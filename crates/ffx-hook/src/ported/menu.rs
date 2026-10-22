@@ -4988,6 +4988,21 @@ ported! {
     MenuItem_ListWindowCtrl_008c6dd0 @ 0x008c_6dd0 => extern "C" fn menu_item_list_window_ctrl(w: u32) -> u32 {
         tk::menu_item_list_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuWShop_Ctrl_008d6e40(m)`: the original's `eax`.
+    MenuWShop_Ctrl_008d6e40 @ 0x008d_6e40 => extern "C" fn menu_wshop_ctrl(m: u32) -> u32 {
+        // MsGetSaveWeapon's name word (the original's argument slot)
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_wshop_ctrl(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCtrlSummon(m)`: the original's `eax`.
+    TkMenuCtrlSummon @ 0x008c_c330 => extern "C" fn tk_menu_ctrl_summon(m: u32) -> u32 {
+        tk::tk_menu_ctrl_summon(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuNameEntry_WindowCtrl_008c3580(w)` (a window control: its `eax` is dropped).
+    MenuNameEntry_WindowCtrl_008c3580 @ 0x008c_3580 => extern "C" fn menu_name_entry_window_ctrl(w: u32) {
+        tk::menu_name_entry_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `MenuSummon_GrowWindowDraw_008cdba0(w)`: `TkMn2DrawKickSyncPacket`'s `eax`.
     MenuSummon_GrowWindowDraw_008cdba0 @ 0x008c_dba0 => extern "C" fn menu_summon_grow_window_draw(w: u32) -> u32 {
         // the caption width word

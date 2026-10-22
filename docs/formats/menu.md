@@ -1011,3 +1011,41 @@ item is `column + 2 * row`, with the column word of each pick level at
 be past the end, and so do the page-down scroll ends (states 15 and 16).
 Each pick level saves its top at `+0x58 + 4 * (u8 +0x42 + k)`. Its shim
 returns the original's `eax` (`TkMenuListWindowCtrl`'s is void).
+
+`MenuWShop_Ctrl_008d6e40` (`0x008d6e40`, jump table `0x008d74c0`) is
+the weapon shop with buy and sell lists. Like `TkMenuCtrlWShop` it loads
+file 0x2f first, here parts 0, 2 and 4: the sizes go to `0x0186ab04`
+(part 0), `0x0186ab0c` (part 2) and `0x0186ab08` (part 4). The parts are
+laid out from `0x008c1b10()` at 64-byte steps (`0x0186aba4`,
+`0x0186aba8`, `g_TkMenuWShopTable`). The four sub-windows are
+`g_TkMenuWShopSubWindows[0..4]`: the buy list, the sell list, the buy
+count and the sell confirm. A purchase that leaves a party member worse
+off asks with `TkMenuMainMes(0x31)`, `0x32` or `0x33` (by
+`MenuWShop_EquipLoss`, else `0x28`) before `MenuWShop_EquipBought`.
+Selling an item whose byte `+3` is clear is refused with message 0x36
+(no item, or a weapon with `byte +3 & 0xd`), 0x35 (weapon byte `+5`
+set) or 0x34. A sale pays `MenuShop_WeaponSellPrice` through
+`MsPayGIL(-price)` after `Equip_RebuildWearers`.
+
+`TkMenuCtrlSummon` (`0x008cc330`, jump table `0x008cca28`) runs the aeon
+menu. The command list's rows map to actions through the byte table
+`0x0186a5b0` (0 status, 1 growth items, 2 stats). Aeons past 13 cannot
+use growth items. A growth item of kind 4 teaches a command
+(`MsSetSaveCommand(aeon, item, 1)`) and uses up the record's items; the
+other kinds explain why not (5 message 8, 7 message 6, others 7). A stat
+row grows through `MenuSummon_GrowStat(row, aeon)` when its bit is in
+`g_TkMenuSummonGrowMask`, else the notice says whether the items are
+there (`g_TkMenuSummonAffordMask`: message 9, else 6). Stat names come
+from `g_NkzAeonStats + 0xc` in 28-byte rows.
+
+`MenuNameEntry_WindowCtrl_008c3580` (the name entry window's `+0xc`
+control, jump tables `0x008c3c94` and `0x008c3cc4`) moves the cursor
+over a grid of 15-cell key rows (`g_TkMenuItemCell`) and a side column
+(`0x0186a270` set, cursor `0x0186a26c`, entries from
+`MenuItem_CursorTable`, kind at `+2`: 0..2 switch the key page, 3 ends,
+4 deletes, 5 loads the target's keys). It wraps the cell back into the
+grid before and after each frame. Japanese flips the key page with the
+shoulder buttons. Confirming with no target ends at once (5); with
+typed keys it asks first (7). Its "yes" lands past the sound of that
+ending, so it is silent. After the windows close it either moves on
+to the next aeon name (`getMegasAdding`, targets 15..17) or ends.

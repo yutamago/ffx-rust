@@ -24738,6 +24738,1175 @@ pub mod bridge {
             }
         }
     }
+    /// The weapon shop's sub-windows (`MenuWShop_CloseSubWindow0`..`3`:
+    /// the buy list, the sell list, the buy count and the sell confirm).
+    const WSHOP_SUB: [u32; 4] = [0x0186_aaf0, 0x0186_aaf4, 0x0186_aaf8, 0x0186_aafc];
+
+    /// `MenuWShop_Ctrl_008d6e40(m)` (`0x008d6e40`, jump table `0x008d74c0`
+    /// on `+0x1c` 0..=36; name ours): the step of the weapon shop that
+    /// buys and sells through four sub-windows ([`WSHOP_SUB`]). States
+    /// (`=>` runs the next one in the same call without storing it):
+    /// - 0 sizes parts 0, 2 and 4 of file 0x2f (`TkCdSize`, into
+    ///   `0x0186ab04`/`0x0186ab0c`/`0x0186ab08`) and lays them out after
+    ///   `0x008c1b10()` at 64-byte steps (`0x0186aba4`, `0x0186aba8`,
+    ///   `g_TkMenuWShopTable`), 1; 1, 3, 5 read them (`TkCdReadNB` once
+    ///   `TkCdReadSync(1)` is idle for 1), 2, 4, 6; 2 and 4 => 3 / => 5
+    ///   once idle; 6 once idle `MenuWShop_InitList`,
+    ///   `TkMn2RefreshWeaponShopSell`, `TkMn2SetMainFrameRatioDiff(-16)`,
+    ///   `MenuWShop_OpenCommandWindow` => 7;
+    /// - 7 (8 after `TkMenuRestartSubCmdWindow2`) => 9; 9 previews the
+    ///   sub-command row (0 the buy list, 1 the sell list, opening it and
+    ///   closing the other) and goes by the answer: cancelled or row 2 =>
+    ///   34, row 0 10, row 1 23, others 8;
+    /// - 10/11 `MenuWShop_RestartListWindow`, 12; 12 waits on the buy
+    ///   list (cancelled 14): `MenuWShop_CanAfford(MenuWShop_GetRecord(u16
+    ///   [TkMn2GetExcelData([0x0186ab1c], [0x0186aba8]) + 2 + 2 * row]))`
+    ///   sound `0x80000001` => 13 (17), else `0x80000003` => 15: the
+    ///   notice `TkMenuMainMes(g_TkMenuWShopUnnamed ? 0x1a : 0x19)`, 16;
+    ///   16 and 29 wait on the yes/no window (11 / 24);
+    /// - 17 `MenuWShop_OpenSubWindow2([0x0186aaf0])`, 18; 18 waits on the
+    ///   count (=> 20 cancelled: closes it, 11; => 19 picked: closes it,
+    ///   refreshes, 21); 21 asks with the equip loss of `0x0186ab18`
+    ///   (`TkMenuMainMes(0x31/0x32/0x33` for 1..3, else `0x28)`, choices
+    ///   0x1c/0x1d, `+0x3e` 5, `+0x37` 0), 22; 22: yes (row 0) sound
+    ///   `0x80000038` + `MenuWShop_EquipBought`, no sound `0x80000001`,
+    ///   cancelled closes; all refresh, 11;
+    /// - 23 (24 after a refresh) `MenuWShop_ClampSubWindow1`, 25; 25
+    ///   waits on the sell list (cancelled 27, picked => 26): an item
+    ///   whose byte `+3` is clear is refused (sound `0x80000003`, 28),
+    ///   else sound `0x80000001`, 30; 28 explains (`TkMenuMainMes(0x36)`
+    ///   for no item or a weapon with `byte +3 & 0xd`, `0x35` with byte
+    ///   `+5`, else `0x34`), 29; 30 `MenuWShop_OpenSubWindow3`, 31; 31
+    ///   waits on it (=> 32 picked: sound `0x8000000e`, `MsPayGIL(-price)`
+    ///   after `Equip_RebuildWearers`; => 33 cancelled; both close it,
+    ///   24);
+    /// - 14 and 27 8; 34 `AtelRegistCallbackQue2(0, TkMn2ArmsRefreshArms,
+    ///   "MODEL")`, closes the lists, `TkMn2SetMainFrameRatioDiff(16)`, 35;
+    ///   35 36; 36 `TkMenuCloseSubCmdWindow`, tail `TkMenuMainSleepMenu(12)`.
+    ///
+    /// `eax` is the original's; `local` takes `MsGetSaveWeapon`'s name
+    /// word (the original's argument slot).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one state machine
+    pub fn menu_wshop_ctrl<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let g = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        for f in [0x008b_e410, 0x008b_e470, 0x008b_e4b0] {
+            let f = at(mem, f);
+            call(mem, f, &[]);
+        }
+        let state_at = m.wrapping_add(0x1c);
+        let set = |mem: &mut M, state: u32| mem.write(state_at, state);
+        let mut state: u32 = mem.read(state_at);
+        let (sync, read_nb, sound) = (
+            at(mem, 0x0088_d1c0),
+            at(mem, 0x0088_d190),
+            at(mem, 0x0088_6e80),
+        );
+        let (init_list, refresh, mes) = (
+            at(mem, 0x008d_94a0),
+            at(mem, 0x008d_9550),
+            at(mem, 0x008d_df80),
+        );
+        let (open, list_max2, close_yes_no) = (
+            at(mem, 0x008e_33a0),
+            at(mem, 0x008e_3390),
+            at(mem, 0x008e_2de0),
+        );
+        let (frame_diff, weapon) = (at(mem, 0x008a_b260), at(mem, 0x007a_bbd0));
+        let [close0, close1, close2, close3] =
+            [0x008d_7610, 0x008d_7650, 0x008d_75f0, 0x008d_7630].map(|f| at(mem, f));
+        // a window's answer and the eax reading it leaves (low byte replaced)
+        let answer = |mem: &M, cell: u32| {
+            let w = g(mem, cell);
+            let b: u8 = mem.read(w.wrapping_add(0x45));
+            (b.cast_signed(), (w & 0xffff_ff00) | u32::from(b))
+        };
+        // the sell list's item entry
+        let sell_item = |mem: &M| {
+            let w = g(mem, WSHOP_SUB[1]);
+            let k = i32::from(mem.read::<i16>(w.wrapping_add(0x48))).cast_unsigned();
+            at(mem, 0x0159_7770).wrapping_add(k.wrapping_mul(4))
+        };
+        // a yes/no window after `TkMenuOpenSubCmdWindow`
+        let notice =
+            |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, texts: &[u32]| {
+                call(mem, open, texts);
+                let w = call(mem, list_max2, &[]);
+                mem.write(w.wrapping_add(0x3e), 4u8);
+                w
+            };
+        // waiting on the yes/no window, then `next`
+        let wait = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, next: u32| {
+            let w = call(mem, list_max2, &[]);
+            if w == 0 || mem.read::<u8>(w.wrapping_add(0x45)) == 0 {
+                return w;
+            }
+            let r = call(mem, close_yes_no, &[]);
+            set(mem, next);
+            r
+        };
+        if state > 0x24 {
+            return state;
+        }
+        let mut eax = state;
+        loop {
+            match state {
+                0 => {
+                    let size = at(mem, 0x0088_d390);
+                    for (part, cell) in [(0, 0x0186_ab04), (2, 0x0186_ab0c), (4, 0x0186_ab08)] {
+                        let n = call(mem, size, &[0x2f, part]);
+                        mem.write(at(mem, cell), n);
+                    }
+                    let f = at(mem, 0x008c_1b10);
+                    let base = call(mem, f, &[]);
+                    mem.write(at(mem, 0x0186_aba4), base);
+                    set(mem, 1);
+                    let round = |v: u32| {
+                        (v.cast_signed().wrapping_add(0x3f) / 64)
+                            .wrapping_mul(64)
+                            .cast_unsigned()
+                    };
+                    let second = round(g(mem, 0x0186_ab04)).wrapping_add(base);
+                    let third = round(g(mem, 0x0186_ab0c)).wrapping_add(second);
+                    mem.write(at(mem, 0x0186_aba8), second);
+                    mem.write(at(mem, 0x0186_abac), third);
+                    return third;
+                }
+                1 | 3 | 5 => {
+                    let (part, slot) = match state {
+                        1 => (0, 0x0186_aba4),
+                        3 => (2, 0x0186_aba8),
+                        _ => (4, 0x0186_abac),
+                    };
+                    if state == 1 {
+                        let busy = call(mem, sync, &[1]);
+                        if busy != 0 {
+                            return busy;
+                        }
+                    }
+                    let buffer = g(mem, slot);
+                    let r = call(mem, read_nb, &[0x2f, part, buffer]);
+                    set(mem, state + 1);
+                    return r;
+                }
+                2 | 4 | 6 => {
+                    let busy = call(mem, sync, &[1]);
+                    if busy != 0 {
+                        return busy;
+                    }
+                    if state == 6 {
+                        call(mem, init_list, &[]);
+                        call(mem, refresh, &[]);
+                        call(mem, frame_diff, &[0xffff_fff0]);
+                        let f = at(mem, 0x008d_8110);
+                        call(mem, f, &[]);
+                    }
+                    set(mem, state + 1);
+                    state += 1;
+                    eax = state;
+                }
+                7 | 8 => {
+                    if state == 8 {
+                        let f = at(mem, 0x008e_49d0);
+                        call(mem, f, &[]);
+                    }
+                    set(mem, 9);
+                    state = 9;
+                    eax = state;
+                }
+                9 => {
+                    let sub_at = at(mem, 0x023c_c128);
+                    let mut sub: u32 = mem.read(sub_at);
+                    let row = mem.read::<i16>(sub.wrapping_add(0x48));
+                    if row == 0 || row == 1 {
+                        let (window, opener, other) = if row == 0 {
+                            (WSHOP_SUB[0], 0x008d_8260, close1)
+                        } else {
+                            (WSHOP_SUB[1], 0x008d_8370, close0)
+                        };
+                        if g(mem, window) == 0 {
+                            let f = at(mem, opener);
+                            call(mem, f, &[]);
+                        }
+                        call(mem, other, &[]);
+                        sub = mem.read(sub_at);
+                    }
+                    let picked: i8 = mem.read(sub.wrapping_add(0x45));
+                    if picked < 0 {
+                        set(mem, 0x22);
+                        state = 0x22;
+                        eax = state;
+                        continue;
+                    }
+                    if picked == 0 {
+                        return sub;
+                    }
+                    let row = i32::from(mem.read::<i16>(sub.wrapping_add(0x48)));
+                    match row {
+                        0 => {
+                            set(mem, 0xa);
+                            return 0;
+                        }
+                        1 => {
+                            set(mem, 0x17);
+                            return 0;
+                        }
+                        2 => {
+                            set(mem, 0x22);
+                            state = 0x22;
+                            eax = state;
+                        }
+                        _ => {
+                            set(mem, 8);
+                            return row.wrapping_sub(2).cast_unsigned();
+                        }
+                    }
+                }
+                0xa | 0xb => {
+                    let f = at(mem, 0x008d_8420);
+                    let r = call(mem, f, &[]);
+                    set(mem, 0xc);
+                    return r;
+                }
+                0xc => {
+                    let (picked, r) = answer(mem, WSHOP_SUB[0]);
+                    if picked < 0 {
+                        set(mem, 0xe);
+                        return r;
+                    }
+                    if picked == 0 {
+                        return r;
+                    }
+                    let f = at(mem, 0x008c_1af0);
+                    let (id, table) = (g(mem, 0x0186_ab1c), g(mem, 0x0186_aba8));
+                    let rec = call(mem, f, &[id, table]);
+                    let w = g(mem, WSHOP_SUB[0]);
+                    let row = i32::from(mem.read::<i16>(w.wrapping_add(0x48))).cast_unsigned();
+                    let item = u32::from(
+                        mem.read::<u16>(rec.wrapping_add(row.wrapping_mul(2)).wrapping_add(2)),
+                    );
+                    let f = at(mem, 0x008d_9170);
+                    let e = call(mem, f, &[item]);
+                    let f = at(mem, 0x008d_85d0);
+                    if call(mem, f, &[e]) != 0 {
+                        call(mem, sound, &[0x8000_0001]);
+                        state = 0xd;
+                    } else {
+                        call(mem, sound, &[0x8000_0003]);
+                        state = 0xf;
+                    }
+                    eax = state;
+                }
+                0xd => {
+                    set(mem, 0x11);
+                    return eax;
+                }
+                0xe | 0x1b => {
+                    set(mem, 8);
+                    return eax;
+                }
+                0xf => {
+                    let id = if g(mem, 0x0186_ab14) == 0 { 0x19 } else { 0x1a };
+                    let text = call(mem, mes, &[id]);
+                    let w = notice(mem, call, &[text, 0, 0]);
+                    set(mem, 0x10);
+                    return w;
+                }
+                0x10 => return wait(mem, call, 0xb),
+                0x1d => return wait(mem, call, 0x18),
+                0x11 => {
+                    let f = at(mem, 0x008d_81d0);
+                    let parent = g(mem, WSHOP_SUB[0]);
+                    let r = call(mem, f, &[parent]);
+                    set(mem, 0x12);
+                    return r;
+                }
+                0x12 | 0x19 | 0x1f => {
+                    let (window, cancelled, picked) = match state {
+                        0x12 => (WSHOP_SUB[2], 0x14, 0x13),
+                        0x19 => (WSHOP_SUB[1], 0x1b, 0x1a),
+                        _ => (WSHOP_SUB[3], 0x21, 0x20),
+                    };
+                    let (answer, r) = answer(mem, window);
+                    if answer == 0 {
+                        return r;
+                    }
+                    if answer < 0 && state == 0x19 {
+                        set(mem, 0x1b);
+                        return r;
+                    }
+                    state = if answer < 0 { cancelled } else { picked };
+                    eax = state;
+                }
+                0x13 => {
+                    call(mem, close2, &[]);
+                    call(mem, init_list, &[]);
+                    let r = call(mem, refresh, &[]);
+                    set(mem, 0x15);
+                    return r;
+                }
+                0x14 => {
+                    let r = call(mem, close2, &[]);
+                    set(mem, 0xb);
+                    return r;
+                }
+                0x15 => {
+                    let f = at(mem, 0x008d_8520);
+                    let loss = call(mem, f, &[g(mem, 0x0186_ab18)]);
+                    let yes = call(mem, mes, &[0x1c]);
+                    let no = call(mem, mes, &[0x1d]);
+                    let id = match loss {
+                        1 => 0x31,
+                        2 => 0x32,
+                        3 => 0x33,
+                        _ => 0x28,
+                    };
+                    let text = call(mem, mes, &[id]);
+                    call(mem, open, &[text, yes, no]);
+                    let w = call(mem, list_max2, &[]);
+                    mem.write(w.wrapping_add(0x3e), 5u8);
+                    mem.write(w.wrapping_add(0x37), 0u8);
+                    set(mem, 0x16);
+                    return w;
+                }
+                0x16 => {
+                    let w = call(mem, list_max2, &[]);
+                    let answer: i8 = mem.read(w.wrapping_add(0x45));
+                    if answer < 0 {
+                        call(mem, init_list, &[]);
+                        call(mem, refresh, &[]);
+                        let r = call(mem, close_yes_no, &[]);
+                        set(mem, 0xb);
+                        return r;
+                    }
+                    if answer == 0 {
+                        return w;
+                    }
+                    let row = mem.read::<i16>(w.wrapping_add(0x48));
+                    call(mem, close_yes_no, &[]);
+                    if row == 0 {
+                        call(mem, sound, &[0x8000_0038]);
+                        let f = at(mem, 0x008d_9120);
+                        call(mem, f, &[g(mem, 0x0186_ab18)]);
+                    } else {
+                        call(mem, sound, &[0x8000_0001]);
+                    }
+                    call(mem, init_list, &[]);
+                    let r = call(mem, refresh, &[]);
+                    set(mem, 0xb);
+                    return r;
+                }
+                0x17 | 0x18 => {
+                    if state == 0x18 {
+                        call(mem, init_list, &[]);
+                        call(mem, refresh, &[]);
+                    }
+                    let f = at(mem, 0x008d_8450);
+                    let r = call(mem, f, &[]);
+                    set(mem, 0x19);
+                    return r;
+                }
+                0x1a => {
+                    let entry = sell_item(mem);
+                    let ok = mem.read::<u8>(entry.wrapping_add(3)) != 0;
+                    let r = call(mem, sound, &[if ok { 0x8000_0001 } else { 0x8000_0003 }]);
+                    set(mem, if ok { 0x1e } else { 0x1c });
+                    return r;
+                }
+                0x1c => {
+                    let id = u32::from(mem.read::<u16>(sell_item(mem)));
+                    let text_id = if id == 0 {
+                        0x36
+                    } else {
+                        let rec = call(mem, weapon, &[id, local]);
+                        if mem.read::<u8>(rec.wrapping_add(3)) & 0xd != 0 {
+                            0x36
+                        } else if mem.read::<u8>(rec.wrapping_add(5)) != 0 {
+                            0x35
+                        } else {
+                            0x34
+                        }
+                    };
+                    let text = call(mem, mes, &[text_id]);
+                    let w = notice(mem, call, &[text, 0, 0]);
+                    set(mem, 0x1d);
+                    return w;
+                }
+                0x1e => {
+                    let f = at(mem, 0x008d_82d0);
+                    let parent = g(mem, WSHOP_SUB[1]);
+                    let r = call(mem, f, &[parent]);
+                    set(mem, 0x1f);
+                    return r;
+                }
+                0x20 | 0x21 => {
+                    if state == 0x20 {
+                        call(mem, sound, &[0x8000_000e]);
+                        let id = u32::from(mem.read::<u16>(sell_item(mem)));
+                        let rec = call(mem, weapon, &[id, local]);
+                        let f = at(mem, 0x008d_9410);
+                        let price = call(mem, f, &[rec]);
+                        let f = at(mem, 0x007a_bca0);
+                        call(mem, f, &[id]);
+                        let f = at(mem, 0x0078_59a0);
+                        call(mem, f, &[price.wrapping_neg()]);
+                    }
+                    let r = call(mem, close3, &[]);
+                    set(mem, 0x18);
+                    return r;
+                }
+                0x22 => {
+                    let (arms, model) = (at(mem, 0x008c_fd70), at(mem, 0x00b6_5e28));
+                    let f = at(mem, 0x0087_51b0);
+                    call(mem, f, &[0, arms, model]);
+                    call(mem, close1, &[]);
+                    call(mem, close0, &[]);
+                    let r = call(mem, frame_diff, &[0x10]);
+                    set(mem, 0x23);
+                    return r;
+                }
+                0x23 => {
+                    set(mem, 0x24);
+                    return eax;
+                }
+                _ => {
+                    let f = at(mem, 0x008e_36f0);
+                    call(mem, f, &[]);
+                    let f = at(mem, 0x008a_ad70);
+                    return call(mem, f, &[0xc]);
+                }
+            }
+        }
+    }
+    /// `TkMenuCtrlSummon(m)` (`0x008cc330`, Fahrenheit's name; jump table
+    /// `0x008cca28` on `+0x1c` 0..=36): the aeon menu's step after the
+    /// three pad reads. The windows: the command list `0x0186a5a0`, the
+    /// status window `0x0186a5a4`, the growth item list `0x0186a5a8`, the
+    /// stat list `0x0186a5ac`. States (`=>` runs the next one in the same
+    /// call without storing it):
+    /// - 0 1, 1 9, 2 and 3 `TkMenuRestartSubCmdWindow2`, 4; 4 5, 5 6; 6
+    ///   waits on the sub-command window (cancelled 0x22, picked 10); 7 8;
+    ///   9 `MenuSummon_OpenWindow`, 10 `MenuSummon_RestartWindow`, both
+    ///   11; 11 12, 12 13;
+    /// - 13 waits on the command list: cancelled sound `0x80000004`, 0x22
+    ///   (or 3 with `[0x0186a5fc] > 1`); picked by the row's kind (`u8
+    ///   0x0186a5b0[row]`): 0 => 14, 1 => 16 (refused with sound
+    ///   `0x80000003` for an aeon past 13), 2 => 24, each after sound
+    ///   `0x80000001` and `TkMenuSummonCloseWindow`;
+    /// - 14 `MenuSummon_OpenStatusWindow_008cd140`, 15; 15 closes it once
+    ///   cancelled => 9;
+    /// - 16/17 open/restart the growth item list, 18; 18 waits on it
+    ///   (cancelled `TkMn2CloseSummonGrowWindow` => 9, picked
+    ///   `TkMn2InitStatusBG` => 19); 19 macro params 0 (aeon) and 1 (item),
+    ///   by the item's kind byte `+2`: 4 asks `(0xa, 0xb, 0xc)` (sound
+    ///   `0x80000001`, 21), else notice 8 (5), 6 (7) or 7 (sound
+    ///   `0x80000003`, 20); 20/23 wait (17); 21: yes teaches the command
+    ///   (`MsSetSaveCommand(aeon, item id, 1)`, `MsSaveItemUse` of the
+    ///   growth record, sound `0x80000066`, `TkMn2RefreshList(3)`) => 22,
+    ///   no sound `0x80000001` 17, cancelled 17; 22 notice 0xd, 23;
+    /// - 24/25 open/restart the stat list, 26; 26 waits (cancelled
+    ///   `TkMenuSummonCloseWindow2` => 9, picked 27); 27 macro params
+    ///   (aeon, the stat's name, `u8 +6` of `MenuSummon_GrowEntry(row)`),
+    ///   with the stat in `g_TkMenuSummonGrowMask` asks `(0xe, 0xb, 0xc)`
+    ///   (29), else notice 9 (affordable) or 6, 28; 28/31 wait (25); 29:
+    ///   yes `MenuSummon_GrowStat(row, aeon)`, sound `0x80000067`,
+    ///   `MenuSummon_RefreshGrowMasks`, 30; no / cancelled 25; 30 notice
+    ///   0xf (`+0x3e` 4), 31;
+    /// - 32 33; 34 35; 35 36; 36 `TkMenuMainSleepMenu(7)`, tail
+    ///   `TkMenuMainActiveMenu(1, 0)`.
+    ///
+    /// `eax` is the original's.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one state machine
+    pub fn tk_menu_ctrl_summon<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let g = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        for f in [0x008b_e410, 0x008b_e470, 0x008b_e4b0] {
+            let f = at(mem, f);
+            call(mem, f, &[]);
+        }
+        let state_at = m.wrapping_add(0x1c);
+        let set = |mem: &mut M, state: u32| mem.write(state_at, state);
+        let mut state: u32 = mem.read(state_at);
+        if state > 0x24 {
+            return state;
+        }
+        let (sound, summon, mes) = (
+            at(mem, 0x0088_6e80),
+            at(mem, 0x008a_9880),
+            at(mem, 0x008d_e180),
+        );
+        let (open, list_max2, close_yes_no) = (
+            at(mem, 0x008e_33a0),
+            at(mem, 0x008e_3390),
+            at(mem, 0x008e_2de0),
+        );
+        let macro_param = at(mem, 0x008c_2c60);
+        let row_of =
+            |mem: &M, cell: u32| i32::from(mem.read::<i16>(g(mem, cell).wrapping_add(0x48)));
+        let item =
+            |mem: &M, k: i32| at(mem, 0x0159_7770).wrapping_add(k.cast_unsigned().wrapping_mul(4));
+        // a window's answer and the eax reading it leaves (low byte replaced)
+        let answer = |mem: &M, w: u32| {
+            let b: u8 = mem.read(w.wrapping_add(0x45));
+            (b.cast_signed(), (w & 0xffff_ff00) | u32::from(b))
+        };
+        // a yes/no window of `texts` (`+0x37` 0 with `choices`), `+0x3e` 3, the sound `tone`, then `next`
+        let ask = |mem: &mut M,
+                   call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                   texts: [u32; 3],
+                   choices: bool,
+                   tone: u32,
+                   next: u32| {
+            call(mem, open, &texts);
+            let w = call(mem, list_max2, &[]);
+            if choices {
+                mem.write(w.wrapping_add(0x37), 0u8);
+            }
+            mem.write(w.wrapping_add(0x3e), 3u8);
+            let r = call(mem, sound, &[tone]);
+            set(mem, next);
+            r
+        };
+        // waiting on the yes/no window, then `next`
+        let wait = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, next: u32| {
+            let w = call(mem, list_max2, &[]);
+            if w == 0 || mem.read::<u8>(w.wrapping_add(0x45)) == 0 {
+                return w;
+            }
+            let r = call(mem, close_yes_no, &[]);
+            set(mem, next);
+            r
+        };
+        // macro params 0 (aeon), 1 (the stat's name) and 2 (its cost) of stat row `k`
+        let stat_params = |mem: &mut M,
+                           call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                           k: i32| {
+            let f = at(mem, 0x008c_ecf0);
+            let entry = call(mem, f, &[k.cast_unsigned()]);
+            let aeon = call(mem, summon, &[]);
+            call(mem, macro_param, &[0, 0x13, aeon]);
+            let name_id = mem
+                .read::<u32>(at(mem, 0x00c5_a610).wrapping_add(k.cast_unsigned().wrapping_mul(28)));
+            let f = at(mem, 0x008b_ee70);
+            let name = call(mem, f, &[name_id]);
+            call(mem, macro_param, &[1, 0, name]);
+            let cost = u32::from(mem.read::<u8>(entry.wrapping_add(6)));
+            call(mem, macro_param, &[2, 1, cost]);
+        };
+        loop {
+            match state {
+                0 | 1 | 4 | 5 | 7 | 0xb | 0xc | 0x20 | 0x22 | 0x23 => {
+                    let next = match state {
+                        0 => 1,
+                        1 => 9,
+                        4 => 5,
+                        5 => 6,
+                        7 => 8,
+                        0xb => 0xc,
+                        0xc => 0xd,
+                        0x20 => 0x21,
+                        0x22 => 0x23,
+                        _ => 0x24,
+                    };
+                    set(mem, next);
+                    return state;
+                }
+                2 | 3 | 9 | 0xa | 0xe | 0x10 | 0x11 | 0x18 | 0x19 => {
+                    let (f, next) = match state {
+                        2 | 3 => (0x008e_49d0, 4),
+                        9 => (0x008c_d1b0, 0xb),
+                        0xa => (0x008c_d1f0, 0xb),
+                        0xe => (0x008c_d140, 0xf),
+                        0x10 => (0x008c_ed30, 0x12),
+                        0x11 => (0x008c_ee30, 0x12),
+                        0x18 => (0x008c_eda0, 0x1a),
+                        _ => (0x008c_ee50, 0x1a),
+                    };
+                    let f = at(mem, f);
+                    let r = call(mem, f, &[]);
+                    set(mem, next);
+                    return r;
+                }
+                6 => {
+                    let sub_at = at(mem, 0x023c_c128);
+                    let sub: u32 = mem.read(sub_at);
+                    let mut picked: i8 = mem.read(sub.wrapping_add(0x45));
+                    let mut r = sub;
+                    if picked < 0 {
+                        set(mem, 0x22);
+                        r = mem.read(sub_at);
+                        picked = mem.read(r.wrapping_add(0x45));
+                    }
+                    if picked > 0 {
+                        set(mem, 0xa);
+                    }
+                    return r;
+                }
+                0xd => {
+                    let (picked, r) = answer(mem, g(mem, 0x0186_a5a0));
+                    if picked < 0 {
+                        call(mem, sound, &[0x8000_0004]);
+                        let next = if g(mem, 0x0186_a5fc).cast_signed() <= 1 {
+                            0x22
+                        } else {
+                            3
+                        };
+                        set(mem, next);
+                        return next;
+                    }
+                    if picked == 0 {
+                        return r;
+                    }
+                    let aeon = call(mem, summon, &[]);
+                    let sub: u32 = mem.read(at(mem, 0x023c_c128));
+                    let kind = if sub == 0 {
+                        0
+                    } else {
+                        let row =
+                            i32::from(mem.read::<i16>(sub.wrapping_add(0x48))).cast_unsigned();
+                        mem.read::<u8>(at(mem, 0x0186_a5b0).wrapping_add(row))
+                    };
+                    let next = match kind {
+                        0 => 0xe,
+                        1 if aeon.cast_signed() > 0xd => return call(mem, sound, &[0x8000_0003]),
+                        1 => 0x10,
+                        2 => 0x18,
+                        _ => return aeon,
+                    };
+                    call(mem, sound, &[0x8000_0001]);
+                    let f = at(mem, 0x008c_cb40);
+                    call(mem, f, &[]);
+                    state = next;
+                }
+                0xf | 0x12 | 0x1a => {
+                    let global = match state {
+                        0xf => 0x0186_a5a4,
+                        0x12 => 0x0186_a5a8,
+                        _ => 0x0186_a5ac,
+                    };
+                    let w = g(mem, global);
+                    if state == 0x12 && w == 0 {
+                        return 0;
+                    }
+                    let (picked, r) = answer(mem, w);
+                    if picked >= 0 {
+                        if picked == 0 || state == 0xf {
+                            return if state == 0x12 { r } else { w };
+                        }
+                        if state == 0x1a {
+                            set(mem, 0x1b);
+                            return w;
+                        }
+                        let f = at(mem, 0x008d_4ed0);
+                        call(mem, f, &[]);
+                        state = 0x13;
+                        continue;
+                    }
+                    let f = at(
+                        mem,
+                        match state {
+                            0xf => 0x008c_cb10,
+                            0x12 => 0x008c_d430,
+                            _ => 0x008c_d440,
+                        },
+                    );
+                    call(mem, f, &[]);
+                    set(mem, 9);
+                    state = 9;
+                }
+                0x13 => {
+                    let k = row_of(mem, 0x0186_a5a8);
+                    let aeon = call(mem, summon, &[]);
+                    call(mem, macro_param, &[0, 0x13, aeon]);
+                    let entry = item(mem, k);
+                    let id = u32::from(mem.read::<u16>(entry));
+                    call(mem, macro_param, &[1, 0x35, id]);
+                    let text_id = match mem.read::<u8>(entry.wrapping_add(2)) {
+                        4 => {
+                            let texts = [0xa, 0xb, 0xc].map(|id| call(mem, mes, &[id]));
+                            return ask(mem, call, texts, true, 0x8000_0001, 0x15);
+                        }
+                        5 => 8,
+                        7 => 6,
+                        _ => 7,
+                    };
+                    let text = call(mem, mes, &[text_id]);
+                    return ask(mem, call, [text, 0, 0], false, 0x8000_0003, 0x14);
+                }
+                0x14 | 0x17 => return wait(mem, call, 0x11),
+                0x1c | 0x1f => return wait(mem, call, 0x19),
+                0x15 | 0x1d => {
+                    let w = call(mem, list_max2, &[]);
+                    let (picked, _) = answer(mem, w);
+                    let back = if state == 0x15 { 0x11 } else { 0x19 };
+                    if picked < 0 {
+                        let r = call(mem, close_yes_no, &[]);
+                        set(mem, back);
+                        return r;
+                    }
+                    if picked == 0 {
+                        return w;
+                    }
+                    let row = i32::from(mem.read::<i16>(w.wrapping_add(0x48)));
+                    let r = call(mem, close_yes_no, &[]);
+                    if row != 0 && (state == 0x1d || row == 1) {
+                        let r = call(mem, sound, &[0x8000_0001]);
+                        set(mem, back);
+                        return r;
+                    }
+                    if row != 0 {
+                        return r;
+                    }
+                    if state == 0x1d {
+                        let aeon = call(mem, summon, &[]);
+                        let f = at(mem, 0x008c_d240);
+                        call(mem, f, &[row_of(mem, 0x0186_a5ac).cast_unsigned(), aeon]);
+                        let (dbg, text) = (at(mem, 0x0062_f500), at(mem, 0x00b6_5d48));
+                        call(mem, dbg, &[text]);
+                        call(mem, sound, &[0x8000_0067]);
+                        let aeon = call(mem, summon, &[]);
+                        let f = at(mem, 0x008c_d3b0);
+                        let r = call(mem, f, &[aeon]);
+                        set(mem, 0x1e);
+                        return r;
+                    }
+                    let k = row_of(mem, 0x0186_a5a8);
+                    let aeon = call(mem, summon, &[]);
+                    let f = at(mem, 0x008c_1c20);
+                    let grow = call(mem, f, &[]);
+                    let entry = item(mem, k);
+                    let rec = grow.wrapping_add(
+                        u32::from(mem.read::<u8>(entry.wrapping_add(3))).wrapping_mul(8),
+                    );
+                    let id = u32::from(mem.read::<u16>(entry));
+                    let f = at(mem, 0x0078_5c50);
+                    let learned = call(mem, f, &[aeon, id, 1]);
+                    let n = u32::from(mem.read::<u8>(rec.wrapping_add(6))).wrapping_neg();
+                    let used = u32::from(mem.read::<u16>(rec.wrapping_add(4)));
+                    let f = at(mem, 0x0079_0550);
+                    call(mem, f, &[used, n]);
+                    let id = u32::from(mem.read::<u16>(entry));
+                    let dbg = at(mem, 0x0062_f500);
+                    let text = at(mem, 0x00b6_5d00);
+                    call(mem, dbg, &[text, aeon, id, id, learned]);
+                    let text = at(mem, 0x00b6_5d3c);
+                    call(mem, dbg, &[text]);
+                    call(mem, sound, &[0x8000_0066]);
+                    let f = at(mem, 0x008c_2360);
+                    call(mem, f, &[3]);
+                    state = 0x16;
+                }
+                0x16 => {
+                    let text = call(mem, mes, &[0xd]);
+                    let r = call(mem, open, &[text, 0, 0]);
+                    set(mem, 0x17);
+                    return r;
+                }
+                0x1b => {
+                    let k = row_of(mem, 0x0186_a5ac);
+                    stat_params(mem, call, k);
+                    let bit = 1u32 << (k.cast_unsigned() & 0x1f);
+                    if g(mem, 0x0186_a600) & bit != 0 {
+                        let texts = [0xe, 0xb, 0xc].map(|id| call(mem, mes, &[id]));
+                        return ask(mem, call, texts, true, 0x8000_0001, 0x1d);
+                    }
+                    let text_id = if g(mem, 0x0186_a604) & bit != 0 { 9 } else { 6 };
+                    let text = call(mem, mes, &[text_id]);
+                    return ask(mem, call, [text, 0, 0], false, 0x8000_0003, 0x1c);
+                }
+                0x1e => {
+                    let k = row_of(mem, 0x0186_a5ac);
+                    stat_params(mem, call, k);
+                    let text = call(mem, mes, &[0xf]);
+                    call(mem, open, &[text, 0, 0]);
+                    let w = call(mem, list_max2, &[]);
+                    mem.write(w.wrapping_add(0x3e), 4u8);
+                    set(mem, 0x1f);
+                    return w;
+                }
+                0x24 => {
+                    let f = at(mem, 0x008a_ad70);
+                    call(mem, f, &[7]);
+                    let f = at(mem, 0x008a_a100);
+                    return call(mem, f, &[1, 0]);
+                }
+                // 8 and 0x21 do nothing
+                _ => return state,
+            }
+        }
+    }
+    /// The name entry's cursor cell back inside the grid of `rows` key
+    /// rows (15 cells each): `g_TkMenuItemCell` at or past `15 * rows`
+    /// steps back by whole rows past it, `15 * ((cell - 15 * rows) / 15 +
+    /// 1)` (unsigned).
+    fn name_entry_wrap_cell(mem: &mut impl Mem, rows: u32) {
+        let at = mem.rebase(0x0186_a268);
+        let cell: u32 = mem.read(at);
+        let limit = rows.wrapping_mul(15);
+        if cell.cast_signed() >= limit.cast_signed() {
+            let back = (cell.wrapping_sub(limit) / 15)
+                .wrapping_add(1)
+                .wrapping_mul(15);
+            mem.write(at, cell.wrapping_sub(back));
+        }
+    }
+
+    /// `MenuNameEntry_WindowCtrl_008c3580(w)` (`0x008c3580`, the `+0xc`
+    /// control of the name entry window; jump tables `0x008c3c94` on
+    /// `+0x28` 0..=11 and `0x008c3cc4` on a side-column entry's kind; name
+    /// ours). Reads the pads (`rep`, `trg` as `u16`), `TkMn2StepStatusBG`,
+    /// the key rows (`MenuItem_KeyRowCount`) and the side column's length
+    /// (`MenuItem_CursorCount`), and keeps the cursor cell
+    /// (`g_TkMenuItemCell`, 15 per row) inside the grid before and after
+    /// the step. The side column (`[0x0186a270]` set) has its cursor at
+    /// `0x0186a26c`; `0x0186a25c` is the key page, `0x0186a260` the last
+    /// side entry, `0x0186a264` a flag the grid's edges clear. States:
+    /// - 0 (help `[0x0186a274]`, 1) and 1 (help again; 2 once
+    ///   `TOMenuGetFirstReadEndFlag`); 2 `TkMn2SetMainFrameRatioDiff(-16)`
+    ///   then 4; 3 4;
+    /// - 4 the input. Japanese (`TOGetFFXLangJmp() == 0`) flips the page
+    ///   with `trg & 5` (back) / `trg & 0xa` (on, wrapping 0..=2, sound
+    ///   `0x80000004`). `trg & 0x800` ends (5 without a target, 7 with
+    ///   keys typed, else sound `0x80000003`); `trg & 0x100` toggles the
+    ///   side column. In the side column `trg & 0x20` runs the entry
+    ///   (kinds 0..=2 pick the page and leave the column at the row's
+    ///   start, 3 ends like 0x800, 4 deletes a key, 5 loads the target's
+    ///   keys) and the held directions move its cursor (up/down wrap,
+    ///   left/right leave it at the grid's last or first column). On the
+    ///   grid `trg & 0x20` types the key (refused for languages 10/9/11
+    ///   when the keys already match the target), `trg & 0x40` deletes
+    ///   one, and the held directions move the cell (rows wrap, the
+    ///   columns' edges go to the side column);
+    /// - 5 `MenuNameEntry_Commit`, 6; 6 9; 7 asks `(0x2008, 0x2009,
+    ///   0x200a)` (`+0x3e` 5), 8; 8: yes 5, no or cancelled 3;
+    /// - 9 `TkMn2SetMainFrameRatioDiff(16)` unless menu 3 is active, 10;
+    ///   10 once the frame is in (ratio 0x80 or menu 3 active) closes the
+    ///   windows `+0x60`/`+0x64`, then the next of several aeon names
+    ///   (`getMegasAdding`, target 15..=17: one less, and with more left
+    ///   `NameInputChrChange(target + 1)`, 0) or the end (`+0x30` 1,
+    ///   11).
+    #[allow(clippy::too_many_lines)] // one state machine
+    pub fn menu_name_entry_window_ctrl<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let g = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let put = |mem: &mut M, a: u32, v: u32| mem.write(mem.rebase(a), v);
+        let f = at(mem, 0x008b_e410);
+        call(mem, f, &[]);
+        let f = at(mem, 0x008b_e470);
+        let rep = call(mem, f, &[]) & 0xffff;
+        let f = at(mem, 0x008b_e4b0);
+        let trg = call(mem, f, &[]) & 0xffff;
+        let f = at(mem, 0x008d_3280);
+        call(mem, f, &[]);
+        let row_count = at(mem, 0x008c_5180);
+        let mut rows = call(mem, row_count, &[]);
+        let f = at(mem, 0x008c_5030);
+        let side_len = call(mem, f, &[]);
+        name_entry_wrap_cell(mem, rows);
+        let state_at = w.wrapping_add(0x28);
+        let set = |mem: &mut M, state: u32| mem.write(state_at, state);
+        let state: u32 = mem.read(state_at);
+        let (sound, lang, set_cell) = (
+            at(mem, 0x0088_6e80),
+            at(mem, 0x008a_c2f0),
+            at(mem, 0x008c_5260),
+        );
+        let (frame_diff, delete_key, table) = (
+            at(mem, 0x008a_b260),
+            at(mem, 0x008c_44d0),
+            at(mem, 0x008c_4ff0),
+        );
+        let help = at(mem, 0x008a_aeb0);
+        let typed = |mem: &M| mem.read::<u8>(at(mem, 0x0186_a280)) != 0;
+        let target = |mem: &M| g(mem, 0x0186_a258).cast_signed();
+        // the grid row of the cell (toward zero)
+        let cell_row = |mem: &M| (g(mem, 0x0186_a268).cast_signed() / 15).cast_unsigned();
+        match state {
+            0 | 1 => {
+                if state == 0 {
+                    call(mem, help, &[g(mem, 0x0186_a274)]);
+                    set(mem, 1);
+                }
+                call(mem, help, &[g(mem, 0x0186_a274)]);
+                let f = at(mem, 0x008a_8e50);
+                if call(mem, f, &[]) != 0 {
+                    set(mem, 2);
+                }
+            }
+            2..=4 => 'input: {
+                if state == 2 {
+                    call(mem, frame_diff, &[0xffff_fff0]);
+                }
+                if state != 4 {
+                    set(mem, 4);
+                }
+                if call(mem, lang, &[]) == 0 && trg & 0xf != 0 {
+                    let page = g(mem, 0x0186_a25c).cast_signed();
+                    let page = if trg & 5 != 0 {
+                        call(mem, sound, &[0x8000_0004]);
+                        let page = page.wrapping_sub(1);
+                        if page < 0 { 2 } else { page }
+                    } else {
+                        call(mem, sound, &[0x8000_0004]);
+                        let page = page.wrapping_add(1);
+                        if page >= 3 { 0 } else { page }
+                    };
+                    for a in [0x0186_a25c, 0x0186_a26c, 0x0186_a260] {
+                        put(mem, a, page.cast_unsigned());
+                    }
+                    rows = call(mem, row_count, &[]);
+                    break 'input;
+                }
+                // ending the entry: 5 without a target, 7 with keys typed
+                let finish = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+                    if target(mem) < 0 {
+                        call(mem, sound, &[0x8000_0001]);
+                        set(mem, 5);
+                    } else if typed(mem) {
+                        call(mem, sound, &[0x8000_0001]);
+                        set(mem, 7);
+                    } else {
+                        call(mem, sound, &[0x8000_0003]);
+                    }
+                };
+                if trg & 0x800 != 0 {
+                    finish(mem, call);
+                    break 'input;
+                }
+                if trg & 0x100 != 0 {
+                    call(mem, table, &[]);
+                    call(mem, sound, &[0x8000_0001]);
+                    let side = g(mem, 0x0186_a270) == 1;
+                    put(mem, 0x0186_a264, 1);
+                    put(mem, 0x0186_a270, u32::from(!side));
+                    break 'input;
+                }
+                if g(mem, 0x0186_a270) != 0 {
+                    if trg & 0x20 != 0 {
+                        let tab = call(mem, table, &[]);
+                        let k = g(mem, 0x0186_a26c);
+                        let kind = u32::from(
+                            mem.read::<u16>(tab.wrapping_add(k.wrapping_mul(4)).wrapping_add(2)),
+                        );
+                        match kind {
+                            0..=2 => {
+                                call(mem, set_cell, &[0, cell_row(mem)]);
+                                put(mem, 0x0186_a270, 0);
+                                call(mem, sound, &[0x8000_0001]);
+                                put(mem, 0x0186_a260, kind);
+                                put(mem, 0x0186_a25c, kind);
+                            }
+                            3 => {
+                                put(mem, 0x0186_a260, 3);
+                                if target(mem) >= 0 && typed(mem) {
+                                    call(mem, sound, &[0x8000_0001]);
+                                    set(mem, 7);
+                                    break 'input;
+                                }
+                                finish(mem, call);
+                            }
+                            4 => {
+                                put(mem, 0x0186_a260, 4);
+                                if typed(mem) {
+                                    call(mem, sound, &[0x8000_0004]);
+                                    call(mem, delete_key, &[]);
+                                } else {
+                                    call(mem, sound, &[0x8000_0003]);
+                                }
+                            }
+                            5 => {
+                                put(mem, 0x0186_a260, 5);
+                                call(mem, sound, &[0x8000_0001]);
+                                let f = at(mem, 0x008c_5320);
+                                call(mem, f, &[g(mem, 0x0186_a258)]);
+                            }
+                            _ => {}
+                        }
+                    }
+                    if rep & 0x5000 != 0 {
+                        let k = g(mem, 0x0186_a26c).cast_signed();
+                        let k = if rep & 0x1000 != 0 {
+                            let k = k.wrapping_sub(1);
+                            put(mem, 0x0186_a26c, k.cast_unsigned());
+                            if k < 0 {
+                                side_len.cast_signed().wrapping_sub(1)
+                            } else {
+                                k
+                            }
+                        } else {
+                            let k = k.wrapping_add(1);
+                            put(mem, 0x0186_a26c, k.cast_unsigned());
+                            if k >= side_len.cast_signed() { 0 } else { k }
+                        };
+                        put(mem, 0x0186_a26c, k.cast_unsigned());
+                        call(mem, sound, &[0x8000_0001]);
+                    } else if rep & 0xa000 != 0 {
+                        let flag = g(mem, 0x0186_a264);
+                        let page = g(mem, 0x0186_a25c);
+                        put(mem, 0x0186_a260, page);
+                        put(mem, 0x0186_a26c, page);
+                        if flag == 0 {
+                            let column = if rep & 0x2000 != 0 { 0 } else { 0xe };
+                            call(mem, set_cell, &[column, cell_row(mem)]);
+                        }
+                        put(mem, 0x0186_a270, 0);
+                        call(mem, sound, &[0x8000_0001]);
+                    }
+                    break 'input;
+                }
+                let cursor = g(mem, 0x0186_a268).cast_signed();
+                let mut row = cursor / 15;
+                let mut column = cursor.wrapping_sub(row.wrapping_mul(15));
+                if trg & 0x20 != 0 {
+                    let mut strict = false;
+                    for l in [10, 9, 11] {
+                        if call(mem, lang, &[]) == l {
+                            strict = true;
+                            break;
+                        }
+                    }
+                    let f = at(mem, 0x008c_5390);
+                    if strict && call(mem, f, &[g(mem, 0x0186_a258)]) != 0 {
+                        call(mem, sound, &[0x8000_0003]);
+                    } else {
+                        call(mem, sound, &[0x8000_0001]);
+                        let f = at(mem, 0x008c_4c90);
+                        call(mem, f, &[]);
+                    }
+                    break 'input;
+                }
+                if trg & 0x40 != 0 {
+                    if typed(mem) {
+                        call(mem, sound, &[0x8000_0004]);
+                        call(mem, delete_key, &[]);
+                    } else {
+                        call(mem, sound, &[0x8000_0003]);
+                    }
+                    break 'input;
+                }
+                if rep & 0x1000 != 0 {
+                    row = row.wrapping_sub(1);
+                    if row < 0 {
+                        row = rows.cast_signed().wrapping_sub(1);
+                    }
+                } else if rep & 0x4000 != 0 {
+                    row = row.wrapping_add(1);
+                    if row >= rows.cast_signed() {
+                        row = 0;
+                    }
+                } else if rep & 0x8000 != 0 {
+                    if column == 0 {
+                        put(mem, 0x0186_a264, 0);
+                        put(mem, 0x0186_a270, 1);
+                    } else {
+                        column -= 1;
+                    }
+                } else if rep & 0x2000 != 0 {
+                    if column < 0xe {
+                        column += 1;
+                    } else {
+                        put(mem, 0x0186_a264, 0);
+                        put(mem, 0x0186_a270, 1);
+                    }
+                } else {
+                    break 'input;
+                }
+                call(mem, sound, &[0x8000_0001]);
+                call(
+                    mem,
+                    set_cell,
+                    &[column.cast_unsigned(), row.cast_unsigned()],
+                );
+            }
+            5 => {
+                let f = at(mem, 0x008c_4e60);
+                call(mem, f, &[]);
+                set(mem, 6);
+            }
+            6 => set(mem, 9),
+            7 => {
+                let f = at(mem, 0x008b_edd0);
+                let texts = [0x2008, 0x2009, 0x200a].map(|id| call(mem, f, &[id]));
+                let f = at(mem, 0x008e_33a0);
+                call(mem, f, &texts);
+                let f = at(mem, 0x008e_3390);
+                let yes_no = call(mem, f, &[]);
+                mem.write(yes_no.wrapping_add(0x3e), 5u8);
+                set(mem, 8);
+            }
+            8 => {
+                let f = at(mem, 0x008e_3390);
+                let yes_no = call(mem, f, &[]);
+                if yes_no != 0 {
+                    let answer: i8 = mem.read(yes_no.wrapping_add(0x45));
+                    let close = at(mem, 0x008e_2de0);
+                    if answer < 0 {
+                        call(mem, close, &[]);
+                        set(mem, 3);
+                    } else if answer > 0 {
+                        let row = mem.read::<i16>(yes_no.wrapping_add(0x48));
+                        call(mem, close, &[]);
+                        // yes: 5 without a sound (the jump lands past the 0x800 ending's)
+                        if row == 0 {
+                            set(mem, 5);
+                        } else if row == 1 {
+                            set(mem, 3);
+                        }
+                    }
+                }
+            }
+            9 | 10 => 'close: {
+                let mask = at(mem, 0x008a_a460);
+                if state == 9 {
+                    if call(mem, mask, &[]) & 8 == 0 {
+                        call(mem, frame_diff, &[0x10]);
+                    }
+                    set(mem, 0xa);
+                }
+                if call(mem, mask, &[]) & 8 == 0 {
+                    let f = at(mem, 0x008a_b230);
+                    if call(mem, f, &[]).cast_signed() < 0x80 {
+                        break 'close;
+                    }
+                }
+                let first: u32 = mem.read(w.wrapping_add(0x60));
+                if first != 0 {
+                    mem.write(first.wrapping_add(0x41), 1u8);
+                }
+                let second: u32 = mem.read(w.wrapping_add(0x64));
+                mem.write(second.wrapping_add(0x41), 1u8);
+                let (get, put_megas) = (at(mem, 0x0086_0a90), at(mem, 0x0086_0f20));
+                if call(mem, get, &[]) != 0 && (0xf..=0x11).contains(&target(mem)) {
+                    let n = call(mem, get, &[]).wrapping_sub(1);
+                    call(mem, put_megas, &[n]);
+                    if call(mem, get, &[]) != 0 {
+                        let next = g(mem, 0x0186_a258).wrapping_add(1);
+                        let f = at(mem, 0x008c_33f0);
+                        call(mem, f, &[next]);
+                        set(mem, 0);
+                        break 'close;
+                    }
+                }
+                mem.write(w.wrapping_add(0x30), 1u16);
+                set(mem, 0xb);
+            }
+            _ => {}
+        }
+        name_entry_wrap_cell(mem, rows);
+    }
 }
 
 #[cfg(test)]
