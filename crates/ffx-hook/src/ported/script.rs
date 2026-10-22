@@ -7401,4 +7401,13 @@ ported! {
     AtelInitBasicWork @ 0x0086_cb00 => extern "C" fn h_86cb00(setup: u32, clear: u32) {
         hp::atel_init_basic_work(&mut mem(), setup, clear);
     }
+    /// `AtelEventRemoveForBattle()`.
+    AtelEventRemoveForBattle @ 0x0086_5dc0 => extern "C" fn h_865dc0() -> u32 {
+        hp::atel_event_remove_for_battle(&mut mem())
+    }
+    /// `Atel_CheckTouchTalk_00866980(worker, _, player)`: `Math_LengthSq3`
+    /// through the game.
+    Atel_CheckTouchTalk_00866980 @ 0x0086_6980 => extern "C" fn h_866980(w: u32, _unused: u32, player: u32) -> u32 {
+        hp::atel_check_touch_talk(&mut mem(), w, player, |_, f, args| super::call_cdecl_f64(f, args))
+    }
 }

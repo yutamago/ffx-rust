@@ -9364,7 +9364,7 @@
 0x00865a60 function AtelEventLoadMusic # (hdr): when the sound table's (+0x2c) music word +0x38 is negative, SndMusicRead(low half) and SndSyncMusicStandby(1) (a tail jump; on PC that returns 0 and ignores its argument); else EAX hdr; ported in helpers (script round 23 g); str-match switch: only user of 2 string(s) held once by both builds, e.g. 'LOAD MUSIC START'; Switch 0x71004740e0 AtelEventLoadMusic (symbols from Fahrenheit's server export)
 0x00865ac0 function AtelEventPlayMusic # (hdr): for a negative music word (sound table +0x38: number low half, fade bits 16..30): from 0x100 up fades the playing music out and registers -1, else starts or cross-fades the number (unless it already plays) and registers it; ported in helpers (script round 23 i); fh v3:exact 0x00865a60
 0x00865b80 function AtelEventRegistFootInfo   # fh v3:exact 0x00865b20
-0x00865dc0 function AtelEventRemoveForBattle  # fh v3:cg25 0x865d60
+0x00865dc0 function AtelEventRemoveForBattle # () before a battle: SndSepLock(0), Yn_BattleBegin, guide map off, keeps yiGetDrawMask (g_AtelBattleDrawMask), pppFpSaveStat into g_AtelBattleStickState (zeroed 0x100 bytes), the lights (0x0086db20), the guide map number (g_AtelBattleGuideMapNo); with ctrl work 0 in use it becomes current (SndStopStream) and its character-bound actors release their models (speed 0, motion groups, hide event +0xa0, sticks +0xb18, attachments +0xaf4/+0xaf8 by +0x33 bits 4/5, the model +0x9c by bit 0, data too per MsBattleGetChrDisposeFlag); EAX the map number or the old ctrl work; ported in helpers (script round 27 b); fh v3:cg25 0x865d60
 0x008661a0 function AtelEventRemoveGuideMap # (): ctrl work 0 current meanwhile; clears its guide map flag (+1 bit 7) when set (Yn_GuideMapEnd is an empty function); ported in helpers (script round 23 g); fh v3:exact 0x00866140
 0x008661d0 function AtelEventRemoveSep # cdecl (mode): SndStopStream; ctrl work 0 current; with its script block Atel_LoadEventSeps_00866520(block, mode, -1) and the current ctrl work back (without one ctrl work 0 stays current, EAX 0); ported (ffx_script helpers, script round 24 d); fh v3:exact 0x00866170
 0x00866210 function AtelEventSetUpFoot3d # (hdr): SndEventSetFoot3dCtrlp (a tail jump) with hdr + the sound table's (+0x2c) +0x2c offset, or 0; ported in helpers (script round 23 g); fh v3:exact 0x008661b0
@@ -9373,6 +9373,7 @@
 0x00866490 function AtelEventSetupGuideMap # (): sets ctrl work 0's guide map flag (+1 bit 7) when clear (Yn_GuideMapInit is empty), then Yn_GuideMapSetMode(0) with the context back; ported in helpers (script round 23 g); fh v3:exact 0x00866430
 0x00866520 function Atel_LoadEventSeps_00866520 # name ours; cdecl (_, mode, group): g_AtelSepLoadCount = 0, then the separates table of ctrl work 0's script block (0x01325be8 +0x2c -> +0xc): mode 0 adds flags bit 1 without bit 2 or bit 3 without bit 1; mode set and group selected ((mask|1) bit) keeps entries with none of the rotated group bits; else adds flags bit 0 (Atel_AddSepLoad); kept: added and not refused (1), first 16 ids >= 0; group bit cleared from g_AtelSepGroupMask, SndSepClearAll with none kept else SqsSeSeparateMaskClear(first 8), mask = 0; EAX that call's; callers 0x00862470, AtelEventRemoveSep, 0x00866500; ported (ffx_script helpers, script round 24 b)
 0x008666d0 function AtelExec # (): Atel_ExecCtrlWorks_008688f0(0, 6), EAX its result; caller 0x00872bd0; Fahrenheit's name (Switch BSim match 0x7100470050); ported in helpers (script round 27 a)
+0x00866980 function Atel_CheckTouchTalk_00866980 # (w, _, player) -> trigger EAX or 0: character-bound actor vs the ctrl work's player position (+0x218): touch (|dy| < move +0x1c, LengthSq3(dx, 0, dz) <= (+0x48)^2: AtelRequestTrigger_008764f0(0xffff, id, 3), +0x34 bit 6); talk (+0xab bit 0, ctrl +0x1e4 == 1: within (ctrl +0x1f0 + move +0x40)^2, dy only when move +0x2c < 0 else |dy| < +0x2c, +0x34 bits 5/9 and +0x36 bit 3 clear, nearer than ctrl +0x1ec unless +0x1e8 is 0xffff, Math_FacingWithin) sets ctrl +0x1e8 id, +0x1ec distance; caller 0x008666e0; name ours; ported in helpers (script round 27 b)
 0x00867230 function Script_OpReq              # (op, level, worker, stack): opcodes 36, 45-49 (REQ): pops entry, worker, level; 47-49 gated by the ctrl work's +0x60 callback; calls 0x0067a9b0 first
 0x008673d0 function Script_OpReqEw            # (op, worker, level, stack) -> 0: opcodes 38, 4f-53 (REQEW, kind 2)
 0x00867570 function Script_OpReqSw            # (op, worker, level, stack) -> 0: opcodes 37, 4a-4e (REQSW, kind 1); the level waits (+0x1f = 1)
@@ -17112,9 +17113,11 @@
 0x01326b48 label    g_AtelBattleEndStatus        # +0 status (AtelInitBattleEndStatus: 0x10001; bit 16 clear = AtelGetStatusWinFadeOut), +4 keep-recover type (AtelSetBattleEndKeepRecoverType, low byte cleared), +8/+0xc (AtelSetEncountBattleEndStatus writes +0, +8, +0xc)
 0x01326b58 label    g_AtelEffectState         # u32: AtelSetEffectState (0x0086fa80)
 0x01326b5c label    g_AtelMotionRequest          # three words; AtelInitMotionRequest (0x0086d4c0) sets -1, -1, 0
+0x01326b68 label g_AtelBattleGuideMapNo # (r27 b) u32: the guide map number AtelEventRemoveForBattle keeps (Yn_GuideMapGetMapNo)
 0x01326b6c label    g_AtelShopRatio              # written by AtelSetShopRatio (0x00870f60)
 0x01326b70 label    g_AtelEffectFlags            # 32 flags: AtelGetEffectFlag/AtelSetEffectFlag (bit mod 32), AtelAllClearEffectFlag
 0x01326b74 label    g_AtelMenuMask               # AtelGetMenuMask (0x0086be50), AtelClearAllMenuMask (0x00863620)
+0x01326b78 label g_AtelBattleDrawMask # (r27 b) u32: yiGetDrawMask as AtelEventRemoveForBattle found it
 0x01326b7c label g_AtelPartyMask # (r25 c) u32: bits of the three party members (Atel_SetPartyMask_008623b0)
 0x01326b80 label    g_AtelOverlayStatus          # u8: AtelSetOverlayStatus (0x00870900)
 0x01326b81 label    g_AtelNotAuronPatchFlag      # u8: cleared by AtelClearNotAuronPatchFlag (0x00863f90)
@@ -17124,6 +17127,7 @@
 0x01326b90 label    g_AtelLoveParamDisable       # cleared by AtelClearLoveParamDisable (0x00863ae0)
 0x01326bd8 label    g_GameSpeed                  # f32: Script_Run multiplies a worker's speed (+0x94) by it into its accumulator (+0x98)
 0x01326bdc label    g_AtelSepGroupMask           # u8: sound-separate groups selected (bit n set by 0x00870f70, cleared by 0x00863fc0); Atel_AddSepLoad tests (mask | 1) << 16 against the entry's flags; 0x00866520 clears it
+0x01326be0 label g_AtelBattleStickState # (r27 b) 0x100 bytes: pppFpSaveStat's effect stick state, zeroed and filled by AtelEventRemoveForBattle
 0x01326ce0 label    g_AtelEffectParams           # four words: AtelGetEffectParam (0x0086b050), AtelClearEffectParam (0x00863880)
 0x01326cf0 label    g_AtelMCFPInWater            # four words written by AtelSetMCFPInWater (0x00870280)
 0x01326d00 label g_AtelSavedLights # (r25 b) 4 light colours then 3 directions, 16 bytes each: Atel_SaveLights_0086db20 before a battle, Atel_RestoreLights_0086e770 after

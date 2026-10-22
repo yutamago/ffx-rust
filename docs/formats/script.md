@@ -3136,6 +3136,35 @@ real spline functions.
   itself (`AtelRegistSignalMain`: level 7 entry 0, then level 0 entry 1;
   none for index `0xffff`) and `AtelDecodeSignal(index, 10)`. Callers read
   no `EAX`.
+- `AtelEventRemoveForBattle()` (`0x00865dc0`) runs before a battle: it
+  keeps the field's draw mask (`g_AtelBattleDrawMask`, `0x01326b78`), effect
+  stick state (`g_AtelBattleStickState`, `0x01326be0`, 0x100 bytes), lights
+  and guide map number (`g_AtelBattleGuideMapNo`, `0x01326b68`), and when
+  ctrl work 0 is in use makes it current and lets each character-bound
+  actor (`+0xaa` 1) release its model: speed 0, `+0x33` bit 2 and
+  `+0xb10` bit 0 cleared, `+0x36` `& 0x9fff` then `0x2000`/`0x4000` for
+  the system motion groups 0 and 2 it has, the hide event in `+0xa0` (0
+  with `+0x38` bit 12), `Ch_SetResHide(0)` unless `+0x38` bit 11, the four
+  effect sticks (`+0xb18`, every 0x10 bytes, `& 0x7fff`), then the motion
+  groups (`+0x33` bit 1), the attachments `+0xaf4`/`+0xaf8` (bits 4 and 5,
+  data ids `+0xb04`/`+0xb06`) and with bit 0 both attachments and the model
+  itself (`+0x9c`, data id `+0xa8`); the data go too when
+  `MsBattleGetChrDisposeFlag`. Each disposal skips actors with `+0x36`
+  bit 6 (an actor sharing a model). `EAX` the guide map number, or the old
+  ctrl work when ctrl work 0 is in use.
+- `Atel_CheckTouchTalk_00866980(w, _, player)` (`0x00866980`, per actor
+  from `0x008666e0`) checks a character-bound actor against the player
+  position (ctrl work `+0x218..+0x220`). Touch: `|dy|` under the move
+  block's `+0x1c` and `LengthSq3(dx, 0, dz)` at most `(+0x48)²` send it
+  trigger 3 (`AtelRequestTrigger_008764f0(0xffff, id, 3)`, whose `EAX` it
+  returns); `+0x34` bit 6 records it, `+0x36` bit 0 is cleared. Talk (actor
+  `+0xab` bit 0, ctrl work `+0x1e4` 1): the squared distance (with `dy`
+  only when the move block's `+0x2c` is negative; otherwise `|dy|` must be
+  under `+0x2c`) under `(ctrl +0x1f0 + move +0x40)²`, `+0x34` bits 5 and 9
+  and `+0x36` bit 3 clear, nearer than the candidate (`+0x1ec`, any when
+  `+0x1e8` is `0xffff`) and `Math_FacingWithin(player heading, +0x3c, ...)`
+  make it the talk candidate (`+0x1e8` id, `+0x1ec` distance). Every float
+  compare skips on NaN.
 
 ### Verification
 

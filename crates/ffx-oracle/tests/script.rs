@@ -12957,3 +12957,267 @@ fn round27a_exec_source_init_basic_work_match_the_original() {
     eprintln!("round 27a: {n} snapshot workers");
     assert!(n > 0);
 }
+
+/// Replaces each `(f, n, seq)` in both oracles with a stub that logs `f`
+/// and its first `n` stack words into one shared log; a `seq` stub returns
+/// the words of its own sequence in turn, the others the log's new end.
+/// Returns the log cell, the log start and each `seq` stub's (cursor
+/// cell, sequence start, 64 words): reset both per case.
+fn r27_stubs(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    fs: &[(u32, u8, bool)],
+) -> (u32, u32, Vec<(u32, u32)>) {
+    let log = alloc_both(a, b, 0x8000);
+    let cell = alloc_both(a, b, 4);
+    poke(a, b, cell, log);
+    let mut seqs = vec![];
+    for &(f, n, seq) in fs {
+        let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &cell.to_le_bytes()].concat(); // mov ecx, [cell]
+        code.extend([&[0xc7, 0x01][..], &f.to_le_bytes()].concat()); // mov [ecx], f
+        for k in 0..n {
+            code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 + 4 * k]);
+        }
+        code.extend([0x83, 0xc1, 4 + 4 * n]); // add ecx, 4 + 4n
+        code.extend([&[0x89, 0x0d][..], &cell.to_le_bytes()].concat()); // mov [cell], ecx
+        if seq {
+            let words = alloc_both(a, b, 0x100);
+            let vcell = alloc_both(a, b, 4);
+            poke(a, b, vcell, words);
+            code.extend([&[0x8b, 0x15][..], &vcell.to_le_bytes()].concat()); // mov edx, [vcell]
+            code.extend([0x8b, 0x02, 0x83, 0xc2, 0x04]); // mov eax, [edx]; add edx, 4
+            code.extend([&[0x89, 0x15][..], &vcell.to_le_bytes(), &[0xc3]].concat());
+            seqs.push((vcell, words));
+        } else {
+            code.extend([0x89, 0xc8, 0xc3]); // mov eax, ecx; ret
+        }
+        let at = a.alloc_code(&code).unwrap();
+        assert_eq!(b.alloc_code(&code).unwrap(), at);
+        for o in [&mut *a, &mut *b] {
+            let entry = o.rebase(f);
+            let rel = at.wrapping_sub(entry + 5);
+            o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+                .unwrap();
+        }
+    }
+    (cell, log, seqs)
+}
+
+/// Restarts the shared log and refills each sequence with `pick()`s.
+fn r27_reset(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    stubs: &(u32, u32, Vec<(u32, u32)>),
+    mut pick: impl FnMut(usize) -> u32,
+) {
+    poke(a, b, stubs.0, stubs.1);
+    for (s, &(vcell, words)) in stubs.2.iter().enumerate() {
+        poke(a, b, vcell, words);
+        for k in 0..64 {
+            poke(a, b, words + 4 * k, pick(s));
+        }
+    }
+}
+
+/// Round 27 b on one pair: `AtelEventRemoveForBattle` (every callee
+/// logged; on the image a ctrl work 0 of up to four actors, on a snapshot
+/// its own) and `Atel_CheckTouchTalk_00866980` (`Math_LengthSq3` and
+/// `Math_FacingWithin` real, the trigger request logged).
+#[allow(clippy::too_many_lines)] // one block per function
+fn r27b_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    // sequences: the dispose flag, ChN_ExistSystemMGRP, Ch_CheckHandle,
+    // AtelRequestTrigger_008764f0
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0078_1630, 0, true),
+            (0x0083_6850, 2, true),
+            (0x0082_61b0, 1, true),
+            (0x0087_64f0, 3, true),
+            (0x0088_6dd0, 1, false),
+            (0x0091_9a20, 0, false),
+            (0x0091_9d70, 1, false),
+            (0x0090_8960, 0, false),
+            (0x0072_a180, 1, false),
+            (0x0086_db20, 0, false),
+            (0x0091_9c70, 0, false),
+            (0x0088_7780, 0, false),
+            (0x0082_b840, 2, false),
+            (0x0082_ac20, 1, false),
+            (0x0082_b4e0, 2, false),
+            (0x0072_a120, 1, false),
+            (0x0083_6830, 2, false),
+            (0x0082_66f0, 1, false),
+            (0x0082_4f00, 2, false),
+        ],
+    );
+    let works = a.rebase(0x0132_5ba0);
+    let ctx_cell = a.rebase(0x0132_6b28);
+    let here = Mem::read::<u32>(a, ctx_cell);
+    if what == "image" {
+        let n = 4u32;
+        let ws = alloc_both(a, b, (0xb58 * n) as usize);
+        poke(a, b, works + 0x1c, ws);
+        poke(a, b, works + 0x10, 4u16);
+    }
+    for round in 0..48u32 {
+        let flag = [0u32, 1, 0x100][rng.below(3) as usize];
+        r27_reset(a, b, &stubs, |s| match s {
+            0 => flag,
+            1 | 2 => [0u32, 0, 1, 0x100][rng.below(4) as usize],
+            _ => rng.next(),
+        });
+        if what == "image" {
+            let ws = Mem::read::<u32>(a, works + 0x1c);
+            let n = [0u16, 1, 2, 4][rng.below(4) as usize];
+            poke(a, b, works + 0x0c, n);
+            let used = u8::from(round % 6 != 5);
+            poke(
+                a,
+                b,
+                works,
+                u8::try_from(rng.below(256)).unwrap() & 0xfe | used,
+            );
+            for i in 0..4 {
+                let w = ws + 0xb58 * i;
+                fill_both(a, b, rng, w + 0x30, 0x10);
+                fill_both(a, b, rng, w + 0x9c, 0x10);
+                fill_both(a, b, rng, w + 0xaf0, 0x40);
+                poke(a, b, w + 0xaa, [1u8, 1, 1, 0, 2][rng.below(5) as usize]);
+                for (at, zero) in [(0x9c, 6), (0xaf4, 3), (0xaf8, 3)] {
+                    if rng.below(zero) == 0 {
+                        poke(a, b, w + at, 0u32);
+                    }
+                }
+                for k in 0..4 {
+                    let s = [0u16, 0x8000, 0x8001, 0x7fff, 5][rng.below(5) as usize];
+                    poke(a, b, w + 0xb18 + 0x10 * k, s);
+                }
+            }
+        }
+        poke(
+            a,
+            b,
+            ctx_cell,
+            [here, works + 0x238, rng.next()][rng.below(3) as usize],
+        );
+        r22_case(
+            a,
+            b,
+            0x0086_5dc0,
+            &[],
+            true,
+            &format!("AtelEventRemoveForBattle {what} {round} flag {flag:#x}"),
+            |r| hp::atel_event_remove_for_battle(r),
+        );
+        if what != "image" && round == 7 {
+            break;
+        }
+    }
+    poke(a, b, ctx_cell, here);
+    // Atel_CheckTouchTalk_00866980: a ctrl work of its own (the player's
+    // position, the talk candidate) and two workers
+    let c = alloc_both(a, b, 0x240);
+    poke(a, b, ctx_cell, c);
+    let (w, p) = (alloc_both(a, b, 0xb58), alloc_both(a, b, 0xb58));
+    let nan = 0x7fc0_0000u32;
+    let f = |rng: &mut Xorshift, r: f32| {
+        if rng.below(24) == 0 {
+            nan
+        } else {
+            r26_f32(rng, r)
+        }
+    };
+    for round in 0..160u32 {
+        r27_reset(a, b, &stubs, |_| rng.next());
+        for (x, kinds) in [(w, [0u8, 1, 2, 3, 5, 6, 7]), (p, [0u8, 1, 2, 3, 5, 6, 7])] {
+            let hdr = alloc_both(a, b, 4);
+            poke(a, b, hdr, kinds[rng.below(7) as usize]);
+            fill_both(a, b, rng, x + 4, 0xb54);
+            poke(a, b, x, hdr);
+        }
+        poke(a, b, w + 0xaa, [1u8, 1, 1, 1, 0, 2][rng.below(6) as usize]);
+        let mv = if matches!(Mem::read::<u8>(a, Mem::read::<u32>(a, w)), 5 | 6) {
+            w + 0x284
+        } else {
+            w + 0x558
+        };
+        let pmv = if matches!(Mem::read::<u8>(a, Mem::read::<u32>(a, p)), 5 | 6) {
+            p + 0x284
+        } else {
+            p + 0x558
+        };
+        // near: positions within a few units, so both checks pass often
+        for k in 0..3 {
+            poke(a, b, mv + 4 * k, f(rng, 6.0));
+            poke(a, b, c + 0x218 + 4 * k, f(rng, 6.0));
+        }
+        poke(a, b, mv + 0x1c, f(rng, 8.0));
+        poke(a, b, mv + 0x48, f(rng, 8.0));
+        poke(a, b, mv + 0x2c, f(rng, 8.0));
+        poke(a, b, mv + 0x40, f(rng, 8.0));
+        poke(a, b, mv + 0x3c, f(rng, 4.0));
+        poke(a, b, pmv + 0x34, f(rng, 4.0));
+        poke(a, b, c + 0x1f0, f(rng, 8.0));
+        poke(a, b, c + 0x1ec, f(rng, 80.0));
+        poke(a, b, c + 0x1e4, [1u8, 1, 1, 0, 2][rng.below(5) as usize]);
+        poke(
+            a,
+            b,
+            c + 0x1e8,
+            [0xffffu16, 3, 0xffff][rng.below(3) as usize],
+        );
+        let bits = [0u16, 0, 0x20, 0x200][rng.below(4) as usize];
+        poke(
+            a,
+            b,
+            w + 0x34,
+            Mem::read::<u16>(a, w + 0x34) & !0x220 | bits,
+        );
+        if rng.below(2) == 0 {
+            poke(a, b, w + 0x36, Mem::read::<u8>(a, w + 0x36) & !8);
+        }
+        if rng.below(4) != 0 {
+            poke(a, b, w + 0xab, Mem::read::<u8>(a, w + 0xab) | 1);
+        }
+        let junk = rng.next();
+        r22_case(
+            a,
+            b,
+            0x0086_6980,
+            &[w, junk, p],
+            true,
+            &format!("Atel_CheckTouchTalk {what} {round}"),
+            |r| hp::atel_check_touch_talk(r, w, p, |r, at, args| r.0.call_f64(at, args).unwrap()),
+        );
+    }
+    poke(a, b, ctx_cell, here);
+}
+
+#[test]
+fn round27b_remove_for_battle_touch_talk_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_027b);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r27b_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r27b_cases(&mut a, &mut b, &mut rng, "snapshot");
+}
