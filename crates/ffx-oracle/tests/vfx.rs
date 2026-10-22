@@ -9191,6 +9191,56 @@ fn ppp_shape_center_matches_the_original() {
     }
 }
 
+#[test]
+fn vu_mul_matrix_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_3670);
+        let (out, ma, mb) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x40));
+        let regs = p.sym(0x00c8_f930);
+        for round in 0..800 {
+            p.fill(out, 0x40, &mut rng);
+            // (finite: the aliased cases read them, and signalling NaNs
+            // stay out)
+            for i in 0..0x28 {
+                let x = finite(&mut rng);
+                p.set(regs + 4 * i, x);
+            }
+            p.fill(p.sym(0x00c8_f790), 0x10, &mut rng);
+            for at in [ma, mb] {
+                for i in 0..16 {
+                    #[allow(clippy::cast_precision_loss)]
+                    let x = match rng.below(40) {
+                        0 => f32::NAN,
+                        1 => f32::INFINITY,
+                        2 => f32::from_bits(finite(&mut rng)),
+                        _ => (rng.below(2001) as f32 - 1000.0) / 7.0,
+                    };
+                    p.set(at + 4 * i, x);
+                }
+            }
+            let (o, m, n) = match rng.below(8) {
+                // the output over either matrix
+                0 => (ma, ma, mb),
+                1 => (mb, ma, mb),
+                // a matrix in the emulated registers themselves
+                2 => (out, p.sym(0x00c8_f940), mb),
+                3 => (out, ma, p.sym(0x00c8_f940)),
+                4 => (out, ma, p.sym(0x00c8_f930)),
+                5 => (out, ma, p.sym(0x00c8_f790)),
+                // over the vector register's next word: the copy shifts it
+                6 => (out, ma, p.sym(0x00c8_f984)),
+                _ => (out, ma, mb),
+            };
+            p.check(
+                &format!("vu_mul_matrix round {round}"),
+                0x0075_3670,
+                &[o, m, n],
+                |or| Some(vec::bridge::vu_mul_matrix(or, o, m, n)),
+            );
+        }
+    }
+}
+
 /// A float in `[lo, hi)` with 16 fraction bits, as bits.
 fn ranged(rng: &mut Xorshift, lo: f32, hi: f32) -> u32 {
     #[allow(clippy::cast_precision_loss)]

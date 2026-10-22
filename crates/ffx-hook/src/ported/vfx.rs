@@ -5393,6 +5393,10 @@ ported! {
     vu_apply_matrix_00753310 @ 0x0075_3310 => extern "C" fn vu_apply_matrix_00753310(out: u32, m: u32, v: u32) -> u32 {
         vec::bridge::vu_apply_matrix(&mut mem(), out, m, v)
     }
+    /// `vu_mul_matrix_00753670(out, m, n)`.
+    vu_mul_matrix_00753670 @ 0x0075_3670 => extern "C" fn vu_mul_matrix_00753670(out: u32, m: u32, n: u32) -> u32 {
+        vec::bridge::vu_mul_matrix(&mut mem(), out, m, n)
+    }
     /// `op_et_astatus_effect_change(h, status)`.
     op_et_astatus_effect_change @ 0x007f_aed0 => extern "C" fn op_et_astatus_effect_change(h: u32, status: u32) -> u32 {
         et::bridge::op_et_astatus_effect_change(&mut mem(), h, status, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
