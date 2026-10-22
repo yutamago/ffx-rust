@@ -7098,4 +7098,38 @@ ported! {
     Atel_SetSaveEventBit_008700e0 @ 0x0087_00e0 => extern "C" fn h_8700e0(n: u32) -> u32 {
         hp::atel_set_save_event_bit(&mut mem(), n)
     }
+    /// `AtelExecSoftWareReset()`.
+    AtelExecSoftWareReset @ 0x0087_38d0 => extern "C" fn h_8738d0() -> u32 {
+        hp::atel_exec_soft_ware_reset(&mut mem())
+    }
+    /// `AtelClearShape()`: the texture list path and its unify buffer in
+    /// one 512-byte frame.
+    AtelClearShape @ 0x0087_42b0 => extern "C" fn h_8742b0() -> u32 {
+        let mut frame = super::StackFrame::<128>::new();
+        hp::atel_clear_shape(&mut mem(), frame.at())
+    }
+    /// `Atel_TranslateBGSeps_00861020(volume, frames, all)`.
+    Atel_TranslateBGSeps_00861020 @ 0x0086_1020 => extern "C" fn h_861020(volume: u32, frames: u32, all: u32) -> u32 {
+        hp::atel_translate_bg_seps(&mut mem(), volume, frames, all)
+    }
+    /// `AtelEventKickBGSep(header, fade)`.
+    AtelEventKickBGSep @ 0x0086_58d0 => extern "C" fn h_8658d0(hdr: u32, fade: u32) {
+        hp::atel_event_kick_bg_sep(&mut mem(), hdr, fade);
+    }
+    /// `Atel_SetWorkerPosXZ_00870970(worker, x f32, z f32, keep)`.
+    Atel_SetWorkerPosXZ_00870970 @ 0x0087_0970 => extern "C" fn h_870970(w: u32, x: u32, z: u32, keep: u32) {
+        hp::atel_set_worker_pos_xz(&mut mem(), w, x, z, keep);
+    }
+    /// `AtelExecCtrlEventInit_008677a0(ctrl, battle)`.
+    AtelExecCtrlEventInit_008677a0 @ 0x0086_77a0 => extern "C" fn h_8677a0(c: u32, battle: u32) {
+        hp::atel_exec_ctrl_event_init(&mut mem(), c, battle);
+    }
+    /// `AtelEventSetUpForBattleMusic()`.
+    AtelEventSetUpForBattleMusic @ 0x0086_6240 => extern "C" fn h_866240() {
+        hp::atel_event_set_up_for_battle_music(&mut mem());
+    }
+    /// `AtelEventRegistFootInfo(header)`.
+    AtelEventRegistFootInfo @ 0x0086_5b80 => extern "C" fn h_865b80(hdr: u32) -> u32 {
+        hp::atel_event_regist_foot_info(&mut mem(), hdr)
+    }
 }

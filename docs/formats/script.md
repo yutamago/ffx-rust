@@ -2863,6 +2863,46 @@ fades the queued separates out and empties the queue;
 event's flag words at `+0x18`. `round24e_save_movie_effects_match_the_original`
 covers them.
 
+### Helpers (script round 25)
+
+Round 25 a: `AtelExecSoftWareReset` (`0x008738d0`) checks, with ctrl work
+0 current, that a soft reset is allowed (`+0` bit 0 set, `+3` bits `0x83`
+and `+0x210` bit 2 clear, `+0x210` bit `0x40` set, no movie
+(`0x0086d940` 0), map not `0x15c` (`0x0086c1c0`), no voice on standby or
+loading) and runs `TkSoftWareReset` when `g_AtelResetRequest`
+(`0x01327108`) is 2, or when allowed and `TkCheckSoftWareReset` agrees.
+`AtelClearShape` (`0x008742b0`) resets the 128 event sprites and frees
+their six effect handles each (`graphicVFXDestroy(i + k*10000, sprite)`,
+the sprite's address as the id's high word), then unloads the event's
+texture list (`g_AtelEventTexListLoaded`, `0x01327140`) by its path
+(`getEventLocTexListPath`). `Atel_TranslateBGSeps_00861020(volume,
+frames, all)` and `AtelEventKickBGSep(header, fade)` (`0x008658d0`) walk
+the event header's separates table (`+0x2c` -> `+0xc`: a count and
+`(id, flags)` pairs): bit 2 marks a background separate, `0x8` one that
+the first also translates with `all`, `0x30` silent (volume 0), `0x80` one
+that starts later (kicked without `fade`, flag 4) and keeps its volume
+unless `0x40`, `0x300` never kicked, `0x1c00` a fade-in (`0x400` 0xf0,
+`0x800` 0x78, `0x1000` 0x168 frames) from 0; the save event's `+0x28`
+halves the volume (`0x3f` for `0x7f`). A separate pending in
+`g_AtelSepLoadList` under the same id is not kicked.
+`Atel_SetWorkerPosXZ_00870970(worker, x, z, keep)` (`Native_0012`,
+`Native_0125`) puts a worker at `(x, 0, z)` (kind 5/6 at `+0x284`, others
+at `+0x558`, kind 4 has none and the original writes through null); for
+the player worker the ctx's camera target `+0x218` takes it (the old one
+to `+0x228`) and the save event's encounter byte and dictionary index
+follow its character. `AtelExecCtrlEventInit_008677a0(ctrl, battle)` runs
+each worker's init (`Script_Run(w, 0, 1)`) until all have `+0x34` bit
+`0x10`, then decodes their signals; its debug strings go to
+`AtelPs2DebugString`, a bare `ret`. `AtelEventSetUpForBattleMusic`
+(`0x00866240`) prepares ctrl work 0 for a battle (field and gravity
+modes, swap works, FP effects of type-`0x5001` workers hidden, UC off and
+back on for the old ctrl work, guide map closed).
+`AtelEventRegistFootInfo` (`0x00865b80`) hands the header's four footstep
+tables (`+0x2c` sub-header `+0x1c`, `+0x20`, `+0x30`, `+0x34`; 16 `u16`
+offsets each) to `SndSetFootSep`. `round25a_reset_shapes_seps_setup_match_the_original`
+covers them (only the workers of the first, `0xb58`-byte class have FP
+slots, so the test fills those only there).
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the
