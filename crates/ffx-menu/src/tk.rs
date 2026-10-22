@@ -25907,6 +25907,2459 @@ pub mod bridge {
         }
         name_entry_wrap_cell(mem, rows);
     }
+
+    /// `MenuItem_TargetWindowDraw_008c80b0(w)` (`0x008c80b0`, the `+0x10`
+    /// draw step of `MenuItem_OpenTargetWindow`'s window; name ours): one
+    /// plate per party member (`+0x58` 0) or aeon, each sliding in with
+    /// its own delay. `n = TkMenuGet{Player,Summon}ListMax()`; the open
+    /// fraction `s = 1 - MenuMn2_Ease(i16 +0x52, i16 +0x54) / 4096` (1
+    /// while `i16 +0x54 < 0`); rows start at `remapY2(240)` (item menu,
+    /// `[0x0186a408]` 1) or `remapY2(284)` and move up `remapY2(77)` per
+    /// row past 9. Row `i`'s slide `t = (s - 0.4 - 0.05i) / (0.6 -
+    /// 0.06n)` clamped to `0..=1`; `x = remapX2(-1000) * (1 - t)` when
+    /// `+0x60` is 1, else `remapX2(1920 - 1000t)`; `y = top +
+    /// remapY2(77) * i`. Per row: the plate `TODrawMenuPlateXYWHType(x,
+    /// y, remapX2(1000), remapY2(60), 0xb)`, the HP or MP (`+0x5c` 1)
+    /// label and bar shapes, the current and maximum values
+    /// (`ToMakeBtlEasyDigit2`, colour 0x25, scale 0.68), the `"/"`, the
+    /// name (`ToMakeBtlEasyEdgeFont`, colour 1 or `MenuPlayer_DamageClass`
+    /// for a row whose bit is set in the `u16` target mask
+    /// `[0x0186a3a4]`), and when the row is in place (`t >= 1`) the
+    /// cursor: `TkMn2DrawCrossCursor` on the row `i16 +0x48` for a
+    /// one-target command (`[0x0186a391]` 1), else
+    /// `TkMn2DrawStatiCursor` on every row blinking with
+    /// `TkMenuGetTimer() / 2 + i`. Japanese (`TOGetFFXLang() == 0xb`)
+    /// shifts the HP/MP label 22 right and 1 down from that row on.
+    ///
+    /// x87: all in f64 in the original's order, rounded to f32 where it
+    /// stores (every argument, `t`, `x`, `y`). `eax` is left over (a
+    /// status word or the cursor's), so the port returns nothing.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one draw loop; x, y, t, w as in the original
+    pub fn menu_item_target_window_draw<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, mul, store, sub};
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let field = |mem: &M, o: u32| mem.read::<u32>(w.wrapping_add(o));
+        // remap and round to f32, as each argument is stored
+        let rf = |mem: &mut M, remap: &mut dyn FnMut(&mut M, bool, f32) -> f64, y: bool, v: f32| {
+            store(remap(mem, y, v))
+        };
+        // `remap(v) + base` rounded to f32
+        let rel = |mem: &mut M,
+                   remap: &mut dyn FnMut(&mut M, bool, f32) -> f64,
+                   y: bool,
+                   v: f32,
+                   base: f32| { store(add(remap(mem, y, v), f64::from(base))) };
+        let aeons = field(mem, 0x58) != 0;
+        let max = at(mem, if aeons { 0x008a_9bf0 } else { 0x008a_9b30 });
+        let n = call(mem, max, &[]).cast_signed();
+        let dir = mem.read::<i16>(w.wrapping_add(0x54));
+        let open = if dir < 0 {
+            1.0
+        } else {
+            let t = mem.read::<i16>(w.wrapping_add(0x52));
+            let f = at(mem, 0x008d_30c0);
+            let args = [i32::from(t).cast_unsigned(), i32::from(dir).cast_unsigned()];
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+            let eased = call(mem, f, &args).cast_signed() as f32;
+            f32::from_bits(store(1.0 - f64::from(eased) * 0.000_244_140_625))
+        };
+        let item_menu = mem.read::<u32>(at(mem, 0x0186_a408)) == 1;
+        let mut top = f32::from_bits(rf(mem, remap, true, if item_menu { 240.0 } else { 284.0 }));
+        if n >= 9 {
+            let step = remap(mem, true, 77.0);
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+            let rows = n.wrapping_sub(9) as f32;
+            top = f32::from_bits(store(sub(f64::from(top), mul(step, f64::from(rows)))));
+        }
+        if n <= 0 {
+            return;
+        }
+        let lead = f64::from(open) - f64::from(0.4f32);
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+        let span = f32::from_bits(store(
+            f64::from(0.6f32) - f64::from(n as f32) * f64::from(0.06f32),
+        ));
+        // the Japanese label offsets, kept from row to row
+        let (mut jx, mut jy) = (0.0f32, 0.0f32);
+        let mut bit = 1u32;
+        let mut i = 0i32;
+        while i < n {
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+            let fi = i as f32;
+            // fcom against 0 and 1: NaN and -0 stay as they are
+            let t = f32::from_bits(store(
+                (lead - f64::from(fi) * f64::from(0.05f32)) / f64::from(span),
+            ))
+            .clamp(0.0, 1.0);
+            let x = if field(mem, 0x60) == 1 {
+                let far = remap(mem, false, -1000.0);
+                store(mul(far, 1.0 - f64::from(t)))
+            } else {
+                let v = f32::from_bits(store(1920.0 - f64::from(t) * 1000.0));
+                rf(mem, remap, false, v)
+            };
+            let x = f32::from_bits(x);
+            let step = remap(mem, true, 77.0);
+            let y = f32::from_bits(store(add(mul(step, f64::from(fi)), f64::from(top))));
+            let index = at(
+                mem,
+                if field(mem, 0x58) == 0 {
+                    0x008a_9ad0
+                } else {
+                    0x008a_9bc0
+                },
+            );
+            let chr = call(mem, index, &[i.cast_unsigned()]);
+            let f = at(mem, 0x008a_c850);
+            let name = call(mem, f, &[chr]);
+            let mp = field(mem, 0x5c) == 1;
+            let (cur, most) = if mp {
+                let (get, get_max) = (at(mem, 0x008a_9970), at(mem, 0x008a_99b0));
+                let cur = call(mem, get, &[chr]);
+                (cur, call(mem, get_max, &[chr]))
+            } else {
+                let (get, get_max) = (at(mem, 0x008a_98c0), at(mem, 0x008a_9990));
+                let cur = call(mem, get, &[chr]);
+                let most = call(mem, get_max, &[chr]);
+                let f = at(mem, 0x008a_99f0);
+                call(mem, f, &[chr]);
+                (cur, most)
+            };
+            let h = rf(mem, remap, true, 60.0);
+            let width = rf(mem, remap, false, 1000.0);
+            let f = at(mem, 0x008f_5f70);
+            call(mem, f, &[x.to_bits(), y.to_bits(), width, h, 0xb]);
+            // the plate's frame: uv (1631, 567)..(1829, 570)
+            let h = rf(mem, remap, true, 2.0);
+            let width = rf(mem, remap, false, 440.0);
+            let sy = rel(mem, remap, true, 29.0, y);
+            let sx = rel(mem, remap, false, 524.0, x);
+            let shape = at(mem, 0x0090_3bb0);
+            let frame = [0x44cb_e000, 0x440d_c000, 0x44e4_a000, 0x440e_8000];
+            call(
+                mem,
+                shape,
+                &[
+                    0xffff_ffff,
+                    sx,
+                    sy,
+                    width,
+                    h,
+                    frame[0],
+                    frame[1],
+                    frame[2],
+                    frame[3],
+                ],
+            );
+            let f = at(mem, 0x008a_c2f0);
+            let lang = call(mem, f, &[]);
+            if lang == 0xb {
+                (jx, jy) = (22.0, 1.0);
+            }
+            let k = 0.000_976_562_5;
+            let (kind, sx, sy, width, h, uv) = if mp {
+                let u1 = store((f64::from(jx) + 570.0) * k);
+                let h = rf(mem, remap, true, 23.0);
+                let wv = f32::from_bits(store(f64::from(jx) + 49.0));
+                let width = rf(mem, remap, false, wv);
+                let sy = rel(mem, remap, true, 4.0, y);
+                let sx = rel(mem, remap, false, 524.0, x);
+                (
+                    0x22,
+                    sx,
+                    sy,
+                    width,
+                    h,
+                    [0x3eff_0000, 0x3c70_0000, u1, 0x3d24_0000],
+                )
+            } else {
+                let v1 = store((f64::from(jy) + 41.0) * k);
+                let u1 = store((f64::from(jx) + 436.0) * k);
+                let hv = f32::from_bits(store(f64::from(jy) + 23.0));
+                let h = rf(mem, remap, true, hv);
+                let wv = f32::from_bits(store(f64::from(jx) + 61.5));
+                let width = rf(mem, remap, false, wv);
+                let sy = rel(mem, remap, true, 4.0, y);
+                let sx = rel(mem, remap, false, 504.0, x);
+                (0x21, sx, sy, width, h, [0x3eb2_0000, 0x3c70_0000, u1, v1])
+            };
+            call(
+                mem,
+                shape,
+                &[kind, sx, sy, width, h, uv[0], uv[1], uv[2], uv[3]],
+            );
+            let digit = at(mem, 0x0090_5550);
+            for (value, dy) in [(cur, -3.0), (most, 24.0)] {
+                let vy = rel(mem, remap, true, dy, y);
+                let vx = rel(mem, remap, false, 608.0, x);
+                call(mem, digit, &[value, vx, vy, 0x25, 0x3f2e_147b, 0]);
+            }
+            let vy = rel(mem, remap, true, 34.0, y);
+            let vx = rel(mem, remap, false, 582.0, x);
+            let (font, slash) = (at(mem, 0x0090_1660), at(mem, 0x00b8_f88c));
+            call(mem, font, &[slash, vx, vy, 0x25, 0x3f33_3333, 0]);
+            let single = |mem: &M| mem.read::<u8>(at(mem, 0x0186_a391)) == 1;
+            let (mut shown, mut lit) = (false, true);
+            if single(mem) {
+                if i == i32::from(mem.read::<i16>(w.wrapping_add(0x48))) {
+                    shown = true;
+                }
+            } else {
+                let f = at(mem, 0x008a_9c60);
+                let timer = call(mem, f, &[]).cast_signed();
+                lit = (timer / 2).wrapping_add(i) & 1 == 0;
+                shown = true;
+            }
+            let mask = u32::from(mem.read::<u16>(at(mem, 0x0186_a3a4)));
+            let colour = if bit & mask == 0 {
+                1
+            } else {
+                let f = at(mem, 0x008a_99f0);
+                call(mem, f, &[chr])
+            };
+            let ny = rel(mem, remap, true, 8.0, y);
+            let nx = rel(mem, remap, false, 200.0, x);
+            let f = at(mem, 0x0090_5930);
+            call(mem, f, &[name, nx, ny, colour, 0x3f51_eb85, 0x3f80_0000]);
+            if t >= 1.0 && shown && lit {
+                let cursor = at(
+                    mem,
+                    if single(mem) {
+                        0x008c_0670
+                    } else {
+                        0x008c_13d0
+                    },
+                );
+                let cy = rel(mem, remap, true, 14.0, y);
+                let cx = rel(mem, remap, false, 200.0, x);
+                call(mem, cursor, &[cx, cy, 0]);
+            }
+            bit = bit.rotate_left(1);
+            i += 1;
+        }
+    }
+
+    /// `u16` the main menu's fade-in, +0xaa per [`tk_menu_ctrl_main`] call
+    /// up to 0x1000.
+    pub const MENU_MAIN_FADE: Global<u16> = Global::new(0x0187_1544);
+    /// The main menu's highlighted option (`g_TkMenuMainOptionCursor`).
+    pub const MENU_MAIN_OPTION_CURSOR: Global<i32> = Global::new(0x0187_1548);
+    /// The party-order row picked first in [`tk_menu_ctrl_main`] (-1 none).
+    pub const MENU_MAIN_SWAP_FROM: Global<i32> = Global::new(0x0187_155c);
+    /// The party-order row to swap with (-1 none).
+    pub const MENU_MAIN_SWAP_TO: Global<i32> = Global::new(0x0187_1560);
+
+    /// `TkMenuCtrlMain(m)` (`0x008e0350`, Fahrenheit's name; jump table
+    /// `0x008e0afc` on the state `m+0x1c`, 0..=0x26): the main menu's
+    /// control. Every call first steps the fade [`MENU_MAIN_FADE`] by
+    /// 0xaa (signed, held at 0x1000) after reading the pads
+    /// (`TOMenuGetControlPad`, `...Rep`, `...Trg`, each `u16`). Confirm is
+    /// trigger bit 0x20, cancel 0x40, up/left repeat 0x1000, down/right
+    /// 0x4000. States (`=>` runs the next one in the same call without
+    /// storing it):
+    /// - 0 `TkMn2SetMainFrameRatioDiff(-16)`, 1; 1 waits for the fade
+    ///   (`>= 0x1000`) and `u16 [0x01871564]` 0, 2; 2 and 3
+    ///   `TkMenuMainSetIgnoreJoinFlag(0)`, 4; 4 stores 5 => 5;
+    /// - 5 the option list ([`MENU_MAIN_OPTION_CURSOR`]): moves wrap (up at 0
+    ///   to `TkMenuMainGetMaxOptions() - 1`, down past it to 0) and set
+    ///   the help `TkMenuSetHelpMessage(TkMenuMainHelp(menu))`; cancel
+    ///   sound `0x80000004`, 0x23; confirm on a disabled option sound
+    ///   `0x80000003`; else sound `0x80000001` and: menu 6 (party order)
+    ///   => 10; a `MenuMain_OptionY` 0 option opens at once
+    ///   (`TkMenuMainOpenOption(cursor)`); option kind 2 ignores the
+    ///   join flag (1), others clear it and pull the current player into
+    ///   the party list, then 6;
+    /// - 6 [`MENU_MAIN_CHOICE`] `= TkMenuGetCurrentPlayer()`, stores 7 => 7;
+    ///   7 picks the player (`TkMenuSetPrev/NextPlayer2` while more than
+    ///   one, each updating [`MENU_MAIN_CHOICE`]); confirm on a party member
+    ///   (`pos < TkMenuGetPlayerListMax()`) opens the option; cancel 8;
+    ///   the opening result 3 => 0x1b, 9 => 0x1f, else => 0x19 (stored);
+    /// - 8 [`MENU_MAIN_CHOICE`] -1, 2 (9 stored first); 9 2;
+    /// - 10 (party order) [`MENU_MAIN_SWAP_FROM`] `= TkMenuGetCurrentPlayerPos()`
+    ///   => 0xb; 0xb [`MENU_MAIN_SWAP_TO`] -1, 0xc; 0xc 0xd; 0xd 0xe;
+    /// - 0xe moves [`MENU_MAIN_SWAP_FROM`] over `TkMenuGetPlayerListMax2()`
+    ///   rows (down first, wrapping); confirm on a member who joined
+    ///   (`MsGetSavePlyJoin(TkMenuGetPlayerFromIndex2_008a9b00(row))`)
+    ///   0x11; cancel 0xf;
+    /// - 0xf both rows -1, stores 0x10 => 0x10; 0x10 `MsSetSaveParamAll`,
+    ///   3;
+    /// - 0x11 [`MENU_MAIN_SWAP_TO`] = from, 0x13 (0x12 stored first); 0x12
+    ///   0x13; 0x13 stores 0x14 => 0x14 moves [`MENU_MAIN_SWAP_TO`] (up
+    ///   first); confirm on another row of a member who joined 0x15;
+    ///   cancel 0x17;
+    /// - 0x15 `TkMenuExchangePlayerPos(from, to)`, from = to, to = -1,
+    ///   0xb (0x16 stored first); 0x16 0xb; 0x17 0xb (0x18 first); 0x18
+    ///   0xb;
+    /// - 0x19 `MsSetSaveParamAll`, 0x1a; 0x1a waits on
+    ///   [`MENU_MAIN_CMD_DONE`], frees window groups 0 and 3, 2;
+    /// - 0x1b/0x1f `TkMenuSetDrawShadeRatioStep(10)`, 0x1c/0x20; these
+    ///   wait for `TkMenuGetDrawShadeRatio() >= 0x80`, then
+    ///   `TkMenuMainActiveMenu(0x13 / 0xb, 0)`, `TkMenuMainSleepMenu(1)`,
+    ///   0x1d/0x21; these wait on [`MENU_MAIN_CMD_DONE`], free groups 0 and 3,
+    ///   step -10, 0x1e/0x22; 0x1e and 0x22 wait for the ratio `<= 0`, 2;
+    /// - 0x23 stores 0x24 => 0x24 waits on `TOMenuGetFirstReadEndFlag()`,
+    ///   `TkMn2SetMainFrameRatioDiff(16)`, 0x25; 0x25 waits for
+    ///   `TkMn2GetMainFrameRatio() >= 0x80`, 0x26; 0x26
+    ///   `TkMenuMainRemoveMenu(1)` every call.
+    ///
+    /// `eax` is the original's: the last call's, the state, or a value
+    /// just loaded.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one state machine
+    pub fn tk_menu_ctrl_main<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let g = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let set = |mem: &mut M, a: u32, v: u32| {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        };
+        let state_at = m.wrapping_add(0x1c);
+        let f = at(mem, 0x008b_e410);
+        call(mem, f, &[]);
+        let f = at(mem, 0x008b_e470);
+        let rep = call(mem, f, &[]) & 0xffff;
+        let f = at(mem, 0x008b_e4b0);
+        let trg = call(mem, f, &[]) & 0xffff;
+        let fade_at = at(mem, 0x0187_1544);
+        let fade = mem.read::<u16>(fade_at).wrapping_add(0xaa);
+        mem.write(fade_at, fade);
+        if fade.cast_signed() >= 0x1000 {
+            mem.write(fade_at, 0x1000u16);
+        }
+        let (sound, players, list_max2) = (
+            at(mem, 0x0088_6e80),
+            at(mem, 0x008a_9b30),
+            at(mem, 0x008a_9b50),
+        );
+        let (player_pos, cur_player, open) = (
+            at(mem, 0x008a_9870),
+            at(mem, 0x008a_9860),
+            at(mem, 0x008e_24c0),
+        );
+        let (shade_step, shade, free) = (
+            at(mem, 0x008a_9680),
+            at(mem, 0x008a_98a0),
+            at(mem, 0x008a_a410),
+        );
+        let (ignore_join, frame_diff, save_all) = (
+            at(mem, 0x008a_ad60),
+            at(mem, 0x008a_b260),
+            at(mem, 0x008c_30d0),
+        );
+        let (option_menu, max_options) = (at(mem, 0x008e_2270), at(mem, 0x008e_2280));
+        let (from, to) = (0x0187_155c, 0x0187_1560);
+        let cursor = 0x0187_1548;
+        let mut state = mem.read::<u32>(state_at);
+        // the option's help line, `eax` the last call's
+        let help = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, i: u32| {
+            let menu = call(mem, option_menu, &[i]);
+            let f = at(mem, 0x008d_df60);
+            let text = call(mem, f, &[menu]);
+            let f = at(mem, 0x008a_aeb0);
+            call(mem, f, &[text])
+        };
+        // a party member who joined at row `cell`
+        let joined = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, row: u32| {
+            let f = at(mem, 0x008a_9b00);
+            let chr = call(mem, f, &[row]);
+            let f = at(mem, 0x0078_5380);
+            call(mem, f, &[chr]) != 0
+        };
+        loop {
+            let put = |mem: &mut M, s: u32| mem.write(state_at, s);
+            // the option opened: the next state, run at once
+            let opened = |mem: &mut M, r: u32| {
+                let s = match r {
+                    3 => 0x1b,
+                    9 => 0x1f,
+                    _ => 0x19,
+                };
+                mem.write(state_at, s);
+                s
+            };
+            match state {
+                0 => {
+                    let eax = call(mem, frame_diff, &[0xffff_fff0]);
+                    put(mem, 1);
+                    return eax;
+                }
+                1 => {
+                    if mem.read::<u16>(fade_at).cast_signed() >= 0x1000
+                        && mem.read::<u16>(at(mem, 0x0187_1564)) == 0
+                    {
+                        put(mem, 2);
+                    }
+                    return 0x1000;
+                }
+                2 | 3 => {
+                    let eax = call(mem, ignore_join, &[0]);
+                    put(mem, 4);
+                    return eax;
+                }
+                4 | 5 => {
+                    if state == 4 {
+                        put(mem, 5);
+                    }
+                    if trg & 0x20 != 0 {
+                        let f = at(mem, 0x008e_2290);
+                        if call(mem, f, &[g(mem, cursor)]) == 0 {
+                            return call(mem, sound, &[0x8000_0003]);
+                        }
+                        call(mem, sound, &[0x8000_0001]);
+                        if call(mem, option_menu, &[g(mem, cursor)]) == 6 {
+                            state = 10;
+                            continue;
+                        }
+                        let c = g(mem, cursor);
+                        let y = at(mem, 0x008e_2260);
+                        if call(mem, y, &[c]) == 0 {
+                            let r = call(mem, open, &[c]);
+                            state = opened(mem, r);
+                            continue;
+                        }
+                        if call(mem, y, &[g(mem, cursor)]) == 2 {
+                            let eax = call(mem, ignore_join, &[1]);
+                            put(mem, 6);
+                            return eax;
+                        }
+                        call(mem, ignore_join, &[0]);
+                        let pos = call(mem, player_pos, &[]).cast_signed();
+                        let mut eax = call(mem, players, &[]);
+                        if pos >= eax.cast_signed() {
+                            let last = call(mem, players, &[]).wrapping_sub(1);
+                            let f = at(mem, 0x008a_ae80);
+                            eax = call(mem, f, &[last]);
+                        }
+                        put(mem, 6);
+                        return eax;
+                    }
+                    if trg & 0x40 != 0 {
+                        let eax = call(mem, sound, &[0x8000_0004]);
+                        put(mem, 0x23);
+                        return eax;
+                    }
+                    if rep & 0x1000 != 0 {
+                        call(mem, sound, &[0x8000_0001]);
+                        let mut c = g(mem, cursor).wrapping_sub(1);
+                        set(mem, cursor, c);
+                        if c.cast_signed() < 0 {
+                            c = call(mem, max_options, &[]).wrapping_sub(1);
+                            set(mem, cursor, c);
+                        }
+                        return help(mem, call, c);
+                    }
+                    if rep & 0x4000 != 0 {
+                        call(mem, sound, &[0x8000_0001]);
+                        let c = g(mem, cursor).wrapping_add(1);
+                        let n = call(mem, max_options, &[]);
+                        let c = if c.cast_signed() >= n.cast_signed() {
+                            0
+                        } else {
+                            c
+                        };
+                        set(mem, cursor, c);
+                        return help(mem, call, c);
+                    }
+                    return state;
+                }
+                6 | 7 => {
+                    if state == 6 {
+                        let p = call(mem, cur_player, &[]);
+                        set(mem, 0x0187_154c, p);
+                        put(mem, 7);
+                    }
+                    if trg & 0x20 != 0 {
+                        let pos = call(mem, player_pos, &[]).cast_signed();
+                        if pos >= call(mem, players, &[]).cast_signed() {
+                            return call(mem, sound, &[0x8000_0003]);
+                        }
+                        call(mem, sound, &[0x8000_0001]);
+                        let r = call(mem, open, &[g(mem, cursor)]);
+                        state = opened(mem, r);
+                        continue;
+                    }
+                    if trg & 0x40 != 0 {
+                        let eax = call(mem, sound, &[0x8000_0004]);
+                        put(mem, 8);
+                        return eax;
+                    }
+                    let n = call(mem, list_max2, &[]);
+                    if n.cast_signed() <= 1 {
+                        return n;
+                    }
+                    let step = if rep & 0x1000 != 0 {
+                        0x008a_afc0
+                    } else if rep & 0x4000 != 0 {
+                        0x008a_af40
+                    } else {
+                        return n;
+                    };
+                    call(mem, sound, &[0x8000_0001]);
+                    let f = at(mem, step);
+                    call(mem, f, &[]);
+                    let p = call(mem, cur_player, &[]);
+                    set(mem, 0x0187_154c, p);
+                    return p;
+                }
+                8 => {
+                    set(mem, 0x0187_154c, 0xffff_ffff);
+                    put(mem, 9);
+                    put(mem, 2);
+                    return 8;
+                }
+                9 => {
+                    put(mem, 2);
+                    return 9;
+                }
+                10 | 0xb => {
+                    let eax = if state == 10 {
+                        let pos = call(mem, player_pos, &[]);
+                        set(mem, from, pos);
+                        pos
+                    } else {
+                        0xb
+                    };
+                    set(mem, to, 0xffff_ffff);
+                    put(mem, 0xc);
+                    return eax;
+                }
+                0xc | 0xd => {
+                    put(mem, state + 1);
+                    return state;
+                }
+                0xe => {
+                    if trg & 0x20 != 0 {
+                        if !joined(mem, call, g(mem, from)) {
+                            return call(mem, sound, &[0x8000_0003]);
+                        }
+                        let eax = call(mem, sound, &[0x8000_0001]);
+                        put(mem, 0x11);
+                        return eax;
+                    }
+                    if trg & 0x40 != 0 {
+                        let eax = call(mem, sound, &[0x8000_0004]);
+                        put(mem, 0xf);
+                        return eax;
+                    }
+                    if rep & 0x4000 != 0 {
+                        return move_row(mem, call, sound, list_max2, from, true);
+                    }
+                    if rep & 0x1000 != 0 {
+                        return move_row(mem, call, sound, list_max2, from, false);
+                    }
+                    return 0xe;
+                }
+                0xf | 0x10 => {
+                    if state == 0xf {
+                        set(mem, from, 0xffff_ffff);
+                        set(mem, to, 0xffff_ffff);
+                        put(mem, 0x10);
+                    }
+                    let eax = call(mem, save_all, &[]);
+                    put(mem, 3);
+                    return eax;
+                }
+                0x11 => {
+                    let row = g(mem, from);
+                    set(mem, to, row);
+                    put(mem, 0x12);
+                    put(mem, 0x13);
+                    return row;
+                }
+                0x12 => {
+                    put(mem, 0x13);
+                    return 0x12;
+                }
+                0x13 | 0x14 => {
+                    if state == 0x13 {
+                        put(mem, 0x14);
+                    }
+                    if trg & 0x20 != 0 {
+                        let row = g(mem, to);
+                        if g(mem, from) == row || !joined(mem, call, row) {
+                            return call(mem, sound, &[0x8000_0003]);
+                        }
+                        let eax = call(mem, sound, &[0x8000_0001]);
+                        put(mem, 0x15);
+                        return eax;
+                    }
+                    if trg & 0x40 != 0 {
+                        let eax = call(mem, sound, &[0x8000_0004]);
+                        put(mem, 0x17);
+                        return eax;
+                    }
+                    if rep & 0x1000 != 0 {
+                        return move_row(mem, call, sound, list_max2, to, false);
+                    }
+                    if rep & 0x4000 != 0 {
+                        return move_row(mem, call, sound, list_max2, to, true);
+                    }
+                    return state;
+                }
+                0x15 => {
+                    let f = at(mem, 0x008a_9720);
+                    let args = [g(mem, from), g(mem, to)];
+                    call(mem, f, &args);
+                    let row = g(mem, to);
+                    set(mem, from, row);
+                    set(mem, to, 0xffff_ffff);
+                    put(mem, 0x16);
+                    put(mem, 0xb);
+                    return row;
+                }
+                0x16 | 0x18 => {
+                    put(mem, 0xb);
+                    return state;
+                }
+                0x17 => {
+                    put(mem, 0x18);
+                    put(mem, 0xb);
+                    return 0x17;
+                }
+                0x19 => {
+                    let eax = call(mem, save_all, &[]);
+                    put(mem, 0x1a);
+                    return eax;
+                }
+                0x1a | 0x1d | 0x21 => {
+                    if g(mem, 0x0187_1554) == 0 {
+                        return state;
+                    }
+                    call(mem, free, &[0]);
+                    let mut eax = call(mem, free, &[3]);
+                    let next = if state == 0x1a {
+                        2
+                    } else {
+                        eax = call(mem, shade_step, &[0xffff_fff6]);
+                        state + 1
+                    };
+                    put(mem, next);
+                    return eax;
+                }
+                0x1b | 0x1f => {
+                    let eax = call(mem, shade_step, &[10]);
+                    put(mem, state + 1);
+                    return eax;
+                }
+                0x1c | 0x20 => {
+                    let r = call(mem, shade, &[]);
+                    if r.cast_signed() < 0x80 {
+                        return r;
+                    }
+                    let f = at(mem, 0x008a_a100);
+                    call(mem, f, &[if state == 0x1c { 0x13 } else { 0xb }, 0]);
+                    let f = at(mem, 0x008a_ad70);
+                    let eax = call(mem, f, &[1]);
+                    put(mem, state + 1);
+                    return eax;
+                }
+                0x1e | 0x22 => {
+                    let r = call(mem, shade, &[]);
+                    if r.cast_signed() <= 0 {
+                        put(mem, 2);
+                    }
+                    return r;
+                }
+                0x23 | 0x24 => {
+                    if state == 0x23 {
+                        put(mem, 0x24);
+                    }
+                    let f = at(mem, 0x008a_8e50);
+                    let r = call(mem, f, &[]);
+                    if r == 0 {
+                        return r;
+                    }
+                    let eax = call(mem, frame_diff, &[0x10]);
+                    put(mem, 0x25);
+                    return eax;
+                }
+                0x25 => {
+                    let f = at(mem, 0x008a_b230);
+                    let r = call(mem, f, &[]);
+                    if r.cast_signed() >= 0x80 {
+                        put(mem, 0x26);
+                    }
+                    return r;
+                }
+                0x26 => {
+                    let f = at(mem, 0x008a_ab20);
+                    return call(mem, f, &[1]);
+                }
+                _ => return state,
+            }
+        }
+    }
+
+    /// A party-order row `row_at` of [`tk_menu_ctrl_main`] moved one row down
+    /// (`down`) or up over `TkMenuGetPlayerListMax2()` rows, wrapping,
+    /// after sound `0x80000001`; `eax` as the original leaves it (the
+    /// count, the new last row, or the sound's).
+    fn move_row<M: Mem>(
+        mem: &mut M,
+        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        sound: u32,
+        list_max2: u32,
+        row_at: u32,
+        down: bool,
+    ) -> u32 {
+        let row_at = mem.rebase(row_at);
+        let eax = call(mem, sound, &[0x8000_0001]);
+        if down {
+            let row = mem.read::<u32>(row_at).wrapping_add(1);
+            mem.write(row_at, row);
+            let n = call(mem, list_max2, &[]);
+            if mem.read::<u32>(row_at).cast_signed() >= n.cast_signed() {
+                mem.write(row_at, 0u32);
+            }
+            n
+        } else {
+            let row = mem.read::<u32>(row_at).wrapping_sub(1);
+            mem.write(row_at, row);
+            if row.cast_signed() >= 0 {
+                return eax;
+            }
+            let last = call(mem, list_max2, &[]).wrapping_sub(1);
+            mem.write(row_at, last);
+            last
+        }
+    }
+
+    /// `TkBtlEndDraw(i)` (`0x008bc340`, jump table `0x008bd004` on the
+    /// entry's kind): the after-battle results row of [`BTL_END_LIST`]
+    /// entry `i` (14 bytes from `0x01869f20`: `i16 +2` timer, `+4` kind,
+    /// `+6` character, `i8 +0xa` level-up flash). Kinds 0 and 5 draw
+    /// nothing (`eax` the kind). Kind 1 slides the row in by
+    /// `(u16 Math_CosLookup(timer) * -512) / 4096` and kind 4 out by
+    /// `((u16 Math_SinLookup(0x1000 - timer) - 0x1000) << 9) / 4096`
+    /// (both truncated). Other kinds, 2 and 3 included, don't slide.
+    /// The row sits at `x = remapX2(210) + slide`, `y = remapY2(90 i +
+    /// 278)` between `TOMenuOpenPktBuffTmp` and `TOMenuDrawKickTmp`
+    /// (`eax`): its frame (shapes -3 and four `DrawWaterWaveShapeC2`
+    /// strips of the texture row `64 (i + 1)`), the name
+    /// (`ToMakeBtlEasyEdgeFont`, 0.82), the result
+    /// (`BtlEnd_GetResult(chr)`, `ToMakeBtlEasyDigitRight`), the sphere
+    /// level (`TkMenuGetSP`, centred by `ToGetBtlEasyDigitWidth2` into
+    /// `local`) and the AP to the next level (`MsGetNextAP -
+    /// MsGetSaveNextAP`, `"-----"` from sphere level 99). While the
+    /// flash byte is positive a plate `(remapX2(100) * (k + 1))` wide, `k
+    /// = clamp(15 - flash, 0, 2)`, marks the level-up (with its two
+    /// labels at `k = 2`), and the byte counts down. Japanese
+    /// (`TOGetFFXLang() == 0xb`) moves the result 20 left and swaps the
+    /// labels' UV and offsets.
+    ///
+    /// x87: f64 in the original's order, rounded to f32 at every stored
+    /// argument. The original also stores floats into its own argument
+    /// word; that is the caller's dead slot (cdecl), left alone here.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one draw; x, y as in the original
+    pub fn tk_btl_end_draw<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let entry = at(mem, 0x0186_9f20).wrapping_add(i.cast_unsigned().wrapping_mul(14));
+        let chr = |mem: &M| i32::from(mem.read::<i16>(entry.wrapping_add(6))).cast_unsigned();
+        let rf = |mem: &mut M, remap: &mut dyn FnMut(&mut M, bool, f32) -> f64, y: bool, v: f32| {
+            store(remap(mem, y, v))
+        };
+        let rel = |mem: &mut M,
+                   remap: &mut dyn FnMut(&mut M, bool, f32) -> f64,
+                   y: bool,
+                   v: f32,
+                   base: f32| { store(add(remap(mem, y, v), f64::from(base))) };
+        let kind = i32::from(mem.read::<i16>(entry.wrapping_add(4)));
+        let timer = i32::from(mem.read::<i16>(entry.wrapping_add(2)));
+        let slide = match kind {
+            0 | 5 => return kind.cast_unsigned(),
+            1 => {
+                let f = at(mem, 0x0088_e750);
+                let c = call(mem, f, &[timer.cast_unsigned()]) & 0xffff;
+                c.cast_signed().wrapping_mul(-0x200) / 0x1000
+            }
+            4 => {
+                let f = at(mem, 0x0088_e730);
+                let s = call(mem, f, &[0x1000i32.wrapping_sub(timer).cast_unsigned()]) & 0xffff;
+                (s.cast_signed() - 0x1000).wrapping_shl(9) / 0x1000
+            }
+            _ => 0,
+        };
+        let f = at(mem, 0x008b_ef30);
+        call(mem, f, &[]);
+        let left = remap(mem, false, 210.0);
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+        let x = f32::from_bits(store(add(left, f64::from(slide as f32))));
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+        let row = i.wrapping_mul(0x5a).wrapping_add(0x116) as f32;
+        let y = f32::from_bits(rf(mem, remap, true, row));
+        let shape = at(mem, 0x0090_3bb0);
+        // the frame: shape -3 over the texture row 86 i
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+        let fi = f64::from(i as f32);
+        let v1 = store(fi * 86.0 + 72.0);
+        let v0 = store(fi * 86.0 + 0.0);
+        let h = rf(mem, remap, true, 72.0);
+        let w = rf(mem, remap, false, 1110.0);
+        let u1 = 1110f32.to_bits();
+        call(
+            mem,
+            shape,
+            &[0xffff_fffd, x.to_bits(), y.to_bits(), w, h, 0, v0, u1, v1],
+        );
+        // four wave strips: (u, ripple, phase, colours, from the right edge)
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+        let v = store(f64::from(i.wrapping_add(1) as f32) * 64.0);
+        let wave = at(mem, 0x008e_7d30);
+        let strips: [(f32, f32, f32, [u32; 2], bool); 4] = [
+            (0.0, 50.0, -20.0, [0x00c5_6870, 0x1ac5_6870], false),
+            (250.0, 50.0, -20.0, [0x1ac5_6870, 0x00c5_6870], true),
+            (300.0, -80.0, -10.0, [0x00c5_6870, 0x33c5_6870], false),
+            (550.0, -80.0, -10.0, [0x33c5_6870, 0x00c5_6870], true),
+        ];
+        for (u, ripple, phase, colours, right) in strips {
+            let h = rf(mem, remap, true, 64.0);
+            let w = rf(mem, remap, false, 250.0);
+            let sx = if right {
+                rel(mem, remap, false, 250.0, x)
+            } else {
+                x.to_bits()
+            };
+            let args = [
+                sx,
+                y.to_bits(),
+                w,
+                h,
+                u.to_bits(),
+                v,
+                250f32.to_bits(),
+                64f32.to_bits(),
+                ripple.to_bits(),
+                phase.to_bits(),
+                colours[0],
+                colours[1],
+            ];
+            call(mem, wave, &args);
+        }
+        let h = rf(mem, remap, true, 70.0);
+        let w = rf(mem, remap, false, 415.0);
+        let sx = rel(mem, remap, false, 1090.0, x);
+        let uv = [689f32, 618.0, 1104.0, 688.0].map(f32::to_bits);
+        call(
+            mem,
+            shape,
+            &[
+                0xffff_fffd,
+                sx,
+                y.to_bits(),
+                w,
+                h,
+                uv[0],
+                uv[1],
+                uv[2],
+                uv[3],
+            ],
+        );
+        // the name
+        let ny = rel(mem, remap, true, 9.0, y);
+        let nx = rel(mem, remap, false, 160.0, x);
+        let f = at(mem, 0x008a_c850);
+        let name = call(mem, f, &[chr(mem)]);
+        let f = at(mem, 0x0090_5930);
+        call(mem, f, &[name, nx, ny, 0, 0x3f51_eb85, 0x3f80_0000]);
+        let lang = at(mem, 0x008a_c2f0);
+        let mut dx = 0.0f32;
+        if call(mem, lang, &[]) == 0xb {
+            dx = -20.0;
+        }
+        // the labels' UV and offsets: (u, u', x, x'), Japanese
+        let (mut ua, mut ub, mut xa, mut xb) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        let japanese = |mem: &mut M,
+                        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                        o: &mut (f32, f32, f32, f32)| {
+            if call(mem, lang, &[]) == 0xb {
+                *o = (-35.0, 20.0, -10.0, 25.0);
+            }
+        };
+        let mut o = (ua, ub, xa, xb);
+        japanese(mem, call, &mut o);
+        (ua, ub, xa, xb) = o;
+        let k = 0.000_976_562_5;
+        // a shape of the standard order: h, w, then y and x beside the row
+        let put = |mem: &mut M,
+                   remap: &mut dyn FnMut(&mut M, bool, f32) -> f64,
+                   call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                   kind: u32,
+                   hw: (f32, f32),
+                   yx: (f32, f32),
+                   uv: [u32; 4]| {
+            let h = rf(mem, remap, true, hw.0);
+            let w = rf(mem, remap, false, hw.1);
+            let sy = rel(mem, remap, true, yx.0, y);
+            let sx = rel(mem, remap, false, yx.1, x);
+            call(
+                mem,
+                shape,
+                &[kind, sx, sy, w, h, uv[0], uv[1], uv[2], uv[3]],
+            );
+        };
+        // the result's label
+        let label = |ub: f32| {
+            let u1 = store((f64::from(ub) + 434.0) * k);
+            let w = f32::from_bits(store(f64::from(ub) + 55.0));
+            (w, [0x3ebf_0000, 0x3d9a_0000, u1, 0x3dd2_0000])
+        };
+        let (lw, uv) = label(ub);
+        let lx = f32::from_bits(store(f64::from(dx) + 758.0));
+        put(mem, remap, call, 200, (28.0, lw), (33.0, lx), uv);
+        let ry = rel(mem, remap, true, 27.0, y);
+        let rx_at = f32::from_bits(store(f64::from(dx) + 748.0));
+        let rx = rel(mem, remap, false, rx_at, x);
+        let f = at(mem, 0x008b_da10);
+        let result = call(mem, f, &[chr(mem)]);
+        let right = at(mem, 0x0090_55c0);
+        call(mem, right, &[result, rx, ry, 0x25, 0x3f33_3333, 0]);
+        put(
+            mem,
+            remap,
+            call,
+            200,
+            (28.0, 384.0),
+            (2.0, 1096.0),
+            [0x3ebc_0000, 0x3dfe_0000, 0x3f3e_0000, 0x3e1c_0000],
+        );
+        put(
+            mem,
+            remap,
+            call,
+            0xffff_ffff,
+            (33.0, 208.0),
+            (29.0, 844.0),
+            [0, 603f32.to_bits(), 208f32.to_bits(), 636f32.to_bits()],
+        );
+        let h = rf(mem, remap, true, 75.0);
+        let w = rf(mem, remap, false, 75.0);
+        let up = remap(mem, true, 3.0);
+        let sy = store(sub(f64::from(y), up));
+        let sx = rel(mem, remap, false, 1038.0, x);
+        let uv = [0x3ef9_0000, 0x3f16_c000, 0x3f0f_4000, 0x3f29_8000];
+        call(
+            mem,
+            shape,
+            &[0x3d, sx, sy, w, h, uv[0], uv[1], uv[2], uv[3]],
+        );
+        let mut o = (ua, ub, xa, xb);
+        japanese(mem, call, &mut o);
+        (ua, ub, xa, xb) = o;
+        // the sphere level's label
+        let level = |ua: f32, ub: f32, xa: f32, xb: f32, x0: f32, u0: f64, u1: f64| {
+            let u1 = store((f64::from(ub) + u1) * k);
+            let u0 = store((f64::from(ua) + u0) * k);
+            let w = f32::from_bits(store(f64::from(xb) + 144.0));
+            let sx = f32::from_bits(store(f64::from(xa) + f64::from(x0)));
+            (w, sx, [u0, 0x3da8_0000, u1, 0x3de8_0000])
+        };
+        let (lw, lx, uv) = level(ua, ub, xa, xb, 935.0, 834.0, 978.0);
+        put(mem, remap, call, 0x3d, (32.0, lw), (32.0, lx), uv);
+        let sp = at(mem, 0x008a_9b80);
+        let n = call(mem, sp, &[chr(mem)]);
+        let f = at(mem, 0x0090_5230);
+        call(mem, f, &[n, local, 0x3f33_3333, 0]);
+        let sy = rel(mem, remap, true, 16.0, y);
+        let r = remap(mem, false, 1076.0);
+        let half = mul(load(mem.read::<u32>(local)), 0.5);
+        let sx = store(sub(add(r, f64::from(x)), half));
+        let n = call(mem, sp, &[chr(mem)]);
+        let f = at(mem, 0x0090_5550);
+        call(mem, f, &[n, sx, sy, 0, 0x3f33_3333, 0]);
+        let mut o = (ua, ub, xa, xb);
+        japanese(mem, call, &mut o);
+        (ua, ub, xa, xb) = o;
+        // the AP's label
+        let (lw, uv) = label(ub);
+        put(mem, remap, call, 200, (28.0, lw), (34.0, 1348.0), uv);
+        let f = at(mem, 0x008b_da50);
+        if call(mem, f, &[chr(mem)]).cast_signed() < 99 {
+            let ay = rel(mem, remap, true, 28.0, y);
+            let ax = rel(mem, remap, false, 1333.0, x);
+            let f = at(mem, 0x0078_4e90);
+            let next = call(mem, f, &[chr(mem)]);
+            let f = at(mem, 0x0078_52b0);
+            let saved = call(mem, f, &[chr(mem)]);
+            call(
+                mem,
+                right,
+                &[next.wrapping_sub(saved), ax, ay, 0x25, 0x3f33_3333, 0],
+            );
+        } else {
+            let ay = rel(mem, remap, true, 38.0, y);
+            let ax = rel(mem, remap, false, 1210.0, x);
+            let (f, dashes) = (at(mem, 0x0090_1660), at(mem, 0x00b5_029c));
+            call(mem, f, &[dashes, ax, ay, 0x25, 0x3f33_3333, 0]);
+        }
+        let flash_at = entry.wrapping_add(0xa);
+        let flash = mem.read::<i8>(flash_at);
+        if flash > 0 {
+            let k2 = (15 - i32::from(flash)).clamp(0, 2);
+            let h = rf(mem, remap, true, 54.0);
+            let wide = remap(mem, false, 100.0);
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+            let w = store(mul(wide, f64::from((k2 + 1) as f32)));
+            let py = rel(mem, remap, true, 32.0, y);
+            let px = rel(mem, remap, false, 1110.0, x);
+            let f = at(mem, 0x008f_5f70);
+            call(mem, f, &[px, py, w, h, 0xa]);
+            if k2 == 2 {
+                let (lw, lx, uv) = level(ua, ub, xa, xb, 1152.0, 834.0, 978.0);
+                put(mem, remap, call, 0x3d, (32.0, lw), (43.0, lx), uv);
+                let u1 = store((f64::from(ub) + 680.0) * k);
+                let u0 = store((f64::from(ua) + 614.0) * k);
+                let w = f32::from_bits(store(f64::from(xb) + 66.0));
+                let lx = f32::from_bits(store(f64::from(xa) + 1265.0));
+                let uv = [u0, 0x3f1b_4000, u1, 0x3f23_8000];
+                put(mem, remap, call, 0x3d, (33.0, w), (43.0, lx), uv);
+            }
+            mem.write(flash_at, flash.wrapping_sub(1));
+        }
+        let f = at(mem, 0x008b_ea20);
+        call(mem, f, &[])
+    }
+
+    /// `TkBtlEndCtrl()` (`0x008ba660`, Fahrenheit's name; jump table
+    /// `0x008bb5d4` on `g_BtlEnd_State` `0x01869f08`, 0..=0x2b): the battle-end
+    /// screen's control (menu slot 0x11's `+0` callback; `TkMenuCloseAll`
+    /// drops its `eax`). Each call first reads the pads (`u16`), calls
+    /// `TODebugAddPadPrintFlag` on trigger 0x100 alone, and steps the
+    /// `i16` fades `0x0186a0b4`, `0x0186a160`, `0x0186a168`, `0x0186a170`
+    /// by their speeds (`+0x60`, `+4`, `+4`, `+4`), each held in
+    /// `0..=0x1000`, and `0x0186a178` by 0x100 up to 0x1000. States
+    /// (`=>` runs the next one in the same call; "stores" marks the ones
+    /// written first):
+    /// - 0 stores 9 => 9: with level-ups (`[0x01869f19]`) stores 10 =>
+    ///   10, else => 0x10; 10 steps every entry (`BtlEnd_StepEntry`) and
+    ///   goes on to 0xb when all are done;
+    /// - 1 0 or 2 by `AtelIsKeepPlayStatusClear8`; 2 3; 3 waits on
+    ///   `TkSndReportStatus` and the CD's `+8(1)` callback (`GetCD`), 4;
+    ///   4 reads music 0x8a unless playing (5, else 0); 5 starts it once
+    ///   `SndSyncMusicStandby(0)` is 0, 0;
+    /// - 0xb stores 0xc, sound `0x80000018` if an entry's sphere level is
+    ///   below 99 => 0xc counts AP (`BtlEnd_CountApSteps`; confirm
+    ///   finishes it), 0xd; 0xd stops the sound, 0xe; 0xe waits for
+    ///   confirm, `SetEntries_01869f20(3)`, 0xf; 0xf steps the entries
+    ///   (the last one done sets speed `0x0186a164` 0x80), 0x14; 0x10
+    ///   0x11; 0x11-0x13 fade the gil panel in and wait for confirm, 0x14;
+    /// - 0x14 the gil text pair (0x4006), 0x15; 0x15 counts 7 frames of
+    ///   text 0x4014 (`0x025cc590`), 0x16; 0x16 0x17; 0x17 (sound
+    ///   `0x80000018` while gil is left) stores 0x18 => 0x18 counts gil
+    ///   (`BtlEnd_StepGil`, confirm finishes it) => 0x19 (stored); 0x19
+    ///   stops the sound and, with room for the spoils, sets text 0x4005,
+    ///   0x1a; 0x1a waits for confirm: 0x1c with spoils left over, else
+    ///   0x1b;
+    /// - 0x1b/0x2b wait for their fade to reach 0, 6; 6 stores 7 => 7 ends
+    ///   the screen (screen fade to white or black, field music unless
+    ///   `AtelCheckMenuOtakaraFlag`), 8; 8 once `0x0186a0b4` is 0 sets
+    ///   `g_BtlEndCtrlDone` and, when `AtelIsKeepPlayStatusClear12`,
+    ///   fades in (`Sg_FadeIn(15)`) every call;
+    /// - 0x1c (`TOSeqStartScene(1, "scene6")`) and 0x1d set the spoils
+    ///   text pair (0x4009), 0x1e; 0x1e waits, 0x1f; 0x1f 0x20;
+    /// - 0x20 the spoils list (top `0x0186a190`, cursor
+    ///   `0x0186a1a0[side]`, side `0x0186a19c`): 0x100 checks the legend
+    ///   weapon (0x2a, or 0x22 with sound `0x80000003`), confirm on an
+    ///   empty slot 0x24, moves scroll by one (0x21, speed 0x333) or by
+    ///   six with the shoulder pads (`pad` 1/2, speed 0x111); 0x21 scrolls
+    ///   `0x0186a18c` to 0 => 0x20; 0x24 sets `0x0186a1a8` => 0x25;
+    /// - 0x25 the gear list the same way (equip slot `0x0186a1a4` on side
+    ///   0): confirm swaps (`MsExchangeSaveWeapon`) unless the weapon in
+    ///   use is kept, cancel and swap => 0x27; 0x26 scrolls => 0x25; 0x27
+    ///   clears `0x0186a1a8`, 0x20; 0x22/0x28 fade a notice in, 0x23/0x29
+    ///   wait for any trigger, back to 0x20 (top from `0x0186a194`) or
+    ///   0x25; 0x2a fades out, 0x2b.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cognitive_complexity,
+        clippy::many_single_char_names
+    )] // one state machine; g, h, s as in the others
+    pub fn tk_btl_end_ctrl<M: Mem>(
+        mem: &mut M,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let g = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let set = |mem: &mut M, a: u32, v: u32| {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        };
+        let h = |mem: &M, a: u32| -> i16 { mem.read(mem.rebase(a)) };
+        let set_h = |mem: &mut M, a: u32, v: u16| {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        };
+        let f = at(mem, 0x008b_e410);
+        let pad = call(mem, f, &[]) & 0xffff;
+        let f = at(mem, 0x008b_e470);
+        let rep = call(mem, f, &[]) & 0xffff;
+        let f = at(mem, 0x008b_e4b0);
+        let trg = call(mem, f, &[]) & 0xffff;
+        for (fade, speed) in [
+            (0x0186_a0b4, 0x0186_a114),
+            (0x0186_a160, 0x0186_a164),
+            (0x0186_a168, 0x0186_a16c),
+        ] {
+            step_fade(mem, fade, speed);
+        }
+        let v = h(mem, 0x0186_a178).wrapping_add(0x100);
+        set_h(mem, 0x0186_a178, v.cast_unsigned());
+        if v > 0x1000 {
+            set_h(mem, 0x0186_a178, 0x1000);
+        }
+        step_fade(mem, 0x0186_a170, 0x0186_a174);
+        if trg == 0x100 {
+            let f = at(mem, 0x008a_bd00);
+            call(mem, f, &[]);
+        }
+        let (state, top, side, cursor) = (0x0186_9f08, 0x0186_a190, 0x0186_a19c, 0x0186_a1a0);
+        let (rows, speed, target) = (0x0186_a18c, 0x0186_a198, 0x0186_a194);
+        let sound = at(mem, 0x0088_6e80);
+        let snd = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, id: u32| {
+            call(mem, sound, &[id]);
+        };
+        let count = |mem: &M| i32::from(mem.read::<u8>(mem.rebase(0x0186_9f18)));
+        let (get_text, set_pair) = (at(mem, 0x008b_da60), at(mem, 0x008b_dfe0));
+        // the shoulder-pad jump of six rows: the new top, or None when it
+        // stays (`0x0186a194` written either way)
+        let jump = |mem: &mut M, up: bool| -> Option<u32> {
+            let t = g(mem, top).cast_signed();
+            let v = if up {
+                t.wrapping_sub(6).max(0)
+            } else {
+                let last = g(mem, 0x0186_a188).cast_signed().wrapping_sub(6);
+                let v = t.wrapping_add(6);
+                set(mem, target, v.cast_unsigned());
+                if v >= last { last.max(0) } else { v }
+            };
+            set(mem, target, v.cast_unsigned());
+            (v != t).then_some(v.cast_unsigned())
+        };
+        // the scroll of states 0x21 and 0x26: true once it arrived
+        let scroll = |mem: &mut M| -> bool {
+            let r = g(mem, rows).cast_signed();
+            let s = g(mem, speed).cast_signed();
+            if r > 0 {
+                let r = r.wrapping_sub(s);
+                set(mem, rows, r.cast_unsigned());
+                r <= 0
+            } else {
+                let r = r.wrapping_add(s);
+                set(mem, rows, r.cast_unsigned());
+                r >= 0
+            }
+        };
+        let mut s = g(mem, state);
+        loop {
+            match s {
+                0 => {
+                    set(mem, state, 9);
+                    s = 9;
+                }
+                9 => {
+                    if mem.read::<u8>(at(mem, 0x0186_9f19)) == 0 {
+                        s = 0x10;
+                        continue;
+                    }
+                    set(mem, state, 10);
+                    s = 10;
+                }
+                10 | 0xf => {
+                    let mut done = 1;
+                    let mut i = 0;
+                    let f = at(mem, 0x008b_b690);
+                    while i < count(mem) {
+                        let r = call(mem, f, &[i.cast_unsigned()]);
+                        if s == 0xf && i == count(mem) - 1 && r != 0 {
+                            set_h(mem, 0x0186_a164, 0x80);
+                        }
+                        done &= r;
+                        i += 1;
+                    }
+                    if done != 0 {
+                        set(mem, state, if s == 10 { 0xb } else { 0x14 });
+                    }
+                    return;
+                }
+                1 => {
+                    let f = at(mem, 0x0086_bc20);
+                    let v = if call(mem, f, &[]) == 0 { 0 } else { 2 };
+                    set(mem, state, v);
+                    return;
+                }
+                2 => {
+                    set(mem, state, 3);
+                    return;
+                }
+                3 => {
+                    let f = at(mem, 0x0076_d0d0);
+                    let cd = call(mem, f, &[]);
+                    let f = at(mem, 0x0088_7b30);
+                    if call(mem, f, &[]) != 0 {
+                        return;
+                    }
+                    let f = mem.read::<u32>(cd.wrapping_add(8));
+                    if call(mem, f, &[1]) == 0 {
+                        set(mem, state, 4);
+                    }
+                    return;
+                }
+                4 => {
+                    let f = at(mem, 0x0088_63f0);
+                    if call(mem, f, &[]) == 0x8a {
+                        set(mem, state, 0);
+                    } else {
+                        let f = at(mem, 0x0088_6960);
+                        call(mem, f, &[0x8a]);
+                        set(mem, state, 5);
+                    }
+                    return;
+                }
+                5 => {
+                    let f = at(mem, 0x0088_7900);
+                    if call(mem, f, &[0]) == 0 {
+                        let f = at(mem, 0x0088_6a20);
+                        call(mem, f, &[0x8a]);
+                        set(mem, state, 0);
+                    }
+                    return;
+                }
+                0xb | 0xc => {
+                    if s == 0xb {
+                        set(mem, state, 0xc);
+                        let f = at(mem, 0x008b_da50);
+                        let list = at(mem, 0x0186_9f26);
+                        let mut i = 0;
+                        while i < count(mem) {
+                            let at_chr = list.wrapping_add(i.cast_unsigned() * 14);
+                            let chr = i32::from(mem.read::<i16>(at_chr)).cast_unsigned();
+                            if call(mem, f, &[chr]).cast_signed() < 99 {
+                                snd(mem, call, 0x8000_0018);
+                                break;
+                            }
+                            i += 1;
+                        }
+                    }
+                    let f = at(mem, 0x008b_a550);
+                    if call(mem, f, &[]) == 0 {
+                        set(mem, state, 0xd);
+                    }
+                    if rep & 0x20 != 0 {
+                        snd(mem, call, 0x8000_0001);
+                        while call(mem, f, &[]) != 0 {}
+                        set(mem, state, 0xd);
+                    }
+                    return;
+                }
+                0xd => {
+                    let f = at(mem, 0x0088_6eb0);
+                    call(mem, f, &[0x8000_0018]);
+                    set(mem, state, 0xe);
+                    return;
+                }
+                0xe => {
+                    if rep & 0x20 != 0 {
+                        snd(mem, call, 0x8000_0001);
+                        let f = at(mem, 0x008b_e050);
+                        call(mem, f, &[3]);
+                        set(mem, state, 0xf);
+                    }
+                    return;
+                }
+                0x10 => {
+                    set(mem, state, 0x11);
+                    return;
+                }
+                0x11 => {
+                    if h(mem, 0x0186_a0b4) == 0x1000 {
+                        set_h(mem, 0x0186_a174, 0x200);
+                        set(mem, state, 0x12);
+                    }
+                    return;
+                }
+                0x12 | 0x16 | 0x1e => {
+                    let (fade, next) = match s {
+                        0x12 => (0x0186_a170, 0x13),
+                        0x16 => (0x0186_a160, 0x17),
+                        _ => (0x0186_a168, 0x1f),
+                    };
+                    if h(mem, fade) == 0x1000 {
+                        set(mem, state, next);
+                    }
+                    return;
+                }
+                0x13 => {
+                    if rep & 0x20 != 0 {
+                        snd(mem, call, 0x8000_0001);
+                        set_h(mem, 0x0186_a174, 0xfe00);
+                        set_h(mem, 0x0186_a164, 0x80);
+                        set(mem, state, 0x14);
+                    }
+                    return;
+                }
+                0x14 => {
+                    set(mem, 0x0186_a17c, 0);
+                    set(mem, state, 0x15);
+                    let text = call(mem, get_text, &[0x4006]);
+                    call(mem, set_pair, &[0, text]);
+                    return;
+                }
+                0x15 => {
+                    if h(mem, 0x0186_a170) != 0 {
+                        return;
+                    }
+                    let n = g(mem, 0x0186_a17c).wrapping_add(1);
+                    set(mem, 0x0186_a17c, n);
+                    let text = call(mem, get_text, &[0x4014]);
+                    set(mem, 0x025c_c590, text);
+                    set(mem, 0x0186_a180, 0x105);
+                    if g(mem, 0x0186_a17c).cast_signed() <= 6 {
+                        return;
+                    }
+                    if mem.read::<u8>(at(mem, 0x0231_0f70)) == 0
+                        && mem.read::<u8>(at(mem, 0x0231_0f72)) == 0
+                    {
+                        set_h(mem, 0x0186_a174, 0x200);
+                    }
+                    set(mem, state, 0x16);
+                    return;
+                }
+                0x17 | 0x18 => {
+                    if s == 0x17 {
+                        if g(mem, 0x0186_9f14) != 0 {
+                            snd(mem, call, 0x8000_0018);
+                        }
+                        set(mem, state, 0x18);
+                    }
+                    let f = at(mem, 0x008b_a590);
+                    if call(mem, f, &[]) != 0 {
+                        if rep & 0x20 != 0 {
+                            snd(mem, call, 0x8000_0001);
+                            while call(mem, f, &[]) != 0 {}
+                            set(mem, state, 0x19);
+                        }
+                        return;
+                    }
+                    set(mem, state, 0x19);
+                    s = 0x19;
+                }
+                0x19 => {
+                    let f = at(mem, 0x0088_6eb0);
+                    call(mem, f, &[0x8000_0018]);
+                    if g(mem, 0x0186_a184) == 0 {
+                        let text = call(mem, get_text, &[0x4005]);
+                        set(mem, 0x025c_c594, text);
+                    }
+                    set(mem, state, 0x1a);
+                    return;
+                }
+                0x1a => {
+                    if rep & 0x20 == 0 {
+                        return;
+                    }
+                    snd(mem, call, 0x8000_0001);
+                    set_h(mem, 0x0186_a164, 0xff80);
+                    set_h(mem, 0x0186_a174, 0xfe00);
+                    if g(mem, 0x0186_a184) != 0 {
+                        set(mem, state, 0x1c);
+                    } else {
+                        set_h(mem, 0x0186_a114, 0xff80);
+                        set(mem, state, 0x1b);
+                    }
+                    return;
+                }
+                0x1b | 0x2b => {
+                    let fade = if s == 0x1b { 0x0186_a160 } else { 0x0186_a168 };
+                    if h(mem, fade) == 0 {
+                        set(mem, state, 6);
+                    }
+                    return;
+                }
+                0x1c => {
+                    let (f, name) = (at(mem, 0x008a_f0d0), at(mem, 0x00b6_55f0));
+                    call(mem, f, &[1, name]);
+                    set_h(mem, 0x0186_a16c, 0x80);
+                    let text = call(mem, get_text, &[0x4009]);
+                    call(mem, set_pair, &[0, text]);
+                    set(mem, state, 0x1e);
+                    return;
+                }
+                0x1d => {
+                    set_h(mem, 0x0186_a16c, 0x80);
+                    let first = call(mem, get_text, &[0x4009]);
+                    let second = call(mem, get_text, &[0x4009]);
+                    call(mem, set_pair, &[second, first]);
+                    set(mem, state, 0x1e);
+                    return;
+                }
+                0x1f => {
+                    set(mem, state, 0x20);
+                    return;
+                }
+                0x22 | 0x28 => {
+                    set_h(mem, 0x0186_a174, 0x200);
+                    set(mem, state, s + 1);
+                    return;
+                }
+                0x23 | 0x29 => {
+                    if trg != 0 && h(mem, 0x0186_a170) == 0x1000 {
+                        set_h(mem, 0x0186_a174, 0xfe00);
+                        if s == 0x23 {
+                            let t = g(mem, target);
+                            set(mem, top, t);
+                            set(mem, state, 0x20);
+                        } else {
+                            set(mem, state, 0x25);
+                        }
+                    }
+                    return;
+                }
+                0x27 => {
+                    set(mem, 0x0186_a1a8, 0);
+                    set(mem, state, 0x20);
+                    return;
+                }
+                0x2a => {
+                    set_h(mem, 0x0186_a114, 0xff80);
+                    set_h(mem, 0x0186_a16c, 0xff80);
+                    set(mem, state, 0x2b);
+                    return;
+                }
+                6 | 7 => {
+                    if s == 6 {
+                        set(mem, state, 7);
+                    }
+                    let f = at(mem, 0x0064_1cb0);
+                    let locked = call(mem, f, &[]) != 0;
+                    if locked {
+                        let f = at(mem, 0x0064_48d0);
+                        call(mem, f, &[]);
+                    }
+                    let f = at(mem, 0x0086_bc60);
+                    let c = if call(mem, f, &[]) == 0 {
+                        0
+                    } else {
+                        0x3f80_0000
+                    };
+                    let f = at(mem, 0x0064_3900);
+                    call(mem, f, &[c, c, c, 0x3f80_0000]);
+                    let f = at(mem, 0x0063_9280);
+                    call(mem, f, &[c, c, c, 0x3f80_0000, 0]);
+                    let f = at(mem, 0x0064_38e0);
+                    call(mem, f, &[0]);
+                    if locked {
+                        let f = at(mem, 0x0064_1e20);
+                        call(mem, f, &[]);
+                    }
+                    let f = at(mem, 0x0087_2b50);
+                    if call(mem, f, &[]) == 0 {
+                        let f = at(mem, 0x008b_df60);
+                        call(mem, f, &[]);
+                        set(mem, state, 8);
+                    }
+                    return;
+                }
+                8 => {
+                    if h(mem, 0x0186_a0b4) != 0 {
+                        return;
+                    }
+                    let done = at(mem, 0x00c5_a068);
+                    mem.write(done, 1u8);
+                    let f = at(mem, 0x0086_bc10);
+                    if call(mem, f, &[]) == 0 {
+                        return;
+                    }
+                    let f = at(mem, 0x0064_1cb0);
+                    let locked = call(mem, f, &[]) != 0;
+                    if locked {
+                        let f = at(mem, 0x0064_48d0);
+                        call(mem, f, &[]);
+                    }
+                    let f = at(mem, 0x0064_3900);
+                    call(mem, f, &[0, 0, 0, 0x3f80_0000]);
+                    let f = at(mem, 0x0064_38e0);
+                    call(mem, f, &[0]);
+                    let f = at(mem, 0x0063_9280);
+                    call(mem, f, &[0, 0, 0, 0x3f80_0000, 0]);
+                    if locked {
+                        let f = at(mem, 0x0064_1e20);
+                        call(mem, f, &[]);
+                    }
+                    let f = at(mem, 0x0082_cb80);
+                    call(mem, f, &[0xf]);
+                    return;
+                }
+                0x21 | 0x26 => {
+                    if !scroll(mem) {
+                        return;
+                    }
+                    s = if s == 0x21 { 0x20 } else { 0x25 };
+                    set(mem, state, s);
+                    let t = g(mem, target);
+                    set(mem, rows, 0);
+                    set(mem, top, t);
+                }
+                0x24 => {
+                    set(mem, 0x0186_a1a8, 1);
+                    set(mem, state, 0x25);
+                    s = 0x25;
+                }
+                0x20 | 0x25 => {
+                    let gear = s == 0x25;
+                    if trg & 0x100 != 0 {
+                        let f = at(mem, 0x008b_a5c0);
+                        if call(mem, f, &[]) == 0 {
+                            snd(mem, call, 0x8000_0001);
+                            s = 0x2a;
+                        } else {
+                            snd(mem, call, 0x8000_0003);
+                            s = if gear { 0x28 } else { 0x22 };
+                        }
+                        set(mem, state, s);
+                        continue;
+                    }
+                    if !gear && trg & 0x20 != 0 {
+                        let f = at(mem, 0x008b_da80);
+                        let w = call(mem, f, &[]);
+                        if mem.read::<u8>(w.wrapping_add(6)) == 0xff {
+                            snd(mem, call, 0x8000_0001);
+                            set(mem, state, 0x24);
+                        } else {
+                            snd(mem, call, 0x8000_0003);
+                        }
+                        return;
+                    }
+                    if trg & 0x40 != 0 {
+                        if gear {
+                            snd(mem, call, 0x8000_0004);
+                            s = 0x27;
+                            continue;
+                        }
+                        snd(mem, call, 0x8000_0003);
+                        return;
+                    }
+                    if gear && trg & 0x20 != 0 {
+                        let row = g(mem, cursor).wrapping_add(g(mem, top));
+                        let ids = g(mem, 0x025c_c580);
+                        let id = u32::from(mem.read::<u16>(ids.wrapping_add(row.wrapping_mul(2))));
+                        let f = at(mem, 0x007a_bbd0);
+                        let w = call(mem, f, &[id, local]);
+                        if mem.read::<u8>(w.wrapping_add(6)) != 0xff
+                            && mem.read::<u8>(w.wrapping_add(2)) != 0
+                        {
+                            snd(mem, call, 0x8000_0003);
+                            return;
+                        }
+                        snd(mem, call, 0x8000_0001);
+                        let f = at(mem, 0x008b_e0a0);
+                        call(mem, f, &[]);
+                        s = 0x27;
+                        continue;
+                    }
+                    let next = if gear { 0x26 } else { 0x21 };
+                    if rep & 0x1000 != 0 || rep & 0x4000 != 0 {
+                        let down = rep & 0x1000 == 0;
+                        let k = g(mem, side);
+                        // the gear list's side 0 moves the equip slot
+                        let (slot, scrolls) = if gear && k == 0 {
+                            (0x0186_a1a4, false)
+                        } else if !gear && k != 0 {
+                            (cursor + 4 * k, false)
+                        } else {
+                            (cursor, true)
+                        };
+                        let c = if down {
+                            g(mem, slot).cast_signed().wrapping_add(1)
+                        } else {
+                            g(mem, slot).cast_signed().wrapping_sub(1)
+                        };
+                        set(mem, slot, c.cast_unsigned());
+                        // one bound each way: down `< 6`, up `jns`
+                        if (down && c < 6) || (!down && c >= 0) {
+                            snd(mem, call, 0x8000_0001);
+                            return;
+                        }
+                        set(mem, slot, if down { 5 } else { 0 });
+                        if !scrolls {
+                            return;
+                        }
+                        let t = g(mem, top).cast_signed();
+                        let last = g(mem, 0x0186_a188).cast_signed().wrapping_sub(7);
+                        if (down && t > last) || (!down && t <= 0) {
+                            return;
+                        }
+                        let t = (if down { t + 1 } else { t - 1 }).cast_unsigned();
+                        let r = if down { 0x1000 } else { 0xffff_f000 };
+                        if gear && !down {
+                            snd(mem, call, 0x8000_0001);
+                            set(mem, rows, r);
+                            set(mem, target, t);
+                            set(mem, speed, 0x333);
+                            set(mem, state, next);
+                            set(mem, top, t);
+                        } else {
+                            set(mem, rows, r);
+                            set(mem, top, t);
+                            set(mem, target, t);
+                            set(mem, speed, 0x333);
+                            snd(mem, call, 0x8000_0001);
+                            set(mem, state, next);
+                        }
+                        s = next;
+                        continue;
+                    }
+                    if !gear && trg & 0x8000 != 0 {
+                        if g(mem, side) == 1 {
+                            set(mem, side, 0);
+                            snd(mem, call, 0x8000_0001);
+                        }
+                        return;
+                    }
+                    if !gear && trg & 0x2000 != 0 {
+                        if g(mem, side) == 0 {
+                            set(mem, side, 1);
+                            snd(mem, call, 0x8000_0001);
+                        }
+                        return;
+                    }
+                    // six rows with the shoulder pads: the spoils on side
+                    // 0 and pad 1/2, the gear on side 1
+                    let k = g(mem, side);
+                    let ok = |pad_needed: u32| {
+                        if gear {
+                            k != 0
+                        } else {
+                            k == 0 && pad == pad_needed
+                        }
+                    };
+                    let r = if rep & 1 != 0 && ok(1) && jump(mem, true).is_some() {
+                        0xffff_f000
+                    } else if rep & 2 != 0 && ok(2) && jump(mem, false).is_some() {
+                        0x1000
+                    } else {
+                        return;
+                    };
+                    snd(mem, call, 0x8000_0001);
+                    set(mem, rows, r);
+                    set(mem, speed, 0x111);
+                    set(mem, state, next);
+                    s = next;
+                }
+                _ => return,
+            }
+        }
+    }
+
+    /// `fade += speed` on two `i16` words, held in `0..=0x1000`.
+    fn step_fade<M: Mem>(mem: &mut M, fade: u32, speed: u32) {
+        let (fade, speed) = (mem.rebase(fade), mem.rebase(speed));
+        let v = mem
+            .read::<u16>(fade)
+            .wrapping_add(mem.read::<u16>(speed))
+            .cast_signed();
+        mem.write(fade, v.cast_unsigned());
+        if v > 0x1000 {
+            mem.write(fade, 0x1000u16);
+        } else if v < 0 {
+            mem.write(fade, 0u16);
+        }
+    }
+
+    /// `TkCh_Dispose(chr)` (`0x008722f0`, Fahrenheit's name):
+    /// `Ch_Dispose(chr)` (a tail jump, its `eax`) when `Ch_CheckHandle(chr)`
+    /// is 0, else that check's result.
+    pub fn tk_ch_dispose<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0082_61b0);
+        let bad = call(mem, f, &[chr]);
+        if bad != 0 {
+            return bad;
+        }
+        let f = mem.rebase(0x0082_66f0);
+        call(mem, f, &[chr])
+    }
+
+    /// `MenuConfig_Open_008cb3c0(m)` (`0x008cb3c0`, name ours): the config
+    /// menu's start: `0x0186a43c = MsGetSaveConfigEnglish()`, state `m+0x1c`
+    /// 0, cursor `i8 [0x0186a444]` 0, then every row `r` of
+    /// `[0x0186a44c]` (count `[0x0186a448]`, signed, read each time) gets
+    /// its `+0x10(r)` callback. `eax`: the last callback's, else `m`.
+    pub fn menu_config_open<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let f = at(mem, 0x0078_51d0);
+        let english = call(mem, f, &[]);
+        let a = at(mem, 0x0186_a43c);
+        mem.write(a, english);
+        mem.write(m.wrapping_add(0x1c), 0u32);
+        let a = at(mem, 0x0186_a444);
+        mem.write(a, 0u8);
+        let mut eax = m;
+        let mut i = 0u32;
+        while i.cast_signed() < mem.read::<u32>(at(mem, 0x0186_a448)).cast_signed() {
+            let rows: u32 = mem.read(at(mem, 0x0186_a44c));
+            let row: u32 = mem.read(rows.wrapping_add(i.wrapping_mul(4)));
+            let f: u32 = mem.read(row.wrapping_add(0x10));
+            eax = call(mem, f, &[row]);
+            i = i.wrapping_add(1);
+        }
+        eax
+    }
+
+    /// The end of a save/load screen shared by [`tk_menu_close_save_load_screen`]
+    /// and [`tk_menu_jump_to_loaded_scene`]: the menu frame back in
+    /// (`TkMn2SetMainFrameRatioDiff(16)` in a menu mode with high bits),
+    /// and with the language swap flag 1 and `[0x01866240]` 1 the
+    /// international swap (`TOSwapInternationalEnvInit(MsGetSaveConfigEnglish())`;
+    /// `[0x01866240]` cleared once `TOSwapInternationalEnvExecNonBlock`
+    /// gives 1).
+    fn save_load_frame_back<M: Mem>(mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32) {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let f = at(mem, 0x008a_b240);
+        if call(mem, f, &[]) & 0xffff_0000 != 0 {
+            let f = at(mem, 0x008a_b260);
+            call(mem, f, &[0x10]);
+        }
+        let f = at(mem, 0x008a_c390);
+        let flag = at(mem, 0x0186_6240);
+        if call(mem, f, &[]) == 1 && mem.read::<u32>(flag) == 1 {
+            let f = at(mem, 0x0078_51d0);
+            let english = call(mem, f, &[]);
+            let f = at(mem, 0x008b_0920);
+            call(mem, f, &[english]);
+            let f = at(mem, 0x008b_0500);
+            // dec, neg, sbb: cleared once the swap reports 1
+            let keep = if call(mem, f, &[]) == 1 { 0 } else { u32::MAX };
+            let v = mem.read::<u32>(flag) & keep;
+            mem.write(flag, v);
+        }
+    }
+
+    /// `TkMenuCloseSaveLoadScreen()` (`0x008b3db0`, Fahrenheit's name):
+    /// `TkMenuSaveLoad_PollCard_008b3d20()`, `TOMenuHelpSetExtMode(0,
+    /// g_TkMenuSaveLoadActive)`, the frame back (`save_load_frame_back`),
+    /// `TkMenuSaveLoadCloseWindow2()`, then `TkMenuMainSleepMenu(15)` and
+    /// `TkMenuMainActiveMenu(1, 0)` when `u8 [0x0186628a]` is set, else
+    /// `TkMenuMainSleepMenu(16)`. `eax` the last call's.
+    pub fn tk_menu_close_save_load_screen<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let f = at(mem, 0x008b_3d20);
+        call(mem, f, &[]);
+        let active: u32 = mem.read(at(mem, 0x0186_63c4));
+        let f = at(mem, 0x008b_ef10);
+        call(mem, f, &[0, active]);
+        save_load_frame_back(mem, call);
+        let f = at(mem, 0x008b_3d90);
+        call(mem, f, &[]);
+        let sleep = at(mem, 0x008a_ad70);
+        if mem.read::<u8>(at(mem, 0x0186_628a)) != 0 {
+            call(mem, sleep, &[0xf]);
+            let f = at(mem, 0x008a_a100);
+            call(mem, f, &[1, 0])
+        } else {
+            call(mem, sleep, &[0x10])
+        }
+    }
+
+    /// `TkMenuJumpToLoadedScene()` (`0x008b4ec0`, Fahrenheit's name): after
+    /// a load: `graphicSwitchGPUMode()`, sound `0x8000006a`,
+    /// `g_TkMenuSaveLoadActive` 1, `TkMenuCopyLoadedSave(TkGetSaveEventAddress(),
+    /// g_SaveFileBuffer)`, `iMusicRefreshBgmType`, help `TkMenuSaveMes(0x2008)`,
+    /// `TkRefreshSoundMode`, `TkRefreshHdd`, the three save scenes stopped
+    /// (`TOSeqStopScene(1, ...)`), `eiAbmParaGet` (`0x008a97e0`),
+    /// `g_FFXHddMode` 0, `[0x01866240]` 1, `TOMenuHelpSetExtMode(0, 1)`, the
+    /// frame back (`save_load_frame_back`), tail `TkMenuMainSleepMenu(16)`
+    /// (`eax`).
+    pub fn tk_menu_jump_to_loaded_scene<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let f = at(mem, 0x0064_3e70);
+        call(mem, f, &[]);
+        let f = at(mem, 0x0088_6e80);
+        call(mem, f, &[0x8000_006a]);
+        let active = at(mem, 0x0186_63c4);
+        mem.write(active, 1u32);
+        let buffer = at(mem, 0x0159_7f70);
+        let f = at(mem, 0x0088_c830);
+        let event = call(mem, f, &[]);
+        let f = at(mem, 0x008b_54a0);
+        call(mem, f, &[event, buffer]);
+        let f = at(mem, 0x008c_c170);
+        call(mem, f, &[]);
+        let f = at(mem, 0x008d_e080);
+        let text = call(mem, f, &[0x2008]);
+        let f = at(mem, 0x008a_aeb0);
+        call(mem, f, &[text]);
+        let f = at(mem, 0x0087_24f0);
+        call(mem, f, &[]);
+        let f = at(mem, 0x0087_24a0);
+        call(mem, f, &[]);
+        let stop = at(mem, 0x008a_f4f0);
+        for name in [0x00b6_2fcc, 0x00b6_2fd4, 0x00b6_2fdc] {
+            let name = at(mem, name);
+            call(mem, stop, &[1, name]);
+        }
+        let f = at(mem, 0x008a_97e0);
+        call(mem, f, &[]);
+        let ext = mem.read::<u32>(active);
+        let hdd = at(mem, 0x0133_c913);
+        mem.write(hdd, 0u8);
+        let flag = at(mem, 0x0186_6240);
+        mem.write(flag, 1u32);
+        let f = at(mem, 0x008b_ef10);
+        call(mem, f, &[0, ext]);
+        save_load_frame_back(mem, call);
+        let f = at(mem, 0x008a_ad70);
+        call(mem, f, &[0x10])
+    }
+
+    /// `TkMenuOpenNameEntryWindow(aeon, target)` (`0x008c4250`, from the
+    /// Switch build's callees): the name entry window. A target outside
+    /// `0..=0x11` is -1 with `aeon` 1. The help text
+    /// [`MENU_NAME_ENTRY_HELP`] is `TOMenuGetNameMes(0x200c)` without a
+    /// target (`PasswordTextRead()` in languages 9 and 10), 0x204e for
+    /// targets from 8 in menu mode 0x80000, else 0x200b. After
+    /// `TkMn2InitStatusBG`, `TMn2SetStatusBGDiff(0x155)` the window
+    /// (`TkMenuMainAllocWindow`: `+8 0x008c3520`, `+0xc
+    /// MenuNameEntry_WindowCtrl_008c3580`, `+0x10 0x008c3d00`, `+0x14
+    /// 0x008c4490`, `+0x3e` 4, `+0x58 aeon`, `+0x5c target`) is
+    /// registered; `0x0186a258` = target, key page, cell and last side 0;
+    /// for `aeon` 0 `+0x60 = MenuNameEntry_OpenCharWindow(target)` and the
+    /// side column on at row 3 (1 in languages other than 0), else both
+    /// 0. Then the layout, `TkMn2GetStatusPos`, `+0x64 =
+    /// MenuNameEntry_RegistWindow()`, and the keys from the target's name
+    /// (`Menu_ParseItemKeys(TOGetSaveChrName(target))`, or the empty text
+    /// `0x00b8fbeb` after `TkGetSaveEventAddress`). Returns the window,
+    /// also kept in `0x0186a278`.
+    #[allow(clippy::too_many_lines)] // one opener
+    pub fn tk_menu_open_name_entry_window<M: Mem>(
+        mem: &mut M,
+        aeon: u32,
+        target: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let set = |mem: &mut M, a: u32, v: u32| {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        };
+        let (aeon, target) = if (0..=0x11).contains(&target) {
+            (aeon, target)
+        } else {
+            (1, -1)
+        };
+        let target_w = target.cast_unsigned();
+        set(mem, 0x0186_a274, 0);
+        let name_mes = at(mem, 0x008b_edd0);
+        let lang = at(mem, 0x008a_c2f0);
+        if target < 0 {
+            let help = call(mem, name_mes, &[0x200c]);
+            set(mem, 0x0186_a274, help);
+            if call(mem, lang, &[]) == 9 || call(mem, lang, &[]) == 0xa {
+                let f = at(mem, 0x0079_0340);
+                call(mem, f, &[]);
+            }
+        } else {
+            let f = at(mem, 0x008a_b240);
+            let id = if call(mem, f, &[]) & 0x8_0000 != 0 && target >= 8 {
+                0x204e
+            } else {
+                0x200b
+            };
+            let help = call(mem, name_mes, &[id]);
+            set(mem, 0x0186_a274, help);
+        }
+        let f = at(mem, 0x008d_4ed0);
+        call(mem, f, &[]);
+        let f = at(mem, 0x008d_2660);
+        call(mem, f, &[0x155]);
+        let f = at(mem, 0x008a_a1a0);
+        let w = call(mem, f, &[]);
+        for (o, fun) in [
+            (8u32, 0x008c_3520),
+            (0xc, 0x008c_3580),
+            (0x10, 0x008c_3d00),
+            (0x14, 0x008c_4490),
+        ] {
+            let fun = at(mem, fun);
+            mem.write(w.wrapping_add(o), fun);
+        }
+        mem.write(w.wrapping_add(0x3e), 4u8);
+        mem.write(w.wrapping_add(0x58), aeon);
+        mem.write(w.wrapping_add(0x5c), target_w);
+        let f = at(mem, 0x008a_ab00);
+        call(mem, f, &[w]);
+        set(mem, 0x0186_a258, target_w);
+        if call(mem, lang, &[]) == 0 {
+            let f = at(mem, 0x0078_51d0);
+            call(mem, f, &[]);
+        }
+        for a in [0x0186_a25c, 0x0186_a268, 0x0186_a260] {
+            set(mem, a, 0);
+        }
+        if aeon == 0 {
+            let f = at(mem, 0x008c_43f0);
+            let chars = call(mem, f, &[target_w]);
+            mem.write(w.wrapping_add(0x60), chars);
+            set(mem, 0x0186_a270, 1);
+            let row = if call(mem, lang, &[]) == 0 { 3 } else { 1 };
+            set(mem, 0x0186_a26c, row);
+        } else {
+            mem.write(w.wrapping_add(0x60), 0u32);
+            set(mem, 0x0186_a270, 0);
+            set(mem, 0x0186_a26c, 0);
+        }
+        for f in [0x008c_5050, 0x008d_4920] {
+            let f = at(mem, f);
+            call(mem, f, &[]);
+        }
+        let f = at(mem, 0x008c_4450);
+        let keys = call(mem, f, &[]);
+        mem.write(w.wrapping_add(0x64), keys);
+        let parse = at(mem, 0x008c_5280);
+        if target >= 0 {
+            let f = at(mem, 0x008a_c850);
+            let name = call(mem, f, &[target_w]);
+            call(mem, parse, &[name]);
+        } else {
+            let f = at(mem, 0x0088_c830);
+            call(mem, f, &[]);
+            let empty = at(mem, 0x00b8_fbeb);
+            call(mem, parse, &[empty]);
+        }
+        set(mem, 0x0186_a278, w);
+        w
+    }
+
+    /// The name entry's help text id ([`tk_menu_open_name_entry_window`]).
+    pub const MENU_NAME_ENTRY_HELP: Global<u32> = Global::new(0x0186_a274);
+
+    /// `MenuNameEntry_DrawKeys_008c4550()` (`0x008c4550`, name ours; the
+    /// name entry draw `0x008c3d00` calls it): the key rows, three to a
+    /// line. The rows come from the `u16` text ids of a table (language 0:
+    /// `[0x00c5a2f0 + 4 page]` in Japanese config, else `0x00c5a2c8`;
+    /// language 1 `0x00c5a2c8`; 9, 10, 0xb `0x00c5a260` with a target,
+    /// the password list `PasswordText_GetEntry_007902a0(i)` up to
+    /// `PasswordGetTotalIndex()` without; others `0x00c5a288`), a 0 id
+    /// ends them. Row `i` sits at x `remapX2(684 / 1041 / 1398)` by `i %
+    /// 3`, y `remapY2(420) + (i / 3) * remapY2(471) / max(6,
+    /// MenuItem_KeyRowCount())`; each character (one byte; two for 6..=0x2f;
+    /// two or three after 4) goes through `ToMakeBtlEasyFont(buf, x, y, 0,
+    /// 1, 0)` from `local` (4 bytes, kept like the original's frame
+    /// buffer), `remapX2(53)` apart. `eax`: 0 at the end of a table, the
+    /// password count at the end of that list.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one draw loop
+    pub fn menu_name_entry_draw_keys<M: Mem>(
+        mem: &mut M,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, mul, store};
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let lang = at(mem, 0x008a_c2f0);
+        let english = at(mem, 0x0078_51d0);
+        let target = |mem: &M| mem.read::<u32>(at(mem, 0x0186_a258)).cast_signed();
+        let mut table = 0u32;
+        if call(mem, lang, &[]) == 0 {
+            if call(mem, english, &[]) == 0 {
+                let page: u32 = mem.read(at(mem, 0x0186_a25c));
+                table = mem.read(at(mem, 0x00c5_a2f0).wrapping_add(page.wrapping_mul(4)));
+            } else {
+                table = at(mem, 0x00c5_a2c8);
+            }
+        } else if [0xa, 9, 0xb].into_iter().any(|l| call(mem, lang, &[]) == l) {
+            if target(mem) >= 0 {
+                table = at(mem, 0x00c5_a260);
+            }
+        } else if call(mem, lang, &[]) == 1 {
+            table = at(mem, 0x00c5_a2c8);
+        } else {
+            table = at(mem, 0x00c5_a288);
+        }
+        let (mut x, mut y) = (0.0f32, 0.0f32);
+        let rows_f = at(mem, 0x008c_5180);
+        let font = at(mem, 0x0090_5ab0);
+        let mut i = 0i32;
+        loop {
+            let n = call(mem, rows_f, &[]).cast_signed();
+            let rows = if n > 6 {
+                call(mem, rows_f, &[]).cast_signed()
+            } else {
+                6
+            };
+            let full = remap(mem, true, 471.0);
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+            let step = f32::from_bits(store(div(full, f64::from(rows as f32))));
+            let (line, column) = (i / 3, i % 3);
+            let cx = match column {
+                0 => Some(684.0),
+                1 => Some(1041.0),
+                2 => Some(1398.0),
+                _ => None,
+            };
+            if let Some(cx) = cx {
+                x = f32::from_bits(store(remap(mem, false, cx)));
+                y = f32::from_bits(store(remap(mem, true, 420.0)));
+            }
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+            let line_f = f64::from(line as f32);
+            y = f32::from_bits(store(add(mul(line_f, f64::from(step)), f64::from(y))));
+            let password =
+                [0xa, 9, 0xb].into_iter().any(|l| call(mem, lang, &[]) == l) && target(mem) < 0;
+            let text = if password {
+                let f = at(mem, 0x0079_02d0);
+                let total = call(mem, f, &[]);
+                if i >= total.cast_signed() {
+                    return total;
+                }
+                let f = at(mem, 0x0079_02a0);
+                call(mem, f, &[i.cast_unsigned()])
+            } else {
+                let id = mem.read::<u16>(table);
+                table = table.wrapping_add(2);
+                if id == 0 {
+                    return 0;
+                }
+                let f = at(mem, 0x008b_edd0);
+                call(mem, f, &[u32::from(id)])
+            };
+            let mut cx = x;
+            let mut p = text;
+            let mut next = |mem: &M| {
+                let c = mem.read::<u8>(p);
+                p = p.wrapping_add(1);
+                c
+            };
+            let mut c = next(mem);
+            while c != 0 {
+                mem.write(local, c);
+                if c.wrapping_sub(6) <= 0x29 {
+                    let b = next(mem);
+                    mem.write(local.wrapping_add(1), b);
+                    mem.write(local.wrapping_add(2), 0u8);
+                } else if c == 4 {
+                    let b = next(mem);
+                    mem.write(local.wrapping_add(1), b);
+                    if b >= 0x30 {
+                        mem.write(local.wrapping_add(2), 0u8);
+                    } else {
+                        let b2 = next(mem);
+                        mem.write(local.wrapping_add(2), b2);
+                        mem.write(local.wrapping_add(3), 0u8);
+                    }
+                } else {
+                    mem.write(local.wrapping_add(1), 0u8);
+                }
+                call(
+                    mem,
+                    font,
+                    &[local, cx.to_bits(), y.to_bits(), 0, 0x3f80_0000, 0],
+                );
+                let gap = remap(mem, false, 53.0);
+                cx = f32::from_bits(store(add(gap, f64::from(cx))));
+                c = next(mem);
+            }
+            i += 1;
+        }
+    }
+
+    /// `MenuSave_DrawMesBox_008b4920(w)` (`0x008b4920`, name ours): the
+    /// save screen's message box for text `TkMenuSaveMes(w+0x58 +
+    /// 0x2001)`, sliding with `s = GetGlobal01841c0c_008a98e0()` (nothing
+    /// while 0) between `TkVU1SyncPath`/`TOMenuOpenPktBuffTmp` and
+    /// `TOMenuDrawKickTmp`/`TkVU1SyncPath` (`eax`). Japanese config
+    /// (`TOGetFFXLang() == 0` and `MsGetSaveConfigEnglish() == 0`, asked
+    /// again for the box) puts it at `(0x200000 - 98 s) / 4096` with
+    /// `TODrawMesBox_008ff370`; otherwise its width from `TOGetMessageWH`
+    /// (into `local`, `local + 4`) centres it, `((482 - width) s +
+    /// ((0x1000 - s) << 9)) / 4096`, with `TODrawMesBoxFit_008ff3e0`; both
+    /// at y 0x20 (`ftol`).
+    pub fn menu_save_draw_mes_box<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, ftol, load, mul, store, sub};
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let sync = at(mem, 0x0088_ec60);
+        call(mem, sync, &[]);
+        let f = at(mem, 0x008b_ef30);
+        call(mem, f, &[]);
+        let f = at(mem, 0x008a_98e0);
+        let s = call(mem, f, &[]).cast_signed();
+        if s == 0 {
+            return 0;
+        }
+        let (lang, english) = (at(mem, 0x008a_c2f0), at(mem, 0x0078_51d0));
+        let japanese = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            call(mem, lang, &[]) == 0 && call(mem, english, &[]) == 0
+        };
+        let text_id = |mem: &M| mem.read::<u32>(w.wrapping_add(0x58)).wrapping_add(0x2001);
+        let mes = at(mem, 0x008d_e080);
+        let x = if japanese(mem, call) {
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+            let v = (0x20_0000i32.wrapping_sub(s.wrapping_mul(0x62)) / 0x1000) as f32;
+            v
+        } else {
+            let text = call(mem, mes, &[text_id(mem)]);
+            let f = at(mem, 0x008b_9650);
+            call(mem, f, &[0, text, local, local.wrapping_add(4), 0, 0]);
+            let width = load(mem.read::<u32>(local));
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+            let (sf, rest) = (s as f32, (0x1000i32.wrapping_sub(s)).wrapping_shl(9) as f32);
+            let v = add(mul(sub(482.0, width), f64::from(sf)), f64::from(rest));
+            f32::from_bits(store(mul(v, 0.000_244_140_625)))
+        };
+        let fit = !japanese(mem, call);
+        let left = ftol(mem, f64::from(x));
+        let text = call(mem, mes, &[text_id(mem)]);
+        let f = at(mem, if fit { 0x008f_f3e0 } else { 0x008f_f370 });
+        call(mem, f, &[text, left, 0x20, 0]);
+        let f = at(mem, 0x008b_ea20);
+        call(mem, f, &[]);
+        call(mem, sync, &[])
+    }
+
+    /// `TkMenuCtrlConfig(m)` (`0x008cb0e0`, Fahrenheit's name; jump table
+    /// `0x008cb2e4` on `m+0x1c`, 0..=0xb; a menu slot's `+0` control, its
+    /// `eax` dropped): sets `[0x00c5a4dc]` 1 every call. 0 1, 1 2, 2 3; 3
+    /// the option rows: up/down repeat move the cursor
+    /// (`MenuParty_CursorPrev`/`Next` after sound `0x80000001`), triggers
+    /// 0x8000/0x2000 step the cursor row's value `+8` down/up, wrapping
+    /// over `+4`, and run its `+0x14(row)` callback, cancel 4; 4 to 6 when
+    /// the English option changed (`MsGetSaveConfigEnglish() !=
+    /// [0x0186a43c]`), else sound `0x80000004` and 5; 5 0xb; 6 the swap
+    /// notice (`MenuSubCmd_OpenC(TkMenuConfigMes(0x22), 0, 0)` into
+    /// `0x0186a440`) and `TOSwapInternationalEnvInit`, 7; 7 waits for
+    /// `TOSwapInternationalEnvExecNonBlock() == 1`, 8;
+    /// 8 `TOSwapInternationalEnvInit_008b0970`, 9; 9 waits for
+    /// `TOSwapInternationalEnvExecMenu() == 1`, 0xa; 0xa
+    /// `TOMenuCloseYesNoWindow`, 0xb; 0xb `TkMenuMainSleepMenu(10)`,
+    /// `TkMenuMainActiveMenu(1, 0)`, `TOMenuInitBrush()` every call.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one state machine
+    pub fn tk_menu_ctrl_config<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let f = at(mem, 0x008b_e410);
+        call(mem, f, &[]);
+        let f = at(mem, 0x008b_e470);
+        let rep = call(mem, f, &[]) & 0xffff;
+        let f = at(mem, 0x008b_e4b0);
+        let trg = call(mem, f, &[]) & 0xffff;
+        let a = at(mem, 0x00c5_a4dc);
+        mem.write(a, 1u32);
+        let state_at = m.wrapping_add(0x1c);
+        let put = |mem: &mut M, s: u32| mem.write(state_at, s);
+        let sound = at(mem, 0x0088_6e80);
+        let english = at(mem, 0x0078_51d0);
+        match mem.read::<u32>(state_at) {
+            s @ 0..=2 => put(mem, s + 1),
+            3 => {
+                if rep & 0x5000 != 0 {
+                    call(mem, sound, &[0x8000_0001]);
+                    let f = at(
+                        mem,
+                        if rep & 0x1000 != 0 {
+                            0x008c_ba60
+                        } else {
+                            0x008c_ba20
+                        },
+                    );
+                    call(mem, f, &[]);
+                    return;
+                }
+                for (bit, down) in [(0x8000, true), (0x2000, false)] {
+                    if trg & bit == 0 {
+                        continue;
+                    }
+                    call(mem, sound, &[0x8000_0001]);
+                    let k = i32::from(mem.read::<i8>(at(mem, 0x0186_a444)));
+                    let rows: u32 = mem.read(at(mem, 0x0186_a44c));
+                    let row: u32 = mem.read(rows.wrapping_add(k.cast_unsigned().wrapping_mul(4)));
+                    let value = row.wrapping_add(8);
+                    let count = mem.read::<u32>(row.wrapping_add(4)).cast_signed();
+                    if down {
+                        let v = mem.read::<u32>(value).cast_signed().wrapping_sub(1);
+                        mem.write(value, v.cast_unsigned());
+                        if v < 0 {
+                            mem.write(value, count.wrapping_sub(1).cast_unsigned());
+                        }
+                    } else {
+                        let v = mem.read::<u32>(value).cast_signed().wrapping_add(1);
+                        mem.write(value, v.cast_unsigned());
+                        if v >= count {
+                            mem.write(value, 0u32);
+                        }
+                    }
+                    let f: u32 = mem.read(row.wrapping_add(0x14));
+                    call(mem, f, &[row]);
+                }
+                if trg & 0x40 != 0 {
+                    put(mem, 4);
+                }
+            }
+            4 => {
+                let changed = call(mem, english, &[]) != mem.read::<u32>(at(mem, 0x0186_a43c));
+                if changed {
+                    put(mem, 6);
+                } else {
+                    call(mem, sound, &[0x8000_0004]);
+                    put(mem, 5);
+                }
+            }
+            5 => put(mem, 0xb),
+            6 => {
+                let f = at(mem, 0x008d_c9b0);
+                let text = call(mem, f, &[0x22]);
+                let f = at(mem, 0x008e_3690);
+                let window = call(mem, f, &[text, 0, 0]);
+                let a = at(mem, 0x0186_a440);
+                mem.write(a, window);
+                let e = call(mem, english, &[]);
+                let f = at(mem, 0x008b_0920);
+                call(mem, f, &[e]);
+                put(mem, 7);
+            }
+            7 | 9 => {
+                let (f, next) = if mem.read::<u32>(state_at) == 7 {
+                    (0x008b_0500, 8)
+                } else {
+                    (0x008b_0440, 0xa)
+                };
+                let f = at(mem, f);
+                if call(mem, f, &[]) == 1 {
+                    put(mem, next);
+                }
+            }
+            8 => {
+                let e = call(mem, english, &[]);
+                let f = at(mem, 0x008b_0970);
+                call(mem, f, &[e]);
+                put(mem, 9);
+            }
+            0xa => {
+                let f = at(mem, 0x008e_2de0);
+                call(mem, f, &[]);
+                put(mem, 0xb);
+            }
+            0xb => {
+                let f = at(mem, 0x008a_ad70);
+                call(mem, f, &[0xa]);
+                let f = at(mem, 0x008a_a100);
+                call(mem, f, &[1, 0]);
+                let f = at(mem, 0x0090_0f40);
+                call(mem, f, &[]);
+            }
+            _ => {}
+        }
+    }
+
+    /// `TkMenuCtrlTuto(m)` (`0x008db4e0`, Fahrenheit's name; jump table
+    /// `0x008db748` on `m+0x1c`, 0..=10; a menu slot's `+0` control, its
+    /// `eax` dropped): the tutorial menu, run on a tutorial save. Each
+    /// call first drains the pad history (`TkGetControlerTrigHist(0, 0,
+    /// k)` for `k` from `1 - TkGetLastSyncVCounter()` up to 0). The entry
+    /// of the tutorial [`TUTO_CHOICE`] is 16 bytes at `0x00c5a868` (`+0`
+    /// menu slot, `+4` script request, `+8`/`+0xc` file).
+    /// - 0 `TkMenuSetDummyControlerFlag(1)`, 1; 1 2; 2 waits on
+    ///   `TOMenuGetFirstReadEndFlag`, 3;
+    /// - 3 saves `g_SaveData` (0x68c0 bytes) into `0x0186ac60`
+    ///   ([`TUTO_SAVE_COPY`]) and reads the tutorial save
+    ///   (`TkCdReadNB(+8, +0xc, buffer)`, buffer `0x008c1b10()` kept in
+    ///   `0x01871520`), 4;
+    /// - 4 once `TkCdReadSync(1)` is 0 copies the buffer's body (`+0x40`)
+    ///   into `g_SaveData`, keeps the English option, restores the names,
+    ///   party and parameters, 5;
+    /// - 5 `TOMenuAtelReq(1, 0, +4)`, `TkMn2SetMainFrameRatioDiff(-16)`,
+    ///   `TkMenuMainActiveMenu(+0, 0)` (with `dbgPrintf` lines), 6;
+    /// - 6 and 7 wait for slot `+0` to leave the active mask, 8; 8
+    ///   `SndSepLock(0)`, `TkMn2SetMainFrameRatioDiff(16)`, 9;
+    /// - 9 stores 10 => 10 every call: `TkMenuSetDummyControlerFlag(0)`,
+    ///   the saved `g_SaveData` back, party and parameters, tail
+    ///   `TkMenuMainRemoveMenu(0x16)`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one state machine
+    pub fn tk_menu_ctrl_tuto<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let g = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let set = |mem: &mut M, a: u32, v: u32| {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        };
+        // `memcpy(to, from, 0x68c0)` of g_SaveData's size
+        let copy = |mem: &mut M, to: u32, from: u32| {
+            let mut buf = vec![0u8; 0x68c0];
+            mem.read_bytes(from, &mut buf);
+            mem.write_bytes(to, &buf);
+        };
+        // word `o` of the tutorial's entry, the choice read each time
+        let entry = |mem: &M, o: u32| -> u32 {
+            let k = g(mem, 0x0187_1528);
+            mem.read(
+                at(mem, 0x00c5_a868)
+                    .wrapping_add(k.wrapping_shl(4))
+                    .wrapping_add(o),
+            )
+        };
+        let f = at(mem, 0x0088_7dc0);
+        let mut k = 1i32.wrapping_sub(call(mem, f, &[]).cast_signed());
+        let hist = at(mem, 0x0088_8e80);
+        while k <= 0 {
+            call(mem, hist, &[0, 0, k.cast_unsigned()]);
+            k += 1;
+        }
+        let state_at = m.wrapping_add(0x1c);
+        let put = |mem: &mut M, s: u32| mem.write(state_at, s);
+        let (save, dummy, dbg) = (
+            at(mem, 0x0112_ca90),
+            at(mem, 0x008c_a570),
+            at(mem, 0x0062_f500),
+        );
+        let (party, abm, save_all) = (
+            at(mem, 0x008a_ae10),
+            at(mem, 0x008a_97e0),
+            at(mem, 0x008c_30d0),
+        );
+        let (frame, mask) = (at(mem, 0x008a_b260), at(mem, 0x008a_a460));
+        let mut s = mem.read::<u32>(state_at);
+        loop {
+            match s {
+                0 => {
+                    call(mem, dummy, &[1]);
+                    put(mem, 1);
+                }
+                1 => put(mem, 2),
+                2 => {
+                    let f = at(mem, 0x008a_8e50);
+                    if call(mem, f, &[]) != 0 {
+                        put(mem, 3);
+                    }
+                }
+                3 => {
+                    let f = at(mem, 0x008c_1b10);
+                    let buffer = call(mem, f, &[]);
+                    set(mem, 0x0187_1520, buffer);
+                    let copy_at = at(mem, 0x0186_ac60);
+                    set(mem, 0x0187_1524, copy_at);
+                    copy(mem, copy_at, save);
+                    let (file, size) = (entry(mem, 8), entry(mem, 0xc));
+                    let f = at(mem, 0x0088_d190);
+                    call(mem, f, &[file, size, buffer]);
+                    put(mem, 4);
+                }
+                4 => {
+                    let f = at(mem, 0x0078_51d0);
+                    let english = call(mem, f, &[]);
+                    let f = at(mem, 0x0088_d1c0);
+                    if call(mem, f, &[1]) != 0 {
+                        return;
+                    }
+                    let line = at(mem, 0x00b6_672c);
+                    call(mem, dbg, &[line]);
+                    let body = g(mem, 0x0187_1520).wrapping_add(0x40);
+                    copy(mem, save, body);
+                    let f = at(mem, 0x0078_5ed0);
+                    call(mem, f, &[english]);
+                    let f = at(mem, 0x008d_b7e0);
+                    call(mem, f, &[]);
+                    for f in [party, abm, save_all] {
+                        call(mem, f, &[]);
+                    }
+                    put(mem, 5);
+                }
+                5 => {
+                    let req = entry(mem, 4);
+                    let f = at(mem, 0x008b_e370);
+                    call(mem, f, &[1, 0, req]);
+                    let (k, req) = (g(mem, 0x0187_1528), entry(mem, 4));
+                    let line = at(mem, 0x00b6_6744);
+                    call(mem, dbg, &[line, k, req]);
+                    call(mem, frame, &[0xffff_fff0]);
+                    let slot = entry(mem, 0);
+                    let f = at(mem, 0x008a_a100);
+                    call(mem, f, &[slot, 0]);
+                    let (line, slot) = (at(mem, 0x00b6_676c), entry(mem, 0));
+                    call(mem, dbg, &[line, slot]);
+                    for (f, line) in [(0x008a_9b30, 0x00b6_6780), (0x008a_9bf0, 0x00b6_6798)] {
+                        let f = at(mem, f);
+                        let n = call(mem, f, &[]);
+                        let line = at(mem, line);
+                        call(mem, dbg, &[line, n]);
+                    }
+                    put(mem, 6);
+                }
+                6 | 7 => {
+                    let active = call(mem, mask, &[]);
+                    let bit = 1u32.wrapping_shl(entry(mem, 0));
+                    if active & bit == 0 {
+                        put(mem, 8);
+                    }
+                }
+                8 => {
+                    let f = at(mem, 0x0088_6dd0);
+                    call(mem, f, &[0]);
+                    call(mem, frame, &[0x10]);
+                    let active = call(mem, mask, &[]);
+                    let line = at(mem, 0x00b6_67b0);
+                    call(mem, dbg, &[line]);
+                    let line = at(mem, 0x00b6_67c4);
+                    call(mem, dbg, &[line, active]);
+                    put(mem, 9);
+                }
+                9 => {
+                    put(mem, 10);
+                    s = 10;
+                    continue;
+                }
+                10 => {
+                    call(mem, dummy, &[0]);
+                    let from = g(mem, 0x0187_1524);
+                    copy(mem, save, from);
+                    for f in [party, abm, save_all] {
+                        call(mem, f, &[]);
+                    }
+                    let f = at(mem, 0x008a_ab20);
+                    call(mem, f, &[0x16]);
+                }
+                _ => {}
+            }
+            return;
+        }
+    }
 }
 
 #[cfg(test)]
