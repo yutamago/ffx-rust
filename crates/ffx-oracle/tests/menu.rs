@@ -17924,3 +17924,203 @@ fn menu_round32_ctrl_status_w_shop_and_sub_cmd_items_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round32_sub_cmd_row_buy_list_and_compare_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0032_0004) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x008f_5f70u32, 5u8),
+        (0x0090_0f80, 4),
+        (0x0090_0f60, 2),
+        (0x008f_f260, 1),
+        (0x0090_3bb0, 9),
+        (0x008f_9230, 4),
+        (0x0090_5ab0, 6),
+        (0x008c_0670, 3),
+        (0x008f_f140, 1),
+        (0x008e_71d0, 1),
+        (0x008f_8bb0, 5),
+        (0x0090_5550, 6),
+        (0x008c_0f70, 4),
+        (0x008d_abf0, 6),
+        (0x008c_1370, 0),
+        (0x008d_ab70, 3),
+        (0x008e_6cc0, 7),
+        (0x008d_8aa0, 3),
+        (0x008e_6970, 4),
+        (0x008b_ee70, 1),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let held = seq_stub(&mut t, 0x0079_04b0, log, 1, &[]);
+    let excel = seq_stub(&mut t, 0x008c_1af0, log, 2, &[]);
+    let record = seq_stub(&mut t, 0x008d_9170, log, 1, &[]);
+    let gear = [0x008a_9820u32, 0x008a_9c70].map(|f| seq_stub(&mut t, f, log, 1, &[]));
+    // MsGetSaveWeapon(id, &out): the record from a cell (out is a frame address)
+    let weapon = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, 0x007a_bbd0, &[0], weapon, &[]);
+    jump_stub(&mut t, 0x007a_bbd0, &code);
+    // the width words: ToGetBtlEasyFontWidth(text, &w, ..) and
+    // ToGetBtlEasyDigitWidth2(n, &w, ..) store [wcell] unless [skip]
+    let (wcell, skip, dummy) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    let mut extra = vec![0x83, 0x3d]; // cmp dword [skip], 0
+    extra.extend(skip.to_le_bytes());
+    extra.extend([0x00, 0x75, 0x0c]); // jnz over the store
+    extra.extend([0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15]); // mov eax, [esp+8]; mov edx, [wcell]
+    extra.extend(wcell.to_le_bytes());
+    extra.extend([0x89, 0x10]);
+    for (f, args) in [
+        (0x0090_5290u32, &[0u8, 2, 3, 4][..]),
+        (0x0090_5230, &[0, 2, 3]),
+    ] {
+        let code = seq_code_of(log, f, args, dummy, &extra);
+        jump_stub(&mut t, f, &code);
+    }
+    let usable = t.alloc(&[0; 4]);
+    let code = seq_code(log, 0x0000_001c, 3, usable, &[]);
+    let usable_fn = test_code(&mut t, &code);
+    let (m0, rec, sub_cmd) = (
+        t.alloc(&[0; 0x100]),
+        t.alloc(&[0; 0x100]),
+        t.alloc(&[0; 0x80]),
+    );
+    let (r1, r2) = (t.alloc(&[0; 0x10]), t.alloc(&[0; 0x10]));
+    let floats = [0f32, 1.5, 30.0, 100.25, -8.0, 1e6];
+    for round in 0..6000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble_at(m0, 0x100);
+        let v = t.rng.pick(&floats);
+        t.put(wcell, v.to_bits());
+        match round % 3 {
+            0 => {
+                for o in [0x4a, 0x4c, 0x4e, 0x50] {
+                    let v = t.rng.pick(&[0i16, 100, 210, -50, 600, 0x7fff]);
+                    t.put(m0 + o, v);
+                }
+                let v = t.rng.pick(&[0i16, 0x1000, 0x800, 0x1001, -1]);
+                t.put(m0 + 0x46, v);
+                let n = t.rng.pick(&[0u16, 1, 2, 3, 4, 6]);
+                t.put(m0 + 0x30, n);
+                let cb = t.rng.pick(&[0, usable_fn]);
+                t.put(m0 + 0x1c, cb);
+                let v = t.rng.pick(&[0u32, 0, 1]);
+                t.put(usable, v);
+                let v = t.rng.pick(&[0i16, 0, 1, 2, 5, -1]);
+                t.put(m0 + 0x48, v);
+                let v = t.rng.pick(&[0u8, 0, 1, 0x80, 0xff]);
+                t.put(m0 + 0x45, v);
+                let v = t.rng.pick(&[0u32, 0, 1]);
+                t.put(m0 + 0x94, v);
+                let v = t.rng.pick(&[0u32, 0, 1]);
+                t.put(skip, v);
+                // without items eax is what the last remap left
+                let mask = if n == 0 { VOID } else { U32 };
+                t.twin(
+                    "MenuSubCmd_DrawRow_008e3cf0",
+                    0x008e_3cf0,
+                    &[m0],
+                    mask,
+                    |o| {
+                        w(tk::menu_sub_cmd_draw_row(
+                            o,
+                            m0,
+                            local,
+                            &mut ui_remap,
+                            &mut callback,
+                        ))
+                    },
+                );
+            }
+            1 => {
+                t.put(excel, rec);
+                t.scramble_at(rec, 0x100);
+                t.scramble(0x0186_ac20, 4);
+                t.scramble(0x0186_ac2c, 4);
+                t.scramble_at(sub_cmd, 0x80);
+                t.put(t.sym(0x023c_c128), sub_cmd);
+                let v = t.rng.pick(&[0u8, 1, 0x80]);
+                t.put(sub_cmd + 0x45, v);
+                let v = t.rng.pick(&[0u16, 2, 2, 1]);
+                t.put(sub_cmd + 0x48, v);
+                let v = t.rng.pick(&[0u8, 0, 1, 0xff]);
+                t.put(m0 + 0x45, v);
+                let v = t.rng.pick(&[0i16, 1, 9, -1]);
+                t.put(m0 + 0x48, v);
+                let a = t.rng.pick(&[0u16, 1, 5, 0x8000]);
+                t.put(m0 + 0x32, a);
+                let b = t.rng.pick(&[a, a, 2, 0xffff, a ^ 0x100]);
+                t.put(m0 + 0x34, b);
+                let v = t.rng.pick(&[0u32, 0, 1]);
+                t.put(skip, v);
+                let v = t.rng.pick(&[0u32, 1, 99, 0xffff_ffff]);
+                t.put(held, v);
+                t.twin(
+                    "MenuWShop_BuyListDraw_008da050",
+                    0x008d_a050,
+                    &[m0],
+                    U32,
+                    |o| {
+                        w(tk::menu_wshop_buy_list_draw(
+                            o,
+                            m0,
+                            local,
+                            &mut ui_remap,
+                            &mut callback,
+                        ))
+                    },
+                );
+            }
+            _ => {
+                t.put(excel, rec);
+                t.scramble_at(rec, 0x100);
+                for c in [r1, r2] {
+                    t.scramble_at(c, 0x10);
+                    let v = t.rng.pick(&[0u8, 0, 1, 0x80]);
+                    t.put(c + 5, v);
+                }
+                t.put(record, r1);
+                t.scramble(0x0186_ab1c, 4);
+                t.scramble(0x0186_aba8, 4);
+                t.put(weapon, r2);
+                for c in gear {
+                    let v = t.rng.pick(&[0xffu32, 3, 0x1ff]);
+                    t.put(c, v);
+                }
+                let v = t.rng.pick(&[0u32, 3, 6, 7, 0xffff_ffff]);
+                t.put(t.sym(0x0186_aba0), v);
+                let v = t.rng.pick(&[0i16, 1, 9, -1]);
+                t.put(m0 + 0x48, v);
+                t.scramble(0x0159_7770, 0x40);
+                t.put(skip, 0u32);
+                let shop = t.rng.pick(&[0u32, 0, 1, 7]);
+                t.twin(
+                    "MenuWShop_DrawCompare_008d8620",
+                    0x008d_8620,
+                    &[m0, shop],
+                    VOID,
+                    |o| {
+                        tk::menu_wshop_draw_compare(
+                            o,
+                            m0,
+                            shop,
+                            local,
+                            &mut ui_remap,
+                            &mut callback,
+                        );
+                        0
+                    },
+                );
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

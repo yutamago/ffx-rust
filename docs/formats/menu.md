@@ -927,3 +927,21 @@ scaled by the fade (`0x1000 - i16 +0x46` over 4096). Each item gets an
 equal step of the width. Its text is centred in the step and clipped to
 the row; the busy cursor uses brush entry `+0x90 + 15` and the idle one
 the cross cursor.
+
+`MenuSubCmd_DrawRow_008e3cf0` is the boxed variant of
+`MenuSubCmd_DrawItems_008e4140`: the items sit in the window's own box
+(`TODrawMenuPlateXYWHType(.., 1)` unless `+0x94`). It slides from the
+cursor's column by the fade, puts the arrow before every item but the
+first and centres each text in its step less `remapX2(28)`. With no
+items its `eax` is whatever the last remap left.
+
+The weapon shop's buy list (`MenuWShop_OpenSelWindow`, draw step
+`MenuWShop_BuyListDraw_008da050`) shows ten rows through
+`MenuShop_DrawRows`, the held count of the cursor's item at (1339, 948)
+and the scroll bar at x 955. `MenuWShop_DrawCompare_008d8620(w, shop)`
+draws the gear panels for stock member `[0x0186aba0]` (none above 6):
+the member's current weapon or armour (by the picked record's byte `+5`)
+at y 295..363, or `TOMenuGetStatusMes(0x17)` when there is none, and
+the picked gear at y 659..727. `shop` selects where the pick comes from:
+the shop table (`MenuWShop_GetRecord`) or the item list
+(`MsGetSaveWeapon`).

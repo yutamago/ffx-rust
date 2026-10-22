@@ -22016,6 +22016,371 @@ pub mod bridge {
         call(mem, f, &[out, k.cast_unsigned(), frac, points, position]);
     }
 
+    /// `MenuWShop_DrawCompare_008d8620(w, shop)` (`0x008d8620`, own name;
+    /// caller `0x008d7f..` at `0x008d80aa`, which drops `eax`): the weapon
+    /// shop's two gear panels for the stock member `[0x0186aba0]` (nothing
+    /// above 6, unsigned). The picked gear `rec`: with `shop` set
+    /// `MenuWShop_GetRecord(u16 TkMn2GetExcelData([0x0186ab1c],
+    /// [0x0186aba8])[2 + 2 * i16 +0x48])`, else
+    /// `MsGetSaveWeapon(u16 g_TkMenuItemList[i16 +0x48].id, &out)`. The
+    /// member's gear of the same kind (`TkMenuGetArmor` when `rec` byte
+    /// `+5` is set, else `TkMenuGetWeapon`), 0xff for none, else `cur =
+    /// MsGetSaveWeapon(id, &out2)`. Plate `(1144, 295, 740, 60, 2)`, sheet
+    /// cell 0x12 `(1299, 310, 430, 36)`; with `cur` `0x008d8aa0(1144, 363,
+    /// cur)`, plate `(1164, 231, 700, 64, 9)`,
+    /// `DrawCrossMenuIconWeaponName2(cur, 1164, 231, 0)`; without, the
+    /// same plate and `TOMenuGetStatusMes(0x17)` centred on x 1514, y 243
+    /// at 0.78. Then plate `(970, 659, 740, 60, 2)`, sheet cell 0x13
+    /// `(1125, 671, 430, 36)` and `0x008d8aa0(970, 727, rec)`. Rectangles
+    /// are remapped last to first, points `y` first. `local` holds the
+    /// two out words and the width word.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one straight sequence of draws
+    pub fn menu_wshop_draw_compare<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        shop: u32,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{load, mul, store, sub};
+        const SCALE: u32 = 0x3f47_ae14; // 0.78
+        const ONE: u32 = 0x3f80_0000;
+        let r = |mem: &M, f: u32| mem.rebase(f);
+        let g = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let stock = g(mem, 0x0186_aba0);
+        if stock > 6 {
+            return;
+        }
+        let (id, table) = (g(mem, 0x0186_ab1c), g(mem, 0x0186_aba8));
+        let f = r(mem, 0x008c_1af0);
+        let list = call(mem, f, &[id, table]);
+        let row = i32::from(mem.read::<i16>(w.wrapping_add(0x48))).cast_unsigned();
+        let weapon = r(mem, 0x007a_bbd0);
+        let rec = if shop == 0 {
+            let at = r(mem, 0x0159_7770).wrapping_add(row.wrapping_mul(4));
+            let item = u32::from(mem.read::<u16>(at));
+            call(mem, weapon, &[item, local])
+        } else {
+            let at = list.wrapping_add(row.wrapping_mul(2)).wrapping_add(2);
+            let item = u32::from(mem.read::<u16>(at));
+            let f = r(mem, 0x008d_9170);
+            call(mem, f, &[item])
+        };
+        let f = r(
+            mem,
+            if mem.read::<u8>(rec.wrapping_add(5)) == 0 {
+                0x008a_9c70
+            } else {
+                0x008a_9820
+            },
+        );
+        let gear = call(mem, f, &[stock]);
+        let cur = if gear == 0xff {
+            0
+        } else {
+            call(mem, weapon, &[gear, local.wrapping_add(4)])
+        };
+        let rect = |mem: &mut M,
+                    remap: &mut dyn FnMut(&mut M, bool, f32) -> f64,
+                    [x, y, w, h]: [f32; 4]| {
+            let h = store(remap(mem, true, h));
+            let w = store(remap(mem, false, w));
+            let y = store(remap(mem, true, y));
+            let x = store(remap(mem, false, x));
+            [x, y, w, h]
+        };
+        let point =
+            |mem: &mut M, remap: &mut dyn FnMut(&mut M, bool, f32) -> f64, x: f32, y: f32| {
+                let y = store(remap(mem, true, y));
+                let x = store(remap(mem, false, x));
+                [x, y]
+            };
+        let (plate, sheet, stats) = (
+            r(mem, 0x008f_5f70),
+            r(mem, 0x008f_8bb0),
+            r(mem, 0x008d_8aa0),
+        );
+        let [x, y, pw, ph] = rect(mem, remap, [1144.0, 295.0, 740.0, 60.0]);
+        call(mem, plate, &[x, y, pw, ph, 2]);
+        let [x, y, pw, ph] = rect(mem, remap, [1299.0, 310.0, 430.0, 36.0]);
+        call(mem, sheet, &[0x12, x, y, pw, ph]);
+        if cur != 0 {
+            let [x, y] = point(mem, remap, 1144.0, 363.0);
+            call(mem, stats, &[x, y, cur]);
+        }
+        let [x, y, pw, ph] = rect(mem, remap, [1164.0, 231.0, 700.0, 64.0]);
+        call(mem, plate, &[x, y, pw, ph, 9]);
+        if cur != 0 {
+            let [x, y] = point(mem, remap, 1164.0, 231.0);
+            let f = r(mem, 0x008e_6970);
+            call(mem, f, &[cur, x, y, 0]);
+        } else {
+            let width = local.wrapping_add(8);
+            let mes = r(mem, 0x008b_ee70);
+            let text = call(mem, mes, &[0x17]);
+            let f = r(mem, 0x0090_5290);
+            call(mem, f, &[text, width, 0, SCALE, ONE]);
+            let y = store(remap(mem, true, 243.0));
+            let centre = remap(mem, false, 1514.0);
+            let x = store(sub(centre, mul(load(mem.read(width)), 0.5)));
+            let text = call(mem, mes, &[0x17]);
+            let f = r(mem, 0x0090_5ab0);
+            call(mem, f, &[text, x, y, 0, SCALE, ONE]);
+        }
+        let [x, y, pw, ph] = rect(mem, remap, [970.0, 659.0, 740.0, 60.0]);
+        call(mem, plate, &[x, y, pw, ph, 2]);
+        let [x, y, pw, ph] = rect(mem, remap, [1125.0, 671.0, 430.0, 36.0]);
+        call(mem, sheet, &[0x13, x, y, pw, ph]);
+        let [x, y] = point(mem, remap, 970.0, 727.0);
+        call(mem, stats, &[x, y, rec]);
+    }
+
+    /// `MenuWShop_BuyListDraw_008da050(w)` (`0x008da050`, own name; the
+    /// `+0x10` draw step of `MenuWShop_OpenSelWindow`'s list): `rec =
+    /// TkMn2GetExcelData([0x0186ac20], [0x0186ac2c])`, `0x008e71d0(2)`;
+    /// the plates `(970, 876, 740, 48, 2)` and `(970, 934, 740, 60, 5)`
+    /// around sheet cell 9 at `(1125, 882)` `430 x 36` and the shape
+    /// `TOMkpShapeXYWHUV(200, 1306, 933, 68, 68, 0.484, 0.587, 0.564,
+    /// 0.667)` (each rectangle remapped last to first). Unless `i8 +0x45`
+    /// is negative the held count `n = MsGetSaveItemNum(u16 rec[2 + 2 *
+    /// i16 +0x48])` is centred on x 1339: `ToGetBtlEasyDigitWidth2(n, &tw,
+    /// 0.68, 0)`, `ToMakeBtlEasyDigit2(n, f32(remapX2(1339) - tw / 2),
+    /// remapY2(948), 0, 0.68, 0)`. The rows (`MenuShop_DrawRows(w, fixed,
+    /// first, 0, y, rec)`): at rest (`i16 +0x32` == `+0x34`) `(0, +0x32,
+    /// remapY2(240))`; scrolling, in the scissor
+    /// `TkMn2DrawMenuWindowScissor(ftol(remapY2(235)), ftol(remapY2(77) *
+    /// 10 + remapY2(10)), part, i16 +0x46)`, `(1, +0x32, -32)` and `(2,
+    /// +0x34, f32(remapY2(240) - remapY2(77) * 10 * fade / 4096))`. Then
+    /// `TkMn2DrawScissorClear()`, `0x008dab70(w, 0, 0)` while the
+    /// sub-command window is busy (`i8 +0x45` above 0) off row 2, and the
+    /// scroll bar `DrawCrossMenuScrollParts(955, 240, 10, 760, i16 +0x32,
+    /// u16 +0x3a, u16 +0x30)` (its `eax`). `local` is the width word (the
+    /// original's argument slot, so it starts as `w`).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one straight sequence of draws
+    pub fn menu_wshop_buy_list_draw<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, ftol, load, mul, store, sub};
+        const SCALE: u32 = 0x3f2e_147b; // 0.68
+        let r = |mem: &M, f: u32| mem.rebase(f);
+        let g = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let field = |mem: &M, o: u32| i32::from(mem.read::<i16>(w.wrapping_add(o)));
+        let (id, table) = (g(mem, 0x0186_ac20), g(mem, 0x0186_ac2c));
+        let f = r(mem, 0x008c_1af0);
+        let rec = call(mem, f, &[id, table]);
+        let f = r(mem, 0x008e_71d0);
+        call(mem, f, &[2]);
+        // a rectangle remapped last to first: x, y, width, height
+        let rect = |mem: &mut M,
+                    remap: &mut dyn FnMut(&mut M, bool, f32) -> f64,
+                    [x, y, w, h]: [f32; 4]| {
+            let h = store(remap(mem, true, h));
+            let w = store(remap(mem, false, w));
+            let y = store(remap(mem, true, y));
+            let x = store(remap(mem, false, x));
+            [x, y, w, h]
+        };
+        let plate = r(mem, 0x008f_5f70);
+        let [x, y, pw, ph] = rect(mem, remap, [970.0, 876.0, 740.0, 48.0]);
+        call(mem, plate, &[x, y, pw, ph, 2]);
+        let [x, y, pw, ph] = rect(mem, remap, [1125.0, 882.0, 430.0, 36.0]);
+        let f = r(mem, 0x008f_8bb0);
+        call(mem, f, &[9, x, y, pw, ph]);
+        let [x, y, pw, ph] = rect(mem, remap, [970.0, 934.0, 740.0, 60.0]);
+        call(mem, plate, &[x, y, pw, ph, 5]);
+        let [x, y, pw, ph] = rect(mem, remap, [1306.0, 933.0, 68.0, 68.0]);
+        let uv = [0x3ef8_0000, 0x3f16_4000, 0x3f10_8000, 0x3f2a_c000];
+        let f = r(mem, 0x0090_3bb0);
+        call(mem, f, &[200, x, y, pw, ph, uv[0], uv[1], uv[2], uv[3]]);
+        if mem.read::<i8>(w.wrapping_add(0x45)) >= 0 {
+            let row = field(mem, 0x48).cast_unsigned();
+            let item =
+                u32::from(mem.read::<u16>(rec.wrapping_add(row.wrapping_mul(2)).wrapping_add(2)));
+            let f = r(mem, 0x0079_04b0);
+            let n = call(mem, f, &[item]);
+            mem.write(local, w);
+            let f = r(mem, 0x0090_5230);
+            call(mem, f, &[n, local, SCALE, 0]);
+            let y = store(remap(mem, true, 948.0));
+            let centre = remap(mem, false, 1339.0);
+            let x = store(sub(centre, mul(load(mem.read(local)), 0.5)));
+            let f = r(mem, 0x0090_5550);
+            call(mem, f, &[n, x, y, 0, SCALE, 0]);
+        }
+        let rows = r(mem, 0x008d_abf0);
+        if mem.read::<u16>(w.wrapping_add(0x32)) == mem.read::<u16>(w.wrapping_add(0x34)) {
+            let y = store(remap(mem, true, 240.0));
+            let first = field(mem, 0x32).cast_unsigned();
+            call(mem, rows, &[w, 0, first, 0, y, rec]);
+        } else {
+            let scissor = r(mem, 0x008c_0f70);
+            let clip = |mem: &mut M,
+                        remap: &mut dyn FnMut(&mut M, bool, f32) -> f64,
+                        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                        part: u32| {
+                let tall = mul(remap(mem, true, 77.0), 10.0);
+                let fade = field(mem, 0x46).cast_unsigned();
+                let h = add(remap(mem, true, 10.0), tall);
+                let h = ftol(mem, h);
+                let top = remap(mem, true, 235.0);
+                let top = ftol(mem, top);
+                call(mem, scissor, &[top, h, part, fade]);
+            };
+            clip(mem, remap, call, 1);
+            let first = field(mem, 0x32).cast_unsigned();
+            call(mem, rows, &[w, 1, first, 0, (-32f32).to_bits(), rec]);
+            clip(mem, remap, call, 2);
+            let base = remap(mem, true, 240.0);
+            let tall = mul(remap(mem, true, 77.0), 10.0);
+            let fade = f64::from(field(mem, 0x46));
+            let y = store(sub(base, mul(mul(tall, fade), 1.0 / 4096.0)));
+            let second = field(mem, 0x34).cast_unsigned();
+            call(mem, rows, &[w, 2, second, 0, y, rec]);
+        }
+        let f = r(mem, 0x008c_1370);
+        call(mem, f, &[]);
+        let sub_cmd = g(mem, 0x023c_c128);
+        if mem.read::<i8>(sub_cmd.wrapping_add(0x45)) > 0
+            && mem.read::<u16>(sub_cmd.wrapping_add(0x48)) != 2
+        {
+            let f = r(mem, 0x008d_ab70);
+            call(mem, f, &[w, 0, 0]);
+        }
+        let [x, y, bw, bh] = rect(mem, remap, [955.0, 240.0, 10.0, 760.0]);
+        let top = field(mem, 0x32).cast_unsigned();
+        let shown = u32::from(mem.read::<u16>(w.wrapping_add(0x3a)));
+        let count = u32::from(mem.read::<u16>(w.wrapping_add(0x30)));
+        let f = r(mem, 0x008e_6cc0);
+        call(mem, f, &[x, y, bw, bh, top, shown, count])
+    }
+
+    /// `MenuSubCmd_DrawRow_008e3cf0(m)` (`0x008e3cf0`, own name; a window
+    /// draw step): `m`'s `u16 +0x30` items in one row inside its own box
+    /// (`x` `i16 +0x4a`, `y` `+0x4c`, `w` `+0x4e`, `h` `+0x50`, fade
+    /// `+0x46`, cursor row `+0x48`). With `X = f32(x)`, `step = f32((w -
+    /// remapX2(320)) / f32(n))` and `F = f32(0x1000 - fade)` the row
+    /// slides in from the cursor by `OX = f32((F * (X - step * row) +
+    /// f32(fade) * X) / 4096)`. Without `+0x94` the box plate
+    /// `TODrawMenuPlateXYWHType(x, y, w, h, 1)` comes first. `Yt =
+    /// f32(remapY2(8) + f32(y))`. The scissor's left edge is
+    /// `ftol(f32(remapX2(170) + X))` and its width `ftol(f32((F * step +
+    /// f32(fade) * f32(w - remapX2(320))) / 4096))`, 416 high. Item `i`
+    /// (text `+0x58 + 12i`, dimmed when `+0x1c(m, i, 0)` returns 0) starts
+    /// at `XI = f32(remapX2(160) + OX + f32(i) * step)`: the selected one
+    /// of a busy window (`i8 +0x45` above 0) moves brush entry
+    /// `e = +0x90 + 15` as in [`menu_sub_cmd_draw_items`]; every item but the first
+    /// gets the arrow `TOMkpShapeXYWHUV(200, f32(XI - remapX2(28)), Yt,
+    /// remapX2(28), remapY2(35), ..)` before it; the text (width word
+    /// zeroed first) goes at `TX = f32((step - tw - remapX2(28)) / 2 +
+    /// XI)`, `f32(Yt - 1.5)`; the selected item of an idle window gets
+    /// `TkMn2DrawCrossCursor(TX, f32(remapY2(2) + Yt), 0)` and
+    /// `TOClearEntry_008ff140(e)`. `local` is the width word. `eax` is the
+    /// cursor row or the last clear's (garbage without items).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one straight sequence of draws
+    pub fn menu_sub_cmd_draw_row<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, store, sub};
+        const SCALE: u32 = 0x3f47_ae14; // 0.78
+        const ONE: u32 = 0x3f80_0000;
+        let r = |mem: &M, f: u32| mem.rebase(f);
+        let field = |mem: &M, o: u32| i32::from(mem.read::<i16>(m.wrapping_add(o)));
+        let as_f32 = |v: i32| load(store(f64::from(v)));
+        let x = as_f32(field(mem, 0x4a));
+        let fade = field(mem, 0x46);
+        let n = i32::from(mem.read::<u16>(m.wrapping_add(0x30)));
+        let y0 = as_f32(field(mem, 0x4c));
+        let clip_x = store(add(remap(mem, false, 170.0), x));
+        let w = f64::from(field(mem, 0x4e));
+        let span = store(sub(w, remap(mem, false, 320.0)));
+        let w = f64::from(field(mem, 0x4e));
+        let step = load(store(div(sub(w, remap(mem, false, 320.0)), as_f32(n))));
+        let f = as_f32(0x1000i32.wrapping_sub(fade));
+        let fd = as_f32(fade);
+        let row = field(mem, 0x48);
+        let quarter = 1.0 / 4096.0;
+        let clip_w = store(mul(add(mul(fd, load(span)), mul(f, step)), quarter));
+        let slide = sub(x, mul(step, f64::from(row)));
+        let ox = load(store(mul(add(mul(x, fd), mul(f, slide)), quarter)));
+        if mem.read::<u32>(m.wrapping_add(0x94)) == 0 {
+            let [px, py, pw, ph] = [0x4a, 0x4c, 0x4e, 0x50].map(|o| store(as_f32(field(mem, o))));
+            let f = r(mem, 0x008f_5f70);
+            call(mem, f, &[px, py, pw, ph, 1]);
+        }
+        let yt = store(add(remap(mem, true, 8.0), y0));
+        let mut eax = 0;
+        if n <= 0 {
+            return eax;
+        }
+        let clip_w = ftol(mem, load(clip_w));
+        let clip_x = ftol(mem, load(clip_x));
+        let text_y = store(sub(load(yt), 1.5));
+        let (scissor, entry) = (r(mem, 0x008f_9230), m.wrapping_add(0x90));
+        for i in 0..n {
+            let iu = i.cast_unsigned();
+            mem.write(local, 0u32);
+            let base = add(remap(mem, false, 160.0), ox);
+            let text: u32 = mem.read(m.wrapping_add(0x58).wrapping_add(iu.wrapping_mul(12)));
+            let xi = store(add(base, mul(as_f32(i), step)));
+            let cb: u32 = mem.read(m.wrapping_add(0x1c));
+            let dim = u32::from(cb != 0 && call(mem, cb, &[m, iu, 0]) == 0);
+            let row = field(mem, 0x48);
+            if i == row && mem.read::<i8>(m.wrapping_add(0x45)) > 0 {
+                let bx = remap(mem, false, 298.0);
+                let bx = ftol(mem, bx);
+                let by = add(remap(mem, true, 34.0), load(yt));
+                let by = ftol(mem, by);
+                let mid = add(mul(step, 0.5), load(xi));
+                let bxx = sub(mid, mul(remap(mem, false, 298.0), 0.5));
+                let bxx = ftol(mem, bxx);
+                let e = mem.read::<u32>(entry).wrapping_add(0xf);
+                let f = r(mem, 0x0090_0f80);
+                call(mem, f, &[e, bxx, by, bx]);
+                let f = r(mem, 0x0090_0f60);
+                call(mem, f, &[e, 1]);
+                let f = r(mem, 0x008f_f260);
+                call(mem, f, &[e]);
+            }
+            call(mem, scissor, &[clip_x, 0, clip_w, 0x1a0]);
+            if i != 0 {
+                let h = store(remap(mem, true, 35.0));
+                let w = store(remap(mem, false, 28.0));
+                let ax = store(sub(load(xi), remap(mem, false, 28.0)));
+                let uv = [0x3f50_4000, 0x3c40_0000, 0x3f58_4000, 0x3d30_0000];
+                let f = r(mem, 0x0090_3bb0);
+                call(mem, f, &[200, ax, yt, w, h, uv[0], uv[1], uv[2], uv[3]]);
+            }
+            let f = r(mem, 0x0090_5290);
+            call(mem, f, &[text, local, dim, SCALE, ONE]);
+            let room = sub(step, load(mem.read(local)));
+            let room = sub(room, remap(mem, false, 28.0));
+            let tx = store(add(mul(room, 0.5), load(xi)));
+            let f = r(mem, 0x0090_5ab0);
+            call(mem, f, &[text, tx, text_y, dim, SCALE, ONE]);
+            call(mem, scissor, &[0, 0, 0x200, 0x1a0]);
+            let row = field(mem, 0x48);
+            eax = row.cast_unsigned();
+            if i == row && mem.read::<i8>(m.wrapping_add(0x45)) <= 0 {
+                let cy = store(add(remap(mem, true, 2.0), load(yt)));
+                let f = r(mem, 0x008c_0670);
+                call(mem, f, &[tx, cy, 0]);
+                let e = mem.read::<u32>(entry).wrapping_add(0xf);
+                let f = r(mem, 0x008f_f140);
+                eax = call(mem, f, &[e]);
+            }
+        }
+        eax
+    }
+
     /// `MenuSubCmd_DrawItems_008e4140(m)` (`0x008e4140`, own name; a
     /// window draw step): `m`'s `u16 +0x30` items in one row across the
     /// open sub-command window `S` (`0x023cc128`; `x` `i16 +0x4e`, `w`

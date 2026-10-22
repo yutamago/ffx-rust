@@ -4933,6 +4933,27 @@ ported! {
         let local = frame.at();
         tk::menu_sub_cmd_draw_items(&mut mem(), m, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuSubCmd_DrawRow_008e3cf0(m)`: the original's `eax`.
+    MenuSubCmd_DrawRow_008e3cf0 @ 0x008e_3cf0 => extern "C" fn menu_sub_cmd_draw_row(m: u32) -> u32 {
+        // the text width word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_sub_cmd_draw_row(&mut mem(), m, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_BuyListDraw_008da050(w)`: `DrawCrossMenuScrollParts`'s `eax`.
+    MenuWShop_BuyListDraw_008da050 @ 0x008d_a050 => extern "C" fn menu_wshop_buy_list_draw(w: u32) -> u32 {
+        // the digit width word (the original's argument slot)
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_wshop_buy_list_draw(&mut mem(), w, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_DrawCompare_008d8620(w, shop)` (its caller drops `eax`).
+    MenuWShop_DrawCompare_008d8620 @ 0x008d_8620 => extern "C" fn menu_wshop_draw_compare(w: u32, shop: u32) {
+        // MsGetSaveWeapon's two out words and the text width
+        let mut frame = super::StackFrame::<3>::new();
+        let local = frame.at();
+        tk::menu_wshop_draw_compare(&mut mem(), w, shop, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
     /// `MenuLimit_WindowDraw_008d16f0(w)`: `TkMn2DrawKickSyncPacket`'s `eax`.
     MenuLimit_WindowDraw_008d16f0 @ 0x008d_16f0 => extern "C" fn menu_limit_window_draw(w: u32) -> u32 {
         // MsMenuStatusNum's out word and the text width (the original's argument slot)
