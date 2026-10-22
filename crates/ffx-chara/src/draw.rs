@@ -340,4 +340,198 @@ pub mod bridge {
             c = c.wrapping_add(l::SIZE);
         }
     }
+
+    /// The point lights: table pointer and count (`Sg_PLightGetPtr`'s).
+    pub const PLIGHTS: Global<u32> = Global::new(0x0130_08cc);
+    pub const PLIGHT_COUNT: Global<i32> = Global::new(0x0130_08d0);
+    /// Tunables in `.data` next to `g_ChrShadeByLight`: the radius scale
+    /// (`0x00c496ec`, 1.0), the colour scale vector (`0x00c496f0`), the
+    /// largest colour component (`0x00c49700`, 2.0), the direction scale
+    /// vector (`0x00c49704`) and the limit both the exponent and the
+    /// attenuation stay under for the light to count (`0x00c49714`,
+    /// 999999.0).
+    pub const PLIGHT_RADIUS_SCALE: Global<f32> = Global::new(0x00c4_96ec);
+    pub const PLIGHT_COLOR_SCALE: u32 = 0x00c4_96f0;
+    pub const PLIGHT_COLOR_MAX: Global<f32> = Global::new(0x00c4_9700);
+    pub const PLIGHT_DIR_SCALE: u32 = 0x00c4_9704;
+    pub const PLIGHT_LIMIT: Global<f32> = Global::new(0x00c4_9714);
+    /// `0.01f` (`0x00b1f2b0`) and -1.0 (`g_ChrClothFlip`, `0x00b92340`).
+    pub const PLIGHT_NEAR: Global<f32> = Global::new(0x00b1_f2b0);
+    pub const MINUS_ONE: Global<f32> = Global::new(0x00b9_2340);
+    /// `_CIpow` (`0x009498f8`, ST1 to the power ST0), `FFXVu0InnerProduct(a,
+    /// b)` (`0x0062fce0`, ST0), `FFXVu0MulVector(dst, a, b)` (`0x006ed5d0`),
+    /// `graphicCharacterLightingSetLightMatrix(inst, dirs, colours)`
+    /// (`0x0063cb80`).
+    pub const CI_POW: u32 = 0x0094_98f8;
+    pub const VU0_INNER_PRODUCT: u32 = 0x0062_fce0;
+    pub const VU0_MUL_VECTOR: u32 = 0x006e_d5d0;
+    pub const VU0_NORMALIZE: u32 = 0x006e_d6f0;
+    pub const SET_LIGHT_MATRIX: u32 = 0x0063_cb80;
+    /// Bytes of scratch [`ch_plight_calc`] needs: the light's direction
+    /// (`[ebp-0x94]`) and the two matrices (`[ebp-0x84]`, `[ebp-0x44]`).
+    pub const PLIGHT_CALC_SCRATCH: u32 = 0x90;
+
+    /// The callees [`ch_plight_calc`] reaches through the game.
+    pub struct PLightCalls<'a, M> {
+        pub call: &'a mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        /// A cdecl function returning a float in ST0.
+        pub fcall: &'a mut dyn FnMut(&mut M, u32, &[u32]) -> f64,
+        /// A CRT intrinsic on x87 operands (ST1, ST0), stored as `f32`.
+        pub ci: &'a mut dyn FnMut(&mut M, u32, &[f64]) -> f32,
+    }
+
+    /// `Ch_PLightCalc(chr)` (`0x008305a0`; caller `Ch_DrawMain`): the
+    /// point lights on the character. Its four light slots (colour sums at
+    /// `+0x384`, directions at `+0x3c4`, 16 bytes each) start at 0 with
+    /// w = 1. Each enabled light (`+0x28`; 0x2c bytes: position `+0`,
+    /// colour `+0x10`, radius `+0x20`, exponent `+0x24`, slot `i8` `+0x29`)
+    /// whose radius (times the radius scale, in 53 bits) is not below the
+    /// distance to the character's light point (`+0x6c4`, as `f32`; NaN
+    /// counts) adds `att * colour` and `att * direction` to its slot, with
+    /// `att = 1 - ((1 - diff / radius) ^ exponent)` (`f32` at each step;
+    /// 1 for exponent 0) and the direction the light-to-character vector
+    /// (straight up or down within 0.1, by y) scaled and normalized. The
+    /// last such light decides what the renderer gets: when its position
+    /// is not NaN and both its exponent and its attenuation stay under the
+    /// limit, its slot's colour (scaled, the largest component brought
+    /// down to the maximum) and direction; else white light from above.
+    /// Nothing is told while `g_ChrDrawDetached`. No caller reads `eax`.
+    #[allow(clippy::too_many_lines)]
+    pub fn ch_plight_calc<M: Mem>(mem: &mut M, chr: u32, scratch: u32, c: &mut PLightCalls<'_, M>) {
+        use ffx_bridge::x87::{add, div, mul, sub};
+        let at = |o: u32| chr.wrapping_add(o);
+        let rf = |mem: &M, a: u32| f64::from(crate::x87::load(mem.read::<f32>(a)));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let st = |x: f64| x as f32;
+        let g = |mem: &M, f: u32| mem.rebase(f);
+        for slot in 0..4u32 {
+            for k in 0..3 {
+                mem.write(at(0x384 + 16 * slot + 4 * k), 0f32);
+                mem.write(at(0x3c4 + 16 * slot + 4 * k), 0f32);
+            }
+            mem.write(at(0x390 + 16 * slot), 1f32);
+            mem.write(at(0x3d0 + 16 * slot), 1f32);
+        }
+        let d = scratch;
+        let (dirs, colours) = (scratch + 0x10, scratch + 0x50);
+        let lights = PLIGHTS.get(mem);
+        // the last light inside its radius: (counts, colour slot, direction slot)
+        let mut last: Option<(bool, u32, u32)> = None;
+        let mut i = 0i32;
+        while i < PLIGHT_COUNT.get(mem) {
+            let p = lights.wrapping_add(i.cast_unsigned().wrapping_mul(0x2c));
+            i += 1;
+            if mem.read::<u8>(p.wrapping_add(0x28)) == 0 {
+                continue;
+            }
+            let mut v = [0f32; 3];
+            for (k, x) in (0u32..).zip(v.iter_mut()) {
+                *x = st(sub(
+                    rf(mem, at(0x6c4 + 4 * k)),
+                    rf(mem, p.wrapping_add(4 * k)),
+                ));
+            }
+            mem.write(d, v);
+            let radius = mul(
+                rf(mem, p.wrapping_add(0x20)),
+                f64::from(crate::x87::load(PLIGHT_RADIUS_SCALE.get(mem))),
+            );
+            let [x, y, z] = v.map(f64::from);
+            let dist = st(ffx_bridge::x87::sqrt(add(
+                add(mul(x, x), mul(y, y)),
+                mul(z, z),
+            )));
+            let diff = st(sub(radius, f64::from(dist)));
+            if f64::from(diff) < 0.0 {
+                continue;
+            }
+            let ok = (0..3).all(|k| !mem.read::<f32>(p.wrapping_add(4 * k)).is_nan());
+            let exp = rf(mem, p.wrapping_add(0x24));
+            let att = if exp == 0.0 {
+                1f32
+            } else {
+                let t = st(sub(1.0, div(f64::from(diff), radius)));
+                let pw = (c.ci)(mem, g(mem, CI_POW), &[f64::from(t), exp]);
+                st(sub(1.0, f64::from(crate::x87::load(pw))))
+            };
+            let limit = f64::from(crate::x87::load(PLIGHT_LIMIT.get(mem)));
+            let counts = ok && {
+                let exp_size = st(if exp < 0.0 { -exp } else { exp });
+                let att_size = if att < 0.0 { -att } else { att };
+                f64::from(exp_size) < limit && f64::from(att_size) < limit
+            };
+            #[allow(clippy::cast_sign_loss)] // movsx, then scaled
+            let slot = (i32::from(mem.read::<i8>(p.wrapping_add(0x29))) << 4) as u32;
+            let (col, dir) = (at(0x384).wrapping_add(slot), at(0x3c4).wrapping_add(slot));
+            last = Some((counts, col, dir));
+            let len2 = st((c.fcall)(mem, g(mem, VU0_INNER_PRODUCT), &[d, d]));
+            let alen2 = if len2 < 0.0 { -len2 } else { len2 };
+            if alen2 < crate::x87::load(PLIGHT_NEAR.get(mem)) {
+                let y: f32 = mem.read(d + 4);
+                let up = if y < 0.0 {
+                    crate::x87::load(MINUS_ONE.get(mem))
+                } else {
+                    1.0
+                };
+                mem.write(d, [0f32, up, 0f32]);
+            }
+            (c.call)(
+                mem,
+                g(mem, VU0_MUL_VECTOR),
+                &[d, d, g(mem, PLIGHT_DIR_SCALE)],
+            );
+            (c.call)(mem, g(mem, VU0_NORMALIZE), &[d, d]);
+            let att = f64::from(att);
+            for k in 0..3 {
+                let colour = rf(mem, p.wrapping_add(0x10 + 4 * k));
+                let sum = st(add(mul(colour, att), rf(mem, col + 4 * k)));
+                mem.write(col + 4 * k, sum);
+            }
+            for k in 0..3 {
+                let sum = st(add(mul(att, rf(mem, d + 4 * k)), rf(mem, dir + 4 * k)));
+                mem.write(dir + 4 * k, sum);
+            }
+        }
+        mem.write(dirs, [0u32; 16]);
+        mem.write(colours, [0u32; 16]);
+        match last {
+            Some((true, col, dir)) => {
+                (c.call)(
+                    mem,
+                    g(mem, VU0_MUL_VECTOR),
+                    &[col, col, g(mem, PLIGHT_COLOR_SCALE)],
+                );
+                let (cx, cy) = (rf(mem, col), rf(mem, col + 4));
+                let mx = if cy < cx { cx } else { cy };
+                let cz = rf(mem, col + 8);
+                let mx = if cz < mx { mx } else { cz };
+                let most = f64::from(crate::x87::load(PLIGHT_COLOR_MAX.get(mem)));
+                let s = if most < mx { st(div(most, mx)) } else { 1.0 };
+                let s = f64::from(s);
+                let x = st(mul(rf(mem, col), s));
+                mem.write(col, x);
+                let y = st(mul(rf(mem, col + 4), s));
+                mem.write(col + 4, y);
+                let z = st(mul(rf(mem, col + 8), s));
+                mem.write(col + 8, z);
+                mem.write(colours, x);
+                for k in 1..3 {
+                    let v = crate::x87::load(mem.read::<f32>(col + 4 * k));
+                    mem.write(colours + 4 * k, v);
+                }
+                for k in 0..3 {
+                    let v = crate::x87::load(mem.read::<f32>(dir + 4 * k));
+                    mem.write(dirs + 4 * k, v);
+                }
+            }
+            _ => {
+                mem.write(colours, [1f32, 1.0, 1.0, 0.0]);
+                mem.write(dirs, [0f32, 1.0, 0.0]);
+            }
+        }
+        if crate::sys::bridge::DRAW_DETACHED.get(mem) == 0 {
+            let inst: u32 = mem.read(at(l::RENDER_INSTANCE));
+            (c.call)(mem, g(mem, SET_LIGHT_MATRIX), &[inst, dirs, colours]);
+        }
+    }
 }

@@ -541,3 +541,16 @@ used sequence (`0x01300a08`, 100 x `0x14`) whose group `+0x10` is `old`
   at `+8`): strips (bit 0 of the word byte) or triangles of 24 bytes whose
   indices 0, 1 of each vertex pair may point back (bit 15: `(i & 0x7fff) *
   4 / 3` halfwords before the pair).
+- `Ch_WorkRestore(chr, saved)` (`0x00828620`): which fields a character
+  takes back from a saved copy (the sym line lists them); the parent is
+  looked up again from the bound id (`AtelGetEventCharHandleFromID`).
+- `Ch_PLightCalc(chr)` (`0x008305a0`): point lights of 0x2c bytes
+  (position, colour `+0x10`, radius `+0x20`, exponent `+0x24`, enabled
+  `+0x28`, slot `i8` `+0x29`) add `att * colour` and `att * direction`
+  into the character's four light slots (`+0x384` colours, `+0x3c4`
+  directions, w = 1), `att = 1 - (dist / radius) ^ exponent`. The
+  renderer gets only the slot of the last light inside its radius, and
+  only when its position is not NaN and its exponent and attenuation stay
+  under `0x00c49714` (999999); else white light from above. Tunables in
+  `.data`: `0x00c496ec` radius scale, `0x00c496f0` colour scale,
+  `0x00c49700` largest colour component, `0x00c49704` direction scale.

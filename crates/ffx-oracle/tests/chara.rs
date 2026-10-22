@@ -10306,3 +10306,173 @@ fn cmm1_b_on(t: &mut Twin) {
     }
     eprintln!("{}: cmm1 b reach {reach:?}", t.name);
 }
+
+#[test]
+fn cmm1_c_matches_the_original() {
+    for mut t in twins() {
+        cmm1_c_on(&mut t);
+    }
+}
+
+/// Chara-main-map round 1, group c: `Ch_WorkRestore` (random saved
+/// copies, bound or not; the event handle lookup a logging stand-in) and
+/// `Ch_PLightCalc` (made-up point lights around the character: enabled or
+/// not, inside their radius or not, NaN positions, exponents 0, ±, large,
+/// NaN; `_CIpow` and the VU0 math as the originals, the renderer a
+/// stand-in logging both matrices).
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // t, c, p, d, e
+fn cmm1_c_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x00c3_c003);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let frame = t.b.stack_range().start + 0x400;
+    let handle = fk.fake(t, 0x0086_b3a0, 1, 1);
+    multi_deref_stub(t, &fk, 0x0063_cb80, &[0], &[(1, 0, 16), (2, 0, 16)], (0, 0));
+    let ci2 = twin_code(t, &CI2_STUB);
+    let chrs = live_characters(t, &mut rng);
+    let (lights_g, count_g) = (t.a.rebase(0x0130_08cc), t.a.rebase(0x0130_08d0));
+    let detached = t.a.rebase(0x012f_b7d8);
+    let mut reach = [0u32; 8];
+    for round in 0..80u32 {
+        fk.reset(t);
+        // ---- Ch_WorkRestore
+        let chr = chrs[rng.next() as usize % chrs.len()];
+        let keep = Oracle::read(&mut t.b, chr, l::SIZE as usize).unwrap();
+        let saved = random_block(t, &mut rng, l::SIZE);
+        let bound = if rng.next().is_multiple_of(3) {
+            u32::MAX
+        } else {
+            rng.next() % 0x40
+        };
+        t.put_u32(saved + 0x1b8, bound);
+        t.put_u32(handle, rng.next());
+        reach[usize::from(bound == u32::MAX)] += 1;
+        t.check(
+            &format!("Ch_WorkRestore {round}"),
+            0x0082_8620,
+            &[chr, saved],
+            |m| {
+                Res::Int(c::ch_work_restore(m, chr, saved, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        t.put(chr, &keep);
+        // ---- Ch_PLightCalc
+        let n = rng.next() % 6;
+        let lights = random_block(t, &mut rng, 0x2c * n.max(1));
+        let at = |k: u32| chr + 0x6c4 + 4 * k;
+        let centre: Vec<f32> = (0..3).map(|k| fl(rd::<u32>(&t.b, at(k)))).collect();
+        let centre: Vec<f32> = centre
+            .iter()
+            .map(|c| {
+                if c.is_finite() && c.abs() < 1e6 {
+                    *c
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        for k in 0..3 {
+            t.put_u32(at(k), centre[k as usize].to_bits());
+        }
+        for i in 0..n {
+            let p = lights + 0x2c * i;
+            #[allow(clippy::cast_precision_loss)]
+            let radius = (rng.next() % 500) as f32;
+            // anywhere around, on the character, exactly on the radius
+            let mode = rng.next() % 6;
+            for k in 0..3 {
+                #[allow(clippy::cast_precision_loss)]
+                let off = (rng.next() % 400) as f32 - 200.0;
+                let mut v = match mode {
+                    1 if k == 0 => centre[0] + radius,
+                    0 | 1 => centre[k as usize],
+                    _ => centre[k as usize] + off,
+                };
+                if rng.next().is_multiple_of(10) {
+                    v = f32::NAN;
+                }
+                t.put_u32(p + 4 * k, v.to_bits());
+            }
+            t.put_u32(p + 0x20, radius.to_bits());
+            let exp = [0f32, 1.0, 2.0, 0.5, -1.5, f32::NAN, 2e6, -0.0, -3.0, -0.75]
+                [rng.next() as usize % 10];
+            t.put_u32(p + 0x24, exp.to_bits());
+            t.put(p + 0x28, &[u8::from(!rng.next().is_multiple_of(4))]);
+            t.put(p + 0x29, &[[0u8, 1, 2, 3][rng.next() as usize % 4]]);
+            for k in 0..3 {
+                #[allow(clippy::cast_precision_loss)]
+                let c = (rng.next() % 300) as f32 / 100.0;
+                t.put_u32(p + 0x10 + 4 * k, c.to_bits());
+            }
+        }
+        // the tunables: the limit and the largest colour component
+        let mut limit = [999_999f32, 2.0, 0.5][rng.next() as usize % 3];
+        if n > 0 && round % 2 == 1 {
+            // one light whose position, exponent or attenuation alone
+            // decides: z NaN (exponent 0); on its radius with exponent
+            // -0.75 (attenuation 0) against 0.5; at 0.4 of it with -1.5
+            // (attenuation about -2.95) against 1.6
+            let p = lights;
+            let r: f32 = fl(rd(&t.b, p + 0x20)).max(10.0);
+            t.put_u32(p + 0x20, r.to_bits());
+            let (x, z, e, lim) = match round % 8 {
+                1 => (r * 0.5, f32::NAN, 0f32, 999_999f32),
+                3 => (r, 0.0, -0.75, 0.5),
+                _ => (r * 0.4, 0.0, -1.5, 1.6),
+            };
+            t.put_u32(p, (centre[0] + x).to_bits());
+            t.put_u32(p + 4, centre[1].to_bits());
+            t.put_u32(p + 8, (centre[2] + z).to_bits());
+            t.put_u32(p + 0x24, e.to_bits());
+            t.put(p + 0x28, &[1]);
+            for i in 1..n {
+                t.put(lights + 0x2c * i + 0x28, &[0]);
+            }
+            limit = lim;
+        }
+        t.put_u32(t.a.rebase(0x00c4_9714), limit.to_bits());
+        let most = [2f32, 0.5][rng.next() as usize % 2];
+        t.put_u32(t.a.rebase(0x00c4_9700), most.to_bits());
+        t.put_u32(lights_g, lights);
+        let shown = if round % 2 == 1 {
+            n
+        } else {
+            [n, n, 0, u32::MAX][rng.next() as usize % 4]
+        };
+        t.put_u32(count_g, shown);
+        t.put_u32(detached, u32::from(round % 5 == 4));
+        t.check(
+            &format!("Ch_PLightCalc {round}"),
+            0x0083_05a0,
+            &[chr],
+            |m| {
+                let mut call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+                let mut fcall = |m: &mut Oracle, f: u32, a: &[u32]| m.call_f64(f, a).unwrap();
+                let mut ci = |m: &mut Oracle, f: u32, a: &[f64]| {
+                    let words: Vec<u32> = a
+                        .iter()
+                        .flat_map(|x| {
+                            let b = x.to_bits();
+                            #[allow(clippy::cast_possible_truncation)]
+                            [b as u32, (b >> 32) as u32]
+                        })
+                        .chain([f])
+                        .collect();
+                    f32::from_bits(m.call(ci2, Conv::Cdecl, &words).unwrap().eax)
+                };
+                let mut c = ffx_chara::draw::bridge::PLightCalls {
+                    call: &mut call,
+                    fcall: &mut fcall,
+                    ci: &mut ci,
+                };
+                ffx_chara::draw::bridge::ch_plight_calc(m, chr, frame, &mut c);
+                Res::Void
+            },
+        );
+        t.put(chr, &keep);
+        reach[2] += n;
+    }
+    eprintln!("{}: cmm1 c reach {reach:?}", t.name);
+}

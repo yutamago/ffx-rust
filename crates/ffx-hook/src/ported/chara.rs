@@ -2005,4 +2005,19 @@ ported! {
         let s = frame.at();
         sy::ch_effect_packet_create_main(&mut mem(), p, s, &mut |_, f, a| super::call_cdecl(f, a));
     }
+    // ---- chara-main-map round 1, group c
+    /// `Ch_WorkRestore(chr, saved)`: the parent handle, or -1.
+    Ch_WorkRestore @ 0x0082_8620 => extern "C" fn ch_work_restore(chr: u32, saved: u32) -> u32 {
+        c::ch_work_restore(&mut mem(), chr, saved, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_PLightCalc(chr)`: void.
+    Ch_PLightCalc @ 0x0083_05a0 => extern "C" fn ch_plight_calc(chr: u32) {
+        let mut frame = super::StackFrame::<{ dr::PLIGHT_CALC_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = dr::PLightCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        dr::ch_plight_calc(&mut mem(), chr, s, &mut c);
+    }
 }
