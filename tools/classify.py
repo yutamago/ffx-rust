@@ -409,6 +409,8 @@ REVIEWED = {
     0x008c30d0: ("glue", "jmp 0x786900, thunk to MsSetSaveParamAll (TkMsSetSaveParamAll) (menu round 33)"),
     0x00882d50: ("debug", "script-debugger page line via TkPutDebugFontString*; reached only from AtelDebugDisplay_00883040, which has no callers (script round 26)"),
     0x00884d90: ("debug", "script-debugger variables page line; reached only from AtelDebugDisplay_00883040, which has no callers (script round 26)"),
+    0x008a97e0: ("glue", "5-byte jmp eiAbmParaGet (menu round 34)"),
+    0x008c1b10: ("glue", "5-byte jmp TOMenuGetAbilitymapWorkAdrs (menu round 34)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
