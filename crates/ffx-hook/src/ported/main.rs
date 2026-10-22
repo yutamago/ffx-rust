@@ -2314,6 +2314,23 @@ ported! {
     Sg_EventjumpCacheChrs_0083b670 @ 0x0083_b670 => extern "C" fn sg_eventjump_cache_chrs() -> u32 {
         state::bridge::eventjump_cache_chrs(&mut mem())
     }
+    // ---- chara-main-map round 2
+    /// `Sg_ChrMovePushApart_0083d3b0()`: void (`Ch_CalcMain` drops `eax`);
+    /// `Sg_VectorGetLengthXZ`'s `ST0` through the game.
+    Sg_ChrMovePushApart_0083d3b0 @ 0x0083_d3b0 => extern "C" fn sg_chr_move_push_apart() {
+        state::bridge::chr_move_push_apart(&mut mem(), &mut |_, f, a| super::call_cdecl_f64(f, a));
+    }
+    /// `Sg_EventjumpInit(n)`: the last `dbgPrintf`'s `eax`; the fade colour
+    /// in a frame of its own.
+    Sg_EventjumpInit @ 0x0083_b460 => extern "C" fn sg_eventjump_init(n: u32) -> u32 {
+        let mut w = super::StackFrame::<3>::new();
+        state::bridge::eventjump_init(&mut mem(), n, w.at())
+    }
+    /// `HandleSaveDataScreen()`: void; the debug description in its frame.
+    HandleSaveDataScreen @ 0x0081_ff80 => extern "C" fn handle_save_data_screen() {
+        let mut w = super::StackFrame::<{ state::bridge::SAVE_SCREEN_SCRATCH as usize / 4 }>::new();
+        state::bridge::handle_save_data_screen(&mut mem(), w.at());
+    }
     /// `AbmapDrawNodesEamap_00a51340()`: void.
     AbmapDrawNodesEamap_00a51340 @ 0x00a5_1340 => extern "C" fn abmap_draw_nodes_eamap() {
         // laid out and aligned as the original's frame (`ebp - 0x100` on 16)

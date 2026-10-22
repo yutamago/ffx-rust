@@ -700,6 +700,70 @@ pub mod bridge {
         PACKET_SIZE.get(mem)
     }
 
+    /// `Ch_EffectPacketSetPtr` (`0x00845710`), called through the game.
+    pub const PACKET_SET_PTR: u32 = 0x0084_5710;
+    /// `Ch_EffectPacketCreateMain` (`0x00842c80`), called through the game.
+    pub const PACKET_CREATE_MAIN: u32 = 0x0084_2c80;
+    /// `Ch_EffectPacketGetSize` (`0x00845700`), called through the game.
+    pub const PACKET_GET_SIZE: u32 = 0x0084_5700;
+    /// `Ch_TextureSetTex0` (`0x008313f0`), called through the game.
+    pub const TEXTURE_SET_TEX0: u32 = 0x0083_13f0;
+
+    /// Model `i`'s entry (0x38 bytes) in the character's model table
+    /// (`+0x1bc`).
+    fn model_entry(mem: &impl Mem, chr: u32, i: u32) -> u32 {
+        let models: u32 = mem.read(chr.wrapping_add(0x1bc));
+        models.wrapping_add(i.wrapping_mul(0x38))
+    }
+
+    /// `Ch_ModelCalcSizeEffectPacket(chr, i)` (`0x00830450`): the size of
+    /// model `i`'s effect packet. With no texture list
+    /// (`g_ChrTex0List` = 0), the packet writer only measuring
+    /// (`Ch_EffectPacketSetPtr(0)`) and `Ch_EffectPacketCreateMain` on the
+    /// model's entry, `Ch_EffectPacketGetSize()` (a tail call; callers
+    /// read it).
+    pub fn ch_model_calc_size_effect_packet<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        i: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let model = model_entry(mem, chr, i);
+        crate::texanim::bridge::TEX0_LIST.set(mem, 0);
+        call(mem, mem.rebase(PACKET_SET_PTR), &[0]);
+        call(mem, mem.rebase(PACKET_CREATE_MAIN), &[model]);
+        call(mem, mem.rebase(PACKET_GET_SIZE), &[])
+    }
+
+    /// `Ch_ModelCreateEffectPacket(chr, i, p)` (`0x00830490`): model `i`'s
+    /// effect packet written at `p`. The model's vertex and normal buffers
+    /// (entry `+8`, `+4`) to `sg_setvtex_and_normal`, the texture list
+    /// the character's `+0x6e0` while textures are on
+    /// (`g_ChrEnableTexture`) else 0, `Ch_TextureSetTex0(chr)`,
+    /// `Ch_EffectPacketSetPtr(p)`, `Ch_EffectPacketCreateMain(entry)`.
+    /// Returns what the last leaves in `eax` (no caller reads it).
+    pub fn ch_model_create_effect_packet<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        i: u32,
+        p: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let model = model_entry(mem, chr, i);
+        let norm: u32 = mem.read(model.wrapping_add(4));
+        let vtex: u32 = mem.read(model.wrapping_add(8));
+        call(mem, mem.rebase(SET_VTEX_AND_NORMAL), &[vtex, norm]);
+        let list = if ENABLE_TEXTURE.get(mem) == 0 {
+            0
+        } else {
+            mem.read(chr.wrapping_add(0x6e0))
+        };
+        crate::texanim::bridge::TEX0_LIST.set(mem, list);
+        call(mem, mem.rebase(TEXTURE_SET_TEX0), &[chr]);
+        call(mem, mem.rebase(PACKET_SET_PTR), &[p]);
+        call(mem, mem.rebase(PACKET_CREATE_MAIN), &[model])
+    }
+
     /// `Ch_EffectPacketStoreEND()` (`0x008457d0`): the 16-byte end tag
     /// (`0xff00`, words 2 and 3 zero) when writing, else only its size.
     pub fn ch_effect_packet_store_end(mem: &mut impl Mem) {

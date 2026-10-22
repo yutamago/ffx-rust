@@ -342,6 +342,143 @@ pub mod bridge {
         let foot = if y7 < y8 { eight } else { seven };
         call(mem, mem.rebase(OP_ET_BINDEFF2_WALK), &[chr, foot, 0, 0])
     }
+
+    /// `Ch_IdGetSound(chr)` (`0x0083d900`), `SndKickFoot(kind, party,
+    /// sound, variation)` (`0x008866b0`), `Ch_SoundFootEffect_008338d0`,
+    /// `Ch_GetDumpMotEv()` (`0x00833f50`), `dbgPrintf` (`0x0062f500`) and
+    /// `MsChrSePlayAlive_0079fe30(i, kind)`: through the game.
+    pub const ID_GET_SOUND: u32 = 0x0083_d900;
+    pub const SND_KICK_FOOT: u32 = 0x0088_66b0;
+    pub const SOUND_FOOT_EFFECT: u32 = 0x0083_38d0;
+    pub const GET_DUMP_MOT_EV: u32 = 0x0083_3f50;
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    pub const CHR_SE_PLAY_ALIVE: u32 = 0x0079_fe30;
+    /// `g_SgFrame`, the main loop's frame counter (the debug lines print it).
+    pub const SG_FRAME: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x023c_bbf0);
+    /// The debug lines: `"SG:%s:%d:SndKickFoot( ATEL_SND_FOOT_SWIM%c,..."`
+    /// and `"... ATEL_SND_FOOT_TYPE_SOUNDEVENT,%d,0,%d)"`.
+    pub const SWIM_FMT: u32 = 0x00b5_9888;
+    pub const SOUND_EVENT_FMT: u32 = 0x00b5_98c0;
+    /// The character's footstep counters (`+0x82c`): bits 0-1 walking,
+    /// bit 2 kind 3, bits 3-4 swimming.
+    pub const FOOT_STEPS: u32 = 0x82c;
+
+    /// The party byte `Ch_Sound` passes on (`i8` `+0x184`).
+    fn sound_party(mem: &impl Mem, chr: u32) -> u32 {
+        i32::from(mem.read::<i8>(chr.wrapping_add(0x184))).cast_unsigned()
+    }
+
+    /// `SndKickFoot(kind, party, Ch_IdGetSound(chr), var)`: `var` is the
+    /// word pushed for `Ch_IdGetSound` and left on the stack.
+    fn kick_foot<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        kind: u32,
+        var: u32,
+        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let sound = call(mem, mem.rebase(ID_GET_SOUND), &[chr, var]);
+        let p = sound_party(mem, chr);
+        call(mem, mem.rebase(SND_KICK_FOOT), &[kind, p, sound, var]);
+    }
+
+    /// `Ch_Sound(chr, ev)` (`0x00835860`; callers `Ch_MotEvent`,
+    /// `0x00835bb0`): a motion's sound event. With `ev`'s second byte 1,
+    /// the battle sound `MsChrSePlayAlive(chr +0x18c, low byte)` and, for
+    /// 6, the footstep effect. With 0, by the low byte (jump table
+    /// `0x00835b0c`, 1..=0x11):
+    /// - 1, 2: a step (`SndKickFoot` kind 1 or 0) with the walking counter
+    ///   (bits 0-1 of `+0x82c`, stepped on first), then the footstep
+    ///   effect; 10, 11 the same as 2 without the effect;
+    /// - 3: kind 4 with bit 2 (flipped);
+    /// - 4: swimming, kind 3 when flag bit 29 (`+0x194`) is set else 2,
+    ///   with bits 3-4 (stepped on); a debug line first while motion
+    ///   events are dumped;
+    /// - 5: kind 5 with sound slot 0;
+    /// - 0xc..=0x11: kind `0xff` with sound 0 and variation `ev - 10`
+    ///   (a debug line first while dumped).
+    ///
+    /// The sound is `Ch_IdGetSound(chr)`; `SndKickFoot` reads a fourth
+    /// word the original never pushed for it: the counter value it pushed
+    /// for `Ch_IdGetSound` and did not pop. The party is `i8` `+0x184`.
+    /// No caller reads `eax`.
+    pub fn ch_sound<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        ev: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, f: u32| mem.rebase(f);
+        let low = ev & 0xff;
+        let high = (ev >> 8) & 0xff;
+        let steps = chr.wrapping_add(FOOT_STEPS);
+        let party = |mem: &M| sound_party(mem, chr);
+        let kick =
+            |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, kind: u32, var: u32| {
+                kick_foot(mem, chr, kind, var, call);
+            };
+        if high != 0 {
+            if high == 1 {
+                let i: u32 = mem.read(chr.wrapping_add(0x18c));
+                call(mem, g(mem, CHR_SE_PLAY_ALIVE), &[i, low]);
+                if low == 6 {
+                    call(mem, g(mem, SOUND_FOOT_EFFECT), &[chr]);
+                }
+            }
+            return;
+        }
+        match low {
+            1 | 2 | 10 | 11 => {
+                let old: u32 = mem.read(steps);
+                mem.write(steps, ((old.wrapping_add(1) ^ old) & 3) ^ old);
+                kick(mem, call, u32::from(low == 1), old & 3);
+                if low <= 2 {
+                    call(mem, g(mem, SOUND_FOOT_EFFECT), &[chr]);
+                }
+            }
+            3 => {
+                // the original's ((old & !3) - 4 ^ old) & 4 ^ old: bit 2 flipped
+                let old: u32 = mem.read(steps);
+                mem.write(steps, old ^ 4);
+                kick(mem, call, 4, (old >> 2) & 1);
+            }
+            4 => {
+                let swim = |mem: &M| mem.read::<u32>(chr.wrapping_add(0x194)) & 0x2000_0000 != 0;
+                if call(mem, g(mem, GET_DUMP_MOT_EV), &[]) != 0 {
+                    let var = (mem.read::<u32>(steps) >> 3) & 3;
+                    let sound = call(mem, g(mem, ID_GET_SOUND), &[chr, var]);
+                    let p = party(mem);
+                    let c = 0x31 + u32::from(swim(mem));
+                    let (name, frame) = (mem.read(chr.wrapping_add(4)), SG_FRAME.get(mem));
+                    call(
+                        mem,
+                        g(mem, DBG_PRINTF),
+                        &[g(mem, SWIM_FMT), name, frame, c, p, sound, var],
+                    );
+                }
+                let old: u32 = mem.read(steps);
+                mem.write(steps, (((old & !7).wrapping_add(8) ^ old) & 0x18) ^ old);
+                let kind = if swim(mem) { 3 } else { 2 };
+                kick(mem, call, kind, (old >> 3) & 3);
+            }
+            5 => kick(mem, call, 5, 0),
+            0xc..=0x11 => {
+                let var = low - 10;
+                if call(mem, g(mem, GET_DUMP_MOT_EV), &[]) != 0 {
+                    let p = party(mem);
+                    let (name, frame) = (mem.read(chr.wrapping_add(4)), SG_FRAME.get(mem));
+                    call(
+                        mem,
+                        g(mem, DBG_PRINTF),
+                        &[g(mem, SOUND_EVENT_FMT), name, frame, p, var],
+                    );
+                }
+                let p = party(mem);
+                call(mem, g(mem, SND_KICK_FOOT), &[0xff, p, 0, var]);
+            }
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]
