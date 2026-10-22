@@ -323,3 +323,20 @@ harvest_test!(
         );
     }
 );
+
+// script round 28: the per-actor turn update (aim outputs in stack scratch)
+harvest_test!(
+    atel_turn_update,
+    0x0086_9510,
+    args = 2,
+    |m: &mut Oracle, s| {
+        let frame = m.stack_range().start + 0x100;
+        hp::atel_turn_update(
+            &mut OracleHost(m),
+            s.arg(0),
+            s.arg(1),
+            frame,
+            |h, at, args| h.0.call_f64(at, args).unwrap(),
+        );
+    }
+);

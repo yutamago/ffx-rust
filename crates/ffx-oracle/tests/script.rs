@@ -15307,3 +15307,191 @@ fn round28c_move_update_matches_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r28c_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Round 28 d on one pair: `Atel_TurnUpdate_00869510` over every mode
+/// (0..7 and 0x1f) with the aim/retarget/short-way/alternative-step/copy
+/// flags, durations and counts at their edges, times that hit the weight
+/// edges (0, 0.5, 1, NaN), equal yaws for mode 2's end and deltas of each
+/// sign; `Math_YawPitchTo`, `Math_WrapAngle` and `Math_AngleStepMode`
+/// real (angles finite: `Math_WrapAngle` spins on an infinity), the
+/// retarget logged.
+#[allow(clippy::too_many_lines)] // one case loop
+fn r28d_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    let stubs = r27_stubs(a, b, &[(0x0086_f8a0, 2, false)]);
+    let hdr = alloc_both(a, b, 4);
+    let w = alloc_both(a, b, 0xc00);
+    let level = alloc_both(a, b, 0x50);
+    let t = alloc_both(a, b, 0x40);
+    let mv = alloc_both(a, b, 0x40);
+    let pool = [
+        0.0f32,
+        -0.0,
+        0.25,
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+        3.0,
+        -1.0,
+        -2.5,
+        3.1,
+        -3.2,
+        6.3,
+        10.0,
+        f32::NAN,
+        1e-30,
+    ];
+    let modes = [
+        0u16, 1, 2, 3, 4, 5, 6, 7, 0x1f, 0x11, 0x12, 0x13, 0x14, 0x15, 2, 2,
+    ];
+    for round in 0..2500u32 {
+        // a finite angle (pool or continuous in -20..20), or a time that
+        // may be infinite
+        let angle = |rng: &mut Xorshift| {
+            if rng.below(3) == 0 {
+                f32::from(u16::try_from(rng.below(40_000)).unwrap()) / 1000.0 - 20.0
+            } else {
+                pool[rng.below(16) as usize]
+            }
+            .to_bits()
+        };
+        let time = |rng: &mut Xorshift| {
+            if rng.below(3) == 0 {
+                // continuous in 0..1: mode 2's ease rounds differently
+                f32::from(u16::try_from(rng.below(10_000)).unwrap()) / 10_000.0
+            } else {
+                [
+                    0.0f32,
+                    -1.0,
+                    1.0,
+                    2.0,
+                    3.0,
+                    4.5,
+                    0.5,
+                    f32::INFINITY,
+                    f32::NAN,
+                    9.0,
+                    -0.0,
+                ][rng.below(11) as usize]
+            }
+            .to_bits()
+        };
+        poke(a, b, w, hdr);
+        poke(a, b, hdr, [1u8, 1, 1, 5][rng.below(4) as usize]);
+        poke(a, b, level + 0x44, mv);
+        poke(a, b, level + 0x48, t);
+        let mode = modes[rng.below(16) as usize];
+        let mut flags = mode;
+        for bit in [0x8000u16, 0x2000, 0x800, 0x400, 0x200, 0x1000, 0x20, 0x4000] {
+            if rng.below(2) == 0 {
+                flags |= bit;
+            }
+        }
+        poke(
+            a,
+            b,
+            t,
+            rng.next().to_le_bytes()[0..2]
+                .try_into()
+                .map(u16::from_le_bytes)
+                .unwrap(),
+        );
+        // mode 2 aiming with small steps: the eased step does not
+        // saturate Math_AngleStepMode, so its rounding shows
+        let small = mode == 2 && rng.below(2) == 0;
+        if small {
+            flags |= 0x8000;
+        }
+        poke(a, b, t + 2, flags);
+        poke(a, b, t + 4, [0i16, 5, -3, 1, 0x7fff][rng.below(5) as usize]);
+        poke(
+            a,
+            b,
+            t + 6,
+            [0i16, 4, 5, 6, 0x7ffd, 0x7ffe, -1, 40, i16::MIN][rng.below(9) as usize],
+        );
+        for o in (0x10..0x38u32).step_by(4) {
+            let v = angle(rng);
+            poke(a, b, t + o, v);
+        }
+        if small {
+            for o in [0x10u32, 0x14, 0x18] {
+                let v = f32::from(u16::try_from(rng.below(1000)).unwrap()) / 10_000.0;
+                poke(a, b, t + o, v);
+            }
+        }
+        let (now, end) = (time(rng), time(rng));
+        poke(a, b, t + 8, now);
+        poke(a, b, t + 0xc, end);
+        // the weight edges: t + 1 == end, end / 2, 0; t + 1 == 0
+        match rng.below(6) {
+            0 => {
+                poke(a, b, t + 8, 3.0f32);
+                poke(a, b, t + 0xc, 4.0f32);
+            }
+            1 => {
+                poke(a, b, t + 8, 1.0f32);
+                poke(a, b, t + 0xc, 4.0f32);
+            }
+            2 => poke(a, b, t + 8, -1.0f32),
+            3 => poke(a, b, t + 0xc, 0.0f32),
+            _ => {}
+        }
+        let p = if Mem::read::<u8>(a, hdr) == 5 {
+            w + 0x284
+        } else {
+            w + 0x558
+        };
+        for o in (0..0x3cu32).step_by(4) {
+            let v = angle(rng);
+            poke(a, b, p + o, v);
+        }
+        for o in (0x28..0x34u32).step_by(4) {
+            let v = angle(rng);
+            poke(a, b, mv + o, v);
+        }
+        // mode 2's end: the yaw already at the base
+        if rng.below(3) == 0 {
+            let v = Mem::read::<u32>(a, t + 0x20);
+            poke(a, b, p + 0x34, v);
+        }
+        r27_reset(a, b, &stubs, |_| 0);
+        let what = format!("Atel_TurnUpdate {what} {round} flags {flags:#x}");
+        r22_case(a, b, 0x0086_9510, &[w, level], false, &what, |r| {
+            let f = frame(r);
+            Mem::write(r.0, f, [0xa5u8; 0x10]);
+            hp::atel_turn_update(r, w, level, f, |r, at, args| {
+                r.0.call_f64(at, args).unwrap()
+            });
+            0
+        });
+    }
+}
+
+#[test]
+fn round28d_turn_update_matches_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_028d);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r28d_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r28d_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

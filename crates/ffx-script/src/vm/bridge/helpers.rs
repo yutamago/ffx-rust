@@ -7922,6 +7922,240 @@ pub fn atel_move_update<H: ffx_bridge::Host>(
     }
 }
 
+/// `Atel_TurnUpdate_00869510(w, level)` (name ours; caller `0x008666e0`
+/// for type-1 actors, right after [`atel_move_update`]; no `EAX` read):
+/// one frame of the level's turn record `T = *(level + 0x48)` on the move
+/// block's rotation (`P +0x34`/`+0x30`/`+0x38`, yaw/pitch copies at
+/// `+0x20`/`+0x24`). `T`: `+0` target worker, `+2` flags (`0x1f` mode,
+/// `0x8000` aim at the move record's target `*(level + 0x44) +0x28..`,
+/// `0x2000` with it `Atel_TurnToWorker_0086f8a0(w, +0)` first, `0x800` /
+/// `0x400` turn the short way down / up (`Math_AngleStepMode` mode 1 / 2;
+/// the blends add -/+ 2 pi), `0x200` the alternative yaw step `+0x14`
+/// instead of `+0x10`, `0x1000` copy the rotation into `+0x20`/`+0x24`
+/// at the end, for every mode), `+4`/`+6` duration and count (the
+/// count scales the steps as in [`atel_move_update`], without the mode 7/9
+/// exception), `+8`/`+0xc` time and end, `+0x18`/`+0x1c` pitch/roll
+/// steps, `+0x20..` the base angles, `+0x2c..` the turn's deltas.
+///
+/// Aiming (`Math_YawPitchTo` into `frame`) moves the deltas by the change
+/// of the aim (`Math_WrapAngle(delta + aim - base)`); modes 1, 2 and 5
+/// also take the aim as the new base. Modes 1/2/5 then turn the rotation
+/// towards it by the steps times the count scale and mode 2's ease
+/// `s = (1 - 4 (t - 0.5)²) * 0.6 + 0.4` (clamped), or without aiming
+/// just add the steps (`+0x10`, `+0x18`, `+0x1c`). Mode 2 first advances
+/// its time by `+0xc`, clamped to 0..1; at 1 it ends (flags
+/// `& 0xffe1 | 1`) when the yaw already equals the base. Modes 3 (linear;
+/// an end of zero counts as weight zero) and 4 (ease in/out) blend from
+/// base + delta at weight zero to the base at one:
+/// `wrap(base + (1 - w) * (delta + 2 pi fix))`, the yaw rounded to f32
+/// at each step, pitch and roll once. Every float compare is false on
+/// NaN, as the original's flag tests.
+#[allow(clippy::too_many_lines)] // one block per mode, as the jump table
+#[allow(clippy::float_cmp)] // the original's exact fucom tests
+pub fn atel_turn_update<H: ffx_bridge::Host>(
+    h: &mut H,
+    w: u32,
+    level: u32,
+    frame: u32,
+    mut fcall: impl FnMut(&mut H, u32, &[u32]) -> f64,
+) {
+    const ONE: u32 = 0x3f80_0000;
+    const TWO_PI: u32 = 0x40c9_0fdb;
+    let ld = x87::load;
+    let copy = |v: u32| x87::store(x87::load(v));
+    let p = move_block(h, w);
+    let t = h.read::<u32>(level + 0x48);
+    let mv = h.read::<u32>(level + 0x44);
+    let flags = u32::from(h.read::<u16>(t + 2));
+    let dur = h.read::<i16>(t + 4);
+    let mut k = ONE;
+    if dur > 0 {
+        let cnt = h.read::<i16>(t + 6);
+        if cnt < 0x7ffe {
+            h.write(t + 6, cnt + 1);
+        }
+        let cnt = h.read::<i16>(t + 6);
+        if dur < cnt {
+            let q = x87::store(x87::div(f64::from(cnt), f64::from(dur)));
+            k = if ld(q) > 8.0 { 0x4100_0000 } else { q };
+        }
+    }
+    let step = copy(h.read(t + if flags & 0x200 != 0 { 0x14 } else { 0x10 }));
+    let wrap_angle = h.rebase(0x0088_bc20);
+    let step_mode = h.rebase(0x0088_b610);
+    let wrap = |h: &mut H, fcall: &mut dyn FnMut(&mut H, u32, &[u32]) -> f64, x: u32| {
+        x87::store(fcall(h, wrap_angle, &[x]))
+    };
+    // TurnToWorker, then the aim into `frame` and the deltas moved by it
+    let aim = |h: &mut H, fcall: &mut dyn FnMut(&mut H, u32, &[u32]) -> f64| {
+        if flags & 0x2000 != 0 {
+            host_call(h, 0x0086_f8a0, &[w, u32::from(h.read::<u16>(t))]);
+        }
+        let to = [0x28, 0x2c, 0x30].map(|o| copy(h.read(mv + o)));
+        let from = [0, 4, 8].map(|o| copy(h.read(p + o)));
+        let args = [
+            frame,
+            frame + 4,
+            from[0],
+            from[1],
+            from[2],
+            to[0],
+            to[1],
+            to[2],
+        ];
+        host_call(h, 0x0088_b4d0, &args);
+        for (delta, base, out) in [(0x2c, 0x20, frame), (0x30, 0x24, frame + 4)] {
+            let moved = x87::add(ld(h.read(t + delta)), ld(h.read(out)));
+            let x = x87::store(x87::sub(moved, ld(h.read(t + base))));
+            let v = wrap(h, fcall, x);
+            h.write(t + delta, v);
+        }
+    };
+    // the rotation at weight `wt`: the base at 1 (or above), base + delta
+    // at 0 (`full`), else the blend
+    let blend =
+        |h: &mut H, fcall: &mut dyn FnMut(&mut H, u32, &[u32]) -> f64, wt: u32, full: bool| {
+            let rot = [0x34, 0x30, 0x38];
+            if ld(wt) >= 1.0 {
+                for (o, at) in [0x20, 0x24, 0x28].into_iter().zip(rot) {
+                    h.write(p + at, copy(h.read(t + o)));
+                }
+                return;
+            }
+            if full {
+                for (o, at) in [0x20, 0x24, 0x28].into_iter().zip(rot) {
+                    let x = x87::store(x87::add(ld(h.read(t + o + 0xc)), ld(h.read(t + o))));
+                    let v = wrap(h, fcall, x);
+                    h.write(p + at, v);
+                }
+                return;
+            }
+            // -2 pi for a positive delta (0x800), then 2 pi for a negative one
+            // (0x400)
+            let mut fix = [0u32; 3];
+            for (f, o) in fix.iter_mut().zip([0x2c, 0x30, 0x34]) {
+                if flags & 0x800 != 0 && 0.0 < ld(h.read(t + o)) {
+                    *f = TWO_PI | 0x8000_0000;
+                }
+            }
+            for (f, o) in fix.iter_mut().zip([0x2c, 0x30, 0x34]) {
+                if flags & 0x400 != 0 && 0.0 > ld(h.read(t + o)) {
+                    *f = TWO_PI;
+                }
+            }
+            let r = x87::sub(1.0, ld(wt));
+            let d0 = x87::store(x87::add(ld(h.read(t + 0x2c)), ld(fix[0])));
+            let d0 = x87::store(x87::mul(r, ld(d0)));
+            let x = x87::store(x87::add(ld(h.read(t + 0x20)), ld(d0)));
+            let v = wrap(h, fcall, x);
+            h.write(p + 0x34, v);
+            for (i, (delta, base, at)) in [(0x30, 0x24, 0x30), (0x34, 0x28, 0x38)]
+                .into_iter()
+                .enumerate()
+            {
+                let d = x87::add(ld(h.read(t + delta)), ld(fix[i + 1]));
+                let x = x87::store(x87::add(x87::mul(d, r), ld(h.read(t + base))));
+                let v = wrap(h, fcall, x);
+                h.write(p + at, v);
+            }
+        };
+    let mode = flags & 0x1f;
+    match mode {
+        1 | 2 | 5 => {
+            let mut s = ONE;
+            if mode == 2 {
+                let v = x87::store(x87::add(ld(h.read(t + 0xc)), ld(h.read(t + 8))));
+                let v = if ld(v) < 0.0 {
+                    0
+                } else if ld(v) >= 1.0 {
+                    if ld(h.read(p + 0x34)) == ld(h.read(t + 0x20)) {
+                        write_u16(h, t + 2, flags & 0xffe1 | 1);
+                    }
+                    ONE
+                } else {
+                    v
+                };
+                h.write(t + 8, v);
+                let a = x87::sub(ld(v), 0.5);
+                let x = x87::mul(a, x87::mul(4.0, a));
+                let e = x87::mul(x87::sub(1.0, x), f64::from(0.6_f32));
+                let e = x87::store(x87::add(e, f64::from(0.4_f32)));
+                s = if ld(e) < 0.0 {
+                    0
+                } else if ld(e) > 1.0 {
+                    ONE
+                } else {
+                    e
+                };
+            }
+            if flags & 0x8000 == 0 {
+                for (st, at) in [(0x10, 0x34), (0x18, 0x30), (0x1c, 0x38)] {
+                    let x = x87::store(x87::add(ld(h.read(t + st)), ld(h.read(p + at))));
+                    let v = wrap(h, &mut fcall, x);
+                    h.write(p + at, v);
+                }
+            } else {
+                let turn = if flags & 0x400 != 0 {
+                    2
+                } else {
+                    u32::from(flags & 0x800 != 0)
+                };
+                aim(h, &mut fcall);
+                h.write(t + 0x20, copy(h.read(frame)));
+                h.write(t + 0x24, copy(h.read(frame + 4)));
+                let scaled = |v: u32| {
+                    let v = x87::store(x87::mul(ld(v), ld(s)));
+                    x87::store(x87::mul(ld(v), ld(k)))
+                };
+                let by = scaled(step);
+                let args = [copy(h.read(p + 0x34)), copy(h.read(frame)), by, turn];
+                let v = x87::store(fcall(h, step_mode, &args));
+                h.write(p + 0x34, v);
+                let by = scaled(h.read(t + 0x18));
+                let args = [copy(h.read(p + 0x30)), copy(h.read(t + 0x24)), by, turn];
+                let v = x87::store(fcall(h, step_mode, &args));
+                h.write(p + 0x30, v);
+            }
+        }
+        3 => {
+            let now = x87::store(x87::add(ld(h.read(t + 8)), 1.0));
+            h.write(t + 8, now);
+            let end = ld(h.read(t + 0xc));
+            let q = if end == 0.0 {
+                0
+            } else {
+                x87::store(x87::div(ld(now), end))
+            };
+            let q = clamp01(q);
+            if flags & 0x8000 != 0 {
+                aim(h, &mut fcall);
+            }
+            blend(h, &mut fcall, q, ld(q) == 0.0);
+        }
+        4 => {
+            let now = x87::store(x87::add(ld(h.read(t + 8)), 1.0));
+            h.write(t + 8, now);
+            let q = clamp01(x87::store(x87::div(ld(now), ld(h.read(t + 0xc)))));
+            if flags & 0x8000 != 0 {
+                aim(h, &mut fcall);
+            }
+            // NaN takes the first branch, as the fcom with test ah, 1
+            let e = if ld(q) >= 0.5 {
+                let u = x87::store(x87::sub(1.0, ld(q)));
+                x87::store(x87::sub(1.0, x87::mul(x87::add(ld(u), ld(u)), ld(u))))
+            } else {
+                x87::store(x87::mul(x87::add(ld(q), ld(q)), ld(q)))
+            };
+            blend(h, &mut fcall, e, ld(e) <= 0.0);
+        }
+        _ => {}
+    }
+    if flags & 0x1000 != 0 {
+        h.write(p + 0x20, copy(h.read(p + 0x34)));
+        h.write(p + 0x24, copy(h.read(p + 0x30)));
+    }
+}
+
 /// `q` clamped to 0..1 as the move step's `fcom` pair: 0 below 0, 1 above
 /// 1, else (NaN included) `q`.
 fn clamp01(q: u32) -> u32 {

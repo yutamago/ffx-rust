@@ -7429,6 +7429,12 @@ ported! {
         let mut frame = super::StackFrame::<8>::new();
         hp::atel_move_update(&mut mem(), w, level, frame.at(), |_, f, args| super::call_cdecl_f64(f, args));
     }
+    /// `Atel_TurnUpdate_00869510(w, level)`: the aim outputs in a frame, the
+    /// float maths called through the game.
+    Atel_TurnUpdate_00869510 @ 0x0086_9510 => extern "C" fn h_869510(w: u32, level: u32) {
+        let mut frame = super::StackFrame::<4>::new();
+        hp::atel_turn_update(&mut mem(), w, level, frame.at(), |_, f, args| super::call_cdecl_f64(f, args));
+    }
     /// `Atel_CheckTouchTalk_00866980(worker, _, player)`: `Math_LengthSq3`
     /// through the game.
     Atel_CheckTouchTalk_00866980 @ 0x0086_6980 => extern "C" fn h_866980(w: u32, _unused: u32, player: u32) -> u32 {

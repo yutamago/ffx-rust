@@ -3323,6 +3323,35 @@ real spline functions.
   `Math_WrapAngle` (inside `Math_AngleStep`) never returns for an
   infinite angle, in the game as in the oracle, so the tests keep angles
   and turn steps finite.
+- `Atel_TurnUpdate_00869510(w, level)` (`0x00869510`, the dispatcher's
+  next call) advances the level's turn record (`*(level + 0x48)`) on P's
+  rotation (`+0x34` yaw, `+0x30` pitch, `+0x38` roll). The record: `+0`
+  target worker, `+2` flags (`& 0x1f` the mode; `0x8000` aim at the move
+  record's target, `0x2000` with it `Atel_TurnToWorker_0086f8a0` first;
+  `0x800`/`0x400` the short way down/up, which is `Math_AngleStepMode`
+  mode 1/2 and the blend's -/+ 2 pi fix for positive/negative deltas;
+  `0x200` the alternative yaw step `+0x14`; `0x1000` copies yaw and
+  pitch into `+0x20`/`+0x24` at the end, in every mode), `+4`/`+6`
+  duration and count (a positive duration only), `+8`/`+0xc` time and
+  end, `+0x10`/`+0x18`/`+0x1c` steps, `+0x20..` base angles, `+0x2c..`
+  deltas. Aiming (`Math_YawPitchTo` into a frame) moves each delta by the
+  aim's change (`Math_WrapAngle(delta + aim - base)`). The jump table at
+  `0x00869d1c` is indexed by mode - 1; modes past 5 do nothing.
+  - 1, 2, 5: they also take the aim as the base and step yaw and pitch
+    towards it. The step is the yaw step (or the pitch step) times the
+    count scale and mode 2's ease `s`, as f32 at each product. Without the
+    aim flag they just add `+0x10`/`+0x18`/`+0x1c` (wrapped). Mode 2 first
+    advances its time by `+0xc` and clamps it to 0..1. At 1 it ends
+    (flags `& 0xffe1 | 1`) if the yaw already equals the base. Its ease
+    is `s = (1 - 4 (t - 0.5)²) * f32(0.6) + f32(0.4)`, which stays in
+    0.4..1.
+  - 3, 4: blend from base + delta at weight 0 to the base at 1. Mode 3's
+    weight is linear (time / end, 0 for an end of 0). Mode 4 eases it:
+    `2q²` below 0.5, else `1 - 2(1 - q)²`. At weight 1 or more the
+    rotation is the base. Mode 3 at exactly 0, and mode 4 at 0 or less,
+    give `wrap(base + delta)`. Otherwise it is
+    `wrap(base + (1 - w)(delta + fix))`: the yaw is stored as f32 after
+    the sum, the product and the add; pitch and roll only once.
 
 ### Verification
 
