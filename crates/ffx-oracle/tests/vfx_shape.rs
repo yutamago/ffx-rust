@@ -1,0 +1,477 @@
+//! `op_shape_draw` (`0x007ed0c0`, `ffx_vfx::shape_draw`) against the
+//! original, piece by piece: each vertex loop entered at its first
+//! instruction through a thunk that builds the original's frame and
+//! registers as the head leaves them (the loop ends in the original tail,
+//! whose `ret` comes back to the thunk's caller), and the whole function on
+//! the selections whose loops are ported. Results, every written byte
+//! outside the stacks and the frame words the pieces share (`ebp - 0x1bbc`
+//! .. `- 0x1bb0`, the frame packet buffer) must agree. The frame is filled
+//! with random words first, so a read of a frame word the original never
+//! wrote would show as a difference.
+
+use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
+
+use ffx_bridge::Mem;
+use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_vfx::shape_draw::bridge::{self as shape, FRAME_SIZE, Frame};
+
+fn exe() -> Option<PathBuf> {
+    let dir = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
+    if dir.is_none() {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+    }
+    Some(dir?.join("FFX.exe"))
+}
+
+fn pages() -> Option<Arc<Pages>> {
+    static PAGES: OnceLock<Option<Arc<Pages>>> = OnceLock::new();
+    PAGES
+        .get_or_init(|| {
+            let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+                eprintln!("FFX_SNAPSHOT is not set; snapshot cases skipped");
+                return None;
+            };
+            Some(Pages::read(PathBuf::from(snap)).unwrap())
+        })
+        .clone()
+}
+
+struct Xorshift(u32);
+
+impl Xorshift {
+    fn next(&mut self) -> u32 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 17;
+        self.0 ^= self.0 << 5;
+        self.0
+    }
+    fn below(&mut self, n: u32) -> u32 {
+        self.next() % n
+    }
+    fn chance(&mut self, percent: u32) -> bool {
+        self.below(100) < percent
+    }
+    fn pick<T: Copy>(&mut self, of: &[T]) -> T {
+        of[self.below(u32::try_from(of.len()).unwrap()) as usize]
+    }
+    /// Float bits: specials (quiet NaNs, infinities, zeros, denormals) a
+    /// tenth of the time, else ordinary values. No signalling NaNs: the
+    /// oracle's x87 keeps them signalling where the hardware quiets them.
+    fn float(&mut self) -> u32 {
+        if self.chance(10) {
+            return self.pick(&SPECIALS);
+        }
+        let mantissa = self.next() & 0x007f_ffff;
+        let exp = 110 + self.below(36); // about 2^-17 .. 2^18
+        (self.next() & 0x8000_0000) | (exp << 23) | mantissa
+    }
+}
+
+const SPECIALS: [u32; 10] = [
+    0x0000_0000,
+    0x8000_0000,
+    0x7f80_0000,
+    0xff80_0000,
+    0x7fc0_0000,
+    0xffc0_0000,
+    0x7fc1_2345,
+    0xffe0_0001,
+    0x0000_0001,
+    0x3f80_0000,
+];
+
+/// Free code space in the image (the end of `.text`), for the thunks.
+const THUNK: u32 = 0x00b0_bf00;
+/// `__security_cookie`.
+const COOKIE: u32 = 0x00c6_13d8;
+/// `g_Ee_Gpr` and the VU0 block after it, filled with floats.
+const EE: u32 = 0x00c8_f508;
+const EE_END: u32 = 0x00c8_f990;
+const SHIFT: u32 = 0x00c8_b500;
+const COUNT: u32 = 0x00c8_f5f8;
+const S2: u32 = 0x00c8_f628;
+const VF00: u32 = 0x00c0_a004;
+const ORIGIN_SRC: u32 = 0x012e_95d8;
+const SSE2: u32 = 0x0193_ed20;
+
+struct Pair {
+    name: &'static str,
+    a: Oracle,
+    b: Oracle,
+}
+
+impl Pair {
+    fn all() -> Vec<Pair> {
+        let Some(exe) = exe() else { return Vec::new() };
+        let mut v = vec![Pair {
+            name: "image",
+            a: Oracle::load(&exe).unwrap(),
+            b: Oracle::load(&exe).unwrap(),
+        }];
+        if let Some(p) = pages() {
+            v.push(Pair {
+                name: "snapshot",
+                a: Oracle::from_snapshot(&exe, &p).unwrap(),
+                b: Oracle::from_snapshot(&exe, &p).unwrap(),
+            });
+        }
+        v
+    }
+
+    fn sym(&self, sym: u32) -> u32 {
+        self.a.rebase(sym)
+    }
+
+    fn set<T: ffx_bridge::Value>(&mut self, addr: u32, v: T) {
+        Mem::write(&mut self.a, addr, v);
+        Mem::write(&mut self.b, addr, v);
+    }
+
+    fn alloc(&mut self, len: usize) -> u32 {
+        let x = self.a.alloc(len).unwrap();
+        assert_eq!(self.b.alloc(len).unwrap(), x);
+        x
+    }
+
+    /// `n` random float words at `at`, in both oracles, in one write.
+    fn floats(&mut self, at: u32, n: usize, rng: &mut Xorshift) {
+        let bytes: Vec<u8> = (0..n).flat_map(|_| rng.float().to_le_bytes()).collect();
+        self.code(at, &bytes);
+    }
+
+    fn code(&mut self, at: u32, c: &[u8]) {
+        self.a.write(at, c).unwrap();
+        self.b.write(at, c).unwrap();
+    }
+
+    /// `ebp` of a cdecl function the oracle calls with `n` arguments.
+    fn ebp(&self, n: u32) -> u32 {
+        self.b.stack_range().end - 0x100 - 4 * n - 4 - 4
+    }
+
+    /// Random words in the frame below `ebp`, in both oracles.
+    fn fill_frame(&mut self, ebp: u32, rng: &mut Xorshift) {
+        let words = (FRAME_SIZE / 4) as usize;
+        self.floats(ebp - FRAME_SIZE, words, rng);
+    }
+
+    /// Results, the memory outside the stacks and the shared frame words.
+    fn same(&mut self, what: &str, ebp: u32) {
+        let d = self.a.diff(&mut self.b).unwrap();
+        assert!(
+            d.is_empty(),
+            "{}: {what}: memory differs (address, original, rust): {:x?}",
+            self.name,
+            &d[..d.len().min(16)]
+        );
+        for off in [0x1bbc, 0x1bb8, 0x1bb0] {
+            let (x, y): (u32, u32) = (Mem::read(&self.a, ebp - off), Mem::read(&self.b, ebp - off));
+            assert_eq!(x, y, "{}: {what}: frame word ebp-{off:#x}", self.name);
+        }
+        // up to ebp - 8: `_alloca_probe` keeps the caller's `ecx` there,
+        // CRT stack junk below the cookie (ebp - 4), not the function's
+        let len = 0x17fc;
+        let (x, y) = (
+            Oracle::read(&mut self.a, ebp - 0x1804, len).unwrap(),
+            Oracle::read(&mut self.b, ebp - 0x1804, len).unwrap(),
+        );
+        if let Some(i) = (0..len).find(|&i| x[i] != y[i]) {
+            let j = (0..len).rfind(|&i| x[i] != y[i]).unwrap();
+            panic!(
+                "{}: {what}: the frame packet buffer differs at ebp-{:#x}..ebp-{:#x}",
+                self.name,
+                0x1804 - i,
+                0x1804 - j
+            );
+        }
+        self.a.clear_dirty();
+        self.b.clear_dirty();
+    }
+
+    /// A thunk `(shape, cmd)` that builds the original's frame (cookie,
+    /// saved `ebx`/`esi`/`edi`), sets `ecx` = shape, `esi` = cmd, `edi` =
+    /// shape + 0x20 and jumps to `entry`; the tail returns from it.
+    fn loop_thunk(&mut self, entry: u32) -> u32 {
+        let at = self.sym(THUNK);
+        let mut c = vec![0x55, 0x8b, 0xec]; // push ebp; mov ebp, esp
+        c.extend([0x81, 0xec]); // sub esp, FRAME_SIZE
+        c.extend(FRAME_SIZE.to_le_bytes());
+        c.push(0xa1); // mov eax, [cookie]
+        c.extend(self.sym(COOKIE).to_le_bytes());
+        c.extend([0x33, 0xc5, 0x89, 0x45, 0xfc]); // xor eax, ebp; mov [ebp-4], eax
+        c.extend([0x53, 0x56, 0x57]); // push ebx; push esi; push edi
+        c.extend([0x8b, 0x4d, 0x08]); // mov ecx, [ebp+8]
+        c.extend([0x8b, 0x75, 0x0c]); // mov esi, [ebp+0xc]
+        c.extend([0x8d, 0x79, 0x20]); // lea edi, [ecx+0x20]
+        c.push(0xe9); // jmp entry
+        let end = at + u32::try_from(c.len()).unwrap() + 4;
+        c.extend(self.sym(entry).wrapping_sub(end).to_le_bytes());
+        self.code(at, &c);
+        at
+    }
+}
+
+/// A shape (room for `MAX_RECORDS` vertex records) and its command.
+#[derive(Clone, Copy)]
+struct Case {
+    shape: u32,
+    cmd: u32,
+}
+
+const MAX_RECORDS: u32 = 5;
+
+impl Case {
+    fn new(p: &mut Pair) -> Case {
+        Case {
+            shape: p.alloc((0x40 + 0x18 * MAX_RECORDS) as usize),
+            cmd: p.alloc(0x20),
+        }
+    }
+}
+
+/// Random state for `n` vertex records: EE/VU0 registers (floats, `r0`
+/// zero most of the time), the matrix, `vf00`, the origin block, the records' halves
+/// (`+0xc` zero most of the time, to reach the second point), the draw
+/// flags `s1`/`s2` (often clear, to reach the fixed-point and texture
+/// steps), `cmd` (flags without `0xc00`, no texture) and the CPU's SSE2
+/// flag (both `_ftol2_sse` paths).
+fn plain_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
+    p.floats(p.sym(EE), ((EE_END - EE) / 4) as usize, rng);
+    // r0: zero, a few bits of the first flag mask (so a record's +0xc
+    // can equal it and the flag tests compare against it) or garbage
+    let r0 = p.sym(EE);
+    let any = rng.next();
+    let r0_lo = match rng.below(20) {
+        0..=14 => 0,
+        15..=17 => rng.pick(&[2u32, 8, 0x40, 0x4a, 0x1000, 0x4002]),
+        _ => rng.pick(&[1, 0x8000, any]),
+    };
+    p.set(r0, r0_lo);
+    for k in 1..4 {
+        let any = rng.next();
+        let v = if rng.chance(90) {
+            0
+        } else {
+            rng.pick(&[1, any])
+        };
+        p.set(r0 + 4 * k, v);
+    }
+    for k in 0..4 {
+        let v = rng.float();
+        p.set(p.sym(VF00) + 4 * k, v);
+    }
+    for k in 0..12 {
+        let v = rng.float();
+        p.set(p.sym(ORIGIN_SRC) + 4 * k, v);
+    }
+    // s2: random, or passing the first flag test (s2 & 0x28514a == r0's
+    // low word) with random 0x810 bits, or passing both when r0 is 0
+    let s2 = match rng.below(4) {
+        0 => rng.next(),
+        1 => rng.next() & !0x0028_514a | r0_lo,
+        _ => rng.next() & !0x0028_595a | r0_lo,
+    };
+    p.set(p.sym(S2), s2);
+    if rng.chance(30) {
+        p.set(p.sym(0x00c8_f618), rng.next());
+    }
+    let sse2 = u32::from(rng.chance(70));
+    p.set(p.sym(SSE2), sse2);
+    let Case { shape, cmd } = c;
+    for k in 0..0x10 + 0xc * n {
+        let h = if rng.chance(20) {
+            rng.pick(&[0u16, 1, 0x7fff, 0x8000, 0xffff])
+        } else {
+            u16::try_from(rng.below(0x1_0000)).unwrap()
+        };
+        p.set(shape + 2 * k, h);
+    }
+    for k in 0..n {
+        if rng.chance(75) {
+            p.set(
+                shape + 0x20 + 0x18 * k + 0xc,
+                u16::try_from(r0_lo & 0xffff).unwrap(),
+            );
+        }
+    }
+    let b0: u8 = Mem::read(&p.a, shape);
+    p.set(shape, b0 & !8);
+    for k in 0..8 {
+        let v = rng.next();
+        p.set(cmd + 4 * k, v);
+    }
+    let flags = u16::try_from(rng.below(0x1_0000)).unwrap() & !0xc00;
+    p.set(cmd + 2, flags);
+    p.set(cmd + 0x1c, 0u32);
+}
+
+/// A vertex count (`i16`) and the records the loop then reads: one pass
+/// for 0 and negative counts (the loop decrements first). Not 0x8000: it
+/// wraps to 0x7fff and runs 32768 passes.
+fn count(rng: &mut Xorshift) -> (u16, u32) {
+    match rng.below(10) {
+        0 => (0, 1),
+        1 => (rng.pick(&[0x8001, 0xffff, 0xfff0]), 1),
+        _ => {
+            let n = 1 + rng.below(MAX_RECORDS);
+            (u16::try_from(n).unwrap(), n)
+        }
+    }
+}
+
+#[test]
+fn shape_s6_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_3f03);
+        let thunk = p.loop_thunk(0x007f_3f03);
+        let c = Case::new(&mut p);
+        let ebp = p.ebp(2);
+        for case in 0..600 {
+            let (n, records) = count(&mut rng);
+            plain_case(&mut p, &mut rng, c, records);
+            p.set(p.sym(COUNT), n);
+            p.set(p.sym(SHIFT), rng.pick(&[0u32, 0, 2, 0x10]));
+            p.fill_frame(ebp, &mut rng);
+            // the frame words as the head leaves them
+            let cursor = rng.next();
+            p.set(ebp - 0x1bbc, cursor);
+            p.set(ebp - 0x1bb8, c.cmd);
+            p.set(ebp - 0x1bb4, c.shape);
+            p.set(ebp - 0x1bb0, c.shape + 0x20);
+            let what = format!("S6 case {case}");
+            let r =
+                p.a.call(thunk, Conv::Cdecl, &[c.shape, c.cmd])
+                    .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
+            assert!(r.st0.is_none(), "{}: {what}: ST0 left set", p.name);
+            let frame = Frame { ebp };
+            shape::plain(&mut p.b, frame, c.cmd, c.shape + 0x20);
+            assert_eq!(
+                r.eax,
+                shape::tail(&p.b, frame),
+                "{}: {what}: result",
+                p.name
+            );
+            p.same(&what, ebp);
+        }
+    }
+}
+
+#[test]
+fn shape_whole_s6_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_d0c0);
+        let ebp = p.ebp(2);
+        let f = p.sym(0x007e_d0c0);
+        let c = Case::new(&mut p);
+        for case in 0..400 {
+            let (n, records) = count(&mut rng);
+            plain_case(&mut p, &mut rng, c, records);
+            let shift = rng.pick(&[0u32, 0, 4, 0x10]);
+            p.set(p.sym(SHIFT), shift);
+            p.set(c.shape + shift + 2, n);
+            p.fill_frame(ebp, &mut rng);
+            let what = format!("whole S6 case {case}");
+            let r =
+                p.a.call(f, Conv::Cdecl, &[c.shape, c.cmd])
+                    .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
+            assert!(r.st0.is_none(), "{}: {what}: ST0 left set", p.name);
+            let mine = shape::op_shape_draw(&mut p.b, c.shape, c.cmd, ebp);
+            assert_eq!(Some(r.eax), mine, "{}: {what}: result", p.name);
+            p.same(&what, ebp);
+        }
+    }
+}
+
+/// Each loop's first instruction after the head's count store, in
+/// [`shape::Variant`] order (S1..S6).
+const LOOPS: [(u32, shape::Variant); 6] = [
+    (0x007e_d1d2, shape::Variant::Vu0Clip),
+    (0x007e_ed53, shape::Variant::Vu0Textured),
+    (0x007f_0a18, shape::Variant::Vu0Plain),
+    (0x007f_1a8b, shape::Variant::Clip),
+    (0x007f_2dae, shape::Variant::Textured),
+    (0x007f_3f03, shape::Variant::Plain),
+];
+
+/// The head on every selection: each loop's start patched (in both
+/// oracles, run in the original's) to store its number in a cell and jump
+/// to the tail. The Rust head's selection, frame words, origin block, count
+/// and shift and the tail's result must agree.
+#[test]
+fn shape_head_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_d19e);
+        let cell = p.alloc(4);
+        let tail = p.sym(0x007f_499c);
+        for (k, (at, _)) in (0u32..).zip(LOOPS) {
+            let at = p.sym(at);
+            let mut c = vec![0xc7, 0x05]; // mov dword [cell], k
+            c.extend(cell.to_le_bytes());
+            c.extend(k.to_le_bytes());
+            c.push(0xe9); // jmp tail
+            c.extend(tail.wrapping_sub(at + 15).to_le_bytes());
+            p.code(at, &c);
+        }
+        let ebp = p.ebp(2);
+        let draw = p.sym(0x007e_d0c0);
+        let c = Case::new(&mut p);
+        let mut seen = [0u32; 6];
+        for case in 0..600 {
+            for k in 0..8 {
+                let v = rng.next();
+                p.set(c.cmd + 4 * k, v);
+                let v = rng.next();
+                p.set(c.shape + 4 * k, v);
+            }
+            if rng.chance(40) {
+                p.set(c.cmd + 0x1c, 0u32);
+            }
+            if rng.chance(40) {
+                let flags = u16::try_from(rng.below(0x1_0000)).unwrap() & !0xc00;
+                p.set(c.cmd + 2, flags);
+            }
+            if rng.chance(30) {
+                p.set(c.cmd + 0x14, rng.pick(&[0u32, 0xffff_fff8, 0x10]));
+            }
+            for k in 0..12 {
+                let v = rng.float();
+                p.set(p.sym(ORIGIN_SRC) + 4 * k, v);
+            }
+            let shift = rng.pick(&[0u32, 2, 4, 0x10]);
+            p.set(p.sym(SHIFT), shift);
+            let t1 = rng.next();
+            let t1 = rng.pick(&[0u32, 1, 0x1_0000, t1]);
+            p.set(p.sym(0x00c8_f598), t1);
+            p.fill_frame(ebp, &mut rng);
+            let what = format!("head case {case}");
+            let r =
+                p.a.call(draw, Conv::Cdecl, &[c.shape, c.cmd])
+                    .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
+            let frame = Frame { ebp };
+            let v = shape::head(&mut p.b, c.shape, c.cmd, frame);
+            let k = (0u32..).zip(LOOPS).find(|(_, (_, l))| *l == v).unwrap().0;
+            seen[k as usize] += 1;
+            Mem::write(&mut p.b, cell, k);
+            assert_eq!(
+                r.eax,
+                shape::tail(&p.b, frame),
+                "{}: {what}: result",
+                p.name
+            );
+            let shape_word: u32 = Mem::read(&p.b, ebp - 0x1bb4);
+            assert_eq!(
+                shape_word,
+                Mem::read::<u32>(&p.a, ebp - 0x1bb4),
+                "{}: {what}: shape word",
+                p.name
+            );
+            p.same(&what, ebp);
+        }
+        assert!(
+            seen.iter().all(|&n| n > 20),
+            "{}: selections {seen:?}",
+            p.name
+        );
+    }
+}
