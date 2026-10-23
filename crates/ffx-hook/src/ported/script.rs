@@ -7140,6 +7140,22 @@ ported! {
     Atel_SetWorkerPosXZ_00870970 @ 0x0087_0970 => extern "C" fn h_870970(w: u32, x: u32, z: u32, keep: u32) {
         hp::atel_set_worker_pos_xz(&mut mem(), w, x, z, keep);
     }
+    /// `Atel_CtrlExec_00867710(ctrl)`: the caller ignores `EAX`.
+    Atel_CtrlExec_00867710 @ 0x0086_7710 => extern "C" fn h_867710(c: u32) {
+        hp::atel_ctrl_exec(&mut mem(), c);
+    }
+    /// `AtelExecCtrlEvent(ctrl)`.
+    AtelExecCtrlEvent @ 0x0086_7740 => extern "C" fn h_867740(c: u32) -> u32 {
+        hp::atel_exec_ctrl_event(&mut mem(), c)
+    }
+    /// `Atel_CameraCallback_00861800(word)`.
+    Atel_CameraCallback_00861800 @ 0x0086_1800 => extern "C" fn h_861800(word: u32) -> u32 {
+        hp::atel_camera_callback(&mut mem(), word)
+    }
+    /// `Atel_EffectDoneCallback_00861f20(word)`.
+    Atel_EffectDoneCallback_00861f20 @ 0x0086_1f20 => extern "C" fn h_861f20(word: u32) -> u32 {
+        hp::atel_effect_done_callback(&mut mem(), word)
+    }
     /// `AtelExecCtrlEventInit_008677a0(ctrl, battle)`.
     AtelExecCtrlEventInit_008677a0 @ 0x0086_77a0 => extern "C" fn h_8677a0(c: u32, battle: u32) {
         hp::atel_exec_ctrl_event_init(&mut mem(), c, battle);

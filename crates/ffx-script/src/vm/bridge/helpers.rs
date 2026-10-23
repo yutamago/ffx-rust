@@ -9213,3 +9213,76 @@ pub fn atel_check_box_trigger<H: super::run::NativeHost>(
     h.write(ctx + 0x1ec, copy(reach2));
     h.write(ctx + 0x1e8, i);
 }
+
+// ---- small round 1 ----
+
+/// `Atel_RunCtrlWorkers_00867950` ([`atel_run_ctrl_workers`]).
+const RUN_CTRL_WORKERS: u32 = 0x0086_7950;
+/// `AtelExecCtrlEventInit_008677a0` ([`atel_exec_ctrl_event_init`]).
+const EXEC_CTRL_EVENT_INIT: u32 = 0x0086_77a0;
+
+/// `Atel_CtrlExec_00867710(ctrl)` (name ours; the ctrl work's default
+/// update callback, `+0x4c`, set by `AtelSetUpCtrlWork`): a started work
+/// (`+0` bit 3) runs one pass of its workers
+/// ([`atel_run_ctrl_workers`]`(ctrl, 1, 1)`), else the event start
+/// ([`atel_exec_ctrl_event_init`]`(ctrl, 0)`). The caller
+/// (`Atel_ExecCtrlWorks_008688f0`) ignores `EAX`.
+pub fn atel_ctrl_exec(h: &mut impl ffx_bridge::Host, c: u32) {
+    if h.read::<u8>(c) & 8 != 0 {
+        host_call(h, RUN_CTRL_WORKERS, &[c, 1, 1]);
+    } else {
+        host_call(h, EXEC_CTRL_EVENT_INIT, &[c, 0]);
+    }
+}
+
+/// `AtelExecCtrlEvent(ctrl)` (`0x00867740`; the `+0x4c` callback
+/// `AtelActorSetUp2` installs): a started work (`+0` bit 3) runs three
+/// worker passes ([`atel_run_ctrl_workers`] with (input, clear) = (1, 0),
+/// (0, 0), (0, 1)), else the battle event start
+/// ([`atel_exec_ctrl_event_init`]`(ctrl, 1)`). Then, with queue 0 holding
+/// a callback, [`atel_exec_callback_que`]`(0)` (a tail jump that first
+/// zeroes the caller's argument word; the caller doesn't read it back).
+/// `EAX` that call's result, or 0.
+pub fn atel_exec_ctrl_event(h: &mut impl ffx_bridge::Host, c: u32) -> u32 {
+    if h.read::<u8>(c) & 8 != 0 {
+        host_call(h, RUN_CTRL_WORKERS, &[c, 1, 0]);
+        host_call(h, RUN_CTRL_WORKERS, &[c, 0, 0]);
+        host_call(h, RUN_CTRL_WORKERS, &[c, 0, 1]);
+    } else {
+        host_call(h, EXEC_CTRL_EVENT_INIT, &[c, 1]);
+    }
+    if super::globals::atel_check_callback_que(h, 0) == 0 {
+        return 0;
+    }
+    atel_exec_callback_que(h, 0)
+}
+
+/// `Atel_CameraCallback_00861800(word)` (name ours; the `CAMERA` entry
+/// [`atel_battle_end_callback`] queues): the first call only counts its
+/// word up (0); the next frees the battle camera
+/// (`MsBattleCameraFree`, `0x007ba950`), counts up and is done (1).
+pub fn atel_camera_callback(h: &mut impl ffx_bridge::Host, word: u32) -> u32 {
+    let done = h.read::<u32>(word) != 0;
+    if done {
+        host_call(h, 0x007b_a950, &[]);
+    }
+    // `inc [word]` reads the word again after the call
+    let n = h.read::<u32>(word);
+    h.write(word, n.wrapping_add(1));
+    u32::from(done)
+}
+
+/// `Atel_EffectDoneCallback_00861f20(word)` (name ours; the `EFFDONE`
+/// entry): done (1) once the event effect's state
+/// (`MsEventEffectGetStat`) is 0 or 6, which also sets
+/// `g_AtelOverlayStatus` (`0x01326b80`) = 4; a word of 0 becomes 1.
+pub fn atel_effect_done_callback(h: &mut impl ffx_bridge::Host, word: u32) -> u32 {
+    let done = matches!(host_call(h, MS_EVENT_EFFECT_GET_STAT, &[]), 0 | 6);
+    if done {
+        h.write(h.rebase(0x0132_6b80), 4_u8);
+    }
+    if h.read::<u32>(word) == 0 {
+        h.write(word, 1_u32);
+    }
+    u32::from(done)
+}

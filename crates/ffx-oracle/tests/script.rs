@@ -15815,3 +15815,125 @@ fn round28f_native_slots_match_the_original() {
         }
     }
 }
+
+/// Small round 1 a on one pair: the ctrl works' `+0x4c` callbacks
+/// (`Atel_CtrlExec_00867710`, `AtelExecCtrlEvent`; the worker passes and
+/// the event start logged, queue 0's first callback a logging stub with
+/// results from a sequence, `AtelExecCallbackQue` real) and the battle
+/// end's `CAMERA` and `EFFDONE` queue entries (`MsBattleCameraFree`
+/// logged, `MsEventEffectGetStat` from a sequence).
+fn small1a_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    // sequences: 0 the worker passes, 1 the event start, 2 the effect
+    // state, 3 the queued callback (`0x00861480`, the DONE entry)
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0086_7950, 3, true),
+            (0x0086_77a0, 2, true),
+            (0x0078_8bd0, 0, true),
+            (0x0086_1480, 1, true),
+            (0x007b_a950, 0, false),
+        ],
+    );
+    let queued = a.rebase(0x0086_1480);
+    let que = a.rebase(0x0132_7f50);
+    let c = alloc_both(a, b, 0x238);
+    let word = alloc_both(a, b, 4);
+    for round in 0..96u32 {
+        r27_reset(a, b, &stubs, |s| match s {
+            2 => rng.below(9),
+            _ => [0u32, 1, 0x8000, rng.next()][rng.below(4) as usize],
+        });
+        fill_both(a, b, rng, c, 0x40);
+        // queue 0 (and the next queue's head the shift reads into): names
+        // of up to 7 characters, callbacks the stub or empty
+        fill_both(a, b, rng, que, 0x110);
+        for k in 0..17u32 {
+            let e = que + k * 0x10;
+            let f = match rng.below(3) {
+                0 => 0,
+                _ => queued,
+            };
+            poke(a, b, e, f);
+            poke(a, b, e + 8 + rng.below(8), 0u8);
+            poke(a, b, e + 0xf, 0u8);
+        }
+        if round % 5 == 0 {
+            poke(a, b, que, 0u32);
+        }
+        let ce = format!("{what} {round}");
+        r22_case(
+            a,
+            b,
+            0x0086_7710,
+            &[c],
+            false,
+            &format!("Atel_CtrlExec {ce}"),
+            |r| {
+                hp::atel_ctrl_exec(r, c);
+                0
+            },
+        );
+        r22_case(
+            a,
+            b,
+            0x0086_7740,
+            &[c],
+            true,
+            &format!("AtelExecCtrlEvent {ce}"),
+            |r| hp::atel_exec_ctrl_event(r, c),
+        );
+        let w = [0u32, 1, u32::MAX, 0x100, rng.next()][rng.below(5) as usize];
+        poke(a, b, word, w);
+        r22_case(
+            a,
+            b,
+            0x0086_1800,
+            &[word],
+            true,
+            &format!("Atel_CameraCallback {ce}"),
+            |r| hp::atel_camera_callback(r, word),
+        );
+        // 0x100: a word whose low byte is 0
+        let w = [0u32, 0, 1, 0x100, rng.next()][rng.below(5) as usize];
+        poke(a, b, word, w);
+        poke(a, b, a.rebase(0x0132_6b80), rng.next().to_le_bytes()[0]);
+        r22_case(
+            a,
+            b,
+            0x0086_1f20,
+            &[word],
+            true,
+            &format!("Atel_EffectDoneCallback {ce}"),
+            |r| hp::atel_effect_done_callback(r, word),
+        );
+    }
+}
+
+#[test]
+fn round_small1a_ctrl_callbacks_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_5a1a);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        small1a_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    small1a_cases(&mut a, &mut b, &mut rng, "snapshot");
+}
