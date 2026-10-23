@@ -3506,3 +3506,259 @@ fn r3b_iggy_menu_manager_set_viewport_matches_the_original() {
         }
     }
 }
+
+use ffx_pcui::video::bridge as video;
+
+const PVIDEO_AUDIO_READ: u32 = 0x00a2_7170;
+
+/// The test memory the audio stand-ins share (the same in both oracles).
+#[derive(Clone, Copy)]
+struct AudioScript {
+    /// Log cursor, then 4-word entries: `id` and the arguments
+    /// ([`AudioScript::stand_in`]).
+    log: u32,
+    /// Answer cursor, then the answers the stand-ins take in call order
+    /// (`0xffff_ffff` past the end).
+    answers: u32,
+    /// The player (`this`), where a stand-in pokes `+0xd8`.
+    player: u32,
+    /// The two `pcm` channel tables `vorbis_synthesis_pcmout` hands out.
+    tables: [u32; 2],
+    /// What `__iob_func` returns.
+    iob: u32,
+    /// `ecx` of the thiscall stubs.
+    ecx: u32,
+}
+
+impl AudioScript {
+    fn next(self, s: &mut ffx_oracle::StandIn<'_, '_>) -> u32 {
+        let at: u32 = Mem::read(s, self.answers);
+        Mem::write(s, self.answers, at + 4);
+        Mem::read(s, at)
+    }
+
+    fn log(self, s: &mut ffx_oracle::StandIn<'_, '_>, e: [u32; 4]) {
+        let at: u32 = Mem::read(s, self.log);
+        Mem::write(s, at, e);
+        Mem::write(s, self.log, at + 16);
+    }
+
+    /// The stand-in of `id` at `at` (a cave for the thiscall ones and the
+    /// import slots).
+    fn stand_in(self, o: &mut Oracle, at: u32, id: u32, cell: u32) {
+        o.stand_in(at, ffx_oracle::Returns::Eax, cell, move |s| {
+            let ecx: u32 = Mem::read(s, self.ecx);
+            // the words each takes: pcmout's `&pcm` is the caller's
+            // frame (not logged), the queue's `this` is `ecx`
+            let e = match id {
+                1 => [id, s.arg(0), 0, 0],
+                2..=4 => [id, s.arg(0), s.arg(1), 0],
+                5 | 6 => [id, 0, 0, ecx],
+                7 => [id, 0, 0, 0],
+                _ => [id, s.arg(0), s.arg(1), s.arg(2)],
+            };
+            let a1 = s.arg(1);
+            self.log(s, e);
+            let w = self.next(s);
+            let done = w == 0xffff_ffff;
+            let r = match id {
+                // pcmout: a count (0 a third of the time, a few
+                // negatives), table, and a poke of +0xd8; done: +0xd8 = 1
+                1 => {
+                    if done {
+                        Mem::write(s, self.player + 0xd8, 1u32);
+                        0
+                    } else {
+                        let n = match w % 9 {
+                            0..=2 => 0,
+                            3 => (w >> 8) % 4 - 2,
+                            4 => 0x7fff_ff00 + (w >> 8) % 0x20,
+                            _ => (w >> 8) % 120,
+                        };
+                        if n != 0 {
+                            Mem::write(s, a1, self.tables[(w >> 16) as usize & 1]);
+                        }
+                        if (w >> 20).is_multiple_of(16) {
+                            Mem::write(s, self.player + 0xd8, (w >> 24) % 3);
+                        }
+                        n
+                    }
+                }
+                // queue front: a packet or none; a poke of +0xd8
+                5 => {
+                    if done || w.is_multiple_of(4) {
+                        0
+                    } else {
+                        if (w >> 20).is_multiple_of(16) {
+                            Mem::write(s, self.player + 0xd8, 1u32);
+                        }
+                        self.tables[1] + 0x40 + (w >> 8) % 0x40 * 4
+                    }
+                }
+                // synthesis, blockin: 0 half the time
+                3 | 4 if w.is_multiple_of(2) => 0,
+                // __iob_func
+                7 => self.iob,
+                _ => w,
+            };
+            u64::from(r)
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins' setup and the cases
+fn r3c_pvideo_audio_read_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0303);
+        let floats = t.alloc(6 * 128 * 4);
+        let tables = [t.alloc(0x200), t.alloc(0x200)];
+        for (k, &tab) in (0u32..).zip(&tables) {
+            let mut b = Vec::new();
+            for ch in 0..6u32 {
+                b.extend((floats + 4 * (ch * 128 + 5 * k)).to_le_bytes());
+            }
+            t.put(tab, &b);
+        }
+        let s = AudioScript {
+            log: t.alloc(0x4004),
+            answers: t.alloc(0x404),
+            player: t.alloc(0x300),
+            tables,
+            iob: t.alloc(0x100),
+            ecx: t.alloc(4),
+        };
+        let cells = t.alloc(0x20);
+        for o in [&mut t.a, &mut t.b] {
+            for (id, sym) in [
+                (1, video::PCMOUT),
+                (2, video::PCM_READ),
+                (3, video::SYNTHESIS),
+                (4, video::BLOCKIN),
+            ] {
+                let at = o.rebase(sym);
+                s.stand_in(o, at, id, cells + 4 * id);
+            }
+            for (id, sym) in [(5, video::QUEUE_FRONT), (6, video::QUEUE_POP)] {
+                let cave = o.alloc_code(&[0x90; 8]).unwrap();
+                s.stand_in(o, cave, id, cells + 4 * id);
+                // mov [ecx cell], ecx; mov eax, cave; jmp eax
+                let mut c = vec![0x89, 0x0d];
+                c.extend(s.ecx.to_le_bytes());
+                c.push(0xb8);
+                c.extend(cave.to_le_bytes());
+                c.extend([0xff, 0xe0]);
+                let at = o.rebase(sym);
+                o.write(at, &c).unwrap();
+            }
+            for (id, slot) in [(7, video::IOB_FUNC_SLOT), (8, video::FPRINTF_SLOT)] {
+                let cave = o.alloc_code(&[0x90; 8]).unwrap();
+                s.stand_in(o, cave, id, cells + 4 * id);
+                let at = o.rebase(slot);
+                o.write(at, &cave.to_le_bytes()).unwrap();
+            }
+        }
+        t.a.clear_dirty();
+        t.b.clear_dirty();
+        let out = t.alloc(0x8000);
+        let work = t.b.stack_range().start + 0x1000;
+        let special = [
+            1.0f32,
+            -1.0,
+            0.999_99,
+            -0.999_99,
+            1.000_1,
+            -1.000_1,
+            2.0,
+            -3.0,
+            0.0,
+            -0.0,
+            f32::MIN_POSITIVE,
+            1e-45,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            // the rounding edges: (k - 0.5) / 32767
+            -0.5 / 32767.0,
+            0.5 / 32767.0,
+            1.5 / 32767.0,
+            32766.5 / 32767.0,
+            -32767.5 / 32767.0,
+            -32768.5 / 32767.0,
+        ];
+        let mut clipped = 0;
+        let mut blocks = 0;
+        for n in 0..300u32 {
+            let mut fl = Vec::new();
+            for _ in 0..6 * 128 {
+                let x = match rng.below(6) {
+                    0 => special[rng.below(u32::try_from(special.len()).unwrap()) as usize],
+                    1 => f32::from_bits(rng.next()),
+                    #[allow(clippy::cast_possible_truncation)] // a float near -1.2..1.2
+                    _ => (f64::from(rng.next().cast_signed()) / f64::from(0x7000_0000)) as f32,
+                };
+                // no signalling NaNs (the emulator keeps them)
+                let x = if x.is_nan() { f32::NAN } else { x };
+                fl.extend(x.to_le_bytes());
+            }
+            t.put(floats, &fl);
+            let mut p = rng.bytes(0x300);
+            p[0x2a8] = u8::from(rng.below(12) == 0);
+            p[0xf0] = [0, 1, 0xff][rng.below(3) as usize];
+            let remaining = match rng.below(8) {
+                0 => rng.below(4).wrapping_sub(2),
+                _ => rng.below(300),
+            };
+            p[0x2a4..0x2a8].copy_from_slice(&remaining.to_le_bytes());
+            let channels = [1u32, 2, 2, 6, 0, 0xffff_ffff, 3][rng.below(7) as usize];
+            p[0x184..0x188].copy_from_slice(&channels.to_le_bytes());
+            let d8 = [0u32, 0, 0, 1, 0x101, 0x100, rng.next()][rng.below(7) as usize];
+            p[0xd8..0xdc].copy_from_slice(&d8.to_le_bytes());
+            if rng.below(4) == 0 {
+                p[0x178..0x17c].copy_from_slice(&0xffff_ffffu32.to_le_bytes());
+            }
+            t.put(s.player, &p);
+            let mut ans = (s.answers + 4).to_le_bytes().to_vec();
+            for _ in 0..rng.below(200) {
+                ans.extend(rng.next().to_le_bytes());
+            }
+            ans.resize(0x404, 0xff);
+            t.put(s.answers, &ans);
+            t.put(s.log, &(s.log + 4).to_le_bytes());
+            t.put(s.iob, &rng.bytes(0x100));
+            t.put(out, &rng.bytes(0x8000));
+            let at = out + 0x4000;
+            t.b.write(work, &rng.bytes(4)).unwrap();
+            let what = format!("audio read {n}: {remaining} x {channels}");
+            if p[0x2a8] != 0 {
+                let f = t.a.rebase(PVIDEO_AUDIO_READ);
+                let ra = t.a.call(f, Conv::Thiscall(s.player), &[at, 0]).unwrap();
+                assert_eq!(
+                    ra.eax & 0xff,
+                    video::audio_read(&mut Run(&mut t.b), s.player, at, work)
+                );
+                assert_eq!(t.a.diff(&mut t.b).unwrap(), [], "{what}");
+                continue;
+            }
+            t.check(
+                &what,
+                PVIDEO_AUDIO_READ,
+                Conv::Thiscall(s.player),
+                &[at, rng.next()],
+                |o| Res::Int(video::audio_read(&mut Run(o), s.player, at, work)),
+            );
+            let log = Mem::read::<u32>(&t.a, s.log);
+            let entries = Oracle::read(&mut t.a, s.log + 4, (log - s.log - 4) as usize).unwrap();
+            for e in entries.chunks(16) {
+                clipped += usize::from(e[0] == 8);
+                blocks += usize::from(e[0] == 2);
+            }
+        }
+        assert!(
+            clipped > 20 && blocks > 100,
+            "{}: {clipped} clipped, {blocks} blocks",
+            t.name
+        );
+    }
+}

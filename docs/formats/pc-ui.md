@@ -406,6 +406,45 @@ the shader's name from the material path after `"GL/"`. Both pass a name
 buffer the first never fills (stack garbage in the original). Port:
 `ffx_pcui::dyngeo`.
 
+## Esc menu pop-ups, Iggy viewport setter
+
+The Esc menu's pop-ups are queued handlers (`IggyMenuHandlers_addCall`):
+`FFEscMenu_ShowQuitPopUp_0068fb20` (for `EscMenuQuit`) and the settings
+pages' "incomplete" pop-ups `FFEscMenu_ShowKeyIncompletePopUp_00701470`
+and `FFEscMenu_ShowPadIncompletePopUp_00701c50`. Each builds 16-byte
+`IggyDataValue`s and calls `showPopUpWithBtn` through
+`IggyMenu_callFlashFunction_3_0068ddd0` / `_5_0068def0`, which take the
+values by value (14 and 22 stack words: menu, name, then four words per
+value). Texts are localised (`graphicGetLocTextWithLength`) and passed
+through `LocText_ConvertLineBreaks_006e9700`, which turns `@el@` into a
+line break; the incomplete pop-ups use the 0x110-byte `LocString`
+(`0x0068e180` load, `0x0068e270` value at `+0x100`). The quit pop-up then
+puts its answer callback `0x0068fcf0` at `g_FFEscMenu + 0x10c`. Word 1 of
+each value (and word 3 of a boolean) is never written: the original
+passes stack garbage there, the port whatever its frame holds.
+
+`IggyMenuManager_SetViewport_00a26a20(this, w, h)` fits the menus to the
+screen: with `r = f32(f32(w) / f32(h))` against `g_IggyTargetAspect`
+(`0x00c6b270`), equal aspects give `(0, 0, w, h)`, a wider target
+letterboxes (`k = f32(r * 0.5625)`, height `ftol(k h)`, offset
+`ftol((1 - k) h * 0.5)`), anything else (NaN too) pillarboxes
+(`q = f32(a * (1 / r))`, width `ftol(q w)`, offset `ftol((1 - q) w * 0.5)`).
+It calls `IggyMenuManager_ApplyViewport_00a265a0` only when one of the six
+words `+0x18..+0x2c` changes. Port: `ffx_pcui::menus`.
+
+## Movie audio
+
+`PVideoPlaybackWin32_AudioRead_00a27170(player, out)` fills the FMOD
+stream (read callback `0x00a27ee0`) with `+0x2a4` interleaved 16-bit
+samples per channel (`+0x184` channels): Vorbis blocks from
+`vorbis_synthesis_pcmout` (`+0x1b0`), each float as
+`ftol(floor(f32(x * 32767 + 0.5)))` clamped to `-0x8000..0x7fff` (a clamp
+prints `"Clipping in frame %ld"` with `+0x1f0` on `stderr`); without
+decoded samples it feeds queued packets (`+0x80`) to `vorbis_synthesis`
+and `vorbis_synthesis_blockin`, counting them in the `u64` at `+0x178`.
+It stops early when `+0xd8` is 1 and does nothing when `+0x2a8` is set.
+Port: `ffx_pcui::video`.
+
 ## Left original
 
 PhyreEngine library code in the same address range (verdicts, not

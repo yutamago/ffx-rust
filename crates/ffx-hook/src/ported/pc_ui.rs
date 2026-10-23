@@ -15,6 +15,7 @@ use ffx_pcui::panel::bridge as panel;
 use ffx_pcui::sea::bridge as sea;
 use ffx_pcui::spdctrl::bridge as spdctrl;
 use ffx_pcui::touch::bridge as touch;
+use ffx_pcui::video::bridge as video;
 use ffx_pcui::worldmap::bridge as worldmap;
 
 use super::{mem, ported};
@@ -323,5 +324,12 @@ ported! {
     /// `IggyMenuManager_SetViewport_00a26a20(this, w, h)`.
     IggyMenuManager_SetViewport_00a26a20 @ 0x00a2_6a20 => extern "thiscall" fn iggy_menu_manager_set_viewport(this: u32, w: u32, h: u32) -> u32 {
         menus::set_viewport(&mut mem(), this, w, h)
+    }
+    /// `PVideoPlaybackWin32_AudioRead_00a27170(player, out, _)` (the FMOD
+    /// stream's read callback thread): the `pcm` pointer in this frame.
+    PVideoPlaybackWin32_AudioRead_00a27170 @ 0x00a2_7170 => extern "thiscall" fn pvideo_audio_read(this: u32, out: u32, unused: u32) -> u32 {
+        let _ = unused;
+        let mut w = super::StackFrame::<{ video::WORK as usize / 4 }>::new();
+        video::audio_read(&mut mem(), this, out, w.at())
     }
 }

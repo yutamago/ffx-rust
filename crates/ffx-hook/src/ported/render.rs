@@ -941,6 +941,10 @@ ported! {
     graphicUpdateCrossFade @ 0x0064_4910 => extern "C" fn graphic_update_cross_fade(weight: u32, time: u32) -> u32 {
         st::update_cross_fade(&mut mem(), weight, time)
     }
+    /// `SpecialFeatureDisplay_dtor_SpecialFeatureDisplay(lang)`.
+    SpecialFeatureDisplay_dtor_SpecialFeatureDisplay @ 0x0064_22e0 => extern "C" fn special_feature_display_dtor(lang: u32) -> u32 {
+        st::menu_texture_load_language(&mut mem(), lang)
+    }
     /// `graphicObjectSetRotation(id, angles, order)`.
     graphicObjectSetRotation @ 0x0064_26a0 => extern "C" fn graphic_object_set_rotation(id: u32, angles: u32, order: u32) -> u32 {
         st::graphic_object_set_rotation(&mut mem(), id, angles, order)

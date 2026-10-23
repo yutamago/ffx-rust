@@ -1881,7 +1881,7 @@
 0x006420e0 function graphicMagicVFXUnloadLoadSpecialShaderTable # fh v3:bsim1.00 0x00642290
 0x006420f0 function graphicMagicVFXUnloadTexture # fh v3:bsim1.00 0x006422a0
 0x00642110 function graphicMagic_DrawColorModel_KaMdldrw # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'VertexColorHeightNow'; Switch 0x71001d2cf0 graphicMagic_DrawColorModel_KaMdldrw (symbols from Fahrenheit's server export)
-0x006422e0 function SpecialFeatureDisplay_dtor_SpecialFeatureDisplay # fh switch:bsim1.00 0x7100282e00 SpecialFeatureDisplay::~SpecialFeatureDisplay
+0x006422e0 function SpecialFeatureDisplay_dtor_SpecialFeatureDisplay # fh switch:bsim1.00 0x7100282e00 SpecialFeatureDisplay::~SpecialFeatureDisplay; the PC code is cdecl(lang) from TOInit (TOGetFFXLangJmp()): MenuTextureManager_LoadLanguageTextures_0067c920(g_MenuTextureManager, lang), its eax (the bsim match of this 19-byte wrapper looks wrong); ported (ffx_graphic::state, pc round 3)
 0x00642300 function graphicMenuLoadSpecialTexture # fh v3:bsim1.00 0x006424b0
 0x00642320 function graphicMenuReset             # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008b4fc8 graphicMenuReset, 2 votes, round 2
 0x00642340 function graphicMenuSetAbmap          # layout: alphabetical run between graphicMenuReset and graphicMenuUnloadSpecialTexture (3 unnamed in the gap); Switch 0x71001d4b90 graphicMenuSetAbmap is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -2480,6 +2480,7 @@
 0x0067c720 function MenuTextureManager_LoadCloudSaveUITexture # fh v3:bsim1.00 0x0067c8d0 MenuTextureManager::LoadCloudSaveUITexture
 0x0067c8c0 function MenuTextureManager_LoadDreamMapTexture # layout+callees: sorts between MenuTextureManager_LoadCloudSaveUITexture and MenuTextureManager_LoadGameMenuTexture, and its named callees match the Switch 0x710022e170 MenuTextureManager_LoadDreamMapTexture's (similarity 1.00: PhyreScene_loadMenuTexture); symbols from Fahrenheit's server export
 0x0067c8f0 function MenuTextureManager_LoadEternalCalmCopyRightTexture # layout+callees: sorts between MenuTextureManager_LoadCloudSaveUITexture and MenuTextureManager_LoadGameMenuTexture, and its named callees match the Switch 0x710022e790 MenuTextureManager_LoadEternalCalmCopyRightTexture's (similarity 1.00: PhyreScene_loadMenuTexture, TOGetFFXLang); symbols from Fahrenheit's server export
+0x0067c920 function MenuTextureManager_LoadLanguageTextures_0067c920 # thiscall(this, lang), ret 4: per language, ClusterManager_GetInstance(path) and 0x0069bb00(path) over the menu texture paths (0x00c59568...); between MenuTextureManager_LoadEternalCalmCopyRightTexture and LoadGameMenuTexture; name ours
 0x0067cb30 function MenuTextureManager_LoadGameMenuTexture # fh v3:exact 0x0067cce0 MenuTextureManager::LoadGameMenuTexture
 0x0067cba0 function MenuTextureManager_LoadMainMenuWaveTexture # layout: alphabetical run between MenuTextureManager_LoadGameMenuTexture and MenuTextureManager_LoadMon_BokuTextures (1 unnamed in the gap); Switch 0x710022df50 MenuTextureManager::LoadMainMenuWaveTexture is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0067cbd0 function MenuTextureManager_LoadMon_BokuTextures # fh v3:exact 0x0067cd80 MenuTextureManager::LoadMon_BokuTextures
@@ -13619,12 +13620,13 @@
 0x00a26fc0 function PVideoPlaybackWin32_memmove_00a26fc0 # cdecl(dst, src, n): memmove (a jmp); a decoder callback of the PhyreEngine video player (library); name ours
 0x00a26fd0 function PVideoPlaybackWin32_memset_00a26fd0 # cdecl(dst, c, n): memset; a decoder callback of the PhyreEngine video player (library); name ours
 0x00a26fe0 function PVideoPlaybackWin32_CopyPlane_00a26fe0 # cdecl(dst, dst stride, src, src stride, row bytes, rows): one memcpy when the strides agree, else row by row; called by 0x00a284a0 (video frames); library; name ours
-0x00a27170 function PVideoPlaybackWin32_AudioRead_00a27170 # thiscall(player; s16 out): Vorbis float PCM to interleaved s16 (floor(x * 32767 + 0.5), clamped, 'Clipping in frame %ld'); called by the FMOD read callback 0x00a27ee0; library; name ours
+0x00a27170 function PVideoPlaybackWin32_AudioRead_00a27170 # thiscall(player, s16 out, unused), ret 8: +0x2a8 set: al 0; else while +0x2a4 samples are wanted and +0xd8 != 1: vorbis_synthesis_pcmout (+0x1b0) blocks to interleaved s16 over +0x184 channels (f32(x * 32767 + 0.5), floor, ftol, clamped -0x8000..0x7fff; 'Clipping in frame %ld' with +0x1f0 to stderr), vorbis_synthesis_read; none decoded: queue +0x80 packets (+0x178 u64 count, +0x160/+0x164 ogg_packet) to vorbis_synthesis (+0x220) / blockin; returns 1 when done (or +0xf0 clear); called by the FMOD read callback 0x00a27ee0, which drops it; name ours; ported (ffx_pcui::video, pc round 3)
 0x00a273b0 function PVideoPlaybackWin32_AudioInit_00a273b0 # fastcall(player) -> al: the Vorbis headers, then an FMOD stream (System::createSound, playSound, Channel::setPriority); called by PVideoPlaybackWin32__ReadingThread; library; name ours
 0x00a27bd0 function Phyre_PVideo_PVideoPlaybackWin32_getCurrentTime # fh v3:exact+call.cs 0x00a27bd0 thiscall Phyre::PVideo::PVideoPlaybackWin32::getCurrentTime
 0x00a27c40 function Phyre_PVideo_PVideoPlaybackWin32_getEndTime # fh v3:bsim1.00+call.cs 0x00a27c40 thiscall Phyre::PVideo::PVideoPlaybackWin32::getEndTime
 0x00a27cb0 function Phyre_PVideo_PVideoPlaybackNX_getSDKMemoryStats # fh switch:bsim1.00 0x710080ae80 Phyre::PVideo::PVideoPlaybackNX::getSDKMemoryStats
 0x00a27cf0 function PVideoPlaybackWin32__ReadingThread # str: the only user of the string "PVideoPlaybackWin32::_ReadingThread" (its own __FUNCTION__ in an error print)
+0x00a27ee0 function PVideoPlaybackWin32_FmodReadCallback_00a27ee0 # stdcall(sound, data, len), ret 0xc: 0x00a7c8fe(sound, &player) (FMOD Sound::getUserData), then PVideoPlaybackWin32_AudioRead_00a27170(player, data, len); returns 0; its address pushed at 0x00a275d2 (AudioInit's FMOD stream setup); name ours
 0x00a27f20 function PVideoPlaybackWin32__VideoDecodingThread # str: the only user of the string "PVideoPlaybackWin32::_VideoDecodingThread" (its own __FUNCTION__ in an error print)
 0x00a284a0 function Phyre_PVideo_PVideoPlaybackWin32_updateTexture # fh v3:exact 0x00a284a0 Phyre::PVideo::PVideoPlaybackWin32::updateTexture
 0x00a28a40 function IggyMenu_dtor_IggyMenu       # structure: fastcall(this): restores IggyMenu_vftable, releases the Iggy player (+0x6c, +0x68) and frees with Phyre_PhyreFree; 24 callers are the IggyMenu subclasses' destructors and menu teardown, as the Switch's IggyMenu::~IggyMenu callers (FFEscMenu::~FFEscMenu, IconPanel::~IconPanel, ...)
@@ -16499,6 +16501,7 @@
 0x00ccb9d4 label    g_VfxPhase                # at 0x1f updateVFXRenderData doubles the alpha (512) of magic files 0x203 and 0x29b (texture 0, object +8 == 0x48, program 0xb)
 0x00ccb9d8 label    g_PhyreScene              # the PhyreScene object: graphicLevelGetNameHash passes it to PhyreScene_getCurrentLevelNameHash (+0xfaf4); field list in docs/formats/render.md
 0x00ccc81c label    g_GraphicUi               # the remaster's UI object: graphicGetNowUIType / graphicSetNowUIType (+0x2be0)
+0x00ccc820 label g_MenuTextureManager # the menus' texture manager: SpecialFeatureDisplay_dtor_SpecialFeatureDisplay 0x006422e0 calls MenuTextureManager_LoadLanguageTextures_0067c920 on it; name ours
 0x00ccc830 label    g_FreeCamera              # the free camera singleton (0x344 bytes, FreeCamera_FreeCamera), created on demand by its users, FreeCamera_destroyInstance
 0x00ccc838 label    g_GraphicAbmap            # the sphere grid's render object: graphicGetAbmap (+4 state < 2)
 0x00ccc870 label    g_FFEscMenu               # the PC escape menu (FFEscMenu_vftable); graphicIsEscMenuActive

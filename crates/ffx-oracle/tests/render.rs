@@ -8625,3 +8625,28 @@ fn pc_r2_graphic_object_set_rotation_matches_the_original() {
         );
     }
 }
+
+#[test]
+fn pc_r3_menu_texture_load_language_matches_the_original() {
+    use ffx_graphic::state::bridge as st;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x00c0_0301);
+    for round in 0..50 {
+        t.reset();
+        t.stub_sym(
+            st::MENU_TEXTURE_LOAD_LANGUAGE,
+            Conv::Thiscall(0),
+            1,
+            rng.next(),
+        );
+        t.global(st::MENU_TEXTURE_MANAGER.sym, rng.next());
+        let lang = [0, 1, 0xb, 0x11, rng.next()][round % 5];
+        t.check(
+            &format!("round {round} SpecialFeatureDisplay_dtor"),
+            0x0064_22e0,
+            Conv::Cdecl,
+            &[lang],
+            |g| Out::U32(st::menu_texture_load_language(g, lang)),
+        );
+    }
+}
