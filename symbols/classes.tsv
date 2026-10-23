@@ -16782,7 +16782,7 @@
 0x00a29320	platform	reviewed: PhyreEngine PArray search (PText) (PC2 render/pc-ui round 1)
 0x00a37010	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
 0x00a37170	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
-0x00a37410	logic	default (no rule: ported to be safe)
+0x00a37410	platform	reviewed: Iggy GDraw D3D11 back end, gdraw_rt_bind: OMSetRenderTargets/RSSetState on the D3D11 context; refs.py: one ref, stored into GDraw table 0x01a85828 slot 0x01a8583c at 0xa35946 (effects round 54)
 0x00a374e0	glue	calls Iggy IggyGDrawSendWarning
 0x00a37910	dead	unreachable from the entry point and every pointer table
 0x00a37950	dead	unreachable from the entry point and every pointer table
@@ -16809,7 +16809,7 @@
 0x00a38aa0	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
 0x00a38be0	dead	unreachable from the entry point and every pointer table
 0x00a38c40	glue	calls Iggy IggyGDrawSendWarning
-0x00a39200	logic	default (no rule: ported to be safe)
+0x00a39200	platform	reviewed: Iggy GDraw D3D11 back end, gdraw_rt_end: blend/depth/scissor state, ResolveSubresource, CopySubresourceRegion; refs.py: one ref, GDraw table slot 0x01a85844 at 0xa35932 (effects round 54)
 0x00a398a0	platform	reviewed: Iggy GDraw D3D11: stored into GDraw table 0x01a85828 slot +0x48 (0xa35996); no direct caller (effects round 51)
 0x00a398e0	platform	reviewed: Iggy GDraw D3D11: stored into GDraw table 0x01a85828 slot +0x4c (0xa359e6); no direct caller (effects round 51)
 0x00a39900	logic	default (no rule: ported to be safe)
@@ -16833,7 +16833,7 @@
 0x00a3a5f0	glue	calls Iggy IggyGDrawSendWarning, _IggyGDrawFree@4
 0x00a3a7b0	dead	unreachable from the entry point and every pointer table
 0x00a3a7f0	dead	unreachable from the entry point and every pointer table
-0x00a3a820	logic	default (no rule: ported to be safe)
+0x00a3a820	platform	reviewed: Iggy GDraw D3D11 back end, gdraw_tile_begin: tile rectangle + ClearDepthStencilView; refs.py: one ref, GDraw table slot 0x01a85830 at 0xa35900 (effects round 54)
 0x00a3a9b0	platform	reviewed: Iggy GDraw D3D11 back end: slot of the GDraw function table 0x01a85828, stored at 0xa35900..0xa35a0b (docs/formats/vfx.md 'High range') (effects round 49)
 0x00a3a9f0	glue	calls Iggy IggyGDrawSendWarning
 0x00a3abc0	platform	reviewed: Iggy GDraw D3D11 back end: slot of the GDraw function table 0x01a85828, stored at 0xa35900..0xa35a0b (docs/formats/vfx.md 'High range') (effects round 49)

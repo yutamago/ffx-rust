@@ -564,6 +564,9 @@ REVIEWED = {
     0x009de900: ("dead", "refs.py: 0 refs; one of 203 PhyreEngine copies (pc round 4)"),
     0x009de9c0: ("dead", "refs.py: 0 refs; one of 116 PhyreEngine copies (pc round 4)"),
     0x00a26960: ("glue", "bare jmp to IggyMenuManager_SetViewport_00a26a20 (ported); one ref, PhyreScene_resize 0x66c658 (pc round 4)"),
+    0x00a37410: ("platform", "Iggy GDraw D3D11 back end, gdraw_rt_bind: OMSetRenderTargets/RSSetState on the D3D11 context; refs.py: one ref, stored into GDraw table 0x01a85828 slot 0x01a8583c at 0xa35946 (effects round 54)"),
+    0x00a3a820: ("platform", "Iggy GDraw D3D11 back end, gdraw_tile_begin: tile rectangle + ClearDepthStencilView; refs.py: one ref, GDraw table slot 0x01a85830 at 0xa35900 (effects round 54)"),
+    0x00a39200: ("platform", "Iggy GDraw D3D11 back end, gdraw_rt_end: blend/depth/scissor state, ResolveSubresource, CopySubresourceRegion; refs.py: one ref, GDraw table slot 0x01a85844 at 0xa35932 (effects round 54)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
