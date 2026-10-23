@@ -6237,4 +6237,102 @@ pub mod bridge {
         }
         0
     }
+
+    /// `yiRender_draw(r, skip)` (`0x0090bf10`, callers `yiDisp`/`yiDisp2`):
+    /// the map's render pass. Map 0x8a sets `+0x67f0c` bit 8; bit 3 is
+    /// cleared and the word goes to `graphicMeshInstanceGroupIdSetVisible`.
+    /// When `graphicNeedResetMapParam`, each of the `+0x68788` objects
+    /// (`0xb4` apart from `+0x687ec`) gets its translation (`+0x26`) and
+    /// rotation (`+0x16`, order `u16 +0x26` from the record's `+0x68812`)
+    /// and `graphicDoneResetMapParam` runs. Without objects or `+0x67f08` bit
+    /// 0: visibility 0, done. Else map 0x132 with more than 9 objects moves
+    /// object 9 to `+0x68e40` with y less 0.01 (`f64`, through `frame`, 4
+    /// words, as `FFXVu0CopyVector` fills it); `+0xba3f0` = `+0xba3ec`,
+    /// `+0xba3f8` = 0; then for `skip` 0: `yiRender_updatematrixp`,
+    /// `setupparamGS`, `setupparamVU1`, and when `+0x67f30 == +0x67f34`
+    /// each of the `+0x9d9c4` texture animations (`0x720` apart from
+    /// `+0x9d9c8`) with bit 0: `0x0090bdb0(r, i, +4)` (non-zero flips bit
+    /// 0), then by its frame `+4`'s record (`+0x30 + 0x1c * frame`): kind
+    /// `0x10` `yiClutAlloc_copy16(r, src, k, i16)`, `0x100`
+    /// `yiClutAlloc_copy256(r, src, k)`.
+    pub fn yi_render_draw<M: Mem>(
+        mem: &mut M,
+        r: u32,
+        skip: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        const MAP_ID: u32 = 0x0133_0844;
+        const VISIBLE: u32 = 0x0064_23d0;
+        const TRANSLATION: u32 = 0x0064_26c0;
+        let at = |o: u32| r.wrapping_add(o);
+        let map = |mem: &M| mem.read::<u32>(mem.rebase(MAP_ID));
+        if map(mem) == 0x8a {
+            let v = mem.read::<u32>(at(0x67f0c));
+            mem.write(at(0x67f0c), v | 0x100);
+        }
+        let v = mem.read::<u32>(at(0x67f0c)) & !8;
+        mem.write(at(0x67f0c), v);
+        call(mem, VISIBLE, &[v]);
+        if call(mem, 0x0064_2690, &[]) != 0 {
+            let mut i = 0;
+            while i < mem.read::<u32>(at(0x68788)) {
+                let rec = at(0x68812 + 0xb4 * i);
+                call(mem, TRANSLATION, &[i, rec.wrapping_sub(0x26)]);
+                let order = u32::from(mem.read::<u16>(rec));
+                call(mem, 0x0064_26a0, &[i, rec.wrapping_sub(0x36), order]);
+                i += 1;
+            }
+            call(mem, 0x0063_df60, &[]);
+        }
+        let objects = mem.read::<u32>(at(0x68788));
+        if objects == 0 || mem.read::<u8>(at(0x67f08)) & 1 == 0 {
+            call(mem, VISIBLE, &[0]);
+            return;
+        }
+        if map(mem) == 0x132 && objects > 9 {
+            call(mem, 0x006e_d370, &[frame, at(0x68e40)]);
+            let y = ffx_bridge::x87::load(mem.read(frame + 4));
+            let step = mem.read::<f64>(mem.rebase(0x00b1_f2b8));
+            mem.write(
+                frame + 4,
+                ffx_bridge::x87::store(ffx_bridge::x87::sub(y, step)),
+            );
+            call(mem, TRANSLATION, &[9, frame]);
+        }
+        let v = mem.read::<u32>(at(0xba3ec));
+        mem.write(at(0xba3f0), v);
+        mem.write(at(0xba3f8), 0_u32);
+        if skip != 0 {
+            return;
+        }
+        for f in [0x0090_dd80, 0x0090_d260, 0x0090_da90] {
+            call(mem, f, &[r]);
+        }
+        if mem.read::<u32>(at(0x67f30)) != mem.read::<u32>(at(0x67f34)) {
+            return;
+        }
+        let mut i = 0;
+        while i < mem.read::<u32>(at(0x9d9c4)) {
+            let anim = at(0x9d9c8 + 0x720 * i);
+            if mem.read::<u32>(anim) & 1 != 0 {
+                let cur = mem.read::<u32>(anim + 4);
+                if call(mem, 0x0090_bdb0, &[r, i, cur]) != 0 {
+                    let f = mem.read::<u32>(anim);
+                    mem.write(anim, f ^ 1);
+                }
+                let rec = anim.wrapping_add(0x1c_u32.wrapping_mul(mem.read::<u32>(anim + 4)));
+                let kind = mem.read::<u16>(rec.wrapping_add(0x38));
+                let src = mem.read::<u32>(rec.wrapping_add(0x30));
+                let k = u32::from(mem.read::<u16>(rec.wrapping_add(0x3a)));
+                if kind == 0x10 {
+                    let j = u32::from(mem.read::<u16>(rec.wrapping_add(0x36)));
+                    call(mem, 0x0091_6c80, &[r, src, k, j]);
+                } else if kind == 0x100 {
+                    call(mem, 0x0091_6d40, &[r, src, k]);
+                }
+            }
+            i += 1;
+        }
+    }
 }

@@ -2554,6 +2554,12 @@ ported! {
     yiRender_term @ 0x0090_dd00 => extern "C" fn shim_yi_render_term(r: u32) -> u32 {
         yi::bridge::yi_render_term(&mut mem(), r, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `yiRender_draw(r, skip)`: object 9's moved position in a frame.
+    yiRender_draw @ 0x0090_bf10 => extern "C" fn shim_yi_render_draw(r: u32, skip: u32) {
+        let mut frame = super::StackFrame::<4>::new();
+        let at = frame.at();
+        yi::bridge::yi_render_draw(&mut mem(), r, skip, at, &mut |_, f, a| call_cdecl(f, a));
+    }
     /// `yiRender_updatematrixp(r)`.
     yiRender_updatematrixp @ 0x0090_dd80 => extern "C" fn shim_yi_render_updatematrixp(r: u32) -> u32 {
         yi::bridge::yi_render_updatematrixp(&mut mem(), r)

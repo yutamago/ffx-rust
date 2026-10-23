@@ -24489,3 +24489,150 @@ fn small5b_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     small5b_cases(&mut t, &mut rng, g, 200);
 }
+
+/// A logging stand-in for `sym` at new code behind a jump, in both: it
+/// appends `id`, its first `n` arguments (with argument `deref`, when
+/// given, replaced by the four words it points at) at `*cursor`, and
+/// returns the word at `ret`.
+#[allow(clippy::too_many_arguments)] // a stand-in's whole description
+fn small6_stub(
+    t: &mut Twin,
+    sym: u32,
+    cursor: u32,
+    id: u32,
+    n: u8,
+    deref: Option<u8>,
+    ret: u32,
+    pre: &[u8],
+) {
+    let c = cursor.to_le_bytes();
+    let mut code = pre.to_vec();
+    code.extend([&[0x8b, 0x0d][..], &c].concat()); // mov ecx, [cursor]
+    code.extend([0xc7, 0x01]); // mov dword [ecx], id
+    code.extend(id.to_le_bytes());
+    let mut off = 4u8;
+    for j in 0..n {
+        if deref == Some(j) {
+            code.extend([0x8b, 0x54, 0x24, 4 + 4 * j]); // mov edx, [esp + 4 + 4j]
+            for w in 0..4u8 {
+                code.extend([0x8b, 0x42, 4 * w, 0x89, 0x41, off]); // [ecx + off] = [edx + 4w]
+                off += 4;
+            }
+        } else {
+            code.extend([0x8b, 0x44, 0x24, 4 + 4 * j, 0x89, 0x41, off]);
+            off += 4;
+        }
+    }
+    code.extend([&[0x83, 0x05][..], &c, &[off]].concat()); // add dword [cursor], off
+    code.push(0xa1); // mov eax, [ret]
+    code.extend(ret.to_le_bytes());
+    code.push(0xc3);
+    let at = t.a.alloc_code(&code).unwrap();
+    assert_eq!(t.b.alloc_code(&code).unwrap(), at);
+    for o in [&mut t.a, &mut t.b] {
+        let f = o.rebase(sym);
+        let rel = at.wrapping_sub(f + 5);
+        o.write(f, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+}
+
+/// Small round 6 g: `yiRender_draw` on synthetic render blocks (maps 0x8a,
+/// 0x132 and others, objects 0..12, the reset asked or not, skip or not,
+/// the matrix counters equal or not, texture animations with kinds 0x10,
+/// 0x100 and others); every callee but `FFXVu0CopyVector` logged, the
+/// translation's position by value.
+#[test]
+fn small6_g_render_draw_matches_the_original() {
+    for mut t in [Twin::image(), Twin::snapshot()].into_iter().flatten() {
+        let mut rng = Xorshift(0x5a11_6a07);
+        let log = t.alloc(0x4000);
+        let cursor = t.alloc(4);
+        let (reset, anim) = (t.alloc(4), t.alloc(4));
+        let zero = t.alloc(4);
+        for (k, (sym, n, deref, ret)) in [
+            (0x0064_23d0u32, 1u8, None, zero),
+            (0x0064_2690, 0, None, reset),
+            (0x0064_26c0, 2, Some(1u8), zero),
+            (0x0064_26a0, 3, None, zero),
+            (0x0063_df60, 0, None, zero),
+            (0x0090_dd80, 1, None, zero),
+            (0x0090_d260, 1, None, zero),
+            (0x0090_da90, 1, None, zero),
+            (0x0090_bdb0, 3, None, anim),
+            (0x0091_6c80, 4, None, zero),
+            (0x0091_6d40, 3, None, zero),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            // 0x0090bdb0(r, i, frame) moves animation i on a frame, as
+            // the game's does: inc dword [r + 0x9d9cc + 0x720 i]
+            let pre: &[u8] = if sym == 0x0090_bdb0 {
+                &[
+                    0x8b, 0x44, 0x24, 0x08, 0x69, 0xc0, 0x20, 0x07, 0, 0, 0x03, 0x44, 0x24, 0x04,
+                    0xff, 0x80, 0xcc, 0xd9, 0x09, 0x00,
+                ]
+            } else {
+                &[]
+            };
+            let id = 0x6700 + u32::try_from(k).unwrap();
+            small6_stub(&mut t, sym, cursor, id, n, deref, ret, pre);
+        }
+        let map_at = t.a.rebase(0x0133_0844);
+        let frame = t.b.stack_range().start + 0x100;
+        let r = t.alloc(0xba400);
+        for round in 0..120u32 {
+            t.put(cursor, log);
+            t.put(reset, u32::from(rng.next().is_multiple_of(2)));
+            t.put(anim, u32::from(rng.next().is_multiple_of(2)));
+            t.put(
+                map_at,
+                [0x8a_u32, 0x132, 0x132, 5][(rng.next() % 4) as usize],
+            );
+            let objects = [0u32, 1, 3, 9, 10, 12][(rng.next() % 6) as usize];
+            t.put(r + 0x68788, objects);
+            t.fill(r + 0x687ec, 0xb4 * 13, &mut rng);
+            t.fill(r + 0x68e40, 0x10, &mut rng);
+            t.put(r + 0x67f08, rng.next() & 3);
+            t.put(r + 0x67f0c, rng.next());
+            t.put(r + 0xba3ec, rng.next());
+            t.put(r + 0xba3f0, rng.next());
+            t.put(r + 0xba3f8, rng.next());
+            let same = rng.next().is_multiple_of(4);
+            t.put(r + 0x67f30, 7u32);
+            t.put(r + 0x67f34, if same { 7u32 } else { 8 });
+            let n = [0u32, 1, 3][(rng.next() % 3) as usize];
+            t.put(r + 0x9d9c4, n);
+            for i in 0..n {
+                let a = r + 0x9d9c8 + 0x720 * i;
+                t.put(a, rng.next());
+                let cur = rng.next() % 6;
+                t.put(a + 4, cur);
+                let rec = a + 0x1c * cur;
+                t.put(rec + 0x30, rng.next());
+                t.put(rec + 0x34, rng.next());
+                t.put(
+                    rec + 0x38,
+                    [0x10u16, 0x100, 0x110, 0][(rng.next() % 4) as usize],
+                );
+                t.put(rec + 0x3a, rng.next());
+            }
+            let skip = u32::from(rng.next().is_multiple_of(4));
+            t.same(
+                &format!("yiRender_draw {round}"),
+                |o| {
+                    o.eax(0x0090_bf10, &[r, skip]);
+                },
+                |m| {
+                    ffx_field::yi::bridge::yi_render_draw(m, r, skip, frame, &mut |m, f, a| {
+                        let at = m.rebase(f);
+                        m.call(at, Conv::Cdecl, a).unwrap().eax
+                    });
+                },
+            );
+            t.a.clear_dirty();
+            t.b.clear_dirty();
+        }
+    }
+}
