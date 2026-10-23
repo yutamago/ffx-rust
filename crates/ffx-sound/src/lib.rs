@@ -4,10 +4,12 @@
 //! ([`fsb`] banks of [`ima`] ADPCM samples) and the ported game-side sound
 //! logic, a core and a `bridge` per original (`docs/porting.md`): the PS2
 //! sound API ([`snd`]), the FMOD command queue's entry points ([`fmod`])
-//! and the FMOD thread's handlers and objects ([`ffxfmod`]).
+//! and the FMOD thread's handlers and objects ([`ffxfmod`]); the
+//! positioned sounds' volume and pan ([`foot3d`]).
 
 pub mod ffxfmod;
 pub mod fmod;
+pub mod foot3d;
 pub mod fsb;
 pub mod ima;
 pub mod snd;
