@@ -98,6 +98,12 @@ const S2: u32 = 0x00c8_f628;
 const VF00: u32 = 0x00c0_a004;
 const ORIGIN_SRC: u32 = 0x012e_95d8;
 const SSE2: u32 = 0x0193_ed20;
+/// `g_OpFog +0x10`, the four fog vectors S4 and S1 pick from.
+const OP_FOG: u32 = 0x011a_0020;
+
+/// The loop entries past their `mov ebx, [r0]` (S4 and S1 load it before
+/// the count store, the others after it).
+const ENTRIES_AFTER_EBX: [u32; 2] = [0x007f_1a8b, 0x007e_d1d2];
 
 struct Pair {
     name: &'static str,
@@ -198,7 +204,9 @@ impl Pair {
 
     /// A thunk `(shape, cmd)` that builds the original's frame (cookie,
     /// saved `ebx`/`esi`/`edi`), sets `ecx` = shape, `esi` = cmd, `edi` =
-    /// shape + 0x20 and jumps to `entry`; the tail returns from it.
+    /// shape + 0x20 (and `ebx` = `r0`'s low word for the entries in
+    /// [`ENTRIES_AFTER_EBX`]) and jumps to `entry`; the tail returns from
+    /// it.
     fn loop_thunk(&mut self, entry: u32) -> u32 {
         let at = self.sym(THUNK);
         let mut c = vec![0x55, 0x8b, 0xec]; // push ebp; mov ebp, esp
@@ -211,6 +219,10 @@ impl Pair {
         c.extend([0x8b, 0x4d, 0x08]); // mov ecx, [ebp+8]
         c.extend([0x8b, 0x75, 0x0c]); // mov esi, [ebp+0xc]
         c.extend([0x8d, 0x79, 0x20]); // lea edi, [ecx+0x20]
+        if ENTRIES_AFTER_EBX.contains(&entry) {
+            c.extend([0x8b, 0x1d]); // mov ebx, [r0]: loaded before the count store
+            c.extend(self.sym(EE).to_le_bytes());
+        }
         c.push(0xe9); // jmp entry
         let end = at + u32::try_from(c.len()).unwrap() + 4;
         c.extend(self.sym(entry).wrapping_sub(end).to_le_bytes());
@@ -285,6 +297,61 @@ fn textured_case_with(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bo
     if rng.chance(8) {
         p.set(p.sym(EE), m2);
     }
+}
+
+/// [`textured_case`] for S4 (`vu0` clear) or S1 (`vu0` set): `cmd +2`
+/// with `0x400`, `0x800` or both (or, now and then, the bit `r0` holds,
+/// so the vector choice compares a set bit with it), and the four fog
+/// vectors at `g_OpFog +0x10` (most of the time: on the snapshots the
+/// game's own are kept otherwise): depth scales of about `-1/16`..`1/16`
+/// and limits around 0..255, so the fog value lands below, inside and
+/// above them, or zeros of both signs (ties).
+fn fog_case_with(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bool) {
+    textured_case_with(p, rng, c, n, vu0);
+    let r0: u32 = Mem::read(&p.a, p.sym(EE));
+    let bits = match rng.below(10) {
+        0 => u16::try_from(r0 & 0xc00).unwrap() | 0x400,
+        1..=3 => 0x400,
+        4..=6 => 0x800,
+        _ => 0xc00,
+    };
+    let flags: u16 = Mem::read(&p.a, c.cmd + 2);
+    p.set(c.cmd + 2, flags & !0xc00 | bits);
+    if rng.chance(8) {
+        // zeros of both signs: ties between the fog value and its limits
+        // (the low limit -1 now and then, so a tie with the high one shows)
+        for k in 0..16 {
+            let v = if k % 4 == 1 {
+                rng.pick(&[0u32, 0x8000_0000, 0xbf80_0000])
+            } else {
+                rng.pick(&[0u32, 0x8000_0000])
+            };
+            p.set(p.sym(OP_FOG) + 4 * k, v);
+        }
+    } else if rng.chance(80) {
+        for k in 0..4 {
+            let at = p.sym(OP_FOG) + 0x10 * k;
+            let small =
+                |rng: &mut Xorshift, n: u32| f32::from(u16::try_from(rng.below(n)).unwrap());
+            let scale = small(rng, 4096) / 32768.0 - 0.0625;
+            let low = small(rng, 256);
+            let high = low + small(rng, 256);
+            let vector = [scale.to_bits(), low.to_bits(), rng.float(), high.to_bits()];
+            for (i, word) in (0u32..).zip(vector) {
+                let word = if rng.chance(3) {
+                    rng.pick(&SPECIALS)
+                } else {
+                    word
+                };
+                p.set(at + 4 * i, word);
+            }
+        }
+    }
+}
+
+/// [`fog_case_with`] for S4.
+fn fog_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
+    fog_case_with(p, rng, c, n, false);
 }
 
 fn plain_case_with(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bool, tex: bool) {
@@ -517,6 +584,16 @@ fn shape_s2_matches_the_original() {
 #[test]
 fn shape_whole_s2_matches_the_original() {
     whole_test(vu0_textured_case, 0x007e_d0c3, "whole S2");
+}
+
+#[test]
+fn shape_s4_matches_the_original() {
+    loop_test(0x007f_1a8b, fog_case, 0x007f_1a8b, "S4", shape::fog);
+}
+
+#[test]
+fn shape_whole_s4_matches_the_original() {
+    whole_test(fog_case, 0x007e_d0c4, "whole S4");
 }
 
 /// Each loop's first instruction after the head's count store, in

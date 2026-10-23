@@ -105,6 +105,18 @@ pub mod bridge {
     const P5: u32 = 0x00c8_f920;
     const P6: u32 = 0x00c8_f930;
     const P7: u32 = 0x00c8_f940;
+    /// S4's and S1's fog vector (`x` the depth scale, `y` the lowest
+    /// value, `w` the highest): `g_OpFog +0x10` (`0x011a0020`), or `+0x30`
+    /// when `cmd +2` bit `0x800` equals `r0` (is clear).
+    const FOG: u32 = 0x00c8_f800;
+    /// S4's and S1's second fog vector: `g_OpFog +0x20` (`0x011a0030`), or
+    /// `+0x40` when `cmd +2` bit `0x400` equals `r0`. Nothing here reads it.
+    const FOG2: u32 = 0x00c8_f8c0;
+    /// S4's and S1's copy of the first point after its projection, before
+    /// `Q` scales it.
+    const P0_COPY: u32 = 0x00c8_f8b0;
+    /// `g_OpFog +0x10`, the first of the four fog vectors.
+    const OP_FOG_VECTORS: u32 = 0x011a_0020;
     /// `vf00.w` (`g_Vu0_Vf00 +0xc`), the numerator of `Q`.
     const VF00_W: Global<u32> = Global::new(0x00c0_a010);
 
@@ -278,7 +290,8 @@ pub mod bridge {
             Variant::Vu0Plain => vu0_plain(mem, cmd, shape.wrapping_add(0x20)),
             Variant::Textured => textured(mem, frame, cmd, shape.wrapping_add(0x20)),
             Variant::Vu0Textured => vu0_textured(mem, frame, cmd, shape.wrapping_add(0x20)),
-            _ => return None,
+            Variant::Clip => fog(mem, frame, cmd, shape.wrapping_add(0x20)),
+            Variant::Vu0Clip => return None,
         }
         Some(tail(mem, frame))
     }
@@ -300,7 +313,7 @@ pub mod bridge {
         for (row, memory) in (0..3u32).zip(memory_rows) {
             madda(mem, matrix, point, row, memory);
         }
-        maddw(mem, matrix, point, memory_w);
+        maddw(mem, matrix, point, form(memory_w));
         set_q(mem, point);
     }
 
@@ -324,15 +337,32 @@ pub mod bridge {
         }
     }
 
-    /// The last row times `w` plus the accumulator into the point.
-    fn maddw(mem: &mut impl Mem, matrix: u32, point: u32, memory_w: bool) {
+    /// The operand forms of a last row (`vmaddw`): they differ only for a
+    /// signalling NaN `w` or matrix element.
+    #[derive(Clone, Copy)]
+    enum W {
+        /// `x` with `w` the memory operand, `y` and `z` with the element.
+        Memory,
+        /// `x` with `w` the memory operand, `y` and `z` both loaded.
+        Loaded,
+        /// `pppVu0MaddW_copy` (`0x0074bde0`): `x`, `y`, `z` both loaded.
+        Call,
+    }
+
+    /// [`W::Memory`] or [`W::Loaded`].
+    fn form(memory_w: bool) -> W {
+        if memory_w { W::Memory } else { W::Loaded }
+    }
+
+    /// The last row times `w` plus the accumulator into the point (`w`
+    /// lane: the element the memory operand).
+    fn maddw(mem: &mut impl Mem, matrix: u32, point: u32, form: W) {
         let w = rd(mem, point + 0xc);
         for c in 0..4u32 {
             let e = rd(mem, matrix + 0x30 + 4 * c);
-            let product = match c {
-                0 => f(e).mul_m32(f32::from_bits(w)),
-                3 => f(w).mul_m32(f32::from_bits(e)),
-                _ if memory_w => f(w).mul_m32(f32::from_bits(e)),
+            let product = match (c, form) {
+                (3, _) | (1..=2, W::Memory) => f(w).mul_m32(f32::from_bits(e)),
+                (0, W::Memory | W::Loaded) => f(e).mul_m32(f32::from_bits(w)),
                 _ => f(e) * f(w),
             };
             let v = product + f(rd(mem, ACC + 4 * c));
@@ -785,31 +815,34 @@ pub mod bridge {
     }
 
     /// One record of [`textured`].
+    fn textured_vertex(mem: &mut impl Mem, p: u32) {
+        pair_vertex(mem, p, false);
+    }
+
+    /// One record of [`textured`] (`fog` clear) or [`fog`] (`fog` set):
+    /// the two loops differ only in the fog step and in the operand form
+    /// of three last rows (`memory_w`, the matrix element the memory
+    /// operand in S5, loaded in S4).
     #[allow(clippy::many_single_char_names)] // the lanes
-    fn textured_vertex<M: Mem>(mem: &mut M, p: u32) {
-        let half = |mem: &M, off: u32| rd16(mem, p.wrapping_add(off));
-        let hi = rd(mem, V0 + 4);
-        wr16(mem, V0, half(mem, 0));
-        wr16(mem, V1, half(mem, 2));
-        wr(mem, V0 + 0xc, rd(mem, V1 + 4));
-        load_point(mem, P0, hi);
-        load_again(mem, P4);
-        transform(mem, MATRIX, P0, LOADED, true);
-        madda(mem, MATRIX2, P4, 0, false);
-        let flags = set_flags(mem);
-        if !is_r0(mem, flags, 0) {
+    fn pair_vertex<M: Mem>(mem: &mut M, p: u32, fog: bool) {
+        let memory_w = !fog;
+        if !textured_first(mem, p, memory_w) {
             return;
         }
         madda(mem, MATRIX2, P4, 1, false);
         madda(mem, MATRIX2, P4, 2, false);
-        maddw(mem, MATRIX2, P4, true);
-        scale_by_q(mem, P0);
-        set_q(mem, P4);
+        maddw(mem, MATRIX2, P4, form(memory_w));
+        if fog {
+            fog_step(mem);
+        } else {
+            scale_by_q(mem, P0);
+            set_q(mem, P4);
+        }
         // the second point's x (+0xc); the translation also loads +0xe into
         // v1 and copies v1 into v0's second and fourth words: the flag
         // test below replaces v1's first word and v0's second, and v0's
         // fourth already holds v1's second word
-        wr16(mem, V0, half(mem, 0xc));
+        wr16(mem, V0, rd16(mem, p.wrapping_add(0xc)));
         load_point(mem, P3, 0);
         let q = f32::from_bits(Q.get(mem));
         let z = st(f(rd(mem, P4 + 8)).mul_m32(q));
@@ -818,9 +851,10 @@ pub mod bridge {
         madda(mem, MATRIX, P3, 1, true);
         madda(mem, MATRIX, P3, 2, false);
         // (the original leaves out the z lane, replaced below)
-        maddw(mem, MATRIX, P3, true);
+        maddw(mem, MATRIX, P3, form(memory_w));
         set_q(mem, P3);
-        // P3.xy *= Q; P0.z and P3.z = P4.z (`fst` copies)
+        // P3.xy *= Q; P0.z and P3.z = P4.z (`fst` copies); with fog, P0.w
+        // and P3.w = the fog value
         let z = st(f(z));
         wr(mem, P0 + 8, z);
         let q = f(Q.get(mem));
@@ -829,6 +863,107 @@ pub mod bridge {
         let y = st(q.mul_m32(f32::from_bits(rd(mem, P3 + 4))));
         wr(mem, P3 + 4, y);
         wr(mem, P3 + 8, z);
+        if fog {
+            let w = st(f(rd(mem, VB + 0xc)));
+            wr(mem, P0 + 0xc, w);
+            wr(mem, P3 + 0xc, w);
+        }
+        pair_end(mem, p);
+    }
+
+    /// S4, the fog loop (`0x007f1a8b`..`0x007f2d93`), entered as [`plain`]:
+    /// [`textured`] with [`fog_start`] after its start and
+    /// [`fog_step`] after each record's first point; the points' `w`
+    /// become the fog value. The x87 stack carries `vf00.w` (as in S5) and
+    /// the first point's `w` from its projection into the fog step; both
+    /// are read again here (nothing writes them in between).
+    pub fn fog(mem: &mut impl Mem, frame: Frame, cmd: u32, first: u32) {
+        textured_start(mem, frame, cmd);
+        fog_start(mem, cmd);
+        let mut p = first;
+        loop {
+            pair_vertex(mem, p, true);
+            p = p.wrapping_add(VERTEX);
+            let count = COUNT.get(mem).wrapping_sub(1);
+            COUNT.set(mem, count);
+            frame.set_vertex(mem, p);
+            if count.cast_signed() <= 0 {
+                break;
+            }
+        }
+    }
+
+    /// The fog loops' start after [`textured_start`] (S4 `0x007f1f4a`..
+    /// `0x007f204a`, S1 `0x007ed691`..`0x007ed78f`): `cmd +2` into `v0`'s
+    /// low half, then [`FOG2`] and [`FOG`] from `g_OpFog` by its bits
+    /// `0x400` and `0x800` (each compared with `r0`, 64 bits), `v1` = the
+    /// `0x800` bit (64 bits).
+    fn fog_start(mem: &mut impl Mem, cmd: u32) {
+        wr16(mem, V0, mem.read(cmd.wrapping_add(2)));
+        let flags = rd(mem, V0);
+        fog_vector(mem, FOG2, if is_r0(mem, flags & 0x400, 0) { 3 } else { 1 });
+        mem.write(mem.rebase(V1), [flags & 0x800, 0]);
+        fog_vector(mem, FOG, if is_r0(mem, flags & 0x800, 0) { 2 } else { 0 });
+    }
+
+    /// `g_OpFog`'s vector `k` (from `+0x10`) into `dst`.
+    fn fog_vector(mem: &mut impl Mem, dst: u32, k: u32) {
+        let v: [u32; 4] = mem.read(mem.rebase(OP_FOG_VECTORS + 0x10 * k));
+        mem.write(mem.rebase(dst), v);
+    }
+
+    /// The fog step after a record's first point (S4 `0x007f2513`..
+    /// `0x007f25ec`, S1 `0x007edc4c`..`0x007edd25`): `P0` into
+    /// [`P0_COPY`], `P0.xyz *= Q`, `Q` from `P4`, and the fog value into
+    /// `VB.w`: `P0.w * FOG.x + FOG.w`, then the smaller of it and `FOG.w`,
+    /// then the larger of that and `FOG.y` (`fcom`: a NaN or a tie picks
+    /// the fog vector's word).
+    fn fog_step(mem: &mut impl Mem) {
+        // (the copy is of values the projection stored: `fst` keeps them)
+        let p0: [u32; 4] = mem.read(mem.rebase(P0));
+        mem.write(mem.rebase(P0_COPY), p0);
+        let [scale, low, _, high]: [u32; 4] = mem.read(mem.rebase(FOG));
+        let depth = st(f(p0[3]).mul_m32(f32::from_bits(scale)));
+        let q = f(Q.get(mem));
+        for (c, &x) in (0u32..3).zip(&p0) {
+            wr(mem, P0 + 4 * c, st(f(x) * q));
+        }
+        set_q(mem, P4);
+        let high = f(high);
+        let v = f(st(high.add_m32(f32::from_bits(depth))));
+        // (the original stores this and loads it again: both choices are
+        // `f32` values already)
+        let v = if v.value() < high.value() { v } else { high };
+        let low = f(low);
+        let v = if low.value() < v.value() { v } else { low };
+        wr(mem, VB + 0xc, st(v));
+    }
+
+    /// The first point of an S5, S2, S4 or S1 record (`+0`, `+2`; `y`, `z`,
+    /// `w` from `t4`) into `P0` and `P4`, `P0` through `MATRIX` (and `Q`
+    /// from it; `memory_w`: the last row's operand form), the first row of
+    /// `MATRIX2` times `P4` into the accumulator, the flags into `v0`.
+    /// Whether they equal `r0` (the record goes on).
+    fn textured_first(mem: &mut impl Mem, p: u32, memory_w: bool) -> bool {
+        let hi = rd(mem, V0 + 4);
+        wr16(mem, V0, rd16(mem, p));
+        wr16(mem, V1, rd16(mem, p.wrapping_add(2)));
+        wr(mem, V0 + 0xc, rd(mem, V1 + 4));
+        load_point(mem, P0, hi);
+        load_again(mem, P4);
+        transform(mem, MATRIX, P0, LOADED, memory_w);
+        madda(mem, MATRIX2, P4, 0, false);
+        let flags = set_flags(mem);
+        is_r0(mem, flags, 0)
+    }
+
+    /// The end of an S5 or S4 record: `P0` and `P3` minus the origin into
+    /// `VA`, `VB` and clamped as in [`plain`], then the fixed-point and
+    /// texture steps of [`plain`], the texture pair summed (`VB.xy +=
+    /// VA.xy`; S5 adds `VB.y + VA.y`, S4 `VA.y + VB.y`: both are integers /
+    /// 4096, never NaN, so the order changes nothing).
+    fn pair_end<M: Mem>(mem: &mut M, p: u32) {
+        let half = |mem: &M, off: u32| rd16(mem, p.wrapping_add(off));
         minus_origin(mem, VA, P0);
         minus_origin(mem, VB, P3);
         let b: [u32; 4] = mem.read(mem.rebase(VB));
@@ -898,21 +1033,12 @@ pub mod bridge {
     /// One record of [`vu0_textured`].
     fn vu0_textured_vertex<M: Mem>(mem: &mut M, p: u32) {
         let half = |mem: &M, off: u32| rd16(mem, p.wrapping_add(off));
-        let hi = rd(mem, V0 + 4);
-        wr16(mem, V0, half(mem, 0));
-        wr16(mem, V1, half(mem, 2));
-        wr(mem, V0 + 0xc, rd(mem, V1 + 4));
-        load_point(mem, P0, hi);
-        load_again(mem, P4);
-        transform(mem, MATRIX, P0, LOADED, false);
-        madda(mem, MATRIX2, P4, 0, false);
-        let flags = set_flags(mem);
-        if !is_r0(mem, flags, 0) {
+        if !textured_first(mem, p, false) {
             return;
         }
         madda(mem, MATRIX2, P4, 1, false);
         madda(mem, MATRIX2, P4, 2, false);
-        maddw(mem, MATRIX2, P4, false);
+        maddw(mem, MATRIX2, P4, W::Loaded);
         scale_by_q(mem, P0);
         set_q(mem, P4);
         // the middle points. The translation also loads each point's y
@@ -932,7 +1058,7 @@ pub mod bridge {
             // pppVu0MaddaY_copy / pppVu0MaddaZ_copy, the loaded form)
             madda(mem, MATRIX2, tex, 1, off == 4);
             madda(mem, MATRIX2, tex, 2, false);
-            maddw(mem, MATRIX2, tex, false);
+            maddw(mem, MATRIX2, tex, W::Loaded);
             scale_by_q(mem, point);
             set_q(mem, tex);
         }
@@ -950,7 +1076,7 @@ pub mod bridge {
         madda(mem, MATRIX, P7, 0, true);
         madda(mem, MATRIX, P7, 1, false);
         madda(mem, MATRIX, P7, 2, false);
-        maddw(mem, MATRIX, P7, true);
+        maddw(mem, MATRIX, P7, W::Call);
         let q = f(Q.get(mem));
         let x = st(f(rd(mem, P3)) * q);
         wr(mem, P3, x);
