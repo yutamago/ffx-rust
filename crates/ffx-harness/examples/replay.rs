@@ -15,6 +15,10 @@ fn main() -> ffx_harness::Result<()> {
         virtual_clock: true,
         ..ffx_harness::Options::default()
     };
+    if ffx_harness::replay::realtime(&script) {
+        options.fast = false;
+        options.virtual_clock = false;
+    }
     if args.next().as_deref() == Some("original") {
         options.hook_disable = Some("replacements".into());
     }

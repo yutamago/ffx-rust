@@ -11,6 +11,7 @@
 //! | `load direct SAVE [script]` | boots into save slot `SAVE` (`ffx_<SAVE>`) or a Windows path, without the title menu (`screens::load_save_direct`) |
 //! | `battle FIELD GROUP FORMATION` | starts a battle (`screens::start_battle`) |
 //! | `trace RANGE...` | starts tracing these ranges (`addr:len`, `*addr+off:len`; see the `trace` harness command) |
+//! | `realtime` | read before launch ([`realtime`]): the game runs at its own frame rate, not in fast mode; skipped here |
 //! | anything else | sent to the harness as it is (`press circle 4`, `wait 60`, ...) |
 //!
 //! `$OUT` in a line is the trace's folder (a Windows path), so a run's
@@ -39,6 +40,7 @@ pub fn play(game: &mut Game, script: &str, trace: &str) -> Result<Vec<String>> {
         }
         let words: Vec<&str> = line.split_whitespace().collect();
         let reply = match words[0] {
+            "realtime" => continue,
             "load" => {
                 // `load <entry> [script]` or `load direct <save> [script]`:
                 // fails when another scene starts (a lost key press loads a
@@ -95,6 +97,18 @@ pub fn play(game: &mut Game, script: &str, trace: &str) -> Result<Vec<String>> {
     game.command("trace off")?;
     game.command("calllog off")?;
     Ok(replies)
+}
+
+/// Whether `script` asks to run at the game's own frame rate (a
+/// `realtime` line): no fast mode, no virtual clock, no lockstep. The
+/// opening (map `0x15d`) needs it: its scene keeps time with the music
+/// stream, which plays in real time, so in fast mode the same frame shows
+/// another moment of it in every run (`tools/replays/boot.txt`).
+#[must_use]
+pub fn realtime(script: &str) -> bool {
+    script
+        .lines()
+        .any(|l| l.split('#').next().unwrap_or("").trim() == "realtime")
 }
 
 /// The first frame where two traces differ: `(frame, range index)`, or

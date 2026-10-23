@@ -236,6 +236,24 @@ beams, no light orb) field-walk-2 scores 103 against 34.4.
 `examples/counter_probe.rs` lists the image's counters that count once a
 frame, with how late they started after a load, for pinning other shots.
 
+`tools/replays/boot.txt` (2026-10-24) checks what the other replays skip:
+the boot before `load direct`. With no input the game shows the FINAL
+FANTASY X PROJECT logo (map `0x15c`, `memochek`), then the opening (map
+`0x15d`): credits on black, then the in-engine campfire scene (Zanarkand
+ruins, the party, Tidus and Yuna close-ups) with credits, no FMV, about
+4,800 frames; Start goes to the title menu (map `0x17`, previous `0x15d`).
+The opening keeps time with its music stream, which plays in real time:
+in fast mode the same event frame (`0x01325d94`) showed another camera
+cut, credit and pose in every run, original code included (three original
+runs at count 1200: three different pictures). The script therefore says
+`realtime` (`replay::realtime`: no fast mode, no virtual clock, no
+lockstep) and pins its four shots to ctrl work 0's count (101 on the logo,
+900 and 1200 in the campfire scene, 101 on the title). At the game's own
+rate two original runs agree within 9,000-32,000 pixels (a frame of
+jitter) and the Rust run matched both (0 pixels). It has no trace ranges;
+`run-all.sh --record boot` records it alone (`--record NAME...` leaves the
+other replays' recordings alone). About 75 s, the longest replay.
+
 `tools/replays/menu-browse.txt` opens the main menu and takes screenshots
 at fixed frames. Some of the screen animates by the wall clock (the
 character panels' shimmer), so two runs of the original already differ in

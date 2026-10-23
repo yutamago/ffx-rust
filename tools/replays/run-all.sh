@@ -4,8 +4,11 @@
 # for the screenshots. The replays run side by side, each in its own game
 # slot (instance, port, home, output folder). The original runs are recorded
 # once with
-#   tools/replays/run-all.sh --record
+#   tools/replays/run-all.sh --record [replay...]
 # (twice: screenshots are compared outside what differs between them).
+# Named replays (`--record boot`) are recorded alone; the others' recorded
+# traces and screenshots stay as they are. boot.txt has no trace ranges
+# (screenshots only) and runs at the game's own frame rate (`realtime`).
 #
 # Each call writes into its own folder, %TEMP%\ffx-snap\runs\<id>\<tag>\
 # (traces, screenshots, the replay's output), kept for inspection; the
@@ -35,7 +38,7 @@ for f in "$lin"/*-orig.trace "$lin"/*-orig2.trace; do
 done
 # keep the newest KEEP_RUNS run folders (each is ~30 MB of screenshots)
 ls -1dt "$lin"/runs/*/ 2>/dev/null | tail -n +"$((${KEEP_RUNS:-20} + 1))" | while read -r d; do rm -rf "$d"; done
-replays=(field-walk battle-attack menu-browse)
+replays=(field-walk battle-attack menu-browse boot)
 
 # Build once, not three times side by side.
 tools/build-hook.sh >/dev/null || exit 1
@@ -64,12 +67,14 @@ each() {
 }
 start=$SECONDS
 if [ "${1:-}" = --record ]; then
+    shift
+    [ $# -gt 0 ] && replays=("$@")
     for tag in orig orig2; do
         each "$tag" original
-        rm -rf "${shots:?}/$tag"
         mkdir -p "$shots/$tag"
         for r in "${replays[@]}"; do
-            cp "$runs/$tag/$r-$tag.trace" "$traces/$r-$tag.trace"
+            rm -f "${shots:?}/$tag/$r"-[0-9]*.bmp
+            [ -f "$runs/$tag/$r-$tag.trace" ] && cp "$runs/$tag/$r-$tag.trace" "$traces/$r-$tag.trace"
             cp "$runs/$tag/$r"-*.bmp "$shots/$tag/" 2>/dev/null
         done
     done
@@ -80,6 +85,7 @@ each rust
 echo "replays took $((SECONDS - start)) s ($runs)"
 bad=0
 for r in "${replays[@]}"; do
+    [ "$r" = boot ] && continue  # screenshots only
     # the pad word's range (press timing): field-walk 3, menu-browse 0
     case $r in field-walk) ign=(--ignore 3) ;; menu-browse) ign=(--ignore 0) ;; *) ign=() ;; esac
     cmp=(python3 tools/replay-compare.py "$traces/$r-orig.trace" "$runs/rust/$r-rust.trace" --also "$traces/$r-orig2.trace" "${ign[@]}")
