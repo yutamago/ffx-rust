@@ -10673,7 +10673,7 @@
 0x0089b530 function TODrawCommandValue        # fh switch:cg2 0x71004a1820
 0x0089b590 function TOGetBtlWindowControlEnable # fh v3:bsim1.00 0x0089b500
 0x0089b5a0 function TOGetSaveWindow           # fh v3:exact+call.cs 0x0089b510 cdecl; (a, kind, &count): MsGetSaveWindow text, trailing 0xff halfwords dropped except kinds 6/17/20, kinds 7/15 at least 1
-0x0089b660 function TOInitBtlWindow           # fh v3:exact 0x0089b5d0
+0x0089b660 function TOInitBtlWindow           # fh v3:exact 0x0089b5d0; ported (ffx_system::tolib::bridge::init_btl_window, small r6): battle window state reset (help, action list, the 18x10 words every 0x24 from 0x0133d7a4, command window closed, info/help/sign windows, cursor-position stack); returns TOSeqInitAllScene(2)
 0x0089baa0 function TOBtlSetDamageValue_0089baa0 # cdecl(a, b, d, e, f, g, h): TOBtlSetDamageValue without the word at +4; name ours
 0x0089bb10 function TOSetBtlActiveChr         # fh v3:exact 0x0089ba80; in battle (MsBattleGetStatus 1) with g_BtlWindowOpen 0: every battle window reset (state words, levels 0x780 bytes, command rec, depth -1, inits, help/sign/simple-help windows), then g_BtlWindowChr = chr, its bit in g_BtlWindowOpen, TOBtlSetNextAction(chr, 0xfe) (eax); else eax the status or 1; ported (small round 5 f, ffx_system::tolib)
 0x0089bc50 function SetGlobal_00c58ef8 # cdecl(v): *0x00c58ef8 = v, returns v; name ours
@@ -10893,7 +10893,7 @@
 0x008acf20 function GetU32_01841d30 # () -> u32 at 0x01841d30; name ours
 0x008acf30 function TOGetSystemConfirmButtonAssign # fh v3:exact 0x008acee0
 0x008acf50 function TOGetTextureName          # fh v3:exact 0x008acf00; cdecl(id i16, nibbles u8, index i16, high u16, &size): column k = 2*(nibble&7) (high nibble when high; bit 3 or high flags), tables 0x00c59568..0x00c59c00 by id 0x3c00 (TkGetLang)/0x3d00 (prefix 0x025d08a0 or battle 0x025d06a0 + name, interned)/0x3d01,0x3d60 (TOGetFFXLang 0/9/10)/0x3d10-0x3d40/0x3d80 (by byte); size pair from 0x00b5f8d0/0x00b5f890[(index+k)/2]; unknown id dbgPrintf, returns k
-0x008ad4d0 function TOInit                       # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'TOInit(): about to read menu base_ftc file!!!!\\n'; Switch 0x71004f38b0 TOInit (symbols from Fahrenheit's server export)
+0x008ad4d0 function TOInit                       # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'TOInit(): about to read menu base_ftc file!!!!\\n'; Switch 0x71004f38b0 TOInit (symbols from Fahrenheit's server export); ported (ffx_system::tolib::bridge::to_init, small r6): language-dependent menu FTC/newkit (TKMallocAndReadEventFTC for languages 10/0/9, else TODVDFileLoad(4, 0)), menu files from bank 4 (0x11, 9) or 0x12, scene data, message slots and macro commands of areas 1 then 0; returns TOBtlInit's eax
 0x008ad780 function TOInitBattleFontPath      # fh v3:bsim0.92 0x008ad730
 0x008ad840 function TOInitEventFontPath       # fh v3:bsim0.92 0x008ad7f0
 0x008ad900 function TOInitLanguage            # (): by TkGetLang (0 by FFXGetAsiaMode 0/1/2 -> 0/0x11/9 swapped NTSC; 1 -> 1; 2..5 -> same PAL; 18 -> 0x12 PAL) sets 0x01865b5c, g_FFXLangSwapFlag, g_FFXVideoMode; name ours

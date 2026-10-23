@@ -26591,3 +26591,165 @@ fn small6_a_matches_the_original_on_the_snapshot() {
     };
     small6_a(&mut a, &mut b, &mut Xorshift(0x5a11_6a02));
 }
+
+/// Logging stand-ins for `fs` (`(sym, words)`), each at new code behind a
+/// jump: it appends its index and its first `words` arguments at
+/// `*cursor` and returns the word at its cell, which then grows by the
+/// cell's `+4` (0 for a constant). Returns `(log, cursor, cells)`.
+fn small6_stubs(a: &mut Oracle, b: &mut Oracle, fs: &[(u32, u8)]) -> (u32, u32, Vec<u32>) {
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    put(a, b, cursor, log);
+    let mut cells = vec![];
+    for (k, &(sym, n)) in fs.iter().enumerate() {
+        let cell = alloc(a, b, 8);
+        let c = cursor.to_le_bytes();
+        let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &c].concat(); // mov ecx, [cursor]
+        code.extend([0xc7, 0x01]); // mov dword [ecx], k
+        code.extend((0x6600 + u32::try_from(k).unwrap()).to_le_bytes());
+        for j in 0..n {
+            code.extend([0x8b, 0x44, 0x24, 4 + 4 * j, 0x89, 0x41, 4 + 4 * j]);
+        }
+        code.extend([&[0x83, 0x05][..], &c, &[4 + 4 * n]].concat()); // add dword [cursor], 4 + 4n
+        code.push(0xa1); // mov eax, [cell]
+        code.extend(cell.to_le_bytes());
+        code.extend([0x8b, 0x15]); // mov edx, [cell + 4]
+        code.extend((cell + 4).to_le_bytes());
+        code.extend([0x01, 0x15]); // add [cell], edx
+        code.extend(cell.to_le_bytes());
+        code.push(0xc3);
+        let at = a.alloc_code(&code).unwrap();
+        assert_eq!(b.alloc_code(&code).unwrap(), at);
+        redirect(a, b, sym, at);
+        cells.push(cell);
+    }
+    (log, cursor, cells)
+}
+
+/// Small round 6 f: `TOInitBtlWindow` (the SE playing or not) and `TOInit`
+/// (every language path: 0, 1, 9, 10, 0x11, others; the localisation
+/// word 0, 3 and others; "newkit" found or not); every callee a logging
+/// stand-in, the file loads counting up.
+#[allow(clippy::too_many_lines)] // two functions
+fn small6_f(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call(f, Conv::Cdecl, args).unwrap().eax
+    };
+    let win: &[(u32, u8)] = &[
+        (0x008a_dbd0, 0),
+        (0x0089_7860, 0),
+        (0x008a_e410, 3),
+        (0x008a_f5c0, 1),
+        (0x0089_79d0, 0),
+        (0x0089_8010, 0),
+        (0x0089_7af0, 0),
+        (0x0089_7bd0, 0),
+        (0x008a_e450, 4),
+        (0x0088_6680, 1),
+        (0x0088_6eb0, 1),
+        (0x008a_e5a0, 1),
+    ];
+    let init: &[(u32, u8)] = &[
+        (0x0064_1100, 0),
+        (0x008a_d900, 0),
+        (0x008b_3a40, 0),
+        (0x008f_ae20, 0),
+        (0x008a_c2f0, 0),
+        (0x0062_f500, 1),
+        (0x008a_ba60, 2),
+        (0x0088_c860, 1),
+        (0x008a_c130, 1),
+        (0x0068_7010, 1),
+        (0x0064_22e0, 1),
+        (0x008a_ba30, 3),
+        (0x0090_6b20, 0),
+        (0x0088_ccf0, 2),
+        (0x008a_df20, 0),
+        (0x00a7_bb00, 0),
+        (0x00a7_c7f0, 2),
+        (0x008a_e6f0, 0),
+        (0x008b_85c0, 0),
+        (0x008a_da30, 1),
+        (0x008b_81d0, 1),
+        (0x0089_dc40, 0),
+        (0x008b_e800, 0),
+        (0x0089_77f0, 0),
+    ];
+    let mut fs = win.to_vec();
+    fs.extend(init);
+    let (log, cursor, cells) = small6_stubs(a, b, &fs);
+    let cell_of = |sym: u32| cells[fs.iter().position(|f| f.0 == sym).unwrap()];
+    for k in 0..48u32 {
+        put(a, b, cursor, log);
+        for &c in &cells {
+            put(a, b, c, rng.next());
+            put(a, b, c + 4, 0u32);
+        }
+        // every global the window reset writes, random first
+        let block = a.rebase(0x0133_c93c);
+        let bytes: Vec<u8> = (0..0x2ec4).map(|_| rng.next().to_le_bytes()[0]).collect();
+        a.write(block, &bytes).unwrap();
+        b.write(block, &bytes).unwrap();
+        for g in [
+            0x023c_c088u32,
+            0x023c_c08c,
+            0x00c5_8ef4,
+            0x0186_59bc,
+            0x0184_1e0c,
+        ] {
+            let at = a.rebase(g);
+            put(a, b, at, rng.next());
+        }
+        let sep = cell_of(0x0088_6680);
+        put(a, b, sep, u32::from(rng.next().is_multiple_of(2)));
+        let ra = eax(a, 0x0089_b660, &[]);
+        let rb = tolib::bridge::init_btl_window(b, call);
+        assert_eq!(ra, rb, "TOInitBtlWindow {k}");
+        same_memory(&format!("small6 f window {k}"), a, b);
+        settle(a, b);
+
+        put(a, b, cursor, log);
+        let lang = [0u32, 1, 9, 10, 0x11, 2, 5][(k % 7) as usize];
+        put(a, b, cell_of(0x008a_c2f0), lang);
+        put(
+            a,
+            b,
+            cell_of(0x0064_1100),
+            [0u32, 3, 1, 7][((k / 7) % 4) as usize],
+        );
+        put(a, b, cell_of(0x008a_ba60) + 4, 0x100u32);
+        let kit = if rng.next().is_multiple_of(3) {
+            0
+        } else {
+            rng.next() | 1
+        };
+        put(a, b, cell_of(0x0088_c860), kit);
+        put(a, b, cell_of(0x0088_c860) + 4, 0u32);
+        for g in [0x00c5_9558u32, 0x0184_1d20, 0x0184_1d43, 0x025d_09bc] {
+            let at = a.rebase(g);
+            put(a, b, at, rng.next());
+        }
+        let ra = eax(a, 0x008a_d4d0, &[]);
+        let rb = tolib::bridge::to_init(b, call);
+        assert_eq!(ra, rb, "TOInit {k} lang {lang}");
+        same_memory(&format!("small6 f init {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn small6_f_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    small6_f(&mut a, &mut b, &mut Xorshift(0x5a11_6f01));
+}
+
+#[test]
+fn small6_f_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    small6_f(&mut a, &mut b, &mut Xorshift(0x5a11_6f02));
+}

@@ -1144,6 +1144,14 @@ ported! {
     TOMenuFirstReadProc_008a8c10 @ 0x008a_8c10 => extern "C" fn to_menu_first_read_proc(task: u32) -> u32 {
         tolib::bridge::menu_first_read_proc(&mut mem(), task, call_sym)
     }
+    /// `TOInitBtlWindow()`: `TOSeqInitAllScene(2)`'s `eax`.
+    TOInitBtlWindow @ 0x0089_b660 => extern "C" fn to_init_btl_window() -> u32 {
+        tolib::bridge::init_btl_window(&mut mem(), call_sym)
+    }
+    /// `TOInit()`: `TOBtlInit()`'s `eax`.
+    TOInit @ 0x008a_d4d0 => extern "C" fn to_init() -> u32 {
+        tolib::bridge::to_init(&mut mem(), call_sym)
+    }
     /// `Pause_Enter()`: the start time through `call_cdecl_u64`.
     Pause_Enter @ 0x008a_b3d0 => extern "C" fn pause_enter() -> u32 {
         tolib::bridge::pause_enter(&mut mem(), call_sym, |_, f| {
