@@ -28744,6 +28744,75 @@ pub mod bridge {
             return;
         }
     }
+
+    // ---- small round 1 ----
+
+    /// `TkDrawNoTrans()` (`0x0088d4f0`): `AtelDrawNoTrans()`
+    /// (`0x00872c90`), then (a tail jump) `TkSndUpdate2()`, whose `EAX` it
+    /// returns.
+    pub fn tk_draw_no_trans<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0087_2c90);
+        call(mem, f, &[]);
+        let f = mem.rebase(0x0088_7b80);
+        call(mem, f, &[])
+    }
+
+    /// `TkMenuOpenNameEntry_008c3390(aeon, target)` (name ours): for target
+    /// 0xb its save name (`MsGetSaveChrName(0xb)`) first becomes the
+    /// default name text (`TOMenuGetNameMes(u16 0x00c5a14c)`, copied up to
+    /// and with its 0); then `TkMenuOpenNameEntryWindow(0, target)` (a
+    /// tail jump that zeroes the `aeon` argument word; the callers don't
+    /// read it back), whose `EAX` it returns.
+    pub fn tk_menu_open_name_entry_8c3390<M: Mem>(
+        mem: &mut M,
+        target: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if target == 0xb {
+            let f = mem.rebase(0x0078_4fb0);
+            let dst = call(mem, f, &[0xb]);
+            let id = u32::from(mem.read::<u16>(mem.rebase(0x00c5_a14c)));
+            let f = mem.rebase(0x008b_edd0);
+            let src = call(mem, f, &[id]);
+            let mut k = 0u32;
+            loop {
+                let c: u8 = mem.read(src.wrapping_add(k));
+                mem.write(dst.wrapping_add(k), c);
+                k = k.wrapping_add(1);
+                if c == 0 {
+                    break;
+                }
+            }
+        }
+        let f = mem.rebase(0x008c_4250);
+        call(mem, f, &[0, target])
+    }
+
+    /// `TkChPatchM160(chr)` (`0x0082b9b0`): every model part of character
+    /// `chr` (the u16 count at `+6` of its `+0x1c0` block, read again
+    /// after each call) back to full alpha (`Ch_ModelSetAlpha(chr, i,
+    /// 1.0)`); nothing for a null `chr`.
+    pub fn tk_ch_patch_m160<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if chr == 0 {
+            return;
+        }
+        let count = |mem: &M| {
+            u32::from(mem.read::<u16>(mem.read::<u32>(chr.wrapping_add(0x1c0)).wrapping_add(6)))
+        };
+        let mut i = 0u32;
+        while i < count(mem) {
+            let f = mem.rebase(0x0082_ae30);
+            call(mem, f, &[chr, i, 1.0f32.to_bits()]);
+            i += 1;
+        }
+    }
 }
 
 #[cfg(test)]

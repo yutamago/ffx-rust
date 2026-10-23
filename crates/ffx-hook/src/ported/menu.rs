@@ -5016,6 +5016,18 @@ ported! {
     TkMenuJumpToLoadedScene @ 0x008b_4ec0 => extern "C" fn tk_menu_jump_to_loaded_scene() -> u32 {
         tk::tk_menu_jump_to_loaded_scene(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkDrawNoTrans()`: `TkSndUpdate2`'s `eax`.
+    TkDrawNoTrans @ 0x0088_d4f0 => extern "C" fn tk_draw_no_trans() -> u32 {
+        tk::tk_draw_no_trans(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuOpenNameEntry_008c3390(aeon, target)`: the window.
+    TkMenuOpenNameEntry_008c3390 @ 0x008c_3390 => extern "C" fn tk_menu_open_name_entry_8c3390(_aeon: u32, target: u32) -> u32 {
+        tk::tk_menu_open_name_entry_8c3390(&mut mem(), target, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkChPatchM160(chr)`.
+    TkChPatchM160 @ 0x0082_b9b0 => extern "C" fn tk_ch_patch_m160(chr: u32) {
+        tk::tk_ch_patch_m160(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `TkMenuOpenNameEntryWindow(aeon, target)`: the window.
     TkMenuOpenNameEntryWindow @ 0x008c_4250 => extern "C" fn tk_menu_open_name_entry_window(aeon: u32, target: i32) -> u32 {
         tk::tk_menu_open_name_entry_window(&mut mem(), aeon, target, &mut |_, f, a| call_ptr(f, a))

@@ -20374,3 +20374,81 @@ fn menu_round35_main_draw_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// Small round 1 e: `TkDrawNoTrans` (`AtelDrawNoTrans` counted,
+/// `TkSndUpdate2` from a cell), `TkMenuOpenNameEntry_008c3390` (the save
+/// name and the name text stand-ins return buffers, the window call
+/// recorded) and `TkChPatchM160` (`Ch_ModelSetAlpha` recorded, counting
+/// down a word the test points at the part count now and then).
+#[test]
+fn small1_menu_wrappers_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x5a11_0e01) else {
+        return;
+    };
+    let count = t.alloc(&[0; 4]);
+    let code = [&[0xff, 0x05][..], &count.to_le_bytes(), &[0xc3]].concat();
+    stub(&mut t, 0x0087_2c90, &code);
+    let snd = return_cell(&mut t, 0x0088_7b80);
+    let dst = t.alloc(&[0; 0x40]);
+    record_n(&mut t, 0x0078_4fb0, 1, dst);
+    let src = t.alloc(&[0; 0x40]);
+    record_n(&mut t, 0x008b_edd0, 1, src);
+    record_n(&mut t, 0x008c_4250, 2, 0x0123_4567);
+    // Ch_ModelSetAlpha: its three words logged, then `dec word [[cell]]`
+    let buf = t.alloc(&vec![0; 0x2_0000]);
+    let log = t.alloc(&buf.to_le_bytes());
+    let cell = t.alloc(&[0; 4]);
+    let dummy = t.alloc(&[0; 4]);
+    let l = log.to_le_bytes();
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &l].concat();
+    for k in 0..3u8 {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 * k]);
+    }
+    code.extend([&[0x83, 0x05][..], &l, &[12]].concat());
+    code.extend([&[0xa1][..], &cell.to_le_bytes(), &[0x66, 0xff, 0x08, 0xc3]].concat());
+    stub(&mut t, 0x0082_ae30, &code);
+    let chr = t.alloc(&[0; 0x200]);
+    let block = t.alloc(&[0; 0x10]);
+    t.put(chr + 0x1c0, block);
+    let mut callback = callback;
+    for round in 0..400u32 {
+        let v = t.rng.next();
+        t.put(snd, v);
+        t.twin("TkDrawNoTrans", 0x0088_d4f0, &[], U32, |o| {
+            w(tk::tk_draw_no_trans(o, &mut callback))
+        });
+        // a name of 0..=0x30 bytes (no 0 inside), the old one random
+        let len = t.rng.below(0x31);
+        let mut text = t.rng.bytes(0x40);
+        for b in &mut text {
+            *b |= 1;
+        }
+        text[len as usize] = 0;
+        t.put_bytes(src, &text);
+        let old = t.rng.bytes(0x40);
+        t.put_bytes(dst, &old);
+        let id = t.rng.next();
+        t.put(t.sym(0x00c5_a14c), id);
+        let target = t.rng.pick(&[0xbu32, 0xb, 0, 0xa, 0xc, 0x10b, 0xffff_ffff]);
+        let aeon = t.rng.next();
+        t.twin(
+            "TkMenuOpenNameEntry_008c3390",
+            0x008c_3390,
+            &[aeon, target],
+            U32,
+            |o| w(tk::tk_menu_open_name_entry_8c3390(o, target, &mut callback)),
+        );
+        // 0x101: a count past a byte
+        let parts = t.rng.pick(&[0u16, 1, 2, 5, 0x11, 0x40, 0x101]);
+        t.put(block + 6, parts);
+        t.put(cell, if round % 3 == 0 { block + 6 } else { dummy });
+        t.put(log, buf);
+        let c = if round % 9 == 0 { 0 } else { chr };
+        t.twin("TkChPatchM160", 0x0082_b9b0, &[c], VOID, |o| {
+            tk::tk_ch_patch_m160(o, c, &mut callback);
+            0
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
