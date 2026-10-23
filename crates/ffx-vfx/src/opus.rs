@@ -12401,6 +12401,166 @@ pub mod bridge {
         call(mem, f, &[host, ptr])
     }
 
+    /// `opu_vran_add_0081a4a0(host, cmd)` (`0x0081a4a0`, name ours; opus
+    /// table `0x00c48f10..0x00c48f24`, opcodes 0x12..0x17; recompiled
+    /// from the EE): [`opu_v_add`]'s random twin. Kind `k` = the low nine
+    /// flag bits less 0x12 (an `i16`), the vector `v` = `unit + i16
+    /// 0x00c49388[k]`, scales `0x00c49398[k]` (4 words, their low halves).
+    ///
+    /// Four draws of the emulated VU0 R (`g_Vu0_R`, 1.0 for the first
+    /// until `g_Vu0_RSeeded`, which is set; then each `vrnext`): `x_i =
+    /// 2 r_i - 3` into `0x00c8f970..`, R = `r_i - 1.8872414`. The lanes
+    /// `i16 cmd +2.. x scale` (`0x00c8f528..`, as words) / 4096 x `x_i`
+    /// into `g_Vu0_VfMove` and `0x00c8f930..`; `0x00c8f960..` = `v`. The
+    /// add vector `a` (`0x00c8f950..`) starts at 0; flag 0x1000 puts lane
+    /// 0 into its last lane and rotates the lanes; 0x2000 and 0x4000 put
+    /// lane 0 into its first word and rotate both; 0x8000 puts lane 0 into
+    /// its first word; `a` rotates after each of the last three. Each
+    /// taken bit moves the command pointer 2 from `cmd + 2`.
+    ///
+    /// Without flag 0x800 `v` += `a`. With it, the first lane `s` is
+    /// added to `v`'s x (flag 0x1000), y, z and w (0x8000); the original
+    /// spins forever unless 0x2000 and 0x4000 are both set, and so does the
+    /// port. `0x00c8f528` = the pointer (`cmd + 4` with 0x800),
+    /// `0x00c8f548` = host, `0x00c8f568` = `cmd + 2`; without flag 0x200
+    /// the pointer is returned, else the unit's motion callback
+    /// (`0x00c492c8[u8 unit +0xba]`) runs on `(host, pointer)` and its `eax`
+    /// is returned (`0x00c8f558` = the `0x00c8f528` value, which becomes
+    /// the callback entry's address as 64 bits and then the callback).
+    /// Callees through `call`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_vran_add<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let u = unit(mem, host);
+        let flags = u32::from(mem.read::<u16>(host.wrapping_add(0x21a)));
+        // `sub eax, 0x12; movzx eax, ax; movsx ecx, ax`
+        #[allow(clippy::cast_possible_truncation)]
+        let k = ((flags & 0x1ff).wrapping_sub(0x12) as u16).cast_signed();
+        let kind = i32::from(k).cast_unsigned();
+        let scale: [u32; 4] = mem.read(g(mem, 0x00c4_9398).wrapping_add(kind.wrapping_mul(16)));
+        let off = mem.read::<i16>(g(mem, 0x00c4_9388).wrapping_add(kind.wrapping_mul(2)));
+        let v = u.wrapping_add(i32::from(off).cast_unsigned());
+        let src = cmd.wrapping_add(2);
+        mem.write(g(mem, 0x00c8_f568), src);
+        // the four draws
+        let (r_at, seeded) = (g(mem, 0x00c0_a000), g(mem, 0x00c8_f728));
+        let vrnext = |r: u32| ((r >> 18 ^ r) >> 4) & 1 | (r & 0x003f_ffff | 0x1fc0_0000) << 1;
+        let two: f64 = mem.read(g(mem, 0x00b9_2270));
+        let three: f64 = mem.read(g(mem, 0x00b2_c5c8));
+        let back: f64 = mem.read(g(mem, 0x00b5_8250));
+        let mut r = if mem.read::<u32>(seeded) == 0 {
+            1f32.to_bits()
+        } else {
+            vrnext(mem.read(r_at))
+        };
+        mem.write(seeded, 1u32);
+        let mut x = [0u32; 4];
+        for (i, xi) in x.iter_mut().enumerate() {
+            if i > 0 {
+                r = vrnext(mem.read(r_at));
+            }
+            *xi = store(sub(mul(load(r), two), three));
+            mem.write(r_at, store(sub(load(r), back)));
+        }
+        let xs = g(mem, 0x00c8_f970);
+        mem.write(xs, x);
+        // the products (`imul` of the sign-extended halves), as words
+        let p: [u32; 4] = std::array::from_fn(|i| {
+            #[allow(clippy::cast_possible_truncation)] // 0..4, the low halves
+            let (a, s) = (
+                mem.read::<i16>(src.wrapping_add(2 * i as u32)),
+                scale[i] as u16,
+            );
+            i32::from(a)
+                .wrapping_mul(i32::from(s.cast_signed()))
+                .cast_unsigned()
+        });
+        let ee = g(mem, 0x00c8_f528);
+        mem.write(ee, p);
+        let per_4096: f64 = mem.read(g(mem, 0x00b5_0190));
+        #[allow(clippy::cast_precision_loss)] // the original's fild, fstp dword
+        let mut lanes: [u32; 4] = std::array::from_fn(|i| {
+            let f = store(f64::from(p[i].cast_signed()));
+            let s = store(mul(load(f), per_4096));
+            store(mul(load(x[i]), load(s)))
+        });
+        let vf = g(mem, 0x00c8_f980);
+        mem.write(g(mem, 0x00c8_f930), lanes);
+        let first = lanes[0];
+        let w: [u32; 4] = mem.read(v);
+        let vec = g(mem, 0x00c8_f960);
+        mem.write(vec, w);
+        let mut a = [0u32; 4];
+        let mut ptr = src;
+        if flags & 0x1000 != 0 {
+            a[3] = lanes[0];
+            lanes.rotate_left(1);
+            ptr = ptr.wrapping_add(2);
+        }
+        for bit in [0x2000u32, 0x4000] {
+            if flags & bit != 0 {
+                a[0] = lanes[0];
+                lanes.rotate_left(1);
+                ptr = ptr.wrapping_add(2);
+            }
+            a.rotate_left(1);
+        }
+        if flags & 0x8000 != 0 {
+            a[0] = lanes[0];
+            ptr = ptr.wrapping_add(2);
+        }
+        a.rotate_left(1);
+        mem.write(vf, lanes);
+        mem.write(g(mem, 0x00c8_f950), a);
+        let next = if flags & 0x800 == 0 {
+            let s: [u32; 4] = std::array::from_fn(|i| store(add(load(a[i]), load(w[i]))));
+            mem.write(vec, s);
+            mem.write(v, s);
+            ptr
+        } else {
+            let mut s = w;
+            if flags & 0x1000 != 0 {
+                s[0] = store(add(load(first), load(w[0])));
+            }
+            if flags & 0x6000 != 0x6000 {
+                // `test si, si; je $` and `test dx, dx; je $`
+                loop {
+                    std::hint::spin_loop();
+                }
+            }
+            s[1] = store(add(load(first), load(w[1])));
+            s[2] = store(add(load(first), load(w[2])));
+            if flags & 0x8000 != 0 {
+                s[3] = store(add(load(w[3]), load(first)));
+            }
+            mem.write(vec, s);
+            mem.write(v, s);
+            src.wrapping_add(2)
+        };
+        mem.write(ee, next);
+        mem.write(g(mem, 0x00c8_f548), host);
+        if flags & 0x200 == 0 {
+            return ptr;
+        }
+        mem.write(g(mem, 0x00c8_f558), next);
+        let cb = u32::from(mem.read::<u8>(u.wrapping_add(0xba)));
+        let table = g(mem, 0x00c4_92c8);
+        // `shld; shl 2; add; adc`: the 64-bit entry address
+        let at = u64::from(cb << 2) + u64::from(table);
+        #[allow(clippy::cast_possible_truncation)] // the halves
+        let (lo, hi) = (at as u32, (at >> 32) as u32);
+        mem.write(ee.wrapping_add(4), hi);
+        let f: u32 = mem.read(lo);
+        mem.write(ee, f);
+        let f: u32 = mem.read(table.wrapping_add(cb << 2));
+        call(mem, f, &[host, ptr])
+    }
+
     /// `opu_v_etc(host, cmd)` (`0x00819450`): the opus vector commands
     /// picked by the flag nibble (`u16 host +0x21a & 0xf000`); `u` is the
     /// unit (`host +0x220`), `host` doubles as scratch. Returns the next

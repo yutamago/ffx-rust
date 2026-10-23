@@ -33346,3 +33346,81 @@ fn r53b_opu_rgba_en_matches_the_original() {
         assert!(seen.iter().all(|&n| n > 20), "{seen:?}");
     }
 }
+
+/// `opu_vran_add_0081a4a0` against the port: kinds 0..5, every flag bit
+/// pattern (0x800 only with 0x2000 and 0x4000: else the original spins
+/// forever), R seeded or not with random bits, floats with NaNs,
+/// infinities and -0 in the unit's vectors, the motion callback through
+/// one recorder for the whole table.
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn r53c_opu_vran_add_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_a4a0);
+        let cell = p.alloc(0x10);
+        let log = far_recorder(&mut p, 0x0081_5050, &[0; 2], Some(cell));
+        let (table, recorder) = (p.sym(0x00c4_92c8), p.sym(0x0081_5050));
+        for k in 0..12 {
+            p.set(table + 4 * k, recorder);
+        }
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x200), p.alloc(0x10));
+        let (r, seeded, ee) = (p.sym(0x00c0_a000), p.sym(0x00c8_f728), p.sym(0x00c8_f508));
+        let scales = p.sym(0x00c4_9398);
+        let mut seen = [0u32; 3];
+        for round in 0..3000u32 {
+            p.set(log, 0u32);
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x200, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.fill(ee, 0x80, &mut rng);
+            p.set(cell, rng.next());
+            p.set(host + 0x220, unit);
+            let mut flags = (rng.next() & 0xfe00) | (0x12 + rng.below(6));
+            if flags & 0x800 != 0 && flags & 0x6000 != 0x6000 {
+                if rng.chance(50) {
+                    flags |= 0x6000;
+                } else {
+                    flags &= !0x800;
+                }
+            }
+            seen[usize::from(flags & 0x800 != 0)] += 1;
+            seen[2] += u32::from(flags & 0x200 != 0);
+            p.set(host + 0x21a, flags as u16);
+            p.set(seeded, u32::from(!rng.chance(10)));
+            // scales with negative low halves now and then (the game's are
+            // small positive ones)
+            if rng.chance(20) {
+                p.fill(scales, 6 * 16, &mut rng);
+            }
+            p.set(r, rng.next());
+            for o in (0..0x200).step_by(4) {
+                let v = if rng.chance(90) {
+                    ranged(&mut rng, -1000.0, 1000.0)
+                } else {
+                    rng.pick(&[
+                        0x7fc0_0000u32,
+                        0xff80_0000,
+                        0x7f80_0000,
+                        0x8000_0000,
+                        0x7f7f_ffff,
+                    ])
+                };
+                p.set(unit + o, v);
+            }
+            // (after the floats: the callback index lives among them)
+            p.set(unit + 0xba, rng.below(12) as u8);
+            for k in 0..4 {
+                let v = rng.pick(&[0i16, 1, -1, 0x1000, -0x8000, 0x7fff]);
+                let v = if rng.chance(50) { rng.next() as i16 } else { v };
+                p.set(cmd + 2 + 2 * k, v);
+            }
+            p.check(
+                &format!("opu_vran_add round {round}"),
+                0x0081_a4a0,
+                &[host, cmd],
+                |m| Some(opus::bridge::opu_vran_add(m, host, cmd, &mut call_original)),
+            );
+        }
+        assert!(seen.iter().all(|&n| n > 300), "{seen:?}");
+    }
+}
