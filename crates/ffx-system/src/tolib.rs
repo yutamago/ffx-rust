@@ -7812,6 +7812,199 @@ pub mod bridge {
         call(mem, 0x008a_0de0, &[entry])
     }
 
+    /// One [`to_btl_set_window_layout`] box: the image constants (f32
+    /// addresses, or the two f64 ones the original adds 0.0 to) of its
+    /// corners, the help window's y, the column x and its words.
+    struct WindowLayout {
+        /// x0, y0: f32 constants, or (with `slot`) the f64 154 and 835
+        /// rounded through the argument word.
+        left: u32,
+        top: u32,
+        slot: bool,
+        right: u32,
+        bottom: u32,
+        help: u32,
+        column: u32,
+        /// `+0x28`, `+0x2c` (a u16 when `wide` is false), `+0x30` with
+        /// `+0x38` 0x30002 (or none: `+0x38` 0x30001).
+        mode: u32,
+        flags: u32,
+        wide: bool,
+        rows: Option<u16>,
+    }
+
+    /// [`to_btl_set_window_layout`]'s box `l` into window `w`.
+    fn write_window_box<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        l: &WindowLayout,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{self, add, ftol, store};
+        const REMAP_X2: u32 = 0x0064_47e0;
+        const REMAP_Y2: u32 = 0x0064_4820;
+        let at = |off: u32| w.wrapping_add(off);
+        // the f32 at image address `a`, as `fld dword` then `fstp dword` pass it
+        let img_f32 =
+            |mem: &M, a: u32| x87::round_trip(f32::from_bits(mem.read(mem.rebase(a)))).to_bits();
+        // 154.0 or 835.0 (f64) + 0.0, rounded through the argument word
+        let img_f64 = |mem: &M, a: u32| store(add(mem.read::<f64>(mem.rebase(a)), 0.0));
+        let mut remap = |mem: &mut M, sym: u32, v: u32, off: u32| {
+            let r = fcall(mem, sym, &[v]);
+            mem.write(at(off), store(r));
+        };
+        let (left, top) = if l.slot {
+            (img_f64(mem, 0x00b5_f230), img_f64(mem, 0x00b5_f2b8))
+        } else {
+            (img_f32(mem, l.left), img_f32(mem, l.top))
+        };
+        remap(mem, REMAP_X2, left, 0x68);
+        remap(mem, REMAP_Y2, top, 0x6c);
+        let v = img_f32(mem, l.right);
+        remap(mem, REMAP_X2, v, 0x70);
+        let v = img_f32(mem, l.bottom);
+        remap(mem, REMAP_Y2, v, 0x74);
+        let v = img_f32(mem, l.help);
+        remap(mem, REMAP_Y2, v, 0x7c);
+        let v = img_f32(mem, l.bottom);
+        remap(mem, REMAP_Y2, v, 0x84);
+        let v = img_f32(mem, 0x00b4_1d90);
+        remap(mem, REMAP_X2, v, 0x78);
+        let right = x87::round_trip(f32::from_bits(mem.read(at(0x70))));
+        mem.write(at(0x80), right);
+        for (c, off) in [(l.column, 0x66), (0x00b5_ef64, 0x62)] {
+            let v = img_f32(mem, c);
+            let x = fcall(mem, REMAP_X2, &[v]);
+            #[allow(clippy::cast_possible_truncation)] // `mov word`
+            mem.write(at(off), ftol(mem, x) as u16);
+        }
+        mem.write(at(0x28), l.mode);
+        if l.wide {
+            mem.write(at(0x2c), l.flags);
+        } else {
+            #[allow(clippy::cast_possible_truncation)] // 0x1000: `mov word`
+            mem.write(at(0x2c), l.flags as u16);
+        }
+        match l.rows {
+            Some(rows) => {
+                mem.write(at(0x30), rows);
+                mem.write(at(0x38), 0x0003_0002u32);
+            }
+            None => mem.write(at(0x38), 0x0003_0001u32),
+        }
+    }
+
+    /// `TOBtlSetWindowLayout(w)` (`0x008a10d0`, from `TOBtlSetCommand`):
+    /// the box of battle command window `w` by its kind (`i16 +6`), in PS2
+    /// coordinates remapped (`graphicUiRemapX2`/`Y2`, through `fcall`):
+    /// `+0x68`/`+0x6c` the top left, `+0x70`/`+0x74` the bottom right,
+    /// `+0x7c`/`+0x84` the help box's top and bottom, `+0x78` x 191,
+    /// `+0x80` = `+0x70`, u16 `+0x66` and `+0x62` the truncated column x
+    /// and x 420 (`ftol2_sse`); then its mode words (`+0x28`, `+0x2c`,
+    /// `+0x30`, `+0x38`). Kinds 0x15 and 0x16 are the two-entry yes/no
+    /// window (`MsGetRomBtlText(0x3014/0x3015, 0)` into `+0xb4`/`+0xb8`,
+    /// `+0xb0` 2, the pad words `0x025d0afa`/`0x025d0af8` into
+    /// `+0x56`/`+0x58`). Any kind resets `+0x40` and `+0x3c` and copies
+    /// `+0x24` into `+0x44`; `EAX` that u16. The kinds that round 154 and
+    /// 835 through their argument word leave it holding 835.0's bits (the
+    /// caller pushes `w` again).
+    pub fn to_btl_set_window_layout<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        let at = |off: u32| w.wrapping_add(off);
+        let box_of = |left, top, slot, right, bottom, help, column| WindowLayout {
+            left,
+            top,
+            slot,
+            right,
+            bottom,
+            help,
+            column,
+            mode: 0,
+            flags: 0,
+            wide: false,
+            rows: None,
+        };
+        let wide_box = |column, mode, rows| WindowLayout {
+            mode,
+            flags: 0x1000_0100,
+            wide: true,
+            rows: Some(rows),
+            ..box_of(0, 0, true, 0x00b5_f428, 0x00b5_f424, 0x00b5_f404, column)
+        };
+        let kind = mem.read::<i16>(at(6));
+        let layout = match kind {
+            0 | 0xc | 0xd => Some(WindowLayout {
+                mode: 1,
+                flags: 0x1000,
+                ..box_of(
+                    0x00b5_f344,
+                    0x00b4_ae1c,
+                    false,
+                    0x00b5_f3d8,
+                    0x00b5_f41c,
+                    0x00b5_f3fc,
+                    0x00b4_bf08,
+                )
+            }),
+            1 | 2 => Some(wide_box(0x00b5_f388, 3, 0x403)),
+            3 | 4 | 0xe => Some(wide_box(0x00b5_f388, 3, 0x402)),
+            6 | 0x11 | 0x14 => Some(wide_box(0x00b5_f384, 0x0001_0003, 0x202)),
+            7 | 0xf => Some(WindowLayout {
+                mode: 2,
+                flags: 0x1000_0700,
+                wide: true,
+                ..box_of(
+                    0,
+                    0,
+                    true,
+                    0x00b5_f3d8,
+                    0x00b5_f424,
+                    0x00b5_f404,
+                    0x00b4_bf08,
+                )
+            }),
+            5 | 0xa => Some(WindowLayout {
+                mode: 0x0001_0001,
+                flags: 0x1000,
+                ..box_of(
+                    0x00b5_f344,
+                    0x00b5_f400,
+                    false,
+                    0x00b5_f3d8,
+                    0x00b5_f424,
+                    0x00b5_f404,
+                    0x00b4_bf08,
+                )
+            }),
+            _ => None,
+        };
+        if let Some(l) = layout {
+            write_window_box(mem, w, &l, &mut fcall);
+        } else if matches!(kind, 0x15 | 0x16) {
+            let yes = call(mem, 0x0078_f8f0, &[0x3014, 0]);
+            mem.write(at(0xb4), yes);
+            let no = call(mem, 0x0078_f8f0, &[0x3015, 0]);
+            mem.write(at(0xb8), no);
+            mem.write(at(0xb0), 2u32);
+            mem.write(at(0x28), 0x0001_0002u32);
+            mem.write(at(0x2c), 0x1200_1100u32);
+            let v: u16 = mem.read(mem.rebase(0x025d_0afa));
+            mem.write(at(0x56), v);
+            let v: u16 = mem.read(mem.rebase(0x025d_0af8));
+            mem.write(at(0x58), v);
+            mem.write(at(0x38), 0x0003_0001u32);
+        }
+        mem.write(at(0x40), 0u16);
+        mem.write(at(0x3c), 0u16);
+        let v: u16 = mem.read(at(0x24));
+        mem.write(at(0x44), v);
+        u32::from(v)
+    }
+
     /// `TOBtlSetNextAction(chr, command)` (`0x0089a330`): steps the battle
     /// command windows one level deeper for `command`, returning 1, or 0
     /// when `TOCheckBtlCommandUse` refuses it.

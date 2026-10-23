@@ -10667,7 +10667,7 @@
 0x008a0ce0 function TOBtlInitCtbWindow        # fh v3:exact 0x008a0c70; () void: CTB state cleared (u8 0x01340446, u16 0x0134044c/0x01340450/0x01340444/0x01340448, u32 0x01340470), 16 rows of 0x18 at 0x013404f8 from MsGetCTBlist(&local) entries (u8 id, u16 ticks): +0 1, +1 id, +4/+8 ticks, +0xc/+0xd k, +0x12 0x16 k; row pointers at 0x01340478; ported in system round 42
 0x008a0de0 function TOBtlSetCallback          # fh v3:exact 0x008a0d70; (w) void: jump tables 0x008a1068 (bytes) / 0x008a1040 on i16 w+6 (0..0x16): +0x98 open, +0x9c wait, +0xa0, +0x90 draw, +0x94 (TOInitBtlWinChange for kind 10, else 0), +0xe4 = 1 for sub/weapon/prepare; kind 0 TOOpenBtlLimitBreak while MsCheckLeftWindow > 0 and g_BtlInitAnm == 1; kinds 0x15/0x16 TOInitGilInput(w+0xc == 0x3024 ? 100000 : -1); ported in system round 42
 0x008a1090 function TOBtlSetTargetCallback    # fh v3:exact 0x008a1020
-0x008a10d0 function TOBtlSetWindowLayout      # fh v3:exact 0x008a1060
+0x008a10d0 function TOBtlSetWindowLayout      # fh v3:exact 0x008a1060; small round 1: ported in ffx_system::tolib (to_btl_set_window_layout): jump table 0x008a1694/index 0x008a16b4 (8/9/0xb/0x10/0x12/0x13 and > 0x16 only the tail); kinds 1-4, 6, 7, 0xe, 0xf, 0x11, 0x14 round the f64 154/835 (0x00b5f230/0x00b5f2b8) + 0.0 through the argument word (835.0's bits left there; TOBtlSetCommand pushes w again); EAX the u16 +0x24 copied to +0x44
 0x008a16d0 function TODrawBtlCtbParts         # fh v3:exact 0x008a1660
 0x008a1ce0 function TODrawLimitBG             # fh v3:exact 0x008a1c70
 0x008a2030 function TOInitGilInput            # cdecl(max): 0x01340454 (7 words) cleared; +8/+0x14 = MsGetGIL(), +0xc = max >= 0 && gil >= max ? max : gil, u16 +2 = digits - 1 ('%d'); 0x023cc038 = 0; returns digits - 1; name ours

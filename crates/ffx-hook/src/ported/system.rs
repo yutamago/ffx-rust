@@ -1378,6 +1378,11 @@ ported! {
         let at = frame.at();
         btl::bridge::draw_active_chr_cursor(&mut mem(), chr, at, call_sym, fcall);
     }
+    /// `TOBtlSetWindowLayout(w)`: the caller pushes `w` again, so the
+    /// argument word the original rounds 154/835 through is not kept.
+    TOBtlSetWindowLayout @ 0x008a_10d0 => extern "C" fn to_btl_set_window_layout(w: u32) -> u32 {
+        tolib::bridge::to_btl_set_window_layout(&mut mem(), w, call_sym, fcall)
+    }
     /// `TOBtlSetCallback(w)` (callers drop `eax`).
     TOBtlSetCallback @ 0x008a_0de0 => extern "C" fn to_btl_set_callback(w: u32) {
         btl::bridge::set_callback(&mut mem(), w, call_sym);

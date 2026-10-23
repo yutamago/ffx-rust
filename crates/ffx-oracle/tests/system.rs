@@ -25743,3 +25743,113 @@ fn small1_ctb_window_matches_the_original_on_the_snapshot() {
     };
     small1_ctb_window(&mut a, &mut b, &mut Xorshift(0x5a11_0c02));
 }
+
+/// Small round 1 d: `TOBtlSetWindowLayout` for every kind (and some out of
+/// range), the remaps real, the box constants in `.rdata` replaced by
+/// random values in both oracles now and then (results past `i32` for
+/// `ftol2_sse`), `MsGetRomBtlText` a logging stand-in.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names
+)]
+fn small1_window_layout(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x100);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 4);
+    let w = alloc(a, b, 0x100);
+    let s = stand_in8(a, b, 0xa00, &logger_returning(cursor, 2, cells));
+    redirect(a, b, 0x0078_f8f0, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let consts: Vec<u32> = [
+        0x00b4_1d90u32,
+        0x00b4_ae1c,
+        0x00b4_bf08,
+        0x00b5_ef64,
+        0x00b5_f344,
+        0x00b5_f384,
+        0x00b5_f388,
+        0x00b5_f3d8,
+        0x00b5_f3fc,
+        0x00b5_f400,
+        0x00b5_f404,
+        0x00b5_f41c,
+        0x00b5_f424,
+        0x00b5_f428,
+    ]
+    .iter()
+    .map(|&c| a.rebase(c))
+    .collect();
+    let doubles = [a.rebase(0x00b5_f230), a.rebase(0x00b5_f2b8)];
+    let originals: Vec<u32> = consts.iter().map(|&c| Mem::read(a, c)).collect();
+    let original_doubles: Vec<f64> = doubles.iter().map(|&c| Mem::read(a, c)).collect();
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, rng.next());
+        let patch = rng.next().is_multiple_of(2);
+        for (&c, &v) in consts.iter().zip(&originals) {
+            let x = if patch {
+                match rng.next() % 4 {
+                    0 => (rng.next() % 4000) as f32 / 7.0 - 100.0,
+                    1 => ((rng.next() % 2000) as f32 - 1000.0) * 3e7,
+                    2 => f32::from_bits(v),
+                    _ => (rng.next() % 2000) as f32,
+                }
+            } else {
+                f32::from_bits(v)
+            };
+            put(a, b, c, x);
+        }
+        for (&c, &v) in doubles.iter().zip(&original_doubles) {
+            let x = if patch && rng.next().is_multiple_of(2) {
+                // -0.0 + 0.0 is +0.0
+                [-0.0, f64::from(rng.next() % 100_000) / 9.0 - 500.0][(rng.next() % 2) as usize]
+            } else {
+                v
+            };
+            put(a, b, c, x);
+        }
+        let words: [u32; 0x40] = std::array::from_fn(|_| rng.next());
+        put(a, b, w, words);
+        let kind = if rng.next().is_multiple_of(8) {
+            rng.next() as i16
+        } else {
+            (rng.next() % 26) as i16 - 2
+        };
+        put(a, b, w + 6, kind);
+        put(a, b, a.rebase(0x025d_0af8), rng.next());
+        let ra = eax(a, 0x008a_10d0, &[w]);
+        let rb = t::to_btl_set_window_layout(b, w, call, fcall);
+        assert_eq!(ra, rb, "window layout {k}: eax");
+        same_memory(&format!("window layout {k}"), a, b);
+        settle(a, b);
+    }
+    for (&c, &v) in consts.iter().zip(&originals) {
+        put(a, b, c, v);
+    }
+    for (&c, &v) in doubles.iter().zip(&original_doubles) {
+        put(a, b, c, v);
+    }
+}
+
+#[test]
+fn small1_window_layout_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    small1_window_layout(&mut a, &mut b, &mut Xorshift(0x5a11_0d01));
+}
+
+#[test]
+fn small1_window_layout_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    small1_window_layout(&mut a, &mut b, &mut Xorshift(0x5a11_0d02));
+}
