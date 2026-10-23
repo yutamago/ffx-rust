@@ -5392,8 +5392,7 @@ fn round12_case(t: &mut Twins, rng: &mut Rng, case: u32, real: bool, what: &str)
             t.w32(d + 0x1c, rng.next());
             let d = if rng.chance(8) { 0 } else { d };
             t.check(what, 0x006a_e5b0, Conv::Cdecl, &[d], |g| {
-                ut::screen_fade_process(g, d);
-                Out::None
+                Out::U32(ut::screen_fade_process(g, d))
             });
         }
     }
