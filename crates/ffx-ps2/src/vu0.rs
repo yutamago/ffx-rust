@@ -161,6 +161,7 @@ pub enum Axis {
 
 /// The originals over game memory (`ffx_bridge::Mem`).
 pub mod bridge {
+    use ffx_bridge::x87::Reg;
     use ffx_bridge::{Global, Mem};
 
     /// The scale `FFXVu0RotTransPers` applies (an `f64` 16.0 in `.rdata`).
@@ -396,6 +397,41 @@ pub mod bridge {
         let r: [[u32; 4]; 3] = rows.map(|p| mem.read(p));
         mem.write(dst, [r[0], r[1], r[2], r[2]]);
         r[2][3]
+    }
+
+    /// `MagicNormalizeLen_009dbaf0(v, out, len)` (`g_MagicImports` slot
+    /// 358): `*len = |v.xyz|` (`(x² + y²) + z²` through `_CIsqrt`, stored
+    /// as an `f32`), then `out.xyz = v.xyz / *len`: `x` divided by the
+    /// length held in the register, `y` and `z` by `*len` read back, and
+    /// each component of `v` read again when divided, so overlapping
+    /// arguments behave as in the original. `out.w` is not written.
+    /// Returns `out` (the original's `eax`). The original also keeps the
+    /// rounded length in its own `v` argument slot.
+    pub fn normalize_len(mem: &mut impl Mem, v: u32, out: u32, len: u32) -> u32 {
+        let [x, y, z]: [f32; 3] = mem.read(v);
+        let sq = (Reg::load(x) * Reg::load(x) + Reg::load(y) * Reg::load(y))
+            + Reg::load(z) * Reg::load(z);
+        let length = sq.sqrt().store();
+        mem.write(len, length);
+        let x: f32 = mem.read(at(v, 0));
+        mem.write(at(out, 0), Reg::load(length).divr_m32(x).store());
+        for i in 1..3 {
+            let c: f32 = mem.read(at(v, i));
+            let l: f32 = mem.read(len);
+            mem.write(at(out, i), Reg::load(c).div_m32(l).store());
+        }
+        out
+    }
+
+    /// `MagicRandFloat_009dbb40(out)` (`g_MagicImports` slot 241): one draw
+    /// of the emulated VU0 random sequence, `draw` (the rand programs' draw,
+    /// `ffx_vfx::rand::bridge::draw`, which the caller passes in because
+    /// `ffx-vfx` depends on this crate), stored to `out`. Returns the
+    /// draw's bits (the original's `eax`).
+    pub fn rand_float<M: Mem>(mem: &mut M, out: u32, draw: impl FnOnce(&mut M) -> f32) -> u32 {
+        let d = draw(mem);
+        mem.write(out, d);
+        d.to_bits()
     }
 }
 
