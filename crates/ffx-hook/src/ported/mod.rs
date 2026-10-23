@@ -36,6 +36,7 @@ mod text;
 mod vfx;
 mod vfx_hi;
 mod vfx_ppp;
+mod vfx_shape;
 
 pub(crate) use battle::ms_screen_process;
 
@@ -61,6 +62,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(vfx::hooks());
     all.extend(vfx_hi::hooks());
     all.extend(vfx_ppp::hooks());
+    all.extend(vfx_shape::hooks());
     all
 }
 

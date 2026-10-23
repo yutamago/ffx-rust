@@ -213,6 +213,29 @@ Not caught: a 0.5 degree camera rotation, and a camera shift within the
 sway range (20 down on a run already swayed 5 up). Battle and menu screenshots stay
 exact.
 
+Since 2026-10-24 the field-walk shots are taken at a fixed point of the
+event's own clock instead of a fixed frame count after the load: ctrl
+work 0's frame count (`0x01325d94`, `g_AtelCtrlWorks` + 0x1f4, counted by
+`Atel_ExecCtrlWorks`, zeroed by `AtelRequireCtrlWork`). The searchlight
+sweep and the deck's sway start with the event, and the event starts
+once the asset loader is done, so 120 frames after the load the count was
+105-111 on an idle machine but 40-75 under load, and those runs scored
+17-20 (scene shifted 0, -4 to -9) against a limit of 23.5. At the same
+count every run gives the same picture (three runs, 13 counts: identical
+scores). The script waits for the count to enter 64..127 (`waitfor` with
+the mask `c0ffffff`) and then 37 frames, so the shot is at count 101,
+which matches the recording (0.1; 98: 0.6, 110: 2.2); a count that skips
+a value cannot be missed, and an event that never runs fails the replay
+after 1500 frames (`replay::play` names the line and what the range
+held). The walk takes a fixed 358 frames in lockstep, so the second shot
+is at count 459. field-walk-1 before: 0.5-20.6 (median 2.2, 8 of 42 runs
+above 15, the worst at 0.88 of its limit); after: 0.0-0.1 in all 18 runs
+(9 of them beside other games and busy loops), field-walk-2 0.1. With the void
+`ClassDynamicGeometry_SetShaderGl` shim of 2026-10-23 (no searchlight
+beams, no light orb) field-walk-2 scores 103 against 34.4.
+`examples/counter_probe.rs` lists the image's counters that count once a
+frame, with how late they started after a load, for pinning other shots.
+
 `tools/replays/menu-browse.txt` opens the main menu and takes screenshots
 at fixed frames. Some of the screen animates by the wall clock (the
 character panels' shimmer), so two runs of the original already differ in
