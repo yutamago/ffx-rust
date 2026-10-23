@@ -230,6 +230,9 @@ VOID_OK = {
     # 0x8b6ba7 tail-jumps to it, and both its callers (0x8ab969, 0x8ab9f9)
     # overwrite eax (2026-10-23)
     0x008b62b0: "+0xfc pad handler: TOGetControlPadStatus's callers drop its eax",
+    # Atel_WorkerFrame_008666e0: ctrl work +0x5c; its one caller through the
+    # pointer (0x00865208, call eax) reloads eax from [ebp-0x4] (2026-10-23)
+    0x008666e0: "ctrl +0x5c worker frame: the dispatcher 0x00865208 drops its eax",
 }
 
 # g_MagicImports (ffx.sym): the function table MagicFile_Start hands to
