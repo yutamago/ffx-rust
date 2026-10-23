@@ -11458,7 +11458,7 @@
 0x00860d60	dead	unreachable from the entry point and every pointer table
 0x00860e40	dead	unreachable from the entry point and every pointer table
 0x00860f20	logic	default (no rule: ported to be safe)
-0x00860f30	logic	default (no rule: ported to be safe)
+0x00860f30	dead	reviewed: no call/jmp to it and its address is not stored anywhere in FFX.exe (the one 4-byte match at file offset 0x214cb4 is inside an instruction at 0x6158b3) (small round 1)
 0x00860f50	logic	default (no rule: ported to be safe)
 0x00860fd0	logic	default (no rule: ported to be safe)
 0x00861000	logic	default (no rule: ported to be safe)

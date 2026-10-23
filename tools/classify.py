@@ -473,6 +473,7 @@ REVIEWED = {
     0x00a5f040: ("debug", "opd_num's plain-text printer; opd_num is its only caller (effects round 47)"),
     0x00a5d3c0: ("debug", "opd_num: reached only through the op_num_* wrappers 0x7e63b0/0x7e65e0, gated by g_OpNumShow (never set) or g_OpDebugMode (cleared by op_init_ffx_state); 0 calls in both snaps (effects round 48)"),
     0x00a611b0: ("dead", "opd_mmenu_display: only caller is the uncalled wrapper 0x7e62e0 (effects round 48)"),
+    0x00860f30: ("dead", "no call/jmp to it and its address is not stored anywhere in FFX.exe (the one 4-byte match at file offset 0x214cb4 is inside an instruction at 0x6158b3) (small round 1)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
