@@ -98,6 +98,12 @@ const S2: u32 = 0x00c8_f628;
 const VF00: u32 = 0x00c0_a004;
 const ORIGIN_SRC: u32 = 0x012e_95d8;
 const SSE2: u32 = 0x0193_ed20;
+/// `g_OpFog +0x10`, the four fog vectors S4 and S1 pick from.
+const OP_FOG: u32 = 0x011a_0020;
+
+/// The loop entries past their `mov ebx, [r0]` (S4 and S1 load it before
+/// the count store, the others after it).
+const ENTRIES_AFTER_EBX: [u32; 2] = [0x007f_1a8b, 0x007e_d1d2];
 
 struct Pair {
     name: &'static str,
@@ -198,7 +204,9 @@ impl Pair {
 
     /// A thunk `(shape, cmd)` that builds the original's frame (cookie,
     /// saved `ebx`/`esi`/`edi`), sets `ecx` = shape, `esi` = cmd, `edi` =
-    /// shape + 0x20 and jumps to `entry`; the tail returns from it.
+    /// shape + 0x20 (and `ebx` = `r0`'s low word for the entries in
+    /// [`ENTRIES_AFTER_EBX`]) and jumps to `entry`; the tail returns from
+    /// it.
     fn loop_thunk(&mut self, entry: u32) -> u32 {
         let at = self.sym(THUNK);
         let mut c = vec![0x55, 0x8b, 0xec]; // push ebp; mov ebp, esp
@@ -211,6 +219,10 @@ impl Pair {
         c.extend([0x8b, 0x4d, 0x08]); // mov ecx, [ebp+8]
         c.extend([0x8b, 0x75, 0x0c]); // mov esi, [ebp+0xc]
         c.extend([0x8d, 0x79, 0x20]); // lea edi, [ecx+0x20]
+        if ENTRIES_AFTER_EBX.contains(&entry) {
+            c.extend([0x8b, 0x1d]); // mov ebx, [r0]: loaded before the count store
+            c.extend(self.sym(EE).to_le_bytes());
+        }
         c.push(0xe9); // jmp entry
         let end = at + u32::try_from(c.len()).unwrap() + 4;
         c.extend(self.sym(entry).wrapping_sub(end).to_le_bytes());
@@ -285,6 +297,66 @@ fn textured_case_with(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bo
     if rng.chance(8) {
         p.set(p.sym(EE), m2);
     }
+}
+
+/// [`textured_case`] for S4 (`vu0` clear) or S1 (`vu0` set): `cmd +2`
+/// with `0x400`, `0x800` or both (or, now and then, the bit `r0` holds,
+/// so the vector choice compares a set bit with it), and the four fog
+/// vectors at `g_OpFog +0x10` (most of the time: on the snapshots the
+/// game's own are kept otherwise): depth scales of about `-1/16`..`1/16`
+/// and limits around 0..255, so the fog value lands below, inside and
+/// above them, or zeros of both signs (ties).
+fn fog_case_with(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bool) {
+    textured_case_with(p, rng, c, n, vu0);
+    let r0: u32 = Mem::read(&p.a, p.sym(EE));
+    let bits = match rng.below(10) {
+        0 => u16::try_from(r0 & 0xc00).unwrap() | 0x400,
+        1..=3 => 0x400,
+        4..=6 => 0x800,
+        _ => 0xc00,
+    };
+    let flags: u16 = Mem::read(&p.a, c.cmd + 2);
+    p.set(c.cmd + 2, flags & !0xc00 | bits);
+    if rng.chance(8) {
+        // zeros of both signs: ties between the fog value and its limits
+        // (the low limit -1 now and then, so a tie with the high one shows)
+        for k in 0..16 {
+            let v = if k % 4 == 1 {
+                rng.pick(&[0u32, 0x8000_0000, 0xbf80_0000])
+            } else {
+                rng.pick(&[0u32, 0x8000_0000])
+            };
+            p.set(p.sym(OP_FOG) + 4 * k, v);
+        }
+    } else if rng.chance(80) {
+        for k in 0..4 {
+            let at = p.sym(OP_FOG) + 0x10 * k;
+            let small =
+                |rng: &mut Xorshift, n: u32| f32::from(u16::try_from(rng.below(n)).unwrap());
+            let scale = small(rng, 4096) / 32768.0 - 0.0625;
+            let low = small(rng, 256);
+            let high = low + small(rng, 256);
+            let vector = [scale.to_bits(), low.to_bits(), rng.float(), high.to_bits()];
+            for (i, word) in (0u32..).zip(vector) {
+                let word = if rng.chance(3) {
+                    rng.pick(&SPECIALS)
+                } else {
+                    word
+                };
+                p.set(at + 4 * i, word);
+            }
+        }
+    }
+}
+
+/// [`fog_case_with`] for S4.
+fn fog_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
+    fog_case_with(p, rng, c, n, false);
+}
+
+/// [`fog_case_with`] for S1.
+fn vu0_fog_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
+    fog_case_with(p, rng, c, n, true);
 }
 
 fn plain_case_with(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bool, tex: bool) {
@@ -424,7 +496,7 @@ fn loop_test(
                 p.a.call(thunk, Conv::Cdecl, &[c.shape, c.cmd])
                     .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
             assert!(r.st0.is_none(), "{}: {what}: ST0 left set", p.name);
-            let frame = Frame { ebp };
+            let frame = Frame::new(ebp);
             port(&mut p.b, frame, c.cmd, c.shape + 0x20);
             let mine = shape::tail(&p.b, frame);
             assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
@@ -453,7 +525,7 @@ fn whole_test(setup: Setup, seed: u32, name: &str) {
                     .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
             assert!(r.st0.is_none(), "{}: {what}: ST0 left set", p.name);
             let mine = shape::op_shape_draw(&mut p.b, c.shape, c.cmd, ebp);
-            assert_eq!(Some(r.eax), mine, "{}: {what}: result", p.name);
+            assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
             p.same(&what, ebp);
         }
     }
@@ -519,13 +591,95 @@ fn shape_whole_s2_matches_the_original() {
     whole_test(vu0_textured_case, 0x007e_d0c3, "whole S2");
 }
 
+#[test]
+fn shape_s4_matches_the_original() {
+    loop_test(0x007f_1a8b, fog_case, 0x007f_1a8b, "S4", shape::fog);
+}
+
+#[test]
+fn shape_whole_s4_matches_the_original() {
+    whole_test(fog_case, 0x007e_d0c4, "whole S4");
+}
+
+#[test]
+fn shape_s1_matches_the_original() {
+    loop_test(0x007e_d1d2, vu0_fog_case, 0x007e_d1d2, "S1", shape::vu0_fog);
+}
+
+#[test]
+fn shape_whole_s1_matches_the_original() {
+    whole_test(vu0_fog_case, 0x007e_d0c5, "whole S1");
+}
+
+/// The whole function, each case on a selection picked at random (the six
+/// loops one after another on the same memory); every fourth case with the
+/// Rust frame words elsewhere, as the hook keeps them.
+#[test]
+fn shape_whole_all_matches_the_original() {
+    let setups: [Setup; 6] = [
+        vu0_fog_case,
+        vu0_textured_case,
+        vu0_setup,
+        fog_case,
+        textured_case,
+        plain_setup,
+    ];
+    let mut seen = [0u32; 6];
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_d0c6);
+        let ebp = p.ebp(2);
+        let draw = p.sym(0x007e_d0c0);
+        let c = Case::new(&mut p);
+        for case in 0..600 {
+            let (n, records) = count(&mut rng);
+            let k = rng.below(6) as usize;
+            seen[k] += 1;
+            setups[k](&mut p, &mut rng, c, records);
+            let shift = rng.pick(&[0u32, 0, 4, 0x10]);
+            p.set(p.sym(SHIFT), shift);
+            p.set(c.shape + shift + 2, n);
+            p.fill_frame(ebp, &mut rng);
+            let what = format!("whole case {case} (loop {k})");
+            let r =
+                p.a.call(draw, Conv::Cdecl, &[c.shape, c.cmd])
+                    .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
+            assert!(r.st0.is_none(), "{}: {what}: ST0 left set", p.name);
+            if case % 4 == 3 {
+                // the frame words somewhere else, as the hook keeps them:
+                // the same result (a frame buffer address is the
+                // original's) and the same memory outside the stacks
+                let frame = Frame {
+                    ebp: ebp - 0x4000,
+                    original: ebp,
+                };
+                let mine = shape::op_shape_draw_at(&mut p.b, c.shape, c.cmd, frame);
+                assert_eq!(r.eax, mine, "{}: {what} (moved frame): result", p.name);
+                let diff = p.a.diff(&mut p.b).unwrap();
+                assert!(
+                    diff.is_empty(),
+                    "{}: {what} (moved frame): {:x?}",
+                    p.name,
+                    &diff[..diff.len().min(16)]
+                );
+                p.a.clear_dirty();
+                p.b.clear_dirty();
+                continue;
+            }
+            let mine = shape::op_shape_draw(&mut p.b, c.shape, c.cmd, ebp);
+            assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
+            p.same(&what, ebp);
+        }
+    }
+    assert!(seen.iter().all(|&n| n > 50), "selections {seen:?}");
+}
+
 /// Each loop's first instruction after the head's count store, in
 /// [`shape::Variant`] order (S1..S6).
 const LOOPS: [(u32, shape::Variant); 6] = [
-    (0x007e_d1d2, shape::Variant::Vu0Clip),
+    (0x007e_d1d2, shape::Variant::Vu0Fog),
     (0x007e_ed53, shape::Variant::Vu0Textured),
     (0x007f_0a18, shape::Variant::Vu0Plain),
-    (0x007f_1a8b, shape::Variant::Clip),
+    (0x007f_1a8b, shape::Variant::Fog),
     (0x007f_2dae, shape::Variant::Textured),
     (0x007f_3f03, shape::Variant::Plain),
 ];
@@ -584,7 +738,7 @@ fn shape_head_matches_the_original() {
             let r =
                 p.a.call(draw, Conv::Cdecl, &[c.shape, c.cmd])
                     .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
-            let frame = Frame { ebp };
+            let frame = Frame::new(ebp);
             let v = shape::head(&mut p.b, c.shape, c.cmd, frame);
             let k = (0u32..).zip(LOOPS).find(|(_, (_, l))| *l == v).unwrap().0;
             seen[k as usize] += 1;
