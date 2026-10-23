@@ -20180,6 +20180,75 @@ fn opu_rgba_set_matches_the_original() {
     }
 }
 
+/// `opu_v_add_00819fd0` against the port: kinds 0..5, every flag bit
+/// pattern against `r0` (zero, a flag bit, a high word), floats with
+/// NaNs and infinities in the unit's vectors, the motion callback through
+/// one recorder for the whole table.
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn opu_v_add_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_9fd0);
+        let cell = p.alloc(0x10);
+        far_recorder(&mut p, 0x0081_5050, &[0; 2], Some(cell));
+        let (table, recorder) = (p.sym(0x00c4_92c8), p.sym(0x0081_5050));
+        for k in 0..12 {
+            p.set(table + 4 * k, recorder);
+        }
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x200), p.alloc(0x10));
+        let (r0, v0) = (p.sym(0x00c8_f508), p.sym(0x00c8_f528));
+        for round in 0..3000u32 {
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x200, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.fill(v0, 0x40, &mut rng);
+            p.set(cell, rng.next());
+            p.set(host + 0x220, unit);
+            let flags = (rng.next() & 0xfe00) | (0xd6 + rng.below(6));
+            p.set(host + 0x21a, flags as u16);
+            let lo = rng.pick(&[
+                0u32,
+                0,
+                0,
+                flags & 0x1000,
+                flags & 0x4000,
+                flags & 0x200,
+                0x8000,
+                1,
+            ]);
+            p.set(r0, lo);
+            p.set(r0 + 4, u32::from(rng.chance(10)));
+            for o in (0..0x200).step_by(4) {
+                let v = if rng.chance(90) {
+                    ranged(&mut rng, -1000.0, 1000.0)
+                } else {
+                    rng.pick(&[
+                        0x7fc0_0000u32,
+                        0xff80_0000,
+                        0x7f80_0000,
+                        0x8000_0000,
+                        0x7f7f_ffff,
+                    ])
+                };
+                p.set(unit + o, v);
+            }
+            // (after the floats: the callback index lives among them)
+            p.set(unit + 0xba, rng.below(12) as u8);
+            for k in 0..4 {
+                let v = rng.pick(&[0i16, 1, -1, 0x1000, -0x8000, 0x7fff]);
+                let v = if rng.chance(50) { rng.next() as i16 } else { v };
+                p.set(cmd + 2 + 2 * k, v);
+            }
+            p.check(
+                &format!("opu_v_add round {round}"),
+                0x0081_9fd0,
+                &[host, cmd],
+                |m| Some(opus::bridge::opu_v_add(m, host, cmd, &mut call_original)),
+            );
+        }
+    }
+}
+
 #[test]
 #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
 fn round33d_commands_and_draws_match_the_original() {

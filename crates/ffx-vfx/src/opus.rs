@@ -10740,4 +10740,95 @@ pub mod bridge {
         mem.write(unit.wrapping_add(0xc8), packed);
         next
     }
+
+    /// `opu_v_add_00819fd0(host, cmd)` (`0x00819fd0`, name ours; opus
+    /// command recompiled from the EE, 64-bit register compares included):
+    /// as [`opu_v_set`] with kind `k` = the low nine flag bits less 0xd6
+    /// (an `i16`) and scales `0x00c49398`, but each lane is added to the
+    /// vector's word (`unit + i16 0x00c49388[k]`, through the emulated
+    /// `0x00c8f760` + `0x00c8f75c`) instead of stored, every taken bit
+    /// (12..15, each compared with `r0` as 64 bits) moves the command
+    /// pointer 2 from `cmd + 2`, and the lanes rotate after bits 12..14.
+    /// The products stay in `0x00c8f530`/`+0x34`, the lanes before bit 15
+    /// in `0x00c8f558..+0x64`; then `0x00c8f528` = the pointer,
+    /// `0x00c8f538` = flag 0x200 (with a zero high word), `0x00c8f548` =
+    /// host; with flag 0x200 equal to `r0` the pointer is returned, else
+    /// the unit's motion callback (`0x00c492c8[byte +0xba]`) runs on
+    /// `(host, pointer)` and its `eax` is returned. Callees through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_v_add<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let u = unit(mem, host);
+        let flags = u32::from(mem.read::<u16>(host.wrapping_add(0x21a)));
+        // `sub eax, 0xd6; movzx eax, ax; movsx edx, ax`
+        #[allow(clippy::cast_possible_truncation)]
+        let k = ((flags & 0x1ff).wrapping_sub(0xd6) as u16).cast_signed();
+        let kind = i32::from(k).cast_unsigned();
+        let scale: [u32; 4] = mem.read(g(mem, 0x00c4_9398).wrapping_add(kind.wrapping_mul(16)));
+        let off = mem.read::<i16>(g(mem, 0x00c4_9388).wrapping_add(kind.wrapping_mul(2)));
+        let dst = u.wrapping_add(i32::from(off).cast_unsigned());
+        let src = cmd.wrapping_add(2);
+        let p: [u32; 4] = std::array::from_fn(|i| {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            let n = i32::from(mem.read::<i16>(src.wrapping_add(2 * i as u32)));
+            scale[i].wrapping_mul(n.cast_unsigned())
+        });
+        let v0 = g(mem, 0x00c8_f528);
+        mem.write(v0, p);
+        // `fild`, `fstp dword`, times the `f64` 1/4096, `fstp dword`
+        #[allow(clippy::cast_precision_loss)]
+        let mut lanes = p.map(|w| store(mul(f64::from(w.cast_signed() as f32), 0.000_244_140_625)));
+        let mov = g(mem, 0x00c8_f980);
+        mem.write(mov, lanes);
+        let r0: u64 = mem.read(g(mem, 0x00c8_f508));
+        let (tail, sum, old) = (
+            g(mem, 0x00c8_f558),
+            g(mem, 0x00c8_f75c),
+            g(mem, 0x00c8_f760),
+        );
+        let mut ptr = src;
+        for (j, bit) in (0u32..).zip([0x1000u32, 0x2000, 0x4000, 0x8000]) {
+            mem.write(v0, flags & bit);
+            mem.write(v0.wrapping_add(4), 0u32);
+            mem.write(tail, lanes);
+            if u64::from(flags & bit) == r0 {
+                continue;
+            }
+            let at = dst.wrapping_add(4 * j);
+            let w: u32 = mem.read(at);
+            mem.write(old, w);
+            let s = store(add(load(w), load(lanes[0])));
+            mem.write(sum, s);
+            mem.write(at, s);
+            ptr = ptr.wrapping_add(2);
+            if bit != 0x8000 {
+                lanes.rotate_left(1);
+                mem.write(mov, lanes);
+            }
+        }
+        let low = flags & 0x200;
+        mem.write(v0, ptr);
+        mem.write(v0.wrapping_add(0x10), low);
+        mem.write(v0.wrapping_add(0x14), 0u32);
+        mem.write(g(mem, 0x00c8_f548), host);
+        if u64::from(low) == r0 {
+            return ptr;
+        }
+        mem.write(tail, ptr);
+        let cb = u32::from(mem.read::<u8>(u.wrapping_add(0xba)));
+        let table = g(mem, 0x00c4_92c8);
+        // `shld; shl 2; add; adc`: the 64-bit entry address into `v0`
+        let at = u64::from(cb << 2) + u64::from(table);
+        #[allow(clippy::cast_possible_truncation)] // the halves
+        let (lo, hi) = (at as u32, (at >> 32) as u32);
+        let f: u32 = mem.read(lo);
+        mem.write(v0, f);
+        mem.write(v0.wrapping_add(4), hi);
+        call(mem, f, &[host, ptr])
+    }
 }
