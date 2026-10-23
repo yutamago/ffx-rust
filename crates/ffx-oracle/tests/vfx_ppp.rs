@@ -703,3 +703,251 @@ fn vfx_ppp_r1a_shp_tail_draws_match_the_original() {
         assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
     }
 }
+
+// ---- camera model draws (pppDrawMdlCamera*Draw) ------------------------
+
+/// A renderer entry point's stand-in at `sym` (through a jump) that logs,
+/// 0x200 bytes per call after the count, its `nargs` arguments, the
+/// request's first `words` words (the request is argument 3) and the 16
+/// words of each matrix the request points at (`mats`, offsets in the
+/// request; a null pointer logs nothing). Returns 0.
+fn request_recorder(p: &mut Pair, sym: u32, nargs: u8, words: u8, mats: &[u8]) -> u32 {
+    let log = p.alloc(4 + 0x200 * 0x100);
+    let slot = log + 4;
+    let mut c = vec![0x56]; // push esi
+    c.extend([0x8b, 0x0d]); // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x09]); // shl ecx, 9
+    for k in 0..nargs {
+        c.extend([0x8b, 0x44, 0x24, 8 + 4 * k]); // mov eax, [esp + 8 + 4k]
+        c.extend([0x89, 0x81]); // mov [ecx + slot + 4k], eax
+        c.extend((slot + 4 * u32::from(k)).to_le_bytes());
+    }
+    c.extend([0x8b, 0x74, 0x24, 0x14]); // mov esi, [esp + 0x14] (req)
+    let base = slot + 4 * u32::from(nargs);
+    for k in 0..words {
+        c.extend([0x8b, 0x46, 4 * k]); // mov eax, [esi + 4k]
+        c.extend([0x89, 0x81]); // mov [ecx + base + 4k], eax
+        c.extend((base + 4 * u32::from(k)).to_le_bytes());
+    }
+    let mut off = base + 4 * u32::from(words);
+    for &m in mats {
+        c.extend([0x8b, 0x56, m]); // mov edx, [esi + m]
+        c.extend([0x85, 0xd2]); // test edx, edx
+        c.extend([0x0f, 0x84]); // jz past the copy
+        c.extend((16u32 * 9).to_le_bytes());
+        for k in 0..16u8 {
+            c.extend([0x8b, 0x42, 4 * k]); // mov eax, [edx + 4k]
+            c.extend([0x89, 0x81]); // mov [ecx + off + 4k], eax
+            c.extend((off + 4 * u32::from(k)).to_le_bytes());
+        }
+        off += 0x40;
+    }
+    assert!(off - slot <= 0x200);
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x31, 0xc0, 0x5e, 0xc3]); // xor eax, eax; pop esi; ret
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::similar_names
+)]
+fn vfx_ppp_r1c_mdl_camera_draws_match_the_original() {
+    use ffx_vfx::mdl_cam::bridge as mc;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_d930);
+        let cells = p.alloc(0x20);
+        let (rd, alpha, zmat, tex, cnt) = (cells, cells + 4, cells + 8, cells + 0xc, cells + 0x10);
+        let logs = [
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rd)),
+            far_recorder(&mut p, 0x0071_2c30, &[0], Some(alpha)),
+            far_recorder(&mut p, 0x0071_2d00, &[0], Some(zmat)),
+            request_recorder(&mut p, 0x0071_8610, 4, 18, &[0x20, 0x2c, 0x30]),
+            request_recorder(&mut p, 0x0071_1180, 5, 18, &[0x20, 0x2c, 0x30]),
+            request_recorder(&mut p, 0x0071_0fd0, 5, 18, &[0x20, 0x2c, 0x30]),
+            far_recorder(&mut p, 0x0064_5600, &[0, 0], None),
+            far_recorder(&mut p, 0x0064_58a0, &[0, 0], None),
+            far_recorder(&mut p, 0x0091_9ba0, &[0], Some(tex)),
+            far_recorder(&mut p, 0x0091_9be0, &[0, 0, 0], None),
+            far_recorder(&mut p, 0x0091_9bc0, &[0], Some(cnt)),
+            far_recorder(&mut p, 0x0091_9bd0, &[0, 0], None),
+        ];
+        let (obj, key, prog, table) = (p.alloc(0x300), p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        let (env, env2, recs, models, part) = (
+            p.alloc(4),
+            p.alloc(0x40),
+            p.alloc(0x400),
+            p.alloc(0x100),
+            p.alloc(0x80),
+        );
+        let slot = p.sym(0x00c3_a4cc); // g_pppEnvSlot
+        let matrices = [0x0230_ff20u32, 0x0230_ff60, 0x0230_ffa0].map(|a| p.sym(a));
+        let (cur, cpart, shift, stop, r0) = (
+            p.sym(0x0230_fd20),
+            p.sym(0x0230_ffe4),
+            p.sym(0x00c8_b500),
+            p.sym(0x0230_fd34),
+            p.sym(0x00c8_f508),
+        );
+        let mut seen = [0u32; 2];
+        for round in 0..2000u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            let looped = rng.chance(50);
+            p.fill(obj, 0x300, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.fill(recs, 0x400, &mut rng);
+            p.fill(models, 0x100, &mut rng);
+            for o in (0..0x100).step_by(4) {
+                // small words: flags, blends and the camera textures' offsets
+                p.set(models + o, (4 * rng.below(0x10)) | rng.below(4));
+            }
+            if !p.snapshot() || rng.chance(50) {
+                for m in matrices {
+                    for o in (0..0x40).step_by(4) {
+                        let x = ranged(&mut rng, -2.0, 2.0);
+                        p.set(m + o, x);
+                    }
+                }
+            }
+            for o in (0x10..0x90).step_by(4) {
+                let x = ranged(&mut rng, -4.0, 4.0);
+                p.set(obj + o, x);
+            }
+            p.fill(part, 0x80, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.set(prog + 0xc, table);
+            p.set(table, 4 * rng.below(0x10));
+            p.set(table + 4, rng.next());
+            let off2 = rng.pick(&[0u32, 0x40, 0x80]);
+            p.set(table + 8, off2);
+            let w = obj + 0xa0 + off2;
+            // the work area: floats where the draws step and read them
+            for o in (0..0x90).step_by(4) {
+                let x = if rng.chance(3) {
+                    rng.float()
+                } else if rng.chance(20) {
+                    ranged(&mut rng, -70000.0, 70000.0)
+                } else {
+                    ranged(&mut rng, -300.0, 300.0)
+                };
+                p.set(w + o, x);
+            }
+            for b in [0x1cu32, 0x1d, 0x1e, 0x1f, 0x8c, 0x8d, 0x8e, 0x8f] {
+                p.set(w + b, rng.pick(&[0u8, 0, 1, 2, 3, 0xff]));
+            }
+            if rng.chance(30) {
+                p.set(w, 0u32);
+            }
+            if rng.chance(30) {
+                p.set(w + 0x88, 0u32);
+            }
+            for o in (8..0x20).step_by(4) {
+                let x = ranged(&mut rng, -50.0, 50.0);
+                p.set(key + o, x);
+            }
+            if rng.chance(50) {
+                let f: u32 = p.get(obj + 0xc);
+                p.set(key, f);
+            }
+            for o in 0x20..0x2a {
+                p.set(key + o, rng.pick(&[0u8, 0, 1, 2, 3, 4, 0xff]));
+            }
+            p.set(stop, u32::from(rng.chance(15)));
+            p.set(shift, if rng.chance(15) { 4 * rng.below(4) } else { 0 });
+            p.set(cpart, part);
+            p.set(slot, env);
+            p.set(env, env2);
+            p.set(env2 + 0x20, recs);
+            let model = if rng.chance(5) { 0xffff } else { rng.below(8) };
+            p.set(key + 4, model);
+            for k in 0..0x20u32 {
+                let at = if rng.chance(5) {
+                    0
+                } else {
+                    models + 4 * rng.below(0x30)
+                };
+                p.set(recs + 32 * k + 0x1c, at);
+            }
+            p.set(obj + 0x90, models + rng.below(0x20));
+            p.set(obj + 0x94, models + rng.below(0x20));
+            p.set(rd, u32::from(rng.chance(50)));
+            for c in [alpha, zmat] {
+                let x = if rng.chance(50) { 0 } else { rng.next() };
+                p.set(c, x);
+            }
+            p.set(
+                tex,
+                if rng.chance(30) {
+                    0
+                } else {
+                    0x100 + rng.below(0x100)
+                },
+            );
+            p.set(cnt, rng.next());
+            let r9 = rng.next();
+            p.set(cur, rng.pick(&[0u32, 3, 0x8000_0001, r9]));
+            // the request's untouched words: alike on both sides
+            let words = 3;
+            let entry = p.b.stack_range().end - 0x100 - 4 * words - 4 - 0x200 - 4 * words - 4;
+            let frame = (entry - 12) & !0xf;
+            let req = frame - if looped { 0x1c0 } else { 0x1a0 };
+            for o in (0..0x48).step_by(4) {
+                let v = rng.next();
+                p.set(req + o, v);
+            }
+            seen[usize::from(looped)] += 1;
+            let (obj_, key_, prog_) = (obj, key, prog);
+            if looped {
+                check_deep_aligned(
+                    &mut p,
+                    &format!("pppDrawMdlCameraLoopDraw round {round}"),
+                    0x0073_fa50,
+                    &[obj, key, prog],
+                    |o, frame| {
+                        mc::ppp_draw_mdl_camera_loop_draw(
+                            o,
+                            obj_,
+                            key_,
+                            prog_,
+                            frame,
+                            &mut call_original,
+                        );
+                    },
+                );
+            } else {
+                check_deep_aligned(
+                    &mut p,
+                    &format!("pppDrawMdlCameraDraw round {round}"),
+                    0x0073_d930,
+                    &[obj, key, prog],
+                    |o, frame| {
+                        mc::ppp_draw_mdl_camera_draw(
+                            o,
+                            obj_,
+                            key_,
+                            prog_,
+                            frame,
+                            &mut call_original,
+                            &mut |o, f, a| o.call_f64(f, a).unwrap(),
+                        );
+                    },
+                );
+            }
+        }
+        assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
+    }
+}

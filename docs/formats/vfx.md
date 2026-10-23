@@ -132,6 +132,38 @@ draws take their blend from the key (`+8`), the others from the model
   are `T(-g_pppWorldMatrix position) x obj + 0x10` and
   `g_pppViewMatrixCopy x` that.
 
+### Camera draws (`pppDrawMdlCameraDraw`, `pppDrawMdlCameraLoopDraw`)
+
+Ported in `crates/ffx-vfx/src/mdl_cam.rs`. Both keep their state in work
+area 2 (`obj + 0xa0 + [[prog + 0xc] + 8]`), set up on the first frame by
+`pppDrawMdlCameraTex_0073dfe0` (while `+0x88` is a null `ptr32`) or
+`pppDrawMdlCameraLoopInit_007400f0` (while `+0`), step it unless
+`g_pppStopStatus` and animate a texture (`Yn_FpTrxTexGet`, next frame
+by `0x00919bd0` once a byte counter reaches the key's limit; the frame
+wraps at the work area's count byte). The colour, request and submit are
+the other model draws' (`Camera` never takes path 3, `CameraLoop` does
+for flag 4).
+
+- `pppDrawMdlCameraDraw` (`0x0073d930`): two `[pos, speed, accel]`
+  channels at `+0x70`/`+0x7c` (or, with byte `+0x8f`, the positions moved
+  by `+0x60`/`+0x64`), wrapped with `_CIfmod(x, 32768)`, give the
+  request's `+0x10`/`+0x14` in 16.16. `op_rt_m_yxz(w, M, angles, vf00)`
+  writes the rotation into the work area's first 0x40 bytes: `M` is a
+  unit matrix moved to `w +0x40` plus the inverse camera's position, the
+  angles `w +0x50..+0x58` times 4096/2pi (the double at `0x00b51590`).
+  The request's `+0x30` is camera x `w` x the object's matrix, `+0x20` a
+  copy of it, `+0x2c` the object's matrix; flags from key bytes
+  `+0x24..+0x29`, the blend from `+0x22`. `pppVu0Length_3` runs on the
+  object's three rows and its results are dropped.
+- `pppDrawMdlCameraLoopDraw` (`0x0073fa50`): channels at `+4`/`+0x10`
+  (only with byte `+0x1c`); with key byte `+0x20` the request's matrices
+  are the world through the inverse camera (the world copy's position
+  replaced by the inverse camera's, `FFXVu0CopyVectorXYZ`), else copies
+  of the object's `+0x50` and `+0x10`; flags from key byte `+0x26` and
+  the model's first byte, `0x200`/`0x100` for `+0x27`/`+0x28`, and for
+  `+0x29` `0x2000` with `g_pppViewMatrix x obj +0x10` in `+0x30`; the
+  blend from `+0x24`.
+
 ### Point-light draws (`pppNeiDrawMdl*PointLightDraw`)
 
 `pppNeiDrawMdlPointLightDraw` (`0x0074a1e0`), `...SemiPointLightDraw`

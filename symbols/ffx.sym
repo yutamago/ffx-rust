@@ -3876,7 +3876,7 @@
 0x0073d8c0 function pppDrawMdlCameraCon       # ppp program table record "pppDrawMdlCamera" (0x00c3b688) +0x1c set-up; "pppDrawMdlCamera" (0x00c3cd30) +0x1c set-up
 0x0073d8f0 function pppDrawMdlCameraCon2      # ppp program table record "pppDrawMdlCamera" (0x00c3b688) +0x20 second set-up; "pppDrawMdlCamera" (0x00c3cd30) +0x20 second set-up
 0x0073d920 function pppDrawMdlCameraDes       # ppp program table record "pppDrawMdlCamera" +0x24 destructor; not a function start in the Ghidra dump
-0x0073d930 function pppDrawMdlCameraDraw      # ppp program table record "pppDrawMdlCamera" draw; not a function start in the Ghidra dump
+0x0073d930 function pppDrawMdlCameraDraw      # ppp program table record "pppDrawMdlCamera" draw; not a function start in the Ghidra dump; ported vfx-ppp r1 (mdl_cam::bridge): work area 2 steps (+0x70/+0x7c channels or +0x60/+0x64), op_rt_m_yxz(w, M, rot * 4096/2pi [f64 0x00b51590], vf00), request at ebp-0x1a0
 0x0073dfe0 function pppDrawMdlCameraTex_0073dfe0 # (rec, m) for pppDrawMdlCameraDraw: rec+4 != 0xffff and env table entry +0x1c data p: m = unit matrix, 3 vf00 at +0x40, six 0.0 at +0x70, +0x88 set_ptr32(rec), +0x8c rec+0x21, Yn_FpTrxTexGet(rec+0x20) -> SetAddr(t, p[[p+4]+8], +0xc), +0x8d/+0x8e = Yn_EmbeddedTrxGetCnt(t), +0x8f 0; ported r34; name ours
 0x0073e110 function pppVu0LoadVf00_2          # the pppVu0LoadVf00 body again
 0x0073e140 function pppVu0Length_3            # the pppVu0Length body again (pppDrawMdlCameraDraw)
@@ -3898,7 +3898,7 @@
 0x0073f9e0 function pppDrawMdlCameraLoopCon   # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x1c set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x1c set-up
 0x0073fa10 function pppDrawMdlCameraLoopCon2  # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x20 second set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x20 second set-up
 0x0073fa40 function pppDrawMdlCameraLoopDes   # ppp program table record "pppDrawMdlCameraLoop" +0x24 destructor; not a function start in the Ghidra dump
-0x0073fa50 function pppDrawMdlCameraLoopDraw  # ppp program table record "pppDrawMdlCameraLoop" draw; not a function start in the Ghidra dump
+0x0073fa50 function pppDrawMdlCameraLoopDraw  # ppp program table record "pppDrawMdlCameraLoop" draw; not a function start in the Ghidra dump; ported vfx-ppp r1 (mdl_cam::bridge): work area 2 channels +4/+0x10, key byte +0x20 camera-facing (inverse camera, world through it), request at ebp-0x1c0
 0x007400f0 function pppDrawMdlCameraLoopInit_007400f0 # ours: (rec, area): pppDrawMdlCameraLoopDraw's first-frame work area (its only caller, when area +0 is a null ptr32): +0 set_ptr32(rec), +4/+0x10 = rec +8/+0x14 (x87 copies), +8/+0xc/+0x14/+0x18 0, +0x1c = any of rec +0xc/+0x10/+0x18/+0x1c nonzero, +0x1d = rec +0x23, +0x1e/+0x1f = Yn_EmbeddedTrxGetCnt of Yn_FpTrxTexGet(rec +0x22) when rec +0x21 (after Yn_FpTrxTexSetAddr to the shape's image/CLUT) (mdl::bridge::ppp_draw_mdl_camera_loop_init)
 0x007401d0 function ppp_mdl_rev_matrix_007401d0 # ours: (obj, key, prog) pppDrawMdlRevDraw's matrix: pppGetRotMatrixXYZ(obj+0x10, area 1), rows scaled by area 2 (each fchs when area 5 byte +1+r is set) through 0x00c8f820/0x00c8f830, position from area 0, FFXVu0MulMatrix(obj+0x50, g_pppViewMatrixCopy, obj+0x10); only caller 0x007406f0 (pppDrawMdlRevDraw, which runs the Rust port); not a function start in the Ghidra dump, so not hooked (effects round 49)
 0x007403f0 function pppDrawMdlRevCon          # ppp program table record "pppDrawMdlRev" (0x00c3dcf8) +0x1c set-up

@@ -9,6 +9,7 @@
 //! - [`prog`]: the program table's set-ups and steps;
 //! - [`mat`]: the matrix programs and their draws;
 //! - [`mdl`]: the model draws (`pppDrawMdl*`);
+//! - [`mdl_cam`]: the camera-facing model draws;
 //! - [`lns`]: the lens-flare draws (`pppKeLns*`);
 //! - [`tail`]: the tail draws (`pppKeShpTail*`);
 //! - [`heap`]: the particle heaps;
@@ -39,6 +40,7 @@ pub mod lns;
 pub mod mat;
 pub mod md;
 pub mod mdl;
+pub mod mdl_cam;
 pub mod op;
 pub mod opd;
 pub mod opus;
