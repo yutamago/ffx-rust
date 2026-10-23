@@ -10597,4 +10597,147 @@ pub mod bridge {
             _ => cmd,
         }
     }
+
+    /// `opu_rgba_set_00809180(host, cmd)` (`0x00809180`, name ours; opus
+    /// command, next to `opu_ffxlight`): a colour into `g_Vu0_VfMove`
+    /// (`0x00c8f980`) by the flag nibble (host `u16 +0x21a >> 12`), with
+    /// `unit` = host `+0x220` and `src` = `opus_no_get(host +0x300, unit, u16
+    /// cmd +2)`: 0 src `+0x40..`, `cmd + 4`; 1 src `+0x40..` with x, y, z
+    /// times its `w` and then times `[0x00c8f78c]` (first set to 1/128),
+    /// host `+0xc` (through `g_pppColorConShift`) = 128.0 and `w` = that,
+    /// `0x00c8f970..` = host `+0..+0xc`, `cmd + 4`; 2 host `+0..+0xc` =
+    /// the `i16` at `cmd +2..+8` and the colour them as floats, `cmd +
+    /// 0xa`; 3 unit `+0x30..`, `cmd + 2`; 4 src `+0x30..`, `cmd + 4`; 5
+    /// host `+0..+0xc` = unit bytes `+0xc8..+0xca` and `i16 cmd +2`, the
+    /// colour them as floats, `cmd + 4`; others leave it and return `cmd`.
+    /// Then `0x00c8f528` and `0x00c8f78c` = 255.0, `0x00c8f970..` =
+    /// `vf00 - vf00` (`0x00c0a004..`), `restoreVf00Register`,
+    /// `vfx_vec4_min(m, m, 255)`, `Vec4Max(m, m, those four)`, each
+    /// component `ftol`'d, packed with `r0`'s low halves through
+    /// `pppEePpacb` into `0x00c8f528`, which goes to unit `+0xc8`. Callees
+    /// through `call`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_rgba_set<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{ftol, load, mul, store, sub};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let vf = g(mem, 0x00c8_f980);
+        let (ee, k, zero, r0) = (
+            g(mem, 0x00c8_f528),
+            g(mem, 0x00c8_f78c),
+            g(mem, 0x00c8_f970),
+            g(mem, 0x00c8_f508),
+        );
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let list = host.wrapping_add(0x300);
+        let src = |mem: &mut M, go: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let n = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+            go(mem, OPUS_NO_GET, &[list, unit, n])
+        };
+        // the four words as floats (fild, fstp)
+        #[allow(clippy::cast_precision_loss)] // the original's fild
+        let floats = |mem: &mut M, w: [u32; 4]| {
+            mem.write(host, w);
+            mem.write(vf, w);
+            mem.write(vf, w.map(|n| (n.cast_signed() as f32).to_bits()));
+        };
+        let next = match mem.read::<u16>(host.wrapping_add(0x21a)) >> 12 {
+            0 => {
+                let s = src(mem, &mut go);
+                let c: [u32; 4] = mem.read(s.wrapping_add(0x40));
+                mem.write(vf, c);
+                cmd.wrapping_add(4)
+            }
+            1 => {
+                let s = src(mem, &mut go);
+                mem.write(ee, 0x3c00_0000u32);
+                mem.write(k, 0x3c00_0000u32);
+                let c: [u32; 4] = mem.read(s.wrapping_add(0x40));
+                mem.write(vf, c);
+                let x = load(mem.read(vf));
+                let w = load(mem.read(s.wrapping_add(0x4c)));
+                let shift = g(mem, 0x00c8_b500);
+                let sh: u32 = mem.read(shift);
+                mem.write(ee, 0x4300_0000u32);
+                mem.write(vf, store(mul(x, w)));
+                let y = load(mem.read(vf + 4));
+                mem.write(vf + 4, store(mul(y, w)));
+                let z = load(mem.read(vf + 8));
+                mem.write(vf + 8, store(mul(w, z)));
+                let s = load(mem.read(k));
+                for i in 0..3u32 {
+                    let v = load(mem.read(vf + 4 * i));
+                    mem.write(vf + 4 * i, store(mul(v, s)));
+                }
+                mem.write(host.wrapping_add(sh).wrapping_add(0xc), 0x4300_0000u32);
+                mem.write(shift, 0u32);
+                let h: [u32; 4] = mem.read(host);
+                mem.write(zero, h);
+                mem.write(vf + 0xc, store(load(h[3])));
+                cmd.wrapping_add(4)
+            }
+            2 => {
+                let w = [2u32, 4, 6, 8]
+                    .map(|o| i32::from(mem.read::<i16>(cmd.wrapping_add(o))).cast_unsigned());
+                floats(mem, w);
+                cmd.wrapping_add(0xa)
+            }
+            3 => {
+                let c: [u32; 4] = mem.read(unit.wrapping_add(0x30));
+                mem.write(vf, c);
+                cmd.wrapping_add(2)
+            }
+            4 => {
+                let s = src(mem, &mut go);
+                let c: [u32; 4] = mem.read(s.wrapping_add(0x30));
+                mem.write(vf, c);
+                cmd.wrapping_add(4)
+            }
+            5 => {
+                let b = |mem: &M, o: u32| u32::from(mem.read::<u8>(unit.wrapping_add(o)));
+                let a = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+                let w = [b(mem, 0xc8), b(mem, 0xc9), b(mem, 0xca), a];
+                floats(mem, w);
+                cmd.wrapping_add(4)
+            }
+            _ => cmd,
+        };
+        let v00 = g(mem, 0x00c0_a004);
+        mem.write(ee, 0x437f_0000u32);
+        mem.write(k, 0x437f_0000u32);
+        for i in 0..4u32 {
+            let x = load(mem.read(v00 + 4 * i));
+            mem.write(zero + 4 * i, store(sub(x, x)));
+        }
+        go(mem, 0x0042_ef00, &[]);
+        let s = store(load(mem.read(k)));
+        go(mem, 0x0080_8c10, &[vf, vf, s]);
+        let z: [u32; 4] = mem.read(zero);
+        go(mem, 0x0080_8b70, &[vf, vf, z[0], z[1], z[2], z[3]]);
+        let c: [u32; 4] = mem.read(vf);
+        let n = c.map(|x| ftol(mem, load(x)));
+        mem.write(vf, n);
+        let r: [u32; 4] = mem.read(r0);
+        let lo = |a: u32, b: u32| a & 0xffff | b << 16;
+        mem.write(
+            ee,
+            [
+                lo(n[0], n[1]),
+                lo(n[2], n[3]),
+                lo(r[0], r[1]),
+                lo(r[2], r[3]),
+            ],
+        );
+        go(mem, 0x0073_75d0, &[ee, r0, ee]);
+        let packed: u32 = mem.read(ee);
+        mem.write(unit.wrapping_add(0xc8), packed);
+        next
+    }
 }

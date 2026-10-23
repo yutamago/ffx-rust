@@ -20100,6 +20100,86 @@ fn opu_ffxlight_matches_the_original() {
     }
 }
 
+/// `opu_rgba_set_00809180` against the port: every nibble, sources from
+/// `opus_no_get` (a cell), the clamps and packing through the real code,
+/// colours below 0, above 255 and NaN, the colour shift.
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn opu_rgba_set_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_9180);
+        let cells = p.alloc(0x10);
+        far_recorder(&mut p, 0x0080_1060, &[0, 0, 0], Some(cells));
+        let (host, unit, cmd, srcs) = (
+            p.alloc(0x400),
+            p.alloc(0x100),
+            p.alloc(0x10),
+            p.alloc(0x400),
+        );
+        let (shift, vf00, r0, vf) = (
+            p.sym(0x00c8_b500),
+            p.sym(0x00c0_a004),
+            p.sym(0x00c8_f508),
+            p.sym(0x00c8_f980),
+        );
+        let colour = |rng: &mut Xorshift| {
+            if rng.chance(90) {
+                ranged(rng, -40.0, 300.0)
+            } else {
+                rng.pick(&[
+                    0x7fc0_0000u32,
+                    0xffc0_0000,
+                    0x7f80_0000,
+                    0xff80_0000,
+                    0x4f00_0000,
+                    0,
+                ])
+            }
+        };
+        for round in 0..2000 {
+            let what = format!("opu_rgba_set round {round}");
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.set(host + 0x220, unit);
+            let nibble = rng.below(8) as u16;
+            p.set(host + 0x21a, nibble << 12 | (rng.next() as u16 & 0xfff));
+            p.set(cells, srcs + 0x100 * rng.below(4));
+            p.set(shift, if rng.chance(20) { 4 * rng.below(4) } else { 0 });
+            for k in 0..4 {
+                let v = if rng.chance(90) {
+                    0
+                } else {
+                    rng.pick(&[0x3f80_0000u32, 0x7f80_0000, 0x7fc0_0000])
+                };
+                p.set(vf00 + 4 * k, v);
+            }
+            for k in 0..4 {
+                let v = colour(&mut rng);
+                p.set(vf + 4 * k, v);
+            }
+            for base in [unit, srcs, srcs + 0x100, srcs + 0x200, srcs + 0x300] {
+                for o in (0x30..0x50).step_by(4) {
+                    let v = colour(&mut rng);
+                    p.set(base + o, v);
+                }
+            }
+            for o in (0..0x10).step_by(4) {
+                let v = colour(&mut rng);
+                p.set(host + o, v);
+            }
+            for k in 0..4 {
+                let v = rng.pick(&[0i16, 0x80, 0xff, 0x100, -5, 0x7fff, -0x8000]);
+                p.set(cmd + 2 + 2 * k, v);
+            }
+            check_deep_n(&mut p, &what, 0x0080_9180, &[host, cmd], |o, _| {
+                Some(opus::bridge::opu_rgba_set(o, host, cmd, &mut call_original))
+            });
+        }
+    }
+}
+
 #[test]
 #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
 fn round33d_commands_and_draws_match_the_original() {
