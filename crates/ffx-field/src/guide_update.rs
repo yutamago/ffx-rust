@@ -253,8 +253,9 @@ const FULL_SCISSOR: [u32; 2] = [0x01ff_0000, 0x019f_0000];
 /// counter `+0x74` steps.
 ///
 /// A destination drawn when no marker is the player hands
-/// `rcbgGuideDrawPlayer` the player slot (`work + 0`) unwritten: the
-/// original's frame holds whatever an earlier call left there.
+/// `rcbgGuideDrawPlayer` the player slot (`work + 0`) unwritten in the
+/// original (stale frame junk); the port gives it zeros (junk read, brief
+/// 2026-10-24).
 #[allow(clippy::too_many_lines)] // the original's steps in turn
 pub fn rcbg_guide_update_ex<M, C, F>(
     mem: &mut M,
@@ -296,6 +297,10 @@ where
             mem.write(at.wrapping_add(4 * k), w);
         }
     };
+    // junk read: [ebp-0x360] never written; 0 (brief 2026-10-24). The
+    // player slot (4 words) is only written when a marker is the player;
+    // a destination without one hands it to rcbgGuideDrawPlayer as is.
+    put(mem, player, &[0; 4]);
     // the register lists: test, frame, alpha, then the fog's and the scissor's
     put(
         mem,

@@ -6335,4 +6335,26 @@ pub mod bridge {
             i += 1;
         }
     }
+
+    /// `yiClutGreen_00916130(r)` (`0x00916130`, from `yiClutGreenRender`):
+    /// the 0x48 CLUTs of 0x100 words from `r + 0x70` (0x460 apart) keep
+    /// bytes 0, 2 and 3; byte 1 (green) comes from a stack local the
+    /// original never writes (`[ebp-0x14]`): junk read, 0 here (brief
+    /// 2026-10-24), so green is cleared. Returns 0.
+    pub fn yi_clut_green(mem: &mut impl Mem, r: u32) -> u32 {
+        // junk read: [ebp-0x14] never written; 0 (brief 2026-10-24)
+        let green = 0_u32;
+        for c in 0..0x48 {
+            let clut = r.wrapping_add(0x70 + 0x460 * c);
+            for k in 0..0x100 {
+                let at = clut.wrapping_add(4 * k);
+                let w = mem.read::<u32>(at);
+                let red = w & 0xff;
+                let blue = (w >> 16) & 0xff;
+                let w = mem.read::<u32>(at);
+                mem.write(at, w & 0xff00_0000 | ((blue << 8 | green) << 8) | red);
+            }
+        }
+        0
+    }
 }

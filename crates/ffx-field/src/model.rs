@@ -4952,6 +4952,54 @@ pub mod bridge {
         call(mem, set_scale, &[model, crate::x87::copy(scale)]);
         call(mem, create, &[p, model])
     }
+
+    /// `rcbgFPm173ProcKieru(part)` (`0x00922dc0`, from `rcbgFPm173Proc000`'s
+    /// jump table): from frame `+0x1c` 0x4b on, the effect 0x61 stuck to
+    /// the character `+0x10` moves to `(0, B.y - A.y * 0.1, 0, 0)`
+    /// (`pppFpSetStickPos(0x61, v)`; 0.1 the `f64` at `0x00b921f0`), with
+    /// `A` = `Ch_ElemGetPos(chr, 0, 0, &A)` and `B` = `Ch_OptposGet(chr, 6,
+    /// &B)` fetched on frame 0x4b only, which also sticks the effect
+    /// (`pppFpSetStickChr(0x61, chr, 0)`) and restarts it (`Fp_Restart`).
+    /// Frame 0x96 clears `+0x20`. `frame` is the original's 0x30-byte
+    /// local area (`A` at `+0`, `B` at `+0x10`, `v` at `+0x20`).
+    ///
+    /// Junk reads: on frames after 0x4b (and when a callee writes nothing)
+    /// `A.y` (`[ebp-0x30]`) and `B.y` (`[ebp-0x20]`) are never written in
+    /// the original, which uses stale stack words; the port uses 0 (brief
+    /// 2026-10-24).
+    pub fn rcbg_fpm173_proc_kieru<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        frame: u32,
+        call: &mut C,
+    ) {
+        let t = mem.read::<i32>(p.wrapping_add(0x1c));
+        if t < 0x4b {
+            return;
+        }
+        let (a, b, v) = (frame, frame.wrapping_add(0x10), frame.wrapping_add(0x20));
+        // junk read: [ebp-0x30], [ebp-0x20] never written after frame 0x4b; 0 (brief 2026-10-24)
+        mem.write(a, [0_u32; 4]);
+        mem.write(b, [0_u32; 4]);
+        if t == 0x4b {
+            let chr = mem.read::<u32>(p.wrapping_add(0x10));
+            call(mem, mem.rebase(0x0083_3d10), &[chr, 0, 0, a]);
+            let chr = mem.read::<u32>(p.wrapping_add(0x10));
+            call(mem, mem.rebase(0x0083_54f0), &[chr, 6, b]);
+            let chr = mem.read::<u32>(p.wrapping_add(0x10));
+            call(mem, mem.rebase(0x0072_a530), &[0x61, chr, 0]);
+            call(mem, mem.rebase(0x0072_9700), &[0x61]);
+        }
+        let k = Reg::constant(mem.read::<f64>(mem.rebase(0x00b9_21f0)));
+        let by = Reg::load(mem.read::<f32>(b.wrapping_add(4)));
+        let ay = Reg::load(mem.read::<f32>(a.wrapping_add(4)));
+        let y = (by - ay * k).store();
+        mem.write(v, [0_u32, y.to_bits(), 0, 0]);
+        call(mem, mem.rebase(0x0072_a630), &[0x61, v]);
+        if mem.read::<u32>(p.wrapping_add(0x1c)) == 0x96 {
+            mem.write(p.wrapping_add(0x20), 0_u32);
+        }
+    }
 }
 
 #[cfg(test)]

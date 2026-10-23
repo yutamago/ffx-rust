@@ -24105,8 +24105,9 @@ const SMALL4_FLAGS: [u32; 14] = [
 /// Small round 4 a: `rcbgGuideUpdateEx` on synthetic guides, meshes,
 /// scenes and marker records (every map with its own scale, 2D and 3D,
 /// the fade and flags, the camera clamped or not, the special map-0x99
-/// marker), the draws logged. A destination always comes with a player
-/// (without one the original hands `rcbgGuideDrawPlayer` stack junk).
+/// marker), the draws logged. One case in six has no player marker and a
+/// destination: the original then hands `rcbgGuideDrawPlayer` its never
+/// written player slot, zeroed here as the port's (junk read).
 #[allow(clippy::too_many_lines)] // the set-up, then the cases
 fn small4_a_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
     use ffx_field::guide_update as gu;
@@ -24224,7 +24225,14 @@ fn small4_a_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
         for k in 8..14 {
             t.put(rv + 4 * k, f(rng, -300, 300));
         }
-        // the markers
+        // the markers; now and then none is the player, with a
+        // destination. The original's player slot is written only when a
+        // player marker is drawn (junk read otherwise, brief 2026-10-24),
+        // so its stack starts zeroed, as the port's slot
+        let no_player = rng.below(6) == 0;
+        let r = t.a.stack_range();
+        t.a.write(r.start, &vec![0u8; (r.end - r.start) as usize])
+            .unwrap();
         let mut dest = false;
         for i in 0..10u32 {
             let e = table + 0x34 * i;
@@ -24234,7 +24242,13 @@ fn small4_a_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
             } else {
                 pick | (rng.next() & 0xff)
             };
-            let fl = if i == 0 { 0x800 } else { fl };
+            let fl = if no_player {
+                fl & !0x800 | if i == 0 { 0x2000 } else { 0 }
+            } else if i == 0 {
+                0x800
+            } else {
+                fl
+            };
             dest |= fl & 0x2000 != 0;
             t.put(e, rng.below(8));
             t.put(e + 4, fl);
@@ -24254,7 +24268,7 @@ fn small4_a_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
             };
             t.put(e + 0x30, ok);
         }
-        if dest && n > 0 && rng.below(4) == 0 {
+        if !no_player && dest && n > 0 && rng.below(4) == 0 {
             // the player later than the destinations
             t.put(table + 4, 0x2000u32);
             t.put(table + 0x34 * (n - 1) + 4, 0x800u32);
@@ -24373,6 +24387,12 @@ fn small4_a_real(t: &mut Twin, rng: &mut Xorshift) {
         t.set(guide::FADE_STATE, (case >> 2 & 3).cast_signed());
         t.set(guide::FADE_LEVEL, rng.range(0, 7));
         let show = case >> 4 & 1;
+        // the snapshot's guide has a destination and no player marker: the
+        // original's player slot is never written (junk read, brief
+        // 2026-10-24); its stack starts zeroed, as the port's slot
+        let r = t.a.stack_range();
+        t.a.write(r.start, &vec![0u8; (r.end - r.start) as usize])
+            .unwrap();
         t.same_but(
             "rcbgGuideUpdateEx (the snapshot's guide)",
             &small4_skip(t),
@@ -24629,6 +24649,99 @@ fn small6_g_render_draw_matches_the_original() {
                         let at = m.rebase(f);
                         m.call(at, Conv::Cdecl, a).unwrap().eax
                     });
+                },
+            );
+            t.a.clear_dirty();
+            t.b.clear_dirty();
+        }
+    }
+}
+
+/// Code that copies four words from `src` to the address in argument
+/// `arg` (0-based) of the stand-in it starts.
+fn small6_out4(arg: u8, src: u32) -> Vec<u8> {
+    let mut c = vec![];
+    for w in 0..4u8 {
+        c.extend([0x8b, 0x54, 0x24, 4 + 4 * arg, 0x8b, 0x0d]); // mov edx, [esp + 4 + 4arg]; mov ecx, [src + 4w]
+        c.extend((src + 4 * u32::from(w)).to_le_bytes());
+        c.extend([0x89, 0x4a, 4 * w]); // mov [edx + 4w], ecx
+    }
+    c
+}
+
+/// Zeroes the original's whole stack: the never-written locals it reads
+/// are then 0, as in the ports (junk reads, brief 2026-10-24).
+fn small6_zero_stack(t: &mut Twin) {
+    let r = t.a.stack_range();
+    t.a.write(r.start, &vec![0u8; (r.end - r.start) as usize])
+        .unwrap();
+}
+
+/// Small round 6 h: `yiClutGreen_00916130` (random CLUTs) and
+/// `rcbgFPm173ProcKieru` (frames around 0x4b and 0x96, positions from
+/// stand-ins, the stick calls logged with the position by value); the
+/// originals' stacks zeroed for their never-written locals.
+#[test]
+#[allow(clippy::cast_possible_truncation)] // test floats
+fn small6_h_junk_read_ports_match_the_original() {
+    for mut t in [Twin::image(), Twin::snapshot()].into_iter().flatten() {
+        let mut rng = Xorshift(0x5a11_6b08);
+        let r = t.alloc(0x70 + 0x460 * 0x48);
+        for round in 0..6u32 {
+            t.fill(r, 0x70 + 0x460 * 0x48, &mut rng);
+            small6_zero_stack(&mut t);
+            t.same(
+                &format!("yiClutGreen {round}"),
+                |o| o.eax(0x0091_6130, &[r]),
+                |m| ffx_field::yi::bridge::yi_clut_green(m, r),
+            );
+            t.a.clear_dirty();
+            t.b.clear_dirty();
+        }
+        let log = t.alloc(0x4000);
+        let cursor = t.alloc(4);
+        let zero = t.alloc(4);
+        let (pa, pb) = (t.alloc(16), t.alloc(16));
+        let stubs: [(u32, u8, Option<u8>, Vec<u8>); 5] = [
+            (0x0083_3d10, 3, None, small6_out4(3, pa)),
+            (0x0083_54f0, 2, None, small6_out4(2, pb)),
+            (0x0072_a530, 3, None, vec![]),
+            (0x0072_9700, 1, None, vec![]),
+            (0x0072_a630, 2, Some(1), vec![]),
+        ];
+        for (k, (sym, n, deref, pre)) in stubs.into_iter().enumerate() {
+            let id = 0x6800 + u32::try_from(k).unwrap();
+            small6_stub(&mut t, sym, cursor, id, n, deref, zero, &pre);
+        }
+        let p = t.alloc(0x40);
+        let frame = t.b.stack_range().start + 0x100;
+        for round in 0..120u32 {
+            t.put(cursor, log);
+            t.fill(p, 0x40, &mut rng);
+            let f = [0x40i32, 0x4a, 0x4b, 0x4b, 0x4c, 0x95, 0x96, 0x97, 0x200, -1]
+                [(rng.next() % 10) as usize];
+            t.put(p + 0x1c, f);
+            for w in 0..4 {
+                let v = (f64::from(rng.range(-3000, 3000)) / 7.0) as f32;
+                let v = v.to_bits();
+                t.put(pa + 4 * w, v);
+                let v = (f64::from(rng.range(-3000, 3000)) / 9.0) as f32;
+                let v = v.to_bits();
+                t.put(pb + 4 * w, v);
+            }
+            small6_zero_stack(&mut t);
+            t.same(
+                &format!("rcbgFPm173ProcKieru {round} frame {f:#x}"),
+                |o| {
+                    o.eax(0x0092_2dc0, &[p]);
+                },
+                |m| {
+                    ffx_field::model::bridge::rcbg_fpm173_proc_kieru(
+                        m,
+                        p,
+                        frame,
+                        &mut |m, f, a| m.call(f, Conv::Cdecl, a).unwrap().eax,
+                    );
                 },
             );
             t.a.clear_dirty();
