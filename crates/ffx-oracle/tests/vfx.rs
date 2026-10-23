@@ -30239,3 +30239,153 @@ fn round48b_opu_mdc_break_matches_the_original() {
         assert!(logs.is_empty(), "{}: unreached {logs:x?}", p.name);
     }
 }
+
+// ---- round 49 ----
+
+/// A recorder for `KeThCp_Update(&record)`: logs the record's first four
+/// words and the two vectors its `+0x10` and `+0x14` point at (12 words
+/// per entry); returns the count.
+fn ke_th_update_recorder(p: &mut Pair, sym: u32) -> u32 {
+    let log = p.alloc(4 + 0x100 * 64);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x06]); // shl ecx, 6
+    let mut pos = 0u32;
+    for deref in [None, Some(0x10u8), Some(0x14)] {
+        c.extend([0x8b, 0x44, 0x24, 4]); // mov eax, [esp + 4]
+        if let Some(o) = deref {
+            c.extend([0x8b, 0x40, o]); // mov eax, [eax + o]
+        }
+        for j in 0..4u8 {
+            c.extend([0x8b, 0x50, 4 * j]); // mov edx, [eax + 4j]
+            c.extend([0x89, 0x91]); // mov [ecx + slot], edx
+            c.extend((log + 4 + 4 * pos).to_le_bytes());
+            pos += 1;
+        }
+    }
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.push(0xa1); // mov eax, [count]
+    c.extend(log.to_le_bytes());
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round49a_ke_th_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_6050);
+        // KeThCp_AddBp(cp, pool, &pos, &dir), KeThCp_Update(&record)
+        let adds = far_recorder(&mut p, 0x0076_44d0, &[0, 0, 4, 4], None);
+        let updates = ke_th_update_recorder(&mut p, 0x0076_49a0);
+        let stop = p.sym(ppp::bridge::STOP.sym);
+        let cpart = p.sym(0x0230_ffe4);
+        let rand_target = p.sym(0x00d5_2398);
+        let (obj, key, prog, table, part) = (
+            p.alloc(0x300),
+            p.alloc(0x80),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x40),
+        );
+        let (records, objects, pools, scratch) =
+            (p.alloc(0x40), p.alloc(0x400), p.alloc(0x40), p.alloc(0xa0));
+        let mut seen = [0u32; 6];
+        for round in 0..3000 {
+            let what = format!("ke_th round {round}");
+            p.fill(obj, 0x300, &mut rng);
+            p.fill(key, 0x80, &mut rng);
+            p.fill(objects, 0x400, &mut rng);
+            p.fill(pools, 0x40, &mut rng);
+            for k in 0..3 {
+                p.set(table + 4 * k, 4 * rng.below(0x40));
+            }
+            p.set(prog + 0xc, table);
+            p.set(cpart, part);
+            p.set(part + 0x3c, records);
+            for i in 0..4 {
+                p.set(records + 16 * i + 4, objects + 0x100 * i);
+            }
+            // the matrix and the position (its translation row)
+            for k in 0..16 {
+                let v = if rng.chance(90) {
+                    ranged(&mut rng, -4.0, 4.0)
+                } else {
+                    rng.float()
+                };
+                p.set(obj + 0x10 + 4 * k, v);
+            }
+            let a = |p: &Pair, i: u32| obj + 0xa0 + p.get::<u32>(table + 4 * i);
+            let (w, source) = (a(&p, 0), a(&p, 2));
+            for k in 0..4 {
+                let v = if rng.chance(90) {
+                    ranged(&mut rng, -9.0, 9.0)
+                } else {
+                    rng.float()
+                };
+                p.set(source + 4 * k, v);
+            }
+            for o in [0x1c, 0x34, 0x3c, 0x68, 0x6c] {
+                let v = rng.float();
+                p.set(w + o, v);
+            }
+            for o in (0x30..=0x50).step_by(4) {
+                let v = rng.float();
+                p.set(key + o, v);
+            }
+            let pool = pools + 4 * rng.below(8);
+            p.set(w + 0x60, pool);
+            if rng.chance(10) {
+                p.set(w + 0x64, rand_target);
+            }
+            let f: u32 = p.get(obj + 0xc);
+            let f = if rng.chance(50) { 0 } else { f };
+            p.set(obj + 0xc, f);
+            if rng.chance(75) {
+                p.set(key, f);
+            }
+            p.set(key + 4, rng.pick(&[u32::MAX, u32::MAX, 0, 1, 2, 3]));
+            p.set(key + 8, 4 * rng.below(0x30));
+            for o in 0x59..=0x5c {
+                p.set(key + o, rng.pick(&[0u8, 0, 1, 0x80]));
+            }
+            let on = rng.pick(&[1u32, 2, 0x100, 0x8000_0000]);
+            p.set(stop, if rng.chance(8) { on } else { 0 });
+            let before = (p.get::<u32>(adds), p.get::<u32>(updates));
+            let r = p.check(&what, 0x0073_6050, &[obj, key, prog], |m| {
+                let keep = m.read(scratch, 0xa0).unwrap();
+                let r =
+                    prog::bridge::ppp_ke_th(m, obj, key, prog, scratch + 0xa0, &mut call_original);
+                m.write(scratch, &keep).unwrap();
+                Some(r)
+            });
+            let after = (p.get::<u32>(adds), p.get::<u32>(updates));
+            let path = if r == source && after.1 == before.1 {
+                0
+            } else if r == rand_target {
+                1
+            } else if after.0 != before.0 {
+                2
+            } else if p.get::<u32>(key) == f {
+                3
+            } else {
+                4
+            };
+            seen[path] += 1;
+            if after.1 != before.1 && p.get::<u8>(w + 0x52) == 0 {
+                seen[5] += 1;
+            }
+        }
+        // stopped, old target, frame 0, the key's frame, another frame, n = 0
+        assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
+    }
+}

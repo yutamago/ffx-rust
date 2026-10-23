@@ -6218,4 +6218,12 @@ ported! {
     opus_encount0_draw @ 0x007f_81e0 => extern "C" fn opus_encount0_draw(host: u32, unit: u32, grid: u32) -> u32 {
         opus::bridge::opus_encount0_draw(&mut mem(), host, unit, grid, &mut |_, f, a| call_ptr(f, a))
     }
+    // ---- round 49 a ----
+    /// `pppKeTh(obj, key, prog)` (`0x00736050`): the matrix, the position,
+    /// the direction and the update record in this shim's frame.
+    pppKeTh @ 0x0073_6050 => extern "C" fn ppp_ke_th(obj: u32, key: u32, prog: u32) -> u32 {
+        let mut frame = super::StackFrame::<40>::new();
+        let ebp = frame.at() + 0xa0;
+        prog::bridge::ppp_ke_th(&mut mem(), obj, key, prog, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
 }

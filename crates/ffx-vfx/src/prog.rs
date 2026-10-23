@@ -2926,4 +2926,163 @@ pub mod bridge {
         call(mem, sym(mem, 0x006e_d8f0), &[d, d, len]);
         call(mem, sym(mem, 0x0075_ede0), &[a1, d]);
     }
+
+    // ---- round 49 a ----
+
+    /// `pppKeTh(obj, key, prog)` (`0x00736050`): the thread step. Unless
+    /// `g_pppStopStatus`, the work area `w = obj + 0xa0 + [[prog + 0xc]]`
+    /// (a `KeThCp`) is stepped. The direction is work area 2 through
+    /// `obj`'s matrix (`+0x10`, its translation row taken as `(0, 0, 0,
+    /// 1)`), normalised; the position is `obj + 0x40`. When the key's
+    /// first word is the object's frame (`+0xc`): at frame 0 the target
+    /// (`g_pppRandTarget` for key `+4` = -1, else the current part's object
+    /// record `+4` + key `+8` + 0xa0) and the pool (work area 1) go into
+    /// `w + 0x64` / `+0x60` (unless the old target is `g_pppRandTarget`:
+    /// then it returns that at once), flags `+4` get 8 (key byte `+0x5a`
+    /// 0), 4 (`+0x59`), 0x10 (`+0x5c`), 0x20 (`+0x5b`), and
+    /// `KeThCp_AddBp(w, pool, &pos, &dir)` runs. Then the sixteen `u16`
+    /// colours `+0x70` add the key's `+0x10`, `+0x68` = key `+0x30`, `+0x6c`
+    /// += key `+0x4c`, byte `+0x52` = the pool's byte `+1` - 1, `+0x1c` +=
+    /// key `+0x34`, `+0x40`/`+0x48`/`+0x4c` = key `+0x3c`/`+0x40`/`+0x44`,
+    /// `+0x34` += key `+0x48`, `+0x3c` += key `+0x50`, `+0x38` = key `u16
+    /// +0x54` x `[0x00b51548]` x `[0x00b51538]` (degrees to radians), bytes
+    /// `+0x50`/`+0x51` = key `+0x56`/`+0x57`, `+0x2c` = -((`+0x1c` - key
+    /// `+0x38` x `+0x1c`) / n) with `n` = byte `+0x52`. Every frame:
+    /// `+0x30` = `+0x68` / n (an `f32`), `+0x44` = `+0x6c` / that, the
+    /// colour bytes `+0x10..0x18` / `+0x20..0x28` = the `i16` colours `>>
+    /// 7`, and `KeThCp_Update(&(w, target, w + 0x10, pool, &pos, &dir))`,
+    /// whose eax is returned (work area 2 when stopped). The original's
+    /// locals at `frame` (its `ebp`): the matrix at `-0x68`, `pos` at
+    /// `-0x24`, `dir` at `-0x14`, the update record at `-0xa0`. The two
+    /// `KeThCp` calls through `call`.
+    #[allow(clippy::many_single_char_names, clippy::too_many_lines)]
+    pub fn ppp_ke_th<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::rand::bridge::TARGET;
+        use ffx_ps2::vu0::bridge as vu0;
+        use x87::{ADD, MUL, Op, Reg, SUB};
+        const DIV: Op = |a, b| a / b;
+        const DIVR: Op = |a, b| b / a;
+        let w = area(mem, obj, prog, 0).wrapping_add(0xa0);
+        let source = area(mem, obj, prog, 2).wrapping_add(0xa0);
+        if STOP.get(mem) != 0 {
+            return source;
+        }
+        let (m, pos, dir, record) = (
+            frame.wrapping_sub(0x68),
+            frame.wrapping_sub(0x24),
+            frame.wrapping_sub(0x14),
+            frame.wrapping_sub(0xa0),
+        );
+        vu0::matrix_copy(mem, m, obj.wrapping_add(0x10));
+        mem.write(m.wrapping_add(0x30), [0, 0, 0, ONE]);
+        vu0::apply_matrix(mem, dir, m, source);
+        vu0::normalize(mem, dir, dir);
+        vu0::copy_vector(mem, pos, obj.wrapping_add(0x40));
+        let at = |o: u32| w.wrapping_add(o);
+        let k = |o: u32| key.wrapping_add(o);
+        let frame_no = mem.read::<u32>(key);
+        if mem.read::<u32>(obj.wrapping_add(0xc)) == frame_no {
+            if frame_no == 0 {
+                let pool = area(mem, obj, prog, 1).wrapping_add(0xa0);
+                let rand_target = TARGET.ptr(mem).addr;
+                let i = mem.read::<u32>(k(4));
+                let target = if i == u32::MAX {
+                    rand_target
+                } else {
+                    let records = mem.read::<u32>(CURRENT_PART.get(mem).wrapping_add(0x3c));
+                    let o = stub::ptr32(mem.read(records.wrapping_add(16 * i).wrapping_add(4)));
+                    o.wrapping_add(mem.read::<u32>(k(8))).wrapping_add(0xa0)
+                };
+                if stub::ptr32(mem.read(at(0x64))) == rand_target {
+                    return rand_target;
+                }
+                mem.write(at(0x64), stub::ptr32(target));
+                let pool = stub::ptr32(pool);
+                mem.write(at(0x60), pool);
+                for (flag, on, bit) in [
+                    (0x5a, false, 8u8),
+                    (0x59, true, 4),
+                    (0x5c, true, 0x10),
+                    (0x5b, true, 0x20),
+                ] {
+                    if (mem.read::<u8>(k(flag)) != 0) == on {
+                        let b: u8 = mem.read(at(4));
+                        mem.write(at(4), b | bit);
+                    }
+                }
+                call(
+                    mem,
+                    sym(mem, 0x0076_44d0),
+                    &[w, stub::ptr32(pool), pos, dir],
+                );
+            }
+            for i in 0..16 {
+                let c: u16 = mem.read(at(0x70 + 2 * i));
+                let d: u16 = mem.read(k(0x10 + 2 * i));
+                mem.write(at(0x70 + 2 * i), c.wrapping_add(d));
+            }
+            let f = |mem: &M, o: u32| f32::from_bits(mem.read(o));
+            let r = |mem: &M, o: u32| Reg::load(mem.read(o));
+            mem.write(at(0x68), x87::load(mem.read(k(0x30))));
+            let v = r(mem, k(0x4c)).mem(ADD, f(mem, at(0x6c))).store();
+            mem.write(at(0x6c), v);
+            let pool = stub::ptr32(mem.read(at(0x60)));
+            mem.write(
+                at(0x52),
+                mem.read::<u8>(pool.wrapping_add(1)).wrapping_sub(1),
+            );
+            let v = r(mem, k(0x34)).mem(ADD, f(mem, at(0x1c))).store();
+            mem.write(at(0x1c), v);
+            for (to, from) in [(0x40, 0x3c), (0x48, 0x40), (0x4c, 0x44)] {
+                mem.write(at(to), x87::load(mem.read(k(from))));
+            }
+            let v = r(mem, k(0x48)).mem(ADD, f(mem, at(0x34))).store();
+            mem.write(at(0x34), v);
+            let v = r(mem, k(0x50)).mem(ADD, f(mem, at(0x3c))).store();
+            mem.write(at(0x3c), v);
+            let pi: f64 = mem.read(sym(mem, 0x00b5_1548));
+            let deg: f64 = mem.read(sym(mem, 0x00b5_1538));
+            let a = f64::from(mem.read::<u16>(k(0x54))) * pi * deg;
+            #[allow(clippy::cast_possible_truncation)] // fstp m32
+            mem.write(at(0x38), a as f32);
+            let length = r(mem, at(0x1c));
+            mem.write(at(0x50), mem.read::<u8>(k(0x56)));
+            mem.write(at(0x51), mem.read::<u8>(k(0x57)));
+            let n = f64::from(mem.read::<u8>(at(0x52)));
+            let shrink = r(mem, k(0x38)).reg(MUL, length);
+            let step = match length.reg(SUB, shrink).constant(DIV, n) {
+                Reg::Num(x) => Reg::Num(-x),
+                Reg::Nan(b) => Reg::Nan(b ^ 0x8000_0000),
+            };
+            mem.write(at(0x2c), step.store());
+        }
+        let n = f64::from(mem.read::<u8>(at(0x52)));
+        let per = Reg::load(mem.read(at(0x68)))
+            .constant(DIV, n)
+            .store()
+            .to_bits();
+        mem.write(at(0x30), per);
+        let v = Reg::load(per)
+            .mem(DIVR, f32::from_bits(mem.read(at(0x6c))))
+            .store();
+        mem.write(at(0x44), v);
+        for i in 0..8 {
+            for (to, from) in [(0x10, 0x70), (0x20, 0x80)] {
+                let c: i16 = mem.read(at(from + 2 * i));
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low byte
+                mem.write(at(to + i), (c >> 7) as u8);
+            }
+        }
+        let target = stub::ptr32(mem.read(at(0x64)));
+        let pool = stub::ptr32(mem.read(at(0x60)));
+        mem.write(record, [w, target, at(0x10), pool, pos, dir]);
+        call(mem, sym(mem, 0x0076_49a0), &[record])
+    }
 }

@@ -3784,7 +3784,7 @@
 0x00735160 function pppKeZCrctDraw            # fh v3:exact 0x00735230; ported r47: (obj, key, ctrl) -> FFXVu0CopyMatrix eax; frame matrix [ebp-0x44] = obj rows x key+0x20 scale (also in 0x00c8f820/0x00c8f830..), row 3 obj+0x40; key byte +0x30: 0 +key+0x10 then x view, 1 x view then +, 2 x world, part+0x60 scale (+ scale*key) as row 3, x camera; into work area 0 (mat::bridge::ppp_ke_z_crct_draw)
 0x007354c0 function pppKeZCrctShpDraw         # fh v3:exact 0x00735590
 0x00735ee0 function pppEiZCrctDisPosDraw      # ppp program table record "pppEiZCrctDisPos" draw; ported r35 (vfx): object rows scaled by key +0x20.., position minus g_pppWorldMatrix +0x30, key +0x30 picks view / world+camera products with the key offset; into work area 0 (draw::bridge::ppp_ei_z_crct_dis_pos_draw)
-0x00736050 function pppKeTh                   # ppp program table record "pppKeTh" step; not a function start in the Ghidra dump
+0x00736050 function pppKeTh                   # ppp program table record "pppKeTh" step; not a function start in the Ghidra dump; ported r49: frame 0 sets KeThCp target +0x64 (g_pppRandTarget for key +4 = -1, else part object record +4 + key +8 + 0xa0) and pool +0x60 (work area 1), KeThCp_AddBp(w, pool, &obj+0x40, &normalised(area 2 x obj matrix)); key frame adds the u16 colours +0x70 and sets/adds +0x1c..+0x6c; every frame KeThCp_Update(&(w, target, w+0x10, pool, &pos, &dir)), its eax returned
 0x00736460 function pppKeThCon                # fh v3:exact 0x00736520
 0x007364e0 function pppKeThCon2               # fh v3:exact 0x007365a0
 0x00736570 function pppKeThDes                # ppp program table record "pppKeTh" +0x24 destructor; not a function start in the Ghidra dump
