@@ -3212,6 +3212,13 @@ ported! {
     op_token_paren_007e1e90 @ 0x007e_1e90 => extern "C" fn op_token_paren(file: u32, src: u32, out: u32, pos: u32, max: u32, eol: u32) -> u32 {
         op::bridge::op_token_paren(&mut mem(), [file, src, out, pos, max, eol], &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_init_ffx()`: the unified-path local (0x100 bytes) on this
+    /// shim's stack; no caller reads `eax`.
+    op_init_ffx @ 0x007f_f360 => extern "C" fn op_init_ffx() {
+        let mut frame = super::StackFrame::<0x40>::new();
+        let unified = frame.at();
+        op::bridge::op_init_ffx(&mut mem(), unified, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `op_init_ffx_state_007ff960()`.
     op_init_ffx_state_007ff960 @ 0x007f_f960 => extern "C" fn op_init_ffx_state() {
         op::bridge::op_init_ffx_state(&mut mem(), &mut |_, f, a| call_ptr(f, a));
@@ -6005,6 +6012,14 @@ ported! {
         op::bridge::op_oef2_tex_clut_cue_trans(&mut mem(), img, &mut |_, f, a| call_ptr(f, a))
     }
     // ---- round 37 c ----
+    /// `opu_v_en_bone(host, cmd)`.
+    opu_v_en_bone @ 0x0080_4c90 => extern "C" fn opu_v_en_bone(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_en_bone(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opu_jump_etc(host, cmd)`.
+    opu_jump_etc @ 0x0081_68c0 => extern "C" fn opu_jump_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_jump_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `opu_jump_etc2(host, cmd)`.
     opu_jump_etc2 @ 0x0081_6e50 => extern "C" fn opu_jump_etc2(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_jump_etc2(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
@@ -6143,6 +6158,17 @@ ported! {
         let mut frame = super::StackFrame::<1>::new();
         let slot = frame.at();
         opus::bridge::opp_anm(&mut mem(), host, set, slot, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_mimic(host)`: its frame locals (0xe4 bytes) on this shim's
+    /// stack, the frame pointer at their end; no caller reads `eax`.
+    opp_mimic @ 0x0080_eb50 => extern "C" fn opp_mimic(host: u32) {
+        let mut frame = super::StackFrame::<0x39>::new();
+        let ebp = frame.at() + 0xe4;
+        opus::bridge::opp_mimic(&mut mem(), host, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
+    }
+    /// `opp_anm_sippo(host, set)`: `set`, or the early exits' values.
+    opp_anm_sippo @ 0x0081_1530 => extern "C" fn opp_anm_sippo(host: u32, set: u32) -> u32 {
+        opus::bridge::opp_anm_sippo(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opp_dtt(host, set)`: `op_ot_add`'s `eax`, 0, or the draw flags.
     opp_dtt @ 0x0081_2b50 => extern "C" fn opp_dtt(host: u32, set: u32) -> u32 {

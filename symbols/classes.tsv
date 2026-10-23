@@ -17265,7 +17265,7 @@
 0x00a63a90	dead	unreachable from the entry point and every pointer table
 0x00a63ad0	dead	unreachable from the entry point and every pointer table
 0x00a63b00	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x00a63ff0	logic	default (no rule: ported to be safe)
+0x00a63ff0	debug	reviewed: opd_heap_display: only call 0xa64be1 is inside orphan code 0xa64ba0..0xa64bf8 (no call, jmp or pointer in FFX.exe), gated on debug byte 0x02321547 set only by the unreachable opd_debug_on (effects round 52)
 0x00a649c0	logic	default (no rule: ported to be safe)
 0x00a64a00	logic	default (no rule: ported to be safe)
 0x00a64b20	logic	default (no rule: ported to be safe)
