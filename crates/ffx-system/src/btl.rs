@@ -40,6 +40,34 @@ pub mod bridge {
         INIT_ANM.set(mem, 1);
     }
 
+    /// `SndPlayClick(kind)` (`0x00886ba0`), `TOBtlGetMainPad(w)`
+    /// (`0x0089c900`) and the `f64` the window's open fraction must reach
+    /// (`0x00b43d50`, 0.45 as an `f32`).
+    pub const PLAY_CLICK: u32 = 0x0088_6ba0;
+    pub const GET_MAIN_PAD: u32 = 0x0089_c900;
+    pub const WIN_OPEN_ENOUGH: u32 = 0x00b4_3d50;
+
+    /// `TOWaitBtlWinMain(w)` (`0x008a8a70`): when [`INIT_ANM`] is exactly
+    /// one, a click (`SndPlayClick(2)`) and the flag cleared; once the
+    /// window's `f32` `+0xe0` is not below the [`WIN_OPEN_ENOUGH`] (NaN
+    /// included) its pad runs (`TOBtlGetMainPad(w)`). Returns 1.
+    pub fn to_wait_btl_win_main<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if INIT_ANM.get(mem) == 1 {
+            call(mem, mem.rebase(PLAY_CLICK), &[2]);
+            INIT_ANM.set(mem, 0);
+        }
+        let open = f64::from(mem.read::<f32>(w.wrapping_add(0xe0)));
+        let below = open < mem.read::<f64>(mem.rebase(WIN_OPEN_ENOUGH));
+        if !below {
+            call(mem, mem.rebase(GET_MAIN_PAD), &[w]);
+        }
+        1
+    }
+
     /// `TOBtlCloseSignWindow()` (`0x00890ee0`).
     pub fn close_sign_window(mem: &mut impl Mem) {
         SIGN_WINDOW.set(mem, 0);

@@ -25853,3 +25853,96 @@ fn small1_window_layout_matches_the_original_on_the_snapshot() {
     };
     small1_window_layout(&mut a, &mut b, &mut Xorshift(0x5a11_0d02));
 }
+
+/// Small round 2 d: `TOWaitBtlWinMain`, `TOBtlOpenLibraWindow` and
+/// `TOMenuAtelStart`, their callees logging stand-ins.
+#[allow(clippy::cast_possible_truncation, clippy::similar_names)]
+fn small2_d(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cell = alloc(a, b, 4);
+    for (k, (sym, n)) in [
+        (btl::bridge::PLAY_CLICK, 1u8),
+        (btl::bridge::GET_MAIN_PAD, 1),
+        (tolib::bridge::SET_LIBRA_WINDOW_PARAM, 1),
+        (tolib::bridge::ATEL_COMMON_SET_UP, 6),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        // each stand-in logs its own tag first, so a swapped callee shows
+        let mut v = vec![0x8b, 0x0d];
+        v.extend_from_slice(&cursor.to_le_bytes());
+        v.extend_from_slice(&[0xc7, 0x01]);
+        v.extend_from_slice(&(0x5100 + k as u32).to_le_bytes());
+        v.extend_from_slice(&[0x83, 0x05]);
+        v.extend_from_slice(&cursor.to_le_bytes());
+        v.push(4);
+        v.extend(logger_returning(cursor, n, cell));
+        let s = stand_in8(a, b, 0x100 * k as u32, &v);
+        redirect(a, b, sym, s);
+    }
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let w = alloc(a, b, 0x100);
+    let opens = [
+        0.45f32,
+        f32::from_bits(0x3ee6_6665),
+        f32::from_bits(0x3ee6_6667),
+        0.0,
+        -0.0,
+        1.0,
+        -1.0,
+        f32::NAN,
+        f32::INFINITY,
+    ];
+    for k in 0..200u32 {
+        put(a, b, cursor, log);
+        put(a, b, cell, rng.next());
+        match k % 3 {
+            0 => {
+                set(
+                    a,
+                    b,
+                    btl::bridge::INIT_ANM,
+                    [0u8, 1, 2, 0x81][(rng.next() % 4) as usize],
+                );
+                let open = opens[(rng.next() % 9) as usize];
+                put(a, b, w + 0xe0, open);
+                let ra = eax(a, 0x008a_8a70, &[w]);
+                let rb = btl::bridge::to_wait_btl_win_main(b, w, &mut |m, f, x| call(m, f, x));
+                assert_eq!(ra, rb, "TOWaitBtlWinMain {k}");
+            }
+            1 => {
+                let chr = rng.next();
+                set(a, b, tolib::bridge::LIBRA_STATE, rng.next() as i16);
+                let ra = eax(a, 0x0089_8bd0, &[chr]);
+                let rb =
+                    tolib::bridge::to_btl_open_libra_window(b, chr, &mut |m, f, x| call(m, f, x));
+                assert_eq!(ra, rb, "TOBtlOpenLibraWindow {k}");
+            }
+            _ => {
+                set(a, b, tolib::bridge::MENU_ATEL_ACTIVE, rng.next() as u8);
+                let ra = eax(a, 0x008b_e3a0, &[]);
+                let rb = tolib::bridge::to_menu_atel_start(b, &mut |m, f, x| call(m, f, x));
+                assert_eq!(ra, rb, "TOMenuAtelStart {k}");
+            }
+        }
+        same_memory(&format!("small2 d {k}"), a, b);
+    }
+}
+
+#[test]
+fn small2_d_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    small2_d(&mut a, &mut b, &mut Xorshift(0x5a11_2d01));
+}
+
+#[test]
+fn small2_d_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    small2_d(&mut a, &mut b, &mut Xorshift(0x5a11_2d02));
+}

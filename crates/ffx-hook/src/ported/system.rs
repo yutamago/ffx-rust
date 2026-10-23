@@ -6914,6 +6914,19 @@ ported! {
         let scratch = frame.at();
         tolib::bridge::to_btl_get_main_pad(&mut mem(), w, scratch, call_sym);
     }
+    // ---- small round 2, group d
+    /// `TOWaitBtlWinMain(w)`: 1.
+    TOWaitBtlWinMain @ 0x008a_8a70 => extern "C" fn to_wait_btl_win_main(w: u32) -> u32 {
+        btl::bridge::to_wait_btl_win_main(&mut mem(), w, &mut |m, f, a| call_ptr(m, f, a))
+    }
+    /// `TOBtlOpenLibraWindow(chr)`: `TOBtlSetLibraWindowParam`'s `eax`.
+    TOBtlOpenLibraWindow @ 0x0089_8bd0 => extern "C" fn to_btl_open_libra_window(chr: u32) -> u32 {
+        tolib::bridge::to_btl_open_libra_window(&mut mem(), chr, &mut |m, f, a| call_ptr(m, f, a))
+    }
+    /// `TOMenuAtelStart()`: `AtelCommonSetUp`'s `eax`.
+    TOMenuAtelStart @ 0x008b_e3a0 => extern "C" fn to_menu_atel_start() -> u32 {
+        tolib::bridge::to_menu_atel_start(&mut mem(), &mut |m, f, a| call_ptr(m, f, a))
+    }
     /// `TOBtlGetRightPad(w)`.
     TOBtlGetRightPad @ 0x008a_2690 => extern "C" fn to_btl_get_right_pad(w: u32) {
         tolib::bridge::to_btl_get_side_pad(&mut mem(), w, 0x8000, call_sym);
