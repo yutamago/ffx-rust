@@ -11582,6 +11582,198 @@ pub mod bridge {
         result
     }
 
+    /// `TOWaitBtlWinTarget_008a8be0(w)` (name ours; the `+0x9c` step
+    /// `TOBtlSetCallback` installs at `0x008a10aa`): `TOBtlGetTargetPad(w)`
+    /// (`0x0089d390`); returns 0.
+    pub fn wait_btl_win_target<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x0089_d390, &[w]);
+        0
+    }
+
+    /// `g_TkMenuFirstReadEnd` (`0x01340859`, `i8`).
+    pub const MENU_FIRST_READ_END: Global<u8> = Global::new(0x0134_0859);
+    /// `g_TkMenuMainActiveMask` (`0x018408ec`).
+    pub const MENU_MAIN_ACTIVE_MASK: Global<u32> = Global::new(0x0184_08ec);
+    /// `g_TkMn2MenuMode` (`0x018408f8`).
+    pub const MN2_MENU_MODE: Global<u32> = Global::new(0x0184_08f8);
+
+    /// `TOMenuGetControlPad`, `TOMenuGetControlPadTrg`, `TkCdReadSync`,
+    /// `TODVDFileStartRead`, `0x008abb00` (the DVD read's poll),
+    /// `TKMallocAndReadMenuMessage`, `TOMenuAtelStart`, `TkCdReadNB`.
+    pub const MENU_FIRST_READ_CALLS: [u32; 8] = [
+        0x008b_e410,
+        0x008b_e4b0,
+        0x0088_d1c0,
+        0x008a_bab0,
+        0x008a_bb00,
+        0x0088_ccf0,
+        0x008b_e3a0,
+        0x0088_d190,
+    ];
+
+    /// `TOMenuFirstReadProc_008a8c10(task)` (name ours; the proc of the
+    /// scene record at `0x00c59500`): one step of the menu's first load,
+    /// the step at `task + 0x1c` (jump table `0x008a8d84`). After the two
+    /// pad reads: 0 -> 1; 1 waits for `TkCdReadSync(1)`, then 5 (9 when
+    /// `g_TkMn2MenuMode`'s high half is 0x80); 2 -> 3; 3 waits, -> 4; 4 and
+    /// 0xb -> 0xd; 5 starts the DVD read of file 0x12/0xc into
+    /// `0x01576f70` -> 6; 6 waits for `0x008abb00`, -> 7; 7 reads the
+    /// "menumain" messages into `0x0157ef70` -> 8; 8 waits, then
+    /// `TOMenuAtelStart` -> 9; 9 -> 0xb; 0xd -> 0xf -> 0x11 -> 0x13 ->
+    /// 0x16; 0x16 `TkCdReadNB(0x2a, 0, 0x015a0870)` -> 0x17; 0x17 waits,
+    /// clears bit 0 of `g_TkMenuMainActiveMask`, -> 0x18; 0x18 sets
+    /// `g_TkMenuFirstReadEnd`. Returns the `EAX` the original leaves: the
+    /// step for the plain moves and the others, the last callee's result
+    /// on a wait or a call, the masked menu mode after step 1's wait.
+    pub fn menu_first_read_proc<M: Mem>(
+        mem: &mut M,
+        task: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [
+            pad,
+            pad_trg,
+            cd_sync,
+            dvd_read,
+            dvd_poll,
+            read_msg,
+            atel_start,
+            cd_read,
+        ] = MENU_FIRST_READ_CALLS;
+        call(mem, pad, &[]);
+        call(mem, pad_trg, &[]);
+        let at = task.wrapping_add(0x1c);
+        let step = mem.read::<u32>(at);
+        let go = |mem: &mut M, next: u32| mem.write(at, next);
+        match step {
+            0 => go(mem, 1),
+            1 => {
+                let r = call(mem, cd_sync, &[1]);
+                if r != 0 {
+                    return r;
+                }
+                let mode = MN2_MENU_MODE.get(mem) & 0xffff_0000;
+                go(mem, if mode == 0x0080_0000 { 5 } else { 9 });
+                return mode;
+            }
+            2 => go(mem, 3),
+            3 | 0x17 => {
+                let r = call(mem, cd_sync, &[1]);
+                if r != 0 {
+                    return r;
+                }
+                if step == 3 {
+                    go(mem, 4);
+                } else {
+                    let mask = MENU_MAIN_ACTIVE_MASK.get(mem) & !1;
+                    MENU_MAIN_ACTIVE_MASK.set(mem, mask);
+                    go(mem, 0x18);
+                }
+                return 0;
+            }
+            4 | 0xb => go(mem, 0xd),
+            5 => {
+                let buf = mem.rebase(0x0157_6f70);
+                let r = call(mem, dvd_read, &[0x12, 0xc, buf]);
+                go(mem, 6);
+                return r;
+            }
+            6 | 8 => {
+                let r = call(mem, dvd_poll, &[]);
+                if r != 0 {
+                    return r;
+                }
+                if step == 6 {
+                    go(mem, 7);
+                    return 0;
+                }
+                let r = call(mem, atel_start, &[]);
+                go(mem, 9);
+                return r;
+            }
+            7 => {
+                let (name, buf) = (mem.rebase(0x00b5_f484), mem.rebase(0x0157_ef70));
+                let r = call(mem, read_msg, &[name, buf]);
+                go(mem, 8);
+                return r;
+            }
+            9 => go(mem, 0xb),
+            0xd => go(mem, 0xf),
+            0xf => go(mem, 0x11),
+            0x11 => go(mem, 0x13),
+            0x13 => go(mem, 0x16),
+            0x16 => {
+                let buf = mem.rebase(0x015a_0870);
+                let r = call(mem, cd_read, &[0x2a, 0, buf]);
+                go(mem, 0x17);
+                return r;
+            }
+            0x18 => MENU_FIRST_READ_END.set(mem, 1),
+            _ => {}
+        }
+        step
+    }
+
+    /// `g_PauseOn`, `g_PauseFade`, `g_PauseFadeStep`, `g_PauseEntered`
+    /// (`0x01340828`, `0x01340838`, `0x0134083c`, `0x0134084c`) and the
+    /// time the pause began (`0x012fb820`, 64 bits).
+    pub const PAUSE_ON: Global<u32> = Global::new(0x0134_0828);
+    pub const PAUSE_FADE: Global<u32> = Global::new(0x0134_0838);
+    pub const PAUSE_FADE_STEP: Global<u32> = Global::new(0x0134_083c);
+    pub const PAUSE_ENTERED: Global<u32> = Global::new(0x0134_084c);
+    pub const PAUSE_TIME: u32 = 0x012f_b820;
+    /// `g_MoviePictureOn` (`0x0112a00c`).
+    pub const MOVIE_PICTURE_ON: Global<u32> = Global::new(0x0112_a00c);
+
+    /// `graphicGetTimeInMicroseconds` (64 bits), `0x00640e20(1)` (the
+    /// timers), `Sg_SetPauseAllSounds(1)`, `0x006f3300` (the pause screen),
+    /// `Input_UpdateAll_00630e80`, `movie_with3DScene`,
+    /// `graphicVideoPause`.
+    pub const PAUSE_ENTER_CALLS: [u32; 7] = [
+        0x0064_1420,
+        0x0064_0e20,
+        0x0082_1cc0,
+        0x006f_3300,
+        0x0063_0e80,
+        0x0076_f0c0,
+        0x0064_5de0,
+    ];
+
+    /// `Pause_Enter()` (`0x008ab3d0`; caller `Pause_Update`): the time it
+    /// began (`graphicGetTimeInMicroseconds`, both halves), timers and
+    /// sounds paused, the pause screen and an input pass, then
+    /// `g_PauseEntered` = `g_PauseOn` = 1, fade 0x80 stepping -4. With a
+    /// movie in the 3D scene (`movie_with3DScene`) or a movie picture up,
+    /// it tail-calls `graphicVideoPause` and returns its `EAX`, else 0.
+    /// `call64` calls a function returning `EDX:EAX`.
+    pub fn pause_enter<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut call64: impl FnMut(&mut M, u32) -> u64,
+    ) -> u32 {
+        let [time, timers, sounds, screen, input, movie, video_pause] = PAUSE_ENTER_CALLS;
+        let t = call64(mem, time);
+        let at = mem.rebase(PAUSE_TIME);
+        mem.write(at, t);
+        call(mem, timers, &[1]);
+        call(mem, sounds, &[1]);
+        call(mem, screen, &[]);
+        call(mem, input, &[]);
+        PAUSE_ENTERED.set(mem, 1);
+        PAUSE_ON.set(mem, 1);
+        PAUSE_FADE.set(mem, 0x80);
+        PAUSE_FADE_STEP.set(mem, 0xffff_fffc);
+        let r = call(mem, movie, &[]);
+        if r == 0 && MOVIE_PICTURE_ON.get(mem) == 0 {
+            return 0;
+        }
+        call(mem, video_pause, &[])
+    }
+
     /// `TOOpenBtlWinLeft()` (`0x008a8620`) and `TOOpenBtlWinRight()`
     /// (`0x008a86d0`): `TOSeqStartScene(2, "bleftwlay" / "brightwlay")`
     /// (the strings at `0x00b5f070` / `0x00b5f07c`); return 1.

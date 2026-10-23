@@ -1132,6 +1132,25 @@ ported! {
     TOTransTexture_008b1190 @ 0x008b_1190 => extern "C" fn to_trans_texture_menu() -> u32 {
         intl::bridge::trans_texture_menu(&mut mem(), call_ptr)
     }
+    /// `CdReadSync_0076c490(mode)`: `g_CdLib + 8`, its callers read `EAX`.
+    CdReadSync_0076c490 @ 0x0076_c490 => extern "C" fn cd_read_sync(mode: u32) -> u32 {
+        cd::bridge::read_sync(&mut mem(), mode, call_sym)
+    }
+    /// `TOWaitBtlWinTarget_008a8be0(w)`: a window's `+0x9c` step.
+    TOWaitBtlWinTarget_008a8be0 @ 0x008a_8be0 => extern "C" fn to_wait_btl_win_target(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win_target(&mut mem(), w, call_sym)
+    }
+    /// `TOMenuFirstReadProc_008a8c10(task)`: a scene record's proc.
+    TOMenuFirstReadProc_008a8c10 @ 0x008a_8c10 => extern "C" fn to_menu_first_read_proc(task: u32) -> u32 {
+        tolib::bridge::menu_first_read_proc(&mut mem(), task, call_sym)
+    }
+    /// `Pause_Enter()`: the start time through `call_cdecl_u64`.
+    Pause_Enter @ 0x008a_b3d0 => extern "C" fn pause_enter() -> u32 {
+        tolib::bridge::pause_enter(&mut mem(), call_sym, |_, f| {
+            #[allow(clippy::cast_possible_truncation)] // 32-bit process
+            super::call_cdecl_u64(crate::rebase(f) as u32, &[])
+        })
+    }
     /// `0x0076d0e0(file, archive)`.
     cd_channel_state_0076d0e0 @ 0x0076_d0e0 => extern "C" fn cd_channel_state(file: u32, archive: u32) -> u32 {
         cd::bridge::channel_state(&mem(), file, archive)

@@ -4378,6 +4378,7 @@
 0x0076c320 function CDfileSize_CD             # cdecl(number): size of a PS2 file from the sector table (cdrom.mdg); wrapped so mod files report their size; was Cd_FileSize
 0x0076c410 function CDfileSize_CD_EX          # fh v3:exact 0x0076c520
 0x0076c440 function cd_file_size_bytes # cdecl(n): (sectors to the next entry * 0x100 - top byte) * 8 for entry n + g_CdLib+0x20, 0 when absent (bit 23); caller Cd_QueueRead; name ours
+0x0076c490 function CdReadSync_0076c490        # cdecl(mode) -> 0/1: g_CdLib+8, the wait CdEnvInit installs (0x0076d060; Ch_ReadSync tail-jumps through it): graphicProcessPs2DataLoadingCallback around it; mode 1 asks: 1 when any of the 64 g_CdChannels is busy (+0x31), after SignalSema([0x02310c28]) and, with TkSndIsStandbyVoice, dbgPrintf + movie_err(libmscd.c, 0x7ae); else 0; other modes run MovieCdReadTaskLoop_0076e660 and return 0; decrements its own arg slot; refs: only the pointer store at 0x0076d060; ported (small round 5 c, ffx_system::cd); name ours
 0x0076c510 function CdSetModule_0076c510         # cdecl(m) -> first file or -1: movie_err("sa_file_read_init!=0", libmscd.c, 0x594) before sa_file_read_init; g_CdLib_FileBase = i16 [0x02310c6c][m] (0 when negative), 0x02310c64 = m; ported (system round 33); name ours
 0x0076c560 function CdEnvInit                 # fh v3:exact 0x0076c670
 0x0076ce20 function CdQueueSector_0076ce20       # (sector) -> CdQueueSectorRead_0076ce40(sector, 0, 0); g_CdLib slot +0x8c (CdEnvInit, _DAT_02310ccc); ported (system round 33); name ours
@@ -10724,6 +10725,8 @@
 0x008a8b20 function TOWaitBtlWinStd_008a8b20 # cdecl(w) -> 0: TOBtlGetStdPad(w) unless f32 w+0xe0 is below 0.3; ported (system round 37); name ours
 0x008a8b50 function TOWaitBtlWinStdMode2_008a8b50 # cdecl(w) -> 1: unless f32 w+0xe0 is below 0.45 (the double 0x00b43d50 holds 0.45f32; a NaN runs it), g_BtlListMode = 2, TOBtlGetStdPad(w), g_BtlListMode = 0; the +0x9c step of battle window kind 5 (summons; the switch that installs TODrawWaitBtlWinSummon); ported (system r40, tolib::bridge::wait_btl_win StdMode2); name ours
 0x008a8b90 function TOWaitBtlWinStdMode3_008a8b90 # cdecl(w): as TOWaitBtlWinStdMode2_008a8b50 with g_BtlListMode = 3, but returns 0 when below the threshold, else 1; the +0x9c step of battle window kinds 7 and 0xf (with TODrawWaitBtlWinWeapon); ported (system r40, tolib::bridge::wait_btl_win StdMode3); name ours
+0x008a8be0 function TOWaitBtlWinTarget_008a8be0 # cdecl(w) -> 0: TOBtlGetTargetPad(w); a battle window's +0x9c step (TOBtlSetCallback stores it at 0x008a10aa; no direct caller); ported (small round 5 c, ffx_system::tolib); name ours
+0x008a8c10 function TOMenuFirstReadProc_008a8c10 # cdecl(task): the menu's first-load steps at task+0x1c (jump table 0x008a8d84; 0->1, 1 TkCdReadSync wait -> 5 or 9 by g_TkMn2MenuMode high half 0x80, 5 TODVDFileStartRead(0x12, 0xc, 0x01576f70), 6/8 poll 0x008abb00, 7 TKMallocAndReadMenuMessage("menumain", 0x0157ef70), 8 TOMenuAtelStart, 0x16 TkCdReadNB(0x2a, 0, 0x015a0870), 0x17 clears g_TkMenuMainActiveMask bit 0, 0x18 sets g_TkMenuFirstReadEnd); EAX the step or the last callee's; refs: only the scene record 0x00c59500 (proc word); ported (small round 5 c, ffx_system::tolib); name ours
 0x008a8e10 function IsInTkMenuPause           # fh v3:bsim1.00 0x008a8dc0
 0x008a8e20 function TOGetSaveGilAddress       # () -> MsGetSaveEventAddress() + 0x3d48 (&g_SaveGil); name ours
 0x008a8e30 function TOMenuGetDBuffDC          # fh switch:bsim1.00 0x71004bcd80; Sg_GetDBuffDC(0); non-null out = 0x01841c60
@@ -10825,7 +10828,7 @@
 0x008ab280 function TkMsGetRomItem            # fh v3:exact+call.cs 0x008ab230 cdecl
 0x008ab2c0 function TkMsImportantGet          # fh v3:cg3 0x8ab270
 0x008ab340 function Pause_Update                 # per frame: enters the pause (Pause_Enter) when g_PauseOn is set and not entered; Start (pad 0x800) at fade 0x40 hides the screen and sets the step +4; at 0x80 it ends (flags cleared, sound resumed)
-0x008ab3d0 function Pause_Enter                  # sound and timers paused (0x00640e20(1), 0x00821cc0(1)), the pause screen shown (0x006f3300), g_PauseEntered = g_PauseOn = 1, fade 0x80 step -4
+0x008ab3d0 function Pause_Enter                  # sound and timers paused (0x00640e20(1), 0x00821cc0(1)), the pause screen shown (0x006f3300), g_PauseEntered = g_PauseOn = 1, fade 0x80 step -4; 0x012fb820 = graphicGetTimeInMicroseconds (64 bits), Input_UpdateAll_00630e80 too; tail-calls graphicVideoPause when movie_with3DScene or g_MoviePictureOn, else eax 0; ported (small round 5 c, ffx_system::tolib)
 0x008ab440 function TOInternName_008ab440 # cdecl(name): the 0x100-byte slot of 0x025cc5a0 holding name (count 0x01841d90), else the next one, cleared and strcpy'd; no bound past 64 (dbgPrintf only); name ours
 0x008ab550 function EventFontTextureArrayReset # fh v3:exact 0x008ab500; (): 0x01841d90 = 0, 0x4000 bytes at 0x025cc5a0 cleared
 0x008ab570 function SetGlobal_00c59f38 # cdecl(v): *0x00c59f38 = v, returns v; name ours
