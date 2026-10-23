@@ -9762,8 +9762,8 @@
 0x008720d0 function Atel_SetScriptByteGate    # (v) 0x00c526d4 = v, gating 0x008655b0 writing script context +0x1e6; own name
 0x008720e0 function Atel_SetChrAltParts_008720e0 # (r25 b) Ch_ModelSetHide(chr, 1, on) and (chr, 2, !on) for a character; caller Native_7080; own name
 0x00872160 function TkChSetBattleChrNum       # fh v3:exact 0x00872100
-0x00872190 function TkCh_Allocate             # fh v3:exact 0x00872130
-0x00872210 function TkCh_Allocate2            # fh v3:exact 0x008721b0
+0x00872190 function TkCh_Allocate             # fh v3:exact 0x00872130; (key) -> chr: Ch_Allocate(key), ChN_ReadSystemMGRP(key, 0), then for a new character: key 3 Ch_ModelSetHide(chr, 1, 1) + (chr, 2, 0), key 7 (chr, 1, 0), keys 0x10a0/0x1075 TkChPatchM160; ported (ffx_menu::tk, small round 3)
+0x00872210 function TkCh_Allocate2            # fh v3:exact 0x008721b0; (key, v) -> chr: as TkCh_Allocate with Ch_Allocate2(key, v), and key 0x1153 TkChPatchM339; ported (ffx_menu::tk, small round 3)
 0x008722b0 function TkCh_BindToElem           # fh switch:bsim1.00 0x7100473ff0
 0x008722f0 function TkCh_Dispose              # fh v3:exact 0x00872290; (chr) -> eax: Ch_Dispose(chr) (tail jump) when Ch_CheckHandle(chr) is 0, else that result; ported in menu round 34
 0x00872310 function TkCh_SetPos               # (chr, x, y, z) Ch_SetPos3 with the floats through x87; own name

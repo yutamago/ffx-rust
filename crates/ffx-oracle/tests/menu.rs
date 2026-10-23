@@ -20452,3 +20452,55 @@ fn small1_menu_wrappers_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn small3_c_menu_allocators_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x5a11_3c03) else {
+        return;
+    };
+    // the allocators log their words and return a cell's word; every
+    // callee logs its words
+    let logged_cell = |t: &mut Twins, f: u32, n: u8| {
+        let cell = t.alloc(&[0; 4]);
+        let buf = t.alloc(&vec![0; 0x1_0000]);
+        let log = t.alloc(&buf.to_le_bytes());
+        let l = log.to_le_bytes();
+        let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &l].concat(); // mov ecx, [log]
+        for k in 0..n {
+            code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 * k]);
+        }
+        code.extend([&[0x83, 0x05][..], &l, &[4 * n]].concat()); // add dword [log], 4n
+        code.extend([&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat()); // mov eax, [cell]
+        stub(t, f, &code);
+        (cell, log, buf)
+    };
+    let (chr, log1, buf1) = logged_cell(&mut t, 0x0082_4f90, 1);
+    let (chr2, log2, buf2) = logged_cell(&mut t, 0x0082_5650, 2);
+    let _ = record_n(&mut t, 0x0083_6870, 2, 0x55);
+    let _ = record_n(&mut t, 0x0082_aea0, 3, 0x66);
+    let _ = record_n(&mut t, 0x0082_b9b0, 1, 0x77);
+    let _ = record_n(&mut t, 0x0082_ba00, 1, 0x88);
+    let mut callback = callback;
+    for _ in 0..300u32 {
+        t.put(log1, buf1);
+        t.put(log2, buf2);
+        let key = t
+            .rng
+            .pick(&[3u32, 7, 0x10a0, 0x1075, 0x1153, 0, 4, 0x1_0003, 0x10a1]);
+        let r = t.rng.next();
+        let c = t.rng.pick(&[0u32, 0x1234_5678, r]);
+        t.put(chr, c);
+        t.twin("TkCh_Allocate", 0x0087_2190, &[key], U32, |o| {
+            w(tk::tk_ch_allocate(o, key, &mut callback))
+        });
+        let v = t.rng.next();
+        let r = t.rng.next();
+        let c = t.rng.pick(&[0u32, 0x1234_5678, r]);
+        t.put(chr2, c);
+        t.twin("TkCh_Allocate2", 0x0087_2210, &[key, v], U32, |o| {
+            w(tk::tk_ch_allocate2(o, key, v, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
