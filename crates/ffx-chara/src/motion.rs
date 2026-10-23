@@ -1209,6 +1209,119 @@ pub mod bridge {
         call(mem, r(mem, MOTION_SET_LOOP), &[chr, 0]);
     }
 
+    /// `MsEffectSignal_007b74d0(i, signal, 0)`, `tex_anim_no_set(anim, a,
+    /// b, name, x)` (`0x0077e940`) and `g_ChrDumpMotEv` (`i8`, the debug
+    /// switch).
+    pub const EFFECT_SIGNAL: u32 = 0x007b_74d0;
+    pub const TEX_ANIM_NO_SET: u32 = 0x0077_e940;
+    pub const DUMP_MOT_EV: u32 = 0x0130_08db;
+    /// The debug line `"SG:Motev:%d:%s:TYPE=%s(%d) i=%d frame=%d
+    /// frame_lastev=%d id=%d start=%d end=%d\n"` and the type names
+    /// (`"BTL"`, `"SND"`, `"TEX"`, `"EFF"`, and `""` for the others).
+    pub const MOT_EV_FMT: u32 = 0x00b5_9948;
+    pub const MOT_EV_BTL: u32 = 0x00b5_9938;
+    pub const MOT_EV_SND: u32 = 0x00b5_993c;
+    pub const MOT_EV_TEX: u32 = 0x00b5_9940;
+    pub const MOT_EV_EFF: u32 = 0x00b5_9944;
+    pub const MOT_EV_NONE: u32 = 0x00b8_fbeb;
+
+    /// `Ch_MotEvent(chr)` (`0x00834350`): the motion's events (list
+    /// `+0x7f4`, `i16` count `+0x7f0`) between the last frame handled
+    /// (`i16` `+0x7f2`) and the current one (`+0x744 >> 8`, signed). An
+    /// event is `type` (`i8`), its extra word count (`i8` at `+1`, the
+    /// next event is `8 + 4 n` bytes on), `i16` start `+2`, `i16` end
+    /// `+4`, `u16` id `+6`; it fires when start <= frame and last < end.
+    /// By type (jump table `0x008344d4`): 1 `Ch_Sound(chr, (i16)id)`, 2
+    /// the callback `+0x7f8` (if set) `(+0x7fc, (i16)id)`, 3 (with a
+    /// texture animation `+0x6fc`) `tex_anim_no_set(+0x700, id >> 8, id &
+    /// 0xff, +4, +0x830)`, 5 `MsEffectSignal_007b74d0(+0x18c, (i16)id,
+    /// 0)`, others nothing; with `g_ChrDumpMotEv` set, a `dbgPrintf` line
+    /// per fired event. The count, and `+0x7f2` for the line, are read
+    /// again each time. Then the frame goes to `+0x7f2` (also when it did
+    /// not move on; nothing happens without a list). Void: its caller
+    /// reads no EAX.
+    pub fn ch_mot_event<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let i16_at = |mem: &M, a: u32| i32::from(mem.read::<i16>(a));
+        let mut ev: u32 = mem.read(chr + 0x7f4);
+        if ev == 0 {
+            return;
+        }
+        let last = i16_at(mem, chr + 0x7f2);
+        let frame = mem.read::<i32>(chr + 0x744) >> 8;
+        let mut i = 0i32;
+        while frame > last && i < i16_at(mem, chr + 0x7f0) {
+            let start = i16_at(mem, ev + 2);
+            let end = i16_at(mem, ev + 4);
+            let id: u16 = mem.read(ev + 6);
+            let sid = i32::from(id.cast_signed()).cast_unsigned();
+            let kind = mem.read::<i8>(ev);
+            if last < end && start <= frame {
+                let name = match kind {
+                    1 => {
+                        call(mem, r(mem, SOUND), &[chr, sid]);
+                        MOT_EV_SND
+                    }
+                    2 => {
+                        let cb: u32 = mem.read(chr + 0x7f8);
+                        if cb != 0 {
+                            let arg: u32 = mem.read(chr + 0x7fc);
+                            call(mem, cb, &[arg, sid]);
+                        }
+                        MOT_EV_EFF
+                    }
+                    3 => {
+                        if mem.read::<u32>(chr + 0x6fc) != 0 {
+                            let args = [
+                                mem.read(chr + 0x700),
+                                u32::from(id >> 8),
+                                u32::from(id & 0xff),
+                                mem.read(chr + 4),
+                                mem.read(chr + 0x830),
+                            ];
+                            call(mem, r(mem, TEX_ANIM_NO_SET), &args);
+                        }
+                        MOT_EV_TEX
+                    }
+                    5 => {
+                        let who: u32 = mem.read(chr + 0x18c);
+                        call(mem, r(mem, EFFECT_SIGNAL), &[who, sid, 0]);
+                        MOT_EV_BTL
+                    }
+                    _ => MOT_EV_NONE,
+                };
+                if mem.read::<i8>(r(mem, DUMP_MOT_EV)) != 0 {
+                    let args = [
+                        r(mem, MOT_EV_FMT),
+                        mem.read(r(mem, 0x023c_bbf0)),
+                        mem.read(chr + 4),
+                        r(mem, name),
+                        i32::from(kind).cast_unsigned(),
+                        i.cast_unsigned(),
+                        frame.cast_unsigned(),
+                        i16_at(mem, chr + 0x7f2).cast_unsigned(),
+                        sid,
+                        start.cast_unsigned(),
+                        end.cast_unsigned(),
+                    ];
+                    call(mem, r(mem, 0x0062_f500), &args);
+                }
+            }
+            let words = i32::from(mem.read::<i8>(ev + 1));
+            ev = ev
+                .wrapping_add(words.wrapping_mul(4).cast_unsigned())
+                .wrapping_add(8);
+            i += 1;
+        }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        // mov word: the low half
+        mem.write(chr + 0x7f2, frame as u16);
+    }
+
     /// `MsGetSaveEventAddress`'s thunk (`0x0088c830`), `Ch_ResetMotion`
     /// (`0x0082b080`), `Ch_SeqGetFastMotion` (`0x00837860`),
     /// `Ch_SetMotionSeq` (`0x00839b80`), `SG_DisposeMotionGroup` (`0x00836e20`),

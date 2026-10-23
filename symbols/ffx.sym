@@ -8016,7 +8016,7 @@
 0x008340f0 function Ch_IdEnableShade          # fh v3:bsim1.00 0x00834170
 0x00834110 function Ch_IdShadeCalc               # layout+callees: sorts between Ch_IdEnableShade and Ch_MotEvent, and its named callees match the Switch 0x7100415b50 Ch_IdShadeCalc's (similarity 0.60: Ch_IdGetShade0, Ch_IdGetShade1, Ch_IdGetShade2, Ch_SetShadeID, FFXVu0Normalize); symbols from Fahrenheit's server export; id shades off: debug shade coeff of chr's instance per bound character and once more (not while g_ChrDrawDetached); on with +0x194 bit 18: shade id from the distances +0x3c to +0x8c/+0x9c/+0xac (normalized, 1 - c, normalized, x id shade k / 31), Ch_SetShadeID(chr, length, 3); ported (ffx_chara::id, chara-main-map round 1)
 0x008342c0 function Ch_ElemInMotion          # ours: (chr, e) 1 if e is in the +0x758 list (u16 count +2, list +8; any element without one), bounded by the element count
-0x00834350 function Ch_MotEvent                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SG:Motev:%d:%s:TYPE=%s(%d) i=%d frame=%d frame_lastev=%d id='; Switch 0x7100415e00 Ch_MotEvent (symbols from Fahrenheit's server export)
+0x00834350 function Ch_MotEvent                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SG:Motev:%d:%s:TYPE=%s(%d) i=%d frame=%d frame_lastev=%d id='; Switch 0x7100415e00 Ch_MotEvent (symbols from Fahrenheit's server export); ported (ffx_chara::motion, small round 2): void; events (type i8, extra words i8, i16 start/end, u16 id; stride 8 + 4n) fire when start <= +0x744 >> 8 and i16 +0x7f2 < end; jump table 0x008344d4: 1 Ch_Sound, 2 callback +0x7f8(+0x7fc, id), 3 tex_anim_no_set(+0x700, id >> 8, id & 0xff, +4, +0x830) with +0x6fc, 5 MsEffectSignal_007b74d0(+0x18c, id, 0), 4 and others nothing; +0x7f2 = frame even when the frame did not move on (Ghidra right)
 0x008344f0 function Ch_Mouth                     # (chr): the mouth animation (rand-driven when talking, by the global mode 0x013008d9 or chr +0x4d4), Ch_OptposGetElement; the Switch Ch_Mouth (rand, called by Ch_CalcMiddle_Batch) sorts between Ch_MotEvent and Ch_MouthGetAutoTalk, as here
 0x00834740 function Ch_MouthGetAutoTalk       # movsx chr +0x4d4 (Ch_MouthSetAutoTalk's); Switch name, in name order before Ch_MouthInit; the dump's fh Ch_PLightGetEnable was a BSim miss
 0x00834750 function Ch_MouthInit              # fh v3:exact 0x008347d0
@@ -17099,7 +17099,7 @@
 0x013008bf label g_ChrShadowColor            # u8 r, g, b, Ch_DrawSetShadowColor / Ch_DrawGetShadowColor
 0x013008c2 label    g_ChrDrawSituation        # u8, Ch_SysDrawSetSituation
 0x013008c4 label g_ChrShadowDir              # 2 words, Ch_DrawSetShadowDir / Ch_DrawGetShadowDir
-0x013008db label g_ChrDumpMotEv              # i8, Ch_SetDumpMotEv / Ch_GetDumpMotEv
+0x013008db label g_ChrDumpMotEv              # i8, Ch_SetDumpMotEv / Ch_GetDumpMotEv; Ch_MotEvent 0x00834350 prints each fired event when set
 0x013008f8 label g_ChrCameraMatrix           # 64 bytes, Ch_SysGetCameraMatrixPtr / Ch_SysSetCameraMatrix
 0x01300938 label g_ChrScreenMatrix           # 64 bytes, Ch_SysGetScreenMatrixPtr / Ch_SysSetScreenMatrix
 0x01300978 label    g_Vu0ClipScreen           # what FFXVu0ClipScreen returns; also read by the chara screen code (0x008360b0, 0x00836240, 0x00836250, 0x00836430); after g_ChrScreenMatrix

@@ -2088,4 +2088,9 @@ ported! {
             &mut |_, f, a| st0_cdecl(f, a),
         );
     }
+    // ---- small round 2, group b
+    /// `Ch_MotEvent(chr)`: void (its caller reads no `eax`).
+    Ch_MotEvent @ 0x0083_4350 => extern "C" fn ch_mot_event(chr: u32) {
+        mo::bridge::ch_mot_event(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a));
+    }
 }

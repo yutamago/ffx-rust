@@ -11444,3 +11444,109 @@ fn small2_a_on(t: &mut Twin) {
     }
     eprintln!("{}: small2 a reach {reach:?}", t.name);
 }
+
+#[test]
+fn small2_b_matches_the_original() {
+    for mut t in twins() {
+        small2_b_on(&mut t);
+    }
+}
+
+/// `Ch_MotEvent` (small round 2, group b): random event lists, every
+/// callee faked (the callback too), the debug switch on and off.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::similar_names
+)]
+fn small2_b_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x5a11_2b2b);
+    let fk = Fakes::new(t);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let sound = fk.fake(t, mo::SOUND, 1, 2);
+    let tex = fk.fake(t, mo::TEX_ANIM_NO_SET, 2, 5);
+    let signal = fk.fake(t, mo::EFFECT_SIGNAL, 3, 3);
+    let print = fk.fake(t, 0x0062_f500, 4, 11);
+    // the callback (given the character) moves the last frame and drops
+    // an event, so both are read again
+    let (cb_log, cb_ret) = fk.fake_code(t, 5, 2);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04];
+    c.extend([
+        0x66, 0xff, 0x80, 0xf2, 0x07, 0, 0, 0x66, 0xff, 0x88, 0xf0, 0x07, 0, 0, 0xe9,
+    ]);
+    let cb = t.a.alloc_code(&[0; 24]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 24]).unwrap(), cb);
+    c.extend(cb_log.wrapping_sub(cb + 23).to_le_bytes());
+    t.put(cb, &c);
+    let dump = t.a.rebase(mo::DUMP_MOT_EV);
+    let sg_frame = t.a.rebase(0x023c_bbf0);
+    let mut reach = [0u32; 10];
+    let small = |rng: &mut Xorshift, lo: i32, span: u32| (lo + (rng.next() % span) as i32) as u32;
+    for round in 0..160u32 {
+        fk.reset(t);
+        for w in [sound, tex, signal, print, cb_ret] {
+            t.put_u32(w, rng.next());
+        }
+        t.put(dump, &[[0u8, 1, 0x80][(rng.next() % 3) as usize]]);
+        t.put_u32(sg_frame, rng.next());
+        let chr = t.alloc(0x880);
+        for k in 0..0x220 {
+            t.put_u32(chr + 4 * k, rng.next());
+        }
+        let n = if rng.next().is_multiple_of(8) {
+            small(&mut rng, -2, 3)
+        } else {
+            rng.next() % 9
+        };
+        let list = t.alloc(8 * 0x20);
+        let mut at = list;
+        for _ in 0..n.min(9) {
+            let kind = [0u8, 1, 2, 3, 4, 5, 6, 0xff, 1, 2, 3, 5][(rng.next() % 12) as usize];
+            let extra = [0i8, 1, 2, 0, 1, 2, -1, -2][(rng.next() % 8) as usize];
+            let start = small(&mut rng, -3, 30) as u16;
+            let end = small(&mut rng, -3, 34) as u16;
+            let id = if rng.next().is_multiple_of(3) {
+                rng.next() as u16 | 0x8000
+            } else {
+                rng.next() as u16
+            };
+            let mut e = vec![kind, extra.cast_unsigned()];
+            for v in [start, end, id] {
+                e.extend(v.to_le_bytes());
+            }
+            for _ in 0..extra.max(0) {
+                e.extend(rng.next().to_le_bytes());
+            }
+            t.put(at, &e);
+            at = at.wrapping_add((8 + 4 * i32::from(extra)).cast_unsigned());
+        }
+        t.put(chr + 0x7f0, &(n as u16).to_le_bytes());
+        t.put_u32(chr + 0x7f4, if round % 16 == 5 { 0 } else { list });
+        let last = small(&mut rng, -3, 30);
+        t.put(chr + 0x7f2, &(last as u16).to_le_bytes());
+        let frame = small(&mut rng, -3, 34);
+        t.put_u32(chr + 0x744, (frame << 8) | (rng.next() & 0xff));
+        t.put_u32(
+            chr + 0x7f8,
+            if rng.next().is_multiple_of(4) { 0 } else { cb },
+        );
+        t.put_u32(chr + 0x6fc, rng.next() % 2);
+        t.put_u32(chr + 0x7fc, chr);
+        let before: u32 = rd(&t.a, fk.log);
+        t.check(&format!("Ch_MotEvent {round}"), 0x0083_4350, &[chr], |m| {
+            mo::ch_mot_event(m, chr, &mut |m: &mut Oracle, f, a: &[u32]| call(m, f, a));
+            Res::Void
+        });
+        let after: u32 = rd(&t.a, fk.log);
+        let mut p = before;
+        while p < after {
+            let id: u32 = rd(&t.a, p);
+            reach[id as usize] += 1;
+            p += 4 * (1 + [0, 2, 5, 3, 11, 2][id as usize]);
+        }
+        reach[6 + usize::from(frame.cast_signed() <= i32::from(last as i16))] += 1;
+    }
+    eprintln!("{}: small2 b reach {reach:?}", t.name);
+}
