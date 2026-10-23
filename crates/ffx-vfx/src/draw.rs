@@ -3178,6 +3178,122 @@ pub mod bridge {
         fun(mem, call, 0x007e_b410, &[draw, start, 0, 1]);
     }
 
+    /// `pppDrawFilterRender_00756d20(pk)` (`0x00756d20`, name ours; the
+    /// final function [`ppp_draw_filter_packet`] sets with the packet
+    /// start), `frame` the original's `ebp`. The instance is `(pk +0x98,
+    /// pk +0x9c)`. With render data `rd`: unless
+    /// `graphicDynGeoMemManagerGetBufferForSegment(rd, 0, 4, 6)` gives 0,
+    /// the parts at `[rd +0x94]` get a quad: indices `+0x1c` (0, 1, 2, 1,
+    /// 2, 3 as halves), vertices `+0xc` the corners `(pk +0xa0 | +0xc0, pk
+    /// +0xa4 | +0xc4, 1.01)`, UVs `+0x18` `(pk +0x90 | +0xb0, 1 - pk +0x94
+    /// | 1 - pk +0xb4)`, colours `+0x14` four times the colour word `pk
+    /// +0x40`'s bytes / 255 (every float through the x87); `rd +0..+0x40`
+    /// = `g_pppFillMatrix` with its `+0xc`, `+0x1c`, `+0x2c` 0 and `+0x3c`
+    /// 1.0, bounds `+0x98..` -9999999 and `+0xa4..` 9999999, `+0x80` 0,
+    /// the parts' `+0x24` 1, `graphicVFXSetVisible(lo, hi, 1)`,
+    /// `graphicVFXPath3Update`. Without: locals width 4 (`frame - 0x114`),
+    /// height 6 (`- 0x118`), format 1 (`- 0x110`), the name at `- 0x104`:
+    /// for texture word `pk +0x20` (64 bits with `+0x24`) with no address
+    /// (`& 0x3fff`) `"NoTexture"` and format 0, else
+    /// `graphicVFXIsTextureWithBpLoaded(addr, bits 20.., 0, 0, 1 << bits
+    /// 26.., 1 << bits 30.., name)` (0 ends it) and alpha bit 8; then
+    /// `graphicVFXCreate(lo, hi, alpha | 0x800)` (alpha from
+    /// `calculateVFXSP_AlphaFunction(pk +0x30)`),
+    /// `graphicVFXCreateDataBuffer(lo, hi, 1, &width, &height, name,
+    /// &format)`, `graphicVFXSetup`, and `graphicVFXDestroy` when that
+    /// gives 0. Returns what the original leaves in eax (the last call's).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_draw_filter_render<M: Mem>(
+        mem: &mut M,
+        pk: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{div, load, store, sub};
+        let rd = |mem: &M, o: u32| mem.read::<u32>(pk.wrapping_add(o));
+        // every float field goes through fld/fstp
+        let fl = |mem: &M, o: u32| store(load(rd(mem, o)));
+        // the original reads every field first
+        let (lo, hi) = (rd(mem, 0x98), rd(mem, 0x9c));
+        let w = u64::from(rd(mem, 0x20)) | u64::from(rd(mem, 0x24)) << 32;
+        let (blend, colour) = (rd(mem, 0x30), rd(mem, 0x40));
+        let (x0, y0, x1, y1) = (fl(mem, 0xa0), fl(mem, 0xa4), fl(mem, 0xc0), fl(mem, 0xc4));
+        let (u0, u1, v0, v1) = (fl(mem, 0x90), fl(mem, 0xb0), fl(mem, 0x94), fl(mem, 0xb4));
+        let data = fun(mem, call, 0x0064_53d0, &[lo, hi]);
+        if data == 0 {
+            let mut alpha = fun(mem, call, 0x0071_2c30, &[blend]);
+            let (width, height, format, name) = (
+                frame.wrapping_sub(0x114),
+                frame.wrapping_sub(0x118),
+                frame.wrapping_sub(0x110),
+                frame.wrapping_sub(0x104),
+            );
+            mem.write(width, 4u32);
+            mem.write(height, 6u32);
+            mem.write(format, 1u32);
+            #[allow(clippy::cast_possible_truncation)] // the low word
+            let low = w as u32;
+            let addr = low & 0x3fff;
+            if addr == 0 {
+                let text: [u8; 10] = mem.read(g(mem, 0x00b4_1b50));
+                mem.write(name, text);
+                mem.write(format, 0u32);
+            } else {
+                #[allow(clippy::cast_possible_truncation)] // 4-bit fields
+                let bit = |k: u32| u32::from(1u16 << ((w >> k) as u32 & 0xf));
+                let args = [addr, low >> 20 & 0x3f, 0, 0, bit(26), bit(30), name];
+                if fun(mem, call, 0x0064_5450, &args) == 0 {
+                    return 0;
+                }
+                mem.write(format, 1u32);
+                alpha |= 8;
+            }
+            fun(mem, call, 0x0064_4de0, &[lo, hi, alpha | 0x800]);
+            let args = [lo, hi, 1, width, height, name, format];
+            fun(mem, call, 0x0064_5040, &args);
+            let r = fun(mem, call, 0x0064_5780, &[lo, hi]);
+            if r != 0 {
+                return r;
+            }
+            return fun(mem, call, 0x0064_5280, &[lo, hi]);
+        }
+        if fun(mem, call, 0x0063_fdb0, &[data, 0, 4, 6]) == 0 {
+            return 0;
+        }
+        let parts: u32 = mem.read(data.wrapping_add(0x94));
+        let part = |mem: &M, o: u32| mem.read::<u32>(parts.wrapping_add(o));
+        let (verts, colours, uvs, indices) = (
+            part(mem, 0xc),
+            part(mem, 0x14),
+            part(mem, 0x18),
+            part(mem, 0x1c),
+        );
+        mem.write(indices, [0x1_0000u32, 0x1_0002, 0x2_0003]);
+        let z = 1.01f32.to_bits();
+        mem.write(verts, [x0, y0, z, x1, y0, z, x0, y1, z, x1, y1, z]);
+        let (v0, v1) = (store(sub(1.0, load(v0))), store(sub(1.0, load(v1))));
+        mem.write(uvs, [u0, v0, u1, v0, u0, v1, u1, v1]);
+        let c = colour
+            .to_le_bytes()
+            .map(|b| store(div(f64::from(b), 255.0)));
+        for k in 0..4u32 {
+            mem.write(colours.wrapping_add(0x10 * k), c);
+        }
+        let fill: [u32; 16] = mem.read(g(mem, 0x0230_fca0));
+        mem.write(data, fill);
+        for o in [0x2cu32, 0x1c, 0xc] {
+            mem.write(data.wrapping_add(o), 0u32);
+        }
+        mem.write(data.wrapping_add(0x3c), 1f32);
+        mem.write(data.wrapping_add(0x98), [(-9_999_999f32).to_bits(); 3]);
+        mem.write(data.wrapping_add(0xa4), [9_999_999f32.to_bits(); 3]);
+        mem.write(data.wrapping_add(0x80), 0u32);
+        let parts: u32 = mem.read(data.wrapping_add(0x94));
+        mem.write(parts.wrapping_add(0x24), 1u32);
+        fun(mem, call, 0x0064_5710, &[lo, hi, 1]);
+        fun(mem, call, 0x0064_5600, &[lo, hi])
+    }
+
     /// `pppKeMdlBmpDraw_Body_00748b00(obj)` (`0x00748b00`; `pppKeMdlBmpDraw`):
     /// the model's triangles as GS packets in a 0x1a0-byte scratch block
     /// (`op_spr_alloc`; fixed tags and registers, then per triangle the

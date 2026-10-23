@@ -5828,6 +5828,14 @@ ported! {
         draw::bridge::ppp_draw_filter_packet(&mut mem(), obj, tex, prog, frame, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
     }
+    /// `pppDrawFilterRender_00756d20(pk)`: its locals (the data buffer's
+    /// counts, format and name) on this shim's stack, the frame pointer at
+    /// their end.
+    pppDrawFilterRender_00756d20 @ 0x0075_6d20 => extern "C" fn ppp_draw_filter_render(pk: u32) -> u32 {
+        let mut frame = super::StackFrame::<0x46>::new();
+        let ebp = frame.at() + 0x118;
+        draw::bridge::ppp_draw_filter_render(&mut mem(), pk, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppPartLoop()`: `Sg_GetDBuffDC`'s out word on this shim's stack.
     pppPartLoop @ 0x0076_2240 => extern "C" fn ppp_part_loop() -> u32 {
         let mut frame = super::StackFrame::<1>::new();

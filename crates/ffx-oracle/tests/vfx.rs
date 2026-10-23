@@ -10402,6 +10402,83 @@ fn nei_draw_mdl_ts_point_light_draw_matches_the_original() {
     );
 }
 
+/// `pppDrawFilterRender_00756d20` against the port: both render-data
+/// paths, recorded renderer calls (the data buffer's counts and format by
+/// value, its name's first two words), small and odd floats, textured and
+/// untextured words.
+#[test]
+#[allow(clippy::many_single_char_names)]
+fn draw_filter_render_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_6d20);
+        let cells = p.alloc(0x20);
+        for (sym, words, ret) in [
+            (0x0064_53d0u32, &[0u8, 0][..], Some(cells)),
+            (0x0071_2c30, &[0], Some(cells + 4)),
+            (0x0064_5450, &[0; 7], Some(cells + 8)),
+            (0x0064_4de0, &[0; 3], None),
+            (0x0064_5040, &[0, 0, 0, 1, 1, 2, 1], None),
+            (0x0064_5780, &[0, 0], Some(cells + 0xc)),
+            (0x0064_5280, &[0, 0], None),
+            (0x0063_fdb0, &[0; 4], Some(cells + 0x10)),
+            (0x0064_5710, &[0; 3], None),
+            (0x0064_5600, &[0, 0], None),
+        ] {
+            far_recorder(&mut p, sym, words, ret);
+        }
+        let (pk, data, parts, bufs) =
+            (p.alloc(0x100), p.alloc(0xc0), p.alloc(0x40), p.alloc(0x100));
+        let fill = p.sym(0x0230_fca0);
+        for round in 0..1500 {
+            let what = format!("pppDrawFilterRender round {round}");
+            p.fill(pk, 0x100, &mut rng);
+            p.fill(data, 0xc0, &mut rng);
+            p.fill(parts, 0x40, &mut rng);
+            p.fill(bufs, 0x100, &mut rng);
+            p.fill(fill, 0x40, &mut rng);
+            for o in (0x90..0xc8).step_by(4) {
+                let v = if rng.chance(85) {
+                    ranged(&mut rng, -2.0, 2.0)
+                } else {
+                    rng.pick(&[
+                        0x7fc0_0000u32,
+                        0xffc0_0000,
+                        0x7f80_0000,
+                        0x8000_0000,
+                        1,
+                        0x3f80_0000,
+                    ])
+                };
+                p.set(pk + o, v);
+            }
+            if rng.chance(30) {
+                let w: u32 = p.get(pk + 0x20);
+                p.set(pk + 0x20, w & !0x3fff);
+            }
+            let (lo, hi) = (rng.next(), rng.below(4));
+            p.set(pk + 0x98, lo);
+            p.set(pk + 0x9c, hi);
+            p.set(cells, if rng.chance(50) { data } else { 0 });
+            for c in [cells + 4, cells + 8, cells + 0xc, cells + 0x10] {
+                let v = if rng.chance(30) { 0 } else { rng.next() };
+                p.set(c, v);
+            }
+            p.set(data + 0x94, parts);
+            for (k, o) in [0xcu32, 0x14, 0x18, 0x1c].into_iter().enumerate() {
+                p.set(parts + o, bufs + 0x40 * u32::try_from(k).unwrap());
+            }
+            check_deep_n(&mut p, &what, 0x0075_6d20, &[pk], |o, frame| {
+                Some(draw::bridge::ppp_draw_filter_render(
+                    o,
+                    pk,
+                    frame,
+                    &mut call_original,
+                ))
+            });
+        }
+    }
+}
+
 #[test]
 fn mdl_3_draw_matches_the_original() {
     use mdl::bridge as d;
