@@ -9811,6 +9811,189 @@ pub mod bridge {
         }
     }
 
+    /// `opu_jump_etc(host, cmd)` (`0x008168c0`, opus command table
+    /// `0x00c4914c`; Fahrenheit's Switch name) -> the next command: tests
+    /// by the flag nibble `u16 host +0x21a & 0xf000` (`u` = the unit `host
+    /// +0x220`, read once at the start; `c` = byte `u +0x18`; `h` =
+    /// `g_EtChrHandles[c]`; flag 0x800 inverts most tests). A taken test
+    /// returns `cmd` plus the command's `i16` distance, else `cmd` plus the
+    /// command's length:
+    ///
+    /// - 0: `i16 cmd +2 > op_irandom_p(0x100)`; 0x1000, 0x2000:
+    ///   `MsEffectGetLastMagicNum()` (or, in debug mode, a nonzero `i16
+    ///   host +0x3b8`) = `i16 cmd +2`; 0x7000 (= with flag 0x1000) and
+    ///   0x8000 (!=): `g_EtChr[opus_get_chr_status_index(h, 0, 0)] +4` =
+    ///   `i16 cmd +2`. Distance `i16 cmd +4`, length 6.
+    /// - 0x5000: `yiGetSceneno()` (our `GetGlobal018ded30_00908f40`), 0x6000:
+    ///   `MsBattleGetNum()` (0 when byte `host +0x21e` is 0), against `u32
+    ///   cmd +2` (= with no 0x800). Distance `i16 cmd +6`, length 8.
+    /// - Length 4, distance `i16 cmd +2`: 0x3000, 0x4000: (only when byte
+    ///   `host +0x21e` is set) `MsChrGroundFlag(c)` / `MsGetChrByte41f(c)`
+    ///   nonzero (Switch: `MsGetChrDisableMove` / `DisableJump`); 0x9000:
+    ///   `MsGetChrSbyte508(c)` (`MsGetChrAdjustPos`) zero (0x800: nonzero);
+    ///   0xb000: `Ch_GetVel(h, host)`, then its length through the
+    ///   emulated VU0 (`g_Vu0_VfMove` = the squares and their sum, `g_Vu0_Q`
+    ///   = `sqrt|sum|`, `VfMove.x` = `Vf00.x + Q`; `host +0x10..+0x20` =
+    ///   `VfMove`) below 0.4 (nibble `& 0xf00` = 0), 0.4..1.2 (0x200) or at
+    ///   least 1.2 (0x400; other values return `cmd`); 0xc000: `Sg_GetSuimen()`
+    ///   (`f32`) at most `Ch_OptposGet(h, 1, host)`'s y; 0xd000: byte `u +0xb3
+    ///   & g_EtChrDrawFlags[c]` set (0x800: clear); 0xe000: `g_OpusNoTable`
+    ///   byte `+0x14` of entry `u16 u +0x14` = `c`; 0xf000: flag 0x800 set
+    ///   outside debug mode, clear in it.
+    /// - 0xa000 (debug pause): in debug mode, with `g_OpDebugChrFlags` bit
+    ///   0x10 (`g_OpOvlEffectOn`) or 1 (not), and unless byte `0x012a1390`
+    ///   has bits 0x80 and 0x20: byte `host +0x210` = 1 and `cmd` again;
+    ///   else `cmd + 2`.
+    ///
+    /// Other nibbles return `cmd`. Callees through `call`, `Sg_GetSuimen`
+    /// through `fcall`; x87 compares (NaN fails every test).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_jump_etc<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, sqrt, store};
+        let flags: u16 = mem.read(host.wrapping_add(0x21a));
+        let u = unit(mem, host);
+        let s16 =
+            |mem: &M, at: u32| i32::from(mem.read::<i16>(cmd.wrapping_add(at))).cast_unsigned();
+        let flags_now = |mem: &M| mem.read::<u16>(host.wrapping_add(0x21a));
+        let chr = |mem: &M| u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        let handle = |mem: &M| {
+            crate::et::bridge::CHR_HANDLES
+                .ptr(mem)
+                .at(chr(mem))
+                .get(mem)
+        };
+        let debug = |mem: &M| mem.read::<u8>(g(mem, 0x0232_2790)) != 0;
+        let battle = |mem: &M| mem.read::<u8>(host.wrapping_add(0x21e)) != 0;
+        // (taken, distance offset, length)
+        let (jump, at, len) = match flags & 0xf000 {
+            0 => {
+                let n = s16(mem, 2);
+                let r = call(mem, g(mem, 0x007e_5d50), &[0x100]);
+                (n.cast_signed() > r.cast_signed(), 4, 6)
+            }
+            0x1000 | 0x2000 => {
+                let mut m = call(mem, g(mem, 0x0078_7be0), &[]);
+                let k: i16 = mem.read(host.wrapping_add(0x3b8));
+                if debug(mem) && k != 0 {
+                    m = i32::from(k).cast_unsigned();
+                }
+                (m == s16(mem, 2), 4, 6)
+            }
+            0x3000 | 0x4000 => {
+                if !battle(mem) {
+                    return cmd.wrapping_add(4);
+                }
+                let d = s16(mem, 2);
+                let f = if flags & 0xf000 == 0x3000 {
+                    0x0079_4db0
+                } else {
+                    0x0079_4d70
+                };
+                let c = chr(mem);
+                if call(mem, g(mem, f), &[c]) == 0 {
+                    return cmd.wrapping_add(4);
+                }
+                return cmd.wrapping_add(d);
+            }
+            k @ (0x5000 | 0x6000) => {
+                let v = if k == 0x5000 {
+                    call(mem, g(mem, 0x0090_8f40), &[])
+                } else if battle(mem) {
+                    call(mem, g(mem, 0x0078_16b0), &[])
+                } else {
+                    0
+                };
+                let want: u32 = mem.read(cmd.wrapping_add(2));
+                ((v == want) == (flags_now(mem) & 0x800 == 0), 6, 8)
+            }
+            0x7000 | 0x8000 => {
+                let h = handle(mem);
+                let i = call(mem, g(mem, 0x007f_e970), &[h, 0, 0]);
+                let no: u32 = mem.read(g(mem, 0x012a_22c4).wrapping_add(i << 5));
+                let same = no == s16(mem, 2);
+                (same == (flags_now(mem) & 0x1000 != 0), 4, 6)
+            }
+            0x9000 => {
+                let c = chr(mem);
+                let r = call(mem, g(mem, 0x0079_4240), &[c]);
+                ((r == 0) == (flags_now(mem) & 0x800 == 0), 2, 4)
+            }
+            0xa000 => {
+                if debug(mem) {
+                    let bit = if mem.read::<u8>(g(mem, 0x011a_006a)) == 0 {
+                        1
+                    } else {
+                        0x10
+                    };
+                    let pad: u8 = mem.read(g(mem, 0x012a_1390));
+                    if mem.read::<u8>(g(mem, 0x0232_1580)) & bit != 0
+                        && (pad & 0x80 == 0 || pad & 0x20 == 0)
+                    {
+                        mem.write(host.wrapping_add(0x210), 1u8);
+                        return cmd;
+                    }
+                }
+                return cmd.wrapping_add(2);
+            }
+            0xb000 => {
+                let h = handle(mem);
+                call(mem, g(mem, 0x0083_4000), &[h, host]);
+                let v: [u32; 4] = mem.read(host);
+                let sq = |k: usize| store(mul(load(v[k]), load(v[k])));
+                let (y, z) = (sq(1), sq(2));
+                let sum = store(add(load(z), load(store(add(load(y), load(sq(0)))))));
+                let q = store(sqrt(load(sum).abs()));
+                mem.write(g(mem, 0x00c8_f788), q);
+                let vf00: u32 = mem.read(g(mem, 0x00c0_a004));
+                let x = store(add(load(vf00), load(q)));
+                let out = [x, y, z, v[3]];
+                mem.write(g(mem, 0x00c8_f980), out);
+                mem.write(host.wrapping_add(0x10), out);
+                let l = f64::from(f32::from_bits(x));
+                let lo: f64 = mem.read(g(mem, 0x00b4_8318));
+                let hi = f64::from(mem.read::<f32>(g(mem, 0x00b4_7c88)));
+                let jump = match flags_now(mem) & 0xf00 {
+                    0 => l < lo,
+                    0x200 => l >= lo && l < hi,
+                    0x400 => l >= hi,
+                    _ => return cmd,
+                };
+                (jump, 2, 4)
+            }
+            0xc000 => {
+                let s = f32::from_bits(store(fcall(mem, g(mem, 0x0083_60a0), &[])));
+                let h = handle(mem);
+                call(mem, g(mem, 0x0083_54f0), &[h, 1, host]);
+                let y: f32 = mem.read(host.wrapping_add(4));
+                (s <= y, 2, 4)
+            }
+            0xd000 => {
+                let c = chr(mem);
+                let mask = crate::et::bridge::DRAW_FLAGS.ptr(mem).at(c).get(mem);
+                let hit = mem.read::<u8>(u.wrapping_add(0xb3)) & mask != 0;
+                (hit == (flags & 0x800 == 0), 2, 4)
+            }
+            0xe000 => {
+                let i = u32::from(mem.read::<u16>(u.wrapping_add(0x14)));
+                let b: u8 = mem.read(g(mem, 0x012a_4118).wrapping_add(i << 5));
+                (u32::from(b) == chr(mem), 2, 4)
+            }
+            0xf000 => ((flags & 0x800 != 0) != debug(mem), 2, 4),
+            _ => return cmd,
+        };
+        if jump {
+            cmd.wrapping_add(s16(mem, at))
+        } else {
+            cmd.wrapping_add(len)
+        }
+    }
+
     /// `opu_jump_etc2(host, cmd)` (`0x00816e50`, opus command table
     /// `0x00c49150`) -> the next command: tests that branch to `cmd + i16
     /// cmd +2` or go on to `cmd + 4`, by the flag nibble (`u` = the host's

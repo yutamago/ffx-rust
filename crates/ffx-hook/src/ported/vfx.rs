@@ -6005,6 +6005,10 @@ ported! {
         op::bridge::op_oef2_tex_clut_cue_trans(&mut mem(), img, &mut |_, f, a| call_ptr(f, a))
     }
     // ---- round 37 c ----
+    /// `opu_jump_etc(host, cmd)`.
+    opu_jump_etc @ 0x0081_68c0 => extern "C" fn opu_jump_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_jump_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `opu_jump_etc2(host, cmd)`.
     opu_jump_etc2 @ 0x0081_6e50 => extern "C" fn opu_jump_etc2(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_jump_etc2(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
