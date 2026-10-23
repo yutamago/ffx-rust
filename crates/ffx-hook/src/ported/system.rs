@@ -6896,6 +6896,12 @@ ported! {
         let scratch = frame.at();
         tolib::bridge::to_btl_get_std_pad(&mut mem(), w, scratch, call_sym);
     }
+    /// `TOBtlGetMainPad(w)`: `MsGetSaveWindow`'s count in a 1-word frame.
+    TOBtlGetMainPad @ 0x0089_c900 => extern "C" fn to_btl_get_main_pad(w: u32) {
+        let mut frame = super::StackFrame::<1>::new();
+        let scratch = frame.at();
+        tolib::bridge::to_btl_get_main_pad(&mut mem(), w, scratch, call_sym);
+    }
     /// `TOBtlGetRightPad(w)`.
     TOBtlGetRightPad @ 0x008a_2690 => extern "C" fn to_btl_get_right_pad(w: u32) {
         tolib::bridge::to_btl_get_side_pad(&mut mem(), w, 0x8000, call_sym);

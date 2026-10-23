@@ -25397,3 +25397,199 @@ fn round42_target_pad_matches_the_original_on_the_snapshot() {
     };
     round42_target_pad(&mut a, &mut b, &mut Xorshift(0x4042_0042));
 }
+
+/// Small round 1 b: `TOBtlGetMainPad` over the logging stand-ins of
+/// [`round28_pad_prepare`] plus `inputIsPressButton` (from a cell) and
+/// `forceAutoBattleOff`.
+#[allow(
+    clippy::many_single_char_names,
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
+fn small1_main_pad(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x100);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let w = alloc(a, b, 0x100);
+    let list = alloc(a, b, 0x200) + 0x100;
+    for (k, (sym, n)) in (0u32..).zip([(0x0079_0790u32, 1u8), (0x0088_6ba0, 1)]) {
+        let mut v = marker(cursor, 0x2840 + k);
+        v.pop();
+        v.extend_from_slice(&logger_args(cursor, n));
+        let s = stand_in8(a, b, 0x80 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    let s = stand_in8(a, b, 0x100, &marker(cursor, 0x2850));
+    redirect(a, b, 0x0089_a630, s);
+    let s = stand_in8(a, b, 0x180, &logger_returning(cursor, 2, cells));
+    redirect(a, b, 0x0089_aca0, s);
+    let s = stand_in8(a, b, 0x200, &logger_returning(cursor, 2, cells + 4));
+    redirect(a, b, 0x0089_a330, s);
+    // the side pads' skip command, battle command, window and scene calls
+    let s = stand_in8(a, b, 0x280, &logger_returning(cursor, 1, cells + 8));
+    redirect(a, b, 0x0078_fb80, s);
+    let s = stand_in8(a, b, 0x300, &logger_returning(cursor, 1, cells + 0xc));
+    redirect(a, b, 0x0078_4ff0, s);
+    for (k, (sym, n)) in (0u32..).zip([(0x0079_2d60u32, 3u8), (0x0089_ade0, 1), (0x008a_e5a0, 1)]) {
+        let mut v = marker(cursor, 0x2860 + k);
+        v.pop();
+        v.extend_from_slice(&logger_args(cursor, n));
+        let s = stand_in8(a, b, 0x380 + 0x80 * k, &v);
+        redirect(a, b, sym, s);
+    }
+    let s = stand_in8(a, b, 0x500, &marker(cursor, 0x2870));
+    redirect(a, b, 0x0089_0eb0, s);
+    // the standard pad's MsCheckLeftWindow and MsGetSaveWindow (count
+    // from a cell into its third argument, the list from another)
+    let more = alloc(a, b, 0x10);
+    let windows = alloc(a, b, 0x40);
+    let scratch = alloc(a, b, 4);
+    let s = stand_in8(a, b, 0x580, &logger_returning(cursor, 1, more));
+    redirect(a, b, 0x0078_f700, s);
+    let mut v = logger_args(cursor, 2);
+    v.truncate(v.len() - 5);
+    v.extend_from_slice(&[0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]);
+    v.extend_from_slice(&(more + 4).to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0xa1]);
+    v.extend_from_slice(&(more + 8).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x600, &v);
+    redirect(a, b, 0x0078_5410, s);
+    put(a, b, more + 8, windows + 0x20);
+    // inputIsPressButton (the summon button) and forceAutoBattleOff
+    let press = alloc(a, b, 4);
+    let s = stand_in8(a, b, 0x680, &logger_returning(cursor, 1, press));
+    redirect(a, b, 0x0063_0cf0, s);
+    let s = stand_in8(a, b, 0x700, &marker(cursor, 0x2880));
+    redirect(a, b, 0x0078_71f0, s);
+    let [flag, missed] = [0x0133_d6e4, 0x0133_d6ec].map(|x| a.rebase(x));
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let [open, libra, depth, pad] =
+        [0x023c_c08c, 0x0133_d6e0, 0x023c_c092, 0x025d_09d2].map(|x| a.rebase(x));
+    let idle = a.rebase(t::SCROLL_DONE);
+    for k in 0..6000u32 {
+        put(a, b, cursor, log);
+        put(a, b, press, u32::from(rng.next().is_multiple_of(6)));
+        put(
+            a,
+            b,
+            more,
+            [0u32, 1, 5, u32::MAX][(rng.next() % 4) as usize],
+        );
+        put(
+            a,
+            b,
+            more + 4,
+            [0u32, 1, 2, 4, 8, u32::MAX, (-5i32).cast_unsigned()][(rng.next() % 7) as usize],
+        );
+        let entries: [u16; 0x20] = std::array::from_fn(|_| {
+            if (rng.next() >> 16).is_multiple_of(2) {
+                0xff
+            } else {
+                rng.next() as u16
+            }
+        });
+        put(a, b, windows, entries);
+        put(a, b, flag, rng.next() % 3);
+        put(a, b, missed, rng.next() % 3);
+        put(
+            a,
+            b,
+            cells,
+            [0u32, 1, 0xfe, u32::MAX][(rng.next() % 4) as usize],
+        );
+        put(a, b, cells + 4, [0u32, 1, 2][(rng.next() % 3) as usize]);
+        put(
+            a,
+            b,
+            cells + 8,
+            [0u32, 0x0001_0000, 0x3002, rng.next()][(rng.next() % 4) as usize],
+        );
+        put(a, b, cells + 0xc, u32::from(rng.next().is_multiple_of(3)));
+        put(a, b, open, u32::from(!rng.next().is_multiple_of(8)));
+        put(a, b, libra, [0u32, 0, 0, 1, 2][(rng.next() % 5) as usize]);
+        put(a, b, depth, [0i8, 1, 2, -1][(rng.next() % 4) as usize]);
+        let held = [
+            0u16,
+            0x9000,
+            0x3000,
+            0xc000,
+            0x6000,
+            0x1000,
+            0xa000,
+            rng.next() as u16,
+        ][(rng.next() % 8) as usize];
+        let trigger = [
+            0u16,
+            0,
+            0,
+            0x40,
+            0x20,
+            0x04,
+            0x10,
+            0x2000,
+            0x8000,
+            rng.next() as u16,
+        ][(rng.next() % 10) as usize];
+        let rep =
+            [0x1000u16, 0x4000, 0x5000, 0x8000, 0, rng.next() as u16][(rng.next() % 6) as usize];
+        put(a, b, pad, [held, trigger, rep]);
+        let bytes: [u32; 0x40] = std::array::from_fn(|_| rng.next());
+        put(a, b, w, bytes);
+        let items: [u32; 0x40] = std::array::from_fn(|_| rng.next());
+        put(a, b, list - 0x40, items);
+        put(a, b, w + 0x20, list);
+        put(
+            a,
+            b,
+            w + 0x88,
+            if rng.next().is_multiple_of(8) {
+                rng.next()
+            } else {
+                idle
+            },
+        );
+        let count = (1 + rng.next() % 20) as i16;
+        let step = (1 + rng.next() % 4) as i16;
+        let rows = (1 + rng.next() % 5) as i16;
+        put(a, b, w + 0x38, [step, rows]);
+        put(a, b, w + 0x44, count);
+        put(a, b, w + 0x40, (rng.next() % 14) as i16 - 2);
+        put(a, b, w + 0x42, (rng.next() % (count as u32 + 4)) as i16 - 2);
+        put(
+            a,
+            b,
+            w + 0xa,
+            [(1 + rng.next() % 3) as i8, (rng.next() % 4) as i8 - 1],
+        );
+        put(a, b, a.rebase(0x023c_c088), rng.next() as u16);
+        if k % 3 == 2 {
+            // the right window's list check, more often
+            put(a, b, pad + 2, 0x2000u16);
+        }
+        eax(a, 0x0089_c900, &[w]);
+        t::to_btl_get_main_pad(b, w, scratch, call);
+        let v: u32 = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory(&format!("main pad {k}"), a, b);
+    }
+}
+
+#[test]
+fn small1_main_pad_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    small1_main_pad(&mut a, &mut b, &mut Xorshift(0x5a11_0b01));
+}
+
+#[test]
+fn small1_main_pad_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    small1_main_pad(&mut a, &mut b, &mut Xorshift(0x5a11_0b02));
+}

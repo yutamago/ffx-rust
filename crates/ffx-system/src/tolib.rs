@@ -11159,15 +11159,21 @@ pub mod bridge {
         }
     }
 
-    /// Records the pick, then keeps the cursor's row shown: the first
-    /// shown row (`+0x40`) goes up a row when the cursor is above it and
-    /// down one when it is past the `+0x3a` rows shown (with `fns`, the
-    /// step function `+0x88` becomes `TOBtlPadScrollDown`/`Up`), then is
-    /// clamped to the list (0 when it all fits). Returns the cursor.
-    #[allow(clippy::cast_possible_truncation)] // `mov word`
+    /// Records the pick, then keeps the cursor's row shown
+    /// ([`show_cursor_row`]). Returns the cursor.
     fn follow_cursor<M: Mem>(mem: &mut M, w: u32, fns: bool) -> i16 {
-        let r16 = |mem: &M, off: u32| -> i16 { mem.read(w.wrapping_add(off)) };
         record_pick(mem, w);
+        show_cursor_row(mem, w, fns)
+    }
+
+    /// Keeps the cursor's row shown: the first shown row (`+0x40`) goes
+    /// up a row when the cursor is above it and down one when it is past
+    /// the `+0x3a` rows shown (with `fns`, the step function `+0x88`
+    /// becomes `TOBtlPadScrollDown`/`Up`), then is clamped to the list (0
+    /// when it all fits). Returns the cursor.
+    #[allow(clippy::cast_possible_truncation)] // `mov word`
+    fn show_cursor_row<M: Mem>(mem: &mut M, w: u32, fns: bool) -> i16 {
+        let r16 = |mem: &M, off: u32| -> i16 { mem.read(w.wrapping_add(off)) };
         let cursor = r16(mem, 0x42);
         let step = r16(mem, 0x38);
         if cursor < r16(mem, 0x40) {
@@ -12358,6 +12364,200 @@ pub mod bridge {
             record_pick(mem, w);
             call(mem, CLICK, &[1]);
         }
+    }
+
+    /// `TOBtlGetMainPad(w)` (`0x0089c900`, from `TOWaitBtlWinMain`): one
+    /// frame of the battle's main command window `w` while the battle
+    /// windows are open (`g_BtlWindowOpen`) and its step function (`+0x88`)
+    /// is the idle [`SCROLL_DONE`]. Libra's auto mode (`0x0133d6e0` 1) with
+    /// a missed command (`g_BtlCommandMissed` 1) forces the trigger word
+    /// (`0x025d09d4`) to 0x10. Then:
+    /// - 0x10: the character's skip command (`MsMenuGetChrSkipCommand`)
+    ///   becomes its battle command (`0x023cc040` as in
+    ///   [`to_btl_get_side_pad`], `MsSetBtlCommand(record, 0, 0)`), the
+    ///   window closed (`TOCloseBtlWindow(i16 0x023cc088)`), the help
+    ///   window flag (`g_BtlHelpWinOpen`) cleared, `TOSeqInitAllScene(2)`,
+    ///   `0x023cc088` 0xff and click 1; without one click 3 and go on.
+    /// - the summon button (`inputIsPressButton(0x08000000)`): with no
+    ///   summon out (`MsGetSaveChrSummon`) `TOBtlSetNextAction(actor,
+    ///   0x3002)` 1 clicks 1; anything else clicks 3.
+    /// - 0x8000 with `MsCheckLeftWindow(actor)` above 0 goes to the left
+    ///   window (`TOBtlSetNextAction(actor, 0xffff)`, click 1); 0x2000 to
+    ///   the right one (`0xfffe`, click 1) when `MsGetSaveWindow(actor,
+    ///   0xd, &n)` lists a command, trailing 0xff entries not counted (`n`
+    ///   lives in `scratch`), else click 3.
+    ///
+    /// Otherwise the repeated up (0x1000) and down (0x4000) move the
+    /// cursor a row ([`wrap_row`]) and the pick is recorded. In libra's
+    /// auto mode `0x0133d6e4` is cleared, a cursor past the first entry
+    /// goes back to it, `TOCheckBtlCommandUse(i16 0x023cc088, 0x3000)`
+    /// negative turns auto battle off (`forceAutoBattleOff`) and the
+    /// trigger word becomes 0x20. Then cancel (0x40) undoes a pick
+    /// ([`undo_pick`]) or at a deeper level goes back
+    /// (`TOBtlSetPrevAction()`, `+1` stepped, click 4); confirm (0x20)
+    /// checks the current pick ([`confirm_pick`]); anything else keeps the
+    /// cursor's row shown ([`show_cursor_row`]) and a moved cursor sets
+    /// `+0x1e`, records the pick again and clicks 1.
+    pub fn to_btl_get_main_pad<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        const CLICK: u32 = 0x0088_6ba0;
+        let pad = mem.rebase(0x025d_09d2);
+        if mem.read::<u32>(mem.rebase(0x023c_c08c)) == 0
+            || mem.read::<u32>(w.wrapping_add(0x88)) != mem.rebase(SCROLL_DONE)
+        {
+            return;
+        }
+        if LIBRA_AUTO.get(mem) == 1 && mem.read::<u32>(mem.rebase(0x0133_d6ec)) == 1 {
+            MENU_PAD_TRG.set(mem, 0x10);
+        }
+        if main_pad_shortcut(mem, w, pad, scratch, &mut call) {
+            return;
+        }
+        let r16 = |mem: &M, off: u32| -> i16 { mem.read(w.wrapping_add(off)) };
+        let at = w.wrapping_add(0x42);
+        let old = r16(mem, 0x42);
+        let rep: u16 = mem.read(pad.wrapping_add(4));
+        if rep & 0x1000 != 0 {
+            mem.write(at, old.wrapping_sub(r16(mem, 0x38)));
+        }
+        let rep: u16 = mem.read(pad.wrapping_add(4));
+        if rep & 0x4000 != 0 {
+            let c = r16(mem, 0x42);
+            mem.write(at, c.wrapping_add(r16(mem, 0x38)));
+        }
+        wrap_row(mem, w);
+        record_pick(mem, w);
+        if LIBRA_AUTO.get(mem) == 1 {
+            mem.write(mem.rebase(0x0133_d6e4), 0u32);
+            if r16(mem, 0x42) > 0 {
+                mem.write(at, 0i16);
+            }
+            let chr = i32::from(mem.read::<i16>(mem.rebase(0x023c_c088))).cast_unsigned();
+            if call(mem, 0x0089_aca0, &[chr, 0x3000]).cast_signed() < 0 {
+                call(mem, 0x0078_71f0, &[]);
+            }
+            MENU_PAD_TRG.set(mem, 0x20);
+        }
+        let trigger: u8 = mem.read(pad.wrapping_add(2));
+        if trigger & 0x40 != 0 {
+            if !undo_pick(mem, w, &mut call) && mem.read::<i8>(mem.rebase(0x023c_c092)) > 0 {
+                call(mem, 0x0089_a630, &[]);
+                let n = mem.read::<u8>(w.wrapping_add(1)).wrapping_add(1);
+                mem.write(w.wrapping_add(1), n);
+                call(mem, CLICK, &[4]);
+            }
+            return;
+        }
+        if trigger & 0x20 != 0 {
+            let checked = u32::from(mem.read::<u16>(pick_slot(mem, w, 0x16)));
+            confirm_pick(mem, w, checked, &mut call);
+            return;
+        }
+        let cursor = show_cursor_row(mem, w, true);
+        if cursor != old {
+            // the original's order: `+0x1e`, the pick's cursor, then its
+            // command (the list read again)
+            let list: u32 = mem.read(w.wrapping_add(0x20));
+            let command: u16 = mem.read(list.wrapping_add((i32::from(cursor) * 2).cast_unsigned()));
+            mem.write(w.wrapping_add(0x1e), command);
+            let at = pick_slot(mem, w, 0xe);
+            mem.write(at, cursor);
+            let command: u16 = mem.read(cursor_entry(mem, w));
+            let at = pick_slot(mem, w, 0x16);
+            mem.write(at, command);
+            call(mem, CLICK, &[1]);
+        }
+    }
+
+    /// [`to_btl_get_main_pad`]'s buttons before the d-pad (the skip
+    /// command, the summon button, the left and right windows); true when
+    /// one of them ends the frame.
+    fn main_pad_shortcut<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        pad: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> bool {
+        const CLICK: u32 = 0x0088_6ba0;
+        const NEXT_ACTION: u32 = 0x0089_a330;
+        let actor = |mem: &M| i32::from(mem.read::<i16>(w.wrapping_add(8))).cast_unsigned();
+        let trigger = |mem: &M| mem.read::<u32>(pad.wrapping_add(2));
+        if trigger(mem) & 0x10 != 0 {
+            let a = actor(mem);
+            #[allow(clippy::cast_possible_truncation)] // `movzx ecx, ax`
+            let skip = call(mem, 0x0078_fb80, &[a]) as u16;
+            if skip != 0 {
+                let rec = mem.rebase(0x023c_c040);
+                let who: u8 = mem.read(w.wrapping_add(8));
+                mem.write(rec, who);
+                mem.write(rec.wrapping_add(3), 1u8);
+                mem.write(rec.wrapping_add(8), skip);
+                mem.write(rec.wrapping_add(0xa), 0xffu16);
+                let bit = |mem: &M| 1u32.wrapping_shl(u32::from(mem.read::<u8>(w.wrapping_add(8))));
+                let b = bit(mem);
+                mem.write(rec.wrapping_add(0x10), b);
+                let b = bit(mem);
+                mem.write(mem.rebase(0x0133_d178), b);
+                call(mem, 0x0079_2d60, &[rec, 0, 0]);
+                let chr = mem.rebase(0x023c_c088);
+                let current = i32::from(mem.read::<i16>(chr)).cast_unsigned();
+                call(mem, 0x0089_ade0, &[current]);
+                mem.write(mem.rebase(0x0133_c93c), 0u8);
+                call(mem, 0x008a_e5a0, &[2]);
+                mem.write(chr, 0xffu16);
+                call(mem, CLICK, &[1]);
+                return true;
+            }
+            call(mem, CLICK, &[3]);
+        }
+        if call(mem, 0x0063_0cf0, &[0x0800_0000]) != 0 {
+            let ok = {
+                let a = actor(mem);
+                call(mem, 0x0078_4ff0, &[a]) == 0
+            } && {
+                let a = actor(mem);
+                call(mem, NEXT_ACTION, &[a, 0x3002]) == 1
+            };
+            call(mem, CLICK, &[if ok { 1 } else { 3 }]);
+            return true;
+        }
+        if trigger(mem) & 0x8000 != 0 {
+            let a = actor(mem);
+            if call(mem, 0x0078_f700, &[a]).cast_signed() > 0 {
+                let a = actor(mem);
+                call(mem, NEXT_ACTION, &[a, 0xffff]);
+                call(mem, CLICK, &[1]);
+                return true;
+            }
+        }
+        if trigger(mem) & 0x2000 == 0 {
+            return false;
+        }
+        mem.write(scratch, 0u32);
+        let a = actor(mem);
+        let list = call(mem, 0x0078_5410, &[a, 0xd, scratch]);
+        let mut n: i32 = mem.read(scratch);
+        // trailing empty (0xff) entries do not count
+        while n > 0
+            && mem.read::<u16>(list.wrapping_add(n.wrapping_mul(2).wrapping_sub(2).cast_unsigned()))
+                == 0xff
+        {
+            n -= 1;
+            mem.write(scratch, n);
+        }
+        if n == 0 {
+            call(mem, CLICK, &[3]);
+        } else {
+            let a = actor(mem);
+            call(mem, NEXT_ACTION, &[a, 0xfffe]);
+            call(mem, CLICK, &[1]);
+        }
+        true
     }
 
     /// `MenuItem_ApplyHeal_008c8c40(target)` (`0x008c8c40`, called by
