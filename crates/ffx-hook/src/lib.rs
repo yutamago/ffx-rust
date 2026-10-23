@@ -187,7 +187,7 @@ pub fn hooks() -> Vec<Hook> {
             // push ebx; mov ebx, esp; sub esp, 8
             prologue: &[0x53, 0x8b, 0xdc, 0x83, 0xec, 0x08],
             replacement: minimap::guide_update as *const () as usize,
-            original: Some(&minimap::ORIGINAL),
+            original: None,
             steal: 0,
         },
         Hook {

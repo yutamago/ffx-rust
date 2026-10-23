@@ -5112,6 +5112,27 @@ struct Swizzle([u8; 0x200]);
 #[repr(C, align(16))]
 struct Host([u8; 0x1000]);
 
+/// `rcbgGuideUpdateEx(guide, show)` (`0x0091da80`) in Rust, for the
+/// minimap's hook (`crate::minimap::guide_update`), which the game calls
+/// instead: the work area is the original's frame (`StackFrame`), the
+/// callees run through the game, `ST0` results at the x87's precision
+/// (`_CItan` in `ST0`; `AtelGetGuideMapAngEx` and the six-word
+/// `rcbgSetProjectionMatrixSub` as cdecl). Returns the original's `eax`.
+pub(crate) fn rcbg_guide_update_ex(g: u32, show: u32) -> u32 {
+    use ffx_field::guide_update;
+    let mut w = super::StackFrame::<{ (guide_update::WORK / 4) as usize }>::new();
+    guide_update::rcbg_guide_update_ex(
+        &mut mem(),
+        [g, show],
+        w.at(),
+        &mut |_, f, a| call_cdecl(f, a),
+        &mut |_, f, a| match a {
+            camera::FArgs::Stack(words) => super::call_cdecl_f64(f, words),
+            other => call_float(f, other),
+        },
+    )
+}
+
 /// Calls an original routine that returns in `ST0`: an `_CI*` intrinsic
 /// (its argument in `ST0`) or a cdecl function of two words; the result at
 /// the x87's precision.

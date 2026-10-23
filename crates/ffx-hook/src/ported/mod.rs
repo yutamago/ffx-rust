@@ -39,6 +39,7 @@ mod vfx_ppp;
 mod vfx_shape;
 
 pub(crate) use battle::ms_screen_process;
+pub(crate) use map::rcbg_guide_update_ex;
 
 /// Every replacement, for the hook table.
 #[must_use]

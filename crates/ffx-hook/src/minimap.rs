@@ -12,12 +12,10 @@
 //! changes.
 
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::log::log;
 
-/// The trampoline to the original `rcbgGuideUpdateEx`.
-pub static ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 /// The renderer draws its own minimap.
 pub static REPLACE: AtomicBool = AtomicBool::new(false);
 
@@ -45,23 +43,21 @@ const MARKER: u32 = 0x0086_b740;
 const FOG_REVEAL: u32 = 0x0091_f420;
 const AFTER_DRAW: u32 = 0x008e_5cd0;
 
-/// Replaces `rcbgGuideUpdateEx` (see the module's notes).
+/// Replaces `rcbgGuideUpdateEx` (see the module's notes). The game's own
+/// minimap runs the Rust port (`ffx_field::guide_update`) and returns its
+/// `eax` (`rcbgGuideUpdate` hands it on); the renderer's returns 0.
 ///
 /// # Safety
 /// Called by the game, on its thread.
-pub unsafe extern "C" fn guide_update(guide: usize, show: u32) {
+pub unsafe extern "C" fn guide_update(guide: usize, show: u32) -> u32 {
     if !REPLACE.load(Ordering::Acquire) || guide == 0 {
-        // SAFETY: the trampoline runs the original with the same arguments.
-        unsafe {
-            let original: unsafe extern "C" fn(usize, u32) =
-                std::mem::transmute(ORIGINAL.load(Ordering::Acquire));
-            original(guide, show);
-        }
-        return;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        return crate::ported::rcbg_guide_update_ex(guide as u32, show);
     }
     // SAFETY: the game's own functions and globals, as the original uses
     // them, on its thread.
     unsafe { replace(guide, show) };
+    0
 }
 
 unsafe fn replace(guide: usize, show: u32) {
