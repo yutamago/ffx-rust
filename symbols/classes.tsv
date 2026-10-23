@@ -6040,7 +6040,7 @@
 0x0076c320	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CDfileSize_CD
 0x0076c410	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CDfileSize_CD_EX
 0x0076c440	logic	default (no rule: ported to be safe)
-0x0076c490	logic	default (no rule: ported to be safe)
+0x0076c490	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdReadSync_0076c490
 0x0076c510	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdSetModule_0076c510
 0x0076c560	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdEnvInit
 0x0076ccb0	platform	only called from platform code (Sa_CdRead_task)
@@ -6101,7 +6101,7 @@
 0x0076ece0	logic	default (no rule: ported to be safe)
 0x0076ed10	glue	glue name (FMOD or the movie player): Movie_IsBusy_0076ed10
 0x0076ed70	dead	unreachable from the entry point and every pointer table
-0x0076edc0	logic	default (no rule: ported to be safe)
+0x0076edc0	glue	glue name (FMOD or the movie player): MovieCameraFrame_0076edc0
 0x0076ef80	logic	default (no rule: ported to be safe)
 0x0076efa0	glue	glue name (FMOD or the movie player): movie_err
 0x0076efb0	glue	glue name (FMOD or the movie player): movie_frame_prog
@@ -12290,7 +12290,7 @@
 0x00879a70	logic	default (no rule: ported to be safe)
 0x00879b60	debug	reviewed: reads a host-PC file into a source buffer (AtelPCOpen, sceRead); caller AtelLoadSourceData (script round 25)
 0x00879c30	platform	thin wrapper: only forwards to platform code (FlushCache, sceClose)
-0x00879c60	logic	default (no rule: ported to be safe)
+0x00879c60	debug	reviewed: AtelPCCreate: tools/refs.py finds one ref, a call at 0x878437 inside Native_c000, which runs only after TkIsDebug 0x887d10 (xor eax,eax; ret) (small round 5)
 0x00879cf0	platform	reviewed: AtelPCOpen: opens host0: files on the PS2 dev host (script round 19)
 0x00879d60	platform	reviewed: AtelPCOpen2: opens host0: files on the PS2 dev host (script round 19)
 0x00879de0	platform	thin wrapper: only forwards to platform code (FlushCache, sceRead)
@@ -16162,7 +16162,7 @@
 0x00942860	dead	unreachable from the entry point and every pointer table
 0x00942880	dead	unreachable from the entry point and every pointer table
 0x009428a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): MemSystem_Ensure
-0x009428b0	logic	default (no rule: ported to be safe)
+0x009428b0	platform	reviewed: MemSystem_Ensure slow path: allocator setup with an SEH frame; refs.py: 5 refs, all in allocator code (0x9427fd, 0x9428a7, 0x942967, 0x94261c, 0xaf1297) (pc round 4)
 0x00942950	dead	unreachable from the entry point and every pointer table
 0x009429f0	dead	unreachable from the entry point and every pointer table
 0x00942a20	dead	unreachable from the entry point and every pointer table
@@ -16594,10 +16594,10 @@
 0x009de880	dead	unreachable from the entry point and every pointer table
 0x009de8a0	dead	unreachable from the entry point and every pointer table
 0x009de8c0	dead	unreachable from the entry point and every pointer table
-0x009de900	logic	default (no rule: ported to be safe)
+0x009de900	dead	reviewed: refs.py: 0 refs; one of 203 PhyreEngine copies (pc round 4)
 0x009de940	dead	unreachable from the entry point and every pointer table
 0x009de980	dead	unreachable from the entry point and every pointer table
-0x009de9c0	logic	default (no rule: ported to be safe)
+0x009de9c0	dead	reviewed: refs.py: 0 refs; one of 116 PhyreEngine copies (pc round 4)
 0x009dea00	dead	unreachable from the entry point and every pointer table
 0x009dea40	dead	unreachable from the entry point and every pointer table
 0x009dea80	dead	unreachable from the entry point and every pointer table
@@ -16672,7 +16672,7 @@
 0x009dfa90	dead	unreachable from the entry point and every pointer table
 0x009dfad0	dead	unreachable from the entry point and every pointer table
 0x009dfb00	dead	unreachable from the entry point and every pointer table
-0x009dfb30	logic	default (no rule: ported to be safe)
+0x009dfb30	glue	reviewed: PhyreEngine PClassDescriptor constructor; dupes.py family of 70 copies; 18 refs, all from Phyre_* functions (pc round 4)
 0x00a25860	glue	calls PhyreEngine Phyre_PBase_GetClassDescriptor
 0x00a258c0	glue	reviewed: slot of the Phyre PMethodCallerConcrete vtable 0xb77c2c (pc round 1)
 0x00a25960	dead	unreachable from the entry point and every pointer table
@@ -16713,7 +16713,7 @@
 0x00a267f0	glue	calls PhyreEngine Phyre_PRendering_PRenderer_beginScene, Phyre_PRendering_PRenderer_endScene, Phyre_PRendering_PRenderer_setColorTarget
 0x00a26870	dead	unreachable from the entry point and every pointer table
 0x00a268f0	dead	unreachable from the entry point and every pointer table
-0x00a26960	logic	default (no rule: ported to be safe)
+0x00a26960	glue	reviewed: bare jmp to IggyMenuManager_SetViewport_00a26a20 (ported); one ref, PhyreScene_resize 0x66c658 (pc round 4)
 0x00a26970	dead	unreachable from the entry point and every pointer table
 0x00a269a0	dead	unreachable from the entry point and every pointer table
 0x00a269e0	dead	unreachable from the entry point and every pointer table

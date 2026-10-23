@@ -25946,3 +25946,478 @@ fn small2_d_matches_the_original_on_the_snapshot() {
     };
     small2_d(&mut a, &mut b, &mut Xorshift(0x5a11_2d02));
 }
+
+/// Logging stand-ins for `(sym, args)`: each logs its tag (0x5500 + its
+/// index) and arguments at `*cursor` and returns the word in its own
+/// cell. Returns the log, the cursor and the cells.
+#[allow(clippy::many_single_char_names)] // a, b: the oracles
+fn small5_stubs(a: &mut Oracle, b: &mut Oracle, list: &[(u32, u8)]) -> (u32, u32, Vec<u32>) {
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let mut cells = vec![];
+    for (k, &(sym, n)) in list.iter().enumerate() {
+        let k = u32::try_from(k).unwrap();
+        let cell = alloc(a, b, 8);
+        let mut v = vec![0x8b, 0x0d];
+        v.extend_from_slice(&cursor.to_le_bytes());
+        v.extend_from_slice(&[0xc7, 0x01]);
+        v.extend_from_slice(&(0x5500 + k).to_le_bytes());
+        v.extend_from_slice(&[0x83, 0x05]);
+        v.extend_from_slice(&cursor.to_le_bytes());
+        v.push(4);
+        v.extend(logger_returning(cursor, n, cell));
+        // mov edx, [cell + 4] before the ret: a 64-bit result's high half
+        v.pop();
+        v.extend_from_slice(&[0x8b, 0x15]);
+        v.extend_from_slice(&(cell + 4).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0x80 * k, &v);
+        redirect(a, b, sym, s);
+        cells.push(cell);
+    }
+    (log, cursor, cells)
+}
+
+/// Small round 5 c: `CdReadSync_0076c490`, `TOWaitBtlWinTarget_008a8be0`,
+/// `TOMenuFirstReadProc_008a8c10` (every step, polls done or not) and
+/// `Pause_Enter`, every callee a logging stand-in.
+#[allow(clippy::too_many_lines)] // one block per function
+fn small5_c(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::{cd, tolib};
+    // callees by their ffx.sym address, as the hook's call_sym
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call(f, Conv::Cdecl, args).unwrap().eax
+    };
+    let call64 = |m: &mut Oracle, f: u32| {
+        let f = m.rebase(f);
+        let r = m.call(f, Conv::Cdecl, &[]).unwrap();
+        (u64::from(r.edx) << 32) | u64::from(r.eax)
+    };
+    let mut list: Vec<(u32, u8)> = vec![];
+    list.extend(
+        cd::bridge::READ_SYNC_CALLS
+            .iter()
+            .zip([0u8, 0, 1, 0, 1, 3])
+            .map(|(&f, n)| (f, n)),
+    );
+    list.push((0x0089_d390, 1));
+    list.extend(
+        tolib::bridge::MENU_FIRST_READ_CALLS
+            .iter()
+            .zip([0u8, 0, 1, 3, 0, 2, 0, 3])
+            .map(|(&f, n)| (f, n)),
+    );
+    list.extend(
+        tolib::bridge::PAUSE_ENTER_CALLS
+            .iter()
+            .zip([0u8, 1, 1, 0, 0, 0, 0])
+            .map(|(&f, n)| (f, n)),
+    );
+    let (log, cursor, cells) = small5_stubs(a, b, &list);
+    let channels = cd::bridge::CHANNELS.ptr(&*b).addr;
+    let task = alloc(a, b, 0x40);
+    let pick = |rng: &mut Xorshift| [0u32, 0, 1, 2, rng.next()][(rng.next() % 5) as usize];
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        for &c in &cells {
+            let (lo, hi) = (pick(rng), rng.next());
+            put(a, b, c, lo);
+            put(a, b, c + 4, hi);
+        }
+        match k % 4 {
+            0 => {
+                for ch in 0..64 {
+                    put(a, b, channels + ch * 0x38 + 0x31, 0u8);
+                }
+                if !rng.next().is_multiple_of(3) {
+                    let ch = rng.next() % 64;
+                    put(
+                        a,
+                        b,
+                        channels + ch * 0x38 + 0x31,
+                        u8::try_from(rng.next() % 255 + 1).unwrap(),
+                    );
+                }
+                set(a, b, cd::bridge::READ_SEMA, rng.next());
+                let mode = [0u32, 1, 1, 2, u32::MAX][(rng.next() % 5) as usize];
+                let ra = eax(a, 0x0076_c490, &[mode]);
+                let rb = cd::bridge::read_sync(b, mode, call);
+                assert_eq!(ra, rb, "CdReadSync {k} mode {mode}");
+            }
+            1 => {
+                let w = rng.next();
+                let ra = eax(a, 0x008a_8be0, &[w]);
+                let rb = tolib::bridge::wait_btl_win_target(b, w, call);
+                assert_eq!(ra, rb, "TOWaitBtlWinTarget {k}");
+            }
+            2 => {
+                let step = if rng.next().is_multiple_of(8) {
+                    rng.next()
+                } else if rng.next().is_multiple_of(4) {
+                    1
+                } else {
+                    rng.next() % 0x1a
+                };
+                put(a, b, task + 0x1c, step);
+                let mode = [
+                    0x0080_0000u32,
+                    0x0080_ffff,
+                    0x0081_0000,
+                    0x0180_0000,
+                    rng.next(),
+                ][(rng.next() % 5) as usize];
+                set(a, b, tolib::bridge::MN2_MENU_MODE, mode);
+                set(a, b, tolib::bridge::MENU_MAIN_ACTIVE_MASK, rng.next());
+                set(
+                    a,
+                    b,
+                    tolib::bridge::MENU_FIRST_READ_END,
+                    rng.next().to_le_bytes()[0],
+                );
+                let ra = eax(a, 0x008a_8c10, &[task]);
+                let rb = tolib::bridge::menu_first_read_proc(b, task, call);
+                assert_eq!(ra, rb, "TOMenuFirstReadProc {k} step {step:#x}");
+            }
+            _ => {
+                set(a, b, tolib::bridge::MOVIE_PICTURE_ON, pick(rng));
+                for g in [
+                    tolib::bridge::PAUSE_ON,
+                    tolib::bridge::PAUSE_FADE,
+                    tolib::bridge::PAUSE_FADE_STEP,
+                    tolib::bridge::PAUSE_ENTERED,
+                ] {
+                    set(a, b, g, rng.next());
+                }
+                let ra = eax(a, 0x008a_b3d0, &[]);
+                let rb = tolib::bridge::pause_enter(b, call, call64);
+                assert_eq!(ra, rb, "Pause_Enter {k}");
+            }
+        }
+        same_memory(&format!("small5 c {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn small5_c_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    small5_c(&mut a, &mut b, &mut Xorshift(0x5a11_5c01));
+}
+
+#[test]
+fn small5_c_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    small5_c(&mut a, &mut b, &mut Xorshift(0x5a11_5c02));
+}
+
+/// Small round 5 e: `TOBtlDrawInfoWinElementLamp` and
+/// `TOBtlDrawScanWinElementLamp` (the same code) for elements 0..=3 and
+/// others, every flag combination; the lamp flags and the shape maker are
+/// logging stand-ins (the shape returns the log position), the two remaps
+/// return their argument times a per-case factor (0, negative, NaN and
+/// infinity included).
+#[allow(clippy::many_single_char_names)] // a, b: the oracles; f, k, s, v
+fn small5_e(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::tolib;
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call(f, Conv::Cdecl, args).unwrap().eax
+    };
+    let fcall = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call_f64(f, args).unwrap()
+    };
+    let (log, cursor, cells) = small5_stubs(a, b, &[(0x0089_7650, 2)]);
+    // the shape maker: its tag, nine words, and the log position in EAX
+    let mut v = vec![0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0xc7, 0x01, 0x5f, 0x55, 0, 0, 0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.push(4);
+    v.extend(logger_returning(cursor, 9, cursor));
+    let s = stand_in8(a, b, 0x200, &v);
+    redirect(a, b, 0x0090_3bb0, s);
+    // the remaps: fld dword [esp+4]; fmul dword [factor]; ret
+    let factor = alloc(a, b, 8);
+    for (k, f) in [0x0064_47e0u32, 0x0064_4820].into_iter().enumerate() {
+        let mut v = vec![0xd9, 0x44, 0x24, 0x04, 0xd8, 0x0d];
+        v.extend_from_slice(&(factor + 4 * u32::try_from(k).unwrap()).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0x300 + 0x20 * u32::try_from(k).unwrap(), &v);
+        redirect(a, b, f, s);
+    }
+    let factors = [
+        1.0f32,
+        2.25,
+        0.5,
+        -1.5,
+        0.0,
+        -0.0,
+        f32::INFINITY,
+        f32::NAN,
+        1.0e-40,
+        3.0e38,
+    ];
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells[0], rng.next());
+        for j in 0..2 {
+            let f = if k % 4 == 0 {
+                f32::from_bits(rng.next() | 0x0040_0000)
+            } else {
+                factors[(rng.next() % 10) as usize]
+            };
+            put(a, b, factor + 4 * j, f);
+        }
+        let element = if k % 8 == 7 {
+            rng.next()
+        } else {
+            rng.next() % 5
+        };
+        let pos = |rng: &mut Xorshift| match rng.next() % 4 {
+            0 => rng.next(),
+            1 => 0x0100_0001,
+            _ => rng.next() % 0x400,
+        };
+        let args = [rng.next(), element, pos(rng), pos(rng)];
+        let sym = if k % 2 == 0 { 0x0089_4b40 } else { 0x0089_5ae0 };
+        let ra = eax(a, sym, &args);
+        let rb = tolib::bridge::btl_draw_win_element_lamp(b, args, call, fcall);
+        assert_eq!(ra, rb, "element lamp {sym:#x} {k} {args:x?}");
+        same_memory(&format!("small5 e {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn small5_e_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    small5_e(&mut a, &mut b, &mut Xorshift(0x5a11_5e01));
+}
+
+#[test]
+fn small5_e_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    small5_e(&mut a, &mut b, &mut Xorshift(0x5a11_5e02));
+}
+
+/// Small round 5 f: `TOControlMsSetMenuCommand` over random levels
+/// (commands 0xffff/0xfffe/0xff mixed in, flags set or not, depths -1 to
+/// 20, battle info status 0x100 or not) and `TOSetBtlActiveChr` (status 1
+/// or not, a window open or not); every callee a logging stand-in.
+#[allow(clippy::many_single_char_names)] // a, b: the oracles
+fn small5_f(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::tolib::bridge as t;
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call(f, Conv::Cdecl, args).unwrap().eax
+    };
+    let (log, cursor, cells) = small5_stubs(
+        a,
+        b,
+        &[
+            (0x0079_2e50, 1),
+            (0x0089_ece0, 2),
+            (0x0078_16f0, 0),
+            (0x008a_0cd0, 0),
+            (0x008a_0ce0, 0),
+            (0x0089_79d0, 0),
+            (0x0089_8010, 0),
+            (0x0089_7bd0, 0),
+            (0x0089_7f00, 0),
+            (0x0089_a330, 2),
+        ],
+    );
+    let levels = a.rebase(t::BTL_LEVELS);
+    let rec = a.rebase(t::BTL_COMMAND_REC);
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        for &c in &cells {
+            put(a, b, c, rng.next());
+        }
+        // every byte the two touch random first, so a narrower or missing
+        // store shows
+        let mut fill = |a: &mut Oracle, b: &mut Oracle, at: u32, n: u32| {
+            for j in 0..n {
+                put(a, b, at + j, rng.next().to_le_bytes()[0]);
+            }
+        };
+        fill(a, b, levels - 0xf0, 0x790 + 0xf0);
+        fill(a, b, levels + 0xff * 0xf0, 0x10);
+        for at in [0x0133_d740u32, 0x0133_c938, 0x023c_c030, 0x0133_f0f8] {
+            fill(a, b, a.rebase(at), 0x38);
+        }
+        fill(a, b, a.rebase(0x0133_f508), 0xc0);
+        for i in 0..21 {
+            let l = levels + 0xf0 * i;
+            let cmd = match rng.next() % 6 {
+                0 => 0xffff,
+                1 => 0xfffe,
+                2 => 0xff,
+                _ => rng.next() & 0xffff,
+            };
+            put(a, b, l + 0x16, u16::try_from(cmd).unwrap());
+            put(a, b, l + 2, u8::from(rng.next().is_multiple_of(3)));
+            put(a, b, l + 8, rng.next().to_le_bytes()[0]);
+            put(a, b, l + 0xd8, rng.next());
+        }
+        for j in 0..0x48 {
+            put(a, b, rec + j, rng.next().to_le_bytes()[0]);
+        }
+        if k % 2 == 0 {
+            let depth = [-1i8, 0, 1, 2, 3, 5, 7, 20][(rng.next() % 8) as usize];
+            set(a, b, t::BTL_ACTION_DEPTH, depth);
+            let status = match rng.next() % 6 {
+                0 | 1 => 0x100u32,
+                2 => 0x0001_0100,
+                _ => rng.next() % 0x102,
+            };
+            put(a, b, a.rebase(0x0133_c94c), status);
+            put(a, b, a.rebase(0x0133_cb46), rng.next());
+            put(a, b, a.rebase(0x0133_d178), rng.next());
+            let ra = eax(a, 0x0089_afc0, &[]);
+            let rb = t::to_control_ms_set_menu_command(b, call);
+            assert_eq!(ra, rb, "TOControlMsSetMenuCommand {k} depth {depth}");
+        } else {
+            put(a, b, cells[2], [1u32, 1, 0, 2][(rng.next() % 4) as usize]);
+            let open = match rng.next() % 6 {
+                0 => rng.next(),
+                1 => 0x0001_0000 << (rng.next() % 16),
+                _ => 0,
+            };
+            put(a, b, a.rebase(0x023c_c08c), open);
+            let chr = if rng.next().is_multiple_of(4) {
+                rng.next()
+            } else {
+                rng.next() % 0x12
+            };
+            let ra = eax(a, 0x0089_bb10, &[chr]);
+            let rb = t::to_set_btl_active_chr(b, chr, call);
+            assert_eq!(ra, rb, "TOSetBtlActiveChr {k} {chr:#x}");
+        }
+        same_memory(&format!("small5 f {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn small5_f_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    small5_f(&mut a, &mut b, &mut Xorshift(0x5a11_5f01));
+}
+
+#[test]
+fn small5_f_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    small5_f(&mut a, &mut b, &mut Xorshift(0x5a11_5f02));
+}
+
+/// Small round 5 h: `Pause_Update` (pausing or not, entered or not, Start
+/// pressed at 0x40 or not, fades and steps around 0x40 and 0x80, the end
+/// with or without a movie); every callee a logging stand-in, the time
+/// 64 bits.
+#[allow(clippy::many_single_char_names)] // a, b: the oracles
+fn small5_h(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::tolib::bridge as t;
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call(f, Conv::Cdecl, args).unwrap().eax
+    };
+    let call64 = |m: &mut Oracle, f: u32| {
+        let f = m.rebase(f);
+        let r = m.call(f, Conv::Cdecl, &[]).unwrap();
+        (u64::from(r.edx) << 32) | u64::from(r.eax)
+    };
+    let mut list: Vec<(u32, u8)> = t::PAUSE_UPDATE_CALLS
+        .iter()
+        .zip([0u8, 0, 1, 0, 0])
+        .map(|(&f, n)| (f, n))
+        .collect();
+    list.extend(
+        t::PAUSE_ENTER_CALLS
+            .iter()
+            .zip([0u8, 1, 1, 0, 0, 0, 0])
+            .map(|(&f, n)| (f, n)),
+    );
+    let (log, cursor, cells) = small5_stubs(a, b, &list);
+    let ctrl = alloc(a, b, 0x220);
+    let fades = [0x40u32, 0x40, 0x3c, 0x44, 0x7c, 0x80, 0x84, 0x7f, 0];
+    let steps = [4u32, 0xffff_fffc, 0, 1, 0x40, 0x8000_0000];
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        for &c in &cells {
+            put(a, b, c, rng.next());
+            put(a, b, c + 4, rng.next());
+        }
+        put(a, b, cells[0], ctrl);
+        put(a, b, cells[2], [0u32, 1, 0x800][(rng.next() % 3) as usize]);
+        put(a, b, cells[10], [0u32, 0, 1][(rng.next() % 3) as usize]);
+        put(
+            a,
+            b,
+            ctrl + 0x210,
+            rng.next().to_le_bytes()[0] | (0x10 * u8::from(k % 5 != 0)),
+        );
+        set(
+            a,
+            b,
+            t::PAUSE_ENTERED,
+            [0u32, 1, 2][(rng.next() % 3) as usize],
+        );
+        let fade = if k % 7 == 0 {
+            rng.next()
+        } else {
+            fades[(rng.next() % 9) as usize]
+        };
+        set(a, b, t::PAUSE_FADE, fade);
+        set(a, b, t::PAUSE_FADE_STEP, steps[(rng.next() % 6) as usize]);
+        set(
+            a,
+            b,
+            t::MOVIE_PICTURE_ON,
+            [0u32, 0, 1][(rng.next() % 3) as usize],
+        );
+        for g in [t::PAUSE_ON, t::PAUSE_REQUEST] {
+            set(a, b, g, rng.next());
+        }
+        for at in [t::PAUSE_TIME, t::PAUSE_TOTAL] {
+            let at = a.rebase(at);
+            put(a, b, at, rng.next());
+            put(a, b, at + 4, rng.next());
+        }
+        let ra = eax(a, 0x008a_b340, &[]);
+        let rb = t::pause_update(b, call, call64);
+        assert_eq!(ra, rb, "Pause_Update {k} fade {fade:#x}");
+        same_memory(&format!("small5 h {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn small5_h_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    small5_h(&mut a, &mut b, &mut Xorshift(0x5a11_5801));
+}
+
+#[test]
+fn small5_h_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    small5_h(&mut a, &mut b, &mut Xorshift(0x5a11_5802));
+}

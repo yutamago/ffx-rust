@@ -249,6 +249,23 @@ names the file: `ve%06d` (`vj` for languages above 6) of `id >> 12`, then
 `.vs`. `SndCalcVoiceWait` turns the sector length into frames (x2048, -32,
 /48000, x16/28, x2016/2048, x4.97, each stored as f32), 0 in video mode 0.
 
+**Positioned sounds** (`Snd3dFootRequest` 0x00876950, `ffx_sound::foot3d`):
+a request is `{id, params, position or u16 actor, direction}` with the
+result bytes at `+0x20` (pan) and `+0x21` (volume); params are `u16`
+flags (1 direction, 2 the event actor's position, 4 the second camera
+matrix, 0x8000 no height in the distance), the far and near volume bytes
+(`+2`, `+3`), the pan scale (`+4`) and the volume's and pan's near/far
+distances (`+8`/`+0xc`, `+0x10`/`+0x14`). The position goes through the
+camera matrix in the emulated VU0 registers (`0x00c8f890`, copied from
+`0x01328288` or `0x013282c8` when `g_AtelCameraMatrixFlag` changes),
+moves toward the direction's nearest point (`Math_SegmentNearestT`), and
+its distance picks the volume (the near byte, the far byte, or both mixed,
+times `g_AtelSnd3dVolumeTotalRatio`; only the mix is clamped to 0..127).
+The pan is `ftol((pi + angle) * 127 / 2pi)` of `Math_Atan2XZ(0, 0, z, x)`
+folded into [-pi/2, pi/2] and scaled by the pan ratio. Requests with flag
+2 for an actor that is not of type 2 or 5 but flag 1 set read a direction
+the function never wrote (its stack frame).
+
 # FMOD Designer event projects (`*.fev`)
 
 Not decoded yet; this is what the game reads from them, through

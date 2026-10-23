@@ -301,6 +301,58 @@ pub mod bridge {
         0
     }
 
+    /// `graphicProcessPs2DataLoadingCallback`, `MovieCdReadTaskLoop_0076e660`,
+    /// `SignalSema`, `TkSndIsStandbyVoice`, `dbgPrintf`, `movie_err`.
+    pub const READ_SYNC_CALLS: [u32; 6] = [
+        0x0064_27f0,
+        0x0076_e660,
+        0x006f_2ce0,
+        0x0088_7b20,
+        0x0062_f500,
+        0x0076_efa0,
+    ];
+    /// The read thread's semaphore (`0x02310c28`).
+    pub const READ_SEMA: Global<u32> = Global::new(0x0231_0c28);
+
+    /// `CdReadSync_0076c490(mode)` (name ours; `g_CdLib + 8`, the wait
+    /// `CdEnvInit` installs at `0x0076d060`; `Ch_ReadSync` tail-jumps
+    /// through it): with the PS2 data-loading callback around it, mode 1
+    /// only asks: 1 when any of the 64 [`CHANNELS`] is in use (`+0x31`),
+    /// after signalling the read thread (`SignalSema`) and, with a voice
+    /// on standby (`TkSndIsStandbyVoice`), the `dbgPrintf` and `movie_err`
+    /// of libmscd.c line 0x7ae; else 0. Any other mode runs the read loop
+    /// (`MovieCdReadTaskLoop_0076e660`) and returns 0. The original
+    /// decrements its own `mode` slot (`dec [ebp+8]`).
+    pub fn read_sync<M: Mem>(
+        mem: &mut M,
+        mode: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [loading, task_loop, signal, standby, printf, err] = READ_SYNC_CALLS;
+        call(mem, loading, &[]);
+        if mode != 1 {
+            call(mem, task_loop, &[]);
+            call(mem, loading, &[]);
+            return 0;
+        }
+        let base = CHANNELS.ptr(mem).addr;
+        let busy = (0..64u32).any(|k| mem.read::<u8>(base.wrapping_add(k * 0x38 + 0x31)) != 0);
+        if !busy {
+            call(mem, loading, &[]);
+            return 0;
+        }
+        let sema = READ_SEMA.get(mem);
+        call(mem, signal, &[sema]);
+        if call(mem, standby, &[]) != 0 {
+            let text = mem.rebase(0x00b5_1fa0);
+            call(mem, printf, &[text]);
+            let (what, file) = (mem.rebase(0x00b7_c998), mem.rebase(0x00b5_1d30));
+            call(mem, err, &[what, file, 0x7ae]);
+        }
+        call(mem, loading, &[]);
+        1
+    }
+
     /// `0x0076c250(n)`: [`cd_file_sector`] of `n` relative to the current
     /// module ([`FILE_BASE`] added; a tail jump).
     pub fn cd_module_file_sector_rel(mem: &impl Mem, n: i32) -> u32 {

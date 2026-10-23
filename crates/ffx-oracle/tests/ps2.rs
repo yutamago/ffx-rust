@@ -640,3 +640,169 @@ fn rotations_match_the_original_on_the_snapshot() {
     };
     rotations(&mut a, &mut b, &mut Xorshift(0x0ff0_7e08));
 }
+
+// ---- pc round 4: g_MagicImports slots 358 and 241 ---------------------
+
+const NORMALIZE_LEN: u32 = 0x009d_baf0;
+const RAND_FLOAT: u32 = 0x009d_bb40;
+/// The import slot of MSVCR110's `srand`.
+const SRAND_SLOT: u32 = 0x00b0_c484;
+/// Free code space for the `srand` recorder (after the CRT stand-ins).
+const SRAND_RECORDER: u32 = 0x00b0_bb80;
+/// The emulated VU0 and EE registers the draw goes through.
+const VU0_R: u32 = 0x00c0_a000;
+const VU0_R_SEEDED: u32 = 0x00c8_f728;
+const EE_R0: u32 = 0x00c8_f508;
+const EE_T0: u32 = 0x00c8_f588;
+const VU0_DRAW: u32 = 0x00c8_f7a0;
+const VU0_T0: u32 = 0x00c8_f7b0;
+
+/// Where `out` and `len` go in a block `[v 16][out 16][len 4]`: apart, or
+/// over `v`, each other or a word of either.
+fn normalize_len_args(block: u32, n: u32) -> (u32, u32) {
+    let (v, out, len) = (block, block + 16, block + 32);
+    match n % 8 {
+        0..=2 => (out, len),
+        3 => (v, len),
+        4 => (out, v + 4),
+        5 => (out, out),
+        6 => (v, v),
+        _ => (out, out + 8),
+    }
+}
+
+fn normalize_len(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    patch_crt_math(a);
+    patch_crt_math(b);
+    let block = alloc(a, b, 48);
+    // square sums whose two possible orders round to different lengths
+    let crafted = [
+        [0x3fe4_aa35, 0x39d9_3e83, 0x3955_0237],
+        [0x3fc9_b552, 0x39d7_c7ad, 0x390e_7f21],
+        [0x3ff2_c903, 0x39c7_3975, 0x3995_e01a],
+    ];
+    for n in 0..6000u32 {
+        let v = if let Some(c) = crafted.get(n as usize / 8) {
+            let [x, y, z] = c.map(f32::from_bits);
+            [x, y, z, rng.float()]
+        } else if n % 3 == 0 {
+            std::array::from_fn(|_| rng.float())
+        } else {
+            short_vector(rng)
+        };
+        fill(a, b, rng, block + 16, 5);
+        put(a, b, block, v);
+        let (out, len) = normalize_len_args(block, n);
+        let ra = cdecl(a, NORMALIZE_LEN, &[block, out, len]);
+        let rb = vu0::normalize_len(b, block, out, len);
+        assert_eq!(ra, rb, "NormalizeLen {n} {v:?}: eax");
+        assert_eq!(
+            words(a, block, 9),
+            words(b, block, 9),
+            "NormalizeLen {n} {v:?} out {out:#x} len {len:#x}"
+        );
+    }
+    same_memory("NormalizeLen", a, b);
+}
+
+#[test]
+fn pc_r4_normalize_len_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    normalize_len(&mut a, &mut b, &mut Xorshift(0x0ff0_7e40));
+}
+
+#[test]
+fn pc_r4_normalize_len_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    normalize_len(&mut a, &mut b, &mut Xorshift(0x0ff0_7e41));
+}
+
+/// Points the `srand` import at a recorder that appends each seed to `log`
+/// (count at `log`, seeds after it), in both oracles alike; returns `log`.
+fn record_srand(a: &mut Oracle, b: &mut Oracle) -> u32 {
+    let log = alloc(a, b, 0x1000);
+    let (count, seeds) = (log, log + 4);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+    c.extend([0x8b, 0x0d]); // mov ecx, [count]
+    c.extend(count.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0x03, 0x00, 0x00]); // and ecx, 0x3ff
+    c.extend([0x89, 0x04, 0x8d]); // mov [seeds + ecx*4], eax
+    c.extend(seeds.to_le_bytes());
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(count.to_le_bytes());
+    c.push(0xc3);
+    for o in [&mut *a, &mut *b] {
+        let at = o.rebase(SRAND_RECORDER);
+        o.write(at, &c).unwrap();
+        let slot = o.rebase(SRAND_SLOT);
+        Mem::write(o, slot, at);
+    }
+    log
+}
+
+/// The Rust side of the recorder.
+fn srand_log(m: &mut Oracle, log: u32, seed: u32) {
+    let n: u32 = Mem::read(m, log);
+    Mem::write(m, log + 4 + 4 * (n & 0x3ff), seed);
+    Mem::write(m, log, n.wrapping_add(1));
+}
+
+fn rand_float(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = record_srand(a, b);
+    let block = alloc(a, b, 16);
+    let [r_at, seeded, gpr_r0, t0, draw, vf_t0] =
+        [VU0_R, VU0_R_SEEDED, EE_R0, EE_T0, VU0_DRAW, VU0_T0].map(|g| a.rebase(g));
+    for n in 0..3000u32 {
+        if n % 4 == 0 {
+            // a fresh state: R a float in [1, 2) or any word, seeded or not,
+            // r0 zero (as the game keeps it) or anything
+            let r = if n % 8 == 0 {
+                rng.next()
+            } else {
+                0x3f80_0000 | rng.next() & 0x007f_ffff
+            };
+            put(a, b, r_at, r);
+            put(a, b, seeded, u32::from(n % 12 != 0));
+            let r0 = if n % 3 == 0 { rng.next() } else { 0 };
+            put(a, b, gpr_r0, r0);
+            for i in 0..4 {
+                put(a, b, t0 + 4 * i, rng.next());
+                put(a, b, vf_t0 + 4 * i, rng.next());
+            }
+        }
+        // out apart, on the draw register, on R, on the VF copy of t0
+        let out = match n % 6 {
+            0..=2 => block,
+            3 => draw,
+            4 => r_at,
+            _ => vf_t0,
+        };
+        let ra = cdecl(a, RAND_FLOAT, &[out]);
+        let rb = vu0::rand_float(b, out, |m| {
+            ffx_vfx::rand::bridge::draw(m, &mut |m, seed| srand_log(m, log, seed))
+        });
+        assert_eq!(ra, rb, "RandFloat {n}: eax");
+        assert_eq!(words(a, log, 2), words(b, log, 2), "RandFloat {n}: srand");
+        same_memory("RandFloat", a, b);
+    }
+}
+
+#[test]
+fn pc_r4_rand_float_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    rand_float(&mut a, &mut b, &mut Xorshift(0x0ff0_7e42));
+}
+
+#[test]
+fn pc_r4_rand_float_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    rand_float(&mut a, &mut b, &mut Xorshift(0x0ff0_7e43));
+}
