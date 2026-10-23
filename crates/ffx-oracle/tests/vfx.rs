@@ -33196,3 +33196,153 @@ fn r53a_opp_anm_yodare_matches_the_original() {
         assert!(seen.iter().all(|&n| n > 50), "{seen:?}");
     }
 }
+
+/// `opu_rgba_en` against the port: every nibble (0 with and without flag
+/// 0x800 and `host +0x300` = 1, the magic id 0x143), the clamps and
+/// packing through the real code with colours below 0, above 255, NaN and
+/// infinite, `vf00` nonzero now and then, `r0`'s halves, model alphas
+/// below 0, -0, at and above 1.99 and NaN from all three sources.
+/// Stand-ins log the status, colour, shade and alpha calls.
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r53b_opu_rgba_en_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_9620);
+        let cells = p.alloc(0x10);
+        let (index_cell, magic_cell, alpha_cell) = (cells, cells + 4, cells + 8);
+        let logs = [
+            far_recorder(&mut p, 0x007f_e970, &[0, 0, 0], Some(index_cell)),
+            far_recorder(&mut p, 0x009d_a3b0, &[], Some(magic_cell)),
+            far_recorder(&mut p, 0x0080_a560, &[0, 0, 0], None),
+            far_recorder(&mut p, 0x0080_aa00, &[0, 0], None),
+            far_recorder(&mut p, 0x0082_ae30, &[0, 0, 0], None),
+            far_recorder(&mut p, 0x0082_eaf0, &[0, 0, 0, 0], None),
+            float_recorder(&mut p, 0x0082_eba0, 2, alpha_cell),
+        ];
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x10));
+        let (handles, vf00, r0, records) = (
+            p.sym(0x012a_8100),
+            p.sym(0x00c0_a004),
+            p.sym(0x00c8_f508),
+            p.sym(0x012a_22c0),
+        );
+        let colour = |rng: &mut Xorshift| {
+            if rng.chance(90) {
+                ranged(rng, -40.0, 300.0)
+            } else {
+                rng.pick(&[
+                    0x7fc0_0000u32,
+                    0xffc0_0000,
+                    0x7f80_0000,
+                    0xff80_0000,
+                    0x4f00_0000,
+                    0,
+                    0x8000_0000,
+                ])
+            }
+        };
+        let alpha = |rng: &mut Xorshift| {
+            rng.pick(&[
+                0.0f32,
+                -0.0,
+                -3.0,
+                64.0,
+                128.0,
+                254.72,
+                1.99 * 128.0,
+                255.0,
+                300.0,
+                1e6,
+                f32::NAN,
+            ])
+            .to_bits()
+        };
+        let mut seen = [0u32; 16];
+        for round in 0..3000 {
+            let what = format!("opu_rgba_en round {round}");
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.fill(records, 0x80, &mut rng);
+            p.set(host + 0x220, unit);
+            let nibble = if rng.chance(85) {
+                rng.below(8)
+            } else {
+                rng.below(16)
+            };
+            seen[nibble as usize] += 1;
+            let low = rng.next() as u16 & 0xfff;
+            let low = if rng.chance(50) { low & !0x800 } else { low };
+            p.set(host + 0x21a, (nibble as u16) << 12 | low);
+            p.set(host + 0x300, rng.pick(&[0u16, 1, 1, 2, 0x101]));
+            let chr = rng.below(8);
+            p.set(unit + 0x18, chr as u8);
+            p.set(handles + 4 * chr, rng.next());
+            p.set(index_cell, rng.below(4));
+            p.set(magic_cell, rng.pick(&[0x143u32, 0x142, 0, 0x1143]));
+            p.set(
+                alpha_cell,
+                if rng.chance(80) {
+                    ranged(&mut rng, 0.0, 1.0)
+                } else {
+                    alpha(&mut rng)
+                },
+            );
+            for k in 0..4 {
+                let v = if rng.chance(90) {
+                    0
+                } else {
+                    rng.pick(&[0x3f80_0000u32, 0x7f80_0000, 0x7fc0_0000])
+                };
+                p.set(vf00 + 4 * k, v);
+            }
+            for o in (0x30..0x80).step_by(4) {
+                let v = colour(&mut rng);
+                p.set(unit + o, v);
+            }
+            for o in (0..0x10).step_by(4) {
+                let v = colour(&mut rng);
+                p.set(host + o, v);
+            }
+            // offsets into the unit for 0x2000 / 0x5000, values for 0x1000
+            let (a_at, m_at) = (0x60 + 4 * rng.below(4), 0x70 + 4 * rng.below(4));
+            p.set(unit + a_at, alpha(&mut rng));
+            p.set(
+                unit + m_at,
+                rng.pick(&[0.0f32, 1.0, 2.7, -1.0, 5.5, f32::NAN]).to_bits(),
+            );
+            if nibble == 1 {
+                p.set(cmd + 2, rng.pick(&[0i16, 1, 3, 5, -1, -3]));
+                p.set(
+                    cmd + 4,
+                    rng.pick(&[0i16, 1, -5, 128, 254, 255, 300, 0x7fff, -0x8000]),
+                );
+            } else {
+                p.set(
+                    cmd + 2,
+                    if nibble == 5 {
+                        m_at as i16
+                    } else {
+                        rng.pick(&[0i16, 1, 3, 5, -1, -3])
+                    },
+                );
+                p.set(cmd + 4, a_at as i16);
+            }
+            check_deep_n(&mut p, &what, 0x0080_9620, &[host, cmd], |o, frame| {
+                Some(opus::bridge::opu_rgba_en(
+                    o,
+                    host,
+                    cmd,
+                    frame,
+                    &mut call_original,
+                    &mut call_original_f,
+                ))
+            });
+        }
+        assert!(seen.iter().all(|&n| n > 20), "{seen:?}");
+    }
+}

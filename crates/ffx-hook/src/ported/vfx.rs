@@ -5672,6 +5672,13 @@ ported! {
         let ebp = frame.at() + 0x24;
         opus::bridge::opu_ffxlight(&mut mem(), host, cmd, ebp, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opu_rgba_en(host, cmd)`: the next command; its frame locals (0x38
+    /// bytes) on this shim's stack, the frame pointer at their end.
+    opu_rgba_en @ 0x0080_9620 => extern "C" fn opu_rgba_en(host: u32, cmd: u32) -> u32 {
+        let mut frame = super::StackFrame::<0xe>::new();
+        let ebp = frame.at() + 0x38;
+        opus::bridge::opu_rgba_en(&mut mem(), host, cmd, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `opu_rgba_set_00809180(host, cmd)`.
     opu_rgba_set_00809180 @ 0x0080_9180 => extern "C" fn opu_rgba_set(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_rgba_set(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))

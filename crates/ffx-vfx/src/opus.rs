@@ -12067,6 +12067,249 @@ pub mod bridge {
         next
     }
 
+    /// `opu_rgba_en(host, cmd)` (`0x00809620`, the Switch's name; opus
+    /// command table entry `0x00c48fa8`): a character's colour or model
+    /// alpha by the flag nibble (host `u16 +0x21a & 0xf000`), with `u` =
+    /// host `+0x220` and `c` = `g_EtChrHandles[u +0x18]`.
+    ///
+    /// The colour paths put a colour into `g_Vu0_VfMove` (`0x00c8f980`),
+    /// set `0x00c8f528` and `0x00c8f78c` to 255.0, clamp it to 255
+    /// (`vfx_vec4_min`) and to `0x00c8f970..` (`Vec4Max`; that is `vf00 -
+    /// vf00`, by `fsub` before `restoreVf00Register` or by
+    /// `Vec4SubScalars`), truncate it (`op_fvec4_to_ivec4`, or `ftol` of a
+    /// copy in the frame at `ebp - 0x14`) and pack its low halves with
+    /// `r0`'s through `pppEePpacb`:
+    /// - 0 with flag 0x800 or `u16 host +0x300` = 1: from `u +0x40`
+    ///   (`0x00c8f52c` = 0 too), packed in the frame; unless
+    ///   `MagicFile_GetMagicId()` is 0x143, `opus_chara_rgba_set(c, that,
+    ///   i8 host +0x21e)`;
+    /// - 0 otherwise: from `u +0x40` (`Vec4SubScalars`), into `+0x10` of
+    ///   `c`'s status record (`0x012a22c0` + 32 x `opus_get_chr_status_
+    ///   index(c, 0, 0)`), then `opus_chara_status_rgb_set(c, i8 host
+    ///   +0x21e)`;
+    /// - 0x3000: from `u +0x40`, `ftol`, into the record's `+0x18`, then
+    ///   the status colour as above;
+    /// - 0x4000: host `+0..+0xc` = `Ch_DrawCalcShade(c)`, `+0xc` =
+    ///   `Ch_DrawGetModelAlpha(c, 0)`, all scaled by 256 (`op_xyz_scale`),
+    ///   `ftol`, into `u +0xc8`;
+    /// - 0x6000: from `u +0x40` (`0x00c8f52c` = 0, `Vec4SubScalars`),
+    ///   copied to the frame, `pppEePpach` and `pppEePpacb` there and
+    ///   dropped.
+    ///
+    /// These return `cmd + 2`. 0x1000 (`i16 cmd +4`), 0x2000 (the `f32` at
+    /// `u + i16 cmd +4`) and 0x5000 (that, the model `ftol` of the `f32` at
+    /// `u + i16 cmd +2`; else `i16 cmd +2`) set `Ch_ModelSetAlpha(c, model,
+    /// value / 128)`, clamped to 0 (below) and 1.99 (above; NaN goes
+    /// through), and return `cmd + 6`; other nibbles return `cmd`. `ebp`
+    /// is the original's frame pointer. Callees through `call` (`fcall`
+    /// for the model alpha).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_rgba_en<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        ebp: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{ftol, load, mul, store, sub};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let (vf, ee, k, zero, r0, v00) = (
+            g(mem, 0x00c8_f980),
+            g(mem, 0x00c8_f528),
+            g(mem, 0x00c8_f78c),
+            g(mem, 0x00c8_f970),
+            g(mem, 0x00c8_f508),
+            g(mem, 0x00c0_a004),
+        );
+        let local = ebp.wrapping_sub(0x14);
+        let u: u32 = mem.read(host.wrapping_add(0x220));
+        let at_u = |o: u32| u.wrapping_add(o);
+        let chr_at = g(mem, 0x012a_8100).wrapping_add(u32::from(mem.read::<u8>(at_u(0x18))) << 2);
+        let c: u32 = mem.read(chr_at);
+        let op = u32::from(mem.read::<u16>(host.wrapping_add(0x21a)));
+        let weapons = |mem: &M| i32::from(mem.read::<i8>(host.wrapping_add(0x21e))).cast_unsigned();
+        let i16_at =
+            |mem: &M, o: u32| i32::from(mem.read::<i16>(cmd.wrapping_add(o))).cast_unsigned();
+        // `vf00 - vf00` by `fsub st0, st0`, then `restoreVf00Register`
+        let fsub_zero = |mem: &mut M, go: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            for i in 0..4u32 {
+                let x = load(mem.read(v00 + 4 * i));
+                mem.write(zero + 4 * i, store(sub(x, x)));
+            }
+            go(mem, 0x0042_ef00, &[]);
+        };
+        // the same by `Vec4SubScalars(0x00c8f970, vf00, vf00's words)`
+        let call_zero = |mem: &mut M, go: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let s: [u32; 4] = mem.read(v00);
+            go(mem, 0x0074_bed0, &[zero, v00, s[0], s[1], s[2], s[3]]);
+        };
+        // `vfx_vec4_min(vf, vf, [0x00c8f78c])`, `Vec4Max(vf, vf, zero)`
+        let clamp = |mem: &mut M, go: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let s = store(load(mem.read(k)));
+            go(mem, 0x0080_8c10, &[vf, vf, s]);
+            let z: [u32; 4] = mem.read(zero);
+            go(mem, 0x0080_8b70, &[vf, vf, z[0], z[1], z[2], z[3]]);
+        };
+        // `ftol` of each word through the frame copy
+        let truncate = |mem: &mut M| {
+            let w: [u32; 4] = mem.read(vf);
+            mem.write(local, w);
+            for i in 0..4u32 {
+                let x: u32 = mem.read(local + 4 * i);
+                let n = ftol(mem, load(x));
+                mem.write(vf + 4 * i, n);
+            }
+        };
+        // the low halves of `vf` and `r0` at `to`
+        let halves = |mem: &mut M, to: u32| {
+            let n: [u32; 4] = mem.read(vf);
+            let r: [u32; 4] = mem.read(r0);
+            let lo = |a: u32, b: u32| a & 0xffff | b << 16;
+            mem.write(
+                to,
+                [
+                    lo(n[0], n[1]),
+                    lo(n[2], n[3]),
+                    lo(r[0], r[1]),
+                    lo(r[2], r[3]),
+                ],
+            );
+        };
+        let from_unit = |mem: &mut M| {
+            let w: [u32; 4] = mem.read(at_u(0x40));
+            mem.write(vf, w);
+        };
+        let set_255 = |mem: &mut M| {
+            mem.write(ee, 0x437f_0000u32);
+            mem.write(k, 0x437f_0000u32);
+        };
+        let record = |mem: &mut M, go: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let i = go(mem, 0x007f_e970, &[c, 0, 0]);
+            g(mem, 0x012a_22c0).wrapping_add(i << 5)
+        };
+        let alpha =
+            |mem: &mut M, go: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, model: u32, x: f64| {
+                let per_128: f64 = mem.read(g(mem, 0x00b1_70b8));
+                let mut v = store(mul(load(store(x)), per_128));
+                // fcom's C0 alone: below 0 (NaN and -0 go on)
+                if load(v) < 0.0 {
+                    v = 0;
+                }
+                let top: f64 = mem.read(g(mem, 0x00b5_8968));
+                if load(v) > top {
+                    v = mem.read(g(mem, 0x00b5_8960));
+                }
+                go(mem, 0x0082_ae30, &[c, model, v]);
+                cmd.wrapping_add(6)
+            };
+        let fu = |mem: &M, o: u32| load(mem.read(u.wrapping_add(o)));
+        match op & 0xf000 {
+            0 if op & 0x800 != 0 || mem.read::<u16>(host.wrapping_add(0x300)) == 1 => {
+                from_unit(mem);
+                set_255(mem);
+                mem.write(ee.wrapping_add(4), 0u32);
+                fsub_zero(mem, &mut go);
+                clamp(mem, &mut go);
+                go(mem, 0x0080_8b00, &[vf, vf]);
+                halves(mem, local);
+                go(mem, 0x0073_75d0, &[local, r0, local]);
+                if go(mem, 0x009d_a3b0, &[]) != 0x143 {
+                    let rgba: u32 = mem.read(local);
+                    let w = weapons(mem);
+                    go(mem, 0x0080_a560, &[c, rgba, w]);
+                }
+                cmd.wrapping_add(2)
+            }
+            0 => {
+                let rec = record(mem, &mut go);
+                from_unit(mem);
+                set_255(mem);
+                call_zero(mem, &mut go);
+                clamp(mem, &mut go);
+                go(mem, 0x0080_8b00, &[vf, vf]);
+                halves(mem, ee);
+                go(mem, 0x0073_75d0, &[ee, r0, ee]);
+                let packed: u32 = mem.read(ee);
+                mem.write(rec.wrapping_add(0x10), packed);
+                let w = weapons(mem);
+                go(mem, 0x0080_aa00, &[c, w]);
+                cmd.wrapping_add(2)
+            }
+            0x1000 => {
+                let x = f64::from(mem.read::<i16>(cmd.wrapping_add(4)));
+                let model = i16_at(mem, 2);
+                alpha(mem, &mut go, model, x)
+            }
+            0x2000 => {
+                let x = fu(mem, i16_at(mem, 4));
+                let model = i16_at(mem, 2);
+                alpha(mem, &mut go, model, x)
+            }
+            0x3000 => {
+                let rec = record(mem, &mut go);
+                from_unit(mem);
+                set_255(mem);
+                fsub_zero(mem, &mut go);
+                clamp(mem, &mut go);
+                truncate(mem);
+                halves(mem, ee);
+                go(mem, 0x0073_75d0, &[ee, r0, ee]);
+                let packed: u32 = mem.read(ee);
+                mem.write(rec.wrapping_add(0x18), packed);
+                let w = weapons(mem);
+                go(mem, 0x0080_aa00, &[c, w]);
+                cmd.wrapping_add(2)
+            }
+            0x4000 => {
+                go(
+                    mem,
+                    0x0082_eaf0,
+                    &[c, host, host.wrapping_add(4), host.wrapping_add(8)],
+                );
+                let f = g(mem, 0x0082_eba0);
+                let a = fcall(mem, f, &[c, 0]);
+                mem.write(host.wrapping_add(0xc), store(a));
+                let s: u32 = mem.read(g(mem, 0x00b5_01c0));
+                go(mem, 0x007e_a850, &[host, host, s]);
+                let w: [u32; 4] = mem.read(host);
+                mem.write(vf, w);
+                set_255(mem);
+                fsub_zero(mem, &mut go);
+                clamp(mem, &mut go);
+                truncate(mem);
+                halves(mem, ee);
+                go(mem, 0x0073_75d0, &[ee, r0, ee]);
+                let packed: u32 = mem.read(ee);
+                mem.write(at_u(0xc8), packed);
+                cmd.wrapping_add(2)
+            }
+            0x5000 => {
+                let m = fu(mem, i16_at(mem, 2));
+                let model = ftol(mem, m);
+                let x = fu(mem, i16_at(mem, 4));
+                alpha(mem, &mut go, model, x)
+            }
+            0x6000 => {
+                from_unit(mem);
+                set_255(mem);
+                mem.write(ee.wrapping_add(4), 0u32);
+                call_zero(mem, &mut go);
+                clamp(mem, &mut go);
+                go(mem, 0x0080_8b00, &[vf, vf]);
+                let w: [u32; 4] = mem.read(vf);
+                mem.write(local, w);
+                go(mem, 0x0073_76a0, &[local, r0, local]);
+                go(mem, 0x0073_75d0, &[local, r0, local]);
+                cmd.wrapping_add(2)
+            }
+            _ => cmd,
+        }
+    }
+
     /// `opu_v_add_00819fd0(host, cmd)` (`0x00819fd0`, name ours; opus
     /// command recompiled from the EE, 64-bit register compares included):
     /// as [`opu_v_set`] with kind `k` = the low nine flag bits less 0xd6
