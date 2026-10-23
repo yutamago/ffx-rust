@@ -31711,3 +31711,106 @@ fn r51b_opu_v_etc_matches_the_original() {
         assert!(seen[..9].iter().all(|&n| n > 0), "{seen:?}");
     }
 }
+
+/// `opu_md_etc` against the port: every flag nibble, the packet callees
+/// as recorders (their arguments compared through the logs), the matrix
+/// helpers original, the EE register image for all sign combinations.
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r51c_opu_md_etc_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_c4f0);
+        let cells = p.alloc(0x20);
+        let (get_cell, size_cell, malloc_cell, parent_cell) =
+            (cells, cells + 4, cells + 8, cells + 0xc);
+        let mut logs = vec![
+            far_recorder(&mut p, 0x007e_3810, &[0, 0, 0], Some(get_cell)),
+            far_recorder(&mut p, 0x00a6_98c0, &[0], Some(size_cell)),
+            far_recorder(&mut p, 0x007f_f780, &[0, 0], Some(malloc_cell)),
+            far_recorder(&mut p, 0x0080_1f00, &[0, 0], Some(parent_cell)),
+        ];
+        for (sym, n) in [
+            (0x00a6_9290u32, 2usize),
+            (0x007e_38a0, 4),
+            (0x007f_f1d0, 2),
+            (0x00a6_9c80, 3),
+            (0x00a6_9e60, 3),
+            (0x00a6_9de0, 3),
+            (0x0081_ca20, 4),
+            (0x00a6_9f10, 3),
+            (0x00a6_93b0, 5),
+        ] {
+            logs.push(far_recorder(&mut p, sym, &[0, 0, 0, 0, 0][..n], None));
+        }
+        let (host, unit, cmd, pk, parent) = (
+            p.alloc(0x400),
+            p.alloc(0x100),
+            p.alloc(0x80) + 0x40,
+            p.alloc(0x40),
+            p.alloc(0x40),
+        );
+        let (regs, done) = (p.sym(0x00c8_f528), p.sym(0x012f_4120));
+        let mut seen = [0u32; 16];
+        for round in 0..3000u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd - 0x40, 0x80, &mut rng);
+            p.fill(pk, 0x40, &mut rng);
+            p.fill(regs, 0x20, &mut rng);
+            for k in 0..0x40u32 {
+                let v = if rng.chance(95) {
+                    ranged(&mut rng, -10.0, 10.0)
+                } else {
+                    rng.pick(&[0x7fc0_0000u32, 0x7f80_0000, 0])
+                };
+                p.set(host + 4 * k, v);
+                let v = ranged(&mut rng, -10.0, 10.0);
+                p.set(parent + ((4 * k) & 0x3f), v);
+            }
+            let scale = if rng.chance(90) {
+                ranged(&mut rng, 0.0, 4_000_000.0)
+            } else {
+                rng.pick(&[0x7fc0_0000u32, 0xff80_0000, 0x8000_0000])
+            };
+            p.set(unit + 0x3c, scale);
+            p.set(host + 0x220, unit);
+            let nibble = if rng.chance(90) {
+                rng.below(7)
+            } else {
+                rng.below(16)
+            };
+            seen[nibble as usize] += 1;
+            p.set(host + 0x21a, ((nibble << 12) | rng.below(0x1000)) as u16);
+            p.set(unit + 0x1e, rng.below(8) as u8);
+            p.set(get_cell, pk);
+            p.set(size_cell, rng.next());
+            p.set(malloc_cell, rng.next());
+            p.set(parent_cell, parent);
+            p.set(done, rng.pick(&[0u32, 0, 1, 7]));
+            // the four i16 at cmd + i16 cmd+4 (0x4000) or cmd+6 (0x6000)
+            let off = rng.pick(&[8i16, 0x10, 0x18, 0x20, -0x10, -0x40]);
+            p.set(cmd + 4 + 2 * u32::from(nibble == 6), off);
+            for k in 0..4u32 {
+                let any = rng.next() as i16;
+                let v = rng.pick(&[0i16, 1, -1, 0x7fff, -0x8000, any]);
+                p.set(cmd.wrapping_add(i32::from(off).cast_unsigned()) + 2 * k, v);
+            }
+            for k in [2u32, 4, 6] {
+                if !((k == 4 && nibble == 4) || (k == 6 && nibble == 6)) && rng.chance(50) {
+                    let v = rng.pick(&[0x8000u16, 0xffff, 1, 7]);
+                    p.set(cmd + k, v);
+                }
+            }
+            p.check(
+                &format!("opu_md_etc nibble {nibble:x} round {round}"),
+                0x0081_c4f0,
+                &[host, cmd],
+                |m| Some(opus::bridge::opu_md_etc(m, host, cmd, &mut call_original)),
+            );
+        }
+        assert!(seen[..7].iter().all(|&n| n > 0), "{seen:?}");
+    }
+}
