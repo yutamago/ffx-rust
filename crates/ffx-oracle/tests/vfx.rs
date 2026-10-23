@@ -32056,3 +32056,140 @@ fn r51e_opu_mdc_matches_the_original() {
         assert!(seen[..7].iter().all(|&n| n > 0), "{seen:?}");
     }
 }
+
+/// `opu_camera` against the port: every command, and for command 0 the
+/// per-magic and per-scene fixes with look-at/eye values placed on and
+/// beside their thresholds (y x 10 truncating to -205, the -20.5/-13
+/// layout, the pull that lands y on -18, the 0x01610014 checks, -85, the
+/// 0xaa depth).
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r51f_opu_camera_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_57a0);
+        let cells = p.alloc(0x40);
+        let (magic_cell, scene_cell, other_cell, cam_cell, status_cell) =
+            (cells, cells + 4, cells + 8, cells + 0xc, cells + 0x10);
+        let pos_cells = cells + 0x20;
+        let mut logs = vec![
+            far_recorder(&mut p, 0x009d_a3b0, &[], Some(magic_cell)),
+            far_recorder(&mut p, 0x0078_2970, &[], Some(scene_cell)),
+            far_recorder(&mut p, 0x0080_1060, &[0, 0, 0], Some(other_cell)),
+            far_recorder(&mut p, 0x0078_77d0, &[0, 0, 0], Some(cam_cell)),
+            far_recorder(&mut p, 0x0078_16f0, &[], Some(status_cell)),
+            copy_recorder(&mut p, 0x007b_d470, 2, 1, From::At(pos_cells), 4),
+        ];
+        for (sym, n) in [
+            (0x007b_f940u32, 3usize),
+            (0x007b_fa80, 2),
+            (0x007b_fbd0, 2),
+            (0x0079_2e70, 1),
+            (0x0079_ddb0, 1),
+            (0x007b_ed60, 2),
+            (0x0078_7760, 1),
+            (0x007b_c0c0, 2),
+            (0x007b_bb10, 4),
+            (0x007b_bb00, 0),
+            (0x0081_7590, 1),
+        ] {
+            logs.push(far_recorder(&mut p, sym, &[0, 0, 0, 0][..n], None));
+        }
+        let (host, unit, cmd, other) = (
+            p.alloc(0x400),
+            p.alloc(0x100),
+            p.alloc(0x10),
+            p.alloc(0x100),
+        );
+        let (debug, limit) = (p.sym(0x0232_2790), p.sym(0x011a_006c));
+        let mut seen = [0u32; 16];
+        for round in 0..6000u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(host, 0x400, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.fill(pos_cells, 0x10, &mut rng);
+            for k in 0..0x40u32 {
+                let v = if rng.chance(95) {
+                    ranged(&mut rng, -100.0, 100.0)
+                } else {
+                    rng.pick(&[0x7fc0_0000u32, 0x7f80_0000, 0x8000_0000, 0])
+                };
+                p.set(unit + 4 * k, v);
+                p.set(other + 4 * k, ranged(&mut rng, -100.0, 100.0));
+            }
+            p.set(host + 0x220, unit);
+            let kind = if rng.chance(50) {
+                0
+            } else if rng.chance(95) {
+                rng.below(11)
+            } else {
+                rng.below(16)
+            };
+            seen[kind as usize] += 1;
+            p.set(host + 0x21a, ((kind << 12) | rng.below(0x1000)) as u16);
+            let n = if rng.chance(50) {
+                0
+            } else {
+                rng.below(0x10000) as u16
+            };
+            p.set(cmd + 2, n);
+            p.set(other_cell, other);
+            p.set(cam_cell, rng.next());
+            p.set(status_cell, rng.below(2));
+            p.set(debug, rng.below(2) as u8);
+            p.set(limit, rng.next() as u16);
+            let magic = rng.pick(&[0x253u32, 0x94, 0x132, 0xaa, 0x95, 0]);
+            p.set(magic_cell, magic);
+            let scene = rng.pick(&[
+                0x0161_0014u32,
+                0x0238_0000,
+                0x0105_0032,
+                0x00f5_1234,
+                0x014c_0000,
+                0x0061_0000,
+                0x0161_0015,
+            ]);
+            p.set(scene_cell, scene);
+            // look-at (u +0x90..) and eye (u +0x30.. / 16, or other +0x90..)
+            let (ly, ey) = match rng.below(10) {
+                0 => (-20.5f32, -13.0f32),
+                1 => (-20.0, -12.0),
+                2 => (-20.55, -13.0),
+                3 => (-86.0, 3.0),
+                4 => (-84.0, -13.0),
+                5 => (-85.0, 1.0),
+                6 => (-20.5, -12.0),
+                7 => (73.9, -13.0),
+                8 => (74.0, -13.0),
+                _ => (f32::from_bits(ranged(&mut rng, -30.0, 30.0)), -13.0),
+            };
+            p.set(unit + 0x94, ly.to_bits());
+            p.set(unit + 0x90, rng.pick(&[5.0f32, 12.9, 13.0, -3.0]).to_bits());
+            let ez = rng.pick(&[-41.595f32, -41.6, 10.0]);
+            if n == 0 {
+                p.set(unit + 0x34, (ey * 16.0).to_bits());
+                p.set(unit + 0x38, (ez * 16.0).to_bits());
+            } else {
+                p.set(other + 0x94, ey.to_bits());
+                p.set(other + 0x98, ez.to_bits());
+            }
+            // the 0xaa depth: u +0x94 -11, other +0x94 -17, u +0x3c 0
+            if magic == 0xaa && n != 0 && rng.chance(50) {
+                p.set(unit + 0x94, (-11.0f32).to_bits());
+                p.set(other + 0x94, rng.pick(&[-17.0f32, -16.0]).to_bits());
+                p.set(unit + 0x3c, rng.pick(&[0u32, 0x8000_0000, 0x3f80_0000]));
+            }
+            if magic == 0xaa && n == 0 {
+                p.set(unit + 0x94, 0u32); // other is 0: not read
+            }
+            p.check(
+                &format!("opu_camera kind {kind} round {round}"),
+                0x0081_57a0,
+                &[host, cmd],
+                |m| Some(opus::bridge::opu_camera(m, host, cmd, &mut call_original)),
+            );
+        }
+        assert!(seen[..11].iter().all(|&n| n > 0), "{seen:?}");
+    }
+}

@@ -5669,6 +5669,10 @@ ported! {
     opu_rgba_set_00809180 @ 0x0080_9180 => extern "C" fn opu_rgba_set(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_rgba_set(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opu_camera(host, cmd)`.
+    opu_camera @ 0x0081_57a0 => extern "C" fn opu_camera(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_camera(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu_mdc(host, cmd)`.
     opu_mdc @ 0x0080_3c00 => extern "C" fn opu_mdc(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_mdc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))

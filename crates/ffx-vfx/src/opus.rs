@@ -11602,4 +11602,195 @@ pub mod bridge {
             _ => cmd,
         }
     }
+
+    /// `opu_camera(host, cmd)` (`0x008157a0`): the opus battle-camera
+    /// commands, by `u16 host +0x21a >> 12` (jump table `0x00815d58`; `u` =
+    /// unit `host +0x220`, `cam` = `host +0x35c`, `n` = `u16 cmd+2`):
+    ///
+    /// - 0: look-at `host` = `u +0x90`, eye `host +0x10` = `u +0x30` / 16
+    ///   (`n` 0) or unit `n`'s `+0x90` (`opus_no_get`), with per-magic and
+    ///   per-scene fixes (magic 0x253/0x94: the eye pulled toward the
+    ///   target by 0.2..0.4 in some scenes; 0x132 in scene 0x00610000:
+    ///   y held at -85; 0xaa: depth 400 for one layout), then
+    ///   `MsCameraSetRect(cam, 1, host)`, `(cam, 0, host +0x10)`, roll `u
+    ///   +0x4c x pi / 2048` and depth `u +0x3c + 1024`.
+    /// - 1: a new effect camera (`MsEffectCameraGet(4, 0, 7)` into `cam`,
+    ///   both sides reset); 2: the camera released (`cam` 0).
+    /// - 3: `MsScreenOffset(u +0x90, u +0x94)`; 4, 5:
+    ///   `MsCameraGetPosNow(1 or 0, u +0x90)`, `u +0x40` = 16 x it.
+    /// - 6: depth `i16 n + 1024`, roll `i16 cmd+4 x pi / 2048`; 6 bytes.
+    /// - 7: as 0 without the fixes, through `MsEffectCameraSet`; 8:
+    ///   `MsEffectCameraReset`; 9: `g_OpusCameraLimit` = `n + 0x1000`,
+    ///   `opus_camera_limit(host +0x300)`; 10: the limit cleared.
+    ///
+    /// Everything but 6 steps 4 bytes. Callees through `call`.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::many_single_char_names,
+        clippy::float_cmp
+    )]
+    pub fn opu_camera<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, ftol, load, mul, store, sub};
+        const ONE: u32 = 0x3f80_0000;
+        const ROLL: f64 = 0.000_488_281_25;
+        // the `f64` constants are `f32` values widened (pi: 3.141592)
+        let pi = f64::from(f32::from_bits(0x4049_0fd8));
+        let mut fun = |mem: &mut M, f: u32, args: &[u32]| {
+            let f = g(mem, f);
+            call(mem, f, args)
+        };
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let magic = fun(mem, 0x009d_a3b0, &[]);
+        let scene = fun(mem, 0x0078_2970, &[]);
+        let kind = mem.read::<u16>(host.wrapping_add(0x21a)) >> 12;
+        let cam = rd(mem, host.wrapping_add(0x35c));
+        let u = unit(mem, host);
+        let n = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        let eye = host.wrapping_add(0x10);
+        // look-at and eye; returns the other unit (or `n` 0)
+        let aim = |mem: &mut M, fun: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            fun(mem, 0x007e_a850, &[host, u.wrapping_add(0x90), ONE]);
+            let (other, src, s) = if n == 0 {
+                (0, u.wrapping_add(0x30), 0x3d80_0000)
+            } else {
+                let other = fun(mem, 0x0080_1060, &[host.wrapping_add(0x300), u, n]);
+                (other, other.wrapping_add(0x90), ONE)
+            };
+            fun(mem, 0x007e_a850, &[eye, src, s]);
+            other
+        };
+        let roll = |mem: &M| store(mul(mul(load(rd(mem, u.wrapping_add(0x4c))), pi), ROLL));
+        let depth = |mem: &M| store(add(load(rd(mem, u.wrapping_add(0x3c))), 1024.0));
+        let f = |mem: &M, k: u32| load(rd(mem, host.wrapping_add(4 * k)));
+        let set = |mem: &mut M, k: u32, v: f64| mem.write(host.wrapping_add(4 * k), store(v));
+        // the look-at moved toward the eye by `k`
+        let pull = |mem: &mut M, k: f64| {
+            for i in 0..3 {
+                let d = sub(f(mem, 4 + i), f(mem, i));
+                let v = add(mul(d, k), f(mem, i));
+                set(mem, i, v);
+            }
+        };
+        match kind {
+            0 => {
+                let other = aim(mem, &mut fun);
+                if magic == 0x253 || magic == 0x94 {
+                    if ftol(mem, mul(f(mem, 1), 10.0)) == 0xffff_ff33 {
+                        let v = add(f(mem, 0), 9.0);
+                        set(mem, 0, v);
+                        let v = add(f(mem, 2), 3.0);
+                        set(mem, 2, v);
+                    }
+                    if scene == 0x0161_0014 {
+                        if ftol(mem, f(mem, 0)).cast_signed() <= 12
+                            && ftol(mem, f(mem, 1)).cast_signed() <= 0x49
+                            && ftol(mem, mul(f(mem, 6), 100.0)) == 0xffff_efc1
+                        {
+                            pull(mem, f64::from(0.3_f32));
+                            let v = add(
+                                mul(sub(f(mem, 5), f(mem, 1)), f64::from(0.32_f32)),
+                                f(mem, 5),
+                            );
+                            set(mem, 5, v);
+                        }
+                    } else if scene == 0x0238_0000 || scene == 0x0105_0032 {
+                        pull(mem, 0.25);
+                        if ftol(mem, f(mem, 1)) == 0xffff_ffee {
+                            pull(mem, f64::from(0.2_f32));
+                        }
+                    } else {
+                        let layout = f(mem, 1) == -20.5 && f(mem, 5) == -13.0;
+                        let k = if scene & 0xffff_0000 == 0x00f5_0000 && layout {
+                            f64::from(0.35_f32)
+                        } else if scene == 0x014c_0000 && layout {
+                            f64::from(0.4_f32)
+                        } else {
+                            0.25
+                        };
+                        pull(mem, k);
+                    }
+                }
+                if magic == 0x132 {
+                    if scene == 0x0061_0000 && -85.0 < f(mem, 1) {
+                        mem.write(host.wrapping_add(4), 0xc2aa_0000u32);
+                    }
+                } else if magic == 0xaa
+                    && load(rd(mem, u.wrapping_add(0x94))) == -11.0
+                    && load(rd(mem, other.wrapping_add(0x94))) == -17.0
+                    && load(rd(mem, u.wrapping_add(0x3c))) == 0.0
+                {
+                    mem.write(u.wrapping_add(0x3c), 0x43c8_0000u32);
+                }
+                fun(mem, 0x007b_f940, &[cam, 1, host]);
+                fun(mem, 0x007b_f940, &[cam, 0, eye]);
+                let r = roll(mem);
+                fun(mem, 0x007b_fa80, &[cam, r]);
+                let d = depth(mem);
+                fun(mem, 0x007b_fbd0, &[cam, d]);
+            }
+            1 => {
+                fun(mem, 0x0079_2e70, &[0]);
+                fun(mem, 0x0079_ddb0, &[1]);
+                let c = fun(mem, 0x0078_77d0, &[4, 0, 7]);
+                mem.write(host.wrapping_add(0x35c), c);
+                fun(mem, 0x007b_ed60, &[c, 0]);
+                let c = rd(mem, host.wrapping_add(0x35c));
+                fun(mem, 0x007b_ed60, &[c, 1]);
+            }
+            2 => {
+                if mem.read::<u8>(g(mem, 0x0232_2790)) != 0 {
+                    fun(mem, 0x0079_2e70, &[1]);
+                }
+                if cam != 0 {
+                    fun(mem, 0x0079_ddb0, &[0]);
+                    if fun(mem, 0x0078_16f0, &[]) == 0 {
+                        fun(mem, 0x0078_7760, &[0]);
+                    }
+                }
+                mem.write(host.wrapping_add(0x35c), 0u32);
+            }
+            3 => {
+                let y = store(load(rd(mem, u.wrapping_add(0x94))));
+                let x = store(load(rd(mem, u.wrapping_add(0x90))));
+                fun(mem, 0x007b_c0c0, &[x, y]);
+            }
+            4 | 5 => {
+                let pos = u.wrapping_add(0x90);
+                fun(mem, 0x007b_d470, &[u32::from(kind == 4), pos]);
+                fun(mem, 0x007e_a850, &[u.wrapping_add(0x40), pos, 0x4180_0000]);
+            }
+            6 => {
+                let near = f64::from(mem.read::<i16>(cmd.wrapping_add(2)));
+                let turn = f64::from(mem.read::<i16>(cmd.wrapping_add(4)));
+                let d = store(add(near, 1024.0));
+                fun(mem, 0x007b_fbd0, &[cam, d]);
+                let r = store(mul(mul(turn, pi), ROLL));
+                fun(mem, 0x007b_fa80, &[cam, r]);
+                return cmd.wrapping_add(6);
+            }
+            7 => {
+                aim(mem, &mut fun);
+                let r = roll(mem);
+                let d = depth(mem);
+                fun(mem, 0x007b_bb10, &[eye, host, d, r]);
+            }
+            8 => {
+                fun(mem, 0x007b_bb00, &[]);
+            }
+            9 => {
+                #[allow(clippy::cast_possible_truncation)] // `mov word`
+                let limit = n.wrapping_add(0x1000) as u16;
+                mem.write(g(mem, 0x011a_006c), limit);
+                fun(mem, 0x0081_7590, &[host.wrapping_add(0x300)]);
+            }
+            10 => mem.write(g(mem, 0x011a_006c), 0u16),
+            _ => {}
+        }
+        cmd.wrapping_add(4)
+    }
 }
