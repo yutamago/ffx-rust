@@ -17197,7 +17197,7 @@
 0x00a5cf10	logic	default (no rule: ported to be safe)
 0x00a5cf30	logic	default (no rule: ported to be safe)
 0x00a5d120	logic	default (no rule: ported to be safe)
-0x00a5d3c0	logic	default (no rule: ported to be safe)
+0x00a5d3c0	debug	reviewed: opd_num: reached only through the op_num_* wrappers 0x7e63b0/0x7e65e0, gated by g_OpNumShow (never set) or g_OpDebugMode (cleared by op_init_ffx_state); 0 calls in both snaps (effects round 48)
 0x00a5d5f0	logic	default (no rule: ported to be safe)
 0x00a5dd80	dead	unreachable from the entry point and every pointer table
 0x00a5dd90	logic	default (no rule: ported to be safe)
@@ -17238,7 +17238,7 @@
 0x00a60ed0	dead	unreachable from the entry point and every pointer table
 0x00a60ef0	dead	unreachable from the entry point and every pointer table
 0x00a60f10	dead	unreachable from the entry point and every pointer table
-0x00a611b0	logic	default (no rule: ported to be safe)
+0x00a611b0	dead	reviewed: opd_mmenu_display: only caller is the uncalled wrapper 0x7e62e0 (effects round 48)
 0x00a61590	dead	unreachable from the entry point and every pointer table
 0x00a61670	dead	unreachable from the entry point and every pointer table
 0x00a617f0	dead	unreachable from the entry point and every pointer table
