@@ -2975,7 +2975,7 @@
 0x006a3b40	logic	default (no rule: ported to be safe)
 0x006a3b50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassDynamicGeometry_setupMaterial
 0x006a4240	platform	reviewed: ClassDynamicGeometry subclass setupMaterial (vtable slot 0xb47e58): PhyreEngine scene materials and VfxShaderManager GL/ shader parameters, no PS2 counterpart (effects round 38)
-0x006a44d0	logic	default (no rule: ported to be safe)
+0x006a44d0	platform	reviewed: ClassDynamicGeometry vtable slot (0xb47e28 and three more): sizes PhyreMalloc mesh arrays, like 0x6a4240 (effects round 49)
 0x006a46c0	logic	default (no rule: ported to be safe)
 0x006a46e0	logic	default (no rule: ported to be safe)
 0x006a4800	logic	default (no rule: ported to be safe)
@@ -16766,8 +16766,8 @@
 0x00a29300	dead	unreachable from the entry point and every pointer table
 0x00a29310	dead	unreachable from the entry point and every pointer table
 0x00a29320	platform	reviewed: PhyreEngine PArray search (PText) (PC2 render/pc-ui round 1)
-0x00a37010	logic	default (no rule: ported to be safe)
-0x00a37170	logic	default (no rule: ported to be safe)
+0x00a37010	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
+0x00a37170	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
 0x00a37410	logic	default (no rule: ported to be safe)
 0x00a374e0	glue	calls Iggy IggyGDrawSendWarning
 0x00a37910	dead	unreachable from the entry point and every pointer table
@@ -16777,7 +16777,7 @@
 0x00a37b20	dead	unreachable from the entry point and every pointer table
 0x00a37b50	dead	unreachable from the entry point and every pointer table
 0x00a37c20	glue	calls Iggy IggyGDrawSendWarning, _IggyGDrawFree@4, _IggyGDrawMallocAnnotated@12
-0x00a380b0	logic	default (no rule: ported to be safe)
+0x00a380b0	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
 0x00a38100	dead	unreachable from the entry point and every pointer table
 0x00a38120	dead	unreachable from the entry point and every pointer table
 0x00a38180	glue	calls Iggy _IggyGDrawFree@4
@@ -16791,8 +16791,8 @@
 0x00a38560	logic	default (no rule: ported to be safe)
 0x00a385f0	logic	default (no rule: ported to be safe)
 0x00a38670	logic	default (no rule: ported to be safe)
-0x00a387e0	logic	default (no rule: ported to be safe)
-0x00a38aa0	logic	default (no rule: ported to be safe)
+0x00a387e0	platform	reviewed: Iggy GDraw D3D11 back end: slot of the GDraw function table 0x01a85828, stored at 0xa35900..0xa35a0b (docs/formats/vfx.md 'High range') (effects round 49)
+0x00a38aa0	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
 0x00a38be0	dead	unreachable from the entry point and every pointer table
 0x00a38c40	glue	calls Iggy IggyGDrawSendWarning
 0x00a39200	logic	default (no rule: ported to be safe)
@@ -16820,23 +16820,23 @@
 0x00a3a7b0	dead	unreachable from the entry point and every pointer table
 0x00a3a7f0	dead	unreachable from the entry point and every pointer table
 0x00a3a820	logic	default (no rule: ported to be safe)
-0x00a3a9b0	logic	default (no rule: ported to be safe)
+0x00a3a9b0	platform	reviewed: Iggy GDraw D3D11 back end: slot of the GDraw function table 0x01a85828, stored at 0xa35900..0xa35a0b (docs/formats/vfx.md 'High range') (effects round 49)
 0x00a3a9f0	glue	calls Iggy IggyGDrawSendWarning
-0x00a3abc0	logic	default (no rule: ported to be safe)
+0x00a3abc0	platform	reviewed: Iggy GDraw D3D11 back end: slot of the GDraw function table 0x01a85828, stored at 0xa35900..0xa35a0b (docs/formats/vfx.md 'High range') (effects round 49)
 0x00a3abe0	logic	default (no rule: ported to be safe)
 0x00a3ac50	dead	unreachable from the entry point and every pointer table
 0x00a3ac90	glue	calls Iggy IggyGDrawSendWarning
 0x00a3afb0	logic	default (no rule: ported to be safe)
-0x00a3b010	logic	default (no rule: ported to be safe)
-0x00a3b050	logic	default (no rule: ported to be safe)
-0x00a3b0c0	logic	default (no rule: ported to be safe)
-0x00a3b100	logic	default (no rule: ported to be safe)
-0x00a3b160	logic	default (no rule: ported to be safe)
+0x00a3b010	platform	reviewed: Iggy GDraw D3D11 back end: slot of the GDraw function table 0x01a85828, stored at 0xa35900..0xa35a0b (docs/formats/vfx.md 'High range') (effects round 49)
+0x00a3b050	platform	reviewed: Iggy GDraw D3D11 back end: slot of the GDraw function table 0x01a85828, stored at 0xa35900..0xa35a0b (docs/formats/vfx.md 'High range') (effects round 49)
+0x00a3b0c0	platform	reviewed: Iggy GDraw D3D11 back end: slot of the GDraw function table 0x01a85828, stored at 0xa35900..0xa35a0b (docs/formats/vfx.md 'High range') (effects round 49)
+0x00a3b100	platform	reviewed: Iggy GDraw D3D11 back end: slot of the GDraw function table 0x01a85828, stored at 0xa35900..0xa35a0b (docs/formats/vfx.md 'High range') (effects round 49)
+0x00a3b160	platform	reviewed: Iggy GDraw D3D11 back end: slot of the GDraw function table 0x01a85828, stored at 0xa35900..0xa35a0b (docs/formats/vfx.md 'High range') (effects round 49)
 0x00a3b1e0	dead	unreachable from the entry point and every pointer table
 0x00a3b210	glue	calls Iggy IggyGDrawSendWarning
 0x00a3b310	dead	unreachable from the entry point and every pointer table
 0x00a3b380	glue	calls Iggy IggyGDrawSendWarning, _IggyDiscardVertexBufferCallback@8
-0x00a3b480	logic	default (no rule: ported to be safe)
+0x00a3b480	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
 0x00a3b500	glue	calls Iggy IggyGDrawSendWarning, _IggyDiscardVertexBufferCallback@8
 0x00a3b590	platform	reviewed: Direct3D device vtable calls only (effects round 16)
 0x00a3b610	glue	calls Iggy IggyGDrawSendWarning
@@ -16856,8 +16856,8 @@
 0x00a3c310	dead	unreachable from the entry point and every pointer table
 0x00a3c330	dead	unreachable from the entry point and every pointer table
 0x00a3c350	logic	default (no rule: ported to be safe)
-0x00a3c450	logic	default (no rule: ported to be safe)
-0x00a3c570	logic	default (no rule: ported to be safe)
+0x00a3c450	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
+0x00a3c570	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
 0x00a3c630	dead	unreachable from the entry point and every pointer table
 0x00a3c670	dead	unreachable from the entry point and every pointer table
 0x00a3c6c0	glue	calls Iggy IggyGDrawSendWarning
@@ -16865,7 +16865,7 @@
 0x00a3cd10	dead	unreachable from the entry point and every pointer table
 0x00a3cd30	logic	default (no rule: ported to be safe)
 0x00a3cdb0	dead	unreachable from the entry point and every pointer table
-0x00a3ce00	logic	default (no rule: ported to be safe)
+0x00a3ce00	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
 0x00a3cec0	glue	calls Iggy IggyGDrawSendWarning
 0x00a3cf40	glue	calls Iggy IggyGDrawSendWarning
 0x00a3cfc0	glue	only called from glue code (0xa37960)
@@ -16875,10 +16875,10 @@
 0x00a3d280	glue	only called from glue code (0xa38180 and 1 more)
 0x00a3d2d0	dead	unreachable from the entry point and every pointer table
 0x00a3d300	dead	unreachable from the entry point and every pointer table
-0x00a3d310	logic	default (no rule: ported to be safe)
+0x00a3d310	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
 0x00a3d3c0	logic	default (no rule: ported to be safe)
-0x00a3d3d0	logic	default (no rule: ported to be safe)
-0x00a3d410	logic	default (no rule: ported to be safe)
+0x00a3d3d0	platform	reviewed: frees a PhyreEngine-owned buffer through PhyreFree; reached only from the unwind handlers 0xadf796/0xadf7c6 (effects round 49)
+0x00a3d410	platform	reviewed: frees a PhyreEngine-owned buffer through PhyreFree (effects round 49)
 0x00a3d4f0	dead	unreachable from the entry point and every pointer table
 0x00a3d510	dead	unreachable from the entry point and every pointer table
 0x00a3d540	dead	unreachable from the entry point and every pointer table
@@ -17198,7 +17198,7 @@
 0x00a5cf30	logic	default (no rule: ported to be safe)
 0x00a5d120	logic	default (no rule: ported to be safe)
 0x00a5d3c0	debug	reviewed: opd_num: reached only through the op_num_* wrappers 0x7e63b0/0x7e65e0, gated by g_OpNumShow (never set) or g_OpDebugMode (cleared by op_init_ffx_state); 0 calls in both snaps (effects round 48)
-0x00a5d5f0	logic	default (no rule: ported to be safe)
+0x00a5d5f0	debug	reviewed: reached only from the op_num wrapper 0x7e63b0, gated by g_OpNumShow/g_OpDebugMode like opd_num 0xa5d3c0 (effects round 49)
 0x00a5dd80	dead	unreachable from the entry point and every pointer table
 0x00a5dd90	logic	default (no rule: ported to be safe)
 0x00a5dda0	logic	default (no rule: ported to be safe)
@@ -17210,7 +17210,7 @@
 0x00a5dff0	dead	unreachable from the entry point and every pointer table
 0x00a5e0c0	dead	unreachable from the entry point and every pointer table
 0x00a5e2b0	logic	default (no rule: ported to be safe)
-0x00a5e2e0	logic	default (no rule: ported to be safe)
+0x00a5e2e0	debug	reviewed: reached only from the op_num wrapper 0x7e66a0, gated by g_OpNumShow/g_OpDebugMode like opd_num 0xa5d3c0 (effects round 49)
 0x00a5e400	dead	unreachable from the entry point and every pointer table
 0x00a5e420	dead	unreachable from the entry point and every pointer table
 0x00a5e440	dead	unreachable from the entry point and every pointer table
