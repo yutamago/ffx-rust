@@ -2239,3 +2239,442 @@ fn fmod_objects() {
         eprintln!("{world}: FMOD object methods agree");
     }
 }
+
+// ---- pc round 4: Snd3dFootRequest (0x00876950) -------------------------
+
+/// [`Run`] with the float calls (`Host::call_st0`) the 3D request makes.
+struct RunF<'a>(&'a mut Oracle);
+
+impl Mem for RunF<'_> {
+    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        self.0.read_bytes(addr, out);
+    }
+    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
+        Mem::write_bytes(self.0, addr, data);
+    }
+    fn image_base(&self) -> u32 {
+        self.0.image_base()
+    }
+}
+
+impl Host for RunF<'_> {
+    fn call(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> u32 {
+        Run(self.0).call(addr, conv, args)
+    }
+    fn call_st0(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f32 {
+        assert_eq!(conv, host::Conv::Cdecl);
+        let r = self
+            .0
+            .call(addr, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"));
+        r.st0_f32().expect("a float in ST0")
+    }
+    fn scratch(&mut self) -> u32 {
+        Run(self.0).scratch()
+    }
+}
+
+/// The stand-ins' control block: their answers, then a log.
+mod foot_ctl {
+    pub const POS: u32 = 0;
+    pub const KIND: u32 = 0xc;
+    pub const ROT: u32 = 0x10;
+    pub const ANGLE: u32 = 0x1c;
+    pub const HASH: u32 = 0x20;
+    pub const SCENARIO: u32 = 0x24;
+    pub const SCENARIO_CALLS: u32 = 0x2c;
+    pub const LOG_COUNT: u32 = 0x30;
+    pub const LOG: u32 = 0x34;
+    pub const CELLS: u32 = 0x800;
+    pub const LEN: usize = 0x900;
+}
+
+fn foot_log(s: &mut ffx_oracle::StandIn<'_, '_>, ctl: u32, tag: u32, n: u32) {
+    let k: u32 = Mem::read(s, ctl + foot_ctl::LOG_COUNT);
+    let at = ctl + foot_ctl::LOG + 20 * (k % 64);
+    Mem::write(s, at, tag);
+    for i in 0..n {
+        let v = s.arg(i);
+        Mem::write(s, at + 4 + 4 * i, v);
+    }
+    Mem::write(s, ctl + foot_ctl::LOG_COUNT, k + 1);
+}
+
+/// Rust stand-ins for the request's script, renderer and scenario
+/// callees, alike in both oracles: answers from `ctl`, calls logged there.
+fn foot_stand_ins(o: &mut Oracle, ctl: u32) {
+    use ffx_oracle::Returns;
+    use ffx_sound::foot3d::bridge as f3;
+    let cell = |k: u32| ctl + foot_ctl::CELLS + 8 * k;
+    for (k, (sym, out)) in (0..).zip([
+        (f3::ACTOR_POS, foot_ctl::POS),
+        (f3::ACTOR_ROT, foot_ctl::ROT),
+    ]) {
+        let at = o.rebase(sym);
+        o.stand_in(at, Returns::Eax, cell(k), move |s| {
+            // the id only: the pointers are each side's frame
+            foot_log(s, ctl, sym, 1);
+            for i in 0..3 {
+                let v: u32 = Mem::read(s, ctl + out + 4 * i);
+                let p = s.arg(1 + i);
+                Mem::write(s, p, v);
+            }
+            0x1234
+        })
+        .unwrap();
+    }
+    let at = o.rebase(f3::ACTOR_TYPE);
+    o.stand_in(at, Returns::Eax, cell(2), move |s| {
+        foot_log(s, ctl, f3::ACTOR_TYPE, 1);
+        u64::from(Mem::read::<u32>(s, ctl + foot_ctl::KIND))
+    })
+    .unwrap();
+    let at = o.rebase(f3::ATAN2_XZ);
+    o.stand_in(at, Returns::St0F32, cell(3), move |s| {
+        foot_log(s, ctl, f3::ATAN2_XZ, 4);
+        u64::from(Mem::read::<u32>(s, ctl + foot_ctl::ANGLE))
+    })
+    .unwrap();
+    let at = o.rebase(f3::LEVEL_NAME_HASH);
+    o.stand_in(at, Returns::Eax, cell(4), move |s| {
+        foot_log(s, ctl, f3::LEVEL_NAME_HASH, 0);
+        u64::from(Mem::read::<u32>(s, ctl + foot_ctl::HASH))
+    })
+    .unwrap();
+    let at = o.rebase(f3::SCENARIO_FLAG);
+    o.stand_in(at, Returns::Eax, cell(5), move |s| {
+        foot_log(s, ctl, f3::SCENARIO_FLAG, 0);
+        let k: u32 = Mem::read(s, ctl + foot_ctl::SCENARIO_CALLS);
+        Mem::write(s, ctl + foot_ctl::SCENARIO_CALLS, k + 1);
+        u64::from(Mem::read::<u32>(s, ctl + foot_ctl::SCENARIO + 4 * (k & 1)))
+    })
+    .unwrap();
+}
+
+/// A float for the request's geometry: small, edge or any.
+fn foot_float(rng: &mut Xorshift) -> f32 {
+    match rng.below(10) {
+        0 => 0.0,
+        1 => f32::from_bits(rng.next()),
+        2 => -1.0,
+        3 => 1.0,
+        _ => {
+            #[allow(clippy::cast_precision_loss)] // small integers
+            let v = (rng.next() % 4001) as f32 / 100.0 - 20.0;
+            v
+        }
+    }
+}
+
+fn quiet(f: f32) -> f32 {
+    if f.is_nan() {
+        f32::from_bits(f.to_bits() | 0x0040_0000)
+    } else {
+        f
+    }
+}
+
+/// A request [`pc_r4_snd3d_foot_request`] crafts (float bits): where the
+/// original's roundings to `f32` show.
+struct FootCase {
+    x: u32,
+    angle: u32,
+    pan_scale: u32,
+    pan: (u32, u32),
+    volume: (u32, u32),
+    far_volume: u8,
+    near_volume: u8,
+    ratio: u32,
+}
+
+const F1: u32 = 0x3f80_0000;
+const F30: u32 = 0x41f0_0000;
+const INF: u32 = 0x7f80_0000;
+
+const FOOT_CRAFTED: [FootCase; 6] = [
+    // pi/2 just below f32 pi/2 times just above 2 is f32 pi: pan 127,
+    // 126 without that rounding or with a double pi
+    FootCase {
+        x: F1,
+        angle: 0x3fc9_0fb5,
+        pan_scale: 0x4000_0018,
+        pan: (0, 0),
+        volume: (0, 0),
+        far_volume: 1,
+        near_volume: 1,
+        ratio: F1,
+    },
+    FootCase {
+        x: F1,
+        angle: 0x3fc9_0fdb,
+        pan_scale: 0x4000_0000,
+        pan: (0, 0),
+        volume: (0, 0),
+        far_volume: 1,
+        near_volume: 1,
+        ratio: F1,
+    },
+    // the volume's ratio rounded to f32 before the mix
+    FootCase {
+        x: 0x417c_a1ad,
+        angle: 0,
+        pan_scale: F1,
+        pan: (0, 0),
+        volume: (0, F30),
+        far_volume: 94,
+        near_volume: 37,
+        ratio: F1,
+    },
+    // the mix rounded to f32 before the total ratio
+    FootCase {
+        x: 0x3ea0_ebd5,
+        angle: 0,
+        pan_scale: F1,
+        pan: (0, 0),
+        volume: (0, F1),
+        far_volume: 190,
+        near_volume: 42,
+        ratio: 0x3f94_f1c0,
+    },
+    // exactly at the far volume distance: the mix, clamped
+    FootCase {
+        x: 0x40a0_0000,
+        angle: 0,
+        pan_scale: F1,
+        pan: (0, 0),
+        volume: (0, 0x40a0_0000),
+        far_volume: 200,
+        near_volume: 0,
+        ratio: F1,
+    },
+    // an infinite distance at an infinite pan distance: ratio 1
+    FootCase {
+        x: 0x7f61_b1e6,
+        angle: F1,
+        pan_scale: F1,
+        pan: (0, INF),
+        volume: (0, F1),
+        far_volume: 9,
+        near_volume: 9,
+        ratio: F1,
+    },
+];
+
+#[test]
+fn pc_r4_snd3d_foot_request() {
+    use ffx_sound::foot3d::bridge as f3;
+    const IDENTITY: [f32; 16] = [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ];
+    let mut rng = Xorshift(0x5d3f_0401);
+    for (world, mut a, mut b) in worlds_except(&[s::FOOT3D_REQUEST]) {
+        let (a, b) = (&mut a, &mut b);
+        let ctl = a.alloc(foot_ctl::LEN).unwrap();
+        assert_eq!(b.alloc(foot_ctl::LEN).unwrap(), ctl);
+        foot_stand_ins(a, ctl);
+        foot_stand_ins(b, ctl);
+        let req = a.alloc(0x40).unwrap();
+        let p = a.alloc(0x40).unwrap();
+        let work = a.alloc(0x40).unwrap();
+        assert_eq!(
+            (b.alloc(0x40).unwrap(), b.alloc(0x40).unwrap()),
+            (p - 0x40, p)
+        );
+        assert_eq!(b.alloc(0x40).unwrap(), work);
+        // the original's frame from ebp - 0x24 (three arguments, the
+        // return address and the saved ebp under the call's top)
+        let frame = a.stack_range().end - 0x100 - 0x14 - 0x24;
+        let special: Vec<u32> = [0x00b5_bffc, 0x00b5_c004, 0x00b5_c000]
+            .iter()
+            .map(|&c| Mem::read(a, a.rebase(c)))
+            .collect();
+        for n in 0..6000u32 {
+            stub_rets(a, b, &mut rng);
+            reset_log(a, b);
+            put(a, b, ctl + foot_ctl::LOG_COUNT, 0u32);
+            put(a, b, ctl + foot_ctl::SCENARIO_CALLS, 0u32);
+            let identity = rng.below(3) == 0;
+            for src in [f3::CAMERA_MATRIX_4, f3::CAMERA_MATRIX, f3::VU0_MATRIX] {
+                for i in 0..16 {
+                    let v = if identity {
+                        IDENTITY[i as usize]
+                    } else {
+                        quiet(foot_float(&mut rng))
+                    };
+                    put(a, b, a.rebase(src) + 4 * i, v);
+                }
+            }
+            let flag = [0, 1, u32::MAX, 2][rng.below(4) as usize];
+            put(a, b, a.rebase(0x0132_8308), flag);
+            let vf00 = if rng.below(4) == 0 {
+                quiet(foot_float(&mut rng))
+            } else {
+                0.0
+            };
+            put(a, b, a.rebase(f3::VU0_VF00_X), vf00);
+            let ratio = if rng.below(3) == 0 {
+                quiet(foot_float(&mut rng))
+            } else {
+                1.0
+            };
+            put(a, b, a.rebase(f3::VOLUME_RATIO), ratio);
+            for i in 0..4 {
+                put(
+                    a,
+                    b,
+                    a.rebase(f3::SEGMENT_START) + 4 * i,
+                    quiet(foot_float(&mut rng)),
+                );
+            }
+            // the request
+            let id = match rng.below(8) {
+                0 => 0,
+                1..=3 => 0x0001_1df8 + rng.below(6),
+                _ => rng.next(),
+            };
+            put(a, b, req, id);
+            put(a, b, req + 4, if rng.below(12) == 0 { 0 } else { p });
+            let x = if identity && rng.below(2) == 0 {
+                f32::from_bits(special[rng.below(3) as usize])
+            } else {
+                quiet(foot_float(&mut rng))
+            };
+            put(a, b, req + 8, x);
+            for i in 1..6 {
+                put(a, b, req + 8 + 4 * i, quiet(foot_float(&mut rng)));
+            }
+            let flags = (rng.next() & 7) as u16 | if rng.below(4) == 0 { 0x8000 } else { 0 };
+            put(a, b, p, flags);
+            put(a, b, p + 2, rng.next() as u8);
+            put(a, b, p + 3, rng.next() as u8);
+            put(a, b, p + 4, quiet(foot_float(&mut rng)));
+            // distances around the request's, sometimes equal or reversed
+            let mut d = [0f32; 4];
+            for v in &mut d {
+                *v = match rng.below(6) {
+                    0 => quiet(foot_float(&mut rng)),
+                    1 => 0.0,
+                    _ => f32::from(u8::try_from(rng.below(40)).unwrap()),
+                };
+            }
+            if rng.below(6) == 0 {
+                d[1] = d[0];
+            }
+            if rng.below(6) == 0 {
+                d[3] = d[2];
+            }
+            for (i, v) in (0..).zip(d) {
+                put(a, b, p + 8 + 4 * i, v);
+            }
+            // the stand-ins' answers
+            let x = if identity && rng.below(2) == 0 {
+                f32::from_bits(special[rng.below(3) as usize])
+            } else {
+                quiet(foot_float(&mut rng))
+            };
+            put(a, b, ctl + foot_ctl::POS, x);
+            for i in 1..3 {
+                put(
+                    a,
+                    b,
+                    ctl + foot_ctl::POS + 4 * i,
+                    quiet(foot_float(&mut rng)),
+                );
+            }
+            put(
+                a,
+                b,
+                ctl + foot_ctl::KIND,
+                [2, 5, 0, 1, 3][rng.below(5) as usize],
+            );
+            for i in 0..3 {
+                put(
+                    a,
+                    b,
+                    ctl + foot_ctl::ROT + 4 * i,
+                    quiet(foot_float(&mut rng)),
+                );
+            }
+            let angle = match rng.below(6) {
+                0 => quiet(f32::from_bits(rng.next())),
+                1 => std::f32::consts::FRAC_PI_2,
+                2 => -std::f32::consts::FRAC_PI_2,
+                _ => {
+                    #[allow(clippy::cast_precision_loss)] // small integers
+                    let v = (rng.next() % 6284) as f32 / 1000.0 - std::f32::consts::PI;
+                    v
+                }
+            };
+            put(a, b, ctl + foot_ctl::ANGLE, angle);
+            put(
+                a,
+                b,
+                ctl + foot_ctl::HASH,
+                if rng.below(2) == 0 {
+                    0x76f
+                } else {
+                    rng.below(0x800)
+                },
+            );
+            for i in 0..2 {
+                put(
+                    a,
+                    b,
+                    ctl + foot_ctl::SCENARIO + 4 * i,
+                    [2000, 0x7c6, 0x1_07d0, 0][rng.below(4) as usize],
+                );
+            }
+            // what the original's frame holds before it runs
+            for i in 0..8 {
+                let v = quiet(foot_float(&mut rng));
+                Mem::write(a, frame + 4 * i, v);
+                Mem::write(b, work + 4 * i, v);
+            }
+            let play = rng.below(2);
+            let mut count = [0, 2, 3, 0x100, u32::MAX][rng.below(5) as usize];
+            if let Some(c) = FOOT_CRAFTED.get((n / 4) as usize) {
+                // a request on the camera's x axis whose distance is |x|
+                for src in [f3::CAMERA_MATRIX_4, f3::CAMERA_MATRIX, f3::VU0_MATRIX] {
+                    for (i, v) in (0..).zip(IDENTITY) {
+                        put(a, b, a.rebase(src) + 4 * i, v);
+                    }
+                }
+                put(a, b, a.rebase(f3::VU0_VF00_X), 0u32);
+                put(a, b, a.rebase(f3::VOLUME_RATIO), c.ratio);
+                put(a, b, req, 0x100u32);
+                put(a, b, req + 4, p);
+                put(a, b, req + 8, [c.x, 0, 0]);
+                put(a, b, p, 0u16);
+                put(a, b, p + 2, [c.far_volume, c.near_volume]);
+                put(
+                    a,
+                    b,
+                    p + 4,
+                    [c.pan_scale, c.volume.0, c.volume.1, c.pan.0, c.pan.1],
+                );
+                put(a, b, ctl + foot_ctl::ANGLE, c.angle);
+                count = 3;
+            }
+            let at = a.rebase(s::FOOT3D_REQUEST);
+            let ra = a
+                .call(at, Conv::Cdecl, &[req, play, count])
+                .unwrap_or_else(|e| panic!("{world} {n}: {e}"));
+            assert!(ra.st0.is_none(), "{world} {n}: x87 stack left");
+            let rb = f3::snd3d_foot_request(&mut RunF(b), req, play, count.cast_signed(), work);
+            let ran = Mem::read::<u32>(a, req) != 0 && Mem::read::<u32>(a, req + 4) != 0;
+            if ran {
+                assert_eq!(ra.eax, rb, "{world} {n}: eax");
+            }
+            let fa: Vec<u32> = (0..8).map(|i| Mem::read(a, frame + 4 * i)).collect();
+            let fb: Vec<u32> = (0..8).map(|i| Mem::read(b, work + 4 * i)).collect();
+            assert_eq!(fa, fb, "{world} {n}: frame");
+            let diff: Vec<_> = a
+                .diff(b)
+                .unwrap()
+                .into_iter()
+                .filter(|d| !(work..work + 0x20).contains(&d.0))
+                .collect();
+            assert_eq!(diff, [], "{world} {n}: memory (logged {})", logged(a));
+        }
+    }
+}

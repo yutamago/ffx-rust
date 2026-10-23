@@ -42,6 +42,17 @@ fn crt_trig(t: Trig, x: f32) -> f32 {
     }
 }
 
+/// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`).
+fn crt_srand(seed: u32) {
+    // SAFETY: the import slot holds the address of MSVCR110's cdecl
+    // `srand(seed)`.
+    unsafe {
+        let f: unsafe extern "C" fn(u32) =
+            std::mem::transmute(*(crate::rebase(0x00b0_c484) as *const usize));
+        f(seed);
+    }
+}
+
 ported! {
     /// `FFXVu0CopyVector(dst, src)`.
     FFXVu0CopyVector @ 0x006e_d370 => extern "C" fn ffx_vu0_copy_vector(dst: u32, src: u32) -> u32 {
@@ -171,6 +182,16 @@ ported! {
     /// `FFXVu0ClipScreen()`.
     FFXVu0ClipScreen @ 0x0083_5b90 => extern "C" fn ffx_vu0_clip_screen() -> u32 {
         vu0::clip_screen(&mem())
+    }
+    /// `MagicNormalizeLen_009dbaf0(v, out, len)`.
+    MagicNormalizeLen_009dbaf0 @ 0x009d_baf0 => extern "C" fn magic_normalize_len(v: u32, out: u32, len: u32) -> u32 {
+        vu0::normalize_len(&mut mem(), v, out, len)
+    }
+    /// `MagicRandFloat_009dbb40(out)`.
+    MagicRandFloat_009dbb40 @ 0x009d_bb40 => extern "C" fn magic_rand_float(out: u32) -> u32 {
+        vu0::rand_float(&mut mem(), out, |m| {
+            ffx_vfx::rand::bridge::draw(m, &mut |_, seed| crt_srand(seed))
+        })
     }
     /// `setSSFlag()`.
     setSSFlag @ 0x0042_ef20 => extern "C" fn set_ss_flag() {
