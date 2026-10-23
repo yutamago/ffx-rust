@@ -921,6 +921,236 @@ pub mod bridge {
         }
         (out.dist & 0xffff_0000) | (found.cast_unsigned() & 0xffff)
     }
+
+    /// `Cache_Exist_ClothVertexBuff(kind, id)` (`0x00840850`),
+    /// `Cache_Exist_ClothMeshMappingData(kind, id)` (`0x00840810`),
+    /// `InsideTriangle` (`0x00828c10`), `Ch_UseAnchorVertex` and
+    /// `dbgPrintf` (`0x0062f500`), with the two lines `"[ClothSystem] has
+    /// correct baked data for %s mesh %d segment %d\n"` and `"...No
+    /// correct baked data..."`.
+    pub const CLOTH_VERTEX_BUFF: u32 = 0x0084_0850;
+    pub const CLOTH_MAPPING_DATA: u32 = 0x0084_0810;
+    pub const INSIDE_TRIANGLE: u32 = 0x0082_8c10;
+    pub const USE_ANCHOR_VERTEX: u32 = 0x0083_16d0;
+    pub const BAKED_FMT: u32 = 0x00b5_9240;
+    pub const NOT_BAKED_FMT: u32 = 0x00b5_9280;
+    /// The scratch [`ch_pre_calc_active_cloth_mesh`] needs: the vertex
+    /// position (x, y, z, w) at `+0` and the distance at `+0x10` (the
+    /// original's `ebp-0x14` and `ebp-0x64`).
+    pub const PRE_CALC_SCRATCH: u32 = 0x14;
+
+    /// `Ch_PreCalcActiveClothMesh(chr, skip)` (`0x00827e90`; caller
+    /// `Ch_OnCharacterInstanceLoaded`): binds the character's cloth
+    /// (`+0x834`) to its model once (cloth `+0xc` set to 1; nothing
+    /// without a cloth, or without the vertex buffer
+    /// `Cache_Exist_ClothVertexBuff(1, u16 chr)`).
+    ///
+    /// First `+0x868` = `+0x844` - cloth `+0x1c` * 1000 (`f64`). For each
+    /// mesh (cloth `+0x14`, read again each time; segment lists from
+    /// cloth `+0x30`, vertex blocks from the buffer's `+4`) and each
+    /// segment of both (count the list's first word, read again; vertex
+    /// count `+0x44`, normals `+0x4c`): the baked mapping data
+    /// (`Cache_Exist_ClothMeshMappingData(1, u16 chr)`: words from `+8`:
+    /// mesh count, per mesh its segment count, per segment its vertex
+    /// count and data) is used when its counts all match: the 8-byte
+    /// records go to the segment's `+8`, the 12-byte coordinates to its
+    /// `+0xc` (`memcpy`). Otherwise each vertex (unless `skip`) is
+    /// placed: position * 1000 (`f64`, stored `f32`) against the absolute
+    /// normal (ax, ay, az) and 0.3 (`f32`): all <= 0.3 marks it unused
+    /// (record `+2` = 0xffff); ax and az < 0.3 takes the triangle of
+    /// group `code % 100` (`InsideTriangle(chr, pos, model, code % 100,
+    /// &coords..., 0)`); else, when ay and az < 0.3 or
+    /// `Ch_UseAnchorVertex(chr, model, code)`, it is pinned (record bit 0)
+    /// with its distance (`+4`), else unpinned without one. Model and
+    /// code are the segment's `u16` `+0x40`/`+0x42`. The `"plane"`
+    /// character 0x66's segment (2, 10) first sets ax to 0.1 when ay is
+    /// below 0.3 (`f32`) or az below 0.3 (`f64`). Every normal is then
+    /// cleared (x, y, z). A `dbgPrintf` line per segment. The distance
+    /// slot is only written by `InsideTriangle` when it finds one: an
+    /// unpinned-or-not-found vertex copies whatever it held (the shim's
+    /// scratch, the original's stack). Void (its caller reads no EAX).
+    #[allow(clippy::too_many_lines)]
+    pub fn ch_pre_calc_active_cloth_mesh<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        skip: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(crate::x87::load(mem.read::<f32>(a)));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        let cloth: u32 = mem.read(chr + 0x834);
+        let id = u32::from(mem.read::<u16>(chr));
+        let vb = call(mem, r(mem, CLOTH_VERTEX_BUFF), &[1, id]);
+        let id = u32::from(mem.read::<u16>(chr));
+        let md = call(mem, r(mem, CLOTH_MAPPING_DATA), &[1, id]);
+        let mut p = md.wrapping_add(8);
+        if cloth == 0 || vb == 0 {
+            return;
+        }
+        // the mapping data's next word (all ones without the data)
+        let next = |mem: &M, p: &mut u32| {
+            if md == 0 {
+                u32::MAX
+            } else {
+                let v: u32 = mem.read(*p);
+                *p = p.wrapping_add(4);
+                v
+            }
+        };
+        let meshes = next(mem, &mut p);
+        let v = fl(mem, chr + 0x844) - fl(mem, cloth + 0x1c) * 1000.0;
+        mem.write(chr + 0x868, r32(v));
+        if mem.read::<u32>(cloth + 0xc) != 0 {
+            return;
+        }
+        mem.write(cloth + 0xc, 1u32);
+        let pos = scratch;
+        let dist = scratch + 0x10;
+        let c = f64::from(0.3f32);
+        let mut m = 0u32;
+        while m < mem.read::<u32>(cloth + 0x14) {
+            let segs: u32 = mem.read(cloth + 0x30 + 4 * m);
+            let vbm: u32 = mem.read(vb + 4 + 4 * m);
+            let mesh_segs = next(mem, &mut p);
+            if segs != 0 && vbm != 0 {
+                let mut s = 0u32;
+                while s < mem.read::<u32>(segs) {
+                    let seg: u32 = mem.read(segs + 4 + 4 * s);
+                    let vseg: u32 = mem.read(vbm + 4 + 4 * s);
+                    let n = next(mem, &mut p);
+                    if seg == 0 || vseg == 0 || mem.read::<u32>(seg + 0x4c) == 0 {
+                        if md != 0 {
+                            p = p.wrapping_add(n.wrapping_mul(20));
+                        }
+                        s += 1;
+                        continue;
+                    }
+                    let baked = md != 0
+                        && meshes == mem.read::<u32>(cloth + 0x14)
+                        && mesh_segs == mem.read::<u32>(segs)
+                        && n == mem.read::<u32>(seg + 0x44);
+                    let name: u32 = mem.read(chr + 4);
+                    let clear = |mem: &mut M, k: u32| {
+                        for off in [8, 4, 0] {
+                            let normals: u32 = mem.read(seg + 0x4c);
+                            mem.write(normals.wrapping_add(16 * k + off), 0u32);
+                        }
+                    };
+                    if baked {
+                        call(mem, r(mem, DBG_PRINTF), &[r(mem, BAKED_FMT), name, m, s]);
+                        for (field, size) in [(8u32, 8u32), (0xc, 12)] {
+                            let len = n.wrapping_mul(size);
+                            let mut bytes = vec![0u8; len as usize];
+                            mem.read_bytes(p, &mut bytes);
+                            let to: u32 = mem.read(vseg + field);
+                            mem.write_bytes(to, &bytes);
+                            p = p.wrapping_add(len);
+                        }
+                        let mut k = 0;
+                        while k < mem.read::<u32>(seg + 0x44) {
+                            clear(mem, k);
+                            k += 1;
+                        }
+                        s += 1;
+                        continue;
+                    }
+                    let model = u32::from(mem.read::<u16>(seg + 0x40));
+                    let code = u32::from(mem.read::<u16>(seg + 0x42));
+                    let plane = mem.read::<u16>(chr) == 0x66 && model == 2 && code == 10;
+                    call(
+                        mem,
+                        r(mem, DBG_PRINTF),
+                        &[r(mem, NOT_BAKED_FMT), name, m, s],
+                    );
+                    let mut k = 0;
+                    while k < mem.read::<u32>(seg + 0x44) {
+                        if skip == 0 {
+                            place_vertex(mem, chr, seg, vseg, k, plane, (pos, dist), c, call);
+                        }
+                        clear(mem, k);
+                        k += 1;
+                    }
+                    if md != 0 {
+                        p = p.wrapping_add(n.wrapping_mul(16));
+                    }
+                    s += 1;
+                }
+            }
+            m += 1;
+        }
+    }
+
+    /// One vertex of [`ch_pre_calc_active_cloth_mesh`]'s placement.
+    #[allow(clippy::too_many_arguments)]
+    fn place_vertex<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        seg: u32,
+        vseg: u32,
+        k: u32,
+        plane: bool,
+        (pos, dist): (u32, u32),
+        c: f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(crate::x87::load(mem.read::<f32>(a)));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        let src: u32 = mem.read(vseg + 4);
+        let src = src.wrapping_add(12 * k);
+        let xyz = [0, 4, 8].map(|o| r32(fl(mem, src + o) * 1000.0));
+        mem.write(pos, [xyz[0], xyz[1], xyz[2], 1.0]);
+        let normals: u32 = mem.read(seg + 0x4c);
+        let n = normals.wrapping_add(16 * k);
+        let [mut ax, ay, az] = [0, 4, 8].map(|o| f64::from(r32(fl(mem, n + o).abs())));
+        let model = u32::from(mem.read::<u16>(seg + 0x40));
+        let code = u32::from(mem.read::<u16>(seg + 0x42));
+        let records: u32 = mem.read(vseg + 8);
+        let record = records.wrapping_add(8 * k);
+        let tri: u32 = mem.read(vseg + 0xc);
+        let tri = tri.wrapping_add(12 * k);
+        let over = if plane && (c > ay || 0.3 > az) {
+            ax = f64::from(0.1f32);
+            false
+        } else {
+            ax > c
+        };
+        let placed = over || ay > c || az > c;
+        if !placed {
+            mem.write(record + 2, 0xffffu16);
+            return;
+        }
+        let triangle = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, code, d| {
+            #[allow(clippy::cast_possible_truncation)] // the result's ax
+            let got = call(
+                mem,
+                r(mem, INSIDE_TRIANGLE),
+                &[chr, pos, model, code, tri, tri + 4, tri + 8, d],
+            ) as u16;
+            let records: u32 = mem.read(vseg + 8);
+            mem.write(records.wrapping_add(8 * k + 2), got);
+        };
+        if ax < c && az < c {
+            triangle(mem, call, code % 100, 0);
+            return;
+        }
+        let pinned =
+            (c > ay && c > az) || call(mem, r(mem, USE_ANCHOR_VERTEX), &[chr, model, code]) != 0;
+        if pinned {
+            let v: u16 = mem.read(record);
+            mem.write(record, v | 1);
+            triangle(mem, call, code, dist);
+            let records: u32 = mem.read(vseg + 8);
+            let d = crate::x87::load(mem.read::<f32>(dist));
+            mem.write(records.wrapping_add(8 * k + 4), d);
+        } else {
+            triangle(mem, call, code, 0);
+        }
+    }
 }
 
 #[cfg(test)]

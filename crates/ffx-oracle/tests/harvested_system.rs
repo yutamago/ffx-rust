@@ -41,3 +41,16 @@ harvest_test!(
         );
     }
 );
+// small round 2
+harvest_test!(
+    to_wait_btl_win_main,
+    0x008a_8a70,
+    args = 1,
+    |m: &mut Oracle, s| {
+        ffx_system::btl::bridge::to_wait_btl_win_main(
+            m,
+            s.arg(0),
+            &mut |m: &mut Oracle, f, a: &[u32]| m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax,
+        )
+    }
+);

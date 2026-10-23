@@ -2786,6 +2786,17 @@ ported! {
         let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
         ffx_field::abmap_draw::abmap_draw_board(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a));
     }
+    /// `AbmapDrawChrLabels_00a4b790()`: void (no caller reads `eax`); the
+    /// projection's `ST0` is popped.
+    AbmapDrawChrLabels_00a4b790 @ 0x00a4_b790 => extern "C" fn shim_abmap_draw_chr_labels() {
+        let mut w = super::StackFrame::<{ ffx_field::abmap_draw::LABELS_WORK as usize / 4 }>::new();
+        ffx_field::abmap_draw::abmap_draw_chr_labels(
+            &mut mem(),
+            w.at(),
+            &mut |_, f, a| call_cdecl(f, a),
+            &mut |_, f, a| super::call_cdecl_f64(f, a),
+        );
+    }
     /// `AbmapDrawMap()`.
     AbmapDrawMap @ 0x00a4_ce20 => extern "C" fn shim_abmap_draw_map() -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::abmap_draw::MAP_WORK as usize / 4 }>::new();

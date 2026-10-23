@@ -188,6 +188,100 @@ pub mod bridge {
         }
     }
 
+    /// `JobScheduleWait_Ch_CalcMiddle_Batch()` (`0x00a44b80`),
+    /// `JobSchedule_Ch_CalcMiddle_Batch(first, 1, n)` (`0x00a44b90`),
+    /// `Sg_GetPause()` (`0x008205e0`), `Ch_MotEvent(chr)`,
+    /// `Ch_RequestCalcNormal()` (`0x00832540`), the GS register sink
+    /// (`0x023056e8`, a word that counts packet words) and where
+    /// `Ch_CalcMiddle` leaves how far it moved (`0x013009c0`).
+    pub const CALC_MIDDLE_WAIT: u32 = 0x00a4_4b80;
+    pub const CALC_MIDDLE_SCHEDULE: u32 = 0x00a4_4b90;
+    pub const GET_PAUSE: u32 = 0x0082_05e0;
+    pub const MOT_EVENT: u32 = 0x0083_4350;
+    pub const REQUEST_CALC_NORMAL: u32 = 0x0083_2540;
+    pub const GS_REGISTER_SINK: Global<u32> = Global::new(0x0230_56e8);
+    pub const CALC_MIDDLE_SINK_DELTA: Global<u32> = Global::new(0x0130_09c0);
+
+    /// `Ch_CalcMiddle()` (`0x00833390`; caller `Sg_MainLoop`): the
+    /// characters' middle step on the job threads, then their motion
+    /// events.
+    ///
+    /// After waiting for the last batch, the characters are cut into
+    /// batches of about 200 bones: walking the array (its end read again
+    /// each step), every character counts, and an active one that runs
+    /// (`+0x180` 0 or `+0x181` set) adds its bone count (the `u16` at
+    /// `+0xa` of `[+0x1c0]`) when it has a model (`+0x19c`) and the game
+    /// is not paused; from 200 the batch so far goes to the job threads
+    /// (`JobSchedule_Ch_CalcMiddle_Batch(first, 1, count)`) and the next
+    /// starts after this character. The rest goes after the walk; then
+    /// the wait again. Two passes follow, those without a model then those
+    /// with one: a running character, unpaused, with flag bit 24 of
+    /// `+0x194` gets `Ch_MotEvent` and bit 12 cleared, else bit 12 set.
+    /// Then `Ch_RequestCalcNormal()`, and how far the GS register sink
+    /// moved goes to `0x013009c0`; that difference is also the EAX.
+    pub fn ch_calc_middle<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let runs =
+            |mem: &M, c: u32| mem.read::<u8>(c + 0x180) == 0 || mem.read::<u8>(c + 0x181) != 0;
+        let mut first = CHR_ARRAY.get(mem);
+        let sink = GS_REGISTER_SINK.get(mem);
+        let (mut count, mut bones) = (0u32, 0u32);
+        call(mem, r(mem, CALC_MIDDLE_WAIT), &[]);
+        let mut c = CHR_ARRAY.get(mem);
+        if c != slot(mem, CHR_COUNT.get(mem)) {
+            loop {
+                count = count.wrapping_add(1);
+                if active(mem, c) && runs(mem, c) {
+                    if mem.read::<u32>(c + 0x19c) != 0 && call(mem, r(mem, GET_PAUSE), &[]) == 0 {
+                        let skin: u32 = mem.read(c + 0x1c0);
+                        bones =
+                            bones.wrapping_add(u32::from(mem.read::<u16>(skin.wrapping_add(0xa))));
+                    }
+                    if bones.cast_signed() >= 200 {
+                        call(mem, r(mem, CALC_MIDDLE_SCHEDULE), &[first, 1, count]);
+                        first = c.wrapping_add(l::SIZE);
+                        bones = 0;
+                        count = 0;
+                    }
+                }
+                c = c.wrapping_add(l::SIZE);
+                if c == slot(mem, CHR_COUNT.get(mem)) {
+                    break;
+                }
+            }
+            if bones != 0 {
+                call(mem, r(mem, CALC_MIDDLE_SCHEDULE), &[first, 1, count]);
+            }
+        }
+        call(mem, r(mem, CALC_MIDDLE_WAIT), &[]);
+        for pass in 0..2 {
+            each_active(mem, |mem, c| {
+                let modelled = mem.read::<u32>(c + 0x19c) != 0;
+                if modelled != (pass == 1) || !runs(mem, c) {
+                    return;
+                }
+                if call(mem, r(mem, GET_PAUSE), &[]) != 0 {
+                    return;
+                }
+                let flags: u32 = mem.read(c + 0x194);
+                if flags & 0x0100_0000 != 0 {
+                    call(mem, r(mem, MOT_EVENT), &[c]);
+                    let f: u32 = mem.read(c + 0x194);
+                    mem.write(c + 0x194, f & 0xffff_efff);
+                } else {
+                    mem.write(c + 0x194, flags | 0x1000);
+                }
+            });
+        }
+        call(mem, r(mem, REQUEST_CALC_NORMAL), &[]);
+        let delta = GS_REGISTER_SINK.get(mem).wrapping_sub(sink);
+        CALC_MIDDLE_SINK_DELTA.set(mem, delta);
+        delta
+    }
+
     /// `Ch_AllReserveCalcNorm()` (`0x00832550`).
     pub fn ch_all_reserve_calc_norm(mem: &mut impl Mem) {
         each_active(mem, |m, c| {

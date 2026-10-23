@@ -1124,6 +1124,38 @@ pub mod bridge {
         }
     }
 
+    /// `chr_texanim_main_sub_old(i)` (`0x0077ff00`) and
+    /// `chr_texanim_main_sub_new(i, name, draw)` (`0x0077f360`).
+    pub const MAIN_SUB_OLD: u32 = 0x0077_ff00;
+    pub const MAIN_SUB_NEW: u32 = 0x0077_f360;
+
+    /// `chr_texanim_main(i, name, draw)` (`0x0077c8d0`; caller the
+    /// character draw loop at `0x0083362f`): by entry `i`'s format byte
+    /// (`i8` `+0xd` of [`TEX_ANIMS`]), 0 runs `chr_texanim_main_sub_old(i)`
+    /// and 1 tail-calls `chr_texanim_main_sub_new` with the caller's three
+    /// words; others do nothing. Void: the caller reads no EAX.
+    pub fn chr_texanim_main<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        name: u32,
+        draw: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let e = TEX_ANIMS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.wrapping_mul(TEXANIM_SIZE));
+        match mem.read::<i8>(e.wrapping_add(0xd)) {
+            0 => {
+                call(mem, mem.rebase(MAIN_SUB_OLD), &[i]);
+            }
+            1 => {
+                call(mem, mem.rebase(MAIN_SUB_NEW), &[i, name, draw]);
+            }
+            _ => {}
+        }
+    }
+
     /// `chr_texanim_main_sub_new(i, name, draw)` (`0x0077f360`; caller
     /// `chr_texanim_main`): one step of new-format entry `i` of
     /// [`TEX_ANIMS`] (source kind byte 2). On map `0xe2` a name containing

@@ -37,6 +37,36 @@ pub mod bridge {
         }
     }
 
+    /// `AtelCommonSetUp(ctrl, a, block, x34, x8, debug)` (`0x008759b0`) and
+    /// the menu script controller's buffers (`0x01574f70`, `0x01576f70`,
+    /// `0x0157ef70`).
+    pub const ATEL_COMMON_SET_UP: u32 = 0x0087_59b0;
+    pub const MENU_ATEL_A: u32 = 0x0157_4f70;
+    pub const MENU_ATEL_BLOCK: u32 = 0x0157_6f70;
+    pub const MENU_ATEL_X34: u32 = 0x0157_ef70;
+
+    /// `TOMenuAtelStart()` (`0x008be3a0`): sets up script controller 6
+    /// for the menu (`AtelCommonSetUp(6, 0x01574f70, 0x01576f70,
+    /// 0x0157ef70, 0, 0)`) and sets [`MENU_ATEL_ACTIVE`]. Returns the
+    /// set-up's EAX.
+    pub fn to_menu_atel_start<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let args = [
+            6,
+            g(mem, MENU_ATEL_A),
+            g(mem, MENU_ATEL_BLOCK),
+            g(mem, MENU_ATEL_X34),
+            0,
+            0,
+        ];
+        let eax = call(mem, g(mem, ATEL_COMMON_SET_UP), &args);
+        MENU_ATEL_ACTIVE.set(mem, 1);
+        eax
+    }
+
     /// While 0, `TOBtlPadScrollDown` records the scroll start
     /// (`0x0133c938`).
     pub const SCROLL_LOCK: Global<u32> = Global::new(0x0133_c938);
@@ -483,6 +513,25 @@ pub mod bridge {
     pub const LIBRA_AUTO: Global<u32> = Global::new(0x0133_d6e0);
     /// The menu pad's trigger word (`0x025d09d4`).
     pub const MENU_PAD_TRG: Global<u16> = Global::new(0x025d_09d4);
+
+    /// The character the Libra window shows (`0x0133f6aa`, `i16`).
+    pub const LIBRA_CHR: Global<u16> = Global::new(0x0133_f6aa);
+    /// `TOBtlSetLibraWindowParam(chr)` (`0x0089a160`).
+    pub const SET_LIBRA_WINDOW_PARAM: u32 = 0x0089_a160;
+
+    /// `TOBtlOpenLibraWindow(chr)` (`0x00898bd0`): [`LIBRA_STATE`] = 1,
+    /// [`LIBRA_CHR`] = the low half of `chr`, then a tail call of
+    /// `TOBtlSetLibraWindowParam(chr)`, whose EAX it returns.
+    pub fn to_btl_open_libra_window<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        LIBRA_STATE.set(mem, 1);
+        #[allow(clippy::cast_possible_truncation)] // mov word
+        LIBRA_CHR.set(mem, chr as u16);
+        call(mem, mem.rebase(SET_LIBRA_WINDOW_PARAM), &[chr])
+    }
 
     /// `TOBtlCtrlLibraWindow()` (`0x00891a30`): the Libra window's state
     /// machine. 1: timer 0x14, next. 3, 6, 7: next. 4: with auto-close the

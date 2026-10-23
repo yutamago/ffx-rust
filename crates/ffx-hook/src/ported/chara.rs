@@ -2070,4 +2070,40 @@ ported! {
     chr_texanim_main_sub_new @ 0x0077_f360 => extern "C" fn chr_texanim_main_sub_new(i: u32, name: u32, draw: u32) {
         ta::chr_texanim_main_sub_new(&mut mem(), i, name, draw, &mut |_, f, a| super::call_cdecl(f, a));
     }
+    // ---- small round 2, group a
+    /// `chr_texanim_main(i, name, draw)`: void (the caller reads no `eax`).
+    chr_texanim_main @ 0x0077_c8d0 => extern "C" fn chr_texanim_main(i: u32, name: u32, draw: u32) {
+        ta::chr_texanim_main(&mut mem(), i, name, draw, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Chr_LoadMotionGroup(n)`: the found group or `Ch_ReadSync`'s `eax`.
+    Chr_LoadMotionGroup @ 0x0083_75f0 => extern "C" fn chr_load_motion_group(n: u32) -> u32 {
+        mo::bridge::chr_load_motion_group(&mut mem(), n, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_MoveMotion_00835bb0(chr)`: void (its caller reads no `eax`).
+    Ch_MoveMotion_00835bb0 @ 0x0083_5bb0 => extern "C" fn ch_move_motion(chr: u32) {
+        mo::bridge::ch_move_motion(
+            &mut mem(),
+            chr,
+            &mut |_, f, a| super::call_cdecl(f, a),
+            &mut |_, f, a| st0_cdecl(f, a),
+        );
+    }
+    // ---- small round 2, group b
+    /// `Ch_MotEvent(chr)`: void (its caller reads no `eax`).
+    Ch_MotEvent @ 0x0083_4350 => extern "C" fn ch_mot_event(chr: u32) {
+        mo::bridge::ch_mot_event(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    // ---- small round 2, group c
+    /// `Ch_PreCalcActiveClothMesh(chr, skip)`: void (its caller reads no
+    /// `eax`); the position and distance live in a per-call frame.
+    Ch_PreCalcActiveClothMesh @ 0x0082_7e90 => extern "C" fn ch_pre_calc_active_cloth_mesh(chr: u32, skip: u32) {
+        let mut frame = super::StackFrame::<{ cl::PRE_CALC_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        cl::ch_pre_calc_active_cloth_mesh(&mut mem(), chr, skip, s, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    // ---- small round 2, group f
+    /// `Ch_CalcMiddle()`: how far the GS register sink moved (also stored).
+    Ch_CalcMiddle @ 0x0083_3390 => extern "C" fn ch_calc_middle() -> u32 {
+        h::ch_calc_middle(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }

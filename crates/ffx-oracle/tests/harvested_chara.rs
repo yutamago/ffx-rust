@@ -53,3 +53,32 @@ harvest_test!(
         ffx_chara::draw::bridge::ch_plight_calc(m, s.arg(0), frame, &mut c);
     }
 );
+// small round 2
+harvest_test!(
+    ch_move_motion,
+    0x0083_5bb0,
+    args = 1,
+    |m: &mut Oracle, s| {
+        ffx_chara::motion::bridge::ch_move_motion(
+            m,
+            s.arg(0),
+            &mut |m: &mut Oracle, f, a: &[u32]| m.call_cdecl(f, a).unwrap(),
+            &mut |m: &mut Oracle, f, a: &[u32]| m.call_f64(f, a).unwrap(),
+        );
+    }
+);
+harvest_test!(ch_mot_event, 0x0083_4350, args = 1, |m: &mut Oracle, s| {
+    ffx_chara::motion::bridge::ch_mot_event(m, s.arg(0), &mut |m: &mut Oracle, f, a: &[u32]| {
+        m.call_cdecl(f, a).unwrap()
+    });
+});
+harvest_test!(
+    ch_calc_middle,
+    0x0083_3390,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        ffx_chara::handle::bridge::ch_calc_middle(m, &mut |m: &mut Oracle, f, a: &[u32]| {
+            m.call_cdecl(f, a).unwrap()
+        })
+    }
+);
