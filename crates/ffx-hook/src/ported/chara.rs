@@ -2112,4 +2112,14 @@ ported! {
     Ch_CalcMain @ 0x0083_2e10 => extern "C" fn ch_calc_main(dt: f32) -> u32 {
         h::ch_calc_main(&mut mem(), dt, &mut |_, f, a| super::call_cdecl(f, a), &mut |_, f, a| ci_call(f, a))
     }
+    // ---- small round 3, group b
+    /// `Ch_DrawMain()`: void (`Sg_MainLoop` reads no `eax`); its matrices
+    /// and vectors live in a per-call frame laid out as the original's,
+    /// the three words it reads unwritten 0.
+    Ch_DrawMain @ 0x0082_ed50 => extern "C" fn ch_draw_main() {
+        use ffx_chara::draw_main::bridge as dm;
+        let mut frame = super::StackFrame::<{ dm::FRAME as usize / 4 }>::new();
+        let f = frame.at();
+        dm::ch_draw_main(&mut mem(), f, [0; 3], &mut |_, f, a| super::call_cdecl(f, a));
+    }
 }
