@@ -7156,6 +7156,10 @@ ported! {
     Atel_EffectDoneCallback_00861f20 @ 0x0086_1f20 => extern "C" fn h_861f20(word: u32) -> u32 {
         hp::atel_effect_done_callback(&mut mem(), word)
     }
+    /// `Atel_ChrRegCallback_00861850(state)`.
+    Atel_ChrRegCallback_00861850 @ 0x0086_1850 => extern "C" fn h_861850(state: u32) -> u32 {
+        hp::atel_chr_reg_callback(&mut mem(), state)
+    }
     /// `AtelExecCtrlEventInit_008677a0(ctrl, battle)`.
     AtelExecCtrlEventInit_008677a0 @ 0x0086_77a0 => extern "C" fn h_8677a0(c: u32, battle: u32) {
         hp::atel_exec_ctrl_event_init(&mut mem(), c, battle);

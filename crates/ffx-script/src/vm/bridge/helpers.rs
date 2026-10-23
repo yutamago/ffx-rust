@@ -9286,3 +9286,333 @@ pub fn atel_effect_done_callback(h: &mut impl ffx_bridge::Host, word: u32) -> u3
     }
     u32::from(done)
 }
+
+// ---- small round 4 b ----
+
+/// `0x013270e8`: the actor [`atel_chr_reg_callback`] is at.
+const CHR_REG_INDEX: u32 = 0x0132_70e8;
+/// `0x013270ec`: how many actors it sets up (ctrl work 0's `+0xc`).
+const CHR_REG_COUNT: u32 = 0x0132_70ec;
+
+/// `Atel_ChrRegCallback_00861850(state)` (name ours; the `CHRREG` callback
+/// queue entry, reached only through it): the actors of ctrl work 0
+/// (current meanwhile, the old ctrl work back at every return) get their
+/// characters back after a battle, one step of a state machine in
+/// `*state` per actor, the actor index at `0x013270e8`:
+/// - 0: the index 0 and the count (ctrl work 0's `+0xc`) set up; returns
+///   1 instead of 0 from here on when ctrl work 0's bit 0 is clear;
+/// - 1: an actor not at `+0xaa` 1 recovers its field program
+///   (`AtelRecoverFPFromBattle`) and is skipped (14);
+/// - 2, 3: without a character (`+0x9c`) or with `+0x33` bit 2, its data
+///   (`+0xa8`) read (`Ch_DataRead`), then waited for (`Ch_DataReadSync`,
+///   1: return);
+/// - 4, 5: `+0x38` bit 9 unbinds it (`AtelBindElemOff(w, 0)`); the weapon
+///   (`+0xb04`, `+0xb14` bit 0, no `+0xaf4` yet) read and waited for;
+/// - 6, 7: `+0x38` bit 10 drops the armour's character `+0xaf8`
+///   (`Ch_Dispose` when `Ch_CheckHandle` says 0) and the bits; the armour
+///   (`+0xb06`, `+0xb14` bit 1, non-zero) read and waited for;
+/// - 8..=11: the system motion groups 0 (`+0x36` bit 13) and 2 (bit 14)
+///   read (`Ch_MgrpRead_thunk`) and waited for (`ChN_ReadSystemMGRPsync`;
+///   after group 2 it returns with state 12 either way);
+/// - 12: the character made (`TkCh_Allocate2(+0xa8, +0x2e)` into `+0x9c`,
+///   battle number `+0x40`, -1 as 0xff) with its bind effects (`+0x38`
+///   bits 4..=7), `+0x33` bit 2 cleared; the weapon and armour made from
+///   the save (`MsGetSaveChr{Weapon,Armor}Model(+0x40)` into
+///   `+0xb04`/`+0xb06`, `TkCh_Allocate`, sound id 15, bound to element
+///   `+0xafc`/`+0xb00` of the character; actor 7's weapon hides the
+///   character's part 1) and clipped (`+0xb08`/`+0xb0c` bits 0 and 1);
+///   back into the battle's place (`Atel_ReturnActorFromBattle_00862d70(w,
+///   1)`) unless `+0x36` bit 6 or `+0xb10` bit 0;
+/// - 13, 14: the next actor (1), or 15 after the last;
+/// - 15: every actor's `+0x34` bit 2 set, `g_AtelNotAuronPatchFlag` 0,
+///   ctrl work 0's `+0x1ea` = 3, and the Phyre field map loaded
+///   (`loadPhyreFieldMap`) when the previous level's hash is 0x1d58 or
+///   ctrl work 0's `+3` & 3 is 1; returns 1.
+///
+/// A state above 15 returns 0 at once.
+#[allow(clippy::too_many_lines)] // the original's states in turn
+pub fn atel_chr_reg_callback(h: &mut impl ffx_bridge::Host, state: u32) -> u32 {
+    let ctx = h.rebase(SCRIPT_CONTEXT);
+    let (index_at, count_at) = (h.rebase(CHR_REG_INDEX), h.rebase(CHR_REG_COUNT));
+    let saved = h.read::<u32>(ctx);
+    let mut s = h.read::<u32>(state);
+    h.write(ctx, h.rebase(0x0132_5ba0));
+    let mut ret = 0u32;
+    let mut i = h.read::<u32>(index_at);
+    let work = |h: &mut _, i: u32| host_call(h, 0x0086_a830, &[i]);
+    let id = |h: &mut _, w: u32, o: u32| u32::from(Mem::read::<u16>(h, w.wrapping_add(o)));
+    let set = |h: &mut _, w: u32, o: u32, keep: u16| {
+        let at = w.wrapping_add(o);
+        let v = Mem::read::<u16>(h, at) & keep;
+        Mem::write(h, at, v);
+    };
+    // the states as the original's jump table runs them; `None` returns
+    let done = loop {
+        if s > 0xf {
+            break Some(0);
+        }
+        s = match s {
+            0 | 1 => {
+                if s == 0 {
+                    i = 0;
+                    let c = h.read::<u32>(ctx);
+                    let n = u32::from(h.read::<u16>(c.wrapping_add(0xc)));
+                    h.write(index_at, 0u32);
+                    h.write(count_at, n);
+                    if h.read::<u8>(h.rebase(0x0132_5ba0)) & 1 == 0 {
+                        ret = 1;
+                    }
+                    h.write(state, 1u32);
+                }
+                let w = work(h, i);
+                if h.read::<u8>(w.wrapping_add(0xaa)) == 1 {
+                    2
+                } else {
+                    host_call(h, 0x0086_e4c0, &[w]);
+                    i = h.read::<u32>(index_at);
+                    0xe
+                }
+            }
+            2 => {
+                let w = work(h, i);
+                if h.read::<u32>(w.wrapping_add(0x9c)) != 0
+                    && h.read::<u8>(w.wrapping_add(0x33)) & 4 == 0
+                {
+                    4
+                } else {
+                    let d = id(h, w, 0xa8);
+                    host_call(h, 0x0082_9ef0, &[d]);
+                    i = h.read::<u32>(index_at);
+                    h.write(state, 3u32);
+                    3
+                }
+            }
+            3 | 5 | 7 => {
+                let (o, next) = match s {
+                    3 => (0xa8, 4),
+                    5 => (0xb04, 6),
+                    _ => (0xb06, 8),
+                };
+                let w = work(h, i);
+                let d = id(h, w, o);
+                if host_call(h, 0x0082_a040, &[d]) == 1 {
+                    break None;
+                }
+                i = h.read::<u32>(index_at);
+                next
+            }
+            4 => {
+                let w = work(h, i);
+                if h.read::<u16>(w.wrapping_add(0x38)) & 0x200 != 0 {
+                    host_call(h, 0x0086_2780, &[w, 0]);
+                    i = h.read::<u32>(index_at);
+                    set(h, w, 0x38, 0xfdff);
+                }
+                if h.read::<u32>(w.wrapping_add(0xaf4)) == 0
+                    && h.read::<u8>(w.wrapping_add(0xb14)) & 1 != 0
+                {
+                    let d = id(h, w, 0xb04);
+                    host_call(h, 0x0082_9ef0, &[d]);
+                    i = h.read::<u32>(index_at);
+                    h.write(state, 5u32);
+                    5
+                } else {
+                    6
+                }
+            }
+            6 => {
+                let w = work(h, i);
+                if h.read::<u16>(w.wrapping_add(0x38)) & 0x400 != 0 {
+                    let c = h.read::<u32>(w.wrapping_add(0xaf8));
+                    if c != 0 {
+                        if host_call(h, 0x0082_61b0, &[c]) == 0 {
+                            host_call(h, 0x0082_66f0, &[c]);
+                        }
+                        i = h.read::<u32>(index_at);
+                        h.write(w.wrapping_add(0xaf8), 0u32);
+                    }
+                    set(h, w, 0xb14, 0xfffd);
+                    set(h, w, 0x38, 0xfbff);
+                }
+                let armour = id(h, w, 0xb06);
+                if h.read::<u32>(w.wrapping_add(0xaf8)) == 0
+                    && h.read::<u8>(w.wrapping_add(0xb14)) & 2 != 0
+                    && armour != 0
+                {
+                    host_call(h, 0x0082_9ef0, &[armour]);
+                    i = h.read::<u32>(index_at);
+                    h.write(state, 7u32);
+                    7
+                } else {
+                    8
+                }
+            }
+            8 | 10 => {
+                let (bit, group, next) = if s == 8 {
+                    (0x2000, 0, 9)
+                } else {
+                    (0x4000, 2, 0xb)
+                };
+                let w = work(h, i);
+                if h.read::<u16>(w.wrapping_add(0x36)) & bit == 0 {
+                    s + 2
+                } else {
+                    let d = id(h, w, 0xa8);
+                    host_call(h, 0x0083_6a40, &[d, group]);
+                    i = h.read::<u32>(index_at);
+                    h.write(state, next);
+                    next
+                }
+            }
+            9 => {
+                let w = work(h, i);
+                let d = id(h, w, 0xa8);
+                if host_call(h, 0x0083_6a50, &[d, 0]) == 1 {
+                    break None;
+                }
+                i = h.read::<u32>(index_at);
+                0xa
+            }
+            0xb => {
+                let w = work(h, i);
+                let d = id(h, w, 0xa8);
+                if host_call(h, 0x0083_6a50, &[d, 2]) != 1 {
+                    h.write(state, 0xcu32);
+                }
+                break None;
+            }
+            0xc => {
+                let w = work(h, i);
+                chr_reg_make(h, w);
+                i = h.read::<u32>(index_at);
+                h.write(state, 0xdu32);
+                h.write(state, 0xeu32);
+                chr_reg_next(h, state, &mut i)
+            }
+            0xd => {
+                h.write(state, 0xeu32);
+                chr_reg_next(h, state, &mut i)
+            }
+            0xe => chr_reg_next(h, state, &mut i),
+            _ => {
+                // the count read again after each actor
+                let mut k = 0i32;
+                while k < h.read::<u32>(count_at).cast_signed() {
+                    let w = work(h, k.cast_unsigned());
+                    let v = h.read::<u16>(w.wrapping_add(0x34)) | 4;
+                    h.write(w.wrapping_add(0x34), v);
+                    k += 1;
+                }
+                h.write(h.rebase(0x0132_6b81), 0u8);
+                let c = h.read::<u32>(ctx);
+                h.write(c.wrapping_add(0x1ea), 3u8);
+                ret = 1;
+                let hash = host_call(h, 0x0064_27e0, &[]);
+                let c = h.read::<u32>(ctx);
+                if hash == 0x1d58 || h.read::<u8>(c.wrapping_add(3)) & 3 == 1 {
+                    host_call(h, 0x0090_8000, &[]);
+                }
+                break None;
+            }
+        };
+    };
+    h.write(ctx, saved);
+    done.unwrap_or(ret)
+}
+
+/// [`atel_chr_reg_callback`]'s states 13 and 14: the index steps; state 1
+/// again while below the count, else 15 (both stored in `*state`).
+fn chr_reg_next(h: &mut impl ffx_bridge::Host, state: u32, i: &mut u32) -> u32 {
+    *i = i.wrapping_add(1);
+    h.write(h.rebase(CHR_REG_INDEX), *i);
+    let next = if i.cast_signed() < h.read::<u32>(h.rebase(CHR_REG_COUNT)).cast_signed() {
+        1
+    } else {
+        0xf
+    };
+    h.write(state, next);
+    next
+}
+
+/// [`atel_chr_reg_callback`]'s state 12 on the actor `w`: its character,
+/// bind effects, weapon and armour made, then back into its battle place.
+fn chr_reg_make(h: &mut impl ffx_bridge::Host, w: u32) {
+    let at = |o: u32| w.wrapping_add(o);
+    if h.read::<u32>(at(0x9c)) == 0 || h.read::<u8>(at(0x33)) & 4 != 0 {
+        let (model, n) = (
+            u32::from(h.read::<u16>(at(0xa8))),
+            u32::from(h.read::<u16>(at(0x2e))),
+        );
+        let c = host_call(h, 0x0087_2210, &[model, n]);
+        h.write(at(0x9c), c);
+        if c != 0 {
+            let num = match h.read::<u32>(at(0x40)) {
+                u32::MAX => 0xff,
+                v => v,
+            };
+            host_call(h, 0x0082_b0d0, &[c, num]);
+        }
+        let chr = |h: &mut _| Mem::read::<u32>(h, at(0x9c));
+        if h.read::<u8>(at(0x38)) & 0x10 != 0 {
+            let c = chr(h);
+            host_call(h, 0x007f_b290, &[c]);
+            let c = chr(h);
+            host_call(h, 0x007f_bab0, &[c]);
+        }
+        // walk, breath and water: bindeff2, its draw, then the kind
+        for (bit, on) in [
+            (0x20u8, 0x007f_b830),
+            (0x40, 0x007f_b4c0),
+            (0x80, 0x007f_b8e0),
+        ] {
+            if h.read::<u8>(at(0x38)) & bit != 0 {
+                for f in [0x007f_b360, 0x007f_b5a0, on] {
+                    let c = chr(h);
+                    host_call(h, f, &[c]);
+                }
+                let v = h.read::<u16>(at(0x38)) | u16::from(bit);
+                h.write(at(0x38), v);
+            }
+        }
+    }
+    let v = h.read::<u8>(at(0x33)) & 0xfb;
+    h.write(at(0x33), v);
+    let mut mask = 1u32;
+    for k in 0..2u32 {
+        let slot = at(0xaf4 + 4 * k);
+        if h.read::<u32>(slot) == 0 && mask & u32::from(h.read::<u16>(at(0xb14))) != 0 {
+            let save = h.read::<u32>(at(0x40));
+            let f = if k == 1 { 0x007a_bb70 } else { 0x007a_bba0 };
+            let model = host_call(h, f, &[save]).to_le_bytes();
+            let model = u16::from_le_bytes([model[0], model[1]]);
+            h.write(at(0xb04 + 2 * k), model);
+            if model != 0 {
+                let part = host_call(h, 0x0087_2190, &[u32::from(model)]);
+                h.write(slot, part);
+                host_call(h, 0x0083_5b50, &[part, 0xf]);
+                let elem = h.read::<u32>(at(0xafc + 4 * k));
+                let part = h.read::<u32>(slot);
+                let c = h.read::<u32>(at(0x9c));
+                if h.read::<u16>(at(0xa8)) == 7 && c != 0 && k == 0 {
+                    host_call(h, 0x0082_aea0, &[c, 1, 1]);
+                }
+                host_call(h, 0x0083_2630, &[part, c, elem]);
+            }
+        }
+        let part = h.read::<u32>(slot);
+        if part != 0 {
+            let clip = h.read::<u32>(at(0xb08 + 4 * k));
+            host_call(h, 0x0082_aa30, &[part, clip & 1]);
+            let clip = h.read::<u32>(at(0xb08 + 4 * k));
+            let part = h.read::<u32>(slot);
+            host_call(h, 0x0082_b970, &[part, clip >> 1 & 1]);
+        }
+        mask = mask.rotate_left(1);
+    }
+    if h.read::<u8>(at(0x36)) & 0x40 == 0
+        && h.read::<u32>(at(0x9c)) != 0
+        && h.read::<u8>(at(0xb10)) & 1 == 0
+    {
+        host_call(h, 0x0086_2d70, &[w, 1]);
+    }
+}

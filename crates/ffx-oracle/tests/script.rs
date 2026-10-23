@@ -15937,3 +15937,160 @@ fn round_small1a_ctrl_callbacks_match_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     small1a_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Small round 4 b on one pair: `Atel_ChrRegCallback_00861850` from every
+/// state (and past 15) over up to 8 synthetic actors, several calls in a
+/// row. `AtelGetBasicWork` maps an index to one of 8 work areas; every
+/// other callee is a logging stub, the reads' syncs, the handle check,
+/// the allocations, the save's models and the level hash from sequences.
+#[allow(clippy::too_many_lines)] // the set-up, then the cases
+fn small4b_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    // sequences: 0 Ch_DataReadSync, 1 Ch_CheckHandle, 2 the MGRP sync,
+    // 3 TkCh_Allocate2, 4 the weapon model, 5 the armour model,
+    // 6 TkCh_Allocate, 7 the level hash
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0082_a040, 1, true),
+            (0x0082_61b0, 1, true),
+            (0x0083_6a50, 2, true),
+            (0x0087_2210, 2, true),
+            (0x007a_bba0, 1, true),
+            (0x007a_bb70, 1, true),
+            (0x0087_2190, 1, true),
+            (0x0064_27e0, 0, true),
+            (0x0086_e4c0, 1, false),
+            (0x0082_9ef0, 1, false),
+            (0x0086_2780, 2, false),
+            (0x0082_66f0, 1, false),
+            (0x0083_6a40, 2, false),
+            (0x0082_b0d0, 2, false),
+            (0x007f_b290, 1, false),
+            (0x007f_bab0, 1, false),
+            (0x007f_b360, 1, false),
+            (0x007f_b5a0, 1, false),
+            (0x007f_b830, 1, false),
+            (0x007f_b4c0, 1, false),
+            (0x007f_b8e0, 1, false),
+            (0x0083_5b50, 2, false),
+            (0x0082_aea0, 3, false),
+            (0x0083_2630, 3, false),
+            (0x0082_aa30, 2, false),
+            (0x0082_b970, 2, false),
+            (0x0086_2d70, 2, false),
+            (0x0090_8000, 0, false),
+        ],
+    );
+    let works = alloc_both(a, b, 0xc00 * 8);
+    // AtelGetBasicWork(i): works + (i & 7) * 0xc00
+    let mut code = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x07, 0x69, 0xc0, 0x00, 0x0c, 0, 0,
+    ];
+    code.push(0x05);
+    code.extend_from_slice(&works.to_le_bytes());
+    code.push(0xc3);
+    let at = a.alloc_code(&code).unwrap();
+    assert_eq!(b.alloc_code(&code).unwrap(), at);
+    for o in [&mut *a, &mut *b] {
+        let entry = o.rebase(0x0086_a830);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+    let state = alloc_both(a, b, 4);
+    let ctrl0 = a.rebase(0x0132_5ba0);
+    let (ctx, index, count) = (
+        a.rebase(0x0132_6b28),
+        a.rebase(0x0132_70e8),
+        a.rebase(0x0132_70ec),
+    );
+    let mut seen = [0u32; 18];
+    for round in 0..160u32 {
+        r27_reset(a, b, &stubs, |s| match s {
+            0 | 2 => [0u32, 1, 1, 2][rng.below(4) as usize],
+            1 => rng.below(2),
+            3 | 6 => [0u32, 0x1000_0000 + rng.below(0x1000)][rng.below(3).min(1) as usize],
+            4 | 5 => [0u32, 0x7, 0x1_0123, rng.next()][rng.below(4) as usize],
+            _ => [0x1d58u32, rng.next()][rng.below(2) as usize],
+        });
+        // (0x101: a count above a byte)
+        let n = if round % 16 == 4 { 0x101 } else { rng.below(9) };
+        fill_both(a, b, rng, works, 0xc00 * 8);
+        for k in 0..8u32 {
+            let w = works + 0xc00 * k;
+            poke(a, b, w + 0xaa, [1u8, 1, 0, 2][rng.below(4) as usize]);
+            if rng.below(2) == 0 {
+                poke(a, b, w + 0x9c, 0u32);
+            }
+            for o in [0xaf4u32, 0xaf8] {
+                if rng.below(2) == 0 {
+                    poke(a, b, w + o, 0u32);
+                }
+            }
+            if rng.below(3) == 0 {
+                poke(a, b, w + 0xb06, 0u16);
+            }
+            if rng.below(3) == 0 {
+                poke(a, b, w + 0x40, u32::MAX);
+            }
+            if rng.below(4) == 0 {
+                poke(a, b, w + 0xa8, 7u16);
+            }
+        }
+        poke(a, b, ctx, rng.next());
+        poke(a, b, ctrl0, rng.next().to_le_bytes()[0]);
+        poke(a, b, ctrl0 + 3, rng.next().to_le_bytes()[0]);
+        poke(a, b, ctrl0 + 0xc, u16::try_from(n).unwrap());
+        poke(a, b, count, n);
+        poke(a, b, index, rng.below(n + 1));
+        if round % 8 == 3 {
+            // a negative count or index (signed compares)
+            poke(a, b, count, 0xffff_fff0u32);
+            poke(a, b, index, [0x8000_0000u32, 2][rng.below(2) as usize]);
+        }
+        let s0 = if round % 4 == 0 { 0 } else { rng.below(18) };
+        poke(a, b, state, s0);
+        for call in 0..6 {
+            let s = Mem::read::<u32>(&*a, state);
+            seen[s.min(17) as usize] += 1;
+            r22_case(
+                a,
+                b,
+                0x0086_1850,
+                &[state],
+                true,
+                &format!("Atel_ChrRegCallback {what} {round} call {call} state {s}"),
+                |r| hp::atel_chr_reg_callback(r, state),
+            );
+        }
+    }
+    assert!(seen.iter().all(|&k| k > 0), "every state runs ({seen:?})");
+}
+
+#[test]
+fn small4b_chr_reg_callback_matches_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_4b01);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        small4b_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    small4b_cases(&mut a, &mut b, &mut rng, "snapshot");
+}
