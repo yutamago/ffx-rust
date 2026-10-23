@@ -240,4 +240,14 @@ ported! {
     MenuWorldMap_Draw_008e2b60 @ 0x008e_2b60 => extern "C" fn menu_world_map_draw(window: u32) -> u32 {
         worldmap::draw(&mut mem(), window, &mut |_, f, args| super::call_cdecl(f, args))
     }
+    /// `AbmapPadDrawList_00a58900(panel, dx)`.
+    AbmapPadDrawList_00a58900 @ 0x00a5_8900 => extern "C" fn abmap_pad_draw_list(panel: u32, dx: u32) {
+        panel::draw_list(&mut mem(), panel, dx.cast_signed(), &mut |_, f, args| super::call_cdecl(f, args));
+    }
+    /// `AbmapFreeCursorStep_00a58ff0(filter)`: the distance and the move
+    /// in this frame.
+    AbmapFreeCursorStep_00a58ff0 @ 0x00a5_8ff0 => extern "C" fn abmap_free_cursor_step(filter: u32) {
+        let mut w = super::StackFrame::<{ cursor::FREE_CURSOR_WORK as usize / 4 }>::new();
+        cursor::free_cursor_step(&mut mem(), filter, w.at());
+    }
 }

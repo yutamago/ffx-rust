@@ -474,4 +474,228 @@ pub mod bridge {
         mem.write(g.wrapping_add(0x1_161c), 0u32);
         g
     }
+
+    /// `FUN_00a462f0(x, y, right, bottom, count)` (unnamed; by its
+    /// arguments the panel's frame), `TODrawScissorXYWH(x, y, w, h)`,
+    /// `AbmapDrawScrollBar(x, y, height, first, total, shown)`,
+    /// `FUN_00a4f290(panel, first, dx)` (unnamed; drawn when `+0x25` is
+    /// set, the cursor by the look of it).
+    pub const ABMAP_PAD_DRAW_FRAME: u32 = 0x00a4_62f0;
+    pub const TO_DRAW_SCISSOR_XYWH: u32 = 0x008f_9230;
+    pub const ABMAP_DRAW_SCROLL_BAR: u32 = 0x00a4_6120;
+    pub const ABMAP_PAD_DRAW_CURSOR: u32 = 0x00a4_f290;
+    /// The panel whose frame shows its entry count (`g_AbmapPad +
+    /// 0x1a00`, panel 8).
+    pub const COUNTED_PANEL: u32 = 0x1a00;
+    /// A list row's height.
+    pub const ROW: i32 = 0x14;
+
+    /// `AbmapPadDrawList_00a58900(panel, dx)` (name ours; from the panel
+    /// pass `0x00a58660`): the panel's frame at `x = i16 +8 + dx`, `y =
+    /// i16 +0xa`, size `i16 +0xc` x `i16 +0xe` (the count `i16 +0x1e` for
+    /// panel 8 only), its scissor (`y - 1`, `h - 2`). The first row shown
+    /// is the top `+0x1a`, or `cursor - page + 1` once the cursor `+0x18`
+    /// is a page `+0x16` or more below it. With `+0x28` set and more than
+    /// two rows a page, the scroll bar (x, y, height as `u16`). Rows are
+    /// drawn through the panel's callback `+0x38` (re-read for each),
+    /// `cb(panel, entry, index, x, y)`, entries 12 bytes from `+0x40`,
+    /// rows [`ROW`] apart, columns `+0x22` (`i16 +0xc / cols` apart, from
+    /// `x + i16 +0x20`), `cols * page` cells; by the scroll animation
+    /// `+0x26` (`+0x27` its step): 0 still (stops at the count, re-read),
+    /// 1 one row up, 2 one row down (`page + 1` rows offset by `step / 8`,
+    /// the step then grows by 0x35 and the animation ends at 0x8c), 3 a
+    /// page up, 4 a page down (the step grows by 1, the animation ends at
+    /// 8; the old page from `+0x1c` slides out of a shrinking scissor while
+    /// the new one follows). Then the full-screen scissor and, with `+0x25`
+    /// set, the cursor. A panel with no columns faults on the division in
+    /// the original; the port draws its rows at the same x.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // five animations; x, y, p
+    pub fn draw_list<M, C>(mem: &mut M, panel: u32, dx: i32, call: &mut C)
+    where
+        M: ffx_bridge::Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let p = panel;
+        let x = word(mem, p, 8).wrapping_add(dx);
+        let y = word(mem, p, 0xa);
+        let counted = p == PAD.get(mem).wrapping_add(COUNTED_PANEL);
+        let count = if counted { word(mem, p, 0x1e) } else { 0 };
+        let right = word(mem, p, 0xc).wrapping_add(x);
+        let bottom = word(mem, p, 0xe).wrapping_add(y);
+        cdecl(
+            mem,
+            call,
+            ABMAP_PAD_DRAW_FRAME,
+            &[x, y, right, bottom, count],
+        );
+        scissor(mem, call, p, x);
+        let top = word(mem, p, 0x1a);
+        let cursor = word(mem, p, 0x18);
+        let page = word(mem, p, 0x16);
+        let first = if cursor - top >= page {
+            cursor - page + 1
+        } else {
+            top
+        };
+        if byte(mem, p, 0x28) != 0 && page > 2 {
+            // x, y and height as the u16 the original computes them in
+            let w16 = |v: i32| i32::from(v.to_le_bytes()[0]) | i32::from(v.to_le_bytes()[1]) << 8;
+            let bar = [
+                w16(word(mem, p, 0xc) - 8 + x),
+                w16(word(mem, p, 0xa) - 3),
+                w16(word(mem, p, 0xe) + 4),
+                word(mem, p, 0x1a),
+                word(mem, p, 0x1e),
+                page,
+            ];
+            cdecl(mem, call, ABMAP_DRAW_SCROLL_BAR, &bar);
+        }
+        let cols = i32::from(byte(mem, p, 0x22));
+        let col_w = word(mem, p, 0xc).checked_div(cols).unwrap_or(0);
+        let x0 = word(mem, p, 0x20).wrapping_add(x);
+        let row_y = word(mem, p, 0xa);
+        let cells = cols * word(mem, p, 0x16);
+        match byte(mem, p, 0x26) {
+            0 => {
+                let (mut cx, mut cy, mut col) = (x0, row_y, 0);
+                for k in 0..cells {
+                    let index = first + k;
+                    if index >= word(mem, p, 0x1e) {
+                        break;
+                    }
+                    draw_row(mem, call, p, index, cx, cy);
+                    cx = cx.wrapping_add(col_w);
+                    col += 1;
+                    if col >= i32::from(byte(mem, p, 0x22)) {
+                        col = 0;
+                        cx = x0;
+                        cy = cy.wrapping_add(ROW);
+                    }
+                }
+            }
+            anim @ (1 | 2) => {
+                let shift = i32::from(byte(mem, p, 0x27) >> 3);
+                // up: from the first row, `step / 8 - 20` above; down: from
+                // the row before it, `step / 8` above
+                let (from, mut cy) = if anim == 1 {
+                    (first, shift - ROW + row_y)
+                } else {
+                    (first - 1, row_y - shift)
+                };
+                let mut j = 0;
+                while j < word(mem, p, 0x16) + 1 {
+                    draw_row(mem, call, p, from + j, x0, cy);
+                    cy = cy.wrapping_add(ROW);
+                    j += 1;
+                }
+                let step = byte(mem, p, 0x27).wrapping_add(0x35);
+                mem.write(p.wrapping_add(0x27), step);
+                if step >= 0x8c {
+                    mem.write(p.wrapping_add(0x26), 0u8);
+                }
+            }
+            anim @ (3 | 4) => {
+                let old = word(mem, p, 0x1c);
+                let step = byte(mem, p, 0x27).wrapping_add(1);
+                mem.write(p.wrapping_add(0x27), step);
+                if step >= 8 {
+                    mem.write(p.wrapping_add(0x26), 0u8);
+                }
+                let h = word(mem, p, 0xe);
+                // C division toward zero
+                let off = i32::from(step) * h / 8;
+                let w = word(mem, p, 0xc);
+                let old_rect = if anim == 3 {
+                    [x, row_y - 1 + off, w, h - off - 2]
+                } else {
+                    [x, row_y - 1, w, h - off - 2]
+                };
+                cdecl(mem, call, TO_DRAW_SCISSOR_XYWH, &old_rect);
+                if byte(mem, p, 0x26) != 0 {
+                    for k in 0..cells {
+                        draw_row(mem, call, p, old + k, x0, row_y + ROW * k);
+                    }
+                }
+                scissor(mem, call, p, x);
+                let new_y = if anim == 3 {
+                    word(mem, p, 0xa) - word(mem, p, 0xe) + off
+                } else {
+                    word(mem, p, 0xa) + (h - off)
+                };
+                for k in 0..cells {
+                    draw_row(mem, call, p, first + k, x0, new_y + ROW * k);
+                }
+            }
+            _ => {}
+        }
+        cdecl(mem, call, TO_DRAW_SCISSOR_XYWH, &[0, 0, 0x200, 0x1a0]);
+        if byte(mem, p, 0x25) != 0 {
+            cdecl(
+                mem,
+                call,
+                ABMAP_PAD_DRAW_CURSOR,
+                &[p.cast_signed(), first, dx],
+            );
+        }
+    }
+
+    /// The `i16` at `p + off`, widened.
+    fn word(mem: &impl ffx_bridge::Mem, p: u32, off: u32) -> i32 {
+        i32::from(mem.read::<i16>(p.wrapping_add(off)))
+    }
+
+    fn byte(mem: &impl ffx_bridge::Mem, p: u32, off: u32) -> u8 {
+        mem.read(p.wrapping_add(off))
+    }
+
+    /// The original at `sym` through `call`, the words as `i32`.
+    fn cdecl<M, C>(mem: &mut M, call: &mut C, sym: u32, args: &[i32]) -> u32
+    where
+        M: ffx_bridge::Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let f = mem.rebase(sym);
+        let words: Vec<u32> = args.iter().map(|v| v.cast_unsigned()).collect();
+        call(mem, f, &words)
+    }
+
+    /// The panel's own scissor: from `y - 1`, `h - 2` high (`+0xa`,
+    /// `+0xc`, `+0xe` read now).
+    fn scissor<M, C>(mem: &mut M, call: &mut C, p: u32, x: i32)
+    where
+        M: ffx_bridge::Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let rect = [
+            x,
+            word(mem, p, 0xa) - 1,
+            word(mem, p, 0xc),
+            word(mem, p, 0xe) - 2,
+        ];
+        cdecl(mem, call, TO_DRAW_SCISSOR_XYWH, &rect);
+    }
+
+    /// Row `index` (entry `+0x40 + 12 index`) through the panel's
+    /// callback `+0x38`, read now: `cb(panel, entry, index, x, y)`.
+    fn draw_row<M, C>(mem: &mut M, call: &mut C, p: u32, index: i32, x: i32, y: i32)
+    where
+        M: ffx_bridge::Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let entry = p
+            .wrapping_add(0x40)
+            .wrapping_add(index.cast_unsigned().wrapping_mul(0xc));
+        let cb: u32 = mem.read(p.wrapping_add(0x38));
+        call(
+            mem,
+            cb,
+            &[
+                p,
+                entry,
+                index.cast_unsigned(),
+                x.cast_unsigned(),
+                y.cast_unsigned(),
+            ],
+        );
+    }
 }

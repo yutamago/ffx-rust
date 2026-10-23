@@ -2495,3 +2495,294 @@ fn r2a_menu_world_map_draw_matches_the_original() {
         }
     }
 }
+
+const ABMAP_PAD_DRAW_LIST: u32 = 0x00a5_8900;
+const ABMAP_FREE_CURSOR_STEP: u32 = 0x00a5_8ff0;
+
+#[test]
+#[allow(clippy::too_many_lines)] // the panel's fields, then the case
+fn r2b_abmap_pad_draw_list_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0201);
+        let log = Log::new(&mut t);
+        log.stub(
+            &mut t,
+            panel::ABMAP_PAD_DRAW_FRAME,
+            1,
+            5,
+            (0x5100_0000, 0, 0),
+        );
+        log.stub(
+            &mut t,
+            panel::TO_DRAW_SCISSOR_XYWH,
+            2,
+            4,
+            (0x5200_0000, 0, 0),
+        );
+        log.stub(
+            &mut t,
+            panel::ABMAP_DRAW_SCROLL_BAR,
+            3,
+            6,
+            (0x5300_0000, 0, 0),
+        );
+        log.stub(
+            &mut t,
+            panel::ABMAP_PAD_DRAW_CURSOR,
+            4,
+            3,
+            (0x5400_0000, 0, 0),
+        );
+        let pads = t.alloc(0x1a00 + 0x400);
+        let other = t.alloc(0x400);
+        let pad_global = t.a.rebase(panel::PAD.sym);
+        let plain = log.func(&mut t, 5, 5, (0x5500_0000, 0, 0));
+        for n in 0..1500u32 {
+            log.rewind(&mut t);
+            let counted = rng.below(3) == 0;
+            let p = if counted { pads + 0x1a00 } else { other };
+            let base = if rng.below(4) == 0 { other } else { pads };
+            t.put(pad_global, &base.to_le_bytes());
+            let mut b = rng.bytes(0x340);
+            #[allow(clippy::cast_possible_truncation)]
+            let small = |rng: &mut Xorshift, lo: i32, hi: i32| -> [u8; 2] {
+                let span = (hi - lo + 1).cast_unsigned();
+                ((lo + rng.below(span).cast_signed()) as i16).to_le_bytes()
+            };
+            let page = small(&mut rng, -2, 7);
+            let page_v = i16::from_le_bytes(page);
+            for (off, v) in [
+                (0x8, small(&mut rng, -300, 300)),
+                (0xa, small(&mut rng, -300, 300)),
+                (0xc, small(&mut rng, -200, 400)),
+                (0xe, small(&mut rng, -200, 400)),
+                (0x16, page),
+                (0x18, small(&mut rng, -3, 20)),
+                (0x1a, small(&mut rng, -3, 20)),
+                (0x1c, small(&mut rng, -3, 20)),
+                (0x1e, small(&mut rng, -1, 24)),
+                (0x20, small(&mut rng, -50, 50)),
+            ] {
+                b[off..off + 2].copy_from_slice(&v);
+            }
+            b[0x22] = [1, 1, 2, 3, 4][rng.below(5) as usize];
+            b[0x25] = [0, 1, rng.next().to_le_bytes()[0]][rng.below(3) as usize];
+            b[0x26] = [0, 0, 1, 2, 3, 4, 5, 0xff][rng.below(8) as usize];
+            b[0x27] = [
+                0,
+                6,
+                7,
+                8,
+                0x56,
+                0x57,
+                0x58,
+                0xff,
+                rng.next().to_le_bytes()[0],
+            ][rng.below(9) as usize];
+            b[0x28] = [0, 1, 0x80][rng.below(3) as usize];
+            // the row callback: plain, or one that changes the page size,
+            // the position, the count or the columns while the rows draw
+            let cb = match rng.below(5) {
+                0 => {
+                    let off = [0x16u32, 0xa, 0xe, 0x1e, 0x22][rng.below(5) as usize];
+                    let v = rng.below(4) | rng.below(3) << 16;
+                    let c = log.code(6, 5, (0x5600_0000, 0, 0), Some((p + off, v)));
+                    let to = t.a.alloc_code(&c).unwrap();
+                    assert_eq!(t.b.alloc_code(&c).unwrap(), to);
+                    to
+                }
+                _ => plain,
+            };
+            b[0x38..0x3c].copy_from_slice(&cb.to_le_bytes());
+            t.put(p, &b);
+            let dx: i32 =
+                [0, -0x88, -1, 0x1b - 0x88, rng.below(300).cast_signed()][rng.below(5) as usize];
+            t.check(
+                &format!(
+                    "pad draw list {n}: anim {} step {} page {page_v} cols {}",
+                    b[0x26], b[0x27], b[0x22]
+                ),
+                ABMAP_PAD_DRAW_LIST,
+                Conv::Cdecl,
+                &[p, dx.cast_unsigned()],
+                |o| {
+                    panel::draw_list(o, p, dx, &mut |o, f, a| {
+                        o.call(f, Conv::Cdecl, a).unwrap().eax
+                    });
+                    Res::Void
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn r2b_abmap_free_cursor_step_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0202);
+        let mut log = Log::new(&mut t);
+        let slots = t.alloc(0x40);
+        let (mv, dist, radius) = (slots, slots + 0x10, slots + 0x14);
+        // what the node searches were given: pos and filter of each, the
+        // direction's three floats
+        let kept = t.alloc(0x20);
+        log.stub(
+            &mut t,
+            cursor::SND_SEP_PLAY_SIMPLE,
+            1,
+            1,
+            (0x5100_0000, 0, 0),
+        );
+        log.stub(
+            &mut t,
+            cursor::ABMAP_TRANSITION_TO_HOMING,
+            2,
+            2,
+            (0x5200_0000, 0, 0),
+        );
+        log.float = Some(radius);
+        log.stub(&mut t, cursor::ABMAP_NODE_RADIUS, 3, 1, (0, 0, 0));
+        log.float = None;
+        let g = made_up_abmap(&mut t, &mut rng, 0x11700);
+        let work = t.b.stack_range().start + 0x1000;
+        let float = |rng: &mut Xorshift| -> f32 {
+            match rng.below(6) {
+                0 => f32::from_bits(FLOATS[rng.below(12) as usize]),
+                1 => 0.0,
+                _ => f32::from(i16::try_from(rng.below(4000)).unwrap() - 2000) / 8.0,
+            }
+        };
+        for n in 0..1500u32 {
+            log.rewind(&mut t);
+            // the stick: the move copied out, the answer returned
+            let mut c = vec![0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0xbe];
+            c.extend(mv.to_le_bytes());
+            c.extend([0xb9, 4, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e]);
+            let stick = [0, 1, rng.next()][rng.below(3) as usize];
+            c.extend(log.code(4, 0, (stick, 0, 0), None));
+            let at = t.a.rebase(cursor::ABMAP_READ_CURSOR_STICK);
+            t.jump(at, &c);
+            // the nodes: a record of the grid, its neighbour fields, or
+            // none; the nearest one also writes its distance
+            let node = |rng: &mut Xorshift| -> u32 {
+                match rng.below(5) {
+                    0 => 0,
+                    1 => g + 0x808 + 0x28 * rng.below(0x200) + rng.below(0x28),
+                    2 => g + 0x808 - 0x28 * rng.below(4) - rng.below(0x28),
+                    _ => g + 0x808 + 0x28 * rng.below(0x400),
+                }
+            };
+            let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+            c.extend(dist.to_le_bytes());
+            c.extend([0x89, 0x08]);
+            let near = node(&mut rng);
+            c.extend(keep_arg(0x08, kept));
+            c.extend(keep_arg(0x0c, kept + 4));
+            c.extend(log.code(5, 0, (near, 0, 0), None));
+            let at = t.a.rebase(cursor::ABMAP_FIND_NEAREST_NODE);
+            t.jump(at, &c);
+            let ahead = node(&mut rng);
+            let mut c = keep_arg(0x04, kept + 8);
+            c.extend(keep_arg(0x0c, kept + 0xc));
+            // push esi; push edi; mov esi, [esp + 0x10]; mov edi, kept + 0x10;
+            // mov ecx, 3; rep movsd; pop edi; pop esi
+            c.extend([0x56, 0x57, 0x8b, 0x74, 0x24, 0x10, 0xbf]);
+            c.extend((kept + 0x10).to_le_bytes());
+            c.extend([0xb9, 3, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e]);
+            c.extend(log.code(6, 0, (ahead, 0, 0), None));
+            let at = t.a.rebase(cursor::ABMAP_FIND_NODE_IN_DIRECTION);
+            t.jump(at, &c);
+            let mut m = [0f32; 4];
+            for v in &mut m {
+                *v = if rng.below(3) == 0 {
+                    0.0
+                } else {
+                    float(&mut rng)
+                };
+            }
+            let r = float(&mut rng);
+            let d = if rng.below(2) == 0 {
+                r
+            } else {
+                float(&mut rng)
+            };
+            let target = match rng.below(4) {
+                0 => r,
+                1 => r + 1.0,
+                2 => r - 3.0,
+                _ => float(&mut rng),
+            };
+            // signed zeros where only the sign tells a bound or a step
+            // apart: the radius and its target, the x position and its
+            // upper bound
+            let (r, d, target) = if rng.below(4) == 0 {
+                let (r, target) =
+                    [(-0.0, 0.0), (2.0, -0.0), (0.0, -0.0), (-2.0, -0.0)][rng.below(4) as usize];
+                (r, r, target)
+            } else {
+                (r, d, target)
+            };
+            let zero_edge = rng.below(6) == 0;
+            if zero_edge {
+                m[0] = -0.0;
+            }
+            let mut s = Vec::new();
+            for v in m.iter().chain([d, target].iter()) {
+                s.extend(v.to_bits().to_le_bytes());
+            }
+            t.put(mv, &s);
+            let mut blk = rng.bytes(0x400);
+            let put_f = |blk: &mut [u8], off: usize, v: f32| {
+                blk[off..off + 4].copy_from_slice(&v.to_le_bytes());
+            };
+            // g + 0x112b8 ..= 0x116b7
+            put_f(&mut blk, 0x0, float(&mut rng));
+            put_f(&mut blk, 0x4, float(&mut rng));
+            put_f(&mut blk, 0x3c, r);
+            put_f(
+                &mut blk,
+                0x32c,
+                [-1.0, 0.0, -0.0, 2.0, float(&mut rng)][rng.below(5) as usize],
+            );
+            let lo = f32::from(i16::try_from(rng.below(400)).unwrap() - 300);
+            for (off, v) in [
+                (0x354, lo),
+                (0x358, lo + 10.0),
+                (0x35c, lo + 200.0),
+                (0x360, lo + 50.0),
+            ] {
+                put_f(
+                    &mut blk,
+                    off,
+                    if rng.below(8) == 0 {
+                        float(&mut rng)
+                    } else {
+                        v
+                    },
+                );
+            }
+            if zero_edge {
+                put_f(&mut blk, 0x0, -0.0);
+                put_f(&mut blk, 0x354, -10.0);
+                put_f(&mut blk, 0x35c, 0.0);
+            }
+            let busy = [0u32, 0, 0, 0, 1, rng.next()][rng.below(6) as usize];
+            blk[0x2f8..0x2fc].copy_from_slice(&busy.to_le_bytes());
+            blk[0x315] = [0, 1, 0xff][rng.below(3) as usize];
+            t.put(g + 0x1_12b8, &blk);
+            let filter = rng.next();
+            t.b.write(work, &rng.bytes(0x20)).unwrap();
+            t.check(
+                &format!("free cursor step {n}: stick {stick:#x} near {near:#x} ahead {ahead:#x}"),
+                ABMAP_FREE_CURSOR_STEP,
+                Conv::Cdecl,
+                &[filter],
+                |o| {
+                    cursor::free_cursor_step(&mut Run(o), filter, work);
+                    Res::Void
+                },
+            );
+        }
+    }
+}

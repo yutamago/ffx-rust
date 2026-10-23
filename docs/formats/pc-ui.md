@@ -362,6 +362,22 @@ draw the map (place `"scene30"`, the marker, at half the map marker's
 coordinates, y 16 higher), the title plate and the save's dictionary name.
 Port: `ffx_pcui::worldmap`.
 
+## Panel lists and the free cursor
+
+`AbmapPadDrawList_00a58900(panel, dx)` draws one list panel of
+`g_AbmapPad` (the pass `0x00a58660` slides panels 7 and 8 in by `dx`):
+rows of 0x14 pixels through the panel's row callback `+0x38`
+(`cb(panel, entry, index, x, y)`, 12-byte entries from `+0x40`), in `+0x22`
+columns, the scroll animation `+0x26` (1/2 one row, 3/4 a page) stepped
+by `+0x27`. Its sym line has the offsets. Port: `ffx_pcui::panel::bridge::draw_list`.
+
+`AbmapFreeCursorStep_00a58ff0(filter)` moves the free cursor one frame
+(the cursor position `g_Abmap + 0x112b8`, its radius `+0x112f4`, the node
+under it `+0x112fc`). It is called from code Ghidra left as labels
+(`AbmapState_ChoosingMoveTarget_00a44ef0`), so the dump's `calls.tsv` shows
+no caller: search the disassembly for `call 0x...` before calling a function
+unreachable. Port: `ffx_pcui::cursor::bridge::free_cursor_step`.
+
 ## Left original
 
 PhyreEngine library code in the same address range (verdicts, not
