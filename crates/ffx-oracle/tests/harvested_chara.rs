@@ -72,3 +72,13 @@ harvest_test!(ch_mot_event, 0x0083_4350, args = 1, |m: &mut Oracle, s| {
         m.call_cdecl(f, a).unwrap()
     });
 });
+harvest_test!(
+    ch_calc_middle,
+    0x0083_3390,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        ffx_chara::handle::bridge::ch_calc_middle(m, &mut |m: &mut Oracle, f, a: &[u32]| {
+            m.call_cdecl(f, a).unwrap()
+        })
+    }
+);
