@@ -378,6 +378,18 @@ under it `+0x112fc`). It is called from code Ghidra left as labels
 no caller: search the disassembly for `call 0x...` before calling a function
 unreachable. Port: `ffx_pcui::cursor::bridge::free_cursor_step`.
 
+## Input pass, Iggy viewport, help callbacks
+
+`Input_UpdateAll_00630e80` runs the PC input objects once a frame (input
+manager, pointer zones, Iggy input, then the menu manager by tail call)
+unless the word at `0x0133c930` is set. `IggyMenuManager_ApplyViewport_00a265a0`
+hands every menu the manager's viewport with y counted from the bottom
+(`screen h - y - h`). The sphere grid panels' help callbacks are
+`AbmapPadMenuHelp_00a570a0` (menu text help) and `AbmapPadItemHelp_00a57040`
+(item help through the item's help id `+0x5d`, 0xff for none); the item one
+uses its own `entry` argument slot as the strings word. Ports:
+`ffx_pcui::input`, `ffx_pcui::menus`, `ffx_pcui::panel`.
+
 ## Left original
 
 PhyreEngine library code in the same address range (verdicts, not

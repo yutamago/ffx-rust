@@ -7,10 +7,12 @@
 //!
 //! - [`iggy`]: Iggy data values and the menus' handler slots;
 //! - [`camera`]: the camera tracks of the movies over 3D scenes;
+//! - [`input`]: the per-frame input pass;
 //! - [`abmap`]: the sphere grid screen (`g_Abmap`) helpers the PC port
 //!   placed beside its UI code;
 //! - [`cursor`]: the sphere grid cursor's move and node searches;
 //! - [`link`]: the sphere grid's link outlines (straight and curved);
+//! - [`menus`]: the Iggy menu manager's viewport, an Esc menu handler;
 //! - [`panel`]: the sphere grid's list panels (cursor, scrolling, choice);
 //! - [`item`]: item menu rows and key strings the PC port placed here;
 //! - [`sea`]: the sea's UV scroll speed nudge;
@@ -22,8 +24,10 @@ pub mod abmap;
 pub mod camera;
 pub mod cursor;
 pub mod iggy;
+pub mod input;
 pub mod item;
 pub mod link;
+pub mod menus;
 pub mod panel;
 pub mod sea;
 pub mod spdctrl;

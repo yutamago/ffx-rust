@@ -2786,3 +2786,217 @@ fn r2b_abmap_free_cursor_step_matches_the_original() {
         }
     }
 }
+
+use ffx_pcui::input::bridge as input;
+use ffx_pcui::menus::bridge as menus;
+
+const INPUT_UPDATE_ALL: u32 = 0x0063_0e80;
+const IGGY_MENU_MANAGER_APPLY_VIEWPORT: u32 = 0x00a2_65a0;
+const FF_ESC_MENU_VFUNC_0068E530: u32 = 0x0068_e530;
+const ABMAP_PAD_MENU_HELP: u32 = 0x00a5_70a0;
+const ABMAP_PAD_ITEM_HELP: u32 = 0x00a5_7040;
+
+#[test]
+fn r2c_input_update_all_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0301);
+        let log = Log::new(&mut t);
+        for (id, sym) in [
+            (1, input::INPUT_MANAGER_UPDATE),
+            (2, input::GUI_TOUCH_UPDATE),
+            (3, input::IGGY_INPUT_UPDATE),
+            (4, input::IGGY_MENU_MANAGER_UPDATE),
+        ] {
+            log.stub_this(&mut t, sym, id, 0);
+        }
+        let off = t.a.rebase(input::INPUT_OFF.sym);
+        let menus = t.a.rebase(input::IGGY_MENU_MANAGER.sym);
+        for n in 0..40u32 {
+            log.rewind(&mut t);
+            for (id, sym) in [
+                (5, input::INPUT_MANAGER),
+                (6, input::TOUCH_MANAGER),
+                (7, input::IGGY_INPUT),
+            ] {
+                log.stub(&mut t, sym, id, 0, (rng.next(), 0, 0));
+            }
+            let flag = [0, 0, 1, rng.next()][rng.below(4) as usize];
+            t.put(off, &flag.to_le_bytes());
+            t.put(menus, &rng.next().to_le_bytes());
+            let res = flag == 0;
+            t.check(
+                &format!("input update all {n}: off {flag:#x}"),
+                INPUT_UPDATE_ALL,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    let r = input::update_all(&mut Run(o));
+                    if res { Res::Int(r) } else { Res::Void }
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn r2c_iggy_menu_manager_apply_viewport_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0302);
+        let log = Log::new(&mut t);
+        log.stub_this(&mut t, menus::MENU_SET_VIEWPORT, 1, 4);
+        let this = t.alloc(0x30);
+        let list = t.alloc(0x40);
+        // a count past 16 bits (the high bit is a flag): a long list of
+        // nulls with a menu at its end
+        let long = t.alloc(4 * 0x1_0004);
+        t.put(long + 4 * 0x1_0001, &rng.next().to_le_bytes());
+        let mut b = rng.bytes(0x30);
+        b[8..12].copy_from_slice(&0x8001_0002u32.to_le_bytes());
+        b[0xc..0x10].copy_from_slice(&long.to_le_bytes());
+        t.put(this, &b);
+        t.check(
+            "apply viewport: a long list",
+            IGGY_MENU_MANAGER_APPLY_VIEWPORT,
+            Conv::Thiscall(this),
+            &[],
+            |o| {
+                menus::apply_viewport(&mut Run(o), this);
+                Res::Void
+            },
+        );
+        for n in 0..60u32 {
+            log.rewind(&mut t);
+            let mut b = rng.bytes(0x30);
+            let count = [0u32, 1, 3, 0x8000_0002, 0x8000_0000, 16][rng.below(6) as usize];
+            b[8..12].copy_from_slice(&count.to_le_bytes());
+            b[0xc..0x10].copy_from_slice(&list.to_le_bytes());
+            t.put(this, &b);
+            let mut l = Vec::new();
+            for _ in 0..16 {
+                let m = if rng.below(3) == 0 { 0 } else { rng.next() };
+                l.extend(m.to_le_bytes());
+            }
+            t.put(list, &l);
+            t.check(
+                &format!("apply viewport {n}: count {count:#x}"),
+                IGGY_MENU_MANAGER_APPLY_VIEWPORT,
+                Conv::Thiscall(this),
+                &[],
+                |o| {
+                    menus::apply_viewport(&mut Run(o), this);
+                    Res::Void
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn r2c_ff_esc_menu_vfunc_0068e530_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0303);
+        let log = Log::new(&mut t);
+        // the stand-ins return `this`: its low byte picks the branch
+        log.stub_this(&mut t, menus::ESC_MENU_CHECK, 1, 2);
+        log.stub_this(&mut t, menus::MENU_HANDLE, 2, 2);
+        for n in 0..40u32 {
+            log.rewind(&mut t);
+            let low = [1u32, 1, 0, 2, 0x101, 0xff][rng.below(6) as usize];
+            let this = rng.next() & 0xffff_ff00 | low & 0xff;
+            let (a, b) = (rng.next(), rng.next());
+            t.check(
+                &format!("esc menu vfunc {n}: this {this:#x}"),
+                FF_ESC_MENU_VFUNC_0068E530,
+                Conv::Thiscall(this),
+                &[a, b],
+                |o| Res::Int(menus::esc_menu_handle(&mut Run(o), this, a, b)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r2c_abmap_pad_help_callbacks_match_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0304);
+        let log = Log::new(&mut t);
+        log.stub(
+            &mut t,
+            panel::MS_MENU_GET_HELP,
+            2,
+            3,
+            (0x5200_0000, 0xff, 4),
+        );
+        log.stub(
+            &mut t,
+            panel::ABMAP_HELP_MESSAGE_STEP,
+            3,
+            1,
+            (0x5300_0000, 0, 0),
+        );
+        let entry = t.alloc(0x10);
+        let item = t.alloc(0x200);
+        let rec = t.alloc(0x10);
+        let src = t.alloc(8);
+        let table = t.a.rebase(panel::ITEM_HELP_TABLE.sym);
+        let strings = t.b.stack_range().start + 0x1000;
+        for n in 0..200u32 {
+            log.rewind(&mut t);
+            log.stub(
+                &mut t,
+                panel::MS_GET_SAVE_CONFIG_HIRAGANA,
+                1,
+                0,
+                (rng.next(), 0, 0),
+            );
+            t.put(entry, &rng.bytes(0x10));
+            t.put(table, &rng.next().to_le_bytes());
+            t.put(src, &rng.bytes(8));
+            t.put(rec, &rng.bytes(0x10));
+            // the record anywhere in its block: eax keeps its upper bytes
+            let ip = item + rng.below(0x100);
+            let mut it = rng.bytes(0x100);
+            it[0x5d] = [0xff, 0, 1, 0x7f, 0x80, rng.next().to_le_bytes()[0]][rng.below(6) as usize];
+            t.put(ip, &it);
+            // MsGetRomItem: writes its strings word or not, the item back
+            let mut c = Vec::new();
+            if rng.below(3) != 0 {
+                // mov eax, [esp + 8]; mov ecx, [src]; mov [eax], ecx
+                c.extend([0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+                c.extend(src.to_le_bytes());
+                c.extend([0x89, 0x08]);
+            }
+            c.extend(log.code(4, 1, (ip, 0, 0), None));
+            let at = t.a.rebase(panel::MS_GET_ROM_ITEM);
+            t.jump(at, &c);
+            // MsGetExcelData: writes its strings word or not, a record or 0
+            let mut c = Vec::new();
+            if rng.below(3) != 0 {
+                // mov eax, [esp + 0xc]; mov ecx, [src + 4]; mov [eax], ecx
+                c.extend([0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]);
+                c.extend((src + 4).to_le_bytes());
+                c.extend([0x89, 0x08]);
+            }
+            let r = if rng.below(4) == 0 { 0 } else { rec };
+            c.extend(log.code(5, 2, (r, 0, 0), None));
+            let at = t.a.rebase(panel::MS_GET_EXCEL_DATA);
+            t.jump(at, &c);
+            let p = rng.next();
+            t.check(
+                &format!("menu help {n}"),
+                ABMAP_PAD_MENU_HELP,
+                Conv::Cdecl,
+                &[p, entry],
+                |o| Res::Int(panel::menu_help(&mut Run(o), entry)),
+            );
+            log.rewind(&mut t);
+            t.check(
+                &format!("item help {n}: help id {:#x} record {r:#x}", it[0x5d]),
+                ABMAP_PAD_ITEM_HELP,
+                Conv::Cdecl,
+                &[p, entry],
+                |o| Res::Int(panel::item_help(&mut Run(o), entry, strings)),
+            );
+        }
+    }
+}

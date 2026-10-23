@@ -698,4 +698,63 @@ pub mod bridge {
             ],
         );
     }
+
+    /// `MsGetSaveConfigHiragana()`, `MsMenuGetHelp(i, id, second)`,
+    /// `AbmapHelpMessageStep_00a59350(text)`, `MsGetRomItem(id, &strings)`,
+    /// `MsGetExcelData(id, table, &strings)` and the table word
+    /// `0x01a860e4` the item help reads.
+    pub const MS_GET_SAVE_CONFIG_HIRAGANA: u32 = 0x0078_51f0;
+    pub const MS_MENU_GET_HELP: u32 = 0x0078_fbb0;
+    pub const ABMAP_HELP_MESSAGE_STEP: u32 = 0x00a5_9350;
+    pub const MS_GET_ROM_ITEM: u32 = 0x0079_09f0;
+    pub const MS_GET_EXCEL_DATA: u32 = 0x007a_b870;
+    pub const ITEM_HELP_TABLE: Global<u32> = Global::new(0x01a8_60e4);
+
+    /// `AbmapPadMenuHelp_00a570a0(panel, entry)` (name ours; the help
+    /// callback `+0x3c` the grid's start `0x00a54e3a` gives its menu
+    /// panels): the help of menu text `entry + 8` (`MsMenuGetHelp(9, id,
+    /// MsGetSaveConfigHiragana() & 1)`) shown through
+    /// `AbmapHelpMessageStep_00a59350`, whose `eax` it returns.
+    pub fn menu_help(mem: &mut impl Host, entry: u32) -> u32 {
+        let id: u32 = mem.read(entry.wrapping_add(8));
+        let kana = mem.call_sym(MS_GET_SAVE_CONFIG_HIRAGANA, Conv::Cdecl, &[]) & 1;
+        let text = mem.call_sym(MS_MENU_GET_HELP, Conv::Cdecl, &[9, id, kana]);
+        mem.call_sym(ABMAP_HELP_MESSAGE_STEP, Conv::Cdecl, &[text])
+    }
+
+    /// `AbmapPadItemHelp_00a57040(panel, entry)` (name ours; the help
+    /// callback of the item panel, `g_AbmapPad + 0x1a3c`): the item
+    /// `u16 entry + 8` (`MsGetRomItem`, its strings word into `strings`,
+    /// which is the original's `entry` argument slot, so it starts as
+    /// `entry`); with a help id
+    /// (byte `+0x5d` not 0xff) the help record (`MsGetExcelData(id, [table
+    /// 0x01a860e4], strings)`, its strings word over the first) and, when
+    /// there is one, the text at strings + its `u16` (`+4` with
+    /// `MsGetSaveConfigHiragana() & 1`) through
+    /// `AbmapHelpMessageStep_00a59350`. `eax`: that call's, else 0 (no
+    /// record), else the item record with `al` 0xff.
+    pub fn item_help(mem: &mut impl Host, entry: u32, strings: u32) -> u32 {
+        // the slot holds the argument until a callee writes it
+        mem.write(strings, entry);
+        let id = mem.read::<u32>(entry.wrapping_add(8)) & 0xffff;
+        let item = mem.call_sym(MS_GET_ROM_ITEM, Conv::Cdecl, &[id, strings]);
+        let help: u8 = mem.read(item.wrapping_add(0x5d));
+        if help == 0xff {
+            return item & 0xffff_ff00 | 0xff;
+        }
+        let table = ITEM_HELP_TABLE.get(mem);
+        let rec = mem.call_sym(
+            MS_GET_EXCEL_DATA,
+            Conv::Cdecl,
+            &[u32::from(help), table, strings],
+        );
+        if rec == 0 {
+            return 0;
+        }
+        let base: u32 = mem.read(strings);
+        let kana = mem.call_sym(MS_GET_SAVE_CONFIG_HIRAGANA, Conv::Cdecl, &[]) & 1;
+        let off: u16 = mem.read(rec.wrapping_add(4 * kana));
+        let text = u32::from(off).wrapping_add(base);
+        mem.call_sym(ABMAP_HELP_MESSAGE_STEP, Conv::Cdecl, &[text])
+    }
 }
