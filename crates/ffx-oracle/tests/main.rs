@@ -10697,3 +10697,205 @@ fn push_apart_crafted(
         );
     }
 }
+
+// ---- pc round 4: the sphere grid's frame draws (eiAbm) ----------------
+
+/// Per stand-in `k`: an address and a word it stores after logging (none
+/// for address 0), so a callee can move `g_Abmap`, the pad or the skip flag
+/// under the caller.
+const POKE_DATA: u32 = 0x0270_fd00;
+/// The address whose word each poking stand-in logs as its entry's last
+/// field (offset 0x1c).
+const WATCH: u32 = 0x0270_fdf0;
+
+/// A cdecl stand-in in slot `k` of the code area (not hooked anywhere):
+/// logs `tag`, `n` arguments and the watched word, stores the poke, then
+/// returns its answer. Returns the code's address in `a` (the same in `b`).
+fn poking_recorder(a: &mut Oracle, b: &mut Oracle, k: u32, tag: u32, n: u32) -> u32 {
+    assert!(n <= 6);
+    let mut at = 0;
+    for o in [a, b] {
+        let log = o.rebase(REC_LOG);
+        let (poke, ret, watch) = (
+            o.rebase(POKE_DATA) + 8 * k,
+            o.rebase(REC_RETS) + 4 * k,
+            o.rebase(WATCH),
+        );
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(tag.to_le_bytes()); // mov [eax], tag
+        for i in 0..n {
+            let d = u8::try_from(4 + 4 * i).unwrap();
+            c.extend([0x8b, 0x54, 0x24, d]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, d]); // mov [eax+4+4i], edx
+        }
+        c.extend([0x8b, 0x0d]);
+        c.extend(watch.to_le_bytes()); // mov ecx, [watch]
+        c.extend([0x8b, 0x09, 0x89, 0x48, 0x1c]); // mov ecx, [ecx]; mov [eax+0x1c], ecx
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.extend([0x8b, 0x0d]);
+        c.extend(poke.to_le_bytes()); // mov ecx, [poke]
+        c.extend([0x85, 0xc9, 0x74, 0x08]); // test ecx, ecx; jz +8
+        c.extend([0x8b, 0x15]);
+        c.extend((poke + 4).to_le_bytes()); // mov edx, [poke + 4]
+        c.extend([0x89, 0x11]); // mov [ecx], edx
+        c.push(0xa1);
+        c.extend(ret.to_le_bytes()); // mov eax, [ret]
+        c.push(0xc3);
+        assert!(c.len() <= 0x60);
+        at = o.rebase(REC_CODE) + 0x60 * k;
+        o.write(at, &c).unwrap();
+    }
+    at
+}
+
+/// Points the original at `sym` to `code` (a `jmp`), in both.
+fn divert(a: &mut Oracle, b: &mut Oracle, sym: u32, code: u32) {
+    for o in [a, b] {
+        let at = o.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        o.write(at, &j).unwrap();
+    }
+}
+
+fn ei_abm_draw_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as ab;
+    const DRAW_FRAME: u32 = 0x00a5_4560;
+    const DRAW: u32 = 0x00a5_45a0;
+    const DRAW_IMMEDIATE: u32 = 0x00a5_4660;
+    let mut callees: Vec<(u32, u32)> = ab::RENDER_SUBMITS.iter().map(|&f| (f, 0)).collect();
+    callees.extend([
+        (ab::GRID_MARK_UVS, 0),
+        (ab::FADE_OVERLAY, 2),
+        (ab::DRAW_CHR_PANEL, 0),
+        (ab::DRAW_CHR_LABELS, 0),
+        (ab::DRAW_PANELS, 0),
+    ]);
+    callees.extend(ab::IMMEDIATE_PASSES.iter().map(|&f| (f, 0)));
+    let mut k = 0;
+    for &(sym, n) in &callees {
+        let code = poking_recorder(a, b, k, sym, n);
+        divert(a, b, sym, code);
+        k += 1;
+    }
+    let callback = poking_recorder(a, b, k, 0xcb, 0);
+    let slots = k + 1;
+    let blocks = [alloc(a, b, 0x11700), alloc(a, b, 0x11700)];
+    let pads = [alloc(a, b, 0x2800), alloc(a, b, 0x2800)];
+    let skip_at = ab::SKIP_FRAME.ptr(a).addr;
+    let abmap_at = ab::ABMAP.ptr(a).addr;
+    let pad_at = ab::ABMAP_PAD.ptr(a).addr;
+    let packet_at = ab::PACKET_POS.ptr(a).addr;
+    put(a, b, a.rebase(WATCH), skip_at);
+    let fades = [
+        0x3f80_0000,
+        0,
+        0x7fc0_0000,
+        0x4000_0000,
+        0x3f7f_ffff,
+        0x5f00_0000,
+    ];
+    for round in 0..rounds {
+        for (i, &g) in blocks.iter().enumerate() {
+            put(a, b, g + 0x115ba, u8::from(rng.below(6) == 0));
+            put(
+                a,
+                b,
+                g + 0x115bb,
+                u8::from(rng.below(3) == 0) * u8::try_from(1 + rng.below(200)).unwrap(),
+            );
+            let fade = if rng.below(3) == 0 {
+                rng.float()
+            } else {
+                fades[rng.below(6) as usize]
+            };
+            put(a, b, g + 0x115e8, fade);
+            let cb = if rng.below(3) == 0 { 0 } else { callback };
+            put(a, b, g + 0x115ac, cb);
+            put(a, b, g + 0x116a8, rng.next());
+            let pressed: u16 = match rng.below(5) {
+                0 => 0,
+                1 | 2 => (rng.next() & 0xffff) as u16 | 0x8000,
+                _ => (rng.next() & 0x7fff) as u16,
+            };
+            put(a, b, pads[i] + 0x2700, pressed);
+        }
+        put(a, b, packet_at, rng.next());
+        put(a, b, abmap_at, blocks[0]);
+        put(a, b, pad_at, pads[0]);
+        put(
+            a,
+            b,
+            skip_at,
+            if rng.below(3) == 0 {
+                1 + rng.below(3)
+            } else {
+                0
+            },
+        );
+        for s in 0..slots {
+            put(a, b, a.rebase(REC_RETS) + 4 * s, rng.next());
+            let poke = if rng.below(4) == 0 {
+                match rng.below(5) {
+                    0 => (abmap_at, blocks[1]),
+                    1 => (pad_at, pads[1]),
+                    2 => (skip_at, rng.below(2)),
+                    3 => (blocks[0] + 0x115e8, fades[rng.below(6) as usize]),
+                    _ => (blocks[0] + 0x115ac, 0),
+                }
+            } else {
+                (0, 0)
+            };
+            put(a, b, a.rebase(POKE_DATA) + 8 * s, poke.0);
+            put(a, b, a.rebase(POKE_DATA) + 8 * s + 4, poke.1);
+        }
+        put(a, b, a.rebase(REC_LOG), 0u32);
+        let (name, sym) = match round % 3 {
+            0 => ("eiAbmDrawFrame", DRAW_FRAME),
+            1 => ("eiAbmDraw", DRAW),
+            _ => ("eiAbmDrawImmediate", DRAW_IMMEDIATE),
+        };
+        let skipped = Mem::read::<u32>(a, skip_at) != 0;
+        let ra = a
+            .call(a.rebase(sym), Conv::Cdecl, &[])
+            .unwrap_or_else(|e| panic!("{name} {round}: {e}"));
+        let rb = match sym {
+            DRAW_FRAME => ab::ei_abm_draw_frame(&mut H(b)),
+            DRAW => ab::ei_abm_draw(&mut H(b)),
+            _ => ab::ei_abm_draw_immediate(&mut H(b)),
+        };
+        // eiAbmDraw skipped leaves its caller's eax (its caller's g_Abmap)
+        if sym != DRAW || !skipped {
+            assert_eq!(ra.eax, rb, "{name} {round}: eax");
+        }
+        let n: u32 = Mem::read(a, a.rebase(REC_LOG));
+        let log = a.rebase(REC_LOG);
+        let words_of =
+            |o: &Oracle| -> Vec<u32> { (0..=n * 8).map(|i| Mem::read(o, log + 4 * i)).collect() };
+        assert_eq!(words_of(a), words_of(b), "{name} {round}: calls");
+        assert_eq!(a.diff(b).unwrap(), [], "{name} {round}: memory");
+        settle(a, b);
+    }
+}
+
+#[test]
+fn pc_r4_main_ei_abm_draw_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    ei_abm_draw_cases(&mut a, &mut b, &mut Xorshift(0x5c4e_0401), 3000);
+}
+
+#[test]
+fn pc_r4_main_ei_abm_draw_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    ei_abm_draw_cases(&mut a, &mut b, &mut Xorshift(0x5c4e_0402), 3000);
+}

@@ -1774,4 +1774,150 @@ pub mod bridge {
             [r0[0], r0[1], x87::round_trip(k).to_bits(), 1f32.to_bits()],
         );
     }
+
+    /// `g_GraphicSkipFrame` (`0x012fb7d0`): set while the frame is skipped.
+    pub const SKIP_FRAME: Global<u32> = Global::new(0x012f_b7d0);
+    /// Where [`PACKET_POS`] starts each sphere grid frame (`0x01760870`).
+    pub const PACKET_START: u32 = 0x0176_0870;
+    /// The renderer submissions `eiAbmDraw` makes first (each passes
+    /// the renderer `0x00cdede4` a draw callback or a flush) and again
+    /// after the panels (the first one).
+    pub const RENDER_SUBMITS: [u32; 5] = [
+        0x00a8_ecf0,
+        0x00a8_ed60,
+        0x00a8_ed40,
+        0x00a8_ed00,
+        0x00a8_ed20,
+    ];
+    /// `AbmapGridMarkUVs()`, `0x00a4c460(alpha, 0x4300)` (the fade
+    /// overlay), `AbmapDrawChrPanel()`, `AbmapDrawChrLabels_00a4b790()`,
+    /// `AbmapDrawPanels_00a58660()`.
+    pub const GRID_MARK_UVS: u32 = 0x00a4_ac20;
+    pub const FADE_OVERLAY: u32 = 0x00a4_c460;
+    pub const DRAW_CHR_PANEL: u32 = 0x00a4_fbe0;
+    pub const DRAW_CHR_LABELS: u32 = 0x00a4_b790;
+    pub const DRAW_PANELS: u32 = 0x00a5_8660;
+    /// The immediate draw's passes before the overlay: `AbmapProjectGrid`,
+    /// `0x00a497b0`, `AbmapDrawMap`, `AbmapDrawNodesEamap_00a51340`,
+    /// `AbmapDrawBoard`, `AbmapDrawLinks_00a4b4b0`, `AbmapDrawGridMarks`,
+    /// `AbmapDrawNodeSpheres`, `AbmapDrawNodeHalos`, `AbmapDrawChrRings`.
+    pub const IMMEDIATE_PASSES: [u32; 10] = [
+        0x00a4_7630,
+        0x00a4_97b0,
+        0x00a4_ce20,
+        0x00a5_1340,
+        0x00a4_c700,
+        0x00a4_b4b0,
+        0x00a4_9f10,
+        0x00a5_05e0,
+        0x00a5_0290,
+        0x00a4_c8d0,
+    ];
+    /// The second argument of the fade overlay.
+    const FADE_OVERLAY_KIND: u32 = 0x4300;
+
+    fn call_at(h: &mut impl ffx_bridge::Host, f: u32, args: &[u32]) -> u32 {
+        let f = h.rebase(f);
+        h.call(f, args)
+    }
+
+    /// The fade overlay both draws share: while the fade (`f32 g_Abmap +
+    /// 0x115e8`) is not exactly 1 (a NaN counts as not 1),
+    /// `0x00a4c460(ftol((1 - fade) * 128), 0x4300)`; then the character
+    /// panel and labels.
+    fn fade_and_chr(h: &mut impl ffx_bridge::Host) {
+        let g = ABMAP.get(h);
+        let fade = x87::load(h.read(g.wrapping_add(0x115e8)));
+        #[allow(clippy::float_cmp)] // fucompp against fld1: exactly 1 or not
+        if fade != 1.0 {
+            let k128 = rdata_f64(h, K128);
+            let alpha = x87::ftol(h, x87::mul(x87::sub(1.0, fade), k128));
+            call_at(h, FADE_OVERLAY, &[alpha, FADE_OVERLAY_KIND]);
+        }
+        call_at(h, DRAW_CHR_PANEL, &[]);
+        call_at(h, DRAW_CHR_LABELS, &[]);
+    }
+
+    /// The pad slot's callback (`g_Abmap + 0x115ac`), called while the
+    /// pressed command (`i16 g_AbmapPad + 0x2700`) is negative.
+    fn pad_callback(h: &mut impl ffx_bridge::Host) {
+        let pad = ABMAP_PAD.get(h);
+        if h.read::<i16>(pad.wrapping_add(0x2700)) < 0 {
+            let g = ABMAP.get(h);
+            let f: u32 = h.read(g.wrapping_add(0x115ac));
+            if f != 0 {
+                h.call(f, &[]);
+            }
+        }
+    }
+
+    /// `eiAbmDraw()` (`0x00a545a0`, from [`ei_abm_draw_frame`]): the
+    /// sphere grid's frame through the renderer. [`PACKET_POS`] to
+    /// [`PACKET_START`]; unless the frame is skipped: the five
+    /// [`RENDER_SUBMITS`], `AbmapGridMarkUVs`, the fade overlay and the
+    /// character panel and labels ([`fade_and_chr`]), the panels, the first
+    /// submit again, the pad callback ([`pad_callback`]), and `g_Abmap +
+    /// 0x116a8 = -2`. Returns `g_Abmap` (the original's `eax`: read last,
+    /// and what its caller had loaded when skipped).
+    pub fn ei_abm_draw(h: &mut impl ffx_bridge::Host) -> u32 {
+        let skip = SKIP_FRAME.get(h);
+        let start = h.rebase(PACKET_START);
+        PACKET_POS.set(h, start);
+        if skip != 0 {
+            return ABMAP.get(h);
+        }
+        for f in RENDER_SUBMITS {
+            call_at(h, f, &[]);
+        }
+        call_at(h, GRID_MARK_UVS, &[]);
+        fade_and_chr(h);
+        call_at(h, DRAW_PANELS, &[]);
+        call_at(h, RENDER_SUBMITS[0], &[]);
+        pad_callback(h);
+        let g = ABMAP.get(h);
+        h.write(g.wrapping_add(0x116a8), -2i32);
+        g
+    }
+
+    /// `eiAbmDrawImmediate_00a54660()` (from [`ei_abm_draw_frame`]): the
+    /// whole sphere grid drawn at once, with the frame skip
+    /// ([`SKIP_FRAME`]) cleared for the passes and put back after:
+    /// [`PACKET_POS`] to [`PACKET_START`], the ten [`IMMEDIATE_PASSES`],
+    /// the fade overlay and the character panel and labels, the pad
+    /// callback, then the panels. Returns the panels' `eax` (the
+    /// original's).
+    pub fn ei_abm_draw_immediate(h: &mut impl ffx_bridge::Host) -> u32 {
+        let skip = SKIP_FRAME.get(h);
+        let start = h.rebase(PACKET_START);
+        PACKET_POS.set(h, start);
+        SKIP_FRAME.set(h, 0);
+        for f in IMMEDIATE_PASSES {
+            call_at(h, f, &[]);
+        }
+        fade_and_chr(h);
+        pad_callback(h);
+        let r = call_at(h, DRAW_PANELS, &[]);
+        SKIP_FRAME.set(h, skip);
+        r
+    }
+
+    /// `eiAbmDrawFrame_00a54560()` (from `0x008e2720`, the sphere grid
+    /// menu's draw): nothing while `g_Abmap + 0x115ba` is set; else
+    /// [`ei_abm_draw_immediate`] when `+0x115bb` asks for it (a one-shot
+    /// flag) or [`ei_abm_draw`], and `+0x115bb` cleared. Returns `g_Abmap`
+    /// (the original's `eax`, read last).
+    pub fn ei_abm_draw_frame(h: &mut impl ffx_bridge::Host) -> u32 {
+        let g = ABMAP.get(h);
+        if h.read::<u8>(g.wrapping_add(0x115ba)) != 0 {
+            return g;
+        }
+        if h.read::<u8>(g.wrapping_add(0x115bb)) != 0 {
+            ei_abm_draw_immediate(h);
+        } else {
+            ei_abm_draw(h);
+        }
+        let g = ABMAP.get(h);
+        h.write(g.wrapping_add(0x115bb), 0u8);
+        g
+    }
 }
