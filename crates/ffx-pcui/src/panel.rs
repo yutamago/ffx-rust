@@ -474,4 +474,401 @@ pub mod bridge {
         mem.write(g.wrapping_add(0x1_161c), 0u32);
         g
     }
+
+    /// `FUN_00a462f0(x, y, right, bottom, count)` (unnamed; by its
+    /// arguments the panel's frame), `TODrawScissorXYWH(x, y, w, h)`,
+    /// `AbmapDrawScrollBar(x, y, height, first, total, shown)`,
+    /// `FUN_00a4f290(panel, first, dx)` (unnamed; drawn when `+0x25` is
+    /// set, the cursor by the look of it).
+    pub const ABMAP_PAD_DRAW_FRAME: u32 = 0x00a4_62f0;
+    pub const TO_DRAW_SCISSOR_XYWH: u32 = 0x008f_9230;
+    pub const ABMAP_DRAW_SCROLL_BAR: u32 = 0x00a4_6120;
+    pub const ABMAP_PAD_DRAW_CURSOR: u32 = 0x00a4_f290;
+    /// The panel whose frame shows its entry count (`g_AbmapPad +
+    /// 0x1a00`, panel 8).
+    pub const COUNTED_PANEL: u32 = 0x1a00;
+    /// A list row's height.
+    pub const ROW: i32 = 0x14;
+
+    /// `AbmapPadDrawList_00a58900(panel, dx)` (name ours; from the panel
+    /// pass `0x00a58660`): the panel's frame at `x = i16 +8 + dx`, `y =
+    /// i16 +0xa`, size `i16 +0xc` x `i16 +0xe` (the count `i16 +0x1e` for
+    /// panel 8 only), its scissor (`y - 1`, `h - 2`). The first row shown
+    /// is the top `+0x1a`, or `cursor - page + 1` once the cursor `+0x18`
+    /// is a page `+0x16` or more below it. With `+0x28` set and more than
+    /// two rows a page, the scroll bar (x, y, height as `u16`). Rows are
+    /// drawn through the panel's callback `+0x38` (re-read for each),
+    /// `cb(panel, entry, index, x, y)`, entries 12 bytes from `+0x40`,
+    /// rows [`ROW`] apart, columns `+0x22` (`i16 +0xc / cols` apart, from
+    /// `x + i16 +0x20`), `cols * page` cells; by the scroll animation
+    /// `+0x26` (`+0x27` its step): 0 still (stops at the count, re-read),
+    /// 1 one row up, 2 one row down (`page + 1` rows offset by `step / 8`,
+    /// the step then grows by 0x35 and the animation ends at 0x8c), 3 a
+    /// page up, 4 a page down (the step grows by 1, the animation ends at
+    /// 8; the old page from `+0x1c` slides out of a shrinking scissor while
+    /// the new one follows). Then the full-screen scissor and, with `+0x25`
+    /// set, the cursor. A panel with no columns faults on the division in
+    /// the original; the port draws its rows at the same x.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // five animations; x, y, p
+    pub fn draw_list<M, C>(mem: &mut M, panel: u32, dx: i32, call: &mut C)
+    where
+        M: ffx_bridge::Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let p = panel;
+        let x = word(mem, p, 8).wrapping_add(dx);
+        let y = word(mem, p, 0xa);
+        let counted = p == PAD.get(mem).wrapping_add(COUNTED_PANEL);
+        let count = if counted { word(mem, p, 0x1e) } else { 0 };
+        let right = word(mem, p, 0xc).wrapping_add(x);
+        let bottom = word(mem, p, 0xe).wrapping_add(y);
+        cdecl(
+            mem,
+            call,
+            ABMAP_PAD_DRAW_FRAME,
+            &[x, y, right, bottom, count],
+        );
+        scissor(mem, call, p, x);
+        let top = word(mem, p, 0x1a);
+        let cursor = word(mem, p, 0x18);
+        let page = word(mem, p, 0x16);
+        let first = if cursor - top >= page {
+            cursor - page + 1
+        } else {
+            top
+        };
+        if byte(mem, p, 0x28) != 0 && page > 2 {
+            // x, y and height as the u16 the original computes them in
+            let w16 = |v: i32| i32::from(v.to_le_bytes()[0]) | i32::from(v.to_le_bytes()[1]) << 8;
+            let bar = [
+                w16(word(mem, p, 0xc) - 8 + x),
+                w16(word(mem, p, 0xa) - 3),
+                w16(word(mem, p, 0xe) + 4),
+                word(mem, p, 0x1a),
+                word(mem, p, 0x1e),
+                page,
+            ];
+            cdecl(mem, call, ABMAP_DRAW_SCROLL_BAR, &bar);
+        }
+        let cols = i32::from(byte(mem, p, 0x22));
+        let col_w = word(mem, p, 0xc).checked_div(cols).unwrap_or(0);
+        let x0 = word(mem, p, 0x20).wrapping_add(x);
+        let row_y = word(mem, p, 0xa);
+        let cells = cols * word(mem, p, 0x16);
+        match byte(mem, p, 0x26) {
+            0 => {
+                let (mut cx, mut cy, mut col) = (x0, row_y, 0);
+                for k in 0..cells {
+                    let index = first + k;
+                    if index >= word(mem, p, 0x1e) {
+                        break;
+                    }
+                    draw_row(mem, call, p, index, cx, cy);
+                    cx = cx.wrapping_add(col_w);
+                    col += 1;
+                    if col >= i32::from(byte(mem, p, 0x22)) {
+                        col = 0;
+                        cx = x0;
+                        cy = cy.wrapping_add(ROW);
+                    }
+                }
+            }
+            anim @ (1 | 2) => {
+                let shift = i32::from(byte(mem, p, 0x27) >> 3);
+                // up: from the first row, `step / 8 - 20` above; down: from
+                // the row before it, `step / 8` above
+                let (from, mut cy) = if anim == 1 {
+                    (first, shift - ROW + row_y)
+                } else {
+                    (first - 1, row_y - shift)
+                };
+                let mut j = 0;
+                while j < word(mem, p, 0x16) + 1 {
+                    draw_row(mem, call, p, from + j, x0, cy);
+                    cy = cy.wrapping_add(ROW);
+                    j += 1;
+                }
+                let step = byte(mem, p, 0x27).wrapping_add(0x35);
+                mem.write(p.wrapping_add(0x27), step);
+                if step >= 0x8c {
+                    mem.write(p.wrapping_add(0x26), 0u8);
+                }
+            }
+            anim @ (3 | 4) => {
+                let old = word(mem, p, 0x1c);
+                let step = byte(mem, p, 0x27).wrapping_add(1);
+                mem.write(p.wrapping_add(0x27), step);
+                if step >= 8 {
+                    mem.write(p.wrapping_add(0x26), 0u8);
+                }
+                let h = word(mem, p, 0xe);
+                // C division toward zero
+                let off = i32::from(step) * h / 8;
+                let w = word(mem, p, 0xc);
+                let old_rect = if anim == 3 {
+                    [x, row_y - 1 + off, w, h - off - 2]
+                } else {
+                    [x, row_y - 1, w, h - off - 2]
+                };
+                cdecl(mem, call, TO_DRAW_SCISSOR_XYWH, &old_rect);
+                if byte(mem, p, 0x26) != 0 {
+                    for k in 0..cells {
+                        draw_row(mem, call, p, old + k, x0, row_y + ROW * k);
+                    }
+                }
+                scissor(mem, call, p, x);
+                let new_y = if anim == 3 {
+                    word(mem, p, 0xa) - word(mem, p, 0xe) + off
+                } else {
+                    word(mem, p, 0xa) + (h - off)
+                };
+                for k in 0..cells {
+                    draw_row(mem, call, p, first + k, x0, new_y + ROW * k);
+                }
+            }
+            _ => {}
+        }
+        cdecl(mem, call, TO_DRAW_SCISSOR_XYWH, &[0, 0, 0x200, 0x1a0]);
+        if byte(mem, p, 0x25) != 0 {
+            cdecl(
+                mem,
+                call,
+                ABMAP_PAD_DRAW_CURSOR,
+                &[p.cast_signed(), first, dx],
+            );
+        }
+    }
+
+    /// The `i16` at `p + off`, widened.
+    fn word(mem: &impl ffx_bridge::Mem, p: u32, off: u32) -> i32 {
+        i32::from(mem.read::<i16>(p.wrapping_add(off)))
+    }
+
+    fn byte(mem: &impl ffx_bridge::Mem, p: u32, off: u32) -> u8 {
+        mem.read(p.wrapping_add(off))
+    }
+
+    /// The original at `sym` through `call`, the words as `i32`.
+    fn cdecl<M, C>(mem: &mut M, call: &mut C, sym: u32, args: &[i32]) -> u32
+    where
+        M: ffx_bridge::Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let f = mem.rebase(sym);
+        let words: Vec<u32> = args.iter().map(|v| v.cast_unsigned()).collect();
+        call(mem, f, &words)
+    }
+
+    /// The panel's own scissor: from `y - 1`, `h - 2` high (`+0xa`,
+    /// `+0xc`, `+0xe` read now).
+    fn scissor<M, C>(mem: &mut M, call: &mut C, p: u32, x: i32)
+    where
+        M: ffx_bridge::Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let rect = [
+            x,
+            word(mem, p, 0xa) - 1,
+            word(mem, p, 0xc),
+            word(mem, p, 0xe) - 2,
+        ];
+        cdecl(mem, call, TO_DRAW_SCISSOR_XYWH, &rect);
+    }
+
+    /// Row `index` (entry `+0x40 + 12 index`) through the panel's
+    /// callback `+0x38`, read now: `cb(panel, entry, index, x, y)`.
+    fn draw_row<M, C>(mem: &mut M, call: &mut C, p: u32, index: i32, x: i32, y: i32)
+    where
+        M: ffx_bridge::Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let entry = p
+            .wrapping_add(0x40)
+            .wrapping_add(index.cast_unsigned().wrapping_mul(0xc));
+        let cb: u32 = mem.read(p.wrapping_add(0x38));
+        call(
+            mem,
+            cb,
+            &[
+                p,
+                entry,
+                index.cast_unsigned(),
+                x.cast_unsigned(),
+                y.cast_unsigned(),
+            ],
+        );
+    }
+
+    /// `MsGetSaveConfigHiragana()`, `MsMenuGetHelp(i, id, second)`,
+    /// `AbmapHelpMessageStep_00a59350(text)`, `MsGetRomItem(id, &strings)`,
+    /// `MsGetExcelData(id, table, &strings)` and the table word
+    /// `0x01a860e4` the item help reads.
+    pub const MS_GET_SAVE_CONFIG_HIRAGANA: u32 = 0x0078_51f0;
+    pub const MS_MENU_GET_HELP: u32 = 0x0078_fbb0;
+    pub const ABMAP_HELP_MESSAGE_STEP: u32 = 0x00a5_9350;
+    pub const MS_GET_ROM_ITEM: u32 = 0x0079_09f0;
+    pub const MS_GET_EXCEL_DATA: u32 = 0x007a_b870;
+    pub const ITEM_HELP_TABLE: Global<u32> = Global::new(0x01a8_60e4);
+
+    /// `AbmapPadMenuHelp_00a570a0(panel, entry)` (name ours; the help
+    /// callback `+0x3c` the grid's start `0x00a54e3a` gives its menu
+    /// panels): the help of menu text `entry + 8` (`MsMenuGetHelp(9, id,
+    /// MsGetSaveConfigHiragana() & 1)`) shown through
+    /// `AbmapHelpMessageStep_00a59350`, whose `eax` it returns.
+    pub fn menu_help(mem: &mut impl Host, entry: u32) -> u32 {
+        let id: u32 = mem.read(entry.wrapping_add(8));
+        let kana = mem.call_sym(MS_GET_SAVE_CONFIG_HIRAGANA, Conv::Cdecl, &[]) & 1;
+        let text = mem.call_sym(MS_MENU_GET_HELP, Conv::Cdecl, &[9, id, kana]);
+        mem.call_sym(ABMAP_HELP_MESSAGE_STEP, Conv::Cdecl, &[text])
+    }
+
+    /// `AbmapPadItemHelp_00a57040(panel, entry)` (name ours; the help
+    /// callback of the item panel, `g_AbmapPad + 0x1a3c`): the item
+    /// `u16 entry + 8` (`MsGetRomItem`, its strings word into `strings`,
+    /// which is the original's `entry` argument slot, so it starts as
+    /// `entry`); with a help id
+    /// (byte `+0x5d` not 0xff) the help record (`MsGetExcelData(id, [table
+    /// 0x01a860e4], strings)`, its strings word over the first) and, when
+    /// there is one, the text at strings + its `u16` (`+4` with
+    /// `MsGetSaveConfigHiragana() & 1`) through
+    /// `AbmapHelpMessageStep_00a59350`. `eax`: that call's, else 0 (no
+    /// record), else the item record with `al` 0xff.
+    pub fn item_help(mem: &mut impl Host, entry: u32, strings: u32) -> u32 {
+        // the slot holds the argument until a callee writes it
+        mem.write(strings, entry);
+        let id = mem.read::<u32>(entry.wrapping_add(8)) & 0xffff;
+        let item = mem.call_sym(MS_GET_ROM_ITEM, Conv::Cdecl, &[id, strings]);
+        let help: u8 = mem.read(item.wrapping_add(0x5d));
+        if help == 0xff {
+            return item & 0xffff_ff00 | 0xff;
+        }
+        let table = ITEM_HELP_TABLE.get(mem);
+        let rec = mem.call_sym(
+            MS_GET_EXCEL_DATA,
+            Conv::Cdecl,
+            &[u32::from(help), table, strings],
+        );
+        if rec == 0 {
+            return 0;
+        }
+        let base: u32 = mem.read(strings);
+        let kana = mem.call_sym(MS_GET_SAVE_CONFIG_HIRAGANA, Conv::Cdecl, &[]) & 1;
+        let off: u16 = mem.read(rec.wrapping_add(4 * kana));
+        let text = u32::from(off).wrapping_add(base);
+        mem.call_sym(ABMAP_HELP_MESSAGE_STEP, Conv::Cdecl, &[text])
+    }
+
+    /// `AbmapPadDrawList_00a58900(panel, dx)`.
+    pub const ABMAP_PAD_DRAW_LIST: u32 = 0x00a5_8900;
+    /// The panels [`draw_panels`] walks (0x340 bytes each).
+    pub const PANELS: u32 = 12;
+
+    /// The slide of a side panel `width` wide: from the grid's slide
+    /// state (byte `+0x115c2` moving, `+0x115c0` out, `+0x115c1` the
+    /// step, counted down when going out) the panel's offset, `width` when
+    /// it is fully in and 0 when fully out.
+    fn slide_offset(mem: &impl ffx_bridge::Mem, width: i32, base: i32) -> i32 {
+        let g = ABMAP.get(mem);
+        let flag = |off: u32| mem.read::<u8>(g.wrapping_add(off)) != 0;
+        if flag(0x1_15c2) {
+            let step = i32::from(mem.read::<u8>(g.wrapping_add(0x1_15c1)));
+            let f = if flag(0x1_15c0) { 3 - step } else { step };
+            // C division toward zero
+            f * width / 4 + base
+        } else if flag(0x1_15c0) {
+            0
+        } else {
+            width
+        }
+    }
+
+    /// `AbmapDrawPanels_00a58660()` (name ours; the sphere grid's draw
+    /// pass): each of the [`PANELS`] panels of `g_AbmapPad` (the base read
+    /// once) that is shown (byte `+0x23`) through
+    /// `AbmapPadDrawList_00a58900(panel, dx)`. Panels 6, 7 and 8 slide
+    /// ([`slide_offset`], widths 0x4c, 0x88, 0xa5 from 0xf, 0x1b, 0x21):
+    /// drawn at `off - width` while `off > 0`, and while `off < width`
+    /// again at `off +` 0x120/0xf0 (6, CJK text or not), 0x150 (7) or
+    /// 0x110/0xf0 (8); 9 and 10 at 0, or once the grid is out at
+    /// 0x140/0x110 and 0x130/0x110; 11 at 0 or 0x150; the rest at 0. Then
+    /// the open panel's (`+0x2700`, `i16`, none when negative) help
+    /// callback `+0x3c`, when set, gets `(panel, its cursor entry, cursor
+    /// +0x18)`; `eax` its result, else `g_AbmapPad`.
+    pub fn draw_panels<M, C>(mem: &mut M, call: &mut C) -> u32
+    where
+        M: ffx_bridge::Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let mut draw = |mem: &mut M, p: u32, dx: i32| {
+            cdecl(mem, call, ABMAP_PAD_DRAW_LIST, &[p.cast_signed(), dx]);
+        };
+        let base = PAD.get(mem);
+        for i in 0..PANELS {
+            let p = base.wrapping_add(0x340 * i);
+            if mem.read::<u8>(p.wrapping_add(0x23)) == 0 {
+                continue;
+            }
+            let cjk = |mem: &M| CJK_TEXT.get(mem) != 0;
+            let out = |mem: &M| mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x1_15c0)) != 0;
+            match i {
+                6..=8 => {
+                    let (width, start) = [(0x4c, 0xf), (0x88, 0x1b), (0xa5, 0x21)][i as usize - 6];
+                    let off = slide_offset(mem, width, start);
+                    if off > 0 {
+                        draw(mem, p, off - width);
+                    }
+                    if off < width {
+                        let second = match i {
+                            6 => {
+                                if cjk(mem) {
+                                    0x120
+                                } else {
+                                    0xf0
+                                }
+                            }
+                            7 => 0x150,
+                            _ => {
+                                if cjk(mem) {
+                                    0x110
+                                } else {
+                                    0xf0
+                                }
+                            }
+                        };
+                        draw(mem, p, off + second);
+                    }
+                }
+                9 | 10 => {
+                    let dx = if !out(mem) {
+                        0
+                    } else if cjk(mem) {
+                        if i == 9 { 0x140 } else { 0x130 }
+                    } else {
+                        0x110
+                    };
+                    draw(mem, p, dx);
+                }
+                11 => {
+                    let dx = if out(mem) { 0x150 } else { 0 };
+                    draw(mem, p, dx);
+                }
+                _ => draw(mem, p, 0),
+            }
+        }
+        let pad = PAD.get(mem);
+        let open = mem.read::<i16>(pad.wrapping_add(0x2700));
+        if open < 0 {
+            return pad;
+        }
+        let panel = pad.wrapping_add(0x340u32.wrapping_mul(u32::from(open.cast_unsigned())));
+        let help: u32 = mem.read(panel.wrapping_add(0x3c));
+        if help == 0 {
+            return pad;
+        }
+        let cursor = i32::from(mem.read::<i16>(panel.wrapping_add(0x18)));
+        let entry = panel
+            .wrapping_add(0x40)
+            .wrapping_add(cursor.cast_unsigned().wrapping_mul(0xc));
+        call(mem, help, &[panel, entry, cursor.cast_unsigned()])
+    }
 }

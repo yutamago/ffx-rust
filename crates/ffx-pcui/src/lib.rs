@@ -6,22 +6,34 @@
 //! (`docs/formats/pc-ui.md`):
 //!
 //! - [`iggy`]: Iggy data values and the menus' handler slots;
+//! - [`camera`]: the camera tracks of the movies over 3D scenes;
+//! - [`input`]: the per-frame input pass;
 //! - [`abmap`]: the sphere grid screen (`g_Abmap`) helpers the PC port
 //!   placed beside its UI code;
+//! - [`dyngeo`]: two shader setters of `ClassDynamicGeometry`;
 //! - [`cursor`]: the sphere grid cursor's move and node searches;
 //! - [`link`]: the sphere grid's link outlines (straight and curved);
+//! - [`mapname`]: the map name overlay;
+//! - [`menus`]: the Iggy menu manager's viewport, an Esc menu handler;
 //! - [`panel`]: the sphere grid's list panels (cursor, scrolling, choice);
 //! - [`item`]: item menu rows and key strings the PC port placed here;
 //! - [`sea`]: the sea's UV scroll speed nudge;
 //! - [`spdctrl`]: where the speed-up booster stays off;
-//! - [`touch`]: the pointer (mouse and touch) zones of the PC screens.
+//! - [`touch`]: the pointer (mouse and touch) zones of the PC screens;
+//! - [`worldmap`]: the menu's world map window.
 
 pub mod abmap;
+pub mod camera;
 pub mod cursor;
+pub mod dyngeo;
 pub mod iggy;
+pub mod input;
 pub mod item;
 pub mod link;
+pub mod mapname;
+pub mod menus;
 pub mod panel;
 pub mod sea;
 pub mod spdctrl;
 pub mod touch;
+pub mod worldmap;

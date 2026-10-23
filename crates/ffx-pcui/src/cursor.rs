@@ -123,7 +123,7 @@ pub fn direction_score(dot: f32, d: f32) -> f32 {
 
 /// The originals, where the game keeps their state (`ffx_bridge::Mem`).
 pub mod bridge {
-    use ffx_bridge::Global;
+    use ffx_bridge::{Global, x87};
     use ffx_graphic::host::{Conv, Host};
 
     use super::{Vu0Length, node_offset, vu0_length};
@@ -289,5 +289,143 @@ pub mod bridge {
             p = p.wrapping_add(0x28);
         }
         found
+    }
+
+    /// `AbmapReadCursorStick(move)`, `AbmapFindNearestNode(dist, pos,
+    /// filter)`, `AbmapFindNodeInDirection(pos, dir, filter)`,
+    /// `AbmapNodeRadius(node)` (`ST0`), `AbmapTransitionToHoming(node,
+    /// t)` and `SndSepPlaySimple(id)`.
+    pub const ABMAP_READ_CURSOR_STICK: u32 = 0x00a5_6bd0;
+    pub const ABMAP_FIND_NEAREST_NODE: u32 = 0x00a5_6a40;
+    pub const ABMAP_FIND_NODE_IN_DIRECTION: u32 = 0x00a5_6860;
+    pub const ABMAP_NODE_RADIUS: u32 = 0x00a5_6f30;
+    pub const ABMAP_TRANSITION_TO_HOMING: u32 = 0x00a4_8d20;
+    pub const SND_SEP_PLAY_SIMPLE: u32 = 0x0088_6e80;
+    /// The cursor sound.
+    pub const SFX_MOVE: u32 = 0x8000_0001;
+    /// Bytes of scratch [`free_cursor_step`] needs, laid out as the
+    /// original's frame from `ebp - 0x18`: the nearest node's distance,
+    /// then the move (4 floats).
+    pub const FREE_CURSOR_WORK: u32 = 0x14;
+
+    /// The node record `p` is (records of 0x28 bytes from `g_Abmap +
+    /// 0x808`, `g_Abmap` read now), as the original's `imul` by
+    /// `0x66666667` divides: toward zero.
+    fn node_index(mem: &impl Host, p: u32) -> i32 {
+        let off = p.wrapping_sub(ABMAP.get(mem)).wrapping_sub(0x808);
+        off.cast_signed() / 0x28
+    }
+
+    /// The cursor sound, then `AbmapTransitionToHoming(node of p, t)`.
+    fn home_on(mem: &mut impl Host, p: u32, t: f32) {
+        mem.call_sym(SND_SEP_PLAY_SIMPLE, Conv::Cdecl, &[SFX_MOVE]);
+        let node = node_index(mem, p).cast_unsigned();
+        mem.call_sym(
+            ABMAP_TRANSITION_TO_HOMING,
+            Conv::Cdecl,
+            &[node, t.to_bits()],
+        );
+    }
+
+    /// `AbmapFreeCursorStep_00a58ff0(filter)` (name ours; from the
+    /// sphere grid's free-cursor states `0x00a44ef0` and
+    /// `abmCalcChrMoveCurMoveCheck`): one frame of the free cursor at
+    /// `g_Abmap + 0x112b8`, nodes visited as `filter` says. Nothing while
+    /// `+0x115b0` is set; a negative speed `+0x115e4` becomes 1.
+    ///
+    /// When `AbmapReadCursorStick` reports no stick move: right after a
+    /// stick move (byte `+0x115cd`, then cleared) the cursor homes on the
+    /// nearest node (t 0.5), else, with a d-pad move (either axis not 0,
+    /// NaN counts), on the node in that direction (t 0.25), each with the
+    /// cursor sound; no node, nothing. With a stick move: the flag set,
+    /// the move added (rounded to floats), x clamped to `+0x1160c ..=
+    /// +0x11614` and y to `+0x11610 ..= +0x11618` (a NaN bound or
+    /// position is left alone), the position (4 words) copied to
+    /// `+0x11308`; when the nearest node lies within the cursor radius
+    /// `+0x112f4` it becomes the cursor node `+0x112fc` (`u16`) and the
+    /// radius moves 2 toward the node's (`AbmapNodeRadius`), not past it.
+    /// The nearest node is not checked for null there. `eax` is the
+    /// last callee's (the stack cookie check leaves it; callers read none).
+    pub fn free_cursor_step(mem: &mut impl Host, filter: u32, work: u32) {
+        let g = ABMAP.get(mem);
+        let pos = g.wrapping_add(0x1_12b8);
+        if mem.read::<u32>(g.wrapping_add(0x1_15b0)) != 0 {
+            return;
+        }
+        let speed = g.wrapping_add(0x1_15e4);
+        if mem.read::<f32>(speed) < 0.0 {
+            mem.write(speed, 1.0f32);
+        }
+        let (dist, mv) = (work, work.wrapping_add(4));
+        let stick = mem.call_sym(ABMAP_READ_CURSOR_STICK, Conv::Cdecl, &[mv]);
+        let g2 = ABMAP.get(mem);
+        let after_stick = g2.wrapping_add(0x1_15cd);
+        if stick == 0 {
+            if mem.read::<u8>(after_stick) != 0 {
+                mem.write(after_stick, 0u8);
+                let near = mem.call_sym(ABMAP_FIND_NEAREST_NODE, Conv::Cdecl, &[dist, pos, filter]);
+                if near != 0 {
+                    home_on(mem, near, 0.5);
+                }
+            } else {
+                let (dx, dy) = (mem.read::<f32>(mv), mem.read::<f32>(mv.wrapping_add(4)));
+                if dx != 0.0 || dy != 0.0 {
+                    let to = mem.call_sym(
+                        ABMAP_FIND_NODE_IN_DIRECTION,
+                        Conv::Cdecl,
+                        &[pos, mv, filter],
+                    );
+                    if to != 0 {
+                        home_on(mem, to, 0.25);
+                    }
+                }
+            }
+            return;
+        }
+        mem.write(after_stick, 1u8);
+        for k in 0..2 {
+            let at = pos.wrapping_add(4 * k);
+            let v = x87::add(
+                f64::from(mem.read::<f32>(at)),
+                f64::from(mem.read::<f32>(mv.wrapping_add(4 * k))),
+            );
+            mem.write(at, x87::store(v));
+        }
+        let g3 = ABMAP.get(mem);
+        for (k, lo, hi) in [(0, 0x1_160c, 0x1_1614), (1, 0x1_1610, 0x1_1618)] {
+            let at = pos.wrapping_add(4 * k);
+            let v: f32 = mem.read(at);
+            let min: u32 = mem.read(g3.wrapping_add(lo));
+            let max: u32 = mem.read(g3.wrapping_add(hi));
+            if f32::from_bits(min) > v {
+                mem.write(at, min);
+            } else if f32::from_bits(max) < v {
+                mem.write(at, max);
+            }
+        }
+        let g4 = ABMAP.get(mem);
+        for k in 0..4 {
+            let w: u32 = mem.read(g4.wrapping_add(0x1_12b8 + 4 * k));
+            mem.write(g4.wrapping_add(0x1_1308 + 4 * k), w);
+        }
+        let near = mem.call_sym(ABMAP_FIND_NEAREST_NODE, Conv::Cdecl, &[dist, pos, filter]);
+        let radius = pos.wrapping_add(0x3c);
+        // farther, or a NaN on either side: nothing
+        let within = mem.read::<f32>(dist) <= mem.read::<f32>(radius);
+        if !within {
+            return;
+        }
+        let node = node_index(mem, near).to_le_bytes();
+        let node = u16::from_le_bytes([node[0], node[1]]);
+        mem.write(pos.wrapping_add(0x44), node);
+        let target = mem.call_sym_st0(ABMAP_NODE_RADIUS, Conv::Cdecl, &[u32::from(node)]);
+        let r: f32 = mem.read(radius);
+        if target < r {
+            let r2 = f32::from_bits(x87::store(x87::sub(f64::from(r), 2.0)));
+            mem.write(radius, if r2 < target { target } else { r2 });
+        } else if r < target {
+            let r2 = f32::from_bits(x87::store(x87::add(f64::from(r), 2.0)));
+            mem.write(radius, if r2 > target { target } else { r2 });
+        }
     }
 }

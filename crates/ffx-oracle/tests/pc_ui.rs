@@ -2293,3 +2293,985 @@ fn r1b_abmap_load_oef_matches_the_original() {
         }
     }
 }
+
+// ---- pc round 2 ----
+
+use ffx_pcui::camera::bridge as camera;
+use ffx_pcui::worldmap::bridge as worldmap;
+
+const LOAD_CAMERA_DATA: u32 = 0x006f_6dc0;
+const MENU_WORLD_MAP_DRAW: u32 = 0x008e_2b60;
+
+/// `push esi; push edi; mov esi, [esp + src]`, then the string at `esi`
+/// copied to `edi` through its NUL (`lodsb; stosb; test al, al; jnz`).
+fn copy_string(src: u8, to: &[u8]) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, src];
+    c.extend(to);
+    c.extend([0xac, 0xaa, 0x84, 0xc0, 0x75, 0xfa, 0x5f, 0x5e]);
+    c
+}
+
+/// `mov eax, [esp + off]; mov [slot], eax`.
+fn keep_arg(off: u8, slot: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, off, 0xa3];
+    c.extend(slot.to_le_bytes());
+    c
+}
+
+#[test]
+fn r2a_load_camera_data_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0201);
+        let log = Log::new(&mut t);
+        // the slots the stand-ins keep their arguments and answers in
+        let s = t.alloc(0x40);
+        let (unify_size, mode, answer, file, size, count, short, seed) = (
+            s,
+            s + 4,
+            s + 8,
+            s + 0xc,
+            s + 0x10,
+            s + 0x14,
+            s + 0x18,
+            s + 0x1c,
+        );
+        let path = t.alloc(0x100);
+        let block = t.alloc(0x3_c000);
+        log.stub(&mut t, camera::OPERATOR_DELETE, 1, 1, (0x5100_0000, 0, 0));
+        log.stub(&mut t, camera::OPERATOR_NEW, 2, 1, (block, 0, 0));
+        log.stub(&mut t, camera::DBG_PRINTF, 3, 1, (0x5300_0000, 0, 0));
+        log.stub(&mut t, camera::FIOS_CLOSE, 4, 1, (0x5400_0000, 0, 0));
+        // fiosUnifyFilename: the source copied to the output, the size kept
+        let mut c = copy_string(0x0c, &[0x8b, 0x7c, 0x24, 0x10]);
+        c.extend(keep_arg(0x0c, unify_size));
+        c.push(0xc3);
+        let at = t.a.rebase(camera::FIOS_UNIFY);
+        t.jump(at, &c);
+        // fiosOpen: the path copied out, the mode kept, the answer returned
+        let mut to = vec![0xbf]; // mov edi, path
+        to.extend(path.to_le_bytes());
+        let mut c = copy_string(0x0c, &to);
+        c.extend(keep_arg(0x08, mode));
+        c.push(0xa1);
+        c.extend(answer.to_le_bytes());
+        c.push(0xc3);
+        let at = t.a.rebase(camera::FIOS_OPEN);
+        t.jump(at, &c);
+        // fiosRead: 42 words of the seed (then seed + 1) into the buffer,
+        // file and size kept; a full record while the count lasts, then
+        // the short answer
+        let mut c = vec![0x57, 0x8b, 0x7c, 0x24, 0x0c, 0xa1];
+        c.extend(seed.to_le_bytes());
+        c.extend([0xb9, 0x2a, 0, 0, 0, 0xf3, 0xab, 0xff, 0x05]);
+        c.extend(seed.to_le_bytes());
+        c.push(0x5f);
+        c.extend(keep_arg(0x04, file));
+        c.extend(keep_arg(0x0c, size));
+        c.extend([0xff, 0x0d]);
+        c.extend(count.to_le_bytes());
+        c.extend([0x78, 0x06, 0xb8, 0xa8, 0, 0, 0, 0xc3, 0xa1]);
+        c.extend(short.to_le_bytes());
+        c.push(0xc3);
+        let at = t.a.rebase(camera::FIOS_READ);
+        t.jump(at, &c);
+        let work = t.b.stack_range().start + 0x1000;
+        let movies = [0x2e, 0x48, 0x20, 0x46];
+        for n in 0..48u32 {
+            log.rewind(&mut t);
+            let known = n % 6 < 4;
+            let movie = if known {
+                movies[rng.below(4) as usize]
+            } else {
+                [0, 1, 0x2f, 0x47, 0xffff_ffff, rng.next()][rng.below(6) as usize]
+            };
+            let reads = match ffx_pcui::camera::block(movie) {
+                Some((bytes, _)) => {
+                    let full = bytes / ffx_pcui::camera::RECORD;
+                    [0, 1, 2, 7, full - 1, full][rng.below(6) as usize]
+                }
+                None => 0,
+            };
+            let opened = if rng.below(4) == 0 { 0 } else { rng.next() | 1 };
+            let old = [0, rng.next()][rng.below(2) as usize];
+            let short = [0, 0x10, 0xa7, 0xa9, 0xffff_ffff][rng.below(5) as usize];
+            let mut slots = rng.bytes(0x40);
+            for (k, v) in [(8, opened), (0x14, reads), (0x18, short)] {
+                slots[k..k + 4].copy_from_slice(&v.to_le_bytes());
+            }
+            t.put(s, &slots);
+            t.put(path, &rng.bytes(0x100));
+            if n < 8 {
+                t.put(block, &rng.bytes(0x3_c000));
+            }
+            let data = t.a.rebase(camera::CAMERA_DATA.sym);
+            t.put(data, &old.to_le_bytes());
+            let words = t.a.rebase(camera::CAMERA_DATA_WORDS.sym);
+            t.put(words, &rng.next().to_le_bytes());
+            t.b.write(work, &rng.bytes(camera::WORK as usize)).unwrap();
+            t.check(
+                &format!("load camera data {n}: movie {movie:#x} reads {reads} file {opened:#x}"),
+                LOAD_CAMERA_DATA,
+                Conv::Cdecl,
+                &[movie],
+                |o| {
+                    camera::load_camera_data(o, movie, work, &mut |o, f, a| {
+                        o.call(f, Conv::Cdecl, a).unwrap().eax
+                    });
+                    Res::Void
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn r2a_menu_world_map_draw_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0202);
+        let log = Log::new(&mut t);
+        let window = t.alloc(0x80);
+        for (id, (sym, args)) in (1u32..).zip([
+            (worldmap::OPEN_PKT_BUFF_TMP, 0),
+            (worldmap::DRAW_SCISSOR_XYWH, 4),
+            (worldmap::SEQ_START_SCENE, 2),
+            (worldmap::SEQ_SET_SCENE_POS_BY_NAME, 4),
+            (worldmap::MKP_SHAPE_XYWHUV_C2, 11),
+            (worldmap::MKP_SHAPE_XYWHUV, 9),
+            (worldmap::GET_SAVE_DIC, 0),
+            (worldmap::GET_SAVE_CONFIG_ENGLISH, 0),
+            (worldmap::GET_SAVE_DIC_NAME, 2),
+            (worldmap::MKP_CROSS_EXT_MES_FONT_L_CLUT, 7),
+            (worldmap::DRAW_KICK_TMP, 0),
+        ]) {
+            log.stub(&mut t, sym, id, args, (0x5a00_0000 + id, 0, 0));
+        }
+        for n in 0..80u32 {
+            log.rewind(&mut t);
+            let alpha = [0x80, 0x80, 0x80, 0, 0x7f, 0x81, 0x180, rng.next()][rng.below(8) as usize];
+            let mut w = rng.bytes(0x80);
+            w[0x64..0x68].copy_from_slice(&alpha.to_le_bytes());
+            t.put(window, &w);
+            // the tint may change the alpha before it is read again
+            let poke = match rng.below(4) {
+                0 => Some((window + 0x64, 0x80)),
+                1 => Some((window + 0x64, 0)),
+                _ => None,
+            };
+            log.stub_poke(
+                &mut t,
+                worldmap::DRAW_TINT,
+                20,
+                4,
+                (0x5b00_0000, 0, 0),
+                poke,
+            );
+            #[allow(clippy::cast_sign_loss)]
+            let coord = |rng: &mut Xorshift| -> u32 {
+                [
+                    0,
+                    0,
+                    1,
+                    0xffff_ffff,
+                    3,
+                    0xffff_fffd,
+                    0x8000_0001,
+                    rng.next(),
+                ][rng.below(8) as usize]
+            };
+            let (x, y) = (coord(&mut rng), coord(&mut rng));
+            log.stub(&mut t, worldmap::MAP_MARKER_X, 21, 0, (x, 0, 0));
+            log.stub(&mut t, worldmap::MAP_MARKER_Y, 22, 0, (y, 0, 0));
+            t.check(
+                &format!("world map draw {n}: alpha {alpha:#x} marker {x:#x},{y:#x}"),
+                MENU_WORLD_MAP_DRAW,
+                Conv::Cdecl,
+                &[window],
+                |o| {
+                    Res::Int(worldmap::draw(o, window, &mut |o, f, a| {
+                        o.call(f, Conv::Cdecl, a).unwrap().eax
+                    }))
+                },
+            );
+        }
+    }
+}
+
+const ABMAP_PAD_DRAW_LIST: u32 = 0x00a5_8900;
+const ABMAP_FREE_CURSOR_STEP: u32 = 0x00a5_8ff0;
+
+#[test]
+#[allow(clippy::too_many_lines)] // the panel's fields, then the case
+fn r2b_abmap_pad_draw_list_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0201);
+        let log = Log::new(&mut t);
+        log.stub(
+            &mut t,
+            panel::ABMAP_PAD_DRAW_FRAME,
+            1,
+            5,
+            (0x5100_0000, 0, 0),
+        );
+        log.stub(
+            &mut t,
+            panel::TO_DRAW_SCISSOR_XYWH,
+            2,
+            4,
+            (0x5200_0000, 0, 0),
+        );
+        log.stub(
+            &mut t,
+            panel::ABMAP_DRAW_SCROLL_BAR,
+            3,
+            6,
+            (0x5300_0000, 0, 0),
+        );
+        log.stub(
+            &mut t,
+            panel::ABMAP_PAD_DRAW_CURSOR,
+            4,
+            3,
+            (0x5400_0000, 0, 0),
+        );
+        let pads = t.alloc(0x1a00 + 0x400);
+        let other = t.alloc(0x400);
+        let pad_global = t.a.rebase(panel::PAD.sym);
+        let plain = log.func(&mut t, 5, 5, (0x5500_0000, 0, 0));
+        for n in 0..1500u32 {
+            log.rewind(&mut t);
+            let counted = rng.below(3) == 0;
+            let p = if counted { pads + 0x1a00 } else { other };
+            let base = if rng.below(4) == 0 { other } else { pads };
+            t.put(pad_global, &base.to_le_bytes());
+            let mut b = rng.bytes(0x340);
+            #[allow(clippy::cast_possible_truncation)]
+            let small = |rng: &mut Xorshift, lo: i32, hi: i32| -> [u8; 2] {
+                let span = (hi - lo + 1).cast_unsigned();
+                ((lo + rng.below(span).cast_signed()) as i16).to_le_bytes()
+            };
+            let page = small(&mut rng, -2, 7);
+            let page_v = i16::from_le_bytes(page);
+            for (off, v) in [
+                (0x8, small(&mut rng, -300, 300)),
+                (0xa, small(&mut rng, -300, 300)),
+                (0xc, small(&mut rng, -200, 400)),
+                (0xe, small(&mut rng, -200, 400)),
+                (0x16, page),
+                (0x18, small(&mut rng, -3, 20)),
+                (0x1a, small(&mut rng, -3, 20)),
+                (0x1c, small(&mut rng, -3, 20)),
+                (0x1e, small(&mut rng, -1, 24)),
+                (0x20, small(&mut rng, -50, 50)),
+            ] {
+                b[off..off + 2].copy_from_slice(&v);
+            }
+            b[0x22] = [1, 1, 2, 3, 4][rng.below(5) as usize];
+            b[0x25] = [0, 1, rng.next().to_le_bytes()[0]][rng.below(3) as usize];
+            b[0x26] = [0, 0, 1, 2, 3, 4, 5, 0xff][rng.below(8) as usize];
+            b[0x27] = [
+                0,
+                6,
+                7,
+                8,
+                0x56,
+                0x57,
+                0x58,
+                0xff,
+                rng.next().to_le_bytes()[0],
+            ][rng.below(9) as usize];
+            b[0x28] = [0, 1, 0x80][rng.below(3) as usize];
+            // the row callback: plain, or one that changes the page size,
+            // the position, the count or the columns while the rows draw
+            let cb = match rng.below(5) {
+                0 => {
+                    let off = [0x16u32, 0xa, 0xe, 0x1e, 0x22][rng.below(5) as usize];
+                    let v = rng.below(4) | rng.below(3) << 16;
+                    let c = log.code(6, 5, (0x5600_0000, 0, 0), Some((p + off, v)));
+                    let to = t.a.alloc_code(&c).unwrap();
+                    assert_eq!(t.b.alloc_code(&c).unwrap(), to);
+                    to
+                }
+                _ => plain,
+            };
+            b[0x38..0x3c].copy_from_slice(&cb.to_le_bytes());
+            t.put(p, &b);
+            let dx: i32 =
+                [0, -0x88, -1, 0x1b - 0x88, rng.below(300).cast_signed()][rng.below(5) as usize];
+            t.check(
+                &format!(
+                    "pad draw list {n}: anim {} step {} page {page_v} cols {}",
+                    b[0x26], b[0x27], b[0x22]
+                ),
+                ABMAP_PAD_DRAW_LIST,
+                Conv::Cdecl,
+                &[p, dx.cast_unsigned()],
+                |o| {
+                    panel::draw_list(o, p, dx, &mut |o, f, a| {
+                        o.call(f, Conv::Cdecl, a).unwrap().eax
+                    });
+                    Res::Void
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn r2b_abmap_free_cursor_step_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0202);
+        let mut log = Log::new(&mut t);
+        let slots = t.alloc(0x40);
+        let (mv, dist, radius) = (slots, slots + 0x10, slots + 0x14);
+        // what the node searches were given: pos and filter of each, the
+        // direction's three floats
+        let kept = t.alloc(0x20);
+        log.stub(
+            &mut t,
+            cursor::SND_SEP_PLAY_SIMPLE,
+            1,
+            1,
+            (0x5100_0000, 0, 0),
+        );
+        log.stub(
+            &mut t,
+            cursor::ABMAP_TRANSITION_TO_HOMING,
+            2,
+            2,
+            (0x5200_0000, 0, 0),
+        );
+        log.float = Some(radius);
+        log.stub(&mut t, cursor::ABMAP_NODE_RADIUS, 3, 1, (0, 0, 0));
+        log.float = None;
+        let g = made_up_abmap(&mut t, &mut rng, 0x11700);
+        let work = t.b.stack_range().start + 0x1000;
+        let float = |rng: &mut Xorshift| -> f32 {
+            match rng.below(6) {
+                0 => f32::from_bits(FLOATS[rng.below(12) as usize]),
+                1 => 0.0,
+                _ => f32::from(i16::try_from(rng.below(4000)).unwrap() - 2000) / 8.0,
+            }
+        };
+        for n in 0..1500u32 {
+            log.rewind(&mut t);
+            // the stick: the move copied out, the answer returned
+            let mut c = vec![0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0xbe];
+            c.extend(mv.to_le_bytes());
+            c.extend([0xb9, 4, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e]);
+            let stick = [0, 1, rng.next()][rng.below(3) as usize];
+            c.extend(log.code(4, 0, (stick, 0, 0), None));
+            let at = t.a.rebase(cursor::ABMAP_READ_CURSOR_STICK);
+            t.jump(at, &c);
+            // the nodes: a record of the grid, its neighbour fields, or
+            // none; the nearest one also writes its distance
+            let node = |rng: &mut Xorshift| -> u32 {
+                match rng.below(5) {
+                    0 => 0,
+                    1 => g + 0x808 + 0x28 * rng.below(0x200) + rng.below(0x28),
+                    2 => g + 0x808 - 0x28 * rng.below(4) - rng.below(0x28),
+                    _ => g + 0x808 + 0x28 * rng.below(0x400),
+                }
+            };
+            let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+            c.extend(dist.to_le_bytes());
+            c.extend([0x89, 0x08]);
+            let near = node(&mut rng);
+            c.extend(keep_arg(0x08, kept));
+            c.extend(keep_arg(0x0c, kept + 4));
+            c.extend(log.code(5, 0, (near, 0, 0), None));
+            let at = t.a.rebase(cursor::ABMAP_FIND_NEAREST_NODE);
+            t.jump(at, &c);
+            let ahead = node(&mut rng);
+            let mut c = keep_arg(0x04, kept + 8);
+            c.extend(keep_arg(0x0c, kept + 0xc));
+            // push esi; push edi; mov esi, [esp + 0x10]; mov edi, kept + 0x10;
+            // mov ecx, 3; rep movsd; pop edi; pop esi
+            c.extend([0x56, 0x57, 0x8b, 0x74, 0x24, 0x10, 0xbf]);
+            c.extend((kept + 0x10).to_le_bytes());
+            c.extend([0xb9, 3, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e]);
+            c.extend(log.code(6, 0, (ahead, 0, 0), None));
+            let at = t.a.rebase(cursor::ABMAP_FIND_NODE_IN_DIRECTION);
+            t.jump(at, &c);
+            let mut m = [0f32; 4];
+            for v in &mut m {
+                *v = if rng.below(3) == 0 {
+                    0.0
+                } else {
+                    float(&mut rng)
+                };
+            }
+            let r = float(&mut rng);
+            let d = if rng.below(2) == 0 {
+                r
+            } else {
+                float(&mut rng)
+            };
+            let target = match rng.below(4) {
+                0 => r,
+                1 => r + 1.0,
+                2 => r - 3.0,
+                _ => float(&mut rng),
+            };
+            // signed zeros where only the sign tells a bound or a step
+            // apart: the radius and its target, the x position and its
+            // upper bound
+            let (r, d, target) = if rng.below(4) == 0 {
+                let (r, target) =
+                    [(-0.0, 0.0), (2.0, -0.0), (0.0, -0.0), (-2.0, -0.0)][rng.below(4) as usize];
+                (r, r, target)
+            } else {
+                (r, d, target)
+            };
+            let zero_edge = rng.below(6) == 0;
+            if zero_edge {
+                m[0] = -0.0;
+            }
+            let mut s = Vec::new();
+            for v in m.iter().chain([d, target].iter()) {
+                s.extend(v.to_bits().to_le_bytes());
+            }
+            t.put(mv, &s);
+            let mut blk = rng.bytes(0x400);
+            let put_f = |blk: &mut [u8], off: usize, v: f32| {
+                blk[off..off + 4].copy_from_slice(&v.to_le_bytes());
+            };
+            // g + 0x112b8 ..= 0x116b7
+            put_f(&mut blk, 0x0, float(&mut rng));
+            put_f(&mut blk, 0x4, float(&mut rng));
+            put_f(&mut blk, 0x3c, r);
+            put_f(
+                &mut blk,
+                0x32c,
+                [-1.0, 0.0, -0.0, 2.0, float(&mut rng)][rng.below(5) as usize],
+            );
+            let lo = f32::from(i16::try_from(rng.below(400)).unwrap() - 300);
+            for (off, v) in [
+                (0x354, lo),
+                (0x358, lo + 10.0),
+                (0x35c, lo + 200.0),
+                (0x360, lo + 50.0),
+            ] {
+                put_f(
+                    &mut blk,
+                    off,
+                    if rng.below(8) == 0 {
+                        float(&mut rng)
+                    } else {
+                        v
+                    },
+                );
+            }
+            if zero_edge {
+                put_f(&mut blk, 0x0, -0.0);
+                put_f(&mut blk, 0x354, -10.0);
+                put_f(&mut blk, 0x35c, 0.0);
+            }
+            let busy = [0u32, 0, 0, 0, 1, rng.next()][rng.below(6) as usize];
+            blk[0x2f8..0x2fc].copy_from_slice(&busy.to_le_bytes());
+            blk[0x315] = [0, 1, 0xff][rng.below(3) as usize];
+            t.put(g + 0x1_12b8, &blk);
+            let filter = rng.next();
+            t.b.write(work, &rng.bytes(0x20)).unwrap();
+            t.check(
+                &format!("free cursor step {n}: stick {stick:#x} near {near:#x} ahead {ahead:#x}"),
+                ABMAP_FREE_CURSOR_STEP,
+                Conv::Cdecl,
+                &[filter],
+                |o| {
+                    cursor::free_cursor_step(&mut Run(o), filter, work);
+                    Res::Void
+                },
+            );
+        }
+    }
+}
+
+use ffx_pcui::input::bridge as input;
+use ffx_pcui::menus::bridge as menus;
+
+const INPUT_UPDATE_ALL: u32 = 0x0063_0e80;
+const IGGY_MENU_MANAGER_APPLY_VIEWPORT: u32 = 0x00a2_65a0;
+const FF_ESC_MENU_VFUNC_0068E530: u32 = 0x0068_e530;
+const ABMAP_PAD_MENU_HELP: u32 = 0x00a5_70a0;
+const ABMAP_PAD_ITEM_HELP: u32 = 0x00a5_7040;
+
+#[test]
+fn r2c_input_update_all_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0301);
+        let log = Log::new(&mut t);
+        for (id, sym) in [
+            (1, input::INPUT_MANAGER_UPDATE),
+            (2, input::GUI_TOUCH_UPDATE),
+            (3, input::IGGY_INPUT_UPDATE),
+            (4, input::IGGY_MENU_MANAGER_UPDATE),
+        ] {
+            log.stub_this(&mut t, sym, id, 0);
+        }
+        let off = t.a.rebase(input::INPUT_OFF.sym);
+        let menus = t.a.rebase(input::IGGY_MENU_MANAGER.sym);
+        for n in 0..40u32 {
+            log.rewind(&mut t);
+            for (id, sym) in [
+                (5, input::INPUT_MANAGER),
+                (6, input::TOUCH_MANAGER),
+                (7, input::IGGY_INPUT),
+            ] {
+                log.stub(&mut t, sym, id, 0, (rng.next(), 0, 0));
+            }
+            let flag = [0, 0, 1, rng.next()][rng.below(4) as usize];
+            t.put(off, &flag.to_le_bytes());
+            t.put(menus, &rng.next().to_le_bytes());
+            let res = flag == 0;
+            t.check(
+                &format!("input update all {n}: off {flag:#x}"),
+                INPUT_UPDATE_ALL,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    let r = input::update_all(&mut Run(o));
+                    if res { Res::Int(r) } else { Res::Void }
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn r2c_iggy_menu_manager_apply_viewport_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0302);
+        let log = Log::new(&mut t);
+        log.stub_this(&mut t, menus::MENU_SET_VIEWPORT, 1, 4);
+        let this = t.alloc(0x30);
+        let list = t.alloc(0x40);
+        // a count past 16 bits (the high bit is a flag): a long list of
+        // nulls with a menu at its end
+        let nulls = t.alloc(4 * 0x1_0004);
+        t.put(nulls + 4 * 0x1_0001, &rng.next().to_le_bytes());
+        let mut b = rng.bytes(0x30);
+        b[8..12].copy_from_slice(&0x8001_0002u32.to_le_bytes());
+        b[0xc..0x10].copy_from_slice(&nulls.to_le_bytes());
+        t.put(this, &b);
+        t.check(
+            "apply viewport: a long list",
+            IGGY_MENU_MANAGER_APPLY_VIEWPORT,
+            Conv::Thiscall(this),
+            &[],
+            |o| {
+                menus::apply_viewport(&mut Run(o), this);
+                Res::Void
+            },
+        );
+        for n in 0..60u32 {
+            log.rewind(&mut t);
+            let mut b = rng.bytes(0x30);
+            let count = [0u32, 1, 3, 0x8000_0002, 0x8000_0000, 16][rng.below(6) as usize];
+            b[8..12].copy_from_slice(&count.to_le_bytes());
+            b[0xc..0x10].copy_from_slice(&list.to_le_bytes());
+            t.put(this, &b);
+            let mut l = Vec::new();
+            for _ in 0..16 {
+                let m = if rng.below(3) == 0 { 0 } else { rng.next() };
+                l.extend(m.to_le_bytes());
+            }
+            t.put(list, &l);
+            t.check(
+                &format!("apply viewport {n}: count {count:#x}"),
+                IGGY_MENU_MANAGER_APPLY_VIEWPORT,
+                Conv::Thiscall(this),
+                &[],
+                |o| {
+                    menus::apply_viewport(&mut Run(o), this);
+                    Res::Void
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn r2c_ff_esc_menu_vfunc_0068e530_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0303);
+        let log = Log::new(&mut t);
+        // the stand-ins return `this`: its low byte picks the branch
+        log.stub_this(&mut t, menus::ESC_MENU_CHECK, 1, 2);
+        log.stub_this(&mut t, menus::MENU_HANDLE, 2, 2);
+        for n in 0..40u32 {
+            log.rewind(&mut t);
+            let low = [1u32, 1, 0, 2, 0x101, 0xff][rng.below(6) as usize];
+            let this = rng.next() & 0xffff_ff00 | low & 0xff;
+            let (a, b) = (rng.next(), rng.next());
+            t.check(
+                &format!("esc menu vfunc {n}: this {this:#x}"),
+                FF_ESC_MENU_VFUNC_0068E530,
+                Conv::Thiscall(this),
+                &[a, b],
+                |o| Res::Int(menus::esc_menu_handle(&mut Run(o), this, a, b)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r2c_abmap_pad_help_callbacks_match_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0304);
+        let log = Log::new(&mut t);
+        log.stub(
+            &mut t,
+            panel::MS_MENU_GET_HELP,
+            2,
+            3,
+            (0x5200_0000, 0xff, 4),
+        );
+        log.stub(
+            &mut t,
+            panel::ABMAP_HELP_MESSAGE_STEP,
+            3,
+            1,
+            (0x5300_0000, 0, 0),
+        );
+        let entry = t.alloc(0x10);
+        let item = t.alloc(0x200);
+        let rec = t.alloc(0x10);
+        let src = t.alloc(8);
+        let table = t.a.rebase(panel::ITEM_HELP_TABLE.sym);
+        let strings = t.b.stack_range().start + 0x1000;
+        for n in 0..200u32 {
+            log.rewind(&mut t);
+            log.stub(
+                &mut t,
+                panel::MS_GET_SAVE_CONFIG_HIRAGANA,
+                1,
+                0,
+                (rng.next(), 0, 0),
+            );
+            t.put(entry, &rng.bytes(0x10));
+            t.put(table, &rng.next().to_le_bytes());
+            t.put(src, &rng.bytes(8));
+            t.put(rec, &rng.bytes(0x10));
+            // the record anywhere in its block: eax keeps its upper bytes
+            let ip = item + rng.below(0x100);
+            let mut it = rng.bytes(0x100);
+            it[0x5d] = [0xff, 0, 1, 0x7f, 0x80, rng.next().to_le_bytes()[0]][rng.below(6) as usize];
+            t.put(ip, &it);
+            // MsGetRomItem: writes its strings word or not, the item back
+            let mut c = Vec::new();
+            if rng.below(3) != 0 {
+                // mov eax, [esp + 8]; mov ecx, [src]; mov [eax], ecx
+                c.extend([0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+                c.extend(src.to_le_bytes());
+                c.extend([0x89, 0x08]);
+            }
+            c.extend(log.code(4, 1, (ip, 0, 0), None));
+            let at = t.a.rebase(panel::MS_GET_ROM_ITEM);
+            t.jump(at, &c);
+            // MsGetExcelData: writes its strings word or not, a record or 0
+            let mut c = Vec::new();
+            if rng.below(3) != 0 {
+                // mov eax, [esp + 0xc]; mov ecx, [src + 4]; mov [eax], ecx
+                c.extend([0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]);
+                c.extend((src + 4).to_le_bytes());
+                c.extend([0x89, 0x08]);
+            }
+            let r = if rng.below(4) == 0 { 0 } else { rec };
+            c.extend(log.code(5, 2, (r, 0, 0), None));
+            let at = t.a.rebase(panel::MS_GET_EXCEL_DATA);
+            t.jump(at, &c);
+            let p = rng.next();
+            t.check(
+                &format!("menu help {n}"),
+                ABMAP_PAD_MENU_HELP,
+                Conv::Cdecl,
+                &[p, entry],
+                |o| Res::Int(panel::menu_help(&mut Run(o), entry)),
+            );
+            log.rewind(&mut t);
+            t.check(
+                &format!("item help {n}: help id {:#x} record {r:#x}", it[0x5d]),
+                ABMAP_PAD_ITEM_HELP,
+                Conv::Cdecl,
+                &[p, entry],
+                |o| Res::Int(panel::item_help(&mut Run(o), entry, strings)),
+            );
+        }
+    }
+}
+
+use ffx_pcui::mapname::bridge as mapname;
+
+const MAP_NAME_TEXT_SHOW: u32 = 0x006b_b480;
+
+#[test]
+fn r2d_map_name_text_show_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0401);
+        let log = Log::new(&mut t);
+        log.stub_this(&mut t, mapname::TEXT_SET_ENABLED, 1, 1);
+        log.stub_this(&mut t, mapname::TEXT_RESIZE, 2, 2);
+        log.stub(&mut t, mapname::YI_GET_MAP_NAME, 3, 1, (0x5300_0000, 0, 0));
+        // the lines: 32 bytes of `src + line` into the buffer (`this`
+        // kept); the text's copy of the whole buffer to `lines + 0x100
+        // line` (its `this` kept)
+        let src = t.alloc(0x40);
+        let lines = t.alloc(0x300);
+        let kept = t.alloc(8);
+        // the lines' order: a count, then the line numbers
+        let order = t.alloc(0x10);
+        let mut c = vec![0x56, 0x57, 0x89, 0x0d];
+        c.extend(kept.to_le_bytes());
+        c.push(0xa1);
+        c.extend(order.to_le_bytes());
+        c.extend([0xff, 0x05]);
+        c.extend(order.to_le_bytes());
+        c.extend([0x8b, 0x54, 0x24, 0x0c, 0x89, 0x14, 0x85]);
+        c.extend((order + 4).to_le_bytes());
+        c.extend([0x8b, 0x7c, 0x24, 0x10, 0xbe]);
+        c.extend(src.to_le_bytes());
+        c.extend([
+            0x03, 0x74, 0x24, 0x0c, 0xb9, 8, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xc2, 8, 0,
+        ]);
+        let at = t.a.rebase(mapname::LINE_TEXT);
+        t.jump(at, &c);
+        let mut c = vec![0x56, 0x57, 0x89, 0x0d];
+        c.extend((kept + 4).to_le_bytes());
+        c.extend([0x8b, 0x44, 0x24, 0x0c, 0xc1, 0xe0, 0x08, 0x8d, 0xb8]);
+        c.extend(lines.to_le_bytes());
+        c.extend([
+            0x8b, 0x74, 0x24, 0x10, 0xb9, 0x40, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xc2, 8, 0,
+        ]);
+        let at = t.a.rebase(mapname::TEXT_CHANGE_LINE);
+        t.jump(at, &c);
+        let this = t.alloc(0x200);
+        let work = t.b.stack_range().start + 0x1000;
+        for n in 0..120u32 {
+            log.rewind(&mut t);
+            let mut b = rng.bytes(0x200);
+            b[0x110] = [0, 1, 0x80][rng.below(3) as usize];
+            b[0x1c4] = rng.next().to_le_bytes()[0];
+            t.put(this, &b);
+            t.put(src, &rng.bytes(0x40));
+            t.put(lines, &rng.bytes(0x300));
+            t.put(order, &[0; 0x10]);
+            // the getters, and a poke of +0x110 from one of them or none
+            let flag = this + 0x110;
+            let poke = match rng.below(4) {
+                0 => Some((flag, 0)),
+                1 => Some((flag, 1)),
+                _ => None,
+            };
+            log.stub_poke(
+                &mut t,
+                mapname::GET_GLOBAL_00C44248,
+                4,
+                0,
+                (rng.next(), 0, 0),
+                poke,
+            );
+            log.stub(
+                &mut t,
+                mapname::GET_GLOBAL_01139E48,
+                5,
+                0,
+                (rng.next(), 0, 0),
+            );
+            let show = [0, 1, 0x100, 0x101, 0xff, rng.next()][rng.below(6) as usize];
+            t.b.write(work, &rng.bytes(0x100)).unwrap();
+            t.check(
+                &format!("map name show {n}: show {show:#x} lines {:#x}", b[0x110]),
+                MAP_NAME_TEXT_SHOW,
+                Conv::Thiscall(this),
+                &[show],
+                |o| Res::Int(mapname::show(&mut Run(o), this, show, work)),
+            );
+        }
+    }
+}
+
+use ffx_pcui::dyngeo::bridge as dyngeo;
+
+const CLASS_DYNAMIC_GEOMETRY_SET_SHADER: u32 = 0x006a_4800;
+const CLASS_DYNAMIC_GEOMETRY_SET_SHADER_GL: u32 = 0x006a_48d0;
+
+/// The shader lookup's stand-in (`thiscall(mgr, name, &key)`, `ret 8`):
+/// 32-byte entries at `area` (count at `cnt`) with the manager, the key and
+/// (with `content`) the name up to its NUL; returns `[answers]`, then
+/// `[answers + 4]`.
+fn shader_find_stub(cnt: u32, area: u32, answers: u32, content: bool) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0xa1];
+    c.extend(cnt.to_le_bytes());
+    c.extend([0xff, 0x05]);
+    c.extend(cnt.to_le_bytes());
+    c.extend([0xc1, 0xe0, 0x05, 0x8d, 0xb8]);
+    c.extend(area.to_le_bytes());
+    c.extend([
+        0x89, 0x0f, 0x8b, 0x44, 0x24, 0x10, 0x8b, 0x00, 0x89, 0x47, 0x04,
+    ]);
+    if content {
+        c.extend([
+            0x8b, 0x74, 0x24, 0x0c, 0x83, 0xc7, 0x08, 0xac, 0xaa, 0x84, 0xc0, 0x75, 0xfa,
+        ]);
+    }
+    c.extend([0x5f, 0x5e, 0xa1]);
+    c.extend(answers.to_le_bytes());
+    c.extend([0x8b, 0x0d]);
+    c.extend((answers + 4).to_le_bytes());
+    c.extend([0x89, 0x0d]);
+    c.extend(answers.to_le_bytes());
+    c.extend([0xc2, 8, 0]);
+    c
+}
+
+#[test]
+fn r2d_class_dynamic_geometry_set_shader_match_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0402);
+        let log = Log::new(&mut t);
+        log.stub_this(&mut t, dyngeo::SET_SHADER, 1, 2);
+        let s = t.alloc(0x110);
+        let (cnt, answers, area) = (s, s + 8, s + 0x10);
+        let scene = t.alloc(0xfa00);
+        let this = t.alloc(0x40);
+        let mat = t.alloc(0x100);
+        let info = t.alloc(0x40);
+        let path = t.alloc(0x100);
+        let work = t.b.stack_range().start + 0x1000;
+        let scene_at = t.a.rebase(dyngeo::PHYRE_SCENE.sym);
+        let map_at = t.a.rebase(dyngeo::CURRENT_MAP.sym);
+        for n in 0..240u32 {
+            log.rewind(&mut t);
+            let gl = n % 2 == 1;
+            log.stub(&mut t, dyngeo::SHADER_MANAGER, 2, 0, (rng.next(), 0, 0));
+            // the path: with "GL/" somewhere (twice now and then), or not
+            let mut name: Vec<u8> = (0..rng.below(12))
+                .map(|_| b'a' + rng.below(26).to_le_bytes()[0])
+                .collect();
+            let with_gl = !gl || rng.below(4) != 0;
+            if with_gl {
+                let at = rng.below(u32::try_from(name.len()).unwrap() + 1) as usize;
+                name.splice(at..at, b"GL/".iter().copied());
+                if rng.below(4) == 0 {
+                    name.extend(b"GL/x");
+                }
+            }
+            name.push(0);
+            t.put(path, &name);
+            let content = gl && with_gl;
+            let c = shader_find_stub(cnt, area, answers, content);
+            let at = t.a.rebase(dyngeo::SHADER_FIND);
+            t.jump(at, &c);
+            let first = [0, 0, rng.next()][rng.below(3) as usize];
+            let second = [0, rng.next()][rng.below(2) as usize];
+            let mut sl = rng.bytes(0x110);
+            sl[0..4].copy_from_slice(&0u32.to_le_bytes());
+            sl[8..12].copy_from_slice(&first.to_le_bytes());
+            sl[12..16].copy_from_slice(&second.to_le_bytes());
+            t.put(s, &sl);
+            let mut b = rng.bytes(0x40);
+            b[0x24..0x28].copy_from_slice(&mat.to_le_bytes());
+            t.put(this, &b);
+            t.put(mat + 0x94, &info.to_le_bytes());
+            t.put(info + 0x20, &path.to_le_bytes());
+            t.put(scene_at, &scene.to_le_bytes());
+            t.put(scene + 0xf9c6, &rng.bytes(1));
+            let map =
+                [0x10a, 0xdf, 0xcd, 0xdd, 0xde, 0x109, 0, rng.below(0x400)][rng.below(8) as usize];
+            t.put(map_at, &map.to_le_bytes());
+            let target = [0, rng.next()][rng.below(2) as usize];
+            t.b.write(work, &rng.bytes(0x84)).unwrap();
+            let (f, what) = if gl {
+                (CLASS_DYNAMIC_GEOMETRY_SET_SHADER_GL, "set shader gl")
+            } else {
+                (CLASS_DYNAMIC_GEOMETRY_SET_SHADER, "set shader")
+            };
+            t.check(
+                &format!("{what} {n}: map {map:#x} first {first:#x} second {second:#x}"),
+                f,
+                Conv::Thiscall(this),
+                &[rng.next(), target],
+                |o| {
+                    Res::Int(if gl {
+                        dyngeo::set_shader_gl(&mut Run(o), this, target, work)
+                    } else {
+                        dyngeo::set_shader(&mut Run(o), this, target, work)
+                    })
+                },
+            );
+        }
+    }
+}
+
+const ABMAP_DRAW_PANELS: u32 = 0x00a5_8660;
+
+#[test]
+fn r2f_abmap_draw_panels_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0601);
+        let log = Log::new(&mut t);
+        let pads = t.alloc(0x2710);
+        let pad_at = t.a.rebase(panel::PAD.sym);
+        let cjk_at = t.a.rebase(panel::CJK_TEXT.sym);
+        let g = made_up_abmap(&mut t, &mut rng, 0x11700);
+        let help = log.func(&mut t, 2, 3, (0x5200_0000, 0, 0));
+        for n in 0..300u32 {
+            log.rewind(&mut t);
+            // a draw that flips the CJK word now and then (it is read
+            // between a sliding panel's two draws)
+            let poke = match rng.below(4) {
+                0 => Some((cjk_at, rng.below(2))),
+                _ => None,
+            };
+            log.stub_poke(
+                &mut t,
+                panel::ABMAP_PAD_DRAW_LIST,
+                1,
+                2,
+                (0x5100_0000, 0, 0),
+                poke,
+            );
+            let mut b = rng.bytes(0x2710);
+            for i in 0..12usize {
+                b[0x340 * i + 0x23] = [0, 1, 1, 0x80][rng.below(4) as usize];
+                let cb = if rng.below(3) == 0 { 0 } else { help };
+                b[0x340 * i + 0x3c..0x340 * i + 0x40].copy_from_slice(&cb.to_le_bytes());
+                let cur = i16::try_from(rng.below(20)).unwrap() - 2;
+                b[0x340 * i + 0x18..0x340 * i + 0x1a].copy_from_slice(&cur.to_le_bytes());
+            }
+            let open: i16 = [
+                -1,
+                -0x100,
+                0,
+                6,
+                7,
+                8,
+                11,
+                i16::try_from(rng.below(12)).unwrap(),
+            ][rng.below(8) as usize];
+            b[0x2700..0x2702].copy_from_slice(&open.to_le_bytes());
+            t.put(pads, &b);
+            t.put(pad_at, &pads.to_le_bytes());
+            t.put(
+                cjk_at,
+                &[0u32, 1, 0, rng.next()][rng.below(4) as usize].to_le_bytes(),
+            );
+            let moving = [0, 0, 1, 0xff][rng.below(4) as usize];
+            let out = [0, 1, 0x80][rng.below(3) as usize];
+            let step = [0, 1, 2, 3, 4, 0xff, rng.next().to_le_bytes()[0]][rng.below(7) as usize];
+            t.put(g + 0x1_15c0, &[out, step, moving]);
+            t.check(
+                &format!("draw panels {n}: moving {moving} out {out} step {step} open {open}"),
+                ABMAP_DRAW_PANELS,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    Res::Int(panel::draw_panels(o, &mut |o, f, a| {
+                        o.call(f, Conv::Cdecl, a).unwrap().eax
+                    }))
+                },
+            );
+        }
+    }
+}

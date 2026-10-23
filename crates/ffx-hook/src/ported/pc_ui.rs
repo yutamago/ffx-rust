@@ -2,14 +2,20 @@
 //! sphere grid screen's helpers, the pointer zones.
 
 use ffx_pcui::abmap::bridge as abmap;
+use ffx_pcui::camera::bridge as camera;
 use ffx_pcui::cursor::bridge as cursor;
+use ffx_pcui::dyngeo::bridge as dyngeo;
 use ffx_pcui::iggy::bridge as iggy;
+use ffx_pcui::input::bridge as input;
 use ffx_pcui::item::bridge as item;
 use ffx_pcui::link::bridge as link;
+use ffx_pcui::mapname::bridge as mapname;
+use ffx_pcui::menus::bridge as menus;
 use ffx_pcui::panel::bridge as panel;
 use ffx_pcui::sea::bridge as sea;
 use ffx_pcui::spdctrl::bridge as spdctrl;
 use ffx_pcui::touch::bridge as touch;
+use ffx_pcui::worldmap::bridge as worldmap;
 
 use super::{mem, ported};
 
@@ -227,5 +233,73 @@ ported! {
     /// `AbmapLoadOef_00a57620()`.
     AbmapLoadOef_00a57620 @ 0x00a5_7620 => extern "C" fn abmap_load_oef() -> u32 {
         abmap::load_oef(&mut mem())
+    }
+    /// `LoadCameraData(movie)`: the read buffer and the paths in this
+    /// frame.
+    LoadCameraData @ 0x006f_6dc0 => extern "C" fn load_camera_data(movie: u32) {
+        let mut w = super::StackFrame::<{ camera::WORK as usize / 4 }>::new();
+        camera::load_camera_data(&mut mem(), movie, w.at(), &mut |_, f, args| super::call_cdecl(f, args));
+    }
+    /// `MenuWorldMap_Draw_008e2b60(window)`.
+    MenuWorldMap_Draw_008e2b60 @ 0x008e_2b60 => extern "C" fn menu_world_map_draw(window: u32) -> u32 {
+        worldmap::draw(&mut mem(), window, &mut |_, f, args| super::call_cdecl(f, args))
+    }
+    /// `AbmapPadDrawList_00a58900(panel, dx)`.
+    AbmapPadDrawList_00a58900 @ 0x00a5_8900 => extern "C" fn abmap_pad_draw_list(panel: u32, dx: u32) {
+        panel::draw_list(&mut mem(), panel, dx.cast_signed(), &mut |_, f, args| super::call_cdecl(f, args));
+    }
+    /// `AbmapFreeCursorStep_00a58ff0(filter)`: the distance and the move
+    /// in this frame.
+    AbmapFreeCursorStep_00a58ff0 @ 0x00a5_8ff0 => extern "C" fn abmap_free_cursor_step(filter: u32) {
+        let mut w = super::StackFrame::<{ cursor::FREE_CURSOR_WORK as usize / 4 }>::new();
+        cursor::free_cursor_step(&mut mem(), filter, w.at());
+    }
+    /// `Input_UpdateAll_00630e80()`.
+    Input_UpdateAll_00630e80 @ 0x0063_0e80 => extern "C" fn input_update_all() -> u32 {
+        input::update_all(&mut mem())
+    }
+    /// `IggyMenuManager_ApplyViewport_00a265a0(this)`.
+    IggyMenuManager_ApplyViewport_00a265a0 @ 0x00a2_65a0 => extern "thiscall" fn iggy_menu_manager_apply_viewport(this: u32) {
+        menus::apply_viewport(&mut mem(), this);
+    }
+    /// `FFEscMenu_vfunc_0068e530(this, a, b)`.
+    FFEscMenu_vfunc_0068e530 @ 0x0068_e530 => extern "thiscall" fn ff_esc_menu_vfunc_0068e530(this: u32, a: u32, b: u32) -> u32 {
+        menus::esc_menu_handle(&mut mem(), this, a, b)
+    }
+    /// `AbmapPadMenuHelp_00a570a0(panel, entry)`.
+    AbmapPadMenuHelp_00a570a0 @ 0x00a5_70a0 => extern "C" fn abmap_pad_menu_help(panel: u32, entry: u32) -> u32 {
+        let _ = panel;
+        panel::menu_help(&mut mem(), entry)
+    }
+    /// `AbmapPadItemHelp_00a57040(panel, entry)`: the strings word in this
+    /// frame.
+    AbmapPadItemHelp_00a57040 @ 0x00a5_7040 => extern "C" fn abmap_pad_item_help(panel: u32, entry: u32) -> u32 {
+        let _ = panel;
+        let mut w = super::StackFrame::<1>::new();
+        panel::item_help(&mut mem(), entry, w.at())
+    }
+    /// `MapNameText_Show_006bb480(this, show)`: the line buffer in this
+    /// frame.
+    MapNameText_Show_006bb480 @ 0x006b_b480 => extern "thiscall" fn map_name_text_show(this: u32, show: u32) -> u32 {
+        let mut w = super::StackFrame::<{ mapname::WORK as usize / 4 }>::new();
+        mapname::show(&mut mem(), this, show, w.at())
+    }
+    /// `ClassDynamicGeometry_SetShader_006a4800(this, _, target)`: the
+    /// key and the name buffer in this frame.
+    ClassDynamicGeometry_SetShader_006a4800 @ 0x006a_4800 => extern "thiscall" fn class_dynamic_geometry_set_shader(this: u32, unused: u32, target: u32) -> u32 {
+        let _ = unused;
+        let mut w = super::StackFrame::<{ dyngeo::WORK as usize / 4 }>::new();
+        dyngeo::set_shader(&mut mem(), this, target, w.at())
+    }
+    /// `ClassDynamicGeometry_SetShaderGl_006a48d0(this, _, target)`: the
+    /// key and the name buffer in this frame.
+    ClassDynamicGeometry_SetShaderGl_006a48d0 @ 0x006a_48d0 => extern "thiscall" fn class_dynamic_geometry_set_shader_gl(this: u32, unused: u32, target: u32) -> u32 {
+        let _ = unused;
+        let mut w = super::StackFrame::<{ dyngeo::WORK as usize / 4 }>::new();
+        dyngeo::set_shader_gl(&mut mem(), this, target, w.at())
+    }
+    /// `AbmapDrawPanels_00a58660()`.
+    AbmapDrawPanels_00a58660 @ 0x00a5_8660 => extern "C" fn abmap_draw_panels() -> u32 {
+        panel::draw_panels(&mut mem(), &mut |_, f, args| super::call_cdecl(f, args))
     }
 }

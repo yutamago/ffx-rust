@@ -339,6 +339,73 @@ keeps the last normalisation.
 panel that asks whether to keep nodes just activated: see its `ffx.sym`
 line and `ffx_pcui::panel::bridge::activate_handler`.
 
+## Movie camera tracks (`g_CameraData`)
+
+`LoadCameraData(movie)` (`0x006f6dc0`, Fahrenheit's name), called by
+`PhyreScene_fieldMapLoad` for the four maps whose movie plays over the 3D
+scene (map 0x1f20 movie 0x2e, 0x220 0x48, 0xc04 0x20, 0xa6c 0x46; any
+other map calls `UnloadCameraData`). The file is
+`/FFX_Data/GameData/PS3Data/Video/<movie>.dat` (decimal), read in
+0xa8-byte records, one per movie frame, into a zeroed `operator new` block
+of fixed size: 0x38658, 0xfff0, 0x3ba30, 0x29388 bytes; the block's size
+in words goes to `g_CameraDataWords` (`0x00c38e18`), which the frame code
+at `0x0076ee38` divides by 42 for the frame count. Reads stop at the
+first one that does not return a full record; nothing checks the block's
+end. Port: `ffx_pcui::camera`.
+
+## The world map window
+
+`MenuWorldMap_Draw_008e2b60` is the draw callback `MenuWorldMap_OpenWindow`
+(`0x008e2d60`) stores at `+0x10` of `g_TkMenuWorldMapWindow`; `+0x64` is the
+fade alpha (`Menu_FadeStep` moves it by `+0x68`). Only at alpha 0x80 does it
+draw the map (place `"scene30"`, the marker, at half the map marker's
+coordinates, y 16 higher), the title plate and the save's dictionary name.
+Port: `ffx_pcui::worldmap`.
+
+## Panel lists and the free cursor
+
+`AbmapPadDrawList_00a58900(panel, dx)` draws one list panel of
+`g_AbmapPad` (the pass `0x00a58660` slides panels 7 and 8 in by `dx`):
+rows of 0x14 pixels through the panel's row callback `+0x38`
+(`cb(panel, entry, index, x, y)`, 12-byte entries from `+0x40`), in `+0x22`
+columns, the scroll animation `+0x26` (1/2 one row, 3/4 a page) stepped
+by `+0x27`. Its sym line has the offsets. Port: `ffx_pcui::panel::bridge::draw_list`.
+
+`AbmapFreeCursorStep_00a58ff0(filter)` moves the free cursor one frame
+(the cursor position `g_Abmap + 0x112b8`, its radius `+0x112f4`, the node
+under it `+0x112fc`). It is called from code Ghidra left as labels
+(`AbmapState_ChoosingMoveTarget_00a44ef0`), so the dump's `calls.tsv` shows
+no caller: search the disassembly for `call 0x...` before calling a function
+unreachable. Port: `ffx_pcui::cursor::bridge::free_cursor_step`.
+
+## Input pass, Iggy viewport, help callbacks
+
+`Input_UpdateAll_00630e80` runs the PC input objects once a frame (input
+manager, pointer zones, Iggy input, then the menu manager by tail call)
+unless the word at `0x0133c930` is set. `IggyMenuManager_ApplyViewport_00a265a0`
+hands every menu the manager's viewport with y counted from the bottom
+(`screen h - y - h`). The sphere grid panels' help callbacks are
+`AbmapPadMenuHelp_00a570a0` (menu text help) and `AbmapPadItemHelp_00a57040`
+(item help through the item's help id `+0x5d`, 0xff for none); the item one
+uses its own `entry` argument slot as the strings word. Ports:
+`ffx_pcui::input`, `ffx_pcui::menus`, `ffx_pcui::panel`.
+
+## Map name overlay, dynamic geometry shaders
+
+`MapNameText_Show_006bb480(this, show)` is a member of the PC text overlay:
+the `TextUtil` at `+0x114` is enabled when `show` and the line flag `+0x110`
+are set; with `show` it gets the map name (`yiGetMapName` into `+8`) and
+lines 2, 1, 0 (`0x006b6ef0` into a 0x100-byte buffer, then
+`TextUtil_changeLine`). Port: `ffx_pcui::mapname`.
+
+Two `ClassDynamicGeometry` vtable slots, `0x006a4800` and `0x006a48d0`, look
+up the geometry's shader in `VfxShaderManager` by its key `+0x3c` (then by
+8 or 0) and hand it to `0x006a46e0`; the first sets the scene flag
+`g_PhyreScene + 0xf9c6` for maps 0x10a, 0xdf, 0xcd, 0xdd, the second takes
+the shader's name from the material path after `"GL/"`. Both pass a name
+buffer the first never fills (stack garbage in the original). Port:
+`ffx_pcui::dyngeo`.
+
 ## Left original
 
 PhyreEngine library code in the same address range (verdicts, not

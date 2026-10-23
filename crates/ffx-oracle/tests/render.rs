@@ -8480,3 +8480,148 @@ fn snapshot_pc_r1_render_matches_the_original() {
         );
     }
 }
+
+/// `PhyreScene_setObjectRotation` (`0x0066db00`) on a made-up object
+/// tree: the Phyre matrix helpers run as they are in both oracles; the
+/// meshes' world matrices must come out the same.
+fn pc_r2_set_object_rotation(t: &mut Twins, rng: &mut Rng, what: &str) {
+    use ffx_graphic::state::bridge as st;
+    let scene = build_scene(t, rng);
+    t.w32(scene + 0x10d4, u32::from(!rng.chance(8)));
+    let keys: Vec<u32> = (0..=rng.below(6)).map(|_| rng.below(12)).collect();
+    let head = build_key_tree(t, &keys, |t| {
+        let n = rng.below(4);
+        let mut meshes = Vec::new();
+        for _ in 0..n {
+            let mesh = t.alloc(&rng.bytes(0x20));
+            // world matrices of plain values mostly, of any floats now
+            // and then
+            let world = if rng.chance(4) {
+                t.alloc(&float_bytes(rng, 12))
+            } else {
+                let w: Vec<u8> = (0..12)
+                    .flat_map(|_| {
+                        let v = f32::from(i16::try_from(rng.below(2000)).unwrap() - 1000) / 64.0;
+                        v.to_le_bytes()
+                    })
+                    .collect();
+                t.alloc(&w)
+            };
+            t.w32(mesh + 4, world);
+            meshes.extend(mesh.to_le_bytes());
+        }
+        let meshes = t.alloc(&meshes);
+        let list = t.zeros(0x10);
+        t.w32(list, n);
+        t.w32(list + 8, meshes);
+        list
+    });
+    let h: Vec<u8> = (0..0x10).map(|i| t.r8(head + i)).collect();
+    let tree = scene + 0x1198;
+    t.write(tree, &h);
+    let mut stack = vec![t.r32(tree + 0xc)];
+    if stack[0] == head {
+        t.w32(tree + 0xc, tree);
+        stack.clear();
+    }
+    while let Some(n) = stack.pop() {
+        for off in [0, 4] {
+            let c = t.r32(n + off);
+            if c == head {
+                t.w32(n + off, tree);
+            } else {
+                stack.push(c);
+            }
+        }
+    }
+    let id = if rng.chance(6) {
+        rng.next()
+    } else {
+        keys[rng.below(u32::try_from(keys.len()).unwrap()) as usize]
+    };
+    let angles = if rng.chance(4) {
+        float_bytes(rng, 3)
+    } else {
+        (0..3)
+            .flat_map(|_| {
+                (f32::from(i16::try_from(rng.below(800)).unwrap() - 400) / 100.0).to_le_bytes()
+            })
+            .collect()
+    };
+    let angles = t.alloc(&angles);
+    // the order: the six, one past them, a negative word, junk above
+    let order = [0, 1, 2, 3, 4, 5, 6, 0xffff, rng.below(6) | 0x7_0000][rng.below(9) as usize];
+    let work = t.b.stack_range().start + 0x400;
+    t.check(
+        what,
+        0x0066_db00,
+        Conv::Thiscall(scene),
+        &[id, angles, order],
+        |g| {
+            Out::U32(st::scene_set_object_rotation(
+                g, scene, id, angles, order, work,
+            ))
+        },
+    );
+}
+
+#[test]
+fn pc_r2_set_object_rotation_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x00c0_0201);
+    for round in 0..600 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        pc_r2_set_object_rotation(
+            &mut t,
+            &mut rng,
+            &format!("round {round} set_object_rotation"),
+        );
+    }
+}
+
+#[test]
+fn snapshot_pc_r2_set_object_rotation_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x50c0_0201);
+    for round in 0..200 {
+        t.reset();
+        pc_r2_set_object_rotation(
+            &mut t,
+            &mut rng,
+            &format!("snapshot round {round} set_object_rotation"),
+        );
+    }
+}
+
+#[test]
+fn pc_r2_graphic_object_set_rotation_matches_the_original() {
+    use ffx_graphic::state::bridge as st;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x00c0_0202);
+    for round in 0..50 {
+        t.reset();
+        t.stub_sym(
+            st::SCENE_SET_OBJECT_ROTATION,
+            Conv::Thiscall(0),
+            3,
+            rng.next(),
+        );
+        t.global(st::SCENE.sym, rng.next());
+        let args = [rng.next(), rng.next(), rng.next()];
+        t.check(
+            &format!("round {round} graphicObjectSetRotation"),
+            0x0064_26a0,
+            Conv::Cdecl,
+            &args,
+            |g| {
+                Out::U32(st::graphic_object_set_rotation(
+                    g, args[0], args[1], args[2],
+                ))
+            },
+        );
+    }
+}
