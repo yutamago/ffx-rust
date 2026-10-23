@@ -354,6 +354,11 @@ fn fog_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
     fog_case_with(p, rng, c, n, false);
 }
 
+/// [`fog_case_with`] for S1.
+fn vu0_fog_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
+    fog_case_with(p, rng, c, n, true);
+}
+
 fn plain_case_with(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bool, tex: bool) {
     // the registers and the matrix: few specials most of the time (one in
     // a matrix element makes the whole projected quad NaN)
@@ -520,7 +525,7 @@ fn whole_test(setup: Setup, seed: u32, name: &str) {
                     .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
             assert!(r.st0.is_none(), "{}: {what}: ST0 left set", p.name);
             let mine = shape::op_shape_draw(&mut p.b, c.shape, c.cmd, ebp);
-            assert_eq!(Some(r.eax), mine, "{}: {what}: result", p.name);
+            assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
             p.same(&what, ebp);
         }
     }
@@ -596,13 +601,63 @@ fn shape_whole_s4_matches_the_original() {
     whole_test(fog_case, 0x007e_d0c4, "whole S4");
 }
 
+#[test]
+fn shape_s1_matches_the_original() {
+    loop_test(0x007e_d1d2, vu0_fog_case, 0x007e_d1d2, "S1", shape::vu0_fog);
+}
+
+#[test]
+fn shape_whole_s1_matches_the_original() {
+    whole_test(vu0_fog_case, 0x007e_d0c5, "whole S1");
+}
+
+/// The whole function, each case on a selection picked at random (the six
+/// loops one after another on the same memory).
+#[test]
+fn shape_whole_all_matches_the_original() {
+    let setups: [Setup; 6] = [
+        vu0_fog_case,
+        vu0_textured_case,
+        vu0_setup,
+        fog_case,
+        textured_case,
+        plain_setup,
+    ];
+    let mut seen = [0u32; 6];
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_d0c6);
+        let ebp = p.ebp(2);
+        let draw = p.sym(0x007e_d0c0);
+        let c = Case::new(&mut p);
+        for case in 0..600 {
+            let (n, records) = count(&mut rng);
+            let k = rng.below(6) as usize;
+            seen[k] += 1;
+            setups[k](&mut p, &mut rng, c, records);
+            let shift = rng.pick(&[0u32, 0, 4, 0x10]);
+            p.set(p.sym(SHIFT), shift);
+            p.set(c.shape + shift + 2, n);
+            p.fill_frame(ebp, &mut rng);
+            let what = format!("whole case {case} (loop {k})");
+            let r =
+                p.a.call(draw, Conv::Cdecl, &[c.shape, c.cmd])
+                    .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
+            assert!(r.st0.is_none(), "{}: {what}: ST0 left set", p.name);
+            let mine = shape::op_shape_draw(&mut p.b, c.shape, c.cmd, ebp);
+            assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
+            p.same(&what, ebp);
+        }
+    }
+    assert!(seen.iter().all(|&n| n > 50), "selections {seen:?}");
+}
+
 /// Each loop's first instruction after the head's count store, in
 /// [`shape::Variant`] order (S1..S6).
 const LOOPS: [(u32, shape::Variant); 6] = [
-    (0x007e_d1d2, shape::Variant::Vu0Clip),
+    (0x007e_d1d2, shape::Variant::Vu0Fog),
     (0x007e_ed53, shape::Variant::Vu0Textured),
     (0x007f_0a18, shape::Variant::Vu0Plain),
-    (0x007f_1a8b, shape::Variant::Clip),
+    (0x007f_1a8b, shape::Variant::Fog),
     (0x007f_2dae, shape::Variant::Textured),
     (0x007f_3f03, shape::Variant::Plain),
 ];

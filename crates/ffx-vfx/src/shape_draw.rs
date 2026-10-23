@@ -22,13 +22,10 @@
 //! `g_MagicImports` slot `0x00c650b0`, so magic overlays call it; on the
 //! job workers (128 KB) that fits, as it does for the original.
 //!
-//! Ported so far: the head, the tail, the plain loop (S6,
-//! [`bridge::plain`]), the VU0 plain loop (S3, [`bridge::vu0_plain`]) and
-//! the textured loops (S5, [`bridge::textured`]; S2,
-//! [`bridge::vu0_textured`]); [`bridge::op_shape_draw`]
-//! returns `None` for the
-//! loops still to port. Not hooked yet (`docs/porting.md`: the whole
-//! function first).
+//! The loops: plain (S6, [`bridge::plain`]), VU0 plain (S3,
+//! [`bridge::vu0_plain`]), textured (S5, [`bridge::textured`]; S2,
+//! [`bridge::vu0_textured`]) and fog (S4, [`bridge::fog`]; S1,
+//! [`bridge::vu0_fog`]).
 
 /// The originals over game memory (`ffx_bridge::Mem`).
 pub mod bridge {
@@ -172,14 +169,14 @@ pub mod bridge {
     /// The six vertex loops, by the head's selection.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Variant {
-        /// S1 (`0x007ed1bc`): `shape` bit 3, `cmd` bits `0xc00`.
-        Vu0Clip,
+        /// S1 (`0x007ed1bc`): `shape` bit 3, `cmd` bits `0xc00` ([`vu0_fog`]).
+        Vu0Fog,
         /// S2 (`0x007eed39`): bit 3, a texture.
         Vu0Textured,
         /// S3 (`0x007f0a18`): bit 3 alone.
         Vu0Plain,
-        /// S4 (`0x007f1a60`): bits `0xc00`.
-        Clip,
+        /// S4 (`0x007f1a60`): bits `0xc00` ([`fog`]).
+        Fog,
         /// S5 (`0x007f2d94`): a texture.
         Textured,
         /// S6 (`0x007f3f03`): neither ([`plain`]).
@@ -255,10 +252,10 @@ pub mod bridge {
         let count = rd16(mem, count_at);
         let textured = || mem.read::<u32>(cmd.wrapping_add(0x1c)) != 0;
         let variant = match (vu0, clip) {
-            (true, true) => Variant::Vu0Clip,
+            (true, true) => Variant::Vu0Fog,
             (true, false) if textured() => Variant::Vu0Textured,
             (true, false) => Variant::Vu0Plain,
-            (false, true) => Variant::Clip,
+            (false, true) => Variant::Fog,
             (false, false) if textured() => Variant::Textured,
             (false, false) => Variant::Plain,
         };
@@ -282,18 +279,18 @@ pub mod bridge {
     }
 
     /// `op_shape_draw(shape, cmd)` with its frame at `ebp`: the head, the
-    /// selected loop, the tail's result. `None` for a loop not ported yet.
-    pub fn op_shape_draw(mem: &mut impl Mem, shape: u32, cmd: u32, ebp: u32) -> Option<u32> {
+    /// selected loop, the tail's result.
+    pub fn op_shape_draw(mem: &mut impl Mem, shape: u32, cmd: u32, ebp: u32) -> u32 {
         let frame = Frame { ebp };
         match head(mem, shape, cmd, frame) {
             Variant::Plain => plain(mem, frame, cmd, shape.wrapping_add(0x20)),
             Variant::Vu0Plain => vu0_plain(mem, cmd, shape.wrapping_add(0x20)),
             Variant::Textured => textured(mem, frame, cmd, shape.wrapping_add(0x20)),
             Variant::Vu0Textured => vu0_textured(mem, frame, cmd, shape.wrapping_add(0x20)),
-            Variant::Clip => fog(mem, frame, cmd, shape.wrapping_add(0x20)),
-            Variant::Vu0Clip => return None,
+            Variant::Fog => fog(mem, frame, cmd, shape.wrapping_add(0x20)),
+            Variant::Vu0Fog => vu0_fog(mem, frame, cmd, shape.wrapping_add(0x20)),
         }
-        Some(tail(mem, frame))
+        tail(mem, frame)
     }
 
     /// One point through `matrix` with the accumulator (`vmulax`,
@@ -1083,6 +1080,101 @@ pub mod bridge {
         let y = st(q.mul_m32(f32::from_bits(rd(mem, P3 + 4))));
         wr(mem, P3 + 4, y);
         z_by_q(mem, P3, P7);
+        quad(mem, p);
+    }
+
+    /// S1, the VU0 fog loop (`0x007ed1d2`..`0x007eed38`): [`fog`]'s start,
+    /// then per record (`0x18` bytes) [`vu0_textured`]'s four points with
+    /// [`fog_step`] after the first, each later point's `w` the fog value
+    /// once the next point is loaded, and S3's end ([`quad`]). The later
+    /// points' second and third rows go through `pppVu0MaddaY_copy` /
+    /// `pppVu0MaddaZ_copy`, and every last row but the second point's
+    /// through `pppVu0MaddW_copy` (the loaded forms). The flag tests before
+    /// the later points repeat the first on unchanged operands (as in S2)
+    /// and are left out.
+    pub fn vu0_fog(mem: &mut impl Mem, frame: Frame, cmd: u32, first: u32) {
+        textured_start(mem, frame, cmd);
+        fog_start(mem, cmd);
+        let mut p = first;
+        loop {
+            vu0_fog_vertex(mem, p);
+            p = p.wrapping_add(VERTEX);
+            let count = COUNT.get(mem).wrapping_sub(1);
+            COUNT.set(mem, count);
+            frame.set_vertex(mem, p);
+            if count.cast_signed() <= 0 {
+                break;
+            }
+        }
+    }
+
+    /// A point through `matrix`: row 0 with the elements the memory
+    /// operands, rows 1 and 2 through the helper calls (the loaded form),
+    /// the last row through `pppVu0MaddW_copy`. `Q` is left alone.
+    fn project_calls(mem: &mut impl Mem, matrix: u32, point: u32) {
+        madda(mem, matrix, point, 0, true);
+        madda(mem, matrix, point, 1, false);
+        madda(mem, matrix, point, 2, false);
+        maddw(mem, matrix, point, W::Call);
+    }
+
+    /// `point.w` = the fog value (`fld; fstp`).
+    fn fog_w(mem: &mut impl Mem, point: u32) {
+        let w = st(f(rd(mem, VB + 0xc)));
+        wr(mem, point + 0xc, w);
+    }
+
+    /// One record of [`vu0_fog`].
+    fn vu0_fog_vertex<M: Mem>(mem: &mut M, p: u32) {
+        let half = |mem: &M, off: u32| rd16(mem, p.wrapping_add(off));
+        if !textured_first(mem, p, true) {
+            return;
+        }
+        madda(mem, MATRIX2, P4, 1, false);
+        madda(mem, MATRIX2, P4, 2, false);
+        maddw(mem, MATRIX2, P4, W::Memory);
+        fog_step(mem);
+        // the later points, each loaded with v0's third word 0 (the
+        // translation also loads the y half into v1 and copies v1 into
+        // v0's second and fourth words: the flags replace the second, the
+        // fourth holds v1's second word already, and `quad` replaces v1's
+        // first). The point before gets z = its texture point's z * Q and
+        // w = the fog value.
+        let points = [
+            (4, P1, P5, P0, P4),
+            (8, P2, P6, P1, P5),
+            (0xc, P3, P7, P2, P6),
+        ];
+        for (off, point, tex, before, before_tex) in points {
+            wr16(mem, V0, half(mem, off));
+            load_point(mem, point, 0);
+            load_again(mem, tex);
+            z_by_q(mem, before, before_tex);
+            fog_w(mem, before);
+            if off == 4 {
+                // (its last row inline, `w` the memory operand)
+                transform(mem, MATRIX, point, [true, false, false], true);
+            } else {
+                project_calls(mem, MATRIX, point);
+                set_q(mem, point);
+            }
+            if off == 0xc {
+                break;
+            }
+            project_calls(mem, MATRIX2, tex);
+            scale_by_q(mem, point);
+            set_q(mem, tex);
+        }
+        // the last texture point through MATRIX, as in S2
+        project_calls(mem, MATRIX, P7);
+        let q = f(Q.get(mem));
+        let x = st(f(rd(mem, P3)) * q);
+        wr(mem, P3, x);
+        let y = st(q.mul_m32(f32::from_bits(rd(mem, P3 + 4))));
+        wr(mem, P3 + 4, y);
+        set_q(mem, P7);
+        z_by_q(mem, P3, P7);
+        fog_w(mem, P3);
         quad(mem, p);
     }
 }
