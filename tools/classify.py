@@ -541,6 +541,12 @@ REVIEWED = {
     0x00947cc0: ("platform", "page manager: VirtualFree decommit/release, g_PageManager counters (pc round 1)"),
     0x00949162: ("platform", "CRT __onexit (pc round 1)"),
     0x00949988: ("platform", "6-byte CRT EH epilog tail (misnamed FlashSpriteBatch_Begin) (pc round 1)"),
+    0x00a398a0: ("platform", "Iggy GDraw D3D11: stored into GDraw table 0x01a85828 slot +0x48 (0xa35996); no direct caller (effects round 51)"),
+    0x00a398e0: ("platform", "Iggy GDraw D3D11: stored into GDraw table 0x01a85828 slot +0x4c (0xa359e6); no direct caller (effects round 51)"),
+    0x00a37ac0: ("platform", "Iggy GDraw D3D11: stored into GDraw table 0x01a85828 slot +0x84 (0xa359b4); no direct caller (effects round 51)"),
+    0x00a3cd30: ("platform", "Iggy GDraw D3D11: called only from 0xa37410..0xa3afb0, reads the GDraw context 0x01a858b4 (effects round 51)"),
+    0x00a3c350: ("platform", "Iggy GDraw D3D11: called only from 0xa37410..0xa3afb0, reads the GDraw context 0x01a858b4 (effects round 51)"),
+    0x00a3d3c0: ("platform", "Iggy GDraw D3D11: fastcall wrapper of the 0xa3d310 constructor; callers lead to the Iggy player constructor 0xa288f0 (effects round 51)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

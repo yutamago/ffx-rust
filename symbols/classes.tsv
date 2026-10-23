@@ -16773,7 +16773,7 @@
 0x00a37910	dead	unreachable from the entry point and every pointer table
 0x00a37950	dead	unreachable from the entry point and every pointer table
 0x00a37960	glue	calls Iggy _IggyGDrawFree@4
-0x00a37ac0	logic	default (no rule: ported to be safe)
+0x00a37ac0	platform	reviewed: Iggy GDraw D3D11: stored into GDraw table 0x01a85828 slot +0x84 (0xa359b4); no direct caller (effects round 51)
 0x00a37b20	dead	unreachable from the entry point and every pointer table
 0x00a37b50	dead	unreachable from the entry point and every pointer table
 0x00a37c20	glue	calls Iggy IggyGDrawSendWarning, _IggyGDrawFree@4, _IggyGDrawMallocAnnotated@12
@@ -16796,8 +16796,8 @@
 0x00a38be0	dead	unreachable from the entry point and every pointer table
 0x00a38c40	glue	calls Iggy IggyGDrawSendWarning
 0x00a39200	logic	default (no rule: ported to be safe)
-0x00a398a0	logic	default (no rule: ported to be safe)
-0x00a398e0	logic	default (no rule: ported to be safe)
+0x00a398a0	platform	reviewed: Iggy GDraw D3D11: stored into GDraw table 0x01a85828 slot +0x48 (0xa35996); no direct caller (effects round 51)
+0x00a398e0	platform	reviewed: Iggy GDraw D3D11: stored into GDraw table 0x01a85828 slot +0x4c (0xa359e6); no direct caller (effects round 51)
 0x00a39900	logic	default (no rule: ported to be safe)
 0x00a39940	dead	unreachable from the entry point and every pointer table
 0x00a39a30	glue	only called from glue code (opd_config_memory and 1 more)
@@ -16855,7 +16855,7 @@
 0x00a3c280	platform	reviewed: sets Direct3D device state through its vtable (effects round 16)
 0x00a3c310	dead	unreachable from the entry point and every pointer table
 0x00a3c330	dead	unreachable from the entry point and every pointer table
-0x00a3c350	logic	default (no rule: ported to be safe)
+0x00a3c350	platform	reviewed: Iggy GDraw D3D11: called only from 0xa37410..0xa3afb0, reads the GDraw context 0x01a858b4 (effects round 51)
 0x00a3c450	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
 0x00a3c570	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
 0x00a3c630	dead	unreachable from the entry point and every pointer table
@@ -16863,7 +16863,7 @@
 0x00a3c6c0	glue	calls Iggy IggyGDrawSendWarning
 0x00a3ccb0	platform	reviewed: binds a texture view and sampler on the D3D11 device context (effects round 22)
 0x00a3cd10	dead	unreachable from the entry point and every pointer table
-0x00a3cd30	logic	default (no rule: ported to be safe)
+0x00a3cd30	platform	reviewed: Iggy GDraw D3D11: called only from 0xa37410..0xa3afb0, reads the GDraw context 0x01a858b4 (effects round 51)
 0x00a3cdb0	dead	unreachable from the entry point and every pointer table
 0x00a3ce00	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
 0x00a3cec0	glue	calls Iggy IggyGDrawSendWarning
@@ -16876,7 +16876,7 @@
 0x00a3d2d0	dead	unreachable from the entry point and every pointer table
 0x00a3d300	dead	unreachable from the entry point and every pointer table
 0x00a3d310	platform	reviewed: Iggy GDraw D3D11 back end: called or referenced only from 0xa36000..0xa3e000 (effects round 49)
-0x00a3d3c0	logic	default (no rule: ported to be safe)
+0x00a3d3c0	platform	reviewed: Iggy GDraw D3D11: fastcall wrapper of the 0xa3d310 constructor; callers lead to the Iggy player constructor 0xa288f0 (effects round 51)
 0x00a3d3d0	platform	reviewed: frees a PhyreEngine-owned buffer through PhyreFree; reached only from the unwind handlers 0xadf796/0xadf7c6 (effects round 49)
 0x00a3d410	platform	reviewed: frees a PhyreEngine-owned buffer through PhyreFree (effects round 49)
 0x00a3d4f0	dead	unreachable from the entry point and every pointer table
