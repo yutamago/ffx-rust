@@ -7117,7 +7117,7 @@
 0x007ff290 function op_heap_display_set       # fh v3:bsim1.00 0x007ff1b0
 0x007ff2b0 function op_heap_display_set_par   # fh v3:exact 0x007ff1d0
 0x007ff2d0 function op_heap_init                 # layout: alphabetical run between op_heap_display_set_par and op_init_ffx (1 unnamed in the gap); Switch 0x71003dfe40 op_heap_init is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x007ff360 function op_init_ffx               # fh v3:exact 0x007ff280
+0x007ff360 function op_init_ffx               # fh v3:exact 0x007ff280; ours: () once (0x012e9c60): AsmEmuInit, op_init_ffx_state, op_init_draw, srand(0x3f4cf27b), EE/VU0 seeds 0xbfbfbfbf; unless g_OpNumShow the et_ffx.bin / et_tex.bin loads (sprintf, fiosUnifyFilename + sprintf_s, fiosOpen/Lseek/user_aligned_malloc/fiosRead/fiosClose, blocks 0x012a86a0/a4), persistent texture, opu_et_init, [[g_BtlOverlayFuncs]](0), g_OpusEncount, op_et_ffx_init; g_OpNumBoot number display set-up; debug heap display init; with g_OpNumShow the debug chr flags; ported (effects round 52)
 0x007ff670 function op_loop_end_ffx           # fh v3:cg2 0x7ff590
 0x007ff680 function op_loop_ffx_after         # fh v3:exact+call.cs 0x007ff5a0 cdecl; (): g_OpLoopCount/2 advanced, op_gs1_init on a copy of Sg_GetDBuffDC's +0x60/+0x190 halves, op_pad_set(pad, TkGetControlerHist(pad,0,0)) for pads 0 and 1, 0x007ec4f0(), two latches copied, KaGDebFirstCall in debug mode (op::bridge::op_loop_ffx_after)
 0x007ff770 function op_loop_ffx_before        # fh v3:bsim1.00+call.cs 0x007ff690 cdecl

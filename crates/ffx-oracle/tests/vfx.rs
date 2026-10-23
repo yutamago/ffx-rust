@@ -32895,3 +32895,119 @@ fn r52d_opu_v_en_bone_matches_the_original() {
         assert!(seen.iter().all(|&k| k > 100), "{seen:?}");
     }
 }
+
+/// A [`deref_recorder_with`] in the oracles' code area whose address goes
+/// into the pointer at `slot` (an import slot or a function table);
+/// returns the log.
+fn slot_recorder(p: &mut Pair, slot: u32, words: &[u8], ret: Option<u32>) -> u32 {
+    let (c, log) = deref_recorder_code(p, words, ret);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    p.set(slot, to);
+    log
+}
+
+/// `op_init_ffx` against the port: done before or not, `g_OpNumShow`,
+/// `g_OpNumBoot` and the debug mode each way, both files found or not,
+/// the `g_EtChr` records used or not and their numbers on and past 0xf0.
+/// Every callee is a recorder (the imports and the battle overlay's first
+/// function through their slots); the original runs under a frame like
+/// the port's, so the unified-path local is at the same address.
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r52e_op_init_ffx_matches_the_original() {
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_f360);
+        let cells = p.alloc(0x20);
+        let (file, size, block) = (cells, cells + 4, cells + 8);
+        let (sprintf, sprintf_s) = (p.sym(0x00b0_c3dc), p.sym(0x00b0_c394));
+        let mut logs = vec![
+            record_srand(&mut p),
+            slot_recorder(&mut p, sprintf, &[0, 0, 0, 0], None),
+            slot_recorder(&mut p, sprintf_s, &[0, 0, 0, 0], None),
+            far_recorder(&mut p, 0x0067_9730, &[0, 0], Some(file)),
+            far_recorder(&mut p, 0x0067_9710, &[0, 0, 0], Some(size)),
+            far_recorder(&mut p, 0x0068_6ff0, &[0, 0], Some(block)),
+        ];
+        let (overlay, overlays) = (p.alloc(8), p.sym(0x00c4_8d88));
+        p.set(overlays, overlay);
+        logs.push(slot_recorder(&mut p, overlay, &[0], None));
+        for (sym, n) in [
+            (0x0042_ee40u32, 0usize),
+            (0x007f_f960, 0),
+            (0x007e_c410, 0),
+            (0x0067_9820, 3),
+            (0x0067_9800, 3),
+            (0x0067_9510, 1),
+            // dbgPrintf: the format and path (the found message adds the
+            // size, which malloc and fiosRead log too)
+            (0x0062_f500, 2),
+            (0x0064_54c0, 0),
+            (0x007f_d760, 0),
+            (0x007f_c620, 1),
+            (0x007e_6480, 1),
+            (0x007e_6560, 0),
+            (0x007e_63a0, 1),
+            (0x007e_65e0, 2),
+            (0x007e_63b0, 1),
+            (0x007e_6440, 1),
+            (0x007e_64d0, 1),
+            (0x007e_64b0, 0),
+            (0x00a6_4a00, 0),
+            (0x007e_5210, 1),
+        ] {
+            logs.push(far_recorder(&mut p, sym, &[0, 0, 0][..n], None));
+        }
+        let (done, show, boot, debug) = (
+            p.sym(0x012e_9c60),
+            p.sym(0x0232_2794),
+            p.sym(0x0232_279c),
+            p.sym(0x0232_2790),
+        );
+        let (chrs, draw) = (p.sym(0x012a_22c0), p.sym(et::bridge::DRAW_FLAGS.sym));
+        let mut seen = [0u32; 4];
+        for round in 0..600u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.set(done, u32::from(rng.chance(10)));
+            let on = rng.chance(50);
+            p.set(show, u8::from(on));
+            p.set(boot, rng.pick(&[0u32, 1, 0x100]));
+            p.set(debug, rng.below(2) as u8);
+            p.set(file, if rng.chance(25) { 0 } else { rng.next() });
+            let v = rng.next();
+            p.set(size, v);
+            let v = rng.next();
+            p.set(block, v);
+            for k in 0..0xd0u32 {
+                let rec = chrs + 32 * k;
+                p.set(rec, if rng.chance(40) { 0 } else { rng.next() });
+                let no = if rng.chance(20) {
+                    rng.pick(&[0xefu16, 0xf0, 0xff])
+                } else {
+                    rng.below(0x100) as u16
+                };
+                p.set(rec + 0xe, no);
+            }
+            // bit 1 mostly clear, so each record's flag shows
+            for k in 0..0x100u32 {
+                let b = rng.next() as u8;
+                p.set(draw + k, if rng.chance(80) { b & !2 } else { b });
+            }
+            let ee = p.sym(0x00c8_f508);
+            for k in [0x28u32, 0x2c] {
+                let v = rng.next();
+                p.set(ee + k, v);
+            }
+            seen[usize::from(on) * 2 + usize::from(p.get::<u32>(done) == 0)] += 1;
+            let what = format!("op_init_ffx round {round}");
+            check_deep_n(&mut p, &what, 0x007f_f360, &[], |m, ebp| {
+                o::op_init_ffx(m, ebp - 0x104, &mut call_original);
+                None
+            });
+        }
+        assert!(seen.iter().all(|&k| k > 20), "{seen:?}");
+    }
+}

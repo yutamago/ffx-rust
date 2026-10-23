@@ -3212,6 +3212,13 @@ ported! {
     op_token_paren_007e1e90 @ 0x007e_1e90 => extern "C" fn op_token_paren(file: u32, src: u32, out: u32, pos: u32, max: u32, eol: u32) -> u32 {
         op::bridge::op_token_paren(&mut mem(), [file, src, out, pos, max, eol], &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_init_ffx()`: the unified-path local (0x100 bytes) on this
+    /// shim's stack; no caller reads `eax`.
+    op_init_ffx @ 0x007f_f360 => extern "C" fn op_init_ffx() {
+        let mut frame = super::StackFrame::<0x40>::new();
+        let unified = frame.at();
+        op::bridge::op_init_ffx(&mut mem(), unified, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `op_init_ffx_state_007ff960()`.
     op_init_ffx_state_007ff960 @ 0x007f_f960 => extern "C" fn op_init_ffx_state() {
         op::bridge::op_init_ffx_state(&mut mem(), &mut |_, f, a| call_ptr(f, a));
