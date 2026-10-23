@@ -4466,6 +4466,15 @@ ported! {
         };
         tk::menu_wshop_equip_loss(&mut m, id, local, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuSummon_Open_008cc1b0(m)`: the last `TkMenuGetCurrentSummonPos()`
+    /// (slot 7's open entry; `TkMenuMainOpenMode` calls it through the record).
+    MenuSummon_Open_008cc1b0 @ 0x008c_c1b0 => extern "C" fn menu_summon_open(m: u32) -> u32 {
+        let mut mm = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut mm) else {
+            return 0;
+        };
+        tk::menu_summon_open(&mut mm, m, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuWShop_OpenCommandWindow()`: `MenuWShop_OpenSubWindow4`'s result.
     MenuWShop_OpenCommandWindow @ 0x008d_8110 => extern "C" fn menu_wshop_open_command_window() -> u32 {
         let mut m = mem();

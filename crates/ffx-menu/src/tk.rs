@@ -16599,6 +16599,90 @@ pub mod bridge {
         )
     }
 
+    /// `MenuSummon_Open_008cc1b0(m)` (`0x008cc1b0`, own name; the summon
+    /// menu's open function, entry `+0xc` of slot 7's record `0x00c5a720`,
+    /// called by `TkMenuMainOpenMode`): `m +0x1c` = 0; the command rows
+    /// (`g_TkMenuSummonCmdKinds`, `0x0186a5b0`): 0 always, 1 when key
+    /// item `0xa01e` or `0xa022` is held (`MsImportantGet`), 2 when
+    /// `0xa01f` is, with `TkMenuSummonMes(kind)` / `TkMenuSummonHelp(kind)`
+    /// in `local` (texts at `+0`, helps at `+0xc`, 6 words; the rows past
+    /// the count stay unwritten); the count into `0x0186a5fc`. With two or
+    /// more rows `TkMenuOpenSubCmdWindowRect(0x008ceec0, texts, helps, n, 1,
+    /// x, y, w, h)` (the remaps of (210, 155, 1500, 54), done Y 54, X 1500,
+    /// Y 155, X 210), `MenuSubCmd_CenterOpen()` and
+    /// `TkMenuSetSubCmdWindowCursor(0)`. Then `0x023cc3c8` = 0 and
+    /// `0x023cc3c4`, `0x023cc3c0`, `0x023cc3bc` = `TkMenuGetCurrentSummonPos()`
+    /// in that order; returns the last.
+    pub fn menu_summon_open<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let round = |v: f64| (v as f32).to_bits();
+        mem.write(m.wrapping_add(0x1c), 0_u32);
+        let kinds = mem.rebase(0x0186_a5b0);
+        let (mes, help) = (mem.rebase(0x008d_e180), mem.rebase(0x008d_e160));
+        let important = mem.rebase(0x0079_0800);
+        let row =
+            |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, n: u32, kind: u32| {
+                let text = call(mem, mes, &[kind]);
+                mem.write(local.wrapping_add(4 * n), text);
+                let h = call(mem, help, &[kind]);
+                mem.write(local.wrapping_add(0xc + 4 * n), h);
+            };
+        row(mem, call, 0, 0);
+        mem.write(kinds, 0_u8);
+        let mut n = 1_u32;
+        if call(mem, important, &[0xa01e]) != 0 || call(mem, important, &[0xa022]) != 0 {
+            row(mem, call, 1, 1);
+            mem.write(kinds.wrapping_add(1), 1_u8);
+            n = 2;
+        }
+        if call(mem, important, &[0xa01f]) != 0 {
+            row(mem, call, n, 2);
+            mem.write(kinds.wrapping_add(n), 2_u8);
+            n += 1;
+        }
+        mem.write(mem.rebase(0x0186_a5fc), n);
+        if n > 1 {
+            let height = round(remap(mem, true, 54.0));
+            let width = round(remap(mem, false, 1500.0));
+            let top = round(remap(mem, true, 155.0));
+            let left = round(remap(mem, false, 210.0));
+            let (open, handler) = (mem.rebase(0x008e_4930), mem.rebase(0x008c_eec0));
+            call(
+                mem,
+                open,
+                &[
+                    handler,
+                    local,
+                    local.wrapping_add(0xc),
+                    n,
+                    1,
+                    left,
+                    top,
+                    width,
+                    height,
+                ],
+            );
+            let f = mem.rebase(0x008e_4ab0);
+            call(mem, f, &[]);
+            let f = mem.rebase(0x008e_3b80);
+            call(mem, f, &[0]);
+        }
+        mem.write(mem.rebase(0x023c_c3c8), 0_u32);
+        let pos = mem.rebase(0x008a_9890);
+        let mut last = 0;
+        for at in [0x023c_c3c4, 0x023c_c3c0, 0x023c_c3bc] {
+            last = call(mem, pos, &[]);
+            mem.write(mem.rebase(at), last);
+        }
+        last
+    }
+
     /// `MenuWShop_OpenCommandWindow()` (`0x008d8110`, own name; caller
     /// `0x008d6e40`): clears the weapon shop sub windows 0 and 1
     /// (`0x0186aaf0`, `0x0186aaf4`), opens the command window

@@ -20559,3 +20559,91 @@ fn small4_c_name_entry_draw_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// Small round 6 d: `MenuSummon_Open_008cc1b0` for every key-item
+/// combination (`MsImportantGet` from a table by the item's low 3 bits);
+/// the texts are the kind + 1, the helps + 0x100; the window logs its nine
+/// words and the `n` texts and helps behind its pointers (the rest of the
+/// original's frame stays unwritten); the cursor and centre calls logged,
+/// `TkMenuGetCurrentSummonPos` a counter.
+#[test]
+fn small6_d_summon_open_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x5a11_6d01) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    stub(&mut t, 0x008d_e180, &[0x8b, 0x44, 0x24, 0x04, 0x40, 0xc3]);
+    stub(
+        &mut t,
+        0x008d_e160,
+        &[0x8b, 0x44, 0x24, 0x04, 0x05, 0, 1, 0, 0, 0xc3],
+    );
+    let held = t.alloc(&[0; 32]);
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x07][..], // mov eax, [esp + 4]; and eax, 7
+        &[0x8b, 0x04, 0x85], &held.to_le_bytes(),        // mov eax, [eax * 4 + held]
+        &[0xc3],
+    ]
+    .concat();
+    stub(&mut t, 0x0079_0800, &code);
+    let (_, mut code) = log_args(&mut t, 9);
+    let log_cell = u32::from_le_bytes(code[2..6].try_into().unwrap());
+    let l = log_cell.to_le_bytes();
+    // the two pointers are stack addresses: logged as 0
+    code.extend([0x31, 0xc0, 0x89, 0x41, 0x04, 0x89, 0x41, 0x08]); // xor eax, eax; [ecx + 4] = [ecx + 8] = 0
+    #[rustfmt::skip]
+    code.extend([
+        &[0x56, 0x57][..],                         // push esi; push edi
+        &[0x8b, 0x4c, 0x24, 0x18],                 // mov ecx, [esp + 0x18] (n)
+        &[0x8b, 0x3d], &l,                         // mov edi, [log]
+        &[0x8b, 0x74, 0x24, 0x10, 0xf3, 0xa5],     // mov esi, texts; rep movsd
+        &[0x8b, 0x4c, 0x24, 0x18],                 // mov ecx, n
+        &[0x8b, 0x74, 0x24, 0x14, 0xf3, 0xa5],     // mov esi, helps; rep movsd
+        &[0x89, 0x3d], &l,                         // mov [log], edi
+        &[0x5f, 0x5e, 0xb8, 0x77, 0, 0, 0, 0xc3],  // pop edi; pop esi; mov eax, 0x77; ret
+    ]
+    .concat());
+    jump_stub(&mut t, 0x008e_4930, &code);
+    return_counter(&mut t, 0x008e_4ab0, 0x11);
+    record_far(&mut t, 0x008e_3b80, 1, 0x22);
+    return_counter(&mut t, 0x008a_9890, 0x100);
+    // the remaps as v + 1 (X) and v + 2 (Y), so their order and axes show
+    for (f, add) in [(0x0064_47e0u32, 1.0f32), (0x0064_4820, 2.0)] {
+        let c = t.alloc(&add.to_bits().to_le_bytes());
+        #[rustfmt::skip]
+        let code: Vec<u8> = [
+            &[0xd9, 0x44, 0x24, 0x04][..],  // fld dword [esp + 4]
+            &[0xd8, 0x05], &c.to_le_bytes(), // fadd dword [c]
+            &[0xc3],
+        ]
+        .concat();
+        jump_stub(&mut t, f, &code);
+    }
+    let m = t.alloc_random(0x40);
+    for k in 0..64u32 {
+        for (bit, slot) in [(1u32, 6u32), (2, 2), (4, 7)] {
+            let v = if k & bit != 0 {
+                t.rng.pick(&[1u32, 0x100, 0xffff_ffff])
+            } else {
+                0
+            };
+            t.put(held + 4 * slot, v);
+        }
+        let bytes = t.rng.bytes(0x40);
+        t.put_bytes(m, &bytes);
+        t.scramble(0x0186_a5b0, 4);
+        t.scramble(0x0186_a5fc, 4);
+        t.scramble(0x023c_c3bc, 16);
+        t.twin("MenuSummon_Open", 0x008c_c1b0, &[m], U32, |o| {
+            w(tk::menu_summon_open(
+                o,
+                m,
+                local,
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+}
