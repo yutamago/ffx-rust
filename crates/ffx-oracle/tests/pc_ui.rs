@@ -2293,3 +2293,205 @@ fn r1b_abmap_load_oef_matches_the_original() {
         }
     }
 }
+
+// ---- pc round 2 ----
+
+use ffx_pcui::camera::bridge as camera;
+use ffx_pcui::worldmap::bridge as worldmap;
+
+const LOAD_CAMERA_DATA: u32 = 0x006f_6dc0;
+const MENU_WORLD_MAP_DRAW: u32 = 0x008e_2b60;
+
+/// `push esi; push edi; mov esi, [esp + src]`, then the string at `esi`
+/// copied to `edi` through its NUL (`lodsb; stosb; test al, al; jnz`).
+fn copy_string(src: u8, to: &[u8]) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, src];
+    c.extend(to);
+    c.extend([0xac, 0xaa, 0x84, 0xc0, 0x75, 0xfa, 0x5f, 0x5e]);
+    c
+}
+
+/// `mov eax, [esp + off]; mov [slot], eax`.
+fn keep_arg(off: u8, slot: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, off, 0xa3];
+    c.extend(slot.to_le_bytes());
+    c
+}
+
+#[test]
+fn r2a_load_camera_data_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0201);
+        let log = Log::new(&mut t);
+        // the slots the stand-ins keep their arguments and answers in
+        let s = t.alloc(0x40);
+        let (unify_size, mode, answer, file, size, count, short, seed) = (
+            s,
+            s + 4,
+            s + 8,
+            s + 0xc,
+            s + 0x10,
+            s + 0x14,
+            s + 0x18,
+            s + 0x1c,
+        );
+        let path = t.alloc(0x100);
+        let block = t.alloc(0x3_c000);
+        log.stub(&mut t, camera::OPERATOR_DELETE, 1, 1, (0x5100_0000, 0, 0));
+        log.stub(&mut t, camera::OPERATOR_NEW, 2, 1, (block, 0, 0));
+        log.stub(&mut t, camera::DBG_PRINTF, 3, 1, (0x5300_0000, 0, 0));
+        log.stub(&mut t, camera::FIOS_CLOSE, 4, 1, (0x5400_0000, 0, 0));
+        // fiosUnifyFilename: the source copied to the output, the size kept
+        let mut c = copy_string(0x0c, &[0x8b, 0x7c, 0x24, 0x10]);
+        c.extend(keep_arg(0x0c, unify_size));
+        c.push(0xc3);
+        let at = t.a.rebase(camera::FIOS_UNIFY);
+        t.jump(at, &c);
+        // fiosOpen: the path copied out, the mode kept, the answer returned
+        let mut to = vec![0xbf]; // mov edi, path
+        to.extend(path.to_le_bytes());
+        let mut c = copy_string(0x0c, &to);
+        c.extend(keep_arg(0x08, mode));
+        c.push(0xa1);
+        c.extend(answer.to_le_bytes());
+        c.push(0xc3);
+        let at = t.a.rebase(camera::FIOS_OPEN);
+        t.jump(at, &c);
+        // fiosRead: 42 words of the seed (then seed + 1) into the buffer,
+        // file and size kept; a full record while the count lasts, then
+        // the short answer
+        let mut c = vec![0x57, 0x8b, 0x7c, 0x24, 0x0c, 0xa1];
+        c.extend(seed.to_le_bytes());
+        c.extend([0xb9, 0x2a, 0, 0, 0, 0xf3, 0xab, 0xff, 0x05]);
+        c.extend(seed.to_le_bytes());
+        c.push(0x5f);
+        c.extend(keep_arg(0x04, file));
+        c.extend(keep_arg(0x0c, size));
+        c.extend([0xff, 0x0d]);
+        c.extend(count.to_le_bytes());
+        c.extend([0x78, 0x06, 0xb8, 0xa8, 0, 0, 0, 0xc3, 0xa1]);
+        c.extend(short.to_le_bytes());
+        c.push(0xc3);
+        let at = t.a.rebase(camera::FIOS_READ);
+        t.jump(at, &c);
+        let work = t.b.stack_range().start + 0x1000;
+        let movies = [0x2e, 0x48, 0x20, 0x46];
+        for n in 0..48u32 {
+            log.rewind(&mut t);
+            let known = n % 6 < 4;
+            let movie = if known {
+                movies[rng.below(4) as usize]
+            } else {
+                [0, 1, 0x2f, 0x47, 0xffff_ffff, rng.next()][rng.below(6) as usize]
+            };
+            let reads = match ffx_pcui::camera::block(movie) {
+                Some((bytes, _)) => {
+                    let full = bytes / ffx_pcui::camera::RECORD;
+                    [0, 1, 2, 7, full - 1, full][rng.below(6) as usize]
+                }
+                None => 0,
+            };
+            let opened = if rng.below(4) == 0 { 0 } else { rng.next() | 1 };
+            let old = [0, rng.next()][rng.below(2) as usize];
+            let short = [0, 0x10, 0xa7, 0xa9, 0xffff_ffff][rng.below(5) as usize];
+            let mut slots = rng.bytes(0x40);
+            for (k, v) in [(8, opened), (0x14, reads), (0x18, short)] {
+                slots[k..k + 4].copy_from_slice(&v.to_le_bytes());
+            }
+            t.put(s, &slots);
+            t.put(path, &rng.bytes(0x100));
+            if n < 8 {
+                t.put(block, &rng.bytes(0x3_c000));
+            }
+            let data = t.a.rebase(camera::CAMERA_DATA.sym);
+            t.put(data, &old.to_le_bytes());
+            let words = t.a.rebase(camera::CAMERA_DATA_WORDS.sym);
+            t.put(words, &rng.next().to_le_bytes());
+            t.b.write(work, &rng.bytes(camera::WORK as usize)).unwrap();
+            t.check(
+                &format!("load camera data {n}: movie {movie:#x} reads {reads} file {opened:#x}"),
+                LOAD_CAMERA_DATA,
+                Conv::Cdecl,
+                &[movie],
+                |o| {
+                    camera::load_camera_data(o, movie, work, &mut |o, f, a| {
+                        o.call(f, Conv::Cdecl, a).unwrap().eax
+                    });
+                    Res::Void
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn r2a_menu_world_map_draw_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0202);
+        let log = Log::new(&mut t);
+        let window = t.alloc(0x80);
+        for (id, (sym, args)) in (1u32..).zip([
+            (worldmap::OPEN_PKT_BUFF_TMP, 0),
+            (worldmap::DRAW_SCISSOR_XYWH, 4),
+            (worldmap::SEQ_START_SCENE, 2),
+            (worldmap::SEQ_SET_SCENE_POS_BY_NAME, 4),
+            (worldmap::MKP_SHAPE_XYWHUV_C2, 11),
+            (worldmap::MKP_SHAPE_XYWHUV, 9),
+            (worldmap::GET_SAVE_DIC, 0),
+            (worldmap::GET_SAVE_CONFIG_ENGLISH, 0),
+            (worldmap::GET_SAVE_DIC_NAME, 2),
+            (worldmap::MKP_CROSS_EXT_MES_FONT_L_CLUT, 7),
+            (worldmap::DRAW_KICK_TMP, 0),
+        ]) {
+            log.stub(&mut t, sym, id, args, (0x5a00_0000 + id, 0, 0));
+        }
+        for n in 0..80u32 {
+            log.rewind(&mut t);
+            let alpha = [0x80, 0x80, 0x80, 0, 0x7f, 0x81, 0x180, rng.next()][rng.below(8) as usize];
+            let mut w = rng.bytes(0x80);
+            w[0x64..0x68].copy_from_slice(&alpha.to_le_bytes());
+            t.put(window, &w);
+            // the tint may change the alpha before it is read again
+            let poke = match rng.below(4) {
+                0 => Some((window + 0x64, 0x80)),
+                1 => Some((window + 0x64, 0)),
+                _ => None,
+            };
+            log.stub_poke(
+                &mut t,
+                worldmap::DRAW_TINT,
+                20,
+                4,
+                (0x5b00_0000, 0, 0),
+                poke,
+            );
+            #[allow(clippy::cast_sign_loss)]
+            let coord = |rng: &mut Xorshift| -> u32 {
+                [
+                    0,
+                    0,
+                    1,
+                    0xffff_ffff,
+                    3,
+                    0xffff_fffd,
+                    0x8000_0001,
+                    rng.next(),
+                ][rng.below(8) as usize]
+            };
+            let (x, y) = (coord(&mut rng), coord(&mut rng));
+            log.stub(&mut t, worldmap::MAP_MARKER_X, 21, 0, (x, 0, 0));
+            log.stub(&mut t, worldmap::MAP_MARKER_Y, 22, 0, (y, 0, 0));
+            t.check(
+                &format!("world map draw {n}: alpha {alpha:#x} marker {x:#x},{y:#x}"),
+                MENU_WORLD_MAP_DRAW,
+                Conv::Cdecl,
+                &[window],
+                |o| {
+                    Res::Int(worldmap::draw(o, window, &mut |o, f, a| {
+                        o.call(f, Conv::Cdecl, a).unwrap().eax
+                    }))
+                },
+            );
+        }
+    }
+}

@@ -339,6 +339,29 @@ keeps the last normalisation.
 panel that asks whether to keep nodes just activated: see its `ffx.sym`
 line and `ffx_pcui::panel::bridge::activate_handler`.
 
+## Movie camera tracks (`g_CameraData`)
+
+`LoadCameraData(movie)` (`0x006f6dc0`, Fahrenheit's name), called by
+`PhyreScene_fieldMapLoad` for the four maps whose movie plays over the 3D
+scene (map 0x1f20 movie 0x2e, 0x220 0x48, 0xc04 0x20, 0xa6c 0x46; any
+other map calls `UnloadCameraData`). The file is
+`/FFX_Data/GameData/PS3Data/Video/<movie>.dat` (decimal), read in
+0xa8-byte records, one per movie frame, into a zeroed `operator new` block
+of fixed size: 0x38658, 0xfff0, 0x3ba30, 0x29388 bytes; the block's size
+in words goes to `g_CameraDataWords` (`0x00c38e18`), which the frame code
+at `0x0076ee38` divides by 42 for the frame count. Reads stop at the
+first one that does not return a full record; nothing checks the block's
+end. Port: `ffx_pcui::camera`.
+
+## The world map window
+
+`MenuWorldMap_Draw_008e2b60` is the draw callback `MenuWorldMap_OpenWindow`
+(`0x008e2d60`) stores at `+0x10` of `g_TkMenuWorldMapWindow`; `+0x64` is the
+fade alpha (`Menu_FadeStep` moves it by `+0x68`). Only at alpha 0x80 does it
+draw the map (place `"scene30"`, the marker, at half the map marker's
+coordinates, y 16 higher), the title plate and the save's dictionary name.
+Port: `ffx_pcui::worldmap`.
+
 ## Left original
 
 PhyreEngine library code in the same address range (verdicts, not

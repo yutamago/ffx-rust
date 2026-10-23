@@ -2,6 +2,7 @@
 //! sphere grid screen's helpers, the pointer zones.
 
 use ffx_pcui::abmap::bridge as abmap;
+use ffx_pcui::camera::bridge as camera;
 use ffx_pcui::cursor::bridge as cursor;
 use ffx_pcui::iggy::bridge as iggy;
 use ffx_pcui::item::bridge as item;
@@ -10,6 +11,7 @@ use ffx_pcui::panel::bridge as panel;
 use ffx_pcui::sea::bridge as sea;
 use ffx_pcui::spdctrl::bridge as spdctrl;
 use ffx_pcui::touch::bridge as touch;
+use ffx_pcui::worldmap::bridge as worldmap;
 
 use super::{mem, ported};
 
@@ -227,5 +229,15 @@ ported! {
     /// `AbmapLoadOef_00a57620()`.
     AbmapLoadOef_00a57620 @ 0x00a5_7620 => extern "C" fn abmap_load_oef() -> u32 {
         abmap::load_oef(&mut mem())
+    }
+    /// `LoadCameraData(movie)`: the read buffer and the paths in this
+    /// frame.
+    LoadCameraData @ 0x006f_6dc0 => extern "C" fn load_camera_data(movie: u32) {
+        let mut w = super::StackFrame::<{ camera::WORK as usize / 4 }>::new();
+        camera::load_camera_data(&mut mem(), movie, w.at(), &mut |_, f, args| super::call_cdecl(f, args));
+    }
+    /// `MenuWorldMap_Draw_008e2b60(window)`.
+    MenuWorldMap_Draw_008e2b60 @ 0x008e_2b60 => extern "C" fn menu_world_map_draw(window: u32) -> u32 {
+        worldmap::draw(&mut mem(), window, &mut |_, f, args| super::call_cdecl(f, args))
     }
 }
