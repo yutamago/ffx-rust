@@ -696,6 +696,45 @@ whose first two words are that buffer's index and vertex counts.
 All three return 1, or 0 when the instance has no render data. They are
 bookkeeping for the PC renderer's buffers, ported in `draw.rs`.
 
+## Shape clip test (`VertexGroupApplyZMatZClip`, `0x007119d0`)
+
+`VertexGroupApplyZMatZClip(m, a, b, c, d, flags)` (Fahrenheit's name;
+cdecl; from `updateVFXRenderDataShapeField` 0x0071a7af/0x0071b04f,
+`updateVFXRenderDataShp_OShapeVu1` 0x0071c408/0x0071c98a and the shape job
+`0x00727110` +0x435/+0xaf3; `flags` is the shape's `u16 *b`) returns 0 when
+the group is drawn and 1 when it is clipped. Ported in
+`ffx_vfx::mat::bridge::vertex_group_apply_zmat_zclip`.
+
+`L = FFXVu0MulMatrix(b, m)` goes into the frame (`ebp - 0x54`), then
+`m = a * m`. A screen depth `q` is a row dotted with `g_ScreenMatrix`
+column 2 over the same row dotted with column 3 (`S2, S6, S10, S14` and
+`S3, S7, S11, S15`). Every partial sum is stored as an `f32`, and a zero
+denominator gives `q = 0` (a NaN one divides). `q` is inside when it is
+not below 0 and not above 2^23 (`f32` at `0x00b501c4`); a NaN `q` counts
+as inside, because the `fcom`s fall through to the draw path (Ghidra's C
+reads it the other way).
+
+- Flag 8 clear: `q2` is `L` row 0 over `L` row 3, `q3` is `m` row 3 over
+  itself. Drawn when either is inside.
+- Flag 8 set: `q0..q2` come from `L` rows 0..2, and the column-3 sums run
+  on from row to row (row 1's denominator starts from row 0's rounded
+  sum). `q3` comes from `m` row 3, its column-2 sum starting from the
+  local `[ebp-8]`, which nothing writes first: stack junk. The port uses 0
+  there (brief 2026-10-24). With a zero denominator `q3` is 0 whatever the
+  junk. Drawn when any of the four is inside.
+
+The packet's other "unwritten" reads (`ebp - 0x10`, `- 0xc`) are `q1` and
+`q2`, which the flag-8 loop writes.
+
+Drawn: `m = c * m`, `L = c * L`. For each row `i`, `m[4i+2] = (m[4i+3] /
+L[4i+3]) x L[4i+2]` (the quotient unrounded until the product is stored;
+`0 x L[4i+2]` when `L[4i+3]` is 0). Then for each row `p = w z` (`z =
+m[4i+2]`, `w = m[4i+3]`): `p <= 0` stores +0 in `z`; otherwise (NaN too)
+`|w| < |z|` stores `w` in `z`, unless `graphicLevelGetNameHash()` is
+0x21e8 or 0x4a6 or `MagicFile_GetMagicId()` is 0x2b9 (called in that
+order, short-circuit). Last, `m = d * m` and `FFXVu0ScaleVector(row, row,
+1/w)` for each row (0 when `w` is 0).
+
 ## Bone matrices (`opus_get_bone_matrix`)
 
 `opus_get_bone_matrix(out, chr, bone)` (`0x00805430`) puts a character

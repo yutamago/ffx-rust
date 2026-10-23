@@ -1575,6 +1575,15 @@ ported! {
     opu_v_2d @ 0x0081_8dc0 => extern "C" fn opu_v_2d(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_v_2d(&mut mem(), host, cmd)
     }
+    /// `VertexGroupApplyZMatZClip(m, a, b, c, d, flags)`: 0 drawn / 1
+    /// clipped in `eax`; the matrix it hands `FFXVu0MulMatrix` in this
+    /// call's own frame; flag 8's never-written `[ebp-8]` is 0 (brief
+    /// 2026-10-24).
+    VertexGroupApplyZMatZClip @ 0x0071_19d0 => extern "C" fn vertex_group_apply_zmat_zclip(m: u32, a: u32, b: u32, c: u32, d: u32, flags: u32) -> u32 {
+        let mut frame = super::StackFrame::<{ (mat::bridge::ZCLIP_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + mat::bridge::ZCLIP_FRAME;
+        mat::bridge::vertex_group_apply_zmat_zclip(&mut mem(), m, a, b, c, d, flags & 0xff, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu_v_u2(host, cmd)`: nibbles other than 0/0x1000 read the
     /// never-written frame words `ebp - 8` / `- 0x10`; the port uses 0
     /// (brief 2026-10-24).

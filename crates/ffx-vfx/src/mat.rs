@@ -1155,4 +1155,171 @@ pub mod bridge {
         let mul = Global::<u32>::new(0x006e_d5c0).ptr(mem).addr;
         call(mem, mul, &[obj.wrapping_add(0x50), view_copy, m])
     }
+    /// `g_ScreenMatrix` (`0x02311480`): the screen matrix the clip test
+    /// reads (columns 2 and 3).
+    pub const SCREEN_MATRIX: u32 = 0x0231_1480;
+    /// The clip bound, the `f32` 2^23 at `0x00b501c4`.
+    pub const CLIP_BOUND: u32 = 0x00b5_01c4;
+    /// The work block [`vertex_group_apply_zmat_zclip`] needs below
+    /// `frame` (the original's `ebp - 0x54`: the matrix it passes to
+    /// `FFXVu0MulMatrix` by address).
+    pub const ZCLIP_FRAME: u32 = 0x54;
+
+    /// `!(q < 0 || q > bound)`: a NaN counts as inside (the `fcom`s fall
+    /// through to the draw path).
+    fn inside(q: f64, bound: f64) -> bool {
+        !(q < 0.0 || q > bound)
+    }
+
+    /// `VertexGroupApplyZMatZClip(m, a, b, c, d, flags)` (`0x007119d0`,
+    /// Fahrenheit's name; from `updateVFXRenderDataShapeField`,
+    /// `updateVFXRenderDataShp_OShapeVu1` and the shape job
+    /// `0x00727110`), cdecl, returns 0 drawn / 1 clipped in `eax`.
+    ///
+    /// `L = FFXVu0MulMatrix(b, m)` into the frame (`frame - 0x54`), then
+    /// `m = a * m` (`FFXVu0MulMatrix(m, a, m)`). Screen depths `q`
+    /// through `g_ScreenMatrix` column 2 over column 3, each sum rounded
+    /// to `f32` at every step, `q = 0` for a zero denominator (a NaN one
+    /// divides):
+    /// - flag 8 clear: `q2` from `L`'s row 0 over its row 3, `q3` from
+    ///   `m`'s row 3; drawn when either lies in `[0, 2^23]` (or is NaN);
+    /// - flag 8 set: `q0..q2` from `L`'s rows 0..2, the denominators
+    ///   summed on from row to row; `q3` from `m`'s row 3 with the
+    ///   numerator started from the never-written `[ebp-8]` (0 here);
+    ///   drawn when any of the four lies in range.
+    ///
+    /// Drawn: `m = c * m`, `L = c * L`; for each row `i` of `m`, `z =
+    /// (w / L[4i+3]) * L[4i+2]` (0 times for `L[4i+3] = 0`; the quotient
+    /// unrounded). Then per row `p = w z`: `p <= 0` zeroes `z`; else when
+    /// `|w| < |z|`, `z = w` unless the level hash is 0x21e8 or 0x4a6 or
+    /// the magic id 0x2b9. Then `m = d * m` and each row scaled by `1/w`
+    /// (`FFXVu0ScaleVector`; 0 for `w = 0`). Callees through `call`.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::too_many_arguments,
+        clippy::similar_names
+    )]
+    pub fn vertex_group_apply_zmat_zclip<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        a: u32,
+        b: u32,
+        c: u32,
+        d: u32,
+        flags: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, store};
+        const MUL_MATRIX: u32 = 0x006e_d5c0;
+        const LEVEL_NAME_HASH: u32 = 0x0064_1da0;
+        const MAGIC_ID: u32 = 0x009d_a3b0;
+        const SCALE_VECTOR: u32 = 0x006e_d8f0;
+        let sym = |mem: &M, a: u32| mem.rebase(a);
+        let l = frame.wrapping_sub(ZCLIP_FRAME);
+        let mul_matrix = sym(mem, MUL_MATRIX);
+        call(mem, mul_matrix, &[l, b, m]);
+        call(mem, mul_matrix, &[m, a, m]);
+        let screen = sym(mem, SCREEN_MATRIX);
+        let s = |mem: &M, i: u32| load(mem.read(screen.wrapping_add(4 * i)));
+        let at = |mem: &M, base: u32, i: u32| load(mem.read(base.wrapping_add(4 * i)));
+        let bound = load(mem.read(sym(mem, CLIP_BOUND)));
+        let ratio = |num: u32, den: u32| {
+            if load(den) == 0.0 {
+                0
+            } else {
+                store(div(load(num), load(den)))
+            }
+        };
+        let drawn = if flags & 8 == 0 {
+            // L row 0 over L row 3, m row 3 over itself; a running f32
+            let mut q2 = store(add(mul(at(mem, l, 0), s(mem, 2)), 0.0));
+            let mut q3 = store(add(mul(s(mem, 2), at(mem, m, 12)), 0.0));
+            for (k, col) in [(1u32, 6u32), (2, 10), (3, 14)] {
+                q2 = store(add(mul(at(mem, l, k), s(mem, col)), load(q2)));
+                if k < 3 {
+                    q3 = store(add(mul(s(mem, col), at(mem, m, 12 + k)), load(q3)));
+                }
+            }
+            let mut w_l = store(add(0.0, mul(at(mem, l, 12), s(mem, 3))));
+            for (k, col) in [(13u32, 7u32), (14, 11), (15, 15)] {
+                w_l = store(add(mul(at(mem, l, k), s(mem, col)), load(w_l)));
+            }
+            q3 = store(add(mul(s(mem, 14), at(mem, m, 15)), load(q3)));
+            let mut w_m = store(add(mul(s(mem, 3), at(mem, m, 12)), 0.0));
+            for (k, col) in [(13u32, 7u32), (14, 11), (15, 15)] {
+                w_m = store(add(mul(s(mem, col), at(mem, m, k)), load(w_m)));
+            }
+            let (q2, q3) = (ratio(q2, w_l), ratio(q3, w_m));
+            inside(load(q2), bound) || inside(load(q3), bound)
+        } else {
+            let mut q = [0u32; 4];
+            let mut w_sum = 0.0;
+            for (i, slot) in (0u32..).zip(&mut q[..3]) {
+                let row = 4 * i;
+                let x = |mem: &M, k: u32| at(mem, l, row + k);
+                let mut z = store(add(mul(s(mem, 2), x(mem, 0)), 0.0));
+                z = store(add(load(z), mul(s(mem, 6), x(mem, 1))));
+                z = store(add(load(z), mul(x(mem, 2), s(mem, 10))));
+                z = store(add(load(z), mul(x(mem, 3), s(mem, 14))));
+                let mut w = store(add(w_sum, mul(x(mem, 0), s(mem, 3))));
+                w = store(add(load(w), mul(s(mem, 7), x(mem, 1))));
+                w = store(add(load(w), mul(x(mem, 2), s(mem, 11))));
+                w = store(add(load(w), mul(x(mem, 3), s(mem, 15))));
+                w_sum = load(w);
+                *slot = ratio(z, w);
+            }
+            // junk read: [ebp-0x8] never written; 0 (brief 2026-10-24)
+            // (the row-3 numerator starts from it)
+            let junk = 0u32;
+            let mut n = store(add(mul(at(mem, m, 12), s(mem, 2)), load(junk)));
+            n = store(add(load(n), mul(at(mem, m, 13), s(mem, 6))));
+            n = store(add(load(n), mul(s(mem, 10), at(mem, m, 14))));
+            n = store(add(mul(s(mem, 14), at(mem, m, 15)), load(n)));
+            let mut w = store(add(mul(at(mem, m, 12), s(mem, 3)), 0.0));
+            w = store(add(load(w), mul(at(mem, m, 13), s(mem, 7))));
+            w = store(add(load(w), mul(s(mem, 11), at(mem, m, 14))));
+            w = store(add(mul(s(mem, 15), at(mem, m, 15)), load(w)));
+            q[3] = ratio(n, w);
+            q.iter().any(|&v| inside(load(v), bound))
+        };
+        if !drawn {
+            return 1;
+        }
+        call(mem, mul_matrix, &[m, c, m]);
+        call(mem, mul_matrix, &[l, c, l]);
+        for i in 0..4u32 {
+            let den = at(mem, l, 4 * i + 3);
+            let r = if den == 0.0 {
+                0.0
+            } else {
+                div(at(mem, m, 4 * i + 3), den)
+            };
+            let z = store(mul(r, at(mem, l, 4 * i + 2)));
+            mem.write(m.wrapping_add(16 * i + 8), z);
+        }
+        for i in 0..4u32 {
+            let row = m.wrapping_add(16 * i);
+            let (z, w) = (at(mem, row, 2), at(mem, row, 3));
+            let p = mul(w, z);
+            if p <= 0.0 {
+                mem.write(row.wrapping_add(8), 0u32);
+            } else if w.abs() < z.abs() {
+                let keep = call(mem, sym(mem, LEVEL_NAME_HASH), &[]) == 0x21e8
+                    || call(mem, sym(mem, LEVEL_NAME_HASH), &[]) == 0x4a6
+                    || call(mem, sym(mem, MAGIC_ID), &[]) == 0x2b9;
+                if !keep {
+                    mem.write(row.wrapping_add(8), store(w));
+                }
+            }
+        }
+        call(mem, mul_matrix, &[m, d, m]);
+        for i in 0..4u32 {
+            let row = m.wrapping_add(16 * i);
+            let w = at(mem, row, 3);
+            let scale = if w == 0.0 { 0 } else { store(div(1.0, w)) };
+            call(mem, sym(mem, SCALE_VECTOR), &[row, row, scale]);
+        }
+        0
+    }
 }
