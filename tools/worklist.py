@@ -7,7 +7,10 @@ functions most used), then smaller first.
   tools/worklist.py [--module M | --global] [--unclaimed] [--limit N] [--named] [--max-bytes B]
 
 Columns: address, module, bytes, callers, name (and calls into imports,
-which need a platform equivalent). Functions too short to hook that only
+which need a platform equivalent). Callers and callees are the dump's
+call_sites.tsv plus the direct calls and jumps FFX.exe's bytes show
+(tools/refs.py: calls from code Ghidra left as a label, tail jumps).
+Functions too short to hook that only
 return (dbgPrintf, FlushCache) block nobody.
 
 Only logic is listed (symbols/classes.tsv, tools/classify.py), and only
@@ -21,6 +24,7 @@ claimed (tools/claim.py); stale claims (over 12 hours) are listed again,
 marked.
 """
 import argparse
+import bisect
 import os
 import pathlib
 import sys
@@ -43,6 +47,30 @@ def is_stub(a, size):
                          capture_output=True, text=True, check=False).stdout
     ops = [line.split("\t", 1)[1].split()[0] for line in out.splitlines() if ":\t" in line]
     return bool(ops) and ops[-1] == "ret" and all(o in ("ret", "xor", "mov", "or") for o in ops)
+
+
+def raw_edges(size, callees, callers):
+    """Adds the direct call/jmp edges FFX.exe's bytes show that
+    call_sites.tsv misses (tools/refs.py): calls from code Ghidra left as a
+    label count as callers (keyed by the site), tail jumps and calls inside
+    a function body as its callees."""
+    import refs
+    exe = refs.default_exe()
+    if not exe.exists():
+        return
+    starts = sorted(size)
+    for t, sites in refs.index(exe).callers().items():
+        if t not in size:
+            continue
+        for s in sites:
+            i = bisect.bisect_right(starts, s) - 1
+            a = starts[i] if i >= 0 else None
+            if a is not None and s < a + size[a]:
+                if a != t:
+                    callees[a].add(t)
+                    callers[t].add(a)
+            else:
+                callers[t].add(s)
 
 
 def main():
@@ -86,6 +114,7 @@ def main():
             a, c = int(a, 16), int(c, 16)
             callees[a].add(c)
             callers[c].add(a)
+    raw_edges(size, callees, callers)
 
     # functions too short to hook (a bare `ret` such as dbgPrintf, FlushCache)
     # do nothing a port has to replace: they block no caller

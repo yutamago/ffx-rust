@@ -347,6 +347,33 @@ port status; `--shims` prints the `ported!` entries for unported logic
 copies of ported functions, copied from the port, and the oracle test to
 extend. About 30 s.
 
+## References and dead verdicts
+
+The dump's `calls.tsv` and `call_sites.tsv` only list calls from code
+Ghidra made a function of. Code it left as a label calls functions too
+(`0x00a58ff0` from `0x00a44ef5`, `0x00a45012` and `0x00a452d5`;
+`0x0084d790` from `0x008532bc`), so "0 callers" there proves nothing.
+`tools/refs.py` scans FFX.exe itself:
+
+```bash
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD tools/refs.py 0x00a58ff0 AbmapDrawPanels_00a58660
+```
+
+It lists every E8/E9/0F 8x rel32 branch to the address in `.text` (each
+checked by disassembling around it: "raw (decoded)", or "ghidra" when
+call_sites.tsv has it too; "(raw, not decoded)" is byte noise) and every
+relocated pointer to it: `data` (vtables, native tables, callbacks in
+`.data`/`.rdata`) and `code` (an immediate such as `push offset f`). The
+image has a base relocation table, so the pointer list is exact. The index
+is cached in `$FFX_WORK/cache/rawrefs-<hash>-v<n>.pickle` (about 1 s to
+build, 0.1 s to load). `tools/worklist.py` and `tools/packet.py` count these
+raw callers and tail-jump callees together with call_sites.tsv.
+
+A dead verdict (an OVERRIDES entry in `tools/classify.py`, or "no callers"
+in a report) must cite `tools/refs.py`: "tools/refs.py: 0 refs", or the
+refs it lists and why each one never runs. A function stored in a vtable
+(`data` ref) is reached through it even with no direct caller.
+
 ## Bulk dump
 
 ```bash
