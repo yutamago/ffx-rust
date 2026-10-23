@@ -11805,3 +11805,104 @@ fn small2_c_on(t: &mut Twin) {
     }
     eprintln!("{}: small2 c reach {reach:?}", t.name);
 }
+
+#[test]
+fn small2_f_matches_the_original() {
+    for mut t in twins() {
+        small2_f_on(&mut t);
+    }
+}
+
+/// `Ch_CalcMiddle` (small round 2, group f): random character arrays
+/// (active, running, modelled, bone counts around the 200 cut), the job
+/// scheduler, the pause, `Ch_MotEvent` and `Ch_RequestCalcNormal` faked.
+fn small2_f_on(t: &mut Twin) {
+    use ffx_chara::handle::bridge as hb;
+    let mut rng = Xorshift(0x5a11_2f2f);
+    let fk = Fakes::new(t);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let wait = fk.fake(t, hb::CALC_MIDDLE_WAIT, 1, 0);
+    let sched = fk.fake(t, hb::CALC_MIDDLE_SCHEDULE, 2, 3);
+    let pause = fk.fake(t, hb::GET_PAUSE, 3, 0);
+    let (array, count) = (t.a.rebase(0x023c_44e4), t.a.rebase(0x023c_44e0));
+    let sink = t.a.rebase(0x0230_56e8);
+    // stand-ins with a side effect before the logging one: Ch_MotEvent
+    // flips bit 28 of the character's +0x194 (so it is read again), the
+    // normal request moves the GS register sink
+    let chained = |t: &mut Twin, sym: u32, id: u32, n: u8, pre: &[u8]| {
+        let (code, ret) = fk.fake_code(t, id, n);
+        let at = t.a.alloc_code(&[0; 32]).unwrap();
+        assert_eq!(t.b.alloc_code(&[0; 32]).unwrap(), at);
+        let mut c = pre.to_vec();
+        c.push(0xe9);
+        let end = at + u32::try_from(c.len()).unwrap() + 4;
+        c.extend(code.wrapping_sub(end).to_le_bytes());
+        t.put(at, &c);
+        let f = t.a.rebase(sym);
+        let mut jmp = vec![0xe9];
+        jmp.extend(at.wrapping_sub(f + 5).to_le_bytes());
+        t.put(f, &jmp);
+        ret
+    };
+    let mot = chained(
+        t,
+        hb::MOT_EVENT,
+        4,
+        1,
+        &[
+            0x8b, 0x44, 0x24, 0x04, 0x81, 0xb0, 0x94, 0x01, 0, 0, 0, 0, 0, 0x10,
+        ],
+    );
+    let mut add = vec![0x81, 0x05];
+    add.extend(sink.to_le_bytes());
+    add.extend(0x0123_4567u32.to_le_bytes());
+    let normal = chained(t, hb::REQUEST_CALC_NORMAL, 5, 0, &add);
+    let mut reach = [0u32; 6];
+    for round in 0..120u32 {
+        fk.reset(t);
+        for w in [wait, sched, mot, normal] {
+            t.put_u32(w, rng.next());
+        }
+        t.put_u32(pause, u32::from(rng.next().is_multiple_of(6)));
+        t.put_u32(sink, rng.next());
+        let n = if round % 20 == 0 { 0 } else { rng.next() % 24 };
+        let chrs = t.alloc(0x880 * n.max(1) as usize);
+        for k in 0..n {
+            let c = chrs + 0x880 * k;
+            t.put(c + 2, &[u8::from(!rng.next().is_multiple_of(5))]);
+            t.put(c + 0x180, &[u8::from(rng.next().is_multiple_of(3))]);
+            t.put(c + 0x181, &[u8::from(rng.next().is_multiple_of(2))]);
+            t.put_u32(
+                c + 0x19c,
+                if rng.next().is_multiple_of(3) {
+                    0
+                } else {
+                    rng.next() | 1
+                },
+            );
+            let skin = t.alloc(0x10);
+            let bones = (rng.next() % 140) as u16;
+            t.put(skin + 0xa, &bones.to_le_bytes());
+            t.put_u32(c + 0x1c0, skin);
+            t.put_u32(c + 0x194, rng.next());
+        }
+        // a null array with no characters once in a while
+        t.put_u32(array, if round % 40 == 20 { 0 } else { chrs });
+        t.put_u32(count, n);
+        let before: u32 = rd(&t.a, fk.log);
+        t.check(&format!("Ch_CalcMiddle {round}"), 0x0083_3390, &[], |m| {
+            Res::Int(hb::ch_calc_middle(
+                m,
+                &mut |m: &mut Oracle, f, a: &[u32]| call(m, f, a),
+            ))
+        });
+        let after: u32 = rd(&t.a, fk.log);
+        let mut q = before;
+        while q < after {
+            let id: u32 = rd(&t.a, q);
+            reach[id as usize] += 1;
+            q += 4 * (1 + [0, 0, 3, 0, 1, 0][id as usize]);
+        }
+    }
+    eprintln!("{}: small2 f reach {reach:?}", t.name);
+}

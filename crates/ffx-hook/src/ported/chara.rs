@@ -2101,4 +2101,9 @@ ported! {
         let s = frame.at();
         cl::ch_pre_calc_active_cloth_mesh(&mut mem(), chr, skip, s, &mut |_, f, a| super::call_cdecl(f, a));
     }
+    // ---- small round 2, group f
+    /// `Ch_CalcMiddle()`: how far the GS register sink moved (also stored).
+    Ch_CalcMiddle @ 0x0083_3390 => extern "C" fn ch_calc_middle() -> u32 {
+        h::ch_calc_middle(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }
