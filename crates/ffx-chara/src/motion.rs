@@ -1124,6 +1124,91 @@ pub mod bridge {
         }
     }
 
+    /// `Ch_Sound(chr, ev)` (`0x00835860`) and `Ch_MotionSetLoop(chr, n)`
+    /// (`0x00839960`).
+    pub const SOUND: u32 = 0x0083_5860;
+    pub const MOTION_SET_LOOP: u32 = 0x0083_9960;
+
+    /// The move motion step `Ch_MoveMotion_00835bb0` (characters in motion
+    /// mode 0, byte `+0x186`; mode 2 runs [`ch_auto_motion`]): with flag
+    /// bit 10 of `+0x194` the facing `+0x158` turns toward `+0x168` as in
+    /// [`ch_auto_motion`]. A pending motion (`+0x736`) only clears flag
+    /// bit 27 (from the flags as read on entry: the original keeps them in
+    /// ECX across the angle calls, which leave it alone). Otherwise speed
+    /// `+0x154` above `+0x170` plays the run motion `+0x764`, another
+    /// non-zero speed the walk motion `+0x760` (both set bit 27), and
+    /// standing still plays `+0x75c` (sets bit 26), after `Ch_Sound(chr,
+    /// 5)` when bit 27 was set on entry, and clears bit 27. A motion whose
+    /// low half is from 0x1000 is a sequence (`Ch_SetSequence(chr, m)`),
+    /// else `Ch_SetSysMotion(chr, 0, m)`. Then `+0x736` = 0 and
+    /// `Ch_MotionSetLoop(chr, 0)`. Void: its only caller reads no EAX.
+    pub fn ch_move_motion<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        let bits = |mem: &M, a: u32| crate::x87::load(mem.read::<f32>(a)).to_bits();
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        let flags: u32 = mem.read(chr + 0x194);
+        if flags & 0x400 != 0 {
+            let speed = fl(mem, chr + 0x154);
+            let step = if fl(mem, chr + 0x170) < speed {
+                0x00b5_99a8
+            } else if speed == 0.0 {
+                0x00b5_99a4
+            } else {
+                0x00b5_982c
+            };
+            let step = bits(mem, r(mem, step));
+            let to = r32((fcall)(mem, r(mem, ANGLE_WRAP), &[bits(mem, chr + 0x168)]));
+            let cur = r32((fcall)(mem, r(mem, ANGLE_WRAP), &[bits(mem, chr + 0x158)]));
+            let v = (fcall)(
+                mem,
+                r(mem, ANGLE_APPROACH),
+                &[cur.to_bits(), to.to_bits(), step],
+            );
+            mem.write(chr + 0x158, r32(v));
+        }
+        if mem.read::<u8>(chr + 0x736) != 0 {
+            mem.write(chr + 0x194, flags & 0xf7ff_ffff);
+            return;
+        }
+        let play = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, m: u32| {
+            if m & 0xffff >= 0x1000 {
+                call(mem, r(mem, SET_SEQUENCE), &[chr, m]);
+            } else {
+                call(mem, r(mem, SET_SYS_MOTION), &[chr, 0, m]);
+            }
+        };
+        let or_flags = |mem: &mut M, bit: u32| {
+            let f: u32 = mem.read(chr + 0x194);
+            mem.write(chr + 0x194, f | bit);
+        };
+        let speed = fl(mem, chr + 0x154);
+        let run = fl(mem, chr + 0x170) < speed;
+        if run || speed != 0.0 {
+            let at = if run { 0x764 } else { 0x760 };
+            let m: u32 = mem.read(chr + at);
+            play(mem, call, m);
+            or_flags(mem, 0x0800_0000);
+        } else {
+            if flags & 0x0800_0000 != 0 {
+                call(mem, r(mem, SOUND), &[chr, 5]);
+            }
+            let f: u32 = mem.read(chr + 0x194);
+            mem.write(chr + 0x194, f & 0xf7ff_ffff);
+            let m: u32 = mem.read(chr + 0x75c);
+            play(mem, call, m);
+            or_flags(mem, 0x0400_0000);
+        }
+        mem.write(chr + 0x736, 0u8);
+        call(mem, r(mem, MOTION_SET_LOOP), &[chr, 0]);
+    }
+
     /// `MsGetSaveEventAddress`'s thunk (`0x0088c830`), `Ch_ResetMotion`
     /// (`0x0082b080`), `Ch_SeqGetFastMotion` (`0x00837860`),
     /// `Ch_SetMotionSeq` (`0x00839b80`), `SG_DisposeMotionGroup` (`0x00836e20`),
@@ -1204,6 +1289,31 @@ pub mod bridge {
         let i = call(mem, mem.rebase(0x0086_5890), &[v, x]);
         call(mem, mem.rebase(0x0082_a6e0), &[i, x])
     }
+
+    /// `Chr_LoadMotionGroup(n)` (`0x008375f0`): unless event motion group
+    /// `n` is loaded (`SG_FindMotionGroup(1, n, 0)`, whose non-zero result
+    /// it returns), reads it (`Ch_ReadEventMgrp(n)`, 0 when it is cached
+    /// and must be read: then `Ch_ReadEventMgrpAsync_00837650(n)`) and
+    /// waits (a tail call of `Ch_ReadSync(0)`, whose EAX it returns).
+    pub fn chr_load_motion_group<M: Mem>(
+        mem: &mut M,
+        n: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let found = call(mem, mem.rebase(FIND_MOTION_GROUP), &[1, n, 0]);
+        if found != 0 {
+            return found;
+        }
+        if call(mem, mem.rebase(READ_EVENT_MGRP), &[n]) == 0 {
+            call(mem, mem.rebase(READ_EVENT_MGRP_ASYNC), &[n]);
+        }
+        call(mem, mem.rebase(READ_SYNC), &[0])
+    }
+
+    /// `Ch_ReadEventMgrp` (`0x00837670`) and
+    /// `Ch_ReadEventMgrpAsync_00837650`.
+    pub const READ_EVENT_MGRP: u32 = 0x0083_7670;
+    pub const READ_EVENT_MGRP_ASYNC: u32 = 0x0083_7650;
 
     /// `Ch_IsShadowHidden(chr)` (`0x008303a0`): points both globals at the
     /// save data's `+0xd2`; in battle, a character whose byte `+0x186` is

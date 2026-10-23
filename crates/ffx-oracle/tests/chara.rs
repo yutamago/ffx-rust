@@ -11285,3 +11285,162 @@ fn cmm2_c_on(t: &mut Twin) {
     }
     eprintln!("{}: cmm2 c reach {reach:?}", t.name);
 }
+
+#[test]
+fn small2_a_matches_the_original() {
+    for mut t in twins() {
+        small2_a_on(&mut t);
+    }
+}
+
+/// `chr_texanim_main`, `Chr_LoadMotionGroup` and `Ch_MoveMotion_00835bb0`
+/// (small round 2, group a).
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss
+)]
+fn small2_a_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    use ffx_chara::texanim::bridge as ta;
+    let mut rng = Xorshift(0x5a11_2a2a);
+    let fk = Fakes::new(t);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let mut reach = [0u32; 12];
+
+    // chr_texanim_main: the two steps faked
+    let old = fk.fake(t, ta::MAIN_SUB_OLD, 1, 1);
+    let new = fk.fake(t, ta::MAIN_SUB_NEW, 2, 3);
+    let table = t.a.rebase(0x0231_0000);
+    for round in 0..60u32 {
+        fk.reset(t);
+        t.put_u32(old, rng.next());
+        t.put_u32(new, rng.next());
+        let i = if round < 50 {
+            rng.next() % 64
+        } else {
+            rng.next() % 0x100
+        };
+        let kind = [0u8, 1, 2, 0xff, 0x81][(round % 5) as usize];
+        reach[usize::from(kind.min(2))] += 1;
+        t.put(table + i * 0x30 + 0xd, &[kind]);
+        let (name, draw) = (rng.next(), rng.next() % 2);
+        t.check(
+            &format!("chr_texanim_main {round}"),
+            0x0077_c8d0,
+            &[i, name, draw],
+            |m| {
+                ta::chr_texanim_main(m, i, name, draw, &mut |m: &mut Oracle, f, a: &[u32]| {
+                    call(m, f, a)
+                });
+                Res::Void
+            },
+        );
+    }
+
+    // Chr_LoadMotionGroup: the finder and readers faked
+    let find = fk.fake(t, 0x0083_6f10, 3, 3);
+    let read = fk.fake(t, mo::READ_EVENT_MGRP, 4, 1);
+    let read_async = fk.fake(t, mo::READ_EVENT_MGRP_ASYNC, 5, 1);
+    let sync = fk.fake(t, mo::READ_SYNC, 6, 1);
+    for round in 0..32u32 {
+        fk.reset(t);
+        let f = if round % 3 == 0 { rng.next() | 1 } else { 0 };
+        let r = if rng.next().is_multiple_of(2) {
+            0
+        } else {
+            rng.next()
+        };
+        t.put_u32(find, f);
+        t.put_u32(read, r);
+        t.put_u32(read_async, rng.next());
+        t.put_u32(sync, rng.next());
+        reach[3 + usize::from(f != 0) + usize::from(f == 0 && r != 0) * 2] += 1;
+        let n = rng.next();
+        t.check(
+            &format!("Chr_LoadMotionGroup {round}"),
+            0x0083_75f0,
+            &[n],
+            |m| {
+                Res::Int(mo::chr_load_motion_group(
+                    m,
+                    n,
+                    &mut |m: &mut Oracle, f, a: &[u32]| call(m, f, a),
+                ))
+            },
+        );
+    }
+
+    // Ch_MoveMotion_00835bb0: the angle functions are the originals
+    // the motion setters also set the pending byte, so its reset shows
+    let pending_stub = |t: &mut Twin, sym: u32, id: u32, n: u8| {
+        let (code, ret) = fk.fake_code(t, id, n);
+        let mut c = vec![
+            0x8b, 0x44, 0x24, 0x04, 0xc6, 0x80, 0x36, 0x07, 0, 0, 0x5a, 0xe9,
+        ];
+        let at = t.a.alloc_code(&[0; 16]).unwrap();
+        assert_eq!(t.b.alloc_code(&[0; 16]).unwrap(), at);
+        c.extend(code.wrapping_sub(at + 16).to_le_bytes());
+        t.put(at, &c);
+        let f = t.a.rebase(sym);
+        let mut jmp = vec![0xe9];
+        jmp.extend(at.wrapping_sub(f + 5).to_le_bytes());
+        t.put(f, &jmp);
+        ret
+    };
+    let seq = pending_stub(t, 0x0083_7ac0, 7, 2);
+    let sys = pending_stub(t, 0x0083_7d00, 8, 3);
+    let sound = fk.fake(t, mo::SOUND, 9, 2);
+    let set_loop = fk.fake(t, mo::MOTION_SET_LOOP, 10, 2);
+    let pop = t.b.rebase(FPU_POP);
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| {
+        let span = u32::try_from(hi - lo).unwrap() * 16;
+        ((rng.next() % span) as f32 / 16.0 + lo as f32).to_bits()
+    };
+    for round in 0..96u32 {
+        fk.reset(t);
+        for w in [seq, sys, sound, set_loop] {
+            t.put_u32(w, rng.next());
+        }
+        let chr = t.alloc(0x800);
+        for k in 0..0x200 {
+            t.put_u32(chr + 4 * k, rng.next());
+        }
+        let speed = [0f32, 0.5, 1.0, 2.0, -0.0, f32::NAN][(rng.next() % 6) as usize];
+        t.put_u32(chr + 0x154, speed.to_bits());
+        t.put_u32(chr + 0x170, f(&mut rng, 0, 2));
+        t.put_u32(chr + 0x158, f(&mut rng, -7, 7));
+        t.put_u32(chr + 0x168, f(&mut rng, -7, 7));
+        t.put(chr + 0x736, &[u8::from(rng.next().is_multiple_of(4))]);
+        for off in [0x75cu32, 0x760, 0x764] {
+            let low = if rng.next().is_multiple_of(4) {
+                0x1000
+            } else {
+                rng.next() % 0x2000
+            };
+            let m = (rng.next() & 0xffff_0000) | low;
+            t.put_u32(chr + off, m);
+        }
+        let at = t.a.rebase(0x0083_5bb0);
+        t.a.call(at, Conv::Cdecl, &[chr]).unwrap();
+        mo::ch_move_motion(
+            &mut t.b,
+            chr,
+            &mut |m: &mut Oracle, f, a: &[u32]| m.call_cdecl(f, a).unwrap(),
+            &mut |m: &mut Oracle, f, a: &[u32]| {
+                let r = m.call(f, Conv::Cdecl, a).unwrap();
+                m.call(pop, Conv::Cdecl, &[]).unwrap();
+                r.st0.expect("a float result")
+            },
+        );
+        let flags: u32 = rd(&t.a, chr + 0x194);
+        reach[6 + usize::from(flags & 0x0c00_0000 == 0x0400_0000)] += 1;
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_MoveMotion {round}",
+            t.name
+        );
+    }
+    eprintln!("{}: small2 a reach {reach:?}", t.name);
+}

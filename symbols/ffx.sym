@@ -5028,7 +5028,7 @@
 0x0077c770 function chr_texanim_del           # fh v3:exact 0x0077c860
 0x0077c830 function chr_texanim_draw          # fh v3:exact 0x0077c920
 0x0077c870 function chr_texanim_init          # fh v3:exact 0x0077c960
-0x0077c8d0 function chr_texanim_main             # layout: alphabetical run between chr_texanim_init and chr_texanim_memory_move (1 unnamed in the gap); Switch 0x7100327140 chr_texanim_main is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0077c8d0 function chr_texanim_main             # layout: alphabetical run between chr_texanim_init and chr_texanim_memory_move (1 unnamed in the gap); Switch 0x7100327140 chr_texanim_main is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (ffx_chara::texanim, small round 2): cdecl(i, name, draw), void: g_ChrTexAnim[i] (0x30 bytes; Ghidra's 0x18 stride is wrong) i8 +0xd 0 -> chr_texanim_main_sub_old(i), 1 -> tail jmp chr_texanim_main_sub_new with the caller's 3 words (caller 0x0083362f pushes 3)
 0x0077c900 function chr_texanim_memory_move  # Switch name (0x7100326db0, calls _old then _new): "Sa:Movie Memory Move" print, then by entry byte +0xd: 0 chr_texanim_memory_move_old, 1 _new
 0x0077c950 function chr_texanim_set           # fh v3:exact 0x0077ca40
 0x0077ca10 function chr_texanim_clut_swizzle # ours: (dst, src, which) dst[i] = src[table[i]] for 64 bytes, table 0x00c42130 or (which) 0x00c42170
@@ -8052,6 +8052,7 @@
 0x00835b70 function Ch_SysGetScreenMatrixPtr  # fh v3:bsim1.00 0x00835bf0
 0x00835b90 function FFXVu0ClipScreen          # () -> &g_Vu0ClipScreen; fh switch:bsim1.00 0x71001c22e0
 0x00835ba0 function Ch_SysGetCameraMatrixPtr  # fh v3:bsim1.00 0x00835c20
+0x00835bb0 function Ch_MoveMotion_00835bb0     # (chr): the motion step of characters in mode 0 (+0x186; caller 0x00832e10's loop, mode 2 runs Ch_AutoMotion): bit 10 of +0x194 turns +0x158 toward +0x168 (Sg_AngleApproach, step 0xb599a8/a4/0x82c); unless +0x736: run +0x764 (speed +0x154 > +0x170) / walk +0x760 (bit 27) or stand +0x75c (bit 26, Ch_Sound(chr, 5) when bit 27 was set); sequence from 0x1000 else Ch_SetSysMotion(chr, 0, m) (Ghidra drops the 3rd word); the entry flags stay in ECX across the angle calls (they leave it alone); then +0x736 = 0, Ch_MotionSetLoop(chr, 0); name ours; ported (ffx_chara::motion, small round 2)
 0x00835d30 function Ch_AutoMotion             # (chr): the automatic stand/walk/run motion step: facing +0x158 toward +0x168 by Sg_AngleApproach, then +0x79c/+0x7a4/+0x7a8 by speed +0x154 and the water height (Sg_GetSuimen's 0x013009d8) through Ch_SetSequence or Ch_SetSysMotion(chr, 2, m); name ours
 0x00835e90 function Ch_SysSetScreenMatrix     # (m): 64 bytes from m to g_ChrScreenMatrix (Ch_SysGetScreenMatrixPtr's); Switch name
 0x00835eb0 function Ch_SysSetCameraMatrix     # (m): 64 bytes from m to g_ChrCameraMatrix (Ch_SysGetCameraMatrixPtr's); Switch name
@@ -8110,7 +8111,7 @@
 0x00837540 function Ch_MotionSetNull         # Switch name (0x7100423e20, 4 insns, just before Ch_MoveMgrp as here): +0x714, motion id +0x72c, +0x7e8 = 0
 0x00837570 function Ch_MotionSet737          # ours: (chr, v) byte +0x737 = v, returns 0
 0x00837590 function Ch_MoveMgrp              # Switch name (0x7100423e80): (chr, delta) the motion group pointers (+0x70c/710/714/7e8/7f4, node list at +0x74c) after it moved
-0x008375f0 function Chr_LoadMotionGroup          # ?(n): if resource (1, n) not cached (0x00836f10, table 0x013011e0), requests it and waits through g_CdLib slot 2
+0x008375f0 function Chr_LoadMotionGroup          # ?(n): if resource (1, n) not cached (0x00836f10, table 0x013011e0), requests it and waits through g_CdLib slot 2; ported (ffx_chara::motion, small round 2): returns the found group or the tail call Ch_ReadSync(0)'s eax
 0x00837630 function ChN_AddEventMgrp          # (data, x): SG_AddMotionGroup(data, 1, x, 0) when data is not 0; called with a request's +0x10, +0xc; name ours
 0x00837650 function Ch_ReadEventMgrpAsync_00837650 # (x): Ch_RomReadEventMGRP(AtelEventGetMotionIndex(0x0086c1c0(x), x), x): the asynchronous Ch_ReadEventMgrp; callers Chr_LoadMotionGroup, Native_5065; name ours; ported in ffx_chara::motion (chara-main-map round 2)
 0x00837670 function Ch_ReadEventMgrp          # (x): tail call Ch_RomReadEventMGRPsync(AtelEventGetMotionIndex(0x0086c1c0(x), x)) (x is left pushed and read as the second word); name ours

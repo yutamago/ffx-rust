@@ -2070,4 +2070,22 @@ ported! {
     chr_texanim_main_sub_new @ 0x0077_f360 => extern "C" fn chr_texanim_main_sub_new(i: u32, name: u32, draw: u32) {
         ta::chr_texanim_main_sub_new(&mut mem(), i, name, draw, &mut |_, f, a| super::call_cdecl(f, a));
     }
+    // ---- small round 2, group a
+    /// `chr_texanim_main(i, name, draw)`: void (the caller reads no `eax`).
+    chr_texanim_main @ 0x0077_c8d0 => extern "C" fn chr_texanim_main(i: u32, name: u32, draw: u32) {
+        ta::chr_texanim_main(&mut mem(), i, name, draw, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Chr_LoadMotionGroup(n)`: the found group or `Ch_ReadSync`'s `eax`.
+    Chr_LoadMotionGroup @ 0x0083_75f0 => extern "C" fn chr_load_motion_group(n: u32) -> u32 {
+        mo::bridge::chr_load_motion_group(&mut mem(), n, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_MoveMotion_00835bb0(chr)`: void (its caller reads no `eax`).
+    Ch_MoveMotion_00835bb0 @ 0x0083_5bb0 => extern "C" fn ch_move_motion(chr: u32) {
+        mo::bridge::ch_move_motion(
+            &mut mem(),
+            chr,
+            &mut |_, f, a| super::call_cdecl(f, a),
+            &mut |_, f, a| st0_cdecl(f, a),
+        );
+    }
 }
