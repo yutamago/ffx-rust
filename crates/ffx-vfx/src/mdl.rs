@@ -164,7 +164,7 @@ pub mod bridge {
 
     /// The colour stored in the request's `+0x18` (at `req + 0x18 +
     /// g_pppColorConShift`, then the shift cleared); returns it.
-    fn store_colour(mem: &mut impl Mem, req: u32, colour: u32) -> u32 {
+    pub(crate) fn store_colour(mem: &mut impl Mem, req: u32, colour: u32) -> u32 {
         let shift = g(mem, COLOR_SHIFT);
         let sh: u32 = mem.read(shift);
         mem.write(at(req, 0x18).wrapping_add(sh), colour);

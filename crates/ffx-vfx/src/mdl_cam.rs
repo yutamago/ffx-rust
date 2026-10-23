@@ -7,10 +7,10 @@
 pub mod bridge {
     use crate::draw::bridge::{ENV_SLOT, GET_PTR32, NAME_HASH, g, instance};
     use crate::mdl::bridge::{
-        MDL, SEMI2, create, ee_colour_at, fmod, has_render_data, submit, update,
+        MDL, SEMI2, create, ee_colour_at, fmod, has_render_data, store_colour, submit, update,
     };
     use ffx_bridge::Mem;
-    use ffx_bridge::x87::{add, div, ftol, load, mul, store};
+    use ffx_bridge::x87::{add, div, ftol, load, mul, store, sub};
 
     const IS_PTR32_NULL: u32 = 0x00a4_46a0;
     const UNIT_MATRIX: u32 = 0x006e_d9a0;
@@ -946,5 +946,371 @@ pub mod bridge {
             }
             go(mem, DBG_PRINTF, &args);
         }
+    }
+
+    // ---- pppDrawMdlInfDraw ------------------------------------------------
+
+    const SAVE_EVENT: u32 = 0x0088_c830;
+    const IS_NULL: u32 = 0x00a4_46a0;
+    const INF_SETUP: u32 = 0x0073_c8e0;
+    const SCREEN_PROJECTION: u32 = 0x0076_6ae0;
+    const VU0_LENGTH: u32 = 0x0073_ceb0;
+    const LOAD_VF00: u32 = 0x0073_ce80;
+    const MOVE_VIA: u32 = 0x0073_ce30;
+    /// `g_pppSinTable`.
+    const SIN_TABLE: u32 = 0x00c4_4bf0;
+    /// The `f64` constants 256 (the phase speeds) and 651.89862 (the
+    /// angles); [`PERIOD`] and [`FIXED`] are the other two.
+    const K256: u32 = 0x00b9_22f0;
+    const ANGLE_SCALE: u32 = 0x00b5_1590;
+    /// Levels where the draw only resets its two vectors.
+    const INF_LEVELS: [u32; 3] = [0x1432, 0x6e1, 0x24de];
+
+    /// `pppDrawMdlInfDraw(obj, key, ctrl)` (`0x0073b9b0`), cdecl; `frame`
+    /// the original's aligned frame pointer.
+    ///
+    /// Work area 2 (`w = obj + 0xa0 + [[ctrl+0xc]+8]`). In levels `0x1432`,
+    /// `0x6e1`, `0x24de` only `w +0x40` and `+0x50` become `vf00`. Else,
+    /// with a model (`key +4` not `0xffff`, its set not null, the save
+    /// event's first `u16` not `0x5e`, `pppDrawMdlInfDrawSetup` when `w
+    /// +0xdc` is null) and unless `g_pppStopStatus`, the work area steps:
+    /// two phases (`+0xb8`, `+0xc4`, modulo 32768) by speeds the key adds
+    /// on its frame (or `+0x60`/`+0x64` when byte `+0xe4`), then the model's
+    /// vertices (`set + [set+8]`, 3 `u16` each) are copied from `[w+0xd0]`
+    /// (flag `+0xe3` bit 2) or waved: bit 0 by `sin(((p + phase_i) * f) >>
+    /// 4) * amp` per axis (`w +0x70..`, key `+0x40..`, `+0x20..`, phases
+    /// from `[w+0xd4]` and `[w+0xd8]`), bit 1 likewise (`w +0x80..`, key
+    /// `+0x70..`, `+0x50..`, phases from `[w+0xd4]`), the `p`s moving by key
+    /// `+0x30..`/`+0x60..` times 256; key byte `+0x81` steps the texture
+    /// frame (`Yn_FpTrxTexGet(key +0x80)`, wrapping at `w +0xe2`). Then the
+    /// model is drawn on a grid of tiles within key `+0x8c` of the centre
+    /// (spacing `w +0xb0`/`+0xb4` times the object's row lengths, snapped
+    /// to the camera with key byte `+0x90`; key byte `+0x89` keeps the
+    /// centre tile), each tile's matrix `op_rt_m_yxz` of the work area's
+    /// angles (`+0x50..` times 651.9) unless byte `+0xe5`, through a
+    /// request at `ebp - 0x260` like the other model draws.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_draw_mdl_inf_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let lf = |mem: &M, a: u32| load(mem.read::<u32>(a));
+        let fr = |o: u32| frame.wrapping_sub(o);
+        let offs = rd(mem, ctrl.wrapping_add(0xc));
+        let w = obj
+            .wrapping_add(0xa0)
+            .wrapping_add(rd(mem, offs.wrapping_add(8)));
+        let ev = call(mem, g(mem, SAVE_EVENT), &[]);
+        let hash = call(mem, g(mem, NAME_HASH), &[]);
+        if INF_LEVELS.contains(&hash) {
+            if w != 0 {
+                for o in [0x40u32, 0x50] {
+                    let v: [u32; 4] = mem.read(g(mem, VF00));
+                    mem.write(w.wrapping_add(o), v);
+                }
+            }
+            return;
+        }
+        let k1 = rd(mem, key.wrapping_add(4));
+        if k1 == 0xffff || mem.read::<u16>(ev) == 0x5e {
+            return;
+        }
+        let rec = rd(mem, rd(mem, rd(mem, g(mem, ENV_SLOT))).wrapping_add(0x20))
+            .wrapping_add(k1.wrapping_shl(5));
+        let set = call(mem, g(mem, GET_PTR32), &[rd(mem, rec.wrapping_add(0x1c))]);
+        if set == 0 {
+            return;
+        }
+        if call(mem, g(mem, IS_NULL), &[rd(mem, w.wrapping_add(0xdc))]) != 0
+            && call(mem, g(mem, INF_SETUP), &[key, w]) == 0
+        {
+            return;
+        }
+        if rd(mem, g(mem, STOP_STATUS)) == 0 {
+            inf_step(mem, obj, key, w, set, call);
+        }
+        // the frame's matrices and vectors
+        call(mem, g(mem, SCREEN_PROJECTION), &[fr(0x128)]);
+        let k: f64 = mem.read(g(mem, ANGLE_SCALE));
+        let angles = [0x50u32, 0x54, 0x58].map(|o| store(mul(lf(mem, w.wrapping_add(o)), k)));
+        mem.write(fr(0x24), [angles[0], angles[1], angles[2], 0]);
+        let vf00: [u32; 4] = mem.read(g(mem, VF00));
+        mem.write(fr(0x14), vf00);
+        let len = g(mem, VU0_LENGTH);
+        let l0 = store(fcall(mem, len, &[obj.wrapping_add(0x10)]));
+        fcall(mem, len, &[obj.wrapping_add(0x20)]);
+        let l2 = store(fcall(mem, len, &[obj.wrapping_add(0x30)]));
+        let sx = store(mul(lf(mem, w.wrapping_add(0xb0)), load(l0)));
+        let sz = store(mul(lf(mem, w.wrapping_add(0xb4)), load(l2)));
+        let off = fr(0x2b8);
+        if mem.read::<u8>(key.wrapping_add(0x90)) == 0 {
+            call(mem, g(mem, LOAD_VF00), &[off]);
+        } else {
+            let camera = g(mem, CAMERA_MATRIX);
+            call(mem, g(mem, INVERSE_MATRIX), &[fr(0x1a8), camera]);
+            call(mem, g(mem, MOVE_VIA), &[off, fr(0x178)]);
+            for (o, s) in [(0u32, sx), (8, sz)] {
+                let x = lf(mem, off.wrapping_add(o));
+                mem.write(off.wrapping_add(o), store(sub(x, fmod(x, load(s)))));
+            }
+        }
+        // the colour, then the request
+        let req = fr(0x260);
+        let colour = ee_colour_at(mem, obj.wrapping_add(rd(mem, offs)), true, call);
+        store_colour(mem, req, colour);
+        if mem.read::<u8>(req.wrapping_add(0x1b)) == 0 {
+            return;
+        }
+        let byte = |mem: &M, o: u32| mem.read::<u8>(key.wrapping_add(o)) != 0;
+        let mut flags = if byte(mem, 0x84) { 0x14u32 } else { 4 };
+        if byte(mem, 0x85) {
+            flags &= !0x10;
+        }
+        if byte(mem, 0x86) {
+            flags |= 0x200;
+        }
+        if byte(mem, 0x87) {
+            flags |= 8;
+        }
+        if !byte(mem, 0x88) {
+            flags |= 0x20;
+        }
+        mem.write(req, flags);
+        let word4 = rd(mem, g(mem, REQUEST_WORD4));
+        mem.write(req.wrapping_add(4), word4);
+        let blend = if mem.read::<u8>(key.wrapping_add(0x82)) == 0xff {
+            mem.read::<u16>(set.wrapping_add(0x16))
+        } else {
+            mem.read::<u16>(key.wrapping_add(0x82))
+        };
+        mem.write(req.wrapping_add(8), blend);
+        mem.write(req.wrapping_add(0xa), 0u8);
+        mem.write(req.wrapping_add(0xc), 0u32);
+        let k: f64 = mem.read(g(mem, FIXED));
+        let s0 = ftol(mem, mul(lf(mem, w.wrapping_add(0xb8)), k));
+        let s1 = ftol(mem, mul(k, lf(mem, w.wrapping_add(0xc4))));
+        mem.write(req.wrapping_add(0x10), [s0, s1]);
+        mem.write(req.wrapping_add(0x20), fr(0x168));
+        mem.write(req.wrapping_add(0x2c), obj.wrapping_add(0x10));
+        mem.write(req.wrapping_add(0x30), fr(0xa8));
+        mem.write(req.wrapping_add(0x1c), 0u32);
+        mem.write(req.wrapping_add(0x44), 0u32);
+        mem.write(req.wrapping_add(0x24), g(mem, REQUEST_TABLES[0]));
+        mem.write(req.wrapping_add(0x28), g(mem, REQUEST_TABLES[1]));
+        let t0 = call(mem, g(mem, GET_PTR32), &[rd(mem, obj.wrapping_add(0x90))]);
+        mem.write(req.wrapping_add(0x38), t0);
+        let t1 = call(mem, g(mem, GET_PTR32), &[rd(mem, obj.wrapping_add(0x94))]);
+        mem.write(req.wrapping_add(0x3c), t1);
+        // the tile offset (x, 0, z, 0)
+        let tile = fr(0x2c8);
+        mem.write(tile.wrapping_add(0xc), 0u32);
+        mem.write(tile.wrapping_add(4), 0u32);
+        mem.write(req.wrapping_add(0x40), 0u32);
+        let radius = lf(mem, key.wrapping_add(0x8c));
+        let nx = ftol(mem, add(div(radius, load(sx)), 1.0)).cast_signed();
+        let nz = ftol(mem, add(div(radius, load(sz)), 1.0)).cast_signed();
+        let mut j = nz.wrapping_neg();
+        while j <= nz {
+            let zj = store(mul(load(store(f64::from(j))), load(sz)));
+            let mut i = nx.wrapping_neg();
+            while i <= nx {
+                let xi = store(mul(load(store(f64::from(i))), load(sx)));
+                mem.write(tile, xi);
+                mem.write(tile.wrapping_add(8), zj);
+                let d = store(fcall(mem, len, &[tile]));
+                let centre = j == 0 && i == 0 && !byte(mem, 0x89);
+                if radius >= load(d) && !centre {
+                    inf_tile(mem, obj, key, w, rec, req, [i, j], [xi, zj], fr, call);
+                }
+                i = i.wrapping_add(1);
+            }
+            j = j.wrapping_add(1);
+        }
+    }
+
+    /// One tile `(i, j)` at `(x, z)` of [`ppp_draw_mdl_inf_draw`]: its
+    /// matrix, the request's flag `0x2000` (the 3 x 3 tiles round the
+    /// centre with key byte `+0x85`), and the request submitted.
+    #[allow(clippy::too_many_arguments, clippy::many_single_char_names)]
+    fn inf_tile<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        w: u32,
+        rec: u32,
+        req: u32,
+        [i, j]: [i32; 2],
+        [x, z]: [u32; 2],
+        fr: impl Fn(u32) -> u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let lf = |mem: &M, a: u32| load(mem.read::<u32>(a));
+        if mem.read::<u8>(key.wrapping_add(0x85)) != 0 {
+            let near =
+                i.wrapping_add(1).cast_unsigned() <= 2 && j.wrapping_add(1).cast_unsigned() <= 2;
+            let f = mem.read::<u32>(req);
+            mem.write(req, if near { f | 0x2000 } else { f & !0x2000 });
+        }
+        let (unit, m, copy, at_tile) = (fr(0x68), fr(0xa8), fr(0xe8), fr(0x38));
+        let (ox, oz) = (lf(mem, fr(0x2b8)), lf(mem, fr(0x2b0)));
+        call(mem, g(mem, UNIT_MATRIX), &[unit]);
+        if mem.read::<u8>(w.wrapping_add(0xe5)) == 0 {
+            let tx = store(add(add(lf(mem, w.wrapping_add(0x40)), ox), load(x)));
+            mem.write(at_tile, tx);
+            let ty = store(lf(mem, w.wrapping_add(0x44)));
+            mem.write(at_tile.wrapping_add(4), ty);
+            let tz = store(add(add(lf(mem, w.wrapping_add(0x48)), oz), load(z)));
+            mem.write(at_tile.wrapping_add(8), tz);
+            call(mem, g(mem, OP_RT_M_YXZ), &[w, unit, fr(0x24), fr(0x14)]);
+            call(mem, g(mem, MUL_MATRIX), &[m, w, obj.wrapping_add(0x10)]);
+        } else {
+            mem.write(at_tile, store(add(load(x), ox)));
+            mem.write(at_tile.wrapping_add(8), store(add(load(z), oz)));
+            call(mem, g(mem, COPY_MATRIX), &[copy, w]);
+            call(mem, g(mem, MUL_MATRIX), &[copy, copy, unit]);
+            call(mem, g(mem, MUL_MATRIX), &[m, copy, obj.wrapping_add(0x10)]);
+        }
+        let camera = g(mem, CAMERA_MATRIX);
+        call(mem, g(mem, MUL_MATRIX), &[m, camera, m]);
+        call(mem, g(mem, COPY_MATRIX), &[fr(0x168), m]);
+        call(mem, g(mem, MUL_MATRIX), &[fr(0x1e8), fr(0x128), m]);
+        let packet: u32 = mem.read(g(mem, PACKET_POS));
+        mem.write(req.wrapping_add(0x34), packet);
+        submit(mem, obj, rec, req, MDL, call);
+    }
+
+    /// [`ppp_draw_mdl_inf_draw`]'s work-area step (not while
+    /// `g_pppStopStatus`): phases, vertices, texture frame.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    fn inf_step<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        w: u32,
+        set: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let lf = |mem: &M, a: u32| load(mem.read::<u32>(a));
+        let wa = |o: u32| w.wrapping_add(o);
+        let ka = |o: u32| key.wrapping_add(o);
+        let add_to = |mem: &mut M, dst: u32, x: f64| {
+            let v = store(add(x, lf(mem, dst)));
+            mem.write(dst, v);
+            v
+        };
+        if mem.read::<u8>(wa(0xe4)) == 0 {
+            if rd(mem, key) == rd(mem, obj.wrapping_add(0xc)) {
+                for k in 0..6 {
+                    let x = lf(mem, ka(8 + 4 * k));
+                    add_to(mem, wa(0xb8 + 4 * k), x);
+                }
+            }
+            let t = add_to(mem, wa(0xbc), lf(mem, wa(0xc0)));
+            add_to(mem, wa(0xb8), load(t));
+            let u = add_to(mem, wa(0xc8), lf(mem, wa(0xcc)));
+            add_to(mem, wa(0xc4), load(u));
+        } else {
+            add_to(mem, wa(0xb8), lf(mem, wa(0x60)));
+            add_to(mem, wa(0xc4), lf(mem, wa(0x64)));
+        }
+        let period: f64 = mem.read(g(mem, PERIOD));
+        for o in [0xb8u32, 0xc4] {
+            let v = store(fmod(lf(mem, wa(o)), period));
+            mem.write(wa(o), v);
+        }
+        let flags = mem.read::<u8>(wa(0xe3));
+        let dst = set.wrapping_add(rd(mem, set.wrapping_add(8)));
+        let count = |mem: &M| i32::from(mem.read::<i16>(set.wrapping_add(0x12)));
+        if flags & 4 != 0 {
+            let src = call(mem, g(mem, GET_PTR32), &[rd(mem, wa(0xd0))]);
+            let mut i = 0i32;
+            while i < count(mem) {
+                let at = 6 * i.cast_unsigned();
+                for k in 0..3 {
+                    let v = mem.read::<u16>(src.wrapping_add(at + 2 * k));
+                    mem.write(dst.wrapping_add(at + 2 * k), v);
+                }
+                i += 1;
+            }
+        } else {
+            let k256: f64 = mem.read(g(mem, K256));
+            let sin = g(mem, SIN_TABLE);
+            // (p words in w, frequency words in the key, amplitudes, speeds)
+            let waves = [
+                (0x70u32, 0x40u32, 0x20u32, 0x30u32, 1u8),
+                (0x80, 0x70, 0x50, 0x60, 2),
+            ];
+            for (p_at, f_at, amp_at, speed_at, bit) in waves {
+                if flags & bit == 0 {
+                    continue;
+                }
+                let src = call(mem, g(mem, GET_PTR32), &[rd(mem, wa(0xd0))]);
+                let ph1 = call(mem, g(mem, GET_PTR32), &[rd(mem, wa(0xd4))]);
+                let ph2 = if bit == 1 {
+                    call(mem, g(mem, GET_PTR32), &[rd(mem, wa(0xd8))])
+                } else {
+                    0
+                };
+                let p = [0u32, 4, 8].map(|o| ftol(mem, lf(mem, wa(p_at + o))));
+                let f = [0u32, 4, 8].map(|o| ftol(mem, lf(mem, ka(f_at + o))));
+                let mut i = 0i32;
+                while i < count(mem) {
+                    let iu = i.cast_unsigned();
+                    let mut phase = u32::from(mem.read::<u16>(ph1.wrapping_add(2 * iu)));
+                    if bit == 1 {
+                        phase = u32::from(mem.read::<u16>(ph2.wrapping_add(2 * iu)))
+                            .wrapping_add(phase);
+                    }
+                    for k in 0..3u32 {
+                        let a = p[k as usize]
+                            .wrapping_add(phase)
+                            .wrapping_mul(f[k as usize]);
+                        let idx = (a.cast_signed() >> 4).cast_unsigned() & 0xfff;
+                        let s = lf(mem, sin.wrapping_add(4 * idx));
+                        let v = ftol(mem, mul(s, lf(mem, ka(amp_at + 4 * k))));
+                        let base = mem.read::<u16>(src.wrapping_add(6 * iu + 2 * k));
+                        #[allow(clippy::cast_possible_truncation)]
+                        let v = (v as u16).wrapping_add(base);
+                        mem.write(dst.wrapping_add(6 * iu + 2 * k), v);
+                    }
+                    i += 1;
+                }
+                for k in 0..3u32 {
+                    let x = mul(lf(mem, ka(speed_at + 4 * k)), k256);
+                    add_to(mem, wa(p_at + 4 * k), x);
+                }
+            }
+        }
+        // the texture frame
+        let every = mem.read::<u8>(ka(0x81));
+        if every == 0 {
+            return;
+        }
+        let n = mem.read::<u8>(wa(0xe0)).wrapping_add(1);
+        mem.write(wa(0xe0), n);
+        if n < every {
+            return;
+        }
+        let tex = call(
+            mem,
+            g(mem, TRX_TEX_GET),
+            &[u32::from(mem.read::<u8>(ka(0x80)))],
+        );
+        if tex == 0 {
+            return;
+        }
+        let f = mem.read::<u8>(wa(0xe1)).wrapping_add(1);
+        mem.write(wa(0xe1), f);
+        mem.write(wa(0xe0), 0u8);
+        let f = if f < mem.read::<u8>(wa(0xe2)) { f } else { 0 };
+        mem.write(wa(0xe1), f);
+        call(mem, g(mem, TRX_TEX_SET_FRAME), &[tex, u32::from(f)]);
     }
 }

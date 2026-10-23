@@ -2004,3 +2004,258 @@ fn vfx_ppp_r2c_ke_mdl_bmp_draw_matches_the_original() {
         assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
     }
 }
+
+// ---- pppDrawMdlInfDraw ---------------------------------------------------
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::similar_names
+)]
+fn vfx_ppp_r2d_mdl_inf_draw_matches_the_original() {
+    use ffx_vfx::mdl_cam::bridge as mc;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_b9b0);
+        let cells = p.alloc(0x40);
+        let (rd, alpha, zmat, tex, event, hash, setup) = (
+            cells,
+            cells + 4,
+            cells + 8,
+            cells + 0xc,
+            cells + 0x10,
+            cells + 0x14,
+            cells + 0x18,
+        );
+        let logs = [
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rd)),
+            far_recorder(&mut p, 0x0071_2c30, &[0], Some(alpha)),
+            far_recorder(&mut p, 0x0071_2d00, &[0], Some(zmat)),
+            request_recorder(&mut p, 0x0071_8610, 4, 18, &[0x20, 0x2c, 0x30]),
+            request_recorder(&mut p, 0x0071_1180, 5, 18, &[0x20, 0x2c, 0x30]),
+            request_recorder(&mut p, 0x0071_0fd0, 5, 18, &[0x20, 0x2c, 0x30]),
+            far_recorder(&mut p, 0x0064_5600, &[0, 0], None),
+            far_recorder(&mut p, 0x0064_58a0, &[0, 0], None),
+            far_recorder(&mut p, 0x0091_9ba0, &[0], Some(tex)),
+            far_recorder(&mut p, 0x0091_9bd0, &[0, 0], None),
+            far_recorder(&mut p, 0x0088_c830, &[], Some(event)),
+            far_recorder(&mut p, 0x0064_1da0, &[], Some(hash)),
+            far_recorder(&mut p, 0x0073_c8e0, &[0, 0], Some(setup)),
+        ];
+        let (obj, key, ctrl, table) = (p.alloc(0x300), p.alloc(0xa0), p.alloc(0x10), p.alloc(0x10));
+        let (env, env2, recs, set, part) = (
+            p.alloc(4),
+            p.alloc(0x40),
+            p.alloc(0x400),
+            p.alloc(0x100),
+            p.alloc(0x80),
+        );
+        let (src, ph1, ph2, ev) = (p.alloc(0x80), p.alloc(0x40), p.alloc(0x40), p.alloc(4));
+        let camera = p.sym(0x0230_ff60);
+        let (cur, cpart, shift, stop, r0) = (
+            p.sym(0x0230_fd20),
+            p.sym(0x0230_ffe4),
+            p.sym(0x00c8_b500),
+            p.sym(0x0230_fd34),
+            p.sym(0x00c8_f508),
+        );
+        let mut seen = [0u32; 4];
+        for round in 0..1500u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.fill(obj, 0x300, &mut rng);
+            p.fill(key, 0xa0, &mut rng);
+            p.fill(set, 0x100, &mut rng);
+            p.fill(src, 0x80, &mut rng);
+            p.fill(ph1, 0x40, &mut rng);
+            p.fill(ph2, 0x40, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            if !p.snapshot() || rng.chance(50) {
+                for o in (0..0x40).step_by(4) {
+                    let x = ranged(&mut rng, -2.0, 2.0);
+                    p.set(camera + o, x);
+                }
+                for o in [0u32, 0x14, 0x28, 0x3c] {
+                    p.set(camera + o, ranged(&mut rng, 1.0, 2.0));
+                }
+            }
+            // the object's rows: lengths of at least 1
+            for o in (0x10..0x50).step_by(4) {
+                let x = ranged(&mut rng, -0.5, 0.5);
+                p.set(obj + o, x);
+            }
+            for o in [0x10u32, 0x24, 0x38] {
+                p.set(obj + o, ranged(&mut rng, 1.0, 2.0));
+            }
+            p.set(ctrl + 0xc, table);
+            p.set(table, 4 * rng.below(0x10));
+            p.set(table + 4, rng.next());
+            let off2 = rng.pick(&[0u32, 0x40, 0x80]);
+            p.set(table + 8, off2);
+            let w = obj + 0xa0 + off2;
+            for o in (0x40..0xd0).step_by(4) {
+                let x = if rng.chance(3) {
+                    rng.float()
+                } else if rng.chance(20) {
+                    ranged(&mut rng, -70000.0, 70000.0)
+                } else {
+                    ranged(&mut rng, -300.0, 300.0)
+                };
+                p.set(w + o, x);
+            }
+            for o in [0x70u32, 0x74, 0x78, 0x80, 0x84, 0x88] {
+                let x = ranged(&mut rng, -3000.0, 3000.0);
+                p.set(w + o, x);
+            }
+            let sx = ranged(&mut rng, 1.0, 3.0);
+            p.set(w + 0xb0, sx);
+            let sz = if rng.chance(5) {
+                0
+            } else {
+                ranged(&mut rng, 1.0, 3.0)
+            };
+            p.set(w + 0xb4, sz);
+            p.set(w + 0xd0, src);
+            p.set(w + 0xd4, ph1);
+            p.set(w + 0xd8, ph2);
+            p.set(w + 0xdc, if rng.chance(30) { 0 } else { rng.next() | 1 });
+            p.set(w + 0xe0, rng.below(4) as u8);
+            p.set(w + 0xe1, rng.below(4) as u8);
+            p.set(w + 0xe2, rng.below(4) as u8);
+            p.set(w + 0xe3, rng.below(8) as u8);
+            p.set(w + 0xe4, u8::from(rng.chance(30)));
+            p.set(w + 0xe5, u8::from(rng.chance(40)));
+            // the key
+            if rng.chance(50) {
+                let f: u32 = p.get(obj + 0xc);
+                p.set(key, f);
+            }
+            for o in (8..0x40).step_by(4) {
+                let x = ranged(&mut rng, -50.0, 50.0);
+                p.set(key + o, x);
+            }
+            for o in (0x40..0x4c).chain(0x70..0x7c).step_by(4) {
+                let x = ranged(&mut rng, -40.0, 40.0);
+                p.set(key + o, x);
+            }
+            for o in (0x50..0x6c).step_by(4) {
+                let x = ranged(&mut rng, -80.0, 80.0);
+                p.set(key + o, x);
+            }
+            p.set(key + 0x80, rng.below(8) as u8);
+            p.set(key + 0x81, rng.pick(&[0u8, 1, 2, 3]));
+            p.set(key + 0x82, rng.pick(&[0xffu8, 0, 3, 0x44]));
+            for o in 0x84..0x8a {
+                p.set(key + o, rng.pick(&[0u8, 0, 1, 0x80]));
+            }
+            let r = if rng.chance(5) {
+                // no grid, one tile at the far corner, or none
+                rng.pick(&[0x7fc0_0000u32, 0x7f80_0000, 0xff80_0000, 0, 0xbf80_0000, 1])
+            } else {
+                ranged(&mut rng, 0.0, 5.0)
+            };
+            p.set(key + 0x8c, r);
+            p.set(key + 0x90, u8::from(rng.chance(50)));
+            if rng.chance(4) {
+                // a snapped offset that cancels the work area's position:
+                // the sums' order shows (tiles 2^-30 apart)
+                for o in (0..0x40).step_by(4) {
+                    p.set(camera + o, 0u32);
+                }
+                for o in [0u32, 0x14, 0x28, 0x3c] {
+                    p.set(camera + o, 1.0f32.to_bits());
+                }
+                p.set(camera + 0x30, 0x4e80_0000u32);
+                p.set(camera + 0x38, 0x4e80_0000u32);
+                p.set(key + 0x90, 1u8);
+                p.set(w + 0x40, 0x4e80_0000u32);
+                p.set(w + 0x48, 0x4e80_0000u32);
+                p.set(w + 0xb0, 0x3080_0000u32);
+                p.set(w + 0xb4, 0x3080_0000u32);
+                p.set(key + 0x8c, 0x3180_0000u32);
+            }
+            // the model's set and record
+            let model = if rng.chance(5) { 0xffff } else { rng.below(8) };
+            p.set(key + 4, model);
+            p.set(cpart, part);
+            p.set(p.sym(0x00c3_a4cc), env);
+            p.set(env, env2);
+            p.set(env2 + 0x20, recs);
+            for k in 0..8u32 {
+                p.set(recs + 32 * k + 0x1c, if rng.chance(5) { 0 } else { set });
+            }
+            p.set(set + 8, 0x20u32);
+            p.set(set + 0x12, rng.pick(&[0i16, 1, 2, 5, 8, -1]));
+            p.set(obj + 0x90, rng.next());
+            p.set(obj + 0x94, rng.next());
+            // the stand-ins' answers
+            p.set(
+                ev,
+                if rng.chance(5) {
+                    0x5eu16
+                } else {
+                    rng.next() as u16
+                },
+            );
+            p.set(event, ev);
+            let h = if rng.chance(8) {
+                rng.pick(&[0x1432u32, 0x6e1, 0x24de])
+            } else {
+                rng.next()
+            };
+            p.set(hash, h);
+            if INF_LEVEL.contains(&h) && rng.chance(30) {
+                // a work area at address 0: those levels check for it
+                p.set(table + 8, 0u32.wrapping_sub(obj + 0xa0));
+            }
+            p.set(setup, u32::from(rng.chance(70)));
+            p.set(rd, u32::from(rng.chance(50)));
+            for c in [alpha, zmat] {
+                let x = if rng.chance(50) { 0 } else { rng.next() };
+                p.set(c, x);
+            }
+            p.set(tex, if rng.chance(30) { 0 } else { rng.next() });
+            p.set(stop, u32::from(rng.chance(15)));
+            p.set(shift, if rng.chance(15) { 4 * rng.below(4) } else { 0 });
+            let r9 = rng.next();
+            p.set(cur, rng.pick(&[0u32, 3, 0x8000_0001, r9]));
+            p.set(p.sym(0x0230_fd2c), rng.next());
+            // the frame: alike on both sides (the request's untouched bytes)
+            let words = 3;
+            let entry = p.b.stack_range().end - 0x100 - 4 * words - 4 - 0x200 - 4 * words - 4;
+            let frame = (entry - 12) & !0xf;
+            for o in (4..0x2e0).step_by(4) {
+                let v = rng.next();
+                p.set(frame - o, v);
+            }
+            seen[usize::from(INF_LEVEL.contains(&h))] += 1;
+            check_deep_aligned(
+                &mut p,
+                &format!("pppDrawMdlInfDraw round {round}"),
+                0x0073_b9b0,
+                &[obj, key, ctrl],
+                |o, frame| {
+                    mc::ppp_draw_mdl_inf_draw(
+                        o,
+                        obj,
+                        key,
+                        ctrl,
+                        frame,
+                        &mut call_original,
+                        &mut |o, f, a| o.call_f64(f, a).unwrap(),
+                    );
+                },
+            );
+            let updates: u32 = p.get(logs[3]);
+            // flag 4 is always set: the path-3 entry points
+            let inits: u32 = p.get(logs[5]);
+            seen[2] += u32::from(updates > 1);
+            seen[3] += u32::from(inits > 1);
+        }
+        assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
+    }
+}
+
+const INF_LEVEL: [u32; 3] = [0x1432, 0x6e1, 0x24de];

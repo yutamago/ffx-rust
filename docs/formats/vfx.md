@@ -512,6 +512,52 @@ Ported in `crates/ffx-vfx/src/mdl_cam.rs`; the drawing itself is
   the colour, `+0x20` the direction, `+0x24` `key[+0x3c]`.
   `g_PppPacketPos` is the block's `+8` after the body.
 
+## `pppDrawMdlInfDraw` (`0x0073b9b0`)
+
+Ported in `crates/ffx-vfx/src/mdl_cam.rs` (`ppp_draw_mdl_inf_draw`): a
+model drawn on a grid of tiles round the object, its vertices waved.
+
+- Work area 2 (`w = obj + 0xa0 + [[ctrl+0xc]+8]`). In levels `0x1432`,
+  `0x6e1`, `0x24de` (`graphicLevelGetNameHash`) the draw only copies
+  `vf00` to `w +0x40` and `+0x50` (unless `w` is 0) and returns. Else it
+  needs key `+4` not `0xffff`, `TkGetSaveEventAddress()`'s first `u16` not
+  `0x5e`, the model record's set not null, and `pppDrawMdlInfDrawSetup(key,
+  w)` nonzero when `ptr32 w[+0xdc]` is null.
+- Step (not while `g_pppStopStatus`): without byte `+0xe4`, on the key's
+  frame (`key[+0]` = `obj[+0xc]`) key `+8..+0x1c` are added to `w
+  +0xb8..+0xcc`; then `+0xbc += +0xc0`, `+0xb8 += +0xbc`, `+0xc8 += +0xcc`,
+  `+0xc4 += +0xc8` (with `+0xe4`: `+0xb8 += +0x60`, `+0xc4 += +0x64`); both
+  phases `fmod` 32768. The model's vertices (`set + [set+8]`, `i16 +0x12`
+  of 3 `u16`): byte `+0xe3` bit 2 copies them from `ptr32 w[+0xd0]`; else
+  bit 0 sets each axis `k` to `src + ftol(sin[((ftol(w[+0x70+4k]) + B[i] +
+  C[i]) * ftol(key[+0x40+4k]) >> 4) & 0xfff] * key[+0x20+4k])` (`B`, `C`
+  the `u16` phases at `ptr32 w[+0xd4]`, `[+0xd8]`) and moves `w +0x70..`
+  by key `+0x30.. * 256`; bit 1 the same from `w +0x80..`, key `+0x70..`,
+  `+0x50..`, `+0x60..` with `B` alone (after bit 0, from the same
+  source). Key byte `+0x81` counts frames in `w +0xe0`, then steps the
+  texture frame `w +0xe1` (wrapping at `w +0xe2`) of
+  `Yn_FpTrxTexGet(key[+0x80])`.
+- Draw: angles `w +0x50..+0x58` times 651.8986 (`f64` at `0x00b51590`),
+  tile spacing `w +0xb0`/`+0xb4` times the lengths of the object's rows 0
+  and 2 (`pppVu0Length`, row 1's length is computed and dropped); with key
+  byte `+0x90` an offset of the camera's position (inverse of
+  `g_pppCameraMatrix`) snapped to the spacing, else `vf00`. The request
+  at `ebp - 0x260`: flags 4 (`| 0x10` with key byte `+0x84`, `& ~0x10`
+  `+0x85`, `| 0x200` `+0x86`, `| 8` `+0x87`, `| 0x20` without `+0x88`),
+  blend key `u16 +0x82` (set `+0x16` when its low byte is `0xff`), the
+  colour (`ee_colour`, nothing drawn at alpha 0), `+0x10`/`+0x14` the
+  phases in 16.16, matrices `ebp - 0x168`, `obj + 0x10`, `ebp - 0xa8`, the
+  textures `ptr32 obj[+0x90]`, `[+0x94]`. Tiles `(i, j)` for `|i| <=
+  ftol(r / sx + 1)`, `|j| <= ftol(r / sz + 1)` (`r` key `+0x8c`) whose
+  centre is within `r` (`pppVu0Length`), the centre tile only with key
+  byte `+0x89`; key byte `+0x85` sets flag `0x2000` on the 3 x 3 tiles
+  round the centre and clears it elsewhere. Each tile: `w`'s matrix by
+  `op_rt_m_yxz` of the angles at `w +0x40 + offset + tile` (or, with byte
+  `+0xe5`, `w`'s matrix times a translation), times the object's, times
+  the camera, then submitted as the other model draws (path 3, flag 4 is
+  always set). `ebp - 0x1e8` (screen projection times the tile matrix) is
+  computed and never read.
+
 ## Saved VU0 state (`pppKeShpTail3`, `pppKeShpTail3X`)
 
 The tail draws save the emulated VU0 registers they use and restore them
