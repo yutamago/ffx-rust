@@ -28813,6 +28813,75 @@ pub mod bridge {
             i += 1;
         }
     }
+
+    // ---- small round 3 ----
+
+    /// `TkCh_Allocate(key)` (`0x00872190`): `Ch_Allocate(key)`
+    /// (`0x00824f90`) and `ChN_ReadSystemMGRP(key, 0)` (`0x00836870`), then
+    /// the menu's model fix-ups on the new character; returns it.
+    pub fn tk_ch_allocate<M: Mem>(
+        mem: &mut M,
+        key: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0082_4f90);
+        let chr = call(mem, f, &[key]);
+        tk_ch_allocated(mem, key, chr, false, call)
+    }
+
+    /// `TkCh_Allocate2(key, v)` (`0x00872210`): as [`tk_ch_allocate`] with
+    /// `Ch_Allocate2(key, v)` (`0x00825650`), and character `0x1153` gets
+    /// `TkChPatchM339` (`0x0082ba00`).
+    pub fn tk_ch_allocate2<M: Mem>(
+        mem: &mut M,
+        key: u32,
+        v: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0082_5650);
+        let chr = call(mem, f, &[key, v]);
+        tk_ch_allocated(mem, key, chr, true, call)
+    }
+
+    /// The menu's model fix-ups after an allocation (`ChN_ReadSystemMGRP(key,
+    /// 0)` first, whatever came back): for a new character, key 3 hides
+    /// model 1 and shows model 2, key 7 shows model 1
+    /// (`Ch_ModelSetHide(chr, i, hide)`, `0x0082aea0`), keys `0x10a0` and
+    /// `0x1075` get `TkChPatchM160`, and with `m339` key `0x1153` gets
+    /// `TkChPatchM339`.
+    fn tk_ch_allocated<M: Mem>(
+        mem: &mut M,
+        key: u32,
+        chr: u32,
+        m339: bool,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0083_6870);
+        call(mem, f, &[key, 0]);
+        if chr == 0 {
+            return chr;
+        }
+        let hide = mem.rebase(0x0082_aea0);
+        match key {
+            3 => {
+                call(mem, hide, &[chr, 1, 1]);
+                call(mem, hide, &[chr, 2, 0]);
+            }
+            7 => {
+                call(mem, hide, &[chr, 1, 0]);
+            }
+            0x10a0 | 0x1075 => {
+                let f = mem.rebase(0x0082_b9b0);
+                call(mem, f, &[chr]);
+            }
+            0x1153 if m339 => {
+                let f = mem.rebase(0x0082_ba00);
+                call(mem, f, &[chr]);
+            }
+            _ => {}
+        }
+        chr
+    }
 }
 
 #[cfg(test)]

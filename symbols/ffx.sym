@@ -1668,6 +1668,7 @@
 0x00638aa0 function SplitScreenSetCamera      # cdecl(m): sceVu0InversMatrix4x4 of a copy of m, signs of elements 0, 1, 6, 10, 12, 13 flipped, PMatrix4_toWorldMatrix3x4 into g_PhyreScene +0x10d94..+0x10dc0; called next to SplitScreenStart (0x007bca8a); alphabetical before SplitScreenStart; name ours
 0x00638d40 function SplitScreenStart             # callees: its named callees match the Switch 0x71001d1df0 SplitScreenStart's (similarity 1.00: PhyreScene_GetSplitScreenStat, PhyreScene_SetSplitScreenStat, PhyreScene_SetSplitScreenType); symbols from Fahrenheit's server export
 0x00638d90 function cgraphicSetNowUIType      # fh v3:bsim1.00 0x00638f40
+0x00638dd0 function Empty_00638dd0             # (): an empty function (ret); Ch_DrawMain calls it before debugClearClothDebugDraw
 0x00638e00 function debugDrawKeTh             # fh v3:bsim1.00 0x00638fb0
 0x00638e30 function getCurrentControlMode     # fh v3:bsim1.00 0x00638fe0
 0x00638e70 function getNearPlane              # fh v3:bsim1.00 0x00639020
@@ -1810,8 +1811,10 @@
 0x00640d70 function graphicFontGetEdgeRatio   # fh v3:exact 0x00640f20
 0x00640db0 function graphicFontGetScreenWH    # fh v3:exact 0x00640f60
 0x00640dd0 function graphicFontSetUiShadowType # fh v3:cg15 0x640f80
+0x00640df0 function graphicFrameStart_00640df0 # (): mov ecx, [0x00ccb9d8]; jmp 0x00671be0 (renderer object); Ch_DrawMain's first renderer call (name ours, from the place)
 0x00640e70 function Cache_FreeClothVertexBuff_00640e70 # cdecl(&entry+0x20): the Cache_* releasers call it on a cache entry's cloth vertex buffer when set (and leave the field to it); platform in classes.tsv; name ours
 0x00641060 function graphicGetAbmap           # fh v3:exact 0x00641210
+0x00641080 function graphicSetTidusPos_00641080 # (v4): ecx = [0x00ccb9d8], 0x0065d860(v); Ch_DrawMain passes g_ChrTidus's position (w = 1) for every character it walks (name ours)
 0x006410a0 function graphicGetAbmapUV_006410a0 # cdecl(kind, u, v, &u_out, &v_out): SheetCellUV_00684b00 with ecx = g_GraphicAbmap (unread), the floats through the x87; returns its eax; sorts between graphicGetAbmap and graphicGetCurrentFrame; callers 0x007f49e0; name ours
 0x006410d0 function graphicGetCurrentFrame    # fh v3:cg3 0x641280
 0x006410e0 function TOGetFFXLang              # () -> [LocalizationManager_GetInstance()+4]: 0 jp, 1 us, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch; 0 without a manager (asks twice); was Lang_Get
@@ -1967,6 +1970,8 @@
 0x00643b30 function graphicSetColourPair_00643b30 # cdecl(r, g, b, r2, g2, b2, second): PhyreScene_SetColourPair on g_PhyreScene with second != 0 (eax that flag); name ours
 0x00643cc0 function graphicSgSetSpecular         # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'SgSpec_LightVec'; Switch 0x71001d8220 graphicSgSetSpecular (symbols from Fahrenheit's server export)
 0x00643db0 function graphicShaderGetVertexInfo # fh v3:bsim1.00 0x00643f60
+0x00643dc0 function graphicShadowStart_00643dc0 # (): mov ecx, [0x00ccca74]; jmp 0x0069fcb0; Ch_DrawMain calls it before graphicUpdateShadowVisibility and the shadow walk (name ours)
+0x00643dd0 function graphicShadowEnd_00643dd0  # (): mov ecx, [0x00ccca74]; jmp 0x0069fe40; Ch_DrawMain calls it after the shadow walk (name ours)
 0x00643de0 function graphicShowAutoSavePrompt    # layout+callees: sorts between graphicShaderGetVertexInfo and graphicSwitchGPUMode, and its named callees match the Switch 0x71001dd940 graphicShowAutoSavePrompt's (similarity 1.00: PhyreScene_showAutoSavingPrompt); symbols from Fahrenheit's server export
 0x00643e70 function graphicSwitchGPUMode      # fh v3:bsim1.00 0x00644020
 0x00643eb0 function graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0 # cdecl(a, b, c, x, y, w, h, sw, sh, d, e): names "G"+a and "Animation"+b (numbers below 20 signed from g_TexAnimNumbers, else sprintf %d), then TextureAnimationManager_setAnimatedMaterialsChar(s1, s2, c, x/sw, y/sh, w/sw, h/sh, d, e), quotients 0 for a zero divisor; returns its eax; sorts between graphicSwitchGPUMode and graphicTextureAnimationSetMaterialVisiability; name ours; ported (render round 24)
@@ -7893,7 +7898,7 @@
 0x0082ec70 function Ch_DrawGetShadowSemi      # () byte 0x013008be (Sg_SetMovieGomiAvoid sets it) zero-extended; Switch name, the two slots Ch_DrawGetShadowDir..Ch_DrawInitAll before Ch_DrawIcons in order
 0x0082ec80 function Ch_DrawIcons                 # layout: alphabetical run between Ch_DrawGetShadowMode and Ch_DrawInitAll (2 unnamed in the gap); Switch 0x7100419a80 Ch_DrawIcons is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0082ed30 function Ch_DrawInitAll            # fh v3:bsim1.00 0x0082edb0
-0x0082ed50 function Ch_DrawMain                  # layout: alphabetical run between Ch_DrawInitAll and Ch_DrawMainForSituation (1 unnamed in the gap); Switch 0x710041ae90 Ch_DrawMain is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0082ed50 function Ch_DrawMain                  # layout: alphabetical run between Ch_DrawInitAll and Ch_DrawMainForSituation (1 unnamed in the gap); Switch 0x710041ae90 Ch_DrawMain is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (): ported (ffx_chara::draw_main, small round 3). 0x420-byte frame: walk 1 world matrices (+0x1d0 x unit*1000 [ebp-0x84] -> [ebp-0x104]; skin flags 0x80 words [ebp-0x3c4], a model past 0x7f runs into [ebp-0x1c4]; all skinned or none -> SetWorldMatrix(+0x830 and +0x838), else ByMdlID per model, unskinned x base element +0x88), magic 0x275 swap (g_MagicMatrixSwap), vertex dump; walk 2 +0x198 
 0x0082fe00 function Ch_DrawMainForSituation   # fh v3:exact 0x0082fe80; world matrices of every shown character (active, +0x180 clear, +0x198 bit 5 clear, alpha +0x354 not 0): +0x1d0 x unit matrix scaled 1000; whole to +0x830/+0x838 when every model is skinned (or none), else per model by id (unskinned ones x their base element's +0x88); skeleton bounds when any skinned (not detached); Ch_UpdateClothMatrix; ported (ffx_chara::draw, chara-main-map round 1)
 0x008300b0 function Ch_DrawSetCull            # fh v3:cg2 0x830130
 0x008300d0 function Ch_DrawSetDisableSpec     # (v): g_ChrDrawDisableSpec = v; Switch name, in name order after Ch_DrawSetCull
@@ -7983,7 +7988,7 @@
 0x008326e0 function Ch_BindToElemDirectOfs    # (chr, parent, elem, x, y, z): as Ch_BindToElemDirect with the offset (x, y, z) * 100.0 * model block +0x38; Switch name, in name order
 0x00832760 function Ch_CalcElement            # fh v3:exact 0x008327e0
 0x00832db0 function Ch_AllClearFlags24       # ours: chr +0x194 &= 0xf8ffffff for every active character (Sg_MainLoop)
-0x00832e10 function Ch_CalcMain               # fh v3:exact+call.cs 0x00832e90 cdecl
+0x00832e10 function Ch_CalcMain               # fh v3:exact+call.cs 0x00832e90 cdecl; (dt f32) -> eax = Sg_GetPause() when paused, else the GS register sink's move (also at g_ChrFuka[1] 0x013009bc); walk 1: +0x180 &= 0x13, running chars step motion unless +0x194 bit 6 (+0x186 0 Ch_MoveMotion, 2 Ch_AutoMotion), bit 17 = +0x170 < speed +0x154, velocity +0x4c/+0x54 = cos/sin(+0x168) x f32(speed*0.05*30*dt) (bit 25; 0 at speed 0), old pos +0x1c..+0x28 = +0xc..+0x18; Sg_ChrMovePushApart; g_WaterLimit raised to g_Suimen; walk 2: bit 29 = water < y-8.5, +0x182 0 clamp y +0x10 under +0x16c (unless bit 7), 1 y = +0x16c, 2 swim (rate +0x504 -0.163/+0.327, bob +0x4fc eases 1/30 to max(+0x4e4,+0x514)); walk 3 after JobScheduleWait: bit 24, SG_UpdateMotion(chr, 1), 7 Sg_AnimValF(+0x330+12k); unmodelled (+0x19c 0) unpaused: +0x878 = 1, bones u16 [+0x1c0]+0xa; >= 200 -> JobSchedule_Ch_CalcMiddle_Batch(first, 0, n), rest after the walk, no final wait; ported (ffx_chara::handle, small round 3)
 0x00833390 function Ch_CalcMiddle                # (): the per-character middle calculation, waiting on the job scheduler (JobScheduleWait_*); the Switch Ch_CalcMiddle (calls JobSchedule_Ch_CalcMiddle_Batch and its wait) sorts between Ch_CalcMain and Ch_CalcMiddle_Batch, as here; ported (ffx_chara::handle, small round 2): -> eax = the GS register sink's move (also at 0x013009c0); batches of >= 200 bones (u16 [+0x1c0]+0xa of active running modelled characters, unpaused; every character counts) to JobSchedule_Ch_CalcMiddle_Batch(first, 1, n) between two waits; then pass 0 (no model +0x19c) and pass 1 (model): running and unpaused, +0x194 bit 24 -> Ch_MotEvent and bit 12 cleared, else bit 12 set; Ch_RequestCalcNormal
 0x00833530 function Ch_CalcMiddle_Batch          # layout+callees: sorts between Ch_CalcMain and Ch_FunctionHistory, and its named callees match the Switch 0x7100417b60 Ch_CalcMiddle_Batch's (similarity 0.62: Ch_CalcElement, Ch_IdShadeCalc, Ch_Neck, Ch_OptposCalc, Sg_GetPause); symbols from Fahrenheit's server export
 0x008336a0 function Ch_DrawReserveCalcNorm    # ours: frame budget (500 - ReturnTableU32_00820580(0)) / 40 Ch_ReserveCalcNorm2 calls, round-robin from the cursor g_ChrCalcNormCursor over active characters with +0x194 & 6 and +0x198 & 0x40; only caller Ch_DrawMain
@@ -9757,8 +9762,8 @@
 0x008720d0 function Atel_SetScriptByteGate    # (v) 0x00c526d4 = v, gating 0x008655b0 writing script context +0x1e6; own name
 0x008720e0 function Atel_SetChrAltParts_008720e0 # (r25 b) Ch_ModelSetHide(chr, 1, on) and (chr, 2, !on) for a character; caller Native_7080; own name
 0x00872160 function TkChSetBattleChrNum       # fh v3:exact 0x00872100
-0x00872190 function TkCh_Allocate             # fh v3:exact 0x00872130
-0x00872210 function TkCh_Allocate2            # fh v3:exact 0x008721b0
+0x00872190 function TkCh_Allocate             # fh v3:exact 0x00872130; (key) -> chr: Ch_Allocate(key), ChN_ReadSystemMGRP(key, 0), then for a new character: key 3 Ch_ModelSetHide(chr, 1, 1) + (chr, 2, 0), key 7 (chr, 1, 0), keys 0x10a0/0x1075 TkChPatchM160; ported (ffx_menu::tk, small round 3)
+0x00872210 function TkCh_Allocate2            # fh v3:exact 0x008721b0; (key, v) -> chr: as TkCh_Allocate with Ch_Allocate2(key, v), and key 0x1153 TkChPatchM339; ported (ffx_menu::tk, small round 3)
 0x008722b0 function TkCh_BindToElem           # fh switch:bsim1.00 0x7100473ff0
 0x008722f0 function TkCh_Dispose              # fh v3:exact 0x00872290; (chr) -> eax: Ch_Dispose(chr) (tail jump) when Ch_CheckHandle(chr) is 0, else that result; ported in menu round 34
 0x00872310 function TkCh_SetPos               # (chr, x, y, z) Ch_SetPos3 with the floats through x87; own name
@@ -17107,10 +17112,14 @@
 0x013007d9 label g_ChrDrawParaEdit           # i8, Ch_DrawSetParaEdit / Ch_DrawGetParaEdit
 0x013007da label g_ChrDrawFourceSpec         # i8, Ch_DrawSetFourceSpec / Ch_DrawGetFourceSpec
 0x013007db label g_ChrDrawDisableSpec        # i8, Ch_DrawSetDisableSpec / Ch_DrawGetDisableSpec
+0x013007dc label    g_ChrDumpVertexId          # u32: the character id (u16 +0) whose renderer instance Ch_DrawMain dumps once with graphicCharacterInstanceOutputAllVertexBuffers while g_ChrDumpVertex is set (debug; no writer in FFX.exe)
+0x013007e0 label    g_ChrDumpVertex            # u32: debug switch for g_ChrDumpVertexId, cleared by Ch_DrawMain after the dump
 0x013007e4 label g_Chr7e4                   # u32, Ch_SysSet7e4
 0x013007e8 label g_ChrEnableTexture          # i8, Ch_EnableGetTexture
 0x013007e9 label g_ChrDrawIcon              # u8, Ch_SetDrawIcon; g_ChrDrawIcon2 at 0x013007ea (Ch_SetDrawIcon2)
 0x013007eb label    g_ChrTexAnimOn            # i8: Ch_TextureLoadAnim 0x00831110 sends texture animation packets only when set
+0x01300820 label    g_ChrScreenCameraMatrix    # matrix: FFXVu0MulMatrix(it, Ch_SysGetCameraMatrixPtr(), Ch_SysGetScreenMatrixPtr()) at Ch_DrawMain's start
+0x013008bc label    g_ChrDrawByte8bc           # u8: cleared at Ch_DrawMain's start; 0x00831200 reads it
 0x013008bd label g_ChrShadowMode             # u8, Ch_DrawSetShadowMode
 0x013008bf label g_ChrShadowColor            # u8 r, g, b, Ch_DrawSetShadowColor / Ch_DrawGetShadowColor
 0x013008c2 label    g_ChrDrawSituation        # u8, Ch_SysDrawSetSituation
@@ -17119,7 +17128,9 @@
 0x013008f8 label g_ChrCameraMatrix           # 64 bytes, Ch_SysGetCameraMatrixPtr / Ch_SysSetCameraMatrix
 0x01300938 label g_ChrScreenMatrix           # 64 bytes, Ch_SysGetScreenMatrixPtr / Ch_SysSetScreenMatrix
 0x01300978 label    g_Vu0ClipScreen           # what FFXVu0ClipScreen returns; also read by the chara screen code (0x008360b0, 0x00836240, 0x00836250, 0x00836430); after g_ChrScreenMatrix
-0x013009b8 label g_ChrFuka                   # u32 by index, Ch_SetFuka / Ch_GetFuka
+0x013009b8 label g_ChrFuka                   # u32 by index, Ch_SetFuka / Ch_GetFuka; [1] (0x013009bc) = Ch_CalcMain's GS register sink move, [2] (0x013009c0) = Ch_CalcMiddle's: the load counters (fuka) Ch_GetFuka reads
+0x013009d8 label    g_Suimen                   # f32 water height: Sg_SetSuimen 0x00836640 / Sg_GetSuimen 0x008360a0; Ch_CalcMain raises g_WaterLimit to it and swimming characters (+0x182 = 2) sink to it; name from the Sg_*Suimen pair
+0x013009dc label    g_WaterLimit               # f32: Sg_SetWaterLimit 0x00836660; swimming characters below it rise a tenth of the way per frame (Ch_CalcMain); name from Sg_SetWaterLimit
 0x013009e0 label g_ChrGuiCalcNormal          # 0 or 1, Ch_GuiSetCalcNormAll / Ch_GuiGetCalcNormal
 0x013009e4 label    g_ChrCalcNormalOnce       # u8: Apply_Envelope recomputes normals for a character with +0x194 bit 3 while it is not 0, and takes one off each time it clears that bit (may wrap); name ours
 0x013009e8 label g_ChrCalcNormCursor        # u32: Ch_DrawReserveCalcNorm 0x008336a0's round-robin cursor into g_ChrArray (0: start over); cleared by Ch_FunctionHistoryClear
@@ -17626,7 +17637,10 @@
 0x0193cd4c label    g_VirtualFreeErrorHook    # cdecl(message) the VirtualFree wrappers call on failure, when set
 0x0193ed20 label g_Sse2Available             # MSVC CRT __sse2_available: _ftol2_sse picks cvttsd2si when set (0 in an image that has not run its start-up)
 0x0193fdac label    g_MagicFile_IsNexData     # MagicFile_IsNexData
+0x01940ab8 label    g_MagicHide3017            # u32: set by MagicFile_Load 0x009da430 for magic 0x1ae and 600; Ch_DrawMain then hides character 0x3017 (+0x180 = 0x12) and clears it
 0x01940abc label g_BtlEffectSpecialScene   # u32: effect 0x84 by model 0x108f in scene 0x1e70000 (MsEffectRead)
+0x01940ac0 label    g_MagicMatrixSwap          # u32: magic 0x275: bit 3 on, bits 0-2 for characters 0x10b2/0x10b3/0x10b4: set -> Ch_DrawMain copies the character's matrix (+0x1d0) to g_Magic275Matrices[slot] and clears the bit, else copies it back; cleared by MagicFile_Stop
+0x01940ac4 label    g_MagicStopHide            # u32: MagicFile_Stop sets 1 for magic 0x158/0x1b5/0x1b6; Ch_DrawMain hides the next character 0x1081/0x1063/0x1064/0x1114/0x108b it walks (+0x180 = 1) and clears it
 0x01942998 label    g_DepthBias_Count         # entries in use; DepthBiasHooks_clearDepthBias zeroes it
 0x0194299c label    g_DepthBias               # 256 entries of 12 bytes (u32, f32 scale, f32): DepthBiasHooks_clearDepthBias resets them to (0, 1.0, 0.0)
 0x01984c6c label    g_IggyMenuManager # IggyMenuManager_createInstance (0x00a26240) stores the new 0x34-byte manager here, 0x00a26270 deletes it and clears it; SpdCtrl_Tick needs it set; name ours
@@ -17637,6 +17651,8 @@
 0x01a85c30 label    g_PcFileName                 # the name PcFileName_00a42c00 builds and returns; name ours
 0x01a85f30 label g_SplineNearT              # name ours; f32: spline_get_near_point's parameter (0..1) kept between calls; spline_get_near_point_init sets it
 0x01a85f34 label g_SplineNearSamples        # name ours; f32: the near-point search's sample count (spline_get_near_point_init: ten per point); spline_get_near_point's first step 10 / it
+0x01a85f50 label    g_ChrClothJobs             # u32 *: Ch_DrawMain's cloth job list (characters with +0x194 bit 21 and +0x834), user_malloc'd g_ChrCount*4 bytes when g_ChrClothJobsSize is short or 0 (after JobScheduleWait_Ch_Cloth_PerCharacter); each entry's address goes to JobSchedule_Ch_Cloth_PerCharacter(&entry, 1)
+0x01a85f54 label    g_ChrClothJobsSize         # u32: bytes in g_ChrClothJobs
 0x01a85f60 label g_AbmapDataLoaded            # u32: set once eiAbmDataInit 0x00a53de0 has loaded the grid data files; name ours
 0x01a85f70 label g_AbmapRunning # u32: eiAbmCalc sets 1 each frame, eiAbmDataInit and AbmapPadQuitHandler clear it, GetGlobal01a85f70_00a547e0 returns it; name ours
 0x01a85f74 label g_AbmapCjkText # u32: eiAbmStart sets 1 when TOGetFFXLang is 0 or 9..11 (Japanese, Korean, Chinese), else 0; narrower menu frames; name ours
@@ -17663,6 +17679,7 @@
 0x022fb4d8 label    g_ChrWaitMotionFrames     # frames Native_ChrWaitMotion_Poll_501e waited, counted while 0x012fb80c is 1
 0x022fb4dc label    g_TkMenuSceneData         # 8 menu scene data blocks (TkMenuSetSceneDataAdrs, TkMenuInitSeq zeroes them; layout in crates/ffx-menu/src/scene.rs)
 0x022fb504 label    g_Settings
+0x022fb540 label    g_Magic275Matrices         # 3 matrices (0x40 each) for g_MagicMatrixSwap
 0x022fb6c0 label g_CdChannelNames # CD channel names, 0x80 bytes each, cleared by cd_channel_clear 0x0076d530; name ours
 0x023056e8 label    g_GsRegisterSink          # the one word every PS2 GS register write of the texture-animation code lands in (loadImage and the TexAnim_* tag helpers)
 0x02305834 label    g_Abmap                      # the sphere grid data (LoadAbmap): +4 i16 link count, +0x808 nodes of 0x28 (x, y i16, +6 kind, +0x21 panel bits), +0xa816 link flags (0x14 each), +0xf834 kind sizes (0x30 each)
@@ -17760,6 +17777,7 @@
 0x023c3648 label    g_OpOef2StreamCues           # 2 stream cue pointers (op_oef2_stream_cue, op_oef2_sound_cue_*)
 0x023c3668 label    g_OpSoundCurves           # f32 volume max/min (+0/+4), pan max/min (+0x10/+0x14), volume base/slope (+0x18/+0x1c), pan slope (+0x24) for op_3d_vol_pan_get
 0x023c37a0 label    g_OpOef2Seps                 # 32 x (sound sep handle, user mask) slots: op_oef2_sep_free_all clears a mask, stopping (SndSepStop, SndSepClear) a slot left with no user
+0x023c3b60 label    g_ChrSpecularMatrix        # matrix: a specular segment's world matrix (character +0x1d0 x base element +0x88), Ch_DrawMain; 0x008440f0 uses it too
 0x023c4000 label    g_DebugLine               # char buffer for debug text; Ch_FunctionHistory 0x00833770 and Ch_CheckRadian 0x00836790 sprintf into it
 0x023c44a0 label g_ChrTex0List              # texture list Ch_TextureSetTex0 last worked on
 0x023c44a4 label    g_PadLStickY              # u8 left stick y, 0x80 at rest (Sg_ControlMain: TkGetControlerAnalogHist axis 3); up below 0x80 (it ramps the up level, d-pad 0x1000); name ours

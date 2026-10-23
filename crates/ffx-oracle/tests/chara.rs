@@ -11906,3 +11906,849 @@ fn small2_f_on(t: &mut Twin) {
     }
     eprintln!("{}: small2 f reach {reach:?}", t.name);
 }
+
+#[test]
+fn small3_a_matches_the_original() {
+    for mut t in twins() {
+        small3_a_on(&mut t);
+    }
+}
+
+/// `Ch_CalcMain` (small round 3, group a): random character arrays
+/// (active, running, motion modes, speeds, the height modes with floating
+/// characters above, at and below the floor), the CRT's own `_CIcos` and
+/// `_CIsin`, the other callees faked: the motion steps flip the speed's
+/// sign, the push-apart flips the floor's, the motion update moves the GS
+/// register sink.
+#[allow(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::cast_precision_loss
+)]
+fn small3_a_on(t: &mut Twin) {
+    use ffx_chara::handle::bridge as hb;
+    let mut rng = Xorshift(0x5a11_3a3a);
+    let fk = Fakes::new(t);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let ci1 = twin_code(t, &CI1_STUB);
+    let wait = fk.fake(t, hb::CALC_MIDDLE_WAIT, 1, 0);
+    let sched = fk.fake(t, hb::CALC_MIDDLE_SCHEDULE, 2, 3);
+    let pause = fk.fake(t, hb::GET_PAUSE, 3, 0);
+    let anim = fk.fake(t, hb::ANIM_VAL_F, 7, 1);
+    let (array, count) = (t.a.rebase(0x023c_44e4), t.a.rebase(0x023c_44e0));
+    let sink = t.a.rebase(0x0230_56e8);
+    let (floor_at, level_at) = (t.a.rebase(0x0130_09d8), t.a.rebase(0x0130_09dc));
+    // a stand-in with a side effect before the logging one
+    let chained = |t: &mut Twin, sym: u32, id: u32, n: u8, pre: &[u8]| {
+        let (code, ret) = fk.fake_code(t, id, n);
+        let at = t.a.alloc_code(&[0; 32]).unwrap();
+        assert_eq!(t.b.alloc_code(&[0; 32]).unwrap(), at);
+        let mut c = pre.to_vec();
+        c.push(0xe9);
+        let end = at + u32::try_from(c.len()).unwrap() + 4;
+        c.extend(code.wrapping_sub(end).to_le_bytes());
+        t.put(at, &c);
+        let f = t.a.rebase(sym);
+        let mut jmp = vec![0xe9];
+        jmp.extend(at.wrapping_sub(f + 5).to_le_bytes());
+        t.put(f, &jmp);
+        ret
+    };
+    // mov eax, [esp+4]; xor byte [eax+0x157], 0x80 (the speed's sign)
+    let flip_speed = [0x8b, 0x44, 0x24, 0x04, 0x80, 0xb0, 0x57, 0x01, 0, 0, 0x80];
+    let mv = chained(t, hb::MOVE_MOTION, 4, 1, &flip_speed);
+    let auto = chained(t, hb::AUTO_MOTION, 5, 1, &flip_speed);
+    // xor byte [floor+3], 0x80
+    let mut flip_floor = vec![0x80, 0x35];
+    flip_floor.extend((floor_at + 3).to_le_bytes());
+    flip_floor.push(0x80);
+    let apart = chained(t, hb::PUSH_APART, 8, 0, &flip_floor);
+    // add dword [sink], 0x01234567 (the motion update writes GS packets)
+    let mut add = vec![0x81, 0x05];
+    add.extend(sink.to_le_bytes());
+    add.extend(0x0123_4567u32.to_le_bytes());
+    let update = chained(t, hb::UPDATE_MOTION, 6, 2, &add);
+    let near = |rng: &mut Xorshift, base: f32, span: u32| {
+        base + (rng.next() % (span * 64)) as f32 / 64.0 - span as f32 / 2.0
+    };
+    let mut reach = [0u32; 12];
+    for round in 0..200u32 {
+        fk.reset(t);
+        for w in [wait, sched, update, anim, mv, auto, apart] {
+            t.put_u32(w, rng.next());
+        }
+        t.put_u32(
+            pause,
+            u32::from(rng.next().is_multiple_of(12)) * (rng.next() | 1),
+        );
+        t.put_u32(sink, rng.next());
+        // the floor as the walks see it: stored with its sign flipped,
+        // which the push-apart stand-in undoes
+        let floor = match round % 9 {
+            3 => 0.0,
+            5 => -0.0,
+            _ => near(&mut rng, 0.0, 40),
+        };
+        t.put_u32(floor_at, (-floor).to_bits());
+        let level = match rng.next() % 5 {
+            0 => -floor,
+            1 => 0.0,
+            _ => near(&mut rng, floor, 20),
+        };
+        t.put_u32(level_at, level.to_bits());
+        let lvl = if floor > level { floor } else { level };
+        if round % 25 == 7 {
+            let w = if round % 50 == 7 { floor_at } else { level_at };
+            t.put_u32(w, FLOATS[rng.next() as usize % FLOATS.len()]);
+        }
+        let n = if round % 20 == 0 { 0 } else { rng.next() % 24 };
+        let chrs = t.alloc(0x880 * n.max(1) as usize);
+        for k in 0..n {
+            let c = chrs + 0x880 * k;
+            t.put(c + 2, &[u8::from(!rng.next().is_multiple_of(5))]);
+            let state = if rng.next().is_multiple_of(2) {
+                0
+            } else {
+                (rng.next() & 0xff) as u8
+            };
+            t.put(c + 0x180, &[state]);
+            t.put(c + 0x181, &[u8::from(rng.next().is_multiple_of(3))]);
+            t.put(
+                c + 0x182,
+                &[[0u8, 1, 2, 2, 2, 2, 3, 0xff][rng.next() as usize % 8]],
+            );
+            t.put(
+                c + 0x186,
+                &[[0u8, 2, 2, 0, 1, 0x80][rng.next() as usize % 6]],
+            );
+            t.put_u32(c + 0x194, rng.next());
+            let speed = match rng.next() % 8 {
+                0 => 0,
+                1 => 0x8000_0000,
+                2 => FLOATS[rng.next() as usize % FLOATS.len()],
+                _ => near(&mut rng, 0.0, 16).to_bits(),
+            };
+            t.put_u32(c + 0x154, speed);
+            t.put_u32(c + 0x170, near(&mut rng, 0.0, 16).to_bits());
+            t.put_u32(c + 0x168, near(&mut rng, 0.0, 14).to_bits());
+            for w in [0xc, 0x10, 0x14, 0x18] {
+                t.put_u32(c + w, rng.next() & 0xbfff_ffff);
+            }
+            for w in [0x4c, 0x54] {
+                t.put_u32(c + w, rng.next() & 0xbfff_ffff);
+            }
+            let y = match rng.next() % 9 {
+                0 => floor,
+                1 => floor + 8.5,
+                2 => lvl,
+                // just above a zero floor: (y - floor) / 8.5 rounds to 0
+                3 if floor == 0.0 => f32::from_bits(1),
+                4 => 0.0,
+                _ => near(&mut rng, floor, 30),
+            };
+            t.put_u32(c + 0x10, y.to_bits());
+            let top = match rng.next() % 4 {
+                0 => y,
+                1 if y == 0.0 => -0.0,
+                _ => near(&mut rng, y, 8),
+            };
+            t.put_u32(c + 0x16c, top.to_bits());
+            t.put_u32(
+                c + 0x504,
+                if rng.next().is_multiple_of(5) {
+                    0
+                } else {
+                    near(&mut rng, 0.0, 6).to_bits()
+                },
+            );
+            for w in [0x4e4, 0x514, 0x4fc] {
+                let v = if rng.next().is_multiple_of(16) {
+                    FLOATS[rng.next() as usize % FLOATS.len()]
+                } else {
+                    near(&mut rng, 0.0, 10).to_bits()
+                };
+                t.put_u32(c + w, v);
+            }
+            if rng.next().is_multiple_of(4) {
+                let w = [0x4e4, 0x514][rng.next() as usize % 2];
+                t.put_u32(c + 0x4fc, rd::<u32>(&t.a, c + w));
+            }
+            if rng.next().is_multiple_of(6) {
+                // sinking at the full rate (clamped to -2), the bob at its
+                // goal, above the level: y + rate + bob lands on the ceiling
+                let bob = near(&mut rng, 0.0, 10);
+                for w in [0x4e4, 0x514, 0x4fc] {
+                    t.put_u32(c + w, bob.to_bits());
+                }
+                t.put_u32(c + 0x504, (-3.0f32).to_bits());
+                let y = lvl.max(floor + 8.5) + near(&mut rng, 4.0, 6);
+                t.put_u32(c + 0x10, y.to_bits());
+                t.put_u32(c + 0x16c, (y - 2.0 + bob).to_bits());
+                t.put(c + 0x182, &[2]);
+            }
+            t.put_u32(c + 0x878, rng.next());
+            t.put_u32(
+                c + 0x19c,
+                if rng.next().is_multiple_of(2) {
+                    0
+                } else {
+                    rng.next() | 1
+                },
+            );
+            let skin = t.alloc(0x10);
+            let bones = match rng.next() % 8 {
+                0 => 0x100,
+                1 => 1,
+                _ => (rng.next() % 140) as u16,
+            };
+            t.put(skin + 0xa, &bones.to_le_bytes());
+            t.put_u32(c + 0x1c0, skin);
+            // which height path a floating character takes
+            let runs =
+                rd::<u8>(&t.a, c + 2) != 0 && (state & 0x13 == 0 || rd::<u8>(&t.a, c + 0x181) != 0);
+            if runs && rd::<u8>(&t.a, c + 0x182) == 2 {
+                let f = f64::from(floor);
+                let d = f64::from(y) - 8.5;
+                reach[if d > f {
+                    0
+                } else if f64::from(y) > f {
+                    1
+                } else {
+                    2
+                }] += 1;
+            }
+        }
+        t.put_u32(array, if round % 40 == 20 { 0 } else { chrs });
+        t.put_u32(count, n);
+        let dt = match round % 10 {
+            0 => FLOATS[rng.next() as usize % FLOATS.len()],
+            1 => 0x3f80_0000,
+            _ => near(&mut rng, 1.0, 2).to_bits(),
+        };
+        let before: u32 = rd(&t.a, fk.log);
+        t.check(&format!("Ch_CalcMain {round}"), 0x0083_2e10, &[dt], |m| {
+            Res::Int(hb::ch_calc_main(
+                m,
+                f32::from_bits(dt),
+                &mut |m: &mut Oracle, f, a: &[u32]| call(m, f, a),
+                &mut |m: &mut Oracle, f, a: &[f64]| {
+                    let b = a[0].to_bits();
+                    #[allow(clippy::cast_possible_truncation)]
+                    let w = [b as u32, (b >> 32) as u32, f];
+                    f32::from_bits(m.call(ci1, Conv::Cdecl, &w).unwrap().eax)
+                },
+            ))
+        });
+        let after: u32 = rd(&t.a, fk.log);
+        let mut q = before;
+        while q < after {
+            let id: u32 = rd(&t.a, q);
+            reach[2 + id as usize] += 1;
+            q += 4 * (1 + [0, 0, 3, 0, 1, 1, 2, 1, 0][id as usize]);
+        }
+    }
+    eprintln!("{}: small3 a reach {reach:?}", t.name);
+}
+
+#[test]
+fn small3_b_matches_the_original() {
+    for mut t in twins() {
+        small3_b_on(&mut t);
+    }
+}
+
+/// A stand-in at `sym` that logs its first argument (a character) and
+/// returns the byte at `off` in it, leaving ecx and edx alone (as
+/// `Ch_IsShadowExceptionId` does: `Ch_DrawMain` keeps its job list in them
+/// across the call).
+fn chr_byte_stub(t: &mut Twin, fk: &Fakes, sym: u32, off: u32) {
+    let mut c = vec![0x51, 0x8b, 0x0d]; // push ecx
+    c.extend(fk.log.to_le_bytes()); // mov ecx, [log]
+    c.extend([0x8b, 0x44, 0x24, 0x08, 0x89, 0x01]); // mov eax, [esp+8]; mov [ecx], eax
+    c.extend([0x83, 0x05]);
+    c.extend(fk.log.to_le_bytes());
+    c.extend([4, 0x59]); // add dword [log], 4; pop ecx
+    c.extend([0x0f, 0xb6, 0x80]);
+    c.extend(off.to_le_bytes()); // movzx eax, byte [eax + off]
+    c.push(0xc3);
+    jump_to(t, sym, &c);
+}
+
+/// `code` at `sym` behind `inc dword [counter]`; returns the counter.
+fn counted_stub(t: &mut Twin, sym: u32, code: &[u8]) -> u32 {
+    let counter = t.alloc(4);
+    let mut c = vec![0xff, 0x05];
+    c.extend(counter.to_le_bytes());
+    c.extend(code);
+    jump_to(t, sym, &c);
+    counter
+}
+
+/// A float in [-span/2, span/2) on a 1/64 grid.
+#[allow(clippy::cast_precision_loss)]
+fn grid(rng: &mut Xorshift, span: u32) -> f32 {
+    (rng.next() % (span * 64)) as f32 / 64.0 - span as f32 / 2.0
+}
+
+/// What a `Ch_DrawMain` round concentrates on (`round % 7`): the magic
+/// `0x275` matrix swap, the magic skinning, the scene's shadow switches,
+/// the shade, the `f117` hides, the specular NaN checks, or nothing.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Focus {
+    Swap,
+    Envelope,
+    Shadow,
+    Shade,
+    F117,
+    Specular,
+    Any,
+}
+
+/// The ids each [`Focus`] prefers.
+fn focus_ids(f: Focus) -> &'static [u16] {
+    match f {
+        Focus::Swap => &[0x10b2, 0x10b3, 0x10b4],
+        Focus::Envelope => &[0x1114, 0x1064, 0x1063],
+        Focus::Shadow => &[0, 1, 2, 5, 7, 8, 0x2041, 0x20f1, 0x4029, 0x5033],
+        Focus::Shade => &[0x5008, 0x5002, 0x4001],
+        Focus::F117 => &[0x5075],
+        Focus::Specular | Focus::Any => &[],
+    }
+}
+
+/// One made-up character for `Ch_DrawMain` at `c` (random words first).
+/// `elems` is a shared block of 0x102 elements (base indices past a byte).
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // small test values
+fn draw_main_character(
+    t: &mut Twin,
+    rng: &mut Xorshift,
+    c: u32,
+    others: &[u32],
+    focus: Focus,
+    elems: u32,
+) {
+    const IDS: [u16; 33] = [
+        0x10b2, 0x10b3, 0x10b4, 1, 2, 5, 7, 8, 0x2041, 0x20f1, 0x5009, 0x500a, 0x501d, 0x5033,
+        0x5034, 0x5055, 0x5056, 0x4029, 0x1081, 0x1063, 0x1064, 0x1114, 0x108b, 0x3017, 0x0123,
+        0x3123, 0x5075, 0x10d3, 0x5008, 0x5002, 0x4001, 0x207a, 0,
+    ];
+    t.put(c, &random(rng, l::SIZE));
+    let hot = focus_ids(focus);
+    let id = if !hot.is_empty() && rng.next().is_multiple_of(2) {
+        hot[rng.next() as usize % hot.len()]
+    } else if rng.next().is_multiple_of(12) {
+        (rng.next() & 0xffff) as u16
+    } else {
+        IDS[rng.next() as usize % IDS.len()]
+    };
+    t.put(c, &id.to_le_bytes());
+    t.put(c + 2, &[u8::from(!rng.next().is_multiple_of(5))]);
+    let hide = [0u8, 0, 0, 1, 0x12][rng.next() as usize % 5];
+    t.put(c + 0x180, &[hide]);
+    let pick = |rng: &mut Xorshift, bits: u32| {
+        let mut v = rng.next() & !bits;
+        for b in 0..32 {
+            if bits & (1 << b) != 0 && rng.next().is_multiple_of(3) {
+                v |= 1 << b;
+            }
+        }
+        v
+    };
+    t.put_u32(c + 0x194, pick(rng, 0x0020_3000));
+    t.put_u32(c + 0x198, pick(rng, 0x71));
+    let alpha = [
+        0x3f80_0000u32,
+        0x3f80_0000,
+        0x3f00_0000,
+        0,
+        0x8000_0000,
+        0x7fc0_0000,
+        0xbf80_0000,
+    ][rng.next() as usize % 7];
+    t.put_u32(c + 0x354, alpha);
+    let other = match rng.next() % 4 {
+        0 => 0,
+        1 if !others.is_empty() => others[rng.next() as usize % others.len()],
+        _ => {
+            let o = t.alloc(0x200);
+            let oid: u16 = if rng.next().is_multiple_of(2) {
+                0x207a
+            } else {
+                0x207b
+            };
+            t.put(o, &oid.to_le_bytes());
+            o
+        }
+    };
+    t.put_u32(c + 0x19c, other);
+    // models (129 at times: the skin flags run past the original's 0x80
+    // words), header, elements
+    let many = rng
+        .next()
+        .is_multiple_of(if matches!(focus, Focus::Specular | Focus::Any) {
+            5
+        } else {
+            40
+        });
+    let skip = rng.next().is_multiple_of(2);
+    let nm = if many { 129 } else { rng.next() % 5 };
+    let models = t.alloc(0x38 * nm.max(1) as usize);
+    t.put(models, &random(rng, 0x38 * nm.max(1)));
+    let shared_seg = t.alloc(0x20);
+    for m in 0..nm {
+        let seg = if many && m > 0 {
+            shared_seg
+        } else {
+            t.alloc(0x20)
+        };
+        t.put(seg, &random(rng, 0x20));
+        let base: u16 = if rng.next().is_multiple_of(8) {
+            0x100 + (rng.next() % 2) as u16
+        } else {
+            (rng.next() % 4) as u16
+        };
+        t.put(seg, &base.to_le_bytes());
+        let ng = rng.next() % 4;
+        t.put(seg + 6, &(ng as u16).to_le_bytes());
+        let groups = t.alloc(12 * ng.max(1) as usize);
+        t.put(groups, &random(rng, 12 * ng.max(1)));
+        for k in 0..ng {
+            let fl = if rng.next().is_multiple_of(3) {
+                8u8
+            } else {
+                0x37
+            };
+            t.put(groups + 12 * k, &[fl]);
+        }
+        t.put_u32(seg + 0x10, groups);
+        t.put_u32(models + 0x38 * m, seg);
+        let sa = [
+            0x3f00_0000u32,
+            0x3f80_0000,
+            0x4000_0000,
+            0x7fc0_0000,
+            0x3e80_0000,
+        ][rng.next() as usize % 5];
+        t.put_u32(models + 0x38 * m + 0x14, sa);
+    }
+    t.put(models + 0x18, &[u8::from(rng.next().is_multiple_of(2))]);
+    t.put_u32(c + 0x1bc, models);
+    let hdr = t.alloc(0x20);
+    t.put(hdr, &random(rng, 0x20));
+    t.put(hdr + 6, &(nm as u16).to_le_bytes());
+    let ne = if many { 130 } else { rng.next() % 6 };
+    t.put(hdr + 8, &(ne as u16).to_le_bytes());
+    let list = t.alloc(12 * ne.max(1) as usize);
+    t.put(list, &random(rng, 12 * ne.max(1)));
+    for e in 0..ne {
+        let m = if many {
+            if skip && e == 127 { 200 } else { e }
+        } else {
+            rng.next() % 5
+        };
+        t.put(list + 12 * e + 2, &(m as u16).to_le_bytes());
+    }
+    t.put_u32(hdr + 0x14, list);
+    t.put_u32(c + 0x1c0, hdr);
+    t.put_u32(c + 0x328, elems);
+    let identity = focus == Focus::Specular;
+    for k in 0..16 {
+        t.put_u32(c + 0x1d0 + 4 * k, grid(rng, 8).to_bits());
+    }
+    if focus == Focus::Any && rng.next().is_multiple_of(6) {
+        t.put_u32(c + 0x1d0 + 4 * (rng.next() % 16), f32::INFINITY.to_bits());
+    }
+    if identity {
+        // the world matrix's w terms (last column and translation row) 0
+        // for one of the first three coordinates: an infinite w then gives
+        // a NaN in that coordinate only
+        let row = rng.next() % 3;
+        for r in 0..3 {
+            let v = if r == row { 0.0 } else { 1.5 };
+            t.put_u32(c + 0x1d0 + 16 * r + 12, f32::to_bits(v));
+            t.put_u32(c + 0x1d0 + 48 + 4 * r, f32::to_bits(v));
+        }
+    }
+    // the material
+    let mat = t.alloc(0x64);
+    t.put(mat, &random(rng, 0x64));
+    for o in [0x58, 0x5c] {
+        let v = if focus == Focus::Specular && rng.next().is_multiple_of(3) {
+            f32::INFINITY
+        } else {
+            grid(rng, 4)
+        };
+        t.put_u32(mat + o, v.to_bits());
+    }
+    let strength = match rng.next() % 5 {
+        0 => 0,
+        1 => 1,
+        2 => 2,
+        _ => (rng.next() & 0xff) as u8,
+    };
+    t.put(mat + 0x63, &[strength]);
+    t.put_u32(c + 0x1c4, mat);
+    // colours and shade
+    for o in [0x330, 0x33c, 0x348, 0x36c, 0x370] {
+        t.put_u32(c + o, grid(rng, 4).to_bits());
+    }
+    let s = grid(rng, 4);
+    t.put_u32(c + 0x360, s.to_bits());
+    let s2 = if rng.next().is_multiple_of(2) {
+        s
+    } else {
+        grid(rng, 4)
+    };
+    t.put_u32(c + 0x364, s2.to_bits());
+    if rng.next().is_multiple_of(10) {
+        t.put_u32(c + 0x364, 0x7fc0_0000);
+    }
+    t.put_u32(
+        c + 0x830,
+        if rng.next().is_multiple_of(5) {
+            0
+        } else {
+            rng.next() | 1
+        },
+    );
+    t.put_u32(
+        c + 0x834,
+        if rng.next().is_multiple_of(2) {
+            0
+        } else {
+            rng.next() | 1
+        },
+    );
+    // the stand-ins' answers: culled, shadow exception
+    let cull = focus == Focus::Any && rng.next().is_multiple_of(3);
+    t.put(c + 0x87f, &[u8::from(cull)]);
+    t.put(c + 0x87e, &[u8::from(rng.next().is_multiple_of(2))]);
+}
+
+/// `Ch_DrawMain` (small round 3, group b): random character arrays (every
+/// id, flag and level/magic/scenario the walks test, each round leaning to
+/// one [`Focus`]), the matrix math as the originals, the renderer and the
+/// other callees logging stand-ins (matrices and vectors logged by their
+/// contents: the original keeps them on its stack), the three frame words
+/// the original reads unwritten filled with known values on both sides.
+#[allow(clippy::too_many_lines)]
+fn small3_b_on(t: &mut Twin) {
+    use ffx_chara::draw_main::bridge as dm;
+    let mut rng = Xorshift(0x5a11_3b3b);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    // a log big enough for the matrices
+    let log = t.alloc(8);
+    let start = t.alloc(0x8_0000);
+    t.put_u32(log, start);
+    let fk = Fakes { log, start };
+    let frame = t.b.stack_range().start + 0x400;
+    let top = t.a.stack_range().end - 0x100;
+    let scene: Vec<u32> = [
+        dm::GET_INTER_VALEFOR,
+        dm::LEVEL_NAME_HASH,
+        dm::MAGIC_GET_ID,
+        dm::GET_SCENARIO_FLAG,
+        dm::ATEL_GET_CUR_CTRL_WORK,
+        dm::MS_BATTLE_CHECK,
+        dm::MAGIC_0146_KEY,
+    ]
+    .iter()
+    .enumerate()
+    .map(|(k, &f)| fk.fake(t, f, 1 + u32::try_from(k).unwrap(), 0))
+    .collect();
+    for (k, (f, n)) in [
+        (dm::RENDER_FRAME_START, 0u8),
+        (dm::UPDATE_SKELETON_BOUNDS, 1),
+        (dm::OUTPUT_ALL_VERTEX_BUFFERS, 1),
+        (dm::DRAW_RESERVE_CALC_NORM, 0),
+        (dm::RENDER_SHADOW_START, 0),
+        (dm::UPDATE_SHADOW_VISIBILITY, 0),
+        (dm::UPDATE_CLOTH_MATRIX, 1),
+        (dm::UPDATE_CLOTH_HIDE_FLAG, 1),
+        (dm::SET_VISIBLE, 2),
+        (dm::DRAW_SINGLE_SHADOW, 1),
+        (dm::SET_MESH_COLOR, 6),
+        (dm::SET_MESH_SEGMENT_COLOR, 7),
+        (dm::SET_MESH_SEGMENT_ALPHA, 4),
+        (dm::RENDER_SHADOW_END, 0),
+        (dm::DEBUG_CLEAR_CLOTH_DEBUG_DRAW, 0),
+        (dm::CLOTH_JOB_WAIT, 0),
+        (dm::USER_FREE, 1),
+        (dm::APPLY_ENVELOPE, 2),
+        (dm::DRAW_CLOTH_CLEAR, 1),
+        (dm::ADD_TO_PIPELINE, 1),
+        (dm::PLIGHT_CALC, 1),
+        (dm::ET_CHR_DRAW_ON, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let _ = fk.fake(t, f, 9 + u32::try_from(k).unwrap(), n);
+    }
+    let malloc = fk.fake_alloc(t, dm::USER_MALLOC, 40, 0x100);
+    // the job scheduler logs its two words and moves the job list one
+    // entry on, so the walk reads the list again after each job
+    {
+        let mut c = vec![0x8b, 0x0d];
+        c.extend(fk.log.to_le_bytes()); // mov ecx, [log]
+        for k in 0..2u8 {
+            c.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 * k]);
+        }
+        c.extend([0x83, 0x05]);
+        c.extend(fk.log.to_le_bytes());
+        c.push(8); // add dword [log], 8
+        c.extend([0x83, 0x05]);
+        c.extend(t.a.rebase(0x01a8_5f50).to_le_bytes());
+        c.push(4); // add dword [jobs], 4
+        c.push(0xc3);
+        jump_to(t, dm::CLOTH_JOB_SCHEDULE, &c);
+    }
+    let heap = t.alloc(0x2_0000);
+    chr_byte_stub(t, &fk, dm::CULL_BY_DISTANCE, 0x87f);
+    chr_byte_stub(t, &fk, dm::IS_SHADOW_EXCEPTION_ID, 0x87e);
+    let tidus_pos = counted_stub(
+        t,
+        dm::RENDER_TIDUS_POS,
+        &multi_deref_code(&fk, &[], &[(0, 0, 4)], (0, 0)),
+    );
+    let world = counted_stub(
+        t,
+        dm::SET_WORLD_MATRIX,
+        &multi_deref_code(&fk, &[0], &[(1, 0, 16)], (0, 0)),
+    );
+    let by_id = counted_stub(
+        t,
+        dm::SET_WORLD_MATRIX_BY_MDL_ID,
+        &multi_deref_code(&fk, &[0, 2], &[(1, 0, 16)], (0, 0)),
+    );
+    let spec = counted_stub(
+        t,
+        dm::SET_SPECULAR,
+        &multi_deref_code(
+            &fk,
+            &[0, 1],
+            &[(2, 0, 4), (3, 0, 4), (4, 0, 4), (5, 0, 16)],
+            (0, 0),
+        ),
+    );
+    // the image has no battle camera: a stand-in copies a made-up
+    // position (x, y, z) into Sg_CameraGetPos's vector
+    let cam = t.alloc(12);
+    if t.name == "synthetic" {
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+        for k in 0..3u32 {
+            c.extend([0x8b, 0x15]);
+            c.extend((cam + 4 * k).to_le_bytes()); // mov edx, [cam + 4k]
+            c.extend([0x89, 0x50, u8::try_from(4 * k).unwrap()]); // mov [eax + 4k], edx
+        }
+        c.push(0xc3);
+        jump_to(t, dm::CAMERA_GET_POS, &c);
+    }
+    // 0x102 elements: identity matrices at +0x88 for the first four,
+    // grid values elsewhere
+    let elems = t.alloc(0x102 * 0x160);
+    let fl: Vec<u8> = (0..0x102 * 0x160 / 4)
+        .flat_map(|_| grid(&mut rng, 8).to_le_bytes())
+        .collect();
+    t.put(elems, &fl);
+    let (count, array) = (t.a.rebase(h::CHR_COUNT.sym), t.a.rebase(h::CHR_ARRAY.sym));
+    let (n0, a0) = (rd::<u32>(&t.a, count), rd::<u32>(&t.a, array));
+    let g = |t: &Twin, a: u32| t.a.rebase(a);
+    let mut reach = [0u32; 4];
+    for round in 0..1050u32 {
+        fk.reset(t);
+        t.put_u32(malloc, heap);
+        let focus = [
+            Focus::Swap,
+            Focus::Envelope,
+            Focus::Shadow,
+            Focus::Shade,
+            Focus::F117,
+            Focus::Specular,
+            Focus::Any,
+        ][round as usize % 7];
+        // identity element matrices in the specular rounds
+        for e in 0..4 {
+            for k in 0..16u32 {
+                let v = if focus == Focus::Specular {
+                    if k % 5 == 0 { 1.0 } else { 0.0 }
+                } else {
+                    grid(&mut rng, 8)
+                };
+                t.put_u32(elems + 0x160 * e + 0x88 + 4 * k, f32::to_bits(v));
+            }
+        }
+        let real = t.name == "snapshot" && round % 5 == 1;
+        let chrs: Vec<u32> = if real {
+            (0..n0).map(|i| a0 + i * l::SIZE).collect()
+        } else {
+            let n = if round % 16 == 0 { 0 } else { rng.next() % 8 };
+            let block = t.alloc((l::SIZE * n.max(1)) as usize);
+            let chrs: Vec<u32> = (0..n).map(|i| block + i * l::SIZE).collect();
+            for &c in &chrs {
+                draw_main_character(t, &mut rng, c, &chrs, focus, elems);
+            }
+            t.put_u32(array, block);
+            t.put_u32(count, n);
+            chrs
+        };
+        // the scene
+        let pick = |rng: &mut Xorshift, opts: &[u32]| opts[rng.next() as usize % opts.len()];
+        let any = rng.next();
+        let mut valefor = pick(&mut rng, &[0, 4, 0x84, 0x80, any]);
+        let mut hash = pick(
+            &mut rng,
+            &[
+                0x1b84, 0x24f9, 0xf99, 0x24c9, 0x1c0e, 0x1ca, 0x2fa, 0x200f, 0xfc1, 0x1c36, 7,
+            ],
+        );
+        let mut magic = pick(
+            &mut rng,
+            &[0x275, 0x13c, 0x280, 0x245, 0xa8, 0x1b6, 0x1b5, 0, 9],
+        );
+        let mut scenario = pick(&mut rng, &[0x13a, 0x13b, 0x39a, 0x8ac, 0x1_08ac, 0x777]);
+        let mut key = u32::from(rng.next().is_multiple_of(5));
+        match focus {
+            Focus::Swap => magic = 0x275,
+            Focus::Envelope => magic = pick(&mut rng, &[0x1b6, 0x1b5]),
+            Focus::Shadow => {
+                hash = [0x1b84, 0x24f9, 0xf99, 0x24c9, 0xfc1, 0x1c36, 0x200f]
+                    [(round / 7) as usize % 7];
+                valefor = pick(&mut rng, &[4, 4, 0x84]);
+                scenario = pick(&mut rng, &[0x13a, 0x13b, 0x39a, 0x1_013b]);
+                key = 0;
+            }
+            Focus::Shade => {
+                hash = pick(&mut rng, &[0x2fa, 0x1ca, 0x1c0e, 0x1c0e, 7]);
+                scenario = pick(&mut rng, &[0x8ac, 0x1_08ac, 0x777]);
+                magic = 9;
+            }
+            Focus::F117 | Focus::Specular => magic = 9,
+            Focus::Any => {}
+        }
+        let ctrl = if rng.next().is_multiple_of(3) && focus != Focus::Shadow {
+            0
+        } else {
+            let p = t.alloc(4);
+            let opts: &[u8] = if focus == Focus::Shadow {
+                &[2, 3, 2, 0xfd]
+            } else {
+                &[0, 2, 3, 0xfd]
+            };
+            t.put(p, &[opts[rng.next() as usize % 4]]);
+            p
+        };
+        let battle = u32::from(rng.next().is_multiple_of(2));
+        for (w, v) in scene
+            .iter()
+            .zip([valefor, hash, magic, scenario, ctrl, battle, key])
+        {
+            t.put_u32(*w, v);
+        }
+        let some_chr = |rng: &mut Xorshift| {
+            if chrs.is_empty() {
+                0
+            } else {
+                chrs[rng.next() as usize % chrs.len()]
+            }
+        };
+        t.put_u32(g(t, 0x012f_bc40), pick(&mut rng, &[0xf1, 0xf2, 0xc1, 0x40]));
+        let swap = rng.next() & 0xf | if focus == Focus::Swap { 8 } else { 0 };
+        t.put_u32(g(t, 0x0194_0ac0), swap);
+        t.put_u32(g(t, 0x0194_0ac4), pick(&mut rng, &[0, 1, 1, 2]));
+        t.put_u32(g(t, 0x0194_0ab8), pick(&mut rng, &[0, 1]));
+        t.put_u32(g(t, 0x0130_07e0), pick(&mut rng, &[0, 0, 1]));
+        let dump_id = if chrs.is_empty() {
+            0
+        } else {
+            u32::from(rd::<u16>(&t.a, some_chr(&mut rng)))
+        };
+        t.put_u32(g(t, 0x0130_07dc), dump_id);
+        t.put(g(t, 0x0130_08bc), &[(rng.next() & 0xff) as u8]);
+        let detached = if focus == Focus::Any {
+            pick(&mut rng, &[0, 0, 1, 2])
+        } else {
+            pick(&mut rng, &[0, 0, 0, 0, 2])
+        };
+        t.put_u32(g(t, 0x012f_b7d8), detached);
+        t.put(g(t, 0x00c4_96ea), &[u8::from(rng.next().is_multiple_of(2))]);
+        t.put_u32(g(t, 0x022f_b3dc), pick(&mut rng, &[0, 1]));
+        let tidus = if rng.next().is_multiple_of(3) {
+            0
+        } else {
+            some_chr(&mut rng)
+        };
+        t.put_u32(g(t, 0x012f_bc60), tidus);
+        t.put_u32(g(t, 0x0230_56e8), rng.next());
+        let nf = rng.next() % 4;
+        t.put_u32(
+            g(t, 0x012f_fad4),
+            if rng.next().is_multiple_of(5) {
+                u32::MAX
+            } else {
+                nf
+            },
+        );
+        let mut insts = Vec::new();
+        for k in 0..4 {
+            let inst = if rng.next().is_multiple_of(3) && !insts.is_empty() {
+                insts[rng.next() as usize % insts.len()]
+            } else if rng.next().is_multiple_of(2) && !chrs.is_empty() {
+                rd::<u32>(&t.a, some_chr(&mut rng) + 0x830)
+            } else {
+                rng.next()
+            };
+            insts.push(inst);
+            t.put(
+                g(t, 0x023c_44c0) + 8 * k,
+                &[[0u8, 1, 3][rng.next() as usize % 3]],
+            );
+            t.put_u32(g(t, 0x023c_44c4) + 8 * k, inst);
+        }
+        match rng.next() % 3 {
+            0 => {
+                t.put_u32(g(t, 0x01a8_5f50), 0);
+                t.put_u32(g(t, 0x01a8_5f54), 0);
+            }
+            1 => {
+                let p = t.alloc(0x100);
+                t.put_u32(g(t, 0x01a8_5f50), p);
+                t.put_u32(g(t, 0x01a8_5f54), 0x100);
+            }
+            _ => {
+                let p = t.alloc(8);
+                t.put_u32(g(t, 0x01a8_5f50), p);
+                t.put_u32(g(t, 0x01a8_5f54), 4);
+            }
+        }
+        for k in 0..3 {
+            t.put_u32(cam + 4 * k, grid(&mut rng, 40).to_bits());
+        }
+        let junk = [
+            rng.next(),
+            rng.next(),
+            if focus == Focus::Specular && rng.next().is_multiple_of(2) {
+                0x7f80_0000
+            } else {
+                grid(&mut rng, 4).to_bits()
+            },
+        ];
+        // the original's frame: ebp = top - 8
+        t.a.write(top - 8 - 0x3c, &junk[0].to_le_bytes()).unwrap();
+        t.a.write(top - 8 - 0x2c, &junk[1].to_le_bytes()).unwrap();
+        t.a.write(top - 8 - 0x3c8, &junk[2].to_le_bytes()).unwrap();
+        let counters = [tidus_pos, world, by_id, spec].map(|w| rd::<u32>(&t.a, w));
+        t.check(&format!("Ch_DrawMain {round}"), 0x0082_ed50, &[], |m| {
+            dm::ch_draw_main(m, frame, junk, &mut |m: &mut Oracle, f, a: &[u32]| {
+                call(m, f, a)
+            });
+            Res::Void
+        });
+        for (k, w) in [tidus_pos, world, by_id, spec].into_iter().enumerate() {
+            reach[k] += rd::<u32>(&t.a, w) - counters[k];
+        }
+    }
+    eprintln!("{}: small3 b reach {reach:?}", t.name);
+    t.put_u32(array, a0);
+    t.put_u32(count, n0);
+}

@@ -5028,6 +5028,15 @@ ported! {
     TkChPatchM160 @ 0x0082_b9b0 => extern "C" fn tk_ch_patch_m160(chr: u32) {
         tk::tk_ch_patch_m160(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a));
     }
+    // ---- small round 3, group c
+    /// `TkCh_Allocate(key)`: the new character.
+    TkCh_Allocate @ 0x0087_2190 => extern "C" fn tk_ch_allocate(key: u32) -> u32 {
+        tk::tk_ch_allocate(&mut mem(), key, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkCh_Allocate2(key, v)`: the new character.
+    TkCh_Allocate2 @ 0x0087_2210 => extern "C" fn tk_ch_allocate2(key: u32, v: u32) -> u32 {
+        tk::tk_ch_allocate2(&mut mem(), key, v, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuOpenNameEntryWindow(aeon, target)`: the window.
     TkMenuOpenNameEntryWindow @ 0x008c_4250 => extern "C" fn tk_menu_open_name_entry_window(aeon: u32, target: i32) -> u32 {
         tk::tk_menu_open_name_entry_window(&mut mem(), aeon, target, &mut |_, f, a| call_ptr(f, a))

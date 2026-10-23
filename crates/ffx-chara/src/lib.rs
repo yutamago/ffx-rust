@@ -18,6 +18,7 @@
 //! - [`attach`]: attachment points, binding to them, optional positions.
 //! - [`cloth`]: the cloth exceptions and resetting cloth.
 //! - [`draw`]: skinning the models and their world matrices for drawing.
+//! - [`draw_main`]: the frame's character drawing (`Ch_DrawMain`).
 //! - [`mapping`]: fixing up moved character data, filling model blocks.
 //! - [`motion`]: motion lerps, the motion frame loop, the sequence table.
 //! - [`matrix`]: the root and model matrices.
@@ -33,6 +34,7 @@ pub mod attach;
 pub mod chr;
 pub mod cloth;
 pub mod draw;
+pub mod draw_main;
 pub mod fixed;
 pub mod handle;
 pub mod id;

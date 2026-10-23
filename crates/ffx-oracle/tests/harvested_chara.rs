@@ -82,3 +82,36 @@ harvest_test!(
         })
     }
 );
+// small round 3
+harvest_test!(ch_calc_main, 0x0083_2e10, args = 1, |m: &mut Oracle, s| {
+    // fld qword [esp+4]; call [esp+0xc]; fstp dword [esp+4]; mov eax,
+    // [esp+4]; ret: a CRT intrinsic on ST0
+    const CI1: [u8; 17] = [
+        0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xd9, 0x5c, 0x24, 0x04, 0x8b, 0x44, 0x24,
+        0x04, 0xc3,
+    ];
+    let ci1 = m.alloc_code(&CI1).unwrap();
+    ffx_chara::handle::bridge::ch_calc_main(
+        m,
+        s.arg_f32(0),
+        &mut |m: &mut Oracle, f, a: &[u32]| m.call_cdecl(f, a).unwrap(),
+        &mut |m: &mut Oracle, f, a: &[f64]| {
+            let b = a[0].to_bits();
+            #[allow(clippy::cast_possible_truncation)]
+            let w = [b as u32, (b >> 32) as u32, f];
+            f32::from_bits(m.call(ci1, ffx_oracle::Conv::Cdecl, &w).unwrap().eax)
+        },
+    )
+});
+harvest_test!(ch_draw_main, 0x0082_ed50, args = 0, |m: &mut Oracle, s| {
+    use ffx_chara::draw_main::bridge as dm;
+    // the words the original reads from its frame unwritten: what the
+    // oracle's stack holds there (ebp = esp - 4)
+    let ebp = s.regs.esp - 4;
+    let word = |m: &mut Oracle, x: u32| ffx_bridge::Mem::read::<u32>(m, ebp - x);
+    let junk = [word(m, 0x3c), word(m, 0x2c), word(m, 0x3c8)];
+    let frame = m.stack_range().start + 0x400;
+    dm::ch_draw_main(m, frame, junk, &mut |m: &mut Oracle, f, a: &[u32]| {
+        m.call_cdecl(f, a).unwrap()
+    });
+});
