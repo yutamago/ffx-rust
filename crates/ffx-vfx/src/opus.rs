@@ -3615,6 +3615,335 @@ pub mod bridge {
         set
     }
 
+    /// `opp_anm_yodare(host, set)` (`0x00811bc0`, the Switch's name; an
+    /// opp table entry): a dribble ("yodare") of `n` shape-field segments
+    /// hanging from the unit's trail. `u` = the unit `host +0x220`, `t` =
+    /// its trail `u +0xbc` (`u16 +4` ring size, `+6` newest point, `+8`
+    /// point count; 16-byte points `x y z time` from `+0x10`, a second
+    /// ring of `size` points, the chain, right after the first), `p` =
+    /// `opus_no_get(set, u, u16 u +0xa8)`.
+    ///
+    /// Nothing when `u +0xb3` shares a bit with `g_EtChrDrawFlags[u +0x18]`
+    /// (that byte is returned). The floor `g` = 65536 when `i16 u +0xaa`
+    /// is 10000 or more, else `MsGetChrGround(u +0x18) + u +0xaa / 16`;
+    /// the link length `s` = `u +0x4c / size / 16`. `host +0x40` =
+    /// `op_xyz_scale(p +0x40, 1/256)` (the pull), `+0x50` counts the chain
+    /// points held up by the floor. The newest trail point goes to
+    /// `g_Ee_Gpr +0x20` and the chain's last point (time 0); from there
+    /// back each chain point moves to `s` from the next one along its
+    /// pulled direction (`FFXVu0*` through the frame vector `ebp - 0x14`),
+    /// gets the time `T` (from `s + 0.0`, by `s`), and every `y` above the
+    /// floor (`g <= y`) is cut to it. All of them on the floor sets bit 0
+    /// of `u16 u +0xb0`.
+    ///
+    /// Then `a = ftol(p +0x30)` and `n = a - b`, `b = ftol(p +0x4c)`, must
+    /// be positive (else `a` or `b` is returned). The time step `s` = `p
+    /// +0x34 / p +0x30 / 16` (0 unless positive), cut to `last / p +0x30`
+    /// when `s x p +0x30` is above the first chain point's time `last`.
+    /// `host +0x148` = `u +0xe4`, `+0x144` = `d` = `(u +0x3c - p +0x3c) / p
+    /// +0x30`, `+0x140` = `u +0x3c - b d`; colour steps `+0x160..` = `(p
+    /// +0xc8.. - u +0xc8..) / a` (bytes), colours `+0x150..` = `u` byte +
+    /// `b` x step. `host +0x40` = `opus_parent_get(host, u)`'s matrix, `u16
+    /// +2` = 0x80, `+0x10` = `host +0x80`, `+8`, `+0xc` 0, byte `+0x18` 0.
+    ///
+    /// The instance `(0, u)`: without render data `InitVFXRenderDataShape
+    /// Field(0, u, &set_ptr32(u +0xd4), size, 8)` (the pointer in the frame
+    /// word `ebp - 0x80`); with render data each of its `[+0x90]` segments
+    /// (0x6c bytes at `[+0x94]`) gets a dynamic buffer (`graphicDynGeo
+    /// MemManagerGetBufferForSegment(rd, i, +0x64, +0x68)`, none returns 0
+    /// at once) and `+0x1c`'s `2 x +0x68` bytes cleared; then
+    /// `clearVFXRenderDataShp`. For `i` in `0..n` the chain is walked from
+    /// its last point as `opp_anm_sippo` walks its trail (position at
+    /// `host +0xf0`, `+0x100` = `op_unit_m_scale(+0x140 / 4096)`, `+0x130`
+    /// = `op_apply_m_w1(parent, +0xf0)`, `+0x80` = a copy of `+0x100`,
+    /// `+0x1c`/`+0x138` from `i16 u +0xc6`, `+0x14` = `set +0x54`, colour
+    /// bytes `+4..+8`) and the shape `[u +0xe0][(+0x148 >> 8) mod u16 u
+    /// +0xe8]` goes to `updateVFXRenderDataShapeField(0, u, shape, host)`
+    /// when there is render data. Each step `+0x140` -= `+0x144`, `+0x148`
+    /// -= 2 `ftol(p +0x38)`.
+    ///
+    /// Last `u16 u +0xc0` &= 0x4000, `p +0xe4` += 0x200 when that leaves
+    /// 0, `set +0x54` restored, `graphicVFXUpdate(0, u)` with render data;
+    /// returns `graphicUseOptimizedVFXShaderByVFXInstance(0, u)`. `ebp` is
+    /// the original's frame pointer (its locals below it). Callees through
+    /// `call` (`fcall` for the ground). A zero ring size or `u +0xe8`
+    /// faults in the original (`idiv`/`div`); the port uses index 0 there.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opp_anm_yodare<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        set: u32,
+        ebp: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, sqrt, store, sub};
+        let u: u32 = mem.read(host.wrapping_add(0x220));
+        let at_u = |k: u32| u.wrapping_add(k);
+        let h = |k: u32| host.wrapping_add(k);
+        let fv = |mem: &M, at: u32| load(mem.read::<u32>(at));
+        let chr = u32::from(mem.read::<u8>(at_u(0x18)));
+        let hide: u8 = mem.read(g(mem, 0x012a_84c0).wrapping_add(chr));
+        if mem.read::<u8>(at_u(0xb3)) & hide != 0 {
+            return u32::from(hide);
+        }
+        let no = u32::from(mem.read::<u16>(at_u(0xa8)));
+        let p = call(mem, g(mem, 0x0080_1060), &[set, u, no]);
+        let at_p = |k: u32| p.wrapping_add(k);
+        let t: u32 = mem.read(at_u(0xbc));
+        let size = |mem: &M| u32::from(mem.read::<u16>(t.wrapping_add(4)));
+        let per_16: f64 = mem.read(g(mem, 0x00b9_21e0));
+        let lift = store(f64::from(mem.read::<i16>(at_u(0xaa))));
+        let floor = if load(lift) >= 10000.0 {
+            mem.read::<u32>(g(mem, 0x00b4_3ddc))
+        } else {
+            let ground = fcall(mem, g(mem, 0x0079_4fb0), &[chr]);
+            store(add(ground, mul(load(lift), per_16)))
+        };
+        let n0 = size(mem);
+        let first = t.wrapping_add(0x10);
+        let head = first.wrapping_add(n0 << 5).wrapping_sub(0x10);
+        let newest = u32::from(mem.read::<u16>(t.wrapping_add(6)));
+        let link = store(mul(div(fv(mem, at_u(0x4c)), f64::from(n0)), per_16));
+        let pull: u32 = mem.read(g(mem, 0x00b5_895c));
+        call(mem, g(mem, 0x007e_a850), &[h(0x40), at_p(0x40), pull]);
+        mem.write(h(0x50), 0u32);
+        // the original's idiv faults on size 0
+        let r = newest.checked_rem(size(mem)).unwrap_or(0);
+        let src: [u32; 4] = mem.read(first.wrapping_add(r << 4));
+        let gpr = g(mem, 0x00c8_f528);
+        mem.write(gpr, src);
+        mem.write(head, src[0]);
+        for k in [4u32, 8] {
+            let v: u32 = mem.read(gpr.wrapping_add(k));
+            mem.write(head.wrapping_add(k), v);
+        }
+        mem.write(head.wrapping_add(0xc), 0u32);
+        let floor_cut = |mem: &mut M, y_at: u32| {
+            // fcom's flags: the floor at or below `y` (ordered)
+            if load(floor) <= fv(mem, y_at) {
+                mem.write(y_at, floor);
+                let c = mem.read::<u32>(h(0x50)).wrapping_add(1);
+                mem.write(h(0x50), c);
+            }
+        };
+        floor_cut(mem, head.wrapping_add(4));
+        let zero: f64 = mem.read(g(mem, 0x00b0_db90));
+        let mut time = store(add(load(link), zero));
+        let tmp = ebp.wrapping_sub(0x14);
+        let mut at = head.wrapping_sub(0x10);
+        let mut i = 1u32;
+        while i < size(mem) {
+            let next = at.wrapping_add(0x10);
+            call(mem, g(mem, 0x006e_d290), &[tmp, at, h(0x40)]);
+            call(mem, g(mem, 0x006e_d940), &[tmp, tmp, next]);
+            call(mem, g(mem, 0x006e_d6f0), &[tmp, tmp]);
+            call(mem, g(mem, 0x006e_d8f0), &[tmp, tmp, link]);
+            call(mem, g(mem, 0x006e_d290), &[tmp, tmp, next]);
+            call(mem, g(mem, 0x006e_d370), &[at, tmp]);
+            mem.write(at.wrapping_add(0xc), time);
+            floor_cut(mem, at.wrapping_add(4));
+            time = store(add(load(time), load(link)));
+            i += 1;
+            at = at.wrapping_sub(0x10);
+        }
+        if mem.read::<i32>(h(0x50)) >= size(mem).cast_signed() {
+            let f = mem.read::<u16>(at_u(0xb0)) | 1;
+            mem.write(at_u(0xb0), f);
+        }
+        let a = ftol(mem, fv(mem, at_p(0x30)));
+        if a.cast_signed() <= 0 {
+            return a;
+        }
+        let b = ftol(mem, fv(mem, at_p(0x4c)));
+        let n = a.wrapping_sub(b);
+        if n.cast_signed() <= 0 {
+            return b;
+        }
+        let mut step = store(mul(div(fv(mem, at_p(0x34)), fv(mem, at_p(0x30))), per_16));
+        let last_at = t.wrapping_add(0x1c).wrapping_add(size(mem) << 4);
+        let last = store(fv(mem, last_at));
+        if load(step) > 0.0 {
+            let span = store(mul(load(step), fv(mem, at_p(0x30))));
+            if load(span) > load(last) {
+                step = store(div(load(last), fv(mem, at_p(0x30))));
+            }
+        } else {
+            step = 0;
+        }
+        let w: u32 = mem.read(at_u(0xe4));
+        mem.write(h(0x148), w);
+        let d = store(div(
+            sub(fv(mem, at_u(0x3c)), fv(mem, at_p(0x3c))),
+            fv(mem, at_p(0x30)),
+        ));
+        mem.write(h(0x144), d);
+        let bf = store(f64::from(b.cast_signed()));
+        let v = store(sub(fv(mem, at_u(0x3c)), mul(load(d), load(bf))));
+        mem.write(h(0x140), v);
+        let af = store(f64::from(a.cast_signed()));
+        let byte = |mem: &M, at: u32| f64::from(mem.read::<u8>(at));
+        for k in 0..4u32 {
+            let r = store(div(
+                sub(byte(mem, at_p(0xc8 + k)), byte(mem, at_u(0xc8 + k))),
+                load(af),
+            ));
+            mem.write(h(0x160 + 4 * k), r);
+        }
+        for k in 0..4u32 {
+            let c = store(add(
+                mul(fv(mem, h(0x160 + 4 * k)), load(bf)),
+                byte(mem, at_u(0xc8 + k)),
+            ));
+            mem.write(h(0x150 + 4 * k), c);
+        }
+        let parent = call(mem, g(mem, 0x0080_1f00), &[host, u]);
+        call(mem, g(mem, 0x007e_8010), &[h(0x40), parent]);
+        let mut time = 0u32; // f32 0.0
+        mem.write(h(2), 0x80u16);
+        mem.write(h(0x10), h(0x80));
+        mem.write(h(8), 0u32);
+        mem.write(h(0xc), 0u32);
+        mem.write(h(0x18), 0u8);
+        let saved: u32 = mem.read(set.wrapping_add(0x54));
+        let mut cur = size(mem).wrapping_sub(1) & 0xffff;
+        let chain = first.wrapping_add(size(mem) << 4);
+        // the chain point at ring index `i` (size 0: see above)
+        let point = |mem: &M, i: u32| {
+            let r = i.checked_rem(size(mem)).unwrap_or(0);
+            chain.wrapping_add(r << 4)
+        };
+        if call(mem, g(mem, 0x0064_53d0), &[0, u]) == 0 {
+            let ptr = call(mem, g(mem, 0x00a4_4700), &[mem.read(at_u(0xd4))]);
+            let local = ebp.wrapping_sub(0x80);
+            mem.write(local, ptr);
+            call(mem, g(mem, 0x0071_13d0), &[0, u, local, size(mem), 8]);
+        }
+        let rd = call(mem, g(mem, 0x0064_53d0), &[0, u]);
+        if rd != 0 {
+            let segs = |mem: &M| mem.read::<i32>(rd.wrapping_add(0x90));
+            let seg = |mem: &M, k: u32, o: u32| {
+                let base: u32 = mem.read(rd.wrapping_add(0x94));
+                mem.read::<u32>(base.wrapping_add(k * 0x6c + o))
+            };
+            let mut k = 0u32;
+            while k.cast_signed() < segs(mem) {
+                let (verts, idx) = (seg(mem, k, 0x64), seg(mem, k, 0x68));
+                if call(mem, g(mem, 0x0063_fdb0), &[rd, k, verts, idx]) == 0 {
+                    return 0;
+                }
+                let (to, len) = (seg(mem, k, 0x1c), seg(mem, k, 0x68));
+                call(mem, g(mem, 0x0094_964c), &[to, 0, len.wrapping_add(len)]);
+                k += 1;
+            }
+        }
+        call(mem, g(mem, 0x0071_3290), &[0, u]);
+        let mut walked = 0u32; // ebx: compared as 16 bits
+        // fcomp's C0: below or unordered
+        let below = |x: f64, t: u32| {
+            matches!(
+                x.partial_cmp(&load(t)),
+                None | Some(std::cmp::Ordering::Less)
+            )
+        };
+        let mut i = 0u32;
+        'tail: while i.cast_signed() < n.cast_signed() {
+            let mut older = cur.wrapping_sub(1) & 0xffff;
+            let mut q = point(mem, older);
+            if below(fv(mem, q.wrapping_add(0xc)), time) {
+                let count = u32::from(mem.read::<u16>(t.wrapping_add(8)));
+                loop {
+                    cur = older;
+                    walked = walked.wrapping_add(1);
+                    if walked & 0xffff >= count {
+                        break 'tail;
+                    }
+                    older = cur.wrapping_sub(1) & 0xffff;
+                    q = point(mem, older);
+                    if !below(fv(mem, q.wrapping_add(0xc)), time) {
+                        break;
+                    }
+                }
+            }
+            let pc = point(mem, cur);
+            let xyz = |mem: &M, at: u32| [0u32, 4, 8].map(|k| store(fv(mem, at.wrapping_add(k))));
+            let p0 = xyz(mem, pc);
+            let p1 = xyz(mem, q);
+            let dl: [u32; 3] = std::array::from_fn(|k| store(sub(load(p1[k]), load(p0[k]))));
+            let sq = |x: u32| mul(load(x), load(x));
+            let len = store(sqrt(add(add(sq(dl[0]), sq(dl[1])), sq(dl[2]))));
+            let dt = store(sub(load(time), fv(mem, pc.wrapping_add(0xc))));
+            let off = if load(len) == 0.0 {
+                [0u32; 3]
+            } else {
+                let l = load(len);
+                [
+                    store(div(mul(load(dl[0]), load(dt)), l)),
+                    store(div(mul(load(dl[1]), load(dt)), l)),
+                    store(div(mul(load(dt), load(dl[2])), l)),
+                ]
+            };
+            for (k, o) in (0u32..).zip(off) {
+                let v = store(add(load(o), load(p0[k as usize])));
+                mem.write(h(0xf0 + 4 * k), v);
+            }
+            let per_4096: f64 = mem.read(g(mem, 0x00b5_0190));
+            let s = store(mul(fv(mem, h(0x140)), per_4096));
+            call(mem, g(mem, 0x007e_a700), &[h(0x100), s]);
+            call(mem, g(mem, 0x007e_79a0), &[h(0x130), parent, h(0xf0)]);
+            call(mem, g(mem, 0x007e_8010), &[h(0x80), h(0x100)]);
+            let lift: i16 = mem.read(at_u(0xc6));
+            if lift == 0 {
+                mem.write(h(0x1c), 0u32);
+            } else {
+                mem.write(h(0x1c), h(0x100));
+                let l = store(f64::from(lift));
+                let v = store(add(mul(load(l), per_16), fv(mem, h(0x138))));
+                mem.write(h(0x138), v);
+            }
+            mem.write(h(0x14), saved);
+            let shapes: u32 = mem.read(at_u(0xe0));
+            let kinds = u32::from(mem.read::<u16>(at_u(0xe8)));
+            // the original's div faults on 0
+            let k = (mem.read::<u32>(h(0x148)) >> 8)
+                .checked_rem(kinds)
+                .unwrap_or(0);
+            let shape: u32 = mem.read(shapes.wrapping_add(k << 2));
+            for k in 0..4u32 {
+                let c = ftol(mem, fv(mem, h(0x150 + 4 * k)));
+                #[allow(clippy::cast_possible_truncation)] // the byte of eax
+                mem.write(h(4 + k), c as u8);
+            }
+            for k in 0..4u32 {
+                let v = store(add(fv(mem, h(0x160 + 4 * k)), fv(mem, h(0x150 + 4 * k))));
+                mem.write(h(0x150 + 4 * k), v);
+            }
+            if rd != 0 {
+                call(mem, g(mem, 0x0071_a4e0), &[0, u, shape, host]);
+            }
+            let back = ftol(mem, fv(mem, at_p(0x38)));
+            let v = store(sub(fv(mem, h(0x140)), fv(mem, h(0x144))));
+            mem.write(h(0x140), v);
+            time = store(add(load(time), load(step)));
+            let w = mem
+                .read::<u32>(h(0x148))
+                .wrapping_add(back.wrapping_mul(0xffff_fffe));
+            mem.write(h(0x148), w);
+            i += 1;
+        }
+        let fl = mem.read::<u16>(at_u(0xc0)) & 0x4000;
+        mem.write(at_u(0xc0), fl);
+        if fl == 0 {
+            let w = mem.read::<u32>(at_p(0xe4)).wrapping_add(0x200);
+            mem.write(at_p(0xe4), w);
+        }
+        mem.write(set.wrapping_add(0x54), saved);
+        if rd != 0 {
+            call(mem, g(mem, 0x0064_58a0), &[0, u]);
+        }
+        call(mem, g(mem, 0x0064_4b10), &[0, u])
+    }
+
     /// `opp_mimic(host)` (`0x0080eb50`, opp table entry `0x00c48ec0`; the
     /// Switch's callees): a copy of a character drawn with another's
     /// models. `u` = the unit `host +0x220`, `r` = its mimic record `u

@@ -6170,6 +6170,14 @@ ported! {
     opp_anm_sippo @ 0x0081_1530 => extern "C" fn opp_anm_sippo(host: u32, set: u32) -> u32 {
         opus::bridge::opp_anm_sippo(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opp_anm_yodare(host, set)`: its frame locals (0x90 bytes) on this
+    /// shim's stack, the frame pointer at their end; returns the
+    /// original's `eax` (the last callee's, 0, or the early exits' values).
+    opp_anm_yodare @ 0x0081_1bc0 => extern "C" fn opp_anm_yodare(host: u32, set: u32) -> u32 {
+        let mut frame = super::StackFrame::<0x24>::new();
+        let ebp = frame.at() + 0x90;
+        opus::bridge::opp_anm_yodare(&mut mem(), host, set, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `opp_dtt(host, set)`: `op_ot_add`'s `eax`, 0, or the draw flags.
     opp_dtt @ 0x0081_2b50 => extern "C" fn opp_dtt(host: u32, set: u32) -> u32 {
         opus::bridge::opp_dtt(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))
