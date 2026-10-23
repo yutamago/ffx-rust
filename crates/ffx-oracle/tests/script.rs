@@ -16094,3 +16094,134 @@ fn small4b_chr_reg_callback_matches_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     small4b_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Small round 4 d on one pair: `Native_805d` (its callees stood in),
+/// `Atel_EffectCallback_00861f90` (the
+/// effect read and state logged, the poll from a sequence, `dbgPrintf`
+/// logged) and `AtelFlushAlbhedDic` (`TkMsImportantSet` logged).
+fn small4d_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0086_33e0, 1, true),
+            (0x0078_8c60, 1, false),
+            (0x0078_8bd0, 0, false),
+            (0x0062_f500, 1, false),
+            (0x0088_e790, 1, false),
+        ],
+    );
+    // Native_805d: the reset logged, the part count from a sequence
+    // (asked again after each part), the frame set logged
+    let parts = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0091_a3d0, 0, true),
+            (0x0072_97e0, 0, false),
+            (0x0091_a930, 2, false),
+        ],
+    );
+    for round in 0..40u32 {
+        let n = rng.below(5);
+        let mut k = 0u32;
+        r27_reset(a, b, &parts, |_| {
+            k += 1;
+            if k <= n {
+                8
+            } else {
+                [0u32, 0xffff_fff0, k][rng.below(3) as usize]
+            }
+        });
+        r22_case(
+            a,
+            b,
+            0x0091_c4a0,
+            &[0, 0, 0],
+            true,
+            &format!("Native_805d {what} {round}"),
+            |r| ffx_script::vm::bridge::native_map::native_805d(r, 0, 0, 0),
+        );
+    }
+    let state = alloc_both(a, b, 4);
+    let (id, poll, status) = (
+        a.rebase(0x0132_6b40),
+        a.rebase(0x0132_6b44),
+        a.rebase(0x0132_6b80),
+    );
+    let (dic, pending, have) = (
+        a.rebase(0x0132_5b90),
+        a.rebase(0x0132_5b94),
+        a.rebase(0x0113_07a0),
+    );
+    for round in 0..200u32 {
+        r27_reset(a, b, &stubs, |_| {
+            [0u32, 1, 2, 3, 0x100, rng.next()][rng.below(6) as usize]
+        });
+        poke(
+            a,
+            b,
+            state,
+            [0u32, 1, 1, 2, rng.next()][rng.below(5) as usize],
+        );
+        poke(
+            a,
+            b,
+            id,
+            [0x121u32, 0x120, 0x1_0121, rng.next()][rng.below(4) as usize],
+        );
+        poke(a, b, poll, rng.next());
+        poke(a, b, status, rng.next().to_le_bytes()[0]);
+        r22_case(
+            a,
+            b,
+            0x0086_1f90,
+            &[state],
+            true,
+            &format!("Atel_EffectCallback {what} {round}"),
+            |r| hp::atel_effect_callback(r, state),
+        );
+        poke(a, b, dic, [0u32, 1, rng.next()][rng.below(3) as usize]);
+        poke(a, b, pending, rng.next());
+        poke(a, b, have, rng.next() & rng.next());
+        r22_case(
+            a,
+            b,
+            0x0086_a040,
+            &[],
+            false,
+            &format!("AtelFlushAlbhedDic {what} {round}"),
+            |r| {
+                hp::atel_flush_albhed_dic(r);
+                0
+            },
+        );
+    }
+}
+
+#[test]
+fn small4d_effect_callback_and_albhed_dic_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_4d01);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        small4d_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    small4d_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

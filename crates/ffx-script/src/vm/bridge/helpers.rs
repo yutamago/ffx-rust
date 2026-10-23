@@ -9616,3 +9616,62 @@ fn chr_reg_make(h: &mut impl ffx_bridge::Host, w: u32) {
         host_call(h, 0x0086_2d70, &[w, 1]);
     }
 }
+
+// ---- small round 4 d ----
+
+/// The event effect [`atel_effect_callback`] reads (`0x01326b40`) and the
+/// poll's argument (`0x01326b44`), both set by its queuer (`0x00861550`).
+const EFFECT_CALLBACK_ID: u32 = 0x0132_6b40;
+const EFFECT_CALLBACK_POLL: u32 = 0x0132_6b44;
+
+/// `Atel_EffectCallback_00861f90(state)` (name ours; the `EFF`
+/// callback-queue entry `0x00861550` pushes): state 0 sets
+/// `g_AtelOverlayStatus` 1, reads the event effect `[0x01326b40]`
+/// (`MsEventEffectRead`), asks `MsEventEffectGetStat`, moves to state 1
+/// and returns 0; state 1 is done (1) once `Atel_EffectStartPoll([0x01326b44])`
+/// has bit 0, else it prints "TK:Effect Wait" (`dbgPrintf`) and is done
+/// only for effect 0x121; other states return 0.
+pub fn atel_effect_callback(h: &mut impl ffx_bridge::Host, state: u32) -> u32 {
+    match h.read::<u32>(state) {
+        0 => {
+            let id = h.read::<u32>(h.rebase(EFFECT_CALLBACK_ID));
+            h.write(h.rebase(0x0132_6b80), 1u8);
+            host_call(h, 0x0078_8c60, &[id]);
+            host_call(h, 0x0078_8bd0, &[]);
+            h.write(state, 1u32);
+            0
+        }
+        1 => {
+            let arg = h.read::<u32>(h.rebase(EFFECT_CALLBACK_POLL));
+            if host_call(h, 0x0086_33e0, &[arg]) & 1 != 0 {
+                return 1;
+            }
+            let text = h.rebase(0x00b5_be34);
+            host_call(h, 0x0062_f500, &[text]);
+            u32::from(h.read::<u32>(h.rebase(EFFECT_CALLBACK_ID)) == 0x121)
+        }
+        _ => 0,
+    }
+}
+
+/// `AtelFlushAlbhedDic()` (`0x0086a040`, Native 0x0234's call): with a
+/// dictionary pending (`g_AtelAlbhedDic`), each of the 26 bits set in
+/// its second word (`0x01325b94`) and clear in the save's
+/// (`0x011307a0`) becomes key item `0xa004 + bit` (`TkMsImportantSet`);
+/// both words cleared. Its caller ignores `EAX`.
+pub fn atel_flush_albhed_dic(h: &mut impl ffx_bridge::Host) {
+    let (dic, pending) = (h.rebase(0x0132_5b90), h.rebase(0x0132_5b94));
+    if h.read::<u32>(dic) != 0 {
+        let new = h.read::<u32>(pending);
+        let have = h.read::<u32>(h.rebase(0x0113_07a0));
+        let mut bit = 1u32;
+        for i in 0..0x1a {
+            if have & bit == 0 && new & bit != 0 {
+                host_call(h, 0x0088_e790, &[i + 0xa004]);
+            }
+            bit = bit.rotate_left(1);
+        }
+    }
+    h.write(pending, 0u32);
+    h.write(dic, 0u32);
+}
