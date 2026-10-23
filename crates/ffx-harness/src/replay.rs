@@ -75,6 +75,19 @@ pub fn play(game: &mut Game, script: &str, trace: &str) -> Result<Vec<String>> {
                 screens::start_battle(game, n(1), n(2) as u8, n(3) as u8)?
             }
             "trace" => game.command(&format!("trace {trace} {}", words[1..].join(" ")))?,
+            // a timed-out wait says which line and what the bytes were
+            "waitfor" => game.command(line).map_err(|e| match e {
+                crate::Error::Harness(why) => {
+                    let now = words
+                        .get(1)
+                        .and_then(|r| r.split_once(':'))
+                        .filter(|(at, _)| !at.contains(['*', '+']))
+                        .and_then(|(at, len)| game.command(&format!("read {at} {len}")).ok())
+                        .map_or_else(String::new, |b| format!(" (the range holds {b})"));
+                    crate::Error::Harness(format!("{line}: {why}{now}"))
+                }
+                e => e,
+            })?,
             _ => game.command(line)?,
         };
         replies.push(format!("{line} -> {reply}"));

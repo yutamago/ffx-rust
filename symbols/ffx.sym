@@ -17255,7 +17255,7 @@
 0x01325b88 label g_AtelBattleEndOtherMap # (r25 c) u32: 1 when the battle ended on another map than the event jump's (Atel_BattleEndMapStart_008615b0)
 0x01325b90 label    g_AtelAlbhedDic              # two words written by AtelRegistAlbhedDic (0x0086e820)
 0x01325b98 label    g_TkScalePair             # 2 x f32 (Tk_GetScale)
-0x01325ba0 label    g_AtelCtrlWorks              # 7 ctrl works x 0x238 (AtelGetCtrlWork); g_ScriptContext follows; layout in ffx_script::vm::ctrl
+0x01325ba0 label    g_AtelCtrlWorks              # 7 ctrl works x 0x238 (AtelGetCtrlWork); +0x1f4 u32 frames the work has run (Atel_ExecCtrlWorks 0x008688f0 counts it while flag bit 3 is set, AtelRequireCtrlWork zeroes it; work 0's, 0x01325d94, pins the field-walk shots); g_ScriptContext follows; layout in ffx_script::vm::ctrl
 0x01326b28 label    g_ScriptContext              # current ctrl work (AtelGetCurCtrlWork, AtelSetCurrentCtrl): +0x0a player worker, +0x0c actor count, +0x10 worker count, +0x1c workers, +0x2c/+0x30 variable storage 0/1, +0x218 player position, +0x1e4/0x1f0 talk state (ffx_script::vm::ctrl)
 0x01326b40 label    g_AtelEffectCallbackId     # Atel_EffectCallback_00861f90: the event effect to read (0x00861550 stores it)
 0x01326b44 label    g_AtelEffectCallbackPoll   # Atel_EffectCallback_00861f90: Atel_EffectStartPoll's argument (0x00861550 stores it)
