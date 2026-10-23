@@ -10031,6 +10031,23 @@ fn mdl_case(
     req_off: u32,
     rust: impl Fn(&mut Oracle, u32, u32, u32, u32) -> u32,
 ) {
+    mdl_case_light(name, sym, req_off, None, rust);
+}
+
+/// [`mdl_case`] with, for `light` (the key offset of a point-light
+/// target), the target and its four references set up (part objects
+/// 0..3 with fields at `0x10 j`, their `+0xac`/`+0xb0` pointing at
+/// floats) and the request recorded by 20 words (the light bytes at
+/// `+0x4c`).
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn mdl_case_light(
+    name: &str,
+    sym: u32,
+    req_off: u32,
+    light: Option<u32>,
+    rust: impl Fn(&mut Oracle, u32, u32, u32, u32) -> u32,
+) {
+    let words = if light.is_some() { 20 } else { 18 };
     for mut p in Pair::all() {
         let mut rng = Xorshift(sym);
         let cells = p.alloc(0x20);
@@ -10046,12 +10063,18 @@ fn mdl_case(
         // FFXVu0MulMatrix(dst, a, b) recorded with a's 16 words: the
         // matrices built on the stack only reach the request as pointers
         wide_recorder(&mut p, 0x006e_d5c0, &[0, 16, 0], None);
-        wide_recorder(&mut p, 0x0071_8610, &[0, 0, 0, 18], None);
-        wide_recorder(&mut p, 0x0071_0fd0, &[0, 0, 0, 18, 0], None);
-        wide_recorder(&mut p, 0x0071_1180, &[0, 0, 0, 18, 0], None);
+        wide_recorder(&mut p, 0x0071_8610, &[0, 0, 0, words], None);
+        wide_recorder(&mut p, 0x0071_0fd0, &[0, 0, 0, words, 0], None);
+        wide_recorder(&mut p, 0x0071_1180, &[0, 0, 0, words, 0], None);
         deref_recorder(&mut p, 0x0064_5600, &[0, 0]);
         deref_recorder(&mut p, 0x0064_58a0, &[0, 0]);
-        let (obj, key, prog, table) = (p.alloc(0x200), p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        let key_len = if light.is_some() { 0x50 } else { 0x40 };
+        let (obj, key, prog, table) = (
+            p.alloc(0x200),
+            p.alloc(key_len),
+            p.alloc(0x10),
+            p.alloc(0x10),
+        );
         let (env, env2, recs, models, part) = (
             p.alloc(4),
             p.alloc(0x40),
@@ -10082,6 +10105,11 @@ fn mdl_case(
             p.sym(0x0230_fd34),
         );
         let r0 = p.sym(0x00c8_f508);
+        let (records, others, vecs) = if light.is_some() {
+            (p.alloc(0x40), p.alloc(0x400), p.alloc(0x100))
+        } else {
+            (0, 0, 0)
+        };
         for _ in 0..1500 {
             p.fill(obj, 0x200, &mut rng);
             p.fill(key, 0x40, &mut rng);
@@ -10211,6 +10239,54 @@ fn mdl_case(
             let (s1, s2) = (rng.next(), rng.next());
             p.set(at - req_off + 8, s1);
             p.set(at - req_off + 0x30, s2);
+            if let Some(li) = light {
+                p.set(part + 0x3c, records);
+                for n in 0..4 {
+                    p.set(records + 0x10 * n + 4, others + 0x100 * n);
+                    for j in 0..3 {
+                        let d = others + 0x100 * n + 0x10 * j;
+                        for o in [0xa8u32, 0xb4] {
+                            let v = if rng.chance(80) {
+                                ranged(&mut rng, -3.0, 3.0)
+                            } else {
+                                rng.pick(&[
+                                    0x7f7f_ffffu32,
+                                    0xff7f_ffff,
+                                    0x7fc0_0000,
+                                    0x4300_0000,
+                                    0xc300_0000,
+                                ])
+                            };
+                            p.set(d + o, v);
+                        }
+                        p.set(d + 0xac, vecs + 0x10 * rng.below(8));
+                        p.set(d + 0xb0, vecs + 0x10 * rng.below(8));
+                    }
+                }
+                for o in (0..0x100).step_by(4) {
+                    let v = ranged(&mut rng, -100.0, 100.0);
+                    p.set(vecs + o, v);
+                }
+                // the target and the four references: (object, field)
+                let pick = |rng: &mut Xorshift| rng.pick(&[u32::MAX, 0, 1, 2, 3]);
+                for r in 0..5 {
+                    let slot = if r == 4 {
+                        key + li
+                    } else {
+                        key + li - 0x20 + 8 * r
+                    };
+                    let n = if r == 4 && rng.chance(20) {
+                        u32::MAX
+                    } else {
+                        pick(&mut rng)
+                    };
+                    p.set(slot, n);
+                    p.set(slot + 4, 0x10 * rng.below(3));
+                }
+                let (s1, s2) = (rng.next(), rng.next());
+                p.set(at - req_off + 0x48, s1);
+                p.set(at - req_off + 0x4c, s2);
+            }
             check_deep_n(&mut p, name, sym, &[obj, key, prog], |o, frame| {
                 assert_eq!((frame - 8) & !0xf, at);
                 Some(rust(o, obj, key, prog, at))
@@ -10280,6 +10356,48 @@ fn mdl_ts_draw_matches_the_original() {
         0xa0,
         |o, obj, key, prog, frame| {
             d::ppp_draw_mdl_ts_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn nei_draw_mdl_point_light_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case_light(
+        "pppNeiDrawMdlPointLightDraw",
+        0x0074_a1e0,
+        0xa0,
+        Some(0x28),
+        |o, obj, key, prog, frame| {
+            d::ppp_nei_draw_mdl_point_light_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn nei_draw_mdl_semi_point_light_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case_light(
+        "pppNeiDrawMdlSemiPointLightDraw",
+        0x0074_a850,
+        0xa0,
+        Some(0x2c),
+        |o, obj, key, prog, frame| {
+            d::ppp_nei_draw_mdl_semi_point_light_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn nei_draw_mdl_ts_point_light_draw_matches_the_original() {
+    use mdl::bridge as d;
+    mdl_case_light(
+        "pppNeiDrawMdlTsPointLightDraw",
+        0x0074_ae70,
+        0xa0,
+        Some(0x40),
+        |o, obj, key, prog, frame| {
+            d::ppp_nei_draw_mdl_ts_point_light_draw(o, obj, key, prog, frame, &mut call_original)
         },
     );
 }

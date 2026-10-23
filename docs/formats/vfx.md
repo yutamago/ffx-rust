@@ -132,6 +132,23 @@ draws take their blend from the key (`+8`), the others from the model
   are `T(-g_pppWorldMatrix position) x obj + 0x10` and
   `g_pppViewMatrixCopy x` that.
 
+### Point-light draws (`pppNeiDrawMdl*PointLightDraw`)
+
+`pppNeiDrawMdlPointLightDraw` (`0x0074a1e0`), `...SemiPointLightDraw`
+(`0x0074a850`) and `...TsPointLightDraw` (`0x0074ae70`) are
+`pppDrawMdlDraw`, `pppDrawMdlSemiDraw` and `pppDrawMdlTsDraw` without the
+level checks, with flag `0x40` added (`0xc0`/`0x4c`, the `Semi` one
+`0xc0`/`0xd0`) and a light: for a target (object `n`, field) at key `+0x28`
+(`Semi` `+0x2c`, `Ts` `+0x40`; `n` -1 for none), `t` = the current part's
+object `n` (`+0x3c` records, data at `+4` through `get_ptr32`) plus the
+field; the request's bytes `+0x4d` and `+0x4c` get `t +0xa8` and `t +0xb4`
+times 128 (`fistp` truncating, the low byte), and four references (key
+`+8`, `Semi` `+0xc`, `Ts` `+0x20`, 8 bytes each) are resolved by
+`0x0074a760` (copies `0x0074ad80`, `0x0074b540`) into the request's tables:
+the position at `0x0230fda0 + 0x10 k` (three floats of `ptr32(t' +0xac)`
+and `t' +0xa8`), the rotation at `0x0230fd60 + 0x10 k` (four `i16` of
+`ptr32(t' +0xb0)` / 16384).
+
 ### Per-effect fixes
 
 The `3` draws and `LoopZ` patch requests for particular content:

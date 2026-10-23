@@ -3335,6 +3335,36 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
         mdl::bridge::ppp_draw_mdl_ts_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `pppNeiDrawMdlPointLightDraw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppNeiDrawMdlPointLightDraw @ 0x0074_a1e0 => extern "C" fn ppp_nei_draw_mdl_point_light_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xa0]);
+        let mut locals = Locals([0; 0xa0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        mdl::bridge::ppp_nei_draw_mdl_point_light_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppNeiDrawMdlSemiPointLightDraw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppNeiDrawMdlSemiPointLightDraw @ 0x0074_a850 => extern "C" fn ppp_nei_draw_mdl_semi_point_light_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xa0]);
+        let mut locals = Locals([0; 0xa0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        mdl::bridge::ppp_nei_draw_mdl_semi_point_light_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppNeiDrawMdlTsPointLightDraw(obj, key, prog)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppNeiDrawMdlTsPointLightDraw @ 0x0074_ae70 => extern "C" fn ppp_nei_draw_mdl_ts_point_light_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xa0]);
+        let mut locals = Locals([0; 0xa0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        mdl::bridge::ppp_nei_draw_mdl_ts_point_light_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppDrawMdl2Draw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppDrawMdl2Draw @ 0x0073_8530 => extern "C" fn ppp_draw_mdl_2_draw(obj: u32, key: u32, prog: u32) -> u32 {

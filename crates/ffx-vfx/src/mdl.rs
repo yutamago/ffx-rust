@@ -75,6 +75,8 @@ pub mod bridge {
     const LOOP_PERIOD: f64 = 32768.0;
     /// The work area's float-to-fixed scale of the `Ts` draws (`0x00b51558`).
     const TS_SCALE: f64 = 65536.0;
+    /// The point lights' byte scale (`0x00b4c170`).
+    const LIGHT_SCALE: f64 = 128.0;
 
     fn at(base: u32, off: u32) -> u32 {
         base.wrapping_add(off)
@@ -1688,5 +1690,146 @@ pub mod bridge {
         fill_request(mem, req, obj, flags, mem.read(at(mp, 0x16)), tex);
         mem.write(at(req, 0x44), z);
         submit(mem, obj, rec, req, SEMI2, call)
+    }
+
+    /// The point-light draws' light: for a target `(n, field)` at `key +
+    /// light` (`n` -1 for none), `t` = `get_ptr32` of the current part's
+    /// object `n` (`+0x3c`, 16-byte records, the data at `+4`) plus the
+    /// field; the request's bytes `+0x4d`, `+0x4c` = `t +0xa8`, `t +0xb4`
+    /// times 128 as `fistp` truncates them (the low byte; NaN and out of
+    /// range give 0), then `rot_pos(0x0230fda0 + 0x10 k, 0x0230fd60 + 0x10
+    /// k, key + refs + 8 k)` for `k` 0..4 (the request's matrix tables).
+    fn point_light<M: Mem>(
+        mem: &mut M,
+        req: u32,
+        key: u32,
+        light: u32,
+        refs: u32,
+        rot_pos: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::cvttsd2si;
+        let n: u32 = mem.read(at(key, light));
+        if n == u32::MAX {
+            return;
+        }
+        let part: u32 = mem.read(g(mem, CURRENT_PART));
+        let records: u32 = mem.read(at(part, 0x3c));
+        let data: u32 = mem.read(at(records, 4).wrapping_add(n.wrapping_mul(16)));
+        let o = call(mem, g(mem, GET_PTR32), &[data]);
+        let t = mem.read::<u32>(at(key, light + 4)).wrapping_add(o);
+        for (src, dst) in [(0xa8u32, 0x4du32), (0xb4, 0x4c)] {
+            let v = mul(f(mem, at(t, src)), LIGHT_SCALE);
+            mem.write(at(req, dst), cvttsd2si(v).to_le_bytes()[0]);
+        }
+        for k in 0..4u32 {
+            let args = [
+                g(mem, REQUEST_TABLES[1] + 0x10 * k),
+                g(mem, REQUEST_TABLES[0] + 0x10 * k),
+                at(key, refs + 8 * k),
+            ];
+            call(mem, g(mem, rot_pos), &args);
+        }
+    }
+
+    /// `pppNeiDrawMdlPointLightDraw(obj, key, prog)` (`0x0074a1e0`): as
+    /// [`ppp_draw_mdl_draw`] without the level check, the request at
+    /// `frame - 0xa0`, flags `0xc0` (model bit 0) or `0x4c`, `| 0x10`
+    /// unless the model's bit 1, and the light of target `key + 0x28`
+    /// with the references at `key + 8` ([`point_light`], `0x0074a760`).
+    /// Returns what the original leaves in eax.
+    pub fn ppp_nei_draw_mdl_point_light_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u32>(at(key, 4)) == 0xffff {
+            return key;
+        }
+        let req = frame.wrapping_sub(0xa0);
+        let colour = ee_colour(mem, obj, prog, false, call);
+        store_colour(mem, req, colour);
+        if mem.read::<u8>(at(req, 0x1b)) == 0 {
+            return colour;
+        }
+        let rec = model_record(mem, key);
+        let mp = call(mem, g(mem, GET_PTR32), &[mem.read(at(rec, 0x1c))]);
+        let flags = flags_model(mem.read(mp)) | 0x40;
+        let tex = textures(mem, obj, call);
+        point_light(mem, req, key, 0x28, 8, 0x0074_a760, call);
+        fill_request(mem, req, obj, flags, mem.read(at(mp, 0x16)), tex);
+        submit(mem, obj, rec, req, MDL, call)
+    }
+
+    /// `pppNeiDrawMdlSemiPointLightDraw(obj, key, prog)` (`0x0074a850`):
+    /// as [`ppp_draw_mdl_semi_draw`] with flags `0xc0` (`0xd0` unless the
+    /// model's bit 1), the light of target `key + 0x2c` with the
+    /// references at `key + 0xc` ([`point_light`], `0x0074ad80`) and the
+    /// Z matrix skipped for flag `0x2000` (never set).
+    pub fn ppp_nei_draw_mdl_semi_point_light_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u32>(at(key, 4)) == 0xffff {
+            return key;
+        }
+        let req = frame.wrapping_sub(0xa0);
+        let colour = ee_colour(mem, obj, prog, false, call);
+        store_colour(mem, req, colour);
+        if mem.read::<u8>(at(req, 0x1b)) == 0 {
+            return colour;
+        }
+        let rec = model_record(mem, key);
+        let mp = call(mem, g(mem, GET_PTR32), &[mem.read(at(rec, 0x1c))]);
+        let flags = if mem.read::<u8>(mp) & 2 != 0 {
+            0xc0
+        } else {
+            0xd0
+        };
+        let tex = textures(mem, obj, call);
+        point_light(mem, req, key, 0x2c, 0xc, 0x0074_ad80, call);
+        fill_request(mem, req, obj, flags, mem.read(at(key, 8)), tex);
+        mem.write(at(req, 0x44), at(obj, 0x50));
+        submit(mem, obj, rec, req, SEMI2, call)
+    }
+
+    /// `pppNeiDrawMdlTsPointLightDraw(obj, key, prog)` (`0x0074ae70`): as
+    /// [`ppp_draw_mdl_ts_draw`] without the level check (returning the
+    /// colour at alpha 0), flags as [`ppp_nei_draw_mdl_point_light_draw`]
+    /// and the light of target `key + 0x40` with the references at `key +
+    /// 0x20` ([`point_light`], `0x0074b540`).
+    pub fn ppp_nei_draw_mdl_ts_point_light_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (w, eax) = ts_step(mem, obj, key, prog);
+        if mem.read::<u32>(at(key, 4)) == 0xffff {
+            return eax;
+        }
+        let req = frame.wrapping_sub(0xa0);
+        let colour = ee_colour(mem, obj, prog, false, call);
+        store_colour(mem, req, colour);
+        if mem.read::<u8>(at(req, 0x1b)) == 0 {
+            return colour;
+        }
+        let rec = model_record(mem, key);
+        let mp = call(mem, g(mem, GET_PTR32), &[mem.read(at(rec, 0x1c))]);
+        let flags = flags_model(mem.read(mp)) | 0x40;
+        let tex = textures(mem, obj, call);
+        point_light(mem, req, key, 0x40, 0x20, 0x0074_b540, call);
+        fill_request(mem, req, obj, flags, mem.read(at(mp, 0x16)), tex);
+        ts_fixed(mem, req, w);
+        submit(mem, obj, rec, req, MDL, call)
     }
 }
