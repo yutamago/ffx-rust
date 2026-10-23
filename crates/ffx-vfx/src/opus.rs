@@ -11381,4 +11381,225 @@ pub mod bridge {
             cmd.wrapping_add(4)
         }
     }
+
+    /// `opu_mdc(host, cmd)` (`0x00803c00`): the opus character-copy (mdc)
+    /// commands. `u` = unit `host +0x220`, `oef` = `host +0x360[u8 u
+    /// +0x1e]`, `chr` = `g_EtChrHandles[u8 u +0x18]`, `rec` = `host
+    /// +0x300`; by the flag nibble (`u16 host +0x21a & 0xf000`):
+    ///
+    /// - 0x0000: `opus_mdc_free(oef, chr, heap host +0x3a8, u16 rec == 1)`,
+    ///   texture bases (-1, 0x3c00) and (-1, 12000), a packet of
+    ///   `op_chara_packet_size_get(chr, i16 cmd+4, 1)` bytes (none: done)
+    ///   from the heap set as `i16 cmd+2`, filled by `op_mdc_all_make` (flag
+    ///   0x800) or its delhide twin; without flag 0x400 the low byte of `i16
+    ///   cmd+2` goes to `g_EtChr[opus_get_chr_status_index(chr, 0, 0)] +0x14`
+    ///   (`+0x15` with `u16 rec == 1`); 6 bytes.
+    /// - 0x1000: the free, then `opu_mdc_0x1000_hide(chr)`'s bits: 1
+    ///   `Ch_SetHideBattle`, 2 `Ch_SetHideEvent`, any
+    ///   `graphicCharacterInstanceSetVisible(Ch_GetChrRenderInstance(chr),
+    ///   0)`; 4 bytes.
+    /// - 0x2000 and 0x6000: angles `u +0x30..+0x3c` into `host` (x 0, or
+    ///   `f32 u +0xcc` with flag 0x200 for 0x6000; also left in the EE
+    ///   registers `0x00c8f528..`), `opus_rt_m_chara(host +0x80, u8 u +0x18,
+    ///   f32 u +0x3c, host, u +0x90, i8 host +0x21e)`, `host +0xc0` = `host
+    ///   +0x2c0` x parent x `host +0x80`, the packet (`opus_mdc_packet_set`
+    ///   0x0080e160, or 0x0080e230 for 0x6000 with flag 0x200) and lights
+    ///   on `host +0x100` (bit 0x40 set in its first word). 0x2000 then sets the
+    ///   ambient, `rec +0x54` = `op1_mdc_draw(..)` and the mesh alpha `u8 u
+    ///   +0xcb / 128` (at least `f32` 0.0001); 12 bytes. 0x6000 instead
+    ///   takes key `ftol(f32 u + i16 cmd+0xc) + 1` of the packet, multiplies
+    ///   its matrix (`get_ptr32_func(key +4)`) into `host +0x80`, rebuilds
+    ///   `host +0xc0` and runs `op_md_chara_path3(get_ptr32_func(key),
+    ///   host +0x100, *packet)`; 14 bytes.
+    /// - 0x4000: texture bases (-1, -1) and `Ch_ClutDispose`; 0x5000:
+    ///   `Ch_TextureLoadImage`/`LoadClut(chr, -1)`; 2 bytes each.
+    ///
+    /// Any other nibble returns `cmd`. Callees through `call`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_mdc<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{ftol, load, mul, store};
+        let mut fun = |mem: &mut M, f: u32, args: &[u32]| {
+            let f = g(mem, f);
+            call(mem, f, args)
+        };
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let i16_at =
+            |mem: &M, k: u32| i32::from(mem.read::<i16>(cmd.wrapping_add(k))).cast_unsigned();
+        let flag = |mem: &M, bit: u16| mem.read::<u16>(host.wrapping_add(0x21a)) & bit != 0;
+        let u = unit(mem, host);
+        let rec = host.wrapping_add(0x300);
+        let slot = u32::from(mem.read::<u8>(u.wrapping_add(0x1e)));
+        let oef = rd(
+            mem,
+            host.wrapping_add(0x360).wrapping_add(slot.wrapping_mul(4)),
+        );
+        let no = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        let chr = rd(mem, g(mem, 0x012a_8100).wrapping_add(no.wrapping_mul(4)));
+        let free = |mem: &mut M, fun: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let second = u32::from(mem.read::<u16>(rec) == 1);
+            let heap = rd(mem, host.wrapping_add(0x3a8));
+            fun(mem, 0x0080_61a0, &[oef, chr, heap, second]);
+        };
+        // angles into the host (x as given), rotation, parent, packet, lights
+        let place = |mem: &mut M, fun: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, x: u32| {
+            let regs = g(mem, 0x00c8_f528);
+            for k in 0..4 {
+                let w = rd(mem, u.wrapping_add(0x30 + 4 * k));
+                mem.write(regs.wrapping_add(4 * k), w);
+            }
+            for k in 0..4 {
+                let w = rd(mem, regs.wrapping_add(4 * k));
+                mem.write(host.wrapping_add(4 * k), w);
+            }
+            mem.write(host, x);
+            let side = i32::from(mem.read::<i8>(host.wrapping_add(0x21e))).cast_unsigned();
+            let scale = store(load(rd(mem, u.wrapping_add(0x3c))));
+            let chr_no = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+            let (rot, world) = (host.wrapping_add(0x80), host.wrapping_add(0xc0));
+            fun(
+                mem,
+                0x0080_62c0,
+                &[rot, chr_no, scale, host, u.wrapping_add(0x90), side],
+            );
+            let parent = fun(mem, 0x0080_1f00, &[host, u]);
+            fun(mem, 0x007e_83b0, &[world, parent, rot]);
+            let screen = host.wrapping_add(0x2c0);
+            fun(mem, 0x007e_83b0, &[world, screen, world]);
+            parent
+        };
+        let packet = host.wrapping_add(0x100);
+        match mem.read::<u16>(host.wrapping_add(0x21a)) & 0xf000 {
+            0x0000 => {
+                free(mem, &mut fun);
+                let mode = i16_at(mem, 4);
+                fun(mem, 0x0083_13c0, &[chr, u32::MAX, 0x3c00]);
+                fun(mem, 0x0083_1390, &[chr, u32::MAX, 12000]);
+                let size = fun(mem, 0x0080_37c0, &[chr, mode, 1]);
+                if size == 0 {
+                    return cmd.wrapping_add(6);
+                }
+                let heap = rd(mem, host.wrapping_add(0x3a8));
+                let buf = fun(mem, 0x007f_f780, &[heap, size]);
+                let n = i16_at(mem, 2);
+                fun(mem, 0x007e_38a0, &[oef, 4, n, buf]);
+                let table = rd(mem, host.wrapping_add(0x328));
+                let make = if flag(mem, 0x800) {
+                    0x0080_3220
+                } else {
+                    0x0080_3360
+                };
+                fun(mem, make, &[buf, chr, mode, table]);
+                let i = fun(mem, 0x007f_e970, &[chr, 0, 0]);
+                let at = g(mem, 0x012a_22c0).wrapping_add(i << 5);
+                if !flag(mem, 0x400) {
+                    let at = at.wrapping_add(if mem.read::<u16>(rec) == 1 {
+                        0x15
+                    } else {
+                        0x14
+                    });
+                    #[allow(clippy::cast_possible_truncation)] // its low byte
+                    mem.write(at, n as u8);
+                }
+                cmd.wrapping_add(6)
+            }
+            0x1000 => {
+                free(mem, &mut fun);
+                let bits = fun(mem, 0x0080_4150, &[chr]);
+                if bits & 1 != 0 {
+                    fun(mem, 0x0082_b260, &[chr, 1]);
+                }
+                if bits & 2 != 0 {
+                    fun(mem, 0x0082_b2c0, &[chr, 1]);
+                }
+                if bits != 0 {
+                    let inst = fun(mem, 0x0082_6b70, &[chr, 0]);
+                    fun(mem, 0x0063_c390, &[inst, 0]);
+                }
+                cmd.wrapping_add(4)
+            }
+            0x2000 => {
+                place(mem, &mut fun, 0);
+                let n = i16_at(mem, 2);
+                let list = fun(mem, 0x0080_e160, &[packet, host, rec, u, n]);
+                let w = rd(mem, packet) | 0x40;
+                mem.write(packet, w);
+                fun(
+                    mem,
+                    0x0080_e900,
+                    &[packet, host, rec, u, cmd.wrapping_add(2)],
+                );
+                fun(mem, 0x0080_41c0, &[packet]);
+                let (rot, view, screen) = (
+                    host.wrapping_add(0x80),
+                    host.wrapping_add(0x280),
+                    host.wrapping_add(0x2c0),
+                );
+                let d = fun(mem, 0x00a6_8c90, &[list, packet, rot, view, screen]);
+                mem.write(rec.wrapping_add(0x54), d);
+                let a = f64::from(mem.read::<u8>(u.wrapping_add(0xcb)));
+                let inst = rd(mem, chr.wrapping_add(0x830));
+                let mut alpha = store(mul(a, 0.007_812_5));
+                if load(alpha) < 9.999_999_747_378_752e-5 {
+                    alpha = 0x38d1_b717;
+                }
+                let id = u32::from(mem.read::<u16>(chr));
+                fun(mem, 0x0063_b810, &[inst, id, alpha]);
+                cmd.wrapping_add(0xc)
+            }
+            0x4000 => {
+                fun(mem, 0x0083_13c0, &[chr, u32::MAX, u32::MAX]);
+                fun(mem, 0x0083_1390, &[chr, u32::MAX, u32::MAX]);
+                fun(mem, 0x0083_c810, &[chr]);
+                cmd.wrapping_add(2)
+            }
+            0x5000 => {
+                fun(mem, 0x0083_1300, &[chr, u32::MAX]);
+                fun(mem, 0x0083_11d0, &[chr, u32::MAX]);
+                cmd.wrapping_add(2)
+            }
+            0x6000 => {
+                let x = if flag(mem, 0x200) {
+                    store(load(rd(mem, u.wrapping_add(0xcc))))
+                } else {
+                    0
+                };
+                let parent = place(mem, &mut fun, x);
+                let n = i16_at(mem, 2);
+                let set = if flag(mem, 0x200) {
+                    0x0080_e230
+                } else {
+                    0x0080_e160
+                };
+                let pk = fun(mem, set, &[packet, host, rec, u, n]);
+                let w = rd(mem, packet) | 0x40;
+                mem.write(packet, w);
+                fun(
+                    mem,
+                    0x0080_e900,
+                    &[packet, host, rec, u, cmd.wrapping_add(2)],
+                );
+                let at = u.wrapping_add(i16_at(mem, 0xc));
+                let t = ftol(mem, load(rd(mem, at)));
+                let key = t.wrapping_add(1).wrapping_mul(16).wrapping_add(pk);
+                let (rot, world) = (host.wrapping_add(0x80), host.wrapping_add(0xc0));
+                mem.write(packet.wrapping_add(0x20), world);
+                mem.write(packet.wrapping_add(0x2c), rot);
+                let m = ffx_system::stub::ptr32(rd(mem, key.wrapping_add(4)));
+                fun(mem, 0x007e_83b0, &[rot, rot, m]);
+                fun(mem, 0x007e_83b0, &[world, parent, rot]);
+                let screen = host.wrapping_add(0x2c0);
+                fun(mem, 0x007e_83b0, &[world, screen, world]);
+                let head = rd(mem, pk);
+                let path = ffx_system::stub::ptr32(rd(mem, key));
+                fun(mem, 0x00a6_a3a0, &[path, packet, head]);
+                cmd.wrapping_add(0xe)
+            }
+            _ => cmd,
+        }
+    }
 }

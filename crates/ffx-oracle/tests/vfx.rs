@@ -31927,3 +31927,132 @@ fn r51d_opu_part_run_matches_the_original() {
         assert!(seen.iter().all(|&n| n > 0), "{seen:?}");
     }
 }
+
+/// `opu_mdc` against the port: every flag nibble with the 0x200, 0x400
+/// and 0x800 flags, the callees as recorders (their arguments compared
+/// through the logs; `op_mul_m` original), a packet key table whose
+/// entries point at real matrices, mesh alphas on both sides of the floor.
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r51e_opu_mdc_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_3c00);
+        let cells = p.alloc(0x40);
+        let cell = |k: u32| cells + 4 * k;
+        let mut logs = Vec::new();
+        for (k, (sym, n)) in [
+            (0x0080_1f00u32, 2usize), // opus_parent_get -> cell 0
+            (0x0080_e160, 5),         // packet set -> cell 1
+            (0x0080_e230, 5),         // packet set 2 -> cell 1 (below)
+            (0x00a6_8c90, 5),         // op1_mdc_draw -> cell 3
+            (0x0080_4150, 1),         // hide bits -> cell 4
+            (0x0082_6b70, 2),         // render instance -> cell 5
+            (0x0080_37c0, 3),         // packet size -> cell 6
+            (0x007f_f780, 2),         // op_malloc -> cell 7
+            (0x007f_e970, 3),         // status index -> cell 8
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let ret = if k == 2 { cell(1) } else { cell(k as u32) };
+            logs.push(far_recorder(&mut p, sym, &[0, 0, 0, 0, 0][..n], Some(ret)));
+        }
+        for (sym, n) in [
+            (0x0080_62c0u32, 6usize),
+            (0x0080_e900, 5),
+            (0x0080_41c0, 1),
+            (0x0063_b810, 3),
+            (0x0080_61a0, 4),
+            (0x0082_b260, 2),
+            (0x0082_b2c0, 2),
+            (0x0063_c390, 2),
+            (0x0083_13c0, 3),
+            (0x0083_1390, 3),
+            (0x007e_38a0, 4),
+            (0x0080_3220, 4),
+            (0x0080_3360, 4),
+            (0x0083_c810, 1),
+            (0x0083_1300, 2),
+            (0x0083_11d0, 2),
+            (0x00a6_a3a0, 3),
+        ] {
+            logs.push(far_recorder(&mut p, sym, &[0, 0, 0, 0, 0, 0][..n], None));
+        }
+        let (host, unit, cmd, chr, pk, mats) = (
+            p.alloc(0x400),
+            p.alloc(0x100),
+            p.alloc(0x20),
+            p.alloc(0x840),
+            p.alloc(0x100),
+            p.alloc(0x200),
+        );
+        let (handles, et_chr, regs) = (p.sym(0x012a_8100), p.sym(0x012a_22c0), p.sym(0x00c8_f528));
+        let mut seen = [0u32; 16];
+        for round in 0..3000u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(host, 0x400, &mut rng);
+            p.fill(cmd, 0x20, &mut rng);
+            p.fill(chr, 0x840, &mut rng);
+            p.fill(regs, 0x10, &mut rng);
+            p.fill(et_chr, 0x100, &mut rng);
+            for k in 0..0x40u32 {
+                let v = if rng.chance(95) {
+                    ranged(&mut rng, -100.0, 100.0)
+                } else {
+                    rng.pick(&[0x7fc0_0000u32, 0x7f80_0000, 0x8000_0000, 0x4f00_0000])
+                };
+                p.set(unit + 4 * k, v);
+                p.set(host + 4 * k, ranged(&mut rng, -2.0, 2.0)); // the matrices
+                p.set(host + 0x2c0 + ((4 * k) & 0x3f), ranged(&mut rng, -2.0, 2.0));
+                p.set(mats + 4 * k, ranged(&mut rng, -2.0, 2.0));
+                p.set(mats + 0x100 + 4 * k, ranged(&mut rng, -2.0, 2.0));
+            }
+            p.set(host + 0x220, unit);
+            let nibble = if rng.chance(90) {
+                rng.below(7)
+            } else {
+                rng.below(16)
+            };
+            seen[nibble as usize] += 1;
+            p.set(host + 0x21a, ((nibble << 12) | rng.below(0x1000)) as u16);
+            p.set(host + 0x300, rng.pick(&[0u16, 1, 2, 0x101]));
+            p.set(unit + 0x1e, rng.below(8) as u8);
+            let no = rng.below(16);
+            p.set(unit + 0x18, no as u8);
+            p.set(handles + 4 * no, chr);
+            // the mesh alpha byte: 0 (floored), 1, 0x80, 0xff
+            p.set(unit + 0xcb, rng.pick(&[0u8, 1, 2, 0x80, 0xff]));
+            // the key index: a float at u + i16 cmd+0xc, 0..3
+            let at = 4 * rng.below(0x3c);
+            p.set(cmd + 0xc, at as i16);
+            let t = rng.below(4);
+            p.set(unit + at, (f64::from(t) as f32 + 0.5).to_bits());
+            // the packet: head, then keys of (path, matrix) 16 bytes apart
+            p.fill(pk, 0x100, &mut rng);
+            for k in 0..6u32 {
+                p.set(pk + 16 * (k + 1), mats + 0x40 * (k % 4));
+                p.set(pk + 16 * (k + 1) + 4, mats + 0x40 * ((k + 1) % 4));
+            }
+            p.set(cell(0), mats + 0x100);
+            p.set(cell(1), pk);
+            for k in 3..8 {
+                p.set(cell(k), rng.next());
+            }
+            p.set(
+                cell(4),
+                rng.below(4) | if rng.chance(10) { 0x100 } else { 0 },
+            );
+            p.set(cell(6), if rng.chance(20) { 0 } else { rng.next() });
+            p.set(cell(8), rng.below(8));
+            p.check(
+                &format!("opu_mdc nibble {nibble:x} round {round}"),
+                0x0080_3c00,
+                &[host, cmd],
+                |m| Some(opus::bridge::opu_mdc(m, host, cmd, &mut call_original)),
+            );
+        }
+        assert!(seen[..7].iter().all(|&n| n > 0), "{seen:?}");
+    }
+}
