@@ -836,7 +836,19 @@ What else lies in the range is not effect logic:
   GDraw function table at `0x01a85828` and allocates the context
   `[0x01a858b4]`). The `op_node_*` and `op_texels_*` functions ported
   earlier are its handle cache and mip builder (state 5 is GDraw's
-  user-owned handle). Middleware, left original.
+  user-owned handle). Middleware, left original. Three slots drive the
+  D3D11 device context `[ctx+4]` directly (vtable offsets checked in the
+  asm): `0x00a3a820` (slot `0x01a85830`, stored at `0x00a35900`) sets the
+  tile rectangle `+0x6c0..+0x6f4` and calls `ClearDepthStencilView`
+  (`+0xd4`, flags 3, 1.0, 0) on `+0x784`/`+0x788`; `0x00a37410` (slot
+  `0x01a8583c`, `0x00a35946`) binds `+0x784`/`+0x788` with
+  `OMSetRenderTargets` (`+0x84`) and `RSSetState` (`+0xac`, `+0x7ac`);
+  `0x00a39200` (slot `0x01a85844`, `0x00a35932`) is the render-target
+  end, with `OMSetBlendState` (`+0x8c`), `OMSetDepthStencilState`
+  (`+0x90`), `RSSetScissorRects` (`+0xb4`), `ResolveSubresource` (`+0xe4`)
+  and `CopySubresourceRegion` (`+0xb8`). Each has one reference, the
+  table store in `0x00a35780` (`tools/refs.py`); effects round 54 left
+  them original as platform, like the other slots.
 - `0x00a5d120..0x00a65570` is the op debug display (`opd_*`): the
   `op_num_*` wrappers reach the digit-sprite writers only under
   `g_OpDebugMode` or `0x02322794`, and the command printers
