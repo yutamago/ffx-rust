@@ -4,8 +4,8 @@
 
 use ffx_sg::quat::Crt;
 use ffx_sg::{
-    abmap, cache, camera, cdread, chpacket, cloth, control, decode, envelope, gs, light, player,
-    quat, savecmd, seq, state, vec,
+    abmap, cache, camera, cdread, chpacket, cloth, control, decode, envelope, gs, help, light,
+    player, quat, savecmd, seq, state, vec,
 };
 
 use super::{mem, ported};
@@ -61,6 +61,12 @@ ported! {
     menu_list_step @ 0x0076_f470 => extern "C" fn menu_list_step() -> u32 {
         let mut w = super::StackFrame::<{ state::bridge::MENU_STEP_WORK as usize / 4 }>::new();
         state::bridge::menu_list_step(&mut mem(), w.at())
+    }
+    /// `menu_list_draw()` (`0x0076f850`): the words its callees write
+    /// through pointers (and the texture name) in this frame.
+    menu_list_draw @ 0x0076_f850 => extern "C" fn menu_list_draw() {
+        let mut w = super::StackFrame::<{ help::bridge::DRAW_WORK as usize / 4 }>::new();
+        help::bridge::menu_list_draw(&mut mem(), w.at(), &mut |_, f, a| super::call_cdecl(f, a));
     }
     /// `cd_read_thread_sector(cd, request, n)` (`0x0076e4b0`).
     cd_read_thread_sector @ 0x0076_e4b0 => extern "C" fn cd_read_thread_sector(cd: u32, request: u32, n: u32) {

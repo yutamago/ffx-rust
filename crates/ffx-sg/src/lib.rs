@@ -16,6 +16,7 @@ pub mod control;
 pub mod decode;
 pub mod envelope;
 pub mod gs;
+pub mod help;
 pub mod light;
 pub mod player;
 pub mod quat;

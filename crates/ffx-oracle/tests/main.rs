@@ -11035,3 +11035,405 @@ fn pc_r4_main_ei_abm_start_snapshot() {
     };
     ei_abm_start_cases(&mut a, &mut b, &mut Xorshift(0x5c4e_0404), 1500);
 }
+
+// pc round 5: the help menu's list drawer.
+
+/// `mov ecx, eax; <op> ecx, ..; mov [at], ecx` pieces of the
+/// `MsgExpandCodes` stand-in below.
+fn store_ecx(c: &mut Vec<u8>, at: u32) {
+    c.extend([0x89, 0x0d]);
+    c.extend(at.to_le_bytes());
+}
+
+/// `menu_list_draw` over logging stand-ins: two lists of up to six
+/// records of every kind, movement and picture state; positions on the
+/// screen's wrap edges and the digit special case; the text expansion's
+/// flag, digits and empty text from bits of the text pointer.
+#[allow(clippy::too_many_lines)] // the stand-ins, then the records
+fn menu_list_draw_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::help::bridge as hp;
+    use ffx_sg::state::bridge as st;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    let packet = alloc(a, b, 0x400);
+    recorder(a, b, 1, hp::PACKET_GET_PTR, 0, packet);
+    recorder(a, b, 2, hp::HDD_KABE_DISP, 0, 0);
+    recorder(a, b, 3, hp::RELAYOUT_RECORDS, 4, 0);
+    recorder(a, b, 4, hp::GS_SYNC_PATH, 2, 0);
+    recorder(a, b, 5, hp::DMA_GET_CHAN, 1, 0);
+    recorder(a, b, 6, hp::IS_LANG_SPECIAL, 1, 0);
+    // the condition: the record's byte +0x20 & 5
+    let cond = [
+        0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x40, 0x20, 0x83, 0xe0, 0x05, 0xc3,
+    ];
+    logged(a, b, 7, hp::RECORD_CONDITION, 1, &cond);
+    recorder(a, b, 8, hp::FLUSH_CACHE, 1, 0);
+    recorder(a, b, 9, hp::DMA_SEND, 2, 0);
+    // MsgExpandCodes: flag = text & 1, out[0] = (text >> 9) & 1; unless
+    // text bit 10 is set, digit mode (text >> 1) & 3, colour text & 8,
+    // value from its answer slot
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x54, 0x24, 0x14];
+    c.extend([0x89, 0xc1, 0x83, 0xe1, 0x01, 0x89, 0x0a]);
+    c.extend([
+        0x8b, 0x54, 0x24, 0x04, 0x89, 0xc1, 0xc1, 0xe9, 0x09, 0x83, 0xe1, 0x01,
+    ]);
+    // mov [edx], cl; test eax, 0x400; jz +1; ret
+    c.extend([0x88, 0x0a, 0xa9, 0x00, 0x04, 0, 0, 0x74, 0x01, 0xc3]);
+    c.extend([0x89, 0xc1, 0xd1, 0xe9, 0x83, 0xe1, 0x03]);
+    store_ecx(&mut c, a.rebase(hp::DIGIT_MODE.sym));
+    c.extend([0x89, 0xc1, 0x83, 0xe1, 0x08]);
+    store_ecx(&mut c, a.rebase(hp::DIGIT_COLOUR.sym));
+    c.extend([0x8b, 0x0d]);
+    c.extend(ret(a, 38).to_le_bytes());
+    store_ecx(&mut c, a.rebase(hp::DIGIT_VALUE.sym));
+    c.push(0xc3);
+    logged(a, b, 10, st::EXPAND_CODES, 3, &c);
+    // the message size: w 0x30 + text & 0xf, h 0x10
+    let c = [
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x0f, 0x83, 0xc0, 0x30, 0x8b, 0x4c, 0x24, 0x08, 0x89,
+        0x01, 0x8b, 0x44, 0x24, 0x0c, 0xc7, 0x00, 0x10, 0, 0, 0, 0xc3,
+    ];
+    logged(a, b, 11, hp::MESSAGE_SIZE, 1, &c);
+    recorder(a, b, 12, hp::TEXT_FRAME, 5, 0);
+    // the packet writers: the cursor plus 0x40 (text), 0x20 (digits),
+    // 0x30 (values)
+    let plus = |n: u8| vec![0x8b, 0x44, 0x24, 0x04, 0x83, 0xc0, n, 0xc3];
+    logged(a, b, 13, hp::FONT_ICONS, 6, &plus(0x40));
+    logged(a, b, 14, hp::FONT_NO_EDGE, 6, &plus(0x40));
+    recorder(a, b, 15, hp::FONT_FOR_HELP, 6, 0);
+    logged(a, b, 16, hp::FONT_BASE, 6, &plus(0x40));
+    recorder(a, b, 17, hp::FFX_LANG, 0, 0);
+    for (k, f) in [
+        (18, hp::DIGIT_ONE_8),
+        (19, hp::DIGIT_ONE),
+        (20, hp::DIGIT_TWO_8),
+        (21, hp::DIGIT_TWO),
+    ] {
+        logged(a, b, k, f, 5, &plus(0x20));
+    }
+    recorder(a, b, 22, hp::RECORD_DRAW, 4, 0);
+    logged(a, b, 23, hp::VALUE_RIGHT, 5, &plus(0x30));
+    logged(a, b, 24, hp::MES_VALUE, 5, &plus(0x30));
+    recorder(a, b, 25, hp::SND_SEP_PLAY_SIMPLE, 1, 0);
+    // the name: n stored into it; its first 8 bytes logged when interned
+    let c = [
+        0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08, 0x89, 0x08, 0xc3,
+    ];
+    logged(a, b, 26, hp::TEXTURE_NAME, 0, &c);
+    let names = alloc(a, b, 4 + 64 * 8);
+    let c = arg_logger(names, &[(0, 8)], &answer(ret(a, 27)));
+    redirect_to(a, b, hp::INTERN_NAME, &c);
+    recorder(a, b, 28, hp::LOAD_SPECIAL_TEXTURE, 3, 0);
+    // the read size: w 0x123 only
+    let c = [0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00, 0x23, 0x01, 0, 0, 0xc3];
+    logged(a, b, 29, hp::PICTURE_READ_SIZE, 1, &c);
+    recorder(a, b, 30, hp::PICTURE_SIZE, 5, 0);
+    recorder(a, b, 31, hp::DBG_PRINTF, 3, 0);
+    recorder(a, b, 32, hp::PICTURE_DRAW, 5, 0);
+    recorder(a, b, 33, hp::HDD_DRAW, 0, 0);
+    // the value getters and the CD library: stand-ins by pointer
+    let getter_log = alloc(a, b, 4 + 64 * 4);
+    let code = |a: &mut Oracle, b: &mut Oracle, c: &[u8]| {
+        let at = a.alloc_code(c).unwrap();
+        assert_eq!(b.alloc_code(c).unwrap(), at);
+        at
+    };
+    let getter = arg_logger(getter_log, &[(0, 0)], &answer(ret(a, 34)));
+    let getter = code(a, b, &getter);
+    let getters = alloc(a, b, 16 * 4);
+    for k in 0..16 {
+        put(a, b, getters + 4 * k, getter);
+    }
+    // the CD library: sync(1), table(n), read(n, buffer, 0, 0), each
+    // with its own log
+    let cd_logs = [
+        alloc(a, b, 4 + 64 * 4),
+        alloc(a, b, 4 + 64 * 4),
+        alloc(a, b, 4 + 64 * 16),
+    ];
+    let one: &[(u8, u32)] = &[(0, 0)];
+    let four: &[(u8, u32)] = &[(0, 0), (1, 0), (2, 0), (3, 0)];
+    let mut cd = [0; 3];
+    for (i, (k, args)) in [(35, one), (36, one), (37, four)].into_iter().enumerate() {
+        let slot = ret(a, k);
+        let tail = if i == 0 {
+            // bit 0 of the slot, shifted out: a new answer per call
+            let mut t = vec![0xa1];
+            t.extend(slot.to_le_bytes());
+            t.extend([0xd1, 0x2d]);
+            t.extend(slot.to_le_bytes());
+            t.extend([0x83, 0xe0, 0x01, 0xc3]);
+            t
+        } else {
+            answer(slot)
+        };
+        let c = arg_logger(cd_logs[i], args, &tail);
+        cd[i] = code(a, b, &c);
+    }
+    let [sync, table, read] = cd;
+    set(a, b, hp::SCRIPT_GETTERS, getters);
+    set(a, b, st::CDLIB_SYNC, sync);
+    set(a, b, st::CDLIB_TABLE, table);
+    set(a, b, st::CDLIB_READ, read);
+    let lists = alloc(a, b, 2 * 8);
+    let recs = [alloc(a, b, 6 * 0x138), alloc(a, b, 6 * 0x138)];
+    let slots = alloc(a, b, 16 * 4);
+    let texts = alloc(a, b, 32 * 4);
+    let out = alloc(a, b, 16);
+    let work = b.stack_range().start + 0x1000;
+    let float = |rng: &mut Xorshift| match rng.below(16) {
+        0 => 0x7fc0_0000,
+        1 => 0x5000_0000,
+        2 => 0,
+        3 => 0x8000_0000,
+        _ => float_within(rng, 700.0),
+    };
+    for round in 0..rounds {
+        put(a, b, log, 0u32);
+        put(a, b, names, 0u32);
+        put(a, b, getter_log, 0u32);
+        for l in cd_logs {
+            put(a, b, l, 0u32);
+        }
+        for k in [5, 6, 17, 27, 34, 37] {
+            let at = ret(a, k);
+            put(a, b, at, [0, 1, rng.next()][rng.below(3) as usize]);
+        }
+        let at = ret(a, 35);
+        put(a, b, at, rng.next() & rng.next());
+        let at = ret(a, 38);
+        put(
+            a,
+            b,
+            at,
+            [9, 9, 10, u32::MAX, 0, rng.next()][rng.below(6) as usize],
+        );
+        let at = ret(a, 36);
+        put(a, b, at, rng.below(2));
+        for k in 0..0x100 {
+            put(a, b, packet + 4 * k, rng.next());
+        }
+        let base = [0, 0x40, rng.below(0x100)][rng.below(3) as usize];
+        set(a, b, st::ML_BASE, base);
+        for (k, &r) in (0u32..).zip(&recs) {
+            put(a, b, lists + 8 * k, r.wrapping_sub(base));
+            let n = [0u16, 1, 2, 3, 6, 6, 0xffff][rng.below(7) as usize];
+            put(a, b, lists + 8 * k + 4, n);
+            for i in 0..6 * 0x138 / 4 {
+                put(a, b, r + 4 * i, rng.next());
+            }
+            for i in 0..6 {
+                record(a, b, rng, r + 0x138 * i, float, round);
+            }
+        }
+        set(
+            a,
+            b,
+            st::ML_LISTS,
+            if rng.below(10) == 0 { 0 } else { lists },
+        );
+        set(a, b, st::ML_CURRENT, rng.below(2));
+        let target = match rng.below(4) {
+            0 => 0,
+            _ => recs[rng.below(2) as usize] + 0x138 * rng.below(6),
+        };
+        set(a, b, st::ML_TARGET, target);
+        set(a, b, st::ML_SLOTS, slots);
+        for k in 0..16 {
+            let v = match rng.below(4) {
+                0 => rng.next() % 64,
+                _ => rng.below(8),
+            };
+            put(a, b, slots + 4 * k, v);
+        }
+        set(a, b, st::ML_TEXTS, texts);
+        for k in 0..32 {
+            put(a, b, texts + 4 * k, rng.next());
+        }
+        set(a, b, st::ML_TEXT_BASE, rng.next());
+        set(a, b, st::ML_OUT, out);
+        set(a, b, st::ML_TRG, u16::try_from(rng.below(0x100)).unwrap());
+        set(a, b, st::ML_BUSY, u8::from(rng.below(3) == 0));
+        set(
+            a,
+            b,
+            st::SA_MENU_SBIN,
+            [5, 8, 8, 0xb, 2][rng.below(5) as usize],
+        );
+        set(
+            a,
+            b,
+            hp::HDD_TABLE_A,
+            [0, 1, rng.next()][rng.below(3) as usize],
+        );
+        set(
+            a,
+            b,
+            hp::HDD_TABLE_B,
+            [0, 1, rng.next()][rng.below(3) as usize],
+        );
+        set(a, b, hp::PICTURE_BUF, rng.next());
+        set(
+            a,
+            b,
+            hp::PICTURE_TEXTURE,
+            [0, rng.next()][rng.below(2) as usize],
+        );
+        for g in [
+            hp::DIGIT_MODE,
+            hp::DIGIT_VALUE,
+            hp::DIGIT_COLOUR,
+            hp::PICK_KIND,
+            hp::PICK_VALUE,
+        ] {
+            set(a, b, g, rng.next());
+        }
+        twin("menu_list_draw", a, b, 0x0076_f850, &[], |m| {
+            let call = &mut |m: &mut Oracle, f: u32, args: &[u32]| {
+                m.call(f, Conv::Cdecl, args)
+                    .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+                    .eax
+            };
+            hp::menu_list_draw(m, work, call);
+        });
+    }
+}
+
+/// One random record of [`menu_list_draw_cases`]: a kind, movement and
+/// picture state, slot indexes, floats; every fourth on the digit special
+/// position (x 0xb9, y 0x5e + 0x26 k) or a wrap edge.
+fn record(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rec: u32,
+    float: impl Fn(&mut Xorshift) -> u32,
+    round: u32,
+) {
+    let small = |rng: &mut Xorshift, m: u32| u16::try_from(rng.below(m)).unwrap();
+    let kind = [0u8, 0, 0, 1, 2, 2, 3, 4, 5, 6, 6, 7, 0xff][rng.below(13) as usize];
+    put(a, b, rec, kind);
+    for o in [4, 6, 0xc, 0xe] {
+        let v = small(rng, 1200).wrapping_sub(500);
+        put(a, b, rec + o, v);
+    }
+    for o in [8, 0xa] {
+        let v = if rng.below(8) == 0 {
+            0xff00 | small(rng, 0x100)
+        } else {
+            small(rng, 300)
+        };
+        put(a, b, rec + o, v);
+    }
+    for o in [0x18, 0x24, 0x26, 0x28, 0xfe] {
+        let v = if rng.below(3) == 0 {
+            0xffff
+        } else {
+            small(rng, 16)
+        };
+        put(a, b, rec + o, v);
+    }
+    put(
+        a,
+        b,
+        rec + 0x14,
+        [0x30u16, 0x30, 2, 0xfff0][rng.below(4) as usize],
+    );
+    if rng.below(4) == 0 {
+        put(a, b, rec + 0xfe, 0xfffeu16);
+    }
+    put(a, b, rec + 0x16, small(rng, 8));
+    put(a, b, rec + 0x1a, small(rng, 8));
+    put(a, b, rec + 0x2a, [0u8, 0, 1, 2, 3][rng.below(5) as usize]);
+    put(a, b, rec + 0x20, [0u8, 0, 1, 4][rng.below(4) as usize]);
+    put(
+        a,
+        b,
+        rec + 0xf2,
+        [0u16, 0x80, 0x8123][rng.below(3) as usize],
+    );
+    put(
+        a,
+        b,
+        rec + 0x110,
+        [0u8, 1, 1, 2, 2, 3, 5, 0x81, 0xff][rng.below(9) as usize],
+    );
+    put(
+        a,
+        b,
+        rec + 0x114,
+        [0u16, 0, 1, 0x8000][rng.below(4) as usize],
+    );
+    put(
+        a,
+        b,
+        rec + 0x116,
+        [0u16, 1, 3, 0x8000, 0xffff][rng.below(5) as usize],
+    );
+    for o in [0x118, 0x11c, 0x124, 0x128] {
+        let f = float(rng);
+        put(a, b, rec + o, f);
+    }
+    match (round + rng.below(4)) % 4 {
+        0 => {
+            // the digit special position, a text record drawn
+            put(a, b, rec, 0u8);
+            put(a, b, rec + 0x20, 0u8);
+            put(a, b, rec + 4, 0xb9u16);
+            put(a, b, rec + 6, 0x5eu16 + 0x13 * small(rng, 8));
+            for o in [0xc, 0xe] {
+                put(a, b, rec + o, 0u16);
+            }
+            for o in [0x26, 0x28] {
+                put(a, b, rec + o, 0xffffu16);
+            }
+            put(a, b, rec + 0x118, 0u32);
+            put(a, b, rec + 0x11c, 0u32);
+        }
+        1 => {
+            // on or next to a wrap edge
+            let w = small(rng, 64);
+            put(a, b, rec + 8, w);
+            put(a, b, rec + 0xa, w);
+            let edges = [
+                0u16.wrapping_sub(w),
+                0u16.wrapping_sub(w + 1),
+                0x200,
+                0x201,
+                0x1a0,
+                0x1a1,
+            ];
+            for o in [4, 6] {
+                put(a, b, rec + o, edges[rng.below(6) as usize]);
+            }
+            for o in [0xc, 0xe] {
+                put(a, b, rec + o, 0u16);
+            }
+            for o in [0x26, 0x28] {
+                put(a, b, rec + o, 0xffffu16);
+            }
+            for o in [0x118, 0x11c, 0x124, 0x128] {
+                put(a, b, rec + o, 0u32);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn menu_list_draw_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_f850);
+    menu_list_draw_cases(&mut a, &mut b, &mut rng, 1500);
+}
+
+#[test]
+fn menu_list_draw_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_f851);
+    menu_list_draw_cases(&mut a, &mut b, &mut rng, 800);
+}
