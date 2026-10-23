@@ -17,10 +17,13 @@
 //! (`fild`/`fstp` staging, copies of VU0 registers), kept in Rust locals
 //! here.
 //!
-//! Frame: `0x1f3c` bytes (`_alloca_probe`), so a shim needs a
-//! `StackFrame` of `0x7cf` words. Its one reference is the
-//! `g_MagicImports` slot `0x00c650b0`, so magic overlays call it; on the
-//! job workers (128 KB) that fits, as it does for the original.
+//! Frame: `0x1f3c` bytes (`_alloca_probe`); the hook keeps the frame words
+//! in a `StackFrame` of `0x7cf` words and computes the frame buffer's
+//! address from where the original's frame would be
+//! ([`bridge::op_shape_draw_at`]). Its one reference is the
+//! `g_MagicImports` slot `0x00c650b0`, so magic overlays call it, from the
+//! effect runners: the main thread or a 128 KB job worker, never a 32 KB
+//! thread.
 //!
 //! The loops: plain (S6, [`bridge::plain`]), VU0 plain (S3,
 //! [`bridge::vu0_plain`]), textured (S5, [`bridge::textured`]; S2,
@@ -128,11 +131,20 @@ pub mod bridge {
     /// The frame words the head, the loops and the tail share.
     #[derive(Debug, Clone, Copy)]
     pub struct Frame {
-        /// The original's `ebp`.
+        /// Where the frame is (the original's `ebp`, or a stand-in's).
         pub ebp: u32,
+        /// The original's `ebp`: the packet buffer's address (the cursor
+        /// and the result with `cmd +2` bit 2) is computed from it. The
+        /// buffer itself is never written or read.
+        pub original: u32,
     }
 
     impl Frame {
+        /// A frame at the original's `ebp`.
+        #[must_use]
+        pub const fn new(ebp: u32) -> Self {
+            Self { ebp, original: ebp }
+        }
         fn at(self, off: u32) -> u32 {
             self.ebp.wrapping_sub(off)
         }
@@ -159,10 +171,11 @@ pub mod bridge {
         fn set_vertex(self, mem: &mut impl Mem, v: u32) {
             mem.write(self.at(0x1bb0), v);
         }
-        /// `ebp - 0x1804`: the packet buffer used with `cmd +2` bit 2.
+        /// `ebp - 0x1804`: the packet buffer used with `cmd +2` bit 2 (at
+        /// the original's `ebp`).
         #[must_use]
         pub fn buffer(self) -> u32 {
-            self.at(0x1804)
+            self.original.wrapping_sub(0x1804)
         }
     }
 
@@ -281,7 +294,13 @@ pub mod bridge {
     /// `op_shape_draw(shape, cmd)` with its frame at `ebp`: the head, the
     /// selected loop, the tail's result.
     pub fn op_shape_draw(mem: &mut impl Mem, shape: u32, cmd: u32, ebp: u32) -> u32 {
-        let frame = Frame { ebp };
+        op_shape_draw_at(mem, shape, cmd, Frame::new(ebp))
+    }
+
+    /// [`op_shape_draw`] with its frame words at `frame.ebp` and the
+    /// addresses it returns from `frame.original` (a shim's frame stands in
+    /// for the original's, which would sit just below the caller's stack).
+    pub fn op_shape_draw_at(mem: &mut impl Mem, shape: u32, cmd: u32, frame: Frame) -> u32 {
         match head(mem, shape, cmd, frame) {
             Variant::Plain => plain(mem, frame, cmd, shape.wrapping_add(0x20)),
             Variant::Vu0Plain => vu0_plain(mem, cmd, shape.wrapping_add(0x20)),

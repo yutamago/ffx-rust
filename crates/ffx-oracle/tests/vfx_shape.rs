@@ -496,7 +496,7 @@ fn loop_test(
                 p.a.call(thunk, Conv::Cdecl, &[c.shape, c.cmd])
                     .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
             assert!(r.st0.is_none(), "{}: {what}: ST0 left set", p.name);
-            let frame = Frame { ebp };
+            let frame = Frame::new(ebp);
             port(&mut p.b, frame, c.cmd, c.shape + 0x20);
             let mine = shape::tail(&p.b, frame);
             assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
@@ -612,7 +612,8 @@ fn shape_whole_s1_matches_the_original() {
 }
 
 /// The whole function, each case on a selection picked at random (the six
-/// loops one after another on the same memory).
+/// loops one after another on the same memory); every fourth case with the
+/// Rust frame words elsewhere, as the hook keeps them.
 #[test]
 fn shape_whole_all_matches_the_original() {
     let setups: [Setup; 6] = [
@@ -643,6 +644,27 @@ fn shape_whole_all_matches_the_original() {
                 p.a.call(draw, Conv::Cdecl, &[c.shape, c.cmd])
                     .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
             assert!(r.st0.is_none(), "{}: {what}: ST0 left set", p.name);
+            if case % 4 == 3 {
+                // the frame words somewhere else, as the hook keeps them:
+                // the same result (a frame buffer address is the
+                // original's) and the same memory outside the stacks
+                let frame = Frame {
+                    ebp: ebp - 0x4000,
+                    original: ebp,
+                };
+                let mine = shape::op_shape_draw_at(&mut p.b, c.shape, c.cmd, frame);
+                assert_eq!(r.eax, mine, "{}: {what} (moved frame): result", p.name);
+                let diff = p.a.diff(&mut p.b).unwrap();
+                assert!(
+                    diff.is_empty(),
+                    "{}: {what} (moved frame): {:x?}",
+                    p.name,
+                    &diff[..diff.len().min(16)]
+                );
+                p.a.clear_dirty();
+                p.b.clear_dirty();
+                continue;
+            }
             let mine = shape::op_shape_draw(&mut p.b, c.shape, c.cmd, ebp);
             assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
             p.same(&what, ebp);
@@ -716,7 +738,7 @@ fn shape_head_matches_the_original() {
             let r =
                 p.a.call(draw, Conv::Cdecl, &[c.shape, c.cmd])
                     .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
-            let frame = Frame { ebp };
+            let frame = Frame::new(ebp);
             let v = shape::head(&mut p.b, c.shape, c.cmd, frame);
             let k = (0u32..).zip(LOOPS).find(|(_, (_, l))| *l == v).unwrap().0;
             seen[k as usize] += 1;
