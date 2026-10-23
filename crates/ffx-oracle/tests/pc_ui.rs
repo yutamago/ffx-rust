@@ -3275,3 +3275,158 @@ fn r2f_abmap_draw_panels_matches_the_original() {
         }
     }
 }
+
+const FF_ESC_MENU_SHOW_QUIT_POP_UP: u32 = 0x0068_fb20;
+const FF_ESC_MENU_SHOW_KEY_INCOMPLETE_POP_UP: u32 = 0x0070_1470;
+const FF_ESC_MENU_SHOW_PAD_INCOMPLETE_POP_UP: u32 = 0x0070_1c50;
+
+/// What a Flash call stand-in saw, per call.
+type FlashLog = std::rc::Rc<std::cell::RefCell<Vec<Vec<u32>>>>;
+
+/// A stand-in for the `IggyMenu_callFlashFunction_<n>` at `sym` in `o`:
+/// logs the menu, the name and each value's words but the second (frame
+/// junk the setters leave), a string's pointer replaced by its bytes;
+/// stores `[poke.1]` at `poke.0` when not zero (a callee changing
+/// `g_FFEscMenu`); returns `[cell]`.
+fn flash_stand_in(o: &mut Oracle, sym: u32, n: u32, cell: u32, poke: (u32, u32)) -> FlashLog {
+    let log = FlashLog::default();
+    let l = log.clone();
+    let at = o.rebase(sym);
+    o.stand_in(at, ffx_oracle::Returns::Eax, cell, move |s| {
+        let mut e = vec![s.arg(0), s.arg(1)];
+        for k in 0..n {
+            let w = [0u32, 1, 2, 3].map(|i| s.arg(2 + 4 * k + i));
+            e.push(w[0]);
+            if w[0] == ffx_pcui::iggy::TYPE_STRING_UTF8 {
+                e.push(w[3]);
+                let mut b = vec![0u8; w[3].min(0x100) as usize];
+                Mem::read_bytes(s, w[2], &mut b);
+                e.extend(b.iter().map(|&x| u32::from(x)));
+            } else {
+                e.extend([w[2], w[3]]);
+            }
+        }
+        l.borrow_mut().push(e);
+        let p: u32 = Mem::read(s, poke.1);
+        if p != 0 {
+            Mem::write(s, poke.0, p);
+        }
+        u64::from(Mem::read::<u32>(s, cell))
+    })
+    .unwrap();
+    log
+}
+
+/// `graphicGetLocTextWithLength(id, out, len)`'s stand-in: `T<id>.<salt>`
+/// and up to 0x13f filler letters (`[salt] >> 9`), the line-break marker
+/// `@el@` at `([salt] >> 20) %` the length when `[salt] % 5` is below 4
+/// (and at the end with bit 8), cut to `len - 1` bytes; returns `[cell]`.
+fn loc_text_stand_in(o: &mut Oracle, cell: u32, salt: u32) {
+    let at = o.rebase(menus::LOC_TEXT);
+    o.stand_in(at, ffx_oracle::Returns::Eax, cell, move |s| {
+        let (id, out, len) = (s.arg(0), s.arg(1), s.arg(2));
+        let v: u32 = Mem::read(s, salt);
+        let mut t = format!("T{id:x}.{v:x}").into_bytes();
+        t.extend((0..(v >> 9) % 0x140).map(|i| b'a' + (i % 26) as u8));
+        if v % 5 < 4 {
+            let at = (v >> 20) as usize % (t.len() + 1);
+            t.splice(at..at, *b"@el@");
+            if v & 0x100 != 0 {
+                t.extend(b"@el@x");
+            }
+        }
+        t.truncate(len.saturating_sub(1) as usize);
+        t.push(0);
+        Mem::write_bytes(s, out, &t);
+        u64::from(Mem::read::<u32>(s, cell))
+    })
+    .unwrap();
+}
+
+#[test]
+fn r3a_esc_menu_pop_ups_match_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0301);
+        let cells = t.alloc(0x20);
+        let (ret, salt, poke) = (cells, cells + 4, cells + 8);
+        let g = t.a.rebase(menus::G_FF_ESC_MENU);
+        let mut logs = Vec::new();
+        for o in [&mut t.a, &mut t.b] {
+            loc_text_stand_in(o, cells + 0xc, salt);
+            logs.push([
+                flash_stand_in(o, menus::CALL_FLASH_3, 3, ret, (g, poke)),
+                flash_stand_in(o, menus::CALL_FLASH_5, 5, ret, (g, poke)),
+            ]);
+        }
+        // the stand-ins' own bytes
+        t.a.clear_dirty();
+        t.b.clear_dirty();
+        let menus_at = t.alloc(0x400);
+        let work = t.b.stack_range().start + 0x1000;
+        for n in 0..60u32 {
+            t.put(menus_at, &rng.bytes(0x400));
+            let first = menus_at + 0x200 * rng.below(2);
+            t.put(g, &first.to_le_bytes());
+            t.put(ret, &rng.next().to_le_bytes());
+            t.put(salt, &rng.next().to_le_bytes());
+            let other = [0, 0, menus_at + 0x200, menus_at][rng.below(4) as usize];
+            t.put(poke, &other.to_le_bytes());
+            t.b.write(work, &rng.bytes(0x430)).unwrap();
+            t.check(
+                &format!("quit pop-up {n}"),
+                FF_ESC_MENU_SHOW_QUIT_POP_UP,
+                Conv::Cdecl,
+                &[0],
+                |o| {
+                    Res::Int(menus::show_quit_pop_up(
+                        &mut Run(o),
+                        work,
+                        &mut |h, f, a| h.0.call(f, Conv::Cdecl, a).unwrap().eax,
+                    ))
+                },
+            );
+            let menu = [first, rng.next(), 0][rng.below(3) as usize];
+            for (f, ids) in [
+                (
+                    FF_ESC_MENU_SHOW_KEY_INCOMPLETE_POP_UP,
+                    menus::KEY_INCOMPLETE_TEXTS,
+                ),
+                (
+                    FF_ESC_MENU_SHOW_PAD_INCOMPLETE_POP_UP,
+                    menus::PAD_INCOMPLETE_TEXTS,
+                ),
+            ] {
+                t.b.write(work, &rng.bytes(0x270)).unwrap();
+                t.check(
+                    &format!("incomplete pop-up {f:#x} {n}"),
+                    f,
+                    Conv::Cdecl,
+                    &[menu],
+                    |o| {
+                        Res::Int(menus::show_incomplete_pop_up(
+                            &mut Run(o),
+                            menu,
+                            ids,
+                            work,
+                            &mut |h, f, a| h.0.call(f, Conv::Cdecl, a).unwrap().eax,
+                        ))
+                    },
+                );
+            }
+            for [three, five] in &logs[..1] {
+                let [b3, b5] = &logs[1];
+                assert_eq!(*three.borrow(), *b3.borrow(), "{}: quit {n}", t.name);
+                assert_eq!(*five.borrow(), *b5.borrow(), "{}: incomplete {n}", t.name);
+                assert_eq!(three.borrow().len(), n as usize + 1);
+                assert_eq!(five.borrow().len(), 2 * n as usize + 2);
+            }
+        }
+        // the converter really ran: line breaks in the logged texts
+        let breaks = logs[0][0]
+            .borrow()
+            .iter()
+            .filter(|e| e.contains(&10))
+            .count();
+        assert!(breaks > 20, "{}: {breaks} texts with line breaks", t.name);
+    }
+}

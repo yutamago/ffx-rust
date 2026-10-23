@@ -302,4 +302,22 @@ ported! {
     AbmapDrawPanels_00a58660 @ 0x00a5_8660 => extern "C" fn abmap_draw_panels() -> u32 {
         panel::draw_panels(&mut mem(), &mut |_, f, args| super::call_cdecl(f, args))
     }
+    /// `FFEscMenu_ShowQuitPopUp_0068fb20()`: the texts and values in this
+    /// frame, the 14-word Flash call through `call_cdecl_words`.
+    FFEscMenu_ShowQuitPopUp_0068fb20 @ 0x0068_fb20 => extern "C" fn ff_esc_menu_show_quit_pop_up() -> u32 {
+        let mut w = super::StackFrame::<{ menus::QUIT_POP_UP_WORK as usize / 4 }>::new();
+        menus::show_quit_pop_up(&mut mem(), w.at(), &mut |_, f, args| super::call_cdecl_words(f, args))
+    }
+    /// `FFEscMenu_ShowKeyIncompletePopUp_00701470(menu)`: the strings and
+    /// values in this frame, the 22-word Flash call through
+    /// `call_cdecl_words`.
+    FFEscMenu_ShowKeyIncompletePopUp_00701470 @ 0x0070_1470 => extern "C" fn ff_esc_menu_show_key_incomplete_pop_up(menu: u32) -> u32 {
+        let mut w = super::StackFrame::<{ menus::INCOMPLETE_POP_UP_WORK as usize / 4 }>::new();
+        menus::show_incomplete_pop_up(&mut mem(), menu, menus::KEY_INCOMPLETE_TEXTS, w.at(), &mut |_, f, args| super::call_cdecl_words(f, args))
+    }
+    /// `FFEscMenu_ShowPadIncompletePopUp_00701c50(menu)`: as the keyboard's.
+    FFEscMenu_ShowPadIncompletePopUp_00701c50 @ 0x0070_1c50 => extern "C" fn ff_esc_menu_show_pad_incomplete_pop_up(menu: u32) -> u32 {
+        let mut w = super::StackFrame::<{ menus::INCOMPLETE_POP_UP_WORK as usize / 4 }>::new();
+        menus::show_incomplete_pop_up(&mut mem(), menu, menus::PAD_INCOMPLETE_TEXTS, w.at(), &mut |_, f, args| super::call_cdecl_words(f, args))
+    }
 }

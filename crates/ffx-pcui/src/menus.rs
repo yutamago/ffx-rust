@@ -5,6 +5,8 @@
 pub mod bridge {
     use ffx_graphic::host::{Conv, Host};
 
+    use crate::iggy::bridge as iggy;
+
     /// `0x00a28f40(menu, x, y, w, h)` (`thiscall`, unnamed): a menu's
     /// viewport, the four words through `ftol` into `+0x84..+0x90`.
     pub const MENU_SET_VIEWPORT: u32 = 0x00a2_8f40;
@@ -46,5 +48,134 @@ pub mod bridge {
             return r;
         }
         mem.call_sym(MENU_HANDLE, Conv::Thiscall(this), &[a, b])
+    }
+
+    /// `graphicGetLocTextWithLength(id, out, len)`: localised text `id`.
+    pub const LOC_TEXT: u32 = 0x0064_12f0;
+    /// `0x006e96b0(src, dst, len)` (a jump to `LocText_ConvertLineBreaks_006e9700`,
+    /// name ours): `src` into `dst` with the text's line-break marker
+    /// turned into `'\n'`.
+    pub const TEXT_TO_IGGY: u32 = 0x006e_96b0;
+    /// `LocString_Load_0068e180(this, id)` (name ours; `thiscall`, `ret
+    /// 4`): localised text `id` through [`TEXT_TO_IGGY`] into the
+    /// 0x100-byte text at `this`; returns `this`.
+    pub const LOC_STRING_LOAD: u32 = 0x0068_e180;
+    /// `LocString_ToValue_0068e270(this, out)` (name ours; `thiscall`,
+    /// `ret 4`): the `IggyDataValue` at `this + 0x100` set to the text at
+    /// `this`, its four words copied to `out`.
+    pub const LOC_STRING_TO_VALUE: u32 = 0x0068_e270;
+    /// `IggyMenu_callFlashFunction_3_0068ddd0(menu, name, v0, v1, v2)` and
+    /// `IggyMenu_callFlashFunction_5_0068def0(menu, name, v0..v4)` (names
+    /// ours, after Fahrenheit's `IggyMenu::callFlashFunction<1>` at
+    /// `0x0068dd40`; `cdecl`): the values passed by value, four words
+    /// each, 14 and 22 stack words.
+    pub const CALL_FLASH_3: u32 = 0x0068_ddd0;
+    pub const CALL_FLASH_5: u32 = 0x0068_def0;
+    /// `"showPopUpWithBtn"`, `""` (`.rdata`).
+    pub const SHOW_POP_UP_WITH_BTN: u32 = 0x00b4_6cac;
+    pub const EMPTY_TEXT: u32 = 0x00b8_fbeb;
+    /// `g_FFEscMenu`: the Esc menu.
+    pub const G_FF_ESC_MENU: u32 = 0x00cc_c870;
+    /// `FFEscMenu_QuitConfirmed_0068fcf0(yes)` (name ours): with `yes`,
+    /// the menu off, the cursor shown, and back to the launcher.
+    pub const QUIT_CONFIRMED: u32 = 0x0068_fcf0;
+
+    /// The four words of the `IggyDataValue` at `v`, as a by-value
+    /// argument (word 1, and word 3 of a boolean, are whatever the frame
+    /// held: the setters don't write them).
+    fn value_words(mem: &impl Host, v: u32) -> [u32; 4] {
+        mem.read(v)
+    }
+
+    /// Bytes of work [`show_quit_pop_up`] needs: the original's frame
+    /// (one 0x100-byte localised text, three converted ones, three
+    /// values).
+    pub const QUIT_POP_UP_WORK: u32 = 0x430;
+
+    /// `FFEscMenu_ShowQuitPopUp_0068fb20()` (name ours; `cdecl`, the
+    /// handler `FUN_0068fb00` queues for `EscMenuQuit`, called as `f(0)`):
+    /// localised texts 0x309, 0x308, 0x307, each through
+    /// [`TEXT_TO_IGGY`] into its own buffer and set as a string value;
+    /// `showPopUpWithBtn` on `g_FFEscMenu` with the values of 0x307,
+    /// 0x308, 0x309 ([`CALL_FLASH_3`] through `wide`, 14 words); then
+    /// `g_FFEscMenu` (read again) gets the answer callback
+    /// [`QUIT_CONFIRMED`] at `+0x10c` and 0 at `+0x110`. Returns that
+    /// `g_FFEscMenu` (`eax`).
+    pub fn show_quit_pop_up<H: Host>(
+        mem: &mut H,
+        work: u32,
+        wide: &mut impl FnMut(&mut H, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let loc = work;
+        let mut args = vec![0u32; 2];
+        let mut values = [[0u32; 4]; 3];
+        for (k, id) in [0x309u32, 0x308, 0x307].into_iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation)] // k < 3
+            let k32 = k as u32;
+            let text = work.wrapping_add(0x100 + 0x100 * k32);
+            let value = work.wrapping_add(0x400 + 0x10 * k32);
+            mem.call_sym(LOC_TEXT, Conv::Cdecl, &[id, loc, 0x100]);
+            mem.call_sym(TEXT_TO_IGGY, Conv::Cdecl, &[loc, text, 0x100]);
+            iggy::set_utf8(mem, value, text);
+            values[k] = value_words(mem, value);
+        }
+        let g = mem.rebase(G_FF_ESC_MENU);
+        args[0] = mem.read(g);
+        args[1] = mem.rebase(SHOW_POP_UP_WITH_BTN);
+        for v in values.iter().rev() {
+            args.extend(v);
+        }
+        let f = mem.rebase(CALL_FLASH_3);
+        wide(mem, f, &args);
+        let menu: u32 = mem.read(g);
+        let done = mem.rebase(QUIT_CONFIRMED);
+        mem.write(menu.wrapping_add(0x10c), done);
+        mem.write(menu.wrapping_add(0x110), 0u32);
+        menu
+    }
+
+    /// Bytes of work [`show_incomplete_pop_up`] needs: the original's
+    /// frame (two 0x110-byte localised strings, five values).
+    pub const INCOMPLETE_POP_UP_WORK: u32 = 0x270;
+
+    /// The texts of `FFEscMenu_ShowKeyIncompletePopUp_00701470` and
+    /// `FFEscMenu_ShowPadIncompletePopUp_00701c50`, in load order.
+    pub const KEY_INCOMPLETE_TEXTS: [u32; 2] = [0x302, 0x301];
+    pub const PAD_INCOMPLETE_TEXTS: [u32; 2] = [0x37b, 0x37a];
+
+    /// The settings pages' "incomplete" pop-up (`cdecl(menu)`, queued as
+    /// `f(menu)` by `EscMenuKeyboardSettingIncomplete` and
+    /// `EscMenuControllerSettingIncomplete`): `FFEscMenu_ShowKeyIncompletePopUp_00701470`
+    /// with `ids` [`KEY_INCOMPLETE_TEXTS`], `FFEscMenu_ShowPadIncompletePopUp_00701c50`
+    /// with [`PAD_INCOMPLETE_TEXTS`] (names ours). Two number values 1, the
+    /// string value `""`, then each id's localised string
+    /// ([`LOC_STRING_LOAD`], [`LOC_STRING_TO_VALUE`]) in that order;
+    /// `showPopUpWithBtn` on `menu` with the values of `ids[1]`, `ids[0]`,
+    /// `""`, 1, 1 ([`CALL_FLASH_5`] through `wide`, 22 words). Returns its
+    /// `eax`.
+    pub fn show_incomplete_pop_up<H: Host>(
+        mem: &mut H,
+        menu: u32,
+        ids: [u32; 2],
+        work: u32,
+        wide: &mut impl FnMut(&mut H, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let value = |k: u32| work.wrapping_add(0x220 + 0x10 * k);
+        let (one_a, one_b, empty) = (value(0), value(1), value(2));
+        iggy::set_int(mem, one_a, 1);
+        iggy::set_int(mem, one_b, 1);
+        let text = mem.rebase(EMPTY_TEXT);
+        iggy::set_utf8(mem, empty, text);
+        for (k, id) in (0u32..).zip(ids) {
+            let s = work.wrapping_add(0x110 * k);
+            let s = mem.call_sym(LOC_STRING_LOAD, Conv::Thiscall(s), &[id]);
+            mem.call_sym(LOC_STRING_TO_VALUE, Conv::Thiscall(s), &[value(3 + k)]);
+        }
+        let mut args = vec![menu, mem.rebase(SHOW_POP_UP_WITH_BTN)];
+        for v in [value(4), value(3), empty, one_b, one_a] {
+            args.extend(value_words(mem, v));
+        }
+        let f = mem.rebase(CALL_FLASH_5);
+        wide(mem, f, &args)
     }
 }
