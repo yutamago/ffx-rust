@@ -743,7 +743,7 @@ fn gui_touch_handle_event_matches_the_original() {
 
 /// A call log both oracles share the layout of: a cursor word, then
 /// entries (stub id, the first three arguments in 16 bytes; up to seven
-/// in 32 bytes).
+/// in 32 bytes, up to eleven in 48).
 struct Log {
     cursor: u32,
     /// Stubs made while set return this `f32` in `ST0` instead.
@@ -761,7 +761,7 @@ impl Log {
     }
 
     /// Replaces the original at `sym` in both with a cdecl stub that logs
-    /// `id` and its first `args` arguments (0 to 7) and returns
+    /// `id` and its first `args` arguments (0 to 11) and returns
     /// `base + (first argument & mask) * stride`.
     fn stub(&self, t: &mut Twin, sym: u32, id: u32, args: u8, ret: (u32, u32, u32)) {
         self.stub_poke(t, sym, id, args, ret, None);
@@ -807,7 +807,11 @@ impl Log {
         for k in 1..=args {
             c.extend([0x8b, 0x54, 0x24, 4 * k, 0x89, 0x51, 4 * k]);
         }
-        let size = if args > 3 { 0x20 } else { 0x10 };
+        let size = match args {
+            0..=3 => 0x10,
+            4..=7 => 0x20,
+            _ => 0x30,
+        };
         c.extend([0x83, 0xc1, size, 0x89, 0x0d]);
         c.extend(self.cursor.to_le_bytes());
         if let Some(f) = self.float {
@@ -1939,6 +1943,204 @@ fn gui_touch_update_matches_the_original() {
                     Res::Void
                 },
             );
+        }
+    }
+}
+
+const ABMAP_PAD_QUIT_HANDLER: u32 = 0x00a5_6060;
+const ABMAP_PAD_ITEM_HANDLER: u32 = 0x00a5_60d0;
+const ABMAP_PAD_COMMAND_HANDLER: u32 = 0x00a5_6330;
+const ABMAP_MAIN_MES: u32 = 0x00a5_67d0;
+const ABMAP_STATUS_MES: u32 = 0x00a5_6fc0;
+const MENU_ITEM_SORT_ALL_GEAR: u32 = 0x008c_9bf0;
+const MENU_MES_FONT1612_NO_EDGE: u32 = 0x008e_52b0;
+const MENU_MES_FONT1612_ICONS_NO_EDGE: u32 = 0x008e_52e0;
+
+#[test]
+fn r1a_abmap_pad_menu_handlers_match_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0101);
+        let log = Log::new(&mut t);
+        // every callee returns its own constant, so eax shows whose it is
+        for (id, sym) in (1u32..).zip([
+            panel::ABMAP_STORE_SAVE,
+            panel::EI_ABM_PARA_GET,
+            panel::TO_MENU_TERM_ABILITY_MAP2,
+            panel::ABMAP_SHOW_ITEM_TARGETS,
+            panel::ABMAP_ENTER_COMMAND_MENU,
+            panel::ABMAP_ENTER_ITEM_MENU,
+            panel::ABMAP_INIT_CHOOSING_MOVE_TARGET,
+            panel::ABMAP_RESET_HELP,
+        ]) {
+            // only AbmapShowItemTargets takes arguments (three)
+            let args = if sym == panel::ABMAP_SHOW_ITEM_TARGETS {
+                3
+            } else {
+                0
+            };
+            log.stub(&mut t, sym, id, args, (0x5100_0000 + id, 0, 0));
+        }
+        log.stub(
+            &mut t,
+            abmap::SND_SEP_PLAY_SIMPLE,
+            9,
+            1,
+            (0x5200_0000, 0, 0),
+        );
+        let pads = t.alloc(0x2800);
+        let at = t.a.rebase(panel::PAD.sym);
+        t.put(at, &pads.to_le_bytes());
+        let g = made_up_abmap(&mut t, &mut rng, 0x11700);
+        let entry = t.alloc(0x10);
+        let running = t.a.rebase(panel::RUNNING.sym);
+        let cjk = t.a.rebase(panel::CJK_TEXT.sym);
+        for n in 0..400u32 {
+            log.rewind(&mut t);
+            t.put(pads, &rng.bytes(0x2800));
+            t.put(g + 0x1_1000, &rng.bytes(0x700));
+            t.put(entry, &rng.bytes(0x10));
+            t.put(running, &rng.next().to_le_bytes());
+            let c = [0u32, 1, rng.next()][rng.below(3) as usize];
+            t.put(cjk, &c.to_le_bytes());
+            #[allow(clippy::cast_possible_truncation)]
+            t.put(g + 0x1_15bc, &[rng.below(8) as u8]);
+            // panel 6 shown or not, with or without a step
+            if rng.below(2) == 0 {
+                t.put(pads + 0x13a3, &[0]);
+            }
+            if rng.below(2) == 0 {
+                t.put(pads + 0x13b4, &[0; 4]);
+            }
+            let choice = [0u32, 1, 2, 0xffff_ffff, 0x100, rng.next()][n as usize % 6];
+            let confirmed = [0u32, 1, 0x100, rng.next()][(n as usize / 6) % 4];
+            let (p, e) = (rng.next(), entry);
+            let what = format!("{n} choice {choice:#x} confirmed {confirmed:#x}");
+            t.check(
+                &format!("quit {what}"),
+                ABMAP_PAD_QUIT_HANDLER,
+                Conv::Cdecl,
+                &[p, e, choice, confirmed],
+                |o| Res::Int(panel::quit_handler(&mut Run(o), choice, confirmed)),
+            );
+            t.check(
+                &format!("item {what}"),
+                ABMAP_PAD_ITEM_HANDLER,
+                Conv::Cdecl,
+                &[p, e, choice, confirmed],
+                |o| Res::Int(panel::item_handler(&mut Run(o), e, confirmed)),
+            );
+            t.check(
+                &format!("command {what}"),
+                ABMAP_PAD_COMMAND_HANDLER,
+                Conv::Cdecl,
+                &[p, e, choice, confirmed],
+                |o| Res::Int(panel::command_handler(&mut Run(o), choice, confirmed)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r1a_abmap_menu_text_wrappers_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0102);
+        let config = t.a.rebase(ffx_battle::save::bridge::MENU.sym);
+        for n in 0..300u32 {
+            if n % 2 == 0 {
+                t.put(config, &rng.next().to_le_bytes());
+            }
+            let id = [0u32, 1, 2, 0x10, 0x2000_0001, 0xffff_ffff, rng.below(0x100)][n as usize % 7]
+                & 0xffff_1fff;
+            for (f, text) in [(ABMAP_MAIN_MES, 9), (ABMAP_STATUS_MES, 11)] {
+                t.check(
+                    &format!("text {text} id {id:#x}"),
+                    f,
+                    Conv::Cdecl,
+                    &[id],
+                    |o| Res::Int(tk::menu_text_of(o, text, false, id)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn r1a_menu_item_sort_all_gear_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0103);
+        let log = Log::new(&mut t);
+        // returns its start, so eax is the last run's
+        log.stub(&mut t, item::MENU_ITEM_SORT_GEAR, 1, 3, (0, 0xffff_ffff, 1));
+        let counts = t.a.rebase(item::GEAR_COUNTS);
+        for n in 0..200u32 {
+            log.rewind(&mut t);
+            let words: Vec<u8> = (0..item::GEAR_RUNS)
+                .flat_map(|_| {
+                    #[allow(clippy::cast_possible_truncation)]
+                    let c = match rng.below(4) {
+                        0 => 0u16,
+                        1 => rng.below(8) as u16,
+                        2 => 0xffff,
+                        _ => rng.next() as u16,
+                    };
+                    c.to_le_bytes()
+                })
+                .collect();
+            t.put(counts, &words);
+            t.check(
+                &format!("sort all gear {n}"),
+                MENU_ITEM_SORT_ALL_GEAR,
+                Conv::Cdecl,
+                &[],
+                |o| Res::Int(item::sort_all_gear(&mut Run(o))),
+            );
+        }
+    }
+}
+
+#[test]
+fn r1a_menu_mes_font1612_no_edge_wrappers_match_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0104);
+        let log = Log::new(&mut t);
+        // they return their cursor (plus 7 for the icon one)
+        log.stub(
+            &mut t,
+            item::MENU_MES_ADD_PKT_FONT1612,
+            1,
+            11,
+            (0, 0xffff_ffff, 1),
+        );
+        log.stub(
+            &mut t,
+            item::MENU_MES_ADD_PKT_FONT1612_ICONS,
+            2,
+            11,
+            (7, 0xffff_ffff, 1),
+        );
+        for n in 0..100u32 {
+            for (f, callee) in [
+                (MENU_MES_FONT1612_NO_EDGE, item::MENU_MES_ADD_PKT_FONT1612),
+                (
+                    MENU_MES_FONT1612_ICONS_NO_EDGE,
+                    item::MENU_MES_ADD_PKT_FONT1612_ICONS,
+                ),
+            ] {
+                log.rewind(&mut t);
+                let args: [u32; 10] = std::array::from_fn(|_| rng.next());
+                t.check(
+                    &format!("font 1612 no edge {n} via {callee:#x}"),
+                    f,
+                    Conv::Cdecl,
+                    &args,
+                    |o| {
+                        Res::Int(item::font1612_no_edge(o, callee, args, &mut |o, f, a| {
+                            o.call(f, Conv::Cdecl, a).unwrap().eax
+                        }))
+                    },
+                );
+            }
         }
     }
 }

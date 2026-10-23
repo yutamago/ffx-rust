@@ -1,6 +1,6 @@
 //! Pieces of the item menu the PC port placed among its UI code: the key
 //! string of the item a target uses, the item list's row plates, the
-//! two line anchors.
+//! two line anchors, the gear sort, the edgeless 16x12 text wrappers.
 
 use ffx_graphic::ui::{remap_x2, remap_y2};
 
@@ -52,6 +52,57 @@ pub mod bridge {
     pub const DRAW_CROSS_MENU_ICON_WEAPON_NAME2: u32 = 0x008e_6970;
     /// `g_TkMenuItemList`: `{u16 id, u8 used, u8}` entries.
     pub const ITEM_LIST: u32 = 0x0159_7770;
+    /// `g_TkMenuItemGearCounts`: `u16 [owner 0..6][weapon, armour]`, the
+    /// lengths of the gear runs in [`ITEM_LIST`].
+    pub const GEAR_COUNTS: u32 = 0x0186_a3e4;
+    /// The 14 runs of [`GEAR_COUNTS`].
+    pub const GEAR_RUNS: u32 = 14;
+    /// `MenuItem_SortGear_008c9c40(list, start, n)`.
+    pub const MENU_ITEM_SORT_GEAR: u32 = 0x008c_9c40;
+    /// `MenuMes_AddPktFont1612(cursor, key, text, x, y, flags, edge, r, g,
+    /// b, a)`.
+    pub const MENU_MES_ADD_PKT_FONT1612: u32 = 0x008e_4af0;
+    /// `MenuMes_AddPktFont1612Icons(...)`, the same arguments.
+    pub const MENU_MES_ADD_PKT_FONT1612_ICONS: u32 = 0x008e_4e60;
+
+    /// `MenuItem_SortAllGear_008c9bf0()`: each owner's weapon run, then
+    /// armour run of [`ITEM_LIST`] sorted in turn
+    /// (`MenuItem_SortGear(list, start, n)`, `start` the sum of the runs
+    /// before, each count read after the previous run's sort). `eax` is
+    /// the last sort's.
+    pub fn sort_all_gear(mem: &mut impl Host) -> u32 {
+        let list = mem.rebase(ITEM_LIST);
+        let counts = mem.rebase(GEAR_COUNTS);
+        let mut start = 0u32;
+        let mut eax = 0;
+        for run in 0..GEAR_RUNS {
+            let n: u16 = mem.read(counts.wrapping_add(2 * run));
+            eax = mem.call_sym(
+                MENU_ITEM_SORT_GEAR,
+                Conv::Cdecl,
+                &[list, start, u32::from(n)],
+            );
+            start = start.wrapping_add(u32::from(n));
+        }
+        eax
+    }
+
+    /// `MenuMes_AddPktFont1612NoEdge_008e52b0(cursor, key, text, x, y,
+    /// flags, r, g, b, a)` and `MenuMes_AddPktFont1612IconsNoEdge_008e52e0`:
+    /// the 16x12 text function `f` ([`MENU_MES_ADD_PKT_FONT1612`] or
+    /// [`MENU_MES_ADD_PKT_FONT1612_ICONS`]) with no edge (0 inserted
+    /// before the colour) through `call` (cdecl, 11 words); its `eax`.
+    #[allow(clippy::many_single_char_names)] // the colour
+    pub fn font1612_no_edge<M: ffx_bridge::Mem>(
+        mem: &mut M,
+        f: u32,
+        args: [u32; 10],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [cursor, key, text, x, y, flags, r, g, b, a] = args;
+        let f = mem.rebase(f);
+        call(mem, f, &[cursor, key, text, x, y, flags, 0, r, g, b, a])
+    }
 
     /// `MenuItem_ParseTargetKeys(t)` (`0x008c5320`): for `t >= 0`, the key
     /// string of target `t` (`TOMenuGetNameMes` of the `u16` at

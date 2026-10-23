@@ -150,6 +150,131 @@ pub mod bridge {
     /// `g_AbmapPad`: the panels (0x340 bytes each), `+0x2700` the open
     /// one (`i16`, negative for none), `+0x2704` its handler.
     pub const PAD: Global<u32> = Global::new(0x01a8_6108);
+    /// `g_AbmapRunning`: 1 while the sphere grid runs (`eiAbmCalc` sets
+    /// it).
+    pub const RUNNING: Global<u32> = Global::new(0x01a8_5f70);
+    /// `g_AbmapCjkText`: 1 for Japanese, Korean and Chinese text (set by
+    /// `eiAbmStart`).
+    pub const CJK_TEXT: Global<u32> = Global::new(0x01a8_5f74);
+    /// Where a menu frame's rectangle tweens in from: `i16` x 0x30, y
+    /// 0x164 (one word; no relocation, not an address, though Ghidra
+    /// shows it as `&DAT_01640030`).
+    pub const RECT_ORIGIN: u32 = 0x0164_0030;
+    /// `AbmapStoreSave()`.
+    pub const ABMAP_STORE_SAVE: u32 = 0x00a5_bb70;
+    /// `eiAbmParaGet()`.
+    pub const EI_ABM_PARA_GET: u32 = 0x00a5_4860;
+    /// `TOMenuTermAbilityMap2()`: back to the main menu.
+    pub const TO_MENU_TERM_ABILITY_MAP2: u32 = 0x008e_27e0;
+    /// `AbmapPadSlideInStep(panel)`: a panel's step that slides it in.
+    pub const ABMAP_PAD_SLIDE_IN_STEP: u32 = 0x00a5_a270;
+    /// `AbmapRectTweenIn(rect)`: a menu frame's step that grows it.
+    pub const ABMAP_RECT_TWEEN_IN: u32 = 0x00a5_a080;
+    /// `AbmapShowItemTargets(chr, node, item)`.
+    pub const ABMAP_SHOW_ITEM_TARGETS: u32 = 0x00a5_b980;
+    /// `AbmapEnterCommandMenu()`.
+    pub const ABMAP_ENTER_COMMAND_MENU: u32 = 0x00a5_9950;
+    /// `AbmapEnterItemMenu()`.
+    pub const ABMAP_ENTER_ITEM_MENU: u32 = 0x00a5_98a0;
+    /// `AbmapInitChoosingMoveTarget()`.
+    pub const ABMAP_INIT_CHOOSING_MOVE_TARGET: u32 = 0x00a5_b7b0;
+
+    /// `AbmapPadQuitHandler(panel, entry, choice, confirmed)`
+    /// (`0x00a56060`): the handler of the panel asking whether to leave
+    /// the sphere grid. Byte `g_AbmapPad + 0x20a3` cleared first. Choice 0
+    /// confirmed leaves: `AbmapStoreSave`, `eiAbmParaGet`,
+    /// `TOMenuTermAbilityMap2`, `g_AbmapRunning` = 0; `eax` is the last
+    /// call's. Anything else: the cancel sound, and panel 6 (`+0x1380`)
+    /// slides back in (`+0x29` = 0, step `+0x34` = `AbmapPadSlideInStep`)
+    /// when it is hidden (`+0x23` 0) or has no step; `eax` is
+    /// `g_AbmapPad`.
+    pub fn quit_handler(mem: &mut impl Host, choice: u32, confirmed: u32) -> u32 {
+        let pad = PAD.get(mem);
+        mem.write(pad.wrapping_add(0x20a3), 0u8);
+        if confirmed != 0 && choice == 0 {
+            mem.call_sym(ABMAP_STORE_SAVE, Conv::Cdecl, &[]);
+            mem.call_sym(EI_ABM_PARA_GET, Conv::Cdecl, &[]);
+            let eax = mem.call_sym(TO_MENU_TERM_ABILITY_MAP2, Conv::Cdecl, &[]);
+            RUNNING.set(mem, 0);
+            return eax;
+        }
+        mem.call_sym(SND_SEP_PLAY_SIMPLE, Conv::Cdecl, &[super::SFX_CANCEL]);
+        let pad = PAD.get(mem);
+        let shown: u8 = mem.read(pad.wrapping_add(0x13a3));
+        let step: u32 = mem.read(pad.wrapping_add(0x13b4));
+        if shown == 0 || step != 0 {
+            mem.write(pad.wrapping_add(0x13a9), 0u8);
+            let f = mem.rebase(ABMAP_PAD_SLIDE_IN_STEP);
+            mem.write(pad.wrapping_add(0x13b4), f);
+        }
+        pad
+    }
+
+    /// Starts the frame tween of the menu frame at `frame`: shown (`+0`),
+    /// from [`RECT_ORIGIN`] (`+7`) to `size` (`i16` w, h at `+0xb`), step
+    /// 0 (`+0xf`), `AbmapRectTweenIn` (`+0x11`).
+    fn tween_frame_in(mem: &mut impl Host, frame: u32, size: u32) {
+        mem.write(frame, 1u8);
+        mem.write(frame.wrapping_add(7), RECT_ORIGIN);
+        mem.write(frame.wrapping_add(0xb), size);
+        mem.write(frame.wrapping_add(0xf), 0u8);
+        let f = mem.rebase(ABMAP_RECT_TWEEN_IN);
+        mem.write(frame.wrapping_add(0x11), f);
+    }
+
+    /// `AbmapPadItemHandler(panel, entry, choice, confirmed)`
+    /// (`0x00a560d0`): the item menu's handler (`AbmapEnterItemMenu`).
+    /// Cancelled: a tail call to `AbmapEnterCommandMenu`. Chosen: the
+    /// frame at `g_AbmapPad + 0x1a23` tweens in to `0x140090` with CJK
+    /// text (`g_AbmapCjkText`), else `0x1400b0`, then
+    /// `AbmapShowItemTargets(chr +0x115bc, its node u16 +0x110cc + 0x50
+    /// chr, item u16 entry +8)`; `eax` is the callee's.
+    pub fn item_handler(mem: &mut impl Host, entry: u32, confirmed: u32) -> u32 {
+        if confirmed == 0 {
+            return mem.call_sym(ABMAP_ENTER_COMMAND_MENU, Conv::Cdecl, &[]);
+        }
+        let cjk = CJK_TEXT.get(mem) != 0;
+        let pad = PAD.get(mem);
+        let size = if cjk { 0x0014_0090 } else { 0x0014_00b0 };
+        tween_frame_in(mem, pad.wrapping_add(0x1a23), size);
+        let g = ABMAP.get(mem);
+        let chr: u8 = mem.read(g.wrapping_add(0x1_15bc));
+        let node: u16 = mem.read(g.wrapping_add(0x1_10cc).wrapping_add(u32::from(chr) * 0x50));
+        let item: u16 = mem.read(entry.wrapping_add(8));
+        mem.call_sym(
+            ABMAP_SHOW_ITEM_TARGETS,
+            Conv::Cdecl,
+            &[u32::from(chr), u32::from(node), u32::from(item)],
+        )
+    }
+
+    /// `AbmapPadCommandHandler(panel, entry, choice, confirmed)`
+    /// (`0x00a56330`): the command menu's handler (`AbmapEnterCommandMenu`).
+    /// Cancelled: a tail call to `AbmapResetHelp`. Choice 0 (move): sound
+    /// `0x80000051`, `AbmapInitChoosingMoveTarget`, and the frame at
+    /// `g_AbmapPad + 0x16e3` tweens in to `0x140050`; `eax` is
+    /// `g_AbmapPad`. Choice 1 (items): the cursor sound and a tail call to
+    /// `AbmapEnterItemMenu`. Other choices do nothing and return the
+    /// choice.
+    pub fn command_handler(mem: &mut impl Host, choice: u32, confirmed: u32) -> u32 {
+        if confirmed == 0 {
+            return mem.call_sym(ABMAP_RESET_HELP, Conv::Cdecl, &[]);
+        }
+        match choice {
+            0 => {
+                mem.call_sym(SND_SEP_PLAY_SIMPLE, Conv::Cdecl, &[0x8000_0051]);
+                mem.call_sym(ABMAP_INIT_CHOOSING_MOVE_TARGET, Conv::Cdecl, &[]);
+                let pad = PAD.get(mem);
+                tween_frame_in(mem, pad.wrapping_add(0x16e3), 0x0014_0050);
+                pad
+            }
+            1 => {
+                mem.call_sym(SND_SEP_PLAY_SIMPLE, Conv::Cdecl, &[super::SFX_MOVE]);
+                mem.call_sym(ABMAP_ENTER_ITEM_MENU, Conv::Cdecl, &[])
+            }
+            _ => choice,
+        }
+    }
 
     /// The list fields at `+0x16..+0x20`, then the animation at `+0x26`.
     fn read_list(mem: &impl Host, p: u32) -> List {
