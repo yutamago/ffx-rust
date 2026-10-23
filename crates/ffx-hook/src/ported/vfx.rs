@@ -1575,6 +1575,12 @@ ported! {
     opu_v_2d @ 0x0081_8dc0 => extern "C" fn opu_v_2d(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_v_2d(&mut mem(), host, cmd)
     }
+    /// `opu_v_u2(host, cmd)`: nibbles other than 0/0x1000 read the
+    /// never-written frame words `ebp - 8` / `- 0x10`; the port uses 0
+    /// (brief 2026-10-24).
+    opu_v_u2 @ 0x0081_9c90 => extern "C" fn opu_v_u2(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_u2(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
     // ---- round 34 b ----
     /// `pppKeThDraw(obj, key, prog)`.
     pppKeThDraw @ 0x0073_6580 => extern "C" fn ppp_ke_th_draw(obj: u32, key: u32, prog: u32) -> u32 {

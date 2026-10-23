@@ -33503,12 +33503,12 @@ fn r53d_render_stack_matches_the_original() {
     }
 }
 
-/// `opu_v_u2` against the port (not hooked: other nibbles read the
-/// never-written frame words `ebp - 8` / `- 0x10`): nibbles 0, 0x1000 and
-/// the rest with those words seeded in both oracles' stacks (a unit-like
-/// record and a lift), `t` and the points with NaN, infinities and -0,
-/// the lift byte 0 or not, the colour shift, `r0` and the work registers
-/// random.
+/// `opu_v_u2` against the port: nibbles 0, 0x1000 and the rest, whose
+/// never-written frame words `ebp - 8` / `- 0x10` are 0 in the original's
+/// stack (the port's value, brief 2026-10-24), so they read the null
+/// record (the null page mapped on both sides, `+0x90..` random); `t` and
+/// the points with NaN, infinities and -0, the lift byte 0 or not, the
+/// colour shift, `r0` and the work registers random.
 #[test]
 #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
 fn r53e_opu_v_u2_matches_the_original() {
@@ -33530,6 +33530,8 @@ fn r53e_opu_v_u2_matches_the_original() {
             p.sym(0x00c0_a004),
         );
         let frame = p.b.stack_range().end - 0x100 - 8 - 4 - 0x200 - 8 - 4 - 4;
+        p.a.map_zeroed(0, 0x1000).unwrap();
+        p.b.map_zeroed(0, 0x1000).unwrap();
         let float = |rng: &mut Xorshift| {
             if rng.chance(90) {
                 ranged(rng, -500.0, 500.0)
@@ -33562,27 +33564,22 @@ fn r53e_opu_v_u2_matches_the_original() {
             p.set(cmd + 6, (0x30 + 4 * rng.below(0x30)) as u8);
             p.set(cmd + 7, rng.pick(&[0u8, 0x40, 0x9c, 0xa0]));
             p.set(shift, if rng.chance(20) { 4 * rng.below(4) } else { 0 });
-            // the frame leftovers: a record pointer (also read as t) and a lift
-            let leftover = others + 0x80 * rng.below(6);
-            let lift = float(&mut rng);
+            // the never-written frame words: 0 (the port's value); the null
+            // record they make the other nibbles read
             for o in [&mut p.a, &mut p.b] {
-                o.write(frame - 8, &leftover.to_le_bytes()).unwrap();
-                o.write(frame - 0x10, &lift.to_le_bytes()).unwrap();
+                o.write(frame - 8, &[0; 4]).unwrap();
+                o.write(frame - 0x10, &[0; 4]).unwrap();
+            }
+            for o in (0x90..0xa0).step_by(4) {
+                let v = float(&mut rng);
+                p.set(o, v);
             }
             check_deep_n(
                 &mut p,
                 &format!("opu_v_u2 round {round}"),
                 0x0081_9c90,
                 &[host, cmd],
-                |o, frame| {
-                    Some(opus::bridge::opu_v_u2(
-                        o,
-                        host,
-                        cmd,
-                        frame,
-                        &mut call_original,
-                    ))
-                },
+                |o, _| Some(opus::bridge::opu_v_u2(o, host, cmd, &mut call_original)),
             );
         }
         assert!(seen.iter().all(|&n| n > 500), "{seen:?}");
