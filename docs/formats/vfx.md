@@ -405,6 +405,159 @@ the lengths end them then.
   the next frame, and past the set's count (`i16 +6`) frame 0 when the
   entry's byte `+0x14` has bit 7, else the last frame held.
 
+## `Tail3` draws (`pppKeShpTail3Draw`, `pppKeShpTail3XDraw`)
+
+Ported in `crates/ffx-vfx/src/tail.rs` (`ppp_ke_shp_tail3_draw`, one
+function for both, the differences in `Tail3`). Work area 0 holds two
+colours (four `i16` each at `+0` and `+8`), a ring of 28 16-byte points
+from `+0x30` (head byte `+0x1f8`; the walk goes `head + 1, ...` and wraps
+after entry 27), a time `i32 +0x1f0` (stepped by key `i32 +8` unless
+`g_pppStopStatus`) and a random seed `u16 +0x1f6`.
+
+| Draw | Address | Helpers |
+| --- | --- | --- |
+| `pppKeShpTail3Draw` | `0x00750620` | `0x007501d0` sub, `0x00750130` ftoi, `0x00751740` load, `0x00751680` copy |
+| `pppKeShpTail3XDraw` | `0x00751fc0` | `0x007519d0`, `0x00751930`, `0x00751ab0`, `0x00753080` |
+
+- `n` = key byte `+0x1c`; colours `(c * u16 part[+0x70 + 2k])` times the
+  `f64` 2^-19 at `0x00b51650` (`X`: the integer `>> 19`), the alphas times
+  work area 1's `i16 +6` / 2^14; the size from key `+0xc` to `+0x10`, the
+  spacing key `+0x18` (spacing times step / start, unrounded; a spacing of
+  exactly 0 sets `n` to 0 as in the other tails).
+- Random numbers: `r = (r * 0x80d + 7) & 0xffff` from the seed, once per
+  sprite (the sizing pass runs the same sequence). The sprite's shape
+  frame is `((time + r) / len) % frames` (`div` on `u32`, `len` = `i16 set
+  +0x12` and `frames` = `i16 set +6` sign-extended; a zero divisor faults
+  in the original), its size `size * f32(1 - f32(r / 65535.0) * key
+  +0x14)`, and with key `i16 +0x1e` its rows 0 and 1 turn by `r` through
+  `g_pppSinTable` (`[(r >> 4) & 0xfff]`, cosine `(r + 0x4000)`).
+- The matrix is built in the emulated VU0 registers (`0x00c8f790` the
+  accumulator, `0x00c8f7b0..0x00c8f7ef` the sprite's matrix, the part's
+  scales at `0x00c8f7f0`, the view matrix at `0x00c8f830`, segment
+  `B`/`D`/`A`/point at `0x00c8f930..0x00c8f96f`) and copied to the
+  `op_spr_alloc(0x180)` block's `+0xc0`, which the request points at.
+  Row 2 (`0x00c8f7d0`) is whatever the register holds.
+- Key byte `+0x1d` draws the first sprite at the head. `X`: no stop or
+  skip-frame gates at the start (but shape `0xffff` ends it), request
+  flags from key bytes `+0x50..+0x52` (`0x880`, `| 0x400`, work area 3 as
+  the second matrix), the render data asked for at each use, one buffer
+  per segment (`[rd + 0x90]` of them, `0x6c` apart from `[rd + 0x94]`),
+  and the registers reloaded from the block after each sprite.
+- When `graphicDynGeoMemManagerGetBufferForSegment` gives none, the draw
+  returns at once without `op_spr_free`.
+- Stale stack: `g_Vu0_VfMove`'s `y`, `z`, `w` and `0x00c8f8f8`,
+  `0x00c8f8fc` come from frame words the draws never write first (plain:
+  `ebp - 0x10` (the last turn's cosine once a sprite turned), `- 0xc`,
+  `- 0x8`; `X`: `ebp - 0x16c`, `- 0x168`, `- 0x164`, set by the walk along
+  the ring). They are scratch registers the draw overwrites before
+  reading; the port's shim reads 0 there.
+
+## `pppKeShpTailPhtDraw` (`0x00754300`)
+
+Ported in `crates/ffx-vfx/src/tail.rs` (`ppp_ke_shp_tail_pht_draw`). The
+`Tail3` scheme on a 27-entry ring (work area 0 `+0x30`, head `+0x1f4`,
+time `i32 +0x1ec`, seed `u16 +0x1f2`; key count byte `+0x60`, `+0x61`
+first sprite at the head, `+0x62` turn), with these differences:
+
+- Colours are work area 0's `i16 >> 7` (arithmetic, as `f32`); the alphas
+  times work area 1's fourth `>> 7` times the `f64` 1/128 at `0x00b170b8`.
+- The sprite's matrix is a frame local (`ebp - 0x98`, unit to start): the
+  object's rows 0 and 1 times `f32(part[+0x60] * size * share)` and
+  `f32(size * part[+0x64] * share)`; the turn multiplies it
+  (`vu_mul_matrix_00753670`) by a z rotation `[c, s; -s, c]`.
+- Each sprite also fills a distortion-sprite record at `ebp - 0x160` for
+  `KeDttSpr_MkGifPk_Pre` and `KeDttSpr_MkGifPk`: `+0` the point through
+  `g_pppViewMatrix`, `+0x10` work area 1's colour (`>> 7`) with `+0x1c` the
+  sprite's alpha, `+0x20`/`+0x28` `g_pppScreenMatrix`, `+0x24` the packet
+  position `+ 0x10`, `+0x30` `(0, -area0[+0x1e0], 0, 0)` through work
+  area 2's matrix with `+0x3c` key byte `+0x64`, `+0x40` the frame
+  buffer's TEX0 (`Sg_GetDBuffDC`, the half by key byte `+0x63` plus the
+  buffer index; `((psm | 0x2a80) << 6 | fbw) << 14 | tbp << 5` from
+  `[dc + 0x60]`), `+0x48` `[dc + 0x84]` sign-extended, `+0x50`/`+0x54`
+  `[dc + 0x78]`/`[dc + 0x7c]`, `+0x58`/`+0x5c` key `+0x28`/`+0x2c` times
+  the part's scales, the size and the share. A nonzero `KeDttSpr_MkGifPk`
+  (never on PC) puts the packet into the ordering table at depth
+  `record[+0x2c] / 12288`, a word the draw never writes.
+- No `op_spr_alloc` block, no stop or skip gates; the time always steps.
+
+## `pppKeMdlBmpDraw` (`0x007490d0`)
+
+Ported in `crates/ffx-vfx/src/mdl_cam.rs`; the drawing itself is
+`pppKeMdlBmpDraw_Body_00748b00` (`draw.rs`).
+
+- First pass (`obj +0xc` == key `+0` == 0, not `g_pppStopStatus`; both
+  shapes key `+0x24`/`+0x28` not `0xffff`): an `op_spr_alloc(0x50)` block;
+  the vertex set `key[+0x24]` (`+[+8]`, `i16` x, y, z per 6 bytes) and the
+  triangle records of `key[+0x28]` (`+[+4]`; kind byte `+1` 2 with `i16 +2`
+  triangles of 32 bytes after a 0x10-byte head, until kind 0xff; any other
+  kind frees the block and returns at once; a negative count walks back
+  and never ends, in both). Per triangle, `u16` points `(x, y)` at `+0x14`,
+  `+0x18`, `+0x1c` and vertex indices at `+0xc`, `+0xe`, `+0x10`: the
+  longest of `|x2 - x1|`, `|x0 - x2|`, `|x1 - x0|` (ties to the first two in
+  that order, the third only when strictly longer) picks the corner
+  order; the block gets the edge's x and y differences as `f32` (`+0`,
+  `+4`, `+0x10`, `+0x18`), the slope term `dx * dy / x` (`+0x14`), the
+  three vertices as `i32` (`+0x20`, `+0x30`, `+0x40`), and the triangle's
+  first 12 bytes become the first vertex's three `i32` (through `fld`/`fstp`,
+  so the bits are copied). Triangle number `key[+0x3c]` (counted down)
+  goes to `dbgPrintf` (format `0x00b51618`/`20`/`28` by the case, then
+  `0x00b51630` with the three words as doubles).
+- Every frame with a target object (`key[+0x2c]` not -1: the part's record
+  `[part+0x3c] + 16k + 4`, then `+0xa0 + key[+0x30]`, not
+  `g_pppRandTarget`): work area 1's colour `>> 7` times 1/128 (`f32` at
+  `0x00b51640`), `g_pppWorldMatrix` times the object's matrix, the
+  direction from its position to the target through the inverse
+  (normalized before and after), and the body's block at `ebp - 0x100`:
+  matrix, `obj + 0x50`, packet position, the two shape sets, `+0x18`/`+0x1c`
+  the colour, `+0x20` the direction, `+0x24` `key[+0x3c]`.
+  `g_PppPacketPos` is the block's `+8` after the body.
+
+## `pppDrawMdlInfDraw` (`0x0073b9b0`)
+
+Ported in `crates/ffx-vfx/src/mdl_cam.rs` (`ppp_draw_mdl_inf_draw`): a
+model drawn on a grid of tiles round the object, its vertices waved.
+
+- Work area 2 (`w = obj + 0xa0 + [[ctrl+0xc]+8]`). In levels `0x1432`,
+  `0x6e1`, `0x24de` (`graphicLevelGetNameHash`) the draw only copies
+  `vf00` to `w +0x40` and `+0x50` (unless `w` is 0) and returns. Else it
+  needs key `+4` not `0xffff`, `TkGetSaveEventAddress()`'s first `u16` not
+  `0x5e`, the model record's set not null, and `pppDrawMdlInfDrawSetup(key,
+  w)` nonzero when `ptr32 w[+0xdc]` is null.
+- Step (not while `g_pppStopStatus`): without byte `+0xe4`, on the key's
+  frame (`key[+0]` = `obj[+0xc]`) key `+8..+0x1c` are added to `w
+  +0xb8..+0xcc`; then `+0xbc += +0xc0`, `+0xb8 += +0xbc`, `+0xc8 += +0xcc`,
+  `+0xc4 += +0xc8` (with `+0xe4`: `+0xb8 += +0x60`, `+0xc4 += +0x64`); both
+  phases `fmod` 32768. The model's vertices (`set + [set+8]`, `i16 +0x12`
+  of 3 `u16`): byte `+0xe3` bit 2 copies them from `ptr32 w[+0xd0]`; else
+  bit 0 sets each axis `k` to `src + ftol(sin[((ftol(w[+0x70+4k]) + B[i] +
+  C[i]) * ftol(key[+0x40+4k]) >> 4) & 0xfff] * key[+0x20+4k])` (`B`, `C`
+  the `u16` phases at `ptr32 w[+0xd4]`, `[+0xd8]`) and moves `w +0x70..`
+  by key `+0x30.. * 256`; bit 1 the same from `w +0x80..`, key `+0x70..`,
+  `+0x50..`, `+0x60..` with `B` alone (after bit 0, from the same
+  source). Key byte `+0x81` counts frames in `w +0xe0`, then steps the
+  texture frame `w +0xe1` (wrapping at `w +0xe2`) of
+  `Yn_FpTrxTexGet(key[+0x80])`.
+- Draw: angles `w +0x50..+0x58` times 651.8986 (`f64` at `0x00b51590`),
+  tile spacing `w +0xb0`/`+0xb4` times the lengths of the object's rows 0
+  and 2 (`pppVu0Length`, row 1's length is computed and dropped); with key
+  byte `+0x90` an offset of the camera's position (inverse of
+  `g_pppCameraMatrix`) snapped to the spacing, else `vf00`. The request
+  at `ebp - 0x260`: flags 4 (`| 0x10` with key byte `+0x84`, `& ~0x10`
+  `+0x85`, `| 0x200` `+0x86`, `| 8` `+0x87`, `| 0x20` without `+0x88`),
+  blend key `u16 +0x82` (set `+0x16` when its low byte is `0xff`), the
+  colour (`ee_colour`, nothing drawn at alpha 0), `+0x10`/`+0x14` the
+  phases in 16.16, matrices `ebp - 0x168`, `obj + 0x10`, `ebp - 0xa8`, the
+  textures `ptr32 obj[+0x90]`, `[+0x94]`. Tiles `(i, j)` for `|i| <=
+  ftol(r / sx + 1)`, `|j| <= ftol(r / sz + 1)` (`r` key `+0x8c`) whose
+  centre is within `r` (`pppVu0Length`), the centre tile only with key
+  byte `+0x89`; key byte `+0x85` sets flag `0x2000` on the 3 x 3 tiles
+  round the centre and clears it elsewhere. Each tile: `w`'s matrix by
+  `op_rt_m_yxz` of the angles at `w +0x40 + offset + tile` (or, with byte
+  `+0xe5`, `w`'s matrix times a translation), times the object's, times
+  the camera, then submitted as the other model draws (path 3, flag 4 is
+  always set). `ebp - 0x1e8` (screen projection times the tile matrix) is
+  computed and never read.
+
 ## Saved VU0 state (`pppKeShpTail3`, `pppKeShpTail3X`)
 
 The tail draws save the emulated VU0 registers they use and restore them
