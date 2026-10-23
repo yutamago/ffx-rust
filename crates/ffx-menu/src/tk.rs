@@ -28374,6 +28374,63 @@ pub mod bridge {
         }
     }
 
+    /// `MenuNameEntry_Draw_008c3d00(window)` (`0x008c3d00`, name ours; the
+    /// name entry window's `+0x10` draw, [`tk_menu_open_name_entry_window`]):
+    /// two `TkMenuDrawKick`s, `TkVU1SyncPath` (`0x008c1790`),
+    /// `TkMn2DrawInitPacket`; the frame `0x008f4df0(x, y, w, h, 0x5a574a47,
+    /// 0x5a2b1d1d)` and the plate `TODrawMenuPlateXYWHType(x, y, w, h, 0xc)`
+    /// of the rect (`remapX2(610)`, `remapY2(232)`, `remapX2(1100)`,
+    /// `remapY2(700)`), a second frame (610, 932, 1100, 6; both colours
+    /// 2.0's bits), the shape `TOMkpShapeXYWHUV(-1, remapX2(617),
+    /// remapY2(377), remapX2(1086), remapY2(2), 1631, 567, 1829, 570)`; then
+    /// [`menu_item_draw_key_use_cells`], [`menu_name_entry_draw_keys`] and
+    /// [`menu_item_draw_key_cursor`] (`window, 0, 0`; the original pushes
+    /// the window to all three), and a tail jump to
+    /// `TkMn2DrawKickSyncPacket`, whose `eax` it returns.
+    ///
+    /// The original builds each call's words in place: it pushes the
+    /// integer words, then stores every remap's result into the slot it
+    /// passed the remap (h first, then w, y, x), so the remaps run in that
+    /// order.
+    pub fn menu_name_entry_draw<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::store;
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let kick = at(mem, 0x008d_ce50);
+        call(mem, kick, &[]);
+        call(mem, kick, &[]);
+        call(mem, at(mem, 0x008c_1790), &[]);
+        call(mem, at(mem, 0x008c_0be0), &[]);
+        // h, w, y, x remapped in turn; the words x, y, w, h
+        let mut rect = |mem: &mut M, [x, y, w, h]: [f32; 4]| {
+            let h = store(remap(mem, true, h));
+            let w = store(remap(mem, false, w));
+            let y = store(remap(mem, true, y));
+            let x = store(remap(mem, false, x));
+            [x, y, w, h]
+        };
+        let frame = at(mem, 0x008f_4df0);
+        let [x, y, w, h] = rect(mem, [610.0, 232.0, 1100.0, 700.0]);
+        call(mem, frame, &[x, y, w, h, 0x5a57_4a47, 0x5a2b_1d1d]);
+        let [x, y, w, h] = rect(mem, [610.0, 232.0, 1100.0, 700.0]);
+        call(mem, at(mem, 0x008f_5f70), &[x, y, w, h, 0xc]);
+        let two = 2.0f32.to_bits();
+        let [x, y, w, h] = rect(mem, [610.0, 932.0, 1100.0, 6.0]);
+        call(mem, frame, &[x, y, w, h, two, two]);
+        let [x, y, w, h] = rect(mem, [617.0, 377.0, 1086.0, 2.0]);
+        let uv = [1631.0f32, 567.0, 1829.0, 570.0].map(f32::to_bits);
+        let shape = [u32::MAX, x, y, w, h, uv[0], uv[1], uv[2], uv[3]];
+        call(mem, at(mem, 0x0090_3bb0), &shape);
+        call(mem, at(mem, 0x008c_4770), &[window]);
+        call(mem, at(mem, 0x008c_4550), &[window]);
+        call(mem, at(mem, 0x008c_4b60), &[window, 0, 0]);
+        call(mem, at(mem, 0x008c_0cc0), &[])
+    }
+
     /// `MenuSave_DrawMesBox_008b4920(w)` (`0x008b4920`, name ours): the
     /// save screen's message box for text `TkMenuSaveMes(w+0x58 +
     /// 0x2001)`, sliding with `s = GetGlobal01841c0c_008a98e0()` (nothing

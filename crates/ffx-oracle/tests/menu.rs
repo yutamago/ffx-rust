@@ -20504,3 +20504,58 @@ fn small3_c_menu_allocators_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// Small round 4 c: `MenuNameEntry_Draw_008c3d00(window)`, every callee a
+/// logging stand-in (the remaps real): the frames', plate's and shape's
+/// words as the original builds them in place, the window passed on, the
+/// tail call's `eax`.
+#[test]
+fn small4_c_name_entry_draw_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x5a11_4c03) else {
+        return;
+    };
+    // the calls without words: a tag each into one log
+    let tags = t.alloc(&[0; 0x400]);
+    let tag_log = t.alloc(&tags.to_le_bytes());
+    for (tag, f) in [(1u32, 0x008d_ce50u32), (2, 0x008c_1790), (3, 0x008c_0be0)] {
+        let l = tag_log.to_le_bytes();
+        let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &l].concat(); // mov ecx, [log]
+        code.extend([&[0xc7, 0x01][..], &tag.to_le_bytes()].concat()); // mov [ecx], tag
+        code.extend([&[0x83, 0x05][..], &l, &[4, 0xc3]].concat()); // add dword [log], 4; ret
+        stub(&mut t, f, &code);
+    }
+    let logs: Vec<u32> = [
+        (0x008f_4df0u32, 6u8),
+        (0x008f_5f70, 5),
+        (0x0090_3bb0, 9),
+        (0x008c_4770, 1),
+        (0x008c_4550, 1),
+        (0x008c_4b60, 3),
+    ]
+    .into_iter()
+    .map(|(f, n)| record_n(&mut t, f, n, 0x1234_5678))
+    .collect();
+    let mut callback = callback;
+    for k in 0..20u32 {
+        t.put(tag_log, tags);
+        let ret = t.rng.next();
+        let _ = record_n(&mut t, 0x008c_0cc0, 0, ret);
+        let r = t.rng.next();
+        let window = t.rng.pick(&[0u32, 0x0186_a278, r]);
+        t.twin("MenuNameEntry_Draw", 0x008c_3d00, &[window], U32, |o| {
+            w(tk::menu_name_entry_draw(
+                o,
+                window,
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+        if k == 0 {
+            // the first frame's w, remapX2(1100), as logged
+            let w = f32::from_bits(Mem::read::<u32>(&t.b, logs[0] + 8));
+            assert!((293.0..294.0).contains(&w), "{w}");
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

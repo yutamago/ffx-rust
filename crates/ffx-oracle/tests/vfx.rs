@@ -6687,6 +6687,29 @@ enum From {
 /// entry) and copies `words` dwords from `from` to argument `to`, so the
 /// locals an original reads back are known; returns the log.
 fn copy_recorder(p: &mut Pair, sym: u32, nargs: u8, to: u8, from: From, words: u8) -> u32 {
+    let (c, log) = copy_recorder_code(p, nargs, to, from, words);
+    let at = p.sym(sym);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    log
+}
+
+/// [`copy_recorder`] in the oracles' code area with a jump to it at
+/// `sym`, for functions too close together to hold one each.
+fn far_copy_recorder(p: &mut Pair, sym: u32, nargs: u8, to: u8, from: From, words: u8) -> u32 {
+    let (c, log) = copy_recorder_code(p, nargs, to, from, words);
+    let code = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), code);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp code
+    j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+/// The code of a [`copy_recorder`] and its log.
+fn copy_recorder_code(p: &mut Pair, nargs: u8, to: u8, from: From, words: u8) -> (Vec<u8>, u32) {
     let log = p.alloc(4 + 0x100 * 64);
     let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
     c.extend(log.to_le_bytes());
@@ -6712,10 +6735,7 @@ fn copy_recorder(p: &mut Pair, sym: u32, nargs: u8, to: u8, from: From, words: u
         c.extend([0x89, 0x50, 4 * k]); // mov [eax + 4k], edx
     }
     c.push(0xc3);
-    let at = p.sym(sym);
-    p.a.write(at, &c).unwrap();
-    p.b.write(at, &c).unwrap();
-    log
+    (c, log)
 }
 
 #[test]
@@ -32191,5 +32211,803 @@ fn r51f_opu_camera_matches_the_original() {
             );
         }
         assert!(seen[..11].iter().all(|&n| n > 0), "{seen:?}");
+    }
+}
+
+/// `opu_jump_etc` against the port: every flag nibble with flag 0x800
+/// and 0x1000 both ways; the stand-ins' results placed on and beside the
+/// command's values; velocity lengths on and beside 0.4 and 1.2 (and
+/// NaN); the water height equal to, above and below the y.
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap
+)]
+fn r52a_opu_jump_etc_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_68c0);
+        let cells = p.alloc(0x40);
+        let (rand, magic, ground, jump41f, sbyte, scene, num, status) = (
+            cells,
+            cells + 4,
+            cells + 8,
+            cells + 0xc,
+            cells + 0x10,
+            cells + 0x14,
+            cells + 0x18,
+            cells + 0x1c,
+        );
+        let (suimen, vel, opt) = (cells + 0x20, p.alloc(0x10), p.alloc(0x10));
+        let logs = [
+            far_recorder(&mut p, 0x007e_5d50, &[0], Some(rand)),
+            far_recorder(&mut p, 0x0078_7be0, &[], Some(magic)),
+            far_recorder(&mut p, 0x0079_4db0, &[0], Some(ground)),
+            far_recorder(&mut p, 0x0079_4d70, &[0], Some(jump41f)),
+            far_recorder(&mut p, 0x0079_4240, &[0], Some(sbyte)),
+            far_recorder(&mut p, 0x0090_8f40, &[], Some(scene)),
+            far_recorder(&mut p, 0x0078_16b0, &[], Some(num)),
+            far_recorder(&mut p, 0x007f_e970, &[0, 0, 0], Some(status)),
+            float_recorder(&mut p, 0x0083_60a0, 0, suimen),
+            copy_recorder(&mut p, 0x0083_4000, 2, 1, From::At(vel), 4),
+            copy_recorder(&mut p, 0x0083_54f0, 3, 2, From::At(opt), 4),
+        ];
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        let draw = p.sym(et::bridge::DRAW_FLAGS.sym);
+        let (chrs, nos) = (p.sym(0x012a_22c4), p.sym(0x012a_4118));
+        let (debug, ovl, dbg_chr, pad, vf00) = (
+            p.sym(0x0232_2790),
+            p.sym(0x011a_006a),
+            p.sym(0x0232_1580),
+            p.sym(0x012a_1390),
+            p.sym(0x00c0_a004),
+        );
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x10));
+        let ulp = |x: f32, d: i32| f32::from_bits(x.to_bits().wrapping_add_signed(d));
+        let lens = [
+            0.4f32,
+            ulp(0.4, -1),
+            ulp(0.4, 1),
+            1.2,
+            ulp(1.2, -1),
+            ulp(1.2, 1),
+            0.0,
+            -0.4,
+            -1.2,
+            0.7,
+            3.0,
+            f32::NAN,
+            f32::from_bits(0xffc0_0000),
+            f32::INFINITY,
+        ];
+        let mut seen = [0u32; 16];
+        for round in 0..4000u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.set(host + 0x220, unit);
+            let kind = rng.below(16);
+            seen[kind as usize] += 1;
+            let sub = rng.pick(&[0u32, 0x200, 0x400, 0x200, 0x400, 0x600, 0x100]);
+            let low = if kind == 0xb {
+                sub | rng.below(0x100) | rng.below(2) << 11
+            } else {
+                rng.below(0x1000)
+            };
+            p.set(host + 0x21a, (kind << 12 | low) as u16);
+            p.set(host + 0x21e, rng.below(2) as u8);
+            p.set(host + 0x3b8, rng.pick(&[0u16, 0x1234, 0xfff0]));
+            let no = rng.below(240);
+            p.set(unit + 0x18, no as u8);
+            let idx = rng.below(512);
+            p.set(unit + 0x14, idx as u16);
+            p.set(
+                nos + 32 * idx,
+                if rng.chance(50) {
+                    no as u8
+                } else {
+                    rng.next() as u8
+                },
+            );
+            p.set(handles + 4 * no, rng.next());
+            p.set(draw + no, rng.pick(&[0u8, 1, 4, 8, 0xff]));
+            p.set(unit + 0xb3, rng.pick(&[0u8, 1, 4, 8, 0xff]));
+            let want = i32::from(rng.next() as i16);
+            p.set(cmd + 2, want as i16);
+            let near = |rng: &mut Xorshift| {
+                rng.pick(&[want, want, want + 1, want - 1, 0, -1])
+                    .cast_unsigned()
+            };
+            let drawn = near(&mut rng);
+            p.set(rand, drawn);
+            let last = near(&mut rng);
+            p.set(magic, last);
+            // the scene and battle number against 0 (no battle) and 1
+            if rng.chance(20) {
+                p.set(cmd + 2, rng.below(2));
+            }
+            let word: u32 = p.get(cmd + 2);
+            for cell in [scene, num] {
+                let got = rng.pick(&[word, word, word ^ 1, 0]);
+                p.set(cell, got);
+            }
+            for cell in [ground, jump41f, sbyte] {
+                let got = rng.pick(&[0u32, 1, 0x100]);
+                p.set(cell, got);
+            }
+            let s = rng.below(240);
+            p.set(status, if rng.chance(10) { u32::MAX } else { s });
+            let n = rng.pick(&[want, want ^ 2]).cast_unsigned();
+            p.set(chrs + 32 * s, n);
+            p.set(chrs.wrapping_sub(32), n);
+            p.set(debug, rng.below(2) as u8);
+            p.set(ovl, rng.below(2) as u8);
+            p.set(dbg_chr, rng.pick(&[0u8, 1, 0x10, 0x11]));
+            p.set(pad, rng.pick(&[0u8, 0x80, 0x20, 0xa0, 0xff, 0x7f]));
+            p.set(vf00, rng.pick(&[0u32, 0, 0, 0x3f80_0000]));
+            // velocity: a length along one axis, or random
+            let l = rng.pick(&lens);
+            let axis = rng.below(3);
+            for k in 0..4 {
+                let x = if k == axis { l.to_bits() } else { 0 };
+                p.set(vel + 4 * k, x);
+            }
+            if rng.chance(20) {
+                p.fill(vel, 0x10, &mut rng);
+                for k in 0..3 {
+                    let x = ranged(&mut rng, -2.0, 2.0);
+                    p.set(vel + 4 * k, x);
+                }
+            }
+            let y = rng.pick(&[0.0f32, 5.0, -5.0, f32::NAN]);
+            p.set(opt + 4, y.to_bits());
+            let sm = rng.pick(&[y, 5.0, -5.0, 0.0, f32::NAN]);
+            p.set(suimen, sm.to_bits());
+            p.check(
+                &format!("opu_jump_etc kind {kind:#x} round {round}"),
+                0x0081_68c0,
+                &[host, cmd],
+                |m| {
+                    Some(o::opu_jump_etc(
+                        m,
+                        host,
+                        cmd,
+                        &mut call_original,
+                        &mut call_original_f,
+                    ))
+                },
+            );
+        }
+        assert!(seen.iter().all(|&n| n > 100), "{seen:?}");
+    }
+}
+
+/// `opp_anm_sippo` against the port: tails of up to 13 instances along
+/// trails of 1..16-point rings, the walk back through older points (times
+/// below, equal to and above the tail time, NaN, and the shared counter
+/// running out), zero-length steps, the step cut, the early exits, render
+/// data present or not, the skip frame and the instance-run record. The
+/// stand-ins log each instance's position (`op_apply_m_w1`, which also
+/// copies it to its `dst`) and the host's first 11 words (colour bytes,
+/// `+0x1c`) per call; `graphicVFXUpdate` bumps `set +0x54`, which the
+/// original restores.
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss
+)]
+fn r52b_opp_anm_sippo_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_1530);
+        let cells = p.alloc(0x10);
+        let (parent_cell, have_cell, alpha_cell) = (cells, cells + 4, cells + 8);
+        let parent = p.alloc(0x40);
+        let logs = [
+            far_recorder(&mut p, 0x0080_1f00, &[0, 0], Some(parent_cell)),
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(have_cell)),
+            far_recorder(&mut p, 0x0071_2c30, &[0], Some(alpha_cell)),
+            apply_copy_stub(&mut p, 0x007e_79a0),
+            far_recorder(&mut p, 0x0071_1500, &[0, 0, 0, 11, 0], None),
+            far_recorder(&mut p, 0x0071_c0b0, &[0, 0, 0, 11], None),
+        ];
+        let draw = p.sym(et::bridge::DRAW_FLAGS.sym);
+        let (skip, pass, runs_count) = (p.sym(0x012f_b7d0), p.sym(0x0113_335c), p.sym(0x012f_411c));
+        let (host, unit, set, parts) = (
+            p.alloc(0x400),
+            p.alloc(0x100),
+            p.alloc(0x60),
+            p.alloc(0x400),
+        );
+        bump_stub(&mut p, 0x0064_58a0, set + 0x54);
+        let (trail, table) = (p.alloc(0x10 + 16 * 16), p.alloc(0x20));
+        let shapes = p.alloc(0x200);
+        let mut seen = [0u32; 6];
+        for round in 0..3000u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(set, 0x60, &mut rng);
+            p.fill(parts, 0x400, &mut rng);
+            p.fill(shapes, 0x200, &mut rng);
+            for k in 0..16u32 {
+                let v = ranged(&mut rng, -2.0, 2.0);
+                p.set(parent + 4 * k, v);
+            }
+            p.set(host + 0x220, unit);
+            let chr = rng.below(240);
+            p.set(unit + 0x18, chr as u8);
+            p.set(draw + chr, rng.pick(&[0u8, 0, 0, 0, 0, 0, 0, 0, 4]));
+            p.set(unit + 0xb3, rng.pick(&[0u8, 4, 0xfb]));
+            p.set(set + 0x20, parts);
+            // trail: ring size 1..16, newest index, count, part 0..3
+            let size = 1 + rng.below(16);
+            p.set(trail + 4, size as u16);
+            p.set(trail + 6, {
+                let any = rng.below(0x1_0000);
+                rng.pick(&[0u32, 1, size, 0xffff, any]) as u16
+            });
+            p.set(trail + 8, rng.pick(&[0u32, 1, 2, 5, 16, 20, 300]) as u16);
+            p.set(trail + 0xa, rng.below(4) as u16);
+            p.set(unit + 0xbc, trail);
+            // points: small positions, times growing with age (index
+            // distance below the newest), equal or NaN now and then
+            let newest = u32::from(p.get::<u16>(trail + 6));
+            let dt = rng.pick(&[0.5f32, 1.0, 0.25]);
+            for k in 0..size {
+                let age = (newest + size * 0x1_0000 - k) % size;
+                let at = trail + 0x10 + 16 * k;
+                for c in 0..3 {
+                    let v = if rng.chance(20) {
+                        0
+                    } else {
+                        ranged(&mut rng, -4.0, 4.0)
+                    };
+                    p.set(at + 4 * c, v);
+                }
+                let time = match rng.below(20) {
+                    0 => f32::NAN,
+                    1 => 0.0,
+                    2 => dt,
+                    3 => -1.0,
+                    4 => 0.001,
+                    _ => age as f32 * dt,
+                };
+                p.set(at + 0xc, time.to_bits());
+            }
+            // a zero-length step: two neighbours at the same place
+            if rng.chance(20) && size > 1 {
+                let k = rng.below(size - 1);
+                for c in 0..3 {
+                    let v: u32 = p.get(trail + 0x10 + 16 * k + 4 * c);
+                    p.set(trail + 0x10 + 16 * (k + 1) + 4 * c, v);
+                }
+            }
+            let a = rng.pick(&[0.0f32, -1.0, 3.5, 8.0, 12.9, f32::NAN, 5.0, 3.3, 6.7]);
+            let b = rng.pick(&[0.0f32, 1.0, 2.5, 20.0, f32::NAN, 0.0, a.floor()]);
+            p.set(unit + 0x30, a.to_bits());
+            p.set(unit + 0x4c, b.to_bits());
+            let step = rng.pick(&[
+                0.0f32,
+                -1.0,
+                16.0,
+                64.0,
+                256.0,
+                1024.0,
+                f32::NAN,
+                25.6,
+                77.7,
+                7.1,
+            ]);
+            p.set(unit + 0x34, step.to_bits());
+            // the oldest point's time at the step x +0x30, rounded as the
+            // original does (an f32 product of two f32s is exact in f64);
+            // with 3.3 and 77.7 or 7.1 the product rounds down to it, and
+            // its quotient by +0x30 is not the step
+            if rng.chance(40) {
+                let span = (f64::from(step) / 256.0 * f64::from(a)) as f32;
+                let count = u32::from(p.get::<u16>(trail + 8));
+                let oldest = (newest + 0x1_0000 - count + 1) & 0xffff;
+                p.set(trail + 0x1c + 16 * (oldest % size), span.to_bits());
+            } else if step == 0.0 && rng.chance(60) {
+                // a negative oldest time: a zero step is never cut
+                let count = u32::from(p.get::<u16>(trail + 8));
+                let oldest = (newest + 0x1_0000 - count + 1) & 0xffff;
+                p.set(trail + 0x1c + 16 * (oldest % size), (-1.0f32).to_bits());
+            }
+            p.set(unit + 0x38, rng.pick(&[0.0f32, 1.5, -3.0, 100.0]).to_bits());
+            p.set(unit + 0x3c, ranged(&mut rng, -100.0, 100.0));
+            p.set(
+                parts + 0x3c + 0x100 * rng.below(4),
+                ranged(&mut rng, -100.0, 100.0),
+            );
+            p.set(unit + 0xc0, rng.pick(&[0u16, 0x4000, 0xffff, 0xbfff]));
+            p.set(unit + 0xc6, rng.pick(&[0i16, 16, -40, 3]));
+            p.set(unit + 0xe0, table);
+            p.set(unit + 0xe8, (1 + rng.below(8)) as u16);
+            for k in 0..8u32 {
+                let sh = shapes + 0x40 * k;
+                p.set(table + 4 * k, sh);
+                p.set(sh + 0xf, rng.pick(&[3u8, 1]));
+                p.set(sh + 4, rng.below(0x30));
+            }
+            p.set(parent_cell, parent);
+            p.set(have_cell, rng.below(2));
+            p.set(alpha_cell, rng.next());
+            p.set(skip, u32::from(rng.chance(10)));
+            p.set(pass, rng.below(2));
+            p.set(runs_count, rng.below(4));
+            let exit = if p.get::<u8>(draw + chr) & p.get::<u8>(unit + 0xb3) != 0 {
+                0
+            } else if p.get::<u16>(trail + 8) == 0 {
+                1
+            } else if a.is_nan() || a < 1.0 {
+                2
+            } else if b.is_nan() || b as i32 >= a as i32 {
+                3
+            } else if step.is_nan() || step <= 0.0 {
+                4
+            } else {
+                5
+            };
+            seen[exit] += 1;
+            p.check(
+                &format!("opp_anm_sippo round {round}"),
+                0x0081_1530,
+                &[host, set],
+                |m| Some(o::opp_anm_sippo(m, host, set, &mut call_original)),
+            );
+        }
+        assert!(seen.iter().all(|&n| n > 50), "{seen:?}");
+    }
+}
+
+/// A stand-in for `op_apply_m_w1(dst, m, v)` (through a jump) that logs
+/// the four words at `v` (16 per entry) and copies them to `dst`; returns
+/// the log.
+fn apply_copy_stub(p: &mut Pair, sym: u32) -> u32 {
+    let log = p.alloc(4 + 0x100 * 64);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x06]); // shl ecx, 6
+    c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp + 0xc]: v
+    c.push(0x56); // push esi
+    c.extend([0x8b, 0x74, 0x24, 0x08]); // mov esi, [esp + 8]: dst
+    for k in 0..4u8 {
+        c.extend([0x8b, 0x50, 4 * k]); // mov edx, [eax + 4k]
+        c.extend([0x89, 0x91]); // mov [ecx + slot], edx
+        c.extend((log + 4 + 4 * u32::from(k)).to_le_bytes());
+        c.extend([0x89, 0x56, 4 * k]); // mov [esi + 4k], edx
+    }
+    c.push(0x5e); // pop esi
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+/// A stand-in at `sym` (through a jump) that adds 1 to the dword at
+/// `cell` and returns.
+fn bump_stub(p: &mut Pair, sym: u32, cell: u32) {
+    let mut c = vec![0xff, 0x05]; // inc dword [cell]
+    c.extend(cell.to_le_bytes());
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+}
+
+/// `opp_mimic` against the port: 0..4 entries, frozen or moving, the
+/// hide bits (8 alone goes on), the alpha at, below and above 0 and NaN,
+/// colours below 0, inside and above 255 after the x 128, the EE's r0 and
+/// vf00 nonzero now and then, 0..4 source models. Stand-ins copy the bone
+/// and root matrices and log every packet, light (with the 16 light
+/// numbers), mesh-matrix (13 words of the product) and hide call.
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r52c_opp_mimic_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_eb50);
+        let cells = p.alloc(0x40);
+        let (speed, hide, alpha, nb, vtx, nrm) = (
+            cells,
+            cells + 4,
+            cells + 8,
+            cells + 0xc,
+            cells + 0x10,
+            cells + 0x14,
+        );
+        let (bone, root) = (p.alloc(0x40), p.alloc(0x40));
+        let logs = [
+            far_recorder(&mut p, 0x0082_ac50, &[0], Some(speed)),
+            far_recorder(&mut p, 0x0082_abd0, &[0], Some(hide)),
+            float_recorder(&mut p, 0x0082_eba0, 2, alpha),
+            far_recorder(&mut p, 0x0083_13c0, &[0, 0, 0], None),
+            far_recorder(&mut p, 0x0083_1390, &[0, 0, 0], None),
+            far_recorder(&mut p, 0x0083_1300, &[0, 0], None),
+            far_recorder(&mut p, 0x0083_11d0, &[0, 0], None),
+            far_recorder(&mut p, 0x0082_eaf0, &[0, 0, 0, 0], None),
+            far_recorder(&mut p, 0x0083_0410, &[0], Some(nb)),
+            far_recorder(&mut p, 0x0082_ae10, &[0, 0], Some(vtx)),
+            far_recorder(&mut p, 0x0082_adf0, &[0, 0], Some(nrm)),
+            far_recorder(&mut p, 0x0080_e230, &[0, 0, 0, 0, 0], None),
+            far_recorder(&mut p, 0x0080_e900, &[0, 0, 0, 0, 8], None),
+            far_recorder(&mut p, 0x0063_9170, &[0, 13, 0], None),
+            far_recorder(&mut p, 0x0082_aea0, &[0, 0, 0], None),
+            far_copy_recorder(&mut p, 0x0080_5430, 3, 0, From::At(bone), 16),
+            far_copy_recorder(&mut p, 0x0080_5400, 2, 0, From::At(root), 16),
+        ];
+        let (ee, vf00) = (p.sym(0x00c8_f508), p.sym(0x00c0_a004));
+        let (host, unit, rec) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x120 + 0x60 * 4));
+        let (chr, objs, models, offs) =
+            (p.alloc(0x900), p.alloc(0x100), p.alloc(0x60), p.alloc(0x80));
+        let refs = p.alloc(8);
+        let mut seen = [0u32; 3];
+        for round in 0..2000u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(rec, 0x120 + 0x60 * 4, &mut rng);
+            p.fill(objs, 0x100, &mut rng);
+            p.fill(models, 0x60, &mut rng);
+            p.fill(chr + 0x800, 0x40, &mut rng);
+            for k in 0..16u32 {
+                let v = ranged(&mut rng, -2.0, 2.0);
+                p.set(bone + 4 * k, v);
+                let v = ranged(&mut rng, -2.0, 2.0);
+                p.set(root + 4 * k, v);
+            }
+            p.set(host + 0x220, unit);
+            p.set(unit + 0xbc, rec);
+            p.set(refs, chr);
+            p.set(refs + 4, rng.next());
+            p.set(rec, refs);
+            p.set(rec + 4, refs + 4);
+            p.set(rec + 8, models);
+            let n = rng.pick(&[0u16, 1, 2, 4, 3]);
+            p.set(rec + 0xe, n);
+            let nmodels = rng.below(5);
+            p.set(nb, nmodels);
+            for k in 0..4u32 {
+                p.set(models + 0x10 + 16 * k, offs + 0x10 * k);
+                let e = rec + 0x120 + 0x60 * k;
+                p.set(e, objs + 0x40 * k);
+                p.set(e + 4, rng.below(4) as u16);
+                p.set(e + 6, rng.below(0x40) as u16);
+                for c in 0..4u32 {
+                    let v = ranged(&mut rng, -3.0, 3.0);
+                    p.set(e + 0x10 + 4 * c, v);
+                }
+                let v = ranged(&mut rng, 0.0, 4.0);
+                p.set(objs + 0x40 * k + 0x34, v);
+                let v = ranged(&mut rng, 0.0, 512.0);
+                p.set(objs + 0x40 * k + 0x3c, v);
+            }
+            p.set(speed, rng.pick(&[0u32, 1, 0x100]));
+            let hidden = rng.pick(&[0u32, 0, 0, 8, 1, 9, 0x10]);
+            p.set(hide, hidden);
+            let a = rng.pick(&[1.0f32, 0.5, 0.0, -0.0, -0.25, f32::NAN, 1.0]);
+            p.set(alpha, a.to_bits());
+            let v = rng.next();
+            p.set(vtx, v);
+            let v = rng.next();
+            p.set(nrm, v);
+            // colours x 128 below 0, inside and above 255
+            for k in 0..3u32 {
+                let v = rng.pick(&[-0.5f32, 0.0, 1.0, 1.99, 1.992_187_5, 2.5, f32::NAN]);
+                p.set(host + 4 * k, v.to_bits());
+            }
+            let r0: [u32; 4] = if rng.chance(20) {
+                [rng.next(), rng.next(), rng.next(), rng.next()]
+            } else {
+                [0; 4]
+            };
+            p.set(ee, r0);
+            let vf: [u32; 4] = if rng.chance(10) {
+                [rng.next(), 0x7f80_0000, 0, 0x3f80_0000]
+            } else {
+                [0, 0, 0, 0x3f80_0000]
+            };
+            p.set(vf00, vf);
+            let goes = hidden & !8 == 0 && (a > 0.0 || a.is_nan());
+            seen[usize::from(goes) + usize::from(goes && n > 0)] += 1;
+            let what = format!("opp_mimic round {round}");
+            check_deep_n(&mut p, &what, 0x0080_eb50, &[host], |m, ebp| {
+                o::opp_mimic(m, host, ebp, &mut call_original, &mut call_original_f);
+                None
+            });
+        }
+        assert!(seen.iter().all(|&k| k > 100), "{seen:?}");
+    }
+}
+
+/// A stand-in for `opus_get_bone_matrix(out, chr, bone)` (through a jump)
+/// that logs its arguments and copies the 16 words at `mats + 0x40 (bone
+/// & 3)` to `out`; returns the log.
+fn bone_copy_stub(p: &mut Pair, sym: u32, mats: u32) -> u32 {
+    let log = p.alloc(4 + 0x100 * 64);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x06]); // shl ecx, 6
+    for k in 0..3u8 {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        c.extend([0x89, 0x81]); // mov [ecx + slot], eax
+        c.extend((log + 4 + 4 * u32::from(k)).to_le_bytes());
+    }
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x8b, 0x4c, 0x24, 0x0c]); // mov ecx, [esp + 0xc]: bone
+    c.extend([0x83, 0xe1, 0x03]); // and ecx, 3
+    c.extend([0xc1, 0xe1, 0x06]); // shl ecx, 6
+    c.extend([0x81, 0xc1]); // add ecx, mats
+    c.extend(mats.to_le_bytes());
+    c.extend([0x8b, 0x44, 0x24, 0x04]); // mov eax, [esp + 4]: out
+    for k in 0..16u8 {
+        c.extend([0x8b, 0x51, 4 * k]); // mov edx, [ecx + 4k]
+        c.extend([0x89, 0x50, 4 * k]); // mov [eax + 4k], edx
+    }
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+/// `opu_v_en_bone` against the port: every nibble and the default, world
+/// and bone space, each case's command words in range for its reads, the
+/// element and random picks on and past their limits (the 0x12e /
+/// 0x1153 bands), the weapon present or not, the angle table and axis
+/// bytes.
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap
+)]
+fn r52d_opu_v_en_bone_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_4c90);
+        let cells = p.alloc(0x40);
+        let (scale, nb, rand, magic, id, weapon) = (
+            cells,
+            cells + 4,
+            cells + 8,
+            cells + 0xc,
+            cells + 0x10,
+            cells + 0x14,
+        );
+        let (vtx, mat, root, mats) = (p.alloc(0x10), p.alloc(0x40), p.alloc(0x40), p.alloc(0x100));
+        let logs = [
+            float_recorder(&mut p, 0x0082_ab60, 1, scale),
+            far_copy_recorder(&mut p, 0x0080_54d0, 3, 0, From::At(vtx), 4),
+            far_copy_recorder(&mut p, 0x0083_3b80, 3, 2, From::At(mat), 16),
+            far_copy_recorder(&mut p, 0x0083_54f0, 3, 2, From::At(vtx), 4),
+            far_recorder(&mut p, 0x0083_03f0, &[0], Some(nb)),
+            far_recorder(&mut p, 0x007e_5d50, &[0], Some(rand)),
+            far_copy_recorder(&mut p, 0x0080_5400, 2, 0, From::At(root), 16),
+            bone_copy_stub(&mut p, 0x0080_5430, mats),
+            far_recorder(&mut p, 0x009d_a3b0, &[], Some(magic)),
+            far_recorder(&mut p, 0x0082_6b80, &[0], Some(id)),
+            far_copy_recorder(&mut p, 0x0083_3d10, 4, 3, From::At(vtx), 4),
+            far_recorder(&mut p, 0x0079_5b40, &[0, 0], Some(weapon)),
+            far_copy_recorder(&mut p, 0x0079_56e0, 2, 1, From::At(vtx), 4),
+        ];
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x40));
+        let mut seen = [0u32; 16];
+        for round in 0..4000u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(host, 0x400, &mut rng);
+            for k in 0..0x40u32 {
+                let v = ranged(&mut rng, -50.0, 50.0);
+                p.set(unit + 4 * k, v);
+            }
+            for (at, n) in [(vtx, 4u32), (mat, 16), (root, 16), (mats, 64)] {
+                for k in 0..n {
+                    let v = ranged(&mut rng, -2.0, 2.0);
+                    p.set(at + 4 * k, v);
+                }
+            }
+            p.set(host + 0x220, unit);
+            let chr = rng.below(240);
+            p.set(unit + 0x18, chr as u8);
+            p.set(handles + 4 * chr, rng.next());
+            p.set(unit + 0xb2, rng.next() as u8);
+            let kind = rng.below(16);
+            seen[kind as usize] += 1;
+            p.set(host + 0x21a, (kind << 12 | rng.below(0x1000)) as u16);
+            p.fill(cmd, 0x40, &mut rng);
+            let s = rng.pick(&[1.0f32, 0.5, 2.0, 3.3, 0.0]);
+            p.set(scale, s.to_bits());
+            let last = rng.pick(&[0u32, 1, 4, 5, 6, 30, 80]);
+            p.set(nb, last);
+            p.set(
+                rand,
+                rng.pick(&[0u32, 1, 3, 4, 20, 21, 25, 26, 72, 73, 0x1_0005]),
+            );
+            p.set(magic, rng.pick(&[0x12eu32, 0x12e, 0x12f]));
+            p.set(id, rng.pick(&[0x1153u32, 0x1153, 0x1152]));
+            p.set(weapon, if rng.chance(30) { 0 } else { rng.next() });
+            // the command words each case reads
+            match kind {
+                4 => p.set(cmd + 2, rng.below(0x30) as u16),
+                9 | 10 => p.set(cmd + 2, (4 * rng.below(0x40)) as u16),
+                6 => {
+                    p.set(cmd + 2, rng.pick(&[0i16, 3, 4, 20, 26, -1]));
+                    p.set(cmd + 4, rng.pick(&[0i16, 5, 30, 79, 100, -2]));
+                }
+                7 => {
+                    p.set(cmd + 2, 0x10u16);
+                    p.set(cmd + 0x10, rng.pick(&[0u16, 1, 3, 8]));
+                }
+                8 => {
+                    p.set(cmd + 4, rng.below(6) as u16);
+                    let a = rng.pick(&[0.0f32, 1024.0, 4095.0, 4096.0, -1.0, 70000.0, f32::NAN]);
+                    p.set(unit + 0x48, a.to_bits());
+                }
+                _ => {}
+            }
+            p.check(
+                &format!("opu_v_en_bone kind {kind} round {round}"),
+                0x0080_4c90,
+                &[host, cmd],
+                |m| {
+                    Some(o::opu_v_en_bone(
+                        m,
+                        host,
+                        cmd,
+                        &mut call_original,
+                        &mut call_original_f,
+                    ))
+                },
+            );
+        }
+        assert!(seen.iter().all(|&k| k > 100), "{seen:?}");
+    }
+}
+
+/// A [`deref_recorder_with`] in the oracles' code area whose address goes
+/// into the pointer at `slot` (an import slot or a function table);
+/// returns the log.
+fn slot_recorder(p: &mut Pair, slot: u32, words: &[u8], ret: Option<u32>) -> u32 {
+    let (c, log) = deref_recorder_code(p, words, ret);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    p.set(slot, to);
+    log
+}
+
+/// `op_init_ffx` against the port: done before or not, `g_OpNumShow`,
+/// `g_OpNumBoot` and the debug mode each way, both files found or not,
+/// the `g_EtChr` records used or not and their numbers on and past 0xf0.
+/// Every callee is a recorder (the imports and the battle overlay's first
+/// function through their slots); the original runs under a frame like
+/// the port's, so the unified-path local is at the same address.
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r52e_op_init_ffx_matches_the_original() {
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_f360);
+        let cells = p.alloc(0x20);
+        let (file, size, block) = (cells, cells + 4, cells + 8);
+        let (sprintf, sprintf_s) = (p.sym(0x00b0_c3dc), p.sym(0x00b0_c394));
+        let mut logs = vec![
+            record_srand(&mut p),
+            slot_recorder(&mut p, sprintf, &[0, 0, 0, 0], None),
+            slot_recorder(&mut p, sprintf_s, &[0, 0, 0, 0], None),
+            far_recorder(&mut p, 0x0067_9730, &[0, 0], Some(file)),
+            far_recorder(&mut p, 0x0067_9710, &[0, 0, 0], Some(size)),
+            far_recorder(&mut p, 0x0068_6ff0, &[0, 0], Some(block)),
+        ];
+        let (overlay, overlays) = (p.alloc(8), p.sym(0x00c4_8d88));
+        p.set(overlays, overlay);
+        logs.push(slot_recorder(&mut p, overlay, &[0], None));
+        for (sym, n) in [
+            (0x0042_ee40u32, 0usize),
+            (0x007f_f960, 0),
+            (0x007e_c410, 0),
+            (0x0067_9820, 3),
+            (0x0067_9800, 3),
+            (0x0067_9510, 1),
+            // dbgPrintf: the format and path (the found message adds the
+            // size, which malloc and fiosRead log too)
+            (0x0062_f500, 2),
+            (0x0064_54c0, 0),
+            (0x007f_d760, 0),
+            (0x007f_c620, 1),
+            (0x007e_6480, 1),
+            (0x007e_6560, 0),
+            (0x007e_63a0, 1),
+            (0x007e_65e0, 2),
+            (0x007e_63b0, 1),
+            (0x007e_6440, 1),
+            (0x007e_64d0, 1),
+            (0x007e_64b0, 0),
+            (0x00a6_4a00, 0),
+            (0x007e_5210, 1),
+        ] {
+            logs.push(far_recorder(&mut p, sym, &[0, 0, 0][..n], None));
+        }
+        let (done, show, boot, debug) = (
+            p.sym(0x012e_9c60),
+            p.sym(0x0232_2794),
+            p.sym(0x0232_279c),
+            p.sym(0x0232_2790),
+        );
+        let (chrs, draw) = (p.sym(0x012a_22c0), p.sym(et::bridge::DRAW_FLAGS.sym));
+        let mut seen = [0u32; 4];
+        for round in 0..600u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.set(done, u32::from(rng.chance(10)));
+            let on = rng.chance(50);
+            p.set(show, u8::from(on));
+            p.set(boot, rng.pick(&[0u32, 1, 0x100]));
+            p.set(debug, rng.below(2) as u8);
+            p.set(file, if rng.chance(25) { 0 } else { rng.next() });
+            let v = rng.next();
+            p.set(size, v);
+            let v = rng.next();
+            p.set(block, v);
+            for k in 0..0xd0u32 {
+                let rec = chrs + 32 * k;
+                p.set(rec, if rng.chance(40) { 0 } else { rng.next() });
+                let no = if rng.chance(20) {
+                    rng.pick(&[0xefu16, 0xf0, 0xff])
+                } else {
+                    rng.below(0x100) as u16
+                };
+                p.set(rec + 0xe, no);
+            }
+            // bit 1 mostly clear, so each record's flag shows
+            for k in 0..0x100u32 {
+                let b = rng.next() as u8;
+                p.set(draw + k, if rng.chance(80) { b & !2 } else { b });
+            }
+            let ee = p.sym(0x00c8_f508);
+            for k in [0x28u32, 0x2c] {
+                let v = rng.next();
+                p.set(ee + k, v);
+            }
+            seen[usize::from(on) * 2 + usize::from(p.get::<u32>(done) == 0)] += 1;
+            let what = format!("op_init_ffx round {round}");
+            check_deep_n(&mut p, &what, 0x007f_f360, &[], |m, ebp| {
+                o::op_init_ffx(m, ebp - 0x104, &mut call_original);
+                None
+            });
+        }
+        assert!(seen.iter().all(|&k| k > 20), "{seen:?}");
     }
 }

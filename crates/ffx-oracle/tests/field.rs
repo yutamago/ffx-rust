@@ -23874,3 +23874,509 @@ fn small2_e_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x5a11_2e02);
     small2_e_cases(&mut t, &mut rng, 200);
 }
+
+// ---- small round 4 a: rcbgGuideUpdateEx ----
+
+/// A stand-in that logs, after `tag`, for each `(k, n)` of `spec` the
+/// argument word `k` (`n` 0) or the `n` words it points at, and returns
+/// `[rv]` in `EAX` (or, with `float`, the `f32` at `rv` in `ST0`).
+fn rec_stub(plog: u32, tag: u32, spec: &[(u8, u8)], rv: u32, float: bool) -> Vec<u8> {
+    let p = plog.to_le_bytes();
+    let mut c = plog_tag(plog, tag);
+    c.extend_from_slice(&[0x56, 0x57, 0x8b, 0x3d, p[0], p[1], p[2], p[3]]);
+    for &(k, n) in spec {
+        let at = 0x0c + 4 * k;
+        if n == 0 {
+            c.extend_from_slice(&[0x8b, 0x44, 0x24, at, 0xab]);
+        } else {
+            c.extend_from_slice(&[0x8b, 0x74, 0x24, at, 0xb9, n, 0, 0, 0, 0xf3, 0xa5]);
+        }
+    }
+    c.extend_from_slice(&[0x89, 0x3d, p[0], p[1], p[2], p[3], 0x5f, 0x5e]);
+    if float {
+        c.extend_from_slice(&[0xd9, 0x05]);
+    } else {
+        c.push(0xa1);
+    }
+    c.extend_from_slice(&rv.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// `rcbgSetReg(list)`: logs the list's word pairs up to the `-1` pair.
+fn set_reg_stub(plog: u32) -> Vec<u8> {
+    let p = plog.to_le_bytes();
+    let mut c = plog_tag(plog, 0x40);
+    c.extend_from_slice(&[
+        0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x8b, 0x3d, p[0], p[1], p[2], p[3],
+    ]);
+    c.extend_from_slice(&[0xad, 0xab, 0xad, 0xab, 0x83, 0x7e, 0xf8, 0xff, 0x75, 0xf6]);
+    c.extend_from_slice(&[0x89, 0x3d, p[0], p[1], p[2], p[3], 0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// `AtelGetGideMapActorInfo(i, out)` over `table`: 0x30 bytes of record
+/// `i` (0x34 bytes apart) copied out, its word `+0x30` returned.
+fn actor_info_stub(table: u32) -> Vec<u8> {
+    let mut c = vec![
+        0x56, 0x57, 0x8b, 0x44, 0x24, 0x0c, 0x6b, 0xc0, 0x34, 0x8d, 0xb0,
+    ];
+    c.extend_from_slice(&table.to_le_bytes());
+    c.extend_from_slice(&[
+        0x8b, 0x7c, 0x24, 0x10, 0xb9, 0x0c, 0, 0, 0, 0xf3, 0xa5, 0xad,
+    ]);
+    c.extend_from_slice(&[0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// `AtelGetActorStartPos(id, x, y, z)` / `EndPos`: the three words at
+/// `src` (moved by 4 a call) out, the id logged.
+fn actor_pos_stub(plog: u32, tag: u32, src: u32) -> Vec<u8> {
+    let mut c = rec_stub(plog, tag, &[(0, 0)], src, false);
+    c.pop(); // ret
+    c.truncate(c.len() - 5); // mov eax, [src]
+    for (k, o) in [(8u8, 0u32), (0xc, 4), (0x10, 8)] {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, k, 0x8b, 0x0d]);
+        c.extend_from_slice(&(src + o).to_le_bytes());
+        c.extend_from_slice(&[0x89, 0x08]);
+    }
+    c.extend_from_slice(&[0x31, 0xc0, 0xc3]);
+    c
+}
+
+/// The stand-ins of small round 4 a (`rcbgGuideDrawPlayer`'s edge points
+/// logged without their `w`, which the original never writes and the
+/// callee never reads): every draw, GS register, renderer and
+/// marker callee logged by content into `plog` (the vectors and lists are
+/// in the original's frame and in the port's work area). With `synthetic`
+/// the script's marker calls, the 3D-scene test and the map angle are
+/// stood in too (records at `table`, words at `rv`..).
+#[allow(clippy::too_many_lines)] // one stand-in a callee
+fn small4_a_stubs(t: &mut Twin, plog: u32, rv: u32, table: u32, synthetic: bool) {
+    use ffx_field::guide_update::callee as c;
+    let r = |k: u32| rv + 4 * k;
+    let mut list = vec![
+        (Some(c::MINIMAP_SET_ENABLE), set_enable_stub(t, plog, rv)),
+        (
+            Some(c::CAMERA_SET_WORLD),
+            rec_stub(plog, 2, &[(0, 16)], r(0), false),
+        ),
+        (Some(c::SET_REG), set_reg_stub(plog)),
+        (
+            Some(c::PRIM_BOX),
+            rec_stub(
+                plog,
+                3,
+                &[(0, 0), (1, 0), (2, 0), (3, 0), (4, 4), (5, 0)],
+                r(0),
+                false,
+            ),
+        ),
+        (
+            Some(c::PRIM_LINE),
+            rec_stub(
+                plog,
+                4,
+                &[(0, 0), (1, 0), (2, 0), (3, 0), (4, 4), (5, 0)],
+                r(0),
+                false,
+            ),
+        ),
+        (
+            Some(c::PRIM_TRI),
+            rec_stub(
+                plog,
+                5,
+                &[(0, 0), (1, 0), (2, 0), (3, 0), (4, 4), (5, 0)],
+                r(0),
+                false,
+            ),
+        ),
+        (
+            Some(c::PRIM_BATU),
+            rec_stub(
+                plog,
+                6,
+                &[(0, 0), (1, 0), (2, 0), (3, 4), (4, 0)],
+                r(0),
+                false,
+            ),
+        ),
+        (
+            Some(c::PRIM_CIRCLE_LINE),
+            rec_stub(
+                plog,
+                7,
+                &[(0, 0), (1, 0), (2, 0), (3, 4), (4, 0)],
+                r(0),
+                false,
+            ),
+        ),
+        (
+            Some(c::FOG_SET_ENABLE),
+            rec_stub(plog, 8, &[(0, 0)], r(1), false),
+        ),
+        (
+            Some(c::UPDATE_WALK),
+            rec_stub(plog, 9, &[(0, 0), (1, 16), (2, 4)], r(0), false),
+        ),
+        (
+            Some(c::MODEL_DRAW),
+            rec_stub(plog, 10, &[(0, 0)], r(0), false),
+        ),
+        (Some(c::RESTORE_REG), rec_stub(plog, 11, &[], r(0), false)),
+        (Some(c::CLOSE_SCISSOR), rec_stub(plog, 12, &[], r(2), false)),
+        (
+            Some(c::DRAW_PLAYER),
+            rec_stub(
+                plog,
+                13,
+                &[
+                    (0, 0),
+                    (1, 4),
+                    (2, 4),
+                    (3, 4),
+                    (4, 0),
+                    (5, 0),
+                    (6, 3),
+                    (7, 3),
+                    (8, 0),
+                    (9, 0),
+                ],
+                r(0),
+                false,
+            ),
+        ),
+        (
+            Some(c::REVEAL_FOG),
+            rec_stub(plog, 14, &[(0, 0), (1, 0), (2, 0)], r(0), false),
+        ),
+    ];
+    if synthetic {
+        list.extend([
+            (Some(c::IS_3D_SCENE), rec_stub(plog, 15, &[], r(3), false)),
+            (
+                Some(c::GUIDE_MAP_ANG),
+                rec_stub(plog, 16, &[(0, 0)], r(4), true),
+            ),
+            (Some(c::ACTOR_NUMBER), rec_stub(plog, 17, &[], r(5), false)),
+            (Some(c::ACTOR_INFO), actor_info_stub(table)),
+            (
+                Some(c::ACTOR_TYPE),
+                rec_stub(plog, 18, &[(0, 0)], r(6), false),
+            ),
+            (Some(c::SCENARIO_FLAG), rec_stub(plog, 19, &[], r(7), false)),
+            (Some(c::ACTOR_START_POS), actor_pos_stub(plog, 20, r(8))),
+            (Some(c::ACTOR_END_POS), actor_pos_stub(plog, 21, r(11))),
+        ]);
+    }
+    t.cave_from(0, &list);
+}
+
+/// `graphicMinimapSetEnable(alpha)`: logged; with `[rv + 0x3c]` set it
+/// also changes `g_GuideFade` to `[rv + 0x38]` (the original reads the
+/// fade again after the call).
+fn set_enable_stub(t: &Twin, plog: u32, rv: u32) -> Vec<u8> {
+    let fade = t.b.rebase(ffx_field::guide_update::global::FADE);
+    let mut c = rec_stub(plog, 1, &[(0, 0)], rv, false);
+    c.truncate(c.len() - 6); // mov eax, [rv]; ret
+    c.extend_from_slice(&[0x83, 0x3d]);
+    c.extend_from_slice(&(rv + 0x3c).to_le_bytes());
+    c.extend_from_slice(&[0x00, 0x74, 0x0a, 0xa1]);
+    c.extend_from_slice(&(rv + 0x38).to_le_bytes());
+    c.push(0xa3);
+    c.extend_from_slice(&fade.to_le_bytes());
+    c.push(0xa1);
+    c.extend_from_slice(&rv.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Marker flags for the synthetic records: every shape, the ring, the
+/// blink, the player and the destination, some mixed, some empty.
+const SMALL4_FLAGS: [u32; 14] = [
+    0, 0x100, 0x200, 0x2_0000, 0x1_0000, 0x400, 0x1400, 0x1200, 0x500, 0x1_0400, 0x800, 0x2000,
+    0x300, 0x4_0100,
+];
+
+/// Small round 4 a: `rcbgGuideUpdateEx` on synthetic guides, meshes,
+/// scenes and marker records (every map with its own scale, 2D and 3D,
+/// the fade and flags, the camera clamped or not, the special map-0x99
+/// marker), the draws logged. A destination always comes with a player
+/// (without one the original hands `rcbgGuideDrawPlayer` stack junk).
+#[allow(clippy::too_many_lines)] // the set-up, then the cases
+fn small4_a_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::guide_update as gu;
+    t.install_trig();
+    let (plog, area, rv, table) = (
+        t.alloc(4),
+        t.alloc(0x2_0000),
+        t.alloc(0x40),
+        t.alloc(0x34 * 10),
+    );
+    small4_a_stubs(t, plog, rv, table, true);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let (g, mesh, walk) = (t.alloc(0x100), t.alloc(0x200), t.alloc(0x200));
+    let (sys, map, scene, bitmap, dirs) = (
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(0x100),
+        t.alloc(0x200),
+        t.alloc(0x40),
+    );
+    let work = t.stack_scratch(0x400);
+    let glob = |t: &Twin, a: u32| t.b.rebase(a);
+    let maps = [
+        0xec, 0x142, 0x131, 0xb4, 0xb6, 0x100, 0xb5, 0xf3, 0xab, 0x9e, 0x114, 0x50, 0x99,
+    ];
+    let mut reach = [0u32; 0x41];
+    for case in 0..cases {
+        t.put(plog, area);
+        let f = |rng: &mut Xorshift, lo: i32, hi: i32| float_in(rng, lo, hi);
+        // the globals
+        t.put(glob(t, gu::global::ASPECT_Z), f(rng, 100, 400));
+        t.put(
+            glob(t, gu::global::GRAPHIC_MAP_ID),
+            maps[rng.below(13) as usize],
+        );
+        t.put(
+            glob(t, gu::global::CURRENT_MAP_NO),
+            if rng.below(3) == 0 {
+                0x99
+            } else {
+                rng.below(0x200)
+            },
+        );
+        t.put(glob(t, gu::global::ENABLED), u32::from(case % 17 != 3));
+        let flags = (rng.next() & 0x101) | u32::from(case % 13 != 5);
+        t.put(glob(t, gu::global::FLAGS), flags);
+        t.set(guide::FADE_STATE, rng.range(0, 4));
+        t.set(guide::FADE_WAIT, rng.range(0, 3));
+        t.set(guide::FADE_LEVEL, rng.range(0, 7));
+        // (sizes of -16 and -40 give 0 grid lines, -100 a negative count)
+        t.set(
+            guide::SIZE,
+            [0x80i32, 0x100, 0xc0, -16, -40, -100][rng.below(6) as usize].cast_unsigned(),
+        );
+        t.set(guide::POS, [rng.below(0x200), rng.below(0x1a0)]);
+        // (without a scene the original reads address 0xf4)
+        t.set(guide_update_sys(), sys);
+        t.put(sys, map);
+        t.put(map + 8, scene);
+        t.put(scene + 0xf4, f(rng, 1, 4));
+        t.put(scene + 0x1a, [0xffffu16, 0, 1, 2, 3][rng.below(5) as usize]);
+        // the guide and its mesh
+        t.put(g, if case % 5 == 0 { 0 } else { mesh });
+        t.put(g + 8, if case % 23 == 11 { 0 } else { walk });
+        for o in (0x50..0x60).step_by(4) {
+            t.put(g + o, f(rng, -200, 200));
+        }
+        t.put(g + 0x60, f(rng, -40, 40));
+        t.put(g + 0x6c, f(rng, -250, 250));
+        if case % 9 == 4 {
+            // the clamp's floor exactly at the eye
+            t.put(g + 0x60, 0u32);
+            let y = t.b.read::<f32>(g + 0x54);
+            t.put(g + 0x6c, (-y).to_bits());
+        }
+        t.put(g + 0x70, if rng.below(2) == 0 { 0 } else { bitmap });
+        t.put(g + 0x74, rng.next() & 0xffff);
+        for m in [mesh, walk] {
+            t.fill(m, 0x100, rng);
+            for k in 0..16u32 {
+                let ident = if k % 5 == 0 { 1.0f32 } else { 0.0 };
+                #[allow(clippy::cast_precision_loss)]
+                let x = ident + rng.range(-300, 300) as f32 / 1000.0;
+                t.put(m + 0xc0 + 4 * k, x.to_bits());
+            }
+        }
+        // the stand-ins' words
+        t.put(rv, rng.next());
+        t.put(rv + 4, rng.next());
+        t.put(rv + 8, rng.next());
+        t.put(rv + 0xc, rng.below(2));
+        t.put(rv + 0x10, f(rng, -7, 7));
+        let n = [0u32, 1, 3, 7, 8, 10][rng.below(6) as usize];
+        t.put(rv + 0x14, n);
+        t.put(rv + 0x18, [2u32, 5, 1, 3][rng.below(4) as usize]);
+        t.put(
+            rv + 0x1c,
+            [0x618u32, 0x1_0618, rng.next()][rng.below(3) as usize],
+        );
+        t.put(
+            rv + 0x38,
+            [
+                0u32,
+                1,
+                64,
+                128,
+                0xffff_fff0,
+                u32::MAX,
+                0xffff_fffd,
+                rng.next(),
+            ][rng.below(8) as usize],
+        );
+        t.put(rv + 0x3c, u32::from(rng.below(4) == 0));
+        for k in 8..14 {
+            t.put(rv + 4 * k, f(rng, -300, 300));
+        }
+        // the markers
+        let mut dest = false;
+        for i in 0..10u32 {
+            let e = table + 0x34 * i;
+            let pick = SMALL4_FLAGS[rng.below(14) as usize];
+            let fl = if pick == 0 {
+                0
+            } else {
+                pick | (rng.next() & 0xff)
+            };
+            let fl = if i == 0 { 0x800 } else { fl };
+            dest |= fl & 0x2000 != 0;
+            t.put(e, rng.below(8));
+            t.put(e + 4, fl);
+            for o in [8u32, 0xc, 0x10] {
+                t.put(e + o, f(rng, -300, 300));
+            }
+            t.put(e + 0x14, f(rng, -7, 7));
+            t.put(e + 0x18, if rng.below(3) == 0 { 0 } else { dirs + 4 * i });
+            for o in (0x1c..0x2c).step_by(4) {
+                t.put(e + o, f(rng, -300, 300));
+            }
+            t.put(e + 0x2c, rng.below(2));
+            let ok = if i == 0 {
+                1
+            } else {
+                u32::from(rng.below(5) != 0)
+            };
+            t.put(e + 0x30, ok);
+        }
+        if dest && n > 0 && rng.below(4) == 0 {
+            // the player later than the destinations
+            t.put(table + 4, 0x2000u32);
+            t.put(table + 0x34 * (n - 1) + 4, 0x800u32);
+            t.put(table + 0x34 * (n - 1) + 0x30, 1u32);
+        }
+        let show = rng.below(2);
+        let ra = Orig(&mut t.a).eax(0x0091_da80, &[g, show]);
+        let rb = gu::rcbg_guide_update_ex(&mut t.b, [g, show], work, call, fcall);
+        t.same_but("rcbgGuideUpdateEx", &small4_skip(t), |_| ra, |_| rb);
+        small4_count(&t.b, area, t.b.read::<u32>(plog), &mut reach);
+    }
+    // every stand-in but the 3D test's and the angle's runs in some cases
+    for tag in [
+        1usize, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 0x40,
+    ] {
+        assert!(reach[tag] > 0, "stand-in {tag} never runs ({reach:?})");
+    }
+}
+
+/// Counts the calls in a [`small4_a_stubs`] log (`area..end`) by tag.
+fn small4_count(m: &Oracle, area: u32, end: u32, reach: &mut [u32; 0x41]) {
+    // the words after each tag (the register lists end at a -1 pair)
+    let len = |tag: u32| match tag {
+        2 => 16,
+        3..=5 => 9,
+        6 | 7 => 8,
+        9 => 21,
+        13 => 23,
+        14 => 3,
+        1 | 8 | 10 | 16 | 18 | 20 | 21 => 1,
+        _ => 0,
+    };
+    let mut at = area;
+    while at < end {
+        let tag = m.read::<u32>(at);
+        at += 4;
+        reach[tag.min(0x40) as usize] += 1;
+        if tag == 0x40 {
+            while m.read::<u32>(at) != u32::MAX {
+                at += 8;
+            }
+            at += 8;
+        } else {
+            at += 4 * len(tag);
+        }
+    }
+}
+
+/// The emulated VU0 registers the callees load from their own stack
+/// frames (vf at `0x00c8f810`, `0x00c8f820`; the scale copies at
+/// `0x00c8f970`): junk that differs between the two sides.
+fn small4_skip(t: &Twin) -> [(u32, u32); 2] {
+    [
+        (t.b.rebase(0x00c8_f810), 0x20),
+        (t.b.rebase(0x00c8_f970), 0x30),
+    ]
+}
+
+/// `g_YnMapSystem`.
+const fn guide_update_sys() -> Global<u32> {
+    Global::new(ffx_field::guide_update::global::YN_MAP_SYSTEM)
+}
+
+/// Small round 4 a on the image.
+#[test]
+fn small4_a_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x5a11_4a01);
+    small4_a_cases(&mut t, &mut rng, 400);
+}
+
+/// Small round 4 a on the snapshot (`FFX_SNAPSHOT`): the synthetic cases,
+/// then the game's own guide with the script's markers, every fade
+/// state and flag.
+#[test]
+fn small4_a_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5a11_4a02);
+    small4_a_cases(&mut t, &mut rng, 150);
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    small4_a_real(&mut t, &mut rng);
+}
+
+/// The snapshot's own guide (`g_YnMapSystem +4`), when it has one.
+fn small4_a_real(t: &mut Twin, rng: &mut Xorshift) {
+    use ffx_field::guide_update as gu;
+    t.install_trig();
+    let (plog, area, rv) = (t.alloc(4), t.alloc(0x2_0000), t.alloc(0x40));
+    small4_a_stubs(t, plog, rv, 0, false);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let sys = guide_update_sys().get(&t.b);
+    let map = if sys == 0 { 0 } else { t.b.read::<u32>(sys) };
+    if map == 0 || t.b.read::<u32>(map + 8) == 0 {
+        eprintln!("no Yn map system in the snapshot; skipping its guide");
+        return;
+    }
+    let g = t.b.read::<u32>(sys + 4);
+    if g == 0 {
+        eprintln!("no guide in the snapshot; skipping it");
+        return;
+    }
+    let work = t.stack_scratch(0x400);
+    let flags = t.b.rebase(gu::global::FLAGS);
+    let base = t.b.read::<u32>(flags);
+    let mut reach = [0u32; 0x41];
+    for case in 0..24u32 {
+        t.put(plog, area);
+        t.put(rv, rng.next());
+        t.put(rv + 8, rng.next());
+        t.put(flags, base & !0x101 | (case & 1) | (case & 2) << 7);
+        t.set(guide::FADE_STATE, (case >> 2 & 3).cast_signed());
+        t.set(guide::FADE_LEVEL, rng.range(0, 7));
+        let show = case >> 4 & 1;
+        t.same_but(
+            "rcbgGuideUpdateEx (the snapshot's guide)",
+            &small4_skip(t),
+            |o| o.eax(0x0091_da80, &[g, show]),
+            |b| gu::rcbg_guide_update_ex(b, [g, show], work, call, fcall),
+        );
+        small4_count(&t.b, area, t.b.read::<u32>(plog), &mut reach);
+    }
+    eprintln!("the snapshot's guide: calls by tag {reach:?}");
+}

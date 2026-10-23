@@ -549,6 +549,15 @@ REVIEWED = {
     0x00a3d3c0: ("platform", "Iggy GDraw D3D11: fastcall wrapper of the 0xa3d310 constructor; callers lead to the Iggy player constructor 0xa288f0 (effects round 51)"),
     0x00853070: ("dead", "called only from 0x84d790 and 0x853210, both in the unreferenced chain under 0x84f100 (pc round 2)"),
     0x0068dfd0: ("platform", "FFEscMenu C++ constructor (Iggy menu, SEH): base ctor 0xa288f0, vtables, field defaults, page initializers; like 0x6f9890 (pc round 2)"),
+    0x00884fe0: ("debug", "AtelDebugPage_BlockHex: ctrl-work hex dump page (TkDebugHexDump_00883340) of AtelDebugDisplay_00883040, reached only through its jump table (0x883174/0x883185/0x883196); AtelDebugDisplay has no static caller (small round 4)"),
+    0x008850c0: ("debug", "AtelDebugPage_CtrlHex: ctrl-work hex dump page (TkDebugHexDump_00883340) of AtelDebugDisplay_00883040, reached only through its jump table (0x883174/0x883185/0x883196); AtelDebugDisplay has no static caller (small round 4)"),
+    0x00885040: ("debug", "AtelDebugPage_CodeHex: ctrl-work hex dump page (TkDebugHexDump_00883340) of AtelDebugDisplay_00883040, reached only through its jump table (0x883174/0x883185/0x883196); AtelDebugDisplay has no static caller (small round 4)"),
+    0x00a63ff0: ("debug", "opd_heap_display: only call 0xa64be1 is inside orphan code 0xa64ba0..0xa64bf8 (no call, jmp or pointer in FFX.exe), gated on debug byte 0x02321547 set only by the unreachable opd_debug_on (effects round 52)"),
+    0x00a27110: ("dead", "thiscall wrapper of 0x409680(this+0x130, a, b, 0, 0); no E8/E9/0F8x rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
+    0x00a27130: ("dead", "xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
+    0x00a27140: ("dead", "xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
+    0x00a27150: ("dead", "xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
+    0x00a27160: ("dead", "xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
