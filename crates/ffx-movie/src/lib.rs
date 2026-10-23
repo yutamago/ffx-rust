@@ -157,14 +157,27 @@ pub mod bridge {
     /// first float, the screen matrix from `+4`, the camera matrix from
     /// `+0x44`, the look-at and eye from `+0x84`, the aspect `+0xa4`
     /// (through the x87), into `work` ([`CAMERA_WORK`]); without records
-    /// "on" is 0 and the rest is what `work` held (the original's
-    /// uninitialised frame). Then `setScreenDataAspectZ(aspect)`,
+    /// "on" is 0 and the rest is the original's never-written frame, which
+    /// the port sets to 0 (brief 2026-10-24). Then `setScreenDataAspectZ(aspect)`,
     /// `MsSetCameraMatrix(on, screen, camera, look_at, eye, aspect)` and,
     /// unless `rcbgSceneSetMatrix_Cross()` took the view, `Cam_Apply(0)`.
     /// Returns the last callee's `eax` on the camera path, as the original
     /// (elsewhere the original leaves what its checks left; nothing reads
     /// it).
     pub fn movie_camera_frame(h: &mut impl Host, work: u32) -> u32 {
+        // Without records the original reads its frame unwritten:
+        // junk read: [ebp-0xac] never written; 0 (brief 2026-10-24)
+        // (the aspect)
+        h.write(work, [0u32; 2]);
+        // junk read: [ebp-0xa4] never written; 0 (brief 2026-10-24)
+        // (the camera matrix, to MsSetCameraMatrix by address)
+        h.write(work + 8, [0u32; 16]);
+        // junk read: [ebp-0x64] never written; 0 (brief 2026-10-24)
+        // (the screen matrix, by address)
+        h.write(work + 0x48, [0u32; 16]);
+        // junk read: [ebp-0x24] never written; 0 (brief 2026-10-24)
+        // (the look-at and eye, by address)
+        h.write(work + 0x88, [0u32; 8]);
         if h.read::<u32>(h.rebase(WAIT_FRAMES_BY_TIME)) == 0 {
             return 0;
         }
@@ -177,6 +190,7 @@ pub mod bridge {
         };
         let data: u32 = h.read(h.rebase(CAMERA_DATA));
         if data == 0 {
+            // the aspect, matrices and vectors stay the 0s written above
             h.write(work + 4, 0u32);
         } else {
             let off = frame.wrapping_mul(0xa8).cast_unsigned();

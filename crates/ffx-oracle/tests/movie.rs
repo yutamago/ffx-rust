@@ -307,11 +307,12 @@ fn pc_r4_movie_camera_frame() {
                     put(a, b, records + 4 * i, rng.float());
                 }
             }
-            // what the original's frame holds when there are no records
+            // without records the original reads its never-written frame:
+            // 0 there (the port's value, brief 2026-10-24); the port writes
+            // its 0s itself, so its work block starts as garbage
             for i in 0..0xa8 / 4 {
-                let v = rng.float();
-                Mem::write(a, frame + 4 * i, v);
-                Mem::write(b, work + 4 * i, v);
+                Mem::write(a, frame + 4 * i, 0u32);
+                Mem::write(b, work + 4 * i, rng.float());
             }
             let id =
                 [0x2e, 0x46, 0x20, 0x48, 0x2e, 0x46, rng.next() % 0x80][(rng.next() % 7) as usize];

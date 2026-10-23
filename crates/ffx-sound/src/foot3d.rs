@@ -277,9 +277,10 @@ pub mod bridge {
     /// 0x11df9..=0x11dfc only from three exact `x` positions), and the pan
     /// and volume into bytes `req +0x20`/`+0x21`. `work`: the original's
     /// frame ([`WORK`]); with flag 2 for an actor of another type and flag
-    /// 1 in the request the direction is what `work` held (the original
-    /// reads its uninitialised frame). Returns the pan (the original's
-    /// `eax`; 0 when it does nothing).
+    /// 1 in the request the original reads its never-written direction
+    /// (`ebp - 0x24 .. - 0x1c`): the port sets the direction to 0 first
+    /// (brief 2026-10-24). Returns the pan (the original's `eax`; 0 when
+    /// it does nothing).
     #[allow(clippy::too_many_lines)] // one request, in the original's order
     pub fn snd3d_foot_request(
         h: &mut impl Host,
@@ -288,6 +289,11 @@ pub mod bridge {
         count: i32,
         work: u32,
     ) -> u32 {
+        // junk read: [ebp-0x24] never written; 0 (brief 2026-10-24)
+        // (the direction x, y, z and w: transform_direction reads x, y, z
+        // with flag 2 for an actor of a type other than 2 and 5 and flag 1
+        // in the request; w is written before it is read)
+        h.write(work, [0u32; 4]);
         let id: u32 = h.read(req);
         let p: u32 = h.read(req + 4);
         if id == 0 || p == 0 {
