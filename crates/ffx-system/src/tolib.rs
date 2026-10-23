@@ -11985,6 +11985,163 @@ pub mod bridge {
         call(mem, f, &[chr])
     }
 
+    /// `g_BtlCommandRec` (`0x023cc040`), `g_BtlActionDepth` (`0x023cc092`,
+    /// `i8`) and the command-window levels (`0x0133c950`, 0xf0 bytes each:
+    /// `+2` a flag byte, `+8` the actor byte, `+0x16` the command, `+0xd8`
+    /// a word).
+    pub const BTL_COMMAND_REC: u32 = 0x023c_c040;
+    pub const BTL_ACTION_DEPTH: Global<i8> = Global::new(0x023c_c092);
+    pub const BTL_LEVELS: u32 = 0x0133_c950;
+
+    /// `TOControlMsSetMenuCommand()` (`0x0089afc0`, Fahrenheit's name;
+    /// callers `TOBtlFinishCommand`, `TOControlBtlWindow`): builds the
+    /// command record from the open levels 0..=depth and hands it to
+    /// `MsSetMenuCommand`. The record's three groups (`+8`, 0x10 bytes
+    /// each) start as `0xff00ff`, 0; a level's command (`u16 +0x16`,
+    /// skipped when 0xffff or 0xfffe) goes into the current group's next
+    /// slot (from the third on, the second slot moves to the first and the
+    /// new one takes the second), unless the level's flag byte is set:
+    /// then its `+0xd8` word goes to the group's `+8` and the next group
+    /// starts. Battle info status 0x100 (`0x0133c94c`) instead sets group 0
+    /// to (0x311e, `0x0133cb46`) and group 1's first to `0x0133cb48`, two
+    /// groups. `+0` the actor (`0x0133c958`), `+3` the group count (at least
+    /// 1). Then `TOBtlCtrlCtbWindow(command, mask)` with the record's
+    /// second command (its first when that is 0xff) and the current
+    /// level's actor bit (or `g_BtlTargetSelMask` when its flag is set);
+    /// `EAX` that call's.
+    pub fn to_control_ms_set_menu_command<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let rec = mem.rebase(BTL_COMMAND_REC);
+        let levels = mem.rebase(BTL_LEVELS);
+        for g in 0..3u32 {
+            mem.write(rec + 8 + 0x10 * g, 0x00ff_00ffu32);
+            mem.write(rec + 0x10 + 0x10 * g, 0u32);
+        }
+        let depth = i32::from(BTL_ACTION_DEPTH.get(mem));
+        let mut groups = 0u32;
+        let mut k = 0i32;
+        let mut group = rec + 8;
+        for i in 0..=depth {
+            let level = levels.wrapping_add(i.cast_unsigned().wrapping_mul(0xf0));
+            let cmd = mem.read::<u16>(level + 0x16);
+            if cmd == 0xffff || cmd == 0xfffe {
+                continue;
+            }
+            if mem.read::<u8>(level + 2) == 0 {
+                if k >= 2 {
+                    let second = mem.read::<u16>(group + 2);
+                    mem.write(group, second);
+                    k -= 1;
+                }
+                let slot = k.cast_unsigned().wrapping_add(groups.wrapping_mul(8));
+                mem.write(rec + 8 + slot.wrapping_mul(2), cmd);
+                k += 1;
+            } else {
+                let v = mem.read::<u32>(level + 0xd8);
+                mem.write(group + 8, v);
+                groups = groups.wrapping_add(1);
+                group = group.wrapping_add(0x10);
+                k = 0;
+            }
+        }
+        if mem.read::<u32>(mem.rebase(0x0133_c94c)) == 0x100 {
+            mem.write(rec + 8, 0x311eu16);
+            let v = mem.read::<u16>(mem.rebase(0x0133_cb46));
+            mem.write(rec + 0xa, v);
+            groups = 2;
+            let v = mem.read::<u16>(mem.rebase(0x0133_cb48));
+            mem.write(rec + 0x18, v);
+        }
+        let actor = mem.read::<u8>(levels + 8);
+        mem.write(rec, actor);
+        if groups == 0 {
+            groups = 1;
+        }
+        mem.write(rec + 3, groups.to_le_bytes()[0]);
+        call(mem, 0x0079_2e50, &[rec]);
+        let d = i32::from(BTL_ACTION_DEPTH.get(mem))
+            .wrapping_mul(0xf0)
+            .cast_unsigned();
+        let level = levels.wrapping_add(d);
+        let mask = if mem.read::<u8>(level + 2) == 0 {
+            1u32 << (mem.read::<u8>(level + 8) & 0x1f)
+        } else {
+            mem.read::<u32>(mem.rebase(0x0133_d178))
+        };
+        let second = mem.read::<u16>(rec + 0xa);
+        let cmd = if second == 0xff {
+            mem.read::<u16>(rec + 8)
+        } else {
+            second
+        };
+        call(mem, 0x0089_ece0, &[u32::from(cmd), mask])
+    }
+
+    /// `TOSetBtlActiveChr(chr)` (`0x0089bb10`, Fahrenheit's name; caller
+    /// `MsBattleProcess_InputCue_00792a90`): in battle
+    /// (`MsBattleGetStatus` 1) with no command window open
+    /// (`g_BtlWindowOpen` 0), every battle window's state is reset (the
+    /// window state words, the levels and command record zeroed, depth -1,
+    /// `TOBtlInitAnm`, `TOBtlInitCtbWindow`, `TOBtlInitChrNum`,
+    /// `TOBtlInitStatusWin`, the help, sign and simple-help windows,
+    /// `TOBtlInitInfoWinMes`, `TOBtlInitLimitTimer`), then `chr`'s window
+    /// opens (`g_BtlWindowChr`, its bit in `g_BtlWindowOpen`,
+    /// `TOBtlSetNextAction(chr, 0xfe)`, whose `EAX` it returns). Otherwise
+    /// `EAX` is the status, or 1 with a window open.
+    pub fn to_set_btl_active_chr<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let status = call(mem, 0x0078_16f0, &[]);
+        if status != 1 {
+            return status;
+        }
+        let open = mem.rebase(0x023c_c08c);
+        if mem.read::<u32>(open) != 0 {
+            return 1;
+        }
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        for k in 0..9 {
+            mem.write(g(mem, 0x0133_d74c) + 4 * k, 0u32);
+        }
+        mem.write(g(mem, 0x0133_c94c), 0u32);
+        mem.write(g(mem, 0x023c_c038), 0u32);
+        let zero = |mem: &mut M, at: u32, n: u32| {
+            for k in 0..n {
+                mem.write(at + k, 0u8);
+            }
+        };
+        zero(mem, g(mem, BTL_LEVELS), 0x780);
+        BTL_ACTION_DEPTH.set(mem, -1);
+        mem.write(g(mem, 0x0133_f100), 0u32);
+        mem.write(g(mem, 0x0133_f104), 0u32);
+        zero(mem, g(mem, BTL_COMMAND_REC), 0x48);
+        for f in [0x008a_0cd0, 0x008a_0ce0, 0x0089_79d0, 0x0089_8010] {
+            call(mem, f, &[]);
+        }
+        mem.write(g(mem, 0x0133_c93c), 0u8);
+        zero(mem, g(mem, 0x0133_f538), 0x80);
+        for a in [0x0133_f51c, 0x0133_f520, 0x0133_f528, 0x0133_f52c] {
+            mem.write(g(mem, a), 0u32);
+        }
+        mem.write(g(mem, 0x0133_c93e), 0u8);
+        mem.write(g(mem, 0x0133_f510), 0u32);
+        mem.write(g(mem, 0x0133_f514), 7u32);
+        mem.write(g(mem, 0x0133_f518), 0u32);
+        mem.write(g(mem, 0x0133_f524), 7u32);
+        mem.write(g(mem, 0x0133_f5b8), 0xffu16);
+        call(mem, 0x0089_7bd0, &[]);
+        call(mem, 0x0089_7f00, &[]);
+        #[allow(clippy::cast_possible_truncation)] // `mov word`
+        mem.write(g(mem, 0x023c_c088), chr as u16);
+        let bits = mem.read::<u32>(open) | 1u32 << (chr & 0x1f);
+        mem.write(open, bits);
+        call(mem, 0x0089_a330, &[chr, 0xfe])
+    }
+
     /// One lamp piece of [`btl_draw_win_element_lamp`]: the shape, then
     /// the PS2 x, y, w, h (remapped) and the four texture words, as `f32`
     /// bits.

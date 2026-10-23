@@ -1159,6 +1159,14 @@ ported! {
     TOBtlDrawScanWinElementLamp @ 0x0089_5ae0 => extern "C" fn to_btl_draw_scan_win_element_lamp(chr: u32, element: u32, x: u32, y: u32) -> u32 {
         tolib::bridge::btl_draw_win_element_lamp(&mut mem(), [chr, element, x, y], call_sym, fcall)
     }
+    /// `TOControlMsSetMenuCommand()`: `TOBtlCtrlCtbWindow`'s `EAX`.
+    TOControlMsSetMenuCommand @ 0x0089_afc0 => extern "C" fn to_control_ms_set_menu_command() -> u32 {
+        tolib::bridge::to_control_ms_set_menu_command(&mut mem(), call_sym)
+    }
+    /// `TOSetBtlActiveChr(chr)`.
+    TOSetBtlActiveChr @ 0x0089_bb10 => extern "C" fn to_set_btl_active_chr(chr: u32) -> u32 {
+        tolib::bridge::to_set_btl_active_chr(&mut mem(), chr, call_sym)
+    }
     /// `0x0076d0e0(file, archive)`.
     cd_channel_state_0076d0e0 @ 0x0076_d0e0 => extern "C" fn cd_channel_state(file: u32, archive: u32) -> u32 {
         cd::bridge::channel_state(&mem(), file, archive)

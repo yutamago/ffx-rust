@@ -10651,7 +10651,7 @@
 0x0089ad90 function TOClearBtlWindow          # fh v3:exact 0x0089ad00
 0x0089ade0 function TOCloseBtlWindow          # (): 0x023cc08c and the nine words at 0x0133d74c zeroed; returns 0; fh v3:exact 0x0089ad50
 0x0089ae20 function TOControlBtlWindow        # fh v3:exact 0x0089ad90
-0x0089afc0 function TOControlMsSetMenuCommand # fh v3:exact 0x0089af30
+0x0089afc0 function TOControlMsSetMenuCommand # fh v3:exact 0x0089af30; builds g_BtlCommandRec from command levels 0..=g_BtlActionDepth (0x0133c950, 0xf0 each: +2 flag, +8 actor, +0x16 u16 command, +0xd8 word): three groups at +8 (0x10 each, init 0xff00ff/0), commands into the current group (third and later shift slot 1 to 0), a flagged level ends the group (its +0xd8 at group +8); status 0x100 (0x0133c94c) forces (0x311e, 0x0133cb46)/0x0133cb48, 2 groups; +0 actor, +3 group count (min 1); MsSetMenuCommand, then TOBtlCtrlCtbWindow(second command or first when 0xff, actor bit or g_BtlTargetSelMask), eax its; ported (small round 5 f, ffx_system::tolib)
 0x0089b140 function TODrawAMES              # cdecl(window, text, x, y, anchor) -> TOOpenWindowAndMessage's eax: slot init, kind 0 type 0, texts, position (map 0x185 at (0xfa,0x96) moves to y 0x8c for langs 2..5), value 4, active, open; Switch TODrawAMES (0x710049d870), the first of the five TODrawAMES* there, the only one with a position argument
 0x0089b1d0 function TODrawAMES_CENTERMES    # cdecl(window, text): as TODrawAMES at (4, 0x100, 0xe0), kind 1 type 0x2402; Switch TODrawAMES_CENTERMES by inference: the screen-centre y of the four, in the TODrawAMES* run that sorts between TOControlMsSetMenuCommand and TODrawBtlWindow; name ours
 0x0089b230 function TODrawAMES_EVJIMAKU    # cdecl(window, text): as TODrawAMES at (4, 0x100, 0x1c0), kind 1 type 0x2002 (subtitle line); Switch TODrawAMES_EVJIMAKU by inference (see TODrawAMES_CENTERMES); name ours
@@ -10662,7 +10662,7 @@
 0x0089b5a0 function TOGetSaveWindow           # fh v3:exact+call.cs 0x0089b510 cdecl; (a, kind, &count): MsGetSaveWindow text, trailing 0xff halfwords dropped except kinds 6/17/20, kinds 7/15 at least 1
 0x0089b660 function TOInitBtlWindow           # fh v3:exact 0x0089b5d0
 0x0089baa0 function TOBtlSetDamageValue_0089baa0 # cdecl(a, b, d, e, f, g, h): TOBtlSetDamageValue without the word at +4; name ours
-0x0089bb10 function TOSetBtlActiveChr         # fh v3:exact 0x0089ba80
+0x0089bb10 function TOSetBtlActiveChr         # fh v3:exact 0x0089ba80; in battle (MsBattleGetStatus 1) with g_BtlWindowOpen 0: every battle window reset (state words, levels 0x780 bytes, command rec, depth -1, inits, help/sign/simple-help windows), then g_BtlWindowChr = chr, its bit in g_BtlWindowOpen, TOBtlSetNextAction(chr, 0xfe) (eax); else eax the status or 1; ported (small round 5 f, ffx_system::tolib)
 0x0089bc50 function SetGlobal_00c58ef8 # cdecl(v): *0x00c58ef8 = v, returns v; name ours
 0x0089bc60 function SetByte_00c58ef4 # cdecl(v): byte 0x00c58ef4 = v; name ours
 0x0089bc80 function ToDrawLibraWin            # fh v3:exact 0x0089bbf0

@@ -26209,3 +26209,118 @@ fn small5_e_matches_the_original_on_the_snapshot() {
     };
     small5_e(&mut a, &mut b, &mut Xorshift(0x5a11_5e02));
 }
+
+/// Small round 5 f: `TOControlMsSetMenuCommand` over random levels
+/// (commands 0xffff/0xfffe/0xff mixed in, flags set or not, depths -1 to
+/// 20, battle info status 0x100 or not) and `TOSetBtlActiveChr` (status 1
+/// or not, a window open or not); every callee a logging stand-in.
+#[allow(clippy::many_single_char_names)] // a, b: the oracles
+fn small5_f(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::tolib::bridge as t;
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call(f, Conv::Cdecl, args).unwrap().eax
+    };
+    let (log, cursor, cells) = small5_stubs(
+        a,
+        b,
+        &[
+            (0x0079_2e50, 1),
+            (0x0089_ece0, 2),
+            (0x0078_16f0, 0),
+            (0x008a_0cd0, 0),
+            (0x008a_0ce0, 0),
+            (0x0089_79d0, 0),
+            (0x0089_8010, 0),
+            (0x0089_7bd0, 0),
+            (0x0089_7f00, 0),
+            (0x0089_a330, 2),
+        ],
+    );
+    let levels = a.rebase(t::BTL_LEVELS);
+    let rec = a.rebase(t::BTL_COMMAND_REC);
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        for &c in &cells {
+            put(a, b, c, rng.next());
+        }
+        // every byte the two touch random first, so a narrower or missing
+        // store shows
+        let mut fill = |a: &mut Oracle, b: &mut Oracle, at: u32, n: u32| {
+            for j in 0..n {
+                put(a, b, at + j, rng.next().to_le_bytes()[0]);
+            }
+        };
+        fill(a, b, levels - 0xf0, 0x790 + 0xf0);
+        fill(a, b, levels + 0xff * 0xf0, 0x10);
+        for at in [0x0133_d740u32, 0x0133_c938, 0x023c_c030, 0x0133_f0f8] {
+            fill(a, b, a.rebase(at), 0x38);
+        }
+        fill(a, b, a.rebase(0x0133_f508), 0xc0);
+        for i in 0..21 {
+            let l = levels + 0xf0 * i;
+            let cmd = match rng.next() % 6 {
+                0 => 0xffff,
+                1 => 0xfffe,
+                2 => 0xff,
+                _ => rng.next() & 0xffff,
+            };
+            put(a, b, l + 0x16, u16::try_from(cmd).unwrap());
+            put(a, b, l + 2, u8::from(rng.next().is_multiple_of(3)));
+            put(a, b, l + 8, rng.next().to_le_bytes()[0]);
+            put(a, b, l + 0xd8, rng.next());
+        }
+        for j in 0..0x48 {
+            put(a, b, rec + j, rng.next().to_le_bytes()[0]);
+        }
+        if k % 2 == 0 {
+            let depth = [-1i8, 0, 1, 2, 3, 5, 7, 20][(rng.next() % 8) as usize];
+            set(a, b, t::BTL_ACTION_DEPTH, depth);
+            let status = match rng.next() % 6 {
+                0 | 1 => 0x100u32,
+                2 => 0x0001_0100,
+                _ => rng.next() % 0x102,
+            };
+            put(a, b, a.rebase(0x0133_c94c), status);
+            put(a, b, a.rebase(0x0133_cb46), rng.next());
+            put(a, b, a.rebase(0x0133_d178), rng.next());
+            let ra = eax(a, 0x0089_afc0, &[]);
+            let rb = t::to_control_ms_set_menu_command(b, call);
+            assert_eq!(ra, rb, "TOControlMsSetMenuCommand {k} depth {depth}");
+        } else {
+            put(a, b, cells[2], [1u32, 1, 0, 2][(rng.next() % 4) as usize]);
+            let open = match rng.next() % 6 {
+                0 => rng.next(),
+                1 => 0x0001_0000 << (rng.next() % 16),
+                _ => 0,
+            };
+            put(a, b, a.rebase(0x023c_c08c), open);
+            let chr = if rng.next().is_multiple_of(4) {
+                rng.next()
+            } else {
+                rng.next() % 0x12
+            };
+            let ra = eax(a, 0x0089_bb10, &[chr]);
+            let rb = t::to_set_btl_active_chr(b, chr, call);
+            assert_eq!(ra, rb, "TOSetBtlActiveChr {k} {chr:#x}");
+        }
+        same_memory(&format!("small5 f {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn small5_f_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    small5_f(&mut a, &mut b, &mut Xorshift(0x5a11_5f01));
+}
+
+#[test]
+fn small5_f_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    small5_f(&mut a, &mut b, &mut Xorshift(0x5a11_5f02));
+}
