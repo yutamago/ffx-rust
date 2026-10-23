@@ -139,6 +139,18 @@ pub fn tag_offsets(corner: u8, b: &TagBox) -> [u16; 4] {
     }
 }
 
+/// The help message's macro slots for its kind (`g_Abmap + 0x11664`): the
+/// byte 1 of each slot, slot 0 first. Kind 0 has
+/// three, the third a byte-1 of 1; kinds 1 and 2 have two; others none.
+#[must_use]
+pub fn help_macros(kind: i16) -> &'static [u8] {
+    match kind {
+        0 => &[0, 0, 1],
+        1 | 2 => &[0, 0],
+        _ => &[],
+    }
+}
+
 /// The originals, where the game keeps their state (`ffx_bridge::Mem`).
 pub mod bridge {
     use ffx_bridge::x87::{Reg, ftol, round_trip};
@@ -476,6 +488,252 @@ pub mod bridge {
     #[must_use]
     pub fn ranges_overlap(a: f32, b: f32, c: f32, d: f32) -> u32 {
         u32::from(super::ranges_overlap(a, b, c, d))
+    }
+
+    /// `MsGetSaveMenu()`: the save's menu settings (`u32`; bits
+    /// `0xc000` the sphere grid kind, `0x8000` expert).
+    pub const MS_GET_SAVE_MENU: u32 = 0x0078_5290;
+    /// `GetCD()`: the CD reader's function table (`+0` read(file, buf,
+    /// 0, 0), `+8` wait(0), `+0x10` select(group)).
+    pub const GET_CD: u32 = 0x0076_d0d0;
+    /// `g_AbmapOefData`: where the grid's effect file lands.
+    pub const OEF_DATA: u32 = 0x011a_1260;
+    /// `g_AbmapOef`: the effect file `AbmapLoadOef` loaded.
+    pub const OEF: Global<u32> = Global::new(0x01a8_60e8);
+    /// `op_oef2_set2(oef)`.
+    pub const OP_OEF2_SET2: u32 = 0x007e_3e30;
+    /// `op_oef2_tex_clut_cue_multi(oef, first, last, mask)`.
+    pub const OP_OEF2_TEX_CLUT_CUE_MULTI: u32 = 0x007e_4830;
+    /// `op_oef2_tex_clut_cue_trans(mask)`.
+    pub const OP_OEF2_TEX_CLUT_CUE_TRANS: u32 = 0x007e_4c30;
+    /// `op_oef2_tex_clut_ovl_trans(mask)`.
+    pub const OP_OEF2_TEX_CLUT_OVL_TRANS: u32 = 0x007e_4e80;
+    /// `op_oef2_tex_clut_ovl_clear(mask)`.
+    pub const OP_OEF2_TEX_CLUT_OVL_CLEAR: u32 = 0x007e_4e40;
+    /// `AbmapSetKindSizes(oef)`.
+    pub const ABMAP_SET_KIND_SIZES: u32 = 0x00a5_adf0;
+    /// `AbmapSetupKindShapes()`.
+    pub const ABMAP_SETUP_KIND_SHAPES: u32 = 0x00a5_b230;
+
+    /// `AbmapLoadOef_00a57620()` (`0x00a57620`, from `eiAbmStart`): the
+    /// expert grid (`MsGetSaveMenu` bits `0xc000` = `0x8000`) sets
+    /// `g_Abmap + 0x116a4` = 2 and reads file 0x14, else 0 and file 8 (CD
+    /// group 0x25) into `g_AbmapOefData`, waits, and makes it
+    /// `g_AbmapOef`; then its textures and CLUTs 0..=0x23 and 0x24..=0x3e8
+    /// are cued (mask 0x100) and transferred, the overlay transferred and
+    /// cleared, the kind sizes read from it, and a tail call to
+    /// `AbmapSetupKindShapes` (`eax` its result).
+    pub fn load_oef(mem: &mut impl Host) -> u32 {
+        let menu = mem.call_sym(MS_GET_SAVE_MENU, Conv::Cdecl, &[]);
+        let expert = mem.read::<u32>(menu) & 0xc000 == 0x8000;
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1_16a4), if expert { 2u32 } else { 0 });
+        let cd = mem.call_sym(GET_CD, Conv::Cdecl, &[]);
+        let select: u32 = mem.read(cd.wrapping_add(0x10));
+        mem.call(select, Conv::Cdecl, &[0x25]);
+        let data = mem.rebase(OEF_DATA);
+        let read: u32 = mem.read(cd);
+        let file = if expert { 0x14 } else { 8 };
+        mem.call(read, Conv::Cdecl, &[file, data, 0, 0]);
+        let wait: u32 = mem.read(cd.wrapping_add(8));
+        mem.call(wait, Conv::Cdecl, &[0]);
+        OEF.set(mem, data);
+        mem.call_sym(OP_OEF2_SET2, Conv::Cdecl, &[data]);
+        for (first, last) in [(0, 0x23), (0x24, 0x3e8)] {
+            let oef = OEF.get(mem);
+            mem.call_sym(
+                OP_OEF2_TEX_CLUT_CUE_MULTI,
+                Conv::Cdecl,
+                &[oef, first, last, 0x100],
+            );
+            mem.call_sym(OP_OEF2_TEX_CLUT_CUE_TRANS, Conv::Cdecl, &[0x100]);
+        }
+        mem.call_sym(OP_OEF2_TEX_CLUT_OVL_TRANS, Conv::Cdecl, &[0x100]);
+        mem.call_sym(OP_OEF2_TEX_CLUT_OVL_CLEAR, Conv::Cdecl, &[0x100]);
+        let oef = OEF.get(mem);
+        mem.call_sym(ABMAP_SET_KIND_SIZES, Conv::Cdecl, &[oef]);
+        mem.call_sym(ABMAP_SETUP_KIND_SHAPES, Conv::Cdecl, &[])
+    }
+
+    /// `g_AbmapPadData`: the panels `g_AbmapPad` points at (0x2710
+    /// bytes).
+    pub const PAD_DATA: u32 = 0x016a_b1a0;
+    /// `g_AbmapData`: the grid data `g_Abmap` points at (0x12fc0 bytes).
+    pub const ABMAP_DATA: u32 = 0x016a_d8b0;
+    /// `g_AbmapPad` (as `panel::bridge::PAD`).
+    const PAD: Global<u32> = Global::new(0x01a8_6108);
+    /// `FFXSamp0ViewScreenMatrix(m, scrz, ax, ay, cx, cy, zmin, zmax,
+    /// nearz, farz)`.
+    pub const VIEW_SCREEN_MATRIX: u32 = 0x0093_d960;
+    /// `FFXVu0UnitMatrix(m)`.
+    pub const UNIT_MATRIX: u32 = 0x006e_d9a0;
+    /// `graphicGetCurrentFrame_008e1c50()`: the current character, in
+    /// `al`.
+    pub const GET_CURRENT_FRAME: u32 = 0x008e_1c50;
+    /// The help state `AbmapResetHelp` also installs (`+0x115a8`).
+    pub const STATE_HELP: u32 = 0x00a4_5010;
+    /// `AbmapSetHelpMessage` (`+0x115ac`).
+    pub const SET_HELP_MESSAGE: u32 = 0x00a4_54a0;
+    /// The `.rdata` floats `InitLpamng` passes: 65536 (far z), 16777215
+    /// (z max), 2048 (centre), 1.0833334 (aspect), 512 (screen z,
+    /// `g_AlphaScaleExtended`).
+    pub const LPAMNG_FLOATS: [u32; 5] = [
+        0x00b4_3ddc,
+        0x00b5_1a24,
+        0x00b5_1a20,
+        0x00b5_1a18,
+        0x00b4_1d9c,
+    ];
+
+    /// `len` zero bytes at `at` (`rep stos`), a small block at a time
+    /// (some game threads have little stack).
+    fn zero(mem: &mut impl Mem, at: u32, len: u32) {
+        const ZEROS: [u8; 0x400] = [0; 0x400];
+        let mut done = 0;
+        while done < len {
+            let n = (len - done).min(0x400);
+            mem.write_bytes(at.wrapping_add(done), &ZEROS[..n as usize]);
+            done += n;
+        }
+    }
+
+    /// `InitLpamng()` (`0x00a572e0`, Fahrenheit's name; from
+    /// `eiAbmStart`), callees through `call` (cdecl): the panels and the
+    /// grid data cleared and made `g_AbmapPad`/`g_Abmap`, no panel open
+    /// (`+0x2700` = -1); two view-screen matrices (`+0x113a0`: screen z
+    /// 512, aspect 1 x 1.0833334, centre 2048, 2048; `+0x114a0`: aspect 1
+    /// x 1, centre 0, 0; both z 1..16777215, near 1, far 65536); unit
+    /// matrices at `+0x11360` and `+0x11420`; `+0x11314` = 1.0 and the
+    /// four words `+0x11308..` copied to `+0x11328..`; `+0x11350..0x1135c`
+    /// = 1.0; the help state and message hook; `+0x115c6` = 0x80; the
+    /// current character (`al`) at `+0x115bc`; and the rest of the start
+    /// state. Returns `g_Abmap`.
+    pub fn init_lpamng<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let pad = mem.rebase(PAD_DATA);
+        zero(mem, pad, 0x2710);
+        mem.write(pad.wrapping_add(0x2700), 0xffffu16);
+        let g = mem.rebase(ABMAP_DATA);
+        ABMAP.set(mem, g);
+        zero(mem, g, 0x1_2fc0);
+        PAD.set(mem, pad);
+        // the constants go through fld/fstp
+        let [far, zmax, centre, aspect, scrz] = LPAMNG_FLOATS.map(|at| {
+            let at = mem.rebase(at);
+            round_trip(f32::from_bits(mem.read(at))).to_bits()
+        });
+        let one = 1f32.to_bits();
+        let matrix = mem.rebase(VIEW_SCREEN_MATRIX);
+        let m = ABMAP.get(mem).wrapping_add(0x1_13a0);
+        call(
+            mem,
+            matrix,
+            &[m, scrz, one, aspect, centre, centre, one, zmax, one, far],
+        );
+        let m = ABMAP.get(mem).wrapping_add(0x1_14a0);
+        call(mem, matrix, &[m, scrz, one, one, 0, 0, one, zmax, one, far]);
+        let unit = mem.rebase(UNIT_MATRIX);
+        for off in [0x1_1360, 0x1_1420] {
+            let m = ABMAP.get(mem).wrapping_add(off);
+            call(mem, unit, &[m]);
+        }
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1_1314), one);
+        let g = ABMAP.get(mem);
+        for k in 0..4 {
+            let w: u32 = mem.read(g.wrapping_add(0x1_1308 + 4 * k));
+            mem.write(g.wrapping_add(0x1_1328 + 4 * k), w);
+        }
+        for off in [0x1_135c, 0x1_1358, 0x1_1354, 0x1_1350] {
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(off), one);
+        }
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1_15c4), 0u8);
+        let state = mem.rebase(STATE_HELP);
+        mem.write(g.wrapping_add(0x1_15a8), state);
+        let hook = mem.rebase(SET_HELP_MESSAGE);
+        mem.write(g.wrapping_add(0x1_15ac), hook);
+        mem.write(g.wrapping_add(0x1_15c3), 0u8);
+        mem.write(g.wrapping_add(0x1_15c6), 0x80u8);
+        let frame = mem.rebase(GET_CURRENT_FRAME);
+        #[allow(clippy::cast_possible_truncation)] // `mov [..], al`
+        let chr = call(mem, frame, &[]) as u8;
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1_15bc), chr);
+        mem.write(g.wrapping_add(0x1_1670), 0xffffu16);
+        mem.write(g.wrapping_add(0x1_15bb), 1u8);
+        mem.write(g.wrapping_add(0x1_15ba), 1u8);
+        mem.write(g.wrapping_add(0x1_16a8), 0xffff_fffeu32);
+        mem.write(g.wrapping_add(0x1_16ac), 0u32);
+        mem.write(g.wrapping_add(0x1_16b4), 0u32);
+        mem.write(g.wrapping_add(0x1_16b8), 1u32);
+        g
+    }
+
+    /// `TOMacroSetByte1(win, n, v)`.
+    pub const TO_MACRO_SET_BYTE1: u32 = 0x008b_84f0;
+    /// `TOMacroSetValue_008b8510(win, n, v)`.
+    pub const TO_MACRO_SET_VALUE: u32 = 0x008b_8510;
+    /// `TOAddPktBaseMesFontLAbmap(pkt, kind, text, x, y, mode, ..., a,
+    /// shadow)`, 12 words.
+    pub const TO_ADD_PKT_BASE_MES_FONT_L_ABMAP: u32 = 0x008e_8fb0;
+    /// `AbmapHelpLineDraw(text, x, y)`.
+    pub const ABMAP_HELP_LINE_DRAW: u32 = 0x00a5_94c0;
+    /// `g_PppPacketPos`: the packet write position.
+    pub const PACKET_POS: Global<u32> = Global::new(0x0230_fd2c);
+
+    /// `AbmapHelpMessageStep_00a59350(fallback)` (`0x00a59350`), callees
+    /// through `call` (cdecl): while the help timer (`i16` `g_Abmap +
+    /// 0x11666`) is positive it counts down, the message's macro values go
+    /// to window 7 ([`super::help_macros`] of the kind `i16` `+0x11664`:
+    /// byte 1 then the word, values from `+0x11658`, 4 apart), and the
+    /// message `+0x11654`, when set, is drawn at (0x48, 0x23) in window 7
+    /// with grey 0x80 and the fade byte `+0x115b9` as alpha into
+    /// `g_PppPacketPos` (`+ 0x10`), `eax` the new position; with no message
+    /// `eax` is `g_Abmap`. Once the timer is out, `fallback` (when not 0)
+    /// is drawn by `AbmapHelpLineDraw(fallback, 0x48, 0x23)` (`eax` its
+    /// result), else `eax` is 0.
+    pub fn help_message_step<M: Mem>(
+        mem: &mut M,
+        fallback: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = ABMAP.get(mem);
+        let timer: i16 = mem.read(g.wrapping_add(0x1_1666));
+        if timer <= 0 {
+            if fallback == 0 {
+                return 0;
+            }
+            let f = mem.rebase(ABMAP_HELP_LINE_DRAW);
+            return call(mem, f, &[fallback, 0x48, 0x23]);
+        }
+        mem.write(g.wrapping_add(0x1_1666), timer.wrapping_sub(1));
+        let kind: i16 = mem.read(ABMAP.get(mem).wrapping_add(0x1_1664));
+        for (n, &byte) in (0u32..).zip(super::help_macros(kind)) {
+            let set_byte = mem.rebase(TO_MACRO_SET_BYTE1);
+            call(mem, set_byte, &[7, n, u32::from(byte)]);
+            let value: u32 = mem.read(ABMAP.get(mem).wrapping_add(0x1_1658 + 4 * n));
+            let set_value = mem.rebase(TO_MACRO_SET_VALUE);
+            call(mem, set_value, &[7, n, value]);
+        }
+        let g = ABMAP.get(mem);
+        let text: u32 = mem.read(g.wrapping_add(0x1_1654));
+        if text == 0 {
+            return g;
+        }
+        let alpha = u32::from(mem.read::<u8>(g.wrapping_add(0x1_15b9)));
+        let pos = PACKET_POS.get(mem).wrapping_add(0x10);
+        let f = mem.rebase(TO_ADD_PKT_BASE_MES_FONT_L_ABMAP);
+        let end = call(
+            mem,
+            f,
+            &[pos, 7, text, 0x48, 0x23, 0, 0, 0x80, 0x80, 0x80, alpha, 0],
+        );
+        PACKET_POS.set(mem, end);
+        end
     }
 }
 

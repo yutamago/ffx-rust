@@ -187,6 +187,72 @@ pub mod bridge {
         }
     }
 
+    /// `TexAnim_SetMaterialsChar_0077fbf0(..)`, 11 words (12 pushed).
+    pub const SET_MATERIALS_CHAR: u32 = 0x0077_fbf0;
+
+    /// `tex_anim_no_set_new(i, a, lo, hi, e, f)` (`0x0077fce0`), the
+    /// renderer call through `call` (cdecl): for `a == 4` and a loaded
+    /// entry `i` (`+0` set), byte `+0xf + lo` = `hi`; unless the entry
+    /// already plays `lo` (`+8`, not 0) and `hi` isn't 2, `+8` = `lo` and
+    /// each of the 64 animations of its work buffer (`0x34` bytes from
+    /// `+0x1c`, `p`) gets `+0`, `+4`, `-0x10` and the floats `+0x18`,
+    /// `+0x1c` (the next one's `-0x1c`, `-0x18`) zeroed and, with `e` and
+    /// `f` both set, its materials set
+    /// (`TexAnim_SetMaterialsChar(n, lo, 0, the six u16s at p - 0xc..,
+    /// e, f, 0)`). Returns its `eax`: `e` after the loop, the entry when
+    /// it is empty or already plays `lo`, and for `a != 4` the `eax` it was
+    /// called with, which its one caller (`tex_anim_no_set`) sets to `lo`.
+    pub fn no_set_new<M: Mem>(
+        m: &mut M,
+        [i, a, lo, hi, e, f]: [u32; 6],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if a != 4 {
+            return lo;
+        }
+        let at = entry(m, i);
+        if m.read::<u32>(at) == 0 {
+            return at;
+        }
+        #[allow(clippy::cast_possible_truncation)] // `mov [..], dl`
+        m.write(at.wrapping_add(lo).wrapping_add(0xf), hi as u8);
+        let current: u32 = m.read(at + 8);
+        if current != 0 && current == lo && hi != 2 {
+            return at;
+        }
+        let work: u32 = m.read(at + 4);
+        m.write(at + 8, lo);
+        let set = m.rebase(SET_MATERIALS_CHAR);
+        let mut p = work.wrapping_add(0x1c);
+        for n in 0..64u32 {
+            m.write(p.wrapping_add(0x18), 0u32);
+            m.write(p.wrapping_add(0x1c), 0u32);
+            m.write(p.wrapping_sub(0x10), 0u32);
+            m.write(p, 0u32);
+            m.write(p.wrapping_add(4), 0u32);
+            if e != 0 && f != 0 {
+                let w = |m: &M, o: u32| u32::from(m.read::<u16>(p.wrapping_sub(o)));
+                let args = [
+                    n,
+                    lo,
+                    0,
+                    w(m, 0xc),
+                    w(m, 0xa),
+                    w(m, 8),
+                    w(m, 6),
+                    w(m, 4),
+                    w(m, 2),
+                    e,
+                    f,
+                    0,
+                ];
+                call(m, set, &args);
+            }
+            p = p.wrapping_add(0x34);
+        }
+        e
+    }
+
     /// `TexAnim_ResetPos(i, which, v)` (`FUN_0077fda0`): for a loaded entry
     /// (`+0` set), resets animation `which` of its work buffer (`0x34`
     /// bytes each), or with `which == 1` every one of the 64 whose active

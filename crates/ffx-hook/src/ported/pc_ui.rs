@@ -181,4 +181,51 @@ ported! {
     AbmapPositionPlyTag @ 0x00a5_8080 => extern "C" fn abmap_position_ply_tag(chr: u32) -> u32 {
         abmap::position_ply_tag(&mut mem(), chr)
     }
+    /// `AbmapPadQuitHandler(panel, entry, choice, confirmed)`.
+    AbmapPadQuitHandler @ 0x00a5_6060 => extern "C" fn abmap_pad_quit_handler(panel: u32, entry: u32, choice: u32, confirmed: u32) -> u32 {
+        let _ = (panel, entry);
+        panel::quit_handler(&mut mem(), choice, confirmed)
+    }
+    /// `AbmapPadItemHandler(panel, entry, choice, confirmed)`.
+    AbmapPadItemHandler @ 0x00a5_60d0 => extern "C" fn abmap_pad_item_handler(panel: u32, entry: u32, choice: u32, confirmed: u32) -> u32 {
+        let _ = (panel, choice);
+        panel::item_handler(&mut mem(), entry, confirmed)
+    }
+    /// `AbmapPadCommandHandler(panel, entry, choice, confirmed)`.
+    AbmapPadCommandHandler @ 0x00a5_6330 => extern "C" fn abmap_pad_command_handler(panel: u32, entry: u32, choice: u32, confirmed: u32) -> u32 {
+        let _ = (panel, entry);
+        panel::command_handler(&mut mem(), choice, confirmed)
+    }
+    /// `AbmapMainMes_00a567d0(id)`: menu text 9's name (as `TkMenuMainMes`).
+    AbmapMainMes_00a567d0 @ 0x00a5_67d0 => extern "C" fn abmap_main_mes(id: u32) -> u32 {
+        ffx_menu::tk::bridge::menu_text_of(&mem(), 9, false, id)
+    }
+    /// `AbmapStatusMes_00a56fc0(id)`: menu text 11's name (as `TkMenuStatusMes`).
+    AbmapStatusMes_00a56fc0 @ 0x00a5_6fc0 => extern "C" fn abmap_status_mes(id: u32) -> u32 {
+        ffx_menu::tk::bridge::menu_text_of(&mem(), 11, false, id)
+    }
+    /// `MenuItem_SortAllGear_008c9bf0()`.
+    MenuItem_SortAllGear_008c9bf0 @ 0x008c_9bf0 => extern "C" fn menu_item_sort_all_gear() -> u32 {
+        item::sort_all_gear(&mut mem())
+    }
+    /// `MenuMes_AddPktFont1612NoEdge_008e52b0(cursor, key, text, x, y, flags, r, g, b, a)`.
+    MenuMes_AddPktFont1612NoEdge_008e52b0 @ 0x008e_52b0 => extern "C" fn menu_mes_add_pkt_font1612_no_edge(cursor: u32, key: u32, text: u32, x: u32, y: u32, flags: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        item::font1612_no_edge(&mut mem(), item::MENU_MES_ADD_PKT_FONT1612, [cursor, key, text, x, y, flags, r, g, b, a], &mut |_, f, args| super::call_cdecl(f, args))
+    }
+    /// `MenuMes_AddPktFont1612IconsNoEdge_008e52e0(cursor, key, text, x, y, flags, r, g, b, a)`.
+    MenuMes_AddPktFont1612IconsNoEdge_008e52e0 @ 0x008e_52e0 => extern "C" fn menu_mes_add_pkt_font1612_icons_no_edge(cursor: u32, key: u32, text: u32, x: u32, y: u32, flags: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        item::font1612_no_edge(&mut mem(), item::MENU_MES_ADD_PKT_FONT1612_ICONS, [cursor, key, text, x, y, flags, r, g, b, a], &mut |_, f, args| super::call_cdecl(f, args))
+    }
+    /// `AbmapHelpMessageStep_00a59350(fallback)`.
+    AbmapHelpMessageStep_00a59350 @ 0x00a5_9350 => extern "C" fn abmap_help_message_step(fallback: u32) -> u32 {
+        abmap::help_message_step(&mut mem(), fallback, &mut |_, f, args| super::call_cdecl(f, args))
+    }
+    /// `InitLpamng()`.
+    InitLpamng @ 0x00a5_72e0 => extern "C" fn init_lpamng() -> u32 {
+        abmap::init_lpamng(&mut mem(), &mut |_, f, args| super::call_cdecl(f, args))
+    }
+    /// `AbmapLoadOef_00a57620()`.
+    AbmapLoadOef_00a57620 @ 0x00a5_7620 => extern "C" fn abmap_load_oef() -> u32 {
+        abmap::load_oef(&mut mem())
+    }
 }

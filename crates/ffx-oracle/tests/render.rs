@@ -8384,3 +8384,99 @@ fn snapshot_round24c_matches_the_original() {
         round24_set_materials_char(&mut t, &mut rng, &format!("{what} materials char"));
     }
 }
+
+// ---- pc round 1 ----
+
+/// `tex_anim_no_set_new` on a made-up `g_ChrTexAnim` entry, the materials
+/// call a recording stub.
+#[allow(clippy::many_single_char_names)] // entry fields and arguments
+fn pc_r1_no_set_new(t: &mut Twins, rng: &mut Rng, what: &str) {
+    use ffx_graphic::texanim::bridge as ta;
+    let i = rng.below(64);
+    let entry = t.rebase(ta::CHR_TEXANIM.sym) + 0x30 * i;
+    let work = t.alloc(&rng.bytes(0x34 * 64 + 0x40));
+    let mut e = rng.bytes(0x30);
+    // -3..-1 write the byte into +0xc..+0xe; further down it would land
+    // on the work pointer or the play state, and the loop would then write
+    // through whatever pointer that made (as the original does)
+    let lo = [rng.below(0x20), (-(rng.below(3) as i32) - 1) as u32, 0, 1][rng.below(4) as usize];
+    let current = [0, lo, lo ^ 1, rng.next()][rng.below(4) as usize];
+    let loaded = [0u32, 1, rng.next()][rng.below(3) as usize];
+    e[..4].copy_from_slice(&loaded.to_le_bytes());
+    e[4..8].copy_from_slice(&work.to_le_bytes());
+    e[8..12].copy_from_slice(&current.to_le_bytes());
+    t.write(entry, &e);
+    let a = [4, 4, 4, 3, 0, rng.next()][rng.below(6) as usize];
+    let hi = [0, 1, 2, 2, 0x102, rng.next()][rng.below(6) as usize];
+    let ee = [0, rng.next() | 1][rng.below(2) as usize];
+    let f = [0, rng.next() | 2][rng.below(2) as usize];
+    stub_log(
+        t,
+        ta::SET_MATERIALS_CHAR,
+        &[LogArg::Word; 12],
+        2,
+        0,
+        rng.next(),
+    );
+    // entered as its one caller (tex_anim_no_set) enters it, eax = lo:
+    // mov eax, lo; jmp tex_anim_no_set_new
+    let entry_at = t.cave_next;
+    let target = t.rebase(0x0077_fce0);
+    let mut code = vec![0xb8];
+    code.extend(lo.to_le_bytes());
+    code.push(0xe9);
+    code.extend(target.wrapping_sub(entry_at + 10).to_le_bytes());
+    t.write(entry_at, &code);
+    t.cave_next = entry_at + 10;
+    let entry_sym = entry_at
+        .wrapping_sub(t.rebase(0x0040_0000))
+        .wrapping_add(0x0040_0000);
+    let args = [i, a, lo, hi, ee, f];
+    let log = t.log;
+    t.check_with(
+        what,
+        entry_sym,
+        Conv::Cdecl,
+        &args,
+        |g| {
+            Out::U32(ta::no_set_new(g, args, &mut |g, f, w| {
+                g.0.call(f, Conv::Cdecl, w).unwrap().eax
+            }))
+        },
+        // the stub logs ecx, which means nothing to a cdecl callee
+        |t| {
+            for k in 0..64 {
+                t.w32(log + 8 + 0x40 * k, 0);
+            }
+        },
+    );
+}
+
+#[test]
+fn pc_r1_render_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x00c0_0001);
+    for round in 0..1500 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        pc_r1_no_set_new(&mut t, &mut rng, &format!("round {round} no_set_new"));
+    }
+}
+
+#[test]
+fn snapshot_pc_r1_render_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x50c0_0001);
+    for round in 0..400 {
+        t.reset();
+        pc_r1_no_set_new(
+            &mut t,
+            &mut rng,
+            &format!("snapshot round {round} no_set_new"),
+        );
+    }
+}

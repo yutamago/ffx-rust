@@ -149,6 +149,11 @@ ported! {
     tex_anim_no_set @ 0x0077_e940 => extern "C" fn tex_anim_no_set(i: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
         ta::no_set(&mut mem(), i, a, b, c, d)
     }
+    /// `tex_anim_no_set_new(i, a, lo, hi, e, f)`: `lo` back for `a != 4`
+    /// (the `eax` its one caller passes).
+    tex_anim_no_set_new @ 0x0077_fce0 => extern "C" fn tex_anim_no_set_new(i: u32, a: u32, lo: u32, hi: u32, e: u32, f: u32) -> u32 {
+        ta::no_set_new(&mut mem(), [i, a, lo, hi, e, f], &mut |_, g, args| super::call_cdecl(g, args))
+    }
     /// `tex_anim_dlg(arg)`.
     tex_anim_dlg @ 0x0077_e920 => extern "C" fn tex_anim_dlg(arg: u32) -> u32 {
         ta::dlg(&mut mem(), arg)
