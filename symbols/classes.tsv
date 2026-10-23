@@ -595,11 +595,11 @@
 0x00630d80	dead	unreachable from the entry point and every pointer table
 0x00630da0	dead	unreachable from the entry point and every pointer table
 0x00630de0	platform	platform name (PC port: input, saves, loaders, app lifecycle): inputSetInputInfoToCurrentFrame
-0x00630df0	platform	thin wrapper: only forwards to platform code (InputManager_SwapState_00632930, Virtuos_InputManager_getInstance)
+0x00630df0	glue	only called from glue code (0x701be0 and 4 more)
 0x00630e20	platform	platform name (PC port: input, saves, loaders, app lifecycle): inputSetVibration
 0x00630e40	dead	unreachable from the entry point and every pointer table
 0x00630e60	dead	unreachable from the entry point and every pointer table
-0x00630e80	logic	default (no rule: ported to be safe)
+0x00630e80	platform	platform name (PC port: input, saves, loaders, app lifecycle): Input_UpdateAll_00630e80
 0x00630ec0	dead	unreachable from the entry point and every pointer table
 0x00630ee0	dead	unreachable from the entry point and every pointer table
 0x00630f40	platform	only exception unwinding reaches it (a release or destructor)
@@ -2501,7 +2501,7 @@
 0x0068def0	glue	reviewed: Iggy menu glue: only builds Iggy values or calls Iggy: packs 20 arguments for IggyMenu_callIggyAS3External (pc round 1)
 0x0068dfa0	glue	only called from glue code (0x6ff1e0 and 2 more)
 0x0068dfb0	dead	unreachable from the entry point and every pointer table
-0x0068dfd0	logic	default (no rule: ported to be safe)
+0x0068dfd0	platform	reviewed: FFEscMenu C++ constructor (Iggy menu, SEH): base ctor 0xa288f0, vtables, field defaults, page initializers; like 0x6f9890 (pc round 2)
 0x0068e180	glue	reviewed: Iggy menu glue: only builds Iggy values or calls Iggy: graphicGetLocTextWithLength, then UTF-8 conversion 0x6e9700 (pc round 1)
 0x0068e1f0	dead	unreachable from the entry point and every pointer table
 0x0068e270	glue	reviewed: Iggy menu glue: only builds Iggy values or calls Iggy: iggyDataValueSet_utf8(this+0x100), copies the 16-byte value out (pc round 1)
@@ -2512,7 +2512,7 @@
 0x0068e380	dead	unreachable from the entry point and every pointer table
 0x0068e400	glue	only called from glue code (PhyreScene_initScene)
 0x0068e4a0	dead	unreachable from the entry point and every pointer table
-0x0068e530	logic	default (no rule: ported to be safe)
+0x0068e530	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): FFEscMenu_vfunc_0068e530
 0x0068e560	glue	reviewed: Iggy menu glue: only builds Iggy values or calls Iggy: Esc-menu callback, stored only by 0x702570 via IggyMenuHandlers_addCall (pc round 1)
 0x0068e5b0	glue	only called from glue code (FFEscMenu_registerCallbacks)
 0x0068e6f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): FFEscMenu_initializeMainSettingPage
@@ -2978,8 +2978,8 @@
 0x006a44d0	platform	reviewed: ClassDynamicGeometry vtable slot (0xb47e28 and three more): sizes PhyreMalloc mesh arrays, like 0x6a4240 (effects round 49)
 0x006a46c0	glue	reviewed: DynamicGeometry vtable method (0xb47e18..0xb47ec0): stream pointer/count (pc round 1)
 0x006a46e0	glue	reviewed: DynamicGeometry vtable method (0xb47e18..0xb47ec0): builds vertex streams (pc round 1)
-0x006a4800	logic	default (no rule: ported to be safe)
-0x006a48d0	logic	default (no rule: ported to be safe)
+0x006a4800	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassDynamicGeometry_SetShader_006a4800
+0x006a48d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassDynamicGeometry_SetShaderGl_006a48d0
 0x006a49e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassDynamicGeometry_show
 0x006a4a50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassDynamicGeometry_updateRenderData
 0x006a5070	glue	calls PhyreEngine Phyre_PRendering_PMeshInstanceBounds_setMinAndMax
@@ -10754,7 +10754,7 @@
 0x0084d5b0	dead	unreachable from the entry point and every pointer table
 0x0084d5e0	debug	only called from debug code (gui_chr_GWM_SELECTOR)
 0x0084d730	dead	unreachable from the entry point and every pointer table
-0x0084d790	dead	reviewed: debug-line command root: no caller in the dump and its address appears nowhere in FFX.exe (coordinator check) (pc round 1)
+0x0084d790	dead	reviewed: debug settings-file interpreter chain: called only from 0x8532bc inside 0x853210, whose chain head 0x84f100 (-> 0x8531a0 -> 0x853210) has no call, jmp or pointer in FFX.exe (pc round 2) (pc round 1)
 0x0084d8a0	debug	debug name: Gui_SettingSaveLight
 0x0084d940	debug	only called from debug code (0x84dac0 and 1 more)
 0x0084dac0	debug	only called from debug code (SgGu_LightEdit)
@@ -10823,7 +10823,7 @@
 0x008523e0	debug	only called from debug code (0x851e10)
 0x00852a30	debug	only called from debug code (0x851e40)
 0x00853000	debug	only called from debug code (0x852080)
-0x00853070	logic	default (no rule: ported to be safe)
+0x00853070	dead	reviewed: called only from 0x84d790 and 0x853210, both in the unreferenced chain under 0x84f100 (pc round 2)
 0x008530d0	dead	reviewed: debug-line tokenizer (g_DebugLine, strtok); callers lead only to the dead 0x84d790 (pc round 1)
 0x00853140	dead	reviewed: debug-line tokenizer (g_DebugLine, strtok); callers lead only to the dead 0x84d790 (pc round 1)
 0x00853170	dead	reviewed: debug-line tokenizer (g_DebugLine, strtok); callers lead only to the dead 0x84d790 (pc round 1)
@@ -16725,6 +16725,14 @@
 0x00a26ce0	glue	calls Iggy _IggyMakeEventMouseButton@8, _IggyMakeEventMouseMove@12, _IggyMakeEventMouseWheel@8
 0x00a26e60	dead	unreachable from the entry point and every pointer table
 0x00a26e70	glue	calls PhyreEngine Phyre_PEventFlagWin32_PEventFlagWin32
+0x00a26f30	platform	reviewed: PVideoPlaybackWin32 (PhyreEngine video player) (PC2 sound round 1)
+0x00a26fb0	platform	reviewed: PVideoPlaybackWin32 (PC2 sound round 1)
+0x00a26fc0	platform	reviewed: PVideoPlaybackWin32 (PC2 sound round 1)
+0x00a26fd0	platform	reviewed: PVideoPlaybackWin32 (PC2 sound round 1)
+0x00a26fe0	platform	reviewed: PVideoPlaybackWin32 (PC2 sound round 1)
+0x00a27040	dead	unreachable from the entry point and every pointer table
+0x00a27080	dead	unreachable from the entry point and every pointer table
+0x00a270a0	dead	unreachable from the entry point and every pointer table
 0x00a28310	logic	default (no rule: ported to be safe)
 0x00a28330	glue	only called from glue code (0x6d8fc0 and 2 more)
 0x00a28350	glue	calls PhyreEngine Phyre_PEventFlagWin32_wait

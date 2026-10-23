@@ -531,7 +531,7 @@ REVIEWED = {
     0x006a46c0: ("glue", "DynamicGeometry vtable method (0xb47e18..0xb47ec0): stream pointer/count (pc round 1)"),
     0x006a46e0: ("glue", "DynamicGeometry vtable method (0xb47e18..0xb47ec0): builds vertex streams (pc round 1)"),
     0x006f6900: ("dead", "add ecx,0x128; jmp PMatrix4_toWorldMatrix3x4; no call, jump or aligned pointer reaches it (pc round 1)"),
-    0x0084d790: ("dead", "debug-line command root: no caller in the dump and its address appears nowhere in FFX.exe (coordinator check) (pc round 1)"),
+    0x0084d790: ("dead", "debug settings-file interpreter chain: called only from 0x8532bc inside 0x853210, whose chain head 0x84f100 (-> 0x8531a0 -> 0x853210) has no call, jmp or pointer in FFX.exe (pc round 2) (pc round 1)"),
     0x008530d0: ("dead", "debug-line tokenizer (g_DebugLine, strtok); callers lead only to the dead 0x84d790 (pc round 1)"),
     0x00853140: ("dead", "debug-line tokenizer (g_DebugLine, strtok); callers lead only to the dead 0x84d790 (pc round 1)"),
     0x00853170: ("dead", "debug-line tokenizer (g_DebugLine, strtok); callers lead only to the dead 0x84d790 (pc round 1)"),
@@ -547,6 +547,8 @@ REVIEWED = {
     0x00a3cd30: ("platform", "Iggy GDraw D3D11: called only from 0xa37410..0xa3afb0, reads the GDraw context 0x01a858b4 (effects round 51)"),
     0x00a3c350: ("platform", "Iggy GDraw D3D11: called only from 0xa37410..0xa3afb0, reads the GDraw context 0x01a858b4 (effects round 51)"),
     0x00a3d3c0: ("platform", "Iggy GDraw D3D11: fastcall wrapper of the 0xa3d310 constructor; callers lead to the Iggy player constructor 0xa288f0 (effects round 51)"),
+    0x00853070: ("dead", "called only from 0x84d790 and 0x853210, both in the unreferenced chain under 0x84f100 (pc round 2)"),
+    0x0068dfd0: ("platform", "FFEscMenu C++ constructor (Iggy menu, SEH): base ctor 0xa288f0, vtables, field defaults, page initializers; like 0x6f9890 (pc round 2)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
