@@ -10179,4 +10179,265 @@ pub mod bridge {
         mem.write(shift, 0u32);
         cmd.wrapping_add(6)
     }
+
+    /// `opu_mimic(host, cmd)` (`0x0080f210`; opus command, no direct
+    /// caller): the "mimic" model copy, by the flag nibble (`u16 host
+    /// +0x21a & 0xf000`), unit `u` = `[host +0x220]` (read first). 0: `n`
+    /// = `i16 cmd +2`, `p` = `op_malloc([host +0x3a8], (n + 3) * 0x60)` at
+    /// `u +0xbc`, `u16 p +0xc` = `n`, `u16 p +0xe` = 0, byte `p +0x10` =
+    /// 0, `p +0` / `+4` = the `g_EtChr` records of `op_et_chr_index_by_no(i16
+    /// cmd +4 / +6)` (both read before the first call), byte `u +0xbb` =
+    /// 0x12, `opu_id_list_add(host +0x300, u16 host +0x214)`, `cmd + 8`.
+    /// 0x1000: `p` = `[opus_no_get(host +0x300, u, u16 cmd +2) +0xbc]`,
+    /// entry `e` = `p + (u16 p +0xe + 3) * 0x60`: `e +0` = `u`, `u16 e +4`
+    /// / `+6` = `ftol(f32 u +0x40 / +0x4c)`, the emulated register
+    /// `0x00c8f528..` = `u +0x30..+0x3c`, `e +0x10..+0x18` = its first
+    /// three words (the last two read back from it), `e +0x1c` = 0.0,
+    /// `u16 p +0xe` + 1, `cmd + 4`. 0x2000: `p` =
+    /// `[opus_get_osu_by_draw(0, 0, 0x12, 1) +0xbc]`, `chr` = `[[p +4]]`;
+    /// `Ch_TextureSetClutBase(chr, -1, 0x3c00)`,
+    /// `Ch_TextureSetImageBase(chr, -1, 12000)`; `op_mdc_size_get_main(chr,
+    /// 2, 1, 0)` 0 gives `cmd + 6`; else `buf` =
+    /// `MsEffectGetBufferAddress(0)` or `0x02333500`, `p +8` = `buf`,
+    /// `op_mdc_all_make_main(buf, chr, 2, 0, 0, [host +0x328])`,
+    /// `op_mdc_mem_transfer_cue_free(chr)`, then for each model `i <
+    /// Ch_GetNbModel(chr)` (signed) `p +0x20 + 4i` = `Ch_ModelGetVtexPtr`
+    /// and `p +0xa0 + 4i` = `Ch_ModelGetNromPtr`; `cmd + 2`. Other nibbles
+    /// `cmd`. Callees through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_mimic<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{ftol, load};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let u = unit(mem, host);
+        let h = |k: u32| host.wrapping_add(k);
+        match nibble(mem, host) {
+            0 => {
+                let n = mem.read::<i16>(cmd.wrapping_add(2));
+                let size = (i32::from(n) + 3).wrapping_mul(0x60).cast_unsigned();
+                let heap: u32 = mem.read(h(0x3a8));
+                let p = go(mem, 0x007f_f780, &[heap, size]);
+                mem.write(u.wrapping_add(0xbc), p);
+                mem.write(p.wrapping_add(0xc), n);
+                mem.write(p.wrapping_add(0xe), 0u16);
+                mem.write(p.wrapping_add(0x10), 0u8);
+                let a = i32::from(mem.read::<i16>(cmd.wrapping_add(4))).cast_unsigned();
+                let b = i32::from(mem.read::<i16>(cmd.wrapping_add(6))).cast_unsigned();
+                let recs = g(mem, 0x012a_22c0);
+                let i = go(mem, 0x007f_eaa0, &[a]);
+                mem.write(p, (i << 5).wrapping_add(recs));
+                let i = go(mem, 0x007f_eaa0, &[b]);
+                mem.write(p.wrapping_add(4), (i << 5).wrapping_add(recs));
+                mem.write(u.wrapping_add(0xbb), 0x12u8);
+                let id = u32::from(mem.read::<u16>(h(0x214)));
+                go(mem, 0x0080_0d60, &[h(0x300), id]);
+                cmd.wrapping_add(8)
+            }
+            0x1000 => {
+                let no = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+                let o = go(mem, 0x0080_1060, &[h(0x300), u, no]);
+                let p: u32 = mem.read(o.wrapping_add(0xbc));
+                let k = u32::from(mem.read::<u16>(p.wrapping_add(0xe)));
+                let e = (k + 3).wrapping_mul(0x60).wrapping_add(p);
+                mem.write(e, u);
+                #[allow(clippy::cast_possible_truncation)] // mov word, ax
+                let x = ftol(mem, load(mem.read(u.wrapping_add(0x40)))) as u16;
+                mem.write(e.wrapping_add(4), x);
+                #[allow(clippy::cast_possible_truncation)] // mov word, ax
+                let z = ftol(mem, load(mem.read(u.wrapping_add(0x4c)))) as u16;
+                mem.write(e.wrapping_add(6), z);
+                let reg = g(mem, 0x00c8_f528);
+                let w0: u32 = mem.read(u.wrapping_add(0x30));
+                mem.write(reg, w0);
+                for k in 1..4u32 {
+                    let w: u32 = mem.read(u.wrapping_add(0x30 + 4 * k));
+                    mem.write(reg + 4 * k, w);
+                }
+                mem.write(e.wrapping_add(0x10), w0);
+                for k in 1..3u32 {
+                    let w: u32 = mem.read(reg + 4 * k);
+                    mem.write(e.wrapping_add(0x10 + 4 * k), w);
+                }
+                mem.write(e.wrapping_add(0x1c), 0u32);
+                let c: u16 = mem.read(p.wrapping_add(0xe));
+                mem.write(p.wrapping_add(0xe), c.wrapping_add(1));
+                cmd.wrapping_add(4)
+            }
+            0x2000 => {
+                let o = go(mem, 0x0080_0f60, &[0, 0, 0x12, 1]);
+                let p: u32 = mem.read(o.wrapping_add(0xbc));
+                let chr: u32 = mem.read(mem.read::<u32>(p.wrapping_add(4)));
+                go(mem, 0x0083_13c0, &[chr, u32::MAX, 0x3c00]);
+                go(mem, 0x0083_1390, &[chr, u32::MAX, 12000]);
+                if go(mem, 0x0080_3880, &[chr, 2, 1, 0]) == 0 {
+                    return cmd.wrapping_add(6);
+                }
+                let mut buf = go(mem, 0x007b_7eb0, &[0]);
+                if buf == 0 {
+                    buf = g(mem, 0x0233_3500);
+                }
+                mem.write(p.wrapping_add(8), buf);
+                let table: u32 = mem.read(h(0x328));
+                go(mem, 0x0080_34b0, &[buf, chr, 2, 0, 0, table]);
+                go(mem, 0x0080_3730, &[chr]);
+                let n = go(mem, 0x0083_0410, &[chr]).cast_signed();
+                let mut i = 0i32;
+                while i < n {
+                    let k = i.cast_unsigned();
+                    let v = go(mem, 0x0082_ae10, &[chr, k]);
+                    mem.write(p.wrapping_add(0x20).wrapping_add(4 * k), v);
+                    let v = go(mem, 0x0082_adf0, &[chr, k]);
+                    mem.write(p.wrapping_add(0xa0).wrapping_add(4 * k), v);
+                    i += 1;
+                }
+                cmd.wrapping_add(2)
+            }
+            _ => cmd,
+        }
+    }
+
+    /// `opu_mdc_break(host, cmd)` (`0x00804270`; opus command, no direct
+    /// caller): the shattering model, by the flag nibble, unit `u` =
+    /// `[host +0x220]`, `chr` = `g_EtChrHandles[u8 u +0x18]`, the slot
+    /// bits byte `host +0x33b`, the three slot buffers at `0x012f20a4`. 0:
+    /// the first clear bit `k < 3` (none: byte `host +0x210` = 1, `cmd`);
+    /// it is set, slot `k` = `user_aligned_malloc(0x120000, 16)`,
+    /// `Ch_TextureSetClutBase(chr, -1, 0x3c00)`,
+    /// `Ch_TextureSetImageBase(chr, -1, 12000)`, `Ch_SetCalcNorm(chr, 1)`,
+    /// `op_mdc_all_make_delhide(g_AbilitymapWork, chr, 0, [host +0x328])`,
+    /// the first of the 8 `g_OpMdcTransferCues` keyed by `chr` cleared;
+    /// byte `u +0xad` = `k`, `u +0xa8` = the buffer,
+    /// `opus_rt_m_chara(host, u8 u +0x18, f32 u +0x3c, u +0x30, u +0x90, i8
+    /// host +0x21e)`, `Ch_OptposGet(chr, 16, host +0x40)`; the original's
+    /// 16-byte local (at `frame`) = (`host`, `host +0x40`,
+    /// `f32 MsGetChrGround(u8 u +0x18)`, the buffer) goes to
+    /// `opus_mdc_break_make(g_AbilitymapWork, buffer, cmd + i16 cmd +2,
+    /// frame)`, and `createU16MeshBreakRenderDataBuffer(0, u, buffer, chr,
+    /// 0x4000)` != 0 runs `graphicVFXSetup(0, u)`; `cmd + 4`. 0x1000:
+    /// `Ch_TextureLoadImage(chr, -1)`, `Ch_TextureLoadClut(chr, -1)`,
+    /// `opus_mdc_break_draw([u +0xa8], u, host +0x280, host +0x2c0, i16 host
+    /// +0x212)`, `MsEffectWaitFlag(1)`, bit 0 of byte `u +0xb2` set, `cmd +
+    /// 2`. 0x2000: both texture bases -1, `graphicVFXDestroy(0, u)`, slot
+    /// `k` = `i8 u +0xad` freed (`user_aligned_free`) and cleared, its bit
+    /// (`u8` 1 doubled `k` times, 1 for `k <= 0`) cleared in `host +0x33b`,
+    /// bit 0 of `u +0xb2` cleared, `MsEffectWaitFlag(0)` when no slot is
+    /// left; `cmd + 2`. Other nibbles `cmd`. Callees through `call`, the
+    /// ground through `fcall`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_mdc_break<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{load, store};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let u = unit(mem, host);
+        let h = |k: u32| host.wrapping_add(k);
+        let who = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        let chr = crate::et::bridge::CHR_HANDLES.ptr(mem).at(who).get(mem);
+        let slots = g(mem, 0x012f_20a4);
+        match nibble(mem, host) {
+            0 => {
+                let used: u8 = mem.read(h(0x33b));
+                let Some(k) = (0..3u32).find(|&k| used & (1 << k) == 0) else {
+                    mem.write(h(0x210), 1u8);
+                    return cmd;
+                };
+                mem.write(h(0x33b), used | (1 << k));
+                let buf = go(mem, 0x0068_6ff0, &[0x0012_0000, 0x10]);
+                mem.write(slots.wrapping_add(4 * k), buf);
+                go(mem, 0x0083_13c0, &[chr, u32::MAX, 0x3c00]);
+                go(mem, 0x0083_1390, &[chr, u32::MAX, 12000]);
+                go(mem, 0x0083_5750, &[chr, 1]);
+                let work = g(mem, 0x0164_0870);
+                let table: u32 = mem.read(h(0x328));
+                go(mem, 0x0080_3360, &[work, chr, 0, table]);
+                let cues = crate::op::bridge::MDC_TRANSFER_CUES.ptr(mem).addr;
+                if let Some(c) = (0..8u32)
+                    .map(|i| cues.wrapping_add(0x10 * i))
+                    .find(|&c| mem.read::<u32>(c) == chr)
+                {
+                    mem.write(c, 0u32);
+                }
+                let step = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+                let next = cmd.wrapping_add(step);
+                #[allow(clippy::cast_possible_truncation)] // k < 3
+                mem.write(u.wrapping_add(0xad), k as u8);
+                mem.write(u.wrapping_add(0xa8), buf);
+                let battle = i32::from(mem.read::<i8>(h(0x21e))).cast_unsigned();
+                // fld dword u +0x3c; fstp dword [esp]
+                let k3c = store(load(mem.read(u.wrapping_add(0x3c))));
+                let who = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+                go(
+                    mem,
+                    0x0080_62c0,
+                    &[
+                        host,
+                        who,
+                        k3c,
+                        u.wrapping_add(0x30),
+                        u.wrapping_add(0x90),
+                        battle,
+                    ],
+                );
+                go(mem, 0x0083_54f0, &[chr, 0x10, h(0x40)]);
+                let who = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+                let ground = g(mem, 0x0079_4fb0);
+                let ground = store(fcall(mem, ground, &[who]));
+                mem.write(frame, [host, h(0x40), ground, buf]);
+                go(mem, 0x0080_59c0, &[work, buf, next, frame]);
+                if go(mem, 0x0080_2fb0, &[0, u, buf, chr, 0x4000]) != 0 {
+                    go(mem, 0x0064_5780, &[0, u]);
+                }
+                cmd.wrapping_add(4)
+            }
+            0x1000 => {
+                let id: u32 = mem.read(u.wrapping_add(0xa8));
+                go(mem, 0x0083_1300, &[chr, u32::MAX]);
+                go(mem, 0x0083_11d0, &[chr, u32::MAX]);
+                let still = i32::from(mem.read::<i16>(h(0x212))).cast_unsigned();
+                go(mem, 0x0080_5510, &[id, u, h(0x280), h(0x2c0), still]);
+                go(mem, 0x0078_8b20, &[1]);
+                let b: u8 = mem.read(u.wrapping_add(0xb2));
+                mem.write(u.wrapping_add(0xb2), b | 1);
+                cmd.wrapping_add(2)
+            }
+            0x2000 => {
+                go(mem, 0x0083_13c0, &[chr, u32::MAX, u32::MAX]);
+                go(mem, 0x0083_1390, &[chr, u32::MAX, u32::MAX]);
+                go(mem, 0x0064_5280, &[0, u]);
+                let k = i32::from(mem.read::<i8>(u.wrapping_add(0xad)));
+                let at = slots.wrapping_add((4 * k).cast_unsigned());
+                let buf: u32 = mem.read(at);
+                go(mem, 0x0068_6fe0, &[buf]);
+                mem.write(at, 0u32);
+                let mut bit = 1u8;
+                for _ in 0..k.max(0) {
+                    bit = bit.wrapping_add(bit);
+                }
+                let used: u8 = mem.read(h(0x33b));
+                mem.write(h(0x33b), used & !bit);
+                let b: u8 = mem.read(u.wrapping_add(0xb2));
+                mem.write(u.wrapping_add(0xb2), b & 0xfe);
+                if mem.read::<u8>(h(0x33b)) == 0 {
+                    go(mem, 0x0078_8b20, &[0]);
+                }
+                cmd.wrapping_add(2)
+            }
+            _ => cmd,
+        }
+    }
 }
