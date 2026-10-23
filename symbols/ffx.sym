@@ -7673,7 +7673,7 @@
 0x00827700 function Ch_ModelPurgePacket       # fh v3:exact 0x00827780
 0x008277f0 function SG_InitBones              # allocs "%s:Elem" (0x160/bone) and "%s:Fcv" (0x18c/bone); bind pose from the .chr bone table (20 bytes: parent, rot centideg, trans /1000, scale >>12)
 0x00827d10 function Ch_OnCharacterInstanceLoaded # fh v3:exact 0x00827d90
-0x00827e90 function Ch_PreCalcActiveClothMesh # fh v3:exact 0x00827f10
+0x00827e90 function Ch_PreCalcActiveClothMesh # fh v3:exact 0x00827f10; ported (ffx_chara::cloth, small round 2): cdecl(chr, skip), void; once per cloth (+0x834, +0xc = 1): +0x868 = +0x844 - cloth +0x1c * 1000; per mesh/segment the baked mapping data (Cache_Exist_ClothMeshMappingData words from +8: mesh count, segment counts, vertex counts) is memcpy'd (8- and 12-byte records) when all counts match, else each vertex (unless skip) is classified by 
 0x00828380 function Ch_ReadCollisionFromCMF      # layout: alphabetical run between Ch_PreCalcActiveClothMesh and Ch_ReadMotionViewer (1 unnamed in the gap); Switch 0x710040c660 Ch_ReadCollisionFromCMF is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008283c0 function Ch_ReadMotionViewer       # fh v3:exact 0x00828440
 0x008285d0 function Ch_SetAllocateErr        # Switch name (0x710040f480, 4 insns: stores 1): g_ChrAllocateErr = 1

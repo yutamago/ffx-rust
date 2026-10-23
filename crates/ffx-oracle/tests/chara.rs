@@ -5397,7 +5397,7 @@ fn round8b_on(t: &mut Twin) {
         assert_eq!(t.a.diff(&mut t.b).unwrap(), [], "Ch_AnimCopyNear memory");
         // Ch_DrawClothClear: a made-up cloth and buffer
         let n = rng.next() % 3;
-        let cloth = t.alloc(0x40);
+        let cloth = t.alloc(0x50);
         t.put_u32(cloth + 0x14, n);
         let buf = t.alloc(0x20);
         for i in 0..n {
@@ -11549,4 +11549,259 @@ fn small2_b_on(t: &mut Twin) {
         reach[6 + usize::from(frame.cast_signed() <= i32::from(last as i16))] += 1;
     }
     eprintln!("{}: small2 b reach {reach:?}", t.name);
+}
+
+#[test]
+fn small2_c_matches_the_original() {
+    for mut t in twins() {
+        small2_c_on(&mut t);
+    }
+}
+
+/// `Ch_PreCalcActiveClothMesh` (small round 2, group c): random cloths
+/// with and without (matching) baked data. The caches, `dbgPrintf` and
+/// `InsideTriangle` are faked; the stand-in for `InsideTriangle` writes a
+/// distance on every other call it gets one, so the stale slot shows (the
+/// original's slot, `ebp-0x64`, and the port's scratch start equal).
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::similar_names,
+    clippy::many_single_char_names
+)]
+fn small2_c_on(t: &mut Twin) {
+    use ffx_chara::cloth::bridge as cl;
+    let mut rng = Xorshift(0x5a11_2c2c);
+    let fk = Fakes::new(t);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let vbuf = fk.fake(t, cl::CLOTH_VERTEX_BUFF, 1, 2);
+    let mdata = fk.fake(t, cl::CLOTH_MAPPING_DATA, 2, 2);
+    let print = fk.fake(t, cl::DBG_PRINTF, 3, 4);
+    // InsideTriangle: every other call with a distance pointer gets a
+    // distance (a positive float below 2); then the two pointers, which
+    // differ (stack against scratch), are logged by what they hold: the
+    // position's 16 bytes go to their own log (`pos` logged as 0), and
+    // `&dist` as whether one was given
+    let (tri_log, tri_ret) = fk.fake_code(t, 4, 8);
+    let counter = t.alloc(4);
+    let pos_log = t.alloc(4);
+    let pos_area = t.alloc(0x1000);
+    let stub = t.a.alloc_code(&[0; 128]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 128]).unwrap(), stub);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x20, 0x85, 0xc0, 0x74, 0x1d, 0x8b, 0x0d];
+    c.extend(counter.to_le_bytes());
+    c.extend([0x81, 0x05]);
+    c.extend(counter.to_le_bytes());
+    c.extend(0x9e37_79b9u32.to_le_bytes());
+    c.extend([
+        0xf6, 0xc1, 0x01, 0x74, 0x08, 0x81, 0xe1, 0xff, 0xff, 0xff, 0x3f, 0x89, 0x08,
+    ]);
+    // mov eax, [esp+8]; mov edx, [pos_log]; copy 4 words; [pos_log] += 16
+    c.extend([0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15]);
+    c.extend(pos_log.to_le_bytes());
+    c.extend([
+        0x8b, 0x08, 0x89, 0x0a, 0x8b, 0x48, 0x04, 0x89, 0x4a, 0x04, 0x8b, 0x48, 0x08, 0x89, 0x4a,
+        0x08, 0x8b, 0x48, 0x0c, 0x89, 0x4a, 0x0c, 0x83, 0x05,
+    ]);
+    c.extend(pos_log.to_le_bytes());
+    c.push(0x10);
+    // [esp+8] = 0; [esp+0x20] = [esp+0x20] != 0
+    c.extend([
+        0xc7, 0x44, 0x24, 0x08, 0, 0, 0, 0, 0x83, 0x7c, 0x24, 0x20, 0x00, 0x0f, 0x95, 0xc0, 0x0f,
+        0xb6, 0xc0, 0x89, 0x44, 0x24, 0x20, 0xe9,
+    ]);
+    c.extend(tri_log.wrapping_sub(stub + 104).to_le_bytes());
+    assert_eq!(c.len(), 104);
+    t.put(stub, &c);
+    let tri_at = t.a.rebase(cl::INSIDE_TRIANGLE);
+    let mut jmp = vec![0xe9];
+    jmp.extend(stub.wrapping_sub(tri_at + 5).to_le_bytes());
+    t.put(tri_at, &jmp);
+
+    let frame = t.b.stack_range().start + 0x400;
+    let a_slot = t.a.stack_range().end - 0x100 - 0x74;
+    let normal = [
+        0.0f32,
+        0.1,
+        f32::from_bits(0x3e99_9999),
+        0.3,
+        f32::from_bits(0x3e99_999b),
+        0.31,
+        0.5,
+        -0.5,
+        -0.3,
+        -0.1,
+        1.0,
+        f32::NAN,
+    ];
+    let mut reach = [0u32; 8];
+    for round in 0..240u32 {
+        fk.reset(t);
+        t.put_u32(print, 0);
+        t.put_u32(tri_ret, rng.next());
+        t.put_u32(counter, rng.next());
+        t.put_u32(pos_log, pos_area);
+        let stale = (rng.next() & 0x3fff_ffff) | 1;
+        t.a.write(a_slot, &stale.to_le_bytes()).unwrap();
+        t.b.write(frame + 0x10, &stale.to_le_bytes()).unwrap();
+
+        let chr = t.alloc(0x880);
+        for k in 0..0x220 {
+            t.put_u32(chr + 4 * k, rng.next());
+        }
+        let id: u16 = if rng.next().is_multiple_of(3) {
+            0x66
+        } else {
+            (rng.next() % 0x120) as u16
+        };
+        t.put(chr, &id.to_le_bytes());
+        t.put_u32(chr + 0x844, ((rng.next() % 4000) as f32 / 8.0).to_bits());
+        let dead = t.alloc(16);
+        t.put_u32(chr + 0x1c0, dead);
+        let cloth = t.alloc(0x50);
+        let meshes = rng.next() % 4;
+        t.put_u32(cloth + 0xc, u32::from(round % 16 == 3));
+        t.put_u32(cloth + 0x14, meshes);
+        t.put_u32(
+            cloth + 0x1c,
+            (rng.next() % 0x0080_0000 + 0x3c00_0000) | (rng.next() & 0x8000_0000),
+        );
+        t.put_u32(chr + 0x834, if round % 16 == 7 { 0 } else { cloth });
+        let vb = t.alloc(0x20);
+        t.put_u32(vbuf, if round % 16 == 9 { 0 } else { vb });
+        let with_md = !rng.next().is_multiple_of(4);
+        let md = t.alloc(0x2000);
+        let small: Vec<u8> = (0..0x800)
+            .flat_map(|_| (rng.next() % 6).to_le_bytes())
+            .collect();
+        t.put(md, &small);
+        t.put_u32(mdata, if with_md { md } else { 0 });
+        let mut p = md + 8;
+        let hdr_ok = !rng.next().is_multiple_of(6);
+        t.put_u32(p, if hdr_ok { meshes } else { meshes + 1 });
+        p += 4;
+        for m in 0..meshes {
+            let segs = rng.next() % 4;
+            let list = t.alloc(0x20);
+            t.put_u32(list, segs);
+            let vbm = t.alloc(0x20);
+            let null = rng.next().is_multiple_of(10);
+            t.put_u32(cloth + 0x30 + 4 * m, if null { 0 } else { list });
+            t.put_u32(vb + 4 + 4 * m, vbm);
+            let mh_ok = !rng.next().is_multiple_of(6);
+            t.put_u32(p, if mh_ok { segs } else { segs + 1 });
+            p += 4;
+            if null {
+                continue;
+            }
+            for s in 0..segs {
+                let n = rng.next() % 6;
+                let seg = t.alloc(0x50);
+                let vseg = t.alloc(0x10);
+                let normals = t.alloc(0x60 + 16);
+                let model: u16 = if rng.next().is_multiple_of(2) {
+                    2
+                } else {
+                    (rng.next() % 4) as u16
+                };
+                let code: u16 = if rng.next().is_multiple_of(2) {
+                    10
+                } else {
+                    (rng.next() % 400) as u16
+                };
+                t.put(seg + 0x40, &model.to_le_bytes());
+                t.put(seg + 0x42, &code.to_le_bytes());
+                t.put_u32(seg + 0x44, n);
+                let seg_null = rng.next().is_multiple_of(10);
+                t.put_u32(seg + 0x4c, if seg_null { 0 } else { normals });
+                for k in 0..n * 4 {
+                    let v = normal[(rng.next() % 12) as usize];
+                    t.put_u32(normals + 4 * k, v.to_bits());
+                }
+                let src = t.alloc(0x60);
+                for k in 0..n * 3 {
+                    t.put_u32(
+                        src + 4 * k,
+                        ((rng.next() % 512) as f32 / 64.0 - 4.0).to_bits(),
+                    );
+                }
+                let records = random_block(t, &mut rng, 0x40);
+                let tris = random_block(t, &mut rng, 0x60);
+                t.put_u32(vseg + 4, src);
+                t.put_u32(vseg + 8, records);
+                t.put_u32(vseg + 0xc, tris);
+                t.put_u32(list + 4 + 4 * s, seg);
+                let vseg_null = rng.next().is_multiple_of(12);
+                t.put_u32(vbm + 4 + 4 * s, if vseg_null { 0 } else { vseg });
+                let sh_ok = !rng.next().is_multiple_of(6);
+                let sh = if sh_ok { n } else { (n + 1) % 6 };
+                t.put_u32(p, sh);
+                p += 4;
+                let baked = with_md && hdr_ok && mh_ok && sh_ok;
+                p += sh
+                    * if seg_null || vseg_null || baked {
+                        20
+                    } else {
+                        16
+                    };
+                if !seg_null && !vseg_null {
+                    reach[usize::from(baked)] += 1;
+                }
+            }
+        }
+        // a whole mesh past the count, which only a loop too long reaches
+        {
+            let list = t.alloc(8);
+            let vbm = t.alloc(8);
+            let seg = t.alloc(0x50);
+            let vseg = t.alloc(0x10);
+            let normals = t.alloc(0x20);
+            for k in 0..8 {
+                t.put_u32(normals + 4 * k, 1f32.to_bits());
+            }
+            t.put_u32(list, 1);
+            t.put_u32(list + 4, seg);
+            t.put_u32(vbm + 4, vseg);
+            t.put_u32(seg + 0x44, 2);
+            t.put_u32(seg + 0x4c, normals);
+            for off in [4u32, 8, 0xc] {
+                let b = random_block(t, &mut rng, 0x20);
+                t.put_u32(vseg + off, b);
+            }
+            t.put_u32(cloth + 0x30 + 4 * meshes, list);
+            t.put_u32(vb + 4 + 4 * meshes, vbm);
+        }
+        let skip = u32::from(rng.next().is_multiple_of(5));
+        let before: u32 = rd(&t.a, fk.log);
+        t.check(
+            &format!("Ch_PreCalcActiveClothMesh {round}"),
+            0x0082_7e90,
+            &[chr, skip],
+            |m| {
+                cl::ch_pre_calc_active_cloth_mesh(
+                    m,
+                    chr,
+                    skip,
+                    frame,
+                    &mut |m: &mut Oracle, f, a: &[u32]| call(m, f, a),
+                );
+                Res::Void
+            },
+        );
+        let after: u32 = rd(&t.a, fk.log);
+        let mut q = before;
+        while q < after {
+            let id: u32 = rd(&t.a, q);
+            if id == 4 {
+                let code: u32 = rd(&t.a, q + 16);
+                let d: u32 = rd(&t.a, q + 32);
+                reach[2 + d as usize] += 1;
+                reach[4] += u32::from(code < 100);
+            }
+            q += 4 * (1 + [0, 2, 2, 4, 8][id as usize]);
+        }
+        reach[5] += skip;
+    }
+    eprintln!("{}: small2 c reach {reach:?}", t.name);
 }

@@ -2093,4 +2093,12 @@ ported! {
     Ch_MotEvent @ 0x0083_4350 => extern "C" fn ch_mot_event(chr: u32) {
         mo::bridge::ch_mot_event(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a));
     }
+    // ---- small round 2, group c
+    /// `Ch_PreCalcActiveClothMesh(chr, skip)`: void (its caller reads no
+    /// `eax`); the position and distance live in a per-call frame.
+    Ch_PreCalcActiveClothMesh @ 0x0082_7e90 => extern "C" fn ch_pre_calc_active_cloth_mesh(chr: u32, skip: u32) {
+        let mut frame = super::StackFrame::<{ cl::PRE_CALC_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        cl::ch_pre_calc_active_cloth_mesh(&mut mem(), chr, skip, s, &mut |_, f, a| super::call_cdecl(f, a));
+    }
 }
