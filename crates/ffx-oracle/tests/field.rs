@@ -24380,3 +24380,109 @@ fn small4_a_real(t: &mut Twin, rng: &mut Xorshift) {
     }
     eprintln!("the snapshot's guide: calls by tag {reach:?}");
 }
+
+// ---- small round 5 b: the node-activation message ----
+
+/// Small round 5 b on `t` over the grid `g`:
+/// `AbmapShowNodeMessage_00a5aa30` for any node, every flag bit (alone,
+/// with lower ones, none) and with or without a row command; the excel
+/// lookup and the row command (their string bases written out), the kana
+/// setting, the texts and the name are logged stand-ins.
+fn small5b_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap::{self, bridge as ab};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let log = t.alloc(4 + 0x20 * 12);
+    let v: Vec<u32> = (0..9).map(|_| t.alloc(4)).collect();
+    let [
+        rowv,
+        basev,
+        kanav,
+        textv,
+        namev,
+        statusv,
+        recv,
+        cmd_basev,
+        mainv,
+    ] = v[..]
+    else {
+        unreachable!()
+    };
+    // mov eax, [esp + 0xc]; mov ecx, [basev]; mov [eax], ecx; then the log
+    let mut excel = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d];
+    excel.extend_from_slice(&basev.to_le_bytes());
+    excel.extend_from_slice(&[0x89, 0x08]);
+    excel.extend(log_stub(log, rowv, 1, 2));
+    // mov eax, [esp + 8]; mov ecx, [cmd_basev]; mov [eax], ecx; log the id
+    let mut command = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d];
+    command.extend_from_slice(&cmd_basev.to_le_bytes());
+    command.extend_from_slice(&[0x89, 0x08]);
+    command.extend(log_stub(log, recv, 2, 1));
+    let [kana, text, name, status, cmd, main] = ab::NODE_MESSAGE_CALLS;
+    t.cave(&[
+        (Some(abmap::MS_GET_EXCEL_DATA), excel),
+        (Some(cmd), command),
+        (Some(kana), log_stub(log, kanav, 3, 0)),
+        (Some(text), log_stub(log, textv, 4, 3)),
+        (Some(name), log_stub(log, namev, 5, 1)),
+        (Some(status), log_stub(log, statusv, 6, 1)),
+        (Some(main), log_stub(log, mainv, 7, 1)),
+    ]);
+    let row = t.alloc(0x20);
+    let rec = t.alloc(8);
+    for case in 0..cases {
+        t.put(log, 0u32);
+        for at in [basev, kanav, textv, namev, statusv, cmd_basev, mainv] {
+            t.put(at, rng.next());
+        }
+        t.put(rowv, row);
+        t.put(recv, rec);
+        t.fill(row, 0x20, rng);
+        t.fill(rec, 8, rng);
+        let flags = match case % 4 {
+            0 => 0,
+            1 => 1u32 << rng.below(10),
+            2 => (1u32 << rng.below(10)) | (rng.next() & 0xfc00),
+            _ => rng.below(0x1_0000),
+        };
+        t.put(row + 0x10, u16::try_from(flags).unwrap());
+        if rng.below(3) == 0 {
+            t.put(row + 0x12, 0u16);
+        }
+        t.put(t.b.rebase(abmap::NODE_EXCEL_TABLE), rng.next());
+        t.fill(g + 0x11654, 0x18, rng);
+        let node = rng.below(40);
+        t.put(
+            g + 0x80e + 0x28 * node,
+            u16::try_from(rng.below(0x10000)).unwrap(),
+        );
+        let a = [rng.below(0x100), node];
+        let work = t.stack_scratch(0x100);
+        t.same(
+            "AbmapShowNodeMessage",
+            |o| o.eax(0x00a5_aa30, &a),
+            |m| ab::abmap_show_node_message(m, a, work, call),
+        );
+    }
+}
+
+/// Small round 5 b on the image.
+#[test]
+fn small5b_show_node_message_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x5eed_5b01);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    small5b_cases(&mut t, &mut rng, g, 400);
+}
+
+/// Small round 5 b on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid.
+#[test]
+fn small5b_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_5b02);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    small5b_cases(&mut t, &mut rng, g, 200);
+}

@@ -4113,6 +4113,12 @@ ported! {
         let mut w = super::StackFrame::<2>::new();
         abmap::bridge::abmap_show_change_message(&mut mem(), [kind, node], w.at(), &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapShowNodeMessage_00a5aa30(chr, node)`: the two string bases
+    /// in a frame; `AbmapGetNodePanel` returns its `EAX`.
+    AbmapShowNodeMessage_00a5aa30 @ 0x00a5_aa30 => extern "C" fn shim_abmap_show_node_message(chr: u32, node: u32) -> u32 {
+        let mut w = super::StackFrame::<2>::new();
+        abmap::bridge::abmap_show_node_message(&mut mem(), [chr, node], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `AbmapCalcLinkPoints()`: the three positions in a frame.
     AbmapCalcLinkPoints @ 0x00a5_a800 => extern "C" fn shim_abmap_calc_link_points() -> u32 {
         let mut w = super::StackFrame::<12>::new();
