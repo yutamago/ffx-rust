@@ -22,14 +22,14 @@
 //! `g_MagicImports` slot `0x00c650b0`, so magic overlays call it; on the
 //! job workers (128 KB) that fits, as it does for the original.
 //!
-//! Ported so far: the head, the tail and the plain loop (S6,
-//! [`bridge::plain`]); [`bridge::op_shape_draw`] returns `None` for the
+//! Ported so far: the head, the tail, the plain loop (S6,
+//! [`bridge::plain`]) and the VU0 plain loop (S3, [`bridge::vu0_plain`]); [`bridge::op_shape_draw`] returns `None` for the
 //! loops still to port. Not hooked yet (`docs/porting.md`: the whole
 //! function first).
 
 /// The originals over game memory (`ffx_bridge::Mem`).
 pub mod bridge {
-    use ffx_bridge::x87::{Reg, ftol};
+    use ffx_bridge::x87::Reg;
     use ffx_bridge::{Global, Mem};
 
     /// The original's frame size below `ebp` (`mov eax, 0x1f3c; call
@@ -77,9 +77,12 @@ pub mod bridge {
     /// are subtracted from each projected point.
     const ORIGIN: u32 = 0x00c8_f850;
     const ORIGIN_SRC: u32 = 0x012e_95d8;
-    /// The two points of a vertex, projected in place.
+    /// A record's points, projected in place (S6 uses the first and the
+    /// last).
     const P0: u32 = 0x00c8_f8d0;
-    const P1: u32 = 0x00c8_f900;
+    const P1: u32 = 0x00c8_f8e0;
+    const P2: u32 = 0x00c8_f8f0;
+    const P3: u32 = 0x00c8_f900;
     /// The matrix the points go through (four rows of four `f32`).
     const MATRIX: u32 = 0x00c8_f950;
     /// `vf00.w` (`g_Vu0_Vf00 +0xc`), the numerator of `Q`.
@@ -89,8 +92,6 @@ pub mod bridge {
     const POINT_SCALE: f64 = 0.0625;
     /// `1/4096`, the texture scale (`fld qword 0x00b50190`).
     const TEX_SCALE: f64 = 0.000_244_140_625;
-    /// `16.0`, the fixed-point scale (`g_Vu0FixedScale`, `0x00b313a0`).
-    const FIXED_SCALE: f64 = 16.0;
 
     /// The bytes per vertex record.
     const VERTEX: u32 = 0x18;
@@ -254,6 +255,7 @@ pub mod bridge {
         let frame = Frame { ebp };
         match head(mem, shape, cmd, frame) {
             Variant::Plain => plain(mem, frame, cmd, shape.wrapping_add(0x20)),
+            Variant::Vu0Plain => vu0_plain(mem, cmd, shape.wrapping_add(0x20)),
             _ => return None,
         }
         Some(tail(mem, frame))
@@ -261,11 +263,12 @@ pub mod bridge {
 
     /// One point through `MATRIX` with the accumulator (`vmulax`,
     /// `vmadday`, `vmaddaz`, `vmaddw`), then `Q = vf00.w / w`. Each step
-    /// rounds to `f32` where the original stores. `rows_in_memory`: the
-    /// x and y rows' matrix elements are the memory operands (the second
-    /// point's code) instead of loaded first; it only tells a signalling
-    /// NaN element from a quiet one.
-    fn transform<M: Mem>(mem: &mut M, point: u32, rows_in_memory: bool) {
+    /// rounds to `f32` where the original stores. `memory_rows[r]`: row
+    /// `r`'s matrix elements are the memory operands instead of loaded
+    /// first (lane `w` always is); `memory_w`: so are the last row's `y`
+    /// and `z`. The forms differ between the points' code and only tell a
+    /// signalling NaN element from a quiet one.
+    fn transform<M: Mem>(mem: &mut M, point: u32, memory_rows: [bool; 3], memory_w: bool) {
         let element = |mem: &M, row: u32, c: u32| rd(mem, MATRIX + 0x10 * row + 4 * c);
         let acc = |c: u32| ACC + 4 * c;
         let lane = |c: u32| point + 4 * c;
@@ -273,7 +276,7 @@ pub mod bridge {
             let s = rd(mem, lane(row));
             for c in 0..4u32 {
                 let e = element(mem, row, c);
-                let product = if c == 3 || rows_in_memory && row < 2 {
+                let product = if c == 3 || memory_rows[row as usize] {
                     f(s).mul_m32(f32::from_bits(e))
                 } else {
                     f(e) * f(s)
@@ -292,6 +295,7 @@ pub mod bridge {
             let product = match c {
                 0 => f(e).mul_m32(f32::from_bits(w)),
                 3 => f(w).mul_m32(f32::from_bits(e)),
+                _ if memory_w => f(w).mul_m32(f32::from_bits(e)),
                 _ => f(e) * f(w),
             };
             let v = product + f(rd(mem, acc(c)));
@@ -300,6 +304,9 @@ pub mod bridge {
         let q = f(VF00_W.get(mem)).div_m32(f32::from_bits(rd(mem, lane(3))));
         Q.set(mem, st(q));
     }
+
+    /// The first point's forms: every row element loaded.
+    const LOADED: [bool; 3] = [false; 3];
 
     /// `x, y, z *= Q` (`vmulq.xyz`; `z` is the memory operand).
     fn scale_by_q(mem: &mut impl Mem, point: u32) {
@@ -325,13 +332,11 @@ pub mod bridge {
         ffx_ps2::ee::bridge::restore_vf00(mem);
     }
 
-    /// `vftoi4`: the four words times 16, truncated (`_ftol2_sse`).
+    /// `vftoi4` in place: the four words times 16, truncated
+    /// (`rcVec4fToFixed`, which S3 calls and S6 has inline).
     fn to_fixed(mem: &mut impl Mem, point: u32) {
-        let v: [u32; 4] = mem.read(mem.rebase(point));
-        for (c, x) in (0u32..).zip(v) {
-            let n = ftol(mem, (f(x) * Reg::constant(FIXED_SCALE)).value());
-            wr(mem, point + 4 * c, n);
-        }
+        let at = mem.rebase(point);
+        ffx_field::model::bridge::rc_vec4f_to_fixed(mem, at, at);
     }
 
     /// A point into `dst`: `x` is `v0`'s low word, `y`, `z`, `w` are `t4`'s
@@ -384,11 +389,7 @@ pub mod bridge {
     /// nothing in the loop writes it again, so those change nothing and are
     /// left out.
     pub fn plain(mem: &mut impl Mem, frame: Frame, cmd: u32, first: u32) {
-        let r0 = R0.get(mem);
-        T1.set(mem, r0);
-        let mut hi = rd(mem, V0 + 4);
-        wr(mem, V0, mem.read(cmd.wrapping_add(4)));
-        SHIFT.set(mem, 0);
+        let mut hi = loop_start(mem, cmd);
         let mut p = first;
         loop {
             hi = plain_vertex(mem, p, hi);
@@ -402,20 +403,42 @@ pub mod bridge {
         }
     }
 
-    /// One record of [`plain`]; returns `v0`'s second word for the next.
-    fn plain_vertex<M: Mem>(mem: &mut M, p: u32, hi: u32) -> u32 {
-        let half = |mem: &M, off: u32| rd16(mem, p.wrapping_add(off));
+    /// Both loops' start: `t1` = `r0`'s low word, `v0`'s low word =
+    /// `cmd +4`, the shift cleared; returns `v0`'s second word (`ebx`).
+    fn loop_start(mem: &mut impl Mem, cmd: u32) -> u32 {
+        let r0 = R0.get(mem);
+        T1.set(mem, r0);
+        let hi = rd(mem, V0 + 4);
+        wr(mem, V0, mem.read(cmd.wrapping_add(4)));
+        SHIFT.set(mem, 0);
+        hi
+    }
+
+    /// A record's first point (`+0`, `+2`) into `P0` through the matrix,
+    /// then `s1 & 0x11` into `v0` (64 bits, the second word 0).
+    fn first_point(mem: &mut impl Mem, p: u32, hi: u32) {
         // x, y into v0 / v1 (lhu): low halves only
-        wr16(mem, V0, half(mem, 0));
-        wr16(mem, V1, half(mem, 2));
+        wr16(mem, V0, rd16(mem, p));
+        wr16(mem, V1, rd16(mem, p.wrapping_add(2)));
         let v1_hi = rd(mem, V1 + 4);
         wr(mem, V0 + 0xc, v1_hi);
         load_point(mem, P0, hi);
-        transform(mem, P0, false);
-        // and s1, 0x11 into v0 (64 bits): v0's second word is now 0
+        transform(mem, P0, LOADED, false);
+        set_flags(mem);
+    }
+
+    /// `and v0, s1, 0x11`: `v0` = the flags (64 bits); returns them.
+    fn set_flags(mem: &mut impl Mem) -> u32 {
         let flags = S1.get(mem) & 0x11;
         wr(mem, V0, flags);
         wr(mem, V0 + 4, 0);
+        flags
+    }
+
+    /// One record of [`plain`]; returns `v0`'s second word for the next.
+    fn plain_vertex<M: Mem>(mem: &mut M, p: u32, hi: u32) -> u32 {
+        let half = |mem: &M, off: u32| rd16(mem, p.wrapping_add(off));
+        first_point(mem, p, hi);
         let hi = 0;
         wr16(mem, V0, half(mem, 0xc));
         let second = rd(mem, V0);
@@ -424,32 +447,17 @@ pub mod bridge {
         }
         // (the translation loads `+0xe` into v1 and copies v1 into v0 here:
         // the flag test below overwrites both before anything reads them)
-        load_point(mem, P1, hi);
+        load_point(mem, P3, hi);
         scale_by_q(mem, P0);
-        transform(mem, P1, true);
-        scale_by_q(mem, P1);
+        transform(mem, P3, [true, true, false], false);
+        scale_by_q(mem, P3);
         minus_origin(mem, VA, P0);
-        minus_origin(mem, VB, P1);
+        minus_origin(mem, VB, P3);
         let b: [u32; 4] = mem.read(mem.rebase(VB));
         crate::op::bridge::op_vec3_clamp(mem, mem.rebase(VMAX), mem.rebase(VA), b, true);
         let b: [u32; 4] = mem.read(mem.rebase(VB));
         crate::op::bridge::op_vec3_clamp(mem, mem.rebase(VMIN), mem.rebase(VA), b, false);
-        // and v1, s2, 0x28514a; v0 = 0x810: beq v1, r0. r0's high word
-        // was 0 at the test above and nothing writes it: only the low words
-        // are compared from here on
-        let s2 = S2.get(mem);
-        let r0 = R0.get(mem);
-        let m = s2 & 0x0028_514a;
-        mem.write(mem.rebase(V1), [m, 0]);
-        wr(mem, V0, 0x810); // (its second word is 0 already)
-        if m != r0 {
-            return 0;
-        }
-        to_fixed(mem, P0);
-        to_fixed(mem, P1);
-        let m = s2 & 0x810;
-        mem.write(mem.rebase(V1), [m, 0]);
-        if m != r0 {
+        if !fixed_point(mem, &[P0, P3]) {
             return 0;
         }
         // the texture pair: (+0x10, +0x12) into VA, (+0x14, +0x16) into VB;
@@ -472,5 +480,144 @@ pub mod bridge {
         let sum_y = f(rd(mem, VA + 4)).add_m32(f32::from_bits(vb_y));
         wr(mem, VB + 4, st(sum_y));
         second
+    }
+
+    /// Both loops' flag tests after the points: `and v1, s2, 0x28514a`,
+    /// `v0 = 0x810`, `beq v1, r0`: with none of those flags the points to
+    /// fixed point (`rcVec4fToFixed`, inline in S6), then `and v1, s2, v0`
+    /// (`0x810`), `beq v1, r0`. Whether both tests passed. `r0`'s high
+    /// word was 0 at the loops' earlier tests and nothing writes it, and the
+    /// high words of `v0` and `v1` are 0 here, so only low words count.
+    fn fixed_point(mem: &mut impl Mem, points: &[u32]) -> bool {
+        let r0 = R0.get(mem);
+        let m = S2.get(mem) & 0x0028_514a;
+        mem.write(mem.rebase(V1), [m, 0]);
+        wr(mem, V0, 0x810);
+        if m != r0 {
+            return false;
+        }
+        for &point in points {
+            to_fixed(mem, point);
+        }
+        let m = S2.get(mem) & 0x810;
+        wr(mem, V1, m);
+        m == r0
+    }
+
+    /// The vertices' bounding box corners and `VB.xy`: `op_vec3_max` and
+    /// `op_vec3_min` of `VA` with `VB`'s words, then of the results with
+    /// `VC`'s and `VD`'s.
+    fn clamp_quad(mem: &mut impl Mem) {
+        use crate::op::bridge::op_vec3_clamp;
+        let (max, min) = (mem.rebase(VMAX), mem.rebase(VMIN));
+        let va = mem.rebase(VA);
+        for (k, src) in [VA + 0x10, VA + 0x20, VB].into_iter().enumerate() {
+            let words: [u32; 4] = mem.read(mem.rebase(src));
+            let (v_max, v_min) = if k == 0 { (va, va) } else { (max, min) };
+            op_vec3_clamp(mem, max, v_max, words, true);
+            let words: [u32; 4] = mem.read(mem.rebase(src));
+            op_vec3_clamp(mem, min, v_min, words, false);
+        }
+    }
+
+    /// S3, the VU0 plain loop (`0x007f0a18`..`0x007f1a5f`), entered as
+    /// [`plain`]. Per record (`0x18` bytes): up to four points (`+0`/`+2`,
+    /// `+4`/`+6`, `+8`/`+0xa`, `+0xc`/`+0xe`), each next one only while
+    /// the half before it equals `r0` (`bne v0, r0`, a 0 flag), each
+    /// through the matrix and the one before it scaled by `Q`; then, with
+    /// `s1 & 0x11` clear, the last scaled too, the four minus the origin
+    /// (`VA`..`VD`, `0x00c8f7a0`.. step 16) and their box (`clamp_quad`);
+    /// with no `s2 & 0x28514a` flag all four to fixed point
+    /// (`rcVec4fToFixed`); with no `s2 & 0x810` flag the texture pairs
+    /// (`+0x10`/`+0x12`, `+0x14`/`+0x16`, `pextlw` with `t6`'s `yzw`,
+    /// times 1/4096) into `VA` and `VD` and the quad's four corners
+    /// (`VA`, `VA` with `x` + `VD.x`, with `y` + `VD.y`, both) in
+    /// `VA`..`VD`. The vertex pointer stays in a register: the frame's
+    /// vertex word keeps the head's value.
+    ///
+    /// The records' `y` halves only reach `v1`: every point takes `y`, `z`
+    /// and `w` from `t4`, and the later points' `x` is the flag half, equal
+    /// to `r0`'s low word to get there. So points 1..3 are always projected
+    /// from the same values and `VB`, `VC`, `VD` coincide.
+    pub fn vu0_plain(mem: &mut impl Mem, cmd: u32, first: u32) {
+        let mut hi = loop_start(mem, cmd);
+        let mut p = first;
+        loop {
+            hi = vu0_plain_vertex(mem, p, hi);
+            p = p.wrapping_add(VERTEX);
+            let count = COUNT.get(mem).wrapping_sub(1);
+            COUNT.set(mem, count);
+            if count.cast_signed() <= 0 {
+                break;
+            }
+        }
+    }
+
+    /// One record of [`vu0_plain`]; returns `v0`'s second word for the next.
+    fn vu0_plain_vertex<M: Mem>(mem: &mut M, p: u32, hi: u32) -> u32 {
+        let half = |mem: &M, off: u32| rd16(mem, p.wrapping_add(off));
+        first_point(mem, p, hi);
+        // the middle points: y (+6, +0xa) into v1's low half, unread but
+        // left there when a later test ends the record
+        for (flag, point, before) in [(4, P1, P0), (8, P2, P1)] {
+            wr16(mem, V0, half(mem, flag));
+            if !is_r0(mem, rd(mem, V0), 0) {
+                return 0;
+            }
+            wr16(mem, V1, half(mem, flag + 2));
+            load_point(mem, point, 0);
+            scale_by_q(mem, before);
+            transform(mem, point, [true, true, false], true);
+            // (the translation sets v0 to the flags again here: the next
+            // flag half replaces its low half, the rest is equal)
+        }
+        // the last point: its y and z rows through pppVu0MaddaY_copy /
+        // pppVu0MaddaZ_copy (the loaded form); the copy of v1 into v0's
+        // second word is overwritten by the flags
+        wr16(mem, V0, half(mem, 0xc));
+        if !is_r0(mem, rd(mem, V0), 0) {
+            return 0;
+        }
+        wr16(mem, V1, half(mem, 0xe));
+        load_point(mem, P3, 0);
+        scale_by_q(mem, P2);
+        transform(mem, P3, [true, false, false], true);
+        let flags = set_flags(mem);
+        if !is_r0(mem, flags, 0) {
+            return 0;
+        }
+        scale_by_q(mem, P3);
+        for (dst, point) in [(VA, P0), (VA + 0x10, P1), (VA + 0x20, P2), (VB, P3)] {
+            minus_origin(mem, dst, point);
+        }
+        clamp_quad(mem);
+        if !fixed_point(mem, &[P0, P1, P2, P3]) {
+            return 0;
+        }
+        for (off, dst) in [(0x10, VA), (0x14, VB)] {
+            wr16(mem, V0, half(mem, off));
+            wr16(mem, V1, half(mem, off + 2));
+            // CopyFields_007ecb20(v0, v1, v0): pextlw v0, v1, v0
+            let [a0, a1, _, _]: [u32; 4] = mem.read(mem.rebase(V0));
+            let [b0, b1, _, _]: [u32; 4] = mem.read(mem.rebase(V1));
+            mem.write(mem.rebase(V0), [a0, b0, a1, b1]);
+            let [_, y, z, w]: [u32; 4] = mem.read(mem.rebase(T6));
+            wr(mem, T6, a0);
+            let at = mem.rebase(dst);
+            mem.write(at, [a0, y, z, w]);
+            crate::op::bridge::op_ivec2_scale(mem, at, 0x00b5_0190);
+        }
+        let next = rd(mem, V0 + 4);
+        // the quad: VA, VA + (VD.x, 0), VA + (0, VD.y), VA + VD.xy
+        // (`fst` copies: a signalling NaN comes out quiet)
+        let copy = |bits: u32| st(f(bits));
+        let [ax, ay, az, aw]: [u32; 4] = mem.read(mem.rebase(VA));
+        let (dx, dy) = (rd(mem, VB), rd(mem, VB + 4));
+        let x = st(f(ax).add_m32(f32::from_bits(dx)));
+        let y = st(f(ay).add_m32(f32::from_bits(dy)));
+        mem.write(mem.rebase(VA + 0x10), [x, copy(ay), copy(az), copy(aw)]);
+        mem.write(mem.rebase(VA + 0x20), [copy(ax), y, copy(az), copy(aw)]);
+        mem.write(mem.rebase(VB), [x, y]);
+        next
     }
 }

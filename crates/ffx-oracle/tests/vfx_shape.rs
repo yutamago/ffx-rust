@@ -59,7 +59,11 @@ impl Xorshift {
     /// tenth of the time, else ordinary values. No signalling NaNs: the
     /// oracle's x87 keeps them signalling where the hardware quiets them.
     fn float(&mut self) -> u32 {
-        if self.chance(10) {
+        self.float_specials(10)
+    }
+    /// As [`Xorshift::float`] with specials `percent` of the time.
+    fn float_specials(&mut self, percent: u32) -> u32 {
+        if self.chance(percent) {
             return self.pick(&SPECIALS);
         }
         let mantissa = self.next() & 0x007f_ffff;
@@ -134,9 +138,12 @@ impl Pair {
         x
     }
 
-    /// `n` random float words at `at`, in both oracles, in one write.
-    fn floats(&mut self, at: u32, n: usize, rng: &mut Xorshift) {
-        let bytes: Vec<u8> = (0..n).flat_map(|_| rng.float().to_le_bytes()).collect();
+    /// `n` random float words at `at` (specials `percent` of the time), in
+    /// both oracles, in one write.
+    fn floats(&mut self, at: u32, n: usize, rng: &mut Xorshift, percent: u32) {
+        let bytes: Vec<u8> = (0..n)
+            .flat_map(|_| rng.float_specials(percent).to_le_bytes())
+            .collect();
         self.code(at, &bytes);
     }
 
@@ -153,7 +160,7 @@ impl Pair {
     /// Random words in the frame below `ebp`, in both oracles.
     fn fill_frame(&mut self, ebp: u32, rng: &mut Xorshift) {
         let words = (FRAME_SIZE / 4) as usize;
-        self.floats(ebp - FRAME_SIZE, words, rng);
+        self.floats(ebp - FRAME_SIZE, words, rng, 10);
     }
 
     /// Results, the memory outside the stacks and the shared frame words.
@@ -236,8 +243,11 @@ impl Case {
 /// flags `s1`/`s2` (often clear, to reach the fixed-point and texture
 /// steps), `cmd` (flags without `0xc00`, no texture) and the CPU's SSE2
 /// flag (both `_ftol2_sse` paths).
-fn plain_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
-    p.floats(p.sym(EE), ((EE_END - EE) / 4) as usize, rng);
+fn plain_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bool) {
+    // the registers and the matrix: few specials most of the time (one in
+    // a matrix element makes the whole projected quad NaN)
+    let specials = if rng.chance(80) { 1 } else { 10 };
+    p.floats(p.sym(EE), ((EE_END - EE) / 4) as usize, rng, specials);
     // r0: zero, a few bits of the first flag mask (so a record's +0xc
     // can equal it and the flag tests compare against it) or garbage
     let r0 = p.sym(EE);
@@ -273,9 +283,14 @@ fn plain_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
         _ => rng.next() & !0x0028_595a | r0_lo,
     };
     p.set(p.sym(S2), s2);
-    if rng.chance(30) {
-        p.set(p.sym(0x00c8_f618), rng.next());
-    }
+    // s1: its 0x11 bits equal to r0's most of the time (S3's last test)
+    let s1 = rng.next();
+    let s1 = if rng.chance(60) {
+        s1 & !0x11 | r0_lo & 0x11
+    } else {
+        s1
+    };
+    p.set(p.sym(0x00c8_f618), s1);
     let sse2 = u32::from(rng.chance(70));
     p.set(p.sym(SSE2), sse2);
     let Case { shape, cmd } = c;
@@ -287,16 +302,19 @@ fn plain_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
         };
         p.set(shape + 2 * k, h);
     }
+    // the flag halves before each further point: r0's low half most of
+    // the time (S6: +0xc; S3: +4, +8, +0xc)
+    let flags: &[u32] = if vu0 { &[4, 8, 0xc] } else { &[0xc] };
     for k in 0..n {
-        if rng.chance(75) {
-            p.set(
-                shape + 0x20 + 0x18 * k + 0xc,
-                u16::try_from(r0_lo & 0xffff).unwrap(),
-            );
+        for &off in flags {
+            if rng.chance(80) {
+                let h = u16::try_from(r0_lo & 0xffff).unwrap();
+                p.set(shape + 0x20 + 0x18 * k + off, h);
+            }
         }
     }
     let b0: u8 = Mem::read(&p.a, shape);
-    p.set(shape, b0 & !8);
+    p.set(shape, if vu0 { b0 | 8 } else { b0 & !8 });
     for k in 0..8 {
         let v = rng.next();
         p.set(cmd + 4 * k, v);
@@ -320,60 +338,57 @@ fn count(rng: &mut Xorshift) -> (u16, u32) {
     }
 }
 
-#[test]
-fn shape_s6_matches_the_original() {
+/// A loop entered at `entry` through [`Pair::loop_thunk`] with the frame
+/// words as the head leaves them, against `port`.
+fn loop_test(entry: u32, vu0: bool, seed: u32, name: &str, port: fn(&mut Oracle, Frame, u32, u32)) {
     for mut p in Pair::all() {
-        let mut rng = Xorshift(0x007f_3f03);
-        let thunk = p.loop_thunk(0x007f_3f03);
+        let mut rng = Xorshift(seed);
+        let thunk = p.loop_thunk(entry);
         let c = Case::new(&mut p);
         let ebp = p.ebp(2);
         for case in 0..600 {
             let (n, records) = count(&mut rng);
-            plain_case(&mut p, &mut rng, c, records);
+            plain_case(&mut p, &mut rng, c, records, vu0);
             p.set(p.sym(COUNT), n);
             p.set(p.sym(SHIFT), rng.pick(&[0u32, 0, 2, 0x10]));
             p.fill_frame(ebp, &mut rng);
-            // the frame words as the head leaves them
             let cursor = rng.next();
             p.set(ebp - 0x1bbc, cursor);
             p.set(ebp - 0x1bb8, c.cmd);
             p.set(ebp - 0x1bb4, c.shape);
             p.set(ebp - 0x1bb0, c.shape + 0x20);
-            let what = format!("S6 case {case}");
+            let what = format!("{name} case {case}");
             let r =
                 p.a.call(thunk, Conv::Cdecl, &[c.shape, c.cmd])
                     .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
             assert!(r.st0.is_none(), "{}: {what}: ST0 left set", p.name);
             let frame = Frame { ebp };
-            shape::plain(&mut p.b, frame, c.cmd, c.shape + 0x20);
-            assert_eq!(
-                r.eax,
-                shape::tail(&p.b, frame),
-                "{}: {what}: result",
-                p.name
-            );
+            port(&mut p.b, frame, c.cmd, c.shape + 0x20);
+            let mine = shape::tail(&p.b, frame);
+            assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
             p.same(&what, ebp);
         }
     }
 }
 
-#[test]
-fn shape_whole_s6_matches_the_original() {
+/// The whole function on the selection of `shape` bit 3 = `vu0`, no
+/// `0xc00` flags, no texture.
+fn whole_test(vu0: bool, seed: u32, name: &str) {
     for mut p in Pair::all() {
-        let mut rng = Xorshift(0x007e_d0c0);
+        let mut rng = Xorshift(seed);
         let ebp = p.ebp(2);
-        let f = p.sym(0x007e_d0c0);
+        let draw = p.sym(0x007e_d0c0);
         let c = Case::new(&mut p);
         for case in 0..400 {
             let (n, records) = count(&mut rng);
-            plain_case(&mut p, &mut rng, c, records);
+            plain_case(&mut p, &mut rng, c, records, vu0);
             let shift = rng.pick(&[0u32, 0, 4, 0x10]);
             p.set(p.sym(SHIFT), shift);
             p.set(c.shape + shift + 2, n);
             p.fill_frame(ebp, &mut rng);
-            let what = format!("whole S6 case {case}");
+            let what = format!("{name} case {case}");
             let r =
-                p.a.call(f, Conv::Cdecl, &[c.shape, c.cmd])
+                p.a.call(draw, Conv::Cdecl, &[c.shape, c.cmd])
                     .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
             assert!(r.st0.is_none(), "{}: {what}: ST0 left set", p.name);
             let mine = shape::op_shape_draw(&mut p.b, c.shape, c.cmd, ebp);
@@ -381,6 +396,28 @@ fn shape_whole_s6_matches_the_original() {
             p.same(&what, ebp);
         }
     }
+}
+
+#[test]
+fn shape_s6_matches_the_original() {
+    loop_test(0x007f_3f03, false, 0x007f_3f03, "S6", shape::plain);
+}
+
+#[test]
+fn shape_whole_s6_matches_the_original() {
+    whole_test(false, 0x007e_d0c0, "whole S6");
+}
+
+#[test]
+fn shape_s3_matches_the_original() {
+    loop_test(0x007f_0a18, true, 0x007f_0a18, "S3", |m, _, cmd, first| {
+        shape::vu0_plain(m, cmd, first);
+    });
+}
+
+#[test]
+fn shape_whole_s3_matches_the_original() {
+    whole_test(true, 0x007e_d0c1, "whole S3");
 }
 
 /// Each loop's first instruction after the head's count store, in
