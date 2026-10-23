@@ -7520,6 +7520,15 @@ ported! {
     Atel_SyncWorkerPos_00869e40 @ 0x0086_9e40 => extern "C" fn h_869e40(w: u32) {
         hp::atel_sync_worker_pos(&mut mem(), w);
     }
+    /// `AtelPopMember()`: the old push flag.
+    AtelPopMember @ 0x0086_ddb0 => extern "C" fn h_86ddb0() -> u32 {
+        hp::atel_pop_member(&mut mem())
+    }
+    /// `AtelPushMember()`: the party words in a frame; the old push flag.
+    AtelPushMember @ 0x0086_e310 => extern "C" fn h_86e310() -> u32 {
+        let mut frame = super::StackFrame::<3>::new();
+        hp::atel_push_member(&mut mem(), frame.at())
+    }
     /// `AtelBattleSetUp(blocks, x8s, n, x30, work, a, ctrl, callback)`: the
     /// setup record in an eight-word frame.
     AtelBattleSetUp @ 0x0087_56d0 => extern "C" fn h_8756d0(blocks: u32, x8s: u32, n: u32, x30: u32, work: u32, a: u32, ctrl: u32, callback: u32) -> u32 {

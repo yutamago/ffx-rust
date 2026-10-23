@@ -9813,3 +9813,54 @@ pub fn atel_sync_worker_pos(h: &mut impl ffx_bridge::Host, w: u32) {
         }
     }
 }
+
+// ---- small round 5 g ----
+
+/// `AtelPopMember()` (`0x0086ddb0`, Fahrenheit's name; caller Native
+/// 0x0112): with a party pushed (the save block's,
+/// `TkGetSaveEventAddress`, `+0x20` nonzero), the seven characters'
+/// join flags come back from `+0x24` (`MsSetSavePlyJoin(i, bit i)`) and
+/// the three party slots from `+0x21..=+0x23` (`MsSetSavePartyMember`);
+/// `+0x20` cleared. `EAX` the old `+0x20` byte.
+pub fn atel_pop_member(h: &mut impl ffx_bridge::Host) -> u32 {
+    let save = host_call(h, 0x0088_c830, &[]);
+    let pushed = u32::from(h.read::<u8>(save + 0x20));
+    if pushed != 0 {
+        let mut bit = 1u32;
+        for i in 0..7 {
+            let on = u32::from(h.read::<u32>(save + 0x24) & bit != 0);
+            host_call(h, 0x0078_69b0, &[i, on]);
+            bit = bit.rotate_left(1);
+        }
+        let slots = [0x21, 0x22, 0x23].map(|o| u32::from(h.read::<u8>(save + o)));
+        host_call(h, 0x0078_6950, &slots);
+    }
+    h.write(save + 0x20, 0u8);
+    pushed
+}
+
+/// `AtelPushMember()` (`0x0086e310`, Fahrenheit's name; caller Native
+/// 0x0111): the party (`MsGetSavePartyMember` into `out`, three words)
+/// into the save block's `+0x21..=+0x23` (low bytes), the seven join
+/// flags (`MsGetSavePlyJoin(i) == 1`) into `+0x24`, `+0x20` = 1. `EAX`
+/// the old `+0x20` byte.
+pub fn atel_push_member(h: &mut impl ffx_bridge::Host, out: u32) -> u32 {
+    let save = host_call(h, 0x0088_c830, &[]);
+    let old = u32::from(h.read::<u8>(save + 0x20));
+    host_call(h, 0x0078_52f0, &[out, out + 4, out + 8]);
+    for k in 0..3 {
+        let v = h.read::<u32>(out + 4 * k);
+        h.write(save + 0x21 + k, v.to_le_bytes()[0]);
+    }
+    h.write(save + 0x24, 0u32);
+    let mut bit = 1u32;
+    for i in 0..7 {
+        if host_call(h, 0x0078_5380, &[i]) == 1 {
+            let v = h.read::<u32>(save + 0x24) | bit;
+            h.write(save + 0x24, v);
+        }
+        bit = bit.rotate_left(1);
+    }
+    h.write(save + 0x20, 1u8);
+    old
+}

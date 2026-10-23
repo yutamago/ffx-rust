@@ -16429,3 +16429,88 @@ fn small5a_actor_set_up2_and_sync_worker_pos_match_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     small5a_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Small round 5 g on one pair: `AtelPopMember` and `AtelPushMember`
+/// over a save block of their own; the join setters and party setter
+/// logged, the join getter from a sequence (0, 1, 2 and others), the
+/// party getter the original over random party bytes.
+fn small5g_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    let save = alloc_both(a, b, 0x40);
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0088_c830, 0, true),
+            (0x0078_5380, 1, true),
+            (0x0078_69b0, 2, false),
+            (0x0078_6950, 3, false),
+        ],
+    );
+    let party = a.rebase(0x0113_07e8);
+    for round in 0..300u32 {
+        r27_reset(a, b, &stubs, |s| match s {
+            0 => save,
+            _ => [0u32, 1, 1, 2, rng.next()][rng.below(5) as usize],
+        });
+        fill_both(a, b, rng, save, 0x30);
+        if rng.below(3) == 0 {
+            poke(a, b, save + 0x20, 0u8);
+        }
+        for k in 0..3 {
+            let v = [0xffu8, 0, 1, 7, rng.next().to_le_bytes()[0]][rng.below(5) as usize];
+            poke(a, b, party + k, v);
+        }
+        if round % 2 == 0 {
+            r22_case(
+                a,
+                b,
+                0x0086_ddb0,
+                &[],
+                true,
+                &format!("AtelPopMember {what} {round}"),
+                |r| hp::atel_pop_member(r),
+            );
+        } else {
+            r22_case(
+                a,
+                b,
+                0x0086_e310,
+                &[],
+                true,
+                &format!("AtelPushMember {what} {round}"),
+                |r| {
+                    let f = frame(r);
+                    hp::atel_push_member(r, f)
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn small5g_pop_and_push_member_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_5e07);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        small5g_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    small5g_cases(&mut a, &mut b, &mut rng, "snapshot");
+}
