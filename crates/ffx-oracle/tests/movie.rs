@@ -210,3 +210,187 @@ fn samp0_view_screen_matrix() {
         eprintln!("{world}: FFXSamp0ViewScreenMatrix agrees");
     }
 }
+
+// ---- pc round 4: the movie camera (0x0076edc0) ------------------------
+
+/// Free image bytes for the stand-ins (`.reloc`, which the code never
+/// reads): code, then the log (a count, then 8-byte entries: tag, first
+/// argument) and one answer per stand-in.
+const REC_CODE: u32 = 0x0270_0000;
+const REC_LOG: u32 = 0x0270_f000;
+const REC_RETS: u32 = 0x0270_fc00;
+
+/// Replaces the cdecl original at `sym` with a stand-in (slot `k`) that
+/// logs `sym` and its argument (0 for none) and returns its answer.
+fn recorder(o: &mut Oracle, k: u32, sym: u32, takes_arg: bool) {
+    let log = o.rebase(REC_LOG);
+    let ret = o.rebase(REC_RETS) + 4 * k;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0x25, 0xff, 0x00, 0x00, 0x00]); // and eax, 0xff
+    c.extend([0x8d, 0x04, 0xc5]);
+    c.extend((log + 4).to_le_bytes()); // lea eax, [eax*8 + log + 4]
+    c.extend([0xc7, 0x00]);
+    c.extend(sym.to_le_bytes()); // mov dword [eax], sym
+    if takes_arg {
+        c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+    } else {
+        c.extend([0x31, 0xd2]); // xor edx, edx
+    }
+    c.extend([0x89, 0x50, 0x04]); // mov [eax+4], edx
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xa1);
+    c.extend(ret.to_le_bytes()); // mov eax, [ret]
+    c.push(0xc3);
+    let code = o.rebase(REC_CODE) + 0x40 * k;
+    o.write(code, &c).unwrap();
+    let at = o.rebase(sym);
+    let mut j = vec![0xe9];
+    j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+    o.write(at, &j).unwrap();
+}
+
+fn put<T: ffx_bridge::Value>(a: &mut Oracle, b: &mut Oracle, at: u32, v: T) {
+    Mem::write(a, at, v);
+    Mem::write(b, at, v);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case loop, in the order the original reads
+fn pc_r4_movie_camera_frame() {
+    const MOVIE_CAMERA_FRAME: u32 = 0x0076_edc0;
+    const STAND_INS: [u32; 4] = [
+        mv::HAVE_CAMERA,
+        mv::CURRENT_FRAME,
+        mv::SCENE_SET_MATRIX_CROSS,
+        mv::CAM_APPLY,
+    ];
+    const FRAMES: [u32; 11] = [
+        0,
+        1,
+        0x47a,
+        0x47b,
+        0x47c,
+        0x4d7,
+        0x4d8,
+        0x3c9,
+        0x3ca,
+        0xffff_ffff,
+        0x7fff_ffff,
+    ];
+    let mut rng = Xorshift(0x0e1e_0401);
+    for (world, mut a, mut b) in worlds() {
+        let (a, b) = (&mut a, &mut b);
+        for (k, &sym) in (0..).zip(&STAND_INS) {
+            recorder(a, k, sym, sym == mv::CAM_APPLY);
+            recorder(b, k, sym, sym == mv::CAM_APPLY);
+        }
+        let records = a.alloc(0x500 * 0xa8).unwrap();
+        assert_eq!(b.alloc(0x500 * 0xa8).unwrap(), records);
+        let work = a.alloc(0x100).unwrap();
+        assert_eq!(b.alloc(0x100).unwrap(), work);
+        // the original's frame (ebp - 0xac) under its return address and
+        // saved ebp
+        let frame = a.stack_range().end - 0x100 - 8 - 0xac;
+        for n in 0..3000u32 {
+            for i in 0..(0x500 * 0xa8 / 4) {
+                if i % 42 == 0 || rng.next().is_multiple_of(64) {
+                    let v = match rng.next() % 4 {
+                        0 => rng.float(),
+                        1 => 1.0,
+                        2 => f32::from(u8::try_from(rng.next() % 8).unwrap()),
+                        _ => 0.0,
+                    };
+                    put(a, b, records + 4 * i, v);
+                } else if n == 0 {
+                    put(a, b, records + 4 * i, rng.float());
+                }
+            }
+            // what the original's frame holds when there are no records
+            for i in 0..0xa8 / 4 {
+                let v = rng.float();
+                Mem::write(a, frame + 4 * i, v);
+                Mem::write(b, work + 4 * i, v);
+            }
+            let id =
+                [0x2e, 0x46, 0x20, 0x48, 0x2e, 0x46, rng.next() % 0x80][(rng.next() % 7) as usize];
+            put(a, b, a.rebase(mv::MOVIE_ID), id);
+            put(
+                a,
+                b,
+                a.rebase(mv::WAIT_FRAMES_BY_TIME),
+                u32::from(!rng.next().is_multiple_of(8)),
+            );
+            let frames = [
+                0x4d9,
+                0x4d8,
+                0x3cb,
+                0x3ca,
+                0x47c,
+                0x100,
+                0,
+                rng.next() % 0x500,
+            ][(rng.next() % 8) as usize];
+            let words = frames * 42 + [0, 1, 41, 0][(rng.next() % 4) as usize];
+            let words = if rng.next().is_multiple_of(16) {
+                rng.next()
+            } else {
+                words
+            };
+            put(a, b, a.rebase(mv::CAMERA_DATA_WORDS), words);
+            let data = if rng.next().is_multiple_of(5) {
+                0
+            } else {
+                records
+            };
+            put(a, b, a.rebase(mv::CAMERA_DATA), data);
+            let current = if rng.next().is_multiple_of(3) {
+                FRAMES[(rng.next() % 11) as usize]
+            } else {
+                rng.next() % 0x500
+            };
+            for (k, v) in [
+                u32::from(!rng.next().is_multiple_of(6)),
+                current,
+                rng.next() % 2,
+                rng.next(),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                put(a, b, a.rebase(REC_RETS) + 4 * u32::try_from(k).unwrap(), v);
+            }
+            put(a, b, a.rebase(REC_LOG), 0u32);
+            put(a, b, a.rebase(0x012f_b8fb), 1u8);
+            let at = a.rebase(MOVIE_CAMERA_FRAME);
+            let ra = a
+                .call(at, Conv::Cdecl, &[])
+                .unwrap_or_else(|e| panic!("{world} {n}: {e}"));
+            let rb = mv::movie_camera_frame(&mut H(b), work);
+            let log = a.rebase(REC_LOG);
+            let count: u32 = Mem::read(a, log);
+            let entries = |o: &Oracle| -> Vec<u32> {
+                (0..=2 * count).map(|i| Mem::read(o, log + 4 * i)).collect()
+            };
+            assert_eq!(entries(a), entries(b), "{world} {n}: calls");
+            // eax is the last callee's on the camera path; elsewhere it is
+            // what the frame and bound checks left (nothing reads it)
+            if entries(a).contains(&mv::SCENE_SET_MATRIX_CROSS) {
+                assert_eq!(ra.eax, rb, "{world} {n}: eax");
+            }
+            let frame_words: Vec<u32> =
+                (0..0xa8 / 4).map(|i| Mem::read(a, frame + 4 * i)).collect();
+            let work_words: Vec<u32> = (0..0xa8 / 4).map(|i| Mem::read(b, work + 4 * i)).collect();
+            assert_eq!(frame_words, work_words, "{world} {n}: frame");
+            // the work block is the original's stack frame: leave it out
+            let diff: Vec<_> = a
+                .diff(b)
+                .unwrap()
+                .into_iter()
+                .filter(|d| !(work..work + 0xa8).contains(&d.0))
+                .collect();
+            assert_eq!(diff, [], "{world} {n}: memory");
+        }
+    }
+}

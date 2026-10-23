@@ -64,7 +64,7 @@ pub fn view_screen(v: &ViewScreen) -> ([f32; 16], [f32; 16]) {
 
 /// The originals, where the game keeps their state (`ffx_bridge::Mem`).
 pub mod bridge {
-    use ffx_bridge::{Host, Mem};
+    use ffx_bridge::{Host, Mem, x87};
 
     use super::ViewScreen;
 
@@ -83,6 +83,130 @@ pub mod bridge {
         h.write(tmp, screen);
         let f = h.rebase(RCUI_MUL_MATRIX);
         h.call(f, &[m, tmp, m]);
+    }
+
+    /// `g_WaitFramesByTime` (`0x0112a008`): movie frames count by time.
+    pub const WAIT_FRAMES_BY_TIME: u32 = 0x0112_a008;
+    /// The movie playing (`0x00c40e28`): 0x2e and 0x46 have frame rules.
+    pub const MOVIE_ID: u32 = 0x00c4_0e28;
+    /// `g_CameraDataWords` (`0x00c38e18`): the camera records' size in
+    /// words, 42 per frame.
+    pub const CAMERA_DATA_WORDS: u32 = 0x00c3_8e18;
+    /// `g_CameraData` (`0x00ce82ac`): the camera records, 0xa8 bytes per
+    /// frame, null when none is loaded.
+    pub const CAMERA_DATA: u32 = 0x00ce_82ac;
+    /// `movie_have_camera()`, `graphicGetCurrentFrame()`,
+    /// `setScreenDataAspectZ(f)`, `MsSetCameraMatrix(on, screen, camera,
+    /// look_at, eye, roll)`, `rcbgSceneSetMatrix_Cross()`,
+    /// `Cam_Apply(camera)`, `SetByte_012fb8fb(v)`.
+    pub const HAVE_CAMERA: u32 = 0x0076_efc0;
+    pub const CURRENT_FRAME: u32 = 0x0064_10d0;
+    pub const SET_ASPECT_Z: u32 = 0x007c_0e60;
+    pub const SET_CAMERA_MATRIX: u32 = 0x007c_06d0;
+    pub const SCENE_SET_MATRIX_CROSS: u32 = 0x0092_0e40;
+    pub const CAM_APPLY: u32 = 0x007b_c980;
+    pub const SET_BYTE_012FB8FB: u32 = 0x0082_1a20;
+
+    /// The frame of [`movie_camera_frame`], laid out as the original's
+    /// (`ebp - 0xac` on): `+0` the aspect (`f32`), `+4` the "on" word,
+    /// `+8` the camera matrix, `+0x48` the screen matrix, `+0x88` the
+    /// look-at and `+0x98` the eye (four words each).
+    pub const CAMERA_WORK: u32 = 0xa8;
+
+    /// `fld dword` then `fstp dword` (a signalling NaN comes out quiet).
+    fn through_x87(bits: u32) -> u32 {
+        x87::store(x87::load(bits))
+    }
+
+    fn call_at(h: &mut impl Host, f: u32, args: &[u32]) -> u32 {
+        let f = h.rebase(f);
+        h.call(f, args)
+    }
+
+    /// The camera record for movie frame `frame`, or `None` for a frame
+    /// out of range: movie 0x2e plays one frame ahead (except at 0x47b)
+    /// and stops at 0x4d8, movie 0x46 stops at 0x3ca; otherwise a negative
+    /// frame is out. The bound is `g_CameraDataWords / 42` (signed).
+    fn camera_frame(mem: &impl Mem, frame: i32) -> Option<i32> {
+        let id: u32 = mem.read(mem.rebase(MOVIE_ID));
+        let frame = match id {
+            0x2e => {
+                let f = if frame == 0x47b {
+                    frame
+                } else {
+                    frame.wrapping_add(1)
+                };
+                if f >= 0x4d8 { 0x4d8 } else { f }
+            }
+            0x46 if frame >= 0x3ca => 0x3ca,
+            _ => frame,
+        };
+        if frame < 0 {
+            return None;
+        }
+        let words: i32 = mem.read(mem.rebase(CAMERA_DATA_WORDS));
+        (frame < words / 42).then_some(frame)
+    }
+
+    /// `MovieCameraFrame_0076edc0()` (from `Sg_MainLoop` and
+    /// `Native_b009_Result`): while `g_WaitFramesByTime` is set and
+    /// `movie_have_camera()`, the movie camera for the renderer's current
+    /// frame ([`camera_frame`]; out of range: `SetByte_012fb8fb(0)`). From
+    /// the record (when [`CAMERA_DATA`] is loaded; the original reads
+    /// [`CAMERA_DATA`] again after the `ftol`): "on" the `ftol` of its
+    /// first float, the screen matrix from `+4`, the camera matrix from
+    /// `+0x44`, the look-at and eye from `+0x84`, the aspect `+0xa4`
+    /// (through the x87), into `work` ([`CAMERA_WORK`]); without records
+    /// "on" is 0 and the rest is what `work` held (the original's
+    /// uninitialised frame). Then `setScreenDataAspectZ(aspect)`,
+    /// `MsSetCameraMatrix(on, screen, camera, look_at, eye, aspect)` and,
+    /// unless `rcbgSceneSetMatrix_Cross()` took the view, `Cam_Apply(0)`.
+    /// Returns the last callee's `eax` on the camera path, as the original
+    /// (elsewhere the original leaves what its checks left; nothing reads
+    /// it).
+    pub fn movie_camera_frame(h: &mut impl Host, work: u32) -> u32 {
+        if h.read::<u32>(h.rebase(WAIT_FRAMES_BY_TIME)) == 0 {
+            return 0;
+        }
+        if call_at(h, HAVE_CAMERA, &[]) == 0 {
+            return 0;
+        }
+        let current = call_at(h, CURRENT_FRAME, &[]).cast_signed();
+        let Some(frame) = camera_frame(h, current) else {
+            return call_at(h, SET_BYTE_012FB8FB, &[0]);
+        };
+        let data: u32 = h.read(h.rebase(CAMERA_DATA));
+        if data == 0 {
+            h.write(work + 4, 0u32);
+        } else {
+            let off = frame.wrapping_mul(0xa8).cast_unsigned();
+            let first: u32 = h.read(off.wrapping_add(data));
+            let on = x87::ftol(h, x87::load(first));
+            let rec = h.read::<u32>(h.rebase(CAMERA_DATA)).wrapping_add(off);
+            h.write(work + 4, on);
+            let screen: [u32; 16] = h.read(rec.wrapping_add(4));
+            h.write(work + 0x48, screen);
+            let camera: [u32; 16] = h.read(rec.wrapping_add(0x44));
+            h.write(work + 8, camera);
+            let vectors: [u32; 8] = h.read(rec.wrapping_add(0x84));
+            h.write(work + 0x88, vectors);
+            let aspect: u32 = h.read(rec.wrapping_add(0xa4));
+            h.write(work, through_x87(aspect));
+        }
+        let aspect = through_x87(h.read(work));
+        call_at(h, SET_ASPECT_Z, &[aspect]);
+        let aspect = through_x87(h.read(work));
+        let on: u32 = h.read(work + 4);
+        call_at(
+            h,
+            SET_CAMERA_MATRIX,
+            &[on, work + 0x48, work + 8, work + 0x88, work + 0x98, aspect],
+        );
+        let taken = call_at(h, SCENE_SET_MATRIX_CROSS, &[]);
+        if taken != 0 {
+            return taken;
+        }
+        call_at(h, CAM_APPLY, &[0])
     }
 
     /// `FFXSamp0UnitMatrix(m)` (`0x0093d900`): the identity into the 16
