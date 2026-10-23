@@ -11985,6 +11985,129 @@ pub mod bridge {
         call(mem, f, &[chr])
     }
 
+    /// One lamp piece of [`btl_draw_win_element_lamp`]: the shape, then
+    /// the PS2 x, y, w, h (remapped) and the four texture words, as `f32`
+    /// bits.
+    struct LampPiece {
+        shape: u32,
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+        uv: [u32; 4],
+    }
+
+    /// The element's frame (elements 0..=3), the window's lamp bar, and
+    /// the four lamp covers.
+    const LAMP_ELEMENT: [LampPiece; 4] = [
+        LampPiece {
+            shape: 0x1af,
+            x: 0x41c8_0000,
+            y: 0x40c0_0000,
+            w: 0x4296_0000,
+            h: 0x41d0_0000,
+            uv: [0x3d28_0000, 0x3f73_0000, 0x3e0a_0000, 0x3f7d_0000],
+        },
+        LampPiece {
+            shape: 0x1b0,
+            x: 0x41c8_0000,
+            y: 0x40c0_0000,
+            w: 0x4296_0000,
+            h: 0x41d0_0000,
+            uv: [0x3d28_0000, 0x3f63_0000, 0x3e0a_0000, 0x3f6d_0000],
+        },
+        LampPiece {
+            shape: 0x1b1,
+            x: 0x41c8_0000,
+            y: 0x40c0_0000,
+            w: 0x4296_0000,
+            h: 0x41d0_0000,
+            uv: [0x3e6c_0000, 0x3f63_0000, 0x3ea6_0000, 0x3f6d_0000],
+        },
+        LampPiece {
+            shape: 0x1b2,
+            x: 0x41c8_0000,
+            y: 0x40c0_0000,
+            w: 0x4296_0000,
+            h: 0x41d0_0000,
+            uv: [0x3ed6_8000, 0x3f63_0000, 0x3f03_4000, 0x3f6d_0000],
+        },
+    ];
+    const LAMP_BAR: LampPiece = LampPiece {
+        shape: 0x1af,
+        x: 0x42fa_0000,
+        y: 0x4000_0000,
+        w: 0x4361_0000,
+        h: 0x420e_cccd,
+        uv: [0x3e66_0000, 0x3f73_0000, 0x3eee_8000, 0x3f7d_0000],
+    };
+    /// The covers: a flag bit clear draws one at this x (125, 188, 251,
+    /// 316).
+    const LAMP_COVERS: [(u8, u32); 4] = [
+        (1, 0x42fa_0000),
+        (4, 0x433c_0000),
+        (8, 0x437b_0000),
+        (2, 0x439e_0000),
+    ];
+
+    /// `TOBtlDrawInfoWinElementLamp(chr, element, x, y)` (`0x00894b40`)
+    /// and `TOBtlDrawScanWinElementLamp` (`0x00895ae0`), the same code (Fahrenheit's
+    /// names; callers `TOBtlDrawInfoWin` and the scan window): the
+    /// element's frame (elements 0..=3, jump table `0x00895130`), the lamp
+    /// bar, then a cover for each of the four lamps whose bit is clear in
+    /// `TOBtlElementLampFlags_00897650(chr, element)`'s `al` (1, 4, 8, 2 from
+    /// the left). Each piece is `TOMkpShapeXYWHUV(shape, x', y', w', h',
+    /// u0, v0, u1, v1)` with `w'`/`h'` its size remapped
+    /// (`graphicUiRemapX2`/`Y2` through `fcall`, rounded to `f32`) and
+    /// `x'`/`y'` its remapped position plus `x`/`y` (`f32` of the
+    /// integers), summed at double precision and rounded to `f32`. `EAX`
+    /// the last `TOMkpShapeXYWHUV`'s. The original also rewrites its own
+    /// argument words (`element` with the last `x'`, `x` and `y` as
+    /// `f32`).
+    pub fn btl_draw_win_element_lamp<M: Mem>(
+        mem: &mut M,
+        [chr, element, x, y]: [u32; 4],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, store};
+        const REMAP_X2: u32 = 0x0064_47e0;
+        const REMAP_Y2: u32 = 0x0064_4820;
+        const SHAPE: u32 = 0x0090_3bb0;
+        #[allow(clippy::cast_precision_loss)] // `fild` then `fstp dword`
+        let (fx, fy) = (
+            load((x.cast_signed() as f32).to_bits()),
+            load((y.cast_signed() as f32).to_bits()),
+        );
+        let flags = call(mem, 0x0089_7650, &[chr, element]).to_le_bytes()[0];
+        let mut draw = |mem: &mut M, p: &LampPiece, px: u32| {
+            let h = store(fcall(mem, REMAP_Y2, &[p.h]));
+            let w = store(fcall(mem, REMAP_X2, &[p.w]));
+            let sy = store(add(fcall(mem, REMAP_Y2, &[p.y]), fy));
+            let sx = store(add(fcall(mem, REMAP_X2, &[px]), fx));
+            let [u0, v0, u1, v1] = p.uv;
+            call(mem, SHAPE, &[p.shape, sx, sy, w, h, u0, v0, u1, v1])
+        };
+        if let Some(p) = LAMP_ELEMENT.get(element as usize) {
+            draw(mem, p, p.x);
+        }
+        let mut eax = draw(mem, &LAMP_BAR, LAMP_BAR.x);
+        let cover = LampPiece {
+            shape: 0x1af,
+            x: 0,
+            y: 0x4080_0000,
+            w: 0x4202_cccd,
+            h: 0x4202_cccd,
+            uv: [0x3f0b_4000, 0x3f73_8000, 0x3f14_8000, 0x3f7c_8000],
+        };
+        for (bit, px) in LAMP_COVERS {
+            if flags & bit == 0 {
+                eax = draw(mem, &cover, px);
+            }
+        }
+        eax
+    }
+
     /// `KernelSlotMonsterName_198_00773780(i)` (`0x00773780`, a kernel
     /// menu accessor in a function table): `Mon_GetName(rec, i)` with `rec`
     /// = `*0x0112a034 + 0x198 + 0x1d8 i`, then `rec` (the pointer read

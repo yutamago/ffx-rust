@@ -26114,3 +26114,98 @@ fn small5_c_matches_the_original_on_the_snapshot() {
     };
     small5_c(&mut a, &mut b, &mut Xorshift(0x5a11_5c02));
 }
+
+/// Small round 5 e: `TOBtlDrawInfoWinElementLamp` and
+/// `TOBtlDrawScanWinElementLamp` (the same code) for elements 0..=3 and
+/// others, every flag combination; the lamp flags and the shape maker are
+/// logging stand-ins (the shape returns the log position), the two remaps
+/// return their argument times a per-case factor (0, negative, NaN and
+/// infinity included).
+#[allow(clippy::many_single_char_names)] // a, b: the oracles; f, k, s, v
+fn small5_e(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::tolib;
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call(f, Conv::Cdecl, args).unwrap().eax
+    };
+    let fcall = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call_f64(f, args).unwrap()
+    };
+    let (log, cursor, cells) = small5_stubs(a, b, &[(0x0089_7650, 2)]);
+    // the shape maker: its tag, nine words, and the log position in EAX
+    let mut v = vec![0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0xc7, 0x01, 0x5f, 0x55, 0, 0, 0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.push(4);
+    v.extend(logger_returning(cursor, 9, cursor));
+    let s = stand_in8(a, b, 0x200, &v);
+    redirect(a, b, 0x0090_3bb0, s);
+    // the remaps: fld dword [esp+4]; fmul dword [factor]; ret
+    let factor = alloc(a, b, 8);
+    for (k, f) in [0x0064_47e0u32, 0x0064_4820].into_iter().enumerate() {
+        let mut v = vec![0xd9, 0x44, 0x24, 0x04, 0xd8, 0x0d];
+        v.extend_from_slice(&(factor + 4 * u32::try_from(k).unwrap()).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0x300 + 0x20 * u32::try_from(k).unwrap(), &v);
+        redirect(a, b, f, s);
+    }
+    let factors = [
+        1.0f32,
+        2.25,
+        0.5,
+        -1.5,
+        0.0,
+        -0.0,
+        f32::INFINITY,
+        f32::NAN,
+        1.0e-40,
+        3.0e38,
+    ];
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells[0], rng.next());
+        for j in 0..2 {
+            let f = if k % 4 == 0 {
+                f32::from_bits(rng.next() | 0x0040_0000)
+            } else {
+                factors[(rng.next() % 10) as usize]
+            };
+            put(a, b, factor + 4 * j, f);
+        }
+        let element = if k % 8 == 7 {
+            rng.next()
+        } else {
+            rng.next() % 5
+        };
+        let pos = |rng: &mut Xorshift| match rng.next() % 4 {
+            0 => rng.next(),
+            1 => 0x0100_0001,
+            _ => rng.next() % 0x400,
+        };
+        let args = [rng.next(), element, pos(rng), pos(rng)];
+        let sym = if k % 2 == 0 { 0x0089_4b40 } else { 0x0089_5ae0 };
+        let ra = eax(a, sym, &args);
+        let rb = tolib::bridge::btl_draw_win_element_lamp(b, args, call, fcall);
+        assert_eq!(ra, rb, "element lamp {sym:#x} {k} {args:x?}");
+        same_memory(&format!("small5 e {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn small5_e_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    small5_e(&mut a, &mut b, &mut Xorshift(0x5a11_5e01));
+}
+
+#[test]
+fn small5_e_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    small5_e(&mut a, &mut b, &mut Xorshift(0x5a11_5e02));
+}
