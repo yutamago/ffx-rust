@@ -496,6 +496,7 @@ REVIEWED = {
     0x006a44d0: ("platform", "ClassDynamicGeometry vtable slot (0xb47e28 and three more): sizes PhyreMalloc mesh arrays, like 0x6a4240 (effects round 49)"),
     0x00a5d5f0: ("debug", "reached only from the op_num wrapper 0x7e63b0, gated by g_OpNumShow/g_OpDebugMode like opd_num 0xa5d3c0 (effects round 49)"),
     0x00a5e2e0: ("debug", "reached only from the op_num wrapper 0x7e66a0, gated by g_OpNumShow/g_OpDebugMode like opd_num 0xa5d3c0 (effects round 49)"),
+    0x00826fbc: ("glue", "not a function: the dump's split of Ch_MemMove 0x826fa0 at its early return; Ch_MemMove is ported whole (small round 2)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

@@ -9707,7 +9707,7 @@
 0x00826dc0	debug	only called from debug code (0x84d5e0)
 0x00826ea0	logic	default (no rule: ported to be safe)
 0x00826fa0	logic	default (no rule: ported to be safe)
-0x00826fbc	logic	default (no rule: ported to be safe)
+0x00826fbc	glue	reviewed: not a function: the dump's split of Ch_MemMove 0x826fa0 at its early return; Ch_MemMove is ported whole (small round 2)
 0x00827250	logic	default (no rule: ported to be safe)
 0x00827260	logic	default (no rule: ported to be safe)
 0x00827280	logic	default (no rule: ported to be safe)
