@@ -13,6 +13,7 @@
 //! - [`model`]: scene objects (`rcbgModel` and its primitive packets,
 //!   layers, transfers, palettes, animations, particle simulations).
 //! - [`guide`]: the guide map, the minimap (`rcbgGuide`, `Guide_*`, `Yn_*`).
+//! - [`guide_update`]: the minimap's frame (`rcbgGuideUpdateEx`).
 //! - [`scene`]: the map's scene, its layers (map parts) and objects.
 //! - [`task`]: the field effects' tasks and objects (`rcef`).
 //! - [`rcui`]: the field UI helpers.
@@ -35,6 +36,7 @@ pub mod camera;
 pub mod freecam;
 pub mod geom;
 pub mod guide;
+pub mod guide_update;
 pub mod ke;
 pub mod kedtt;
 pub mod keth;

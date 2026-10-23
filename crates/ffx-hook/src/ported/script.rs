@@ -1658,6 +1658,10 @@ ported! {
     Native_805c @ 0x0091_c470 => extern "C" fn n_91c470(w: u32, a: u32, s: u32) -> u32 {
         native_map::native_805c(&mut mem(), w, a, s)
     }
+    /// `Native_805d(worker, args, stack)`.
+    Native_805d @ 0x0091_c4a0 => extern "C" fn n_91c4a0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_805d(&mut mem(), w, a, s)
+    }
     /// `Native_805e(worker, args, stack)`.
     Native_805e @ 0x0091_c4d0 => extern "C" fn n_91c4d0(w: u32, a: u32, s: u32) -> u32 {
         native_map::native_805e(&mut mem(), w, a, s)
@@ -7155,6 +7159,18 @@ ported! {
     /// `Atel_EffectDoneCallback_00861f20(word)`.
     Atel_EffectDoneCallback_00861f20 @ 0x0086_1f20 => extern "C" fn h_861f20(word: u32) -> u32 {
         hp::atel_effect_done_callback(&mut mem(), word)
+    }
+    /// `Atel_ChrRegCallback_00861850(state)`.
+    Atel_ChrRegCallback_00861850 @ 0x0086_1850 => extern "C" fn h_861850(state: u32) -> u32 {
+        hp::atel_chr_reg_callback(&mut mem(), state)
+    }
+    /// `Atel_EffectCallback_00861f90(state)`.
+    Atel_EffectCallback_00861f90 @ 0x0086_1f90 => extern "C" fn h_861f90(state: u32) -> u32 {
+        hp::atel_effect_callback(&mut mem(), state)
+    }
+    /// `AtelFlushAlbhedDic()`: its caller (Native 0x0234) ignores `EAX`.
+    AtelFlushAlbhedDic @ 0x0086_a040 => extern "C" fn h_86a040() {
+        hp::atel_flush_albhed_dic(&mut mem());
     }
     /// `AtelExecCtrlEventInit_008677a0(ctrl, battle)`.
     AtelExecCtrlEventInit_008677a0 @ 0x0086_77a0 => extern "C" fn h_8677a0(c: u32, battle: u32) {

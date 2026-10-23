@@ -5041,6 +5041,10 @@ ported! {
     TkMenuOpenNameEntryWindow @ 0x008c_4250 => extern "C" fn tk_menu_open_name_entry_window(aeon: u32, target: i32) -> u32 {
         tk::tk_menu_open_name_entry_window(&mut mem(), aeon, target, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuNameEntry_Draw_008c3d00(window)`: `TkMn2DrawKickSyncPacket`'s `eax`.
+    MenuNameEntry_Draw_008c3d00 @ 0x008c_3d00 => extern "C" fn menu_name_entry_draw(window: u32) -> u32 {
+        tk::menu_name_entry_draw(&mut mem(), window, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuNameEntry_DrawKeys_008c4550()`: 0 or the password count.
     MenuNameEntry_DrawKeys_008c4550 @ 0x008c_4550 => extern "C" fn menu_name_entry_draw_keys() -> u32 {
         // the character buffer ToMakeBtlEasyFont draws
