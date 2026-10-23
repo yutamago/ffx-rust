@@ -558,6 +558,7 @@ REVIEWED = {
     0x00a27140: ("dead", "xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
     0x00a27150: ("dead", "xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
     0x00a27160: ("dead", "xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
+    0x00879c60: ("debug", "AtelPCCreate: tools/refs.py finds one ref, a call at 0x878437 inside Native_c000, which runs only after TkIsDebug 0x887d10 (xor eax,eax; ret) (small round 5)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

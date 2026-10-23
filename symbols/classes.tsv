@@ -6040,7 +6040,7 @@
 0x0076c320	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CDfileSize_CD
 0x0076c410	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CDfileSize_CD_EX
 0x0076c440	logic	default (no rule: ported to be safe)
-0x0076c490	logic	default (no rule: ported to be safe)
+0x0076c490	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdReadSync_0076c490
 0x0076c510	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdSetModule_0076c510
 0x0076c560	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdEnvInit
 0x0076ccb0	platform	only called from platform code (Sa_CdRead_task)
@@ -12290,7 +12290,7 @@
 0x00879a70	logic	default (no rule: ported to be safe)
 0x00879b60	debug	reviewed: reads a host-PC file into a source buffer (AtelPCOpen, sceRead); caller AtelLoadSourceData (script round 25)
 0x00879c30	platform	thin wrapper: only forwards to platform code (FlushCache, sceClose)
-0x00879c60	logic	default (no rule: ported to be safe)
+0x00879c60	debug	reviewed: AtelPCCreate: tools/refs.py finds one ref, a call at 0x878437 inside Native_c000, which runs only after TkIsDebug 0x887d10 (xor eax,eax; ret) (small round 5)
 0x00879cf0	platform	reviewed: AtelPCOpen: opens host0: files on the PS2 dev host (script round 19)
 0x00879d60	platform	reviewed: AtelPCOpen2: opens host0: files on the PS2 dev host (script round 19)
 0x00879de0	platform	thin wrapper: only forwards to platform code (FlushCache, sceRead)
