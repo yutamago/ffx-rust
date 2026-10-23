@@ -5101,6 +5101,138 @@ pub mod bridge {
         0
     }
 
+    /// `op_init_ffx()` (`0x007ff360`, from `Sg_MainInit`): the effect
+    /// layer's one-time start-up (`0x012e9c60` set; nothing when it
+    /// already is). `AsmEmuInit`, `op_init_ffx_state`, `op_init_draw`,
+    /// `srand(0x3f4cf27b)` (through its import slot); the EE/VU0 seed
+    /// values (`g_Ee_Gpr +0x20` = `g_Vu0_VfMove.x` = `g_Vu0_R` =
+    /// 0xbfbfbfbf, `+0x24` = `VfMove.y` = 0, `VfMove.zw` = `g_Ee_Gpr
+    /// +0x28/+0x2c`, `g_Vu0_RSeeded` 1). Unless `g_OpNumShow`: the two data
+    /// paths (`sprintf` "%s/%s" of the yonishi data dir and
+    /// `dat_et/et_ffx.bin`, `dat_et/bat_eff/et_tex.bin` into `0x023c39a0`
+    /// and `0x023c38a0`, through `fiosUnifyFilename` into `unified`, the
+    /// shim's 0x100-byte local, and back with `sprintf_s`), each file read
+    /// whole into an aligned block (`fiosOpen`, `fiosLseek` end/start,
+    /// `user_aligned_malloc(size, 16)`, `fiosRead`, `fiosClose`; the blocks
+    /// at `0x012a86a0`/`0x012a86a4`; a `dbgPrintf` either way), then
+    /// `graphicVFXLoadPersistentTexture`, `opu_et_init`, the battle
+    /// overlay's first function (`[[g_BtlOverlayFuncs]](0)`),
+    /// `g_OpusEncount` = the `et_ffx` block and `op_et_ffx_init` of it. With
+    /// `g_OpNumBoot` the number display's set-up; in debug mode
+    /// `opd_heap_display_init`; with `g_OpNumShow` `u16 0x02321582` =
+    /// 0x2c00, `op_num_init(0x2c0000)`, `g_OpEtChrShow` 0, `g_EtChrHidden`
+    /// 1, draw flag bit 1 on for every used `g_EtChr` record (0xd0 of 32
+    /// bytes, `u16 +0xe` below 0xf0), `op_tex_vdisp_load_triger(0)`. All
+    /// callees through `call`; no caller reads `eax`.
+    #[allow(clippy::too_many_lines)]
+    pub fn op_init_ffx<M: Mem>(
+        mem: &mut M,
+        unified: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        const ET_FFX: u32 = 0x023c_39a0;
+        const ET_TEX: u32 = 0x023c_38a0;
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let done = g(mem, 0x012e_9c60);
+        if mem.read::<u32>(done) != 0 {
+            return;
+        }
+        mem.write(done, 1u32);
+        for f in [0x0042_ee40, 0x007f_f960, 0x007e_c410] {
+            call(mem, g(mem, f), &[]);
+        }
+        let srand: u32 = mem.read(g(mem, 0x00b0_c484));
+        call(mem, srand, &[0x3f4c_f27b]);
+        let ee = g(mem, 0x00c8_f508);
+        let vf = g(mem, 0x00c8_f980);
+        mem.write(ee.wrapping_add(0x24), 0u32);
+        mem.write(vf.wrapping_add(4), 0u32);
+        let z: u32 = mem.read(ee.wrapping_add(0x28));
+        mem.write(ee.wrapping_add(0x20), 0xbfbf_bfbfu32);
+        mem.write(vf.wrapping_add(8), z);
+        // fld/fstp: the same bits (not a NaN)
+        let r = ffx_bridge::x87::store(ffx_bridge::x87::load(mem.read(ee.wrapping_add(0x20))));
+        mem.write(g(mem, 0x00c0_a000), r);
+        let w: u32 = mem.read(ee.wrapping_add(0x2c));
+        mem.write(vf, 0xbfbf_bfbfu32);
+        mem.write(vf.wrapping_add(0xc), w);
+        mem.write(g(mem, 0x00c8_f728), 1u32);
+        let show = |mem: &M| mem.read::<u8>(g(mem, 0x0232_2794)) != 0;
+        if !show(mem) {
+            let (ffx, tex) = (g(mem, ET_FFX), g(mem, ET_TEX));
+            let sprintf: u32 = mem.read(g(mem, 0x00b0_c3dc));
+            let (fmt, dir) = (g(mem, 0x00b5_85c8), g(mem, 0x00b5_85ac));
+            for (path, name) in [(ffx, 0x00b5_8598), (tex, 0x00b5_85d0)] {
+                let name = g(mem, name);
+                call(mem, sprintf, &[path, fmt, dir, name]);
+            }
+            let sprintf_s: u32 = mem.read(g(mem, 0x00b0_c394));
+            let fmt_s = g(mem, 0x00b0_e160);
+            for path in [ffx, tex] {
+                call(mem, g(mem, 0x0067_9820), &[path, unified, 0x100]);
+                call(mem, sprintf_s, &[path, 0xfe, fmt_s, unified]);
+            }
+            for (path, block, missing) in [
+                (ffx, 0x012a_86a0, 0x00b5_85ec),
+                (tex, 0x012a_86a4, 0x00b5_8658),
+            ] {
+                let file = call(mem, g(mem, 0x0067_9730), &[path, 1]);
+                if file == 0 {
+                    let fmt = g(mem, missing);
+                    call(mem, g(mem, 0x0062_f500), &[fmt, path]);
+                    continue;
+                }
+                let size = call(mem, g(mem, 0x0067_9710), &[file, 0, 2]);
+                call(mem, g(mem, 0x0067_9710), &[file, 0, 0]);
+                let at = call(mem, g(mem, 0x0068_6ff0), &[size, 0x10]);
+                mem.write(g(mem, block), at);
+                call(mem, g(mem, 0x0067_9800), &[file, at, size]);
+                call(mem, g(mem, 0x0067_9510), &[file]);
+                let fmt = g(mem, 0x00b5_862c);
+                call(mem, g(mem, 0x0062_f500), &[fmt, path, size]);
+            }
+            call(mem, g(mem, 0x0064_54c0), &[]);
+            call(mem, g(mem, 0x007f_d760), &[]);
+            let table: u32 = mem.read(g(mem, 0x00c4_8d88));
+            let first: u32 = mem.read(table);
+            call(mem, first, &[0]);
+            let et: u32 = mem.read(g(mem, 0x012a_86a0));
+            mem.write(g(mem, 0x0119_fe98), et);
+            call(mem, g(mem, 0x007f_c620), &[et]);
+        }
+        if mem.read::<u32>(g(mem, 0x0232_279c)) != 0 {
+            call(mem, g(mem, 0x007e_6480), &[0x3000]);
+            call(mem, g(mem, 0x007e_6560), &[]);
+            let text = g(mem, 0x00b4_8b14);
+            call(mem, g(mem, 0x007e_63a0), &[text]);
+            call(mem, g(mem, 0x007e_65e0), &[0x10, 0x10]);
+            call(mem, g(mem, 0x007e_63b0), &[0x7000_0000]);
+            call(mem, g(mem, 0x007e_6440), &[0]);
+            call(mem, g(mem, 0x007e_64d0), &[0]);
+            call(mem, g(mem, 0x007e_64b0), &[]);
+        }
+        if mem.read::<u8>(g(mem, 0x0232_2790)) != 0 {
+            call(mem, g(mem, 0x00a6_4a00), &[]);
+        }
+        if show(mem) {
+            mem.write(g(mem, 0x0232_1582), 0x2c00u16);
+            call(mem, g(mem, 0x007e_6480), &[0x2c_0000]);
+            mem.write(g(mem, 0x011a_0063), 0u8);
+            mem.write(g(mem, 0x00cc_b9d0), 1u32);
+            let chrs = g(mem, 0x012a_22c0);
+            let flags = g(mem, 0x012a_84c0);
+            for k in 0..0xd0u32 {
+                let rec = chrs.wrapping_add(k << 5);
+                let no = u32::from(mem.read::<u16>(rec.wrapping_add(0xe)));
+                if mem.read::<u32>(rec) != 0 && no < 0xf0 {
+                    let b: u8 = mem.read(flags.wrapping_add(no));
+                    mem.write(flags.wrapping_add(no), b | 2);
+                }
+            }
+            call(mem, g(mem, 0x007e_5210), &[0]);
+        }
+    }
+
     /// `op_init_ffx_state_007ff960()` (`0x007ff960`): the op layer's state
     /// at start-up (callees through `call`): the 0xa4 bytes at `0x02322780`
     /// cleared, [`g_OpNumShow`](`0x02322794`) kept only when
