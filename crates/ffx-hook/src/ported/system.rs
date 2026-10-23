@@ -1167,6 +1167,14 @@ ported! {
     TOSetBtlActiveChr @ 0x0089_bb10 => extern "C" fn to_set_btl_active_chr(chr: u32) -> u32 {
         tolib::bridge::to_set_btl_active_chr(&mut mem(), chr, call_sym)
     }
+    /// `Pause_Update()`: its end (`0x008ab2d0`) inline; the pause time
+    /// through `call_cdecl_u64`.
+    Pause_Update @ 0x008a_b340 => extern "C" fn pause_update() -> u32 {
+        tolib::bridge::pause_update(&mut mem(), call_sym, |_, f| {
+            #[allow(clippy::cast_possible_truncation)] // 32-bit process
+            super::call_cdecl_u64(crate::rebase(f) as u32, &[])
+        })
+    }
     /// `0x0076d0e0(file, archive)`.
     cd_channel_state_0076d0e0 @ 0x0076_d0e0 => extern "C" fn cd_channel_state(file: u32, archive: u32) -> u32 {
         cd::bridge::channel_state(&mem(), file, archive)

@@ -11985,6 +11985,88 @@ pub mod bridge {
         call(mem, f, &[chr])
     }
 
+    /// `g_PauseRequest` (`0x01340850`) and the pauses' total time
+    /// (`0x012fb818`, 64 bits).
+    pub const PAUSE_REQUEST: Global<u32> = Global::new(0x0134_0850);
+    pub const PAUSE_TOTAL: u32 = 0x012f_b818;
+
+    /// `AtelGetCurCtrlWork`, `Pause_Enter`, `inputIsPressButton`,
+    /// `Pause_HideScreen`, `0x006f32d0` (the pause screen's end).
+    pub const PAUSE_UPDATE_CALLS: [u32; 5] = [
+        0x0086_aff0,
+        0x008a_b3d0,
+        0x0063_0cf0,
+        0x006f_32e0,
+        0x006f_32d0,
+    ];
+
+    /// `Pause_Update()` (`0x008ab340`; caller `PhyreScene_animate`): while
+    /// the current ctrl work pauses (`+0x210` bit 4) the pause is entered
+    /// once (`Pause_Enter`), Start (`inputIsPressButton(0x800)`) at fade
+    /// 0x40 hides the pause screen and turns the fade step to +4, and the
+    /// fade (`g_PauseFade`) moves by its step, kept from 0x40. Reaching
+    /// 0x80 ends the pause (`0x008ab2d0`, a tail jump, here inline): the
+    /// flags cleared, the time paused added to `0x012fb818`
+    /// (`graphicGetTimeInMicroseconds` less the start), timers and sounds
+    /// resumed, the pause screen closed, an input pass, and with a movie in
+    /// the 3D scene or a movie picture `graphicVideoPause`'s `EAX`, else 0.
+    /// Otherwise `EAX` is the ctrl work (not pausing) or the new fade,
+    /// before the 0x40 clamp. `call64` calls a function returning
+    /// `EDX:EAX`.
+    pub fn pause_update<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut call64: impl FnMut(&mut M, u32) -> u64,
+    ) -> u32 {
+        let [ctrl_work, enter, pressed, hide, screen_end] = PAUSE_UPDATE_CALLS;
+        let [time, timers, sounds, _, input, movie, video_pause] = PAUSE_ENTER_CALLS;
+        let ctrl = call(mem, ctrl_work, &[]);
+        if mem.read::<u8>(ctrl.wrapping_add(0x210)) & 0x10 == 0 {
+            return ctrl;
+        }
+        if PAUSE_ENTERED.get(mem) == 0 {
+            call(mem, enter, &[]);
+        }
+        let mut fade = PAUSE_FADE.get(mem);
+        if fade == 0x40 {
+            if call(mem, pressed, &[0x800]) == 0 {
+                fade = PAUSE_FADE.get(mem);
+            } else {
+                call(mem, hide, &[]);
+                fade = 0x40;
+                PAUSE_FADE_STEP.set(mem, 4);
+            }
+        }
+        let fade = fade.wrapping_add(PAUSE_FADE_STEP.get(mem));
+        PAUSE_FADE.set(mem, fade);
+        if fade.cast_signed() < 0x40 {
+            PAUSE_FADE.set(mem, 0x40);
+            return fade;
+        }
+        if fade.cast_signed() < 0x80 {
+            return fade;
+        }
+        if fade != 0x80 {
+            PAUSE_FADE.set(mem, 0x80);
+        }
+        PAUSE_ENTERED.set(mem, 0);
+        PAUSE_REQUEST.set(mem, 0);
+        PAUSE_ON.set(mem, 0);
+        let now = call64(mem, time);
+        let start = mem.read::<u64>(mem.rebase(PAUSE_TIME));
+        let total = mem.rebase(PAUSE_TOTAL);
+        let sum = mem.read::<u64>(total).wrapping_add(now.wrapping_sub(start));
+        mem.write(total, sum);
+        call(mem, timers, &[0]);
+        call(mem, sounds, &[0]);
+        call(mem, screen_end, &[]);
+        call(mem, input, &[]);
+        if call(mem, movie, &[]) == 0 && MOVIE_PICTURE_ON.get(mem) == 0 {
+            return 0;
+        }
+        call(mem, video_pause, &[])
+    }
+
     /// `g_BtlCommandRec` (`0x023cc040`), `g_BtlActionDepth` (`0x023cc092`,
     /// `i8`) and the command-window levels (`0x0133c950`, 0xf0 bytes each:
     /// `+2` a flag byte, `+8` the actor byte, `+0x16` the command, `+0xd8`

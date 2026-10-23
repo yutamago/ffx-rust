@@ -26324,3 +26324,100 @@ fn small5_f_matches_the_original_on_the_snapshot() {
     };
     small5_f(&mut a, &mut b, &mut Xorshift(0x5a11_5f02));
 }
+
+/// Small round 5 h: `Pause_Update` (pausing or not, entered or not, Start
+/// pressed at 0x40 or not, fades and steps around 0x40 and 0x80, the end
+/// with or without a movie); every callee a logging stand-in, the time
+/// 64 bits.
+#[allow(clippy::many_single_char_names)] // a, b: the oracles
+fn small5_h(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::tolib::bridge as t;
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call(f, Conv::Cdecl, args).unwrap().eax
+    };
+    let call64 = |m: &mut Oracle, f: u32| {
+        let f = m.rebase(f);
+        let r = m.call(f, Conv::Cdecl, &[]).unwrap();
+        (u64::from(r.edx) << 32) | u64::from(r.eax)
+    };
+    let mut list: Vec<(u32, u8)> = t::PAUSE_UPDATE_CALLS
+        .iter()
+        .zip([0u8, 0, 1, 0, 0])
+        .map(|(&f, n)| (f, n))
+        .collect();
+    list.extend(
+        t::PAUSE_ENTER_CALLS
+            .iter()
+            .zip([0u8, 1, 1, 0, 0, 0, 0])
+            .map(|(&f, n)| (f, n)),
+    );
+    let (log, cursor, cells) = small5_stubs(a, b, &list);
+    let ctrl = alloc(a, b, 0x220);
+    let fades = [0x40u32, 0x40, 0x3c, 0x44, 0x7c, 0x80, 0x84, 0x7f, 0];
+    let steps = [4u32, 0xffff_fffc, 0, 1, 0x40, 0x8000_0000];
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        for &c in &cells {
+            put(a, b, c, rng.next());
+            put(a, b, c + 4, rng.next());
+        }
+        put(a, b, cells[0], ctrl);
+        put(a, b, cells[2], [0u32, 1, 0x800][(rng.next() % 3) as usize]);
+        put(a, b, cells[10], [0u32, 0, 1][(rng.next() % 3) as usize]);
+        put(
+            a,
+            b,
+            ctrl + 0x210,
+            rng.next().to_le_bytes()[0] | (0x10 * u8::from(k % 5 != 0)),
+        );
+        set(
+            a,
+            b,
+            t::PAUSE_ENTERED,
+            [0u32, 1, 2][(rng.next() % 3) as usize],
+        );
+        let fade = if k % 7 == 0 {
+            rng.next()
+        } else {
+            fades[(rng.next() % 9) as usize]
+        };
+        set(a, b, t::PAUSE_FADE, fade);
+        set(a, b, t::PAUSE_FADE_STEP, steps[(rng.next() % 6) as usize]);
+        set(
+            a,
+            b,
+            t::MOVIE_PICTURE_ON,
+            [0u32, 0, 1][(rng.next() % 3) as usize],
+        );
+        for g in [t::PAUSE_ON, t::PAUSE_REQUEST] {
+            set(a, b, g, rng.next());
+        }
+        for at in [t::PAUSE_TIME, t::PAUSE_TOTAL] {
+            let at = a.rebase(at);
+            put(a, b, at, rng.next());
+            put(a, b, at + 4, rng.next());
+        }
+        let ra = eax(a, 0x008a_b340, &[]);
+        let rb = t::pause_update(b, call, call64);
+        assert_eq!(ra, rb, "Pause_Update {k} fade {fade:#x}");
+        same_memory(&format!("small5 h {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn small5_h_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    small5_h(&mut a, &mut b, &mut Xorshift(0x5a11_5801));
+}
+
+#[test]
+fn small5_h_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    small5_h(&mut a, &mut b, &mut Xorshift(0x5a11_5802));
+}
