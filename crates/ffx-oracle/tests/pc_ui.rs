@@ -2848,11 +2848,11 @@ fn r2c_iggy_menu_manager_apply_viewport_matches_the_original() {
         let list = t.alloc(0x40);
         // a count past 16 bits (the high bit is a flag): a long list of
         // nulls with a menu at its end
-        let long = t.alloc(4 * 0x1_0004);
-        t.put(long + 4 * 0x1_0001, &rng.next().to_le_bytes());
+        let nulls = t.alloc(4 * 0x1_0004);
+        t.put(nulls + 4 * 0x1_0001, &rng.next().to_le_bytes());
         let mut b = rng.bytes(0x30);
         b[8..12].copy_from_slice(&0x8001_0002u32.to_le_bytes());
-        b[0xc..0x10].copy_from_slice(&long.to_le_bytes());
+        b[0xc..0x10].copy_from_slice(&nulls.to_le_bytes());
         t.put(this, &b);
         t.check(
             "apply viewport: a long list",
