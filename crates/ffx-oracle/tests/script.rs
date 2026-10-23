@@ -1819,7 +1819,7 @@ fn run_workers(mode: u32, callbacks: u32, rounds: u32) {
                 };
                 let rb = run::script_run_traced(
                     &mut Run(&mut b),
-                    &mut run::OriginalNatives,
+                    &mut KeepUninit,
                     w,
                     mode,
                     callbacks,
@@ -1932,14 +1932,10 @@ fn run_entries(max_entries: u32, frames: u32) {
                             break;
                         }
                     };
-                    let rb = run::script_run_traced(
-                        &mut Run(b),
-                        &mut run::OriginalNatives,
-                        w,
-                        0,
-                        1,
-                        |op, _| executed[usize::from(op)] += 1,
-                    );
+                    let rb =
+                        run::script_run_traced(&mut Run(b), &mut KeepUninit, w, 0, 1, |op, _| {
+                            executed[usize::from(op)] += 1;
+                        });
                     assert_eq!(ra, rb, "{what}: result");
                     no_diff(a, b, &what);
                     compared += 1;
@@ -2215,16 +2211,9 @@ fn script_programs_match_the_original() {
             if std::env::var_os("ATEL_TRACE").is_some() {
                 eprintln!("  frame {frame}: original {:?}", t.elapsed());
             }
-            let rb = run::script_run_traced(
-                &mut Run(b),
-                &mut run::OriginalNatives,
-                w,
-                mode,
-                1,
-                |op, _| {
-                    executed[usize::from(op)] += 1;
-                },
-            );
+            let rb = run::script_run_traced(&mut Run(b), &mut KeepUninit, w, mode, 1, |op, _| {
+                executed[usize::from(op)] += 1;
+            });
             assert_eq!(ra, rb, "{what} frame {frame}: result");
             no_diff(a, b, &format!("{what} frame {frame}"));
             compared += 1;
@@ -2273,16 +2262,9 @@ fn run_code(
     for frame in 0..frames {
         let what = format!("{code:02x?} mode {mode} frame {frame}");
         let ra = orig(&mut a, SCRIPT_RUN, &[w, mode, 1]);
-        let rb = run::script_run_traced(
-            &mut Run(&mut b),
-            &mut run::OriginalNatives,
-            w,
-            mode,
-            1,
-            |op, _| {
-                ops.push(op);
-            },
-        );
+        let rb = run::script_run_traced(&mut Run(&mut b), &mut KeepUninit, w, mode, 1, |op, _| {
+            ops.push(op);
+        });
         assert_eq!(ra, rb, "{what}: result");
         no_diff(&mut a, &mut b, &what);
     }
@@ -2509,14 +2491,8 @@ fn synthetic_script_matches_the_original() {
     let mut ops = 0;
     for frame in 0..4 {
         let ra = orig(&mut a, SCRIPT_RUN, &[w, 0, 0]);
-        let rb = run::script_run_traced(
-            &mut Run(&mut b),
-            &mut run::OriginalNatives,
-            w,
-            0,
-            0,
-            |_, _| ops += 1,
-        );
+        let rb =
+            run::script_run_traced(&mut Run(&mut b), &mut KeepUninit, w, 0, 0, |_, _| ops += 1);
         assert_eq!(ra, rb, "frame {frame}");
         no_diff(&mut a, &mut b, &format!("frame {frame}"));
     }
@@ -4684,8 +4660,16 @@ fn r19_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path, c: u32) -> (Or
 /// Natives that can read an uninitialised local of the original
 /// (`0x0099` and `0x009c` with no points, `0x00f7` with a negative slot),
 /// tested on chosen arguments only; and `0xb008`'s start, which leaves `EAX` as it was
-/// (the dispatch ignores it) and writes nothing.
-const R20_UNINIT: [u32; 4] = [0x0085_fd80, 0x0086_0000, 0x0085_8290, 0x0076_eb00];
+/// (the dispatch ignores it) and writes nothing; and `0x7076`, whose
+/// `MsSetBallSplineInit` copies a position its callee may leave unwritten
+/// (the frame sits elsewhere when Rust calls it): `small6b` with stand-ins.
+const R20_UNINIT: [u32; 5] = [
+    0x0085_fd80,
+    0x0086_0000,
+    0x0085_8290,
+    0x0076_eb00,
+    0x007a_56f0,
+];
 
 /// [`round19_natives`] in [`CTRL_SHARDS`] shards.
 mod round19_natives_match_the_original {
@@ -16513,4 +16497,334 @@ fn small5g_pop_and_push_member_match_the_original() {
     let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     small5g_cases(&mut a, &mut b, &mut rng, "snapshot");
+}
+
+/// Small round 6 b on one pair: `Native_7076` on workers of our own
+/// (battle ids 0, 1, 7 and `0xff`), `MsSetBallSplineInit`,
+/// `MsSetBallSpline` and `MsMoveSpline` logged, `MsGetChr` a record of our
+/// own; the arguments random words and floats on the worker's stack.
+fn small6b_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    let chr = alloc_both(a, b, 0x500);
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x007b_7c80, 1, false),
+            (0x0079_4020, 1, true),
+            (0x007b_78c0, 1, false),
+            (0x007a_b010, 5, false),
+        ],
+    );
+    // MsSetBallSpline: the actor's u16 +0x452 as it sees it
+    small6_patch(a, b, 0x007b_78c0, &small6_log_word(stubs.0, chr + 0x450));
+    for round in 0..120u32 {
+        r27_reset(a, b, &stubs, |_| chr);
+        fill_both(a, b, rng, chr + 0x440, 0x40);
+        let w = r22_worker(a, b, rng, 0);
+        poke(
+            a,
+            b,
+            w + worker::BATTLE_ID,
+            [0u8, 1, 7, 0xff][rng.below(4) as usize],
+        );
+        let s = w + worker::STACK;
+        let c = [0u32, 1, 0x7fff, 0x1_2345, rng.next()][rng.below(5) as usize];
+        push_both(a, b, s, stack::INT, c);
+        push_both(a, b, s, stack::FLOAT, small5_word(rng));
+        push_both(a, b, s, stack::INT, rng.next());
+        r22_case(
+            a,
+            b,
+            0x007a_56f0,
+            &[w, 0, s],
+            true,
+            &format!("Native_7076 {what} {round}"),
+            |r| ffx_script::vm::bridge::native_btl::native_7076(r, w, 0, s),
+        );
+    }
+}
+
+#[test]
+fn small6b_native_7076_matches_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_6b01);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        small6b_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    small6b_cases(&mut a, &mut b, &mut rng, "snapshot");
+}
+
+/// Points `f` at new code in both oracles (a `jmp` at its entry).
+fn small6_patch(a: &mut Oracle, b: &mut Oracle, f: u32, code: &[u8]) {
+    let at = a.alloc_code(code).unwrap();
+    assert_eq!(b.alloc_code(code).unwrap(), at);
+    for o in [&mut *a, &mut *b] {
+        let entry = o.rebase(f);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+}
+
+/// Code that appends the word at `src` to the log `*cell` points into.
+fn small6_log_word(cell: u32, src: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [cell]
+    c.extend(cell.to_le_bytes());
+    c.push(0xa1); // mov eax, [src]
+    c.extend(src.to_le_bytes());
+    c.extend([0x89, 0x01, 0x83, 0xc1, 0x04]); // mov [ecx], eax; add ecx, 4
+    c.extend([0x89, 0x0d]); // mov [cell], ecx
+    c.extend(cell.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Small round 6 c on one pair: `Atel_WorkerFrame_008666e0` (worker types
+/// 0..=7, `+0x34` bits 7 and 5, player `0xffff` or not),
+/// `Atel_BattleEndMapStep_00861650` (states 0..=6 and others, render
+/// status bits, `CheckPreviousLevel` 0 or not, `Yn_GuideMapInit`'s bit;
+/// `AtelRecoverPreBgPage` makes another ctrl work current and the guide
+/// map calls log the current one) and `Atel_PlayTimeUpdate_0086ca20`
+/// (play times around the cap, game times and the last count from a
+/// sequence, NaNs and huge values). Every callee is logged.
+#[allow(clippy::too_many_lines)] // one block per function
+fn small6c_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    // sequences: 0 AtelGetBasicWork, 1 yiGetRenderStatus, 2 map id, 3 map
+    // no, 4 CheckPreviousLevel, 5 TkGetSaveEventAddress
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0086_a830, 1, true),
+            (0x0090_8f10, 0, true),
+            (0x0088_d680, 0, true),
+            (0x0088_d690, 1, true),
+            (0x0087_2a00, 0, true),
+            (0x0088_c830, 0, true),
+            (0x0086_8990, 2, false),
+            (0x0086_9510, 2, false),
+            (0x0087_0540, 2, false),
+            (0x0087_0360, 2, false),
+            (0x0087_0dc0, 2, false),
+            (0x0086_29c0, 2, false),
+            (0x0086_9df0, 1, false),
+            (0x0086_9f90, 1, false),
+            (0x0086_6980, 3, false),
+            (0x0086_84b0, 3, false),
+            (0x0086_6cc0, 3, false),
+            (0x0086_8020, 2, false),
+            (0x0086_7c10, 2, false),
+            (0x0062_f4c0, 1, false),
+            (0x0090_8630, 2, false),
+            (0x0090_8000, 0, false),
+            (0x0090_9b90, 0, false),
+            (0x0091_9da0, 1, false),
+            (0x0072_9a10, 1, false),
+            (0x0090_a2b0, 1, false),
+            (0x0088_7c40, 0, false),
+        ],
+    );
+    let ctx_at = a.rebase(0x0132_6b28);
+    let works = a.rebase(0x0132_5ba0);
+    let other = alloc_both(a, b, 0x240);
+    // AtelRecoverPreBgPage: another ctrl work current
+    let mut code = vec![0xc7, 0x05];
+    code.extend(ctx_at.to_le_bytes());
+    code.extend(other.to_le_bytes());
+    code.push(0xc3);
+    small6_patch(a, b, 0x0087_3cc0, &code);
+    small6_patch(a, b, 0x0091_9cd0, &small6_log_word(stubs.0, ctx_at));
+    small6_patch(a, b, 0x0091_9a40, &small6_log_word(stubs.0, ctx_at));
+    small6_patch(a, b, 0x0090_8000, &small6_log_word(stubs.0, ctx_at));
+    small6_patch(a, b, 0x0090_9b90, &small6_log_word(stubs.0, ctx_at));
+    // graphicGetTime: ST0 = the next f64 of a sequence
+    let times = alloc_both(a, b, 0x400);
+    let tcell = alloc_both(a, b, 4);
+    let mut code = vec![0x8b, 0x15]; // mov edx, [tcell]
+    code.extend(tcell.to_le_bytes());
+    code.extend([0xdd, 0x02, 0x83, 0xc2, 0x08]); // fld qword [edx]; add edx, 8
+    code.extend([0x89, 0x15]); // mov [tcell], edx
+    code.extend(tcell.to_le_bytes());
+    code.push(0xc3);
+    small6_patch(a, b, 0x0064_1410, &code);
+    let ctx = alloc_both(a, b, 0x40);
+    let state = alloc_both(a, b, 4);
+    let save = alloc_both(a, b, 0x100);
+    let last_at = a.rebase(hp::PLAY_TIME_LAST);
+    let saved_ctx: u32 = Mem::read(&*a, ctx_at);
+    for round in 0..300u32 {
+        r27_reset(a, b, &stubs, |s| match s {
+            1 => [0u32, 0x20, 0x40, 0x60, rng.next()][rng.below(5) as usize],
+            4 => [0u32, 0, 1, rng.next()][rng.below(4) as usize],
+            5 => save,
+            _ => rng.next(),
+        });
+        // Atel_WorkerFrame
+        let kind = u8::try_from(rng.below(8)).unwrap();
+        let w = r22_worker(a, b, rng, kind);
+        let flags = [0x80u8, 0xa0, 0x20, 0, 0xff, 0x7f][rng.below(6) as usize];
+        poke(a, b, w + 0x34, flags);
+        poke(a, b, ctx_at, ctx);
+        let player = [0xffffu16, 0, 3, 0x7fff][rng.below(4) as usize];
+        poke(a, b, ctx + 0xa, player);
+        let level = rng.next();
+        r22_case(
+            a,
+            b,
+            0x0086_66e0,
+            &[w, level],
+            false,
+            &format!("Atel_WorkerFrame {what} {round} kind {kind} flags {flags:#x}"),
+            |r| {
+                hp::atel_worker_frame(r, w, level);
+                0
+            },
+        );
+        // Atel_BattleEndMapStep
+        let step = [0u32, 1, 2, 3, 4, 5, 6, rng.next()][rng.below(8) as usize];
+        poke(a, b, state, step);
+        poke(a, b, ctx_at, ctx);
+        poke(
+            a,
+            b,
+            works + 1,
+            [0u8, 0x80, 0x7f, 0xff][rng.below(4) as usize],
+        );
+        for g in [0x0132_6b68u32, 0x0132_6b78] {
+            let at = a.rebase(g);
+            poke(a, b, at, rng.next());
+        }
+        r22_case(
+            a,
+            b,
+            0x0086_1650,
+            &[state],
+            true,
+            &format!("Atel_BattleEndMapStep {what} {round} step {step}"),
+            |r| hp::atel_battle_end_map_step(r, state),
+        );
+        // Atel_PlayTimeUpdate
+        poke(a, b, tcell, times);
+        let exact = rng.below(8) == 0;
+        let t64: f64 = match rng.below(6) {
+            _ if exact => f64::from(1.001_f32),
+            0 => f64::from(f32::from_bits(small5_word(rng))),
+            1 => f64::from(rng.below(1_000_000)) + 0.5,
+            _ => f64::from(rng.below(5000)) / 7.0,
+        };
+        poke(a, b, times, t64.to_bits());
+        #[allow(clippy::cast_possible_truncation)] // the f32 the port sees
+        let t = t64 as f32;
+        let last: f32 = match rng.below(5) {
+            _ if exact => 0.0,
+            0 => f32::from_bits(small5_word(rng)),
+            1 => 0.0,
+            2 => t,
+            #[allow(clippy::cast_precision_loss)] // small
+            _ => (t - 1.0 - (rng.below(30) as f32) / 10.0).max(-1.0e30),
+        };
+        poke(a, b, last_at, last.to_bits());
+        let time = [
+            0u32,
+            1,
+            100,
+            0x0036_ee7e,
+            0x0036_ee7f,
+            0x0036_ee80,
+            u32::MAX,
+            0x8000_0000,
+            rng.below(0x0036_ee7f),
+        ][rng.below(9) as usize];
+        poke(a, b, save + 0xbc, time);
+        r22_case(
+            a,
+            b,
+            0x0086_ca20,
+            &[],
+            false,
+            &format!("Atel_PlayTimeUpdate {what} {round} t {t} last {last} time {time:#x}"),
+            |r| {
+                hp::atel_play_time_update(r, |r, f, args| r.0.call_f64(f, args).unwrap());
+                0
+            },
+        );
+    }
+    poke(a, b, ctx_at, saved_ctx);
+}
+
+#[test]
+fn small6c_script_callbacks_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_6c01);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        small6c_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    small6c_cases(&mut a, &mut b, &mut rng, "snapshot");
+}
+
+/// [`run::OriginalNatives`], except that the [`R20_UNINIT`] natives' start
+/// and integer-result functions run as the originals, not their Rust versions: they reach
+/// never-written stack words (junk reads, brief 2026-10-24) whose values
+/// depend on where the frame sits, which differs between an original run
+/// and a Rust one. `0x7076`'s `MsSetBallSplineInit` is one; their own
+/// tests use stand-ins.
+struct KeepUninit;
+
+impl<H: run::NativeHost> run::Natives<H> for KeepUninit {
+    fn start(&mut self, host: &mut H, id: u32, worker: u32, args: u32, stack: u32) {
+        let f: u32 = host.read(run::script_native_entry(host, id));
+        let sym = f.wrapping_sub(host.image_base()).wrapping_add(0x0040_0000);
+        if f != 0 && id >> 12 != 6 && R20_UNINIT.contains(&sym) {
+            host.call(f, &[worker, args, stack]);
+        } else {
+            run::OriginalNatives.start(host, id, worker, args, stack);
+        }
+    }
+    fn poll(&mut self, host: &mut H, id: u32, worker: u32, args: u32) -> u8 {
+        run::OriginalNatives.poll(host, id, worker, args)
+    }
+    fn finish(&mut self, host: &mut H, id: u32, worker: u32, args: u32, stack: u32) {
+        let e = run::script_native_entry(host, id);
+        let f: u32 = host.read(e + 0xc);
+        let sym = f.wrapping_sub(host.image_base()).wrapping_add(0x0040_0000);
+        if host.read::<u32>(e + 8) == 0 && f != 0 && R20_UNINIT.contains(&sym) {
+            let r = host.call(f, &[worker, args, stack]);
+            v::atel_push_stack_integer(host, stack, r);
+        } else {
+            run::OriginalNatives.finish(host, id, worker, args, stack);
+        }
+    }
 }

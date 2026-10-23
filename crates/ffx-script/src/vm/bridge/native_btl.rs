@@ -1690,6 +1690,27 @@ pub fn native_7049<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
+/// `Native_7076` (`0x007a56f0`, `0x7076`): `(c, f, a)` on the worker's
+/// actor (not checked against `0xff`): `MsSetBallSplineInit(actor)`
+/// (`0x007b7c80`), `MsGetChr(actor)`'s `u16 +0x45a` = `c` and `+0x452` =
+/// 0, `MsSetBallSpline(actor)` (`0x007b78c0`), `MsMoveSpline(2, actor, c,
+/// f, a)` (`0x007ab010`, `f` through `fld`/`fstp`), then `+0x452` = 1; 0.
+pub fn native_7076<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let id = actor(h, w);
+    let a1 = pop(h, s);
+    let f = popf(h, s);
+    let c = pop(h, s);
+    call(h, 0x007b_7c80, &[id]);
+    let p = chr(h, id);
+    #[allow(clippy::cast_possible_truncation)] // the original stores DI
+    h.write(p.wrapping_add(0x45a), c as u16);
+    h.write(p.wrapping_add(0x452), 0u16);
+    call(h, 0x007b_78c0, &[id]);
+    call(h, 0x007a_b010, &[2, id, c, x87::store(x87::load(f)), a1]);
+    h.write(p.wrapping_add(0x452), 1u16);
+    0
+}
+
 /// `Native_70dc` (`0x007a7a10`, `0x70dc`): `(selector, i)`: copies 40
 /// bytes of the name table `*0x0112a9b8` (entry
 /// `MsGetSaveConfigHiragana() + 2i`, a `u16` offset in 4-byte steps) into the picked actor's `+0x540`;
@@ -2264,6 +2285,7 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x007a_5610 => Int(native_7040),
         0x007a_5220 => Int(native_7046),
         0x007a_55a0 => Int(native_7049),
+        0x007a_56f0 => Int(native_7076),
         0x007a_7a10 => Int(native_70dc),
         0x007a_77c0 => Int(native_7091),
         0x007a_30a0 => Int(native_7106),
@@ -2303,7 +2325,7 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
 }
 
 /// Every handler [`find`] has, with whether it returns a float.
-pub const PORTED: [(u32, bool); 144] = [
+pub const PORTED: [(u32, bool); 145] = [
     (0x007a_4f80, false),
     (0x007a_6970, false),
     (0x007a_81f0, false),
@@ -2411,6 +2433,7 @@ pub const PORTED: [(u32, bool); 144] = [
     (0x007a_5610, false),
     (0x007a_5220, false),
     (0x007a_55a0, false),
+    (0x007a_56f0, false),
     (0x007a_7a10, false),
     (0x007a_77c0, false),
     (0x007a_30a0, false),

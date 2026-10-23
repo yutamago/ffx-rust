@@ -1144,6 +1144,14 @@ ported! {
     TOMenuFirstReadProc_008a8c10 @ 0x008a_8c10 => extern "C" fn to_menu_first_read_proc(task: u32) -> u32 {
         tolib::bridge::menu_first_read_proc(&mut mem(), task, call_sym)
     }
+    /// `TOInitBtlWindow()`: `TOSeqInitAllScene(2)`'s `eax`.
+    TOInitBtlWindow @ 0x0089_b660 => extern "C" fn to_init_btl_window() -> u32 {
+        tolib::bridge::init_btl_window(&mut mem(), call_sym)
+    }
+    /// `TOInit()`: `TOBtlInit()`'s `eax`.
+    TOInit @ 0x008a_d4d0 => extern "C" fn to_init() -> u32 {
+        tolib::bridge::to_init(&mut mem(), call_sym)
+    }
     /// `Pause_Enter()`: the start time through `call_cdecl_u64`.
     Pause_Enter @ 0x008a_b3d0 => extern "C" fn pause_enter() -> u32 {
         tolib::bridge::pause_enter(&mut mem(), call_sym, |_, f| {
@@ -1402,6 +1410,11 @@ ported! {
     /// `MenuScene_KeyPick_00a7b290(keys, track, frame, frames, out)`: `0x00a7bbc0`'s `eax`.
     MenuScene_KeyPick_00a7b290 @ 0x00a7_b290 => extern "C" fn menu_scene_key_pick(keys: u32, track: u32, frame: u32, frames: u32, out: u32) -> u32 {
         scene::bridge::menu_scene_key_pick(&mut mem(), [keys, track, frame, frames, out], call_sym, fcall)
+    }
+    /// `MenuScene_TrackStep_00a7b510(base, list, track, table, out)`: 1, or 0
+    /// at the script's end (`TkMenuExecScene` and `0x00a7b360` read it).
+    MenuScene_TrackStep_00a7b510 @ 0x00a7_b510 => extern "C" fn menu_scene_track_step(base: u32, list: u32, track: u32, table: u32, out: u32) -> u32 {
+        scene::bridge::menu_scene_track_step(&mut mem(), [base, list, track, table, out], call_sym)
     }
     /// `TOBtlSetLibraWindowParam(chr)` (callers drop `eax`).
     TOBtlSetLibraWindowParam @ 0x0089_a160 => extern "C" fn to_btl_set_libra_window_param(chr: u32) {

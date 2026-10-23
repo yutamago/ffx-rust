@@ -2106,6 +2106,16 @@ ported! {
     Ch_CalcMiddle @ 0x0083_3390 => extern "C" fn ch_calc_middle() -> u32 {
         h::ch_calc_middle(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
     }
+    /// `Ch_CalcMiddle_Batch(chars, pass, count)`: a job (worker threads).
+    Ch_CalcMiddle_Batch @ 0x0083_3530 => extern "C" fn ch_calc_middle_batch(chars: u32, pass: u32, count: u32) {
+        h::ch_calc_middle_batch(&mut mem(), [chars, pass, count], &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_OnCharacterInstanceLoaded(chr)`: the cloth buffer word in a frame.
+    Ch_OnCharacterInstanceLoaded @ 0x0082_7d10 => extern "C" fn ch_on_character_instance_loaded(chr: u32) {
+        let mut frame = super::StackFrame::<1>::new();
+        let out = frame.at();
+        h::ch_on_character_instance_loaded(&mut mem(), chr, out, &mut |_, f, a| super::call_cdecl(f, a));
+    }
     // ---- small round 3, group a
     /// `Ch_CalcMain(dt)`: the pause value, or how far the GS register sink
     /// moved (also stored).

@@ -2554,6 +2554,23 @@ ported! {
     yiRender_term @ 0x0090_dd00 => extern "C" fn shim_yi_render_term(r: u32) -> u32 {
         yi::bridge::yi_render_term(&mut mem(), r, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `yiClutGreen_00916130(r)`: 0 (green from a never-written local: 0).
+    yiClutGreen_00916130 @ 0x0091_6130 => extern "C" fn shim_yi_clut_green(r: u32) -> u32 {
+        yi::bridge::yi_clut_green(&mut mem(), r)
+    }
+    /// `rcbgFPm173ProcKieru(part)`: the 0x30-byte local area in a frame
+    /// (never-written words read 0).
+    rcbgFPm173ProcKieru @ 0x0092_2dc0 => extern "C" fn shim_rcbg_fpm173_proc_kieru(p: u32) {
+        let mut frame = super::StackFrame::<12>::new();
+        let at = frame.at();
+        model::bridge::rcbg_fpm173_proc_kieru(&mut mem(), p, at, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `yiRender_draw(r, skip)`: object 9's moved position in a frame.
+    yiRender_draw @ 0x0090_bf10 => extern "C" fn shim_yi_render_draw(r: u32, skip: u32) {
+        let mut frame = super::StackFrame::<4>::new();
+        let at = frame.at();
+        yi::bridge::yi_render_draw(&mut mem(), r, skip, at, &mut |_, f, a| call_cdecl(f, a));
+    }
     /// `yiRender_updatematrixp(r)`.
     yiRender_updatematrixp @ 0x0090_dd80 => extern "C" fn shim_yi_render_updatematrixp(r: u32) -> u32 {
         yi::bridge::yi_render_updatematrixp(&mut mem(), r)

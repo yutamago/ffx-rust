@@ -234,6 +234,13 @@ VOID_OK = {
     # (after TkMenuCtrlHelp) calls TkVU1SyncPath next, whose sceGsSyncPath
     # zeroes eax (2026-10-24)
     0x0076f850: "help draw slot 0xc416b0: the caller 0x8bf037 overwrites eax",
+    # Atel_WorkerFrame_008666e0: ctrl work +0x5c; its one caller through the
+    # pointer (0x00865208, call eax) reloads eax from [ebp-0x4] (2026-10-23)
+    0x008666e0: "ctrl +0x5c worker frame: the dispatcher 0x00865208 drops its eax",
+    # Ch_CalcMiddle_Batch: a job (0x0071e720 record +0xc); the job runner
+    # 0x00703910 (call eax at 0x0070394a) passes eax back to
+    # ThreadLoop_00703a20 (0x00703a3e), which never reads it (2026-10-24)
+    0x00833530: "job callback: ThreadLoop_00703a20 drops the job runner's eax",
 }
 
 # g_MagicImports (ffx.sym): the function table MagicFile_Start hands to

@@ -1703,6 +1703,164 @@ pub mod bridge {
         call(mem, g(mem, INIT_LIGHT), &[]);
         call(mem, g(mem, INIT_CAMERA), &[]);
     }
+
+    /// `Ch_CalcMiddle_Batch(chars, pass, count)` (`0x00833530`, a job
+    /// `JobSchedule_Ch_CalcMiddle_Batch` queues; `pass` and `count` point
+    /// at words, both read again where the original does): for each of the
+    /// `*count` characters from `chars` (`0x880` apart) that are active
+    /// (`+2`): one with a model (`+0x19c`) runs when `*pass` is set, one
+    /// without when it is 0; one without a model on the other pass with
+    /// `+0x194` bit 7 gets `graphicCharacterLightingSetShadeCoeff_debug(+0x830)`.
+    /// A running one: `op_et_chr_draw_off` and `+0x198` bit 0 cleared when
+    /// set; then, when it runs (`+0x180` 0 or `+0x181` set) and the game
+    /// is not paused, `Ch_Mouth`, `Ch_Neck`, `Ch_CalcElement` +
+    /// `Ch_OptposCalc` (flags `0x3000000`), `+0x878` = 2, `Ch_IdShadeCalc`
+    /// unless modelled on the model pass, `+0x878` = 3, `chr_texanim_main(+0x700,
+    /// +4, +0x830)` when `+0x6fc`, `Sg_GuiGetTextureAnim()` and `0x00c49720`
+    /// are set, `+0x878` = 0 and `+0x194` bit 9 = (it is `Sg_GetPlayer()`).
+    pub fn ch_calc_middle_batch<M: Mem>(
+        mem: &mut M,
+        [chars, pass, count]: [u32; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let mut i = 0_i32;
+        while i < mem.read::<i32>(count) {
+            let c = chars.wrapping_add(i.cast_unsigned().wrapping_mul(l::SIZE));
+            i += 1;
+            if mem.read::<u8>(c.wrapping_add(2)) == 0 {
+                continue;
+            }
+            let modelled = mem.read::<u32>(c.wrapping_add(0x19c)) != 0;
+            let on = mem.read::<u32>(pass) != 0;
+            if modelled != on {
+                if !modelled && mem.read::<u8>(c.wrapping_add(0x194)) & 0x80 != 0 {
+                    let list = mem.read::<u32>(c.wrapping_add(0x830));
+                    call(mem, r(mem, 0x0063_cec0), &[list]);
+                }
+                continue;
+            }
+            if mem.read::<u32>(c.wrapping_add(0x198)) & 1 != 0 {
+                call(mem, r(mem, 0x007f_c000), &[c]);
+                let f = mem.read::<u32>(c.wrapping_add(0x198));
+                mem.write(c.wrapping_add(0x198), f & !1);
+            }
+            let runs = mem.read::<u8>(c.wrapping_add(0x180)) == 0
+                || mem.read::<u8>(c.wrapping_add(0x181)) != 0;
+            if !runs || call(mem, r(mem, GET_PAUSE), &[]) != 0 {
+                continue;
+            }
+            call(mem, r(mem, 0x0083_44f0), &[c]);
+            call(mem, r(mem, 0x0083_48d0), &[c]);
+            if mem.read::<u32>(c.wrapping_add(0x194)) & 0x0300_0000 != 0 {
+                call(mem, r(mem, 0x0083_2760), &[c]);
+                call(mem, r(mem, 0x0083_50f0), &[c]);
+            }
+            mem.write(c.wrapping_add(0x878), 2_u32);
+            if mem.read::<u32>(c.wrapping_add(0x19c)) == 0 || mem.read::<u32>(pass) == 0 {
+                call(mem, r(mem, 0x0083_4110), &[c]);
+            }
+            mem.write(c.wrapping_add(0x878), 3_u32);
+            if mem.read::<u32>(c.wrapping_add(0x6fc)) != 0
+                && call(mem, r(mem, 0x0083_1930), &[]) != 0
+                && mem.read::<u32>(r(mem, 0x00c4_9720)) != 0
+            {
+                let args = [
+                    mem.read::<u32>(c.wrapping_add(0x700)),
+                    mem.read::<u32>(c.wrapping_add(4)),
+                    mem.read::<u32>(c.wrapping_add(0x830)),
+                ];
+                call(mem, r(mem, 0x0077_c8d0), &args);
+            }
+            let player = call(mem, r(mem, 0x0082_d860), &[]);
+            mem.write(c.wrapping_add(0x878), 0_u32);
+            let f = mem.read::<u32>(c.wrapping_add(0x194));
+            mem.write(
+                c.wrapping_add(0x194),
+                f & !0x200 | u32::from(player == c) << 9,
+            );
+        }
+    }
+
+    /// `Ch_OnCharacterInstanceLoaded(chr)` (`0x00827d10`, the render
+    /// instance's loaded callback, [`ON_INSTANCE_LOADED`]): nothing for a
+    /// null or inactive (`+2`) character. `cached` =
+    /// `Cache_Exist_ClothVertexBuff(1, u16 +0)`; with `+0x194` bit 21 and a
+    /// cloth (`+0x83c`) that `Ch_ClothMeshMapping` maps: `+0x834` =
+    /// `graphicCharacterInstanceGetClothVertexBuffers(+0x830, &out)` (`out`
+    /// starts as `cached`, the word at `out_at`), `Cache_Entry_ClothVertexBuff(1,
+    /// id, out)` when nothing was cached, `Ch_PreCalcActiveClothMesh(chr,
+    /// cached)`; without bit 21 `+0x834` = 0 and each mesh segment's
+    /// (`+0x1bc`, `0x38` apart, `u16 (+0x1c0)+6` of them) `+0x2c`/`+0x30` =
+    /// 0. Then the shade coefficient (`+0x36c`) and colour (`+0x330`,
+    /// `+0x33c`, `+0x348`) to the lighting list `+0x830`, the segments with
+    /// bit 0 of `+0x18` hidden, draw situation 0.
+    pub fn ch_on_character_instance_loaded<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        out_at: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let copy = |v: u32| ffx_bridge::x87::store(ffx_bridge::x87::load(v));
+        if chr == 0 || mem.read::<u8>(chr.wrapping_add(2)) == 0 {
+            return;
+        }
+        let id = u32::from(mem.read::<u16>(chr));
+        let cached = call(mem, r(mem, 0x0084_0850), &[1, id]);
+        mem.write(out_at, cached);
+        let segments = |mem: &M| {
+            u32::from(mem.read::<u16>(mem.read::<u32>(chr.wrapping_add(0x1c0)).wrapping_add(6)))
+        };
+        if mem.read::<u32>(chr.wrapping_add(0x194)) & 0x0020_0000 == 0 {
+            mem.write(chr.wrapping_add(0x834), 0_u32);
+            let mut k = 0;
+            while k < segments(mem) {
+                let seg = mem
+                    .read::<u32>(chr.wrapping_add(0x1bc))
+                    .wrapping_add(0x38 * k);
+                mem.write(seg.wrapping_add(0x2c), 0_u32);
+                let seg = mem
+                    .read::<u32>(chr.wrapping_add(0x1bc))
+                    .wrapping_add(0x38 * k);
+                mem.write(seg.wrapping_add(0x30), 0_u32);
+                k += 1;
+            }
+        } else if mem.read::<u32>(chr.wrapping_add(0x83c)) != 0
+            && call(mem, r(mem, 0x0082_6340), &[chr]) != 0
+        {
+            let inst = mem.read::<u32>(chr.wrapping_add(0x830));
+            let v = call(mem, r(mem, 0x0063_a810), &[inst, out_at]);
+            mem.write(chr.wrapping_add(0x834), v);
+            if cached == 0 {
+                let out = mem.read::<u32>(out_at);
+                let id = u32::from(mem.read::<u16>(chr));
+                call(mem, r(mem, 0x0084_05b0), &[1, id, out]);
+            }
+            call(mem, r(mem, 0x0082_7e90), &[chr, cached]);
+        }
+        let inst = mem.read::<u32>(chr.wrapping_add(0x830));
+        let coeff = copy(mem.read(chr.wrapping_add(0x36c)));
+        call(mem, r(mem, 0x0063_cdd0), &[inst, coeff]);
+        let b = copy(mem.read(chr.wrapping_add(0x348)));
+        let g = copy(mem.read(chr.wrapping_add(0x33c)));
+        let red = copy(mem.read(chr.wrapping_add(0x330)));
+        let inst = mem.read::<u32>(chr.wrapping_add(0x830));
+        call(mem, r(mem, 0x0063_d050), &[inst, red, g, b]);
+        let mut k = 0;
+        while k < segments(mem) {
+            let seg = mem
+                .read::<u32>(chr.wrapping_add(0x1bc))
+                .wrapping_add(0x38 * k);
+            if mem.read::<u8>(seg.wrapping_add(0x18)) & 1 != 0 {
+                let inst = mem.read::<u32>(chr.wrapping_add(0x830));
+                call(mem, r(mem, 0x0063_bdf0), &[inst, k, 1]);
+            }
+            k += 1;
+        }
+        let inst = mem.read::<u32>(chr.wrapping_add(0x830));
+        call(mem, r(mem, 0x0063_b7d0), &[inst, 0]);
+    }
 }
 
 #[cfg(test)]

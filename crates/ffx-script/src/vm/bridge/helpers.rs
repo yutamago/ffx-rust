@@ -9864,3 +9864,174 @@ pub fn atel_push_member(h: &mut impl ffx_bridge::Host, out: u32) -> u32 {
     h.write(save + 0x20, 1u8);
     old
 }
+
+/// `Atel_WorkerFrame_008666e0(w, level)` (name ours; ctrl work `+0x5c`,
+/// set by `AtelSetUpCtrlWork`, called from `0x00865208`, which drops
+/// `EAX`): nothing unless the worker's `+0x34` bit 7 is set; then by the
+/// worker header's type byte (`*w`): 1 `Atel_MoveUpdate_00868990`,
+/// `Atel_TurnUpdate_00869510`, then (`+0x34` bit 5 clear) `MoveStep`,
+/// `ApplyChrDir`, `SyncTurnEnd`, `ApplyPolarMove` or (set) `SyncChrDir`,
+/// `SyncChrRot`, then `Atel_CheckTouchTalk_00866980(w, level, player
+/// work)`; 2 `Atel_CheckLineTouch_008684b0(w, level, player work)`; 3
+/// `Atel_CheckBoxTrigger_00866cc0(..)`; 5 `Atel_CheckLineCrosses_00868020(w,
+/// level)`; 6 `Atel_CheckBoxTouch_00867c10(w, level)`. The player work is
+/// `AtelGetBasicWork(ctx +0xa)`, nothing when that is `0xffff`.
+pub fn atel_worker_frame(h: &mut impl ffx_bridge::Host, w: u32, level: u32) {
+    if h.read::<u8>(w.wrapping_add(0x34)) & 0x80 == 0 {
+        return;
+    }
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let player = u32::from(h.read::<u16>(ctx.wrapping_add(0xa)));
+    let kind = h.read::<u8>(h.read::<u32>(w));
+    let near = |h: &mut _, f: u32| {
+        if player != 0xffff {
+            let p = host_call(h, 0x0086_a830, &[player]);
+            host_call(h, f, &[w, level, p]);
+        }
+    };
+    match kind {
+        1 => {
+            host_call(h, 0x0086_8990, &[w, level]);
+            host_call(h, 0x0086_9510, &[w, level]);
+            if h.read::<u8>(w.wrapping_add(0x34)) & 0x20 == 0 {
+                for f in [0x0087_0540, 0x0087_0360, 0x0087_0dc0, 0x0086_29c0] {
+                    host_call(h, f, &[w, level]);
+                }
+            } else {
+                host_call(h, 0x0086_9df0, &[w]);
+                host_call(h, 0x0086_9f90, &[w]);
+            }
+            near(h, 0x0086_6980);
+        }
+        2 => near(h, 0x0086_84b0),
+        3 => near(h, 0x0086_6cc0),
+        5 => {
+            host_call(h, 0x0086_8020, &[w, level]);
+        }
+        6 => {
+            host_call(h, 0x0086_7c10, &[w, level]);
+        }
+        _ => {}
+    }
+}
+
+/// `Atel_BattleEndMapStep_00861650(state)` (name ours; the "MAPR" callback
+/// `Atel_BattleEndMapStart_008615b0` queues): one step of the return to the
+/// map after a battle on another map, with `g_ScriptContext` set to ctrl
+/// work 0 and restored. `*state` 0 (becomes 2) and 1 wait for
+/// `yiGetRenderStatus` bit 6 to clear, then `FlushCache(0)` and state 2; 2
+/// starts `yiFieldObjReadNB(TkGetNowEventJumpMapNo(id), id)` (`id`
+/// `TkGetNowEventJumpMapIdNo`), state 3; 3 waits for bit 5 to clear, then
+/// `loadPhyreFieldMap` unless `CheckPreviousLevel_00872a00`, state 4; 4
+/// `yiPopRenderState`, `FlushCache(0)`, the guide map number and the
+/// effect stick state back, state 5, then as 5: `AtelRecoverPreBgPage`,
+/// the draw mask back, `Yn_GuideMapInit` once (ctrl work 0 byte `+1`
+/// bit 7, with ctrl work 0 current), `Yn_BattleEnd`; returns 1 (done).
+/// Every other step returns 0.
+pub fn atel_battle_end_map_step(h: &mut impl ffx_bridge::Host, state: u32) -> u32 {
+    const RENDER_STATUS: u32 = 0x0090_8f10;
+    const FLUSH_CACHE: u32 = 0x0062_f4c0;
+    let ctx_at = h.rebase(SCRIPT_CONTEXT);
+    let works = h.rebase(CTRL_WORKS);
+    let saved = h.read::<u32>(ctx_at);
+    h.write(ctx_at, works);
+    let step = h.read::<u32>(state);
+    let mut done = 0;
+    let mut next = None;
+    match step {
+        0 | 1 => {
+            if step == 0 {
+                h.write(state, 2_u32);
+            }
+            if host_call(h, RENDER_STATUS, &[]) & 0x40 == 0 {
+                host_call(h, FLUSH_CACHE, &[0]);
+                next = Some(2);
+            }
+        }
+        2 => {
+            let id = host_call(h, 0x0088_d680, &[]);
+            let no = host_call(h, 0x0088_d690, &[id]);
+            host_call(h, 0x0090_8630, &[no, id]);
+            next = Some(3);
+        }
+        3 => {
+            if host_call(h, RENDER_STATUS, &[]) & 0x20 == 0 {
+                if host_call(h, 0x0087_2a00, &[]) == 0 {
+                    host_call(h, 0x0090_8000, &[]);
+                }
+                next = Some(4);
+            }
+        }
+        4 | 5 => {
+            if step == 4 {
+                host_call(h, 0x0090_9b90, &[]);
+                host_call(h, FLUSH_CACHE, &[0]);
+                let map = h.read::<u32>(h.rebase(0x0132_6b68));
+                host_call(h, 0x0091_9da0, &[map]);
+                let stick = h.rebase(0x0132_6be0);
+                host_call(h, 0x0072_9a10, &[stick]);
+                h.write(state, 5_u32);
+            }
+            host_call(h, 0x0087_3cc0, &[]);
+            let mask = h.read::<u32>(h.rebase(0x0132_6b78));
+            host_call(h, 0x0090_a2b0, &[mask]);
+            let flags = h.read::<u8>(works.wrapping_add(1));
+            let cur = h.read::<u32>(ctx_at);
+            h.write(ctx_at, works);
+            if flags & 0x80 == 0 {
+                h.write(works.wrapping_add(1), flags | 0x80);
+                host_call(h, 0x0091_9cd0, &[]);
+            }
+            h.write(ctx_at, cur);
+            host_call(h, 0x0091_9a40, &[]);
+            done = 1;
+        }
+        _ => {}
+    }
+    if let Some(n) = next {
+        h.write(state, n);
+    }
+    h.write(ctx_at, saved);
+    done
+}
+
+/// The game time `Atel_PlayTimeUpdate_0086ca20` last counted from (`f32`,
+/// whole seconds).
+pub const PLAY_TIME_LAST: u32 = 0x0132_5b84;
+
+/// `Atel_PlayTimeUpdate_0086ca20()` (name ours; a frame callback
+/// `AtelInitTotal` registers through `0x00888790(2, ..)`): the save
+/// event record's play time (`u32 +0xbc`, seconds) is capped at 3599999
+/// (999:59:59); below that, when `t - last` > 1.001 (`t` =
+/// `f32(graphicGetTime())`, `last` = [`PLAY_TIME_LAST`], the difference
+/// rounded to `f32`), it becomes `trunc(f32(t - last) + f32(time))` (low
+/// 32 bits of the 64-bit `fistp`) and `last` = `f32(ftol2_sse(t))`.
+/// `TkGetSaveEventAddress` and `FFXGetVideoMode` (unused) are called first;
+/// `fcall` gets the rebased `graphicGetTime`.
+pub fn atel_play_time_update<H: ffx_bridge::Host>(
+    h: &mut H,
+    mut fcall: impl FnMut(&mut H, u32, &[u32]) -> f64,
+) {
+    let save = host_call(h, MS_GET_SAVE_EVENT_ADDRESS, &[]);
+    host_call(h, 0x0088_7c40, &[]);
+    let time_fn = h.rebase(0x0064_1410);
+    let t = x87::load(x87::store(fcall(h, time_fn, &[])));
+    let time_at = save.wrapping_add(0xbc);
+    let time = h.read::<u32>(time_at);
+    let last_at = h.rebase(PLAY_TIME_LAST);
+    let last = x87::load(h.read::<u32>(last_at));
+    let d = x87::load(x87::store(x87::sub(t, last)));
+    if time >= 0x0036_ee7f {
+        h.write(time_at, 0x0036_ee7f_u32);
+        return;
+    }
+    // fcom: carry on only when d > 1.001 (not for NaN)
+    if d.partial_cmp(&f64::from(1.001_f32)) != Some(std::cmp::Ordering::Greater) {
+        return;
+    }
+    // time < 0x36ee7f: fild is exact, never negative
+    let p = x87::load(x87::store(f64::from(time)));
+    h.write(time_at, x87::ftol2(x87::add(d, p)));
+    let whole = x87::ftol(h, t);
+    h.write(last_at, x87::store(f64::from(whole.cast_signed())));
+}

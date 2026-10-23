@@ -3428,6 +3428,10 @@ ported! {
     Native_7049 @ 0x007a_55a0 => extern "C" fn n_7a55a0(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_7049(&mut mem(), w, a, s)
     }
+    /// `Native_7076(worker, args, stack)`.
+    Native_7076 @ 0x007a_56f0 => extern "C" fn n_7a56f0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_7076(&mut mem(), w, a, s)
+    }
     /// `Native_70dc(worker, args, stack)`.
     Native_70dc @ 0x007a_7a10 => extern "C" fn n_7a7a10(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_70dc(&mut mem(), w, a, s)
@@ -7432,6 +7436,19 @@ ported! {
     /// `Atel_CheckLineCrosses_00868020(worker, x)`.
     Atel_CheckLineCrosses_00868020 @ 0x0086_8020 => extern "C" fn h_868020(w: u32, x: u32) -> u32 {
         hp::atel_check_line_crosses(&mut mem(), w, x)
+    }
+    /// `Atel_WorkerFrame_008666e0(w, level)`: ctrl work `+0x5c`; its one
+    /// caller (`0x00865208`) drops `EAX`.
+    Atel_WorkerFrame_008666e0 @ 0x0086_66e0 => extern "C" fn h_8666e0(w: u32, level: u32) {
+        hp::atel_worker_frame(&mut mem(), w, level);
+    }
+    /// `Atel_BattleEndMapStep_00861650(state)`: 1 when done.
+    Atel_BattleEndMapStep_00861650 @ 0x0086_1650 => extern "C" fn h_861650(state: u32) -> u32 {
+        hp::atel_battle_end_map_step(&mut mem(), state)
+    }
+    /// `Atel_PlayTimeUpdate_0086ca20()`: a frame callback.
+    Atel_PlayTimeUpdate_0086ca20 @ 0x0086_ca20 => extern "C" fn h_86ca20() {
+        hp::atel_play_time_update(&mut mem(), |_, f, args| super::call_cdecl_f64(f, args));
     }
     /// `AtelEventGetFilePath2(dirs, sub, alt, name, ext)`: the three
     /// 256-byte locals in a frame.

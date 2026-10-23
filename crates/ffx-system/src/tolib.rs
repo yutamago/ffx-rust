@@ -15283,4 +15283,199 @@ pub mod bridge {
         ];
         call(mem, BASE_MES_FONT, &args)
     }
+    /// `TOInitBtlWindow()` (`0x0089b660`, caller `MsBattleExe`): the battle
+    /// windows' state reset: `TOInitPadData`, help scroll `0x0133c948` = 1
+    /// and `+4` = 0, `TOBtlInitActiveChrCursor`, `TOSeqGetNum(2, "dumm79",
+    /// 0x023cc090)`, `TOSetExeMessageWindowArea(1)`, `0x0133c950` (0x780
+    /// bytes) and `g_BtlActionList` (0x140) zeroed, every 9th word from
+    /// `0x0133d7a4` below `0x0133f0f4` zeroed (18 x 10), the command window
+    /// closed (`g_BtlWindowOpen` 0, `g_BtlWindowChr` 0xff), `0x0133f108` 0,
+    /// `0x00c58ef4` 1, `TOBtlInitChrNum`, `TOBtlInitStatusWin`,
+    /// `TOBtlInitEnemyLimit`, the info status line off (chr 0xff),
+    /// `TOBtlInitInfoWinMes`, the help window and text cleared, four floats
+    /// at `0x0133f788` 0.0, the simple help and sign windows (mode 7) and
+    /// `0x0133f784` cleared, `TOSeqGetPoint(2, "dum201", 0x0133f780,
+    /// 0x0133f782)`, `0x0133f77c` 0, SE `0x8000004e` stopped when playing,
+    /// the cursor-position stack cleared; returns
+    /// `TOSeqInitAllScene(2)`.
+    pub fn init_btl_window<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let zero = |mem: &mut M, at: u32, len: u32| {
+            for k in 0..len / 4 {
+                mem.write(r(mem, at) + 4 * k, 0_u32);
+            }
+        };
+        call(mem, 0x008a_dbd0, &[]);
+        mem.write(r(mem, 0x0133_c948), 1_u32);
+        mem.write(r(mem, 0x0133_c94c), 0_u32);
+        call(mem, 0x0089_7860, &[]);
+        let (name, out) = (r(mem, 0x00b5_ec54), r(mem, 0x023c_c090));
+        call(mem, 0x008a_e410, &[2, name, out]);
+        call(mem, 0x008a_f5c0, &[1]);
+        zero(mem, 0x0133_c950, 0x780);
+        zero(mem, 0x0133_d0d0, 0x140);
+        let mut at = 0x0133_d7c8;
+        while at < 0x0133_f118 {
+            for k in 0..10 {
+                mem.write(r(mem, at - 0x24 + 0x24 * k), 0_u32);
+            }
+            at += 0x168;
+        }
+        mem.write(r(mem, 0x023c_c08c), 0_u32);
+        mem.write(r(mem, 0x023c_c088), 0xff_u16);
+        mem.write(r(mem, 0x0133_f108), 0_u16);
+        mem.write(r(mem, 0x00c5_8ef4), 1_u8);
+        call(mem, 0x0089_79d0, &[]);
+        call(mem, 0x0089_8010, &[]);
+        call(mem, 0x0089_7af0, &[]);
+        mem.write(r(mem, 0x0133_c93e), 0_u8);
+        mem.write(r(mem, 0x0133_f5b8), 0xff_u16);
+        call(mem, 0x0089_7bd0, &[]);
+        mem.write(r(mem, 0x0133_c93c), 0_u8);
+        zero(mem, 0x0133_f538, 0x80);
+        zero(mem, 0x0133_f788, 0x10);
+        for (at, v) in [
+            (0x0133_f510, 0_u32),
+            (0x0133_f514, 7),
+            (0x0133_f518, 0),
+            (0x0133_f51c, 0),
+            (0x0133_f520, 0),
+            (0x0133_f524, 7),
+            (0x0133_f528, 0),
+            (0x0133_f52c, 0),
+            (0x0133_f784, 0),
+        ] {
+            mem.write(r(mem, at), v);
+        }
+        let (name, x, y) = (
+            r(mem, 0x00b5_ecb4),
+            r(mem, 0x0133_f780),
+            r(mem, 0x0133_f782),
+        );
+        call(mem, 0x008a_e450, &[2, name, x, y]);
+        mem.write(r(mem, 0x0133_f77c), 0_u32);
+        if call(mem, 0x0088_6680, &[0x8000_004e]) != 0 {
+            call(mem, 0x0088_6eb0, &[0x8000_004e]);
+        }
+        mem.write(r(mem, 0x0133_d6f0), 0_u16);
+        zero(mem, 0x0133_f7b4, 0x20);
+        call(mem, 0x008a_e5a0, &[2])
+    }
+
+    /// `TOInit()` (`0x008ad4d0`, caller `TkInit`): the system layer's start.
+    /// `LocalizationManager_GetWord0` 0 or 3 clears `0x00c59558`;
+    /// `TOInitLanguage`, `TOMenuMakeSaveFileName`, `TOInitPadData`,
+    /// `0x008fae20`; `0x01841e0c` and `g_MessageWindowMode` 0;
+    /// `0x01841d20` = 0 for language 0 or (1 unless the word is 3), else 1
+    /// (`TOGetFFXLangJmp` asked each time, as the original). The menu base
+    /// FTC (`TKMallocAndReadEventFTC` for languages 10, 0, 9, else
+    /// `TODVDFileLoad(4, 0)`) through `TOFTCTransfer` and freed; for 10, 0
+    /// and 9 also "newkit" when it loads. Then the language textures, the
+    /// menu files from bank 4 (languages 0x11 and 9) or 0x12 (loads 0xb,
+    /// 0xa, 0xf, 0xe, 8; reads 6 into `0x025d0d20`, the Albhed dictionary,
+    /// reads 7 and 0x16), bank 0x12's 0x13 load and 0x14/0x15 reads, the
+    /// scene slots and data, `TOSeqInitParam`, `MacroDic_Load`, the font pen
+    /// (`0x025d09bc` = 0x5012, `+2` 0), the message slots and macro
+    /// commands 0..8 of areas 1 and 0, `TODapsInit`, `TOMenuInit`,
+    /// `TOBtlInit` (its `EAX` returned) and `g_DebugPadPrintFlag` 0.
+    pub fn to_init<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) -> u32 {
+        const LANG: u32 = 0x008a_c2f0;
+        const LOAD: u32 = 0x008a_ba60;
+        const READ: u32 = 0x008a_ba30;
+        const READ_FTC: u32 = 0x0088_c860;
+        const TRANSFER: u32 = 0x008a_c130;
+        const FREE: u32 = 0x0068_7010;
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let word = call(mem, 0x0064_1100, &[]);
+        if word == 0 || word == 3 {
+            mem.write(r(mem, 0x00c5_9558), 0_u32);
+        }
+        for f in [0x008a_d900, 0x008b_3a40, 0x008a_dbd0, 0x008f_ae20] {
+            call(mem, f, &[]);
+        }
+        mem.write(r(mem, 0x0184_1e0c), 0_u32);
+        mem.write(r(mem, 0x0186_59bc), 0_u32);
+        let english = call(mem, LANG, &[]) == 1 && word != 3;
+        let flag = u32::from(!english && call(mem, LANG, &[]) != 0);
+        mem.write(r(mem, 0x0184_1d20), flag);
+        let msg = r(mem, 0x00b6_27a4);
+        call(mem, 0x0062_f500, &[msg]);
+        // languages 10, 0 and 9 read their own FTC files
+        let own = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            call(mem, LANG, &[]) == 10 || call(mem, LANG, &[]) == 0 || call(mem, LANG, &[]) == 9
+        };
+        let base = if own(mem, &mut call) {
+            let name = r(mem, 0x00b5_eb6c);
+            call(mem, READ_FTC, &[name])
+        } else {
+            call(mem, LOAD, &[4, 0])
+        };
+        call(mem, TRANSFER, &[base]);
+        call(mem, FREE, &[base]);
+        if own(mem, &mut call) {
+            let name = r(mem, 0x00b5_eb84);
+            let kit = call(mem, READ_FTC, &[name]);
+            if kit != 0 {
+                call(mem, TRANSFER, &[kit]);
+                call(mem, FREE, &[kit]);
+            }
+        }
+        let lang = call(mem, LANG, &[]);
+        call(mem, 0x0064_22e0, &[lang]);
+        let bank = if call(mem, LANG, &[]) == 0x11 || call(mem, LANG, &[]) == 9 {
+            4
+        } else {
+            0x12
+        };
+        for (file, at) in [
+            (0xb, 0x0184_1e00),
+            (0xa, 0x0184_1e04),
+            (0xf, 0x0184_1d9c),
+            (0xe, 0x0184_1d98),
+            (8, 0x0184_1e08),
+        ] {
+            let v = call(mem, LOAD, &[bank, file]);
+            mem.write(r(mem, at), v);
+        }
+        let tuto = r(mem, 0x025d_0d20);
+        call(mem, READ, &[bank, 6, tuto]);
+        mem.write(r(mem, 0x025d_16c4), tuto);
+        let table = call(mem, 0x0090_6b20, &[]);
+        let name = r(mem, 0x00b6_27d4);
+        call(mem, 0x0088_ccf0, &[name, table]);
+        let (seven, scene2) = (r(mem, 0x025d_0dc0), r(mem, 0x0184_1e10));
+        call(mem, READ, &[bank, 7, seven]);
+        call(mem, READ, &[bank, 0x16, scene2]);
+        let v = call(mem, LOAD, &[0x12, 0x13]);
+        mem.write(r(mem, 0x0184_1d94), v);
+        let (scene0, scene1) = (r(mem, 0x0185_f610), r(mem, 0x0185_fe10));
+        call(mem, READ, &[0x12, 0x14, scene0]);
+        call(mem, READ, &[0x12, 0x15, scene1]);
+        call(mem, 0x008a_df20, &[]);
+        call(mem, 0x00a7_bb00, &[]);
+        for (i, data) in [(0, scene0), (1, scene1), (2, scene2)] {
+            call(mem, 0x00a7_c7f0, &[i, data]);
+        }
+        call(mem, 0x008a_e6f0, &[]);
+        call(mem, 0x008b_85c0, &[]);
+        mem.write(r(mem, 0x025d_09bc), 0x5012_u16);
+        mem.write(r(mem, 0x025d_09be), 0_u8);
+        for area in [1, 0] {
+            call(mem, 0x008a_f5c0, &[area]);
+            for i in 0..8 {
+                call(mem, 0x008a_da30, &[i]);
+            }
+            for i in 0..8 {
+                call(mem, 0x008b_81d0, &[i]);
+            }
+        }
+        call(mem, 0x0089_dc40, &[]);
+        call(mem, 0x008b_e800, &[]);
+        let eax = call(mem, 0x0089_77f0, &[]);
+        mem.write(r(mem, 0x0184_1d43), 0_u8);
+        eax
+    }
 }

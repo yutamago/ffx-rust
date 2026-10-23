@@ -679,4 +679,190 @@ pub mod bridge {
             pick(mem, &mut call, key_a, a, a, 0)
         }
     }
+
+    /// The key-script operand lengths in words, by opcode (`0x00c89c40`,
+    /// eleven bytes: 2 2 2 2 10 10 12 12 2 2 16).
+    pub const KEY_OP_WORDS: u32 = 0x00c8_9c40;
+
+    /// `MenuScene_TrackStep_00a7b510(base, list, track, table, out)`
+    /// (`0x00a7b510`): one frame of a scene track's key script. The script
+    /// is `base + table[track.key]` (`track.key` = `u32 track+0` low 30
+    /// bits), the program counter `u16 track+8`, in 16-bit words whose low
+    /// 11 bits are the opcode. While the wait `u16 track+4` is not zero it
+    /// counts down and `MenuScene_KeyPick` runs at once (returns 1).
+    /// Otherwise the opcodes run until one waits:
+    /// - 0: end. Wait 0, frames -1, `track+0` = the key alone (flags
+    ///   cleared); returns 0.
+    /// - 1: step (`track+0xa` = the old counter).
+    /// - 2: wait for list entry `i16 track+0xc` (found by the operand
+    ///   against `list[1]`'s low 30 bits, the first entry's, for every
+    ///   entry, as the original compares) while its `+4` bit 31 is set;
+    ///   then entry -1, frames 0, step.
+    /// - 3: hold: wait = operand (minus 1 and stop after this frame when
+    ///   not 0), frames -1, step.
+    /// - 4..=7, 10: key: wait = frames = operand, step; stop when not 0
+    ///   (wait minus 1).
+    /// - 8: loop back to `u16 track+0xe` while the count `i16 track+0x10`
+    ///   (bit 11 of the word: 1; else the operand when it is not above 0,
+    ///   else minus 1) stays above 0, else count 0 and step.
+    /// - 9: loop mark: step, `track+0xe` = the new counter.
+    ///
+    /// Opcodes above 10 change nothing (with no hold pending they spin, as
+    /// in the original). Steps use [`KEY_OP_WORDS`]. Each stop ends in
+    /// `MenuScene_KeyPick(script, track, u16 wait, i16 frames, out)`;
+    /// returns 1 except after opcode 0.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::too_many_lines,
+        clippy::similar_names
+    )] // 16-bit counters as the original stores them; one interpreter
+    pub fn menu_scene_track_step<M: Mem>(
+        mem: &mut M,
+        [base, list, track, table, out]: [u32; 5],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const KEY_PICK: u32 = 0x00a7_b290;
+        let key = mem.read::<u32>(track) & 0x3fff_ffff;
+        let slot = table.wrapping_add(key.wrapping_mul(4));
+        let script = mem.read::<u32>(slot).wrapping_add(base);
+        let mut word = script.wrapping_add(2 * u32::from(mem.read::<u16>(track.wrapping_add(8))));
+        let wait = mem.read::<u16>(track.wrapping_add(4));
+        let frames = |mem: &M| i32::from(mem.read::<i16>(track.wrapping_add(6)));
+        if wait != 0 {
+            let wait = wait.wrapping_sub(1);
+            let f = frames(mem).cast_unsigned();
+            mem.write(track.wrapping_add(4), wait);
+            call(mem, KEY_PICK, &[script, track, u32::from(wait), f, out]);
+            return 1;
+        }
+        let ops = mem.rebase(KEY_OP_WORDS);
+        let len = |mem: &M, op: u32| u32::from(mem.read::<u8>(ops.wrapping_add(op)));
+        let set16 = |mem: &mut M, at: u32, v: u16| mem.write(track.wrapping_add(at), v);
+        let get16 = |mem: &M, at: u32| mem.read::<u16>(track.wrapping_add(at));
+        let mut go_on = true;
+        let mut result = 1;
+        loop {
+            let op_word = u32::from(mem.read::<u16>(word));
+            let op = op_word & 0x7ff;
+            // step: pointer and counter by the opcode's length
+            let step = |mem: &mut M, word: &mut u32, n: u32| {
+                *word = word.wrapping_add(2 * n);
+                let pc = get16(mem, 8);
+                mem.write(track.wrapping_add(8), pc.wrapping_add(n as u16));
+            };
+            match op {
+                0 => {
+                    set16(mem, 4, 0);
+                    set16(mem, 6, 0xffff);
+                    mem.write(track, key);
+                    result = 0;
+                    break;
+                }
+                1 => {
+                    let n = len(mem, 1);
+                    word = word.wrapping_add(2 * n);
+                    let pc = get16(mem, 8);
+                    set16(mem, 0xa, pc);
+                    set16(mem, 8, pc.wrapping_add(n as u16));
+                }
+                2 => {
+                    set16(mem, 4, 0);
+                    set16(mem, 6, 0xffff);
+                    if mem.read::<i16>(track.wrapping_add(0xc)) < 0 {
+                        let want = i32::from(mem.read::<i16>(word.wrapping_add(2)));
+                        let count = mem.read::<i32>(list);
+                        let first = mem.read::<u32>(list.wrapping_add(4)) & 0x3fff_ffff;
+                        let mut i = 0i32;
+                        while i < count {
+                            if want.cast_unsigned() == first {
+                                set16(mem, 0xc, i as u16);
+                                break;
+                            }
+                            i += 1;
+                        }
+                    }
+                    let entry = mem.read::<i16>(track.wrapping_add(0xc));
+                    if entry >= 0 {
+                        let at = list
+                            .wrapping_add(20u32.wrapping_mul(i32::from(entry).cast_unsigned()))
+                            .wrapping_add(4);
+                        if mem.read::<u32>(at) & 0x8000_0000 != 0 {
+                            break;
+                        }
+                    }
+                    set16(mem, 0xc, 0xffff);
+                    set16(mem, 6, 0);
+                    let n = len(mem, 2);
+                    step(mem, &mut word, n);
+                }
+                3 => {
+                    let hold = mem.read::<u16>(word.wrapping_add(2));
+                    set16(mem, 4, hold);
+                    set16(mem, 6, 0xffff);
+                    if hold != 0 {
+                        go_on = false;
+                        set16(mem, 4, hold - 1);
+                    }
+                    let n = len(mem, 3);
+                    word = word.wrapping_add(2 * n);
+                    let pc = get16(mem, 8);
+                    set16(mem, 0xa, pc);
+                    set16(mem, 8, pc.wrapping_add(n as u16));
+                }
+                4..=7 | 10 => {
+                    let n = len(mem, op);
+                    let wait = mem.read::<u16>(word.wrapping_add(2));
+                    word = word.wrapping_add(2 * n);
+                    let pc = get16(mem, 8);
+                    set16(mem, 0xa, pc);
+                    set16(mem, 8, pc.wrapping_add(n as u16));
+                    set16(mem, 4, wait);
+                    set16(mem, 6, wait);
+                    if wait != 0 {
+                        set16(mem, 4, wait - 1);
+                        break;
+                    }
+                }
+                8 => {
+                    let count = if op_word & 0x800 != 0 {
+                        1
+                    } else {
+                        let c = mem.read::<i16>(track.wrapping_add(0x10));
+                        if c > 0 {
+                            c - 1
+                        } else {
+                            mem.read::<i16>(word.wrapping_add(2))
+                        }
+                    };
+                    mem.write(track.wrapping_add(0x10), count);
+                    if count > 0 {
+                        let mark = get16(mem, 0xe);
+                        set16(mem, 8, mark);
+                        word = base
+                            .wrapping_add(2 * u32::from(mark))
+                            .wrapping_add(mem.read::<u32>(slot));
+                    } else {
+                        let n = len(mem, 8);
+                        step(mem, &mut word, n);
+                        set16(mem, 0x10, 0);
+                    }
+                }
+                9 => {
+                    let n = len(mem, 9);
+                    step(mem, &mut word, n);
+                    let pc = get16(mem, 8);
+                    set16(mem, 0xe, pc);
+                }
+                _ => {}
+            }
+            if !go_on {
+                break;
+            }
+        }
+        let wait = u32::from(get16(mem, 4));
+        let f = frames(mem).cast_unsigned();
+        call(mem, KEY_PICK, &[script, track, wait, f, out]);
+        result
+    }
 }
