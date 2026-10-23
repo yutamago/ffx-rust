@@ -3161,6 +3161,98 @@ pub mod bridge {
         g
     }
 
+    /// `MsGetSaveConfigHiragana()` (`0x007851f0`), `MsMenuGetText(group,
+    /// id, kana)` (`0x0078fcf0`), `TOGetSaveChrName(chr)` (`0x008ac850`),
+    /// `AbmapStatusMes_00a56fc0(id)`, `MsGetRomPlyCommand(id, &strings)`
+    /// (`0x00790a90`) and `AbmapMainMes_00a567d0(id)`.
+    pub const NODE_MESSAGE_CALLS: [u32; 6] = [
+        0x0078_51f0,
+        0x0078_fcf0,
+        0x008a_c850,
+        0x00a5_6fc0,
+        0x0079_0a90,
+        0x00a5_67d0,
+    ];
+
+    /// `AbmapShowNodeMessage_00a5aa30(chr, node)` (name ours; caller
+    /// `AbmapGetNodePanel`, which returns its `EAX`): the message for a
+    /// node `chr` has just activated. Its kind's excel row
+    /// (`MsGetExcelData` of the node's `+0x80e` in
+    /// [`super::NODE_EXCEL_TABLE`], the strings base into `work`) gives the flags (`+0x10`) and the amount (`+0x14` byte, into
+    /// `+0x11660`); the timer `+0x11666` 0x78, the title
+    /// `MsMenuGetText(9, 0x21, kana)` at `+0x11654`, the name
+    /// (`TOGetSaveChrName`) at `+0x11658`, `+0x1165c` 0 then the text and
+    /// `+0x11664` 0. The lowest flag picks the text: bits 0-3
+    /// `MsMenuGetText(0xb, 7..=10, kana)`, bits 4-7 the status texts
+    /// 0xb..=0xe, bit 8 status text 0 with the amount times 50, bit 9 status
+    /// text 1 with the amount times 5 (`EAX` the new amount); else a row
+    /// command (`+0x12` nonzero) gives the title `AbmapMainMes(0x20)` and
+    /// the command's name (`MsGetRomPlyCommand`, its strings base in
+    /// `work + 4`; the original uses its own `node` slot) with `+0x11664` 1
+    /// (`EAX` the grid), and no command leaves it (`EAX` 0). Otherwise
+    /// `EAX` is the text stored.
+    pub fn abmap_show_node_message<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [chr, node]: [u32; 2],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [kana, text, name, status, command, main] = NODE_MESSAGE_CALLS.map(|f| mem.rebase(f));
+        let excel = mem.rebase(super::MS_GET_EXCEL_DATA);
+        let table = mem.read::<u32>(mem.rebase(super::NODE_EXCEL_TABLE));
+        let g = ABMAP.get(mem);
+        let kind =
+            u32::from(mem.read::<u16>(g.wrapping_add(0x80e).wrapping_add(node.wrapping_mul(0x28))));
+        let row = call(mem, excel, &[kind, table, work]);
+        let flags = mem.read::<u16>(row.wrapping_add(0x10));
+        mem.write(ABMAP.get(mem).wrapping_add(0x11666), 0x78u16);
+        mem.write(ABMAP.get(mem).wrapping_add(0x1165c), 0u32);
+        mem.write(ABMAP.get(mem).wrapping_add(0x11658), 0u32);
+        let amount = u32::from(mem.read::<u8>(row.wrapping_add(0x14)));
+        mem.write(ABMAP.get(mem).wrapping_add(0x11660), amount);
+        let k = call(mem, kana, &[]) & 1;
+        let title = call(mem, text, &[9, 0x21, k]);
+        mem.write(ABMAP.get(mem).wrapping_add(0x11654), title);
+        let who = call(mem, name, &[chr]);
+        mem.write(ABMAP.get(mem).wrapping_add(0x11658), who);
+        mem.write(ABMAP.get(mem).wrapping_add(0x11664), 0u16);
+        if let Some(id) = (0..4_u32).find(|b| u32::from(flags) & (1 << b) != 0) {
+            let k = call(mem, kana, &[]) & 1;
+            let t = call(mem, text, &[0xb, 7 + id, k]);
+            mem.write(ABMAP.get(mem).wrapping_add(0x1165c), t);
+            return t;
+        }
+        if let Some(b) = (4..10_u32).find(|b| u32::from(flags) & (1 << b) != 0) {
+            let id = if b < 8 { 0xb + b - 4 } else { b - 8 };
+            let t = call(mem, status, &[id]);
+            mem.write(ABMAP.get(mem).wrapping_add(0x1165c), t);
+            if b < 8 {
+                return t;
+            }
+            let at = ABMAP.get(mem).wrapping_add(0x11660);
+            let v = mem
+                .read::<u32>(at)
+                .wrapping_mul(if b == 8 { 0x32 } else { 5 });
+            mem.write(at, v);
+            return v;
+        }
+        let cmd = u32::from(mem.read::<u16>(row.wrapping_add(0x12)));
+        if cmd == 0 {
+            return 0;
+        }
+        let base_at = work.wrapping_add(4);
+        let rec = call(mem, command, &[cmd, base_at]);
+        let title = call(mem, main, &[0x20]);
+        mem.write(ABMAP.get(mem).wrapping_add(0x11654), title);
+        let base = mem.read::<u32>(base_at);
+        let k = call(mem, kana, &[]) & 1;
+        let t = u32::from(mem.read::<u16>(rec.wrapping_add(4 * k))).wrapping_add(base);
+        mem.write(ABMAP.get(mem).wrapping_add(0x1165c), t);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x11664), 1u16);
+        g
+    }
+
     /// `AbmapGetNodePosRadius(node, out)` (`0x00a5b4c0`, in `ST0`),
     /// `AbmapCalcLinkPointsStraight` (`0x00a581f0`) and
     /// `AbmapCalcLinkPointsCurved` (`0x00a57710`).

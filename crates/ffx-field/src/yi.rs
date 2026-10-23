@@ -3159,7 +3159,9 @@ pub mod bridge {
     }
 
     /// The three-call sync step `yiResetObj` repeats: `TkRestartSyncH(5)`,
-    /// `TkGetSyncH(5)` (unless `restart_only`), `0x0088c820(5)`.
+    /// `TkGetSyncH(5)` (unless `restart_only`), `0x0088c820(5)`. Returns
+    /// `TkGetSyncH`'s value (0 without it): `0x0088c820` is a bare `ret`, so
+    /// that is the `EAX` the step leaves.
     fn sync_step<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
         mem: &mut M,
         call: &mut C,

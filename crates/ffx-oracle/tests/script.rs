@@ -16225,3 +16225,292 @@ fn small4d_effect_callback_and_albhed_dic_match_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     small4d_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// A random word that is no signalling NaN (the emulator keeps those).
+fn small5_word(rng: &mut Xorshift) -> u32 {
+    let v = match rng.below(4) {
+        0 => 0x7fc0_0000 | rng.below(0x40_0000),
+        1 => 0x3f80_0000,
+        _ => rng.next(),
+    };
+    if v & 0x7f80_0000 == 0x7f80_0000 && v & 0x007f_ffff != 0 {
+        v | 0x0040_0000
+    } else {
+        v
+    }
+}
+
+/// Small round 5 a on one pair: `AtelActorSetUp2` (every callee logged,
+/// `AtelInitBasicWork` by its record, the counts from sequences with
+/// negatives) and `Atel_SyncWorkerPos_00869e40` (the model, save and
+/// autosave callees logged or from sequences; worker types 0, 1, 5, 6,
+/// player and not).
+#[allow(clippy::too_many_lines)] // one block per function
+fn small5a_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    // sequences: 0 actors, 1 namespaces, 2 index work, 3 the required
+    // ctrl work, 4 AtelGetCtrlWork, 5 the expand count
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0086_a650, 1, true),
+            (0x0086_c190, 1, true),
+            (0x0086_bb80, 2, true),
+            (0x0086_ee10, 4, true),
+            (0x0086_afa0, 1, true),
+            (0x0086_aa20, 1, true),
+            (0x0088_5b00, 5, false),
+            (0x0087_1190, 1, false),
+            (0x0086_2d30, 1, false),
+            (0x0086_d670, 2, false),
+            (0x0087_3c70, 1, false),
+            (0x0083_b460, 1, false),
+            (0x0086_ed80, 1, false),
+            (0x0087_0ef0, 1, false),
+            (0x0086_f3c0, 1, false),
+            (0x0086_cae0, 0, false),
+        ],
+    );
+    r27_deref_stub(a, b, stubs.0, 0x0086_cb00, 8, 2);
+    let c = alloc_both(a, b, 0x240);
+    let c2 = alloc_both(a, b, 0x40);
+    let debug = alloc_both(a, b, 4 + 12 * 4);
+    for round in 0..60u32 {
+        r27_reset(a, b, &stubs, |s| match s {
+            0 | 1 => [0u32, 1, 2, 3, 4, u32::MAX, 2][rng.below(7) as usize],
+            3 => c,
+            4 => c2,
+            5 => [0u32, 1, 0x10, 0x1c, 0x1d, 0xffff_fff0, rng.next()][rng.below(7) as usize],
+            _ => rng.next(),
+        });
+        fill_both(a, b, rng, debug + 4, 12 * 4);
+        poke(
+            a,
+            b,
+            debug,
+            [0u32, 1, 3, 4, u32::MAX][rng.below(5) as usize],
+        );
+        for o in [0x0cu32, 0x14, 0x16, 0x18] {
+            let v = if rng.below(4) == 0 {
+                rng.next() & 0xffff
+            } else {
+                rng.below(12)
+            };
+            #[allow(clippy::cast_possible_truncation)] // a u16 field
+            poke(a, b, c2 + o, v as u16);
+        }
+        fill_both(a, b, rng, c, 0x60);
+        if round % 5 == 0 {
+            // an exact 0x24 entries: the expand count makes up the rest
+            let f = |o: u32| u32::from(Mem::read::<u16>(a, c2 + o));
+            let n = f(0x0c)
+                .wrapping_sub(f(0x18))
+                .wrapping_sub(f(0x16))
+                .wrapping_sub(f(0x14))
+                .wrapping_add(8);
+            let (_, words) = stubs.2[5];
+            poke(a, b, words, 0x24_u32.wrapping_sub(n));
+        }
+        let args = [
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            if round % 3 == 0 { 0 } else { rng.next() },
+            rng.next(),
+            if round % 4 == 0 { 0 } else { debug },
+            rng.next(),
+        ];
+        r22_case(
+            a,
+            b,
+            0x0087_5510,
+            &args,
+            true,
+            &format!("AtelActorSetUp2 {what} {round} {args:x?}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_actor_set_up2(r, args, f)
+            },
+        );
+    }
+    // sequences: 0 field mode, 1 encounter, 2 the save block, 3 the
+    // dictionary, 4 the debug save's result
+    let save = alloc_both(a, b, 0x40);
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0082_ab90, 1, true),
+            (0x0083_d820, 1, true),
+            (0x0088_c830, 0, true),
+            (0x0083_d7a0, 1, true),
+            (0x0064_7e10, 1, true),
+            (0x0082_ac90, 4, false),
+            (0x0087_0ef0, 1, false),
+            (0x0064_3de0, 0, false),
+        ],
+    );
+    let ctrl = alloc_both(a, b, 0x240);
+    let hdr = alloc_both(a, b, 0x10);
+    let w = alloc_both(a, b, 0x600);
+    poke(a, b, w, hdr);
+    let ctx_cell = a.rebase(0x0132_6b28);
+    poke(a, b, ctx_cell, ctrl);
+    let flag = a.rebase(0x023c_bebc);
+    for round in 0..300u32 {
+        r27_reset(a, b, &stubs, |s| match s {
+            2 => save,
+            4 => [0u32, 1, u32::MAX][rng.below(3) as usize],
+            _ => rng.next(),
+        });
+        poke(a, b, hdr, [0u8, 1, 5, 6, 7, 3][rng.below(6) as usize]);
+        for o in (0x284..0x2a0).chain(0x558..0x574).step_by(4) {
+            let v = small5_word(rng);
+            poke(a, b, w + o, v);
+        }
+        for o in (0x218..0x238).step_by(4) {
+            let v = small5_word(rng);
+            poke(a, b, ctrl + o, v);
+        }
+        poke(a, b, w + 0xaa, [0u8, 1, 1, 2][rng.below(4) as usize]);
+        poke(
+            a,
+            b,
+            w + 0x9c,
+            if rng.below(3) == 0 { 0 } else { rng.next() | 1 },
+        );
+        let id = rng.below(4) | (rng.below(2) << 8);
+        let other = [id, id, id ^ 0x100, id ^ 1][rng.below(4) as usize];
+        #[allow(clippy::cast_possible_truncation)] // u16 ids
+        {
+            poke(a, b, w + 0x2e, id as u16);
+            poke(a, b, ctrl + 0xa, other as u16);
+        }
+        poke(a, b, flag, [0u32, 1, 0x100][rng.below(3) as usize]);
+        r22_case(
+            a,
+            b,
+            0x0086_9e40,
+            &[w],
+            false,
+            &format!("Atel_SyncWorkerPos {what} {round}"),
+            |r| {
+                hp::atel_sync_worker_pos(r, w);
+                0
+            },
+        );
+    }
+}
+
+#[test]
+fn small5a_actor_set_up2_and_sync_worker_pos_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_5a01);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        small5a_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    small5a_cases(&mut a, &mut b, &mut rng, "snapshot");
+}
+
+/// Small round 5 g on one pair: `AtelPopMember` and `AtelPushMember`
+/// over a save block of their own; the join setters and party setter
+/// logged, the join getter from a sequence (0, 1, 2 and others), the
+/// party getter the original over random party bytes.
+fn small5g_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    let save = alloc_both(a, b, 0x40);
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0088_c830, 0, true),
+            (0x0078_5380, 1, true),
+            (0x0078_69b0, 2, false),
+            (0x0078_6950, 3, false),
+        ],
+    );
+    let party = a.rebase(0x0113_07e8);
+    for round in 0..300u32 {
+        r27_reset(a, b, &stubs, |s| match s {
+            0 => save,
+            _ => [0u32, 1, 1, 2, rng.next()][rng.below(5) as usize],
+        });
+        fill_both(a, b, rng, save, 0x30);
+        if rng.below(3) == 0 {
+            poke(a, b, save + 0x20, 0u8);
+        }
+        for k in 0..3 {
+            let v = [0xffu8, 0, 1, 7, rng.next().to_le_bytes()[0]][rng.below(5) as usize];
+            poke(a, b, party + k, v);
+        }
+        if round % 2 == 0 {
+            r22_case(
+                a,
+                b,
+                0x0086_ddb0,
+                &[],
+                true,
+                &format!("AtelPopMember {what} {round}"),
+                |r| hp::atel_pop_member(r),
+            );
+        } else {
+            r22_case(
+                a,
+                b,
+                0x0086_e310,
+                &[],
+                true,
+                &format!("AtelPushMember {what} {round}"),
+                |r| {
+                    let f = frame(r);
+                    hp::atel_push_member(r, f)
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn small5g_pop_and_push_member_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_5e07);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        small5g_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    small5g_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

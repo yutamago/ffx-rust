@@ -11582,6 +11582,198 @@ pub mod bridge {
         result
     }
 
+    /// `TOWaitBtlWinTarget_008a8be0(w)` (name ours; the `+0x9c` step
+    /// `TOBtlSetCallback` installs at `0x008a10aa`): `TOBtlGetTargetPad(w)`
+    /// (`0x0089d390`); returns 0.
+    pub fn wait_btl_win_target<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x0089_d390, &[w]);
+        0
+    }
+
+    /// `g_TkMenuFirstReadEnd` (`0x01340859`, `i8`).
+    pub const MENU_FIRST_READ_END: Global<u8> = Global::new(0x0134_0859);
+    /// `g_TkMenuMainActiveMask` (`0x018408ec`).
+    pub const MENU_MAIN_ACTIVE_MASK: Global<u32> = Global::new(0x0184_08ec);
+    /// `g_TkMn2MenuMode` (`0x018408f8`).
+    pub const MN2_MENU_MODE: Global<u32> = Global::new(0x0184_08f8);
+
+    /// `TOMenuGetControlPad`, `TOMenuGetControlPadTrg`, `TkCdReadSync`,
+    /// `TODVDFileStartRead`, `0x008abb00` (the DVD read's poll),
+    /// `TKMallocAndReadMenuMessage`, `TOMenuAtelStart`, `TkCdReadNB`.
+    pub const MENU_FIRST_READ_CALLS: [u32; 8] = [
+        0x008b_e410,
+        0x008b_e4b0,
+        0x0088_d1c0,
+        0x008a_bab0,
+        0x008a_bb00,
+        0x0088_ccf0,
+        0x008b_e3a0,
+        0x0088_d190,
+    ];
+
+    /// `TOMenuFirstReadProc_008a8c10(task)` (name ours; the proc of the
+    /// scene record at `0x00c59500`): one step of the menu's first load,
+    /// the step at `task + 0x1c` (jump table `0x008a8d84`). After the two
+    /// pad reads: 0 -> 1; 1 waits for `TkCdReadSync(1)`, then 5 (9 when
+    /// `g_TkMn2MenuMode`'s high half is 0x80); 2 -> 3; 3 waits, -> 4; 4 and
+    /// 0xb -> 0xd; 5 starts the DVD read of file 0x12/0xc into
+    /// `0x01576f70` -> 6; 6 waits for `0x008abb00`, -> 7; 7 reads the
+    /// "menumain" messages into `0x0157ef70` -> 8; 8 waits, then
+    /// `TOMenuAtelStart` -> 9; 9 -> 0xb; 0xd -> 0xf -> 0x11 -> 0x13 ->
+    /// 0x16; 0x16 `TkCdReadNB(0x2a, 0, 0x015a0870)` -> 0x17; 0x17 waits,
+    /// clears bit 0 of `g_TkMenuMainActiveMask`, -> 0x18; 0x18 sets
+    /// `g_TkMenuFirstReadEnd`. Returns the `EAX` the original leaves: the
+    /// step for the plain moves and the others, the last callee's result
+    /// on a wait or a call, the masked menu mode after step 1's wait.
+    pub fn menu_first_read_proc<M: Mem>(
+        mem: &mut M,
+        task: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [
+            pad,
+            pad_trg,
+            cd_sync,
+            dvd_read,
+            dvd_poll,
+            read_msg,
+            atel_start,
+            cd_read,
+        ] = MENU_FIRST_READ_CALLS;
+        call(mem, pad, &[]);
+        call(mem, pad_trg, &[]);
+        let at = task.wrapping_add(0x1c);
+        let step = mem.read::<u32>(at);
+        let go = |mem: &mut M, next: u32| mem.write(at, next);
+        match step {
+            0 => go(mem, 1),
+            1 => {
+                let r = call(mem, cd_sync, &[1]);
+                if r != 0 {
+                    return r;
+                }
+                let mode = MN2_MENU_MODE.get(mem) & 0xffff_0000;
+                go(mem, if mode == 0x0080_0000 { 5 } else { 9 });
+                return mode;
+            }
+            2 => go(mem, 3),
+            3 | 0x17 => {
+                let r = call(mem, cd_sync, &[1]);
+                if r != 0 {
+                    return r;
+                }
+                if step == 3 {
+                    go(mem, 4);
+                } else {
+                    let mask = MENU_MAIN_ACTIVE_MASK.get(mem) & !1;
+                    MENU_MAIN_ACTIVE_MASK.set(mem, mask);
+                    go(mem, 0x18);
+                }
+                return 0;
+            }
+            4 | 0xb => go(mem, 0xd),
+            5 => {
+                let buf = mem.rebase(0x0157_6f70);
+                let r = call(mem, dvd_read, &[0x12, 0xc, buf]);
+                go(mem, 6);
+                return r;
+            }
+            6 | 8 => {
+                let r = call(mem, dvd_poll, &[]);
+                if r != 0 {
+                    return r;
+                }
+                if step == 6 {
+                    go(mem, 7);
+                    return 0;
+                }
+                let r = call(mem, atel_start, &[]);
+                go(mem, 9);
+                return r;
+            }
+            7 => {
+                let (name, buf) = (mem.rebase(0x00b5_f484), mem.rebase(0x0157_ef70));
+                let r = call(mem, read_msg, &[name, buf]);
+                go(mem, 8);
+                return r;
+            }
+            9 => go(mem, 0xb),
+            0xd => go(mem, 0xf),
+            0xf => go(mem, 0x11),
+            0x11 => go(mem, 0x13),
+            0x13 => go(mem, 0x16),
+            0x16 => {
+                let buf = mem.rebase(0x015a_0870);
+                let r = call(mem, cd_read, &[0x2a, 0, buf]);
+                go(mem, 0x17);
+                return r;
+            }
+            0x18 => MENU_FIRST_READ_END.set(mem, 1),
+            _ => {}
+        }
+        step
+    }
+
+    /// `g_PauseOn`, `g_PauseFade`, `g_PauseFadeStep`, `g_PauseEntered`
+    /// (`0x01340828`, `0x01340838`, `0x0134083c`, `0x0134084c`) and the
+    /// time the pause began (`0x012fb820`, 64 bits).
+    pub const PAUSE_ON: Global<u32> = Global::new(0x0134_0828);
+    pub const PAUSE_FADE: Global<u32> = Global::new(0x0134_0838);
+    pub const PAUSE_FADE_STEP: Global<u32> = Global::new(0x0134_083c);
+    pub const PAUSE_ENTERED: Global<u32> = Global::new(0x0134_084c);
+    pub const PAUSE_TIME: u32 = 0x012f_b820;
+    /// `g_MoviePictureOn` (`0x0112a00c`).
+    pub const MOVIE_PICTURE_ON: Global<u32> = Global::new(0x0112_a00c);
+
+    /// `graphicGetTimeInMicroseconds` (64 bits), `0x00640e20(1)` (the
+    /// timers), `Sg_SetPauseAllSounds(1)`, `0x006f3300` (the pause screen),
+    /// `Input_UpdateAll_00630e80`, `movie_with3DScene`,
+    /// `graphicVideoPause`.
+    pub const PAUSE_ENTER_CALLS: [u32; 7] = [
+        0x0064_1420,
+        0x0064_0e20,
+        0x0082_1cc0,
+        0x006f_3300,
+        0x0063_0e80,
+        0x0076_f0c0,
+        0x0064_5de0,
+    ];
+
+    /// `Pause_Enter()` (`0x008ab3d0`; caller `Pause_Update`): the time it
+    /// began (`graphicGetTimeInMicroseconds`, both halves), timers and
+    /// sounds paused, the pause screen and an input pass, then
+    /// `g_PauseEntered` = `g_PauseOn` = 1, fade 0x80 stepping -4. With a
+    /// movie in the 3D scene (`movie_with3DScene`) or a movie picture up,
+    /// it tail-calls `graphicVideoPause` and returns its `EAX`, else 0.
+    /// `call64` calls a function returning `EDX:EAX`.
+    pub fn pause_enter<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut call64: impl FnMut(&mut M, u32) -> u64,
+    ) -> u32 {
+        let [time, timers, sounds, screen, input, movie, video_pause] = PAUSE_ENTER_CALLS;
+        let t = call64(mem, time);
+        let at = mem.rebase(PAUSE_TIME);
+        mem.write(at, t);
+        call(mem, timers, &[1]);
+        call(mem, sounds, &[1]);
+        call(mem, screen, &[]);
+        call(mem, input, &[]);
+        PAUSE_ENTERED.set(mem, 1);
+        PAUSE_ON.set(mem, 1);
+        PAUSE_FADE.set(mem, 0x80);
+        PAUSE_FADE_STEP.set(mem, 0xffff_fffc);
+        let r = call(mem, movie, &[]);
+        if r == 0 && MOVIE_PICTURE_ON.get(mem) == 0 {
+            return 0;
+        }
+        call(mem, video_pause, &[])
+    }
+
     /// `TOOpenBtlWinLeft()` (`0x008a8620`) and `TOOpenBtlWinRight()`
     /// (`0x008a86d0`): `TOSeqStartScene(2, "bleftwlay" / "brightwlay")`
     /// (the strings at `0x00b5f070` / `0x00b5f07c`); return 1.
@@ -11791,6 +11983,368 @@ pub mod bridge {
             _ => return element & !0xff | element >> 24,
         };
         call(mem, f, &[chr])
+    }
+
+    /// `g_PauseRequest` (`0x01340850`) and the pauses' total time
+    /// (`0x012fb818`, 64 bits).
+    pub const PAUSE_REQUEST: Global<u32> = Global::new(0x0134_0850);
+    pub const PAUSE_TOTAL: u32 = 0x012f_b818;
+
+    /// `AtelGetCurCtrlWork`, `Pause_Enter`, `inputIsPressButton`,
+    /// `Pause_HideScreen`, `0x006f32d0` (the pause screen's end).
+    pub const PAUSE_UPDATE_CALLS: [u32; 5] = [
+        0x0086_aff0,
+        0x008a_b3d0,
+        0x0063_0cf0,
+        0x006f_32e0,
+        0x006f_32d0,
+    ];
+
+    /// `Pause_Update()` (`0x008ab340`; caller `PhyreScene_animate`): while
+    /// the current ctrl work pauses (`+0x210` bit 4) the pause is entered
+    /// once (`Pause_Enter`), Start (`inputIsPressButton(0x800)`) at fade
+    /// 0x40 hides the pause screen and turns the fade step to +4, and the
+    /// fade (`g_PauseFade`) moves by its step, kept from 0x40. Reaching
+    /// 0x80 ends the pause (`0x008ab2d0`, a tail jump, here inline): the
+    /// flags cleared, the time paused added to `0x012fb818`
+    /// (`graphicGetTimeInMicroseconds` less the start), timers and sounds
+    /// resumed, the pause screen closed, an input pass, and with a movie in
+    /// the 3D scene or a movie picture `graphicVideoPause`'s `EAX`, else 0.
+    /// Otherwise `EAX` is the ctrl work (not pausing) or the new fade,
+    /// before the 0x40 clamp. `call64` calls a function returning
+    /// `EDX:EAX`.
+    pub fn pause_update<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut call64: impl FnMut(&mut M, u32) -> u64,
+    ) -> u32 {
+        let [ctrl_work, enter, pressed, hide, screen_end] = PAUSE_UPDATE_CALLS;
+        let [time, timers, sounds, _, input, movie, video_pause] = PAUSE_ENTER_CALLS;
+        let ctrl = call(mem, ctrl_work, &[]);
+        if mem.read::<u8>(ctrl.wrapping_add(0x210)) & 0x10 == 0 {
+            return ctrl;
+        }
+        if PAUSE_ENTERED.get(mem) == 0 {
+            call(mem, enter, &[]);
+        }
+        let mut fade = PAUSE_FADE.get(mem);
+        if fade == 0x40 {
+            if call(mem, pressed, &[0x800]) == 0 {
+                fade = PAUSE_FADE.get(mem);
+            } else {
+                call(mem, hide, &[]);
+                fade = 0x40;
+                PAUSE_FADE_STEP.set(mem, 4);
+            }
+        }
+        let fade = fade.wrapping_add(PAUSE_FADE_STEP.get(mem));
+        PAUSE_FADE.set(mem, fade);
+        if fade.cast_signed() < 0x40 {
+            PAUSE_FADE.set(mem, 0x40);
+            return fade;
+        }
+        if fade.cast_signed() < 0x80 {
+            return fade;
+        }
+        if fade != 0x80 {
+            PAUSE_FADE.set(mem, 0x80);
+        }
+        PAUSE_ENTERED.set(mem, 0);
+        PAUSE_REQUEST.set(mem, 0);
+        PAUSE_ON.set(mem, 0);
+        let now = call64(mem, time);
+        let start = mem.read::<u64>(mem.rebase(PAUSE_TIME));
+        let total = mem.rebase(PAUSE_TOTAL);
+        let sum = mem.read::<u64>(total).wrapping_add(now.wrapping_sub(start));
+        mem.write(total, sum);
+        call(mem, timers, &[0]);
+        call(mem, sounds, &[0]);
+        call(mem, screen_end, &[]);
+        call(mem, input, &[]);
+        if call(mem, movie, &[]) == 0 && MOVIE_PICTURE_ON.get(mem) == 0 {
+            return 0;
+        }
+        call(mem, video_pause, &[])
+    }
+
+    /// `g_BtlCommandRec` (`0x023cc040`), `g_BtlActionDepth` (`0x023cc092`,
+    /// `i8`) and the command-window levels (`0x0133c950`, 0xf0 bytes each:
+    /// `+2` a flag byte, `+8` the actor byte, `+0x16` the command, `+0xd8`
+    /// a word).
+    pub const BTL_COMMAND_REC: u32 = 0x023c_c040;
+    pub const BTL_ACTION_DEPTH: Global<i8> = Global::new(0x023c_c092);
+    pub const BTL_LEVELS: u32 = 0x0133_c950;
+
+    /// `TOControlMsSetMenuCommand()` (`0x0089afc0`, Fahrenheit's name;
+    /// callers `TOBtlFinishCommand`, `TOControlBtlWindow`): builds the
+    /// command record from the open levels 0..=depth and hands it to
+    /// `MsSetMenuCommand`. The record's three groups (`+8`, 0x10 bytes
+    /// each) start as `0xff00ff`, 0; a level's command (`u16 +0x16`,
+    /// skipped when 0xffff or 0xfffe) goes into the current group's next
+    /// slot (from the third on, the second slot moves to the first and the
+    /// new one takes the second), unless the level's flag byte is set:
+    /// then its `+0xd8` word goes to the group's `+8` and the next group
+    /// starts. Battle info status 0x100 (`0x0133c94c`) instead sets group 0
+    /// to (0x311e, `0x0133cb46`) and group 1's first to `0x0133cb48`, two
+    /// groups. `+0` the actor (`0x0133c958`), `+3` the group count (at least
+    /// 1). Then `TOBtlCtrlCtbWindow(command, mask)` with the record's
+    /// second command (its first when that is 0xff) and the current
+    /// level's actor bit (or `g_BtlTargetSelMask` when its flag is set);
+    /// `EAX` that call's.
+    pub fn to_control_ms_set_menu_command<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let rec = mem.rebase(BTL_COMMAND_REC);
+        let levels = mem.rebase(BTL_LEVELS);
+        for g in 0..3u32 {
+            mem.write(rec + 8 + 0x10 * g, 0x00ff_00ffu32);
+            mem.write(rec + 0x10 + 0x10 * g, 0u32);
+        }
+        let depth = i32::from(BTL_ACTION_DEPTH.get(mem));
+        let mut groups = 0u32;
+        let mut k = 0i32;
+        let mut group = rec + 8;
+        for i in 0..=depth {
+            let level = levels.wrapping_add(i.cast_unsigned().wrapping_mul(0xf0));
+            let cmd = mem.read::<u16>(level + 0x16);
+            if cmd == 0xffff || cmd == 0xfffe {
+                continue;
+            }
+            if mem.read::<u8>(level + 2) == 0 {
+                if k >= 2 {
+                    let second = mem.read::<u16>(group + 2);
+                    mem.write(group, second);
+                    k -= 1;
+                }
+                let slot = k.cast_unsigned().wrapping_add(groups.wrapping_mul(8));
+                mem.write(rec + 8 + slot.wrapping_mul(2), cmd);
+                k += 1;
+            } else {
+                let v = mem.read::<u32>(level + 0xd8);
+                mem.write(group + 8, v);
+                groups = groups.wrapping_add(1);
+                group = group.wrapping_add(0x10);
+                k = 0;
+            }
+        }
+        if mem.read::<u32>(mem.rebase(0x0133_c94c)) == 0x100 {
+            mem.write(rec + 8, 0x311eu16);
+            let v = mem.read::<u16>(mem.rebase(0x0133_cb46));
+            mem.write(rec + 0xa, v);
+            groups = 2;
+            let v = mem.read::<u16>(mem.rebase(0x0133_cb48));
+            mem.write(rec + 0x18, v);
+        }
+        let actor = mem.read::<u8>(levels + 8);
+        mem.write(rec, actor);
+        if groups == 0 {
+            groups = 1;
+        }
+        mem.write(rec + 3, groups.to_le_bytes()[0]);
+        call(mem, 0x0079_2e50, &[rec]);
+        let d = i32::from(BTL_ACTION_DEPTH.get(mem))
+            .wrapping_mul(0xf0)
+            .cast_unsigned();
+        let level = levels.wrapping_add(d);
+        let mask = if mem.read::<u8>(level + 2) == 0 {
+            1u32 << (mem.read::<u8>(level + 8) & 0x1f)
+        } else {
+            mem.read::<u32>(mem.rebase(0x0133_d178))
+        };
+        let second = mem.read::<u16>(rec + 0xa);
+        let cmd = if second == 0xff {
+            mem.read::<u16>(rec + 8)
+        } else {
+            second
+        };
+        call(mem, 0x0089_ece0, &[u32::from(cmd), mask])
+    }
+
+    /// `TOSetBtlActiveChr(chr)` (`0x0089bb10`, Fahrenheit's name; caller
+    /// `MsBattleProcess_InputCue_00792a90`): in battle
+    /// (`MsBattleGetStatus` 1) with no command window open
+    /// (`g_BtlWindowOpen` 0), every battle window's state is reset (the
+    /// window state words, the levels and command record zeroed, depth -1,
+    /// `TOBtlInitAnm`, `TOBtlInitCtbWindow`, `TOBtlInitChrNum`,
+    /// `TOBtlInitStatusWin`, the help, sign and simple-help windows,
+    /// `TOBtlInitInfoWinMes`, `TOBtlInitLimitTimer`), then `chr`'s window
+    /// opens (`g_BtlWindowChr`, its bit in `g_BtlWindowOpen`,
+    /// `TOBtlSetNextAction(chr, 0xfe)`, whose `EAX` it returns). Otherwise
+    /// `EAX` is the status, or 1 with a window open.
+    pub fn to_set_btl_active_chr<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let status = call(mem, 0x0078_16f0, &[]);
+        if status != 1 {
+            return status;
+        }
+        let open = mem.rebase(0x023c_c08c);
+        if mem.read::<u32>(open) != 0 {
+            return 1;
+        }
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        for k in 0..9 {
+            mem.write(g(mem, 0x0133_d74c) + 4 * k, 0u32);
+        }
+        mem.write(g(mem, 0x0133_c94c), 0u32);
+        mem.write(g(mem, 0x023c_c038), 0u32);
+        let zero = |mem: &mut M, at: u32, n: u32| {
+            for k in 0..n {
+                mem.write(at + k, 0u8);
+            }
+        };
+        zero(mem, g(mem, BTL_LEVELS), 0x780);
+        BTL_ACTION_DEPTH.set(mem, -1);
+        mem.write(g(mem, 0x0133_f100), 0u32);
+        mem.write(g(mem, 0x0133_f104), 0u32);
+        zero(mem, g(mem, BTL_COMMAND_REC), 0x48);
+        for f in [0x008a_0cd0, 0x008a_0ce0, 0x0089_79d0, 0x0089_8010] {
+            call(mem, f, &[]);
+        }
+        mem.write(g(mem, 0x0133_c93c), 0u8);
+        zero(mem, g(mem, 0x0133_f538), 0x80);
+        for a in [0x0133_f51c, 0x0133_f520, 0x0133_f528, 0x0133_f52c] {
+            mem.write(g(mem, a), 0u32);
+        }
+        mem.write(g(mem, 0x0133_c93e), 0u8);
+        mem.write(g(mem, 0x0133_f510), 0u32);
+        mem.write(g(mem, 0x0133_f514), 7u32);
+        mem.write(g(mem, 0x0133_f518), 0u32);
+        mem.write(g(mem, 0x0133_f524), 7u32);
+        mem.write(g(mem, 0x0133_f5b8), 0xffu16);
+        call(mem, 0x0089_7bd0, &[]);
+        call(mem, 0x0089_7f00, &[]);
+        #[allow(clippy::cast_possible_truncation)] // `mov word`
+        mem.write(g(mem, 0x023c_c088), chr as u16);
+        let bits = mem.read::<u32>(open) | 1u32 << (chr & 0x1f);
+        mem.write(open, bits);
+        call(mem, 0x0089_a330, &[chr, 0xfe])
+    }
+
+    /// One lamp piece of [`btl_draw_win_element_lamp`]: the shape, then
+    /// the PS2 x, y, w, h (remapped) and the four texture words, as `f32`
+    /// bits.
+    struct LampPiece {
+        shape: u32,
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+        uv: [u32; 4],
+    }
+
+    /// The element's frame (elements 0..=3), the window's lamp bar, and
+    /// the four lamp covers.
+    const LAMP_ELEMENT: [LampPiece; 4] = [
+        LampPiece {
+            shape: 0x1af,
+            x: 0x41c8_0000,
+            y: 0x40c0_0000,
+            w: 0x4296_0000,
+            h: 0x41d0_0000,
+            uv: [0x3d28_0000, 0x3f73_0000, 0x3e0a_0000, 0x3f7d_0000],
+        },
+        LampPiece {
+            shape: 0x1b0,
+            x: 0x41c8_0000,
+            y: 0x40c0_0000,
+            w: 0x4296_0000,
+            h: 0x41d0_0000,
+            uv: [0x3d28_0000, 0x3f63_0000, 0x3e0a_0000, 0x3f6d_0000],
+        },
+        LampPiece {
+            shape: 0x1b1,
+            x: 0x41c8_0000,
+            y: 0x40c0_0000,
+            w: 0x4296_0000,
+            h: 0x41d0_0000,
+            uv: [0x3e6c_0000, 0x3f63_0000, 0x3ea6_0000, 0x3f6d_0000],
+        },
+        LampPiece {
+            shape: 0x1b2,
+            x: 0x41c8_0000,
+            y: 0x40c0_0000,
+            w: 0x4296_0000,
+            h: 0x41d0_0000,
+            uv: [0x3ed6_8000, 0x3f63_0000, 0x3f03_4000, 0x3f6d_0000],
+        },
+    ];
+    const LAMP_BAR: LampPiece = LampPiece {
+        shape: 0x1af,
+        x: 0x42fa_0000,
+        y: 0x4000_0000,
+        w: 0x4361_0000,
+        h: 0x420e_cccd,
+        uv: [0x3e66_0000, 0x3f73_0000, 0x3eee_8000, 0x3f7d_0000],
+    };
+    /// The covers: a flag bit clear draws one at this x (125, 188, 251,
+    /// 316).
+    const LAMP_COVERS: [(u8, u32); 4] = [
+        (1, 0x42fa_0000),
+        (4, 0x433c_0000),
+        (8, 0x437b_0000),
+        (2, 0x439e_0000),
+    ];
+
+    /// `TOBtlDrawInfoWinElementLamp(chr, element, x, y)` (`0x00894b40`)
+    /// and `TOBtlDrawScanWinElementLamp` (`0x00895ae0`), the same code (Fahrenheit's
+    /// names; callers `TOBtlDrawInfoWin` and the scan window): the
+    /// element's frame (elements 0..=3, jump table `0x00895130`), the lamp
+    /// bar, then a cover for each of the four lamps whose bit is clear in
+    /// `TOBtlElementLampFlags_00897650(chr, element)`'s `al` (1, 4, 8, 2 from
+    /// the left). Each piece is `TOMkpShapeXYWHUV(shape, x', y', w', h',
+    /// u0, v0, u1, v1)` with `w'`/`h'` its size remapped
+    /// (`graphicUiRemapX2`/`Y2` through `fcall`, rounded to `f32`) and
+    /// `x'`/`y'` its remapped position plus `x`/`y` (`f32` of the
+    /// integers), summed at double precision and rounded to `f32`. `EAX`
+    /// the last `TOMkpShapeXYWHUV`'s. The original also rewrites its own
+    /// argument words (`element` with the last `x'`, `x` and `y` as
+    /// `f32`).
+    pub fn btl_draw_win_element_lamp<M: Mem>(
+        mem: &mut M,
+        [chr, element, x, y]: [u32; 4],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, store};
+        const REMAP_X2: u32 = 0x0064_47e0;
+        const REMAP_Y2: u32 = 0x0064_4820;
+        const SHAPE: u32 = 0x0090_3bb0;
+        #[allow(clippy::cast_precision_loss)] // `fild` then `fstp dword`
+        let (fx, fy) = (
+            load((x.cast_signed() as f32).to_bits()),
+            load((y.cast_signed() as f32).to_bits()),
+        );
+        let flags = call(mem, 0x0089_7650, &[chr, element]).to_le_bytes()[0];
+        let mut draw = |mem: &mut M, p: &LampPiece, px: u32| {
+            let h = store(fcall(mem, REMAP_Y2, &[p.h]));
+            let w = store(fcall(mem, REMAP_X2, &[p.w]));
+            let sy = store(add(fcall(mem, REMAP_Y2, &[p.y]), fy));
+            let sx = store(add(fcall(mem, REMAP_X2, &[px]), fx));
+            let [u0, v0, u1, v1] = p.uv;
+            call(mem, SHAPE, &[p.shape, sx, sy, w, h, u0, v0, u1, v1])
+        };
+        if let Some(p) = LAMP_ELEMENT.get(element as usize) {
+            draw(mem, p, p.x);
+        }
+        let mut eax = draw(mem, &LAMP_BAR, LAMP_BAR.x);
+        let cover = LampPiece {
+            shape: 0x1af,
+            x: 0,
+            y: 0x4080_0000,
+            w: 0x4202_cccd,
+            h: 0x4202_cccd,
+            uv: [0x3f0b_4000, 0x3f73_8000, 0x3f14_8000, 0x3f7c_8000],
+        };
+        for (bit, px) in LAMP_COVERS {
+            if flags & bit == 0 {
+                eax = draw(mem, &cover, px);
+            }
+        }
+        eax
     }
 
     /// `KernelSlotMonsterName_198_00773780(i)` (`0x00773780`, a kernel
