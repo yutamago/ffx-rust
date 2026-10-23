@@ -1144,6 +1144,62 @@ pub mod bridge {
         q.cast_unsigned().wrapping_shl(4).wrapping_add(g.get(mem))
     }
 
+    /// `rt_stack_reset_00a3abe0(w, h, x, y)` (`0x00a3abe0`, stdcall, name
+    /// ours; a callback `FUN_00a35780` stores at `0x01a8582c`): on the
+    /// render object `r` = `[0x01a858b4]`, clears the 8-entry stack at `r
+    /// +0x9cc` (0x1c bytes each, `memset`), points its top `r +0xaac` at
+    /// it, sets `+0x6d0`/`+0x6d8` = `w`, `+0x6d4`/`+0x6dc` = `h`, the
+    /// floats `+0x7a4` = `x`, `+0x7a8` = `y` (`fld`/`fstp`), then calls
+    /// `0x00a3cd30()`, whose `eax` it returns. Callees through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn rt_stack_reset<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        h: u32,
+        x: u32,
+        y: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::round_trip;
+        let r = Global::<u32>::new(0x01a8_58b4).get(mem);
+        let at = |o: u32| r.wrapping_add(o);
+        let stack = at(0x9cc);
+        call(mem, sym(mem, 0x0094_964c), &[stack, 0, 0xe0]);
+        mem.write(at(0xaac), stack);
+        mem.write(at(0x6d0), w);
+        mem.write(at(0x6d4), h);
+        mem.write(at(0x6d8), w);
+        mem.write(at(0x6dc), h);
+        let f = |v: u32| round_trip(f32::from_bits(v)).to_bits();
+        mem.write(at(0x7a4), f(x));
+        mem.write(at(0x7a8), f(y));
+        call(mem, sym(mem, 0x00a3_cd30), &[])
+    }
+
+    /// `rt_stack_pop_00a3afb0(a)` (`0x00a3afb0`, stdcall, name ours; a
+    /// callback `FUN_00a35780` stores at `0x01a85888`): pops the render
+    /// object's stack (`r +0xaac` -= 0x1c, `r` = `[0x01a858b4]`); with
+    /// `r +0x6d8` and `+0x6dc` both nonzero and the old top below `r
+    /// +0xaac`, calls `0x00a3c570(a)`, `0x00a3cd30()`, `0x00a3c350()` and
+    /// returns the word at the old top, else 0. Callees through `call`.
+    pub fn rt_stack_pop<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = Global::<u32>::new(0x01a8_58b4).get(mem);
+        let at = |o: u32| r.wrapping_add(o);
+        let top: u32 = mem.read(at(0xaac));
+        mem.write(at(0xaac), top.wrapping_sub(0x1c));
+        if mem.read::<u32>(at(0x6d8)) == 0 || mem.read::<u32>(at(0x6dc)) == 0 || top >= at(0xaac) {
+            return 0;
+        }
+        call(mem, sym(mem, 0x00a3_c570), &[a]);
+        call(mem, sym(mem, 0x00a3_cd30), &[]);
+        call(mem, sym(mem, 0x00a3_c350), &[]);
+        mem.read(top)
+    }
+
     /// `0x00a3c0f0(w, h, levels)`: the bytes of a mip chain of 16-bit
     /// texels: `2 w h` summed over `levels`, `w` and `h` halved (arithmetic
     /// shift) each level, at least 1.

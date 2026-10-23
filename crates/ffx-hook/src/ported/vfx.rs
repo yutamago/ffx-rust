@@ -2276,6 +2276,15 @@ ported! {
     getAlphaForShpIgnoreAnFormatBaseOnSh @ 0x0071_6550 => extern "C" fn shp_alpha(shp: u32) -> u32 {
         small::bridge::shp_alpha(&mem(), shp)
     }
+    /// `rt_stack_reset_00a3abe0(w, h, x, y)` (stdcall callback): the
+    /// last callee's `eax`.
+    rt_stack_reset_00a3abe0 @ 0x00a3_abe0 => extern "stdcall" fn rt_stack_reset(w: u32, h: u32, x: u32, y: u32) -> u32 {
+        small::bridge::rt_stack_reset(&mut mem(), w, h, x, y, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `rt_stack_pop_00a3afb0(a)` (stdcall callback): the popped word or 0.
+    rt_stack_pop_00a3afb0 @ 0x00a3_afb0 => extern "stdcall" fn rt_stack_pop(a: u32) -> u32 {
+        small::bridge::rt_stack_pop(&mut mem(), a, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_node_slot_00a3ba10(node)`.
     op_node_slot_00a3ba10 @ 0x00a3_ba10 => extern "C" fn op_node_slot(node: u32) -> u32 {
         small::bridge::op_node_slot(&mem(), node)
@@ -5672,6 +5681,13 @@ ported! {
         let ebp = frame.at() + 0x24;
         opus::bridge::opu_ffxlight(&mut mem(), host, cmd, ebp, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opu_rgba_en(host, cmd)`: the next command; its frame locals (0x38
+    /// bytes) on this shim's stack, the frame pointer at their end.
+    opu_rgba_en @ 0x0080_9620 => extern "C" fn opu_rgba_en(host: u32, cmd: u32) -> u32 {
+        let mut frame = super::StackFrame::<0xe>::new();
+        let ebp = frame.at() + 0x38;
+        opus::bridge::opu_rgba_en(&mut mem(), host, cmd, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `opu_rgba_set_00809180(host, cmd)`.
     opu_rgba_set_00809180 @ 0x0080_9180 => extern "C" fn opu_rgba_set(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_rgba_set(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
@@ -5699,6 +5715,11 @@ ported! {
     /// `opu_v_add_00819fd0(host, cmd)`.
     opu_v_add_00819fd0 @ 0x0081_9fd0 => extern "C" fn opu_v_add(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_v_add(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_vran_add_0081a4a0(host, cmd)`: the next command, or the
+    /// motion callback's `eax`.
+    opu_vran_add_0081a4a0 @ 0x0081_a4a0 => extern "C" fn opu_vran_add(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_vran_add(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opu_v_scale(host, cmd)`.
     opu_v_scale @ 0x0081_9af0 => extern "C" fn opu_v_scale(host: u32, cmd: u32) -> u32 {
@@ -6169,6 +6190,14 @@ ported! {
     /// `opp_anm_sippo(host, set)`: `set`, or the early exits' values.
     opp_anm_sippo @ 0x0081_1530 => extern "C" fn opp_anm_sippo(host: u32, set: u32) -> u32 {
         opus::bridge::opp_anm_sippo(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_anm_yodare(host, set)`: its frame locals (0x90 bytes) on this
+    /// shim's stack, the frame pointer at their end; returns the
+    /// original's `eax` (the last callee's, 0, or the early exits' values).
+    opp_anm_yodare @ 0x0081_1bc0 => extern "C" fn opp_anm_yodare(host: u32, set: u32) -> u32 {
+        let mut frame = super::StackFrame::<0x24>::new();
+        let ebp = frame.at() + 0x90;
+        opus::bridge::opp_anm_yodare(&mut mem(), host, set, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
     }
     /// `opp_dtt(host, set)`: `op_ot_add`'s `eax`, 0, or the draw flags.
     opp_dtt @ 0x0081_2b50 => extern "C" fn opp_dtt(host: u32, set: u32) -> u32 {
