@@ -10,8 +10,10 @@
 //! - [`input`]: the per-frame input pass;
 //! - [`abmap`]: the sphere grid screen (`g_Abmap`) helpers the PC port
 //!   placed beside its UI code;
+//! - [`dyngeo`]: two shader setters of `ClassDynamicGeometry`;
 //! - [`cursor`]: the sphere grid cursor's move and node searches;
 //! - [`link`]: the sphere grid's link outlines (straight and curved);
+//! - [`mapname`]: the map name overlay;
 //! - [`menus`]: the Iggy menu manager's viewport, an Esc menu handler;
 //! - [`panel`]: the sphere grid's list panels (cursor, scrolling, choice);
 //! - [`item`]: item menu rows and key strings the PC port placed here;
@@ -23,10 +25,12 @@
 pub mod abmap;
 pub mod camera;
 pub mod cursor;
+pub mod dyngeo;
 pub mod iggy;
 pub mod input;
 pub mod item;
 pub mod link;
+pub mod mapname;
 pub mod menus;
 pub mod panel;
 pub mod sea;

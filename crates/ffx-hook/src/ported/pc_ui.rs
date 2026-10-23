@@ -4,10 +4,12 @@
 use ffx_pcui::abmap::bridge as abmap;
 use ffx_pcui::camera::bridge as camera;
 use ffx_pcui::cursor::bridge as cursor;
+use ffx_pcui::dyngeo::bridge as dyngeo;
 use ffx_pcui::iggy::bridge as iggy;
 use ffx_pcui::input::bridge as input;
 use ffx_pcui::item::bridge as item;
 use ffx_pcui::link::bridge as link;
+use ffx_pcui::mapname::bridge as mapname;
 use ffx_pcui::menus::bridge as menus;
 use ffx_pcui::panel::bridge as panel;
 use ffx_pcui::sea::bridge as sea;
@@ -275,5 +277,25 @@ ported! {
         let _ = panel;
         let mut w = super::StackFrame::<1>::new();
         panel::item_help(&mut mem(), entry, w.at())
+    }
+    /// `MapNameText_Show_006bb480(this, show)`: the line buffer in this
+    /// frame.
+    MapNameText_Show_006bb480 @ 0x006b_b480 => extern "thiscall" fn map_name_text_show(this: u32, show: u32) {
+        let mut w = super::StackFrame::<{ mapname::WORK as usize / 4 }>::new();
+        mapname::show(&mut mem(), this, show, w.at());
+    }
+    /// `ClassDynamicGeometry_SetShader_006a4800(this, _, target)`: the
+    /// key and the name buffer in this frame.
+    ClassDynamicGeometry_SetShader_006a4800 @ 0x006a_4800 => extern "thiscall" fn class_dynamic_geometry_set_shader(this: u32, unused: u32, target: u32) {
+        let _ = unused;
+        let mut w = super::StackFrame::<{ dyngeo::WORK as usize / 4 }>::new();
+        dyngeo::set_shader(&mut mem(), this, target, w.at());
+    }
+    /// `ClassDynamicGeometry_SetShaderGl_006a48d0(this, _, target)`: the
+    /// key and the name buffer in this frame.
+    ClassDynamicGeometry_SetShaderGl_006a48d0 @ 0x006a_48d0 => extern "thiscall" fn class_dynamic_geometry_set_shader_gl(this: u32, unused: u32, target: u32) {
+        let _ = unused;
+        let mut w = super::StackFrame::<{ dyngeo::WORK as usize / 4 }>::new();
+        dyngeo::set_shader_gl(&mut mem(), this, target, w.at());
     }
 }

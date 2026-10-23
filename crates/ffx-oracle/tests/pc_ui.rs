@@ -3000,3 +3000,210 @@ fn r2c_abmap_pad_help_callbacks_match_the_original() {
         }
     }
 }
+
+use ffx_pcui::mapname::bridge as mapname;
+
+const MAP_NAME_TEXT_SHOW: u32 = 0x006b_b480;
+
+#[test]
+fn r2d_map_name_text_show_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0401);
+        let log = Log::new(&mut t);
+        log.stub_this(&mut t, mapname::TEXT_SET_ENABLED, 1, 1);
+        log.stub_this(&mut t, mapname::TEXT_RESIZE, 2, 2);
+        log.stub(&mut t, mapname::YI_GET_MAP_NAME, 3, 1, (0x5300_0000, 0, 0));
+        // the lines: 32 bytes of `src + line` into the buffer (`this`
+        // kept); the text's copy of the whole buffer to `lines + 0x100
+        // line` (its `this` kept)
+        let src = t.alloc(0x40);
+        let lines = t.alloc(0x300);
+        let kept = t.alloc(8);
+        // the lines' order: a count, then the line numbers
+        let order = t.alloc(0x10);
+        let mut c = vec![0x56, 0x57, 0x89, 0x0d];
+        c.extend(kept.to_le_bytes());
+        c.push(0xa1);
+        c.extend(order.to_le_bytes());
+        c.extend([0xff, 0x05]);
+        c.extend(order.to_le_bytes());
+        c.extend([0x8b, 0x54, 0x24, 0x0c, 0x89, 0x14, 0x85]);
+        c.extend((order + 4).to_le_bytes());
+        c.extend([0x8b, 0x7c, 0x24, 0x10, 0xbe]);
+        c.extend(src.to_le_bytes());
+        c.extend([
+            0x03, 0x74, 0x24, 0x0c, 0xb9, 8, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xc2, 8, 0,
+        ]);
+        let at = t.a.rebase(mapname::LINE_TEXT);
+        t.jump(at, &c);
+        let mut c = vec![0x56, 0x57, 0x89, 0x0d];
+        c.extend((kept + 4).to_le_bytes());
+        c.extend([0x8b, 0x44, 0x24, 0x0c, 0xc1, 0xe0, 0x08, 0x8d, 0xb8]);
+        c.extend(lines.to_le_bytes());
+        c.extend([
+            0x8b, 0x74, 0x24, 0x10, 0xb9, 0x40, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xc2, 8, 0,
+        ]);
+        let at = t.a.rebase(mapname::TEXT_CHANGE_LINE);
+        t.jump(at, &c);
+        let this = t.alloc(0x200);
+        let work = t.b.stack_range().start + 0x1000;
+        for n in 0..120u32 {
+            log.rewind(&mut t);
+            let mut b = rng.bytes(0x200);
+            b[0x110] = [0, 1, 0x80][rng.below(3) as usize];
+            b[0x1c4] = rng.next().to_le_bytes()[0];
+            t.put(this, &b);
+            t.put(src, &rng.bytes(0x40));
+            t.put(lines, &rng.bytes(0x300));
+            t.put(order, &[0; 0x10]);
+            // the getters, and a poke of +0x110 from one of them or none
+            let flag = this + 0x110;
+            let poke = match rng.below(4) {
+                0 => Some((flag, 0)),
+                1 => Some((flag, 1)),
+                _ => None,
+            };
+            log.stub_poke(
+                &mut t,
+                mapname::GET_GLOBAL_00C44248,
+                4,
+                0,
+                (rng.next(), 0, 0),
+                poke,
+            );
+            log.stub(
+                &mut t,
+                mapname::GET_GLOBAL_01139E48,
+                5,
+                0,
+                (rng.next(), 0, 0),
+            );
+            let show = [0, 1, 0x100, 0x101, 0xff, rng.next()][rng.below(6) as usize];
+            t.b.write(work, &rng.bytes(0x100)).unwrap();
+            t.check(
+                &format!("map name show {n}: show {show:#x} lines {:#x}", b[0x110]),
+                MAP_NAME_TEXT_SHOW,
+                Conv::Thiscall(this),
+                &[show],
+                |o| {
+                    mapname::show(&mut Run(o), this, show, work);
+                    Res::Void
+                },
+            );
+        }
+    }
+}
+
+use ffx_pcui::dyngeo::bridge as dyngeo;
+
+const CLASS_DYNAMIC_GEOMETRY_SET_SHADER: u32 = 0x006a_4800;
+const CLASS_DYNAMIC_GEOMETRY_SET_SHADER_GL: u32 = 0x006a_48d0;
+
+/// The shader lookup's stand-in (`thiscall(mgr, name, &key)`, `ret 8`):
+/// 32-byte entries at `area` (count at `cnt`) with the manager, the key and
+/// (with `content`) the name up to its NUL; returns `[answers]`, then
+/// `[answers + 4]`.
+fn shader_find_stub(cnt: u32, area: u32, answers: u32, content: bool) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0xa1];
+    c.extend(cnt.to_le_bytes());
+    c.extend([0xff, 0x05]);
+    c.extend(cnt.to_le_bytes());
+    c.extend([0xc1, 0xe0, 0x05, 0x8d, 0xb8]);
+    c.extend(area.to_le_bytes());
+    c.extend([
+        0x89, 0x0f, 0x8b, 0x44, 0x24, 0x10, 0x8b, 0x00, 0x89, 0x47, 0x04,
+    ]);
+    if content {
+        c.extend([
+            0x8b, 0x74, 0x24, 0x0c, 0x83, 0xc7, 0x08, 0xac, 0xaa, 0x84, 0xc0, 0x75, 0xfa,
+        ]);
+    }
+    c.extend([0x5f, 0x5e, 0xa1]);
+    c.extend(answers.to_le_bytes());
+    c.extend([0x8b, 0x0d]);
+    c.extend((answers + 4).to_le_bytes());
+    c.extend([0x89, 0x0d]);
+    c.extend(answers.to_le_bytes());
+    c.extend([0xc2, 8, 0]);
+    c
+}
+
+#[test]
+fn r2d_class_dynamic_geometry_set_shader_match_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0402);
+        let log = Log::new(&mut t);
+        log.stub_this(&mut t, dyngeo::SET_SHADER, 1, 2);
+        let s = t.alloc(0x110);
+        let (cnt, answers, area) = (s, s + 8, s + 0x10);
+        let scene = t.alloc(0xfa00);
+        let this = t.alloc(0x40);
+        let mat = t.alloc(0x100);
+        let info = t.alloc(0x40);
+        let path = t.alloc(0x100);
+        let work = t.b.stack_range().start + 0x1000;
+        let scene_at = t.a.rebase(dyngeo::PHYRE_SCENE.sym);
+        let map_at = t.a.rebase(dyngeo::CURRENT_MAP.sym);
+        for n in 0..240u32 {
+            log.rewind(&mut t);
+            let gl = n % 2 == 1;
+            log.stub(&mut t, dyngeo::SHADER_MANAGER, 2, 0, (rng.next(), 0, 0));
+            // the path: with "GL/" somewhere (twice now and then), or not
+            let mut name: Vec<u8> = (0..rng.below(12))
+                .map(|_| b'a' + rng.below(26).to_le_bytes()[0])
+                .collect();
+            let with_gl = !gl || rng.below(4) != 0;
+            if with_gl {
+                let at = rng.below(u32::try_from(name.len()).unwrap() + 1) as usize;
+                name.splice(at..at, b"GL/".iter().copied());
+                if rng.below(4) == 0 {
+                    name.extend(b"GL/x");
+                }
+            }
+            name.push(0);
+            t.put(path, &name);
+            let content = gl && with_gl;
+            let c = shader_find_stub(cnt, area, answers, content);
+            let at = t.a.rebase(dyngeo::SHADER_FIND);
+            t.jump(at, &c);
+            let first = [0, 0, rng.next()][rng.below(3) as usize];
+            let second = [0, rng.next()][rng.below(2) as usize];
+            let mut sl = rng.bytes(0x110);
+            sl[0..4].copy_from_slice(&0u32.to_le_bytes());
+            sl[8..12].copy_from_slice(&first.to_le_bytes());
+            sl[12..16].copy_from_slice(&second.to_le_bytes());
+            t.put(s, &sl);
+            let mut b = rng.bytes(0x40);
+            b[0x24..0x28].copy_from_slice(&mat.to_le_bytes());
+            t.put(this, &b);
+            t.put(mat + 0x94, &info.to_le_bytes());
+            t.put(info + 0x20, &path.to_le_bytes());
+            t.put(scene_at, &scene.to_le_bytes());
+            t.put(scene + 0xf9c6, &rng.bytes(1));
+            let map =
+                [0x10a, 0xdf, 0xcd, 0xdd, 0xde, 0x109, 0, rng.below(0x400)][rng.below(8) as usize];
+            t.put(map_at, &map.to_le_bytes());
+            let target = [0, rng.next()][rng.below(2) as usize];
+            t.b.write(work, &rng.bytes(0x84)).unwrap();
+            let (f, what) = if gl {
+                (CLASS_DYNAMIC_GEOMETRY_SET_SHADER_GL, "set shader gl")
+            } else {
+                (CLASS_DYNAMIC_GEOMETRY_SET_SHADER, "set shader")
+            };
+            t.check(
+                &format!("{what} {n}: map {map:#x} first {first:#x} second {second:#x}"),
+                f,
+                Conv::Thiscall(this),
+                &[rng.next(), target],
+                |o| {
+                    if gl {
+                        dyngeo::set_shader_gl(&mut Run(o), this, target, work);
+                    } else {
+                        dyngeo::set_shader(&mut Run(o), this, target, work);
+                    }
+                    Res::Void
+                },
+            );
+        }
+    }
+}

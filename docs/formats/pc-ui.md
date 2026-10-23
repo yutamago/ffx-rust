@@ -390,6 +390,22 @@ hands every menu the manager's viewport with y counted from the bottom
 uses its own `entry` argument slot as the strings word. Ports:
 `ffx_pcui::input`, `ffx_pcui::menus`, `ffx_pcui::panel`.
 
+## Map name overlay, dynamic geometry shaders
+
+`MapNameText_Show_006bb480(this, show)` is a member of the PC text overlay:
+the `TextUtil` at `+0x114` is enabled when `show` and the line flag `+0x110`
+are set; with `show` it gets the map name (`yiGetMapName` into `+8`) and
+lines 2, 1, 0 (`0x006b6ef0` into a 0x100-byte buffer, then
+`TextUtil_changeLine`). Port: `ffx_pcui::mapname`.
+
+Two `ClassDynamicGeometry` vtable slots, `0x006a4800` and `0x006a48d0`, look
+up the geometry's shader in `VfxShaderManager` by its key `+0x3c` (then by
+8 or 0) and hand it to `0x006a46e0`; the first sets the scene flag
+`g_PhyreScene + 0xf9c6` for maps 0x10a, 0xdf, 0xcd, 0xdd, the second takes
+the shader's name from the material path after `"GL/"`. Both pass a name
+buffer the first never fills (stack garbage in the original). Port:
+`ffx_pcui::dyngeo`.
+
 ## Left original
 
 PhyreEngine library code in the same address range (verdicts, not
