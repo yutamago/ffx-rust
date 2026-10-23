@@ -67,6 +67,33 @@ read by the update), `g_GuideTarget` (`0x00c5e354`), `g_GuideSize`
 The `Yn_GuideMap*` wrappers (`0x00919c00`..`0x00919e80`) call these on
 `g_YnMapSystem`'s guide when it exists.
 
+`rcbgGuideUpdateEx(guide, show)` (`0x0091da80`, `ffx_field::guide_update`)
+draws a frame. The scale matrix's x is `645.12 / (2 · g_ScreenDataAspectZ
+· tan π/8)` (the depth fixed at 724.07 on map 0xec and 579.4 on 0x142),
+its y `x · 7/6 · 416/448`, a further `· 1.33 · 416/448` in a 2D scene,
+then per map: 2D maps 0x131, 0xb4, 0xb6, 0x100, 0xb5, 0xf3 `x · 0.8, y ·
+0.865`, 0xab both `· 0.865`, 0x9e `1.1, 1.165`, 0x114 and 0x142 `0.97,
+1.04`; a 3D scene both `· 0.9828`. The camera sits at guide `+0x50`,
+lowered by `+0x60 · 4 / scale`; below `-(+0x6c)` it is clamped there and
+looks at the player marker (scaled by `1 / scene +0xf4`). The model
+matrix goes to mesh `+0x100` (rotation by `AtelGetGuideMapAngEx` about
+the camera's point × 10), the full one to guide `+0x10`, the inverse view
+to `0x0230fce0`. The rect is `size` wide, `0.8125 · size` high, its corner
+at `pos - (size/2, 0.8125 · size/2) + (256, 208)`, `+0x700`/`+0x730` in
+GS coordinates (the scissor, and the `rect` the fog and the destinations
+get). The background box is (0, 30, 20, 80 · alpha), the grid (60, 100,
+80, 48 · alpha) has 32-pixel columns and 34-pixel rows through the
+projected map origin. Markers (`AtelGetGideMapActorInfo` `+4`): palette
+`g_GuideMarkerPalette` (`0x00c5e370`) by the low nibble, a ring
+(`0x400`, radius 10) by the next nibble; blink `0x1000` fades with guide
+`+0x74 % 30` (a triangle wave, `·128/15`). On map 0x99 marker 6 becomes
+`0x107` while the scenario flag is 0x618. The player (`0x800`) is drawn
+last (`0x00c5e3a0` triangle, `0x00c5e3c0` circle) and reveals the fog;
+destinations (`0x2000`) go to `rcbgGuideDrawPlayer` under the full
+screen's scissor, from the player's projected point in the frame: with
+no player marker that point is never written (stack junk in the
+original).
+
 ## Scene (`rcbgScene`)
 
 `rcbgSceneInit` (`0x009209e0`, `0x110` bytes): `+0` 1, `+4` layer count
