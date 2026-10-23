@@ -320,4 +320,8 @@ ported! {
         let mut w = super::StackFrame::<{ menus::INCOMPLETE_POP_UP_WORK as usize / 4 }>::new();
         menus::show_incomplete_pop_up(&mut mem(), menu, menus::PAD_INCOMPLETE_TEXTS, w.at(), &mut |_, f, args| super::call_cdecl_words(f, args))
     }
+    /// `IggyMenuManager_SetViewport_00a26a20(this, w, h)`.
+    IggyMenuManager_SetViewport_00a26a20 @ 0x00a2_6a20 => extern "thiscall" fn iggy_menu_manager_set_viewport(this: u32, w: u32, h: u32) -> u32 {
+        menus::set_viewport(&mut mem(), this, w, h)
+    }
 }

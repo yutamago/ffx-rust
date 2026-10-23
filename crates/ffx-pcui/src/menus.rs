@@ -33,6 +33,56 @@ pub mod bridge {
         }
     }
 
+    /// `IggyMenuManager_ApplyViewport_00a265a0` ([`apply_viewport`]).
+    pub const APPLY_VIEWPORT: u32 = 0x00a2_65a0;
+    /// `g_IggyTargetAspect` (`f32`, name ours): the aspect the menus are
+    /// laid out for; [`set_viewport`] letterboxes or pillarboxes to it.
+    pub const G_IGGY_TARGET_ASPECT: u32 = 0x00c6_b270;
+
+    /// `IggyMenuManager_SetViewport_00a26a20(this, w, h)` (name ours;
+    /// `thiscall`, `ret 8`; from `0x00a262e0` and through the jump at
+    /// `0x00a26960`): the viewport for a `w` x `h` screen. With the
+    /// screen's aspect `r = f32(f32(w) / f32(h))` and the target `a`
+    /// ([`G_IGGY_TARGET_ASPECT`]):
+    /// - `a == r`: `(0, 0, w, h)`;
+    /// - `a > r` (letterbox): `k = f32(r * 0.5625)`, `(0, ftol((1 - k) h
+    ///   0.5), w, ftol(k h))`;
+    /// - else, unordered included (pillarbox): `q = f32(a * (1 / r))`,
+    ///   `(ftol((1 - q) w 0.5), 0, ftol(q w), h)`;
+    ///
+    /// as `(+0x18, +0x1c, +0x20, +0x24)` with the screen `(w, h)` at
+    /// `(+0x28, +0x2c)`. When any of the six words differs they are all
+    /// stored and the menus get it ([`APPLY_VIEWPORT`], whose `eax` is
+    /// returned); else `eax` is `h` (equal aspects) or the last `ftol`.
+    #[allow(clippy::many_single_char_names)] // the rectangle
+    #[allow(clippy::float_cmp)] // the original's fucom: exact
+    pub fn set_viewport(mem: &mut impl Host, this: u32, w: u32, h: u32) -> u32 {
+        use ffx_bridge::x87;
+        let wf = x87::load(x87::store(f64::from(w.cast_signed())));
+        let hf = x87::load(x87::store(f64::from(h.cast_signed())));
+        let r = x87::load(x87::store(x87::div(wf, hf)));
+        let a = x87::load(mem.read::<u32>(mem.rebase(G_IGGY_TARGET_ASPECT)));
+        let (view, eax) = if a == r {
+            ([0, 0, w, h], h)
+        } else if a > r {
+            let k = x87::load(x87::store(x87::mul(r, 0.5625)));
+            let y = x87::ftol(mem, x87::mul(x87::mul(x87::sub(1.0, k), hf), 0.5));
+            let vh = x87::ftol(mem, x87::mul(k, hf));
+            ([0, y, w, vh], vh)
+        } else {
+            let q = x87::load(x87::store(x87::mul(a, x87::div(1.0, r))));
+            let x = x87::ftol(mem, x87::mul(x87::mul(x87::sub(1.0, q), wf), 0.5));
+            let vw = x87::ftol(mem, x87::mul(q, wf));
+            ([x, 0, vw, h], vw)
+        };
+        let words = [view[0], view[1], view[2], view[3], w, h];
+        if mem.read::<[u32; 6]>(this.wrapping_add(0x18)) == words {
+            return eax;
+        }
+        mem.write(this.wrapping_add(0x18), words);
+        mem.call_sym(APPLY_VIEWPORT, Conv::Thiscall(this), &[])
+    }
+
     /// `0x007018a0(this, a, b)` and `0x00a28c10(this, a, b)` (`thiscall`,
     /// unnamed): the Esc menu's check and the base menu's handler.
     pub const ESC_MENU_CHECK: u32 = 0x0070_18a0;

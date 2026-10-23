@@ -3430,3 +3430,79 @@ fn r3a_esc_menu_pop_ups_match_the_original() {
         assert!(breaks > 20, "{}: {breaks} texts with line breaks", t.name);
     }
 }
+
+const IGGY_MENU_MANAGER_SET_VIEWPORT: u32 = 0x00a2_6a20;
+
+#[test]
+fn r3b_iggy_menu_manager_set_viewport_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ca_0302);
+        let log = Log::new(&mut t);
+        log.stub_this(&mut t, menus::APPLY_VIEWPORT, 1, 0);
+        let aspect = t.a.rebase(menus::G_IGGY_TARGET_ASPECT);
+        let own = f32::from_bits(Mem::read::<u32>(&t.a, aspect));
+        let this = t.alloc(0x40);
+        let sizes = [
+            (1920, 1080),
+            (1280, 720),
+            (1024, 768),
+            (2560, 1080),
+            (3440, 1440),
+            (800, 600),
+            (1080, 1920),
+            (1, 1),
+            (0, 0),
+            (5, 0),
+            (0, 7),
+            (0xffff_fc00, 600),
+            (1920, 0xffff_fb50),
+            (0x7fff_ffff, 1),
+            (1, 0x7fff_ffff),
+            (0x8000_0000, 3),
+            // r = -inf: the letterbox's NaN products (ftol's indefinite)
+            (0xffff_fc00, 0),
+            (0x8000_0000, 0),
+        ];
+        for n in 0..400u32 {
+            log.rewind(&mut t);
+            let a: f32 = match rng.below(8) {
+                0 => own,
+                1 => 16.0 / 9.0,
+                2 => 4.0 / 3.0,
+                3 => [0.0, -0.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN][rng.below(5) as usize],
+                4 => 1.0,
+                _ => f32::from_bits(0x3f00_0000 + rng.below(0x0100_0000)),
+            };
+            t.put(aspect, &a.to_le_bytes());
+            let (w, h) = if rng.below(3) == 0 {
+                (rng.next() >> rng.below(32), rng.next() >> rng.below(32))
+            } else {
+                sizes[rng.below(u32::try_from(sizes.len()).unwrap()) as usize]
+            };
+            // the screen at a matching aspect makes the equal branch
+            let (w, h) = if rng.below(6) == 0 && a.is_finite() && a > 0.0 {
+                let h = 1 + rng.below(2000);
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                ((f64::from(h) * f64::from(a)) as u32, h)
+            } else {
+                (w, h)
+            };
+            t.put(this, &rng.bytes(0x40));
+            // twice: the second finds its own words (unless a word is
+            // left as it was by chance)
+            for k in 0..2 {
+                if k == 1 && rng.below(4) == 0 {
+                    let at = this + 0x18 + 4 * rng.below(6);
+                    t.put(at, &rng.next().to_le_bytes());
+                }
+                t.check(
+                    &format!("set viewport {n}.{k}: {w}x{h} aspect {a}"),
+                    IGGY_MENU_MANAGER_SET_VIEWPORT,
+                    Conv::Thiscall(this),
+                    &[w, h],
+                    |o| Res::Int(menus::set_viewport(&mut Run(o), this, w, h)),
+                );
+            }
+        }
+    }
+}
