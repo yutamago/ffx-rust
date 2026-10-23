@@ -33502,3 +33502,89 @@ fn r53d_render_stack_matches_the_original() {
         assert!(seen.iter().all(|&n| n > 200), "{seen:?}");
     }
 }
+
+/// `opu_v_u2` against the port (not hooked: other nibbles read the
+/// never-written frame words `ebp - 8` / `- 0x10`): nibbles 0, 0x1000 and
+/// the rest with those words seeded in both oracles' stacks (a unit-like
+/// record and a lift), `t` and the points with NaN, infinities and -0,
+/// the lift byte 0 or not, the colour shift, `r0` and the work registers
+/// random.
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r53e_opu_v_u2_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_9c90);
+        // opus_no_get: the two records in turn
+        let (idx, seq, no_log) = (p.alloc(4), p.alloc(8), p.alloc(0x80));
+        seq_stub(&mut p, 0x0080_1060, 3, idx, seq, no_log);
+        let (host, unit, cmd, others) = (
+            p.alloc(0x400),
+            p.alloc(0x200),
+            p.alloc(0x10),
+            p.alloc(0x400),
+        );
+        let (shift, ee, regs, vf00) = (
+            p.sym(0x00c8_b500),
+            p.sym(0x00c8_f508),
+            p.sym(0x00c8_f8d0),
+            p.sym(0x00c0_a004),
+        );
+        let frame = p.b.stack_range().end - 0x100 - 8 - 4 - 0x200 - 8 - 4 - 4;
+        let float = |rng: &mut Xorshift| {
+            if rng.chance(90) {
+                ranged(rng, -500.0, 500.0)
+            } else {
+                rng.pick(&[0x7fc0_0000u32, 0xff80_0000, 0x7f80_0000, 0x8000_0000, 0])
+            }
+        };
+        let mut seen = [0u32; 3];
+        for round in 0..3000u32 {
+            p.set(idx, 0u32);
+            p.fill(vf00, 0x10, &mut rng);
+            p.fill(host, 0x400, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.fill(ee, 0x60, &mut rng);
+            p.fill(regs, 0xc0, &mut rng);
+            for base in [unit, others] {
+                for o in (0..0x200).step_by(4) {
+                    let v = float(&mut rng);
+                    p.set(base + o, v);
+                }
+            }
+            p.set(host + 0x220, unit);
+            let nibble = rng.pick(&[0u16, 0, 1, 1, 2, 7, 8, 9]);
+            seen[usize::from(nibble.min(2))] += 1;
+            p.set(host + 0x21a, nibble << 12 | (rng.next() as u16 & 0xfff));
+            // the two units: one of four records 0x100 apart
+            p.set(seq, others + 0x80 * rng.below(6));
+            p.set(seq + 4, others + 0x80 * rng.below(6));
+            p.set(cmd + 2, rng.pick(&[0i16, 1, 5, -2, 0x18]));
+            p.set(cmd + 6, (0x30 + 4 * rng.below(0x30)) as u8);
+            p.set(cmd + 7, rng.pick(&[0u8, 0x40, 0x9c, 0xa0]));
+            p.set(shift, if rng.chance(20) { 4 * rng.below(4) } else { 0 });
+            // the frame leftovers: a record pointer (also read as t) and a lift
+            let leftover = others + 0x80 * rng.below(6);
+            let lift = float(&mut rng);
+            for o in [&mut p.a, &mut p.b] {
+                o.write(frame - 8, &leftover.to_le_bytes()).unwrap();
+                o.write(frame - 0x10, &lift.to_le_bytes()).unwrap();
+            }
+            check_deep_n(
+                &mut p,
+                &format!("opu_v_u2 round {round}"),
+                0x0081_9c90,
+                &[host, cmd],
+                |o, frame| {
+                    Some(opus::bridge::opu_v_u2(
+                        o,
+                        host,
+                        cmd,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+        assert!(seen.iter().all(|&n| n > 500), "{seen:?}");
+    }
+}

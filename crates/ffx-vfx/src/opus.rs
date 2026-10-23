@@ -12401,6 +12401,130 @@ pub mod bridge {
         call(mem, f, &[host, ptr])
     }
 
+    /// `opu_v_u2(host, cmd)` (`0x00819c90`, Fahrenheit's Switch name;
+    /// opus command): the unit point `t` of the way between two units'
+    /// points (`+0x90..`, `a` and `b` from `opus_no_get(host +0x300, unit,
+    /// ..)`), through the emulated registers. Nibble 0: `a`/`b` by `u16
+    /// cmd +4`/`+6`, `t` = the unit float `+0x30 + 4 i16 cmd +2`, lift 0;
+    /// 0x1000: by `u16 cmd +2`/`+4`, `t` = the unit float at byte `cmd +6`,
+    /// the lift = the one at byte `cmd +7` / 16 (0 for byte 0); both
+    /// return `cmd + 8`. Other nibbles return `cmd` and take `a`, `b` and
+    /// `t` from the never-written frame word `ebp - 8` and the lift from
+    /// `ebp - 0x10`: what the previous command's frame left there in the
+    /// opus loop, so this port is not hooked (a shim can't reproduce it).
+    ///
+    /// `0x00c8f8d0..` = `t`, `g_Ee_Gpr +0x34..`, the lift and `+0x4c..`
+    /// (`+0x30` = `t`, `+0x40` = the lift); `0x00c8f8f0..`/`0x00c8f900..` =
+    /// `a`'s/`b`'s points, `0x00c8f970..` = `(b - a) x t x 1/4096 + a`
+    /// (lane by lane, `fsub`, two `fmul`s and `fadd`, in that order) with
+    /// the lift added to `y`; `g_Vu0_VfMove` = (1/4096, 0, old `+0x30`, old
+    /// `+0x34`), `restoreVf00Register` after the differences. The unit's
+    /// `+0x90 + g_pppColorConShift` and `+0x94 +` it get `x` and `y`, `+0x98`
+    /// `z` (the shift cleared); `g_Ee_Gpr +0x20..` ends as (`z`,
+    /// `0x00c8f97c`, `r0` words 2 and 3 in `+0x24`, `+0x2c`).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_v_u2<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        ebp: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, round_trip, store, sub};
+        let u = unit(mem, host);
+        let records = host.wrapping_add(0x300);
+        let rt = |x: u32| round_trip(f32::from_bits(x)).to_bits();
+        let half = |mem: &M, o: u32| u32::from(mem.read::<u16>(cmd.wrapping_add(o)));
+        let byte = |mem: &M, o: u32| u32::from(mem.read::<u8>(cmd.wrapping_add(o)));
+        let no_get = g(mem, 0x0080_1060);
+        let (a, b, t, lift, next) = match mem.read::<u16>(host.wrapping_add(0x21a)) & 0xf000 {
+            0 => {
+                let (na, nb) = (half(mem, 4), half(mem, 6));
+                let a = call(mem, no_get, &[records, u, na]);
+                let b = call(mem, no_get, &[records, u, nb]);
+                let i = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+                let t = rt(mem.read(u.wrapping_add(0x30).wrapping_add(i << 2)));
+                (a, b, t, 0, cmd.wrapping_add(8))
+            }
+            0x1000 => {
+                let (na, nb) = (half(mem, 2), half(mem, 4));
+                let a = call(mem, no_get, &[records, u, na]);
+                let b = call(mem, no_get, &[records, u, nb]);
+                let t = rt(mem.read(u.wrapping_add(byte(mem, 6))));
+                let k = byte(mem, 7);
+                let lift = if k == 0 {
+                    0
+                } else {
+                    let per_16: f64 = mem.read(g(mem, 0x00b9_21e0));
+                    store(mul(load(mem.read(u.wrapping_add(k))), per_16))
+                };
+                (a, b, t, lift, cmd.wrapping_add(8))
+            }
+            _ => {
+                // the never-written frame words
+                let w: u32 = mem.read(ebp.wrapping_sub(8));
+                let lift: u32 = mem.read(ebp.wrapping_sub(0x10));
+                (w, w, w, lift, cmd)
+            }
+        };
+        let (ee, regs, d, mv) = (
+            g(mem, 0x00c8_f528),
+            g(mem, 0x00c8_f8d0),
+            g(mem, 0x00c8_f970),
+            g(mem, 0x00c8_f980),
+        );
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        mem.write(ee.wrapping_add(0x10), t);
+        mem.write(regs, t);
+        for k in [4u32, 8, 0xc] {
+            let v = rd(mem, ee.wrapping_add(0x10 + k));
+            mem.write(regs.wrapping_add(k), v);
+        }
+        for k in [4u32, 8] {
+            let v = rd(mem, ee.wrapping_add(0x20 + k));
+            mem.write(regs.wrapping_add(0x10 + k), v);
+        }
+        mem.write(ee.wrapping_add(0x20), lift);
+        mem.write(regs.wrapping_add(0x10), lift);
+        let v = rd(mem, ee.wrapping_add(0x2c));
+        mem.write(regs.wrapping_add(0x1c), v);
+        mem.write(ee, 0x3980_0000u32);
+        mem.write(ee.wrapping_add(4), 0u32);
+        let pa: [u32; 4] = mem.read(a.wrapping_add(0x90));
+        mem.write(regs.wrapping_add(0x20), pa);
+        let pb: [u32; 4] = mem.read(b.wrapping_add(0x90));
+        mem.write(regs.wrapping_add(0x30), pb);
+        let old = [rd(mem, ee.wrapping_add(8)), rd(mem, ee.wrapping_add(0xc))];
+        let diff: [u32; 3] = std::array::from_fn(|k| store(sub(load(pb[k]), load(pa[k]))));
+        mem.write(d, diff);
+        mem.write(mv, [0x3980_0000u32, 0, old[0], old[1]]);
+        call(mem, g(mem, 0x0042_ef00), &[]);
+        let tt = load(rd(mem, regs));
+        let m = load(rd(mem, mv));
+        let mut lanes = [0u32; 3];
+        for k in 0..3usize {
+            let x = store(mul(tt, load(diff[k])));
+            lanes[k] = store(mul(m, load(x)));
+        }
+        let x = store(add(load(lanes[0]), load(pa[0])));
+        let y = store(add(load(pa[1]), load(lanes[1])));
+        let z = store(add(load(lanes[2]), load(pa[2])));
+        let y = store(add(load(rd(mem, regs.wrapping_add(0x10))), load(y)));
+        mem.write(d, [x, y, z]);
+        let w = rd(mem, d.wrapping_add(0xc));
+        let shift_at = g(mem, 0x00c8_b500);
+        let shift = rd(mem, shift_at);
+        mem.write(u.wrapping_add(shift).wrapping_add(0x90), x);
+        let shift = rd(mem, shift_at);
+        mem.write(u.wrapping_add(shift).wrapping_add(0x94), y);
+        let r0 = g(mem, 0x00c8_f508);
+        let (r2, r3) = (rd(mem, r0.wrapping_add(8)), rd(mem, r0.wrapping_add(0xc)));
+        mem.write(ee, [z, r2, w, r3]);
+        mem.write(u.wrapping_add(0x98), z);
+        mem.write(shift_at, 0u32);
+        next
+    }
+
     /// `opu_vran_add_0081a4a0(host, cmd)` (`0x0081a4a0`, name ours; opus
     /// table `0x00c48f10..0x00c48f24`, opcodes 0x12..0x17; recompiled
     /// from the EE): [`opu_v_add`]'s random twin. Kind `k` = the low nine
