@@ -555,6 +555,124 @@ pub mod bridge {
         mem.call_sym(ABMAP_SETUP_KIND_SHAPES, Conv::Cdecl, &[])
     }
 
+    /// `g_AbmapPadData`: the panels `g_AbmapPad` points at (0x2710
+    /// bytes).
+    pub const PAD_DATA: u32 = 0x016a_b1a0;
+    /// `g_AbmapData`: the grid data `g_Abmap` points at (0x12fc0 bytes).
+    pub const ABMAP_DATA: u32 = 0x016a_d8b0;
+    /// `g_AbmapPad` (as `panel::bridge::PAD`).
+    const PAD: Global<u32> = Global::new(0x01a8_6108);
+    /// `FFXSamp0ViewScreenMatrix(m, scrz, ax, ay, cx, cy, zmin, zmax,
+    /// nearz, farz)`.
+    pub const VIEW_SCREEN_MATRIX: u32 = 0x0093_d960;
+    /// `FFXVu0UnitMatrix(m)`.
+    pub const UNIT_MATRIX: u32 = 0x006e_d9a0;
+    /// `graphicGetCurrentFrame_008e1c50()`: the current character, in
+    /// `al`.
+    pub const GET_CURRENT_FRAME: u32 = 0x008e_1c50;
+    /// The help state `AbmapResetHelp` also installs (`+0x115a8`).
+    pub const STATE_HELP: u32 = 0x00a4_5010;
+    /// `AbmapSetHelpMessage` (`+0x115ac`).
+    pub const SET_HELP_MESSAGE: u32 = 0x00a4_54a0;
+    /// The `.rdata` floats `InitLpamng` passes: 65536 (far z), 16777215
+    /// (z max), 2048 (centre), 1.0833334 (aspect), 512 (screen z,
+    /// `g_AlphaScaleExtended`).
+    pub const LPAMNG_FLOATS: [u32; 5] = [
+        0x00b4_3ddc,
+        0x00b5_1a24,
+        0x00b5_1a20,
+        0x00b5_1a18,
+        0x00b4_1d9c,
+    ];
+
+    /// `len` zero bytes at `at` (`rep stos`), a small block at a time
+    /// (some game threads have little stack).
+    fn zero(mem: &mut impl Mem, at: u32, len: u32) {
+        const ZEROS: [u8; 0x400] = [0; 0x400];
+        let mut done = 0;
+        while done < len {
+            let n = (len - done).min(0x400);
+            mem.write_bytes(at.wrapping_add(done), &ZEROS[..n as usize]);
+            done += n;
+        }
+    }
+
+    /// `InitLpamng()` (`0x00a572e0`, Fahrenheit's name; from
+    /// `eiAbmStart`), callees through `call` (cdecl): the panels and the
+    /// grid data cleared and made `g_AbmapPad`/`g_Abmap`, no panel open
+    /// (`+0x2700` = -1); two view-screen matrices (`+0x113a0`: screen z
+    /// 512, aspect 1 x 1.0833334, centre 2048, 2048; `+0x114a0`: aspect 1
+    /// x 1, centre 0, 0; both z 1..16777215, near 1, far 65536); unit
+    /// matrices at `+0x11360` and `+0x11420`; `+0x11314` = 1.0 and the
+    /// four words `+0x11308..` copied to `+0x11328..`; `+0x11350..0x1135c`
+    /// = 1.0; the help state and message hook; `+0x115c6` = 0x80; the
+    /// current character (`al`) at `+0x115bc`; and the rest of the start
+    /// state. Returns `g_Abmap`.
+    pub fn init_lpamng<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let pad = mem.rebase(PAD_DATA);
+        zero(mem, pad, 0x2710);
+        mem.write(pad.wrapping_add(0x2700), 0xffffu16);
+        let g = mem.rebase(ABMAP_DATA);
+        ABMAP.set(mem, g);
+        zero(mem, g, 0x1_2fc0);
+        PAD.set(mem, pad);
+        // the constants go through fld/fstp
+        let [far, zmax, centre, aspect, scrz] = LPAMNG_FLOATS.map(|at| {
+            let at = mem.rebase(at);
+            round_trip(f32::from_bits(mem.read(at))).to_bits()
+        });
+        let one = 1f32.to_bits();
+        let matrix = mem.rebase(VIEW_SCREEN_MATRIX);
+        let m = ABMAP.get(mem).wrapping_add(0x1_13a0);
+        call(
+            mem,
+            matrix,
+            &[m, scrz, one, aspect, centre, centre, one, zmax, one, far],
+        );
+        let m = ABMAP.get(mem).wrapping_add(0x1_14a0);
+        call(mem, matrix, &[m, scrz, one, one, 0, 0, one, zmax, one, far]);
+        let unit = mem.rebase(UNIT_MATRIX);
+        for off in [0x1_1360, 0x1_1420] {
+            let m = ABMAP.get(mem).wrapping_add(off);
+            call(mem, unit, &[m]);
+        }
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1_1314), one);
+        let g = ABMAP.get(mem);
+        for k in 0..4 {
+            let w: u32 = mem.read(g.wrapping_add(0x1_1308 + 4 * k));
+            mem.write(g.wrapping_add(0x1_1328 + 4 * k), w);
+        }
+        for off in [0x1_135c, 0x1_1358, 0x1_1354, 0x1_1350] {
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(off), one);
+        }
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1_15c4), 0u8);
+        let state = mem.rebase(STATE_HELP);
+        mem.write(g.wrapping_add(0x1_15a8), state);
+        let hook = mem.rebase(SET_HELP_MESSAGE);
+        mem.write(g.wrapping_add(0x1_15ac), hook);
+        mem.write(g.wrapping_add(0x1_15c3), 0u8);
+        mem.write(g.wrapping_add(0x1_15c6), 0x80u8);
+        let frame = mem.rebase(GET_CURRENT_FRAME);
+        #[allow(clippy::cast_possible_truncation)] // `mov [..], al`
+        let chr = call(mem, frame, &[]) as u8;
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1_15bc), chr);
+        mem.write(g.wrapping_add(0x1_1670), 0xffffu16);
+        mem.write(g.wrapping_add(0x1_15bb), 1u8);
+        mem.write(g.wrapping_add(0x1_15ba), 1u8);
+        mem.write(g.wrapping_add(0x1_16a8), 0xffff_fffeu32);
+        mem.write(g.wrapping_add(0x1_16ac), 0u32);
+        mem.write(g.wrapping_add(0x1_16b4), 0u32);
+        mem.write(g.wrapping_add(0x1_16b8), 1u32);
+        g
+    }
+
     /// `TOMacroSetByte1(win, n, v)`.
     pub const TO_MACRO_SET_BYTE1: u32 = 0x008b_84f0;
     /// `TOMacroSetValue_008b8510(win, n, v)`.

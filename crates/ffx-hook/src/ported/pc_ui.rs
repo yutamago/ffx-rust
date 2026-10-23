@@ -220,6 +220,10 @@ ported! {
     AbmapHelpMessageStep_00a59350 @ 0x00a5_9350 => extern "C" fn abmap_help_message_step(fallback: u32) -> u32 {
         abmap::help_message_step(&mut mem(), fallback, &mut |_, f, args| super::call_cdecl(f, args))
     }
+    /// `InitLpamng()`.
+    InitLpamng @ 0x00a5_72e0 => extern "C" fn init_lpamng() -> u32 {
+        abmap::init_lpamng(&mut mem(), &mut |_, f, args| super::call_cdecl(f, args))
+    }
     /// `AbmapLoadOef_00a57620()`.
     AbmapLoadOef_00a57620 @ 0x00a5_7620 => extern "C" fn abmap_load_oef() -> u32 {
         abmap::load_oef(&mut mem())

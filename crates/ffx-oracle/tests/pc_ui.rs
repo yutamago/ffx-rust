@@ -2148,6 +2148,47 @@ fn r1a_menu_mes_font1612_no_edge_wrappers_match_the_original() {
 
 const ABMAP_HELP_MESSAGE_STEP: u32 = 0x00a5_9350;
 const ABMAP_LOAD_OEF: u32 = 0x00a5_7620;
+const INIT_LPAMNG: u32 = 0x00a5_72e0;
+
+#[test]
+fn r1c_init_lpamng_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0107);
+        let log = Log::new(&mut t);
+        log.stub(
+            &mut t,
+            abmap::VIEW_SCREEN_MATRIX,
+            1,
+            10,
+            (0x5a00_0000, 0, 0),
+        );
+        log.stub(&mut t, abmap::UNIT_MATRIX, 2, 1, (0x5b00_0000, 0, 0));
+        let pad = t.a.rebase(abmap::PAD_DATA);
+        let data = t.a.rebase(abmap::ABMAP_DATA);
+        let globals = [t.a.rebase(abmap::ABMAP.sym), t.a.rebase(panel::PAD.sym)];
+        for n in 0..12u32 {
+            log.rewind(&mut t);
+            // the character in al, the rest of eax garbage
+            log.stub(&mut t, abmap::GET_CURRENT_FRAME, 3, 0, (rng.next(), 0, 0));
+            t.put(pad, &rng.bytes(0x2710));
+            t.put(data, &rng.bytes(0x1_2fc0));
+            for at in globals {
+                t.put(at, &rng.next().to_le_bytes());
+            }
+            t.check(
+                &format!("init lpamng {n}"),
+                INIT_LPAMNG,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    Res::Int(abmap::init_lpamng(o, &mut |o, f, a| {
+                        o.call(f, Conv::Cdecl, a).unwrap().eax
+                    }))
+                },
+            );
+        }
+    }
+}
 
 #[test]
 fn r1b_abmap_help_message_step_matches_the_original() {
