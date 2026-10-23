@@ -19998,6 +19998,108 @@ fn thiscall_recorder_n(p: &mut Pair, sym: u32, n: u8, ret: u32) -> u32 {
     log
 }
 
+/// `opu_ffxlight` against the port: every nibble, the light calls and
+/// the heap recorded (directions and colours by their four words),
+/// `opus_no_get` and `Sg_EnFocus` from cells, the blend through the real
+/// `FFXVu0*` vector code, colours around 0..1 (and NaNs) for the clamps.
+#[test]
+#[allow(clippy::many_single_char_names, clippy::cast_possible_truncation)]
+fn opu_ffxlight_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_8cf0);
+        let cells = p.alloc(0x10);
+        for (sym, words, ret) in [
+            (0x007f_f780u32, &[0u8, 0][..], Some(cells)),
+            (0x007f_f1d0, &[0, 0], None),
+            (0x0083_61c0, &[0, 0], None),
+            (0x0083_60f0, &[0, 0], None),
+            (0x0083_6430, &[0, 4], None),
+            (0x0083_6310, &[0, 4], None),
+            (0x0082_cb60, &[0], Some(cells + 4)),
+            (0x0080_1060, &[0, 0, 0], Some(cells + 8)),
+        ] {
+            far_recorder(&mut p, sym, words, ret);
+        }
+        let (host, unit, cmd, saved, srcs) = (
+            p.alloc(0x400),
+            p.alloc(0x100),
+            p.alloc(0x40),
+            p.alloc(0x80),
+            p.alloc(0x400),
+        );
+        let focus = p.sym(opus::bridge::FFX_FOCUS.sym);
+        let float = |rng: &mut Xorshift, lo: f32, hi: f32| {
+            if rng.chance(95) {
+                ranged(rng, lo, hi)
+            } else {
+                rng.pick(&[0x7fc0_0000u32, 0xffc0_0000, 0, 0x8000_0000, 0x3f80_0000])
+            }
+        };
+        for round in 0..2000 {
+            let what = format!("opu_ffxlight round {round}");
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd, 0x40, &mut rng);
+            p.set(host + 0x220, unit);
+            let nibble = rng.pick(&[
+                0u16, 0x1000, 0x2000, 0x2000, 0x2000, 0x3000, 0x4000, 0x5000, 0x8000, 0xa000,
+                0xf000,
+            ]);
+            p.set(host + 0x21a, nibble | (rng.next() as u16 & 0xfff));
+            // none only where the original checks (0x2000)
+            let none = nibble == 0x2000 && rng.chance(10);
+            let r = rng.next();
+            p.set(
+                unit + 0xbc,
+                if none {
+                    0
+                } else if nibble == 0 {
+                    r
+                } else {
+                    saved
+                },
+            );
+            p.set(cells, saved);
+            p.set(cells + 4, rng.next());
+            p.set(cells + 8, srcs + 0x100 * rng.below(4));
+            p.set(focus, [u8::from(rng.chance(50)), rng.next() as u8]);
+            for k in 0..4 {
+                let n = rng.pick(&[0i16, 0, 1, 7, -1]);
+                p.set(cmd + 2 + 2 * k, n);
+            }
+            for o in (0..0x80).step_by(4) {
+                let v = if o & 0x10 == 0 {
+                    float(&mut rng, -1.0, 1.0)
+                } else {
+                    float(&mut rng, -0.5, 1.5)
+                };
+                p.set(saved + o, v);
+            }
+            for base in [unit, srcs, srcs + 0x100, srcs + 0x200, srcs + 0x300] {
+                for o in (0x30..0x50).step_by(4) {
+                    let v = float(&mut rng, -300.0, 300.0);
+                    p.set(base + o, v);
+                }
+                for o in (0x90..0xa0).step_by(4) {
+                    let v = float(&mut rng, -300.0, 300.0);
+                    p.set(base + o, v);
+                }
+                let v = float(&mut rng, -300.0, 300.0);
+                p.set(base + 0x4c, v);
+            }
+            check_deep_n(&mut p, &what, 0x0080_8cf0, &[host, cmd], |o, frame| {
+                Some(opus::bridge::opu_ffxlight(
+                    o,
+                    host,
+                    cmd,
+                    frame,
+                    &mut call_original,
+                ))
+            });
+        }
+    }
+}
+
 #[test]
 #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
 fn round33d_commands_and_draws_match_the_original() {

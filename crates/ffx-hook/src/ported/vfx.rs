@@ -5654,6 +5654,13 @@ ported! {
     opu_sys @ 0x0081_7470 => extern "C" fn opu_sys(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_sys(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opu_ffxlight(host, cmd)`: its two vectors on this shim's stack, the
+    /// frame pointer at their end.
+    opu_ffxlight @ 0x0080_8cf0 => extern "C" fn opu_ffxlight(host: u32, cmd: u32) -> u32 {
+        let mut frame = super::StackFrame::<9>::new();
+        let ebp = frame.at() + 0x24;
+        opus::bridge::opu_ffxlight(&mut mem(), host, cmd, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu_v_scale(host, cmd)`.
     opu_v_scale @ 0x0081_9af0 => extern "C" fn opu_v_scale(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_v_scale(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))

@@ -10440,4 +10440,161 @@ pub mod bridge {
             _ => cmd,
         }
     }
+
+    /// `opu_ffxlight(host, cmd)` (`0x00808cf0`), `frame` the original's
+    /// `ebp` (two vectors at `frame - 0x24` and `- 0x14`). With `unit` =
+    /// host `+0x220`, `saved` = unit `+0xbc`, by the flag nibble (host `u16
+    /// +0x21a`): 0 `saved` = `op_malloc([host +0x3a8], 0x80)` holding the
+    /// game's lights (`Sg_LightGetDir(i, saved + 0x20 i)` for 0..3,
+    /// `Sg_LightGetColor(i, saved + 0x10 + 0x20 i)` for 0..4), `cmd + 2`.
+    /// 1: those put back (`Sg_LightSetDir`/`SetColor`, the same order),
+    /// `saved` freed and 0, `cmd + 2`. 2 (with `saved`): for light `k` of 4
+    /// at `d = host + 0x20 k` with the source `n` = `i16 cmd +2 +2k` (read
+    /// as it goes): 0 copies the saved direction and colour to `cmd + 2k`
+    /// and `cmd + 0x10 + 2k` (the command, not `d`, which keeps what it
+    /// had: an original slip that overwrites the next sources) through the
+    /// EE registers `0x00c8f528..` (left holding the colour); else `src =
+    /// opus_no_get(host +0x300, unit, n)`, `d` = unit `+0x90` - src `+0x90`
+    /// and `d +0x10` = src `+0x30` times its own `w` times 1/32768. Then
+    /// `d` normalised and both moved from the saved light towards the new
+    /// one by `w / 256` (`w` the last source's, else the unit's, `+0x4c`;
+    /// `FFXVu0Sub`/`Scale`/`AddVector`), `w` = 1; the colour clamped to
+    /// 0..1 (NaN kept). Then the lights set from `host` (directions 0..3,
+    /// colours 0..4 interleaved), `cmd + 0xa` (also without `saved`). 3:
+    /// [`opus_ffxfocus_off`], 4: [`opus_ffxfocus_free`], both `cmd + 2`;
+    /// others `cmd`. Callees through `call`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_ffxlight<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{load, store};
+        const SUB: u32 = 0x006e_d940;
+        const COPY: u32 = 0x006e_d370;
+        const SCALE: u32 = 0x006e_d8f0;
+        const ADD_V: u32 = 0x006e_d290;
+        const SET_DIR: u32 = 0x0083_6430;
+        const SET_COLOR: u32 = 0x0083_6310;
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let saved_at = unit.wrapping_add(0xbc);
+        let heap = |mem: &M| mem.read::<u32>(host.wrapping_add(0x3a8));
+        match mem.read::<u16>(host.wrapping_add(0x21a)) & 0xf000 {
+            0 => {
+                let saved = go(mem, 0x007f_f780, &[heap(mem), 0x80]);
+                mem.write(saved_at, saved);
+                for i in 0..3u32 {
+                    go(mem, 0x0083_61c0, &[i, saved.wrapping_add(0x20 * i)]);
+                }
+                for i in 0..4u32 {
+                    go(mem, 0x0083_60f0, &[i, saved.wrapping_add(0x10 + 0x20 * i)]);
+                }
+                cmd.wrapping_add(2)
+            }
+            0x1000 => {
+                let saved: u32 = mem.read(saved_at);
+                for i in 0..3u32 {
+                    go(mem, SET_DIR, &[i, saved.wrapping_add(0x20 * i)]);
+                }
+                for i in 0..4u32 {
+                    go(mem, SET_COLOR, &[i, saved.wrapping_add(0x10 + 0x20 * i)]);
+                }
+                go(mem, 0x007f_f1d0, &[heap(mem), mem.read(saved_at)]);
+                mem.write(saved_at, 0u32);
+                cmd.wrapping_add(2)
+            }
+            0x2000 => {
+                let saved: u32 = mem.read(saved_at);
+                if saved == 0 {
+                    return cmd.wrapping_add(0xa);
+                }
+                let (v, t) = (frame.wrapping_sub(0x24), frame.wrapping_sub(0x14));
+                let ee = g(mem, 0x00c8_f528);
+                let mut src = unit;
+                for k in 0..4u32 {
+                    let d = host.wrapping_add(0x20 * k);
+                    let (dir, colour) = (
+                        saved.wrapping_add(0x20 * k),
+                        saved.wrapping_add(0x20 * k + 0x10),
+                    );
+                    let n = mem.read::<i16>(cmd.wrapping_add(2 + 2 * k));
+                    if n == 0 {
+                        // into the command itself (at its 2k and 0x10 + 2k),
+                        // not the host's light: the original writes through
+                        // the command pointer here
+                        let c = cmd.wrapping_add(2 * k);
+                        for (from, to) in [(dir, c), (colour, c.wrapping_add(0x10))] {
+                            let w: [u32; 4] = mem.read(from);
+                            mem.write(ee, w);
+                            mem.write(to, w);
+                        }
+                    } else {
+                        let list = host.wrapping_add(0x300);
+                        src = go(
+                            mem,
+                            OPUS_NO_GET,
+                            &[list, unit, i32::from(n).cast_unsigned()],
+                        );
+                        go(
+                            mem,
+                            SUB,
+                            &[v, unit.wrapping_add(0x90), src.wrapping_add(0x90)],
+                        );
+                        go(mem, COPY, &[d, v]);
+                        go(mem, COPY, &[v, src.wrapping_add(0x30)]);
+                        // the factors go through fld/fstp
+                        let w = store(load(mem.read(v.wrapping_add(0xc))));
+                        go(mem, SCALE, &[v, v, w]);
+                        go(mem, SCALE, &[v, v, 0x3800_0000]);
+                        go(mem, COPY, &[d.wrapping_add(0x10), v]);
+                    }
+                    go(mem, 0x006e_d6f0, &[d, d]);
+                    for (to, from) in [(d, dir), (d.wrapping_add(0x10), colour)] {
+                        go(mem, SUB, &[t, to, from]);
+                        let w = store(load(mem.read(src.wrapping_add(0x4c))));
+                        go(mem, SCALE, &[t, t, w]);
+                        go(mem, SCALE, &[t, t, 0x3b80_0000]);
+                        go(mem, ADD_V, &[t, t, from]);
+                        if to != d {
+                            for i in 0..4u32 {
+                                let x = load(mem.read(t.wrapping_add(4 * i)));
+                                if x > 1.0 {
+                                    mem.write(t.wrapping_add(4 * i), 1f32);
+                                }
+                            }
+                            for i in 0..4u32 {
+                                let x = load(mem.read(t.wrapping_add(4 * i)));
+                                if x < 0.0 {
+                                    mem.write(t.wrapping_add(4 * i), 0f32);
+                                }
+                            }
+                        }
+                        mem.write(t.wrapping_add(0xc), 1f32);
+                        go(mem, COPY, &[to, t]);
+                    }
+                }
+                for i in 0..3u32 {
+                    go(mem, SET_DIR, &[i, host.wrapping_add(0x20 * i)]);
+                    go(mem, SET_COLOR, &[i, host.wrapping_add(0x10 + 0x20 * i)]);
+                }
+                go(mem, SET_COLOR, &[3, host.wrapping_add(0x70)]);
+                cmd.wrapping_add(0xa)
+            }
+            0x3000 => {
+                opus_ffxfocus_off(mem, call);
+                cmd.wrapping_add(2)
+            }
+            0x4000 => {
+                opus_ffxfocus_free(mem, call);
+                cmd.wrapping_add(2)
+            }
+            _ => cmd,
+        }
+    }
 }
