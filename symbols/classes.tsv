@@ -985,11 +985,11 @@
 0x00640d70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicFontGetEdgeRatio
 0x00640db0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicFontGetScreenWH
 0x00640dd0	glue	thin wrapper: only forwards to glue code (MenuManager_SetMenuDrawFontShadow)
-0x00640df0	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
+0x00640df0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicFrameStart_00640df0
 0x00640e20	debug	reviewed: g_FreeCamera (PC2 render/pc-ui round 1)
 0x00640e70	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (mspace_free, user_free_thunk)
 0x00641060	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetAbmap
-0x00641080	glue	thin wrapper: only forwards to glue code (PhyreScene_getChaPos)
+0x00641080	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetTidusPos_00641080
 0x006410a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetAbmapUV_006410a0
 0x006410d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetCurrentFrame
 0x006410e0	logic	default (no rule: ported to be safe)
@@ -1179,7 +1179,7 @@
 0x00643bc0	dead	unreachable from the entry point and every pointer table
 0x00643cc0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSgSetSpecular
 0x00643db0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicShaderGetVertexInfo
-0x00643dc0	glue	thin wrapper: only forwards to glue code (DynGeo_ResetCurrentBuffer_0069fcb0)
+0x00643dc0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicShadowStart_00643dc0
 0x00643dd0	glue	reviewed: forwarder to PhyreEngine/managers (PC2 render/pc-ui round 1)
 0x00643de0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicShowAutoSavePrompt
 0x00643df0	glue	thin wrapper: only forwards to glue code (PhyreScene_SetMeshesVisible)
