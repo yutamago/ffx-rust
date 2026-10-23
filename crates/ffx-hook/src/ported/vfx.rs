@@ -2276,6 +2276,15 @@ ported! {
     getAlphaForShpIgnoreAnFormatBaseOnSh @ 0x0071_6550 => extern "C" fn shp_alpha(shp: u32) -> u32 {
         small::bridge::shp_alpha(&mem(), shp)
     }
+    /// `rt_stack_reset_00a3abe0(w, h, x, y)` (stdcall callback): the
+    /// last callee's `eax`.
+    rt_stack_reset_00a3abe0 @ 0x00a3_abe0 => extern "stdcall" fn rt_stack_reset(w: u32, h: u32, x: u32, y: u32) -> u32 {
+        small::bridge::rt_stack_reset(&mut mem(), w, h, x, y, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `rt_stack_pop_00a3afb0(a)` (stdcall callback): the popped word or 0.
+    rt_stack_pop_00a3afb0 @ 0x00a3_afb0 => extern "stdcall" fn rt_stack_pop(a: u32) -> u32 {
+        small::bridge::rt_stack_pop(&mut mem(), a, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_node_slot_00a3ba10(node)`.
     op_node_slot_00a3ba10 @ 0x00a3_ba10 => extern "C" fn op_node_slot(node: u32) -> u32 {
         small::bridge::op_node_slot(&mem(), node)

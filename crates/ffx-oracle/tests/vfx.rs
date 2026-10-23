@@ -33424,3 +33424,81 @@ fn r53c_opu_vran_add_matches_the_original() {
         assert!(seen.iter().all(|&n| n > 300), "{seen:?}");
     }
 }
+
+/// `rt_stack_reset_00a3abe0` and `rt_stack_pop_00a3afb0` (stdcall) against
+/// the ports on a render object at `[0x01a858b4]`: stack tops inside, at
+/// and past the stack's end, zero sizes, float arguments with NaN and -0.
+/// Stand-ins log `memset` and the three platform calls (`0x00a3cd30`
+/// returns a cell).
+#[test]
+#[allow(clippy::many_single_char_names)]
+fn r53d_render_stack_matches_the_original() {
+    use small::bridge as s;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a3_abe0);
+        let cell = p.alloc(4);
+        let logs = [
+            far_recorder(&mut p, 0x0094_964c, &[0, 0, 0], None),
+            far_recorder(&mut p, 0x00a3_cd30, &[], Some(cell)),
+            far_recorder(&mut p, 0x00a3_c570, &[0], None),
+            far_recorder(&mut p, 0x00a3_c350, &[], None),
+        ];
+        let render = p.alloc(0xc00);
+        let at = p.sym(0x01a8_58b4);
+        p.set(at, render);
+        let mut seen = [0u32; 2];
+        for round in 0..2000u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(render, 0xc00, &mut rng);
+            p.set(cell, rng.next());
+            // random bits with the quiet bit set: never a signalling NaN
+            let floats = |rng: &mut Xorshift| {
+                let any = rng.next() | 0x0040_0000;
+                rng.pick(&[
+                    0u32,
+                    0x8000_0000,
+                    0x7fc0_0000,
+                    0x3f80_0000,
+                    0x4480_0000,
+                    any,
+                ])
+            };
+            let (w, h) = (rng.pick(&[0u32, 640, 1920]), rng.pick(&[0u32, 480, 1080]));
+            let (x, y) = (floats(&mut rng), floats(&mut rng));
+            check_conv(
+                &mut p,
+                &format!("rt_stack_reset round {round}"),
+                0x00a3_abe0,
+                Conv::Stdcall,
+                &[w, h, x, y],
+                |o| Some(s::rt_stack_reset(o, w, h, x, y, &mut call_original)),
+            );
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(render + 0x9cc, 0xe0, &mut rng);
+            p.set(render + 0x6d8, rng.pick(&[0u32, 1, w]));
+            p.set(render + 0x6dc, rng.pick(&[0u32, 1, h]));
+            // the top: inside, at and past the end (0x9cc + 0xe0)
+            let top =
+                render + rng.pick(&[0x9cc + 0x1c, 0x9cc + 0x1c * 5, 0xaa8, 0xaac, 0xab0, 0xac8]);
+            p.set(render + 0xaac, top);
+            let a = rng.next();
+            let ok = p.get::<u32>(render + 0x6d8) != 0
+                && p.get::<u32>(render + 0x6dc) != 0
+                && top < render + 0xaac;
+            seen[usize::from(ok)] += 1;
+            check_conv(
+                &mut p,
+                &format!("rt_stack_pop round {round}"),
+                0x00a3_afb0,
+                Conv::Stdcall,
+                &[a],
+                |o| Some(s::rt_stack_pop(o, a, &mut call_original)),
+            );
+        }
+        assert!(seen.iter().all(|&n| n > 200), "{seen:?}");
+    }
+}
