@@ -5669,6 +5669,10 @@ ported! {
     opu_rgba_set_00809180 @ 0x0080_9180 => extern "C" fn opu_rgba_set(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_rgba_set(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opu_part_run(host, cmd)`.
+    opu_part_run @ 0x0080_b800 => extern "C" fn opu_part_run(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_part_run(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu_md_etc(host, cmd)`.
     opu_md_etc @ 0x0081_c4f0 => extern "C" fn opu_md_etc(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_md_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))

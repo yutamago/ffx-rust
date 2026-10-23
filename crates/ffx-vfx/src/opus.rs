@@ -11223,4 +11223,162 @@ pub mod bridge {
             _ => cmd,
         }
     }
+
+    /// `opu_part_run(host, cmd)` (`0x0080b800`): runs the unit's ppp part
+    /// (`u` = unit `host +0x220`, kind `u8 u +0xbb` 3, part `pk` = `u
+    /// +0xbc`; any other kind jumps by `i16 cmd+2`, a missing part prints
+    /// Virtuos' FIXME and steps 4 bytes):
+    ///
+    /// - `g_pppChrScale` = `f32 u +0x3c / 256` three times and 1; the part's
+    ///   colour (`u16 pk +0x70..+0x76` = `u8 u +0xc8..+0xcb << 5`), or 0
+    ///   while `u8 u +0xb3` meets `g_EtChrDrawFlags[u8 u +0x18]`.
+    /// - position `pk +0x40` = `u +0x90..+0x98`, 1; rotation `pk +0x50` =
+    ///   `u +0x30..+0x38 x 16` (y negated with `u8 u +0xc0` bit 0) through
+    ///   `ftol2_sse`, by way of `host +0..+0xc` and `g_Vu0_VfMove`.
+    /// - scale `pk +0x60` = `FFXVu0ScaleVector(key, s)`, key `u +0xd0` +
+    ///   16 (`u8 u +0xd4` + 2), `s` = `f32 u +0xdc x u +0x3c` x the 1/256
+    ///   the original keeps in `ST0` from the start (Ghidra's
+    ///   `extraout_ST0`).
+    /// - `pppSetMatrix(pk)`, the camera = `opus_parent_get(host, u)`, the
+    ///   screen matrix and the EE registers `0x00c8f528..+0x3c` from
+    ///   `0x0113fd50` (`u8 u +0x19` bit 7) or `host +0x2c0`, view = camera x
+    ///   world (`FFXVu0MulMatrix`) and its copy `0x0230fe20`.
+    /// - `g_PppPacketPos` from `host +0x354` (or `g_OpLatch1` with `u8 u
+    ///   +0xb2` bit 0), the part's run function (`*(host +0x350) +0x48`)
+    ///   on the unit, the position stored back. A nonzero `al` from it
+    ///   jumps by `i16 cmd+2`, else 4 bytes.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_part_run<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{ftol, load, mul, store};
+        const ONE: u32 = 0x3f80_0000;
+        let mut fun = |mem: &mut M, f: u32, args: &[u32]| {
+            let f = g(mem, f);
+            call(mem, f, args)
+        };
+        let jump = |mem: &M| {
+            cmd.wrapping_add(i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned())
+        };
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let byte = |mem: &M, a: u32| mem.read::<u8>(a);
+        let wg = |mem: &mut M, a: u32, v: u32| {
+            let at = g(mem, a);
+            mem.write(at, v);
+        };
+        let u = unit(mem, host);
+        if byte(mem, u.wrapping_add(0xbb)) != 3 {
+            return jump(mem);
+        }
+        if rd(mem, u.wrapping_add(0xbc)) == 0 {
+            let msg = g(mem, 0x00b5_8a00);
+            fun(mem, 0x0062_f500, &[msg]);
+            return cmd.wrapping_add(4);
+        }
+        // g_pppChrScale
+        let s = store(mul(load(rd(mem, u.wrapping_add(0x3c))), 0.003_906_25));
+        for k in 0..3 {
+            wg(mem, 0x0230_fd50 + 4 * k, store(load(s)));
+        }
+        wg(mem, 0x0230_fd5c, ONE);
+        // the colour
+        let flags = g(mem, 0x012a_84c0).wrapping_add(u32::from(byte(mem, u.wrapping_add(0x18))));
+        let flag = mem.read::<u8>(flags);
+        let pk = rd(mem, u.wrapping_add(0xbc));
+        if byte(mem, u.wrapping_add(0xb3)) & flag != 0 {
+            mem.write(pk.wrapping_add(0x70), 0u32);
+            mem.write(pk.wrapping_add(0x74), 0u32);
+        } else {
+            for k in 0..4 {
+                let c = u16::from(byte(mem, u.wrapping_add(0xc8 + k))) << 5;
+                mem.write(pk.wrapping_add(0x70 + 2 * k), c);
+            }
+        }
+        // the position
+        let index = u32::from(byte(mem, u.wrapping_add(0xd4)));
+        let key = index
+            .wrapping_add(2)
+            .wrapping_mul(16)
+            .wrapping_add(rd(mem, u.wrapping_add(0xd0)));
+        for k in 0..3 {
+            let v = store(load(rd(mem, u.wrapping_add(0x90 + 4 * k))));
+            mem.write(pk.wrapping_add(0x40 + 4 * k), v);
+        }
+        mem.write(pk.wrapping_add(0x4c), ONE);
+        // the rotation: x 16 into the host's first vector, then integers
+        for k in 0..3 {
+            let v = store(mul(load(rd(mem, u.wrapping_add(0x30 + 4 * k))), 16.0));
+            mem.write(host.wrapping_add(4 * k), v);
+        }
+        mem.write(host.wrapping_add(0xc), ONE);
+        if byte(mem, u.wrapping_add(0xc0)) & 1 != 0 {
+            let y = store(-load(rd(mem, host.wrapping_add(4))));
+            mem.write(host.wrapping_add(4), y);
+        }
+        for k in 0..4 {
+            let w = rd(mem, host.wrapping_add(4 * k));
+            wg(mem, 0x00c8_f980 + 4 * k, w);
+        }
+        let rot: [u32; 4] = mem.read(host);
+        for (k, w) in (0u32..).zip(rot) {
+            let i = ftol(mem, load(w));
+            wg(mem, 0x00c8_f980 + 4 * k, i);
+        }
+        for k in 0..4 {
+            let w = rd(mem, g(mem, 0x00c8_f980 + 4 * k));
+            mem.write(pk.wrapping_add(0x50 + 4 * k), w);
+        }
+        // the scale: `fmul`, then `fmulp` into the 1/256 still in ST1
+        let d = load(rd(mem, u.wrapping_add(0xdc)));
+        let scale = store(mul(
+            0.003_906_25,
+            mul(d, load(rd(mem, u.wrapping_add(0x3c)))),
+        ));
+        fun(mem, 0x006e_d8f0, &[pk.wrapping_add(0x60), key, scale]);
+        fun(mem, 0x0071_7410, &[pk]);
+        let parent = fun(mem, 0x0080_1f00, &[host, u]);
+        let camera = g(mem, 0x0230_ff60);
+        fun(mem, 0x007e_8010, &[camera, parent]);
+        // the screen matrix and the EE registers
+        let src = if byte(mem, u.wrapping_add(0x19)) & 0x80 != 0 {
+            g(mem, 0x0113_fd50)
+        } else {
+            host.wrapping_add(0x2c0)
+        };
+        let m: [u32; 16] = mem.read(src);
+        let (regs, screen) = (g(mem, 0x00c8_f528), g(mem, 0x0230_fe60));
+        mem.write(regs, m);
+        mem.write(screen, m);
+        let (view, world) = (g(mem, 0x0230_ff20), g(mem, 0x0230_ffa0));
+        fun(mem, 0x006e_d5c0, &[view, camera, world]);
+        let copy = g(mem, 0x0230_fe20);
+        fun(mem, 0x006e_d360, &[copy, view]);
+        // run the part with its packet position
+        let latched = byte(mem, u.wrapping_add(0xb2)) & 1 != 0;
+        let pos = if latched {
+            rd(mem, g(mem, 0x0233_2e80))
+        } else {
+            rd(mem, host.wrapping_add(0x354))
+        };
+        wg(mem, 0x0230_fd2c, pos);
+        let ops = rd(mem, host.wrapping_add(0x350));
+        let f = rd(mem, ops.wrapping_add(0x48));
+        let arg = rd(mem, host.wrapping_add(0x220));
+        let r = call(mem, f, &[arg]);
+        let pos = rd(mem, g(mem, 0x0230_fd2c));
+        if byte(mem, u.wrapping_add(0xb2)) & 1 != 0 {
+            wg(mem, 0x0233_2e80, pos);
+        } else {
+            mem.write(host.wrapping_add(0x354), pos);
+        }
+        #[allow(clippy::cast_possible_truncation)] // `movsx ecx, al`
+        if r as u8 != 0 {
+            jump(mem)
+        } else {
+            cmd.wrapping_add(4)
+        }
+    }
 }

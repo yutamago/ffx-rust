@@ -31814,3 +31814,116 @@ fn r51c_opu_md_etc_matches_the_original() {
         assert!(seen[..7].iter().all(|&n| n > 0), "{seen:?}");
     }
 }
+
+/// `opu_part_run` against the port: both packet-position sources, both
+/// screen-matrix sources, the colour flags, kinds other than 3 and a
+/// missing part; the run function a stand-in that moves the packet
+/// position and returns `al` from a cell.
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r51d_opu_part_run_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_b800);
+        let cells = p.alloc(0x20);
+        let (parent_cell, run_cell, pos_cell, arg_log) =
+            (cells + 4, cells + 8, cells + 0xc, cells + 0x10);
+        let print = far_recorder(&mut p, 0x0062_f500, &[0], None);
+        let scale = far_recorder(&mut p, 0x006e_d8f0, &[0, 0, 0], None);
+        let set = far_recorder(&mut p, 0x0071_7410, &[0], None);
+        let parent_log = far_recorder(&mut p, 0x0080_1f00, &[0, 0], Some(parent_cell));
+        // the part's run function: logs its argument and the packet position,
+        // moves the latter
+        // position, returns the word at run_cell
+        let pos = p.sym(0x0230_fd2c);
+        let mut c = vec![0x8b, 0x4c, 0x24, 0x04]; // mov ecx, [esp + 4]
+        c.extend([0x89, 0x0d]); // mov [arg_log], ecx
+        c.extend(arg_log.to_le_bytes());
+        c.extend([0x8b, 0x0d]); // mov ecx, [g_PppPacketPos]: the position it got
+        c.extend(pos.to_le_bytes());
+        c.extend([0x89, 0x0d]); // mov [arg_log + 4], ecx
+        c.extend((arg_log + 4).to_le_bytes());
+        c.extend([0x8b, 0x0d]); // mov ecx, [pos_cell]
+        c.extend(pos_cell.to_le_bytes());
+        c.extend([0x89, 0x0d]); // mov [g_PppPacketPos], ecx
+        c.extend(pos.to_le_bytes());
+        c.push(0xa1); // mov eax, [run_cell]
+        c.extend(run_cell.to_le_bytes());
+        c.push(0xc3);
+        let run = p.a.alloc_code(&c).unwrap();
+        assert_eq!(p.b.alloc_code(&c).unwrap(), run);
+        let (host, unit, cmd, part, ops, keys, parent) = (
+            p.alloc(0x400),
+            p.alloc(0x100),
+            p.alloc(0x10),
+            p.alloc(0x100),
+            p.alloc(0x80),
+            p.alloc(0x200),
+            p.alloc(0x40),
+        );
+        let latch = p.sym(0x0233_2e80);
+        let flags = p.sym(0x012a_84c0);
+        let mut seen = [0u32; 6];
+        for round in 0..3000u32 {
+            for log in [print, scale, set, parent_log] {
+                p.set(log, 0u32);
+            }
+            p.fill(host, 0x400, &mut rng);
+            p.fill(part, 0x100, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.fill(keys, 0x200, &mut rng);
+            p.fill(flags, 0x10, &mut rng);
+            for k in 0..0x40u32 {
+                let v = if rng.chance(92) {
+                    ranged(&mut rng, -300.0, 300.0)
+                } else {
+                    rng.pick(&[
+                        0x7fc0_0000u32,
+                        0xff80_0000,
+                        0x7f80_0000,
+                        0x4f00_0000,
+                        0xcf00_0001,
+                    ])
+                };
+                p.set(unit + 4 * k, v);
+                p.set(parent + ((4 * k) & 0x3f), ranged(&mut rng, -2.0, 2.0));
+            }
+            p.set(host + 0x220, unit);
+            p.set(host + 0x350, ops);
+            p.set(ops + 0x48, run);
+            let kind = if rng.chance(85) {
+                3u8
+            } else {
+                rng.pick(&[0u8, 2, 4, 0xff])
+            };
+            p.set(unit + 0xbb, kind);
+            let has_part = rng.chance(92);
+            p.set(unit + 0xbc, if has_part { part } else { 0 });
+            p.set(unit + 0xd0, keys);
+            p.set(unit + 0xd4, rng.below(0x10) as u8);
+            p.set(unit + 0x18, rng.below(0x10) as u8);
+            for at in [0xb2u32, 0xb3, 0xc0, 0x19] {
+                p.set(unit + at, rng.next() as u8);
+            }
+            p.set(parent_cell, parent);
+            p.set(run_cell, rng.pick(&[0u32, 1, 0x100, 0xffff_ff00, 0x80]));
+            p.set(pos_cell, rng.next());
+            p.set(latch, rng.next());
+            let any = rng.next() as i16;
+            p.set(cmd + 2, rng.pick(&[4i16, -8, 0x7fff, any]));
+            let u8_at = |p: &Pair, a: u32| p.get::<u8>(a);
+            let latched = u8_at(&p, unit + 0xb2) & 1;
+            let screen = u8_at(&p, unit + 0x19) >> 7;
+            if kind == 3 && has_part {
+                seen[usize::from(latched)] += 1;
+                seen[2 + usize::from(screen)] += 1;
+            } else {
+                seen[4 + usize::from(kind == 3)] += 1;
+            }
+            let what = format!("opu_part_run round {round}");
+            p.check(&what, 0x0080_b800, &[host, cmd], |m| {
+                Some(opus::bridge::opu_part_run(m, host, cmd, &mut call_original))
+            });
+        }
+        assert!(seen.iter().all(|&n| n > 0), "{seen:?}");
+    }
+}
