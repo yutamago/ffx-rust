@@ -32742,3 +32742,156 @@ fn r52c_opp_mimic_matches_the_original() {
         assert!(seen.iter().all(|&k| k > 100), "{seen:?}");
     }
 }
+
+/// A stand-in for `opus_get_bone_matrix(out, chr, bone)` (through a jump)
+/// that logs its arguments and copies the 16 words at `mats + 0x40 (bone
+/// & 3)` to `out`; returns the log.
+fn bone_copy_stub(p: &mut Pair, sym: u32, mats: u32) -> u32 {
+    let log = p.alloc(4 + 0x100 * 64);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x06]); // shl ecx, 6
+    for k in 0..3u8 {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        c.extend([0x89, 0x81]); // mov [ecx + slot], eax
+        c.extend((log + 4 + 4 * u32::from(k)).to_le_bytes());
+    }
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x8b, 0x4c, 0x24, 0x0c]); // mov ecx, [esp + 0xc]: bone
+    c.extend([0x83, 0xe1, 0x03]); // and ecx, 3
+    c.extend([0xc1, 0xe1, 0x06]); // shl ecx, 6
+    c.extend([0x81, 0xc1]); // add ecx, mats
+    c.extend(mats.to_le_bytes());
+    c.extend([0x8b, 0x44, 0x24, 0x04]); // mov eax, [esp + 4]: out
+    for k in 0..16u8 {
+        c.extend([0x8b, 0x51, 4 * k]); // mov edx, [ecx + 4k]
+        c.extend([0x89, 0x50, 4 * k]); // mov [eax + 4k], edx
+    }
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+/// `opu_v_en_bone` against the port: every nibble and the default, world
+/// and bone space, each case's command words in range for its reads, the
+/// element and random picks on and past their limits (the 0x12e /
+/// 0x1153 bands), the weapon present or not, the angle table and axis
+/// bytes.
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap
+)]
+fn r52d_opu_v_en_bone_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_4c90);
+        let cells = p.alloc(0x40);
+        let (scale, nb, rand, magic, id, weapon) = (
+            cells,
+            cells + 4,
+            cells + 8,
+            cells + 0xc,
+            cells + 0x10,
+            cells + 0x14,
+        );
+        let (vtx, mat, root, mats) = (p.alloc(0x10), p.alloc(0x40), p.alloc(0x40), p.alloc(0x100));
+        let logs = [
+            float_recorder(&mut p, 0x0082_ab60, 1, scale),
+            far_copy_recorder(&mut p, 0x0080_54d0, 3, 0, From::At(vtx), 4),
+            far_copy_recorder(&mut p, 0x0083_3b80, 3, 2, From::At(mat), 16),
+            far_copy_recorder(&mut p, 0x0083_54f0, 3, 2, From::At(vtx), 4),
+            far_recorder(&mut p, 0x0083_03f0, &[0], Some(nb)),
+            far_recorder(&mut p, 0x007e_5d50, &[0], Some(rand)),
+            far_copy_recorder(&mut p, 0x0080_5400, 2, 0, From::At(root), 16),
+            bone_copy_stub(&mut p, 0x0080_5430, mats),
+            far_recorder(&mut p, 0x009d_a3b0, &[], Some(magic)),
+            far_recorder(&mut p, 0x0082_6b80, &[0], Some(id)),
+            far_copy_recorder(&mut p, 0x0083_3d10, 4, 3, From::At(vtx), 4),
+            far_recorder(&mut p, 0x0079_5b40, &[0, 0], Some(weapon)),
+            far_copy_recorder(&mut p, 0x0079_56e0, 2, 1, From::At(vtx), 4),
+        ];
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x40));
+        let mut seen = [0u32; 16];
+        for round in 0..4000u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(host, 0x400, &mut rng);
+            for k in 0..0x40u32 {
+                let v = ranged(&mut rng, -50.0, 50.0);
+                p.set(unit + 4 * k, v);
+            }
+            for (at, n) in [(vtx, 4u32), (mat, 16), (root, 16), (mats, 64)] {
+                for k in 0..n {
+                    let v = ranged(&mut rng, -2.0, 2.0);
+                    p.set(at + 4 * k, v);
+                }
+            }
+            p.set(host + 0x220, unit);
+            let chr = rng.below(240);
+            p.set(unit + 0x18, chr as u8);
+            p.set(handles + 4 * chr, rng.next());
+            p.set(unit + 0xb2, rng.next() as u8);
+            let kind = rng.below(16);
+            seen[kind as usize] += 1;
+            p.set(host + 0x21a, (kind << 12 | rng.below(0x1000)) as u16);
+            p.fill(cmd, 0x40, &mut rng);
+            let s = rng.pick(&[1.0f32, 0.5, 2.0, 3.3, 0.0]);
+            p.set(scale, s.to_bits());
+            let last = rng.pick(&[0u32, 1, 4, 5, 6, 30, 80]);
+            p.set(nb, last);
+            p.set(
+                rand,
+                rng.pick(&[0u32, 1, 3, 4, 20, 21, 25, 26, 72, 73, 0x1_0005]),
+            );
+            p.set(magic, rng.pick(&[0x12eu32, 0x12e, 0x12f]));
+            p.set(id, rng.pick(&[0x1153u32, 0x1153, 0x1152]));
+            p.set(weapon, if rng.chance(30) { 0 } else { rng.next() });
+            // the command words each case reads
+            match kind {
+                4 => p.set(cmd + 2, rng.below(0x30) as u16),
+                9 | 10 => p.set(cmd + 2, (4 * rng.below(0x40)) as u16),
+                6 => {
+                    p.set(cmd + 2, rng.pick(&[0i16, 3, 4, 20, 26, -1]));
+                    p.set(cmd + 4, rng.pick(&[0i16, 5, 30, 79, 100, -2]));
+                }
+                7 => {
+                    p.set(cmd + 2, 0x10u16);
+                    p.set(cmd + 0x10, rng.pick(&[0u16, 1, 3, 8]));
+                }
+                8 => {
+                    p.set(cmd + 4, rng.below(6) as u16);
+                    let a = rng.pick(&[0.0f32, 1024.0, 4095.0, 4096.0, -1.0, 70000.0, f32::NAN]);
+                    p.set(unit + 0x48, a.to_bits());
+                }
+                _ => {}
+            }
+            p.check(
+                &format!("opu_v_en_bone kind {kind} round {round}"),
+                0x0080_4c90,
+                &[host, cmd],
+                |m| {
+                    Some(o::opu_v_en_bone(
+                        m,
+                        host,
+                        cmd,
+                        &mut call_original,
+                        &mut call_original_f,
+                    ))
+                },
+            );
+        }
+        assert!(seen.iter().all(|&k| k > 100), "{seen:?}");
+    }
+}

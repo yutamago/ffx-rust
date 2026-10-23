@@ -10308,6 +10308,323 @@ pub mod bridge {
         }
     }
 
+    /// `opu_v_en_bone(host, cmd)` (`0x00804c90`, opus command table
+    /// `0x00c49128`/`0x00c4912c`; Fahrenheit's name) -> the next command:
+    /// the unit's position `u +0x40` (`u` = `host +0x220`) from a bone of
+    /// its character (`h` = `g_EtChrHandles[u +0x18]`), by the flag nibble
+    /// `u16 host +0x21a >> 12` (jump table `0x0080536c`); flag bit 0 (`w`)
+    /// picks world space (16 x) over the bone's own (0.016 x). `n` = `u16
+    /// cmd +2`, `s` = `10 / Ch_GetDataScale(h)` (`f32`, `fcall`). `host`
+    /// is the scratch: matrices at `+0`, `+0x40`, `+0x80`, a vector at
+    /// `+0xc0`.
+    ///
+    /// - 0: `w`: `opus_get_bone_vertex(host, h, n)`, else
+    ///   `Ch_ElemGetBaseMatrix(h, n, host)` and its translation `+0x30`.
+    /// - 1, 4 (bone `ftol(u +0x30 + 4n)`): `host +0x80` = `u +0x30` x `s`
+    ///   through the bone matrix `+0x40` (times the root, `w`).
+    /// - 2: `w`: `Ch_OptposGet(h, n, host)`. 3: a random element 4..last
+    ///   (or the last), `w`: its matrix x root applied to `+0x70`; `cmd +2`.
+    /// - 5: `+0xc0` = the `i16` offset `cmd +4..+8` x `s` through the bone
+    ///   matrix (x root, `w`); `cmd + 10`.
+    /// - 6: a random element `i16 cmd +2 ..= min(i16 +4, last)` (magic
+    ///   0x12e on character 0x1153: element 4..20 or 26..72 redrawn from
+    ///   75), `w`: `Ch_ElemGetPos`; `cmd + 6`. 7: an element from the `u16`
+    ///   list at `cmd + i16 cmd +2` (count first), `w`: `Ch_ElemGetPos`.
+    /// - 8: `host +0..` = `cos/sin(ftol(u +0x48))` x `u +0x40` and `u
+    ///   +0x44`, / 16 / 0.001 (`g_pppSinTable`), placed at `+0xc0` by the
+    ///   axis bytes `0x00c48e10 + 4 i16 cmd +4`, x `s`, through root x bone
+    ///   `i16 n`, to `u +0x90`; returns `cmd + 6` at once. Sets `u +0xb2`
+    ///   bit 2.
+    /// - 9: between two bones (`i16 cmd +4`, `+6`) of the weapon
+    ///   (`MsGetWeaponHandle(u +0x18, 0)`) at `t = u[i16 n] / 256`: `u
+    ///   +0x40..+0x50` = `(a + (b - a) t) x 16`; `cmd + 8`.
+    /// - 10: `opus_get_bone_vertex(host, h, ftol(u[i16 n]))`, any `w`.
+    /// - other: `MsGetChrPos(u +0x18, host)`, `u +0x44` -= 256; `cmd`.
+    ///
+    /// The cases through a vertex end in `u +0x40` = it x 16 (or 0.016);
+    /// all but 8 end in `u +0x90` = `u +0x40` / 16 and return `cmd + 4`
+    /// unless noted. Callees through `call`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_v_en_bone<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, round_trip, store, sub};
+        const XYZ_SCALE: u32 = 0x007e_a850;
+        const ROOT: u32 = 0x0080_5400;
+        const BONE: u32 = 0x0080_5430;
+        const VERTEX: u32 = 0x0080_54d0;
+        const APPLY: u32 = 0x007e_79a0;
+        const MUL: u32 = 0x007e_83b0;
+        const ELEM_POS: u32 = 0x0083_3d10;
+        const NB_ELEM: u32 = 0x0083_03f0;
+        const RANDOM: u32 = 0x007e_5d50;
+        let h_ = |k: u32| host.wrapping_add(k);
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let world = mem.read::<u16>(h_(0x21a)) & 1 != 0;
+        let u = rd(mem, h_(0x220));
+        let at_u = |k: u32| u.wrapping_add(k);
+        let n = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        let s16 = |mem: &M, k: u32| i32::from(mem.read::<i16>(cmd.wrapping_add(k))).cast_unsigned();
+        let chr = u32::from(mem.read::<u8>(at_u(0x18)));
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        let scale = store(fcall(mem, g(mem, 0x0082_ab60), &[h]));
+        // the f32 constants, through fld/fstp
+        let k16 = round_trip(mem.read::<f32>(g(mem, 0x00b9_231c))).to_bits();
+        let k_bone = round_trip(mem.read::<f32>(g(mem, 0x00b5_88f4))).to_bits();
+        let tenth = |mem: &M| {
+            let ten: f64 = mem.read(g(mem, 0x00b9_22b0));
+            store(div(ten, load(scale)))
+        };
+        let xyz =
+            |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, args: [u32; 3]| {
+                let f = g(mem, XYZ_SCALE);
+                call(mem, f, &args);
+            };
+        let go = |mem: &mut M,
+                  call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                  f: u32,
+                  args: &[u32]| {
+            let f = g(mem, f);
+            call(mem, f, args)
+        };
+        // the vertex at `host` to `u +0x40`, x 16
+        let to_unit = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            xyz(mem, call, [at_u(0x40), host, k16]);
+        };
+        // the bone matrix at `host +0x40` (and x the root at `host` in
+        // world space)
+        let bone_matrix =
+            |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, bone: u32| {
+                if world {
+                    go(mem, call, ROOT, &[host, h]);
+                    go(mem, call, BONE, &[h_(0x40), h, bone]);
+                    go(mem, call, MUL, &[host, host, h_(0x40)]);
+                } else {
+                    go(mem, call, BONE, &[h_(0x40), h, bone]);
+                }
+            };
+        let kind = mem.read::<u16>(h_(0x21a)) >> 12;
+        let next = match kind {
+            0 => {
+                if world {
+                    go(mem, call, VERTEX, &[host, h, n]);
+                    xyz(mem, call, [at_u(0x40), host, k16]);
+                } else {
+                    go(mem, call, 0x0083_3b80, &[h, n, host]);
+                    xyz(mem, call, [at_u(0x40), h_(0x30), k_bone]);
+                }
+                cmd.wrapping_add(4)
+            }
+            1 | 4 => {
+                let bone = if kind == 4 {
+                    let x = rd(mem, at_u(0x30).wrapping_add(n << 2));
+                    ftol(mem, load(x)) & 0xffff
+                } else {
+                    n
+                };
+                bone_matrix(mem, call, bone);
+                let t = tenth(mem);
+                xyz(mem, call, [h_(0x80), at_u(0x30), t]);
+                go(mem, call, APPLY, &[h_(0x40), host, h_(0x80)]);
+                xyz(
+                    mem,
+                    call,
+                    [at_u(0x40), h_(0x40), if world { k16 } else { k_bone }],
+                );
+                cmd.wrapping_add(4)
+            }
+            2 => {
+                if world {
+                    go(mem, call, 0x0083_54f0, &[h, n, host]);
+                    to_unit(mem, call);
+                }
+                cmd.wrapping_add(4)
+            }
+            3 => {
+                let last = go(mem, call, NB_ELEM, &[h]).wrapping_sub(1);
+                let mut e = if last.cast_signed() >= 4 {
+                    let r = go(mem, call, RANDOM, &[last.wrapping_sub(4)]);
+                    r.wrapping_add(4) & 0xffff
+                } else {
+                    last & 0xffff
+                };
+                if e.cast_signed() > last.cast_signed() {
+                    e = last & 0xffff;
+                }
+                if world {
+                    go(mem, call, ROOT, &[host, h]);
+                    go(mem, call, BONE, &[h_(0x40), h, e]);
+                    go(mem, call, APPLY, &[host, host, h_(0x70)]);
+                    to_unit(mem, call);
+                }
+                cmd.wrapping_add(2)
+            }
+            5 => {
+                let v = h_(0xc0);
+                for k in 0..3u32 {
+                    let x = store(f64::from(s16(mem, 4 + 2 * k).cast_signed()));
+                    mem.write(v.wrapping_add(4 * k), x);
+                }
+                let t = tenth(mem);
+                xyz(mem, call, [v, v, t]);
+                bone_matrix(mem, call, n);
+                go(mem, call, APPLY, &[h_(0x40), host, v]);
+                xyz(
+                    mem,
+                    call,
+                    [at_u(0x40), h_(0x40), if world { k16 } else { k_bone }],
+                );
+                cmd.wrapping_add(10)
+            }
+            6 => {
+                let last = go(mem, call, NB_ELEM, &[h]).wrapping_sub(1);
+                let hi = s16(mem, 4);
+                let top = if last.cast_signed() > hi.cast_signed() {
+                    hi
+                } else {
+                    last
+                };
+                let lo = s16(mem, 2);
+                let span = top.wrapping_sub(lo);
+                let r = go(mem, call, RANDOM, &[span]);
+                let mut e = r.wrapping_add(lo) & 0xffff;
+                if go(mem, call, 0x009d_a3b0, &[]) == 0x12e
+                    && go(mem, call, 0x0082_6b80, &[h]) == 0x1153
+                {
+                    let in_band = (4..=0x14).contains(&e) || e.wrapping_sub(0x1a) & 0xffff <= 0x2e;
+                    if in_band {
+                        let r = go(
+                            mem,
+                            call,
+                            RANDOM,
+                            &[span.wrapping_add(lo.wrapping_sub(0x4b))],
+                        );
+                        e = r.wrapping_add(0x4b) & 0xffff;
+                    }
+                }
+                if e.cast_signed() > last.cast_signed() {
+                    e = last & 0xffff;
+                }
+                if world {
+                    go(mem, call, ELEM_POS, &[h, e, 0, host]);
+                    to_unit(mem, call);
+                }
+                cmd.wrapping_add(6)
+            }
+            7 => {
+                let list = cmd.wrapping_add(s16(mem, 2));
+                let count = mem.read::<u16>(list);
+                #[allow(clippy::cast_possible_wrap)] // cwde
+                let r = go(
+                    mem,
+                    call,
+                    RANDOM,
+                    &[i32::from(count as i16).cast_unsigned()],
+                ) & 0xffff;
+                #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+                let pick = if (r as i16) < count as i16 {
+                    r as i16
+                } else {
+                    count.wrapping_sub(1) as i16
+                };
+                if world {
+                    let at = list.wrapping_add((i32::from(pick) * 2 + 2).cast_unsigned());
+                    let e = u32::from(mem.read::<u16>(at));
+                    go(mem, call, ELEM_POS, &[h, e, 0, host]);
+                    to_unit(mem, call);
+                }
+                cmd.wrapping_add(4)
+            }
+            8 => {
+                let x = rd(mem, at_u(0x48));
+                let b: u8 = mem.read(at_u(0xb2));
+                mem.write(at_u(0xb2), b | 4);
+                let a = (ftol(mem, load(x)) & 0xfff) + 0x400;
+                let sixteenth: f64 = mem.read(g(mem, 0x00b9_21e0));
+                let milli: f64 = mem.read(g(mem, 0x00b4_7c68));
+                let ux = load(rd(mem, at_u(0x40)));
+                let cos = load(rd(mem, g(mem, 0x00c4_3bf0).wrapping_add(a << 2)));
+                let x0 = store(div(mul(mul(cos, ux), sixteenth), milli));
+                mem.write(host, x0);
+                let sin = load(rd(mem, g(mem, 0x00c4_4bf0).wrapping_add((a & 0xfff) << 2)));
+                let ux = load(rd(mem, at_u(0x40)));
+                let x2 = store(div(mul(mul(sin, ux), sixteenth), milli));
+                mem.write(h_(8), x2);
+                let uy = load(rd(mem, at_u(0x44)));
+                let x1 = store(div(mul(sixteenth, uy), milli));
+                mem.write(h_(4), x1);
+                let axis = i32::from(
+                    mem.read::<u16>(cmd.wrapping_add(4))
+                        .wrapping_shl(2)
+                        .cast_signed(),
+                );
+                let slots = g(mem, 0x00c4_8e10).wrapping_add(axis.cast_unsigned());
+                let v = h_(0xc0);
+                for k in 0..3u32 {
+                    let slot = u32::from(mem.read::<u8>(slots.wrapping_add(k)));
+                    let c = round_trip(mem.read::<f32>(h_(4 * k))).to_bits();
+                    mem.write(v.wrapping_add(slot << 2), c);
+                }
+                go(mem, call, ROOT, &[host, h]);
+                go(mem, call, BONE, &[h_(0x40), h, s16(mem, 2)]);
+                go(mem, call, MUL, &[host, host, h_(0x40)]);
+                let t = tenth(mem);
+                xyz(mem, call, [v, v, t]);
+                go(mem, call, APPLY, &[at_u(0x90), host, v]);
+                return cmd.wrapping_add(6);
+            }
+            9 => {
+                let wh = go(mem, call, 0x0079_5b40, &[chr, 0]);
+                if wh != 0 {
+                    let per_256: f64 = mem.read(g(mem, 0x00b5_0198));
+                    let t = store(mul(load(rd(mem, u.wrapping_add(s16(mem, 2)))), per_256));
+                    go(mem, call, ROOT, &[host, wh]);
+                    let (b1, b2) = (s16(mem, 4), s16(mem, 6));
+                    go(mem, call, BONE, &[h_(0x40), wh, b1]);
+                    go(mem, call, BONE, &[h_(0x80), wh, b2]);
+                    go(mem, call, MUL, &[h_(0xc0), host, h_(0x70)]);
+                    go(mem, call, MUL, &[h_(0xd0), host, h_(0xb0)]);
+                    let fixed: f64 = mem.read(g(mem, 0x00b3_13a0));
+                    let tt = load(t);
+                    for k in 0..4u32 {
+                        let a = load(rd(mem, h_(0xc0 + 4 * k)));
+                        let b = load(rd(mem, h_(0xd0 + 4 * k)));
+                        // the last lane multiplies the other way round
+                        let v = if k == 3 {
+                            mul(fixed, add(mul(tt, sub(b, a)), a))
+                        } else {
+                            mul(add(mul(sub(b, a), tt), a), fixed)
+                        };
+                        mem.write(at_u(0x40 + 4 * k), store(v));
+                    }
+                }
+                cmd.wrapping_add(8)
+            }
+            10 => {
+                let x = rd(mem, u.wrapping_add(s16(mem, 2)));
+                let bone = ftol(mem, load(x)) & 0xffff;
+                go(mem, call, VERTEX, &[host, h, bone]);
+                to_unit(mem, call);
+                cmd.wrapping_add(4)
+            }
+            _ => {
+                go(mem, call, 0x0079_56e0, &[chr, host]);
+                to_unit(mem, call);
+                let k256: f64 = mem.read(g(mem, 0x00b9_22f0));
+                let y = store(sub(load(rd(mem, at_u(0x44))), k256));
+                mem.write(at_u(0x44), y);
+                cmd
+            }
+        };
+        let k = round_trip(mem.read::<f32>(g(mem, 0x00b5_8354))).to_bits();
+        xyz(mem, call, [at_u(0x90), at_u(0x40), k]);
+        next
+    }
+
     /// `opu_jump_etc(host, cmd)` (`0x008168c0`, opus command table
     /// `0x00c4914c`; Fahrenheit's Switch name) -> the next command: tests
     /// by the flag nibble `u16 host +0x21a & 0xf000` (`u` = the unit `host
