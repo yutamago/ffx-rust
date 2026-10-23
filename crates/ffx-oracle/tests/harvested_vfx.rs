@@ -222,3 +222,11 @@ harvest_test!(
         )
     }
 );
+// effects (round 49)
+harvest_test!(ppp_fp_loop, 0x0072_9ab0, args = 0, |m: &mut Oracle, _| {
+    // the colour scale (the original's ebp - 0x14) in stack scratch
+    let colour = m.stack_range().start + 0x100;
+    ffx_vfx::fp::bridge::ppp_fp_loop(m, colour, &mut |m, f, a| {
+        m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+    });
+});

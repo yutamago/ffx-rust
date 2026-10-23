@@ -6218,4 +6218,39 @@ ported! {
     opus_encount0_draw @ 0x007f_81e0 => extern "C" fn opus_encount0_draw(host: u32, unit: u32, grid: u32) -> u32 {
         opus::bridge::opus_encount0_draw(&mut mem(), host, unit, grid, &mut |_, f, a| call_ptr(f, a))
     }
+    // ---- round 49 a ----
+    /// `pppKeTh(obj, key, prog)` (`0x00736050`): the matrix, the position,
+    /// the direction and the update record in this shim's frame.
+    pppKeTh @ 0x0073_6050 => extern "C" fn ppp_ke_th(obj: u32, key: u32, prog: u32) -> u32 {
+        let mut frame = super::StackFrame::<40>::new();
+        let ebp = frame.at() + 0xa0;
+        prog::bridge::ppp_ke_th(&mut mem(), obj, key, prog, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
+    // ---- round 49 b ----
+    /// `pppFpLoop()` (`0x00729ab0`): the colour scale in this shim's frame.
+    pppFpLoop @ 0x0072_9ab0 => extern "C" fn ppp_fp_loop() {
+        let mut frame = super::StackFrame::<4>::new();
+        let colour = frame.at();
+        fp::bridge::ppp_fp_loop(&mut mem(), colour, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawMdlPSimDraw(obj, key, prog)` (`0x0073d070`): the view-space
+    /// matrix in this shim's frame.
+    pppDrawMdlPSimDraw @ 0x0073_d070 => extern "C" fn ppp_draw_mdl_psim_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        let mut locals = super::StackFrame::<16>::new();
+        let frame = locals.at() + 0x44;
+        mdl::bridge::ppp_draw_mdl_psim_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    // ---- round 49 c ----
+    // (ppp_mdl_rev_matrix_007401d0 is not hooked: not a function start in
+    // the dump; its only caller, pppDrawMdlRevDraw, runs the Rust one)
+    /// `pppDrawMdlRevDraw(obj, key, prog)` (`0x00740410`): the request and
+    /// the view-space matrix in this shim's 16-aligned frame.
+    pppDrawMdlRevDraw @ 0x0074_0410 => extern "C" fn ppp_draw_mdl_rev_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xe0]);
+        let mut locals = Locals([0; 0xe0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xe0;
+        mdl::bridge::ppp_draw_mdl_rev_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
 }

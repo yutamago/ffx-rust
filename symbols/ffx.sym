@@ -3652,7 +3652,7 @@
 0x00729850 function pppFpInfPrint             # fh v3:exact 0x00729940
 0x007299e0 function pppFpInitHeapDisplay      # fh v3:exact 0x00729ad0; (heap): op_heap_display_clear(0x601), op_heap_display_set_par(heap, 0x8603), g_pppFpHeapDisplaySet = 1 (fp::bridge::ppp_fp_init_heap_display)
 0x00729a10 function pppFpLoadStat             # fh v3:exact 0x00729b00; (stat): the inverse of pppFpSaveStat, 2 bits per effect with a nonzero id: Fp_Restart, hidden flag (fp::bridge::ppp_fp_load_stat)
-0x00729ab0 function pppFpLoop                 # fh v3:exact 0x00729ba0
+0x00729ab0 function pppFpLoop                 # fh v3:exact 0x00729ba0; ported r49: field effects frame (matrices, packet/heap stats); map 0x136 skips effects 2/6/10 in view, 0x31 runs only 0x26 while getScenerioFlag <= 0x2c, 0x176 only 0xd; restart pppStartPart(run, 0x1000, prog, 1) (4th word is a pushed 1 Ghidra drops)
 0x00729f70 function pppFpPointLightInit       # fh v3:bsim1.00 0x0072a060
 0x00729f90 function pppFpPointLightProc       # fh v3:cg17 0x72a080; (): point lights follow g_FpPointLightA: growing past g_FpPointLightCap saves the defined ones (Sg_PLightGet*), disposes, Sg_PLightAllocate, redefines them and switches the rest off; shrinking switches the extra ones off; then Ch_PLightSetEnable(h, g_FpPointLightB) for every character (fp::bridge::ppp_fp_point_light_proc)
 0x0072a120 function pppFpResetStick           # fh v3:exact 0x0072a210
@@ -3784,7 +3784,7 @@
 0x00735160 function pppKeZCrctDraw            # fh v3:exact 0x00735230; ported r47: (obj, key, ctrl) -> FFXVu0CopyMatrix eax; frame matrix [ebp-0x44] = obj rows x key+0x20 scale (also in 0x00c8f820/0x00c8f830..), row 3 obj+0x40; key byte +0x30: 0 +key+0x10 then x view, 1 x view then +, 2 x world, part+0x60 scale (+ scale*key) as row 3, x camera; into work area 0 (mat::bridge::ppp_ke_z_crct_draw)
 0x007354c0 function pppKeZCrctShpDraw         # fh v3:exact 0x00735590
 0x00735ee0 function pppEiZCrctDisPosDraw      # ppp program table record "pppEiZCrctDisPos" draw; ported r35 (vfx): object rows scaled by key +0x20.., position minus g_pppWorldMatrix +0x30, key +0x30 picks view / world+camera products with the key offset; into work area 0 (draw::bridge::ppp_ei_z_crct_dis_pos_draw)
-0x00736050 function pppKeTh                   # ppp program table record "pppKeTh" step; not a function start in the Ghidra dump
+0x00736050 function pppKeTh                   # ppp program table record "pppKeTh" step; not a function start in the Ghidra dump; ported r49: frame 0 sets KeThCp target +0x64 (g_pppRandTarget for key +4 = -1, else part object record +4 + key +8 + 0xa0) and pool +0x60 (work area 1), KeThCp_AddBp(w, pool, &obj+0x40, &normalised(area 2 x obj matrix)); key frame adds the u16 colours +0x70 and sets/adds +0x1c..+0x6c; every frame KeThCp_Update(&(w, target, w+0x10, pool, &pos, &dir)), its eax returned
 0x00736460 function pppKeThCon                # fh v3:exact 0x00736520
 0x007364e0 function pppKeThCon2               # fh v3:exact 0x007365a0
 0x00736570 function pppKeThDes                # ppp program table record "pppKeTh" +0x24 destructor; not a function start in the Ghidra dump
@@ -3870,7 +3870,7 @@
 0x0073cfb0 function pppDrawMdlPSimCon         # ppp program table record "pppDrawMdlPSim" (0x00c3b4d0) +0x1c set-up; "pppDrawMdlPSim" (0x00c3cb78) +0x1c set-up
 0x0073cfe0 function pppDrawMdlPSimCon2        # ppp program table record "pppDrawMdlPSim" (0x00c3b4d0) +0x20 second set-up; "pppDrawMdlPSim" (0x00c3cb78) +0x20 second set-up
 0x0073d010 function pppDrawMdlPSimDes         # ppp program table record "pppDrawMdlPSim" +0x24 destructor
-0x0073d070 function pppDrawMdlPSimDraw        # ppp program table record "pppDrawMdlPSim" draw
+0x0073d070 function pppDrawMdlPSimDraw        # ppp program table record "pppDrawMdlPSim" draw; ported r49: request = rcbgPSimGetOmdIn(sim) (flags word +0 left alone), channels +4/+0x10 fmod 32768 like the Loop draws, +0x30 view matrix for key byte +0x75, rcbgPSimProc then update/InitVFXRenderData
 0x0073d4d0 function pppDrawMdlPSimInit        # ours (from pppDrawMdlPSimDraw, its only caller): cdecl(obj, def, sim) -> 1 (0: no model 0xffff / no OMD env+0x20 model +0x1c / pppMemAlloc failed): rcbgPSimNew, CreateFromOMD(scale = pppVu0Length(obj+0x10)), <= 4 nails from shapes i16 def+0x7a.. (jump table 0x0073d7a4), damp/gravity/wind, OMD input flags 4/0x14/0x2000/0x200/8/0x20, sim+4..+0x18 = 0, +0x1c = def; ported round 39 (prog::bridge::ppp_draw_mdl_psim_init)
 0x0073d7c0 function pppVu0Length_2            # the pppVu0Length body again (pppDrawMdlPSimDraw)
 0x0073d8c0 function pppDrawMdlCameraCon       # ppp program table record "pppDrawMdlCamera" (0x00c3b688) +0x1c set-up; "pppDrawMdlCamera" (0x00c3cd30) +0x1c set-up
@@ -3900,8 +3900,9 @@
 0x0073fa40 function pppDrawMdlCameraLoopDes   # ppp program table record "pppDrawMdlCameraLoop" +0x24 destructor; not a function start in the Ghidra dump
 0x0073fa50 function pppDrawMdlCameraLoopDraw  # ppp program table record "pppDrawMdlCameraLoop" draw; not a function start in the Ghidra dump
 0x007400f0 function pppDrawMdlCameraLoopInit_007400f0 # ours: (rec, area): pppDrawMdlCameraLoopDraw's first-frame work area (its only caller, when area +0 is a null ptr32): +0 set_ptr32(rec), +4/+0x10 = rec +8/+0x14 (x87 copies), +8/+0xc/+0x14/+0x18 0, +0x1c = any of rec +0xc/+0x10/+0x18/+0x1c nonzero, +0x1d = rec +0x23, +0x1e/+0x1f = Yn_EmbeddedTrxGetCnt of Yn_FpTrxTexGet(rec +0x22) when rec +0x21 (after Yn_FpTrxTexSetAddr to the shape's image/CLUT) (mdl::bridge::ppp_draw_mdl_camera_loop_init)
+0x007401d0 function ppp_mdl_rev_matrix_007401d0 # ours: (obj, key, prog) pppDrawMdlRevDraw's matrix: pppGetRotMatrixXYZ(obj+0x10, area 1), rows scaled by area 2 (each fchs when area 5 byte +1+r is set) through 0x00c8f820/0x00c8f830, position from area 0, FFXVu0MulMatrix(obj+0x50, g_pppViewMatrixCopy, obj+0x10); only caller 0x007406f0 (pppDrawMdlRevDraw, which runs the Rust port); not a function start in the Ghidra dump, so not hooked (effects round 49)
 0x007403f0 function pppDrawMdlRevCon          # ppp program table record "pppDrawMdlRev" (0x00c3dcf8) +0x1c set-up
-0x00740410 function pppDrawMdlRevDraw         # ppp program table record "pppDrawMdlRev" draw; not a function start in the Ghidra dump
+0x00740410 function pppDrawMdlRevDraw         # ppp program table record "pppDrawMdlRev" draw; not a function start in the Ghidra dump; ported r49: colour of work area 3 (inline pextlh), flags from key +8/+9/+0xa/+0xb, +0x30 view matrix only for key +0xa (else stale), +0x44 area 4 for key +0xc
 0x00740960 function ppp_mdl_rev_random_flags_00740960 # ours: (rec, out): out[0] = 1; for each set byte rec +0xd..+0xf, out[1+j] = 1 when op_random(1.0) > 0; only caller pppDrawMdlRevDraw (mdl::bridge::ppp_mdl_rev_random_flags)
 0x007409e0 function pppDrawShape              # fh v3:bsim1.00 0x00740aa0
 0x00740a70 function pppDrawShape0             # fh v3:exact 0x00740b30; ported round 40: (obj, key, entry): unless key+4 == 0xffff a stack request (ebp-0x60: +2 flags 0x80, +4 colour from the second work area via the EE pmulth/ppacb packing, +8 0, +0x10/+0x1c obj+0x50, +0x14 g_PppPacketPos, +0x18 0); frame record 8(frame+2) of get_ptr32(env[+0x24][shape]); updateVFXRenderDataShp + graphicVFXUpdate or InitVFXRenderDataShp(.., calculateVFXSP_AlphaFunction(blend; 0x48 in magic 499)); path-3 calls follow flag 4, never set; then the time/frame pair (u16 first work area +0xa0) advances by key+8, looping on record bit 7 (part::bridge::ppp_draw_shape0)

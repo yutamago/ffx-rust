@@ -1511,4 +1511,182 @@ pub mod bridge {
         }
         mem.write(m.wrapping_add(0x8f), 0u8);
     }
+
+    // ---- round 49 b ----
+
+    /// `pppDrawMdlPSimDraw(obj, key, prog)` (`0x0073d070`): the cloth
+    /// (particle simulation) model draw. The work area `w = obj + 0xa0 +
+    /// [[prog + 0xc] + 8]` holds the simulation (`ptr32 +0`, made by
+    /// `pppDrawMdlPSimInit(obj, key, w)` while `+0x1c` is null) and two
+    /// `[pos, speed, accel]` channels (`+4`, `+0x10`). Unless the key's
+    /// model (`+4`) is `0xffff` (returning `[[prog + 0xc] + 8]`) or its
+    /// record's `ptr32 +0x1c` is null (or the set-up fails: 0), and
+    /// unless `g_pppStop`, the channels step as the `Loop` draws' (on the
+    /// key's frame its `+8..+0x1c` added, `speed += accel`, `pos =
+    /// fmod(pos + speed, 32768)`). The request is the simulation's OMD
+    /// (`rcbgPSimGetOmdIn`): the colour ([`ee_colour`], the `pextlh`
+    /// calls) in `+0x18`; with a zero alpha (`+0x1b`) it returns the
+    /// colour. Else `+4`, the key's `+0x20` blend (the model's `+0x16` for
+    /// `0xff`), `+0xa`/`+0xc` cleared, the positions in 16.16
+    /// ([`fixed_16_16`]), `+0x30` a view-space matrix (`g_pppViewMatrix x
+    /// obj + 0x10` at `frame - 0x44`) for key byte `+0x75` (else 0), the
+    /// object's matrices and textures, the tables and the packet position;
+    /// its flags word (`+0`) is left alone. `rcbgPSimProc(sim)` steps the
+    /// cloth, then the render data is updated or created ([`submit`],
+    /// [`SEMI2`]); returns that eax.
+    #[allow(clippy::too_many_lines)]
+    pub fn ppp_draw_mdl_psim_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const PSIM_INIT: u32 = 0x0073_d4d0;
+        const GET_OMD_IN: u32 = 0x0091_fdc0;
+        const PSIM_PROC: u32 = 0x0091_fe70;
+        let off = offset(mem, prog, 2);
+        let w = at(obj, off).wrapping_add(0xa0);
+        if mem.read::<u32>(at(key, 4)) == 0xffff {
+            return off;
+        }
+        let rec = model_record(mem, key);
+        let mp = call(mem, g(mem, GET_PTR32), &[mem.read(at(rec, 0x1c))]);
+        if mp == 0 {
+            return 0;
+        }
+        if call(mem, g(mem, IS_PTR32_NULL), &[mem.read(at(w, 0x1c))]) != 0
+            && call(mem, g(mem, PSIM_INIT), &[obj, key, w]) == 0
+        {
+            return 0;
+        }
+        if mem.read::<u32>(g(mem, STOP)) == 0 {
+            if mem.read::<u32>(key) == mem.read::<u32>(at(obj, 0xc)) {
+                for o in (4u32..=0x18).step_by(4) {
+                    let v = store(add(f(mem, at(key, o + 4)), f(mem, at(w, o))));
+                    mem.write(at(w, o), v);
+                }
+            }
+            let speed = store(add(f(mem, at(w, 0xc)), f(mem, at(w, 8))));
+            mem.write(at(w, 8), speed);
+            let speed2 = store(add(f(mem, at(w, 0x18)), f(mem, at(w, 0x14))));
+            mem.write(at(w, 0x14), speed2);
+            let p = store(add(load(speed), f(mem, at(w, 4))));
+            mem.write(at(w, 4), store(fmod(load(p), LOOP_PERIOD)));
+            let q = store(add(load(speed2), f(mem, at(w, 0x10))));
+            mem.write(at(w, 0x10), store(fmod(load(q), LOOP_PERIOD)));
+        }
+        let sim = call(mem, g(mem, GET_PTR32), &[mem.read(w)]);
+        let req = call(mem, g(mem, GET_OMD_IN), &[sim]);
+        let colour = ee_colour(mem, obj, prog, true, call);
+        store_colour(mem, req, colour);
+        if mem.read::<u8>(at(req, 0x1b)) == 0 {
+            return colour;
+        }
+        mem.write(at(req, 4), mem.read::<u32>(g(mem, REQUEST_WORD4)));
+        let blend: u16 = if mem.read::<u8>(at(key, 0x20)) == 0xff {
+            mem.read(at(mp, 0x16))
+        } else {
+            mem.read(at(key, 0x20))
+        };
+        mem.write(at(req, 8), blend);
+        mem.write(at(req, 0xa), 0u8);
+        mem.write(at(req, 0xc), 0u32);
+        fixed_16_16(mem, req, at(w, 4), at(w, 0x10));
+        if mem.read::<u8>(at(key, 0x75)) == 0 {
+            mem.write(at(req, 0x30), 0u32);
+        } else {
+            let m = frame.wrapping_sub(0x44);
+            mem.write(at(req, 0x30), m);
+            call(
+                mem,
+                g(mem, MUL_MATRIX),
+                &[m, g(mem, VIEW_MATRIX), at(obj, 0x10)],
+            );
+        }
+        mem.write(at(req, 0x1c), 0u32);
+        mem.write(at(req, 0x20), at(obj, 0x50));
+        mem.write(at(req, 0x44), 0u32);
+        mem.write(at(req, 0x24), g(mem, REQUEST_TABLES[0]));
+        mem.write(at(req, 0x28), g(mem, REQUEST_TABLES[1]));
+        mem.write(at(req, 0x2c), at(obj, 0x10));
+        mem.write(at(req, 0x34), mem.read::<u32>(g(mem, PACKET_POS)));
+        let tex = textures(mem, obj, call);
+        mem.write(at(req, 0x38), tex[0]);
+        mem.write(at(req, 0x3c), tex[1]);
+        mem.write(at(req, 0x40), 0u32);
+        let sim = call(mem, g(mem, GET_PTR32), &[mem.read(w)]);
+        call(mem, g(mem, PSIM_PROC), &[sim]);
+        let rec = model_record(mem, key);
+        submit(mem, obj, rec, req, SEMI2, call)
+    }
+
+    // ---- round 49 c ----
+
+    /// `pppDrawMdlRevDraw(obj, key, prog)` (`0x00740410`): unless the
+    /// key's model (`+4`) is `0xffff` (returning work area 5, at offset
+    /// `[[prog + 0xc] + 0x14]`): the flip flags drawn while area 5's first
+    /// byte is 0 (`ppp_mdl_rev_random_flags(key, area)`), the colour of
+    /// work area 3 ([`ee_colour_at`], inlined) into the request at
+    /// `frame - 0xe0`; with a non-zero alpha the matrix
+    /// (`crate::mat::bridge::ppp_mdl_rev_matrix`), a request with flags
+    /// ([`flags_key`]) from the key's `+8`, `0x200` for `+9`, `0x100` for
+    /// `+0xb`, and for `+0xa` `0x2000` and a view-space matrix (the view
+    /// times `obj + 0x10`, at `frame - 0x48`, into `+0x30`; else `+0x30`
+    /// is left as it was), the model's blend, `+0x44` work area 4 for key
+    /// byte `+0xc`; then [`submit`] ([`SEMI2`]). Returns what the original
+    /// leaves in eax (the colour when the alpha is 0).
+    pub fn ppp_draw_mdl_rev_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let flips = at(obj, offset(mem, prog, 5)).wrapping_add(0xa0);
+        if mem.read::<u32>(at(key, 4)) == 0xffff {
+            return flips;
+        }
+        if mem.read::<u8>(flips) == 0 {
+            call(mem, g(mem, 0x0074_0960), &[key, flips]);
+        }
+        let req = frame.wrapping_sub(0xe0);
+        let base = at(obj, offset(mem, prog, 3));
+        let colour = ee_colour_at(mem, base, false, call);
+        store_colour(mem, req, colour);
+        if mem.read::<u8>(at(req, 0x1b)) == 0 {
+            return colour;
+        }
+        let rec = model_record(mem, key);
+        let mp = call(mem, g(mem, GET_PTR32), &[mem.read(at(rec, 0x1c))]);
+        crate::mat::bridge::ppp_mdl_rev_matrix(mem, obj, prog, call);
+        let mut flags = flags_key(mem.read(at(key, 8)), mem.read(mp), false);
+        if mem.read::<u8>(at(key, 9)) != 0 {
+            flags |= 0x200;
+        }
+        if mem.read::<u8>(at(key, 0xb)) != 0 {
+            flags |= 0x100;
+        }
+        if mem.read::<u8>(at(key, 0xa)) != 0 {
+            flags |= 0x2000;
+            let m = frame.wrapping_sub(0x48);
+            mem.write(at(req, 0x30), m);
+            call(
+                mem,
+                g(mem, MUL_MATRIX),
+                &[m, g(mem, VIEW_MATRIX), at(obj, 0x10)],
+            );
+        }
+        let z = if mem.read::<u8>(at(key, 0xc)) == 0 {
+            0
+        } else {
+            at(obj, offset(mem, prog, 4)).wrapping_add(0xa0)
+        };
+        let tex = textures(mem, obj, call);
+        fill_request(mem, req, obj, flags, mem.read(at(mp, 0x16)), tex);
+        mem.write(at(req, 0x44), z);
+        submit(mem, obj, rec, req, SEMI2, call)
+    }
 }

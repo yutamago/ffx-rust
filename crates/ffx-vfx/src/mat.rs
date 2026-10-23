@@ -161,17 +161,22 @@ pub mod bridge {
     fn scale_rows(mem: &mut impl Mem, m: u32, scale: u32) {
         for r in 0..3 {
             let s = round_trip(f(mem, at(scale, r)));
-            mem.write(VF_SCALE.ptr(mem).addr, s);
-            let row_at = at(m, 4 * r);
-            let mut row: [u32; 4] = mem.read(row_at);
-            let vf = VF_ROWS.ptr(mem).addr;
-            mem.write(vf, row);
-            for w in &mut row[..3] {
-                *w = scaled(f32::from_bits(*w), s).to_bits();
-            }
-            mem.write(vf, row);
-            mem.write(row_at, row);
+            scale_row(mem, at(m, 4 * r), s);
         }
+    }
+
+    /// One row at `row_at` scaled by `s` through `VF_SCALE.x` and the
+    /// first row register (`w` copied).
+    fn scale_row(mem: &mut impl Mem, row_at: u32, s: f32) {
+        mem.write(VF_SCALE.ptr(mem).addr, s);
+        // the row goes through the register; only its scaled words show
+        let mut row: [u32; 4] = mem.read(row_at);
+        let vf = VF_ROWS.ptr(mem).addr;
+        for w in &mut row[..3] {
+            *w = scaled(f32::from_bits(*w), s).to_bits();
+        }
+        mem.write(vf, row);
+        mem.write(row_at, row);
     }
 
     /// The position of area 0 into `dst` through the FPU.
@@ -1114,5 +1119,40 @@ pub mod bridge {
         }
         let view = VIEW.ptr(mem).addr;
         vu0::apply_matrix(mem, obj.wrapping_add(0x80), view, pos)
+    }
+
+    // ---- round 49 c ----
+
+    /// `ppp_mdl_rev_matrix_007401d0(obj, key, prog)` (`0x007401d0`, ours;
+    /// `pppDrawMdlRevDraw`'s matrix): `pppGetRotMatrixXYZ(obj + 0x10, area
+    /// 1)`, its rows scaled ([`scale_row`]) by area 2's three floats, each
+    /// negated (`fchs`) when area 5's byte `+1 + r` is set, the position
+    /// from area 0 (`+0x40..+0x48`), then `FFXVu0MulMatrix(obj + 0x50,
+    /// g_pppViewMatrixCopy, obj + 0x10)` through `call`, whose eax is
+    /// returned.
+    pub fn ppp_mdl_rev_matrix<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let flips = area(mem, obj, ctrl, 5);
+        let scale = area(mem, obj, ctrl, 2);
+        let pos = area(mem, obj, ctrl, 0);
+        let m = obj.wrapping_add(0x10);
+        ppp_get_rot_matrix(mem, m, area(mem, obj, ctrl, 1), super::order::XYZ);
+        let mut s = [0f32; 3];
+        for (r, slot) in (0u32..).zip(&mut s) {
+            let v = Reg::load(f(mem, at(scale, r)));
+            let flip = mem.read::<u8>(flips.wrapping_add(1 + r)) != 0;
+            *slot = if flip { -v } else { v }.store();
+        }
+        for (r, s) in (0u32..).zip(s) {
+            scale_row(mem, at(m, 4 * r), s);
+        }
+        copy_xyz(mem, obj.wrapping_add(0x40), pos);
+        let view_copy = Global::<u32>::new(0x0230_fe20).ptr(mem).addr;
+        let mul = Global::<u32>::new(0x006e_d5c0).ptr(mem).addr;
+        call(mem, mul, &[obj.wrapping_add(0x50), view_copy, m])
     }
 }
