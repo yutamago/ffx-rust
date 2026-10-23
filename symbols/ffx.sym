@@ -3857,7 +3857,7 @@
 0x0073ab00 function pppDrawMdlSeaCon          # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x1c set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x1c set-up
 0x0073ab40 function pppDrawMdlSeaCon2         # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x20 second set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x20 second set-up
 0x0073ab70 function pppDrawMdlSeaDes          # ppp program table record "pppDrawMdlSea" +0x24 destructor
-0x0073abe0 function pppDrawMdlSeaDraw         # ppp program table record "pppDrawMdlSea" draw; not a function start in the Ghidra dump
+0x0073abe0 function pppDrawMdlSeaDraw         # ppp program table record "pppDrawMdlSea" draw; not a function start in the Ghidra dump; ported vfx-ppp r1 (mdl_cam::bridge): 14 levels, work area 2 channels +0x50/+0x5c, vertex wave (g_pppSinTable by ftol phases), trxtex_%d_%d_%d.dds.phyre texture frames, request at ebp-0x2e0
 0x0073b5c0 function pppDrawMdlSeaDrawSetup    # name ours: the sea draw set-up its one caller pppDrawMdlSeaDraw runs; cdecl (rec, state) -> 0/1; ported ffx_vfx::prog::bridge::ppp_draw_mdl_sea_draw_setup
 0x0073b7b0 function pppDrawMdlInfCon          # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x1c set-up; "pppDrawMdlInf" (0x00c3c970) +0x1c set-up
 0x0073b800 function pppDrawMdlInfCon2         # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x20 second set-up; "pppDrawMdlInf" (0x00c3c970) +0x20 second set-up
@@ -3876,7 +3876,7 @@
 0x0073d8c0 function pppDrawMdlCameraCon       # ppp program table record "pppDrawMdlCamera" (0x00c3b688) +0x1c set-up; "pppDrawMdlCamera" (0x00c3cd30) +0x1c set-up
 0x0073d8f0 function pppDrawMdlCameraCon2      # ppp program table record "pppDrawMdlCamera" (0x00c3b688) +0x20 second set-up; "pppDrawMdlCamera" (0x00c3cd30) +0x20 second set-up
 0x0073d920 function pppDrawMdlCameraDes       # ppp program table record "pppDrawMdlCamera" +0x24 destructor; not a function start in the Ghidra dump
-0x0073d930 function pppDrawMdlCameraDraw      # ppp program table record "pppDrawMdlCamera" draw; not a function start in the Ghidra dump
+0x0073d930 function pppDrawMdlCameraDraw      # ppp program table record "pppDrawMdlCamera" draw; not a function start in the Ghidra dump; ported vfx-ppp r1 (mdl_cam::bridge): work area 2 steps (+0x70/+0x7c channels or +0x60/+0x64), op_rt_m_yxz(w, M, rot * 4096/2pi [f64 0x00b51590], vf00), request at ebp-0x1a0
 0x0073dfe0 function pppDrawMdlCameraTex_0073dfe0 # (rec, m) for pppDrawMdlCameraDraw: rec+4 != 0xffff and env table entry +0x1c data p: m = unit matrix, 3 vf00 at +0x40, six 0.0 at +0x70, +0x88 set_ptr32(rec), +0x8c rec+0x21, Yn_FpTrxTexGet(rec+0x20) -> SetAddr(t, p[[p+4]+8], +0xc), +0x8d/+0x8e = Yn_EmbeddedTrxGetCnt(t), +0x8f 0; ported r34; name ours
 0x0073e110 function pppVu0LoadVf00_2          # the pppVu0LoadVf00 body again
 0x0073e140 function pppVu0Length_3            # the pppVu0Length body again (pppDrawMdlCameraDraw)
@@ -3898,7 +3898,7 @@
 0x0073f9e0 function pppDrawMdlCameraLoopCon   # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x1c set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x1c set-up
 0x0073fa10 function pppDrawMdlCameraLoopCon2  # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x20 second set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x20 second set-up
 0x0073fa40 function pppDrawMdlCameraLoopDes   # ppp program table record "pppDrawMdlCameraLoop" +0x24 destructor; not a function start in the Ghidra dump
-0x0073fa50 function pppDrawMdlCameraLoopDraw  # ppp program table record "pppDrawMdlCameraLoop" draw; not a function start in the Ghidra dump
+0x0073fa50 function pppDrawMdlCameraLoopDraw  # ppp program table record "pppDrawMdlCameraLoop" draw; not a function start in the Ghidra dump; ported vfx-ppp r1 (mdl_cam::bridge): work area 2 channels +4/+0x10, key byte +0x20 camera-facing (inverse camera, world through it), request at ebp-0x1c0
 0x007400f0 function pppDrawMdlCameraLoopInit_007400f0 # ours: (rec, area): pppDrawMdlCameraLoopDraw's first-frame work area (its only caller, when area +0 is a null ptr32): +0 set_ptr32(rec), +4/+0x10 = rec +8/+0x14 (x87 copies), +8/+0xc/+0x14/+0x18 0, +0x1c = any of rec +0xc/+0x10/+0x18/+0x1c nonzero, +0x1d = rec +0x23, +0x1e/+0x1f = Yn_EmbeddedTrxGetCnt of Yn_FpTrxTexGet(rec +0x22) when rec +0x21 (after Yn_FpTrxTexSetAddr to the shape's image/CLUT) (mdl::bridge::ppp_draw_mdl_camera_loop_init)
 0x007401d0 function ppp_mdl_rev_matrix_007401d0 # ours: (obj, key, prog) pppDrawMdlRevDraw's matrix: pppGetRotMatrixXYZ(obj+0x10, area 1), rows scaled by area 2 (each fchs when area 5 byte +1+r is set) through 0x00c8f820/0x00c8f830, position from area 0, FFXVu0MulMatrix(obj+0x50, g_pppViewMatrixCopy, obj+0x10); only caller 0x007406f0 (pppDrawMdlRevDraw, which runs the Rust port); not a function start in the Ghidra dump, so not hooked (effects round 49)
 0x007403f0 function pppDrawMdlRevCon          # ppp program table record "pppDrawMdlRev" (0x00c3dcf8) +0x1c set-up
@@ -3998,28 +3998,28 @@
 0x0074c3b0 function vu_vec4_sub_0074c3b0       # ours, disasm: as vu_vec4_add with a - b and restoreVf00Register before the copy; one of 7 identical copies (vec::bridge::vu_vec4_sub)
 0x0074c490 function pppKeShpTail              # ppp program table record "pppKeShpTail" step: area 0 a ring of positions (+0 length, +1 index, slots from +0x10), the object's +0x40 into the next slot (KeVu0CopyVecXYZ), every slot at frame 0 (w = 1.0)
 0x0074c540 function pppKeShpTailCon           # ppp program table record "pppKeShpTail" (0x00c3a8f0) +0x1c set-up; "pppKeShpTail" (0x00c3bf98) +0x1c set-up
-0x0074c570 function pppKeShpTailDraw          # ppp program table record "pppKeShpTail" draw; not a function start in the Ghidra dump
+0x0074c570 function pppKeShpTailDraw          # ppp program table record "pppKeShpTail" draw; not a function start in the Ghidra dump; ported vfx-ppp r1 (tail::bridge, the ring-walking sprite ribbon)
 0x0074cef0 function vu_vec4_add_0074cef0       # ours, disasm: (out, a, b) -> out.w bits: emulated VU regs 0x00c8f980 = a, 0x00c8f970 = b, the first += b, copied to out; one of 5 identical copies (vec::bridge::vu_vec4_add)
 0x0074cff0 function vu_apply_matrix_0074cff0   # ours, disasm: (out, m, v) -> out.w bits: m into the emulated VU0 rows 0x00c8f940..0x00c8f97c, v into 0x00c8f980, ACC 0x00c8f790 = x m0 + y m1 + z m2 (f32 per step), + w m3 into 0x00c8f940, copied to out (FFXVu0ApplyMatrix inlined); one of 5 identical copies (vec::bridge::vu_apply_matrix)
 0x0074d280 function pppFtoiRgba_0074d280       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTailXDraw)
 0x0074d3b0 function vu_vec4_sub_0074d3b0       # ours, disasm: as vu_vec4_add with a - b and restoreVf00Register before the copy; one of 7 identical copies (vec::bridge::vu_vec4_sub)
 0x0074d490 function pppKeShpTailX             # ppp program table record "pppKeShpTailX" step: the same code as pppKeShpTail
 0x0074d540 function pppKeShpTailXCon          # ppp program table record "pppKeShpTailX" (0x00c3b228) +0x1c set-up; "pppKeShpTailX" (0x00c3c8d0) +0x1c set-up
-0x0074d570 function pppKeShpTailXDraw         # ppp program table record "pppKeShpTailX" draw; not a function start in the Ghidra dump
+0x0074d570 function pppKeShpTailXDraw         # ppp program table record "pppKeShpTailX" draw; not a function start in the Ghidra dump; ported vfx-ppp r1 (tail::bridge, TAIL_X)
 0x0074def0 function vu_vec4_add_0074def0       # ours, disasm: (out, a, b) -> out.w bits: emulated VU regs 0x00c8f980 = a, 0x00c8f970 = b, the first += b, copied to out; one of 5 identical copies (vec::bridge::vu_vec4_add)
 0x0074dff0 function vu_apply_matrix_0074dff0   # ours, disasm: (out, m, v) -> out.w bits: m into the emulated VU0 rows 0x00c8f940..0x00c8f97c, v into 0x00c8f980, ACC 0x00c8f790 = x m0 + y m1 + z m2 (f32 per step), + w m3 into 0x00c8f940, copied to out (FFXVu0ApplyMatrix inlined); one of 5 identical copies (vec::bridge::vu_apply_matrix)
 0x0074e280 function pppFtoiRgba_0074e280       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail2Draw)
 0x0074e3b0 function vu_vec4_sub_0074e3b0       # ours, disasm: as vu_vec4_add with a - b and restoreVf00Register before the copy; one of 7 identical copies (vec::bridge::vu_vec4_sub)
 0x0074e490 function pppKeShpTail2             # ppp program table record "pppKeShpTail2" step: the same code as pppKeShpTail
 0x0074e540 function pppKeShpTail2Con          # ppp program table record "pppKeShpTail2" (0x00c3a918) +0x1c set-up; "pppKeShpTail2" (0x00c3bfc0) +0x1c set-up
-0x0074e570 function pppKeShpTail2Draw         # ppp program table record "pppKeShpTail2" draw; not a function start in the Ghidra dump
+0x0074e570 function pppKeShpTail2Draw         # ppp program table record "pppKeShpTail2" draw; not a function start in the Ghidra dump; ported vfx-ppp r1 (tail::bridge TAIL2)
 0x0074ef50 function vu_vec4_add_0074ef50       # ours, disasm: (out, a, b) -> out.w bits: emulated VU regs 0x00c8f980 = a, 0x00c8f970 = b, the first += b, copied to out; one of 5 identical copies (vec::bridge::vu_vec4_add)
 0x0074f030 function vu_apply_matrix_0074f030   # ours, disasm: (out, m, v) -> out.w bits: m into the emulated VU0 rows 0x00c8f940..0x00c8f97c, v into 0x00c8f980, ACC 0x00c8f790 = x m0 + y m1 + z m2 (f32 per step), + w m3 into 0x00c8f940, copied to out (FFXVu0ApplyMatrix inlined); one of 5 identical copies (vec::bridge::vu_apply_matrix)
 0x0074f2c0 function pppFtoiRgba_0074f2c0       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail2XDraw)
 0x0074f3f0 function vu_vec4_sub_0074f3f0       # ours, disasm: as vu_vec4_add with a - b and restoreVf00Register before the copy; one of 7 identical copies (vec::bridge::vu_vec4_sub)
 0x0074f4d0 function pppKeShpTail2X            # ppp program table record "pppKeShpTail2X" step: the same code as pppKeShpTail
 0x0074f580 function pppKeShpTail2XCon         # ppp program table record "pppKeShpTail2X" (0x00c3b480) +0x1c set-up; "pppKeShpTail2X" (0x00c3cb28) +0x1c set-up
-0x0074f5b0 function pppKeShpTail2XDraw        # ppp program table record "pppKeShpTail2X" draw; not a function start in the Ghidra dump
+0x0074f5b0 function pppKeShpTail2XDraw        # ppp program table record "pppKeShpTail2X" draw; not a function start in the Ghidra dump; ported vfx-ppp r1 (tail::bridge TAIL2_X)
 0x00750020 function pppVec4Copy               # (dst, src) four floats through the FPU (fld/fstp)
 0x007500d0 function pppVu0MulX_007500d0       # the same arithmetic as pppVu0MulX, leaves v in eax (0x0091cb70, 0x00925040)
 0x00750130 function pppFtoiRgba_00750130       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail3Draw)

@@ -230,3 +230,20 @@ harvest_test!(ppp_fp_loop, 0x0072_9ab0, args = 0, |m: &mut Oracle, _| {
         m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
     });
 });
+// vfx-ppp (round 1): the request and matrices in stack scratch
+harvest_test!(
+    ppp_draw_mdl_camera_loop_draw,
+    0x0073_fa50,
+    args = 3,
+    |m: &mut Oracle, s| {
+        let frame = (m.stack_range().start + 0x400) & !0xf;
+        ffx_vfx::mdl_cam::bridge::ppp_draw_mdl_camera_loop_draw(
+            m,
+            s.arg(0),
+            s.arg(1),
+            s.arg(2),
+            frame,
+            &mut |m, f, a| m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax,
+        );
+    }
+);

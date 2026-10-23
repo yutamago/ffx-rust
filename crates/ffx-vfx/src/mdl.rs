@@ -247,7 +247,7 @@ pub mod bridge {
 
     /// How a model draw hands its request to the renderer.
     #[derive(Debug, Clone, Copy)]
-    struct Submit {
+    pub(crate) struct Submit {
         /// Whether flag 4 picks the path-3 entry points.
         path3: bool,
         /// Whether flag `0x2000` skips the Z matrix (else it is always
@@ -258,7 +258,7 @@ pub mod bridge {
     /// The instance's render data updated from the request and the
     /// instance updated (path 3 for flag 4 when `path3`); returns the
     /// update's eax.
-    fn update<M: Mem>(
+    pub(crate) fn update<M: Mem>(
         mem: &mut M,
         obj: u32,
         rec: u32,
@@ -279,7 +279,7 @@ pub mod bridge {
 
     /// Render data created for the instance with `alpha` (path 3 for flag
     /// 4 when `path3`); returns the call's eax.
-    fn create<M: Mem>(
+    pub(crate) fn create<M: Mem>(
         mem: &mut M,
         obj: u32,
         rec: u32,
@@ -298,7 +298,7 @@ pub mod bridge {
     }
 
     /// Whether the instance has render data.
-    fn has_render_data<M: Mem>(
+    pub(crate) fn has_render_data<M: Mem>(
         mem: &mut M,
         obj: u32,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
@@ -310,7 +310,7 @@ pub mod bridge {
     /// The instance's render data [`update`]d when it has some, else
     /// [`create`]d with the alpha function of the blend, the Z matrix of
     /// `+0x44` and `0x40` for flag 8. Returns the last call's eax.
-    fn submit<M: Mem>(
+    pub(crate) fn submit<M: Mem>(
         mem: &mut M,
         obj: u32,
         rec: u32,
@@ -332,7 +332,7 @@ pub mod bridge {
         create(mem, obj, rec, req, how.path3, alpha, call)
     }
 
-    const MDL: Submit = Submit {
+    pub(crate) const MDL: Submit = Submit {
         path3: true,
         z_test: true,
     };
@@ -340,7 +340,7 @@ pub mod bridge {
         path3: false,
         z_test: false,
     };
-    const SEMI2: Submit = Submit {
+    pub(crate) const SEMI2: Submit = Submit {
         path3: false,
         z_test: true,
     };
@@ -992,7 +992,7 @@ pub mod bridge {
     /// `_CIfmod(x, y)` (the import thunk `0x009498e0`), an `fprem` loop:
     /// the exact remainder with the sign of `x`; a NaN passes, an infinite
     /// `x` gives the indefinite NaN.
-    fn fmod(x: f64, y: f64) -> f64 {
+    pub(crate) fn fmod(x: f64, y: f64) -> f64 {
         if x.is_nan() {
             x
         } else if x.is_infinite() {
