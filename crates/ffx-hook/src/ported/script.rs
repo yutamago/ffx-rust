@@ -7510,6 +7510,16 @@ ported! {
         let mut frame = super::StackFrame::<8>::new();
         hp::atel_common_set_up(&mut mem(), [ctrl, a, block, x34, x8, debug], frame.at())
     }
+    /// `AtelActorSetUp2(a, block, x34, x38, x8, debug, d)`: the setup
+    /// record in an eight-word frame; `EAX` `AtelInitActor`'s.
+    AtelActorSetUp2 @ 0x0087_5510 => extern "C" fn h_875510(a: u32, block: u32, x34: u32, x38: u32, x8: u32, debug: u32, d: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        hp::atel_actor_set_up2(&mut mem(), [a, block, x34, x38, x8, debug, d], frame.at())
+    }
+    /// `Atel_SyncWorkerPos_00869e40(worker)`: its caller ignores `EAX`.
+    Atel_SyncWorkerPos_00869e40 @ 0x0086_9e40 => extern "C" fn h_869e40(w: u32) {
+        hp::atel_sync_worker_pos(&mut mem(), w);
+    }
     /// `AtelBattleSetUp(blocks, x8s, n, x30, work, a, ctrl, callback)`: the
     /// setup record in an eight-word frame.
     AtelBattleSetUp @ 0x0087_56d0 => extern "C" fn h_8756d0(blocks: u32, x8s: u32, n: u32, x30: u32, work: u32, a: u32, ctrl: u32, callback: u32) -> u32 {

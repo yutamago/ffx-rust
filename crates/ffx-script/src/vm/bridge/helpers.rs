@@ -9675,3 +9675,141 @@ pub fn atel_flush_albhed_dic(h: &mut impl ffx_bridge::Host) {
     h.write(pending, 0u32);
     h.write(dic, 0u32);
 }
+
+// ---- small round 5 a ----
+
+/// `AtelActorSetUp2(a, block, x34, x38, x8, debug, d)` (`0x00875510`,
+/// Fahrenheit's name; callers `AtelEventSetUp`, `AtelActorSetUp`): the
+/// event's ctrl work 0. `x38` 0 means `x34`. Registers the debug sources
+/// (`debug`: a count, then three words each, through
+/// `AtelSetUpSourceDebug`, flag `0x100000`), takes ctrl work 0 for
+/// `block` (`AtelRequireCtrlWork(0, block, a, d)`: `+0x34` = `x34`,
+/// `+0x38` = `x38`, `+0x50` = 0, `+0x4c` = `AtelExecCtrlEvent`), sets it
+/// up and makes it current, then sets up the block's workers as
+/// [`atel_common_set_up`] does (record `(active, i, 0, 0, i,
+/// AtelGetIndexWork(block, i), block, x8)`). The event jump table gets
+/// `ctrl.+0xc - +0x18 - +0x16 - +0x14 + 8 + AtelGetBinHdrExpandAddChr(block)`
+/// entries, at least 0x24 (`Sg_EventjumpInit`); then the map camera,
+/// save dictionary 0, battle scene group 0 and `AtelInitActor`, whose
+/// `EAX` it returns. `rec` is the record's frame (eight words). The three
+/// `AtelPs2DebugString` progress prints go through the game.
+pub fn atel_actor_set_up2(h: &mut impl ffx_bridge::Host, args: [u32; 7], rec: u32) -> u32 {
+    let [a, block, x34, x38, x8, debug, d] = args;
+    let x38 = if x38 == 0 { x34 } else { x38 };
+    let actors = host_call(h, 0x0086_a650, &[block]).cast_signed();
+    let names = host_call(h, 0x0086_c190, &[block]).cast_signed();
+    if debug != 0 {
+        let mut j = 0_u32;
+        while j.cast_signed() < h.read::<i32>(debug) {
+            let e = debug + 4 + 12 * j;
+            let (e0, e1, e2) = (h.read::<u32>(e), h.read::<u32>(e + 4), h.read::<u32>(e + 8));
+            host_call(h, 0x0088_5b00, &[e1, e2, x8, e0, 0x0010_0000]);
+            j += 1;
+        }
+    }
+    let c = host_call(h, 0x0086_ee10, &[0, block, a, d]);
+    h.write(c + 0x34, x34);
+    h.write(c + 0x38, x38);
+    h.write(c + 0x50, 0_u32);
+    let exec = h.rebase(0x0086_7740);
+    h.write(c + 0x4c, exec);
+    host_call(h, 0x0087_1190, &[0]);
+    host_call(h, 0x0086_2d30, &[0]);
+    let mut i = 0_i32;
+    for (active, end) in [(1, actors), (0, names)] {
+        while i < end {
+            let k = i.cast_unsigned();
+            let hdr = host_call(h, 0x0086_bb80, &[block, k]);
+            write_setup(h, rec, [active, k, 0, 0, k, hdr, block, x8]);
+            host_call(h, 0x0086_cb00, &[rec, 1]);
+            host_call(h, 0x0086_d670, &[k, debug]);
+            i += 1;
+        }
+    }
+    let text = h.rebase(0x00b5_bfe0);
+    host_call(h, 0x0087_3c70, &[text]);
+    let c = host_call(h, 0x0086_afa0, &[0]);
+    let mut n = u32::from(h.read::<u16>(c + 0xc))
+        .wrapping_sub(u32::from(h.read::<u16>(c + 0x18)))
+        .wrapping_sub(u32::from(h.read::<u16>(c + 0x16)))
+        .wrapping_sub(u32::from(h.read::<u16>(c + 0x14)));
+    let add = host_call(h, 0x0086_aa20, &[block]);
+    n = n.wrapping_add(8).wrapping_add(add);
+    if n.cast_signed() < 0x24 {
+        n = 0x24;
+    }
+    let text = h.rebase(0x00b5_bfd4);
+    host_call(h, 0x0087_3c70, &[text]);
+    host_call(h, 0x0083_b460, &[n]);
+    let text = h.rebase(0x00b5_bfec);
+    host_call(h, 0x0087_3c70, &[text]);
+    host_call(h, 0x0086_ed80, &[block]);
+    host_call(h, 0x0087_0ef0, &[0]);
+    host_call(h, 0x0086_f3c0, &[0]);
+    host_call(h, 0x0086_cae0, &[])
+}
+
+/// `gNeedAutoSave` (`0x023cbebc`, Fahrenheit's name).
+const NEED_AUTO_SAVE: u32 = 0x023c_bebc;
+
+/// `Atel_SyncWorkerPos_00869e40(w)` (name ours; caller `0x00866800`, the
+/// worker step): the worker's position block (none for type 4, `+0x284`
+/// for types 5 and 6, else `+0x558`) keeps its old position at `+0x10`;
+/// a character-bound worker (`+0xaa` 1) with a model (`+0x9c`) takes the
+/// model's (`Ch_GetPos`) and field mode (`+0xac`, `Ch_GetFieldMode`'s
+/// low byte). The player worker (`+0x2e` = ctrl `+0xa`) also moves the
+/// ctrl work's player position (`+0x218`, w 1.0) to `+0x228`, and sets the
+/// save block's (`TkGetSaveEventAddress`) `+0x10` to the model's
+/// encounter byte (`Ch_IdGetEncount`, 0 without a model) and the save
+/// dictionary to its `Ch_IdGetDictionary` (0 without); with a model and
+/// `gNeedAutoSave` set, that flag is cleared and a failed
+/// `AutoSave_DebugSave_00647e10(0)` tail-calls `graphicShowAutoSavePrompt`.
+/// Its caller ignores `EAX`.
+pub fn atel_sync_worker_pos(h: &mut impl ffx_bridge::Host, w: u32) {
+    let p = match kind(h, w) {
+        4 => 0,
+        5 | 6 => w + 0x284,
+        _ => w + 0x558,
+    };
+    for k in 0..3 {
+        copy_f32(h, p + 4 * k, p + 0x10 + 4 * k);
+    }
+    let model = h.read::<u32>(w + 0x9c);
+    if h.read::<u8>(w + 0xaa) == 1 && model != 0 {
+        host_call(h, 0x0082_ac90, &[model, p, p + 4, p + 8]);
+        let model = h.read::<u32>(w + 0x9c);
+        let mode = host_call(h, 0x0082_ab90, &[model]);
+        h.write(w + 0xac, mode.to_le_bytes()[0]);
+    }
+    let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    if h.read::<u16>(w + 0x2e) != h.read::<u16>(c + 0xa) {
+        return;
+    }
+    for k in 0..4 {
+        copy_f32(h, c + 0x218 + 4 * k, c + 0x228 + 4 * k);
+    }
+    for k in 0..3 {
+        copy_f32(h, p + 4 * k, c + 0x218 + 4 * k);
+    }
+    h.write(c + 0x224, 1.0_f32.to_bits());
+    let model = h.read::<u32>(w + 0x9c);
+    if model == 0 {
+        let save = host_call(h, 0x0088_c830, &[]);
+        h.write(save + 0x10, 0_u8);
+        host_call(h, 0x0087_0ef0, &[0]);
+        return;
+    }
+    let enc = host_call(h, 0x0083_d820, &[model]);
+    let save = host_call(h, 0x0088_c830, &[]);
+    h.write(save + 0x10, enc.to_le_bytes()[0]);
+    let model = h.read::<u32>(w + 0x9c);
+    let dic = host_call(h, 0x0083_d7a0, &[model]);
+    host_call(h, 0x0087_0ef0, &[dic]);
+    let flag = h.rebase(NEED_AUTO_SAVE);
+    if h.read::<u32>(flag) != 0 {
+        h.write(flag, 0_u32);
+        if host_call(h, 0x0064_7e10, &[0]) == 0 {
+            host_call(h, 0x0064_3de0, &[]);
+        }
+    }
+}
