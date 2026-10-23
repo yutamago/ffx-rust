@@ -1152,6 +1152,22 @@ pub mod bridge {
         }
     }
 
+    /// `g_MenuTextureManager` (name ours): the menus' texture manager.
+    pub const MENU_TEXTURE_MANAGER: Global<u32> = Global::new(0x00cc_c820);
+    /// `MenuTextureManager_LoadLanguageTextures_0067c920(this, lang)`
+    /// (name ours; `thiscall`, `ret 4`): the menu textures of a language
+    /// (`ClusterManager_GetInstance` and `0x0069bb00` per path).
+    pub const MENU_TEXTURE_LOAD_LANGUAGE: u32 = 0x0067_c920;
+
+    /// `SpecialFeatureDisplay_dtor_SpecialFeatureDisplay(lang)`
+    /// (`0x006422e0`, Fahrenheit's name from a Switch match; `cdecl`, from
+    /// `TOInit` with `TOGetFFXLangJmp()`):
+    /// [`MENU_TEXTURE_LOAD_LANGUAGE`] on `g_MenuTextureManager`, its `eax`.
+    pub fn menu_texture_load_language(h: &mut impl Host, lang: u32) -> u32 {
+        let mgr = MENU_TEXTURE_MANAGER.get(h);
+        h.call_sym(MENU_TEXTURE_LOAD_LANGUAGE, Conv::Thiscall(mgr), &[lang])
+    }
+
     /// `PhyreScene_setObjectRotation(this, id, angles, order)`.
     pub const SCENE_SET_OBJECT_ROTATION: u32 = 0x0066_db00;
 

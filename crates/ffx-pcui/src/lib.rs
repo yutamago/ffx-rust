@@ -14,12 +14,14 @@
 //! - [`cursor`]: the sphere grid cursor's move and node searches;
 //! - [`link`]: the sphere grid's link outlines (straight and curved);
 //! - [`mapname`]: the map name overlay;
-//! - [`menus`]: the Iggy menu manager's viewport, an Esc menu handler;
+//! - [`menus`]: the Iggy menu manager's viewport, the Esc menu's handler
+//!   and pop-ups;
 //! - [`panel`]: the sphere grid's list panels (cursor, scrolling, choice);
 //! - [`item`]: item menu rows and key strings the PC port placed here;
 //! - [`sea`]: the sea's UV scroll speed nudge;
 //! - [`spdctrl`]: where the speed-up booster stays off;
 //! - [`touch`]: the pointer (mouse and touch) zones of the PC screens;
+//! - [`video`]: the movie player's Vorbis audio to 16-bit samples;
 //! - [`worldmap`]: the menu's world map window.
 
 pub mod abmap;
@@ -36,4 +38,5 @@ pub mod panel;
 pub mod sea;
 pub mod spdctrl;
 pub mod touch;
+pub mod video;
 pub mod worldmap;
