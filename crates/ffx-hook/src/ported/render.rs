@@ -1287,8 +1287,8 @@ ported! {
         ut::reset_loading_screen(&mut mem());
     }
     /// `ScreenFadeDelegations_processRenderDelegation(d)`.
-    ScreenFadeDelegations_processRenderDelegation @ 0x006a_e5b0 => extern "C" fn screen_fade_process(d: u32) {
-        ut::screen_fade_process(&mut mem(), d);
+    ScreenFadeDelegations_processRenderDelegation @ 0x006a_e5b0 => extern "C" fn screen_fade_process(d: u32) -> u32 {
+        ut::screen_fade_process(&mut mem(), d)
     }
 
     // ---- round 13 ----

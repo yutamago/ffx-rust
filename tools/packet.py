@@ -39,6 +39,7 @@ sys.path.insert(0, str(TOOLS))
 import callarity  # noqa: E402
 import claim  # noqa: E402
 import progress  # noqa: E402
+import refs  # noqa: E402
 
 REPO = progress.REPO
 WORK = progress.WORK
@@ -162,6 +163,17 @@ class World:
                 if "EXTERNAL" not in c:
                     self.callers[int(c, 16)].add(int(a, 16))
                     self.sites[int(c, 16)].append((int(a, 16), int(site, 16)))
+        # calls and tail jumps call_sites.tsv misses (code Ghidra left as
+        # a label: tools/refs.py); a site outside every function body
+        # stands for its caller
+        for t, raw in refs.index(EXE).callers().items():
+            if t in self.rows:
+                for s in raw:
+                    i = bisect.bisect_right(self.starts, s) - 1
+                    a = self.starts[i] if i >= 0 else None
+                    inside = a is not None and s < a + self.rows[a][1]
+                    if not inside or a != t:
+                        self.callers[t].add(a if inside else s)
         self.data_refs = defaultdict(dict)
         with open(DECOMP / "data_refs.tsv", encoding="utf-8") as f:
             next(f)

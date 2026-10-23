@@ -1250,11 +1250,13 @@ pub mod bridge {
     /// `+0x1c`), unless the post-process's colour is locked (byte
     /// `+0x123a0`): `+0x1c` to its `+0x1239c` and the four floats (through
     /// the x87) to `+0x1238c..+0x12398`; then
-    /// `renderScreenFade(d[0], d[1], d[2], g_ScreenFadeByte)`.
-    pub fn screen_fade_process(h: &mut impl Host, d: u32) {
+    /// `renderScreenFade(d[0], d[1], d[2], g_ScreenFadeByte)`. Returns
+    /// what `renderScreenFade` returns (its eax), or 0 (`d` itself) for a
+    /// null `d`.
+    pub fn screen_fade_process(h: &mut impl Host, d: u32) -> u32 {
         use crate::managers::bridge::POST_PROCESS;
         if d == 0 {
-            return;
+            return 0;
         }
         let mut floats = [0u32; 4];
         for (k, f) in (0u32..).zip(floats.iter_mut()) {
@@ -1278,7 +1280,7 @@ pub mod bridge {
             POST_PROCESS_RENDER_SCREEN_FADE,
             Conv::Thiscall(pp),
             &[a, b, c, byte],
-        );
+        )
     }
 
     // ---- round 13 ----

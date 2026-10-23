@@ -100,6 +100,20 @@ thunk they need nothing more, but a shim returning `u8`, `u16` or `bool`
 must still match what the original leaves in the rest of `eax` when a
 caller reads all of it.
 
+Callers through a pointer (a vtable, a table in `.data`, a callback
+stored by an immediate) are not in the dump's call graph. check-clobber
+also reports a shim returning nothing whose original is stored that way
+(the base relocations, `tools/refs.py`) and leaves a result in `eax`:
+a value it computes at the end, or a direct callee's (followed through
+`__security_check_cookie`, which keeps `eax`). `ClassDynamicGeometry_SetShader_006a4800`
+returns `0x6a46e0`'s `eax` (0) to its virtual callers; a void shim lost
+the searchlight beams (pc round 2). Entries of `g_MagicImports` are
+decided by the magic DLLs' own call sites (`magicFiles/FFX/*.dll`,
+cached in `~/ffx-work/cache/magic-*.pickle`, about a minute to build
+once), particle program records by their dispatchers (which never read
+`eax`). Pointer callers checked by hand to drop `eax` go into `VOID_OK`
+in the script, with the dispatcher addresses as the reason.
+
 ## 5. Check it in the game
 
 - `tools/build-hook.sh` (and clippy for the 32-bit target:

@@ -6585,12 +6585,15 @@ fn round8_background_files_and_renderer_reset_match_the_original() {
             t.fill(rd, 0x20, &mut rng);
             t.put(rd + 0x10, mf);
             t.put(rd + 0x14, rng.below(3));
+            // tkGetSyncH(5)'s word, the original's eax at its return
+            t.put(t.b.rebase(0x0133_0820), rng.next());
             t.same(
                 "yiObjReadCallback",
-                |o| o.void(0x0090_97c0, &[rd]),
+                |o| o.eax(0x0090_97c0, &[rd]),
                 |m| {
-                    yi::bridge::yi_obj_read_callback(m, rd, work, image, call);
+                    let eax = yi::bridge::yi_obj_read_callback(m, rd, work, image, call);
                     clean(m);
+                    eax
                 },
             );
         }
