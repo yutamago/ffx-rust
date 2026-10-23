@@ -3159,20 +3159,24 @@ pub mod bridge {
     }
 
     /// The three-call sync step `yiResetObj` repeats: `TkRestartSyncH(5)`,
-    /// `TkGetSyncH(5)` (unless `restart_only`), `0x0088c820(5)`.
+    /// `TkGetSyncH(5)` (unless `restart_only`), `0x0088c820(5)`. Returns
+    /// `TkGetSyncH`'s value (0 without it): `0x0088c820` is a bare `ret`, so
+    /// that is the `EAX` the step leaves.
     fn sync_step<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
         mem: &mut M,
         call: &mut C,
         get: bool,
-    ) {
+    ) -> u32 {
         let f = mem.rebase(super::TK_RESTART_SYNC_H);
         call(mem, f, &[5]);
+        let mut v = 0;
         if get {
             let f = mem.rebase(super::TK_GET_SYNC_H);
-            call(mem, f, &[5]);
+            v = call(mem, f, &[5]);
         }
         let f = mem.rebase(super::TK_SYNC_H_WAIT);
         call(mem, f, &[5]);
+        v
     }
 
     /// `yiResetObj()` (`0x00909ea0`): the field map torn down for the next
@@ -3287,13 +3291,15 @@ pub mod bridge {
     /// ([`yi_anim_attach_all`]), `read +0x18` to `0x018ded30` and status
     /// bits 5 and 7 cleared. `work` and `image` stand for the stack
     /// buffers of the callees; the engine calls go through `call`.
+    /// Returns the last `TkGetSyncH(5)`'s value, the `EAX` it leaves (it is
+    /// a read callback, `yiObjReadNB` hands it over as a pointer).
     pub fn yi_obj_read_callback<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
         mem: &mut M,
         read: u32,
         work: u32,
         image: u32,
         call: &mut C,
-    ) {
+    ) -> u32 {
         let c = |mem: &M, f: u32| mem.rebase(f);
         let f = c(mem, super::TK_RESTART_SYNC_H);
         call(mem, f, &[5]);
@@ -3350,7 +3356,7 @@ pub mod bridge {
         let s = super::RENDER_STATUS.get(mem);
         super::RENDER_STATUS.set(mem, s & 0xffff_ff5f);
         super::READ_DONE.set(mem, v);
-        sync_step(mem, call, true);
+        sync_step(mem, call, true)
     }
 
     /// `yiSwizzleColumns(src, dst)` (`0x0090e000`): a 16x16 block of 8-bit

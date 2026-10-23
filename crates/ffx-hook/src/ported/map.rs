@@ -2344,13 +2344,14 @@ ported! {
     rcbgGuideSetModelSub @ 0x0091_d880 => extern "C" fn shim_rcbg_guide_set_model_sub(g: u32) {
         guide::bridge::rcbg_guide_set_model_sub(&mut mem(), g, &mut |_, f, a| call_cdecl(f, a));
     }
-    /// `yiObjReadCallback(read)`.
-    yiObjReadCallback @ 0x0090_97c0 => extern "C" fn shim_yi_obj_read_callback(read: u32) {
+    /// `yiObjReadCallback(read)`: a read callback (`yiObjReadNB` passes
+    /// it as a pointer), so it returns the original's `EAX`.
+    yiObjReadCallback @ 0x0090_97c0 => extern "C" fn shim_yi_obj_read_callback(read: u32) -> u32 {
         let mut work = Work([0; 0xa4]);
         let mut image = Image([0; 0x60]);
         let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
         let i = u32::try_from((&raw mut image).expose_provenance()).unwrap_or(0);
-        yi::bridge::yi_obj_read_callback(&mut mem(), read, w, i, &mut |_, f, a| call_cdecl(f, a));
+        yi::bridge::yi_obj_read_callback(&mut mem(), read, w, i, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `rcbgScaleVector(dst, v, s)`.
     rcbgScaleVector @ 0x0092_00a0 => extern "C" fn shim_rcbg_scale_vector(dst: u32, v: u32, s: u32) -> u32 {

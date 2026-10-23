@@ -6587,10 +6587,11 @@ fn round8_background_files_and_renderer_reset_match_the_original() {
             t.put(rd + 0x14, rng.below(3));
             t.same(
                 "yiObjReadCallback",
-                |o| o.void(0x0090_97c0, &[rd]),
+                |o| o.eax(0x0090_97c0, &[rd]),
                 |m| {
-                    yi::bridge::yi_obj_read_callback(m, rd, work, image, call);
+                    let r = yi::bridge::yi_obj_read_callback(m, rd, work, image, call);
                     clean(m);
+                    r
                 },
             );
         }
