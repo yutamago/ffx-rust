@@ -6148,6 +6148,13 @@ ported! {
         let slot = frame.at();
         opus::bridge::opp_anm(&mut mem(), host, set, slot, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opp_mimic(host)`: its frame locals (0xe4 bytes) on this shim's
+    /// stack, the frame pointer at their end; no caller reads `eax`.
+    opp_mimic @ 0x0080_eb50 => extern "C" fn opp_mimic(host: u32) {
+        let mut frame = super::StackFrame::<0x39>::new();
+        let ebp = frame.at() + 0xe4;
+        opus::bridge::opp_mimic(&mut mem(), host, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
+    }
     /// `opp_anm_sippo(host, set)`: `set`, or the early exits' values.
     opp_anm_sippo @ 0x0081_1530 => extern "C" fn opp_anm_sippo(host: u32, set: u32) -> u32 {
         opus::bridge::opp_anm_sippo(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))

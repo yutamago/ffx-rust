@@ -3615,6 +3615,239 @@ pub mod bridge {
         set
     }
 
+    /// `opp_mimic(host)` (`0x0080eb50`, opp table entry `0x00c48ec0`; the
+    /// Switch's callees): a copy of a character drawn with another's
+    /// models. `u` = the unit `host +0x220`, `r` = its mimic record `u
+    /// +0xbc` (`[[r]]` the drawn character `c`, `[[r +4]]` the model
+    /// source `o`, `u16 +0xe` entries of 0x60 bytes from `+0x120`, `[r +8]`
+    /// the source's 16-byte model records).
+    ///
+    /// Byte `r +0x10` = 1 when `Ch_GetMotionSpeed(c)` is 0 (frozen: each
+    /// entry's scale `+0x1c` goes to its object's `+0x34`, else the other
+    /// way). Per entry: `host +0x80` = `opus_get_bone_matrix(c, u16 +6)`
+    /// with its translation kept across `op_unit_m` (through `g_Ee_Gpr
+    /// +0x20` and `host +0x70`), `host +0x40` = `op_xyz_scale(+0x10,
+    /// +0x1c)`, `+0x50` = the EE's r0, `host` = `op_unit_m_scale(object
+    /// +0x3c / 256)`, `+0xc0` = `op_rt_m(host, +0x40, +0x50)`, entry
+    /// `+0x20` = `+0x80 x +0xc0`.
+    ///
+    /// Then, unless `Ch_GetHide(c)` has a bit but 8 or the model alpha
+    /// (`Ch_DrawGetModelAlpha(c, -1)` through `fcall`) is 0 or below (NaN
+    /// goes on):
+    /// texture bases 0x3c00/0x2ee0 and loads for `c`, `Ch_DrawCalcShade`
+    /// into `host +0..+8`, `+0xc` = the alpha, all x 128 (`op_xyzw_scale`);
+    /// through the emulated VU0 the colour is clamped to 255 and to 0
+    /// (`Vec4Max` with `vf00 - vf00`, after `restoreVf00Register`),
+    /// truncated (`ftol`), packed with the EE's r0 halves (`pppEePpacb`)
+    /// and stored at `u +0xc8`. Each source model's record `[+0x10]`
+    /// (`get_ptr32`) gets its vertex and normal pointers' offsets at `+8`
+    /// and `+0xc`. With `c`'s root matrix and a unit matrix scaled by 1000
+    /// on its diagonal (frame locals `ebp - 0xe4`, `- 0x64`), per entry:
+    /// `opus_mdc_packet_set(host +0x100, host, host +0x300, object, -1)`,
+    /// `opus_mdc_light_set(.., nos)` (16 zero halves at `ebp - 0x24`),
+    /// the packet head (`+0x100` 0x21c, `+0x118` = `u +0xc8`, `+0x11c` 0,
+    /// `u16 +0x14c` 0x80, `+0x120` = `host +0xc0`, `+0x12c` = `host
+    /// +0x80`), `host +0xc0` = root x entry `+0x20`, its product with the
+    /// scaled matrix (`FFXVu0MulMatrix`, into the local at `ebp - 0xa4`)
+    /// to `graphicAddMeshMatrix` (list `c +0x830`) and
+    /// `Ch_ModelSetHide(c, id, 0)`, `id` = `u16 +0xa` of model record `u16
+    /// entry +4 + 1`.
+    ///
+    /// No caller reads `eax` (`opp_main` overwrites it). Callees through
+    /// `call`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opp_mimic<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        ebp: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{ftol, load, mul, round_trip, store, sub};
+        const ALL: u32 = u32::MAX;
+        let h = |k: u32| host.wrapping_add(k);
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let rt = |x: u32| round_trip(f32::from_bits(x)).to_bits();
+        let u = rd(mem, h(0x220));
+        let r = rd(mem, u.wrapping_add(0xbc));
+        let at_r = |k: u32| r.wrapping_add(k);
+        // `[[r]]`, read again at each use
+        let drawn = |mem: &M| rd(mem, rd(mem, r));
+        let c = drawn(mem);
+        let o = rd(mem, rd(mem, at_r(4)));
+        let count = |mem: &M| u32::from(mem.read::<u16>(at_r(0xe)));
+        let ee = g(mem, 0x00c8_f508);
+        let speed = call(mem, g(mem, 0x0082_ac50), &[c]);
+        mem.write(at_r(0x10), u8::from(speed == 0));
+        let mut e = at_r(0x120);
+        let mut i = 0;
+        while i < count(mem) {
+            let obj = rd(mem, e);
+            if mem.read::<u8>(at_r(0x10)) != 0 {
+                let v = rt(rd(mem, e.wrapping_add(0x1c)));
+                mem.write(obj.wrapping_add(0x34), v);
+            } else {
+                let v = rt(rd(mem, obj.wrapping_add(0x34)));
+                mem.write(e.wrapping_add(0x1c), v);
+            }
+            let bone = u32::from(mem.read::<u16>(e.wrapping_add(6)));
+            let ch = drawn(mem);
+            call(mem, g(mem, 0x0080_5430), &[h(0x80), ch, bone]);
+            let t: [u32; 4] = mem.read(h(0xb0));
+            mem.write(ee.wrapping_add(0x20), t);
+            mem.write(h(0x70), t);
+            call(mem, g(mem, 0x007e_a6d0), &[h(0x80)]);
+            let t: [u32; 4] = mem.read(h(0x70));
+            mem.write(ee.wrapping_add(0x20), t);
+            mem.write(h(0xb0), t);
+            let s = rt(rd(mem, e.wrapping_add(0x1c)));
+            call(
+                mem,
+                g(mem, 0x007e_a850),
+                &[h(0x40), e.wrapping_add(0x10), s],
+            );
+            let r0: [u32; 4] = mem.read(ee);
+            mem.write(h(0x50), r0);
+            let per_256: f64 = mem.read(g(mem, 0x00b5_0198));
+            let s = store(mul(load(rd(mem, obj.wrapping_add(0x3c))), per_256));
+            call(mem, g(mem, 0x007e_a700), &[host, s]);
+            call(mem, g(mem, 0x007e_9850), &[h(0xc0), host, h(0x40), h(0x50)]);
+            call(
+                mem,
+                g(mem, 0x007e_83b0),
+                &[e.wrapping_add(0x20), h(0x80), h(0xc0)],
+            );
+            i += 1;
+            e = e.wrapping_add(0x60);
+        }
+        let ch = drawn(mem);
+        if call(mem, g(mem, 0x0082_abd0), &[ch]) & !8 != 0 {
+            return;
+        }
+        let zero = f64::from(mem.read::<f32>(g(mem, 0x00b0_d92c)));
+        let alpha = fcall(mem, g(mem, 0x0082_eba0), &[c, ALL]);
+        // fcomp: C0 or C3 alone (below or equal) ends it; NaN goes on
+        if alpha <= zero {
+            return;
+        }
+        for (f, args) in [
+            (0x0083_13c0, &[ALL, 0x3c00][..]),
+            (0x0083_1390, &[ALL, 0x2ee0]),
+            (0x0083_1300, &[ALL]),
+            (0x0083_11d0, &[ALL]),
+        ] {
+            let mut a = vec![drawn(mem)];
+            a.extend_from_slice(args);
+            call(mem, g(mem, f), &a);
+        }
+        call(mem, g(mem, 0x0082_eaf0), &[c, host, h(4), h(8)]);
+        let alpha = store(fcall(mem, g(mem, 0x0082_eba0), &[c, ALL]));
+        mem.write(h(0xc), alpha);
+        let k = rt(rd(mem, g(mem, 0x00b5_01bc)));
+        call(mem, g(mem, 0x007e_a8f0), &[host, host, k]);
+        // the colour through the emulated VU0
+        let vf = g(mem, 0x00c8_f980);
+        let vf00 = g(mem, 0x00c0_a004);
+        let zeros = g(mem, 0x00c8_f970);
+        let colour: [u32; 4] = mem.read(host);
+        mem.write(vf, colour);
+        for k in 0..4u32 {
+            let x = load(rd(mem, vf00.wrapping_add(4 * k)));
+            mem.write(zeros.wrapping_add(4 * k), store(sub(x, x)));
+        }
+        mem.write(ee.wrapping_add(0x20), 0x437f_0000u32);
+        let q_at = g(mem, 0x00c8_f78c);
+        mem.write(q_at, 0x437f_0000u32);
+        call(mem, g(mem, 0x0042_ef00), &[]);
+        let q = rd(mem, q_at);
+        for k in 0..4u32 {
+            let at = vf.wrapping_add(4 * k);
+            // fcom/fcomp: the colour stays only when below 255 (ordered)
+            let below = load(rd(mem, at)).partial_cmp(&load(q)) == Some(std::cmp::Ordering::Less);
+            if !below {
+                mem.write(at, rt(q));
+            }
+        }
+        let z: [u32; 4] = mem.read(zeros);
+        call(mem, g(mem, 0x0080_8b70), &[vf, vf, z[0], z[1], z[2], z[3]]);
+        let v: [u32; 4] = mem.read(vf);
+        for (k, x) in (0u32..).zip(v) {
+            let n = ftol(mem, load(x));
+            mem.write(vf.wrapping_add(4 * k), n);
+        }
+        let v: [u32; 4] = mem.read(vf);
+        let r0: [u32; 4] = mem.read(ee);
+        #[allow(clippy::cast_possible_truncation)] // the 16-bit stores
+        let halves: [u16; 8] =
+            std::array::from_fn(|k| if k < 4 { v[k] as u16 } else { r0[k - 4] as u16 });
+        mem.write(ee.wrapping_add(0x20), halves);
+        call(
+            mem,
+            g(mem, 0x0073_75d0),
+            &[ee.wrapping_add(0x20), ee, ee.wrapping_add(0x20)],
+        );
+        let packed = rd(mem, ee.wrapping_add(0x20));
+        mem.write(u.wrapping_add(0xc8), packed);
+        let nos = ebp.wrapping_sub(0x24);
+        mem.write(nos, [0u16; 16]);
+        let models = rd(mem, at_r(8));
+        let nb = call(mem, g(mem, 0x0083_0410), &[o]);
+        let mut rec = models.wrapping_add(0x10);
+        let mut j = 0u32;
+        while j.cast_signed() < nb.cast_signed() {
+            let v = rd(mem, rec);
+            let q = call(mem, g(mem, 0x00a4_4650), &[v]);
+            let vtx = call(mem, g(mem, 0x0082_ae10), &[o, j]);
+            mem.write(q.wrapping_add(8), vtx.wrapping_sub(q));
+            let nrm = call(mem, g(mem, 0x0082_adf0), &[o, j]);
+            mem.write(q.wrapping_add(0xc), nrm.wrapping_sub(q));
+            j += 1;
+            rec = rec.wrapping_add(0x10);
+        }
+        let root = ebp.wrapping_sub(0xe4);
+        call(mem, g(mem, 0x0080_5400), &[root, c]);
+        let scaled = ebp.wrapping_sub(0x64);
+        call(mem, g(mem, 0x006e_d9a0), &[scaled]);
+        let thousand: f64 = mem.read(g(mem, 0x00b0_dba0));
+        for at in [0u32, 0x14] {
+            let a = scaled.wrapping_add(at);
+            mem.write(a, store(mul(load(rd(mem, a)), thousand)));
+        }
+        let a = scaled.wrapping_add(0x28);
+        mem.write(a, store(mul(thousand, load(rd(mem, a)))));
+        let prod = ebp.wrapping_sub(0xa4);
+        let pk = h(0x100);
+        let mut e = at_r(0x120);
+        let mut i = 0;
+        while i < count(mem) {
+            let obj = rd(mem, e);
+            call(mem, g(mem, 0x0080_e230), &[pk, host, h(0x300), obj, ALL]);
+            call(mem, g(mem, 0x0080_e900), &[pk, host, h(0x300), obj, nos]);
+            mem.write(pk, 0x21cu32);
+            let w = rd(mem, u.wrapping_add(0xc8));
+            mem.write(h(0x118), w);
+            mem.write(h(0x11c), 0u32);
+            mem.write(h(0x14c), 0x80u16);
+            let k = u32::from(mem.read::<u16>(e.wrapping_add(4)));
+            let model = (k.wrapping_add(1) << 4).wrapping_add(models);
+            mem.write(h(0x120), h(0xc0));
+            mem.write(h(0x12c), h(0x80));
+            call(
+                mem,
+                g(mem, 0x007e_83b0),
+                &[h(0xc0), root, e.wrapping_add(0x20)],
+            );
+            call(mem, g(mem, 0x006e_d5c0), &[prod, h(0xc0), scaled]);
+            let id = u32::from(mem.read::<u16>(model.wrapping_add(0xa)));
+            let list = rd(mem, c.wrapping_add(0x830));
+            call(mem, g(mem, 0x0063_9170), &[list, prod, id]);
+            let id = u32::from(mem.read::<u16>(model.wrapping_add(0xa)));
+            call(mem, g(mem, 0x0082_aea0), &[c, id, 0]);
+            e = e.wrapping_add(0x60);
+            i += 1;
+        }
+    }
+
     /// `opp_md(host, set)` (`0x008020a0`, opp table entry `0x00c48e80`):
     /// the unit's model draw. Nothing when the unit's flags `+0xb3` share
     /// a bit with its character's `g_EtChrDrawFlags` byte (`u8 +0x18`;
