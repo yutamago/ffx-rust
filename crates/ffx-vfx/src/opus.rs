@@ -10831,4 +10831,252 @@ pub mod bridge {
         mem.write(v0.wrapping_add(4), hi);
         call(mem, f, &[host, ptr])
     }
+
+    /// `opu_v_etc(host, cmd)` (`0x00819450`): the opus vector commands
+    /// picked by the flag nibble (`u16 host +0x21a & 0xf000`); `u` is the
+    /// unit (`host +0x220`), `host` doubles as scratch. Returns the next
+    /// command (`cmd` itself for an unknown nibble). Callees through `call`
+    /// (`fcall` for those that return in `ST0`).
+    ///
+    /// - 0x0000: `MsGetMapCenter(host)`; `u +0x44` = its y x 16, `u +0x94`
+    ///   = y. 0x4000 and 0x7000 the same with `MsGetChrLiftHeight(u8 u
+    ///   +0x18)` and `Sg_GetSuimen()` (the `f32` result).
+    /// - 0x1000: `u +0x30 + 4 i16 cmd+2` = `u16 cmd+4` x
+    ///   `opus_cheight_get(u8 u +0x18, i8 host +0x21e)` / 16
+    ///   (`opus_chr_thickness` is called too, its result dropped); 6 bytes.
+    /// - 0x2000: the unit's motion callback (`0x00c492c8[u8 u +0xba]`) on
+    ///   `(host, cmd)`, its result dropped.
+    /// - 0x3000: angles from the unit floats at the `i8` offsets `cmd
+    ///   +0xa..+0xc` into `host`, `r0` at `host +0x10`, the matrix `host
+    ///   +0x40` = `op_rt_m_6(unit, angles, r0, order i16 cmd+2)`, the `i16`
+    ///   vector `cmd +4..+8` through it (`op_apply_m_w1` into `host +0x30`)
+    ///   added to the unit floats at the offsets `cmd +0xd..+0xf`, then
+    ///   `op_xyz_scale(u +0x90, u +0x40, 1/16)`; 16 bytes.
+    /// - 0x5000: the emulated VU0 step: the key `(u16 +6 - 1) % u16 +4 + 1`
+    ///   (signed) of the table `u +0xbc` (16 bytes each) into
+    ///   `g_Vu0_VfMove`, `u +0x60..+0x68` = 16 x (`u +0x90..` - it), `u
+    ///   +0x6c` kept, the work registers `0x00c8f950..0x00c8f97c` and
+    ///   `0x00c8f528..` left as the original leaves them; 4 bytes.
+    /// - 0x6000: `MsGetMapCenter(host)` into `g_Vu0_VfMove` and `0x00c8f528`
+    ///   (x and z swapped there after), x, y to `u +0x90 +
+    ///   g_pppColorConShift`, z to `u +0x98`, the shift cleared, then
+    ///   `op_xyz_scale(u +0x40, host, 16)`.
+    /// - 0x8000: `opus_get_chr_pos(0x012a4110[32 u16 u +0x14], host)`; when
+    ///   `i16 cmd+2 / 16` (an `f32`) is at most `op_length_get(u +0x90,
+    ///   host)` the command jumps by `i16 cmd+4`, else 6 bytes (NaN too).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_v_etc<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let u = unit(mem, host);
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let rg = |mem: &M, a: u32| mem.read::<u32>(g(mem, a));
+        let wg = |mem: &mut M, a: u32, v: u32| {
+            let at = g(mem, a);
+            mem.write(at, v);
+        };
+        let at_i8 = |mem: &M, k: u32| {
+            u.wrapping_add(i32::from(mem.read::<i8>(cmd.wrapping_add(k))).cast_unsigned())
+        };
+        let chr = |mem: &M| u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        // `fstp dword` of a result, `fld`, x 16 into +0x44 and itself into
+        // +0x94 (in the order given)
+        let height = |mem: &mut M, h: f64, scaled_first: bool| {
+            let h = store(h);
+            let scaled = store(mul(load(h), 16.0));
+            if scaled_first {
+                mem.write(u.wrapping_add(0x44), scaled);
+                mem.write(u.wrapping_add(0x94), store(load(h)));
+            } else {
+                mem.write(u.wrapping_add(0x94), store(load(h)));
+                mem.write(u.wrapping_add(0x44), scaled);
+            }
+            cmd.wrapping_add(2)
+        };
+        match mem.read::<u16>(host.wrapping_add(0x21a)) & 0xf000 {
+            0x0000 => {
+                let f = g(mem, 0x0078_2ae0);
+                call(mem, f, &[host]);
+                let y = rd(mem, host.wrapping_add(4));
+                mem.write(u.wrapping_add(0x44), store(mul(load(y), 16.0)));
+                let y = rd(mem, host.wrapping_add(4));
+                mem.write(u.wrapping_add(0x94), store(load(y)));
+                cmd.wrapping_add(2)
+            }
+            0x1000 => {
+                let i = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+                let side = i32::from(mem.read::<i8>(host.wrapping_add(0x21e))).cast_unsigned();
+                let (b, f) = (chr(mem), g(mem, 0x0080_0b70));
+                let h = store(fcall(mem, f, &[b, side]));
+                let side = i32::from(mem.read::<i8>(host.wrapping_add(0x21e))).cast_unsigned();
+                let (b, f) = (chr(mem), g(mem, 0x0080_0c90));
+                fcall(mem, f, &[b, side]);
+                let n = f64::from(mem.read::<u16>(cmd.wrapping_add(4)));
+                let v = mul(mul(n, load(store(load(h)))), 0.0625);
+                mem.write(
+                    u.wrapping_add(0x30).wrapping_add(i.wrapping_mul(4)),
+                    store(v),
+                );
+                cmd.wrapping_add(6)
+            }
+            0x2000 => {
+                let k = u32::from(mem.read::<u8>(u.wrapping_add(0xba)));
+                let f = rd(mem, g(mem, 0x00c4_92c8).wrapping_add(k.wrapping_mul(4)));
+                call(mem, f, &[host, cmd]);
+                cmd.wrapping_add(2)
+            }
+            0x3000 => {
+                let (a, b, c) = (at_i8(mem, 0xa), at_i8(mem, 0xb), at_i8(mem, 0xc));
+                for (k, from) in (0u32..).zip([a, b, c]) {
+                    let v = store(load(rd(mem, from)));
+                    mem.write(host.wrapping_add(4 * k), v);
+                }
+                for k in 0..4u32 {
+                    let w = rg(mem, 0x00c8_f508 + 4 * k);
+                    mem.write(host.wrapping_add(0x10 + 4 * k), w);
+                }
+                let m = host.wrapping_add(0x40);
+                let f = g(mem, 0x007e_a6d0);
+                call(mem, f, &[m]);
+                let order = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+                let f = g(mem, 0x007e_98b0);
+                call(mem, f, &[m, m, host, host.wrapping_add(0x10), order]);
+                let v = [4u32, 6, 8].map(|k| mem.read::<i16>(cmd.wrapping_add(k)));
+                for (k, n) in (0u32..).zip(v) {
+                    mem.write(host.wrapping_add(0x20 + 4 * k), store(f64::from(n)));
+                }
+                let f = g(mem, 0x007e_79a0);
+                call(
+                    mem,
+                    f,
+                    &[host.wrapping_add(0x30), m, host.wrapping_add(0x20)],
+                );
+                let to = [0xdu32, 0xe, 0xf].map(|k| at_i8(mem, k));
+                for (k, to) in (0u32..).zip(to) {
+                    let x = load(rd(mem, host.wrapping_add(0x30 + 4 * k)));
+                    let s = store(add(x, load(rd(mem, to))));
+                    mem.write(to, s);
+                }
+                let f = g(mem, 0x007e_a850);
+                call(
+                    mem,
+                    f,
+                    &[u.wrapping_add(0x90), u.wrapping_add(0x40), 0x3d80_0000],
+                );
+                cmd.wrapping_add(0x10)
+            }
+            0x4000 => {
+                let (b, f) = (chr(mem), g(mem, 0x0079_4990));
+                let h = fcall(mem, f, &[b]);
+                height(mem, h, true)
+            }
+            0x5000 => {
+                let keys = rd(mem, u.wrapping_add(0xbc));
+                let n = i32::from(mem.read::<u16>(keys.wrapping_add(6))) - 1;
+                let d = i32::from(mem.read::<u16>(keys.wrapping_add(4)));
+                // `idiv`: the original faults on a zero count; here key 1
+                let r = n.checked_rem(d).unwrap_or(0);
+                let key = keys.wrapping_add((r + 1).cast_unsigned().wrapping_mul(16));
+                wg(mem, 0x00c8_f52c, 0);
+                wg(mem, 0x00c8_f954, 0);
+                let w = rg(mem, 0x00c8_f530);
+                wg(mem, 0x00c8_f958, w);
+                let w = rg(mem, 0x00c8_f534);
+                wg(mem, 0x00c8_f528, 0x4180_0000);
+                wg(mem, 0x00c8_f950, 0x4180_0000);
+                wg(mem, 0x00c8_f95c, w);
+                for k in 0..4u32 {
+                    let w = rd(mem, key.wrapping_add(4 * k));
+                    wg(mem, 0x00c8_f980 + 4 * k, w);
+                }
+                // vf = u +0x90..+0x9c, vf' = u +0x60..+0x6c
+                let w = rd(mem, u.wrapping_add(0x90));
+                wg(mem, 0x00c8_f970, w);
+                let x = sub(load(rg(mem, 0x00c8_f970)), load(rg(mem, 0x00c8_f980)));
+                for k in 1..4u32 {
+                    let w = rd(mem, u.wrapping_add(0x90 + 4 * k));
+                    wg(mem, 0x00c8_f970 + 4 * k, w);
+                }
+                for k in 0..4u32 {
+                    let w = rd(mem, u.wrapping_add(0x60 + 4 * k));
+                    wg(mem, 0x00c8_f960 + 4 * k, w);
+                }
+                wg(mem, 0x00c8_f960, store(x));
+                for k in 1..3u32 {
+                    let a = load(rg(mem, 0x00c8_f970 + 4 * k));
+                    let d = store(sub(a, load(rg(mem, 0x00c8_f980 + 4 * k))));
+                    wg(mem, 0x00c8_f960 + 4 * k, d);
+                }
+                let f = g(mem, 0x0042_ef00);
+                call(mem, f, &[]);
+                let s = load(rg(mem, 0x00c8_f950));
+                for k in 0..3u32 {
+                    let d = store(mul(s, load(rg(mem, 0x00c8_f960 + 4 * k))));
+                    wg(mem, 0x00c8_f960 + 4 * k, d);
+                }
+                for k in 0..4u32 {
+                    let w = rg(mem, 0x00c8_f960 + 4 * k);
+                    mem.write(u.wrapping_add(0x60 + 4 * k), w);
+                }
+                cmd.wrapping_add(4)
+            }
+            0x6000 => {
+                let f = g(mem, 0x0078_2ae0);
+                call(mem, f, &[host]);
+                let x = rd(mem, host);
+                wg(mem, 0x00c8_f980, x);
+                let y = rd(mem, host.wrapping_add(4));
+                wg(mem, 0x00c8_f984, y);
+                let z = rd(mem, host.wrapping_add(8));
+                wg(mem, 0x00c8_f988, z);
+                let w = rd(mem, host.wrapping_add(0xc));
+                wg(mem, 0x00c8_f98c, w);
+                wg(mem, 0x00c8_f534, w);
+                let shift = rg(mem, 0x00c8_b500);
+                wg(mem, 0x00c8_f530, z);
+                wg(mem, 0x00c8_f528, x);
+                wg(mem, 0x00c8_f52c, y);
+                mem.write(shift.wrapping_add(u).wrapping_add(0x90), x);
+                let shift = rg(mem, 0x00c8_b500);
+                let y = rg(mem, 0x00c8_f52c);
+                mem.write(shift.wrapping_add(u).wrapping_add(0x94), y);
+                let (x, z) = (rg(mem, 0x00c8_f528), rg(mem, 0x00c8_f530));
+                wg(mem, 0x00c8_f530, x);
+                wg(mem, 0x00c8_f528, z);
+                mem.write(u.wrapping_add(0x98), z);
+                wg(mem, 0x00c8_b500, 0);
+                let f = g(mem, 0x007e_a850);
+                call(mem, f, &[u.wrapping_add(0x40), host, 0x4180_0000]);
+                cmd.wrapping_add(2)
+            }
+            0x7000 => {
+                let f = g(mem, 0x0083_60a0);
+                let h = fcall(mem, f, &[]);
+                height(mem, h, false)
+            }
+            0x8000 => {
+                let i = u32::from(mem.read::<u16>(u.wrapping_add(0x14)));
+                let no = u32::from(mem.read::<u8>(g(mem, 0x012a_4110).wrapping_add(i << 5)));
+                let f = g(mem, 0x0081_b1e0);
+                call(mem, f, &[no, host]);
+                let n = mem.read::<i16>(cmd.wrapping_add(2));
+                let f = g(mem, 0x007e_7fc0);
+                let len = fcall(mem, f, &[u.wrapping_add(0x90), host]);
+                // `fild`, `fstp dword`, x the `f64` 1/16, `fstp dword`
+                let t = load(store(mul(f64::from(n), 0.0625)));
+                if t <= len {
+                    let jump = i32::from(mem.read::<i16>(cmd.wrapping_add(4))).cast_unsigned();
+                    cmd.wrapping_add(jump)
+                } else {
+                    cmd.wrapping_add(6)
+                }
+            }
+            _ => cmd,
+        }
+    }
 }

@@ -31552,3 +31552,162 @@ fn r51a_ppp_pmcom_data_init_matches_the_original() {
         assert!(seen.iter().all(|&n| n > 0), "{seen:?}");
     }
 }
+
+/// `opu_v_etc` against the port: every flag nibble, the float results of
+/// the height/length callees from cells (NaNs and infinities among them),
+/// the unit floats likewise, `i8` offsets inside the unit, key tables for
+/// the VU0 step, thresholds on both sides of the length.
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r51b_opu_v_etc_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_9450);
+        let cells = p.alloc(0x40);
+        let center = copy_recorder(&mut p, 0x0078_2ae0, 1, 0, From::At(cells), 4);
+        let floats = [
+            (0x0080_0b70u32, 2u8),
+            (0x0080_0c90, 2),
+            (0x0079_4990, 1),
+            (0x0083_60a0, 0),
+            (0x007e_7fc0, 2),
+        ];
+        let _flogs: Vec<u32> = floats
+            .iter()
+            .enumerate()
+            .map(|(k, &(sym, n))| float_recorder(&mut p, sym, n, cells + 0x10 + 4 * k as u32))
+            .collect();
+        let pos = far_recorder(&mut p, 0x0081_b1e0, &[0, 0], None);
+        let cb_cell = cells + 0x30;
+        let cb = far_recorder(&mut p, 0x0081_5050, &[0; 2], Some(cb_cell));
+        let (table, recorder) = (p.sym(0x00c4_92c8), p.sym(0x0081_5050));
+        for k in 0..12 {
+            p.set(table + 4 * k, recorder);
+        }
+        let vf00 = p.sym(0x00c0_a004);
+        let (host, units, cmd, keys) = (
+            p.alloc(0x440) + 0x40,
+            p.alloc(0x280) + 0x80,
+            p.alloc(0x20),
+            p.alloc(0x100),
+        );
+        let (r0, v0, work, shift) = (
+            p.sym(0x00c8_f508),
+            p.sym(0x00c8_f528),
+            p.sym(0x00c8_f950),
+            p.sym(0x00c8_b500),
+        );
+        let chr_nos = p.sym(0x012a_4110);
+        let special = [
+            0x7fc0_0000u32,
+            0xffc0_0001,
+            0xff80_0000,
+            0x7f80_0000,
+            0x8000_0000,
+            0x7f7f_ffff,
+            0,
+        ];
+        let mut seen = [0u32; 16];
+        for round in 0..4000u32 {
+            for log in [center, pos, cb] {
+                p.set(log, 0u32);
+            }
+            p.fill(host - 0x40, 0x440, &mut rng);
+            p.fill(vf00, 0x10, &mut rng);
+            let unit = units;
+            p.fill(cmd, 0x20, &mut rng);
+            p.fill(v0, 0x10, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.fill(work, 0x40, &mut rng);
+            p.fill(keys, 0x100, &mut rng);
+            p.fill(chr_nos, 0x40, &mut rng);
+            for k in 0..0x10u32 {
+                let v = if rng.chance(85) {
+                    ranged(&mut rng, -500.0, 500.0)
+                } else {
+                    rng.pick(&special)
+                };
+                p.set(cells + 4 * k, v);
+            }
+            p.set(cb_cell, rng.next());
+            for o in (0..0x280).step_by(4) {
+                let v = if rng.chance(90) {
+                    ranged(&mut rng, -1000.0, 1000.0)
+                } else {
+                    rng.pick(&special)
+                };
+                p.set(unit - 0x80 + o, v);
+            }
+            let nibble = if rng.chance(90) {
+                rng.below(9)
+            } else {
+                rng.below(16)
+            };
+            // nibble 0 sometimes with the unit over the host (u +0x44 = host +4)
+            let unit = if nibble == 0 && rng.chance(20) {
+                host - 0x40
+            } else {
+                unit
+            };
+            p.set(host + 0x220, unit);
+            seen[nibble as usize] += 1;
+            p.set(host + 0x21a, ((nibble << 12) | rng.below(0x1000)) as u16);
+            p.set(unit + 0xba, rng.below(12) as u8);
+            p.set(unit + 0x14, rng.below(2)); // the whole word: no signalling NaN
+            p.set(unit + 0xbc, keys);
+            // key count and index (u16 +4, +6): index 0 wraps to -1
+            let count = rng.pick(&[1u16, 2, 3, 7]);
+            p.set(keys + 4, count);
+            let any = rng.below(16) as u16;
+            p.set(keys + 6, rng.pick(&[0u16, 1, 2, 8, count, any]));
+            p.set(shift, rng.pick(&[0u32, 4, 8, 0x10, 0xffff_fff0]));
+            // i8 unit offsets for 0x3000: inside the unit, sometimes negative
+            for k in 0xa..0x10 {
+                // -0x80..0x7c (the unit has 0x80 bytes in front), mostly
+                // the floats at 0..0x7c
+                let o = if rng.chance(85) {
+                    rng.below(0x20) as i8 * 4
+                } else {
+                    (rng.below(0x40) as i8 - 0x20) * 4
+                };
+                p.set(cmd + k, o);
+            }
+            for k in [2u32, 4, 6, 8] {
+                let any = rng.next() as i16;
+                let v = rng.pick(&[0i16, 1, -1, 16, -16, 0x7fff, -0x8000, any]);
+                p.set(cmd + k, v);
+            }
+            if nibble == 3 {
+                p.set(cmd + 2, rng.below(8) as i16 - 2); // rotation order
+            }
+            if nibble == 1 {
+                p.set(cmd + 2, rng.below(8) as i16 - 4); // inside the unit
+            }
+            if nibble == 8 {
+                // threshold around the length (the cell at +0x20)
+                let len = rng.pick(&[0i16, 16, 32, -16, 100]);
+                let t = len + rng.pick(&[-1i16, 0, 0, 1]);
+                p.set(cmd + 2, t);
+                p.set(cells + 0x20, (f32::from(len) / 16.0).to_bits());
+                if rng.chance(10) {
+                    p.set(cells + 0x20, 0x7fc0_0000u32);
+                }
+                p.set(cmd + 4, rng.pick(&[-6i16, 0, 2, 0x20]));
+            }
+            p.check(
+                &format!("opu_v_etc nibble {nibble:x} round {round}"),
+                0x0081_9450,
+                &[host, cmd],
+                |m| {
+                    Some(opus::bridge::opu_v_etc(
+                        m,
+                        host,
+                        cmd,
+                        &mut call_original,
+                        &mut call_original_f,
+                    ))
+                },
+            );
+        }
+        assert!(seen[..9].iter().all(|&n| n > 0), "{seen:?}");
+    }
+}
