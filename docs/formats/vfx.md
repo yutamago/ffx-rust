@@ -298,6 +298,46 @@ For 32-bit texels the box filter sums bytes 0 and 2 in one masked word
 (`& 0x00ff00ff`) and bytes 1 and 3 in another (`>> 2 & 0x3fc03fc0`), so no
 carry crosses a byte; the result is bit-exact to the per-byte formula.
 
+## Tail draws (`pppKeShpTail*Draw`)
+
+Ported in `crates/ffx-vfx/src/tail.rs`. A tail object records its path in
+work area 0 (`obj + 0xa0 + [[ctrl + 0xc]]`): ring size byte `+0`, head
+byte `+1`, the shape's frame time `u16 +2` and frame `u16 +4`, and the
+ring of 16-byte positions from `+0x10`. The draw lays `n` sprites (key
+`u16 +0x20`) of the key's shape (`+4`, `0xffff` none) backwards along the
+ring from the head, `key +0x1c` apart, until the count, the length or the
+ring runs out (the walk stops when it comes back to the head). A spacing
+of exactly 0 sets `n` to 0, which the loops' `dec; je` read as 2^32: only
+the lengths end them then.
+
+| Draw | Address |
+| --- | --- |
+| `pppKeShpTailDraw` | `0x0074c570` |
+| `pppKeShpTailXDraw` | `0x0074d570` |
+
+- Colour: from work area 1's four `i16` to the key's (`+0x10`), each
+  `(c * u16 part[+0x70 + 2k]) >> 19` as `f32`, in `n - 1` steps
+  (`FFXVu0DivVector` by `f32(n - 1)`); the scale from 1 down by `(1 -
+  key[+0x18]) / (n - 1)`, the length left down by spacing times that.
+- Request (at `ebp - 0x120`, shape field): flags `+2` 0x80 (`X`: `| 0x800`
+  with key byte `+0x22`, `| 0x400` with `+0x23`), `+4` the colour
+  (`pppFtoiRgba`), `+0x10` the matrix: the object's (`+0x10`) rows 0 and
+  1 times the part's `+0x60`/`+0x64` and the scale (`Tail` rounds the
+  part's product into the copy once; `X` rounds part times scale per
+  sprite, then times the row), row 2 unit, row 3 the point through
+  `g_pppViewMatrix`; `+0x14` `g_PppPacketPos`; `+0x1c` 0 (`X`: work area
+  3 with key byte `+0x24`).
+- Render data: without it `InitVFXRenderDataShapeField` (alpha from the
+  frame's data, `X` from frame 0's, and `X` then draws with frame 0's
+  data); with it the buffer is sized per sprite and the draw ends when
+  `graphicDynGeoMemManagerGetBufferForSegment` gives none.
+- Segment lengths after the first (`KeVu0VecLen`) are `_CIsqrt` of the
+  `f32` sum of squares; comparisons treat NaN as "go on".
+- Last, unless `g_pppStopStatus`: the frame time steps by key `u16 +8`; at
+  the frame's length (`i16 +0x12` of its 8-byte entry at `set + 0x10`)
+  the next frame, and past the set's count (`i16 +6`) frame 0 when the
+  entry's byte `+0x14` has bit 7, else the last frame held.
+
 ## Saved VU0 state (`pppKeShpTail3`, `pppKeShpTail3X`)
 
 The tail draws save the emulated VU0 registers they use and restore them

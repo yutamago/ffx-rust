@@ -10,6 +10,7 @@
 //! - [`mat`]: the matrix programs and their draws;
 //! - [`mdl`]: the model draws (`pppDrawMdl*`);
 //! - [`lns`]: the lens-flare draws (`pppKeLns*`);
+//! - [`tail`]: the tail draws (`pppKeShpTail*`);
 //! - [`heap`]: the particle heaps;
 //! - [`part`]: parts, their data and objects;
 //! - [`fp`]: the field's particle effects;
@@ -47,6 +48,7 @@ pub mod prog;
 pub mod rand;
 pub mod slots;
 pub mod small;
+pub mod tail;
 pub mod tree;
 pub mod vec;
 pub mod wave;
