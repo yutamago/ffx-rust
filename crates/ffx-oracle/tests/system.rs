@@ -26421,3 +26421,173 @@ fn small5_h_matches_the_original_on_the_snapshot() {
     };
     small5_h(&mut a, &mut b, &mut Xorshift(0x5a11_5802));
 }
+
+/// A key script for `small6_a`: statement 0 holds (a stop), then random
+/// statements, then the end (opcode 0). Every loop (opcode 8) has a stop
+/// between its mark and itself, so no call spins. Returns the words and,
+/// per statement start, the loop mark in force there.
+fn small6_script(rng: &mut Xorshift, lens: &[u8; 11]) -> (Vec<u16>, Vec<(u16, u16)>) {
+    let mut words: Vec<u16> = vec![];
+    let mut starts = vec![];
+    let mut mark = 0u16;
+    let mut stop_since_mark = false;
+    let n = 3 + rng.next() % 14;
+    for k in 0..=n {
+        let at = u16::try_from(words.len()).unwrap();
+        starts.push((at, mark));
+        let pick = [1u16, 2, 3, 4, 5, 6, 7, 8, 9, 10, 8, 3][(rng.next() % 12) as usize];
+        let mut op = match k {
+            0 => 4,
+            _ if k == n => 0,
+            _ => pick,
+        };
+        if op == 8 && !stop_since_mark {
+            op = 1;
+        }
+        let hi = u16::try_from(rng.next() & 0xf000).unwrap();
+        let mut head = op | hi;
+        let operand: u16 = match op {
+            3..=7 | 10 => {
+                let v = if k == 0 {
+                    1 + rng.next() % 3
+                } else {
+                    [0, 0, 1, 2, 3][(rng.next() % 5) as usize]
+                };
+                if v != 0 {
+                    stop_since_mark = true;
+                }
+                u16::try_from(v).unwrap()
+            }
+            8 => {
+                if rng.next().is_multiple_of(4) {
+                    head |= 0x800;
+                }
+                [0xfffe, 0xffff, 0, 1, 2, 3, 4][(rng.next() % 7) as usize]
+            }
+            2 => [0u16, 1, 2, 3, 0xffff, 0x8000][(rng.next() % 6) as usize],
+            _ => u16::try_from(rng.next() & 0xffff).unwrap(),
+        };
+        let len = usize::from(lens[usize::from(op)]);
+        words.push(head);
+        words.push(operand);
+        for _ in 2..len {
+            words.push(u16::try_from(rng.next() & 0xffff).unwrap());
+        }
+        if op == 9 {
+            mark = u16::try_from(words.len()).unwrap();
+            stop_since_mark = false;
+        }
+    }
+    (words, starts)
+}
+
+/// Small round 6 a: `MenuScene_TrackStep_00a7b510` over random key scripts
+/// (random operand lengths in `0x00c89c40`, random flags, waits, list
+/// entries and loop state), stepping each track up to 24 frames;
+/// `MenuScene_KeyPick` is a logging stand-in.
+fn small6_a(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call(f, Conv::Cdecl, args).unwrap().eax
+    };
+    let (log, cursor, cells) = small5_stubs(a, b, &[(0x00a7_b290, 5)]);
+    let base = alloc(a, b, 0x2000);
+    let table = alloc(a, b, 0x20);
+    let list = alloc(a, b, 0x200);
+    let track = alloc(a, b, 0x20);
+    let ops = a.rebase(scene::bridge::KEY_OP_WORDS);
+    let mut lens = [2u8, 2, 2, 2, 10, 10, 12, 12, 2, 2, 16];
+    for k in 0..300u32 {
+        if k % 3 == 1 {
+            for l in &mut lens {
+                *l = u8::try_from(2 + rng.next() % 15).unwrap();
+            }
+        } else if k % 3 == 2 {
+            lens = [2, 2, 2, 2, 10, 10, 12, 12, 2, 2, 16];
+        }
+        put(a, b, ops, lens);
+        let key = rng.next() % 4;
+        let (words, starts) = small6_script(rng, &lens);
+        let off = 0x10 + 0x800 * key + 2 * (rng.next() % 8);
+        for (i, w) in words.iter().enumerate() {
+            put(a, b, base + off + 2 * u32::try_from(i).unwrap(), *w);
+        }
+        for s in 0..4 {
+            put(a, b, table + 4 * s, if s == key { off } else { rng.next() });
+        }
+        let count = [0i32, 1, 2, 5, 8, -1][(rng.next() % 6) as usize];
+        put(a, b, list, count);
+        for e in 0..12 {
+            let id = [0u32, 1, 2, 3, 0xffff, 0x8000, rng.next()][(rng.next() % 7) as usize];
+            let flag = if rng.next().is_multiple_of(3) {
+                0x8000_0000
+            } else {
+                0
+            };
+            put(a, b, list + 4 + 20 * e, id & 0x7fff_ffff | flag);
+        }
+        let (pc, mark) = starts[(rng.next() as usize) % starts.len()];
+        put(a, b, track, key | rng.next() & 0xc000_0000);
+        let wait = if rng.next().is_multiple_of(4) {
+            (rng.next() % 3) as u16
+        } else {
+            0
+        };
+        put(a, b, track + 4, wait);
+        put(
+            a,
+            b,
+            track + 6,
+            [0u16, 1, 5, 0xffff, 0x8000][(rng.next() % 5) as usize],
+        );
+        put(a, b, track + 8, pc);
+        put(a, b, track + 0xa, (rng.next() & 0xffff) as u16);
+        put(
+            a,
+            b,
+            track + 0xc,
+            [0xffffu16, 0, 1, 3, 7, 0x8000][(rng.next() % 6) as usize],
+        );
+        put(a, b, track + 0xe, mark);
+        put(
+            a,
+            b,
+            track + 0x10,
+            [0u16, 1, 2, 0xffff][(rng.next() % 4) as usize],
+        );
+        let out = rng.next();
+        for frame in 0..24 {
+            put(a, b, cursor, log);
+            put(a, b, cells[0], rng.next());
+            if rng.next().is_multiple_of(5) {
+                let e = rng.next() % 12;
+                put(a, b, list + 4 + 20 * e, rng.next());
+            }
+            let args = [base, list, track, table, out];
+            let ra = eax(a, 0x00a7_b510, &args);
+            let rb = scene::bridge::menu_scene_track_step(b, args, call);
+            assert_eq!(ra, rb, "TrackStep {k} frame {frame}");
+            same_memory(&format!("small6 a {k} frame {frame}"), a, b);
+            settle(a, b);
+            if ra == 0 && rng.next().is_multiple_of(2) {
+                break;
+            }
+        }
+    }
+}
+
+#[test]
+fn small6_a_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    small6_a(&mut a, &mut b, &mut Xorshift(0x5a11_6a01));
+}
+
+#[test]
+fn small6_a_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    small6_a(&mut a, &mut b, &mut Xorshift(0x5a11_6a02));
+}

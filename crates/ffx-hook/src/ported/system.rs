@@ -1403,6 +1403,11 @@ ported! {
     MenuScene_KeyPick_00a7b290 @ 0x00a7_b290 => extern "C" fn menu_scene_key_pick(keys: u32, track: u32, frame: u32, frames: u32, out: u32) -> u32 {
         scene::bridge::menu_scene_key_pick(&mut mem(), [keys, track, frame, frames, out], call_sym, fcall)
     }
+    /// `MenuScene_TrackStep_00a7b510(base, list, track, table, out)`: 1, or 0
+    /// at the script's end (`TkMenuExecScene` and `0x00a7b360` read it).
+    MenuScene_TrackStep_00a7b510 @ 0x00a7_b510 => extern "C" fn menu_scene_track_step(base: u32, list: u32, track: u32, table: u32, out: u32) -> u32 {
+        scene::bridge::menu_scene_track_step(&mut mem(), [base, list, track, table, out], call_sym)
+    }
     /// `TOBtlSetLibraWindowParam(chr)` (callers drop `eax`).
     TOBtlSetLibraWindowParam @ 0x0089_a160 => extern "C" fn to_btl_set_libra_window_param(chr: u32) {
         btl::bridge::set_libra_window_param(&mut mem(), chr, call_sym);
