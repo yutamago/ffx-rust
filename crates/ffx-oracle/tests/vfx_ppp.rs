@@ -1140,3 +1140,606 @@ fn vfx_ppp_r1d_mdl_sea_draw_matches_the_original() {
         assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
     }
 }
+
+// ---- Tail3 draws (pppKeShpTail3Draw, pppKeShpTail3XDraw) -----------------
+
+/// The memory a `Tail3` draw reads besides the globals.
+struct Tail3World {
+    obj: u32,
+    key: u32,
+    ctrl: u32,
+    offs: u32,
+    env: u32,
+    env2: u32,
+    slots: u32,
+    set: u32,
+    part: u32,
+    rdata: u32,
+    parts: u32,
+    spr: u32,
+}
+
+/// One random `Tail3` draw that ends (no sizing or sprite loop without a
+/// bound: a count of 0 or a zero spacing get finite, shrinking steps).
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn tail3_case(p: &mut Pair, rng: &mut Xorshift, w: &Tail3World, cells: u32, x: bool) {
+    let float = |rng: &mut Xorshift, lo: f32, hi: f32| {
+        if rng.chance(3) {
+            rng.float()
+        } else {
+            ranged(rng, lo, hi)
+        }
+    };
+    let Tail3World {
+        obj,
+        key,
+        ctrl,
+        offs,
+        env,
+        env2,
+        slots,
+        set,
+        part,
+        rdata,
+        parts,
+        spr,
+    } = *w;
+    p.fill(obj, 0x500, rng);
+    p.fill(key, 0x60, rng);
+    p.fill(set, 0x200, rng);
+    p.fill(part, 0x80, rng);
+    p.fill(spr, 0x200, rng);
+    p.set(ctrl + 0xc, offs);
+    let off0 = rng.pick(&[0u32, 0x10]);
+    p.set(offs, off0);
+    p.set(offs + 4, rng.pick(&[0x300u32, 0x308]));
+    p.set(offs + 8, rng.next());
+    p.set(offs + 0xc, rng.pick(&[0x340u32, 0x380]));
+    for k in (0x10..0x50).step_by(4) {
+        let f = float(rng, -4.0, 4.0);
+        p.set(obj + k, f);
+    }
+    let area = obj + 0xa0 + off0;
+    // the ring: 28 points, the head
+    for i in 0..28u32 {
+        for k in 0..4 {
+            let f = float(rng, -30.0, 30.0);
+            p.set(area + 0x30 + 16 * i + 4 * k, f);
+        }
+    }
+    if rng.chance(15) {
+        let d = rng.pick(&[1.0f32, 2.0, 4.0]);
+        for i in 0..28u32 {
+            #[allow(clippy::cast_precision_loss)]
+            let v = d * i as f32;
+            p.set(area + 0x30 + 16 * i, v.to_bits());
+            p.set(area + 0x34 + 16 * i, 0u32);
+            p.set(area + 0x38 + 16 * i, 0u32);
+        }
+    }
+    let head = if rng.chance(25) { 27 } else { rng.below(28) };
+    p.set(area + 0x1f8, head as u8);
+    // the key: count, size, spacing
+    let shape = if x && rng.chance(5) {
+        0xffff
+    } else {
+        rng.below(8)
+    };
+    p.set(key + 4, shape);
+    let mut count = rng.pick(&[1u32, 2, 2, 3, 4, 5, 8, 12, 16, 40]);
+    let mut size = float(rng, -2.0, 3.0);
+    let mut to = float(rng, -1.0, 2.0);
+    let mut l = match rng.below(20) {
+        0 => rng.pick(&[0u32, 0x8000_0000]),
+        1 => float(rng, -20.0, 0.0),
+        _ => float(rng, 0.0, 150.0),
+    };
+    if rng.chance(15) {
+        l = rng.pick(&[1.0f32, 2.0, 3.0, 4.0, 8.0]).to_bits();
+        size = 1.0f32.to_bits();
+        to = rng.pick(&[0.0f32, 0.5, 1.0]).to_bits();
+    }
+    if rng.chance(5) {
+        // no count: the spacing alone ends the loops
+        count = 0;
+        size = ranged(rng, 0.5, 2.0);
+        to = (f32::from_bits(size) + f32::from_bits(ranged(rng, 0.5, 2.0))).to_bits();
+        l = ranged(rng, 1.0, 100.0);
+    }
+    if f32::from_bits(l) == 0.0 {
+        // a zero spacing leaves no count: the steps must be numbers
+        count = count.max(2);
+        size = ranged(rng, 0.5, 2.0);
+        to = ranged(rng, -1.0, 2.0);
+    }
+    p.set(key + 0xc, size);
+    p.set(key + 0x10, to);
+    let k14 = float(rng, -1.0, 2.0);
+    p.set(key + 0x14, k14);
+    p.set(key + 0x18, l);
+    p.set(key + 0x1c, count as u8);
+    p.set(key + 0x1d, rng.pick(&[0u8, 0, 1, 0x80]));
+    p.set(key + 0x1e, rng.pick(&[0u16, 0, 1, 0x8000]));
+    for k in 0x50..0x53 {
+        p.set(key + k, rng.pick(&[0u8, 0, 1, 0x80]));
+    }
+    // the shape set: frames, per frame a data offset and length
+    p.set(env, env2);
+    p.set(env2 + 0x24, slots);
+    for i in 0..8u32 {
+        p.set(slots + 4 * i, set);
+    }
+    p.set(set + 6, rng.pick(&[1i16, 2, 3, 5, 8, 10]));
+    let len = match rng.below(10) {
+        0 => rng.pick(&[-1i16, -0x100, i16::MIN]),
+        1 => 1,
+        _ => 1 + rng.below(0x40) as i16,
+    };
+    p.set(set + 0x12, len);
+    for f in 0..10u32 {
+        let e = set + 8 * f;
+        let to = if rng.chance(20) { -0x80 } else { 0x100 };
+        p.set(e + 0x10, to + 8 * rng.below(8) as i16);
+    }
+    for k in (0x100..0x180).step_by(4) {
+        p.set(set + k, rng.below(0x40));
+        p.set(set + k - 0x180, rng.below(0x40));
+    }
+    // the part's scales, the view matrix, the emulated VU0 registers
+    for k in (0x60..0x70).step_by(4) {
+        let f = float(rng, -3.0, 3.0);
+        p.set(part + k, f);
+    }
+    p.set(p.sym(0x0230_ffe4), part);
+    p.set(p.sym(0x00c3_a4cc), env); // g_pppEnvSlot
+    let view = p.sym(0x0230_ff20);
+    for k in (0..0x40).step_by(4) {
+        let f = float(rng, -2.0, 2.0);
+        p.set(view + k, f);
+    }
+    let vu = p.sym(0x00c8_f780);
+    for k in (0..0x220).step_by(4) {
+        let f = float(rng, -2.0, 2.0);
+        p.set(vu + k, f);
+    }
+    let vf00 = p.sym(0x00c0_a004);
+    p.set(vf00, rng.pick(&[0u32, 0x3f80_0000]));
+    let w1 = ranged(rng, -2.0, 2.0);
+    p.set(vf00 + 0xc, rng.pick(&[0x3f80_0000u32, w1]));
+    if !p.snapshot() {
+        // the sine table: random values (the image's is filled at start)
+        let sin = p.sym(0x00c4_4bf0);
+        for k in (0..0x4000).step_by(4) {
+            let f = ranged(rng, -1.0, 1.0);
+            p.set(sin + k, f);
+        }
+    }
+    p.set(op_top(p), 0i8);
+    p.set(p.sym(0x0119_fe10), spr);
+    p.set(p.sym(0x0230_fd2c), rng.next());
+    let any = rng.below(0x10);
+    p.set(p.sym(0x0230_fd20), rng.pick(&[0u32, 8, 0x8000_0001, any]));
+    let stop = if rng.chance(10) {
+        rng.pick(&[1u32, 2, 0x100, 0x8000_0000])
+    } else {
+        0
+    };
+    p.set(p.sym(0x0230_fd34), stop);
+    let skip = if rng.chance(8) {
+        rng.pick(&[1u32, 0x40, 0x8000_0000])
+    } else {
+        0
+    };
+    p.set(p.sym(0x012f_b7d0), skip);
+    // the renderer's answers
+    let (rd, dyn_geo, alpha, shp_alpha) = (cells, cells + 4, cells + 8, cells + 0xc);
+    p.set(rd, if rng.chance(30) { 0 } else { rdata });
+    p.set(rdata + 0x90, rng.pick(&[0i32, 1, 1, 2, 3, -1]));
+    p.set(rdata + 0x94, parts);
+    p.fill(parts, 0x6c * 4, rng);
+    p.set(dyn_geo, u32::from(!rng.chance(10)));
+    p.set(alpha, rng.next());
+    p.set(shp_alpha, rng.next());
+}
+
+/// Puts a stub in front of the stand-in `sym` jumps to that adds 1 to
+/// each word at `words` (globals) first.
+fn clobber_before(p: &mut Pair, sym: u32, words: &[u32]) {
+    let at = p.sym(sym);
+    let rel: u32 = p.get(at + 1);
+    let target = at.wrapping_add(5).wrapping_add(rel);
+    let mut c = Vec::new();
+    for &w in words {
+        c.extend([0xff, 0x05]); // inc dword [w]
+        c.extend(p.sym(w).to_le_bytes());
+    }
+    let code = p.a.alloc_code(&[0; 64]).unwrap();
+    assert_eq!(p.b.alloc_code(&[0; 64]).unwrap(), code);
+    c.push(0xe9); // jmp target
+    let end = code + u32::try_from(c.len()).unwrap() + 4;
+    c.extend(target.wrapping_sub(end).to_le_bytes());
+    p.a.write(code, &c).unwrap();
+    p.b.write(code, &c).unwrap();
+    let mut j = vec![0xe9]; // jmp code
+    j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+}
+
+/// `g_OpSprTop` (the `op_spr_alloc` stack's top index).
+fn op_top(p: &Pair) -> u32 {
+    p.sym(0x0233_2ea1)
+}
+
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn vfx_ppp_r2a_shp_tail3_draws_match_the_original() {
+    use tail::bridge as t;
+    let draws = [
+        ("pppKeShpTail3Draw", 0x0075_0620u32, t::TAIL3),
+        ("pppKeShpTail3XDraw", 0x0075_1fc0, t::TAIL3_X),
+    ];
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_0620);
+        let cells = p.alloc(0x10);
+        let logs = [
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(cells)),
+            far_recorder(&mut p, 0x0071_3290, &[0, 0], None),
+            far_recorder(&mut p, 0x0071_2bd0, &[0, 0, 0, 0], None),
+            far_recorder(&mut p, 0x0063_fdb0, &[0, 0, 0, 0], Some(cells + 4)),
+            shape_field_update_recorder(&mut p, 0x0071_a4e0),
+            far_recorder(&mut p, 0x0064_58a0, &[0, 0], None),
+            far_recorder(&mut p, 0x0064_4b10, &[0, 0], None),
+            far_recorder(&mut p, 0x0071_13d0, &[0; 5], None),
+            far_recorder(&mut p, 0x0071_2c30, &[0], Some(cells + 8)),
+            far_recorder(&mut p, 0x0071_6550, &[0], Some(cells + 0xc)),
+        ];
+        // the renderer's update uses the emulated VU0 registers too: its
+        // stand-in changes some the `X` draw reloads after each sprite
+        clobber_before(
+            &mut p,
+            0x0071_a4e0,
+            &[
+                0x00c8_f834,
+                0x00c8_f7f4,
+                0x00c8_f938,
+                0x00c8_f944,
+                0x00c8_f958,
+            ],
+        );
+        let w = Tail3World {
+            obj: p.alloc(0x500),
+            key: p.alloc(0x60),
+            ctrl: p.alloc(0x10),
+            offs: p.alloc(0x10),
+            env: p.alloc(4),
+            env2: p.alloc(0x40),
+            slots: p.alloc(0x40),
+            set: p.alloc(0x280) + 0x80,
+            part: p.alloc(0x80),
+            rdata: p.alloc(0xa0),
+            parts: p.alloc(0x6c * 4),
+            spr: p.alloc(0x200),
+        };
+        let mut seen = [0u32; 4];
+        for round in 0..3000u32 {
+            let (name, sym, v) = draws[rng.below(2) as usize];
+            tail3_case(&mut p, &mut rng, &w, cells, v.x);
+            let words = 3;
+            let entry = p.b.stack_range().end - 0x100 - 4 * words - 4 - 0x200 - 4 * words - 4;
+            let frame = (entry - 12) & !0xf;
+            // the request's bytes neither side writes, and the stack
+            // words the draw reads unwritten: alike in both
+            let req = frame - v.req;
+            let (s1, s2) = (rng.next(), rng.next());
+            p.set(req, s1);
+            p.set(req + 0x18, s2);
+            for o in v.stale {
+                let s = if rng.chance(50) {
+                    rng.float()
+                } else {
+                    rng.next()
+                };
+                p.set(frame - o, s);
+            }
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            seen[usize::from(v.x)] += 1;
+            let (obj, key, ctrl) = (w.obj, w.key, w.ctrl);
+            check_deep_aligned(
+                &mut p,
+                &format!("{name} round {round}"),
+                sym,
+                &[obj, key, ctrl],
+                |o, frame| {
+                    t::ppp_ke_shp_tail3_draw(
+                        o,
+                        &v,
+                        obj,
+                        key,
+                        ctrl,
+                        frame,
+                        &mut call_original,
+                        &mut |o, f, a| o.call_f64(f, a).unwrap(),
+                    );
+                },
+            );
+            let updates: u32 = p.get(logs[4]);
+            seen[2 + usize::from(updates > 2)] += 1;
+        }
+        assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
+    }
+}
+
+// ---- pppKeShpTailPhtDraw -------------------------------------------------
+
+/// A stand-in at `sym` (through a jump) that logs the `words` words its
+/// first argument points at (0x80 bytes per call, after the count) and
+/// returns the word at `ret` (or the count).
+fn block_recorder(p: &mut Pair, sym: u32, words: u8, ret: Option<u32>) -> u32 {
+    assert!(words <= 32);
+    let log = p.alloc(4 + 0x80 * 0x100);
+    let slot = log + 4;
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x07]); // shl ecx, 7
+    c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp + 4]
+    for k in 0..words {
+        c.extend([0x8b, 0x42, 4 * k]); // mov eax, [edx + 4k]
+        c.extend([0x89, 0x81]); // mov [ecx + slot + 4k], eax
+        c.extend((slot + 4 * u32::from(k)).to_le_bytes());
+    }
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.push(0xa1); // mov eax, [ret] or [count]
+    c.extend(ret.unwrap_or(log).to_le_bytes());
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+/// An `Sg_GetDBuffDC(out)` stand-in: `*out` = the word at `half`,
+/// returns the word at `dc`.
+fn dbuff_stub(p: &mut Pair, half: u32, dc: u32) {
+    let mut c = vec![0x8b, 0x54, 0x24, 0x04]; // mov edx, [esp + 4]
+    c.push(0xa1); // mov eax, [half]
+    c.extend(half.to_le_bytes());
+    c.extend([0x89, 0x02]); // mov [edx], eax
+    c.push(0xa1); // mov eax, [dc]
+    c.extend(dc.to_le_bytes());
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(0x0082_0530);
+    let mut j = vec![0xe9];
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::similar_names
+)]
+fn vfx_ppp_r2b_shp_tail_pht_draw_matches_the_original() {
+    use tail::bridge as t;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_4300);
+        let cells = p.alloc(0x20);
+        let (rd, dyn_geo, alpha, half, dc, gif) = (
+            cells,
+            cells + 4,
+            cells + 8,
+            cells + 0x10,
+            cells + 0x14,
+            cells + 0x18,
+        );
+        dbuff_stub(&mut p, half, dc);
+        let logs = [
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rd)),
+            far_recorder(&mut p, 0x0071_3290, &[0, 0], None),
+            far_recorder(&mut p, 0x0071_2bd0, &[0, 0, 0, 0], None),
+            far_recorder(&mut p, 0x0063_fdb0, &[0, 0, 0, 0], Some(dyn_geo)),
+            shape_field_update_recorder(&mut p, 0x0071_a4e0),
+            far_recorder(&mut p, 0x0064_58a0, &[0, 0], None),
+            far_recorder(&mut p, 0x0064_4b10, &[0, 0], None),
+            far_recorder(&mut p, 0x0071_13d0, &[0; 5], None),
+            far_recorder(&mut p, 0x0071_2c30, &[0], Some(alpha)),
+            block_recorder(&mut p, 0x0076_8d30, 24, None),
+            block_recorder(&mut p, 0x0076_7790, 24, Some(gif)),
+            far_recorder(&mut p, 0x007e_c420, &[0, 0, 0, 0], None),
+        ];
+        let (obj, key, ctrl, offs) = (p.alloc(0x500), p.alloc(0x70), p.alloc(0x10), p.alloc(0x10));
+        let (env, env2, slots) = (p.alloc(4), p.alloc(0x40), p.alloc(0x40));
+        let set = p.alloc(0x280) + 0x80;
+        let (part, rdata, parts, dcb) =
+            (p.alloc(0x80), p.alloc(0xa0), p.alloc(0x10), p.alloc(0x300));
+        let float = |rng: &mut Xorshift, lo: f32, hi: f32| {
+            if rng.chance(3) {
+                rng.float()
+            } else {
+                ranged(rng, lo, hi)
+            }
+        };
+        let mut seen = [0u32; 4];
+        for round in 0..2500u32 {
+            p.fill(obj, 0x500, &mut rng);
+            p.fill(key, 0x70, &mut rng);
+            p.fill(set, 0x200, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            p.fill(dcb, 0x300, &mut rng);
+            p.set(ctrl + 0xc, offs);
+            let off0 = rng.pick(&[0u32, 0x10]);
+            p.set(offs, off0);
+            p.set(offs + 4, rng.pick(&[0x300u32, 0x308]));
+            p.set(offs + 8, rng.pick(&[0x340u32, 0x380]));
+            for k in (0x10..0x50).step_by(4) {
+                let f = float(&mut rng, -4.0, 4.0);
+                p.set(obj + k, f);
+            }
+            let area = obj + 0xa0 + off0;
+            for i in 0..27u32 {
+                for k in 0..4 {
+                    let f = float(&mut rng, -30.0, 30.0);
+                    p.set(area + 0x30 + 16 * i + 4 * k, f);
+                }
+            }
+            if rng.chance(15) {
+                let d = rng.pick(&[1.0f32, 2.0, 4.0]);
+                for i in 0..27u32 {
+                    #[allow(clippy::cast_precision_loss)]
+                    let v = d * i as f32;
+                    p.set(area + 0x30 + 16 * i, v.to_bits());
+                    p.set(area + 0x34 + 16 * i, 0u32);
+                    p.set(area + 0x38 + 16 * i, 0u32);
+                }
+            }
+            let head = if rng.chance(25) { 26 } else { rng.below(27) };
+            p.set(area + 0x1f4, head as u8);
+            let up = float(&mut rng, -10.0, 10.0);
+            p.set(area + 0x1e0, up);
+            for k in (0x340..0x3c0).step_by(4) {
+                let f = float(&mut rng, -2.0, 2.0);
+                p.set(obj + 0xa0 + k, f);
+            }
+            // the key
+            let shape = if rng.chance(5) { 0xffff } else { rng.below(8) };
+            p.set(key + 4, shape);
+            let mut count = rng.pick(&[1u32, 2, 2, 3, 4, 5, 8, 12, 16, 40]);
+            let mut size = float(&mut rng, -2.0, 3.0);
+            let mut to = float(&mut rng, -1.0, 2.0);
+            let mut l = match rng.below(20) {
+                0 => rng.pick(&[0u32, 0x8000_0000]),
+                1 => float(&mut rng, -20.0, 0.0),
+                _ => float(&mut rng, 0.0, 150.0),
+            };
+            if rng.chance(15) {
+                l = rng.pick(&[1.0f32, 2.0, 3.0, 4.0, 8.0]).to_bits();
+                size = 1.0f32.to_bits();
+                to = rng.pick(&[0.0f32, 0.5, 1.0]).to_bits();
+            }
+            if rng.chance(5) {
+                count = 0;
+                size = ranged(&mut rng, 0.5, 2.0);
+                to = (f32::from_bits(size) + f32::from_bits(ranged(&mut rng, 0.5, 2.0))).to_bits();
+                l = ranged(&mut rng, 1.0, 100.0);
+            }
+            if f32::from_bits(l) == 0.0 {
+                count = count.max(2);
+                size = ranged(&mut rng, 0.5, 2.0);
+                to = ranged(&mut rng, -1.0, 2.0);
+            }
+            p.set(key + 0xc, size);
+            p.set(key + 0x10, to);
+            let k14 = float(&mut rng, -1.0, 2.0);
+            p.set(key + 0x14, k14);
+            p.set(key + 0x18, l);
+            for k in [0x28u32, 0x2c] {
+                let f = float(&mut rng, -3.0, 3.0);
+                p.set(key + k, f);
+            }
+            p.set(key + 0x60, count as u8);
+            for k in 0x61..0x65 {
+                p.set(key + k, rng.pick(&[0u8, 0, 1, 0x80, 0xff]));
+            }
+            // the shape set
+            p.set(env, env2);
+            p.set(env2 + 0x24, slots);
+            for i in 0..8u32 {
+                p.set(slots + 4 * i, set);
+            }
+            p.set(set + 6, rng.pick(&[1i16, 2, 3, 5, 8, 10]));
+            let len = match rng.below(10) {
+                0 => rng.pick(&[-1i16, -0x100, i16::MIN]),
+                1 => 1,
+                _ => 1 + rng.below(0x40) as i16,
+            };
+            p.set(set + 0x12, len);
+            for f in 0..10u32 {
+                let to = if rng.chance(20) { -0x80 } else { 0x100 };
+                p.set(set + 8 * f + 0x10, to + 8 * rng.below(8) as i16);
+            }
+            for k in (0x100..0x180).step_by(4) {
+                p.set(set + k, rng.below(0x40));
+                p.set(set + k - 0x180, rng.below(0x40));
+            }
+            for k in (0x60..0x70).step_by(4) {
+                let f = float(&mut rng, -3.0, 3.0);
+                p.set(part + k, f);
+            }
+            p.set(p.sym(0x0230_ffe4), part);
+            p.set(p.sym(0x00c3_a4cc), env);
+            let view = p.sym(0x0230_ff20);
+            for k in (0..0x40).step_by(4) {
+                let f = float(&mut rng, -2.0, 2.0);
+                p.set(view + k, f);
+            }
+            if !p.snapshot() {
+                let sin = p.sym(0x00c4_4bf0);
+                for k in (0..0x4000).step_by(4) {
+                    let f = ranged(&mut rng, -1.0, 1.0);
+                    p.set(sin + k, f);
+                }
+            }
+            p.set(p.sym(0x0230_fd2c), rng.next() & !0xf);
+            let any = rng.below(0x10);
+            p.set(p.sym(0x0230_fd20), rng.pick(&[0u32, 8, 0x8000_0001, any]));
+            p.set(rd, if rng.chance(30) { 0 } else { rdata });
+            p.set(rdata + 0x94, parts);
+            p.fill(parts, 0x10, &mut rng);
+            p.set(dyn_geo, u32::from(!rng.chance(10)));
+            p.set(alpha, rng.next());
+            let hv = rng.next();
+            p.set(half, hv);
+            p.set(dc, dcb);
+            p.set(gif, if rng.chance(50) { 0 } else { rng.next() });
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            // the frame starts alike in both: the words the draw reads
+            // unwritten (the record's +0x2c)
+            let words = 3;
+            let entry = p.b.stack_range().end - 0x100 - 4 * words - 4 - 0x200 - 4 * words - 4;
+            let frame = (entry - 12) & !0xf;
+            for o in (4..0x250).step_by(4) {
+                let v = if rng.chance(50) {
+                    rng.next()
+                } else {
+                    ranged(&mut rng, -1e5, 1e5)
+                };
+                p.set(frame - o, v);
+            }
+            seen[usize::from(shape == 0xffff)] += 1;
+            check_deep_aligned(
+                &mut p,
+                &format!("pppKeShpTailPhtDraw round {round}"),
+                0x0075_4300,
+                &[obj, key, ctrl],
+                |o, frame| {
+                    t::ppp_ke_shp_tail_pht_draw(
+                        o,
+                        obj,
+                        key,
+                        ctrl,
+                        frame,
+                        &mut call_original,
+                        &mut |o, f, a| o.call_f64(f, a).unwrap(),
+                    );
+                },
+            );
+            let ot: u32 = p.get(logs[11]);
+            seen[2 + usize::from(ot > 0)] += 1;
+        }
+        assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
+    }
+}

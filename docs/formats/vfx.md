@@ -405,6 +405,81 @@ the lengths end them then.
   the next frame, and past the set's count (`i16 +6`) frame 0 when the
   entry's byte `+0x14` has bit 7, else the last frame held.
 
+## `Tail3` draws (`pppKeShpTail3Draw`, `pppKeShpTail3XDraw`)
+
+Ported in `crates/ffx-vfx/src/tail.rs` (`ppp_ke_shp_tail3_draw`, one
+function for both, the differences in `Tail3`). Work area 0 holds two
+colours (four `i16` each at `+0` and `+8`), a ring of 28 16-byte points
+from `+0x30` (head byte `+0x1f8`; the walk goes `head + 1, ...` and wraps
+after entry 27), a time `i32 +0x1f0` (stepped by key `i32 +8` unless
+`g_pppStopStatus`) and a random seed `u16 +0x1f6`.
+
+| Draw | Address | Helpers |
+| --- | --- | --- |
+| `pppKeShpTail3Draw` | `0x00750620` | `0x007501d0` sub, `0x00750130` ftoi, `0x00751740` load, `0x00751680` copy |
+| `pppKeShpTail3XDraw` | `0x00751fc0` | `0x007519d0`, `0x00751930`, `0x00751ab0`, `0x00753080` |
+
+- `n` = key byte `+0x1c`; colours `(c * u16 part[+0x70 + 2k])` times the
+  `f64` 2^-19 at `0x00b51650` (`X`: the integer `>> 19`), the alphas times
+  work area 1's `i16 +6` / 2^14; the size from key `+0xc` to `+0x10`, the
+  spacing key `+0x18` (spacing times step / start, unrounded; a spacing of
+  exactly 0 sets `n` to 0 as in the other tails).
+- Random numbers: `r = (r * 0x80d + 7) & 0xffff` from the seed, once per
+  sprite (the sizing pass runs the same sequence). The sprite's shape
+  frame is `((time + r) / len) % frames` (`div` on `u32`, `len` = `i16 set
+  +0x12` and `frames` = `i16 set +6` sign-extended; a zero divisor faults
+  in the original), its size `size * f32(1 - f32(r / 65535.0) * key
+  +0x14)`, and with key `i16 +0x1e` its rows 0 and 1 turn by `r` through
+  `g_pppSinTable` (`[(r >> 4) & 0xfff]`, cosine `(r + 0x4000)`).
+- The matrix is built in the emulated VU0 registers (`0x00c8f790` the
+  accumulator, `0x00c8f7b0..0x00c8f7ef` the sprite's matrix, the part's
+  scales at `0x00c8f7f0`, the view matrix at `0x00c8f830`, segment
+  `B`/`D`/`A`/point at `0x00c8f930..0x00c8f96f`) and copied to the
+  `op_spr_alloc(0x180)` block's `+0xc0`, which the request points at.
+  Row 2 (`0x00c8f7d0`) is whatever the register holds.
+- Key byte `+0x1d` draws the first sprite at the head. `X`: no stop or
+  skip-frame gates at the start (but shape `0xffff` ends it), request
+  flags from key bytes `+0x50..+0x52` (`0x880`, `| 0x400`, work area 3 as
+  the second matrix), the render data asked for at each use, one buffer
+  per segment (`[rd + 0x90]` of them, `0x6c` apart from `[rd + 0x94]`),
+  and the registers reloaded from the block after each sprite.
+- When `graphicDynGeoMemManagerGetBufferForSegment` gives none, the draw
+  returns at once without `op_spr_free`.
+- Stale stack: `g_Vu0_VfMove`'s `y`, `z`, `w` and `0x00c8f8f8`,
+  `0x00c8f8fc` come from frame words the draws never write first (plain:
+  `ebp - 0x10` (the last turn's cosine once a sprite turned), `- 0xc`,
+  `- 0x8`; `X`: `ebp - 0x16c`, `- 0x168`, `- 0x164`, set by the walk along
+  the ring). They are scratch registers the draw overwrites before
+  reading; the port's shim reads 0 there.
+
+## `pppKeShpTailPhtDraw` (`0x00754300`)
+
+Ported in `crates/ffx-vfx/src/tail.rs` (`ppp_ke_shp_tail_pht_draw`). The
+`Tail3` scheme on a 27-entry ring (work area 0 `+0x30`, head `+0x1f4`,
+time `i32 +0x1ec`, seed `u16 +0x1f2`; key count byte `+0x60`, `+0x61`
+first sprite at the head, `+0x62` turn), with these differences:
+
+- Colours are work area 0's `i16 >> 7` (arithmetic, as `f32`); the alphas
+  times work area 1's fourth `>> 7` times the `f64` 1/128 at `0x00b170b8`.
+- The sprite's matrix is a frame local (`ebp - 0x98`, unit to start): the
+  object's rows 0 and 1 times `f32(part[+0x60] * size * share)` and
+  `f32(size * part[+0x64] * share)`; the turn multiplies it
+  (`vu_mul_matrix_00753670`) by a z rotation `[c, s; -s, c]`.
+- Each sprite also fills a distortion-sprite record at `ebp - 0x160` for
+  `KeDttSpr_MkGifPk_Pre` and `KeDttSpr_MkGifPk`: `+0` the point through
+  `g_pppViewMatrix`, `+0x10` work area 1's colour (`>> 7`) with `+0x1c` the
+  sprite's alpha, `+0x20`/`+0x28` `g_pppScreenMatrix`, `+0x24` the packet
+  position `+ 0x10`, `+0x30` `(0, -area0[+0x1e0], 0, 0)` through work
+  area 2's matrix with `+0x3c` key byte `+0x64`, `+0x40` the frame
+  buffer's TEX0 (`Sg_GetDBuffDC`, the half by key byte `+0x63` plus the
+  buffer index; `((psm | 0x2a80) << 6 | fbw) << 14 | tbp << 5` from
+  `[dc + 0x60]`), `+0x48` `[dc + 0x84]` sign-extended, `+0x50`/`+0x54`
+  `[dc + 0x78]`/`[dc + 0x7c]`, `+0x58`/`+0x5c` key `+0x28`/`+0x2c` times
+  the part's scales, the size and the share. A nonzero `KeDttSpr_MkGifPk`
+  (never on PC) puts the packet into the ordering table at depth
+  `record[+0x2c] / 12288`, a word the draw never writes.
+- No `op_spr_alloc` block, no stop or skip gates; the time always steps.
+
 ## Saved VU0 state (`pppKeShpTail3`, `pppKeShpTail3X`)
 
 The tail draws save the emulated VU0 registers they use and restore them

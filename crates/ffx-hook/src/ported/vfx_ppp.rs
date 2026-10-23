@@ -48,7 +48,51 @@ fn shp_tail(v: &tail::bridge::Tail, obj: u32, key: u32, ctrl: u32) {
     std::hint::black_box(&mut locals.0);
 }
 
+/// `pppKeShpTail3*Draw`: the request, vectors and matrices in a 16-aligned
+/// block, as the original aligns its frame. The block starts zeroed: the
+/// words the original reads there unwritten (stale stack, scratch VU0
+/// registers only) come out 0.
+fn shp_tail3(v: &tail::bridge::Tail3, obj: u32, key: u32, ctrl: u32) {
+    let mut locals = Locals::<0x1b0>::new();
+    let ebp = locals.ebp();
+    tail::bridge::ppp_ke_shp_tail3_draw(
+        &mut mem(),
+        v,
+        obj,
+        key,
+        ctrl,
+        ebp,
+        &mut |_, f, a| call_ptr(f, a),
+        &mut |_, f, a| call_ptr_f64(f, a),
+    );
+    std::hint::black_box(&mut locals.0);
+}
+
 ported! {
+    /// `pppKeShpTail3Draw(obj, key, ctrl)`.
+    pppKeShpTail3Draw @ 0x0075_0620 => extern "C" fn ppp_ke_shp_tail3_draw(obj: u32, key: u32, ctrl: u32) {
+        shp_tail3(&tail::bridge::TAIL3, obj, key, ctrl);
+    }
+    /// `pppKeShpTail3XDraw(obj, key, ctrl)`.
+    pppKeShpTail3XDraw @ 0x0075_1fc0 => extern "C" fn ppp_ke_shp_tail3_x_draw(obj: u32, key: u32, ctrl: u32) {
+        shp_tail3(&tail::bridge::TAIL3_X, obj, key, ctrl);
+    }
+    /// `pppKeShpTailPhtDraw(obj, key, ctrl)`: the request, vectors,
+    /// matrices and the distortion sprite's record in a 16-aligned block.
+    pppKeShpTailPhtDraw @ 0x0075_4300 => extern "C" fn ppp_ke_shp_tail_pht_draw(obj: u32, key: u32, ctrl: u32) {
+        let mut locals = Locals::<0x250>::new();
+        let ebp = locals.ebp();
+        tail::bridge::ppp_ke_shp_tail_pht_draw(
+            &mut mem(),
+            obj,
+            key,
+            ctrl,
+            ebp,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, f, a| call_ptr_f64(f, a),
+        );
+        std::hint::black_box(&mut locals.0);
+    }
     /// `pppKeShpTailDraw(obj, key, ctrl)`.
     pppKeShpTailDraw @ 0x0074_c570 => extern "C" fn ppp_ke_shp_tail_draw(obj: u32, key: u32, ctrl: u32) {
         shp_tail(&tail::bridge::TAIL, obj, key, ctrl);
