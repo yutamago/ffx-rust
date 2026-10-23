@@ -1920,4 +1920,446 @@ pub mod bridge {
         h.write(g.wrapping_add(0x115bb), 0u8);
         g
     }
+
+    // ---- pc round 4: eiAbmStart
+
+    /// `g_AbmapRunning` (`0x01a85f70`) and `g_AbmapCjkText` (`0x01a85f74`:
+    /// Japanese, Korean or Chinese text, narrower menu frames).
+    pub const RUNNING: Global<u32> = Global::new(0x01a8_5f70);
+    pub const CJK_TEXT: Global<u32> = Global::new(0x01a8_5f74);
+    /// The two 0x200-byte work blocks `eiAbmStart` allocates last.
+    pub const START_BLOCKS: [u32; 2] = [0x01a8_60ec, 0x01a8_60f0];
+    /// `pppInitEnv`'s environment, data (a word read from `0x02305800`)
+    /// and memory (0x7d000 bytes) for the grid's effects.
+    pub const PPP_ENV: u32 = 0x01a8_6034;
+    pub const PPP_DATA: u32 = 0x0230_5800;
+    pub const PPP_MEMORY: u32 = 0x016c_1870;
+    pub const PPP_MEMORY_SIZE: u32 = 0x7_d000;
+    /// What `eiAbmStart` stores at `g_Abmap + 0x11668`.
+    pub const LINK_WORK: u32 = 0x0169_31a0;
+    /// The callees of `eiAbmStart` (all called through the game).
+    pub const GET_FFX_LANG: u32 = 0x008a_c2f0;
+    pub const INIT_LPAMNG: u32 = 0x00a5_72e0;
+    pub const LOAD_OEF: u32 = 0x00a5_7620;
+    pub const LOAD_ABMAP: u32 = 0x00a4_5570;
+    pub const TRANS_FACE_PLY_TEX: u32 = 0x0090_1100;
+    pub const SAVE_PLY_JOINED: u32 = 0x0078_53a0;
+    pub const INIT_PLY_TAG: u32 = 0x00a5_7f80;
+    pub const LOAD_SAVE_ABMAP: u32 = 0x00a4_9590;
+    pub const POSITION_PLY_TAG: u32 = 0x00a5_8080;
+    pub const CALC_LINK_POINTS: u32 = 0x00a5_a800;
+    pub const RESET_VECTORS: u32 = 0x00a5_7120;
+    pub const RESET_CURSOR_CAMERA: u32 = 0x00a5_b030;
+    pub const PPP_INIT_ENV: u32 = 0x0071_69d0;
+    pub const SAVE_CONFIG_HIRAGANA: u32 = 0x0078_51f0;
+    pub const MENU_GET_TEXT: u32 = 0x0078_fcf0;
+    pub const DEBUG_EXIT_TRACE: u32 = 0x0062_f510;
+    pub const FILL_USE_ITEM_MENU: u32 = 0x00a4_5fd0;
+    pub const FILL_COMMAND_MENU: u32 = 0x00a4_59e0;
+    pub const GRAPHIC_ABMAP_CREATE: u32 = 0x0063_8f90;
+    pub const DEACTIVATE_LOADING_SCREEN: u32 = 0x0063_de40;
+    pub const SET_FLIP_VSYNC: u32 = 0x0064_30e0;
+    /// `"addMenuPrim error!!!  menu->mprimn >= MAXMENUPRIM\n"`.
+    pub const MENU_PRIM_ERROR: u32 = 0x00b7_b558;
+
+    /// A store of a menu panel's set-up, at an offset into `g_AbmapPad`.
+    #[derive(Clone, Copy)]
+    enum Set {
+        W(u32, u32),
+        H(u32, u16),
+        B(u32, u8),
+        /// A function's address (relocated).
+        F(u32, u32),
+    }
+
+    use Set::{B, F, H, W};
+
+    /// The pad entry callbacks the panels get.
+    const DRAW_HELP_E: u32 = 0x00a4_f930;
+    const MENU_HELP: u32 = 0x00a5_70a0;
+    const DRAW_ITEM: u32 = 0x00a4_f630;
+    const ITEM_HELP: u32 = 0x00a5_7040;
+    const DRAW_TEXT: u32 = 0x00a4_f9e0;
+    const DRAW_STAT: u32 = 0x00a4_fa30;
+    const DRAW_ICON: u32 = 0x00a4_f250;
+    const DRAW_ICON_COPY: u32 = 0x00a4_f9a0;
+    const DRAW_HELP_5: u32 = 0x00a4_fb70;
+
+    /// The cleared words of a panel at `p` (`+0x18`, `+0x24`, `+0x25`,
+    /// `+0x28`, `+0x34` and, with `help`, `+0x3c`).
+    const fn cleared(p: u32, help: bool) -> [Set; 6] {
+        [
+            W(p + 0x18, 0),
+            H(p + 0x25, 0),
+            B(p + 0x24, 0),
+            B(p + 0x28, 0),
+            W(p + 0x34, 0),
+            if help { W(p + 0x3c, 0) } else { W(p + 0x34, 0) },
+        ]
+    }
+
+    /// A panel's frame: `pos` and `size` (packed `y << 16 | x`) at `+0`/`+8`
+    /// and `+4`/`+0xc`, the grid at `+0x10`/`+0x14`.
+    const fn frame(p: u32, pos: u32, size: u32, grid: u32) -> [Set; 6] {
+        [
+            W(p + 8, pos),
+            W(p + 0xc, size),
+            W(p, pos),
+            W(p + 4, size),
+            W(p + 0x14, grid),
+            W(p + 0x10, grid),
+        ]
+    }
+
+    /// The same without the position (the caller set it).
+    const fn frame_size(p: u32, size: u32, grid: u32) -> [Set; 4] {
+        [
+            W(p + 0xc, size),
+            W(p + 4, size),
+            W(p + 0x14, grid),
+            W(p + 0x10, grid),
+        ]
+    }
+
+    fn apply(h: &mut impl ffx_bridge::Host, pad: u32, sets: &[Set]) {
+        for &s in sets {
+            match s {
+                W(o, v) => h.write(pad.wrapping_add(o), v),
+                H(o, v) => h.write(pad.wrapping_add(o), v),
+                B(o, v) => h.write(pad.wrapping_add(o), v),
+                F(o, f) => {
+                    let f = h.rebase(f);
+                    h.write(pad.wrapping_add(o), f);
+                }
+            }
+        }
+    }
+
+    /// `addMenuPrim(panel, MsMenuGetText(group, text, hiragana), id)` as
+    /// `eiAbmStart` inlines it: the text (`MsGetSaveConfigHiragana() & 1`
+    /// picks the script) appended to the panel at `g_AbmapPad + panel`
+    /// (`i16 +0x1e` the count, at most 0x40; `+0x28` set when it passes
+    /// rows `u8 +0x22` times columns `i16 +0x16`; 12-byte entries from
+    /// `+0x40`: text, byte 0, id). A full panel prints the original's
+    /// error and calls `debug_exit_trace(0)`. Returns `g_AbmapPad` as read
+    /// after the text (again after the error).
+    #[allow(clippy::many_single_char_names)] // h, p, n, m, e as in the field module's
+    fn add_prim(h: &mut impl ffx_bridge::Host, panel: u32, group: u32, text: u32, id: u32) -> u32 {
+        let hira = call_at(h, SAVE_CONFIG_HIRAGANA, &[]) & 1;
+        let entry_text = call_at(h, MENU_GET_TEXT, &[group, text, hira]);
+        let pad = ABMAP_PAD.get(h);
+        let p = pad.wrapping_add(panel);
+        let n = h.read::<i16>(p.wrapping_add(0x1e));
+        if n >= 0x40 {
+            let fmt = h.rebase(MENU_PRIM_ERROR);
+            call_at(h, DBG_PRINTF, &[fmt, 0x40]);
+            call_at(h, DEBUG_EXIT_TRACE, &[0]);
+            return ABMAP_PAD.get(h);
+        }
+        let rows = i32::from(h.read::<u8>(p.wrapping_add(0x22)));
+        let cols = i32::from(h.read::<i16>(p.wrapping_add(0x16)));
+        let m = n.wrapping_add(1);
+        h.write(p.wrapping_add(0x28), u8::from(i32::from(m) > rows * cols));
+        h.write(p.wrapping_add(0x1e), m);
+        let e = p.wrapping_add(i32::from(n).wrapping_mul(12).cast_unsigned());
+        h.write(e.wrapping_add(0x40), entry_text);
+        h.write(e.wrapping_add(0x48), id);
+        h.write(e.wrapping_add(0x44), 0u8);
+        pad
+    }
+
+    /// A node's position as floats (`i16 +0`, `+2` of node `node`, `z` 0,
+    /// `w` 1) into `at`.
+    fn node_point(h: &mut impl Mem, abmap: u32, node: u32, at: u32) {
+        let n = abmap.wrapping_add(0x808).wrapping_add(node * 0x28);
+        let x = i32::from(h.read::<i16>(n));
+        let y = i32::from(h.read::<i16>(n.wrapping_add(2)));
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp m32
+        h.write(at, [x as f32, y as f32, 0.0, 1.0]);
+    }
+
+    /// Half the size (`i16 +0` of the node's kind, arithmetic shift) plus
+    /// 3, as an `f32`: a tag's radius around node `node` (`g_Abmap` read
+    /// afresh).
+    fn node_radius(h: &impl Mem, node: u32) -> f32 {
+        let g = ABMAP.get(h);
+        let kind = u32::from(h.read::<u16>(g.wrapping_add(0x80e).wrapping_add(node * 0x28)));
+        let size = h.read::<i16>(g.wrapping_add(0xf834).wrapping_add(kind * 0x30));
+        let k = f64::from(i32::from(size >> 1));
+        f32::from_bits(x87::store(x87::add(3.0, k)))
+    }
+
+    /// `eiAbmStart()` (`0x00a54b40`, from `TkMenuCtrlAbilityMap2`): opens
+    /// the sphere grid. [`RUNNING`] cleared, [`CJK_TEXT`] from
+    /// `TOGetFFXLang` (0 or 9..=11); `InitLpamng`, `AbmapLoadOef`,
+    /// `LoadAbmap`, `TOMenuTransFacePlyTex`; a name tag
+    /// (`AbmapInitPlyTag(i, 0, 2.0, 0x80404040, 0x80404040, 0x80808080)`)
+    /// and bit `i` of `g_Abmap + 0x115c9` for each joined character of
+    /// the seven; `LoadSaveAbmap`; each tag with a positive radius
+    /// (`+0x3c`) put on its node (`+0x44`: position, radius by
+    /// [`node_radius`]) and `AbmapPositionPlyTag(i)`; the tag spread asked
+    /// (`+0x115c7`); the cursor on the current character's node
+    /// (`+0x115bc`: `+0x112fc` the node, `+0x112b8` the point, copied to
+    /// the camera target `+0x11308`, colours, radius, 2.0), `+0x11668` =
+    /// [`LINK_WORK`]; `AbmapCalcLinkPoints`, `AbmapResetVectors`,
+    /// `AbmapResetCursorCamera`, `pppInitEnv`; then the twelve menu
+    /// panels of `g_AbmapPad` with their texts (`addMenuPrim`,
+    /// [`add_prim`]) and the item and command lists
+    /// (`AbmapFillUseItemMenu(8, 3)`, `AbmapFillCommandMenu(3, 0x40)`,
+    /// `(2, 0x41)`, `(4, 0x45)`, `(5, 0x44)`); then
+    /// `graphicAbmapCreate` of `g_Abmap + 0x116a4`,
+    /// `graphicDeActivateLoadingScreen`, `graphicSetFlipVsnc(2)` and the
+    /// two [`START_BLOCKS`] (`user_malloc(0x200)`). Returns the second
+    /// block (the original's `eax`).
+    #[allow(clippy::too_many_lines)] // the original's set-up, in its order
+    pub fn ei_abm_start(h: &mut impl ffx_bridge::Host) -> u32 {
+        RUNNING.set(h, 0);
+        let lang = call_at(h, GET_FFX_LANG, &[]).cast_signed();
+        CJK_TEXT.set(h, u32::from(lang == 0 || (9..=0xb).contains(&lang)));
+        for f in [INIT_LPAMNG, LOAD_OEF, LOAD_ABMAP, TRANS_FACE_PLY_TEX] {
+            call_at(h, f, &[]);
+        }
+        let g = ABMAP.get(h);
+        h.write(g.wrapping_add(0x115c9), 0u8);
+        for i in 0..7u32 {
+            if call_at(h, SAVE_PLY_JOINED, &[i]) == 1 {
+                let g = ABMAP.get(h);
+                let bits: u8 = h.read(g.wrapping_add(0x115c9));
+                h.write(g.wrapping_add(0x115c9), bits | 1 << i);
+                let args = [i, 0, 2f32.to_bits(), 0x8040_4040, 0x8040_4040, 0x8080_8080];
+                call_at(h, INIT_PLY_TAG, &args);
+            }
+        }
+        call_at(h, LOAD_SAVE_ABMAP, &[]);
+        let mut g = ABMAP.get(h);
+        for i in 0..7u32 {
+            let tag = g.wrapping_add(0x11088 + 0x50 * i);
+            if 0.0 < h.read::<f32>(tag.wrapping_add(0x3c)) {
+                let node = u32::from(h.read::<u16>(tag.wrapping_add(0x44)));
+                node_point(h, g, node, tag);
+                let node = u32::from(h.read::<u16>(tag.wrapping_add(0x44)));
+                let r = node_radius(h, node);
+                h.write(tag.wrapping_add(0x3c), r);
+                call_at(h, POSITION_PLY_TAG, &[i]);
+                g = ABMAP.get(h);
+            }
+        }
+        h.write(g.wrapping_add(0x115c7), 1u8);
+        // the cursor on the current character's node
+        let g = ABMAP.get(h);
+        let cur = u32::from(h.read::<u8>(g.wrapping_add(0x115bc)));
+        let node: u16 = h.read(g.wrapping_add(0x110cc).wrapping_add(cur * 0x50));
+        h.write(g.wrapping_add(0x112fc), node);
+        let node = u32::from(node);
+        node_point(h, g, node, g.wrapping_add(0x112b8));
+        let r = node_radius(h, node);
+        h.write(g.wrapping_add(0x11306), 0u8);
+        h.write(
+            g.wrapping_add(0x112d8),
+            [0x8080_8080u32, 0x8080_8080, 0x80ff_ffff],
+        );
+        h.write(g.wrapping_add(0x112f4), [r, 2.0]);
+        let g = ABMAP.get(h);
+        let target: [u32; 4] = h.read(g.wrapping_add(0x112b8));
+        h.write(g.wrapping_add(0x11308), target);
+        let g = ABMAP.get(h);
+        let link = h.rebase(LINK_WORK);
+        h.write(g.wrapping_add(0x11668), link);
+        for f in [CALC_LINK_POINTS, RESET_VECTORS, RESET_CURSOR_CAMERA] {
+            call_at(h, f, &[]);
+        }
+        let data: u32 = h.read(h.rebase(PPP_DATA));
+        let (env, memory) = (h.rebase(PPP_ENV), h.rebase(PPP_MEMORY));
+        call_at(h, PPP_INIT_ENV, &[env, data, memory, PPP_MEMORY_SIZE]);
+        // the command panels
+        let pad = ABMAP_PAD.get(h);
+        apply(h, pad, &frame(0, 0x23_0030, 0x14_01a0, 0x1_001a));
+        apply(
+            h,
+            pad,
+            &[
+                W(0x1e, 0xf_0000),
+                H(0x22, 0x101),
+                F(0x38, DRAW_HELP_E),
+                F(0x3c, MENU_HELP),
+            ],
+        );
+        apply(h, pad, &cleared(0, false));
+        apply(h, pad, &frame(0x16c0, 0xcd_0030, 0x28_0050, 0x2_0005));
+        apply(
+            h,
+            pad,
+            &[H(0x16e2, 1), F(0x16f8, DRAW_HELP_E), F(0x16fc, MENU_HELP)],
+        );
+        apply(
+            h,
+            pad,
+            &[W(
+                0x16de,
+                if CJK_TEXT.get(h) != 0 {
+                    0x12_0000
+                } else {
+                    0xa_0000
+                },
+            )],
+        );
+        apply(h, pad, &cleared(0x16c0, false));
+        add_prim(h, 0x16c0, 9, 0x1f, 0x1f);
+        let pad = add_prim(h, 0x16c0, 9, 0x1e, 0x1e);
+        // the item panel
+        apply(
+            h,
+            pad,
+            &[
+                W(0x1a08, 0xcd_0030),
+                W(0x1a00, 0xcd_0030),
+                W(0x1a1e, 0x8_0000),
+                H(0x1a22, 1),
+            ],
+        );
+        apply(h, pad, &[F(0x1a38, DRAW_ITEM), F(0x1a3c, ITEM_HELP)]);
+        apply(h, pad, &cleared(0x1a00, false));
+        let (size, grid) = if CJK_TEXT.get(h) != 0 {
+            (0x50_0090, 0x4_0009)
+        } else {
+            (0x50_00b0, 0x4_000b)
+        };
+        apply(h, pad, &frame_size(0x1a00, size, grid));
+        apply(h, pad, &[H(0x1a1e, 0)]);
+        call_at(h, FILL_USE_ITEM_MENU, &[8, 3]);
+        // the text panel
+        let pad = ABMAP_PAD.get(h);
+        apply(
+            h,
+            pad,
+            &[
+                W(0x1388, 0x164_0030),
+                W(0x1380, 0x164_0030),
+                W(0x139e, 0x14_0000),
+                H(0x13a2, 1),
+            ],
+        );
+        apply(h, pad, &[F(0x13b8, DRAW_TEXT)]);
+        apply(h, pad, &cleared(0x1380, true));
+        let (size, grid) = if CJK_TEXT.get(h) != 0 {
+            (0x14_0080, 0x1_0008)
+        } else {
+            (0x14_00b0, 0x1_000b)
+        };
+        apply(h, pad, &frame_size(0x1380, size, grid));
+        let pad = add_prim(h, 0x1380, 9, 0x23, 0x23);
+        // the stat panel
+        apply(
+            h,
+            pad,
+            &[W(0x35e, 0x20_0000), H(0x362, 2), F(0x378, DRAW_STAT)],
+        );
+        apply(h, pad, &cleared(0x340, true));
+        let (pos, size, grid) = if CJK_TEXT.get(h) != 0 {
+            (0x114_00a0, 0x64_00c0, 0x5_000c)
+        } else {
+            (0x114_0088, 0x64_00f0, 0x5_000f)
+        };
+        apply(h, pad, &frame(0x340, pos, size, grid));
+        let mut pad = pad;
+        for (text, id) in [
+            (0, 0),
+            (1, 1),
+            (7, 2),
+            (0xb, 3),
+            (8, 4),
+            (0xc, 5),
+            (9, 6),
+            (0xd, 7),
+            (10, 8),
+            (0xe, 9),
+        ] {
+            pad = add_prim(h, 0x340, 0xb, text, id);
+        }
+        // the four command lists
+        let lists: [(u32, u16, u32, u32, bool); 4] = [
+            (0x9c0, 3, 3, 0x40, true),
+            (0x680, 0, 2, 0x41, false),
+            (0xd00, 4, 4, 0x45, true),
+            (0x1040, 4, 5, 0x44, true),
+        ];
+        for (k, (p, rows, list, kind, has_rows)) in lists.into_iter().enumerate() {
+            let pad = if k == 0 { pad } else { ABMAP_PAD.get(h) };
+            apply(h, pad, &[W(p + 0x1e, 0x20_0000)]);
+            if has_rows {
+                apply(h, pad, &[H(p + 0x22, rows)]);
+            }
+            let draw = if p == 0x680 {
+                DRAW_ICON_COPY
+            } else {
+                DRAW_ICON
+            };
+            apply(h, pad, &[F(p + 0x38, draw)]);
+            apply(h, pad, &cleared(p, true));
+            let (pos, size, grid) = match (p, CJK_TEXT.get(h) != 0) {
+                (0x9c0 | 0x680, false) => (0xd8_0048, 0xa0_0170, 0x8_0017),
+                (0x9c0, true) => (0xd8_005f, 0xa0_0140, 0x8_0014),
+                (0x680 | 0xd00, true) => (0x100_0060, 0x78_0140, 0x6_0014),
+                (0xd00, false) => (0x100_0040, 0x78_0180, 0x6_0018),
+                (_, true) => (0x114_0060, 0x64_0140, 0x5_0014),
+                (_, false) => (0x114_0040, 0x64_0180, 0x5_0018),
+            };
+            apply(h, pad, &frame(p, pos, size, grid));
+            if p == 0x680 {
+                apply(
+                    h,
+                    pad,
+                    &[H(0x6a2, if CJK_TEXT.get(h) != 0 { 4 } else { 3 })],
+                );
+            }
+            call_at(h, FILL_COMMAND_MENU, &[list, kind]);
+        }
+        // the two help lines
+        let mut pad = ABMAP_PAD.get(h);
+        for (p, cjk_size, cjk_grid, text) in [
+            (0x1d40, 0x14_0060, 0x1_0006, 0x2b),
+            (0x2080, 0x14_0070, 0x1_0007, 0x2e),
+        ] {
+            apply(
+                h,
+                pad,
+                &[
+                    W(p + 8, 0xcd_0030),
+                    W(p, 0xcd_0030),
+                    W(p + 0x1e, 0xa_0000),
+                    H(p + 0x22, 1),
+                ],
+            );
+            apply(h, pad, &[F(p + 0x38, DRAW_HELP_5)]);
+            apply(h, pad, &cleared(p, true));
+            let (size, grid) = if CJK_TEXT.get(h) != 0 {
+                (cjk_size, cjk_grid)
+            } else {
+                (0x14_0090, 0x1_0009)
+            };
+            apply(h, pad, &frame_size(p, size, grid));
+            pad = add_prim(h, p, 9, text, text);
+        }
+        // the confirmation
+        apply(h, pad, &frame(0x23c0, 0xf5_0030, 0x28_0050, 0x2_0005));
+        apply(
+            h,
+            pad,
+            &[W(0x23de, 0xf_0000), H(0x23e2, 1), F(0x23f8, DRAW_HELP_E)],
+        );
+        apply(h, pad, &cleared(0x23c0, true));
+        add_prim(h, 0x23c0, 9, 0x2c, 0x2c);
+        add_prim(h, 0x23c0, 9, 0x2d, 0x2d);
+        let g = ABMAP.get(h);
+        let model: u32 = h.read(g.wrapping_add(0x116a4));
+        call_at(h, GRAPHIC_ABMAP_CREATE, &[model]);
+        call_at(h, DEACTIVATE_LOADING_SCREEN, &[]);
+        call_at(h, SET_FLIP_VSYNC, &[2]);
+        let mut last = 0;
+        for at in START_BLOCKS {
+            last = call_at(h, USER_MALLOC, &[0x200]);
+            Global::<u32>::new(at).set(h, last);
+        }
+        last
+    }
 }

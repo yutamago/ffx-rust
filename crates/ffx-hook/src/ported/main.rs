@@ -2231,6 +2231,10 @@ ported! {
         let at = ffx_bridge::Mem::rebase(&m, state::bridge::TIME_US);
         state::bridge::frame_sync(&mut m, dt, &mut |_| super::call_cdecl_u64(at, &[]))
     }
+    /// `eiAbmStart()`.
+    eiAbmStart @ 0x00a5_4b40 => extern "C" fn ei_abm_start() -> u32 {
+        abmap::bridge::ei_abm_start(&mut mem())
+    }
     /// `eiAbmDrawFrame_00a54560()`.
     eiAbmDrawFrame_00a54560 @ 0x00a5_4560 => extern "C" fn ei_abm_draw_frame() -> u32 {
         abmap::bridge::ei_abm_draw_frame(&mut mem())

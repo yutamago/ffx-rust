@@ -10700,10 +10700,11 @@ fn push_apart_crafted(
 
 // ---- pc round 4: the sphere grid's frame draws (eiAbm) ----------------
 
-/// Per stand-in `k`: an address and a word it stores after logging (none
-/// for address 0), so a callee can move `g_Abmap`, the pad or the skip flag
-/// under the caller.
-const POKE_DATA: u32 = 0x0270_fd00;
+/// Per stand-in `k` (16 bytes): an address, a word and a mode: after
+/// logging the stand-in stores the word there (mode 0) or xors it in
+/// (mode 1, so each call toggles); none for address 0. A callee can so
+/// move `g_Abmap`, the pad or the skip flag under the caller.
+const POKE_DATA: u32 = 0x0270_e000;
 /// The address whose word each poking stand-in logs as its entry's last
 /// field (offset 0x1c).
 const WATCH: u32 = 0x0270_fdf0;
@@ -10717,7 +10718,7 @@ fn poking_recorder(a: &mut Oracle, b: &mut Oracle, k: u32, tag: u32, n: u32) -> 
     for o in [a, b] {
         let log = o.rebase(REC_LOG);
         let (poke, ret, watch) = (
-            o.rebase(POKE_DATA) + 8 * k,
+            o.rebase(POKE_DATA) + 16 * k,
             o.rebase(REC_RETS) + 4 * k,
             o.rebase(WATCH),
         );
@@ -10740,15 +10741,19 @@ fn poking_recorder(a: &mut Oracle, b: &mut Oracle, k: u32, tag: u32, n: u32) -> 
         c.extend(log.to_le_bytes()); // inc dword [log]
         c.extend([0x8b, 0x0d]);
         c.extend(poke.to_le_bytes()); // mov ecx, [poke]
-        c.extend([0x85, 0xc9, 0x74, 0x08]); // test ecx, ecx; jz +8
+        c.extend([0x85, 0xc9, 0x74, 0x15]); // test ecx, ecx; jz done
         c.extend([0x8b, 0x15]);
         c.extend((poke + 4).to_le_bytes()); // mov edx, [poke + 4]
-        c.extend([0x89, 0x11]); // mov [ecx], edx
+        c.extend([0x83, 0x3d]);
+        c.extend((poke + 8).to_le_bytes());
+        c.push(0x00); // cmp dword [poke + 8], 0
+        c.extend([0x75, 0x04, 0x89, 0x11, 0xeb, 0x02]); // jne xor; mov [ecx], edx; jmp done
+        c.extend([0x31, 0x11]); // xor: xor [ecx], edx
         c.push(0xa1);
         c.extend(ret.to_le_bytes()); // mov eax, [ret]
         c.push(0xc3);
-        assert!(c.len() <= 0x60);
-        at = o.rebase(REC_CODE) + 0x60 * k;
+        assert!(c.len() <= 0x80);
+        at = o.rebase(REC_CODE) + 0x80 * k;
         o.write(at, &c).unwrap();
     }
     at
@@ -10852,8 +10857,7 @@ fn ei_abm_draw_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds:
             } else {
                 (0, 0)
             };
-            put(a, b, a.rebase(POKE_DATA) + 8 * s, poke.0);
-            put(a, b, a.rebase(POKE_DATA) + 8 * s + 4, poke.1);
+            put(a, b, a.rebase(POKE_DATA) + 16 * s, [poke.0, poke.1, 0]);
         }
         put(a, b, a.rebase(REC_LOG), 0u32);
         let (name, sym) = match round % 3 {
@@ -10898,4 +10902,136 @@ fn pc_r4_main_ei_abm_draw_snapshot() {
         return;
     };
     ei_abm_draw_cases(&mut a, &mut b, &mut Xorshift(0x5c4e_0402), 3000);
+}
+
+#[allow(clippy::cast_possible_truncation)] // random bytes and half-words
+fn ei_abm_start_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as ab;
+    const START: u32 = 0x00a5_4b40;
+    let callees: [(u32, u32); 23] = [
+        (ab::GET_FFX_LANG, 0),
+        (ab::INIT_LPAMNG, 0),
+        (ab::LOAD_OEF, 0),
+        (ab::LOAD_ABMAP, 0),
+        (ab::TRANS_FACE_PLY_TEX, 0),
+        (ab::SAVE_PLY_JOINED, 1),
+        (ab::INIT_PLY_TAG, 6),
+        (ab::LOAD_SAVE_ABMAP, 0),
+        (ab::POSITION_PLY_TAG, 1),
+        (ab::CALC_LINK_POINTS, 0),
+        (ab::RESET_VECTORS, 0),
+        (ab::RESET_CURSOR_CAMERA, 0),
+        (ab::PPP_INIT_ENV, 4),
+        (ab::SAVE_CONFIG_HIRAGANA, 0),
+        (ab::MENU_GET_TEXT, 3),
+        (ab::DBG_PRINTF, 2),
+        (ab::DEBUG_EXIT_TRACE, 1),
+        (ab::FILL_USE_ITEM_MENU, 2),
+        (ab::FILL_COMMAND_MENU, 2),
+        (ab::GRAPHIC_ABMAP_CREATE, 1),
+        (ab::DEACTIVATE_LOADING_SCREEN, 0),
+        (ab::SET_FLIP_VSYNC, 1),
+        (ab::USER_MALLOC, 1),
+    ];
+    for (k, &(sym, n)) in (0..).zip(&callees) {
+        let code = poking_recorder(a, b, k, sym, n);
+        divert(a, b, sym, code);
+    }
+    let blocks = [alloc(a, b, 0x17000), alloc(a, b, 0x17000)];
+    let pads = [alloc(a, b, 0x2800), alloc(a, b, 0x2800)];
+    let abmap_at = ab::ABMAP.ptr(a).addr;
+    let pad_at = ab::ABMAP_PAD.ptr(a).addr;
+    let cjk_at = ab::CJK_TEXT.ptr(a).addr;
+    put(a, b, a.rebase(WATCH), abmap_at);
+    for round in 0..rounds {
+        for &g in &blocks {
+            for i in 0..8 {
+                let tag = g + 0x11088 + 0x50 * i;
+                let r = if rng.below(3) == 0 {
+                    rng.float()
+                } else {
+                    [0x4040_0000, 0, 0xbf80_0000][rng.below(3) as usize]
+                };
+                put(a, b, tag + 0x3c, r);
+                put(a, b, tag + 0x44, u16::try_from(rng.below(16)).unwrap());
+            }
+            for node in 0..16 {
+                let at = g + 0x808 + node * 0x28;
+                put(a, b, at, rng.next());
+                put(a, b, at + 6, u16::try_from(rng.below(8)).unwrap());
+            }
+            for kind in 0..8 {
+                put(a, b, g + 0xf834 + kind * 0x30, rng.next() as u16);
+            }
+            put(a, b, g + 0x115bc, u8::try_from(rng.below(8)).unwrap());
+            put(a, b, g + 0x115c9, rng.next() as u8);
+            put(a, b, g + 0x116a4, rng.next());
+        }
+        for &p in &pads {
+            for o in (0..0x2800).step_by(4) {
+                put(a, b, p + o, rng.next());
+            }
+        }
+        put(a, b, abmap_at, blocks[0]);
+        put(a, b, pad_at, pads[0]);
+        put(a, b, a.rebase(ab::PPP_DATA), rng.next());
+        for s in 0..23 {
+            let ret = match callees[s as usize].0 {
+                ab::GET_FFX_LANG => [0, 1, 8, 9, 11, 12, u32::MAX][rng.below(7) as usize],
+                ab::SAVE_PLY_JOINED => rng.below(3),
+                _ => rng.next(),
+            };
+            put(a, b, a.rebase(REC_RETS) + 4 * s, ret);
+            // pokes: some toggle g_Abmap or the pad at each call, some
+            // fill a panel (and whatever pad is current then)
+            let poke = if rng.below(5) == 0 {
+                match rng.below(7) {
+                    0 => (abmap_at, blocks[0] ^ blocks[1], 1),
+                    1 => (pad_at, pads[0] ^ pads[1], 1),
+                    2 => (pad_at, pads[1], 0),
+                    3 => (pads[0] + 0x16de, 0x40, 0),
+                    4 => (
+                        pads[rng.below(2) as usize]
+                            + [0x16de, 0x23de, 0x35e, 0x1d5e][rng.below(4) as usize],
+                        0x40,
+                        0,
+                    ),
+                    5 => (cjk_at, 1, 1),
+                    _ => (pads[1] + 0x16de, 0x40, 0),
+                }
+            } else {
+                (0, 0, 0)
+            };
+            put(a, b, a.rebase(POKE_DATA) + 16 * s, [poke.0, poke.1, poke.2]);
+        }
+        put(a, b, a.rebase(REC_LOG), 0u32);
+        let ra = a
+            .call(a.rebase(START), Conv::Cdecl, &[])
+            .unwrap_or_else(|e| panic!("eiAbmStart {round}: {e}"));
+        let rb = ab::ei_abm_start(&mut H(b));
+        assert_eq!(ra.eax, rb, "eiAbmStart {round}: eax");
+        let n: u32 = Mem::read(a, a.rebase(REC_LOG));
+        let log = a.rebase(REC_LOG);
+        let words_of =
+            |o: &Oracle| -> Vec<u32> { (0..=n * 8).map(|i| Mem::read(o, log + 4 * i)).collect() };
+        assert_eq!(words_of(a), words_of(b), "eiAbmStart {round}: calls");
+        assert_eq!(a.diff(b).unwrap(), [], "eiAbmStart {round}: memory");
+        settle(a, b);
+    }
+}
+
+#[test]
+fn pc_r4_main_ei_abm_start_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    ei_abm_start_cases(&mut a, &mut b, &mut Xorshift(0x5c4e_0403), 1500);
+}
+
+#[test]
+fn pc_r4_main_ei_abm_start_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    ei_abm_start_cases(&mut a, &mut b, &mut Xorshift(0x5c4e_0404), 1500);
 }
