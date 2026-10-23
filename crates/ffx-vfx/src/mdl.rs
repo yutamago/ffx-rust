@@ -1621,4 +1621,72 @@ pub mod bridge {
         let rec = model_record(mem, key);
         submit(mem, obj, rec, req, SEMI2, call)
     }
+
+    // ---- round 49 c ----
+
+    /// `pppDrawMdlRevDraw(obj, key, prog)` (`0x00740410`): unless the
+    /// key's model (`+4`) is `0xffff` (returning work area 5, at offset
+    /// `[[prog + 0xc] + 0x14]`): the flip flags drawn while area 5's first
+    /// byte is 0 (`ppp_mdl_rev_random_flags(key, area)`), the colour of
+    /// work area 3 ([`ee_colour_at`], inlined) into the request at
+    /// `frame - 0xe0`; with a non-zero alpha the matrix
+    /// (`crate::mat::bridge::ppp_mdl_rev_matrix`), a request with flags
+    /// ([`flags_key`]) from the key's `+8`, `0x200` for `+9`, `0x100` for
+    /// `+0xb`, and for `+0xa` `0x2000` and a view-space matrix (the view
+    /// times `obj + 0x10`, at `frame - 0x48`, into `+0x30`; else `+0x30`
+    /// is left as it was), the model's blend, `+0x44` work area 4 for key
+    /// byte `+0xc`; then [`submit`] ([`SEMI2`]). Returns what the original
+    /// leaves in eax (the colour when the alpha is 0).
+    pub fn ppp_draw_mdl_rev_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let flips = at(obj, offset(mem, prog, 5)).wrapping_add(0xa0);
+        if mem.read::<u32>(at(key, 4)) == 0xffff {
+            return flips;
+        }
+        if mem.read::<u8>(flips) == 0 {
+            call(mem, g(mem, 0x0074_0960), &[key, flips]);
+        }
+        let req = frame.wrapping_sub(0xe0);
+        let base = at(obj, offset(mem, prog, 3));
+        let colour = ee_colour_at(mem, base, false, call);
+        store_colour(mem, req, colour);
+        if mem.read::<u8>(at(req, 0x1b)) == 0 {
+            return colour;
+        }
+        let rec = model_record(mem, key);
+        let mp = call(mem, g(mem, GET_PTR32), &[mem.read(at(rec, 0x1c))]);
+        crate::mat::bridge::ppp_mdl_rev_matrix(mem, obj, prog, call);
+        let mut flags = flags_key(mem.read(at(key, 8)), mem.read(mp), false);
+        if mem.read::<u8>(at(key, 9)) != 0 {
+            flags |= 0x200;
+        }
+        if mem.read::<u8>(at(key, 0xb)) != 0 {
+            flags |= 0x100;
+        }
+        if mem.read::<u8>(at(key, 0xa)) != 0 {
+            flags |= 0x2000;
+            let m = frame.wrapping_sub(0x48);
+            mem.write(at(req, 0x30), m);
+            call(
+                mem,
+                g(mem, MUL_MATRIX),
+                &[m, g(mem, VIEW_MATRIX), at(obj, 0x10)],
+            );
+        }
+        let z = if mem.read::<u8>(at(key, 0xc)) == 0 {
+            0
+        } else {
+            at(obj, offset(mem, prog, 4)).wrapping_add(0xa0)
+        };
+        let tex = textures(mem, obj, call);
+        fill_request(mem, req, obj, flags, mem.read(at(mp, 0x16)), tex);
+        mem.write(at(req, 0x44), z);
+        submit(mem, obj, rec, req, SEMI2, call)
+    }
 }

@@ -30805,3 +30805,160 @@ fn round49b_mdl_psim_draw_matches_the_original() {
         assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round49c_mdl_rev_matches_the_original() {
+    use mdl::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_0410);
+        let cells = p.alloc(0x20);
+        // cells: +0 render data, +4 alpha, +8 Z matrix
+        deref_recorder_with(&mut p, 0x0064_53d0, &[0, 0], Some(cells));
+        deref_recorder_with(&mut p, 0x0071_2c30, &[0], Some(cells + 4));
+        deref_recorder_with(&mut p, 0x0071_2d00, &[0], Some(cells + 8));
+        let updates = wide_recorder(&mut p, 0x0071_8610, &[0, 0, 0, 18], None);
+        let inits = wide_recorder(&mut p, 0x0071_1180, &[0, 0, 0, 18, 0], None);
+        deref_recorder(&mut p, 0x0064_58a0, &[0, 0]);
+        let flags = deref_recorder(&mut p, 0x0074_0960, &[0, 0]);
+        let (obj, key, prog, table) = (p.alloc(0x300), p.alloc(0x40), p.alloc(0x10), p.alloc(0x20));
+        let (env, env2, recs, models, part) = (
+            p.alloc(4),
+            p.alloc(0x40),
+            p.alloc(0x400),
+            p.alloc(0x80),
+            p.alloc(0x80),
+        );
+        let slot = p.sym(draw::bridge::ENV_SLOT);
+        let views = [p.sym(0x0230_ff20), p.sym(0x0230_fe20)];
+        let (cur, cpart, shift) = (p.sym(0x0230_fd20), p.sym(0x0230_ffe4), p.sym(0x00c8_b500));
+        let r0 = p.sym(0x00c8_f508);
+        // FFXVu0MulMatrix runs: pppGetRotMatrixXYZ builds the rotation with it
+        let logs = [flags, updates, inits];
+        let mut seen = [0u32; 4];
+        for round in 0..2000 {
+            p.fill(obj, 0x300, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.fill(recs, 0x400, &mut rng);
+            for v in views {
+                for o in (0..0x40).step_by(4) {
+                    let x = ranged(&mut rng, -2.0, 2.0);
+                    p.set(v + o, x);
+                }
+            }
+            for o in (0..0x80).step_by(4) {
+                let v = (4 * rng.below(0x10)) | rng.below(4);
+                p.set(models + o, v);
+            }
+            p.fill(part, 0x80, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.set(prog + 0xc, table);
+            for k in 0..6 {
+                let off = 4 * rng.below(0x40);
+                p.set(table + 4 * k, off);
+            }
+            let area = |p: &Pair, k: u32| obj + 0xa0 + p.get::<u32>(table + 4 * k);
+            // the angles (i32), the scales and the position
+            let angles = area(&p, 1);
+            for k in 0..3 {
+                let a = rng.below(0x2000);
+                p.set(angles + 4 * k, a);
+            }
+            for k in [0u32, 2] {
+                let w = area(&p, k);
+                for o in (0..0x10).step_by(4) {
+                    let x = if rng.chance(10) {
+                        rng.float()
+                    } else {
+                        ranged(&mut rng, -3.0, 3.0)
+                    };
+                    p.set(w + o, x);
+                }
+            }
+            let flips = area(&p, 5);
+            for o in 0..4 {
+                p.set(flips + o, rng.pick(&[0u8, 0, 1, 0x80]));
+            }
+            for o in 8..0x10 {
+                let b = if rng.chance(50) {
+                    0
+                } else {
+                    rng.below(8) as u8
+                };
+                p.set(key + o, b);
+            }
+            let s = if rng.chance(20) { 4 * rng.below(4) } else { 0 };
+            p.set(shift, s);
+            p.set(cpart, part);
+            p.set(slot, env);
+            p.set(env, env2);
+            p.set(env2 + 0x20, recs);
+            let model = if rng.chance(5) { 0xffff } else { rng.below(8) };
+            p.set(key + 4, model);
+            for k in 0..8u32 {
+                let o = 4 * rng.below(8);
+                p.set(recs + 32 * k + 0x1c, models + o);
+            }
+            p.set(obj + 0x90, models + rng.below(0x20));
+            p.set(obj + 0x94, models + rng.below(0x20));
+            p.set(cells, u32::from(rng.chance(50)));
+            for c in [cells + 4, cells + 8] {
+                let x = if rng.chance(50) { 0 } else { rng.next() };
+                p.set(c, x);
+            }
+            let r9 = rng.next();
+            p.set(cur, rng.pick(&[0u32, 3, 0x8000_0001, r9]));
+            let pos = rng.next();
+            p.set(p.sym(0x0230_fd2c), pos);
+            // the request's stale words (+0x18.. with a shift, +0x30)
+            let frame = p.b.stack_range().end - 0x100 - 12 - 4 - 0x200 - 12 - 4 - 4;
+            let at = (frame - 8) & !0xf;
+            let req = at - 0xe0;
+            for o in (0x18..0x48).step_by(4) {
+                let v = rng.next();
+                p.set(req + o, v);
+            }
+            let before = logs.map(|l| p.get::<u32>(l));
+            // the matrix alone, then the draw
+            if round % 4 == 0 {
+                let what = format!("rev matrix round {round}");
+                p.check(&what, 0x0074_01d0, &[obj, key, prog], |o| {
+                    Some(ffx_vfx::mat::bridge::ppp_mdl_rev_matrix(
+                        o,
+                        obj,
+                        prog,
+                        &mut call_original,
+                    ))
+                });
+            }
+            let what = format!("rev draw round {round}");
+            check_deep_n(&mut p, &what, 0x0074_0410, &[obj, key, prog], |o, frame| {
+                assert_eq!((frame - 8) & !0xf, at);
+                Some(d::ppp_draw_mdl_rev_draw(
+                    o,
+                    obj,
+                    key,
+                    prog,
+                    at,
+                    &mut call_original,
+                ))
+            });
+            for (k, &l) in logs.iter().enumerate() {
+                if p.get::<u32>(l) != before[k] {
+                    seen[k] += 1;
+                }
+            }
+            if p.get::<u8>(key + 0xa) != 0 && p.get::<u32>(req + 0x30) == at - 0x48 {
+                seen[3] += 1;
+                // the view-space matrix on the stack (the diff skips it)
+                let (ma, mb) = (
+                    Mem::read::<[u32; 16]>(&p.a, at - 0x48),
+                    Mem::read::<[u32; 16]>(&p.b, at - 0x48),
+                );
+                assert_eq!(ma, mb, "{}: {what}: view-space matrix", p.name);
+            }
+        }
+        // flags drawn, update, create, view matrix
+        assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
+    }
+}

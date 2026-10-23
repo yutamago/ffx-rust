@@ -6240,4 +6240,17 @@ ported! {
         let frame = locals.at() + 0x44;
         mdl::bridge::ppp_draw_mdl_psim_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
+    // ---- round 49 c ----
+    // (ppp_mdl_rev_matrix_007401d0 is not hooked: not a function start in
+    // the dump; its only caller, pppDrawMdlRevDraw, runs the Rust one)
+    /// `pppDrawMdlRevDraw(obj, key, prog)` (`0x00740410`): the request and
+    /// the view-space matrix in this shim's 16-aligned frame.
+    pppDrawMdlRevDraw @ 0x0074_0410 => extern "C" fn ppp_draw_mdl_rev_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xe0]);
+        let mut locals = Locals([0; 0xe0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xe0;
+        mdl::bridge::ppp_draw_mdl_rev_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
 }
