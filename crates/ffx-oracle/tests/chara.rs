@@ -12752,3 +12752,226 @@ fn small3_b_on(t: &mut Twin) {
     t.put_u32(array, a0);
     t.put_u32(count, n0);
 }
+
+/// A stand-in that runs `prefix`, then logs like [`Fakes::fake`], put at
+/// `sym` behind a jump; the result word.
+fn small6_fake_pre(fk: &Fakes, t: &mut Twin, sym: u32, id: u32, n: u8, prefix: &[u8]) -> u32 {
+    let idxs: Vec<u8> = (0..n).collect();
+    let (code, ret) = fk.fake_code_idxs(t, prefix, id, &idxs);
+    let at = t.a.rebase(sym);
+    let mut jmp = vec![0xe9];
+    jmp.extend(code.wrapping_sub(at + 5).to_le_bytes());
+    t.put(at, &jmp);
+    ret
+}
+
+#[test]
+fn small6_e_matches_the_original() {
+    for mut t in twins() {
+        small6_e_on(&mut t);
+    }
+}
+
+/// Small round 6 e: `Ch_CalcMiddle_Batch` over random characters (active,
+/// modelled or not, running, paused, flags) for both passes, with
+/// `Ch_Neck` sometimes lowering the count and `Ch_CalcElement` flipping
+/// the pass (both read again by the original), and
+/// `Ch_OnCharacterInstanceLoaded` (null and inactive characters, cloth or
+/// not, mapped or not, cached or not, segment counts 0..=5); every callee a
+/// logging stand-in, the cloth buffers' one writing its out word.
+#[allow(clippy::too_many_lines)] // two functions
+fn small6_e_on(t: &mut Twin) {
+    use ffx_chara::handle::bridge as hb;
+    let mut rng = Xorshift(0x5a11_6e01);
+    let fk = Fakes::new(t);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let pass = t.alloc(4);
+    let count = t.alloc(4);
+    let mut lower = vec![0xff, 0x0d]; // dec dword [count]
+    lower.extend(count.to_le_bytes());
+    let mut flip = vec![0x83, 0x35]; // xor dword [pass], 1
+    flip.extend(pass.to_le_bytes());
+    flip.push(1);
+    let neck_on = t.alloc(4);
+    // when [neck_on] is set: dec dword [count]
+    let mut neck = vec![0x83, 0x3d];
+    neck.extend(neck_on.to_le_bytes());
+    neck.extend([0x00, 0x74, u8::try_from(lower.len()).unwrap()]);
+    neck.extend(&lower);
+    let debug = fk.fake(t, 0x0063_cec0, 1, 1);
+    let off = fk.fake(t, 0x007f_c000, 2, 1);
+    let pause = fk.fake(t, hb::GET_PAUSE, 3, 0);
+    // Ch_Mouth keeps its character; Ch_IdShadeCalc and Sg_GetPlayer add
+    // that character's +0x878 (the stage) to a sum
+    let (cur, stage) = (t.alloc(4), t.alloc(4));
+    let mut keep = vec![0x8b, 0x44, 0x24, 0x04, 0xa3]; // mov eax, [esp + 4]; mov [cur], eax
+    keep.extend(cur.to_le_bytes());
+    let mouth = small6_fake_pre(&fk, t, 0x0083_44f0, 4, 1, &keep);
+    let mut sum = vec![0xa1]; // mov eax, [cur]
+    sum.extend(cur.to_le_bytes());
+    sum.extend([0x8b, 0x88, 0x78, 0x08, 0, 0, 0x01, 0x0d]); // mov ecx, [eax + 0x878]; add [stage], ecx
+    sum.extend(stage.to_le_bytes());
+    let neck_r = small6_fake_pre(&fk, t, 0x0083_48d0, 5, 1, &neck);
+    let elem_on = t.alloc(4);
+    let mut elem = vec![0x83, 0x3d];
+    elem.extend(elem_on.to_le_bytes());
+    elem.extend([0x00, 0x74, u8::try_from(flip.len()).unwrap()]);
+    elem.extend(&flip);
+    let elem_r = small6_fake_pre(&fk, t, 0x0083_2760, 6, 1, &elem);
+    let opt = fk.fake(t, 0x0083_50f0, 7, 1);
+    let shade = small6_fake_pre(&fk, t, 0x0083_4110, 8, 1, &sum);
+    let gui = fk.fake(t, 0x0083_1930, 9, 0);
+    let tex = fk.fake(t, 0x0077_c8d0, 10, 3);
+    let player = small6_fake_pre(&fk, t, 0x0082_d860, 11, 0, &sum);
+    let texon = t.a.rebase(0x00c4_9720);
+    for round in 0..300u32 {
+        fk.reset(t);
+        for w in [debug, off, mouth, neck_r, elem_r, opt, shade, tex] {
+            t.put_u32(w, rng.next());
+        }
+        t.put_u32(pause, u32::from(rng.next().is_multiple_of(6)));
+        t.put_u32(gui, u32::from(!rng.next().is_multiple_of(3)));
+        t.put_u32(texon, u32::from(!rng.next().is_multiple_of(3)));
+        t.put_u32(neck_on, u32::from(rng.next().is_multiple_of(8)));
+        t.put_u32(elem_on, u32::from(rng.next().is_multiple_of(8)));
+        let n = rng.next() % 8;
+        let chrs = t.alloc(0x880 * (n as usize + 1));
+        for k in 0..n {
+            let c = chrs + 0x880 * k;
+            t.put(c + 2, &[u8::from(!rng.next().is_multiple_of(5))]);
+            t.put_u32(c + 4, rng.next());
+            t.put_u32(
+                c + 0x19c,
+                if rng.next().is_multiple_of(2) {
+                    0
+                } else {
+                    rng.next() | 1
+                },
+            );
+            let flags = rng.next() & 0x0300_0280 | rng.next() & 0x0000_1200;
+            t.put_u32(c + 0x194, flags);
+            t.put_u32(c + 0x198, rng.next());
+            let run = [[0u8, 0], [1, 0], [1, 1], [0, 1]][rng.next() as usize % 4];
+            t.put(c + 0x180, &run);
+            t.put_u32(c + 0x6fc, u32::from(!rng.next().is_multiple_of(3)));
+            for w in [0x700, 0x830, 0x878] {
+                t.put_u32(c + w, rng.next());
+            }
+        }
+        let p = match rng.next() % 4 {
+            0 => 0,
+            1 => rng.next(),
+            _ => chrs + 0x880 * (rng.next() % n.max(1)),
+        };
+        t.put_u32(player, p);
+        t.put_u32(pass, [0, 0, 1, 2, 0x100][rng.next() as usize % 5]);
+        t.put_u32(count, if round % 30 == 0 { 0 } else { n });
+        t.check(
+            &format!("Ch_CalcMiddle_Batch {round}"),
+            0x0083_3530,
+            &[chrs, pass, count],
+            |m| {
+                hb::ch_calc_middle_batch(
+                    m,
+                    [chrs, pass, count],
+                    &mut |m: &mut Oracle, f, a: &[u32]| call(m, f, a),
+                );
+                Res::Void
+            },
+        );
+    }
+
+    // Ch_OnCharacterInstanceLoaded
+    let cached = fk.fake(t, 0x0084_0850, 20, 2);
+    let mapped = fk.fake(t, 0x0082_6340, 21, 1);
+    let value = t.alloc(4);
+    let writes = t.alloc(4);
+    // when [writes] is set: mov eax, [esp + 8]; mov ecx, [value]; mov [eax], ecx
+    let mut out = vec![0x83, 0x3d];
+    out.extend(writes.to_le_bytes());
+    out.extend([0x00, 0x74, 12, 0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    out.extend(value.to_le_bytes());
+    out.extend([0x89, 0x08]);
+    let buffers = fk.fake_code_idxs(t, &out, 22, &[0]);
+    let at = t.a.rebase(0x0063_a810);
+    let mut jmp = vec![0xe9];
+    jmp.extend(buffers.0.wrapping_sub(at + 5).to_le_bytes());
+    t.put(at, &jmp);
+    let mut rest = vec![];
+    for (f, id, n) in [
+        (0x0084_05b0u32, 23u32, 3u8),
+        (0x0082_7e90, 24, 2),
+        (0x0063_cdd0, 25, 2),
+        (0x0063_d050, 26, 4),
+        (0x0063_bdf0, 27, 3),
+        (0x0063_b7d0, 28, 2),
+    ] {
+        rest.push(fk.fake(t, f, id, n));
+    }
+    let out_at = t.b.stack_range().start + 0x100;
+    let quiet = |rng: &mut Xorshift| {
+        let v = if rng.next().is_multiple_of(8) {
+            FLOATS[rng.next() as usize % FLOATS.len()]
+        } else {
+            rng.next()
+        };
+        if v & 0x7f80_0000 == 0x7f80_0000 && v & 0x007f_ffff != 0 {
+            v | 0x0040_0000
+        } else {
+            v
+        }
+    };
+    for round in 0..200u32 {
+        fk.reset(t);
+        t.put_u32(cached, [0, 0, 1, rng.next()][rng.next() as usize % 4]);
+        t.put_u32(mapped, u32::from(!rng.next().is_multiple_of(3)));
+        t.put_u32(value, rng.next());
+        t.put_u32(writes, u32::from(!rng.next().is_multiple_of(3)));
+        t.put_u32(buffers.1, rng.next());
+        for &w in &rest {
+            t.put_u32(w, rng.next());
+        }
+        let c = t.alloc(0x880);
+        t.put(c, &rng.next().to_le_bytes()[..2]);
+        t.put(c + 2, &[u8::from(!rng.next().is_multiple_of(6))]);
+        t.put_u32(c + 0x194, rng.next() & 0x0020_0000 | rng.next() & 0x0f);
+        t.put_u32(c + 0x83c, u32::from(!rng.next().is_multiple_of(4)));
+        t.put_u32(c + 0x830, rng.next());
+        t.put_u32(c + 0x834, rng.next());
+        for w in [0x36c, 0x330, 0x33c, 0x348] {
+            let v = quiet(&mut rng);
+            t.put_u32(c + w, v);
+        }
+        let n = if round % 20 == 3 {
+            0x101
+        } else {
+            rng.next() % 6
+        };
+        let skin = t.alloc(8);
+        t.put(skin + 6, &u16::try_from(n).unwrap().to_le_bytes());
+        t.put_u32(c + 0x1c0, skin);
+        let segs = t.alloc(0x38 * n.max(1) as usize);
+        for k in 0..n {
+            let s = segs + 0x38 * k;
+            t.put(s + 0x18, &[u8::try_from(rng.next() & 3).unwrap()]);
+            t.put_u32(s + 0x2c, rng.next());
+            t.put_u32(s + 0x30, rng.next());
+        }
+        t.put_u32(c + 0x1bc, segs);
+        let chr = if round % 25 == 0 { 0 } else { c };
+        t.check(
+            &format!("Ch_OnCharacterInstanceLoaded {round}"),
+            0x0082_7d10,
+            &[chr],
+            |m| {
+                hb::ch_on_character_instance_loaded(
+                    m,
+                    chr,
+                    out_at,
+                    &mut |m: &mut Oracle, f, a: &[u32]| call(m, f, a),
+                );
+                Res::Void
+            },
+        );
+    }
+}
