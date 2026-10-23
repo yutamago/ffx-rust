@@ -23,7 +23,9 @@
 //! job workers (128 KB) that fits, as it does for the original.
 //!
 //! Ported so far: the head, the tail, the plain loop (S6,
-//! [`bridge::plain`]) and the VU0 plain loop (S3, [`bridge::vu0_plain`]); [`bridge::op_shape_draw`] returns `None` for the
+//! [`bridge::plain`]), the VU0 plain loop (S3, [`bridge::vu0_plain`]) and
+//! the textured loop (S5, [`bridge::textured`]); [`bridge::op_shape_draw`]
+//! returns `None` for the
 //! loops still to port. Not hooked yet (`docs/porting.md`: the whole
 //! function first).
 
@@ -43,7 +45,8 @@ pub mod bridge {
     const SHIFT: Global<u32> = Global::new(0x00c8_b500);
     /// The EE's `r0` (zero) register, low and high words; the original's
     /// `beq rX, r0` tests compare 64 bits with them.
-    const R0: Global<u32> = Global::new(0x00c8_f508);
+    const R0_AT: u32 = 0x00c8_f508;
+    const R0: Global<u32> = Global::new(R0_AT);
     const R0_HI: Global<u32> = Global::new(0x00c8_f50c);
     /// `v0` (r2), four words.
     const V0: u32 = 0x00c8_f528;
@@ -52,6 +55,11 @@ pub mod bridge {
     /// `t1` (r9), low word: `r0` in the plain loop; a nonzero low half
     /// makes the tail return `cmd +0x14`.
     const T1: Global<u32> = Global::new(0x00c8_f598);
+    /// `t2` (r10), `t3` (r11) and `t5` (r13), four words each: set by S5's
+    /// start, read by nothing here.
+    const T2: u32 = 0x00c8_f5a8;
+    const T3: u32 = 0x00c8_f5b8;
+    const T5: u32 = 0x00c8_f5d8;
     /// `t4` (r12), four words: `y`, `z`, `w` of each point.
     const T4: u32 = 0x00c8_f5c8;
     /// `t6` (r14), four words: `y`, `z`, `w` of the texture pair.
@@ -85,6 +93,13 @@ pub mod bridge {
     const P3: u32 = 0x00c8_f900;
     /// The matrix the points go through (four rows of four `f32`).
     const MATRIX: u32 = 0x00c8_f950;
+    /// S5's second matrix, the texture's (`cmd +0x1c`, or the first when
+    /// that equals `r0`).
+    const MATRIX2: u32 = 0x00c8_f810;
+    /// S5's colour: `cmd +4`'s bytes unpacked to words, times `1/128`.
+    const COLOUR: u32 = 0x00c8_f880;
+    /// S5's texture point: the first point again, through `MATRIX2`.
+    const P4: u32 = 0x00c8_f910;
     /// `vf00.w` (`g_Vu0_Vf00 +0xc`), the numerator of `Q`.
     const VF00_W: Global<u32> = Global::new(0x00c0_a010);
 
@@ -256,52 +271,72 @@ pub mod bridge {
         match head(mem, shape, cmd, frame) {
             Variant::Plain => plain(mem, frame, cmd, shape.wrapping_add(0x20)),
             Variant::Vu0Plain => vu0_plain(mem, cmd, shape.wrapping_add(0x20)),
+            Variant::Textured => textured(mem, frame, cmd, shape.wrapping_add(0x20)),
             _ => return None,
         }
         Some(tail(mem, frame))
     }
 
-    /// One point through `MATRIX` with the accumulator (`vmulax`,
+    /// One point through `matrix` with the accumulator (`vmulax`,
     /// `vmadday`, `vmaddaz`, `vmaddw`), then `Q = vf00.w / w`. Each step
     /// rounds to `f32` where the original stores. `memory_rows[r]`: row
     /// `r`'s matrix elements are the memory operands instead of loaded
     /// first (lane `w` always is); `memory_w`: so are the last row's `y`
     /// and `z`. The forms differ between the points' code and only tell a
     /// signalling NaN element from a quiet one.
-    fn transform<M: Mem>(mem: &mut M, point: u32, memory_rows: [bool; 3], memory_w: bool) {
-        let element = |mem: &M, row: u32, c: u32| rd(mem, MATRIX + 0x10 * row + 4 * c);
-        let acc = |c: u32| ACC + 4 * c;
-        let lane = |c: u32| point + 4 * c;
-        for row in 0..3u32 {
-            let s = rd(mem, lane(row));
-            for c in 0..4u32 {
-                let e = element(mem, row, c);
-                let product = if c == 3 || memory_rows[row as usize] {
-                    f(s).mul_m32(f32::from_bits(e))
-                } else {
-                    f(e) * f(s)
-                };
-                let v = if row == 0 {
-                    product
-                } else {
-                    product + f(rd(mem, acc(c)))
-                };
-                wr(mem, acc(c), st(v));
-            }
+    fn transform(
+        mem: &mut impl Mem,
+        matrix: u32,
+        point: u32,
+        memory_rows: [bool; 3],
+        memory_w: bool,
+    ) {
+        for (row, memory) in (0..3u32).zip(memory_rows) {
+            madda(mem, matrix, point, row, memory);
         }
-        let w = rd(mem, lane(3));
+        maddw(mem, matrix, point, memory_w);
+        set_q(mem, point);
+    }
+
+    /// Row `row` (0..3) of `matrix` times the point's lane `row` into the
+    /// accumulator (row 0 replaces it).
+    fn madda(mem: &mut impl Mem, matrix: u32, point: u32, row: u32, memory: bool) {
+        let s = rd(mem, point + 4 * row);
         for c in 0..4u32 {
-            let e = element(mem, 3, c);
+            let e = rd(mem, matrix + 0x10 * row + 4 * c);
+            let product = if c == 3 || memory {
+                f(s).mul_m32(f32::from_bits(e))
+            } else {
+                f(e) * f(s)
+            };
+            let v = if row == 0 {
+                product
+            } else {
+                product + f(rd(mem, ACC + 4 * c))
+            };
+            wr(mem, ACC + 4 * c, st(v));
+        }
+    }
+
+    /// The last row times `w` plus the accumulator into the point.
+    fn maddw(mem: &mut impl Mem, matrix: u32, point: u32, memory_w: bool) {
+        let w = rd(mem, point + 0xc);
+        for c in 0..4u32 {
+            let e = rd(mem, matrix + 0x30 + 4 * c);
             let product = match c {
                 0 => f(e).mul_m32(f32::from_bits(w)),
                 3 => f(w).mul_m32(f32::from_bits(e)),
                 _ if memory_w => f(w).mul_m32(f32::from_bits(e)),
                 _ => f(e) * f(w),
             };
-            let v = product + f(rd(mem, acc(c)));
-            wr(mem, lane(c), st(v));
+            let v = product + f(rd(mem, ACC + 4 * c));
+            wr(mem, point + 4 * c, st(v));
         }
-        let q = f(VF00_W.get(mem)).div_m32(f32::from_bits(rd(mem, lane(3))));
+    }
+
+    /// `Q = vf00.w / w` (`vdiv`).
+    fn set_q(mem: &mut impl Mem, point: u32) {
+        let q = f(VF00_W.get(mem)).div_m32(f32::from_bits(rd(mem, point + 0xc)));
         Q.set(mem, st(q));
     }
 
@@ -423,7 +458,7 @@ pub mod bridge {
         let v1_hi = rd(mem, V1 + 4);
         wr(mem, V0 + 0xc, v1_hi);
         load_point(mem, P0, hi);
-        transform(mem, P0, LOADED, false);
+        transform(mem, MATRIX, P0, LOADED, false);
         set_flags(mem);
     }
 
@@ -449,7 +484,7 @@ pub mod bridge {
         // the flag test below overwrites both before anything reads them)
         load_point(mem, P3, hi);
         scale_by_q(mem, P0);
-        transform(mem, P3, [true, true, false], false);
+        transform(mem, MATRIX, P3, [true, true, false], false);
         scale_by_q(mem, P3);
         minus_origin(mem, VA, P0);
         minus_origin(mem, VB, P3);
@@ -567,7 +602,7 @@ pub mod bridge {
             wr16(mem, V1, half(mem, flag + 2));
             load_point(mem, point, 0);
             scale_by_q(mem, before);
-            transform(mem, point, [true, true, false], true);
+            transform(mem, MATRIX, point, [true, true, false], true);
             // (the translation sets v0 to the flags again here: the next
             // flag half replaces its low half, the rest is equal)
         }
@@ -581,7 +616,7 @@ pub mod bridge {
         wr16(mem, V1, half(mem, 0xe));
         load_point(mem, P3, 0);
         scale_by_q(mem, P2);
-        transform(mem, P3, [true, false, false], true);
+        transform(mem, MATRIX, P3, [true, false, false], true);
         let flags = set_flags(mem);
         if !is_r0(mem, flags, 0) {
             return 0;
@@ -619,5 +654,183 @@ pub mod bridge {
         mem.write(mem.rebase(VA + 0x20), [copy(ax), y, copy(az), copy(aw)]);
         mem.write(mem.rebase(VB), [x, y]);
         next
+    }
+
+    /// S5, the textured loop (`0x007f2dae`..`0x007f3f02`), entered as
+    /// [`plain`]. Its start ([`textured_start`]) sets the colour, both
+    /// matrices and `t2`..`t6`; then per record (`0x18` bytes):
+    /// - the first point (`+0`, `+2`; `y`, `z`, `w` from `t4`) into `P0`
+    ///   and `P4`, `P0` through `MATRIX` (and `Q` from it), the first row
+    ///   of `MATRIX2` times `P4` into the accumulator;
+    /// - with `s1 & 0x11` equal to `r0`: `P4` through `MATRIX2`'s other
+    ///   rows, `P0.xyz *= Q`, `Q` from `P4`; the second point (`+0xc`,
+    ///   `+0xe`) into `P3`, `P4.z *= Q`, `P3` through `MATRIX` without its
+    ///   `z` lane (`Q` from it); `P3.xy *= Q`, `P0.z` and `P3.z` = `P4.z`;
+    ///   both minus the origin into `VA`, `VB` and clamped as in [`plain`];
+    /// - the fixed-point and texture steps of [`plain`], the texture pair
+    ///   summed `VB.xy = VB.xy + VA.xy`.
+    ///
+    /// The packet is not written. The original keeps `1/16` and, from the
+    /// first point's `Q` to the second's, `vf00.w` on the x87 stack (the
+    /// `s1` test pops `vf00.w` when it fails); `vf00` is not written in
+    /// between, so it is read again here. Every register the loop carries
+    /// from one record to the next (`ebx`, `ecx`, `edx`, `esi`, `ebp -
+    /// 0x1bac`) equals an EE word at the loop's start (`v0`'s and `v1`'s
+    /// second words, `t4`'s `y`, `z`, `w`), which are read from there.
+    pub fn textured(mem: &mut impl Mem, frame: Frame, cmd: u32, first: u32) {
+        textured_start(mem, frame, cmd);
+        let mut p = first;
+        loop {
+            textured_vertex(mem, p);
+            p = p.wrapping_add(VERTEX);
+            let count = COUNT.get(mem).wrapping_sub(1);
+            COUNT.set(mem, count);
+            frame.set_vertex(mem, p);
+            if count.cast_signed() <= 0 {
+                break;
+            }
+        }
+    }
+
+    /// `int` to `f32` (`fild dword; fstp dword`).
+    fn int_bits(bits: u32) -> f32 {
+        Reg::constant(f64::from(bits.cast_signed())).store()
+    }
+
+    /// S5's start (`0x007f2dae`..`0x007f3286`).
+    #[allow(clippy::similar_names)] // the matrices
+    fn textured_start(mem: &mut impl Mem, frame: Frame, cmd: u32) {
+        let r0: [u32; 4] = mem.read(mem.rebase(R0_AT));
+        T1.set(mem, r0[0]);
+        let c4: u32 = mem.read(cmd.wrapping_add(4));
+        // v1 = (1/128, 0, ..), VA a copy (v1's first word is replaced
+        // below)
+        wr(mem, V1 + 4, 0);
+        let [_, _, z, w]: [u32; 4] = mem.read(mem.rebase(V1));
+        mem.write(mem.rebase(VA), [0x3c00_0000, 0, z, w]);
+        // pextlb v0, r0, v0 (inline), then pextlh v0, r0, v0: the colour's
+        // bytes to words when r0 is 0. pextlh reads only v0's low eight
+        // bytes and writes all 16, so only pextlb's low half (`cmd +4`'s
+        // bytes with r0's) counts.
+        let (rt, rs) = (c4.to_le_bytes(), r0[0].to_le_bytes());
+        let bytes: [u8; 8] = std::array::from_fn(|i| [rt, rs][i % 2][i / 2]);
+        mem.write(mem.rebase(V0), bytes);
+        SHIFT.set(mem, 0);
+        let (v0, r0_at) = (mem.rebase(V0), mem.rebase(R0_AT));
+        crate::mat::bridge::ppp_ee_pextlh(mem, v0, r0_at, v0);
+        let words: [u32; 4] = mem.read(v0);
+        let k = f(rd(mem, VA));
+        for (c, word) in (0u32..).zip(words) {
+            wr(mem, COLOUR + 4 * c, st(k.mul_m32(int_bits(word))));
+        }
+        // the matrices (`g_pppColorConShift` is 0 here)
+        let m1: u32 = mem.read(cmd.wrapping_add(0x10));
+        wr(mem, V0, m1);
+        let rows: [u32; 16] = mem.read(m1);
+        mem.write(mem.rebase(MATRIX), rows);
+        let tex: u32 = mem.read(cmd.wrapping_add(0x1c));
+        wr(mem, V1, tex);
+        let m2 = if is_r0(mem, tex, rd(mem, V1 + 4)) {
+            wr(mem, V1, m1);
+            m1
+        } else {
+            tex
+        };
+        let rows: [u32; 16] = mem.read(m2);
+        mem.write(mem.rebase(MATRIX2), rows);
+        // t6 = (0, 2 r0.z, 1, 2 r0.w), t5 = 2 r0, t4 = (r0.x, r0.z, 0, 1)
+        // (t4's first word is replaced by every record's first point)
+        let twice = r0.map(|x| x.wrapping_add(x));
+        mem.write(mem.rebase(T6), [0, twice[2], 0x3f80_0000, twice[3]]);
+        mem.write(mem.rebase(T5), twice);
+        mem.write(mem.rebase(T4 + 4), [r0[2], 0, 0x3f80_0000]);
+        // t3 = shape's words +0x10 (64 bits) plus v1 (cmd +8 into the
+        // texture pointer's low half), sign-extended; v0 = (v1, v0 << 5)
+        let shape = frame.shape(mem);
+        let t3: u64 = mem.read(shape.wrapping_add(0x10));
+        wr16(mem, V0, mem.read(cmd.wrapping_add(0xa)));
+        wr16(mem, V1, mem.read(cmd.wrapping_add(8)));
+        // (`or` with v1's second word, 0 since the start)
+        let shifted = rd(mem, V0) << 5;
+        let v1 = rd(mem, V1);
+        wr(mem, V0, v1);
+        let t3 = t3.wrapping_add_signed(i64::from(v1.cast_signed()));
+        mem.write(mem.rebase(T3), t3);
+        wr(mem, V0 + 4, shifted);
+        mem.write(mem.rebase(T2), [0x8000u32, 0]);
+    }
+
+    /// One record of [`textured`].
+    #[allow(clippy::many_single_char_names)] // the lanes
+    fn textured_vertex<M: Mem>(mem: &mut M, p: u32) {
+        let half = |mem: &M, off: u32| rd16(mem, p.wrapping_add(off));
+        let hi = rd(mem, V0 + 4);
+        wr16(mem, V0, half(mem, 0));
+        wr16(mem, V1, half(mem, 2));
+        wr(mem, V0 + 0xc, rd(mem, V1 + 4));
+        load_point(mem, P0, hi);
+        load_point(mem, P4, hi);
+        transform(mem, MATRIX, P0, LOADED, true);
+        madda(mem, MATRIX2, P4, 0, false);
+        let flags = set_flags(mem);
+        if !is_r0(mem, flags, 0) {
+            return;
+        }
+        madda(mem, MATRIX2, P4, 1, false);
+        madda(mem, MATRIX2, P4, 2, false);
+        maddw(mem, MATRIX2, P4, true);
+        scale_by_q(mem, P0);
+        set_q(mem, P4);
+        // the second point's x (+0xc); the translation also loads +0xe into
+        // v1 and copies v1 into v0's second and fourth words: the flag
+        // test below replaces v1's first word and v0's second, and v0's
+        // fourth already holds v1's second word
+        wr16(mem, V0, half(mem, 0xc));
+        load_point(mem, P3, 0);
+        let q = f32::from_bits(Q.get(mem));
+        let z = st(f(rd(mem, P4 + 8)).mul_m32(q));
+        wr(mem, P4 + 8, z);
+        madda(mem, MATRIX, P3, 0, true);
+        madda(mem, MATRIX, P3, 1, true);
+        madda(mem, MATRIX, P3, 2, false);
+        // (the original leaves out the z lane, replaced below)
+        maddw(mem, MATRIX, P3, true);
+        set_q(mem, P3);
+        // P3.xy *= Q; P0.z and P3.z = P4.z (`fst` copies)
+        let z = st(f(z));
+        wr(mem, P0 + 8, z);
+        let q = f(Q.get(mem));
+        let x = st(f(rd(mem, P3)) * q);
+        wr(mem, P3, x);
+        let y = st(q.mul_m32(f32::from_bits(rd(mem, P3 + 4))));
+        wr(mem, P3 + 4, y);
+        wr(mem, P3 + 8, z);
+        minus_origin(mem, VA, P0);
+        minus_origin(mem, VB, P3);
+        let b: [u32; 4] = mem.read(mem.rebase(VB));
+        crate::op::bridge::op_vec3_clamp(mem, mem.rebase(VMAX), mem.rebase(VA), b, true);
+        let b: [u32; 4] = mem.read(mem.rebase(VB));
+        crate::op::bridge::op_vec3_clamp(mem, mem.rebase(VMIN), mem.rebase(VA), b, false);
+        // (the translation zeroes v0's second word here: the flags did)
+        if !fixed_point(mem, &[P0, P3]) {
+            return;
+        }
+        // the texture pair: (+0x10, +0x12) into VA, (+0x14, +0x16) into VB;
+        // v0 then holds the second v1, the first and v1's second word (0
+        // since the flag test) in its last three words (the translation
+        // sets them after the first pair too: the second replaces them)
+        wr16(mem, V0, half(mem, 0x10));
+        wr16(mem, V1, half(mem, 0x12));
+        let first = rd(mem, V1);
+        load_tex(mem, VA);
+        wr16(mem, V0, half(mem, 0x14));
+        wr16(mem, V1, half(mem, 0x16));
+        let second = rd(mem, V1);
+        mem.write(mem.rebase(V0 + 4), [second, first, 0]);
+        load_tex(mem, VB);
+        let sum_x = f(rd(mem, VA)).add_m32(f32::from_bits(rd(mem, VB)));
+        wr(mem, VB, st(sum_x));
+        let sum_y = f(rd(mem, VB + 4)).add_m32(f32::from_bits(rd(mem, VA + 4)));
+        wr(mem, VB + 4, st(sum_y));
     }
 }
