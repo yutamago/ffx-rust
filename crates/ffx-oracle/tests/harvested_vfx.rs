@@ -230,3 +230,22 @@ harvest_test!(ppp_fp_loop, 0x0072_9ab0, args = 0, |m: &mut Oracle, _| {
         m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
     });
 });
+// effects (round 52)
+harvest_test!(opu_jump_etc, 0x0081_68c0, args = 2, |m: &mut Oracle, s| {
+    ffx_vfx::opus::bridge::opu_jump_etc(
+        m,
+        s.arg(0),
+        s.arg(1),
+        &mut |m, f, a| m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax,
+        &mut |m, f, a| m.call_f64(f, a).unwrap(),
+    )
+});
+harvest_test!(opu_v_en_bone, 0x0080_4c90, args = 2, |m: &mut Oracle, s| {
+    ffx_vfx::opus::bridge::opu_v_en_bone(
+        m,
+        s.arg(0),
+        s.arg(1),
+        &mut |m, f, a| m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax,
+        &mut |m, f, a| m.call_f64(f, a).unwrap(),
+    )
+});
