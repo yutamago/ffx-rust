@@ -6273,32 +6273,36 @@ pub mod bridge {
         }
         let v = mem.read::<u32>(at(0x67f0c)) & !8;
         mem.write(at(0x67f0c), v);
-        call(mem, VISIBLE, &[v]);
-        if call(mem, 0x0064_2690, &[]) != 0 {
+        call(mem, mem.rebase(VISIBLE), &[v]);
+        if call(mem, mem.rebase(0x0064_2690), &[]) != 0 {
             let mut i = 0;
             while i < mem.read::<u32>(at(0x68788)) {
                 let rec = at(0x68812 + 0xb4 * i);
-                call(mem, TRANSLATION, &[i, rec.wrapping_sub(0x26)]);
+                call(mem, mem.rebase(TRANSLATION), &[i, rec.wrapping_sub(0x26)]);
                 let order = u32::from(mem.read::<u16>(rec));
-                call(mem, 0x0064_26a0, &[i, rec.wrapping_sub(0x36), order]);
+                call(
+                    mem,
+                    mem.rebase(0x0064_26a0),
+                    &[i, rec.wrapping_sub(0x36), order],
+                );
                 i += 1;
             }
-            call(mem, 0x0063_df60, &[]);
+            call(mem, mem.rebase(0x0063_df60), &[]);
         }
         let objects = mem.read::<u32>(at(0x68788));
         if objects == 0 || mem.read::<u8>(at(0x67f08)) & 1 == 0 {
-            call(mem, VISIBLE, &[0]);
+            call(mem, mem.rebase(VISIBLE), &[0]);
             return;
         }
         if map(mem) == 0x132 && objects > 9 {
-            call(mem, 0x006e_d370, &[frame, at(0x68e40)]);
+            call(mem, mem.rebase(0x006e_d370), &[frame, at(0x68e40)]);
             let y = ffx_bridge::x87::load(mem.read(frame + 4));
             let step = mem.read::<f64>(mem.rebase(0x00b1_f2b8));
             mem.write(
                 frame + 4,
                 ffx_bridge::x87::store(ffx_bridge::x87::sub(y, step)),
             );
-            call(mem, TRANSLATION, &[9, frame]);
+            call(mem, mem.rebase(TRANSLATION), &[9, frame]);
         }
         let v = mem.read::<u32>(at(0xba3ec));
         mem.write(at(0xba3f0), v);
@@ -6307,7 +6311,7 @@ pub mod bridge {
             return;
         }
         for f in [0x0090_dd80, 0x0090_d260, 0x0090_da90] {
-            call(mem, f, &[r]);
+            call(mem, mem.rebase(f), &[r]);
         }
         if mem.read::<u32>(at(0x67f30)) != mem.read::<u32>(at(0x67f34)) {
             return;
@@ -6317,7 +6321,7 @@ pub mod bridge {
             let anim = at(0x9d9c8 + 0x720 * i);
             if mem.read::<u32>(anim) & 1 != 0 {
                 let cur = mem.read::<u32>(anim + 4);
-                if call(mem, 0x0090_bdb0, &[r, i, cur]) != 0 {
+                if call(mem, mem.rebase(0x0090_bdb0), &[r, i, cur]) != 0 {
                     let f = mem.read::<u32>(anim);
                     mem.write(anim, f ^ 1);
                 }
@@ -6327,9 +6331,9 @@ pub mod bridge {
                 let k = u32::from(mem.read::<u16>(rec.wrapping_add(0x3a)));
                 if kind == 0x10 {
                     let j = u32::from(mem.read::<u16>(rec.wrapping_add(0x36)));
-                    call(mem, 0x0091_6c80, &[r, src, k, j]);
+                    call(mem, mem.rebase(0x0091_6c80), &[r, src, k, j]);
                 } else if kind == 0x100 {
-                    call(mem, 0x0091_6d40, &[r, src, k]);
+                    call(mem, mem.rebase(0x0091_6d40), &[r, src, k]);
                 }
             }
             i += 1;

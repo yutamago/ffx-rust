@@ -24646,8 +24646,7 @@ fn small6_g_render_draw_matches_the_original() {
                 },
                 |m| {
                     ffx_field::yi::bridge::yi_render_draw(m, r, skip, frame, &mut |m, f, a| {
-                        let at = m.rebase(f);
-                        m.call(at, Conv::Cdecl, a).unwrap().eax
+                        m.call(f, Conv::Cdecl, a).unwrap().eax
                     });
                 },
             );

@@ -10006,14 +10006,16 @@ pub const PLAY_TIME_LAST: u32 = 0x0132_5b84;
 /// `f32(graphicGetTime())`, `last` = [`PLAY_TIME_LAST`], the difference
 /// rounded to `f32`), it becomes `trunc(f32(t - last) + f32(time))` (low
 /// 32 bits of the 64-bit `fistp`) and `last` = `f32(ftol2_sse(t))`.
-/// `TkGetSaveEventAddress` and `FFXGetVideoMode` (unused) are called first.
+/// `TkGetSaveEventAddress` and `FFXGetVideoMode` (unused) are called first;
+/// `fcall` gets the rebased `graphicGetTime`.
 pub fn atel_play_time_update<H: ffx_bridge::Host>(
     h: &mut H,
     mut fcall: impl FnMut(&mut H, u32, &[u32]) -> f64,
 ) {
     let save = host_call(h, MS_GET_SAVE_EVENT_ADDRESS, &[]);
     host_call(h, 0x0088_7c40, &[]);
-    let t = x87::load(x87::store(fcall(h, 0x0064_1410, &[])));
+    let time_fn = h.rebase(0x0064_1410);
+    let t = x87::load(x87::store(fcall(h, time_fn, &[])));
     let time_at = save.wrapping_add(0xbc);
     let time = h.read::<u32>(time_at);
     let last_at = h.rebase(PLAY_TIME_LAST);

@@ -72,3 +72,16 @@ harvest_test!(
         })
     }
 );
+// small round 6
+harvest_test!(
+    menu_scene_track_step,
+    0x00a7_b510,
+    args = 5,
+    |m: &mut Oracle, s| {
+        let args = [s.arg(0), s.arg(1), s.arg(2), s.arg(3), s.arg(4)];
+        ffx_system::scene::bridge::menu_scene_track_step(m, args, |m, f, a| {
+            let f = m.rebase(f);
+            m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+        })
+    }
+);

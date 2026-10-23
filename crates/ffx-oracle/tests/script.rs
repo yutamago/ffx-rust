@@ -16764,10 +16764,7 @@ fn small6c_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str)
             false,
             &format!("Atel_PlayTimeUpdate {what} {round} t {t} last {last} time {time:#x}"),
             |r| {
-                hp::atel_play_time_update(r, |r, f, args| {
-                    let at = r.0.rebase(f);
-                    r.0.call_f64(at, args).unwrap()
-                });
+                hp::atel_play_time_update(r, |r, f, args| r.0.call_f64(f, args).unwrap());
                 0
             },
         );
