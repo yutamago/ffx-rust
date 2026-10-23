@@ -26,3 +26,14 @@ harvest_test!(
         )
     }
 );
+// small round 1
+harvest_test!(
+    tk_draw_no_trans,
+    0x0088_d4f0,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        ffx_menu::tk::bridge::tk_draw_no_trans(m, &mut |m, f, a| {
+            m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+        })
+    }
+);

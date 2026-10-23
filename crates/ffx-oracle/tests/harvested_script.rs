@@ -340,3 +340,11 @@ harvest_test!(
         );
     }
 );
+
+// small round 1: the battle ctrl work's +0x4c callback
+harvest_test!(
+    atel_exec_ctrl_event,
+    0x0086_7740,
+    args = 1,
+    |m: &mut Oracle, s| { hp::atel_exec_ctrl_event(&mut OracleHost(m), s.arg(0)) }
+);

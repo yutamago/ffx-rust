@@ -22,3 +22,22 @@ harvest_test!(
         })
     }
 );
+// small round 1: the CTB window's frame (MsGetCTBlist's count word in stack scratch)
+harvest_test!(
+    to_btl_ctrl_ctb_window,
+    0x0089_ece0,
+    args = 2,
+    |m: &mut Oracle, s| {
+        let local = m.stack_range().start + 0x100;
+        ffx_system::btl::bridge::ctrl_ctb_window(
+            m,
+            s.arg(1),
+            local,
+            |m, f, a| {
+                let f = m.rebase(f);
+                m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+            },
+            |m, f, a| m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax,
+        );
+    }
+);
