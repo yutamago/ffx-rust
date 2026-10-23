@@ -2624,11 +2624,19 @@ fn pc_r4_snd3d_foot_request() {
                     [2000, 0x7c6, 0x1_07d0, 0][rng.below(4) as usize],
                 );
             }
-            // what the original's frame holds before it runs
+            // what the original's frame holds before it runs: the
+            // direction (words 0..4, read unwritten with flag 2 for an
+            // actor of another type and flag 1) 0, the port's value (brief
+            // 2026-10-24), which the port writes itself over garbage
             for i in 0..8 {
                 let v = quiet(foot_float(&mut rng));
-                Mem::write(a, frame + 4 * i, v);
-                Mem::write(b, work + 4 * i, v);
+                if i < 4 {
+                    Mem::write(a, frame + 4 * i, 0u32);
+                    Mem::write(b, work + 4 * i, quiet(foot_float(&mut rng)));
+                } else {
+                    Mem::write(a, frame + 4 * i, v);
+                    Mem::write(b, work + 4 * i, v);
+                }
             }
             let play = rng.below(2);
             let mut count = [0, 2, 3, 0x100, u32::MAX][rng.below(5) as usize];

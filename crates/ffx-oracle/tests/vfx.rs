@@ -33503,12 +33503,12 @@ fn r53d_render_stack_matches_the_original() {
     }
 }
 
-/// `opu_v_u2` against the port (not hooked: other nibbles read the
-/// never-written frame words `ebp - 8` / `- 0x10`): nibbles 0, 0x1000 and
-/// the rest with those words seeded in both oracles' stacks (a unit-like
-/// record and a lift), `t` and the points with NaN, infinities and -0,
-/// the lift byte 0 or not, the colour shift, `r0` and the work registers
-/// random.
+/// `opu_v_u2` against the port: nibbles 0, 0x1000 and the rest, whose
+/// never-written frame words `ebp - 8` / `- 0x10` are 0 in the original's
+/// stack (the port's value, brief 2026-10-24), so they read the null
+/// record (the null page mapped on both sides, `+0x90..` random); `t` and
+/// the points with NaN, infinities and -0, the lift byte 0 or not, the
+/// colour shift, `r0` and the work registers random.
 #[test]
 #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
 fn r53e_opu_v_u2_matches_the_original() {
@@ -33530,6 +33530,8 @@ fn r53e_opu_v_u2_matches_the_original() {
             p.sym(0x00c0_a004),
         );
         let frame = p.b.stack_range().end - 0x100 - 8 - 4 - 0x200 - 8 - 4 - 4;
+        p.a.map_zeroed(0, 0x1000).unwrap();
+        p.b.map_zeroed(0, 0x1000).unwrap();
         let float = |rng: &mut Xorshift| {
             if rng.chance(90) {
                 ranged(rng, -500.0, 500.0)
@@ -33562,29 +33564,173 @@ fn r53e_opu_v_u2_matches_the_original() {
             p.set(cmd + 6, (0x30 + 4 * rng.below(0x30)) as u8);
             p.set(cmd + 7, rng.pick(&[0u8, 0x40, 0x9c, 0xa0]));
             p.set(shift, if rng.chance(20) { 4 * rng.below(4) } else { 0 });
-            // the frame leftovers: a record pointer (also read as t) and a lift
-            let leftover = others + 0x80 * rng.below(6);
-            let lift = float(&mut rng);
+            // the never-written frame words: 0 (the port's value); the null
+            // record they make the other nibbles read
             for o in [&mut p.a, &mut p.b] {
-                o.write(frame - 8, &leftover.to_le_bytes()).unwrap();
-                o.write(frame - 0x10, &lift.to_le_bytes()).unwrap();
+                o.write(frame - 8, &[0; 4]).unwrap();
+                o.write(frame - 0x10, &[0; 4]).unwrap();
+            }
+            for o in (0x90..0xa0).step_by(4) {
+                let v = float(&mut rng);
+                p.set(o, v);
             }
             check_deep_n(
                 &mut p,
                 &format!("opu_v_u2 round {round}"),
                 0x0081_9c90,
                 &[host, cmd],
-                |o, frame| {
-                    Some(opus::bridge::opu_v_u2(
-                        o,
-                        host,
-                        cmd,
-                        frame,
-                        &mut call_original,
-                    ))
-                },
+                |o, _| Some(opus::bridge::opu_v_u2(o, host, cmd, &mut call_original)),
             );
         }
         assert!(seen.iter().all(|&n| n > 500), "{seen:?}");
+    }
+}
+
+/// `VertexGroupApplyZMatZClip` against the port: flag 8 clear and set,
+/// the never-written `[ebp-8]` 0 in the original's frame (the port's
+/// value, brief 2026-10-24); the five matrices zero, identity or random
+/// (zeros, NaN, infinities, values past 2^23), the screen matrix random
+/// with its column 3 zero at times; the level hash and magic id fixed to
+/// each of the three exceptions or neither.
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn junk_vertex_group_apply_zmat_zclip_matches_the_original() {
+    use mat::bridge as mt;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0071_19d0);
+        let mats: Vec<u32> = (0..5).map(|_| p.alloc(0x40)).collect();
+        let screen = p.sym(mt::SCREEN_MATRIX);
+        let (hash, magic) = (p.sym(0x0064_1da0), p.sym(0x009d_a3b0));
+        let elem = |rng: &mut Xorshift| match rng.below(20) {
+            0..=2 => 0u32,
+            3 => 0x8000_0000,
+            4 => rng.pick(&[0x7fc0_0000u32, 0x7f80_0000, 0xff80_0000]),
+            5 => ranged(rng, -2e7, 2e7),
+            6 => rng.pick(&[0x3f80_0000u32, 0xbf80_0000, 0x4b00_0000]),
+            _ => ranged(rng, -4.0, 4.0),
+        };
+        let mut seen = [[0u32; 2]; 2];
+        for round in 0..4000u32 {
+            // a third of the rounds dense and finite, aimed at clipping
+            let clip = rng.chance(33);
+            for &at in &mats {
+                let mode = if clip { 9 } else { rng.below(10) };
+                for i in 0..16u32 {
+                    let v = match mode {
+                        _ if clip => ranged(&mut rng, -4.0, 4.0),
+                        0 => 0,
+                        1 => {
+                            if i % 5 == 0 {
+                                0x3f80_0000
+                            } else {
+                                0
+                            }
+                        }
+                        _ => elem(&mut rng),
+                    };
+                    p.set(at + 4 * i, v);
+                }
+            }
+            for i in 0..16u32 {
+                let v = if clip {
+                    ranged(&mut rng, 0.5, 3.0)
+                } else if i % 4 == 3 && rng.chance(10) {
+                    0
+                } else if rng.chance(85) {
+                    ranged(&mut rng, -3.0, 3.0)
+                } else {
+                    elem(&mut rng)
+                };
+                p.set(screen + 4 * i, v);
+            }
+            if clip {
+                // column 2 = k x column 3: every depth near k, out of range
+                let k = rng.pick(&[-5.0f32, -0.001, 9e6, 1e30, 8_388_608.0, 16_777_216.0]);
+                for r in 0..4u32 {
+                    let w = f32::from_bits(p.get::<u32>(screen + 16 * r + 12));
+                    p.set(screen + 16 * r + 8, (w * k).to_bits());
+                }
+            }
+            let (h, g) = rng.pick(&[
+                (0x21e8u32, 0u32),
+                (0x4a6, 0),
+                (1, 0x2b9),
+                (1, 0),
+                (0x21e8, 0x2b9),
+                (7, 3),
+            ]);
+            for o in [&mut p.a, &mut p.b] {
+                o.stub_return(hash, h).unwrap();
+                o.stub_return(magic, g).unwrap();
+            }
+            let mut flags = rng.next() & 0xff;
+            if round % 20 == 0 {
+                // flag 8, m = a = identity, L = b: row 0's denominator is
+                // (1 + 2^-24) - 1 = 0 in the original's order (q0 = 0,
+                // drawn), 2^-24 summed the other way (q0 = 2^24, clipped);
+                // rows 1, 2 and m's row 3 out of range
+                for i in 0..16u32 {
+                    let v = if i % 5 == 0 { 1f32 } else { 0.0 };
+                    p.set(mats[0] + 4 * i, v.to_bits());
+                    p.set(mats[1] + 4 * i, v.to_bits());
+                }
+                let b = [
+                    1f32, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ];
+                let s = [
+                    0f32,
+                    0.0,
+                    -1.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    2f32.powi(-24),
+                    0.0,
+                    0.0,
+                    2.0,
+                    -1.0,
+                ];
+                for i in 0..16u32 {
+                    p.set(mats[2] + 4 * i, b[i as usize].to_bits());
+                    p.set(screen + 4 * i, s[i as usize].to_bits());
+                }
+                flags |= 8;
+            }
+            let frame = p.b.stack_range().end - 0x100 - 0x18 - 4 - 0x200 - 0x18 - 4 - 4;
+            // junk read: [ebp-8] never written; 0, as the port
+            for o in [&mut p.a, &mut p.b] {
+                o.write(frame - 8, &[0; 4]).unwrap();
+            }
+            let args = [mats[0], mats[1], mats[2], mats[3], mats[4], flags];
+            let mut drawn = 0;
+            check_deep_n(
+                &mut p,
+                &format!("VertexGroupApplyZMatZClip round {round}"),
+                0x0071_19d0,
+                &args,
+                |o, frame| {
+                    let r = mt::vertex_group_apply_zmat_zclip(
+                        o,
+                        args[0],
+                        args[1],
+                        args[2],
+                        args[3],
+                        args[4],
+                        flags,
+                        frame,
+                        &mut call_original,
+                    );
+                    drawn = usize::from(r == 0);
+                    Some(r)
+                },
+            );
+            seen[usize::from(flags & 8 != 0)][drawn] += 1;
+        }
+        assert!(seen.iter().flatten().all(|&n| n > 100), "{seen:?}");
     }
 }

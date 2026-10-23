@@ -264,7 +264,8 @@ times `g_AtelSnd3dVolumeTotalRatio`; only the mix is clamped to 0..127).
 The pan is `ftol((pi + angle) * 127 / 2pi)` of `Math_Atan2XZ(0, 0, z, x)`
 folded into [-pi/2, pi/2] and scaled by the pan ratio. Requests with flag
 2 for an actor that is not of type 2 or 5 but flag 1 set read a direction
-the function never wrote (its stack frame).
+the function never wrote (its stack frame); the port uses 0 there (brief
+2026-10-24).
 
 # FMOD Designer event projects (`*.fev`)
 

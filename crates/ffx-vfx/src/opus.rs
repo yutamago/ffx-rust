@@ -12410,8 +12410,10 @@ pub mod bridge {
     /// the lift = the one at byte `cmd +7` / 16 (0 for byte 0); both
     /// return `cmd + 8`. Other nibbles return `cmd` and take `a`, `b` and
     /// `t` from the never-written frame word `ebp - 8` and the lift from
-    /// `ebp - 0x10`: what the previous command's frame left there in the
-    /// opus loop, so this port is not hooked (a shim can't reproduce it).
+    /// `ebp - 0x10` (what the previous command's frame left there in the
+    /// opus loop); the port uses 0 for both (brief 2026-10-24), so `a` and
+    /// `b` are the null record and the points come from `0x90..0xa0`,
+    /// where the original faults too unless the stale word is a pointer.
     ///
     /// `0x00c8f8d0..` = `t`, `g_Ee_Gpr +0x34..`, the lift and `+0x4c..`
     /// (`+0x30` = `t`, `+0x40` = the lift); `0x00c8f8f0..`/`0x00c8f900..` =
@@ -12427,7 +12429,6 @@ pub mod bridge {
         mem: &mut M,
         host: u32,
         cmd: u32,
-        ebp: u32,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
         use ffx_bridge::x87::{add, load, mul, round_trip, store, sub};
@@ -12461,9 +12462,11 @@ pub mod bridge {
                 (a, b, t, lift, cmd.wrapping_add(8))
             }
             _ => {
-                // the never-written frame words
-                let w: u32 = mem.read(ebp.wrapping_sub(8));
-                let lift: u32 = mem.read(ebp.wrapping_sub(0x10));
+                // junk read: [ebp-0x8] never written; 0 (brief 2026-10-24)
+                // (a, b and t all come from it)
+                let w = 0u32;
+                // junk read: [ebp-0x10] never written; 0 (brief 2026-10-24)
+                let lift = 0u32;
                 (w, w, w, lift, cmd)
             }
         };

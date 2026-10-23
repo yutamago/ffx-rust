@@ -217,6 +217,15 @@ ported! {
     SndCalcVoiceWait @ 0x0088_5d20 => extern "C" fn snd_calc_voice_wait() -> u32 {
         s::snd_calc_voice_wait(&mem())
     }
+    /// `Snd3dFootRequest(req, play, count)`: the pan in `eax`; the
+    /// original's frame (the direction and position) in this call's own,
+    /// the direction 0 where the original reads it unwritten (brief
+    /// 2026-10-24).
+    Snd3dFootRequest @ 0x0087_6950 => extern "C" fn snd3d_foot_request(req: u32, play: u32, count: i32) -> u32 {
+        let mut work = super::StackFrame::<{ (ffx_sound::foot3d::bridge::WORK / 4) as usize }>::new();
+        let at = work.at();
+        ffx_sound::foot3d::bridge::snd3d_foot_request(&mut mem(), req, play, count, at)
+    }
     /// `SndInitNowPlayMusic()`.
     SndInitNowPlayMusic @ 0x0088_5db0 => extern "C" fn snd_init_now_play_music() {
         s::snd_init_now_play_music(&mut mem());
