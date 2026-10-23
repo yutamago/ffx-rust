@@ -6226,4 +6226,18 @@ ported! {
         let ebp = frame.at() + 0xa0;
         prog::bridge::ppp_ke_th(&mut mem(), obj, key, prog, ebp, &mut |_, f, a| call_ptr(f, a))
     }
+    // ---- round 49 b ----
+    /// `pppFpLoop()` (`0x00729ab0`): the colour scale in this shim's frame.
+    pppFpLoop @ 0x0072_9ab0 => extern "C" fn ppp_fp_loop() {
+        let mut frame = super::StackFrame::<4>::new();
+        let colour = frame.at();
+        fp::bridge::ppp_fp_loop(&mut mem(), colour, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawMdlPSimDraw(obj, key, prog)` (`0x0073d070`): the view-space
+    /// matrix in this shim's frame.
+    pppDrawMdlPSimDraw @ 0x0073_d070 => extern "C" fn ppp_draw_mdl_psim_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        let mut locals = super::StackFrame::<16>::new();
+        let frame = locals.at() + 0x44;
+        mdl::bridge::ppp_draw_mdl_psim_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
 }

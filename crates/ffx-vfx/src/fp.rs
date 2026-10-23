@@ -1241,6 +1241,224 @@ pub mod bridge {
             }
         }
     }
+
+    // ---- round 49 b ----
+
+    /// `g_VfxYiqMode` (`0x00c3a504`): the effect `pppFpLoop` runs (-1 off).
+    pub const YIQ_MODE: Global<u32> = Global::new(0x00c3_a504);
+    /// `g_pppFpCurrentId` (`0x00c3a500`): the running effect's `u16 +0x64`.
+    pub const CURRENT_ID: Global<u32> = Global::new(0x00c3_a500);
+    /// `g_PppPacketPos` (`0x0230fd2c`).
+    const PACKET_POS: Global<u32> = Global::new(0x0230_fd2c);
+    /// `g_CurrentMapNo` (`0x012fbc40`).
+    const MAP_NO: Global<u32> = Global::new(0x012f_bc40);
+
+    /// Whether `pppFpLoop` runs effect `i` of a centred effect (`u16 +0x44`
+    /// 0) that `pppCheckViewCylinder` sees: on map 0x136 all but 2, 6 and
+    /// 10; on map 0x31 only effect 0x26, while `getScenerioFlag()` is at
+    /// most 0x2c; on map 0x176 only effect 0xd; elsewhere none.
+    fn runs_in_view<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> bool {
+        match MAP_NO.get(mem) {
+            0x136 => !matches!(i, 2 | 6 | 10),
+            0x31 => {
+                // (the original then tests map 0x176 and effect 0xd again,
+                // which effect 0x26 never passes)
+                if i != 0x26 {
+                    return false;
+                }
+                let flag = call(mem, sym(mem, 0x0078_7360), &[]);
+                #[allow(clippy::cast_possible_truncation)] // cmp ax
+                let flag = flag as u16;
+                flag <= 0x2c
+            }
+            0x176 => i == 0xd,
+            _ => false,
+        }
+    }
+
+    fn sym(mem: &impl Mem, a: u32) -> u32 {
+        Global::<u32>::new(a).ptr(mem).addr
+    }
+
+    /// `pppFpLoop()` (`0x00729ab0`): the field effects' frame. With
+    /// [`FP_DISP`] on: the screen and camera matrices copied
+    /// (`MsCopyScreenMatrix(g_pppScreenMatrix)`,
+    /// `MsCopyCameraMatrix(g_pppCameraMatrix)`), the camera's inverse into
+    /// `g_pppFillMatrix` (`sceVu0InversMatrix4x4`),
+    /// `UpdatePhyreViewProjectionMatrix()`, `pppFpSetWoodMatrix()` with
+    /// [`WOOD`]; the packet position at [`PACKET_BUF`], the field heap
+    /// current, both point-light words cleared. Then each effect `i` of
+    /// [`DATA`] (the count re-read every pass): hidden (display record
+    /// bit 0x10) it gets `hideDisplayOffParticle(run)`; else [`YIQ_MODE`]
+    /// is `i` and a started one (counter not -0x1000) runs, unless it is
+    /// centred (`u16 +0x44` 0), inside the view cylinder
+    /// (`pppCheckViewCylinder(camera, run + 0x40, x, y, z)` with the run's
+    /// floats `+0x20..+0x28`) and not let through by [`runs_in_view`].
+    /// Running: [`CURRENT_ID`] is its `+0x44`; a non-negative counter
+    /// counts down, and on passing below 0 the objects are freed and the
+    /// part restarted with `pppStartPart(run, 0x1000, p, 1)`, `p` being
+    /// program `[entry + 0x34]` of the table's `+0x10` (a status `+0x1d`
+    /// of 2 becomes 1); else the effect waits. Then `pppFpLoopMatrix(run,
+    /// disp, entry)`, the colour scale (`yiGetColorScale(colour)`, each
+    /// word clamped to at most 1.0, scaled by `[0x00b50224]` (4096) with
+    /// `FFXVu0ScaleVector`) truncated into the run's `u16 +0x70..+0x76`,
+    /// and `pppRunPartFp(run, 0x30)`; a nonzero result frees the objects
+    /// and stops the effect. At the end: `pppFpPointLightProc()`, the
+    /// packet use and peak (with two `dbgPrintf`s over the budget in
+    /// debug), the heap use (the two heaps' `+0x1c` and `+0xc`) and peak,
+    /// the packet position cleared; in debug `op_heap_display_set(used,
+    /// budget, 0x601)` and `op_heap_display_set(heap, span, 0x603)`, the
+    /// span adding `last - first + 0x10` of each heap with both words
+    /// set. [`YIQ_MODE`] -1 in any case. `colour` is the original's local
+    /// (its `ebp - 0x14`, 16 bytes). Callees through `call`.
+    #[allow(clippy::too_many_lines)]
+    pub fn ppp_fp_loop<M: Mem>(
+        mem: &mut M,
+        colour: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if FP_DISP.get(mem) == 0 {
+            YIQ_MODE.set(mem, u32::MAX);
+            return;
+        }
+        let camera = sym(mem, CAMERA_MATRIX);
+        let screen = sym(mem, 0x0230_fe60);
+        call(mem, sym(mem, 0x007b_ba50), &[screen]);
+        call(mem, sym(mem, 0x007c_0070), &[camera]);
+        let fill = sym(mem, 0x0230_fca0);
+        call(mem, sym(mem, 0x006e_d460), &[fill, camera]);
+        call(mem, sym(mem, 0x0071_1910), &[]);
+        let wood = WOOD.get(mem);
+        YIQ_MODE.set(mem, u32::MAX);
+        if wood != 0 {
+            call(mem, sym(mem, 0x0072_a690), &[]);
+        }
+        let buf = PACKET_BUF.get(mem);
+        PACKET_POS.set(mem, buf);
+        set_env(mem);
+        POINT_LIGHT_A.set(mem, 0);
+        POINT_LIGHT_B.set(mem, 0);
+        let count = |mem: &M| u32::from(mem.read::<u16>(DATA.get(mem).wrapping_add(4)));
+        let mut i = 0;
+        while i < count(mem) {
+            let (run, disp) = (run(mem, i), disp(mem, i));
+            if mem.read::<u8>(disp) & 0x10 != 0 {
+                call(mem, sym(mem, 0x0072_8e40), &[run]);
+                i += 1;
+                continue;
+            }
+            YIQ_MODE.set(mem, i);
+            if mem.read::<u32>(run) == NOT_STARTED {
+                i += 1;
+                continue;
+            }
+            let mut entry = DATA.get(mem).wrapping_add(0x20 + 0x50 * i);
+            if mem.read::<u16>(entry.wrapping_add(0x44)) == 0 {
+                // fld m32 / fstp m32 onto the stack
+                let float = |mem: &M, o: u32| crate::x87::load(mem.read(run.wrapping_add(o)));
+                let (x, y, z) = (float(mem, 0x20), float(mem, 0x24), float(mem, 0x28));
+                let args = [camera, run.wrapping_add(0x40), x, y, z];
+                let seen = call(mem, sym(mem, 0x0072_8f10), &args);
+                if seen != 0 && !runs_in_view(mem, i, call) {
+                    i += 1;
+                    continue;
+                }
+            }
+            CURRENT_ID.set(mem, u32::from(mem.read::<u16>(entry.wrapping_add(0x44))));
+            let counter = mem.read::<u32>(run).cast_signed();
+            if counter >= 0 {
+                let left = counter.wrapping_sub(1);
+                mem.write(run, left);
+                if left >= 0 {
+                    i += 1;
+                    continue;
+                }
+                let mode2 = mem.read::<u8>(run.wrapping_add(0x1d)) == 2;
+                free_objects(mem, run, call);
+                let data = DATA.get(mem);
+                entry = data.wrapping_add(0x20 + 0x50 * i);
+                set_env(mem);
+                let programs = ffx_system::stub::ptr32(mem.read(data.wrapping_add(0x10)));
+                let k = mem.read::<u32>(entry.wrapping_add(0x34));
+                let program = mem.read::<u32>(programs.wrapping_add(k.wrapping_mul(4)));
+                call(mem, sym(mem, 0x0071_23c0), &[run, 0x1000, program, 1]);
+                if mode2 {
+                    mem.write(run.wrapping_add(0x1d), 1u8);
+                }
+            }
+            call(mem, sym(mem, 0x0072_8ac0), &[run, disp, entry]);
+            call(mem, sym(mem, 0x0090_88d0), &[colour]);
+            for k in 0..4 {
+                let at = colour.wrapping_add(4 * k);
+                if f32::from_bits(mem.read(at)) > 1.0 {
+                    mem.write(at, 1.0f32);
+                }
+            }
+            let scale = crate::x87::load(mem.read(sym(mem, 0x00b5_0224)));
+            call(mem, sym(mem, 0x006e_d8f0), &[colour, colour, scale]);
+            for k in 0..4 {
+                let x = f32::from_bits(mem.read(colour.wrapping_add(4 * k)));
+                let v = ffx_bridge::x87::cvttsd2si(f64::from(x));
+                #[allow(clippy::cast_possible_truncation)] // the low half
+                mem.write(run.wrapping_add(0x70 + 2 * k), v as u16);
+            }
+            set_env(mem);
+            if call(mem, sym(mem, 0x0071_22f0), &[run, 0x30]) != 0 {
+                free_objects(mem, run, call);
+                mem.write(run, NOT_STARTED);
+            }
+            i += 1;
+        }
+        call(mem, sym(mem, 0x0072_9f90), &[]);
+        let debug = call(mem, sym(mem, 0x0088_7c50), &[]);
+        let [size, used_at, peak_at, heap_at, heap_peak_at] = STATS;
+        let g = |mem: &M, a: u32| mem.read::<u32>(sym(mem, a)).cast_signed();
+        let used = PACKET_POS
+            .get(mem)
+            .wrapping_sub(PACKET_BUF.get(mem))
+            .cast_signed();
+        if debug != 0 && used > g(mem, size) {
+            let print = sym(mem, 0x0062_f500);
+            let kb = (used / 1024).cast_unsigned();
+            let format = sym(mem, 0x00b5_13d4);
+            call(mem, print, &[format, kb]);
+            // the first call's format is still pushed below the second's
+            // (which prints no arguments)
+            call(mem, print, &[sym(mem, 0x00b5_13fc), format]);
+        }
+        mem.write(sym(mem, used_at), used);
+        if g(mem, peak_at) < used {
+            mem.write(sym(mem, peak_at), used);
+        }
+        let heap = g(mem, 0x00ce_c248).wrapping_add(g(mem, 0x00ce_c238));
+        PACKET_POS.set(mem, 0);
+        let mut span = 0i32;
+        for (first, last) in [(0x00ce_c230, 0x00ce_c234), (0x00ce_c240, 0x00ce_c244)] {
+            let (a, b) = (g(mem, first), g(mem, last));
+            if b != 0 && a != 0 {
+                span = span.wrapping_add(b.wrapping_sub(a).wrapping_add(0x10));
+            }
+        }
+        mem.write(sym(mem, heap_at), heap);
+        if g(mem, heap_peak_at) < heap {
+            mem.write(sym(mem, heap_peak_at), heap);
+        }
+        if debug != 0 {
+            let set = sym(mem, 0x007f_f290);
+            let budget = g(mem, size).cast_unsigned();
+            call(mem, set, &[used.cast_unsigned(), budget, 0x601]);
+            call(
+                mem,
+                set,
+                &[heap.cast_unsigned(), span.cast_unsigned(), 0x603],
+            );
+        }
+        YIQ_MODE.set(mem, u32::MAX);
+    }
 }
 
 #[cfg(test)]
