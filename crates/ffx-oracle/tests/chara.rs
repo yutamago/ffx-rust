@@ -11906,3 +11906,246 @@ fn small2_f_on(t: &mut Twin) {
     }
     eprintln!("{}: small2 f reach {reach:?}", t.name);
 }
+
+#[test]
+fn small3_a_matches_the_original() {
+    for mut t in twins() {
+        small3_a_on(&mut t);
+    }
+}
+
+/// `Ch_CalcMain` (small round 3, group a): random character arrays
+/// (active, running, motion modes, speeds, the height modes with floating
+/// characters above, at and below the floor), the CRT's own `_CIcos` and
+/// `_CIsin`, the other callees faked: the motion steps flip the speed's
+/// sign, the push-apart flips the floor's, the motion update moves the GS
+/// register sink.
+#[allow(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::cast_precision_loss
+)]
+fn small3_a_on(t: &mut Twin) {
+    use ffx_chara::handle::bridge as hb;
+    let mut rng = Xorshift(0x5a11_3a3a);
+    let fk = Fakes::new(t);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let ci1 = twin_code(t, &CI1_STUB);
+    let wait = fk.fake(t, hb::CALC_MIDDLE_WAIT, 1, 0);
+    let sched = fk.fake(t, hb::CALC_MIDDLE_SCHEDULE, 2, 3);
+    let pause = fk.fake(t, hb::GET_PAUSE, 3, 0);
+    let anim = fk.fake(t, hb::ANIM_VAL_F, 7, 1);
+    let (array, count) = (t.a.rebase(0x023c_44e4), t.a.rebase(0x023c_44e0));
+    let sink = t.a.rebase(0x0230_56e8);
+    let (floor_at, level_at) = (t.a.rebase(0x0130_09d8), t.a.rebase(0x0130_09dc));
+    // a stand-in with a side effect before the logging one
+    let chained = |t: &mut Twin, sym: u32, id: u32, n: u8, pre: &[u8]| {
+        let (code, ret) = fk.fake_code(t, id, n);
+        let at = t.a.alloc_code(&[0; 32]).unwrap();
+        assert_eq!(t.b.alloc_code(&[0; 32]).unwrap(), at);
+        let mut c = pre.to_vec();
+        c.push(0xe9);
+        let end = at + u32::try_from(c.len()).unwrap() + 4;
+        c.extend(code.wrapping_sub(end).to_le_bytes());
+        t.put(at, &c);
+        let f = t.a.rebase(sym);
+        let mut jmp = vec![0xe9];
+        jmp.extend(at.wrapping_sub(f + 5).to_le_bytes());
+        t.put(f, &jmp);
+        ret
+    };
+    // mov eax, [esp+4]; xor byte [eax+0x157], 0x80 (the speed's sign)
+    let flip_speed = [0x8b, 0x44, 0x24, 0x04, 0x80, 0xb0, 0x57, 0x01, 0, 0, 0x80];
+    let mv = chained(t, hb::MOVE_MOTION, 4, 1, &flip_speed);
+    let auto = chained(t, hb::AUTO_MOTION, 5, 1, &flip_speed);
+    // xor byte [floor+3], 0x80
+    let mut flip_floor = vec![0x80, 0x35];
+    flip_floor.extend((floor_at + 3).to_le_bytes());
+    flip_floor.push(0x80);
+    let apart = chained(t, hb::PUSH_APART, 8, 0, &flip_floor);
+    // add dword [sink], 0x01234567 (the motion update writes GS packets)
+    let mut add = vec![0x81, 0x05];
+    add.extend(sink.to_le_bytes());
+    add.extend(0x0123_4567u32.to_le_bytes());
+    let update = chained(t, hb::UPDATE_MOTION, 6, 2, &add);
+    let near = |rng: &mut Xorshift, base: f32, span: u32| {
+        base + (rng.next() % (span * 64)) as f32 / 64.0 - span as f32 / 2.0
+    };
+    let mut reach = [0u32; 12];
+    for round in 0..200u32 {
+        fk.reset(t);
+        for w in [wait, sched, update, anim, mv, auto, apart] {
+            t.put_u32(w, rng.next());
+        }
+        t.put_u32(
+            pause,
+            u32::from(rng.next().is_multiple_of(12)) * (rng.next() | 1),
+        );
+        t.put_u32(sink, rng.next());
+        // the floor as the walks see it: stored with its sign flipped,
+        // which the push-apart stand-in undoes
+        let floor = match round % 9 {
+            3 => 0.0,
+            5 => -0.0,
+            _ => near(&mut rng, 0.0, 40),
+        };
+        t.put_u32(floor_at, (-floor).to_bits());
+        let level = match rng.next() % 5 {
+            0 => -floor,
+            1 => 0.0,
+            _ => near(&mut rng, floor, 20),
+        };
+        t.put_u32(level_at, level.to_bits());
+        let lvl = if floor > level { floor } else { level };
+        if round % 25 == 7 {
+            let w = if round % 50 == 7 { floor_at } else { level_at };
+            t.put_u32(w, FLOATS[rng.next() as usize % FLOATS.len()]);
+        }
+        let n = if round % 20 == 0 { 0 } else { rng.next() % 24 };
+        let chrs = t.alloc(0x880 * n.max(1) as usize);
+        for k in 0..n {
+            let c = chrs + 0x880 * k;
+            t.put(c + 2, &[u8::from(!rng.next().is_multiple_of(5))]);
+            let state = if rng.next().is_multiple_of(2) {
+                0
+            } else {
+                (rng.next() & 0xff) as u8
+            };
+            t.put(c + 0x180, &[state]);
+            t.put(c + 0x181, &[u8::from(rng.next().is_multiple_of(3))]);
+            t.put(
+                c + 0x182,
+                &[[0u8, 1, 2, 2, 2, 2, 3, 0xff][rng.next() as usize % 8]],
+            );
+            t.put(
+                c + 0x186,
+                &[[0u8, 2, 2, 0, 1, 0x80][rng.next() as usize % 6]],
+            );
+            t.put_u32(c + 0x194, rng.next());
+            let speed = match rng.next() % 8 {
+                0 => 0,
+                1 => 0x8000_0000,
+                2 => FLOATS[rng.next() as usize % FLOATS.len()],
+                _ => near(&mut rng, 0.0, 16).to_bits(),
+            };
+            t.put_u32(c + 0x154, speed);
+            t.put_u32(c + 0x170, near(&mut rng, 0.0, 16).to_bits());
+            t.put_u32(c + 0x168, near(&mut rng, 0.0, 14).to_bits());
+            for w in [0xc, 0x10, 0x14, 0x18] {
+                t.put_u32(c + w, rng.next() & 0xbfff_ffff);
+            }
+            for w in [0x4c, 0x54] {
+                t.put_u32(c + w, rng.next() & 0xbfff_ffff);
+            }
+            let y = match rng.next() % 9 {
+                0 => floor,
+                1 => floor + 8.5,
+                2 => lvl,
+                // just above a zero floor: (y - floor) / 8.5 rounds to 0
+                3 if floor == 0.0 => f32::from_bits(1),
+                4 => 0.0,
+                _ => near(&mut rng, floor, 30),
+            };
+            t.put_u32(c + 0x10, y.to_bits());
+            let top = match rng.next() % 4 {
+                0 => y,
+                1 if y == 0.0 => -0.0,
+                _ => near(&mut rng, y, 8),
+            };
+            t.put_u32(c + 0x16c, top.to_bits());
+            t.put_u32(
+                c + 0x504,
+                if rng.next().is_multiple_of(5) {
+                    0
+                } else {
+                    near(&mut rng, 0.0, 6).to_bits()
+                },
+            );
+            for w in [0x4e4, 0x514, 0x4fc] {
+                let v = if rng.next().is_multiple_of(16) {
+                    FLOATS[rng.next() as usize % FLOATS.len()]
+                } else {
+                    near(&mut rng, 0.0, 10).to_bits()
+                };
+                t.put_u32(c + w, v);
+            }
+            if rng.next().is_multiple_of(4) {
+                let w = [0x4e4, 0x514][rng.next() as usize % 2];
+                t.put_u32(c + 0x4fc, rd::<u32>(&t.a, c + w));
+            }
+            if rng.next().is_multiple_of(6) {
+                // sinking at the full rate (clamped to -2), the bob at its
+                // goal, above the level: y + rate + bob lands on the ceiling
+                let bob = near(&mut rng, 0.0, 10);
+                for w in [0x4e4, 0x514, 0x4fc] {
+                    t.put_u32(c + w, bob.to_bits());
+                }
+                t.put_u32(c + 0x504, (-3.0f32).to_bits());
+                let y = lvl.max(floor + 8.5) + near(&mut rng, 4.0, 6);
+                t.put_u32(c + 0x10, y.to_bits());
+                t.put_u32(c + 0x16c, (y - 2.0 + bob).to_bits());
+                t.put(c + 0x182, &[2]);
+            }
+            t.put_u32(c + 0x878, rng.next());
+            t.put_u32(
+                c + 0x19c,
+                if rng.next().is_multiple_of(2) {
+                    0
+                } else {
+                    rng.next() | 1
+                },
+            );
+            let skin = t.alloc(0x10);
+            let bones = match rng.next() % 8 {
+                0 => 0x100,
+                1 => 1,
+                _ => (rng.next() % 140) as u16,
+            };
+            t.put(skin + 0xa, &bones.to_le_bytes());
+            t.put_u32(c + 0x1c0, skin);
+            // which height path a floating character takes
+            let runs =
+                rd::<u8>(&t.a, c + 2) != 0 && (state & 0x13 == 0 || rd::<u8>(&t.a, c + 0x181) != 0);
+            if runs && rd::<u8>(&t.a, c + 0x182) == 2 {
+                let f = f64::from(floor);
+                let d = f64::from(y) - 8.5;
+                reach[if d > f {
+                    0
+                } else if f64::from(y) > f {
+                    1
+                } else {
+                    2
+                }] += 1;
+            }
+        }
+        t.put_u32(array, if round % 40 == 20 { 0 } else { chrs });
+        t.put_u32(count, n);
+        let dt = match round % 10 {
+            0 => FLOATS[rng.next() as usize % FLOATS.len()],
+            1 => 0x3f80_0000,
+            _ => near(&mut rng, 1.0, 2).to_bits(),
+        };
+        let before: u32 = rd(&t.a, fk.log);
+        t.check(&format!("Ch_CalcMain {round}"), 0x0083_2e10, &[dt], |m| {
+            Res::Int(hb::ch_calc_main(
+                m,
+                f32::from_bits(dt),
+                &mut |m: &mut Oracle, f, a: &[u32]| call(m, f, a),
+                &mut |m: &mut Oracle, f, a: &[f64]| {
+                    let b = a[0].to_bits();
+                    #[allow(clippy::cast_possible_truncation)]
+                    let w = [b as u32, (b >> 32) as u32, f];
+                    f32::from_bits(m.call(ci1, Conv::Cdecl, &w).unwrap().eax)
+                },
+            ))
+        });
+        let after: u32 = rd(&t.a, fk.log);
+        let mut q = before;
+        while q < after {
+            let id: u32 = rd(&t.a, q);
+            reach[2 + id as usize] += 1;
+            q += 4 * (1 + [0, 0, 3, 0, 1, 1, 2, 1, 0][id as usize]);
+        }
+    }
+    eprintln!("{}: small3 a reach {reach:?}", t.name);
+}

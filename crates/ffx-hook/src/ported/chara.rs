@@ -2106,4 +2106,10 @@ ported! {
     Ch_CalcMiddle @ 0x0083_3390 => extern "C" fn ch_calc_middle() -> u32 {
         h::ch_calc_middle(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
     }
+    // ---- small round 3, group a
+    /// `Ch_CalcMain(dt)`: the pause value, or how far the GS register sink
+    /// moved (also stored).
+    Ch_CalcMain @ 0x0083_2e10 => extern "C" fn ch_calc_main(dt: f32) -> u32 {
+        h::ch_calc_main(&mut mem(), dt, &mut |_, f, a| super::call_cdecl(f, a), &mut |_, f, a| ci_call(f, a))
+    }
 }

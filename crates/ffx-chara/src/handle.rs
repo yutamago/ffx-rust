@@ -282,6 +282,265 @@ pub mod bridge {
         delta
     }
 
+    /// `Ch_MoveMotion_00835bb0(chr)`, `Ch_AutoMotion(chr)`,
+    /// `Sg_ChrMovePushApart_0083d3b0()`, `SG_UpdateMotion(chr, apply)`,
+    /// `Sg_AnimValF(v)`: the callees of [`ch_calc_main`].
+    pub const MOVE_MOTION: u32 = 0x0083_5bb0;
+    pub const AUTO_MOTION: u32 = 0x0083_5d30;
+    pub const PUSH_APART: u32 = 0x0083_d3b0;
+    pub const UPDATE_MOTION: u32 = 0x0083_8c90;
+    pub const ANIM_VAL_F: u32 = 0x0083_6020;
+    /// The water height (`g_Suimen`, `Sg_SetSuimen`/`Sg_GetSuimen`) the
+    /// swimming characters (`+0x182` = 2) sink to, and the water limit
+    /// (`g_WaterLimit`, `Sg_SetWaterLimit`) they rise to, raised to the
+    /// water height each frame.
+    pub const SUIMEN: Global<f32> = Global::new(0x0130_09d8);
+    pub const WATER_LIMIT: Global<f32> = Global::new(0x0130_09dc);
+    /// Where `Ch_CalcMain` leaves how far the GS register sink moved
+    /// (`g_ChrFuka[1]`, the load `Ch_GetFuka(1)` reads).
+    pub const CALC_MAIN_SINK_DELTA: Global<u32> = Global::new(0x0130_09bc);
+
+    /// `Ch_CalcMain(dt)` (`0x00832e10`; caller `Sg_MainLoop`): the
+    /// characters' main step. Paused (`Sg_GetPause()` nonzero), nothing
+    /// happens and the pause value is the EAX.
+    ///
+    /// Three walks of the array (its end read again each step), over the
+    /// active characters:
+    /// 1. `+0x180 &= 0x13`; a running one (`+0x180` now 0 or `+0x181` set)
+    ///    steps its motion unless bit 6 of `+0x194` is set (`+0x186` 0:
+    ///    `Ch_MoveMotion`, 2: `Ch_AutoMotion`), sets bit 17 of `+0x194` to
+    ///    `+0x170 < +0x154`, gets its velocity (`+0x4c`, `+0x54`) from the
+    ///    speed `+0x154` (`speed · 0.05 · 30 · dt` along the angle `+0x168`,
+    ///    and bit 25 set; both 0 at speed 0) and copies its position
+    ///    (`+0xc..+0x18`) to the old one (`+0x1c..`).
+    /// 2. After `Sg_ChrMovePushApart`, the water limit is raised to the
+    ///    water height; each running character sets bit 29 to
+    ///    `water < y - 8.5` and by `+0x182` holds its height `y` (`+0x10`)
+    ///    under the ceiling `+0x16c` (0, unless bit 7: clamp; 1: put at it)
+    ///    or swims (2, see [`swim_step`]).
+    /// 3. After `JobScheduleWait`: each running character gets bit 24,
+    ///    `SG_UpdateMotion(chr, 1)` and `Sg_AnimValF` on its 7 animated
+    ///    values (`+0x330`, 12 bytes apart); one without a model
+    ///    (`+0x19c` 0), unpaused, gets `+0x878 = 1` and adds its bone count
+    ///    (the `u16` at `+0xa` of `[+0x1c0]`); from 200 bones the batch so
+    ///    far (every character counts) goes to
+    ///    `JobSchedule_Ch_CalcMiddle_Batch(first, 0, count)`, the rest after
+    ///    the walk (no wait).
+    ///
+    /// How far the GS register sink moved goes to `0x013009bc` and is the
+    /// EAX. `ci(mem, thunk, &[angle])` is `_CIcos`/`_CIsin` through their
+    /// thunks, the result stored as `f32`.
+    pub fn ch_calc_main<M: Mem>(
+        mem: &mut M,
+        dt: f32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        ci: &mut impl FnMut(&mut M, u32, &[f64]) -> f32,
+    ) -> u32 {
+        use ffx_bridge::x87::Reg;
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let runs =
+            |mem: &M, c: u32| mem.read::<u8>(c + 0x180) == 0 || mem.read::<u8>(c + 0x181) != 0;
+        let paused = call(mem, r(mem, GET_PAUSE), &[]);
+        if paused != 0 {
+            return paused;
+        }
+        // 1: motion, velocity, old position
+        let mut c = CHR_ARRAY.get(mem);
+        while c != slot(mem, CHR_COUNT.get(mem)) {
+            if active(mem, c) {
+                let state = mem.read::<u8>(c + 0x180) & 0x13;
+                mem.write(c + 0x180, state);
+                if state == 0 || mem.read::<u8>(c + 0x181) != 0 {
+                    move_step(mem, c, dt, call, ci);
+                }
+            }
+            c = c.wrapping_add(l::SIZE);
+        }
+        call(mem, r(mem, PUSH_APART), &[]);
+        // 2: heights
+        let water = SUIMEN.get(mem);
+        if water > WATER_LIMIT.get(mem) {
+            WATER_LIMIT.set(mem, water);
+        }
+        let limit = WATER_LIMIT.get(mem);
+        let mut c = CHR_ARRAY.get(mem);
+        while c != slot(mem, CHR_COUNT.get(mem)) {
+            if active(mem, c) && runs(mem, c) {
+                let y: f32 = mem.read(c + 0x10);
+                let above = Reg::load(y) - Reg::constant(8.5);
+                let flags: u32 = mem.read(c + 0x194);
+                let bit = u32::from(above.value() > f64::from(water)) << 29;
+                mem.write(c + 0x194, flags ^ ((bit ^ flags) & 0x2000_0000));
+                let top: f32 = mem.read(c + 0x16c);
+                match mem.read::<i8>(c + 0x182) {
+                    0 => {
+                        mem.write(c + 0x504, 0f32);
+                        if mem.read::<u8>(c + 0x194) & 0x80 == 0 && top < y {
+                            mem.write(c + 0x10, top);
+                        }
+                    }
+                    1 => {
+                        mem.write(c + 0x10, top);
+                        mem.write(c + 0x504, 0f32);
+                    }
+                    2 => swim_step(mem, c, above, water, limit),
+                    _ => {}
+                }
+            }
+            c = c.wrapping_add(l::SIZE);
+        }
+        // 3: motion update and the batches
+        let sink = GS_REGISTER_SINK.get(mem);
+        let (mut first, mut count, mut bones) = (CHR_ARRAY.get(mem), 0u32, 0u32);
+        call(mem, r(mem, CALC_MIDDLE_WAIT), &[]);
+        let mut c = CHR_ARRAY.get(mem);
+        if c != slot(mem, CHR_COUNT.get(mem)) {
+            loop {
+                count = count.wrapping_add(1);
+                if active(mem, c) && runs(mem, c) {
+                    let flags = mem.read::<u32>(c + 0x194) | 0x0100_0000;
+                    mem.write(c + 0x194, flags);
+                    let apply = mem.read::<u32>(c + 0x194) >> 24 & 1;
+                    call(mem, r(mem, UPDATE_MOTION), &[c, apply]);
+                    for k in 0..7 {
+                        call(mem, r(mem, ANIM_VAL_F), &[c + 0x330 + 12 * k]);
+                    }
+                    if mem.read::<u32>(c + 0x19c) == 0 && call(mem, r(mem, GET_PAUSE), &[]) == 0 {
+                        mem.write(c + 0x878, 1u32);
+                        let skin: u32 = mem.read(c + 0x1c0);
+                        bones =
+                            bones.wrapping_add(u32::from(mem.read::<u16>(skin.wrapping_add(0xa))));
+                    }
+                    if bones.cast_signed() >= 200 {
+                        call(mem, r(mem, CALC_MIDDLE_SCHEDULE), &[first, 0, count]);
+                        first = c.wrapping_add(l::SIZE);
+                        bones = 0;
+                        count = 0;
+                    }
+                }
+                c = c.wrapping_add(l::SIZE);
+                if c == slot(mem, CHR_COUNT.get(mem)) {
+                    break;
+                }
+            }
+            if bones != 0 {
+                call(mem, r(mem, CALC_MIDDLE_SCHEDULE), &[first, 0, count]);
+            }
+        }
+        let delta = GS_REGISTER_SINK.get(mem).wrapping_sub(sink);
+        CALC_MAIN_SINK_DELTA.set(mem, delta);
+        delta
+    }
+
+    /// [`ch_calc_main`]'s first walk for one running character.
+    fn move_step<M: Mem>(
+        mem: &mut M,
+        c: u32,
+        dt: f32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        ci: &mut impl FnMut(&mut M, u32, &[f64]) -> f32,
+    ) {
+        use crate::parts::bridge::{CI_COS, CI_SIN};
+        use ffx_bridge::x87::Reg;
+        if mem.read::<u8>(c + 0x194) & 0x40 == 0 {
+            match mem.read::<i8>(c + 0x186) {
+                0 => {
+                    call(mem, mem.rebase(MOVE_MOTION), &[c]);
+                }
+                2 => {
+                    call(mem, mem.rebase(AUTO_MOTION), &[c]);
+                }
+                _ => {}
+            }
+        }
+        let speed: f32 = mem.read(c + 0x154);
+        let limit: f32 = mem.read(c + 0x170);
+        let flags: u32 = mem.read(c + 0x194);
+        let bit = u32::from(limit < speed) << 17;
+        mem.write(c + 0x194, flags ^ ((bit ^ flags) & 0x0002_0000));
+        if speed == 0.0 {
+            mem.write(c + 0x4c, 0f32);
+            mem.write(c + 0x54, 0f32);
+        } else {
+            let angle: f32 = mem.read(c + 0x168);
+            let v = (Reg::load(speed)
+                * Reg::constant(f64::from(0.05f32))
+                * Reg::constant(30.0)
+                * Reg::load(dt))
+            .store();
+            let cos = ci(mem, mem.rebase(CI_COS), &[f64::from(angle)]);
+            mem.write(c + 0x4c, Reg::load(cos).mul_m32(v).store());
+            let sin = ci(mem, mem.rebase(CI_SIN), &[f64::from(angle)]);
+            let f: u32 = mem.read(c + 0x194);
+            mem.write(c + 0x194, f | 0x0200_0000);
+            mem.write(c + 0x54, Reg::load(sin).mul_m32(v).store());
+        }
+        for k in 0..4 {
+            let w: u32 = mem.read(c + 0xc + 4 * k);
+            mem.write(c + 0x1c + 4 * k, w);
+        }
+    }
+
+    /// A swimming character's height step (`+0x182` = 2): `above` is
+    /// `y - 8.5` (53 bits). Above the water it sinks: the fall rate `+0x504`
+    /// drops by 0.163 (at most to `-2·depth`, `depth` 1 above `water + 8.5`,
+    /// else `(y - water) / 8.5`), and under the water limit `y` rises a
+    /// tenth of the way (a negative rate then ends); at or under the water
+    /// (depth 0) the rate grows by 0.327. The bob `+0x4fc` eases a thirtieth
+    /// towards `max(+0x4e4, +0x514)`; `y + rate + bob` above the ceiling
+    /// `+0x16c` puts `y` at `ceiling - bob` and stops; then `y += rate ·
+    /// (0.5 sinking, else 1)`.
+    fn swim_step<M: Mem>(mem: &mut M, c: u32, above: ffx_bridge::x87::Reg, water: f32, limit: f32) {
+        use ffx_bridge::x87::Reg;
+        let y = |mem: &M| mem.read::<f32>(c + 0x10);
+        let rate = |mem: &M| mem.read::<f32>(c + 0x504);
+        let f = f64::from(water);
+        let depth = if above.value() > f {
+            Some(1.0f32)
+        } else if f64::from(y(mem)) > f {
+            let d = ((Reg::load(y(mem)) - Reg::load(water)) / Reg::constant(8.5)).store();
+            (d != 0.0).then_some(d)
+        } else {
+            None
+        };
+        let (depth, scale) = if let Some(d) = depth {
+            let t = Reg::load(rate(mem)) - Reg::constant(0.163_444_161_415_100_1);
+            let t = t.store();
+            mem.write(c + 0x504, t);
+            if y(mem) < limit {
+                let ny = (Reg::load(limit).sub_m32(y(mem)) / Reg::constant(10.0))
+                    .add_m32(y(mem))
+                    .store();
+                mem.write(c + 0x10, ny);
+                if t < 0.0 {
+                    mem.write(c + 0x504, 0f32);
+                }
+            }
+            (d, 0.5f32)
+        } else {
+            let t = (Reg::constant(0.326_888_322_830_200_2) + Reg::load(rate(mem))).store();
+            mem.write(c + 0x504, t);
+            (0.0, 1.0)
+        };
+        let least = Reg::load(depth) * Reg::constant(-2.0);
+        if f64::from(rate(mem)) < least.value() {
+            mem.write(c + 0x504, least.store());
+        }
+        let (p, q) = (mem.read::<f32>(c + 0x4e4), mem.read::<f32>(c + 0x514));
+        let goal = if q < p { p } else { q };
+        let bob = mem.read::<f32>(c + 0x4fc);
+        let bob = ((Reg::load(goal).sub_m32(bob) / Reg::constant(30.0)).add_m32(bob)).store();
+        mem.write(c + 0x4fc, bob);
+        let top: f32 = mem.read(c + 0x16c);
+        let sum = Reg::load(rate(mem)).add_m32(y(mem)) + Reg::load(bob);
+        if f64::from(top) < sum.value() {
+            mem.write(c + 0x10, Reg::load(bob).subr_m32(top).store());
+            mem.write(c + 0x504, 0f32);
+        }
+        let ny = Reg::load(rate(mem)).mul_m32(scale).add_m32(y(mem)).store();
+        mem.write(c + 0x10, ny);
+    }
+
     /// `Ch_AllReserveCalcNorm()` (`0x00832550`).
     pub fn ch_all_reserve_calc_norm(mem: &mut impl Mem) {
         each_active(mem, |m, c| {
