@@ -5,8 +5,22 @@
 # walk (field-walk-<n>.bmp; models must be drawn).
 load direct 1 cdsp0000
 lockstep on
-# the map fades in over about a second after the direct load
-wait 120
+# The map fades in over about a second after the direct load. The shot is
+# pinned to the event's clock, not to a frame count: the asset loader takes
+# a varying number of frames, and the map's animations (the searchlight
+# sweep, the deck's sway) start with the event. 0x01325d94 is +0x1f4 of
+# ctrl work 0 (g_AtelCtrlWorks 0x01325ba0, 0x238 a work): the frames its
+# event has run (Atel_ExecCtrlWorks 0x008688f0 counts it; AtelRequireCtrlWork
+# 0x0086ee10 zeroes it). 120 frames after the load it read 105-111 on an idle
+# machine and 40-58 under load (scores 17-20 against the recording); at the
+# same count, runs give the same picture. 101 matches the recording (0.1;
+# 98: 0.6, 110: 2.2). The wait is for the count to enter 64..127 (mask
+# 0xffffffc0) and then 37 frames, so a count that skipped a value cannot
+# be missed; the 1500-frame limit fails the replay when the event never
+# runs.
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+read 0x01325d94 4
 shot $OUT\field-walk-1.bmp
 trace 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68 0x00ccb170:8
 press up 40 10
@@ -15,5 +29,8 @@ press down 40 10
 press right 30 10
 press circle 4 30
 press circle 4 30
+# in lockstep the presses and waits take a fixed 358 frames: this shot is at
+# event frame 459 (read back into the replay's output, 0x1cb)
 wait 120
+read 0x01325d94 4
 shot $OUT\field-walk-2.bmp
