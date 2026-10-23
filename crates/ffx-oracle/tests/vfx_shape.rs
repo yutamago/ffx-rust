@@ -260,7 +260,16 @@ fn plain_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bool) {
 /// and `cmd +0x1c` (random floats; the second the first, the high one or
 /// equal to `r0`'s low word now and then, which picks the first).
 fn textured_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
-    plain_case_with(p, rng, c, n, false, true);
+    textured_case_with(p, rng, c, n, false);
+}
+
+/// [`textured_case`] with `shape` bit 3 set, for S2.
+fn vu0_textured_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
+    textured_case_with(p, rng, c, n, true);
+}
+
+fn textured_case_with(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bool) {
+    plain_case_with(p, rng, c, n, vu0, true);
     for &m in &c.matrices {
         let specials = if rng.chance(80) { 0 } else { 5 };
         p.floats(m, 16, rng, specials);
@@ -492,6 +501,22 @@ fn shape_s5_matches_the_original() {
 #[test]
 fn shape_whole_s5_matches_the_original() {
     whole_test(textured_case, 0x007e_d0c2, "whole S5");
+}
+
+#[test]
+fn shape_s2_matches_the_original() {
+    loop_test(
+        0x007e_ed53,
+        vu0_textured_case,
+        0x007e_ed53,
+        "S2",
+        shape::vu0_textured,
+    );
+}
+
+#[test]
+fn shape_whole_s2_matches_the_original() {
+    whole_test(vu0_textured_case, 0x007e_d0c3, "whole S2");
 }
 
 /// Each loop's first instruction after the head's count store, in
