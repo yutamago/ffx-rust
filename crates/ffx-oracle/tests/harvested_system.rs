@@ -54,3 +54,21 @@ harvest_test!(
         )
     }
 );
+// small round 5
+harvest_test!(cd_read_sync, 0x0076_c490, args = 1, |m: &mut Oracle, s| {
+    ffx_system::cd::bridge::read_sync(m, s.arg(0), |m, f, a| {
+        let f = m.rebase(f);
+        m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+    })
+});
+harvest_test!(
+    to_control_ms_set_menu_command,
+    0x0089_afc0,
+    args = 0,
+    |m: &mut Oracle, _| {
+        ffx_system::tolib::bridge::to_control_ms_set_menu_command(m, |m, f, a| {
+            let f = m.rebase(f);
+            m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+        })
+    }
+);

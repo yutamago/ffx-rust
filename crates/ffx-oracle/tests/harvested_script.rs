@@ -348,3 +348,10 @@ harvest_test!(
     args = 1,
     |m: &mut Oracle, s| { hp::atel_exec_ctrl_event(&mut OracleHost(m), s.arg(0)) }
 );
+// small round 5
+harvest_test!(
+    atel_sync_worker_pos,
+    0x0086_9e40,
+    args = 1,
+    |m: &mut Oracle, s| { hp::atel_sync_worker_pos(&mut OracleHost(m), s.arg(0)) }
+);
