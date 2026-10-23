@@ -345,7 +345,7 @@ pub mod bridge {
     /// `+0x112f4` it becomes the cursor node `+0x112fc` (`u16`) and the
     /// radius moves 2 toward the node's (`AbmapNodeRadius`), not past it.
     /// The nearest node is not checked for null there. `eax` is the
-    /// stack cookie check's (callers read none).
+    /// last callee's (the stack cookie check leaves it; callers read none).
     pub fn free_cursor_step(mem: &mut impl Host, filter: u32, work: u32) {
         let g = ABMAP.get(mem);
         let pos = g.wrapping_add(0x1_12b8);

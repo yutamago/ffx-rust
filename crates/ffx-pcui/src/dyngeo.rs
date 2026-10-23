@@ -63,8 +63,9 @@ pub mod bridge {
     /// buffer here; only a manager keyed by name reads it), the scene flag
     /// `+0xf9c6` set for the maps of [`flag_map`] and cleared for the
     /// rest, then `0x006a46e0(this, shader, target)`, `target` 0 meaning
-    /// `g_PhyreScene + 0x2874`. `eax` is the stack cookie check's.
-    pub fn set_shader(mem: &mut impl Host, this: u32, target: u32, work: u32) {
+    /// `g_PhyreScene + 0x2874`; `eax` that call's (the stack cookie check
+    /// leaves it; the callers are virtual calls, which read it).
+    pub fn set_shader(mem: &mut impl Host, this: u32, target: u32, work: u32) -> u32 {
         let key: u32 = mem.read(this.wrapping_add(0x3c));
         find_shader(mem, this, key, work);
         let scene = PHYRE_SCENE.get(mem);
@@ -76,7 +77,7 @@ pub mod bridge {
         let on = flag_map(CURRENT_MAP.get(mem));
         mem.write(scene.wrapping_add(0xf9c6), u8::from(on));
         let shader: u32 = mem.read(this.wrapping_add(0x20));
-        mem.call_sym(SET_SHADER, Conv::Thiscall(this), &[shader, target]);
+        mem.call_sym(SET_SHADER, Conv::Thiscall(this), &[shader, target])
     }
 
     /// `ClassDynamicGeometry_SetShaderGl_006a48d0(this, _, target)` (name
@@ -85,8 +86,8 @@ pub mod bridge {
     /// (left as it was without one; at most 0x7f bytes here, where the
     /// original overruns its frame), the shader looked up, then
     /// `0x006a46e0(this, shader, target)`, `target` 0 meaning
-    /// `g_PhyreScene + 0x12d4`. `eax` is the stack cookie check's.
-    pub fn set_shader_gl(mem: &mut impl Host, this: u32, target: u32, work: u32) {
+    /// `g_PhyreScene + 0x12d4`; `eax` that call's (as [`set_shader`]'s).
+    pub fn set_shader_gl(mem: &mut impl Host, this: u32, target: u32, work: u32) -> u32 {
         let key: u32 = mem.read(this.wrapping_add(0x3c));
         let mat: u32 = mem.read(this.wrapping_add(0x24));
         let info: u32 = mem.read(mat.wrapping_add(0x94));
@@ -112,6 +113,6 @@ pub mod bridge {
             target
         };
         let shader: u32 = mem.read(this.wrapping_add(0x20));
-        mem.call_sym(SET_SHADER, Conv::Thiscall(this), &[shader, target]);
+        mem.call_sym(SET_SHADER, Conv::Thiscall(this), &[shader, target])
     }
 }

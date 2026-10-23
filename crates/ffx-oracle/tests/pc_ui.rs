@@ -3085,10 +3085,7 @@ fn r2d_map_name_text_show_matches_the_original() {
                 MAP_NAME_TEXT_SHOW,
                 Conv::Thiscall(this),
                 &[show],
-                |o| {
-                    mapname::show(&mut Run(o), this, show, work);
-                    Res::Void
-                },
+                |o| Res::Int(mapname::show(&mut Run(o), this, show, work)),
             );
         }
     }
@@ -3196,12 +3193,11 @@ fn r2d_class_dynamic_geometry_set_shader_match_the_original() {
                 Conv::Thiscall(this),
                 &[rng.next(), target],
                 |o| {
-                    if gl {
-                        dyngeo::set_shader_gl(&mut Run(o), this, target, work);
+                    Res::Int(if gl {
+                        dyngeo::set_shader_gl(&mut Run(o), this, target, work)
                     } else {
-                        dyngeo::set_shader(&mut Run(o), this, target, work);
-                    }
-                    Res::Void
+                        dyngeo::set_shader(&mut Run(o), this, target, work)
+                    })
                 },
             );
         }

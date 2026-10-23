@@ -72,7 +72,8 @@ pub mod bridge {
     /// (re-read for each) while a read returns the full record, and the
     /// file closed. Any other movie leaves the block null, so a file that
     /// opens would be copied to address 0 (the original faults too).
-    /// `eax` is the stack cookie check's (callers read none).
+    /// `eax` is the last callee's (the stack cookie check leaves it; the
+    /// caller reads none).
     pub fn load_camera_data<M, C>(mem: &mut M, movie: u32, work: u32, call: &mut C)
     where
         M: Mem,

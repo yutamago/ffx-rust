@@ -280,23 +280,23 @@ ported! {
     }
     /// `MapNameText_Show_006bb480(this, show)`: the line buffer in this
     /// frame.
-    MapNameText_Show_006bb480 @ 0x006b_b480 => extern "thiscall" fn map_name_text_show(this: u32, show: u32) {
+    MapNameText_Show_006bb480 @ 0x006b_b480 => extern "thiscall" fn map_name_text_show(this: u32, show: u32) -> u32 {
         let mut w = super::StackFrame::<{ mapname::WORK as usize / 4 }>::new();
-        mapname::show(&mut mem(), this, show, w.at());
+        mapname::show(&mut mem(), this, show, w.at())
     }
     /// `ClassDynamicGeometry_SetShader_006a4800(this, _, target)`: the
     /// key and the name buffer in this frame.
-    ClassDynamicGeometry_SetShader_006a4800 @ 0x006a_4800 => extern "thiscall" fn class_dynamic_geometry_set_shader(this: u32, unused: u32, target: u32) {
+    ClassDynamicGeometry_SetShader_006a4800 @ 0x006a_4800 => extern "thiscall" fn class_dynamic_geometry_set_shader(this: u32, unused: u32, target: u32) -> u32 {
         let _ = unused;
         let mut w = super::StackFrame::<{ dyngeo::WORK as usize / 4 }>::new();
-        dyngeo::set_shader(&mut mem(), this, target, w.at());
+        dyngeo::set_shader(&mut mem(), this, target, w.at())
     }
     /// `ClassDynamicGeometry_SetShaderGl_006a48d0(this, _, target)`: the
     /// key and the name buffer in this frame.
-    ClassDynamicGeometry_SetShaderGl_006a48d0 @ 0x006a_48d0 => extern "thiscall" fn class_dynamic_geometry_set_shader_gl(this: u32, unused: u32, target: u32) {
+    ClassDynamicGeometry_SetShaderGl_006a48d0 @ 0x006a_48d0 => extern "thiscall" fn class_dynamic_geometry_set_shader_gl(this: u32, unused: u32, target: u32) -> u32 {
         let _ = unused;
         let mut w = super::StackFrame::<{ dyngeo::WORK as usize / 4 }>::new();
-        dyngeo::set_shader_gl(&mut mem(), this, target, w.at());
+        dyngeo::set_shader_gl(&mut mem(), this, target, w.at())
     }
     /// `AbmapDrawPanels_00a58660()`.
     AbmapDrawPanels_00a58660 @ 0x00a5_8660 => extern "C" fn abmap_draw_panels() -> u32 {

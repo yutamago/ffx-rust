@@ -31,15 +31,16 @@ pub mod bridge {
     /// `GetGlobal01139e48` into `+0` and `+4`; then, while `+0x110` stays
     /// set, lines 2, 1, 0 each into a zeroed 0x100-byte buffer
     /// (`0x006b6ef0`) and onto the text (`TextUtil_changeLine`). `eax` is
-    /// the stack cookie check's (callers read none).
-    pub fn show(mem: &mut impl Host, this: u32, show: u32, work: u32) {
+    /// the last call's (the stack cookie check leaves it; one caller returns
+    /// it in turn).
+    pub fn show(mem: &mut impl Host, this: u32, show: u32, work: u32) -> u32 {
         let show = show.to_le_bytes()[0] != 0;
         let text = this.wrapping_add(0x114);
         let on = show && mem.read::<u8>(this.wrapping_add(0x110)) != 0;
         mem.write(this.wrapping_add(0x1c4), u8::from(on));
-        mem.call_sym(TEXT_SET_ENABLED, Conv::Thiscall(text), &[u32::from(on)]);
+        let mut eax = mem.call_sym(TEXT_SET_ENABLED, Conv::Thiscall(text), &[u32::from(on)]);
         if !show {
-            return;
+            return eax;
         }
         if mem.read::<u8>(this.wrapping_add(0x1c4)) != 0 {
             let w: u32 = mem.read(this.wrapping_add(0x1cc));
@@ -51,13 +52,15 @@ pub mod bridge {
         mem.write(this, a);
         let b = mem.call_sym(GET_GLOBAL_01139E48, Conv::Cdecl, &[]);
         mem.write(this.wrapping_add(4), b);
+        eax = b;
         for line in [2u32, 1, 0] {
             if mem.read::<u8>(this.wrapping_add(0x110)) == 0 {
                 break;
             }
             mem.write_bytes(work, &[0u8; WORK as usize]);
             mem.call_sym(LINE_TEXT, Conv::Thiscall(this), &[line, work]);
-            mem.call_sym(TEXT_CHANGE_LINE, Conv::Thiscall(text), &[line, work]);
+            eax = mem.call_sym(TEXT_CHANGE_LINE, Conv::Thiscall(text), &[line, work]);
         }
+        eax
     }
 }
