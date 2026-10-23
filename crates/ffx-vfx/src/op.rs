@@ -3008,6 +3008,26 @@ pub mod bridge {
         }
     }
 
+    /// `op_num_char_256(p)` (`0x007e63b0`): `opd_num_char_256(p)` (through
+    /// `call`, the 256-byte hex dump) once when `NUM_SHOW` is set and again
+    /// in debug mode (the second a tail jump: its `eax` is the result).
+    /// Without either, `eax` is whatever it was; its one caller
+    /// (`0x007ff360`) ignores it.
+    pub fn op_num_char_256<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let f = Global::<u32>::new(0x00a5_d5f0).ptr(mem).addr;
+        if NUM_SHOW.get(mem) != 0 {
+            call(mem, f, &[p]);
+        }
+        if DEBUG_MODE.get(mem) != 0 {
+            return Some(call(mem, f, &[p]));
+        }
+        None
+    }
+
     /// `op_heap_init(heap, size)` (`0x007ff2d0`): the `size` bytes before
     /// `heap + size` cleared in 16-byte steps from the top (the last step
     /// may start below `heap` by less than 16 when `size` is not a

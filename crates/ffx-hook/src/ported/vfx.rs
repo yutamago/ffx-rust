@@ -2016,6 +2016,10 @@ ported! {
     op_ivec4_to_fvec4_007e3100 @ 0x007e_3100 => extern "C" fn op_ivec4_to_fvec4(dst: u32, src: u32) {
         vec::bridge::ivec4_to_fvec4(&mut mem(), dst, src);
     }
+    /// `op_num_char_256(p)`: `opd_num_char_256`'s `eax` in debug mode.
+    op_num_char_256 @ 0x007e_63b0 => extern "C" fn op_num_char_256(p: u32) -> u32 {
+        op::bridge::op_num_char_256(&mut mem(), p, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
     /// `op_num_xy_set(x, y)`.
     op_num_xy_set @ 0x007e_65e0 => extern "C" fn op_num_xy_set(x: u32, y: u32) {
         op::bridge::op_num_xy_set(&mut mem(), x, y, &mut |_, f, a| call_ptr(f, a));
@@ -5665,6 +5669,26 @@ ported! {
     opu_rgba_set_00809180 @ 0x0080_9180 => extern "C" fn opu_rgba_set(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_rgba_set(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opu_camera(host, cmd)`.
+    opu_camera @ 0x0081_57a0 => extern "C" fn opu_camera(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_camera(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_mdc(host, cmd)`.
+    opu_mdc @ 0x0080_3c00 => extern "C" fn opu_mdc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_mdc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_part_run(host, cmd)`.
+    opu_part_run @ 0x0080_b800 => extern "C" fn opu_part_run(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_part_run(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_md_etc(host, cmd)`.
+    opu_md_etc @ 0x0081_c4f0 => extern "C" fn opu_md_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_md_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_v_etc(host, cmd)`.
+    opu_v_etc @ 0x0081_9450 => extern "C" fn opu_v_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `opu_v_add_00819fd0(host, cmd)`.
     opu_v_add_00819fd0 @ 0x0081_9fd0 => extern "C" fn opu_v_add(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_v_add(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
@@ -5867,6 +5891,18 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x48;
         ppp::bridge::ppp_data_rcv(&mut mem(), frame, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
+    }
+    /// `pppPmcomDataInit_00760080(data)`: its two matrices in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    pppPmcomDataInit_00760080 @ 0x0076_0080 => extern "C" fn ppp_pmcom_data_init(data: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x84]);
+        let mut locals = Locals([0; 0x84]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x84;
+        let r = ppp::bridge::ppp_pmcom_data_init(&mut mem(), data, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+        r
     }
     /// `pppKeMdlBmpDraw_Body_00748b00(obj)`: returns `op_spr_free`'s `eax`.
     pppKeMdlBmpDraw_Body_00748b00 @ 0x0074_8b00 => extern "C" fn ppp_ke_mdl_bmp_draw_body(obj: u32) -> u32 {
