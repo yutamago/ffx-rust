@@ -6148,6 +6148,10 @@ ported! {
         let slot = frame.at();
         opus::bridge::opp_anm(&mut mem(), host, set, slot, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opp_anm_sippo(host, set)`: `set`, or the early exits' values.
+    opp_anm_sippo @ 0x0081_1530 => extern "C" fn opp_anm_sippo(host: u32, set: u32) -> u32 {
+        opus::bridge::opp_anm_sippo(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opp_dtt(host, set)`: `op_ot_add`'s `eax`, 0, or the draw flags.
     opp_dtt @ 0x0081_2b50 => extern "C" fn opp_dtt(host: u32, set: u32) -> u32 {
         opus::bridge::opp_dtt(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))

@@ -32365,3 +32365,233 @@ fn r52a_opu_jump_etc_matches_the_original() {
         assert!(seen.iter().all(|&n| n > 100), "{seen:?}");
     }
 }
+
+/// `opp_anm_sippo` against the port: tails of up to 13 instances along
+/// trails of 1..16-point rings, the walk back through older points (times
+/// below, equal to and above the tail time, NaN, and the shared counter
+/// running out), zero-length steps, the step cut, the early exits, render
+/// data present or not, the skip frame and the instance-run record. The
+/// stand-ins log each instance's position (`op_apply_m_w1`, which also
+/// copies it to its `dst`) and the host's first 11 words (colour bytes,
+/// `+0x1c`) per call; `graphicVFXUpdate` bumps `set +0x54`, which the
+/// original restores.
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss
+)]
+fn r52b_opp_anm_sippo_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_1530);
+        let cells = p.alloc(0x10);
+        let (parent_cell, have_cell, alpha_cell) = (cells, cells + 4, cells + 8);
+        let parent = p.alloc(0x40);
+        let logs = [
+            far_recorder(&mut p, 0x0080_1f00, &[0, 0], Some(parent_cell)),
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(have_cell)),
+            far_recorder(&mut p, 0x0071_2c30, &[0], Some(alpha_cell)),
+            apply_copy_stub(&mut p, 0x007e_79a0),
+            far_recorder(&mut p, 0x0071_1500, &[0, 0, 0, 11, 0], None),
+            far_recorder(&mut p, 0x0071_c0b0, &[0, 0, 0, 11], None),
+        ];
+        let draw = p.sym(et::bridge::DRAW_FLAGS.sym);
+        let (skip, pass, runs_count) = (p.sym(0x012f_b7d0), p.sym(0x0113_335c), p.sym(0x012f_411c));
+        let (host, unit, set, parts) = (
+            p.alloc(0x400),
+            p.alloc(0x100),
+            p.alloc(0x60),
+            p.alloc(0x400),
+        );
+        bump_stub(&mut p, 0x0064_58a0, set + 0x54);
+        let (trail, table) = (p.alloc(0x10 + 16 * 16), p.alloc(0x20));
+        let shapes = p.alloc(0x200);
+        let mut seen = [0u32; 6];
+        for round in 0..3000u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(set, 0x60, &mut rng);
+            p.fill(parts, 0x400, &mut rng);
+            p.fill(shapes, 0x200, &mut rng);
+            for k in 0..16u32 {
+                let v = ranged(&mut rng, -2.0, 2.0);
+                p.set(parent + 4 * k, v);
+            }
+            p.set(host + 0x220, unit);
+            let chr = rng.below(240);
+            p.set(unit + 0x18, chr as u8);
+            p.set(draw + chr, rng.pick(&[0u8, 0, 0, 0, 0, 0, 0, 0, 4]));
+            p.set(unit + 0xb3, rng.pick(&[0u8, 4, 0xfb]));
+            p.set(set + 0x20, parts);
+            // trail: ring size 1..16, newest index, count, part 0..3
+            let size = 1 + rng.below(16);
+            p.set(trail + 4, size as u16);
+            p.set(trail + 6, {
+                let any = rng.below(0x1_0000);
+                rng.pick(&[0u32, 1, size, 0xffff, any]) as u16
+            });
+            p.set(trail + 8, rng.pick(&[0u32, 1, 2, 5, 16, 20, 300]) as u16);
+            p.set(trail + 0xa, rng.below(4) as u16);
+            p.set(unit + 0xbc, trail);
+            // points: small positions, times growing with age (index
+            // distance below the newest), equal or NaN now and then
+            let newest = u32::from(p.get::<u16>(trail + 6));
+            let dt = rng.pick(&[0.5f32, 1.0, 0.25]);
+            for k in 0..size {
+                let age = (newest + size * 0x1_0000 - k) % size;
+                let at = trail + 0x10 + 16 * k;
+                for c in 0..3 {
+                    let v = if rng.chance(20) {
+                        0
+                    } else {
+                        ranged(&mut rng, -4.0, 4.0)
+                    };
+                    p.set(at + 4 * c, v);
+                }
+                let time = match rng.below(20) {
+                    0 => f32::NAN,
+                    1 => 0.0,
+                    2 => dt,
+                    3 => -1.0,
+                    4 => 0.001,
+                    _ => age as f32 * dt,
+                };
+                p.set(at + 0xc, time.to_bits());
+            }
+            // a zero-length step: two neighbours at the same place
+            if rng.chance(20) && size > 1 {
+                let k = rng.below(size - 1);
+                for c in 0..3 {
+                    let v: u32 = p.get(trail + 0x10 + 16 * k + 4 * c);
+                    p.set(trail + 0x10 + 16 * (k + 1) + 4 * c, v);
+                }
+            }
+            let a = rng.pick(&[0.0f32, -1.0, 3.5, 8.0, 12.9, f32::NAN, 5.0, 3.3, 6.7]);
+            let b = rng.pick(&[0.0f32, 1.0, 2.5, 20.0, f32::NAN, 0.0, a.floor()]);
+            p.set(unit + 0x30, a.to_bits());
+            p.set(unit + 0x4c, b.to_bits());
+            let step = rng.pick(&[
+                0.0f32,
+                -1.0,
+                16.0,
+                64.0,
+                256.0,
+                1024.0,
+                f32::NAN,
+                25.6,
+                77.7,
+                7.1,
+            ]);
+            p.set(unit + 0x34, step.to_bits());
+            // the oldest point's time at the step x +0x30, rounded as the
+            // original does (an f32 product of two f32s is exact in f64);
+            // with 3.3 and 77.7 or 7.1 the product rounds down to it, and
+            // its quotient by +0x30 is not the step
+            if rng.chance(40) {
+                let span = (f64::from(step) / 256.0 * f64::from(a)) as f32;
+                let count = u32::from(p.get::<u16>(trail + 8));
+                let oldest = (newest + 0x1_0000 - count + 1) & 0xffff;
+                p.set(trail + 0x1c + 16 * (oldest % size), span.to_bits());
+            } else if step == 0.0 && rng.chance(60) {
+                // a negative oldest time: a zero step is never cut
+                let count = u32::from(p.get::<u16>(trail + 8));
+                let oldest = (newest + 0x1_0000 - count + 1) & 0xffff;
+                p.set(trail + 0x1c + 16 * (oldest % size), (-1.0f32).to_bits());
+            }
+            p.set(unit + 0x38, rng.pick(&[0.0f32, 1.5, -3.0, 100.0]).to_bits());
+            p.set(unit + 0x3c, ranged(&mut rng, -100.0, 100.0));
+            p.set(
+                parts + 0x3c + 0x100 * rng.below(4),
+                ranged(&mut rng, -100.0, 100.0),
+            );
+            p.set(unit + 0xc0, rng.pick(&[0u16, 0x4000, 0xffff, 0xbfff]));
+            p.set(unit + 0xc6, rng.pick(&[0i16, 16, -40, 3]));
+            p.set(unit + 0xe0, table);
+            p.set(unit + 0xe8, (1 + rng.below(8)) as u16);
+            for k in 0..8u32 {
+                let sh = shapes + 0x40 * k;
+                p.set(table + 4 * k, sh);
+                p.set(sh + 0xf, rng.pick(&[3u8, 1]));
+                p.set(sh + 4, rng.below(0x30));
+            }
+            p.set(parent_cell, parent);
+            p.set(have_cell, rng.below(2));
+            p.set(alpha_cell, rng.next());
+            p.set(skip, u32::from(rng.chance(10)));
+            p.set(pass, rng.below(2));
+            p.set(runs_count, rng.below(4));
+            let exit = if p.get::<u8>(draw + chr) & p.get::<u8>(unit + 0xb3) != 0 {
+                0
+            } else if p.get::<u16>(trail + 8) == 0 {
+                1
+            } else if a.is_nan() || a < 1.0 {
+                2
+            } else if b.is_nan() || b as i32 >= a as i32 {
+                3
+            } else if step.is_nan() || step <= 0.0 {
+                4
+            } else {
+                5
+            };
+            seen[exit] += 1;
+            p.check(
+                &format!("opp_anm_sippo round {round}"),
+                0x0081_1530,
+                &[host, set],
+                |m| Some(o::opp_anm_sippo(m, host, set, &mut call_original)),
+            );
+        }
+        assert!(seen.iter().all(|&n| n > 50), "{seen:?}");
+    }
+}
+
+/// A stand-in for `op_apply_m_w1(dst, m, v)` (through a jump) that logs
+/// the four words at `v` (16 per entry) and copies them to `dst`; returns
+/// the log.
+fn apply_copy_stub(p: &mut Pair, sym: u32) -> u32 {
+    let log = p.alloc(4 + 0x100 * 64);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x06]); // shl ecx, 6
+    c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp + 0xc]: v
+    c.push(0x56); // push esi
+    c.extend([0x8b, 0x74, 0x24, 0x08]); // mov esi, [esp + 8]: dst
+    for k in 0..4u8 {
+        c.extend([0x8b, 0x50, 4 * k]); // mov edx, [eax + 4k]
+        c.extend([0x89, 0x91]); // mov [ecx + slot], edx
+        c.extend((log + 4 + 4 * u32::from(k)).to_le_bytes());
+        c.extend([0x89, 0x56, 4 * k]); // mov [esi + 4k], edx
+    }
+    c.push(0x5e); // pop esi
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+/// A stand-in at `sym` (through a jump) that adds 1 to the dword at
+/// `cell` and returns.
+fn bump_stub(p: &mut Pair, sym: u32, cell: u32) {
+    let mut c = vec![0xff, 0x05]; // inc dword [cell]
+    c.extend(cell.to_le_bytes());
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+}
