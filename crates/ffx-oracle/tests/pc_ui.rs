@@ -3207,3 +3207,75 @@ fn r2d_class_dynamic_geometry_set_shader_match_the_original() {
         }
     }
 }
+
+const ABMAP_DRAW_PANELS: u32 = 0x00a5_8660;
+
+#[test]
+fn r2f_abmap_draw_panels_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0601);
+        let log = Log::new(&mut t);
+        let pads = t.alloc(0x2710);
+        let pad_at = t.a.rebase(panel::PAD.sym);
+        let cjk_at = t.a.rebase(panel::CJK_TEXT.sym);
+        let g = made_up_abmap(&mut t, &mut rng, 0x11700);
+        let help = log.func(&mut t, 2, 3, (0x5200_0000, 0, 0));
+        for n in 0..300u32 {
+            log.rewind(&mut t);
+            // a draw that flips the CJK word now and then (it is read
+            // between a sliding panel's two draws)
+            let poke = match rng.below(4) {
+                0 => Some((cjk_at, rng.below(2))),
+                _ => None,
+            };
+            log.stub_poke(
+                &mut t,
+                panel::ABMAP_PAD_DRAW_LIST,
+                1,
+                2,
+                (0x5100_0000, 0, 0),
+                poke,
+            );
+            let mut b = rng.bytes(0x2710);
+            for i in 0..12usize {
+                b[0x340 * i + 0x23] = [0, 1, 1, 0x80][rng.below(4) as usize];
+                let cb = if rng.below(3) == 0 { 0 } else { help };
+                b[0x340 * i + 0x3c..0x340 * i + 0x40].copy_from_slice(&cb.to_le_bytes());
+                let cur = i16::try_from(rng.below(20)).unwrap() - 2;
+                b[0x340 * i + 0x18..0x340 * i + 0x1a].copy_from_slice(&cur.to_le_bytes());
+            }
+            let open: i16 = [
+                -1,
+                -0x100,
+                0,
+                6,
+                7,
+                8,
+                11,
+                i16::try_from(rng.below(12)).unwrap(),
+            ][rng.below(8) as usize];
+            b[0x2700..0x2702].copy_from_slice(&open.to_le_bytes());
+            t.put(pads, &b);
+            t.put(pad_at, &pads.to_le_bytes());
+            t.put(
+                cjk_at,
+                &[0u32, 1, 0, rng.next()][rng.below(4) as usize].to_le_bytes(),
+            );
+            let moving = [0, 0, 1, 0xff][rng.below(4) as usize];
+            let out = [0, 1, 0x80][rng.below(3) as usize];
+            let step = [0, 1, 2, 3, 4, 0xff, rng.next().to_le_bytes()[0]][rng.below(7) as usize];
+            t.put(g + 0x1_15c0, &[out, step, moving]);
+            t.check(
+                &format!("draw panels {n}: moving {moving} out {out} step {step} open {open}"),
+                ABMAP_DRAW_PANELS,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    Res::Int(panel::draw_panels(o, &mut |o, f, a| {
+                        o.call(f, Conv::Cdecl, a).unwrap().eax
+                    }))
+                },
+            );
+        }
+    }
+}

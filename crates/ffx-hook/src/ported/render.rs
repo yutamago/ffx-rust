@@ -941,6 +941,10 @@ ported! {
     graphicUpdateCrossFade @ 0x0064_4910 => extern "C" fn graphic_update_cross_fade(weight: u32, time: u32) -> u32 {
         st::update_cross_fade(&mut mem(), weight, time)
     }
+    /// `graphicObjectSetRotation(id, angles, order)`.
+    graphicObjectSetRotation @ 0x0064_26a0 => extern "C" fn graphic_object_set_rotation(id: u32, angles: u32, order: u32) -> u32 {
+        st::graphic_object_set_rotation(&mut mem(), id, angles, order)
+    }
     /// `PhyreScene_setObjectRotation(this, id, angles, order)`: the
     /// original's frame (its matrices) in this frame.
     PhyreScene_setObjectRotation @ 0x0066_db00 => extern "thiscall" fn scene_set_object_rotation(this: u32, id: u32, angles: u32, order: u32) -> u32 {

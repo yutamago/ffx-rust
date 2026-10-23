@@ -757,4 +757,118 @@ pub mod bridge {
         let text = u32::from(off).wrapping_add(base);
         mem.call_sym(ABMAP_HELP_MESSAGE_STEP, Conv::Cdecl, &[text])
     }
+
+    /// `AbmapPadDrawList_00a58900(panel, dx)`.
+    pub const ABMAP_PAD_DRAW_LIST: u32 = 0x00a5_8900;
+    /// The panels [`draw_panels`] walks (0x340 bytes each).
+    pub const PANELS: u32 = 12;
+
+    /// The slide of a side panel `width` wide: from the grid's slide
+    /// state (byte `+0x115c2` moving, `+0x115c0` out, `+0x115c1` the
+    /// step, counted down when going out) the panel's offset, `width` when
+    /// it is fully in and 0 when fully out.
+    fn slide_offset(mem: &impl ffx_bridge::Mem, width: i32, base: i32) -> i32 {
+        let g = ABMAP.get(mem);
+        let flag = |off: u32| mem.read::<u8>(g.wrapping_add(off)) != 0;
+        if flag(0x1_15c2) {
+            let step = i32::from(mem.read::<u8>(g.wrapping_add(0x1_15c1)));
+            let f = if flag(0x1_15c0) { 3 - step } else { step };
+            // C division toward zero
+            f * width / 4 + base
+        } else if flag(0x1_15c0) {
+            0
+        } else {
+            width
+        }
+    }
+
+    /// `AbmapDrawPanels_00a58660()` (name ours; the sphere grid's draw
+    /// pass): each of the [`PANELS`] panels of `g_AbmapPad` (the base read
+    /// once) that is shown (byte `+0x23`) through
+    /// `AbmapPadDrawList_00a58900(panel, dx)`. Panels 6, 7 and 8 slide
+    /// ([`slide_offset`], widths 0x4c, 0x88, 0xa5 from 0xf, 0x1b, 0x21):
+    /// drawn at `off - width` while `off > 0`, and while `off < width`
+    /// again at `off +` 0x120/0xf0 (6, CJK text or not), 0x150 (7) or
+    /// 0x110/0xf0 (8); 9 and 10 at 0, or once the grid is out at
+    /// 0x140/0x110 and 0x130/0x110; 11 at 0 or 0x150; the rest at 0. Then
+    /// the open panel's (`+0x2700`, `i16`, none when negative) help
+    /// callback `+0x3c`, when set, gets `(panel, its cursor entry, cursor
+    /// +0x18)`; `eax` its result, else `g_AbmapPad`.
+    pub fn draw_panels<M, C>(mem: &mut M, call: &mut C) -> u32
+    where
+        M: ffx_bridge::Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let mut draw = |mem: &mut M, p: u32, dx: i32| {
+            cdecl(mem, call, ABMAP_PAD_DRAW_LIST, &[p.cast_signed(), dx]);
+        };
+        let base = PAD.get(mem);
+        for i in 0..PANELS {
+            let p = base.wrapping_add(0x340 * i);
+            if mem.read::<u8>(p.wrapping_add(0x23)) == 0 {
+                continue;
+            }
+            let cjk = |mem: &M| CJK_TEXT.get(mem) != 0;
+            let out = |mem: &M| mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x1_15c0)) != 0;
+            match i {
+                6..=8 => {
+                    let (width, start) = [(0x4c, 0xf), (0x88, 0x1b), (0xa5, 0x21)][i as usize - 6];
+                    let off = slide_offset(mem, width, start);
+                    if off > 0 {
+                        draw(mem, p, off - width);
+                    }
+                    if off < width {
+                        let second = match i {
+                            6 => {
+                                if cjk(mem) {
+                                    0x120
+                                } else {
+                                    0xf0
+                                }
+                            }
+                            7 => 0x150,
+                            _ => {
+                                if cjk(mem) {
+                                    0x110
+                                } else {
+                                    0xf0
+                                }
+                            }
+                        };
+                        draw(mem, p, off + second);
+                    }
+                }
+                9 | 10 => {
+                    let dx = if !out(mem) {
+                        0
+                    } else if cjk(mem) {
+                        if i == 9 { 0x140 } else { 0x130 }
+                    } else {
+                        0x110
+                    };
+                    draw(mem, p, dx);
+                }
+                11 => {
+                    let dx = if out(mem) { 0x150 } else { 0 };
+                    draw(mem, p, dx);
+                }
+                _ => draw(mem, p, 0),
+            }
+        }
+        let pad = PAD.get(mem);
+        let open = mem.read::<i16>(pad.wrapping_add(0x2700));
+        if open < 0 {
+            return pad;
+        }
+        let panel = pad.wrapping_add(0x340u32.wrapping_mul(u32::from(open.cast_unsigned())));
+        let help: u32 = mem.read(panel.wrapping_add(0x3c));
+        if help == 0 {
+            return pad;
+        }
+        let cursor = i32::from(mem.read::<i16>(panel.wrapping_add(0x18)));
+        let entry = panel
+            .wrapping_add(0x40)
+            .wrapping_add(cursor.cast_unsigned().wrapping_mul(0xc));
+        call(mem, help, &[panel, entry, cursor.cast_unsigned()])
+    }
 }

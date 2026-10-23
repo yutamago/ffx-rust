@@ -8596,3 +8596,32 @@ fn snapshot_pc_r2_set_object_rotation_matches_the_original() {
         );
     }
 }
+
+#[test]
+fn pc_r2_graphic_object_set_rotation_matches_the_original() {
+    use ffx_graphic::state::bridge as st;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x00c0_0202);
+    for round in 0..50 {
+        t.reset();
+        t.stub_sym(
+            st::SCENE_SET_OBJECT_ROTATION,
+            Conv::Thiscall(0),
+            3,
+            rng.next(),
+        );
+        t.global(st::SCENE.sym, rng.next());
+        let args = [rng.next(), rng.next(), rng.next()];
+        t.check(
+            &format!("round {round} graphicObjectSetRotation"),
+            0x0064_26a0,
+            Conv::Cdecl,
+            &args,
+            |g| {
+                Out::U32(st::graphic_object_set_rotation(
+                    g, args[0], args[1], args[2],
+                ))
+            },
+        );
+    }
+}

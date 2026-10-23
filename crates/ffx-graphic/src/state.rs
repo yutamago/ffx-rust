@@ -1152,6 +1152,21 @@ pub mod bridge {
         }
     }
 
+    /// `PhyreScene_setObjectRotation(this, id, angles, order)`.
+    pub const SCENE_SET_OBJECT_ROTATION: u32 = 0x0066_db00;
+
+    /// `graphicObjectSetRotation(id, angles, order)` (`0x006426a0`):
+    /// [`scene_set_object_rotation`] on `g_PhyreScene` (the original's
+    /// through the game), its `eax`.
+    pub fn graphic_object_set_rotation(h: &mut impl Host, id: u32, angles: u32, order: u32) -> u32 {
+        let scene = SCENE.get(h);
+        h.call_sym(
+            SCENE_SET_OBJECT_ROTATION,
+            Conv::Thiscall(scene),
+            &[id, angles, order],
+        )
+    }
+
     /// `graphicCharacterLightingSetShadeCoeff(list, coeff)`: the shade
     /// coefficient `Phyre_CharacterLighting_calcShadeCoeffWithConfidence`
     /// derives from `coeff` (1.0 on maps `0x226d` and `0x1739`, `coeff`

@@ -298,4 +298,8 @@ ported! {
         let mut w = super::StackFrame::<{ dyngeo::WORK as usize / 4 }>::new();
         dyngeo::set_shader_gl(&mut mem(), this, target, w.at());
     }
+    /// `AbmapDrawPanels_00a58660()`.
+    AbmapDrawPanels_00a58660 @ 0x00a5_8660 => extern "C" fn abmap_draw_panels() -> u32 {
+        panel::draw_panels(&mut mem(), &mut |_, f, args| super::call_cdecl(f, args))
+    }
 }
