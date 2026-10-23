@@ -9,7 +9,7 @@
 //! - [`prog`]: the program table's set-ups and steps;
 //! - [`mat`]: the matrix programs and their draws;
 //! - [`mdl`]: the model draws (`pppDrawMdl*`);
-//! - [`mdl_cam`]: the camera-facing model draws;
+//! - [`mdl_cam`]: the camera-facing and sea model draws;
 //! - [`lns`]: the lens-flare draws (`pppKeLns*`);
 //! - [`tail`]: the tail draws (`pppKeShpTail*`);
 //! - [`heap`]: the particle heaps;

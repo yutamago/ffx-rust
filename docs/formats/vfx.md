@@ -164,6 +164,30 @@ for flag 4).
   `+0x29` `0x2000` with `g_pppViewMatrix x obj +0x10` in `+0x30`; the
   blend from `+0x24`.
 
+### Sea draw (`pppDrawMdlSeaDraw`)
+
+`pppDrawMdlSeaDraw` (`0x0073abe0`, `crates/ffx-vfx/src/mdl_cam.rs`)
+draws only on 14 levels (`graphicLevelGetNameHash` 0x199, 0x17e6,
+0x24c9, 0xa95, 0x245b, 0xa27, 0x170a, 0xe58, 0x1b3b, 0xb3, 0x1acd, 0x99,
+0xe6c, 0xf48). Work area 2 is set up by `pppDrawMdlSeaDrawSetup` while
+its `+0x70` is a null `ptr32`. Its channels `+0x50`/`+0x5c` step like
+`CameraLoop`'s (on the key's frame its `+8..+0x1c` are added to all six
+words). With byte `+0x77` the model's vertices (`i16` triples at its
+`+8` offset, `i16 +0x12` of them, a flag byte each in `ptr32 +0x6c`)
+are rebuilt from the rest positions (`ptr32 +0x68`): with `s = f32(x +
+z)`, phase `k` is `ftol((w[+0x40 + 4k] + s) * key[+0x40 + 4k])`, and
+coordinate `k` gets `ftol(g_pppSinTable[phase >> 4 & 0xfff] * key[+0x20
++ 4k])` (16-bit add); then the phases move by key `+0x30..+0x38`. The
+texture animation counts in `+0x74` up to key byte `+0x51` (cleared
+even when `Yn_FpTrxTexGet(key[+0x50])` gives none), steps the frame
+`+0x75` (wrapping at `+0x76`), formats `trxtex_<frame>_<a>_<b>.dds.phyre`
+with `a`, `b` from `pppStoreComputed_0091af10` (the CRT's `sprintf`) and
+hands the record `graphicVFXIsTextureLoaded` fills to
+`graphicVFXUpdateTexture`. The colour inlines the `pextlh` steps; the
+request (`ebp - 0x2e0`) has flags 4 (`0x14` with key byte `+0x54`), the
+object's `+0x50`/`+0x10` matrices, and after an update
+`graphicDynamicGeometryUpdateTexture`.
+
 ### Point-light draws (`pppNeiDrawMdl*PointLightDraw`)
 
 `pppNeiDrawMdlPointLightDraw` (`0x0074a1e0`), `...SemiPointLightDraw`

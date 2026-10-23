@@ -258,7 +258,7 @@ pub mod bridge {
     /// The instance's render data updated from the request and the
     /// instance updated (path 3 for flag 4 when `path3`); returns the
     /// update's eax.
-    fn update<M: Mem>(
+    pub(crate) fn update<M: Mem>(
         mem: &mut M,
         obj: u32,
         rec: u32,
@@ -279,7 +279,7 @@ pub mod bridge {
 
     /// Render data created for the instance with `alpha` (path 3 for flag
     /// 4 when `path3`); returns the call's eax.
-    fn create<M: Mem>(
+    pub(crate) fn create<M: Mem>(
         mem: &mut M,
         obj: u32,
         rec: u32,
@@ -298,7 +298,7 @@ pub mod bridge {
     }
 
     /// Whether the instance has render data.
-    fn has_render_data<M: Mem>(
+    pub(crate) fn has_render_data<M: Mem>(
         mem: &mut M,
         obj: u32,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,

@@ -951,3 +951,192 @@ fn vfx_ppp_r1c_mdl_camera_draws_match_the_original() {
         assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
     }
 }
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::similar_names
+)]
+fn vfx_ppp_r1d_mdl_sea_draw_matches_the_original() {
+    use ffx_vfx::mdl_cam::bridge as mc;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_abe0);
+        let cells = p.alloc(0x20);
+        let (rd, alpha, zmat, tex, level, setup, loaded) = (
+            cells,
+            cells + 4,
+            cells + 8,
+            cells + 0xc,
+            cells + 0x10,
+            cells + 0x14,
+            cells + 0x18,
+        );
+        let logs = [
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rd)),
+            far_recorder(&mut p, 0x0071_2c30, &[0], Some(alpha)),
+            far_recorder(&mut p, 0x0071_2d00, &[0], Some(zmat)),
+            request_recorder(&mut p, 0x0071_8610, 4, 18, &[0x20, 0x2c, 0x30]),
+            request_recorder(&mut p, 0x0071_1180, 5, 18, &[0x20, 0x2c, 0x30]),
+            request_recorder(&mut p, 0x0071_0fd0, 5, 18, &[0x20, 0x2c, 0x30]),
+            far_recorder(&mut p, 0x0064_5600, &[0, 0], None),
+            far_recorder(&mut p, 0x0064_58a0, &[0, 0], None),
+            far_recorder(&mut p, 0x0064_0060, &[0, 0], None),
+            far_recorder(&mut p, 0x0091_9ba0, &[0], Some(tex)),
+            far_recorder(&mut p, 0x0091_9bd0, &[0, 0], None),
+            far_recorder(&mut p, 0x0064_1da0, &[], Some(level)),
+            far_recorder(&mut p, 0x0073_b5c0, &[0, 0], Some(setup)),
+            // the texture's name (8 words of it) and where its record goes
+            far_recorder(&mut p, 0x0064_5400, &[8, 0, 0, 0, 0, 0], Some(loaded)),
+            far_recorder(&mut p, 0x0064_5aa0, &[0, 0, 0], None),
+        ];
+        let (obj, key, prog, table) = (p.alloc(0x300), p.alloc(0x60), p.alloc(0x10), p.alloc(0x10));
+        let (env, env2, recs, models, part, rest, flags) = (
+            p.alloc(4),
+            p.alloc(0x40),
+            p.alloc(0x400),
+            p.alloc(0x200),
+            p.alloc(0x80),
+            p.alloc(0x100),
+            p.alloc(0x40),
+        );
+        let slot = p.sym(0x00c3_a4cc); // g_pppEnvSlot
+        let view = p.sym(0x0230_ff20);
+        let (cur, cpart, shift, stop, r0) = (
+            p.sym(0x0230_fd20),
+            p.sym(0x0230_ffe4),
+            p.sym(0x00c8_b500),
+            p.sym(0x0230_fd34),
+            p.sym(0x00c8_f508),
+        );
+        let levels = mc::SEA_LEVELS;
+        let mut seen = [0u32; 3];
+        for round in 0..2000u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.fill(obj, 0x300, &mut rng);
+            p.fill(key, 0x60, &mut rng);
+            p.fill(recs, 0x400, &mut rng);
+            p.fill(models, 0x200, &mut rng);
+            p.fill(rest, 0x100, &mut rng);
+            p.fill(flags, 0x40, &mut rng);
+            // two models: vertices at +0x20, a count, a blend
+            for m in [models, models + 0x100] {
+                p.set(m, rng.below(4));
+                p.set(m + 8, 0x20u32);
+                let count = rng.pick(&[0i16, 1, 3, 8, 0x20, -1]);
+                p.set(m + 0x12, count);
+            }
+            for i in 0..0x40u32 {
+                p.set(flags + i, rng.pick(&[0u8, 1, 0x80]));
+            }
+            if !p.snapshot() || rng.chance(50) {
+                for o in (0..0x40).step_by(4) {
+                    let x = ranged(&mut rng, -2.0, 2.0);
+                    p.set(view + o, x);
+                }
+            }
+            for o in (0x10..0x90).step_by(4) {
+                let x = ranged(&mut rng, -4.0, 4.0);
+                p.set(obj + o, x);
+            }
+            p.fill(part, 0x80, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.set(prog + 0xc, table);
+            p.set(table, 4 * rng.below(0x10));
+            p.set(table + 4, rng.next());
+            let off2 = rng.pick(&[0u32, 0x40, 0x80]);
+            p.set(table + 8, off2);
+            let w = obj + 0xa0 + off2;
+            for o in (0x40..0x68).step_by(4) {
+                let x = if rng.chance(3) {
+                    rng.float()
+                } else if rng.chance(20) {
+                    ranged(&mut rng, -70000.0, 70000.0)
+                } else {
+                    ranged(&mut rng, -300.0, 300.0)
+                };
+                p.set(w + o, x);
+            }
+            p.set(w + 0x68, rest);
+            p.set(w + 0x6c, flags);
+            p.set(w + 0x70, if rng.chance(30) { 0 } else { rest });
+            for b in [0x74u32, 0x75, 0x76, 0x77] {
+                p.set(w + b, rng.pick(&[0u8, 0, 1, 2, 3, 0xff]));
+            }
+            for o in (8..0x20).step_by(4) {
+                let x = ranged(&mut rng, -50.0, 50.0);
+                p.set(key + o, x);
+            }
+            // the wave: amplitudes, phase scales and steps
+            for o in (0x20..0x4c).step_by(4) {
+                let x = if rng.chance(3) {
+                    rng.float()
+                } else {
+                    ranged(&mut rng, -40.0, 40.0)
+                };
+                p.set(key + o, x);
+            }
+            if rng.chance(50) {
+                let f: u32 = p.get(obj + 0xc);
+                p.set(key, f);
+            }
+            for o in 0x50..0x58 {
+                p.set(key + o, rng.pick(&[0u8, 0, 1, 2, 3, 4, 0xff]));
+            }
+            p.set(stop, u32::from(rng.chance(15)));
+            p.set(shift, if rng.chance(15) { 4 * rng.below(4) } else { 0 });
+            p.set(cpart, part);
+            p.set(slot, env);
+            p.set(env, env2);
+            p.set(env2 + 0x20, recs);
+            let model = if rng.chance(5) { 0xffff } else { rng.below(8) };
+            p.set(key + 4, model);
+            for k in 0..8u32 {
+                p.set(recs + 32 * k + 0x1c, models + 0x100 * rng.below(2));
+            }
+            p.set(obj + 0x90, models + rng.below(0x20));
+            p.set(obj + 0x94, models + rng.below(0x20));
+            let other = rng.next();
+            let lv = if rng.chance(85) {
+                rng.pick(&levels)
+            } else {
+                other
+            };
+            p.set(level, lv);
+            p.set(setup, u32::from(rng.chance(70)));
+            p.set(loaded, u32::from(rng.chance(50)));
+            p.set(rd, u32::from(rng.chance(50)));
+            for c in [alpha, zmat] {
+                let x = if rng.chance(50) { 0 } else { rng.next() };
+                p.set(c, x);
+            }
+            p.set(tex, if rng.chance(30) { 0 } else { models + 0x100 });
+            let r9 = rng.next();
+            p.set(cur, rng.pick(&[0u32, 3, 0x8000_0001, r9]));
+            let words = 3;
+            let entry = p.b.stack_range().end - 0x100 - 4 * words - 4 - 0x200 - 4 * words - 4;
+            let frame = (entry - 12) & !0xf;
+            let req = frame - 0x2e0;
+            for o in (0..0x48).step_by(4) {
+                let v = rng.next();
+                p.set(req + o, v);
+            }
+            seen[0] += 1;
+            seen[1] += u32::from(levels.contains(&lv) && model != 0xffff);
+            seen[2] += u32::from(p.get::<u8>(w + 0x77) != 0);
+            let (obj_, key_, prog_) = (obj, key, prog);
+            check_deep_aligned(
+                &mut p,
+                &format!("pppDrawMdlSeaDraw round {round}"),
+                0x0073_abe0,
+                &[obj, key, prog],
+                |o, frame| {
+                    mc::ppp_draw_mdl_sea_draw(o, obj_, key_, prog_, frame, &mut call_original);
+                },
+            );
+        }
+        assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
+    }
+}

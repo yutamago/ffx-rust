@@ -1,12 +1,14 @@
-//! The camera-facing model draws (`pppDrawMdlCameraDraw`,
-//! `pppDrawMdlCameraLoopDraw`): a model record drawn with the object's
-//! colour through a render request on the stack, like the other
-//! `pppDrawMdl*` draws (`docs/formats/vfx.md`, "Model draws").
+//! The camera-facing and sea model draws (`pppDrawMdlCameraDraw`,
+//! `pppDrawMdlCameraLoopDraw`, `pppDrawMdlSeaDraw`): a model record drawn
+//! with the object's colour through a render request on the stack, like
+//! the other `pppDrawMdl*` draws (`docs/formats/vfx.md`, "Model draws").
 
 /// The functions over game memory.
 pub mod bridge {
-    use crate::draw::bridge::{ENV_SLOT, GET_PTR32, g};
-    use crate::mdl::bridge::{MDL, SEMI2, ee_colour_at, fmod, submit};
+    use crate::draw::bridge::{ENV_SLOT, GET_PTR32, NAME_HASH, g, instance};
+    use crate::mdl::bridge::{
+        MDL, SEMI2, create, ee_colour_at, fmod, has_render_data, submit, update,
+    };
     use ffx_bridge::Mem;
     use ffx_bridge::x87::{add, ftol, load, mul, store};
 
@@ -60,6 +62,19 @@ pub mod bridge {
         let v = store(add(load(mem.read(src)), load(mem.read(dst))));
         mem.write(dst, v);
         v
+    }
+
+    /// Two `[pos, speed, accel]` channels at `w + p1` and `w + p2`: each
+    /// speed takes its acceleration, then each position `fmod(f32(pos +
+    /// speed), 32768)` (the double at `0x00b51588`), in that order.
+    fn step_channels(mem: &mut impl Mem, w: u32, p1: u32, p2: u32) {
+        let period = f64_at(mem, PERIOD);
+        let t = add_to(mem, at(w, p1 + 4), at(w, p1 + 8));
+        let u = add_to(mem, at(w, p2 + 4), at(w, p2 + 8));
+        for (o, speed) in [(p1, t), (p2, u)] {
+            let x = load(store(add(load(speed), load(mem.read(at(w, o))))));
+            mem.write(at(w, o), store(fmod(x, period)));
+        }
     }
 
     /// The texture-animation step both draws share: with the key's speed
@@ -352,13 +367,7 @@ pub mod bridge {
                         add_to(mem, at(w, dst), at(key, src));
                     }
                 }
-                let period = f64_at(mem, PERIOD);
-                let t = add_to(mem, at(w, 8), at(w, 0xc));
-                let u = add_to(mem, at(w, 0x14), at(w, 0x18));
-                for (o, speed) in [(4, t), (0x10, u)] {
-                    let x = load(store(add(load(speed), load(rd(mem, at(w, o))))));
-                    mem.write(at(w, o), store(fmod(x, period)));
-                }
+                step_channels(mem, w, 4, 0x10);
             }
             tex_step(mem, key, 0x23, 0x22, at(w, 0x1d), at(w, 0x1e), call);
         }
@@ -438,5 +447,247 @@ pub mod bridge {
         let env = rd(mem, rd(mem, g(mem, ENV_SLOT)));
         let rec = rd(mem, at(env, 0x20)).wrapping_add(n << 5);
         submit(mem, obj, rec, req, MDL, call);
+    }
+
+    const SEA_SETUP: u32 = 0x0073_b5c0;
+    const STORE_COMPUTED: u32 = 0x0091_af10;
+    const IS_TEXTURE_LOADED: u32 = 0x0064_5400;
+    const UPDATE_TEXTURE: u32 = 0x0064_5aa0;
+    const DYN_GEO_UPDATE_TEXTURE: u32 = 0x0064_0060;
+    const ALPHA_FUNCTION: u32 = 0x0071_2c30;
+    const Z_MAT: u32 = 0x0071_2d00;
+    /// The import slot of the C runtime's `sprintf`.
+    const SPRINTF_SLOT: u32 = 0x00b0_c3dc;
+    /// `"trxtex_%d_%d_%d.dds.phyre"`.
+    const TRXTEX_FORMAT: u32 = 0x00b5_1568;
+
+    /// The levels (`graphicLevelGetNameHash`) `pppDrawMdlSeaDraw` draws
+    /// on.
+    pub const SEA_LEVELS: [u32; 14] = [
+        0x199, 0x17e6, 0x24c9, 0xa95, 0x245b, 0xa27, 0x170a, 0xe58, 0x1b3b, 0xb3, 0x1acd, 0x99,
+        0xe6c, 0xf48,
+    ];
+
+    /// `pppDrawMdlSeaDraw(obj, key, prog)` (`0x0073abe0`), cdecl; `frame`
+    /// the original's aligned frame pointer. Only on the [`SEA_LEVELS`] and
+    /// for a key model (`+4`) other than `0xffff`; the work area `w` (as
+    /// in [`ppp_draw_mdl_camera_draw`]) is set up by
+    /// `pppDrawMdlSeaDrawSetup(key, w)` while its `+0x70` is a null
+    /// `ptr32` (nothing when that fails). Unless `g_pppStopStatus`: on the
+    /// key's frame its `+8..+0x1c` are added to the channels `+0x50`,
+    /// `+0x5c`, which step ([`step_channels`]); with `w` byte `+0x77` the
+    /// model's vertices (`i16` triples at its `+8` offset, `i16 +0x12` of
+    /// them, those whose flag byte in `ptr32 w +0x6c` is set) become the
+    /// rest positions (`ptr32 w +0x68`) plus a wave: with `s = x + z`
+    /// (rest, as `f32`) the phases `ftol((w[+0x40..+0x48] + s) *
+    /// key[+0x40..+0x48])` pick `g_pppSinTable[phase >> 4 & 0xfff]`, times
+    /// key `+0x20..+0x28`, truncated, added to each coordinate (x from
+    /// phase 0, y 1, z 2); then the phases move by key `+0x30..+0x38`. The
+    /// texture animation (key `+0x51` both the speed and the limit, `+0x50`
+    /// the texture; `w +0x74..+0x76`) clears the counter even without a
+    /// texture and, after the frame step, loads
+    /// `trxtex_<frame>_<a>_<b>.dds.phyre` (`a`, `b` from
+    /// `pppStoreComputed_0091af10`; `sprintf` into `frame - 0x208`) and
+    /// hands it to the instance when `graphicVFXIsTextureLoaded` finds it.
+    /// The colour is the inlined form of [`ee_colour_at`]; with a non-zero
+    /// alpha the request at `frame - 0x2e0` (flags 4, `0x14` with key byte
+    /// `+0x54`, `0x2000` without `0x10` and `g_pppViewMatrix x obj +0x10`
+    /// in `+0x30` for `+0x55`, `0x200`/`8` for `+0x56`/`+0x57`; the blend
+    /// from `+0x52`; positions `w +0x50`, `+0x5c` in 16.16; the object's
+    /// `+0x50`/`+0x10` matrices) updates the render data (path 3 for flag
+    /// 4, then `graphicDynamicGeometryUpdateTexture`) or creates it.
+    /// Callees through `call`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_draw_mdl_sea_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let offs = rd(mem, at(prog, 0xc));
+        let w = obj.wrapping_add(0xa0).wrapping_add(rd(mem, at(offs, 8)));
+        let level = call(mem, g(mem, NAME_HASH), &[]);
+        if !SEA_LEVELS.contains(&level) {
+            return;
+        }
+        let Some((_, model)) = model_record(mem, key, call) else {
+            return;
+        };
+        let state = call(mem, g(mem, GET_PTR32), &[rd(mem, at(w, 0x70))]);
+        if state == 0 && call(mem, g(mem, SEA_SETUP), &[key, w]) == 0 {
+            return;
+        }
+        let at_f = |o: u32| frame.wrapping_sub(o);
+        if crate::ppp::bridge::STOP.get(mem) == 0 {
+            if rd(mem, key) == rd(mem, at(obj, 0xc)) {
+                for k in 0..6 {
+                    add_to(mem, at(w, 0x50 + 4 * k), at(key, 8 + 4 * k));
+                }
+            }
+            step_channels(mem, w, 0x50, 0x5c);
+            if mem.read::<u8>(at(w, 0x77)) != 0 {
+                let rest = call(mem, g(mem, GET_PTR32), &[rd(mem, at(w, 0x68))]);
+                let verts = model.wrapping_add(rd(mem, at(model, 8)));
+                let flags = call(mem, g(mem, GET_PTR32), &[rd(mem, at(w, 0x6c))]);
+                let sin = crate::ppp::bridge::SIN.ptr(mem).addr;
+                let kf = |mem: &M, o: u32| load(rd(mem, at(key, o)));
+                let wf = |mem: &M, o: u32| load(rd(mem, at(w, o)));
+                let mut i = 0u32;
+                while i.cast_signed() < i32::from(mem.read::<i16>(at(model, 0x12))) {
+                    if mem.read::<u8>(flags.wrapping_add(i)) != 0 {
+                        let (src, dst) = (rest.wrapping_add(6 * i), verts.wrapping_add(6 * i));
+                        let x = i32::from(mem.read::<i16>(src));
+                        let z = i32::from(mem.read::<i16>(at(src, 4)));
+                        let s = load(store(f64::from(x.wrapping_add(z))));
+                        let p1 = ftol(mem, mul(add(wf(mem, 0x44), s), kf(mem, 0x44)));
+                        let p2 = ftol(mem, mul(add(wf(mem, 0x48), s), kf(mem, 0x48)));
+                        let p0 = ftol(mem, mul(add(s, wf(mem, 0x40)), kf(mem, 0x40)));
+                        for (k, phase) in [(0u32, p0), (1, p1), (2, p2)] {
+                            let entry = ((phase.cast_signed() >> 4) & 0xfff).cast_unsigned();
+                            let t = load(mem.read(sin.wrapping_add(4 * entry)));
+                            let v = ftol(mem, mul(t, kf(mem, 0x20 + 4 * k)));
+                            #[allow(clippy::cast_possible_truncation)] // 16-bit add
+                            let v = (v as u16).wrapping_add(mem.read::<u16>(at(src, 2 * k)));
+                            mem.write(at(dst, 2 * k), v);
+                        }
+                    }
+                    i = i.wrapping_add(1);
+                }
+                for k in 0..3 {
+                    add_to(mem, at(w, 0x40 + 4 * k), at(key, 0x30 + 4 * k));
+                }
+            }
+            sea_texture(mem, obj, key, w, frame, call);
+        }
+        let req = at_f(0x2e0);
+        if !colour_inline(mem, obj, prog, req, call) {
+            return;
+        }
+        let n = rd(mem, at(key, 4));
+        let env = rd(mem, rd(mem, g(mem, ENV_SLOT)));
+        let rec = rd(mem, at(env, 0x20)).wrapping_add(n << 5);
+        let model = call(mem, g(mem, GET_PTR32), &[rd(mem, at(rec, 0x1c))]);
+        let mut flags = 4u32;
+        if mem.read::<u8>(at(key, 0x54)) != 0 {
+            flags = 0x14;
+        }
+        let view = if mem.read::<u8>(at(key, 0x55)) != 0 {
+            flags = flags & !0x10 | 0x2000;
+            let v = at_f(0x248);
+            call(
+                mem,
+                g(mem, MUL_MATRIX),
+                &[v, g(mem, VIEW_MATRIX), at(obj, 0x10)],
+            );
+            v
+        } else {
+            0
+        };
+        if mem.read::<u8>(at(key, 0x56)) != 0 {
+            flags |= 0x200;
+        }
+        if mem.read::<u8>(at(key, 0x57)) != 0 {
+            flags |= 8;
+        }
+        mem.write(req, flags);
+        mem.write(at(req, 0x30), view);
+        blend_and_fixed(mem, req, key, 0x52, model, [at(w, 0x50), at(w, 0x5c)]);
+        mem.write(at(req, 0x20), at(obj, 0x50));
+        mem.write(at(req, 0x2c), at(obj, 0x10));
+        mem.write(at(req, 0x1c), 0u32);
+        mem.write(at(req, 0x44), 0u32);
+        mem.write(at(req, 0x24), g(mem, REQUEST_TABLES[0]));
+        mem.write(at(req, 0x28), g(mem, REQUEST_TABLES[1]));
+        let packet = rd(mem, g(mem, PACKET_POS));
+        mem.write(at(req, 0x34), packet);
+        let t0 = call(mem, g(mem, GET_PTR32), &[rd(mem, at(obj, 0x90))]);
+        mem.write(at(req, 0x38), t0);
+        let t1 = call(mem, g(mem, GET_PTR32), &[rd(mem, at(obj, 0x94))]);
+        mem.write(at(req, 0x3c), t1);
+        mem.write(at(req, 0x40), 0u32);
+        if has_render_data(mem, obj, call) {
+            update(mem, obj, rec, req, true, call);
+            let [lo, hi] = instance(mem, obj);
+            call(mem, g(mem, DYN_GEO_UPDATE_TEXTURE), &[lo, hi]);
+            return;
+        }
+        let blend = u32::from(mem.read::<u8>(at(req, 8)));
+        let mut alpha = call(mem, g(mem, ALPHA_FUNCTION), &[blend]);
+        if rd(mem, req) & 0x2000 == 0 {
+            alpha |= call(mem, g(mem, Z_MAT), &[rd(mem, at(req, 0x44))]);
+        }
+        if mem.read::<u8>(req) & 8 != 0 {
+            alpha |= 0x40;
+        }
+        create(mem, obj, rec, req, true, alpha, call);
+    }
+
+    /// The sea draw's texture animation (see [`ppp_draw_mdl_sea_draw`]).
+    #[allow(clippy::many_single_char_names)]
+    fn sea_texture<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        w: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let speed = mem.read::<u8>(at(key, 0x51));
+        if speed == 0 {
+            return;
+        }
+        let c = mem.read::<u8>(at(w, 0x74)).wrapping_add(1);
+        mem.write(at(w, 0x74), c);
+        if c < speed {
+            return;
+        }
+        let id = u32::from(mem.read::<u8>(at(key, 0x50)));
+        let t = call(mem, g(mem, TRX_TEX_GET), &[id]);
+        if t != 0 {
+            let mut n = mem.read::<u8>(at(w, 0x75)).wrapping_add(1);
+            if n >= mem.read::<u8>(at(w, 0x76)) {
+                n = 0;
+            }
+            mem.write(at(w, 0x75), n);
+            call(mem, g(mem, TRX_TEX_SET_FRAME), &[t, u32::from(n)]);
+            let (a, b) = (frame.wrapping_sub(0x2e4), frame.wrapping_sub(0x2e8));
+            call(mem, g(mem, STORE_COMPUTED), &[t, a, b]);
+            let (name, out) = (frame.wrapping_sub(0x208), frame.wrapping_sub(0x108));
+            let sprintf: u32 = mem.read(g(mem, SPRINTF_SLOT));
+            let args = [
+                name,
+                g(mem, TRXTEX_FORMAT),
+                u32::from(n),
+                mem.read(a),
+                mem.read(b),
+            ];
+            call(mem, sprintf, &args);
+            if call(mem, g(mem, IS_TEXTURE_LOADED), &[name, out, 0, 0, 0, 0]) != 0 {
+                let [lo, hi] = instance(mem, obj);
+                call(mem, g(mem, UPDATE_TEXTURE), &[lo, hi, out]);
+            }
+        }
+        mem.write(at(w, 0x74), 0u8);
+    }
+
+    /// [`colour`] with the `pextlh` steps inlined (the original writes the
+    /// emulated registers itself).
+    fn colour_inline<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        prog: u32,
+        req: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> bool {
+        let off: u32 = mem.read(mem.read::<u32>(at(prog, 0xc)));
+        let c = ee_colour_at(mem, obj.wrapping_add(off), false, call);
+        let shift = g(mem, COLOR_SHIFT);
+        let sh: u32 = mem.read(shift);
+        mem.write(at(req, 0x18).wrapping_add(sh), c);
+        mem.write(shift, 0u32);
+        mem.read::<u8>(at(req, 0x1b)) != 0
     }
 }
