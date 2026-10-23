@@ -314,19 +314,30 @@ the lengths end them then.
 | --- | --- |
 | `pppKeShpTailDraw` | `0x0074c570` |
 | `pppKeShpTailXDraw` | `0x0074d570` |
+| `pppKeShpTail2Draw` | `0x0074e570` |
+| `pppKeShpTail2XDraw` | `0x0074f5b0` |
 
 - Colour: from work area 1's four `i16` to the key's (`+0x10`), each
   `(c * u16 part[+0x70 + 2k]) >> 19` as `f32`, in `n - 1` steps
   (`FFXVu0DivVector` by `f32(n - 1)`); the scale from 1 down by `(1 -
   key[+0x18]) / (n - 1)`, the length left down by spacing times that.
+- The `2` draws: colours from key bytes `+0x14..+0x17` to `+0x18..+0x1b`,
+  each `(b * u16 part[+0x70 + 2k]) >> 12`, the alphas times work area 1's
+  `i16 +6` times the `f64` 2^-14 at `0x00b51550`; the scale from key `+0xc`
+  to `+0x10` (step `(s0 - key[+0x10]) / (n - 1)`), the length's step the
+  spacing times `step / s0` (unrounded); the first sprite only with key
+  byte `+0x22` (else the loop starts with a step). `pppKeShpTail2Draw`
+  alone turns a zero divisor into a zero step and triples the vertex and
+  index counts it asks the dynamic-geometry buffer for.
 - Request (at `ebp - 0x120`, shape field): flags `+2` 0x80 (`X`: `| 0x800`
-  with key byte `+0x22`, `| 0x400` with `+0x23`), `+4` the colour
+  with key byte `+0x22`, `| 0x400` with `+0x23`; `2X` one byte up), `+4` the colour
   (`pppFtoiRgba`), `+0x10` the matrix: the object's (`+0x10`) rows 0 and
   1 times the part's `+0x60`/`+0x64` and the scale (`Tail` rounds the
   part's product into the copy once; `X` rounds part times scale per
-  sprite, then times the row), row 2 unit, row 3 the point through
-  `g_pppViewMatrix`; `+0x14` `g_PppPacketPos`; `+0x1c` 0 (`X`: work area
-  3 with key byte `+0x24`).
+  sprite, then times the row; `Tail2` as `Tail`, `Tail2X` as `X`), row 2
+  unit, row 3 the point through `g_pppViewMatrix`; `+0x14`
+  `g_PppPacketPos`; `+0x1c` 0 (`X`: work area 3 with key byte `+0x24`,
+  `2X` `+0x25`).
 - Render data: without it `InitVFXRenderDataShapeField` (alpha from the
   frame's data, `X` from frame 0's, and `X` then draws with frame 0's
   data); with it the buffer is sized per sprite and the draw ends when

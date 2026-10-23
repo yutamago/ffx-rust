@@ -4012,14 +4012,14 @@
 0x0074e3b0 function vu_vec4_sub_0074e3b0       # ours, disasm: as vu_vec4_add with a - b and restoreVf00Register before the copy; one of 7 identical copies (vec::bridge::vu_vec4_sub)
 0x0074e490 function pppKeShpTail2             # ppp program table record "pppKeShpTail2" step: the same code as pppKeShpTail
 0x0074e540 function pppKeShpTail2Con          # ppp program table record "pppKeShpTail2" (0x00c3a918) +0x1c set-up; "pppKeShpTail2" (0x00c3bfc0) +0x1c set-up
-0x0074e570 function pppKeShpTail2Draw         # ppp program table record "pppKeShpTail2" draw; not a function start in the Ghidra dump
+0x0074e570 function pppKeShpTail2Draw         # ppp program table record "pppKeShpTail2" draw; not a function start in the Ghidra dump; ported vfx-ppp r1 (tail::bridge TAIL2)
 0x0074ef50 function vu_vec4_add_0074ef50       # ours, disasm: (out, a, b) -> out.w bits: emulated VU regs 0x00c8f980 = a, 0x00c8f970 = b, the first += b, copied to out; one of 5 identical copies (vec::bridge::vu_vec4_add)
 0x0074f030 function vu_apply_matrix_0074f030   # ours, disasm: (out, m, v) -> out.w bits: m into the emulated VU0 rows 0x00c8f940..0x00c8f97c, v into 0x00c8f980, ACC 0x00c8f790 = x m0 + y m1 + z m2 (f32 per step), + w m3 into 0x00c8f940, copied to out (FFXVu0ApplyMatrix inlined); one of 5 identical copies (vec::bridge::vu_apply_matrix)
 0x0074f2c0 function pppFtoiRgba_0074f2c0       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail2XDraw)
 0x0074f3f0 function vu_vec4_sub_0074f3f0       # ours, disasm: as vu_vec4_add with a - b and restoreVf00Register before the copy; one of 7 identical copies (vec::bridge::vu_vec4_sub)
 0x0074f4d0 function pppKeShpTail2X            # ppp program table record "pppKeShpTail2X" step: the same code as pppKeShpTail
 0x0074f580 function pppKeShpTail2XCon         # ppp program table record "pppKeShpTail2X" (0x00c3b480) +0x1c set-up; "pppKeShpTail2X" (0x00c3cb28) +0x1c set-up
-0x0074f5b0 function pppKeShpTail2XDraw        # ppp program table record "pppKeShpTail2X" draw; not a function start in the Ghidra dump
+0x0074f5b0 function pppKeShpTail2XDraw        # ppp program table record "pppKeShpTail2X" draw; not a function start in the Ghidra dump; ported vfx-ppp r1 (tail::bridge TAIL2_X)
 0x00750020 function pppVec4Copy               # (dst, src) four floats through the FPU (fld/fstp)
 0x007500d0 function pppVu0MulX_007500d0       # the same arithmetic as pppVu0MulX, leaves v in eax (0x0091cb70, 0x00925040)
 0x00750130 function pppFtoiRgba_00750130       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail3Draw)

@@ -53,4 +53,12 @@ ported! {
     pppKeShpTailXDraw @ 0x0074_d570 => extern "C" fn ppp_ke_shp_tail_x_draw(obj: u32, key: u32, ctrl: u32) {
         shp_tail(&tail::bridge::TAIL_X, obj, key, ctrl);
     }
+    /// `pppKeShpTail2Draw(obj, key, ctrl)`.
+    pppKeShpTail2Draw @ 0x0074_e570 => extern "C" fn ppp_ke_shp_tail2_draw(obj: u32, key: u32, ctrl: u32) {
+        shp_tail(&tail::bridge::TAIL2, obj, key, ctrl);
+    }
+    /// `pppKeShpTail2XDraw(obj, key, ctrl)`.
+    pppKeShpTail2XDraw @ 0x0074_f5b0 => extern "C" fn ppp_ke_shp_tail2_x_draw(obj: u32, key: u32, ctrl: u32) {
+        shp_tail(&tail::bridge::TAIL2_X, obj, key, ctrl);
+    }
 }

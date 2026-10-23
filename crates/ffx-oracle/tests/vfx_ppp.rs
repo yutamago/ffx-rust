@@ -469,7 +469,13 @@ impl TailWorld {
 /// The ring, colours, key, shape set and part of one random tail draw
 /// that ends (no sizing or sprite loop without a bound).
 #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
-fn tail_case(p: &mut Pair, rng: &mut Xorshift, w: &TailWorld, s: &TailStubs) {
+fn tail_case(
+    p: &mut Pair,
+    rng: &mut Xorshift,
+    w: &TailWorld,
+    s: &TailStubs,
+    v: &tail::bridge::Tail,
+) {
     let float = |rng: &mut Xorshift, lo: f32, hi: f32| {
         if rng.chance(3) {
             rng.float()
@@ -557,14 +563,33 @@ fn tail_case(p: &mut Pair, rng: &mut Xorshift, w: &TailWorld, s: &TailStubs) {
         l = ranged(rng, 1.0, 100.0);
     }
     if f32::from_bits(l) == 0.0 {
-        // a zero length leaves no count: the steps must be numbers
-        n = n.max(2);
+        // a zero length leaves no count: the steps must be numbers (only
+        // the guarded draw makes 0 of a single sprite's step)
+        if !v.guarded || rng.chance(50) {
+            n = n.max(2);
+        }
         k18 = ranged(rng, -1.0, 2.0);
     }
-    p.set(key + 0x18, k18);
+    if v.two {
+        // the scale from +0xc to +0x10 (k18's part), the colour bytes from
+        // the fill
+        let s0 = if n == 0 {
+            1.0f32.to_bits()
+        } else if f32::from_bits(l) == 0.0 {
+            ranged(rng, 0.5, 2.0)
+        } else if rng.chance(5) {
+            rng.pick(&[0u32, 0x8000_0000])
+        } else {
+            float(rng, -2.0, 3.0)
+        };
+        p.set(key + 0xc, s0);
+        p.set(key + 0x10, k18);
+    } else {
+        p.set(key + 0x18, k18);
+    }
     p.set(key + 0x1c, l);
     p.set(key + 0x20, n as u16);
-    for k in 0x22..0x25 {
+    for k in 0x22..0x26 {
         p.set(key + k, rng.pick(&[0u8, 0, 1, 0x80]));
     }
     // the shape set: frames, per frame a data offset, a length and flags
@@ -632,15 +657,17 @@ fn vfx_ppp_r1a_shp_tail_draws_match_the_original() {
     let draws = [
         ("pppKeShpTailDraw", 0x0074_c570u32, t::TAIL),
         ("pppKeShpTailXDraw", 0x0074_d570, t::TAIL_X),
+        ("pppKeShpTail2Draw", 0x0074_e570, t::TAIL2),
+        ("pppKeShpTail2XDraw", 0x0074_f5b0, t::TAIL2_X),
     ];
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x0074_c570);
         let s = tail_stubs(&mut p);
         let w = TailWorld::new(&mut p);
-        let mut seen = [0u32; 4];
-        for round in 0..2000u32 {
-            let (name, sym, v) = draws[rng.below(2) as usize];
-            tail_case(&mut p, &mut rng, &w, &s);
+        let mut seen = [0u32; 6];
+        for round in 0..4000u32 {
+            let (name, sym, v) = draws[rng.below(4) as usize];
+            tail_case(&mut p, &mut rng, &w, &s, &v);
             // the request's words neither side writes: alike in both
             let words = 3;
             let entry = p.b.stack_range().end - 0x100 - 4 * words - 4 - 0x200 - 4 * words - 4;
@@ -650,8 +677,9 @@ fn vfx_ppp_r1a_shp_tail_draws_match_the_original() {
             p.set(req, s1);
             p.set(req + 0x18, s2);
             let n: u16 = p.get(w.key + 0x20);
-            seen[usize::from(v.x)] += 1;
-            seen[2 + usize::from(n > 3)] += 1;
+            seen[usize::from(v.x.is_some())] += 1;
+            seen[2 + usize::from(v.two)] += 1;
+            seen[4 + usize::from(n > 3)] += 1;
             let (obj, key, ctrl) = (w.obj, w.key, w.ctrl);
             check_deep_aligned(
                 &mut p,
