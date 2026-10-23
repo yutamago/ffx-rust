@@ -140,6 +140,15 @@ ported! {
         );
         std::hint::black_box(&mut locals.0);
     }
+    /// `pppKeMdlBmpDraw(obj, key, ctrl)`: the matrices, vectors and the
+    /// body's argument block in a 16-aligned block, as the original aligns
+    /// its frame.
+    pppKeMdlBmpDraw @ 0x0074_90d0 => extern "C" fn ppp_ke_mdl_bmp_draw(obj: u32, key: u32, ctrl: u32) {
+        let mut locals = Locals::<0x110>::new();
+        let ebp = locals.ebp();
+        mdl_cam::bridge::ppp_ke_mdl_bmp_draw(&mut mem(), obj, key, ctrl, ebp, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals.0);
+    }
     /// `pppDrawMdlSeaDraw(obj, key, prog)`: the request, the texture name
     /// and record in a 16-aligned block, as the original aligns its frame.
     pppDrawMdlSeaDraw @ 0x0073_abe0 => extern "C" fn ppp_draw_mdl_sea_draw(obj: u32, key: u32, prog: u32) {

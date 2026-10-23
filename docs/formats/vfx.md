@@ -480,6 +480,38 @@ first sprite at the head, `+0x62` turn), with these differences:
   `record[+0x2c] / 12288`, a word the draw never writes.
 - No `op_spr_alloc` block, no stop or skip gates; the time always steps.
 
+## `pppKeMdlBmpDraw` (`0x007490d0`)
+
+Ported in `crates/ffx-vfx/src/mdl_cam.rs`; the drawing itself is
+`pppKeMdlBmpDraw_Body_00748b00` (`draw.rs`).
+
+- First pass (`obj +0xc` == key `+0` == 0, not `g_pppStopStatus`; both
+  shapes key `+0x24`/`+0x28` not `0xffff`): an `op_spr_alloc(0x50)` block;
+  the vertex set `key[+0x24]` (`+[+8]`, `i16` x, y, z per 6 bytes) and the
+  triangle records of `key[+0x28]` (`+[+4]`; kind byte `+1` 2 with `i16 +2`
+  triangles of 32 bytes after a 0x10-byte head, until kind 0xff; any other
+  kind frees the block and returns at once; a negative count walks back
+  and never ends, in both). Per triangle, `u16` points `(x, y)` at `+0x14`,
+  `+0x18`, `+0x1c` and vertex indices at `+0xc`, `+0xe`, `+0x10`: the
+  longest of `|x2 - x1|`, `|x0 - x2|`, `|x1 - x0|` (ties to the first two in
+  that order, the third only when strictly longer) picks the corner
+  order; the block gets the edge's x and y differences as `f32` (`+0`,
+  `+4`, `+0x10`, `+0x18`), the slope term `dx * dy / x` (`+0x14`), the
+  three vertices as `i32` (`+0x20`, `+0x30`, `+0x40`), and the triangle's
+  first 12 bytes become the first vertex's three `i32` (through `fld`/`fstp`,
+  so the bits are copied). Triangle number `key[+0x3c]` (counted down)
+  goes to `dbgPrintf` (format `0x00b51618`/`20`/`28` by the case, then
+  `0x00b51630` with the three words as doubles).
+- Every frame with a target object (`key[+0x2c]` not -1: the part's record
+  `[part+0x3c] + 16k + 4`, then `+0xa0 + key[+0x30]`, not
+  `g_pppRandTarget`): work area 1's colour `>> 7` times 1/128 (`f32` at
+  `0x00b51640`), `g_pppWorldMatrix` times the object's matrix, the
+  direction from its position to the target through the inverse
+  (normalized before and after), and the body's block at `ebp - 0x100`:
+  matrix, `obj + 0x50`, packet position, the two shape sets, `+0x18`/`+0x1c`
+  the colour, `+0x20` the direction, `+0x24` `key[+0x3c]`.
+  `g_PppPacketPos` is the block's `+8` after the body.
+
 ## Saved VU0 state (`pppKeShpTail3`, `pppKeShpTail3X`)
 
 The tail draws save the emulated VU0 registers they use and restore them
