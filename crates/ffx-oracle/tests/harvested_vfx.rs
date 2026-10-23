@@ -266,3 +266,8 @@ harvest_test!(opu_v_en_bone, 0x0080_4c90, args = 2, |m: &mut Oracle, s| {
         &mut |m, f, a| m.call_f64(f, a).unwrap(),
     )
 });
+harvest_test!(opu_vran_add, 0x0081_a4a0, args = 2, |m: &mut Oracle, s| {
+    ffx_vfx::opus::bridge::opu_vran_add(m, s.arg(0), s.arg(1), &mut |m, f, a| {
+        m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+    })
+});
