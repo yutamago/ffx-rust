@@ -960,6 +960,198 @@ pub mod bridge {
         0
     }
 
+    /// `PMatrix4_FromMatrix3x4(this, m34)`, `0x00531a40(this, rows)` (the
+    /// upper 3x3 from three padded rows, `thiscall`, unnamed),
+    /// `Matrix_RotationX(out, angle)`, `Matrix_RotationY(out, angle)`,
+    /// `0x004cd1f0(out, angle)` (the z rotation, cdecl, unnamed),
+    /// `0x005e4400(out, a, b)` (a product, cdecl, unnamed),
+    /// `PMatrix4_Copy(this, src)`, `PMatrix4_RowTimes(this, out, row)`,
+    /// `PMatrix4_toWorldMatrix3x4(this, m44)` and the `.rdata` 10.0 the
+    /// scale uses.
+    pub const PMATRIX4_FROM_3X4: u32 = 0x0045_1080;
+    pub const PMATRIX4_SET_UPPER3X3: u32 = 0x0053_1a40;
+    pub const MATRIX_ROTATION_X: u32 = 0x0066_c8a0;
+    pub const MATRIX_ROTATION_Y: u32 = 0x0066_c920;
+    pub const MATRIX_ROTATION_Z: u32 = 0x004c_d1f0;
+    pub const MATRIX_MUL: u32 = 0x005e_4400;
+    pub const PMATRIX4_COPY: u32 = 0x004c_9430;
+    pub const PMATRIX4_ROW_TIMES: u32 = 0x004c_9c20;
+    pub const PMATRIX4_TO_WORLD_3X4: u32 = 0x0045_1190;
+    pub const ROTATION_SCALE: u32 = 0x00b9_2318;
+    /// Bytes of work [`scene_set_object_rotation`] needs, laid out as the
+    /// original's frame from `ebp - 0x1f8`.
+    pub const OBJECT_ROTATION_WORK: u32 = 0x1f8;
+    // the frame's matrices: the object's (`ebp - 0x40`), two scratch ones
+    // (`- 0x80`, `- 0xc0`, the scale rows inside the second at `- 0xb0`),
+    // the 3x4 world copy (`- 0xf8`) and the rotation (`- 0x138`); the x
+    // rotations' row products of each stage (rows +0x30, +0x20, +0x10, +0)
+    const ROT_M: u32 = 0x1b8;
+    const ROT_A: u32 = 0x178;
+    const ROT_B: u32 = 0x138;
+    const ROT_SCALE: u32 = 0x148;
+    const ROT_W: u32 = 0x100;
+    const ROT_R: u32 = 0xc0;
+    const ROT_ROWS: [[u32; 4]; 3] = [
+        [0x10, 0x80, 0x60, 0x40],
+        [0x20, 0x00, 0x90, 0xb0],
+        [0x70, 0x30, 0x50, 0xa0],
+    ];
+
+    /// The axes `PhyreScene_setObjectRotation` turns about, in order, for
+    /// rotation order `mode`; none for an order beyond 5.
+    #[must_use]
+    pub fn rotation_order(mode: i16) -> &'static [u8] {
+        match mode {
+            0 => b"zyx",
+            1 => b"zxy",
+            2 => b"yxz",
+            3 => b"yzx",
+            4 => b"xzy",
+            5 => b"xyz",
+            _ => b"",
+        }
+    }
+
+    /// `-x` as `fld; fchs; fstp dword` makes it.
+    fn negated(bits: u32) -> u32 {
+        x87::store(-x87::load(bits))
+    }
+
+    /// The 16 floats at `from` to `to` through the x87.
+    fn copy_matrix(m: &mut impl Mem, to: u32, from: u32) {
+        for k in 0..16 {
+            let v = float_bits(f32::from_bits(m.read(from + 4 * k)));
+            m.write(to + 4 * k, v);
+        }
+    }
+
+    /// `PhyreScene_setObjectRotation(this, id, angles, order)`
+    /// (`0x0066db00`, Fahrenheit's name; `thiscall`, `ret 0xc`, from
+    /// `graphicObjectSetRotation`): with the object tree up (`+0x10d4`),
+    /// every mesh of object `id` (as `PhyreScene_setObjectTranslation`
+    /// finds them) gets a new 3x4 world matrix: its own (`*(mesh +4)`,
+    /// copied, made a `PMatrix4`) with the upper 3x3 set to 10 times the
+    /// unit matrix (`0x00531a40`), then turned about the axes of
+    /// [`rotation_order`] (`order`, an `i16`) by `-x` (`Matrix_RotationX`,
+    /// applied row by row through `PMatrix4_RowTimes`), `-y`
+    /// (`Matrix_RotationY`) and `z` (`0x004cd1f0`; both multiplied in by
+    /// `0x005e4400`) of `angles`, each result copied back
+    /// (`PMatrix4_Copy`, then float by float), and written back
+    /// (`PMatrix4_toWorldMatrix3x4`, float by float, the mesh re-read).
+    /// `work` stands for the original's frame. Returns 0.
+    #[allow(clippy::too_many_lines)] // the three kinds of turn
+    pub fn scene_set_object_rotation(
+        h: &mut impl Host,
+        scene: u32,
+        id: u32,
+        angles: u32,
+        order: u32,
+        work: u32,
+    ) -> u32 {
+        use crate::managers::bridge::tree_find_key;
+        if h.read::<u32>(scene + 0x10d4) == 0 {
+            return 0;
+        }
+        let tree = scene + 0x1198;
+        let node = tree_find_key(h, tree, id);
+        if node == 0 || node.wrapping_add(0x10) == 0 {
+            return 0;
+        }
+        let node = tree_find_key(h, tree, id);
+        let value = if node == 0 { 0 } else { node + 0x10 };
+        let list: u32 = h.read(value);
+        if h.read::<u32>(list) == 0 {
+            return 0;
+        }
+        let mode = i16::from_le_bytes(order.to_le_bytes()[..2].try_into().unwrap_or([0; 2]));
+        let at = |off: u32| work + off;
+        let (m4, a, b, w, r) = (at(ROT_M), at(ROT_A), at(ROT_B), at(ROT_W), at(ROT_R));
+        let mut i = 0;
+        loop {
+            let meshes: u32 = h.read(list + 8);
+            let mesh: u32 = h.read(meshes + 4 * i);
+            let world: u32 = h.read(mesh + 4);
+            for k in 0..12 {
+                let v: u32 = h.read(world + 4 * k);
+                h.write(w + 4 * k, v);
+            }
+            h.call_sym(PMATRIX4_FROM_3X4, Conv::Thiscall(m4), &[w]);
+            let ten = float_bits(f32::from_bits(h.read(h.rebase(ROTATION_SCALE))));
+            let s = at(ROT_SCALE);
+            for (k, v) in [
+                (0, ten),
+                (1, 0),
+                (2, 0),
+                (4, 0),
+                (5, ten),
+                (6, 0),
+                (8, 0),
+                (9, 0),
+                (10, ten),
+            ] {
+                h.write(s + 4 * k, v);
+            }
+            h.call_sym(PMATRIX4_SET_UPPER3X3, Conv::Thiscall(m4), &[s]);
+            for (stage, &axis) in rotation_order(mode).iter().enumerate() {
+                let first = stage == 0;
+                match axis {
+                    b'x' => {
+                        let angle = negated(h.read(angles));
+                        let rot = h.call_sym(MATRIX_ROTATION_X, Conv::Cdecl, &[r, angle]);
+                        let temps = ROT_ROWS[stage];
+                        let mut rows = [0u32; 4];
+                        for (k, (&t, out)) in (0u32..).zip(temps.iter().zip(rows.iter_mut().rev()))
+                        {
+                            let row = rot.wrapping_add(0x30 - 0x10 * k);
+                            *out =
+                                h.call_sym(PMATRIX4_ROW_TIMES, Conv::Thiscall(m4), &[at(t), row]);
+                        }
+                        let (fill, copy) = if first { (b, a) } else { (a, b) };
+                        for (k, &row) in (0u32..).zip(&rows) {
+                            for j in 0..4 {
+                                let v = float_bits(f32::from_bits(h.read(row + 4 * j)));
+                                h.write(fill + 0x10 * k + 4 * j, v);
+                            }
+                        }
+                        h.call_sym(PMATRIX4_COPY, Conv::Thiscall(copy), &[fill]);
+                        copy_matrix(h, m4, copy);
+                    }
+                    turn => {
+                        let rot = if turn == b'y' {
+                            let angle = negated(h.read(angles + 4));
+                            h.call_sym(MATRIX_ROTATION_Y, Conv::Cdecl, &[r, angle])
+                        } else {
+                            let angle = float_bits(f32::from_bits(h.read(angles + 8)));
+                            let out = if first { a } else { r };
+                            h.call_sym(MATRIX_ROTATION_Z, Conv::Cdecl, &[out, angle])
+                        };
+                        let out = match (first, turn) {
+                            (true, b'y') => a,
+                            (true, _) => r,
+                            (false, _) => b,
+                        };
+                        let product = h.call_sym(MATRIX_MUL, Conv::Cdecl, &[out, m4, rot]);
+                        let copy = if first { b } else { a };
+                        h.call_sym(PMATRIX4_COPY, Conv::Thiscall(copy), &[product]);
+                        copy_matrix(h, m4, copy);
+                    }
+                }
+            }
+            h.call_sym(PMATRIX4_TO_WORLD_3X4, Conv::Thiscall(w), &[m4]);
+            i += 1;
+            let meshes: u32 = h.read(list + 8);
+            let mesh: u32 = h.read(meshes + 4 * (i - 1));
+            let world: u32 = h.read(mesh + 4);
+            for k in 0..12 {
+                let v = float_bits(f32::from_bits(h.read(w + 4 * k)));
+                h.write(world + 4 * k, v);
+            }
+            if i >= h.read::<u32>(list) {
+                return 0;
+            }
+        }
+    }
+
     /// `graphicCharacterLightingSetShadeCoeff(list, coeff)`: the shade
     /// coefficient `Phyre_CharacterLighting_calcShadeCoeffWithConfidence`
     /// derives from `coeff` (1.0 on maps `0x226d` and `0x1739`, `coeff`

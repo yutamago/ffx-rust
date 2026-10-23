@@ -399,6 +399,17 @@ matrix (`*(mesh +4)`) the translation row `(-x, -y, z)` (words 8-10,
 the others rewritten as they were); each mesh's draw entry (`*(mesh
 +0x1c) +0xc`) then points at it. Returns 0.
 
+Object rotation: `PhyreScene_setObjectRotation(id, angles, order)`
+(`0x0066db00`) finds the same mesh list and rebuilds each mesh's 3x4 world
+matrix: made a `PMatrix4`, its upper 3x3 set to 10 times the unit matrix
+(`0x00531a40`; the old rotation and scale are dropped, the translation
+kept), then turned about three axes in the order `order` (an `i16`) picks:
+0 z y x, 1 z x y, 2 y x z, 3 y z x, 4 x z y, 5 x y z, anything else none.
+The x and y turns are by `-angles.x` and `-angles.y` (`Matrix_RotationX`,
+applied row by row with `PMatrix4_RowTimes`; `Matrix_RotationY`), the z
+turn by `+angles.z` (`0x004cd1f0`); the y and z products go through
+`0x005e4400`. Returns 0. Port: `ffx_graphic::state::bridge::scene_set_object_rotation`.
+
 Shade coefficient: `graphicCharacterLightingSetShadeCoeff(list, c)`
 (`0x0063cdd0`) takes `Phyre_CharacterLighting_calcShadeCoeffWithConfidence(list,
 c, 0)` (an `ST0` result), forced to 1.0 on maps `0x226d` and `0x1739` and
