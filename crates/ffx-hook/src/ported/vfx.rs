@@ -6071,6 +6071,17 @@ ported! {
     opu_vran_etc @ 0x0081_abe0 => extern "C" fn opu_vran_etc(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_vran_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
     }
+    /// `opu_mimic(host, cmd)`: the next command.
+    opu_mimic @ 0x0080_f210 => extern "C" fn opu_mimic(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_mimic(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_mdc_break(host, cmd)`: the next command; the original's
+    /// 16-byte break parameter block in this shim's frame.
+    opu_mdc_break @ 0x0080_4270 => extern "C" fn opu_mdc_break(host: u32, cmd: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        opus::bridge::opu_mdc_break(&mut mem(), host, cmd, local, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `opu_weapon_etc_008139b0(host, cmd)`: the next command.
     opu_weapon_etc_008139b0 @ 0x0081_39b0 => extern "C" fn opu_weapon_etc(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_weapon_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))

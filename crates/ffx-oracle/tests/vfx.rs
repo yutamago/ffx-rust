@@ -30052,3 +30052,190 @@ fn round47e_opp_anm_matches_the_original() {
         assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round48b_opu_mimic_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_f210);
+        let rets = p.alloc(0x40);
+        let r = |k: u32| rets + 4 * k;
+        let mut logs = vec![
+            far_recorder(&mut p, 0x007f_f780, &[0; 2], Some(r(0))), // op_malloc
+            far_recorder(&mut p, 0x007f_eaa0, &[0], Some(r(1))),    // op_et_chr_index_by_no
+            far_recorder(&mut p, 0x0080_0d60, &[0; 2], None),       // opu_id_list_add
+            far_recorder(&mut p, 0x0080_1060, &[0; 3], Some(r(2))), // opus_no_get
+            far_recorder(&mut p, 0x0080_0f60, &[0; 4], Some(r(3))), // opus_get_osu_by_draw
+            far_recorder(&mut p, 0x0083_13c0, &[0; 3], None),       // Ch_TextureSetClutBase
+            far_recorder(&mut p, 0x0083_1390, &[0; 3], None),       // Ch_TextureSetImageBase
+            far_recorder(&mut p, 0x0080_3880, &[0; 4], Some(r(4))), // op_mdc_size_get_main
+            far_recorder(&mut p, 0x007b_7eb0, &[0], Some(r(5))),    // MsEffectGetBufferAddress
+            far_recorder(&mut p, 0x0080_34b0, &[0; 6], None),       // op_mdc_all_make_main
+            far_recorder(&mut p, 0x0080_3730, &[0], None),          // cue_free
+            far_recorder(&mut p, 0x0083_0410, &[0], Some(r(6))),    // Ch_GetNbModel
+            far_recorder(&mut p, 0x0082_ae10, &[0; 2], Some(r(7))), // Ch_ModelGetVtexPtr
+            far_recorder(&mut p, 0x0082_adf0, &[0; 2], Some(r(8))), // Ch_ModelGetNromPtr
+        ];
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x20));
+        let (obj, blk, cell, buf) = (p.alloc(0x100), p.alloc(0x400), p.alloc(4), p.alloc(0x40));
+        let reg = p.sym(0x00c8_f528);
+        let mut seen = [0u32; 4];
+        for round in 0..3000u32 {
+            p.fill(rets, 0x40, &mut rng);
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd, 0x20, &mut rng);
+            p.fill(obj, 0x100, &mut rng);
+            p.fill(blk, 0x400, &mut rng);
+            p.fill(reg, 0x10, &mut rng);
+            p.set(host + 0x220, unit);
+            let nib = rng.pick(&[0u16, 0x1000, 0x2000, 0x3000, 0xf000]);
+            let fl = u16::try_from(rng.below(0x1000)).unwrap() | nib;
+            p.set(host + 0x21a, fl);
+            if let Some(k) = [0u16, 0x1000, 0x2000].iter().position(|&n| n == nib) {
+                seen[k] += 1;
+            } else {
+                seen[3] += 1;
+            }
+            p.set(
+                cmd + 2,
+                rng.pick(&[0u16, 1, 2, 5, 0x7fff, 0x8000, 0xfffd, 0xffff]),
+            );
+            for at in [0x40, 0x4c] {
+                let x = if rng.chance(70) {
+                    ranged(&mut rng, -70000.0, 70000.0)
+                } else {
+                    rng.float()
+                };
+                p.set(unit + at, x);
+            }
+            p.set(blk + 0xe, u16::try_from(rng.below(6)).unwrap());
+            p.set(obj + 0xbc, blk);
+            p.set(blk + 4, cell);
+            let chr = rng.next();
+            p.set(cell, chr);
+            p.set(r(0), blk);
+            p.set(r(1), rng.pick(&[0u32, 1, 7, 239, 0xffff_ffff]));
+            p.set(r(2), obj);
+            p.set(r(3), obj);
+            let any = rng.next();
+            p.set(r(4), rng.pick(&[0u32, 1, any]));
+            p.set(r(5), if rng.chance(30) { 0 } else { buf });
+            p.set(
+                r(6),
+                rng.pick(&[0u32, 1, 2, 5, 32, 0xffff_ffff, 0x8000_0000]),
+            );
+            p.check(
+                &format!("opu_mimic {fl:#x} round {round}"),
+                0x0080_f210,
+                &[host, cmd],
+                |m| Some(o::opu_mimic(m, host, cmd, &mut call_original)),
+            );
+        }
+        assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
+        logs.retain(|&log| p.get::<u32>(log) == 0);
+        assert!(logs.is_empty(), "{}: unreached {logs:x?}", p.name);
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round48b_opu_mdc_break_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_4270);
+        let rets = p.alloc(0x40);
+        let r = |k: u32| rets + 4 * k;
+        let ground = p.alloc(0x40);
+        float_seq_stand_in(&mut p, 0x0079_4fb0, 1, ground); // MsGetChrGround
+        let mut logs = vec![
+            far_recorder(&mut p, 0x0068_6ff0, &[0; 2], Some(r(0))), // user_aligned_malloc
+            far_recorder(&mut p, 0x0083_13c0, &[0; 3], None),       // Ch_TextureSetClutBase
+            far_recorder(&mut p, 0x0083_1390, &[0; 3], None),       // Ch_TextureSetImageBase
+            far_recorder(&mut p, 0x0083_5750, &[0; 2], None),       // Ch_SetCalcNorm
+            far_recorder(&mut p, 0x0080_3360, &[0; 4], None),       // op_mdc_all_make_delhide
+            far_recorder(&mut p, 0x0080_62c0, &[0; 6], None),       // opus_rt_m_chara
+            far_recorder(&mut p, 0x0083_54f0, &[0; 3], None),       // Ch_OptposGet
+            far_recorder(&mut p, 0x0080_59c0, &[0, 0, 0, 4], None), // opus_mdc_break_make
+            far_recorder(&mut p, 0x0080_2fb0, &[0; 5], Some(r(1))), // createU16MeshBreak...
+            far_recorder(&mut p, 0x0064_5780, &[0; 2], None),       // graphicVFXSetup
+            far_recorder(&mut p, 0x0083_1300, &[0; 2], None),       // Ch_TextureLoadImage
+            far_recorder(&mut p, 0x0083_11d0, &[0; 2], None),       // Ch_TextureLoadClut
+            far_recorder(&mut p, 0x0080_5510, &[0; 5], None),       // opus_mdc_break_draw
+            far_recorder(&mut p, 0x0078_8b20, &[0], None),          // MsEffectWaitFlag
+            far_recorder(&mut p, 0x0064_5280, &[0; 2], None),       // graphicVFXDestroy
+            far_recorder(&mut p, 0x0068_6fe0, &[0], None),          // user_aligned_free
+        ];
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x20));
+        let handles = p.sym(0x012a_8100);
+        let cues = p.sym(0x011a_11e0);
+        let slots = p.sym(0x012f_20a0);
+        let mut seen = [0u32; 6];
+        for round in 0..3000u32 {
+            p.fill(rets, 0x40, &mut rng);
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd, 0x20, &mut rng);
+            p.fill(slots, 0x10, &mut rng);
+            for k in 0..4 {
+                let x = if rng.chance(80) {
+                    ranged(&mut rng, -500.0, 500.0)
+                } else {
+                    rng.float()
+                };
+                p.set(ground + 4 * k, x);
+            }
+            p.set(ground + 0x20, rng.next());
+            p.set(host + 0x220, unit);
+            let nib = rng.pick(&[0u16, 0, 0x1000, 0x2000, 0x2000, 0x3000, 0xf000]);
+            let fl = u16::try_from(rng.below(0x1000)).unwrap() | nib;
+            p.set(host + 0x21a, fl);
+            let who = rng.below(0xf0);
+            p.set(unit + 0x18, u8::try_from(who).unwrap());
+            let chr = if rng.chance(50) {
+                rng.next()
+            } else {
+                p.get(handles + 4 * who)
+            };
+            p.set(handles + 4 * who, chr);
+            for i in 0..8 {
+                let w = if rng.chance(15) { chr } else { rng.next() };
+                p.set(cues + 0x10 * i, w);
+            }
+            let any = rng.next().to_le_bytes()[0];
+            let used = rng.pick(&[0u8, 1, 2, 3, 4, 5, 6, 7, 0xff, 0xf8, any]);
+            p.set(host + 0x33b, used);
+            p.set(unit + 0xad, rng.pick(&[0u8, 1, 2, 0xff, 7, 8, 9]));
+            p.set(unit + 0x3c, rng.float());
+            let any = rng.next();
+            p.set(r(1), rng.pick(&[0u32, 1, any]));
+            let k = match nib {
+                0 => usize::from(used & 7 == 7),
+                0x1000 => 2,
+                0x2000 => 3 + usize::from(used.count_ones() <= 1),
+                _ => 5,
+            };
+            seen[k] += 1;
+            check_deep_n(
+                &mut p,
+                &format!("opu_mdc_break {fl:#x} used {used:#x} round {round}"),
+                0x0080_4270,
+                &[host, cmd],
+                |m, frame| {
+                    Some(o::opu_mdc_break(
+                        m,
+                        host,
+                        cmd,
+                        frame - 0x18,
+                        &mut call_original,
+                        &mut |o, f, args| o.call_f64(f, args).unwrap(),
+                    ))
+                },
+            );
+        }
+        assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
+        logs.retain(|&log| p.get::<u32>(log) == 0);
+        assert!(logs.is_empty(), "{}: unreached {logs:x?}", p.name);
+    }
+}
