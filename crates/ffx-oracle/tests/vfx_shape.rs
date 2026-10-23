@@ -219,20 +219,29 @@ impl Pair {
     }
 }
 
-/// A shape (room for `MAX_RECORDS` vertex records) and its command.
+/// A shape (room for `MAX_RECORDS` vertex records), its command and two
+/// matrices for S5 (`cmd +0x10` and the texture `cmd +0x1c`), the second
+/// one in a page above 2 GB too (a negative texture pointer: S5 adds its
+/// low half sign-extended to a 64-bit register).
 #[derive(Clone, Copy)]
 struct Case {
     shape: u32,
     cmd: u32,
+    matrices: [u32; 3],
 }
 
 const MAX_RECORDS: u32 = 5;
+/// The page above 2 GB for [`Case::matrices`].
+const HIGH: u32 = 0xa123_0000;
 
 impl Case {
     fn new(p: &mut Pair) -> Case {
+        p.a.map_zeroed(HIGH, 0x1000).unwrap();
+        p.b.map_zeroed(HIGH, 0x1000).unwrap();
         Case {
             shape: p.alloc((0x40 + 0x18 * MAX_RECORDS) as usize),
             cmd: p.alloc(0x20),
+            matrices: [p.alloc(0x40), p.alloc(0x40), HIGH + 0x7c0],
         }
     }
 }
@@ -244,6 +253,41 @@ impl Case {
 /// steps), `cmd` (flags without `0xc00`, no texture) and the CPU's SSE2
 /// flag (both `_ftol2_sse` paths).
 fn plain_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bool) {
+    plain_case_with(p, rng, c, n, vu0, false);
+}
+
+/// [`plain_case`] for S5: `shape` bit 3 clear, the matrices at `cmd +0x10`
+/// and `cmd +0x1c` (random floats; the second the first, the high one or
+/// equal to `r0`'s low word now and then, which picks the first).
+fn textured_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
+    textured_case_with(p, rng, c, n, false);
+}
+
+/// [`textured_case`] with `shape` bit 3 set, for S2.
+fn vu0_textured_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
+    textured_case_with(p, rng, c, n, true);
+}
+
+fn textured_case_with(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bool) {
+    plain_case_with(p, rng, c, n, vu0, true);
+    for &m in &c.matrices {
+        let specials = if rng.chance(80) { 0 } else { 5 };
+        p.floats(m, 16, rng, specials);
+    }
+    let m1 = c.matrices[0];
+    let m2 = match rng.below(10) {
+        0 => m1,
+        1..=2 => c.matrices[2],
+        _ => c.matrices[1],
+    };
+    p.set(c.cmd + 0x10, m1);
+    p.set(c.cmd + 0x1c, m2);
+    if rng.chance(8) {
+        p.set(p.sym(EE), m2);
+    }
+}
+
+fn plain_case_with(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bool, tex: bool) {
     // the registers and the matrix: few specials most of the time (one in
     // a matrix element makes the whole projected quad NaN)
     let specials = if rng.chance(80) { 1 } else { 10 };
@@ -293,7 +337,7 @@ fn plain_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bool) {
     p.set(p.sym(0x00c8_f618), s1);
     let sse2 = u32::from(rng.chance(70));
     p.set(p.sym(SSE2), sse2);
-    let Case { shape, cmd } = c;
+    let Case { shape, cmd, .. } = c;
     for k in 0..0x10 + 0xc * n {
         let h = if rng.chance(20) {
             rng.pick(&[0u16, 1, 0x7fff, 0x8000, 0xffff])
@@ -321,7 +365,9 @@ fn plain_case(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32, vu0: bool) {
     }
     let flags = u16::try_from(rng.below(0x1_0000)).unwrap() & !0xc00;
     p.set(cmd + 2, flags);
-    p.set(cmd + 0x1c, 0u32);
+    if !tex {
+        p.set(cmd + 0x1c, 0u32);
+    }
 }
 
 /// A vertex count (`i16`) and the records the loop then reads: one pass
@@ -340,7 +386,23 @@ fn count(rng: &mut Xorshift) -> (u16, u32) {
 
 /// A loop entered at `entry` through [`Pair::loop_thunk`] with the frame
 /// words as the head leaves them, against `port`.
-fn loop_test(entry: u32, vu0: bool, seed: u32, name: &str, port: fn(&mut Oracle, Frame, u32, u32)) {
+type Setup = fn(&mut Pair, &mut Xorshift, Case, u32);
+
+fn plain_setup(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
+    plain_case(p, rng, c, n, false);
+}
+
+fn vu0_setup(p: &mut Pair, rng: &mut Xorshift, c: Case, n: u32) {
+    plain_case(p, rng, c, n, true);
+}
+
+fn loop_test(
+    entry: u32,
+    setup: Setup,
+    seed: u32,
+    name: &str,
+    port: fn(&mut Oracle, Frame, u32, u32),
+) {
     for mut p in Pair::all() {
         let mut rng = Xorshift(seed);
         let thunk = p.loop_thunk(entry);
@@ -348,7 +410,7 @@ fn loop_test(entry: u32, vu0: bool, seed: u32, name: &str, port: fn(&mut Oracle,
         let ebp = p.ebp(2);
         for case in 0..600 {
             let (n, records) = count(&mut rng);
-            plain_case(&mut p, &mut rng, c, records, vu0);
+            setup(&mut p, &mut rng, c, records);
             p.set(p.sym(COUNT), n);
             p.set(p.sym(SHIFT), rng.pick(&[0u32, 0, 2, 0x10]));
             p.fill_frame(ebp, &mut rng);
@@ -371,9 +433,8 @@ fn loop_test(entry: u32, vu0: bool, seed: u32, name: &str, port: fn(&mut Oracle,
     }
 }
 
-/// The whole function on the selection of `shape` bit 3 = `vu0`, no
-/// `0xc00` flags, no texture.
-fn whole_test(vu0: bool, seed: u32, name: &str) {
+/// The whole function on the selection `setup` makes.
+fn whole_test(setup: Setup, seed: u32, name: &str) {
     for mut p in Pair::all() {
         let mut rng = Xorshift(seed);
         let ebp = p.ebp(2);
@@ -381,7 +442,7 @@ fn whole_test(vu0: bool, seed: u32, name: &str) {
         let c = Case::new(&mut p);
         for case in 0..400 {
             let (n, records) = count(&mut rng);
-            plain_case(&mut p, &mut rng, c, records, vu0);
+            setup(&mut p, &mut rng, c, records);
             let shift = rng.pick(&[0u32, 0, 4, 0x10]);
             p.set(p.sym(SHIFT), shift);
             p.set(c.shape + shift + 2, n);
@@ -400,24 +461,62 @@ fn whole_test(vu0: bool, seed: u32, name: &str) {
 
 #[test]
 fn shape_s6_matches_the_original() {
-    loop_test(0x007f_3f03, false, 0x007f_3f03, "S6", shape::plain);
+    loop_test(0x007f_3f03, plain_setup, 0x007f_3f03, "S6", shape::plain);
 }
 
 #[test]
 fn shape_whole_s6_matches_the_original() {
-    whole_test(false, 0x007e_d0c0, "whole S6");
+    whole_test(plain_setup, 0x007e_d0c0, "whole S6");
 }
 
 #[test]
 fn shape_s3_matches_the_original() {
-    loop_test(0x007f_0a18, true, 0x007f_0a18, "S3", |m, _, cmd, first| {
-        shape::vu0_plain(m, cmd, first);
-    });
+    loop_test(
+        0x007f_0a18,
+        vu0_setup,
+        0x007f_0a18,
+        "S3",
+        |m, _, cmd, first| {
+            shape::vu0_plain(m, cmd, first);
+        },
+    );
 }
 
 #[test]
 fn shape_whole_s3_matches_the_original() {
-    whole_test(true, 0x007e_d0c1, "whole S3");
+    whole_test(vu0_setup, 0x007e_d0c1, "whole S3");
+}
+
+#[test]
+fn shape_s5_matches_the_original() {
+    loop_test(
+        0x007f_2dae,
+        textured_case,
+        0x007f_2dae,
+        "S5",
+        shape::textured,
+    );
+}
+
+#[test]
+fn shape_whole_s5_matches_the_original() {
+    whole_test(textured_case, 0x007e_d0c2, "whole S5");
+}
+
+#[test]
+fn shape_s2_matches_the_original() {
+    loop_test(
+        0x007e_ed53,
+        vu0_textured_case,
+        0x007e_ed53,
+        "S2",
+        shape::vu0_textured,
+    );
+}
+
+#[test]
+fn shape_whole_s2_matches_the_original() {
+    whole_test(vu0_textured_case, 0x007e_d0c3, "whole S2");
 }
 
 /// Each loop's first instruction after the head's count store, in
