@@ -1584,12 +1584,11 @@ ported! {
         let ebp = frame.at() + mat::bridge::ZCLIP_FRAME;
         mat::bridge::vertex_group_apply_zmat_zclip(&mut mem(), m, a, b, c, d, flags & 0xff, ebp, &mut |_, f, a| call_ptr(f, a))
     }
-    /// `opu_v_u2(host, cmd)`: nibbles other than 0/0x1000 read the
-    /// never-written frame words `ebp - 8` / `- 0x10`; the port uses 0
-    /// (brief 2026-10-24).
-    opu_v_u2 @ 0x0081_9c90 => extern "C" fn opu_v_u2(host: u32, cmd: u32) -> u32 {
-        opus::bridge::opu_v_u2(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
-    }
+    // `opu_v_u2` 0x819c90 is ported (opus::bridge::opu_v_u2) but not
+    // hooked: on nibbles other than 0/0x1000 its never-written frame words
+    // are a record pointer, and 0 turns that path into a certain access
+    // violation at 0x90 where the original only faults when the stale word
+    // isn't a valid pointer (coordinator, 2026-10-24).
     // ---- round 34 b ----
     /// `pppKeThDraw(obj, key, prog)`.
     pppKeThDraw @ 0x0073_6580 => extern "C" fn ppp_ke_th_draw(obj: u32, key: u32, prog: u32) -> u32 {
