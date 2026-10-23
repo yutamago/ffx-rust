@@ -567,6 +567,17 @@ REVIEWED = {
     0x00a37410: ("platform", "Iggy GDraw D3D11 back end, gdraw_rt_bind: OMSetRenderTargets/RSSetState on the D3D11 context; refs.py: one ref, stored into GDraw table 0x01a85828 slot 0x01a8583c at 0xa35946 (effects round 54)"),
     0x00a3a820: ("platform", "Iggy GDraw D3D11 back end, gdraw_tile_begin: tile rectangle + ClearDepthStencilView; refs.py: one ref, GDraw table slot 0x01a85830 at 0xa35900 (effects round 54)"),
     0x00a39200: ("platform", "Iggy GDraw D3D11 back end, gdraw_rt_end: blend/depth/scissor state, ResolveSubresource, CopySubresourceRegion; refs.py: one ref, GDraw table slot 0x01a85844 at 0xa35932 (effects round 54)"),
+    0x00872c80: ("debug", "jump thunk to the script debugger draw; refs.py: 0 refs (small round 6)"),
+    0x0087d6c0: ("debug", "script debugger draw; only ref is the unreferenced thunk 0x872c80 (small round 6)"),
+    0x00883070: ("debug", "script debugger page switch; only ref from 0x87d6c0 (small round 6)"),
+    0x0087f390: ("debug", "script debugger helper; only ref from 0x87d6c0 (small round 6)"),
+    0x008827b0: ("debug", "script debugger page; only ref from the page switch 0x883070 (small round 6)"),
+    0x00882880: ("debug", "script debugger page; only ref from the page switch 0x883070 (small round 6)"),
+    0x00882990: ("debug", "script debugger page; only ref from the page switch 0x883070 (small round 6)"),
+    0x00882ac0: ("debug", "script debugger page; only ref from the page switch 0x883070 (small round 6)"),
+    0x00882bb0: ("debug", "script debugger page; only ref from the page switch 0x883070 (small round 6)"),
+    0x00883960: ("debug", "script debugger page; only ref from the page switch 0x883070 (small round 6)"),
+    0x006793e0: ("platform", "PhyreFIOS_LoadMagicfilePrx: PC error handling around PhyreFIOS_LoadsPrx (MessageBoxW, ShowCursor, ResetToLauncher) (small round 6)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

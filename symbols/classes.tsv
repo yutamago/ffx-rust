@@ -2052,7 +2052,7 @@
 0x006790c0	glue	only called from glue code (0x6d1530)
 0x00679330	dead	unreachable from the entry point and every pointer table
 0x00679370	dead	unreachable from the entry point and every pointer table
-0x006793e0	logic	default (no rule: ported to be safe)
+0x006793e0	platform	reviewed: PhyreFIOS_LoadMagicfilePrx: PC error handling around PhyreFIOS_LoadsPrx (MessageBoxW, ShowCursor, ResetToLauncher) (small round 6)
 0x006794f0	glue	reviewed: PhyreFIOS_UnloadMagicfilePrx: PhyreEngine forwarder (system round 34)
 0x00679500	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): fiosClearOps
 0x00679510	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): fiosClose
@@ -11767,7 +11767,7 @@
 0x0086c920	dead	unreachable from the entry point and every pointer table
 0x0086c930	dead	unreachable from the entry point and every pointer table
 0x0086c9c0	dead	unreachable from the entry point and every pointer table
-0x0086ca10	logic	default (no rule: ported to be safe)
+0x0086ca10	debug	only called from debug code (0x882d50)
 0x0086ca20	logic	default (no rule: ported to be safe)
 0x0086cae0	logic	default (no rule: ported to be safe)
 0x0086cb00	logic	default (no rule: ported to be safe)
@@ -11991,7 +11991,7 @@
 0x008725e0	logic	default (no rule: ported to be safe)
 0x00872600	dead	unreachable from the entry point and every pointer table
 0x00872620	dead	unreachable from the entry point and every pointer table
-0x00872630	logic	default (no rule: ported to be safe)
+0x00872630	debug	only called from debug code (0x882d50)
 0x00872650	logic	default (no rule: ported to be safe)
 0x008726a0	dead	unreachable from the entry point and every pointer table
 0x008726b0	dead	unreachable from the entry point and every pointer table
@@ -12076,7 +12076,7 @@
 0x008742b0	logic	default (no rule: ported to be safe)
 0x008743e0	logic	default (no rule: ported to be safe)
 0x00874420	logic	default (no rule: ported to be safe)
-0x008747b0	logic	default (no rule: ported to be safe)
+0x008747b0	debug	only called from debug code (AtelDebugPage_00883960)
 0x008747f0	logic	default (no rule: ported to be safe)
 0x00874840	dead	unreachable from the entry point and every pointer table
 0x008748a0	logic	default (no rule: ported to be safe)
@@ -12396,7 +12396,7 @@
 0x0087e6b0	dead	unreachable from the entry point and every pointer table
 0x0087e6d0	dead	unreachable from the entry point and every pointer table
 0x0087e750	debug	only called from debug code (0x884d90)
-0x0087e7c0	debug	only calls debug code (0x87e880, TkPutDebugFontString)
+0x0087e7c0	debug	only called from debug code (AtelDebugPage_00882ac0 and 1 more)
 0x0087e880	debug	only calls debug code (TkPutDebugFontString, TkPutDebugFontStringP)
 0x0087e950	dead	unreachable from the entry point and every pointer table
 0x0087e960	dead	unreachable from the entry point and every pointer table
@@ -12414,7 +12414,7 @@
 0x0087f1c0	debug	only called from debug code (0x87f0d0)
 0x0087f280	dead	unreachable from the entry point and every pointer table
 0x0087f330	dead	unreachable from the entry point and every pointer table
-0x0087f390	logic	default (no rule: ported to be safe)
+0x0087f390	debug	reviewed: script debugger helper; only ref from 0x87d6c0 (small round 6)
 0x0087f4a0	debug	debug name: AtelDebugPage_Book_0087f4a0
 0x0087f5d0	dead	unreachable from the entry point and every pointer table
 0x0087f660	debug	debug name: AtelDebugPage_Effect_0087f660
@@ -12434,18 +12434,18 @@
 0x008822c0	debug	debug name: AtelDebugPage_Sound_008822c0
 0x00882580	dead	unreachable from the entry point and every pointer table
 0x00882750	dead	unreachable from the entry point and every pointer table
-0x008827b0	logic	default (no rule: ported to be safe)
-0x00882880	logic	default (no rule: ported to be safe)
-0x00882990	logic	default (no rule: ported to be safe)
-0x00882ac0	logic	default (no rule: ported to be safe)
-0x00882bb0	logic	default (no rule: ported to be safe)
+0x008827b0	debug	reviewed: script debugger page; only ref from the page switch 0x883070 (small round 6)
+0x00882880	debug	reviewed: script debugger page; only ref from the page switch 0x883070 (small round 6)
+0x00882990	debug	reviewed: script debugger page; only ref from the page switch 0x883070 (small round 6)
+0x00882ac0	debug	reviewed: script debugger page; only ref from the page switch 0x883070 (small round 6)
+0x00882bb0	debug	reviewed: script debugger page; only ref from the page switch 0x883070 (small round 6)
 0x00882d50	debug	reviewed: script-debugger page line via TkPutDebugFontString*; reached only from AtelDebugDisplay_00883040, which has no callers (script round 26)
 0x00882f40	debug	only called from debug code (AtelDebugPage_System_0087fca0)
 0x00883040	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00883340	debug	debug name: TkDebugHexDump_00883340
 0x00883620	dead	unreachable from the entry point and every pointer table
 0x008838d0	debug	only called from debug code (AtelDebugPage_Signals_00883e80)
-0x00883960	logic	default (no rule: ported to be safe)
+0x00883960	debug	reviewed: script debugger page; only ref from the page switch 0x883070 (small round 6)
 0x00883c40	dead	unreachable from the entry point and every pointer table
 0x00883e80	debug	debug name: AtelDebugPage_Signals_00883e80
 0x008840d0	dead	unreachable from the entry point and every pointer table
@@ -12907,15 +12907,15 @@
 0x0088faf0	debug	debug name: TkSetDebugFontLocate
 0x0088fb10	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0088fb30	glue	reviewed: builds a GIF-tag sprite packet (menu round 15)
-0x0088fca0	logic	default (no rule: ported to be safe)
+0x0088fca0	debug	only called from debug code (AtelDebugDraw_0087d6c0)
 0x0088fd50	debug	reviewed: GS packets into TkDebugFontBuffer, only for the Atel debug panels (menu round 18)
 0x0088ff70	debug	reviewed: GS packets into TkDebugFontBuffer, only for the Atel debug panels (menu round 18)
 0x00890150	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x00890320	logic	default (no rule: ported to be safe)
+0x00890320	debug	only called from debug code (AtelDebugDraw_0087d6c0)
 0x008903d0	glue	reviewed: GIF tag with a SCISSOR register: packet emission only (menu round 16)
 0x008904e0	debug	debug name: TkSetDebugFontLocate2
 0x00890500	debug	reviewed: GS packets into TkDebugFontBuffer, only for the Atel debug panels (menu round 18)
-0x008906d0	logic	default (no rule: ported to be safe)
+0x008906d0	debug	only called from debug code (AtelDebugDraw_0087d6c0)
 0x00890780	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x008907e0	dead	unreachable from the entry point and every pointer table
 0x00890860	dead	unreachable from the entry point and every pointer table
