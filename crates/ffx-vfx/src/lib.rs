@@ -20,6 +20,7 @@
 //! - [`opus`]: opus effect objects and their script commands;
 //! - [`anmm`]: `opp_anmm`'s sprite-animation commands;
 //! - [`opd`]: the debug display;
+//! - [`shape_draw`]: `op_shape_draw`'s head, vertex loops and tail;
 //! - [`hi_md`], [`hi_light`], [`hi_draw`], [`hi_opus`], [`hi_0283`]: the
 //!   high range's model helpers, vertex lights, model draw set-ups and opus
 //!   effects.
@@ -48,6 +49,7 @@ pub mod part;
 pub mod ppp;
 pub mod prog;
 pub mod rand;
+pub mod shape_draw;
 pub mod slots;
 pub mod small;
 pub mod tail;
