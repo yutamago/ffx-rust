@@ -216,4 +216,12 @@ ported! {
     MenuMes_AddPktFont1612IconsNoEdge_008e52e0 @ 0x008e_52e0 => extern "C" fn menu_mes_add_pkt_font1612_icons_no_edge(cursor: u32, key: u32, text: u32, x: u32, y: u32, flags: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
         item::font1612_no_edge(&mut mem(), item::MENU_MES_ADD_PKT_FONT1612_ICONS, [cursor, key, text, x, y, flags, r, g, b, a], &mut |_, f, args| super::call_cdecl(f, args))
     }
+    /// `AbmapHelpMessageStep_00a59350(fallback)`.
+    AbmapHelpMessageStep_00a59350 @ 0x00a5_9350 => extern "C" fn abmap_help_message_step(fallback: u32) -> u32 {
+        abmap::help_message_step(&mut mem(), fallback, &mut |_, f, args| super::call_cdecl(f, args))
+    }
+    /// `AbmapLoadOef_00a57620()`.
+    AbmapLoadOef_00a57620 @ 0x00a5_7620 => extern "C" fn abmap_load_oef() -> u32 {
+        abmap::load_oef(&mut mem())
+    }
 }

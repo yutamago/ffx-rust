@@ -743,7 +743,7 @@ fn gui_touch_handle_event_matches_the_original() {
 
 /// A call log both oracles share the layout of: a cursor word, then
 /// entries (stub id, the first three arguments in 16 bytes; up to seven
-/// in 32 bytes, up to eleven in 48).
+/// in 32 bytes, up to eleven in 48, twelve in 64).
 struct Log {
     cursor: u32,
     /// Stubs made while set return this `f32` in `ST0` instead.
@@ -761,7 +761,7 @@ impl Log {
     }
 
     /// Replaces the original at `sym` in both with a cdecl stub that logs
-    /// `id` and its first `args` arguments (0 to 11) and returns
+    /// `id` and its first `args` arguments (0 to 12) and returns
     /// `base + (first argument & mask) * stride`.
     fn stub(&self, t: &mut Twin, sym: u32, id: u32, args: u8, ret: (u32, u32, u32)) {
         self.stub_poke(t, sym, id, args, ret, None);
@@ -810,7 +810,8 @@ impl Log {
         let size = match args {
             0..=3 => 0x10,
             4..=7 => 0x20,
-            _ => 0x30,
+            8..=11 => 0x30,
+            _ => 0x40,
         };
         c.extend([0x83, 0xc1, size, 0x89, 0x0d]);
         c.extend(self.cursor.to_le_bytes());
@@ -2141,6 +2142,113 @@ fn r1a_menu_mes_font1612_no_edge_wrappers_match_the_original() {
                     },
                 );
             }
+        }
+    }
+}
+
+const ABMAP_HELP_MESSAGE_STEP: u32 = 0x00a5_9350;
+const ABMAP_LOAD_OEF: u32 = 0x00a5_7620;
+
+#[test]
+fn r1b_abmap_help_message_step_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0105);
+        let log = Log::new(&mut t);
+        log.stub(&mut t, abmap::TO_MACRO_SET_BYTE1, 1, 3, (0x5300_0000, 0, 0));
+        log.stub(&mut t, abmap::TO_MACRO_SET_VALUE, 2, 3, (0x5400_0000, 0, 0));
+        // the new packet position: the one passed plus 0x30
+        log.stub(
+            &mut t,
+            abmap::TO_ADD_PKT_BASE_MES_FONT_L_ABMAP,
+            3,
+            12,
+            (0x30, 0xffff_ffff, 1),
+        );
+        log.stub(
+            &mut t,
+            abmap::ABMAP_HELP_LINE_DRAW,
+            4,
+            3,
+            (0x5500_0000, 0, 0),
+        );
+        let g = made_up_abmap(&mut t, &mut rng, 0x11700);
+        let pos = t.a.rebase(abmap::PACKET_POS.sym);
+        for n in 0..600u32 {
+            log.rewind(&mut t);
+            t.put(g + 0x1_1600, &rng.bytes(0x100));
+            t.put(g + 0x1_15b9, &rng.bytes(1));
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                let timer = [0u16, 1, 2, 0x7fff, 0x8000, 0xffff, rng.below(100) as u16]
+                    [rng.below(7) as usize];
+                t.put(g + 0x1_1666, &timer.to_le_bytes());
+                let kind = [0u16, 1, 2, 3, 0xffff, 0x100, rng.next() as u16][rng.below(7) as usize];
+                t.put(g + 0x1_1664, &kind.to_le_bytes());
+            }
+            if rng.below(3) == 0 {
+                t.put(g + 0x1_1654, &[0; 4]);
+            }
+            t.put(pos, &rng.next().to_le_bytes());
+            let fallback = [0, rng.next()][rng.below(2) as usize];
+            t.check(
+                &format!("help message step {n} fallback {fallback:#x}"),
+                ABMAP_HELP_MESSAGE_STEP,
+                Conv::Cdecl,
+                &[fallback],
+                |o| {
+                    Res::Int(abmap::help_message_step(o, fallback, &mut |o, f, a| {
+                        o.call(f, Conv::Cdecl, a).unwrap().eax
+                    }))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn r1b_abmap_load_oef_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0106);
+        let log = Log::new(&mut t);
+        let menu = t.alloc(4);
+        log.stub(&mut t, abmap::MS_GET_SAVE_MENU, 1, 0, (menu, 0, 0));
+        // the CD reader's table: read, wait, select
+        let cd = t.alloc(0x14);
+        let read = log.func(&mut t, 2, 4, (0x5600_0000, 0, 0));
+        let wait = log.func(&mut t, 3, 1, (0x5700_0000, 0, 0));
+        let select = log.func(&mut t, 4, 1, (0x5800_0000, 0, 0));
+        let mut table = rng.bytes(0x14);
+        table[0..4].copy_from_slice(&read.to_le_bytes());
+        table[8..12].copy_from_slice(&wait.to_le_bytes());
+        table[0x10..0x14].copy_from_slice(&select.to_le_bytes());
+        t.put(cd, &table);
+        log.stub(&mut t, abmap::GET_CD, 5, 0, (cd, 0, 0));
+        for (id, (sym, args)) in (6u32..).zip([
+            (abmap::OP_OEF2_SET2, 1),
+            (abmap::OP_OEF2_TEX_CLUT_CUE_MULTI, 4),
+            (abmap::OP_OEF2_TEX_CLUT_CUE_TRANS, 1),
+            (abmap::OP_OEF2_TEX_CLUT_OVL_TRANS, 1),
+            (abmap::OP_OEF2_TEX_CLUT_OVL_CLEAR, 1),
+            (abmap::ABMAP_SET_KIND_SIZES, 1),
+            (abmap::ABMAP_SETUP_KIND_SHAPES, 0),
+        ]) {
+            log.stub(&mut t, sym, id, args, (0x5900_0000 + id, 0, 0));
+        }
+        let g = made_up_abmap(&mut t, &mut rng, 0x11700);
+        let oef = t.a.rebase(abmap::OEF.sym);
+        for n in 0..100u32 {
+            log.rewind(&mut t);
+            let m = [0x8000u32, 0xc000, 0x4000, 0, rng.next()][rng.below(5) as usize];
+            t.put(menu, &m.to_le_bytes());
+            t.put(oef, &rng.next().to_le_bytes());
+            t.put(g + 0x1_16a4, &rng.next().to_le_bytes());
+            t.check(
+                &format!("load oef {n} menu {m:#x}"),
+                ABMAP_LOAD_OEF,
+                Conv::Cdecl,
+                &[],
+                |o| Res::Int(abmap::load_oef(&mut Run(o))),
+            );
         }
     }
 }
