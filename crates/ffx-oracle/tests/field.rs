@@ -23633,3 +23633,244 @@ fn cmm2_make_tex_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x00c3_d212);
     cmm2_make_tex_cases(&mut t, &mut rng, 200);
 }
+
+// ---- small round 2
+
+/// A stand-in prefix: appends `tag` to the content log (`[plog]`, a
+/// cursor).
+fn plog_tag(plog: u32, tag: u32) -> Vec<u8> {
+    let p = plog.to_le_bytes();
+    let mut c = vec![0x8b, 0x0d, p[0], p[1], p[2], p[3], 0xc7, 0x01];
+    c.extend_from_slice(&tag.to_le_bytes());
+    c.extend_from_slice(&[0x83, 0x05, p[0], p[1], p[2], p[3], 0x04]);
+    c
+}
+
+/// A stand-in logging its first `n` argument words after `tag` and
+/// returning `[rv]`.
+fn plog_args(plog: u32, tag: u32, n: u8, rv: u32) -> Vec<u8> {
+    let p = plog.to_le_bytes();
+    let mut c = plog_tag(plog, tag);
+    c.extend_from_slice(&[
+        0x56, 0x57, 0x8d, 0x74, 0x24, 0x0c, 0x8b, 0x3d, p[0], p[1], p[2], p[3],
+    ]);
+    c.extend_from_slice(&[
+        0xb9, n, 0, 0, 0, 0xf3, 0xa5, 0x89, 0x3d, p[0], p[1], p[2], p[3],
+    ]);
+    c.extend_from_slice(&[0x5f, 0x5e, 0xa1]);
+    c.extend_from_slice(&rv.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Small round 2 e: `AbmapDrawChrLabels_00a4b790` on random label records,
+/// view matrices, layouts and current characters. Every callee is a
+/// stand-in logging what it is given by content (the buffers are on the
+/// original's stack and in the port's scratch): `user_malloc` (a block
+/// of ours), `user_free`, the projection (the point; it returns 1 in ST0
+/// and moving screen positions), the element draw (the four vertices and
+/// the count), the message size (the text and the height; it writes a
+/// width on every other call only, so the slot's stale z shows) and the
+/// packet add (all 12 words).
+#[allow(clippy::too_many_lines, clippy::similar_names)]
+fn small2_e_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::abmap_draw as ad;
+    let plog = t.alloc(4);
+    let area = t.alloc(0x8000);
+    let (blkv, rv, sx, sy, tw) = (t.alloc(4), t.alloc(4), t.alloc(4), t.alloc(4), t.alloc(4));
+    let blk = t.alloc(0x200);
+    let p = plog.to_le_bytes();
+    let w4 = |a: u32| a.to_le_bytes();
+    // the projection: logs the point, out = ([sx], [sy]), both move; fld1
+    // (first it sets the word at [radp] to [radv]: a later record's
+    // radius changes, which the second loop must see)
+    let (radp, radv) = (t.alloc(4), t.alloc(4));
+    let mut project = vec![0xa1];
+    project.extend_from_slice(&radp.to_le_bytes());
+    project.extend_from_slice(&[0x8b, 0x0d]);
+    project.extend_from_slice(&radv.to_le_bytes());
+    project.extend_from_slice(&[0x89, 0x08]);
+    project.extend(plog_tag(plog, 3));
+    project.extend_from_slice(&[0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d, p[0], p[1], p[2], p[3]]);
+    for o in [0u8, 4, 8, 0xc] {
+        project.extend_from_slice(&[0x8b, 0x50, o, 0x89, 0x51, o]);
+    }
+    project.extend_from_slice(&[0x83, 0x05, p[0], p[1], p[2], p[3], 0x10]);
+    let (x, y) = (w4(sx), w4(sy));
+    project.extend_from_slice(&[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d, x[0], x[1], x[2], x[3]]);
+    project.extend_from_slice(&[
+        0x89, 0x08, 0x8b, 0x0d, y[0], y[1], y[2], y[3], 0x89, 0x48, 0x04,
+    ]);
+    project.extend_from_slice(&[0x83, 0x05, x[0], x[1], x[2], x[3], 0x35]);
+    project.extend_from_slice(&[0x83, 0x2d, y[0], y[1], y[2], y[3], 0x29, 0xd9, 0xe8, 0xc3]);
+    // the draw: the 0x80 vertex bytes and the count
+    let mut draw = plog_tag(plog, 4);
+    draw.extend_from_slice(&[
+        0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x8b, 0x3d, p[0], p[1], p[2], p[3],
+    ]);
+    draw.extend_from_slice(&[
+        0xb9, 0x20, 0, 0, 0, 0xf3, 0xa5, 0x8b, 0x44, 0x24, 0x14, 0xab,
+    ]);
+    draw.extend_from_slice(&[0x89, 0x3d, p[0], p[1], p[2], p[3], 0x5f, 0x5e, 0xc3]);
+    // the size: logs the text and the height; [w] = [tw] when even; tw moves
+    let tw4 = w4(tw);
+    let mut size = plog_tag(plog, 5);
+    size.extend_from_slice(&[
+        0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d, p[0], p[1], p[2], p[3], 0x89, 0x01,
+    ]);
+    size.extend_from_slice(&[0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x00, 0x89, 0x41, 0x04]);
+    size.extend_from_slice(&[0x83, 0x05, p[0], p[1], p[2], p[3], 0x08]);
+    size.extend_from_slice(&[
+        0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d, tw4[0], tw4[1], tw4[2], tw4[3],
+    ]);
+    size.extend_from_slice(&[0xf6, 0xc1, 0x01, 0x75, 0x02, 0x89, 0x08]);
+    size.extend_from_slice(&[
+        0x83, 0x05, tw4[0], tw4[1], tw4[2], tw4[3], 0x1d, 0x31, 0xc0, 0xc3,
+    ]);
+    t.cave_from(
+        0,
+        &[
+            (Some(ad::USER_MALLOC), plog_args(plog, 1, 1, blkv)),
+            (Some(ad::USER_FREE), plog_args(plog, 2, 1, rv)),
+            (Some(ad::PROJECT_ABMAP), project),
+            (Some(ad::DRAW_ELEMENT), draw),
+            (Some(ad::MESSAGE_SIZE), size),
+            (Some(ad::ADD_PKT_MES_FONT), plog_args(plog, 6, 12, rv)),
+        ],
+    );
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call_f64(f, a).unwrap();
+    let g = t.alloc(0x1_2000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    let vf00w = t.b.rebase(0x00c0_a010);
+    let pos = t.b.rebase(ad::PPP_PACKET_POS);
+    let mut reach = [0u32; 12];
+    for case in 0..cases {
+        t.put(plog, area);
+        t.put(blkv, blk);
+        t.put(rv, rng.next());
+        t.put(sx, rng.range(-0x180, 0x180).cast_unsigned());
+        t.put(sy, rng.range(-0x100, 0x100).cast_unsigned());
+        t.put(tw, rng.below(0x100));
+        t.put(pos, rng.next());
+        t.put(
+            vf00w,
+            if rng.below(4) == 0 {
+                float_in(rng, -2, 3)
+            } else {
+                1f32.to_bits()
+            },
+        );
+        t.fill(g + 0x1_1088, 0x50 * 8, rng);
+        t.fill(blk, 0x200, rng);
+        for i in 0..7u32 {
+            let r = g + 0x1_1088 + 0x50 * i;
+            for k in 0..3 {
+                t.put(r + 0x10 + 4 * k, float_in(rng, -300, 300));
+            }
+            let radius = match rng.below(8) {
+                0 => 0u32,
+                1 => float_in(rng, -3, 0),
+                2 => 0x7fc0_0000,
+                _ => float_in(rng, 1, 40),
+            };
+            t.put(r + 0x3c, radius);
+            t.put(r, float_in(rng, -100, 100));
+            t.put(r + 4, float_in(rng, -100, 100));
+            t.put(r + 0x30, i16::try_from(rng.range(-20, 60)).unwrap());
+            t.put(r + 0x38, i16::try_from(rng.range(-20, 60)).unwrap());
+            for o in [0x46u32, 0x48] {
+                let d = if rng.below(3) == 0 {
+                    0
+                } else {
+                    i16::try_from(rng.range(-0x400, 0x400)).unwrap()
+                };
+                t.put(r + o, d);
+            }
+            t.put(r + 0x4c, i16::try_from(rng.range(-30, 30)).unwrap());
+        }
+        // the view: small rotation-ish rows, a w column mostly positive
+        for row in 0..4u32 {
+            for col in 0..4u32 {
+                let v = if col == 3 {
+                    if row == 3 {
+                        float_in(rng, -2, 400)
+                    } else {
+                        float_in(rng, -1, 2)
+                    }
+                } else {
+                    float_in(rng, -4, 4)
+                };
+                t.put(g + 0x1_13e0 + 0x10 * row + 4 * col, v);
+            }
+        }
+        t.put(g + 0x1_15bc, u8::try_from(rng.below(9)).unwrap());
+        t.put(g + 0x1_15b9, u8::try_from(rng.below(0x100)).unwrap());
+        t.put(g + 0x1_1354, float_in(rng, -1, 3));
+        // a zero w now and then
+        if rng.below(8) == 0 {
+            for row in 0..4u32 {
+                t.put(g + 0x1_13e0 + 0x10 * row + 0xc, 0u32);
+            }
+        }
+        let k = rng.below(7);
+        t.put(radp, g + 0x1_1088 + 0x50 * k + 0x3c);
+        let keep: u32 = Mem::read(&t.a, g + 0x1_1088 + 0x50 * k + 0x3c);
+        t.put(
+            radv,
+            [keep, 0, 0x8000_0000, 0x7fc0_0000, 0xbf80_0000][rng.below(5) as usize],
+        );
+        // the frame constants (u 0.25 and 0.5146, the 0.5 they meet) as
+        // the image has them, or at the comparison's edges
+        for (at, orig) in [
+            (0x00b9_2180u32, 0.25f32),
+            (0x00b5_f0f0, 0.514_648_44),
+            (0x00b9_2194, 0.5),
+        ] {
+            let v = if rng.below(4) == 0 {
+                [0.5f32, 0.25, f32::NAN, 0.75][rng.below(4) as usize]
+            } else {
+                orig
+            };
+            let a = t.b.rebase(at);
+            t.put(a, v.to_bits());
+        }
+        let before: u32 = Mem::read(&t.a, plog);
+        let work = t.b.stack_range().start + 0x400;
+        t.same(
+            &format!("AbmapDrawChrLabels {case}"),
+            |o| o.void(0x00a4_b790, &[]),
+            |m| ad::abmap_draw_chr_labels(m, work, call, fcall),
+        );
+        let after: u32 = Mem::read(&t.a, plog);
+        // count the calls by tag (the entries' lengths by tag)
+        let mut q = area;
+        while q < after.max(before) && q < area + 0x8000 {
+            let tag: u32 = Mem::read(&t.a, q);
+            reach[tag as usize % 12] += 1;
+            q += 4 * (1 + [0, 1, 1, 4, 0x21, 2, 12][tag as usize % 7]);
+        }
+        let cur = u32::from(Mem::read::<u8>(&t.a, g + 0x1_15bc));
+        for i in 0..7u32 {
+            let layout = Mem::read::<u8>(&t.a, g + 0x1_1088 + 0x50 * i + 0x4e) & 3;
+            reach[7 + usize::from(layout)] += u32::from(i == cur);
+        }
+    }
+    eprintln!("small2 e reach {reach:?}");
+}
+
+#[test]
+fn small2_e_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x5a11_2e01);
+    small2_e_cases(&mut t, &mut rng, 300);
+}
+
+#[test]
+fn small2_e_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5a11_2e02);
+    small2_e_cases(&mut t, &mut rng, 200);
+}

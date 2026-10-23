@@ -1153,3 +1153,293 @@ where
     ];
     call(mem, f, &thumb)
 }
+
+/// `user_malloc` (`0x00687020`), `user_free`'s thunk (`0x00687010`),
+/// `graphicProject3DPointOntoScreenAbmap(out, p)` (`0x006428d0`, a float
+/// in `ST0` the label draw drops), `TOGetMessageSize_008b7130(text, &w,
+/// &h)` and `TOAddPktBaseMesFontLAbmap` (`0x008e8fb0`, 12 words).
+pub const USER_MALLOC: u32 = 0x0068_7020;
+pub const USER_FREE: u32 = 0x0068_7010;
+pub const PROJECT_ABMAP: u32 = 0x0064_28d0;
+pub const MESSAGE_SIZE: u32 = 0x008b_7130;
+pub const ADD_PKT_MES_FONT: u32 = 0x008e_8fb0;
+/// The emulated VU0 registers the label draw goes through: `vf` x, y, z,
+/// w (`0x00c8f940`), the view matrix copy (`0x00c8f950`, 4 x 4), the
+/// accumulator (`0x00c8f790`), the result (`0x00c8f930`), `vf00.w`
+/// (`0x00c0a010`), `Q` (`0x00c8f788`), the divided vector (`0x00c8f7d0`,
+/// w at `0x00c8f7dc`, the divisor again at `0x00c8f7e0`), the fixed-point
+/// words (`0x00c8f800`) and the vector they come from (`0x00c8f810`).
+const LABEL_VF: u32 = 0x00c8_f940;
+const LABEL_MATRIX: u32 = 0x00c8_f950;
+const LABEL_ACC: u32 = 0x00c8_f790;
+const LABEL_OUT: u32 = 0x00c8_f930;
+const VF00_W: u32 = 0x00c0_a010;
+const VU0_Q: u32 = 0x00c8_f788;
+const LABEL_DIV: u32 = 0x00c8_f7e0;
+const LABEL_FIXED: u32 = 0x00c8_f800;
+const LABEL_FROM: u32 = 0x00c8_f810;
+/// The scratch [`abmap_draw_chr_labels`] needs: the point (`+0`), the
+/// projected point (`+0x10`), the element's four vertices (`+0x20`), the
+/// draw's 0x100-byte buffer (`+0xa0`) and the text size (`+0x1a0`, `+0x1a4`).
+pub const LABELS_WORK: u32 = 0x1a8;
+const LABEL_PT: u32 = 0;
+const LABEL_SCREEN: u32 = 0x10;
+const LABEL_VERTS: u32 = 0x20;
+const LABEL_BUF: u32 = 0xa0;
+const LABEL_TEXT_W: u32 = 0x1a0;
+const LABEL_TEXT_H: u32 = 0x1a4;
+
+/// One element vertex of the label frame: x, y, u, v and the colour
+/// `0x80` four times.
+fn label_vertex<M: Mem>(mem: &mut M, at: u32, [x, y, u, v]: [u32; 4]) {
+    write4(mem, at, [x, y, u, v]);
+    write4(mem, at + 0x10, [0x80; 4]);
+}
+
+/// An `i32` as the `f32` `fild`/`fstp dword` makes of it.
+fn int_f32(v: i32) -> u32 {
+    x87::store(f64::from(v))
+}
+
+/// `AbmapDrawChrLabels_00a4b790()` (name ours; from `eiAbmDraw` and the
+/// grid's draw pass `0x00a54660`): the name labels of the seven
+/// characters' records (0x50 bytes from `g_Abmap + 0x11088`), through a
+/// fresh 0x1ec-byte block (`user_malloc`, freed after).
+///
+/// 1. Each record's position (`+0x10`, x, y, z) goes through the view
+///    matrix (`g_Abmap + 0x113e0`) as VU0 code does (`vf00.w` for w; every
+///    register in its emulated global, the result also at the block's
+///    `+0x30`). With radius `+0x3c` and the result's w above 0 it is
+///    divided by w (`Q = vf00.w / w`, at `+0x30` again) and made fixed
+///    point: `x * 16`, `y * 16`, `z`, `w` through `ftol` (`0x00c8f800`, the
+///    block's `+0x60`); the label is shown at `(x >> 4, y >> 4)`.
+/// 2. Each shown label with a positive radius: the point `(x - 0x800,
+///    y', 1, 1)` (`y'` = `+0 - x + +4`, or `+4 - (+0 - x)` for layouts 1
+///    and 3 of byte `+0x4e`) is projected (`graphicProject3DPointOnto
+///    ScreenAbmap`) to `(sx + 0x100 + (i16 +0x46 >> 4), sy + 0xd0 + (i16
+///    +0x48 >> 4))`, the width is `i16 +0x30 + i16 +0x38`. By layout (jump
+///    table `0x00a4c414`): 0 frame (0.25, 0.1855) and 0x13 up, 1 the same
+///    with the frame moved left by width + 7, 2 that with (0.5146, 0.1191)
+///    and 3 (0.25, 0.1191), line 1 for the last two. The current character
+///    (`+0x115bc`) gets the lit frame (u 0.7646) when u is above 0.5, else
+///    u 0; the others keep u. A frame with u from 0.5 (NaN too) draws its
+///    piece right of the text then left of it, else left then right
+///    (`graphicDrawUIAbmapElement(vertices, buffer, 5)` twice, colour
+///    0x80). Then the text (`+0x2c`) is sized (`TOGetMessageSize`, height
+///    0x13) and centred (half of width - text width, + 7 for layouts 0
+///    and 3) and added at the packet position (`TOAddPktBaseMesFontL
+///    Abmap(g_PppPacketPos + 0x10, -1, text, x, y + line + i16 +0x4c, 0,
+///    0, 0x80, 0x80, 0x80, +0x115b9, +0x11354 * 100)`, the new position
+///    kept).
+///
+/// The text-width slot holds the last label's z (as the original's stack
+/// does) until `TOGetMessageSize` writes it. Void: no caller reads EAX.
+#[allow(clippy::too_many_lines)]
+pub fn abmap_draw_chr_labels<M, C, F>(mem: &mut M, work: u32, call: &mut C, fcall: &mut F)
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+    F: FnMut(&mut M, u32, &[u32]) -> f64,
+{
+    let (ld, st) = (x87::load, x87::store);
+    let reg = |mem: &M, a: u32| mem.rebase(a);
+    let fixed_scale = mem.read::<f64>(reg(mem, 0x00b3_13a0));
+    let f = reg(mem, USER_MALLOC);
+    let blk = call(mem, f, &[0x1ec]);
+    // the label's x; the original also keeps y >> 4, which nothing reads
+    let mut shown = [None::<i32>; 7];
+    for (i, label) in (0u32..).zip(shown.iter_mut()) {
+        let g = ABMAP.get(mem);
+        let rec = g.wrapping_add(0x1_1088 + 0x50 * i);
+        let pos = read4(mem, rec.wrapping_add(0x10));
+        write4(mem, reg(mem, LABEL_VF), pos);
+        for r in 0..4 {
+            let row = read4(mem, g.wrapping_add(0x1_13e0 + 0x10 * r));
+            write4(mem, reg(mem, LABEL_MATRIX) + 0x10 * r, row);
+        }
+        let m = [0, 1, 2, 3].map(|r| read4(mem, reg(mem, LABEL_MATRIX) + 0x10 * r));
+        let v = read4(mem, reg(mem, LABEL_VF));
+        let w = mem.read::<u32>(reg(mem, VF00_W));
+        let (out, acc) = vu_transform(m, [v[0], v[1], v[2], w]);
+        write4(mem, reg(mem, LABEL_ACC), acc);
+        write4(mem, reg(mem, LABEL_OUT), out);
+        write4(mem, blk.wrapping_add(0x30), out);
+        let radius = ld(mem.read::<u32>(rec.wrapping_add(0x3c)));
+        let shown_now = 0.0 < radius && 0.0 < ld(out[3]);
+        if !shown_now {
+            continue;
+        }
+        write4(mem, reg(mem, VU0_VECTOR), out);
+        mem.write(reg(mem, LABEL_DIV), st(ld(out[3])));
+        let q = st(ld(mem.read(reg(mem, VF00_W))) / ld(mem.read(reg(mem, LABEL_DIV))));
+        mem.write(reg(mem, VU0_Q), q);
+        let d = read4(mem, reg(mem, VU0_VECTOR));
+        let scaled = [
+            st(ld(d[0]) * ld(q)),
+            st(ld(d[1]) * ld(q)),
+            st(ld(q) * ld(d[2])),
+            d[3],
+        ];
+        write4(mem, reg(mem, VU0_VECTOR), scaled);
+        write4(mem, blk.wrapping_add(0x30), scaled);
+        let p = read4(mem, blk.wrapping_add(0x30));
+        write4(mem, reg(mem, LABEL_FROM), p);
+        let fixed = [
+            ffx_bridge::x87::ftol(mem, ld(p[0]) * fixed_scale),
+            ffx_bridge::x87::ftol(mem, ld(p[1]) * fixed_scale),
+            ffx_bridge::x87::ftol(mem, ld(p[2])),
+            ffx_bridge::x87::ftol(mem, ld(p[3])),
+        ];
+        write4(mem, reg(mem, LABEL_FIXED), fixed);
+        write4(mem, blk.wrapping_add(0x60), fixed);
+        // the original's text-width slot keeps z until the size is taken
+        mem.write(work + LABEL_TEXT_W, p[2]);
+        *label = Some(mem.read::<i32>(blk.wrapping_add(0x60)) >> 4);
+    }
+
+    let g = ABMAP.get(mem);
+    for (j, label) in (0u32..).zip(shown) {
+        let rec = g.wrapping_add(0x1_1088 + 0x50 * j);
+        let at = |o: u32| rec.wrapping_add(o);
+        let Some(lx) = label else { continue };
+        let radius = ld(mem.read::<u32>(at(0x3c)));
+        if radius.is_nan() || radius <= 0.0 {
+            continue;
+        }
+        let px = int_f32(lx.wrapping_sub(0x800));
+        let layout = mem.read::<u8>(at(0x4e)) & 3;
+        let (r0, r1) = (ld(mem.read(at(0))), ld(mem.read(at(4))));
+        let py = if layout == 0 || layout == 2 {
+            (r0 - ld(px)) + r1
+        } else {
+            r1 - (r0 - ld(px))
+        };
+        let one = 0x3f80_0000u32;
+        write4(mem, work + LABEL_PT, [px, st(py), one, one]);
+        let f = reg(mem, PROJECT_ABMAP);
+        fcall(mem, f, &[work + LABEL_SCREEN, work + LABEL_PT]);
+        let mut x = mem.read::<i32>(work + LABEL_SCREEN).wrapping_add(0x100);
+        let mut y = mem.read::<i32>(work + LABEL_SCREEN + 4).wrapping_add(0xd0);
+        let dx = i32::from(mem.read::<i16>(at(0x46)));
+        if dx != 0 {
+            x = x.wrapping_add(dx >> 4);
+        }
+        let dy = i32::from(mem.read::<i16>(at(0x48)));
+        if dy != 0 {
+            y = y.wrapping_add(dy >> 4);
+        }
+        let current = u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x1_15bc)));
+        let other = j != current;
+        let width_sum = i32::from(mem.read::<i16>(at(0x30))) + i32::from(mem.read::<i16>(at(0x38)));
+        let width = ffx_bridge::x87::ftol(mem, ld(int_f32(width_sum))).cast_signed();
+        mem.write(work + LABEL_TEXT_H, 0x13u32);
+        let k = |mem: &M, a: u32| mem.read::<u32>(reg(mem, a));
+        let (mut u, v, line) = match mem.read::<u8>(at(0x4e)) & 3 {
+            0 => {
+                y = y.wrapping_sub(0x13);
+                (k(mem, 0x00b9_2180), k(mem, 0x00b6_6ba0), 0x13)
+            }
+            1 => {
+                x = x.wrapping_add((-7i32).wrapping_sub(width));
+                y = y.wrapping_sub(0x13);
+                (k(mem, 0x00b5_f0f0), k(mem, 0x00b6_6ba0), 0x13)
+            }
+            2 => {
+                x = x.wrapping_add((-7i32).wrapping_sub(width));
+                (k(mem, 0x00b5_f0f0), k(mem, 0x00b6_6b8c), 1)
+            }
+            _ => (k(mem, 0x00b9_2180), k(mem, 0x00b6_6b8c), 1),
+        };
+        let half = ld(k(mem, 0x00b9_2194));
+        let right_first = if other {
+            let below = half > ld(u);
+            !below
+        } else if half < ld(u) {
+            u = k(mem, 0x00b7_b61c);
+            true
+        } else {
+            u = st(0.0);
+            false
+        };
+        let verts = work + LABEL_VERTS;
+        let vtx = |n: u32| verts + 0x20 * n;
+        let (y0, y1) = (int_f32(y), int_f32(y.wrapping_add(0x13)));
+        let v1 = st(ld(v) + mem.read::<f64>(reg(mem, 0x00b7_b660)));
+        let draw = |mem: &mut M, call: &mut C| {
+            let f = reg(mem, DRAW_ELEMENT);
+            call(mem, f, &[verts, work + LABEL_BUF, 5]);
+        };
+        if right_first {
+            let xa = int_f32(width.wrapping_add(x));
+            let xb = int_f32(x.wrapping_add(7).wrapping_add(width));
+            let ua = st(ld(u) + mem.read::<f64>(reg(mem, 0x00b7_b668)));
+            let ub = st(ld(u) + mem.read::<f64>(reg(mem, 0x00b7_b670)));
+            label_vertex(mem, vtx(0), [xa, y0, ua, v]);
+            label_vertex(mem, vtx(1), [xb, y0, ub, v]);
+            label_vertex(mem, vtx(2), [xa, y1, ua, v1]);
+            label_vertex(mem, vtx(3), [xb, y1, ub, v1]);
+            draw(mem, call);
+            let xl = int_f32(x);
+            for n in [1, 3] {
+                mem.write(vtx(n), xl);
+                mem.write(vtx(n) + 8, u);
+            }
+        } else {
+            let xa = int_f32(x);
+            let xb = int_f32(x.wrapping_add(7));
+            let ub = st(ld(u) + mem.read::<f64>(reg(mem, 0x00b7_b658)));
+            label_vertex(mem, vtx(0), [xa, y0, u, v]);
+            label_vertex(mem, vtx(1), [xb, y0, ub, v]);
+            label_vertex(mem, vtx(2), [xa, y1, u, v1]);
+            label_vertex(mem, vtx(3), [xb, y1, ub, v1]);
+            draw(mem, call);
+            let xr = int_f32(width.wrapping_add(7).wrapping_add(x));
+            let ur = st(ld(u) + mem.read::<f64>(reg(mem, 0x00b7_b670)));
+            for n in [0, 2] {
+                mem.write(vtx(n), xr);
+                mem.write(vtx(n) + 8, ur);
+            }
+        }
+        draw(mem, call);
+
+        let text: u32 = mem.read(at(0x2c));
+        let f = reg(mem, MESSAGE_SIZE);
+        call(mem, f, &[text, work + LABEL_TEXT_W, work + LABEL_TEXT_H]);
+        let text_w = mem.read::<i32>(work + LABEL_TEXT_W);
+        let gap = ld(int_f32(width)) - ld(int_f32(text_w));
+        let gap = gap * mem.read::<f64>(reg(mem, 0x00b9_2220));
+        let gap = if matches!(mem.read::<u8>(at(0x4e)) & 3, 1 | 2) {
+            gap
+        } else {
+            gap + mem.read::<f64>(reg(mem, 0x00b9_22a0))
+        };
+        let off = ffx_bridge::x87::ftol(mem, gap).cast_signed();
+        let g = ABMAP.get(mem);
+        let ty = i32::from(mem.read::<i16>(at(0x4c)))
+            .wrapping_add(line)
+            .wrapping_add(y);
+        let fade = ld(mem.read(g.wrapping_add(0x1_1354))) * mem.read::<f64>(reg(mem, 0x00b9_22e0));
+        let alpha = ffx_bridge::x87::ftol(mem, fade);
+        let shadow = u32::from(mem.read::<u8>(g.wrapping_add(0x1_15b9)));
+        let pos: u32 = mem.read(reg(mem, PPP_PACKET_POS));
+        let args = [
+            pos.wrapping_add(0x10),
+            u32::MAX,
+            mem.read(at(0x2c)),
+            x.wrapping_add(off).cast_unsigned(),
+            ty.cast_unsigned(),
+            0,
+            0,
+            0x80,
+            0x80,
+            0x80,
+            shadow,
+            alpha,
+        ];
+        let f = reg(mem, ADD_PKT_MES_FONT);
+        let next = call(mem, f, &args);
+        mem.write(reg(mem, PPP_PACKET_POS), next);
+    }
+    let f = reg(mem, USER_FREE);
+    call(mem, f, &[blk]);
+}
