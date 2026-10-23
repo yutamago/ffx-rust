@@ -977,4 +977,172 @@ pub mod bridge {
         }
         fun(mem, 0x0076_14a0, &[])
     }
+
+    /// `pppPmcomDataInit_00760080(data)` (`0x00760080`), the pmcom
+    /// protocol's receive callback (registered with `pppPmcomDataQueue` by
+    /// `pppInitPartRender`): sets up the block for the data's kind
+    /// (`data + 0x28`; jump tables `0x007604ec`/`0x00760544`), the payload
+    /// at `*(data + 0x14) + 0x18`, its size at `*(data + 0x14) + 0x10`.
+    /// `frame` is the original's `ebp` (its two matrices at `frame - 0x84`
+    /// and `frame - 0x44`). Returns 1 when it handed out a block, else 0.
+    ///
+    /// - 1, 2: 0x60 words into the render state `0x00d4b500`; 22, 23, 17,
+    ///   18: one word into `0x00d4b800`/`0x00d4b818`/`0x00d4b81c`; 21: two
+    ///   into `0x00d4b808`; 66: ten into `0x00d4b4d8`, then `0x00d4b4d0` = 1.
+    /// - 3: `scePrintf("pmcom_data_init")`, `pppInitPmcomEnv`, the vsf block
+    ///   `0x00d4bc2c` = `0x00f524f0` + 0x40000 x (load count `0x00d4b4c0`
+    ///   bit 0), the queue indices, `0x00d4b4cc` = the part count
+    ///   `0x00d4b4c8`, then it and the texture state reset.
+    /// - 4/8, 5/9, 7: a block from the bump pointer `0x00d524a0` (size
+    ///   rounded up to 16, plus 8) into `data + 0x18` and
+    ///   `0x00d4b820`/`0x00d4b824`/`0x00d4bc28`.
+    /// - 6/10: the texture block `0x00d4ca38` = `KePmcomAlloc(size)` unless
+    ///   one is held (then the `ReadTextureInfo` error message, 0).
+    /// - 11 (block base reset as in 3), 12: `data + 0x18` = `0x00d4bc2c`,
+    ///   its end at `0x00d4be30`.
+    /// - 13: 0x14 words into the next part program (0x50 apart from
+    ///   `0x010d24f0`, restarted at part 0), the part count up; 14: count 0
+    ///   and `0x0230fd38` = 1.
+    /// - 19/20: `g_pppStopStatus` 0/1; 25: `0x00d4b4d4` = 1; 64/65:
+    ///   `0x00d4b4d0` = 1/0.
+    /// - 24: the camera flipped (identity with `m[1][1]` = -1 on both sides
+    ///   of `g_pppCameraMatrix`) sent with `pppExSendPacket`.
+    #[allow(clippy::too_many_lines)]
+    pub fn ppp_pmcom_data_init<M: Mem>(
+        mem: &mut M,
+        data: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::op::bridge::lmemcpy;
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let rd = |mem: &M, a: u32| mem.read::<u32>(g(mem, a));
+        let wr = |mem: &mut M, a: u32, v: u32| {
+            let at = g(mem, a);
+            mem.write(at, v);
+        };
+        let mut fun = |mem: &mut M, f: u32, args: &[u32]| {
+            let f = g(mem, f);
+            call(mem, f, args)
+        };
+        let block: u32 = mem.read(data.wrapping_add(0x14));
+        let payload = block.wrapping_add(0x18);
+        let copy = |mem: &mut M, to: u32, words: u32| {
+            let to = g(mem, to);
+            lmemcpy(mem, to, payload, words);
+        };
+        let vsf_base = |mem: &M| g(mem, 0x00f5_24f0).wrapping_add((rd(mem, 0x00d4_b4c0) & 1) << 18);
+        // a block from the bump pointer, also kept at `slot`
+        let bump = |mem: &mut M, slot: u32| {
+            let size = mem.read::<u32>(block.wrapping_add(0x10));
+            let at = rd(mem, 0x00d5_24a0);
+            mem.write(data.wrapping_add(0x18), at);
+            let step = (size.wrapping_add(0xf) & !0xf).wrapping_add(8);
+            wr(mem, 0x00d5_24a0, at.wrapping_add(step));
+            wr(mem, slot, at);
+            1
+        };
+        // the vsf block's start into the data, its end at 0x00d4be30
+        let vsf = |mem: &mut M, at: u32| {
+            mem.write(data.wrapping_add(0x18), at);
+            let size = mem.read::<u32>(block.wrapping_add(0x10));
+            wr(
+                mem,
+                0x00d4_be30,
+                (size.wrapping_add(0xf) & !0xf).wrapping_add(at),
+            );
+            1
+        };
+        match mem.read::<u32>(data.wrapping_add(0x28)) {
+            1 | 2 => copy(mem, 0x00d4_b500, 0x60),
+            3 => {
+                let msg = g(mem, 0x00b5_17c0);
+                fun(mem, 0x0062_fbf0, &[msg]);
+                fun(mem, 0x0076_0610, &[]);
+                let base = vsf_base(mem);
+                wr(mem, 0x00d4_bc2c, base);
+                wr(mem, 0x010d_552c, 0);
+                let i = rd(mem, 0x010d_552c);
+                wr(mem, 0x010d_5528, i);
+                let parts = rd(mem, 0x00d4_b4c8);
+                wr(mem, 0x00d4_b4cc, parts);
+                wr(mem, 0x0230_fd38, 1);
+                wr(mem, 0x00d4_be34, 0);
+                wr(mem, 0x010d_4cf4, u32::MAX);
+                wr(mem, 0x00d4_b4c8, 0);
+                wr(mem, 0x00d4_b4c4, 0);
+                wr(mem, 0x00d5_2390, 0);
+            }
+            4 | 8 => return bump(mem, 0x00d4_b820),
+            5 | 9 => return bump(mem, 0x00d4_b824),
+            7 => return bump(mem, 0x00d4_bc28),
+            6 | 10 => {
+                if rd(mem, 0x00d4_ca38) != 0 {
+                    let msg = g(mem, 0x00b5_17d4);
+                    fun(mem, 0x0076_b860, &[msg]);
+                    return 0;
+                }
+                let size = mem.read::<u32>(block.wrapping_add(0x10));
+                let tex = fun(mem, 0x0076_2f50, &[size.wrapping_add(0xf) & !0xf]);
+                mem.write(data.wrapping_add(0x18), tex);
+                wr(mem, 0x00d4_ca38, tex);
+                return 1;
+            }
+            11 => {
+                let base = vsf_base(mem);
+                wr(mem, 0x00d4_bc2c, base);
+                return vsf(mem, base);
+            }
+            12 => {
+                let at = rd(mem, 0x00d4_bc2c);
+                return vsf(mem, at);
+            }
+            13 => {
+                let to = if rd(mem, 0x00d4_b4c8) == 0 {
+                    let first = g(mem, 0x010d_24f0);
+                    wr(mem, 0x010d_4cf0, first);
+                    first
+                } else {
+                    rd(mem, 0x010d_4cf0)
+                };
+                // the payload pointer read again after the store above
+                let from = mem.read::<u32>(data.wrapping_add(0x14)).wrapping_add(0x18);
+                lmemcpy(mem, to, from, 0x14);
+                let next = rd(mem, 0x010d_4cf0).wrapping_add(0x50);
+                wr(mem, 0x010d_4cf0, next);
+                let parts = rd(mem, 0x00d4_b4c8).wrapping_add(1);
+                wr(mem, 0x00d4_b4c8, parts);
+            }
+            14 => {
+                wr(mem, 0x0230_fd38, 1);
+                wr(mem, 0x00d4_b4c8, 0);
+            }
+            17 | 18 => copy(mem, 0x00d4_b81c, 1),
+            19 => wr(mem, 0x0230_fd34, 0),
+            20 => wr(mem, 0x0230_fd34, 1),
+            21 => copy(mem, 0x00d4_b808, 2),
+            22 => copy(mem, 0x00d4_b800, 1),
+            23 => copy(mem, 0x00d4_b818, 1),
+            24 => {
+                let (out, flip) = (frame.wrapping_sub(0x84), frame.wrapping_sub(0x44));
+                fun(mem, 0x006e_d9a0, &[flip]);
+                let y = ffx_bridge::x87::round_trip(f32::from_bits(rd(mem, 0x00b9_2340)));
+                mem.write(flip.wrapping_add(0x14), y);
+                let camera = g(mem, 0x0230_ff60);
+                fun(mem, 0x006e_d5c0, &[out, camera, flip]);
+                fun(mem, 0x006e_d5c0, &[out, flip, out]);
+                let (rpc, tag) = (g(mem, 0x00e5_24a8), g(mem, 0x00b5_1800));
+                fun(mem, 0x0076_b210, &[rpc, tag, out, 0x40]);
+            }
+            25 => wr(mem, 0x00d4_b4d4, 1),
+            64 => wr(mem, 0x00d4_b4d0, 1),
+            65 => wr(mem, 0x00d4_b4d0, 0),
+            66 => {
+                copy(mem, 0x00d4_b4d8, 10);
+                wr(mem, 0x00d4_b4d0, 1);
+            }
+            _ => {}
+        }
+        0
+    }
 }

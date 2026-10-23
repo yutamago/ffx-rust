@@ -31408,3 +31408,147 @@ fn round49c_mdl_rev_matches_the_original() {
         assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
     }
 }
+
+#[test]
+fn r51a_op_num_char_256_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_63b0);
+        let cell = p.alloc(4);
+        let log = far_recorder(&mut p, 0x00a5_d5f0, &[0], Some(cell));
+        let mut seen = [0u32; 4];
+        for round in 0..64u32 {
+            let (show, debug) = (u8::from(round & 1 != 0), u8::from(round & 2 != 0));
+            p.put(op::bridge::NUM_SHOW, show * rng.pick(&[1u8, 0x80, 0xff]));
+            p.put(op::bridge::DEBUG_MODE, debug * rng.pick(&[1u8, 0x80, 0xff]));
+            p.set(cell, rng.next());
+            p.set(log, 0u32);
+            let arg = rng.next();
+            let mut r = None;
+            p.check("op_num_char_256", 0x007e_63b0, &[arg], |m| {
+                r = op::bridge::op_num_char_256(m, arg, &mut call_original);
+                r
+            });
+            // debug mode returns opd_num_char_256's eax
+            assert_eq!(r.is_some(), debug != 0, "{}: round {round}", p.name);
+            seen[usize::from(show + 2 * debug)] += p.get::<u32>(log);
+        }
+        // calls: none, once (show), once (debug), twice
+        assert!(
+            seen[0] == 0 && seen[1] > 0 && seen[2] > 0 && seen[3] > 0,
+            "{seen:?}"
+        );
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r51a_ppp_pmcom_data_init_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0076_0080);
+        let cell = p.alloc(4);
+        let logs = [
+            printf_recorder(&mut p, &[(0x00b5_17c0, 0)]),
+            far_recorder(&mut p, 0x0076_0610, &[], None),
+            far_recorder(&mut p, 0x0076_b860, &[0], None),
+            far_recorder(&mut p, 0x0076_2f50, &[0], Some(cell)),
+            far_recorder(&mut p, 0x0076_b210, &[0, 0, 0, 0], None),
+        ];
+        let (record, block) = (p.alloc(0x40), p.alloc(0x200));
+        let state = p.sym(0x00d4_b500);
+        let progs = p.sym(0x010d_24f0);
+        let camera = p.sym(0x0230_ff60);
+        let mut kinds: Vec<u32> = (0..=27).collect();
+        kinds.extend([63, 64, 65, 66, 67, 0x80, u32::MAX]);
+        let mut seen = vec![0u32; kinds.len()];
+        for round in 0..1200u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            let ki = rng.below(u32::try_from(kinds.len()).unwrap()) as usize;
+            let kind = kinds[ki];
+            // the record, sometimes over 0x010d4cf0 (its +0x14), which kind
+            // 13 writes before it reads the payload pointer again
+            let data = if rng.chance(8) {
+                p.sym(0x010d_4cdc)
+            } else {
+                record
+            };
+            p.fill(data, 0x40, &mut rng);
+            p.fill(block, 0x200, &mut rng);
+            p.fill(state, 0x180, &mut rng);
+            p.set(data + 0x28, kind);
+            // the block, sometimes the data itself (+0x14 then +0x18 overlap)
+            let b = if rng.chance(10) { data } else { block };
+            p.set(data + 0x14, b);
+            let any = rng.next();
+            let size = rng.pick(&[0u32, 1, 0xf, 0x10, 0x11, 0x123, 0xffff_fff8, any]);
+            p.set(b + 0x10, size);
+            p.set(cell, rng.next());
+            for (g, v) in [
+                (0x00d4_b4c0u32, rng.next()),
+                (0x00d5_24a0, rng.next()),
+                (0x00d4_ca38, if rng.chance(50) { 0 } else { rng.next() }),
+                (0x00d4_bc2c, rng.next()),
+                (0x00d4_b4c8, rng.pick(&[0u32, 0, 1, 5])),
+                (0x00d4_be30, rng.next()),
+                (0x00d4_b4cc, rng.next()),
+                (0x00d4_b4d0, rng.next()),
+                (0x00d4_b4d4, rng.next()),
+                (0x0230_fd34, rng.next()),
+                (0x0230_fd38, rng.next()),
+                (0x010d_552c, rng.next()),
+                (0x010d_5528, rng.next()),
+                (0x010d_4cf4, rng.next()),
+                (0x00d4_be34, rng.next()),
+                (0x00d4_b4c4, rng.next()),
+                (0x00d5_2390, rng.next()),
+            ] {
+                let at = p.sym(g);
+                p.set(at, v);
+            }
+            // the next part program; sometimes its copy covers 0x010d4cf0
+            let next = if rng.chance(15) {
+                p.sym(0x010d_4cf0) - 4 * rng.below(0x14)
+            } else {
+                progs + 0x50 * rng.below(0x40)
+            };
+            if data == record {
+                p.set(p.sym(0x010d_4cf0), next);
+            } else {
+                p.set(data + 0x14, block);
+            }
+            for k in 0..16 {
+                let v = if rng.chance(3) {
+                    rng.float()
+                } else {
+                    ranged(&mut rng, -100.0, 100.0)
+                };
+                p.set(camera + 4 * k, v);
+            }
+            let what = format!("pppPmcomDataInit kind {kind} round {round}");
+            let mut at = 0;
+            check_deep_n(&mut p, &what, 0x0076_0080, &[data], |o, frame| {
+                at = frame;
+                Some(ppp::bridge::ppp_pmcom_data_init(
+                    o,
+                    data,
+                    frame,
+                    &mut call_original,
+                ))
+            });
+            if kind == 24 {
+                // the two matrices on the stack (the diff skips it)
+                for m in [at - 0x84, at - 0x44] {
+                    let (ma, mb) = (
+                        Mem::read::<[u32; 16]>(&p.a, m),
+                        Mem::read::<[u32; 16]>(&p.b, m),
+                    );
+                    assert_eq!(ma, mb, "{}: {what}: matrix {m:x}", p.name);
+                }
+                assert_eq!(p.get::<u32>(logs[4] + 4 + 8), at - 0x84, "{what}");
+            }
+            seen[ki] += 1;
+        }
+        assert!(seen.iter().all(|&n| n > 0), "{seen:?}");
+    }
+}

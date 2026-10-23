@@ -2016,6 +2016,10 @@ ported! {
     op_ivec4_to_fvec4_007e3100 @ 0x007e_3100 => extern "C" fn op_ivec4_to_fvec4(dst: u32, src: u32) {
         vec::bridge::ivec4_to_fvec4(&mut mem(), dst, src);
     }
+    /// `op_num_char_256(p)`: `opd_num_char_256`'s `eax` in debug mode.
+    op_num_char_256 @ 0x007e_63b0 => extern "C" fn op_num_char_256(p: u32) -> u32 {
+        op::bridge::op_num_char_256(&mut mem(), p, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
     /// `op_num_xy_set(x, y)`.
     op_num_xy_set @ 0x007e_65e0 => extern "C" fn op_num_xy_set(x: u32, y: u32) {
         op::bridge::op_num_xy_set(&mut mem(), x, y, &mut |_, f, a| call_ptr(f, a));
@@ -5867,6 +5871,18 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x48;
         ppp::bridge::ppp_data_rcv(&mut mem(), frame, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
+    }
+    /// `pppPmcomDataInit_00760080(data)`: its two matrices in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    pppPmcomDataInit_00760080 @ 0x0076_0080 => extern "C" fn ppp_pmcom_data_init(data: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x84]);
+        let mut locals = Locals([0; 0x84]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x84;
+        let r = ppp::bridge::ppp_pmcom_data_init(&mut mem(), data, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+        r
     }
     /// `pppKeMdlBmpDraw_Body_00748b00(obj)`: returns `op_spr_free`'s `eax`.
     pppKeMdlBmpDraw_Body_00748b00 @ 0x0074_8b00 => extern "C" fn ppp_ke_mdl_bmp_draw_body(obj: u32) -> u32 {

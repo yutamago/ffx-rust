@@ -4269,7 +4269,7 @@
 0x0075fda0 function KeVu0VecLen               # fh v3:exact 0x0075fe90
 0x0075fde0 function KeVu0VecLenXY             # fh v3:exact 0x0075fed0
 0x0075ff00 function pppPmcomDataQueue_0075ff00  # (data) -> eax: pppPmcomDataInit_00760080's pair (the same kinds, name ours): kind +0x28 4/8, 5/9, 6/10, 7, 11/12: KePmcomQueuePush(kind, block 0x00d4b820/b824/ca38/bc28/bc2c, unused 1 or 0), the slot then 0 (11/12: the word at 0x00d4be30); other kinds pushed inline as (kind, set_ptr32(0)); eax the block (11/12 that word); ported (field r13, ffx_field::ke)
-0x00760080 function pppPmcomDataInit_00760080    # (data): prints "pmcom_data_init", pppInitPmcomEnv, KePmcomAlloc blocks, copies the data (lmemcpy), identity/model matrices, pppExSendPacket; "PMCOM_DATA_TEXTURE ReadTextureInfo error" on a bad texture; own name from the message
+0x00760080 function pppPmcomDataInit_00760080    # (data): prints "pmcom_data_init", pppInitPmcomEnv, KePmcomAlloc blocks, copies the data (lmemcpy), identity/model matrices, pppExSendPacket; "PMCOM_DATA_TEXTURE ReadTextureInfo error" on a bad texture; own name from the message; cdecl(data) -> eax 1 when it hands out a block, else 0: pmcom protocol receive callback (pppInitPartRender registers it at 0x761d6a); kind +0x28 through jump tables 0x007604ec/0x00760544 (kinds 1..25, 64..66); kind 24 sends the y-flipped camera (pppExSendPacket, tag 0x00b51800); ported r51 (vfx, ppp::bridge::ppp_pmcom_data_init)
 0x007605d0 function pppFreeAllEnvObjects      # (): for each of *0x00d4b4cc object blocks (0x80 from 0x00d4e390), *g_pppEnvSlot = the pmcom environment 0x010d4cfc and pppAllFreePObject(block); called by pppDataRcv, pppPartDraw; name ours
 0x00760610 function pppInitPmcomEnv           # (): 0x00d524a0 = 0x00d524a8, g_KePmcomNext = its base 0x00e524f0, pppInitEnv(0x010d4cfc, 0, 0x00fd24f0, 0x100000); name ours
 0x00760640 function KeResampleRgbaToRgb       # (src, sw, sh, dst, dw, dh): nearest-neighbour RGBA to bottom-up BGR bytes by Bresenham error terms; returns the row error; pppPartDraw; name ours
@@ -6869,7 +6869,7 @@
 0x007e6110 function op_trail_add_007e6110     # ours: (ring, point, fill, life) -> 0: fill 0 one push as op_trail_push, else the point behind the oldest while the ring is not full; then the lengths with flag 0x8000; called by 0x008171a0 twice (call_sites.tsv); ported r36 (vfx, small::bridge::op_trail_add)
 0x007e62e0 function op_mmenu_display_007e62e0 # ours: (): tail jmp opd_mmenu_display when g_OpDebugMode and 0x023227c7 are set; no caller and no pointer in the image (r48)
 0x007e63a0 function op_num                    # fh v3:bsim1.00 0x007e62b0
-0x007e63b0 function op_num_char_256           # fh v3:bsim1.00 0x007e62c0
+0x007e63b0 function op_num_char_256           # fh v3:bsim1.00 0x007e62c0; cdecl(p): opd_num_char_256(p) when g_OpNumShow, again (tail jmp, its eax) when g_OpDebugMode; caller 0x007ff360 ignores eax; ported r51 (vfx, op::bridge::op_num_char_256)
 0x007e6440 function op_num_display            # fh v3:bsim1.00 0x007e6350
 0x007e6480 function op_num_init               # fh v3:bsim1.00 0x007e6390; (x): opd_num_init(x) when g_OpNumShow, again in debug mode (op::bridge::op_num_forward)
 0x007e64b0 function op_num_pal_default        # fh v3:bsim1.00 0x007e63c0; (): opd_num_pal_default when g_OpNumShow, again in debug mode (op::bridge::op_num_pal_default)
