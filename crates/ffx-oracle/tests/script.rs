@@ -1819,7 +1819,7 @@ fn run_workers(mode: u32, callbacks: u32, rounds: u32) {
                 };
                 let rb = run::script_run_traced(
                     &mut Run(&mut b),
-                    &mut run::OriginalNatives,
+                    &mut KeepUninit,
                     w,
                     mode,
                     callbacks,
@@ -1932,14 +1932,10 @@ fn run_entries(max_entries: u32, frames: u32) {
                             break;
                         }
                     };
-                    let rb = run::script_run_traced(
-                        &mut Run(b),
-                        &mut run::OriginalNatives,
-                        w,
-                        0,
-                        1,
-                        |op, _| executed[usize::from(op)] += 1,
-                    );
+                    let rb =
+                        run::script_run_traced(&mut Run(b), &mut KeepUninit, w, 0, 1, |op, _| {
+                            executed[usize::from(op)] += 1;
+                        });
                     assert_eq!(ra, rb, "{what}: result");
                     no_diff(a, b, &what);
                     compared += 1;
@@ -2215,16 +2211,9 @@ fn script_programs_match_the_original() {
             if std::env::var_os("ATEL_TRACE").is_some() {
                 eprintln!("  frame {frame}: original {:?}", t.elapsed());
             }
-            let rb = run::script_run_traced(
-                &mut Run(b),
-                &mut run::OriginalNatives,
-                w,
-                mode,
-                1,
-                |op, _| {
-                    executed[usize::from(op)] += 1;
-                },
-            );
+            let rb = run::script_run_traced(&mut Run(b), &mut KeepUninit, w, mode, 1, |op, _| {
+                executed[usize::from(op)] += 1;
+            });
             assert_eq!(ra, rb, "{what} frame {frame}: result");
             no_diff(a, b, &format!("{what} frame {frame}"));
             compared += 1;
@@ -2273,16 +2262,9 @@ fn run_code(
     for frame in 0..frames {
         let what = format!("{code:02x?} mode {mode} frame {frame}");
         let ra = orig(&mut a, SCRIPT_RUN, &[w, mode, 1]);
-        let rb = run::script_run_traced(
-            &mut Run(&mut b),
-            &mut run::OriginalNatives,
-            w,
-            mode,
-            1,
-            |op, _| {
-                ops.push(op);
-            },
-        );
+        let rb = run::script_run_traced(&mut Run(&mut b), &mut KeepUninit, w, mode, 1, |op, _| {
+            ops.push(op);
+        });
         assert_eq!(ra, rb, "{what}: result");
         no_diff(&mut a, &mut b, &what);
     }
@@ -2509,14 +2491,8 @@ fn synthetic_script_matches_the_original() {
     let mut ops = 0;
     for frame in 0..4 {
         let ra = orig(&mut a, SCRIPT_RUN, &[w, 0, 0]);
-        let rb = run::script_run_traced(
-            &mut Run(&mut b),
-            &mut run::OriginalNatives,
-            w,
-            0,
-            0,
-            |_, _| ops += 1,
-        );
+        let rb =
+            run::script_run_traced(&mut Run(&mut b), &mut KeepUninit, w, 0, 0, |_, _| ops += 1);
         assert_eq!(ra, rb, "frame {frame}");
         no_diff(&mut a, &mut b, &format!("frame {frame}"));
     }
@@ -16820,4 +16796,38 @@ fn small6c_script_callbacks_match_the_original() {
     let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     small6c_cases(&mut a, &mut b, &mut rng, "snapshot");
+}
+
+/// [`run::OriginalNatives`], except that the [`R20_UNINIT`] natives' start
+/// and integer-result functions run as the originals, not their Rust versions: they reach
+/// never-written stack words (junk reads, brief 2026-10-24) whose values
+/// depend on where the frame sits, which differs between an original run
+/// and a Rust one. `0x7076`'s `MsSetBallSplineInit` is one; their own
+/// tests use stand-ins.
+struct KeepUninit;
+
+impl<H: run::NativeHost> run::Natives<H> for KeepUninit {
+    fn start(&mut self, host: &mut H, id: u32, worker: u32, args: u32, stack: u32) {
+        let f: u32 = host.read(run::script_native_entry(host, id));
+        let sym = f.wrapping_sub(host.image_base()).wrapping_add(0x0040_0000);
+        if f != 0 && id >> 12 != 6 && R20_UNINIT.contains(&sym) {
+            host.call(f, &[worker, args, stack]);
+        } else {
+            run::OriginalNatives.start(host, id, worker, args, stack);
+        }
+    }
+    fn poll(&mut self, host: &mut H, id: u32, worker: u32, args: u32) -> u8 {
+        run::OriginalNatives.poll(host, id, worker, args)
+    }
+    fn finish(&mut self, host: &mut H, id: u32, worker: u32, args: u32, stack: u32) {
+        let e = run::script_native_entry(host, id);
+        let f: u32 = host.read(e + 0xc);
+        let sym = f.wrapping_sub(host.image_base()).wrapping_add(0x0040_0000);
+        if host.read::<u32>(e + 8) == 0 && f != 0 && R20_UNINIT.contains(&sym) {
+            let r = host.call(f, &[worker, args, stack]);
+            v::atel_push_stack_integer(host, stack, r);
+        } else {
+            run::OriginalNatives.finish(host, id, worker, args, stack);
+        }
+    }
 }
