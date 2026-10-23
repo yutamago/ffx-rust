@@ -230,6 +230,10 @@ VOID_OK = {
     # 0x8b6ba7 tail-jumps to it, and both its callers (0x8ab969, 0x8ab9f9)
     # overwrite eax (2026-10-23)
     0x008b62b0: "+0xfc pad handler: TOGetControlPadStatus's callers drop its eax",
+    # menu_list_draw, help table slot 0x00c416b0: its one caller 0x8bf037
+    # (after TkMenuCtrlHelp) calls TkVU1SyncPath next, whose sceGsSyncPath
+    # zeroes eax (2026-10-24)
+    0x0076f850: "help draw slot 0xc416b0: the caller 0x8bf037 overwrites eax",
 }
 
 # g_MagicImports (ffx.sym): the function table MagicFile_Start hands to
