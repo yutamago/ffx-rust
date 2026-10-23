@@ -25593,3 +25593,153 @@ fn small1_main_pad_matches_the_original_on_the_snapshot() {
     };
     small1_main_pad(&mut a, &mut b, &mut Xorshift(0x5a11_0b02));
 }
+
+/// Small round 1 c: `TOBtlCtrlCtbWindow` frame after frame from a
+/// `TOBtlInitCtbWindow` state, `MsGetCTBlist` a logging stand-in returning
+/// a list the test shuffles (actors from a small set, repeats and gaps),
+/// `inputIsHoldButton` a stand-in answering up and down from two cells,
+/// the step functions real (`Tick4_008a2ba0`, `TOBtlCtbAnimStep_008a2ad0`)
+/// or a logging stand-in; rows, leaving rows and the scroll globals
+/// disturbed now and then (free rows used up, targets off the shown
+/// ticks).
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::many_single_char_names
+)]
+fn small1_ctb_window(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as t;
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let list = alloc(a, b, 0x80);
+    let local = alloc(a, b, 4);
+    put(a, b, cells, list);
+    // the count word differs (frame vs local): not logged
+    let s = stand_in8(a, b, 0x800, &logger_returning(cursor, 0, cells));
+    redirect(a, b, 0x0079_a200, s);
+    // inputIsHoldButton(b): [cells + 4] for 0x02000000, [cells + 8] for
+    // 0x04000000, else 1
+    let mut v = vec![0x81, 0x7c, 0x24, 0x04, 0, 0, 0, 2, 0x75, 0x06, 0xa1];
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.push(0xc3);
+    v.extend_from_slice(&[0x81, 0x7c, 0x24, 0x04, 0, 0, 0, 4, 0x75, 0x06, 0xa1]);
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.push(0xc3);
+    v.extend_from_slice(&[0xb8, 1, 0, 0, 0, 0xc3]);
+    let s = stand_in8(a, b, 0x880, &v);
+    redirect(a, b, 0x0063_0cd0, s);
+    let stub = stand_in8(a, b, 0x900, &logger_args(cursor, 1));
+    let steps = [0, a.rebase(0x008a_2ba0), a.rebase(0x008a_2ad0), stub];
+    let g = |o: &Oracle, x: u32| o.rebase(x);
+    let rows = g(a, t::CTB_ROWS);
+    let slots = g(a, t::CTB_SLOTS);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let call_ptr = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let shuffle = |a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift| {
+        for k in 0..16u32 {
+            let id = [0u8, 1, 2, 3, 4, 5, 6, 7, 0x14, 0x15, 0x16, 0xff][(rng.next() % 12) as usize];
+            put(a, b, list + 4 * k, id);
+            // ticks past 0x7fff now and then (they widen as u16)
+            let ticks = if rng.next().is_multiple_of(8) {
+                rng.next() as u16
+            } else {
+                (rng.next() % 0x400) as u16
+            };
+            put(a, b, list + 4 * k + 2, ticks);
+        }
+    };
+    for k in 0..1500u32 {
+        put(a, b, cursor, log);
+        if k % 60 == 0 {
+            shuffle(a, b, rng);
+            for o in [&mut *a, &mut *b] {
+                eax(o, 0x008a_0ce0, &[]);
+            }
+        }
+        match rng.next() % 6 {
+            0 | 1 => shuffle(a, b, rng),
+            2 => {
+                // two entries swap
+                let (i, j) = (rng.next() % 16, rng.next() % 16);
+                let x: u32 = Mem::read(a, list + 4 * i);
+                let y: u32 = Mem::read(a, list + 4 * j);
+                put(a, b, list + 4 * i, y);
+                put(a, b, list + 4 * j, x);
+            }
+            _ => {}
+        }
+        if rng.next().is_multiple_of(4) {
+            for _ in 0..4 {
+                let r = rows + 0x18 * (rng.next() % 32);
+                put(a, b, r + 4, (rng.next() % 0x400) as i32 - 0x10);
+                put(a, b, r + 8, (rng.next() % 0x400) as i32 - 0x10);
+                put(a, b, r + 0x14, steps[(rng.next() % 4) as usize]);
+                // 0..=3: a step count of 4 makes TOBtlCtbAnimStep read its
+                // caller's frame
+                put(a, b, r + 0xf, (rng.next() % 4) as u8);
+            }
+        }
+        if rng.next().is_multiple_of(8) {
+            // rows in use (all of them now and then) and leaving rows
+            let full = rng.next().is_multiple_of(3);
+            for i in 0..32 {
+                if full || rng.next().is_multiple_of(2) {
+                    put(
+                        a,
+                        b,
+                        rows + 0x18 * i,
+                        [1u8, 1, 2, 0x80][(rng.next() % 4) as usize],
+                    );
+                }
+            }
+            for j in 16..32 {
+                let p = if rng.next().is_multiple_of(2) {
+                    0
+                } else {
+                    rows + 0x18 * (rng.next() % 32)
+                };
+                put(a, b, slots + 4 * j, p);
+            }
+        }
+        if rng.next().is_multiple_of(3) {
+            let off = [0i16, 0x16, -0x16, 0x2c, 5, -7, 0x84][(rng.next() % 7) as usize];
+            put(a, b, g(a, 0x0134_0450), off);
+            let off = [0i16, 0x16, -0x16, 0x2c, 5, -7, 0x84][(rng.next() % 7) as usize];
+            put(a, b, g(a, 0x0134_0448), off);
+            put(
+                a,
+                b,
+                g(a, 0x0134_0446),
+                [0i8, 1, 9, 10, 11, -1][(rng.next() % 6) as usize],
+            );
+        }
+        put(a, b, cells + 4, u32::from(rng.next().is_multiple_of(3)));
+        put(a, b, cells + 8, u32::from(rng.next().is_multiple_of(3)));
+        let mask = [0u32, u32::MAX, rng.next(), 1 << (rng.next() % 32)][(rng.next() % 4) as usize];
+        let junk = rng.next();
+        eax(a, 0x0089_ece0, &[junk, mask]);
+        t::ctrl_ctb_window(b, mask, local, call, call_ptr);
+        let v: u32 = Mem::read(b, local);
+        Mem::write(a, local, v);
+        same_memory(&format!("ctb window {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn small1_ctb_window_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    small1_ctb_window(&mut a, &mut b, &mut Xorshift(0x5a11_0c01));
+}
+
+#[test]
+fn small1_ctb_window_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    small1_ctb_window(&mut a, &mut b, &mut Xorshift(0x5a11_0c02));
+}

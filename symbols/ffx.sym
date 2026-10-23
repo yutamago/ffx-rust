@@ -10658,7 +10658,7 @@
 0x0089e600 function TONumberFontString_0089e600 # cdecl(src, dst): digits kept, space -> :, - . / -> G H I (any other char spins the original forever; the battle number font); caller 0x008ebb80; name ours
 0x0089e660 function DrawCrossCtbIcon          # fh v3:exact 0x0089e5d0; cdecl(id, x, y, w, h) -> eax of the last call: battle command/CTB icon quads (TOMkpShapeXYWHUV 400) for ids 0x1b6..0x1d4; resetButtonData only for 0x1b6/0x1b7/unknown ids; ported (system round 28)
 0x0089eca0 function TOBtlCloseComWinChange    # fh switch:bsim1.00 0x71004b0aa0
-0x0089ece0 function TOBtlCtrlCtbWindow        # fh v3:bsim0.94 0x0089ec70
+0x0089ece0 function TOBtlCtrlCtbWindow        # fh v3:bsim0.94 0x0089ec70; small round 1: (_, mask) ported in ffx_system::btl (ctrl_ctb_window): mask to 0x01340470; rebuilds the 32 row pointers 0x01340478 when MsGetCTBlist's 16 actors differ from the shown rows' +1 (reset shown, free leaving, match per entry, leftovers leave at slots 16.., new rows from the 0x18-byte pool 0x013404f8, none free -> index 32), runs each row's +0x14 step, moves +4 by 3 toward +8, scrolls with inputIsHoldButton 0x02000000/0x04000000
 0x0089f0e0 function TOBtlDrawChangePrim       # fh v3:exact 0x0089f070; cdecl(chr, x, y ints) -> plate's eax: TOMkpShapePartIndexXYWHC2(part, 0, X2(20)+x, Y2(14)+y, X2(70), Y2(50), grey, grey), part 0x1c0 for chr >= 8, 0x1d4 for chr 6 while AtelGetScenarioFlag() < 0x434, else chr + 0x1b8; name at X2(210)+x - w/2 (scale 0.71); plate at X2(12)+x, Y2(62)+y; ported (system round 35)
 0x0089f370 function TOBtlDrawCommandWindow    # fh v3:exact+call.cs 0x0089f300 cdecl; (w) -> 0: battle command window: +0xe0 = graphicGetTime() - +0xdc (0 unless +0xdc > 0); with +0x38 cols >= 2 the cursor plate (alpha trunc(cos(5t)*32+96)), 3 plate rows sliding over 0.1 s each (row k at +0xe0 - 0.1k, gloss strip) and from +0xe0 >= 0.3 eight DrawWaterWaveShapeC2 ripples per row; DrawCrossMenuScrollParts, TOMakePktScissor(ftol +0x68..+0x74), +0x88(w); rows +0x40.. of the u16 list +0x20 (0xff none, TOCheckBtlCommandUse -4 hidden) with parts +0x2c (kind 1 icon, 2/4/5/6 counts, 7 weapon icon, 0x10 QuickRecoverMenuDraw label); ported (system round 30)
 0x008a0590 function TOBtlDrawCtbWindow        # fh v3:exact 0x008a0520; cdecl(x, y) -> the closing scissor's eax (eax untouched while 0x0133d6e0 is 1): CTB window X2(1637)/Y2(194)..X2(1765)/Y2(482): net window, arrows 0x1b6/0x1b7 by scroll i8 0x01340446, DrawCrossMenuScrollParts, OpenScissor; 32 entries at 0x01340478 (+1 chr, +4, +0x10/+0x12 i16 offsets, +0x14 0x008a2b10 while sliding) via TODrawBtlCtbParts, highlight 0x1d8 for entry 0 at scroll row (i16 0x01340448) 0; with the command window at g_BtlActionDepth open (0x0133c952 + 0xf0 d): TOMakePktScissor and per row whose chr bit is in 0x01340470 TOMkpShapeXY(0x1d6, ftol(x + left + 8), y), TOMkpShapeXYWHUVC2 0x190; ported (system round 36)
@@ -17344,6 +17344,9 @@
 0x0133f988 label g_BtlEnemyLimitBars          # 8 x 16 bytes: i32 +0 target width, +4 shown width (TOBtlInitEnemyLimit, TOBtlCtrlEnemyLimit); name ours
 0x0133faa0 label g_TODapsUsed # i16 bytes used in g_TODapsBuffer (TODapsString, TODapsSetPos, TODapsInit); name ours
 0x0133fab0 label g_TODapsBuffer # 0x800-byte debug print buffer, appends stop at 0x7c0 (TODapsString); name ours
+0x01340446 label    g_CtbScrollRow             # i8: the CTB window's scroll row 0..=10 (TOBtlCtrlCtbWindow: held up/down step it once the shown offset caught up); name ours
+0x01340448 label    g_CtbScroll                # i16: the CTB window's shown scroll offset, moved 11 a frame toward g_CtbScrollTarget (TOBtlCtrlCtbWindow); name ours
+0x01340450 label    g_CtbScrollTarget          # i16: the CTB window's scroll target, 0x16 per row (TOBtlCtrlCtbWindow); name ours
 0x01340452 label    g_BtlInitAnm              # u8: TOBtlInitAnm sets 1
 0x01340456 label    g_BtlGilTopDigit          # i16: the gil window's highest digit (TOWaitBtlWinInputGil wraps the cursor to it); name ours
 0x01340458 label    g_BtlGilDigit             # i16: the gil window's cursor digit (TOWaitBtlWinInputGil); name ours
@@ -17351,6 +17354,9 @@
 0x01340460 label    g_BtlGilMost              # i32: the most the gil window lets you pay (TOWaitBtlWinInputGil); name ours
 0x01340464 label    g_BtlGilAmount            # i32: the amount in the gil window (TOWaitBtlWinInputGil); name ours
 0x01340468 label    g_BtlGilLeft              # i32: the gil left after paying (TOWaitBtlWinInputGil); name ours
+0x01340470 label    g_CtbAnimMask              # u32: TOBtlCtrlCtbWindow's mask (bit per actor: its moved rows step with TOBtlCtbAnimStep_008a2ad0, others Tick4_008a2ba0); TOBtlInitCtbWindow clears it; name ours
+0x01340478 label    g_CtbRowSlots              # 32 row pointers: 16 shown CTB rows then 16 leaving (TOBtlInitCtbWindow, TOBtlCtrlCtbWindow); name ours
+0x013404f8 label    g_CtbRows                  # 32 CTB window rows of 0x18 bytes: +0 in use, +1 actor, +4 shown ticks, +8 target ticks (i32), +0xc slot, +0xd slot before, +0xf step count, +0x10 i16, +0x12 i16 y, +0x14 step function; name ours
 0x01340800 label    g_BtlWinChange            # 0x20 bytes: the battle change window's state (TOInitBtlWinChange: u16 3, window, party list count at +0xc); name ours
 0x01340824 label    g_MovieFading             # PhyreScene_isFading reads it beside the scene's +0x10dcc
 0x01340828 label    g_PauseOn                    # nonzero: Game_Frame runs the pause instead of the world; set alone, Pause_Update enters the pause

@@ -2757,6 +2757,259 @@ pub mod bridge {
         }
     }
 
+    /// The CTB window's row pointers (`0x01340478`): 16 shown rows, then
+    /// 16 rows leaving the list.
+    pub const CTB_SLOTS: u32 = 0x0134_0478;
+    /// The CTB window's 32 rows of 0x18 bytes (`0x013404f8`): `+0` in use,
+    /// `+1` the actor, `+4` the shown ticks and `+8` the target (`i32`),
+    /// `+0xc` the slot and `+0xd` the one before, `+0xf` the step count,
+    /// `u16 +0x10`, `u16 +0x12` the row's y, `+0x14` the step function.
+    pub const CTB_ROWS: u32 = 0x0134_04f8;
+    /// `TOBtlCtbAnimStep_008a2ad0`, the step of a row the mask animates.
+    const CTB_ANIM_STEP: u32 = 0x008a_2ad0;
+    /// `Tick4_008a2ba0`, the step of any other moved row.
+    const CTB_TICK4: u32 = 0x008a_2ba0;
+
+    /// The step function of a moved row of actor `+1` under `mask`.
+    fn ctb_step<M: Mem>(mem: &M, row: u32, mask: u32) -> u32 {
+        let actor = u32::from(mem.read::<u8>(row.wrapping_add(1)));
+        if mask & 1u32.wrapping_shl(actor) == 0 {
+            mem.rebase(CTB_TICK4)
+        } else {
+            mem.rebase(CTB_ANIM_STEP)
+        }
+    }
+
+    /// `TOBtlCtrlCtbWindow(_, mask)` (`0x0089ece0`, from
+    /// `TOControlMsSetMenuCommand`): one frame of the CTB (turn order)
+    /// window. `mask` (bit per actor: its rows animate with
+    /// `TOBtlCtbAnimStep_008a2ad0`, the others with `Tick4_008a2ba0`) is
+    /// kept in `0x01340470`. When the shown rows' actors (`+1`) differ from
+    /// `MsGetCTBlist(local)`'s 16 entries (`u8 +0` actor, `u16 +2` ticks)
+    /// the list is rebuilt:
+    /// - every shown row is reset (`+0` 1, ticks shown = target, `+0x10`
+    ///   0, y `0x16` × its old slot, steps and step function 0); every
+    ///   leaving row is freed (all of it 0) and dropped;
+    /// - entry `k` takes the first shown row of its actor not yet taken
+    ///   (old slot `+0xd`, slot `k`, target its ticks; the row's step is
+    ///   none when it stays in place, else by `mask`);
+    /// - the shown rows no entry took leave (slots 16 on, in order; their
+    ///   target the ticks of the entry at their old place);
+    /// - entries still without a row get a free one of the 32 (`+0` 1,
+    ///   actor, slot `k`, `+0xd` and y from a count starting at 16, shown
+    ///   and target ticks, step by `mask`).
+    ///
+    /// Then each row's step function runs (`call_ptr`), each row's shown
+    /// ticks move 3 toward the target, and the window scrolls: the held
+    /// up (`inputIsHoldButton(0x02000000)`) and down (`0x04000000`) move
+    /// the target offset (`i16 0x01340450`) a row (0x16) while the row
+    /// index (`i8 0x01340446`) stays in 0..=10, once the shown offset
+    /// (`i16 0x01340448`) has caught up; it moves 11 a frame toward it.
+    /// `local` is `MsGetCTBlist`'s out word.
+    #[allow(clippy::too_many_lines)] // one pass per step of the rebuild
+    pub fn ctrl_ctb_window<M: Mem>(
+        mem: &mut M,
+        mask: u32,
+        local: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut call_ptr: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let slots = mem.rebase(CTB_SLOTS);
+        let slot_at = |j: u32| slots.wrapping_add(4 * j);
+        let slot = |mem: &M, j: u32| mem.read::<u32>(slot_at(j));
+        mem.write(mem.rebase(0x0134_0470), mask);
+        let list = call(mem, 0x0079_a200, &[local]);
+        let entry = |k: u32| list.wrapping_add(4 * k);
+        let same = (0..16u32).all(|k| {
+            let row = slot(mem, k);
+            mem.read::<u8>(row.wrapping_add(1)) == mem.read::<u8>(entry(k))
+        });
+        if !same {
+            for j in 0..16u32 {
+                mem.write(slot(mem, j), 1u8);
+                let row = slot(mem, j);
+                let target: u32 = mem.read(row.wrapping_add(8));
+                mem.write(row.wrapping_add(4), target);
+                mem.write(slot(mem, j).wrapping_add(0x10), 0u16);
+                #[allow(clippy::cast_possible_truncation)] // j < 16
+                mem.write(slot(mem, j).wrapping_add(0x12), (j * 0x16) as u16);
+                mem.write(slot(mem, j).wrapping_add(0xf), 0u8);
+                mem.write(slot(mem, j).wrapping_add(0x14), 0u32);
+            }
+            for j in 16..32u32 {
+                if slot(mem, j) == 0 {
+                    continue;
+                }
+                mem.write(slot(mem, j), 0u8);
+                let row = slot(mem, j);
+                let target: u32 = mem.read(row.wrapping_add(8));
+                mem.write(row.wrapping_add(4), target);
+                mem.write(slot(mem, j).wrapping_add(0x10), 0u16);
+                mem.write(slot(mem, j).wrapping_add(0x12), 0u16);
+                mem.write(slot(mem, j).wrapping_add(0xf), 0u8);
+                mem.write(slot(mem, j).wrapping_add(0x14), 0u32);
+                mem.write(slot_at(j), 0u32);
+            }
+            // the original's frame array: the rows in their new order
+            let mut order = [0u32; 32];
+            for j in 0..16u32 {
+                for k in 0..16u32 {
+                    if order[k as usize] != 0
+                        || mem.read::<u8>(slot(mem, j).wrapping_add(1)) != mem.read::<u8>(entry(k))
+                    {
+                        continue;
+                    }
+                    let row = slot(mem, j);
+                    order[k as usize] = row;
+                    let old: u8 = mem.read(row.wrapping_add(0xc));
+                    mem.write(row.wrapping_add(0xd), old);
+                    #[allow(clippy::cast_possible_truncation)] // k < 16
+                    mem.write(row.wrapping_add(0xc), k as u8);
+                    let ticks = u32::from(mem.read::<u16>(entry(k).wrapping_add(2)));
+                    mem.write(row.wrapping_add(8), ticks);
+                    mem.write(slot_at(j), 0u32);
+                    let step = if j == k { 0 } else { ctb_step(mem, row, mask) };
+                    mem.write(row.wrapping_add(0x14), step);
+                    break;
+                }
+            }
+            let mut leaving = 16u32;
+            for j in 0..16u32 {
+                let row = slot(mem, j);
+                if row == 0 {
+                    continue;
+                }
+                let old: u8 = mem.read(row.wrapping_add(0xc));
+                mem.write(row.wrapping_add(0xd), old);
+                order[leaving as usize] = row;
+                #[allow(clippy::cast_possible_truncation)] // below 32
+                mem.write(row.wrapping_add(0xc), leaving as u8);
+                let ticks = u32::from(mem.read::<u16>(entry(j).wrapping_add(2)));
+                mem.write(row.wrapping_add(8), ticks);
+                mem.write(slot_at(j), 0u32);
+                let step = ctb_step(mem, row, mask);
+                mem.write(row.wrapping_add(0x14), step);
+                leaving += 1;
+            }
+            let rows = mem.rebase(CTB_ROWS);
+            let mut count = 16u32;
+            for k in 0..16u32 {
+                if order[k as usize] != 0 {
+                    continue;
+                }
+                // the first free row; none free gives the 33rd, past the end
+                let free = (0..32u32)
+                    .find(|&i| mem.read::<u8>(rows.wrapping_add(0x18 * i)) == 0)
+                    .unwrap_or(32);
+                let row = rows.wrapping_add(0x18 * free);
+                #[allow(clippy::cast_possible_truncation)] // `mov byte`
+                {
+                    mem.write(row.wrapping_add(0xd), count as u8);
+                    mem.write(row, 1u8);
+                    mem.write(row.wrapping_add(0xc), k as u8);
+                }
+                let actor: u8 = mem.read(entry(k));
+                mem.write(row.wrapping_add(1), actor);
+                let ticks = u32::from(mem.read::<u16>(entry(k).wrapping_add(2)));
+                mem.write(row.wrapping_add(4), ticks);
+                let ticks = u32::from(mem.read::<u16>(entry(k).wrapping_add(2)));
+                mem.write(row.wrapping_add(8), ticks);
+                mem.write(row.wrapping_add(0x10), 0u16);
+                #[allow(clippy::cast_possible_truncation)] // `imul` then `mov word`
+                mem.write(row.wrapping_add(0x12), count.wrapping_mul(0x16) as u16);
+                let step = ctb_step(mem, row, mask);
+                mem.write(row.wrapping_add(0x14), step);
+                count += 1;
+                order[k as usize] = row;
+            }
+            for (j, row) in (0u32..).zip(order) {
+                mem.write(slot_at(j), row);
+            }
+        }
+        for j in 0..32u32 {
+            let row = slot(mem, j);
+            if row == 0 {
+                continue;
+            }
+            let f: u32 = mem.read(row.wrapping_add(0x14));
+            if f != 0 {
+                call_ptr(mem, f, &[row]);
+            }
+        }
+        for j in 0..32u32 {
+            let row = slot(mem, j);
+            if row == 0 {
+                continue;
+            }
+            let target: i32 = mem.read(row.wrapping_add(8));
+            let shown: i32 = mem.read(row.wrapping_add(4));
+            if target == shown {
+                continue;
+            }
+            if target < shown {
+                mem.write(row.wrapping_add(4), shown.wrapping_sub(3));
+                let row = slot(mem, j);
+                let target: i32 = mem.read(row.wrapping_add(8));
+                if target >= mem.read::<i32>(row.wrapping_add(4)) {
+                    mem.write(row.wrapping_add(4), target);
+                }
+            }
+            let row = slot(mem, j);
+            let shown: i32 = mem.read(row.wrapping_add(4));
+            if mem.read::<i32>(row.wrapping_add(8)) > shown {
+                mem.write(row.wrapping_add(4), shown.wrapping_add(3));
+                let row = slot(mem, j);
+                let target: i32 = mem.read(row.wrapping_add(8));
+                if target <= mem.read::<i32>(row.wrapping_add(4)) {
+                    mem.write(row.wrapping_add(4), target);
+                }
+            }
+        }
+        ctb_scroll(mem, &mut call);
+    }
+
+    /// [`ctrl_ctb_window`]'s scroll.
+    fn ctb_scroll<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let row_at = mem.rebase(0x0134_0446);
+        let shown_at = mem.rebase(0x0134_0448);
+        let target_at = mem.rebase(0x0134_0450);
+        // `inputIsHoldButton`: up (0x02000000) first, down only without it
+        let (dir, target, shown) = if call(mem, 0x0063_0cd0, &[0x0200_0000]) != 0 {
+            (-1i8, mem.read::<i16>(target_at), mem.read::<i16>(shown_at))
+        } else {
+            let down = call(mem, 0x0063_0cd0, &[0x0400_0000]) != 0;
+            let shown: i16 = mem.read(shown_at);
+            (i8::from(down), mem.read::<i16>(target_at), shown)
+        };
+        let mut target = target;
+        if dir != 0 && target == shown {
+            let row: i8 = mem.read(row_at);
+            let room = if dir < 0 { row > 0 } else { row < 10 };
+            if room {
+                target = if dir < 0 {
+                    target.wrapping_add(0x16)
+                } else {
+                    target.wrapping_sub(0x16)
+                };
+                mem.write(target_at, target);
+                mem.write(row_at, row.wrapping_add(dir));
+            }
+        }
+        if target < shown {
+            let shown = shown.wrapping_sub(0xb);
+            mem.write(shown_at, shown);
+            if target >= shown {
+                mem.write(shown_at, target);
+            }
+        } else if target > shown {
+            let shown = shown.wrapping_add(0xb);
+            mem.write(shown_at, shown);
+            if target <= shown {
+                mem.write(shown_at, target);
+            }
+        }
+    }
+
     /// A limit window's caption centred on 512: `MsGetRomBtlText(mes, 0)`
     /// measured by `ToGetBtlEasyFontWidth(text, width, 0, 0.78, 1)` into
     /// the frame word `width`, then `TOMkpCrossExtMesFontLClut(0, text,

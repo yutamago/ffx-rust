@@ -1335,6 +1335,13 @@ ported! {
         let local = frame.at();
         btl::bridge::init_ctb_window(&mut mem(), local, call_sym);
     }
+    /// `TOBtlCtrlCtbWindow(_, mask)`: the first word is unused.
+    TOBtlCtrlCtbWindow @ 0x0089_ece0 => extern "C" fn to_btl_ctrl_ctb_window(_unused: u32, mask: u32) {
+        // MsGetCTBlist's count word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        btl::bridge::ctrl_ctb_window(&mut mem(), mask, local, call_sym, call_ptr);
+    }
     /// `TOBtlDrawWakkaLimitWindow()` (callers drop `eax`).
     TOBtlDrawWakkaLimitWindow @ 0x0089_74a0 => extern "C" fn to_btl_draw_wakka_limit_window() {
         // ToGetBtlEasyFontWidth's width word
