@@ -3527,6 +3527,10 @@ ported! {
     yiKeyFrameAdvanceLinked @ 0x0091_4070 => extern "C" fn shim_yi_key_frame_advance_linked(r: u32, a: u32, now: u32) -> u32 {
         yi::bridge::yi_key_frame_advance_linked(&mut mem(), r, a, now, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `LocText_ConvertLineBreaks_006e9700(src, dst, len)`: 0.
+    LocText_ConvertLineBreaks_006e9700 @ 0x006e_9700 => extern "C" fn shim_loc_text_convert_line_breaks(src: u32, dst: u32, len: u32) -> u32 {
+        ffx_field::loctext::bridge::loc_text_convert_line_breaks(&mut mem(), src, dst, len)
+    }
     /// `yiKeyFrame_main(r)`: the frame's vectors and matrices in a
     /// `StackFrame` laid out as the original's.
     yiKeyFrame_main @ 0x0091_4a10 => extern "C" fn shim_yi_key_frame_main(r: u32) -> u32 {

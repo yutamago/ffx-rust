@@ -24898,3 +24898,69 @@ fn small7_b_key_frame_main_matches_the_original() {
         }
     }
 }
+
+/// Small round 7 e: `LocText_ConvertLineBreaks_006e9700` on strings with
+/// no, one, several, adjacent, leading and trailing `@el@` markers, half
+/// markers, other markers (the global repointed), buffers shorter than the
+/// text (stale bytes past them), the oracle's CRT `memset`, `strstr` and
+/// `strncpy`.
+#[test]
+fn small7_e_loc_text_line_breaks_match_the_original() {
+    use ffx_field::loctext;
+    for mut t in [Twin::image(), Twin::snapshot()].into_iter().flatten() {
+        let mut rng = Xorshift(0x5a11_7e01);
+        let (src, dst) = (t.alloc(0x200), t.alloc(0x200));
+        let markers = [b"@el@\0".as_slice(), b"#\0", b"ab\0"];
+        let marker_cells: Vec<u32> = markers
+            .iter()
+            .map(|m| {
+                let at = t.alloc(8);
+                t.write(at, m);
+                at
+            })
+            .collect();
+        let marker_at = t.a.rebase(loctext::MARKER);
+        let original = t.a.read::<u32>(marker_at);
+        let pieces: [&[u8]; 8] = [b"Hello", b"@el@", b"@e", b"l@", b"#", b"ab", b"x", b""];
+        for round in 0..300u32 {
+            let m = if round % 4 == 3 {
+                marker_cells[(rng.next() % 3) as usize]
+            } else if original != 0 {
+                original
+            } else {
+                marker_cells[0]
+            };
+            t.put(marker_at, m);
+            let mut text = vec![];
+            for _ in 0..rng.below(12) {
+                text.extend_from_slice(pieces[(rng.next() % 8) as usize]);
+            }
+            text.push(0);
+            // stale bytes, non-zero but every 16th: the line break lands
+            // past a short buffer's piece
+            let stale: Vec<u8> = (0..0x200u32)
+                .map(|k| {
+                    if k % 16 == 15 {
+                        0
+                    } else {
+                        0x41 + (rng.next() % 26) as u8
+                    }
+                })
+                .collect();
+            t.write(dst, &stale);
+            t.write(src, &text);
+            let len = if rng.below(4) == 0 {
+                rng.below(u32::try_from(text.len()).unwrap())
+            } else {
+                0x100
+            };
+            t.same(
+                &format!("LocText_ConvertLineBreaks {round}"),
+                |o| o.eax(0x006e_9700, &[src, dst, len]),
+                |b| loctext::bridge::loc_text_convert_line_breaks(b, src, dst, len),
+            );
+            t.a.clear_dirty();
+            t.b.clear_dirty();
+        }
+    }
+}
