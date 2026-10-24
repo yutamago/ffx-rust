@@ -42,9 +42,12 @@
 # showed an extra or other first state in one original run: before the
 # save, entry 1 is whichever sandbox copy sorts first, and the copies'
 # times tie or not by the second they were made. run-all.sh leaves
-# ranges 2, 11 and 12 out of the comparison (--ignore 2,11,12); the
-# counts in range 10 and the file buffer still check the list and the
-# save. Screenshots (menu-save-<n>.bmp): 1 Brotherhood equipped, 2 the
+# ranges 2, 11 and 12 out of the comparison (--ignore 2,11,12), and in
+# hook-hit mode (--hits: slower first calls) 0, 4 and 7 as well: there
+# the loaded block (map words and the rest) and the packed save's header
+# passed through an in-between state for a frame, in 2 of 2 runs (0 of 9
+# normal Rust runs). The waits on the map words, the counts in range 10
+# and the file buffer still check the maps, the list and the save. Screenshots (menu-save-<n>.bmp): 1 Brotherhood equipped, 2 the
 # save sphere's choice, 3 the field after saving, 4 the title, 5 the field
 # after loading, 6 the Equip screen after loading.
 load direct 5 kami0100

@@ -119,9 +119,12 @@ for r in "${replays[@]}"; do
     # player position in event-besaid (2) misses an in-between value when a
     # trace frame is skipped, in original runs too; menu-save's save data
     # word +0x28 (2), slot list flags (11) and newest slot (12) take an
-    # in-between value for a frame in some runs, original ones included
+    # in-between value for a frame in some runs, original ones included,
+    # and in hook-hit mode (slower first calls) the loaded block's map
+    # words (0), its rest (4) and the packed save's header (7) did too
     # (docs/harness.md)
     case $r in field-walk) ign=(--ignore 3) ;; menu-browse) ign=(--ignore 0) ;; event-besaid) ign=(--ignore 2) ;; menu-save) ign=(--ignore 2,11,12) ;; *) ign=() ;; esac
+    [ "$r" = menu-save ] && [ -n "$hits" ] && ign=(--ignore 0,2,4,7,11,12)
     cmp=(python3 tools/replay-compare.py "$traces/$r-orig.trace" "$runs/rust/$r-rust.trace" --also "$traces/$r-orig2.trace" "${ign[@]}")
     echo "== $r: $("${cmp[@]}" 2>&1 | tail -1)"
     "${cmp[@]}" >/dev/null 2>&1 || bad=1

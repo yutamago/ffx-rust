@@ -131,7 +131,10 @@ and are not armed.
 - Cost: unset, nothing is armed and the shims, thunks and patch sites are
   those of a normal run (no flag or branch on any path). Set, each hook
   costs one exception and one append the first time it runs, nothing
-  after. A replay gives the same events either way.
+  after. A replay gives the same events either way, except menu-save,
+  whose save and load copies passed through an in-between state for a
+  frame with the slower first calls (`run-all.sh --hits` leaves those
+  ranges out; see menu-save below).
 - Crash-safe: each hit is one `WriteFile` in append mode with no user-space
   buffer, so a game that dies leaves every hit it had, and lines from
   several threads never interleave.
@@ -513,7 +516,12 @@ dates are the files' times.
   one frame: 1 of 9 original runs, most Rust runs; the field's load
   timing), the present flags, and entry 1 before the save (whichever
   sandbox copy sorts first: the copies' times tie or not by the second
-  they were made). A bisect of the Rust runs' `+0x28` difference with
+  they were made). In hook-hit mode (`--hits`) it leaves out three more
+  (`0,4,7`): with the slower first calls the loaded block's map words and
+  the rest of the block passed through an in-between state for a frame at
+  the load (the copy and the title script's jump a frame apart), and the
+  packed save's header at the save (2 of 2 runs with `FFX_HOOK_HITS`, 0 of
+  9 Rust runs without). The waits on the map words still check the maps. A bisect of the Rust runs' `+0x28` difference with
   `FFX_HOOK_DISABLE` found no single port: neither half of the 2,061 ports
   the replay runs fixed it alone, and the halves that did held a harness
   hook (`Phyre_PTimerWin32_GetTime`, the virtual clock; `Input_KeyHeld`).
