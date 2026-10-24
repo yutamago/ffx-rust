@@ -8,7 +8,10 @@
 #   FFX_GFX=1 target/release/examples/replay tools/replays/draw-field.txt \
 #     '<windows path of a folder>\draw-field.trace' [original]
 # Captures land beside the trace ($OUT\fw-101, fw-459, besaid-101), about
-# 5 MB each: keep them in ~/ffx-work/m4/captures, never in the repository.
+# 3.5-6.3 MB each: keep them in ~/ffx-work/m4/captures, never in the
+# repository. Two runs are compared with ~/ffx-work/m4/draw-field-gate.sh
+# (drawdiff and the hashes.txt comparison; the noise list is in
+# docs/renderer.md, "Reference captures").
 #
 # Each capture starts with `now` while lockstep holds the render thread in
 # Present after a wait (the main thread then waits too), so it records the

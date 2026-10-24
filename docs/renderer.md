@@ -389,3 +389,146 @@ FSR's DLLs (`amd_fidelityfx_loader_dx12.dll`,
 `Kits/FidelityFX/signedbin`, MIT licence) go next to the renderer with
 `LICENSE-FidelityFX.txt` when the SDK is in `FFX_SDK_DIR` (default
 `~/tools/ffx-sdk`); they are not in the repository.
+
+## Reference captures (M4)
+
+The in-process rewrite (`docs/rewrite-plan.md`, M4) is checked against
+captures of the original's Direct3D 11 calls. `gfxcapture` (harness
+command, `crates/ffx-hook/src/gfx/capture.rs`, needs `FFX_GFX=1`):
+
+```text
+gfxcapture <dir> [hash] [frames N] [draws A B] [now] [async]
+gfxcapture result
+```
+
+- `hash`: content hashes instead of contents (below). Without it the
+  capture is the full one of [Tools](#tools) (a few hundred MB a frame).
+- `frames N`: N frames in a row (full mode writes frames after the first
+  as `…_f<k>` files and `frame k` lines in `frame.txt`).
+- `draws A B`: render target 0 after each draw A..B (full mode; the old
+  form `<dir> A B` still works).
+- `now`: start with the next call, not at the next `Present`. Use it only
+  while lockstep holds the render thread in `Present` (after a `wait` or
+  `waitfor`); the main thread then waits too, and the capture first reads
+  the scene inputs as the main thread left them (the *held* sample).
+- `async`: answer `ok armed` at once; `gfxcapture result` waits for the
+  reply. Lockstep needs it: a blocking `gfxcapture` would wait for frames
+  that lockstep does not let run. The script does `gfxcapture … now
+  async`, `wait N`, `gfxcapture result` (`tools/replays/draw-field.txt`).
+
+Nothing of this runs while no capture is armed (every entry point returns
+when `State::capture` is `None`); the only per-frame costs are an atomic
+store of the swap chain and, with the layer on, a bounded list of opened
+files.
+
+### Files
+
+| File | What |
+|---|---|
+| `capture.ffxgfx` | the scene stream (`ffx-gfx` messages): objects, the `World` message, one `Frame` per captured frame. Hash mode keeps its structure (states, shaders, layouts, draws with their constant buffer windows inline) and drops contents: a texture has one subresource holding its 8-byte content hash (row pitch 0; 0 for render and depth targets), a static vertex buffer its hash, a static index buffer its data, a ring nothing; each draw is preceded by `UpdateBuffer`s of the ring bytes it reads (vertex range from its indices, index range), recorded at the draw. Full mode also sends a changed index ring before each draw. `ffx-drawdiff` reads both |
+| `capture.ffxref` | reference records (`ffx_gfx::reference::Ref`, magic `FFXREF01`): frame tags, scene samples, threads, draw keys, target hashes, reborn ids |
+| `hashes.txt` | hash mode: the address-free record runs are compared with, one line per call, in order: `frame k`; `held <field> <hex>` and `opened <file>` (frame 0, `now` only); `d` draws (kind, counts, topology, shader, layout, vertex (stride:hash of the bytes used), index, constant window, texture (content hash, or role for targets and GPU-written textures), sampler, blend, depth and raster keys, viewport, scissor, target roles); `c`/`z` clears; `x`/`xr` copies; `t <draw> <role> <hash>` a target's contents when the game moved off it; `p backbuffer <hash>`; `gs`/`cs`/`dispatch` |
+| `frames.txt` | tags and samples as text: `tag`, `sample` (held and present), `thread`, `reborn` |
+| `frame.txt`, `objects.txt` | the call log with addresses, as before (full mode also writes `rt/`, `tex/`, `buf/`, `cb/`, `shaders/`) |
+
+Targets are named by role: `<w>x<h>f<format>b<bind>#<n>`, the n-th
+texture of that description first seen in the capture, or `backbuffer`
+(the swap chain's buffer, which the layer's table may hold a stale texture
+for). Textures written by copies (`CopyResource`, `CopySubresourceRegion`)
+are keyed by role as well. Hashes are FNV-1a 64 of texel rows without the
+read-back's row padding. `Reborn` records list objects created at the
+address of one the layer knew: the layer does not hook `Release`, so
+these are the lifetimes it can see (4-6 on Besaid's beach at count 101,
+from the asset loader).
+
+Sizes and times (draw-field, three frames each, hash mode): 3.5 MB
+(deck, count 101, 591 draws), 4.2 MB (count 459, 633 draws), 6.3 MB
+(Besaid, 782 draws); 0.1-0.2 s to write, inside the last `Present`.
+
+### Frame tags
+
+Per frame (`Ref::Tag`): its index, the `Present` count at the `Present`
+that ended it (the harness's `frame` reply after that `Present`), ctrl
+work 0's frame count (`0x01325d94`) read there, the draws, the calls per
+thread, and the `Present` thread. At the end the process's threads with
+their start addresses (`ThreadQuerySetWin32StartAddress`) and roles
+(`main`: created first; `render`: called `Present`).
+
+### Scene inputs
+
+Read from memory (`crate::world::scene_inputs`, `ReadProcessMemory`, never
+a fault); pointers are left out.
+
+| Name | Address | Evidence |
+|---|---|---|
+| `event_count` | `0x01325d94` (ctrl work 0 `+0x1f4`) | field-walk's pin |
+| `g_CameraMatrix` | `0x02311440`, 64 bytes | `Cam_Apply` passes it to `graphicCameraSetWorldMatrix` |
+| `g_Camera+0x50`, `+0x66c` | `*0x02311430` | look-at and eye of the active channel |
+| `scene+0xfa04` | `*g_PhyreScene` (`0x00ccb9d8`) `+0xfa04`, 48 bytes | `graphicCameraSetWorldMatrix` (`0x00639860`) stores the inverted view there; floats 8..10 are the eye |
+| `scene+0xfa34` | 8 bytes | screen shift (`PhyreScene_getViewProjectionMatrix`) |
+| `camera+0xbc`, `+0x150` | `*(scene +0xdc)`: far plane; aspect and fovy (8 bytes) | `setFarPlane`, `PhyreScene_setCameraAspectRatio`, `PhyreScene_setCameraFOVy` |
+| `scene+0x1128!=0`, `+0x1138`, `+0x11d8`, `+0x1140[]` | 2D layers: whether there are any, count, current group, entries (shown, group, id, mesh set) | `PhyreScene_show2DLayer` (`0x0066f2f0`) |
+| `app+0x50` | `*g_PhyreApplication` (`0x00cc9cd8`) `+0x50..+0x8f` | ambient, fog colour, near/far/limit, background (`docs/formats/render.md`) |
+| `fade+0x1238c` | `*g_PostProcessManager` (`0x00ccc8a0`) `+0x1238c..+0x123a7` | fade colour, alpha mode, lock, reason (`graphicGetScreenFadeColor`) |
+| opened files | the `openFile` hook (`0x00607f40`) | files opened since the previous sample, with the `Present` count |
+
+### Threads and the frame relation (measured 2026-10-24)
+
+Every Direct3D 11 call the layer records (draws, clears, copies, target
+changes, the noted calls) and `Present` run on one thread whose start
+address is `Phyre_PRendering_PRenderThread_StaticThreadEntry`
+(`0x00614710`): PhyreEngine's render thread, 268-389 calls a frame in
+draw-field, none on any other thread. The main thread (created first,
+start address the PE entry `0x009493c1`) makes none. (The calls the layer
+does not note, such as `Map` and the setters, were not counted.)
+
+PhyreEngine draws a frame while the main thread computes the next one.
+Evidence, draw-field `fw-459` (deck, the camera rising each frame):
+- held sample at harness frame 786 (render thread held in `Present`):
+  event count 459, eye y 23.133413; at the `Present`s of frames 787, 788
+  and 789, read on the render thread, the counts are already 460, 461 and
+  462 and the eyes 23.141678, 23.15049, 23.159842;
+- the frame presented at 787 has the held sample's eye bit for bit in cb0
+  of every scene draw (282 windows); the frame at 788 has the eye read at
+  787's `Present`, the frame at 789 the one read at 788's. No frame holds
+  the eye read at its own `Present`.
+
+So the draws presented at `Present` P were built from the main thread's
+update that ended before `Present` P-1 returned, and by the time `Present`
+P runs, the main thread has finished the next update. A shot taken in
+`Present` (the harness's `shot`, field-walk-2 "at count 459") shows the
+update before the count read at the same point: the picture of update
+458. `fw-101` and Besaid agree (Besaid's camera does not move, so it
+cannot tell frames apart). Scene inputs for a frame are therefore those
+of the held point (the main thread between two updates, the render thread
+held), not those read at `Present`; the Rust scene builder takes its
+inputs where the main thread hands a frame over, and in captures only the
+held sample is exact (present samples race the main thread and stay out of
+`hashes.txt`).
+
+### Noise and the two-run gate
+
+```bash
+FFX_GFX=1 target/release/examples/replay tools/replays/draw-field.txt '<win dir>\draw-field.trace' original
+~/ffx-work/m4/draw-field-gate.sh <run A> <run B>   # drawdiff + compare-captures.py
+```
+
+`drawdiff` (`docs/drawdiff.md`) compares the streams with
+`~/ffx-work/m4/allow-draw-field.txt` (T1's `cdsp0000` rules plus a
+`bsil0000` section); `~/ffx-work/m4/compare-captures.py` compares
+`hashes.txt`. Two original runs (orig3, orig4, 2026-10-24) gave 0
+differences in both outside this list:
+- `scene.GlobalTime` (8 ulp) and `SgSpec_LightVec[0].z` (junk read), and
+  the cloth's COLOR1 ring (vertex shader `bb9bf1c768e1480f`, slot 5), as
+  T1 found on the deck; target and back-buffer hashes after a noisy draw
+  follow it;
+- Besaid: the chocobo icon at the bottom right (vertex shaders
+  `3ed98be438f1788c`, `db4c42c82f869fe7`, `0259336042bd8dbd`; viewport
+  50x50 at 1220,660), animated by the wall clock, with a varying number of
+  draws a frame (276, 255 and 251, in another order in every run), and the
+  target hashes after its first draw;
+- Besaid: ps srv1 of vertex shader `f1de6dea8bd5f574`, a 16x8 BC3 texture
+  the asset loader replaces at a load-dependent frame (`reborn` records);
+- Besaid: vb1 of vertex shader `0d19616adb13ee23`, a ring alternating
+  between two versions frame by frame, in a phase not pinned to the event
+  count.

@@ -1156,6 +1156,14 @@ pub mod reference {
             role: String,
             hash: u64,
         },
+        /// The game made a new object at the address of one the layer
+        /// knew (the old one was released unseen: the layer does not hook
+        /// `Release`); records made before this one about `id` refer to
+        /// the old object.
+        Reborn {
+            frame: u32,
+            id: Id,
+        },
     }
 
     const TAG: u32 = 0x101;
@@ -1163,6 +1171,7 @@ pub mod reference {
     const THREADS: u32 = 0x103;
     const KEYS: u32 = 0x104;
     const TARGET: u32 = 0x105;
+    const REBORN: u32 = 0x106;
 
     fn u64w(w: &mut Writer, v: u64) {
         w.bytes.extend_from_slice(&v.to_le_bytes());
@@ -1262,6 +1271,10 @@ pub mod reference {
                     w.str(role);
                     u64w(&mut w, *hash);
                     TARGET
+                }
+                Self::Reborn { frame, id } => {
+                    w.u32s(&[*frame, *id]);
+                    REBORN
                 }
             };
             out.extend_from_slice(&tag.to_le_bytes());
@@ -1370,6 +1383,10 @@ pub mod reference {
                         hash: u64r(r)?,
                     }
                 }
+                REBORN => {
+                    let [frame, id] = r.u32s()?;
+                    Self::Reborn { frame, id }
+                }
                 _ => return Err(DecodeError("tag")),
             })
         }
@@ -1443,6 +1460,7 @@ pub mod reference {
                     role: "backbuffer".into(),
                     hash: 0xdead_beef_0000_0001,
                 },
+                Ref::Reborn { frame: 2, id: 0x55 },
             ];
             let mut bytes = Vec::new();
             for r in &refs {

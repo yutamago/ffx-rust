@@ -131,7 +131,9 @@ pub fn scene_inputs() -> Vec<(String, Vec<u8>)> {
         put("camera+0x150", bytes(camera + 0x150, 8));
         // 2D layers (PhyreScene_show2DLayer): present flag, count, group,
         // and the entries.
-        put("scene+0x1128", bytes(scene + 0x1128, 4));
+        // (a pointer: only whether it is set)
+        let layers = word(scene + 0x1128).map(|p| u32::from(p != 0).to_le_bytes().to_vec());
+        put("scene+0x1128!=0", layers);
         let count = word(scene + 0x1138).unwrap_or(0) as u32;
         put("scene+0x1138", Some(count.to_le_bytes().to_vec()));
         put("scene+0x11d8", bytes(scene + 0x11d8, 4));

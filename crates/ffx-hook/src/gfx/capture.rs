@@ -142,12 +142,53 @@ pub struct Capture {
     hashed: HashMap<(usize, u32), u64>,
     indices: HashMap<(usize, u32), Vec<u8>>,
     present_thread: u32,
+    /// Textures the GPU wrote by copies: keyed by role, as targets.
+    gpu_written: HashSet<usize>,
+    /// The swap chain's back buffer (not made through the device: the
+    /// layer's table can hold a stale texture at its address).
+    backbuffer: usize,
+    /// `State::reborn`'s length when the capture started.
+    reborn_at: usize,
 }
 
 static PENDING: Mutex<Option<Capture>> = Mutex::new(None);
 static DRAW_RANGE: Mutex<Option<(u32, u32)>> = Mutex::new(None);
 /// The reply of a detached (`async`) capture.
 static RESULT: Mutex<Option<Receiver<String>>> = Mutex::new(None);
+/// The swap chain of the last `Present`.
+static SWAP_CHAIN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The swap chain's buffer 0 (the swap chain keeps it alive).
+///
+/// # Safety
+/// `swap_chain` is the game's live swap chain (DXGI calls are
+/// thread-safe).
+unsafe fn back_buffer(swap_chain: Ptr) -> usize {
+    const IID_TEXTURE2D: [u8; 16] = [
+        0xf2, 0xaa, 0x15, 0x6f, 0x08, 0xd2, 0x89, 0x4e, 0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f,
+        0x9c,
+    ];
+    if swap_chain.is_null() {
+        return 0;
+    }
+    let mut back: Ptr = std::ptr::null_mut();
+    // SAFETY: IDXGISwapChain::GetBuffer and IUnknown::Release.
+    unsafe {
+        let hr = super::com!(
+            swap_chain,
+            vt::GET_BUFFER,
+            unsafe extern "system" fn(Ptr, u32, *const u8, *mut Ptr) -> i32,
+            0,
+            IID_TEXTURE2D.as_ptr(),
+            &raw mut back
+        );
+        if hr < 0 || back.is_null() {
+            return 0;
+        }
+        super::com!(back, vt::RELEASE, unsafe extern "system" fn(Ptr) -> u32);
+    }
+    back as usize
+}
 
 fn thread_id() -> u32 {
     // SAFETY: plain call.
@@ -216,6 +257,9 @@ impl Capture {
             hashed: HashMap::new(),
             indices: HashMap::new(),
             present_thread: 0,
+            gpu_written: HashSet::new(),
+            backbuffer: 0,
+            reborn_at: 0,
         }
     }
 
@@ -325,7 +369,11 @@ pub fn request(args: &str) -> String {
         // The render thread is held in Present (the caller says so): the
         // next calls are the next frame's.
         c.add_sample(sample(0, When::Held));
-        state().capture = Some(c);
+        // SAFETY: the swap chain of the last Present.
+        c.backbuffer = unsafe { back_buffer(SWAP_CHAIN.load(Ordering::Acquire) as Ptr) };
+        let mut s = state();
+        c.reborn_at = s.reborn.len();
+        s.capture = Some(c);
     } else if let Ok(mut p) = PENDING.lock() {
         *p = Some(c);
     }
@@ -341,23 +389,35 @@ pub fn request(args: &str) -> String {
 
 /// Adds a line to the capture, if one is running.
 pub fn note(s: &mut State, line: &str) {
-    let Some(c) = &mut s.capture else { return };
+    let Some(mut c) = s.capture.take() else {
+        return;
+    };
     c.seen();
     c.lines.push(line.to_owned());
-    // Geometry and compute shaders and dispatches go into the text too.
+    // Geometry and compute shaders, dispatches and region copies go into
+    // the text too.
     let key = line
         .strip_prefix("gs_set_shader ")
         .map(|p| ("gs", p))
         .or_else(|| line.strip_prefix("cs_set_shader ").map(|p| ("cs", p)));
+    let hex_id = |t: &str| usize::from_str_radix(t.trim_start_matches("0x"), 16).ok();
     if let Some((stage, p)) = key {
-        let p = usize::from_str_radix(p.trim_start_matches("0x"), 16).unwrap_or(0);
-        let h = s.shaders.get(&p).map_or(0, |sh| sh.hash);
-        if let Some(c) = &mut s.capture {
-            c.text.push(format!("{stage} {h:016x}"));
-        }
+        let h = hex_id(p)
+            .and_then(|p| s.shaders.get(&p))
+            .map_or(0, |sh| sh.hash);
+        c.text.push(format!("{stage} {h:016x}"));
     } else if line.starts_with("dispatch ") {
         c.text.push(line.to_owned());
+    } else if let Some(rest) = line
+        .strip_prefix("copy_region ")
+        .or_else(|| line.strip_prefix("copy_region1 "))
+        && let Some(dst) = hex_id(rest.split('[').next().unwrap_or(""))
+    {
+        c.gpu_written.insert(dst);
+        let r = role(s, &mut c, dst);
+        c.text.push(format!("xr {r}"));
     }
+    s.capture = Some(c);
 }
 
 fn list(slots: &[usize]) -> String {
@@ -383,6 +443,9 @@ fn role(s: &State, c: &mut Capture, view_or_resource: usize) -> String {
         .map_or(view_or_resource, |v| v.resource);
     if let Some(r) = c.roles.get(&resource) {
         return r.clone();
+    }
+    if resource == c.backbuffer {
+        return "backbuffer".into();
     }
     let base = s.textures.get(&resource).map_or_else(
         || "untracked".to_string(),
@@ -413,6 +476,7 @@ pub fn copy(s: &mut State, dst: usize, src: usize) {
         dst: dst as u32,
         src: src as u32,
     });
+    c.gpu_written.insert(dst);
     let (d, from) = (role(s, &mut c, dst), role(s, &mut c, src));
     c.text.push(format!("x {d} {from}"));
     s.capture = Some(c);
@@ -524,9 +588,13 @@ fn texture_hash(s: &State, c: &mut Capture, resource: usize) -> u64 {
 /// per version) for static ones.
 fn buffer_bytes(s: &State, c: &mut Capture, id: usize) -> Option<Vec<u8>> {
     let b = s.buffers.get(&id)?;
-    if b.desc[1] == 2 {
-        return b.shadow.clone();
+    if b.desc[1] == 2
+        && let Some(sh) = &b.shadow
+    {
+        return Some(sh.clone());
     }
+    // Static buffers, and dynamic ones not written since the capture
+    // started (no copy of the layer's): a read-back.
     if let Some(d) = c.indices.get(&(id, b.version)) {
         return Some(d.clone());
     }
@@ -542,9 +610,27 @@ fn range_hash(bytes: &[u8], from: usize, to: usize) -> u64 {
     super::hash(bytes.get(from.min(to)..to).unwrap_or(&[]))
 }
 
-/// The content keys of a draw and their text line.
+/// The content keys of a draw, their text line, and the ring bytes it
+/// reads as updates for the scene stream (only those bytes: hash-only
+/// captures carry no buffer contents otherwise).
 #[allow(clippy::too_many_lines)] // one draw's keys, field by field
-fn keys(s: &State, c: &mut Capture, d: &ffx_gfx::Draw) -> (DrawKeys, String) {
+fn keys(s: &State, c: &mut Capture, d: &ffx_gfx::Draw) -> (DrawKeys, String, Vec<ffx_gfx::Cmd>) {
+    let ring = |id: u32| {
+        s.buffers
+            .get(&(id as usize))
+            .is_some_and(|b| b.desc[1] == 2)
+    };
+    let mut updates = Vec::new();
+    let mut update = |id: u32, data: &[u8], from: usize, to: usize| {
+        let to = to.min(data.len());
+        if from < to {
+            updates.push(ffx_gfx::Cmd::UpdateBuffer {
+                id,
+                offset: from as u32,
+                data: data[from..to].to_vec(),
+            });
+        }
+    };
     use ffx_gfx::DrawKind as K;
     let indexed = matches!(d.kind, K::Indexed | K::IndexedInstanced);
     let (ib, ifmt, ioff) = d.index;
@@ -557,7 +643,11 @@ fn keys(s: &State, c: &mut Capture, d: &ffx_gfx::Draw) -> (DrawKeys, String) {
     };
     let index = index_data.as_ref().map_or(0, |data| {
         let from = ioff as usize + d.start as usize * isize;
-        range_hash(data, from, from + d.count as usize * isize)
+        let to = from + d.count as usize * isize;
+        if ring(ib) {
+            update(ib, data, from, to);
+        }
+        range_hash(data, from, to)
     });
     let vertices = if indexed {
         index_data
@@ -614,6 +704,7 @@ fn keys(s: &State, c: &mut Capture, d: &ffx_gfx::Draw) -> (DrawKeys, String) {
             }
             let from = offset as usize + lo * stride as usize;
             let to = offset as usize + (hi + 1) * stride as usize;
+            update(id, data, from, to);
             range_hash(data, from, to)
         });
         vertex.push((slot, h));
@@ -636,7 +727,9 @@ fn keys(s: &State, c: &mut Capture, d: &ffx_gfx::Draw) -> (DrawKeys, String) {
             let target = s
                 .textures
                 .get(&resource)
-                .is_some_and(|t| t.desc[8] & (BIND_RENDER_TARGET | BIND_DEPTH_STENCIL) != 0);
+                .is_some_and(|t| t.desc[8] & (BIND_RENDER_TARGET | BIND_DEPTH_STENCIL) != 0)
+                || c.gpu_written.contains(&resource)
+                || resource == c.backbuffer;
             let (h, shown) = if target {
                 let r = role(s, c, resource);
                 (super::hash(r.as_bytes()), r)
@@ -718,6 +811,7 @@ fn keys(s: &State, c: &mut Capture, d: &ffx_gfx::Draw) -> (DrawKeys, String) {
             depth,
         },
         line,
+        updates,
     )
 }
 
@@ -863,15 +957,23 @@ pub fn draw(s: &mut State, d: Draw) {
     c.draws_since_rt += 1;
     let streamed = stream_draw(s, d);
     if c.opts.hash {
-        let (k, line) = keys(s, &mut c, &streamed);
+        let (k, line, updates) = keys(s, &mut c, &streamed);
         c.refs.push(Ref::Keys(k));
         c.text.push(line);
+        c.cmds.extend(updates);
         c.objects.extend(draw_objects(&streamed));
         c.cmds.push(ffx_gfx::Cmd::Draw(Box::new(streamed)));
         s.capture = Some(c);
         return;
     }
-    for &(_, id, _, _) in &streamed.vertex {
+    // Vertex and index rings: their contents at this draw, when they
+    // changed since the last one.
+    let rings = streamed
+        .vertex
+        .iter()
+        .map(|v| v.1)
+        .chain((streamed.index.0 != 0).then_some(streamed.index.0));
+    for id in rings {
         if let Some(buf) = s.buffers.get(&(id as usize))
             && buf.desc[1] == 2
             && let Some(sh) = &buf.shadow
@@ -1347,8 +1449,12 @@ pub unsafe fn on_present(swap_chain: Ptr) {
         }
         return;
     }
+    SWAP_CHAIN.store(swap_chain as usize, Ordering::Release);
     if let Some(mut c) = PENDING.lock().ok().and_then(|mut p| p.take()) {
         c.add_sample(sample(0, When::Present));
+        // SAFETY: inside its Present.
+        c.backbuffer = unsafe { back_buffer(swap_chain) };
+        c.reborn_at = s.reborn.len();
         c.lines
             .push(format!("start at present {}", present_count()));
         s.capture = Some(c);
@@ -1396,6 +1502,9 @@ fn frames_text(refs: &[Ref]) -> String {
                     let _ = writeln!(out, "thread {} start {:08x} {}", t.id, t.start, t.role);
                 }
             }
+            Ref::Reborn { frame, id } => {
+                let _ = writeln!(out, "reborn {id:#x} by frame {frame}");
+            }
             Ref::Keys(_) | Ref::Target { .. } => {}
         }
     }
@@ -1409,6 +1518,12 @@ fn finish(s: &State, mut c: Capture) -> (String, Option<Sender<String>>) {
     let started = std::time::Instant::now();
     let dir = c.opts.dir.clone();
     c.refs.push(Ref::Threads(threads(c.present_thread)));
+    for &id in s.reborn.get(c.reborn_at..).unwrap_or(&[]) {
+        c.refs.push(Ref::Reborn {
+            frame: c.frame,
+            id: id as u32,
+        });
+    }
     let mut objects = String::new();
     let mut resources = BTreeSet::new();
     for &v in &c.views {
@@ -1554,6 +1669,12 @@ fn write_refs(c: &Capture) {
 fn finish_hashed(s: &State, mut c: Capture) -> (String, Option<Sender<String>>) {
     let started = std::time::Instant::now();
     c.refs.push(Ref::Threads(threads(c.present_thread)));
+    for &id in s.reborn.get(c.reborn_at..).unwrap_or(&[]) {
+        c.refs.push(Ref::Reborn {
+            frame: c.frame,
+            id: id as u32,
+        });
+    }
     let draws: u32 = c.frames.iter().map(frame_draws).sum();
     let frames = c.frames.len();
     let stream = snapshot(s, &mut c);
@@ -1741,21 +1862,38 @@ pub(super) fn draw_objects(d: &ffx_gfx::Draw) -> impl Iterator<Item = usize> + '
     .map(|id| id as usize)
 }
 
-/// A light message for object `id` (hash-only captures): textures and
-/// buffers without their contents.
-fn light_msg(s: &State, id: usize) -> Option<ffx_gfx::Msg> {
+/// A light message for object `id` (hash-only captures): a texture's one
+/// subresource holds its 8-byte content hash (row pitch 0; 0 for render
+/// and depth targets, whose contents change in the frame), a static
+/// vertex buffer's data its hash, a static index buffer its data, a ring
+/// nothing (each draw's `UpdateBuffer` brings the bytes it reads).
+fn light_msg(s: &State, c: &mut Capture, id: usize) -> Option<ffx_gfx::Msg> {
     if let Some(t) = s.textures.get(&id) {
+        let target = t.desc[8] & (BIND_RENDER_TARGET | BIND_DEPTH_STENCIL) != 0;
+        let h = if target { 0 } else { texture_hash(s, c, id) };
         return Some(ffx_gfx::Msg::Texture {
             id: id as u32,
             desc: t.desc,
-            subresources: Vec::new(),
+            subresources: vec![ffx_gfx::Subresource {
+                row_pitch: 0,
+                data: h.to_le_bytes().to_vec(),
+            }],
         });
     }
     if let Some(b) = s.buffers.get(&id) {
+        let data = if b.desc[1] == 2 {
+            Vec::new()
+        } else if b.desc[2] & super::BIND_INDEX != 0 {
+            buffer_bytes(s, c, id).unwrap_or_default()
+        } else {
+            buffer_bytes(s, c, id)
+                .map(|d| super::hash(&d).to_le_bytes().to_vec())
+                .unwrap_or_default()
+        };
         return Some(ffx_gfx::Msg::Buffer {
             id: id as u32,
             desc: b.desc,
-            data: Vec::new(),
+            data,
         });
     }
     object_msg(s, id)
@@ -1773,17 +1911,15 @@ fn snapshot(s: &State, c: &mut Capture) -> Vec<u8> {
             objects.insert(v.resource);
         }
     }
-    let hash = c.opts.hash;
-    let mut msgs: Vec<ffx_gfx::Msg> = objects
-        .iter()
-        .filter_map(|&id| {
-            if hash {
-                light_msg(s, id)
-            } else {
-                object_msg(s, id)
-            }
-        })
-        .collect();
+    let mut msgs: Vec<ffx_gfx::Msg> = Vec::new();
+    for &id in &objects {
+        let m = if c.opts.hash {
+            light_msg(s, c, id)
+        } else {
+            object_msg(s, id)
+        };
+        msgs.extend(m);
+    }
     // Views after their resources.
     msgs.extend(objects.iter().filter_map(|&id| view_msg(s, id)));
     for m in &msgs {
