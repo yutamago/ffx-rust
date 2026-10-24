@@ -1,0 +1,65 @@
+# Event: the arrival at Besaid, the cut scene save slot 2 (ffx_002: the sea
+# off Besaid, map 0x46 entrance 0x41, bsil0000, scenario 111) plays on
+# load. Tidus swims up from the deep and surfaces ("Tidus: Rikku!"), the
+# Aurochs on the beach ("Hey! You okay?"), Tidus waves ("Tidus: Heeey!")
+# and shows off a blitzball kick, the ball flying in over the beach, and
+# the control comes back with Tidus treading water off the beach.
+#
+# The control check guards a report (2026-10-24) of Tidus left in the
+# upside-down pose of the swim when the control comes back: the player
+# chr's motion id (*0x01300788 + 0x72c, Ch_MotionGetId's field; the player
+# pointer, Sg_SetPlayer's, is 0 until then and the range reads '-') is
+# traced, and shot 7 shows him. In 22 runs to the control (original and
+# Rust, fast and realtime) it was motion 0x000110b8, upright, every time.
+#
+# realtime (as event-cliff.txt): the scene is voiced and keeps time with
+# its voice stream. The shots are pinned to the scene: the frame message
+# window 0 opens for the first subtitle (state 2 at g_AtelMsgWindows +
+# 0x14, 0x01326d84) and fixed waits after it. The event count read
+# back with each shot lands in the replay's output. The first subtitle
+# comes about 640 counts (21 s) after the load; a scene that never starts
+# fails the `waitfor` after 1500 frames.
+#
+# Ranges: the map and previous map, the scenario, message windows 0 and 1,
+# the global random generator, the party records (as event-cliff), and
+# Tidus's position and rotation: the player's worker 0 of ctrl work 0
+# (*0x01325bbc + 0x558: x +0 and z +8, rotation +0x30..+0x3b; not y,
+# which bobs every frame once the control is back, so its count of values
+# followed how many frames the trace ran on), and the player chr's motion
+# id (above). No view matrix: the camera keeps time with the voice. The trace starts at event
+# count 256 (Tidus swimming up), not at the load: in the event's first 40
+# frames one of two original runs showed a one-frame value in the map
+# words' 16 bytes and in Tidus's position that the other did not.
+#
+# Screenshots (event-arrival-<n>.bmp): 1 "Tidus: Rikku!", 2 Tidus close
+# up, 3 "Tidus: Blitzball!!", 4 the Aurochs ("Hey! You okay?"), 5 the
+# kicked ball in the sky, 6 the ball coming down over the beach, 7 Tidus
+# in the water with the control back (30 frames after it).
+realtime
+load direct 2 bsil0000
+waitfor 0x01325d94:4 00010000 00ffffff 1500
+trace 0x0112ca90:4 0x0112d67c:2 0x01326d84:12 0x01326db0:12 0x00c42200:4 0x0113205c:0xa68 *0x01325bbc+0x558:4 *0x01325bbc+0x560:4 *0x01325bbc+0x588:12 *0x01300788+0x72c:4
+waitfor 0x01326d84:4 02000000 ffffffff 1500
+read 0x01325d94 4
+shot $OUT\event-arrival-1.bmp
+wait 240
+read 0x01325d94 4
+shot $OUT\event-arrival-2.bmp
+wait 180
+read 0x01325d94 4
+shot $OUT\event-arrival-3.bmp
+wait 120
+read 0x01325d94 4
+shot $OUT\event-arrival-4.bmp
+wait 360
+read 0x01325d94 4
+shot $OUT\event-arrival-5.bmp
+wait 80
+read 0x01325d94 4
+shot $OUT\event-arrival-6.bmp
+# the control comes back (ctrl work 0 +0 bit 1, AtelUcOn): Tidus upright
+waitfor 0x01325ba0:1 02 02 900
+wait 30
+read 0x01325d94 4
+readp 0x01300788 0x72c 4
+shot $OUT\event-arrival-7.bmp

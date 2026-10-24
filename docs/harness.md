@@ -160,6 +160,25 @@ hooked, in functions and bytes (body sizes from the Ghidra dump), the
 biggest areas (name prefixes) that never ran, and every port that never
 ran, biggest first.
 
+The event-script natives are mostly invisible to this mode (rp-events2,
+2026-10-24). The interpreter runs in Rust (`Script_Run`), and its native
+dispatch (`run::script_call_native` / `_poll_` / `_finish_`) looks each
+table entry up in `native::find` (and the per-module `find`s it chains to)
+and calls the Rust version directly, so the native's own hook, and its
+`int3`, is never entered. A native counts only when other code calls it
+through its address: `Native_MsgOpen` and `Native_MsgSetPos` by
+`AtelOpenChoiceWindow`, for instance. In a Rust run of
+`event-agency.txt`, which calls `Native_MsgSetText` for every message, the
+first byte of `Native_MsgSetText` (`0x00857870`) still held the unfired
+`int3` after the book's text was on screen. The `Native_` line of the
+report ("never ran") therefore lists natives the replays do run; coverage
+mode on the original code (an `int3` on every hooked port's first byte
+with `--hook-disable replacements`) counts them. Run that way, the ten
+replays and the five coverage sessions reached 4,950 hooked ports, 432 of
+them natives, where the hook-hit union of the same runs has 3,512; the
+candidates file is every `ported!` address with its first byte
+(`~/ffx-work/rp-events2/natcand.py`, `covrun.sh`, `covattr.py`).
+
 ## Snapshots and replays
 
 Two tools for checking Rust replacements against the original code on real
@@ -471,6 +490,90 @@ per run: the variable goes through the Windows environment). A replay that
 stops early like this leaves its later shots missing and its trace's last
 line cut: `shot-compare.py` reports a missing shot as a failure and goes on
 with the other replays' shots, and `replay-compare.py` drops a cut line.
+
+`tools/replays/event-agency.txt` (2026-10-24, lockstep, fast mode, about
+20 s) plays the Thunder Plains travel agency from save slot 5 (`ffx_005`,
+`kami0100`, map `0x107`): a book with a Read/Don't read choice and five
+pages, out of the front door (worker 23's line, `Native_MapChange(256,
+2)`) to the plains (map `0x100`), the chest by the door (the
+lightning-dodge prize: "Amazing! You've dodged 200 lightning bolts in a
+row!", then "Obtained Venus Sigil!", `Native_015b_GiveEventReward`, a key
+item), back in (entrance 1), the counter (two messages and the four-way
+choice Rest / Buy weapons / Buy items / Leave) and Rest (fade out, the inn
+music, every member's HP and MP restored, fade in). Each map's inputs and
+shots are pinned to ctrl work 0's count, as in event-besaid. Rest waits
+for its music file and its sound (real time), and after it the plains'
+rain and lightning and some agency animations were no longer at the same
+phase (after a rest, shots of the plains differed by 47,000-67,000 pixels
+between original runs), so Rest comes last and no shot follows it; the
+script waits for the control to come back (ctrl work 0 `+0` bit 1,
+`0x01325ba0`, which `AtelUcOn` sets). Traced: the map and previous map
+(`0x0112ca90`, 4 bytes: the 16 of event-besaid had a one-frame value at a
+talk in one of three original runs), scenario, player position (left out
+of the comparison, `--ignore 2`, as event-besaid's), view matrix, message
+windows 0 and 1, the random generators, the party records, the key items
+(`g_SaveImportant` `0x01130f1c`) and ctrl work 0's byte `+3` (bit 2 while
+an event reward is given; its byte `+0` had a one-frame value at the map
+change in one of two original runs). Seven shots: the agency, the book's
+choice, its first page, the plains by the door, the chest's first message,
+"Obtained Venus Sigil!", the counter's choice. They are on the `eye` list:
+the plains' shots (4-6) show the chocobo icon at the bottom right (x
+1227-1262, y 661-705), which animates by the wall clock as on event-besaid's
+maps (570-980 pixels against the recording; the original runs agreed there
+by chance). A `MASKS` entry in `tools/shot-compare.py` for
+`event-agency-4..6` (as event-besaid's) would let the exact comparison
+take them; shots 1-3 and 7 gave 0-5 pixels.
+
+Message windows 0 and 1 are traced from `+0x14` for 8 bytes, not 12. Their
+`+0x1c..+0x1f` (the choice flag byte `+0x1d` and the answer `+0x1e`) go from
+`04 00 00 00` to `04 10 ff ff` in one frame when the book's Read is
+confirmed, in every original run (0 of 25, plus 0 of 6 with coverage mode's
+first-call traps); with the Rust replacements the trace showed one frame
+in between in 3 of 26 plain runs and in about two of three in hook-hit
+mode. Turning hooks off by file (`FFX_HOOK_DISABLE`, six hook-hit runs
+each) found no single culprit: with all of `system.rs`'s second half off
+(757 hooks, `Difference_009ddc80` to `MagicFile_Load` in file order,
+mostly `Kernel*` lookups and `TO*` text and menu drawing) 0 of 12 runs
+showed it, with either half of those 757 off 3 of 6 (a bisection down the
+second half kept finding it), with `script.rs`, `menu.rs`, `map.rs`,
+`vfx*.rs`, `battle.rs` or the rest off 2-5 of 6. A race with a thread, or
+timing that the trap cost tips, rather than one wrong port; the probe is
+`~/ffx-work/rp-events2/cam.txt` and `ab.sh` (rp-events2, 2026-10-24).
+
+`tools/replays/event-arrival.txt` (2026-10-24, `realtime`, about 90 s, the
+longest replay) plays the cut scene save slot 2 (`ffx_002`, the sea off
+Besaid, `bsil0000` entrance `0x41`, scenario 111) runs on load, into the
+control: Tidus swims up and surfaces ("Tidus: Rikku!"), "Tidus:
+Blitzball!!", the Aurochs on the beach ("Hey! You okay?"), the kick, the
+ball over the beach, then Tidus treading water with the control back.
+Voiced, so `realtime` as event-cliff, with the shots pinned to the first
+subtitle (window 0 state 2) and fixed waits after it (two original runs
+read the event count within 10 of each other at each shot), and the last
+one to the control (ctrl work 0 `+0` bit 1). The first subtitle comes
+about 640 counts (21 s) after the load, the control about 1,280 frames
+after it. Traced from event count 256 on (in the event's first 40 frames
+one original run of two showed a one-frame value in the map words and in
+Tidus's position): the map words, scenario, message windows, the global
+generator, the party records, Tidus's x, z and rotation (the player's
+worker 0, `*0x01325bbc + 0x558`, `+0x560`, `+0x588`; not y, which bobs every
+frame once the control is back) and the player chr's motion id
+(`*0x01300788 + 0x72c`: `Sg_SetPlayer`'s pointer, 0 and so `-` until the
+control, then `Ch_MotionGetId`'s field). On the `eye` list: two original
+runs differ by 127,000-846,000 pixels per shot (water, the moving camera).
+
+The control check answers a report (2026-10-24) that Tidus sometimes stays
+in the upside-down pose of the swim when this scene ends. On the
+`load direct 2` path no FMV plays (the movie number `0x00c40e28` stays -1;
+the `Native_b000_MovieStart` of `bsil0000`'s worker 24 entry 5, which
+worker 0 entry 17 requests, was not reached; after the load the screen is
+black, then fades into the in-engine swim). In 22 runs to the control
+(6 fast lockstep and 3 realtime each on the original code and the Rust
+replacements, and 4 with the coverage session's presses during the
+scene) Tidus came back upright every time: motion `0x000110b8`, worker 0 at
+(-184.8, 3.5, -46.7), yaw -1.82, ctrl byte `0x8b`, and a press of Up moved
+him (to about (-177, -75)). Not reproduced on these paths; the replay
+guards it from now on (a wrong motion at the control changes the last
+range's value).
 
 `tools/replays/menu-browse.txt` opens the main menu and takes screenshots
 at fixed frames. Some of the screen animates by the wall clock (the
