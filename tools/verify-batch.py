@@ -145,6 +145,7 @@ def main():
     if any(f.startswith("crates/") for f in changed):
         run(["python3", "-I", "tools/check-ported.py"], env, dry)
         run(["python3", "-I", "tools/check-clobber.py"], env, dry)
+        run(["python3", "-I", "tools/check-callwidth.py"], env, dry)
         run(["tools/build-hook.sh"], None, dry)
         if "--no-replays" not in sys.argv:
             run(["tools/replays/run-all.sh"], env, dry)
