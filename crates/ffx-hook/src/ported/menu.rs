@@ -5128,6 +5128,21 @@ ported! {
         let local = frame.at();
         tk::menu_summon_grow_window_draw(&mut mem(), w, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuCtrlAbilityMap2(w)` (a menu slot's ctrl, through
+    /// `g_TkMenuMainOptionOrder`): `eiAbmCalc`'s `eax`, 0 or `state - 1`.
+    TkMenuCtrlAbilityMap2 @ 0x008e_26d0 => extern "C" fn tk_menu_ctrl_ability_map2(w: u32) -> u32 {
+        ffx_menu::ability_map::bridge::tk_menu_ctrl_ability_map2(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuDrawAbilityMap2_008e2720(w)` (the slot's draw): the last
+    /// `TkMenuDrawKick`'s `eax`.
+    TkMenuDrawAbilityMap2_008e2720 @ 0x008e_2720 => extern "C" fn tk_menu_draw_ability_map2(w: u32) -> u32 {
+        ffx_menu::ability_map::bridge::tk_menu_draw_ability_map2(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuExecScene(i, handle, out)`: the tracks' OR; the block goes
+    /// into the `handle` slot, as in the original.
+    TkMenuExecScene @ 0x00a7_b460 => extern "C" fn tk_menu_exec_scene(i: u32, handle: u32, out: u32; slots: u32) -> u32 {
+        ffx_menu::scene::bridge::tk_menu_exec_scene(&mut mem(), i, handle, out, slots, &mut |_, f, a| call_ptr(f, a))
+    }
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry

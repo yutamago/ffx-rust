@@ -11797,7 +11797,8 @@
 0x008e2630 function TkMn2GetMainPos           # fh switch:bsim1.00 0x71004d55d0
 0x008e2690 function TkScreenToMenuX           # (x) -> float(x) * 512 / 1920 (a 1920-wide coordinate in the 512-wide menu)
 0x008e26b0 function TkScreenToMenuY           # (y) -> float(y) * 416 / 1080
-0x008e26d0 function TkMenuCtrlAbilityMap2     # fh v3:exact 0x008e26d0
+0x008e26d0 function TkMenuCtrlAbilityMap2     # fh v3:exact 0x008e26d0; cdecl(w): menu pads read; state w+0x1c 0: TOMenuGetFirstReadEndFlag 0 -> return 0, else eiAbmStart, state 1; state 1: tail jmp eiAbmCalc (eax); other states return state-1; slot g_TkMenuMainOptionOrder+0x20 (refs.py: 1 data ref 0x00c5b2f4); ported (ffx_menu::ability_map, small r8)
+0x008e2720 function TkMenuDrawAbilityMap2_008e2720 # cdecl(w): the sphere grid menu's draw (slot g_TkMenuMainOptionOrder+0x24, refs.py: 1 data ref 0x00c5b2f8): TOMenuOpenPktBuffTmp, TODrawScissorXYWH(0,0,512,416), TODrawBoxXYWHC2(0,0,512,416,0x80000000 x2), TOMenuDrawKickTmp, TkVU1SyncPath, TkMenuDrawKick x2, eiAbmDrawFrame when w+0x1c, TkMenuDrawKick, TkMenuDrawEnv, tail jmp TkMenuDrawKick (eax); name ours; ported (ffx_menu::ability_map, small r8)
 0x008e2790 function TOMenuEndScreenX2_008e2790 # cdecl(w): w+0x1c = 0, TkMenuSetScreenX2Flag(0) (eax returned), byte 0x01340858 = 1; no direct callers (a window function); ported (system round 37); name ours
 0x008e27e0 function TOMenuTermAbilityMap2     # fh switch:bsim1.00 0x71004b6970; (): TkMenuSetScreenX2Flag(0), SndSepPlaySimple(0x80000001), TkMenuMainSleepMenu(0x13), TkMenuMainActiveMenu(1, 0)
 0x008e2870 function TkMenuCtrlHdd             # fh v3:exact 0x008e2870
@@ -14311,7 +14312,7 @@
 0x00a7b1a0 function CopyCuttingLines_00a7b1a0 # cdecl(dst, src): src copied with line feeds turned into terminators, returns length + 1 (null src: empty dst, 0); caller 0x00a7aee0; name ours
 0x00a7b220 function TOMenuExecLayerHandle     # fh v3:exact 0x00a7b220
 0x00a7b290 function MenuScene_KeyPick_00a7b290 # cdecl(keys, track, frame, frames, out) -> 0x00a7bbc0's eax: track key pair A = keys[u16 +8], B = keys[u16 +0xa]: (B) while i16 +6 < 0 or frame == frames, (A) at frame 0, else t = MenuScene_KeyEase(*B, frame, frames): (*A, B, A, t) when the keys' low 11 bits match, else B from t >= 0.5, A below; callers 0x00a7b510; ported in system round 42; name ours
-0x00a7b460 function TkMenuExecScene           # fh v3:exact 0x00a7b460
+0x00a7b460 function TkMenuExecScene           # fh v3:exact 0x00a7b460; cdecl(i, handle, out) -> OR of the tracks: 0 for handle 0, no block g_TkMenuSceneData[i] or record +4 bit 31 clear; g_TkMenuSceneOffsetX/Y = i16 +8/+0xa; list = block + (+4 & 0x3fffffff): count, 20-byte tracks, each MenuScene_TrackStep(block, list, track, block + [block+0x80], out); OR 0 clears record +4 bit 30; keeps the block in its handle arg slot; ported (ffx_menu::scene, small r8)
 0x00a7b510 function MenuScene_TrackStep_00a7b510 # cdecl(base, list, track, table, out) -> 1, 0 after opcode 0: one frame of a scene track's key script (base + table[track+0 low 30 bits], u16 pc +8; opcodes low 11 bits, jump table 0x00a7b770: 0 end, 1 step, 2 wait for list entry i16 +0xc (searched against list[1] only) with +4 bit 31, 3 hold, 4..7/10 key with wait = frames = operand, 8 loop to u16 +0xe by count i16 +0x10 (bit 11: always), 9 loop mark); lengths 0x00c89c40; wait u16 +4 counts down first; ends in MenuScene_KeyPick(script, track, u16 +4, i16 +6, out); callers TkMenuExecScene, 0x00a7b360; ported (ffx_system::scene, small r6); name ours
 0x00a7b7a0 function TkMenuGetParam               # (i, offset) -> u32 at g_TkMenuSceneData[i] + 4 + offset (0 for a negative offset or no block); the Switch TkMenuGetParam (52 bytes) sorts between TkMenuExecScene and TkMenuGetParamHandle, as here
 0x00a7b7d0 function TkMenuGetParamHandle      # fh v3:exact 0x00a7b7d0
@@ -17774,6 +17775,8 @@
 0x022fb4d4 label    g_MenuWaitFrames           # CT_401D_init (0x00a78210) sets 1; Native_MenuOpen_Poll counts it down
 0x022fb4d8 label    g_ChrWaitMotionFrames     # frames Native_ChrWaitMotion_Poll_501e waited, counted while 0x012fb80c is 1
 0x022fb4dc label    g_TkMenuSceneData         # 8 menu scene data blocks (TkMenuSetSceneDataAdrs, TkMenuInitSeq zeroes them; layout in crates/ffx-menu/src/scene.rs)
+0x022fb4fc label    g_TkMenuSceneOffsetX       # i32: the running scene record's i16 +8 (TkMenuExecScene), added to the key x by the scene draws in 0x00a70000; name ours
+0x022fb500 label    g_TkMenuSceneOffsetY       # i32: the running scene record's i16 +0xa (TkMenuExecScene); name ours
 0x022fb504 label    g_Settings
 0x022fb540 label    g_Magic275Matrices         # 3 matrices (0x40 each) for g_MagicMatrixSwap
 0x022fb6c0 label g_CdChannelNames # CD channel names, 0x80 bytes each, cleared by cd_channel_clear 0x0076d530; name ours

@@ -20973,3 +20973,190 @@ fn small7_d_arms_refresh_matches_the_original() {
         );
     }
 }
+
+/// Small round 8 a: `TkMenuCtrlAbilityMap2` from states 0, 1 and others
+/// with the first read done or not, `TkMenuDrawAbilityMap2_008e2720` with
+/// and without the grid frame, and `TkMenuExecScene` on blocks present or
+/// missing, 0 and wrapping handles, records started or not, -1..4 tracks
+/// whose steps return 0 or bits (a step that flips the record's flags
+/// word, to show the final read); every callee logged with its arguments.
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn small8_a_ability_map_and_exec_scene_match_the_original() {
+    use ffx_menu::{ability_map as am, scene};
+    let Some(mut t) = setup_any(0x5a11_8a01) else {
+        return;
+    };
+    let log = t.alloc(&vec![0; 0x4000]);
+    let cursor = t.alloc(&log.to_le_bytes());
+    let (read_end, steps, flags_at, calc) = (
+        t.alloc(&[0; 4]),
+        t.alloc(&[0; 4]),
+        t.alloc(&[0; 4]),
+        t.alloc(&[0; 4]),
+    );
+    let ret = |cell: u32| [&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat();
+    // mov eax, [steps]; and eax, 3; shr dword [steps], 2; ret
+    let step_post = [
+        &[0xa1][..],
+        &steps.to_le_bytes(),
+        &[0x83, 0xe0, 0x03, 0xc1, 0x2d],
+        &steps.to_le_bytes(),
+        &[0x02, 0xc3],
+    ]
+    .concat();
+    // mov eax, [flags_at]; xor dword [eax], 0x40000001
+    let step_pre = [
+        &[0xa1][..],
+        &flags_at.to_le_bytes(),
+        &[0x81, 0x30, 0x01, 0, 0, 0x40],
+    ]
+    .concat();
+    let callees: Vec<(u32, u8, Vec<u8>, Vec<u8>)> = vec![
+        (am::callee::GET_CONTROL_PAD, 0, vec![], vec![]),
+        (am::callee::GET_CONTROL_PAD_REP, 0, vec![], vec![]),
+        (am::callee::GET_CONTROL_PAD_TRG, 0, vec![], vec![]),
+        (
+            am::callee::GET_FIRST_READ_END_FLAG,
+            0,
+            vec![],
+            ret(read_end),
+        ),
+        (am::callee::ABM_START, 0, vec![], vec![]),
+        (am::callee::ABM_CALC, 0, vec![], ret(calc)),
+        (am::callee::OPEN_PKT_BUFF_TMP, 0, vec![], vec![]),
+        (am::callee::DRAW_SCISSOR_XYWH, 4, vec![], vec![]),
+        (am::callee::DRAW_BOX_XYWH_C2, 6, vec![], vec![]),
+        (am::callee::DRAW_KICK_TMP, 0, vec![], vec![]),
+        (am::callee::VU1_SYNC_PATH, 0, vec![], vec![]),
+        (am::callee::DRAW_KICK, 0, vec![], vec![]),
+        (am::callee::ABM_DRAW_FRAME, 0, vec![], vec![]),
+        (am::callee::DRAW_ENV, 0, vec![], vec![]),
+        (scene::bridge::TRACK_STEP, 5, step_pre, step_post),
+    ];
+    for (k, (f, n, pre, post)) in callees.into_iter().enumerate() {
+        let id = 0x8a00 + u32::try_from(k).unwrap();
+        let post = if post.is_empty() {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        } else {
+            post
+        };
+        small7_log(&mut t, f, cursor, id, n, &pre, &post);
+    }
+    let window = t.alloc(&[0; 0x40]);
+    for round in 0..300u32 {
+        t.put(cursor, log);
+        let st = t.rng.pick(&[0u32, 0, 1, 1, 2, 7, 0x100, u32::MAX]);
+        t.put(window + 0x1c, st);
+        let v = t.rng.pick(&[0u32, 1, 0x100]);
+        t.put(read_end, v);
+        let v = t.rng.pick(&[0u32, 1, 2, 0x8a05]);
+        t.put(calc, v);
+        t.twin(
+            &format!("TkMenuCtrlAbilityMap2 {round}"),
+            0x008e_26d0,
+            &[window],
+            U32,
+            |o| {
+                w(am::bridge::tk_menu_ctrl_ability_map2(
+                    o,
+                    window,
+                    &mut callback,
+                ))
+            },
+        );
+        t.put(cursor, log);
+        t.twin(
+            &format!("TkMenuDrawAbilityMap2 {round}"),
+            0x008e_2720,
+            &[window],
+            U32,
+            |o| {
+                w(am::bridge::tk_menu_draw_ability_map2(
+                    o,
+                    window,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    let blocks: Vec<u32> = (0..3).map(|_| t.alloc(&[0; 0x400])).collect();
+    let data = t.sym(0x022f_b4dc);
+    // TkMenuExecScene keeps the block in its handle slot: the original's
+    // slots are below Oracle::call's top of stack; the port's go lower
+    // (the callbacks' own arguments reuse that top)
+    let a_slot = t.a.stack_range().end - 0x100 - 12;
+    let slot = t.b.stack_range().start + 0x80;
+    for round in 0..600u32 {
+        t.put(cursor, log);
+        for k in 0..8 {
+            let v = t.rng.pick(&[0, blocks[0], blocks[1], blocks[2]]);
+            t.put(data + 4 * k, v);
+        }
+        let i = t.rng.below(8);
+        let base = Mem::read::<u32>(&t.b, data + 4 * i);
+        let handle = t.rng.pick(&[0u32, 0x100, 0x100, 0x100, 0x140, 1]);
+        let handle = if round % 37 == 3 {
+            base.wrapping_neg()
+        } else {
+            handle
+        };
+        for b in &blocks {
+            // the record at handle 0 (the block's own +4)
+            let v = t.rng.pick(&[0u32, 0x8000_0200]);
+            t.put(b + 4, v);
+            let tab = t.rng.pick(&[0x300u32, 0x340, 0]);
+            t.put(b + 0x80, tab);
+            for rec in [0x100u32, 0x140] {
+                let started = t.rng.pick(&[0x8000_0000u32, 0x8000_0000, 0]);
+                let ended = t.rng.pick(&[0x4000_0000u32, 0]);
+                let list = t.rng.pick(&[0x200u32, 0x280]);
+                let flags = if t.rng.below(8) == 0 {
+                    0
+                } else {
+                    started | ended | list
+                };
+                t.put(b + rec + 4, flags);
+                let v = t.rng.next();
+                t.put(b + rec + 8, v);
+            }
+            for list in [0x200u32, 0x280] {
+                let n = t.rng.pick(&[u32::MAX, 0, 1, 2, 4]);
+                t.put(b + list, n);
+                for k in 0..0x14 {
+                    let v = t.rng.next();
+                    t.put(b + list + 4 + 4 * k, v);
+                }
+            }
+        }
+        let v = t.rng.pick(&[0u32, 0, 0x1, 0x40, 0xffff]);
+        t.put(steps, v);
+        let f = base.wrapping_add(handle).wrapping_add(4);
+        let f = if round % 3 == 0 { f } else { window + 0x30 };
+        t.put(flags_at, f);
+        t.scramble(scene::bridge::SCENE_OFFSET_X, 8);
+        let out = t.rng.next();
+        Mem::write(&mut t.b, slot + 4, handle);
+        t.twin(
+            &format!("TkMenuExecScene {round}"),
+            0x00a7_b460,
+            &[i, handle, out],
+            U32,
+            |o| {
+                w(scene::bridge::tk_menu_exec_scene(
+                    o,
+                    i,
+                    handle,
+                    out,
+                    slot,
+                    &mut callback,
+                ))
+            },
+        );
+        assert_eq!(
+            Mem::read::<u32>(&t.a, a_slot + 4),
+            Mem::read::<u32>(&t.b, slot + 4),
+            "TkMenuExecScene {round}: the handle slot"
+        );
+    }
+}

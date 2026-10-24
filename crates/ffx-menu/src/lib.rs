@@ -4,6 +4,7 @@
 //! becomes a core (portable, on its own types) and a `bridge` function over
 //! game memory (`docs/porting.md`), one module per family:
 //!
+//! - [`ability_map`]: the sphere grid's menu slot (ctrl and draw);
 //! - [`arms`]: the field models' weapon and armour refresh
 //!   (`TkMn2ArmsRefreshArms`);
 //! - [`gu`]: windows, controls, selectors, the text cursor, GS packets;
@@ -14,6 +15,7 @@
 //! - [`scissor`]: the menu's software scissor;
 //! - [`tk`]: menu state, pads, vibration, the save CRC, command lists.
 
+pub mod ability_map;
 pub mod arms;
 pub mod gu;
 pub mod main_loop;
