@@ -4817,7 +4817,7 @@ pub fn atel_exec_vibrate(h: &mut impl ffx_bridge::Host, update: u32, frame: u32)
 }
 
 /// `Atel_SetChrAltParts_008720e0(chr, on)` (name ours; caller
-/// `Native_7080`): with a character, `on` hides its model part 1 and shows
+/// `Native_7080_ChrSetAltParts`): with a character, `on` hides its model part 1 and shows
 /// part 2 (`Ch_ModelSetHide(chr, 1, 1)`, `(chr, 2, 0)`), else the other
 /// way round.
 pub fn atel_set_chr_alt_parts(h: &mut impl ffx_bridge::Host, chr: u32, on: u32) {

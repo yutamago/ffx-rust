@@ -172,7 +172,7 @@ pub mod bridge {
     }
 
     /// `MsSetMonsterVisible_007969a0(m, v)` (name ours; caller
-    /// `Native_7127`): [`ms_set_chr_visible`] of monster `m` (actor `m +
+    /// `Native_7127_MonsterSetVisible`): [`ms_set_chr_visible`] of monster `m` (actor `m +
     /// 0x14`); returns `m + 0x14`.
     pub fn ms_set_monster_visible<M: Mem>(mem: &mut M, call: Call<'_, M>, m: u32, v: u32) -> u32 {
         let i = m.wrapping_add(0x14);

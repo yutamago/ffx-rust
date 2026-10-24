@@ -1595,7 +1595,7 @@ const UNINIT: [Uninit; 9] = [
         ],
         fixup: Some((8, 0x00c6_13d8)),
     },
-    // MsGetTargetDist (0x007a9a40, behind Native_702e) takes the target
+    // MsGetTargetDist (0x007a9a40, behind Native_702e_GetTargetDist) takes the target
     // and actor positions into [ebp-0x28..-0x8] and reads words of them
     // the callees leave unwritten. Same site; the stub zeroes the nine
     // words: push edi; lea edi, [ebp-0x28]; xor eax, eax; push ecx;
@@ -1623,7 +1623,7 @@ const UNINIT: [Uninit; 9] = [
         ],
         fixup: Some((17, 0x00c6_13d8)),
     },
-    // Native_702c (0x007a45c0) reads the pair 0x00794d20 fills at
+    // Native_702c_ChrMoveToTarget (0x007a45c0) reads the pair 0x00794d20 fills at
     // [ebp-0x34]/[ebp-0x30] (unwritten for some actors) into the actor's
     // +0x490/+0x494; the stub zeroes [ebp-0x54..-0x8], 19 words, the same
     // way as the one above.
@@ -1636,7 +1636,7 @@ const UNINIT: [Uninit; 9] = [
         ],
         fixup: Some((17, 0x00c6_13d8)),
     },
-    // MsSetChrDirTarget (0x00795eb0, behind Native_7003/7006 and others)
+    // MsSetChrDirTarget (0x00795eb0, behind Native_7003_ChrSetDirTarget/7006 and others)
     // stores the angle 0x00794d20 leaves at [ebp-0x18] into the actor's
     // +0x490, unwritten for some targets; the stub zeroes [ebp-0x1c..-0x8],
     // 6 words.
@@ -1663,7 +1663,7 @@ const UNINIT: [Uninit; 9] = [
         ],
         fixup: None,
     },
-    // 0x007a87f0 (the turn steps behind Native_702c) reads the direction
+    // 0x007a87f0 (the turn steps behind Native_702c_ChrMoveToTarget) reads the direction
     // MsGetChrDir leaves at [ebp-8] and the angle at [ebp-4], unwritten
     // for some actors. Site: sub esp, 8; lea eax, [ebp-8]. Stub: pop ecx;
     // mov dword [ebp-4], 0; mov dword [ebp-8], 0; those two; jmp ecx
@@ -16499,7 +16499,7 @@ fn small5g_pop_and_push_member_match_the_original() {
     small5g_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
 
-/// Small round 6 b on one pair: `Native_7076` on workers of our own
+/// Small round 6 b on one pair: `Native_7076_MoveBallSpline` on workers of our own
 /// (battle ids 0, 1, 7 and `0xff`), `MsSetBallSplineInit`,
 /// `MsSetBallSpline` and `MsMoveSpline` logged, `MsGetChr` a record of our
 /// own; the arguments random words and floats on the worker's stack.
@@ -16541,7 +16541,7 @@ fn small6b_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str)
             0x007a_56f0,
             &[w, 0, s],
             true,
-            &format!("Native_7076 {what} {round}"),
+            &format!("Native_7076_MoveBallSpline {what} {round}"),
             |r| ffx_script::vm::bridge::native_btl::native_7076(r, w, 0, s),
         );
     }

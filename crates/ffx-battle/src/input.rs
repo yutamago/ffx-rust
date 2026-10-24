@@ -64,7 +64,7 @@ pub mod bridge {
     /// The "player powerup" cheat: party members heal fully each turn.
     pub const CHEAT_POWERUP: Global<u32> = Global::new(0x012f_b7cc);
     /// Set: automatic actors (`+0xdf3`) get their menu as the rest do
-    /// (battle flag selector 3, `Native_707d`).
+    /// (battle flag selector 3, `Native_707d_BtlSetFlag`).
     pub const AUTO_OFF: Global<u8> = Global::new(0x0112_a8fa);
     /// A dword each turn's start clears (written by `0x00792de0` too).
     pub const TURN_WORD: Global<u32> = Global::new(0x0112_c8cc);
