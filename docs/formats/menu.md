@@ -1224,3 +1224,26 @@ one-target command (`0x0186a391` 1) draws the cross cursor on row
 `(22, 1)`, and the shift persists from the first row that sees the
 language. The original's `eax` is the x87 status word or the cursor's
 result, and `TkMenuDrawLayer` drops it.
+
+## The main menu's frame (small round 7)
+
+`TkMenuMainLoop_008a9ca0(mode)` (name ours; `ffx_menu::main_loop`) runs
+once per frame from `TkMenuStart` (`0x008ab030`) while `g_MovieFading`
+(`0x01340824`, here "the menu is open") is set. Modes `0x800001`/`0x800002`
+set `g_TkMenuBlackBack` (`0x01340820`: a black background, unless
+`graphicGetAbmap() == 1`), `0x800003` sets `0x01340854`; -1 keeps both.
+The first frame saves VRAM and the frame buffer (not for high half
+`0x10000`), sets the frame ratio to 0x80, runs `TOInitMenuGraph`,
+`TOSeqInitScene(1)`, `AtelEnterMenuCallback(mode)`, `MenuMain_Reset` and
+`TkMenuMainOpenMode` with (high half, low half), `TOMenuInitBrush`, and
+opens only when `MenuMain_BusyMask` is non-zero (the movie paused,
+`graphicSetFlipVsnc(1)`). Each frame: the timer byte and the counter
+`0x01841c60` step, the draw skip mask clears, `TkSyncV(0)` (Iggy menu
+`0x01340858`: `TkSyncV(2)`, a second vibration step and `IggyMenu_update`),
+the pad, the file reads, the script's menu control, `TkMenuCloseAll`, the
+shade ratio steps (0..0x80), the message window every other frame (every
+frame in the Iggy menu), the sound, the textures, the draws (a shade box
+over 0x200 × 0x1a0 when menu bit 1 is active), two kicks, the frame fade
+`0x008a9510(ratio, 0x80, 0, 0)` and the frame ratio step (0..0x80). An idle
+`MenuMain_BusyMask` closes it: the menus removed, the script recovered,
+and unless `0x10000` the VRAM restored with two more frames drawn.

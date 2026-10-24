@@ -5,6 +5,7 @@
 //! game memory (`docs/porting.md`), one module per family:
 //!
 //! - [`gu`]: windows, controls, selectors, the text cursor, GS packets;
+//! - [`main_loop`]: the main menu's frame (`0x008a9ca0`);
 //! - [`math`]: float helpers (angle wrapping, radius tests);
 //! - [`msg`]: message tables and message-window choices;
 //! - [`scene`]: menu scene data lookups;
@@ -12,6 +13,7 @@
 //! - [`tk`]: menu state, pads, vibration, the save CRC, command lists.
 
 pub mod gu;
+pub mod main_loop;
 pub mod math;
 pub mod msg;
 pub mod scene;

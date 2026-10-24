@@ -4475,6 +4475,12 @@ ported! {
         };
         tk::menu_summon_open(&mut mm, m, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuMainLoop_008a9ca0(mode)`: one frame of the main menu;
+    /// `Sg_GetDBuffDC` writes the caller's argument slot, as in the
+    /// original.
+    TkMenuMainLoop_008a9ca0 @ 0x008a_9ca0 => extern "C" fn tk_menu_main_loop(mode: u32; slots: u32) -> u32 {
+        ffx_menu::main_loop::bridge::tk_menu_main_loop(&mut mem(), mode, slots, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuWShop_OpenCommandWindow()`: `MenuWShop_OpenSubWindow4`'s result.
     MenuWShop_OpenCommandWindow @ 0x008d_8110 => extern "C" fn menu_wshop_open_command_window() -> u32 {
         let mut m = mem();

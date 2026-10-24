@@ -20647,3 +20647,198 @@ fn small6_d_summon_open_matches_the_original() {
         });
     }
 }
+
+/// A stand-in for `f` behind a jump, in both: `pre`, then it appends `id`
+/// and its first `n` arguments at `*cursor`, then `post` (which ends with
+/// its `ret`).
+fn small7_log(t: &mut Twins, f: u32, cursor: u32, id: u32, n: u8, pre: &[u8], post: &[u8]) {
+    let c = cursor.to_le_bytes();
+    let mut code = pre.to_vec();
+    code.extend([&[0x8b, 0x0d][..], &c].concat()); // mov ecx, [cursor]
+    code.extend([0xc7, 0x01]); // mov dword [ecx], id
+    code.extend(id.to_le_bytes());
+    for j in 0..n {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * j, 0x89, 0x41, 4 + 4 * j]);
+    }
+    code.extend([&[0x83, 0x05][..], &c, &[4 + 4 * n]].concat()); // add dword [cursor], 4 + 4n
+    code.extend(post);
+    jump_stub(t, f, &code);
+}
+
+/// Small round 7 c: `TkMenuMainLoop_008a9ca0` over every mode family
+/// (0x800001..3, -1, 0x10000.., others), opening or open, busy or idle on
+/// each `MenuMain_BusyMask` call (a bit sequence), the Iggy byte, skipped
+/// frames, the black background, the active mask, both ratios near their
+/// clamps; every callee logged with its arguments and a result of its own,
+/// some changing what the loop reads after them (the timer in `TkSyncV`,
+/// the Iggy byte flipped in `AtelExecMenuCtrl`, the shade in
+/// `TkMenuGetDrawShadeRatio`, the frame ratio in `sceGsSyncPath`, the open
+/// flag set or kept in `graphicSetFlipVsnc`).
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn small7_c_menu_main_loop_matches_the_original() {
+    use ffx_menu::main_loop::{callee as c, global as g};
+    let Some(mut t) = setup_any(0x5a11_7c01) else {
+        return;
+    };
+    let log = t.alloc(&vec![0; 0x4000]);
+    let cursor = t.alloc(&log.to_le_bytes());
+    let (busy, reopen) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    let (timer, iggy, shade, ratio, open) = (
+        t.sym(g::TIMER),
+        t.sym(g::IGGY),
+        t.sym(g::SHADE_RATIO),
+        t.sym(g::FRAME_RATIO),
+        t.sym(g::OPEN),
+    );
+    let rets: Vec<u32> = (0..8).map(|_| t.alloc(&[0; 4])).collect();
+    let ret = |cell: u32| [&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat();
+    let inc_byte = |at: u32| [&[0xfe, 0x05][..], &at.to_le_bytes()].concat();
+    let inc_word = |at: u32| [&[0xff, 0x05][..], &at.to_le_bytes()].concat();
+    let busy_post = [
+        &[0xa1][..],
+        &busy.to_le_bytes(),
+        &[0x83, 0xe0, 0x01, 0xd1, 0x2d],
+        &busy.to_le_bytes(),
+        &[0xc3],
+    ]
+    .concat(); // mov eax, [busy]; and eax, 1; shr dword [busy], 1; ret
+    // mov eax, [reopen]; cmp eax, -1; je +5; mov [open], eax
+    let reopen_pre = [
+        &[0xa1][..],
+        &reopen.to_le_bytes(),
+        &[0x83, 0xf8, 0xff, 0x74, 0x05, 0xa3],
+        &open.to_le_bytes(),
+    ]
+    .concat();
+    let flip_iggy = [&[0x80, 0x35][..], &iggy.to_le_bytes(), &[0x01]].concat(); // xor byte [iggy], 1
+    let slot_pre = [0x8b, 0x44, 0x24, 0x04, 0xc7, 0, 0x34, 0x12, 0, 0]; // mov eax, [esp + 4]; mov dword [eax], 0x1234
+    let callees: Vec<(u32, u8, Vec<u8>, Vec<u8>)> = vec![
+        (c::SAVE_VRAM, 0, vec![], vec![]),
+        (c::SAVE_FRAME_BUFFER, 0, vec![], vec![]),
+        (c::SET_FRAME_RATIO_DIFF, 1, vec![], vec![]),
+        (c::INIT_MENU_GRAPH, 0, vec![], vec![]),
+        (c::SEQ_INIT_SCENE, 1, vec![], vec![]),
+        (c::ENTER_MENU_CALLBACK, 1, vec![], vec![]),
+        (c::MAIN_RESET, 2, vec![], vec![]),
+        (c::OPEN_MODE, 2, vec![], vec![]),
+        (c::INIT_BRUSH, 0, vec![], vec![]),
+        (c::BUSY_MASK, 0, vec![], busy_post),
+        (c::MOVIE_HAVE_CAMERA, 0, vec![], ret(rets[0])),
+        (c::VIDEO_PAUSE, 0, vec![], vec![]),
+        (c::SET_FLIP_VSYNC, 1, reopen_pre, ret(rets[1])),
+        (c::MENU_RESET, 0, vec![], vec![]),
+        (c::SYNC_V, 1, inc_byte(timer), ret(rets[2])),
+        (c::EXEC_VIBRATE, 1, vec![], vec![]),
+        (c::IGGY_MENU_UPDATE, 0, vec![], vec![]),
+        (c::GET_DBUFF_DC, 0, slot_pre.to_vec(), vec![]),
+        (c::GET_PAD_STATUS, 0, vec![], vec![]),
+        (c::FILE_READ_MAIN, 0, vec![], vec![]),
+        (c::EXEC_MENU_CTRL, 0, flip_iggy, vec![]),
+        (c::CLOSE_ALL, 0, inc_byte(timer), vec![]),
+        (c::CONTROL_MESSAGE_WINDOW, 0, vec![], vec![]),
+        (c::SND_UPDATE, 0, vec![], vec![]),
+        (c::TRANS_TEXTURE, 0, vec![], vec![]),
+        (c::ABMAP_RESET_SEGMENTS, 0, vec![], vec![]),
+        (c::GET_ABMAP, 0, vec![], ret(rets[3])),
+        (c::DRAW_BLACK_BACKGROUND, 0, vec![], vec![]),
+        (c::DRAW_ALL, 0, vec![], vec![]),
+        (c::VU1_SYNC_PATH, 0, vec![], vec![]),
+        (c::OPEN_PKT_BUFF_TMP, 0, vec![], vec![]),
+        (c::DRAW_SCISSOR_XYWH, 4, vec![], vec![]),
+        (c::GET_DRAW_SHADE_RATIO, 0, inc_word(shade), ret(rets[4])),
+        (c::DRAW_BOX_XYWH_C2, 6, vec![], vec![]),
+        (c::DRAW_KICK_TMP, 0, vec![], vec![]),
+        (c::DRAW_MESSAGE_WINDOW, 0, vec![], vec![]),
+        (c::DAPS_DRAW, 0, vec![], vec![]),
+        (c::ABMAP_UPDATE, 0, vec![], vec![]),
+        (c::DRAW_KICK, 0, vec![], vec![]),
+        (c::GS_SYNC_PATH, 2, inc_word(ratio), vec![]),
+        (c::FRAME_FADE, 4, vec![], vec![]),
+        (c::MENU_UPDATE, 0, vec![], vec![]),
+        (c::REMOVE_ALL_MENUS, 0, vec![], vec![]),
+        (c::ATEL_RELEASE, 0, vec![], vec![]),
+        (c::RECOVER_FROM_MENU, 0, vec![], vec![]),
+        (c::RESTORE_VRAM, 0, vec![], vec![]),
+        (c::DRAW_INIT_STRING, 0, vec![], vec![]),
+        (c::DRAW_ENV, 0, vec![], vec![]),
+    ];
+    for (k, (f, n, pre, post)) in callees.into_iter().enumerate() {
+        let id = 0x7c00 + u32::try_from(k).unwrap();
+        // a result of its own (`mov eax, id; ret`) unless given
+        let post = if post.is_empty() {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        } else {
+            post
+        };
+        small7_log(&mut t, f, cursor, id, n, &pre, &post);
+    }
+    let slot = t.b.stack_range().start + 0x80;
+    for round in 0..400u32 {
+        t.put(cursor, log);
+        let mode = match t.rng.below(7) {
+            0 => 0x0080_0001,
+            1 => 0x0080_0002,
+            2 => 0x0080_0003,
+            3 => u32::MAX,
+            4 => 0x0001_0000 | t.rng.below(0x20),
+            5 => t.rng.pick(&[0x0002_0000, 0x0040_0000, 0]) | t.rng.below(0x20),
+            _ => t.rng.next(),
+        };
+        let b = t.rng.below(8);
+        t.put(busy, b);
+        let r = t.rng.pick(&[u32::MAX, u32::MAX, 0, 1, 2]);
+        t.put(reopen, r);
+        for &cell in &rets {
+            let v = t.rng.pick(&[0u32, 1, 2, 0x55]);
+            t.put(cell, v);
+        }
+        let o = t.rng.below(2);
+        t.put(open, o);
+        for gl in [
+            g::BLACK_BACK,
+            g::MODE_800003,
+            g::MOVIE_PICTURE,
+            g::SKIP_FRAME,
+        ] {
+            let v = t.rng.pick(&[0u32, 0, 1, 2]);
+            t.put(t.sym(gl), v);
+        }
+        let v = t.rng.pick(&[0u8, 0, 1]);
+        t.put(iggy, v);
+        let v = u8::try_from(t.rng.below(0x100)).unwrap();
+        t.put(timer, v);
+        t.scramble(g::FRAMES, 4);
+        t.scramble(g::DRAW_SKIP_MASK, 4);
+        t.scramble(g::CLEARED, 12);
+        let v = u8::try_from(t.rng.below(4)).unwrap();
+        t.put(t.sym(g::ACTIVE_MASK), v);
+        for (at, step) in [
+            (g::SHADE_RATIO, g::SHADE_RATIO + 4),
+            (g::FRAME_RATIO, g::FRAME_RATIO_DIFF),
+        ] {
+            let v = t
+                .rng
+                .pick(&[0u32, 1, 0x7f, 0x80, 0x40, 0xffff_ffff, 0x8000_0000]);
+            t.put(t.sym(at), v);
+            let d = t
+                .rng
+                .pick(&[0u32, 1, 2, 0xffff_ffff, 0xffff_fff0, 0x7fff_ffff]);
+            t.put(t.sym(step), d);
+        }
+        t.twin(
+            &format!("TkMenuMainLoop {round}"),
+            0x008a_9ca0,
+            &[mode],
+            U32,
+            |o| {
+                w(ffx_menu::main_loop::bridge::tk_menu_main_loop(
+                    o,
+                    mode,
+                    slot,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+}

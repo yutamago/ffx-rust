@@ -10802,6 +10802,7 @@
 0x008a9c50 function TkMenuGetTime             # save u32 +0xbc (play time); Switch name, alphabetical slot before TkMenuGetTimer
 0x008a9c60 function TkMenuGetTimer            # () -> u8 0x01840884; Switch symbol name (BSim)
 0x008a9c70 function TkMenuGetWeapon           # (chr) ply_save u8 +0x2d; Switch name, alphabetical slot
+0x008a9ca0 function TkMenuMainLoop_008a9ca0    # cdecl(mode) -> eax: one frame of the main menu, from TkMenuStart 0x008ab030 (2 calls) while g_MovieFading is set; opens (VRAM/frame buffer saved unless mode high half 0x10000, AtelEnterMenuCallback, MenuMain_Reset/TkMenuMainOpenMode(high, low)), runs, draws and closes on MenuMain_BusyMask 0; Sg_GetDBuffDC(&mode) writes its argument slot; eax the last BusyMask/graphicSetFlipVsnc while open, else TkSyncV(0); ported and hooked small r7 c (ffx_menu::main_loop, menu.rs small7_c); name ours
 0x008aa100 function TkMenuMainActiveMenu      # fh v3:exact 0x008aa0b0
 0x008aa180 function MenuMain_ResetWindowRet   # (window) MenuMain_ResetWindow, returns the window; own name
 0x008aa1a0 function TkMenuMainAllocWindow     # fh call.cs cdecl
@@ -10851,6 +10852,7 @@
 0x008ab220 function TkMenuGetHelpRatio2       # () -> 0x01840878; Switch symbol name (BSim)
 0x008ab230 function TkMn2GetMainFrameRatio    # fh v3:bsim1.00 0x008ab1e0
 0x008ab240 function TkMn2GetMenuMode          # fh v3:bsim1.00 0x008ab1f0
+0x008ab250 function TkMenuDrawDC_008ab250      # bare ret (PS2 draw left empty); TkMenuMainLoop_008a9ca0 calls it with (dc, timer); name ours
 0x008ab260 function TkMn2SetMainFrameRatioDiff # fh v3:bsim1.00 0x008ab210
 0x008ab270 function MenuHelp_SetRatio2        # g_TkMenuHelpRatio2 = 1; own name
 0x008ab280 function TkMsGetRomItem            # fh v3:exact+call.cs 0x008ab230 cdecl
@@ -11378,7 +11380,8 @@
 0x008ca1b0 function MenuItem_SortGearByKind_008ca1b0 # (): within each owner's group (u16 counts 0x0186a3e4), armour (MsGetSaveWeapon byte +5) among the first 'weapons' entries swapped (SwapSaveGear + flag bytes in a 0x400-byte frame buffer) with Menu_FindByte(flags, 0, from, n); returns 1, 0 when a search fails; caller TkMenuCtrlItem after MenuItem_SortGearByOwner; ported in menu round 30; name ours
 0x008ca320 function TOMenuGetDummyAnalogControler # fh v3:exact 0x008ca2f0
 0x008ca370 function SetByte_0186a429_008ca370 # cdecl(i, v): byte 0x0186a42d, 0x0186a42f, 0x0186a429 or 0x0186a42b (i = 0..3, a jump table) = v; caller 0x0085f2e0; name ours
-0x008ca480 function TkMenuDraw                # fh v3:cg2 0x8ca450
+0x008ca470 function TkSndUpdate_thunk_008ca470 # jmp TkSndUpdate 0x00887b60; TkMenuMainLoop_008a9ca0; name ours
+0x008ca480 function TkMenuDraw                # fh v3:cg2 0x8ca450; bare ret (empty); TkMenuMainLoop_008a9ca0 calls it after the menu draws
 0x008ca490 function TkMenuFlushDummyControler # fh switch:bsim1.00 0x71004c3a50
 0x008ca500 function TkMenuGetDummyControler   # g_TkMenuDummyControler; Switch name, alphabetical slot
 0x008ca510 function TkMenuGetDummyControlerFlag # fh v3:bsim1.00 0x008ca4e0
@@ -17474,12 +17477,15 @@
 0x01340478 label    g_CtbRowSlots              # 32 row pointers: 16 shown CTB rows then 16 leaving (TOBtlInitCtbWindow, TOBtlCtrlCtbWindow); name ours
 0x013404f8 label    g_CtbRows                  # 32 CTB window rows of 0x18 bytes: +0 in use, +1 actor, +4 shown ticks, +8 target ticks (i32), +0xc slot, +0xd slot before, +0xf step count, +0x10 i16, +0x12 i16 y, +0x14 step function; name ours
 0x01340800 label    g_BtlWinChange            # 0x20 bytes: the battle change window's state (TOInitBtlWinChange: u16 3, window, party list count at +0xc); name ours
+0x01340820 label    g_TkMenuBlackBack          # u32: set by TkMenuMainLoop_008a9ca0 for modes 0x800001/0x800002 (cleared otherwise, kept for -1): DrawBlackBackGround instead of TkMenuDrawAll unless graphicGetAbmap() == 1; name ours
 0x01340824 label    g_MovieFading             # PhyreScene_isFading reads it beside the scene's +0x10dcc
 0x01340828 label    g_PauseOn                    # nonzero: Game_Frame runs the pause instead of the world; set alone, Pause_Update enters the pause
 0x01340838 label    g_PauseFade                  # the pause's dimming, 0x40 (paused) to 0x80 (running)
 0x0134083c label    g_PauseFadeStep              # added to g_PauseFade each frame: -4 entering, +4 leaving
 0x0134084c label    g_PauseEntered               # 1 once Pause_Enter ran
 0x01340850 label    g_PauseRequest            # Pause_Request sets it; the main loop runs Pause_Update while set
+0x01340854 label    g_TkMenuMode800003         # u32: 1 for TkMenuMainLoop_008a9ca0 mode 0x800003, 0 for other modes but -1; name ours
+0x01340858 label    g_TkMenuIggyMode           # u8: TkMenuMainLoop_008a9ca0 runs the Iggy menu (TkSyncV(2), AtelExecVibrate(1), IggyMenu_update, TOControlMessageWindowForMenu every frame); name ours
 0x01340859 label    g_TkMenuFirstReadEnd      # i8: TOMenuGetFirstReadEndFlag
 0x01340870 label g_BtlEffectOverlayDefault # the overlay table an actor plays while its magic file loads (+0xf8c; MsEffectRead)
 0x01596f70 label    g_TkMenuImportantList     # u16 key item ids by their list slot (TkMenuItemImportantRefresh)
