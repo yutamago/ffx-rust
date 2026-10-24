@@ -17347,3 +17347,251 @@ fn pc6c_worker_place_and_battle_music_match_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     pc6c_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// pc round 6 d on one pair: `AtelEventSetUp` with every callee a stub (a
+/// sequence where its result matters): event names with and without
+/// `"bltz"`/`"hiku2"`, Eternal Calm scenes or not, the ten listed maps,
+/// 0x17 and others, old blocks to free or none, messages and `.ftc` read
+/// or not, `TkIsDebug` on (debug data loaded or not, up to eight source
+/// tables) or off, both map loads. The debug source table: the
+/// original's frame against the port's work block, compared by the
+/// `AtelActorSetUp2` and `AtelReturnTableU32` logs.
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // one function's callees; random bytes
+fn pc6d_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(4_000_000);
+    }
+    // sequences: 0 TkIsDebug, 1 TkCdReadWithMallocWithMessage, 2
+    // isEternalCalmScene, 3 getEternalCalmSceneName, 4 TOCDGetFileName, 5
+    // AtelGetBinHdrExpandSpFlags, 6 AtelGetMapIndex, 7 AtelGetActorBufferSize,
+    // 8 TkMalloc, 9 TKMallocAndReadEventMessage, 10 TKMallocAndReadEventFTC,
+    // 11 AtelLoadDebugData, 12 AtelGetSourceDataAdrs, 13
+    // AtelGetSourceDataLength, 14 AtelGetSourceWorkAdrs, 15
+    // AtelReturnTableU32_00879750, 16 AtelGetBinHdrExpandSoundEvent
+    let mut fs: Vec<(u32, u8, bool)> = vec![
+        (0x0088_7d10, 0, true),
+        (0x0088_d2c0, 2, true),
+        (0x0067_ab50, 1, true),
+        (0x0067_aac0, 1, true),
+        (0x008a_b7d0, 2, true),
+        (0x0086_adc0, 1, true),
+        (0x0086_bd90, 2, true),
+        (0x0086_a290, 1, true),
+        (0x0088_e650, 1, true),
+        (0x0088_cac0, 1, true),
+        (0x0088_c860, 1, true),
+        (0x0087_99b0, 2, true),
+        (0x0087_9820, 2, true),
+        (0x0087_9840, 2, true),
+        (0x0087_9860, 2, true),
+        (0x0087_9750, 1, true),
+        (0x0086_ad20, 1, true),
+    ];
+    for (f, n) in [
+        (0x0086_3b10u32, 0u8),
+        (0x0087_0900, 1),
+        (0x0078_1530, 0),
+        (0x0087_0f60, 1),
+        (0x0087_0280, 4),
+        (0x0086_e820, 2),
+        (0x0086_0f50, 0),
+        (0x0086_3ae0, 0),
+        (0x0087_02e0, 1),
+        (0x0087_15e0, 1),
+        (0x0086_fc20, 3),
+        (0x0086_e840, 3),
+        (0x0086_cff0, 0),
+        (0x0087_0130, 1),
+        (0x0087_15f0, 1),
+        (0x0086_3f90, 0),
+        (0x0086_3880, 0),
+        (0x0086_d4c0, 0),
+        (0x0087_9f00, 0),
+        (0x0062_f4c0, 1),
+        (0x0088_d520, 1),
+        (0x0078_1c50, 1),
+        (0x008a_d840, 1),
+        (0x0064_2300, 3),
+        (0x008a_c130, 1),
+        (0x0064_2390, 1),
+        (0x0087_9a70, 2),
+        (0x0088_e6b0, 1),
+        (0x0087_5510, 7),
+        (0x0088_e680, 1),
+        (0x0088_d1c0, 1),
+        (0x0086_5a60, 1),
+        (0x0086_6430, 3),
+        (0x0088_6dd0, 1),
+        (0x0088_5f10, 0),
+        (0x0086_6210, 1),
+        (0x0086_dd30, 1),
+        (0x0086_dca0, 1),
+        (0x0086_6490, 0),
+        (0x0086_5b80, 1),
+        (0x0088_5ff0, 1),
+        (0x0088_6be0, 0),
+        (0x0086_58d0, 2),
+        (0x0088_7b60, 0),
+        (0x0086_5ac0, 1),
+        (0x0086_0fd0, 0),
+        (0x0086_3620, 0),
+        (0x0091_9d70, 1),
+    ] {
+        fs.push((f, n, false));
+    }
+    let stubs = r27_stubs(a, b, &fs);
+    let names = alloc_both(a, b, 0x100);
+    // the .ebp below 2 GB or above (its address is stored sign-extended)
+    let low = alloc_both(a, b, 0x40);
+    let high = 0x9876_5000u32;
+    for o in [&mut *a, &mut *b] {
+        o.map_zeroed(high, 0x1000).unwrap();
+    }
+    let work = alloc_both(a, b, hp::EVENT_SET_UP_WORK as usize);
+    let base = [
+        "ffx_ps2/ffx/master/jppc/event/obj/",
+        "x/event/obj/",
+        "/event/obj/",
+    ];
+    let dirs = [
+        "bl/bltz0000",
+        "te/test20",
+        "hi/hiku2000",
+        "ka/kami0100",
+        "bltz",
+    ];
+    let maps = [
+        0x4fu32, 0x5d, 0x61, 0x6b, 0x6e, 0x88, 0x8c, 0x103, 0x123, 0x149, 0x17, 0, 1, 0x50, 0x14a,
+        0x4e, 0x200,
+    ];
+    let saved: Vec<(u32, u32)> = [
+        0x023c_bd70u32,
+        0x023c_bd78,
+        0x0132_7128,
+        0x0132_712c,
+        0x025d_5ebc,
+    ]
+    .iter()
+    .map(|&g| (a.rebase(g), Mem::read::<u32>(&*a, a.rebase(g))))
+    .collect();
+    for round in 0..200u32 {
+        // the event file name
+        let name = format!(
+            "{}{}/{}.ebp\0",
+            base[rng.below(3) as usize],
+            dirs[rng.below(5) as usize],
+            ["xx0000", "a/b"][rng.below(2) as usize]
+        );
+        for (k, c) in name.bytes().enumerate() {
+            poke(a, b, names + k as u32, c);
+        }
+        // the .ebp
+        let ebp = if rng.below(4) == 0 { high } else { low };
+        fill_both(a, b, rng, ebp, 0x40);
+        poke(a, b, ebp, *b"EV");
+        for at in [8u32, 0xc, 0x14] {
+            poke(
+                a,
+                b,
+                ebp + at,
+                [0u32, 0x20, rng.next()][rng.below(3) as usize],
+            );
+        }
+        let debug = rng.below(3) == 0;
+        let sources = rng.below(10);
+        let mut lens = vec![];
+        for k in 0..64 {
+            lens.push(if k < sources { rng.next() | 1 } else { 0 });
+        }
+        let mut len_k = 0;
+        r27_reset(a, b, &stubs, |s| match s {
+            0 => u32::from(debug),
+            1 => ebp,
+            2 | 11 => [0u32, 1][rng.below(2) as usize],
+            3 | 4 => names,
+            6 => [0u32, 1, 0x7fff, u32::MAX, rng.next()][rng.below(5) as usize],
+            9 | 10 => [0u32, rng.next()][rng.below(2) as usize],
+            13 => {
+                len_k += 1;
+                lens[len_k - 1]
+            }
+            _ => rng.next(),
+        });
+        for &(g, _) in &saved {
+            poke(a, b, g, [0u32, rng.next()][rng.below(2) as usize]);
+        }
+        let map = maps[rng.below(maps.len() as u32) as usize];
+        // pause flags, the map id page, the flags it sets
+        for g in [
+            0x0132_7138u32,
+            0x0132_713c,
+            0x0132_711c,
+            0x0132_7100,
+            0x0132_7104,
+        ] {
+            poke(a, b, a.rebase(g), rng.next());
+        }
+        fill_both(a, b, rng, work, hp::EVENT_SET_UP_WORK);
+        clear_stacks(a, b);
+        orig(a, 0x0087_2ef0, &[map]);
+        hp::atel_event_set_up(&mut Run(b), map, work);
+        // the debug table is the original's frame in a, the work block in
+        // b: where b's logs hand on `work`, a's hand on its frame, whose
+        // table must be b's work block
+        let stack = a.stack_range();
+        let end: u32 = Mem::read(&*b, stubs.0);
+        let mut at = stubs.1;
+        while at < end {
+            let fa: u32 = Mem::read(&*a, at);
+            if Mem::read::<u32>(&*b, at) == work && stack.contains(&fa) {
+                // the count and its rows (the rest is never written)
+                let n: u32 = Mem::read(&*b, work);
+                for k in (0..4 + 12 * n).step_by(4) {
+                    assert_eq!(
+                        Mem::read::<u32>(&*a, fa + k),
+                        Mem::read::<u32>(&*b, work + k),
+                        "{what} {round}: debug table +{k:#x}"
+                    );
+                }
+                Mem::write(a, at, work);
+            }
+            at += 4;
+        }
+        for k in 0..hp::EVENT_SET_UP_WORK {
+            let v: u8 = Mem::read(&*b, work + k);
+            Mem::write(a, work + k, v);
+        }
+        native_no_diff(
+            a,
+            b,
+            &format!("AtelEventSetUp {what} {round} map {map:#x} debug {debug} {name:?}"),
+        );
+    }
+    for (g, v) in saved {
+        poke(a, b, g, v);
+    }
+}
+
+#[test]
+fn pc6d_atel_event_set_up_matches_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_6d0c);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        pc6d_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    pc6d_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

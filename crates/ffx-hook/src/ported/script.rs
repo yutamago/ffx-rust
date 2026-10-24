@@ -7323,6 +7323,12 @@ ported! {
     Atel_BattleMusicStep_00862470 @ 0x0086_2470 => extern "C" fn h_862470(state: u32) -> u32 {
         hp::atel_battle_music_step(&mut mem(), state)
     }
+    /// `AtelEventSetUp(map)`: the debug source table (`ebp - 0x68`, 25
+    /// words) in a frame of its own; `TkInitScene` drops `EAX`.
+    AtelEventSetUp @ 0x0087_2ef0 => extern "C" fn h_872ef0(map: u32) {
+        let mut work = super::StackFrame::<{ (hp::EVENT_SET_UP_WORK / 4) as usize }>::new();
+        hp::atel_event_set_up(&mut mem(), map, work.at());
+    }
     /// `AtelSetSndCameraPos()`: the matrix in a 16-word frame.
     AtelSetSndCameraPos @ 0x0087_7470 => extern "C" fn h_877470() {
         let mut frame = super::StackFrame::<16>::new();

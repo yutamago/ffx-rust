@@ -10522,3 +10522,331 @@ pub fn atel_battle_music_step(h: &mut impl ffx_bridge::Host, state: u32) -> u32 
     }
     0
 }
+
+/// The C runtime's `strstr(hay, needle)` over game memory: the first
+/// match, `hay` for an empty needle, 0 for none.
+fn c_strstr(m: &impl Mem, hay: u32, needle: u32) -> u32 {
+    let mut n = 0u32;
+    while m.read::<u8>(needle.wrapping_add(n)) != 0 {
+        n = n.wrapping_add(1);
+    }
+    let mut at = hay;
+    loop {
+        if (0..n).all(|k| m.read::<u8>(at.wrapping_add(k)) == m.read::<u8>(needle.wrapping_add(k)))
+        {
+            return at;
+        }
+        if m.read::<u8>(at) == 0 {
+            return 0;
+        }
+        at = at.wrapping_add(1);
+    }
+}
+
+/// The C runtime's `strrchr(s, c)`: the last `c` in `s` (its terminator
+/// for `c` 0), 0 for none.
+fn c_strrchr(m: &impl Mem, s: u32, c: u8) -> u32 {
+    let mut last = 0;
+    let mut at = s;
+    loop {
+        let b = m.read::<u8>(at);
+        if b == c {
+            last = at;
+        }
+        if b == 0 {
+            return last;
+        }
+        at = at.wrapping_add(1);
+    }
+}
+
+/// `strcpy(to, from)` as the original's inline byte loop (forward, so a
+/// later `from` inside `to`'s string is fine).
+fn c_strcpy(m: &mut impl Mem, to: u32, from: u32) {
+    let mut k = 0u32;
+    loop {
+        let b = m.read::<u8>(from.wrapping_add(k));
+        m.write(to.wrapping_add(k), b);
+        if b == 0 {
+            return;
+        }
+        k = k.wrapping_add(1);
+    }
+}
+
+/// The event's `.ebp` (`0x023cbd70`), its actor buffer (`0x023cbd78`),
+/// its localized message table (`0x01327128`) and `.ftc` (`0x0132712c`),
+/// all `TkMalloc` blocks an event set-up frees again.
+const EVENT_EBP: u32 = 0x023c_bd70;
+const EVENT_ACTORS: u32 = 0x023c_bd78;
+const EVENT_MESSAGES: u32 = 0x0132_7128;
+const EVENT_FTC: u32 = 0x0132_712c;
+/// The bytes [`atel_event_set_up`]'s work frame takes (the original's
+/// `ebp - 0x68 .. - 4`: the debug source count and eight (work, data,
+/// length) triples).
+pub const EVENT_SET_UP_WORK: u32 = 0x64;
+
+/// `AtelEventSetUp(map)` (`0x00872ef0`; caller `TkInitScene`, which drops
+/// `EAX`): `g_CurrentMapNo` = map, the event state reset (message
+/// windows, overlay 0, pause flags, `MsBattleExeClear`, shop ratio 100,
+/// MCFP -1, Albhed dictionary, bind masks, love parameters, menu bank,
+/// vibration, battle end status and movie fade-out, force battle map -1,
+/// water battle effect, Auron patch flag, effect parameters, motion
+/// requests; `AtelUpdateFilePath` when `TkIsDebug`); the `.ebp` read
+/// (`TkCdReadWithMallocWithMessage(0xc, map * 0x12)`, its address also
+/// sign-extended into `0x013270f8`/`fc`); [`EVENT_NAME`] from the file
+/// name (`TOCDGetFileName(0xc, map * 0x12)`, or `getEternalCalmSceneName`
+/// for an Eternal Calm scene) cut to the part after `"/event/obj/"` up to
+/// its last `/`; `0x01327100` = 1 for a `"bltz"` or `"hiku2"` event and
+/// maps 0x17, 0x123, 0x5d; `0x01327104` = 1 for ten maps (jump table
+/// `0x008734fc`); `f32 0x00c5d784` 0.9 for `"bltz"`, else 1. A file not
+/// starting `"EV"` hangs (`jmp $`). Then the old blocks are freed and
+/// replaced: the `.ebp` ([`EVENT_EBP`]), the actor buffer (`TkMalloc` of
+/// `AtelGetActorBufferSize(hdr)`, `FlushCache(0)` around), the messages
+/// (`TKMallocAndReadEventMessage`: with one, `g_EventEbpMessages` = the
+/// `.ebp`'s own table; without, that table is the one used), the `.ftc`
+/// (`TKMallocAndReadEventFTC`: with one, `g_AtelExpandFTCAdrs`, the font
+/// path and `graphicMenuLoadSpecialTexture(0, 0x025d08a0, 0)`,
+/// `TOFTCTransfer`); special texture 7 for map 0x17, else unloaded when
+/// `g_YnTest20Seen`. `AtelActorSetUp2(actors, hdr, messages, +0x14 table,
+/// 0, 0, size)`; with `TkIsDebug`, the debug data and source tables
+/// first (`AtelLoadDebugData`, `AtelLoadSourceData`, up to eight
+/// (work, data, length) triples into `work + 4`, unlocked while read,
+/// their count at `work`, locked again after; `AtelReturnTableU32_00879750
+/// (0, work)` and `work` as the fifth and sixth words when the debug data
+/// loaded). Then music, separates (`+0xc` table), sound locks and foot
+/// sounds, the map (`AtelMapLoadNoCache` with expansion flag bit 0, else
+/// `AtelMapLoad`, of `AtelGetMapIndex(hdr, 0)`), the map id page cleared,
+/// the guide map for a positive map index, foot info, the sound event,
+/// the background separates, the music started, effect flags and menu
+/// masks cleared, VAG volume 0x7f, voice pan 0x3f,
+/// `Yn_GuideMapSetDispProg(1)`, `TkCdReadSync(0)`.
+#[allow(clippy::too_many_lines)] // one set-up, in the original's order
+pub fn atel_event_set_up(h: &mut impl ffx_bridge::Host, map: u32, work: u32) {
+    const FLUSH: u32 = 0x0062_f4c0;
+    const FREE: u32 = 0x0088_d520;
+    const IS_DEBUG: u32 = 0x0088_7d10;
+    const IS_CALM: u32 = 0x0067_ab50;
+    const CALM_NAME: u32 = 0x0067_aac0;
+    const FILE_NAME: u32 = 0x008a_b7d0;
+    const SOURCE_WORK: u32 = 0x0087_9860;
+    const SET_UP2: u32 = 0x0087_5510;
+    const CD_SYNC: u32 = 0x0088_d1c0;
+    const SND_UPDATE: u32 = 0x0088_7b60;
+    h.write(h.rebase(0x012f_bc40), map);
+    host_call(h, 0x0086_3b10, &[]);
+    host_call(h, 0x0087_0900, &[0]);
+    h.write(h.rebase(0x0132_7138), 0u32);
+    h.write(h.rebase(0x0132_713c), 0u32);
+    host_call(h, 0x0078_1530, &[]);
+    host_call(h, 0x0087_0f60, &[100]);
+    host_call(h, 0x0087_0280, &[u32::MAX, u32::MAX, u32::MAX, u32::MAX]);
+    host_call(h, 0x0086_e820, &[0, 0]);
+    host_call(h, 0x0086_0f50, &[]);
+    host_call(h, 0x0086_3ae0, &[]);
+    host_call(h, 0x0087_02e0, &[0]);
+    host_call(h, 0x0087_15e0, &[0]);
+    host_call(h, 0x0086_fc20, &[0, 0, 0]);
+    host_call(h, 0x0086_e840, &[u32::MAX, 0, 0]);
+    host_call(h, 0x0086_cff0, &[]);
+    host_call(h, 0x0087_0130, &[u32::MAX]);
+    host_call(h, 0x0087_15f0, &[0]);
+    host_call(h, 0x0086_3f90, &[]);
+    host_call(h, 0x0086_3880, &[]);
+    host_call(h, 0x0086_d4c0, &[]);
+    if host_call(h, IS_DEBUG, &[]) != 0 {
+        host_call(h, 0x0087_9f00, &[]);
+    }
+    let file = map.wrapping_mul(0x12);
+    let ebp = host_call(h, 0x0088_d2c0, &[0xc, file]);
+    h.write(h.rebase(0x0132_70f8), ebp);
+    h.write(
+        h.rebase(0x0132_70fc),
+        (ebp.cast_signed() >> 31).cast_unsigned(),
+    );
+    let name = h.rebase(EVENT_NAME);
+    let from = if host_call(h, IS_CALM, &[map]) != 0 {
+        host_call(h, CALM_NAME, &[map])
+    } else {
+        host_call(h, FILE_NAME, &[0xc, file])
+    };
+    c_strcpy(h, name, from);
+    // the part after "/event/obj/", up to its last '/'
+    let start = c_strstr(h, name, h.rebase(0x00b5_bf20)).wrapping_add(0xb);
+    let slash = c_strrchr(h, start, b'/');
+    h.write(slash, 0u8);
+    c_strcpy(h, name, start);
+    let bltz = h.rebase(0x00b4_8718);
+    let map_no = h.read::<u32>(h.rebase(0x012f_bc40));
+    let special = c_strstr(h, name, bltz) != 0
+        || matches!(map_no, 0x17 | 0x123 | 0x5d)
+        || c_strstr(h, name, h.rebase(0x00b5_bf2c)) != 0;
+    h.write(h.rebase(0x0132_7100), u32::from(special));
+    let map_no = h.read::<u32>(h.rebase(0x012f_bc40));
+    let listed = matches!(
+        map_no,
+        0x4f | 0x5d | 0x61 | 0x6b | 0x6e | 0x88 | 0x8c | 0x103 | 0x123 | 0x149
+    );
+    h.write(h.rebase(0x0132_7104), u32::from(listed));
+    let scale = if c_strstr(h, name, bltz) != 0 {
+        h.read::<u32>(h.rebase(0x00b4_7c70))
+    } else {
+        1.0_f32.to_bits()
+    };
+    h.write(h.rebase(0x00c5_d784), scale);
+    if h.read::<u8>(ebp) != b'E' || h.read::<u8>(ebp + 1) != b'V' {
+        // jmp $ (0x008734f8): the original hangs on a bad file
+        loop {
+            std::hint::spin_loop();
+        }
+    }
+    let ebp_at = h.rebase(EVENT_EBP);
+    let old = h.read::<u32>(ebp_at);
+    if old != 0 {
+        host_call(h, FLUSH, &[0]);
+        host_call(h, FREE, &[old]);
+        h.write(ebp_at, 0u32);
+        host_call(h, FLUSH, &[0]);
+    }
+    h.write(ebp_at, ebp);
+    let hdr = h.read::<u32>(ebp + 4).wrapping_add(ebp);
+    let sp_flags = host_call(h, 0x0086_adc0, &[hdr]);
+    let map_index = host_call(h, 0x0086_bd90, &[hdr, 0]);
+    host_call(h, 0x0078_1c50, &[map_index]);
+    let size = host_call(h, 0x0086_a290, &[hdr]);
+    let actors_at = h.rebase(EVENT_ACTORS);
+    let old = h.read::<u32>(actors_at);
+    if old != 0 {
+        host_call(h, FLUSH, &[0]);
+        host_call(h, FREE, &[old]);
+        host_call(h, FLUSH, &[0]);
+        h.write(actors_at, 0u32);
+    }
+    host_call(h, FLUSH, &[0]);
+    let actors = host_call(h, 0x0088_e650, &[size]);
+    host_call(h, FLUSH, &[0]);
+    h.write(actors_at, actors);
+    let msg_at = h.rebase(EVENT_MESSAGES);
+    let old = h.read::<u32>(msg_at);
+    if old != 0 {
+        host_call(h, FREE, &[old]);
+        h.write(msg_at, 0u32);
+    }
+    let read = host_call(h, 0x0088_cac0, &[name]);
+    h.write(msg_at, read);
+    let own = h.read::<u32>(ebp + 8);
+    let messages = if read != 0 {
+        h.write(h.rebase(0x023c_bd60), own.wrapping_add(ebp));
+        read
+    } else if own != 0 {
+        own.wrapping_add(ebp)
+    } else {
+        0
+    };
+    let t14 = h.read::<u32>(ebp + 0x14);
+    let table = if t14 == 0 { 0 } else { t14.wrapping_add(ebp) };
+    let ftc_at = h.rebase(EVENT_FTC);
+    let old = h.read::<u32>(ftc_at);
+    if old != 0 {
+        host_call(h, FREE, &[old]);
+        h.write(ftc_at, 0u32);
+    }
+    let ftc = host_call(h, 0x0088_c860, &[name]);
+    h.write(ftc_at, ftc);
+    let expand_at = h.rebase(0x0132_7120);
+    if ftc == 0 {
+        h.write(expand_at, 0u32);
+    } else {
+        h.write(expand_at, ftc);
+        let path = if host_call(h, IS_CALM, &[map]) != 0 {
+            host_call(h, CALM_NAME, &[map])
+        } else {
+            host_call(h, FILE_NAME, &[0xc, file])
+        };
+        host_call(h, 0x008a_d840, &[path]);
+        let tex = h.rebase(0x025d_08a0);
+        host_call(h, 0x0064_2300, &[0, tex, 0]);
+        host_call(h, 0x008a_c130, &[ftc]);
+    }
+    if h.read::<u32>(h.rebase(0x012f_bc40)) == 0x17 {
+        host_call(h, 0x0064_2300, &[7, 0, 0]);
+    } else {
+        let seen = h.rebase(0x025d_5ebc);
+        if h.read::<u32>(seen) != 0 {
+            host_call(h, 0x0064_2390, &[7]);
+        }
+        h.write(seen, 0u32);
+    }
+    if host_call(h, IS_DEBUG, &[]) == 0 {
+        host_call(h, SET_UP2, &[actors, hdr, messages, table, 0, 0, size]);
+    } else {
+        let loaded = host_call(h, 0x0087_99b0, &[0, map]);
+        if loaded != 0 {
+            host_call(h, 0x0087_9a70, &[0, map]);
+        }
+        let mut n = 0u32;
+        while n < 8 {
+            let data = host_call(h, 0x0087_9820, &[0, n]);
+            let len = host_call(h, 0x0087_9840, &[0, n]);
+            if len == 0 {
+                break;
+            }
+            let w = host_call(h, SOURCE_WORK, &[0, n]);
+            host_call(h, 0x0088_e6b0, &[w]);
+            let w = host_call(h, SOURCE_WORK, &[0, n]);
+            let row = work + 4 + n * 0xc;
+            h.write(row, w);
+            h.write(row + 4, data);
+            h.write(row + 8, len);
+            n += 1;
+        }
+        h.write(work, n);
+        if loaded == 0 {
+            host_call(h, SET_UP2, &[actors, hdr, messages, table, 0, 0, size]);
+        } else {
+            let t = host_call(h, 0x0087_9750, &[0, work]);
+            host_call(h, SET_UP2, &[actors, hdr, messages, table, t, work, size]);
+            let mut i = 0u32;
+            while i.cast_signed() < h.read::<i32>(work) {
+                let w = host_call(h, SOURCE_WORK, &[0, i]);
+                host_call(h, 0x0088_e680, &[w]);
+                i += 1;
+            }
+        }
+    }
+    host_call(h, CD_SYNC, &[0]);
+    host_call(h, 0x0086_5a60, &[hdr]);
+    let tc = h.read::<u32>(ebp + 0xc);
+    let seps = if tc == 0 { 0 } else { tc.wrapping_add(ebp) };
+    host_call(h, 0x0086_6430, &[hdr, seps, 1]);
+    host_call(h, 0x0088_6dd0, &[0]);
+    host_call(h, 0x0088_5f10, &[]);
+    host_call(h, 0x0086_6210, &[hdr]);
+    let load = if sp_flags & 1 != 0 {
+        0x0086_dd30
+    } else {
+        0x0086_dca0
+    };
+    host_call(h, load, &[map_index]);
+    let page = h.rebase(0x0132_711c);
+    h.write(page, 0u8);
+    h.write(page + 1, 0xffu8);
+    h.write(page + 2, 0xffu8);
+    if map_index.cast_signed() > 0 {
+        host_call(h, 0x0086_6490, &[]);
+    }
+    host_call(h, 0x0086_5b80, &[hdr]);
+    let event = host_call(h, 0x0086_ad20, &[hdr]);
+    host_call(h, 0x0088_5ff0, &[event]);
+    host_call(h, 0x0088_6be0, &[]);
+    host_call(h, 0x0086_58d0, &[hdr, 1]);
+    host_call(h, SND_UPDATE, &[]);
+    host_call(h, 0x0086_5ac0, &[hdr]);
+    host_call(h, SND_UPDATE, &[]);
+    host_call(h, 0x0086_0fd0, &[]);
+    host_call(h, 0x0086_3620, &[]);
+    h.write(h.rebase(0x0132_7134), 0x7fu8);
+    h.write(h.rebase(0x0132_7135), 0x3fu8);
+    host_call(h, 0x0091_9d70, &[1]);
+    host_call(h, CD_SYNC, &[0]);
+}
