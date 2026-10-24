@@ -10621,8 +10621,15 @@ pub const EVENT_SET_UP_WORK: u32 = 0x64;
 /// the background separates, the music started, effect flags and menu
 /// masks cleared, VAG volume 0x7f, voice pan 0x3f,
 /// `Yn_GuideMapSetDispProg(1)`, `TkCdReadSync(0)`.
+/// `set_up2` calls `AtelActorSetUp2` (rebased) with its seven words:
+/// more than [`ffx_bridge::Host::call`] takes.
 #[allow(clippy::too_many_lines)] // one set-up, in the original's order
-pub fn atel_event_set_up(h: &mut impl ffx_bridge::Host, map: u32, work: u32) {
+pub fn atel_event_set_up<H: ffx_bridge::Host>(
+    h: &mut H,
+    map: u32,
+    work: u32,
+    mut set_up2: impl FnMut(&mut H, u32, &[u32]) -> u32,
+) {
     const FLUSH: u32 = 0x0062_f4c0;
     const FREE: u32 = 0x0088_d520;
     const IS_DEBUG: u32 = 0x0088_7d10;
@@ -10778,7 +10785,10 @@ pub fn atel_event_set_up(h: &mut impl ffx_bridge::Host, map: u32, work: u32) {
         h.write(seen, 0u32);
     }
     if host_call(h, IS_DEBUG, &[]) == 0 {
-        host_call(h, SET_UP2, &[actors, hdr, messages, table, 0, 0, size]);
+        {
+            let f = h.rebase(SET_UP2);
+            set_up2(h, f, &[actors, hdr, messages, table, 0, 0, size]);
+        }
     } else {
         let loaded = host_call(h, 0x0087_99b0, &[0, map]);
         if loaded != 0 {
@@ -10802,10 +10812,16 @@ pub fn atel_event_set_up(h: &mut impl ffx_bridge::Host, map: u32, work: u32) {
         }
         h.write(work, n);
         if loaded == 0 {
-            host_call(h, SET_UP2, &[actors, hdr, messages, table, 0, 0, size]);
+            {
+                let f = h.rebase(SET_UP2);
+                set_up2(h, f, &[actors, hdr, messages, table, 0, 0, size]);
+            }
         } else {
             let t = host_call(h, 0x0087_9750, &[0, work]);
-            host_call(h, SET_UP2, &[actors, hdr, messages, table, t, work, size]);
+            {
+                let f = h.rebase(SET_UP2);
+                set_up2(h, f, &[actors, hdr, messages, table, t, work, size]);
+            }
             let mut i = 0u32;
             while i.cast_signed() < h.read::<i32>(work) {
                 let w = host_call(h, SOURCE_WORK, &[0, i]);

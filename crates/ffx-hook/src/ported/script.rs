@@ -7327,7 +7327,7 @@ ported! {
     /// words) in a frame of its own; `TkInitScene` drops `EAX`.
     AtelEventSetUp @ 0x0087_2ef0 => extern "C" fn h_872ef0(map: u32) {
         let mut work = super::StackFrame::<{ (hp::EVENT_SET_UP_WORK / 4) as usize }>::new();
-        hp::atel_event_set_up(&mut mem(), map, work.at());
+        hp::atel_event_set_up(&mut mem(), map, work.at(), |_, f, a| super::call_cdecl(f, a));
     }
     /// `AtelSetSndCameraPos()`: the matrix in a 16-word frame.
     AtelSetSndCameraPos @ 0x0087_7470 => extern "C" fn h_877470() {

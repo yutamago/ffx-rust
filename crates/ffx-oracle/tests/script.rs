@@ -17535,7 +17535,9 @@ fn pc6d_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
         fill_both(a, b, rng, work, hp::EVENT_SET_UP_WORK);
         clear_stacks(a, b);
         orig(a, 0x0087_2ef0, &[map]);
-        hp::atel_event_set_up(&mut Run(b), map, work);
+        hp::atel_event_set_up(&mut Run(b), map, work, |r, f, args| {
+            r.0.call(f, Conv::Cdecl, args).unwrap().eax
+        });
         // the debug table is the original's frame in a, the work block in
         // b: where b's logs hand on `work`, a's hand on its frame, whose
         // table must be b's work block
