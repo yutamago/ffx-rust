@@ -20,16 +20,18 @@
 # the control to come back (ctrl work 0 +0 bit 1, 0x01325ba0; AtelUcOn sets
 # it) and takes no shot after it.
 #
-# Ranges: the save data's map and previous map (0x0112ca90), the scenario
-# (0x0112d67c), the player's position (g_SaveData_PlayerPos 0x00ccb9a8),
-# the field view matrix (g_YiViewMatrix 0x018ded38), message windows 0 and
-# 1's state words (g_AtelMsgWindows + 0x14 / + 0x40, 8 bytes each: the
-# trace samples on the render thread while the main thread updates, and
-# can catch +0x1d half-written; the original does it too when slowed,
-# docs/harness.md, agency-race), the random
-# generators, the party records (HP and MP: Rest restores them), the key
-# items (g_SaveImportant 0x01130f1c) and ctrl work 0's byte +3 (bit 2 while
-# an event reward is given). run-all.sh leaves the position out of the
+# Ranges: the save data's map words (0x0112ca90, 16 bytes as in
+# event-besaid), the scenario (0x0112d67c), the player's position
+# (g_SaveData_PlayerPos 0x00ccb9a8), the field view matrix (g_YiViewMatrix
+# 0x018ded38), message windows 0 and 1's state words (g_AtelMsgWindows +
+# 0x14 / + 0x40, 12 bytes each), the random generators, the party records
+# (HP and MP: Rest restores them), the key items (g_SaveImportant
+# 0x01130f1c) and ctrl work 0's first word (0x01325ba0: bit 1 of +0 the
+# control, bit 2 of +3 while an event reward is given). Until 2026-10-24
+# the trace sampled on the render thread while the main thread ran the next
+# update, and caught +0x1d of the windows, the map words and ctrl work 0's
+# +0 half-written, so they were cut to 8, 4 and 1 bytes; it samples between
+# two updates now (docs/harness.md, "Frames"). run-all.sh leaves the position out of the
 # comparison (--ignore 2), as event-besaid's.
 # Screenshots (event-agency-<n>.bmp): 1 the agency, 2 the book's choice,
 # 3 its first page, 4 the plains by the door, 5 the chest's first message,
@@ -41,7 +43,7 @@ waitfor 0x01325d94:4 40000000 c0ffffff 1500
 wait 37
 read 0x01325d94 4
 shot $OUT\event-agency-1.bmp
-trace 0x0112ca90:4 0x0112d67c:2 0x00ccb9a8:12 0x018ded38:64 0x01326d84:8 0x01326db0:8 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68 0x01130f1c:32 0x01325ba3:1
+trace 0x0112ca90:16 0x0112d67c:2 0x00ccb9a8:12 0x018ded38:64 0x01326d84:12 0x01326db0:12 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68 0x01130f1c:32 0x01325ba0:4
 # the book on the left ("A History of Summoners"): Read, then the pages
 press right 10 6
 press up+right 20 6

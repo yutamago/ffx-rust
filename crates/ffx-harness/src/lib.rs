@@ -55,17 +55,19 @@ pub struct Options {
     /// The game's Documents folder: settings and saves are read and
     /// written there, never in the user's own (unless [`Home::Real`]).
     pub home: Home,
-    /// Copy the user's settings and saves into the sandboxed home before
-    /// each launch (a fresh copy, so every run starts from the same saves).
+    /// Copy the user's saves into the sandboxed home before each launch (a
+    /// fresh copy, so every run starts from the same saves). The settings
+    /// are never the user's: the sandbox has its own
+    /// ([`SANDBOX_SETTINGS`]).
     pub copy_user_data: bool,
     /// Save files to put into the sandboxed home after that copy:
     /// `(slot name, source file)`, the name as the game's (`ffx_001`; entry
     /// 1 of the load screen is the first manual save). Lets a test run from
     /// a given save, independent of the user's.
     pub saves: Vec<(String, PathBuf)>,
-    /// Mod folders to add to the game instance's `mods/` (as
-    /// `mods/<folder name>`), for this launch only; the game folder's own
-    /// mods are there too.
+    /// Mod folders to put into the game instance's `mods/` (as
+    /// `mods/<folder name>`), for this launch only. These are the only mods
+    /// a test game loads: the game folder's own (the user's) are left out.
     pub mods: Vec<PathBuf>,
     /// Seed of the random number generators (instead of the clock), so
     /// encounters, battles and drops repeat. `None` keeps the clock.
@@ -331,10 +333,24 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
 /// The saves' folder under the game's Documents folder.
 const SAVE_FOLDER: &str = "FINAL FANTASY X";
 
-/// Empties the sandbox Documents folder and copies the user's game folder
-/// (settings and saves) into it, then the chosen saves. The user's own
-/// files are only read.
-fn prepare_home(home: &Path, copy: bool, saves: &[(String, PathBuf)]) -> Result<()> {
+/// The sandbox's settings file in the repository (`docs/harness.md`,
+/// "Sandbox settings"): every test game starts from it, never from the
+/// user's.
+pub const SANDBOX_SETTINGS: &str = "tools/sandbox/GameSetting.ini";
+
+/// The settings file's name in the game's Documents folder.
+const SETTINGS_FILE: &str = "GameSetting.ini";
+
+/// Empties the sandbox Documents folder and copies the user's saves into it
+/// (their game folder without `GameSetting.ini`), then the chosen saves,
+/// and writes the sandbox's own settings (`settings`, the repository's
+/// [`SANDBOX_SETTINGS`]). The user's own files are only read.
+fn prepare_home(
+    home: &Path,
+    settings: &Path,
+    copy: bool,
+    saves: &[(String, PathBuf)],
+) -> Result<()> {
     if let Ok(real) = user_documents()
         && home.starts_with(&real)
     {
@@ -353,6 +369,20 @@ fn prepare_home(home: &Path, copy: bool, saves: &[(String, PathBuf)]) -> Result<
             copy_tree(&source, &home.join(GAME_DOCUMENTS))?;
         }
     }
+    // The user's settings (texture quality, key bindings, ...) are not the
+    // tests' business: the sandbox has its own.
+    let target = home.join(GAME_DOCUMENTS).join(SETTINGS_FILE);
+    std::fs::create_dir_all(home.join(GAME_DOCUMENTS))?;
+    // Without the file's `#` comment lines: the game's own parser
+    // (`Settings_Load` `0x00401cb0`) knows only `key=value` lines.
+    let text = std::fs::read_to_string(settings)
+        .map_err(|e| Error::Launch(format!("sandbox settings {}: {e}", settings.display())))?;
+    let lines: String = text
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    std::fs::write(&target, lines)?;
     let folder = home.join(GAME_DOCUMENTS).join(SAVE_FOLDER);
     for (name, source) in saves {
         if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
@@ -362,15 +392,16 @@ fn prepare_home(home: &Path, copy: bool, saves: &[(String, PathBuf)]) -> Result<
         std::fs::copy(source, folder.join(name))
             .map_err(|e| Error::Launch(format!("save {name} from {}: {e}", source.display())))?;
     }
-    test_display(&home.join(GAME_DOCUMENTS).join("GameSetting.ini"))
+    test_display(&target)
 }
 
-/// Tests run in a 1280x720 window whatever the user plays at: screenshots
-/// keep one size and the desktop stays usable. Their sound plays at 5% of
-/// the master volume (`FFX_TEST_VOLUME`, 0-100): several games may run at
-/// once. Only the sandbox's settings are changed, never the user's.
+/// Tests run in a 1280x720 window (the sandbox's settings say so too):
+/// screenshots keep one size and the desktop stays usable. Their sound
+/// plays at 5% of the master volume (`FFX_TEST_VOLUME`, 0-100): several
+/// games may run at once. Only the sandbox's settings are changed, never
+/// the user's.
 fn test_display(settings: &Path) -> Result<()> {
-    let old = std::fs::read_to_string(settings).unwrap_or_else(|_| "Language=en\n".into());
+    let old = std::fs::read_to_string(settings)?;
     let volume = std::env::var("FFX_TEST_VOLUME")
         .ok()
         .and_then(|v| v.parse::<u8>().ok())
@@ -451,7 +482,12 @@ impl Game {
             Home::Real => None,
         };
         if let Some(home) = home {
-            prepare_home(&home, options.copy_user_data, &options.saves)?;
+            prepare_home(
+                &home,
+                &options.repo.join(SANDBOX_SETTINGS),
+                options.copy_user_data,
+                &options.saves,
+            )?;
             cmd.arg("--home").arg(home);
         } else if !options.saves.is_empty() {
             return Err(Error::Launch(
@@ -475,10 +511,14 @@ impl Game {
         }
         let start = Instant::now();
         loop {
-            // Ready once the first frame is presented (the frame hook runs
-            // the commands that touch the game).
+            // Ready once the first frame is presented, during the start-up
+            // screens: the first update (the frame boundary, where the
+            // commands that touch the game run) comes later, when the
+            // memochek logo starts, which in fast mode lasts about 120
+            // frames (a quarter of a second): the loads must be in time to
+            // press Start there.
             if let Ok(mut game) = Self::connect(port)
-                && game.frame().is_ok_and(|f| f > 0)
+                && game.presents().is_ok_and(|f| f > 0)
             {
                 game.owned = true;
                 game.slot = slot;
@@ -615,7 +655,8 @@ impl Game {
         }
     }
 
-    /// Frames presented so far.
+    /// Updates the game's main thread has finished: the frame boundary it
+    /// stands at (`docs/harness.md`, "Frames").
     ///
     /// # Errors
     /// See [`Game::command`].
@@ -623,6 +664,22 @@ impl Game {
         self.command("frame")?
             .parse()
             .map_err(|_| Error::Harness("frame count".into()))
+    }
+
+    /// Images presented so far, the start-up screens' included (which
+    /// come before the first update).
+    ///
+    /// # Errors
+    /// See [`Game::command`].
+    pub fn presents(&mut self) -> Result<u32> {
+        let stats = self.command("stats")?;
+        let mut words = stats.split_whitespace();
+        words
+            .by_ref()
+            .find(|w| *w == "presents")
+            .and_then(|_| words.next())
+            .and_then(|n| n.parse().ok())
+            .ok_or_else(|| Error::Harness(format!("no present count in {stats:?}")))
     }
 
     /// Waits `frames` frames.
@@ -861,8 +918,9 @@ mod tests {
         assert_eq!(crc32(b"IEND"), 0xae42_6082);
     }
 
-    /// Chosen saves land in the sandbox's save folder, settings get the
-    /// test display; bad names are refused.
+    /// Chosen saves land in the sandbox's save folder, settings are the
+    /// repository's sandbox file with the test display; bad names are
+    /// refused.
     #[test]
     fn prepare_home_puts_the_chosen_saves() {
         let dir = std::env::temp_dir().join(format!("ffx-home-test-{}", std::process::id()));
@@ -870,15 +928,30 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(&source, b"save").unwrap();
         let home = dir.join("home");
-        prepare_home(&home, false, &[("ffx_007".into(), source.clone())]).unwrap();
+        let sandbox = Options::default().repo.join(SANDBOX_SETTINGS);
+        prepare_home(
+            &home,
+            &sandbox,
+            false,
+            &[("ffx_007".into(), source.clone())],
+        )
+        .unwrap();
         let game = home.join(GAME_DOCUMENTS);
         assert_eq!(
             std::fs::read(game.join(SAVE_FOLDER).join("ffx_007")).unwrap(),
             b"save"
         );
-        let settings = std::fs::read_to_string(game.join("GameSetting.ini")).unwrap();
+        let settings = std::fs::read_to_string(game.join(SETTINGS_FILE)).unwrap();
         assert!(settings.contains("ScreenMode=SM_WINDOW"), "{settings}");
-        assert!(prepare_home(&home, false, &[("../x".into(), source)]).is_err());
+        assert_eq!(
+            settings
+                .lines()
+                .filter(|l| l.starts_with("TextureQuality="))
+                .count(),
+            1,
+            "{settings}"
+        );
+        assert!(prepare_home(&home, &sandbox, false, &[("../x".into(), source)]).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

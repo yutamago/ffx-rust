@@ -4,9 +4,9 @@
 //! lockstep, in background mode through the game-slot queue, with ctrl
 //! work 0's event count (`0x01325d94`) held at field-walk-1's value.
 //!
-//! `field_capture <windows dir>`: writes `capture.ffxgfx` and the rest of
-//! `gfxcapture`'s output into that folder; prints the event count before
-//! the capture.
+//! `field_capture <windows dir> [rust]`: writes `capture.ffxgfx` and the
+//! rest of `gfxcapture`'s output into that folder; prints the event count
+//! before the capture. With `rust` the Rust replacements stay in.
 //!
 //! `gfxcapture` waits for two Presents, which lockstep holds back, so the
 //! capture is asked for together with `lockstep off` in one write: the
@@ -17,10 +17,11 @@ use std::io::Write as _;
 fn main() -> ffx_harness::Result<()> {
     let dir = std::env::args()
         .nth(1)
-        .expect("usage: field_capture <windows dir>");
+        .expect("usage: field_capture <windows dir> [rust]");
+    let rust = std::env::args().nth(2).as_deref() == Some("rust");
     let options = ffx_harness::Options {
         gfx: Some("1".into()),
-        hook_disable: Some("replacements".into()),
+        hook_disable: (!rust).then(|| "replacements".into()),
         virtual_clock: true,
         ..ffx_harness::Options::default()
     };

@@ -1019,6 +1019,7 @@
 0x0058a2d0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PTexture3DD3D11__Get_0058a2d0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PTexture3DD3D11 *>::Get" (its own __FUNCTION__ in an error print)
 0x0058a3b0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PTextureCubeMapD3D11__Get_0058a3b0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PTextureCubeMapD3D11 *>::Get" (its own __FUNCTION__ in an error print)
 0x0058db00 function Phyre_PRendering_PTexture2DD3D11_bind # fh v3:bsim1.00 0x0058dc90 Phyre::PRendering::PTexture2DD3D11::bind
+0x00593760 function Renderer_PresentFlip      # thiscall(renderer) -> al: the render thread's flip command (from Phyre_PRendering_PRenderThread_processRenderCommands, call at 0x006159b6): null swap chain object at +0x74 gives 0, else its +0x20(obj, +0x131c != 0, 0), which calls IDXGISwapChain::Present (the harness's present hook sees caller 0x00593782); one per successful Phyre_PRendering_PRenderer_flip (measured: flips == flip commands run == presents after the start-up screens); wrapped by the harness (present_flip) to label each present with its update; name ours
 0x00594be0 function Phyre_PClassDescriptorConcrete_Phyre_PRendering_PSamplerState__getValueFromScriptContext # fh switch:bsim0.99 0x710004fab0 Phyre::PClassDescriptorConcrete<Phyre::PRendering::PSamplerState>::getValueFromScriptContext
 0x00594f40 function Phyre_PRendering_PRenderInterfaceNVN_getViewportSize # fh switch:bsim1.00 0x710003b4d0 Phyre::PRendering::PRenderInterfaceNVN::getViewportSize
 0x00595f90 function Phyre_PRendering_PTexture2DD3D11_isBound # fh v3:bsim1.00 0x00596120 Phyre::PRendering::PTexture2DD3D11::isBound
@@ -16380,6 +16381,7 @@
 0x00b92340 label g_ChrClothFlip             # f32 -1.0: Ch_UpdateClothMatrix's x and y flip
 0x00c0a000 label    g_Vu0_R                      # emulated VU0 R (random) register, f32 bits in [1,2): op_random/op_random_p step it (vrnext: low 22 fraction bits << 1, bit 4 of R^(R>>18) in) and leave draw - 1.8872414 there; 0x0075fe50 seeds it
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
+0x00c30e88 label    g_FrameVsyncs             # u32: vsyncs a frame (Phyre_PFramework_PWindowWin32Base_SetFlipVSyncInterval 0x00625090 writes it); Game_Main's limiter runs a frame each g_FrameVsyncs x 0.016683333333333335 s of Phyre_PTimerWin32_GetTime; name ours
 0x00c30f94 label NvOptimusEnablement          # fh v4:imported
 0x00c30f98 label AmdPowerXpressRequestHighPerformance # fh v4:imported
 0x00c322a0 label    g_TexAnimPrefixG # char*: "G" (0x00b8f7bc), the first name prefix of graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0 and graphicTextureAnimationSetMaterialUV_00644150; name ours
@@ -16543,10 +16545,12 @@
 0x00c8f7f0 label g_pppVtMimeT              # f32: pppVtMime's blend factor (work +0xa0), stored after the buffer is there (0x0072ec4c)
 0x00c8f980 label    g_Vu0_VfMove              # emulated VU0 register pppVu0MoveVia copies through
 0x00c8fac4 label    g_Vu0_Status              # emulated VU0 status flags: setZSFlag sets 0x40 (sticky zero), setSSFlag 0x80 (sticky sign)
+0x00c90278 label    g_AppStartTime            # f64: the clock at start-up (written by Phyre_PhyreInit 0x00430dd0); Game_Main's limiter and Phyre_PFramework_PApplication_frame subtract it; name ours
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
 0x00cc9cd8 label    g_PhyreApplication        # Phyre_PFramework_PApplication_GetApplication; fog colour/near/far/limit +0x60..+0x7c, ambient +0x50, background +0x80, keyframe-anim byte +0x3ac, window size +0x26c/+0x270 (docs/formats/render.md)
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
+0x00cc9d00 label    g_FrameLimiterLast        # f64: the last frame's time less g_AppStartTime (Game_Main 0x0062f34a: now - start - the overshoot clamped to one interval); the harness's fast_sleep steps the virtual clock to it + one interval; name ours
 0x00ccb170 label    g_Virtuos_InputManager    # the object Virtuos_InputManager_getInstance returns
 0x00ccb228 label    g_GraphicScreenDttOffset  # two floats: graphicScreenSetDttOffset / graphicScreenGetDttOffset
 0x00ccb248 label    g_EtBreathFlags              # op_et_bindeff2_breath_on sets bit 0 for characters 1 and 0x65
