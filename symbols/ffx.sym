@@ -1367,7 +1367,7 @@
 0x00614010 function Phyre_PRendering_PRenderThread_PRenderThread # fh v3:exact 0x006141d0 Phyre::PRendering::PRenderThread::PRenderThread
 0x00614410 function Phyre_PRendering_PRenderThread_GetInstance # fh v3:cg5 0x6145d0 Phyre::PRendering::PRenderThread::GetInstance
 0x00614700 function Phyre_PRendering_PRenderThread_SignalSynchronizationEventFlagRenderCallback # fh v3:exact 0x006148c0 Phyre::PRendering::PRenderThread::SignalSynchronizationEventFlagRenderCallback
-0x00614710 function Phyre_PRendering_PRenderThread_StaticThreadEntry # layout+callees: sorts between Phyre_PRendering_PRenderThread_SignalSynchronizationEventFlagRenderCallback and Phyre_PRendering_PRenderThread_getEventFlag, and its named callees match the Switch 0x710004cf40 Phyre_PRendering_PRenderThread_StaticThreadEntry's (similarity 1.00: Phyre_PRendering_PRenderThread_threadEntry); symbols from Fahrenheit's server export
+0x00614710 function Phyre_PRendering_PRenderThread_StaticThreadEntry # layout+callees: sorts between Phyre_PRendering_PRenderThread_SignalSynchronizationEventFlagRenderCallback and Phyre_PRendering_PRenderThread_getEventFlag, and its named callees match the Switch 0x710004cf40 Phyre_PRendering_PRenderThread_StaticThreadEntry's (similarity 1.00: Phyre_PRendering_PRenderThread_threadEntry); symbols from Fahrenheit's server export; start address of the render thread: the thread that calls Present and makes every Direct3D 11 draw, clear, copy and target change (gfx capture thread tags, draw-field 2026-10-24: 268-389 calls a frame, all on it)
 0x00614b70 function Phyre_PRendering_PRenderThread_getEventFlag # fh v3:exact 0x00614d30 Phyre::PRendering::PRenderThread::getEventFlag
 0x00614c00 function Phyre_PRendering_PRenderThread_getFlipSlot # fh v3:exact 0x00614dc0 Phyre::PRendering::PRenderThread::getFlipSlot
 0x00614c60 function Phyre_PRendering_PRenderThread_handleNonRenderInstanceCommand # layout: alphabetical run between Phyre_PRendering_PRenderThread_getFlipSlot and Phyre_PRendering_PRenderThread_initialize (1 unnamed in the gap); Switch 0x710004bdd0 Phyre::PRendering::PRenderThread::handleNonRenderInstanceCommand is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -16545,7 +16545,7 @@
 0x00c8fac4 label    g_Vu0_Status              # emulated VU0 status flags: setZSFlag sets 0x40 (sticky zero), setSSFlag 0x80 (sticky sign)
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
-0x00cc9cd8 label    g_PhyreApplication        # Phyre_PFramework_PApplication_GetApplication; fog colour/near/far/limit +0x60..+0x7c, ambient +0x50, background +0x80, keyframe-anim byte +0x3ac, window size +0x26c/+0x270 (docs/formats/render.md)
+0x00cc9cd8 label    g_PhyreApplication        # Phyre_PFramework_PApplication_GetApplication; fog colour/near/far/limit +0x60..+0x7c, ambient +0x50, background +0x80, keyframe-anim byte +0x3ac, window size +0x26c/+0x270 (docs/formats/render.md); a pointer (GetApplication 0x00623b90 returns it); +0x50..+0x8f sampled by the reference captures as app+0x50 (graphicSetGlobalAmbientColor 0x00643270 writes +0x50/+0x54/+0x58, graphicGetFogColor 0x00641160 reads +0x60/+0x64/+0x68)
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
 0x00ccb170 label    g_Virtuos_InputManager    # the object Virtuos_InputManager_getInstance returns
 0x00ccb228 label    g_GraphicScreenDttOffset  # two floats: graphicScreenSetDttOffset / graphicScreenGetDttOffset
@@ -16567,7 +16567,7 @@
 0x00ccb9cc label    g_pppSpecialPart          # set to 1 by pppRunPartStd for a part with 0x33 births or during spell 0x296
 0x00ccb9d0 label    g_EtChrHidden             # 1 after op_et_chr_show(0)
 0x00ccb9d4 label    g_VfxPhase                # at 0x1f updateVFXRenderData doubles the alpha (512) of magic files 0x203 and 0x29b (texture 0, object +8 == 0x48, program 0xb)
-0x00ccb9d8 label    g_PhyreScene              # the PhyreScene object: graphicLevelGetNameHash passes it to PhyreScene_getCurrentLevelNameHash (+0xfaf4); field list in docs/formats/render.md
+0x00ccb9d8 label    g_PhyreScene              # the PhyreScene object: graphicLevelGetNameHash passes it to PhyreScene_getCurrentLevelNameHash (+0xfaf4); field list in docs/formats/render.md; a pointer (graphicCameraSetWorldMatrix 0x00639860 loads it and stores the camera world 3x4 at +0xfa04..+0xfa30, eye at floats 8..10: the reference captures find those bits in cb0 of every scene draw of the next frame); +0xfa34/+0xfa38 screen shift (PhyreScene_getViewProjectionMatrix); +0xdc main camera: its +0xbc far plane (setFarPlane 0x00645e90, [0x2f]), +0x150 aspect (PhyreScene_setCameraAspectRatio 0x0066cbe0, [0x54]), +0x154 fovy (PhyreScene_setCameraFOVy 0x0066cda0, [0x55]); 2D layers +0x1128 non-zero with layers, +0x1138 count, +0x1140 table of 8-byte entries, +0x11d8 current group (PhyreScene_show2DLayer 0x0066f2f0)
 0x00ccc81c label    g_GraphicUi               # the remaster's UI object: graphicGetNowUIType / graphicSetNowUIType (+0x2be0)
 0x00ccc820 label g_MenuTextureManager # the menus' texture manager: SpecialFeatureDisplay_dtor_SpecialFeatureDisplay 0x006422e0 calls MenuTextureManager_LoadLanguageTextures_0067c920 on it; name ours
 0x00ccc830 label    g_FreeCamera              # the free camera singleton (0x344 bytes, FreeCamera_FreeCamera), created on demand by its users, FreeCamera_destroyInstance
@@ -16575,7 +16575,7 @@
 0x00ccc870 label    g_FFEscMenu               # the PC escape menu (FFEscMenu_vftable); graphicIsEscMenuActive
 0x00ccc88c label    g_AsyncLoadManager        # the instance AsyncLoadManager_sGetInstance returns
 0x00ccc89c label    g_PostProcessTweakUtil    # PostProcessTweakUtil_GetInstance; PostProcessTweakUtil_Destroy
-0x00ccc8a0 label    g_PostProcessManager      # PostProcessManager_GetInstance
+0x00ccc8a0 label    g_PostProcessManager      # PostProcessManager_GetInstance; a pointer (0x00692be0 is mov eax, [0x00ccc8a0]; ret); screen fade +0x1238c rgba floats (graphicGetScreenFadeColor 0x00641390), +0x1239c alpha mode, +0x123a0 lock byte, +0x123a4 last reason (docs/formats/render.md)
 0x00ccca4c label    g_ClusterManager          # the instance ClusterManager_GetInstance returns
 0x00ccca6c label    g_VFXRenderDataTable      # the ClassVFXRenderDataTable (std::map head +0, cached key +0x20/+0x24 and geometry +0x28): graphicVFXGetRenderDataByInstance, graphicVFXUpdate
 0x00ccca84 label    g_CharacterLighting       # Phyre_CharacterLighting_GetInstance; the graphicCharacterLighting* wrappers call its methods
@@ -17903,7 +17903,7 @@
 0x02311428 label    g_CamOverrideScreenDepth     # override projection distance (default 1024.0; Native_CamSetScreenDepth's units)
 0x0231142c label    g_CamOverrideOn              # nonzero: the view comes from the override camera (Cam_OverrideSet), else from the active channel
 0x02311430 label    g_Camera                     # pointer to the active camera channel (FUN_007bd470 reads its sides): +0x50 look-at point (ref, side 0) xyz, +0x66c eye (side 1) xyz; live: the look-at follows the player at chest height on the S.S. Winno deck
-0x02311440 label g_CameraMatrix              # MsGetCameraMatrix (0x007c04b0)
+0x02311440 label g_CameraMatrix              # MsGetCameraMatrix (0x007c04b0); the game's 4x4 view: Cam_Apply 0x007bc980 passes it to graphicCameraSetWorldMatrix 0x00639860, which inverts it into g_PhyreScene +0xfa04; Copy_009da750 fills it from 0x022fb660 (MsScreenProcess); a reference-capture scene input
 0x02311480 label g_ScreenMatrix              # MsGetScreenMatrix (0x007bbd70)
 0x023114c0 label g_BtlScreen                  # u32; Pointer to the screen in use (MsScreenOffset: its offset at +0x30).
 0x023114c4 label g_CameraMatrixOn          # u32 bit 0 (MsSetCameraMatrix)
