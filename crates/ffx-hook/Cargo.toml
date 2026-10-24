@@ -13,6 +13,7 @@ ffx-battle.workspace = true
 ffx-bridge.workspace = true
 ffx-chara.workspace = true
 ffx-core.workspace = true
+ffx-draw = { path = "../ffx-draw" }
 ffx-field.workspace = true
 ffx-gfx.workspace = true
 ffx-graphic.workspace = true

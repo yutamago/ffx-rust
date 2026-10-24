@@ -1,0 +1,18 @@
+# ffx-draw's replay mode on the S.S. Winno deck (docs/draw.md): capture a
+# frame, then draw that frame's scene through ffx-draw on the game's device
+# in place of the game's own scene draws, and compare. Needs FFX_GFX=1.
+# Captures are large: put the trace in ~/ffx-work/m4/captures, never in git.
+#   tools/draw/replay.sh <run name>
+load direct 1 cdsp0000
+# Event frame 101, as field-walk-1 (tools/replays/field-walk.txt).
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+gfxcapture $OUT\cap
+gfxreplay $OUT\cap\capture.ffxgfx $OUT\replay
+shot $OUT\after-replay.bmp
+# A capture of a later frame (the game draws its own again), the first
+# capture replayed a few hundred frames on, and the second one.
+wait 200
+gfxcapture $OUT\cap2
+gfxreplay $OUT\cap\capture.ffxgfx $OUT\replay-later
+gfxreplay $OUT\cap2\capture.ffxgfx $OUT\replay2

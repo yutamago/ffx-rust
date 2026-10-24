@@ -13,6 +13,7 @@
 mod capture;
 pub mod live;
 mod proxy;
+pub mod replay;
 pub mod vt;
 
 use std::collections::HashMap;

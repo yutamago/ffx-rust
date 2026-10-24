@@ -591,6 +591,10 @@ dependencies = [
 [[package]]
 name = "ffx-draw"
 version = "0.1.0"
+dependencies = [
+ "ffx-gfx",
+ "windows",
+]
 
 [[package]]
 name = "ffx-drawdiff"
@@ -652,6 +656,7 @@ dependencies = [
  "ffx-bridge",
  "ffx-chara",
  "ffx-core",
+ "ffx-draw",
  "ffx-field",
  "ffx-gfx",
  "ffx-graphic",
