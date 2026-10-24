@@ -147,8 +147,10 @@ def main():
         run(["python3", "-I", "tools/check-clobber.py"], env, dry)
         run(["python3", "-I", "tools/check-callwidth.py"], env, dry)
         run(["tools/build-hook.sh"], None, dry)
-        if "--no-replays" not in sys.argv:
-            run(["tools/replays/run-all.sh"], env, dry)
+    # the replays also check their own scripts and comparison tools
+    replay_inputs = ("crates/", "tools/replays/", "tools/shot-compare.py", "tools/replay-compare.py")
+    if any(f.startswith(replay_inputs) for f in changed) and "--no-replays" not in sys.argv:
+        run(["tools/replays/run-all.sh"], env, dry)
     print("batch verified")
     if not dry:  # the status page, in the background (tools/status.sh)
         subprocess.run([str(REPO / "tools/status.sh")], check=False)
