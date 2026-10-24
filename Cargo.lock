@@ -823,6 +823,13 @@ dependencies = [
 [[package]]
 name = "ffx-scene"
 version = "0.1.0"
+dependencies = [
+ "ffx-drawdiff",
+ "ffx-dxbc",
+ "ffx-gfx",
+ "ffx-phyre",
+ "ffx-vbf",
+]
 
 [[package]]
 name = "ffx-script"

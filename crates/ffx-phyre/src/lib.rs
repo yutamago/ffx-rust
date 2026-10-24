@@ -26,8 +26,8 @@ pub use dds::{Dds, DdsError};
 pub use decode::png;
 pub use gltf::{Animation, Track};
 pub use import::{Imported, import_into_cluster};
-pub use material::{Bone, Instance, Material, MaterialTexture, Node, Parameter, Skeleton};
-pub use model::{Model, Segment};
+pub use material::{Bone, Bounds, Instance, Material, MaterialTexture, Node, Parameter, Skeleton};
+pub use model::{BlockBuffer, Model, Segment, SegmentBuffers};
 pub use texture::{Format, Kind, Texture};
 
 #[derive(Debug, thiserror::Error)]

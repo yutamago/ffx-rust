@@ -6,5 +6,12 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[dependencies]
+ffx-drawdiff = { path = "../ffx-drawdiff" }
+ffx-dxbc.workspace = true
+ffx-gfx.workspace = true
+ffx-phyre.workspace = true
+ffx-vbf.workspace = true
+
 [lints]
 workspace = true

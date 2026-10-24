@@ -176,6 +176,10 @@ streams by order is wrong for about a fifth of the models.
   to the node that shares its `PWorldMatrix`: `m_localToWorldMatrix` and
   `PNode.m_worldMatrix` point to the same object. The world matrices
   themselves are zero in the file and computed at load time.
+- **Bounds.** A `PMeshInstanceBounds` (`m_min` +0, `m_worldMatrix` +0xc,
+  `m_size` +0x10, `m_meshInstance` +0x1c, `m_render_order` +0x20) points
+  at each instance: the box the renderer culls with and the sort class
+  (`Instance::bounds`; `docs/formats/scene.md`).
 - **Uninstanced meshes.** A map can contain meshes that no instance uses
   (copies for dynamic modifiers). Exporting every segment would draw
   those twice, so the export follows the instances.
