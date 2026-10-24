@@ -240,21 +240,19 @@ and later content; dead stays a static verdict there.
    moves into the core and the bridge shrinks to the views the remaining
    original callers need. When the last caller goes, the bridge goes too.
 
-### Two sides that grow toward each other
+### One process, then 64-bit
 
-The renderer shows the pattern. It runs as a separate 64-bit process
-(`ffx-render`), fed by the scene stream from the 32-bit game. Parts with
-narrow, per-frame interfaces can move to that 64-bit side early:
-- rendering (started);
-- audio;
-- input and window;
-- the PC UI screens;
-- movies.
-
-Game logic stays in-process in the 32-bit game, because it calls and is
-called thousands of times a frame, and shrinks there function by function.
-At the end the logic crates move into the 64-bit host, and `FFX.exe` is no
-longer loaded.
+Until 2026-10-24 the plan grew a separate 64-bit process (`ffx-render`,
+fed by the scene stream) toward the 32-bit game, because enhancements
+needed more than the 32-bit process allows. Enhancements are now a
+separate project after the rewrite (M4), so the platform is rewritten
+in-process instead (user, 2026-10-24): the Rust renderer, audio, input,
+window, movies and PC UI run inside the 32-bit game, the way the logic
+does, on the game's own D3D11 device and with its own shaders. Every crate
+is built for any target, so at M5 the whole game becomes one 64-bit Rust
+program and `FFX.exe` is no longer loaded. The external renderer is parked
+as it is (with its enhanced mode), as a starting point for the
+enhancement project.
 
 ### Verification at scale
 
@@ -336,43 +334,43 @@ characters and motions (`Ch`; motion formats are done); the remaining Atel
 natives; menus and text (`Tk`). It is done when walking, events and the
 menus of a save run on Rust logic and replay identically.
 
-### M4: the 64-bit side takes the platform
+### M4: Rust takes the platform, in-process
 
-The original look is preserved first (user's decision, 2026-10-17): the
-renderer's original mode (the game's own shaders and draw state, no
-enhancements) is the default and must match the original game; the
-enhanced mode (PBR materials, new lighting, upscaling) is always an option
-the player turns on. Each part the renderer takes over (scene, effects,
-glow and post-processing, the UI, movies) switches from the old engine only
-when its original mode passes:
+Every part of the platform (the scene renderer, effects and
+post-processing, the UI, movies, audio, input and the window) is rebuilt
+in Rust inside the game's process and must give the original's output
+exactly. Improvements to graphics, sound and input are not part of this
+rewrite: they are a separate project after it, backwards compatible with
+the original behaviour (user, 2026-10-24). The external renderer
+(`ffx-render`, its enhanced mode) is parked and gets no M4 work.
 
-- a draw-stream comparison: the draws the Rust scene builder makes (meshes,
-  order, shaders, constants, state) against the ones PhyreEngine makes for
-  the same frame, draw by draw;
-- screenshot comparisons against the original game (`tools/shot-compare.py`
-  and the replays), within the rounding that different graphics APIs bring.
-
-Order (user's decision, 2026-10-24): the renderer's scene first (the
-external renderer exists, and the replays give it screenshot checks), then
+Order (user's decision, 2026-10-24): the renderer's scene first, then
 effects and post-processing, the UI, movies, audio, input and the window.
-Every part is rebuilt to give the original's output exactly. Improvements
-to graphics, sound and input are not part of this rewrite: they are a
-separate project after it, backwards compatible with the original
-behaviour (user, 2026-10-24). The renderer's existing enhanced mode stays
-as it is, but M4 adds no enhancement work.
+
+The renderer draws on the game's own D3D11 device with the game's own
+DXBC shaders, so its output can be bit-identical. It issues its draws
+through a thin backend layer of its own with only a D3D11 backend: M6's
+platforms add Vulkan or wgpu behind it (reusing `ffx-dxbc`'s DXBC→WGSL
+translation). Each part replaces the old engine only when it passes:
+
+- a draw-stream comparison: the D3D11 calls the Rust side makes (draws,
+  order, shaders, constants, state, resources) against the ones PhyreEngine
+  makes for the same frame, captured in the same process, call by call
+  (`ffx-drawdiff`);
+- the replays and screenshot comparisons against the original game
+  (`tools/replays/run-all.sh`, `tools/shot-compare.py`).
 
 - Effects (`ppp`) and the remaster renderer (`graphic*`) are rewritten into
-  the scene stream: the Rust side builds the scene instead of reading it out
-  of PhyreEngine's.
+  the Rust scene builder: Rust builds the scene instead of PhyreEngine.
 - Audio (FSB/FEV decoding, mixer), input and the window, movies, and the PC
-  UI screens move into the 64-bit host. FMOD, Iggy and D3D11 are no longer
-  used.
+  UI screens are rewritten in Rust in-process. FMOD and Iggy are no longer
+  used; D3D11 stays as the first backend.
 
 ### M5: inversion
 
 The main loop (`Sg`, `FFXApplication`) and the system module (archives,
-saves, settings, language) move to Rust. The 64-bit host runs the whole game
-from the Rust crates and no longer starts `FFX.exe`. Saves stay
+saves, settings, language) move to Rust. A 64-bit Rust program runs the
+whole game from the Rust crates and no longer loads `FFX.exe`. Saves stay
 byte-compatible with the original's.
 
 Alongside M4 and M5: the Luau stages L1 and L2 (Modding, below).
@@ -466,7 +464,7 @@ PhyreEngine, but never runs it and exposes nothing of the game to it:
   worker started, signal sent, battle started, command chosen) and call the
   natives through a typed API (`chr.move_to`, `msg.show`, `wait.frames`).
   The original scripts stay as they are; a mod adds behaviour or replaces
-  one worker's. Runs in the hook first and in the 64-bit host after M5
+  one worker's. Runs in the hook first and in the 64-bit program after M5
   unchanged.
 - **L2, Atel to Luau (with M4/M5).** A decompiler turns every shipped event
   and battle script into readable Luau (workers as coroutines, natives by
