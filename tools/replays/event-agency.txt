@@ -23,9 +23,10 @@
 # Ranges: the save data's map and previous map (0x0112ca90), the scenario
 # (0x0112d67c), the player's position (g_SaveData_PlayerPos 0x00ccb9a8),
 # the field view matrix (g_YiViewMatrix 0x018ded38), message windows 0 and
-# 1's state words (g_AtelMsgWindows + 0x14 / + 0x40, 8 bytes each: their
-# +0x1c..+0x1f, the choice flags and answer, settle a frame apart in some
-# Rust runs, docs/harness.md), the random
+# 1's state words (g_AtelMsgWindows + 0x14 / + 0x40, 8 bytes each: the
+# trace samples on the render thread while the main thread updates, and
+# can catch +0x1d half-written; the original does it too when slowed,
+# docs/harness.md, agency-race), the random
 # generators, the party records (HP and MP: Rest restores them), the key
 # items (g_SaveImportant 0x01130f1c) and ctrl work 0's byte +3 (bit 2 while
 # an event reward is given). run-all.sh leaves the position out of the

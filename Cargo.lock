@@ -599,6 +599,11 @@ dependencies = [
 [[package]]
 name = "ffx-drawdiff"
 version = "0.1.0"
+dependencies = [
+ "ffx-dxbc",
+ "ffx-gfx",
+ "ffx-harness",
+]
 
 [[package]]
 name = "ffx-dxbc"

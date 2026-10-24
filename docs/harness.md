@@ -15,7 +15,7 @@ tools/harness.py quit
 
 | Piece | Hook | Why |
 |---|---|---|
-| Frames | `IDXGISwapChain::Present` (vtable of the swap chain from `D3D11CreateDeviceAndSwapChain`, patched in the import table) | Counts frames; commands that touch game state or the GPU (`call`, `shot`, waits) run here, on the game thread, between frames |
+| Frames | `IDXGISwapChain::Present` (vtable of the swap chain from `D3D11CreateDeviceAndSwapChain`, patched in the import table) | Counts frames; commands that touch game state or the GPU (`call`, `shot`, waits) and the trace run here, between frames. `Present` runs on Phyre's render thread (`0x00616010`), not the main thread, which may be in the middle of the next frame's update meanwhile (agency-race, event-agency below) |
 | Buttons | `Input_KeyHeld` (`0x00629d50`), wrapped with a trampoline | `Virtuos_InputManager_updateInput` (`0x00632a30`) builds the PS2 pad word at `0x00ccb170` (previous frame at `+4`) by asking it about every binding. For each held button the first keyboard binding paired with it reads as held, so the game sees the same as a key press: exactly that button's bit |
 | Keys | `IDirectInput8::CreateDevice` → device `GetDeviceState` / `SetCooperativeLevel` | The PC menus (Esc) read keys directly. The keyboard is made a background device, and an unacquired one reads as all keys up |
 | Focus | `ShowWindow` | Background mode shows the window without activating it |
@@ -526,21 +526,49 @@ against the recording; the original runs agreed there by chance), so
 `tools/shot-compare.py` masks it there as it does for event-besaid; shots
 1-3 and 7 gave 0-5 pixels.
 
-Message windows 0 and 1 are traced from `+0x14` for 8 bytes, not 12. Their
-`+0x1c..+0x1f` (the choice flag byte `+0x1d` and the answer `+0x1e`) go from
-`04 00 00 00` to `04 10 ff ff` in one frame when the book's Read is
-confirmed, in every original run (0 of 25, plus 0 of 6 with coverage mode's
-first-call traps); with the Rust replacements the trace showed one frame
-in between in 3 of 26 plain runs and in about two of three in hook-hit
-mode. Turning hooks off by file (`FFX_HOOK_DISABLE`, six hook-hit runs
-each) found no single culprit: with all of `system.rs`'s second half off
-(757 hooks, `Difference_009ddc80` to `MagicFile_Load` in file order,
-mostly `Kernel*` lookups and `TO*` text and menu drawing) 0 of 12 runs
-showed it, with either half of those 757 off 3 of 6 (a bisection down the
-second half kept finding it), with `script.rs`, `menu.rs`, `map.rs`,
-`vfx*.rs`, `battle.rs` or the rest off 2-5 of 6. A race with a thread, or
-timing that the trap cost tips, rather than one wrong port; the probe is
-`~/ffx-work/rp-events2/cam.txt` and `ab.sh` (rp-events2, 2026-10-24).
+Message windows 0 and 1 are traced from `+0x14` for 8 bytes, not 12.
+Their `+0x1c..+0x1f` (`+0x1d` the mode flags, `+0x1e`/`+0x1f` the choice
+cursor) can show a value the game never holds at a frame boundary, and
+that is the trace's doing, not the game's (agency-race, 2026-10-24).
+`Present`, where `trace_frame` samples, runs on Phyre's render thread
+(`Phyre_PRendering_PRenderThread_threadEntry` `0x00616010`; the call log's
+callers `00593782,006159bb,0061608e`), while the main thread runs the next
+frame's update (`Script_Run`, the natives) beside it: lockstep holds the
+render thread in `Present`, and the main thread goes on until it waits for
+the render thread. In the call log `Native_MsgOpen` started before one
+`present` line and returned after it. A sample therefore sees the main
+thread's update up to wherever it has got to. Two pairs of writes are
+caught this way, each made by one call on the main thread with no frame in
+between:
+- the book's choice (window 1): `Msg_ShowSetup` (`0x008607a0`) calls
+  `Native_MsgOpen`, which stores `Msg_ClampChoices`' flags (`02`) into
+  `+0x1d` first and then sets up the text box (`TOInitMessageSlot_008ada30`,
+  `TOSetWindowRGBA`, ... `TOOpenWindowAndMessage`), then
+  `Native_MsgSelect`, which ORs in `0x20`. Split traces show `02`, then
+  `22` a frame later;
+- Read confirmed (window 0, the book's message reopened): in one script run
+  `Msg_CloseWindow` (`0x008640f0`) writes `+0x1e` = `ffff`, `Native_MsgOpen`
+  writes `+0x1d` (`00`) and sets up the box, and the wait's start
+  (`Native_MsgWaitEx` `0x0085abd0`, `wait_start`) ORs in `0x10`. Split traces
+  show `ffff` with `+0x1d` `00`, then `10` a frame later.
+The longer the main thread spends between the two writes (the text box
+setup in between), the likelier a sample lands there. Per-byte traces
+(`~/ffx-work/agency-race/bytes.txt`, one-byte ranges decoded by
+`decode.py`; `probe.sh`): the original 0 of 7 (and 0 of 25 before, 0 of 6
+with coverage mode's first-call traps), plain Rust 1 of 6 (3 of 26
+before), hook-hit mode 3 of 3 (its first-call traps fall in the text box
+setup). The original splits both pairs in 3 of 3 runs, exactly as Rust does,
+with a debug build that wraps the original `Native_MsgOpen` with a
+trampoline and sleeps 30 ms after it returns (`debug-probe.patch` there,
+`FFX_DEBUG_MSGOPEN=30`; 0 of 2 with the same wrapper and no sleep). No game
+state differs: the main thread reads its own writes in order, and the
+game's code never looks at these bytes between the two writes. So no port
+is wrong, and the old bisection could not find one: what it moved was the
+main thread's time inside that window (any 757 hooks' worth of trap and
+call cost), not one function or a pair of them. The 8-byte trace stays.
+A sample taken on the main thread between two updates would remove this
+kind of one-frame value from every replay; that is a harness change (and
+re-recording) not made here.
 
 `tools/replays/event-arrival.txt` (2026-10-24, `realtime`, about 90 s, the
 longest replay) plays the cut scene save slot 2 (`ffx_002`, the sea off

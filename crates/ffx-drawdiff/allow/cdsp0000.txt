@@ -1,0 +1,29 @@
+# Noise allow list of cdsp0000 (S.S. Winno deck, save slot 1): what differs
+# between two runs of the original code at field-walk-1's frame (ctrl work
+# 0's event count 101), from six captures (fw1..fw3, a and b; 15 pairs).
+# docs/drawdiff.md, "Noise in cdsp0000".
+[cdsp0000]
+
+# Differs in 3 of 5 pairs against fw1-a: 3.436, 3.437, 3.435999.
+# Phyre_PTimerWin32_GetTime (0x0042fd80) returns FILETIME / 1e7, about
+# 1.34e10 s, where one f64 ulp is 1.9e-6 s. The harness's virtual clock
+# starts at the real clock's first reading (ffx-hook harness.rs time_now),
+# so a time difference carries that rounding (the 8-ulp f32 change at 3.436
+# is 1.9e-6 s), and the frame limiter's whole-millisecond sleep, taken from
+# a difference of such values, now and then truncates to one more ms (the
+# 1 ms steps).
+constant var=scene field=*.cb0.scene.GlobalTime cause: the virtual clock starts at the wall clock's FILETIME reading, so GlobalTime carries its f64 rounding and the limiter's ms truncation
+
+# Differs in every pair: the COLOR1 stream (slot 5, a dynamic ring) of the
+# cloth draws of this skinned shader. Sg_ClothStep (0x00822de0) adds wind
+# from the CRT rand(), whose seed is per thread; the cloth job
+# (Ch_Cloth_PerCharacter 0x0082e390) runs on whichever JobWorker thread is
+# free, so each run draws other numbers. Seeding (FFX_HARNESS_SEED) covers
+# the game's generators, not the workers' CRT state.
+resource kind=draw vs=bb9bf1c768e1480f field=vb5 cause: cloth wind from CRT rand() on JobWorker threads (per-thread seed, scheduling-dependent)
+
+# Differs in every pair, about 5e-30: the third word of the light vector
+# Ch_DrawMain (0x0082ed50) passes to graphicSgSetSpecular (0x00643cc0) is
+# [ebp-0x3c], a stack word it never writes (ffx_chara::draw_main; the port
+# passes 0 under the junk-read policy of 2026-10-24).
+constant var=SgSpec_LightVec field=*.SgSpec_LightVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x3c] (the light vector's third word)
