@@ -219,7 +219,11 @@ MENU_CTRL = ("menu window +0xc control: its dispatchers TkMenuMainActiveMenu 0x8
              "TOMenuCloseMainWindows_008a9230 0x8a927c overwrite eax after the call (2026-10-23)")
 RCBG_DRAW = ("rcbg object +0xc draw: its dispatcher 0x92075e (rcbgScene draw loop) and the +4 "
              "ones 0x920695/0x9208cf/0x920abe overwrite eax after the call (2026-10-23)")
+MENU_SLOT = ("menu slot +0 control (record registered by TkMenuMainRegistMenu, slot table "
+             "g_TkMenuSlots 0x01840888): its dispatchers TkMenuMainActiveMenu 0x8aa15f (then "
+             "mov eax, 1) and TkMenuCloseAll 0x8aa237 (eax reloaded at 0x8aa216) drop eax (2026-10-24)")
 VOID_OK = {
+    0x008b15d0: MENU_SLOT,  # TkMenuCtrlSaveLoad (records 0x00c59ff0, 0x00c5a014)
     0x00922100: RCBG_DRAW,  # rcbgTrxTexDraw
     0x0092d470: RCBG_DRAW,  # rcbgTrxDraw_0092d470
     0x008d9e20: MENU_CTRL,  # MenuShop_SellWindowCtrl

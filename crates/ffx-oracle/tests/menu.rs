@@ -21751,3 +21751,354 @@ fn small8_c_ctrl_item_matches_the_original() {
         );
     }
 }
+
+/// A [`small8_stub`]: callee, arguments, `pre`, `post`.
+type Small8Stub = (u32, Vec<Small8Arg>, Vec<u8>, Vec<u8>);
+
+/// How a [`small8_stub`] logs one argument.
+#[derive(Clone, Copy)]
+enum Small8Arg {
+    /// The word.
+    V,
+    /// The word it points at (a pointer into each side's own frame).
+    D,
+    /// Not at all (a pointer into each side's own frame, written only).
+    S,
+}
+
+/// A stand-in for `f` behind a jump, in both: `pre`, then it appends `id`
+/// and its arguments as `args` says at `*cursor`, then `post` (which ends
+/// with its `ret`).
+fn small8_stub(
+    t: &mut Twins,
+    f: u32,
+    cursor: u32,
+    id: u32,
+    args: &[Small8Arg],
+    pre: &[u8],
+    post: &[u8],
+) {
+    let c = cursor.to_le_bytes();
+    let mut code = pre.to_vec();
+    code.extend([&[0x8b, 0x0d][..], &c].concat()); // mov ecx, [cursor]
+    code.extend([0xc7, 0x01]); // mov dword [ecx], id
+    code.extend(id.to_le_bytes());
+    let mut k = 0u8;
+    for (j, a) in (0u8..).zip(args) {
+        match a {
+            Small8Arg::V => code.extend([0x8b, 0x44, 0x24, 4 + 4 * j]),
+            Small8Arg::D => code.extend([0x8b, 0x44, 0x24, 4 + 4 * j, 0x8b, 0x00]),
+            Small8Arg::S => continue,
+        }
+        k += 1;
+        code.extend([0x89, 0x41, 4 * k]); // mov [ecx + 4k], eax
+    }
+    code.extend([&[0x83, 0x05][..], &c, &[4 + 4 * k]].concat());
+    code.extend(post);
+    jump_stub(t, f, &code);
+}
+
+/// Small round 8 d: `TkMenuCtrlSaveLoad` from every state (0..0x73) in
+/// the save and the load menu, with the pads' bits, the card calls'
+/// results (0, positive, negative), `MenuSave_McSync` finished or not with
+/// every out value the states test (-4, -2, -3, 0, 1, ...), the card's
+/// type, format and free space, the slot states and sizes, the yes/no
+/// window's outcome and row, the file list window's pick, the CRC check's
+/// three outcomes, the menu mode and frame ratio, the language swap. The
+/// path builders write the slot into the path buffer and the card calls
+/// log it back (each side's frame differs); every stand-in logs the state
+/// word first.
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn small8_d_ctrl_save_load_matches_the_original() {
+    use Small8Arg::{D, S, V};
+    use ffx_menu::save_load::{callee as c, global as g};
+    let Some(mut t) = setup_any(0x5a11_8d01) else {
+        return;
+    };
+    let log = t.alloc(&vec![0; 0x8000]);
+    let cursor = t.alloc(&log.to_le_bytes());
+    let slot = t.alloc(&[0; 0x40]);
+    let cells: Vec<u32> = (0..20).map(|_| t.alloc(&[0; 4])).collect();
+    let [
+        pad,
+        rep,
+        trg,
+        sync_ret,
+        sync_out,
+        card,
+        list_max,
+        pos,
+        toggle,
+        first,
+        glob,
+        info,
+        crc,
+        mode,
+        ratio,
+        swap,
+        exec,
+        debug,
+        _,
+        _,
+    ] = cells[..].try_into().unwrap();
+    let ret = small8_ret;
+    let state_log = [
+        &[0xa1][..],
+        &(slot + 0x1c).to_le_bytes(),
+        &[0x8b, 0x0d],
+        &cursor.to_le_bytes(),
+        &[0x89, 0x01, 0x83, 0x05],
+        &cursor.to_le_bytes(),
+        &[0x04],
+    ]
+    .concat();
+    // mov eax, [esp + 12]; mov ecx, [sync_out]; mov [eax], ecx
+    let sync_pre = [
+        &[0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d][..],
+        &sync_out.to_le_bytes(),
+        &[0x89, 0x08],
+    ]
+    .concat();
+    // mov eax, [esp + 4]; mov ecx, [esp + 8]; add ecx, id << 16 (below);
+    // mov [eax], ecx
+    let path_pre = |k: u32| {
+        [
+            &[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08, 0x81, 0xc1][..],
+            &(k << 16).to_le_bytes(),
+            &[0x89, 0x08],
+        ]
+        .concat()
+    };
+    let plus = |k: u32| {
+        [
+            &[0x8b, 0x44, 0x24, 0x04, 0x05][..],
+            &k.to_le_bytes(),
+            &[0xc3],
+        ]
+        .concat()
+    };
+    let callees: Vec<Small8Stub> = vec![
+        (c::GET_CONTROL_PAD, vec![], vec![], ret(pad)),
+        (c::GET_CONTROL_PAD_REP, vec![], vec![], ret(rep)),
+        (c::GET_CONTROL_PAD_TRG, vec![], vec![], ret(trg)),
+        (c::GET_CD, vec![], vec![], vec![]),
+        (c::POLL_CARD, vec![], vec![], vec![]),
+        (c::SND_SEP_PLAY_SIMPLE, vec![V], vec![], vec![]),
+        (c::CLOSE_HELP_WINDOW, vec![], vec![], vec![]),
+        (c::GET_LIST_MAX2, vec![], vec![], ret(list_max)),
+        (c::CLOSE_YES_NO_WINDOW, vec![], vec![], vec![]),
+        (c::MC_INIT_DIR, vec![V, V], vec![], vec![]),
+        (c::MC_GET_DIR, vec![D, V, V, V], vec![], ret(card)),
+        (c::MC_GET_INFO, vec![V, V, V, V], vec![], ret(card)),
+        (c::MC_GET_LOAD_FILE_POS, vec![V], vec![], ret(pos)),
+        (c::SYNC_TOGGLE, vec![], vec![], ret(toggle)),
+        (c::MC_SYNC, vec![V, V, S], sync_pre, ret(sync_ret)),
+        (c::PATH_DIR, vec![S, V], path_pre(1), vec![]),
+        (c::MC_MKDIR, vec![D], vec![], ret(card)),
+        (c::PATH_ICON, vec![S, V], path_pre(2), vec![]),
+        (c::MC_OPEN, vec![D, V], vec![], ret(card)),
+        (c::MC_WRITE, vec![V, V, V], vec![], ret(card)),
+        (c::MC_CLOSE, vec![V], vec![], ret(card)),
+        (c::PATH_ICON_SYS, vec![S, V], path_pre(3), vec![]),
+        (c::GET_SAVE_DIC, vec![], vec![], vec![]),
+        (c::GET_SAVE_EVENT_ADDRESS, vec![V], vec![], plus(0x100)),
+        (c::PACK_SAVE, vec![V, V, V], vec![], vec![]),
+        (c::BUILD_ICON_SYS, vec![V, V, V], vec![], vec![]),
+        (c::PATH_DATA, vec![S, V], path_pre(4), vec![]),
+        (c::SAVE_MES, vec![V], vec![], plus(0x1_0000)),
+        (c::SET_HELP_MESSAGE, vec![V], vec![], vec![]),
+        (c::SUB_CMD_OPEN_C, vec![V, V, V], vec![], vec![]),
+        (c::MC_READ, vec![V, V, V], vec![], ret(card)),
+        (c::MC_SET_EXEC_PORT, vec![V], vec![], vec![]),
+        (c::OPEN_SUB_CMD_WINDOW, vec![V, V, V], vec![], vec![]),
+        (c::CLOSE_WINDOW, vec![], vec![], vec![]),
+        (c::SET_HELP_RATIO_DIFF2, vec![V], vec![], vec![]),
+        (c::STOP_SCENE, vec![V, V], vec![], vec![]),
+        (c::RESET_TOGGLES, vec![], vec![], vec![]),
+        (c::OPEN_WINDOW_3C20, vec![], vec![], vec![]),
+        (c::OPEN_WINDOW2, vec![V], vec![], vec![]),
+        (c::OPEN_CHOICE, vec![V], vec![], vec![]),
+        (c::SUB_CMD_OPEN_A, vec![V, V, V], vec![], vec![]),
+        (c::SAVE_LOAD_RESET, vec![V], vec![], vec![]),
+        (c::FIRST_READ_END, vec![], vec![], ret(first)),
+        (c::GET_GLOBAL_1841C0C, vec![], vec![], ret(glob)),
+        (c::OPEN_WINDOW, vec![V], vec![], vec![]),
+        (c::CLEAR_SELECT_WINDOW, vec![V], vec![], vec![]),
+        (c::DEBUG_SAVE, vec![V, V, V], vec![], vec![]),
+        (c::DEBUG_LOAD, vec![V, V, V], vec![], ret(debug)),
+        (c::SWITCH_GPU_MODE, vec![], vec![], vec![]),
+        (c::MC_SET_LOAD_FILE_POS, vec![V, V], vec![], vec![]),
+        (c::COPY_LOADED_SAVE, vec![V, V], vec![], vec![]),
+        (c::REFRESH_SOUND_MODE, vec![], vec![], vec![]),
+        (c::REFRESH_HDD, vec![], vec![], vec![]),
+        (c::ABM_PARA_GET, vec![], vec![], vec![]),
+        (c::MC_FORMAT, vec![], vec![], ret(card)),
+        (c::MARK_SLOTS, vec![V, V], vec![], vec![]),
+        (c::GET_SAVE_FILE_INFO, vec![V], vec![], ret(info)),
+        (c::CRC, vec![V, V], vec![], ret(crc)),
+        (c::HELP_SET_EXT_MODE, vec![V, V], vec![], vec![]),
+        (c::GET_MENU_MODE, vec![], vec![], ret(mode)),
+        (c::SET_MAIN_FRAME_RATIO_DIFF, vec![V], vec![], vec![]),
+        (c::GET_MAIN_FRAME_RATIO, vec![], vec![], ret(ratio)),
+        (c::LANG_SWAP_FLAG, vec![], vec![], ret(swap)),
+        (c::SAVE_CONFIG_ENGLISH, vec![], vec![], vec![]),
+        (c::SWAP_ENV_INIT, vec![V], vec![], vec![]),
+        (c::SWAP_ENV_EXEC, vec![], vec![], ret(exec)),
+        (c::CLOSE_WINDOW2, vec![], vec![], vec![]),
+        (c::MAIN_SLEEP_MENU, vec![V], vec![], vec![]),
+        (c::MAIN_ACTIVE_MENU, vec![V, V], vec![], vec![]),
+    ];
+    for (k, (f, args, pre, post)) in callees.into_iter().enumerate() {
+        let id = 0x8d00 + u32::try_from(k).unwrap();
+        let post = if post.is_empty() {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        } else {
+            post
+        };
+        let pre = [&state_log[..], &pre].concat();
+        small8_stub(&mut t, f, cursor, id, &args, &pre, &post);
+    }
+    let (window, yes_no, info_rec) = (
+        t.alloc(&[0; 0x80]),
+        t.alloc(&[0; 0x80]),
+        t.alloc(&[0; 0x80]),
+    );
+    t.put(t.sym(g::WINDOW), window);
+    t.put(t.sym(g::YES_NO), yes_no);
+    t.put(list_max, yes_no);
+    t.put(info, info_rec);
+    let frame = t.b.stack_range().start + 0x80;
+    for round in 0..6000u32 {
+        t.put(cursor, log);
+        let state = t.rng.below(0x74);
+        t.put(slot + 0x1c, state);
+        for cell in [pad, rep, trg] {
+            let v = t.rng.pick(&[
+                0u32, 1, 4, 5, 0x20, 0x40, 0x5000, 0x1_0000, 0x1000, 0x1_0001, 0x1_5000,
+            ]);
+            t.put(cell, v);
+        }
+        let v = t.rng.pick(&[1u32, 1, 1, 0, 2, u32::MAX]);
+        t.put(sync_ret, v);
+        let v = t.rng.pick(&[
+            0u32,
+            0,
+            1,
+            2,
+            0xffff_fffc,
+            0xffff_fffe,
+            0xffff_fffd,
+            0xffff_ffff,
+        ]);
+        t.put(sync_out, v);
+        let v = t.rng.pick(&[0u32, 0, 0, 1, u32::MAX]);
+        t.put(card, v);
+        for cell in [pos, toggle, first, glob, swap, exec, debug] {
+            let v = t.rng.pick(&[0u32, 1, 1, 2, u32::MAX]);
+            t.put(cell, v);
+        }
+        let v = t.rng.pick(&[0u32, 0x1_0000, 0x80_0001, 0x100_0000]);
+        t.put(mode, v);
+        let v = t.rng.pick(&[0u32, 0x7f, 0x80, 0x81, u32::MAX]);
+        t.put(ratio, v);
+        let v = t.rng.pick(&[0u32, 0x1234, 0x5678]);
+        t.put(crc, v);
+        let v = t.rng.pick(&[0u16, 0x1234, 0x5678]);
+        t.put(info_rec + 0x1a, v);
+        let v = t.rng.pick(&[0u16, 0x1234, 0x5678]);
+        t.put(t.sym(g::SAVE_CRC), v);
+        let v = t.rng.below(2);
+        t.put(t.sym(g::ROW), v);
+        for k in 0..2 {
+            let v = t.rng.pick(&[0u8, 1, 1]);
+            t.put(t.sym(g::ENABLED + k), v);
+        }
+        for at in [g::TOGGLES, g::SAVING, g::HDD_MODE] {
+            let v = t.rng.pick(&[0u8, 1]);
+            t.put(t.sym(at), v);
+        }
+        let v = t.rng.pick(&[0u32, 0, 1]);
+        t.put(t.sym(g::ACTIVE), v);
+        let s = t.rng.below(6);
+        t.put(t.sym(g::SLOT), s);
+        for k in 0..8 {
+            let v = u8::try_from(t.rng.below(4)).unwrap();
+            t.put(t.sym(g::SLOTS + k), v);
+            let v = u8::try_from(t.rng.below(4)).unwrap();
+            t.put(t.sym(g::SLOT_SIZES + k), v);
+        }
+        for (at, opts) in [
+            (g::NEED, &[0u32, 2, 5][..]),
+            (g::CARD_FREE, &[0, 1, 3, 0x2000, u32::MAX][..]),
+            (g::CARD_TYPE, &[2, 2, 1][..]),
+            (g::CARD_FORMAT, &[0, 0, 1, 2][..]),
+            (
+                g::DIR_ICON_SIZE,
+                &[0x83a0, 0x8000, 0x8400, 0, 0xffff_f23d][..],
+            ),
+            (
+                g::ICON_SIZE,
+                &[0x83a0, 0x83a0, 0x7fff_fff0, 0xffff_f000, 0xffff_fb00][..],
+            ),
+            (g::LANG_SWAP, &[0, 1, 1][..]),
+        ] {
+            let v = t.rng.pick(opts);
+            t.put(t.sym(at), v);
+        }
+        t.scramble(g::DEFAULT_POS, 8);
+        t.scramble(g::FD, 4);
+        t.scramble(g::BUSY_WINDOW, 4);
+        t.scramble(g::SAVE_FILE, 0x40);
+        t.scramble(g::CARD_DIR_CLEAR, 0x10);
+        t.scramble(g::SLOTS_USED, 4);
+        for w in [window, yes_no] {
+            let v = t.rng.pick(&[-1i8, 0, 1, 2]);
+            t.put(w + 0x45, v);
+            let v = t.rng.pick(&[0i16, 0, 1, 3]);
+            t.put(w + 0x48, v);
+            let v = t.rng.pick(&[0i16, 1, 3, -1]);
+            t.put(w + 0x2c, v);
+            for o in [0x30, 0x3a] {
+                let v = t.rng.pick(&[0u16, 3, 8, 0x8000, 0x8001, 0xffff]);
+                t.put(w + o, v);
+            }
+            t.scramble_at(w + 0x32, 4);
+        }
+        t.twin(
+            &format!("TkMenuCtrlSaveLoad {round} state {state:#x}"),
+            0x008b_15d0,
+            &[slot],
+            VOID,
+            |o| {
+                ffx_menu::save_load::bridge::tk_menu_ctrl_save_load(o, slot, frame, &mut callback);
+                0
+            },
+        );
+    }
+    // state 0x46's size check: the icon's card size against its own,
+    // rounded to KiB (signed, as the original's cdq/sar)
+    for round in 0..300u32 {
+        t.put(cursor, log);
+        t.put(slot + 0x1c, 0x46u32);
+        t.put(sync_ret, 1u32);
+        let v = t.rng.pick(&[1u32, 5]);
+        t.put(sync_out, v);
+        let v = t.rng.pick(&[0u32, 0x400, 0x83a0, 0xffff_f23d]);
+        t.put(t.sym(g::DIR_ICON_SIZE), v);
+        let v = t
+            .rng
+            .pick(&[0u32, 0x83a0, 0xffff_f000, 0xffff_fb00, 0xffff_ffff]);
+        t.put(t.sym(g::ICON_SIZE), v);
+        t.twin(
+            &format!("TkMenuCtrlSaveLoad icon size {round}"),
+            0x008b_15d0,
+            &[slot],
+            VOID,
+            |o| {
+                ffx_menu::save_load::bridge::tk_menu_ctrl_save_load(o, slot, frame, &mut callback);
+                0
+            },
+        );
+    }
+}

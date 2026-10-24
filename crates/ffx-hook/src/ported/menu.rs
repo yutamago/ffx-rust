@@ -5161,6 +5161,15 @@ ported! {
         let local = frame.at();
         ffx_menu::item::bridge::tk_menu_ctrl_item(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuCtrlSaveLoad(m)` (the save and load slots' ctrl; menu slot
+    /// ctrls' eax is dropped by their dispatchers, `TkMenuMainActiveMenu`
+    /// and `TkMenuCloseAll`).
+    TkMenuCtrlSaveLoad @ 0x008b_15d0 => extern "C" fn tk_menu_ctrl_save_load(m: u32) {
+        // a path buffer and MenuSave_McSync's out word
+        let mut frame = super::StackFrame::<{ ffx_menu::save_load::FRAME_WORDS }>::new();
+        let local = frame.at();
+        ffx_menu::save_load::bridge::tk_menu_ctrl_save_load(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a));
+    }
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry

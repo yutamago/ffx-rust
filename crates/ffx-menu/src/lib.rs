@@ -12,6 +12,7 @@
 //! - [`main_loop`]: the main menu's frame (`0x008a9ca0`);
 //! - [`math`]: float helpers (angle wrapping, radius tests);
 //! - [`msg`]: message tables and message-window choices;
+//! - [`save_load`]: the save/load menu's control (`TkMenuCtrlSaveLoad`);
 //! - [`scene`]: menu scene data lookups;
 //! - [`scissor`]: the menu's software scissor;
 //! - [`start`]: the Tk boot (`TkInit`) and the menu's entry (`TkMenuStart`);
@@ -24,6 +25,7 @@ pub mod item;
 pub mod main_loop;
 pub mod math;
 pub mod msg;
+pub mod save_load;
 pub mod scene;
 pub mod scissor;
 pub mod start;

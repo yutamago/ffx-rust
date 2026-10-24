@@ -10770,6 +10770,7 @@
 0x008a9680 function TkMenuSetDrawShadeRatioStep# (v) 0x01840880, added to g_TkMenuDrawShadeRatio each draw; own name
 0x008a9690 function TkMenuDrawLayer           # (layer): nothing when 0x0134085c == 1 and layer >= 6 (signed); else TkVU1SyncPath, TOMenuOpenPktBuffTmp, TODrawScissorXYWH(0, 0, 512, 416), TOSeqDrawLayer(1, layer), TOMenuDrawKickTmp, TkVU1SyncPath, then +0x10(w) of each of the 16 g_TkMenuWindows with u8 +0x3e == layer; caller 0x008aa290; ported in menu round 23; name ours
 0x008a9720 function TkMenuExchangePlayerPos   # fh v3:exact 0x008a96d0; cdecl(a, b): swaps menu party slots a and b (g_TkMenuPlayers) and the save party: b >= g_TkMenuPlayerPartyMask (signed) looks players[b] up in MsGetSaveOutParty(&n) (found at j: save slot j+3, else no swap), otherwise slot b (MsGetSaveInParty called, list unused; negative: no swap); MsExchangeSaveParty(players[a], slot), bytes swapped; MenuParty_RefreshMask() always; the count goes into its b argument slot; ported in menu round 23
+0x008a97e0 function eiAbmParaGet               # (), the sphere grid's save data reread after a load (TkMenuCtrlSaveLoad states 0x25/0x68); no dump row; name from Ghidra's call
 0x008a9820 function TkMenuGetArmor            # (chr) ply_save u8 +0x2e; Switch name, alphabetical slot (pairs with TkMenuGetWeapon +0x2d)
 0x008a9840 function TkMenuGetPlayerStep       # () -> i8 g_TkMenuPlayerStep, sign-extended
 0x008a9860 function TkMenuGetCurrentPlayer    # fh v3:bsim1.00+call.cs 0x008a9810 stdcall
@@ -10962,7 +10963,7 @@
 0x008b1350 function setButtonData             # fh v3:bsim1.00 0x008b1300
 0x008b1370 function MenuSaveLoad_BuildCrcTable# (table) 256 u16 CRC-16/0x1021 of i<<9 (TkCRC table variant); no caller; own name
 0x008b1450 function TkCRC                     # fh v3:exact 0x008b1400
-0x008b15d0 function TkMenuCtrlSaveLoad        # fh v3:cg22 0x8b1580 +TkMenuCtrlSaveLoad
+0x008b15d0 function TkMenuCtrlSaveLoad        # fh v3:cg22 0x8b1580 +TkMenuCtrlSaveLoad; cdecl(m), eax dropped (menu slot +0 ctrl of the records 0x00c59ff0 save / 0x00c5a014 load, refs.py: 1 code ref each from TkMenuMainOpenMode_008aa780; dispatchers TkMenuMainActiveMenu 0x8aa15f and TkMenuCloseAll 0x8aa237 drop eax; VOID_OK MENU_SLOT): state m+0x1c 0..0x71, jump table 0x008b3310; 0..7 card poll toggles, 8..0xc port choice (trg 0x20 pick, 0x40 cancel, rep 0x5000 flip), 0xd/0xe no card, 0x10..0x13 card check (TkMcGetInfo, MenuSave_McSync), 0x16..0x21 directory and file list (0x1866284 load row), 0x24/0x25 the list: pad bits 0/2 save = debugSave_Thunk(1, g_SaveFileBuffer, 0x6900) after MenuSave_PackSave/BuildIconSys at slot 1, load = debugLoad_Thunk(pad bit 0 clear, buf, 0x6900) == 0 -> taken over (TkMenuCopyLoadedSave(event, buf), sound/HDD refresh, eiAbmParaGet 0x8a97e0, HDD mode 0) -> 0x69; 0x27 overwrite question (slot state 2 and free space < need - slot size refused), 0x2b..0x40 card type/format/format question, 0x41..0x58 card save (dir, icon unless the same KiB size, icon.sys, data; errors -> 0x5e), 0x5a..0x5d free space and the saved file's header, 0x60..0x68 card load with the CRC check (TkCRC(0x68c0, +0x40) against the file info +0x1a and the stored 0x159e464), 0x6d..0x70 menu mode, frame ratio and the language swap, 0x71 back (TkMenuMainSleepMenu 0xf + ActiveMenu(1, 0) saving, 0x10 loading). Hidden stack arguments: MenuSubCmd_OpenC/TkMenuOpenSubCmdWindow get (mes, 0, 0), MenuSave_PackSave gets the slot third, TkMenuCopyLoadedSave the buffer second; state 0x5c keeps the slot in edx across TkMenuGetSaveFileInfo (which leaves edx); ported (ffx_menu::save_load, small r8)
 0x008b3510 function TOLoadMenuOpen_008b3510 # cdecl(menu): save/load menu set-up, 0x0186628a = 1 (load: all slot states); TkMcSetDebugLock(1), MenuSaveLoad_ResetToggles, TkMenuSetScreenX2Flag(0), TkMn2SetMainFrameRatioDiff(-16); name ours
 0x008b3580 function TOSaveMenuOpen_008b3580 # cdecl(menu): as TOLoadMenuOpen with 0x0186628a = 0; name ours
 0x008b3610 function TOClearBlock_008b3610     # (): memset(AddrOfGlobal0159e468_008b3630(), 0, 0x400); name ours
@@ -17545,18 +17546,30 @@
 0x01865cdc label    g_FFXLangSwapFlag         # TOGetFFXLangSwapFlag
 0x01865f00 label    g_FFXVideoMode            # TOGetFFXVideoMode
 0x01865f20 label g_TOSeqSlots # 0x100 per scene: 8 slots of 0x20 (+0 u16 state: 0 free, 1..3 running, 4 stopped; +4 u16 draw-continue; +8 name; +0x1c handle): TOSeqStartScene/StopScene/InitAllScene/CheckTermScene; name ours
+0x01866240 label    g_TkMenuSaveLoadLangSwap   # u32 1 after a load (TkMenuCtrlSaveLoad 0x69): state 0x6f swaps the language environment when TOGetFFXLangSwapFlag is 1, 0x70 clears it; name ours
 0x01866244 label g_TkMenuPreSavePacked    # u32: 1 while a caller hands TkMenuPreSave an already packed save in g_SaveFileBuffer (two save callers set it, call TkMenuPreSave, clear it); name ours
 0x0186624c label g_TkMenuPreSaveDic       # u32: the save location (AtelGetSaveDic) handed to TkMenuPreSave with g_TkMenuPreSavePacked; name ours
 0x01866254 label    g_TkMenuSaveLoadWindow    # the save/load menu's window (TkMenuCtrlSaveLoad, TkMenuSaveLoadCloseWindow)
 0x01866264 label g_TkMenuSaveChoiceRow # u32 the save choice window's cursor row (TkMenuDrawSaveChoice_008b3860 draws the cursor there); name ours
 0x01866268 label g_TkMenuSaveChoiceEnabled # u8[2] the save choice window's choices; 0 draws one greyed (TkMenuDrawSaveChoice_008b3860); name ours
 0x0186626a label    g_TkMenuSaveLoadToggles   # 2 x u8 (MenuSaveLoad_ResetToggles)
+0x0186626c label    g_TkMenuCardType           # u32 the memory card type (TkMcGetInfo's second out; 2 = PS2 card); name ours
+0x01866270 label    g_TkMenuCardFormatted      # u32 TkMcGetInfo's fourth out (nonzero: formatted, TkMenuCtrlSaveLoad 0x2e/0x30 skip the format question); name ours
+0x01866274 label    g_TkMenuCardFree           # i32 the card's free clusters (TkMcGetInfo's third out; 0x2000 on result -2); MenuSaveLoad_MarkSlots(free, need); name ours
 0x01866278 label    g_TkSaveSlotsUsed         # MenuSaveLoad_MarkSlots
 0x0186627c label g_MenuSaveCounter # u32: MenuSave_PackSave adds 1 per save and stores it capped at 0x80000000 in the header's +0; name ours
+0x01866280 label    g_TkMenuSaveDefaultRow     # u32 the load cursor row when TkMcGetLoadFilePos has none; name ours
+0x01866284 label    g_TkMenuSaveLoadRow        # u32 the file list's start row (TkMcGetLoadFilePos, into window +0x48); name ours
 0x01866288 label g_TkMenuSaveChoiceWidth # u16 the widest save choice text (TkMenuInitSaveChoice_008b3680); name ours
+0x0186628a label    g_TkMenuSaving             # u8 nonzero in the save menu, 0 in the load menu (TkMenuCtrlSaveLoad); name ours
 0x0186628c label g_TkMenuSaveSlot         # u32: the save slot packed (TkMenuPreSave sets 1; the save/load menu sets the cursor row i16 +0x2c of g_TkMenuSaveLoadWindow); name ours
 0x01866290 label    g_TkSaveSlots             # 99 x u8 slot states (0 free, 1 used, 3 marked)
+0x018662f4 label    g_TkMenuCardFd             # u32 the open card file (MenuSave_McSync's result after TkMcOpen); name ours
+0x018662f8 label    g_TkSaveSlotSizes          # u8[99] each slot's size in card clusters (TkMenuCtrlSaveLoad 0x27); name ours
+0x01866380 label    g_TkMenuCardDir            # the directory entry TkMcGetDir fills (+0x10 the file size: 0x01866390); name ours
+0x018663c0 label    g_TkMenuSaveNeed           # u32 clusters one save needs; name ours
 0x018663c4 label    g_TkMenuSaveLoadActive    # cleared by TkMenuSaveLoadActive
+0x018663c8 label    g_TkMenuSaveBusyWindow     # the "busy" sub-command window (MenuSubCmd_OpenC(TkMenuSaveMes(0x2010), 0, 0)); name ours
 0x018676f0 label    g_MsgWindows              # message window pointers: +0 in use (i16), +0x2c state, +0x2e status (TOGetMessageStatus), +0x100 handler per state, +0x114 current handler (TOCloseMessage, TOSetMessageFunc, TOControlMessage)
 0x01869ab0 label    g_MsgVars                    # per window 32 pointers to text variable records {u8 default type, u8 type, i32 value}; text code 0x12
 0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
