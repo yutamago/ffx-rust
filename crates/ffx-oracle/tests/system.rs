@@ -27500,3 +27500,225 @@ fn pc8_b_matches_the_original_on_the_snapshot() {
     };
     pc8_b(&mut a, &mut b, &mut Xorshift(0x9c08_b002));
 }
+
+/// A stand-in that appends `id`, then its first `n` stack words to the
+/// log `*cursor` points into, word `text` as the bytes of the string it
+/// points to (up to and with the terminator; a buffer's address differs
+/// between the original's frame and the bridge's), and returns `[ret]`.
+fn pc8_text_logger(cursor: u32, id: u32, n: u8, text: u8, ret: u32) -> Vec<u8> {
+    let c = cursor.to_le_bytes();
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &c].concat(); // mov ecx, [cursor]
+    code.extend([0xc7, 0x01]); // mov dword [ecx], id
+    code.extend(id.to_le_bytes());
+    code.extend([0x83, 0xc1, 0x04]); // add ecx, 4
+    for j in 0..n {
+        if j == text {
+            code.extend([0x8b, 0x54, 0x24, 4 + 4 * j]); // mov edx, [esp + 4 + 4j]
+            // copy: mov al, [edx]; mov [ecx], al; inc edx; inc ecx; test al, al; jnz copy
+            code.extend([0x8a, 0x02, 0x88, 0x01, 0x42, 0x41, 0x84, 0xc0, 0x75, 0xf6]);
+        } else {
+            code.extend([0x8b, 0x44, 0x24, 4 + 4 * j, 0x89, 0x01, 0x83, 0xc1, 0x04]);
+        }
+    }
+    code.extend([&[0x89, 0x0d][..], &c].concat()); // mov [cursor], ecx
+    code.push(0xa1); // mov eax, [ret]
+    code.extend(ret.to_le_bytes());
+    code.push(0xc3);
+    code
+}
+
+/// pc round 8 c: `MagicFile_Load` with no id, a handle already loaded,
+/// the magic waiting for deletion taken back (its handle negative or
+/// not), and loads (magic 0x92, 0x1ae, 600, 0x275 and others, negative
+/// ids, the camera count -1 or not, both previous words set or not, the
+/// PRX load failing or not, async texture loading or not, random matrices
+/// and field of view). Every callee is a logging stand-in; `printf` (its
+/// import), `graphicMagicSetPath` and `PhyreFIOS_LoadMagicfilePrx` log the
+/// path's text. The ids in the never-load list (`0x00c64cb4`) are left
+/// out: the original writes to address 0 for them on purpose.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // the stand-ins, then the cases; a, b, c, f, g
+fn pc8_c(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::magic::bridge as mg;
+    let mut call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let mut fcall = |m: &mut Oracle, f: u32, args: &[u32]| m.call_f64(f, args).unwrap();
+    let fs: &[(u32, u8)] = &[
+        (0x0064_2040, 0),
+        (0x0064_2070, 1),
+        (0x0064_1da0, 1),
+        (0x009d_ae90, 2),
+        (0x009d_afe0, 0),
+        (0x009d_a960, 0),
+        (0x0064_2090, 1),
+        (0x0064_1c60, 0),
+        (0x0064_20b0, 1),
+    ];
+    let (log, cursor, cells) = small6_stubs(a, b, fs);
+    let cell_of = |sym: u32| cells[fs.iter().position(|f| f.0 == sym).unwrap()];
+    let old_path = alloc(a, b, 0x20);
+    a.write(old_path, b"magic_0777\0").unwrap();
+    b.write(old_path, b"magic_0777\0").unwrap();
+    let prx = alloc(a, b, 4);
+    let fov = alloc(a, b, 4);
+    for (sym, code) in [
+        (0x0064_2050, pc8_text_logger(cursor, 0x8c50, 1, 0, prx)),
+        (0x0067_93e0, pc8_text_logger(cursor, 0x8c51, 3, 0, prx)),
+        // graphicCameraGetFOVy: fld dword [fov]; ret
+        (
+            0x0063_9570,
+            [&[0xd9, 0x05][..], &fov.to_le_bytes(), &[0xc3]].concat(),
+        ),
+    ] {
+        let at = a.alloc_code(&code).unwrap();
+        assert_eq!(b.alloc_code(&code).unwrap(), at);
+        redirect(a, b, sym, at);
+    }
+    // printf: the format, then the path's text for "Load Magic: %s" or
+    // the id for "Load(%d) completed" (the other messages take no word)
+    let load_fmt = a.rebase(0x00b7_0570);
+    let done_fmt = a.rebase(0x00b7_059c);
+    let c = cursor.to_le_bytes();
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &c].concat(); // mov ecx, [cursor]
+    code.extend([0x8b, 0x44, 0x24, 0x04, 0x89, 0x01, 0x83, 0xc1, 0x04]); // [ecx] = format; ecx += 4
+    code.extend([0x8b, 0x54, 0x24, 0x08, 0x3d]); // mov edx, [esp + 8]; cmp eax, load_fmt
+    code.extend(load_fmt.to_le_bytes());
+    code.extend([0x74, 14, 0x3d]); // je copy; cmp eax, done_fmt
+    code.extend(done_fmt.to_le_bytes());
+    code.extend([0x75, 17]); // jne end
+    code.extend([0x89, 0x11, 0x83, 0xc1, 0x04, 0xeb, 10]); // [ecx] = edx; ecx += 4; jmp end
+    code.extend([0x8a, 0x02, 0x88, 0x01, 0x42, 0x41, 0x84, 0xc0, 0x75, 0xf6]); // copy: the text
+    code.extend([&[0x89, 0x0d][..], &c, &[0x31, 0xc0, 0xc3]].concat()); // end: [cursor] = ecx; xor eax, eax; ret
+    let printf = a.alloc_code(&code).unwrap();
+    assert_eq!(b.alloc_code(&code).unwrap(), printf);
+    let slot = a.rebase(mg::PRINTF);
+    put(a, b, slot, printf);
+
+    let g = |m: &Oracle, at: u32| m.rebase(at);
+    // MagicFile_PreloadPrx and MagicFile_SetAsyncLoad also move the id by
+    // [delta] (the original reads it again after each call), and
+    // MagicFile_SetAsyncLoad stores [handle_cell] into g_MagicFile_Handle
+    let delta = alloc(a, b, 4);
+    let handle_cell = alloc(a, b, 4);
+    let id_at = g(a, mg::MAGIC_ID);
+    let mut bump = vec![0xa1]; // mov eax, [delta]
+    bump.extend(delta.to_le_bytes());
+    bump.extend([0x01, 0x05]); // add [id], eax
+    bump.extend(id_at.to_le_bytes());
+    let mut set_handle = vec![0xa1]; // mov eax, [handle_cell]
+    set_handle.extend(handle_cell.to_le_bytes());
+    set_handle.push(0xa3); // mov [g_MagicFile_Handle], eax
+    set_handle.extend(g(a, mg::HANDLE).to_le_bytes());
+    for (sym, id, n, pre) in [
+        (0x009d_ae90, 0x8c60, 2u8, bump.clone()),
+        (0x009d_afe0, 0x8c61, 0, [bump, set_handle].concat()),
+    ] {
+        let mut code = pre;
+        code.extend(pc8_text_logger(cursor, id, n, 0xff, delta));
+        let at = a.alloc_code(&code).unwrap();
+        assert_eq!(b.alloc_code(&code).unwrap(), at);
+        redirect(a, b, sym, at);
+    }
+    let path = b.stack_range().start + 0x100;
+    let forbidden = [0u32, 693, 694, 695, 696, 44, 712, 713, 725];
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        for &c in &cells {
+            put(a, b, c, rng.next());
+            put(a, b, c + 4, 0u32);
+        }
+        put(a, b, cell_of(0x0064_2040), old_path);
+        put(a, b, cell_of(0x0064_1c60), rng.next() % 2);
+        put(a, b, prx, [0u32, 1, 7][(rng.next() % 3) as usize]);
+        // no signalling NaNs (the emulator keeps them, hardware quiets them)
+        let f = rng.float();
+        let f = if f.is_nan() {
+            f32::from_bits(f.to_bits() | 0x0040_0000)
+        } else {
+            f
+        };
+        put(a, b, fov, f);
+        put(
+            a,
+            b,
+            delta,
+            [0u32, 0, 1, u32::MAX][(rng.next() % 4) as usize],
+        );
+        put(
+            a,
+            b,
+            handle_cell,
+            [u32::MAX, u32::MAX, 0, 5][(rng.next() % 4) as usize],
+        );
+        let mut id = match rng.next() % 8 {
+            0 => u32::MAX,
+            1 => 0x92,
+            2 => 0x1ae,
+            3 => 600,
+            4 => 0x275,
+            5 => (rng.next() % 0x40).wrapping_sub(0x20),
+            6 => rng.next(),
+            _ => rng.next() % 2000,
+        };
+        if forbidden.contains(&id) {
+            id = 0x93;
+        }
+        put(a, b, g(a, mg::MAGIC_ID), id);
+        let prev = match rng.next() % 4 {
+            0 => id,
+            1 => u32::MAX,
+            _ => rng.next() % 2000,
+        };
+        put(a, b, g(a, mg::PREVIOUS_ID), prev);
+        let handle = if rng.next().is_multiple_of(4) {
+            rng.next() % 9
+        } else {
+            u32::MAX
+        };
+        put(a, b, g(a, mg::HANDLE), handle);
+        let prev_handle = [u32::MAX, 0, 3, 0x8000_0005][(rng.next() % 4) as usize];
+        put(a, b, g(a, mg::PREVIOUS_HANDLE), prev_handle);
+        put(
+            a,
+            b,
+            g(a, 0x00c4_94c8),
+            [u32::MAX, 0, 1, 2][(rng.next() % 4) as usize],
+        );
+        for at in [0x0231_1440u32, 0x0231_1480] {
+            for w in 0..16 {
+                put(a, b, g(a, at) + 4 * w, rng.next());
+            }
+        }
+        for at in [
+            0x0194_0ab0u32,
+            0x0194_0ab4,
+            0x0194_0ab8,
+            0x0194_0ac0,
+            0x0193_fdac,
+        ] {
+            put(a, b, g(a, at), rng.next());
+        }
+        let ra = eax(a, 0x009d_a430, &[]);
+        let rb = mg::magic_file_load(b, path, &mut call, &mut fcall);
+        assert_eq!(
+            ra, rb,
+            "MagicFile_Load {k} id {id:#x} prev {prev:#x} handle {handle:#x}"
+        );
+        same_memory(&format!("pc8 c magic load {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn pc8_c_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    pc8_c(&mut a, &mut b, &mut Xorshift(0x9c08_c001));
+}
+
+#[test]
+fn pc8_c_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    pc8_c(&mut a, &mut b, &mut Xorshift(0x9c08_c002));
+}

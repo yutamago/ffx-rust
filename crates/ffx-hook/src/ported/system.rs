@@ -7451,6 +7451,20 @@ ported! {
     TOBtlDrawLibraWindow @ 0x0089_5390 => extern "C" fn to_btl_draw_libra_window() -> u32 {
         btl::bridge::btl_draw_libra_window(&mut mem(), call_sym, fcall)
     }
+    // ---- pc round 8, group c
+    /// `MagicFile_Load()`: 0 or 1 (or the taken-back handle's `>= 0`) in
+    /// `EAX`, which `MsEffectRead` and `MsEventEffectRead` read; the
+    /// 256-byte path buffer in a frame; `printf` through its import.
+    MagicFile_Load @ 0x009d_a430 => extern "C" fn magic_file_load() -> u32 {
+        let mut frame = super::StackFrame::<64>::new();
+        let path = frame.at();
+        ffx_system::magic::bridge::magic_file_load(
+            &mut mem(),
+            path,
+            &mut |m, f, a| call_ptr(m, f, a),
+            &mut |_, f, a| super::call_cdecl_f64(f, a),
+        )
+    }
 }
 
 /// `TOMenuGetGetImportant*`: the key item's text at `field`, with the
