@@ -317,6 +317,51 @@ load time moves its phase), so `shot-compare.py` is blind there like on
 battle-attack-1: look at the shots. Traces: the magic ID, the flags and the
 actors' HP (the item heals Rikku at the end). About 17 s.
 
+`tools/replays/battle-overdrive.txt` (2026-10-24) plays an overdrive with
+its minigame and a summon: Tidus's Spiral Cut with the timing bar hit,
+Yuna summons Valefor (entry sequence, party swap), Valefor's overdrive
+Energy Blast, Valefor dismissed (the party comes back), and Wakka's menu.
+It starts from save slot 5 (story 1470, Valefor, Ifrit and Ixion joined)
+in a land battle, `battle 33 0 3` (`genk16_03`, the Djose highroad: Ochu
+and Garm), and forces the rest with `write`/`writep` before the first
+turn: the battle party (`g_SaveInParty` `0x011307e8`, `MsGetSaveInParty`:
+Yuna, Tidus, Wakka), the overdrive gauges (actor `+0x5bc`,
+`MsGetChrLimitGauge`; `+0x5bd` the max) of Tidus (100) and Valefor (actor 8,
+20), and the Ochu's HP and max (99999), so that Energy Blast leaves the
+battle running for the dismissal. The script waits on game state, not
+frame counts, wherever the loader's timing shows: whose menu is open
+(`g_BtlWindowOpen` `0x023cc08c`, the window character's bit), and each
+effect's magic ID and file (`0x00c64ca0`, `g_MagicFile_Handle`
+`0x00c64cac`). The timing bar (`TOBtlCtrlTidusLimitWindow`) is hit the
+same way every run: in its state 4 the marker (`0x0133d742`) moves by 11
+from 118 over 275, the hit zone is 243..267 (at 1280x720), and the script
+presses circle once the marker reads 250, so the check sees 250 (or 261 a
+frame later). With a longer script (dismiss, two attacks, summon again)
+the Ochu KO'd Yuna before her second summon (in a shorter trial it only
+hurt her): the monsters' choices follow the frames between the events, so
+after changing a wait, check the outcome in the shots again.
+Traces, from Tidus's first menu on (it opens on the frame the phase byte
+turns 1 in two of five original runs, a frame later in the others): the
+magic ID and the file handle's low half (the high half is the module
+base), the bar's result (`0x0133d6f3`; its states 3 and 5 last a frame and
+one original run skipped 3), the window
+bits, `g_BtlSummoner`, the two gauges, the HP of Tidus, Yuna, Wakka,
+Valefor, the Ochu and the Garm, and the battle phase. Its nine shots (the
+bar, Spiral Cut, Valefor's entry twice, Valefor's menu, Energy Blast twice,
+the dismissal, the party back) are checked by eye only: the overdrive's
+lightning, the fireflies and the idle poses differ in a few hundred to a
+few thousand pixels between any two runs, original or Rust (shots 1 and 5
+are only 30% noise, so the exact comparison counted the rest and failed;
+the coarse field comparison failed on two original runs too).
+`run-all.sh` records them into `orig/eye` and `orig2/eye` (its `eye`
+list), out of `shot-compare.py`'s sight, and prints where the Rust run's
+are. The effects' phase at a shot varies by a few
+frames even between original runs (Valefor's entry took 327-348 frames
+from its magic ID to its end in three original runs, 319 in three Rust
+runs; Energy Blast's damage came 268-284 frames after its ID, 264-275 in
+Rust), so shot 6 shows the dark summoning circle in some runs and the
+white flash after it in others. About 25 s.
+
 `tools/replays/menu-browse.txt` opens the main menu and takes screenshots
 at fixed frames. Some of the screen animates by the wall clock (the
 character panels' shimmer), so two runs of the original already differ in

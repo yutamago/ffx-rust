@@ -1,0 +1,110 @@
+# Battle overdrive and summon: Tidus's Spiral Cut with the timing bar hit,
+# Yuna summons Valefor (entry, party swap), Valefor's overdrive Energy
+# Blast, Valefor dismissed (the party back), Wakka's menu last.
+#
+# Save slot 5 (ffx_005, story 1470, the Moonflow `kami0100`: Valefor, Ifrit
+# and Ixion joined), battle field 33 (`genk16`, the Djose highroad, on
+# land) group 0 formation 3 (`genk16_03`: Ochu, Garm). The state is forced
+# by writes, not taken from the save:
+# - the battle party: g_SaveInParty (0x011307e8, save +0x3d58, the first 3
+#   of 20 ply_save indices; MsGetSaveInParty 0x00785270) written to Yuna,
+#   Tidus, Wakka (1, 0, 4; the rest of the list kept, Yuna's old slot 7
+#   given to Rikku 6) before the battle starts;
+# - the overdrive gauges: actor (*0x011334d4 g_BtlChrTop + index x 0xf90,
+#   MsGetChr 0x00794020; party actors are indexed by character, the
+#   monsters from 0x14) +0x5bc (MsGetChrLimitGauge 0x00795550; +0x5bd the
+#   max, MsGetChrLimitGaugeMax 0x00795590, +0x5bb the type) set to the max:
+#   Tidus (0) 100, Valefor (8, +0x823c) 20;
+# - the Ochu (actor 0x14) gets 99999 HP (+0x5d0, max +0x594, as
+#   docs/harness.md "Observed"), so Energy Blast does not end the battle
+#   and Valefor can be dismissed. With its own 7200 the Ochu dies to it;
+#   and a longer script (dismiss, Wakka, Tidus, summon again) lets the
+#   Ochu KO Yuna first, as the random draws fall.
+# Whose menu is open: g_BtlWindowOpen (0x023cc08c, the window character's
+# bit; TOSetBtlActiveChr 0x0089bb10): Tidus 1, Yuna 2, Wakka 0x10, Valefor
+# 0x100. The menus remember their cursor (TOBtlMemoryCursorPos).
+# The timing bar (TOBtlCtrlTidusLimitWindow 0x00892320, state i16
+# 0x0133d734, result 0x0133d6f3): in state 4 the marker (i16 0x0133d742)
+# moves by 11 (0x0133d744) from 118 (0x0133d736) over 275 (0x0133d73a);
+# a circle press while it is in 243..267 (0x0133d73c..0x0133d73e, at
+# 1280x720) hits. The script waits for the marker to read 250 (0xfa) and
+# presses: the next frame checks 250 (or 261 one frame later), both in.
+# Effects are pinned to their magic files (g_MagicFile_Handle 0x00c64cac,
+# low half 0 once loaded, -1 before; the magic ID 0x00c64ca0): Valefor's
+# entry 0x253, Energy Blast 0x25c. Spiral Cut (0x186) is loaded while the
+# bar runs and plays when the bar's state is back at 0.
+#
+# Ranges, from Tidus's first menu on (whether it opens on the frame the
+# phase byte turns 1 or the next varies between runs of the original): the
+# magic ID, the handle's low half (the high half is the module base, which
+# moves between runs), the timing bar's result (not its state: states 3
+# and 5 last one frame, and one of five original runs skipped 3), the
+# window bits, g_BtlSummoner (0x0112c9e8), Tidus's and Valefor's gauges
+# (+0x5bc:2), the HP (+0x5d0) of Tidus, Yuna, Wakka, Valefor, the Ochu
+# (0x14) and the Garm (0x15), the battle phase byte (0x0112a8e0).
+# Screenshots (battle-overdrive-<n>.bmp): 1 the timing bar, 2 Spiral Cut,
+# 3 and 4 Valefor's entry, 5 Valefor's menu, 6 and 7 Energy Blast, 8 the
+# dismissal, 9 the party back (Wakka's menu).
+load direct 5 kami0100
+lockstep on
+wait 10
+write 0x011307e8 01000405ff020306
+battle 33 0 3
+waitfor 0x0112a8e0:1 01 ff 4000
+writep 0x011334d4 0x5bc 64
+writep 0x011334d4 0x823c 14
+writep 0x011334d4 0x13cd4 9f860100
+writep 0x011334d4 0x13d10 9f860100
+# Tidus: Swordplay (left), Spiral Cut, the Ochu
+waitfor 0x023cc08c:4 01000000 ffffffff 600
+trace 0x00c64ca0:4 0x00c64cac:2 0x0133d6f3:1 0x023cc08c:4 0x0112c9e8:1 *0x011334d4+0x5bc:2 *0x011334d4+0x823c:2 *0x011334d4+0x5d0:4 *0x011334d4+0x1560:4 *0x011334d4+0x4410:4 *0x011334d4+0x8250:4 *0x011334d4+0x13d10:4 *0x011334d4+0x14ca0:4 0x0112a8e0:1
+wait 30
+press left 4 30
+press circle 4 30
+press circle 4 30
+press circle 4 10
+waitfor 0x0133d742:2 fa00 ffff 600
+shot $OUT\battle-overdrive-1.bmp
+press circle 4 30
+waitfor 0x0133d734:2 0000 ffff 600
+wait 60
+shot $OUT\battle-overdrive-2.bmp
+# Yuna: Summon, Valefor
+waitfor 0x023cc08c:4 02000000 ffffffff 3000
+wait 30
+press down 4 30
+press circle 4 30
+press circle 4 0
+waitfor 0x00c64ca0:4 53020000 ffffffff 600
+waitfor 0x00c64cac:2 0000 ffff 1200
+wait 150
+shot $OUT\battle-overdrive-3.bmp
+wait 100
+shot $OUT\battle-overdrive-4.bmp
+# Valefor: Overdrive (left), Energy Blast, all enemies
+waitfor 0x023cc08c:4 00010000 ffffffff 3000
+wait 30
+shot $OUT\battle-overdrive-5.bmp
+press left 4 30
+press circle 4 30
+press circle 4 0
+waitfor 0x00c64ca0:4 5c020000 ffffffff 600
+waitfor 0x00c64cac:2 0000 ffff 1200
+wait 150
+shot $OUT\battle-overdrive-6.bmp
+wait 70
+shot $OUT\battle-overdrive-7.bmp
+# Valefor again: Dismiss (right, down twice), on itself
+waitfor 0x023cc08c:4 00010000 ffffffff 3000
+wait 30
+press right 4 30
+press down 4 30
+press down 4 30
+press circle 4 30
+press circle 4 0
+wait 120
+shot $OUT\battle-overdrive-8.bmp
+# the party back: the next party member's menu
+waitfor 0x023cc08c:4 10000000 ffffffff 3000
+wait 30
+shot $OUT\battle-overdrive-9.bmp
