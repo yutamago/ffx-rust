@@ -353,6 +353,41 @@ impl Resolver<'_> {
         Ok(m)
     }
 
+    /// The `PMeshInstanceBounds` whose `m_meshInstance` is object `obj` of
+    /// the `PMeshInstance` list `instances`.
+    fn instance_bounds(&self, instances: usize, obj: u32) -> Result<Option<Bounds>> {
+        let c = self.c;
+        let Some(list) = self.list_of("PMeshInstanceBounds") else {
+            return Ok(None);
+        };
+        let field = |m: &str| c.member_offset("PMeshInstanceBounds", m).map(|o| o as usize);
+        let (Some(o_min), Some(o_size), Some(o_order)) =
+            (field("m_min"), field("m_size"), field("m_render_order"))
+        else {
+            return Ok(None);
+        };
+        let Some(f) = self.pointers[list].iter().find(|f| {
+            f.target_list() as usize == instances
+                && f.target() == obj
+                && self.is_field(f.member(), "PMeshInstanceBounds", "m_meshInstance", 0)
+        }) else {
+            return Ok(None);
+        };
+        let at = c.lists[list].object(f.object());
+        let v3 = |o: usize| -> Result<[f32; 3]> {
+            let mut v = [0f32; 3];
+            for (k, x) in v.iter_mut().enumerate() {
+                *x = f32::from_bits(crate::model::u32_at(self.bytes, at + o + 4 * k)?);
+            }
+            Ok(v)
+        };
+        Ok(Some(Bounds {
+            min: v3(o_min)?,
+            size: v3(o_size)?,
+            render_order: crate::model::u32_at(self.bytes, at + o_order)?.cast_signed(),
+        }))
+    }
+
     /// Resolves the scene: materials, default materials per segment, the
     /// node hierarchy and the mesh instances.
     #[allow(clippy::too_many_lines)] // materials, nodes and instances share the lookups
@@ -475,7 +510,9 @@ impl Resolver<'_> {
                     .pointers_of(instances, i, "PMeshInstance", "m_localToWorldMatrix", 0)
                     .next()
                     .map(|f| (f.target_list(), f.target()));
+                let bounds = self.instance_bounds(instances, i)?;
                 scene.instances.push(Instance {
+                    bounds,
                     name: self
                         .array_string(instances, i, "PMeshInstance", "m_name")
                         .unwrap_or_default(),
@@ -505,7 +542,7 @@ pub struct Node {
 }
 
 /// A placed mesh (`PMeshInstance`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Instance {
     pub name: String,
     /// The node it is attached to (the one sharing its world matrix).
@@ -515,6 +552,20 @@ pub struct Instance {
     pub segments: Vec<(usize, Option<usize>)>,
     /// Its mesh's skeleton, an index into [`crate::Model::skeletons`].
     pub skeleton: Option<usize>,
+    /// Its `PMeshInstanceBounds` (what the renderer culls and sorts by,
+    /// `docs/formats/scene.md`).
+    pub bounds: Option<Bounds>,
+}
+
+/// A `PMeshInstanceBounds`: the box in the instance's model space and its
+/// sort class.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Bounds {
+    /// `m_min`, `m_size`.
+    pub min: [f32; 3],
+    pub size: [f32; 3],
+    /// `m_render_order`.
+    pub render_order: i32,
 }
 
 /// A mesh's skeleton: the matrices its segments are skinned to.

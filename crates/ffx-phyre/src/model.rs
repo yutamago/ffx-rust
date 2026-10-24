@@ -436,4 +436,59 @@ impl Model {
             layout,
         })
     }
+
+    /// Where each segment's GPU data sits in the cluster's bytes: its
+    /// indices and its data blocks, in segment order. The game makes one
+    /// index buffer per segment and one vertex buffer per data block from
+    /// exactly these ranges (`docs/formats/scene.md`).
+    #[must_use]
+    pub fn buffers(&self) -> Vec<SegmentBuffers> {
+        let l = &self.layout;
+        self.segments
+            .iter()
+            .zip(&l.segments)
+            .map(|(seg, loc)| {
+                let at = l.index_buffer + loc.index_offset;
+                SegmentBuffers {
+                    indices: at..at + 2 * seg.indices.len(),
+                    blocks: l.blocks[loc.blocks.clone()]
+                        .iter()
+                        .map(|b| {
+                            let at = l.vertex_buffer + b.offset;
+                            BlockBuffer {
+                                bytes: at..at + b.stride * b.count,
+                                stride: b.stride,
+                                count: b.count,
+                                streams: b
+                                    .streams
+                                    .iter()
+                                    .map(|s| (s.semantic.clone(), s.data_type, s.offset))
+                                    .collect(),
+                            }
+                        })
+                        .collect(),
+                }
+            })
+            .collect()
+    }
+}
+
+/// A segment's GPU data: byte ranges into the cluster file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SegmentBuffers {
+    /// The `u16` indices.
+    pub indices: std::ops::Range<usize>,
+    /// The `PDataBlock`s, in order.
+    pub blocks: Vec<BlockBuffer>,
+}
+
+/// One `PDataBlock`'s vertices.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockBuffer {
+    /// `stride * count` bytes from the block's offset in the vertex buffer.
+    pub bytes: std::ops::Range<usize>,
+    pub stride: usize,
+    pub count: usize,
+    /// (semantic, `PVertexStream.m_type`, offset within the stride).
+    pub streams: Vec<(String, u8, usize)>,
 }
