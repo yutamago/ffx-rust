@@ -388,7 +388,7 @@ pub mod bridge {
     }
 
     /// `Sg_LightSetColorRGB(kind, r, g, b)` (`0x00836400`, name ours, after
-    /// `Sg_LightSetDirXYZ`; `Native_4012`'s): [`sg_light_set_color`] with
+    /// `Sg_LightSetDirXYZ`; `Native_4012_LightSetColor`'s): [`sg_light_set_color`] with
     /// `(r, g, b, 0)` from the stack (each through `fld`/`fstp`); its `eax`.
     pub fn sg_light_set_color_rgb(
         h: &mut impl ffx_bridge::Host,

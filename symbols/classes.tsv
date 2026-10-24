@@ -6902,13 +6902,13 @@
 0x00784720	logic	default (no rule: ported to be safe)
 0x00784830	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00784860	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x007848b0	logic	reviewed: MsDebugFullCommand: the PC booster menu 0x006fc970 (with achievements 0x18, 0x19), 0x006b8ce0 and Native_707d flag 0x15 reach it (battle round 21)
+0x007848b0	logic	reviewed: MsDebugFullCommand: the PC booster menu 0x006fc970 (with achievements 0x18, 0x19), 0x006b8ce0 and Native_707d_BtlSetFlag flag 0x15 reach it (battle round 21)
 0x007849c0	debug	debug name: MsDebugFullGill
 0x007849d0	debug	debug name: MsDebugFullItem
 0x00784ac0	debug	reviewed: MsDebugFullMember: only under the debug menu toggle 0x0112a905 (battle round 21)
 0x00784ae0	debug	debug name: MsDebugSetAllSP_00784ae0
 0x00784b00	debug	only called from debug code (Ms_Gui_BattleConfigProc)
-0x00784b60	logic	debug-sounding name, but used by logic: Native_707d
+0x00784b60	logic	debug-sounding name, but used by logic: Native_707d_BtlSetFlag
 0x00784b80	debug	only called from debug code (Ms_Gui_BattleConfigProc)
 0x00784bc0	debug	only called from debug code (Ms_Gui_BattleConfigProc)
 0x00784c20	debug	only called from debug code (Ms_Gui_BattleConfigProc)
@@ -12290,7 +12290,7 @@
 0x00879a70	logic	default (no rule: ported to be safe)
 0x00879b60	debug	reviewed: reads a host-PC file into a source buffer (AtelPCOpen, sceRead); caller AtelLoadSourceData (script round 25)
 0x00879c30	platform	thin wrapper: only forwards to platform code (FlushCache, sceClose)
-0x00879c60	debug	reviewed: AtelPCCreate: tools/refs.py finds one ref, a call at 0x878437 inside Native_c000, which runs only after TkIsDebug 0x887d10 (xor eax,eax; ret) (small round 5)
+0x00879c60	debug	reviewed: AtelPCCreate: tools/refs.py finds one ref, a call at 0x878437 inside Native_c000_SaveEventToHost, which runs only after TkIsDebug 0x887d10 (xor eax,eax; ret) (small round 5)
 0x00879cf0	platform	reviewed: AtelPCOpen: opens host0: files on the PS2 dev host (script round 19)
 0x00879d60	platform	reviewed: AtelPCOpen2: opens host0: files on the PS2 dev host (script round 19)
 0x00879de0	platform	thin wrapper: only forwards to platform code (FlushCache, sceRead)
@@ -12639,7 +12639,7 @@
 0x00887c80	dead	unreachable from the entry point and every pointer table
 0x00887cb0	dead	unreachable from the entry point and every pointer table
 0x00887d00	logic	default (no rule: ported to be safe)
-0x00887d10	logic	debug-sounding name, but used by logic: AtelEventSetUp, Native_00f8, Native_014a
+0x00887d10	logic	debug-sounding name, but used by logic: AtelEventSetUp, Native_00f8, Native_014a_SetBattleEndStatus
 0x00887d20	logic	default (no rule: ported to be safe)
 0x00887d30	logic	default (no rule: ported to be safe)
 0x00887d50	logic	default (no rule: ported to be safe)

@@ -57,37 +57,37 @@ macro_rules! pop_calls {
 }
 
 pop_calls! {
-    /// `Native_01a5` (`0x008574c0`): `(a, b)` -> `0x00909e30(a, b)`; 1.
+    /// `Native_01a5_TexSwapSetFrame` (`0x008574c0`): `(a, b)` -> `0x00909e30(a, b)`; 1.
     native_01a5 => 2, 0x0090_9e30;
     /// `Native_806a` (`0x0091af80`): `0x0091a260(x)`; 1.
     native_806a => 1, 0x0091_a260;
     /// `Native_MapPartHide` (`0x0091b1e0`, `0x8010`): `0x0091a7c0(part)`; 1.
     native_map_part_hide => 1, 0x0091_a7c0;
-    /// `Native_8011` (`0x0091b200`): `0x0091ab30(a, b, c)`; 1.
+    /// `Native_8011_MapPartSetOffset` (`0x0091b200`): `0x0091ab30(a, b, c)`; 1.
     native_8011 => 3, 0x0091_ab30;
-    /// `Native_801d` (`0x0091b400`): `0x0091a930(a, b)`; 1.
+    /// `Native_801d_MapPartSetFrame` (`0x0091b400`): `0x0091a930(a, b)`; 1.
     native_801d => 2, 0x0091_a930;
     /// `Native_801e` (`0x0091b430`): `0x0091a080(x)`; 1.
     native_801e => 1, 0x0091_a080;
     /// `Native_801f` (`0x0091b450`): `0x0091a030(x)`; 1.
     native_801f => 1, 0x0091_a030;
-    /// `Native_8020` (`0x0091b470`): `0x00919f90(x)`; 1.
+    /// `Native_8020_MapPartAnimOn` (`0x0091b470`): `0x00919f90(x)`; 1.
     native_8020 => 1, 0x0091_9f90;
-    /// `Native_8021` (`0x0091b490`): `0x00919f40(x)`; 1.
+    /// `Native_8021_MapPartAnimOff` (`0x0091b490`): `0x00919f40(x)`; 1.
     native_8021 => 1, 0x0091_9f40;
-    /// `Native_8022` (`0x0091b4b0`): `0x00919fe0(a, b)`; 1.
+    /// `Native_8022_MapPartAnimMode` (`0x0091b4b0`): `0x00919fe0(a, b)`; 1.
     native_8022 => 2, 0x0091_9fe0;
-    /// `Native_802e` (`0x0091b6a0`): `0x0091a9c0(a, b)`; 1.
+    /// `Native_802e_MapPartAnimRate` (`0x0091b6a0`): `0x0091a9c0(a, b)`; 1.
     native_802e => 2, 0x0091_a9c0;
-    /// `Native_802f` (`0x0091b6d0`): `0x0091a970(x)`; 1.
+    /// `Native_802f_MapPartLastFrame` (`0x0091b6d0`): `0x0091a970(x)`; 1.
     native_802f => 1, 0x0091_a970;
-    /// `Native_8030` (`0x0091b6f0`): `0x0091aa90(a, b)`; 1.
+    /// `Native_8030_MapPartSetAlpha` (`0x0091b6f0`): `0x0091aa90(a, b)`; 1.
     native_8030 => 2, 0x0091_aa90;
-    /// `Native_805e` (`0x0091c4d0`): `Yn_GuideMapSetMapNo`'s caller `0x00919da0(x)`; 1.
+    /// `Native_805e_GuideSetMapNo` (`0x0091c4d0`): `Yn_GuideMapSetMapNo`'s caller `0x00919da0(x)`; 1.
     native_805e => 1, 0x0091_9da0;
-    /// `Native_805f` (`0x0091c4f0`): `0x007295f0(x)`; 1.
+    /// `Native_805f_FpFree` (`0x0091c4f0`): `0x007295f0(x)`; 1.
     native_805f => 1, 0x0072_95f0;
-    /// `Native_8060` (`0x0091c510`): `0x00729480(x)`; 1.
+    /// `Native_8060_FpGroupForceOff` (`0x0091c510`): `0x00729480(x)`; 1.
     native_8060 => 1, 0x0072_9480;
     /// `Native_8066` (`0x0091c7c0`): `0x0072a750(x)`; 1.
     native_8066 => 1, 0x0072_a750;
@@ -95,7 +95,7 @@ pop_calls! {
     native_bltz_set_obj_models => 4, 0x0091_9a80;
 }
 
-/// `Native_8059` (`0x0091c3c0`): `(a, b)` -> `0x0072a590(b, a)` (the top
+/// `Native_8059_FpSetStickMap` (`0x0091c3c0`): `(a, b)` -> `0x0072a590(b, a)` (the top
 /// first); 1.
 pub fn native_8059<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let b = pop(h, s);
@@ -179,7 +179,7 @@ pub fn native_805c<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_8006` (`0x0091aff0`, start): `(n)`, `0x00874000(n)`'s `EAX`; on
+/// `Native_8006_MapJumpToEntrance` (`0x0091aff0`, start): `(n)`, `0x00874000(n)`'s `EAX`; on
 /// map `0x159c` at scenario `0x7e4` with `n` 2 it first sets `0x0193bf68`.
 pub fn native_8006<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let n = pop(h, s);
@@ -191,7 +191,7 @@ pub fn native_8006<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     super::helpers::atel_jump_to_entrance(h, n)
 }
 
-/// `Native_8006_Poll` (`0x0091b040`): done at once.
+/// `Native_8006_MapJumpToEntrance_Poll` (`0x0091b040`): done at once.
 pub fn native_8006_poll<H: NativeHost>(_h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     1
 }
@@ -249,7 +249,7 @@ pub fn native_fp_unbind<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u3
     1
 }
 
-/// `Native_800c` (`0x0091b160`): `(on)` -> `0x00729050(on != 0)`; returns
+/// `Native_800c_FpSetDisp` (`0x0091b160`): `(on)` -> `0x00729050(on != 0)`; returns
 /// `on != 0`.
 pub fn native_800c<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let on = u32::from(pop(h, s) != 0);
@@ -290,7 +290,7 @@ pub fn native_8026<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_8032` (`0x0091b740`): `(x)` -> `0x00919df0(x)`; 1.
+/// `Native_8032_GuideMapSetLimit` (`0x0091b740`): `(x)` -> `0x00919df0(x)`; 1.
 pub fn native_8032<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let x = popf(h, s);
     call(h, 0x0091_9df0, &[x]);
@@ -305,12 +305,12 @@ fn on_off<H: NativeHost>(h: &mut H, s: u32, on_f: u32, off_f: u32) -> u32 {
     on
 }
 
-/// `Native_8035` (`0x0091b790`): `0x00729530`/`0x007294f0`.
+/// `Native_8035_FpRunGroup` (`0x0091b790`): `0x00729530`/`0x007294f0`.
 pub fn native_8035<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     on_off(h, s, 0x0072_9530, 0x0072_94f0)
 }
 
-/// `Native_8036` (`0x0091b7d0`): `0x00729440`/`0x00729400`.
+/// `Native_8036_FpShowGroup` (`0x0091b7d0`): `0x00729440`/`0x00729400`.
 pub fn native_8036<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     on_off(h, s, 0x0072_9440, 0x0072_9400)
 }
@@ -330,7 +330,7 @@ pub fn native_8001<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     on
 }
 
-/// `Native_804f` (`0x0091c150`): `(a, x, b)` -> `0x0091a150(a, x, x, b)`; 1.
+/// `Native_804f_MapPartScaleTo` (`0x0091c150`): `(a, x, b)` -> `0x0091a150(a, x, x, b)`; 1.
 pub fn native_804f<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let b = pop(h, s);
     let x = popf(h, s);

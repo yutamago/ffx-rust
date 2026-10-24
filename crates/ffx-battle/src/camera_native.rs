@@ -676,7 +676,7 @@ pub mod bridge {
 
     /// `MsAtelCameraPolar_007bb5d0(worker, _, stack, side, add)`
     /// (`0x007bb5d0`, name ours; callers `Native_CamSetPolar`,
-    /// `Native_Cam_6005`, `Native_6022`, `Native_6023`): three floats
+    /// `Native_Cam_6005`, `Native_6022_CamRefSetPolar`, `Native_6023_CamRefAddPolar`): three floats
     /// popped (`r`, then the degrees `b` and `a`) to the worker's camera's
     /// polar aim on `side`: `Cam_SetPolar(camera, side, rad(a), rad(b), r)`,
     /// or with `add` `Cam_AddPolar`, whose `eax` it returns.

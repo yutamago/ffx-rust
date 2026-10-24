@@ -7127,7 +7127,7 @@ pub static R_0091AF10: Row = Row {
     ],
     result: Some(Val::Arg(2)),
 };
-/// `Native_8006_Poll` (return constant): `return 0x1`.
+/// `Native_8006_MapJumpToEntrance_Poll` (return constant): `return 0x1`.
 pub static R_0091B040: Row = Row {
     address: 0x0091_b040,
     conv: Conv::Cdecl,

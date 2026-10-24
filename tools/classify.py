@@ -59,7 +59,7 @@ CATS = ("logic", "glue", "platform", "debug", "dead")
 # (address: (category, evidence)); applied last, over every rule
 REVIEWED = {
     0x00784ac0: ("debug", "MsDebugFullMember: only MsBattleInit, under the debug menu's toggle 0x0112a905 (battle round 21)"),
-    0x007848b0: ("logic", "MsDebugFullCommand: the PC booster menu 0x006fc970 (with achievements 0x18, 0x19), 0x006b8ce0 and Native_707d flag 0x15 reach it (battle round 21)"),
+    0x007848b0: ("logic", "MsDebugFullCommand: the PC booster menu 0x006fc970 (with achievements 0x18, 0x19), 0x006b8ce0 and Native_707d_BtlSetFlag flag 0x15 reach it (battle round 21)"),
     0x007b055a: ("dead", "not a function: MsSetRikkuLimit's tail (0x007b0520 jumps in at 0x007b0542 and it runs on that frame, ebp-based); ported with MsSetRikkuLimit, never entered on its own (battle round 27)"),
     0x007eb760: ("glue", "op_gs1_init: fixed GS register-setup packets (effects round 13)"),
     0x00775330: ("glue", "builds a GS packet (system round 19)"),
@@ -558,7 +558,7 @@ REVIEWED = {
     0x00a27140: ("dead", "xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
     0x00a27150: ("dead", "xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
     0x00a27160: ("dead", "xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
-    0x00879c60: ("debug", "AtelPCCreate: tools/refs.py finds one ref, a call at 0x878437 inside Native_c000, which runs only after TkIsDebug 0x887d10 (xor eax,eax; ret) (small round 5)"),
+    0x00879c60: ("debug", "AtelPCCreate: tools/refs.py finds one ref, a call at 0x878437 inside Native_c000_SaveEventToHost, which runs only after TkIsDebug 0x887d10 (xor eax,eax; ret) (small round 5)"),
     0x009428b0: ("platform", "MemSystem_Ensure slow path: allocator setup with an SEH frame; refs.py: 5 refs, all in allocator code (0x9427fd, 0x9428a7, 0x942967, 0x94261c, 0xaf1297) (pc round 4)"),
     0x009dfb30: ("glue", "PhyreEngine PClassDescriptor constructor; dupes.py family of 70 copies; 18 refs, all from Phyre_* functions (pc round 4)"),
     0x009de900: ("dead", "refs.py: 0 refs; one of 203 PhyreEngine copies (pc round 4)"),

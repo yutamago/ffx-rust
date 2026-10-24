@@ -3136,7 +3136,7 @@ pub mod bridge {
     }
 
     /// `Cam_SetScreenVector2_007bc750(screen, x, y, z, w)` (`0x007bc750`,
-    /// name ours; `Native_6050` calls it; a near copy of
+    /// name ours; `Native_6050_CamSetScreenVector2` calls it; a near copy of
     /// `Cam_SetScreenVector`): for screens 0..=2 (unsigned), the four
     /// `i32`s as `f32` (`fild`, `fstp dword`) into the screen's `+0x90`,
     /// copied through the EE register move words

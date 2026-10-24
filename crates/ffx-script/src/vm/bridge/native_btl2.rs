@@ -77,7 +77,7 @@ fn item_list(h: &impl NativeHost, id: u32) -> u32 {
         .wrapping_add(id.wrapping_mul(0x478))
 }
 
-/// `Native_7123` (`0x007a2980`, `0x7123`): `(weapon)` ->
+/// `Native_7123_ChrAttachWeapon` (`0x007a2980`, `0x7123`): `(weapon)` ->
 /// `MsAttachWeapon(5, weapon)`'s `EAX` (`0x00793330`).
 pub fn native_7123<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -119,7 +119,7 @@ pub fn native_710c<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     i32::from(h.read::<i8>(at)).cast_unsigned()
 }
 
-/// `Native_70f1` (`0x007a2d30`, `0x70f1`): frees the actor's 20 item
+/// `Native_70f1_ItemSlotsClear` (`0x007a2d30`, `0x70f1`): frees the actor's 20 item
 /// slots (every `u16` 0xff); 0. The actor is not checked: `0xff` reaches
 /// past the table, as in the original.
 pub fn native_70f1<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
@@ -130,7 +130,7 @@ pub fn native_70f1<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_705b` (`0x007a2d80`, `0x705b`, float): `(selector)` -> the
+/// `Native_705b_ChrGetCamWidth` (`0x007a2d80`, `0x705b`, float): `(selector)` -> the
 /// selected actor's `0x00794a70(index)` float, 0.0 for none.
 pub fn native_705b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     let id = actor(h, w);
@@ -161,7 +161,7 @@ pub fn native_705c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     r32(x87::mul(x, ld(h, c.wrapping_add(0x3a4))))
 }
 
-/// `Native_70f2` (`0x007a2e60`, `0x70f2`): `(item)`: the item into the
+/// `Native_70f2_ItemSlotAdd` (`0x007a2e60`, `0x70f2`): `(item)`: the item into the
 /// actor's first free slot (20 `u16`, 0xff free); 0.
 pub fn native_70f2<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -196,7 +196,7 @@ pub fn native_70b9<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     ld(h, o)
 }
 
-/// `Native_70f5` (`0x007a2f80`, `0x70f5`): `(selector, command)` ->
+/// `Native_70f5_CheckUseCommand` (`0x007a2f80`, `0x70f5`): `(selector, command)` ->
 /// `0x0078c690(index, 0x0079a4b0(command, 0), 0)` for the selected actor
 /// (its `dbgPrintf` is an empty function).
 pub fn native_70f5<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -260,7 +260,7 @@ pub fn native_70ba<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     bits_float(h, w, s, 0xa)
 }
 
-/// `Native_709b` (`0x007a3170`, `0x709b`, float): `(selector)` -> the
+/// `Native_709b_ChrGetPosY` (`0x007a3170`, `0x709b`, float): `(selector)` -> the
 /// second float of the vector `0x007956e0(index, &v)` writes for the
 /// selected actor.
 pub fn native_709b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
@@ -273,7 +273,7 @@ pub fn native_709b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     ld(h, o + 4)
 }
 
-/// `Native_70c2` (`0x007a31d0`, `0x70c2`, float): `(a, b)` (selectors) ->
+/// `Native_70c2_ChrGetAngleTo` (`0x007a31d0`, `0x70c2`, float): `(a, b)` (selectors) ->
 /// the angle from `a`'s position to `b`'s (`0x007c4990`'s third result)
 /// in degrees.
 pub fn native_70c2<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
@@ -302,7 +302,7 @@ pub fn native_70fa<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_709f` (`0x007a3460`, `0x709f`, float): `(selector)` -> the
+/// `Native_709f_GetTargetDirDiff` (`0x007a3460`, `0x709f`, float): `(selector)` -> the
 /// selected actor's target direction (`MsGetChrTargetDir(i, 0)`,
 /// `0x007958c0`) minus its direction (`MsGetChrDir`, `0x00794d20`), each
 /// `f32`, in degrees.
@@ -317,7 +317,7 @@ pub fn native_709f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     near_degrees(h, d)
 }
 
-/// `Native_70f7` (`0x007a3560`, `0x70f7`): `(v)`: appends v to the 16
+/// `Native_70f7_BtlListAppend` (`0x007a3560`, `0x70f7`): `(v)`: appends v to the 16
 /// `u16` at `0x011363f0` (count in the byte `0x011363ec`) while there is
 /// room; v.
 pub fn native_70f7<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
@@ -351,7 +351,7 @@ pub fn native_7102<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     }
 }
 
-/// `Native_7103` (`0x007a3880`, `0x7103`): `(selector, x f, y f, z f)`:
+/// `Native_7103_ChrSetNeckTarget` (`0x007a3880`, `0x7103`): `(selector, x f, y f, z f)`:
 /// for the selected actor's model (`0x00795080`), `0x008350a0(model, &v)`
 /// (mode 3 and `v` to its `+0x4c0`); 0. The vector's fourth word is the
 /// original's uninitialised stack; the port passes 0.
@@ -439,7 +439,7 @@ pub fn native_710d<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_70ff` (`0x007a3d00`, `0x70ff`): the word `0x0112c8d0` = the
+/// `Native_70ff_BtlGetTargets` (`0x007a3d00`, `0x70ff`): the word `0x0112c8d0` = the
 /// actor's `+0xdc0`; -> it. No actor check.
 pub fn native_70ff<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -492,7 +492,7 @@ pub fn native_7111<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     model_4d4(h, w, s, true, 0)
 }
 
-/// `Native_711a` (`0x007a4160`, `0x711a`): `(selector, a f, b f, c f)`:
+/// `Native_711a_ChrSetWind` (`0x007a4160`, `0x711a`): `(selector, a f, b f, c f)`:
 /// for the selected actor's model (`0x00795080`), `0x00824c90(model, c,
 /// b, a)`; 0.
 pub fn native_711a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -525,7 +525,7 @@ pub fn native_70d0<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7112` (`0x007a43d0`, `0x7112`): `(c, _ f, b, a)`:
+/// `Native_7112_ChrSetDirTarget` (`0x007a43d0`, `0x7112`): `(c, _ f, b, a)`:
 /// `0x00795eb0(actor, c, 1, -1, b, a)`; 0. The float is popped and
 /// dropped.
 pub fn native_7112<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -538,7 +538,7 @@ pub fn native_7112<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_70c1` (`0x007a4b90`, `0x70c1`): `(b, a)` (selectors) -> the
+/// `Native_70c1_ChrGetDistance` (`0x007a4b90`, `0x70c1`): `(b, a)` (selectors) -> the
 /// distance between their positions (`0x00795170(1, MsGetChrBit(actor, x,
 /// 0, 1), -1, &v)`, `0x007c3030(&va, &vb)`) truncated by `_ftol2_sse`.
 pub fn native_70c1<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -570,14 +570,14 @@ pub fn native_70df<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     u32::from(i32::from(h.read::<i16>(p)) == v.cast_signed() >> 16)
 }
 
-/// `Native_705e` (`0x007a5310`, `0x705e`): `0x00788e60(actor)`; 0.
+/// `Native_705e_ResetBindEffect` (`0x007a5310`, `0x705e`): `0x00788e60(actor)`; 0.
 pub fn native_705e<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
     call(h, 0x0078_8e60, &[id]);
     0
 }
 
-/// `Native_7020` (`0x007a53b0`, `0x7020`): -> `0x007a92c0(actor, its
+/// `Native_7020_CheckStartEffect` (`0x007a53b0`, `0x7020`): -> `0x007a92c0(actor, its
 /// +0xdc0)`, 0 without an actor.
 pub fn native_7020<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -626,13 +626,13 @@ fn poll_clear<H: NativeHost>(h: &mut H, a: u32, off: u32) -> u32 {
     }
 }
 
-/// `Native_70bc` (`0x007a5990`, `0x70bc`, start): `(selector)`: the
+/// `Native_70bc_ChrWaitEffect7` (`0x007a5990`, `0x70bc`, start): `(selector)`: the
 /// selected actor into the argument word; -> its index.
 pub fn native_70bc<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     start_selected(h, w, a, s)
 }
 
-/// `Native_70bc_Poll` (`0x007a5b90`, `0x70bc`, poll): 5 once that actor's
+/// `Native_70bc_ChrWaitEffect7_Poll` (`0x007a5b90`, `0x70bc`, poll): 5 once that actor's
 /// `+0xe12` is clear.
 pub fn native_70bc_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
     poll_clear(h, a, 0xe12)
@@ -649,18 +649,18 @@ pub fn native_7027<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     u32::from(h.read::<u8>(c.wrapping_add(0x44f)))
 }
 
-/// `Native_70bd` (`0x007a5ed0`, `0x70bd`, start): as `0x70bc`'s start.
+/// `Native_70bd_ChrWaitEffect8` (`0x007a5ed0`, `0x70bd`, start): as `0x70bc`'s start.
 pub fn native_70bd<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     start_selected(h, w, a, s)
 }
 
-/// `Native_70bd_Poll` (`0x007a6030`, `0x70bd`, poll): 5 once that actor's
+/// `Native_70bd_ChrWaitEffect8_Poll` (`0x007a6030`, `0x70bd`, poll): 5 once that actor's
 /// `+0xe13` is clear.
 pub fn native_70bd_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
     poll_clear(h, a, 0xe13)
 }
 
-/// `Native_7092` (`0x007a5f10`, `0x7092`): `(selector)` -> the selected
+/// `Native_7092_ChrGetGroundDist` (`0x007a5f10`, `0x7092`): `(selector)` -> the selected
 /// actor's `0x00794fb0(index)` minus the second float of `0x007956e0(index,
 /// &v)`, rounded to `f32`, times 100.0, truncated by `_ftol2_sse`.
 pub fn native_7092<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -675,7 +675,7 @@ pub fn native_7092<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     x87::ftol(h, x87::mul(d, 100.0))
 }
 
-/// `Native_70d2` (`0x007a6130`, `0x70d2`): `(selector)` -> the selected
+/// `Native_70d2_ChrGetEffect8Count` (`0x007a6130`, `0x70d2`): `(selector)` -> the selected
 /// actor's byte `+0xe13`.
 pub fn native_70d2<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let sel = pop(h, s);
@@ -685,7 +685,7 @@ pub fn native_70d2<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     u32::from(h.read::<u8>(c.wrapping_add(0xe13)))
 }
 
-/// `Native_7060` (`0x007a62a0`, `0x7060`): `0x0079eff0(actor)`; 0.
+/// `Native_7060_StatusEffectCheck` (`0x007a62a0`, `0x7060`): `0x0079eff0(actor)`; 0.
 pub fn native_7060<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
     if id != 0xff {
@@ -694,7 +694,7 @@ pub fn native_7060<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_7061` (`0x007a6300`, `0x7061`): `0x0079f110(actor)`; 0.
+/// `Native_7061_StatusEffectClear` (`0x007a6300`, `0x7061`): `0x0079f110(actor)`; 0.
 pub fn native_7061<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
     if id != 0xff {
@@ -703,7 +703,7 @@ pub fn native_7061<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_7064` (`0x007a63d0`, `0x7064`, start): `(v)`: v into the
+/// `Native_7064_BtlStreamStandby` (`0x007a63d0`, `0x7064`, start): `(v)`: v into the
 /// argument word and the word `0x0112c24c`; -> v.
 pub fn native_7064<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -712,7 +712,7 @@ pub fn native_7064<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_7064_Poll` (`0x007a64c0`, `0x7064`, poll): `0x0076d0d0()`,
+/// `Native_7064_BtlStreamStandby_Poll` (`0x007a64c0`, `0x7064`, poll): `0x0076d0d0()`,
 /// then 5 when `0x007a8c20()` is set and `0x007b2c10(1)` is 0, else 0.
 pub fn native_7064_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     call(h, 0x0076_d0d0, &[]);
@@ -723,7 +723,7 @@ pub fn native_7064_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> 
     }
 }
 
-/// `Native_7064_Result` (`0x007a65d0`, `0x7064`): for a non-negative v in
+/// `Native_7064_BtlStreamStandby_Result` (`0x007a65d0`, `0x7064`): for a non-negative v in
 /// the argument word, the word `0x011363bc` = (v == `0x41fef504`) and
 /// `0x00887570(v)`; 0.
 pub fn native_7064_result<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
@@ -747,7 +747,7 @@ pub fn native_7105_poll<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u
     }
 }
 
-/// `Native_7002_Poll` (`0x007a35c0`, `0x7002`, poll): 1 at once.
+/// `Native_7002_BtlLabelExe_Poll` (`0x007a35c0`, `0x7002`, poll): 1 at once.
 pub fn native_7002_poll<H: NativeHost>(_h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     1
 }
@@ -761,12 +761,12 @@ fn clamped_window<H: NativeHost>(h: &mut H, a: u32, s: u32) -> u32 {
     r
 }
 
-/// `Native_7043` (`0x007a6a10`, `0x7043`, start): [`clamped_window`].
+/// `Native_7043_MsgWaitClose` (`0x007a6a10`, `0x7043`, start): [`clamped_window`].
 pub fn native_7043<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
     clamped_window(h, a, s)
 }
 
-/// `Native_70a9` (`0x007a6c50`, `0x70a9`, start): [`clamped_window`].
+/// `Native_70a9_MsgWaitCloseStream` (`0x007a6c50`, `0x70a9`, start): [`clamped_window`].
 pub fn native_70a9<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
     clamped_window(h, a, s)
 }
@@ -783,7 +783,7 @@ pub fn native_704c_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u
     }
 }
 
-/// `Native_706d_Poll` (`0x007a6db0`, `0x706d`, poll): 0 while the music
+/// `Native_706d_SoundStreamPlay_Poll` (`0x007a6db0`, `0x706d`, poll): 0 while the music
 /// standby syncs (`SndSyncMusicStandby(0)`) outside the water
 /// (`g_BtlUnderwater`), else 5.
 pub fn native_706d_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
@@ -794,7 +794,7 @@ pub fn native_706d_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> 
     }
 }
 
-/// `Native_706d_Int` (`0x007a6ea0`, `0x706d`, third slot): outside the
+/// `Native_706d_SoundStreamPlay_Int` (`0x007a6ea0`, `0x706d`, third slot): outside the
 /// water and in a menuless battle status (`MsBattleStatusMenuless_007a8c20`)
 /// the stream in the first argument word plays for the first actor the
 /// second word selects (`Battle_FirstSelectedActor(actor, word 1, 0, 1)`,
@@ -811,7 +811,7 @@ pub fn native_706d_int<H: NativeHost>(h: &mut H, w: u32, a: u32, _s: u32) -> u32
     0
 }
 
-/// `Native_70a2_Poll` (`0x007a7500`, `0x70a2`, poll): 0 without
+/// `Native_70a2_RegMotionRead_Poll` (`0x007a7500`, `0x70a2`, poll): 0 without
 /// `g_BtlRegMotionFlag`; else 5 once `g_Native70a2Flag` (set by the start)
 /// is 0, clearing it (and 0) while it is set.
 pub fn native_70a2_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
@@ -826,7 +826,7 @@ pub fn native_70a2_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> 
     0
 }
 
-/// `Native_7043_Poll` (`0x007a6a40`, `0x7043`, poll): on the handle in
+/// `Native_7043_MsgWaitClose_Poll` (`0x007a6a40`, `0x7043`, poll): on the handle in
 /// the argument word: 5 when `0x008b7ca0(h)` is 0; else 0 while
 /// `0x008b8530(h)` is 0, then `0x008ab8f0(h)` and 5.
 pub fn native_7043_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
@@ -856,7 +856,7 @@ pub fn native_70bf<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_70a9_Poll` (`0x007a6cb0`, `0x70a9`, poll): on the handle in the
+/// `Native_70a9_MsgWaitCloseStream_Poll` (`0x007a6cb0`, `0x70a9`, poll): on the handle in the
 /// argument word: 5 when its state `0x008b7ca0(h)` is 0; when
 /// `0x008b8530(h)` is 1, or `0x008864b0()` is 0 and the state is 3,
 /// `0x008ab8f0(h)` and 5; else 0.
@@ -873,7 +873,7 @@ pub fn native_70a9_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u
     5
 }
 
-/// `Native_706d` (`0x007a6d00`, `0x706d`, start): `(b, a)`: the argument
+/// `Native_706d_SoundStreamPlay` (`0x007a6d00`, `0x706d`, start): `(b, a)`: the argument
 /// words = a, b; -> b.
 pub fn native_706d<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
     let x = pop(h, s);
@@ -976,7 +976,7 @@ pub fn native_70b8<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_7075` (`0x007a78f0`, `0x7075`, start): `(selector, b, a)`: for
+/// `Native_7075_WeaponSetMotion` (`0x007a78f0`, `0x7075`, start): `(selector, b, a)`: for
 /// every actor below 31 in `MsGetChrBit(actor, selector, 0, 1)` with a
 /// command record (`0x00795bb0(i, 0)`), `0x007ab360(record +0xc, b, a, 0,
 /// 1, worker, &out)`; the argument word = 1 when any `out` was set, else
@@ -1009,7 +1009,7 @@ pub fn native_7075<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     a
 }
 
-/// `Native_7075_Poll` (`0x007a7aa0`, `0x7075`, poll): `0x007a8700(args)`.
+/// `Native_7075_WeaponSetMotion_Poll` (`0x007a7aa0`, `0x7075`, poll): `0x007a8700(args)`.
 pub fn native_7075_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
     call(h, 0x007a_8700, &[a])
 }
@@ -1039,7 +1039,7 @@ pub fn native_704c<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     b
 }
 
-/// `Native_70e3` (`0x007a7da0`, `0x70e3`): `(v)`: once (while the word
+/// `Native_70e3_BtlAllocMemory` (`0x007a7da0`, `0x70e3`): `(v)`: once (while the word
 /// `0x0112be98` is 0): the word `0x0112be9c` = v, `0x0083c4a0(0x40)`,
 /// `0x0112be98` = `0x00687020(v)`, `0x00799f00(it, v)`; 0.
 pub fn native_70e3<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
@@ -1055,7 +1055,7 @@ pub fn native_70e3<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_70b3` (`0x007a7df0`, `0x70b3`): `(v)` -> `0x007b2b60(v)`.
+/// `Native_70b3_SetVoiceWait` (`0x007a7df0`, `0x70b3`): `(v)` -> `0x007b2b60(v)`.
 pub fn native_70b3<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     call(h, 0x007b_2b60, &[v])
@@ -1069,7 +1069,7 @@ pub fn native_70dd<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_70d6` (`0x007a80b0`, `0x70d6`): `(c, b, a)`: with `i` and `j`
+/// `Native_70d6_CalcDamageCommand` (`0x007a80b0`, `0x70d6`): `(c, b, a)`: with `i` and `j`
 /// the actors selected by `c` and `b`, `r = 0x0078ce50(i, 0, -1, 0, &a)`
 /// (a command record), then `0x00789bf0(chr i, chr j, r, r +0x28, r
 /// +0x2a, 0, r +0x23, 0, 0, 0, 0)`'s `EAX`.
@@ -1133,7 +1133,7 @@ pub fn native_70e1<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     u32::from(h.read::<u8>(c.wrapping_add(0xdf1)) == 0)
 }
 
-/// `Native_7073` (`0x007a85f0`, `0x7073`): `(weapon)` ->
+/// `Native_7073_ChrAttachWeapon` (`0x007a85f0`, `0x7073`): `(weapon)` ->
 /// `MsAttachWeapon(actor, weapon)`'s `EAX` (`0x00793330`).
 pub fn native_7073<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -1141,7 +1141,7 @@ pub fn native_7073<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0079_3330, &[id, v])
 }
 
-/// `Native_7125` (`0x007a8650`, `0x7125`): for actor 4,
+/// `Native_7125_ChrAttachWeapon` (`0x007a8650`, `0x7125`): for actor 4,
 /// `MsAttachWeapon(4, 0)`; 0.
 pub fn native_7125<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     if actor(h, w) == 4 {
@@ -1150,7 +1150,7 @@ pub fn native_7125<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_70e7` (`0x007a8680`, `0x70e7`): `(command)`: the actor's word
+/// `Native_70e7_SetCommandTargets` (`0x007a8680`, `0x70e7`): `(command)`: the actor's word
 /// `+0xdc0` = `0x007996d0(actor, command, bit 1 of the record's +0x1a
 /// clear, 1)`, the record `0x0078ce50(actor, 0, -1, 0, &command)` (which
 /// may change the command); -> that word. No actor check.

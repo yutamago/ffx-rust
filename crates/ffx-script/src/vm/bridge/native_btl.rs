@@ -218,7 +218,7 @@ pub fn native_actor_get_slot_ref<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u
     0xff
 }
 
-/// `Native_7002` (`0x007a3530`, `0x7002`, start): `(a, b)` ->
+/// `Native_7002_BtlLabelExe` (`0x007a3530`, `0x7002`, start): `(a, b)` ->
 /// `0x00781c90(a, 1, b)`'s `EAX`.
 pub fn native_7002<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let b = pop(h, s);
@@ -263,7 +263,7 @@ pub fn native_actor_queue_motion<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u
     0
 }
 
-/// `Native_70ac` (`0x007a5650`, `0x70ac`, float): `(i)` ->
+/// `Native_70ac_ChrGetMotionInfo` (`0x007a5650`, `0x70ac`, float): `(i)` ->
 /// `0x007b2c90(actor, i)` (a float property).
 pub fn native_70ac<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     let v = pop(h, s);
@@ -321,7 +321,7 @@ pub fn atel_btl_move_target_dist<H: NativeHost>(
     r
 }
 
-/// `Native_700c` (`0x007a4310`, `0x700c`): [`atel_btl_move_target_dist`]
+/// `Native_700c_BtlMoveTargetDist` (`0x007a4310`, `0x700c`): [`atel_btl_move_target_dist`]
 /// with gravity 0.0; 0.
 pub fn native_700c<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     atel_btl_move_target_dist(h, w, a, s, x87::store(0.0));
@@ -353,7 +353,7 @@ pub fn native_btl_get_battle_id<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: 
     call(h, BATTLE_SCENE, &[])
 }
 
-/// `Native_7006` (`0x007a3f50`, `0x7006`): `(a, b)`: with the actor's
+/// `Native_7006_ChrSetDirTarget` (`0x007a3f50`, `0x7006`): `(a, b)`: with the actor's
 /// `+0x41d` set, `0x00795eb0(actor, 1, 0, -1, b, a)`; 0.
 pub fn native_7006<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let a = pop(h, s);
@@ -366,7 +366,7 @@ pub fn native_7006<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7003` (`0x007a3d90`, `0x7003`): `(a, b)` ->
+/// `Native_7003_ChrSetDirTarget` (`0x007a3d90`, `0x7003`): `(a, b)` ->
 /// `0x00795eb0(actor, 2, 0, -1, b, a)`; 0.
 pub fn native_7003<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let a = pop(h, s);
@@ -376,7 +376,7 @@ pub fn native_7003<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_707b` (`0x007a7470`, `0x707b`): `(selector, k)`: for the picked
+/// `Native_707b_ChrSePlay` (`0x007a7470`, `0x707b`): `(selector, k)`: for the picked
 /// actor, `0x0079fd40(it, k)`'s `EAX` (for `k` 9 only when `0x007a8920(it)`
 /// is not 0, else 0); 0 for none.
 pub fn native_707b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -396,7 +396,7 @@ pub fn native_707b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0079_fd40, &[i, k])
 }
 
-/// `Native_7048` (`0x007a53f0`, `0x7048`): `(i, x, y, z)` floats ->
+/// `Native_7048_MoveSplineRegistPos` (`0x007a53f0`, `0x7048`): `(i, x, y, z)` floats ->
 /// `0x007ab0b0(i, 0, 0, &[x, y, z])`; 0.
 pub fn native_7048<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let z = popf(h, s);
@@ -425,10 +425,10 @@ pub fn native_actor_get_id<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) ->
     u32::from(h.read::<u16>(c + 0xe))
 }
 
-/// `g_011363e8` (`0x011363e8`): set by `Native_70a2`'s start.
+/// `g_011363e8` (`0x011363e8`): set by `Native_70a2_RegMotionRead`'s start.
 pub const NATIVE_70A2_FLAG: Global<u32> = Global::new(0x0113_63e8);
 
-/// `Native_70a2` (`0x007a7440`, `0x70a2`, start): `(v)`: the flag set, `v`
+/// `Native_70a2_RegMotionRead` (`0x007a7440`, `0x70a2`, start): `(v)`: the flag set, `v`
 /// into the args word; `0x0079ccf0(v)`'s `EAX`.
 pub fn native_70a2<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
     NATIVE_70A2_FLAG.set(h, 1);
@@ -437,7 +437,7 @@ pub fn native_70a2<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
     call(h, 0x0079_ccf0, &[v])
 }
 
-/// `Native_702b` (`0x007a3c50`, `0x702b`): -1 when the actor's model is
+/// `Native_702b_ChrGetWaitMotion` (`0x007a3c50`, `0x702b`): -1 when the actor's model is
 /// busy (`0x008392c0`), else 0.
 pub fn native_702b<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -483,7 +483,7 @@ fn request_system<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32, mark: u8) ->
     x
 }
 
-/// `Native_7097` (`0x007a5780`, `0x7097`, start): `(v)`: [`request_system`]
+/// `Native_7097_AtelRequestSystem` (`0x007a5780`, `0x7097`, start): `(v)`: [`request_system`]
 /// with the guard value 1.
 pub fn native_7097<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     request_system(h, w, a, s, 1)
@@ -502,7 +502,7 @@ pub fn native_7026<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_702e` (`0x007a6d70`, `0x702e`, float): `(v)` ->
+/// `Native_702e_GetTargetDist` (`0x007a6d70`, `0x702e`, float): `(v)` ->
 /// `0x007a9a40(actor, v, 0)`, 0.0 without an actor.
 pub fn native_702e<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     let v = pop(h, s);
@@ -523,7 +523,7 @@ pub fn native_702d<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_7019` (`0x007a62d0`, `0x7019`): `0x007acc90(actor)`, 0 without one.
+/// `Native_7019_ActReCommand` (`0x007a62d0`, `0x7019`): `0x007acc90(actor)`, 0 without one.
 pub fn native_7019<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
     if id == 0xff {
@@ -562,7 +562,7 @@ pub fn native_701d<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     i32::from(h.read::<i8>(c + 0x420)).cast_unsigned()
 }
 
-/// `Native_700a` (`0x007a4100`, `0x700a`): `(b, f)`: the actor's `+0x538`
+/// `Native_700a_ChrSetHeight` (`0x007a4100`, `0x700a`): `(b, f)`: the actor's `+0x538`
 /// = f, `+0x50c` = b, `0x007ab300(actor)`; 0.
 pub fn native_700a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let f = popf(h, s);
@@ -578,7 +578,7 @@ pub fn native_700a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_701a` (`0x007a6390`, `0x701a`): `(a, b)` ->
+/// `Native_701a_GetComInfo` (`0x007a6390`, `0x701a`): `(a, b)` ->
 /// `0x0078cd30(actor, a, b)`'s `EAX`.
 pub fn native_701a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let id = actor(h, w);
@@ -587,7 +587,7 @@ pub fn native_701a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0078_cd30, &[id, a, b])
 }
 
-/// `Native_7037` (`0x007a6d30`, `0x7037`): `(b, a)` ->
+/// `Native_7037_ChrAddExtraCommand` (`0x007a6d30`, `0x7037`): `(b, a)` ->
 /// `0x007ac840(actor, a, b, 1)`'s `EAX`.
 pub fn native_7037<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let a = pop(h, s);
@@ -596,13 +596,13 @@ pub fn native_7037<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x007a_c840, &[id, a, b, 1])
 }
 
-/// `Native_706f` (`0x007a36c0`, `0x706f`): `0x007a8fc0(worker, args,
+/// `Native_706f_ActorPlayMotion` (`0x007a36c0`, `0x706f`): `0x007a8fc0(worker, args,
 /// stack, 1)`'s `EAX`.
 pub fn native_706f<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     call(h, 0x007a_8fc0, &[w, a, s, 1])
 }
 
-/// `Native_7104` (`0x007a6600`, `0x7104`): `(a, b, c)` -> `0x0079d2a0(a, b,
+/// `Native_7104_ComBufAdd` (`0x007a6600`, `0x7104`): `(a, b, c)` -> `0x0079d2a0(a, b,
 /// c)`'s `EAX`.
 pub fn native_7104<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let c = pop(h, s);
@@ -611,7 +611,7 @@ pub fn native_7104<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0079_d2a0, &[a, b, c])
 }
 
-/// `Native_7009` (`0x007a3b20`, `0x7009`): `(b)`: `0x00796070(actor, b & 1
+/// `Native_7009_ChrSetGravMode` (`0x007a3b20`, `0x7009`): `(b)`: `0x00796070(actor, b & 1
 /// == 0)`; 0.
 pub fn native_7009<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let b = pop(h, s) & 1;
@@ -623,7 +623,7 @@ pub fn native_7009<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7058` (`0x007a8160`, `0x7058`): `(selector, motion)`: 0 when the
+/// `Native_7058_ChrCheckMotion` (`0x007a8160`, `0x7058`): `(selector, motion)`: 0 when the
 /// picked actor's motion (`+0x3f0`) is `0x007a8c80(it, motion)`, else -1.
 pub fn native_7058<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let m = pop(h, s);
@@ -642,7 +642,7 @@ pub fn native_7058<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     }
 }
 
-/// `Native_70a8` (`0x007a57e0`, `0x70a8`): `(selector, property, value
+/// `Native_70a8_ChrSetMotionInfo` (`0x007a57e0`, `0x70a8`): `(selector, property, value
 /// f)` -> `MsSetChrMotionInfo(picked, property, value)`; 0.
 pub fn native_70a8<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let f = popf(h, s);
@@ -654,7 +654,7 @@ pub fn native_70a8<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_706b` (`0x007a84c0`, `0x706b`): `(selector, a, b)`: on the
+/// `Native_706b_ChrModelSetHide` (`0x007a84c0`, `0x706b`): `(selector, a, b)`: on the
 /// picked actor's model, `0x0082aea0(model, a, b & 1)`; 0.
 pub fn native_706b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let b = pop(h, s);
@@ -712,7 +712,7 @@ pub fn native_70e0<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     u32::from(call(h, 0x007b_24a0, &[c, 0, 0, 1]) != 0 && h.read::<u8>(d + 0xdf1) == 0)
 }
 
-/// `Native_703c` (`0x007a5540`, `0x703c`, start): as [`native_7097`] with
+/// `Native_703c_AtelRequestSystem` (`0x007a5540`, `0x703c`, start): as [`native_7097`] with
 /// the guard value 2.
 pub fn native_703c<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     request_system(h, w, a, s, 2)
@@ -749,12 +749,12 @@ fn picked_call<H: NativeHost>(h: &mut H, w: u32, s: u32, f: u32) -> u32 {
     }
 }
 
-/// `Native_70c9` (`0x007a7740`, `0x70c9`): `0x0079fdf0(picked, k)`.
+/// `Native_70c9_ChrSePlayUnhasted` (`0x007a7740`, `0x70c9`): `0x0079fdf0(picked, k)`.
 pub fn native_70c9<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     picked_call(h, w, s, 0x0079_fdf0)
 }
 
-/// `Native_709e` (`0x007a2fe0`, `0x709e`): `(selector, a, b)` ->
+/// `Native_709e_ChrEffectSignal` (`0x007a2fe0`, `0x709e`): `(selector, a, b)` ->
 /// `0x007b74d0(picked, a, b)`.
 pub fn native_709e<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let id = actor(h, w);
@@ -765,7 +765,7 @@ pub fn native_709e<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x007b_74d0, &[i, a, b])
 }
 
-/// `Native_707a` (`0x007a2a80`, `0x707a`): `(selector)` ->
+/// `Native_707a_GetDamageResult` (`0x007a2a80`, `0x707a`): `(selector)` ->
 /// `0x0079a920(picked, its selector -16 pick, 0, 0, 0)`.
 pub fn native_707a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let p = pop(h, s);
@@ -775,7 +775,7 @@ pub fn native_707a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0079_a920, &[i, j, 0, 0, 0])
 }
 
-/// `Native_705a` (`0x007a49f0`, `0x705a`): `(targets, command)` as
+/// `Native_705a_BtlQueueCommand` (`0x007a49f0`, `0x705a`): `(targets, command)` as
 /// `Native_BtlUseCommand` without the checks (`MsGetChrBit(.., 0, 1, 1,
 /// -1)`); 1, 0 without an actor.
 pub fn native_705a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -791,7 +791,7 @@ pub fn native_705a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_7017` (`0x007a4050`, `0x7017`): `(a, b)`: when
+/// `Native_7017_ChrSetEffect7` (`0x007a4050`, `0x7017`): `(a, b)`: when
 /// `0x0079eb10(actor, a, 7, b, 1)` holds, the actor's `+0xe12` counts up; 0.
 pub fn native_7017<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let b = pop(h, s);
@@ -805,7 +805,7 @@ pub fn native_7017<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7059` (`0x007a6e40`, `0x7059`, float): as `0x702e` with 1 for
+/// `Native_7059_GetTargetDist` (`0x007a6e40`, `0x7059`, float): as `0x702e` with 1 for
 /// the third argument.
 pub fn native_7059<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     let v = pop(h, s);
@@ -816,7 +816,7 @@ pub fn native_7059<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     callf(h, 0x007a_9a40, &[id, v, 1])
 }
 
-/// `Native_7039` (`0x007a2b10`, `0x7039`): `0x0078cca0(actor, record)`
+/// `Native_7039_ChrDeathTerminate` (`0x007a2b10`, `0x7039`): `0x0078cca0(actor, record)`
 /// with an actor, then `0x007a8f20()`; 0.
 pub fn native_7039<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -855,14 +855,14 @@ pub fn native_7012<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_7086` (`0x007a2ce0`, `0x7086`): `0x0078e5a0(actor)`; 0.
+/// `Native_7086_ChrUseMpLimit` (`0x007a2ce0`, `0x7086`): `0x0078e5a0(actor)`; 0.
 pub fn native_7086<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
     call(h, 0x0078_e5a0, &[id]);
     0
 }
 
-/// `Native_7055` (`0x007a3eb0`, `0x7055`): `(b)`: `0x00796f20(record, 0, b
+/// `Native_7055_ChrSetBodyHit` (`0x007a3eb0`, `0x7055`): `(b)`: `0x00796f20(record, 0, b
 /// & 1)`; 0.
 pub fn native_7055<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let b = pop(h, s) & 1;
@@ -874,7 +874,7 @@ pub fn native_7055<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7038` (`0x007a6dd0`, `0x7038`): `(b, a)` ->
+/// `Native_7038_ChrDelExtraCommand` (`0x007a6dd0`, `0x7038`): `(b, a)` ->
 /// `0x007acb40(actor, a, b)`.
 pub fn native_7038<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let a = pop(h, s);
@@ -883,7 +883,7 @@ pub fn native_7038<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x007a_cb40, &[id, a, b])
 }
 
-/// `Native_7108` (`0x007a40a0`, `0x7108`): `(a, b)`: with `+0x41d` set,
+/// `Native_7108_ChrSetDirTarget` (`0x007a40a0`, `0x7108`): `(a, b)`: with `+0x41d` set,
 /// `MsSetChrDirTarget(actor, 1, 1, -1, b, a)`; 0.
 pub fn native_7108<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let a = pop(h, s);
@@ -896,7 +896,7 @@ pub fn native_7108<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_70e2` (`0x007a32a0`, `0x70e2`): `(selector, v)`: on the picked
+/// `Native_70e2_ChrSetTextureAnim` (`0x007a32a0`, `0x70e2`): `(selector, v)`: on the picked
 /// actor's model, `0x0083d040(model, 4, v)`; 0.
 pub fn native_70e2<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -911,7 +911,7 @@ pub fn native_70e2<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7047` (`0x007a5270`, `0x7047`): `(i, a)` ->
+/// `Native_7047_MoveSplineRegist` (`0x007a5270`, `0x7047`): `(i, a)` ->
 /// `0x007ab0b0(i, actor, a, 0)`; 0.
 pub fn native_7047<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let id = actor(h, w);
@@ -921,7 +921,7 @@ pub fn native_7047<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7093` (`0x007a60f0`, `0x7093`): `0x00791780(actor, record)`, 0
+/// `Native_7093_CheckRestMotion` (`0x007a60f0`, `0x7093`): `0x00791780(actor, record)`, 0
 /// without one.
 pub fn native_7093<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -940,7 +940,7 @@ pub fn native_708f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x007a_8720, &[id, v, 1])
 }
 
-/// `Native_708c` (`0x007a3920`, `0x708c`): `(a, b)` -> `0x00782ba0(a, b)`.
+/// `Native_708c_EncSetGroupWeight` (`0x007a3920`, `0x708c`): `(a, b)` -> `0x00782ba0(a, b)`.
 pub fn native_708c<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let b = pop(h, s);
     let a = pop(h, s);
@@ -988,12 +988,12 @@ pub fn native_702a<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     i32::from(h.read::<i8>(c + 0x508)).cast_unsigned()
 }
 
-/// `Native_7041` (`0x007a56d0`, `0x7041`): nothing; 0.
+/// `Native_7041_NoOp` (`0x007a56d0`, `0x7041`): nothing; 0.
 pub fn native_7041<H: NativeHost>(_h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_707f` (`0x007a5e50`, `0x707f`): `(selector)` ->
+/// `Native_707f_ChrResetBtlPos` (`0x007a5e50`, `0x707f`): `(selector)` ->
 /// `0x007ab2a0(picked)`; 0.
 pub fn native_707f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let id = actor(h, w);
@@ -1015,7 +1015,7 @@ pub fn native_70d5<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     i
 }
 
-/// `Native_7084` (`0x007a4440`, `0x7084`): `0x00788e30(record)`; 0.
+/// `Native_7084_ResetAfterImage` (`0x007a4440`, `0x7084`): `0x00788e30(record)`; 0.
 pub fn native_7084<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
     let c = chr(h, id);
@@ -1037,7 +1037,7 @@ pub fn native_7034<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_7051` (`0x007a5890`, `0x7051`, poll): 5 once the actor's
+/// `Native_7051_WaitEffect7` (`0x007a5890`, `0x7051`, poll): 5 once the actor's
 /// `+0xe12` is 0.
 pub fn native_7051<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -1045,7 +1045,7 @@ pub fn native_7051<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     if h.read::<u8>(c + 0xe12) == 0 { 5 } else { 0 }
 }
 
-/// `Native_7062` (`0x007a4580`, `0x7062`): `(a, b)` ->
+/// `Native_7062_ChrSetEffect8` (`0x007a4580`, `0x7062`): `(a, b)` ->
 /// `0x0079eba0(actor, a, b, 1)`.
 pub fn native_7062<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let b = pop(h, s);
@@ -1065,17 +1065,17 @@ fn bits_dc0<H: NativeHost>(h: &mut H, w: u32, s: u32, op: fn(u32, u32) -> u32) -
     m
 }
 
-/// `Native_70cd` (`0x007a7d60`, `0x70cd`): `+0xdc0` |= the set.
+/// `Native_70cd_BtlAddTargets` (`0x007a7d60`, `0x70cd`): `+0xdc0` |= the set.
 pub fn native_70cd<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     bits_dc0(h, w, s, |v, m| v | m)
 }
 
-/// `Native_70cc` (`0x007a7cb0`, `0x70cc`): `+0xdc0` = the set.
+/// `Native_70cc_BtlSetTargets` (`0x007a7cb0`, `0x70cc`): `+0xdc0` = the set.
 pub fn native_70cc<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     bits_dc0(h, w, s, |_, m| m)
 }
 
-/// `Native_70ce` (`0x007a7f20`, `0x70ce`): `+0xdc0` &= !the set.
+/// `Native_70ce_BtlRemoveTargets` (`0x007a7f20`, `0x70ce`): `+0xdc0` &= !the set.
 pub fn native_70ce<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     bits_dc0(h, w, s, |v, m| v & !m)
 }
@@ -1097,7 +1097,7 @@ fn ld(h: &impl NativeHost, at: u32) -> f64 {
     x87::load(h.read(at))
 }
 
-/// The battle flag bytes `Native_707d`/`Native_707e` set and read, by
+/// The battle flag bytes `Native_707d_BtlSetFlag`/`Native_707e_BtlGetFlag` set and read, by
 /// selector (`0x0112a8f8`.. ; `None`: a selector without a byte).
 const BTL_FLAGS: [Option<u32>; 26] = [
     None,
@@ -1133,7 +1133,7 @@ fn r32(x: f64) -> f64 {
     x87::load(x87::store(x))
 }
 
-/// `Native_702c` (`0x007a45c0`, `0x702c`): `(m, p8, p7, p6, p5, p4, p3,
+/// `Native_702c_ChrMoveToTarget` (`0x007a45c0`, `0x702c`): `(m, p8, p7, p6, p5, p4, p3,
 /// p2, p1)` (eight floats then a mode): the actor's jump to its target.
 /// The frames from the distance (`0x007a9ac0`, then `0x007c2ec0` or
 /// `0x007c3030` for `+0x34`), the speed `p8` and acceleration `p6` (the
@@ -1233,7 +1233,7 @@ pub fn native_702c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x007a_87f0, &[v14, v24, id, 0x10, 1])
 }
 
-/// `Native_70b0` (`0x007a4f80`, `0x70b0`): `(selector)`: for the picked
+/// `Native_70b0_ChrGetMoveSteps` (`0x007a4f80`, `0x70b0`): `(selector)`: for the picked
 /// actor, a count from its `+0x40e` (scaled by `+0x3fc / +0x400` when
 /// `+0x400` is larger) and, when `0x007b4a70(it)` has bits 0-1, the steps
 /// of `+0x4cc` growing by `+0x4d0` (capped at `0x007a88e0(it)`) it takes to
@@ -1278,7 +1278,7 @@ pub fn native_70b0<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     }
 }
 
-/// `Native_7028` (`0x007a6970`, `0x7028`): `(x, y, z)` floats into the
+/// `Native_7028_ChrSetScale` (`0x007a6970`, `0x7028`): `(x, y, z)` floats into the
 /// actor's `+0x3a0`..`+0x3a8` (z first) and its model's
 /// `0x0082b560(model, 7, z, y, x)`; 0.
 pub fn native_7028<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -1305,7 +1305,7 @@ pub fn native_7028<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_707d` (`0x007a81f0`, `0x707d`): `(k, v)`: battle flag `k` =
+/// `Native_707d_BtlSetFlag` (`0x007a81f0`, `0x707d`): `(k, v)`: battle flag `k` =
 /// `v & 1` ([`BTL_FLAGS`]; `k` 2 sets two, 25 takes all of `v`'s low
 /// byte); `k` 0, 10, 11, 21, 22 call the battle module instead; `v`.
 pub fn native_707d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
@@ -1348,7 +1348,7 @@ pub fn native_707d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_707e` (`0x007a27e0`, `0x707e`): `(k)`: battle flag `k - 1`
+/// `Native_707e_BtlGetFlag` (`0x007a27e0`, `0x707e`): `(k)`: battle flag `k - 1`
 /// (signed; 25 unsigned; 2 is whether both `0x0112a8f9` and `0x0112a8f8`
 /// are set), 0 for selectors without one.
 pub fn native_707e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
@@ -1493,7 +1493,7 @@ pub fn native_7096<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     sb(h, h.rebase(0x0112_c9fa))
 }
 
-/// `Native_706e` (`0x007a7020`, `0x706e`, start): `(selector, voice)`:
+/// `Native_706e_ChrSetVoice` (`0x007a7020`, `0x706e`, start): `(selector, voice)`:
 /// `MsSetVoice(i, voice, 1, worker, &out)` (`0x007a0720`) for each picked
 /// actor; the args word is 1 when any `out` was set. `EAX` is the args
 /// word's address.
@@ -1516,7 +1516,7 @@ pub fn native_706e<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     a
 }
 
-/// `Native_704b` (`0x007a7640`, `0x704b`, start): `(selector, motion,
+/// `Native_704b_ChrSetMotion` (`0x007a7640`, `0x704b`, start): `(selector, motion,
 /// b)`: `MsSetMotion(i, motion, b, 0, 1, worker, &out)` (`0x007ab360`)
 /// for each picked actor; as [`native_706e`].
 pub fn native_704b<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
@@ -1539,7 +1539,7 @@ pub fn native_704b<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     a
 }
 
-/// `Native_7050` (`0x007a7400`, `0x7050`, start): `(selector)`: the args
+/// `Native_7050_ChrVisibleBtl2Event` (`0x007a7400`, `0x7050`, start): `(selector)`: the args
 /// word = `MsSetChrVisibleBtl2Event(worker, MsGetChrBit(actor, selector,
 /// 0, 1), -1)` (`0x007a89c0`), also `EAX`.
 pub fn native_7050<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
@@ -1589,7 +1589,7 @@ pub fn native_7107<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     x87::ftol(h, x)
 }
 
-/// `Native_7057` (`0x007a4220`, `0x7057`): `(target, f, b, a)`:
+/// `Native_7057_ChrSetDirTarget` (`0x007a4220`, `0x7057`): `(target, f, b, a)`:
 /// `MsSetChrDirTarget(actor, target, 0, -1, b, a)` (`0x00795eb0`); the
 /// float is popped and dropped; 0.
 pub fn native_7057<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -1602,7 +1602,7 @@ pub fn native_7057<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7083` (`0x007a42a0`, `0x7083`): `(_, n)`: for n > 0 on an
+/// `Native_7083_WeaponEffectCreate` (`0x007a42a0`, `0x7083`): `(_, n)`: for n > 0 on an
 /// actor with `+0xe15` set and no weapon unit (`+0xea8`),
 /// `op_et_weapon_unit(model, 0, ...)` (`0x007fc9b0`) into `+0xea8`; 0.
 pub fn native_7083<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -1620,7 +1620,7 @@ pub fn native_7083<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7117` (`0x007a4b00`, `0x7117`): `(targets, command)`: as
+/// `Native_7117_BtlQueueCommand` (`0x007a4b00`, `0x7117`): `(targets, command)`: as
 /// `0x700b` without the checks: `MsMotionPosCheck` when `+0x3f9` is set,
 /// then `Battle_QueueCommand(actor, command, MsGetChrBit(actor, targets,
 /// 0, 1, 1, 0x40))`; 1, or 0 without an actor.
@@ -1642,7 +1642,7 @@ pub fn native_7117<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_7078` (`0x007a6540`, `0x7078`): `(selector, b, a)` ->
+/// `Native_7078_ChrGetComInfo` (`0x007a6540`, `0x7078`): `(selector, b, a)` ->
 /// `MsGetComInfo(picked, b, a)` (`0x0078cd30`).
 pub fn native_7078<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let id = actor(h, w);
@@ -1659,7 +1659,7 @@ pub fn native_70a4<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_7040` (`0x007a5610`, `0x7040`): `(v)` -> `0x0079e8c0(actor,
+/// `Native_7040_MagicEffectStart` (`0x007a5610`, `0x7040`): `(v)` -> `0x0079e8c0(actor,
 /// v)`, 0 without an actor.
 pub fn native_7040<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -1670,7 +1670,7 @@ pub fn native_7040<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0079_e8c0, &[id, v])
 }
 
-/// `Native_7046` (`0x007a5220`, `0x7046`): `(v)`: `MsMoveSplineSet(v)`
+/// `Native_7046_MoveSplineSet` (`0x007a5220`, `0x7046`): `(v)`: `MsMoveSplineSet(v)`
 /// (`0x007ab140`); 0.
 pub fn native_7046<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -1678,7 +1678,7 @@ pub fn native_7046<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7049` (`0x007a55a0`, `0x7049`): `(d, c, f, a)`:
+/// `Native_7049_ChrMoveSpline` (`0x007a55a0`, `0x7049`): `(d, c, f, a)`:
 /// `0x007ab010(d, actor, c, f, a)`; 0.
 pub fn native_7049<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let id = actor(h, w);
@@ -1690,7 +1690,7 @@ pub fn native_7049<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7076` (`0x007a56f0`, `0x7076`): `(c, f, a)` on the worker's
+/// `Native_7076_MoveBallSpline` (`0x007a56f0`, `0x7076`): `(c, f, a)` on the worker's
 /// actor (not checked against `0xff`): `MsSetBallSplineInit(actor)`
 /// (`0x007b7c80`), `MsGetChr(actor)`'s `u16 +0x45a` = `c` and `+0x452` =
 /// 0, `MsSetBallSpline(actor)` (`0x007b78c0`), `MsMoveSpline(2, actor, c,
@@ -1711,7 +1711,7 @@ pub fn native_7076<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_70dc` (`0x007a7a10`, `0x70dc`): `(selector, i)`: copies 40
+/// `Native_70dc_ChrSetName` (`0x007a7a10`, `0x70dc`): `(selector, i)`: copies 40
 /// bytes of the name table `*0x0112a9b8` (entry
 /// `MsGetSaveConfigHiragana() + 2i`, a `u16` offset in 4-byte steps) into the picked actor's `+0x540`;
 /// 0.
@@ -1736,7 +1736,7 @@ pub fn native_70dc<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7091` (`0x007a77c0`, `0x7091`): `(to, from)` selectors: the
+/// `Native_7091_ChrCopyName` (`0x007a77c0`, `0x7091`): `(to, from)` selectors: the
 /// 40-byte name at `+0x540` and the byte `+0xdd5` copied from one picked
 /// actor to the other; 0.
 pub fn native_7091<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -1767,7 +1767,7 @@ pub fn native_7106<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0078_5020, &[i, cmd])
 }
 
-/// `Native_7087` (`0x007a7880`, `0x7087`): `(selector, b, a)` ->
+/// `Native_7087_ChrSeFade` (`0x007a7880`, `0x7087`): `(selector, b, a)` ->
 /// `0x0079fcf0(picked, b, a)`, 0 for none.
 pub fn native_7087<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let a1 = pop(h, s);
@@ -1781,7 +1781,7 @@ pub fn native_7087<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0079_fcf0, &[i, b, a1])
 }
 
-/// `Native_7088` (`0x007a79c0`, `0x7088`): `(selector, se)` ->
+/// `Native_7088_RegSePlay` (`0x007a79c0`, `0x7088`): `(selector, se)` ->
 /// `MsRegSEplay(picked, se)` (`0x007a0100`), 0 for none.
 pub fn native_7088<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let se = pop(h, s);
@@ -1794,7 +1794,7 @@ pub fn native_7088<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x007a_0100, &[i, se])
 }
 
-/// `Native_70ed` (`0x007a2ca0`, `0x70ed`): `(b, a)` -> `MsSaveItemUse(b,
+/// `Native_70ed_SaveItemUse` (`0x007a2ca0`, `0x70ed`): `(b, a)` -> `MsSaveItemUse(b,
 /// a)` (`0x00790550`).
 pub fn native_70ed<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let a1 = pop(h, s);
@@ -1835,7 +1835,7 @@ pub fn native_7109<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     n
 }
 
-/// `Native_70d1` (`0x007a5cb0`, `0x70d1`): `(selector)` -> the picked
+/// `Native_70d1_ChrGetEffect7Count` (`0x007a5cb0`, `0x70d1`): `(selector)` -> the picked
 /// actor's `+0xe12` byte.
 pub fn native_70d1<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let p = pop(h, s);
@@ -1845,7 +1845,7 @@ pub fn native_70d1<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     u32::from(h.read::<u8>(c + 0xe12))
 }
 
-/// `Native_701b` (`0x007a66a0`, `0x701b`): `(targets, v)`:
+/// `Native_701b_CueAddCommand` (`0x007a66a0`, `0x701b`): `(targets, v)`:
 /// `0x007ac940(actor, v, MsGetChrBit(actor, targets, 0, 1))`; 0.
 pub fn native_701b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -1858,7 +1858,7 @@ pub fn native_701b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7036` (`0x007a7180`, `0x7036`): `(a f, b f, n)`:
+/// `Native_7036_ChrSetTransparent` (`0x007a7180`, `0x7036`): `(a f, b f, n)`:
 /// `MsSetChrTransparentVisible(actor, a, b, n, 1)` (`0x00796550`); 0.
 pub fn native_7036<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let id = actor(h, w);
@@ -1872,7 +1872,7 @@ pub fn native_7036<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_702f` (`0x007a5140`, `0x702f`): `(keep)`: resets the actor:
+/// `Native_702f_ChrReset` (`0x007a5140`, `0x702f`): `(keep)`: resets the actor:
 /// `+0x508` = 0, `MsStatusEffectClear` (`0x0079f110`), `0x0079ea90`, the
 /// system motion again for a model unless `+0xdce` (`Ch_ResetMotion`,
 /// `ms_motion_trans`, `Ch_SetSysMotion`), `MsSetChrVisibleAppear(actor,
@@ -1901,7 +1901,7 @@ pub fn native_702f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7082` (`0x007a41e0`, `0x7082`): `(b, a)` ->
+/// `Native_7082_ChrSetEffect` (`0x007a41e0`, `0x7082`): `(b, a)` ->
 /// `0x0079eb10(actor, b, 1, a, 1)`.
 pub fn native_7082<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let a1 = pop(h, s);
@@ -1921,7 +1921,7 @@ pub fn native_709d<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     if h.read::<u8>(c + 0x425) == 0 { 5 } else { 0 }
 }
 
-/// `Native_7063` (`0x007a5dc0`, `0x7063`, poll): 5 when the actor's
+/// `Native_7063_WaitEffect8` (`0x007a5dc0`, `0x7063`, poll): 5 when the actor's
 /// `+0xe13` is clear, else 0.
 pub fn native_7063<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -1929,7 +1929,7 @@ pub fn native_7063<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     if h.read::<u8>(c + 0xe13) == 0 { 5 } else { 0 }
 }
 
-/// `Native_70d7` (`0x007a30f0`, `0x70d7`): `(selector, motion)`: unless
+/// `Native_70d7_DamageSetMotion` (`0x007a30f0`, `0x70d7`): `(selector, motion)`: unless
 /// the picked actor's `+0x422` actor has `+0xdcc` set,
 /// `MsDamageSetMotion(picked, motion, picked != actor)` (`0x0078ca20`); 0.
 pub fn native_70d7<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -1989,7 +1989,7 @@ pub fn native_7023<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     x87::ftol(h, sum)
 }
 
-/// `Native_7054` (`0x007a7fe0`, `0x7054`): `(to, from, point)`: the
+/// `Native_7054_ChrSetPosOptpos` (`0x007a7fe0`, `0x7054`): `(to, from, point)`: the
 /// `from` actor's model point (`Ch_OptposGet`, `0x008354f0`) through
 /// `0x0079e1b0(0, &v)` into `MsSetChrPosReset(to, &v)` (`0x00796220`);
 /// 0. Without a model the vector is the original's stack garbage (zeroed
@@ -2018,7 +2018,7 @@ pub fn native_7054<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_70be` (`0x007a3780`, `0x70be`, float): `(selector)`: the picked
+/// `Native_70be_ChrGetDir` (`0x007a3780`, `0x70be`, float): `(selector)`: the picked
 /// actor's direction (`MsGetChrDir`, `0x00794d20`) in degrees.
 pub fn native_70be<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     let id = actor(h, w);
@@ -2030,7 +2030,7 @@ pub fn native_70be<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     near_degrees(h, d)
 }
 
-/// `Native_70c3` (`0x007a3650`, `0x70c3`, float): `(selector)`: the
+/// `Native_70c3_ChrGetTargetDir` (`0x007a3650`, `0x70c3`, float): `(selector)`: the
 /// direction to the picked actor's target (`MsGetChrTargetDir(i, 0)`,
 /// `0x007958c0`, rounded to `f32`) in degrees.
 pub fn native_70c3<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
@@ -2050,7 +2050,7 @@ pub fn native_70ea<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_7115` (`0x007a4560`, `0x7115`): `MsSetChrDirLeave(actor)`
+/// `Native_7115_ChrSetDirLeave` (`0x007a4560`, `0x7115`): `MsSetChrDirLeave(actor)`
 /// (`0x00795e70`); 0.
 pub fn native_7115<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -2058,7 +2058,7 @@ pub fn native_7115<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_711d` (`0x007a4330`, `0x711d`): `(height f)`:
+/// `Native_711d_ChrSetShadowHeight` (`0x007a4330`, `0x711d`): `(height f)`:
 /// `Ch_ShadowSetHeight(MsGetChrHandle(actor), height)` (`0x00795080`,
 /// `0x00830cb0`) for a model; 0.
 pub fn native_711d<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -2073,7 +2073,7 @@ pub fn native_711d<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7025` (`0x007a5cf0`, `0x7025`): `(d, c, b, a)`:
+/// `Native_7025_ActTargetSearch` (`0x007a5cf0`, `0x7025`): `(d, c, b, a)`:
 /// `0x00796430(actor, MsActTargetSearch(actor, d, c, b, 4, a, 0, &out))`
 /// (`0x007acd40`); out (zeroed here when the search writes none).
 pub fn native_7025<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -2088,7 +2088,7 @@ pub fn native_7025<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     h.read(o)
 }
 
-/// `Native_7053` (`0x007a4470`, `0x7053`): `(f)`:
+/// `Native_7053_BtlMoveTargetDist` (`0x007a4470`, `0x7053`): `(f)`:
 /// [`atel_btl_move_target_dist`] with gravity f; 0.
 pub fn native_7053<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     let f = x87::store(x87::load(popf(h, s)));
@@ -2117,14 +2117,14 @@ pub fn native_7071<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_708a` (`0x007a3710`, `0x708a`): `(v)`: `0x00782b40(v)`; 0.
+/// `Native_708a_EncResetWeights` (`0x007a3710`, `0x708a`): `(v)`: `0x00782b40(v)`; 0.
 pub fn native_708a<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     call(h, 0x0078_2b40, &[v]);
     0
 }
 
-/// `Native_708b` (`0x007a3900`, `0x708b`): `(v)` -> `0x00782940(v)`.
+/// `Native_708b_EncGetGroupWeight` (`0x007a3900`, `0x708b`): `(v)` -> `0x00782940(v)`.
 pub fn native_708b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     call(h, 0x0078_2940, &[v])
@@ -2145,7 +2145,7 @@ pub fn native_70bb<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_70ef` (`0x007a64f0`, `0x70ef`): `(selector, signal)`:
+/// `Native_70ef_EffectSendSignal` (`0x007a64f0`, `0x70ef`): `(selector, signal)`:
 /// `MsEffectSendSignal(picked, signal)` (`0x0079e4f0`); 0.
 pub fn native_70ef<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let sig = pop(h, s);
