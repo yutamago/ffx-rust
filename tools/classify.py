@@ -558,7 +558,7 @@ REVIEWED = {
     0x00a27140: ("dead", "xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
     0x00a27150: ("dead", "xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
     0x00a27160: ("dead", "xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)"),
-    0x00879c60: ("debug", "AtelPCCreate: tools/refs.py finds one ref, a call at 0x878437 inside Native_c000, which runs only after TkIsDebug 0x887d10 (xor eax,eax; ret) (small round 5)"),
+    0x00879c60: ("debug", "AtelPCCreate: tools/refs.py finds one ref, a call at 0x878437 inside Native_c000_SaveEventToHost, which runs only after TkIsDebug 0x887d10 (xor eax,eax; ret) (small round 5)"),
     0x009428b0: ("platform", "MemSystem_Ensure slow path: allocator setup with an SEH frame; refs.py: 5 refs, all in allocator code (0x9427fd, 0x9428a7, 0x942967, 0x94261c, 0xaf1297) (pc round 4)"),
     0x009dfb30: ("glue", "PhyreEngine PClassDescriptor constructor; dupes.py family of 70 copies; 18 refs, all from Phyre_* functions (pc round 4)"),
     0x009de900: ("dead", "refs.py: 0 refs; one of 203 PhyreEngine copies (pc round 4)"),

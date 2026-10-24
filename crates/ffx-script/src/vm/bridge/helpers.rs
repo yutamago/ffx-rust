@@ -4641,7 +4641,7 @@ pub fn atel_exec_ctrl_event_init(h: &mut impl ffx_bridge::Host, c: u32, battle: 
 }
 
 /// `AtelEventSetUpForBattleMusic(…)` (`0x00866240`; callers
-/// `MsBattleExe`, `Native_c024`; their argument unread): the event set-up
+/// `MsBattleExe`, `Native_c024_BtlEnd`; their argument unread): the event set-up
 /// for a battle. No voice on standby; outside an encounter
 /// (`MsGetEncountType` 0) the battle-end status takes the save event's
 /// `+0xe4` over its bit 16; the music-keep byte `0x01326bdd` = status bit

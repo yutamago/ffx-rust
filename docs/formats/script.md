@@ -2384,96 +2384,96 @@ marked "not ported" runs in the original, and so does the handler of
 | `0xb00d` | `Native_b00d_MovieClearDone` | - | the movie done flag = 0; 0 | - | int `0x0076ecb0` (native_chr) |
 | `0xb00e` | `Native_b00e_DebugPrint` | - | int: a "Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impelemented yet!" line naming the PS2 callback through the empty dbgPrintf; 0 (the poll keeps waiting) | - | int `0x0076ecc0` (native_mods) |
 | `0xb00f` | `Native_b00f_DebugPrint` | - | int: a "Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impelemented yet!" line naming the PS2 callback through the empty dbgPrintf; 0 (the poll keeps waiting) | - | int `0x0076ecd0` (native_mods) |
-| `0xc000` | `Native_c000` | - | debug (mod-tool candidate): under TkIsDebug only: the save event block (TkGetSaveEventAddress) written to a PS2 development-host file (AtelPCCreate/AtelPCWrite 0x21ec bytes, name at 0x00c52dc0); 1, else 0 | - | int `0x00878420` (not ported) |
-| `0xc001` | `Native_c001` | - | debug (mod-tool candidate): under TkIsDebug only: the save event block read back from that host file (AtelPCOpen/AtelPCRead); 1, else 0 | - | int `0x00878490` (not ported) |
-| `0xc002` | `Native_c002` | on | MsSetSaveConfigHiragana(on != 0) (0x00785f40); 0 | - | int `0x008784e0` (native_chr) |
-| `0xc003` | `Native_c003` | map | AtelMapLoad(map) (0x0086dca0) | - | int `0x00878510` (native_chr) |
-| `0xc004` | `Native_c004` | a int, b int | debug (mod-tool candidate): under TkIsDebug (0 in this build) 0x0083a4f0(b, a); 1 | - | int `0x00878570` (not ported) |
-| `0xc005` | `Native_c005` | v int | debug (mod-tool candidate): under TkIsDebug (0 in this build) 0x0083a580(v); 1 | - | int `0x008785b0` (not ported) |
+| `0xc000` | `Native_c000_SaveEventToHost` | - | debug (mod-tool candidate): under TkIsDebug only: the save event block (TkGetSaveEventAddress) written to a PS2 development-host file (AtelPCCreate/AtelPCWrite 0x21ec bytes, name at 0x00c52dc0); 1, else 0 | - | int `0x00878420` (not ported) |
+| `0xc001` | `Native_c001_SaveEventFromHost` | - | debug (mod-tool candidate): under TkIsDebug only: the save event block read back from that host file (AtelPCOpen/AtelPCRead); 1, else 0 | - | int `0x00878490` (not ported) |
+| `0xc002` | `Native_c002_SetConfigHiragana` | on | MsSetSaveConfigHiragana(on != 0) (0x00785f40); 0 | - | int `0x008784e0` (native_chr) |
+| `0xc003` | `Native_c003_MapLoad` | map | AtelMapLoad(map) (0x0086dca0) | - | int `0x00878510` (native_chr) |
+| `0xc004` | `Native_c004_CaptureEnableKari` | a int, b int | debug (mod-tool candidate): under TkIsDebug (0 in this build) 0x0083a4f0(b, a); 1 | - | int `0x00878570` (not ported) |
+| `0xc005` | `Native_c005_CaptureEnableKariOn` | v int | debug (mod-tool candidate): under TkIsDebug (0 in this build) 0x0083a580(v); 1 | - | int `0x008785b0` (not ported) |
 | `0xc006` | `Native_c006` | - | debug (mod-tool candidate): under TkIsDebug only: 0x0083a570(); 1 | - | int `0x008785e0` (not ported) |
-| `0xc007` | `Native_c007` | map, index | TkSetStartMapIndex(map, index) (0x0088ebf0); map | - | int `0x00878600` (native_chr) |
+| `0xc007` | `Native_c007_SetStartMapIndex` | map, index | TkSetStartMapIndex(map, index) (0x0088ebf0); map | - | int `0x00878600` (native_chr) |
 | `0xc008` | `Native_c008` | var int | 1 (the variable's address is computed and dropped) | - | int `0x00878390` (native_sys) |
-| `0xc009` | `Native_c009` | mode | AtelSetEventMode(mode) (0x00873e40); mode | - | int `0x00878630` (native_chr) |
-| `0xc00b` | `Native_c00b` | - | debug (mod-tool candidate): in a debug build yiLoadBattleFieldParticleNo(v); 1 in release | - | int `0x00878690` (not ported) |
-| `0xc00c` | `Native_c00c` | - | debug (mod-tool candidate): in a debug build (TkIsDebug) yiLoadFieldParticleNo(v); 1 in release | - | int `0x00878650` (not ported) |
-| `0xc00d` | `Native_c00d` | on | MsSetSaveConfigCreditName(on != 0) (0x00785e90); on != 0 | - | int `0x008786d0` (native_chr) |
-| `0xc00e` | `Native_c00e` | id, b, c, d | int: SqsSePlay(id, b, c, d) (0x0081e4e0); id | - | int `0x00878700` (native_mods) |
+| `0xc009` | `Native_c009_SetEventMode` | mode | AtelSetEventMode(mode) (0x00873e40); mode | - | int `0x00878630` (native_chr) |
+| `0xc00b` | `Native_c00b_LoadBtlFieldParticle` | - | debug (mod-tool candidate): in a debug build yiLoadBattleFieldParticleNo(v); 1 in release | - | int `0x00878690` (not ported) |
+| `0xc00c` | `Native_c00c_LoadFieldParticle` | - | debug (mod-tool candidate): in a debug build (TkIsDebug) yiLoadFieldParticleNo(v); 1 in release | - | int `0x00878650` (not ported) |
+| `0xc00d` | `Native_c00d_SetConfigCreditName` | on | MsSetSaveConfigCreditName(on != 0) (0x00785e90); on != 0 | - | int `0x008786d0` (native_chr) |
+| `0xc00e` | `Native_c00e_SqsSePlay` | id, b, c, d | int: SqsSePlay(id, b, c, d) (0x0081e4e0); id | - | int `0x00878700` (native_mods) |
 | `0xc00f` | `Native_c00f` | var int | 0 (as 0xc008) | - | int `0x00878750` (native_sys) |
-| `0xc010` | `Native_c010` | voice int | 1; SndStandbyStream(voice) (0x00887570) | - | int `0x00878770` (native_sys) |
-| `0xc011` | `Native_c011` | - | int: SndStartStream() (0x00887630); 1 | - | int `0x00878790` (native_mods) |
-| `0xc012` | `Native_c012` | - | int: SndGetStreamState() != 0 (0x008864b0) | - | int `0x008787a0` (native_mods) |
-| `0xc013` | `Native_c013` | - | 1 when MsGetSaveConfigHiragana() (0x007851f0) is 1 | - | int `0x008787b0` (native_chr) |
+| `0xc010` | `Native_c010_StreamStandby` | voice int | 1; SndStandbyStream(voice) (0x00887570) | - | int `0x00878770` (native_sys) |
+| `0xc011` | `Native_c011_StreamStart` | - | int: SndStartStream() (0x00887630); 1 | - | int `0x00878790` (native_mods) |
+| `0xc012` | `Native_c012_StreamGetState` | - | int: SndGetStreamState() != 0 (0x008864b0) | - | int `0x008787a0` (native_mods) |
+| `0xc013` | `Native_c013_GetConfigHiragana` | - | 1 when MsGetSaveConfigHiragana() (0x007851f0) is 1 | - | int `0x008787b0` (native_chr) |
 | `0xc014` | `Native_c014` | - | 1 when 0x007851b0() is not 0 | - | int `0x008787c0` (native_chr) |
-| `0xc015` | `Native_c015` | &name int | debug (mod-tool candidate): the variable's address taken, then under TkIsDebug only: a host file read into a TkMalloc buffer and sent with SndSepTrans; 1 | - | int `0x008787d0` (not ported) |
-| `0xc016` | `Native_c016` | v int | 1; 0x00886e80(v) | - | int `0x00878860` (native_sys) |
-| `0xc017` | `Native_c017` | v int | 1; 0x00886eb0(v) | - | int `0x00878880` (native_sys) |
-| `0xc018` | `Native_c018` | - | debug (mod-tool candidate): in a debug build SqsSetProjectBase(&var); 1 in release | - | int `0x008788a0` (not ported) |
-| `0xc019` | `Native_c019` | map | int: AtelMapLoadNoCache(map) (0x0086dd30); 0 | - | int `0x00878550` (native_mods) |
-| `0xc01a` | `Native_c01a` | party int, kick int, variation int | 1; SndKickFoot(1, party, kick, variation) | - | int `0x008788e0` (native_sys) |
-| `0xc01b` | `Native_c01b` | party int, kick int, variation int | 1; SndKickFoot(0, party, kick, variation) | - | int `0x00878920` (native_sys) |
-| `0xc01c` | `Native_c01c` | party int, kick int | 1; SndKickFoot(5, party, kick, 0) | - | int `0x00878960` (native_sys) |
-| `0xc01d` | `Native_c01d` | party int, kick int, variation int | 1; SndKickFoot(2, party, kick, variation) | - | int `0x008789a0` (native_sys) |
-| `0xc01e` | `Native_c01e` | party int, kick int, variation int | 1; SndKickFoot(3, party, kick, variation) | - | int `0x008789e0` (native_sys) |
-| `0xc01f` | `Native_c01f` | party int, kick int, variation int | 1; SndKickFoot(4, party, kick, variation) | - | int `0x00878a20` (native_sys) |
+| `0xc015` | `Native_c015_SepTransFromHost` | &name int | debug (mod-tool candidate): the variable's address taken, then under TkIsDebug only: a host file read into a TkMalloc buffer and sent with SndSepTrans; 1 | - | int `0x008787d0` (not ported) |
+| `0xc016` | `Native_c016_SepPlaySimple` | v int | 1; 0x00886e80(v) | - | int `0x00878860` (native_sys) |
+| `0xc017` | `Native_c017_SepStop` | v int | 1; 0x00886eb0(v) | - | int `0x00878880` (native_sys) |
+| `0xc018` | `Native_c018_SqsSetProjectBase` | - | debug (mod-tool candidate): in a debug build SqsSetProjectBase(&var); 1 in release | - | int `0x008788a0` (not ported) |
+| `0xc019` | `Native_c019_MapLoadNoCache` | map | int: AtelMapLoadNoCache(map) (0x0086dd30); 0 | - | int `0x00878550` (native_mods) |
+| `0xc01a` | `Native_c01a_SndKickFoot` | party int, kick int, variation int | 1; SndKickFoot(1, party, kick, variation) | - | int `0x008788e0` (native_sys) |
+| `0xc01b` | `Native_c01b_SndKickFoot` | party int, kick int, variation int | 1; SndKickFoot(0, party, kick, variation) | - | int `0x00878920` (native_sys) |
+| `0xc01c` | `Native_c01c_SndKickFoot` | party int, kick int | 1; SndKickFoot(5, party, kick, 0) | - | int `0x00878960` (native_sys) |
+| `0xc01d` | `Native_c01d_SndKickFoot` | party int, kick int, variation int | 1; SndKickFoot(2, party, kick, variation) | - | int `0x008789a0` (native_sys) |
+| `0xc01e` | `Native_c01e_SndKickFoot` | party int, kick int, variation int | 1; SndKickFoot(3, party, kick, variation) | - | int `0x008789e0` (native_sys) |
+| `0xc01f` | `Native_c01f_SndKickFoot` | party int, kick int, variation int | 1; SndKickFoot(4, party, kick, variation) | - | int `0x00878a20` (native_sys) |
 | `0xc020` | `Native_c020` | v int | int: v (popped and returned) | - | int `0x00878ac0` (native_sys) |
 | `0xc021` | `Native_c021` | v int | int: v (popped and returned) | - | int `0x00878ae0` (native_sys) |
-| `0xc022` | `Native_c022` | - | debug (mod-tool candidate): in a debug build Sg_EnableDrawGui(v); 1 in release | - | int `0x00878b00` (not ported) |
-| `0xc023` | `Native_c023` | worker int, kind int, x var, y var, z var | 1; the given worker's character position (0x00833c30(chr, kind, &matrix) translation) into the three variables, 0.0 each without a character | - | int `0x00878b40` (native_sys) |
-| `0xc024` | `Native_c024` | _, v | start: the battle end (AtelEventSetUpForBattleMusic, AtelEventRemoveForBattle for the event jump map, AtelBattleEndCallback(1, v, map)); its EAX; poll: 0xc024 (0x00878c60, poll), 0xb00a (0x0076ec10, int) and the like: 1; poll: 1 | see the poll | start `0x00878c10`, poll `0x00878c60`, poll `0x00878c60` (native_chr) |
-| `0xc025` | `Native_c025` | msg int | int: 1 when the message text (Msg_Text) fits and is copied over the player's name (MsGetSaveChrName(0), shorter than MsGetSaveChrNameSize(0)), else 0 | - | int `0x00878c70` (native_chr) |
-| `0xc026` | `Native_c026` | var int, v int | 1; 0x00886a00(AtelGetRealVarAdrs(worker, var), v) | - | int `0x00878ce0` (native_sys) |
+| `0xc022` | `Native_c022_EnableDrawGui` | - | debug (mod-tool candidate): in a debug build Sg_EnableDrawGui(v); 1 in release | - | int `0x00878b00` (not ported) |
+| `0xc023` | `Native_c023_ChrGetPos` | worker int, kind int, x var, y var, z var | 1; the given worker's character position (0x00833c30(chr, kind, &matrix) translation) into the three variables, 0.0 each without a character | - | int `0x00878b40` (native_sys) |
+| `0xc024` | `Native_c024_BtlEnd` | _, v | start: the battle end (AtelEventSetUpForBattleMusic, AtelEventRemoveForBattle for the event jump map, AtelBattleEndCallback(1, v, map)); its EAX; poll: 0xc024 (0x00878c60, poll), 0xb00a (0x0076ec10, int) and the like: 1; poll: 1 | see the poll | start `0x00878c10`, poll `0x00878c60`, poll `0x00878c60` (native_chr) |
+| `0xc025` | `Native_c025_SetChrName` | msg int | int: 1 when the message text (Msg_Text) fits and is copied over the player's name (MsGetSaveChrName(0), shorter than MsGetSaveChrNameSize(0)), else 0 | - | int `0x00878c70` (native_chr) |
+| `0xc026` | `Native_c026_MusicStandby` | var int, v int | 1; 0x00886a00(AtelGetRealVarAdrs(worker, var), v) | - | int `0x00878ce0` (native_sys) |
 | `0xc027` | `Native_c027` | - | debug (mod-tool candidate): under TkIsDebug only: TOSetCollectBit(-1) and 0x0088e780(0xa004 + k) for k < 26; 0 | - | int `0x00878d20` (not ported) |
-| `0xc028` | `Native_c028` | - | debug (mod-tool candidate): in a debug build 0x0088e790(0xa004 + i) for 26 i; 1 | - | int `0x00878d60` (not ported) |
+| `0xc028` | `Native_c028_ImportantSetAll` | - | debug (mod-tool candidate): in a debug build 0x0088e790(0xa004 + i) for 26 i; 1 | - | int `0x00878d60` (not ported) |
 | `0xc029` | `Native_c029` | flags int, b int, a int | int: a when bit 1 of flags is set, else b (the level's +0x884 minus the yaw is wrapped by 0x0088bc20 and dropped) | - | int `0x00878d90` (native_sys) |
-| `0xc02a` | `Native_c02a` | - | debug (mod-tool candidate): in a debug build TkSetOutputEncount(v) and AtelOutputEncountStart(); v | - | int `0x00878e10` (not ported) |
-| `0xc02b` | `Native_c02b` | - | int: 0 (xor eax, eax; ret) | - | int `0x00878e50` (native_mods) |
+| `0xc02a` | `Native_c02a_OutputEncountStart` | - | debug (mod-tool candidate): in a debug build TkSetOutputEncount(v) and AtelOutputEncountStart(); v | - | int `0x00878e10` (not ported) |
+| `0xc02b` | `Native_c02b_NoOp` | - | int: 0 (xor eax, eax; ret) | - | int `0x00878e50` (native_mods) |
 | `0xc02c` | `Native_c02c` | v int | int: the popped value; int: the popped value | - | int `0x00878e60` (native_chr) |
-| `0xc02d` | `Native_c02d` | party int | 1; SndKickFoot(6, party, 0, 0) | - | int `0x00878a60` (native_sys) |
-| `0xc02e` | `Native_c02e` | party int | 1; SndKickFoot(7, party, 0, 0) | - | int `0x00878a90` (native_sys) |
+| `0xc02d` | `Native_c02d_SndKickFoot` | party int | 1; SndKickFoot(6, party, 0, 0) | - | int `0x00878a60` (native_sys) |
+| `0xc02e` | `Native_c02e_SndKickFoot` | party int | 1; SndKickFoot(7, party, 0, 0) | - | int `0x00878a90` (native_sys) |
 | `0xc02f` | `Native_c02f` | on, v f | the current ctrl work's +0x208 = v and +2 bit 0 = on != 0; EAX on != 0 | - | int `0x00878e80` (native_chr) |
 | `0xc030` | `Native_c030` | - | TkIsDebug(), then the current ctrl work's +0x1f4 | - | int `0x00878ed0` (native_chr) |
-| `0xc031` | `Native_c031` | v | 0x0086dcd0(v) | - | int `0x00878530` (native_chr) |
+| `0xc031` | `Native_c031_MapLoadBtl` | v | 0x0086dcd0(v) | - | int `0x00878530` (native_chr) |
 | `0xc032` | `Native_c032` | - | 1 (Script_WorkerLevel of the running level, unused) | - | int `0x00878ef0` (native_sys) |
-| `0xc033` | `Native_c033` | - | int: jumps to Ch_EnableGetTexture (0x00830320) | - | int `0x00878f10` (native_mods) |
-| `0xc034` | `Native_c034` | v int | debug (mod-tool candidate): pops v; under TkIsDebug (0 in this build) 0x00830330(1); 1 | - | int `0x00878f20` (not ported) |
-| `0xc035` | `Native_c035` | pc | int: AtelGetCharHandleFromBindPC(pc) (0x0086ae90) | - | int `0x00878f50` (native_mods) |
-| `0xc036` | `Native_c036` | on | pppFpSetDisp(on != 0) (0x00729050); on != 0 | - | int `0x00878f70` (native_chr) |
+| `0xc033` | `Native_c033_EnableGetTexture` | - | int: jumps to Ch_EnableGetTexture (0x00830320) | - | int `0x00878f10` (native_mods) |
+| `0xc034` | `Native_c034_EnableSetTexture` | v int | debug (mod-tool candidate): pops v; under TkIsDebug (0 in this build) 0x00830330(1); 1 | - | int `0x00878f20` (not ported) |
+| `0xc035` | `Native_c035_GetBindPcChr` | pc | int: AtelGetCharHandleFromBindPC(pc) (0x0086ae90) | - | int `0x00878f50` (native_mods) |
+| `0xc036` | `Native_c036_FpSetDisp` | on | pppFpSetDisp(on != 0) (0x00729050); on != 0 | - | int `0x00878f70` (native_chr) |
 | `0xc037` | `Native_c037` | i int | int: the string table 0x008b9130()'s base plus its u16 offset 2i (2i + 1 when 0x0086bad0() is set) | - | int `0x00878fa0` (native_sys) |
 | `0xc038` | `Native_c038` | c int, b int, var int | 1; GetCD()'s +0x10(c), then its +0(b, the variable's address, 0, 0) | - | int `0x00878fe0` (native_sys) |
 | `0xc039` | `Native_c039` | v int | int: GetCD()'s +8(v) | - | int `0x00879040` (native_sys) |
-| `0xc03a` | `Native_c03a` | a int, b int, volume int | 1; SndStartShoutStream(a, b, volume) (0x008875d0) | - | int `0x00879070` (native_sys) |
-| `0xc03b` | `Native_c03b` | - | debug (mod-tool candidate): MsDebugFullItem (0x007849d0), the debug cheat that gives every item; 1 | - | int `0x008790b0` (not ported) |
-| `0xc03c` | `Native_c03c` | - | debug (mod-tool candidate): MsDebugFullCommand (0x007848b0), the debug cheat that teaches every command; 1 | - | int `0x008790c0` (not ported) |
-| `0xc03d` | `Native_c03d` | bit int, on int | int: on; the effect flag bit set (AtelSetEffectFlag) or cleared (0x00863860) | - | int `0x008790d0` (native_sys) |
-| `0xc03e` | `Native_c03e` | v int | int: 0x00886680(v) | - | int `0x00879110` (native_sys) |
-| `0xc03f` | `Native_c03f` | v int | int: v; 0x00887180(v) | - | int `0x00879130` (native_sys) |
+| `0xc03a` | `Native_c03a_ShoutStreamStart` | a int, b int, volume int | 1; SndStartShoutStream(a, b, volume) (0x008875d0) | - | int `0x00879070` (native_sys) |
+| `0xc03b` | `Native_c03b_FullItem` | - | debug (mod-tool candidate): MsDebugFullItem (0x007849d0), the debug cheat that gives every item; 1 | - | int `0x008790b0` (not ported) |
+| `0xc03c` | `Native_c03c_FullCommand` | - | debug (mod-tool candidate): MsDebugFullCommand (0x007848b0), the debug cheat that teaches every command; 1 | - | int `0x008790c0` (not ported) |
+| `0xc03d` | `Native_c03d_SetEffectFlag` | bit int, on int | int: on; the effect flag bit set (AtelSetEffectFlag) or cleared (0x00863860) | - | int `0x008790d0` (native_sys) |
+| `0xc03e` | `Native_c03e_SepIsPlaying` | v int | int: 0x00886680(v) | - | int `0x00879110` (native_sys) |
+| `0xc03f` | `Native_c03f_SetSoundMode` | v int | int: v; 0x00887180(v) | - | int `0x00879130` (native_sys) |
 | `0xc040` | `Native_c040` | - | int: jumps to 0x00886430 | - | int `0x00879150` (native_mods) |
-| `0xc041` | `Native_c041` | v int | int: v; 0x008871c0(v) | - | int `0x00879160` (native_sys) |
-| `0xc042` | `Native_c042` | - | int: jumps to SndGetSoundType (0x00886440) | - | int `0x00879180` (native_mods) |
-| `0xc043` | `Native_c043` | - | int: SndSepClearAll() (0x00886db0); 1 | - | int `0x00879190` (native_mods) |
-| `0xc044` | `Native_c044` | v int | 0; 0x0088c7f0(v) | - | int `0x008791a0` (native_sys) |
-| `0xc045` | `Native_c045` | v int | int: 0x0088c800(v) | - | int `0x008791c0` (native_sys) |
+| `0xc041` | `Native_c041_SetSoundType` | v int | int: v; 0x008871c0(v) | - | int `0x00879160` (native_sys) |
+| `0xc042` | `Native_c042_GetSoundType` | - | int: jumps to SndGetSoundType (0x00886440) | - | int `0x00879180` (native_mods) |
+| `0xc043` | `Native_c043_SepClearAll` | - | int: SndSepClearAll() (0x00886db0); 1 | - | int `0x00879190` (native_mods) |
+| `0xc044` | `Native_c044_RestartSyncH` | v int | 0; 0x0088c7f0(v) | - | int `0x008791a0` (native_sys) |
+| `0xc045` | `Native_c045_GetSyncH` | v int | int: 0x0088c800(v) | - | int `0x008791c0` (native_sys) |
 | `0xc046` | `Native_c046` | v int | 0; 0x0088c820(v) | - | int `0x008791e0` (native_sys) |
-| `0xc047` | `Native_c047` | offset int | float: the f32 at the buffer 0x0088c830() plus offset | - | float `0x00879200` (native_sys) |
-| `0xc048` | `Native_c048` | offset int, v f | float: v; the f32 at 0x0088c830() plus offset = v | - | float `0x00879280` (native_sys) |
-| `0xc049` | `Native_c049` | offset int | int: the word at 0x0088c830() plus offset | - | int `0x00879220` (native_sys) |
-| `0xc04a` | `Native_c04a` | offset int, v f | int: v truncated; stored as a word at 0x0088c830() plus offset | - | int `0x008792c0` (native_sys) |
-| `0xc04b` | `Native_c04b` | offset int | int: the i16 at 0x0088c830() plus offset, sign-extended | - | int `0x00879240` (native_sys) |
-| `0xc04c` | `Native_c04c` | offset int, v f | int: v truncated; its low 16 bits stored at 0x0088c830() plus offset | - | int `0x00879300` (native_sys) |
-| `0xc04d` | `Native_c04d` | offset int | int: the i8 at 0x0088c830() plus offset, sign-extended | - | int `0x00879260` (native_sys) |
-| `0xc04e` | `Native_c04e` | offset int, v f | int: v truncated; its low byte stored at 0x0088c830() plus offset | - | int `0x00879340` (native_sys) |
-| `0xc04f` | `Native_c04f` | - | int: 1 (mov eax, 1; ret) | - | int `0x00879380` (native_mods) |
-| `0xc050` | `Native_c050` | - | int: movie_stop_prog() (0x0076f090) when movie_run_check() (0x0076f060); 1 | - | int `0x00879390` (native_mods) |
-| `0xc051` | `Native_c051` | on | TkSetTGS(on != 0) (0x0088ec10); on != 0 | - | int `0x008793b0` (native_chr) |
-| `0xc052` | `Native_c052` | - | jumps to 0x0088d6d0 | - | int `0x008793e0` (native_chr) |
+| `0xc047` | `Native_c047_SaveEventGetFloat` | offset int | float: the f32 at the buffer 0x0088c830() plus offset | - | float `0x00879200` (native_sys) |
+| `0xc048` | `Native_c048_SaveEventSetFloat` | offset int, v f | float: v; the f32 at 0x0088c830() plus offset = v | - | float `0x00879280` (native_sys) |
+| `0xc049` | `Native_c049_SaveEventGetU32` | offset int | int: the word at 0x0088c830() plus offset | - | int `0x00879220` (native_sys) |
+| `0xc04a` | `Native_c04a_SaveEventSetU32` | offset int, v f | int: v truncated; stored as a word at 0x0088c830() plus offset | - | int `0x008792c0` (native_sys) |
+| `0xc04b` | `Native_c04b_SaveEventGetI16` | offset int | int: the i16 at 0x0088c830() plus offset, sign-extended | - | int `0x00879240` (native_sys) |
+| `0xc04c` | `Native_c04c_SaveEventSetU16` | offset int, v f | int: v truncated; its low 16 bits stored at 0x0088c830() plus offset | - | int `0x00879300` (native_sys) |
+| `0xc04d` | `Native_c04d_SaveEventGetI8` | offset int | int: the i8 at 0x0088c830() plus offset, sign-extended | - | int `0x00879260` (native_sys) |
+| `0xc04e` | `Native_c04e_SaveEventSetU8` | offset int, v f | int: v truncated; its low byte stored at 0x0088c830() plus offset | - | int `0x00879340` (native_sys) |
+| `0xc04f` | `Native_c04f_AlwaysTrue` | - | int: 1 (mov eax, 1; ret) | - | int `0x00879380` (native_mods) |
+| `0xc050` | `Native_c050_MovieStop` | - | int: movie_stop_prog() (0x0076f090) when movie_run_check() (0x0076f060); 1 | - | int `0x00879390` (native_mods) |
+| `0xc051` | `Native_c051_SetTgs` | on | TkSetTGS(on != 0) (0x0088ec10); on != 0 | - | int `0x008793b0` (native_chr) |
+| `0xc052` | `Native_c052_GetTgs` | - | jumps to 0x0088d6d0 | - | int `0x008793e0` (native_chr) |
 | `0xc053` | `Native_c053` | - | four popped and dropped; 0 | - | int `0x008793f0` (native_chr) |
-| `0xc054` | `Native_c054` | n | TkMalloc(n) (0x0088e650) | - | int `0x008781b0` (native_chr) |
-| `0xc055` | `Native_c055` | p | TkFree(p) (0x0088d520); 1 | - | int `0x008781d0` (native_chr) |
-| `0xc056` | `Native_c056` | - | debug (mod-tool candidate): TkCdRead(group, index, adrs) with a dbgPrintf (a debug file read); 1 | - | int `0x00878230` (not ported) |
-| `0xc057` | `Native_c057` | - | debug (mod-tool candidate): copies 0x68c0 bytes from the address + 0x40 into g_SaveData and TkFlushSyncH ('copy to saveram'); 1 | - | int `0x008781f0` (not ported) |
-| `0xc058` | `Native_c058` | v | AtelGetRealVarAdrs(worker, v) | - | int `0x00878280` (native_chr) |
-| `0xc059` | `Native_c059` | i, on | int: MsGetSaveCommandMenuPanel(i) (0x007850b0) before MsSetSaveCommandMenuPanel(i, on != 0) (0x00785d40) | - | int `0x008782a0` (native_mods) |
-| `0xc05a` | `Native_c05a` | event int, variation int | 1; SndKickFoot(0xff, event, 0, variation) (kind 0xff plays a sound event) | - | int `0x008782f0` (native_sys) |
+| `0xc054` | `Native_c054_MemAlloc` | n | TkMalloc(n) (0x0088e650) | - | int `0x008781b0` (native_chr) |
+| `0xc055` | `Native_c055_MemFree` | p | TkFree(p) (0x0088d520); 1 | - | int `0x008781d0` (native_chr) |
+| `0xc056` | `Native_c056_CdRead` | - | debug (mod-tool candidate): TkCdRead(group, index, adrs) with a dbgPrintf (a debug file read); 1 | - | int `0x00878230` (not ported) |
+| `0xc057` | `Native_c057_CopyToSaveRam` | - | debug (mod-tool candidate): copies 0x68c0 bytes from the address + 0x40 into g_SaveData and TkFlushSyncH ('copy to saveram'); 1 | - | int `0x008781f0` (not ported) |
+| `0xc058` | `Native_c058_GetVarAddress` | v | AtelGetRealVarAdrs(worker, v) | - | int `0x00878280` (native_chr) |
+| `0xc059` | `Native_c059_SetCmdMenuPanel` | i, on | int: MsGetSaveCommandMenuPanel(i) (0x007850b0) before MsSetSaveCommandMenuPanel(i, on != 0) (0x00785d40) | - | int `0x008782a0` (native_mods) |
+| `0xc05a` | `Native_c05a_SndKickEvent` | event int, variation int | 1; SndKickFoot(0xff, event, 0, variation) (kind 0xff plays a sound event) | - | int `0x008782f0` (native_sys) |
 | `0xc05b` | `Native_c05b` | v int | debug (mod-tool candidate): AtelPs2DebugString2("DEBUG:%d/%d" of the worker id +0x2e and v) (0x00873c80); v | - | int `0x00878330` (not ported) |
 | `0xc05c` | `Native_c05c` | v int | debug (mod-tool candidate): AtelPs2DebugString2(sprintf("DEBUG:%d/0x%x", worker id, v)); v | - | int `0x008783c0` (not ported) |
 | `0xc05d` | `Native_c05d` | v int | int: v; 0x00887ca0(v) | - | int `0x00878470` (native_sys) |
