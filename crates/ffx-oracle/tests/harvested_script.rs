@@ -362,3 +362,26 @@ harvest_test!(
     args = 2,
     |m: &mut Oracle, s| { hp::atel_worker_frame(&mut OracleHost(m), s.arg(0), s.arg(1)) }
 );
+// pc round 6
+harvest_test!(
+    atel_exec_sound,
+    0x0087_7380,
+    args = 0,
+    |m: &mut Oracle, _s| { hp::atel_exec_sound(&mut OracleHost(m)) }
+);
+harvest_test!(
+    atel_event_sound_step,
+    0x0086_82f0,
+    args = 0,
+    |m: &mut Oracle, _s| { hp::atel_event_sound_step(&mut OracleHost(m)) }
+);
+harvest_test!(
+    atel_worker_place_chr,
+    0x0086_6800,
+    args = 2,
+    |m: &mut Oracle, s| {
+        // the y - 0.1 slot: stack scratch, as the original's own slot
+        let slot = m.stack_range().start + 0x100;
+        hp::atel_worker_place_chr(&mut OracleHost(m), s.arg(0), s.arg(1), slot);
+    }
+);

@@ -7289,9 +7289,9 @@ ported! {
     AtelCalcSound @ 0x0087_6930 => extern "C" fn h_876930(req: u32, play: u32) -> u32 {
         hp::atel_calc_sound(&mut mem(), req, play)
     }
-    /// `AtelExecSound()`: the last request's `EAX`.
-    AtelExecSound @ 0x0087_7380 => extern "C" fn h_877380() -> u32 {
-        hp::atel_exec_sound(&mut mem())
+    /// `AtelExecSound()`: its one caller (`0x00872c6d`) drops `EAX`.
+    AtelExecSound @ 0x0087_7380 => extern "C" fn h_877380() {
+        hp::atel_exec_sound(&mut mem());
     }
     /// `Atel_EventSoundStep_008682f0()`: its one caller drops `EAX`.
     Atel_EventSoundStep_008682f0 @ 0x0086_82f0 => extern "C" fn h_8682f0() {

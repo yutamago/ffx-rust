@@ -16905,9 +16905,12 @@ fn pc6a_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
             b,
             0x0087_7380,
             &[],
-            true,
+            false,
             &format!("AtelExecSound {what} {round} total {total:#x} diff {diff:#x}"),
-            |r| hp::atel_exec_sound(r),
+            |r| {
+                hp::atel_exec_sound(r);
+                0
+            },
         );
         // Atel_EventSoundStep
         poke(a, b, ctx_at, other);

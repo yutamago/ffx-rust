@@ -85,3 +85,23 @@ harvest_test!(
         })
     }
 );
+// pc round 6
+harvest_test!(
+    to_control_btl_window,
+    0x0089_ae20,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        ffx_system::btl::bridge::to_control_btl_window(
+            m,
+            |m, f, a| {
+                let f = m.rebase(f);
+                m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+            },
+            |m, f, a| m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax,
+            |m, f, a| {
+                let f = m.rebase(f);
+                m.call_f64(f, a).unwrap()
+            },
+        );
+    }
+);

@@ -10056,8 +10056,9 @@ const SND3D_VOLUME_DIFF: u32 = 0x0132_8310;
 /// (`f32(diff + total)`, then 0 below 0 and 1 above 1; a NaN stays),
 /// `AtelSetSndCameraPos` places the listener and each of the 16
 /// `g_AtelSnd3dWork` records is requested (`Snd3dFootRequest(rec, 0,
-/// 0x100)`). `EAX`: the last request's (the caller drops it).
-pub fn atel_exec_sound(h: &mut impl ffx_bridge::Host) -> u32 {
+/// 0x100)`). Void: its one caller drops `EAX` (the last request's, which
+/// is stale for a record without a sound).
+pub fn atel_exec_sound(h: &mut impl ffx_bridge::Host) {
     let total_at = h.rebase(SND3D_VOLUME_TOTAL);
     let diff = x87::load(h.read::<u32>(h.rebase(SND3D_VOLUME_DIFF)));
     let total = x87::store(x87::add(diff, x87::load(h.read::<u32>(total_at))));
@@ -10070,12 +10071,10 @@ pub fn atel_exec_sound(h: &mut impl ffx_bridge::Host) -> u32 {
         h.write(total_at, 1.0_f32.to_bits());
     }
     host_call(h, 0x0087_7470, &[]);
-    let mut eax = 0;
     for k in 0..16 {
         let rec = h.rebase(SND3D_WORK) + k * 0x24;
-        eax = host_call(h, SND3D_FOOT_REQUEST, &[rec, 0, 0x100]);
+        host_call(h, SND3D_FOOT_REQUEST, &[rec, 0, 0x100]);
     }
-    eax
 }
 
 /// `Atel_EventSoundStep_008682f0()` (name ours; caller `0x00872bd0`, the
