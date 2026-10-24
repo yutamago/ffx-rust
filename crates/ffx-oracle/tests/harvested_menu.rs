@@ -37,3 +37,20 @@ harvest_test!(
         })
     }
 );
+// small round 8 (the block goes into the handle slot: the caller's
+// argument words, esp + 4 on)
+harvest_test!(
+    tk_menu_exec_scene,
+    0x00a7_b460,
+    args = 3,
+    |m: &mut Oracle, s| {
+        ffx_menu::scene::bridge::tk_menu_exec_scene(
+            m,
+            s.arg(0),
+            s.arg(1),
+            s.arg(2),
+            s.regs.esp + 4,
+            &mut |m, f, a| m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax,
+        )
+    }
+);
