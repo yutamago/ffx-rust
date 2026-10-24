@@ -127,6 +127,35 @@ footer code { font-family: var(--mono); color: var(--text-secondary); }
 #tip .r span:last-child { color: var(--text-primary); }
 #tip i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
 .empty { color: var(--text-muted); padding: 40px; text-align: center; }
+
+/* current work */
+.phase { font-size: 20px; font-weight: 650; margin: 2px 0 2px; }
+.phase-sub { color: var(--text-secondary); font-size: 13px; margin-bottom: 14px; }
+.phase-sub b { color: var(--text-primary); font-weight: 600; }
+.mods.tasks tbody tr, #covMods tbody tr { cursor: default; }
+.card .hint code, .empty code { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); }
+.mods.tasks td { vertical-align: top; }
+.mods.tasks .branch { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.mods.tasks .title { color: var(--text-secondary); font-size: 12.5px; }
+.mods.tasks .result { color: var(--text-secondary); font-size: 12.5px; }
+.mods.tasks .dates { color: var(--text-muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--hairline); background: var(--surface-2); color: var(--text-primary); white-space: nowrap; }
+.pill i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.pill.running i { animation: ping 2.4s infinite; }
+.past { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; color: var(--text-secondary); font-size: 12.5px; }
+.past b { color: var(--text-primary); font-weight: 600; }
+.stats { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 14px; }
+.col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.groups { display: flex; flex-direction: column; gap: 10px; }
+.groups .g { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.groups .g .n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.groups .g .n small { color: var(--text-muted); font-size: 12px; margin-left: 6px; }
+.groups .chips { margin: 4px 0 0 16px; }
+.rlist { display: flex; flex-direction: column; gap: 8px; }
+.rlist .r { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.rlist .r code { font-family: var(--mono); font-size: 12.5px; color: var(--text-primary); }
+.rlist .r span { color: var(--text-secondary); font-size: 12.5px; }
+.badge { font-size: 11px; color: var(--text-muted); border: 1px solid var(--hairline); border-radius: 5px; padding: 0 5px; margin-left: 6px; }
 </style>
 </head>
 <body>
@@ -214,6 +243,26 @@ function render() {
   $("took").textContent = `generated ${when(D.generated)} in ${D.took} s · ${D.history.length} snapshots`;
   updateLive();
   $("app").innerHTML = `
+    <section class="card" id="now" style="margin-bottom:14px"></section>
+    <section class="grid-two">
+      <div class="card">
+        <h2>In-game coverage</h2>
+        <p class="hint">Ported functions whose hook the game entered in a replay or the coverage session (hook-hit mode: <code>tools/replays/run-all.sh --hits</code> → <code>symbols/hook-hits.txt</code>). A port that runs only through Rust callers is not counted.</p>
+        <div id="cov"></div>
+      </div>
+      <div class="col">
+        <div class="card">
+          <h2>Left to port</h2>
+          <p class="hint">Game functions not replaced yet and not glue, platform, debug or dead code (<code>symbols/classes.tsv</code>), by why they are left.</p>
+          <div id="left"></div>
+        </div>
+        <div class="card">
+          <h2>Replays</h2>
+          <p class="hint">What <code>tools/replays/run-all.sh</code> plays, original against Rust (<code>docs/harness.md</code>).</p>
+          <div id="replays"></div>
+        </div>
+      </div>
+    </section>
     <section class="tiles" id="tiles"></section>
     <section class="grid-main">
       <div class="card">
@@ -269,6 +318,10 @@ function render() {
       <p class="hint">Replaced at the boundary the game uses, not function by function.</p>
       <table class="mods lib" id="libs"></table>
     </section>`;
+  renderNow();
+  renderCoverage(last);
+  renderLeft();
+  renderReplays();
   renderTiles(last);
   renderModules(last);
   bindSeg("mapMode", "mapMode", drawMap);
@@ -292,6 +345,121 @@ function bindSeg(id, key, cb) {
     cb();
   });
   sync();
+}
+
+// ---- current work: ~/ffx-work/agents/tasks.json (format in tools/status.py) ----
+const STATE_COLOR = () => ({ running: C.toPort, merged: C.named, verified: C.replaced, pushed: C.seq[5] });
+const day = s => s ? esc(String(s).replace("T", " ").slice(0, 16)) : "–";
+function renderNow() {
+  const T = D.tasks;
+  if (!T || T.error) {
+    $("now").innerHTML = `<h2>Current work</h2><div class="empty" style="padding:20px">No task list: ${esc(T ? T.error : "this data.js predates it")}. The coordinator keeps <code>~/ffx-work/agents/tasks.json</code> (format: <code>tools/status.py</code>).</div>`;
+    return;
+  }
+  const sc = STATE_COLOR();
+  const counts = {};
+  for (const t of T.tasks) counts[t.state || "?"] = (counts[t.state || "?"] || 0) + 1;
+  const order = ["running", "merged", "verified", "pushed"];
+  const rank = s => order.includes(s) ? order.indexOf(s) : order.length;
+  const summary = Object.keys(counts).sort((a, b) => rank(a) - rank(b)).map(s => `${counts[s]} ${esc(s)}`).join(", ");
+  $("now").innerHTML = `
+    <div class="toolbar" style="margin-bottom:0"><h2>Current work</h2><span class="delta">tasks.json ${T.updated ? "updated " + day(T.updated) : ""} · edited ${ago(T.mtime)}</span></div>
+    <div class="phase">${esc(T.phase || "phase not set")}</div>
+    <div class="phase-sub">Round <b>${esc(T.round || "–")}</b>${T.next ? ` · next: ${esc(T.next)}` : ""}${summary ? ` · ${summary}` : ""}</div>
+    ${T.tasks.length ? `<table class="mods tasks"><thead><tr><th>Task</th><th>Owner</th><th>State</th><th>Started → finished</th><th>Result</th></tr></thead><tbody>${T.tasks.map(t => `<tr>
+        <td style="width:28%"><div class="name">${esc(t.id || "")}</div><div class="title">${esc(t.title || "")}</div></td>
+        <td class="branch">${esc(t.branch || "–")}</td>
+        <td><span class="pill ${esc(t.state || "")}"><i style="background:${sc[t.state] || C.muted}"></i>${esc(t.state || "?")}</span></td>
+        <td class="dates">${day(t.started)} → ${t.finished ? day(t.finished) : "…"}</td>
+        <td class="result">${t.result ? esc(t.result) : `<span style="color:var(--text-muted)">${t.state === "running" ? "in progress" : "–"}</span>`}</td>
+      </tr>`).join("")}</tbody></table>` : `<div class="hint">No tasks in this round yet.</div>`}
+    ${T.history.length ? `<div class="past"><div style="color:var(--text-muted)">Earlier rounds</div>${T.history.map(h => `<div><b>${esc(h.round || "")}</b> · ${h.finished ? "finished " + day(h.finished) : "unfinished"}${h.result ? " · " + esc(h.result) : ""}</div>`).join("")}</div>` : ""}`;
+}
+
+// ---- in-game coverage (hook-hit mode) ------------------------------------------
+function allTotals(counts) {
+  const t = {};
+  for (const c of Object.values(counts)) for (const [k, v] of Object.entries(c)) t[k] = (t[k] || 0) + v;
+  return t;
+}
+function renderCoverage(last) {
+  const H = D.hook_hits;
+  if (!H || !Object.keys(H).length) { $("cov").innerHTML = `<div class="empty" style="padding:20px">No hook-hit data yet.</div>`; return; }
+  const sum = i => Object.values(H).reduce((n, v) => n + v[i], 0);
+  const [rep, ran, repB, ranB] = [0, 1, 2, 3].map(sum);
+  // game modules by ported bytes; the libraries in one row
+  const rows = Object.keys(H).filter(m => D.kinds[m] === "game").sort((a, b) => H[b][2] - H[a][2]).map(m => [m, H[m]]);
+  const libs = Object.keys(H).filter(m => D.kinds[m] !== "game");
+  if (libs.length) rows.push(["libraries", [0, 1, 2, 3].map(i => libs.reduce((n, m) => n + H[m][i], 0)), libs.join(", ")]);
+  $("cov").innerHTML = `
+    <div class="stats">
+      <div class="tile"><div class="label">Ported hooks that ran</div><div class="value">${pct(ran, rep)}</div><div class="foot">${fmt(ran)} of ${fmt(rep)} functions</div></div>
+      <div class="tile"><div class="label">By bytes</div><div class="value">${pct(ranB, repB)}</div><div class="foot">${kb(ranB)} of ${kb(repB)}</div></div>
+    </div>
+    <table class="mods" id="covMods"><thead><tr><th>Module</th><th>Ported code</th><th class="num">Ran</th><th class="num">By bytes</th></tr></thead><tbody>${rows.map(([m, v, title]) => `<tr data-m="${esc(m)}" ${title ? `title="${esc(title)}"` : ""}>
+        <td><div class="name">${esc(m)}</div><div class="kb">${kb(v[2])} · ${fmt(v[0])} fn</div></td>
+        <td style="width:45%"><div class="bar">
+          ${v[3] ? `<span style="width:${100 * v[3] / v[2]}%;background:${C.replaced}"></span>` : ""}
+          ${v[2] - v[3] ? `<span style="width:${100 * (v[2] - v[3]) / v[2]}%;background:${C.seq[1]}"></span>` : ""}
+        </div></td>
+        <td class="num">${fmt(v[1])}<div class="delta">of ${fmt(v[0])}</div></td>
+        <td class="num"><span class="pct">${pct(v[3], v[2], 0)}</span></td>
+      </tr>`).join("")}</tbody></table>
+    <div class="legend" style="margin-top:12px">
+      <span><i style="background:${C.replaced}"></i>Ran in-game</span>
+      <span><i style="background:${C.seq[1]}"></i>Ported, not seen running</span>
+    </div>
+    <h2 style="margin-top:22px">Over time</h2>
+    <p class="hint" id="covHint"></p>
+    <div id="covTraj"></div>`;
+  const P = D.history.filter(e => Object.values(e.counts).some(c => c.ran)).map(e => ({ e, a: allTotals(e.counts) }));
+  if (P.length < 2) { $("covHint").textContent = "Share of the ported code that ran in-game at each commit to " + D.ref + "; it starts with symbols/hook-hits.txt and has " + P.length + " point so far."; return; }
+  $("covHint").textContent = `Share of the ported code that ran in-game at each commit to ${D.ref}, since symbols/hook-hits.txt exists. It moves when a hits run is merged and when ports are added.`;
+  lineChart($("covTraj"), [
+    { name: "Functions", color: C.named, area: false, points: P.map(({ e, a }) => ({ t: e.t, v: 100 * a.ran / a.replaced, e })) },
+    { name: "Bytes", color: C.replaced, area: true, points: P.map(({ e, a }) => ({ t: e.t, v: 100 * a.ran_bytes / a.replaced_bytes, e })) },
+  ], { label: "Share of ported code that ran in-game over time", height: 170, ymax: 100, fmtY: v => v + "%", fmtV: v => v.toFixed(1) + "%" });
+}
+
+// ---- left to port, by group (status.py left_to_port) --------------------------
+function leftColor(key) {
+  return { logic: C.toPort, held: C.seq[4], "held-m5": C.seq[2], stub: C.rest }[key] || C.muted;
+}
+function toPortOf(m, c) {
+  if (!D.left) return [c.to_port, c.to_port_bytes];
+  const g = D.left.find(x => x.key === "logic");
+  return g && g.modules[m] ? g.modules[m] : [0, 0];
+}
+function leftTile(g) {
+  if (!D.left) return `<div class="value">${fmt(g.to_port)}</div><div class="foot">logic functions · ${kb(g.to_port_bytes)}</div>`;
+  const total = D.left.reduce((n, x) => n + x.functions, 0);
+  const lg = D.left.find(x => x.key === "logic") || { functions: 0, bytes: 0 };
+  return `<div class="value">${fmt(lg.functions)}</div>
+    <div class="foot">functions · ${fmt(lg.bytes)} B; ${fmt(total - lg.functions)} more held or stubs</div>
+    <div class="meter">${D.left.map(x => `<span title="${esc(x.label)}: ${fmt(x.functions)}" style="width:${100 * x.functions / Math.max(1, total)}%;background:${leftColor(x.key)}"></span>`).join("")}</div>`;
+}
+function renderLeft() {
+  const L = D.left;
+  if (!L) { $("left").innerHTML = `<div class="empty" style="padding:20px">This data.js predates the breakdown.</div>`; return; }
+  if (!L.length) { $("left").innerHTML = `<div class="empty" style="padding:20px">Nothing left.</div>`; return; }
+  const total = L.reduce((n, x) => n + x.functions, 0);
+  $("left").innerHTML = `
+    <div class="meter" style="margin:0 0 14px">${L.map(x => `<span style="width:${100 * x.functions / total}%;background:${leftColor(x.key)}"></span>`).join("")}</div>
+    <div class="groups">${L.map(x => `<div>
+      <div class="g"><span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px;background:${leftColor(x.key)}"></i>${esc(x.label)}</span>
+        <span class="n"><b>${fmt(x.functions)}</b><small>${fmt(x.bytes)} B</small></span></div>
+      ${x.items.length ? `<div class="chips">${x.items.map(it => `<span class="chip" title="${hex(it[0])} · ${fmt(it[2])} bytes${it[3] ? " · " + esc(it[3]) : ""}">${esc(it[1])}</span>`).join("")}</div>` : ""}
+    </div>`).join("")}</div>
+    <p class="hint" style="margin:12px 0 0">${fmt(total)} in all; only “${esc((L.find(x => x.key === "logic") || { label: "To port" }).label)}” is porting work. Hover a name for its address and why.</p>`;
+}
+
+// ---- replays ------------------------------------------------------------------
+function renderReplays() {
+  const R = D.replays;
+  if (!R || !R.length) { $("replays").innerHTML = `<div class="empty" style="padding:20px">No replay list.</div>`; return; }
+  $("replays").innerHTML = `<div class="rlist">${R.map(r => `<div class="r">
+      <div><code>${esc(r.name)}</code>${r.eye ? `<span class="badge" title="screenshots are looked at, not compared (random effects)">eye</span>` : ""}${r.parity ? "" : `<span class="badge" title="played for hook hits and coverage only, not compared">hits</span>`}</div>
+      <span>${esc(r.about || "")}</span></div>`).join("")}</div>`;
 }
 
 // ---- tiles ---------------------------------------------------------------
@@ -324,9 +492,8 @@ function renderTiles(last) {
       <div class="foot">of ${fmt(g.functions)} game functions</div>
     </div>
     <div class="card tile">
-      <div class="label">Logic left to port</div>
-      <div class="value">${fmt(g.to_port)}</div>
-      <div class="foot">functions · ${kb(g.to_port_bytes)}</div>
+      <div class="label">Left to port</div>
+      ${leftTile(g)}
     </div>
     <div class="card tile">
       <div class="label">Functions named</div>
@@ -372,7 +539,7 @@ function renderModules(last) {
         ${restB ? `<span style="width:${100 * restB / b}%;background:${C.rest}"></span>` : ""}
       </div></td>
       <td class="num"><span class="pct">${pct(c.replaced_bytes, b, 0)}</span><div class="delta">${Math.abs(dp) >= .05 ? (dp > 0 ? "+" : "") + dp.toFixed(1) + " pts" : "&nbsp;"}</div></td>
-      <td class="num">${fmt(c.to_port)}<div class="delta">${kb(c.to_port_bytes)}</div></td>
+      <td class="num">${(([n, by]) => `${fmt(n)}<div class="delta">${kb(by)}</div>`)(toPortOf(m, c))}</td>
       <td class="num">${pct(c.named, c.functions, 0)}</td>
       <td>${sparkline(seriesOf(m))}</td>
     </tr>`;
@@ -391,7 +558,9 @@ function renderModules(last) {
     const c = last.counts[tr.dataset.m];
     showTip(`<div class="t">${tr.dataset.m}</div>
       ${row(`<i style="background:${C.replaced}"></i>Replaced`, `${fmt(c.replaced)} fn · ${kb(c.replaced_bytes)}`)}
-      ${row(`<i style="background:${C.toPort}"></i>Logic to port`, `${fmt(c.to_port)} fn · ${kb(c.to_port_bytes)}`)}
+      ${(D.left || []).filter(gr => gr.modules[tr.dataset.m]).map(gr => row(`<i style="background:${leftColor(gr.key)}"></i>${esc(gr.label)}`, `${fmt(gr.modules[tr.dataset.m][0])} fn · ${fmt(gr.modules[tr.dataset.m][1])} B`)).join("")
+        || row(`<i style="background:${C.toPort}"></i>Logic to port`, `${fmt(c.to_port)} fn · ${kb(c.to_port_bytes)}`)}
+      ${D.hook_hits && D.hook_hits[tr.dataset.m] ? row("Ran in-game", `${fmt(D.hook_hits[tr.dataset.m][1])} of ${fmt(D.hook_hits[tr.dataset.m][0])} ported`) : ""}
       ${row("Wrapped", fmt(c.wrapped))}
       ${row("Named", `${fmt(c.named)} of ${fmt(c.functions)}`)}`, e);
   };
@@ -688,7 +857,7 @@ function renderTrajectory() {
   const now = B[B.length - 1], ago2 = B.find(({ e }) => e.t >= now.e.t - 2 * 86400) || B[0];
   const days = (now.e.t - ago2.e.t) / 86400;
   const rate = days > 0 ? (ago2.g.to_port_bytes - now.g.to_port_bytes) / days : 0;
-  $("burnHint").textContent = `Logic functions (symbols/classes.tsv) not replaced yet, in KB. ` + (rate > 0
+  $("burnHint").textContent = `Logic functions (symbols/classes.tsv) not replaced yet, in KB, held ones and stubs included (Left to port above splits them). ` + (rate > 0
     ? `Over the last ${days.toFixed(1)} days it went down ${kb(rate)} a day; at that pace the rest takes about ${Math.ceil(now.g.to_port_bytes / rate)} days.`
     : `It has not gone down over the last two days.`);
 }

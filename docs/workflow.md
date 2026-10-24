@@ -321,6 +321,17 @@ the latest ports. `tools/status.sh` returns at once and runs
 the whole history (about a minute); later ones reuse `history.json` and take
 under a second. The open page reloads `data.js` every 30 s.
 
+The page opens with "Current work": the phase, the current round's tasks
+(owner branch, state, one-line result) and the past rounds, from
+`~/ffx-work/agents/tasks.json`. The coordinator keeps that file by hand
+(format at the top of `tools/status.py`): update it when a round starts,
+a task changes state (running, merged, verified, pushed) or a round ends,
+then run `tools/status.sh`. Below it: in-game coverage (the ported hooks
+that ran, from `symbols/hook-hits.txt`, per module and over time), "left to
+port" split by why (to port, held unhooked on purpose, held for M5, too
+short to hook; a new `symbols/classes.tsv` category shows up as its own
+group) and the replays `tools/replays/run-all.sh` plays.
+
 Both progress.py and ownership.py read the dump below (`functions.tsv`, `data_refs.tsv`). Modules come
 from name prefixes (the original PS2 ones the Switch symbols carry, listed in
 `tools/progress.py`); unnamed functions take their named neighbours' module,
