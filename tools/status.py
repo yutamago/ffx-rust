@@ -206,6 +206,19 @@ def main():
         e["added"] = [[a, fmap["names"].get(where.get(a), f"sub_{a:08x}"), fmap["modules"][fmap["module"][where[a]]]]
                       for a in e["added"] if a in where]
 
+    # hook-hit mode's union (tools/hook-hits.py): per module, the replaced
+    # functions and bytes that ran in a replay or the coverage session
+    ran = {int(x, 16) for x in (tree.read("symbols/hook-hits.txt") or "").split()}
+    hits = {}
+    for i, a in enumerate(fmap["addr"]):
+        if fmap["state"][i] == STATES.index("replaced"):
+            h = hits.setdefault(fmap["modules"][fmap["module"][i]], [0, 0, 0, 0])
+            h[0] += 1
+            h[2] += fmap["size"][i]
+            if a in ran:
+                h[1] += 1
+                h[3] += fmap["size"][i]
+
     data = {
         "generated": int(time.time()),
         "ref": args.ref,
@@ -215,6 +228,8 @@ def main():
         "kinds": progress.KIND,
         "history": entries,
         "map": fmap,
+        # module -> [replaced, of them ran, replaced bytes, ran bytes]
+        "hook_hits": hits,
         "took": 0,
     }
     data["took"] = round(time.time() - started, 1)

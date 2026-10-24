@@ -92,6 +92,8 @@ pub mod gfx;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod harness;
 #[cfg(all(windows, target_arch = "x86"))]
+pub mod hook_hits;
+#[cfg(all(windows, target_arch = "x86"))]
 mod iat;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod loadsave;

@@ -18,6 +18,16 @@
 # KEEP_RUNS run folders are kept; %TEMP%\ffx-snap is otherwise disposable.
 #
 # FFX_REPLAY_SERIAL=1 runs the replays one after the other instead.
+#
+# Hook-hit mode (docs/harness.md, "Hook-hit mode"):
+#   tools/replays/run-all.sh --hits
+# runs and compares the replays as usual with FFX_HOOK_HITS set (one hits
+# file per replay in the run folder's hits/), then plays
+# tools/replays/coverage-session.txt on the Rust side for each save entry in
+# FFX_HITS_SAVES (default "0 1 2 3 5", the sandbox's saves), merges every hits file into
+# symbols/hook-hits.txt (tools/hook-hits.py) and writes the report to
+# FFX_HITS_REPORT (default ~/ffx-work/agents/coverage/hook-hits-report.txt).
+# The exit code is the comparison's; the session is not a parity replay.
 set -u
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo"
@@ -48,7 +58,8 @@ replay="$repo/target/release/examples/replay"
 run() { # replay, tag, [original]
     local dir="$runs/$2"
     mkdir -p "$dir"
-    timeout 900 "$replay" "tools/replays/$1.txt" "$win\\runs\\$id\\$2\\$1-$2.trace" ${3:-} \
+    ${hits:+env FFX_HOOK_HITS="$hits/$1-$2.hits"} \
+        timeout 900 "$replay" "tools/replays/$1.txt" "$win\\runs\\$id\\$2\\$1-$2.trace" ${3:-} \
         > "$dir/$1.out" 2>&1
     echo "$1 $2: exit $?" >> "$dir/$1.out"
     grep '^hook log:' "$dir/$1.out" | head -6
@@ -66,6 +77,12 @@ each() {
     wait
 }
 start=$SECONDS
+hits=""
+if [ "${1:-}" = --hits ]; then
+    shift
+    hits="$runs/hits"
+    mkdir -p "$hits"
+fi
 if [ "${1:-}" = --record ]; then
     shift
     [ $# -gt 0 ] && replays=("$@")
@@ -96,4 +113,19 @@ for r in "${replays[@]}"; do
     "${cmp[@]}" >/dev/null 2>&1 || bad=1
 done
 python3 tools/shot-compare.py "$shots/orig" "$shots/orig2" "$runs/rust" --coarse field-walk || bad=1
+if [ -n "$hits" ]; then
+    # the coverage session on every save entry, one game at a time
+    for e in ${FFX_HITS_SAVES:-0 1 2 3 5}; do
+        dir="$runs/session-$e"
+        mkdir -p "$dir"
+        sed "s/^load direct 1\$/load direct $e/" tools/replays/coverage-session.txt > "$dir/session.txt"
+        FFX_HOOK_HITS="$hits/session-$e.hits" timeout 1800 "$replay" "$dir/session.txt" \
+            "$win\\runs\\$id\\session-$e\\session.trace" > "$dir/session.out" 2>&1
+        echo "== session $e: exit $?, $(cat "$hits/session-$e.hits" 2>/dev/null | wc -l) hooks ran"
+        grep '^hook log:' "$dir/session.out" | head -6
+    done
+    python3 -I tools/hook-hits.py merge "$hits"/*.hits
+    python3 -I tools/hook-hits.py report --only "$hits"/*.hits \
+        --out "${FFX_HITS_REPORT:-$HOME/ffx-work/agents/coverage/hook-hits-report.txt}" | head -24
+fi
 exit $bad

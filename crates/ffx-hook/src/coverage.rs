@@ -35,6 +35,10 @@ static ARMED: OnceLock<Armed> = OnceLock::new();
 /// # Safety
 /// `base` must be the main module; called before other threads run game code.
 pub unsafe fn install(base: usize) {
+    // Hook-hit mode (`FFX_HOOK_HITS`) arms the hook sites, which this mode
+    // skips; both run here, after every hook is in place.
+    // SAFETY: forwarded from the caller.
+    unsafe { crate::hook_hits::install(base) };
     let Ok(path) = std::env::var("FFX_COVERAGE") else {
         return;
     };

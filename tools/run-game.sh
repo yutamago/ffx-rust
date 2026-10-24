@@ -21,6 +21,8 @@
 #               one frame interval per frame, and reads are synchronous; implies
 #               --fixed-addresses (for replays)
 # FFX_COVERAGE=FILE in the environment: coverage mode (FILE.hits gets the hits)
+# FFX_HOOK_HITS=FILE in the environment: hook-hit mode (FILE gets every hook
+#               that ran, once; crates/ffx-hook/src/hook_hits.rs)
 #   --fixed-addresses  start through ffx-launch.exe with bottom-up ASLR off, so
 #               heap and VirtualAlloc addresses repeat between runs
 #   --instance N  run from game instance N (tools/instance.sh: a hard-linked
@@ -64,6 +66,11 @@ done
 # candidate list; /p turns the WSL path into a Windows one for the game.
 if [[ -n "${FFX_COVERAGE:-}" ]]; then
     export WSLENV="${WSLENV:+$WSLENV:}FFX_COVERAGE/p"
+fi
+# Hook-hit mode (crates/ffx-hook/src/hook_hits.rs): FFX_HOOK_HITS names the
+# file the hits are appended to (a WSL path, best on /mnt/c).
+if [[ -n "${FFX_HOOK_HITS:-}" ]]; then
+    export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_HITS/p"
 fi
 case "$lang" in jp|en|fr|de|it|es|kr|ch) ;; *) echo "unknown language $lang" >&2; exit 2 ;; esac
 if [[ -n "$instance" ]]; then

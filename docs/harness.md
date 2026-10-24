@@ -115,6 +115,51 @@ the replays and `tools/replays/coverage-session.txt` on every save in the
 game slot and merges the hits into `symbols/coverage.txt`; the last run's
 logs and outputs are in `~/ffx-work/agents/coverage/`.
 
+## Hook-hit mode
+
+Coverage mode skips every byte a hook owns, so it cannot say which ported
+functions run. `FFX_HOOK_HITS=<file>` (a WSL path, best on `/mnt/c`;
+`tools/run-game.sh` passes it on with `/p`, and the harness and replays
+inherit it) does: after the hook table is installed, `ffx-hook`
+(`crates/ffx-hook/src/hook_hits.rs`) puts a one-time `int3` over the `0xe9`
+of every installed hook's `jmp`. The first call through a hook traps into
+the vectored handler (`log.rs`), which puts the `0xe9` back, appends
+`0x<address> <name>` to `<file>` and resumes at the `jmp`, so the shim runs
+as usual. Hooks turned off with `FFX_HOOK_DISABLE` keep their original code
+and are not armed.
+
+- Cost: unset, nothing is armed and the shims, thunks and patch sites are
+  those of a normal run (no flag or branch on any path). Set, each hook
+  costs one exception and one append the first time it runs, nothing
+  after. A replay gives the same events either way.
+- Crash-safe: each hit is one `WriteFile` in append mode with no user-space
+  buffer, so a game that dies leaves every hit it had, and lines from
+  several threads never interleave.
+- It counts hooks the game enters. A port that a module crate calls as Rust
+  (not through the original's address) is not counted on that path.
+- Don't take snapshots in this mode: the image holds the `int3`s that have
+  not fired yet.
+
+`tools/replays/run-all.sh --hits` runs and compares the replays with the
+mode on (one hits file per replay in the run folder's `hits/`), then plays
+`tools/replays/coverage-session.txt` on the Rust side for each save in
+`FFX_HITS_SAVES` (default `0 1 2 3 5`), merges the hits into
+`symbols/hook-hits.txt` (the union of every run, addresses only) and writes
+the report (`FFX_HITS_REPORT`, default
+`~/ffx-work/agents/coverage/hook-hits-report.txt`). `tools/hook-hits.py`
+does the merging and reporting on its own:
+
+```bash
+python3 -I tools/hook-hits.py merge FILE.hits...
+python3 -I tools/hook-hits.py report [FILE.hits...] [--only] [--out REPORT]
+```
+
+The report gives, per hook file (`crates/ffx-hook/src/ported/*.rs`) and per
+module (`tools/progress.py`), the ported hooks that ran against those
+hooked, in functions and bytes (body sizes from the Ghidra dump), the
+biggest areas (name prefixes) that never ran, and every port that never
+ran, biggest first.
+
 ## Snapshots and replays
 
 Two tools for checking Rust replacements against the original code on real

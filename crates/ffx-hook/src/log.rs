@@ -43,10 +43,10 @@ unsafe extern "system" fn fault(
         let r = &*(*info).ExceptionRecord;
         (r.ExceptionCode.cast_unsigned(), r.ExceptionAddress as usize)
     };
-    // Coverage mode's one-time breakpoints (`coverage`): put the byte
-    // back and run the function from its start.
+    // Coverage mode's and hook-hit mode's one-time breakpoints (`coverage`,
+    // `hook_hits`): put the byte back and run the function from its start.
     #[cfg(target_arch = "x86")]
-    if code == 0x8000_0003 && crate::coverage::hit(at) {
+    if code == 0x8000_0003 && (crate::coverage::hit(at) || crate::hook_hits::hit(at)) {
         // SAFETY: the system passes a valid context of the faulting thread.
         unsafe { (*(*info).ContextRecord).Eip = at as u32 };
         return -1; // EXCEPTION_CONTINUE_EXECUTION
