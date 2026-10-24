@@ -1,0 +1,79 @@
+# Event: the cut scene at the Besaid river (map 0x29), from save slot 3
+# (ffx_003, the beach). The same walk as event-besaid.txt (off the beach to
+# map 0x14, Wakka's trigger, right to map 0x29, up to the river) and one
+# step further, into the trigger of the scene: the camera pans over the
+# water, cuts to Wakka and Tidus on the bank ("Tidus: Huh?"), Wakka shoves
+# Tidus off it, jumps after him, and Tidus comes up in the water.
+#
+# realtime (as boot.txt): the scene is voiced and keeps time with its
+# voice stream, which plays in real time. In fast mode two original runs
+# showed another moment of it at the same event count in every shot (up to
+# 600,000 pixels apart); at the game's own rate they differ by a few
+# thousand pixels (cloth, hair, water). Without lockstep the walk's presses
+# land a frame or two apart, so the shots are pinned to the scene itself:
+# the frame message window 0 opens for the first subtitle (state 2 at
+# g_AtelMsgWindows + 0x14, 0x01326d84) and fixed waits after it; the
+# event count read back with each shot lands in the replay's output. The
+# subtitle comes about 180 frames after the last step; a scene that never
+# starts fails the `waitfor` after 900 (30 s).
+#
+# Ranges: the map words, the scenario, message windows 0 and 1, the global
+# random generator and the party records (as event-besaid, without the
+# position and the view matrix, which follow the presses' frames here).
+# Screenshots (event-cliff-<n>.bmp): 1 the subtitle "Tidus: Huh?", 2 Wakka
+# about to shove, 3 Tidus falling, 4 Wakka jumping (from above), 5 Tidus in
+# the water.
+realtime
+load direct 3 bsil0000
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x0112ca90:16 0x0112d67c:2 0x01326d84:12 0x01326db0:12 0x00c42200:4 0x0113205c:0xa68
+pad down+left
+waitfor 0x0112ca90:4 14004600 ffffffff 600
+pad
+waitfor 0x01325d94:4 20000000 e0ffffff 1500
+pad up
+waitfor 0x0112d67c:2 7700 ffff 600
+pad
+wait 160
+pad right
+waitfor 0x0112ca90:4 29001400 ffffffff 900
+pad
+waitfor 0x01325d94:4 20000000 e0ffffff 1500
+read 0x01325d94 4
+press up+right 30 4
+press circle 3 3
+press up+right 30 4
+press circle 3 3
+press up+right 30 4
+press circle 3 3
+press up+right 30 4
+press circle 3 3
+press up+right 30 4
+press circle 3 3
+press up+right 30 4
+press circle 3 3
+press up+right 30 4
+press circle 3 3
+press up+right 30 4
+press circle 3 3
+# the ninth step crosses the trigger
+press up+right 30 4
+press circle 3 3
+read 0x01325d94 4
+read 0x00ccb9a8 12
+waitfor 0x01326d84:4 02000000 ffffffff 900
+read 0x01325d94 4
+shot $OUT\event-cliff-1.bmp
+wait 40
+read 0x01325d94 4
+shot $OUT\event-cliff-2.bmp
+wait 80
+read 0x01325d94 4
+shot $OUT\event-cliff-3.bmp
+wait 120
+read 0x01325d94 4
+shot $OUT\event-cliff-4.bmp
+wait 120
+read 0x01325d94 4
+shot $OUT\event-cliff-5.bmp

@@ -362,6 +362,74 @@ runs; Energy Blast's damage came 268-284 frames after its ID, 264-275 in
 Rust), so shot 6 shows the dark summoning circle in some runs and the
 white flash after it in others. About 25 s.
 
+`tools/replays/event-besaid.txt` and `event-cliff.txt` (2026-10-24) play
+scripted events from save slot 3 (`ffx_003`). The harness's five save
+entries are `ffx_000` (the autosave: Besaid beach, map `0x46`, scenario
+118), `ffx_001` (the salvage ship deck, `cdsp0000`, map `0x47`, scenario
+100: the other replays), `ffx_002` (the sea off Besaid, map `0x46`,
+scenario 111: the arrival cut scene plays on load), `ffx_003` (Besaid
+beach at the save sphere, scenario 118, after Wakka's beach scene) and
+`ffx_005` (the Thunder Plains agency, `kami0100`, map `0x107`, scenario
+1470); `load direct N` loads `ffx_00N` (`load N` counts the title's list,
+where entry 1 is the autosave). The map words are `g_SaveData` `+0`/`+2`
+(`0x0112ca90`), the scenario `+0xbec` (`0x0112d67c`).
+
+event-besaid (lockstep, fast mode, about 18 s) walks off the beach (the
+exit line of `bsil0000`'s worker 32, `Native_MapChange(20)`) to map `0x14`
+(`bsil0200`), walks up into Wakka's trigger (scenario 118 to 119: Wakka
+waves, his voiced line "Hey! It's this way!" as a subtitle, then he runs
+off), then right to map `0x29` (`bsil0300`), where the script has put
+Wakka on the far bank, and up to the river's edge. Shots: the beach, the
+subtitle, map `0x29`, Tidus at the river with Wakka across it. Each map's
+inputs and shots are pinned to ctrl work 0's count, which each map's event
+starts from 0. Traced: the map words, scenario, player position
+(`g_SaveData_PlayerPos` `0x00ccb9a8`), field view matrix (`g_YiViewMatrix`
+`0x018ded38`), message windows 0 and 1 (`g_AtelMsgWindows` + `0x14`, +
+`0x40`: state and flags), the random generators, the party records.
+
+Voiced lines wait for the voice stream, which plays in real time, so what
+a script does after one lands on a different frame in every run, original
+code included (Wakka's run: 7,700 pixels between two original runs at the
+same count). event-besaid takes no shot then, and waits for the subtitle's
+window to close (`waitfor` state 0) before the next input, after which the
+script's frames are fixed again. Two more things vary between original
+runs: a chocobo icon at the bottom right of maps `0x14` and `0x29` that
+animates by the wall clock (masked, `shot-compare.py` `MASKS`), and the
+player position range, which misses an in-between value when a trace frame
+is skipped (seen in 2 of about 6 pairs of original runs; `run-all.sh`
+passes `--ignore 2`).
+
+event-cliff (`realtime`, about 72 s, the longest replay) makes the same
+walk one step further, into the trigger of `bsil0300`'s worker 18 (a line
+at the river, active at scenario 119; entry 6 disables the control and
+starts worker 9's scene): the camera pans over the water, cuts to Wakka and
+Tidus on the bank ("Tidus: Huh?"), Wakka shoves Tidus off it, jumps after
+him, and Tidus comes up in the water. The scene keeps time with its voice
+stream like the opening (`boot.txt`): in fast mode two original runs gave
+another moment of it at the same event count in every shot (up to 600,000
+pixels apart), at the game's own rate a few thousand (cloth, hair, water).
+Without lockstep the walk's presses land a frame or two apart, so the shots
+are pinned to the scene: the frame message window 0 opens for the first
+subtitle (`waitfor 0x01326d84:4 02000000`), then fixed waits (the event
+count read back with each shot lands in the replay's output; two original
+runs read the same counts within one). Traced as event-besaid without the
+position and the view matrix, which follow the presses' frames here. The
+five shots are not BLIND, but the original runs differ in up to 47 % of
+the picture on the last two (the water), so look at them too.
+
+On 2026-10-24 the Rust run of event-cliff did not reach the scene:
+`Atel_TurnUpdate_00869510` (with the original, the scene starts; in
+lockstep the player stands at the same position, byte for byte, either
+way) and, once that is the original, `Atel_MoveUpdate_00868990` (Wakka
+stands about 200 pixels further back on the bank in shot 2). With both
+originals in (`FFX_HOOK_DISABLE=Atel_TurnUpdate_00869510,Atel_MoveUpdate_00868990`)
+the run gives the original's events and 0 differing pixels in all five
+shots. Bisected with `FFX_HOOK_DISABLE` lists (at most about 30 KB of names
+per run: the variable goes through the Windows environment). A replay that
+stops early like this leaves its later shots missing and its trace's last
+line cut: `shot-compare.py` reports a missing shot as a failure and goes on
+with the other replays' shots, and `replay-compare.py` drops a cut line.
+
 `tools/replays/menu-browse.txt` opens the main menu and takes screenshots
 at fixed frames. Some of the screen animates by the wall clock (the
 character panels' shimmer), so two runs of the original already differ in
