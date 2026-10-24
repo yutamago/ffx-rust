@@ -11501,3 +11501,149 @@ fn pc9_main_check_menu_snapshot() {
     let mut rng = Xorshift(0x9c09_a102);
     pc9_main_check_menu_cases(&mut a, &mut b, &mut rng, 300);
 }
+
+/// Turns the recorder `k` over `sym` into a poking one: before it logs,
+/// `xor [[ctl]], [ctl + 4]` (both words set per case).
+fn pc9_poke(a: &mut Oracle, b: &mut Oracle, k: u32, sym: u32, ctl: u32) {
+    let rec = a.rebase(REC_CODE) + 0x60 * k;
+    let mut c = vec![0xa1];
+    c.extend(ctl.to_le_bytes()); // mov eax, [ctl]
+    c.extend([0x8b, 0x0d]);
+    c.extend((ctl + 4).to_le_bytes()); // mov ecx, [ctl + 4]
+    c.extend([0x31, 0x08]); // xor [eax], ecx
+    c.push(0xe9); // jmp the recorder
+    let here = a.alloc_code(&[0; 32]).unwrap();
+    assert_eq!(b.alloc_code(&[0; 32]).unwrap(), here);
+    c.extend(
+        rec.wrapping_sub(here + u32::try_from(c.len()).unwrap() + 4)
+            .to_le_bytes(),
+    );
+    for o in [&mut *a, &mut *b] {
+        o.write(here, &c).unwrap();
+        let at = o.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(here.wrapping_sub(at + 5).to_le_bytes());
+        o.write(at, &j).unwrap();
+    }
+}
+
+/// pc round 9 b: `Sg_MainInit` over recorders (each answering a word of
+/// its own per case): debug on or off, the command line's count (signed)
+/// and its second word `"_ECalm"`, a prefix, longer, another case,
+/// empty or random; the debug byte flipped by `SetByte_012fb8fd` and by
+/// `Sg_CalcScreenMatrix`, the Eternal Calm's map changed by
+/// `TkSetEventJump`, so every read the original makes again is checked.
+fn pc9_main_init_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::state::bridge as st;
+    let log = a.rebase(REC_LOG);
+    let mut syms: Vec<(u32, u32)> = Vec::new();
+    for &(f, args) in st::MAIN_INIT_FIRST
+        .iter()
+        .chain(&st::MAIN_INIT_SCREEN)
+        .chain(&st::MAIN_INIT_REST)
+    {
+        syms.push((f, u32::try_from(args.len()).unwrap()));
+    }
+    for (f, n) in [
+        (st::INIT_EVENT_LIST, 0),
+        (st::TK_INIT_SCENE, 1),
+        (st::TK_SET_EVENT_JUMP, 2),
+        (st::SET_SCREEN_CENTER, 2),
+        (st::CALC_SCREEN_MATRIX, 0),
+        (st::DBG_PRINTF, 1),
+        (st::MAGIC_FILE_INIT, 0),
+        (st::WINDOW_EVENT_HANDLER_SET, 0),
+    ] {
+        syms.push((f, n));
+    }
+    let mut slot_of: std::collections::BTreeMap<u32, (u32, u32)> =
+        std::collections::BTreeMap::new();
+    for &(f, n) in &syms {
+        let e = slot_of.entry(f).or_insert((0, n));
+        e.1 = e.1.max(n);
+    }
+    for (k, (&f, e)) in (1u32..).zip(slot_of.iter_mut()) {
+        e.0 = k;
+        recorder(a, b, k, f, e.1, 0);
+    }
+    let pokes = alloc(a, b, 3 * 8);
+    let debug = a.rebase(st::IS_DEBUG.sym);
+    let calm = a.rebase(st::ETERNAL_CALM_FIRST_MAP.sym);
+    for (i, (f, target)) in [
+        (0x0082_1b20, debug),
+        (st::CALC_SCREEN_MATRIX, debug),
+        (st::TK_SET_EVENT_JUMP, calm),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let ctl = pokes + 8 * u32::try_from(i).unwrap();
+        put(a, b, ctl, target);
+        pc9_poke(a, b, slot_of[&f].0, f, ctl);
+    }
+    let words = alloc(a, b, 12);
+    let text = alloc(a, b, 16);
+    let other = alloc(a, b, 16);
+    put(a, b, words, other);
+    put(a, b, words + 4, text);
+    put(a, b, words + 8, 0u32);
+    let n_slots = u32::try_from(slot_of.len()).unwrap();
+    for round in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 1..=n_slots {
+            let at = a.rebase(REC_RETS) + 4 * k;
+            let v = rng.next();
+            put(a, b, at, v);
+        }
+        for i in 0..3 {
+            let v = if rng.below(3) == 0 { rng.below(2) } else { 0 };
+            put(a, b, pokes + 8 * i + 4, v);
+        }
+        let d = [0u8, 0, 1, 0x80][rng.below(4) as usize];
+        set(a, b, st::IS_DEBUG, d);
+        let m = if rng.below(2) == 0 { 0x17 } else { rng.next() };
+        set(a, b, st::ETERNAL_CALM_FIRST_MAP, m);
+        let v = rng.next();
+        set(a, b, st::VCOUNT, v);
+        let v = rng.next();
+        set(a, b, st::SG_FRAME, v);
+        let s: &[u8] = match rng.below(8) {
+            0..=2 => b"_ECalm\0",
+            3 => b"_ECal\0",
+            4 => b"_ECalmX\0",
+            5 => b"_eCalm\0",
+            6 => b"\0",
+            _ => b"_ECaln\0",
+        };
+        let mut bytes = s.to_vec();
+        if round % 16 == 15 {
+            // random bytes, ended within the block
+            bytes = (0..15).map(|_| rng.next().to_le_bytes()[0]).collect();
+            bytes.push(0);
+        }
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        let count = [0u32, 1, 2, 2, 2, 3, u32::MAX, 0x8000_0002][rng.below(8) as usize];
+        twin("Sg_MainInit", a, b, 0x0082_0860, &[count, words], |m| {
+            st::main_init(&mut H(m), count.cast_signed(), words)
+        });
+    }
+}
+
+#[test]
+fn pc9_main_init_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x9c09_b101);
+    pc9_main_init_cases(&mut a, &mut b, &mut rng, 400);
+}
+
+#[test]
+fn pc9_main_init_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x9c09_b102);
+    pc9_main_init_cases(&mut a, &mut b, &mut rng, 200);
+}

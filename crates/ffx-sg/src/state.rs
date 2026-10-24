@@ -2715,6 +2715,192 @@ pub mod bridge {
     /// answers 0 while it is 1.
     pub const MENU_CAPTURE_STATE: Global<u32> = Global::new(0x0134_0844);
 
+    /// `Sg_MainInit`'s callees before the event jump, in order, with the
+    /// words each gets (all called through the game).
+    pub const MAIN_INIT_FIRST: [(u32, &[u32]); 31] = [
+        (0x0064_30e0, &[2]),          // graphicSetFlipVsnc
+        (0x0072_8750, &[]),           // JobSchedule_pppPart_initFillBufferRequest
+        (0x0072_ac30, &[]),           // ModelBuffer_ClearAll
+        (0x0064_3e70, &[]),           // graphicSwitchGPUMode
+        (0x0062_f6a0, &[]),           // (empty platform stub)
+        (0x0062_f6b0, &[]),           // WindowEventHandlerInit
+        (0x0062_f6c0, &[]),           // (empty platform stub)
+        (0x0062_fc70, &[]),           // FFXVpu0Reset
+        (0x0062_f700, &[1]),          // sceDmaReset
+        (0x0062_f7c0, &[0, 1, 2, 0]), // sceGsResetGraph
+        (0x0062_f7d0, &[]),           // sceGsResetPath
+        (DMA_GET_CHAN, &[2]),         // -> MAIN_DMA_CHANNELS[0]
+        (DMA_GET_CHAN, &[0]),         // -> MAIN_DMA_CHANNELS[2]
+        (DMA_GET_CHAN, &[1]),         // -> MAIN_DMA_CHANNELS[1]
+        (0x0062_f880, &[0, 0]),       // sceGsSyncPath
+        (0x0082_1a20, &[0]),          // SetByte_012fb8fb
+        (0x0062_f7c0, &[0, 1, 2, 0]), // sceGsResetGraph
+        (0x0082_17d0, &[1]),          // the display/draw environments, buffer 1
+        (0x0082_17d0, &[0]),          // and 0
+        (0x0062_f4c0, &[0]),          // FlushCache
+        (0x0067_a950, &[]),           // iSyncInit
+        (0x0067_a500, &[]),           // movie_init
+        (0x0067_a600, &[]),           // iSoundUpdate
+        (0x0084_0910, &[]),           // Cache_Init
+        (0x0062_fb80, &[0]),          // scePadInit_ps2
+        (0x0077_c870, &[]),           // chr_texanim_init
+        (0x0076_eff0, &[]),           // movie_init
+        (0x0078_1d00, &[]),           // MsBattleMemInit
+        (0x0088_d710, &[]),           // TkInit
+        (0x0083_b5f0, &[]),           // Sg_InitAll
+        (0x0082_6ea0, &[]),           // Ch_InitAll
+    ];
+    /// `sceDmaGetChan(n)`.
+    pub const DMA_GET_CHAN: u32 = 0x0062_f6e0;
+    /// The DMA channels `Sg_MainInit` keeps: `sceDmaGetChan(2)`, `(1)`
+    /// (`g_ChrTexAnimDmaChannel`), `(0)`.
+    pub const MAIN_DMA_CHANNELS: u32 = 0x023c_bbf4;
+    /// `Sg_MapInitAll`, `yiInit`, `MsScreenInit(0x200, 0x1a0)`,
+    /// `MsCameraInit`.
+    pub const MAIN_INIT_SCREEN: [(u32, &[u32]); 4] = [
+        (0x0084_4eb0, &[]),
+        (0x0090_9030, &[]),
+        (0x007c_0540, &[0x200, 0x1a0]),
+        (0x007b_d5d0, &[]),
+    ];
+    /// `initEventList()` (debug only).
+    pub const INIT_EVENT_LIST: u32 = 0x0090_7f50;
+    /// The calls after `initEventList`, in order.
+    pub const MAIN_INIT_REST: [(u32, &[u32]); 26] = [
+        (0x0084_4ca0, &[]),  // Sg_IdInitAll
+        (0x0082_d910, &[]),  // Sg_PlayerInitAll
+        (0x0078_1700, &[]),  // MsBattleInit
+        (0x0076_1d60, &[]),  // pppInitPartRender
+        (0x007f_f360, &[]),  // op_init_ffx
+        (0x007f_f770, &[]),  // op_loop_ffx_before
+        (0x007f_f680, &[]),  // op_loop_ffx_after
+        (0x0078_2740, &[]),  // MsEtEffectRead_00782740
+        (0x0082_6230, &[]),  // Ch_ChrMemHeapSet
+        (0x0082_da90, &[6]), // Sg_SetExecSpecialSpeed
+        (0x0083_add0, &[1]), // Sg_EnableTkAnti_0083add0
+        (0x0082_0440, &[1]), // Sg_EnableCalcMap
+        (0x0082_0400, &[1]), // Sg_EnableDrawMap
+        (0x0082_03e0, &[1]), // Sg_EnableCalcChr
+        (0x0082_03c0, &[1]), // Sg_EnableDrawChr
+        (0x0082_03a0, &[1]), // Sg_EnableCalcCam
+        (0x0082_0420, &[1]), // Sg_EnableDrawGui
+        (0x0082_0460, &[1]), // Sg_EnableDrawMenu
+        (0x0083_f700, &[1]), // SetGlobal01301bc4_0083f700
+        (0x0082_0380, &[1]), // Sg_EffectRoutineEnable
+        (0x0082_0500, &[1]), // Sg_EnableTkAnti
+        (0x0082_1d50, &[1]), // Sg_SetthDispEnable
+        (0x0082_0670, &[1]), // Sg_GuiSetDrawChr
+        (0x0083_1940, &[1]), // Sg_GuiSetTextureAnim
+        (0x0082_1cb0, &[0]), // Sg_SetPause
+        (0x0082_1b20, &[0]), // SetByte_012fb8fd (Ch_DrawSetShadowSemi)
+    ];
+    /// `TkInitScene(map)`.
+    pub const TK_INIT_SCENE: u32 = 0x0088_e070;
+    /// `TkSetEventJump(map, entrance)`.
+    pub const TK_SET_EVENT_JUMP: u32 = 0x0088_ea60;
+    /// `Sg_SetScreenCenter(x, y)`.
+    pub const SET_SCREEN_CENTER: u32 = 0x0083_f7a0;
+    /// `Sg_CalcScreenMatrix()`.
+    pub const CALC_SCREEN_MATRIX: u32 = 0x0083_f160;
+    /// `"<HR>SG:<FONT COLOR=ffff00><B>MainRoutine</B></FONT>\n"`.
+    pub const MAIN_ROUTINE_MSG: u32 = 0x00b5_90cc;
+    /// `MagicFile_Init()`.
+    pub const MAGIC_FILE_INIT: u32 = 0x009d_a3e0;
+    /// `0x00a44a30()`: clears `0x00c85ec4` and hands the window event
+    /// handler `0x00c85ec0` to `0x00625c70` (`Sg_MainInit`'s tail call).
+    pub const WINDOW_EVENT_HANDLER_SET: u32 = 0x00a4_4a30;
+    /// `"_ECalm"`: the command-line word that starts at the Eternal Calm.
+    pub const ETERNAL_CALM_ARG: u32 = 0x00b0_da90;
+    /// `g_EternalCalmFirstMap`.
+    pub const ETERNAL_CALM_FIRST_MAP: Global<u32> = Global::new(0x00c3_3468);
+
+    /// `Sg_MainInit(count, words)` (`0x00820860`, `argc`/`argv`, at start-up, before the
+    /// main loop): the platform, graphics, sound, pad, battle, menu (`TkInit`),
+    /// main, character and map inits ([`MAIN_INIT_FIRST`],
+    /// [`MAIN_INIT_SCREEN`]), `initEventList` in debug, the rest
+    /// ([`MAIN_INIT_REST`]: switches on, pause off), the DMA channels into
+    /// [`MAIN_DMA_CHANNELS`], [`VCOUNT_LAST`] = [`VCOUNT`], [`SG_FRAME`] 0.
+    /// The first scene: map 0 in debug (`TkInitScene(0)` only), else
+    /// `TkSetEventJump(m, 0)` and `TkInitScene(m)` with `m` the Eternal
+    /// Calm's first map when `count > 1` (signed) and `words[1]` is
+    /// `"_ECalm"`, 0x17 otherwise. Then `Sg_SetScreenCenter(0x100, 0xd0)`,
+    /// `Sg_CalcScreenMatrix`, the debug line, `MagicFile_Init` and the tail
+    /// call [`WINDOW_EVENT_HANDLER_SET`], whose `EAX` it returns.
+    pub fn main_init(h: &mut impl ffx_bridge::Host, count: i32, words: u32) -> u32 {
+        let call = |h: &mut _, f: u32, args: &[u32]| {
+            let f = Mem::rebase(h, f);
+            ffx_bridge::Host::call(h, f, args)
+        };
+        let channels = Mem::rebase(h, MAIN_DMA_CHANNELS);
+        for &(f, args) in &MAIN_INIT_FIRST {
+            let r = call(h, f, args);
+            if f == DMA_GET_CHAN {
+                // channel 2 at +0, 0 at +8, 1 at +4
+                let at = match args {
+                    [2] => channels,
+                    [0] => channels + 8,
+                    _ => channels + 4,
+                };
+                h.write(at, r);
+            }
+        }
+        for &(f, args) in &MAIN_INIT_SCREEN {
+            call(h, f, args);
+        }
+        if IS_DEBUG.get(h) != 0 {
+            call(h, INIT_EVENT_LIST, &[]);
+        }
+        for &(f, args) in &MAIN_INIT_REST {
+            call(h, f, args);
+        }
+        let v = VCOUNT.get(h);
+        VCOUNT_LAST.set(h, v);
+        SG_FRAME.set(h, 0);
+        if IS_DEBUG.get(h) != 0 {
+            call(h, TK_INIT_SCENE, &[0]);
+        } else {
+            let ecalm = count > 1 && is_eternal_calm_arg(h, words);
+            let map = if ecalm {
+                ETERNAL_CALM_FIRST_MAP.get(h)
+            } else {
+                0x17
+            };
+            call(h, TK_SET_EVENT_JUMP, &[map, 0]);
+            // the original reads the Eternal Calm's map again here
+            let map = if ecalm {
+                ETERNAL_CALM_FIRST_MAP.get(h)
+            } else {
+                0x17
+            };
+            call(h, TK_INIT_SCENE, &[map]);
+        }
+        call(h, SET_SCREEN_CENTER, &[0x100, 0xd0]);
+        call(h, CALC_SCREEN_MATRIX, &[]);
+        if IS_DEBUG.get(h) != 0 {
+            let msg = Mem::rebase(h, MAIN_ROUTINE_MSG);
+            call(h, DBG_PRINTF, &[msg]);
+        }
+        call(h, MAGIC_FILE_INIT, &[]);
+        call(h, WINDOW_EVENT_HANDLER_SET, &[])
+    }
+
+    /// `strcmp(argv[1], "_ECalm") == 0`, both strings read from memory.
+    fn is_eternal_calm_arg(h: &impl Mem, words: u32) -> bool {
+        let mut arg = h.read::<u32>(words.wrapping_add(4));
+        let mut want = h.rebase(ETERNAL_CALM_ARG);
+        loop {
+            let (x, y) = (h.read::<u8>(arg), h.read::<u8>(want));
+            if x != y {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            arg = arg.wrapping_add(1);
+            want = want.wrapping_add(1);
+        }
+    }
+
     /// `Sg_MainCheckMenu()` (`0x00820750`, `Sg_MainLoop`'s menu check):
     /// with [`MOVIE_FADING`] or [`PAUSE_ON`] set, `TkMenuStart(request)`
     /// and 0. With no request (`MENU_RESERVE[0]` = -1), the newly pressed

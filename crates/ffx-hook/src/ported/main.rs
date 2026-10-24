@@ -960,6 +960,10 @@ ported! {
     Sg_MainCalcRate @ 0x0082_06c0 => extern "C" fn sg_main_calc_rate() -> i32 {
         state::bridge::main_calc_rate(&mut mem())
     }
+    /// `Sg_MainInit(argc, argv)`: the tail call `0x00a44a30`'s `eax`.
+    Sg_MainInit @ 0x0082_0860 => extern "C" fn sg_main_init(argc: i32, argv: u32) -> u32 {
+        state::bridge::main_init(&mut mem(), argc, argv)
+    }
     /// `Sg_MainCheckMenu()`: 1 when the menu opened this frame.
     Sg_MainCheckMenu @ 0x0082_0750 => extern "C" fn sg_main_check_menu() -> u32 {
         state::bridge::main_check_menu(&mut mem())

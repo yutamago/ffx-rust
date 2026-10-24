@@ -7589,7 +7589,7 @@
 0x008206c0 function Sg_MainCalcRate           # fh v3:exact 0x008207d0
 0x00820750 function Sg_MainCheckMenu             # cdecl() -> 1 when TOMenuTryOpen opened the menu this frame, else 0: movie fade or pause on -> TkMenuStart(request), 0; no request (0x012fbc38 = -1) and pad bit 0x10 newly pressed -> Sg_MenuSetReserve(0); a request -> 0x012fbc3c = 1 (Movie_IsBusy 0) or TOMenuTryOpen(request), cleared to -1 unless g_MenuCaptureState is 1; 0 while g_MenuCaptureState is 1; caller Sg_MainLoop; ported ffx_sg::state::main_check_menu (pc r9). layout: alphabetical run between Sg_MainCalcRate and Sg_MainDebug (1 unnamed in the gap); Switch 0x710042d460 Sg_MainCheckMenu is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008207f0 function Sg_MainDebug              # fh v3:exact 0x00820900
-0x00820860 function Sg_MainInit               # fh switch:cg4 0x710042ce30
+0x00820860 function Sg_MainInit               # fh switch:cg4 0x710042ce30; cdecl(argc, argv) -> 0x00a44a30's eax (tail jmp; callers 0x00820680/0x00822490 drop it): the platform/GS/DMA resets, sceDmaGetChan(2/0/1) into 0x023cbbf4/0x023cbbfc/0x023cbbf8, sound/movie/pad/cache inits, MsBattleMemInit, TkInit, Sg_InitAll, Ch_InitAll, Sg_MapInitAll, yiInit, MsScreenInit(0x200, 0x1a0), MsCameraInit, initEventList (debug), Sg_IdInitAll .. op inits, the Sg_Enable* switches on, Sg_SetPause(0); g_SgVCount -> 0x012fbc30, g_SgFrame 0; first scene: debug TkInitScene(0), else TkSetEventJump + TkInitScene of g_EternalCalmFirstMap (argc > 1 signed and argv[1] == "_ECalm" 0x00b0da90) or 0x17; Sg_SetScreenCenter(0x100, 0xd0), Sg_CalcScreenMatrix, MagicFile_Init; ported ffx_sg::state::main_init (pc r9)
 0x00820ae0 function Sg_MainLoop               # the game's frame (update and draw): with g_PauseOn the world update (0x00821e80) is skipped for the pause's (0x008893e0); calls Battle_Update, Cam_Update, Screen_UpdateFades; was Game_Frame
 0x00821750 function Sg_MenuSetReserve         # (menu id): g_012fbc38 = id, result 0x012fbc3c = -1; 0x40100000/0x40200000 handled separately; was Menu_Request
 0x00821a20 function SetByte_012fb8fb # cdecl(v): byte 0x012fb8fb = v; name ours
@@ -13801,6 +13801,7 @@
 0x00a44800 function sceCdStandby              # fh v3:cg2 0xa44800
 0x00a44820 function sceCdSync                 # fh v3:cg5 0xa44820
 0x00a44840 function MyProfilerAddMarker       # fh v3:cg6 0xa44840
+0x00a44a30 function WindowEventHandler_Register_00a44a30 # cdecl(): 0x00c85ec4 = 0, then 0x00625c70(&0x00c85ec0, the CWindowEventHandler vtable object); Sg_MainInit's tail call; name ours
 0x00a44b30 function JobScheduleWait_Ch_Cloth_PerCharacter # fh v3:bsim1.00 0x00a44b30
 0x00a44b40 function JobSchedule_Ch_Cloth_PerCharacter # (chars, &count): queues Ch_Cloth_PerCharacter (0x0082e390) through the scheduler's one-argument enqueue 0x00a44a50; Ch_DrawMain calls it
 0x00a44b80 function JobScheduleWait_Ch_CalcMiddle_Batch # JobSchedule_JobScheduler_waitForComplete(0) only; Ch_CalcMain (0x00832e10) and Ch_CalcMiddle (0x00833390) call it before and after queueing the batches (0x00a44b90)
@@ -14350,6 +14351,7 @@
 0x00b0d9e8 label std__Generic_error_category_vftable # fh v4:imported std::_Generic_error_category::vftable
 0x00b0da04 label std__Iostream_error_category_vftable # fh v4:imported std::_Iostream_error_category::vftable
 0x00b0da20 label std__System_error_category_vftable # fh v4:imported std::_System_error_category::vftable
+0x00b0da90 label    s_ECalm                   # "_ECalm": Sg_MainInit's argv[1] word that starts at the Eternal Calm (g_EternalCalmFirstMap); name ours
 0x00b0dbbc label Phyre_PCaller_vftable        # fh v4:imported Phyre::PCaller::vftable
 0x00b0ddac label Phyre_PClassDescriptorForType_Phyre_PTimer__vftable # fh v4:imported Phyre::PClassDescriptorForType<Phyre::PTimer>::vftable
 0x00b0ddf4 label Phyre_PClassDescriptorWrapper_Phyre_PTimer__vftable # fh v4:imported Phyre::PClassDescriptorWrapper<Phyre::PTimer>::vftable
