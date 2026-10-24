@@ -5,8 +5,15 @@
 //! - makes the keys bound to the PS2 buttons the test holds read as held
 //!   (`Input_KeyHeld`, `0x00629d50`), so the game and its Flash menus see
 //!   the buttons as if pressed on the keyboard;
+//! - wraps the game's update (`FFXApplication_animate`, `0x0042f520`) to
+//!   count frames and, on the main thread between two updates, sample the
+//!   trace and run commands (calls, waits, snapshots); lockstep holds the
+//!   main thread there ([`animate`]);
 //! - patches the swap chain's `Present` (from `D3D11CreateDeviceAndSwapChain`)
-//!   to count frames and run commands on the game thread, between frames;
+//!   to take screenshots on the render thread, of the image of a known
+//!   update ([`flip`], [`present_flip`]: each flip's update);
+//! - gives each cloth and middle-calc job (`Ch_CalcMiddle_Batch`: mouths, eye
+//!   blinks) a seed of its own for the CRT `rand()` ([`seeded_job`]), so they repeat;
 //! - adds keys the test holds to the `DirectInput` keyboard
 //!   (`GetDeviceState`), for the PC-only menus that read keys directly;
 //! - with `FFX_HARNESS_HOME=<Windows folder>`, answers the game's question
@@ -21,7 +28,7 @@
 //!   sees its usual frame rate; it also ends the start-up logos
 //!   (`OpeningScreen.swf`, timed by Flash in real time) on their first frame;
 //! - with `FFX_HARNESS_VIRTUAL_CLOCK=1` (and fast mode), the game's clock is
-//!   its start time plus the skipped sleeps only, never real time, so every
+//!   a fixed start ([`VIRTUAL_START`]) plus the skipped sleeps only, never real time, so every
 //!   frame advances it by exactly one frame interval; with `lockstep on`
 //!   frames then advance only as far as `wait` and `press` say (replays);
 //! - gives the single-instance mutex (`CreateMutexW`, named
@@ -60,8 +67,8 @@
 //! |---|---|
 //! | `keys [dik…]` | holds DirectInput keys (hex scan codes), none to release |
 //! | `key <dik[,dik…]> <frames> [gap]` | holds keys, releases, waits `gap` frames |
-//! | `call <addr> [args…]` | `ok <eax>`: a cdecl call on the game thread |
-//! | `shot <windows path>` | saves the back buffer as a 32-bit BMP |
+//! | `call <addr> [args…]` | `ok <eax>`: a cdecl call on the main thread, between two updates |
+//! | `shot <windows path>` | `ok <w> <h> update <n>`: saves the back buffer as a 32-bit BMP, the image of update `n` (in lockstep the one the main thread is held after; see `docs/harness.md`, "Frames") |
 //! | `loadsave <slot\|windows path>` | `ok <file> map <n> entrance <n> …`: starts the game from that save file without the title menu ([`crate::loadsave`]) |
 //! | `events` | `ok <n>` then `n` lines: files opened since the last call |
 //! | `gfxcapture <windows dir>` | `ok <n> draws`: the next frame's D3D11 calls (`gfx`, needs `FFX_GFX=1`) |
@@ -219,8 +226,14 @@ pub unsafe extern "C" fn clock_seed() -> u32 {
 pub static TIME_NOW_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 /// The virtual clock is on (`FFX_HARNESS_VIRTUAL_CLOCK=1`).
 static VIRTUAL: AtomicBool = AtomicBool::new(false);
-/// The clock's first reading, as `f64` bits (0: not read yet).
-static VIRTUAL_START: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Where the virtual clock starts, in seconds. The real clock
+/// (`Phyre_PTimerWin32_GetTime`: FILETIME / 1e7, about 1.34e10 s, where an
+/// `f64` step is 1.9e-6 s) differed in every run, so the game's time
+/// differences (the shaders' `scene.GlobalTime`) took other roundings:
+/// three values 8 `f32` ulp apart in six draw captures
+/// (`docs/drawdiff.md`, "Noise in cdsp0000"). A fixed power of two (about
+/// 12 days; a step of 2.3e-10 s) gives every run the same times.
+const VIRTUAL_START: f64 = 1_048_576.0;
 /// Frames advance only up to [`ALLOWED`] (`lockstep on`).
 static LOCKSTEP: AtomicBool = AtomicBool::new(false);
 /// The last frame the game may present in lockstep.
@@ -235,7 +248,7 @@ static VSYNC_TICKS: AtomicU64 = AtomicU64::new(0);
 
 /// `createVsyncEmuThread(callback)` on the virtual clock: no thread (which
 /// would call `callback` every 16 ms of real time); [`run_vsync`] calls it
-/// from the game thread as game time passes.
+/// at the main thread's frame boundary as game time passes ([`animate`]; before the first update, from `Present`).
 unsafe extern "C" fn virtual_vsync_start(callback: usize) {
     VSYNC_TICKS.store(vsync_ticks_now(), Ordering::Release);
     VSYNC_CALLBACK.store(callback, Ordering::Release);
@@ -279,7 +292,7 @@ fn run_vsync() {
 }
 
 /// `FileSys_SubmitRead` (`0x0061c220`) on the virtual clock: runs the read
-/// and its decompression on the game thread at once, as `BigFileStream_readVFile`
+/// and its decompression on the calling thread at once, as `BigFileStream_readVFile`
 /// (`0x0061bfe0`) does, instead of on the thread pool, so a load takes the
 /// same number of frames every run.
 ///
@@ -310,10 +323,7 @@ static FAST_SLEEP: unsafe extern "system" fn(u32) = fast_sleep;
 pub unsafe extern "C" fn time_now() -> f64 {
     let skipped = f64::from_bits(SKIPPED.load(Ordering::Acquire));
     if VIRTUAL.load(Ordering::Acquire) {
-        let start = VIRTUAL_START.load(Ordering::Acquire);
-        if start != 0 {
-            return f64::from_bits(start) + skipped;
-        }
+        return VIRTUAL_START + skipped;
     }
     // SAFETY: the trampoline runs the original, which returns in st(0).
     let now = unsafe {
@@ -321,30 +331,58 @@ pub unsafe extern "C" fn time_now() -> f64 {
             std::mem::transmute(TIME_NOW_ORIGINAL.load(Ordering::Acquire));
         original()
     };
-    if VIRTUAL.load(Ordering::Acquire) {
-        let _ =
-            VIRTUAL_START.compare_exchange(0, now.to_bits(), Ordering::AcqRel, Ordering::Acquire);
-        return f64::from_bits(VIRTUAL_START.load(Ordering::Acquire)) + skipped;
-    }
     now + skipped
 }
 
-/// The frame limiter's `Sleep(ms)` in fast mode: no wait, the clock moves.
-unsafe extern "system" fn fast_sleep(ms: u32) {
-    // On the virtual clock nothing else moves time: a Sleep(0) in a wait
-    // loop would spin for ever.
-    let ms = if VIRTUAL.load(Ordering::Relaxed) {
-        ms.max(1)
-    } else {
-        ms
-    };
+/// Moves the clock on by `seconds`.
+fn skip(seconds: f64) {
     let mut bits = SKIPPED.load(Ordering::Acquire);
     loop {
-        let next = (f64::from_bits(bits) + f64::from(ms) / 1000.0).to_bits();
+        let next = (f64::from_bits(bits) + seconds).to_bits();
         match SKIPPED.compare_exchange(bits, next, Ordering::AcqRel, Ordering::Acquire) {
             Ok(_) => break,
             Err(b) => bits = b,
         }
+    }
+}
+
+/// The frame limiter's `Sleep(ms)` in fast mode: no wait, the clock moves.
+///
+/// On the virtual clock it moves to the next frame's time exactly. The
+/// limiter (`Game_Main` `0x0062f2a0`..`0x0062f3bb`) sleeps the remaining
+/// time chopped to whole ms (`fistp` under control word `| 0xc00`), then
+/// 0 ms (made 1 here: nothing else moves this clock), so the clock stood
+/// 0.3-1 ms past the frame's time in a pattern that depends on how many
+/// frames have run; time differences such as the shaders'
+/// `scene.GlobalTime` then came out 1 ms apart between runs whose loads
+/// took other frame counts (`docs/drawdiff.md`, "Noise in cdsp0000"). The
+/// frame's time is the limiter's: the start (`0x00c90278`) plus the last
+/// frame's (`0x00cc9d00`) plus `DAT_00c30e88` x 0.016683333333333335 s.
+unsafe extern "system" fn fast_sleep(ms: u32) {
+    if !VIRTUAL.load(Ordering::Relaxed) {
+        skip(f64::from(ms) / 1000.0);
+        return;
+    }
+    // SAFETY: the limiter's own globals in the image's data, written only
+    // by this (the main) thread.
+    let (start, last, count) = unsafe {
+        (
+            *(crate::rebase(0x00c9_0278) as *const f64),
+            *(crate::rebase(0x00cc_9d00) as *const f64),
+            *(crate::rebase(0x00c3_0e88) as *const u32),
+        )
+    };
+    let due = start + last + f64::from(count) * 0.016_683_333_333_333_335;
+    let now = VIRTUAL_START + f64::from_bits(SKIPPED.load(Ordering::Acquire));
+    // The limiter compares in 80 bits, so step a little past the frame's
+    // time (1e-9 s: below an f32 step of the game's seconds); a clock
+    // already there (the comparison still came out short) moves the same.
+    let ahead = (due - now).max(0.0) + 1e-9;
+    if ahead < 1.0 {
+        skip(ahead);
+    } else {
+        // Not the frame's wait (the globals are not set up yet).
+        skip(f64::from(ms.max(1)) / 1000.0);
     }
 }
 
@@ -389,8 +427,14 @@ unsafe extern "system" fn traced_sleep(ms: u32) {
 
 /// The start-up loop's `Time_Sleep(33)` (`cdecl`) in fast mode.
 unsafe extern "C" fn fast_sleep_cdecl(ms: u32) {
-    // SAFETY: same work as the stdcall version.
-    unsafe { fast_sleep(ms) };
+    // On the virtual clock nothing else moves time: a Sleep(0) in a wait
+    // loop would spin for ever.
+    let ms = if VIRTUAL.load(Ordering::Relaxed) {
+        ms.max(1)
+    } else {
+        ms
+    };
+    skip(f64::from(ms) / 1000.0);
 }
 
 /// Points the start-up loop's `call Time_Sleep` (`0x0066b345`, in
@@ -450,6 +494,151 @@ unsafe fn patch_frame_limiter(module: usize) -> bool {
         VirtualProtect(site.cast(), 6, old, &raw mut old);
     }
     true
+}
+
+/// MSVCR110's `_getptd`: the calling thread's CRT data, whose `+0x14` is
+/// `rand`'s seed (`rand` `0x100a492a`: `_getptd`, `[eax+0x14] * 0x343fd +
+/// 0x269ec3`; `srand` stores its argument there).
+static GETPTD: AtomicUsize = AtomicUsize::new(0);
+/// `rand`'s seed in the CRT's per-thread data.
+const HOLDRAND: usize = 0x14;
+/// Ctrl work 0's event frame count (`0x01325d94`) at the last frame
+/// boundary, for [`seeded_job`].
+static JOB_EVENTS: AtomicU32 = AtomicU32::new(0);
+/// Seeded jobs run (cloth, middle calc), for `stats`.
+static SEEDED_JOBS: AtomicU32 = AtomicU32::new(0);
+
+/// Runs one character job with the CRT `rand()` seeded for it, and gives
+/// the worker its own seed back after. Two job kinds the scheduler runs on
+/// whichever `JobWorker` thread is free draw from `rand()`, whose seed is
+/// per thread, so each run drew other numbers: the cloth's wind
+/// (`Sg_ClothStep` `0x00822de0`, under `Ch_Cloth_PerCharacter`
+/// `0x0082e390`) and the mouth and the texture animations, the eyes'
+/// blinks among them (`Ch_Mouth`, `chr_texanim_main` `0x0077c8d0`, under
+/// `Ch_CalcMiddle_Batch` `0x00833530`). The seed comes from the job's kind,
+/// its first character's place in the character array (`*0x023c44e4`,
+/// 0x880 bytes a record), and ctrl work 0's event frame count (which the
+/// replays pin their screenshots to) as it stood at the last frame boundary
+/// ([`JOB_EVENTS`]: the main thread counts it on during the update, beside
+/// the jobs). The game itself is unchanged: the wrappers exist only with
+/// the harness, on the original code and the Rust replacements alike.
+///
+/// # Safety
+/// On a job thread, with `first` a character record (or 0).
+unsafe fn seeded_job(kind: u32, first: u32, job: impl FnOnce() -> u32) -> u32 {
+    type GetPtd = unsafe extern "C" fn() -> usize;
+    let getptd = GETPTD.load(Ordering::Acquire);
+    if getptd == 0 || first == 0 {
+        return job();
+    }
+    // SAFETY: the array global is the image's; `_getptd` returns this
+    // thread's CRT data, created if needed.
+    unsafe {
+        let array = *(crate::rebase(0x023c_44e4) as *const u32);
+        let place = first.wrapping_sub(array) / 0x880;
+        let events = JOB_EVENTS.load(Ordering::Acquire);
+        let ptd = std::mem::transmute::<usize, GetPtd>(getptd)();
+        let seed = (ptd + HOLDRAND) as *mut u32;
+        let own = seed.read();
+        seed.write(place.wrapping_mul(0x9e37_79b1) ^ events.wrapping_mul(0x85eb_ca6b) ^ kind);
+        let r = job();
+        seed.write(own);
+        SEEDED_JOBS.fetch_add(1, Ordering::Relaxed);
+        r
+    }
+}
+
+/// The job `JobSchedule_Ch_Cloth_PerCharacter` (`0x00a44b40`) queues in
+/// place of `Ch_Cloth_PerCharacter` (`0x0082e390`, `cdecl(chars, count)`:
+/// `count` character pointers at `chars`), seeded ([`seeded_job`]).
+unsafe extern "C" fn cloth_job(chars: u32, count: u32) -> u32 {
+    type Job = unsafe extern "C" fn(u32, u32) -> u32;
+    // SAFETY: the job's own arguments, passed on to the job.
+    unsafe {
+        let job: Job = std::mem::transmute(crate::rebase(0x0082_e390));
+        let first = if chars != 0 && count != 0 {
+            *(chars as *const u32)
+        } else {
+            0
+        };
+        seeded_job(1, first, || job(chars, count))
+    }
+}
+
+/// The job `JobSchedule_Ch_CalcMiddle_Batch` (`0x00a44b90`) queues in
+/// place of `Ch_CalcMiddle_Batch` (`0x00833530`, `cdecl(chars, &pass,
+/// &count)`: `*count` records from `chars` on), seeded ([`seeded_job`];
+/// the pass in the kind).
+unsafe extern "C" fn middle_job(chars: u32, pass: u32, count: u32) -> u32 {
+    type Job = unsafe extern "C" fn(u32, u32, u32) -> u32;
+    // SAFETY: the job's own arguments, passed on to the job; `pass` points
+    // at the caller's word.
+    unsafe {
+        let job: Job = std::mem::transmute(crate::rebase(0x0083_3530));
+        let kind = if pass == 0 {
+            2
+        } else {
+            2 | (*(pass as *const u32) << 8)
+        };
+        seeded_job(kind, chars, || job(chars, pass, count))
+    }
+}
+
+/// Points the `push <job>` at `site` (`68 imm32`, an `FFX.exe` address)
+/// at `replacement` when it pushes `job`.
+///
+/// # Safety
+/// `module` is the main module; the job is not queued yet.
+unsafe fn patch_job_push(module: usize, site: u32, job: u32, replacement: usize) -> bool {
+    use windows_sys::Win32::System::Memory::{PAGE_EXECUTE_READWRITE, VirtualProtect};
+    let site = (module + (site - crate::IMAGE_BASE) as usize) as *mut u8;
+    let job = module + (job - crate::IMAGE_BASE) as usize;
+    // SAFETY: inside the mapped image; checked to be `68 <imm32 job>`.
+    unsafe {
+        let current = std::slice::from_raw_parts(site, 5);
+        if current[0] != 0x68
+            || u32::from_le_bytes(current[1..5].try_into().unwrap_or_default()) as usize != job
+        {
+            return false;
+        }
+        let mut old = 0;
+        if VirtualProtect(site.cast(), 5, PAGE_EXECUTE_READWRITE, &raw mut old) == 0 {
+            return false;
+        }
+        let target = u32::try_from(replacement).unwrap_or_default().to_le_bytes();
+        site.add(1).copy_from_nonoverlapping(target.as_ptr(), 4);
+        VirtualProtect(site.cast(), 5, old, &raw mut old);
+    }
+    true
+}
+
+/// Finds MSVCR110's `_getptd` and points the two job schedulers'
+/// `push <job>` at the seeded wrappers: `JobSchedule_Ch_Cloth_PerCharacter`
+/// at `0x00a44b51`, `JobSchedule_Ch_CalcMiddle_Batch` at `0x00a44ba4`.
+///
+/// # Safety
+/// `module` is the main module; no character is drawn yet.
+unsafe fn patch_seeded_jobs(module: usize) -> bool {
+    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+    // SAFETY: plain Win32 lookups; the patches as documented.
+    unsafe {
+        let crt = GetModuleHandleA(c"MSVCR110.dll".as_ptr().cast());
+        let Some(getptd) = GetProcAddress(crt, c"_getptd".as_ptr().cast()) else {
+            return false;
+        };
+        GETPTD.store(getptd as usize, Ordering::Release);
+        patch_job_push(
+            module,
+            0x00a4_4b51,
+            0x0082_e390,
+            cloth_job as *const () as usize,
+        ) & patch_job_push(
+            module,
+            0x00a4_4ba4,
+            0x0083_3530,
+            middle_job as *const () as usize,
+        )
+    }
 }
 
 /// `DirectInput` keys held by the test, by scan code.
@@ -598,14 +787,17 @@ unsafe extern "system" fn get_device_state(this: *mut c_void, size: u32, data: *
     hr
 }
 
-/// Work for the game thread.
+/// Work for the main thread at a frame boundary ([`animate`]), or for the
+/// render thread in `Present` (screenshots).
 enum Job {
     /// Reply at this frame.
     WaitUntil(u32),
     /// Release the pad at this frame, then wait until the second.
     Release(u32, u32),
     Call(usize, Vec<u32>),
-    Shot(String),
+    /// The first presented image of update `.1` or a later one (render
+    /// thread).
+    Shot(String, u32),
     Snapshot(String),
     FpuControl,
     /// Start the game from a save (`loadsave`, [`crate::loadsave`]).
@@ -615,7 +807,10 @@ enum Job {
     WaitFor(TraceRange, Vec<u8>, Vec<u8>, u32),
 }
 
+/// The main thread's jobs, run at frame boundaries.
 static JOBS: Mutex<VecDeque<(Job, Sender<String>)>> = Mutex::new(VecDeque::new());
+/// The render thread's jobs, run in `Present`.
+static RENDER_JOBS: Mutex<VecDeque<(Job, Sender<String>)>> = Mutex::new(VecDeque::new());
 
 /// A memory range a trace hashes each frame: `addr:len` (an `ffx.sym`
 /// address) or `*addr+off:len` (through the pointer stored at `addr`).
@@ -952,12 +1147,9 @@ unsafe extern "system" fn create_device_and_swap_chain(
     hr
 }
 
-/// Replaces `IDXGISwapChain::Present`: runs due jobs, then presents.
-/// Runs the jobs due at `frame`.
-///
-/// # Safety
-/// Inside the swap chain's own `Present`, on the game thread.
-unsafe fn run_due_jobs(frame: u32, swap_chain: *mut c_void) {
+/// Runs the main thread's jobs due at the frame boundary `frame` (the
+/// number of updates finished).
+fn run_main_jobs(frame: u32) {
     let due: Vec<(Job, Sender<String>)> = JOBS.lock().map_or_else(
         |_| Vec::new(),
         |mut jobs| {
@@ -967,7 +1159,7 @@ unsafe fn run_due_jobs(frame: u32, swap_chain: *mut c_void) {
                 let ready = match job.0 {
                     Job::WaitUntil(f) | Job::Release(f, _) => frame >= f,
                     Job::Call(..)
-                    | Job::Shot(_)
+                    | Job::Shot(..)
                     | Job::Snapshot(_)
                     | Job::FpuControl
                     | Job::LoadSave(_) => true,
@@ -998,7 +1190,8 @@ unsafe fn run_due_jobs(frame: u32, swap_chain: *mut c_void) {
                 }
             }
             Job::Call(address, args) => {
-                // SAFETY: the test asked for this call, on the game thread.
+                // SAFETY: the test asked for this call, on the main thread
+                // between two updates.
                 let eax = unsafe { call(address, &args) };
                 let _ = reply.send(format!("ok {eax:#x}"));
             }
@@ -1011,7 +1204,7 @@ unsafe fn run_due_jobs(frame: u32, swap_chain: *mut c_void) {
             }
             Job::WaitFor(r, value, mask, _) => {
                 let hit = range_matches(&r, &value, &mask);
-                // hold here, on the game thread, before another frame runs
+                // hold here, before the next update runs
                 if LOCKSTEP.load(Ordering::Acquire) {
                     ALLOWED.store(frame, Ordering::Release);
                 }
@@ -1029,36 +1222,219 @@ unsafe fn run_due_jobs(frame: u32, swap_chain: *mut c_void) {
                 log(&format!("loadsave {spec} at frame {frame}: {r:?}"));
                 let _ = reply.send(r.map_or_else(|e| format!("err {e}"), |s| format!("ok {s}")));
             }
-            Job::Shot(path) => {
-                // SAFETY: the swap chain is live inside its own Present.
-                let r = unsafe { screenshot(swap_chain, &path) };
-                let _ = reply
-                    .send(r.map_or_else(|e| format!("err {e}"), |(w, h)| format!("ok {w} {h}")));
+            Job::Shot(..) => {
+                let _ = reply.send("err a shot is a render-thread job".into());
             }
         }
     }
 }
 
-unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags: u32) -> i32 {
-    let frame = FRAME.fetch_add(1, Ordering::AcqRel) + 1;
+/// Runs the render thread's jobs (screenshots) that the image being
+/// presented satisfies: it shows update `label` ([`NO_LABEL`]: unknown).
+///
+/// # Safety
+/// Inside the swap chain's own `Present`, on the render thread.
+unsafe fn run_render_jobs(label: u32, swap_chain: *mut c_void) {
+    let due: Vec<(Job, Sender<String>)> = RENDER_JOBS.lock().map_or_else(
+        |_| Vec::new(),
+        |mut jobs| {
+            let (due, keep): (VecDeque<_>, VecDeque<_>) = jobs.drain(..).partition(|j| match j.0 {
+                Job::Shot(_, want) => label == NO_LABEL || label >= want,
+                _ => true,
+            });
+            *jobs = keep;
+            due.into_iter().collect()
+        },
+    );
+    for (job, reply) in due {
+        if let Job::Shot(path, _) = job {
+            // SAFETY: the swap chain is live inside its own Present.
+            let r = unsafe { screenshot(swap_chain, &path) };
+            let _ = reply.send(r.map_or_else(
+                |e| format!("err {e}"),
+                |(w, h)| {
+                    if label == NO_LABEL {
+                        format!("ok {w} {h}")
+                    } else {
+                        format!("ok {w} {h} update {label}")
+                    }
+                },
+            ));
+        } else {
+            let _ = reply.send("err not a render-thread job".into());
+        }
+    }
+}
+
+/// The label of a present whose flip the harness did not see.
+const NO_LABEL: u32 = u32::MAX;
+/// Frame boundaries the main thread has entered: the newest one's label
+/// plus 1 (0: none yet).
+static REACHED: AtomicU32 = AtomicU32::new(0);
+/// Frame boundaries the main thread has left, as [`REACHED`].
+static PASSED: AtomicU32 = AtomicU32::new(0);
+/// Trampoline to the original `FFXApplication_animate`.
+pub static ANIMATE_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+/// Trampoline to the original `Phyre_PRendering_PRenderer_flip`.
+pub static FLIP_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+/// Trampoline to the original `Renderer_PresentFlip`.
+pub static PRESENT_FLIP_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+/// Flips the main thread queued.
+static FLIPS: AtomicU32 = AtomicU32::new(0);
+/// Flip commands the render thread ran.
+static FLIPS_RUN: AtomicU32 = AtomicU32::new(0);
+/// The update each queued flip shows ([`FRAME`] when it was queued), by
+/// flip number modulo the ring's size. The render thread runs at most 16
+/// command buffers behind (`Phyre_PRendering_PRenderThread_threadEntry`'s
+/// ring of 16 slots).
+static FLIP_LABELS: [AtomicU32; 64] = [const { AtomicU32::new(NO_LABEL) }; 64];
+/// The update the render thread's current flip shows (render thread only).
+static PRESENT_LABEL: AtomicU32 = AtomicU32::new(NO_LABEL);
+/// Presents so far, for `stats`.
+static PRESENTS: AtomicU32 = AtomicU32::new(0);
+/// A present without a known label was seen after the main loop started.
+static UNLABELLED: AtomicBool = AtomicBool::new(false);
+/// The virtual vsync handler runs on one thread at a time.
+static VSYNC_LOCK: Mutex<()> = Mutex::new(());
+
+/// Wraps `FFXApplication_animate` (`0x0042f520`, `thiscall(app) -> int`),
+/// the game's update: `Phyre_PFramework_PApplication_frame` (`0x00627940`)
+/// calls it once a frame on the main thread, before the frame's render and
+/// flip; it runs `updateFFX` (`0x00822840`: `Sg_MainLoop` `0x00820ae0`,
+/// with `Sg_FrameSync` `0x00821e80` inside) unless the PC menu is up. Its
+/// entry is the frame boundary: every update before it has finished, the
+/// next has not begun, and the previous frame's flip is queued. The trace
+/// samples here, the main thread's jobs run here, and lockstep holds the
+/// game here.
+///
+/// # Safety
+/// Called by the game, on the main thread.
+pub unsafe extern "thiscall" fn animate(app: *mut c_void) -> u32 {
+    let frame = FRAME.load(Ordering::Acquire);
+    REACHED.store(frame + 1, Ordering::Release);
     trace_frame(frame);
-    // Not a barrier on the asset loader (AsyncLoadManager): some of its
-    // tasks need frames to pass, so holding the game thread until it is
-    // idle deadlocks. Replays wait for game state instead (`waitfor`).
-    if VIRTUAL.load(Ordering::Acquire) {
+    run_main_jobs(frame);
+    // Lockstep: hold the game here until the script allows more updates,
+    // still answering jobs (calls, snapshots, waits) meanwhile.
+    while LOCKSTEP.load(Ordering::Acquire) && frame >= ALLOWED.load(Ordering::Acquire) {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        run_main_jobs(frame);
+    }
+    PASSED.store(frame + 1, Ordering::Release);
+    // SAFETY: a word of the image's data (ctrl work 0's event frame count),
+    // which only this thread writes.
+    JOB_EVENTS.store(
+        unsafe { *(crate::rebase(0x0132_5d94) as *const u32) },
+        Ordering::Release,
+    );
+    if VIRTUAL.load(Ordering::Acquire)
+        && let Ok(_one) = VSYNC_LOCK.lock()
+    {
+        run_vsync();
+    }
+    // SAFETY: the trampoline runs the original with the same `this`.
+    let r = unsafe {
+        let original: unsafe extern "thiscall" fn(*mut c_void) -> u32 =
+            std::mem::transmute(ANIMATE_ORIGINAL.load(Ordering::Acquire));
+        original(app)
+    };
+    FRAME.store(frame + 1, Ordering::Release);
+    r
+}
+
+/// Wraps `Phyre_PRendering_PRenderer_flip` (`0x005b6af0`,
+/// `thiscall(renderer) -> error`): on success it has written the flip
+/// command (`0x16`) into the render ring, which the render thread runs once
+/// the caller kicks it. Notes which update the flip shows.
+///
+/// # Safety
+/// Called by the game, on the main thread.
+pub unsafe extern "thiscall" fn flip(renderer: *mut c_void) -> u32 {
+    // SAFETY: the trampoline runs the original with the same `this`.
+    let r = unsafe {
+        let original: unsafe extern "thiscall" fn(*mut c_void) -> u32 =
+            std::mem::transmute(FLIP_ORIGINAL.load(Ordering::Acquire));
+        original(renderer)
+    };
+    if r == 0 {
+        let n = FLIPS.load(Ordering::Acquire);
+        FLIP_LABELS[n as usize % FLIP_LABELS.len()]
+            .store(FRAME.load(Ordering::Acquire), Ordering::Release);
+        FLIPS.store(n + 1, Ordering::Release);
+    }
+    r
+}
+
+/// Wraps `Renderer_PresentFlip` (`0x00593760`, `thiscall(renderer) ->
+/// bool`): the render thread's flip command, from
+/// `Phyre_PRendering_PRenderThread_processRenderCommands`; it presents
+/// through the swap chain object at `+0x74` (its `+0x20`, which calls
+/// `IDXGISwapChain::Present`). Tells [`present`] which update it shows.
+///
+/// # Safety
+/// Called by the game, on the render thread.
+pub unsafe extern "thiscall" fn present_flip(renderer: *mut c_void) -> u32 {
+    let n = FLIPS_RUN.fetch_add(1, Ordering::AcqRel);
+    let label = if n < FLIPS.load(Ordering::Acquire) {
+        FLIP_LABELS[n as usize % FLIP_LABELS.len()].load(Ordering::Acquire)
+    } else {
+        NO_LABEL
+    };
+    PRESENT_LABEL.store(label, Ordering::Release);
+    // SAFETY: the trampoline runs the original with the same `this`.
+    let r = unsafe {
+        let original: unsafe extern "thiscall" fn(*mut c_void) -> u32 =
+            std::mem::transmute(PRESENT_FLIP_ORIGINAL.load(Ordering::Acquire));
+        original(renderer)
+    };
+    PRESENT_LABEL.store(NO_LABEL, Ordering::Release);
+    r
+}
+
+/// Replaces `IDXGISwapChain::Present`, on Phyre's render thread
+/// (`Phyre_PRendering_PRenderThread_threadEntry`, `0x00616010`): takes the
+/// screenshots this image satisfies, and in lockstep holds the image of
+/// update `n` until the main thread has left frame boundary `n`, so a
+/// screenshot asked for there shows the update the trace saw.
+unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags: u32) -> i32 {
+    PRESENTS.fetch_add(1, Ordering::AcqRel);
+    let label = PRESENT_LABEL.load(Ordering::Acquire);
+    let started = REACHED.load(Ordering::Acquire) != 0;
+    if label == NO_LABEL && started && !UNLABELLED.swap(true, Ordering::AcqRel) {
+        log("  harness: a present without a flip label (screenshots may show another update)");
+    }
+    // Before the main loop's first update (the start-up logos) the virtual
+    // vsync has no frame boundary to run at.
+    if VIRTUAL.load(Ordering::Acquire)
+        && !started
+        && let Ok(_one) = VSYNC_LOCK.try_lock()
+    {
         run_vsync();
     }
     if FAST.load(Ordering::Relaxed) {
         skip_opening_screen();
     }
     // SAFETY: forwarded: inside the swap chain's own Present.
-    unsafe { run_due_jobs(frame, swap_chain) };
-    // Lockstep: hold the game here until the script allows more frames,
-    // still answering jobs (calls, snapshots, shots) meanwhile.
-    while LOCKSTEP.load(Ordering::Acquire) && frame >= ALLOWED.load(Ordering::Acquire) {
-        std::thread::sleep(std::time::Duration::from_millis(1));
-        // SAFETY: as above.
-        unsafe { run_due_jobs(frame, swap_chain) };
+    unsafe { run_render_jobs(label, swap_chain) };
+    if label != NO_LABEL {
+        // The main thread reaches boundary `label` right after queueing
+        // this flip. One that does not within seconds would be waiting for
+        // this thread (no known path does), so the hold ends then.
+        let mut waited = 0u32;
+        while LOCKSTEP.load(Ordering::Acquire)
+            && PASSED.load(Ordering::Acquire) <= label
+            && (REACHED.load(Ordering::Acquire) > label || waited < 5000)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            waited += 1;
+            // SAFETY: as above.
+            unsafe { run_render_jobs(label, swap_chain) };
+        }
+        if LOCKSTEP.load(Ordering::Acquire) && REACHED.load(Ordering::Acquire) <= label {
+            log(&format!(
+                "  harness: present of update {label}: the main thread did not reach its boundary"
+            ));
+        }
     }
     // SAFETY: the address came from the vtable.
     let original: unsafe extern "system" fn(*mut c_void, u32, u32) -> i32 =
@@ -1080,8 +1456,8 @@ unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags:
 /// the movie in real time, so fast mode cannot shorten it otherwise.
 fn skip_opening_screen() {
     let flag = crate::rebase(0x00cc_b9c2) as *mut u8;
-    // SAFETY: a byte in the image's data; the game thread is the only other
-    // user and is here, inside Present.
+    // SAFETY: a byte in the image's data, which the start-up loop polls on
+    // the main thread; a byte write cannot tear.
     unsafe {
         if flag.read_volatile() != 0 {
             flag.write_volatile(0);
@@ -1425,13 +1801,19 @@ fn list_threads() -> String {
     }
 }
 
-/// Runs a job on the game thread and waits for its reply.
+/// Runs a job on the main thread at a frame boundary, or a screenshot on
+/// the render thread, and waits for its reply.
 fn on_game_thread(job: Job) -> String {
     if PRESENT.load(Ordering::Acquire) == 0 {
         return "err the game has not presented a frame yet".into();
     }
     let (tx, rx) = channel();
-    if let Ok(mut jobs) = JOBS.lock() {
+    let queue = if matches!(job, Job::Shot(..)) {
+        &RENDER_JOBS
+    } else {
+        &JOBS
+    };
+    if let Ok(mut jobs) = queue.lock() {
         jobs.push_back((job, tx));
     }
     rx.recv().unwrap_or_else(|_| "err no reply".into())
@@ -1451,10 +1833,14 @@ fn command(line: &str) -> Result<String, String> {
         "ping" => "ok pong".into(),
         "frame" => format!("ok {}", now()),
         "stats" => format!(
-            "ok frame {} pad_reads {} key_polls {}",
+            "ok frame {} pad_reads {} key_polls {} presents {} flips {} flips_run {} seeded_jobs {}",
             now(),
             PAD_READS.load(Ordering::Relaxed),
-            KEY_POLLS.load(Ordering::Relaxed)
+            KEY_POLLS.load(Ordering::Relaxed),
+            PRESENTS.load(Ordering::Relaxed),
+            FLIPS.load(Ordering::Relaxed),
+            FLIPS_RUN.load(Ordering::Relaxed),
+            SEEDED_JOBS.load(Ordering::Relaxed)
         ),
         "keys" => {
             let codes = words[1..]
@@ -1578,7 +1964,9 @@ fn command(line: &str) -> Result<String, String> {
             }
             on_game_thread(Job::Call(address, args))
         }
-        "shot" => on_game_thread(Job::Shot(words[1..].join(" "))),
+        // the image of the update the main thread stands after (in
+        // lockstep: the boundary it is held at), or a later one
+        "shot" => on_game_thread(Job::Shot(words[1..].join(" "), now())),
         "snapshot" => on_game_thread(Job::Snapshot(words[1..].join(" "))),
         "fpucw" => on_game_thread(Job::FpuControl),
         "loadsave" => on_game_thread(Job::LoadSave(words[1..].join(" "))),
@@ -1800,7 +2188,8 @@ pub unsafe fn install(module: usize) {
             // start-up, before the main loop).
             let r = unsafe { crate::install(module, &hooks, &[]) };
             log(&format!(
-                "  harness: virtual clock: synchronous reads, vsync on the game thread {r:?}"
+                "  harness: virtual clock from {VIRTUAL_START} s: synchronous reads, the vsync \
+                 handler at the main thread's frame boundary {r:?}"
             ));
         }
         // SAFETY: forwarded from the caller.
@@ -1814,6 +2203,53 @@ pub unsafe fn install(module: usize) {
             }
         ));
     }
+    // The frame boundary on the main thread, and which update each present
+    // shows (docs/harness.md, "Frames"). Trampolines, so `--hook-disable
+    // replacements` keeps them: the original code runs under the same
+    // harness.
+    let frame_hooks = [
+        crate::Hook {
+            name: "FFXApplication_animate",
+            address: 0x0042_f520,
+            // cmp byte [abs32], 0 (relocated: only its opcode is checked;
+            // the 7 bytes are copied)
+            prologue: &[0x80, 0x3d],
+            replacement: animate as *const () as usize,
+            original: Some(&ANIMATE_ORIGINAL),
+            steal: 7,
+        },
+        crate::Hook {
+            name: "Phyre_PRendering_PRenderer_flip",
+            address: 0x005b_6af0,
+            // push ebp; mov ebp, esp; sub esp, 8
+            prologue: &[0x55, 0x8b, 0xec, 0x83, 0xec, 0x08],
+            replacement: flip as *const () as usize,
+            original: Some(&FLIP_ORIGINAL),
+            steal: 0,
+        },
+        crate::Hook {
+            name: "Renderer_PresentFlip",
+            address: 0x0059_3760,
+            // push esi; mov esi, ecx; mov edx, [esi + 0x74]
+            prologue: &[0x56, 0x8b, 0xf1, 0x8b, 0x56, 0x74],
+            replacement: present_flip as *const () as usize,
+            original: Some(&PRESENT_FLIP_ORIGINAL),
+            steal: 0,
+        },
+    ];
+    // SAFETY: the game has not started (we are in its start-up).
+    let r = unsafe { crate::install(module, &frame_hooks, &[]) };
+    log(&format!("  harness: frame boundary hooks {r:?}"));
+    // SAFETY: forwarded from the caller.
+    let seeded = unsafe { patch_seeded_jobs(module) };
+    log(&format!(
+        "  harness: cloth and middle-calc jobs seeded per character and event frame: {}",
+        if seeded {
+            "on"
+        } else {
+            "not available (unexpected code)"
+        }
+    ));
     if let Ok(path) = std::env::var("FFX_HARNESS_CALL_LOG")
         && let Ok(f) = std::fs::File::create(&path)
         && let Ok(mut log) = CALL_LOG.lock()

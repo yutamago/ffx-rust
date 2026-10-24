@@ -118,22 +118,35 @@ for r in "${replays[@]}"; do
     if [ ! -f "$traces/$r-orig.trace" ]; then
         echo "== $r: not recorded (tools/replays/run-all.sh --record $r)"; bad=1; continue
     fi
-    # the pad word's range (press timing): field-walk 3, menu-browse 0; the
-    # player position in event-besaid (2) misses an in-between value when a
-    # trace frame is skipped, in original runs too; menu-save's save data
-    # word +0x28 (2), slot list flags (11) and newest slot (12) take an
-    # in-between value for a frame in some runs, original ones included,
-    # and in hook-hit mode (slower first calls) the loaded block's map
-    # words (0), its rest (4) and the packed save's header (7) did too
-    # (docs/harness.md)
-    case $r in field-walk) ign=(--ignore 3) ;; menu-browse) ign=(--ignore 0) ;; event-besaid) ign=(--ignore 2) ;; menu-save) ign=(--ignore 2,11,12) ;; *) ign=() ;; esac
-    [ "$r" = menu-save ] && [ -n "$hits" ] && ign=(--ignore 0,2,4,7,11,12)
-    [ "$r" = event-agency ] && ign=(--ignore 2)  # its player position, as event-besaid's
+    # The player position in event-besaid (2) differs between original runs
+    # (three of three pairs on 2026-10-24, sampled between two updates).
+    # The rest that was left out here (the pad words of field-walk and
+    # menu-browse, menu-save's ranges and, in hook-hit mode, its 0, 4 and
+    # 7) were one-frame in-between values the trace caught while it sampled
+    # on the render thread; three original runs, three Rust runs and a
+    # hook-hit run agree on all of them now (docs/harness.md, "Frames and
+    # threads", the replays' sections).
+    # event-cliff runs at the game's own rate: Wakka's position and rotation
+    # (6, 7) change every frame, and a frame that falls behind runs more
+    # ticks, so the trace can miss values in between (a Rust run of
+    # 2026-10-24 missed 4 of 197): compared by order (--sampled).
+    # event-agency's player position (2) skipped a value in one of six
+    # original runs (lockstep too): compared by order.
+    case $r in
+        event-besaid) ign=(--ignore 2) ;;
+        event-cliff) ign=(--sampled 6,7) ;;
+        event-agency) ign=(--sampled 2) ;;
+        *) ign=() ;;
+    esac
     cmp=(python3 tools/replay-compare.py "$traces/$r-orig.trace" "$runs/rust/$r-rust.trace" --also "$traces/$r-orig2.trace" "${ign[@]}")
     echo "== $r: $("${cmp[@]}" 2>&1 | tail -1)"
     "${cmp[@]}" >/dev/null 2>&1 || bad=1
 done
-python3 tools/shot-compare.py "$shots/orig" "$shots/orig2" "$runs/rust" --coarse field-walk || bad=1
+# The Thunder Plains' shots of event-agency (4-6) are compared coarsely, as
+# field-walk's: the rain differs between original runs (about 1,000 pixels
+# outside the masked chocobo icon in some pairs of five, 2026-10-24).
+python3 tools/shot-compare.py "$shots/orig" "$shots/orig2" "$runs/rust" \
+    --coarse field-walk event-agency-4 event-agency-5 event-agency-6 || bad=1
 for r in "${eye[@]}"; do
     echo "== $r screenshots, by eye: $runs/rust/$r-*.bmp against $shots/orig/eye and $shots/orig2/eye"
 done

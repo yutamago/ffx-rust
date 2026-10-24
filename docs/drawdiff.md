@@ -267,7 +267,7 @@ count at 101.
 
 `gfxcapture` waits for two Presents, which lockstep holds back. So the
 example sends `lockstep off` and `gfxcapture` in one write. The harness
-reads both lines and sets the capture up while the game thread is still
+reads both lines and sets the capture up while the main thread is still
 in lockstep's 1 ms hold. All six runs captured at count 101 with 197
 draws, and they differ only by the noise below.
 
@@ -283,20 +283,23 @@ drawdiff reads a pair in 0.28 s and compares it in under 10 ms.
 
 ## Noise in cdsp0000
 
-Six original captures give 15 pairs. In each part, every pair has 0
-unallowed differences with `crates/ffx-drawdiff/allow/cdsp0000.txt`. That
-file has three entries:
+Six original captures (fw1..fw3, a and b) gave 15 pairs, each with 0
+unallowed differences against `crates/ffx-drawdiff/allow/cdsp0000.txt`.
+That list then had three entries. The harness of 2026-10-24
+(harness-main-thread) removed most of the first and all of the second:
 
 | Entry | Seen | Cause |
 |---|---|---|
-| `constant var=scene field=*.cb0.scene.GlobalTime` (251 words: every draw's vs and ps `scene` buffer) | 3 values in 6 runs: 3.4360008, 3.4370003, 3.435999 | `Phyre_PTimerWin32_GetTime` (`0x0042fd80`) returns FILETIME / 1e7, about 1.34e10 s, where an f64 ulp is 1.9e-6 s. The harness's virtual clock starts at the real clock's first reading (`harness.rs` `time_now`), so differences of game times carry that rounding. The 8-ulp f32 step at 3.436 is 1.9e-6 s. The frame limiter's whole-millisecond sleep, taken from such a difference, now and then truncates to one more ms, which gives the 1 ms steps |
-| `resource kind=draw vs=bb9bf1c768e1480f field=vb5` (5 draws, 256–1120 B each) | every pair | COLOR1, slot 5, a dynamic ring of the skinned shader `bb9bf1c768e1480f`: the cloth vertices. `Sg_ClothStep` (`0x00822de0`) adds wind from the CRT `rand()`, which keeps its seed per thread. The cloth job (`Ch_Cloth_PerCharacter`, `0x0082e390`) runs on whichever JobWorker thread is free, so each run draws other numbers. `FFX_HARNESS_SEED` seeds the game's generators, not the workers' CRT state |
+| `constant var=scene field=*.cb0.scene.GlobalTime` (251 words: every draw's vs and ps `scene` buffer) | before: 3 values in 6 runs, 1 ms apart (3.4360008, 3.4370003, 3.435999). Now: 1 to 5 f32 ulp apart (3.4701328 to 3.470134) in 5 of 6 pairs of 4 captures (n1, n2), equal in the sixth | Before: the virtual clock started at `Phyre_PTimerWin32_GetTime`'s first reading (FILETIME / 1e7, about 1.34e10 s, where an f64 ulp is 1.9e-6 s: the 8-ulp f32 steps), and the frame limiter (`Game_Main` `0x0062f2a0`..`0x0062f3bb`) sleeps the time left chopped to whole ms, then 1 ms, so the clock stood 0.3-1 ms past each frame's time in a pattern that depends on how many frames have run (the 1 ms steps: the loads took 380-505 frames). Now the clock starts at 2^20 s and the limiter's `Sleep` moves it to the frame's time exactly (`harness.rs` `VIRTUAL_START`, `fast_sleep`). The few ulp left are likely the game's own f32 time since start (`Phyre_PFramework_PApplication_frame` `0x00627940` keeps the elapsed time and the frame's dt as f32), which rounds differently after another number of frames |
+| `resource kind=draw vs=bb9bf1c768e1480f field=vb5` (5 draws, 256–1120 B each) | before: every pair. Now: in no pair of 4 original captures (n1, n2: 6 pairs) or of the 2 Rust ones (r1), and the Rust captures' cloth equals the original's. The entry is gone | COLOR1, slot 5, a dynamic ring of the skinned shader `bb9bf1c768e1480f`: the cloth vertices. `Sg_ClothStep` (`0x00822de0`) adds wind from the CRT `rand()`, which keeps its seed per thread, and the cloth job (`Ch_Cloth_PerCharacter`, `0x0082e390`) runs on whichever JobWorker thread is free. The harness now queues its own cloth job, which seeds the worker's `rand` for the job from the character's place in the array and ctrl work 0's event count at the last frame boundary (`harness.rs` `cloth_job`; `docs/harness.md`, the "Cloth" row). Seeding from the count read inside the job (the main thread counts it on beside the job) still left 2 of 8 captures (made with the user's mods) with other cloth |
 | `constant var=SgSpec_LightVec field=*.SgSpec_LightVec[0].z` (1 draw, about 5e-30) | every pair | A junk read: `Ch_DrawMain` (`0x0082ed50`) passes `graphicSgSetSpecular` (`0x00643cc0`) a light vector whose third word, `[ebp-0x3c]`, it never writes (`ffx_chara::draw_main`; the port passes 0 under the junk-read policy) |
 
-The first entry would go away if the virtual clock started at a round
-value. The second would go away if the harness seeded the workers' CRT
-`rand` per job, or made the cloth's wind deterministic. Both are harness
-changes, not drawdiff ones.
+The captures since then run without the user's mods (`docs/harness.md`,
+"Parallel games"), so they differ from fw1..fw3 in the characters' draws.
+`field_capture <dir> rust` captures the Rust replacements' frame. Against
+the original's, the two Rust captures (r1) differ only in the junk read
+above and in `vs.cb0.SgSpec_CameraVec[0].z` of one draw (`A#0116`, vs
+`1e6f10bb647d242c`): `0.0` in Rust, the denormal `1e-45` in the original.
 
 ## Open problems
 

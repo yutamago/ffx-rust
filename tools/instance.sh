@@ -3,13 +3,16 @@
 # hard links, so several harness games run side by side, each with its own
 # DINPUT8.dll and ffx-hook.log (docs/harness.md, "Parallel games").
 #
-# Usage: tools/instance.sh N [--mod DIR]...   prints the instance folder
+# Usage: tools/instance.sh N [--mod DIR]... [--user-mods]   prints the instance folder
 #
 # The folder is $FFX_INSTANCES_DIR/N (default ~/ffx-work/instances/N). The
 # hard links are rebuilt only when the game folder's listing (names, sizes,
-# times, inodes) changes; mods/ is linked afresh every call, plus every
-# --mod DIR as mods/<name of DIR>. Files that are written in place, or that
-# each launch installs itself, are never shared with the game folder.
+# times, inodes) changes; mods/ is made afresh every call and holds only
+# every --mod DIR, as mods/<name of DIR>: test games run without the user's
+# mods (the game folder's mods/; user decision 2026-10-24). --user-mods (or
+# FFX_INSTANCE_USER_MODS=1) links the game folder's mods/ in as well, for a
+# game the user wants to see with them. Files that are written in place, or
+# that each launch installs itself, are never shared with the game folder.
 # The game folder and the instances must be on the same filesystem.
 set -euo pipefail
 n="${1:?usage: tools/instance.sh N [--mod DIR]...}"
@@ -19,9 +22,11 @@ src="${FFX_GAME_DIR:-$HOME/steam-games/FFX-X2-HD}"
 root="${FFX_INSTANCES_DIR:-$HOME/ffx-work/instances}"
 inst="$root/$n"
 mods=()
+user_mods="${FFX_INSTANCE_USER_MODS:-0}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --mod) mods+=("$2"); shift ;;
+        --user-mods) user_mods=1 ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
     shift
@@ -72,10 +77,11 @@ for f in "${copied[@]}"; do
     fi
 done
 
-# Mods: the game folder's, then the extra ones; linked each time, so a mod
-# written into the game folder (or removed) is seen by the next launch.
+# Mods: only the ones asked for (the game folder's with --user-mods first);
+# made afresh each time, so a mod changed or removed is seen by the next
+# launch.
 rm -rf "$inst/mods"
-if [[ -d "$src/mods" ]]; then
+if [[ "$user_mods" == 1 && -d "$src/mods" ]]; then
     cp -al "$src/mods" "$inst/mods"
 else
     mkdir -p "$inst/mods"

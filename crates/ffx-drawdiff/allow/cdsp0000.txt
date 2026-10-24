@@ -1,26 +1,22 @@
 # Noise allow list of cdsp0000 (S.S. Winno deck, save slot 1): what differs
 # between two runs of the original code at field-walk-1's frame (ctrl work
-# 0's event count 101), from six captures (fw1..fw3, a and b; 15 pairs).
+# 0's event count 101), from six captures (fw1..fw3, a and b; 15 pairs), and four
+# (n1, n2) with the harness of 2026-10-24, which seeds the cloth jobs' CRT
+# rand() per character and event frame: their cloth (vb5) no longer differs.
 # docs/drawdiff.md, "Noise in cdsp0000".
 [cdsp0000]
 
-# Differs in 3 of 5 pairs against fw1-a: 3.436, 3.437, 3.435999.
-# Phyre_PTimerWin32_GetTime (0x0042fd80) returns FILETIME / 1e7, about
-# 1.34e10 s, where one f64 ulp is 1.9e-6 s. The harness's virtual clock
-# starts at the real clock's first reading (ffx-hook harness.rs time_now),
-# so a time difference carries that rounding (the 8-ulp f32 change at 3.436
-# is 1.9e-6 s), and the frame limiter's whole-millisecond sleep, taken from
-# a difference of such values, now and then truncates to one more ms (the
-# 1 ms steps).
-constant var=scene field=*.cb0.scene.GlobalTime cause: the virtual clock starts at the wall clock's FILETIME reading, so GlobalTime carries its f64 rounding and the limiter's ms truncation
-
-# Differs in every pair: the COLOR1 stream (slot 5, a dynamic ring) of the
-# cloth draws of this skinned shader. Sg_ClothStep (0x00822de0) adds wind
-# from the CRT rand(), whose seed is per thread; the cloth job
-# (Ch_Cloth_PerCharacter 0x0082e390) runs on whichever JobWorker thread is
-# free, so each run draws other numbers. Seeding (FFX_HARNESS_SEED) covers
-# the game's generators, not the workers' CRT state.
-resource kind=draw vs=bb9bf1c768e1480f field=vb5 cause: cloth wind from CRT rand() on JobWorker threads (per-thread seed, scheduling-dependent)
+# Differs by 1 to 5 f32 ulp (3.4701328 to 3.470134) in 5 of 6 pairs of
+# four captures made with the harness of 2026-10-24 (harness-main-thread);
+# before it, 3 values 1 ms apart (3.436, 3.437, 3.435999). The virtual clock
+# now starts at a fixed 2^20 s and steps exactly one frame interval a frame
+# (ffx-hook harness.rs VIRTUAL_START, fast_sleep), which removed the f64
+# rounding of the wall clock's FILETIME reading (8 ulp) and the frame
+# limiter's ms truncation (1 ms). What is left is likely the game's own f32
+# time since start (Phyre_PFramework_PApplication_frame 0x00627940 keeps it
+# and the frame's dt as f32), whose rounding depends on how many frames the
+# load took before the event started.
+constant var=scene field=*.cb0.scene.GlobalTime cause: the game's f32 time since start rounds differently when the load took another number of frames (a few ulp)
 
 # Differs in every pair, about 5e-30: the third word of the light vector
 # Ch_DrawMain (0x0082ed50) passes to graphicSgSetSpecular (0x00643cc0) is
