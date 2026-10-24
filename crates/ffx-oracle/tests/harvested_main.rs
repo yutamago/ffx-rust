@@ -82,3 +82,11 @@ harvest_test!(sg_frame_sync, 0x0082_1e80, args = 1, |m: &mut Oracle, s| {
     };
     ffx_sg::state::bridge::frame_sync(&mut OracleHost(m), s.arg(0), time)
 });
+
+// pc round 9 a: the main loop's menu check
+harvest_test!(
+    sg_main_check_menu,
+    0x0082_0750,
+    args = 0,
+    |m: &mut Oracle, _s| { ffx_sg::state::bridge::main_check_menu(&mut OracleHost(m)) }
+);

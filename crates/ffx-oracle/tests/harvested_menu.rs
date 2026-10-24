@@ -54,3 +54,14 @@ harvest_test!(
         )
     }
 );
+// pc round 9 a
+harvest_test!(
+    tk_update_event_jump,
+    0x0088_d3d0,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        ffx_menu::start::bridge::tk_update_event_jump(m, &mut |m, f, a| {
+            m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+        })
+    }
+);
