@@ -10673,7 +10673,7 @@
 0x0089aca0 function TOCheckBtlCommandUse      # fh v3:exact+call.cs 0x0089ac10 cdecl; (chr, cmd): 0xfe->0, 0xff->-2, MsGetCommandUse 1 -> -1, MsCheckUseCommand -1 -> -2, item kinds (+0x16&0xf8 8/0x10) -> +0x17 or -4/-3 if TOGetSaveWindow is empty, else 0xfe (+0x1a bit 0) or 0xfe + (0x0133c94c != 0x100)
 0x0089ad90 function TOClearBtlWindow          # fh v3:exact 0x0089ad00
 0x0089ade0 function TOCloseBtlWindow          # (): 0x023cc08c and the nine words at 0x0133d74c zeroed; returns 0; fh v3:exact 0x0089ad50
-0x0089ae20 function TOControlBtlWindow        # fh v3:exact 0x0089ad90
+0x0089ae20 function TOControlBtlWindow        # fh v3:exact 0x0089ad90; cdecl() -> void (MsBattleProcess 0x00790d74 drops eax); TOSeqCtrl(2), the TOBtlCtrl* windows (Lulu's twice with the keyboard flag 0x0133c930, after inputSetInputInfoToCurrentFrame/TkUpdateScanControler/TkScanControler); MsBattleGetStatus 1 + g_BtlWindowOpen + g_BtlWindowControlEnable: active cursor, g_BtlCurPosCount/g_BtlCurPos cleared, the 8 command levels 0x0133c950 (0xf0 each) by state byte +1 (jump table 0x0089afa0: 1/5 ++, 2 f32 +0xdc = graphicGetTime, +0xe0 = 0, +0x94(level) if set, ++ (re-read); 3 ++ when +0x98(level) == 1; 4 +0xe0 = f32(now - start), +0x9c(level); 6 +0xa0(level) == 1 clears +0xdc, state 0), help/info/info-mes windows, tail jmp TOControlMsSetMenuCommand; ported (ffx_system::btl, pc round 6 e)
 0x0089afc0 function TOControlMsSetMenuCommand # fh v3:exact 0x0089af30; builds g_BtlCommandRec from command levels 0..=g_BtlActionDepth (0x0133c950, 0xf0 each: +2 flag, +8 actor, +0x16 u16 command, +0xd8 word): three groups at +8 (0x10 each, init 0xff00ff/0), commands into the current group (third and later shift slot 1 to 0), a flagged level ends the group (its +0xd8 at group +8); status 0x100 (0x0133c94c) forces (0x311e, 0x0133cb46)/0x0133cb48, 2 groups; +0 actor, +3 group count (min 1); MsSetMenuCommand, then TOBtlCtrlCtbWindow(second command or first when 0xff, actor bit or g_BtlTargetSelMask), eax its; ported (small round 5 f, ffx_system::tolib)
 0x0089b140 function TODrawAMES              # cdecl(window, text, x, y, anchor) -> TOOpenWindowAndMessage's eax: slot init, kind 0 type 0, texts, position (map 0x185 at (0xfa,0x96) moves to y 0x8c for langs 2..5), value 4, active, open; Switch TODrawAMES (0x710049d870), the first of the five TODrawAMES* there, the only one with a position argument
 0x0089b1d0 function TODrawAMES_CENTERMES    # cdecl(window, text): as TODrawAMES at (4, 0x100, 0xe0), kind 1 type 0x2402; Switch TODrawAMES_CENTERMES by inference: the screen-centre y of the four, in the TODrawAMES* run that sorts between TOControlMsSetMenuCommand and TODrawBtlWindow; name ours
@@ -13415,7 +13415,7 @@
 0x009dad70 function MagicFile_FindPreloaded_009dad70 # cdecl(id, &out): with 0x0193fd40 set, the first of 12 entries (0x00c64c18, 12 bytes) with id (any for negative) and a positive count (0x0193fd44 + 4 i): *out = &count, 1; else 0; caller MagicFile_isPrxPreloaded; name ours
 0x009dadc0 function MagicFile_ResetPreloaded  # (): 0xd00 bytes at 0x0193fdb0, 12 words at 0x0193fd78 and 0x0193fd44, 0x0193fd40 cleared; returns 0; name ours
 0x009dae60 function MagicFile_isPrxPreloaded  # fh v3:exact 0x009dae40; cdecl(id): MagicFile_FindPreloaded(id, &e) && e != 0
-0x009dae90 function MagicFile_PreloadPrx_009dae90 # (id, index): with preloading on (0x0193fd40) PhyreFIOS_LoadMagicfilePrx into the handle table 0x00c64c10 (graphicSetMagicFileAsyncLoadEnable(2) around it), "MagicFilePreload: preload for id=%d, index=%d" / "skiped" / "non-null preload handle found"; caller MagicFile_Load; own name
+0x009dae90 function MagicFile_PreloadPrx_009dae90 # (id, index): with preloading on (0x0193fd40) PhyreFIOS_LoadMagicfilePrx into the handle table 0x00c64c10 (graphicSetMagicFileAsyncLoadEnable(2) around it), "MagicFilePreload: preload for id=%d, index=%d" / "skiped" / "non-null preload handle found"; caller MagicFile_Load; own name; verdict logic (pc round 6: the slot choice by (magic, file) table is the game's; the loads are PhyreFIOS's, called through the game; tools/refs.py: 1 ref, call 0x009da588 MagicFile_Load, which drops eax); slots i of 12: entry (magic, file, n) matches magic (or either < 0), file (or entry < 0), n > 0; handle set and n != file: Unload(handle, &op) after the stderr message when handle >= 0, handle/op = 0; handle 0: Load(0x0193fdb0 + i*0x100, &handle, &op), stdout message (n, i, op); else stderr "skiped" (file, i, n); fprintf/__iob_func through the CRT import slots 0x00b0c38c/0x00b0c350; ported (ffx_system::magic, pc round 6 e)
 0x009dafd0 function SetGlobal_0193fdac # cdecl(v): *0x0193fdac = v, returns v; name ours
 0x009dafe0 function MagicFile_SetAsyncLoad    # (): graphicSetMagicFileAsyncLoadEnable(1 for magic 0x26e..0x274/0x15c/0x277/0x27b, 3 for 0x15e, else 2); name ours
 0x009db110 function onMagicDLLLoaded          # fh v3:exact 0x009db0f0
@@ -16501,6 +16501,7 @@
 0x00c5e754 label    g_RcdtTm2Psm                 # GS pixel format per TIM2 image type, 8 words (rcdtTm2GetPsm): 0, 2, 1, 0, 0x14, 0x13
 0x00c5e790 label    g_GuidePacketStrides         # bytes per primitive of the minimap mesh's packet types 0-7 (0x14 0x1c 0x20 0x28 0x18 0x20 0x28 0x30); type 0: triangles, vertex indices at +0xc
 0x00c613b0 label    g_PageManager             # the page manager (PageAlloc/PageCommit/PageQueueDecommit/PageRelease pass it); ffx_system::heap has the layout
+0x00c64c10 label    g_MagicFilePreloadTable   # 12 x (i32 magic, i32 file, i32 handle id): MagicFile_PreloadPrx_009dae90's slots; negative magic/file match any; name ours
 0x00c64ca0 label    g_MagicFile_MagicId       # MagicFile_GetMagicId; -1 = none (MagicFile_GetEffectOverlayTable checks)
 0x00c64ca8 label g_MagicFile_PreviousId # the magic MagicFile_Cleanup keeps as the previous one; MagicFile_Unload unloads it and sets -1; MagicFile_GetToBeDeleteMagicId returns it; name ours
 0x00c64cac label    g_MagicFile_Handle        # MagicFile_GetHandle; -1 = none (MagicFile_GetEffectOverlayTable checks)
@@ -17742,7 +17743,11 @@
 0x0193cd48 label    g_CommittedBytes          # VirtualAlloc_Commit_RW adds, VirtualFree_Decommit subtracts
 0x0193cd4c label    g_VirtualFreeErrorHook    # cdecl(message) the VirtualFree wrappers call on failure, when set
 0x0193ed20 label g_Sse2Available             # MSVC CRT __sse2_available: _ftol2_sse picks cvttsd2si when set (0 in an image that has not run its start-up)
+0x0193fd40 label    g_MagicFilePreloadOn      # u32: MagicFile_PreloadPrx_009dae90 does nothing while 0; name ours
+0x0193fd44 label    g_MagicFilePreloadHandles # 12 words: the preload slots' PRX handles (PhyreFIOS_LoadMagicfilePrx's second argument); name ours
+0x0193fd78 label    g_MagicFilePreloadOps     # 12 words: the preload slots' FIOS operations; name ours
 0x0193fdac label    g_MagicFile_IsNexData     # MagicFile_IsNexData
+0x0193fdb0 label    g_MagicFilePreloadPaths   # 12 x 0x100 bytes: the preload slots' paths; name ours
 0x01940ab8 label    g_MagicHide3017            # u32: set by MagicFile_Load 0x009da430 for magic 0x1ae and 600; Ch_DrawMain then hides character 0x3017 (+0x180 = 0x12) and clears it
 0x01940abc label g_BtlEffectSpecialScene   # u32: effect 0x84 by model 0x108f in scene 0x1e70000 (MsEffectRead)
 0x01940ac0 label    g_MagicMatrixSwap          # u32: magic 0x275: bit 3 on, bits 0-2 for characters 0x10b2/0x10b3/0x10b4: set -> Ch_DrawMain copies the character's matrix (+0x1d0) to g_Magic275Matrices[slot] and clears the bit, else copies it back; cleared by MagicFile_Stop

@@ -3559,4 +3559,112 @@ pub mod bridge {
             call(mem, 0x0088_6ba0, &[if r.cast_signed() < 0 { 3 } else { 1 }]);
         }
     }
+
+    /// The command-window levels (`0x0133c950`, 8 x 0xf0 bytes):
+    /// `+1` the state byte, `+0x94`..`+0xa0` the open, wait, frame and
+    /// close callbacks (each gets the level), `f32 +0xdc` the time it
+    /// opened, `+0xe0` the time since.
+    pub const CMD_LEVELS: u32 = 0x0133_c950;
+
+    /// `TOControlBtlWindow()` (`0x0089ae20`, Fahrenheit's name; caller
+    /// `MsBattleProcess`, which drops `EAX`): `TOSeqCtrl(2)` and the battle
+    /// windows' controls (chr numbers, status, enemy limit, Libra, limit
+    /// timer, Auron's, Tidus's and Lulu's limit windows; with the keyboard
+    /// flag `0x0133c930` the input frame and scan controller first and
+    /// Lulu's again). While a battle runs (`MsBattleGetStatus` 1) with the
+    /// window open (`0x023cc08c`) and control on (`0x00c58ef8`): the
+    /// active cursor, the cursor positions cleared, each level stepped
+    /// by its state (jump table `0x0089afa0`: 1 and 5 advance; 2 notes the
+    /// time (`graphicGetTime`, `f32`), clears the elapsed time, calls the
+    /// open callback when there is one and advances; 3 advances when the
+    /// wait callback returns 1; 4 stores the time since opening (`f32(now -
+    /// start)`) and calls the frame callback; 6 clears the start time when
+    /// the close callback returns 1 and goes back to 0), then the help,
+    /// info and info message windows and `TOControlMsSetMenuCommand`
+    /// (a tail jump). `call` gets `ffx.sym` addresses, `call_ptr` the
+    /// levels' callbacks, `fcall` `graphicGetTime`.
+    pub fn to_control_btl_window<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut call_ptr: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{load, store, sub};
+        const LULU: u32 = 0x0089_1b80;
+        const TIME: u32 = 0x0064_1410;
+        call(mem, 0x008a_e0f0, &[2]);
+        for f in [
+            0x0089_1140u32,
+            0x0089_20d0,
+            0x0089_1220,
+            0x0089_1a30,
+            0x0089_1ac0,
+            0x0089_0f70,
+            0x0089_2320,
+            LULU,
+        ] {
+            call(mem, f, &[]);
+        }
+        if mem.read::<u32>(mem.rebase(0x0133_c930)) != 0 {
+            for f in [0x0063_0de0u32, 0x0088_9a80, 0x0088_93e0, LULU] {
+                call(mem, f, &[]);
+            }
+        }
+        if call(mem, 0x0078_16f0, &[]) != 1
+            || mem.read::<u32>(mem.rebase(0x023c_c08c)) == 0
+            || mem.read::<u32>(mem.rebase(0x00c5_8ef8)) == 0
+        {
+            return;
+        }
+        call(mem, 0x0089_0f30, &[]);
+        mem.write(mem.rebase(0x0133_d6f0), 0u16);
+        let pos = mem.rebase(0x0133_f7b4);
+        for k in 0..8 {
+            mem.write(pos + 4 * k, 0u32);
+        }
+        let levels = mem.rebase(CMD_LEVELS);
+        for i in 0..8 {
+            let lv = levels + i * 0xf0;
+            let state = mem.read::<u8>(lv + 1);
+            match state {
+                1 | 5 => mem.write(lv + 1, state.wrapping_add(1)),
+                2 => {
+                    let now = fcall(mem, TIME, &[]);
+                    mem.write(lv + 0xdc, store(now));
+                    mem.write(lv + 0xe0, 0u32);
+                    let open = mem.read::<u32>(lv + 0x94);
+                    if open != 0 {
+                        call_ptr(mem, open, &[lv]);
+                    }
+                    let s = mem.read::<u8>(lv + 1);
+                    mem.write(lv + 1, s.wrapping_add(1));
+                }
+                3 => {
+                    let wait = mem.read::<u32>(lv + 0x98);
+                    if call_ptr(mem, wait, &[lv]) == 1 {
+                        let s = mem.read::<u8>(lv + 1);
+                        mem.write(lv + 1, s.wrapping_add(1));
+                    }
+                }
+                4 => {
+                    let now = fcall(mem, TIME, &[]);
+                    let since = store(sub(now, load(mem.read::<u32>(lv + 0xdc))));
+                    let frame = mem.read::<u32>(lv + 0x9c);
+                    mem.write(lv + 0xe0, since);
+                    call_ptr(mem, frame, &[lv]);
+                }
+                6 => {
+                    let close = mem.read::<u32>(lv + 0xa0);
+                    if call_ptr(mem, close, &[lv]) == 1 {
+                        mem.write(lv + 0xdc, 0u32);
+                    }
+                    mem.write(lv + 1, 0u8);
+                }
+                _ => {}
+            }
+        }
+        for f in [0x0089_12e0u32, 0x0089_1480, 0x0089_1580, 0x0089_afc0] {
+            call(mem, f, &[]);
+        }
+    }
 }

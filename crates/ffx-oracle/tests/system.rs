@@ -26753,3 +26753,240 @@ fn small6_f_matches_the_original_on_the_snapshot() {
     };
     small6_f(&mut a, &mut b, &mut Xorshift(0x5a11_6f02));
 }
+
+/// pc round 6 e: `MagicFile_PreloadPrx_009dae90` (preloading on or off,
+/// table entries matching by magic and file or as wildcards, slots empty,
+/// negative or holding another file) and `TOControlBtlWindow` (keyboard
+/// flag, battle status, window open and control flags, every level state
+/// and callback result). Every callee is a logging stand-in; the C
+/// runtime imports point at stand-ins too, `PhyreFIOS_LoadMagicfilePrx`
+/// writes its path into the operation word and 7 into the handle, and
+/// `graphicGetTime` returns a double from a cell.
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // two functions; random bytes
+fn pc6_e(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::magic::bridge as mg;
+    // the hook's call_sym, call_ptr and fcall
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call(f, Conv::Cdecl, args).unwrap().eax
+    };
+    let call_ptr = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let fcall = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call_f64(f, args).unwrap()
+    };
+    // dummies for the imports and the levels' callbacks
+    let iob = 0x009d_afd0u32;
+    let fprintf = 0x009d_b270u32;
+    let cbs = [0x009d_afe0u32, 0x009d_b230, 0x009d_b250, 0x009d_b490];
+    let mut list: Vec<(u32, u8)> = vec![
+        (mg::ASYNC_LOAD_ENABLE, 1),
+        (mg::UNLOAD_PRX, 2),
+        (iob, 0),
+        (0x008a_e0f0, 1),
+        (0x0078_16f0, 0),
+    ];
+    for f in [
+        0x0089_1140u32,
+        0x0089_20d0,
+        0x0089_1220,
+        0x0089_1a30,
+        0x0089_1ac0,
+        0x0089_0f70,
+        0x0089_2320,
+        0x0089_1b80,
+        0x0063_0de0,
+        0x0088_9a80,
+        0x0088_93e0,
+        0x0089_0f30,
+        0x0089_12e0,
+        0x0089_1480,
+        0x0089_1580,
+        0x0089_afc0,
+    ] {
+        list.push((f, 0));
+    }
+    for f in cbs {
+        list.push((f, 1));
+    }
+    let (log, cursor, cells) = small5_stubs(a, b, &list);
+    let cell_of = |sym: u32| cells[list.iter().position(|&(s, _)| s == sym).unwrap()];
+    // fprintf(stream, fmt, ..): 4 words for the "non-null" message, else 5
+    let non_null = a.rebase(mg::MSG_NON_NULL);
+    let mut code = vec![0x8b, 0x0d]; // mov ecx, [cursor]
+    code.extend(cursor.to_le_bytes());
+    for k in 0..4u8 {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 * k]);
+    }
+    code.extend([0x81, 0x7c, 0x24, 0x08]); // cmp dword [esp+8], non_null
+    code.extend(non_null.to_le_bytes());
+    code.extend([0x74, 0x07]); // je +7
+    code.extend([0x8b, 0x44, 0x24, 0x14, 0x89, 0x41, 0x10]);
+    code.extend([0x83, 0xc1, 0x14, 0x89, 0x0d]); // add ecx, 0x14; mov [cursor], ecx
+    code.extend(cursor.to_le_bytes());
+    code.push(0xc3);
+    let printer = stand_in8(a, b, 0x80 * 33, &code);
+    redirect(a, b, fprintf, printer);
+    for (slot, f) in [(mg::IOB_FUNC, iob), (mg::FPRINTF, fprintf)] {
+        let at = a.rebase(slot);
+        let to = a.rebase(f);
+        put(a, b, at, to);
+    }
+    // PhyreFIOS_LoadMagicfilePrx(path, &handle, &op): *op = path when it
+    // is 0, *handle = 7
+    let load = stand_in8(
+        a,
+        b,
+        0x80 * 34,
+        &[
+            0x8b, 0x44, 0x24, 0x04, // mov eax, [esp+4]
+            0x8b, 0x4c, 0x24, 0x0c, // mov ecx, [esp+0xc]
+            0x83, 0x39, 0x00, // cmp dword [ecx], 0
+            0x75, 0x02, // jne +2 (an operation left set stays)
+            0x89, 0x01, // mov [ecx], eax
+            0x8b, 0x4c, 0x24, 0x08, // mov ecx, [esp+8]
+            0xc7, 0x01, 0x07, 0, 0, 0, // mov dword [ecx], 7
+            0xc3,
+        ],
+    );
+    redirect(a, b, mg::LOAD_PRX, load);
+    // the open callback moves its level's state on by 3 (the original
+    // re-reads the state after it)
+    let mut code = vec![0x8b, 0x44, 0x24, 0x04, 0x80, 0x40, 0x01, 0x03, 0xa1]; // mov eax, [esp+4]; add byte [eax+1], 3; mov eax, [cell]
+    code.extend(cell_of(cbs[0]).to_le_bytes());
+    code.push(0xc3);
+    let open = stand_in8(a, b, 0x80 * 32, &code);
+    redirect(a, b, cbs[0], open);
+    // graphicGetTime: fld qword [time]
+    let time = alloc(a, b, 8);
+    let mut code = vec![0xdd, 0x05];
+    code.extend(time.to_le_bytes());
+    code.push(0xc3);
+    let t = stand_in8(a, b, 0x80 * 35, &code);
+    redirect(a, b, 0x0064_1410, t);
+    let on = a.rebase(mg::PRELOAD_ON);
+    let table = a.rebase(mg::PRELOAD_TABLE);
+    let handles = a.rebase(mg::PRELOAD_HANDLES);
+    let ops = a.rebase(mg::PRELOAD_OPS);
+    let levels = a.rebase(ffx_system::btl::bridge::CMD_LEVELS);
+    let word = |rng: &mut Xorshift| {
+        [0u32, 1, 2, 3, u32::MAX, 0x8000_0000, rng.next()][(rng.next() % 7) as usize]
+    };
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        for &c in &cells {
+            put(a, b, c, word(rng));
+        }
+        // MagicFile_PreloadPrx
+        put(
+            a,
+            b,
+            on,
+            [0u32, 1, 1, 1, rng.next()][(rng.next() % 5) as usize],
+        );
+        for i in 0..mg::PRELOAD_SLOTS {
+            let e = table + i * 0xc;
+            put(
+                a,
+                b,
+                e,
+                [0u32, 1, 2, u32::MAX, rng.next()][(rng.next() % 5) as usize],
+            );
+            put(
+                a,
+                b,
+                e + 4,
+                [0u32, 1, 2, u32::MAX, rng.next()][(rng.next() % 5) as usize],
+            );
+            put(
+                a,
+                b,
+                e + 8,
+                [0u32, 1, 2, u32::MAX, 0x8000_0000][(rng.next() % 5) as usize],
+            );
+            put(
+                a,
+                b,
+                handles + i * 4,
+                [0u32, 0, 5, u32::MAX, rng.next()][(rng.next() % 5) as usize],
+            );
+            put(a, b, ops + i * 4, rng.next());
+        }
+        let magic = [0u32, 1, 2, u32::MAX, rng.next()][(rng.next() % 5) as usize];
+        let file = [0u32, 1, 2, u32::MAX, rng.next()][(rng.next() % 5) as usize];
+        call(a, 0x009d_ae90, &[magic, file]);
+        mg::magic_file_preload_prx(b, magic, file, &mut |m, f, args| call_ptr(m, f, args));
+        same_memory(&format!("pc6 e magic {k}"), a, b);
+        settle(a, b);
+        // TOControlBtlWindow
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cell_of(0x0078_16f0),
+            [1u32, 1, 1, 0, 2][(rng.next() % 5) as usize],
+        );
+        for &f in &cbs {
+            put(a, b, cell_of(f), [0u32, 1, 1, 2][(rng.next() % 4) as usize]);
+        }
+        for g in [0x0133_c930u32, 0x023c_c08c, 0x00c5_8ef8] {
+            let at = a.rebase(g);
+            put(
+                a,
+                b,
+                at,
+                [0u32, 1, 1, 1, rng.next()][(rng.next() % 5) as usize],
+            );
+        }
+        let now = f64::from(rng.next() % 100_000) / 7.0;
+        put(a, b, time, now.to_bits());
+        for i in 0..8 {
+            let lv = levels + i * 0xf0;
+            put(
+                a,
+                b,
+                lv + 1,
+                [0u8, 1, 2, 3, 4, 5, 6, 7, 0xff][(rng.next() % 9) as usize],
+            );
+            for (c, &f) in cbs.iter().enumerate() {
+                let p = if c == 0 && rng.next().is_multiple_of(4) {
+                    0
+                } else {
+                    a.rebase(f)
+                };
+                put(a, b, lv + 0x94 + 4 * c as u32, p);
+            }
+            put(
+                a,
+                b,
+                lv + 0xdc,
+                (f64::from(rng.next() % 50_000) / 3.0) as f32,
+            );
+            put(a, b, lv + 0xe0, rng.next());
+        }
+        put(a, b, a.rebase(0x0133_d6f0), rng.next() as u16);
+        for w in 0..8 {
+            put(a, b, a.rebase(0x0133_f7b4) + 4 * w, rng.next());
+        }
+        call(a, 0x0089_ae20, &[]);
+        ffx_system::btl::bridge::to_control_btl_window(b, call, call_ptr, fcall);
+        same_memory(&format!("pc6 e btl window {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn pc6_e_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    pc6_e(&mut a, &mut b, &mut Xorshift(0x9c06_e001));
+}
+
+#[test]
+fn pc6_e_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    pc6_e(&mut a, &mut b, &mut Xorshift(0x9c06_e002));
+}

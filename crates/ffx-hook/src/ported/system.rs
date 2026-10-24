@@ -6970,6 +6970,18 @@ ported! {
         let scratch = frame.at();
         tolib::bridge::to_btl_get_main_pad(&mut mem(), w, scratch, call_sym);
     }
+    // ---- pc round 6, group e
+    /// `MagicFile_PreloadPrx_009dae90(magic, file)`: `MagicFile_Load`
+    /// drops `EAX`; the loads, the C runtime's `fprintf` and `__iob_func`
+    /// through the game.
+    MagicFile_PreloadPrx_009dae90 @ 0x009d_ae90 => extern "C" fn magic_file_preload_prx(magic: u32, file: u32) {
+        ffx_system::magic::bridge::magic_file_preload_prx(&mut mem(), magic, file, &mut |m, f, a| call_ptr(m, f, a));
+    }
+    /// `TOControlBtlWindow()`: `MsBattleProcess` drops `EAX`; the levels'
+    /// callbacks by their addresses, `graphicGetTime` in ST0.
+    TOControlBtlWindow @ 0x0089_ae20 => extern "C" fn to_control_btl_window() {
+        btl::bridge::to_control_btl_window(&mut mem(), call_sym, call_ptr, fcall);
+    }
     // ---- small round 2, group d
     /// `TOWaitBtlWinMain(w)`: 1.
     TOWaitBtlWinMain @ 0x008a_8a70 => extern "C" fn to_wait_btl_win_main(w: u32) -> u32 {

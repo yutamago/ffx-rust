@@ -18,6 +18,7 @@ pub mod fixup;
 pub mod heap;
 pub mod instance;
 pub mod intl;
+pub mod magic;
 pub mod math;
 pub mod menu;
 pub mod msg;
