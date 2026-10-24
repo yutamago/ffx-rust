@@ -55,7 +55,7 @@ done
 # keep the newest KEEP_RUNS run folders (each is ~30 MB of screenshots)
 ls -1dt "$lin"/runs/*/ 2>/dev/null | tail -n +"$((${KEEP_RUNS:-20} + 1))" | while read -r d; do rm -rf "$d"; done
 replays=(field-walk battle-attack menu-browse boot battle-magic battle-overdrive event-besaid event-cliff)
-eye=(battle-overdrive)
+eye=(battle-overdrive event-cliff)
 
 # Build once, not three times side by side.
 tools/build-hook.sh >/dev/null || exit 1

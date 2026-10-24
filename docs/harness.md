@@ -412,19 +412,23 @@ Without lockstep the walk's presses land a frame or two apart, so the shots
 are pinned to the scene: the frame message window 0 opens for the first
 subtitle (`waitfor 0x01326d84:4 02000000`), then fixed waits (the event
 count read back with each shot lands in the replay's output; two original
-runs read the same counts within one). Traced as event-besaid without the
-position and the view matrix, which follow the presses' frames here. The
-five shots are not BLIND, but the original runs differ in up to 47 % of
-the picture on the last two (the water), so look at them too.
+runs read the same counts within one). The trigger is a fixed line
+(-417.0, -34.9, -476.4) to (-483.1, -35.0, -359.5), each end extended by
+20; Tidus stops against the river edge 0.24 units short of it, 23 inside
+its end, and the ninth step is held 45 frames for slack. Traced from map
+`0x29` on (worker 6 is Wakka only there): as event-besaid without the
+player position and the view matrix, which follow the presses' frames, plus
+Wakka's position and rotation (`*0x01325bbc + 0x4968`, `+0x4998`). The
+shots are on `run-all.sh`'s `eye` list (checked by eye, like
+battle-overdrive's): three original runs differed by 2,000-77,000 pixels
+per shot (water, cloth, hair), more than the Rust run does.
 
-On 2026-10-24 the Rust run of event-cliff did not reach the scene:
-`Atel_TurnUpdate_00869510` (with the original, the scene starts; in
-lockstep the player stands at the same position, byte for byte, either
-way) and, once that is the original, `Atel_MoveUpdate_00868990` (Wakka
-stands about 200 pixels further back on the bank in shot 2). With both
-originals in (`FFX_HOOK_DISABLE=Atel_TurnUpdate_00869510,Atel_MoveUpdate_00868990`)
-the run gives the original's events and 0 differing pixels in all five
-shots. Bisected with `FFX_HOOK_DISABLE` lists (at most about 30 KB of names
+On 2026-10-24 the Rust run of event-cliff did not reach the scene, and with
+that fixed Wakka stood about 200 pixels out of place: `Atel_TurnUpdate`
+and `Atel_MoveUpdate` made their 8-word `Math_YawPitchTo` call through
+`Host::call`, which in the game passes at most 6 words and refuses longer
+calls (the oracle hosts accepted any width, so the parity tests passed).
+Bisected with `FFX_HOOK_DISABLE` lists (at most about 30 KB of names
 per run: the variable goes through the Windows environment). A replay that
 stops early like this leaves its later shots missing and its trace's last
 line cut: `shot-compare.py` reports a missing shot as a failure and goes on
