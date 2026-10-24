@@ -49,14 +49,14 @@
 0x00402b50	logic	default (no rule: ported to be safe)
 0x0042d370	platform	only called from platform code (0x42c300)
 0x0042d3c0	logic	default (no rule: ported to be safe)
-0x0042d3d0	logic	default (no rule: ported to be safe)
+0x0042d3d0	stub	4 bytes, too short to hook; behaviour: returns ecx + 0x10 (lea eax)
 0x0042d410	dead	unreachable from the entry point and every pointer table
 0x0042d470	platform	only called from platform code (0x42c740 and 1 more)
 0x0042def0	dead	unreachable from the entry point and every pointer table
 0x0042df70	platform	only called from platform code (0x428a00 and 2 more)
 0x0042e060	logic	default (no rule: ported to be safe)
 0x0042e080	dead	unreachable from the entry point and every pointer table
-0x0042e0c0	logic	default (no rule: ported to be safe)
+0x0042e0c0	stub	4 bytes, too short to hook; behaviour: returns the dword at ecx + 0x20
 0x0042e0d0	platform	reviewed: libwebm (PC2 sound round 1)
 0x0042e160	dead	unreachable from the entry point and every pointer table
 0x0042e1d0	logic	default (no rule: ported to be safe)
@@ -307,7 +307,7 @@
 0x0061a770	platform	reviewed: Phyre_PWorldMatrixFlyController vtable slot (system round 41)
 0x0061a7f0	logic	default (no rule: ported to be safe)
 0x0061a810	logic	default (no rule: ported to be safe)
-0x0061a850	logic	default (no rule: ported to be safe)
+0x0061a850	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0061a860	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): VFile_VFile
 0x0061a960	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): VFile_dtor_VFile
 0x0061a9b0	dead	unreachable from the entry point and every pointer table
@@ -462,11 +462,11 @@
 0x00629d90	dead	unreachable from the entry point and every pointer table
 0x0062ee50	glue	calls PhyreEngine Phyre_PRendering_PRenderer_syncRender, Phyre_PTimerWin32_GetTime, Phyre_PhyreExit
 0x0062f4c0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): FlushCache
-0x0062f4d0	logic	default (no rule: ported to be safe)
+0x0062f4d0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x0062f4e0	logic	default (no rule: ported to be safe)
 0x0062f500	debug	debug name: dbgPrintf
-0x0062f510	logic	debug-sounding name, but used by logic: 0x7cf970, AbmapFillCommandMenu, AbmapFillUseItemMenu
-0x0062f520	logic	default (no rule: ported to be safe)
+0x0062f510	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0062f520	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x0062f530	dead	unreachable from the entry point and every pointer table
 0x0062f540	dead	unreachable from the entry point and every pointer table
 0x0062f550	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sceCdDiskReady
@@ -553,18 +553,18 @@
 0x0062fc20	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sceRemove
 0x0062fc30	dead	unreachable from the entry point and every pointer table
 0x0062fc60	platform	unnamed, in the PS2 SDK stub file between sceRemove and FFXVpu0Reset
-0x0062fc70	logic	default (no rule: ported to be safe)
-0x0062fc80	logic	default (no rule: ported to be safe)
-0x0062fc90	logic	default (no rule: ported to be safe)
+0x0062fc70	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0062fc80	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0062fc90	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x0062fca0	logic	default (no rule: ported to be safe)
 0x0062fcc0	dead	unreachable from the entry point and every pointer table
-0x0062fcd0	logic	default (no rule: ported to be safe)
+0x0062fcd0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0062fce0	logic	default (no rule: ported to be safe)
 0x0062fd10	logic	default (no rule: ported to be safe)
 0x0062fd70	logic	default (no rule: ported to be safe)
 0x0062fdc0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sceWrite
 0x0062fde0	dead	unreachable from the entry point and every pointer table
-0x0062fdf0	logic	default (no rule: ported to be safe)
+0x0062fdf0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x0062fe20	dead	unreachable from the entry point and every pointer table
 0x0062fe30	dead	unreachable from the entry point and every pointer table
 0x0062fe40	dead	unreachable from the entry point and every pointer table
@@ -812,9 +812,9 @@
 0x00638d20	glue	thin wrapper: only forwards to glue code (PhyreScene_GetSplitScreenStat, PhyreScene_SetSplitScreenStat)
 0x00638d40	logic	default (no rule: ported to be safe)
 0x00638d90	logic	scene state the renderer needs (original look first): cgraphicSetNowUIType
-0x00638dd0	logic	default (no rule: ported to be safe)
-0x00638de0	logic	default (no rule: ported to be safe)
-0x00638e00	logic	debug-sounding name, but used by logic: KeThBP_MkGifPk
+0x00638dd0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x00638de0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x00638e00	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00638e30	glue	reviewed: getCurrentControlMode: forwarder (PC2 render/pc-ui round 1)
 0x00638e70	logic	default (no rule: ported to be safe)
 0x00638e90	platform	only called from platform code (0x636430)
@@ -841,7 +841,7 @@
 0x00639330	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAtelUnloadTexture
 0x00639360	glue	reviewed: forwarder (PC2 render/pc-ui round 1)
 0x00639370	glue	reviewed: forwarder (PC2 render/pc-ui round 1)
-0x00639380	logic	default (no rule: ported to be safe)
+0x00639380	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00639390	glue	reviewed: C++ thiscall wrapper (effects round 29)
 0x006393a0	glue	thin wrapper: only forwards to glue code (BrokenScreenEffect_GetInstance)
 0x006393c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BrokenScreenEffect_BufferSize
@@ -2024,7 +2024,7 @@
 0x00671da0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_updateMapYIQ
 0x00671f60	dead	unreachable from the entry point and every pointer table
 0x00671f80	dead	unreachable from the entry point and every pointer table
-0x00672000	logic	default (no rule: ported to be safe)
+0x00672000	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimation_Animate_00672000
 0x00672060	dead	unreachable from the entry point and every pointer table
 0x00672070	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_updateTextureVideoCallback
 0x006787a0	dead	unreachable from the entry point and every pointer table
@@ -2047,7 +2047,7 @@
 0x00678d70	glue	reviewed: Lua binding helper (PC2 render/pc-ui round 1)
 0x00678db0	glue	reviewed: Lua binding helper (PC2 render/pc-ui round 1)
 0x00678de0	glue	reviewed: Lua binding helper (PC2 render/pc-ui round 1)
-0x00678e50	logic	default (no rule: ported to be safe)
+0x00678e50	stub	3 bytes, too short to hook; behaviour: ret 4 (does nothing, pops 1 word; eax untouched)
 0x00678e60	glue	only called from glue code (0x6d12f0)
 0x006790c0	glue	only called from glue code (0x6d1530)
 0x00679330	dead	unreachable from the entry point and every pointer table
@@ -2172,7 +2172,7 @@
 0x0067ac40	platform	only called from platform code (FFXApplication_exitApplication)
 0x0067ac60	platform	only called from platform code (TrophyGetError)
 0x0067ac70	platform	only called from platform code (SaveData_Init)
-0x0067ac80	logic	default (no rule: ported to be safe)
+0x0067ac80	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x0067ac90	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): TrophyManager_Instance
 0x0067acc0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): TrophyManager_IsInstallCompleted
 0x0067acd0	dead	unreachable from the entry point and every pointer table
@@ -2335,7 +2335,7 @@
 0x006882a0	debug	reviewed: StackWalker call-stack line formatting for crash traces (system round 40)
 0x00688470	debug	reviewed: StackWalker error logger (system round 41)
 0x006884e0	debug	reviewed: StackWalker module-load logger (system round 41)
-0x006885e0	logic	default (no rule: ported to be safe)
+0x006885e0	stub	3 bytes, too short to hook; behaviour: ret 4 (does nothing, pops 1 word; eax untouched)
 0x006885f0	debug	reviewed: StackWalker symbol-init logger (system round 41)
 0x006886d0	dead	unreachable from the entry point and every pointer table
 0x00688ed0	dead	unreachable from the entry point and every pointer table
@@ -2935,7 +2935,7 @@
 0x006a2010	glue	only called from glue code (ClassDynamicGeometry_setupMaterial)
 0x006a2070	platform	only called from platform code (0x576190)
 0x006a2110	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassLoadedCharacterTable_getPrototypeByFilename
-0x006a2220	logic	default (no rule: ported to be safe)
+0x006a2220	stub	3 bytes, too short to hook; behaviour: returns this (mov eax, ecx)
 0x006a2260	glue	only called from glue code (0x6a2390)
 0x006a22d0	glue	only called from glue code (0x6a2390)
 0x006a2370	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassDynamicGeometry_hide
@@ -3095,10 +3095,10 @@
 0x006b1d10	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimation_FindByName
 0x006b1e40	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimation_FindMaterial
 0x006b1ef0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_FindAnimation
-0x006b1f90	logic	default (no rule: ported to be safe)
+0x006b1f90	stub	4 bytes, too short to hook; behaviour: returns the dword at ecx + 0x18
 0x006b1fa0	dead	unreachable from the entry point and every pointer table
-0x006b2050	logic	default (no rule: ported to be safe)
-0x006b2060	logic	default (no rule: ported to be safe)
+0x006b2050	stub	4 bytes, too short to hook; behaviour: returns ecx + 0x20 (lea eax)
+0x006b2060	stub	4 bytes, too short to hook; behaviour: returns ecx + 0x4 (lea eax)
 0x006b2070	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_getMaterialByLayNum
 0x006b20a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_FindMaterialIndex
 0x006b2130	dead	unreachable from the entry point and every pointer table
@@ -3119,7 +3119,7 @@
 0x006b2730	glue	only called from glue code (TextureAnimationManager_addAnimatedMaterials)
 0x006b2800	glue	only called from glue code (TextureAnimationManager_addAnimatedMaterials)
 0x006b28d0	dead	unreachable from the entry point and every pointer table
-0x006b28e0	logic	default (no rule: ported to be safe)
+0x006b28e0	stub	4 bytes, too short to hook; behaviour: returns the byte at ecx + 0x1c in al (rest of eax the caller's)
 0x006b28f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreCursor_IsValid_006b28f0
 0x006b2960	dead	unreachable from the entry point and every pointer table
 0x006b29c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_registerCharacterInstance
@@ -3159,7 +3159,7 @@
 0x006b49b0	debug	debug name: DebugMenuManager_GetInstance
 0x006b49c0	glue	calls PhyreEngine Phyre_CharacterLightingTweakUtil_GetInstance, Phyre_CharacterLightingTweakUtil_setEnabled
 0x006b4a70	dead	unreachable from the entry point and every pointer table
-0x006b4a80	logic	default (no rule: ported to be safe)
+0x006b4a80	glue	only called from glue code (TextureAnimation_Animate_00672000)
 0x006b4a90	dead	unreachable from the entry point and every pointer table
 0x006b4d10	dead	unreachable from the entry point and every pointer table
 0x006b4ee0	dead	unreachable from the entry point and every pointer table
@@ -3240,7 +3240,7 @@
 0x006bbef0	dead	unreachable from the entry point and every pointer table
 0x006bc0f0	dead	unreachable from the entry point and every pointer table
 0x006bc130	debug	debug name: CharacterAnimationTweakUtil_updateAnimation
-0x006bc210	logic	default (no rule: ported to be safe)
+0x006bc210	debug	reviewed: ViewerManager_DrawTexAnimInfo_006bc210: refs.py: 1 ref, TextureAnimation_Animate_00672000 0x0067204a, which calls it only with g_FFXIsDebug set and the debug menu on type 5 (the viewer); prints texture-animation info through 0x00829c00 (port-missed)
 0x006bc340	dead	unreachable from the entry point and every pointer table
 0x006bc410	dead	unreachable from the entry point and every pointer table
 0x006bc480	dead	unreachable from the entry point and every pointer table
@@ -3431,7 +3431,7 @@
 0x006c35a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BlurEffect_activate
 0x006c35d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BlurEffect_doOnShaderClusterLoaded
 0x006c38b0	glue	only called from glue code (PhyreScene_bootInit)
-0x006c3940	logic	default (no rule: ported to be safe)
+0x006c3940	stub	4 bytes, too short to hook; behaviour: returns the byte at ecx + 0xc in al (rest of eax the caller's)
 0x006c3950	glue	only called from glue code (0x6c38b0)
 0x006c3970	glue	calls PhyreEngine Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_renderMeshInstance
 0x006c3c40	glue	only called from glue code (PhyreScene_resize)
@@ -4102,8 +4102,8 @@
 0x006f13c0	dead	unreachable from the entry point and every pointer table
 0x006f1420	dead	unreachable from the entry point and every pointer table
 0x006f1430	platform	only called from platform code (0x647fe0)
-0x006f1510	logic	default (no rule: ported to be safe)
-0x006f1550	logic	default (no rule: ported to be safe)
+0x006f1510	platform	reviewed: StatsAndAchievements_Unlock_006f1510: Steam achievement unlock (StatsAndAchievements_SetAchievement_006f1900: SteamUserStats SetAchievement/StoreStats) guarded by the Steam stats flag +0x4d; refs.py: 2 refs, SaveDataUnlockAchievement (platform) 0x006488d6 and AchievementTryObtainPlat 0x006f1573 (port-missed)
+0x006f1550	platform	reviewed: AchievementTryObtainPlat: unlocks Steam achievement 0 (ACH_COMPLETION_OF_FFX) once records 1..33 of g_AchievementRecords are achieved; refs.py: 1 ref, StatsAndAchievements_Unlock_006f1510 0x006f153d (port-missed)
 0x006f1580	logic	default (no rule: ported to be safe)
 0x006f1590	logic	default (no rule: ported to be safe)
 0x006f15a0	logic	default (no rule: ported to be safe)
@@ -4119,7 +4119,7 @@
 0x006f1880	glue	reviewed: call-through-pointer thunk (system round 31)
 0x006f1890	glue	reviewed: call-through-pointer thunk (system round 31)
 0x006f18b0	dead	unreachable from the entry point and every pointer table
-0x006f1900	platform	imports SteamUserStats
+0x006f1900	platform	reviewed: StatsAndAchievements_SetAchievement_006f1900: SteamUserStats SetAchievement and StoreStats (port-missed)
 0x006f1980	platform	reviewed: PC save metadata block (system round 37)
 0x006f1a80	dead	unreachable from the entry point and every pointer table
 0x006f1aa0	platform	only called from platform code (SaveDataSaveLoadSucceed)
@@ -4173,19 +4173,19 @@
 0x006f2a40	dead	unreachable from the entry point and every pointer table
 0x006f2a80	dead	unreachable from the entry point and every pointer table
 0x006f2ab0	dead	unreachable from the entry point and every pointer table
-0x006f2ae0	logic	default (no rule: ported to be safe)
+0x006f2ae0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x006f2b10	platform	only called from platform code (AsyncLoadManager_createThread)
 0x006f2b60	dead	unreachable from the entry point and every pointer table
-0x006f2ba0	logic	default (no rule: ported to be safe)
-0x006f2bb0	logic	default (no rule: ported to be safe)
-0x006f2bc0	logic	default (no rule: ported to be safe)
+0x006f2ba0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
+0x006f2bb0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
+0x006f2bc0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x006f2be0	dead	unreachable from the entry point and every pointer table
 0x006f2bf0	dead	unreachable from the entry point and every pointer table
 0x006f2c00	dead	unreachable from the entry point and every pointer table
 0x006f2c30	dead	unreachable from the entry point and every pointer table
 0x006f2c90	dead	unreachable from the entry point and every pointer table
 0x006f2ca0	dead	unreachable from the entry point and every pointer table
-0x006f2cc0	logic	default (no rule: ported to be safe)
+0x006f2cc0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x006f2ce0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): SignalSema
 0x006f2d10	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): SleepThread
 0x006f2d20	logic	default (no rule: ported to be safe)
@@ -4348,7 +4348,7 @@
 0x006f99a0	glue	calls PhyreEngine Phyre_PScripting_PScriptAccessors_PObjectAccessor_ShadowDynamicMeshInstance__Get
 0x006f99c0	logic	default (no rule: ported to be safe)
 0x006f99e0	glue	calls PhyreEngine Phyre_PhyrePrintf
-0x006f9a00	logic	default (no rule: ported to be safe)
+0x006f9a00	stub	3 bytes, too short to hook; behaviour: ret 8 (does nothing, pops 2 words; eax untouched)
 0x006f9a30	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowDynamicMeshInstance_populatePreprocessData
 0x006f9a80	glue	reviewed: Lua binding helper (PC2 render/pc-ui round 1)
 0x006f9ac0	glue	reviewed: Lua binding helper (PC2 render/pc-ui round 1)
@@ -5094,7 +5094,7 @@
 0x00716c40	logic	default (no rule: ported to be safe)
 0x00717010	logic	default (no rule: ported to be safe)
 0x00717410	logic	default (no rule: ported to be safe)
-0x007175f0	logic	default (no rule: ported to be safe)
+0x007175f0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00717600	logic	default (no rule: ported to be safe)
 0x00717610	logic	default (no rule: ported to be safe)
 0x00717620	glue	reviewed: updateGuildMapRenderData (effects round 29)
@@ -5131,7 +5131,7 @@
 0x00728660	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): JobSchedule_pppPart_getFillBufferRequest
 0x00728750	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): JobSchedule_pppPart_initFillBufferRequest
 0x007287b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): JobSchedule_pppPart_fillBuffer_drawShp_007287b0
-0x007289d0	logic	default (no rule: ported to be safe)
+0x007289d0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x007289e0	dead	unreachable from the entry point and every pointer table
 0x00728a00	dead	unreachable from the entry point and every pointer table
 0x00728a20	dead	unreachable from the entry point and every pointer table
@@ -5335,7 +5335,7 @@
 0x00736050	logic	default (no rule: ported to be safe)
 0x00736460	logic	default (no rule: ported to be safe)
 0x007364e0	logic	default (no rule: ported to be safe)
-0x00736570	logic	default (no rule: ported to be safe)
+0x00736570	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00736580	logic	default (no rule: ported to be safe)
 0x00736690	logic	default (no rule: ported to be safe)
 0x007366c0	logic	default (no rule: ported to be safe)
@@ -5380,8 +5380,8 @@
 0x00736e90	logic	default (no rule: ported to be safe)
 0x00737130	logic	default (no rule: ported to be safe)
 0x007371c0	logic	default (no rule: ported to be safe)
-0x007372b0	logic	default (no rule: ported to be safe)
-0x007372c0	logic	default (no rule: ported to be safe)
+0x007372b0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x007372c0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x007372d0	logic	default (no rule: ported to be safe)
 0x00737420	dead	unreachable from the entry point and every pointer table
 0x00737450	logic	default (no rule: ported to be safe)
@@ -5423,29 +5423,29 @@
 0x0073d7c0	logic	default (no rule: ported to be safe)
 0x0073d8c0	logic	default (no rule: ported to be safe)
 0x0073d8f0	logic	default (no rule: ported to be safe)
-0x0073d920	logic	default (no rule: ported to be safe)
+0x0073d920	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0073d930	logic	default (no rule: ported to be safe)
 0x0073dfe0	logic	default (no rule: ported to be safe)
 0x0073e110	dead	unreachable from the entry point and every pointer table
 0x0073e140	logic	default (no rule: ported to be safe)
 0x0073e240	logic	default (no rule: ported to be safe)
 0x0073e270	logic	default (no rule: ported to be safe)
-0x0073e2a0	logic	default (no rule: ported to be safe)
+0x0073e2a0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0073e2b0	logic	default (no rule: ported to be safe)
 0x0073e990	dead	unreachable from the entry point and every pointer table
 0x0073e9d0	logic	default (no rule: ported to be safe)
 0x0073ea00	logic	default (no rule: ported to be safe)
-0x0073ea30	logic	default (no rule: ported to be safe)
+0x0073ea30	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0073ea40	logic	default (no rule: ported to be safe)
 0x0073f180	dead	unreachable from the entry point and every pointer table
 0x0073f1c0	logic	default (no rule: ported to be safe)
 0x0073f1f0	logic	default (no rule: ported to be safe)
-0x0073f220	logic	default (no rule: ported to be safe)
+0x0073f220	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0073f230	logic	default (no rule: ported to be safe)
 0x0073f9a0	dead	unreachable from the entry point and every pointer table
 0x0073f9e0	logic	default (no rule: ported to be safe)
 0x0073fa10	logic	default (no rule: ported to be safe)
-0x0073fa40	logic	default (no rule: ported to be safe)
+0x0073fa40	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0073fa50	logic	default (no rule: ported to be safe)
 0x007400f0	logic	default (no rule: ported to be safe)
 0x007403f0	logic	default (no rule: ported to be safe)
@@ -5521,8 +5521,8 @@
 0x00748ad0	dead	unreachable from the entry point and every pointer table
 0x00748b00	logic	default (no rule: ported to be safe)
 0x00749050	logic	default (no rule: ported to be safe)
-0x007490b0	logic	default (no rule: ported to be safe)
-0x007490c0	logic	default (no rule: ported to be safe)
+0x007490b0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x007490c0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x007490d0	logic	default (no rule: ported to be safe)
 0x007497e0	logic	default (no rule: ported to be safe)
 0x00749810	logic	default (no rule: ported to be safe)
@@ -5641,10 +5641,10 @@
 0x00754180	logic	default (no rule: ported to be safe)
 0x00754260	logic	default (no rule: ported to be safe)
 0x00754300	logic	default (no rule: ported to be safe)
-0x00754fb0	logic	default (no rule: ported to be safe)
+0x00754fb0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00754fc0	logic	default (no rule: ported to be safe)
-0x00754ff0	logic	default (no rule: ported to be safe)
-0x00755000	logic	default (no rule: ported to be safe)
+0x00754ff0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x00755000	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00755010	logic	default (no rule: ported to be safe)
 0x00755040	logic	default (no rule: ported to be safe)
 0x007553c0	dead	unreachable from the entry point and every pointer table
@@ -5659,14 +5659,14 @@
 0x007565b0	dead	unreachable from the entry point and every pointer table
 0x00756600	logic	debug-sounding name, but used by logic: pppDrawRainAlloc_00756320, pppDrawRainStep_00755a00
 0x007566a0	logic	default (no rule: ported to be safe)
-0x007566d0	logic	default (no rule: ported to be safe)
+0x007566d0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x007566e0	logic	default (no rule: ported to be safe)
 0x00756720	dead	unreachable from the entry point and every pointer table
 0x00756740	logic	default (no rule: ported to be safe)
 0x00756d20	logic	default (no rule: ported to be safe)
 0x007571a0	dead	unreachable from the entry point and every pointer table
 0x00757210	logic	default (no rule: ported to be safe)
-0x00757240	logic	default (no rule: ported to be safe)
+0x00757240	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00757250	glue	reviewed: pppDrawFilterDes: only releases the renderer instance (graphicVFXDestroy) (effects round 19)
 0x00757280	logic	default (no rule: ported to be safe)
 0x00757340	dead	unreachable from the entry point and every pointer table
@@ -5681,8 +5681,8 @@
 0x00757b50	logic	default (no rule: ported to be safe)
 0x00757c30	logic	default (no rule: ported to be safe)
 0x00757e90	logic	default (no rule: ported to be safe)
-0x00757eb0	logic	default (no rule: ported to be safe)
-0x00757ec0	logic	default (no rule: ported to be safe)
+0x00757eb0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x00757ec0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00757ed0	logic	default (no rule: ported to be safe)
 0x00757ff0	logic	default (no rule: ported to be safe)
 0x00758250	logic	default (no rule: ported to be safe)
@@ -5711,17 +5711,17 @@
 0x007595e0	logic	default (no rule: ported to be safe)
 0x00759620	logic	default (no rule: ported to be safe)
 0x00759650	logic	default (no rule: ported to be safe)
-0x007597a0	logic	default (no rule: ported to be safe)
+0x007597a0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x007597b0	logic	default (no rule: ported to be safe)
 0x00759800	logic	default (no rule: ported to be safe)
 0x00759830	logic	default (no rule: ported to be safe)
-0x00759880	logic	default (no rule: ported to be safe)
+0x00759880	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00759890	logic	default (no rule: ported to be safe)
 0x00759990	logic	default (no rule: ported to be safe)
 0x007599b0	logic	default (no rule: ported to be safe)
 0x00759bc0	logic	default (no rule: ported to be safe)
 0x00759bf0	logic	default (no rule: ported to be safe)
-0x00759d70	logic	default (no rule: ported to be safe)
+0x00759d70	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00759d80	logic	default (no rule: ported to be safe)
 0x00759f10	logic	default (no rule: ported to be safe)
 0x00759f30	logic	default (no rule: ported to be safe)
@@ -5762,17 +5762,17 @@
 0x0075b130	logic	default (no rule: ported to be safe)
 0x0075b160	logic	default (no rule: ported to be safe)
 0x0075b230	logic	default (no rule: ported to be safe)
-0x0075b680	logic	default (no rule: ported to be safe)
+0x0075b680	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0075b690	glue	thin wrapper: only forwards to glue code (graphicVFXAddCopyBufferEvent)
-0x0075b6b0	logic	default (no rule: ported to be safe)
-0x0075b6c0	logic	default (no rule: ported to be safe)
-0x0075b6d0	logic	default (no rule: ported to be safe)
-0x0075b6e0	logic	default (no rule: ported to be safe)
-0x0075b6f0	logic	default (no rule: ported to be safe)
-0x0075b700	logic	default (no rule: ported to be safe)
-0x0075b710	logic	default (no rule: ported to be safe)
-0x0075b720	logic	default (no rule: ported to be safe)
-0x0075b730	logic	default (no rule: ported to be safe)
+0x0075b6b0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0075b6c0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0075b6d0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0075b6e0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0075b6f0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0075b700	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0075b710	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0075b720	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0075b730	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0075b740	logic	default (no rule: ported to be safe)
 0x0075b810	logic	default (no rule: ported to be safe)
 0x0075b850	logic	default (no rule: ported to be safe)
@@ -5833,20 +5833,20 @@
 0x0075d700	logic	default (no rule: ported to be safe)
 0x0075d7c0	logic	default (no rule: ported to be safe)
 0x0075d7f0	logic	default (no rule: ported to be safe)
-0x0075d910	logic	default (no rule: ported to be safe)
-0x0075d920	logic	default (no rule: ported to be safe)
+0x0075d910	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0075d920	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0075d930	logic	default (no rule: ported to be safe)
-0x0075db10	logic	default (no rule: ported to be safe)
-0x0075db20	logic	default (no rule: ported to be safe)
+0x0075db10	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0075db20	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0075db30	logic	default (no rule: ported to be safe)
-0x0075dd50	logic	default (no rule: ported to be safe)
-0x0075dd60	logic	default (no rule: ported to be safe)
+0x0075dd50	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0075dd60	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0075dd70	logic	default (no rule: ported to be safe)
-0x0075df70	logic	default (no rule: ported to be safe)
-0x0075df80	logic	default (no rule: ported to be safe)
+0x0075df70	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0075df80	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0075df90	logic	default (no rule: ported to be safe)
-0x0075e1d0	logic	default (no rule: ported to be safe)
-0x0075e1e0	logic	default (no rule: ported to be safe)
+0x0075e1d0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0075e1e0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0075e1f0	logic	default (no rule: ported to be safe)
 0x0075e310	logic	default (no rule: ported to be safe)
 0x0075e430	logic	default (no rule: ported to be safe)
@@ -5967,7 +5967,7 @@
 0x00766770	logic	default (no rule: ported to be safe)
 0x007669c0	logic	default (no rule: ported to be safe)
 0x00766ae0	logic	default (no rule: ported to be safe)
-0x00766b80	logic	default (no rule: ported to be safe)
+0x00766b80	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x00766b90	logic	default (no rule: ported to be safe)
 0x00766be0	dead	unreachable from the entry point and every pointer table
 0x00766c20	dead	unreachable from the entry point and every pointer table
@@ -6102,7 +6102,7 @@
 0x0076ed10	glue	glue name (FMOD or the movie player): Movie_IsBusy_0076ed10
 0x0076ed70	dead	unreachable from the entry point and every pointer table
 0x0076edc0	glue	glue name (FMOD or the movie player): MovieCameraFrame_0076edc0
-0x0076ef80	logic	default (no rule: ported to be safe)
+0x0076ef80	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0076efa0	glue	glue name (FMOD or the movie player): movie_err
 0x0076efb0	glue	glue name (FMOD or the movie player): movie_frame_prog
 0x0076efc0	glue	glue name (FMOD or the movie player): movie_have_camera
@@ -6585,7 +6585,7 @@
 0x00777240	dead	unreachable from the entry point and every pointer table
 0x007772e0	dead	unreachable from the entry point and every pointer table
 0x00777300	dead	unreachable from the entry point and every pointer table
-0x00777310	logic	default (no rule: ported to be safe)
+0x00777310	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x00777320	dead	unreachable from the entry point and every pointer table
 0x00777380	dead	unreachable from the entry point and every pointer table
 0x00777420	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_state_clear
@@ -6658,7 +6658,7 @@
 0x0077a4a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_printf_set
 0x0077a4b0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): task_create_asm
 0x0077a4c0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): task_init_asm
-0x0077a4d0	logic	default (no rule: ported to be safe)
+0x0077a4d0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0077a4e0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): task_wait
 0x0077a4f0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): dvd_ReturnConst2_0077a4f0
 0x0077a500	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): dvd_ReturnConst118_0077a500
@@ -6933,7 +6933,7 @@
 0x00785140	logic	default (no rule: ported to be safe)
 0x007851b0	logic	default (no rule: ported to be safe)
 0x007851c0	logic	default (no rule: ported to be safe)
-0x007851d0	logic	default (no rule: ported to be safe)
+0x007851d0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x007851f0	logic	default (no rule: ported to be safe)
 0x00785230	debug	only called from debug code (AtelDebugPage_System_0087fca0)
 0x00785240	logic	default (no rule: ported to be safe)
@@ -8801,7 +8801,7 @@
 0x007e6300	dead	unreachable from the entry point and every pointer table
 0x007e6360	dead	unreachable from the entry point and every pointer table
 0x007e6380	dead	unreachable from the entry point and every pointer table
-0x007e63a0	logic	default (no rule: ported to be safe)
+0x007e63a0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x007e63b0	logic	default (no rule: ported to be safe)
 0x007e6420	dead	unreachable from the entry point and every pointer table
 0x007e6440	logic	default (no rule: ported to be safe)
@@ -8825,7 +8825,7 @@
 0x007e6a60	logic	default (no rule: ported to be safe)
 0x007e6a70	dead	unreachable from the entry point and every pointer table
 0x007e6aa0	dead	unreachable from the entry point and every pointer table
-0x007e6b20	logic	default (no rule: ported to be safe)
+0x007e6b20	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x007e6b30	dead	unreachable from the entry point and every pointer table
 0x007e6b50	dead	unreachable from the entry point and every pointer table
 0x007e6bb0	dead	unreachable from the entry point and every pointer table
@@ -8884,10 +8884,10 @@
 0x007ea9d0	logic	default (no rule: ported to be safe)
 0x007eaa60	dead	unreachable from the entry point and every pointer table
 0x007eaa90	dead	unreachable from the entry point and every pointer table
-0x007eaac0	logic	default (no rule: ported to be safe)
+0x007eaac0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x007eaad0	logic	default (no rule: ported to be safe)
 0x007eadb0	logic	default (no rule: ported to be safe)
-0x007eadc0	logic	default (no rule: ported to be safe)
+0x007eadc0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x007eadd0	dead	unreachable from the entry point and every pointer table
 0x007eb300	logic	default (no rule: ported to be safe)
 0x007eb320	logic	default (no rule: ported to be safe)
@@ -8904,12 +8904,12 @@
 0x007eb760	glue	reviewed: op_gs1_init: fixed GS register-setup packets (effects round 13)
 0x007eba80	dead	unreachable from the entry point and every pointer table
 0x007ec410	logic	default (no rule: ported to be safe)
-0x007ec420	logic	default (no rule: ported to be safe)
-0x007ec430	logic	default (no rule: ported to be safe)
+0x007ec420	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x007ec430	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x007ec450	dead	unreachable from the entry point and every pointer table
 0x007ec470	logic	default (no rule: ported to be safe)
 0x007ec500	dead	unreachable from the entry point and every pointer table
-0x007ec790	logic	default (no rule: ported to be safe)
+0x007ec790	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x007ec7d0	logic	default (no rule: ported to be safe)
 0x007ec7e0	logic	default (no rule: ported to be safe)
 0x007ec890	logic	default (no rule: ported to be safe)
@@ -9027,11 +9027,11 @@
 0x007fc9a0	logic	default (no rule: ported to be safe)
 0x007fc9b0	logic	default (no rule: ported to be safe)
 0x007fca40	logic	default (no rule: ported to be safe)
-0x007fca80	logic	default (no rule: ported to be safe)
+0x007fca80	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x007fca90	logic	default (no rule: ported to be safe)
 0x007fcaf0	logic	default (no rule: ported to be safe)
 0x007fcb60	logic	default (no rule: ported to be safe)
-0x007fcbd0	logic	default (no rule: ported to be safe)
+0x007fcbd0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x007fcbf0	logic	default (no rule: ported to be safe)
 0x007fcc20	logic	default (no rule: ported to be safe)
 0x007fcc40	logic	default (no rule: ported to be safe)
@@ -9097,7 +9097,7 @@
 0x007ff360	logic	default (no rule: ported to be safe)
 0x007ff670	debug	reviewed: op_loop_end_ffx: jumps to the debug routine 0x00a5bd90 under g_OpDebugMode (effects round 17)
 0x007ff680	logic	default (no rule: ported to be safe)
-0x007ff770	logic	default (no rule: ported to be safe)
+0x007ff770	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x007ff780	logic	default (no rule: ported to be safe)
 0x007ff890	dead	unreachable from the entry point and every pointer table
 0x007ff8e0	logic	default (no rule: ported to be safe)
@@ -9214,8 +9214,8 @@
 0x008064f0	dead	unreachable from the entry point and every pointer table
 0x00806510	dead	unreachable from the entry point and every pointer table
 0x00806530	dead	unreachable from the entry point and every pointer table
-0x00806550	logic	default (no rule: ported to be safe)
-0x00806580	logic	default (no rule: ported to be safe)
+0x00806550	stub	3 bytes, too short to hook; behaviour: ret 4 (does nothing, pops 1 word; eax untouched)
+0x00806580	stub	3 bytes, too short to hook; behaviour: ret 4 (does nothing, pops 1 word; eax untouched)
 0x00806610	dead	unreachable from the entry point and every pointer table
 0x00806620	dead	unreachable from the entry point and every pointer table
 0x00806630	dead	unreachable from the entry point and every pointer table
@@ -9232,11 +9232,11 @@
 0x00806760	dead	unreachable from the entry point and every pointer table
 0x00806770	dead	unreachable from the entry point and every pointer table
 0x00806780	dead	unreachable from the entry point and every pointer table
-0x008067b0	logic	default (no rule: ported to be safe)
+0x008067b0	stub	3 bytes, too short to hook; behaviour: returns this (mov eax, ecx)
 0x00807510	logic	default (no rule: ported to be safe)
 0x008075b0	logic	default (no rule: ported to be safe)
-0x00807830	logic	default (no rule: ported to be safe)
-0x00807860	logic	default (no rule: ported to be safe)
+0x00807830	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x00807860	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00807870	logic	default (no rule: ported to be safe)
 0x008079f0	logic	default (no rule: ported to be safe)
 0x00807b20	logic	default (no rule: ported to be safe)
@@ -9301,7 +9301,7 @@
 0x0080f580	logic	default (no rule: ported to be safe)
 0x0080f630	logic	default (no rule: ported to be safe)
 0x0080f680	logic	default (no rule: ported to be safe)
-0x0080f7e0	logic	default (no rule: ported to be safe)
+0x0080f7e0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0080f820	dead	unreachable from the entry point and every pointer table
 0x0080fb30	dead	unreachable from the entry point and every pointer table
 0x00810240	debug	unreachable from the entry point and every pointer table; debug name or strings
@@ -9511,7 +9511,7 @@
 0x0081e320	dead	unreachable from the entry point and every pointer table
 0x0081e3b0	logic	default (no rule: ported to be safe)
 0x0081e3e0	logic	default (no rule: ported to be safe)
-0x0081e400	logic	default (no rule: ported to be safe)
+0x0081e400	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0081e410	logic	default (no rule: ported to be safe)
 0x0081e460	logic	default (no rule: ported to be safe)
 0x0081e480	logic	default (no rule: ported to be safe)
@@ -9544,7 +9544,7 @@
 0x0081ee20	logic	default (no rule: ported to be safe)
 0x0081eeb0	dead	unreachable from the entry point and every pointer table
 0x0081eef0	logic	default (no rule: ported to be safe)
-0x0081ef40	logic	default (no rule: ported to be safe)
+0x0081ef40	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x0081ef50	logic	default (no rule: ported to be safe)
 0x0081efd0	logic	default (no rule: ported to be safe)
 0x0081f100	dead	unreachable from the entry point and every pointer table
@@ -10036,7 +10036,7 @@
 0x008336a0	logic	default (no rule: ported to be safe)
 0x00833760	logic	default (no rule: ported to be safe)
 0x00833770	logic	default (no rule: ported to be safe)
-0x008337f0	logic	default (no rule: ported to be safe)
+0x008337f0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00833800	debug	only called from debug code (0x852080)
 0x00833860	logic	default (no rule: ported to be safe)
 0x008338d0	logic	default (no rule: ported to be safe)
@@ -10295,7 +10295,7 @@
 0x0083c510	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sg_MemSetErrorIgnore
 0x0083c520	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sg_MemSetFast
 0x0083c530	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sg_MemSetMoveHeapStartAddr
-0x0083c550	logic	default (no rule: ported to be safe)
+0x0083c550	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0083c560	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sg_MemSetRtAddr
 0x0083c580	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sg_MemSetStr
 0x0083c590	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Sg_MemSetType
@@ -10430,11 +10430,11 @@
 0x00840890	logic	default (no rule: ported to be safe)
 0x008408d0	logic	default (no rule: ported to be safe)
 0x00840910	logic	default (no rule: ported to be safe)
-0x00840950	logic	default (no rule: ported to be safe)
+0x00840950	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x00840960	logic	default (no rule: ported to be safe)
 0x008409a0	logic	default (no rule: ported to be safe)
 0x00840aa0	dead	unreachable from the entry point and every pointer table
-0x00840ab0	logic	default (no rule: ported to be safe)
+0x00840ab0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00840ac0	logic	default (no rule: ported to be safe)
 0x00840b00	dead	unreachable from the entry point and every pointer table
 0x00840cf0	logic	default (no rule: ported to be safe)
@@ -10585,10 +10585,10 @@
 0x00845df0	logic	default (no rule: ported to be safe)
 0x00845e40	logic	default (no rule: ported to be safe)
 0x00845e80	logic	default (no rule: ported to be safe)
-0x00845eb0	logic	default (no rule: ported to be safe)
+0x00845eb0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00845ec0	logic	default (no rule: ported to be safe)
 0x00846710	logic	default (no rule: ported to be safe)
-0x008467a0	logic	default (no rule: ported to be safe)
+0x008467a0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x008467b0	logic	default (no rule: ported to be safe)
 0x00846840	debug	only called from debug code (Gu_DrawMouseCursor and 1 more)
 0x00846b10	debug	only called from debug code (0x847720 and 1 more)
@@ -11088,7 +11088,7 @@
 0x00859d00	logic	default (no rule: ported to be safe)
 0x00859d30	logic	default (no rule: ported to be safe)
 0x00859d50	logic	default (no rule: ported to be safe)
-0x00859d70	logic	default (no rule: ported to be safe)
+0x00859d70	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00859d80	logic	default (no rule: ported to be safe)
 0x00859dc0	logic	default (no rule: ported to be safe)
 0x00859e00	logic	default (no rule: ported to be safe)
@@ -11220,7 +11220,7 @@
 0x0085c3b0	logic	default (no rule: ported to be safe)
 0x0085c3e0	logic	default (no rule: ported to be safe)
 0x0085c400	logic	default (no rule: ported to be safe)
-0x0085c420	logic	default (no rule: ported to be safe)
+0x0085c420	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x0085c430	logic	default (no rule: ported to be safe)
 0x0085c470	logic	default (no rule: ported to be safe)
 0x0085c490	logic	default (no rule: ported to be safe)
@@ -11504,7 +11504,7 @@
 0x008633e0	logic	default (no rule: ported to be safe)
 0x00863440	logic	default (no rule: ported to be safe)
 0x008634b0	logic	default (no rule: ported to be safe)
-0x00863510	logic	default (no rule: ported to be safe)
+0x00863510	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00863520	logic	default (no rule: ported to be safe)
 0x00863570	logic	default (no rule: ported to be safe)
 0x008635c0	logic	default (no rule: ported to be safe)
@@ -11975,7 +11975,7 @@
 0x008722f0	logic	default (no rule: ported to be safe)
 0x00872310	logic	default (no rule: ported to be safe)
 0x00872340	logic	default (no rule: ported to be safe)
-0x00872350	logic	default (no rule: ported to be safe)
+0x00872350	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x00872360	logic	default (no rule: ported to be safe)
 0x00872380	logic	default (no rule: ported to be safe)
 0x00872470	logic	default (no rule: ported to be safe)
@@ -12046,9 +12046,9 @@
 0x00873b90	logic	default (no rule: ported to be safe)
 0x00873ba0	debug	only calls debug code (AtelInitPS2Debug, TkIsDebug)
 0x00873c00	logic	default (no rule: ported to be safe)
-0x00873c30	logic	default (no rule: ported to be safe)
-0x00873c70	logic	debug-sounding name, but used by logic: AtelActorSetUp2, AtelEventLoadMusic, AtelExecCtrlEventInit_008677a0
-0x00873c80	logic	debug-sounding name, but used by logic: AtelExecCtrlEventInit_008677a0, Native_c05b, Native_c05c
+0x00873c30	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x00873c70	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x00873c80	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00873cc0	logic	default (no rule: ported to be safe)
 0x00873cf0	logic	default (no rule: ported to be safe)
 0x00873d00	logic	default (no rule: ported to be safe)
@@ -12094,7 +12094,7 @@
 0x00875000	logic	default (no rule: ported to be safe)
 0x00875020	dead	unreachable from the entry point and every pointer table
 0x00875050	dead	unreachable from the entry point and every pointer table
-0x008750a0	logic	default (no rule: ported to be safe)
+0x008750a0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x008750b0	logic	default (no rule: ported to be safe)
 0x00875140	dead	unreachable from the entry point and every pointer table
 0x00875160	dead	unreachable from the entry point and every pointer table
@@ -12500,7 +12500,7 @@
 0x00885e50	logic	default (no rule: ported to be safe)
 0x00885e80	logic	default (no rule: ported to be safe)
 0x00885ea0	logic	default (no rule: ported to be safe)
-0x00885ec0	logic	default (no rule: ported to be safe)
+0x00885ec0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00885ee0	logic	default (no rule: ported to be safe)
 0x00885f00	dead	unreachable from the entry point and every pointer table
 0x00885f10	logic	default (no rule: ported to be safe)
@@ -12531,7 +12531,7 @@
 0x008865e0	logic	default (no rule: ported to be safe)
 0x00886600	logic	default (no rule: ported to be safe)
 0x00886640	logic	default (no rule: ported to be safe)
-0x00886650	logic	default (no rule: ported to be safe)
+0x00886650	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x00886660	debug	only called from debug code (Ms_Gui_BattleInfoProc)
 0x00886680	logic	default (no rule: ported to be safe)
 0x008866b0	logic	default (no rule: ported to be safe)
@@ -12594,7 +12594,7 @@
 0x00887310	logic	default (no rule: ported to be safe)
 0x00887360	debug	only called from debug code (MsBattleProcess_DebugStatus_00792f20)
 0x008873c0	dead	unreachable from the entry point and every pointer table
-0x008873d0	logic	default (no rule: ported to be safe)
+0x008873d0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x008873f0	logic	default (no rule: ported to be safe)
 0x00887420	logic	default (no rule: ported to be safe)
 0x00887450	logic	default (no rule: ported to be safe)
@@ -12639,7 +12639,7 @@
 0x00887c80	dead	unreachable from the entry point and every pointer table
 0x00887cb0	dead	unreachable from the entry point and every pointer table
 0x00887d00	logic	default (no rule: ported to be safe)
-0x00887d10	logic	debug-sounding name, but used by logic: AtelEventSetUp, Native_00f8, Native_014a_SetBattleEndStatus
+0x00887d10	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x00887d20	logic	default (no rule: ported to be safe)
 0x00887d30	logic	default (no rule: ported to be safe)
 0x00887d50	logic	default (no rule: ported to be safe)
@@ -12805,11 +12805,11 @@
 0x0088c690	logic	default (no rule: ported to be safe)
 0x0088c710	logic	default (no rule: ported to be safe)
 0x0088c740	debug	only called from debug code (Ms_Gui_InfoProc and 2 more)
-0x0088c7d0	logic	default (no rule: ported to be safe)
-0x0088c7f0	logic	default (no rule: ported to be safe)
+0x0088c7d0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0088c7f0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0088c800	logic	default (no rule: ported to be safe)
-0x0088c810	logic	default (no rule: ported to be safe)
-0x0088c820	logic	default (no rule: ported to be safe)
+0x0088c810	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
+0x0088c820	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0088c850	debug	only called from debug code (AtelDebugPage_System_0087fca0)
 0x0088c860	platform	reviewed: TKMallocAndReadEventFTC: language path choice, then a fios load (M5 rewrites the path choice with the file layer) (menu round 16)
 0x0088cac0	platform	reviewed: TKMallocAndReadEventMessage: language path choice, then a fios load (M5 rewrites the path choice with the file layer) (menu round 16)
@@ -12824,7 +12824,7 @@
 0x0088d2c0	logic	default (no rule: ported to be safe)
 0x0088d390	platform	reviewed: TkCdSize: dispatches through the GetCD() object (menu round 15)
 0x0088d3d0	logic	default (no rule: ported to be safe)
-0x0088d4e0	logic	debug-sounding name, but used by logic: Sg_MainLoop
+0x0088d4e0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0088d4f0	logic	default (no rule: ported to be safe)
 0x0088d520	logic	default (no rule: ported to be safe)
 0x0088d570	logic	default (no rule: ported to be safe)
@@ -13176,7 +13176,7 @@
 0x008a9670	logic	default (no rule: ported to be safe)
 0x008a9680	logic	default (no rule: ported to be safe)
 0x008a9690	logic	default (no rule: ported to be safe)
-0x008a9710	logic	default (no rule: ported to be safe)
+0x008a9710	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x008a9720	logic	default (no rule: ported to be safe)
 0x008a9820	logic	default (no rule: ported to be safe)
 0x008a9840	logic	default (no rule: ported to be safe)
@@ -13211,7 +13211,7 @@
 0x008a9c50	logic	default (no rule: ported to be safe)
 0x008a9c60	logic	default (no rule: ported to be safe)
 0x008a9c70	logic	default (no rule: ported to be safe)
-0x008a9c90	logic	default (no rule: ported to be safe)
+0x008a9c90	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x008a9ca0	logic	default (no rule: ported to be safe)
 0x008aa100	logic	default (no rule: ported to be safe)
 0x008aa180	logic	default (no rule: ported to be safe)
@@ -13264,7 +13264,7 @@
 0x008ab220	logic	default (no rule: ported to be safe)
 0x008ab230	logic	default (no rule: ported to be safe)
 0x008ab240	logic	default (no rule: ported to be safe)
-0x008ab250	logic	default (no rule: ported to be safe)
+0x008ab250	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x008ab260	logic	default (no rule: ported to be safe)
 0x008ab270	logic	default (no rule: ported to be safe)
 0x008ab280	logic	default (no rule: ported to be safe)
@@ -13289,7 +13289,7 @@
 0x008abb00	glue	reviewed: vtable call wrapper (system round 21)
 0x008abb10	dead	unreachable from the entry point and every pointer table
 0x008abd00	logic	debug-sounding name, but used by logic: TOControlMessageWindow, TOControlMessageWindowForMenu, TkBtlEndCtrl
-0x008abd20	logic	debug-sounding name, but used by logic: MsBattleProcess, cd_read_thread_sector, menu_list_step
+0x008abd20	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x008abd30	glue	GS packet API (TODrawMessageWindow): appends to or kicks a packet; replaced by ffx-render
 0x008abe40	glue	GS packet API (TODrawMessageWindowForMenu): appends to or kicks a packet; replaced by ffx-render
 0x008abf30	dead	unreachable from the entry point and every pointer table
@@ -13600,7 +13600,7 @@
 0x008bed70	dead	unreachable from the entry point and every pointer table
 0x008bedb0	dead	unreachable from the entry point and every pointer table
 0x008bedd0	glue	reviewed: TOMenuGetNameMes: glue (system round 21)
-0x008bedf0	logic	default (no rule: ported to be safe)
+0x008bedf0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x008bee00	logic	default (no rule: ported to be safe)
 0x008bee10	dead	unreachable from the entry point and every pointer table
 0x008bee30	logic	default (no rule: ported to be safe)
@@ -13819,7 +13819,7 @@
 0x008ca320	logic	default (no rule: ported to be safe)
 0x008ca370	logic	default (no rule: ported to be safe)
 0x008ca3c0	dead	unreachable from the entry point and every pointer table
-0x008ca480	logic	default (no rule: ported to be safe)
+0x008ca480	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x008ca490	logic	default (no rule: ported to be safe)
 0x008ca500	logic	default (no rule: ported to be safe)
 0x008ca510	logic	default (no rule: ported to be safe)
@@ -14142,7 +14142,7 @@
 0x008dcc30	dead	unreachable from the entry point and every pointer table
 0x008dcc70	dead	unreachable from the entry point and every pointer table
 0x008dcca0	logic	default (no rule: ported to be safe)
-0x008dcd40	logic	default (no rule: ported to be safe)
+0x008dcd40	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x008dcd50	dead	unreachable from the entry point and every pointer table
 0x008dcd80	dead	unreachable from the entry point and every pointer table
 0x008dcdb0	dead	unreachable from the entry point and every pointer table
@@ -14281,7 +14281,7 @@
 0x008e2720	logic	default (no rule: ported to be safe)
 0x008e2790	logic	default (no rule: ported to be safe)
 0x008e27e0	logic	default (no rule: ported to be safe)
-0x008e2830	logic	default (no rule: ported to be safe)
+0x008e2830	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x008e2870	logic	default (no rule: ported to be safe)
 0x008e28e0	logic	default (no rule: ported to be safe)
 0x008e2930	logic	default (no rule: ported to be safe)
@@ -14528,7 +14528,7 @@
 0x008f3390	glue	GS/DMA packet writer (TODrawFont3d80String_008ee060; writes no game state): replaced by ffx-render
 0x008f3420	glue	GS packet API (TOMkpBtlDigitRight_008f3420): appends to or kicks a packet; replaced by ffx-render
 0x008f34c0	logic	default (no rule: ported to be safe)
-0x008f3820	logic	default (no rule: ported to be safe)
+0x008f3820	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x008f3830	dead	unreachable from the entry point and every pointer table
 0x008f38c0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x008f38f0	dead	unreachable from the entry point and every pointer table
@@ -14772,14 +14772,14 @@
 0x00904340	dead	unreachable from the entry point and every pointer table
 0x00904600	glue	GS packet API (TOOpenPktbuff): appends to or kicks a packet; replaced by ffx-render
 0x00904650	glue	GS/DMA packet writer (TOGsFRAME; writes no game state): replaced by ffx-render
-0x009046d0	logic	default (no rule: ported to be safe)
+0x009046d0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x009046e0	glue	GS/DMA packet writer (TOCtrlPkt; writes no game state): replaced by ffx-render
 0x009047a0	dead	unreachable from the entry point and every pointer table
 0x009047c0	glue	GS packet API (TOSetPktBuffAdrs): appends to or kicks a packet; replaced by ffx-render
 0x009047f0	dead	unreachable from the entry point and every pointer table
 0x00904860	dead	unreachable from the entry point and every pointer table
 0x009048a0	dead	unreachable from the entry point and every pointer table
-0x009048e0	logic	default (no rule: ported to be safe)
+0x009048e0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x009048f0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00904910	dead	unreachable from the entry point and every pointer table
 0x00904a00	dead	unreachable from the entry point and every pointer table
@@ -15009,9 +15009,9 @@
 0x0090cd50	logic	default (no rule: ported to be safe)
 0x0090cd90	logic	default (no rule: ported to be safe)
 0x0090cea0	logic	default (no rule: ported to be safe)
-0x0090cee0	logic	default (no rule: ported to be safe)
+0x0090cee0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x0090cf00	logic	default (no rule: ported to be safe)
-0x0090cff0	logic	default (no rule: ported to be safe)
+0x0090cff0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x0090d000	dead	unreachable from the entry point and every pointer table
 0x0090d1b0	logic	default (no rule: ported to be safe)
 0x0090d260	logic	default (no rule: ported to be safe)
@@ -15158,10 +15158,10 @@
 0x00919be0	logic	default (no rule: ported to be safe)
 0x00919c00	dead	unreachable from the entry point and every pointer table
 0x00919c30	dead	unreachable from the entry point and every pointer table
-0x00919c60	logic	default (no rule: ported to be safe)
+0x00919c60	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00919c70	logic	default (no rule: ported to be safe)
 0x00919ca0	logic	default (no rule: ported to be safe)
-0x00919cd0	logic	default (no rule: ported to be safe)
+0x00919cd0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00919d00	logic	default (no rule: ported to be safe)
 0x00919d40	dead	unreachable from the entry point and every pointer table
 0x00919d70	logic	default (no rule: ported to be safe)
@@ -15173,7 +15173,7 @@
 0x00919ef0	debug	only called from debug code (0x935710)
 0x00919f00	logic	default (no rule: ported to be safe)
 0x00919f10	logic	default (no rule: ported to be safe)
-0x00919f30	logic	default (no rule: ported to be safe)
+0x00919f30	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00919f40	logic	default (no rule: ported to be safe)
 0x00919f90	logic	default (no rule: ported to be safe)
 0x00919fe0	logic	default (no rule: ported to be safe)
@@ -15221,7 +15221,7 @@
 0x0091ad10	logic	default (no rule: ported to be safe)
 0x0091ad40	logic	default (no rule: ported to be safe)
 0x0091ad80	logic	default (no rule: ported to be safe)
-0x0091ade0	logic	default (no rule: ported to be safe)
+0x0091ade0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0091adf0	logic	default (no rule: ported to be safe)
 0x0091ae00	logic	default (no rule: ported to be safe)
 0x0091ae10	logic	default (no rule: ported to be safe)
@@ -15581,7 +15581,7 @@
 0x009273e0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00927430	dead	unreachable from the entry point and every pointer table
 0x00927520	dead	unreachable from the entry point and every pointer table
-0x00927550	logic	default (no rule: ported to be safe)
+0x00927550	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00927570	dead	unreachable from the entry point and every pointer table
 0x00927590	dead	unreachable from the entry point and every pointer table
 0x009275b0	glue	GS packet API (rcPacketDataCloseAdr): appends to or kicks a packet; replaced by ffx-render
@@ -15723,7 +15723,7 @@
 0x0092b9b0	debug	only called from debug code (rcdtRsdLoad_LoadMatRsd and 7 more)
 0x0092b9d0	dead	unreachable from the entry point and every pointer table
 0x0092ba30	debug	only called from debug code (rcdtRsdLoad_LoadMatRsd and 10 more)
-0x0092ba60	logic	default (no rule: ported to be safe)
+0x0092ba60	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0092ba70	debug	only called from debug code (rcdtParseSetPos)
 0x0092ba90	logic	default (no rule: ported to be safe)
 0x0092bac0	dead	unreachable from the entry point and every pointer table
@@ -15773,7 +15773,7 @@
 0x0092ccb0	debug	only called from debug code (0x9325c0)
 0x0092ccc0	debug	only called from debug code (0x9325c0)
 0x0092ccd0	debug	only called from debug code (0x9325c0)
-0x0092cce0	logic	default (no rule: ported to be safe)
+0x0092cce0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0092ccf0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0092cdd0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0092cf00	debug	reviewed: MsDebugDrawBoard: a single ret (no-op stub) (battle round 29)
@@ -15792,7 +15792,7 @@
 0x0092d580	logic	default (no rule: ported to be safe)
 0x0092d5a0	dead	unreachable from the entry point and every pointer table
 0x0092d670	logic	default (no rule: ported to be safe)
-0x0092d680	logic	default (no rule: ported to be safe)
+0x0092d680	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0092d690	logic	default (no rule: ported to be safe)
 0x0092d6f0	logic	default (no rule: ported to be safe)
 0x0092d720	logic	default (no rule: ported to be safe)
@@ -15865,7 +15865,7 @@
 0x0092ec90	logic	default (no rule: ported to be safe)
 0x0092ecb0	logic	default (no rule: ported to be safe)
 0x0092ece0	dead	unreachable from the entry point and every pointer table
-0x0092ed00	logic	default (no rule: ported to be safe)
+0x0092ed00	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0092ed10	logic	default (no rule: ported to be safe)
 0x0092ed50	logic	default (no rule: ported to be safe)
 0x0092ed90	logic	default (no rule: ported to be safe)
@@ -15877,7 +15877,7 @@
 0x0092ee90	logic	default (no rule: ported to be safe)
 0x0092eec0	logic	default (no rule: ported to be safe)
 0x0092eee0	debug	only called from debug code (rcefMainSetPar)
-0x0092efc0	logic	default (no rule: ported to be safe)
+0x0092efc0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x0092efd0	logic	default (no rule: ported to be safe)
 0x0092f010	logic	default (no rule: ported to be safe)
 0x0092f290	logic	default (no rule: ported to be safe)
@@ -16196,7 +16196,7 @@
 0x009436c0	dead	unreachable from the entry point and every pointer table
 0x009436d0	dead	unreachable from the entry point and every pointer table
 0x009436f0	dead	unreachable from the entry point and every pointer table
-0x009437b0	logic	default (no rule: ported to be safe)
+0x009437b0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x009437c0	platform	reviewed: Win32 memory (GlobalMemoryStatusEx) (main round 13)
 0x009437f0	logic	default (no rule: ported to be safe)
 0x00943800	logic	default (no rule: ported to be safe)
@@ -16417,7 +16417,7 @@
 0x009dafd0	logic	default (no rule: ported to be safe)
 0x009dafe0	logic	default (no rule: ported to be safe)
 0x009db110	platform	reviewed: onMagicDLLLoaded: GetProcAddress of the magic DLL entry points (system round 41)
-0x009db190	logic	default (no rule: ported to be safe)
+0x009db190	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x009db230	logic	default (no rule: ported to be safe)
 0x009db250	logic	default (no rule: ported to be safe)
 0x009db270	logic	default (no rule: ported to be safe)
@@ -16440,7 +16440,7 @@
 0x009dbe10	logic	default (no rule: ported to be safe)
 0x009dbe30	dead	unreachable from the entry point and every pointer table
 0x009dbe90	platform	thin wrapper: only forwards to platform code (user_aligned_malloc)
-0x009dbea0	logic	default (no rule: ported to be safe)
+0x009dbea0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x009dbed0	dead	unreachable from the entry point and every pointer table
 0x009dbf00	dead	unreachable from the entry point and every pointer table
 0x009dbf30	dead	unreachable from the entry point and every pointer table
@@ -16677,7 +16677,7 @@
 0x00a258c0	glue	reviewed: slot of the Phyre PMethodCallerConcrete vtable 0xb77c2c (pc round 1)
 0x00a25960	dead	unreachable from the entry point and every pointer table
 0x00a25990	platform	imports GetSystemMetrics
-0x00a259f0	logic	default (no rule: ported to be safe)
+0x00a259f0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00a25a30	logic	default (no rule: ported to be safe)
 0x00a25a40	glue	only called from glue code (0xa26ce0)
 0x00a25a50	dead	unreachable from the entry point and every pointer table
@@ -16739,7 +16739,7 @@
 0x00a27150	dead	reviewed: xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)
 0x00a27160	dead	reviewed: xchg [ecx], eax exchange wrapper; no rel32 target and no pointer bytes in FFX.exe (pc round 3)
 0x00a27170	platform	reviewed: PVideoPlaybackWin32 (PC2 sound round 1)
-0x00a28310	logic	default (no rule: ported to be safe)
+0x00a28310	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00a28330	glue	only called from glue code (0x6d8fc0 and 2 more)
 0x00a28350	glue	calls PhyreEngine Phyre_PEventFlagWin32_wait
 0x00a28870	dead	unreachable from the entry point and every pointer table
@@ -16903,7 +16903,7 @@
 0x00a42490	logic	default (no rule: ported to be safe)
 0x00a424b0	glue	calls PhyreEngine Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_POccluderGeometry_POccluderGeometryObject__Get
 0x00a424e0	glue	reviewed: PhyreEngine class-descriptor entry (system round 37)
-0x00a42500	logic	default (no rule: ported to be safe)
+0x00a42500	stub	3 bytes, too short to hook; behaviour: ret 8 (does nothing, pops 2 words; eax untouched)
 0x00a42520	dead	unreachable from the entry point and every pointer table
 0x00a425a0	dead	unreachable from the entry point and every pointer table
 0x00a425e0	dead	unreachable from the entry point and every pointer table
@@ -16950,7 +16950,7 @@
 0x00a44120	logic	default (no rule: ported to be safe)
 0x00a44420	logic	default (no rule: ported to be safe)
 0x00a445f0	logic	default (no rule: ported to be safe)
-0x00a44640	logic	default (no rule: ported to be safe)
+0x00a44640	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00a44650	logic	default (no rule: ported to be safe)
 0x00a44660	logic	default (no rule: ported to be safe)
 0x00a44670	dead	unreachable from the entry point and every pointer table
@@ -16959,7 +16959,7 @@
 0x00a446c0	dead	unreachable from the entry point and every pointer table
 0x00a446e0	dead	unreachable from the entry point and every pointer table
 0x00a44700	logic	default (no rule: ported to be safe)
-0x00a44740	logic	default (no rule: ported to be safe)
+0x00a44740	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x00a44750	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): FFXSifCallRpc
 0x00a44760	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): FFXSifCheckStatRpc
 0x00a44770	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sceSifDmaStat
@@ -16973,7 +16973,7 @@
 0x00a44800	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sceCdStandby
 0x00a44810	platform	unnamed, in the PS2 SDK stub file between sceCdStandby and sceCdSync
 0x00a44820	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sceCdSync
-0x00a44840	logic	debug-sounding name, but used by logic: Sg_MainLoop
+0x00a44840	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00a44890	platform	reviewed: CWindowEventHandler focus lost: pauses sound/FMV (system round 41)
 0x00a44960	platform	reviewed: CWindowEventHandler focus gained: resumes sound/FMV (system round 41)
 0x00a44a30	platform	reviewed: resets a CWindowEventHandler (system round 27)
@@ -17080,7 +17080,7 @@
 0x00a54860	logic	default (no rule: ported to be safe)
 0x00a54ab0	logic	default (no rule: ported to be safe)
 0x00a54b40	logic	default (no rule: ported to be safe)
-0x00a56050	logic	default (no rule: ported to be safe)
+0x00a56050	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00a56060	logic	default (no rule: ported to be safe)
 0x00a560d0	logic	default (no rule: ported to be safe)
 0x00a56160	logic	default (no rule: ported to be safe)
@@ -17178,7 +17178,7 @@
 0x00a5bb70	logic	default (no rule: ported to be safe)
 0x00a5bca0	logic	default (no rule: ported to be safe)
 0x00a5bd50	dead	unreachable from the entry point and every pointer table
-0x00a5bd80	logic	default (no rule: ported to be safe)
+0x00a5bd80	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00a5bda0	dead	unreachable from the entry point and every pointer table
 0x00a5be10	dead	unreachable from the entry point and every pointer table
 0x00a5be30	dead	unreachable from the entry point and every pointer table
@@ -17311,14 +17311,14 @@
 0x00a69290	logic	default (no rule: ported to be safe)
 0x00a69300	logic	default (no rule: ported to be safe)
 0x00a693b0	logic	default (no rule: ported to be safe)
-0x00a698b0	logic	default (no rule: ported to be safe)
+0x00a698b0	stub	3 bytes, too short to hook; behaviour: constant return 0 (xor eax, eax)
 0x00a698c0	logic	default (no rule: ported to be safe)
 0x00a69940	logic	default (no rule: ported to be safe)
 0x00a69c40	dead	unreachable from the entry point and every pointer table
 0x00a69c80	logic	default (no rule: ported to be safe)
 0x00a69ca0	logic	default (no rule: ported to be safe)
 0x00a69de0	logic	default (no rule: ported to be safe)
-0x00a69e60	logic	default (no rule: ported to be safe)
+0x00a69e60	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00a69e80	dead	unreachable from the entry point and every pointer table
 0x00a69f10	logic	default (no rule: ported to be safe)
 0x00a69fe0	logic	default (no rule: ported to be safe)
@@ -17334,13 +17334,13 @@
 0x00a6bfe0	logic	default (no rule: ported to be safe)
 0x00a6c3d0	logic	default (no rule: ported to be safe)
 0x00a6c8b0	logic	default (no rule: ported to be safe)
-0x00a6cd40	logic	default (no rule: ported to be safe)
+0x00a6cd40	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00a6cd50	dead	unreachable from the entry point and every pointer table
 0x00a6cd80	logic	default (no rule: ported to be safe)
 0x00a6cf10	logic	default (no rule: ported to be safe)
 0x00a6cf70	logic	default (no rule: ported to be safe)
 0x00a6cfb0	logic	default (no rule: ported to be safe)
-0x00a6d370	logic	default (no rule: ported to be safe)
+0x00a6d370	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00a6d380	logic	default (no rule: ported to be safe)
 0x00a6d670	logic	default (no rule: ported to be safe)
 0x00a6d890	logic	default (no rule: ported to be safe)
@@ -17421,7 +17421,7 @@
 0x00a77e00	logic	default (no rule: ported to be safe)
 0x00a77e30	logic	default (no rule: ported to be safe)
 0x00a77e80	logic	default (no rule: ported to be safe)
-0x00a77ee0	logic	default (no rule: ported to be safe)
+0x00a77ee0	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00a77ef0	logic	default (no rule: ported to be safe)
 0x00a77f00	logic	default (no rule: ported to be safe)
 0x00a77f20	logic	default (no rule: ported to be safe)
@@ -17512,7 +17512,7 @@
 0x00a79300	logic	default (no rule: ported to be safe)
 0x00a79310	logic	default (no rule: ported to be safe)
 0x00a79340	logic	default (no rule: ported to be safe)
-0x00a79370	logic	default (no rule: ported to be safe)
+0x00a79370	stub	1 bytes, too short to hook; behaviour: ret (does nothing; eax untouched)
 0x00a79380	logic	default (no rule: ported to be safe)
 0x00a793c0	logic	default (no rule: ported to be safe)
 0x00a79410	logic	default (no rule: ported to be safe)

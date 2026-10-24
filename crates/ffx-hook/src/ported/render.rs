@@ -1488,6 +1488,10 @@ ported! {
     TextureAnimationManager_updateSamplers_006b44a0 @ 0x006b_44a0 => extern "fastcall" fn tex_anim_update_samplers(this: u32) {
         mg::update_samplers(&mut mem(), this);
     }
+    /// `TextureAnimation_Animate_00672000(dt)`.
+    TextureAnimation_Animate_00672000 @ 0x0067_2000 => extern "stdcall" fn tex_anim_animate(dt: f32) {
+        mg::animate(&mut mem(), dt);
+    }
 
     // ---- round 24 ----
     /// `PhyreScene_getViewProjectionMatrix(this, out)`.

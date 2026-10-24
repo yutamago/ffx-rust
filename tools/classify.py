@@ -9,6 +9,9 @@ the rewrite does with it, and writes symbols/classes.tsv.
             input setup, std:: copies: replaced by the host and Rust std
   debug     debug and development code: kept as mod-tool candidates
   dead      PS2-only paths that cannot run on PC, and code nothing reaches
+  stub      logic under five bytes (a bare ret, ret N, a constant or field
+            return): too short for the hook's jmp; its callers' ports do
+            what it does or call it, so there is nothing to port
 
 Evidence, in order (the first rule that fires decides; one line of it goes
 into the TSV):
@@ -53,7 +56,7 @@ REPO = progress.REPO
 COVERAGE = REPO / "symbols/coverage.txt"
 WORK = progress.WORK
 BASE = 0x400000
-CATS = ("logic", "glue", "platform", "debug", "dead")
+CATS = ("logic", "glue", "platform", "debug", "dead", "stub")
 
 # verdicts from porters who read the function and found no rule matched it
 # (address: (category, evidence)); applied last, over every rule
@@ -579,6 +582,15 @@ REVIEWED = {
     0x00883960: ("debug", "script debugger page; only ref from the page switch 0x883070 (small round 6)"),
     0x006793e0: ("platform", "PhyreFIOS_LoadMagicfilePrx: PC error handling around PhyreFIOS_LoadsPrx (MessageBoxW, ShowCursor, ResetToLauncher) (small round 6)"),
     0x00820680: ("dead", "PS2 main (Sg_InitArgs, Sg_MainInit, then Sg_MainLoop forever); refs.py: 0 refs, the PC build enters through 0x822490 (pc round 9)"),
+    0x006bc210: ("debug", "ViewerManager_DrawTexAnimInfo_006bc210: refs.py: 1 ref, TextureAnimation_Animate_00672000 0x0067204a, "
+                          "which calls it only with g_FFXIsDebug set and the debug menu on type 5 (the viewer); prints "
+                          "texture-animation info through 0x00829c00 (port-missed)"),
+    0x006f1900: ("platform", "StatsAndAchievements_SetAchievement_006f1900: SteamUserStats SetAchievement and StoreStats (port-missed)"),
+    0x006f1510: ("platform", "StatsAndAchievements_Unlock_006f1510: Steam achievement unlock (StatsAndAchievements_SetAchievement_006f1900: "
+                             "SteamUserStats SetAchievement/StoreStats) guarded by the Steam stats flag +0x4d; refs.py: 2 refs, "
+                             "SaveDataUnlockAchievement (platform) 0x006488d6 and AchievementTryObtainPlat 0x006f1573 (port-missed)"),
+    0x006f1550: ("platform", "AchievementTryObtainPlat: unlocks Steam achievement 0 (ACH_COMPLETION_OF_FFX) once records 1..33 of "
+                             "g_AchievementRecords are achieved; refs.py: 1 ref, StatsAndAchievements_Unlock_006f1510 0x006f153d (port-missed)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
@@ -692,6 +704,32 @@ GLUE_LIB_SIDE = {"render", "pc-ui", "movie", "sound", "system", "main"}
 # outside the PC-only modules: game code allocates through them too
 PHYRE_UTIL = re.compile(r"^Phyre_(PhyreFree|PhyreMalloc|PFreeList|PRedBlackTree|PhyrePrintf|PString)")
 PC_SIDE = {"render", "pc-ui", "movie", "sound"}
+
+
+def stub_behaviour(b):
+    """What a function under five bytes does, from its bytes `b` (its whole
+    body), or None for a shape not listed here."""
+    def disp(x):
+        return f"ecx {'-' if x >= 0x80 else '+'} {abs(x - 0x100 if x >= 0x80 else x):#x}"
+    if b == b"\xc3":
+        return "ret (does nothing; eax untouched)"
+    if len(b) == 3 and b[0] == 0xc2:
+        n = int.from_bytes(b[1:], "little")
+        return f"ret {n} (does nothing, pops {n // 4} word{'' if n == 4 else 's'}; eax untouched)"
+    if b == b"\x33\xc0\xc3":
+        return "constant return 0 (xor eax, eax)"
+    if len(b) == 3 and b[0] == 0xb0 and b[2] == 0xc3:
+        return f"constant return al = {b[1]:#x} (rest of eax the caller's)"
+    if b == b"\x8b\xc1\xc3":
+        return "returns this (mov eax, ecx)"
+    if len(b) == 4 and b[3] == 0xc3 and b[1] == 0x41:
+        if b[0] == 0x8d:
+            return f"returns {disp(b[2])} (lea eax)"
+        if b[0] == 0x8b:
+            return f"returns the dword at {disp(b[2])}"
+        if b[0] == 0x8a:
+            return f"returns the byte at {disp(b[2])} in al (rest of eax the caller's)"
+    return None
 
 
 def read_pe(path):
@@ -1211,6 +1249,27 @@ def main():
                   ", ".join(f"{names.get(c, hex(c))}:{cls.get(c)}{'' if c in decided else '?'}" for c in cs[:8]) +
                   "; calls " + ", ".join(f"{names.get(c, hex(c))}:{cls.get(c)}"
                                          for c in sorted(direct.get(a, ())) if c != a)[:300], file=sys.stderr)
+
+    # too short to hook (the hook writes a 5-byte jmp): a logic function
+    # whose whole body is one of the shapes below is a stub of its own
+    # category; anything else that short stays logic and is looked at
+    code = [(va, blob) for _, va, blob, is_code in secs if is_code]
+
+    def body(a, n):
+        return next((blob[a - va:a - va + n] for va, blob in code if va <= a and a + n <= va + len(blob)), b"")
+
+    # (the dump sizes some natives as one byte: the shape is looked for in
+    # the first 1-4 bytes, ending where the int3 padding or the next
+    # function starts; a longer body stays logic)
+    for a in sorted(game):
+        if size.get(a, 5) >= 5 or cls[a] != "logic":
+            continue
+        for n in range(1, 5):
+            b = body(a, n + 1)
+            what = stub_behaviour(b[:n])
+            if what and (len(b) == n or b[n] == 0xcc or a + n in size):
+                cls[a], why[a] = "stub", f"{n} bytes, too short to hook; behaviour: {what}"
+                break
 
     for a, (c, w) in REVIEWED.items():
         if a in cls:

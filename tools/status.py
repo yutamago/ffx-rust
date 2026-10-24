@@ -43,8 +43,8 @@ result) and replace "round" and "tasks" with the next one's.
 "Left to port" is broken down by symbols/classes.tsv's category: every game
 function that is not replaced and whose category is not one of NOT_PORTED
 (glue, platform, debug, dead: not ported 1:1) counts, grouped by category,
-so a new category shows up as its own group. Within "logic", functions under
-STUB_SIZE bytes (too short to hook), HELD_M5 and HELD count apart; see
+so a new category shows up as its own group (`stub`: too short to hook,
+from tools/classify.py). Within "logic", HELD_M5 and HELD count apart; see
 left_to_port().
 
 Usage: tools/status.py [--ref main] [--out DIR] [--tasks FILE]
@@ -71,10 +71,6 @@ STATES = ["library", "unnamed", "named", "wrapped", "replaced"]
 
 # "left to port": categories that are not ported 1:1 (docs/rewrite-plan.md)
 NOT_PORTED = {"glue", "platform", "debug", "dead"}
-# a hook's jmp takes 5 bytes: shorter logic functions are stubs (a bare ret,
-# a constant), nothing to port. tools/classify.py's own `stub` category, once
-# it lands, groups with these.
-STUB_SIZE = 5
 # logic held for M5, the main loop (docs/rewrite-plan.md)
 HELD_M5 = {
     0x00820ae0: "the main loop",
@@ -182,7 +178,8 @@ def snapshot(rows, tree):
             stats[module[a]]["ran"] += 1
             stats[module[a]]["ran_bytes"] += size
     keep = ("functions", "bytes", "named", "named_bytes", "replaced", "replaced_bytes",
-            "wrapped", "logic", "logic_bytes", "to_port", "to_port_bytes", "ran", "ran_bytes")
+            "wrapped", "logic", "logic_bytes", "to_port", "to_port_bytes", "ran", "ran_bytes",
+            "stub", "stub_bytes")
     return {m: {k: s.get(k, 0) for k in keep} for m, s in stats.items()}, hooked
 
 
@@ -272,8 +269,6 @@ def left_to_port(fmap):
                 key, why = "held-m5", HELD_M5[a]
             elif a in HELD:
                 key, why = "held", HELD[a]
-            elif fmap["size"][i] < STUB_SIZE:
-                key = "stub"
         g = groups.setdefault(key, {"key": key, "label": LEFT_GROUPS.get(key, key), "functions": 0, "bytes": 0,
                                     "modules": {}, "items": []})
         size = fmap["size"][i]
