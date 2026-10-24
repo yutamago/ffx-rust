@@ -1258,18 +1258,15 @@ def main():
     def body(a, n):
         return next((blob[a - va:a - va + n] for va, blob in code if va <= a and a + n <= va + len(blob)), b"")
 
-    # (the dump sizes some natives as one byte: the shape is looked for in
-    # the first 1-4 bytes, ending where the int3 padding or the next
-    # function starts; a longer body stays logic)
+    # (sizes are progress.functions()'s: the dump's, corrected from
+    # symbols/sizes.tsv where Ghidra gives a longer body one byte)
     for a in sorted(game):
-        if size.get(a, 5) >= 5 or cls[a] != "logic":
+        n = size.get(a, 5)
+        if n >= 5 or cls[a] != "logic":
             continue
-        for n in range(1, 5):
-            b = body(a, n + 1)
-            what = stub_behaviour(b[:n])
-            if what and (len(b) == n or b[n] == 0xcc or a + n in size):
-                cls[a], why[a] = "stub", f"{n} bytes, too short to hook; behaviour: {what}"
-                break
+        what = stub_behaviour(body(a, n))
+        if what:
+            cls[a], why[a] = "stub", f"{n} bytes, too short to hook; behaviour: {what}"
 
     for a, (c, w) in REVIEWED.items():
         if a in cls:

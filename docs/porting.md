@@ -84,7 +84,10 @@ MsGetRomItem @ 0x0079_09f0 => extern "C" fn ms_get_rom_item(id: u32, strings: u3
 `this`) or `"fastcall"` as the original needs. The name must be the one in
 `symbols/ffx.sym`; the function must be at least five bytes (the jump).
 `tools/check-ported.py` checks both, and with `FFX_GAME_DIR` set that the
-shim pops what the original's `ret` pops.
+shim pops what the original's `ret` pops. Sizes come from
+`progress.functions()`: the dump's, except where `symbols/sizes.tsv` holds the
+length measured in FFX.exe (Ghidra sizes some natives as one byte). After a
+new dump, regenerate it with `tools/progress.py --measure-sizes`.
 
 The game reaches the shim through a thunk the macro generates, which keeps
 `eax`, `ecx` and `edx` for the caller except where the return type puts

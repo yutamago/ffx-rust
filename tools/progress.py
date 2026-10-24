@@ -20,7 +20,13 @@ Counts:
             ret, ret N, a constant or field return) that are too short for
             the hook's jmp; counted apart, never in to port
 
-Usage: tools/progress.py [--json] [--unknown]
+Sizes: the dump's, except where symbols/sizes.tsv has the length measured
+in FFX.exe (the dump sizes some functions, most of them Atel natives, as
+one byte). `--measure-sizes` regenerates it (FFX_GAME_DIR or the default
+game dir): every function the dump sizes under five bytes, disassembled to
+its last ret/jmp; run it after a new dump.
+
+Usage: tools/progress.py [--json] [--unknown] [--measure-sizes]
   --unknown  list the named functions no module rule matches
 """
 import argparse
@@ -163,7 +169,11 @@ def duplicate_hooks(repo=None):
     return out
 
 
-def functions():
+SIZES = "symbols/sizes.tsv"
+
+
+def dump_functions():
+    """(address, Ghidra name, Ghidra body size) of the dump, sizes as they are."""
     path = WORK / "decomp/functions.tsv"
     if not path.exists():
         sys.exit(f"{path} missing: run tools/ghidra/dump.sh")
@@ -174,6 +184,83 @@ def functions():
             a, name, size, _ = line.rstrip("\n").split("\t")
             rows.append((int(a, 16), name, int(size)))
     return rows
+
+
+def size_fixes(tree=WORKTREE):
+    """address -> size measured in FFX.exe, where the dump's is wrong
+    (symbols/sizes.tsv, `tools/progress.py --measure-sizes`)."""
+    out = {}
+    for line in (tree.read(SIZES) or "").splitlines():
+        if line and not line.startswith("#"):
+            a, s = line.split("\t")[:2]
+            out[int(a, 16)] = int(s)
+    return out
+
+
+def functions():
+    """The dump's functions with corrected sizes: Ghidra gives some
+    functions (most of them Atel natives) a one-byte body although the code
+    runs on to a `ret` 5-45 bytes later; symbols/sizes.tsv holds the length
+    measured in FFX.exe for those."""
+    fix = size_fixes()
+    return [(a, n, fix.get(a, s)) for a, n, s in dump_functions()]
+
+
+# a body the dump sizes under this many bytes is measured (a hook needs 5)
+MEASURE_BELOW = 5
+JUMP = re.compile(r"^(j[a-z]+|loop[a-z]*)\s+0x([0-9a-f]+)$")
+
+
+def measure(code, a, limit):
+    """Length of the function at `a` from its disassembly `code` ({address:
+    text}, up to `limit`): instructions in order until a ret or jmp that no
+    earlier forward branch jumps past. None when the code stops first
+    (int3, bad bytes, the limit) or flow leaves through an indirect jmp
+    with code after it (a jump table), where the length is a guess."""
+    reach = a
+    addrs = sorted(code)
+    for i, pc in enumerate(addrs):
+        text = code[pc]
+        nxt = addrs[i + 1] if i + 1 < len(addrs) else limit
+        op = text.split()[0] if text else ""
+        if op in ("int3", "(bad)") or text.startswith(".byte"):
+            return None
+        m = JUMP.match(text)
+        if m:
+            t = int(m[2], 16)
+            if pc < t < limit:
+                reach = max(reach, t)
+        if op in ("ret", "jmp") and nxt > reach:
+            if op == "jmp" and not m and nxt < limit and code.get(nxt, "").split()[:1] != ["int3"]:
+                return None
+            return nxt - a
+    return None
+
+
+def measure_sizes(exe):
+    """Rows of symbols/sizes.tsv: every function the dump sizes under five
+    bytes, measured in `exe`, where the measured length differs."""
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    import disasm_cache
+    rows = sorted(dump_functions())
+    starts = [a for a, _, _ in rows]
+    cache = disasm_cache.for_exe(exe)
+    cache.load()
+    todo = []
+    for i, (a, name, s) in enumerate(rows):
+        if s < MEASURE_BELOW:
+            limit = min(starts[i + 1] if i + 1 < len(rows) else a + 0x1000, a + 0x1000)
+            todo.append((a, name, s, limit))
+    cache.prefetch([(a, limit - a) for a, _, _, limit in todo])
+    out, unsure = [], []
+    for a, name, s, limit in todo:
+        n = measure(cache.get(a, limit - a), a, limit)
+        if n is None:
+            unsure.append((a, name, s))
+        elif n != s:
+            out.append((a, n, s, name))
+    cache.save()
+    return out, unsure
 
 
 def placement(rows, names):
@@ -240,7 +327,22 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--unknown", action="store_true")
+    ap.add_argument("--measure-sizes", action="store_true")
     args = ap.parse_args()
+
+    if args.measure_sizes:
+        exe = pathlib.Path(os.environ.get("FFX_GAME_DIR", "~/steam-games/FFX-X2-HD")).expanduser() / "FFX.exe"
+        fixed, unsure = measure_sizes(exe)
+        with open(REPO / SIZES, "w", encoding="utf-8") as f:
+            f.write("# address\tsize\tdump size\tGhidra name (tools/progress.py --measure-sizes: functions the "
+                    "dump sizes under five bytes, measured in FFX.exe to the last ret/jmp)\n")
+            for a, n, s, name in fixed:
+                f.write(f"0x{a:08x}\t{n}\t{s}\t{name}\n")
+        print(f"{len(fixed)} sizes corrected; {len(unsure)} left as the dump has them (no clear end):",
+              file=sys.stderr)
+        for a, name, s in unsure:
+            print(f"  0x{a:08x} {name} ({s} bytes)", file=sys.stderr)
+        return
 
     names = symbols()
     hooked = hooks()

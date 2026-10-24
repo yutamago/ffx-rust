@@ -6013,7 +6013,7 @@
 0x007a4440 function Native_7084_ResetAfterImage                # 0x7084: 0x00788e30(record); 0; ported in native_btl/native_move (script round 9); name from "0x00788e30(record)" MsResetAfterImage
 0x007a4470 function Native_7053_BtlMoveTargetDist                # 0x7053: args (f f) -> 0: 0x007a9150(worker, args, stack, f); ported in native_btl (script round 12); name from "0x007a9150(worker, args, stack, f)" Atel_BtlMoveTargetDist
 0x007a44b0 function Native_BtlUseCommand         # 0x700b: args (target selector, command id e.g. 0x3048/0x4008) -> 1 if queued; if the self actor can act (0x007b24a0), resolves the targets (Battle_SelectActors) and queues the command (0x007ac9c0)
-0x007a4550 function Native_BtlIsUnderwater # 0x7005: the i8 at 0x0112c9ce; ported in native_mods (script round 21); 0x7005: () -> (signed char)0x0112c9ce, the formation's underwater byte (see Battle_IsUnderwater); not in the Ghidra dump, a two-instruction function
+0x007a4550 function Native_BtlIsUnderwater # 0x7005: the i8 at 0x0112c9ce; ported in native_mods (script round 21); 0x7005: () -> (signed char)0x0112c9ce, the formation's underwater byte (see Battle_IsUnderwater); not in the Ghidra dump, a two-instruction function; 8 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x007a4560 function Native_7115_ChrSetDirLeave                # 0x7115: no args -> 0: MsSetChrDirLeave(actor) (0x00795e70); ported in native_btl (script round 12); name from "MsSetChrDirLeave(actor) (0x00795e70)"
 0x007a4580 function Native_7062_ChrSetEffect8                # 0x7062: (a, b): 0x0079eba0(actor, a, b, 1); ported in native_btl/native_move (script round 9); name from "0x0079eba0(actor, a, b, 1)" MsSetChrEffect8_0079eba0
 0x007a45c0 function Native_702c_ChrMoveToTarget              # 0x702c: (m, eight floats): the actor's jump/move to its target: frames from the distance, speed and acceleration, per-frame steps +0x46c..+0x484; 0x007a87f0(&to, &from, actor, 0x10, 1); ported in native_btl/native_move (script round 10); name from "the actor's jump/move to its target: frames from the distance, speed and acceleration"
@@ -6034,7 +6034,7 @@
 0x007a4df0 function Native_70da # 0x70da: the i8 at 0x0112c9dc; ported in native_mods (script round 21); name ours
 0x007a4e00 function Native_70e6_SetOwnerEffect8 # 0x70e6: (sel, b, a): 0x0079ec40(first of sel, b, a); 0; ported in native_mods (script round 21); name ours; name from "0x0079ec40(first of sel, b, a)" MsSetOwnerEffect8_0079ec40
 0x007a4e60 function Native_702d                # 0x702d: 0x007ab730(actor record); 0; ported in native_btl/native_msg (script round 8); BSim review: clears actor +0x415 (move kind, 7 = spline) and +0x417; not a motion speed
-0x007a4e90 function Native_BtlGetBattleId        # 0x7024: () -> Battle_GetBattleId (0x00782970; a jmp thunk); scripts compare it to constants like 0x2050000
+0x007a4e90 function Native_BtlGetBattleId        # 0x7024: () -> Battle_GetBattleId (0x00782970; a jmp thunk); scripts compare it to constants like 0x2050000; 5 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x007a4ea0 function Native_GetSelfProperty       # 0x70aa: args (property) -> value; Battle_GetActorProperty(self, property, -13 = self)
 0x007a4ee0 function Native_70df # 0x70df: args (v int) -> 1 when 0x0112a8e0 is set and i16 *(*0x0112a9f0) == v >> 16, else 0; ported in native_btl2 (script round 18); name ours
 0x007a4f20 function Native_70d4_ChrSetEffect8 # 0x70d4: (sel, b, a) -> 0x0079eba0(first of sel, b, a, 1); ported in native_mods (script round 21); name ours; name from "0x0079eba0(first of sel, b, a, 1)" MsSetChrEffect8_0079eba0
@@ -6170,7 +6170,7 @@
 0x007a75e0 function Native_70c8_ChrSePlay2 # 0x70c8: (sel, a) -> 0x0079fda0(first of sel, a), 0 for none; ported in native_mods (script round 21); name ours; name from "0x0079fda0(first of sel, a)" MsChrSePlay2_0079fda0
 0x007a7630 function Native_70a4                # 0x70a4: no args -> 0: 0x0079cca0(); ported in native_btl (script round 12)
 0x007a7640 function Native_704b_ChrSetMotion                # 0x704b (start): args (selector int, motion int, b int) -> the args word: 1 when MsSetMotion(i, motion, b, 0, 1, worker, &out) (0x007ab360) set out for any picked actor; ported in native_btl (script round 12); name from start and poll: "MsSetMotion(i, motion, b, 0, 1, worker, &out)"
-0x007a76e0 function Native_BtlGetTurnActor # 0x708d: the i8 at 0x0112c9e2; ported in native_mods (script round 21); 0x708d: () -> (signed char)0x0112c9e2, the actor whose turn last started (set with 0x0112c9df/e0 in the turn code ~0x00792350); ?exact meaning
+0x007a76e0 function Native_BtlGetTurnActor # 0x708d: the i8 at 0x0112c9e2; ported in native_mods (script round 21); 0x708d: () -> (signed char)0x0112c9e2, the actor whose turn last started (set with 0x0112c9df/e0 in the turn code ~0x00792350); ?exact meaning; 8 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x007a76f0 function Native_70a5                # 0x70a5: (x, y, z) into 0x0112a8d0..d8, 0x0112a8dc = 1.0, 0x0112c9fd = 1; 0; ported in native_btl/native_move (script round 9)
 0x007a7740 function Native_70c9_ChrSePlayUnhasted                # 0x70c9: (selector, k): 0x0079fdf0(picked, k); ported in native_btl/native_move (script round 9); name from "0x0079fdf0(picked, k)" MsChrSePlayUnhasted_0079fdf0
 0x007a7790 function Native_70ae # 0x70ae: the i8 at 0x0112c9e3; ported in native_mods (script round 21); name ours
@@ -8727,17 +8727,17 @@
 0x00856570 function Native_00a2              # 0x00a2: (window, a, b, c, d) bytes: the window's +0x10 = a << 24 | d << 16 | c << 8 | b (pushed and popped back); it; ported in native_move (script round 11)
 0x008565f0 function Native_000d # 0x000d: jumps to 0x0086bc70; ported in native_mods (script round 19); name ours
 0x00856600 function Native_SetTouchRange_copy_00856600 # 0x005b: the same code as Native_SetTouchRange (0x00856460; call targets equal), a copy the compiler kept, and the Rust handler is Native_SetTouchRange's; ported in native_sys (script round 18); own name
-0x00856630 function Native_AlwaysTrue019c        # 0x019c () -> 1; no pops, constant 1 (PS2 check stubbed on PC?); scripts use it inside conditions ("pushimm 32; and; land; func 0x019c; land")
+0x00856630 function Native_AlwaysTrue019c        # 0x019c () -> 1; no pops, constant 1 (PS2 check stubbed on PC?); scripts use it inside conditions ("pushimm 32; and; land; func 0x019c; land"); 6 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x00856640 function Native_023e_SepLock # 0x023e: args (id int) -> id: SndSepLock(id); ported in native_sys (script round 18); name ours; name from "SndSepLock(id)"
 0x00856660 function Native_00e9              # 0x00e9: (on): the current ctrl work's +1 bit 4; on != 0; ported in native_move (script round 11)
 0x008566a0 function Native_000e # 0x000e: jumps to 0x0086bc80; ported in native_mods (script round 19); name ours
-0x008566b0 function Native_ControlEnable         # 0x005d: no args -> 1; FUN_00871ab0: type-1 party workers (+0x40 != -1, flag 0x200) get flag 0x20, player worker's model goes to FUN_0082dad0, context byte 0 |= 2
+0x008566b0 function Native_ControlEnable         # 0x005d: no args -> 1; FUN_00871ab0: type-1 party workers (+0x40 != -1, flag 0x200) get flag 0x20, player worker's model goes to FUN_0082dad0, context byte 0 |= 2; 11 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x008566c0 function Native_00a4_WorkerDistance              # 0x00a4 (float): (a, b): the distance between workers a and b; ported in native_move (script round 11); name from "(a, b): the distance between workers a and b"
 0x00856740 function Native_01d7 # 0x01d7: args (v int) -> v: GetCD() +0x8c(v); ported in native_sys (script round 18); name ours
 0x00856770 function Native_023f              # 0x023f: 0x008749e0(v); v; ported in native_move (script round 11)
 0x00856790 function Native_000f # 0x000f: jumps to 0x0086c1c0; ported in native_mods (script round 19); name ours
 0x008567a0 function Native_019f_IsCtrlRunning              # 0x019f: (v) -> 0x0086c530(v); ported in native_move (script round 11); name from "(v) -> 0x0086c530(v)" = Atel_CtrlRunning
-0x008567c0 function Native_ControlDisable        # 0x005e: no args -> 0; FUN_008719e0: clears flag 0x20 and the speed (pos+0x0c) of type-1 workers, FUN_0082dad0(0), context byte 0 &= ~2
+0x008567c0 function Native_ControlDisable        # 0x005e: no args -> 0; FUN_008719e0: clears flag 0x20 and the speed (pos+0x0c) of type-1 workers, FUN_0082dad0(0), context byte 0 &= ~2; 8 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x008567d0 function Native_00ea # 0x00ea: bit 4 of the current ctrl work's byte +1; ported in native_mods (script round 19); name ours
 0x008567e0 function Native_01d8_VibrateStartLevel # 0x01d8: (stream, entry, from, to, len): Vibrate_StartLevel(stream, entry, from, to, len) (0x00876050), the first four clamped to 0..7, 0..1, 0..0x7f, 0..0x7f;; ported in native_mods (script round 19); name ours; name from "Vibrate_StartLevel(stream, entry, from, to, len) (0x00876050)"
 0x00856890 function Native_013e              # 0x013e: (on): +0x36 bit 15; on != 0; ported in native_move (script round 11)
@@ -8779,7 +8779,7 @@
 0x008574f0 function Native_SetTalkAngle          # 0x0063: args (radians); pos block +0x3c; talk check passes it to FUN_0088b780 with the player yaw; usually 1.047 (60 degrees); ported in native_btl/native_move (script round 10)
 0x00857520 function Native_TurnStart             # 0x0019: args (slotMask, mode, param); turn struct +0x00 = param, +0x02 = mode (low 5 bits: 2 timed turn, 3 ...), Atel_StartTurnBlock/Atel_ShareTurnBlock spread it to the slots in mask; scripts "0, 0xd002, 0" / "0, 0x1003, 0" then 0x001b
 0x00857660 function Native_01dd # 0x01dd: args (v int) start: v into the argument word; -> v; ported in native_sys (script round 18); name ours
-0x00857680 function Native_Random16              # 0x00a9: args () -> Rng_Next(2) & 0xffff (Ghidra misses this function; checked in the disassembly); scripts follow it with `pushimm 5; mod`; ported in native_move (script round 11)
+0x00857680 function Native_Random16              # 0x00a9: args () -> Rng_Next(2) & 0xffff (Ghidra misses this function; checked in the disassembly); scripts follow it with `pushimm 5; mod`; ported in native_move (script round 11); 16 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x00857690 function Native_0245              # 0x0245: 0x007fb680(); 1; ported in native_move (script round 11)
 0x008576a0 function Native_00f0_LineSetTable # 0x00f0: (&v): 0x0086d190(worker, variable address); 1; ported in native_mods (script round 19); name ours; name from Atel_SetLineTable(worker, table): types 5/6 +0x2e4 = table, line signals reset
 0x008576d0 function Native_01a6_PartyFillSlots              # 0x01a6: fills the empty party slots (0x007852f0) with the lowest characters 0..=7 that are available (0x00785380 1) and not already in a slot, then 0x00786950(slots); 1; ported in native_move (script round 11); name from "fills the empty party slots ... then 0x00786950(slots)" = MsSetSavePartyMember
@@ -8830,7 +8830,7 @@
 0x008581a0 function Native_0146_MinimapSetSize              # 0x0146: 0x00919e80(v); v; ported in native_move (script round 11); name from "0x00919e80(v)" = Yn_GuideMapSetSize (rcbgGuideSetSize)
 0x008581c0 function Native_MapChange             # 0x0011: args (map, entrance); FUN_0086ff40(map, entrance, 1) -> 0x0088ea60 writes them to the game state (0x00785240: +0 map, +2 previous, +0xc entrance); scripts "pushimm 263; pushimm 0" before end
 0x008581f0 function Native_00ad_SetSaveDicIndex # 0x00ad: (v): AtelSetSaveDicIndex(v) (0x00870ef0); v; ported in native_mods (script round 19); name ours; name from "AtelSetSaveDicIndex(v)"
-0x00858210 function Native_LangGroupNotJpAsia    # 0x0253 () -> 0 when the language group (LangManager +0) is 0 (jp) or 3 (kr, ch), 4; else 1; memochek picks its logo parts by it; ported in native_move (script round 11)
+0x00858210 function Native_LangGroupNotJpAsia    # 0x0253 () -> 0 when the language group (LangManager +0) is 0 (jp) or 3 (kr, ch), 4; else 1; memochek picks its logo parts by it; ported in native_move (script round 11); 28 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x00858230 function Native_01a7_FieldItemGet_Result       # 0x01a7: a new primer runs 0x00798b60(); 1; ported in native_move (script round 11); name from "0x00798fd0(v) and the pending reward given without a window" = MsFieldItemGet
 0x00858250 function Native_0147_MinimapSetOwnMarker # 0x0147: (v): the worker's +0xbc = v with bit 31 set (0 stays 0), +0xb4 = the f32 at 0x00b41db0; that word; ported in native_mods (script round 19); name ours; name from "the worker's +0xbc = v with bit 31 set, +0xb4 = f32": MinimapSetMarker 0x0148's fields, own worker
 0x00858290 function Native_00f7_WaitPartySignal # 0x00f7: (slot, n): args +0 = AtelGetPartyWorker(slot) (0x0086a5e0), +4 = n, at least 1; the args address, or the worker when n is not positive; ported in native_mods (script round 19); name ours; name from start "AtelGetPartyWorker(slot)", poll as 0x00f6: done once Atel_HasSignalFromLevel is 0
@@ -8892,7 +8892,7 @@
 0x00858f40 function Native_00f5_PitchToPoint                # 0x00f5 (float): (x, y, z): second result of 0x0088b4d0(&a, &b, worker pos, z, y, x); ported in native_btl/native_move (script round 9); name from "second result of Math_YawPitchTo(worker pos, z, y, x)"; cf AngleToPoint 0x00f4
 0x00858fc0 function Native_0259              # 0x0259 (float): (i, v): 0x00872530(i, v); ST0 v; ported in native_move (script round 11)
 0x00859000 function Native_01e5              # 0x01e5: (c, b, a) -> 0x0090a400(c, b, a); ported in native_move (script round 11)
-0x00859040 function Native_MusicLoad_Poll        # 0x0102 poll: done (5) once the sound request count 0x012fb808 <= 1; ported in native_move (script round 11)
+0x00859040 function Native_MusicLoad_Poll        # 0x0102 poll: done (5) once the sound request count 0x012fb808 <= 1; ported in native_move (script round 11); 17 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x00859060 function Native_MsgClose              # 0x006b: args (window) -> window; Msg_CloseWindow 0x008640f0 (state 3 = closing unless already 0/3)
 0x00859080 function Native_00b7_GetTkAntiY # 0x00b7: () -> b of 0x0083adf0(0, &b, 0); ported in native_sys (script round 18); name ours; name from "b of 0x0083adf0(0, &b, 0)", second word
 0x008590a0 function Native_01b0_MovieSetTexture              # 0x01b0: (b, a): 0x00873eb0(b, a) (the original first prints both through the C runtime's printf, a debug line left out here); b; ported in native_move (script round 11); name from "0x00873eb0(b, a)" = Atel_SetMovieTexture_00873eb0 (graphicSetTextureVideoInfo)
@@ -8961,7 +8961,7 @@
 0x00859e50 function Native_0026 # 0x0026: (a f): position block +0x30 = the wrapped angle; that angle; ported in native_mods (script round 19); name ours
 0x00859e90 function Native_0162_SndKinuOn # 0x0162: SndSetKinuStatus(party slot, 1); 1, 0 without a slot; ported in native_mods (script round 19); name ours; name from "SndSetKinuStatus(party slot, 1)" (g_SndKinuMask bit)
 0x00859ec0 function Native_01bc              # 0x01bc: 0x00870140(v); 1; ported in native_move (script round 11); BSim review: save event +0xd4 u16 = id, +0xd6 = 1; no reader shows a forced place id
-0x00859ee0 function Native_MusicWaitLoaded_Result # 0x0105 int: returns 1; ported in native_move (script round 11)
+0x00859ee0 function Native_MusicWaitLoaded_Result # 0x0105 int: returns 1; ported in native_move (script round 11); 6 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x00859ef0 function Native_00c1_GetEntranceAtZ              # 0x00c1 (float): +0x14; ported in native_move (script round 11); name from "+0x14"; dump: Event_GetEntranceAt(worker, i) +0x14; GetEntranceZ reads +0x14
 0x00859f10 function Native_0260_AlwaysTrue              # 0x0260: one value dropped; 1; ported in native_move (script round 11); name from "one value dropped; 1"; dump: AtelPopStackInteger, return 1; constant 1 after one dropped value, same role as Native_AlwaysTrue019c
 0x00859f30 function Native_0027 # 0x0027: (a f): position block +0x38 = the wrapped angle; that angle; ported in native_mods (script round 19); name ours
@@ -9146,7 +9146,7 @@
 0x0085cde0 function Native_SpriteSetScale        # 0x0120 (slot, sx, sy floats, 1.0 = normal) -> slot; i16 +8/+0xa = s * 256 (0x00874a80)
 0x0085ce30 function Native_ChrGetAttachBone      # 0x0213 (point id) -> bone index of the attachment point on the worker's own model, 0 if none (Chr_FindAttachPoint 0x00833a70); ported in native_move (script round 11)
 0x0085cea0 function Native_0179_WaitEffectFlag_Poll         # 0x0179 poll: done (5) once 0x0086b030(v) is set; ported in native_move (script round 11); name from poll: "done (5) once 0x0086b030(v) is set" = AtelGetEffectFlag
-0x0085cec0 function Native_VoiceStandby_Poll     # 0x00d5 poll: counts the delay down, then waits for 0x0076f060; returns 5 when done; "VoiceStandbyExec: Frames = %d!" (Ghidra misses this function)
+0x0085cec0 function Native_VoiceStandby_Poll     # 0x00d5 poll: counts the delay down, then waits for 0x0076f060; returns 5 when done; "VoiceStandbyExec: Frames = %d!" (Ghidra misses this function); 201 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x0085cf90 function Native_0087              # 0x0087: jumps to 0x0086c1c0; ported in native_move (script round 11)
 0x0085cfa0 function Native_0158              # 0x0158: (slot): the party slot alone; slot; ported in native_move (script round 11)
 0x0085d000 function Native_SetModel              # 0x0001: args (chr id) -> 0; releases the old one, loads the model (FUN_00872210 -> 0x00825650), worker+0x9c = model, +0xa8 = id, +0xaa = 1, placed at the worker position (FUN_00870b20); ids 1-7 party, 0x5002 NPCs
@@ -9183,7 +9183,7 @@
 0x0085d8b0 function Native_008c # 0x008c: the current ctrl work's +0x1f4; ported in native_mods (script round 19); name ours
 0x0085d8c0 function Native_021b_CheckCaptMonster              # 0x021b: (b, a) -> 0x00872aa0(1, b, a, 0); ported in native_move (script round 11); name from "0x00872aa0(1, b, a, 0)" = AtelCheckCaptMonster mode 1
 0x0085d8f0 function Native_01c5_Result       # 0x01c5: the outcome from the args (+0xb the mode, +0xc the state, +0xf/+4 for 0x0086e820), 6 or 2 by 0x00822540() for worker +0xa8 0x5045 (the dbgPrintf before it, empty in this build, is left out); 0x00648640(0), the ctrl work's +0x210 bit 4 set; ported in native_move (script round 11)
-0x0085d9b0 function Native_PadPressed            # 0x0046: no args -> u16 buttons pressed this frame (g 0x013270d0 = pad +6 = (prev^cur)&cur), remapped by FUN_00888c40; scripts "& 32"
+0x0085d9b0 function Native_PadPressed            # 0x0046: no args -> u16 buttons pressed this frame (g 0x013270d0 = pad +6 = (prev^cur)&cur), remapped by FUN_00888c40; scripts "& 32"; 25 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x0085d9d0 function Native_VoiceStart_Poll       # 0x00d6 poll: "VoiceStartExec: Frames = %d!"; waits out the delay, the stream (0x0081d710 bit 0x10000, 0x0076f060) and the count; returns 5
 0x0085dac0 function Native_0184_MusicTempoDirect              # 0x0184: 0x00886a90(v) with v clamped to -128..=127; 1; ported in native_move (script round 11); name from "0x00886a90(v)" = SndMusicTempoDirect
 0x0085db10 function Native_0127_WorkerInTouchRange              # 0x0127: (worker): [native_0128] with the own touch range (position +0x48) pushed; ported in native_move (script round 11); name from "[native_0128] with the own touch range (position +0x48) pushed"
@@ -9202,7 +9202,7 @@
 0x0085de10 function Native_MsgIsReady            # 0x008f: args (window) -> 1 if window state is 0 or 4, or 2 with the text box state (0x008b7ca0) 3; else 0
 0x0085de60 function Native_0250 # 0x0250: 0x0086af60(), the low word; ported in native_mods (script round 19); name ours
 0x0085de70 function Native_01c6              # 0x01c6: jumps to 0x0088e5e0; ported in native_move (script round 11)
-0x0085de80 function Native_VoiceStart_End        # 0x00d6 int result: "VoiceStartResult!"; Voice_Play(0x00873b80(), 0x00873b90()) at 0x00887690; resets 0x01325ae4 (Ghidra misses this function)
+0x0085de80 function Native_VoiceStart_End        # 0x00d6 int result: "VoiceStartResult!"; Voice_Play(0x00873b80(), 0x00873b90()) at 0x00887690; resets 0x01325ae4 (Ghidra misses this function); 120 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x0085df00 function Native_0187_MusicPitchTranslate # 0x0187: (id, pitch, frames): SndMusicPitchTranslate(id, pitch, frames) (0x00886940), pitch clamped to -0x80..0x7f and frames to 0..0xff; id; ported in native_mods (script round 19); name ours; name from "SndMusicPitchTranslate(id, pitch, frames) (0x00886940)"
 0x0085df80 function Native_012d_SaveCounterGet              # 0x012d: (i): word i (clamped to 0..=7) of the record 0x0088c830()'s +0x2c; ported in native_move (script round 11); name from "word i (clamped to 0..=7) of the record 0x0088c830()'s +0x2c" (TkGetSaveEventAddress)
 0x0085dfc0 function Native_021f_EnableLoveParam # 0x021f: (i): AtelSetLoveParamDisable(i, 0) (0x00870250); i; ported in native_mods (script round 19); name ours; name from "AtelSetLoveParamDisable(i, 0)": clears bit i of the love-parameter disable mask
@@ -9210,14 +9210,14 @@
 0x0085e000 function Native_01c7_GetCdSizeKb # 0x01c7: jumps to 0x008741d0; ported in native_mods (script round 19); name ours; name from "jumps to 0x008741d0" = TkCdSizeKBCached_008741d0
 0x0085e010 function Native_0220_DisableLoveParam              # 0x0220: 0x00870250(v, 1); v; ported in native_move (script round 11); name from "0x00870250(v, 1)" = AtelSetLoveParamDisable: sets the disable bit
 0x0085e040 function Native_012e_SaveCounterAdd              # 0x012e: (i, v): word i (clamped to 0..=7) of the record 0x0088c830()'s +0x2c += v; the sum; ported in native_move (script round 11); name from "word i ... of the record 0x0088c830()'s +0x2c += v"
-0x0085e090 function Native_VoiceStop             # 0x00d7: args () -> 0; unless 0x012fb8a0 == 1, Voice_Stop 0x00887780 (clears 0x0132ff1c, 0x0067a7a0) (Ghidra misses this function)
+0x0085e090 function Native_VoiceStop             # 0x00d7: args () -> 0; unless 0x012fb8a0 == 1, Voice_Stop 0x00887780 (clears 0x0132ff1c, 0x0067a7a0) (Ghidra misses this function); 17 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x0085e0b0 function Native_0091_GetYaw              # 0x0091 (float): () -> float: the position block's +0x34 (yaw); ported in native_btl/native_move (script round 10); name from "the position block's +0x34 (yaw)"
 0x0085e0d0 function Native_004b # 0x004b: 0x0086af80(), the low word; ported in native_mods (script round 19); name ours
 0x0085e0e0 function Native_01cb # 0x01cb: (i): worker i's +0x38 gets bit 2; 1; ported in native_mods (script round 19); name ours
 0x0085e110 function Native_0221              # 0x0221: (i): word i of the table at 0x00c86e28; ported in native_move (script round 11)
 0x0085e130 function Native_004c_PadIsHeld              # 0x004c: (i): bit i of the flag word for 0x0086af30(); ported in native_move (script round 11); name from "bit i of the flag word for 0x0086af30()" (Pad_MapButtons of g_AtelPadHeld)
 0x0085e170 function Native_012f_SaveCounterSub # 0x012f: (i, n): the save block's (0x0088c830()) counter i (clamped to 0..7, +0x2c + 4 i) less n, 0 when that is negative; the new value; ported in native_mods (script round 19); name ours; name from "the save block's counter i ... less n, 0 when that is negative"
-0x0085e1d0 function Native_VoiceIsPlaying        # 0x00d8: args () -> 1 while the voice plays (countdown 0x01325ae0/e4 or 0x008864b0), else 0; "VoiceStatusStart!" / "VoiceStatusExec: Frame = %d!"; scripts loop `func 0x00d8; popa_jz` after 0x00d6
+0x0085e1d0 function Native_VoiceIsPlaying        # 0x00d8: args () -> 1 while the voice plays (countdown 0x01325ae0/e4 or 0x008864b0), else 0; "VoiceStatusStart!" / "VoiceStatusExec: Frame = %d!"; scripts loop `func 0x00d8; popa_jz` after 0x00d6; 157 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x0085e270 function Native_0090              # 0x0090 (float): the position's +0x20; ported in native_move (script round 11)
 0x0085e290 function Native_MusicFadeOut          # 0x0188 (frames) -> frames; <1 stops current music now, else fades it (0x00886af0); then plays the queued music 0x00c526d0 (id | volume << 8) if any; ported in native_move (script round 11)
 0x0085e340 function Native_01ca              # 0x01ca: +0x38 bit 2; 1; ported in native_move (script round 11)
@@ -9227,7 +9227,7 @@
 0x0085e400 function Native_01cc_GetNowPlayMusic              # 0x01cc: jumps to 0x008863f0; ported in native_move (script round 11); name from "jumps to 0x008863f0" = SndGetNowPlayMusic
 0x0085e410 function Native_0130_SaveCounterSet              # 0x0130: (i, v): word i (clamped to 0..=7) of the record 0x0088c830()'s +0x2c = v (0 when negative); the clamped i; ported in native_move (script round 11); name from "word i ... of the record 0x0088c830()'s +0x2c = v"
 0x0085e460 function Native_0223_SetVibrateConfig # 0x0223: (on): bit 4 of the save menu word (MsGetSaveMenu, 0x00785290) = on != 0, TkRefreshActuator() (0x00872480); on != 0; ported in native_mods (script round 19); name ours; name from "bit 4 of the save menu word ... = on != 0, TkRefreshActuator()"
-0x0085e4a0 function Native_SoundWait_Poll        # 0x00d9 poll only: voice-sync countdown (0x01325aec/0x01325ae8, "VoiceSyncStart!", "VoiceSyncExec: Frame = %d!") else done when no sound request is pending (0x008864b0)
+0x0085e4a0 function Native_SoundWait_Poll        # 0x00d9 poll only: voice-sync countdown (0x01325aec/0x01325ae8, "VoiceSyncStart!", "VoiceSyncExec: Frame = %d!") else done when no sound request is pending (0x008864b0); 165 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x0085e550 function Native_0181              # 0x0181 (float): the position's +0x38; ported in native_move (script round 11)
 0x0085e570 function Native_01f8_MusicFadeOutTrack              # 0x01f8: (track, frames): 0 or less stops the current music (0x00886a60, 0x00886800); else a track not negative fades (0x00886af0(track, frames)); frames; ported in native_move (script round 11); name from "0 or less stops the current music ...; else a track ... fades (0x00886af0)" = SndMusicVolumeFadeOut
 0x0085e5d0 function Native_01cd_GetMusicNumber # 0x01cd: jumps to AtelGetMusicNumber (0x00873b00); ported in native_mods (script round 19); name ours; name from "jumps to AtelGetMusicNumber (0x00873b00)"
@@ -14130,7 +14130,7 @@
 0x00a77e80 function Native_4009_FilterSub                # 0x4009: args (d, c, b, a) -> Sg_FilterSub(d, c, b, a) (0x0082cc80); ported in native_chr (script round 12); name from "Sg_FilterSub(d, c, b, a)" (0x0082cc80)
 0x00a77ed0 function Native_400c_FilterReset                # 0x400c: no args -> 0: 0x0082cc70(); ported in native_chr (script round 12); name from "0x0082cc70()"=Sg_FilterReset
 0x00a77ee0 function Native_FadeWait              # 0x400d start: empty
-0x00a77ef0 function Native_FadeWait_Poll         # 0x400d poll: done when fade slot 4's counter 0x0130074c is 0 (only fade in ends; follows 0x4004 in 633 of 685 calls)
+0x00a77ef0 function Native_FadeWait_Poll         # 0x400d poll: done when fade slot 4's counter 0x0130074c is 0 (only fade in ends; follows 0x4004 in 633 of 685 calls); 11 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x00a77f00 function Native_400e                # 0x400e: args (v) -> Sg_EnableCalcMap(v) (0x00820440); ported in native_chr (script round 12); BSim review: flag 0x012fbbb1 gates the BG draw (Sg_AccDrawBG/yiDisp) in Sg_MainLoop, not a map calc
 0x00a77f20 function Native_400f                # 0x400f: args (v) -> Sg_EnableDrawMap(v) (0x00820400); ported in native_chr (script round 12); BSim review: flag 0x012fbbb2 gates the character draw (Ch_DrawMain) in Sg_MainLoop, not the map draw
 0x00a77f40 function Native_4010 # 0x4010: (v, a f, b f) popped; 0; ported in native_mods (script round 19); name ours
@@ -14147,8 +14147,8 @@
 0x00a781d0 function Native_401b_AccSetDrawMap                # 0x401b: args (v) -> Sg_AccSetDrawMap(v) (0x0082bcb0); ported in native_chr (script round 12); name from "Sg_AccSetDrawMap(v)" (0x0082bcb0)
 0x00a781f0 function Native_401c_AccEnableBG                # 0x401c: args (v) -> Sg_AccEnableBG(v) (0x0082be10); ported in native_chr (script round 12); name from "Sg_AccEnableBG(v)" (0x0082be10)
 0x00a78210 function CT_401D_init              # 0x401d start (menu id): "%d:sgMenu Init", Menu_Request 0x00821750, frame counter 0x022fb4d4 = 1; was Native_MenuOpen
-0x00a78270 function Native_MenuOpen_Poll         # 0x401d poll: "%d:sgMenu Exec", waits one frame (0x022fb4d4)
-0x00a782a0 function Native_MenuOpen_Result       # 0x401d int: "%d:sgMenu Result = %d" -> 0x012fbc3c
+0x00a78270 function Native_MenuOpen_Poll         # 0x401d poll: "%d:sgMenu Exec", waits one frame (0x022fb4d4); 45 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
+0x00a782a0 function Native_MenuOpen_Result       # 0x401d int: "%d:sgMenu Result = %d" -> 0x012fbc3c; 30 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x00a782c0 function Native_401e_SgTest # 0x401e: Sg_Test(v) (0x008467b0: map-test setup, a sync print, a 64 KiB scratch allocation and its release); its result; debug native, not ported (script round 19); name ours; name from "Sg_Test(v) (0x008467b0: map-test setup...)"; its result
 0x00a782e0 function Native_401f                # 0x401f: no args -> 0x00840e40(); ported in native_chr (script round 12)
 0x00a782f0 function Native_4020                # 0x4020: no args -> 0: 0x00840e50(); ported in native_chr (script round 12)
@@ -14237,7 +14237,7 @@
 0x00a79550 function Native_ChrSetMotionSeqLevel  # 0x5022: args (n) -> 0; chr +0x737, compared by motion sequence opcode 6 (SG_SeqStep, branch when operand <= n); ?meaning; scripts push 0/1
 0x00a79580 function Native_5067_ChrSetDrawCull                # 0x5067: args (v) -> Ch_DrawSetCull(model, v) (0x008300b0); ported in native_chr (script round 12); name from Ch_DrawSetCull(model, v)
 0x00a795b0 function Native_5023_NoOp # 0x5023/0x406a: (v) popped; 0; ported in native_mods (script round 19); name ours; name from "(v) popped; 0"; dump: AtelGetCharHandle + pop only, returns 0
-0x00a795d0 function Native_WaitCdIdle            # 0x5068 (poll slot only): no args; done when the CD-library sync (g_CdLib +8, 0x0076c490, mode 1) returns 0; scripts use it right after 0x504e
+0x00a795d0 function Native_WaitCdIdle            # 0x5068 (poll slot only): no args; done when the CD-library sync (g_CdLib +8, 0x0076c490, mode 1) returns 0; scripts use it right after 0x504e; 16 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x00a795e0 function Native_5069_ChrSetKeepFps                # 0x5069: args (v) -> Ch_SetKeepFps(model, v) (0x00839b50), 0 without a model; ported in native_chr (script round 12); name from Ch_SetKeepFps(model, v)
 0x00a79620 function Native_5024_NoOp # 0x5024/0x406b: (v) popped; 0; ported in native_mods (script round 19); name ours; name from "(v) popped; 0"; dump: AtelGetCharHandle + pop only, returns 0
 0x00a79640 function Native_506a_ChrSetPlightEnable                # 0x506a: args (v) -> Ch_PLightSetEnable(model, v) (0x00830ae0); ported in native_chr (script round 12); name from Ch_PLightSetEnable(model, v)
@@ -14248,7 +14248,7 @@
 0x00a79800 function Native_ChrLoad               # 0x504e: args (chr id) -> 0; Chr_LoadData, starts reading the character's CHRDATA
 0x00a79820 function Native_ChrLoadSystemMgrp     # 0x5010 start: args (chr id, n), saved in the call state; prints "chReadSystemMGRP %04x %x start"
 0x00a79860 function Native_5027_ChrElemPosOffset # 0x5027/0x406e: (i, element, xyz f, &ox, &oy, &oz): Ch_ElemGetPos into the variables; 0; ported in native_mods (script round 19); name ours; name from (i, element, xyz f, &ox..): Ch_ElemGetPos into the variables
-0x00a79970 function Native_ChrLoadSystemMgrp_Poll # 0x5010 poll: returns 5 immediately
+0x00a79970 function Native_ChrLoadSystemMgrp_Poll # 0x5010 poll: returns 5 immediately; 6 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x00a79980 function Native_ChrLoadSystemMgrp_Result # 0x5010 int result: prints "chReadSystemMGRP %04x %x fin", calls Chr_LoadSystemMgrp(chr id, n); -> 0
 0x00a799b0 function Native_ChrLoadMotionGroup    # 0x5001 start (n) -> result slot; poll 0x00a79a10 returns 5
 0x00a799d0 function Native_5028_ChrSetChgRun                # 0x5028 (float): args (v f) -> Ch_MoveSetChgRun(model, v) (0x0082b040), 0.0 without a model; ported in native_chr (script round 12); name from Ch_MoveSetChgRun(model, v)
@@ -14304,7 +14304,7 @@
 0x00a7a610 function Native_ChrSetMotion2         # 0x5040: same body as 0x501b (SG_SetMotion)
 0x00a7a640 function Native_5085_ChrSetShadowHeight                # 0x5085: args (v f) -> Ch_ShadowSetHeight(model, v) (0x00830cb0); ported in native_chr (script round 12); name from Ch_ShadowSetHeight(model, v)
 0x00a7a680 function Native_5086_ChrRequestBoneUpdate                # 0x5086: no args -> Ch_ReserveCalcNorm(model) (0x00835710); ported in native_chr (script round 12); name from Ch_ReserveCalcNorm(model): one budgeted bone update; "was Chr_RequestBoneUpdate"
-0x00a7a6a0 function Native_ChrRefreshAllBones    # 0x5087: no args -> 0; Chr_RequestBoneUpdateAll; ?one-time skeleton refresh of every chr
+0x00a7a6a0 function Native_ChrRefreshAllBones    # 0x5087: no args -> 0; Chr_RequestBoneUpdateAll; ?one-time skeleton refresh of every chr; 8 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x00a7a6b0 function Native_5088_ChrSetShadeId                # 0x5088: args (v f, n) -> Ch_SetShadeID(model, v, n) (0x0082b720); ported in native_chr (script round 12); name from Ch_SetShadeID(model, v, n)
 0x00a7a700 function Native_5089_ChrPlayMotionIncl                # 0x5089: no args -> Native_PlayMotionCommon(worker, stack, 2, 0); ported in native_chr (script round 12); name from PlayMotionCommon(.., 2, 0): mode 2 = Chr_PlayMotionInclEnd
 0x00a7a720 function Native_508a_ChrPlayInclOf # 0x508a/0x40d1: Native_PlayMotionCommon(worker, stack, 2, 1); 0; ported in native_mods (script round 19); name ours; name from PlayMotionCommon(.., 2, 1): mode 2 = Chr_PlayMotionInclEnd, other worker
