@@ -37,8 +37,10 @@
 # reach 4: the magic file's textures load in a varying number of frames
 # (fewer with the Rust replacements), and the effect starts at the later of
 # that and the summoner's motion. From state 4 the entry takes 282 frames
-# and Energy Blast 259, original and Rust; the script checks both to the
-# frame (docs/harness.md, "Summon timing").
+# and Energy Blast 258 or 259 (original runs give both since 2026-10-24,
+# when the harness began to sample between two updates); the script checks
+# the entry to the frame and Energy Blast within that frame (docs/harness.md,
+# "Summon timing").
 #
 # Ranges, from Tidus's first menu on (whether it opens on the frame the
 # phase byte turns 1 or the next varies between runs of the original): the
@@ -109,10 +111,10 @@ wait 150
 shot $OUT\battle-overdrive-6.bmp
 wait 70
 shot $OUT\battle-overdrive-7.bmp
-# timing: Energy Blast ends 259 frames after its state 4
-wait 38
+# timing: Energy Blast ends 258 or 259 frames after its state 4
+wait 37
 waitfor 0x00c64ca0:4 5c020000 ffffffff 0
-waitfor 0x00c64ca0:4 ffffffff ffffffff 1
+waitfor 0x00c64ca0:4 ffffffff ffffffff 2
 # Valefor again: Dismiss (right, down twice), on itself
 waitfor 0x023cc08c:4 00010000 ffffffff 3000
 wait 30

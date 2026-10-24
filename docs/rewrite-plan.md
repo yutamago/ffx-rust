@@ -397,12 +397,17 @@ screens need a per-platform pass.
 
 Replays need the same inputs to reach the same state. Found so far:
 - The game's clock follows real time; `--virtual-clock` makes it one frame
-  interval per frame.
+  interval per frame, from a fixed start.
 - Archive reads run on the thread pool (`FileSys_SubmitRead`); on the
-  virtual clock they run at once on the game thread.
+  virtual clock they run at once on the calling thread.
 - The PS2 vsync interrupt is a thread calling its handler every 16 ms of
   real time (`createVsyncEmuThread`, `VsyncThreadImpl_run`); on the virtual
-  clock the handler runs from `Present`, once per 1/59.94 s of game time.
+  clock the handler runs at the main thread's frame boundary, once per
+  1/59.94 s of game time (`docs/harness.md`, "Frames and threads").
+- The update runs on the main thread, the drawing on the render thread a
+  frame behind; the harness samples and runs its jobs between two updates.
+- The cloth's wind comes from the CRT `rand()`, seeded per thread, on
+  whichever JobWorker runs the cloth job; the harness seeds it per job.
 - Heap addresses change between runs (Windows' bottom-up ASLR, and other
   threads allocating); `ffx-launch` turns ASLR off for the game, but
   allocation order still varies, so traces compare values, not pointers.

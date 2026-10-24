@@ -12,8 +12,8 @@
 //! - patches the swap chain's `Present` (from `D3D11CreateDeviceAndSwapChain`)
 //!   to take screenshots on the render thread, of the image of a known
 //!   update ([`flip`], [`present_flip`]: each flip's update);
-//! - gives each cloth job a seed of its own for the CRT `rand()`
-//!   ([`cloth_job`]), so the cloth's wind repeats;
+//! - gives each cloth and middle-calc job (`Ch_CalcMiddle_Batch`: mouths, eye
+//!   blinks) a seed of its own for the CRT `rand()` ([`seeded_job`]), so they repeat;
 //! - adds keys the test holds to the `DirectInput` keyboard
 //!   (`GetDeviceState`), for the PC-only menus that read keys directly;
 //! - with `FFX_HARNESS_HOME=<Windows folder>`, answers the game's question
@@ -502,68 +502,98 @@ static GETPTD: AtomicUsize = AtomicUsize::new(0);
 /// `rand`'s seed in the CRT's per-thread data.
 const HOLDRAND: usize = 0x14;
 /// Ctrl work 0's event frame count (`0x01325d94`) at the last frame
-/// boundary, for [`cloth_job`].
-static CLOTH_EVENTS: AtomicU32 = AtomicU32::new(0);
-/// Cloth jobs run, for `stats`.
-static CLOTH_JOBS: AtomicU32 = AtomicU32::new(0);
+/// boundary, for [`seeded_job`].
+static JOB_EVENTS: AtomicU32 = AtomicU32::new(0);
+/// Seeded jobs run (cloth, middle calc), for `stats`.
+static SEEDED_JOBS: AtomicU32 = AtomicU32::new(0);
 
-/// The job `JobSchedule_Ch_Cloth_PerCharacter` (`0x00a44b40`) queues in
-/// place of `Ch_Cloth_PerCharacter` (`0x0082e390`, `cdecl(chars, count)`):
-/// the cloth job, which runs on whichever `JobWorker` thread is free.
-/// `Sg_ClothStep` (`0x00822de0`) draws its wind from the CRT `rand()`,
-/// whose seed is per thread, so each run drew other numbers. This gives
-/// each job its own seed instead, from the first character's place in the
-/// character array (`*0x023c44e4`, 0x880 bytes a record) and ctrl work
-/// 0's event frame count (`0x01325d94`, which the replays pin their
-/// screenshots to) as it stood at the last frame boundary ([`CLOTH_EVENTS`]:
-/// the main thread counts it on during the update, beside the job); the
-/// worker's own seed is put back after the job. The game itself is
-/// unchanged: this wrapper exists only with the harness, on the original
-/// code and the Rust replacements alike.
-unsafe extern "C" fn cloth_job(chars: u32, count: u32) -> u32 {
+/// Runs one character job with the CRT `rand()` seeded for it, and gives
+/// the worker its own seed back after. Two job kinds the scheduler runs on
+/// whichever `JobWorker` thread is free draw from `rand()`, whose seed is
+/// per thread, so each run drew other numbers: the cloth's wind
+/// (`Sg_ClothStep` `0x00822de0`, under `Ch_Cloth_PerCharacter`
+/// `0x0082e390`) and the mouth and the texture animations, the eyes'
+/// blinks among them (`Ch_Mouth`, `chr_texanim_main` `0x0077c8d0`, under
+/// `Ch_CalcMiddle_Batch` `0x00833530`). The seed comes from the job's kind,
+/// its first character's place in the character array (`*0x023c44e4`,
+/// 0x880 bytes a record), and ctrl work 0's event frame count (which the
+/// replays pin their screenshots to) as it stood at the last frame boundary
+/// ([`JOB_EVENTS`]: the main thread counts it on during the update, beside
+/// the jobs). The game itself is unchanged: the wrappers exist only with
+/// the harness, on the original code and the Rust replacements alike.
+///
+/// # Safety
+/// On a job thread, with `first` a character record (or 0).
+unsafe fn seeded_job(kind: u32, first: u32, job: impl FnOnce() -> u32) -> u32 {
     type GetPtd = unsafe extern "C" fn() -> usize;
-    type Job = unsafe extern "C" fn(u32, u32) -> u32;
     let getptd = GETPTD.load(Ordering::Acquire);
-    // SAFETY: the job's own arguments: `count` character pointers at
-    // `chars`; the array globals are the image's; `_getptd` returns this
+    if getptd == 0 || first == 0 {
+        return job();
+    }
+    // SAFETY: the array global is the image's; `_getptd` returns this
     // thread's CRT data, created if needed.
     unsafe {
-        let job: Job = std::mem::transmute(crate::rebase(0x0082_e390));
-        if getptd == 0 || chars == 0 || count == 0 {
-            return job(chars, count);
-        }
-        let first = *(chars as *const u32);
         let array = *(crate::rebase(0x023c_44e4) as *const u32);
         let place = first.wrapping_sub(array) / 0x880;
-        let events = CLOTH_EVENTS.load(Ordering::Acquire);
+        let events = JOB_EVENTS.load(Ordering::Acquire);
         let ptd = std::mem::transmute::<usize, GetPtd>(getptd)();
         let seed = (ptd + HOLDRAND) as *mut u32;
         let own = seed.read();
-        seed.write(place.wrapping_mul(0x9e37_79b1) ^ events.wrapping_mul(0x85eb_ca6b) ^ 1);
-        let r = job(chars, count);
+        seed.write(place.wrapping_mul(0x9e37_79b1) ^ events.wrapping_mul(0x85eb_ca6b) ^ kind);
+        let r = job();
         seed.write(own);
-        CLOTH_JOBS.fetch_add(1, Ordering::Relaxed);
+        SEEDED_JOBS.fetch_add(1, Ordering::Relaxed);
         r
     }
 }
 
-/// Points `JobSchedule_Ch_Cloth_PerCharacter`'s `push 0x0082e390`
-/// (`0x00a44b51`) at [`cloth_job`], and finds MSVCR110's `_getptd`.
+/// The job `JobSchedule_Ch_Cloth_PerCharacter` (`0x00a44b40`) queues in
+/// place of `Ch_Cloth_PerCharacter` (`0x0082e390`, `cdecl(chars, count)`:
+/// `count` character pointers at `chars`), seeded ([`seeded_job`]).
+unsafe extern "C" fn cloth_job(chars: u32, count: u32) -> u32 {
+    type Job = unsafe extern "C" fn(u32, u32) -> u32;
+    // SAFETY: the job's own arguments, passed on to the job.
+    unsafe {
+        let job: Job = std::mem::transmute(crate::rebase(0x0082_e390));
+        let first = if chars != 0 && count != 0 {
+            *(chars as *const u32)
+        } else {
+            0
+        };
+        seeded_job(1, first, || job(chars, count))
+    }
+}
+
+/// The job `JobSchedule_Ch_CalcMiddle_Batch` (`0x00a44b90`) queues in
+/// place of `Ch_CalcMiddle_Batch` (`0x00833530`, `cdecl(chars, &pass,
+/// &count)`: `*count` records from `chars` on), seeded ([`seeded_job`];
+/// the pass in the kind).
+unsafe extern "C" fn middle_job(chars: u32, pass: u32, count: u32) -> u32 {
+    type Job = unsafe extern "C" fn(u32, u32, u32) -> u32;
+    // SAFETY: the job's own arguments, passed on to the job; `pass` points
+    // at the caller's word.
+    unsafe {
+        let job: Job = std::mem::transmute(crate::rebase(0x0083_3530));
+        let kind = if pass == 0 {
+            2
+        } else {
+            2 | (*(pass as *const u32) << 8)
+        };
+        seeded_job(kind, chars, || job(chars, pass, count))
+    }
+}
+
+/// Points the `push <job>` at `site` (`68 imm32`, an `FFX.exe` address)
+/// at `replacement` when it pushes `job`.
 ///
 /// # Safety
-/// `module` is the main module; no character is drawn yet.
-unsafe fn patch_cloth_job(module: usize) -> bool {
-    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+/// `module` is the main module; the job is not queued yet.
+unsafe fn patch_job_push(module: usize, site: u32, job: u32, replacement: usize) -> bool {
     use windows_sys::Win32::System::Memory::{PAGE_EXECUTE_READWRITE, VirtualProtect};
-    let site = (module + (0x00a4_4b51 - crate::IMAGE_BASE as usize)) as *mut u8;
-    let job = module + (0x0082_e390 - crate::IMAGE_BASE as usize);
-    // SAFETY: inside the mapped image; checked to be `68 <imm32 job>`;
-    // plain Win32 lookups.
+    let site = (module + (site - crate::IMAGE_BASE) as usize) as *mut u8;
+    let job = module + (job - crate::IMAGE_BASE) as usize;
+    // SAFETY: inside the mapped image; checked to be `68 <imm32 job>`.
     unsafe {
-        let crt = GetModuleHandleA(c"MSVCR110.dll".as_ptr().cast());
-        let Some(getptd) = GetProcAddress(crt, c"_getptd".as_ptr().cast()) else {
-            return false;
-        };
         let current = std::slice::from_raw_parts(site, 5);
         if current[0] != 0x68
             || u32::from_le_bytes(current[1..5].try_into().unwrap_or_default()) as usize != job
@@ -574,14 +604,40 @@ unsafe fn patch_cloth_job(module: usize) -> bool {
         if VirtualProtect(site.cast(), 5, PAGE_EXECUTE_READWRITE, &raw mut old) == 0 {
             return false;
         }
-        GETPTD.store(getptd as usize, Ordering::Release);
-        let target = u32::try_from(cloth_job as *const () as usize)
-            .unwrap_or_default()
-            .to_le_bytes();
+        let target = u32::try_from(replacement).unwrap_or_default().to_le_bytes();
         site.add(1).copy_from_nonoverlapping(target.as_ptr(), 4);
         VirtualProtect(site.cast(), 5, old, &raw mut old);
     }
     true
+}
+
+/// Finds MSVCR110's `_getptd` and points the two job schedulers'
+/// `push <job>` at the seeded wrappers: `JobSchedule_Ch_Cloth_PerCharacter`
+/// at `0x00a44b51`, `JobSchedule_Ch_CalcMiddle_Batch` at `0x00a44ba4`.
+///
+/// # Safety
+/// `module` is the main module; no character is drawn yet.
+unsafe fn patch_seeded_jobs(module: usize) -> bool {
+    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+    // SAFETY: plain Win32 lookups; the patches as documented.
+    unsafe {
+        let crt = GetModuleHandleA(c"MSVCR110.dll".as_ptr().cast());
+        let Some(getptd) = GetProcAddress(crt, c"_getptd".as_ptr().cast()) else {
+            return false;
+        };
+        GETPTD.store(getptd as usize, Ordering::Release);
+        patch_job_push(
+            module,
+            0x00a4_4b51,
+            0x0082_e390,
+            cloth_job as *const () as usize,
+        ) & patch_job_push(
+            module,
+            0x00a4_4ba4,
+            0x0083_3530,
+            middle_job as *const () as usize,
+        )
+    }
 }
 
 /// `DirectInput` keys held by the test, by scan code.
@@ -1266,7 +1322,7 @@ pub unsafe extern "thiscall" fn animate(app: *mut c_void) -> u32 {
     PASSED.store(frame + 1, Ordering::Release);
     // SAFETY: a word of the image's data (ctrl work 0's event frame count),
     // which only this thread writes.
-    CLOTH_EVENTS.store(
+    JOB_EVENTS.store(
         unsafe { *(crate::rebase(0x0132_5d94) as *const u32) },
         Ordering::Release,
     );
@@ -1776,14 +1832,14 @@ fn command(line: &str) -> Result<String, String> {
         "ping" => "ok pong".into(),
         "frame" => format!("ok {}", now()),
         "stats" => format!(
-            "ok frame {} pad_reads {} key_polls {} presents {} flips {} flips_run {} cloth_jobs {}",
+            "ok frame {} pad_reads {} key_polls {} presents {} flips {} flips_run {} seeded_jobs {}",
             now(),
             PAD_READS.load(Ordering::Relaxed),
             KEY_POLLS.load(Ordering::Relaxed),
             PRESENTS.load(Ordering::Relaxed),
             FLIPS.load(Ordering::Relaxed),
             FLIPS_RUN.load(Ordering::Relaxed),
-            CLOTH_JOBS.load(Ordering::Relaxed)
+            SEEDED_JOBS.load(Ordering::Relaxed)
         ),
         "keys" => {
             let codes = words[1..]
@@ -2183,10 +2239,10 @@ pub unsafe fn install(module: usize) {
     let r = unsafe { crate::install(module, &frame_hooks, &[]) };
     log(&format!("  harness: frame boundary hooks {r:?}"));
     // SAFETY: forwarded from the caller.
-    let cloth = unsafe { patch_cloth_job(module) };
+    let seeded = unsafe { patch_seeded_jobs(module) };
     log(&format!(
-        "  harness: cloth jobs seeded per character and event frame: {}",
-        if cloth {
+        "  harness: cloth and middle-calc jobs seeded per character and event frame: {}",
+        if seeded {
             "on"
         } else {
             "not available (unexpected code)"

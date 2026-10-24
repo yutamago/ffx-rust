@@ -377,11 +377,11 @@ fn prepare_home(
     // (`Settings_Load` `0x00401cb0`) knows only `key=value` lines.
     let text = std::fs::read_to_string(settings)
         .map_err(|e| Error::Launch(format!("sandbox settings {}: {e}", settings.display())))?;
-    let lines: String = text
-        .lines()
-        .filter(|l| !l.trim_start().starts_with('#'))
-        .map(|l| format!("{l}\n"))
-        .collect();
+    let mut lines = String::new();
+    for l in text.lines().filter(|l| !l.trim_start().starts_with('#')) {
+        lines.push_str(l);
+        lines.push('\n');
+    }
     std::fs::write(&target, lines)?;
     let folder = home.join(GAME_DOCUMENTS).join(SAVE_FOLDER);
     for (name, source) in saves {

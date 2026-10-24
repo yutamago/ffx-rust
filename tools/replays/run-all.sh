@@ -118,17 +118,15 @@ for r in "${replays[@]}"; do
     if [ ! -f "$traces/$r-orig.trace" ]; then
         echo "== $r: not recorded (tools/replays/run-all.sh --record $r)"; bad=1; continue
     fi
-    # the pad word's range (press timing): field-walk 3, menu-browse 0; the
-    # player position in event-besaid (2) misses an in-between value when a
-    # trace frame is skipped, in original runs too; menu-save's save data
-    # word +0x28 (2), slot list flags (11) and newest slot (12) take an
-    # in-between value for a frame in some runs, original ones included,
-    # and in hook-hit mode (slower first calls) the loaded block's map
-    # words (0), its rest (4) and the packed save's header (7) did too
-    # (docs/harness.md)
-    case $r in field-walk) ign=(--ignore 3) ;; menu-browse) ign=(--ignore 0) ;; event-besaid) ign=(--ignore 2) ;; menu-save) ign=(--ignore 2,11,12) ;; *) ign=() ;; esac
-    [ "$r" = menu-save ] && [ -n "$hits" ] && ign=(--ignore 0,2,4,7,11,12)
-    [ "$r" = event-agency ] && ign=(--ignore 2)  # its player position, as event-besaid's
+    # The player position in event-besaid (2) differs between original runs
+    # (three of three pairs on 2026-10-24, sampled between two updates).
+    # The rest that was left out here (the pad words of field-walk and
+    # menu-browse, menu-save's ranges, event-agency's position and, in
+    # hook-hit mode, menu-save's 0, 4 and 7) were one-frame in-between
+    # values the trace caught while it sampled on the render thread; three
+    # original runs agree on all of them now (docs/harness.md, "Frames and
+    # threads", the replays' sections).
+    case $r in event-besaid) ign=(--ignore 2) ;; *) ign=() ;; esac
     cmp=(python3 tools/replay-compare.py "$traces/$r-orig.trace" "$runs/rust/$r-rust.trace" --also "$traces/$r-orig2.trace" "${ign[@]}")
     echo "== $r: $("${cmp[@]}" 2>&1 | tail -1)"
     "${cmp[@]}" >/dev/null 2>&1 || bad=1

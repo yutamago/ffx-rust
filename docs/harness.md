@@ -15,7 +15,7 @@ tools/harness.py quit
 
 | Piece | Hook | Why |
 |---|---|---|
-| Frames | `IDXGISwapChain::Present` (vtable of the swap chain from `D3D11CreateDeviceAndSwapChain`, patched in the import table) | Counts frames; commands that touch game state or the GPU (`call`, `shot`, waits) and the trace run here, between frames. `Present` runs on Phyre's render thread (`0x00616010`), not the main thread, which may be in the middle of the next frame's update meanwhile (agency-race, event-agency below) |
+| Frames | `FFXApplication_animate` (`0x0042f520`), wrapped; `Phyre_PRendering_PRenderer_flip` (`0x005b6af0`) and `Renderer_PresentFlip` (`0x00593760`), wrapped; `IDXGISwapChain::Present` (vtable of the swap chain from `D3D11CreateDeviceAndSwapChain`, patched in the import table) | The frame boundary is the entry of the game's update, on the main thread: the trace samples there, and `call`, waits, `loadsave`, `snapshot` and `fpucw` run there, between two updates; lockstep holds the main thread there. Screenshots are taken in `Present` on Phyre's render thread, of the image of a known update ("Frames and threads" below) |
 | Buttons | `Input_KeyHeld` (`0x00629d50`), wrapped with a trampoline | `Virtuos_InputManager_updateInput` (`0x00632a30`) builds the PS2 pad word at `0x00ccb170` (previous frame at `+4`) by asking it about every binding. For each held button the first keyboard binding paired with it reads as held, so the game sees the same as a key press: exactly that button's bit |
 | Keys | `IDirectInput8::CreateDevice` → device `GetDeviceState` / `SetCooperativeLevel` | The PC menus (Esc) read keys directly. The keyboard is made a background device, and an unacquired one reads as all keys up |
 | Focus | `ShowWindow` | Background mode shows the window without activating it |
@@ -23,8 +23,71 @@ tools/harness.py quit
 | Dialogs | `MessageBoxA`, `MessageBoxW` | In background mode a game dialog is logged (`ffx-hook.log`, and an event `messagebox <text>`) and answered OK instead of appearing on the user's desktop |
 | Events | `Phyre_PSerialization_PStreamFileWin32_openFile` | Every file the game opens, and which came from a mod |
 | Randomness | `Rng_ClockSeed` (`0x00798950`), wrapped | `MsRandMize` (`0x00798890`) seeds the global generator (`0x00c42200`) and the 68 at `0x01135ee0` from the system time (`GetSystemTime` bytes XORed, plus 1). With `--seed N` it gets `N`; `ffx-harness` uses seed 1 unless a test says otherwise |
-| Speed | `Phyre_PTimerWin32_GetTime` (`0x0042fd80`), wrapped; the main loop's `call [Sleep]` (`0x0062f3bb`) | The main loop (`Game_Main`, `0x0062ee50`) runs a frame (`0x0062e340`) once `DAT_00c30e88` × 1/59.94 s have passed on `Phyre_PTimerWin32_GetTime`, and sleeps away the rest. With `--fast` that one `Sleep` returns at once and adds its time to the clock: frames run back to back (461 a second instead of 30–60) while the game still sees one frame interval per frame. `ffx-harness` uses it by default |
-| Sandbox | `SHGetFolderPathW` | With `--home DIR`, the Documents folder is `DIR`: the game reads and writes `GameSetting.ini` and its saves (autosaves too) there. `ffx-harness` makes `DIR` a fresh copy of the user's `Square Enix/FINAL FANTASY X&X-2 HD Remaster` before each launch, so tests can load the user's saves and never change them |
+| Cloth | `JobSchedule_Ch_Cloth_PerCharacter`'s `push 0x0082e390` (`0x00a44b51`) | `Sg_ClothStep` (`0x00822de0`) takes its wind from the CRT `rand()`, whose seed is per thread (MSVCR110's `_getptd()` `+0x14`), and the cloth job runs on whichever JobWorker is free, so the cloth differed in every run. The harness queues its own job, which seeds `rand` for the job from the first character's place in the character array and ctrl work 0's event frame count at the last frame boundary, runs `Ch_Cloth_PerCharacter` and gives the worker its seed back (original code and Rust alike) |
+| Speed | `Phyre_PTimerWin32_GetTime` (`0x0042fd80`), wrapped; the main loop's `call [Sleep]` (`0x0062f3bb`) | The main loop (`Game_Main`, `0x0062ee50`) runs a frame (`0x0062e340`) once `DAT_00c30e88` × 1/59.94 s have passed on `Phyre_PTimerWin32_GetTime`, and sleeps away the rest. With `--fast` that one `Sleep` returns at once and adds its time to the clock: frames run back to back (461 a second instead of 30–60) while the game still sees one frame interval per frame. `ffx-harness` uses it by default. On the virtual clock (`--virtual-clock`) the clock starts at 2^20 s (`VIRTUAL_START`, not the wall clock's FILETIME reading of about 1.34e10 s, whose f64 rounding differed in every run) and the `Sleep` moves it to the next frame's time exactly (`g_AppStartTime` + `g_FrameLimiterLast` + one interval, plus 1e-9 s) instead of the whole ms the limiter chops it to, so every frame is one interval long and time differences repeat (`docs/drawdiff.md`, "Noise in cdsp0000") |
+| Sandbox | `SHGetFolderPathW` | With `--home DIR`, the Documents folder is `DIR`: the game reads and writes `GameSetting.ini` and its saves (autosaves too) there. `ffx-harness` makes `DIR` a fresh copy of the user's `Square Enix/FINAL FANTASY X&X-2 HD Remaster` before each launch, so tests can load the user's saves and never change them, with the sandbox's own `GameSetting.ini` in place of the user's ("Sandbox settings" below) |
+
+## Frames and threads
+
+The game updates on the main thread and draws on Phyre's render thread
+(`Phyre_PRendering_PRenderThread_threadEntry`, `0x00616010`). Each pass of
+`Game_Main`'s loop (`0x0062ee50`) runs `App_Frame` (input) and
+`Phyre_PFramework_PApplication_frame` (`0x00627940`), which calls the
+update, `FFXApplication_animate` (`0x0042f520`: `updateFFX` `0x00822840`,
+`Sg_MainLoop` `0x00820ae0` with `Sg_FrameSync` `0x00821e80` inside, unless
+the PC menu is up), then the frame's render commands and
+`Phyre_PRendering_PRenderer_flip` (`0x005b6af0`), which queues a flip
+command (`0x16`). The render thread runs the queued commands (a ring of 16
+slots) and, for the flip, `Renderer_PresentFlip` (`0x00593760`), which
+calls `IDXGISwapChain::Present`. So the render thread draws and presents
+update `n` while the main thread already runs update `n + 1`.
+
+Until 2026-10-24 the harness did everything in `Present`, on the render
+thread: the trace caught the main thread's next update half-done
+(one-frame in-between values, event-agency below), `call` ran game code
+beside the main thread, and lockstep held only the render thread. Since
+then (harness-main-thread):
+
+- **Frame `n`** (`frame`, `wait`'s replies, the trace's first column) is
+  the boundary after `n` updates: the entry of `FFXApplication_animate`,
+  wrapped. There every update before has finished, the next has not
+  begun, and the previous frame's flip is queued. The trace samples there,
+  and the main thread's jobs (`call`, `wait`, `press`'s release,
+  `waitfor`, `loadsave`, `snapshot`, `fpucw`) run there.
+- **Lockstep** holds the main thread at the boundary until the script
+  allows more updates: one update per frame of `wait`, `press` or
+  `waitfor`, as before, and now nothing of the next update runs while the
+  script reads, writes or calls. The render thread is held too (below);
+  the JobWorker threads have no work then (the update hands them theirs).
+  The asset loader and the other threads keep running.
+- **The virtual vsync** (`--virtual-clock`) runs at the boundary, just
+  before the update, instead of in `Present`; before the first update (the
+  start-up screens) it still runs from `Present`.
+- **Screenshots** show the update the boundary follows. The flip wrapper
+  notes, for each queued flip, the frame it was queued at (the update it
+  draws); `Renderer_PresentFlip` tells `Present` which that is. `shot`
+  asks for the image of frame `n` (the current one) or a later one, and in
+  lockstep the present of update `n` waits until the main thread has left
+  boundary `n`, so a shot taken while the main thread is held at `n` is
+  that image. The reply says which: `ok 1280 720 update 435`. A shot thus
+  shows the same update the trace and `waitfor` saw at that frame: a shot
+  after `waitfor` on ctrl work 0's count `101` shows the update in which
+  the count became 101. Before, the shot was the image of the update
+  before (count 100, "PhyreEngine draws frame N while the main thread
+  computes N + 1"), so every recorded screenshot moved by one update and
+  the originals were recorded again. In real time (no lockstep) a shot is
+  the first image of the current update or a later one.
+- `Game::launch` is ready at the first present (`stats`' `presents`), not
+  at the first update: the memochek logo, where `load direct` presses
+  Start, starts with the first update and in fast mode lasts about 120
+  frames.
+
+Every flip and present is counted (`stats`: `presents`, `flips`,
+`flips_run`); in every run so far the three agreed, the start-up screens
+included, and the log says so if a present ever comes without a flip's
+label. A present waits at most 5 s for the main thread to reach its
+boundary (a main thread that waits for the render thread there would
+deadlock otherwise; none is known), and logs it.
 
 XInput is not used: the game creates XInput devices only for controllers
 found while enumerating DirectInput devices at start-up
@@ -413,9 +476,16 @@ code too (another original run at the same frame matched the Rust run's
 angle to 558 pixels, and both differed from the recordings by 457,000).
 The script also checks the effect's length
 to the frame: the magic ID must still be set 281 frames after state 4 and
--1 one frame later (Energy Blast: 258 and 259). Four runs each side gave
-282 and 259 (from the ID to state 4: original 41-55 and 66-80, Rust 37 and
-49-59). A port that ends either effect a frame early or late stops the
+-1 one frame later; Energy Blast's must be set 257 frames after its state
+4 and -1 one or two frames later. Four runs each side gave 282 and 259
+(from the ID to state 4: original 41-55 and 66-80, Rust 37 and 49-59) when
+`waitfor` still sampled on the render thread. Sampled between two updates
+(2026-10-24, "Frames and threads"), the entry still takes 282 in every
+run, but Energy Blast took 258 in two original runs (recorded side by side
+with the other replays) and over 258 in three run alone (259 in the one
+measured to the end): the frame its state 4
+shows up at seems to follow the loader's real time (the effect waits for
+its textures), and the old sampling hid that. A port that ends either effect a frame early or late stops the
 replay at that `waitfor` (`timeout at N`), and its cut trace fails the
 comparison. The trace ranges cannot show this: they compare each range's
 sequence of distinct values, not their frames, and no traced word counts
@@ -726,9 +796,13 @@ An instance folder (`tools/instance.sh <n>`, called by `tools/run-game.sh
 filesystem, no space; about 3,200 files, 0.2 s). Windows loads `FFX.exe`,
 its DLLs and the archives from such a tree over the WSL share like from the
 game folder. The links are rebuilt only when the game folder's listing
-(names, sizes, times, inodes) changes; `mods/` is linked afresh at every
-launch, with each `Options::mods` folder (`--mod DIR`) added as
-`mods/<name>`. Files a launch installs or something writes in place are
+(names, sizes, times, inodes) changes; `mods/` is made afresh at every
+launch and holds only each `Options::mods` folder (`--mod DIR`), as
+`mods/<name>`. Test games run without the user's mods (the game folder's
+`mods/`, 16 character mods on this machine; user decision 2026-10-24):
+replays, captures and game tests see the game as shipped plus what a test
+passes. `tools/instance.sh N --user-mods` (or `FFX_INSTANCE_USER_MODS=1`)
+links the game folder's `mods/` in as well. Files a launch installs or something writes in place are
 never links: the instance's own `DINPUT8.dll` (the caller's build, replaced
 at each launch), `ffx-hook.log` (`Game::log_path`, `Game::new_log` for this
 launch's lines), `ffx-launch.exe`, the renderer's files (`ffx-render.toml`
@@ -737,11 +811,26 @@ instead of writing into the game folder, so games side by side never see
 each other's.
 
 `Options::home` (default `Home::Instance`) is made afresh at each launch:
-a copy of the user's settings and saves (`copy_user_data`), then
-`Options::saves`, `(name, file)` pairs put into its `FINAL FANTASY X`
-folder (`ffx_001` is load-screen entry 1), so a test can start from a
-given save with `copy_user_data: false`. A home inside the user's real
-Documents folder is refused.
+a copy of the user's saves (`copy_user_data`), then `Options::saves`,
+`(name, file)` pairs put into its `FINAL FANTASY X` folder (`ffx_001` is
+load-screen entry 1), so a test can start from a given save with
+`copy_user_data: false`, and the sandbox's settings. A home inside the
+user's real Documents folder is refused.
+
+### Sandbox settings
+
+`tools/sandbox/GameSetting.ini` is every test game's `GameSetting.ini`
+(`ffx_harness::SANDBOX_SETTINGS`): the user's own is never read. Until
+2026-10-24 the sandbox copied the user's file; the repository's file holds
+the values that copy had, which the replays were recorded with: English,
+1280x720 in a window, vsync off, `Quality=VQ_LOW`, `Shadow=0`, no MSAA or
+post AA, the key bindings, and `TextureQuality=TQ_LOW` (the user,
+2026-10-24: tests don't need high-quality textures; it drops the top 2 mip
+levels of every texture). Change a value there, in one line, and record
+the replays again. `ffx-harness` drops the file's `#` comment lines when
+it writes the sandbox's copy (the game's parser, `Settings_Load`
+`0x00401cb0`, knows only `key=value` lines), and sets `Resolution`,
+`ScreenMode`, `Mute` and `MasterVolume` (`FFX_TEST_VOLUME`, default 5).
 
 `Game::launch` takes a ticket, waits until a slot is free (saying so on
 stderr), holds that slot's lock while the game runs and frees it when the
