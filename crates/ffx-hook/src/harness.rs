@@ -47,6 +47,7 @@
 //! | `readp <addr> <offset> <len>` | reads at `*addr + offset` |
 //! | `readabs <addr> <len>` | reads a process address |
 //! | `write <addr> <hex>` | `ok` |
+//! | `writep <addr> <offset> <hex>` | writes at `*addr + offset` |
 //! | `pad [buttons]` | holds PS2 buttons, none to release |
 //! | `press <buttons> <frames> [gap]` | holds buttons, releases, waits `gap` frames (default as long) |
 //!
@@ -1532,9 +1533,16 @@ fn command(line: &str) -> Result<String, String> {
                 hex(&read_memory(at, parse_u32(arg(3)?)? as usize)?)
             )
         }
-        "write" => {
+        "write" | "writep" => {
+            // writep <addr> <offset> <hex>: at *addr + offset, like readp
             let at = crate::rebase(parse_u32(arg(1)?)?);
-            let text = arg(2)?;
+            let (at, text) = if words[0] == "writep" {
+                let ptr = read_memory(at, 4)?;
+                let base = u32::from_le_bytes(ptr.try_into().expect("4 bytes")) as usize;
+                (base + parse_u32(arg(2)?)? as usize, arg(3)?)
+            } else {
+                (at, arg(2)?)
+            };
             let bytes = (0..text.len() / 2)
                 .map(|i| u8::from_str_radix(&text[2 * i..2 * i + 2], 16).map_err(|e| e.to_string()))
                 .collect::<Result<Vec<u8>, String>>()?;

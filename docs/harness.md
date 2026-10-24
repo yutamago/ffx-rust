@@ -254,6 +254,24 @@ jitter) and the Rust run matched both (0 pixels). It has no trace ranges;
 `run-all.sh --record boot` records it alone (`--record NAME...` leaves the
 other replays' recordings alone). About 75 s, the longest replay.
 
+`tools/replays/battle-magic.txt` (2026-10-24) plays the one spell
+overlay that calls `op_shape_draw` (`0x007ed0c0`): `magic_0481.dll`, its
+only caller (`g_MagicImports` slot 242). No command, item or monster
+ability plays magic 481: it is an event effect that waits for the event
+script's effect flags (`AtelGetEffectFlag` 0..11 and 15, `g_AtelEffectFlags`
+`0x01326b70`). The replay starts battle-attack's battle, points the first
+item record's effect IDs (`+0x10`, `+0x12` underwater; `MsGetMagicEffNum`)
+at 481 with `writep` (`*addr + offset`, like `readp`), has Rikku use it
+and sets the flags itself, one more every 60 frames, from the frame the
+magic file is loaded (`g_MagicFile_Handle` `0x00c64cac`). Coverage mode
+(`FFX_COVERAGE`, `0x007ed0c0`) gives no hit up to flag 5 + 90 frames and a
+hit once flag 6 is set: shot 1 is the stage before (flag 5), shots 2 and 3
+the burst flag 6 starts (10 and 30 frames in). The effect looks the same in
+every run; the characters' idle swim pose under it does not (the battle's
+load time moves its phase), so `shot-compare.py` is blind there like on
+battle-attack-1: look at the shots. Traces: the magic ID, the flags and the
+actors' HP (the item heals Rikku at the end). About 17 s.
+
 `tools/replays/menu-browse.txt` opens the main menu and takes screenshots
 at fixed frames. Some of the screen animates by the wall clock (the
 character panels' shimmer), so two runs of the original already differ in
