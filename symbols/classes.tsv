@@ -9595,7 +9595,7 @@
 0x00820650	debug	only called from debug code (Gui_ChrMenuInit and 1 more)
 0x00820660	debug	only called from debug code (0x854c60)
 0x00820670	logic	default (no rule: ported to be safe)
-0x00820680	dead	unreachable from the entry point and every pointer table
+0x00820680	dead	reviewed: PS2 main (Sg_InitArgs, Sg_MainInit, then Sg_MainLoop forever); refs.py: 0 refs, the PC build enters through 0x822490 (pc round 9)
 0x008206c0	logic	default (no rule: ported to be safe)
 0x00820750	logic	default (no rule: ported to be safe)
 0x008207f0	debug	debug name: Sg_MainDebug

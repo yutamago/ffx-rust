@@ -578,6 +578,7 @@ REVIEWED = {
     0x00882bb0: ("debug", "script debugger page; only ref from the page switch 0x883070 (small round 6)"),
     0x00883960: ("debug", "script debugger page; only ref from the page switch 0x883070 (small round 6)"),
     0x006793e0: ("platform", "PhyreFIOS_LoadMagicfilePrx: PC error handling around PhyreFIOS_LoadsPrx (MessageBoxW, ShowCursor, ResetToLauncher) (small round 6)"),
+    0x00820680: ("dead", "PS2 main (Sg_InitArgs, Sg_MainInit, then Sg_MainLoop forever); refs.py: 0 refs, the PC build enters through 0x822490 (pc round 9)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
