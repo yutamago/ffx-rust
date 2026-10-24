@@ -1,0 +1,103 @@
+# Shops: save slot 5 (ffx_005, the Thunder Plains agency kami0100, map
+# 0x107, scenario 1470), loaded without the title menu. Tidus walks to the
+# counter and talks to Rin ("Welcome to Rin Travel Agency!", then the
+# choice Rest / Buy weapons / Buy items / Leave), twice:
+# - Buy weapons (the weapon shop, MenuWShop_*, menu slot 0xc: bit 0x1000 of
+#   g_TkMenuMainActiveMask 0x018408ec): buys a Baroque Sword (825 gil;
+#   "Are you sure?" starts on No, so Up first; "Equip?" answered No), then
+#   sells a Stunning Steel (762 gil; "Sell ...?" starts on No too), Done;
+# - Buy items (the item shop, slot 0xd: bit 0x2000): buys a Mega Potion (50
+#   gil, stock 35 -> 36), sells one (12 gil), Done.
+# Gil 16563 -> 15738 -> 16500 -> 16450 -> 16462.
+#
+# Lockstep, fast mode. The walk starts at ctrl work 0's count 101
+# (0x01325d94, as in field-walk.txt); each shop's inputs start a fixed
+# number of frames after its menu slot turns active (`waitfor` on the
+# mask), the second talk after the first shop's slot is off again, and the
+# first press on each dialogue after message window 0 opens (state 2,
+# g_AtelMsgWindows + 0x14).
+#
+# Ranges: gil (g_SaveGil 0x011307d8), the item inventory (g_SaveItemIds
+# 0x0113095c, 0x70 u16; g_SaveItemCounts 0x01130b5c, 0x70 u8), the
+# equipment inventory (0x01130f2c, 200 x 22 bytes), the party records
+# (0x0113205c, 18 x 0x94), the active menu mask, message window 0.
+# Screenshots (menu-shop-<n>.bmp): 1 the weapon list, 2 "Equip?" after the
+# purchase, 3 "Sell Stunning Steel." (Yes/No), 4 the sell list after the
+# sale, 5 the item quantity window, 6 the item sell quantity window, 7 the
+# sell list after the sale, 8 the field after the shop.
+load direct 5 kami0100
+lockstep on
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x011307d8:4 0x0113095c:0xe0 0x01130b5c:0x70 0x01130f2c:0x1130 0x0113205c:0xa68 0x018408ec:4 0x01326d84:12
+# to the front of the counter, facing Rin
+press down+right 12 10
+press right 10 10
+press up 20 10
+press left 8 10
+press up 15 10
+press circle 4 4
+waitfor 0x01326d84:4 02000000 ffffffff 300
+wait 36
+press circle 4 60
+# Buy weapons
+press down 4 15
+press circle 4 4
+waitfor 0x018408ec:4 00100000 ffffffff 300
+wait 56
+shot $OUT\menu-shop-1.bmp
+# Buy: the Baroque Sword (first line), Yes, then "Equip?" No
+press circle 4 40
+press circle 4 40
+press up 4 15
+press circle 4 60
+shot $OUT\menu-shop-2.bmp
+press circle 4 60
+# Sell: the cursor starts on the Stunning Steel
+press cross 4 30
+press right 4 15
+press circle 4 40
+press circle 4 40
+shot $OUT\menu-shop-3.bmp
+press up 4 15
+press circle 4 60
+shot $OUT\menu-shop-4.bmp
+# Done
+press cross 4 30
+press right 4 15
+press circle 4 4
+waitfor 0x018408ec:4 00000000 ffffffff 300
+wait 60
+# Rin again: Buy items
+press circle 4 4
+waitfor 0x01326d84:4 02000000 ffffffff 300
+wait 36
+press circle 4 60
+press down 4 15
+press down 4 15
+press circle 4 4
+waitfor 0x018408ec:4 00200000 ffffffff 300
+wait 56
+# Buy: one Mega Potion (the quantity stays 1), confirmed
+press circle 4 40
+press right 4 15
+press right 4 15
+press circle 4 40
+shot $OUT\menu-shop-5.bmp
+press circle 4 60
+# Sell: the Mega Potion (first slot), one
+press cross 4 30
+press right 4 15
+press circle 4 40
+press circle 4 40
+shot $OUT\menu-shop-6.bmp
+press circle 4 60
+shot $OUT\menu-shop-7.bmp
+# Done
+press cross 4 30
+press right 4 15
+press circle 4 4
+waitfor 0x018408ec:4 00000000 ffffffff 300
+wait 60
+read 0x011307d8 4
+shot $OUT\menu-shop-8.bmp

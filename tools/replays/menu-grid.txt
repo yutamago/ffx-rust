@@ -1,0 +1,96 @@
+# Sphere Grid and more main menu screens: save slot 5 (ffx_005, the
+# Thunder Plains agency kami0100), loaded without the title menu.
+# Main menu (triangle), Sphere Grid, Tidus (S.Lv 30): Use, Power Sphere,
+# the Strength node under the cursor (Power Spheres 99 -> 98, "Tidus's
+# Strength increased by 1!"); Use, Power Sphere again, Right picks the
+# Defense node beside him (97); Move, Right, "Move to this location?" Yes
+# (S.Lv 30 -> 29). Cross asks "Return to Main Menu?" with Yes selected and
+# Circle answers it (as in coverage-session.txt). Then Aeons (Valefor's
+# status, the Abilities page), Formation (Tidus and Rikku swap places) and
+# back to the field.
+#
+# Lockstep, fast mode; the menu opens at ctrl work 0's count 101
+# (0x01325d94, as in field-walk.txt). After each node activation the
+# message must run out (wait 60) before the next press, or the press goes
+# elsewhere. No shots of the main menu: its play-time clock blinks
+# (menu-browse masks it, tools/shot-compare.py MASKS).
+#
+# Ranges: the party records (0x0113205c, 18 x 0x94: stats, S.Lv, AP), the
+# item inventory (g_SaveItemIds 0x0113095c, g_SaveItemCounts 0x01130b5c:
+# the spheres), the sphere grid's save block (g_SaveAbilityMap 0x0112ec7c,
+# 0x1320 bytes: activated nodes, positions), the party order
+# (g_SaveInParty 0x011307e8, 0x14 bytes with the reserve), the active
+# menu mask (0x018408ec).
+# Screenshots (menu-grid-<n>.bmp): 1 the grid on Tidus, 2 Power Sphere 99
+# picked, 3 "Strength increased", 4 "Move to this location?", 5 Tidus on
+# the Defense node, 6 "Return to Main Menu?", 7 Valefor's status, 8 the
+# Abilities page, 9 the field.
+load direct 5 kami0100
+lockstep on
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x0113205c:0xa68 0x0113095c:0xe0 0x01130b5c:0x70 0x0112ec7c:0x1320 0x011307e8:0x14 0x018408ec:4
+press triangle 8 60
+press circle 4 90
+press circle 4 60
+shot $OUT\menu-grid-1.bmp
+# Use, Power Sphere, the node under the cursor
+press circle 4 60
+press down 4 30
+press circle 4 60
+press circle 4 60
+shot $OUT\menu-grid-2.bmp
+press circle 4 60
+shot $OUT\menu-grid-3.bmp
+wait 60
+# Use (remembered), Power Sphere, the node to the right
+press circle 4 60
+press circle 4 60
+press right 4 30
+press circle 4 60
+press circle 4 60
+wait 60
+# Move one node right
+press circle 4 60
+press up 4 30
+press circle 4 60
+press right 4 30
+press circle 4 60
+shot $OUT\menu-grid-4.bmp
+press circle 4 90
+shot $OUT\menu-grid-5.bmp
+# leave: Return to Main Menu? Yes
+press cross 4 60
+shot $OUT\menu-grid-6.bmp
+press circle 4 90
+# Aeons (entry 6: up 5 wraps from the Sphere Grid): Valefor's status
+press up 4 15
+press up 4 15
+press up 4 15
+press up 4 15
+press up 4 15
+press circle 4 60
+press circle 4 60
+shot $OUT\menu-grid-7.bmp
+# the Abilities page
+press cross 4 40
+press right 4 15
+press circle 4 60
+press down 4 15
+press circle 4 60
+shot $OUT\menu-grid-8.bmp
+press cross 4 40
+press cross 4 40
+press cross 4 40
+press cross 4 40
+# Formation (the next entry): Tidus and Rikku swap
+press down 4 15
+press circle 4 60
+press circle 4 40
+press down 4 15
+press circle 4 60
+press cross 4 40
+press cross 4 40
+press cross 4 60
+wait 60
+shot $OUT\menu-grid-9.bmp

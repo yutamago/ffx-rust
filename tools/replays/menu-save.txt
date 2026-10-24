@@ -1,0 +1,121 @@
+# Save and load: save slot 5 (ffx_005, the Thunder Plains agency kami0100,
+# map 0x107), loaded without the title menu. Equip (main menu entry 4):
+# Tidus's weapon Sonic Steel -> Brotherhood, so the save differs from
+# ffx_005. Then the save sphere beside Tidus (Up, Circle: Save / Play
+# blitzball / Cancel), Save: the PC save list (a Flash screen, keys),
+# "New Save Data", "Save the game?" Yes: written as the first free slot
+# (ffx_004) of the harness's sandboxed Documents folder (Options::home,
+# ~/ffx-work/harness/<slot>/home, a fresh copy at every launch: the user's
+# saves are never written), Backspace leaves the list. Back to the title
+# the way a game over goes (`call` AtelJumpGameOver 0x0086da10: map 0x17,
+# which goes on to memochek and the opening, map 0x15d; Start skips to the
+# title proper), Load (Enter), list entry 1 (the newest manual save: the
+# one just written; entry 0 is the autosave), Yes, and the save's map
+# opens again with Brotherhood equipped (the Equip screen).
+#
+# Lockstep, fast mode. The save/load machine's state
+# (g_SaveMachineState 0x00ce72e8; docs/formats/save.md) is waited on
+# before every key: 1 building the save list, 2 its input, 3 "Save the
+# game?", 5 writing, 2 again, 0 closed; on the load side 0xb list, 0xc its
+# input, 0xd Yes/No. The Flash screens take keys a little after they are
+# drawn, so each key comes 30-60 frames after its state. The map words
+# (g_SaveData +0) are waited on through the title, and each field's shots
+# on ctrl work 0's count (0x01325d94; count 101, as in field-walk.txt).
+# No shots of the save or load lists: their dates are the files' times
+# (the sandbox copy's and the save's, by the wall clock).
+#
+# Ranges: g_SaveData (0x0112ca90, 0x68c0 bytes: map, party, gil,
+# inventory, the sphere grid block) without the play time (+0xbc, u32
+# seconds: Atel_PlayTimeUpdate_0086ca20 counts it from graphicGetTime, so
+# its ticks fall at another point of the script in every run, original
+# code included), the save file buffer (g_SaveFileBuffer 0x01597f70,
+# 0x6900) without the header's play time (+0x10) and CRC (+0x1a), the
+# block's play time (+0xfc) and the CRC after the block (+0x64f4), all of
+# which differed between two original runs. The map words (+0, range 0)
+# and the word at +0x28 (range 2) are ranges of their own: at the load
+# frame +0x29 took an in-between value for one frame in some runs (one of
+# nine original runs, most Rust runs; the field's load timing). The save
+# machine's state, list cursor and file counts (0x00ce72e8, 0x18), the
+# slot list's present flags (0x00ce7c78, 200 words, range 11) and its
+# entry 1's slot (g_SortedSaveTable 0x00ce7318 + 12, range 12; the other
+# words are dates and seconds), message window 0. Ranges 11 and 12 each
+# showed an extra or other first state in one original run: before the
+# save, entry 1 is whichever sandbox copy sorts first, and the copies'
+# times tie or not by the second they were made. run-all.sh leaves
+# ranges 2, 11 and 12 out of the comparison (--ignore 2,11,12); the
+# counts in range 10 and the file buffer still check the list and the
+# save. Screenshots (menu-save-<n>.bmp): 1 Brotherhood equipped, 2 the
+# save sphere's choice, 3 the field after saving, 4 the title, 5 the field
+# after loading, 6 the Equip screen after loading.
+load direct 5 kami0100
+lockstep on
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x0112ca90:0x10 0x0112caa0:0x18 0x0112cab8:4 0x0112cabc:0x90 0x0112cb50:0x6800 0x01597f70:0x10 0x01597f84:6 0x01597f8c:0xe0 0x01598070:0x63f4 0x0159e468:0x498 0x00ce72e8:0x18 0x00ce7c78:0x320 0x00ce7324:4 0x01326d84:12
+# Equip, Tidus, Weapon, Brotherhood (the first line)
+press triangle 8 60
+press down 4 15
+press down 4 15
+press down 4 15
+press down 4 15
+press circle 4 60
+press circle 4 60
+press circle 4 60
+press circle 4 60
+shot $OUT\menu-save-1.bmp
+press cross 4 40
+press cross 4 40
+press cross 4 60
+# the save sphere: Save
+press up 30 10
+press circle 4 60
+shot $OUT\menu-save-2.bmp
+press circle 4 4
+waitfor 0x00ce72e8:4 02000000 ffffffff 600
+wait 60
+# New Save Data, Yes
+key 1c 3 3
+waitfor 0x00ce72e8:4 03000000 ffffffff 600
+wait 30
+key 1c 3 3
+waitfor 0x00ce72e8:4 05000000 ffffffff 600
+waitfor 0x00ce72e8:4 02000000 ffffffff 1200
+wait 60
+key 0e 3 3
+waitfor 0x00ce72e8:4 00000000 ffffffff 600
+wait 60
+shot $OUT\menu-save-3.bmp
+# to the title, as after a game over
+call 0x0086da10
+waitfor 0x0112ca90:2 5d01 ffff 1500
+wait 60
+press start 3 20
+waitfor 0x0112ca90:2 1700 ffff 1500
+wait 120
+shot $OUT\menu-save-4.bmp
+# Load, entry 1, Yes
+key 1c 3 3
+waitfor 0x00ce72e8:4 0c000000 ffffffff 600
+wait 60
+key d0 3 20
+key 1c 3 3
+waitfor 0x00ce72e8:4 0d000000 ffffffff 600
+wait 30
+key 1c 3 3
+waitfor 0x0112ca90:2 0701 ffff 1500
+waitfor 0x01325d94:4 00000000 c0ffffff 1500
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+shot $OUT\menu-save-5.bmp
+# Equip, Tidus: Brotherhood
+press triangle 8 60
+press down 4 15
+press down 4 15
+press down 4 15
+press down 4 15
+press circle 4 60
+press circle 4 60
+shot $OUT\menu-save-6.bmp
+press cross 4 40
+press cross 4 60
+read 0x00ce7318 0x30
