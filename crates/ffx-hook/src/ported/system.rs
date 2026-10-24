@@ -34,6 +34,19 @@ fn call_sym<M>(mem: &mut M, sym: u32, args: &[u32]) -> u32 {
     call_ptr(mem, crate::rebase(sym) as u32, args)
 }
 
+/// [`call_sym`] for bridges with callees of 7 or more stack words
+/// (`TOMkpCrossExtMesFontLClut`, `TOMkpShapeXYWHUV`): those go through
+/// `call_cdecl_words` (brief, "Call width"), the rest through
+/// [`call_sym`].
+fn call_sym_wide<M>(mem: &mut M, sym: u32, args: &[u32]) -> u32 {
+    if args.len() >= 7 {
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        super::call_cdecl_words(crate::rebase(sym) as u32, args)
+    } else {
+        call_sym(mem, sym, args)
+    }
+}
+
 /// Calls the original cdecl function at `sym` (an `ffx.sym` address) that
 /// returns its result in ST0, read back at double precision; up to six
 /// arguments (f32 arguments as their bits).
@@ -1525,6 +1538,14 @@ ported! {
             |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
             call_sym,
         )
+    }
+    /// `TOBtlDrawLibraLeft(x)`: the last draw's `eax` (callers drop it).
+    TOBtlDrawLibraLeft @ 0x0089_bf70 => extern "C" fn to_btl_draw_libra_left(x: i32) -> u32 {
+        // the original's [ebp-8], [ebp-4]: TOGetMessageWH's width and
+        // height, ToGetBtlEasyFontWidth's width
+        let mut frame = super::StackFrame::<2>::new();
+        let size = frame.at();
+        btl::bridge::btl_draw_libra_left(&mut mem(), x, size, call_sym_wide, fcall)
     }
     /// `TOBtlSetInfoWinParam(chr)`.
     TOBtlSetInfoWinParam @ 0x0089_9fd0 => extern "C" fn to_btl_set_info_win_param(chr: u32) -> u32 {

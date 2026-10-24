@@ -10689,7 +10689,7 @@
 0x0089bc50 function SetGlobal_00c58ef8 # cdecl(v): *0x00c58ef8 = v, returns v; name ours
 0x0089bc60 function SetByte_00c58ef4 # cdecl(v): byte 0x00c58ef4 = v; name ours
 0x0089bc80 function ToDrawLibraWin            # fh v3:exact 0x0089bbf0
-0x0089bf70 function TOBtlDrawLibraLeft        # fh v3:cg14 0x89bee0 _TOBtlDrawLibraLeft
+0x0089bf70 function TOBtlDrawLibraLeft        # fh v3:cg14 0x89bee0 _TOBtlDrawLibraLeft; cdecl(i32 x) -> last draw's eax (TOBtlDrawLibraWindow 0x008953ea/0x00895432 drops it and pops the slot, which the original overwrites with f32(x)); name MsGetRamChrName(g_LibraChr) measured by TOGetMessageWH into [ebp-8]/[ebp-4], drawn at X2(486)+x+(X2(410)-0.9w)/2 (f64), Y2(547); frame shape -1 (486, 586, 410, 42; uv 1330,0,1680,50); captions 0xe9/0x1f8/0x1f9 (TOGetFFXLangJmp 0xb: own sizes, x-7/-5, y+2), HP/HPmax (DigitRight/Digit2, '/' 0x00b8f88c by TOMkpEasyStrFontS at ftol), Str/Mag; 4 element rows from ftol(Y2(706)) step Y2(45), TOBtlDrawScanWinElementLamp(chr, i, ftol(X2(495)+x) [-5 at 0xb], y); bottom 0x1fa; g_LibraLine cycle (20 frames) MsMenuGetText(1, id, 1) centred at X2(684.5). Callees reading more words than pushed just before the call (TOGetMessageWH 6, TOMkpCrossExtMesFontLClut 7, TOMkpShapeXYWHUV 9, TOMkpEasyStrFontS 3) read words this function stored earlier for the same call (args written right to left, remap results left in their own slots; logged by the pc7_a stand-ins); ported (ffx_system::btl, pc round 7 a)
 0x0089c7d0 function TOBtlDrawLibraRight          # layout+callees: sorts between TOBtlDrawLibraLeft and TOBtlDrawTargetCursor, and its named callees match the Switch 0x71004a0960 TOBtlDrawLibraRight's (similarity 1.00: MsGetMenuChrInfo, TOGetMessageWH, TOMkpCrossExtMesFontLClut, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export; ported (system round 37)
 0x0089c870 function TOBtlDrawTargetCursor     # fh v3:exact 0x0089c7e0 _TOBtlDrawTargetCursor
 0x0089c900 function TOBtlGetMainPad           # fh v3:exact 0x0089c870 _TOBtlGetMainPad; small round 1: ported in ffx_system::tolib (to_btl_get_main_pad; libra auto + missed forces trigger 0x10; skip command, inputIsPressButton(0x08000000) summon, left/right windows, row moves, libra auto check (TOCheckBtlCommandUse(0x023cc088, 0x3000) < 0 -> forceAutoBattleOff, trigger 0x20), cancel/confirm, scroll); MsGetSaveWindow's count in a 1-word frame
@@ -17469,6 +17469,11 @@
 0x0133f618 label    g_BtlInfoWinLines         # 4 records of 0x1c: +0 i16 shown, +0xc/+0x10 f32 x, y, +0x18 text (TOBtlInitInfoWinMes lays them out, TOBtlDrawInfoWinMes draws them); name ours
 0x0133f688 label    g_BtlInfoWinLineCount     # u16: lines of g_BtlInfoWinLines in use (TOBtlSetInfoWinMes 1, TOBtlCtrlInfoWinMes packs and counts); name ours
 0x0133f694 label    g_BtlInfoWinBox           # 4 i16 at 4-byte steps: x0, y0, x1, y1 of the info window font scissor (TOBtlDrawInfoWinMes); name ours
+0x0133f6aa label    g_LibraChr                # i16: the Libra target (TOBtlSetLibraWindowParam writes it; TOBtlDrawLibraLeft/Right read it); name ours
+0x0133f6ac label    g_LibraLineTimer          # u16: frames left on the shown Libra status line (0x14 per line; TOBtlDrawLibraLeft counts down); name ours
+0x0133f6ae label    g_LibraLine               # u16: the shown Libra status line (back to 0 at g_LibraLineCount; TOBtlDrawLibraLeft); name ours
+0x0133f6b0 label    g_LibraLineCount          # i16: Libra status lines in g_LibraLines (TOBtlSetLibraWindowParam counts them); name ours
+0x0133f6b2 label    g_LibraLines              # u16[]: MsMenuGetText(1, id, 1) ids of the Libra status lines (TOBtlSetLibraWindowParam); name ours
 0x0133f798 label    g_BtlLuluLimitTbl         # 16 bytes: running sums of the ASCII digits TOBtlSetLuluLimitTbl gets
 0x0133f7b4 label    g_BtlCurPos               # 4 cursor positions of 8 bytes (x +0, y +4, z +6, u16) pushed by TOBtlSetCurPos
 0x0133f988 label g_BtlEnemyLimitBars          # 8 x 16 bytes: i32 +0 target width, +4 shown width (TOBtlInitEnemyLimit, TOBtlCtrlEnemyLimit); name ours

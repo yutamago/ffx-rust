@@ -602,6 +602,388 @@ pub mod bridge {
     /// entry, `+6` the count, `+8` the `u16` message ids.
     const INFO_STATUS: u32 = 0x0133_f5c0;
 
+    /// One shape of the Libra and info windows: `TOMkpShapeXYWHUV(shape,
+    /// X(x) + p [- x_sub], Y(y) [+ y_add], X(w), Y(h), uv)`, the remaps
+    /// asked `h`, `w`, `y`, `x` (the original fills the 9 words right to
+    /// left, each remap's result left in its own slot).
+    struct Shape {
+        id: u32,
+        x: f32,
+        x_sub: Option<f64>,
+        y: f32,
+        y_add: Option<f64>,
+        w: f32,
+        h: f32,
+        uv: [u32; 4],
+    }
+
+    /// The Libra window's frame (`TOBtlDrawLibraLeft`, also behind each
+    /// element row with the row's `y`).
+    const LIBRA_FRAME: Shape = Shape {
+        id: u32::MAX,
+        x: 486.0,
+        x_sub: None,
+        y: 586.0,
+        y_add: None,
+        w: 410.0,
+        h: 42.0,
+        uv: [0x44a6_4000, 0, 0x44d2_0000, 0x4248_0000], // 1330, 0, 1680, 50
+    };
+
+    /// `TOBtlDrawLibraLeft`'s captions, each `[other languages, language
+    /// 0xb]`: HP (`0xe9`), the two below it (`0x1f8`, `0x1f9`); the
+    /// bottom one (`0x1fa`) is the same in every language.
+    const LIBRA_CAPTIONS: [[Shape; 2]; 3] = [
+        [
+            Shape {
+                id: 0xe9,
+                x: 520.0,
+                x_sub: None,
+                y: 582.0,
+                y_add: None,
+                w: 60.0,
+                h: 58.0,
+                // 0.361328125, 0.001953125, 0.443359375, 0.0625
+                uv: [0x3eb9_0000, 0x3b00_0000, 0x3ee3_0000, 0x3d80_0000],
+            },
+            Shape {
+                id: 0xe9,
+                x: 520.0,
+                x_sub: Some(7.0),
+                y: 582.0,
+                y_add: Some(2.0),
+                w: 85.0,
+                h: 30.0,
+                // 0.361328125, 0.01171875, 0.4443359375, 0.041015625
+                uv: [0x3eb9_0000, 0x3c40_0000, 0x3ee3_8000, 0x3d28_0000],
+            },
+        ],
+        [
+            Shape {
+                id: 0x1f8,
+                x: 518.0,
+                x_sub: None,
+                y: 635.0,
+                y_add: None,
+                w: 170.0,
+                h: 30.0,
+                // 0, 0.3154296875, 0.3125, 0.375
+                uv: [0, 0x3ea1_8000, 0x3ea0_0000, 0x3ec0_0000],
+            },
+            Shape {
+                id: 0x1f8,
+                x: 518.0,
+                x_sub: Some(5.0),
+                y: 635.0,
+                y_add: None,
+                w: 170.0,
+                h: 30.0,
+                uv: [0, 0x3ea1_8000, 0x3ea0_0000, 0x3ec0_0000],
+            },
+        ],
+        [
+            Shape {
+                id: 0x1f9,
+                x: 518.0,
+                x_sub: None,
+                y: 670.0,
+                y_add: None,
+                w: 202.0,
+                h: 30.0,
+                // 0, 0.251953125, 0.37109375, 0.3125
+                uv: [0, 0x3e81_0000, 0x3ebe_0000, 0x3ea0_0000],
+            },
+            Shape {
+                id: 0x1f9,
+                x: 518.0,
+                x_sub: Some(5.0),
+                y: 670.0,
+                y_add: None,
+                w: 202.0,
+                h: 30.0,
+                uv: [0, 0x3e81_0000, 0x3ebe_0000, 0x3ea0_0000],
+            },
+        ],
+    ];
+
+    /// `TOBtlDrawLibraLeft`'s bottom shape (`0x1fa`).
+    const LIBRA_BOTTOM: Shape = Shape {
+        id: 0x1fa,
+        x: 570.0,
+        x_sub: None,
+        y: 887.0,
+        y_add: None,
+        w: 229.0,
+        h: 28.0,
+        // 0, 0.1962890625, 0.3974609375, 0.2490234375
+        uv: [0, 0x3e49_0000, 0x3ecb_8000, 0x3e7f_0000],
+    };
+
+    /// `graphicUiRemapY2(v)` (`y_axis`) or `graphicUiRemapX2(v)` through
+    /// `fcall`: the f32 result at the x87's precision.
+    fn ui<M: Mem>(
+        mem: &mut M,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+        y_axis: bool,
+        v: f32,
+    ) -> f64 {
+        let f = if y_axis { 0x0064_4820 } else { 0x0064_47e0 };
+        fcall(mem, f, &[v.to_bits()])
+    }
+
+    /// Draws `s` shifted by `p` (`TOMkpShapeXYWHUV`, 9 words); `y` given
+    /// (a row's `f32`) replaces its `Y(s.y)`. Returns the draw's `eax`.
+    #[allow(clippy::many_single_char_names)] // the shape's x, y, w, h
+    fn draw_shape<M: Mem>(
+        mem: &mut M,
+        s: &Shape,
+        p: f64,
+        y: Option<u32>,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, store, sub};
+        let h = store(ui(mem, fcall, true, s.h));
+        let w = store(ui(mem, fcall, false, s.w));
+        let y = match y {
+            Some(y) => y,
+            None => {
+                let y = ui(mem, fcall, true, s.y);
+                store(s.y_add.map_or(y, |k| add(y, k)))
+            }
+        };
+        let x = add(ui(mem, fcall, false, s.x), p);
+        let x = store(s.x_sub.map_or(x, |k| sub(x, k)));
+        let [u0, v0, u1, v1] = s.uv;
+        call(mem, 0x0090_3bb0, &[s.id, x, y, w, h, u0, v0, u1, v1])
+    }
+
+    /// `TOGetFFXLangJmp()` is [`LANG_SHIFTED`].
+    fn lang_shifted<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> bool {
+        call(mem, 0x008a_c2f0, &[]) == LANG_SHIFTED
+    }
+
+    /// `TOGetFFXLangJmp()`'s language number for the layouts with their
+    /// own offsets (`TOBtlDrawLibraLeft`, `TOBtlDrawInfoWin`).
+    const LANG_SHIFTED: u32 = 0xb;
+
+    /// `TOBtlDrawLibraLeft(x)` (`0x0089bf70`, Fahrenheit's name): the
+    /// left half of the Libra window, shifted right by `x` (`p = f32(x)`,
+    /// which the original stores into its own argument slot; its callers
+    /// pop it unread). The Libra target is `i16 0x0133f6aa` (`chr`, read
+    /// again for each call); `X`/`Y` are `graphicUiRemapX2`/`Y2`
+    /// (through `fcall`), asked in the original's order.
+    ///
+    /// - The name `MsGetRamChrName(chr)`, measured by `TOGetMessageWH(0,
+    ///   name, size, size + 4, 0, 0)` (`w` the f32 at `size`), asked again
+    ///   and drawn by `TOMkpCrossExtMesFontLClut(-1, name, X(486) + p + d,
+    ///   Y(547), 0, 0.64, 0.5)` with the f64 `d = (X(410) - 0.9 w) / 2`.
+    /// - [`LIBRA_FRAME`], the HP caption, HP `ToMakeBtlEasyDigitRight(
+    ///   MsGetRamChrHP(chr), X(700) + p, Y(589), 0, 0.64, 0.5)`, the slash
+    ///   `TOMkpEasyStrFontS("/", ftol(X(705) + p), ftol(Y(594)))`, the
+    ///   maximum `ToMakeBtlEasyDigit2(MsGetRamChrHPmax(chr), X(740) + p,
+    ///   Y(589), ..)`, the two other captions ([`LIBRA_CAPTIONS`], by
+    ///   `TOGetFFXLangJmp()` each), strength and magic
+    ///   (`MsGetRamChrStr`/`Mag`) by `DigitRight` at `X(800) + p`,
+    ///   `Y(630)`/`Y(665)`.
+    /// - Four element rows from `y = ftol(Y(706))`: the frame at `f32(y)`,
+    ///   `TOBtlDrawScanWinElementLamp(chr, i, lx, y)` with
+    ///   `lx = ftol(X(495) + p)` (language 0xb: `ftol(f32(lx) - 5)`),
+    ///   `y = ftol(Y(45) + f32(y))`. Then [`LIBRA_BOTTOM`].
+    /// - While the i16 line count `0x0133f6b0` is positive, its cycle: the
+    ///   u16 timer `0x0133f6ac` counts down and, past 0, restarts at 0x14
+    ///   and moves to the next line `0x0133f6ae` (back to 0 at the count);
+    ///   the line's id (u16 `0x0133f6b2[line]`) names `MsMenuGetText(1, id,
+    ///   1)`, measured by `ToGetBtlEasyFontWidth(text, size, 0, 0.64, 0.5)`
+    ///   into `w` and drawn by `TOMkpCrossExtMesFontLClut(-1, text,
+    ///   X(684.5) + p - w / 2, Y(915), 0, 0.64, 0.5)`.
+    ///
+    /// The callees the original hands more words than it pushes just
+    /// before the call (`TOGetMessageWH`, `TOMkpCrossExtMesFontLClut`,
+    /// `TOMkpShapeXYWHUV`, `TOMkpEasyStrFontS`) read words it stored
+    /// earlier for that same call: it writes each call's words right to
+    /// left and leaves every remap's result in the remap's own slot. The
+    /// full argument lists here are those words. Returns the last call's
+    /// `eax` (the bottom shape's or the line's draw); the callers drop it.
+    #[allow(clippy::many_single_char_names, clippy::too_many_lines)] // x, y, w, p as in the docs; the draws in order
+    pub fn btl_draw_libra_left<M: Mem>(
+        mem: &mut M,
+        x: i32,
+        size: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, ftol, load, mul, store, sub};
+        let scale = [0.64f32, 0.5].map(f32::to_bits);
+        let chr = |mem: &M| i32::from(mem.read::<i16>(mem.rebase(0x0133_f6aa))).cast_unsigned();
+        let p = f64::from(int_f32(x));
+        // the name
+        let c = chr(mem);
+        let name = call(mem, 0x0079_af10, &[c]);
+        call(mem, 0x008b_9650, &[0, name, size, size + 4, 0, 0]);
+        let span = ui(mem, &mut fcall, false, 410.0);
+        let w = load(mem.read(size));
+        let d = mul(sub(span, mul(w, 0.899_999_976_158_142_1)), 0.5);
+        let y = store(ui(mem, &mut fcall, true, 547.0));
+        let at = store(add(add(ui(mem, &mut fcall, false, 486.0), p), d));
+        let c = chr(mem);
+        let name = call(mem, 0x0079_af10, &[c]);
+        call(
+            mem,
+            0x0090_16b0,
+            &[u32::MAX, name, at, y, 0, scale[0], scale[1]],
+        );
+        draw_shape(mem, &LIBRA_FRAME, p, None, &mut call, &mut fcall);
+        let lang = lang_shifted(mem, &mut call);
+        draw_shape(
+            mem,
+            &LIBRA_CAPTIONS[0][usize::from(lang)],
+            p,
+            None,
+            &mut call,
+            &mut fcall,
+        );
+        libra_value(
+            mem,
+            [0x0079_add0, 0x0090_55c0],
+            [700.0, 589.0],
+            p,
+            &mut call,
+            &mut fcall,
+        );
+        let y = ui(mem, &mut fcall, true, 594.0);
+        let y = ftol(mem, y);
+        let x = add(ui(mem, &mut fcall, false, 705.0), p);
+        let x = ftol(mem, x);
+        let slash = mem.rebase(0x00b8_f88c);
+        call(mem, 0x0090_2040, &[slash, x, y]);
+        libra_value(
+            mem,
+            [0x0079_adf0, 0x0090_5550],
+            [740.0, 589.0],
+            p,
+            &mut call,
+            &mut fcall,
+        );
+        for caption in &LIBRA_CAPTIONS[1..] {
+            let lang = lang_shifted(mem, &mut call);
+            draw_shape(
+                mem,
+                &caption[usize::from(lang)],
+                p,
+                None,
+                &mut call,
+                &mut fcall,
+            );
+        }
+        libra_value(
+            mem,
+            [0x0079_af40, 0x0090_55c0],
+            [800.0, 630.0],
+            p,
+            &mut call,
+            &mut fcall,
+        );
+        libra_value(
+            mem,
+            [0x0079_ae90, 0x0090_55c0],
+            [800.0, 665.0],
+            p,
+            &mut call,
+            &mut fcall,
+        );
+        // the element rows
+        let lamp_x = add(ui(mem, &mut fcall, false, 495.0), p);
+        let lamp_x = ftol(mem, lamp_x);
+        let y = ui(mem, &mut fcall, true, 706.0);
+        let mut y = ftol(mem, y);
+        for i in 0..4 {
+            let row = int_f32(y.cast_signed());
+            draw_shape(
+                mem,
+                &LIBRA_FRAME,
+                p,
+                Some(row.to_bits()),
+                &mut call,
+                &mut fcall,
+            );
+            let x = if lang_shifted(mem, &mut call) {
+                ftol(mem, sub(f64::from(int_f32(lamp_x.cast_signed())), 5.0))
+            } else {
+                lamp_x
+            };
+            let c = chr(mem);
+            call(mem, 0x0089_5ae0, &[c, i, x, y]);
+            let next = add(ui(mem, &mut fcall, true, 45.0), f64::from(row));
+            y = ftol(mem, next);
+        }
+        let ret = draw_shape(mem, &LIBRA_BOTTOM, p, None, &mut call, &mut fcall);
+        libra_status_line(mem, size, p, &mut call, &mut fcall).unwrap_or(ret)
+    }
+
+    /// `TOBtlDrawLibraLeft`'s status line (see there): `None` without
+    /// lines, else the draw's `eax`.
+    fn libra_status_line<M: Mem>(
+        mem: &mut M,
+        size: u32,
+        p: f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> Option<u32> {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let scale = [0.64f32, 0.5].map(f32::to_bits);
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let count = mem.read::<i16>(at(mem, 0x0133_f6b0));
+        if count <= 0 {
+            return None;
+        }
+        let timer: u16 = mem.read(at(mem, 0x0133_f6ac));
+        mem.write(at(mem, 0x0133_f6ac), timer.wrapping_sub(1));
+        let mut line: u16 = mem.read(at(mem, 0x0133_f6ae));
+        if timer == 0 {
+            mem.write(at(mem, 0x0133_f6ac), 0x14u16);
+            line = line.wrapping_add(1);
+            mem.write(at(mem, 0x0133_f6ae), line);
+            if line == count.cast_unsigned() {
+                line = 0;
+                mem.write(at(mem, 0x0133_f6ae), line);
+            }
+        }
+        let id_at =
+            at(mem, 0x0133_f6b2).wrapping_add((2 * i32::from(line.cast_signed())).cast_unsigned());
+        let id = u32::from(mem.read::<u16>(id_at));
+        let text = call(mem, 0x0078_fcf0, &[1, id, 1]);
+        call(mem, 0x0090_5290, &[text, size, 0, scale[0], scale[1]]);
+        let y = store(ui(mem, fcall, true, 915.0));
+        let x = add(ui(mem, fcall, false, 684.5), p);
+        let x = store(sub(x, mul(load(mem.read(size)), 0.5)));
+        let args = [u32::MAX, text, x, y, 0, scale[0], scale[1]];
+        Some(call(mem, 0x0090_16b0, &args))
+    }
+
+    /// `TOBtlDrawLibraLeft`'s values: `draw(getter(chr), X(dx) + p, Y(dy),
+    /// 0, 0.64, 0.5)` (`ToMakeBtlEasyDigitRight` / `Digit2`), the remaps
+    /// asked `Y` first.
+    fn libra_value<M: Mem>(
+        mem: &mut M,
+        [getter, draw]: [u32; 2],
+        [dx, dy]: [f32; 2],
+        p: f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{add, store};
+        let y = store(ui(mem, fcall, true, dy));
+        let x = store(add(ui(mem, fcall, false, dx), p));
+        let c = i32::from(mem.read::<i16>(mem.rebase(0x0133_f6aa))).cast_unsigned();
+        let value = call(mem, getter, &[c]);
+        let scale = [0.64f32, 0.5].map(f32::to_bits);
+        call(mem, draw, &[value, x, y, 0, scale[0], scale[1]]);
+    }
+
     /// `TOBtlSetInfoWinParam(chr)` (`0x00899fd0`): the info window for
     /// `chr`. The status cycle is cleared and set to `chr`, timer 0x14;
     /// its HP and maximum (`MsGetRamChrHP`/`HPmax`) go to the `u16`s
