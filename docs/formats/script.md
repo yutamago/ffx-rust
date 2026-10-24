@@ -1447,28 +1447,28 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x1005` | `AtelCall_Math_ATan2_RF` | y f, x f | float: atan2(y, x) through the game's _CIatan2 (import thunk 0x009498bc), rounded to f32 | - | float `0x00877b30` (native_chr) |
 | `0x1006` | `AtelCall_Math_Sqrt_RF` | x f | float: sqrt(x) as f32 | - | float `0x00877b70` (native_move) |
 | `0x1007` | `AtelCall_Math_InvSqrt_RF` | v f | float: 1 / sqrt(v), the root and the quotient rounded to f32 | - | float `0x00877ba0` (native_mods) |
-| `0x1008` | `Native_1008` | angle int | int: Math_SinTable2(angle) (0x0088c380) | - | int `0x00877bd0` (native_mods) |
-| `0x1009` | `Native_1009` | angle int | int: Math_CosTable(angle) (0x0088c120) | - | int `0x00877bf0` (native_mods) |
+| `0x1008` | `Native_1008_SinTable` | angle int | int: Math_SinTable2(angle) (0x0088c380) | - | int `0x00877bd0` (native_mods) |
+| `0x1009` | `Native_1009_CosTable` | angle int | int: Math_CosTable(angle) (0x0088c120) | - | int `0x00877bf0` (native_mods) |
 | `0x100a` | `Native_100a` | v int | int: the popped value; int: the popped value | - | int `0x008778b0` (native_chr) |
 | `0x100b` | `Native_100b` | v int | int: v << 15 | - | int `0x008778d0` (native_mods) |
 | `0x100c` | `AtelCall_Math_Ftoul_RI` | x f | int: x times the double at 0x00b51588, rounded to f32, truncated (_ftol2_sse) | - | int `0x008778f0` (native_mods) |
-| `0x100d` | `Native_100d` | angle f | int: Math_AngleTo15Bits(angle) (0x0088c040) | - | int `0x00877920` (native_mods) |
-| `0x100e` | `Native_100e` | angle f | int: Math_AngleTo12Bits(angle) (0x0088bfe0) | - | int `0x00877950` (native_mods) |
-| `0x100f` | `Native_100f` | a int | float: Math_AngleFrom15Bits(a) (0x0088c0e0) | - | float `0x00877980` (native_mods) |
-| `0x1010` | `Native_1010` | a int | float: Math_AngleFrom12Bits(a) (0x0088c0a0) | - | float `0x008779a0` (native_mods) |
-| `0x1011` | `Native_1011` | x0 f, z0 f, x1 f, z1 f | float: Math_Atan2XZ(x0, z0, x1, z1) (0x0088b430) | - | float `0x00877c10` (native_mods) |
-| `0x1012` | `Native_1012` | yaw var, pitch var, x0 f, y0 f, z0 f, x1 f, y1 f, z1 f | float: the yaw; Math_YawPitchTo (0x0088b4d0) writes the yaw and pitch from the first point to the second into the variables | - | float `0x00877c80` (native_mods) |
-| `0x1013` | `Native_1013` | v f | float: Math_WrapAngle(v) (0x0088bc20) | - | float `0x00877d30` (native_chr) |
-| `0x1014` | `Native_1014` | cur f, target f, step f | float: Math_AngleStep(cur, target, step) (0x0088b570) | - | float `0x00877d60` (native_mods) |
-| `0x1015` | `Native_1015` | - | six floats: 0x0088b780(f6, ..., f1)'s EAX | - | int `0x00877dc0` (native_chr) |
-| `0x1016` | `Native_1016` | r f, x0 f, y0 f, z0 f, x1 f, y1 f, z1 f | int: Math_InRadius(r, x0 - x1, y0 - y1, z0 - z1) (0x0088b730), the differences rounded to f32 | - | int `0x00877e50` (native_mods) |
-| `0x1017` | `Native_1017` | out var, points var, n int, t f | 0.0: TkMtCalcSpline(out, points, n, t) (0x0088a4a0) on the variables | - | float `0x00877ef0` (native_mods) |
-| `0x1018` | `Native_1018` | out var, a f, b f, c f | 0.0: 0x0088a3a0(out, a, b, c) on the variable | - | float `0x00877f60` (native_mods) |
+| `0x100d` | `Native_100d_AngleTo15Bits` | angle f | int: Math_AngleTo15Bits(angle) (0x0088c040) | - | int `0x00877920` (native_mods) |
+| `0x100e` | `Native_100e_AngleTo12Bits` | angle f | int: Math_AngleTo12Bits(angle) (0x0088bfe0) | - | int `0x00877950` (native_mods) |
+| `0x100f` | `Native_100f_AngleFrom15Bits` | a int | float: Math_AngleFrom15Bits(a) (0x0088c0e0) | - | float `0x00877980` (native_mods) |
+| `0x1010` | `Native_1010_AngleFrom12Bits` | a int | float: Math_AngleFrom12Bits(a) (0x0088c0a0) | - | float `0x008779a0` (native_mods) |
+| `0x1011` | `Native_1011_Atan2XZ` | x0 f, z0 f, x1 f, z1 f | float: Math_Atan2XZ(x0, z0, x1, z1) (0x0088b430) | - | float `0x00877c10` (native_mods) |
+| `0x1012` | `Native_1012_YawPitchTo` | yaw var, pitch var, x0 f, y0 f, z0 f, x1 f, y1 f, z1 f | float: the yaw; Math_YawPitchTo (0x0088b4d0) writes the yaw and pitch from the first point to the second into the variables | - | float `0x00877c80` (native_mods) |
+| `0x1013` | `Native_1013_WrapAngle` | v f | float: Math_WrapAngle(v) (0x0088bc20) | - | float `0x00877d30` (native_chr) |
+| `0x1014` | `Native_1014_AngleStep` | cur f, target f, step f | float: Math_AngleStep(cur, target, step) (0x0088b570) | - | float `0x00877d60` (native_mods) |
+| `0x1015` | `Native_1015_FacingWithin` | - | six floats: 0x0088b780(f6, ..., f1)'s EAX | - | int `0x00877dc0` (native_chr) |
+| `0x1016` | `Native_1016_InRadius` | r f, x0 f, y0 f, z0 f, x1 f, y1 f, z1 f | int: Math_InRadius(r, x0 - x1, y0 - y1, z0 - z1) (0x0088b730), the differences rounded to f32 | - | int `0x00877e50` (native_mods) |
+| `0x1017` | `Native_1017_CalcSpline` | out var, points var, n int, t f | 0.0: TkMtCalcSpline(out, points, n, t) (0x0088a4a0) on the variables | - | float `0x00877ef0` (native_mods) |
+| `0x1018` | `Native_1018_PolarToVector` | out var, a f, b f, c f | 0.0: 0x0088a3a0(out, a, b, c) on the variable | - | float `0x00877f60` (native_mods) |
 | `0x1019` | `AtelCall_Math_Abs_RF` | - | |v| rounded to f32 | - | float `0x00877fd0` (native_chr) |
-| `0x101a` | `Native_101a` | x1 f, z1 f, x2 f, z2 f | float: sqrt((z2 - z1)^2 + (x2 - x1)^2), f32 steps | - | float `0x00877ff0` (native_chr) |
-| `0x101b` | `Native_101b` | x1 f, y1 f, z1 f, x2 f, y2 f, z2 f | float: the 3D distance, as 0x101a | - | float `0x00878060` (native_chr) |
-| `0x101c` | `Native_101c` | - | 0x00878140(worker, args, stack)'s record +4 = 0; 0 | - | int `0x008780f0` (native_chr) |
-| `0x101d` | `Native_101d` | as 0x00878140 | 0: 0x00878140(worker, args, stack)'s record +4 = 1 (0x101c sets 0) | - | int `0x00878110` (native_mods) |
+| `0x101a` | `Native_101a_DistanceXZ` | x1 f, z1 f, x2 f, z2 f | float: sqrt((z2 - z1)^2 + (x2 - x1)^2), f32 steps | - | float `0x00877ff0` (native_chr) |
+| `0x101b` | `Native_101b_Distance3D` | x1 f, y1 f, z1 f, x2 f, y2 f, z2 f | float: the 3D distance, as 0x101a | - | float `0x00878060` (native_chr) |
+| `0x101c` | `Native_101c_SetVarSlot` | - | 0x00878140(worker, args, stack)'s record +4 = 0; 0 | - | int `0x008780f0` (native_chr) |
+| `0x101d` | `Native_101d_SetVarSlot` | as 0x00878140 | 0: 0x00878140(worker, args, stack)'s record +4 = 1 (0x101c sets 0) | - | int `0x00878110` (native_mods) |
 | `0x4000` | `Native_Empty_00a77d20` | - | 0 (an empty handler) | - | int `0x00a77d20` (native_mods) |
 | `0x4001` | `Native_4001` | v f | 0: Sg_SetSuimen(v) (0x00836640) | - | int `0x00a77b90` (native_chr) |
 | `0x4003` | `Atel_Sg_Flash` | d int, c int, b int, a int | 0: Sg_Flash(d, c, b, a) (0x0082cca0) | - | int `0x00a77d30` (native_chr) |
@@ -2802,7 +2802,7 @@ a movie picture. `TkMenuSaveLoad_PollCard_008b3d20` steps the save
 screen's card poll (`0x0186626b`: 0 to 1, 1 asks `TkMcGetInfo`, 2 ends)
 and, when done, sets the save choice, resets the step and flips
 `g_TkMenuSaveLoadToggles`. `Atel_SetVarSlot_00878140`, the core of
-`Native_101c`/`101d` (which now call it in Rust), pops a variable word
+`Native_101c_SetVarSlot`/`101d` (which now call it in Rust), pops a variable word
 and a slot (0-7) and points the current ctrl work's `+0x1a4 + slot*8` at
 the variable. `Atel_GetEventActorRot_0086b270` is
 `AtelGetEventActorPos`'s twin for the rotation (`+0x30`..`+0x38`;

@@ -3690,7 +3690,7 @@ pub fn tk_menu_save_load_poll_card(h: &mut impl ffx_bridge::Host) -> u32 {
 }
 
 /// `Atel_SetVarSlot_00878140(worker, args, stack)` (name ours; the core of
-/// `Native_101c`/`Native_101d`): pops a variable word and a slot (0..=7,
+/// `Native_101c_SetVarSlot`/`Native_101d_SetVarSlot`): pops a variable word and a slot (0..=7,
 /// clamped) and points the current ctrl work's slot record (`+0x1a4 +
 /// slot*8`) at the variable (`AtelGetRealVarAdrs`; 0 for word 0). Returns
 /// the record's address.

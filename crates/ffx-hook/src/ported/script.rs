@@ -2720,8 +2720,8 @@ ported! {
     Native_503b @ 0x00a7_a450 => extern "C" fn n_a7a450(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_503b(&mut mem(), w, a, s)
     }
-    /// `Native_1015(worker, args, stack)`.
-    Native_1015 @ 0x0087_7dc0 => extern "C" fn n_877dc0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_1015_FacingWithin(worker, args, stack)`.
+    Native_1015_FacingWithin @ 0x0087_7dc0 => extern "C" fn n_877dc0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_1015(&mut mem(), w, a, s)
     }
     /// `Native_4008(worker, args, stack)`.
@@ -2992,8 +2992,8 @@ ported! {
     Native_c055 @ 0x0087_81d0 => extern "C" fn n_8781d0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_c055(&mut mem(), w, a, s)
     }
-    /// `Native_101c(worker, args, stack)`.
-    Native_101c @ 0x0087_80f0 => extern "C" fn n_8780f0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_101c_SetVarSlot(worker, args, stack)`.
+    Native_101c_SetVarSlot @ 0x0087_80f0 => extern "C" fn n_8780f0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_101c(&mut mem(), w, a, s)
     }
     /// `Native_c024(worker, args, stack)`.
@@ -3220,8 +3220,8 @@ ported! {
     Native_503d @ 0x00a7_a520 => extern "C" fn n_a7a520(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_503d(&mut mem(), w, a, s)
     }
-    /// `Native_101a(worker, args, stack)`.
-    Native_101a @ 0x0087_7ff0 => extern "C" fn n_877ff0(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_101a_DistanceXZ(worker, args, stack)`.
+    Native_101a_DistanceXZ @ 0x0087_7ff0 => extern "C" fn n_877ff0(w: u32, a: u32, s: u32) -> f64 {
         native_chr::native_101a(&mut mem(), w, a, s)
     }
     /// `Native_5006(worker, args, stack)`.
@@ -3252,8 +3252,8 @@ ported! {
     Native_503e @ 0x00a7_a570 => extern "C" fn n_a7a570(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_503e(&mut mem(), w, a, s)
     }
-    /// `Native_101b(worker, args, stack)`.
-    Native_101b @ 0x0087_8060 => extern "C" fn n_878060(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_101b_Distance3D(worker, args, stack)`.
+    Native_101b_Distance3D @ 0x0087_8060 => extern "C" fn n_878060(w: u32, a: u32, s: u32) -> f64 {
         native_chr::native_101b(&mut mem(), w, a, s)
     }
     /// `Native_5054(worker, args, stack)`.
@@ -3308,8 +3308,8 @@ ported! {
     Native_503a @ 0x00a7_a3d0 => extern "C" fn n_a7a3d0(w: u32, a: u32, s: u32) -> f64 {
         native_chr::native_503a(&mut mem(), w, a, s)
     }
-    /// `Native_1013(worker, args, stack)`.
-    Native_1013 @ 0x0087_7d30 => extern "C" fn n_877d30(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_1013_WrapAngle(worker, args, stack)`.
+    Native_1013_WrapAngle @ 0x0087_7d30 => extern "C" fn n_877d30(w: u32, a: u32, s: u32) -> f64 {
         native_chr::native_1013(&mut mem(), w, a, s)
     }
     /// `Atel_Sg_Flash(worker, args, stack)`.
@@ -5480,20 +5480,20 @@ ported! {
     AtelCall_Math_Ftoul_RI @ 0x0087_78f0 => extern "C" fn n_8778f0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::atel_call_math_ftoul_ri(&mut mem(), w, a, s)
     }
-    /// `Native_100d(worker, args, stack)`.
-    Native_100d @ 0x0087_7920 => extern "C" fn n_877920(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_100d_AngleTo15Bits(worker, args, stack)`.
+    Native_100d_AngleTo15Bits @ 0x0087_7920 => extern "C" fn n_877920(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_100d(&mut mem(), w, a, s)
     }
-    /// `Native_100e(worker, args, stack)`.
-    Native_100e @ 0x0087_7950 => extern "C" fn n_877950(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_100e_AngleTo12Bits(worker, args, stack)`.
+    Native_100e_AngleTo12Bits @ 0x0087_7950 => extern "C" fn n_877950(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_100e(&mut mem(), w, a, s)
     }
-    /// `Native_100f(worker, args, stack)`.
-    Native_100f @ 0x0087_7980 => extern "C" fn n_877980(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_100f_AngleFrom15Bits(worker, args, stack)`.
+    Native_100f_AngleFrom15Bits @ 0x0087_7980 => extern "C" fn n_877980(w: u32, a: u32, s: u32) -> f64 {
         native_mods::native_100f(&mut mem(), w, a, s)
     }
-    /// `Native_1010(worker, args, stack)`.
-    Native_1010 @ 0x0087_79a0 => extern "C" fn n_8779a0(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_1010_AngleFrom12Bits(worker, args, stack)`.
+    Native_1010_AngleFrom12Bits @ 0x0087_79a0 => extern "C" fn n_8779a0(w: u32, a: u32, s: u32) -> f64 {
         native_mods::native_1010(&mut mem(), w, a, s)
     }
     /// `AtelCall_Math_Tan_RF(worker, args, stack)`.
@@ -5508,40 +5508,40 @@ ported! {
     AtelCall_Math_InvSqrt_RF @ 0x0087_7ba0 => extern "C" fn n_877ba0(w: u32, a: u32, s: u32) -> f64 {
         native_mods::atel_call_math_inv_sqrt_rf(&mut mem(), w, a, s)
     }
-    /// `Native_1008(worker, args, stack)`.
-    Native_1008 @ 0x0087_7bd0 => extern "C" fn n_877bd0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_1008_SinTable(worker, args, stack)`.
+    Native_1008_SinTable @ 0x0087_7bd0 => extern "C" fn n_877bd0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_1008(&mut mem(), w, a, s)
     }
-    /// `Native_1009(worker, args, stack)`.
-    Native_1009 @ 0x0087_7bf0 => extern "C" fn n_877bf0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_1009_CosTable(worker, args, stack)`.
+    Native_1009_CosTable @ 0x0087_7bf0 => extern "C" fn n_877bf0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_1009(&mut mem(), w, a, s)
     }
-    /// `Native_1011(worker, args, stack)`.
-    Native_1011 @ 0x0087_7c10 => extern "C" fn n_877c10(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_1011_Atan2XZ(worker, args, stack)`.
+    Native_1011_Atan2XZ @ 0x0087_7c10 => extern "C" fn n_877c10(w: u32, a: u32, s: u32) -> f64 {
         native_mods::native_1011(&mut mem(), w, a, s)
     }
-    /// `Native_1012(worker, args, stack)`.
-    Native_1012 @ 0x0087_7c80 => extern "C" fn n_877c80(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_1012_YawPitchTo(worker, args, stack)`.
+    Native_1012_YawPitchTo @ 0x0087_7c80 => extern "C" fn n_877c80(w: u32, a: u32, s: u32) -> f64 {
         native_mods::native_1012(&mut mem(), w, a, s)
     }
-    /// `Native_1014(worker, args, stack)`.
-    Native_1014 @ 0x0087_7d60 => extern "C" fn n_877d60(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_1014_AngleStep(worker, args, stack)`.
+    Native_1014_AngleStep @ 0x0087_7d60 => extern "C" fn n_877d60(w: u32, a: u32, s: u32) -> f64 {
         native_mods::native_1014(&mut mem(), w, a, s)
     }
-    /// `Native_1016(worker, args, stack)`.
-    Native_1016 @ 0x0087_7e50 => extern "C" fn n_877e50(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_1016_InRadius(worker, args, stack)`.
+    Native_1016_InRadius @ 0x0087_7e50 => extern "C" fn n_877e50(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_1016(&mut mem(), w, a, s)
     }
-    /// `Native_1017(worker, args, stack)`.
-    Native_1017 @ 0x0087_7ef0 => extern "C" fn n_877ef0(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_1017_CalcSpline(worker, args, stack)`.
+    Native_1017_CalcSpline @ 0x0087_7ef0 => extern "C" fn n_877ef0(w: u32, a: u32, s: u32) -> f64 {
         native_mods::native_1017(&mut mem(), w, a, s)
     }
-    /// `Native_1018(worker, args, stack)`.
-    Native_1018 @ 0x0087_7f60 => extern "C" fn n_877f60(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_1018_PolarToVector(worker, args, stack)`.
+    Native_1018_PolarToVector @ 0x0087_7f60 => extern "C" fn n_877f60(w: u32, a: u32, s: u32) -> f64 {
         native_mods::native_1018(&mut mem(), w, a, s)
     }
-    /// `Native_101d(worker, args, stack)`.
-    Native_101d @ 0x0087_8110 => extern "C" fn n_878110(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_101d_SetVarSlot(worker, args, stack)`.
+    Native_101d_SetVarSlot @ 0x0087_8110 => extern "C" fn n_878110(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_101d(&mut mem(), w, a, s)
     }
     /// `Native_402b(worker, args, stack)`.

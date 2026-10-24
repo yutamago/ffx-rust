@@ -399,7 +399,7 @@ pub fn yaw_pitch_to(
 /// lies within `tol` of `heading`: the difference stored as a float,
 /// [`wrap_angle`]d, [`min_abs`] with `tol`, then strictly below `tol`
 /// (false with a NaN). The script's talk-angle check (`Native_SetTalkAngle`,
-/// `Native_1015`) asks it. Like [`wrap_angle`], it never ends for an
+/// `Native_1015_FacingWithin`) asks it. Like [`wrap_angle`], it never ends for an
 /// infinite difference.
 #[must_use]
 pub fn facing_within(

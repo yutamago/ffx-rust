@@ -9959,10 +9959,10 @@
 0x008778b0 function Native_100a                # 0x100a: args (v int) -> int: the popped value; int: the popped value; ported in native_chr (script round 12)
 0x008778d0 function Native_100b # 0x100b: (v) -> v << 15; ported in native_mods (script round 19); name ours
 0x008778f0 function AtelCall_Math_Ftoul_RI # fh v3:exact 0x00877870 +AtelCall_Math_Ftoul_RI; 0x100c: (x f) -> ftol(f32(x * double 0x00b51588)); ported in native_mods (script round 19)
-0x00877920 function Native_100d # 0x100d: (a f) -> Math_AngleTo15Bits(a); ported in native_mods (script round 19); name ours
-0x00877950 function Native_100e # 0x100e: (a f) -> Math_AngleTo12Bits(a); ported in native_mods (script round 19); name ours
-0x00877980 function Native_100f # 0x100f: (a) -> Math_AngleFrom15Bits(a); ported in native_mods (script round 19); name ours
-0x008779a0 function Native_1010 # 0x1010: (a) -> Math_AngleFrom12Bits(a); ported in native_mods (script round 19); name ours
+0x00877920 function Native_100d_AngleTo15Bits # 0x100d: (a f) -> Math_AngleTo15Bits(a); ported in native_mods (script round 19); name ours; name from "Math_AngleTo15Bits(a)" (0x0088c040)
+0x00877950 function Native_100e_AngleTo12Bits # 0x100e: (a f) -> Math_AngleTo12Bits(a); ported in native_mods (script round 19); name ours; name from "Math_AngleTo12Bits(a)"
+0x00877980 function Native_100f_AngleFrom15Bits # 0x100f: (a) -> Math_AngleFrom15Bits(a); ported in native_mods (script round 19); name ours; name from "Math_AngleFrom15Bits(a)"
+0x008779a0 function Native_1010_AngleFrom12Bits # 0x1010: (a) -> Math_AngleFrom12Bits(a); ported in native_mods (script round 19); name ours; name from "Math_AngleFrom12Bits(a)"
 0x008779c0 function Native_1000                # 0x1000: args (slot int, a int, b int, v int) -> 1: ctrl work +0xa4 slot (0..31) = a/8 | 0x80, b/4, the worker's +0x2e, v (cleared for negative a or b); ported in native_chr (script round 12)
 0x00877a70 function AtelCall_Math_Sin_RF      # fh v3:cg2 0x8779f0 +AtelCall_Math_Sin_RF
 0x00877aa0 function AtelCall_Math_Cos_RF      # fh v3:cg2 0x877a20 +AtelCall_Math_Cos_RF
@@ -9971,22 +9971,22 @@
 0x00877b30 function AtelCall_Math_ATan2_RF    # fh v3:exact 0x00877ab0 +AtelCall_Math_ATan2_RF; 0x1005 (float): atan2(y, x) through _CIatan2; ported in native_chr (script round 13)
 0x00877b70 function AtelCall_Math_Sqrt_RF     # 0x1006 float (x) -> sqrt(x); was Native_MathSqrt
 0x00877ba0 function AtelCall_Math_InvSqrt_RF # fh v3:exact 0x00877b20 +AtelCall_Math_InvSqrt_RF; 0x1007: (v f) -> 1 / f32(sqrt(v)) as f32; ported in native_mods (script round 19)
-0x00877bd0 function Native_1008 # 0x1008: (angle) -> Math_SinTable2(angle); ported in native_mods (script round 19); name ours
-0x00877bf0 function Native_1009 # 0x1009: (angle) -> Math_CosTable(angle); ported in native_mods (script round 19); name ours
-0x00877c10 function Native_1011 # 0x1011: (x0, z0, x1, z1 f) -> Math_Atan2XZ; ported in native_mods (script round 19); name ours
-0x00877c80 function Native_1012 # 0x1012: (&yaw, &pitch, from xyz, to xyz) -> Math_YawPitchTo into the variables; the yaw; ported in native_mods (script round 19); name ours
-0x00877d30 function Native_1013                # 0x1013 (float): args (v f) -> float: Math_WrapAngle(v) (0x0088bc20); ported in native_chr (script round 12)
-0x00877d60 function Native_1014 # 0x1014: (cur, target, step f) -> Math_AngleStep; ported in native_mods (script round 19); name ours
-0x00877dc0 function Native_1015                # 0x1015: no args -> six floats: 0x0088b780(f6, ..., f1)'s EAX; ported in native_chr (script round 12)
-0x00877e50 function Native_1016 # 0x1016: (r, p0 xyz, p1 xyz f) -> Math_InRadius(r, p0 - p1); ported in native_mods (script round 19); name ours
-0x00877ef0 function Native_1017 # 0x1017: (&out, &points, n, t f): TkMtCalcSpline; 0.0; ported in native_mods (script round 19); name ours
-0x00877f60 function Native_1018 # 0x1018: (&out, a, b, c f): 0x0088a3a0; 0.0; ported in native_mods (script round 19); name ours
+0x00877bd0 function Native_1008_SinTable # 0x1008: (angle) -> Math_SinTable2(angle); ported in native_mods (script round 19); name ours; name from "Math_SinTable2(angle)" (0x0088c380: Math_SinTable(angle))
+0x00877bf0 function Native_1009_CosTable # 0x1009: (angle) -> Math_CosTable(angle); ported in native_mods (script round 19); name ours; name from "Math_CosTable(angle)" (0x0088c120)
+0x00877c10 function Native_1011_Atan2XZ # 0x1011: (x0, z0, x1, z1 f) -> Math_Atan2XZ; ported in native_mods (script round 19); name ours; name from "Math_Atan2XZ" (0x0088b430: angle from x0,z0 to x1,z1)
+0x00877c80 function Native_1012_YawPitchTo # 0x1012: (&yaw, &pitch, from xyz, to xyz) -> Math_YawPitchTo into the variables; the yaw; ported in native_mods (script round 19); name ours; name from "Math_YawPitchTo into the variables" (0x0088b4d0)
+0x00877d30 function Native_1013_WrapAngle                # 0x1013 (float): args (v f) -> float: Math_WrapAngle(v) (0x0088bc20); ported in native_chr (script round 12); name from "Math_WrapAngle(v)" (0x0088bc20)
+0x00877d60 function Native_1014_AngleStep # 0x1014: (cur, target, step f) -> Math_AngleStep; ported in native_mods (script round 19); name ours; name from "Math_AngleStep" (0x0088b570: cur turned toward target by step)
+0x00877dc0 function Native_1015_FacingWithin                # 0x1015: no args -> six floats: 0x0088b780(f6, ..., f1)'s EAX; ported in native_chr (script round 12); name from "0x0088b780(f6..f1)'s EAX"; 0x0088b780=Math_FacingWithin; dump confirms the call
+0x00877e50 function Native_1016_InRadius # 0x1016: (r, p0 xyz, p1 xyz f) -> Math_InRadius(r, p0 - p1); ported in native_mods (script round 19); name ours; name from "Math_InRadius(r, p0 - p1)" (0x0088b730: dist^2 <= r^2)
+0x00877ef0 function Native_1017_CalcSpline # 0x1017: (&out, &points, n, t f): TkMtCalcSpline; 0.0; ported in native_mods (script round 19); name ours; name from "TkMtCalcSpline" (0x0088a4a0: spline point)
+0x00877f60 function Native_1018_PolarToVector # 0x1018: (&out, a, b, c f): 0x0088a3a0; 0.0; ported in native_mods (script round 19); name ours; name from "0x0088a3a0"=Math_PolarToVector into &out
 0x00877fd0 function AtelCall_Math_Abs_RF      # fh v3:exact 0x00877f50 +AtelCall_Math_Abs_RF
-0x00877ff0 function Native_101a                # 0x101a (float): args (x1 f, z1 f, x2 f, z2 f) -> float: sqrt((z2 - z1)^2 + (x2 - x1)^2), f32 steps; ported in native_chr (script round 12)
-0x00878060 function Native_101b                # 0x101b (float): args (x1 f, y1 f, z1 f, x2 f, y2 f, z2 f) -> float: the 3D distance, as 0x101a; ported in native_chr (script round 12)
-0x008780f0 function Native_101c                # 0x101c: no args -> 0x00878140(worker, args, stack)'s record +4 = 0; 0; ported in native_chr (script round 12)
-0x00878110 function Native_101d # 0x101d: 0x00878140's record +4 = 1; 0; ported in native_mods (script round 19); name ours
-0x00878140 function Atel_SetVarSlot_00878140 # name ours; cdecl (worker, args, stack): pops a variable word and a slot (clamped 0..7); current ctrl work +0x1a4 + slot*8 = AtelGetRealVarAdrs(worker, word) (0 for word 0); EAX the record; core of Native_101c/Native_101d (which call the Rust one); ported (ffx_script helpers, script round 24 c)
+0x00877ff0 function Native_101a_DistanceXZ                # 0x101a (float): args (x1 f, z1 f, x2 f, z2 f) -> float: sqrt((z2 - z1)^2 + (x2 - x1)^2), f32 steps; ported in native_chr (script round 12); name from "sqrt((z2 - z1)^2 + (x2 - x1)^2)"
+0x00878060 function Native_101b_Distance3D                # 0x101b (float): args (x1 f, y1 f, z1 f, x2 f, y2 f, z2 f) -> float: the 3D distance, as 0x101a; ported in native_chr (script round 12); name from "the 3D distance"
+0x008780f0 function Native_101c_SetVarSlot                # 0x101c: no args -> 0x00878140(worker, args, stack)'s record +4 = 0; 0; ported in native_chr (script round 12); name from 0x00878140=Atel_SetVarSlot (ctrl work +0x1a4 slot = var address); "record +4 = 0"
+0x00878110 function Native_101d_SetVarSlot # 0x101d: 0x00878140's record +4 = 1; 0; ported in native_mods (script round 19); name ours; name from 0x00878140=Atel_SetVarSlot (ctrl work +0x1a4 slot = var address); "record +4 = 1"
+0x00878140 function Atel_SetVarSlot_00878140 # name ours; cdecl (worker, args, stack): pops a variable word and a slot (clamped 0..7); current ctrl work +0x1a4 + slot*8 = AtelGetRealVarAdrs(worker, word) (0 for word 0); EAX the record; core of Native_101c_SetVarSlot/Native_101d_SetVarSlot (which call the Rust one); ported (ffx_script helpers, script round 24 c)
 0x008781b0 function Native_c054                # 0xc054: args (n) -> TkMalloc(n) (0x0088e650); ported in native_chr (script round 12)
 0x008781d0 function Native_c055                # 0xc055: args (p) -> TkFree(p) (0x0088d520); 1; ported in native_chr (script round 12)
 0x008781f0 function Native_c057                # 0xc057: no args -> debug (mod-tool candidate): copies 0x68c0 bytes from the address + 0x40 into g_SaveData and TkFlushSyncH ('copy to saveram'); 1; debug, not ported (mod-tool candidate)
@@ -10427,7 +10427,7 @@
 0x0088b610 function Math_AngleStepMode # cdecl(a, target, step, mode) -> f32 ST0: mode 1 Math_AngleStepTo(a, target, step), 2 with step * -1.0, else Math_AngleStep; caller 0x00869510 (two sites); ported in menu round 22; name ours
 0x0088b6b0 function Math_AngleStepTo          # (a, target, step) a + step unless (a - t)(a + step - t) <= 0, then target; Math_WrapAngle; own name
 0x0088b730 function Math_InRadius                # (r, dx, dy, dz) -> dx^2+dy^2+dz^2 <= r^2
-0x0088b780 function Math_FacingWithin         # (heading, tol, x0, z0, x1, z1) -> eax 1 when Math_MinAbs(Math_WrapAngle(Math_Atan2XZ(x0, z0, x1, z1) - heading), tol) < tol; the talk-angle check (Native_SetTalkAngle, Native_1015); name ours
+0x0088b780 function Math_FacingWithin         # (heading, tol, x0, z0, x1, z1) -> eax 1 when Math_MinAbs(Math_WrapAngle(Math_Atan2XZ(x0, z0, x1, z1) - heading), tol) < tol; the talk-angle check (Native_SetTalkAngle, Native_1015_FacingWithin); name ours
 0x0088b800 function Math_ClampPi              # (a) a clamped to [-pi, pi] (float pi); NaN passes; own name
 0x0088bc20 function Math_WrapAngle               # wraps to [-pi, pi]
 0x0088bc70 function Math_Det3Points           # (x1, y1, x2, y2, x3, y3) -> float twice the signed triangle area (sums in doubles, rounded to float)
