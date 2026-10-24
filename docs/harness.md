@@ -173,7 +173,11 @@ first byte of `Native_MsgSetText` (`0x00857870`) still held the unfired
 `int3` after the book's text was on screen. The `Native_` line of the
 report ("never ran") therefore lists natives the replays do run; coverage
 mode on the original code (an `int3` on every hooked port's first byte
-with `--hook-disable replacements`) counts them.
+with `--hook-disable replacements`) counts them. Run that way, the ten
+replays and the five coverage sessions reached 4,950 hooked ports, 432 of
+them natives, where the hook-hit union of the same runs has 3,512; the
+candidates file is every `ported!` address with its first byte
+(`~/ffx-work/rp-events2/natcand.py`, `covrun.sh`, `covattr.py`).
 
 ## Snapshots and replays
 
@@ -498,23 +502,42 @@ second half kept finding it), with `script.rs`, `menu.rs`, `map.rs`,
 timing that the trap cost tips, rather than one wrong port; the probe is
 `~/ffx-work/rp-events2/cam.txt` and `ab.sh` (rp-events2, 2026-10-24).
 
-`tools/replays/event-arrival.txt` (2026-10-24, `realtime`, about 80 s)
-plays the cut scene save slot 2 (`ffx_002`, the sea off Besaid, `bsil0000`
-entrance `0x41`, scenario 111) runs on load: Tidus swims up and surfaces
-("Tidus: Rikku!"), "Tidus: Blitzball!!", the Aurochs on the beach ("Hey!
-You okay?"), the kick, the ball over the beach. Voiced, so `realtime` as
-event-cliff, with the shots pinned to the first subtitle (window 0 state
-2) and fixed waits after it (two original runs read the event count within
-10 of each other at each shot). It ends before the control comes back
-(about 280 frames later) to stay near the other replays' length; the
-first subtitle comes about 640 counts (21 s) after the load. Traced from
-event count 256 on (in the event's first 40 frames one original run of two
-showed a one-frame value in the map words and in Tidus's position): the
-map words, scenario, message windows, the global generator, the party
-records and Tidus's position and rotation (the player's worker 0,
-`*0x01325bbc + 0x558`, `+0x588`). On the `eye` list: two original runs
-differ by 127,000-846,000 pixels per shot (water, the moving camera).
- opens the main menu and takes screenshots
+`tools/replays/event-arrival.txt` (2026-10-24, `realtime`, about 90 s, the
+longest replay) plays the cut scene save slot 2 (`ffx_002`, the sea off
+Besaid, `bsil0000` entrance `0x41`, scenario 111) runs on load, into the
+control: Tidus swims up and surfaces ("Tidus: Rikku!"), "Tidus:
+Blitzball!!", the Aurochs on the beach ("Hey! You okay?"), the kick, the
+ball over the beach, then Tidus treading water with the control back.
+Voiced, so `realtime` as event-cliff, with the shots pinned to the first
+subtitle (window 0 state 2) and fixed waits after it (two original runs
+read the event count within 10 of each other at each shot), and the last
+one to the control (ctrl work 0 `+0` bit 1). The first subtitle comes
+about 640 counts (21 s) after the load, the control about 1,280 frames
+after it. Traced from event count 256 on (in the event's first 40 frames
+one original run of two showed a one-frame value in the map words and in
+Tidus's position): the map words, scenario, message windows, the global
+generator, the party records, Tidus's x, z and rotation (the player's
+worker 0, `*0x01325bbc + 0x558`, `+0x560`, `+0x588`; not y, which bobs every
+frame once the control is back) and the player chr's motion id
+(`*0x01300788 + 0x72c`: `Sg_SetPlayer`'s pointer, 0 and so `-` until the
+control, then `Ch_MotionGetId`'s field). On the `eye` list: two original
+runs differ by 127,000-846,000 pixels per shot (water, the moving camera).
+
+The control check answers a report (2026-10-24) that Tidus sometimes stays
+in the upside-down pose of the swim when this scene ends. On the
+`load direct 2` path no FMV plays (the movie number `0x00c40e28` stays -1;
+the `Native_b000_MovieStart` of `bsil0000`'s worker 24 entry 5, which
+worker 0 entry 17 requests, was not reached; after the load the screen is
+black, then fades into the in-engine swim). In 22 runs to the control
+(6 fast lockstep and 3 realtime each on the original code and the Rust
+replacements, and 4 with the coverage session's presses during the
+scene) Tidus came back upright every time: motion `0x000110b8`, worker 0 at
+(-184.8, 3.5, -46.7), yaw -1.82, ctrl byte `0x8b`, and a press of Up moved
+him (to about (-177, -75)). Not reproduced on these paths; the replay
+guards it from now on (a wrong motion at the control changes the last
+range's value).
+
+`tools/replays/menu-browse.txt` opens the main menu and takes screenshots
 at fixed frames. Some of the screen animates by the wall clock (the
 character panels' shimmer), so two runs of the original already differ in
 about 27,000 pixels; `tools/shot-compare.py ORIG ORIG2 RUST` (three
