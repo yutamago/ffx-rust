@@ -23,7 +23,7 @@ tools/harness.py quit
 | Dialogs | `MessageBoxA`, `MessageBoxW` | In background mode a game dialog is logged (`ffx-hook.log`, and an event `messagebox <text>`) and answered OK instead of appearing on the user's desktop |
 | Events | `Phyre_PSerialization_PStreamFileWin32_openFile` | Every file the game opens, and which came from a mod |
 | Randomness | `Rng_ClockSeed` (`0x00798950`), wrapped | `MsRandMize` (`0x00798890`) seeds the global generator (`0x00c42200`) and the 68 at `0x01135ee0` from the system time (`GetSystemTime` bytes XORed, plus 1). With `--seed N` it gets `N`; `ffx-harness` uses seed 1 unless a test says otherwise |
-| Cloth | `JobSchedule_Ch_Cloth_PerCharacter`'s `push 0x0082e390` (`0x00a44b51`) | `Sg_ClothStep` (`0x00822de0`) takes its wind from the CRT `rand()`, whose seed is per thread (MSVCR110's `_getptd()` `+0x14`), and the cloth job runs on whichever JobWorker is free, so the cloth differed in every run. The harness queues its own job, which seeds `rand` for the job from the first character's place in the character array and ctrl work 0's event frame count at the last frame boundary, runs `Ch_Cloth_PerCharacter` and gives the worker its seed back (original code and Rust alike) |
+| Job seeds | the `push <job>` of `JobSchedule_Ch_Cloth_PerCharacter` (`0x00a44b51`) and `JobSchedule_Ch_CalcMiddle_Batch` (`0x00a44ba4`) | The cloth's wind (`Sg_ClothStep` `0x00822de0`), the mouths (`Ch_Mouth`) and the texture animations, eyes included (`chr_texanim_main` `0x0077c8d0`, from `Ch_CalcMiddle_Batch` `0x00833530`), draw from the CRT `rand()`, whose seed is per thread (MSVCR110's `_getptd()` `+0x14`), in jobs that run on whichever JobWorker is free, so they differed between runs (the cloth in every draw capture). The harness queues its own jobs, which seed `rand` for the job from its kind, its first character's place in the character array and ctrl work 0's event frame count at the last frame boundary, run the game's job and give the worker its seed back (original code and Rust alike; `harness.rs` `seeded_job`) |
 | Speed | `Phyre_PTimerWin32_GetTime` (`0x0042fd80`), wrapped; the main loop's `call [Sleep]` (`0x0062f3bb`) | The main loop (`Game_Main`, `0x0062ee50`) runs a frame (`0x0062e340`) once `DAT_00c30e88` × 1/59.94 s have passed on `Phyre_PTimerWin32_GetTime`, and sleeps away the rest. With `--fast` that one `Sleep` returns at once and adds its time to the clock: frames run back to back (461 a second instead of 30–60) while the game still sees one frame interval per frame. `ffx-harness` uses it by default. On the virtual clock (`--virtual-clock`) the clock starts at 2^20 s (`VIRTUAL_START`, not the wall clock's FILETIME reading of about 1.34e10 s, whose f64 rounding differed in every run) and the `Sleep` moves it to the next frame's time exactly (`g_AppStartTime` + `g_FrameLimiterLast` + one interval, plus 1e-9 s) instead of the whole ms the limiter chops it to, so every frame is one interval long and time differences repeat (`docs/drawdiff.md`, "Noise in cdsp0000") |
 | Sandbox | `SHGetFolderPathW` | With `--home DIR`, the Documents folder is `DIR`: the game reads and writes `GameSetting.ini` and its saves (autosaves too) there. `ffx-harness` makes `DIR` a fresh copy of the user's `Square Enix/FINAL FANTASY X&X-2 HD Remaster` before each launch, so tests can load the user's saves and never change them, with the sandbox's own `GameSetting.ini` in place of the user's ("Sandbox settings" below) |
 
@@ -194,10 +194,10 @@ and are not armed.
 - Cost: unset, nothing is armed and the shims, thunks and patch sites are
   those of a normal run (no flag or branch on any path). Set, each hook
   costs one exception and one append the first time it runs, nothing
-  after. A replay gives the same events either way, except menu-save,
-  whose save and load copies passed through an in-between state for a
-  frame with the slower first calls (`run-all.sh --hits` leaves those
-  ranges out; see menu-save below).
+  after. A replay gives the same events either way. (Until 2026-10-24
+  menu-save's save and load copies showed an in-between state for a frame
+  with the slower first calls, and `--hits` left those ranges out: the
+  render-thread trace's doing, see menu-save below.)
 - Crash-safe: each hit is one `WriteFile` in append mode with no user-space
   buffer, so a game that dies leaves every hit it had, and lines from
   several threads never interleave.
@@ -525,9 +525,11 @@ window to close (`waitfor` state 0) before the next input, after which the
 script's frames are fixed again. Two more things vary between original
 runs: a chocobo icon at the bottom right of maps `0x14` and `0x29` that
 animates by the wall clock (masked, `shot-compare.py` `MASKS`), and the
-player position range, which misses an in-between value when a trace frame
-is skipped (seen in 2 of about 6 pairs of original runs; `run-all.sh`
-passes `--ignore 2`).
+player position range (`run-all.sh` passes `--ignore 2`). That was thought
+to be a trace frame skipped; sampled between two updates (2026-10-24) the
+three original runs still gave three different sequences (404-406 values,
+parting at the 193rd to 262nd), with other values, not only fewer, so the
+position itself differs.
 
 event-cliff (`realtime`, about 72 s, the longest replay) makes the same
 walk one step further, into the trigger of `bsil0300`'s worker 18 (a line
@@ -551,7 +553,12 @@ player position and the view matrix, which follow the presses' frames, plus
 Wakka's position and rotation (`*0x01325bbc + 0x4968`, `+0x4998`). The
 shots are on `run-all.sh`'s `eye` list (checked by eye, like
 battle-overdrive's): three original runs differed by 2,000-77,000 pixels
-per shot (water, cloth, hair), more than the Rust run does.
+per shot (water, cloth, hair), more than the Rust run does (2026-10-24,
+sampled between two updates: 0-2,100). Wakka's position and rotation
+change every frame, and at the game's own rate a frame that falls behind
+runs more ticks (`Sg_FrameSync`'s hold), so the trace, taken once a frame,
+can miss values in between: a Rust run missed 4 of 197. `run-all.sh`
+compares those two ranges by order (`replay-compare.py --sampled 6,7`).
 
 On 2026-10-24 the Rust run of event-cliff did not reach the scene, and with
 that fixed Wakka stood about 200 pixels out of place: `Atel_TurnUpdate`
@@ -581,64 +588,71 @@ phase (after a rest, shots of the plains differed by 47,000-67,000 pixels
 between original runs), so Rest comes last and no shot follows it; the
 script waits for the control to come back (ctrl work 0 `+0` bit 1,
 `0x01325ba0`, which `AtelUcOn` sets). Traced: the map and previous map
-(`0x0112ca90`, 4 bytes: the 16 of event-besaid had a one-frame value at a
-talk in one of three original runs), scenario, player position (left out
-of the comparison, `--ignore 2`, as event-besaid's), view matrix, message
-windows 0 and 1, the random generators, the party records, the key items
-(`g_SaveImportant` `0x01130f1c`) and ctrl work 0's byte `+3` (bit 2 while
-an event reward is given; its byte `+0` had a one-frame value at the map
-change in one of two original runs). Seven shots: the agency, the book's
-choice, its first page, the plains by the door, the chest's first message,
-"Obtained Venus Sigil!", the counter's choice. The plains' shots (4-6)
-show the chocobo icon at the bottom right (x 1227-1262, y 661-705), which
-animates by the wall clock as on event-besaid's maps (570-980 pixels
-against the recording; the original runs agreed there by chance), so
-`tools/shot-compare.py` masks it there as it does for event-besaid; shots
-1-3 and 7 gave 0-5 pixels.
+(`0x0112ca90`, 16 bytes as in event-besaid), scenario, player position,
+view matrix, message windows 0 and 1 (`+0x14`, 12 bytes each), the random
+generators, the party records, the key items (`g_SaveImportant`
+`0x01130f1c`) and ctrl work 0's first word (`0x01325ba0`: bit 1 of `+0`
+the control, bit 2 of `+3` while an event reward is given). Until
+2026-10-24 the map words were cut to 4 bytes, the windows to 8, ctrl work
+0 to its byte `+3`, and the position was left out of the comparison: each
+had shown a one-frame value in an original run, which the render-thread
+trace had caught (below). Six original runs since agree on all of them
+but the position, which skipped a value in one (a frame where it moved two
+steps): `run-all.sh` compares the position by order (`--sampled 2`).
+Seven shots: the agency, the book's choice, its first page, the plains by
+the door, the chest's first message, "Obtained Venus Sigil!", the
+counter's choice. The plains' shots (4-6) and the counter's (7) show the
+chocobo icon at the bottom right (x 1227-1262, y 661-705), which animates
+by the wall clock as on event-besaid's maps (about 800-1,000 pixels
+between original runs), so `tools/shot-compare.py` masks it there as it
+does for event-besaid. The plains' rain differs between original runs too
+(about 1,000 pixels more, in some pairs of five runs, 2026-10-24), so
+`run-all.sh` compares shots 4-6 coarsely, as field-walk's
+(`--coarse`). Rin's eyes at the counter (x 663-673, y 345-347) take one of
+two states in shot 1, menu-save-5 and menu-grid-9 (in one original run of
+three before the middle-calc jobs were seeded, and in some Rust runs
+after): 4-5 pixels, under `shot-compare.py`'s streak limit.
 
-Message windows 0 and 1 are traced from `+0x14` for 8 bytes, not 12.
-Their `+0x1c..+0x1f` (`+0x1d` the mode flags, `+0x1e`/`+0x1f` the choice
-cursor) can show a value the game never holds at a frame boundary, and
-that is the trace's doing, not the game's (agency-race, 2026-10-24).
-`Present`, where `trace_frame` samples, runs on Phyre's render thread
-(`Phyre_PRendering_PRenderThread_threadEntry` `0x00616010`; the call log's
-callers `00593782,006159bb,0061608e`), while the main thread runs the next
-frame's update (`Script_Run`, the natives) beside it: lockstep holds the
-render thread in `Present`, and the main thread goes on until it waits for
-the render thread. In the call log `Native_MsgOpen` started before one
-`present` line and returned after it. A sample therefore sees the main
-thread's update up to wherever it has got to. Two pairs of writes are
-caught this way, each made by one call on the main thread with no frame in
-between:
+Until 2026-10-24 (harness-main-thread) the trace sampled in `Present`, on
+Phyre's render thread (`Phyre_PRendering_PRenderThread_threadEntry`
+`0x00616010`; the call log's callers `00593782,006159bb,0061608e`), while
+the main thread ran the next frame's update (`Script_Run`, the natives)
+beside it: lockstep held only the render thread, and the main thread went
+on until it waited for the render thread. In the call log `Native_MsgOpen`
+started before one `present` line and returned after it. A sample saw the
+main thread's update up to wherever it had got to (agency-race). Two pairs
+of writes were caught this way in message windows 0 and 1's
+`+0x1c..+0x1f` (`+0x1d` the mode flags, `+0x1e`/`+0x1f` the choice
+cursor), each made by one call on the main thread with no frame in between:
 - the book's choice (window 1): `Msg_ShowSetup` (`0x008607a0`) calls
   `Native_MsgOpen`, which stores `Msg_ClampChoices`' flags (`02`) into
   `+0x1d` first and then sets up the text box (`TOInitMessageSlot_008ada30`,
   `TOSetWindowRGBA`, ... `TOOpenWindowAndMessage`), then
-  `Native_MsgSelect`, which ORs in `0x20`. Split traces show `02`, then
+  `Native_MsgSelect`, which ORs in `0x20`. Split traces showed `02`, then
   `22` a frame later;
 - Read confirmed (window 0, the book's message reopened): in one script run
   `Msg_CloseWindow` (`0x008640f0`) writes `+0x1e` = `ffff`, `Native_MsgOpen`
   writes `+0x1d` (`00`) and sets up the box, and the wait's start
-  (`Native_MsgWaitEx` `0x0085abd0`, `wait_start`) ORs in `0x10`. Split traces
-  show `ffff` with `+0x1d` `00`, then `10` a frame later.
-The longer the main thread spends between the two writes (the text box
-setup in between), the likelier a sample lands there. Per-byte traces
+  (`Native_MsgWaitEx` `0x0085abd0`, `wait_start`) ORs in `0x10`. Split
+  traces showed `ffff` with `+0x1d` `00`, then `10` a frame later.
+The longer the main thread spent between the two writes (the text box
+setup in between), the likelier a sample landed there. Per-byte traces
 (`~/ffx-work/agency-race/bytes.txt`, one-byte ranges decoded by
 `decode.py`; `probe.sh`): the original 0 of 7 (and 0 of 25 before, 0 of 6
 with coverage mode's first-call traps), plain Rust 1 of 6 (3 of 26
 before), hook-hit mode 3 of 3 (its first-call traps fall in the text box
-setup). The original splits both pairs in 3 of 3 runs, exactly as Rust does,
+setup). The original split both pairs in 3 of 3 runs, exactly as Rust did,
 with a debug build that wraps the original `Native_MsgOpen` with a
 trampoline and sleeps 30 ms after it returns (`debug-probe.patch` there,
 `FFX_DEBUG_MSGOPEN=30`; 0 of 2 with the same wrapper and no sleep). No game
-state differs: the main thread reads its own writes in order, and the
+state differed: the main thread reads its own writes in order, and the
 game's code never looks at these bytes between the two writes. So no port
-is wrong, and the old bisection could not find one: what it moved was the
+was wrong, and the old bisection could not find one: what it moved was the
 main thread's time inside that window (any 757 hooks' worth of trap and
-call cost), not one function or a pair of them. The 8-byte trace stays.
-A sample taken on the main thread between two updates would remove this
-kind of one-frame value from every replay; that is a harness change (and
-re-recording) not made here.
+call cost), not one function or a pair of them. The trace now samples on
+the main thread between two updates ("Frames and threads"), so the windows
+are traced for 12 bytes again; three original runs, the Rust runs and a
+hook-hit run agree on them.
 
 `tools/replays/event-arrival.txt` (2026-10-24, `realtime`, about 90 s, the
 longest replay) plays the cut scene save slot 2 (`ffx_002`, the sea off
@@ -747,22 +761,22 @@ dates are the files' times.
   `+0x1a`, `+0x64f4`): the play time counts from `graphicGetTime` and
   ticks at another point of the script in every run, original code
   included; the machine's state, cursor and file counts, the slot list's
-  present flags and its entry 1's slot, message window 0. `run-all.sh`
-  leaves three ranges out (`--ignore 2,11,12`), each of which took an
-  in-between or other value for a frame in an original run: the save
-  data word at `+0x28` (at the load frame `+0x29` held another value for
-  one frame: 1 of 9 original runs, most Rust runs; the field's load
-  timing), the present flags, and entry 1 before the save (whichever
-  sandbox copy sorts first: the copies' times tie or not by the second
-  they were made). In hook-hit mode (`--hits`) it leaves out three more
-  (`0,4,7`): with the slower first calls the loaded block's map words and
-  the rest of the block passed through an in-between state for a frame at
-  the load (the copy and the title script's jump a frame apart), and the
-  packed save's header at the save (2 of 2 runs with `FFX_HOOK_HITS`, 0 of
-  9 Rust runs without). The waits on the map words still check the maps. A bisect of the Rust runs' `+0x28` difference with
-  `FFX_HOOK_DISABLE` found no single port: neither half of the 2,061 ports
-  the replay runs fixed it alone, and the halves that did held a harness
-  hook (`Phyre_PTimerWin32_GetTime`, the virtual clock; `Input_KeyHeld`).
+  present flags and its entry 1's slot, message window 0. Until
+  2026-10-24 `run-all.sh` left three ranges out (`--ignore 2,11,12`), each
+  of which had taken an in-between or other value for a frame in an
+  original run: the save data word at `+0x28` (at the load frame `+0x29`
+  held another value for one frame: 1 of 9 original runs, most Rust runs),
+  the present flags, and entry 1 before the save; in hook-hit mode
+  (`--hits`) three more (`0,4,7`: the loaded block's map words, the rest
+  of the block and the packed save's header, a frame apart with the slower
+  first calls). A bisect of the Rust runs' `+0x28` difference with
+  `FFX_HOOK_DISABLE` found no single port, and the halves that fixed it
+  held a harness hook (`Phyre_PTimerWin32_GetTime`, the virtual clock;
+  `Input_KeyHeld`). They were the render-thread trace catching the main
+  thread's copies half-done ("Frames and threads"): sampled between two
+  updates, three original runs, three Rust runs and a hook-hit run agree on
+  every range, and nothing is left out. The waits on the map words still
+  check the maps.
 
 `fpucw` answers the game thread's x87 control word: `0x027f` (53-bit
 precision, round to nearest, all exceptions masked).
@@ -904,9 +918,11 @@ go in the game folder too: the pad word range (`0x00ccb170`) of
 `field-walk` or `menu-browse` missing one frame's transition value (a
 frame where only the previous pad word still holds the button), and a few
 dozen pixels on the menu's animated cursor. They come from neither the
-instance folders nor the pool; `run-all.sh` now leaves the pad word out
-(`replay-compare.py --ignore`) and `shot-compare.py` allows 24 levels per
-channel. With those, three more runs (two side by side, one
+instance folders nor the pool; `run-all.sh` left the pad word out
+(`replay-compare.py --ignore`) until 2026-10-24, when the trace moved to
+the main thread's frame boundary and the release of a press to the same
+boundary, and three original runs agreed on it; `shot-compare.py` allows
+24 levels per channel. With those, three more runs (two side by side, one
 serial) gave the same events everywhere; one side-by-side run still failed
 on screenshots that follow the wall clock: the field's searchlight block
 at y 120 (38 levels, as a serial run in the game folder once measured) and

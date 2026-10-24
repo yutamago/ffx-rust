@@ -9,13 +9,20 @@ traces drift even when the logic agrees.
   (a battle's draws and an event script's) interleave differently between
   runs; per generator their order is fixed.
 
-Usage: tools/replay-compare.py A.trace B.trace [A.calls B.calls] [--also A2.trace] [--ignore N,...]
+Usage: tools/replay-compare.py A.trace B.trace [A.calls B.calls] [--also A2.trace] [--ignore N,...] [--sampled N,...]
 Exits 1 when anything differs. With `--also`, a second run of the original:
 a range passes when B matches either original run (the originals themselves
 can differ by an event where a press lands a frame apart). `--ignore`
 leaves trace ranges out by index: the pad word (0x00ccb170) records when
 the harness's presses land, which varies by a frame between any two runs
-of the original, and is no game result.
+of the original, and is no game result. `--sampled` compares ranges by
+order only: a range passes when either run's sequence is the other's with
+values left out. For ranges that change every frame in a replay at the
+game's own frame rate (`realtime`): when a frame falls behind, the game
+runs more 30 Hz ticks in it (`Sg_FrameSync`'s hold), and the trace, taken
+once a frame, misses the values in between (docs/harness.md, event-cliff);
+and for event-agency's player position, which skipped a value in one of six
+original runs in lockstep.
 """
 import sys
 from collections import defaultdict
@@ -35,6 +42,12 @@ def events(path):
                 seq.append(row[r])
         out.append(seq)
     return out
+
+
+def within(short, long):
+    """Whether `short` is `long` with values left out (in order)."""
+    it = iter(long)
+    return all(v in it for v in short)
 
 
 def calls(path):
@@ -58,6 +71,11 @@ def main():
         k = argv.index("--ignore")
         ignore = {int(x) for x in argv[k + 1].split(",")}
         argv = argv[:k] + argv[k + 2:]
+    sampled = set()
+    if "--sampled" in argv:
+        k = argv.index("--sampled")
+        sampled = {int(x) for x in argv[k + 1].split(",")}
+        argv = argv[:k] + argv[k + 2:]
     sys.argv = sys.argv[:1] + argv
     if len(sys.argv) not in (3, 5):
         sys.exit(__doc__)
@@ -68,6 +86,9 @@ def main():
             continue
         if x != y and also is not None and i < len(also) and also[i] == y:
             print(f"range {i}: matches the second original run")
+            continue
+        if x != y and i in sampled and (within(x, y) or within(y, x)):
+            print(f"range {i}: the same values in order, {abs(len(x) - len(y))} left out")
             continue
         if x != y:
             n = next((k for k, (u, v) in enumerate(zip(x, y)) if u != v), min(len(x), len(y)))
