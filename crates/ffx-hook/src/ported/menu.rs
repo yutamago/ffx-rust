@@ -5154,6 +5154,13 @@ ported! {
         let local = frame.at();
         ffx_menu::start::bridge::tk_menu_start(&mut mem(), mode, local, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuCtrlItem(m)` (the item menu slot's ctrl): the original's `eax`.
+    TkMenuCtrlItem @ 0x008c_5450 => extern "C" fn tk_menu_ctrl_item(m: u32) -> u32 {
+        // the original's frame: message pairs, MsGetRomItem's out words, the buffers' count
+        let mut frame = super::StackFrame::<{ ffx_menu::item::LOCAL_WORDS }>::new();
+        let local = frame.at();
+        ffx_menu::item::bridge::tk_menu_ctrl_item(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a))
+    }
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry

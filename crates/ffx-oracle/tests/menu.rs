@@ -21453,3 +21453,301 @@ fn small8_b_tk_init_and_menu_start_match_the_original() {
         );
     }
 }
+
+/// Small round 8 c: `TkMenuCtrlItem` from every state (0..0x3a), over
+/// windows with random cursors, outcomes (`+0x45` -1..3) and rows, the
+/// item list, the use kind (0..5), items with and without a target
+/// (`+0x22` bit 3), the sub-command rows (-1..4), missing windows for
+/// state 53, an active-mask bit 23 or not, the gear sort's result; every
+/// callee logged with its arguments (the frame's message pairs and the
+/// save buffers read through their pointers), `TkMenuItemClearWindow`
+/// moving `g_TkMenuItemWindow` (the original keeps the old one in `edx`).
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn small8_c_ctrl_item_matches_the_original() {
+    use ffx_menu::item::{callee as c, global as g};
+    let Some(mut t) = setup_any(0x5a11_8c01) else {
+        return;
+    };
+    let log = t.alloc(&vec![0; 0x4000]);
+    let cursor = t.alloc(&log.to_le_bytes());
+    let cells: Vec<u32> = (0..12).map(|_| t.alloc(&[0; 4])).collect();
+    let [
+        rom,
+        types,
+        nums,
+        mask,
+        sorted,
+        list_win,
+        name_win,
+        moved,
+        moved2,
+        _,
+        _,
+        _,
+    ] = cells[..].try_into().unwrap();
+    let pairs = t.alloc(&[0; 0x20]);
+    let slot = t.alloc(&[0; 0x40]);
+    // each stand-in first logs the state word (to see the stores it
+    // reads): mov eax, [slot + 0x1c]; mov ecx, [cursor]; mov [ecx], eax;
+    // add dword [cursor], 4
+    let state_log = [
+        &[0xa1][..],
+        &(slot + 0x1c).to_le_bytes(),
+        &[0x8b, 0x0d],
+        &cursor.to_le_bytes(),
+        &[0x89, 0x01, 0x83, 0x05],
+        &cursor.to_le_bytes(),
+        &[0x04],
+    ]
+    .concat();
+    let window_at = t.sym(g::WINDOW);
+    // what TkMenuItemClearWindow does (or states 26/27 loop for ever),
+    // then g_TkMenuItemWindow moved:
+    // mov eax, [window]; test eax, eax; je +11; mov byte [eax + 0x45], 0;
+    // mov dword [eax + 0x28], 0; mov eax, [moved]; mov [window], eax
+    let move_window = [
+        &[0xa1][..],
+        &window_at.to_le_bytes(),
+        &[0x85, 0xc0, 0x74, 0x0b, 0xc6, 0x40, 0x45, 0x00],
+        &[0xc7, 0x40, 0x28, 0, 0, 0, 0],
+        &[0xa1],
+        &moved.to_le_bytes(),
+        &[0xa3],
+        &window_at.to_le_bytes(),
+    ]
+    .concat();
+    // mov eax, [moved2]; mov [g_TkMenuItemWindow], eax
+    let move_window2 = [
+        &[0xa1][..],
+        &moved2.to_le_bytes(),
+        &[0xa3],
+        &window_at.to_le_bytes(),
+    ]
+    .concat();
+    // the message pairs and the counts behind the pointers, into `pairs`
+    #[rustfmt::skip]
+    let copy_pairs: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x08][..],                         // mov eax, [esp + 8]
+        &[0x8b, 0x08, 0x89, 0x0d], &pairs.to_le_bytes(),       // mov ecx, [eax]; mov [pairs], ecx
+        &[0x8b, 0x48, 0x04, 0x89, 0x0d], &(pairs + 4).to_le_bytes(),
+        &[0x8b, 0x44, 0x24, 0x0c],
+        &[0x8b, 0x08, 0x89, 0x0d], &(pairs + 8).to_le_bytes(),
+        &[0x8b, 0x48, 0x04, 0x89, 0x0d], &(pairs + 12).to_le_bytes(),
+        &[0x8b, 0x44, 0x24, 0x10, 0xa3], &(pairs + 16).to_le_bytes(),
+        &[0x8b, 0x44, 0x24, 0x14, 0xa3], &(pairs + 20).to_le_bytes(),
+    ]
+    .concat();
+    let plus = |k: u32| {
+        [
+            &[0x8b, 0x44, 0x24, 0x04, 0x05][..],
+            &k.to_le_bytes(),
+            &[0xc3],
+        ]
+        .concat()
+    };
+    let callees: Vec<(u32, u8, Vec<u8>, Vec<u8>)> = vec![
+        (c::GET_CONTROL_PAD, 0, vec![], vec![]),
+        (c::GET_CONTROL_PAD_REP, 0, vec![], vec![]),
+        (c::GET_CONTROL_PAD_TRG, 0, vec![], vec![]),
+        // its out word is a local of each side's stack: not logged
+        (c::GET_ROM_ITEM, 1, vec![], small8_ret(rom)),
+        (c::ITEM_TARGET_MASK, 1, move_window2.clone(), vec![]),
+        (c::FREE_WINDOW_GROUP, 1, vec![], vec![]),
+        (c::OPEN_TARGET_WINDOW, 3, vec![], vec![]),
+        (c::GET_PLAYER_FROM_INDEX2, 1, vec![], plus(0x100)),
+        (c::GET_SUMMON_FROM_INDEX, 1, vec![], plus(0x200)),
+        (c::SND_SEP_PLAY_SIMPLE, 1, vec![], vec![]),
+        (c::APPLY_HEAL, 1, vec![], vec![]),
+        (c::USE_ON_TARGETS, 1, vec![], vec![]),
+        // moves g_TkMenuItemWindow too
+        (c::ITEM_REFRESH, 1, move_window2, vec![]),
+        (c::CLEAR_WINDOW, 0, move_window, vec![]),
+        (c::SAVE_ITEM_TYPE_BUFFER, 0, vec![], small8_ret(types)),
+        (c::SAVE_ITEM_NUM_BUFFER, 0, vec![], small8_ret(nums)),
+        (c::SORT_INVENTORY, 0, vec![], vec![]),
+        (c::PACK_GEAR, 0, vec![], vec![]),
+        (c::COUNT_GEAR_BY_OWNER, 0, vec![], vec![]),
+        (c::SORT_GEAR_BY_OWNER, 0, vec![], small8_ret(sorted)),
+        (c::SORT_GEAR_BY_KIND, 0, vec![], vec![]),
+        (c::SORT_ALL_GEAR, 0, vec![], vec![]),
+        (c::SWAP_SAVE_GEAR, 2, vec![], vec![]),
+        (c::REFRESH_WEAPON_SHOP_SELL2, 0, vec![], vec![]),
+        (c::MAIN_ACTIVE_MENU, 2, vec![], vec![]),
+        (c::MAIN_GET_MENU_ACTIVE_MASK, 0, vec![], small8_ret(mask)),
+        (c::CLOSE_WINDOW2, 0, vec![], vec![]),
+        (c::SAVE_ITEM_USE, 2, vec![], vec![]),
+        (c::CLEAR_WINDOW2, 0, vec![], vec![]),
+        (c::OPEN_NAME_ENTRY_WINDOW, 2, vec![], small8_ret(name_win)),
+        (c::ITEM_MES, 1, vec![], plus(0x1000)),
+        (c::ITEM_HELP, 1, vec![], plus(0x2000)),
+        (c::OPEN_SUB_CMD_WINDOW_BESIDE, 1, copy_pairs, vec![]),
+        (c::SUB_CMD_SET_VALUE, 1, vec![], vec![]),
+        (c::SUB_CMD_SET_VALUE2, 1, vec![], vec![]),
+        (c::RESTART_SUB_CMD_WINDOW1, 0, vec![], vec![]),
+        (c::RESTART_SUB_CMD_WINDOW2, 0, vec![], vec![]),
+        (c::OPEN_LIST_WINDOW, 1, vec![], small8_ret(list_win)),
+        (c::CLOSE_WINDOW3, 0, vec![], vec![]),
+        (c::CLOSE_WINDOW4, 0, vec![], vec![]),
+        (c::OPEN_GEAR_WINDOW, 0, vec![], vec![]),
+        (c::CLOSE_WINDOW, 0, vec![], vec![]),
+        (c::CLOSE_SUB_CMD_WINDOW1, 0, vec![], vec![]),
+        (c::MAIN_SLEEP_MENU, 1, vec![], vec![]),
+    ];
+    for (k, (f, n, pre, post)) in callees.into_iter().enumerate() {
+        let id = 0x8c00 + u32::try_from(k).unwrap();
+        let post = if post.is_empty() {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        } else {
+            post
+        };
+        let pre = [&state_log[..], &pre].concat();
+        small7_log(&mut t, f, cursor, id, n, &pre, &post);
+    }
+    let windows: Vec<u32> = (0..6).map(|_| t.alloc(&[0; 0x80])).collect();
+    let (rom_rec, type_buf, num_buf) = (
+        t.alloc(&[0; 0x40]),
+        t.alloc(&[0; 0x100]),
+        t.alloc(&[0; 0x100]),
+    );
+    t.put(rom, rom_rec);
+    t.put(types, type_buf);
+    t.put(nums, num_buf);
+    let local = t.b.stack_range().start + 0x80;
+    let globals = [
+        g::WINDOW,
+        g::WINDOW2,
+        g::TARGET_WINDOW,
+        g::NAME_WINDOW,
+        g::GEAR_WINDOW,
+        g::SUB_CMD_WINDOW,
+        g::SUB_CMD_WINDOW2,
+    ];
+    for round in 0..3000u32 {
+        t.put(cursor, log);
+        let state = t.rng.below(0x3b);
+        t.put(slot + 0x1c, state);
+        for &w in &windows {
+            let v = t.rng.pick(&[-1i8, -1, 0, 1, 2, 3]);
+            t.put(w + 0x45, v);
+            let v = u8::try_from(t.rng.below(4)).unwrap();
+            t.put(w + 0x42, v);
+            for o in [0x48, 0x2c, 0x2e] {
+                let v = t.rng.pick(&[0i16, 1, 2, 3, 4, -1]);
+                t.put(w + o, v);
+            }
+            for o in [0x58, 0x5c] {
+                let v = t.rng.pick(&[0u32, 0, 1, 4, 8]);
+                t.put(w + o, v);
+            }
+            let v = t.rng.pick(&[0u16, 1, 0x100]);
+            t.put(w + 0x30, v);
+            for o in [0x1c, 0x28] {
+                let v = t.rng.next();
+                t.put(w + o, v);
+            }
+            for o in [0x37, 0x41] {
+                let v = t.rng.pick(&[0u8, 5]);
+                t.put(w + o, v);
+            }
+        }
+        for gl in globals {
+            let v = t.rng.pick(&windows);
+            t.put(t.sym(gl), v);
+        }
+        if state == 53 {
+            for gl in [g::WINDOW, g::WINDOW2, g::GEAR_WINDOW] {
+                if t.rng.below(2) == 0 {
+                    t.put(t.sym(gl), 0u32);
+                }
+            }
+        }
+        for cell in [moved, moved2, list_win, name_win] {
+            let v = t.rng.pick(&windows);
+            t.put(cell, v);
+        }
+        let v = t.rng.pick(&[0u32, 0x0080_0000, 0x0180_0001, 1]);
+        t.put(mask, v);
+        let v = t.rng.pick(&[0u32, 1]);
+        t.put(sorted, v);
+        let v = t.rng.pick(&[0u8, 8, 0xf7, 0xff]);
+        t.put(rom_rec + 0x22, v);
+        let v = u8::try_from(t.rng.below(6)).unwrap();
+        t.put(t.sym(g::USE_KIND), v);
+        t.scramble(g::LIST, 0x80);
+        for k in 0..0x20 {
+            let v = t.rng.pick(&[0u8, 0, 1, 7]);
+            t.put(t.sym(g::LIST + 2 + 4 * k), v);
+        }
+        // equal ids for the gear swap now and then
+        if round % 5 == 0 {
+            t.put(t.sym(g::LIST + 4), 0x55u16);
+            t.put(t.sym(g::LIST), 0x55u16);
+        }
+        t.scramble(g::COMMAND, 2);
+        t.scramble(g::GEAR_MODE, 1);
+        t.scramble(g::TARGET_MODE, 4);
+        let v = t.rng.bytes(0x100);
+        t.put_bytes(type_buf, &v);
+        let v = t.rng.bytes(0x100);
+        t.put_bytes(num_buf, &v);
+        // now and then the count buffer over the type buffer's first rows
+        // (the order of the swap's reads and writes shows)
+        let v = if round % 4 == 0 {
+            type_buf + 6
+        } else {
+            num_buf
+        };
+        t.put(nums, v);
+        t.twin(
+            &format!("TkMenuCtrlItem {round} state {state}"),
+            0x008c_5450,
+            &[slot],
+            U32,
+            |o| {
+                w(ffx_menu::item::bridge::tk_menu_ctrl_item(
+                    o,
+                    slot,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    // the swap (state 27) with the count buffer over the type buffer
+    for round in 0..400u32 {
+        t.put(cursor, log);
+        t.put(slot + 0x1c, 27u32);
+        let win = t.rng.pick(&windows);
+        t.put(t.sym(g::WINDOW), win);
+        t.put(moved2, win);
+        t.put(win + 0x45, 3u8);
+        t.put(win + 0x42, 0u8);
+        for o in [0x2c, 0x2e] {
+            let v = i16::try_from(t.rng.below(4)).unwrap();
+            t.put(win + o, v);
+        }
+        for o in [0x58, 0x5c] {
+            let v = t.rng.below(6);
+            t.put(win + o, v);
+        }
+        let v = t.rng.bytes(0x100);
+        t.put_bytes(type_buf, &v);
+        let v = type_buf + t.rng.below(12);
+        t.put(nums, v);
+        t.twin(
+            &format!("TkMenuCtrlItem swap {round}"),
+            0x008c_5450,
+            &[slot],
+            U32,
+            |o| {
+                w(ffx_menu::item::bridge::tk_menu_ctrl_item(
+                    o,
+                    slot,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+}
