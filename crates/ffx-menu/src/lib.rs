@@ -4,6 +4,8 @@
 //! becomes a core (portable, on its own types) and a `bridge` function over
 //! game memory (`docs/porting.md`), one module per family:
 //!
+//! - [`arms`]: the field models' weapon and armour refresh
+//!   (`TkMn2ArmsRefreshArms`);
 //! - [`gu`]: windows, controls, selectors, the text cursor, GS packets;
 //! - [`main_loop`]: the main menu's frame (`0x008a9ca0`);
 //! - [`math`]: float helpers (angle wrapping, radius tests);
@@ -12,6 +14,7 @@
 //! - [`scissor`]: the menu's software scissor;
 //! - [`tk`]: menu state, pads, vibration, the save CRC, command lists.
 
+pub mod arms;
 pub mod gu;
 pub mod main_loop;
 pub mod math;

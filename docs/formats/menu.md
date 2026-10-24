@@ -1247,3 +1247,21 @@ over 0x200 × 0x1a0 when menu bit 1 is active), two kicks, the frame fade
 `0x008a9510(ratio, 0x80, 0, 0)` and the frame ratio step (0..0x80). An idle
 `MenuMain_BusyMask` closes it: the menus removed, the script recovered,
 and unless `0x10000` the VRAM restored with two more frames drawn.
+
+## Field model gear refresh (small round 7)
+
+`TkMn2ArmsRefreshArms(&state)` (`0x008cfd70`, `ffx_menu::arms`) is the
+callback the equipment, weapon shop and customisation menus queue through
+`0x008751b0` to put the new gear on the field models; it returns 1 when
+done, else 0 (called again next frame), and keeps its place in `*state`
+and in `g_TkMn2ArmsActor` (`0x0186a6d4`). For each actor
+(`AtelGetTotalActorNumber2`, signed) whose work has `+0xaa == 1`, `+0x9c`
+set and a party member at most 6: when `+0xb14` bit 0 (weapon) or bit 1
+(armour) is set and the gear differs from `g_TkMenuEquipShownWeapon`
+(`0x0186a654`) / `g_TkMenuEquipShownArmor` (`0x0186a674`) for that member,
+the old model (`+0xaf4` / `+0xaf8`) and its data (`u16 +0xb04` / `+0xb06`)
+are disposed, the new model id read (`MsGetSaveChrWeaponModel` /
+`MsGetSaveChrArmorModel`; armour 0 means none) and, once
+`Ch_DataReadSync` stops returning 1, allocated and bound to element
+`+0xafc` / `+0xb00` with clip flags from `+0xb08` / `+0xb0c` (bit 0
+`Ch_EnClip`, bit 1 `Ch_Vu1SetClipmode`).

@@ -20842,3 +20842,134 @@ fn small7_c_menu_main_loop_matches_the_original() {
         );
     }
 }
+
+/// Small round 7 d: `TkMn2ArmsRefreshArms` from every state (0..12) on
+/// up to five actors (work records from an `AtelGetBasicWork` stand-in,
+/// party members from `AtelGetBindPC`'s), the pick flags, both gear bits,
+/// shown and changed gear, models with and without handles and ids, the
+/// reads pending or done; every callee logged with its arguments.
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn small7_d_arms_refresh_matches_the_original() {
+    use ffx_menu::arms::{self, callee as c};
+    let Some(mut t) = setup_any(0x5a11_7d01) else {
+        return;
+    };
+    let log = t.alloc(&vec![0; 0x4000]);
+    let cursor = t.alloc(&log.to_le_bytes());
+    let works = t.alloc(&vec![0; 0xc00 * 8]);
+    let state = t.alloc(&[0; 4]);
+    let (total, gear, sync, wmodel, amodel) = (
+        t.alloc(&[0; 4]),
+        t.alloc(&[0; 4]),
+        t.alloc(&[0; 4]),
+        t.alloc(&[0; 4]),
+        t.alloc(&[0; 4]),
+    );
+    let ret = |cell: u32| [&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat();
+    #[rustfmt::skip]
+    let work_post: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x07][..],             // mov eax, [esp + 4]; and eax, 7
+        &[0x69, 0xc0, 0x00, 0x0c, 0, 0],                             // imul eax, eax, 0xc00
+        &[0x05], &works.to_le_bytes(), &[0xc3],                     // add eax, works; ret
+    ]
+    .concat();
+    let pc_post = [0x8b, 0x44, 0x24, 0x04, 0x8b, 0x80, 0xf0, 0x0b, 0, 0, 0xc3]; // mov eax, [esp + 4]; mov eax, [eax + 0xbf0]; ret
+    let alloc_post = [0x8b, 0x44, 0x24, 0x04, 0x05, 0, 0x10, 0, 0, 0xc3]; // mov eax, [esp + 4]; add eax, 0x1000; ret
+    let callees: Vec<(u32, u8, Vec<u8>)> = vec![
+        (c::CHANGE_CURRENT_CTRL, 1, vec![]),
+        (c::TOTAL_ACTOR_NUMBER2, 0, ret(total)),
+        (c::GET_BASIC_WORK, 1, work_post),
+        (c::GET_BIND_PC, 1, pc_post.to_vec()),
+        (c::GET_WEAPON, 1, ret(gear)),
+        (c::GET_ARMOR, 1, ret(gear)),
+        (c::CH_DISPOSE, 1, vec![]),
+        (c::DATA_DISPOSE, 2, vec![]),
+        (c::WEAPON_MODEL, 1, ret(wmodel)),
+        (c::ARMOR_MODEL, 1, ret(amodel)),
+        (c::DATA_READ, 1, vec![]),
+        (c::DATA_READ_SYNC, 1, ret(sync)),
+        (c::CH_ALLOCATE, 1, alloc_post.to_vec()),
+        (c::SOUND_SET_ID, 2, vec![]),
+        (c::BIND_TO_ELEM, 5, vec![]),
+        (c::EN_CLIP, 2, vec![]),
+        (c::VU1_SET_CLIPMODE, 2, vec![]),
+        (c::SET_CURRENT_CTRL, 1, vec![]),
+    ];
+    for (k, (f, n, post)) in callees.into_iter().enumerate() {
+        let id = 0x7d00 + u32::try_from(k).unwrap();
+        let post = if post.is_empty() {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        } else {
+            post
+        };
+        small7_log(&mut t, f, cursor, id, n, &[], &post);
+    }
+    let actor = t.sym(arms::ACTOR);
+    let (shown_w, shown_a) = (t.sym(arms::SHOWN_WEAPON), t.sym(arms::SHOWN_ARMOR));
+    for round in 0..800u32 {
+        t.put(cursor, log);
+        let s = t.rng.below(13);
+        t.put(state, s);
+        let n = t.rng.below(6);
+        t.put(total, n);
+        let i = t.rng.below(n + 2).wrapping_sub(1);
+        t.put(actor, i);
+        // a signed bound: a negative count ends at once
+        if round % 16 == 5 {
+            t.put(total, u32::MAX);
+        }
+        let g = t.rng.pick(&[3u32, 0x41, 0x1_0003]);
+        t.put(gear, g);
+        let v = t.rng.pick(&[0u32, 1, 1, 2]);
+        t.put(sync, v);
+        for cell in [wmodel, amodel] {
+            let v = t.rng.pick(&[0u32, 0x123, 0x1_0000, 0xabcd_0042]);
+            t.put(cell, v);
+        }
+        for k in 0..9 {
+            let v = t.rng.pick(&[g, g, 7]);
+            t.put(shown_w + 4 * k, v);
+            let v = t.rng.pick(&[g, g, 9]);
+            t.put(shown_a + 4 * k, v);
+        }
+        for a in 0..8 {
+            let w = works + 0xc00 * a;
+            let v = t.rng.pick(&[1u8, 1, 0, 2]);
+            t.put(w + 0xaa, v);
+            let v = t.rng.pick(&[0u32, 0x5555, 0x5555]);
+            t.put(w + 0x9c, v);
+            let v = t.rng.below(9);
+            t.put(w + 0xbf0, v);
+            let v = u8::try_from(t.rng.below(4)).unwrap();
+            t.put(w + 0xb14, v);
+            for o in [0xaf4, 0xaf8] {
+                let v = t.rng.pick(&[0u32, 0x9999]);
+                t.put(w + o, v);
+            }
+            for o in [0xb04, 0xb06] {
+                let v = t.rng.pick(&[0u16, 0x31, 0xfff0]);
+                t.put(w + o, v);
+            }
+            for o in [0xafc, 0xb00, 0xb08, 0xb0c] {
+                let v = t.rng.next();
+                t.put(w + o, v);
+            }
+            let v = u16::try_from(t.rng.below(0x1_0000)).unwrap();
+            t.put(w + 0xa8, v);
+        }
+        t.twin(
+            &format!("TkMn2ArmsRefreshArms {round}"),
+            0x008c_fd70,
+            &[state],
+            U32,
+            |o| {
+                w(arms::bridge::tk_mn2_arms_refresh_arms(
+                    o,
+                    state,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+}

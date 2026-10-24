@@ -4475,6 +4475,11 @@ ported! {
         };
         tk::menu_summon_open(&mut mm, m, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMn2ArmsRefreshArms(state)`: 1 when every actor is done (its
+    /// callback queue reads `eax`).
+    TkMn2ArmsRefreshArms @ 0x008c_fd70 => extern "C" fn tk_mn2_arms_refresh_arms(state: u32) -> u32 {
+        ffx_menu::arms::bridge::tk_mn2_arms_refresh_arms(&mut mem(), state, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuMainLoop_008a9ca0(mode)`: one frame of the main menu;
     /// `Sg_GetDBuffDC` writes the caller's argument slot, as in the
     /// original.
