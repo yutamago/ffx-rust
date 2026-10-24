@@ -54,7 +54,7 @@ for f in "$lin"/*-orig.trace "$lin"/*-orig2.trace; do
 done
 # keep the newest KEEP_RUNS run folders (each is ~30 MB of screenshots)
 ls -1dt "$lin"/runs/*/ 2>/dev/null | tail -n +"$((${KEEP_RUNS:-20} + 1))" | while read -r d; do rm -rf "$d"; done
-replays=(field-walk battle-attack menu-browse boot battle-magic battle-overdrive event-besaid event-cliff)
+replays=(field-walk battle-attack menu-browse boot battle-magic battle-overdrive event-besaid event-cliff menu-shop menu-grid menu-save)
 eye=(battle-overdrive event-cliff)
 # rp-events2 (docs/harness.md): the Thunder Plains agency and the Besaid arrival
 replays+=(event-agency event-arrival)
@@ -120,8 +120,14 @@ for r in "${replays[@]}"; do
     fi
     # the pad word's range (press timing): field-walk 3, menu-browse 0; the
     # player position in event-besaid (2) misses an in-between value when a
-    # trace frame is skipped, in original runs too (docs/harness.md)
-    case $r in field-walk) ign=(--ignore 3) ;; menu-browse) ign=(--ignore 0) ;; event-besaid) ign=(--ignore 2) ;; *) ign=() ;; esac
+    # trace frame is skipped, in original runs too; menu-save's save data
+    # word +0x28 (2), slot list flags (11) and newest slot (12) take an
+    # in-between value for a frame in some runs, original ones included,
+    # and in hook-hit mode (slower first calls) the loaded block's map
+    # words (0), its rest (4) and the packed save's header (7) did too
+    # (docs/harness.md)
+    case $r in field-walk) ign=(--ignore 3) ;; menu-browse) ign=(--ignore 0) ;; event-besaid) ign=(--ignore 2) ;; menu-save) ign=(--ignore 2,11,12) ;; *) ign=() ;; esac
+    [ "$r" = menu-save ] && [ -n "$hits" ] && ign=(--ignore 0,2,4,7,11,12)
     [ "$r" = event-agency ] && ign=(--ignore 2)  # its player position, as event-besaid's
     cmp=(python3 tools/replay-compare.py "$traces/$r-orig.trace" "$runs/rust/$r-rust.trace" --also "$traces/$r-orig2.trace" "${ign[@]}")
     echo "== $r: $("${cmp[@]}" 2>&1 | tail -1)"

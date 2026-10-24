@@ -131,7 +131,10 @@ and are not armed.
 - Cost: unset, nothing is armed and the shims, thunks and patch sites are
   those of a normal run (no flag or branch on any path). Set, each hook
   costs one exception and one append the first time it runs, nothing
-  after. A replay gives the same events either way.
+  after. A replay gives the same events either way, except menu-save,
+  whose save and load copies passed through an in-between state for a
+  frame with the slower first calls (`run-all.sh --hits` leaves those
+  ranges out; see menu-save below).
 - Crash-safe: each hit is one `WriteFile` in append mode with no user-space
   buffer, so a game that dies leaves every hit it had, and lines from
   several threads never interleave.
@@ -593,6 +596,75 @@ functions, 2026-10-16); the menu screenshots keep a few dozen pixels on the
 animated cursor that the two original runs happen to agree on, so
 `tools/shot-compare.py` leaves out 12 pixels around every animated one
 (the cursor icon is about 25 pixels wide); with that, 0 pixels differ.
+
+`tools/replays/menu-shop.txt`, `menu-grid.txt` and `menu-save.txt`
+(2026-10-24) play the menus menu-browse leaves out, all from save slot 5
+(`ffx_005`, the Thunder Plains agency `kami0100`, with all 11 main menu
+entries), in lockstep and fast mode, the first input at ctrl work 0's
+count 101 as in field-walk. Their shots passed `shot-compare.py` (0 pixels)
+on the first Rust run; none of them shows the main menu, whose play-time
+clock blinks (menu-browse masks it), or the PC save and load lists, whose
+dates are the files' times.
+
+- menu-shop (about 20 s): Tidus walks to the counter and talks to Rin
+  twice. Buy weapons (the weapon shop, `MenuWShop_*`, menu slot `0xc`:
+  bit `0x1000` of `g_TkMenuMainActiveMask` `0x018408ec`): a Baroque Sword
+  bought ("Are you sure?" and "Sell ...?" start on No, so Up first;
+  "Equip?" answered No), a Stunning Steel sold; Buy items (slot `0xd`, bit
+  `0x2000`): a Mega Potion bought and sold. Gil 16563, 15738, 16500,
+  16450, 16462. Each shop's inputs start a fixed number of frames after its
+  slot turns active (`waitfor` on the mask), each dialogue's after message
+  window 0 opens. Traced: gil (`g_SaveGil`), the item inventory
+  (`g_SaveItemIds`, `g_SaveItemCounts`), the equipment inventory
+  (`0x01130f2c`), the party records, the mask, message window 0. In one of
+  about ten runs (an original one, beside other agents' games) Rin's
+  dialogue never opened and the replay stopped at its first `waitfor`;
+  the walk's positions were the same in every run read back.
+- menu-grid (about 20 s): Sphere Grid, Tidus: Use, Power Sphere, the
+  Strength node under the cursor (Power Spheres 99 to 98); Use again, Right
+  to the Defense node (97); Move one node (S.Lv 30 to 29); Cross, "Return
+  to Main Menu?" Yes. After a node's activation its message must run out
+  (60 frames) before the next press, or the press goes elsewhere. Then
+  Aeons (Valefor's status and abilities) and Formation (Tidus and Rikku
+  swap). Traced: the party records, the inventory (the spheres),
+  `g_SaveAbilityMap` (`0x0112ec7c`, `0x1320` bytes: the grid's save
+  block), the party order (`g_SaveInParty`), the mask.
+- menu-save (about 30 s): Equip (Tidus: Sonic Steel to Brotherhood, so the
+  save differs from `ffx_005`), the save sphere beside Tidus, Save: the PC
+  save list (Flash, keys: Enter, Backspace), New Save Data, Yes. It is
+  written as `ffx_004` in the slot's sandboxed Documents folder
+  (`Options::home`, `~/ffx-work/harness/<slot>/home`, copied afresh at each
+  launch; the user's saves are never written). The PC menu's Quit ends the
+  process and soft reset does nothing in this build, so the replay goes
+  back to the title as a game over does: `call 0x0086da10`
+  (`AtelJumpGameOver`: map `0x17`, which goes on to `memochek` and the
+  opening, map `0x15d`; Start skips to the title proper). Then Load, list
+  entry 1 (the newest manual save, the one just written; entry 0 is the
+  autosave), Yes: the save's map opens again with Brotherhood equipped.
+  Every key waits for the save/load machine's state (`0x00ce72e8`: save 1
+  list, 2 its input, 3 Yes/No, 5 writing; load `0xb`, `0xc`, `0xd`;
+  `docs/formats/save.md`) and 30 to 60 frames more, the title for the map
+  words. Traced: `g_SaveData` and the save file buffer without the play
+  time (`g_SaveData +0xbc`, file `+0x10`, `+0xfc`) and the CRCs (file
+  `+0x1a`, `+0x64f4`): the play time counts from `graphicGetTime` and
+  ticks at another point of the script in every run, original code
+  included; the machine's state, cursor and file counts, the slot list's
+  present flags and its entry 1's slot, message window 0. `run-all.sh`
+  leaves three ranges out (`--ignore 2,11,12`), each of which took an
+  in-between or other value for a frame in an original run: the save
+  data word at `+0x28` (at the load frame `+0x29` held another value for
+  one frame: 1 of 9 original runs, most Rust runs; the field's load
+  timing), the present flags, and entry 1 before the save (whichever
+  sandbox copy sorts first: the copies' times tie or not by the second
+  they were made). In hook-hit mode (`--hits`) it leaves out three more
+  (`0,4,7`): with the slower first calls the loaded block's map words and
+  the rest of the block passed through an in-between state for a frame at
+  the load (the copy and the title script's jump a frame apart), and the
+  packed save's header at the save (2 of 2 runs with `FFX_HOOK_HITS`, 0 of
+  9 Rust runs without). The waits on the map words still check the maps. A bisect of the Rust runs' `+0x28` difference with
+  `FFX_HOOK_DISABLE` found no single port: neither half of the 2,061 ports
+  the replay runs fixed it alone, and the halves that did held a harness
+  hook (`Phyre_PTimerWin32_GetTime`, the virtual clock; `Input_KeyHeld`).
 
 `fpucw` answers the game thread's x87 control word: `0x027f` (53-bit
 precision, round to nearest, all exceptions masked).
