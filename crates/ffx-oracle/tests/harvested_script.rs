@@ -385,3 +385,14 @@ harvest_test!(
         hp::atel_worker_place_chr(&mut OracleHost(m), s.arg(0), s.arg(1), slot);
     }
 );
+// pc round 8
+harvest_test!(
+    atel_event_frame,
+    0x0087_2bd0,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        // the two volume words: stack scratch, as the original's own frame
+        let frame = m.stack_range().start + 0x100;
+        hp::atel_event_frame(&mut OracleHost(m), frame)
+    }
+);

@@ -126,3 +126,37 @@ harvest_test!(
         );
     }
 );
+// pc round 8
+harvest_test!(
+    to_menu_exec_layer_handle,
+    0x00a7_b220,
+    args = 4,
+    |m: &mut Oracle, s| {
+        ffx_system::scene::bridge::exec_layer_handle(
+            m,
+            [s.arg(0), s.arg(1), s.arg(2), s.arg(3)],
+            |m, f, a| {
+                let f = m.rebase(f);
+                m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+            },
+        )
+    }
+);
+harvest_test!(
+    to_btl_draw_libra_window,
+    0x0089_5390,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        ffx_system::btl::bridge::btl_draw_libra_window(
+            m,
+            |m, f, a| {
+                let f = m.rebase(f);
+                m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+            },
+            |m, f, a| {
+                let f = m.rebase(f);
+                m.call_f64(f, a).unwrap()
+            },
+        )
+    }
+);
