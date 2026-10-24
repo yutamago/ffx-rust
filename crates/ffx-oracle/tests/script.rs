@@ -109,11 +109,31 @@ impl Mem for Run<'_> {
 
 impl v::Host for Run<'_> {
     fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
+        // The game's `Host::call` (`RawMem`) passes at most six words and
+        // refuses a longer list without calling: a bridge that needs more
+        // must use `NativeHost::call_n`. Eight words to `Math_YawPitchTo`
+        // this way left the aim unwritten in the game (`Atel_TurnUpdate`,
+        // `Atel_MoveUpdate`; event-cliff, 2026-10-24) while these tests,
+        // which called with any width, passed.
+        assert!(
+            args.len() <= 6,
+            "Host::call({addr:#x}) with {} words: the game's RawMem refuses more than 6; use call_n",
+            args.len()
+        );
         self.0.call(addr, Conv::Cdecl, args).unwrap().eax
     }
 }
 
 impl run::NativeHost for Run<'_> {
+    fn call_n(&mut self, addr: u32, args: &[u32]) -> u32 {
+        // up to 12 words, as `RawMem`'s
+        assert!(
+            args.len() <= 12,
+            "call_n({addr:#x}) with {} words",
+            args.len()
+        );
+        self.0.call(addr, Conv::Cdecl, args).unwrap().eax
+    }
     fn call_float(&mut self, addr: u32, args: &[u32]) -> f64 {
         let r = self.0.call(addr, Conv::Cdecl, args).unwrap();
         let raw = r.st0_raw.expect("a float native leaves ST0");
