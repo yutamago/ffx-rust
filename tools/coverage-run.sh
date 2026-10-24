@@ -5,7 +5,7 @@
 # so ported functions run their original machine code too), then merges the
 # hits into symbols/coverage.txt (tools/coverage.py).
 #
-# Usage: tools/coverage-run.sh [--no-replays] [save entries, default 1 2 3 4 5]
+# Usage: tools/coverage-run.sh [--no-replays] [save slots (ffx_00N), default 0 1 2 3 5]
 # Hits add up: symbols/coverage.txt keeps the union of every run.
 set -u
 source "$(dirname "$0")/in-game-slot.sh"
@@ -32,9 +32,9 @@ if [[ "${1:-}" == --no-replays ]]; then replays=0; shift; fi
 if [[ $replays == 1 ]]; then
     for r in field-walk battle-attack menu-browse; do run "tools/replays/$r.txt" "$r"; done
 fi
-for s in "${@:-1 2 3 4 5}"; do
+for s in "${@:-0 1 2 3 5}"; do
     for e in $s; do
-        sed "s/^load 1\$/load $e/" tools/replays/coverage-session.txt > "$lin/session-$e.txt"
+        sed "s/^load direct 1\$/load direct $e/" tools/replays/coverage-session.txt > "$lin/session-$e.txt"
         run "$lin/session-$e.txt" "session-$e"
     done
 done

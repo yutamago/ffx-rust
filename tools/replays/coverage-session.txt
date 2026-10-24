@@ -1,6 +1,9 @@
-# Coverage session (tools/coverage-run.sh; not a parity replay): boot,
-# load a save, walk and talk, a battle (attacks, skills, a summon attempt,
-# items), every main menu screen, then the PC (Esc) menu.
+# Coverage session (tools/coverage-run.sh, tools/replays/run-all.sh --hits;
+# not a parity replay): boot, load a save, walk and talk, a battle (attacks,
+# skills, a summon attempt, items), every main menu screen, then the PC (Esc)
+# menu's screens. Each menu block starts and ends on the field (checked with
+# screenshots on the original code, 2026-10-24). The runners replace
+# `load direct 1` with the save they play.
 load direct 1
 wait 60
 press up 60 10
@@ -45,7 +48,20 @@ press circle 4 300
 press circle 4 300
 press circle 4 300
 wait 600
-press triangle 4 60
+# Main menu (triangle). Short (early saves): Sphere Grid, Items, Abilities,
+# Overdrive, Status, Config, Help; long (save 5): Sphere Grid, Items,
+# Abilities, Overdrive, Equip, Status, Aeons, Formation, Customize, Config,
+# Help. Each block opens entry N, picks the second line or character,
+# presses right, left and square there, then backs out with enough Crosses
+# for the deepest screen it can reach (Cross on the field does nothing):
+# every block starts and ends on the field, whichever menu the save has.
+# Triangle is held 8 frames after 120 settling frames: these sessions run
+# without lockstep, and a short press right after a menu closed was lost once.
+# Entries 7 and up are left out: a short menu wraps them to the Sphere Grid,
+# where Crosses never leave.
+# Sphere Grid: the second character's grid; Cross asks "Return to Main
+# Menu?" with Yes selected (a second Cross would move to No), Circle answers
+press triangle 8 60
 press circle 4 60
 press down 4 15
 press circle 4 60
@@ -53,40 +69,12 @@ press right 4 15
 press left 4 15
 press square 4 30
 press cross 4 40
-press cross 4 40
-press cross 4 40
-press cross 4 40
-wait 60
-press triangle 4 60
-press down 4 15
 press circle 4 60
-press down 4 15
-press circle 4 60
-press right 4 15
-press left 4 15
-press square 4 30
 press cross 4 40
-press cross 4 40
-press cross 4 40
-press cross 4 40
-wait 60
-press triangle 4 60
-press down 4 15
-press down 4 15
-press circle 4 60
-press down 4 15
-press circle 4 60
-press right 4 15
-press left 4 15
-press square 4 30
-press cross 4 40
-press cross 4 40
-press cross 4 40
-press cross 4 40
-wait 60
-press triangle 4 60
-press down 4 15
-press down 4 15
+press cross 4 60
+wait 120
+# Items: the Use list, then the target list
+press triangle 8 60
 press down 4 15
 press circle 4 60
 press down 4 15
@@ -98,10 +86,11 @@ press cross 4 40
 press cross 4 40
 press cross 4 40
 press cross 4 40
-wait 60
-press triangle 4 60
-press down 4 15
-press down 4 15
+press cross 4 40
+press cross 4 60
+wait 120
+# Abilities: the second character's abilities
+press triangle 8 60
 press down 4 15
 press down 4 15
 press circle 4 60
@@ -114,10 +103,11 @@ press cross 4 40
 press cross 4 40
 press cross 4 40
 press cross 4 40
-wait 60
-press triangle 4 60
-press down 4 15
-press down 4 15
+press cross 4 40
+press cross 4 60
+wait 120
+# Overdrive: the second character's overdrive screen
+press triangle 8 60
 press down 4 15
 press down 4 15
 press down 4 15
@@ -131,10 +121,11 @@ press cross 4 40
 press cross 4 40
 press cross 4 40
 press cross 4 40
-wait 60
-press triangle 4 60
-press down 4 15
-press down 4 15
+press cross 4 40
+press cross 4 60
+wait 120
+# Status (Equip in a longer menu): the second character
+press triangle 8 60
 press down 4 15
 press down 4 15
 press down 4 15
@@ -149,10 +140,11 @@ press cross 4 40
 press cross 4 40
 press cross 4 40
 press cross 4 40
-wait 60
-press triangle 4 60
-press down 4 15
-press down 4 15
+press cross 4 40
+press cross 4 60
+wait 120
+# Config (Status): the Subtitles line (right and left toggle it off and on)
+press triangle 8 60
 press down 4 15
 press down 4 15
 press down 4 15
@@ -168,10 +160,11 @@ press cross 4 40
 press cross 4 40
 press cross 4 40
 press cross 4 40
-wait 60
-press triangle 4 60
-press down 4 15
-press down 4 15
+press cross 4 40
+press cross 4 60
+wait 120
+# Help (Aeons): Reference, its topic list (the second aeon's info)
+press triangle 8 60
 press down 4 15
 press down 4 15
 press down 4 15
@@ -188,14 +181,30 @@ press cross 4 40
 press cross 4 40
 press cross 4 40
 press cross 4 40
-wait 60
+press cross 4 40
+press cross 4 60
+wait 120
+# PC menu (Esc; DirectInput scan codes: 01 Esc, d0 down, c8 up, 1c Enter):
+# Resume, System setting, Special features, Change parameters, Quit. The
+# last two but one are greyed out in some saves (the cursor skips them), so
+# the blocks go up from Resume and never reach Quit: System setting (down
+# 1), then up 2 (Change parameters, else System setting) and up 3 (Special
+# features, else Resume). Esc goes from each straight back to the field.
 key 01 4 60
 key d0 4 20
-key 1c 4 60
-key 01 4 40
-key d0 4 20
-key d0 4 20
-key 1c 4 60
-key 01 4 40
+key 1c 4 90
+key 01 4 60
+wait 60
+key 01 4 60
+key c8 4 20
+key c8 4 20
+key 1c 4 90
+key 01 4 60
+wait 60
+key 01 4 60
+key c8 4 20
+key c8 4 20
+key c8 4 20
+key 1c 4 90
 key 01 4 60
 wait 120
