@@ -3959,7 +3959,7 @@ pub mod bridge {
     pub const CACHE_DISPOSE: u32 = 0x0084_0250;
 
     /// `Sg_CacheDisposeChr(id)` (`0x00840e60`; callers `ChN_DataDispose`,
-    /// `Ch_BlkDisposeHandle`, `Native_4021`): the character's four motion
+    /// `Ch_BlkDisposeHandle`, `Native_4021_CacheDisposeChr`): the character's four motion
     /// groups (kind 2, keys `id | n << 16`, n 0..3) and its model data
     /// (kind 1, key `id`) out of the cache, checked. EAX is the last
     /// `Cache_Dispose`'s.

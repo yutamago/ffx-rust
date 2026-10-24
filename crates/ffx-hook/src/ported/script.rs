@@ -2724,12 +2724,12 @@ ported! {
     Native_1015_FacingWithin @ 0x0087_7dc0 => extern "C" fn n_877dc0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_1015(&mut mem(), w, a, s)
     }
-    /// `Native_4008(worker, args, stack)`.
-    Native_4008 @ 0x00a7_7e30 => extern "C" fn n_a77e30(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4008_FilterAdd(worker, args, stack)`.
+    Native_4008_FilterAdd @ 0x00a7_7e30 => extern "C" fn n_a77e30(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4008(&mut mem(), w, a, s)
     }
-    /// `Native_4009(worker, args, stack)`.
-    Native_4009 @ 0x00a7_7e80 => extern "C" fn n_a77e80(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4009_FilterSub(worker, args, stack)`.
+    Native_4009_FilterSub @ 0x00a7_7e80 => extern "C" fn n_a77e80(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4009(&mut mem(), w, a, s)
     }
     /// `Native_5007(worker, args, stack)`.
@@ -2876,36 +2876,36 @@ ported! {
     Native_500c @ 0x00a7_8d30 => extern "C" fn n_a78d30(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_500c(&mut mem(), w, a, s)
     }
-    /// `Native_400e(worker, args, stack)`.
-    Native_400e @ 0x00a7_7f00 => extern "C" fn n_a77f00(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_400e_EnableCalcMap(worker, args, stack)`.
+    Native_400e_EnableCalcMap @ 0x00a7_7f00 => extern "C" fn n_a77f00(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_400e(&mut mem(), w, a, s)
     }
-    /// `Native_400f(worker, args, stack)`.
-    Native_400f @ 0x00a7_7f20 => extern "C" fn n_a77f20(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_400f_EnableDrawMap(worker, args, stack)`.
+    Native_400f_EnableDrawMap @ 0x00a7_7f20 => extern "C" fn n_a77f20(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_400f(&mut mem(), w, a, s)
     }
-    /// `Native_4045(worker, args, stack)`.
-    Native_4045 @ 0x00a7_7ce0 => extern "C" fn n_a77ce0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4045_PlayerSetDiving(worker, args, stack)`.
+    Native_4045_PlayerSetDiving @ 0x00a7_7ce0 => extern "C" fn n_a77ce0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4045(&mut mem(), w, a, s)
     }
-    /// `Native_401b(worker, args, stack)`.
-    Native_401b @ 0x00a7_81d0 => extern "C" fn n_a781d0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_401b_AccSetDrawMap(worker, args, stack)`.
+    Native_401b_AccSetDrawMap @ 0x00a7_81d0 => extern "C" fn n_a781d0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_401b(&mut mem(), w, a, s)
     }
-    /// `Native_401c(worker, args, stack)`.
-    Native_401c @ 0x00a7_81f0 => extern "C" fn n_a781f0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_401c_AccEnableBG(worker, args, stack)`.
+    Native_401c_AccEnableBG @ 0x00a7_81f0 => extern "C" fn n_a781f0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_401c(&mut mem(), w, a, s)
     }
-    /// `Native_4023(worker, args, stack)`.
-    Native_4023 @ 0x00a7_8340 => extern "C" fn n_a78340(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4023_PLightAllocate(worker, args, stack)`.
+    Native_4023_PLightAllocate @ 0x00a7_8340 => extern "C" fn n_a78340(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4023(&mut mem(), w, a, s)
     }
-    /// `Native_403a(worker, args, stack)`.
-    Native_403a @ 0x00a7_7b10 => extern "C" fn n_a77b10(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_403a_AccSetDrawChr(worker, args, stack)`.
+    Native_403a_AccSetDrawChr @ 0x00a7_7b10 => extern "C" fn n_a77b10(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_403a(&mut mem(), w, a, s)
     }
-    /// `Native_4046(worker, args, stack)`.
-    Native_4046 @ 0x00a7_7d00 => extern "C" fn n_a77d00(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4046_SetShadowSemi(worker, args, stack)`.
+    Native_4046_SetShadowSemi @ 0x00a7_7d00 => extern "C" fn n_a77d00(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4046(&mut mem(), w, a, s)
     }
     /// `Native_c003(worker, args, stack)`.
@@ -2916,32 +2916,32 @@ ported! {
     Native_c031 @ 0x0087_8530 => extern "C" fn n_878530(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_c031(&mut mem(), w, a, s)
     }
-    /// `Native_4022(worker, args, stack)`.
-    Native_4022 @ 0x00a7_8320 => extern "C" fn n_a78320(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4022_SetKeepFps(worker, args, stack)`.
+    Native_4022_SetKeepFps @ 0x00a7_8320 => extern "C" fn n_a78320(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4022(&mut mem(), w, a, s)
     }
-    /// `Native_4043(worker, args, stack)`.
-    Native_4043 @ 0x00a7_7c80 => extern "C" fn n_a77c80(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4043_SetShadowDir(worker, args, stack)`.
+    Native_4043_SetShadowDir @ 0x00a7_7c80 => extern "C" fn n_a77c80(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4043(&mut mem(), w, a, s)
     }
-    /// `Native_402a(worker, args, stack)`.
-    Native_402a @ 0x00a7_85b0 => extern "C" fn n_a785b0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_402a_PLightSetEnable(worker, args, stack)`.
+    Native_402a_PLightSetEnable @ 0x00a7_85b0 => extern "C" fn n_a785b0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_402a(&mut mem(), w, a, s)
     }
-    /// `Native_4036(worker, args, stack)`.
-    Native_4036 @ 0x00a7_7a10 => extern "C" fn n_a77a10(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4036_GlobalSetWind(worker, args, stack)`.
+    Native_4036_GlobalSetWind @ 0x00a7_7a10 => extern "C" fn n_a77a10(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4036(&mut mem(), w, a, s)
     }
-    /// `Native_403e(worker, args, stack)`.
-    Native_403e @ 0x00a7_7be0 => extern "C" fn n_a77be0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_403e_PlayerSetDirFix(worker, args, stack)`.
+    Native_403e_PlayerSetDirFix @ 0x00a7_7be0 => extern "C" fn n_a77be0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_403e(&mut mem(), w, a, s)
     }
-    /// `Native_403c(worker, args, stack)`.
-    Native_403c @ 0x00a7_7b60 => extern "C" fn n_a77b60(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_403c_SetWaterLimit(worker, args, stack)`.
+    Native_403c_SetWaterLimit @ 0x00a7_7b60 => extern "C" fn n_a77b60(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_403c(&mut mem(), w, a, s)
     }
-    /// `Native_4025(worker, args, stack)`.
-    Native_4025 @ 0x00a7_8370 => extern "C" fn n_a78370(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4025_PLightDefine(worker, args, stack)`.
+    Native_4025_PLightDefine @ 0x00a7_8370 => extern "C" fn n_a78370(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4025(&mut mem(), w, a, s)
     }
     /// `Native_4044(worker, args, stack)`.
@@ -3136,12 +3136,12 @@ ported! {
     Native_505e @ 0x00a7_8e20 => extern "C" fn n_a78e20(w: u32, a: u32, s: u32) -> f64 {
         native_chr::native_505e(&mut mem(), w, a, s)
     }
-    /// `Native_4034(worker, args, stack)`.
-    Native_4034 @ 0x00a7_79e0 => extern "C" fn n_a779e0(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_4034_SetMapAlphaFast(worker, args, stack)`.
+    Native_4034_SetMapAlphaFast @ 0x00a7_79e0 => extern "C" fn n_a779e0(w: u32, a: u32, s: u32) -> f64 {
         native_chr::native_4034(&mut mem(), w, a, s)
     }
-    /// `Native_4039(worker, args, stack)`.
-    Native_4039 @ 0x00a7_7ac0 => extern "C" fn n_a77ac0(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_4039_AccSetClear(worker, args, stack)`.
+    Native_4039_AccSetClear @ 0x00a7_7ac0 => extern "C" fn n_a77ac0(w: u32, a: u32, s: u32) -> f64 {
         native_chr::native_4039(&mut mem(), w, a, s)
     }
     /// `Native_504d(worker, args, stack)`.
@@ -3180,12 +3180,12 @@ ported! {
     Native_5061 @ 0x00a7_8f80 => extern "C" fn n_a78f80(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_5061(&mut mem(), w, a, s)
     }
-    /// `Native_401a(worker, args, stack)`.
-    Native_401a @ 0x00a7_81a0 => extern "C" fn n_a781a0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_401a_AccSetAlpha(worker, args, stack)`.
+    Native_401a_AccSetAlpha @ 0x00a7_81a0 => extern "C" fn n_a781a0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_401a(&mut mem(), w, a, s)
     }
-    /// `Native_4017(worker, args, stack)`.
-    Native_4017 @ 0x00a7_8130 => extern "C" fn n_a78130(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4017_IdSetMapTable(worker, args, stack)`.
+    Native_4017_IdSetMapTable @ 0x00a7_8130 => extern "C" fn n_a78130(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4017(&mut mem(), w, a, s)
     }
     /// `Native_5076(worker, args, stack)`.
@@ -3228,8 +3228,8 @@ ported! {
     Native_5006 @ 0x00a7_8a40 => extern "C" fn n_a78a40(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_5006(&mut mem(), w, a, s)
     }
-    /// `Native_4019(worker, args, stack)`.
-    Native_4019 @ 0x00a7_8180 => extern "C" fn n_a78180(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4019_AccRequestCurrent(worker, args, stack)`.
+    Native_4019_AccRequestCurrent @ 0x00a7_8180 => extern "C" fn n_a78180(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4019(&mut mem(), w, a, s)
     }
     /// `Native_5013(worker, args, stack)`.
@@ -3244,8 +3244,8 @@ ported! {
     Native_5056 @ 0x00a7_8a80 => extern "C" fn n_a78a80(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_5056(&mut mem(), w, a, s)
     }
-    /// `Native_4015(worker, args, stack)`.
-    Native_4015 @ 0x00a7_80c0 => extern "C" fn n_a780c0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4015_SetFocus(worker, args, stack)`.
+    Native_4015_SetFocus @ 0x00a7_80c0 => extern "C" fn n_a780c0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4015(&mut mem(), w, a, s)
     }
     /// `Native_503e(worker, args, stack)`.
@@ -3268,8 +3268,8 @@ ported! {
     Native_5063_Poll @ 0x00a7_91a0 => extern "C" fn n_a791a0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_5063_poll(&mut mem(), w, a, s)
     }
-    /// `Native_4014(worker, args, stack)`.
-    Native_4014 @ 0x00a7_80a0 => extern "C" fn n_a780a0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4014_EnFocus(worker, args, stack)`.
+    Native_4014_EnFocus @ 0x00a7_80a0 => extern "C" fn n_a780a0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4014(&mut mem(), w, a, s)
     }
     /// `Native_5079(worker, args, stack)`.
@@ -3288,8 +3288,8 @@ ported! {
     Native_5078 @ 0x00a7_9ef0 => extern "C" fn n_a79ef0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_5078(&mut mem(), w, a, s)
     }
-    /// `Native_4016(worker, args, stack)`.
-    Native_4016 @ 0x00a7_80f0 => extern "C" fn n_a780f0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4016_PlayerSetSpeed(worker, args, stack)`.
+    Native_4016_PlayerSetSpeed @ 0x00a7_80f0 => extern "C" fn n_a780f0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4016(&mut mem(), w, a, s)
     }
     /// `Native_500b(worker, args, stack)`.
@@ -3332,8 +3332,8 @@ ported! {
     AtelCall_Math_Cos_RF @ 0x0087_7aa0 => extern "C" fn n_877aa0(w: u32, a: u32, s: u32) -> f64 {
         native_chr::atel_call_math_cos_rf(&mut mem(), w, a, s)
     }
-    /// `Native_4007(worker, args, stack)`.
-    Native_4007 @ 0x00a7_7de0 => extern "C" fn n_a77de0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4007_FadeOutWhite(worker, args, stack)`.
+    Native_4007_FadeOutWhite @ 0x00a7_7de0 => extern "C" fn n_a77de0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4007(&mut mem(), w, a, s)
     }
     /// `AtelCall_Math_Sin_RF(worker, args, stack)`.
@@ -3352,12 +3352,12 @@ ported! {
     Native_b001_Result @ 0x0076_e9f0 => extern "C" fn n_76e9f0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_b001_result(&mut mem(), w, a, s)
     }
-    /// `Native_4006(worker, args, stack)`.
-    Native_4006 @ 0x00a7_7dc0 => extern "C" fn n_a77dc0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4006_FadeInWhite(worker, args, stack)`.
+    Native_4006_FadeInWhite @ 0x00a7_7dc0 => extern "C" fn n_a77dc0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4006(&mut mem(), w, a, s)
     }
-    /// `Native_4001(worker, args, stack)`.
-    Native_4001 @ 0x00a7_7b90 => extern "C" fn n_a77b90(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4001_SetSuimen(worker, args, stack)`.
+    Native_4001_SetSuimen @ 0x00a7_7b90 => extern "C" fn n_a77b90(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_4001(&mut mem(), w, a, s)
     }
     /// `Native_505f(worker, args, stack)`.
@@ -5544,80 +5544,80 @@ ported! {
     Native_101d_SetVarSlot @ 0x0087_8110 => extern "C" fn n_878110(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_101d(&mut mem(), w, a, s)
     }
-    /// `Native_402b(worker, args, stack)`.
-    Native_402b @ 0x00a7_7880 => extern "C" fn n_a77880(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_402b_PLightGetEnable(worker, args, stack)`.
+    Native_402b_PLightGetEnable @ 0x00a7_7880 => extern "C" fn n_a77880(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_402b(&mut mem(), w, a, s)
     }
-    /// `Native_402c(worker, args, stack)`.
-    Native_402c @ 0x00a7_78a0 => extern "C" fn n_a778a0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_402c_PLightSetRadius(worker, args, stack)`.
+    Native_402c_PLightSetRadius @ 0x00a7_78a0 => extern "C" fn n_a778a0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_402c(&mut mem(), w, a, s)
     }
-    /// `Native_402d(worker, args, stack)`.
-    Native_402d @ 0x00a7_78e0 => extern "C" fn n_a778e0(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_402d_PLightGetRadius(worker, args, stack)`.
+    Native_402d_PLightGetRadius @ 0x00a7_78e0 => extern "C" fn n_a778e0(w: u32, a: u32, s: u32) -> f64 {
         native_mods::native_402d(&mut mem(), w, a, s)
     }
-    /// `Native_402e(worker, args, stack)`.
-    Native_402e @ 0x00a7_7900 => extern "C" fn n_a77900(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_402e_PLightSetLight(worker, args, stack)`.
+    Native_402e_PLightSetLight @ 0x00a7_7900 => extern "C" fn n_a77900(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_402e(&mut mem(), w, a, s)
     }
-    /// `Native_402f(worker, args, stack)`.
-    Native_402f @ 0x00a7_7930 => extern "C" fn n_a77930(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_402f_PLightGetLight(worker, args, stack)`.
+    Native_402f_PLightGetLight @ 0x00a7_7930 => extern "C" fn n_a77930(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_402f(&mut mem(), w, a, s)
     }
-    /// `Native_4030(worker, args, stack)`.
-    Native_4030 @ 0x00a7_7950 => extern "C" fn n_a77950(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4030_SetCameraFollow(worker, args, stack)`.
+    Native_4030_SetCameraFollow @ 0x00a7_7950 => extern "C" fn n_a77950(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_4030(&mut mem(), w, a, s)
     }
-    /// `Native_4032(worker, args, stack)`.
-    Native_4032 @ 0x00a7_7980 => extern "C" fn n_a77980(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4032_PLightSetAttenuation(worker, args, stack)`.
+    Native_4032_PLightSetAttenuation @ 0x00a7_7980 => extern "C" fn n_a77980(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_4032(&mut mem(), w, a, s)
     }
-    /// `Native_4033(worker, args, stack)`.
-    Native_4033 @ 0x00a7_79c0 => extern "C" fn n_a779c0(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_4033_PLightGetAttenuation(worker, args, stack)`.
+    Native_4033_PLightGetAttenuation @ 0x00a7_79c0 => extern "C" fn n_a779c0(w: u32, a: u32, s: u32) -> f64 {
         native_mods::native_4033(&mut mem(), w, a, s)
     }
-    /// `Native_4037(worker, args, stack)`.
-    Native_4037 @ 0x00a7_7a70 => extern "C" fn n_a77a70(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4037_GlobalGetWind(worker, args, stack)`.
+    Native_4037_GlobalGetWind @ 0x00a7_7a70 => extern "C" fn n_a77a70(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_4037(&mut mem(), w, a, s)
     }
-    /// `Native_403d(worker, args, stack)`.
-    Native_403d @ 0x00a7_7bc0 => extern "C" fn n_a77bc0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_403d_MemSetFast(worker, args, stack)`.
+    Native_403d_MemSetFast @ 0x00a7_7bc0 => extern "C" fn n_a77bc0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_403d(&mut mem(), w, a, s)
     }
     /// `Native_4010(worker, args, stack)`.
     Native_4010 @ 0x00a7_7f40 => extern "C" fn n_a77f40(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_4010(&mut mem(), w, a, s)
     }
-    /// `Native_4011(worker, args, stack)`.
-    Native_4011 @ 0x00a7_7f70 => extern "C" fn n_a77f70(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4011_LightSetDir(worker, args, stack)`.
+    Native_4011_LightSetDir @ 0x00a7_7f70 => extern "C" fn n_a77f70(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_4011(&mut mem(), w, a, s)
     }
-    /// `Native_4012(worker, args, stack)`.
-    Native_4012 @ 0x00a7_7fd0 => extern "C" fn n_a77fd0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4012_LightSetColor(worker, args, stack)`.
+    Native_4012_LightSetColor @ 0x00a7_7fd0 => extern "C" fn n_a77fd0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_4012(&mut mem(), w, a, s)
     }
-    /// `Native_4018(worker, args, stack)`.
-    Native_4018 @ 0x00a7_8160 => extern "C" fn n_a78160(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4018_IdGetMapTable(worker, args, stack)`.
+    Native_4018_IdGetMapTable @ 0x00a7_8160 => extern "C" fn n_a78160(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_4018(&mut mem(), w, a, s)
     }
-    /// `Native_4021(worker, args, stack)`.
-    Native_4021 @ 0x00a7_8300 => extern "C" fn n_a78300(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4021_CacheDisposeChr(worker, args, stack)`.
+    Native_4021_CacheDisposeChr @ 0x00a7_8300 => extern "C" fn n_a78300(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_4021(&mut mem(), w, a, s)
     }
-    /// `Native_4026(worker, args, stack)`.
-    Native_4026 @ 0x00a7_8450 => extern "C" fn n_a78450(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4026_PLightSetPos(worker, args, stack)`.
+    Native_4026_PLightSetPos @ 0x00a7_8450 => extern "C" fn n_a78450(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_4026(&mut mem(), w, a, s)
     }
-    /// `Native_4027(worker, args, stack)`.
-    Native_4027 @ 0x00a7_84c0 => extern "C" fn n_a784c0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4027_PLightGetPos(worker, args, stack)`.
+    Native_4027_PLightGetPos @ 0x00a7_84c0 => extern "C" fn n_a784c0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_4027(&mut mem(), w, a, s)
     }
-    /// `Native_4028(worker, args, stack)`.
-    Native_4028 @ 0x00a7_8510 => extern "C" fn n_a78510(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4028_PLightSetColor(worker, args, stack)`.
+    Native_4028_PLightSetColor @ 0x00a7_8510 => extern "C" fn n_a78510(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_4028(&mut mem(), w, a, s)
     }
-    /// `Native_4029(worker, args, stack)`.
-    Native_4029 @ 0x00a7_8560 => extern "C" fn n_a78560(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_4029_PLightGetColor(worker, args, stack)`.
+    Native_4029_PLightGetColor @ 0x00a7_8560 => extern "C" fn n_a78560(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_4029(&mut mem(), w, a, s)
     }
     /// `Native_5002(worker, args, stack)`.
