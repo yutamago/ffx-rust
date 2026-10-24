@@ -20973,3 +20973,1132 @@ fn small7_d_arms_refresh_matches_the_original() {
         );
     }
 }
+
+/// Small round 8 a: `TkMenuCtrlAbilityMap2` from states 0, 1 and others
+/// with the first read done or not, `TkMenuDrawAbilityMap2_008e2720` with
+/// and without the grid frame, and `TkMenuExecScene` on blocks present or
+/// missing, 0 and wrapping handles, records started or not, -1..4 tracks
+/// whose steps return 0 or bits (a step that flips the record's flags
+/// word, to show the final read); every callee logged with its arguments.
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn small8_a_ability_map_and_exec_scene_match_the_original() {
+    use ffx_menu::{ability_map as am, scene};
+    let Some(mut t) = setup_any(0x5a11_8a01) else {
+        return;
+    };
+    let log = t.alloc(&vec![0; 0x4000]);
+    let cursor = t.alloc(&log.to_le_bytes());
+    let (read_end, steps, flags_at, calc) = (
+        t.alloc(&[0; 4]),
+        t.alloc(&[0; 4]),
+        t.alloc(&[0; 4]),
+        t.alloc(&[0; 4]),
+    );
+    let ret = |cell: u32| [&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat();
+    // mov eax, [steps]; and eax, 3; shr dword [steps], 2; ret
+    let step_post = [
+        &[0xa1][..],
+        &steps.to_le_bytes(),
+        &[0x83, 0xe0, 0x03, 0xc1, 0x2d],
+        &steps.to_le_bytes(),
+        &[0x02, 0xc3],
+    ]
+    .concat();
+    // mov eax, [flags_at]; xor dword [eax], 0x40000001
+    let step_pre = [
+        &[0xa1][..],
+        &flags_at.to_le_bytes(),
+        &[0x81, 0x30, 0x01, 0, 0, 0x40],
+    ]
+    .concat();
+    let callees: Vec<(u32, u8, Vec<u8>, Vec<u8>)> = vec![
+        (am::callee::GET_CONTROL_PAD, 0, vec![], vec![]),
+        (am::callee::GET_CONTROL_PAD_REP, 0, vec![], vec![]),
+        (am::callee::GET_CONTROL_PAD_TRG, 0, vec![], vec![]),
+        (
+            am::callee::GET_FIRST_READ_END_FLAG,
+            0,
+            vec![],
+            ret(read_end),
+        ),
+        (am::callee::ABM_START, 0, vec![], vec![]),
+        (am::callee::ABM_CALC, 0, vec![], ret(calc)),
+        (am::callee::OPEN_PKT_BUFF_TMP, 0, vec![], vec![]),
+        (am::callee::DRAW_SCISSOR_XYWH, 4, vec![], vec![]),
+        (am::callee::DRAW_BOX_XYWH_C2, 6, vec![], vec![]),
+        (am::callee::DRAW_KICK_TMP, 0, vec![], vec![]),
+        (am::callee::VU1_SYNC_PATH, 0, vec![], vec![]),
+        (am::callee::DRAW_KICK, 0, vec![], vec![]),
+        (am::callee::ABM_DRAW_FRAME, 0, vec![], vec![]),
+        (am::callee::DRAW_ENV, 0, vec![], vec![]),
+        (scene::bridge::TRACK_STEP, 5, step_pre, step_post),
+    ];
+    for (k, (f, n, pre, post)) in callees.into_iter().enumerate() {
+        let id = 0x8a00 + u32::try_from(k).unwrap();
+        let post = if post.is_empty() {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        } else {
+            post
+        };
+        small7_log(&mut t, f, cursor, id, n, &pre, &post);
+    }
+    let window = t.alloc(&[0; 0x40]);
+    for round in 0..300u32 {
+        t.put(cursor, log);
+        let st = t.rng.pick(&[0u32, 0, 1, 1, 2, 7, 0x100, u32::MAX]);
+        t.put(window + 0x1c, st);
+        let v = t.rng.pick(&[0u32, 1, 0x100]);
+        t.put(read_end, v);
+        let v = t.rng.pick(&[0u32, 1, 2, 0x8a05]);
+        t.put(calc, v);
+        t.twin(
+            &format!("TkMenuCtrlAbilityMap2 {round}"),
+            0x008e_26d0,
+            &[window],
+            U32,
+            |o| {
+                w(am::bridge::tk_menu_ctrl_ability_map2(
+                    o,
+                    window,
+                    &mut callback,
+                ))
+            },
+        );
+        t.put(cursor, log);
+        t.twin(
+            &format!("TkMenuDrawAbilityMap2 {round}"),
+            0x008e_2720,
+            &[window],
+            U32,
+            |o| {
+                w(am::bridge::tk_menu_draw_ability_map2(
+                    o,
+                    window,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    let blocks: Vec<u32> = (0..3).map(|_| t.alloc(&[0; 0x400])).collect();
+    let data = t.sym(0x022f_b4dc);
+    // TkMenuExecScene keeps the block in its handle slot: the original's
+    // slots are below Oracle::call's top of stack; the port's go lower
+    // (the callbacks' own arguments reuse that top)
+    let a_slot = t.a.stack_range().end - 0x100 - 12;
+    let slot = t.b.stack_range().start + 0x80;
+    for round in 0..600u32 {
+        t.put(cursor, log);
+        for k in 0..8 {
+            let v = t.rng.pick(&[0, blocks[0], blocks[1], blocks[2]]);
+            t.put(data + 4 * k, v);
+        }
+        let i = t.rng.below(8);
+        let base = Mem::read::<u32>(&t.b, data + 4 * i);
+        let handle = t.rng.pick(&[0u32, 0x100, 0x100, 0x100, 0x140, 1]);
+        let handle = if round % 37 == 3 {
+            base.wrapping_neg()
+        } else {
+            handle
+        };
+        for b in &blocks {
+            // the record at handle 0 (the block's own +4)
+            let v = t.rng.pick(&[0u32, 0x8000_0200]);
+            t.put(b + 4, v);
+            let tab = t.rng.pick(&[0x300u32, 0x340, 0]);
+            t.put(b + 0x80, tab);
+            for rec in [0x100u32, 0x140] {
+                let started = t.rng.pick(&[0x8000_0000u32, 0x8000_0000, 0]);
+                let ended = t.rng.pick(&[0x4000_0000u32, 0]);
+                let list = t.rng.pick(&[0x200u32, 0x280]);
+                let flags = if t.rng.below(8) == 0 {
+                    0
+                } else {
+                    started | ended | list
+                };
+                t.put(b + rec + 4, flags);
+                let v = t.rng.next();
+                t.put(b + rec + 8, v);
+            }
+            for list in [0x200u32, 0x280] {
+                let n = t.rng.pick(&[u32::MAX, 0, 1, 2, 4]);
+                t.put(b + list, n);
+                for k in 0..0x14 {
+                    let v = t.rng.next();
+                    t.put(b + list + 4 + 4 * k, v);
+                }
+            }
+        }
+        let v = t.rng.pick(&[0u32, 0, 0x1, 0x40, 0xffff]);
+        t.put(steps, v);
+        let f = base.wrapping_add(handle).wrapping_add(4);
+        let f = if round % 3 == 0 { f } else { window + 0x30 };
+        t.put(flags_at, f);
+        t.scramble(scene::bridge::SCENE_OFFSET_X, 8);
+        let out = t.rng.next();
+        Mem::write(&mut t.b, slot + 4, handle);
+        t.twin(
+            &format!("TkMenuExecScene {round}"),
+            0x00a7_b460,
+            &[i, handle, out],
+            U32,
+            |o| {
+                w(scene::bridge::tk_menu_exec_scene(
+                    o,
+                    i,
+                    handle,
+                    out,
+                    slot,
+                    &mut callback,
+                ))
+            },
+        );
+        assert_eq!(
+            Mem::read::<u32>(&t.a, a_slot + 4),
+            Mem::read::<u32>(&t.b, slot + 4),
+            "TkMenuExecScene {round}: the handle slot"
+        );
+    }
+}
+
+/// [`small7_log`]'s stand-in as code in test space (for pointers the game
+/// holds); its address.
+fn small8_log_code(t: &mut Twins, cursor: u32, id: u32, n: u8, pre: &[u8], post: &[u8]) -> u32 {
+    let c = cursor.to_le_bytes();
+    let mut code = pre.to_vec();
+    code.extend([&[0x8b, 0x0d][..], &c].concat());
+    code.extend([0xc7, 0x01]);
+    code.extend(id.to_le_bytes());
+    for j in 0..n {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * j, 0x89, 0x41, 4 + 4 * j]);
+    }
+    code.extend([&[0x83, 0x05][..], &c, &[4 + 4 * n]].concat());
+    code.extend(post);
+    test_code(t, &code)
+}
+
+/// `mov eax, [cell]; ret`.
+fn small8_ret(cell: u32) -> Vec<u8> {
+    [&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat()
+}
+
+/// Small round 8 b: `TkInit` with the debug link on or off, every
+/// language and video mode family, HDD mode on or off (flipped by
+/// `get_hdd_name`), an old stream table or none, sizes around the sector
+/// rounding and the stream table's 0x8000 floor (negative ones too), and
+/// `g_GsDefDrawEnv2` 0 (the disc info blocks); the CD interface a table of
+/// logging stand-ins. `TkMenuStart` open or closed, staying open or
+/// closing, under a pause, with mode bit 24 and the high bits, the task
+/// buffer over its limit, with a task or none, both draw buffer
+/// parities.
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn small8_b_tk_init_and_menu_start_match_the_original() {
+    use ffx_menu::start::{callee as c, global as g};
+    let Some(mut t) = setup_any(0x5a11_8b01) else {
+        return;
+    };
+    let log = t.alloc(&vec![0; 0x8000]);
+    let cursor = t.alloc(&log.to_le_bytes());
+    let cells: Vec<u32> = (0..12).map(|_| t.alloc(&[0; 4])).collect();
+    let [
+        debug,
+        lang,
+        video,
+        size,
+        heap,
+        task,
+        dc,
+        open,
+        size2,
+        reopen,
+        lang2,
+        seen,
+    ] = cells[..].try_into().unwrap();
+    let hdd = t.sym(g::HDD_MODE);
+    let menu_open = t.sym(g::MENU_OPEN);
+    // sizes: the cell, then shifted, so each look-up differs
+    // mov eax, [size]; rol dword [size], 5; ret
+    let size_post = [
+        &[0xa1][..],
+        &size.to_le_bytes(),
+        &[0xc1, 0x05],
+        &size.to_le_bytes(),
+        &[0x05, 0xc3],
+    ]
+    .concat();
+    // mov eax, [heap]; add dword [heap], 0x40; ret
+    let malloc_post = [
+        &[0xa1][..],
+        &heap.to_le_bytes(),
+        &[0x83, 0x05],
+        &heap.to_le_bytes(),
+        &[0x40, 0xc3],
+    ]
+    .concat();
+    let flip_hdd = [&[0x80, 0x35][..], &hdd.to_le_bytes(), &[0x01]].concat();
+    // the language: first call [lang], later [lang2]
+    // mov eax, [lang]; push dword [lang2]; pop dword [lang]; ret
+    let lang_post = [
+        &[0xa1][..],
+        &lang.to_le_bytes(),
+        &[0xff, 0x35],
+        &lang2.to_le_bytes(),
+        &[0x8f, 0x05],
+        &lang.to_le_bytes(),
+        &[0xc3],
+    ]
+    .concat();
+    // mov eax, [reopen]; cmp eax, -1; je +5; mov [open], eax
+    let reopen_pre = [
+        &[0xa1][..],
+        &reopen.to_le_bytes(),
+        &[0x83, 0xf8, 0xff, 0x74, 0x05, 0xa3],
+        &menu_open.to_le_bytes(),
+    ]
+    .concat();
+    // mov eax, [esp + 4]; mov ecx, [dc]; mov [eax], ecx
+    let dc_pre = [
+        &[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d][..],
+        &dc.to_le_bytes(),
+        &[0x89, 0x08],
+    ]
+    .concat();
+    let config_hdd = t.sym(g::CONFIG + 0xe);
+    let flip_config_hdd = [&[0x80, 0x35][..], &config_hdd.to_le_bytes(), &[0x04]].concat();
+    // mov eax, [g_TkMenuMainTask]; mov [seen], eax
+    let keep_task = [
+        &[0xa1][..],
+        &t.sym(g::MAIN_TASK).to_le_bytes(),
+        &[0xa3],
+        &seen.to_le_bytes(),
+    ]
+    .concat();
+    // the CD interface
+    let mut table = [0u32; 6];
+    for (k, (o, n)) in [(0usize, 4u8), (1, 1), (2, 1), (4, 1), (5, 1)]
+        .into_iter()
+        .enumerate()
+    {
+        let id = 0x8b80 + u32::try_from(k).unwrap();
+        let post = if o == 5 {
+            size_post.clone()
+        } else {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        };
+        table[o] = small8_log_code(&mut t, cursor, id, n, &[], &post);
+    }
+    let table_bytes: Vec<u8> = table.iter().flat_map(|v| v.to_le_bytes()).collect();
+    let cd = t.alloc(&table_bytes);
+    let cd_post = [&[0xb8][..], &cd.to_le_bytes(), &[0xc3]].concat();
+    let task_end = small8_log_code(
+        &mut t,
+        cursor,
+        0x8bf0,
+        0,
+        &[],
+        &[0xb8, 0x77, 0x66, 0x55, 0x44, 0xc3],
+    );
+    let task_rec = t.alloc(&[&[0u8; 4][..], &task_end.to_le_bytes()].concat());
+    let callees: Vec<(u32, u8, Vec<u8>, Vec<u8>)> = vec![
+        (c::INIT_WORK, 0, vec![], vec![]),
+        (c::IS_DEBUG, 0, vec![], small8_ret(debug)),
+        (c::INIT_DECI2, 0, vec![], vec![]),
+        (c::RESET_CLIP, 0, vec![], vec![]),
+        (c::INIT_ALL_SYNC_V_CALLBACK, 0, vec![], vec![]),
+        (c::CLEAR_ALARM, 0, vec![], vec![]),
+        (c::PAD_INIT_WORKS, 0, vec![], vec![]),
+        (c::INIT_SCENE_FROM_SAVE, 0, vec![], vec![]),
+        // changes the HDD byte of the config TkInit copies back
+        (c::SND_SET_MUSIC_MUTE, 1, flip_config_hdd, vec![]),
+        (c::INIT_START_MAP, 0, vec![], vec![]),
+        (c::READ_THREAD_INIT, 0, vec![], vec![]),
+        (c::PRINTF_CUT, 0, vec![], vec![]),
+        (c::GET_CD, 0, vec![], cd_post),
+        (c::MEM_SET_ALIGN, 1, vec![], vec![]),
+        (c::USER_MALLOC, 1, vec![], malloc_post),
+        (c::USER_FREE, 1, vec![], vec![]),
+        (c::FLUSH_CACHE, 1, vec![], vec![]),
+        (c::TO_INIT, 0, vec![], vec![]),
+        (c::ATEL_INIT_TOTAL, 0, vec![], vec![]),
+        (c::GET_LANG, 0, vec![], lang_post),
+        (c::SET_PROJECT_BASE, 1, vec![], vec![]),
+        (c::GET_VIDEO_MODE, 0, vec![], small8_ret(video)),
+        (c::SET_CYCLE_MODE, 1, vec![], vec![]),
+        (c::SND_INIT_WORK, 0, vec![], vec![]),
+        (c::INIT_WAVE_INFO, 3, vec![], vec![]),
+        (c::INIT_MUSIC_INFO, 3, vec![], vec![]),
+        (c::MEM_CHECK, 3, vec![], vec![]),
+        (c::SORT_COMMON_WAVE, 1, vec![], vec![]),
+        (c::STANDBY_SHOUT_STREAM, 1, vec![], vec![]),
+        (c::DATA_SEND_SYNC, 1, vec![], vec![]),
+        (c::REPORT_STANDBY_STATUS, 1, vec![], vec![]),
+        (c::SHOUT_STREAMING_DATA_SEND, 2, vec![], vec![]),
+        (c::GET_HDD_NAME, 1, flip_hdd, vec![]),
+        (c::INIT_WAVE_INFO_HDD, 1, vec![], vec![]),
+        (c::INIT_MUSIC_INFO_HDD, 1, vec![], vec![]),
+        (c::ABM_LOAD, 0, vec![], vec![]),
+        (c::MAIN_LOOP, 1, reopen_pre, vec![]),
+        (c::SET_TK_ANTI_XYB, 3, vec![], vec![]),
+        (c::ENABLE_TK_ANTI, 1, vec![], vec![]),
+        (c::PAUSE_REQUEST, 1, vec![], vec![]),
+        (c::MN2_INIT_WORK, 0, vec![], vec![]),
+        (c::MN2_GET_MAIN_POS, 0, vec![], vec![]),
+        (c::SHADE_RATIO_DIFF, 1, vec![], vec![]),
+        (c::SET_SHADE_RATIO_STEP, 1, vec![], vec![]),
+        // keeps the task pointer it sees
+        (c::TASK_BUFF_SIZE_GET, 1, keep_task, small8_ret(size2)),
+        (c::ASSERT, 3, vec![], vec![]),
+        (c::TASK_INIT2, 3, vec![], small8_ret(task)),
+        (c::PLAYER_LIST_INIT, 1, vec![], vec![]),
+        (c::SUMMON_LIST_INIT, 1, vec![], vec![]),
+        // not logged: its argument is a local of each side's own stack
+        (c::GET_DBUFF_DC, 0, dc_pre, vec![]),
+        (c::CALC_IMPORTANT_LIST_MAX, 0, vec![], vec![]),
+        (c::SET_IGNORE_JOIN_FLAG, 1, vec![], vec![]),
+    ];
+    for (k, (f, n, pre, post)) in callees.into_iter().enumerate() {
+        let id = 0x8b00 + u32::try_from(k).unwrap();
+        let post = if post.is_empty() {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        } else {
+            post
+        };
+        small7_log(&mut t, f, cursor, id, n, &pre, &post);
+    }
+    let buffers = t.alloc(&vec![0; 0x2000]);
+    let def_env = t.sym(g::GS_DEF_DRAW_ENV2);
+    for round in 0..200u32 {
+        t.put(cursor, log);
+        let v = t.rng.pick(&[0u32, 0, 1]);
+        t.put(debug, v);
+        for cell in [lang, lang2] {
+            let v = t.rng.pick(&[0u32, 1, 3, 6, 7, 9, u32::MAX]);
+            t.put(cell, v);
+        }
+        let v = t.rng.pick(&[0u32, 1, 2, u32::MAX]);
+        t.put(video, v);
+        let v = t.rng.pick(&[
+            0u32,
+            1,
+            0x7ff,
+            0x800,
+            0x801,
+            0x7fff,
+            0x8001,
+            0xffff_f000,
+            0x8000_0000,
+            0x7fff_f900,
+        ]);
+        t.put(size, v);
+        t.put(heap, buffers);
+        let v = t.rng.bytes(0x2000);
+        t.put_bytes(buffers, &v);
+        let v = t.rng.pick(&[0u8, 0, 1, 2]);
+        t.put(hdd, v);
+        let v = t.rng.pick(&[1u8, 1, 0]);
+        t.put(def_env, v);
+        let v = t.rng.pick(&[0u32, 0x1234_5678]);
+        t.put(t.sym(g::SND_STREAM_TABLE), v);
+        t.scramble(g::CONFIG, 0x40);
+        t.scramble(g::DECAY_TOP - 0x90, 0x94);
+        t.twin(&format!("TkInit {round}"), 0x0088_d710, &[], U32, |o| {
+            w(ffx_menu::start::bridge::tk_init(o, &mut callback))
+        });
+    }
+    t.put(def_env, 1u8);
+    let local = t.b.stack_range().start + 0x80;
+    for round in 0..120u32 {
+        t.put(cursor, log);
+        let v = t.rng.pick(&[0u32, 0, 1]);
+        t.put(open, v);
+        t.put(menu_open, v);
+        let v = t.rng.pick(&[u32::MAX, 0, 1, 5]);
+        t.put(reopen, v);
+        let v = t.rng.pick(&[0u32, 0, 0, 1]);
+        t.put(t.sym(g::PAUSE_ON), v);
+        let mode = match t.rng.below(4) {
+            0 => t.rng.below(0x20) | 0x0080_0000,
+            1 => t.rng.next(),
+            2 => 0x0100_0000 | t.rng.below(0x20),
+            _ => 0xc000_0000 | t.rng.below(0x1_0000),
+        };
+        let v = t.rng.pick(&[0u32, 0x7fff, 0x8000, 0xffff_ffff]);
+        t.put(size2, v);
+        let v = t.rng.pick(&[0u32, task_rec]);
+        t.put(task, v);
+        let v = t.rng.pick(&[0u32, task_rec]);
+        t.put(t.sym(g::MAIN_TASK), v);
+        let v = t.rng.next();
+        t.put(dc, v);
+        // the work area's ends
+        let v = t.rng.next();
+        t.put(t.sym(g::MENU_WORK), v);
+        t.put(t.sym(g::MENU_WORK + g::MENU_WORK_SIZE - 4), v);
+        t.scramble(g::TIMER, 2);
+        t.scramble(g::FRAMES, 4);
+        t.twin(
+            &format!("TkMenuStart {round}"),
+            0x008a_b030,
+            &[mode],
+            U32,
+            |o| {
+                w(ffx_menu::start::bridge::tk_menu_start(
+                    o,
+                    mode,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+}
+
+/// Small round 8 c: `TkMenuCtrlItem` from every state (0..0x3a), over
+/// windows with random cursors, outcomes (`+0x45` -1..3) and rows, the
+/// item list, the use kind (0..5), items with and without a target
+/// (`+0x22` bit 3), the sub-command rows (-1..4), missing windows for
+/// state 53, an active-mask bit 23 or not, the gear sort's result; every
+/// callee logged with its arguments (the frame's message pairs and the
+/// save buffers read through their pointers), `TkMenuItemClearWindow`
+/// moving `g_TkMenuItemWindow` (the original keeps the old one in `edx`).
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn small8_c_ctrl_item_matches_the_original() {
+    use ffx_menu::item::{callee as c, global as g};
+    let Some(mut t) = setup_any(0x5a11_8c01) else {
+        return;
+    };
+    let log = t.alloc(&vec![0; 0x4000]);
+    let cursor = t.alloc(&log.to_le_bytes());
+    let cells: Vec<u32> = (0..12).map(|_| t.alloc(&[0; 4])).collect();
+    let [
+        rom,
+        types,
+        nums,
+        mask,
+        sorted,
+        list_win,
+        name_win,
+        moved,
+        moved2,
+        _,
+        _,
+        _,
+    ] = cells[..].try_into().unwrap();
+    let pairs = t.alloc(&[0; 0x20]);
+    let slot = t.alloc(&[0; 0x40]);
+    // each stand-in first logs the state word (to see the stores it
+    // reads): mov eax, [slot + 0x1c]; mov ecx, [cursor]; mov [ecx], eax;
+    // add dword [cursor], 4
+    let state_log = [
+        &[0xa1][..],
+        &(slot + 0x1c).to_le_bytes(),
+        &[0x8b, 0x0d],
+        &cursor.to_le_bytes(),
+        &[0x89, 0x01, 0x83, 0x05],
+        &cursor.to_le_bytes(),
+        &[0x04],
+    ]
+    .concat();
+    let window_at = t.sym(g::WINDOW);
+    // what TkMenuItemClearWindow does (or states 26/27 loop for ever),
+    // then g_TkMenuItemWindow moved:
+    // mov eax, [window]; test eax, eax; je +11; mov byte [eax + 0x45], 0;
+    // mov dword [eax + 0x28], 0; mov eax, [moved]; mov [window], eax
+    let move_window = [
+        &[0xa1][..],
+        &window_at.to_le_bytes(),
+        &[0x85, 0xc0, 0x74, 0x0b, 0xc6, 0x40, 0x45, 0x00],
+        &[0xc7, 0x40, 0x28, 0, 0, 0, 0],
+        &[0xa1],
+        &moved.to_le_bytes(),
+        &[0xa3],
+        &window_at.to_le_bytes(),
+    ]
+    .concat();
+    // mov eax, [moved2]; mov [g_TkMenuItemWindow], eax
+    let move_window2 = [
+        &[0xa1][..],
+        &moved2.to_le_bytes(),
+        &[0xa3],
+        &window_at.to_le_bytes(),
+    ]
+    .concat();
+    // the message pairs and the counts behind the pointers, into `pairs`
+    #[rustfmt::skip]
+    let copy_pairs: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x08][..],                         // mov eax, [esp + 8]
+        &[0x8b, 0x08, 0x89, 0x0d], &pairs.to_le_bytes(),       // mov ecx, [eax]; mov [pairs], ecx
+        &[0x8b, 0x48, 0x04, 0x89, 0x0d], &(pairs + 4).to_le_bytes(),
+        &[0x8b, 0x44, 0x24, 0x0c],
+        &[0x8b, 0x08, 0x89, 0x0d], &(pairs + 8).to_le_bytes(),
+        &[0x8b, 0x48, 0x04, 0x89, 0x0d], &(pairs + 12).to_le_bytes(),
+        &[0x8b, 0x44, 0x24, 0x10, 0xa3], &(pairs + 16).to_le_bytes(),
+        &[0x8b, 0x44, 0x24, 0x14, 0xa3], &(pairs + 20).to_le_bytes(),
+    ]
+    .concat();
+    let plus = |k: u32| {
+        [
+            &[0x8b, 0x44, 0x24, 0x04, 0x05][..],
+            &k.to_le_bytes(),
+            &[0xc3],
+        ]
+        .concat()
+    };
+    let callees: Vec<(u32, u8, Vec<u8>, Vec<u8>)> = vec![
+        (c::GET_CONTROL_PAD, 0, vec![], vec![]),
+        (c::GET_CONTROL_PAD_REP, 0, vec![], vec![]),
+        (c::GET_CONTROL_PAD_TRG, 0, vec![], vec![]),
+        // its out word is a local of each side's stack: not logged
+        (c::GET_ROM_ITEM, 1, vec![], small8_ret(rom)),
+        (c::ITEM_TARGET_MASK, 1, move_window2.clone(), vec![]),
+        (c::FREE_WINDOW_GROUP, 1, vec![], vec![]),
+        (c::OPEN_TARGET_WINDOW, 3, vec![], vec![]),
+        (c::GET_PLAYER_FROM_INDEX2, 1, vec![], plus(0x100)),
+        (c::GET_SUMMON_FROM_INDEX, 1, vec![], plus(0x200)),
+        (c::SND_SEP_PLAY_SIMPLE, 1, vec![], vec![]),
+        (c::APPLY_HEAL, 1, vec![], vec![]),
+        (c::USE_ON_TARGETS, 1, vec![], vec![]),
+        // moves g_TkMenuItemWindow too
+        (c::ITEM_REFRESH, 1, move_window2, vec![]),
+        (c::CLEAR_WINDOW, 0, move_window, vec![]),
+        (c::SAVE_ITEM_TYPE_BUFFER, 0, vec![], small8_ret(types)),
+        (c::SAVE_ITEM_NUM_BUFFER, 0, vec![], small8_ret(nums)),
+        (c::SORT_INVENTORY, 0, vec![], vec![]),
+        (c::PACK_GEAR, 0, vec![], vec![]),
+        (c::COUNT_GEAR_BY_OWNER, 0, vec![], vec![]),
+        (c::SORT_GEAR_BY_OWNER, 0, vec![], small8_ret(sorted)),
+        (c::SORT_GEAR_BY_KIND, 0, vec![], vec![]),
+        (c::SORT_ALL_GEAR, 0, vec![], vec![]),
+        (c::SWAP_SAVE_GEAR, 2, vec![], vec![]),
+        (c::REFRESH_WEAPON_SHOP_SELL2, 0, vec![], vec![]),
+        (c::MAIN_ACTIVE_MENU, 2, vec![], vec![]),
+        (c::MAIN_GET_MENU_ACTIVE_MASK, 0, vec![], small8_ret(mask)),
+        (c::CLOSE_WINDOW2, 0, vec![], vec![]),
+        (c::SAVE_ITEM_USE, 2, vec![], vec![]),
+        (c::CLEAR_WINDOW2, 0, vec![], vec![]),
+        (c::OPEN_NAME_ENTRY_WINDOW, 2, vec![], small8_ret(name_win)),
+        (c::ITEM_MES, 1, vec![], plus(0x1000)),
+        (c::ITEM_HELP, 1, vec![], plus(0x2000)),
+        (c::OPEN_SUB_CMD_WINDOW_BESIDE, 1, copy_pairs, vec![]),
+        (c::SUB_CMD_SET_VALUE, 1, vec![], vec![]),
+        (c::SUB_CMD_SET_VALUE2, 1, vec![], vec![]),
+        (c::RESTART_SUB_CMD_WINDOW1, 0, vec![], vec![]),
+        (c::RESTART_SUB_CMD_WINDOW2, 0, vec![], vec![]),
+        (c::OPEN_LIST_WINDOW, 1, vec![], small8_ret(list_win)),
+        (c::CLOSE_WINDOW3, 0, vec![], vec![]),
+        (c::CLOSE_WINDOW4, 0, vec![], vec![]),
+        (c::OPEN_GEAR_WINDOW, 0, vec![], vec![]),
+        (c::CLOSE_WINDOW, 0, vec![], vec![]),
+        (c::CLOSE_SUB_CMD_WINDOW1, 0, vec![], vec![]),
+        (c::MAIN_SLEEP_MENU, 1, vec![], vec![]),
+    ];
+    for (k, (f, n, pre, post)) in callees.into_iter().enumerate() {
+        let id = 0x8c00 + u32::try_from(k).unwrap();
+        let post = if post.is_empty() {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        } else {
+            post
+        };
+        let pre = [&state_log[..], &pre].concat();
+        small7_log(&mut t, f, cursor, id, n, &pre, &post);
+    }
+    let windows: Vec<u32> = (0..6).map(|_| t.alloc(&[0; 0x80])).collect();
+    let (rom_rec, type_buf, num_buf) = (
+        t.alloc(&[0; 0x40]),
+        t.alloc(&[0; 0x100]),
+        t.alloc(&[0; 0x100]),
+    );
+    t.put(rom, rom_rec);
+    t.put(types, type_buf);
+    t.put(nums, num_buf);
+    let local = t.b.stack_range().start + 0x80;
+    let globals = [
+        g::WINDOW,
+        g::WINDOW2,
+        g::TARGET_WINDOW,
+        g::NAME_WINDOW,
+        g::GEAR_WINDOW,
+        g::SUB_CMD_WINDOW,
+        g::SUB_CMD_WINDOW2,
+    ];
+    for round in 0..3000u32 {
+        t.put(cursor, log);
+        let state = t.rng.below(0x3b);
+        t.put(slot + 0x1c, state);
+        for &w in &windows {
+            let v = t.rng.pick(&[-1i8, -1, 0, 1, 2, 3]);
+            t.put(w + 0x45, v);
+            let v = u8::try_from(t.rng.below(4)).unwrap();
+            t.put(w + 0x42, v);
+            for o in [0x48, 0x2c, 0x2e] {
+                let v = t.rng.pick(&[0i16, 1, 2, 3, 4, -1]);
+                t.put(w + o, v);
+            }
+            for o in [0x58, 0x5c] {
+                let v = t.rng.pick(&[0u32, 0, 1, 4, 8]);
+                t.put(w + o, v);
+            }
+            let v = t.rng.pick(&[0u16, 1, 0x100]);
+            t.put(w + 0x30, v);
+            for o in [0x1c, 0x28] {
+                let v = t.rng.next();
+                t.put(w + o, v);
+            }
+            for o in [0x37, 0x41] {
+                let v = t.rng.pick(&[0u8, 5]);
+                t.put(w + o, v);
+            }
+        }
+        for gl in globals {
+            let v = t.rng.pick(&windows);
+            t.put(t.sym(gl), v);
+        }
+        if state == 53 {
+            for gl in [g::WINDOW, g::WINDOW2, g::GEAR_WINDOW] {
+                if t.rng.below(2) == 0 {
+                    t.put(t.sym(gl), 0u32);
+                }
+            }
+        }
+        for cell in [moved, moved2, list_win, name_win] {
+            let v = t.rng.pick(&windows);
+            t.put(cell, v);
+        }
+        let v = t.rng.pick(&[0u32, 0x0080_0000, 0x0180_0001, 1]);
+        t.put(mask, v);
+        let v = t.rng.pick(&[0u32, 1]);
+        t.put(sorted, v);
+        let v = t.rng.pick(&[0u8, 8, 0xf7, 0xff]);
+        t.put(rom_rec + 0x22, v);
+        let v = u8::try_from(t.rng.below(6)).unwrap();
+        t.put(t.sym(g::USE_KIND), v);
+        t.scramble(g::LIST, 0x80);
+        for k in 0..0x20 {
+            let v = t.rng.pick(&[0u8, 0, 1, 7]);
+            t.put(t.sym(g::LIST + 2 + 4 * k), v);
+        }
+        // equal ids for the gear swap now and then
+        if round % 5 == 0 {
+            t.put(t.sym(g::LIST + 4), 0x55u16);
+            t.put(t.sym(g::LIST), 0x55u16);
+        }
+        t.scramble(g::COMMAND, 2);
+        t.scramble(g::GEAR_MODE, 1);
+        t.scramble(g::TARGET_MODE, 4);
+        let v = t.rng.bytes(0x100);
+        t.put_bytes(type_buf, &v);
+        let v = t.rng.bytes(0x100);
+        t.put_bytes(num_buf, &v);
+        // now and then the count buffer over the type buffer's first rows
+        // (the order of the swap's reads and writes shows)
+        let v = if round % 4 == 0 {
+            type_buf + 6
+        } else {
+            num_buf
+        };
+        t.put(nums, v);
+        t.twin(
+            &format!("TkMenuCtrlItem {round} state {state}"),
+            0x008c_5450,
+            &[slot],
+            U32,
+            |o| {
+                w(ffx_menu::item::bridge::tk_menu_ctrl_item(
+                    o,
+                    slot,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    // the swap (state 27) with the count buffer over the type buffer
+    for round in 0..400u32 {
+        t.put(cursor, log);
+        t.put(slot + 0x1c, 27u32);
+        let win = t.rng.pick(&windows);
+        t.put(t.sym(g::WINDOW), win);
+        t.put(moved2, win);
+        t.put(win + 0x45, 3u8);
+        t.put(win + 0x42, 0u8);
+        for o in [0x2c, 0x2e] {
+            let v = i16::try_from(t.rng.below(4)).unwrap();
+            t.put(win + o, v);
+        }
+        for o in [0x58, 0x5c] {
+            let v = t.rng.below(6);
+            t.put(win + o, v);
+        }
+        let v = t.rng.bytes(0x100);
+        t.put_bytes(type_buf, &v);
+        let v = type_buf + t.rng.below(12);
+        t.put(nums, v);
+        t.twin(
+            &format!("TkMenuCtrlItem swap {round}"),
+            0x008c_5450,
+            &[slot],
+            U32,
+            |o| {
+                w(ffx_menu::item::bridge::tk_menu_ctrl_item(
+                    o,
+                    slot,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+}
+
+/// A [`small8_stub`]: callee, arguments, `pre`, `post`.
+type Small8Stub = (u32, Vec<Small8Arg>, Vec<u8>, Vec<u8>);
+
+/// How a [`small8_stub`] logs one argument.
+#[derive(Clone, Copy)]
+enum Small8Arg {
+    /// The word.
+    V,
+    /// The word it points at (a pointer into each side's own frame).
+    D,
+    /// Not at all (a pointer into each side's own frame, written only).
+    S,
+}
+
+/// A stand-in for `f` behind a jump, in both: `pre`, then it appends `id`
+/// and its arguments as `args` says at `*cursor`, then `post` (which ends
+/// with its `ret`).
+fn small8_stub(
+    t: &mut Twins,
+    f: u32,
+    cursor: u32,
+    id: u32,
+    args: &[Small8Arg],
+    pre: &[u8],
+    post: &[u8],
+) {
+    let c = cursor.to_le_bytes();
+    let mut code = pre.to_vec();
+    code.extend([&[0x8b, 0x0d][..], &c].concat()); // mov ecx, [cursor]
+    code.extend([0xc7, 0x01]); // mov dword [ecx], id
+    code.extend(id.to_le_bytes());
+    let mut k = 0u8;
+    for (j, a) in (0u8..).zip(args) {
+        match a {
+            Small8Arg::V => code.extend([0x8b, 0x44, 0x24, 4 + 4 * j]),
+            Small8Arg::D => code.extend([0x8b, 0x44, 0x24, 4 + 4 * j, 0x8b, 0x00]),
+            Small8Arg::S => continue,
+        }
+        k += 1;
+        code.extend([0x89, 0x41, 4 * k]); // mov [ecx + 4k], eax
+    }
+    code.extend([&[0x83, 0x05][..], &c, &[4 + 4 * k]].concat());
+    code.extend(post);
+    jump_stub(t, f, &code);
+}
+
+/// Small round 8 d: `TkMenuCtrlSaveLoad` from every state (0..0x73) in
+/// the save and the load menu, with the pads' bits, the card calls'
+/// results (0, positive, negative), `MenuSave_McSync` finished or not with
+/// every out value the states test (-4, -2, -3, 0, 1, ...), the card's
+/// type, format and free space, the slot states and sizes, the yes/no
+/// window's outcome and row, the file list window's pick, the CRC check's
+/// three outcomes, the menu mode and frame ratio, the language swap. The
+/// path builders write the slot into the path buffer and the card calls
+/// log it back (each side's frame differs); every stand-in logs the state
+/// word first.
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn small8_d_ctrl_save_load_matches_the_original() {
+    use Small8Arg::{D, S, V};
+    use ffx_menu::save_load::{callee as c, global as g};
+    let Some(mut t) = setup_any(0x5a11_8d01) else {
+        return;
+    };
+    let log = t.alloc(&vec![0; 0x8000]);
+    let cursor = t.alloc(&log.to_le_bytes());
+    let slot = t.alloc(&[0; 0x40]);
+    let cells: Vec<u32> = (0..20).map(|_| t.alloc(&[0; 4])).collect();
+    let [
+        pad,
+        rep,
+        trg,
+        sync_ret,
+        sync_out,
+        card,
+        list_max,
+        pos,
+        toggle,
+        first,
+        glob,
+        info,
+        crc,
+        mode,
+        ratio,
+        swap,
+        exec,
+        debug,
+        _,
+        _,
+    ] = cells[..].try_into().unwrap();
+    let ret = small8_ret;
+    let state_log = [
+        &[0xa1][..],
+        &(slot + 0x1c).to_le_bytes(),
+        &[0x8b, 0x0d],
+        &cursor.to_le_bytes(),
+        &[0x89, 0x01, 0x83, 0x05],
+        &cursor.to_le_bytes(),
+        &[0x04],
+    ]
+    .concat();
+    // mov eax, [esp + 12]; mov ecx, [sync_out]; mov [eax], ecx
+    let sync_pre = [
+        &[0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d][..],
+        &sync_out.to_le_bytes(),
+        &[0x89, 0x08],
+    ]
+    .concat();
+    // mov eax, [esp + 4]; mov ecx, [esp + 8]; add ecx, id << 16 (below);
+    // mov [eax], ecx
+    let path_pre = |k: u32| {
+        [
+            &[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08, 0x81, 0xc1][..],
+            &(k << 16).to_le_bytes(),
+            &[0x89, 0x08],
+        ]
+        .concat()
+    };
+    let plus = |k: u32| {
+        [
+            &[0x8b, 0x44, 0x24, 0x04, 0x05][..],
+            &k.to_le_bytes(),
+            &[0xc3],
+        ]
+        .concat()
+    };
+    let callees: Vec<Small8Stub> = vec![
+        (c::GET_CONTROL_PAD, vec![], vec![], ret(pad)),
+        (c::GET_CONTROL_PAD_REP, vec![], vec![], ret(rep)),
+        (c::GET_CONTROL_PAD_TRG, vec![], vec![], ret(trg)),
+        (c::GET_CD, vec![], vec![], vec![]),
+        (c::POLL_CARD, vec![], vec![], vec![]),
+        (c::SND_SEP_PLAY_SIMPLE, vec![V], vec![], vec![]),
+        (c::CLOSE_HELP_WINDOW, vec![], vec![], vec![]),
+        (c::GET_LIST_MAX2, vec![], vec![], ret(list_max)),
+        (c::CLOSE_YES_NO_WINDOW, vec![], vec![], vec![]),
+        (c::MC_INIT_DIR, vec![V, V], vec![], vec![]),
+        (c::MC_GET_DIR, vec![D, V, V, V], vec![], ret(card)),
+        (c::MC_GET_INFO, vec![V, V, V, V], vec![], ret(card)),
+        (c::MC_GET_LOAD_FILE_POS, vec![V], vec![], ret(pos)),
+        (c::SYNC_TOGGLE, vec![], vec![], ret(toggle)),
+        (c::MC_SYNC, vec![V, V, S], sync_pre, ret(sync_ret)),
+        (c::PATH_DIR, vec![S, V], path_pre(1), vec![]),
+        (c::MC_MKDIR, vec![D], vec![], ret(card)),
+        (c::PATH_ICON, vec![S, V], path_pre(2), vec![]),
+        (c::MC_OPEN, vec![D, V], vec![], ret(card)),
+        (c::MC_WRITE, vec![V, V, V], vec![], ret(card)),
+        (c::MC_CLOSE, vec![V], vec![], ret(card)),
+        (c::PATH_ICON_SYS, vec![S, V], path_pre(3), vec![]),
+        (c::GET_SAVE_DIC, vec![], vec![], vec![]),
+        (c::GET_SAVE_EVENT_ADDRESS, vec![V], vec![], plus(0x100)),
+        (c::PACK_SAVE, vec![V, V, V], vec![], vec![]),
+        (c::BUILD_ICON_SYS, vec![V, V, V], vec![], vec![]),
+        (c::PATH_DATA, vec![S, V], path_pre(4), vec![]),
+        (c::SAVE_MES, vec![V], vec![], plus(0x1_0000)),
+        (c::SET_HELP_MESSAGE, vec![V], vec![], vec![]),
+        (c::SUB_CMD_OPEN_C, vec![V, V, V], vec![], vec![]),
+        (c::MC_READ, vec![V, V, V], vec![], ret(card)),
+        (c::MC_SET_EXEC_PORT, vec![V], vec![], vec![]),
+        (c::OPEN_SUB_CMD_WINDOW, vec![V, V, V], vec![], vec![]),
+        (c::CLOSE_WINDOW, vec![], vec![], vec![]),
+        (c::SET_HELP_RATIO_DIFF2, vec![V], vec![], vec![]),
+        (c::STOP_SCENE, vec![V, V], vec![], vec![]),
+        (c::RESET_TOGGLES, vec![], vec![], vec![]),
+        (c::OPEN_WINDOW_3C20, vec![], vec![], vec![]),
+        (c::OPEN_WINDOW2, vec![V], vec![], vec![]),
+        (c::OPEN_CHOICE, vec![V], vec![], vec![]),
+        (c::SUB_CMD_OPEN_A, vec![V, V, V], vec![], vec![]),
+        (c::SAVE_LOAD_RESET, vec![V], vec![], vec![]),
+        (c::FIRST_READ_END, vec![], vec![], ret(first)),
+        (c::GET_GLOBAL_1841C0C, vec![], vec![], ret(glob)),
+        (c::OPEN_WINDOW, vec![V], vec![], vec![]),
+        (c::CLEAR_SELECT_WINDOW, vec![V], vec![], vec![]),
+        (c::DEBUG_SAVE, vec![V, V, V], vec![], vec![]),
+        (c::DEBUG_LOAD, vec![V, V, V], vec![], ret(debug)),
+        (c::SWITCH_GPU_MODE, vec![], vec![], vec![]),
+        (c::MC_SET_LOAD_FILE_POS, vec![V, V], vec![], vec![]),
+        (c::COPY_LOADED_SAVE, vec![V, V], vec![], vec![]),
+        (c::REFRESH_SOUND_MODE, vec![], vec![], vec![]),
+        (c::REFRESH_HDD, vec![], vec![], vec![]),
+        (c::ABM_PARA_GET, vec![], vec![], vec![]),
+        (c::MC_FORMAT, vec![], vec![], ret(card)),
+        (c::MARK_SLOTS, vec![V, V], vec![], vec![]),
+        (c::GET_SAVE_FILE_INFO, vec![V], vec![], ret(info)),
+        (c::CRC, vec![V, V], vec![], ret(crc)),
+        (c::HELP_SET_EXT_MODE, vec![V, V], vec![], vec![]),
+        (c::GET_MENU_MODE, vec![], vec![], ret(mode)),
+        (c::SET_MAIN_FRAME_RATIO_DIFF, vec![V], vec![], vec![]),
+        (c::GET_MAIN_FRAME_RATIO, vec![], vec![], ret(ratio)),
+        (c::LANG_SWAP_FLAG, vec![], vec![], ret(swap)),
+        (c::SAVE_CONFIG_ENGLISH, vec![], vec![], vec![]),
+        (c::SWAP_ENV_INIT, vec![V], vec![], vec![]),
+        (c::SWAP_ENV_EXEC, vec![], vec![], ret(exec)),
+        (c::CLOSE_WINDOW2, vec![], vec![], vec![]),
+        (c::MAIN_SLEEP_MENU, vec![V], vec![], vec![]),
+        (c::MAIN_ACTIVE_MENU, vec![V, V], vec![], vec![]),
+    ];
+    for (k, (f, args, pre, post)) in callees.into_iter().enumerate() {
+        let id = 0x8d00 + u32::try_from(k).unwrap();
+        let post = if post.is_empty() {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        } else {
+            post
+        };
+        let pre = [&state_log[..], &pre].concat();
+        small8_stub(&mut t, f, cursor, id, &args, &pre, &post);
+    }
+    let (window, yes_no, info_rec) = (
+        t.alloc(&[0; 0x80]),
+        t.alloc(&[0; 0x80]),
+        t.alloc(&[0; 0x80]),
+    );
+    t.put(t.sym(g::WINDOW), window);
+    t.put(t.sym(g::YES_NO), yes_no);
+    t.put(list_max, yes_no);
+    t.put(info, info_rec);
+    let frame = t.b.stack_range().start + 0x80;
+    for round in 0..6000u32 {
+        t.put(cursor, log);
+        let state = t.rng.below(0x74);
+        t.put(slot + 0x1c, state);
+        for cell in [pad, rep, trg] {
+            let v = t.rng.pick(&[
+                0u32, 1, 4, 5, 0x20, 0x40, 0x5000, 0x1_0000, 0x1000, 0x1_0001, 0x1_5000,
+            ]);
+            t.put(cell, v);
+        }
+        let v = t.rng.pick(&[1u32, 1, 1, 0, 2, u32::MAX]);
+        t.put(sync_ret, v);
+        let v = t.rng.pick(&[
+            0u32,
+            0,
+            1,
+            2,
+            0xffff_fffc,
+            0xffff_fffe,
+            0xffff_fffd,
+            0xffff_ffff,
+        ]);
+        t.put(sync_out, v);
+        let v = t.rng.pick(&[0u32, 0, 0, 1, u32::MAX]);
+        t.put(card, v);
+        for cell in [pos, toggle, first, glob, swap, exec, debug] {
+            let v = t.rng.pick(&[0u32, 1, 1, 2, u32::MAX]);
+            t.put(cell, v);
+        }
+        let v = t.rng.pick(&[0u32, 0x1_0000, 0x80_0001, 0x100_0000]);
+        t.put(mode, v);
+        let v = t.rng.pick(&[0u32, 0x7f, 0x80, 0x81, u32::MAX]);
+        t.put(ratio, v);
+        let v = t.rng.pick(&[0u32, 0x1234, 0x5678]);
+        t.put(crc, v);
+        let v = t.rng.pick(&[0u16, 0x1234, 0x5678]);
+        t.put(info_rec + 0x1a, v);
+        let v = t.rng.pick(&[0u16, 0x1234, 0x5678]);
+        t.put(t.sym(g::SAVE_CRC), v);
+        let v = t.rng.below(2);
+        t.put(t.sym(g::ROW), v);
+        for k in 0..2 {
+            let v = t.rng.pick(&[0u8, 1, 1]);
+            t.put(t.sym(g::ENABLED + k), v);
+        }
+        for at in [g::TOGGLES, g::SAVING, g::HDD_MODE] {
+            let v = t.rng.pick(&[0u8, 1]);
+            t.put(t.sym(at), v);
+        }
+        let v = t.rng.pick(&[0u32, 0, 1]);
+        t.put(t.sym(g::ACTIVE), v);
+        let s = t.rng.below(6);
+        t.put(t.sym(g::SLOT), s);
+        for k in 0..8 {
+            let v = u8::try_from(t.rng.below(4)).unwrap();
+            t.put(t.sym(g::SLOTS + k), v);
+            let v = u8::try_from(t.rng.below(4)).unwrap();
+            t.put(t.sym(g::SLOT_SIZES + k), v);
+        }
+        for (at, opts) in [
+            (g::NEED, &[0u32, 2, 5][..]),
+            (g::CARD_FREE, &[0, 1, 3, 0x2000, u32::MAX][..]),
+            (g::CARD_TYPE, &[2, 2, 1][..]),
+            (g::CARD_FORMAT, &[0, 0, 1, 2][..]),
+            (
+                g::DIR_ICON_SIZE,
+                &[0x83a0, 0x8000, 0x8400, 0, 0xffff_f23d][..],
+            ),
+            (
+                g::ICON_SIZE,
+                &[0x83a0, 0x83a0, 0x7fff_fff0, 0xffff_f000, 0xffff_fb00][..],
+            ),
+            (g::LANG_SWAP, &[0, 1, 1][..]),
+        ] {
+            let v = t.rng.pick(opts);
+            t.put(t.sym(at), v);
+        }
+        t.scramble(g::DEFAULT_POS, 8);
+        t.scramble(g::FD, 4);
+        t.scramble(g::BUSY_WINDOW, 4);
+        t.scramble(g::SAVE_FILE, 0x40);
+        t.scramble(g::CARD_DIR_CLEAR, 0x10);
+        t.scramble(g::SLOTS_USED, 4);
+        for w in [window, yes_no] {
+            let v = t.rng.pick(&[-1i8, 0, 1, 2]);
+            t.put(w + 0x45, v);
+            let v = t.rng.pick(&[0i16, 0, 1, 3]);
+            t.put(w + 0x48, v);
+            let v = t.rng.pick(&[0i16, 1, 3, -1]);
+            t.put(w + 0x2c, v);
+            for o in [0x30, 0x3a] {
+                let v = t.rng.pick(&[0u16, 3, 8, 0x8000, 0x8001, 0xffff]);
+                t.put(w + o, v);
+            }
+            t.scramble_at(w + 0x32, 4);
+        }
+        t.twin(
+            &format!("TkMenuCtrlSaveLoad {round} state {state:#x}"),
+            0x008b_15d0,
+            &[slot],
+            VOID,
+            |o| {
+                ffx_menu::save_load::bridge::tk_menu_ctrl_save_load(o, slot, frame, &mut callback);
+                0
+            },
+        );
+    }
+    // state 0x46's size check: the icon's card size against its own,
+    // rounded to KiB (signed, as the original's cdq/sar)
+    for round in 0..300u32 {
+        t.put(cursor, log);
+        t.put(slot + 0x1c, 0x46u32);
+        t.put(sync_ret, 1u32);
+        let v = t.rng.pick(&[1u32, 5]);
+        t.put(sync_out, v);
+        let v = t.rng.pick(&[0u32, 0x400, 0x83a0, 0xffff_f23d]);
+        t.put(t.sym(g::DIR_ICON_SIZE), v);
+        let v = t
+            .rng
+            .pick(&[0u32, 0x83a0, 0xffff_f000, 0xffff_fb00, 0xffff_ffff]);
+        t.put(t.sym(g::ICON_SIZE), v);
+        t.twin(
+            &format!("TkMenuCtrlSaveLoad icon size {round}"),
+            0x008b_15d0,
+            &[slot],
+            VOID,
+            |o| {
+                ffx_menu::save_load::bridge::tk_menu_ctrl_save_load(o, slot, frame, &mut callback);
+                0
+            },
+        );
+    }
+}

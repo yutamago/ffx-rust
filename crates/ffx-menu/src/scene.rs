@@ -88,6 +88,78 @@ pub mod bridge {
         }
     }
 
+    /// `g_TkMenuSceneOffsetX`/`Y` (`0x022fb4fc`/`0x022fb500`, names ours):
+    /// the running scene's `+8`/`+0xa` offsets, as `i32`, for the draws.
+    pub const SCENE_OFFSET_X: u32 = 0x022f_b4fc;
+    pub const SCENE_OFFSET_Y: u32 = 0x022f_b500;
+
+    /// `MenuScene_TrackStep_00a7b510`.
+    pub const TRACK_STEP: u32 = 0x00a7_b510;
+
+    /// `TkMenuExecScene(i, handle, out)` (`0x00a7b460`): one frame of the
+    /// scene at `handle` in block `i` (unchecked index): 0 for a 0 handle,
+    /// no block, or a record whose word `+4` lacks bit 31 (not started).
+    /// Else its offsets go to [`SCENE_OFFSET_X`]/`Y`, and each of the
+    /// tracks of its list (`+4` low 30 bits from the block: a count, then
+    /// 20-byte tracks) steps (`MenuScene_TrackStep(block, list, track,
+    /// block + block[+0x80], out)`); the OR of their results is returned,
+    /// and when it is 0 (also with no tracks) the record's bit 30 is
+    /// cleared (the scene ended). The original keeps the block in its
+    /// `handle` argument slot (`slot`: the caller's slots' address; written
+    /// whenever the handle is not 0).
+    pub fn tk_menu_exec_scene<M, C>(
+        mem: &mut M,
+        i: u32,
+        handle: u32,
+        out: u32,
+        slot: u32,
+        call: &mut C,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        if handle == 0 {
+            return 0;
+        }
+        let base = SCENE_DATA.ptr(mem).at(i).get(mem);
+        mem.write(slot.wrapping_add(4), base);
+        if base == 0 {
+            return 0;
+        }
+        let record = base.wrapping_add(handle);
+        if record == 0 {
+            return 0;
+        }
+        let flags = mem.read::<u32>(record.wrapping_add(4));
+        if flags.cast_signed() >= 0 {
+            return 0;
+        }
+        let x = i32::from(mem.read::<i16>(record.wrapping_add(8)));
+        let at = mem.rebase(SCENE_OFFSET_X);
+        mem.write(at, x);
+        let y = i32::from(mem.read::<i16>(record.wrapping_add(0xa)));
+        let at = mem.rebase(SCENE_OFFSET_Y);
+        mem.write(at, y);
+        let list = (flags & 0x3fff_ffff).wrapping_add(base);
+        let table = mem.read::<u32>(base.wrapping_add(0x80)).wrapping_add(base);
+        let mut left = mem.read::<i32>(list);
+        let mut track = list.wrapping_add(4);
+        let mut any = 0;
+        let step = mem.rebase(TRACK_STEP);
+        while left > 0 {
+            any |= call(mem, step, &[base, list, track, table, out]);
+            left -= 1;
+            track = track.wrapping_add(0x14);
+        }
+        if any != 0 {
+            return any;
+        }
+        let v = mem.read::<u32>(record.wrapping_add(4)) & 0xbfff_ffff;
+        mem.write(record.wrapping_add(4), v);
+        0
+    }
+
     /// `TkMenuSceneHash(name)` (`0x008e5cf0`): a name's bucket.
     pub fn tk_menu_scene_hash(mem: &impl Mem, name: u32) -> u32 {
         bucket(&c_str(mem, name))

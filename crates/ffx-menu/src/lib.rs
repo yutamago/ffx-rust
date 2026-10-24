@@ -4,23 +4,31 @@
 //! becomes a core (portable, on its own types) and a `bridge` function over
 //! game memory (`docs/porting.md`), one module per family:
 //!
+//! - [`ability_map`]: the sphere grid's menu slot (ctrl and draw);
 //! - [`arms`]: the field models' weapon and armour refresh
 //!   (`TkMn2ArmsRefreshArms`);
 //! - [`gu`]: windows, controls, selectors, the text cursor, GS packets;
+//! - [`item`]: the item menu's control (`TkMenuCtrlItem`);
 //! - [`main_loop`]: the main menu's frame (`0x008a9ca0`);
 //! - [`math`]: float helpers (angle wrapping, radius tests);
 //! - [`msg`]: message tables and message-window choices;
+//! - [`save_load`]: the save/load menu's control (`TkMenuCtrlSaveLoad`);
 //! - [`scene`]: menu scene data lookups;
 //! - [`scissor`]: the menu's software scissor;
+//! - [`start`]: the Tk boot (`TkInit`) and the menu's entry (`TkMenuStart`);
 //! - [`tk`]: menu state, pads, vibration, the save CRC, command lists.
 
+pub mod ability_map;
 pub mod arms;
 pub mod gu;
+pub mod item;
 pub mod main_loop;
 pub mod math;
 pub mod msg;
+pub mod save_load;
 pub mod scene;
 pub mod scissor;
+pub mod start;
 pub mod tk;
 
 /// `get_ptr32_func(p)` (`0x00a44650`): `p` (a 32-bit pointer as itself).
