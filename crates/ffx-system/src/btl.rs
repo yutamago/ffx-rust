@@ -1264,6 +1264,54 @@ pub mod bridge {
         libra_status_line(mem, size, p, &mut call, &mut fcall).unwrap_or(ret)
     }
 
+    /// `TOBtlDrawLibraWindow()` (`0x00895390`, caller `TODrawBtlWindow`):
+    /// by the i16 Libra window state `0x0133f6a8`: 2 opens the window
+    /// (`ToDrawLibraWin`, the state + 1 once it returns nonzero; its `EAX`
+    /// returned); 3..=6 draws it (`ToDrawLibraWin`, then for
+    /// `TOGetFFXLangJmp` 0 at `x0` = 60, else 0: `TOBtlDrawLibraLeft(
+    /// ftol(X2(x0)))` and `TOBtlDrawLibraRight(ftol(X2(x0)))`, each after
+    /// an unused `ftol(Y2(535))` the original leaves as the next stack
+    /// word, passed here too; the right half's `EAX` returned); any other
+    /// state returns `state - 3`. `call` and `fcall` take `ffx.sym`
+    /// addresses (`graphicUiRemapX2`/`Y2` return in ST0).
+    pub fn btl_draw_libra_window<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::ftol;
+        const OPEN: u32 = 0x0089_bc80;
+        let state_at = mem.rebase(0x0133_f6a8);
+        let state = i32::from(mem.read::<i16>(state_at));
+        if state == 2 {
+            let r = call(mem, OPEN, &[]);
+            if r != 0 {
+                let s = mem.read::<u16>(state_at).wrapping_add(1);
+                mem.write(state_at, s);
+            }
+            return r;
+        }
+        let d = state.wrapping_sub(3).cast_unsigned();
+        if d > 3 {
+            return d;
+        }
+        call(mem, OPEN, &[]);
+        let x0 = if call(mem, 0x008a_c2f0, &[]) == 0 {
+            60.0
+        } else {
+            0.0
+        };
+        let mut half = |mem: &mut M, f: u32| {
+            let y = ui(mem, &mut fcall, true, 535.0);
+            let y = ftol(mem, y);
+            let x = ui(mem, &mut fcall, false, x0);
+            let x = ftol(mem, x);
+            call(mem, f, &[x, y])
+        };
+        half(mem, 0x0089_bf70);
+        half(mem, 0x0089_c7d0)
+    }
+
     /// `TOBtlDrawLibraLeft`'s status line (see there): `None` without
     /// lines, else the draw's `eax`.
     fn libra_status_line<M: Mem>(

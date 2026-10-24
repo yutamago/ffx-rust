@@ -5147,6 +5147,11 @@ ported! {
     TkInit @ 0x0088_d710 => extern "C" fn tk_init() -> u32 {
         ffx_menu::start::bridge::tk_init(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkInitScene(map)`: `iSyncDataChange(map)`'s `eax`; `printf`,
+    /// `fprintf` and `__iob_func` through their imports.
+    TkInitScene @ 0x0088_e070 => extern "C" fn tk_init_scene(map: u32) -> u32 {
+        ffx_menu::start::bridge::tk_init_scene(&mut mem(), map, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuStart(mode)`: the frame's or the task end's `eax`.
     TkMenuStart @ 0x008a_b030 => extern "C" fn tk_menu_start(mode: u32) -> u32 {
         // the draw buffer word Sg_GetDBuffDC writes

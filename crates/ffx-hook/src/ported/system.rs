@@ -7445,6 +7445,12 @@ ported! {
     TOMenuTryOpen_008be840 @ 0x008b_e840 => extern "C" fn to_menu_try_open(mode: u32) -> u32 {
         tolib::bridge::menu_try_open(&mut mem(), mode, call_sym)
     }
+    // ---- pc round 8, group b
+    /// `TOBtlDrawLibraWindow()`: `ToDrawLibraWin`'s, `TOBtlDrawLibraRight`'s
+    /// or `state - 3` in `EAX`; the remaps in ST0.
+    TOBtlDrawLibraWindow @ 0x0089_5390 => extern "C" fn to_btl_draw_libra_window() -> u32 {
+        btl::bridge::btl_draw_libra_window(&mut mem(), call_sym, fcall)
+    }
 }
 
 /// `TOMenuGetGetImportant*`: the key item's text at `field`, with the

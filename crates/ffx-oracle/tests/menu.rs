@@ -22102,3 +22102,191 @@ fn small8_d_ctrl_save_load_matches_the_original() {
         );
     }
 }
+
+/// pc round 8 b: `TkInitScene` over map 0x17, every no-autosave map,
+/// others; the achievement byte 8, 9 or else with the latch set or clear;
+/// Eternal Calm (each of its two calls 0 or not) with the busy byte set or
+/// clear; the event word set or clear; the game-over flag and its counter
+/// around 2. Every callee is a logging stand-in with a result of its own
+/// (the CD interface a table whose wait logs; `printf`, `fprintf` and
+/// `__iob_func` through their import slots).
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn pc8_b_tk_init_scene_matches_the_original() {
+    use ffx_menu::start::bridge as st;
+    let Some(mut t) = setup_any(0x9c08_b001) else {
+        return;
+    };
+    let log = t.alloc(&vec![0; 0x8000]);
+    let cursor = t.alloc(&log.to_le_bytes());
+    let cells: Vec<u32> = (0..9).map(|_| t.alloc(&[0; 4])).collect();
+    let [calm, calm2, rec, music, volume, video, battles, sync, iob] =
+        cells[..].try_into().unwrap();
+    // isEternalCalmScene: first [calm], then [calm2]
+    let calm_post = [
+        &[0xa1][..],
+        &calm.to_le_bytes(),
+        &[0xff, 0x35],
+        &calm2.to_le_bytes(),
+        &[0x8f, 0x05],
+        &calm.to_le_bytes(),
+        &[0xc3],
+    ]
+    .concat();
+    let wait = small8_log_code(
+        &mut t,
+        cursor,
+        0x8c80,
+        1,
+        &[],
+        &[0xb8, 0x80, 0x8c, 0, 0, 0xc3],
+    );
+    let cd = t.alloc(&[0u32, 0, wait, 0].map(u32::to_le_bytes).concat());
+    let cd_post = [&[0xb8][..], &cd.to_le_bytes(), &[0xc3]].concat();
+    // AtelEventSetUp also logs the event word 0x01330858 (cleared before
+    // it when it was set)
+    let event_at = t.sym(0x0133_0858);
+    let mut event_post = [&[0xa1][..], &event_at.to_le_bytes()].concat(); // mov eax, [event]
+    event_post.extend([&[0x8b, 0x0d][..], &cursor.to_le_bytes()].concat()); // mov ecx, [cursor]
+    event_post.extend([0x89, 0x01]); // mov [ecx], eax
+    event_post.extend([&[0x83, 0x05][..], &cursor.to_le_bytes(), &[4, 0xc3]].concat()); // add dword [cursor], 4; ret
+    let callees: Vec<(u32, u8, Vec<u8>)> = vec![
+        (0x0064_3490, 1, vec![]),
+        (0x007b_c720, 2, vec![]),
+        (0x0082_2380, 1, vec![]),
+        (0x0067_ab50, 1, calm_post),
+        (0x0076_d0d0, 0, cd_post),
+        (0x0067_9500, 0, vec![]),
+        (0x0064_8630, 1, vec![]),
+        (0x007b_d5d0, 0, vec![]),
+        (0x008a_b7b0, 0, vec![]),
+        (0x008a_dbf0, 0, vec![]),
+        (0x0087_2d20, 0, vec![]),
+        (0x009d_aca0, 1, vec![]),
+        (0x0064_5310, 0, vec![]),
+        (0x0076_ece0, 0, vec![]),
+        (0x0064_2cc0, 0, vec![]),
+        (0x0087_2ef0, 1, event_post),
+        (0x0083_b420, 0, vec![]),
+        (0x0064_3260, 1, vec![]),
+        (0x0078_5240, 0, small8_ret(rec)),
+        (0x0087_3b00, 0, small8_ret(music)),
+        (0x0088_63d0, 1, small8_ret(volume)),
+        (0x0064_1400, 0, small8_ret(video)),
+        (0x0088_e800, 1, vec![]),
+        (0x008b_50b0, 0, vec![]),
+        (0x0064_84d0, 1, vec![]),
+        (0x0078_4f50, 0, small8_ret(battles)),
+        (0x0067_a5d0, 1, vec![]),
+        (0x0067_a6a0, 1, vec![]),
+        (0x0067_a8e0, 1, small8_ret(sync)),
+    ];
+    for (k, (f, n, post)) in callees.into_iter().enumerate() {
+        let id = 0x8c00 + u32::try_from(k).unwrap();
+        let post = if post.is_empty() {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        } else {
+            post
+        };
+        small7_log(&mut t, f, cursor, id, n, &[], &post);
+    }
+    // the C runtime's imports: printf and fprintf log two words,
+    // __iob_func returns [iob]
+    let printf = small8_log_code(
+        &mut t,
+        cursor,
+        0x8c90,
+        2,
+        &[],
+        &[0xb8, 0x90, 0x8c, 0, 0, 0xc3],
+    );
+    let fprintf = small8_log_code(
+        &mut t,
+        cursor,
+        0x8c91,
+        2,
+        &[],
+        &[0xb8, 0x91, 0x8c, 0, 0, 0xc3],
+    );
+    let iob_code = small8_ret(iob);
+    let iob_func = test_code(&mut t, &iob_code);
+    for (slot, f) in [
+        (0x00b0_c380, printf),
+        (0x00b0_c38c, fprintf),
+        (0x00b0_c350, iob_func),
+    ] {
+        let at = t.sym(slot);
+        t.put(at, f);
+    }
+    let record = t.alloc(&[0; 0x100]);
+    // map 0x17, the twelve maps without an autosave, others
+    let maps = [
+        0x17u32,
+        0x17,
+        0,
+        1,
+        0x16,
+        0x18,
+        0x200,
+        0xffff_ffff,
+        0x1_0017,
+        0x11a,
+        0xc2,
+        0x15c,
+        0x15d,
+        0x170,
+        0xff,
+        0xd1,
+        0xd4,
+        0x10e,
+        0x140,
+        0x77,
+        0xf7,
+    ];
+    for round in 0..400u32 {
+        t.put(cursor, log);
+        let map = if round % 3 == 0 {
+            t.rng.below(0x180)
+        } else {
+            let i = t.rng.below(u32::try_from(maps.len()).unwrap());
+            maps[i as usize]
+        };
+        for cell in [calm, calm2] {
+            let v = t.rng.pick(&[0u32, 0, 1, 0x8000_0000]);
+            t.put(cell, v);
+        }
+        t.put(rec, record);
+        t.scramble_at(record, 0x100);
+        for cell in [music, volume, video, battles, sync, iob] {
+            let v = t.rng.next();
+            t.put(cell, v);
+        }
+        // the words around the busy byte, random
+        let around = t.sym(0x0186_63d0);
+        t.scramble_at(around, 8);
+        let ach = t.rng.pick(&[8u8, 9, 9, 0, 0xff]);
+        t.put(t.sym(0x0112_d70f), ach);
+        for (g, vals) in [
+            (0x00c5_8e8a, &[0u32, 1][..]),
+            (0x0186_63d0, &[0, 1, 0x100]),
+            (0x0133_0858, &[0, 1, 0x8000_0000]),
+            (0x00c5_8e40, &[0, 0, 1, 2]),
+            (0x0133_0840, &[0, 1, 1, 2, 0xffff_ffff]),
+        ] {
+            let v = t.rng.pick(vals);
+            if g == 0x00c5_8e8a || g == 0x0186_63d0 {
+                #[allow(clippy::cast_possible_truncation)] // byte globals
+                t.put(t.sym(g), v as u8);
+            } else {
+                t.put(t.sym(g), v);
+            }
+        }
+        t.twin(
+            &format!("TkInitScene {round} map {map:#x}"),
+            0x0088_e070,
+            &[map],
+            U32,
+            |b| u64::from(st::tk_init_scene(b, map, &mut callback)),
+        );
+    }
+}

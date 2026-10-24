@@ -27429,3 +27429,74 @@ fn pc8_a_matches_the_original_on_the_snapshot() {
     };
     pc8_a(&mut a, &mut b, &mut Xorshift(0x9c08_a002));
 }
+
+/// pc round 8 b: `TOBtlDrawLibraWindow` over window states -1..=8, the
+/// i16 extremes and high bits the `movsx` drops; `ToDrawLibraWin` 0 or
+/// not, `TOGetFFXLangJmp` 0 or not, both halves logged with the two words
+/// the original leaves (`x` and the unused `ftol(Y2(535))`). The remaps
+/// and `ftol2_sse` are the originals, the remaps' `.rdata` scales the
+/// game's or random (the game's truncate 60 -> 61 and 535 -> 536 alike).
+fn pc8_b(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call(f, Conv::Cdecl, args).unwrap().eax
+    };
+    let fcall = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call_f64(f, args).unwrap()
+    };
+    let fs: &[(u32, u8)] = &[
+        (0x0089_bc80, 0),
+        (0x008a_c2f0, 0),
+        (0x0089_bf70, 2),
+        (0x0089_c7d0, 2),
+    ];
+    let (log, cursor, cells) = small6_stubs(a, b, fs);
+    let state_at = a.rebase(0x0133_f6a8);
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        for &c in &cells {
+            put(a, b, c, rng.next() % 3);
+            put(a, b, c + 4, rng.next());
+        }
+        let state = match rng.next() % 4 {
+            0 => rng.next(),
+            _ => [
+                0xffff_u32, 0, 1, 2, 3, 4, 5, 6, 7, 8, 0x7fff, 0x8000, 0x1_0003,
+            ][(rng.next() % 13) as usize],
+        };
+        put(a, b, state_at, state);
+        // the remaps' scales (`.rdata` f64s: X2 * [0x00b41d38] / 1920,
+        // Y2 * [0x00b41d30] / 1080): the game's 512 and 416, or others
+        for (g, v) in [(0x00b4_1d38_u32, 512.0), (0x00b4_1d30, 416.0)] {
+            let at = a.rebase(g);
+            let x = if k % 3 == 0 {
+                v
+            } else {
+                f64::from(rng.next() % 4000) + 0.5
+            };
+            put(a, b, at, x);
+        }
+        let ra = call(a, 0x0089_5390, &[]);
+        let rb = ffx_system::btl::bridge::btl_draw_libra_window(b, call, fcall);
+        assert_eq!(ra, rb, "TOBtlDrawLibraWindow {k} state {state:#x}");
+        same_memory(&format!("pc8 b libra window {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn pc8_b_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    pc8_b(&mut a, &mut b, &mut Xorshift(0x9c08_b001));
+}
+
+#[test]
+fn pc8_b_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    pc8_b(&mut a, &mut b, &mut Xorshift(0x9c08_b002));
+}

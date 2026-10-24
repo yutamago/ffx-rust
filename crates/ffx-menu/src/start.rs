@@ -482,4 +482,140 @@ pub mod bridge {
         go(mem, call, init, &[buffer, size, at]);
         free(mem, call, buffer);
     }
+
+    /// The maps `TkInitScene` never autosaves on (besides 0x17 and the
+    /// Eternal Calm scenes).
+    pub const NO_AUTOSAVE_MAPS: [u32; 12] = [
+        0x11a, 0xc2, 0x15c, 0x15d, 0x170, 0xff, 0xd1, 0xd4, 0x10e, 0x140, 0x77, 0xf7,
+    ];
+
+    /// `TkInitScene(map)` (`0x0088e070`; callers `Sg_MainInit`,
+    /// `TkUpdateEventJump`): a new map's start. `graphicSetIsBattleMap(0)`,
+    /// "TK:Init Scene:%d" (`printf` through its import), `MsScreenResetOffset
+    /// (0.0, 0.0)`; the byte `0x0112d70f` 8 clears the achievement latch
+    /// `0x00c58e8a`, 9 with the latch clear sets it and unlocks
+    /// achievement 0x14. An Eternal Calm scene sets `0x018663d0` (when
+    /// clear) and zeroes `0x018663d4`. The CD interface's wait (`GetCD()`
+    /// `+8`, `(0)`), `fiosClearOps`, `SaveDataSetEventId(map)`,
+    /// `g_GraphicMapId` = map, `MsCameraInit`, `TOAllCloseMessageWindow`,
+    /// `TOInitSceneMessageWindow`, and when `0x01330858` is set another
+    /// `TOInitSceneMessageWindow`, `AtelEventRemove` and the word cleared.
+    /// `MagicFile_clearAllPreloadedPrx(-1)`, `graphicVFXDestroyAll`,
+    /// `destroyMoviePicture`, `graphicResetYIQ`, `AtelEventSetUp(map)`,
+    /// `gNeedAutoSave` 0. Map 0x17 (game over): `0x00c58e40` = 1,
+    /// `0x01330840` = 0, `Sg_EventjumpDispose`, "Dispose all the chr cache
+    /// elements." to `__iob_func() + 0x20` (`fprintf`),
+    /// `graphicSetGameOverNotify(0)`. Any other map outside
+    /// [`NO_AUTOSAVE_MAPS`] and not Eternal Calm autosaves, unless
+    /// `0x00c58e40` is set and the counter `0x01330840` (+1) isn't 2 yet
+    /// (at 2 the flag clears): `gNeedAutoSave` = 1, the save event record
+    /// (`MsGetSaveEventAddress`) gets `u16 +0xb8` = `u8 +0xc`, `u16 +0xba`
+    /// = `u16 +0`, `u16 +0xa8` = `SndGetMusicVolume(m)`'s low byte << 8 |
+    /// `m` (`m` = `AtelGetMusicNumber()`), `u16 +0xaa` =
+    /// `graphicGetTextureVideoInfo() + 1`; `TkBackupEventJump(record)`,
+    /// `TkMenuPreSave`, `SaveDataPreDebugSave(0)`. Then
+    /// `g_TkEventJumpRequest` 0, `0x01330858` 1, both `g_TkFadeOut` words
+    /// 0, `g_TkEncountCounterEventStart` = `MsGetSaveBattleCount()`,
+    /// `iSoundStageFlush`, `iVoiceDataChange` and `iSyncDataChange(map)`,
+    /// whose `EAX` it returns. `call` gets absolute addresses.
+    #[allow(clippy::too_many_lines)] // the start in turn
+    pub fn tk_init_scene<M, C>(mem: &mut M, map: u32, call: &mut C) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let import = |mem: &M, slot: u32| mem.read::<u32>(mem.rebase(slot));
+        go(mem, call, 0x0064_3490, &[0]);
+        let printf = import(mem, 0x00b0_c380);
+        let fmt = r(mem, 0x00b5_e984);
+        call(mem, printf, &[fmt, map]);
+        go(mem, call, 0x007b_c720, &[0, 0]);
+        let latch = r(mem, 0x00c5_8e8a);
+        match mem.read::<u8>(r(mem, 0x0112_d70f)) {
+            8 => mem.write(latch, 0_u8),
+            9 if mem.read::<u8>(latch) == 0 => {
+                mem.write(latch, 1_u8);
+                go(mem, call, 0x0082_2380, &[0x14]);
+            }
+            _ => {}
+        }
+        let busy = r(mem, 0x0186_63d0);
+        if go(mem, call, 0x0067_ab50, &[map]) != 0 && mem.read::<u8>(busy) == 0 {
+            mem.write(busy, 1_u8);
+            mem.write(r(mem, 0x0186_63d4), 0_u32);
+        }
+        let cd = go(mem, call, c::GET_CD, &[]);
+        entry(mem, call, cd, 8, &[0]);
+        go(mem, call, 0x0067_9500, &[]);
+        go(mem, call, 0x0064_8630, &[map]);
+        mem.write(r(mem, 0x0133_0844), map);
+        go(mem, call, 0x007b_d5d0, &[]);
+        go(mem, call, 0x008a_b7b0, &[]);
+        go(mem, call, 0x008a_dbf0, &[]);
+        let event = r(mem, 0x0133_0858);
+        if mem.read::<u32>(event) != 0 {
+            go(mem, call, 0x008a_dbf0, &[]);
+            go(mem, call, 0x0087_2d20, &[]);
+            mem.write(event, 0_u32);
+        }
+        go(mem, call, 0x009d_aca0, &[u32::MAX]);
+        go(mem, call, 0x0064_5310, &[]);
+        go(mem, call, 0x0076_ece0, &[]);
+        go(mem, call, 0x0064_2cc0, &[]);
+        go(mem, call, 0x0087_2ef0, &[map]);
+        let need = r(mem, 0x023c_bebc);
+        mem.write(need, 0_u32);
+        let over = r(mem, 0x00c5_8e40);
+        let count = r(mem, 0x0133_0840);
+        if map == 0x17 {
+            mem.write(over, 1_u32);
+            mem.write(count, 0_u32);
+            go(mem, call, 0x0083_b420, &[]);
+            let msg = r(mem, 0x00b5_e998);
+            let iob = import(mem, 0x00b0_c350);
+            let stream = call(mem, iob, &[]).wrapping_add(0x20);
+            let fprintf = import(mem, 0x00b0_c38c);
+            call(mem, fprintf, &[stream, msg]);
+            go(mem, call, 0x0064_3260, &[0]);
+        } else if !NO_AUTOSAVE_MAPS.contains(&map) && go(mem, call, 0x0067_ab50, &[map]) == 0 {
+            let mut save = true;
+            if mem.read::<u32>(over) != 0 {
+                let n = mem.read::<u32>(count).wrapping_add(1);
+                mem.write(count, n);
+                save = n == 2;
+                if save {
+                    mem.write(over, 0_u32);
+                }
+            }
+            if save {
+                mem.write(need, 1_u32);
+                let rec = go(mem, call, 0x0078_5240, &[]);
+                let b = mem.read::<u8>(rec.wrapping_add(0xc));
+                mem.write(rec.wrapping_add(0xb8), u16::from(b));
+                let h = mem.read::<u16>(rec);
+                mem.write(rec.wrapping_add(0xba), h);
+                let music = go(mem, call, 0x0087_3b00, &[]);
+                let volume = go(mem, call, 0x0088_63d0, &[music]);
+                #[allow(clippy::cast_possible_truncation)] // AL and SI's low word
+                let packed = (u16::from(volume as u8) << 8) | music as u16;
+                mem.write(rec.wrapping_add(0xa8), packed);
+                #[allow(clippy::cast_possible_truncation)] // AX
+                let video = (go(mem, call, 0x0064_1400, &[]) as u16).wrapping_add(1);
+                mem.write(rec.wrapping_add(0xaa), video);
+                go(mem, call, 0x0088_e800, &[rec]);
+                go(mem, call, 0x008b_50b0, &[]);
+                go(mem, call, 0x0064_84d0, &[0]);
+            }
+        }
+        mem.write(r(mem, 0x0133_084c), 0_u32);
+        mem.write(event, 1_u32);
+        mem.write(r(mem, 0x0133_0850), 0_u32);
+        mem.write(r(mem, 0x0133_0854), 0_u32);
+        let battles = go(mem, call, 0x0078_4f50, &[]);
+        mem.write(r(mem, 0x0133_086c), battles);
+        go(mem, call, 0x0067_a5d0, &[map]);
+        go(mem, call, 0x0067_a6a0, &[map]);
+        go(mem, call, 0x0067_a8e0, &[map])
+    }
 }
