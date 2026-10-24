@@ -16,7 +16,7 @@
 //! - each scene target is read back and compared byte for byte with the
 //!   capture's dumps of it, and each replayed draw's state, read back from
 //!   the context, with the captured draw (`ffx_draw::replay::compare_draws`;
-//!   the replayed stream is also written as `replay.ffxgfx` for
+//!   the frame with the replayed scene is also written as `replay.ffxgfx` for
 //!   `ffx-drawdiff`).
 //!
 //! Off, it costs nothing: the proxy context's vtable holds the layer's own
@@ -395,7 +395,9 @@ fn replay(p: &mut Pending, context: Ptr, live: [usize; 3]) -> String {
         }
     }
     let mut report = String::new();
-    let mut stream = Vec::new();
+    // The frame as captured, its scene commands replaced by what the
+    // replay gave the API (the rest is the game's own, as it ran).
+    let mut stream = cap.frame.cmds.clone();
     let mut stream_diffs = 0usize;
     let mut dumps_ok = 0usize;
     let mut dumps_bad = 0usize;
@@ -406,7 +408,6 @@ fn replay(p: &mut Pending, context: Ptr, live: [usize; 3]) -> String {
             return;
         };
         let Cmd::Draw(d) = c else {
-            stream.push(c.clone());
             return;
         };
         let seen = b.bound();
@@ -419,7 +420,9 @@ fn replay(p: &mut Pending, context: Ptr, live: [usize; 3]) -> String {
             stream_diffs += 1;
             let _ = writeln!(report, "draw {number}: {}", diffs.join("; "));
         }
-        stream.push(Cmd::Draw(Box::new(replayed)));
+        if let Some(at) = stream.get_mut(i) {
+            *at = Cmd::Draw(Box::new(replayed));
+        }
         // The capture's dumps after this draw, of the scene's targets.
         for dump in p.dumps.iter().filter(|x| x.after == number) {
             let Some(&tex) = texture_of.get(&dump.view) else {
@@ -485,7 +488,7 @@ fn replay(p: &mut Pending, context: Ptr, live: [usize; 3]) -> String {
                     rb.format,
                 );
                 format!(
-                    "{name} {id:#x} at the scene's end, against the capture's texture at the frame's end: {text}"
+                    "{name} {id:#x} at the scene's end against the capture's texture at the frame's end (a reference only where nothing draws after the scene): {text}"
                 )
             }
             (Err(e), _) => format!("{name}: read back failed: {e}"),

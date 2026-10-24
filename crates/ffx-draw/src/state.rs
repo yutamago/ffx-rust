@@ -56,7 +56,7 @@ pub struct DrawState {
     pub index: Option<IndexBinding>,
     pub vs: StageBindings,
     pub ps: StageBindings,
-    /// Only the shader: the scene's geometry shaders (none seen) would
+    /// Only the shader: geometry shaders (the capture records none) would
     /// need their own resources.
     pub gs: Option<Shader>,
     pub blend: Option<Blend>,
