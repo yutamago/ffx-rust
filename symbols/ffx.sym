@@ -8695,14 +8695,14 @@
 0x00855d50 function Native_003c_TurnToWorker # 0x003c: (v): 0x0086f8a0(worker, v); 0; ported in native_mods (script round 19); name ours; name from Atel_TurnToWorker: "turns to its position" (target worker)
 0x00855d70 function Native_013c_MsgShowWaitEx # 0x013c: args as Msg_ShowSetup -> Msg_ShowSetup(worker, args, stack, 8); ported in native_sys (script round 18); name ours; name from "Msg_ShowSetup(worker, args, stack, 8)" (MsgShowWait 0x013b uses mode 0); poll/result MsgSelect
 0x00855d90 function Native_0101_SndSepPanTranslate # 0x0101: args (id, pan, frames) -> frames: SndSepPanTranslate(id, pan, frames); ported in native_sys (script round 18); name ours; name from "SndSepPanTranslate(id, pan, frames)"
-0x00855dd0 function Native_01d4_ChrSetClip              # 0x01d4: (slot, on): 0x0082aa30 on the slot's model, bit 0; ported in native_move (script round 11); name from "0x0082aa30 on the slot's model, bit 0" = Ch_EnClip
+0x00855dd0 function Native_01d4              # 0x01d4: (slot, on): 0x0082aa30 on the slot's model, bit 0; ported in native_move (script round 11); BSim review: Ch_EnClip sets bit 11 of model +0x194; nothing shows it is clipping
 0x00855e50 function Native_01c8_DisposeAnimOwnDobj # 0x01c8: args (v int) -> 1: yiDisposeAnimDObj(+0xa8, v) for an attach kind 5 worker, else 0; ported in native_sys (script round 18); name ours; name from "yiDisposeAnimDObj(+0xa8, v) for an attach kind 5 worker"
 0x00855ec0 function Native_013c_MsgShowWaitEx_Poll # 0x013c: poll: a bare jump to Native_MsgSelect_Poll; ported in native_sys (script round 18); name ours; name from "Msg_ShowSetup(worker, args, stack, 8)" (MsgShowWait 0x013b uses mode 0); poll/result MsgSelect
 0x00855ed0 function Native_00a0_MsgSetMacroType # 0x00a0: args (win, n, t) -> win: TOMacroSetType(win, n, t); ported in native_sys (script round 18); name ours; name from "TOMacroSetType(win, n, t)"
 0x00855f10 function Native_MoveSetFrames         # 0x001c: args (elapsed, frames); current move slot (worker+0x5b8+slot*0x4c, slot = worker+0x32) +0x08 = elapsed, +0x0c = frame count; timed modes 5/6/7/9 finish when +0x0c < +0x08 (0x00870540); scripts "pushimm 0; pushimm 4/19"
 0x00855f60 function Native_00e0_SndSepStop              # 0x00e0: (v): 0x00886eb0(v); v; ported in native_btl/native_move (script round 10); name from "(v): 0x00886eb0(v)" = SndSepStop
 0x00855f80 function Native_0058              # 0x0058: pushes the float at 0x00b92340, then runs 0x00855cd0 (Native_0059) on the same stack; ported in native_btl/native_move (script round 10)
-0x00855fb0 function Native_022f_ChrSetClipMode              # 0x022f: (slot, on): 0x0082b970 on the slot's model, bit 1; ported in native_move (script round 11); name from "0x0082b970 on the slot's model, bit 1" = Ch_Vu1SetClipmode
+0x00855fb0 function Native_022f              # 0x022f: (slot, on): 0x0082b970 on the slot's model, bit 1; ported in native_move (script round 11); BSim review: Ch_Vu1SetClipmode sets bit 3 of model +0x198; nothing shows a clip mode
 0x00856030 function Native_013c_MsgShowWaitEx_Result # 0x013c: result: a bare jump to Native_MsgSelect_Result; ported in native_sys (script round 18); name ours; name from "Msg_ShowSetup(worker, args, stack, 8)" (MsgShowWait 0x013b uses mode 0); poll/result MsgSelect
 0x00856040 function Native_019a_AttachChrDobj # 0x019a: args (obj, _, slot) -> 1: yiAttachChrDObj(obj, chr, slot) with a character; ported in native_sys (script round 18); name ours; name from "yiAttachChrDObj(obj, chr, slot) with a character"
 0x00856090 function Native_009f_MsgSetMacroValue # 0x009f: args (win, n, v) -> win: TOMacroSetValue(win, n, v); ported in native_sys (script round 18); name ours; name from "TOMacroSetValue(win, n, v)"; 0x009e MsgSetValue sets type and value
@@ -8801,7 +8801,7 @@
 0x00857b30 function Native_TurnWait              # 0x001b poll: no args; done (5) when the turn struct mode (+0x02 & 0x1f) is 0
 0x00857b60 function Native_0249 # 0x0249: 0x007fb510(); 1; ported in native_mods (script round 19); name ours
 0x00857b70 function Native_01a7_FieldItemGet              # 0x01a7 start: (v): 0x00798fd0(v) and the pending reward given without a window (item 0x00790550, key item 0x0088e790, primer 0x007ab910(0x007abbd0(..)), gil 0x007859a0); the args get +0xc = the primer, +8 = whether it was new, +0xa = 0; no new primer runs 0x00798b60(); ported in native_move (script round 11); name from "0x00798fd0(v) and the pending reward given without a window" = MsFieldItemGet
-0x00857c30 function Native_00da_GetBattleStatus              # 0x00da: jumps to 0x0086a9b0; ported in native_move (script round 11); name from "jumps to 0x0086a9b0" = AtelGetBattleStatus
+0x00857c30 function Native_00da              # 0x00da: jumps to 0x0086a9b0; ported in native_move (script round 11); BSim review: bit 0 of ctrl work 0 +0x210 (set by a bit setter); nothing shows it is battle status
 0x00857c40 function Native_MinimapSetCorner      # 0x00f3 (corner) -> corner; minimap 0x0193bf80 position: 0 top-left (0x50,0x40), 1 top-right (0x1b0,0x40), 2 bottom-left, 3 bottom-right, 4 centre (0x0091d930); ported in native_move (script round 11)
 0x00857c60 function Native_015a_MsgSetTextRaw # 0x015a: (i, b, a): message window i's +0x16 = b (u16), +8 and +0xc = a; 0; ported in native_mods (script round 19); name ours; name from "message window i's +0x16 = b (u16), +8 and +0xc = a": the text fields MsgSetText fills, from a raw value
 0x00857cb0 function Native_024a_SetHddConfig              # 0x024a: (on): bit 13 of *0x00785290(), then 0x008724a0(); on != 0; ported in native_move (script round 11); name from "bit 13 of *0x00785290(), then 0x008724a0()" = MsGetSaveMenu, TkRefreshHdd
@@ -8815,7 +8815,7 @@
 0x00857ef0 function Native_01a7_FieldItemGet_Poll         # 0x01a7 poll: done (5) without a new primer; else state +0xa 0 plays 0x00821750(0x10001) (then 1), 1 ends (1); ported in native_move (script round 11); name from "0x00798fd0(v) and the pending reward given without a window" = MsFieldItemGet
 0x00857f40 function Native_SetMoveSpeed          # 0x006c: args (float v) -> v; 0x0086f350 sets move block +0x10 for all 9 levels (0x5c8 + i*0x4c); debug label "SVR:" (0x0087a730); 0x0086d300 resets it to 0; init pushes 16.0, the player 34.0
 0x00857f70 function Native_01ed # 0x01ed: an endless loop: dbgPrintf, the top popped and pushed back with a 2 under it, forever; debug native, not ported (script round 19); name ours
-0x00857fb0 function Native_00e1_GetBattleStatusSys              # 0x00e1: jumps to 0x0086a9d0; ported in native_move (script round 11); name from "jumps to 0x0086a9d0" = AtelGetBattleStatusSys
+0x00857fb0 function Native_00e1              # 0x00e1: jumps to 0x0086a9d0; ported in native_move (script round 11); BSim review: bit 1 of save event +0x13; no reader shows it is a battle status; name only
 0x00857fc0 function Native_0145_MinimapSetPos              # 0x0145: (b, a): 0x00919e50(b, a); 1; ported in native_move (script round 11); name from "0x00919e50(b, a)" = Yn_GuideMapSetPos (rcbgGuideSetPos)
 0x00857ff0 function Native_00f6_WaitWorkerSignal_Poll         # 0x00f6 poll: done (5) for a negative worker or once 0x00863520(worker, n) is 0; ported in native_move (script round 11); name from poll: "done (5) ... once Atel_HasSignalFromLevel(worker, n) is 0" (signal queue)
 0x00858020 function Native_SetArriveRadiusAll    # 0x002d: args (radius) -> radius; move slot +0x38 of all 9 slots (FUN_0086f0d0); move ends when XZ dist to target <= radius (FUN_008634b0/0x0088b730); default 1.0
@@ -8840,7 +8840,7 @@
 0x00858430 function Native_0255              # 0x0255: bits 14-15 of *0x00785290(); ported in native_move (script round 11)
 0x00858440 function Native_00af_SetBattleSceneGroup # 0x00af: args (v int) -> v: 0x0086f3c0(v); ported in native_sys (script round 18); name ours; name from AtelSetBattleSceneGroup(v)
 0x00858460 function Native_MapJump               # 0x010b (map, entrance) -> 0; 0x0086ff40 -> 0x0088ea60: game state 0x0112ca90 +0 = map, +2 = previous map, +0xc = entrance; scripts push (263, 0) then end
-0x00858490 function Native_01e0_ChrSetEffectLevel              # 0x01e0: (v): a worker with a character gets 0x0082a9d0(chr, v); 1, else 0; ported in native_move (script round 11); name from "0x0082a9d0(chr, v)" = Ch_EffectSetEffectLevel
+0x00858490 function Native_01e0              # 0x01e0: (v): a worker with a character gets 0x0082a9d0(chr, v); 1, else 0; ported in native_move (script round 11); BSim review: Ch_EffectSetEffectLevel stores model +0x408; no reader shows an effect level
 0x008584d0 function Native_MsgSetFlags           # 0x009d: args (window, flags) -> window; Msg_Window(window)+0x18 = flags; 0x006a ORs it with +0x28 into 0x008b8bb0 (low nibble = style, bits 0x400/0x1000/0x2000/0x4000/0x8000); usual values 12290, 8194, 0
 0x00858500 function Native_01a9 # 0x01a9: args (i int) -> 0x00785330(i) +0x50; ported in native_sys (script round 18); name ours
 0x00858520 function Native_00f8                  # native 0x00f8 int handler (g_NativeTables group 0 entry 0xf8, ffx-script native_counts); 1 calls in the shipped scripts; calls AtelGetRealVarAdrs, AtelPopStackInteger, TkIsDebug; name by id
@@ -8851,7 +8851,7 @@
 0x00858640 function Native_0068 # 0x0068: (i, b, a): message window i's +4 = b, +6 = a; 0; ported in native_mods (script round 19); name ours
 0x00858690 function Native_01aa # 0x01aa: args (i int) -> 0x00785330(i) +0x58; ported in native_sys (script round 18); name ours
 0x008586b0 function Native_00b2_SgEnableTkAnti              # 0x00b2: (on) -> 0x0083add0(on != 0); ported in native_move (script round 11); name from "(on) -> 0x0083add0(on != 0)" = Sg_EnableTkAnti
-0x008586e0 function Native_01e1_ChrGetEffectLevel # 0x01e1: () -> 0x0082a9a0(chr) for attach kind 1 with a character, else 0; ported in native_sys (script round 18); name ours; name from "0x0082a9a0(chr)" = Ch_EffectGetEffectLevel
+0x008586e0 function Native_01e1 # 0x01e1: () -> 0x0082a9a0(chr) for attach kind 1 with a character, else 0; ported in native_sys (script round 18); name ours; BSim review: Ch_EffectGetEffectLevel returns model +0x408; no reader shows an effect level
 0x00858710 function Native_0256              # 0x0256: (window): its +0x28 = 0x8000; ported in native_move (script round 11)
 0x00858740 function Native_014a_SetBattleEndStatus              # 0x014a: (c, b, a): 0x0086fc20(c, b, a); c; ported in native_move (script round 11); name from "0x0086fc20(c, b, a)" = AtelSetEncountBattleEndStatus
 0x00858780 function Native_00f9              # 0x00f9: 1 (the debug build answers TkGetEventNewGame instead when TkIsDebug); ported in native_move (script round 11)
@@ -8906,7 +8906,7 @@
 0x00859320 function Native_01e7_MusicPhraseStart              # 0x01e7: (track, v): 0x008869e0, 0x008868f0(track, v), current music = track; 1; ported in native_move (script round 11); name from "0x008869e0, 0x008868f0(track, v)" = SndMusicReplayPointClear, SndMusicPhraseStart
 0x00859360 function Native_01b2_GetItemCount              # 0x01b2: (v) -> 0x007904b0(v); ported in native_move (script round 11); name from "(v) -> 0x007904b0(v)" = MsGetSaveItemNum; copy slot not used
 0x00859380 function Native_0150_SndFoot3dOn # 0x0150: SndSetFoot3dStatus(party slot, 1); 1; ported in native_mods (script round 19); name ours; name from "SndSetFoot3dStatus(party slot, 1)"
-0x008593a0 function Native_0103_MusicClear              # 0x0103: 0x00886800; ported in native_move (script round 11); name from "0x00886800" = SndMusicClear
+0x008593a0 function Native_0103              # 0x0103: 0x00886800; ported in native_move (script round 11); BSim review: FMOD cmd 0x25 + now-playing cleared; same shape as SndMusicStop, clear vs stop from names only
 0x008593e0 function Native_00b9_SgTkAntiEnabled # 0x00b9: r = Sg_EnableTkAnti(0) (0x0083add0), then Sg_EnableTkAnti(r); r; ported in native_mods (script round 19); name ours; name from "r = Sg_EnableTkAnti(0), then Sg_EnableTkAnti(r); r": reads the enable state
 0x00859400 function Native_025c              # 0x025c: jumps to 0x0086c270; ported in native_move (script round 11)
 0x00859410 function Native_FootstepHookEnable    # 0x0151 (material) -> 1; sets bit n of 0x0132ff2c: footstep sound on ground material n (Snd_KickFoot 0x008866b0) goes to a script request (0x00876950) instead of the SE; ?
@@ -8914,13 +8914,13 @@
 0x00859470 function Native_01e8_SepClear # 0x01e8: (v): SndSepClear(v) (0x00886d80); 1; ported in native_mods (script round 19); name ours; name from "SndSepClear(v) (0x00886d80)"
 0x00859490 function Native_01b4_IsShoutVoiceRead # 0x01b4: TkSndIsReadShoutVoice() != 0 (0x00887b00); ported in native_mods (script round 19); name ours; name from "TkSndIsReadShoutVoice() != 0 (0x00887b00)"
 0x008594a0 function SetFieldConst44_008594a0     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x44)] = 0x0; return 0x1; callers: no direct caller; name ours; also ported in native_move (script round 11)
-0x008594c0 function Native_016c_MusicStopCurrent              # 0x016c: the current music (when not negative) 0x00886a60, current music -1; 1; ported in native_move (script round 11); name from "the current music ... 0x00886a60, current music -1"; SndMusicStop
+0x008594c0 function Native_016c              # 0x016c: the current music (when not negative) 0x00886a60, current music -1; 1; ported in native_move (script round 11); BSim review: SndMusicStop is FMOD cmd 0x26 + now-playing cleared; stop vs clear (0x25) only from names
 0x008594f0 function Native_0152_SndFoot3dOff # 0x0152: SndSetFoot3dStatus(party slot, 0); 0; ported in native_mods (script round 19); name ours; name from "SndSetFoot3dStatus(party slot, 0)"
 0x00859510 function Native_0022 # 0x0022: (a f): the current level's turn block (+0x600 + level * 0x4c) +0 = Math_WrapAngle(a); that angle; ported in native_mods (script round 19); name ours
 0x00859550 function Native_01f0_SetHalfTurnAngle              # 0x01f0 (float): 0x00873e50(v); ST0 v; ported in native_move (script round 11); name from "0x00873e50(v)" = AtelSetHalfTurnAngle
 0x00859580 function Native_01b5_TextureVideoPlay              # 0x01b5: 0x00644280(1), then jumps to 0x00874060; ported in native_move (script round 11); name from "0x00644280(1), then jumps to 0x00874060" = graphicTextureVideoPlay
 0x00859590 function Native_SetMapFadeType        # 0x00bc: args (t) -> t; g_SaveData+0x11 = t; at the map change 0x0086ff40 picks 0x0082cbc0 (t=0) or 0x0082cbe0 (t=1) fade; scripts push it right before map jump 0x010b
-0x008595b0 function Native_016d_MusicStop              # 0x016d: 0x00886a60; ported in native_move (script round 11); name from "0x00886a60" = SndMusicStop (track arg, docs table)
+0x008595b0 function Native_016d              # 0x016d: 0x00886a60; ported in native_move (script round 11); BSim review: SndMusicStop is FMOD cmd 0x26 + now-playing cleared; stop vs clear (0x25) only from names
 0x008595f0 function GetField0_008595f0           # auto-port shape (return field u32, cdecl): t0 = u32[a1]; return t0; callers: no direct caller; name ours; also ported in native_move (script round 11)
 0x00859600 function Native_0153_SndFoot3dOffSlot # 0x0153: (slot): SndSetFoot3dStatus(slot, 0); 0; ported in native_mods (script round 19); name ours; name from "(slot): SndSetFoot3dStatus(slot, 0)"
 0x00859620 function Native_01f1_GetHalfTurnAngle # 0x01f1: jumps to AtelGetHalfTurnAngle (0x00873ad0); ported in native_mods (script round 19); name ours; name from "jumps to AtelGetHalfTurnAngle (0x00873ad0)"
@@ -8956,7 +8956,7 @@
 0x00859e20 function Native_025f              # 0x025f: (b, a): 0x00643500(b, a); 0; ported in native_move (script round 11)
 0x00859e50 function Native_0026 # 0x0026: (a f): position block +0x30 = the wrapped angle; that angle; ported in native_mods (script round 19); name ours
 0x00859e90 function Native_0162_SndKinuOn # 0x0162: SndSetKinuStatus(party slot, 1); 1, 0 without a slot; ported in native_mods (script round 19); name ours; name from "SndSetKinuStatus(party slot, 1)" (g_SndKinuMask bit)
-0x00859ec0 function Native_01bc_SetForcePlaceId              # 0x01bc: 0x00870140(v); 1; ported in native_move (script round 11); name from "0x00870140(v)" = AtelSetForcePlaceId
+0x00859ec0 function Native_01bc              # 0x01bc: 0x00870140(v); 1; ported in native_move (script round 11); BSim review: save event +0xd4 u16 = id, +0xd6 = 1; no reader shows a forced place id
 0x00859ee0 function Native_MusicWaitLoaded_Result # 0x0105 int: returns 1; ported in native_move (script round 11)
 0x00859ef0 function Native_00c1_GetEntranceAtZ              # 0x00c1 (float): +0x14; ported in native_move (script round 11); name from "+0x14"; dump: Event_GetEntranceAt(worker, i) +0x14; GetEntranceZ reads +0x14
 0x00859f10 function Native_0260_AlwaysTrue              # 0x0260: one value dropped; 1; ported in native_move (script round 11); name from "one value dropped; 1"; dump: AtelPopStackInteger, return 1; constant 1 after one dropped value, same role as Native_AlwaysTrue019c
@@ -8973,7 +8973,7 @@
 0x0085a110 function Native_0262_AlwaysTrue              # 0x0262: 1; ported in native_move (script round 11); name from "1"; FFX.exe bytes b8 01 00 00 00 c3 (mov eax, 1; ret); constant 1 (mov eax, 1; ret), same shape as Native_AlwaysTrue019c
 0x0085a120 function Native_0263_AlwaysTrue              # 0x0263: 1; ported in native_move (script round 11); name from "1"; FFX.exe bytes b8 01 00 00 00 c3 (mov eax, 1; ret); constant 1 (mov eax, 1; ret), same shape as Native_AlwaysTrue019c
 0x0085a130 function Native_00c3_TurnIsActive # 0x00c3: 1 when the low five bits of the u16 at +2 of the current level's (Script_WorkerLevel) +0x48 block are set; ported in native_mods (script round 19); name ours; name from "low five bits of the u16 at +2 of the ... +0x48 block": the turn mode TurnWait tests
-0x0085a160 function Native_01f5_SetDummyCtrlFlag # 0x01f5: (on): TkMenuSetDummyControlerFlag(on != 0) (0x008ca570); on != 0; ported in native_mods (script round 19); name ours; name from "TkMenuSetDummyControlerFlag(on != 0) (0x008ca570)"
+0x0085a160 function Native_01f5 # 0x01f5: (on): TkMenuSetDummyControlerFlag(on != 0) (0x008ca570); on != 0; ported in native_mods (script round 19); name ours; BSim review: u8 0x0186a430 = on; only its bsim getter reads it; dummy-controller role is name only
 0x0085a190 function Native_01bf              # 0x01bf: 0x008708d0(); 1; ported in native_move (script round 11)
 0x0085a1a0 function Native_002c              # 0x002c (float): (float v) -> 0x00871500(worker, level, v)'s ST0; ported in native_btl/native_move (script round 10)
 0x0085a1d0 function Native_0165_SndKinuOffSlot # 0x0165: (slot): SndSetKinuStatus(slot, 0); 1; ported in native_mods (script round 19); name ours; name from "(slot): SndSetKinuStatus(slot, 0)"
@@ -9239,7 +9239,7 @@
 0x0085e8f0 function Native_0093_GetWorkerYaw              # 0x0093 (float): (worker): its yaw (position +0x34); ported in native_move (script round 11); name from "(worker): its yaw (position +0x34)"; cf GetWorkerX
 0x0085e920 function Native_AttachCamera          # 0x0002: args (kind 0-3, slot 0-2, unused) -> 0; ?camera controller FUN_007ba780 (0x01136f88.. tables, 0x007bd110), kind 0 -> 1 for the player worker; +0xaa = 2, kind 1 sets +0x36 0x10; scripts "1, 0, 0" at e0; ported in native_move (script round 11)
 0x0085e9e0 function Native_00db_EventEffectRead              # 0x00db start: (v) into the args, 0x00860fd0(), 0x0086fa80(1); the current ctrl work; ported in native_move (script round 11); name from start AtelAllClearEffectFlag, AtelSetEffectState(1); poll TkMsEventEffectRead(v) until MsEventEffectGetStat 3
-0x0085ea10 function Native_0225_SetShopRatio              # 0x0225: 0x00870f60(v); v; ported in native_move (script round 11); name from "0x00870f60(v)" = AtelSetShopRatio
+0x0085ea10 function Native_0225              # 0x0225: 0x00870f60(v); v; ported in native_move (script round 11); BSim review: u32 0x01326b6c = v (default 100); its only getter has no callers; shop role name only
 0x0085ea30 function Native_0189_SetMapIdPage_Poll         # 0x0189 poll: 1; ported in native_move (script round 11); name from "0x00873e60(v)" = AtelSetMapIdPage; poll returns 1 at once
 0x0085ea40 function Native_01cf_BindEffDrawOff              # 0x01cf: a worker with a character gets 0x007fba40(chr) and +0x38 bit 4 cleared; 1; ported in native_move (script round 11); name from "0x007fba40(chr) and +0x38 bit 4 cleared" = op_et_bindeff_draw_off
 0x0085ea80 function Native_004e # 0x004e: (b): bit b of 0x0086af80()'s buttons through Pad_MapButtons; ported in native_mods (script round 19); name ours

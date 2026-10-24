@@ -776,7 +776,7 @@ pub fn native_01aa<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     record_field(h, s, 0x58)
 }
 
-/// `Native_01e1_ChrGetEffectLevel` (`0x008586e0`, `0x01e1`): for a worker attached as kind 1
+/// `Native_01e1` (`0x008586e0`, `0x01e1`): for a worker attached as kind 1
 /// (`+0xaa`) with a character, `0x0082a9a0(chr)`; else 0.
 pub fn native_01e1<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     if h.read::<u8>(w + 0xaa) != 1 {
