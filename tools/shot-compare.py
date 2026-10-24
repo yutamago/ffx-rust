@@ -68,6 +68,10 @@ MASKS = {
     "event-besaid-3.bmp": [(1200, 640, 1280, 720)],
     "event-besaid-4.bmp": [(1200, 640, 1280, 720)],
     "event-besaid-5.bmp": [(1200, 640, 1280, 720)],
+    # the same icon on the Thunder Plains outside the agency (event-agency 4-6)
+    "event-agency-4.bmp": [(1200, 640, 1280, 720)],
+    "event-agency-5.bmp": [(1200, 640, 1280, 720)],
+    "event-agency-6.bmp": [(1200, 640, 1280, 720)],
 }
 BLOCK = 20
 SKY = 240  # coarse shots: rows above this are left out (the beams reach the y 160 blocks; characters stand lower)

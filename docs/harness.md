@@ -516,13 +516,12 @@ windows 0 and 1, the random generators, the party records, the key items
 an event reward is given; its byte `+0` had a one-frame value at the map
 change in one of two original runs). Seven shots: the agency, the book's
 choice, its first page, the plains by the door, the chest's first message,
-"Obtained Venus Sigil!", the counter's choice. They are on the `eye` list:
-the plains' shots (4-6) show the chocobo icon at the bottom right (x
-1227-1262, y 661-705), which animates by the wall clock as on event-besaid's
-maps (570-980 pixels against the recording; the original runs agreed there
-by chance). A `MASKS` entry in `tools/shot-compare.py` for
-`event-agency-4..6` (as event-besaid's) would let the exact comparison
-take them; shots 1-3 and 7 gave 0-5 pixels.
+"Obtained Venus Sigil!", the counter's choice. The plains' shots (4-6)
+show the chocobo icon at the bottom right (x 1227-1262, y 661-705), which
+animates by the wall clock as on event-besaid's maps (570-980 pixels
+against the recording; the original runs agreed there by chance), so
+`tools/shot-compare.py` masks it there as it does for event-besaid; shots
+1-3 and 7 gave 0-5 pixels.
 
 Message windows 0 and 1 are traced from `+0x14` for 8 bytes, not 12. Their
 `+0x1c..+0x1f` (the choice flag byte `+0x1d` and the answer `+0x1e`) go from

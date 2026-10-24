@@ -58,7 +58,7 @@ replays=(field-walk battle-attack menu-browse boot battle-magic battle-overdrive
 eye=(battle-overdrive event-cliff)
 # rp-events2 (docs/harness.md): the Thunder Plains agency and the Besaid arrival
 replays+=(event-agency event-arrival)
-eye+=(event-agency event-arrival)  # the plains' chocobo icon (agency 4-6); voiced, real time (arrival)
+eye+=(event-arrival)  # voiced, real time
 
 # Build once, not three times side by side.
 tools/build-hook.sh >/dev/null || exit 1
