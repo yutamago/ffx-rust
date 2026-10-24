@@ -1547,6 +1547,10 @@ ported! {
         let size = frame.at();
         btl::bridge::btl_draw_libra_left(&mut mem(), x, size, call_sym_wide, fcall)
     }
+    /// `TOBtlDrawInfoWin(chr, x, y)` (its caller drops `eax`).
+    TOBtlDrawInfoWin @ 0x0089_3a30 => extern "C" fn to_btl_draw_info_win(chr: u32, x: i32, y: i32) {
+        btl::bridge::btl_draw_info_win(&mut mem(), chr, [x, y], call_sym_wide, fcall);
+    }
     /// `TOBtlSetInfoWinParam(chr)`.
     TOBtlSetInfoWinParam @ 0x0089_9fd0 => extern "C" fn to_btl_set_info_win_param(chr: u32) -> u32 {
         let mut frame = super::StackFrame::<2>::new();

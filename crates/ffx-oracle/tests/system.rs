@@ -27134,3 +27134,161 @@ fn pc7_a_matches_the_original_on_the_snapshot() {
     };
     pc7_a(&mut a, &mut b, &mut Xorshift(0x9c07_a002));
 }
+
+/// pc round 7 b: `TOBtlDrawInfoWin` over logging stand-ins and the
+/// original remaps. Each stand-in logs every stack word its original
+/// reads (`TOMkpCrossEasyStrFontSClut` 6 and the second
+/// `TOMkpRotateShapeXYWHUVC2` 12 include words the original stored for
+/// the call before its last pushes); the port's lists must have exactly
+/// those counts. `graphicGetTime` returns floats of a table in turn, so the
+/// fade runs below 0, inside, above 1 and NaN; the element flags, the
+/// language and the status count vary.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn pc7_b(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as t;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let tcounter = alloc(a, b, 4);
+    let times = alloc(a, b, 0x10);
+    let seq = round38_seq(counter, table);
+    // mov ecx, [tcounter]; fld dword [times + ecx*4]; inc dword [tcounter]
+    let mut time = vec![0x8b, 0x0d];
+    time.extend_from_slice(&tcounter.to_le_bytes());
+    time.extend_from_slice(&[0xd9, 0x04, 0x8d]);
+    time.extend_from_slice(&times.to_le_bytes());
+    time.extend_from_slice(&[0xff, 0x05]);
+    time.extend_from_slice(&tcounter.to_le_bytes());
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x0064_1410, vec![], vec![], time),         // graphicGetTime
+        (0x0079_0240, all(1), vec![], seq.clone()),  // MsMenuWeakElement_00790240
+        (0x0078_f910, all(1), vec![], seq.clone()),  // MsMenuAbsElement_0078f910
+        (0x0078_fe80, all(1), vec![], seq.clone()),  // MsMenuInvElement
+        (0x0078_fe40, all(1), vec![], seq.clone()),  // MsMenuHalfElement
+        (0x008f_9230, all(4), vec![], seq.clone()),  // TODrawScissorXYWH
+        (0x008f_41b0, all(5), vec![], seq.clone()),  // TODrawBtlNetWindowXYWHType
+        (0x008a_c2f0, vec![], vec![], seq.clone()),  // TOGetFFXLangJmp
+        (0x0090_3bb0, all(9), vec![], seq.clone()),  // TOMkpShapeXYWHUV
+        (0x0079_add0, all(1), vec![], seq.clone()),  // MsGetRamChrHP
+        (0x0079_adf0, all(1), vec![], seq.clone()),  // MsGetRamChrHPmax
+        (0x0090_55c0, all(6), vec![], seq.clone()),  // ToMakeBtlEasyDigitRight
+        (0x0090_1660, all(6), vec![], seq.clone()),  // TOMkpCrossEasyStrFontSClut
+        (0x0089_4b40, all(4), vec![], seq.clone()),  // TOBtlDrawInfoWinElementLamp
+        (0x0089_5240, all(3), vec![], seq.clone()),  // TOBtlDrawInfoWinStatus
+        (0x0090_2ef0, all(12), vec![], seq.clone()), // TOMkpRotateShapeXYWHUVC2
+        (0x0090_3ee0, all(11), vec![], seq),         // TOMkpShapeXYWHUVC2
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let arity: Vec<(u32, usize)> = stands.iter().map(|s| (s.0, s.1.len())).collect();
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let &(_, n) = arity
+            .iter()
+            .find(|e| e.0 == sym)
+            .unwrap_or_else(|| panic!("{sym:#x}: no stand-in"));
+        assert_eq!(args.len(), n, "{sym:#x} words");
+        eax(m, sym, args)
+    };
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        assert!(
+            [0x0064_47e0, 0x0064_4820, 0x0064_1410].contains(&sym),
+            "{sym:#x}"
+        );
+        let at = m.rebase(sym);
+        m.call_f64(at, args).unwrap()
+    };
+    let g = |a: &Oracle, s: u32| a.rebase(s);
+    let words = [0xbu32, 0, 0, 1, 2, 4, 8, 0xf, 0x100, u32::MAX];
+    // time - start: before, at, inside, past the 0.2 s fade, NaN
+    let deltas = [-0.1f32, 0.0, -0.0, 0.03, 0.1, 0.2, 0.5, f32::NAN];
+    for k in 0..1500u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        put(a, b, tcounter, 0u32);
+        for j in 0..0x40 {
+            let v = if rng.next().is_multiple_of(5) {
+                rng.next()
+            } else {
+                words[(rng.next() % words.len() as u32) as usize]
+            };
+            put(a, b, table + 4 * j, v);
+        }
+        let now = [100.0f32, 3.25, 5000.5][(rng.next() % 3) as usize];
+        let delta = deltas[(rng.next() % deltas.len() as u32) as usize];
+        let (now, start) = match rng.next() % 8 {
+            // f32(since / 0.2f32) and f32(since / 0.2) truncate to
+            // different 128ths here
+            0 => {
+                let since = [0x3ca6_6666u32, 0x3cd9_9999, 0x3d06_6666, 0x3d26_6666]
+                    [(rng.next() % 4) as usize];
+                (0.0, -f32::from_bits(since))
+            }
+            // two NaNs: the x87 keeps the larger payload
+            1 => (
+                f32::from_bits(0x7fc0_1234),
+                f32::from_bits([0xffc5_6789u32, 0x7fc0_0001][(rng.next() % 2) as usize]),
+            ),
+            _ => (now, now - delta),
+        };
+        put(a, b, g(a, 0x0133_c944), start);
+        put(a, b, times, now);
+        put(a, b, times + 4, now + 1.5);
+        put(a, b, times + 8, f32::from_bits(round38_quiet(rng)));
+        put(
+            a,
+            b,
+            g(a, 0x0133_c93e),
+            [0u8, 1, 1, 1, 0x80][(rng.next() % 5) as usize],
+        );
+        put(
+            a,
+            b,
+            g(a, 0x0133_d6e0),
+            [0i32, 0, 0, 1, 2, 0x101][(rng.next() % 6) as usize],
+        );
+        put(
+            a,
+            b,
+            g(a, 0x0133_f5c6),
+            [-1i16, 0, 1, 3][(rng.next() % 4) as usize],
+        );
+        let chr = [0u32, 3, 0x13, rng.next()][(rng.next() % 4) as usize];
+        let x = [0xb3u32, 0, rng.next() % 1280, rng.next(), 0x8000_0000][(rng.next() % 5) as usize];
+        let y = [0xf0u32, 0, rng.next() % 720, rng.next()][(rng.next() % 4) as usize];
+        let want = call_raw(a, 0x0089_3a30, &[chr, x, y]);
+        assert!(want.st0.is_none(), "info win leaves ST0 {k}");
+        // drawn: the window, the caption, 3 values, 2 rings, 2 plates
+        let shown: u8 = Mem::read(a, g(a, 0x0133_c93e));
+        let off: i32 = Mem::read(a, g(a, 0x0133_d6e0));
+        let logged: u32 = Mem::read(a, cursor);
+        assert_eq!(
+            shown != 0 && off != 1,
+            logged - log >= 0x180,
+            "info win logged {k}"
+        );
+        t::btl_draw_info_win(b, chr, [x.cast_signed(), y.cast_signed()], call, fcall);
+        same_memory(&format!("pc7 b info win {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn pc7_b_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    pc7_b(&mut a, &mut b, &mut Xorshift(0x9c07_b001));
+}
+
+#[test]
+fn pc7_b_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    pc7_b(&mut a, &mut b, &mut Xorshift(0x9c07_b002));
+}

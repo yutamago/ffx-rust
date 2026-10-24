@@ -597,6 +597,323 @@ pub mod bridge {
         call(mem, 0x0090_16b0, &args)
     }
 
+    /// The info window's element-row frame (`TOBtlDrawInfoWin`, at the
+    /// row's `y`).
+    const INFO_FRAME: Shape = Shape {
+        id: u32::MAX,
+        x: 10.0,
+        x_sub: None,
+        y: 0.0,
+        y_add: None,
+        w: 380.0,
+        h: 42.0,
+        uv: LIBRA_FRAME.uv,
+    };
+
+    /// `TOBtlDrawInfoWin`'s HP caption (`0xe9`): `[other languages,
+    /// language 0xb]`, at the window's corner.
+    const INFO_HP: [Shape; 2] = [
+        Shape {
+            id: 0xe9,
+            x: 24.0,
+            x_sub: None,
+            y: 18.0,
+            y_add: None,
+            w: 61.5,
+            h: 23.0,
+            // 0.34765625, 0.0146484375, 0.42578125, 0.0400390625
+            uv: [0x3eb2_0000, 0x3c70_0000, 0x3eda_0000, 0x3d24_0000],
+        },
+        Shape {
+            id: 0xe9,
+            // the original adds an f64 0 to X(24) + x0 too: a no-op on a
+            // sum that is never -0
+            x: 24.0,
+            x_sub: None,
+            y: 18.0,
+            // `fsub 3.0`: the same as adding -3 for every value
+            y_add: Some(-3.0),
+            w: 85.0,
+            h: 30.0,
+            uv: LIBRA_CAPTIONS[0][1].uv,
+        },
+    ];
+
+    /// The half-damage row's marks (`TOBtlDrawInfoWin`, at the row's
+    /// integer corner): the icon `0x1b2`, its caption `0x1af` and the
+    /// element boxes `0x1af` at `x` 125, 188, 251, 316, drawn for the
+    /// elements whose `MsMenuHalfElement` bit (1, 4, 8, 2) is clear.
+    const INFO_HALF: [Shape; 2] = [
+        Shape {
+            id: 0x1b2,
+            x: 25.0,
+            x_sub: None,
+            y: 6.0,
+            y_add: None,
+            w: 75.0,
+            h: 26.0,
+            // 0.4189453125, 0.88671875, 0.5126953125, 0.92578125
+            uv: [0x3ed6_8000, 0x3f63_0000, 0x3f03_4000, 0x3f6d_0000],
+        },
+        Shape {
+            id: 0x1af,
+            x: 125.0,
+            x_sub: None,
+            y: 2.0,
+            y_add: None,
+            w: 225.0,
+            h: 35.7,
+            // 0.224609375, 0.94921875, 0.4658203125, 0.98828125
+            uv: [0x3e66_0000, 0x3f73_0000, 0x3eee_8000, 0x3f7d_0000],
+        },
+    ];
+
+    /// An element box of [`INFO_HALF`] (`x` set per element).
+    const INFO_HALF_BOX: Shape = Shape {
+        id: 0x1af,
+        x: 125.0,
+        x_sub: None,
+        y: 4.0,
+        y_add: None,
+        w: 32.7,
+        h: 32.7,
+        // 0.5439453125, 0.951171875, 0.580078125, 0.986328125
+        uv: [0x3f0b_4000, 0x3f73_8000, 0x3f14_8000, 0x3f7c_8000],
+    };
+
+    /// `MsMenuHalfElement` bits and the box `x` of [`INFO_HALF_BOX`], in
+    /// the original's order.
+    const INFO_HALF_BOXES: [(u8, f32); 4] = [(1, 125.0), (4, 188.0), (8, 251.0), (2, 316.0)];
+
+    /// `TOBtlDrawInfoWin`'s `[0, 1]` clamp (`fcom`): below 0 is 0, above
+    /// 1 is 1; a NaN stays (neither compare holds).
+    fn clamp_unit(t: f32) -> f32 {
+        // `clamp` keeps a NaN and -0 the same way
+        t.clamp(0.0, 1.0)
+    }
+
+    /// `TOBtlDrawInfoWin(chr, x, y)` (`0x00893a30`, Fahrenheit's name):
+    /// the battle info window of `chr` at `(x, y)` while
+    /// `g_BtlInfoStatusShown` (u8 `0x0133c93e`) is set and the i32
+    /// `0x0133d6e0` is not 1. `t = f32(f32(graphicGetTime() -
+    /// g_BtlInfoStatusTime) / 0.2)` ([`clamp_unit`]: `c`) slides it in
+    /// from the left: `xs = ftol(c f32(x + 385) - 385)` (the original keeps
+    /// it in its `x` slot; its caller pops it unread). `X`/`Y` are
+    /// `graphicUiRemapX2`/`Y2` (through `fcall`, as `graphicGetTime`).
+    ///
+    /// - The height `h = f32(Y(51) + 6)`, plus `Y(43)` for each of
+    ///   `MsMenuWeakElement`, `MsMenuAbsElement_0078f910`,
+    ///   `MsMenuInvElement`, `MsMenuHalfElement` (`al`) that is set and for
+    ///   a positive i16 `0x0133f5c6` (the status cycle's count).
+    /// - `TODrawScissorXYWH(0, 0, 512, 416)`, `TODrawBtlNetWindowXYWHType(
+    ///   X0, Y0, X(385), h, 0)` at `X0 = X(f32(xs))`, `Y0 = Y(f32(y))`.
+    /// - [`INFO_HP`] by `TOGetFFXLangJmp()`; HP, `'/'` and the maximum:
+    ///   `ToMakeBtlEasyDigitRight(MsGetRamChrHP(chr), X(210) + X0,
+    ///   Y(13) + Y0, 0, 0.6, 0)`, then `TOMkpCrossEasyStrFontSClut("/",
+    ///   X(215) + X0, Y(22) + Y0, 0, 0.6, 0)`, then `HPmax` at `X(360)`.
+    /// - Rows from `row = Y(55) + Y0`, `Y(43)` apart, for the set
+    ///   elements: [`INFO_FRAME`] and `TOBtlDrawInfoWinElementLamp(chr, k,
+    ///   ftol(X0), ftol(row))` for weak, absorb, immune (`k` 0..=2); the
+    ///   half row draws [`INFO_HALF`] at `(f32(ftol(X0)), f32(ftol(row)))`
+    ///   instead, with a box for every clear bit of a second
+    ///   `MsMenuHalfElement(chr)`.
+    /// - With status lines, `TOBtlDrawInfoWinStatus(chr, ftol(X0),
+    ///   ftol(row + 2))`.
+    /// - Two spinning rings `TOMkpRotateShapeXYWHUVC2(-1, f32(xs - 33),
+    ///   f32(y - 46), 68, 68, 1, 53, 101, 153, grey, grey, time)` and
+    ///   `(-1, f32(xs - 26), f32(y - 39), 54, 54, 1759, 1, 1835, 77, grey,
+    ///   grey, -time)` (`graphicGetTime()` each, 12 words), then two
+    ///   `TOMkpShapeXYWHUVC2(400, ..)` (11 words) fading in with `c`: the
+    ///   colour `ftrunc(128 c) << 24 | 0x808080` (a NaN `c`: 0x808080).
+    ///
+    /// The callees handed more words than the original pushes just before
+    /// the call (`TOMkpCrossEasyStrFontSClut` 6, the second
+    /// `TOMkpRotateShapeXYWHUVC2` 12) read words it stored for that same
+    /// call (the last `0` and the angle); the lists here are those words.
+    /// The callers drop `eax`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // the draws in order; x, y, t, c as in the docs
+    pub fn btl_draw_info_win<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        [x, y]: [i32; 2],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, store, sub};
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        if mem.read::<u8>(at(mem, 0x0133_c93e)) == 0 || mem.read::<i32>(at(mem, 0x0133_d6e0)) == 1 {
+            return;
+        }
+        let time = fcall(mem, 0x0064_1410, &[]);
+        let since = store(sub(time, load(mem.read(at(mem, 0x0133_c944)))));
+        let t = f32::from_bits(store(div(load(since), 0.200_000_002_980_232_24)));
+        let c = f64::from(clamp_unit(t));
+        let slide = f64::from(int_f32(x.wrapping_add(0x181)));
+        let xs = ftol(mem, sub(mul(c, slide), 385.0)).cast_signed();
+        let mut h = store(add(ui(mem, &mut fcall, true, 51.0), 6.0));
+        let flags = [0x0079_0240, 0x0078_f910, 0x0078_fe80, 0x0078_fe40]
+            .map(|f| call(mem, f, &[chr]) & 0xff != 0);
+        let lines = |mem: &M| mem.read::<i16>(mem.rebase(0x0133_f5c6)) > 0;
+        let more = lines(mem);
+        for set in flags.into_iter().chain([more]) {
+            if set {
+                h = store(add(ui(mem, &mut fcall, true, 43.0), load(h)));
+            }
+        }
+        call(mem, 0x008f_9230, &[0, 0, 0x200, 0x1a0]);
+        let x0 = store(ui(mem, &mut fcall, false, int_f32(xs)));
+        let y0 = store(ui(mem, &mut fcall, true, int_f32(y)));
+        let w = store(ui(mem, &mut fcall, false, 385.0));
+        call(mem, 0x008f_41b0, &[x0, y0, w, h, 0]);
+        let (fx, fy) = (load(x0), load(y0));
+        let lang = lang_shifted(mem, &mut call);
+        draw_shape(
+            mem,
+            &INFO_HP[usize::from(lang)],
+            fx,
+            ShapeY::Remap(Some(fy)),
+            &mut call,
+            &mut fcall,
+        );
+        // HP, the slash, the maximum
+        let small = [0.6f32, 0.0].map(f32::to_bits);
+        let mut at_xy = |mem: &mut M, [dx, dy]: [f32; 2]| {
+            let y = store(add(ui(mem, &mut fcall, true, dy), fy));
+            let x = store(add(ui(mem, &mut fcall, false, dx), fx));
+            [x, y]
+        };
+        let [px, py] = at_xy(mem, [210.0, 13.0]);
+        let hp = call(mem, 0x0079_add0, &[chr]);
+        call(mem, 0x0090_55c0, &[hp, px, py, 0, small[0], small[1]]);
+        let [px, py] = at_xy(mem, [215.0, 22.0]);
+        let slash = mem.rebase(0x00b8_f88c);
+        call(mem, 0x0090_1660, &[slash, px, py, 0, small[0], small[1]]);
+        let [px, py] = at_xy(mem, [360.0, 13.0]);
+        let max = call(mem, 0x0079_adf0, &[chr]);
+        call(mem, 0x0090_55c0, &[max, px, py, 0, small[0], small[1]]);
+        // the element rows
+        let mut row = store(add(ui(mem, &mut fcall, true, 55.0), fy));
+        for (k, &set) in (0u32..).zip(&flags[..3]) {
+            if set {
+                draw_shape(
+                    mem,
+                    &INFO_FRAME,
+                    fx,
+                    ShapeY::Word(row),
+                    &mut call,
+                    &mut fcall,
+                );
+                let ly = ftol(mem, load(row));
+                let lx = ftol(mem, fx);
+                call(mem, 0x0089_4b40, &[chr, k, lx, ly]);
+                row = store(add(ui(mem, &mut fcall, true, 43.0), load(row)));
+            }
+        }
+        if flags[3] {
+            draw_shape(
+                mem,
+                &INFO_FRAME,
+                fx,
+                ShapeY::Word(row),
+                &mut call,
+                &mut fcall,
+            );
+            let ry = f64::from(int_f32(ftol(mem, load(row)).cast_signed()));
+            let rx = f64::from(int_f32(ftol(mem, fx).cast_signed()));
+            let half = call(mem, 0x0078_fe40, &[chr]).to_le_bytes()[0];
+            for s in &INFO_HALF {
+                draw_shape(mem, s, rx, ShapeY::Remap(Some(ry)), &mut call, &mut fcall);
+            }
+            for (bit, bx) in INFO_HALF_BOXES {
+                if half & bit == 0 {
+                    let s = Shape {
+                        x: bx,
+                        ..INFO_HALF_BOX
+                    };
+                    draw_shape(mem, &s, rx, ShapeY::Remap(Some(ry)), &mut call, &mut fcall);
+                }
+            }
+            row = store(add(ui(mem, &mut fcall, true, 43.0), load(row)));
+        }
+        if lines(mem) {
+            let sx = ftol(mem, fx);
+            let sy = ftol(mem, add(load(row), 2.0));
+            call(mem, 0x0089_5240, &[chr, sx, sy]);
+        }
+        // the rings
+        let grey = 0x8080_8080;
+        let one = 1f32.to_bits();
+        let f = |v: f32| v.to_bits();
+        let ring = |n: i32| int_f32(n).to_bits();
+        let angle = store(fcall(mem, 0x0064_1410, &[]));
+        let args = [
+            u32::MAX,
+            ring(xs.wrapping_sub(33)),
+            ring(y.wrapping_sub(46)),
+            f(68.0),
+            f(68.0),
+            one,
+            f(53.0),
+            f(101.0),
+            f(153.0),
+            grey,
+            grey,
+            angle,
+        ];
+        call(mem, 0x0090_2ef0, &args);
+        let angle = store(-fcall(mem, 0x0064_1410, &[]));
+        let args = [
+            u32::MAX,
+            ring(xs.wrapping_sub(26)),
+            ring(y.wrapping_sub(39)),
+            f(54.0),
+            f(54.0),
+            f(1759.0),
+            one,
+            f(1835.0),
+            f(77.0),
+            grey,
+            grey,
+            angle,
+        ];
+        call(mem, 0x0090_2ef0, &args);
+        // the fading plates
+        let fade = mul(c, 128.0);
+        #[allow(clippy::cast_possible_truncation)] // fistp qword, low word
+        let alpha = if fade.is_nan() {
+            0
+        } else {
+            (fade.trunc() as i64).cast_unsigned() as u32
+        };
+        let colour = (alpha << 24).wrapping_add(0x0080_8080);
+        // (w, h), the corner left of and above (xs, y), the uv
+        let plates: [([f32; 2], [i32; 2], [u32; 4]); 2] = [
+            // 0, 0.6962890625, 0.46484375, 0.841796875
+            (
+                [477.0, 149.0],
+                [73, 86],
+                [0, 0x3f32_4000, 0x3eee_0000, 0x3f57_8000],
+            ),
+            // 0.4658203125, 0.2158203125, 0.5634765625, 0.2451171875
+            (
+                [83.0, 25.0],
+                [4, 25],
+                [0x3eee_8000, 0x3e5d_0000, 0x3f10_4000, 0x3e7b_0000],
+            ),
+        ];
+        for ([pw, ph], [dx, dy], [u0, v0, u1, v1]) in plates {
+            let h = store(ui(mem, &mut fcall, true, ph));
+            let w = store(ui(mem, &mut fcall, false, pw));
+            let y = store(ui(mem, &mut fcall, true, int_f32(y.wrapping_sub(dy))));
+            let x = store(ui(mem, &mut fcall, false, int_f32(xs.wrapping_sub(dx))));
+            call(
+                mem,
+                0x0090_3ee0,
+                &[400, x, y, w, h, u0, v0, u1, v1, colour, colour],
+            );
+        }
+    }
+
     /// The battle info window's status cycle (`0x0133f5c0`, 0x58 bytes):
     /// `i16 +0` the character, `u16 +2` the frame timer, `+4` the shown
     /// entry, `+6` the count, `+8` the `u16` message ids.
@@ -731,14 +1048,22 @@ pub mod bridge {
         fcall(mem, f, &[v.to_bits()])
     }
 
-    /// Draws `s` shifted by `p` (`TOMkpShapeXYWHUV`, 9 words); `y` given
-    /// (a row's `f32`) replaces its `Y(s.y)`. Returns the draw's `eax`.
+    /// Where [`draw_shape`] puts a shape: `X(s.x) + x0` and `Y(s.y) [+ y0]`,
+    /// or the given `y` word (a row's) instead of `Y(s.y)`.
+    #[derive(Clone, Copy)]
+    enum ShapeY {
+        Remap(Option<f64>),
+        Word(u32),
+    }
+
+    /// Draws `s` at `x0` (`TOMkpShapeXYWHUV`, 9 words) and `y`. Returns
+    /// the draw's `eax`.
     #[allow(clippy::many_single_char_names)] // the shape's x, y, w, h
     fn draw_shape<M: Mem>(
         mem: &mut M,
         s: &Shape,
-        p: f64,
-        y: Option<u32>,
+        x0: f64,
+        y: ShapeY,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
         fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
     ) -> u32 {
@@ -746,13 +1071,14 @@ pub mod bridge {
         let h = store(ui(mem, fcall, true, s.h));
         let w = store(ui(mem, fcall, false, s.w));
         let y = match y {
-            Some(y) => y,
-            None => {
+            ShapeY::Word(y) => y,
+            ShapeY::Remap(y0) => {
                 let y = ui(mem, fcall, true, s.y);
+                let y = y0.map_or(y, |k| add(y, k));
                 store(s.y_add.map_or(y, |k| add(y, k)))
             }
         };
-        let x = add(ui(mem, fcall, false, s.x), p);
+        let x = add(ui(mem, fcall, false, s.x), x0);
         let x = store(s.x_sub.map_or(x, |k| sub(x, k)));
         let [u0, v0, u1, v1] = s.uv;
         call(mem, 0x0090_3bb0, &[s.id, x, y, w, h, u0, v0, u1, v1])
@@ -836,13 +1162,20 @@ pub mod bridge {
             0x0090_16b0,
             &[u32::MAX, name, at, y, 0, scale[0], scale[1]],
         );
-        draw_shape(mem, &LIBRA_FRAME, p, None, &mut call, &mut fcall);
+        draw_shape(
+            mem,
+            &LIBRA_FRAME,
+            p,
+            ShapeY::Remap(None),
+            &mut call,
+            &mut fcall,
+        );
         let lang = lang_shifted(mem, &mut call);
         draw_shape(
             mem,
             &LIBRA_CAPTIONS[0][usize::from(lang)],
             p,
-            None,
+            ShapeY::Remap(None),
             &mut call,
             &mut fcall,
         );
@@ -874,7 +1207,7 @@ pub mod bridge {
                 mem,
                 &caption[usize::from(lang)],
                 p,
-                None,
+                ShapeY::Remap(None),
                 &mut call,
                 &mut fcall,
             );
@@ -906,7 +1239,7 @@ pub mod bridge {
                 mem,
                 &LIBRA_FRAME,
                 p,
-                Some(row.to_bits()),
+                ShapeY::Word(row.to_bits()),
                 &mut call,
                 &mut fcall,
             );
@@ -920,7 +1253,14 @@ pub mod bridge {
             let next = add(ui(mem, &mut fcall, true, 45.0), f64::from(row));
             y = ftol(mem, next);
         }
-        let ret = draw_shape(mem, &LIBRA_BOTTOM, p, None, &mut call, &mut fcall);
+        let ret = draw_shape(
+            mem,
+            &LIBRA_BOTTOM,
+            p,
+            ShapeY::Remap(None),
+            &mut call,
+            &mut fcall,
+        );
         libra_status_line(mem, size, p, &mut call, &mut fcall).unwrap_or(ret)
     }
 
