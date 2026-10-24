@@ -2672,8 +2672,8 @@ ported! {
     Native_5037_ChrGetOptPos0 @ 0x00a7_a140 => extern "C" fn n_a7a140(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_5037(&mut mem(), w, a, s)
     }
-    /// `Native_6077_ResultF(worker, args, stack)`.
-    Native_6077_ResultF @ 0x007b_9190 => extern "C" fn n_7b9190(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_6077_CamGetRoll_ResultF(worker, args, stack)`.
+    Native_6077_CamGetRoll_ResultF @ 0x007b_9190 => extern "C" fn n_7b9190(w: u32, a: u32, s: u32) -> f64 {
         native_chr::native_6077(&mut mem(), w, a, s)
     }
     /// `Native_c025(worker, args, stack)`.
@@ -3028,88 +3028,88 @@ ported! {
     Native_6013 @ 0x007b_9870 => extern "C" fn n_7b9870(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6013(&mut mem(), w, a, s)
     }
-    /// `Native_601b(worker, args, stack)`.
-    Native_601b @ 0x007b_9ca0 => extern "C" fn n_7b9ca0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_601b_CamIsMoving(worker, args, stack)`.
+    Native_601b_CamIsMoving @ 0x007b_9ca0 => extern "C" fn n_7b9ca0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_601b(&mut mem(), w, a, s)
     }
-    /// `Native_6061(worker, args, stack)`.
-    Native_6061 @ 0x007b_9960 => extern "C" fn n_7b9960(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6061_ScreenResetShake(worker, args, stack)`.
+    Native_6061_ScreenResetShake @ 0x007b_9960 => extern "C" fn n_7b9960(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6061(&mut mem(), w, a, s)
     }
-    /// `Native_604e(worker, args, stack)`.
-    Native_604e @ 0x007b_8ad0 => extern "C" fn n_7b8ad0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_604e_CamSetScreenVector(worker, args, stack)`.
+    Native_604e_CamSetScreenVector @ 0x007b_8ad0 => extern "C" fn n_7b8ad0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_604e(&mut mem(), w, a, s)
     }
-    /// `Native_6050(worker, args, stack)`.
-    Native_6050 @ 0x007b_8ba0 => extern "C" fn n_7b8ba0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6050_CamSetScreenVector2(worker, args, stack)`.
+    Native_6050_CamSetScreenVector2 @ 0x007b_8ba0 => extern "C" fn n_7b8ba0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6050(&mut mem(), w, a, s)
     }
-    /// `Native_6051(worker, args, stack)`.
-    Native_6051 @ 0x007b_8c30 => extern "C" fn n_7b8c30(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6051_ScreenSetLink1(worker, args, stack)`.
+    Native_6051_ScreenSetLink1 @ 0x007b_8c30 => extern "C" fn n_7b8c30(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6051(&mut mem(), w, a, s)
     }
-    /// `Native_6052(worker, args, stack)`.
-    Native_6052 @ 0x007b_8c00 => extern "C" fn n_7b8c00(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6052_ScreenSetLink0(worker, args, stack)`.
+    Native_6052_ScreenSetLink0 @ 0x007b_8c00 => extern "C" fn n_7b8c00(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6052(&mut mem(), w, a, s)
     }
-    /// `Native_6055(worker, args, stack)`.
-    Native_6055 @ 0x007b_8cc0 => extern "C" fn n_7b8cc0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6055_ScreenMoveAcc(worker, args, stack)`.
+    Native_6055_ScreenMoveAcc @ 0x007b_8cc0 => extern "C" fn n_7b8cc0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6055(&mut mem(), w, a, s)
     }
-    /// `Native_6058(worker, args, stack)`.
-    Native_6058 @ 0x007b_8d70 => extern "C" fn n_7b8d70(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6058_ScreenMoveAccSide1(worker, args, stack)`.
+    Native_6058_ScreenMoveAccSide1 @ 0x007b_8d70 => extern "C" fn n_7b8d70(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6058(&mut mem(), w, a, s)
     }
-    /// `Native_604f(worker, args, stack)`.
-    Native_604f @ 0x007b_8b80 => extern "C" fn n_7b8b80(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_604f_CamSetScreenCamera(worker, args, stack)`.
+    Native_604f_CamSetScreenCamera @ 0x007b_8b80 => extern "C" fn n_7b8b80(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_604f(&mut mem(), w, a, s)
     }
-    /// `Native_607b(worker, args, stack)`.
-    Native_607b @ 0x007b_8e40 => extern "C" fn n_7b8e40(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_607b_ScreenMoveWait(worker, args, stack)`.
+    Native_607b_ScreenMoveWait @ 0x007b_8e40 => extern "C" fn n_7b8e40(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_607b(&mut mem(), w, a, s)
     }
-    /// `Native_607b_Poll(worker, args, stack)`.
-    Native_607b_Poll @ 0x007b_8e60 => extern "C" fn n_7b8e60(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_607b_ScreenMoveWait_Poll(worker, args, stack)`.
+    Native_607b_ScreenMoveWait_Poll @ 0x007b_8e60 => extern "C" fn n_7b8e60(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_607b_poll(&mut mem(), w, a, s)
     }
-    /// `Native_6069(worker, args, stack)`.
-    Native_6069 @ 0x007b_8ff0 => extern "C" fn n_7b8ff0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6069_CamFocusShakeKind3(worker, args, stack)`.
+    Native_6069_CamFocusShakeKind3 @ 0x007b_8ff0 => extern "C" fn n_7b8ff0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6069(&mut mem(), w, a, s)
     }
-    /// `Native_6067(worker, args, stack)`.
-    Native_6067 @ 0x007b_8fc0 => extern "C" fn n_7b8fc0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6067_CamEyeShakeKind2(worker, args, stack)`.
+    Native_6067_CamEyeShakeKind2 @ 0x007b_8fc0 => extern "C" fn n_7b8fc0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6067(&mut mem(), w, a, s)
     }
-    /// `Native_6081(worker, args, stack)`.
-    Native_6081 @ 0x007b_92c0 => extern "C" fn n_7b92c0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6081_CamFocusShakeKind7(worker, args, stack)`.
+    Native_6081_CamFocusShakeKind7 @ 0x007b_92c0 => extern "C" fn n_7b92c0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6081(&mut mem(), w, a, s)
     }
-    /// `Native_6082(worker, args, stack)`.
-    Native_6082 @ 0x007b_9300 => extern "C" fn n_7b9300(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6082_CamEyeShakeKind7(worker, args, stack)`.
+    Native_6082_CamEyeShakeKind7 @ 0x007b_9300 => extern "C" fn n_7b9300(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6082(&mut mem(), w, a, s)
     }
-    /// `Native_6066(worker, args, stack)`.
-    Native_6066 @ 0x007b_8fa0 => extern "C" fn n_7b8fa0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6066_CamFocusShakeKind2(worker, args, stack)`.
+    Native_6066_CamFocusShakeKind2 @ 0x007b_8fa0 => extern "C" fn n_7b8fa0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6066(&mut mem(), w, a, s)
     }
-    /// `Native_606c(worker, args, stack)`.
-    Native_606c @ 0x007b_9150 => extern "C" fn n_7b9150(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_606c_CamFocusShakeKind4(worker, args, stack)`.
+    Native_606c_CamFocusShakeKind4 @ 0x007b_9150 => extern "C" fn n_7b9150(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_606c(&mut mem(), w, a, s)
     }
     /// `Native_6033(worker, args, stack)`.
     Native_6033 @ 0x007b_8150 => extern "C" fn n_7b8150(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6033(&mut mem(), w, a, s)
     }
-    /// `Native_6074(worker, args, stack)`.
-    Native_6074 @ 0x007b_9610 => extern "C" fn n_7b9610(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6074_ScreenShakeKind6(worker, args, stack)`.
+    Native_6074_ScreenShakeKind6 @ 0x007b_9610 => extern "C" fn n_7b9610(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_6074(&mut mem(), w, a, s)
     }
-    /// `Native_606e(worker, args, stack)`.
-    Native_606e @ 0x007b_94e0 => extern "C" fn n_7b94e0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_606e_ScreenShakeKind4(worker, args, stack)`.
+    Native_606e_ScreenShakeKind4 @ 0x007b_94e0 => extern "C" fn n_7b94e0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_606e(&mut mem(), w, a, s)
     }
-    /// `Native_605e(worker, args, stack)`.
-    Native_605e @ 0x007b_9420 => extern "C" fn n_7b9420(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_605e_ScreenShakeKind1(worker, args, stack)`.
+    Native_605e_ScreenShakeKind1 @ 0x007b_9420 => extern "C" fn n_7b9420(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_605e(&mut mem(), w, a, s)
     }
     /// `Native_600a(worker, args, stack)`.
@@ -6232,36 +6232,36 @@ ported! {
     Native_0258_SetEnglishMode_Poll @ 0x0085_8da0 => extern "C" fn n_858da0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_0258_poll(&mut mem(), w, a, s)
     }
-    /// `Native_6009(worker, args, stack)`.
-    Native_6009 @ 0x007b_93e0 => extern "C" fn n_7b93e0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6009_CamSetTarget(worker, args, stack)`.
+    Native_6009_CamSetTarget @ 0x007b_93e0 => extern "C" fn n_7b93e0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6009(&mut mem(), w, a, s)
     }
-    /// `Native_600b(worker, args, stack)`.
-    Native_600b @ 0x007b_9480 => extern "C" fn n_7b9480(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_600b_CamAddLineArea(worker, args, stack)`.
+    Native_600b_CamAddLineArea @ 0x007b_9480 => extern "C" fn n_7b9480(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_600b(&mut mem(), w, a, s)
     }
     /// `Native_600c(worker, args, stack)`.
     Native_600c @ 0x007b_94c0 => extern "C" fn n_7b94c0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_600c(&mut mem(), w, a, s)
     }
-    /// `Native_600d(worker, args, stack)`.
-    Native_600d @ 0x007b_9500 => extern "C" fn n_7b9500(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_600d_CamAddCircleArea(worker, args, stack)`.
+    Native_600d_CamAddCircleArea @ 0x007b_9500 => extern "C" fn n_7b9500(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_600d(&mut mem(), w, a, s)
     }
     /// `Native_600e(worker, args, stack)`.
     Native_600e @ 0x007b_95a0 => extern "C" fn n_7b95a0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_600e(&mut mem(), w, a, s)
     }
-    /// `Native_6018(worker, args, stack)`.
-    Native_6018 @ 0x007b_9a80 => extern "C" fn n_7b9a80(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6018_CamSetDir(worker, args, stack)`.
+    Native_6018_CamSetDir @ 0x007b_9a80 => extern "C" fn n_7b9a80(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6018(&mut mem(), w, a, s)
     }
-    /// `Native_6022(worker, args, stack)`.
-    Native_6022 @ 0x007b_9e10 => extern "C" fn n_7b9e10(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6022_CamRefSetPolar(worker, args, stack)`.
+    Native_6022_CamRefSetPolar @ 0x007b_9e10 => extern "C" fn n_7b9e10(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6022(&mut mem(), w, a, s)
     }
-    /// `Native_6023(worker, args, stack)`.
-    Native_6023 @ 0x007b_9e90 => extern "C" fn n_7b9e90(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6023_CamRefAddPolar(worker, args, stack)`.
+    Native_6023_CamRefAddPolar @ 0x007b_9e90 => extern "C" fn n_7b9e90(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6023(&mut mem(), w, a, s)
     }
     /// `Native_6024(worker, args, stack)`.
@@ -6288,92 +6288,92 @@ ported! {
     Native_6031 @ 0x007b_80c0 => extern "C" fn n_7b80c0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6031(&mut mem(), w, a, s)
     }
-    /// `Native_6036(worker, args, stack)`.
-    Native_6036 @ 0x007b_8190 => extern "C" fn n_7b8190(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6036_CamRefSetDir(worker, args, stack)`.
+    Native_6036_CamRefSetDir @ 0x007b_8190 => extern "C" fn n_7b8190(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6036(&mut mem(), w, a, s)
     }
-    /// `Native_6037(worker, args, stack)`.
-    Native_6037 @ 0x007b_81b0 => extern "C" fn n_7b81b0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6037_CamRefResetDir(worker, args, stack)`.
+    Native_6037_CamRefResetDir @ 0x007b_81b0 => extern "C" fn n_7b81b0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6037(&mut mem(), w, a, s)
     }
-    /// `Native_6039(worker, args, stack)`.
-    Native_6039 @ 0x007b_82d0 => extern "C" fn n_7b82d0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6039_CamFocusIsMoving(worker, args, stack)`.
+    Native_6039_CamFocusIsMoving @ 0x007b_82d0 => extern "C" fn n_7b82d0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6039(&mut mem(), w, a, s)
     }
-    /// `Native_603d(worker, args, stack)`.
-    Native_603d @ 0x007b_a000 => extern "C" fn n_7ba000(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_603d_CamRefSetYaw(worker, args, stack)`.
+    Native_603d_CamRefSetYaw @ 0x007b_a000 => extern "C" fn n_7ba000(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_603d(&mut mem(), w, a, s)
     }
-    /// `Native_603e(worker, args, stack)`.
-    Native_603e @ 0x007b_86d0 => extern "C" fn n_7b86d0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_603e_CamSetBtl(worker, args, stack)`.
+    Native_603e_CamSetBtl @ 0x007b_86d0 => extern "C" fn n_7b86d0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_603e(&mut mem(), w, a, s)
     }
-    /// `Native_6053(worker, args, stack)`.
-    Native_6053 @ 0x007b_8c60 => extern "C" fn n_7b8c60(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6053_ScreenMoveKind1(worker, args, stack)`.
+    Native_6053_ScreenMoveKind1 @ 0x007b_8c60 => extern "C" fn n_7b8c60(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6053(&mut mem(), w, a, s)
     }
-    /// `Native_6054(worker, args, stack)`.
-    Native_6054 @ 0x007b_8c90 => extern "C" fn n_7b8c90(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6054_ScreenMoveKind3(worker, args, stack)`.
+    Native_6054_ScreenMoveKind3 @ 0x007b_8c90 => extern "C" fn n_7b8c90(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6054(&mut mem(), w, a, s)
     }
-    /// `Native_6056(worker, args, stack)`.
-    Native_6056 @ 0x007b_8d10 => extern "C" fn n_7b8d10(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6056_ScreenMoveSide1Kind1(worker, args, stack)`.
+    Native_6056_ScreenMoveSide1Kind1 @ 0x007b_8d10 => extern "C" fn n_7b8d10(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6056(&mut mem(), w, a, s)
     }
-    /// `Native_6057(worker, args, stack)`.
-    Native_6057 @ 0x007b_8d40 => extern "C" fn n_7b8d40(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6057_ScreenMoveSide1Kind3(worker, args, stack)`.
+    Native_6057_ScreenMoveSide1Kind3 @ 0x007b_8d40 => extern "C" fn n_7b8d40(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6057(&mut mem(), w, a, s)
     }
-    /// `Native_6065(worker, args, stack)`.
-    Native_6065 @ 0x007b_87d0 => extern "C" fn n_7b87d0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6065_CamSetPriority(worker, args, stack)`.
+    Native_6065_CamSetPriority @ 0x007b_87d0 => extern "C" fn n_7b87d0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6065(&mut mem(), w, a, s)
     }
-    /// `Native_6068(worker, args, stack)`.
-    Native_6068 @ 0x007b_9460 => extern "C" fn n_7b9460(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6068_ScreenShakeKind2(worker, args, stack)`.
+    Native_6068_ScreenShakeKind2 @ 0x007b_9460 => extern "C" fn n_7b9460(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6068(&mut mem(), w, a, s)
     }
-    /// `Native_606a(worker, args, stack)`.
-    Native_606a @ 0x007b_9090 => extern "C" fn n_7b9090(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_606a_CamEyeShakeKind3(worker, args, stack)`.
+    Native_606a_CamEyeShakeKind3 @ 0x007b_9090 => extern "C" fn n_7b9090(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_606a(&mut mem(), w, a, s)
     }
-    /// `Native_606d(worker, args, stack)`.
-    Native_606d @ 0x007b_9170 => extern "C" fn n_7b9170(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_606d_CamEyeShakeKind4(worker, args, stack)`.
+    Native_606d_CamEyeShakeKind4 @ 0x007b_9170 => extern "C" fn n_7b9170(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_606d(&mut mem(), w, a, s)
     }
-    /// `Native_606f(worker, args, stack)`.
-    Native_606f @ 0x007b_91d0 => extern "C" fn n_7b91d0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_606f_CamFocusShakeKind5(worker, args, stack)`.
+    Native_606f_CamFocusShakeKind5 @ 0x007b_91d0 => extern "C" fn n_7b91d0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_606f(&mut mem(), w, a, s)
     }
-    /// `Native_6070(worker, args, stack)`.
-    Native_6070 @ 0x007b_9200 => extern "C" fn n_7b9200(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6070_CamEyeShakeKind5(worker, args, stack)`.
+    Native_6070_CamEyeShakeKind5 @ 0x007b_9200 => extern "C" fn n_7b9200(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6070(&mut mem(), w, a, s)
     }
-    /// `Native_6072(worker, args, stack)`.
-    Native_6072 @ 0x007b_9240 => extern "C" fn n_7b9240(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6072_CamFocusShakeKind6(worker, args, stack)`.
+    Native_6072_CamFocusShakeKind6 @ 0x007b_9240 => extern "C" fn n_7b9240(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6072(&mut mem(), w, a, s)
     }
-    /// `Native_6073(worker, args, stack)`.
-    Native_6073 @ 0x007b_9280 => extern "C" fn n_7b9280(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6073_CamEyeShakeKind6(worker, args, stack)`.
+    Native_6073_CamEyeShakeKind6 @ 0x007b_9280 => extern "C" fn n_7b9280(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6073(&mut mem(), w, a, s)
     }
-    /// `Native_6075(worker, args, stack)`.
-    Native_6075 @ 0x007b_8b50 => extern "C" fn n_7b8b50(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6075_ScreenSetCamNo(worker, args, stack)`.
+    Native_6075_ScreenSetCamNo @ 0x007b_8b50 => extern "C" fn n_7b8b50(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6075(&mut mem(), w, a, s)
     }
-    /// `Native_6079(worker, args, stack)`.
-    Native_6079 @ 0x007b_8dc0 => extern "C" fn n_7b8dc0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6079_ScreenMoveReset(worker, args, stack)`.
+    Native_6079_ScreenMoveReset @ 0x007b_8dc0 => extern "C" fn n_7b8dc0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6079(&mut mem(), w, a, s)
     }
-    /// `Native_607a(worker, args, stack)`.
-    Native_607a @ 0x007b_8de0 => extern "C" fn n_7b8de0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_607a_ScreenMoveResetSide1(worker, args, stack)`.
+    Native_607a_ScreenMoveResetSide1 @ 0x007b_8de0 => extern "C" fn n_7b8de0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_607a(&mut mem(), w, a, s)
     }
-    /// `Native_607c(worker, args, stack)`.
-    Native_607c @ 0x007b_8e00 => extern "C" fn n_7b8e00(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_607c_ScreenMoveWaitSide1(worker, args, stack)`.
+    Native_607c_ScreenMoveWaitSide1 @ 0x007b_8e00 => extern "C" fn n_7b8e00(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_607c(&mut mem(), w, a, s)
     }
-    /// `Native_607c_Poll(worker, args, stack)`.
-    Native_607c_Poll @ 0x007b_8e20 => extern "C" fn n_7b8e20(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_607c_ScreenMoveWaitSide1_Poll(worker, args, stack)`.
+    Native_607c_ScreenMoveWaitSide1_Poll @ 0x007b_8e20 => extern "C" fn n_7b8e20(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_607c_poll(&mut mem(), w, a, s)
     }
     /// `Native_6085(worker, args, stack)`.
@@ -6384,8 +6384,8 @@ ported! {
     Native_6086 @ 0x007b_9d80 => extern "C" fn n_7b9d80(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6086(&mut mem(), w, a, s)
     }
-    /// `Native_6089(worker, args, stack)`.
-    Native_6089 @ 0x007b_9630 => extern "C" fn n_7b9630(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_6089_ScreenShakeKind9(worker, args, stack)`.
+    Native_6089_ScreenShakeKind9 @ 0x007b_9630 => extern "C" fn n_7b9630(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_6089(&mut mem(), w, a, s)
     }
     /// `Native_BtlSetFlagBded(worker, args, stack)`.

@@ -1834,11 +1834,11 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x6006` | `Native_Cam_6006` | a f, b f, angle f (deg), d f, e f, f f: eye; mode -1: (a, b, angle) only, kind 4 (0x007bf330) | 0 | - | int `0x007b9360` (native_cam) |
 | `0x6007` | `Native_Cam_6007` | a f, b f, c f, d f, e f, f f: eye, kind 5 (0x007bf420 mode 0) | 0 | - | int `0x007b93a0` (native_cam) |
 | `0x6008` | `Native_Cam_6008` | as 0x6007, kind 6 (mode 1) | 0 | - | int `0x007b93c0` (native_cam) |
-| `0x6009` | `Native_6009` | - | int: 0x007bab90(worker, args, stack, 1); 0 | - | int `0x007b93e0` (native_mods) |
+| `0x6009` | `Native_6009_CamSetTarget` | - | int: 0x007bab90(worker, args, stack, 1); 0 | - | int `0x007b93e0` (native_mods) |
 | `0x600a` | `Native_600a` | - | 0x007bb2b0(..., 1, 0); 0 | - | int `0x007b9440` (native_chr) |
-| `0x600b` | `Native_600b` | - | int: 0x007bb2b0(worker, args, stack, 1, 1); 0 | - | int `0x007b9480` (native_mods) |
+| `0x600b` | `Native_600b_CamAddLineArea` | - | int: 0x007bb2b0(worker, args, stack, 1, 1); 0 | - | int `0x007b9480` (native_mods) |
 | `0x600c` | `Native_600c` | - | int: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 0); 0 | - | int `0x007b94c0` (native_mods) |
-| `0x600d` | `Native_600d` | - | int: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 1); 0 | - | int `0x007b9500` (native_mods) |
+| `0x600d` | `Native_600d_CamAddCircleArea` | - | int: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 1); 0 | - | int `0x007b9500` (native_mods) |
 | `0x600e` | `Native_600e` | on | int: 0x007bf1a0(cam, 1, on & 1); the camera handle | - | int `0x007b95a0` (native_mods) |
 | `0x600f` | `Native_Cam_600f` | - | int: camera handle (0x007bed10(cam, 1), eye half) | - | int `0x007b9520` (native_cam) |
 | `0x6010` | `Native_CamMove` | frames int: eye moves to its set position, linear | 0 | no (0x601a waits) | int `0x007b96c0` (native_cam) |
@@ -1849,18 +1849,18 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x6015` | `Native_CamMoveEased1` | accel int, hold int, decel int, curve int: as 0x6014, mode 1 | 0 | - | int `0x007b9980` (native_cam) |
 | `0x6016` | `Native_CamMoveFinish` | - | int: camera handle (eye transition applied now; with magic 0x92 the second call arms Native_BtlRandom) | - | int `0x007b9b40` (native_cam) |
 | `0x6017` | `Native_Cam_6017` | a f, b f, c f, d f: eye channel words +0x130..+0x13c (0x007bdde0) | 0 | - | int `0x007b9a00` (native_cam) |
-| `0x6018` | `Native_6018` | - | int: 0x007bb210(worker, args, stack, 1); 0 | - | int `0x007b9a80` (native_mods) |
+| `0x6018` | `Native_6018_CamSetDir` | - | int: 0x007bb210(worker, args, stack, 1); 0 | - | int `0x007b9a80` (native_mods) |
 | `0x6019` | `Native_Cam_6019` | - | int: camera handle (0x007bec90(cam, 1)) | - | int `0x007b9ac0` (native_cam) |
 | `0x601a` | `Native_CamWait` | - | 5 when done | until the eye half stops moving | poll `0x007b9be0` (native_cam) |
-| `0x601b` | `Native_601b` | - | Cam_IsMoving(cam, 1) (0x007bdd20) | - | int `0x007b9ca0` (native_chr) |
+| `0x601b` | `Native_601b_CamIsMoving` | - | Cam_IsMoving(cam, 1) (0x007bdd20) | - | int `0x007b9ca0` (native_chr) |
 | `0x601c` | `Native_Cam_601c` | var int: variable reference, degrees f | int: camera handle (0x007bf520(cam, 1, 1, &var, radians)) | - | int `0x007b8330` (native_cam) |
 | `0x601d` | `Native_Cam_601d` | var int, degrees f, y f, x f | int: camera handle (0x007bf600(cam, 1, 1, &var, radians, y, x)) | - | int `0x007b8470` (native_cam) |
 | `0x601e` | `Native_601e` | var, deg f | 0x007bf520(cam, 1, 0, &var, deg * pi / 180); the camera | - | int `0x007b83d0` (native_chr) |
 | `0x601f` | `Native_Cam_601f` | as 0x601d, mode 0 | int: camera handle | - | int `0x007b8530` (native_cam) |
 | `0x6020` | `Native_CamRefSetPos` | x f, y f, z f: reference (look-at) position | 0 | - | int `0x007b9d00` (native_cam) |
 | `0x6021` | `Native_Cam_6021` | x var, y var, z var: variable references | 0 (the reference position stored) | - | int `0x007b9d40` (native_cam) |
-| `0x6022` | `Native_6022` | - | int: 0x007bb5d0(worker, args, stack, 0, 0); 0 | - | int `0x007b9e10` (native_mods) |
-| `0x6023` | `Native_6023` | - | int: 0x007bb5d0(worker, args, stack, 0, -1); 0 | - | int `0x007b9e90` (native_mods) |
+| `0x6022` | `Native_6022_CamRefSetPolar` | - | int: 0x007bb5d0(worker, args, stack, 0, 0); 0 | - | int `0x007b9e10` (native_mods) |
+| `0x6023` | `Native_6023_CamRefAddPolar` | - | int: 0x007bb5d0(worker, args, stack, 0, -1); 0 | - | int `0x007b9e90` (native_mods) |
 | `0x6024` | `Native_6024` | - | int: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, -1); 0 | - | int `0x007b9f20` (native_mods) |
 | `0x6025` | `Native_6025` | - | int: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 0); 0 | - | int `0x007b9fa0` (native_mods) |
 | `0x6026` | `Native_6026` | - | int: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 1); 0 | - | int `0x007b9fc0` (native_mods) |
@@ -1879,15 +1879,15 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x6033` | `Native_6033` | - | 0x007ba5b0(worker, args, stack, 0, 1); 0 | - | int `0x007b8150` (native_chr) |
 | `0x6034` | `Native_CamFocusCut` | - | int: camera handle (focus jumps to its target) | - | int `0x007b8210` (native_cam) |
 | `0x6035` | `Native_Cam_6035` | as 0x6017 for the focus half | 0 | - | int `0x007b8170` (native_cam) |
-| `0x6036` | `Native_6036` | - | int: 0x007bb210(worker, args, stack, 0); 0 | - | int `0x007b8190` (native_mods) |
-| `0x6037` | `Native_6037` | - | int: MsCameraResetDirVector(cam, 0) (0x007bec90); the camera handle | - | int `0x007b81b0` (native_mods) |
+| `0x6036` | `Native_6036_CamRefSetDir` | - | int: 0x007bb210(worker, args, stack, 0); 0 | - | int `0x007b8190` (native_mods) |
+| `0x6037` | `Native_6037_CamRefResetDir` | - | int: MsCameraResetDirVector(cam, 0) (0x007bec90); the camera handle | - | int `0x007b81b0` (native_mods) |
 | `0x6038` | `Native_CamFocusWait` | - | 5 when done | until the focus half stops moving | poll `0x007b8270` (native_cam) |
-| `0x6039` | `Native_6039` | - | int: Cam_IsMoving(cam, 0) (0x007bdd20) | - | int `0x007b82d0` (native_mods) |
+| `0x6039` | `Native_6039_CamFocusIsMoving` | - | int: Cam_IsMoving(cam, 0) (0x007bdd20) | - | int `0x007b82d0` (native_mods) |
 | `0x603a` | `Native_CamSetRoll` | degrees f: eye roll | int: camera handle | - | int `0x007b9010` (native_cam) |
 | `0x603b` | `Native_CamSetScreenDepth` | depth f: screen depth (zoom) | int: camera handle | - | int `0x007b90b0` (native_cam) |
 | `0x603c` | `Native_Cam_603c` | angle f (deg), b f, c f, d f: eye, kind 10 (0x007befc0) | 0 | - | int `0x007b9400` (native_cam) |
-| `0x603d` | `Native_603d` | - | int: 0x007bac40(worker, args, stack, 0); 0 | - | int `0x007ba000` (native_mods) |
-| `0x603e` | `Native_603e` | - | int: 0x007bad10(worker, args, stack, 1); 0 | - | int `0x007b86d0` (native_mods) |
+| `0x603d` | `Native_603d_CamRefSetYaw` | - | int: 0x007bac40(worker, args, stack, 0); 0 | - | int `0x007ba000` (native_mods) |
+| `0x603e` | `Native_603e_CamSetBtl` | - | int: 0x007bad10(worker, args, stack, 1); 0 | - | int `0x007b86d0` (native_mods) |
 | `0x603f` | `Native_Cam_603f` | a int, b int, c f (/100): focus (0x007c5c60) | 0 | - | int `0x007b86f0` (native_cam) |
 | `0x6040` | `Native_CamEyeOrbitScaled` | actor a int, actor b int, height f, yaw f (deg), pitch f (deg), distance f: eye orbit scaled by actor size | 0 | - | int `0x007b8710` (native_cam) |
 | `0x6041` | `Native_CamFocusOrbitScaled` | as 0x6040 for the focus | 0 | - | int `0x007b8730` (native_cam) |
@@ -1903,66 +1903,66 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x604b` | `Native_CamPathAddFocus` | - | int: camera handle (the focus appended to path list 0) | - | int `0x007b9f40` (native_cam) |
 | `0x604c` | `Native_604c` | - | 0x007badb0(..., 1, 3); 0 | - | int `0x007b8790` (native_chr) |
 | `0x604d` | `Native_Cam_604d` | as 0x6040, mode 4 | 0 | - | int `0x007b87b0` (native_cam) |
-| `0x604e` | `Native_604e` | - | six: 0x007bc930(f, 1), 0x007bc890(f, e, d, c, b, a, 0); 0 | - | int `0x007b8ad0` (native_chr) |
-| `0x604f` | `Native_604f` | v | 0x007bc950(v, 0, v) | - | int `0x007b8b80` (native_chr) |
-| `0x6050` | `Native_6050` | - | five: 0x007bc750(e, d, c, b, a); 0 | - | int `0x007b8ba0` (native_chr) |
-| `0x6051` | `Native_6051` | b, a | MsScreenLinkSet(b, 1, a) (0x007bbdd0) | - | int `0x007b8c30` (native_chr) |
-| `0x6052` | `Native_6052` | b, a | MsScreenLinkSet(b, 0, a) | - | int `0x007b8c00` (native_chr) |
-| `0x6053` | `Native_6053` | id, v | int: MsScreenMove(id, 0, v, 1); 0 | - | int `0x007b8c60` (native_mods) |
-| `0x6054` | `Native_6054` | id, v | int: MsScreenMove(id, 0, v, 3); 0 | - | int `0x007b8c90` (native_mods) |
-| `0x6055` | `Native_6055` | d, c, b, a | MsScreenMoveAcc(d, 0, c, b, a) (0x007bbeb0) | - | int `0x007b8cc0` (native_chr) |
-| `0x6056` | `Native_6056` | id, v | int: MsScreenMove(id, 1, v, 1); 0 | - | int `0x007b8d10` (native_mods) |
-| `0x6057` | `Native_6057` | id, v | int: MsScreenMove(id, 1, v, 3); 0 | - | int `0x007b8d40` (native_mods) |
-| `0x6058` | `Native_6058` | - | as 0x6055 with mode 1 | - | int `0x007b8d70` (native_chr) |
+| `0x604e` | `Native_604e_CamSetScreenVector` | - | six: 0x007bc930(f, 1), 0x007bc890(f, e, d, c, b, a, 0); 0 | - | int `0x007b8ad0` (native_chr) |
+| `0x604f` | `Native_604f_CamSetScreenCamera` | v | 0x007bc950(v, 0, v) | - | int `0x007b8b80` (native_chr) |
+| `0x6050` | `Native_6050_CamSetScreenVector2` | - | five: 0x007bc750(e, d, c, b, a); 0 | - | int `0x007b8ba0` (native_chr) |
+| `0x6051` | `Native_6051_ScreenSetLink1` | b, a | MsScreenLinkSet(b, 1, a) (0x007bbdd0) | - | int `0x007b8c30` (native_chr) |
+| `0x6052` | `Native_6052_ScreenSetLink0` | b, a | MsScreenLinkSet(b, 0, a) | - | int `0x007b8c00` (native_chr) |
+| `0x6053` | `Native_6053_ScreenMoveKind1` | id, v | int: MsScreenMove(id, 0, v, 1); 0 | - | int `0x007b8c60` (native_mods) |
+| `0x6054` | `Native_6054_ScreenMoveKind3` | id, v | int: MsScreenMove(id, 0, v, 3); 0 | - | int `0x007b8c90` (native_mods) |
+| `0x6055` | `Native_6055_ScreenMoveAcc` | d, c, b, a | MsScreenMoveAcc(d, 0, c, b, a) (0x007bbeb0) | - | int `0x007b8cc0` (native_chr) |
+| `0x6056` | `Native_6056_ScreenMoveSide1Kind1` | id, v | int: MsScreenMove(id, 1, v, 1); 0 | - | int `0x007b8d10` (native_mods) |
+| `0x6057` | `Native_6057_ScreenMoveSide1Kind3` | id, v | int: MsScreenMove(id, 1, v, 3); 0 | - | int `0x007b8d40` (native_mods) |
+| `0x6058` | `Native_6058_ScreenMoveAccSide1` | - | as 0x6055 with mode 1 | - | int `0x007b8d70` (native_chr) |
 | `0x6059` | `Native_Cam_6059` | path int (0, 1 battle spline lists, else a variable), a int | 0 (focus along the path, from 0) | - | int `0x007ba020` (native_cam) |
 | `0x605a` | `Native_Cam_605a` | path int, t f, a int | 0 (focus along the path, from t) | - | int `0x007ba100` (native_cam) |
 | `0x605b` | `Native_Cam_605b` | path int, a int | 0 (eye along the path) | - | int `0x007ba210` (native_cam) |
 | `0x605c` | `Native_Cam_605c` | a int, b f, c int, d int, e int: focus interpolation (0x007c4fc0 flags 1: curve byte a, value b, frames c/d, e) | int: camera handle | - | int `0x007b8e80` (native_cam) |
 | `0x605d` | `Native_Cam_605d` | as 0x605c for the eye | int: camera handle | - | int `0x007b8f10` (native_cam) |
-| `0x605e` | `Native_605e` | - | 0x007bb840(..., 1); 0 | - | int `0x007b9420` (native_chr) |
+| `0x605e` | `Native_605e_ScreenShakeKind1` | - | 0x007bb840(..., 1); 0 | - | int `0x007b9420` (native_chr) |
 | `0x605f` | `Native_Cam_605f` | - | 0 (0x007c4f50(cam, 0)) | - | int `0x007b97a0` (native_cam) |
 | `0x6060` | `Native_Cam_6060` | - | 0 (0x007c4f50(cam, 1)) | - | int `0x007b98e0` (native_cam) |
-| `0x6061` | `Native_6061` | v | MsScreenResetShake(v) (0x007c56c0) | - | int `0x007b9960` (native_chr) |
+| `0x6061` | `Native_6061_ScreenResetShake` | v | MsScreenResetShake(v) (0x007c56c0) | - | int `0x007b9960` (native_chr) |
 | `0x6062` | `Native_Cam_6062` | - | 5 when done | until 0x007c4f10(cam, 0) is 0 | poll `0x007b9a20` (native_cam) |
 | `0x6063` | `Native_Cam_6063` | - | 5 when done | until 0x007c4f10(cam, 1) is 0 | poll `0x007b99a0` (native_cam) |
 | `0x6064` | `Native_Cam_6064` | id int: camera channel (0-2) | 5 when done | until that channel is idle (0x007c5680) | start `0x007b9aa0`, poll `0x007b9b20` (native_cam) |
-| `0x6065` | `Native_6065` | p | int: MsCameraPriority(cam, p) (0x007be0a0); the camera handle | - | int `0x007b87d0` (native_mods) |
-| `0x6066` | `Native_6066` | - | the shake with (0, 2) | - | int `0x007b8fa0` (native_chr) |
-| `0x6067` | `Native_6067` | - | the shake with (1, 2) | - | int `0x007b8fc0` (native_chr) |
-| `0x6068` | `Native_6068` | - | int: MsAtelScreenShake(worker, args, stack, 2) (0x007bb840); 0 | - | int `0x007b9460` (native_mods) |
-| `0x6069` | `Native_6069` | - | MsAtelCameraShake(worker, args, stack, 0, 3) (0x007bb8c0) | - | int `0x007b8ff0` (native_chr) |
-| `0x606a` | `Native_606a` | - | int: MsAtelCameraShake(worker, args, stack, 1, 3)'s EAX | - | int `0x007b9090` (native_mods) |
+| `0x6065` | `Native_6065_CamSetPriority` | p | int: MsCameraPriority(cam, p) (0x007be0a0); the camera handle | - | int `0x007b87d0` (native_mods) |
+| `0x6066` | `Native_6066_CamFocusShakeKind2` | - | the shake with (0, 2) | - | int `0x007b8fa0` (native_chr) |
+| `0x6067` | `Native_6067_CamEyeShakeKind2` | - | the shake with (1, 2) | - | int `0x007b8fc0` (native_chr) |
+| `0x6068` | `Native_6068_ScreenShakeKind2` | - | int: MsAtelScreenShake(worker, args, stack, 2) (0x007bb840); 0 | - | int `0x007b9460` (native_mods) |
+| `0x6069` | `Native_6069_CamFocusShakeKind3` | - | MsAtelCameraShake(worker, args, stack, 0, 3) (0x007bb8c0) | - | int `0x007b8ff0` (native_chr) |
+| `0x606a` | `Native_606a_CamEyeShakeKind3` | - | int: MsAtelCameraShake(worker, args, stack, 1, 3)'s EAX | - | int `0x007b9090` (native_mods) |
 | `0x606b` | `Native_Cam_606b` | chan int (< 3), flags int, b f, c int, d int, e int: channel interpolation (0x007c56f0, kind 3) | 0 | - | int `0x007b94a0` (native_cam) |
-| `0x606c` | `Native_606c` | - | the shake with (0, 4) | - | int `0x007b9150` (native_chr) |
-| `0x606d` | `Native_606d` | - | int: MsAtelCameraShake(.., 1, 4)'s EAX | - | int `0x007b9170` (native_mods) |
-| `0x606e` | `Native_606e` | - | 0x007bb840(..., 4); 0 | - | int `0x007b94e0` (native_chr) |
-| `0x606f` | `Native_606f` | - | int: MsAtelCameraShake(.., 0, 5)'s EAX | - | int `0x007b91d0` (native_mods) |
-| `0x6070` | `Native_6070` | - | int: MsAtelCameraShake(.., 1, 5)'s EAX | - | int `0x007b9200` (native_mods) |
+| `0x606c` | `Native_606c_CamFocusShakeKind4` | - | the shake with (0, 4) | - | int `0x007b9150` (native_chr) |
+| `0x606d` | `Native_606d_CamEyeShakeKind4` | - | int: MsAtelCameraShake(.., 1, 4)'s EAX | - | int `0x007b9170` (native_mods) |
+| `0x606e` | `Native_606e_ScreenShakeKind4` | - | 0x007bb840(..., 4); 0 | - | int `0x007b94e0` (native_chr) |
+| `0x606f` | `Native_606f_CamFocusShakeKind5` | - | int: MsAtelCameraShake(.., 0, 5)'s EAX | - | int `0x007b91d0` (native_mods) |
+| `0x6070` | `Native_6070_CamEyeShakeKind5` | - | int: MsAtelCameraShake(.., 1, 5)'s EAX | - | int `0x007b9200` (native_mods) |
 | `0x6071` | `Native_Cam_6071` | as 0x606b, kind 5 | 0 | - | int `0x007b9580` (native_cam) |
-| `0x6072` | `Native_6072` | - | int: MsAtelCameraShake(.., 0, 6)'s EAX | - | int `0x007b9240` (native_mods) |
-| `0x6073` | `Native_6073` | - | int: MsAtelCameraShake(.., 1, 6)'s EAX | - | int `0x007b9280` (native_mods) |
-| `0x6074` | `Native_6074` | - | 0x007bb840(worker, args, stack, 6); 0 | - | int `0x007b9610` (native_chr) |
-| `0x6075` | `Native_6075` | b, a | int: 0x007bc870(b, a); 0 | - | int `0x007b8b50` (native_mods) |
+| `0x6072` | `Native_6072_CamFocusShakeKind6` | - | int: MsAtelCameraShake(.., 0, 6)'s EAX | - | int `0x007b9240` (native_mods) |
+| `0x6073` | `Native_6073_CamEyeShakeKind6` | - | int: MsAtelCameraShake(.., 1, 6)'s EAX | - | int `0x007b9280` (native_mods) |
+| `0x6074` | `Native_6074_ScreenShakeKind6` | - | 0x007bb840(worker, args, stack, 6); 0 | - | int `0x007b9610` (native_chr) |
+| `0x6075` | `Native_6075_ScreenSetCamNo` | b, a | int: 0x007bc870(b, a); 0 | - | int `0x007b8b50` (native_mods) |
 | `0x6076` | `Native_Cam_6076` | - | 0 (the battle cameras freed) | - | int `0x007b8fe0` (native_cam) |
 | `0x6077` | `Native_6077` | - | float: the camera's +0xc90 angle (0x007bd500) in degrees (MsNearRag(0, v) * 180 / pi) | - | float `0x007b9190` (native_chr) |
-| `0x6078` | `Native_6078` | - | jumps to 0x007bd510(worker, args, stack) (ST0) | - | float `0x007b91f0` (native_chr) |
-| `0x6079` | `Native_6079` | id | int: MsScreenMoveReset(id, 0) (0x007bc010); 0 | - | int `0x007b8dc0` (native_mods) |
-| `0x607a` | `Native_607a` | id | int: MsScreenMoveReset(id, 1); 0 | - | int `0x007b8de0` (native_mods) |
-| `0x607b` | `Native_607b` | screen | start: into the args word; EAX it; poll: 5 once MsScreenMoveCheck(screen, 0) (0x007bbfc0) is 0 | see the poll | start `0x007b8e40`, poll `0x007b8e60` (native_chr) |
-| `0x607c` | `Native_607c` | id | AtelGetBattleIdAdrs2(worker) (0x0086a990, unused), args +0 = id; id | - | start `0x007b8e00`, poll `0x007b8e20` (native_mods) |
+| `0x6078` | `Native_6078_CamGetScreenDepth` | - | jumps to 0x007bd510(worker, args, stack) (ST0) | - | float `0x007b91f0` (native_chr) |
+| `0x6079` | `Native_6079_ScreenMoveReset` | id | int: MsScreenMoveReset(id, 0) (0x007bc010); 0 | - | int `0x007b8dc0` (native_mods) |
+| `0x607a` | `Native_607a_ScreenMoveResetSide1` | id | int: MsScreenMoveReset(id, 1); 0 | - | int `0x007b8de0` (native_mods) |
+| `0x607b` | `Native_607b_ScreenMoveWait` | screen | start: into the args word; EAX it; poll: 5 once MsScreenMoveCheck(screen, 0) (0x007bbfc0) is 0 | see the poll | start `0x007b8e40`, poll `0x007b8e60` (native_chr) |
+| `0x607c` | `Native_607c_ScreenMoveWaitSide1` | id | AtelGetBattleIdAdrs2(worker) (0x0086a990, unused), args +0 = id; id | - | start `0x007b8e00`, poll `0x007b8e20` (native_mods) |
 | `0x607d` | `Native_Cam_607d` | v int | int: camera handle (0x007bcdd0(cam, v)) | - | int `0x007b8840` (native_cam) |
 | `0x607e` | `Native_CamSetDepthMaskMode` | flags | 0x007bcf50(cam, flags); the camera | - | int `0x007b88b0` (native_chr) |
 | `0x607f` | `Native_CamSetDepthMask` | plane, z | 0x007bf280(cam, plane, z); the camera | - | int `0x007b8920` (native_chr) |
 | `0x6080` | `Native_BtlRandom` | b int (bit 0 picks draw table 14 or 15) | int: the draw; with the latch armed 2 for odd, 0 for even | - | int `0x007b89a0` (native_cam) |
-| `0x6081` | `Native_6081` | - | the shake with (0, 7) | - | int `0x007b92c0` (native_chr) |
-| `0x6082` | `Native_6082` | - | the shake with (1, 7) | - | int `0x007b9300` (native_chr) |
+| `0x6081` | `Native_6081_CamFocusShakeKind7` | - | the shake with (0, 7) | - | int `0x007b92c0` (native_chr) |
+| `0x6082` | `Native_6082_CamEyeShakeKind7` | - | the shake with (1, 7) | - | int `0x007b9300` (native_chr) |
 | `0x6083` | `Native_Cam_6083` | as 0x605c, flags 8 | int: camera handle | - | int `0x007b9340` (native_cam) |
 | `0x6084` | `Native_Cam_6084` | as 0x605d, flags 8 | int: camera handle | - | int `0x007b9380` (native_cam) |
 | `0x6085` | `Native_6085` | - | int: 0x007ba460(worker, args, stack, 1); 0 | - | int `0x007b92a0` (native_mods) |
 | `0x6086` | `Native_6086` | - | int: 0x007ba460(worker, args, stack, 0); 0 | - | int `0x007b9d80` (native_mods) |
 | `0x6087` | `Native_Cam_6087` | - | int: camera handle (0x007beae0(cam, 0)) | - | int `0x007b8a10` (native_cam) |
 | `0x6088` | `Native_Cam_6088` | - | int: camera handle (0x007beae0(cam, 1)) | - | int `0x007b8a70` (native_cam) |
-| `0x6089` | `Native_6089` | p8, p7, p6, p5, p4 f, p3, p2 f, p1 | int: MsScreenShake2(p8, p7, 9, p6, p5, p4, p3, p2, p1) (0x007c57b0); 0 | - | int `0x007b9630` (native_mods) |
+| `0x6089` | `Native_6089_ScreenShakeKind9` | p8, p7, p6, p5, p4 f, p3, p2 f, p1 | int: MsScreenShake2(p8, p7, 9, p6, p5, p4, p3, p2, p1) (0x007c57b0); 0 | - | int `0x007b9630` (native_mods) |
 | `0x7000` | `Native_7000` | - | 0 (actor +0xdf2 = 0) | - | int `0x007a8620` (native_btl) |
 | `0x7001` | `Native_BtlSetFlagBded` | v | int: the byte 0x0112bded = v & 1; 0 | - | int `0x007a39d0` (native_mods) |
 | `0x7002` | `Native_7002` | a int, b int | the start's result; poll returns 1 at once | no | start `0x007a3530` (native_btl), poll `0x007a35c0` (native_btl2) |

@@ -6473,18 +6473,18 @@
 0x007b8130 function Native_CamFocusTimeEase      # 0x6032: args (accel, hold, decel frames, curve) -> 0; eased transition for the focus (half 0, 0x007bd860 type 2: total = sum); e.g. (20, 10, 20, 0)
 0x007b8150 function Native_6033                # 0x6033: no args -> 0x007ba5b0(worker, args, stack, 0, 1); 0; ported in native_chr (script round 12)
 0x007b8170 function Native_Cam_6035            # 0x6035: 0x007bb520(w, a, s, 0); 0; ported in native_cam
-0x007b8190 function Native_6036 # 0x6036: 0x007bb210(worker, args, stack, 0); 0; ported in native_mods (script round 19); name ours
-0x007b81b0 function Native_6037 # 0x6037: MsCameraResetDirVector(cam, 0) (0x007bec90); the camera handle; ported in native_mods (script round 19); name ours
+0x007b8190 function Native_6036_CamRefSetDir # 0x6036: 0x007bb210(worker, args, stack, 0); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraDirVector(side 0) -> MsCameraSetDirVector
+0x007b81b0 function Native_6037_CamRefResetDir # 0x6037: MsCameraResetDirVector(cam, 0) (0x007bec90); the camera handle; ported in native_mods (script round 19); name ours; name from MsCameraResetDirVector(cam, 0)
 0x007b8210 function Native_CamFocusCut           # 0x6034: () -> cam; drops the focus half's transition and applies the target now (0x007bed60(cam, 0)); 0x6016 is the eye version
 0x007b8270 function Native_CamFocusWait          # 0x6038 (poll): waits until the focus half's transition ends (0x007bdd20(cam, 0) == 0 -> 5); 0x601a is the eye version ("CameraWaitStart!")
-0x007b82d0 function Native_6039 # 0x6039: Cam_IsMoving(cam, 0) (0x007bdd20); ported in native_mods (script round 19); name ours
+0x007b82d0 function Native_6039_CamFocusIsMoving # 0x6039: Cam_IsMoving(cam, 0) (0x007bdd20); ported in native_mods (script round 19); name ours; name from Cam_IsMoving(cam, 0); side 0 as Native_CamFocusWait
 0x007b8330 function Native_Cam_601c            # 0x601c: (var, degrees): 0x007bf520(cam, 1, 1, &var, radians); the handle; ported in native_cam
 0x007b83d0 function Native_601e                # 0x601e: args (var, deg f) -> 0x007bf520(cam, 1, 0, &var, deg * pi / 180); the camera; ported in native_chr (script round 12)
 0x007b8470 function Native_Cam_601d            # 0x601d: (var, degrees, y, x): 0x007bf600(cam, 1, 1, &var, radians, y, x); the handle; ported in native_cam
 0x007b8530 function Native_Cam_601f            # 0x601f: as 0x601d with 0 for the mode; ported in native_cam
 0x007b85f0 function Native_6042                # 0x6042: args (v) -> 0x007bdf90(cam, 0, v ^ 0xffff); the camera; ported in native_chr (script round 12)
 0x007b8660 function Native_Cam_6043            # 0x6043: (v): 0x007bdf90(cam, 1, v ^ 0xffff); the handle; ported in native_cam
-0x007b86d0 function Native_603e # 0x603e: 0x007bad10(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours
+0x007b86d0 function Native_603e_CamSetBtl # 0x603e: 0x007bad10(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraSetBtl(side 1) -> MsCameraSetBtl(cam, side, actor, 0, a, b, lift)
 0x007b86f0 function Native_Cam_603f            # 0x603f: 0x007bad10(w, a, s, 0); 0; ported in native_cam
 0x007b8710 function Native_CamEyeOrbitScaled     # 0x6040: args (actor a, actor b, height, yaw deg, pitch deg, distance) -> cam; 0x007badb0(half 1, mode 1): eye = mean of actors + height * actor height + orbit at distance/100 * actor size
 0x007b8730 function Native_CamFocusOrbitScaled   # 0x6041: same as 0x6040 for the focus point (half 0, mode 1); most common shot setup, e.g. (-2, -1, 49, 0, 0, -70)
@@ -6492,77 +6492,77 @@
 0x007b8770 function Native_CamFocusOrbit         # 0x6045: same as 0x6044 for the focus point (half 0, mode 2)
 0x007b8790 function Native_604c                # 0x604c: no args -> 0x007badb0(..., 1, 3); 0; ported in native_chr (script round 12)
 0x007b87b0 function Native_Cam_604d            # 0x604d: 0x007badb0(w, a, s, 1, 4); 0; ported in native_cam
-0x007b87d0 function Native_6065 # 0x6065: (p): MsCameraPriority(cam, p) (0x007be0a0); the camera handle; ported in native_mods (script round 19); name ours
+0x007b87d0 function Native_6065_CamSetPriority # 0x6065: (p): MsCameraPriority(cam, p) (0x007be0a0); the camera handle; ported in native_mods (script round 19); name ours; name from MsCameraPriority(cam, p)
 0x007b8840 function Native_Cam_607d            # 0x607d: (v): 0x007bcdd0(cam, v); the handle; ported in native_cam
 0x007b88b0 function Native_CamSetDepthMaskMode   # ?0x607e: args (flags; <0 keeps the old value | 2) -> cam; camera +0xcac; Battle cam update passes it to 0x0082cb60 (full-screen Z mask enable)
 0x007b8920 function Native_CamSetDepthMask       # ?0x607f: args (plane 0/1, z) -> cam; camera +0xcb0/+0xcb4 -> 0x0082ce20 -> full-screen Z rectangle (0x0082bb90, 0x006430f0 z/16.77M) that hides geometry beyond z
 0x007b89a0 function Native_BtlRandom             # 0x6080: args (n) -> Rng_Next(0xe + (n & 1)); battle 0x92 special case with 0x012fb7e0 forces a result; scripts use it with mod
 0x007b8a10 function Native_Cam_6087            # 0x6087: 0x007beae0(cam, 0); the handle; ported in native_cam
 0x007b8a70 function Native_Cam_6088            # 0x6088: 0x007beae0(cam, 1); the handle; ported in native_cam
-0x007b8ad0 function Native_604e                # 0x604e: no args -> six: 0x007bc930(f, 1), 0x007bc890(f, e, d, c, b, a, 0); 0; ported in native_chr (script round 12)
-0x007b8b50 function Native_6075 # 0x6075: (b, a): 0x007bc870(b, a); 0; ported in native_mods (script round 19); name ours
-0x007b8b80 function Native_604f                # 0x604f: args (v) -> 0x007bc950(v, 0, v); ported in native_chr (script round 12)
-0x007b8ba0 function Native_6050                # 0x6050: no args -> five: 0x007bc750(e, d, c, b, a); 0; ported in native_chr (script round 12)
-0x007b8c00 function Native_6052                # 0x6052: args (b, a) -> MsScreenLinkSet(b, 0, a); ported in native_chr (script round 12)
-0x007b8c30 function Native_6051                # 0x6051: args (b, a) -> MsScreenLinkSet(b, 1, a) (0x007bbdd0); ported in native_chr (script round 12)
-0x007b8c60 function Native_6053 # 0x6053: (id, v): MsScreenMove(id, 0, v, 1); 0; ported in native_mods (script round 19); name ours
-0x007b8c90 function Native_6054 # 0x6054: (id, v): MsScreenMove(id, 0, v, 3); 0; ported in native_mods (script round 19); name ours
-0x007b8cc0 function Native_6055                # 0x6055: args (d, c, b, a) -> MsScreenMoveAcc(d, 0, c, b, a) (0x007bbeb0); ported in native_chr (script round 12)
-0x007b8d10 function Native_6056 # 0x6056: (id, v): MsScreenMove(id, 1, v, 1); 0; ported in native_mods (script round 19); name ours
-0x007b8d40 function Native_6057 # 0x6057: (id, v): MsScreenMove(id, 1, v, 3); 0; ported in native_mods (script round 19); name ours
-0x007b8d70 function Native_6058                # 0x6058: no args -> as 0x6055 with mode 1; ported in native_chr (script round 12)
-0x007b8dc0 function Native_6079 # 0x6079: (id): MsScreenMoveReset(id, 0) (0x007bc010); 0; ported in native_mods (script round 19); name ours
-0x007b8de0 function Native_607a # 0x607a: (id): MsScreenMoveReset(id, 1); 0; ported in native_mods (script round 19); name ours
-0x007b8e00 function Native_607c # 0x607c: (id): AtelGetBattleIdAdrs2(worker) (0x0086a990, unused), args +0 = id; id; ported in native_mods (script round 19); the same code as Native_607b (0x007b8e40; call targets equal), a copy the compiler kept; own name
-0x007b8e20 function Native_607c_Poll # 0x607c: done (5) once MsScreenMoveCheck(args +0, 1) (0x007bbfc0) is 0; ported in native_mods (script round 19); name ours
-0x007b8e40 function Native_607b                # 0x607b (start): args (screen) -> start: into the args word; EAX it; poll: 5 once MsScreenMoveCheck(screen, 0) (0x007bbfc0) is 0; ported in native_chr (script round 12)
-0x007b8e60 function Native_607b_Poll           # 0x607b (poll): args (screen) -> start: into the args word; EAX it; poll: 5 once MsScreenMoveCheck(screen, 0) (0x007bbfc0) is 0; ported in native_chr (script round 12)
+0x007b8ad0 function Native_604e_CamSetScreenVector                # 0x604e: no args -> six: 0x007bc930(f, 1), 0x007bc890(f, e, d, c, b, a, 0); 0; ported in native_chr (script round 12); name from Cam_SetScreenCameraOn(f, 1), Cam_SetScreenVector(f, e, d, c, b, a, 0)
+0x007b8b50 function Native_6075_ScreenSetCamNo # 0x6075: (b, a): 0x007bc870(b, a); 0; ported in native_mods (script round 19); name ours; name from Cam_SetScreenCameraNo(b, a): screen byte +0xc1 (its camera) = a
+0x007b8b80 function Native_604f_CamSetScreenCamera                # 0x604f: args (v) -> 0x007bc950(v, 0, v); ported in native_chr (script round 12); name from Cam_SetScreenCamera(v, 0, v): screen's camera bytes +0xc0/+0xc1
+0x007b8ba0 function Native_6050_CamSetScreenVector2                # 0x6050: no args -> five: 0x007bc750(e, d, c, b, a); 0; ported in native_chr (script round 12); name from Cam_SetScreenVector2(e, d, c, b, a)
+0x007b8c00 function Native_6052_ScreenSetLink0                # 0x6052: args (b, a) -> MsScreenLinkSet(b, 0, a); ported in native_chr (script round 12); name from MsScreenLinkSet(b, 0, a): screen byte +0xc2+0 = a
+0x007b8c30 function Native_6051_ScreenSetLink1                # 0x6051: args (b, a) -> MsScreenLinkSet(b, 1, a) (0x007bbdd0); ported in native_chr (script round 12); name from MsScreenLinkSet(b, 1, a): screen byte +0xc2+1 = a
+0x007b8c60 function Native_6053_ScreenMoveKind1 # 0x6053: (id, v): MsScreenMove(id, 0, v, 1); 0; ported in native_mods (script round 19); name ours; name from MsScreenMove(id, 0, v, 1)
+0x007b8c90 function Native_6054_ScreenMoveKind3 # 0x6054: (id, v): MsScreenMove(id, 0, v, 3); 0; ported in native_mods (script round 19); name ours; name from MsScreenMove(id, 0, v, 3)
+0x007b8cc0 function Native_6055_ScreenMoveAcc                # 0x6055: args (d, c, b, a) -> MsScreenMoveAcc(d, 0, c, b, a) (0x007bbeb0); ported in native_chr (script round 12); name from MsScreenMoveAcc(d, 0, c, b, a)
+0x007b8d10 function Native_6056_ScreenMoveSide1Kind1 # 0x6056: (id, v): MsScreenMove(id, 1, v, 1); 0; ported in native_mods (script round 19); name ours; name from MsScreenMove(id, 1, v, 1)
+0x007b8d40 function Native_6057_ScreenMoveSide1Kind3 # 0x6057: (id, v): MsScreenMove(id, 1, v, 3); 0; ported in native_mods (script round 19); name ours; name from MsScreenMove(id, 1, v, 3)
+0x007b8d70 function Native_6058_ScreenMoveAccSide1                # 0x6058: no args -> as 0x6055 with mode 1; ported in native_chr (script round 12); name from "as 0x6055 with mode 1": MsScreenMoveAcc side 1
+0x007b8dc0 function Native_6079_ScreenMoveReset # 0x6079: (id): MsScreenMoveReset(id, 0) (0x007bc010); 0; ported in native_mods (script round 19); name ours; name from MsScreenMoveReset(id, 0)
+0x007b8de0 function Native_607a_ScreenMoveResetSide1 # 0x607a: (id): MsScreenMoveReset(id, 1); 0; ported in native_mods (script round 19); name ours; name from MsScreenMoveReset(id, 1)
+0x007b8e00 function Native_607c_ScreenMoveWaitSide1 # 0x607c: (id): AtelGetBattleIdAdrs2(worker) (0x0086a990, unused), args +0 = id; id; ported in native_mods (script round 19); the same code as Native_607b_ScreenMoveWait (0x007b8e40; call targets equal), a copy the compiler kept; own name; name from poll: done (5) once MsScreenMoveCheck(args +0, 1) is 0
+0x007b8e20 function Native_607c_ScreenMoveWaitSide1_Poll # 0x607c: done (5) once MsScreenMoveCheck(args +0, 1) (0x007bbfc0) is 0; ported in native_mods (script round 19); name ours; name from poll: done (5) once MsScreenMoveCheck(args +0, 1) is 0
+0x007b8e40 function Native_607b_ScreenMoveWait                # 0x607b (start): args (screen) -> start: into the args word; EAX it; poll: 5 once MsScreenMoveCheck(screen, 0) (0x007bbfc0) is 0; ported in native_chr (script round 12); name from poll: 5 once MsScreenMoveCheck(screen, 0) is 0
+0x007b8e60 function Native_607b_ScreenMoveWait_Poll           # 0x607b (poll): args (screen) -> start: into the args word; EAX it; poll: 5 once MsScreenMoveCheck(screen, 0) (0x007bbfc0) is 0; ported in native_chr (script round 12); name from poll: 5 once MsScreenMoveCheck(screen, 0) is 0
 0x007b8e80 function Native_Cam_605c            # 0x605c: returns 0x007bb8c0(w, a, s, 0, 1); ported in native_cam
 0x007b8ea0 function Native_CamSuspend            # 0x6000: args (worker) -> camera handle; marks that worker's camera channel suspended (Cam_SetChannelSuspended 0x007c0010, flag 1); worker via Script_GetWorker, handle at worker +0x3c (allocated on demand by Cam_GetHandle 0x007ba780)
 0x007b8f10 function Native_Cam_605d            # 0x605d: returns 0x007bb8c0(w, a, s, 1, 1); ported in native_cam
 0x007b8f30 function Native_CamResume             # 0x6001: args (worker) -> camera handle; same as 0x6000 with flag 0 (0x007c0010); scripts push a worker index (e.g. 2)
-0x007b8fa0 function Native_6066                # 0x6066: no args -> the shake with (0, 2); ported in native_chr (script round 12)
-0x007b8fc0 function Native_6067                # 0x6067: no args -> the shake with (1, 2); ported in native_chr (script round 12)
+0x007b8fa0 function Native_6066_CamFocusShakeKind2                # 0x6066: no args -> the shake with (0, 2); ported in native_chr (script round 12); name from dump: MsAtelCameraShake(.., side 0, kind 2)
+0x007b8fc0 function Native_6067_CamEyeShakeKind2                # 0x6067: no args -> the shake with (1, 2); ported in native_chr (script round 12); name from dump: MsAtelCameraShake(.., side 1, kind 2)
 0x007b8fe0 function Native_Cam_6076            # 0x6076: 0x007ba950(); 0. Not a function start in the dump yet; ported in native_cam
-0x007b8ff0 function Native_6069                # 0x6069: no args -> MsAtelCameraShake(worker, args, stack, 0, 3) (0x007bb8c0); ported in native_chr (script round 12)
+0x007b8ff0 function Native_6069_CamFocusShakeKind3                # 0x6069: no args -> MsAtelCameraShake(worker, args, stack, 0, 3) (0x007bb8c0); ported in native_chr (script round 12); name from MsAtelCameraShake(.., side 0, kind 3)
 0x007b9010 function Native_CamSetRoll            # 0x603a: args (degrees) -> cam; 0x007bfa80 stores radians in the camera's +0xc94 (eye half's roll channel)
-0x007b9090 function Native_606a # 0x606a: MsAtelCameraShake(worker, args, stack, 1, 3)'s EAX; ported in native_mods (script round 19); name ours
+0x007b9090 function Native_606a_CamEyeShakeKind3 # 0x606a: MsAtelCameraShake(worker, args, stack, 1, 3)'s EAX; ported in native_mods (script round 19); name ours; name from MsAtelCameraShake(.., side 1, kind 3)
 0x007b90b0 function Native_CamSetScreenDepth     # 0x603b: args (depth e.g. 404, 624, 1024) -> cam; debug string "MsCameraSetScrDpt"; 0x007bfbd0 (projection distance, i.e. zoom/FOV)
-0x007b9150 function Native_606c                # 0x606c: no args -> the shake with (0, 4); ported in native_chr (script round 12)
-0x007b9170 function Native_606d # 0x606d: MsAtelCameraShake(.., 1, 4)'s EAX; ported in native_mods (script round 19); name ours
-0x007b9190 function Native_6077_ResultF          # native 0x6077 float handler (g_NativeTables group 6 entry 0x77, ffx-script native_counts); 8 calls in the shipped scripts; calls MsNearRag; name by id; ported in native_chr (script round 13)
-0x007b91d0 function Native_606f # 0x606f: MsAtelCameraShake(.., 0, 5)'s EAX; ported in native_mods (script round 19); name ours
-0x007b91f0 function Native_6078                # 0x6078 (float): no args -> jumps to 0x007bd510(worker, args, stack) (ST0); ported in native_chr (script round 12)
-0x007b9200 function Native_6070 # 0x6070: MsAtelCameraShake(.., 1, 5)'s EAX; ported in native_mods (script round 19); name ours
+0x007b9150 function Native_606c_CamFocusShakeKind4                # 0x606c: no args -> the shake with (0, 4); ported in native_chr (script round 12); name from dump: MsAtelCameraShake(.., side 0, kind 4)
+0x007b9170 function Native_606d_CamEyeShakeKind4 # 0x606d: MsAtelCameraShake(.., 1, 4)'s EAX; ported in native_mods (script round 19); name ours; name from MsAtelCameraShake(.., side 1, kind 4)
+0x007b9190 function Native_6077_CamGetRoll_ResultF          # native 0x6077 float handler (g_NativeTables group 6 entry 0x77, ffx-script native_counts); 8 calls in the shipped scripts; calls MsNearRag; name by id; ported in native_chr (script round 13); name from dump: MsCameraGetRollNow (g_Camera +0xc90) -> MsNearRag, radians to degrees
+0x007b91d0 function Native_606f_CamFocusShakeKind5 # 0x606f: MsAtelCameraShake(.., 0, 5)'s EAX; ported in native_mods (script round 19); name ours; name from MsAtelCameraShake(.., side 0, kind 5)
+0x007b91f0 function Native_6078_CamGetScreenDepth                # 0x6078 (float): no args -> jumps to 0x007bd510(worker, args, stack) (ST0); ported in native_chr (script round 12); name from MsCameraGetScrDpt; getter twin of Native_CamSetScreenDepth
+0x007b9200 function Native_6070_CamEyeShakeKind5 # 0x6070: MsAtelCameraShake(.., 1, 5)'s EAX; ported in native_mods (script round 19); name ours; name from MsAtelCameraShake(.., side 1, kind 5)
 0x007b9220 function Native_CamSetPos             # 0x6002: args (x, y, z) floats -> 0; sets the camera eye position (side 1) via Cam_SetPos 0x007bf940; side 1 = "cam", side 0 = "ref" per the debug dump "ref%s\ncam%s" in 0x007d2430; a few hard-coded per-map fixes
-0x007b9240 function Native_6072 # 0x6072: MsAtelCameraShake(.., 0, 6)'s EAX; ported in native_mods (script round 19); name ours
+0x007b9240 function Native_6072_CamFocusShakeKind6 # 0x6072: MsAtelCameraShake(.., 0, 6)'s EAX; ported in native_mods (script round 19); name ours; name from MsAtelCameraShake(.., side 0, kind 6)
 0x007b9260 function Native_CamGetPos             # 0x6003: args (&x, &y, &z) variable refs -> 0; stores the eye position (side 1) through Script_VarAddress into three script vars (Cam_GetPos 0x007bd420)
-0x007b9280 function Native_6073 # 0x6073: MsAtelCameraShake(.., 1, 6)'s EAX; ported in native_mods (script round 19); name ours
+0x007b9280 function Native_6073_CamEyeShakeKind6 # 0x6073: MsAtelCameraShake(.., 1, 6)'s EAX; ported in native_mods (script round 19); name ours; name from MsAtelCameraShake(.., side 1, kind 6)
 0x007b92a0 function Native_6085 # 0x6085: 0x007ba460(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours
-0x007b92c0 function Native_6081                # 0x6081: no args -> the shake with (0, 7); ported in native_chr (script round 12)
+0x007b92c0 function Native_6081_CamFocusShakeKind7                # 0x6081: no args -> the shake with (0, 7); ported in native_chr (script round 12); name from dump: MsAtelCameraShake(.., side 0, kind 7)
 0x007b92e0 function Native_CamSetPolar           # 0x6004: args (theta deg, phi deg, len) -> 0; sets the eye (side 1) in polar form around its reference, degrees * pi/180 (Cam_SetPolar 0x007bf700; "theta,phi,len" in the camera dump)
-0x007b9300 function Native_6082                # 0x6082: no args -> the shake with (1, 7); ported in native_chr (script round 12)
+0x007b9300 function Native_6082_CamEyeShakeKind7                # 0x6082: no args -> the shake with (1, 7); ported in native_chr (script round 12); name from dump: MsAtelCameraShake(.., side 1, kind 7)
 0x007b9320 function Native_Cam_6005            # 0x6005: 0x007bb5d0(w, a, s, 1, -1); 0; ported in native_cam
 0x007b9340 function Native_Cam_6083            # 0x6083: returns 0x007bb8c0(w, a, s, 0, 8); ported in native_cam
 0x007b9360 function Native_Cam_6006            # 0x6006: 0x007bb410(w, a, s, 1, -1); 0; ported in native_cam
 0x007b9380 function Native_Cam_6084            # 0x6084: returns 0x007bb8c0(w, a, s, 1, 8); ported in native_cam
 0x007b93a0 function Native_Cam_6007            # 0x6007: 0x007bb410(w, a, s, 1, 0); 0; ported in native_cam
 0x007b93c0 function Native_Cam_6008            # 0x6008: 0x007bb410(w, a, s, 1, 1); 0; ported in native_cam
-0x007b93e0 function Native_6009 # 0x6009: 0x007bab90(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours
+0x007b93e0 function Native_6009_CamSetTarget # 0x6009: 0x007bab90(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraFocus(side 1) -> MsCameraSetAtelFocus; eye twin of Native_CamRefSetTarget (side 0)
 0x007b9400 function Native_Cam_603c            # 0x603c: 0x007bac40(w, a, s, 1); 0; ported in native_cam
-0x007b9420 function Native_605e                # 0x605e: no args -> 0x007bb840(..., 1); 0; ported in native_chr (script round 12)
+0x007b9420 function Native_605e_ScreenShakeKind1                # 0x605e: no args -> 0x007bb840(..., 1); 0; ported in native_chr (script round 12); name from MsAtelScreenShake(.., 1) -> MsScreenShake kind 1
 0x007b9440 function Native_600a                # 0x600a: no args -> 0x007bb2b0(..., 1, 0); 0; ported in native_chr (script round 12)
-0x007b9460 function Native_6068 # 0x6068: MsAtelScreenShake(worker, args, stack, 2) (0x007bb840); 0; ported in native_mods (script round 19); name ours
-0x007b9480 function Native_600b # 0x600b: 0x007bb2b0(worker, args, stack, 1, 1); 0; ported in native_mods (script round 19); name ours
+0x007b9460 function Native_6068_ScreenShakeKind2 # 0x6068: MsAtelScreenShake(worker, args, stack, 2) (0x007bb840); 0; ported in native_mods (script round 19); name ours; name from MsAtelScreenShake(.., 2)
+0x007b9480 function Native_600b_CamAddLineArea # 0x600b: 0x007bb2b0(worker, args, stack, 1, 1); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraLineFilter(side 1, kind 1): eye twin of Native_CamRefAddLineArea (side 0, kind 1)
 0x007b94a0 function Native_Cam_606b            # 0x606b: 0x007bb840(w, a, s, 3); 0; ported in native_cam
 0x007b94c0 function Native_600c # 0x600c: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 0); 0; ported in native_mods (script round 19); name ours
-0x007b94e0 function Native_606e                # 0x606e: no args -> 0x007bb840(..., 4); 0; ported in native_chr (script round 12)
-0x007b9500 function Native_600d # 0x600d: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 1); 0; ported in native_mods (script round 19); name ours
+0x007b94e0 function Native_606e_ScreenShakeKind4                # 0x606e: no args -> 0x007bb840(..., 4); 0; ported in native_chr (script round 12); name from MsAtelScreenShake(.., 4)
+0x007b9500 function Native_600d_CamAddCircleArea # 0x600d: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 1); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraRefAddCircleArea(side 1, kind 1): eye twin of Native_CamRefAddCircleArea (0, 1)
 0x007b9520 function Native_Cam_600f            # 0x600f: 0x007bed10(cam, 1); the handle; ported in native_cam
 0x007b9580 function Native_Cam_6071            # 0x6071: 0x007bb840(w, a, s, 5); 0; ported in native_cam
 0x007b95a0 function Native_600e # 0x600e: (on): 0x007bf1a0(cam, 1, on & 1); the camera handle; ported in native_mods (script round 19); name ours
-0x007b9610 function Native_6074                # 0x6074: no args -> 0x007bb840(worker, args, stack, 6); 0; ported in native_chr (script round 12)
-0x007b9630 function Native_6089 # 0x6089: (p8, p7, p6, p5, p4 f, p3, p2 f, p1): MsScreenShake2(p8, p7, 9, p6, p5, p4, p3, p2, p1) (0x007c57b0); 0; ported in native_mods (script round 19); name ours
+0x007b9610 function Native_6074_ScreenShakeKind6                # 0x6074: no args -> 0x007bb840(worker, args, stack, 6); 0; ported in native_chr (script round 12); name from MsAtelScreenShake(.., 6)
+0x007b9630 function Native_6089_ScreenShakeKind9 # 0x6089: (p8, p7, p6, p5, p4 f, p3, p2 f, p1): MsScreenShake2(p8, p7, 9, p6, p5, p4, p3, p2, p1) (0x007c57b0); 0; ported in native_mods (script round 19); name ours; name from MsScreenShake2(p8, p7, 9, ...): screen shake, "kind-9 springs"
 0x007b96c0 function Native_CamMove               # 0x6010: args (frames) -> 0; starts the eye (side 1) moving to its set position over n frames, linear (Cam_StartMove 0x007bde50, mode 0)
 0x007b9730 function Native_Cam_6011            # 0x6011: (frames): MsCameraMoveFrame(cam, 1, 1, frames, 1); 0; ported in native_cam
 0x007b97a0 function Native_Cam_605f            # 0x605f: 0x007c4f50(cam, 0); 0; ported in native_cam
@@ -6570,34 +6570,34 @@
 0x007b9870 function Native_6013                # 0x6013: args (frames) -> MsCameraMoveFrame(cam, 1, 1, frames, 3) (0x007bde50); 0; ported in native_chr (script round 12)
 0x007b98e0 function Native_Cam_6060            # 0x6060: 0x007c4f50(cam, 1); 0; ported in native_cam
 0x007b9940 function Native_CamMoveEased          # 0x6014: args (accel frames, hold frames, decel frames, curve?) -> 0; eye move, total = a+b+c frames, type 2 (Cam_StartMoveEased 0x007bd860, mode 0); scripts push e.g. 20,30,20,0
-0x007b9960 function Native_6061                # 0x6061: args (v) -> MsScreenResetShake(v) (0x007c56c0); ported in native_chr (script round 12)
+0x007b9960 function Native_6061_ScreenResetShake                # 0x6061: args (v) -> MsScreenResetShake(v) (0x007c56c0); ported in native_chr (script round 12); name from MsScreenResetShake(v)
 0x007b9980 function Native_CamMoveEased1         # 0x6015: like 0x6014 but mode byte 1 (side +1); ?mode 1 = relative/continuous move
 0x007b99a0 function Native_Cam_6063            # 5 once 0x007c4f10(cam, 1) is 0; ported in native_cam
 0x007b9a00 function Native_Cam_6017            # 0x6017: 0x007bb520(w, a, s, 1); 0; ported in native_cam
 0x007b9a20 function Native_Cam_6062            # 5 once 0x007c4f10(cam, 0) is 0; ported in native_cam
-0x007b9a80 function Native_6018 # 0x6018: 0x007bb210(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours
+0x007b9a80 function Native_6018_CamSetDir # 0x6018: 0x007bb210(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraDirVector(side 1) -> MsCameraSetDirVector
 0x007b9aa0 function Native_Cam_6064            # (id) into the args word; EAX is the id; ported in native_cam
 0x007b9ac0 function Native_Cam_6019            # 0x6019: 0x007bec90(cam, 1); the handle; ported in native_cam
 0x007b9b20 function Native_Cam_6064_Poll       # 0x6064 poll: 5 once 0x007c5680(args[0]) is 0; ported in native_cam
 0x007b9b40 function Native_CamMoveFinish         # 0x6016: no args -> camera handle; stops the eye's interpolation and applies the target position now (Cam_FinishMove 0x007bed60, side 1)
 0x007b9be0 function Native_CamWait               # 0x601a (poll slot only): no args; done (5) once the eye stops moving (Cam_IsMoving 0x007bdd20 == 0); strings "CameraWaitStart!", "CameraWaitExec: Frame = %d!"
-0x007b9ca0 function Native_601b                # 0x601b: no args -> Cam_IsMoving(cam, 1) (0x007bdd20); ported in native_chr (script round 12)
+0x007b9ca0 function Native_601b_CamIsMoving                # 0x601b: no args -> Cam_IsMoving(cam, 1) (0x007bdd20); ported in native_chr (script round 12); name from Cam_IsMoving(cam, 1): bits 1 interpolating, 2 busy
 0x007b9d00 function Native_CamRefSetPos          # 0x6020: args (x, y, z) -> 0; sets the camera reference/look-at point (side 0), same body as 0x6002 with side 0 (0x007bb6a0)
 0x007b9d20 function Native_Cam_6046            # 0x6046: returns 0x007bb970(w, a, s, 1); ported in native_cam
 0x007b9d40 function Native_Cam_6021            # 0x6021: 0x007ba3c0(w, a, s, 0); 0; ported in native_cam
 0x007b9d60 function Native_Cam_6047            # 0x6047: returns 0x007bb970(w, a, s, 0); ported in native_cam
 0x007b9d80 function Native_6086 # 0x6086: 0x007ba460(worker, args, stack, 0); 0; ported in native_mods (script round 19); name ours
 0x007b9da0 function Native_Cam_6048            # 0x6048: MsCameraGetID(cam) == cam clears g_BtlSplines[1]; the handle; ported in native_cam
-0x007b9e10 function Native_6022 # 0x6022: 0x007bb5d0(worker, args, stack, 0, 0); 0; ported in native_mods (script round 19); name ours
+0x007b9e10 function Native_6022_CamRefSetPolar # 0x6022: 0x007bb5d0(worker, args, stack, 0, 0); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraPolar(side 0, add 0) -> Cam_SetPolar; ref twin of Native_CamSetPolar
 0x007b9e30 function Native_CamPathAddEye         # 0x6049: () -> cam; 0x007baac0(cam, 1): appends the eye's yaw/pitch/distance and roll to path list 1 (0x01136b60, max 32), used by the path move 0x007ba020 (>= 3 points)
-0x007b9e90 function Native_6023 # 0x6023: 0x007bb5d0(worker, args, stack, 0, -1); 0; ported in native_mods (script round 19); name ours
+0x007b9e90 function Native_6023_CamRefAddPolar # 0x6023: 0x007bb5d0(worker, args, stack, 0, -1); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraPolar(side 0, -1); dump: nonzero add -> Cam_AddPolar
 0x007b9eb0 function Native_Cam_604a            # 0x604a: as 0x6048 for g_BtlSplines[0]; ported in native_cam
 0x007b9f20 function Native_6024 # 0x6024: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, -1); 0; ported in native_mods (script round 19); name ours
 0x007b9f40 function Native_CamPathAddFocus       # 0x604b: () -> cam; 0x007baac0(cam, 0): appends the focus point to path list 0
 0x007b9fa0 function Native_6025 # 0x6025: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 0); 0; ported in native_mods (script round 19); name ours
 0x007b9fc0 function Native_6026 # 0x6026: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 1); 0; ported in native_mods (script round 19); name ours
 0x007b9fe0 function Native_CamRefSetTarget       # 0x6027: args (target, bone?, y offset) -> 0; ref (side 0) follow mode 3: +0xc = target, +0xe = bone, offset (0,y,0) (0x007beeb0); scripts push (0, -1, y); ?target/bone meaning
-0x007ba000 function Native_603d # 0x603d: 0x007bac40(worker, args, stack, 0); 0; ported in native_mods (script round 19); name ours
+0x007ba000 function Native_603d_CamRefSetYaw # 0x603d: 0x007bac40(worker, args, stack, 0); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraYaw(side 0) -> MsCameraSetAtelYaw(cam, side, yaw, pitch, length)
 0x007ba020 function Native_Cam_6059            # 0x6059: (path, a): focus along path (0/1 battle spline lists, else a variable): 0x007bfe70(cam, 0, path, 0.0, a); 0; ported in native_cam
 0x007ba0e0 function Native_Cam_6028            # 0x6028: 0x007bb2b0(w, a, s, 0, 0); 0; ported in native_cam
 0x007ba100 function Native_Cam_605a            # 0x605a: (path, t, a): as 0x6059 from t; ported in native_cam
@@ -6630,7 +6630,7 @@
 0x007bb370 function MsAtelCameraRefAddCircleArea_007bb370 # structure: as MsAtelCameraEyeAddArea_007bb410, pops the floats and adds a circle constraint through 0x007bf1f0; callers Native_CamRefAddCircleArea and three more; name ours; (worker, _, stack, side, kind): three floats a, b, c popped -> MsCameraRefAddCircleArea_007bf1f0(cam, side, kind, c, b, a); ported (ffx_battle::camera_native, battle round 29)
 0x007bb410 function MsAtelCameraEyeAddArea_007bb410 # structure: gets/caches the worker's camera (AtelGetCameraWorkAdrs, MsAtelGetCameraID), pops six floats and adds an eye constraint: kind 4 through 0x007bf330, kinds 5/6 through 0x007bf420 (docs/formats/script.md, natives 0x6006-0x6008); callers Native_Cam_6006/6007/6008 and three more; name ours; (worker, _, stack, side, short): six floats a..f popped; short < 0: MsCameraSetAimPolar_007bf330(cam, side, f, e, d*pi/180, c, b, a), else MsCameraSetAimPolar2_007bf420(cam, side, short, f, e, d, c, b, a); ported (ffx_battle::camera_native, battle round 29)
 0x007bb520 function MsAtelCameraMoveDivide_007bb520 # ours: camera native (worker, _, stack, side): four floats a..d popped -> MsCameraMoveDivide(cam, side, d, c, b, a); ported (ffx_battle::camera_native, battle round 29)
-0x007bb5d0 function MsAtelCameraPolar_007bb5d0 # ours: (worker, _, stack, side, add) pops r, b, a (degrees) to Cam_SetPolar / Cam_AddPolar(camera, side, rad(a), rad(b), r); callers Native_CamSetPolar, Native_Cam_6005, Native_6022/6023; ported (ffx_battle::camera_native, battle round 33)
+0x007bb5d0 function MsAtelCameraPolar_007bb5d0 # ours: (worker, _, stack, side, add) pops r, b, a (degrees) to Cam_SetPolar / Cam_AddPolar(camera, side, rad(a), rad(b), r); callers Native_CamSetPolar, Native_Cam_6005, Native_6022_CamRefSetPolar/6023; ported (ffx_battle::camera_native, battle round 33)
 0x007bb6a0 function setCameraMatrixToPhyreScene # fh switch:cg2 0x71003a0fe0; (worker, _, stack, side) -> MsCameraSetRect's eax: pops z, y, x into a frame vector (4th word unwritten) and three level fixes; ported (ffx_battle::camera_native, battle round 33)
 0x007bb840 function MsAtelScreenShake            # structure: script-side screen shake: pops int, int, int, float, int from the Atel stack and calls MsScreenShake; its six callers are the shake natives (Native_Cam_606b, Native_Cam_6071, ...); the screen twin of MsAtelCameraShake next to it; name ours; (worker, _, stack, kind) -> 0: ints a, b, c, float f, ints which, screen popped -> MsScreenShake(screen, which, kind, f, c, b, a); ported (ffx_battle::camera_native, battle round 29)
 0x007bb8c0 function MsAtelCameraShake            # structure: script-side camera shake: gets/caches the worker's camera (AtelGetCameraWorkAdrs, MsAtelGetCameraID(5, ...)), pops int, int, int, float, int from the Atel stack and calls MsCameraShake(cam, side, mode, ...); its 16 callers 0x007b8e80.. are the camera shake natives passing constant side/mode; name ours (inlined on the Switch); (worker, _, stack, side, kind) -> cam: ints a, b, c, float f, int which popped -> MsCameraShake(cam, side, which, kind, f, c, b, a); ported (ffx_battle::camera_native, battle round 29)
@@ -6653,12 +6653,12 @@
 0x007bc0e0 function MsScreenOffsetID             # layout: alphabetical run between MsScreenOffset and MsScreenProcess (1 unnamed in the gap); Switch 0x71003a2030 MsScreenOffsetID is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (id, x, y) -> eax g_BtlScreen (or the current request): [g_BtlScreen] +0x30/+0x34 = x, y for the camera's current request; ported (ffx_battle::screen, battle round 25)
 0x007bc110 function MsScreenProcess           # cdecl(camera) -> 1 for camera >= 3 (signed), -1 for a screen off, else 0: g_CameraSelected -1 then the screen's camera; magics 0x98/0x259 on screen 1 with screen 1 off: graphicCameraSetWorldMatrixSub(0, 0); g_Camera, g_BtlScreen; each side: position +0x40 = saved +0x80, centre +0x60 = (size - display) / 2, links +0xc2 (1 size, 2 corner, 3 centring after), four MsCameraMoveCalc lanes +0xdc; two shakes +0x16c; positions/centres truncated (ftol); view: override (MsScreenMatrix, MsCameraMatrix of the override eye/look-at/up/roll), camera matrices on (screen offset only), else near plane (magic 0x21c map 0xd0), MsCameraMatrix of the camera's eye +0x65c and look-at +0x40 (levels 0x1505/0x822/0x1883 with 0x00c421e8 and 0x00c421e4 negative: squared lengths within 0.01..1e9), graphicScreenSetOffset/DttOffset, Cam_Apply around MagicFile_NeedRestoreCamera's saved matrices; camera focus +0xca8/+0xcac.. into the screen +0xd0.. and Sg_SetFocus/Sg_EnFocus; was Cam_Update; ported (ffx_battle::screen, battle round 27; runs inside the gfx::live wrapper, the hook table's MsScreenProcess entry)
 0x007bc720 function MsScreenResetOffset       # fh v3:exact 0x007bc6a0
-0x007bc750 function Cam_SetScreenVector2_007bc750 # ours: (screen, x, y, z, w) Native_6050's twin of Cam_SetScreenVector: screens 0-2, the i32s as f32 into g_Screens+0x90, through g_Ee_GprMove into +0x50; eax the last word; ported (ffx_battle::camera, battle round 33)
+0x007bc750 function Cam_SetScreenVector2_007bc750 # ours: (screen, x, y, z, w) Native_6050_CamSetScreenVector2's twin of Cam_SetScreenVector: screens 0-2, the i32s as f32 into g_Screens+0x90, through g_Ee_GprMove into +0x50; eax the last word; ported (ffx_battle::camera, battle round 33)
 0x007bc7f0 function MsSetScreen               # fh v3:exact 0x007bc770
-0x007bc870 function Cam_SetScreenCameraNo_007bc870 # ours: (screen, camera): screen <= 2 (unsigned): byte +0xc1 (the camera Cam_SetScreenCamera sets) of screen 0x01137000 + screen*0x1c0 = (u8)camera; masked copy of Cam_SetScreenCameraOn (+0xc0); caller Native_6075; ported (ffx_battle::camera, battle round 29)
-0x007bc890 function Cam_SetScreenVector        # ours: cdecl(screen, x, y, z, w, v): screen <= 2 (unsigned): f32 of the four i32s (fild) into g_Screens[screen] +0x80..+0x8c, copied through g_Ee_GprMove (0x00c8f588) into +0x40..+0x4c, v into +0xc4, eax v; else nothing (eax the caller's); caller Native_604e; ported (ffx_sg::camera, main round 16)
-0x007bc930 function Cam_SetScreenCameraOn     # (screen, on): byte +0xc0 of g_Screens[screen] for screens 0..2 (MsScreen's per-frame code takes g_Camera from the screen's camera +0xc1 when it is set); caller Native_604e; name ours; ported (ffx_sg::camera)
-0x007bc950 function Cam_SetScreenCamera       # (screen, on, camera): bytes +0xc0 and +0xc1 (the camera, g_DebugCamera for screen 0) of g_Screens[screen] for screens 0..2; caller Native_604f; name ours; ported (ffx_sg::camera)
+0x007bc870 function Cam_SetScreenCameraNo_007bc870 # ours: (screen, camera): screen <= 2 (unsigned): byte +0xc1 (the camera Cam_SetScreenCamera sets) of screen 0x01137000 + screen*0x1c0 = (u8)camera; masked copy of Cam_SetScreenCameraOn (+0xc0); caller Native_6075_ScreenSetCamNo; ported (ffx_battle::camera, battle round 29)
+0x007bc890 function Cam_SetScreenVector        # ours: cdecl(screen, x, y, z, w, v): screen <= 2 (unsigned): f32 of the four i32s (fild) into g_Screens[screen] +0x80..+0x8c, copied through g_Ee_GprMove (0x00c8f588) into +0x40..+0x4c, v into +0xc4, eax v; else nothing (eax the caller's); caller Native_604e_CamSetScreenVector; ported (ffx_sg::camera, main round 16)
+0x007bc930 function Cam_SetScreenCameraOn     # (screen, on): byte +0xc0 of g_Screens[screen] for screens 0..2 (MsScreen's per-frame code takes g_Camera from the screen's camera +0xc1 when it is set); caller Native_604e_CamSetScreenVector; name ours; ported (ffx_sg::camera)
+0x007bc950 function Cam_SetScreenCamera       # (screen, on, camera): bytes +0xc0 and +0xc1 (the camera, g_DebugCamera for screen 0) of g_Screens[screen] for screens 0..2; caller Native_604f_CamSetScreenCamera; name ours; ported (ffx_sg::camera)
 0x007bc980 function Cam_Apply                    # cdecl(camera): field of view from the camera's screen depth (448 / (2 d), atan) into the renderer, then Render_SetView(0x02311440); Cam_Update calls it only for channel cameras, not the override; exactly: screen 0x01137010 + 0x1c0 cam: h = f32(512 / (2 +0)), w = f32(448 / (2 +4)), fov = f32(2 f32(atan(w / f32 +0xc))) (atan(0.75 w / c) when 0x01136fc0 is 2), aspect f32(h / w) to graphicCameraSetFOVy/AspectRatio by pointer; magic 0x98/0x259 on camera 1 with byte 0x01137280 = 1: graphicCameraSetWorldMatrixSub(g_CameraMatrix, 1); +0x78 == 256: SplitScreenStart(0), camera 1 SplitScreenSetCamera(m); else 0x00638d20(); then graphicCameraSetWorldMatrix(m); no caller reads eax; ported in ffx_sg::camera (main round 15)
 0x007bcab0 function MsCameraMoveStep_007bcab0 # ours: (side, other, chan, step) -> eax: step 1 first MsVectorPolar2Rect(side+0x50, side+0x8c, yaw +0x60, pitch +0x64, length +0x68; the radius vector's other words its caller's esi, ebx, ebp); side +0x50..+0x58 -> other +0x30..+0x38; chan+0x1d set: cleared and spline_get_near_point_init(chan+8, x, y, z, chan+0x1e); chan+4 set and +5 clear: step 0 when FUN_007c0120(side, chan) != 0; other+0x6c != 0 (NaN too): side+0x54 += it, returns 0, else the step; MsSetCheckChange's move step; ported (ffx_battle::camera, battle round 27)
 0x007bcb80 function MsCameraSplineMove_007bcb80 # ours: (id, side_no, _, side, mv): mv+0x68 clamped to 0..1 (NaN kept; clamped flag), the spline (mv+8) there (TkMtCalcSpline3 when mv+0x1c & 3 == 3, else TkMtCalcSpline) and with mv+0x1c bit 2 its tangent (0x0088aba0 / TkMtCalcSplineTangent) added via MsAddPoint when mv+0x6c >= 0, else MsSubPoint; g_Ee_GprMove and side+0x50 = the point, MsCameraSetRoll(id, w), side+0x6c = 0, mv+0x68 += mv+0x6c; MsCameraSetRect(id, side_no, side+0x50) when clamped or speed == 0; third argument unread; caller MsCameraProcess; ported (ffx_battle::camera, battle round 27)
@@ -6675,7 +6675,7 @@
 0x007bd420 function Cam_GetPos                   # (camera, side, &x, &y, &z): side position at camera +0x50
 0x007bd470 function MsCameraGetPosNow         # fh v3:exact 0x007bd3f0
 0x007bd4b0 function Cam_GetRefPos_007bd4b0 # ours: (cam, side, &x, &y, &z): Cam_GetPos' twin for the side's point at +0x40 (0x01137580 + (u8)cam*0xda0 + (side&1)*0x61c), null outputs skipped, eax the side offset; caller FUN_007ba460; ported (ffx_battle::camera, battle round 29)
-0x007bd500 function MsCameraGetRollNow_007bd500 # ours: () -> ST0 [g_Camera] + 0xc90 (the roll now, MsCameraSetRoll's); caller Native_6077_ResultF; ported (ffx_battle::misc, battle round 29)
+0x007bd500 function MsCameraGetRollNow_007bd500 # ours: () -> ST0 [g_Camera] + 0xc90 (the roll now, MsCameraSetRoll's); caller Native_6077_CamGetRoll_ResultF; ported (ffx_battle::misc, battle round 29)
 0x007bd510 function MsCameraGetScrDpt         # fh v3:bsim1.00 0x007bd490
 0x007bd520 function MsCameraGetSplineAddress     # layout: alphabetical run between MsCameraGetScrDpt and MsCameraIDcheck (1 unnamed in the gap); Switch 0x710039dcc0 MsCameraGetSplineAddress is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007bd560 function MsCameraIDcheck           # fh v3:exact 0x007bd4e0

@@ -81,7 +81,7 @@ pub mod bridge {
     pub const SCREEN_VECTOR_WORD: u32 = 0xc4;
 
     /// `Cam_SetScreenVector(screen, x, y, z, w, v)` (`0x007bc890`, name
-    /// ours; `Native_604e` calls it): for screens 0..=2 (unsigned), the
+    /// ours; `Native_604e_CamSetScreenVector` calls it): for screens 0..=2 (unsigned), the
     /// four `i32`s as `f32` (`fild`, `fstp dword`) into the screen's
     /// `+0x80`, copied through [`EE_GPR_MOVE`] and into `+0x40`, and `v`
     /// into `+0xc4`. `eax` is `v` then; for another screen the original
