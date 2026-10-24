@@ -10345,3 +10345,180 @@ pub fn atel_battle_end_sep_step(h: &mut impl ffx_bridge::Host, state: u32) -> u3
     h.write(ctx_at, old);
     r
 }
+
+/// `Atel_WorkerPlaceChr_00866800(worker, level)` (name ours; the ctrl
+/// work's `+0x58` worker callback `AtelSetUpCtrlWork` installs, called by
+/// `0x008642f2`, which drops `EAX`): only for workers of type 1. One with
+/// a character (`+0x9c`) and place flag bit 0 (`u16 +0x38`) puts it at
+/// its position (`+0x558`, `f32` x, y, z): `TkCh_SetPos` for event model
+/// `0x20e5` in level `0x1cd6` (current or previous name hash) with the
+/// save event's `u16 +0xbec` in `0x5be..=0x5cd`, else `Ch_SetPos3` with
+/// `y - 0.1` (`f64 0x00b921f0`, rounded to `f32` in the original's
+/// `[ebp+8]` argument slot); then `Ch_ClothReset` and the bit cleared.
+/// `Atel_SyncWorkerPos_00869e40(worker, level)` follows; with flag bit 2
+/// and the current ctrl work's byte `+3` bits 0 or 1, `Atel_SyncChrDir`
+/// and the direction block's `+0x20` copied to `+0x34` (block `+0x284`
+/// for types 5 and 6, `+0x558` otherwise, address 0 for type 4: the
+/// original reads `[0x20]` there and faults; the type was 1 on entry).
+/// `slot`: the argument slot the original stores into (`[ebp+8]`).
+pub fn atel_worker_place_chr(h: &mut impl ffx_bridge::Host, w: u32, level: u32, slot: u32) {
+    /// The save event's `u16 +0xbec`, through `TkGetSaveEventAddress`.
+    fn scene_count(h: &mut impl ffx_bridge::Host) -> u16 {
+        let save = host_call(h, MS_GET_SAVE_EVENT_ADDRESS, &[]);
+        h.read::<u16>(save + 0xbec)
+    }
+    if kind(h, w) != 1 {
+        return;
+    }
+    let chr = h.read::<u32>(w + 0x9c);
+    if chr != 0 && h.read::<u8>(w + 0x38) & 1 != 0 {
+        let p = w + 0x558;
+        let event = h.read::<u16>(w + 0xa8) == 0x20e5
+            && (host_call(h, 0x0064_1da0, &[]) == 0x1cd6
+                || host_call(h, 0x0064_27e0, &[]) == 0x1cd6)
+            && scene_count(h) >= 0x5be
+            && scene_count(h) <= 0x5cd;
+        let z = x87::store(x87::load(h.read(p + 8)));
+        let x;
+        let y;
+        let f = if event {
+            y = x87::store(x87::load(h.read(p + 4)));
+            x = x87::store(x87::load(h.read(p)));
+            0x0087_2310
+        } else {
+            let tenth = f64::from_bits(h.read::<u64>(h.rebase(0x00b9_21f0)));
+            h.write(slot, x87::store(x87::sub(x87::load(h.read(p + 4)), tenth)));
+            y = x87::store(x87::load(h.read(slot)));
+            x = x87::store(x87::load(h.read(p)));
+            0x0082_b480
+        };
+        let chr = h.read::<u32>(w + 0x9c);
+        host_call(h, f, &[chr, x, y, z]);
+        let chr = h.read::<u32>(w + 0x9c);
+        host_call(h, 0x0082_4650, &[chr]);
+        let flags = h.read::<u16>(w + 0x38);
+        h.write(w + 0x38, flags & 0xfffe);
+    }
+    host_call(h, 0x0086_9e40, &[w, level]);
+    if h.read::<u8>(w + 0x38) & 4 == 0 {
+        return;
+    }
+    let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    // test byte [ctx + 3], 3
+    if h.read::<u8>(c + 3).trailing_zeros() >= 2 {
+        return;
+    }
+    let block = move_block(h, w);
+    host_call(h, 0x0086_9df0, &[w]);
+    copy_f32(h, block + 0x20, block + 0x34);
+}
+
+/// `0x01325b7c`: set while the battle's event separates are loaded
+/// (`Atel_BattleMusicStep_00862470` unloads the sound effects then).
+const BATTLE_SEPS_LOADED: u32 = 0x0132_5b7c;
+
+/// `Atel_BattleMusicStep_00862470(state)` (name ours; a step callback
+/// pushed at `0x00862451` and by `AtelEventSetUpForBattleMusic`): `EAX` 1
+/// when done. 0 becomes 1; 1 waits for the CD (`GetCD()`, then
+/// `0x00886630()` and `+8(1)` both 0) and becomes 2; 2 loads the event's
+/// separates (`Atel_LoadEventSeps_00866520(ctx +0x48, 0, -1)`, the loaded
+/// flag set) and becomes 3; 3 fades them (`Atel_TranslateBGSeps_00861020(
+/// 0xf, 0x3f, 1)`) and becomes 4 while `0x01326bdd` is set, else is done
+/// (unloading the sound effects, `iSfxUnloadAllData`, once); 4 stops and
+/// clears music `0x8a` unless it plays, and the event's music
+/// (`AtelGetMusicNumber`, not with battle end status bit 10 or for 0x10:
+/// its replay point kept, `0x008869f0`) and becomes 5; 5 waits for the CD
+/// as 1 does and goes on with 6 at once: the battle music stands by
+/// (`SndMusicStandby(TkGetBattleMusicSize(TkGetBattleMusicBuffer()), buf)`)
+/// and it becomes 7; 7 waits for `iMusicSyncStandby` (0) and becomes 8; 8
+/// restarts music 0x10 (stopped and its replay point cleared when it
+/// plays), unloads the sound effects once and becomes 9; 9 is done; 0 past
+/// it.
+pub fn atel_battle_music_step(h: &mut impl ffx_bridge::Host, state: u32) -> u32 {
+    const NOW_PLAY: u32 = 0x0088_63f0;
+    const MUSIC_NUMBER: u32 = 0x0087_3b00;
+    const STOP: u32 = 0x0088_6a60;
+    const CLEAR: u32 = 0x0088_6800;
+    fn cd_ready(h: &mut impl ffx_bridge::Host) -> bool {
+        let cd = host_call(h, 0x0076_d0d0, &[]);
+        if host_call(h, 0x0088_6630, &[]) != 0 {
+            return false;
+        }
+        let ready = h.read::<u32>(cd + 8);
+        h.call(ready, &[1]) == 0
+    }
+    fn unload_once(h: &mut impl ffx_bridge::Host) {
+        let at = h.rebase(BATTLE_SEPS_LOADED);
+        if h.read::<u32>(at) != 0 {
+            h.write(at, 0u32);
+            host_call(h, 0x0067_a4d0, &[]);
+        }
+    }
+    match h.read::<u32>(state) {
+        0 => h.write(state, 1u32),
+        1 => {
+            if cd_ready(h) {
+                h.write(state, 2u32);
+            }
+        }
+        2 => {
+            let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+            h.write(h.rebase(BATTLE_SEPS_LOADED), 1u32);
+            let hdr = h.read::<u32>(c + 0x48);
+            host_call(h, 0x0086_6520, &[hdr, 0, u32::MAX]);
+            h.write(state, 3u32);
+        }
+        3 => {
+            host_call(h, 0x0086_1020, &[0xf, 0x3f, 1]);
+            if h.read::<u8>(h.rebase(0x0132_6bdd)) != 0 {
+                h.write(state, 4u32);
+                return 0;
+            }
+            unload_once(h);
+            return 1;
+        }
+        4 => {
+            if host_call(h, NOW_PLAY, &[]) != 0x8a {
+                host_call(h, STOP, &[0x8a]);
+                host_call(h, CLEAR, &[0x8a]);
+            }
+            if host_call(h, MUSIC_NUMBER, &[]).cast_signed() >= 0
+                && h.read::<u32>(h.rebase(0x0132_6b48)) & 0x400 == 0
+                && host_call(h, MUSIC_NUMBER, &[]) != 0x10
+            {
+                host_call(h, 0x0088_69f0, &[]);
+                let n = host_call(h, MUSIC_NUMBER, &[]);
+                host_call(h, STOP, &[n]);
+                let n = host_call(h, MUSIC_NUMBER, &[]);
+                host_call(h, CLEAR, &[n]);
+            }
+            h.write(state, 5u32);
+        }
+        s @ (5 | 6) => {
+            if s == 5 && !cd_ready(h) {
+                return 0;
+            }
+            let buf = host_call(h, 0x0088_d580, &[]);
+            let size = host_call(h, 0x0088_d570, &[buf]);
+            host_call(h, 0x0088_6a00, &[size, buf]);
+            h.write(state, 7u32);
+        }
+        7 => {
+            if host_call(h, 0x0067_a240, &[]) == 0 {
+                h.write(state, 8u32);
+            }
+        }
+        8 => {
+            if host_call(h, NOW_PLAY, &[]) == 0x10 {
+                host_call(h, STOP, &[0x10]);
+                host_call(h, 0x0088_69e0, &[0x10]);
+            }
+            host_call(h, 0x0088_6a20, &[0x10]);
+            unload_once(h);
+            h.write(state, 9u32);
+        }
+        9 => return 1,
+        _ => {}
+    }
+    0
+}

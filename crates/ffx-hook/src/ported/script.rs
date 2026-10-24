@@ -7310,6 +7310,19 @@ ported! {
     Atel_BattleEndSepStep_00862220 @ 0x0086_2220 => extern "C" fn h_862220(state: u32) -> u32 {
         hp::atel_battle_end_sep_step(&mut mem(), state)
     }
+    /// `Atel_WorkerPlaceChr_00866800(worker, level)`: the ctrl work's
+    /// `+0x58` callback (its dispatcher `0x008642f2` drops `EAX`); the
+    /// `y - 0.1` the original rounds in its own argument slot goes through
+    /// a one-word frame (the caller pops its slots unread).
+    Atel_WorkerPlaceChr_00866800 @ 0x0086_6800 => extern "C" fn h_866800(w: u32, level: u32) {
+        let mut slot = super::StackFrame::<1>::new();
+        hp::atel_worker_place_chr(&mut mem(), w, level, slot.at());
+    }
+    /// `Atel_BattleMusicStep_00862470(state)`: a step callback; done (1)
+    /// or not (0) in `EAX`.
+    Atel_BattleMusicStep_00862470 @ 0x0086_2470 => extern "C" fn h_862470(state: u32) -> u32 {
+        hp::atel_battle_music_step(&mut mem(), state)
+    }
     /// `AtelSetSndCameraPos()`: the matrix in a 16-word frame.
     AtelSetSndCameraPos @ 0x0087_7470 => extern "C" fn h_877470() {
         let mut frame = super::StackFrame::<16>::new();

@@ -17171,3 +17171,179 @@ fn pc6b_battle_end_steps_match_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     pc6b_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// pc round 6 c on one pair: `Atel_WorkerPlaceChr_00866800` (worker types
+/// 0..=7, with and without a character, place and direction flags, event
+/// model 0x20e5 in level 0x1cd6 around the save event's `+0xbec` limits,
+/// the current ctrl work's `+3` bits; floats without signalling NaNs) and
+/// `Atel_BattleMusicStep_00862470` from every state. Every callee is a
+/// stub (a sequence where its result matters), the CD's ready function
+/// the stand-in at `0x00886660`.
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // one block per function; random bytes
+fn pc6c_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    // sequences: 0 graphicLevelGetNameHash, 1 graphicPreviousLevelGetNameHash,
+    // 2 TkGetSaveEventAddress, 3 GetCD, 4 0x00886630, 5 the CD's ready
+    // function, 6 SndGetNowPlayMusic, 7 AtelGetMusicNumber,
+    // 8 TkGetBattleMusicBuffer, 9 TkGetBattleMusicSize, 10 iMusicSyncStandby
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0064_1da0, 0, true),
+            (0x0064_27e0, 0, true),
+            (0x0088_c830, 0, true),
+            (0x0076_d0d0, 0, true),
+            (0x0088_6630, 0, true),
+            (0x0088_6660, 1, true),
+            (0x0088_63f0, 0, true),
+            (0x0087_3b00, 0, true),
+            (0x0088_d580, 0, true),
+            (0x0088_d570, 1, true),
+            (0x0067_a240, 0, true),
+            (0x0087_2310, 4, false),
+            (0x0082_b480, 4, false),
+            (0x0082_4650, 1, false),
+            (0x0086_9e40, 2, false),
+            (0x0086_9df0, 1, false),
+            (0x0086_6520, 3, false),
+            (0x0086_1020, 3, false),
+            (0x0067_a4d0, 0, false),
+            (0x0088_6a60, 1, false),
+            (0x0088_6800, 1, false),
+            (0x0088_69f0, 0, false),
+            (0x0088_6a00, 2, false),
+            (0x0088_69e0, 1, false),
+            (0x0088_6a20, 1, false),
+        ],
+    );
+    let ctx_at = a.rebase(0x0132_6b28);
+    let saved_ctx: u32 = Mem::read(&*a, ctx_at);
+    let other = alloc_both(a, b, 0x240);
+    let save = alloc_both(a, b, 0x1000);
+    let cd = alloc_both(a, b, 0x10);
+    poke(a, b, cd + 8, a.rebase(0x0088_6660));
+    let hdr = alloc_both(a, b, 0x10);
+    let w = alloc_both(a, b, 0x600);
+    let slot = alloc_both(a, b, 4);
+    let state = alloc_both(a, b, 4);
+    for round in 0..400u32 {
+        r27_reset(a, b, &stubs, |s| match s {
+            0 | 1 => [0x1cd6u32, 0x1cd6, 0, 0x1cd7, rng.next()][rng.below(5) as usize],
+            2 => save,
+            3 => cd,
+            4 | 5 | 10 => [0u32, 0, 1, rng.next()][rng.below(4) as usize],
+            6 | 7 => [0x8au32, 0x10, u32::MAX, 0, 5, rng.next()][rng.below(6) as usize],
+            _ => rng.next(),
+        });
+        poke(a, b, ctx_at, other);
+        poke(a, b, other + 3, [0u8, 1, 2, 3, 0xfc][rng.below(5) as usize]);
+        poke(a, b, other + 0x48, rng.next());
+        // the worker
+        let kind = [1u8, 1, 1, 1, 0, 2, 4, 5, 6, 7][rng.below(10) as usize];
+        poke(a, b, hdr, kind);
+        fill_both(a, b, rng, w, 0x600);
+        poke(a, b, w, hdr);
+        poke(
+            a,
+            b,
+            w + 0x9c,
+            [0u32, rng.next(), rng.next()][rng.below(3) as usize],
+        );
+        let flags = rng.next() as u16;
+        poke(
+            a,
+            b,
+            w + 0x38,
+            if rng.below(4) == 0 { flags } else { flags | 1 },
+        );
+        poke(
+            a,
+            b,
+            w + 0xa8,
+            [0x20e5u16, 0x20e5, 0x20e4, rng.next() as u16][rng.below(4) as usize],
+        );
+        for at in [0x558u32, 0x55c, 0x560, 0x578, 0x2a4] {
+            let v = if rng.below(8) == 0 {
+                0.1_f32.to_bits()
+            } else if rng.below(2) == 0 {
+                small5_word(rng)
+            } else {
+                // around 0.1: the f32 constant's f64 shows
+                #[allow(clippy::cast_precision_loss)] // small
+                (rng.below(4000) as f32 / 1000.0 - 2.0).to_bits()
+            };
+            poke(a, b, w + at, v);
+        }
+        let count =
+            [0x5bdu16, 0x5be, 0x5c4, 0x5cd, 0x5ce, rng.next() as u16][rng.below(6) as usize];
+        poke(a, b, save + 0xbec, count);
+        let level = rng.next();
+        poke(a, b, slot, rng.next());
+        // the port's argument slot is ours, the original's on its stack:
+        // the same word in both before the compare (the y it rounds there
+        // reaches Ch_SetPos3's log)
+        clear_stacks(a, b);
+        orig(a, 0x0086_6800, &[w, level]);
+        hp::atel_worker_place_chr(&mut Run(b), w, level, slot);
+        let y: u32 = Mem::read(&*b, slot);
+        Mem::write(a, slot, y);
+        native_no_diff(
+            a,
+            b,
+            &format!("Atel_WorkerPlaceChr {what} {round} kind {kind} count {count:#x}"),
+        );
+        // the battle music step
+        poke(
+            a,
+            b,
+            a.rebase(0x0132_5b7c),
+            [0u32, 1, rng.next()][rng.below(3) as usize],
+        );
+        poke(
+            a,
+            b,
+            a.rebase(0x0132_6bdd),
+            [0u8, 0, 1, rng.next() as u8][rng.below(4) as usize],
+        );
+        poke(a, b, a.rebase(0x0132_6b48), rng.next());
+        let s = rng.below(12);
+        poke(a, b, state, s);
+        r22_case(
+            a,
+            b,
+            0x0086_2470,
+            &[state],
+            true,
+            &format!("Atel_BattleMusicStep {what} {round} state {s}"),
+            |r| hp::atel_battle_music_step(r, state),
+        );
+    }
+    poke(a, b, ctx_at, saved_ctx);
+}
+
+#[test]
+fn pc6c_worker_place_and_battle_music_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_6c0c);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        pc6c_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    pc6c_cases(&mut a, &mut b, &mut rng, "snapshot");
+}
