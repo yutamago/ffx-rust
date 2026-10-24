@@ -5143,6 +5143,17 @@ ported! {
     TkMenuExecScene @ 0x00a7_b460 => extern "C" fn tk_menu_exec_scene(i: u32, handle: u32, out: u32; slots: u32) -> u32 {
         ffx_menu::scene::bridge::tk_menu_exec_scene(&mut mem(), i, handle, out, slots, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkInit()` (from `Sg_MainInit`): `TkGetLang()`'s `eax`.
+    TkInit @ 0x0088_d710 => extern "C" fn tk_init() -> u32 {
+        ffx_menu::start::bridge::tk_init(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuStart(mode)`: the frame's or the task end's `eax`.
+    TkMenuStart @ 0x008a_b030 => extern "C" fn tk_menu_start(mode: u32) -> u32 {
+        // the draw buffer word Sg_GetDBuffDC writes
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        ffx_menu::start::bridge::tk_menu_start(&mut mem(), mode, local, &mut |_, f, a| call_ptr(f, a))
+    }
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry

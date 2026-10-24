@@ -10232,6 +10232,7 @@
 0x00886fc0 function SndSepVolumeFadeOut2 # (id, volume): SqsSeVolumeTranslate(kind, id, volume, 0); Switch name by alphabetical slot; layout: alphabetical run between SndSepVolumeFadeOut and SndSepVolumeTranslate (1 unnamed in the gap); Switch 0x710048dc60 SndSepVolumeFadeOut2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00886ff0 function SndSepVolumeTranslate     # fh v3:bsim1.00 0x00886f50
 0x00887020 function SndSeqIopCommandSendMain  # (): SqsIopCommandSend; a first EIO error during a CD wait switches to the HDD error mode (TkCdReadSync, TkRefreshHDDMode, set_hdd_err); Switch name by alphabetical slot
+0x00887070 function SqsSetCycleMode_thunk      # jmp SqsSetCycleMode (0x0081e900), from TkInit; name ours
 0x00887080 function SndSetEventStatus         # (party, on): g_SndEventMask bit; Switch name by alphabetical slot
 0x008870b0 function SndSetFoot3dStatus        # (party, on): g_SndFoot3dMask bit; Switch name by alphabetical slot
 0x008870e0 function SndSetFootSep             # fh v3:exact 0x00887050
@@ -10255,6 +10256,7 @@
 0x00887450 function SndStandbyBattleWave      # fh v3:exact 0x008873c0
 0x008874d0 function SndStandbyBattleWaveBlock # (data, size < 0x30000): SndStandbyBattleWave's send, then SndSyncWaveTrans(1); Switch name by alphabetical slot
 0x00887550 function SndStandbySepWave         # fh v3:exact 0x008874c0
+0x00887560 function SqsShoutStreamingDataSend_thunk # jmp SqsShoutStreamingDataSend (0x0081ed40), from TkInit; name ours
 0x00887570 function SndStandbyStream          # (id): iVoiceRead(id) (FMOD cmd 0x10), status raised, g_TkSndStandbyVoice = 1; Switch name by alphabetical slot; was Voice_Prepare
 0x008875a0 function SndStartBattleStream      # fh v3:exact 0x00887510
 0x008875d0 function SndStartShoutStream       # (a, b, volume; 0 when voices are off): iShoutStart, SqsShoutStreamingStart, shout busy; Switch name by alphabetical slot
@@ -10483,7 +10485,7 @@
 0x0088d6b0 function TkGetStartMapEventId      # 0x0133085c (TkSetStartMapIndex arg 1); Switch name, alphabetical slot TkGetOutputEncount..TkGetTGS
 0x0088d6c0 function TkGetStartMapEventIndex   # 0x01330860 (TkSetStartMapIndex arg 2); Switch name, alphabetical slot
 0x0088d6d0 function TkGetTGS                  # fh v3:bsim1.00 0x0088d640
-0x0088d710 function TkInit                    # fh v3:exact 0x0088d680
+0x0088d710 function TkInit                    # fh v3:exact 0x0088d680; cdecl() -> TkGetLang() (low byte kept at 0x01330874): Tk boot from Sg_MainInit (refs.py: 1 call 0x00820929): work, debug link (TkIsDebug), vsync callbacks, alarms, pads, save scenes; g_FFXConfig cleared and set (+0xe HDD mode, +0x11 2, +0x13 0x20, +0x14 0xa, +0x17 2, +0xf 0x101, copied back to g_FFXHddMode after SndSetMusicMute(+0xd)); file 4 of dir 0x18 into 0x023cbec0; TOInit, AtelInitTotal; u16 decay table 0x023cbede..0x023cbf60 (0, then 0x1000*0.9^k upwards, top 0x1000); SsSetProjectBase(us) for lang 1..6, SqsSetCycleMode(video mode 0/1); shout stream (file 0), shout streaming data (file 5), battle music (dir 0x26 file 0x10), g_SndStreamTable (dir 0x19 file 0, at least 0x8000, old one freed), wave/music info HDD names, common vibration (file 8), eiAbmLoad; GetCD() table: +0 read(file, buf, 0, 0), +4 position(0), +8 wait(0), +0x10 dir, +0x14 size(file); sizes rounded up to 0x800 signed; g_GsDefDrawEnv2 0 (never) adds printf_cut and the disc wave/music info (dir 0x2c/0x2d); skips the bare rets EmptyStub_0081e400 and TkMenuLoadIcon; ported (ffx_menu::start, small r8)
 0x0088dd60 function TkInitSceneFromSave       # () fade/0x01330854 cleared; no load pending (0x00c33480 -1): 0x01327108 = 1; else the save event block restores map/entrance (+0xba->+0, +0xc2->+2, +0xb8->+0xc then 0, +0xce->+0xd), 0x0133084c = 1; own name
 0x0088df40 function TkInitSaveWork            # fh v3:cg6 0x88deb0; (): MsGetSaveEventAddress record reset for a new game (+0/+0xc/+0x14..+0x1c/+0x24/+0x2c..+0x98/+0xb4/+0xb8/+0xd2/+0xe4/+0xe8 0, +4 -1, +0x20 0xffffff00, byte +0x13 = (b & 1) | 2, +0xd0 2, 56 words +0x10c 0, bytes +0xac.. = 0..7), AtelInitSaveWork, TkRefreshSoundMode, MsSetSaveConfigEnglish(1) when FFXGetAsiaMode_007826a0 (via jmp 0x0086a7f0); eax the last call's; ported in menu round 31
 0x0088e070 function TkInitScene               # fh v3:exact 0x0088dfe0
@@ -10802,6 +10804,7 @@
 0x008a9c50 function TkMenuGetTime             # save u32 +0xbc (play time); Switch name, alphabetical slot before TkMenuGetTimer
 0x008a9c60 function TkMenuGetTimer            # () -> u8 0x01840884; Switch symbol name (BSim)
 0x008a9c70 function TkMenuGetWeapon           # (chr) ply_save u8 +0x2d; Switch name, alphabetical slot
+0x008a9c90 function TkMenuLoadIcon             # (): a bare ret (1 byte), from TkInit; nothing to port; name from the packet
 0x008a9ca0 function TkMenuMainLoop_008a9ca0    # cdecl(mode) -> eax: one frame of the main menu, from TkMenuStart 0x008ab030 (2 calls) while g_MovieFading is set; opens (VRAM/frame buffer saved unless mode high half 0x10000, AtelEnterMenuCallback, MenuMain_Reset/TkMenuMainOpenMode(high, low)), runs, draws and closes on MenuMain_BusyMask 0; Sg_GetDBuffDC(&mode) writes its argument slot; eax the last BusyMask/graphicSetFlipVsnc while open, else TkSyncV(0); ported and hooked small r7 c (ffx_menu::main_loop, menu.rs small7_c); name ours
 0x008aa100 function TkMenuMainActiveMenu      # fh v3:exact 0x008aa0b0
 0x008aa180 function MenuMain_ResetWindowRet   # (window) MenuMain_ResetWindow, returns the window; own name
@@ -10846,7 +10849,7 @@
 0x008aafe0 function TkMenuSetPrevSummon       # (): g_TkMenuCurrentSummonPos - 1, the last before the first; g_TkMenuSummonStep = 0xff
 0x008ab000 function TkMenuSetSP               # (chr, sp) ply u8 +0x3b (MsGetSaveSP reads it); Switch name, alphabetical slot
 0x008ab020 function TkMenuSetScreenX2Flag     # (v) byte 0x01840885 (TkMenuStart, the next slot, sets it to 1); Switch name, alphabetical slot TkMenuSetSP..TkMenuStart
-0x008ab030 function TkMenuStart                  # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004bba20 TkMenuStart, 2 votes, round 3
+0x008ab030 function TkMenuStart                  # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004bba20 TkMenuStart, 2 votes, round 3; cdecl(mode) -> eax: open (g_MovieFading): TkMenuMainLoop_008a9ca0(mode), its eax while still open; closed: g_PauseOn or (after byte 0x01840885 = 1) mode bit 24 -> Pause_Request(mode & 0xffff); else mode &= 0x3fffffff: TkMn2InitWork, memset(0x01340870, 0, 0x500000), TkMn2GetMainPos, shade ratio diff/step 0, g_TkMenuMainTask = sa_task_init2(2, 0x01586f70, 0) (yiAssert "SA TASK MEMORY OVERFLOW" when sa_task_buff_size_get(2) >= 0x8000), player/summon lists, timer and 0x01841c60 = ~Sg_GetDBuffDC word & 1, g_TkMenuFirstReadEnd 0, anti (0, 0, 0x80) off, 0x025d16d0 = 0x83a0, TkCalcImportantListMax, ignore-join 0, g_TkMn2MenuMode = mode, first frame; a closing frame: anti (2, 1, 0x80) on, task +4 called (its eax, 0 without a task), task 0; refs.py: calls 0x008207d8 (Sg_MainCheckMenu), 0x008be85a, 0x008be8e3; ported (ffx_menu::start, small r8)
 0x008ab1e0 function TkMenuSummonEnableMask    # fh v3:bsim1.00+call.cs 0x008ab190 cdecl
 0x008ab1f0 function TkMenuWindowStepFade      # (window) -> 0x1000: menu window fade +0x52 += step +0x54 (16-bit), kept in 0..0x1000
 0x008ab220 function TkMenuGetHelpRatio2       # () -> 0x01840878; Switch symbol name (BSim)
@@ -17414,6 +17417,7 @@
 0x01330832 label    g_TkTGS                   # u8 (TkGetTGS)
 0x01330833 label    g_FFXAsiaMode             # u8: FFXGetAsiaMode / FFXSetAsiaMode
 0x01330844 label    g_GraphicMapId            # the map id graphicIsMapInList tests
+0x01330848 label    g_TkInitDone               # u32 set to 1 by TkInit; name ours
 0x0133084c label g_TkEventJumpRequest # 1: TkUpdateEventJump enters g_SaveData's map (TkSetEventJump, TkInitSceneFromSave); TkInitScene clears it
 0x01330850 label    g_TkFadeOut               # 2 words, both set by TkSetFadeOut
 0x0133085c label    g_TkStartMapEvent         # u32 id, index (TkSetStartMapIndex)
@@ -17423,6 +17427,7 @@
 0x01330871 label    g_TkOutputEncount         # u8 (TkGetOutputEncount / TkSetOutputEncount)
 0x01330872 label    g_TkDebugDrawFlag         # u8 (TkSetDebugDrawFlag)
 0x01330873 label    g_TkHddErrorFlag          # u8 (TkGetHddErrorFlag, TkSetHddErrorFlag)
+0x01330874 label    g_TkInitLang               # u8: TkGetLang() at the end of TkInit; name ours
 0x01330880 label    g_TkBattleMusicSize       # TkGetBattleMusicSize returns its address
 0x01338880 label    g_FFXConfig               # the FFX configuration block (TkGetFFXCofingAdrs returns its address)
 0x013388c0 label    g_TkCommonVibrate         # vibration curve (TkGetCommonVibrate returns its address)
@@ -17489,6 +17494,7 @@
 0x01340858 label    g_TkMenuIggyMode           # u8: TkMenuMainLoop_008a9ca0 runs the Iggy menu (TkSyncV(2), AtelExecVibrate(1), IggyMenu_update, TOControlMessageWindowForMenu every frame); name ours
 0x01340859 label    g_TkMenuFirstReadEnd      # i8: TOMenuGetFirstReadEndFlag
 0x01340870 label g_BtlEffectOverlayDefault # the overlay table an actor plays while its magic file loads (+0xf8c; MsEffectRead)
+0x01586f70 label    g_TkMenuTaskBuffer         # the menu task buffer TkMenuStart gives sa_task_init2(2, ., 0); name ours
 0x01596f70 label    g_TkMenuImportantList     # u16 key item ids by their list slot (TkMenuItemImportantRefresh)
 0x01597370 label    g_TkMenuItemCounts        # 0x200 x u16 cleared; item counts by the id's low byte (TkMenuItemRefresh)
 0x01597770 label    g_TkMenuItemList          # 0x200 x {u16 id, u8 count, u8 usable} (TkMenuItemRefresh)
@@ -17505,6 +17511,7 @@
 0x01840878 label    g_TkMenuHelpRatio2        # TkMenuGetHelpRatio2
 0x0184087c label    g_TkMenuDrawShadeRatio    # TkMenuGetDrawShadeRatio; TkMenuDrawShadeRatioDiff sets it (fh bsim names)
 0x01840884 label    g_TkMenuTimer             # u8 (TkMenuGetTimer)
+0x01840885 label    g_TkMenuStarted            # u8 set to 1 by TkMenuStart on a closed menu; name ours
 0x01840886 label    g_TkMenuPlayerStep        # u8, the last change of menu character: 1 (TkMenuSetNextPlayer2), 0xff (TkMenuSetPrevPlayer2)
 0x01840887 label    g_TkMenuSummonStep        # u8: 1 (TkMenuSetNextSummon) or 0xff (TkMenuSetPrevSummon)
 0x01840888 label    g_TkMenuSlots             # 25 menu window pointers (TkMenuMainRegistMenu, TkMenuMainActiveMenu, TkMenuMainSleepMenu)
@@ -17527,6 +17534,7 @@
 0x01841c54 label    g_TkMenuCurrentSummonPos  # index into g_TkMenuSummons
 0x01841c58 label    g_TkMenuSummonTotalMax    # entries in g_TkMenuSummonTotals
 0x01841c5c label    g_TkMenuSummonEnableMask  # TkMenuSummonEnableMask
+0x01841c60 label    g_TkMenuFrames             # u32 the main loop's frame counter (TkMenuMainLoop_008a9ca0), started at ~draw buffer & 1 by TkMenuStart; name ours
 0x01841c64 label    g_TkMn2MainFrameRatioDiff # TkMn2SetMainFrameRatioDiff
 0x01841c68 label    g_TkMn2MainFrameRatio     # TkMn2GetMainFrameRatio
 0x01841d43 label    g_DebugPadPrintFlag       # u8, 4 modes: TODebugAddPadPrintFlag steps it ((v + 1) signed % 4)
@@ -17896,7 +17904,9 @@
 0x023cbc60 label g_EventName # char[]: the current event directory name ("bl/bltz0000"); getEventLocTexListPath, Yn_PreBgLayerDispOn (strstr te/test20)
 0x023cbd60 label    g_EventEbpMessages        # the .ebp's own message table (section 1), set by AtelEventSetUp; the Msg_ lookups fall back to it for offset 0
 0x023cbebc label gNeedAutoSave                # fh v4:user_defined
+0x023cbec0 label    g_TkFile4Buffer            # the buffer of file 4 of directory 0x18 TkInit reads at boot; name ours
 0x023cbec4 label    g_SndStreamTable          # voice stream position table: u16 groups, u16 offsets; group: u16 count, u16 offsets; entry list: u16 count, u16 sectors (0xffff gaps) (SndStreamDVDPos)
+0x023cbede label    g_TkDecayTable             # u16[0x42] built by TkInit: 0, then 0x1000 * 0.9^k (integer, k = 64..0) upwards, 0x1000 twice at the top (0x023cbf5e/60); overlaps g_TkSinLookup at +2; name ours
 0x023cbee0 label    g_TkSinLookup             # u16 table (Math_SinLookup)
 0x023cbf6c label    g_FontWidths              # a byte per character code, two-byte codes too (TkGetStrWidth)
 0x023cc040 label    g_BtlCommandRec           # command record handed to MsSetBtlCommand by TOBtlGetLeftPad/RightPad: +0 actor, +3 1, +8 u16 command, +0xa u16 0xff, +0x10 actor bit; name ours
@@ -17917,6 +17927,7 @@
 0x025d09d8 label    g_TOMenuPad2              # u16: TOMenuGetControlPad2
 0x025d09e2 label    g_TOMenuPadAlt            # 3 u16 (held, trg, rep), the other choice of TOMenuGetControlPad/Trg/Rep
 0x025d16bc label    g_TkMenuTutoChosen        # set by MenuTuto_SetChoice
+0x025d16d0 label    g_TkMenuStartWord          # u32 set to 0x83a0 by TkMenuStart; name ours
 0x025d17a8 label    g_YiVramRegions              # image VRAM allocator: limits +0 (region 1), +4 (0 = g_YiVramLimit), +8, +0xc; next addresses +0x10, +0x14 (g_YiVramNext), +0x18, +0x1c (yiVramAllocPsm)
 0x025d17ac label    g_YiVramLimit                # end of the image VRAM allocator (yiVramSetLimit)
 0x025d17bc label    g_YiVramNext                 # its next free address, in bytes (yiVramAlloc)

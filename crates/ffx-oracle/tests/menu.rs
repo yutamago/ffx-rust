@@ -21160,3 +21160,296 @@ fn small8_a_ability_map_and_exec_scene_match_the_original() {
         );
     }
 }
+
+/// [`small7_log`]'s stand-in as code in test space (for pointers the game
+/// holds); its address.
+fn small8_log_code(t: &mut Twins, cursor: u32, id: u32, n: u8, pre: &[u8], post: &[u8]) -> u32 {
+    let c = cursor.to_le_bytes();
+    let mut code = pre.to_vec();
+    code.extend([&[0x8b, 0x0d][..], &c].concat());
+    code.extend([0xc7, 0x01]);
+    code.extend(id.to_le_bytes());
+    for j in 0..n {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * j, 0x89, 0x41, 4 + 4 * j]);
+    }
+    code.extend([&[0x83, 0x05][..], &c, &[4 + 4 * n]].concat());
+    code.extend(post);
+    test_code(t, &code)
+}
+
+/// `mov eax, [cell]; ret`.
+fn small8_ret(cell: u32) -> Vec<u8> {
+    [&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat()
+}
+
+/// Small round 8 b: `TkInit` with the debug link on or off, every
+/// language and video mode family, HDD mode on or off (flipped by
+/// `get_hdd_name`), an old stream table or none, sizes around the sector
+/// rounding and the stream table's 0x8000 floor (negative ones too), and
+/// `g_GsDefDrawEnv2` 0 (the disc info blocks); the CD interface a table of
+/// logging stand-ins. `TkMenuStart` open or closed, staying open or
+/// closing, under a pause, with mode bit 24 and the high bits, the task
+/// buffer over its limit, with a task or none, both draw buffer
+/// parities.
+#[test]
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn small8_b_tk_init_and_menu_start_match_the_original() {
+    use ffx_menu::start::{callee as c, global as g};
+    let Some(mut t) = setup_any(0x5a11_8b01) else {
+        return;
+    };
+    let log = t.alloc(&vec![0; 0x8000]);
+    let cursor = t.alloc(&log.to_le_bytes());
+    let cells: Vec<u32> = (0..12).map(|_| t.alloc(&[0; 4])).collect();
+    let [
+        debug,
+        lang,
+        video,
+        size,
+        heap,
+        task,
+        dc,
+        open,
+        size2,
+        reopen,
+        lang2,
+        seen,
+    ] = cells[..].try_into().unwrap();
+    let hdd = t.sym(g::HDD_MODE);
+    let menu_open = t.sym(g::MENU_OPEN);
+    // sizes: the cell, then shifted, so each look-up differs
+    // mov eax, [size]; rol dword [size], 5; ret
+    let size_post = [
+        &[0xa1][..],
+        &size.to_le_bytes(),
+        &[0xc1, 0x05],
+        &size.to_le_bytes(),
+        &[0x05, 0xc3],
+    ]
+    .concat();
+    // mov eax, [heap]; add dword [heap], 0x40; ret
+    let malloc_post = [
+        &[0xa1][..],
+        &heap.to_le_bytes(),
+        &[0x83, 0x05],
+        &heap.to_le_bytes(),
+        &[0x40, 0xc3],
+    ]
+    .concat();
+    let flip_hdd = [&[0x80, 0x35][..], &hdd.to_le_bytes(), &[0x01]].concat();
+    // the language: first call [lang], later [lang2]
+    // mov eax, [lang]; push dword [lang2]; pop dword [lang]; ret
+    let lang_post = [
+        &[0xa1][..],
+        &lang.to_le_bytes(),
+        &[0xff, 0x35],
+        &lang2.to_le_bytes(),
+        &[0x8f, 0x05],
+        &lang.to_le_bytes(),
+        &[0xc3],
+    ]
+    .concat();
+    // mov eax, [reopen]; cmp eax, -1; je +5; mov [open], eax
+    let reopen_pre = [
+        &[0xa1][..],
+        &reopen.to_le_bytes(),
+        &[0x83, 0xf8, 0xff, 0x74, 0x05, 0xa3],
+        &menu_open.to_le_bytes(),
+    ]
+    .concat();
+    // mov eax, [esp + 4]; mov ecx, [dc]; mov [eax], ecx
+    let dc_pre = [
+        &[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d][..],
+        &dc.to_le_bytes(),
+        &[0x89, 0x08],
+    ]
+    .concat();
+    let config_hdd = t.sym(g::CONFIG + 0xe);
+    let flip_config_hdd = [&[0x80, 0x35][..], &config_hdd.to_le_bytes(), &[0x04]].concat();
+    // mov eax, [g_TkMenuMainTask]; mov [seen], eax
+    let keep_task = [
+        &[0xa1][..],
+        &t.sym(g::MAIN_TASK).to_le_bytes(),
+        &[0xa3],
+        &seen.to_le_bytes(),
+    ]
+    .concat();
+    // the CD interface
+    let mut table = [0u32; 6];
+    for (k, (o, n)) in [(0usize, 4u8), (1, 1), (2, 1), (4, 1), (5, 1)]
+        .into_iter()
+        .enumerate()
+    {
+        let id = 0x8b80 + u32::try_from(k).unwrap();
+        let post = if o == 5 {
+            size_post.clone()
+        } else {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        };
+        table[o] = small8_log_code(&mut t, cursor, id, n, &[], &post);
+    }
+    let table_bytes: Vec<u8> = table.iter().flat_map(|v| v.to_le_bytes()).collect();
+    let cd = t.alloc(&table_bytes);
+    let cd_post = [&[0xb8][..], &cd.to_le_bytes(), &[0xc3]].concat();
+    let task_end = small8_log_code(
+        &mut t,
+        cursor,
+        0x8bf0,
+        0,
+        &[],
+        &[0xb8, 0x77, 0x66, 0x55, 0x44, 0xc3],
+    );
+    let task_rec = t.alloc(&[&[0u8; 4][..], &task_end.to_le_bytes()].concat());
+    let callees: Vec<(u32, u8, Vec<u8>, Vec<u8>)> = vec![
+        (c::INIT_WORK, 0, vec![], vec![]),
+        (c::IS_DEBUG, 0, vec![], small8_ret(debug)),
+        (c::INIT_DECI2, 0, vec![], vec![]),
+        (c::RESET_CLIP, 0, vec![], vec![]),
+        (c::INIT_ALL_SYNC_V_CALLBACK, 0, vec![], vec![]),
+        (c::CLEAR_ALARM, 0, vec![], vec![]),
+        (c::PAD_INIT_WORKS, 0, vec![], vec![]),
+        (c::INIT_SCENE_FROM_SAVE, 0, vec![], vec![]),
+        // changes the HDD byte of the config TkInit copies back
+        (c::SND_SET_MUSIC_MUTE, 1, flip_config_hdd, vec![]),
+        (c::INIT_START_MAP, 0, vec![], vec![]),
+        (c::READ_THREAD_INIT, 0, vec![], vec![]),
+        (c::PRINTF_CUT, 0, vec![], vec![]),
+        (c::GET_CD, 0, vec![], cd_post),
+        (c::MEM_SET_ALIGN, 1, vec![], vec![]),
+        (c::USER_MALLOC, 1, vec![], malloc_post),
+        (c::USER_FREE, 1, vec![], vec![]),
+        (c::FLUSH_CACHE, 1, vec![], vec![]),
+        (c::TO_INIT, 0, vec![], vec![]),
+        (c::ATEL_INIT_TOTAL, 0, vec![], vec![]),
+        (c::GET_LANG, 0, vec![], lang_post),
+        (c::SET_PROJECT_BASE, 1, vec![], vec![]),
+        (c::GET_VIDEO_MODE, 0, vec![], small8_ret(video)),
+        (c::SET_CYCLE_MODE, 1, vec![], vec![]),
+        (c::SND_INIT_WORK, 0, vec![], vec![]),
+        (c::INIT_WAVE_INFO, 3, vec![], vec![]),
+        (c::INIT_MUSIC_INFO, 3, vec![], vec![]),
+        (c::MEM_CHECK, 3, vec![], vec![]),
+        (c::SORT_COMMON_WAVE, 1, vec![], vec![]),
+        (c::STANDBY_SHOUT_STREAM, 1, vec![], vec![]),
+        (c::DATA_SEND_SYNC, 1, vec![], vec![]),
+        (c::REPORT_STANDBY_STATUS, 1, vec![], vec![]),
+        (c::SHOUT_STREAMING_DATA_SEND, 2, vec![], vec![]),
+        (c::GET_HDD_NAME, 1, flip_hdd, vec![]),
+        (c::INIT_WAVE_INFO_HDD, 1, vec![], vec![]),
+        (c::INIT_MUSIC_INFO_HDD, 1, vec![], vec![]),
+        (c::ABM_LOAD, 0, vec![], vec![]),
+        (c::MAIN_LOOP, 1, reopen_pre, vec![]),
+        (c::SET_TK_ANTI_XYB, 3, vec![], vec![]),
+        (c::ENABLE_TK_ANTI, 1, vec![], vec![]),
+        (c::PAUSE_REQUEST, 1, vec![], vec![]),
+        (c::MN2_INIT_WORK, 0, vec![], vec![]),
+        (c::MN2_GET_MAIN_POS, 0, vec![], vec![]),
+        (c::SHADE_RATIO_DIFF, 1, vec![], vec![]),
+        (c::SET_SHADE_RATIO_STEP, 1, vec![], vec![]),
+        // keeps the task pointer it sees
+        (c::TASK_BUFF_SIZE_GET, 1, keep_task, small8_ret(size2)),
+        (c::ASSERT, 3, vec![], vec![]),
+        (c::TASK_INIT2, 3, vec![], small8_ret(task)),
+        (c::PLAYER_LIST_INIT, 1, vec![], vec![]),
+        (c::SUMMON_LIST_INIT, 1, vec![], vec![]),
+        // not logged: its argument is a local of each side's own stack
+        (c::GET_DBUFF_DC, 0, dc_pre, vec![]),
+        (c::CALC_IMPORTANT_LIST_MAX, 0, vec![], vec![]),
+        (c::SET_IGNORE_JOIN_FLAG, 1, vec![], vec![]),
+    ];
+    for (k, (f, n, pre, post)) in callees.into_iter().enumerate() {
+        let id = 0x8b00 + u32::try_from(k).unwrap();
+        let post = if post.is_empty() {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        } else {
+            post
+        };
+        small7_log(&mut t, f, cursor, id, n, &pre, &post);
+    }
+    let buffers = t.alloc(&vec![0; 0x2000]);
+    let def_env = t.sym(g::GS_DEF_DRAW_ENV2);
+    for round in 0..200u32 {
+        t.put(cursor, log);
+        let v = t.rng.pick(&[0u32, 0, 1]);
+        t.put(debug, v);
+        for cell in [lang, lang2] {
+            let v = t.rng.pick(&[0u32, 1, 3, 6, 7, 9, u32::MAX]);
+            t.put(cell, v);
+        }
+        let v = t.rng.pick(&[0u32, 1, 2, u32::MAX]);
+        t.put(video, v);
+        let v = t.rng.pick(&[
+            0u32,
+            1,
+            0x7ff,
+            0x800,
+            0x801,
+            0x7fff,
+            0x8001,
+            0xffff_f000,
+            0x8000_0000,
+            0x7fff_f900,
+        ]);
+        t.put(size, v);
+        t.put(heap, buffers);
+        let v = t.rng.bytes(0x2000);
+        t.put_bytes(buffers, &v);
+        let v = t.rng.pick(&[0u8, 0, 1, 2]);
+        t.put(hdd, v);
+        let v = t.rng.pick(&[1u8, 1, 0]);
+        t.put(def_env, v);
+        let v = t.rng.pick(&[0u32, 0x1234_5678]);
+        t.put(t.sym(g::SND_STREAM_TABLE), v);
+        t.scramble(g::CONFIG, 0x40);
+        t.scramble(g::DECAY_TOP - 0x90, 0x94);
+        t.twin(&format!("TkInit {round}"), 0x0088_d710, &[], U32, |o| {
+            w(ffx_menu::start::bridge::tk_init(o, &mut callback))
+        });
+    }
+    t.put(def_env, 1u8);
+    let local = t.b.stack_range().start + 0x80;
+    for round in 0..120u32 {
+        t.put(cursor, log);
+        let v = t.rng.pick(&[0u32, 0, 1]);
+        t.put(open, v);
+        t.put(menu_open, v);
+        let v = t.rng.pick(&[u32::MAX, 0, 1, 5]);
+        t.put(reopen, v);
+        let v = t.rng.pick(&[0u32, 0, 0, 1]);
+        t.put(t.sym(g::PAUSE_ON), v);
+        let mode = match t.rng.below(4) {
+            0 => t.rng.below(0x20) | 0x0080_0000,
+            1 => t.rng.next(),
+            2 => 0x0100_0000 | t.rng.below(0x20),
+            _ => 0xc000_0000 | t.rng.below(0x1_0000),
+        };
+        let v = t.rng.pick(&[0u32, 0x7fff, 0x8000, 0xffff_ffff]);
+        t.put(size2, v);
+        let v = t.rng.pick(&[0u32, task_rec]);
+        t.put(task, v);
+        let v = t.rng.pick(&[0u32, task_rec]);
+        t.put(t.sym(g::MAIN_TASK), v);
+        let v = t.rng.next();
+        t.put(dc, v);
+        // the work area's ends
+        let v = t.rng.next();
+        t.put(t.sym(g::MENU_WORK), v);
+        t.put(t.sym(g::MENU_WORK + g::MENU_WORK_SIZE - 4), v);
+        t.scramble(g::TIMER, 2);
+        t.scramble(g::FRAMES, 4);
+        t.twin(
+            &format!("TkMenuStart {round}"),
+            0x008a_b030,
+            &[mode],
+            U32,
+            |o| {
+                w(ffx_menu::start::bridge::tk_menu_start(
+                    o,
+                    mode,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+}

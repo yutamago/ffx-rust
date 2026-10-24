@@ -13,6 +13,7 @@
 //! - [`msg`]: message tables and message-window choices;
 //! - [`scene`]: menu scene data lookups;
 //! - [`scissor`]: the menu's software scissor;
+//! - [`start`]: the Tk boot (`TkInit`) and the menu's entry (`TkMenuStart`);
 //! - [`tk`]: menu state, pads, vibration, the save CRC, command lists.
 
 pub mod ability_map;
@@ -23,6 +24,7 @@ pub mod math;
 pub mod msg;
 pub mod scene;
 pub mod scissor;
+pub mod start;
 pub mod tk;
 
 /// `get_ptr32_func(p)` (`0x00a44650`): `p` (a 32-bit pointer as itself).
