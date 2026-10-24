@@ -25,6 +25,8 @@ def events(path):
     rows = [line.split()[1:] for line in open(path, encoding="utf-8") if line.strip()]
     if not rows:
         return []
+    # a run that ended early (a timed-out `waitfor`) can leave a cut last line
+    rows = [row for row in rows if len(row) == len(rows[0])]
     out = []
     for r in range(len(rows[0])):
         seq = []

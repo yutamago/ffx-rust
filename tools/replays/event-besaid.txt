@@ -1,0 +1,85 @@
+# Event: save slot 3 (ffx_003, Besaid beach bsil0000, map 0x46, scenario
+# 118 = 0x76, after Wakka's beach scene), loaded without the title menu.
+# Walks off the beach (the exit line of worker 32, Native_MapChange(20)) to
+# map 0x14, the jungle path, where walking up crosses Wakka's trigger: the
+# event script stops Tidus, Wakka waves, his voiced line "Hey! It's this
+# way!" runs as a subtitle, the scenario word goes to 119 (0x77) and Wakka
+# runs off up the path. Then right to map 0x29 (the river), where the
+# script has put Wakka on the far bank, and up to the river's edge, a step
+# short of the trigger of the cliff scene (event-cliff.txt plays that).
+#
+# Lockstep, fast mode. Each map's shots are pinned to ctrl work 0's frame
+# count (0x01325d94, as in field-walk.txt), which every map's event starts
+# again from 0; the inputs on a map start at a fixed count too (`waitfor`
+# a power-of-two range of the count), so their frames are fixed as well.
+# The voiced line waits for the voice stream, which plays in real time:
+# what the script does after it (Wakka's run) lands on another frame in
+# every run, original code included, so no shot is taken then.
+# The chocobo icon at the bottom right (x 1200-1280, y 640-720) animates
+# by the wall clock and is left out (tools/shot-compare.py MASKS).
+#
+# Ranges: the save data's map, previous map and entrance (0x0112ca90, 16
+# bytes), the scenario (0x0112d67c), the player's position
+# (g_SaveData_PlayerPos 0x00ccb9a8), the field view matrix (g_YiViewMatrix
+# 0x018ded38: camera cuts and moves), message windows 0 and 1's state and
+# flags (g_AtelMsgWindows 0x01326d70 + 0x14 / + 0x40, 12 bytes each), the
+# random generators (0x00c42200, 0x01135ee0), the party records. run-all.sh
+# leaves the position out of the comparison (--ignore 2): when a trace frame
+# is skipped the walk misses an in-between value, original runs included.
+# Screenshots (event-besaid-<n>.bmp): 1 the beach (count 101), 2 the
+# subtitle and Wakka waving (map 0x14, count 94), 3 map 0x29 (count 32),
+# 4 and 5 Tidus at the river with Wakka across it (counts 192 and 232).
+load direct 3 bsil0000
+lockstep on
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+read 0x01325d94 4
+shot $OUT\event-besaid-1.bmp
+trace 0x0112ca90:16 0x0112d67c:2 0x00ccb9a8:12 0x018ded38:64 0x01326d84:12 0x01326db0:12 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68
+# off the beach: the exit line is just behind the save sphere
+pad down+left
+waitfor 0x0112ca90:4 14004600 ffffffff 600
+pad
+# map 0x14 from count 32: up into Wakka's trigger (scenario 119)
+waitfor 0x01325d94:4 20000000 e0ffffff 1500
+pad up
+waitfor 0x0112d67c:2 7700 ffff 600
+pad
+wait 40
+read 0x01325d94 4
+shot $OUT\event-besaid-2.bmp
+# the subtitle stays until the voice ends (real time, so a varying number
+# of frames); from its close the script's frames are fixed again: Wakka
+# runs off and the control comes back. Then right to map 0x29.
+waitfor 0x01326d84:4 00000000 ffffffff 3000
+wait 120
+pad right
+waitfor 0x0112ca90:4 29001400 ffffffff 900
+pad
+waitfor 0x01325d94:4 20000000 e0ffffff 1500
+read 0x01325d94 4
+shot $OUT\event-besaid-3.bmp
+# up and right in steps (a held direction keeps the mapping of the camera
+# it was pressed under, which walks into the bushes after the first cut)
+press up+right 30 4
+press circle 3 3
+press up+right 30 4
+press circle 3 3
+press up+right 30 4
+press circle 3 3
+press up+right 30 4
+press circle 3 3
+read 0x01325d94 4
+shot $OUT\event-besaid-4.bmp
+press up+right 30 4
+press circle 3 3
+read 0x01325d94 4
+shot $OUT\event-besaid-5.bmp
+press up+right 30 4
+press circle 3 3
+press up+right 30 4
+press circle 3 3
+press up+right 30 4
+press circle 3 3
+read 0x00ccb9a8 12
+wait 30

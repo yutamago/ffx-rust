@@ -62,6 +62,12 @@ MASKS = {
     # sphere's pulsing glow (field-walk-1 only; 21.5 seen)
     "field-walk-1.bmp": [(880, 240, 1280, 400), (480, 300, 580, 420)],
     "field-walk-2.bmp": [(1000, 240, 1120, 280), (600, 240, 700, 320)],
+    # the chocobo icon at the bottom right of the Besaid path maps (0x14,
+    # 0x29) animates by the wall clock (tools/replays/event-besaid.txt)
+    "event-besaid-2.bmp": [(1200, 640, 1280, 720)],
+    "event-besaid-3.bmp": [(1200, 640, 1280, 720)],
+    "event-besaid-4.bmp": [(1200, 640, 1280, 720)],
+    "event-besaid-5.bmp": [(1200, 640, 1280, 720)],
 }
 BLOCK = 20
 SKY = 240  # coarse shots: rows above this are left out (the beams reach the y 160 blocks; characters stand lower)
@@ -186,6 +192,12 @@ a_dir, b_dir, r_dir = (pathlib.Path(p) for p in sys.argv[1:4])
 coarse = tuple(sys.argv[sys.argv.index("--coarse") + 1:]) if "--coarse" in sys.argv else ()
 bad = 0
 for a_path in sorted(a_dir.glob("*.bmp")):
+    if not (r_dir / a_path.name).exists():
+        # the run stopped before this shot (a replay whose `waitfor` timed
+        # out): report it and go on with the other replays' shots
+        print(f"{a_path.name}: missing in {r_dir}")
+        bad += 1
+        continue
     w, h, a = pixels(a_path)
     _, _, b = pixels(b_dir / a_path.name)
     _, _, r = pixels(r_dir / a_path.name)

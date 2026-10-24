@@ -8,7 +8,8 @@
 # (twice: screenshots are compared outside what differs between them).
 # Named replays (`--record boot`) are recorded alone; the others' recorded
 # traces and screenshots stay as they are. boot.txt has no trace ranges
-# (screenshots only) and runs at the game's own frame rate (`realtime`).
+# (screenshots only) and runs at the game's own frame rate (`realtime`), as
+# does event-cliff.txt (a voiced cut scene that keeps time with its voice).
 #
 # Each call writes into its own folder, %TEMP%\ffx-snap\runs\<id>\<tag>\
 # (traces, screenshots, the replay's output), kept for inspection; the
@@ -38,7 +39,7 @@ for f in "$lin"/*-orig.trace "$lin"/*-orig2.trace; do
 done
 # keep the newest KEEP_RUNS run folders (each is ~30 MB of screenshots)
 ls -1dt "$lin"/runs/*/ 2>/dev/null | tail -n +"$((${KEEP_RUNS:-20} + 1))" | while read -r d; do rm -rf "$d"; done
-replays=(field-walk battle-attack menu-browse boot battle-magic)
+replays=(field-walk battle-attack menu-browse boot battle-magic event-besaid event-cliff)
 
 # Build once, not three times side by side.
 tools/build-hook.sh >/dev/null || exit 1
@@ -89,8 +90,10 @@ for r in "${replays[@]}"; do
     if [ ! -f "$traces/$r-orig.trace" ]; then
         echo "== $r: not recorded (tools/replays/run-all.sh --record $r)"; bad=1; continue
     fi
-    # the pad word's range (press timing): field-walk 3, menu-browse 0
-    case $r in field-walk) ign=(--ignore 3) ;; menu-browse) ign=(--ignore 0) ;; *) ign=() ;; esac
+    # the pad word's range (press timing): field-walk 3, menu-browse 0; the
+    # player position in event-besaid (2) misses an in-between value when a
+    # trace frame is skipped, in original runs too (docs/harness.md)
+    case $r in field-walk) ign=(--ignore 3) ;; menu-browse) ign=(--ignore 0) ;; event-besaid) ign=(--ignore 2) ;; *) ign=() ;; esac
     cmp=(python3 tools/replay-compare.py "$traces/$r-orig.trace" "$runs/rust/$r-rust.trace" --also "$traces/$r-orig2.trace" "${ign[@]}")
     echo "== $r: $("${cmp[@]}" 2>&1 | tail -1)"
     "${cmp[@]}" >/dev/null 2>&1 || bad=1
