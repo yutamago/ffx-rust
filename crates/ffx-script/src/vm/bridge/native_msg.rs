@@ -551,7 +551,7 @@ pub fn msg_choice_poll<H: NativeHost>(h: &mut H, a: u32, handlers: u32) -> u32 {
     }
 }
 
-/// `Native_0267_Poll` (`0x0085a540`): [`msg_choice_poll`] with both
+/// `Native_0267_MsgSelectBgmType_Poll` (`0x0085a540`): [`msg_choice_poll`] with both
 /// choices handled by `0x008cc150` (the original's two-word table on its
 /// stack; here in [`NativeHost::scratch`]).
 pub fn native_0267_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {

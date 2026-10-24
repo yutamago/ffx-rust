@@ -1475,7 +1475,7 @@ const SCRIPT_RUN: u32 = 0x0086_41e0;
 
 /// The instruction budget of a [`run_pair`] call. Some natives and
 /// programs wait on a loading thread, a critical section or a semaphore
-/// that no thread of the emulator ever releases (`Native_0258_Poll` through
+/// that no thread of the emulator ever releases (`Native_0258_SetEnglishMode_Poll` through
 /// `TOSwapInternationalEnvExec`'s file reads, `sa_read_callback`,
 /// `graphicProcessPs2DataLoadingCallback`, `task_create_in_group`): such a
 /// call spins until the budget runs out, then the case counts as stopped.
@@ -3045,7 +3045,7 @@ fn move_and_message_cases_match_the_original() {
 }
 
 /// Start handlers that are a bare `ret`: `Native_ChrWaitMotion_501e`,
-/// `Native_MusicWaitLoaded`, `Native_00dc`, `Native_FadeWait` and
+/// `Native_MusicWaitLoaded`, `Native_00dc_EventEffectStart`, `Native_FadeWait` and
 /// the starts of `0xb009` and `0xb00b`.
 const BARE_RET: [u32; 6] = [
     0x00a7_9370,

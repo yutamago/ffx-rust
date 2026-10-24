@@ -572,7 +572,7 @@ pub fn native_8054<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 
 // ---- group 0: the field natives no shipped script calls ----
 
-/// `Native_013c` (`0x00855d70`, `0x013c`, start): `Msg_ShowSetup` with
+/// `Native_013c_MsgShowWaitEx` (`0x00855d70`, `0x013c`, start): `Msg_ShowSetup` with
 /// mode 8 (the window, text, open and choice in one; its poll and result
 /// are `Native_MsgSelect`'s, `0x00855ec0` and `0x00856030` being bare
 /// jumps to them).
@@ -580,7 +580,7 @@ pub fn native_013c<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     super::native_msg::msg_show_setup(h, w, a, s, 8)
 }
 
-/// `Native_0101` (`0x00855d90`, `0x0101`): `(id, pan, frames)` ->
+/// `Native_0101_SndSepPanTranslate` (`0x00855d90`, `0x0101`): `(id, pan, frames)` ->
 /// `SndSepPanTranslate(id, pan, frames)` (`0x00886e20`); frames.
 pub fn native_0101<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let c = pop(h, s);
@@ -590,7 +590,7 @@ pub fn native_0101<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     c
 }
 
-/// `Native_01c8` (`0x00855e50`, `0x01c8`): `(v)`: only for a worker
+/// `Native_01c8_DisposeAnimOwnDobj` (`0x00855e50`, `0x01c8`): `(v)`: only for a worker
 /// attached as kind 5 (`+0xaa`): pushes its `+0xa8` and v, pops them back
 /// (a full stack drops pushes, as in the original) and calls
 /// `yiDisposeAnimDObj(+0xa8, v)` (`0x009084b0`); 1, else 0.
@@ -608,7 +608,7 @@ pub fn native_01c8<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_00a0` (`0x00855ed0`, `0x00a0`): `(win, n, t)` ->
+/// `Native_00a0_MsgSetMacroType` (`0x00855ed0`, `0x00a0`): `(win, n, t)` ->
 /// `TOMacroSetType(win, n, t)` (`0x008b8960`); win.
 pub fn native_00a0<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let t = pop(h, s);
@@ -618,7 +618,7 @@ pub fn native_00a0<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     win
 }
 
-/// `Native_019a` (`0x00856040`, `0x019a`): `(obj, _, slot)`: with a
+/// `Native_019a_AttachChrDobj` (`0x00856040`, `0x019a`): `(obj, _, slot)`: with a
 /// character, `yiAttachChrDObj(obj, chr, slot)` (`0x00908350`); 1.
 pub fn native_019a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let slot = pop(h, s);
@@ -631,7 +631,7 @@ pub fn native_019a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_009f` (`0x00856090`, `0x009f`): `(win, n, v)` ->
+/// `Native_009f_MsgSetMacroValue` (`0x00856090`, `0x009f`): `(win, n, v)` ->
 /// `TOMacroSetValue(win, n, v)` (`0x008b8980`); win.
 pub fn native_009f<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -672,7 +672,7 @@ pub fn native_00a1<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_019b` (`0x008563e0`, `0x019b`): `(b, a)`: pushes the worker's
+/// `Native_019b_AttachChrOwnDobj` (`0x008563e0`, `0x019b`): `(b, a)`: pushes the worker's
 /// `+0xa8`, b and a, pops them back (a, b dropped, then `+0xa8`) and, with
 /// a character, `yiAttachChrDObj(+0xa8, chr, a)`; 1.
 pub fn native_019b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -699,7 +699,7 @@ pub fn native_001e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> f64 {
     pop_st0(h, s)
 }
 
-/// `Native_023e` (`0x00856640`, `0x023e`): `(id)`: `SndSepLock(id)`
+/// `Native_023e_SepLock` (`0x00856640`, `0x023e`): `(id)`: `SndSepLock(id)`
 /// (`0x00886dd0`); id.
 pub fn native_023e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -717,14 +717,14 @@ pub fn native_01d7<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_01db` (`0x00856e00`, `0x01db`): `(v)`: `0x00876290(v)`; v.
+/// `Native_01db_VibrateStop` (`0x00856e00`, `0x01db`): `(v)`: `0x00876290(v)`; v.
 pub fn native_01db<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     call(h, 0x0087_6290, &[v]);
     v
 }
 
-/// `Native_01ef` (`0x00857320`, `0x01ef`): pushes 2 and pops it back (the
+/// `Native_01ef_VibrateStop2` (`0x00857320`, `0x01ef`): pushes 2 and pops it back (the
 /// old top when the stack is full), `0x00876290(it)`; -> it.
 pub fn native_01ef<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     atel_push_stack_integer(h, s, 2);
@@ -735,14 +735,14 @@ pub fn native_01ef<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 
 /// `Native_01dd` (`0x00857660`, `0x01dd`, start): `(v)`: v into the
 /// argument word; v. Its poll (`0x008577f0`) is a copy of
-/// `Native_01de_Poll`.
+/// `Native_01de_VibrateWait3_Poll`.
 pub fn native_01dd<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     h.write(a, v);
     v
 }
 
-/// `Native_01ea` (`0x00857aa0`, `0x01ea`): `(var)`: `0x008715e0(the
+/// `Native_01ea_VibrateSetStreamExt` (`0x00857aa0`, `0x01ea`): `(var)`: `0x008715e0(the
 /// variable's address)`; 1.
 pub fn native_01ea<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -751,7 +751,7 @@ pub fn native_01ea<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_00af` (`0x00858440`, `0x00af`): `(v)`: `0x0086f3c0(v)`; v.
+/// `Native_00af_SetBattleSceneGroup` (`0x00858440`, `0x00af`): `(v)`: `0x0086f3c0(v)`; v.
 pub fn native_00af<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     call(h, 0x0086_f3c0, &[v]);
@@ -776,7 +776,7 @@ pub fn native_01aa<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     record_field(h, s, 0x58)
 }
 
-/// `Native_01e1` (`0x008586e0`, `0x01e1`): for a worker attached as kind 1
+/// `Native_01e1_ChrGetEffectLevel` (`0x008586e0`, `0x01e1`): for a worker attached as kind 1
 /// (`+0xaa`) with a character, `0x0082a9a0(chr)`; else 0.
 pub fn native_01e1<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     if h.read::<u8>(w + 0xaa) != 1 {
@@ -789,7 +789,7 @@ pub fn native_01e1<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     call(h, 0x0082_a9a0, &[c])
 }
 
-/// `Native_01ae` (`0x00858df0`, `0x01ae`): `(v)` -> `0x00790b90(v, -1)`.
+/// `Native_01ae_RemoveMonsterCapture` (`0x00858df0`, `0x01ae`): `(v)` -> `0x00790b90(v, -1)`.
 pub fn native_01ae<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     call(h, 0x0079_0b90, &[v, u32::MAX])
@@ -806,18 +806,18 @@ fn adf0_word<H: NativeHost>(h: &mut H, k: usize) -> u32 {
     h.read(o)
 }
 
-/// `Native_00b6` (`0x00858e20`, `0x00b6`): -> the first word of
+/// `Native_00b6_GetTkAntiX` (`0x00858e20`, `0x00b6`): -> the first word of
 /// `0x0083adf0`.
 pub fn native_00b6<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     adf0_word(h, 0)
 }
 
-/// `Native_00b7` (`0x00859080`, `0x00b7`): -> the second.
+/// `Native_00b7_GetTkAntiY` (`0x00859080`, `0x00b7`): -> the second.
 pub fn native_00b7<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     adf0_word(h, 1)
 }
 
-/// `Native_00b8` (`0x00859220`, `0x00b8`): -> the third.
+/// `Native_00b8_GetTkAntiB` (`0x00859220`, `0x00b8`): -> the third.
 pub fn native_00b8<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     adf0_word(h, 2)
 }

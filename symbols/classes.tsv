@@ -12639,7 +12639,7 @@
 0x00887c80	dead	unreachable from the entry point and every pointer table
 0x00887cb0	dead	unreachable from the entry point and every pointer table
 0x00887d00	logic	default (no rule: ported to be safe)
-0x00887d10	logic	debug-sounding name, but used by logic: AtelEventSetUp, Native_00f8, Native_014a
+0x00887d10	logic	debug-sounding name, but used by logic: AtelEventSetUp, Native_00f8, Native_014a_SetBattleEndStatus
 0x00887d20	logic	default (no rule: ported to be safe)
 0x00887d30	logic	default (no rule: ported to be safe)
 0x00887d50	logic	default (no rule: ported to be safe)

@@ -4013,7 +4013,7 @@ pub fn atel_request_battle_end_entries(h: &mut impl ffx_bridge::Host, tag: u32) 
 }
 
 /// `Atel_SetLevelTarget_0086f940(worker, i)` (name ours; callers
-/// `Native_003b`, `0x00868990`): the current level's turn block (`+0x170 +
+/// `Native_003b_MoveSetTargetWorker`, `0x00868990`): the current level's turn block (`+0x170 +
 /// level*0x4c`, the level clamped as the turn helpers do) gets `i` (`u16`
 /// at `+0`), and [`atel_set_level_vectors`] the position of worker `i`
 /// (`AtelGetBasicWork`; type 4 reads through 0). Returns that call's
@@ -4252,7 +4252,7 @@ pub fn atel_show_water_fps(h: &mut impl ffx_bridge::Host, on: u32) -> u32 {
     r
 }
 
-/// `Atel_SetSaveEventBit_008700e0(n)` (name ours; caller `Native_00fc`):
+/// `Atel_SetSaveEventBit_008700e0(n)` (name ours; caller `Native_00fc_SetSaveEventBit`):
 /// bit `n` of the save event's two flag words (`+0x18`, `TkGetSaveEventAddress`;
 /// C division and remainder, so a negative `n` reaches below them); 1, or 0
 /// for an `n` from 64 on.
@@ -4518,7 +4518,7 @@ fn worker_pos(h: &impl Mem, w: u32) -> u32 {
 }
 
 /// `Atel_SetWorkerPosXZ_00870970(worker, x, z, keep)` (name ours; callers
-/// `Native_0012`, `Native_0125`): the worker's position block (by its
+/// `Native_0012_SetPosXZ`, `Native_0125_SetPosXZ`): the worker's position block (by its
 /// kind) = `(x, 0, z)`; a bound character (`+0xaa` 1, `+0x9c`) moves
 /// there (`Ch_SetPos`) and its cloth resets. When the worker is the
 /// current ctrl work's player (`+0x2e` = ctx `+0xa`), the ctx's camera
@@ -4970,7 +4970,7 @@ pub fn atel_step_sprite_anim(h: &mut impl ffx_bridge::Host, s: u32) {
 }
 
 /// `Atel_LoadEventTexList_00874b70(on, x, y)` (name ours; caller
-/// `Native_011a`): `0x01327144` = on, `0x01327f48` = `x - 0xa0 + on`,
+/// `Native_011a_LoadEventTexList`): `0x01327144` = on, `0x01327f48` = `x - 0xa0 + on`,
 /// `0x023cbc5c` = y, `0x01327f4c` = 1; with `on` the event's texture list
 /// loads (`0x00639310` of `getEventLocTexListPath`, into `frame`'s first
 /// 256 bytes, its own local in the next) and `g_AtelEventTexListLoaded`
@@ -4994,7 +4994,7 @@ pub fn atel_load_event_tex_list(
 }
 
 /// `AtelBGSepFade(volume, frames)` (`0x00861000`; callers
-/// `MsBattleProcess_Status_007917d0`, `Native_0143`, `Native_0144`): the
+/// `MsBattleProcess_Status_007917d0`, `Native_0143_BgSepFadeOut`, `Native_0144_BgSepFadeIn`): the
 /// background separates only ([`atel_translate_bg_seps`] with `all` 0).
 pub fn atel_bg_sep_fade(h: &mut impl ffx_bridge::Host, volume: u32, frames: u32) -> u32 {
     atel_translate_bg_seps(h, volume, frames, 0)
@@ -5254,7 +5254,7 @@ pub fn atel_battle_end_map_start(h: &mut impl ffx_bridge::Host, map: u32) -> u32
 }
 
 /// `Atel_SetMovieTexture_00873eb0(id, flags)` (name ours; caller
-/// `Native_01b0`): by the save event's movie state (`+0xe0`): outside 2..=5
+/// `Native_01b0_MovieSetTexture`): by the save event's movie state (`+0xe0`): outside 2..=5
 /// the movie texture is set up (`graphicSetTextureVideoInfo(id, flags &
 /// 0x80)`) and the state becomes 1 with the id and flags (`+0xd8`,
 /// `+0xdc`); inside, another id waits for its file
@@ -5615,7 +5615,7 @@ pub fn atel_find_var_slot(h: &mut impl ffx_bridge::Host, rec: u32) {
 }
 
 /// `Atel_TurnToWorker_0086f8a0(worker, target)` (name ours; callers
-/// `Native_003c`, `0x00869510`): the worker's current turn block (as in
+/// `Native_003c_TurnToWorker`, `0x00869510`): the worker's current turn block (as in
 /// [`atel_turn_to_point`]) records the target (`u16` at `+0`) and the
 /// worker turns to the target worker's position.
 pub fn atel_turn_to_worker<H: ffx_bridge::Host>(
@@ -7087,7 +7087,7 @@ fn clamp_unit(t: u32) -> u32 {
 }
 
 /// `Atel_CalcSpline_00862b20(out, curve, t)` (name ours; callers
-/// `Native_0099`, `0x00868990`, `0x0087de30`):
+/// `Native_0099_SetPosOnSpline`, `0x00868990`, `0x0087de30`):
 /// `TkMtCalcSpline(out, curve + 0x10, curve's count, t in 0..=1)`;
 /// returns its `EAX`.
 pub fn atel_calc_spline(h: &mut impl ffx_bridge::Host, out: u32, curve: u32, t: u32) -> u32 {
@@ -7096,7 +7096,7 @@ pub fn atel_calc_spline(h: &mut impl ffx_bridge::Host, out: u32, curve: u32, t: 
 }
 
 /// `Atel_CalcSpline3_00862b70(out, curve, t)` (name ours; callers
-/// `Native_009c`, `0x00868990`, `0x0087de30`): [`atel_calc_spline`] with
+/// `Native_009c_SetPosOnSpline3`, `0x00868990`, `0x0087de30`): [`atel_calc_spline`] with
 /// `TkMtCalcSpline3`.
 pub fn atel_calc_spline3(h: &mut impl ffx_bridge::Host, out: u32, curve: u32, t: u32) -> u32 {
     let n = h.read::<u32>(curve);

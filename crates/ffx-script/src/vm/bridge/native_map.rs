@@ -57,7 +57,7 @@ macro_rules! pop_calls {
 }
 
 pop_calls! {
-    /// `Native_01a5` (`0x008574c0`): `(a, b)` -> `0x00909e30(a, b)`; 1.
+    /// `Native_01a5_TexSwapSetFrame` (`0x008574c0`): `(a, b)` -> `0x00909e30(a, b)`; 1.
     native_01a5 => 2, 0x0090_9e30;
     /// `Native_806a` (`0x0091af80`): `0x0091a260(x)`; 1.
     native_806a => 1, 0x0091_a260;
