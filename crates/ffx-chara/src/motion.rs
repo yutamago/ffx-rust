@@ -1390,7 +1390,7 @@ pub mod bridge {
     }
 
     /// `Ch_ReadEventMgrpAsync_00837650(x)` (`0x00837650`; callers
-    /// `Chr_LoadMotionGroup`, `Native_5065`): [`ch_read_event_mgrp`]
+    /// `Chr_LoadMotionGroup`, `Native_5065_ChrReadEventMgrp`): [`ch_read_event_mgrp`]
     /// through the asynchronous reader, `Ch_RomReadEventMGRP(index, x)`;
     /// its result.
     pub fn ch_read_event_mgrp_async<M: Mem>(

@@ -5882,7 +5882,7 @@ pub fn atel_kick_bg_seps_on_flag(h: &mut impl ffx_bridge::Host, hdr: u32, on: u3
 }
 
 /// `Native_GetChrOptPos_00a7a980(worker, _, stack, mode)` (name ours;
-/// caller `Native_5036`, mode 0): pops three variable words (z, y, x
+/// caller `Native_5036_ChrGetOptPos`, mode 0): pops three variable words (z, y, x
 /// order: the last popped is x's), for mode 0 an attachment index, and a
 /// worker index; that worker's character gives a position (mode 0:
 /// `Ch_OptposGet(chr, index, frame)`; 1: point 0; 2: its `+0x6b4`

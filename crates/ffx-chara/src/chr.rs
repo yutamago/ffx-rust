@@ -1037,7 +1037,7 @@ pub mod bridge {
 
     /// `Ch_SetShadeID(chr, v, frames)` (`0x0082b720`; callers
     /// `Ch_Allocate`, `Ch_SetShadeIDRelation`, `Ch_IdShadeCalc`,
-    /// `Native_5088`): the shade-id fade (`+0x36c`) to `v` over `frames`
+    /// `Native_5088_ChrSetShadeId`): the shade-id fade (`+0x36c`) to `v` over `frames`
     /// (`Chr_FadeSet`), `Ch_SetShadeIDRelation(chr, v, frames)`, then the
     /// renderer's shade colour from the colour fades' current values
     /// (`+0x330`, `+0x33c`, `+0x348`) and its shade coefficient `v` on
