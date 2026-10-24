@@ -19,7 +19,24 @@
 #
 # Ranges: the map words, the scenario, message windows 0 and 1, the global
 # random generator and the party records (as event-besaid, without the
-# position and the view matrix, which follow the presses' frames here).
+# position and the view matrix, which follow the presses' frames here), and
+# Wakka's position and rotation: bsil0300's worker 6 (Native_SetModel 5),
+# ctrl work 0's workers (*0x01325bbc; the 15 actors 0xb58 apart) + 6 x 0xb58
+# + the move block 0x558: position +0, rotation +0x30..+0x3b. A port that
+# turns or moves him wrongly shows as a trace difference, not only in the
+# shots (Atel_MoveUpdate, 2026-10-24). The trace starts on map 0x29, where
+# that worker index means Wakka; event-besaid traces the walk before it.
+#
+# The scene's trigger is bsil0300's worker 18: a fixed line from
+# (-417.0, -34.9, -476.4) to (-483.1, -35.0, -359.5), each end moved out 20
+# (Native_LineExtend), active at scenario 119; not tied to Wakka. Tidus
+# walks into the river edge 0.24 units short of the line, about 3 units
+# along it from the first end (23 inside the extended end), and the trigger
+# fires a few frames after he stops (probe 2026-10-24: 5-7 frames into the
+# ninth step, the eighth ending about 3 units from the edge). The ninth
+# step is held 45 frames instead of 30 for slack: after the trigger the
+# control is off, so the longer hold changes nothing once it has fired.
+#
 # Screenshots (event-cliff-<n>.bmp): 1 the subtitle "Tidus: Huh?", 2 Wakka
 # about to shove, 3 Tidus falling, 4 Wakka jumping (from above), 5 Tidus in
 # the water.
@@ -27,7 +44,6 @@ realtime
 load direct 3 bsil0000
 waitfor 0x01325d94:4 40000000 c0ffffff 1500
 wait 37
-trace 0x0112ca90:16 0x0112d67c:2 0x01326d84:12 0x01326db0:12 0x00c42200:4 0x0113205c:0xa68
 pad down+left
 waitfor 0x0112ca90:4 14004600 ffffffff 600
 pad
@@ -40,6 +56,7 @@ pad right
 waitfor 0x0112ca90:4 29001400 ffffffff 900
 pad
 waitfor 0x01325d94:4 20000000 e0ffffff 1500
+trace 0x0112ca90:16 0x0112d67c:2 0x01326d84:12 0x01326db0:12 0x00c42200:4 0x0113205c:0xa68 *0x01325bbc+0x4968:12 *0x01325bbc+0x4998:12
 read 0x01325d94 4
 press up+right 30 4
 press circle 3 3
@@ -57,8 +74,8 @@ press up+right 30 4
 press circle 3 3
 press up+right 30 4
 press circle 3 3
-# the ninth step crosses the trigger
-press up+right 30 4
+# the ninth step reaches the trigger (held 45 frames: slack, see above)
+press up+right 45 4
 press circle 3 3
 read 0x01325d94 4
 read 0x00ccb9a8 12
