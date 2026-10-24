@@ -18,6 +18,12 @@
 # KEEP_RUNS run folders are kept; %TEMP%\ffx-snap is otherwise disposable.
 #
 # FFX_REPLAY_SERIAL=1 runs the replays one after the other instead.
+#
+# The `eye` replays' screenshots are recorded into orig/eye and orig2/eye,
+# out of shot-compare.py's sight: random effects (an overdrive's lightning,
+# fireflies, the idle pose under a menu) differ in a few pixels between any
+# two runs, and the exact comparison would fail every run. Look at them
+# (docs/harness.md, battle-overdrive); the run prints where they are.
 set -u
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo"
@@ -38,7 +44,8 @@ for f in "$lin"/*-orig.trace "$lin"/*-orig2.trace; do
 done
 # keep the newest KEEP_RUNS run folders (each is ~30 MB of screenshots)
 ls -1dt "$lin"/runs/*/ 2>/dev/null | tail -n +"$((${KEEP_RUNS:-20} + 1))" | while read -r d; do rm -rf "$d"; done
-replays=(field-walk battle-attack menu-browse boot battle-magic)
+replays=(field-walk battle-attack menu-browse boot battle-magic battle-overdrive)
+eye=(battle-overdrive)
 
 # Build once, not three times side by side.
 tools/build-hook.sh >/dev/null || exit 1
@@ -71,11 +78,13 @@ if [ "${1:-}" = --record ]; then
     [ $# -gt 0 ] && replays=("$@")
     for tag in orig orig2; do
         each "$tag" original
-        mkdir -p "$shots/$tag"
+        mkdir -p "$shots/$tag/eye"
         for r in "${replays[@]}"; do
-            rm -f "${shots:?}/$tag/$r"-[0-9]*.bmp
+            dest="$shots/$tag"
+            [[ " ${eye[*]} " == *" $r "* ]] && dest="$shots/$tag/eye"
+            rm -f "${dest:?}/$r"-[0-9]*.bmp
             [ -f "$runs/$tag/$r-$tag.trace" ] && cp "$runs/$tag/$r-$tag.trace" "$traces/$r-$tag.trace"
-            cp "$runs/$tag/$r"-*.bmp "$shots/$tag/" 2>/dev/null
+            cp "$runs/$tag/$r"-*.bmp "$dest/" 2>/dev/null
         done
     done
     echo "recorded in $((SECONDS - start)) s ($runs)"
@@ -96,4 +105,7 @@ for r in "${replays[@]}"; do
     "${cmp[@]}" >/dev/null 2>&1 || bad=1
 done
 python3 tools/shot-compare.py "$shots/orig" "$shots/orig2" "$runs/rust" --coarse field-walk || bad=1
+for r in "${eye[@]}"; do
+    echo "== $r screenshots, by eye: $runs/rust/$r-*.bmp against $shots/orig/eye and $shots/orig2/eye"
+done
 exit $bad
