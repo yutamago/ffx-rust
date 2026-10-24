@@ -960,6 +960,10 @@ ported! {
     Sg_MainCalcRate @ 0x0082_06c0 => extern "C" fn sg_main_calc_rate() -> i32 {
         state::bridge::main_calc_rate(&mut mem())
     }
+    /// `Sg_MainCheckMenu()`: 1 when the menu opened this frame.
+    Sg_MainCheckMenu @ 0x0082_0750 => extern "C" fn sg_main_check_menu() -> u32 {
+        state::bridge::main_check_menu(&mut mem())
+    }
     /// `Sg_MenuSetReserve(request)`.
     Sg_MenuSetReserve @ 0x0082_1750 => extern "C" fn sg_menu_set_reserve(request: u32) {
         state::bridge::menu_set_reserve(&mut mem(), request, |m| {

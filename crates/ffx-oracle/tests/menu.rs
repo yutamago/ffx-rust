@@ -22290,3 +22290,94 @@ fn pc8_b_tk_init_scene_matches_the_original() {
         );
     }
 }
+
+/// pc round 9 a: `TkUpdateEventJump` with the jump request on or off,
+/// each fade countdown positive, 0 or negative, the maps that skip the
+/// loading screen (0x17, 0x15c, 0x10c with `getScenerioFlag` 0x1a9 in `ax`
+/// and other high bits) and others; the loading screen changes the
+/// record's map, so `TkInitScene` must get the map read again. Every
+/// callee logged with its arguments and a result of its own.
+#[test]
+fn pc9_a_tk_update_event_jump_matches_the_original() {
+    use ffx_menu::start::{bridge as st, callee as c, global as g};
+    let Some(mut t) = setup_any(0x9c09_a001) else {
+        return;
+    };
+    let log = t.alloc(&vec![0; 0x2000]);
+    let cursor = t.alloc(&log.to_le_bytes());
+    let cells: Vec<u32> = (0..4).map(|_| t.alloc(&[0; 4])).collect();
+    let [rec, flag, next_map, snd] = cells[..].try_into().unwrap();
+    // mov eax, [next_map]; mov ecx, [rec]; mov [ecx], ax; ret
+    let loading_post = [
+        &[0xa1][..],
+        &next_map.to_le_bytes(),
+        &[0x8b, 0x0d],
+        &rec.to_le_bytes(),
+        &[0x66, 0x89, 0x01, 0xc3],
+    ]
+    .concat();
+    // AtelCheckMemory and AtelMove also log g_TkInitDone:
+    // mov eax, [done]; mov ecx, [cursor]; mov [ecx], eax;
+    // add dword [cursor], 4; ret
+    let done = t.sym(g::INIT_FLAG);
+    let done_post = [
+        &[0xa1][..],
+        &done.to_le_bytes(),
+        &[0x8b, 0x0d],
+        &cursor.to_le_bytes(),
+        &[0x89, 0x01, 0x83, 0x05],
+        &cursor.to_le_bytes(),
+        &[0x04, 0xc3],
+    ]
+    .concat();
+    let callees: Vec<(u32, u8, Vec<u8>)> = vec![
+        (c::MS_GET_SAVE_EVENT_ADDRESS, 0, small8_ret(rec)),
+        (c::GET_SCENERIO_FLAG, 0, small8_ret(flag)),
+        (c::ACTIVATE_LOADING_SCREEN, 0, loading_post),
+        (c::INIT_SCENE, 1, vec![]),
+        (c::ATEL_EVENT_FRAME, 0, vec![]),
+        (c::ATEL_CHECK_MEMORY, 0, done_post.clone()),
+        (c::ATEL_MOVE, 1, done_post),
+        (c::SND_UPDATE2, 0, small8_ret(snd)),
+    ];
+    for (k, (f, n, post)) in callees.into_iter().enumerate() {
+        let id = 0x9a00 + u32::try_from(k).unwrap();
+        let post = if post.is_empty() {
+            [&[0xb8][..], &id.to_le_bytes(), &[0xc3]].concat()
+        } else {
+            post
+        };
+        small7_log(&mut t, f, cursor, id, n, &[], &post);
+    }
+    let record = t.alloc(&[0; 0x10]);
+    let mut callback = callback;
+    for round in 0..400u32 {
+        t.put(cursor, log);
+        t.put(rec, record);
+        let map = t
+            .rng
+            .pick_or_any(&[0x17, 0x15c, 0x10c, 0x10c, 0x1_0017, 0x10d, 0]);
+        t.put(record, map);
+        let next = t.rng.pick_or_any(&[0x17, 0x42]);
+        t.put(next_map, next);
+        let f = t.rng.pick_or_any(&[0x1a9, 0x1a9, 0x1_01a9, 0x1a8, 0]);
+        t.put(flag, f);
+        let v = t.rng.next();
+        t.put(snd, v);
+        let on = t.rng.pick_or_any(&[0, 1, 1, 1]);
+        t.put(t.sym(g::EVENT_JUMP_REQUEST), on);
+        for k in 0..2 {
+            let v = t.rng.pick_or_any(&[0, 0, 1, 2, 0xffff_ffff, 0x8000_0000]);
+            t.put(t.sym(g::FADE_OUT) + 4 * k, v);
+        }
+        let v = t.rng.next();
+        t.put(t.sym(g::INIT_FLAG), v);
+        t.twin(
+            &format!("TkUpdateEventJump {round} map {map:#x}"),
+            0x0088_d3d0,
+            &[],
+            U32,
+            |b| u64::from(st::tk_update_event_jump(b, &mut callback)),
+        );
+    }
+}

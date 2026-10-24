@@ -11437,3 +11437,67 @@ fn menu_list_draw_snapshot() {
     let mut rng = Xorshift(0x5eed_f851);
     menu_list_draw_cases(&mut a, &mut b, &mut rng, 800);
 }
+
+/// pc round 9 a: `Sg_MainCheckMenu` over recorders: the movie fade or the
+/// pause on (`TkMenuStart`), no request with the pad bit 0x10 newly
+/// pressed or not, a request with a movie running or not and
+/// `TOMenuTryOpen` answering 0 or not, the capture state 1 or another.
+fn pc9_main_check_menu_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::state::bridge as st;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    let stands = [
+        (st::MOVIE_IS_BUSY, 0),
+        (st::TO_MENU_TRY_OPEN, 1),
+        (st::SG_MENU_SET_RESERVE, 1),
+        (st::TK_MENU_START, 1),
+    ];
+    for (k, &(sym, n)) in (1u32..).zip(&stands) {
+        recorder(a, b, k, sym, n, 0);
+    }
+    let pick = |rng: &mut Xorshift, v: &[u32]| {
+        let k = rng.below(u32::try_from(v.len()).unwrap() + 1) as usize;
+        if k == v.len() { rng.next() } else { v[k] }
+    };
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 1..5 {
+            let at = ret(a, k);
+            let v = pick(rng, &[0, 0, 1]);
+            put(a, b, at, v);
+        }
+        let v = pick(rng, &[0, 0, 0, 1]);
+        set(a, b, st::MOVIE_FADING, v);
+        let v = pick(rng, &[0, 0, 0, 1]);
+        set(a, b, st::PAUSE_ON, v);
+        let v = pick(rng, &[u32::MAX, u32::MAX, 0, 0x4010_0000, 7]);
+        set(a, b, st::MENU_REQUEST, v);
+        let v = rng.next();
+        set(a, b, st::MENU_RESULT, v);
+        let v = pick(rng, &[0, 1, 1, 2, 0x101]);
+        set(a, b, st::MENU_CAPTURE_STATE, v);
+        let v = pick(rng, &[0x10, 0, 0xef, 0x1000]);
+        set(a, b, st::PAD_PRESSED, v);
+        twin("Sg_MainCheckMenu", a, b, 0x0082_0750, &[], |m| {
+            st::main_check_menu(&mut H(m))
+        });
+    }
+}
+
+#[test]
+fn pc9_main_check_menu_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x9c09_a101);
+    pc9_main_check_menu_cases(&mut a, &mut b, &mut rng, 600);
+}
+
+#[test]
+fn pc9_main_check_menu_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x9c09_a102);
+    pc9_main_check_menu_cases(&mut a, &mut b, &mut rng, 300);
+}

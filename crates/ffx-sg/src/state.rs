@@ -2694,6 +2694,73 @@ pub mod bridge {
         MENU_RESERVE.set(mem, [request, u32::MAX]);
     }
 
+    /// `Movie_IsBusy_0076ed10()`.
+    pub const MOVIE_IS_BUSY: u32 = 0x0076_ed10;
+    /// `TOMenuTryOpen_008be840(request)`.
+    pub const TO_MENU_TRY_OPEN: u32 = 0x008b_e840;
+    /// `Sg_MenuSetReserve(request)`.
+    pub const SG_MENU_SET_RESERVE: u32 = 0x0082_1750;
+    /// `TkMenuStart(mode)`.
+    pub const TK_MENU_START: u32 = 0x008a_b030;
+    /// `g_PauseOn`.
+    pub const PAUSE_ON: Global<u32> = Global::new(0x0134_0828);
+    /// [`MENU_RESERVE`]'s request word (-1: none).
+    pub const MENU_REQUEST: Global<u32> = Global::new(0x012f_bc38);
+    /// [`MENU_RESERVE`]'s second word: the open's result
+    /// (`Native_MenuOpen_Result` reads it).
+    pub const MENU_RESULT: Global<u32> = Global::new(0x012f_bc3c);
+    /// The menu background capture's state (`g_MenuCaptureState`, name
+    /// ours): the renderer (`0x00668d68`, `0x0066adcf`) copies the frame
+    /// while it is 1 and sets 2; `Sg_MainCheckMenu` keeps the request and
+    /// answers 0 while it is 1.
+    pub const MENU_CAPTURE_STATE: Global<u32> = Global::new(0x0134_0844);
+
+    /// `Sg_MainCheckMenu()` (`0x00820750`, `Sg_MainLoop`'s menu check):
+    /// with [`MOVIE_FADING`] or [`PAUSE_ON`] set, `TkMenuStart(request)`
+    /// and 0. With no request (`MENU_RESERVE[0]` = -1), the newly pressed
+    /// pad bit 0x10 reserves request 0 (`Sg_MenuSetReserve(0)`). With one,
+    /// `MENU_RESERVE[1]` gets 1 while no movie runs (`Movie_IsBusy` 0),
+    /// else `TOMenuTryOpen(request)`, and a 0 there makes the answer 1;
+    /// the request is cleared (-1) unless [`MENU_CAPTURE_STATE`] is 1.
+    /// Returns 0 whenever [`MENU_CAPTURE_STATE`] is 1 at the end.
+    pub fn main_check_menu(h: &mut impl ffx_bridge::Host) -> u32 {
+        let call = |h: &mut _, f: u32, args: &[u32]| {
+            let f = Mem::rebase(h, f);
+            ffx_bridge::Host::call(h, f, args)
+        };
+        if MOVIE_FADING.get(h) != 0 || PAUSE_ON.get(h) != 0 {
+            let request = MENU_REQUEST.get(h);
+            call(h, TK_MENU_START, &[request]);
+            return 0;
+        }
+        let mut answer = 0;
+        if MENU_REQUEST.get(h) == u32::MAX {
+            if lo8(PAD_PRESSED.get(h)) & 0x10 != 0 {
+                call(h, SG_MENU_SET_RESERVE, &[0]);
+            }
+        } else {
+            let result = if call(h, MOVIE_IS_BUSY, &[]) == 0 {
+                1
+            } else {
+                let request = MENU_REQUEST.get(h);
+                let r = call(h, TO_MENU_TRY_OPEN, &[request]);
+                if r == 0 {
+                    answer = 1;
+                }
+                r
+            };
+            MENU_RESULT.set(h, result);
+            if MENU_CAPTURE_STATE.get(h) == 1 {
+                return 0;
+            }
+            MENU_REQUEST.set(h, u32::MAX);
+        }
+        if MENU_CAPTURE_STATE.get(h) == 1 {
+            return 0;
+        }
+        answer
+    }
+
     /// `Sg_ToggleEnableTkAnti()` (`0x0083b100`): flips [`TK_ANTI_ENABLE`].
     pub fn toggle_enable_tk_anti(mem: &mut impl Mem) {
         toggle(mem, TK_ANTI_ENABLE);

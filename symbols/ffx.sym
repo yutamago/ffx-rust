@@ -7587,7 +7587,7 @@
 0x00820660 function Sg_GuiGetDrawChr          # () -> i8 0x012fbbba; Fahrenheit Switch BSim 1.00 0x710042c7c0
 0x00820670 function Sg_GuiSetDrawChr          # (v): byte 0x012fbbba = v; Fahrenheit Switch BSim 1.00 0x710042c7b0
 0x008206c0 function Sg_MainCalcRate           # fh v3:exact 0x008207d0
-0x00820750 function Sg_MainCheckMenu             # layout: alphabetical run between Sg_MainCalcRate and Sg_MainDebug (1 unnamed in the gap); Switch 0x710042d460 Sg_MainCheckMenu is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00820750 function Sg_MainCheckMenu             # cdecl() -> 1 when TOMenuTryOpen opened the menu this frame, else 0: movie fade or pause on -> TkMenuStart(request), 0; no request (0x012fbc38 = -1) and pad bit 0x10 newly pressed -> Sg_MenuSetReserve(0); a request -> 0x012fbc3c = 1 (Movie_IsBusy 0) or TOMenuTryOpen(request), cleared to -1 unless g_MenuCaptureState is 1; 0 while g_MenuCaptureState is 1; caller Sg_MainLoop; ported ffx_sg::state::main_check_menu (pc r9). layout: alphabetical run between Sg_MainCalcRate and Sg_MainDebug (1 unnamed in the gap); Switch 0x710042d460 Sg_MainCheckMenu is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008207f0 function Sg_MainDebug              # fh v3:exact 0x00820900
 0x00820860 function Sg_MainInit               # fh switch:cg4 0x710042ce30
 0x00820ae0 function Sg_MainLoop               # the game's frame (update and draw): with g_PauseOn the world update (0x00821e80) is skipped for the pause's (0x008893e0); calls Battle_Update, Cam_Update, Screen_UpdateFades; was Game_Frame
@@ -10466,7 +10466,7 @@
 0x0088d240 function TkCdReadWithMalloc2          # layout: alphabetical run between TkCdReadSync and TkCdReadWithMallocWithMessage (2 unnamed in the gap); Switch 0x71004900a0 TkCdReadWithMalloc2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (file, size_of, min): cd = GetCD(), cd+0x10(file), n = max(cd+0x14(size_of), min) signed, Sg_MemSetAlign(0x40), buf = user_malloc((n + 0x7ff) & ~0x7ff toward zero), [buf] = 0, FlushCache(0), cd+0(size_of, buf, 0, 0), cd+8(0), FlushCache(0); returns buf; ported in menu round 30
 0x0088d2c0 function TkCdReadWithMallocWithMessage # fh v3:exact 0x0088d230; cdecl(dir, file) -> buffer: GetCD() +0x10(dir), size +0x14(file) or getEternalCalmSceneSize(file / 18) for isEternalCalmScene(file / 18), Sg_MemSetAlign(0x40), user_malloc(size up to 0x800), word 0, FlushCache(0), +0(file, buf, 0, 0), +8(0), FlushCache(0), AtelPs2DebugString marks; ported in menu round 23
 0x0088d390 function TkCdSize                  # fh switch:bsim1.00 0x7100490160
-0x0088d3d0 function TkUpdateEventJump # (): every frame in Sg_MainLoop's loop: with g_TkEventJumpRequest set and the fade out done, graphicActivateLoadingScreen and TkInitScene(g_SaveData map); name ours
+0x0088d3d0 function TkUpdateEventJump # cdecl() -> TkSndUpdate2's eax (tail jmp): every frame in Sg_MainLoop's loop: with g_TkEventJumpRequest set, g_TkFadeOut[0] > 0 drops by 1, else [1] > 0 becomes 0, else graphicActivateLoadingScreen (unless map 0x17, 0x15c, or 0x10c with getScenerioFlag ax 0x1a9) and TkInitScene(MsGetSaveEventAddress u16 +0, read again); then Atel_EventFrame, AtelCheckMemory with g_TkInitDone 0 (1 after), AtelMove(1); ported ffx_menu::start::tk_update_event_jump (pc r9); name ours
 0x0088d4e0 function TkDrawDebug               # fh v3:cg2 0x88d450
 0x0088d4f0 function TkDrawNoTrans             # fh v3:bsim1.00 0x0088d460; small round 1: AtelDrawNoTrans() then tail jmp TkSndUpdate2 (EAX its); ported in ffx_menu::tk
 0x0088d520 function TkFree                    # fh v3:exact 0x0088d490
@@ -17507,6 +17507,7 @@
 0x01340828 label    g_PauseOn                    # nonzero: Game_Frame runs the pause instead of the world; set alone, Pause_Update enters the pause
 0x01340838 label    g_PauseFade                  # the pause's dimming, 0x40 (paused) to 0x80 (running)
 0x0134083c label    g_PauseFadeStep              # added to g_PauseFade each frame: -4 entering, +4 leaving
+0x01340844 label    g_MenuCaptureState        # u32: the renderer (0x00668d68, 0x0066adcf) copies the frame for the menu background while it is 1 and sets 2; Sg_MainCheckMenu keeps the menu request and answers 0 while it is 1; name ours
 0x0134084c label    g_PauseEntered               # 1 once Pause_Enter ran
 0x01340850 label    g_PauseRequest            # Pause_Request sets it; the main loop runs Pause_Update while set
 0x01340854 label    g_TkMenuMode800003         # u32: 1 for TkMenuMainLoop_008a9ca0 mode 0x800003, 0 for other modes but -1; name ours

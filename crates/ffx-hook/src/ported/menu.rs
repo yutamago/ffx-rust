@@ -5152,6 +5152,10 @@ ported! {
     TkInitScene @ 0x0088_e070 => extern "C" fn tk_init_scene(map: u32) -> u32 {
         ffx_menu::start::bridge::tk_init_scene(&mut mem(), map, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkUpdateEventJump()`: the tail call `TkSndUpdate2`'s `eax`.
+    TkUpdateEventJump @ 0x0088_d3d0 => extern "C" fn tk_update_event_jump() -> u32 {
+        ffx_menu::start::bridge::tk_update_event_jump(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuStart(mode)`: the frame's or the task end's `eax`.
     TkMenuStart @ 0x008a_b030 => extern "C" fn tk_menu_start(mode: u32) -> u32 {
         // the draw buffer word Sg_GetDBuffDC writes

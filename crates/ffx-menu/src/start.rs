@@ -69,6 +69,16 @@ pub mod callee {
     pub const GET_DBUFF_DC: u32 = 0x0082_0530;
     pub const CALC_IMPORTANT_LIST_MAX: u32 = 0x008c_6790;
     pub const SET_IGNORE_JOIN_FLAG: u32 = 0x008a_ad60;
+
+    pub const MS_GET_SAVE_EVENT_ADDRESS: u32 = 0x0078_5240;
+    pub const GET_SCENERIO_FLAG: u32 = 0x0078_7360;
+    /// `jmp`s on into the graphics code.
+    pub const ACTIVATE_LOADING_SCREEN: u32 = 0x0063_9130;
+    pub const INIT_SCENE: u32 = 0x0088_e070;
+    pub const ATEL_EVENT_FRAME: u32 = 0x0087_2bd0;
+    pub const ATEL_CHECK_MEMORY: u32 = 0x0087_3c30;
+    pub const ATEL_MOVE: u32 = 0x0086_3510;
+    pub const SND_UPDATE2: u32 = 0x0088_7b80;
 }
 
 /// The globals and constants, by address.
@@ -130,6 +140,12 @@ pub mod global {
     pub const TASK_BUFFER: u32 = 0x0158_6f70;
     /// `"SA TASK MEMORY OVERFLOW"`.
     pub const TASK_OVERFLOW: u32 = 0x00b5_f490;
+    /// `g_TkEventJumpRequest`: 1 while a jump into the save data's map
+    /// waits (`TkUpdateEventJump`).
+    pub const EVENT_JUMP_REQUEST: u32 = 0x0133_084c;
+    /// `g_TkFadeOut`: two `i32` countdowns `TkUpdateEventJump` runs down
+    /// before the jump (the first by 1 a frame, the second at once to 0).
+    pub const FADE_OUT: u32 = 0x0133_0850;
 }
 
 /// [`ffx_bridge::Mem`].
@@ -617,5 +633,56 @@ pub mod bridge {
         go(mem, call, 0x0067_a5d0, &[map]);
         go(mem, call, 0x0067_a6a0, &[map]);
         go(mem, call, 0x0067_a8e0, &[map])
+    }
+
+    /// `TkUpdateEventJump()` (`0x0088d3d0`, every frame of `Sg_MainLoop`):
+    /// with [`g::EVENT_JUMP_REQUEST`] set, the record
+    /// `MsGetSaveEventAddress` gives and both [`g::FADE_OUT`] countdowns
+    /// (signed) at 0 or below, the record's map (`u16 +0`) is entered:
+    /// `graphicActivateLoadingScreen` first unless the map is 0x17, 0x15c,
+    /// or 0x10c with `getScenerioFlag()`'s `ax` 0x1a9, then
+    /// `TkInitScene(map)` (the map read again). A positive first countdown
+    /// drops by 1, else a positive second one becomes 0. Then
+    /// `Atel_EventFrame`, `AtelCheckMemory` with [`g::INIT_FLAG`] 0 around
+    /// it (1 after), `AtelMove(1)`, and the tail call `TkSndUpdate2`, whose
+    /// `EAX` it returns. `call` gets absolute addresses.
+    pub fn tk_update_event_jump<M, C>(mem: &mut M, call: &mut C) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let request = mem.rebase(g::EVENT_JUMP_REQUEST);
+        if mem.read::<u32>(request) != 0 {
+            let record = go(mem, call, c::MS_GET_SAVE_EVENT_ADDRESS, &[]);
+            let fade = mem.rebase(g::FADE_OUT);
+            let first = mem.read::<i32>(fade);
+            if first > 0 {
+                mem.write(fade, first - 1);
+            } else if mem.read::<i32>(fade + 4) > 0 {
+                mem.write(fade + 4, 0u32);
+            } else {
+                let map = mem.read::<u16>(record);
+                let plain = map == 0x17
+                    || map == 0x15c
+                    || (map == 0x10c && lo16(go(mem, call, c::GET_SCENERIO_FLAG, &[])) == 0x1a9);
+                if !plain {
+                    go(mem, call, c::ACTIVATE_LOADING_SCREEN, &[]);
+                }
+                let map = mem.read::<u16>(record);
+                go(mem, call, c::INIT_SCENE, &[u32::from(map)]);
+            }
+        }
+        go(mem, call, c::ATEL_EVENT_FRAME, &[]);
+        let done = mem.rebase(g::INIT_FLAG);
+        mem.write(done, 0u32);
+        go(mem, call, c::ATEL_CHECK_MEMORY, &[]);
+        mem.write(done, 1u32);
+        go(mem, call, c::ATEL_MOVE, &[1]);
+        go(mem, call, c::SND_UPDATE2, &[])
+    }
+
+    /// The low 16 bits of `v` (`ax`).
+    fn lo16(v: u32) -> u16 {
+        u16::try_from(v & 0xffff).unwrap_or(0)
     }
 }
