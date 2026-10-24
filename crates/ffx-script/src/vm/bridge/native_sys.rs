@@ -156,7 +156,7 @@ pub fn native_c020<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     pop(h, s)
 }
 
-/// `Native_c026_MusicStandby` (`0x00878ce0`, `0xc026`): `(var, v)` ->
+/// `Native_c026` (`0x00878ce0`, `0xc026`): `(var, v)` ->
 /// `0x00886a00(AtelGetRealVarAdrs(var), v)`; 1.
 pub fn native_c026<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -309,13 +309,13 @@ pub fn native_c041<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_c044_RestartSyncH` (`0x008791a0`, `0xc044`): `(v)`: `0x0088c7f0(v)`; 0.
+/// `Native_c044` (`0x008791a0`, `0xc044`): `(v)`: `0x0088c7f0(v)`; 0.
 pub fn native_c044<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     forward(h, s, 0x0088_c7f0);
     0
 }
 
-/// `Native_c045_GetSyncH` (`0x008791c0`, `0xc045`): `(v)` -> `0x0088c800(v)`.
+/// `Native_c045` (`0x008791c0`, `0xc045`): `(v)` -> `0x0088c800(v)`.
 pub fn native_c045<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     forward(h, s, 0x0088_c800)
 }

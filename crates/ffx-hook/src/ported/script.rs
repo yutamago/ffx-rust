@@ -5152,8 +5152,8 @@ ported! {
     Native_c021 @ 0x0087_8ae0 => extern "C" fn n_878ae0(w: u32, a: u32, s: u32) -> u32 {
         native_sys::native_c020(&mut mem(), w, a, s)
     }
-    /// `Native_c026_MusicStandby(worker, args, stack)`.
-    Native_c026_MusicStandby @ 0x0087_8ce0 => extern "C" fn n_878ce0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_c026(worker, args, stack)`.
+    Native_c026 @ 0x0087_8ce0 => extern "C" fn n_878ce0(w: u32, a: u32, s: u32) -> u32 {
         native_sys::native_c026(&mut mem(), w, a, s)
     }
     /// `Native_c032(worker, args, stack)`.
@@ -5200,12 +5200,12 @@ ported! {
     Native_c041_SetSoundType @ 0x0087_9160 => extern "C" fn n_879160(w: u32, a: u32, s: u32) -> u32 {
         native_sys::native_c041(&mut mem(), w, a, s)
     }
-    /// `Native_c044_RestartSyncH(worker, args, stack)`.
-    Native_c044_RestartSyncH @ 0x0087_91a0 => extern "C" fn n_8791a0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_c044(worker, args, stack)`.
+    Native_c044 @ 0x0087_91a0 => extern "C" fn n_8791a0(w: u32, a: u32, s: u32) -> u32 {
         native_sys::native_c044(&mut mem(), w, a, s)
     }
-    /// `Native_c045_GetSyncH(worker, args, stack)`.
-    Native_c045_GetSyncH @ 0x0087_91c0 => extern "C" fn n_8791c0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_c045(worker, args, stack)`.
+    Native_c045 @ 0x0087_91c0 => extern "C" fn n_8791c0(w: u32, a: u32, s: u32) -> u32 {
         native_sys::native_c045(&mut mem(), w, a, s)
     }
     /// `Native_c046(worker, args, stack)`.
@@ -6576,8 +6576,8 @@ ported! {
     Native_c00e_SqsSePlay @ 0x0087_8700 => extern "C" fn n_878700(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_c00e(&mut mem(), w, a, s)
     }
-    /// `Native_c019_MapLoadNoCache(worker, args, stack)`.
-    Native_c019_MapLoadNoCache @ 0x0087_8550 => extern "C" fn n_878550(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_c019(worker, args, stack)`.
+    Native_c019 @ 0x0087_8550 => extern "C" fn n_878550(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_c019(&mut mem(), w, a, s)
     }
     /// `Native_c035_GetBindPcChr(worker, args, stack)`.

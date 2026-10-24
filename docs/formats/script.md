@@ -2402,13 +2402,13 @@ marked "not ported" runs in the original, and so does the handler of
 | `0xc010` | `Native_c010_StreamStandby` | voice int | 1; SndStandbyStream(voice) (0x00887570) | - | int `0x00878770` (native_sys) |
 | `0xc011` | `Native_c011_StreamStart` | - | int: SndStartStream() (0x00887630); 1 | - | int `0x00878790` (native_mods) |
 | `0xc012` | `Native_c012_StreamGetState` | - | int: SndGetStreamState() != 0 (0x008864b0) | - | int `0x008787a0` (native_mods) |
-| `0xc013` | `Native_c013_GetConfigHiragana` | - | 1 when MsGetSaveConfigHiragana() (0x007851f0) is 1 | - | int `0x008787b0` (native_chr) |
+| `0xc013` | `Native_c013` | - | 1 when MsGetSaveConfigHiragana() (0x007851f0) is 1 | - | int `0x008787b0` (native_chr) |
 | `0xc014` | `Native_c014` | - | 1 when 0x007851b0() is not 0 | - | int `0x008787c0` (native_chr) |
 | `0xc015` | `Native_c015_SepTransFromHost` | &name int | debug (mod-tool candidate): the variable's address taken, then under TkIsDebug only: a host file read into a TkMalloc buffer and sent with SndSepTrans; 1 | - | int `0x008787d0` (not ported) |
 | `0xc016` | `Native_c016_SepPlaySimple` | v int | 1; 0x00886e80(v) | - | int `0x00878860` (native_sys) |
 | `0xc017` | `Native_c017_SepStop` | v int | 1; 0x00886eb0(v) | - | int `0x00878880` (native_sys) |
 | `0xc018` | `Native_c018_SqsSetProjectBase` | - | debug (mod-tool candidate): in a debug build SqsSetProjectBase(&var); 1 in release | - | int `0x008788a0` (not ported) |
-| `0xc019` | `Native_c019_MapLoadNoCache` | map | int: AtelMapLoadNoCache(map) (0x0086dd30); 0 | - | int `0x00878550` (native_mods) |
+| `0xc019` | `Native_c019` | map | int: AtelMapLoadNoCache(map) (0x0086dd30); 0 | - | int `0x00878550` (native_mods) |
 | `0xc01a` | `Native_c01a_SndKickFoot` | party int, kick int, variation int | 1; SndKickFoot(1, party, kick, variation) | - | int `0x008788e0` (native_sys) |
 | `0xc01b` | `Native_c01b_SndKickFoot` | party int, kick int, variation int | 1; SndKickFoot(0, party, kick, variation) | - | int `0x00878920` (native_sys) |
 | `0xc01c` | `Native_c01c_SndKickFoot` | party int, kick int | 1; SndKickFoot(5, party, kick, 0) | - | int `0x00878960` (native_sys) |
@@ -2421,7 +2421,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0xc023` | `Native_c023_ChrGetPos` | worker int, kind int, x var, y var, z var | 1; the given worker's character position (0x00833c30(chr, kind, &matrix) translation) into the three variables, 0.0 each without a character | - | int `0x00878b40` (native_sys) |
 | `0xc024` | `Native_c024_BtlEnd` | _, v | start: the battle end (AtelEventSetUpForBattleMusic, AtelEventRemoveForBattle for the event jump map, AtelBattleEndCallback(1, v, map)); its EAX; poll: 0xc024 (0x00878c60, poll), 0xb00a (0x0076ec10, int) and the like: 1; poll: 1 | see the poll | start `0x00878c10`, poll `0x00878c60`, poll `0x00878c60` (native_chr) |
 | `0xc025` | `Native_c025_SetChrName` | msg int | int: 1 when the message text (Msg_Text) fits and is copied over the player's name (MsGetSaveChrName(0), shorter than MsGetSaveChrNameSize(0)), else 0 | - | int `0x00878c70` (native_chr) |
-| `0xc026` | `Native_c026_MusicStandby` | var int, v int | 1; 0x00886a00(AtelGetRealVarAdrs(worker, var), v) | - | int `0x00878ce0` (native_sys) |
+| `0xc026` | `Native_c026` | var int, v int | 1; 0x00886a00(AtelGetRealVarAdrs(worker, var), v) | - | int `0x00878ce0` (native_sys) |
 | `0xc027` | `Native_c027` | - | debug (mod-tool candidate): under TkIsDebug only: TOSetCollectBit(-1) and 0x0088e780(0xa004 + k) for k < 26; 0 | - | int `0x00878d20` (not ported) |
 | `0xc028` | `Native_c028_ImportantSetAll` | - | debug (mod-tool candidate): in a debug build 0x0088e790(0xa004 + i) for 26 i; 1 | - | int `0x00878d60` (not ported) |
 | `0xc029` | `Native_c029` | flags int, b int, a int | int: a when bit 1 of flags is set, else b (the level's +0x884 minus the yaw is wrapped by 0x0088bc20 and dropped) | - | int `0x00878d90` (native_sys) |
@@ -2451,8 +2451,8 @@ marked "not ported" runs in the original, and so does the handler of
 | `0xc041` | `Native_c041_SetSoundType` | v int | int: v; 0x008871c0(v) | - | int `0x00879160` (native_sys) |
 | `0xc042` | `Native_c042_GetSoundType` | - | int: jumps to SndGetSoundType (0x00886440) | - | int `0x00879180` (native_mods) |
 | `0xc043` | `Native_c043_SepClearAll` | - | int: SndSepClearAll() (0x00886db0); 1 | - | int `0x00879190` (native_mods) |
-| `0xc044` | `Native_c044_RestartSyncH` | v int | 0; 0x0088c7f0(v) | - | int `0x008791a0` (native_sys) |
-| `0xc045` | `Native_c045_GetSyncH` | v int | int: 0x0088c800(v) | - | int `0x008791c0` (native_sys) |
+| `0xc044` | `Native_c044` | v int | 0; 0x0088c7f0(v) | - | int `0x008791a0` (native_sys) |
+| `0xc045` | `Native_c045` | v int | int: 0x0088c800(v) | - | int `0x008791c0` (native_sys) |
 | `0xc046` | `Native_c046` | v int | 0; 0x0088c820(v) | - | int `0x008791e0` (native_sys) |
 | `0xc047` | `Native_c047_SaveEventGetFloat` | offset int | float: the f32 at the buffer 0x0088c830() plus offset | - | float `0x00879200` (native_sys) |
 | `0xc048` | `Native_c048_SaveEventSetFloat` | offset int, v f | float: v; the f32 at 0x0088c830() plus offset = v | - | float `0x00879280` (native_sys) |
@@ -2465,7 +2465,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0xc04f` | `Native_c04f_AlwaysTrue` | - | int: 1 (mov eax, 1; ret) | - | int `0x00879380` (native_mods) |
 | `0xc050` | `Native_c050_MovieStop` | - | int: movie_stop_prog() (0x0076f090) when movie_run_check() (0x0076f060); 1 | - | int `0x00879390` (native_mods) |
 | `0xc051` | `Native_c051_SetTgs` | on | TkSetTGS(on != 0) (0x0088ec10); on != 0 | - | int `0x008793b0` (native_chr) |
-| `0xc052` | `Native_c052_GetTgs` | - | jumps to 0x0088d6d0 | - | int `0x008793e0` (native_chr) |
+| `0xc052` | `Native_c052` | - | jumps to 0x0088d6d0 | - | int `0x008793e0` (native_chr) |
 | `0xc053` | `Native_c053` | - | four popped and dropped; 0 | - | int `0x008793f0` (native_chr) |
 | `0xc054` | `Native_c054_MemAlloc` | n | TkMalloc(n) (0x0088e650) | - | int `0x008781b0` (native_chr) |
 | `0xc055` | `Native_c055_MemFree` | p | TkFree(p) (0x0088d520); 1 | - | int `0x008781d0` (native_chr) |
