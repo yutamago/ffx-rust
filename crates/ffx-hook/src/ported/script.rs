@@ -7285,6 +7285,31 @@ ported! {
     Atel_RegistVibrateSignalWith_008766d0 @ 0x0087_66d0 => extern "C" fn h_8766d0(from: u32, i: u32, k: u32, curve: u32) -> u32 {
         hp::atel_regist_vibrate_signal_with(&mut mem(), from, i, k, curve)
     }
+    /// `AtelCalcSound(req, play)`: the request's pan in `EAX`.
+    AtelCalcSound @ 0x0087_6930 => extern "C" fn h_876930(req: u32, play: u32) -> u32 {
+        hp::atel_calc_sound(&mut mem(), req, play)
+    }
+    /// `AtelExecSound()`: the last request's `EAX`.
+    AtelExecSound @ 0x0087_7380 => extern "C" fn h_877380() -> u32 {
+        hp::atel_exec_sound(&mut mem())
+    }
+    /// `Atel_EventSoundStep_008682f0()`: its one caller drops `EAX`.
+    Atel_EventSoundStep_008682f0 @ 0x0086_82f0 => extern "C" fn h_8682f0() {
+        hp::atel_event_sound_step(&mut mem());
+    }
+    /// `Atel_BattleEndMovieStep_00862000(state)`: a step callback; done
+    /// (1) or not (0) in `EAX`.
+    Atel_BattleEndMovieStep_00862000 @ 0x0086_2000 => extern "C" fn h_862000(state: u32) -> u32 {
+        hp::atel_battle_end_movie_step(&mut mem(), state)
+    }
+    /// `Atel_BattleEndMusicStep_00862120(state)`: a step callback.
+    Atel_BattleEndMusicStep_00862120 @ 0x0086_2120 => extern "C" fn h_862120(state: u32) -> u32 {
+        hp::atel_battle_end_music_step(&mut mem(), state)
+    }
+    /// `Atel_BattleEndSepStep_00862220(state)`: a step callback.
+    Atel_BattleEndSepStep_00862220 @ 0x0086_2220 => extern "C" fn h_862220(state: u32) -> u32 {
+        hp::atel_battle_end_sep_step(&mut mem(), state)
+    }
     /// `AtelSetSndCameraPos()`: the matrix in a 16-word frame.
     AtelSetSndCameraPos @ 0x0087_7470 => extern "C" fn h_877470() {
         let mut frame = super::StackFrame::<16>::new();

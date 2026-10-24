@@ -16828,3 +16828,346 @@ impl<H: run::NativeHost> run::Natives<H> for KeepUninit {
         }
     }
 }
+
+/// pc round 6 a on one pair: `AtelCalcSound`, `AtelExecSound` (volume
+/// ratios around 0 and 1, NaNs, infinities) and
+/// `Atel_EventSoundStep_008682f0` (ctrl work 0's flag bytes, an event
+/// header with -1..=4 sound records or none, `MsBattleCheck` 0 or not).
+/// `Snd3dFootRequest` returns a sequence; it, `AtelSetSndCameraPos`,
+/// `MsBattleCheck` and `Atel_SetEventWaterFlag_00865740` are logged.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss
+)] // one block per function; random bytes, small floats
+fn pc6a_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    // sequences: 0 Snd3dFootRequest, 1 MsBattleCheck
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0087_6950, 3, true),
+            (0x0078_0c90, 0, true),
+            (0x0087_7470, 0, false),
+            (0x0086_5740, 1, false),
+        ],
+    );
+    let ctx_at = a.rebase(0x0132_6b28);
+    let works = a.rebase(0x0132_5ba0);
+    let total_at = a.rebase(0x0132_830c);
+    let diff_at = a.rebase(0x0132_8310);
+    let water_at = a.rebase(0x0132_6b83);
+    let other = alloc_both(a, b, 0x240);
+    let block = alloc_both(a, b, 0x200);
+    let saved_ctx: u32 = Mem::read(&*a, ctx_at);
+    let ratio = |rng: &mut Xorshift| -> u32 {
+        match rng.below(10) {
+            0 => 0,
+            1 => 0x3f80_0000,
+            2 => 0xbf80_0000,
+            3 => 0x7f80_0000,
+            4 => 0xff80_0000,
+            5 => (rng.below(2000) as f32 / 1000.0 - 0.5).to_bits(),
+            // -0 (stays -0: fcom calls it equal to 0), NaNs of two payloads
+            6 => 0x8000_0000,
+            7 => 0x7fc0_0000 | rng.below(0x40_0000) | (rng.next() & 0x8000_0000),
+            _ => small5_word(rng),
+        }
+    };
+    for round in 0..200u32 {
+        r27_reset(a, b, &stubs, |s| match s {
+            1 => [0u32, 0, 0, 1, rng.next()][rng.below(5) as usize],
+            _ => rng.next(),
+        });
+        // AtelCalcSound
+        let req = rng.next();
+        let play = rng.below(3);
+        r22_case(
+            a,
+            b,
+            0x0087_6930,
+            &[req, play],
+            true,
+            &format!("AtelCalcSound {what} {round}"),
+            |r| hp::atel_calc_sound(r, req, play),
+        );
+        // AtelExecSound
+        let total = ratio(rng);
+        let diff = ratio(rng);
+        poke(a, b, total_at, total);
+        poke(a, b, diff_at, diff);
+        r22_case(
+            a,
+            b,
+            0x0087_7380,
+            &[],
+            true,
+            &format!("AtelExecSound {what} {round} total {total:#x} diff {diff:#x}"),
+            |r| hp::atel_exec_sound(r),
+        );
+        // Atel_EventSoundStep
+        poke(a, b, ctx_at, other);
+        let flags = [0x09u8, 0x09, 0x09, 0x08, 0x01, 0xff, rng.next() as u8][rng.below(7) as usize];
+        poke(a, b, works, flags);
+        poke(a, b, works + 2, rng.next() as u8);
+        poke(
+            a,
+            b,
+            works + 3,
+            [0u8, 0, 0, 1, 2, 0xfc][rng.below(6) as usize],
+        );
+        poke(a, b, works + 0x1f4, rng.next());
+        poke(a, b, water_at, [0u8, 1, 0xff][rng.below(3) as usize]);
+        fill_both(a, b, rng, block, 0x200);
+        let hdr = if rng.below(8) == 0 { 0 } else { block };
+        poke(a, b, works + 0x48, hdr);
+        // expansion header at +0x40 (or none), sound records at +0x80 (or none)
+        poke(
+            a,
+            b,
+            block + 0x2c,
+            if rng.below(8) == 0 { 0u32 } else { 0x40 },
+        );
+        poke(
+            a,
+            b,
+            block + 0x40 + 0x24,
+            if rng.below(8) == 0 { 0u32 } else { 0x80 },
+        );
+        let n = [-1i32, 0, 1, 2, 4][rng.below(5) as usize];
+        poke(a, b, block + 0x80, n);
+        r22_case(
+            a,
+            b,
+            0x0086_82f0,
+            &[],
+            false,
+            &format!("Atel_EventSoundStep {what} {round} flags {flags:#x} n {n}"),
+            |r| {
+                hp::atel_event_sound_step(r);
+                0
+            },
+        );
+        assert_eq!(Mem::read::<u32>(&*b, ctx_at), other, "{what} {round}: ctx");
+    }
+    // a request that makes another ctrl work current: the water flag
+    // comes from that one's +2
+    let third = alloc_both(a, b, 0x240);
+    let mut code = vec![0xc7, 0x05];
+    code.extend(ctx_at.to_le_bytes());
+    code.extend(third.to_le_bytes());
+    code.extend([0x31, 0xc0, 0xc3]); // xor eax, eax; ret
+    small6_patch(a, b, 0x0087_6950, &code);
+    for round in 0..40u32 {
+        r27_reset(a, b, &stubs, |_| 0);
+        poke(a, b, ctx_at, other);
+        poke(a, b, works, 0x09u8);
+        poke(a, b, works + 2, [0u8, 4, 6][rng.below(3) as usize]);
+        poke(a, b, works + 3, 0u8);
+        poke(a, b, third + 2, [0u8, 4, 6][rng.below(3) as usize]);
+        poke(a, b, works + 0x48, block);
+        poke(a, b, block + 0x2c, 0x40u32);
+        poke(a, b, block + 0x40 + 0x24, 0x80u32);
+        poke(a, b, block + 0x80, 1 + rng.below(2));
+        r22_case(
+            a,
+            b,
+            0x0086_82f0,
+            &[],
+            false,
+            &format!("Atel_EventSoundStep {what} switching {round}"),
+            |r| {
+                hp::atel_event_sound_step(r);
+                0
+            },
+        );
+    }
+    poke(a, b, ctx_at, saved_ctx);
+}
+
+#[test]
+fn pc6a_atel_sound_matches_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_6a0c);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        pc6a_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    pc6a_cases(&mut a, &mut b, &mut rng, "snapshot");
+}
+
+/// pc round 6 b on one pair: the battle end's step callbacks
+/// `Atel_BattleEndMovieStep_00862000`, `Atel_BattleEndMusicStep_00862120`
+/// and `Atel_BattleEndSepStep_00862220` from every state (and some past
+/// the last), every callee a stub (a sequence where its result matters),
+/// the CD's ready function (`GetCD()->+8`) the stand-in at `0x00886660`.
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // one block per callback; random bytes
+fn pc6b_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    // sequences: 0 GetCD, 1 the CD's ready function, 2 SndIsReadStatus,
+    // 3 movie_sync_prog, 4 movie_frame_prog, 5 op_oef2_sound_cue_check,
+    // 6 0x00886630, 7 SndGetNowPlayMusic, 8 AtelGetMusicNumber,
+    // 9 SndSyncMusicStandby
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0076_d0d0, 0, true),
+            (0x0088_6660, 1, true),
+            (0x0088_6650, 0, true),
+            (0x0076_f0a0, 0, true),
+            (0x0076_efb0, 0, true),
+            (0x0080_00f0, 1, true),
+            (0x0088_6630, 0, true),
+            // (their pushed 0x78 is unused: the calls without it would log
+            // a stale stack word)
+            (0x0088_63f0, 0, true),
+            (0x0087_3b00, 0, true),
+            (0x0088_7900, 1, true),
+            (0x0076_f080, 2, false),
+            (0x0076_f040, 0, false),
+            (0x0076_f090, 0, false),
+            (0x0082_cbe0, 1, false),
+            (0x0082_cbc0, 1, false),
+            (0x0088_6af0, 2, false),
+            (0x0088_6960, 1, false),
+            (0x0088_6830, 2, false),
+            (0x0087_1780, 5, false),
+            (0x0086_58d0, 2, false),
+        ],
+    );
+    let ctx_at = a.rebase(0x0132_6b28);
+    // AtelEventKickBGSep logs the current ctrl work and its two words
+    let mut code = vec![0x8b, 0x0d]; // mov ecx, [cell]
+    code.extend(stubs.0.to_le_bytes());
+    code.push(0xa1); // mov eax, [ctx]
+    code.extend(ctx_at.to_le_bytes());
+    code.extend([0x89, 0x01]); // mov [ecx], eax
+    code.extend([0x8b, 0x44, 0x24, 0x04, 0x89, 0x41, 0x04]); // the first word
+    code.extend([0x8b, 0x44, 0x24, 0x08, 0x89, 0x41, 0x08]); // the second
+    code.extend([0x83, 0xc1, 0x0c, 0x89, 0x0d]); // add ecx, 12; mov [cell], ecx
+    code.extend(stubs.0.to_le_bytes());
+    code.push(0xc3);
+    small6_patch(a, b, 0x0086_58d0, &code);
+    let cd = alloc_both(a, b, 0x10);
+    let ready = a.rebase(0x0088_6660);
+    poke(a, b, cd + 8, ready);
+    let state = alloc_both(a, b, 4);
+    let other = alloc_both(a, b, 0x240);
+    let saved_ctx: u32 = Mem::read(&*a, ctx_at);
+    let fade = rng.below(40);
+    for round in 0..400u32 {
+        r27_reset(a, b, &stubs, |s| match s {
+            0 => cd,
+            1 | 2 | 5 | 6 | 9 => [0u32, 0, 1, rng.next()][rng.below(4) as usize],
+            4 => [
+                fade,
+                fade + 1,
+                fade.wrapping_sub(1),
+                0,
+                u32::MAX,
+                rng.next(),
+            ][rng.below(6) as usize],
+            7 | 8 => [u32::MAX, 0, 3, 0x8000_0000, rng.next()][rng.below(5) as usize],
+            _ => rng.next(),
+        });
+        for g in [0x0132_6b38u32, 0x0132_6b3c, 0x0132_6b88] {
+            poke(a, b, a.rebase(g), rng.next());
+        }
+        poke(
+            a,
+            b,
+            a.rebase(0x0132_6b8c),
+            [0u32, 1, rng.next()][rng.below(3) as usize],
+        );
+        let f = [0u32, 1, fade, u32::MAX, 0x8000_0000, rng.next()][rng.below(6) as usize];
+        poke(a, b, a.rebase(0x0132_6b84), f);
+        let keep = (rng.next() & 0x0002_0800) | [0u32, 0, 1, 4, 0xff][rng.below(5) as usize];
+        poke(
+            a,
+            b,
+            a.rebase(0x0132_6b4c),
+            keep | (rng.next() & 0xfffd_f700),
+        );
+        poke(a, b, a.rebase(0x0132_6bde), rng.next() as u8);
+        poke(a, b, a.rebase(0x0132_6bdc), rng.next() as u8);
+        let counter = [0u32, 0, 3, 6, 7, 8, u32::MAX, rng.next()][rng.below(8) as usize];
+        poke(a, b, a.rebase(0x0132_6b34), counter);
+        poke(a, b, ctx_at, other);
+        let s = rng.below(9);
+        poke(a, b, state, s);
+        r22_case(
+            a,
+            b,
+            0x0086_2000,
+            &[state],
+            true,
+            &format!("Atel_BattleEndMovieStep {what} {round} state {s} fade {f:#x}"),
+            |r| hp::atel_battle_end_movie_step(r, state),
+        );
+        poke(a, b, state, s);
+        r22_case(
+            a,
+            b,
+            0x0086_2120,
+            &[state],
+            true,
+            &format!("Atel_BattleEndMusicStep {what} {round} state {s} keep {keep:#x}"),
+            |r| hp::atel_battle_end_music_step(r, state),
+        );
+        poke(a, b, state, s);
+        r22_case(
+            a,
+            b,
+            0x0086_2220,
+            &[state],
+            true,
+            &format!("Atel_BattleEndSepStep {what} {round} state {s} counter {counter:#x}"),
+            |r| hp::atel_battle_end_sep_step(r, state),
+        );
+        assert_eq!(Mem::read::<u32>(&*b, ctx_at), other, "{what} {round}: ctx");
+    }
+    poke(a, b, ctx_at, saved_ctx);
+}
+
+#[test]
+fn pc6b_battle_end_steps_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_6b0c);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        pc6b_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    pc6b_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

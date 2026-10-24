@@ -10035,3 +10035,313 @@ pub fn atel_play_time_update<H: ffx_bridge::Host>(
     let whole = x87::ftol(h, t);
     h.write(last_at, x87::store(f64::from(whole.cast_signed())));
 }
+
+/// `Snd3dFootRequest` (`0x00876950`, ffx-sound's): a positioned sound
+/// request, its pan in `EAX`.
+const SND3D_FOOT_REQUEST: u32 = 0x0087_6950;
+
+/// `AtelCalcSound(req, play)` (`0x00876930`; caller `Native_0109`):
+/// `Snd3dFootRequest(req, play, 0x100)`, its `EAX` (the pan) handed on.
+pub fn atel_calc_sound(h: &mut impl ffx_bridge::Host, req: u32, play: u32) -> u32 {
+    host_call(h, SND3D_FOOT_REQUEST, &[req, play, 0x100])
+}
+
+/// `g_AtelSnd3dVolumeTotalRatio` (`0x0132830c`) and
+/// `g_AtelSnd3dVolumeDiffRatio` (`0x01328310`), both `f32`.
+const SND3D_VOLUME_TOTAL: u32 = 0x0132_830c;
+const SND3D_VOLUME_DIFF: u32 = 0x0132_8310;
+
+/// `AtelExecSound()` (`0x00877380`; caller `0x00872bd0`, the event
+/// frame): the total volume ratio moves by the difference
+/// (`f32(diff + total)`, then 0 below 0 and 1 above 1; a NaN stays),
+/// `AtelSetSndCameraPos` places the listener and each of the 16
+/// `g_AtelSnd3dWork` records is requested (`Snd3dFootRequest(rec, 0,
+/// 0x100)`). `EAX`: the last request's (the caller drops it).
+pub fn atel_exec_sound(h: &mut impl ffx_bridge::Host) -> u32 {
+    let total_at = h.rebase(SND3D_VOLUME_TOTAL);
+    let diff = x87::load(h.read::<u32>(h.rebase(SND3D_VOLUME_DIFF)));
+    let total = x87::store(x87::add(diff, x87::load(h.read::<u32>(total_at))));
+    h.write(total_at, total);
+    let t = f32::from_bits(total);
+    // fcom: 0 when t < 0, 1 when 1 < t; unordered keeps the sum
+    if t < 0.0 {
+        h.write(total_at, 0.0_f32.to_bits());
+    } else if 1.0 < t {
+        h.write(total_at, 1.0_f32.to_bits());
+    }
+    host_call(h, 0x0087_7470, &[]);
+    let mut eax = 0;
+    for k in 0..16 {
+        let rec = h.rebase(SND3D_WORK) + k * 0x24;
+        eax = host_call(h, SND3D_FOOT_REQUEST, &[rec, 0, 0x100]);
+    }
+    eax
+}
+
+/// `Atel_EventSoundStep_008682f0()` (name ours; caller `0x00872bd0`, the
+/// event frame, after [`atel_exec_sound`]): with ctrl work 0 current
+/// (the old one restored at the end) and the camera matrix flag cleared
+/// ([`super::globals::atel_clear_camera_matrix_flag`]): when the work is
+/// on (bit 0), has an event header (`+0x48`) and runs (bit 3), its byte
+/// `+3` has neither bit 0 nor 1 and no battle runs (`MsBattleCheck` 0),
+/// each of the header's sound records (the `+0x24` block,
+/// [`atel_get_bin_hdr_expand_24`]: count, then 0x3c-byte records from
+/// `+4`) gets its own address as parameters (`+0x20` = record `+4`) and
+/// is requested at `+0x1c` (`Snd3dFootRequest(rec + 0x1c, 0, frames)`,
+/// the frames the work has run, `+0x1f4`); then the water flag
+/// (`Atel_SetEventWaterFlag_00865740`): bit 1 of the work's byte `+2`
+/// when its bit 2 is set, else `g_AtelInWater` (`i8`).
+pub fn atel_event_sound_step(h: &mut impl ffx_bridge::Host) {
+    let ctx_at = h.rebase(SCRIPT_CONTEXT);
+    let old = h.read::<u32>(ctx_at);
+    let works = h.rebase(0x0132_5ba0);
+    h.write(ctx_at, works);
+    super::globals::atel_clear_camera_matrix_flag(h);
+    let c = h.read::<u32>(ctx_at);
+    let flags = h.read::<u8>(c);
+    if flags & 1 == 0
+        || h.read::<u32>(c + 0x48) == 0
+        || flags & 8 == 0
+        || h.read::<u8>(c + 3) & 3 != 0
+        || host_call(h, 0x0078_0c90, &[]) != 0
+    {
+        h.write(ctx_at, old);
+        return;
+    }
+    let mut c = h.read::<u32>(ctx_at);
+    let list = atel_get_bin_hdr_expand_24(h, h.read::<u32>(c + 0x48));
+    let frames = h.read::<u32>(c + 0x1f4);
+    if list != 0 && h.read::<i32>(list) > 0 {
+        let mut rec = list + 0x1c;
+        let mut i = 0;
+        loop {
+            h.write(rec + 4, rec - 0x18);
+            host_call(h, SND3D_FOOT_REQUEST, &[rec, 0, frames]);
+            i += 1;
+            rec += 0x3c;
+            if i >= h.read::<i32>(list) {
+                break;
+            }
+        }
+        c = h.read::<u32>(ctx_at);
+    }
+    let b = h.read::<u8>(c + 2);
+    let on = if b & 4 != 0 {
+        u32::from(b >> 1 & 1)
+    } else {
+        i32::from(h.read::<i8>(h.rebase(0x0132_6b83))).cast_unsigned()
+    };
+    host_call(h, 0x0086_5740, &[on]);
+    h.write(ctx_at, old);
+}
+
+/// `g_AtelBattleEndStatus + 4` (`0x01326b4c`): the battle end's
+/// keep-recover word (low byte its kind, bit 11 fade the music out, bit
+/// 17 keep it).
+const BATTLE_END_KEEP: u32 = 0x0132_6b4c;
+/// Ctrl work 0's event header (`g_AtelCtrlWorks + 0x48`) and its
+/// separate data (`+0x204`).
+const CTRL0_HEADER: u32 = 0x0132_5be8;
+const CTRL0_SEP_DATA: u32 = 0x0132_5da4;
+
+/// `Atel_BattleEndMovieStep_00862000(state)` (name ours; a step callback
+/// `AtelBattleEndCallback` and `0x008617a0` register): `*state` 0 or 1
+/// waits for the CD (`GetCD()->+8(1)` 0) and `SndIsReadStatus` (0), then
+/// state 2 starts the movie (`movie_start_prog(*0x01326b38,
+/// *0x01326b3c)`, `movie_play_prog`) and becomes 3; state 3 checks the
+/// movie (`movie_sync_prog`, `movie_frame_prog`): once the frame reaches
+/// a positive [`super::globals::BATTLE_END_MOVIE_FADEOUT`], the screen
+/// fades out (`Sg_FadeOutW` when `0x01326b8c` is set, else `Sg_FadeOut`,
+/// both with `0x01326b88`) and the fade-out frame becomes -1; sync bit 0
+/// stops the movie (`movie_stop_prog`) and returns 1. 0 otherwise, also
+/// for a state above 3.
+pub fn atel_battle_end_movie_step(h: &mut impl ffx_bridge::Host, state: u32) -> u32 {
+    let mut s = h.read::<u32>(state);
+    if s > 3 {
+        return 0;
+    }
+    if s < 2 {
+        if s == 0 {
+            h.write(state, 1u32);
+        }
+        let cd = host_call(h, 0x0076_d0d0, &[]);
+        let ready = h.read::<u32>(cd + 8);
+        if h.call(ready, &[1]) != 0 || host_call(h, 0x0088_6650, &[]) != 0 {
+            return 0;
+        }
+        h.write(state, 2u32);
+        s = 2;
+    }
+    if s == 2 {
+        let a = h.read::<u32>(h.rebase(0x0132_6b38));
+        let b = h.read::<u32>(h.rebase(0x0132_6b3c));
+        host_call(h, 0x0076_f080, &[a, b]);
+        host_call(h, 0x0076_f040, &[]);
+        h.write(state, 3u32);
+        return 0;
+    }
+    let sync = host_call(h, 0x0076_f0a0, &[]);
+    let frame = host_call(h, 0x0076_efb0, &[]).cast_signed();
+    let fade_at = h.rebase(0x0132_6b84);
+    let fade = h.read::<i32>(fade_at);
+    if fade > 0 && fade <= frame {
+        let time = h.read::<u32>(h.rebase(0x0132_6b88));
+        let f = if h.read::<u32>(h.rebase(0x0132_6b8c)) != 0 {
+            0x0082_cbe0
+        } else {
+            0x0082_cbc0
+        };
+        host_call(h, f, &[time]);
+        h.write(fade_at, u32::MAX);
+    }
+    if sync & 1 == 0 {
+        return 0;
+    }
+    host_call(h, 0x0076_f090, &[]);
+    1
+}
+
+/// `Atel_BattleEndMusicStep_00862120(state)` (name ours; a step callback
+/// `AtelBattleEndCallback` registers): state 0 becomes 1; state 1 counts
+/// `0x01326bde` up while `0x00886630()` is busy, then goes to state 2
+/// without keep-recover bit 11 or, with it, fades the playing music out
+/// (`SndMusicVolumeFadeOut(SndGetNowPlayMusic(), 0x78)` when one plays
+/// and the kind byte is set) and returns 1; state 2 reads the event's
+/// music (`SndMusicRead(AtelGetMusicNumber())` when there is one) and
+/// becomes 3; state 3 waits for `SndSyncMusicStandby(0)`, then with a
+/// kind byte and no bit 17 cross-starts the event's music
+/// (`SndMusicCrossStart(n, 0x78)`, or the fade-out without one) and
+/// returns 1 (1 also without). 0 otherwise.
+pub fn atel_battle_end_music_step(h: &mut impl ffx_bridge::Host, state: u32) -> u32 {
+    const NOW_PLAY: u32 = 0x0088_63f0;
+    const MUSIC_NUMBER: u32 = 0x0087_3b00;
+    fn fade_out(h: &mut impl ffx_bridge::Host) -> u32 {
+        // the pushed 0x78 is SndGetNowPlayMusic's unused argument and
+        // then the fade's second
+        let id = host_call(h, NOW_PLAY, &[0x78]);
+        host_call(h, 0x0088_6af0, &[id, 0x78]);
+        1
+    }
+    let keep_at = h.rebase(BATTLE_END_KEEP);
+    match h.read::<u32>(state) {
+        0 => {
+            h.write(state, 1u32);
+            0
+        }
+        1 => {
+            if host_call(h, 0x0088_6630, &[]) != 0 {
+                let at = h.rebase(0x0132_6bde);
+                let n = h.read::<u8>(at);
+                h.write(at, n.wrapping_add(1));
+                return 0;
+            }
+            if h.read::<u32>(keep_at) & 0x800 == 0 {
+                h.write(state, 2u32);
+                return 0;
+            }
+            if host_call(h, NOW_PLAY, &[]).cast_signed() >= 0 && h.read::<u8>(keep_at) != 0 {
+                return fade_out(h);
+            }
+            1
+        }
+        2 => {
+            if host_call(h, MUSIC_NUMBER, &[]).cast_signed() >= 0 {
+                let n = host_call(h, MUSIC_NUMBER, &[]);
+                host_call(h, 0x0088_6960, &[n]);
+            }
+            h.write(state, 3u32);
+            0
+        }
+        3 => {
+            if host_call(h, 0x0088_7900, &[0]) != 0 {
+                return 0;
+            }
+            let keep = h.read::<u32>(keep_at);
+            if keep & 0x2_0000 != 0 || keep.to_le_bytes()[0] == 0 {
+                return 1;
+            }
+            if host_call(h, MUSIC_NUMBER, &[]).cast_signed() < 0 {
+                return fade_out(h);
+            }
+            let n = host_call(h, MUSIC_NUMBER, &[0x78]);
+            host_call(h, 0x0088_6830, &[n, 0x78]);
+            1
+        }
+        _ => 0,
+    }
+}
+
+/// `Atel_BattleEndSepStep_00862220(state)` (name ours; a step callback
+/// `AtelBattleEndCallback` registers): with ctrl work 0 current (the old
+/// one restored before it returns): state 0 restarts the group counter
+/// (`0x01326b34`) and becomes 1; state 1 waits for
+/// `op_oef2_sound_cue_check(-1)` (0), then 4; states 2 and 3 wait for
+/// `0x00886630()` (0), then 3 and 4; state 4 transfers the next selected
+/// sound group below 7 (`g_AtelSepGroupMask | 1`, read once:
+/// `Atel_TransSepGroup_00871780(header, sep data, 0, group, 1)`, state 2)
+/// or, with none left, becomes 5; state 5 waits for `SndIsReadStatus`
+/// (0), then 6; state 6 kicks the event's background separates
+/// (`AtelEventKickBGSep(header, 0)`) and returns 1. 0 otherwise.
+pub fn atel_battle_end_sep_step(h: &mut impl ffx_bridge::Host, state: u32) -> u32 {
+    let ctx_at = h.rebase(SCRIPT_CONTEXT);
+    let old = h.read::<u32>(ctx_at);
+    let works = h.rebase(0x0132_5ba0);
+    h.write(ctx_at, works);
+    let counter = h.rebase(0x0132_6b34);
+    let header = h.rebase(CTRL0_HEADER);
+    let r = match h.read::<u32>(state) {
+        s @ (0 | 1) => {
+            if s == 0 {
+                h.write(counter, 0u32);
+                h.write(state, 1u32);
+            }
+            if host_call(h, 0x0080_00f0, &[u32::MAX]) == 0 {
+                h.write(state, 4u32);
+            }
+            0
+        }
+        s @ (2 | 3) => {
+            if host_call(h, 0x0088_6630, &[]) == 0 {
+                h.write(state, s + 1);
+            }
+            0
+        }
+        4 => {
+            let mut g = h.read::<i32>(counter);
+            let mut next = 5u32;
+            if g < 7 {
+                let mask = u32::from(h.read::<u8>(h.rebase(0x0132_6bdc))) | 1;
+                loop {
+                    h.write(counter, g + 1);
+                    if mask & (1 << g) != 0 {
+                        let hdr = h.read::<u32>(header);
+                        let data = h.read::<u32>(h.rebase(CTRL0_SEP_DATA));
+                        host_call(h, 0x0087_1780, &[hdr, data, 0, g.cast_unsigned(), 1]);
+                        next = 2;
+                        break;
+                    }
+                    g += 1;
+                    if g >= 7 {
+                        break;
+                    }
+                }
+            }
+            h.write(state, next);
+            0
+        }
+        5 => {
+            if host_call(h, 0x0088_6650, &[]) == 0 {
+                h.write(state, 6u32);
+            }
+            0
+        }
+        6 => {
+            let hdr = h.read::<u32>(header);
+            host_call(h, 0x0086_58d0, &[hdr, 0]);
+            1
+        }
+        _ => 0,
+    };
+    h.write(ctx_at, old);
+    r
+}
