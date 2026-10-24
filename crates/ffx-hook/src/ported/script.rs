@@ -7612,4 +7612,11 @@ ported! {
     Atel_CheckBoxTrigger_00866cc0 @ 0x0086_6cc0 => extern "C" fn h_866cc0(w: u32, _unused: u32, player: u32) {
         hp::atel_check_box_trigger(&mut mem(), w, player, |_, f, args| super::call_cdecl_f64(f, args));
     }
+    // ---- pc round 8, group a
+    /// `Atel_EventFrame_00872bd0()`: the two vibration volumes in a
+    /// 2-word frame; `EAX` the flag or `TkClearSoundSyncVFlag3`'s.
+    Atel_EventFrame_00872bd0 @ 0x0087_2bd0 => extern "C" fn h_872bd0() -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        hp::atel_event_frame(&mut mem(), frame.at())
+    }
 }

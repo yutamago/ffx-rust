@@ -27292,3 +27292,140 @@ fn pc7_b_matches_the_original_on_the_snapshot() {
     };
     pc7_b(&mut a, &mut b, &mut Xorshift(0x9c07_b002));
 }
+
+/// pc round 8 a: `TOMenuExecLayerHandle` (scenes with and without data,
+/// layers below 0, inside and above 15, lists missing, empty or holding
+/// the handle 0..3 times among other words; `TkMenuExecScene` a logging
+/// stand-in returning counting values) and `TOMenuTryOpen_008be840`
+/// (`g_MovieFading`/`g_PauseOn` on and `TkMenuStart` clearing them or
+/// not, each open condition, the window-area flag, the English setting
+/// changing or not). Every callee is a logging stand-in.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // two functions; a, b, g, i, k
+fn pc8_a(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let f = m.rebase(f);
+        m.call(f, Conv::Cdecl, args).unwrap().eax
+    };
+    let g = |m: &Oracle, at: u32| m.rebase(at);
+    let fs: &[(u32, u8)] = &[
+        (0x00a7_b460, 3),
+        (0x008b_e320, 0),
+        (0x0086_bae0, 0),
+        (0x0078_16f0, 0),
+        (0x0078_51d0, 0),
+        (0x008b_e3d0, 0),
+        (0x008a_f5c0, 1),
+        (0x008b_1190, 0),
+        (0x008a_df80, 1),
+        (0x008b_09b0, 0),
+        (0x008a_b030, 1),
+    ];
+    let (log, cursor, cells) = small6_stubs(a, b, fs);
+    // TkMenuStart: logged, then g_MovieFading and g_PauseOn &= [mask]
+    let mask = alloc(a, b, 4);
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &cursor.to_le_bytes()].concat(); // mov ecx, [cursor]
+    code.extend([0xc7, 0x01, 0x77, 0x77, 0, 0]); // mov dword [ecx], 0x7777
+    code.extend([0x8b, 0x44, 0x24, 0x04, 0x89, 0x41, 0x04]); // mov eax, [esp+4]; mov [ecx+4], eax
+    code.extend([&[0x83, 0x05][..], &cursor.to_le_bytes(), &[8]].concat()); // add dword [cursor], 8
+    code.push(0xa1); // mov eax, [mask]
+    code.extend(mask.to_le_bytes());
+    for at in [0x0134_0824u32, 0x0134_0828] {
+        code.extend([0x21, 0x05]); // and [at], eax
+        code.extend(g(a, at).to_le_bytes());
+    }
+    // and the kept English setting ^= [mask] (the menu changed it)
+    code.extend([0x31, 0x05]); // xor [0x0186a1cc], eax
+    code.extend(g(a, 0x0186_a1cc).to_le_bytes());
+    code.push(0xc3);
+    let at = a.alloc_code(&code).unwrap();
+    assert_eq!(b.alloc_code(&code).unwrap(), at);
+    redirect(a, b, 0x008a_b030, at);
+
+    // TOMenuExecLayerHandle
+    let table = g(a, 0x022f_b4dc);
+    let data = alloc(a, b, 0x200);
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells[0], rng.next());
+        put(a, b, cells[0] + 4, rng.next() % 3);
+        let i = rng.next() % 8;
+        let scene = if rng.next().is_multiple_of(6) {
+            0
+        } else {
+            data
+        };
+        put(a, b, table + i * 4, scene);
+        let layer =
+            [0u32, 3, 15, 16, 0xffff_ffff, 0x8000_0000, 7, 0x7fff_ffff][(rng.next() % 8) as usize];
+        let handle = rng.next() % 4;
+        for l in 0..16 {
+            let off = match rng.next() % 5 {
+                0 => 0,
+                _ => 0xa0 + 0x10 * (rng.next() % 8),
+            };
+            put(a, b, data + 0x90 + l * 4, off);
+        }
+        for w in 0..0x18 {
+            let v = if w % 6 == 0 {
+                rng.next() % 5
+            } else {
+                rng.next() % 6
+            };
+            put(a, b, data + 0xa0 + w * 4, v);
+        }
+        let out = rng.next();
+        let args = [i, layer, handle, out];
+        let ra = eax(a, 0x00a7_b220, &args);
+        let rb = ffx_system::scene::bridge::exec_layer_handle(b, args, call);
+        assert_eq!(ra, rb, "TOMenuExecLayerHandle {k} {args:x?}");
+        same_memory(&format!("pc8 a layer {k}"), a, b);
+        settle(a, b);
+    }
+
+    // TOMenuTryOpen_008be840
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        for &c in &cells {
+            put(a, b, c, rng.next() % 3);
+            put(a, b, c + 4, rng.next() % 2);
+        }
+        put(a, b, cells[2], [0u32, 1, 2][(rng.next() % 3) as usize]);
+        put(a, b, mask, [0u32, u32::MAX][(rng.next() % 2) as usize]);
+        put(
+            a,
+            b,
+            g(a, 0x0134_0824),
+            u32::from(rng.next().is_multiple_of(3)),
+        );
+        put(
+            a,
+            b,
+            g(a, 0x0134_0828),
+            u32::from(rng.next().is_multiple_of(3)),
+        );
+        put(a, b, g(a, 0x0132_70f4), rng.next() % 2);
+        put(a, b, g(a, 0x0186_a1cc), rng.next());
+        let mode = [0u32, 1, 2, rng.next()][(rng.next() % 4) as usize];
+        let ra = eax(a, 0x008b_e840, &[mode]);
+        let rb = ffx_system::tolib::bridge::menu_try_open(b, mode, call);
+        assert_eq!(ra, rb, "TOMenuTryOpen {k}");
+        same_memory(&format!("pc8 a open {k}"), a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn pc8_a_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    pc8_a(&mut a, &mut b, &mut Xorshift(0x9c08_a001));
+}
+
+#[test]
+fn pc8_a_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    pc8_a(&mut a, &mut b, &mut Xorshift(0x9c08_a002));
+}

@@ -15478,4 +15478,58 @@ pub mod bridge {
         mem.write(r(mem, 0x0184_1d43), 0_u8);
         eax
     }
+
+    /// `TOMenuTryOpen_008be840(mode)` (name ours; caller
+    /// `Sg_MainCheckMenu`): while a movie fades (`g_MovieFading`) or the
+    /// pause is on (`g_PauseOn`), `TkMenuStart(mode)` runs first and the
+    /// result is 0 when either is still set after it. Otherwise the menu
+    /// opens (0) when `GetU32_00c5a084` is set, `AtelGetHyoukaMenuEnable`
+    /// is 1 or `mode` isn't 0, and `MsBattleGetStatus` is 0:
+    /// `MsGetSaveConfigEnglish` kept in `0x0186a1cc`, `0x025d16c0` = 1,
+    /// `TOMenuClearControlPadBuff`, `TOSetExeMessageWindowArea(2)` when
+    /// `0x013270f4` is 0, `0x0186a214` = `mode`, `TOTransTexture_008b1190`,
+    /// `TOSeqClearScene_008adf80(1)`, `TkMenuStart(mode)`, and
+    /// `TORelayoutMessagesForLanguage_008b09b0` when the English setting
+    /// changed meanwhile. Else 1. `call` takes an `ffx.sym` address.
+    pub fn menu_try_open<M: Mem>(
+        mem: &mut M,
+        mode: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const MENU_START: u32 = 0x008a_b030;
+        const ENGLISH: u32 = 0x0078_51d0;
+        let busy = |mem: &M| {
+            mem.read::<u32>(mem.rebase(0x0134_0824)) != 0
+                || mem.read::<u32>(mem.rebase(0x0134_0828)) != 0
+        };
+        if busy(mem) {
+            call(mem, MENU_START, &[mode]);
+            if busy(mem) {
+                return 0;
+            }
+        }
+        if call(mem, 0x008b_e320, &[]) == 0
+            || (call(mem, 0x0086_bae0, &[]) != 1 && mode == 0)
+            || call(mem, 0x0078_16f0, &[]) != 0
+        {
+            return 1;
+        }
+        let english = call(mem, ENGLISH, &[]);
+        let kept = mem.rebase(0x0186_a1cc);
+        mem.write(kept, english);
+        mem.write(mem.rebase(0x025d_16c0), 1_u32);
+        call(mem, 0x008b_e3d0, &[]);
+        if mem.read::<u32>(mem.rebase(0x0132_70f4)) == 0 {
+            call(mem, 0x008a_f5c0, &[2]);
+        }
+        mem.write(mem.rebase(0x0186_a214), mode);
+        call(mem, 0x008b_1190, &[]);
+        call(mem, 0x008a_df80, &[1]);
+        call(mem, MENU_START, &[mode]);
+        let now = call(mem, ENGLISH, &[]);
+        if mem.read::<u32>(kept) != now {
+            call(mem, 0x008b_09b0, &[]);
+        }
+        0
+    }
 }

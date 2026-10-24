@@ -17600,3 +17600,91 @@ fn pc6d_atel_event_set_up_matches_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     pc6d_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// pc round 8 a on one pair: `Atel_EventFrame_00872bd0` (page states 0..=3
+/// and others with page bytes negative or not, vibration on or off with
+/// random volumes, the sound flag 0 or not). Every callee but
+/// `TkGetVibrateVolume` is a logging stub; the flag and
+/// `TkClearSoundSyncVFlag3` return sequence words. The bridge's two-word
+/// frame is at the bottom of the emulated stack, which the diff leaves
+/// out, as it does the original's locals.
+fn pc8a_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0088_7df0, 0, true),
+            (0x0088_7d50, 0, true),
+            (0x0090_a4a0, 1, false),
+            (0x0090_a6f0, 1, false),
+            (0x0086_66d0, 0, false),
+            (0x0087_1bc0, 0, false),
+            (0x0087_43e0, 0, false),
+            (0x0087_5b40, 0, false),
+            (0x0088_9490, 3, false),
+            (0x0088_94b0, 3, false),
+            (0x0087_3620, 0, false),
+            (0x0087_38d0, 0, false),
+            (0x0087_7380, 0, false),
+            (0x0086_82f0, 0, false),
+        ],
+    );
+    let page = a.rebase(0x0132_711c);
+    let frame = b.stack_range().start + 0x100;
+    for round in 0..200u32 {
+        r27_reset(a, b, &stubs, |s| match s {
+            0 => [0u32, 1, rng.next()][rng.below(3) as usize],
+            _ => rng.next(),
+        });
+        let state = [0u8, 1, 2, 3, 0xff, 0x81][rng.below(6) as usize];
+        poke(a, b, page, state);
+        for k in 1..4 {
+            let v = [0u8, 5, 0x7f, 0x80, 0xff, 0x40][rng.below(6) as usize];
+            poke(a, b, page + k, v);
+        }
+        poke(
+            a,
+            b,
+            a.rebase(0x0132_8272),
+            [0u8, 0, 1, 0x80][rng.below(4) as usize],
+        );
+        #[allow(clippy::cast_possible_truncation)] // two random volume bytes
+        poke(a, b, a.rebase(0x0132_8270), rng.next() as u16);
+        r22_case(
+            a,
+            b,
+            0x0087_2bd0,
+            &[],
+            true,
+            &format!("Atel_EventFrame {what} {round} state {state:#x}"),
+            |r| hp::atel_event_frame(r, frame),
+        );
+    }
+}
+
+#[test]
+fn pc8a_event_frame_matches_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_8a01);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        pc8a_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    pc8a_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

@@ -7435,6 +7435,16 @@ ported! {
     Kernel_GetItemName @ 0x0077_67a0 => extern "C" fn kernel_get_item_name(id: u32) -> u32 {
         names::bridge::item_name(&mem(), id)
     }
+    // ---- pc round 8, group a
+    /// `TOMenuExecLayerHandle(i, layer, handle, out)`: `EAX` as the
+    /// original leaves it; `TkMenuExecScene` through the game.
+    TOMenuExecLayerHandle @ 0x00a7_b220 => extern "C" fn to_menu_exec_layer_handle(i: u32, layer: u32, handle: u32, out: u32) -> u32 {
+        scene::bridge::exec_layer_handle(&mut mem(), [i, layer, handle, out], call_sym)
+    }
+    /// `TOMenuTryOpen_008be840(mode)`: 0 or 1.
+    TOMenuTryOpen_008be840 @ 0x008b_e840 => extern "C" fn to_menu_try_open(mode: u32) -> u32 {
+        tolib::bridge::menu_try_open(&mut mem(), mode, call_sym)
+    }
 }
 
 /// `TOMenuGetGetImportant*`: the key item's text at `field`, with the

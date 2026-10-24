@@ -10865,3 +10865,57 @@ pub fn atel_event_set_up<H: ffx_bridge::Host>(
     host_call(h, 0x0091_9d70, &[1]);
     host_call(h, CD_SYNC, &[0]);
 }
+
+/// `Atel_EventFrame_00872bd0()` (name ours; caller `TkUpdateEventJump`):
+/// one frame of the event system. A pending page change in
+/// `g_AtelMapIdPage` (state 1: `yiSetPreBgPage(+1)`, state 2:
+/// `yiSetIDPage(+2)`, each only for a page byte that isn't negative) is
+/// applied and the state cleared; then `AtelExec`,
+/// `AtelUpdateBattleStatus`, two `Atel_StepSprites_008743e0`,
+/// `Vibrate_UpdateVolume_00875b40`, the vibration volumes
+/// (`TkGetVibrateVolume(&a, &b)` into `frame`, two words: `a` at `+4`,
+/// `b` at `+0`, as the original's `[ebp-4]`/`[ebp-8]`) doubled into
+/// `Pad_SetActuatorFF(0, 0, 2a)` and `Pad_SetActuatorFE(0, 0, 2b)`,
+/// `Atel_CheckPause_00873620`, `AtelExecSoftWareReset`, and when
+/// `TkGetSoundSyncVFlag3` is set `AtelExecSound`,
+/// `Atel_EventSoundStep_008682f0` and `TkClearSoundSyncVFlag3`. `EAX` as
+/// the original leaves it: the flag (0) or `TkClearSoundSyncVFlag3`'s.
+pub fn atel_event_frame(h: &mut impl ffx_bridge::Host, frame: u32) -> u32 {
+    let page = h.rebase(0x0132_711c);
+    let (callee, at) = match h.read::<u8>(page) {
+        1 => (0x0090_a6f0, page.wrapping_add(1)),
+        2 => (0x0090_a4a0, page.wrapping_add(2)),
+        _ => (0, 0),
+    };
+    if callee != 0 {
+        let v = h.read::<i8>(at);
+        if v >= 0 {
+            host_call(h, callee, &[i32::from(v).cast_unsigned()]);
+        }
+    }
+    h.write(page, 0_u8);
+    for f in [
+        0x0086_66d0,
+        0x0087_1bc0,
+        0x0087_43e0,
+        0x0087_43e0,
+        0x0087_5b40,
+    ] {
+        host_call(h, f, &[]);
+    }
+    let a = frame.wrapping_add(4);
+    host_call(h, 0x0087_5e10, &[a, frame]);
+    let va = h.read::<u32>(a).wrapping_mul(2);
+    host_call(h, 0x0088_9490, &[0, 0, va]);
+    let vb = h.read::<u32>(frame).wrapping_mul(2);
+    host_call(h, 0x0088_94b0, &[0, 0, vb]);
+    host_call(h, 0x0087_3620, &[]);
+    host_call(h, 0x0087_38d0, &[]);
+    let flag = host_call(h, 0x0088_7df0, &[]);
+    if flag == 0 {
+        return 0;
+    }
+    host_call(h, 0x0087_7380, &[]);
+    host_call(h, 0x0086_82f0, &[]);
+    host_call(h, 0x0088_7d50, &[])
+}

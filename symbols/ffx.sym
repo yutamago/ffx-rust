@@ -9826,6 +9826,7 @@
 0x00872b60 function AtelClearMenuOtakaraFlag  # fh v3:bsim1.00 0x00872b00
 0x00872b70 function AtelClearPauseFlag        # fh v3:bsim1.00 0x00872b10
 0x00872b90 function AtelClearPreBgPage        # fh switch:bsim1.00 0x710044e730
+0x00872bd0 function Atel_EventFrame_00872bd0 # cdecl() -> eax (the sound-sync flag 0, or TkClearSoundSyncVFlag3's): one event-system frame: g_AtelMapIdPage state 1/2 applies yiSetPreBgPage(+1)/yiSetIDPage(+2) (page byte >= 0) and clears it, AtelExec, AtelUpdateBattleStatus, 2x Atel_StepSprites, vibration volumes doubled to Pad_SetActuatorFF/FE, pause check, soft reset, AtelExecSound on TkGetSoundSyncVFlag3; caller TkUpdateEventJump; ported ffx_script helpers::atel_event_frame (pc r8); name ours
 0x00872c80 function AtelDebugDraw_thunk_00872c80 # jmp 0x0087d6c0; refs.py: 0 refs (no call, jmp or pointer); name ours
 0x00872c90 function AtelDrawNoTrans           # fh v3:bsim1.00 0x00872c30; (script r28) AtelUpdateWaterStatus then tail-jumps to AtelExecDrawShape; caller TkDrawNoTrans
 0x00872ca0 function AtelDrawSemiTrans         # fh v3:exact 0x00872c40
@@ -11154,6 +11155,7 @@
 0x008be4b0 function TOMenuGetControlPadTrg    # fh v3:bsim1.00 0x008be480
 0x008be500 function TOMenuGetPadStatus           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004b1c90 TOMenuGetPadStatus, 2 votes, round 2; (): menu pad words 0x025d09d2.. (+6..+0xa both pads: Tk*Hist(0,0,0) | (0,0,-1)); dummy controller on (flushed first): from TkMenuGetDummyControler/T/R and TOMenuGetDummyAnalogControler, done; else stick-made d-pad set 0x025d09e2 repeats: fresh press, > 0.4667 s, restart 0.3 count 9
 0x008be800 function TOMenuInit                # fh v3:exact 0x008be7d0
+0x008be840 function TOMenuTryOpen_008be840 # cdecl(mode) -> 0 opened (or movie fade/pause still on after TkMenuStart), 1 not allowed (GetU32_00c5a084 0, AtelGetHyoukaMenuEnable != 1 with mode 0, or MsBattleGetStatus != 0); keeps MsGetSaveConfigEnglish in 0x0186a1cc and relayouts messages when it changed; caller Sg_MainCheckMenu; ported ffx_system::tolib::menu_try_open (pc r8); name ours
 0x008be9b0 function SetGlobal_00c5a084 # cdecl(v): *0x00c5a084 = v, returns v; name ours
 0x008bea20 function TOMenuDrawKickTmp         # fh v3:bsim1.00+call.cs 0x008be9f0 cdecl
 0x008bea30 function TOMenuGetAbilitymapWorkAdrs # fh v3:bsim1.00 0x008bea00
@@ -14320,7 +14322,7 @@
 0x00a7ae20 function Angle_Wrap_00a7ae20        # the same code as Angle_Wrap (tools/dupes.py); a copy, called by Native_506d and Native_507d; ST0 result; hooked with ffx_chara::chr::wrap_angle (script round 22)
 0x00a7ae90 function GetU32_023cbeb0 # () -> u32 at 0x023cbeb0; name ours
 0x00a7b1a0 function CopyCuttingLines_00a7b1a0 # cdecl(dst, src): src copied with line feeds turned into terminators, returns length + 1 (null src: empty dst, 0); caller 0x00a7aee0; name ours
-0x00a7b220 function TOMenuExecLayerHandle     # fh v3:exact 0x00a7b220
+0x00a7b220 function TOMenuExecLayerHandle     # fh v3:exact 0x00a7b220; cdecl(i, layer 0..15 clamped, handle, out): TkMenuExecScene(i, handle, out) for each entry == handle in g_TkMenuSceneData[i]'s list at +0x90+layer*4 (offset from the data: count, words); eax = the last entry read or call result; caller TOSeqDraw; ported ffx_system::scene::exec_layer_handle (pc r8)
 0x00a7b290 function MenuScene_KeyPick_00a7b290 # cdecl(keys, track, frame, frames, out) -> 0x00a7bbc0's eax: track key pair A = keys[u16 +8], B = keys[u16 +0xa]: (B) while i16 +6 < 0 or frame == frames, (A) at frame 0, else t = MenuScene_KeyEase(*B, frame, frames): (*A, B, A, t) when the keys' low 11 bits match, else B from t >= 0.5, A below; callers 0x00a7b510; ported in system round 42; name ours
 0x00a7b460 function TkMenuExecScene           # fh v3:exact 0x00a7b460; cdecl(i, handle, out) -> OR of the tracks: 0 for handle 0, no block g_TkMenuSceneData[i] or record +4 bit 31 clear; g_TkMenuSceneOffsetX/Y = i16 +8/+0xa; list = block + (+4 & 0x3fffffff): count, 20-byte tracks, each MenuScene_TrackStep(block, list, track, block + [block+0x80], out); OR 0 clears record +4 bit 30; keeps the block in its handle arg slot; ported (ffx_menu::scene, small r8)
 0x00a7b510 function MenuScene_TrackStep_00a7b510 # cdecl(base, list, track, table, out) -> 1, 0 after opcode 0: one frame of a scene track's key script (base + table[track+0 low 30 bits], u16 pc +8; opcodes low 11 bits, jump table 0x00a7b770: 0 end, 1 step, 2 wait for list entry i16 +0xc (searched against list[1] only) with +4 bit 31, 3 hold, 4..7/10 key with wait = frames = operand, 8 loop to u16 +0xe by count i16 +0x10 (bit 11: always), 9 loop mark); lengths 0x00c89c40; wait u16 +4 counts down first; ends in MenuScene_KeyPick(script, track, u16 +4, i16 +6, out); callers TkMenuExecScene, 0x00a7b360; ported (ffx_system::scene, small r6); name ours

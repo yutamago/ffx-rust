@@ -579,6 +579,45 @@ pub mod bridge {
     ) -> u32 {
         draw(mem, i, a, 0, call)
     }
+
+    /// `TkMenuExecScene(i, handle, out)` (`ffx.sym` address).
+    pub const TK_MENU_EXEC_SCENE: u32 = 0x00a7_b460;
+
+    /// `TOMenuExecLayerHandle(i, layer, handle, out)` (`0x00a7b220`, caller
+    /// `TOSeqDraw`): `layer` clamped to 0..=15; when scene `i`'s data
+    /// (`g_TkMenuSceneData[i]`) has a list for that layer (offset at
+    /// `+0x90 + layer * 4`, from the data's start: a count, then that many
+    /// handle words), `TkMenuExecScene(i, handle, out)` runs once for each
+    /// entry equal to `handle`. `EAX` as the original leaves it: the
+    /// clamped layer (no data), 0 (no list), the list's offset (count 0),
+    /// else the last entry read, or `TkMenuExecScene`'s result when that
+    /// entry matched. `call` takes an `ffx.sym` address.
+    pub fn exec_layer_handle<M: Mem>(
+        mem: &mut M,
+        [i, layer, handle, out]: [u32; 4],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let layer = layer.cast_signed().clamp(0, 15).cast_unsigned();
+        let table = mem.rebase(0x022f_b4dc);
+        let data = mem.read::<u32>(table.wrapping_add(i.wrapping_mul(4)));
+        if data == 0 {
+            return layer;
+        }
+        let off = mem.read::<u32>(data.wrapping_add(0x90).wrapping_add(layer * 4));
+        if off == 0 {
+            return 0;
+        }
+        let list = off.wrapping_add(data);
+        let count = mem.read::<u32>(list);
+        let mut eax = off;
+        for k in 1..=count {
+            eax = mem.read::<u32>(list.wrapping_add(k.wrapping_mul(4)));
+            if eax == handle {
+                eax = call(mem, TK_MENU_EXEC_SCENE, &[i, handle, out]);
+            }
+        }
+        eax
+    }
     /// `TkMenuStartScene(i, handle)`.
     pub const TK_MENU_START_SCENE: u32 = 0x00a7_c880;
     /// `TkMenuIsTermScene(i, handle)`.
