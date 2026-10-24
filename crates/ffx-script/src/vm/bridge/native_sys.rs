@@ -459,15 +459,15 @@ int_forwards! {
     native_8017 => 0x0091_a580;
     /// `Native_8018` (`0x0091b340`, `0x8018`): `(v)` -> `0x0091a5d0(v)`.
     native_8018 => 0x0091_a5d0;
-    /// `Native_801a` (`0x0091b3a0`, `0x801a`): `(v)` -> `0x0091a620(v)`.
+    /// `Native_801a_MapPartGetWidth` (`0x0091b3a0`, `0x801a`): `(v)` -> `0x0091a620(v)`.
     native_801a => 0x0091_a620;
-    /// `Native_801b` (`0x0091b3c0`, `0x801b`): `(v)` -> `0x0091a3f0(v)`.
+    /// `Native_801b_MapPartGetHeight` (`0x0091b3c0`, `0x801b`): `(v)` -> `0x0091a3f0(v)`.
     native_801b => 0x0091_a3f0;
-    /// `Native_801c` (`0x0091b3e0`, `0x801c`): `(v)` -> `0x0091a2a0(v)`.
+    /// `Native_801c_MapPartAnimCount` (`0x0091b3e0`, `0x801c`): `(v)` -> `0x0091a2a0(v)`.
     native_801c => 0x0091_a2a0;
-    /// `Native_8031` (`0x0091b720`, `0x8031`): `(v)` -> `0x0091a2e0(v)`.
+    /// `Native_8031_MapPartGetAlpha` (`0x0091b720`, `0x8031`): `(v)` -> `0x0091a2e0(v)`.
     native_8031 => 0x0091_a2e0;
-    /// `Native_8065` (`0x0091c780`, `0x8065`): `(v)` -> `0x009086b0(v)`.
+    /// `Native_8065_CheckDobj` (`0x0091c780`, `0x8065`): `(v)` -> `0x009086b0(v)`.
     native_8065 => 0x0090_86b0;
 }
 
@@ -475,43 +475,43 @@ float_forwards! {
     /// `Native_8015` (`0x0091b2c0`, `0x8015`, float): `(v)` ->
     /// `0x0091a670(v)`'s float.
     native_8015 => 0x0091_a670;
-    /// `Native_8050` (`0x0091c1a0`, `0x8050`, float): `(v)` ->
+    /// `Native_8050_MapPartScaleX` (`0x0091c1a0`, `0x8050`, float): `(v)` ->
     /// `0x0091a530(v)`'s float.
     native_8050 => 0x0091_a530;
-    /// `Native_8051` (`0x0091c1c0`, `0x8051`, float): `(v)` ->
+    /// `Native_8051_MapPartScaleY` (`0x0091c1c0`, `0x8051`, float): `(v)` ->
     /// `0x0091a4e0(v)`'s float.
     native_8051 => 0x0091_a4e0;
-    /// `Native_8056` (`0x0091c330`, `0x8056`, float): `(v)` ->
+    /// `Native_8056_MapPartPosX` (`0x0091c330`, `0x8056`, float): `(v)` ->
     /// `0x0091a330(v)`'s float.
     native_8056 => 0x0091_a330;
-    /// `Native_8057` (`0x0091c350`, `0x8057`, float): `(v)` ->
+    /// `Native_8057_MapPartPosY` (`0x0091c350`, `0x8057`, float): `(v)` ->
     /// `0x0091a380(v)`'s float.
     native_8057 => 0x0091_a380;
 }
 
 mixed_calls! {
-    /// `Native_805a` (`0x0091c3f0`, `0x805a`): `(v)`: `0x0072a120(v)`; 1.
+    /// `Native_805a_FpResetStick` (`0x0091c3f0`, `0x805a`): `(v)`: `0x0072a120(v)`; 1.
     native_805a => [false], 0x0072_a120;
     /// `Native_8061` (`0x0091c580`, `0x8061`): `(v)`: `0x00908580(v)`; 1.
     native_8061 => [false], 0x0090_8580;
     /// `Native_8016` (`0x0091b2e0`, `0x8016`): `(a, b, c)`:
     /// `0x0091ac40(a, b, c)`; 1.
     native_8016 => [false, false, false], 0x0091_ac40;
-    /// `Native_8019` (`0x0091b360`, `0x8019`): `(a, b, c)`:
+    /// `Native_8019_MapPartSetSize` (`0x0091b360`, `0x8019`): `(a, b, c)`:
     /// `0x0091ac80(a, b, c)`; 1.
     native_8019 => [false, false, false], 0x0091_ac80;
-    /// `Native_8023` (`0x0091b4e0`, `0x8023`): `(a f, b f)`:
+    /// `Native_8023_BgSetScrOffset` (`0x0091b4e0`, `0x8023`): `(a f, b f)`:
     /// `0x0091ad40(a, b)`; 1.
     native_8023 => [true, true], 0x0091_ad40;
-    /// `Native_8028` (`0x0091b5d0`, `0x8028`): `(v f)`: `0x0091ad10(v)`; 1.
+    /// `Native_8028_BgSetScrBank` (`0x0091b5d0`, `0x8028`): `(v f)`: `0x0091ad10(v)`; 1.
     native_8028 => [true], 0x0091_ad10;
     /// `Native_802a` (`0x0091b610`, `0x802a`): `(a, b f, c, d f)`:
     /// `0x0091aa00(a, b, c, d)`; 1.
     native_802a => [true, false, true, false], 0x0091_aa00;
-    /// `Native_8052` (`0x0091c1e0`, `0x8052`): `(a, b f, c f)`:
+    /// `Native_8052_MapPartSetPos` (`0x0091c1e0`, `0x8052`): `(a, b f, c f)`:
     /// `0x0091aae0(a, b, c)`; 1.
     native_8052 => [true, true, false], 0x0091_aae0;
-    /// `Native_8055` (`0x0091c2d0`, `0x8055`): `(a, b f, c f, d)`:
+    /// `Native_8055_MapPartMoveTo` (`0x0091c2d0`, `0x8055`): `(a, b f, c f, d)`:
     /// `0x0091a0f0(a, b, c, d)`; 1.
     native_8055 => [false, true, true, false], 0x0091_a0f0;
     /// `Native_8063` (`0x0091c600`, `0x8063`): `(a f, b f, c f, d f)`:
@@ -534,23 +534,23 @@ fn record_word<H: NativeHost>(h: &mut H, s: u32, k: u32) -> u32 {
     1
 }
 
-/// `Native_8046` (`0x0091bf10`, `0x8046`): `(v)`: the record from
+/// `Native_8046_BackSetRed` (`0x0091bf10`, `0x8046`): `(v)`: the record from
 /// `0x009086d0` with word 0 = v to `0x0090a040`; 1.
 pub fn native_8046<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     record_word(h, s, 0)
 }
 
-/// `Native_8047` (`0x0091bf60`, `0x8047`): as `0x8046` with word 1.
+/// `Native_8047_BackSetGreen` (`0x0091bf60`, `0x8047`): as `0x8046` with word 1.
 pub fn native_8047<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     record_word(h, s, 1)
 }
 
-/// `Native_8048` (`0x0091bfb0`, `0x8048`): as `0x8046` with word 2.
+/// `Native_8048_BackSetBlue` (`0x0091bfb0`, `0x8048`): as `0x8046` with word 2.
 pub fn native_8048<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     record_word(h, s, 2)
 }
 
-/// `Native_8053` (`0x0091c230`, `0x8053`): `(i, v f)`: `0x0091aae0(i, v,
+/// `Native_8053_MapPartSetX` (`0x0091c230`, `0x8053`): `(i, v f)`: `0x0091aae0(i, v,
 /// 0x0091a380(i))` (the last rounded to `f32`); 1.
 pub fn native_8053<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = atel_pop_stack_float(h, s);
@@ -560,7 +560,7 @@ pub fn native_8053<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_8054` (`0x0091c280`, `0x8054`): `(i, v f)`: `0x0091aae0(i,
+/// `Native_8054_MapPartSetY` (`0x0091c280`, `0x8054`): `(i, v f)`: `0x0091aae0(i,
 /// 0x0091a330(i, v), v)` (rounded to `f32`); 1.
 pub fn native_8054<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = atel_pop_stack_float(h, s);

@@ -2265,18 +2265,18 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x8003` | `Native_FpRunMode2` | fp int | 1 | - | int `0x0091c7a0` (native) |
 | `0x8004` | `Native_MapSpriteWait` | sprite int: map sprite object | 5 when done | until the object is done | start `0x0091af60`, poll `0x0091afa0` (native_map) |
 | `0x8005` | `Native_MapSpriteWaitEnd` | sprite int, keep int | 5 when done | until the object is done (state 2 counts unless keep) | start `0x0091c7e0`, poll `0x0091c860` (native_map) |
-| `0x8006` | `Native_8006` | n int | int | no (the poll is done at once) | start `0x0091aff0`, poll `0x0091b040` (native_map) |
+| `0x8006` | `Native_8006_MapJumpToEntrance` | n int | int | no (the poll is done at once) | start `0x0091aff0`, poll `0x0091b040` (native_map) |
 | `0x8007` | `Native_8007` | - | 1 | - | int `0x0091b050` (native_map) |
 | `0x8008` | `Native_8008` | - | 1 | - | int `0x0091b060` (native_map) |
 | `0x8009` | `Native_FpBind` | fp int, bone int: bind to the worker | 1 | - | int `0x0091b070` (native_map) |
 | `0x800a` | `Native_FpBindPos` | fp int, x f, y f, z f: bind to a position | 1 | - | int `0x0091b0a0` (native_map) |
 | `0x800b` | `Native_FpUnbind` | fp int (<= 0 all) | 1 | - | int `0x0091b130` (native_map) |
-| `0x800c` | `Native_800c` | on int: field programs shown (pppFpSetDisp) | int: on != 0 | - | int `0x0091b160` (native_map) |
+| `0x800c` | `Native_800c_FpSetDisp` | on int: field programs shown (pppFpSetDisp) | int: on != 0 | - | int `0x0091b160` (native_map) |
 | `0x800d` | `Native_FpShow` | fp int, show int | int: show | - | int `0x0091c740` (native) |
-| `0x800e` | `Native_800e` | - | int: jumps to Yn_MapPartCount (0x0091a3d0) | - | int `0x0091b190` (native_mods) |
+| `0x800e` | `Native_800e_MapPartGetCount` | - | int: jumps to Yn_MapPartCount (0x0091a3d0) | - | int `0x0091b190` (native_mods) |
 | `0x800f` | `Native_MapPartShow` | part int: map part | 1 | - | int `0x0091b1a0` (native_map) |
 | `0x8010` | `Native_MapPartHide` | part int | 1 | - | int `0x0091b1e0` (native_map) |
-| `0x8011` | `Native_8011` | a int, b int, c int | 1 | - | int `0x0091b200` (native_map) |
+| `0x8011` | `Native_8011_MapPartSetOffset` | a int, b int, c int | 1 | - | int `0x0091b200` (native_map) |
 | `0x8012` | `Native_8012` | v int | int: 0x0091a440(v) | - | int `0x0091b240` (native_sys) |
 | `0x8013` | `Native_8013` | v int | int: 0x0091a490(v) | - | int `0x0091b260` (native_sys) |
 | `0x8014` | `Native_8014` | part int, v f: map part +0x14 (Yn_MapPartSet14) | 1 | - | int `0x0091b280` (native_map) |
@@ -2284,36 +2284,36 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x8016` | `Native_8016` | a int, b int, c int | 1; 0x0091ac40(a, b, c) | - | int `0x0091b2e0` (native_sys) |
 | `0x8017` | `Native_8017` | v int | int: 0x0091a580(v) | - | int `0x0091b320` (native_sys) |
 | `0x8018` | `Native_8018` | v int | int: 0x0091a5d0(v) | - | int `0x0091b340` (native_sys) |
-| `0x8019` | `Native_8019` | a int, b int, c int | 1; 0x0091ac80(a, b, c) | - | int `0x0091b360` (native_sys) |
-| `0x801a` | `Native_801a` | v int | int: 0x0091a620(v) | - | int `0x0091b3a0` (native_sys) |
-| `0x801b` | `Native_801b` | v int | int: 0x0091a3f0(v) | - | int `0x0091b3c0` (native_sys) |
-| `0x801c` | `Native_801c` | v int | int: 0x0091a2a0(v) | - | int `0x0091b3e0` (native_sys) |
-| `0x801d` | `Native_801d` | part int, frame int: map part animation frame | 1 | - | int `0x0091b400` (native_map) |
+| `0x8019` | `Native_8019_MapPartSetSize` | a int, b int, c int | 1; 0x0091ac80(a, b, c) | - | int `0x0091b360` (native_sys) |
+| `0x801a` | `Native_801a_MapPartGetWidth` | v int | int: 0x0091a620(v) | - | int `0x0091b3a0` (native_sys) |
+| `0x801b` | `Native_801b_MapPartGetHeight` | v int | int: 0x0091a3f0(v) | - | int `0x0091b3c0` (native_sys) |
+| `0x801c` | `Native_801c_MapPartAnimCount` | v int | int: 0x0091a2a0(v) | - | int `0x0091b3e0` (native_sys) |
+| `0x801d` | `Native_801d_MapPartSetFrame` | part int, frame int: map part animation frame | 1 | - | int `0x0091b400` (native_map) |
 | `0x801e` | `Native_801e` | part int: animation flag 0 on | 1 | - | int `0x0091b430` (native_map) |
 | `0x801f` | `Native_801f` | part int: animation flag 0 off | 1 | - | int `0x0091b450` (native_map) |
-| `0x8020` | `Native_8020` | part int: animation on | 1 | - | int `0x0091b470` (native_map) |
-| `0x8021` | `Native_8021` | part int: animation off | 1 | - | int `0x0091b490` (native_map) |
-| `0x8022` | `Native_8022` | part int, bits int: animation mode (bits 8-11) | 1 | - | int `0x0091b4b0` (native_map) |
-| `0x8023` | `Native_8023` | a f, b f | 1; 0x0091ad40(a, b) | - | int `0x0091b4e0` (native_sys) |
+| `0x8020` | `Native_8020_MapPartAnimOn` | part int: animation on | 1 | - | int `0x0091b470` (native_map) |
+| `0x8021` | `Native_8021_MapPartAnimOff` | part int: animation off | 1 | - | int `0x0091b490` (native_map) |
+| `0x8022` | `Native_8022_MapPartAnimMode` | part int, bits int: animation mode (bits 8-11) | 1 | - | int `0x0091b4b0` (native_map) |
+| `0x8023` | `Native_8023_BgSetScrOffset` | a f, b f | 1; 0x0091ad40(a, b) | - | int `0x0091b4e0` (native_sys) |
 | `0x8024` | `Native_8024` | - | float: jumps to Yn_SceneGetB8 (0x0091a700) | - | float `0x0091b530` (native_mods) |
 | `0x8025` | `Native_8025` | - | float: jumps to Yn_SceneGetBC (0x0091a730) | - | float `0x0091b540` (native_mods) |
 | `0x8026` | `Native_8026` | a int, b f, c int, d int, e int: scene +0xc0..+0xd0 (Yn_SceneSetC0) | 1 | - | int `0x0091b550` (native_map) |
 | `0x8027` | `Native_8027` | - | int: 0x0091a900(); 1 | - | int `0x0091b5c0` (native_mods) |
-| `0x8028` | `Native_8028` | v f | 1; 0x0091ad10(v) | - | int `0x0091b5d0` (native_sys) |
+| `0x8028` | `Native_8028_BgSetScrBank` | v f | 1; 0x0091ad10(v) | - | int `0x0091b5d0` (native_sys) |
 | `0x8029` | `Native_8029` | - | float: jumps to Yn_SceneGetAC (0x0091a6d0) | - | float `0x0091b600` (native_mods) |
 | `0x802a` | `Native_802a` | a int, b f, c int, d f | 1; 0x0091aa00(a, b, c, d) | - | int `0x0091b610` (native_sys) |
 | `0x802b` | `Native_802b` | - | int: 0x0091a8d0(); 1 | - | int `0x0091b670` (native_mods) |
 | `0x802c` | `Native_802c` | - | 1 | - | int `0x0091b680` (native_map) |
 | `0x802d` | `Native_802d` | - | 1 | - | int `0x0091b690` (native_map) |
-| `0x802e` | `Native_802e` | part int, rate int: animation rate | 1 | - | int `0x0091b6a0` (native_map) |
-| `0x802f` | `Native_802f` | part int: animation to its last frame | 1 | - | int `0x0091b6d0` (native_map) |
-| `0x8030` | `Native_8030` | a int, b int | 1 | - | int `0x0091b6f0` (native_map) |
-| `0x8031` | `Native_8031` | v int | int: 0x0091a2e0(v) | - | int `0x0091b720` (native_sys) |
-| `0x8032` | `Native_8032` | limit f: guide map limit | 1 | - | int `0x0091b740` (native_map) |
-| `0x8033` | `Native_8033` | - | float: jumps to Yn_GuideMapGetLimit (0x00919ca0) | - | float `0x0091b770` (native_mods) |
+| `0x802e` | `Native_802e_MapPartAnimRate` | part int, rate int: animation rate | 1 | - | int `0x0091b6a0` (native_map) |
+| `0x802f` | `Native_802f_MapPartLastFrame` | part int: animation to its last frame | 1 | - | int `0x0091b6d0` (native_map) |
+| `0x8030` | `Native_8030_MapPartSetAlpha` | a int, b int | 1 | - | int `0x0091b6f0` (native_map) |
+| `0x8031` | `Native_8031_MapPartGetAlpha` | v int | int: 0x0091a2e0(v) | - | int `0x0091b720` (native_sys) |
+| `0x8032` | `Native_8032_GuideMapSetLimit` | limit f: guide map limit | 1 | - | int `0x0091b740` (native_map) |
+| `0x8033` | `Native_8033_GuideMapGetLimit` | - | float: jumps to Yn_GuideMapGetLimit (0x00919ca0) | - | float `0x0091b770` (native_mods) |
 | `0x8034` | `Native_8034` | - | int: 0x00919b70(); 1 | - | int `0x0091b780` (native_mods) |
-| `0x8035` | `Native_8035` | group int, on int: the group's field programs restarted (Fp_RestartGroup) or ended (Fp_EndGroup) | int: on | - | int `0x0091b790` (native_map) |
-| `0x8036` | `Native_8036` | id int, on int: 0x00729440 or 0x00729400 | int: on | - | int `0x0091b7d0` (native_map) |
+| `0x8035` | `Native_8035_FpRunGroup` | group int, on int: the group's field programs restarted (Fp_RestartGroup) or ended (Fp_EndGroup) | int: on | - | int `0x0091b790` (native_map) |
+| `0x8036` | `Native_8036_FpShowGroup` | id int, on int: 0x00729440 or 0x00729400 | int: on | - | int `0x0091b7d0` (native_map) |
 | `0x8037` | `Native_FogSetParams` | a f, b f, c f: fog parameters | 1 | - | int `0x0091b810` (native_map) |
 | `0x8038` | `Native_FogSetParam0` | x f: fog parameter 0 | 1 | - | int `0x0091b8b0` (native_map) |
 | `0x8039` | `Native_FogGetParam0` | - | float: fog parameter 0 | - | float `0x0091b930` (native_map) |
@@ -2329,42 +2329,42 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x8043` | `Native_FogGetGreen` | - | int: fog green | - | int `0x0091be50` (native_map) |
 | `0x8044` | `Native_FogGetBlue` | - | int: fog blue | - | int `0x0091be80` (native_map) |
 | `0x8045` | `Native_BackSetColor` | r int, g int, b int: back colour | 1 | - | int `0x0091beb0` (native_map) |
-| `0x8046` | `Native_8046` | v int | 1; a record from 0x009086d0 with word 0 = v, passed to 0x0090a040 | - | int `0x0091bf10` (native_sys) |
-| `0x8047` | `Native_8047` | v int | 1; as 0x8046 with word 1 | - | int `0x0091bf60` (native_sys) |
-| `0x8048` | `Native_8048` | v int | 1; as 0x8046 with word 2 | - | int `0x0091bfb0` (native_sys) |
+| `0x8046` | `Native_8046_BackSetRed` | v int | 1; a record from 0x009086d0 with word 0 = v, passed to 0x0090a040 | - | int `0x0091bf10` (native_sys) |
+| `0x8047` | `Native_8047_BackSetGreen` | v int | 1; as 0x8046 with word 1 | - | int `0x0091bf60` (native_sys) |
+| `0x8048` | `Native_8048_BackSetBlue` | v int | 1; as 0x8046 with word 2 | - | int `0x0091bfb0` (native_sys) |
 | `0x8049` | `Native_BackGetRed` | - | int: back red | - | int `0x0091c000` (native_map) |
 | `0x804a` | `Native_BackGetGreen` | - | int: back green | - | int `0x0091c030` (native_map) |
 | `0x804b` | `Native_BackGetBlue` | - | int: back blue | - | int `0x0091c060` (native_map) |
 | `0x804c` | `Native_804c` | part, v f | int: Yn_MapPartSet44_0091abc0(part, v, v); 1 | - | int `0x0091c090` (native_mods) |
 | `0x804d` | `Native_804d` | part, v f | int: Yn_MapPartSet44_0091abc0(part, v, 0.0); 1 | - | int `0x0091c0d0` (native_mods) |
 | `0x804e` | `Native_804e` | part, v f | int: Yn_MapPartSet44_0091abc0(part, 0.0, v); 1 | - | int `0x0091c110` (native_mods) |
-| `0x804f` | `Native_804f` | part int, s f, frames int: map part scaled to (s, s) over frames | 1 | - | int `0x0091c150` (native_map) |
-| `0x8050` | `Native_8050` | v int | float: 0x0091a530(v) | - | float `0x0091c1a0` (native_sys) |
-| `0x8051` | `Native_8051` | v int | float: 0x0091a4e0(v) | - | float `0x0091c1c0` (native_sys) |
-| `0x8052` | `Native_8052` | a int, b f, c f | 1; 0x0091aae0(a, b, c) | - | int `0x0091c1e0` (native_sys) |
-| `0x8053` | `Native_8053` | i int, v f | 1; 0x0091aae0(i, v, 0x0091a380(i) rounded to f32) | - | int `0x0091c230` (native_sys) |
-| `0x8054` | `Native_8054` | i int, v f | 1; 0x0091aae0(i, 0x0091a330(i, v) rounded to f32, v) | - | int `0x0091c280` (native_sys) |
-| `0x8055` | `Native_8055` | a int, b f, c f, d int | 1; 0x0091a0f0(a, b, c, d) | - | int `0x0091c2d0` (native_sys) |
-| `0x8056` | `Native_8056` | v int | float: 0x0091a330(v) | - | float `0x0091c330` (native_sys) |
-| `0x8057` | `Native_8057` | v int | float: 0x0091a380(v) | - | float `0x0091c350` (native_sys) |
-| `0x8058` | `Native_8058` | pc, b, a | int: pppFpSetStickChr(a, AtelGetCharHandleFromBindPC(pc), b) (0x0072a530, 0x0086ae90); 1 | - | int `0x0091c370` (native_mods) |
-| `0x8059` | `Native_8059` | a int, b int: pppFpSetStickMap(b, a) | 1 | - | int `0x0091c3c0` (native_map) |
-| `0x805a` | `Native_805a` | v int | 1; 0x0072a120(v) | - | int `0x0091c3f0` (native_sys) |
+| `0x804f` | `Native_804f_MapPartScaleTo` | part int, s f, frames int: map part scaled to (s, s) over frames | 1 | - | int `0x0091c150` (native_map) |
+| `0x8050` | `Native_8050_MapPartScaleX` | v int | float: 0x0091a530(v) | - | float `0x0091c1a0` (native_sys) |
+| `0x8051` | `Native_8051_MapPartScaleY` | v int | float: 0x0091a4e0(v) | - | float `0x0091c1c0` (native_sys) |
+| `0x8052` | `Native_8052_MapPartSetPos` | a int, b f, c f | 1; 0x0091aae0(a, b, c) | - | int `0x0091c1e0` (native_sys) |
+| `0x8053` | `Native_8053_MapPartSetX` | i int, v f | 1; 0x0091aae0(i, v, 0x0091a380(i) rounded to f32) | - | int `0x0091c230` (native_sys) |
+| `0x8054` | `Native_8054_MapPartSetY` | i int, v f | 1; 0x0091aae0(i, 0x0091a330(i, v) rounded to f32, v) | - | int `0x0091c280` (native_sys) |
+| `0x8055` | `Native_8055_MapPartMoveTo` | a int, b f, c f, d int | 1; 0x0091a0f0(a, b, c, d) | - | int `0x0091c2d0` (native_sys) |
+| `0x8056` | `Native_8056_MapPartPosX` | v int | float: 0x0091a330(v) | - | float `0x0091c330` (native_sys) |
+| `0x8057` | `Native_8057_MapPartPosY` | v int | float: 0x0091a380(v) | - | float `0x0091c350` (native_sys) |
+| `0x8058` | `Native_8058_FpSetStickChr` | pc, b, a | int: pppFpSetStickChr(a, AtelGetCharHandleFromBindPC(pc), b) (0x0072a530, 0x0086ae90); 1 | - | int `0x0091c370` (native_mods) |
+| `0x8059` | `Native_8059_FpSetStickMap` | a int, b int: pppFpSetStickMap(b, a) | 1 | - | int `0x0091c3c0` (native_map) |
+| `0x805a` | `Native_805a_FpResetStick` | v int | 1; 0x0072a120(v) | - | int `0x0091c3f0` (native_sys) |
 | `0x805b` | `Native_FpSetStickPos` | n int, x f, y f, z f | 1 | - | int `0x0091c410` (native_map) |
 | `0x805c` | `Native_805c` | on int | 1 | - | int `0x0091c470` (native_map) |
 | `0x805d` | `Native_805d` | - | 1 | - | int `0x0091c4a0` (native_map) |
-| `0x805e` | `Native_805e` | map int: guide map number (Yn_GuideMapSetMapNo) | 1 | - | int `0x0091c4d0` (native_map) |
-| `0x805f` | `Native_805f` | x int | 1 | - | int `0x0091c4f0` (native_map) |
-| `0x8060` | `Native_8060` | x int | 1 | - | int `0x0091c510` (native_map) |
+| `0x805e` | `Native_805e_GuideSetMapNo` | map int: guide map number (Yn_GuideMapSetMapNo) | 1 | - | int `0x0091c4d0` (native_map) |
+| `0x805f` | `Native_805f_FpFree` | x int | 1 | - | int `0x0091c4f0` (native_map) |
+| `0x8060` | `Native_8060_FpGroupForceOff` | x int | 1 | - | int `0x0091c510` (native_map) |
 | `0x8061` | `Native_8061` | v int | 1; 0x00908580(v) | - | int `0x0091c580` (native_sys) |
 | `0x8062` | `Native_8062` | - | int: 0x00908440(); 1 | - | int `0x0091c5a0` (native_mods) |
 | `0x8063` | `Native_8063` | a f, b f, c f, d f | 1; 0x0090a200(a, b, c, d) | - | int `0x0091c600` (native_sys) |
 | `0x8064` | `Native_8064` | six floats | 1; 0x0090a230(the six floats) | - | int `0x0091c6b0` (native_sys) |
-| `0x8065` | `Native_8065` | v int | int: 0x009086b0(v) | - | int `0x0091c780` (native_sys) |
+| `0x8065` | `Native_8065_CheckDobj` | v int | int: 0x009086b0(v) | - | int `0x0091c780` (native_sys) |
 | `0x8066` | `Native_8066` | fp int: pppFpStopStatus | 1 | - | int `0x0091c7c0` (native_map) |
 | `0x8067` | `Native_BltzSetObjModels` | worker a int, worker b int, mode int, unused int (Blitzball) | 1 | - | int `0x0091c810` (native_map) |
-| `0x8068` | `Native_8068` | - | int: Yn_FPm173End() (0x00919ab0); 1 | - | int `0x0091c890` (native_mods) |
-| `0x8069` | `Native_8069` | b, a | int: pppFpSetStickMapDObj(a, b) (0x0072a5e0); 1 | - | int `0x0091af30` (native_mods) |
+| `0x8068` | `Native_8068_FpM173End` | - | int: Yn_FPm173End() (0x00919ab0); 1 | - | int `0x0091c890` (native_mods) |
+| `0x8069` | `Native_8069_FpSetStickDobj` | b, a | int: pppFpSetStickMapDObj(a, b) (0x0072a5e0); 1 | - | int `0x0091af30` (native_mods) |
 | `0x806a` | `Native_806a` | v int: scene +0x104 | 1 | - | int `0x0091af80` (native_map) |
 | `0x806b` | `Native_806b` | on int | 1 | - | int `0x0091afc0` (native_map) |
 | `0x9000` | `Native_9000` | - | int: an "atel_test_print!" line through the empty dbgPrintf; 0 | - | int `0x00907e60` (native_mods) |

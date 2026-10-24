@@ -1353,7 +1353,7 @@ ported! {
         ffx_auto::call(&mut mem(), &t::R_0091AF10, &[a0, a1, a2])
     }
     /// return constant: `return 0x1`.
-    Native_8006_Poll @ 0x0091_b040 => extern "C" fn auto_0091b040() -> u32 {
+    Native_8006_MapJumpToEntrance_Poll @ 0x0091_b040 => extern "C" fn auto_0091b040() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0091B040, &[])
     }
     /// compare: `t0 = u32[&0x012fbc40]; return (t0 == 0x140)`.
