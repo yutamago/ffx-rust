@@ -10,8 +10,14 @@ Columns: address, module, bytes, callers, name (and calls into imports,
 which need a platform equivalent). Callers and callees are the dump's
 call_sites.tsv plus the direct calls and jumps FFX.exe's bytes show
 (tools/refs.py: calls from code Ghidra left as a label, tail jumps).
-Functions too short to hook that only
-return (dbgPrintf, FlushCache) block nobody.
+Functions too short to hook (under five bytes, whatever they do: a bare
+`ret`, `ret 4`, `xor eax, eax; ret`, a field getter) block nobody: no port
+can replace them, so their callers' ports reproduce them or call them.
+
+Mutual recursion: unported functions that block each other in a cycle
+(a calls b, b calls a, through any number of steps) are listed together
+once nothing outside the cycle blocks any of them, each marked with the
+cycle's size and its first member; port and hook them in one go.
 
 Only logic is listed (symbols/classes.tsv, tools/classify.py), and only
 logic callees block: glue, platform, debug and dead functions are not
@@ -36,17 +42,48 @@ import progress  # noqa: E402
 WORK = pathlib.Path(os.environ.get("FFX_WORK", pathlib.Path.home() / "ffx-work"))
 
 
-def is_stub(a, size):
-    """A function that only returns (`ret`, `ret n`, `xor eax,eax; ret`, ...)."""
-    exe = os.environ.get("FFX_GAME_DIR")
-    if not exe:
-        return size == 1
-    import subprocess
-    out = subprocess.run(["objdump", "-d", "--no-show-raw-insn", f"--start-address={a:#x}",
-                          f"--stop-address={a + size:#x}", str(pathlib.Path(exe).expanduser() / "FFX.exe")],
-                         capture_output=True, text=True, check=False).stdout
-    ops = [line.split("\t", 1)[1].split()[0] for line in out.splitlines() if ":\t" in line]
-    return bool(ops) and ops[-1] == "ret" and all(o in ("ret", "xor", "mov", "or") for o in ops)
+def cycles(nodes, edges):
+    """Strongly connected components (Tarjan, iterative) of the graph
+    `edges` over `nodes`: {node: its component (a frozenset)}."""
+    index, low, comp = {}, {}, {}
+    stack, on = [], set()
+    counter = 0
+    for root in nodes:
+        if root in index:
+            continue
+        work = [(root, iter(edges.get(root, ())))]
+        index[root] = low[root] = counter
+        counter += 1
+        stack.append(root)
+        on.add(root)
+        while work:
+            v, it = work[-1]
+            for w in it:
+                if w not in index:
+                    index[w] = low[w] = counter
+                    counter += 1
+                    stack.append(w)
+                    on.add(w)
+                    work.append((w, iter(edges.get(w, ()))))
+                    break
+                if w in on:
+                    low[v] = min(low[v], index[w])
+            else:
+                work.pop()
+                if work:
+                    low[work[-1][0]] = min(low[work[-1][0]], low[v])
+                if low[v] == index[v]:
+                    members = []
+                    while True:
+                        w = stack.pop()
+                        on.discard(w)
+                        members.append(w)
+                        if w == v:
+                            break
+                    group = frozenset(members)
+                    for w in members:
+                        comp[w] = group
+    return comp
 
 
 def raw_edges(size, callees, callers):
@@ -95,7 +132,9 @@ def main():
     rows = progress.functions()
     module = progress.placement(rows, names)
     size = {a: s for a, _, s in rows}
-    ported = set(progress.ported())
+    # replaced: the ported! tables and the hand-written hooks without a
+    # trampoline (crates/ffx-hook/src/lib.rs), as tools/progress.py counts
+    ported = {a for a, state in progress.hooks().items() if state == "replaced"}
     category = progress.classes()
 
     def logic(a):
@@ -116,14 +155,21 @@ def main():
             callers[c].add(a)
     raw_edges(size, callees, callers)
 
-    # functions too short to hook (a bare `ret` such as dbgPrintf, FlushCache)
-    # do nothing a port has to replace: they block no caller
-    stub = {a for a, _, s in rows if s < 5 and is_stub(a, s)}
+    # functions too short to hook (under five bytes: a bare `ret` such as
+    # dbgPrintf, `ret 4`, a constant or field return) cannot be replaced by
+    # any port: they block no caller, whatever their category
+    short = {a for a, _, s in rows if s < 5}
 
     def blocking(a):
         return [c for c in callees[a]
-                if c != a and c not in ported and c not in stub
+                if c != a and c not in ported and c not in short
                 and progress.KIND.get(module.get(c)) == "game" and logic(c)]
+
+    # cycles among the unported: the members are ready together when
+    # everything that blocks any of them is in the cycle
+    block = {a: blocking(a) for a, _, s in rows
+             if progress.KIND.get(module.get(a)) == "game" and a not in ported}
+    comp = cycles(sorted(block), block)
 
     out = []
     for a, _, s in rows:
@@ -140,15 +186,17 @@ def main():
             continue
         if a in taken and not taken[a]["stale"]:
             continue
-        b = blocking(a)
-        if b:
+        group = comp.get(a, frozenset((a,)))
+        if any(c not in group for w in group for c in block.get(w, ())):
             continue
-        out.append((len(callees[a] - {a}) > 0 or imports[a] > 0, -len(callers[a]), s, a, m))
-    out.sort()
-    for _, neg_callers, s, a, m in out[: args.limit]:
+        out.append((len(callees[a] - {a}) > 0 or imports[a] > 0, -len(callers[a]), s, a, m,
+                    group if len(group) > 1 else None))
+    out.sort(key=lambda r: r[:5])
+    for _, neg_callers, s, a, m, group in out[: args.limit]:
         imp = f" (+{imports[a]} imports)" if imports[a] else ""
         stale = f" (stale claim: {taken[a].get('agent')})" if a in taken else ""
-        print(f"0x{a:08x} {m:8} {s:6} {-neg_callers:5}  {names.get(a, '')}{imp}{stale}")
+        cyc = f" (cycle of {len(group)} with 0x{min(group):08x}: port together)" if group else ""
+        print(f"0x{a:08x} {m:8} {s:6} {-neg_callers:5}  {names.get(a, '')}{imp}{stale}{cyc}")
     print(f"{len(out)} ready", file=sys.stderr)
 
 

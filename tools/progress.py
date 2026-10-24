@@ -16,6 +16,9 @@ Counts:
   to port   logic functions (symbols/classes.tsv, tools/classify.py) not
             replaced yet: what is left to port exactly; glue, platform,
             debug and dead code is replaced or dropped instead
+  stub      functions under five bytes (classes.tsv category `stub`: a bare
+            ret, ret N, a constant or field return) that are too short for
+            the hook's jmp; counted apart, never in to port
 
 Usage: tools/progress.py [--json] [--unknown]
   --unknown  list the named functions no module rule matches
@@ -218,6 +221,9 @@ def count(rows, module, names, hooked, category):
             if state != "replaced":
                 s["to_port"] += 1
                 s["to_port_bytes"] += size
+        elif category.get(a) == "stub":
+            s["stub"] += 1
+            s["stub_bytes"] += size
     return stats
 
 

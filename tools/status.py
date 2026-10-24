@@ -97,7 +97,7 @@ def snapshot(rows, tree):
     module = progress.placement(rows, names)
     stats = progress.count(rows, module, names, hooked, progress.classes(tree))
     keep = ("functions", "bytes", "named", "named_bytes", "replaced", "replaced_bytes",
-            "wrapped", "logic", "logic_bytes", "to_port", "to_port_bytes")
+            "wrapped", "logic", "logic_bytes", "to_port", "to_port_bytes", "stub", "stub_bytes")
     return {m: {k: s.get(k, 0) for k in keep} for m, s in stats.items()}, hooked
 
 
@@ -146,7 +146,7 @@ def functions_map(rows, names, hooked, module, category):
     """The binary, function by function in address order, for the map."""
     mods = sorted(progress.KIND, key=lambda m: (progress.KIND[m] != "game", m))
     idx = {m: i for i, m in enumerate(mods)}
-    cats = ["logic", "glue", "platform", "debug", "dead", ""]
+    cats = ["logic", "glue", "platform", "debug", "dead", "stub", ""]
     out = {"modules": mods, "kinds": [progress.KIND[m] for m in mods], "categories": cats, "states": STATES,
            "addr": [], "size": [], "module": [], "state": [], "category": [], "named": [], "names": {}}
     for a, ghidra_name, size in sorted(rows):
@@ -162,7 +162,7 @@ def functions_map(rows, names, hooked, module, category):
         out["module"].append(idx[m])
         out["state"].append(STATES.index(state))
         out["named"].append(1 if name else 0)
-        out["category"].append(cats.index(category.get(a, "")) if category.get(a, "") in cats else 5)
+        out["category"].append(cats.index(category.get(a, "")) if category.get(a, "") in cats else cats.index(""))
         if name or not ghidra_name.startswith("FUN_"):
             out["names"][i] = name or ghidra_name
     return out
