@@ -672,4 +672,51 @@ pub mod bridge {
             h.call_sym(SET_PARAM_VALUE, Conv::Thiscall(buf), &[param, record]);
         }
     }
+
+    /// `g_FFXIsDebug` (`FFXIsDebug`), a byte.
+    pub const FFX_IS_DEBUG: Global<u8> = Global::new(0x0133_c910);
+    /// `g_GraphicCharacterLoading`: bit 31 a flag, the rest a count of
+    /// characters loading.
+    pub const CHARACTER_LOADING: Global<u32> = Global::new(0x00cc_b6d4);
+    /// `g_ViewerManager` (`ViewerManager_GetInstance`).
+    pub const VIEWER: Global<u32> = Global::new(0x00cc_cac0);
+    /// `ViewerManager_DrawTexAnimInfo_006bc210(this, dt)` (`thiscall`,
+    /// `ret 4`; debug, stays original): the viewer's texture-animation
+    /// read-out.
+    pub const VIEWER_TEX_ANIM_INFO: u32 = 0x006b_c210;
+    /// The debug menu's type for the viewer (its `+4`,
+    /// `DebugMenuManager_getCurrentDebugMenuType`).
+    pub const DEBUG_MENU_VIEWER: u32 = 5;
+
+    /// `TextureAnimation_Animate_00672000(dt)` (`stdcall`; name ours;
+    /// `PhyreScene_animate` calls it): the texture animation manager's
+    /// animations step by `dt` (`ParamList_SetAllFloat`); in a debug build
+    /// with no character loading and the debug menu on the viewer, the
+    /// viewer shows its read-out ([`VIEWER_TEX_ANIM_INFO`]); then the
+    /// materials take their frames' textures ([`update_samplers`]). The
+    /// manager is read again after the calls, as the original asks
+    /// `TextureAnimationManager_GetInstance` twice. `eax` is
+    /// `update_samplers`'s, which its one caller drops.
+    pub fn animate(h: &mut impl Host, dt: f32) {
+        // the original's fld/fstp: it changes only a signalling NaN, which
+        // the hardware quiets and the oracle's emulator keeps, so no test
+        // tells this line from its removal
+        let dt = x87::round_trip(dt);
+        let mgr = TEXTURE_ANIMATION.get(h);
+        crate::util::bridge::set_all_params(h, mgr, dt);
+        let loading = CHARACTER_LOADING.get(h) & 0x7fff_ffff;
+        if FFX_IS_DEBUG.get(h) != 0 && loading == 0 {
+            let menu = DEBUG_MENU.get(h);
+            if h.read::<u32>(menu + 4) == DEBUG_MENU_VIEWER {
+                let viewer = VIEWER.get(h);
+                h.call_sym(
+                    VIEWER_TEX_ANIM_INFO,
+                    Conv::Thiscall(viewer),
+                    &[dt.to_bits()],
+                );
+            }
+        }
+        let mgr = TEXTURE_ANIMATION.get(h);
+        update_samplers(h, mgr);
+    }
 }

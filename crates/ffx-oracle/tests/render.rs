@@ -7539,6 +7539,18 @@ fn stub_record4(t: &mut Twins, sym: u32, ret: u32) {
 /// Returns how many records were set.
 fn round23c_case(t: &mut Twins, rng: &mut Rng, what: &str) -> u32 {
     use managers::bridge as mb;
+    let this = round23c_setup(t, rng);
+    t.check(what, 0x006b_44a0, Conv::Fastcall, &[this], |g| {
+        mb::update_samplers(g, this);
+        Out::None
+    });
+    t.r32(t.log)
+}
+
+/// [`round23c_case`]'s random manager, with `ShaderParams_FindByName` and
+/// the parameter setter stubbed; returns it.
+fn round23c_setup(t: &mut Twins, rng: &mut Rng) -> u32 {
+    use managers::bridge as mb;
     let names: Vec<u32> = ["texA", "texB", "anim1", "anim10"]
         .iter()
         .map(|s| cstr(t, s))
@@ -7623,11 +7635,7 @@ fn round23c_case(t: &mut Twins, rng: &mut Rng, what: &str) -> u32 {
     t.w32(this + 0x78, list);
     t.stub_sym(mb::SHADER_PARAMS_FIND, Conv::Thiscall(0), 1, param);
     stub_record4(t, mb::SET_PARAM_VALUE, rng.next());
-    t.check(what, 0x006b_44a0, Conv::Fastcall, &[this], |g| {
-        mb::update_samplers(g, this);
-        Out::None
-    });
-    t.r32(t.log)
+    this
 }
 
 #[test]
@@ -7657,6 +7665,138 @@ fn snapshot_round23c_matches_the_original() {
         t.reset();
         let what = format!("snapshot round {round}");
         round23c_case(&mut t, &mut rng, &what);
+    }
+}
+
+// ---- missed: TextureAnimation_Animate_00672000 ----
+
+/// `TextureAnimation_Animate_00672000(dt)` on [`round23c_setup`]'s manager
+/// as `g_TextureAnimationManager`: its animations' virtual 1 (the step by
+/// `dt`) and the viewer's read-out are recording stubs; the debug flag,
+/// the loading count and the debug menu's type are random around the
+/// viewer branch. Returns bit 0 when the viewer stub ran, bit 1 when an
+/// animation stepped, bit 2 when a sampler record was set.
+fn missed_animate_case(t: &mut Twins, rng: &mut Rng, what: &str) -> u32 {
+    use managers::bridge as mb;
+    let this = round23c_setup(t, rng);
+    let step = t.stub(None, 0x0067_2001, true, 1, 1, rng.next());
+    let vt = t.zeros(8);
+    t.w32(vt + 4, step);
+    let n = t.r32(this + 0x7c) & 0x7fff_ffff;
+    let anims = t.r32(this + 0x80);
+    for k in 0..n {
+        t.w32(anims + 0x20 * k, vt);
+    }
+    t.global(mb::TEXTURE_ANIMATION.sym, this);
+    let debug = [0u8, 1, 1, 1, rng.next() as u8][rng.below(5) as usize];
+    let at = t.rebase(mb::FFX_IS_DEBUG.sym);
+    t.w8(at, debug);
+    let loading = [
+        0,
+        0,
+        0,
+        0x8000_0000,
+        1,
+        0x4000_0000,
+        0x8001_0000,
+        rng.next(),
+    ][rng.below(8) as usize];
+    t.global(mb::CHARACTER_LOADING.sym, loading);
+    let menu = t.alloc(&rng.bytes(8));
+    let kind = [
+        mb::DEBUG_MENU_VIEWER,
+        mb::DEBUG_MENU_VIEWER,
+        0,
+        4,
+        6,
+        rng.next(),
+    ][rng.below(6) as usize];
+    t.w32(menu + 4, kind);
+    t.global(mb::DEBUG_MENU.sym, menu);
+    let viewer = t.alloc(&rng.bytes(0x40));
+    t.global(mb::VIEWER.sym, viewer);
+    t.stub_sym(mb::VIEWER_TEX_ANIM_INFO, Conv::Thiscall(0), 1, rng.next());
+    let dt = rng.float();
+    t.check(what, 0x0067_2000, Conv::Stdcall, &[dt.to_bits()], |g| {
+        mb::animate(g, dt);
+        Out::None
+    });
+    let mut seen = 0;
+    for k in 0..t.r32(t.log) {
+        seen |= match t.r32(t.log + 4 + 32 * k) {
+            mb::VIEWER_TEX_ANIM_INFO => 1,
+            0x0067_2001 => 2,
+            _ => 4,
+        };
+    }
+    seen
+}
+
+#[test]
+fn missed_animate_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x0067_2000);
+    let mut seen = [0u32; 8];
+    for round in 0..4000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        seen[missed_animate_case(&mut t, &mut rng, &what) as usize] += 1;
+    }
+    eprintln!("paths: {seen:?}");
+    // a sampler record (bit 2) needs an animation, which steps (bit 1)
+    assert!(
+        [0, 1, 2, 3, 6, 7].iter().all(|&k| seen[k] > 5),
+        "paths: {seen:?}"
+    );
+}
+
+#[test]
+fn snapshot_missed_animate_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5067_2000);
+    let mut seen = 0;
+    for round in 0..200 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        seen |= missed_animate_case(&mut t, &mut rng, &what);
+    }
+    assert_eq!(seen, 7, "paths: {seen}");
+}
+
+/// `TextureAnimation_Animate_00672000` on the snapshot's own manager, scene
+/// and animations (`g_TextureAnimationManager` as the game left it), with
+/// only the debug branch's viewer stubbed: its real animations step
+/// through their original virtual 1.
+#[test]
+fn snapshot_missed_animate_real_manager_matches_the_original() {
+    use managers::bridge as mb;
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mgr = t.r32(t.rebase(mb::TEXTURE_ANIMATION.sym));
+    eprintln!("manager {mgr:#x}");
+    if mgr == 0 {
+        return;
+    }
+    let mut rng = Rng(0x6067_2000);
+    t.stub_sym(mb::VIEWER_TEX_ANIM_INFO, Conv::Thiscall(0), 1, 0);
+    for round in 0..20 {
+        let dt = [1.0f32, 0.5, 2.0, 0.0, rng.float()][round % 5];
+        t.check(
+            &format!("real manager round {round}"),
+            0x0067_2000,
+            Conv::Stdcall,
+            &[dt.to_bits()],
+            |g| {
+                mb::animate(g, dt);
+                Out::None
+            },
+        );
     }
 }
 

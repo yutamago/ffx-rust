@@ -2339,6 +2339,7 @@
 0x00671300 function PhyreScene_unloadVFXTexture # fh v3:exact 0x006714a0 PhyreScene::unloadVFXTexture
 0x00671b90 function PhyreScene_unloadWaterEffectTexture # layout+callees: sorts between PhyreScene_unloadVFXTexture and PhyreScene_updateMapYIQ, and its named callees match the Switch 0x7100206b70 PhyreScene_unloadWaterEffectTexture's (similarity 1.00: PhyreScene_unloadVFXTexture, fiosUnifyFilename); symbols from Fahrenheit's server export
 0x00671da0 function PhyreScene_updateMapYIQ   # fh v3:exact 0x00671f40 PhyreScene::updateMapYIQ
+0x00672000 function TextureAnimation_Animate_00672000 # stdcall(dt), ret 4: ParamList_SetAllFloat(g_TextureAnimationManager, dt) (each animation's virtual 1); with g_FFXIsDebug set, no character loading (g_GraphicCharacterLoading & 0x7fffffff == 0) and debug menu type 5 (the viewer, DebugMenuManager +4), ViewerManager_DrawTexAnimInfo_006bc210(g_ViewerManager, dt); then TextureAnimationManager_updateSamplers_006b44a0(g_TextureAnimationManager, read again); eax that one's, dropped by its only caller PhyreScene_animate (0x00657171); ported (port-missed, managers::bridge::animate); name ours
 0x00672070 function PhyreScene_updateTextureVideoCallback # fh v3:exact+call.cs 0x00672210 cdecl PhyreScene::updateTextureVideoCallback
 0x006720c0 function Phyre_PCamera_updateViewMatrices # fh v3:exact 0x00672260 Phyre::PCamera::updateViewMatrices
 0x006727b0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_ClassDynamicMesh__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class ClassDynamicMesh &>::Get" (its own __FUNCTION__ in an error print)
@@ -2822,6 +2823,7 @@
 0x006bb480 function MapNameText_Show_006bb480 # thiscall(this, show) (name ours), ret 4, low byte of show: +0x1c4 = show && +0x110, TextUtil_setEnabled(+0x114; that); show: +0x1c4: TextUtil_resize(+0x114; +0x1cc, +0x1d0); yiGetMapName(+8); +0 = GetGlobal00c44248_007c6db0(), +4 = GetGlobal01139e48_007c6da0(); lines 2, 1, 0 while +0x110 (re-read): 0x006b6ef0(this; line, zeroed 0x100-byte buffer), TextUtil_changeLine(+0x114; line, buffer); eax the last call's. PC UI (REVIEWED field r14 said pc-ui's); ported (ffx_pcui::mapname, pc round 2)
 0x006bb5f0 function CharacterAnimationTweakUtil_setEnabled # layout+callees: sorts between BasicDebugTweakUtil_setEnabled and CharacterAnimationTweakUtil_updateAnimation, and its named callees match the Switch 0x7100294e00 CharacterAnimationTweakUtil_setEnabled's (similarity 0.75: CharacterAnimationTweakUtil_updateAnimation, TextUtil_resize, TextUtil_setEnabled); symbols from Fahrenheit's server export
 0x006bc130 function CharacterAnimationTweakUtil_updateAnimation # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100294b20 CharacterAnimationTweakUtil::updateAnimation, 2 votes, round 1
+0x006bc210 function ViewerManager_DrawTexAnimInfo_006bc210 # thiscall(this = g_ViewerManager, dt), ret 4: when this+0x30 contains "grid00" (strstr) and [0x00cccad4]+0x18 is set, that object's virtual 1(dt), its group id and ID strings (0x006b2050, 0x006b2060: PString text, sprintf_s "%s") and float pairs (0x006b1ce0, 0x006b1cc0) with 0x006b1f90's eax go to 0x00829c00 (forwards to the renderer, 10 words); only caller TextureAnimation_Animate_00672000, only under g_FFXIsDebug with debug menu type 5: debug (classify REVIEWED); name ours
 0x006bc960 function ReturnGlobalSx8_006bc960     # auto-port shape (return global sx8, cdecl): t0 = u8[&0x00cccab8]; return sx8(t0); callers: ; name ours
 0x006bcc70 function graphicPauseGameDestroy # (): virtual destructor (1) of g_GraphicPauseGame, then clears it; name ours
 0x006bcc90 function graphicCheckPauseGame     # () -> g_GraphicPauseGame; name Fahrenheit's (Switch BSim)
@@ -3090,11 +3092,13 @@
 0x006f0950 function SaveDataMachine_Update # (): the PC save/load state machine on g_SaveMachineState 0x00ce72e8 (jump of 20 states: 1-6 save, 0xb-0x11 load, 0x15-0x1b Al Bhed); called from SaveData_Update; name ours
 0x006f0a70 function SaveDataMachine_ScanFiles # (): ffx_000..ffx_199 in g_SaveFolder: CreateFileW + GetFileTime per file into g_SortedSaveTable (slot, yymmdd, seconds), present flags 0x00ce7c78, counts 0x00ce72f4/0x00ce72f8; name ours
 0x006f0fb0 function SortSaveTable_006f0fb0 # (): entries 1..199 of g_SortedSaveTable (3 words) selection-sorted by words 1, 2 descending (signed); callers 0x006eff00/0x006f0220/0x006f0800 (save-data area); name ours
+0x006f1510 function StatsAndAchievements_Unlock_006f1510 # thiscall(this, id), ret 4: with this+0x4d set (the Steam stats received), id <= 0x21 and record id's achieved byte (g_AchievementRecords +0x184) clear: StatsAndAchievements_SetAchievement_006f1900(id), then AchievementTryObtainPlat (which, once records 1..33 are achieved and record 0, the platinum, is not, calls this with 0); callers SaveDataUnlockAchievement (0x006488d6) and AchievementTryObtainPlat (0x006f1573) only (tools/refs.py): platform, the Steam achievement layer (classify REVIEWED); class from Fahrenheit's CCallback<StatsAndAchievements,...> vtables; name ours
 0x006f1550 function AchievementTryObtainPlat  # fh v3:exact 0x006f1690 +AchievementTryObtainPlat
 0x006f1580 function ReturnConst_006f1580 # () -> 0x98; name ours
 0x006f1590 function ReturnConst_006f1590 # () -> 0x18; name ours
 0x006f15a0 function ReturnConst_006f15a0 # () -> 0x10; name ours
 0x006f15b0 function AchievementManager_GetInstance # () -> [0x00ce81a8]; SaveDataUnlockAchievement and BasicDebugTweakUtil_handleInput ask for it; name ours
+0x006f1900 function StatsAndAchievements_SetAchievement_006f1900 # thiscall(this, id), ret 4: with +0x4d set, record id's achieved byte = 1 and +0x188 = 0, then SteamUserStats()->SetAchievement(record +0 name) (vtable +0x1c) and ->StoreStats() (+0x28); only caller StatsAndAchievements_Unlock_006f1510; name ours
 0x006f1ce0 function SaveDataManager_doLoad    # fh v3:exact 0x006f1e20 SaveDataManager::doLoad
 0x006f1d70 function SaveDataManager_doSave    # fh v3:exact 0x006f1eb0 SaveDataManager::doSave
 0x006f1db0 function SetWord0_006f1db0 # thiscall(this): this[0] = 1 (caller 0x00647e40); eax untouched; name ours
@@ -16388,6 +16392,7 @@
 0x00c334b8 label    g_EternalCalmSceneNames   # 7 pointers to "host0:/ffx_master/jppc/event/obj..." paths, indexed by getEternalCalmSceneName
 0x00c34408 label    g_ShadowSize              # ShadowManager_GetShadowSize
 0x00c3577c label g_SaveFilePrefix # pointer to L"ffx_" (the save file names "%s%s%03d", SaveDataMachine_ReadFile)
+0x00c35794 label g_AchievementRecords # 34 Steam achievement records of 400 bytes: +0 the API name (record 0 "ACH_COMPLETION_OF_FFX", the platinum), +0x184 byte achieved, +0x188 dword; StatsAndAchievements_SetAchievement_006f1900, AchievementTryObtainPlat (records 1..33); name ours
 0x00c38e18 label g_CameraDataWords # LoadCameraData's block size in words; 0x0076ee38 divides it by 42 (0xa8-byte records) for the frame bound; name ours
 0x00c38e1c label g_SpdCtrlScales # f32[3] 1, 2, 4 (image data): SpdCtrl_ScaleElapsedTime's scale by g_SpdCtrl_b4; name ours
 0x00c3a368 label    g_FmodCommandHandlers     # label: the 70 FMOD command handlers (cdecl(FfxFmod, args*)) by command, FmodCmd_*; read by the FMOD thread's queue loop
@@ -16579,6 +16584,7 @@
 0x00cccaa8 label    g_TextureAnimationManager # TextureAnimationManager_GetInstance
 0x00cccab0 label    g_DebugMenuManager        # DebugMenuManager_GetInstance; DebugMenuManager_Destroy
 0x00cccab8 label    g_RenderFlag              # the byte ReturnGlobalSx8_006bc960 returns sign-extended
+0x00cccac0 label g_ViewerManager # ViewerManager_GetInstance (0x006b6370) returns it; name ours
 0x00cccb00 label    g_GraphicPauseGame        # graphicCheckPauseGame returns it; graphicPauseGameDestroy deletes it
 0x00cdec1c label    g_SpecularMapParamsManager # SpecularMapParamsManager_GetInstance
 0x00cdec24 label    g_GradMeshSet             # the grad-mesh pool's current set (GetASpareGradMeshInstance)
