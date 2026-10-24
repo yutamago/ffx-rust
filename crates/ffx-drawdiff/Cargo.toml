@@ -1,0 +1,10 @@
+[package]
+name = "ffx-drawdiff"
+description = "Compares two captured D3D11 call streams of a frame, draw by draw (the M4 gate)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

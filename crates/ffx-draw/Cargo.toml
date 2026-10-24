@@ -1,0 +1,10 @@
+[package]
+name = "ffx-draw"
+description = "The in-process renderer core: pipeline-state layer and a thin backend trait, D3D11 first"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

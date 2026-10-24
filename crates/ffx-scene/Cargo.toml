@@ -1,0 +1,10 @@
+[package]
+name = "ffx-scene"
+description = "The field scene: what PhyreEngine draws and from which data, for the Rust scene builder"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

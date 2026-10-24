@@ -589,6 +589,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-draw"
+version = "0.1.0"
+
+[[package]]
+name = "ffx-drawdiff"
+version = "0.1.0"
+
+[[package]]
 name = "ffx-dxbc"
 version = "0.1.0"
 dependencies = [
@@ -801,6 +809,10 @@ dependencies = [
  "windows",
  "windows-sys",
 ]
+
+[[package]]
+name = "ffx-scene"
+version = "0.1.0"
 
 [[package]]
 name = "ffx-script"
