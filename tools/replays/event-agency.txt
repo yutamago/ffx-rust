@@ -1,0 +1,90 @@
+# Event: the Thunder Plains travel agency (kami0100, map 0x107, scenario
+# 1470), from save slot 5 (ffx_005), loaded without the title menu. Reads a
+# book (a message with a Read/Don't read choice, then five pages), goes out
+# of the front door (worker 23's line, Native_MapChange(256, 2)) to the
+# plains (map 0x100), where the chest by the door is the lightning-dodge
+# prize: three message windows, the last "Obtained Venus Sigil!"
+# (Native_015b_GiveEventReward, a key item). Back in (map 0x107 again), it
+# talks to the counter (two messages and a four-way choice) and picks Rest:
+# the screen fades out, the inn music plays, every party member's HP and MP
+# are restored, and it fades back in.
+#
+# Lockstep, fast mode. Each map's inputs and shots are pinned to ctrl work
+# 0's frame count (0x01325d94), which each map's event starts from 0, as in
+# event-besaid. Rest waits for the music file to load and for its sound to
+# end (real time), so its fade-in lands on another frame in every run, and
+# what comes after it is no longer pinned (the plains' rain and lightning
+# and some of the agency's animations follow a clock the event does not
+# reset: after a rest, shots of the plains differed by 47,000-67,000 pixels
+# between original runs). Rest therefore comes last: the script waits for
+# the control to come back (ctrl work 0 +0 bit 1, 0x01325ba0; AtelUcOn sets
+# it) and takes no shot after it.
+#
+# Ranges: the save data's map and previous map (0x0112ca90), the scenario
+# (0x0112d67c), the player's position (g_SaveData_PlayerPos 0x00ccb9a8),
+# the field view matrix (g_YiViewMatrix 0x018ded38), message windows 0 and
+# 1's state words (g_AtelMsgWindows + 0x14 / + 0x40, 8 bytes each: their
+# +0x1c..+0x1f, the choice flags and answer, settle a frame apart in some
+# Rust runs, docs/harness.md), the random
+# generators, the party records (HP and MP: Rest restores them), the key
+# items (g_SaveImportant 0x01130f1c) and ctrl work 0's byte +3 (bit 2 while
+# an event reward is given). run-all.sh leaves the position out of the
+# comparison (--ignore 2), as event-besaid's.
+# Screenshots (event-agency-<n>.bmp): 1 the agency, 2 the book's choice,
+# 3 its first page, 4 the plains by the door, 5 the chest's first message,
+# 6 "Obtained Venus Sigil!", 7 the counter's choice (Rest, Buy weapons,
+# Buy items, Leave).
+load direct 5 kami0100
+lockstep on
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+read 0x01325d94 4
+shot $OUT\event-agency-1.bmp
+trace 0x0112ca90:4 0x0112d67c:2 0x00ccb9a8:12 0x018ded38:64 0x01326d84:8 0x01326db0:8 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68 0x01130f1c:32 0x01325ba3:1
+# the book on the left ("A History of Summoners"): Read, then the pages
+press right 10 6
+press up+right 20 6
+press circle 3 30
+read 0x01325d94 4
+shot $OUT\event-agency-2.bmp
+press circle 3 30
+read 0x01325d94 4
+shot $OUT\event-agency-3.bmp
+press circle 3 30
+press circle 3 30
+press circle 3 30
+press circle 3 30
+press circle 3 30
+press circle 3 30
+waitfor 0x01325ba0:1 02 02 300
+# out of the front door to the plains (map 0x100, entrance 2)
+press down 40 4
+waitfor 0x0112ca90:4 00010701 ffffffff 300
+waitfor 0x01325d94:4 20000000 e0ffffff 1500
+read 0x01325d94 4
+shot $OUT\event-agency-4.bmp
+# the chest by the door
+press up+right 11 4
+press circle 3 40
+press circle 3 40
+read 0x01325d94 4
+shot $OUT\event-agency-5.bmp
+press circle 3 40
+press circle 3 40
+read 0x01325d94 4
+shot $OUT\event-agency-6.bmp
+press circle 3 40
+waitfor 0x01325ba0:1 02 02 300
+# back in (map 0x107, entrance 1), up to the counter: two messages and the
+# choice; Rest
+press up+left 16 4
+waitfor 0x0112ca90:4 07010001 ffffffff 300
+waitfor 0x01325d94:4 20000000 e0ffffff 1500
+press up 14 4
+press circle 3 30
+press circle 3 30
+read 0x01325d94 4
+shot $OUT\event-agency-7.bmp
+press circle 3 30
+waitfor 0x01325ba0:1 02 02 900
+wait 30

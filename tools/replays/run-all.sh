@@ -56,6 +56,9 @@ done
 ls -1dt "$lin"/runs/*/ 2>/dev/null | tail -n +"$((${KEEP_RUNS:-20} + 1))" | while read -r d; do rm -rf "$d"; done
 replays=(field-walk battle-attack menu-browse boot battle-magic battle-overdrive event-besaid event-cliff)
 eye=(battle-overdrive event-cliff)
+# rp-events2 (docs/harness.md): the Thunder Plains agency and the Besaid arrival
+replays+=(event-agency event-arrival)
+eye+=(event-agency event-arrival)  # the plains' chocobo icon (agency 4-6); voiced, real time (arrival)
 
 # Build once, not three times side by side.
 tools/build-hook.sh >/dev/null || exit 1
@@ -119,6 +122,7 @@ for r in "${replays[@]}"; do
     # player position in event-besaid (2) misses an in-between value when a
     # trace frame is skipped, in original runs too (docs/harness.md)
     case $r in field-walk) ign=(--ignore 3) ;; menu-browse) ign=(--ignore 0) ;; event-besaid) ign=(--ignore 2) ;; *) ign=() ;; esac
+    [ "$r" = event-agency ] && ign=(--ignore 2)  # its player position, as event-besaid's
     cmp=(python3 tools/replay-compare.py "$traces/$r-orig.trace" "$runs/rust/$r-rust.trace" --also "$traces/$r-orig2.trace" "${ign[@]}")
     echo "== $r: $("${cmp[@]}" 2>&1 | tail -1)"
     "${cmp[@]}" >/dev/null 2>&1 || bad=1
