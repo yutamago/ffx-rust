@@ -32,7 +32,13 @@
 # Effects are pinned to their magic files (g_MagicFile_Handle 0x00c64cac,
 # low half 0 once loaded, -1 before; the magic ID 0x00c64ca0): Valefor's
 # entry 0x253, Energy Blast 0x25c. Spiral Cut (0x186) is loaded while the
-# bar runs and plays when the bar's state is back at 0.
+# bar runs and plays when the bar's state is back at 0. The summon effects'
+# shots wait for Valefor's effect state (MsEffectStart, actor 8 +0xdfb) to
+# reach 4: the magic file's textures load in a varying number of frames
+# (fewer with the Rust replacements), and the effect starts at the later of
+# that and the summoner's motion. From state 4 the entry takes 282 frames
+# and Energy Blast 259, original and Rust; the script checks both to the
+# frame (docs/harness.md, "Summon timing").
 #
 # Ranges, from Tidus's first menu on (whether it opens on the frame the
 # phase byte turns 1 or the next varies between runs of the original): the
@@ -77,10 +83,18 @@ press circle 4 30
 press circle 4 0
 waitfor 0x00c64ca0:4 53020000 ffffffff 600
 waitfor 0x00c64cac:2 0000 ffff 1200
+# the entry starts: Valefor's effect state (actor 8 +0xdfb) moves to 4
+# once the magic file has loaded and MsEffectStart's state 3 lets it go
+waitfor *0x011334d4+0x8a7b:1 04 ff 1200
 wait 150
 shot $OUT\battle-overdrive-3.bmp
 wait 100
 shot $OUT\battle-overdrive-4.bmp
+# timing: the entry ends (magic ID -1) 282 frames after state 4, not one
+# frame sooner or later (original and Rust alike, whatever the load took)
+wait 31
+waitfor 0x00c64ca0:4 53020000 ffffffff 0
+waitfor 0x00c64ca0:4 ffffffff ffffffff 1
 # Valefor: Overdrive (left), Energy Blast, all enemies
 waitfor 0x023cc08c:4 00010000 ffffffff 3000
 wait 30
@@ -90,10 +104,15 @@ press circle 4 30
 press circle 4 0
 waitfor 0x00c64ca0:4 5c020000 ffffffff 600
 waitfor 0x00c64cac:2 0000 ffff 1200
+waitfor *0x011334d4+0x8a7b:1 04 ff 1200
 wait 150
 shot $OUT\battle-overdrive-6.bmp
 wait 70
 shot $OUT\battle-overdrive-7.bmp
+# timing: Energy Blast ends 259 frames after its state 4
+wait 38
+waitfor 0x00c64ca0:4 5c020000 ffffffff 0
+waitfor 0x00c64ca0:4 ffffffff ffffffff 1
 # Valefor again: Dismiss (right, down twice), on itself
 waitfor 0x023cc08c:4 00010000 ffffffff 3000
 wait 30

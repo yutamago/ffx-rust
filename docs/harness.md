@@ -355,12 +355,50 @@ are only 30% noise, so the exact comparison counted the rest and failed;
 the coarse field comparison failed on two original runs too).
 `run-all.sh` records them into `orig/eye` and `orig2/eye` (its `eye`
 list), out of `shot-compare.py`'s sight, and prints where the Rust run's
-are. The effects' phase at a shot varies by a few
-frames even between original runs (Valefor's entry took 327-348 frames
-from its magic ID to its end in three original runs, 319 in three Rust
-runs; Energy Blast's damage came 268-284 frames after its ID, 264-275 in
-Rust), so shot 6 shows the dark summoning circle in some runs and the
-white flash after it in others. About 25 s.
+are. About 25 s.
+
+Summon timing (2026-10-24, valefor-timing). Measured from its magic ID,
+Valefor's entry took 321-350 frames in original runs and exactly 319 in
+every Rust run of `run-all.sh`. That is loading, not a port bug. The magic
+file's read (`g_BtlEffectReadClear` `0x00c421e8`, counted up each frame by
+`Sg_EffectReadPoll` from 0 and set to -1 when it ends) waits for the
+file's textures (`SegmentList_AllReady`; the DLL itself is loaded at
+once, `g_PrxState` 3 on the ID's frame). It took 38-67 frames in the
+original and 10-38 in Rust (with the dense trace below, 140 and 223 in the
+original, 23 and 25 in Rust). The effect then starts when Valefor's
+effect state (`MsEffectStart`, actor 8 `+0xdfb`) moves from 3 to 4,
+which also waits for the summoner's motion (state 3's conditions): never
+before ID + 37. Original runs always load later than that, so they start at
+load + 1. Rust runs mostly load sooner and start at ID + 37, so 37 + 282 =
+319. Per-frame probes (`~/ffx-work/valefor-timing`: actor 1 and 8 records,
+`0x0112a8e0`-`0x0112cae0`, the magic and read words, every frame in
+lockstep), aligned at the load's end, gave the same change frames for
+every word from load + 9 to the entry's end in two original and two Rust
+runs, and the same values for Valefor's per-frame words (`+0xf34`-`+0xf4c`).
+Before load + 9 only the idle pose differs. Two Rust probe runs that loaded
+slowly (42 and 50 frames) took 325 and 333 frames, in the original's range.
+Turning off any one module's hooks (`FFX_HOOK_DISABLE`, each
+`ported/<module>.rs`, two runs each) left Rust's loads at 10-36 frames
+and the entry at 319, so the faster load has no single port as its cause.
+
+So the replay waits for state 4 (`waitfor *0x011334d4+0x8a7b:1 04`)
+instead of the file handle. The shots after it (3, 4, 6, 7) show the same
+moment of the effect in every run (the two recordings differ in about 350
+pixels on shots 3 and 4). The entry's camera still varies: it looks at
+Valefor's head from the left in some runs and at Yuna from behind Valefor's
+wing in others (shot 4: the ground, or the forest path), with the original
+code too (another original run at the same frame matched the Rust run's
+angle to 558 pixels, and both differed from the recordings by 457,000).
+The script also checks the effect's length
+to the frame: the magic ID must still be set 281 frames after state 4 and
+-1 one frame later (Energy Blast: 258 and 259). Four runs each side gave
+282 and 259 (from the ID to state 4: original 41-55 and 66-80, Rust 37 and
+49-59). A port that ends either effect a frame early or late stops the
+replay at that `waitfor` (`timeout at N`), and its cut trace fails the
+comparison. The trace ranges cannot show this: they compare each range's
+sequence of distinct values, not their frames, and no traced word counts
+the effect's frames. Valefor's per-frame words do, but the idle pose
+before and after the entry makes them differ between original runs.
 
 `tools/replays/event-besaid.txt` and `event-cliff.txt` (2026-10-24) play
 scripted events from save slot 3 (`ffx_003`). The harness's five save
