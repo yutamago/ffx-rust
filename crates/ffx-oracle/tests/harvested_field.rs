@@ -31,3 +31,19 @@ harvest_test!(
         });
     }
 );
+// small round 7 (the key frame tracks in a scratch frame)
+harvest_test!(
+    yi_key_frame_main,
+    0x0091_4a10,
+    args = 1,
+    |m: &mut Oracle, s| {
+        let frame = m.stack_range().start + 0x100;
+        ffx_field::key_frame::bridge::yi_key_frame_main(
+            m,
+            s.arg(0),
+            frame,
+            &mut |m, f, a| m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax,
+            &mut |m, f, a| m.call_f64(f, a).unwrap(),
+        )
+    }
+);
