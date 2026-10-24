@@ -7671,6 +7671,18 @@ pub fn atel_event_remove_for_battle(h: &mut impl ffx_bridge::Host) -> u32 {
     saved
 }
 
+/// `Math_YawPitchTo(&yaw, &pitch, from xyz, to xyz)` (`0x0088b4d0`):
+/// eight words, so through `call_n`. The game's `Host::call` (`RawMem`)
+/// takes six and refuses a longer list without calling: through it the
+/// aim was never written in the game (event-cliff, 2026-10-24: Tidus
+/// never finished his turn, so the river scene never started, and Wakka
+/// stood back on the bank) while the oracle tests, whose `call` took any
+/// width, passed.
+fn yaw_pitch_to(h: &mut impl super::run::NativeHost, args: &[u32; 8]) {
+    let f = h.rebase(0x0088_b4d0);
+    h.call_n(f, args);
+}
+
 /// The move block of worker `w` (`+0x558`, types 5 and 6 `+0x284`, none
 /// for type 4).
 fn move_block(m: &impl Mem, w: u32) -> u32 {
@@ -7714,7 +7726,7 @@ fn move_block(m: &impl Mem, w: u32) -> u32 {
 /// original's `fcom`/`fucom` tests.
 #[allow(clippy::too_many_lines)] // one block per mode, as the jump table
 #[allow(clippy::float_cmp)] // the original's exact fucom tests
-pub fn atel_move_update<H: ffx_bridge::Host>(
+pub fn atel_move_update<H: super::run::NativeHost>(
     h: &mut H,
     w: u32,
     level: u32,
@@ -7773,7 +7785,7 @@ pub fn atel_move_update<H: ffx_bridge::Host>(
                     let from = [0, 4, 8].map(|o| copy(h.read(p + o)));
                     let [fx, fy, fz] = from;
                     let args = [frame, frame + 4, fx, fy, fz, t[0], t[1], t[2]];
-                    host_call(h, 0x0088_b4d0, &args);
+                    yaw_pitch_to(h, &args);
                     let (mut ys, mut ps) = (copy(h.read(m + 0x3c)), copy(h.read(m + 0x40)));
                     if h.read::<u16>(m + 2) & 0x200 != 0 {
                         (ys, ps) = (0x40c9_0fdb, 0x40c9_0fdb);
@@ -7857,7 +7869,7 @@ pub fn atel_move_update<H: ffx_bridge::Host>(
                 to[1],
                 to[2],
             ];
-            host_call(h, 0x0088_b4d0, &args);
+            yaw_pitch_to(h, &args);
             let d =
                 [0u32, 4, 8].map(|o| x87::store(x87::sub(ld(h.read(out + o)), ld(h.read(p + o)))));
             let l = x87::store(fcall(h, length_sq3, &d));
@@ -7952,7 +7964,7 @@ pub fn atel_move_update<H: ffx_bridge::Host>(
 /// NaN, as the original's flag tests.
 #[allow(clippy::too_many_lines)] // one block per mode, as the jump table
 #[allow(clippy::float_cmp)] // the original's exact fucom tests
-pub fn atel_turn_update<H: ffx_bridge::Host>(
+pub fn atel_turn_update<H: super::run::NativeHost>(
     h: &mut H,
     w: u32,
     level: u32,
@@ -8003,7 +8015,7 @@ pub fn atel_turn_update<H: ffx_bridge::Host>(
             to[1],
             to[2],
         ];
-        host_call(h, 0x0088_b4d0, &args);
+        yaw_pitch_to(h, &args);
         for (delta, base, out) in [(0x2c, 0x20, frame), (0x30, 0x24, frame + 4)] {
             let moved = x87::add(ld(h.read(t + delta)), ld(h.read(out)));
             let x = x87::store(x87::sub(moved, ld(h.read(t + base))));

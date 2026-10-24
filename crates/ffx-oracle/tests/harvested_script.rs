@@ -243,11 +243,26 @@ impl ffx_bridge::Mem for TrigHost<'_> {
 
 impl ffx_bridge::Host for TrigHost<'_> {
     fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
+        // the game's `Host::call` (`RawMem`) refuses more than six words
+        // without calling; wider calls go through `call_n`
+        assert!(
+            args.len() <= 6,
+            "Host::call({addr:#x}) with {} words: the game's RawMem refuses more than 6; use call_n",
+            args.len()
+        );
         self.0.call(addr, args)
     }
 }
 
 impl ffx_script::vm::bridge::run::NativeHost for TrigHost<'_> {
+    fn call_n(&mut self, addr: u32, args: &[u32]) -> u32 {
+        assert!(
+            args.len() <= 12,
+            "call_n({addr:#x}) with {} words",
+            args.len()
+        );
+        ffx_bridge::Host::call(&mut self.0, addr, args)
+    }
     fn call_float(&mut self, addr: u32, args: &[u32]) -> f64 {
         self.0.0.call_f64(addr, args).unwrap()
     }
@@ -315,11 +330,11 @@ harvest_test!(
     |m: &mut Oracle, s| {
         let frame = m.stack_range().start + 0x100;
         hp::atel_move_update(
-            &mut OracleHost(m),
+            &mut TrigHost(OracleHost(m)),
             s.arg(0),
             s.arg(1),
             frame,
-            |h, at, args| h.0.call_f64(at, args).unwrap(),
+            |h, at, args| h.0.0.call_f64(at, args).unwrap(),
         );
     }
 );
@@ -332,11 +347,11 @@ harvest_test!(
     |m: &mut Oracle, s| {
         let frame = m.stack_range().start + 0x100;
         hp::atel_turn_update(
-            &mut OracleHost(m),
+            &mut TrigHost(OracleHost(m)),
             s.arg(0),
             s.arg(1),
             frame,
-            |h, at, args| h.0.call_f64(at, args).unwrap(),
+            |h, at, args| h.0.0.call_f64(at, args).unwrap(),
         );
     }
 );
