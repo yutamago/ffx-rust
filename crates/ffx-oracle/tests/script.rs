@@ -2635,6 +2635,362 @@ fn native_special_cases_match_the_original() {
     }
 }
 
+/// The natives the Ghidra dump sizes as one byte although their code runs
+/// 5 to 201 bytes to a `ret` (symbols/sizes.tsv): none reads its
+/// `(worker, args, stack)`, all return `EAX`.
+const SIZE_FIXED: [u32; 22] = [
+    0x007a_4550, // Native_BtlIsUnderwater
+    0x007a_4e90, // Native_BtlGetBattleId (jmp Battle_GetBattleId)
+    0x007a_76e0, // Native_BtlGetTurnActor
+    0x0085_6630, // Native_AlwaysTrue019c
+    0x0085_66b0, // Native_ControlEnable
+    0x0085_67c0, // Native_ControlDisable
+    0x0085_7680, // Native_Random16
+    0x0085_8210, // Native_LangGroupNotJpAsia
+    0x0085_9040, // Native_MusicLoad_Poll
+    0x0085_9ee0, // Native_MusicWaitLoaded_Result
+    0x0085_cec0, // Native_VoiceStandby_Poll
+    0x0085_d9b0, // Native_PadPressed
+    0x0085_de80, // Native_VoiceStart_End
+    0x0085_e090, // Native_VoiceStop
+    0x0085_e1d0, // Native_VoiceIsPlaying
+    0x0085_e4a0, // Native_SoundWait_Poll
+    0x00a7_7ef0, // Native_FadeWait_Poll
+    0x00a7_8270, // Native_MenuOpen_Poll
+    0x00a7_82a0, // Native_MenuOpen_Result
+    0x00a7_95d0, // Native_WaitCdIdle
+    0x00a7_9970, // Native_ChrLoadSystemMgrp_Poll
+    0x00a7_a6a0, // Native_ChrRefreshAllBones
+];
+
+/// The [`SIZE_FIXED`] natives whose callees cannot run on the bare image
+/// (no ctrl work, no character or sound state): compared on the snapshots
+/// and, with those callees fixed by `stub_return`, on the image too.
+const SIZE_FIXED_IMAGE_STOPS: [u32; 6] = [
+    0x0085_66b0, // AtelUcOn: the current ctrl work
+    0x0085_67c0, // AtelUcOff: the same
+    0x0085_8210, // the language manager (until 0x00641100 is fixed)
+    0x0085_de80, // the voice stream (until its callees are fixed)
+    0x0085_e090, // SndStopStream (until it is fixed)
+    0x00a7_95d0, // g_CdLib (until Ch_ReadSync is fixed)
+];
+
+/// One [`SIZE_FIXED`] case: native `sym` on both sides, `EAX` and memory
+/// compared. On the bare image (`image`) a call the original cannot finish
+/// is counted in `stops` and the pair started again from `fresh`.
+fn size_fixed_case(
+    pair: &mut (Oracle, Oracle),
+    fresh: &dyn Fn() -> (Oracle, Oracle),
+    image: bool,
+    seen: &mut std::collections::BTreeMap<u32, usize>,
+    stops: &mut std::collections::BTreeSet<u32>,
+    sym: u32,
+    what: &str,
+) {
+    use ffx_script::vm::bridge::native::{self, Native};
+    let (a, b) = (&mut pair.0, &mut pair.1);
+    clear_stacks(a, b);
+    let ra = match a.call(a.rebase(sym), Conv::Cdecl, &[0, 0, 0]) {
+        Ok(r) => r,
+        Err(e) => {
+            assert!(image, "{what}: the original stops: {e}");
+            eprintln!("{what}: the original stops on the image: {e}");
+            stops.insert(sym);
+            *pair = fresh();
+            return;
+        }
+    };
+    assert!(
+        ra.st0_raw.is_none(),
+        "{what}: the original returns {:?} in ST0",
+        ra.st0
+    );
+    let Some(Native::Int(f)) = native::find::<Run>(sym) else {
+        panic!("{what}: not an integer native in find");
+    };
+    let rb = f(&mut Run(b), 0, 0, 0);
+    assert_eq!(ra.eax, rb, "{what}: EAX");
+    native_no_diff(a, b, what);
+    *seen.entry(sym).or_default() += 1;
+}
+
+/// The [`SIZE_FIXED`] natives against the original on every branch: the
+/// globals they test set on both sides, the callees whose result picks a
+/// branch fixed with `stub_return`. On the image alone without
+/// `FFX_SNAPSHOT`, on the snapshot's current ctrl work with it.
+#[test]
+#[allow(clippy::too_many_lines)] // one block per native family
+fn size_fixed_natives_match_the_original() {
+    use std::collections::{BTreeMap, BTreeSet};
+    fn set<T: ffx_bridge::Value>(pair: &mut (Oracle, Oracle), sym: u32, x: T) {
+        let at = pair.0.rebase(sym);
+        poke(&mut pair.0, &mut pair.1, at, x);
+    }
+    fn stub(pair: &mut (Oracle, Oracle), sym: u32, x: u32) {
+        for o in [&mut pair.0, &mut pair.1] {
+            let at = o.rebase(sym);
+            o.stub_return(at, x).unwrap();
+        }
+    }
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let snap = std::env::var_os("FFX_SNAPSHOT").map(|s| Pages::read(PathBuf::from(s)).unwrap());
+    let image = snap.is_none();
+    let fresh = || -> (Oracle, Oracle) {
+        match &snap {
+            Some(pages) => {
+                let c = in_use(&Oracle::from_snapshot(&exe, pages).unwrap())[0];
+                fresh_run_pair(pages, &exe, c)
+            }
+            None => (Oracle::load(&exe).unwrap(), Oracle::load(&exe).unwrap()),
+        }
+    };
+    let mut pair = fresh();
+    let (mut seen, mut stops) = (BTreeMap::new(), BTreeSet::new());
+    macro_rules! case {
+        ($sym:expr, $($what:tt)*) => {
+            size_fixed_case(&mut pair, &fresh, image, &mut seen, &mut stops, $sym, &format!($($what)*))
+        };
+    }
+    // constants, the signed battle bytes
+    for sym in [0x0085_6630, 0x0085_9ee0, 0x00a7_9970] {
+        case!(sym, "{sym:#x}");
+    }
+    for x in [0u8, 1, 0x7f, 0x80, 0xff] {
+        set(&mut pair, 0x0112_c9ce, x);
+        case!(0x007a_4550, "BtlIsUnderwater {x:#x}");
+        set(&mut pair, 0x0112_c9e2, x);
+        case!(0x007a_76e0, "BtlGetTurnActor {x:#x}");
+    }
+    // Battle_GetBattleId: in battle with a scene, the scene word << 16 plus
+    // the byte (two pointers to the oracle's spare stack bottom)
+    let p = pair.0.stack_range().start + 0x200;
+    for (in_battle, scene, word, byte) in [
+        (0u8, p, 0x0205u16, 0x31u8),
+        (1, 0, 0x0205, 0x31),
+        (1, p, 0x0205, 0x31),
+        (1, p, 0xfffe, 0xff),
+    ] {
+        set(&mut pair, 0x0112_a8e0, in_battle);
+        // (the pointers are absolute)
+        let at = pair.0.rebase(0x0112_a9f0);
+        poke(&mut pair.0, &mut pair.1, at, scene);
+        let at = pair.0.rebase(0x0112_a9fc);
+        poke(&mut pair.0, &mut pair.1, at, p + 8);
+        poke(&mut pair.0, &mut pair.1, p, word);
+        poke(&mut pair.0, &mut pair.1, p + 8, byte);
+        case!(
+            0x007a_4e90,
+            "BtlGetBattleId {in_battle} {scene:#x} {word:#x} {byte:#x}"
+        );
+    }
+    // the callers of game code that just run it
+    for k in 0..4 {
+        case!(0x0085_7680, "Random16 call {k}");
+    }
+    for sym in [
+        0x0085_66b0,
+        0x0085_67c0,
+        0x00a7_a6a0,
+        0x0085_8210,
+        0x00a7_95d0,
+    ] {
+        case!(sym, "{sym:#x}");
+    }
+    // the request count, the voice-stop latch, the fade counter, the menu
+    // wait and result, the pad
+    for x in [0u32, 1, 2, 0xffff_ffff] {
+        set(&mut pair, 0x012f_b808, x);
+        case!(0x0085_9040, "MusicLoad_Poll {x:#x}");
+    }
+    set(&mut pair, 0x012f_b808, 0u32);
+    for x in [0u32, 1, 2] {
+        set(&mut pair, 0x012f_b8a0, x);
+        case!(0x0085_e090, "VoiceStop latch {x}");
+    }
+    for x in [0u16, 1, 0xffff] {
+        set(&mut pair, 0x0130_074c, x);
+        case!(0x00a7_7ef0, "FadeWait_Poll {x:#x}");
+    }
+    set(&mut pair, 0x023c_bbf0, 7u32);
+    for x in [0u32, 1, 2, 0xffff_ffff] {
+        set(&mut pair, 0x022f_b4d4, x);
+        case!(0x00a7_8270, "MenuOpen_Poll wait {x:#x}");
+        set(&mut pair, 0x012f_bc3c, x);
+        case!(0x00a7_82a0, "MenuOpen_Result {x:#x}");
+    }
+    for x in [0u16, 0x20, 0x1234, 0xffff] {
+        set(&mut pair, 0x0132_70d0, x);
+        case!(0x0085_d9b0, "PadPressed {x:#x}");
+    }
+    // the voice natives: debug mode, armed countdowns, the request count
+    // that holds the standby
+    for debug in [0u32, 1] {
+        set(&mut pair, 0x012f_b80c, debug);
+        for (count, flag, left) in [
+            (0u32, 1u32, 2i32),
+            (3, 1, 1),
+            (0, 1, 0),
+            (5, 1, -1),
+            (0, 0, 0),
+            (2, 0, 0),
+        ] {
+            for (cnt, fl, lf) in [
+                (0x0132_5acc, 0x0132_5ae4, 0x0132_5ae0),
+                (0x0132_5afc, 0x0132_5aec, 0x0132_5ae8),
+                (0x0132_5af4, 0x0132_5ad4, 0x0132_5ad0),
+            ] {
+                set(&mut pair, cnt, count);
+                set(&mut pair, fl, flag);
+                set(&mut pair, lf, left);
+            }
+            for hold in [0u32, 2] {
+                set(&mut pair, 0x012f_b808, hold);
+                for k in 0..2 {
+                    case!(
+                        0x0085_cec0,
+                        "VoiceStandby_Poll debug {debug} ({count}, {flag}, {left}) hold {hold} call {k}"
+                    );
+                }
+            }
+            set(&mut pair, 0x012f_b808, 0u32);
+            for k in 0..3 {
+                case!(
+                    0x0085_e1d0,
+                    "VoiceIsPlaying debug {debug} ({count}, {flag}, {left}) call {k}"
+                );
+                case!(
+                    0x0085_e4a0,
+                    "SoundWait_Poll debug {debug} ({count}, {flag}, {left}) call {k}"
+                );
+            }
+            set(&mut pair, 0x0132_5ae0, left);
+            case!(0x0085_de80, "VoiceStart_End debug {debug} left {left}");
+        }
+    }
+    set(&mut pair, 0x012f_b80c, 0u32);
+    // the callees that pick a branch, fixed (last: the stubs stay)
+    for x in [0u32, 1, 2, 3, 4, 5, 0xffff_ffff] {
+        stub(&mut pair, 0x0064_1100, x);
+        case!(0x0085_8210, "LangGroupNotJpAsia group {x:#x}");
+    }
+    // Ch_ReadSync(mode) jumps through g_CdLib +8 (0x02310c48): a thunk
+    // there returning mode - 1 shows the mode passed
+    for o in [&mut pair.0, &mut pair.1] {
+        let t = o.alloc_code(&[0x8b, 0x44, 0x24, 0x04, 0x48, 0xc3]).unwrap();
+        let at = o.rebase(0x0231_0c48);
+        Mem::write(o, at, t);
+    }
+    case!(0x00a7_95d0, "WaitCdIdle sync through g_CdLib");
+    for x in [0u32, 1, 0xffff_ffff] {
+        stub(&mut pair, 0x0082_a5e0, x);
+        case!(0x00a7_95d0, "WaitCdIdle sync {x:#x}");
+    }
+    for sym in [
+        0x0087_1ab0,
+        0x0087_19e0,
+        0x0083_2550,
+        0x0079_88f0,
+        0x0088_8c40,
+    ] {
+        stub(&mut pair, sym, 0x0001_2345);
+    }
+    for sym in [
+        0x0085_66b0,
+        0x0085_67c0,
+        0x00a7_a6a0,
+        0x0085_7680,
+        0x0085_d9b0,
+    ] {
+        case!(sym, "{sym:#x} callee fixed");
+    }
+    for sym in [0x0088_7690, 0x0087_3b80, 0x0087_3b90, 0x0088_7780] {
+        stub(&mut pair, sym, 3);
+    }
+    // GetCD (a constant) counts its calls into a heap word, and the voice
+    // countdown (0x0067a9d0(voice, kind)) returns its kind: both show in
+    // the memory diff
+    for o in [&mut pair.0, &mut pair.1] {
+        let cell = o.alloc(16).unwrap();
+        let cd = o.rebase(0x0231_0c40);
+        o.stand_in(
+            o.rebase(0x0076_d0d0),
+            ffx_oracle::Returns::Eax,
+            cell,
+            move |s| {
+                let n: u32 = Mem::read(s, cell + 8);
+                Mem::write(s, cell + 8, n + 1);
+                u64::from(cd)
+            },
+        )
+        .unwrap();
+        let at = o.rebase(0x0067_a9d0);
+        o.stand_in(at, ffx_oracle::Returns::Eax, cell + 4, |s| {
+            u64::from(s.arg(1))
+        })
+        .unwrap();
+    }
+    for debug in [0u32, 1] {
+        set(&mut pair, 0x012f_b80c, debug);
+        for (movie, bind, stream) in [(0u32, 0u32, 0u32), (0, 1, 1), (1, 0, 0), (1, 1, 1)] {
+            stub(&mut pair, 0x0076_f060, movie);
+            stub(&mut pair, 0x0086_ade0, bind);
+            stub(&mut pair, 0x0088_64b0, stream);
+            for (fl, lf) in [
+                (0x0132_5ae4, 0x0132_5ae0),
+                (0x0132_5aec, 0x0132_5ae8),
+                (0x0132_5ad4, 0x0132_5ad0),
+            ] {
+                set(&mut pair, fl, 0u32);
+                set(&mut pair, lf, 0u32);
+            }
+            for hold in [0u32, 2] {
+                set(&mut pair, 0x012f_b808, hold);
+                case!(
+                    0x0085_cec0,
+                    "VoiceStandby_Poll debug {debug} movie {movie} bind {bind} hold {hold}"
+                );
+            }
+            set(&mut pair, 0x012f_b808, 0u32);
+            for k in 0..2 {
+                case!(
+                    0x0085_e1d0,
+                    "VoiceIsPlaying debug {debug} stream {stream} call {k}"
+                );
+                case!(
+                    0x0085_e4a0,
+                    "SoundWait_Poll debug {debug} stream {stream} call {k}"
+                );
+            }
+            for x in [0u32, 1] {
+                set(&mut pair, 0x012f_b8a0, x);
+                case!(0x0085_e090, "VoiceStop latch {x} callee fixed");
+            }
+            case!(0x0085_de80, "VoiceStart_End debug {debug} callees fixed");
+        }
+    }
+    let never: Vec<String> = SIZE_FIXED
+        .iter()
+        .filter(|s| !seen.contains_key(s))
+        .map(|s| format!("{s:#x}"))
+        .collect();
+    eprintln!(
+        "{} native calls compared; stopped on the image: {stops:x?}; never compared: {never:?}",
+        seen.values().sum::<usize>()
+    );
+    if image {
+        assert_eq!(
+            stops.into_iter().collect::<Vec<_>>(),
+            SIZE_FIXED_IMAGE_STOPS,
+            "image stops"
+        );
+    }
+    assert!(never.is_empty(), "never compared: {never:?}");
+}
+
 /// Calls native `sym` on both sides with `push` on the worker's stack and
 /// compares the result (`EAX`, or `ST0` for a float handler) and memory.
 fn native_case(a: &mut Oracle, b: &mut Oracle, w: u32, sym: u32, push: &[(u8, u32)], what: &str) {

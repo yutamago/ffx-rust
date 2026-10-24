@@ -1159,8 +1159,97 @@ ported! {
     }
 
     // the native functions (ffx_script::vm::bridge::native): (worker, args, stack);
-    // the nine under five bytes (Native_WaitForever, Native_ControlEnable, ...)
-    // run in Rust only through Script_Run's dispatch
+    // the ones under five bytes (Native_WaitForever, ...) run in Rust only
+    // through Script_Run's dispatch. The dump sizes the next 22 as one byte;
+    // their code runs 5-201 bytes (symbols/sizes.tsv). All return EAX.
+    /// `Native_BtlIsUnderwater(worker, args, stack)`.
+    Native_BtlIsUnderwater @ 0x007a_4550 => extern "C" fn n_7a4550(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_7005(&mut mem(), w, a, s)
+    }
+    /// `Native_BtlGetBattleId(worker, args, stack)`.
+    Native_BtlGetBattleId @ 0x007a_4e90 => extern "C" fn n_7a4e90(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_btl_get_battle_id(&mut mem(), w, a, s)
+    }
+    /// `Native_BtlGetTurnActor(worker, args, stack)`.
+    Native_BtlGetTurnActor @ 0x007a_76e0 => extern "C" fn n_7a76e0(w: u32, a: u32, s: u32) -> u32 {
+        native_mods::native_708d(&mut mem(), w, a, s)
+    }
+    /// `Native_AlwaysTrue019c(worker, args, stack)`.
+    Native_AlwaysTrue019c @ 0x0085_6630 => extern "C" fn n_856630(w: u32, a: u32, s: u32) -> u32 {
+        native::native_always_true019c(&mut mem(), w, a, s)
+    }
+    /// `Native_ControlEnable(worker, args, stack)`.
+    Native_ControlEnable @ 0x0085_66b0 => extern "C" fn n_8566b0(w: u32, a: u32, s: u32) -> u32 {
+        native::native_control_enable(&mut mem(), w, a, s)
+    }
+    /// `Native_ControlDisable(worker, args, stack)`.
+    Native_ControlDisable @ 0x0085_67c0 => extern "C" fn n_8567c0(w: u32, a: u32, s: u32) -> u32 {
+        native::native_control_disable(&mut mem(), w, a, s)
+    }
+    /// `Native_Random16(worker, args, stack)`.
+    Native_Random16 @ 0x0085_7680 => extern "C" fn n_857680(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_random16(&mut mem(), w, a, s)
+    }
+    /// `Native_LangGroupNotJpAsia(worker, args, stack)`.
+    Native_LangGroupNotJpAsia @ 0x0085_8210 => extern "C" fn n_858210(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_lang_group_not_jp_asia(&mut mem(), w, a, s)
+    }
+    /// `Native_MusicLoad_Poll(worker, args, stack)`.
+    Native_MusicLoad_Poll @ 0x0085_9040 => extern "C" fn n_859040(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_music_load_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_MusicWaitLoaded_Result(worker, args, stack)`.
+    Native_MusicWaitLoaded_Result @ 0x0085_9ee0 => extern "C" fn n_859ee0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_music_wait_loaded_result(&mut mem(), w, a, s)
+    }
+    /// `Native_VoiceStandby_Poll(worker, args, stack)`.
+    Native_VoiceStandby_Poll @ 0x0085_cec0 => extern "C" fn n_85cec0(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_voice_standby_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_PadPressed(worker, args, stack)`.
+    Native_PadPressed @ 0x0085_d9b0 => extern "C" fn n_85d9b0(w: u32, a: u32, s: u32) -> u32 {
+        native::native_pad_pressed(&mut mem(), w, a, s)
+    }
+    /// `Native_VoiceStart_End(worker, args, stack)`.
+    Native_VoiceStart_End @ 0x0085_de80 => extern "C" fn n_85de80(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_voice_start_end(&mut mem(), w, a, s)
+    }
+    /// `Native_VoiceStop(worker, args, stack)`.
+    Native_VoiceStop @ 0x0085_e090 => extern "C" fn n_85e090(w: u32, a: u32, s: u32) -> u32 {
+        native::native_voice_stop(&mut mem(), w, a, s)
+    }
+    /// `Native_VoiceIsPlaying(worker, args, stack)`.
+    Native_VoiceIsPlaying @ 0x0085_e1d0 => extern "C" fn n_85e1d0(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_voice_is_playing(&mut mem(), w, a, s)
+    }
+    /// `Native_SoundWait_Poll(worker, args, stack)`.
+    Native_SoundWait_Poll @ 0x0085_e4a0 => extern "C" fn n_85e4a0(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_sound_wait_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_FadeWait_Poll(worker, args, stack)`.
+    Native_FadeWait_Poll @ 0x00a7_7ef0 => extern "C" fn n_a77ef0(w: u32, a: u32, s: u32) -> u32 {
+        native_chr::native_fade_wait_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_MenuOpen_Poll(worker, args, stack)`.
+    Native_MenuOpen_Poll @ 0x00a7_8270 => extern "C" fn n_a78270(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_menu_open_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_MenuOpen_Result(worker, args, stack)`.
+    Native_MenuOpen_Result @ 0x00a7_82a0 => extern "C" fn n_a782a0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_menu_open_result(&mut mem(), w, a, s)
+    }
+    /// `Native_WaitCdIdle(worker, args, stack)`.
+    Native_WaitCdIdle @ 0x00a7_95d0 => extern "C" fn n_a795d0(w: u32, a: u32, s: u32) -> u32 {
+        native::native_wait_cd_idle(&mut mem(), w, a, s)
+    }
+    /// `Native_ChrLoadSystemMgrp_Poll(worker, args, stack)`.
+    Native_ChrLoadSystemMgrp_Poll @ 0x00a7_9970 => extern "C" fn n_a79970(w: u32, a: u32, s: u32) -> u32 {
+        native_chr::native_done(&mut mem(), w, a, s)
+    }
+    /// `Native_ChrRefreshAllBones(worker, args, stack)`.
+    Native_ChrRefreshAllBones @ 0x00a7_a6a0 => extern "C" fn n_a7a6a0(w: u32, a: u32, s: u32) -> u32 {
+        native::native_chr_refresh_all_bones(&mut mem(), w, a, s)
+    }
     /// `Native_MsgSetStyle(worker, args, stack)`.
     Native_MsgSetStyle @ 0x0085_8360 => extern "C" fn n_858360(w: u32, a: u32, s: u32) -> u32 {
         native::native_msg_set_style(&mut mem(), w, a, s)
