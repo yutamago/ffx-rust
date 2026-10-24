@@ -1051,6 +1051,408 @@ pub fn read_all(bytes: &[u8]) -> Result<Vec<Msg>, DecodeError> {
 /// Magic at the start of a capture file.
 pub const CAPTURE_MAGIC: &[u8; 8] = b"FFXGFX01";
 
+/// Reference captures (`docs/renderer.md`, "Reference captures"): what a
+/// capture adds next to its scene stream so that two runs can be compared
+/// without their heap addresses. They go into `capture.ffxref` (magic
+/// [`reference::MAGIC`]), apart from `capture.ffxgfx`, so readers of the
+/// scene stream see the same messages as before.
+pub mod reference {
+    use super::{DecodeError, Id, Reader, Writer};
+
+    /// Magic at the start of `capture.ffxref`.
+    pub const MAGIC: &[u8; 8] = b"FFXREF01";
+
+    /// Where a [`SceneSample`] was read.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum When {
+        /// On the harness thread when the capture was armed, with the
+        /// render thread held in `Present` (lockstep) and the main thread
+        /// waiting for it: the state the next frame's draws are built from.
+        Held,
+        /// On the render thread, inside the `Present` that ended a frame;
+        /// the main thread is in its next update meanwhile, so values can
+        /// be half written.
+        Present,
+    }
+
+    /// Tags of one captured frame.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct FrameTag {
+        /// Index of the frame within the capture, from 0.
+        pub frame: u32,
+        /// `Present` calls before the one that ended this frame (the
+        /// harness's frame count at that `Present`).
+        pub present: u32,
+        /// Ctrl work 0's frame count (`0x01325d94`) at that `Present`
+        /// (render thread: it may already have counted the next update).
+        pub event_count: u32,
+        pub draws: u32,
+        /// (thread id, Direct3D calls the capture saw on it): draws,
+        /// clears, copies, render target changes and the noted calls.
+        pub calls: Vec<(u32, u32)>,
+        /// The thread that called `Present`.
+        pub present_thread: u32,
+    }
+
+    /// Scene inputs read from the game's memory, by name
+    /// (`docs/renderer.md` lists them), bytes as they were.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct SceneSample {
+        pub frame: u32,
+        pub when: When,
+        pub thread: u32,
+        pub present: u32,
+        pub fields: Vec<(String, Vec<u8>)>,
+        /// Files the game opened since the previous sample, with the
+        /// `Present` count at the open.
+        pub opened: Vec<(u32, String)>,
+    }
+
+    /// A thread of the game's process at the end of the capture.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct ThreadInfo {
+        pub id: u32,
+        /// Its start address (`FFX.exe` address when inside the image).
+        pub start: u32,
+        /// `main` (created first), `render` (made the draws), or empty.
+        pub role: String,
+    }
+
+    /// The content keys of one draw: what it reads, without addresses.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct DrawKeys {
+        pub frame: u32,
+        /// Index of the draw within the frame, from 1.
+        pub draw: u32,
+        /// (slot, hash of the bytes the draw reads for dynamic buffers, of
+        /// the whole buffer for static ones).
+        pub vertex: Vec<(u8, u64)>,
+        /// Hash of the indices the draw reads (dynamic) or of the buffer.
+        pub index: u64,
+        /// (stage `v`/`p`, slot, constant buffer window hash).
+        pub constants: Vec<(u8, u8, u64)>,
+        /// (stage, slot, key): content hash for textures, `role` hash for
+        /// render targets read as textures.
+        pub textures: Vec<(u8, u8, u64)>,
+        /// (slot, role) of each render target, and the depth target's role.
+        pub targets: Vec<(u8, String)>,
+        pub depth: String,
+    }
+
+    /// One reference record.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum Ref {
+        Tag(FrameTag),
+        Scene(SceneSample),
+        Threads(Vec<ThreadInfo>),
+        Keys(DrawKeys),
+        /// A render target's contents when the game bound others after
+        /// drawing into it (`after_draw` draws into the frame), or the
+        /// back buffer at `Present` (`role` `backbuffer`).
+        Target {
+            frame: u32,
+            after_draw: u32,
+            view: Id,
+            role: String,
+            hash: u64,
+        },
+    }
+
+    const TAG: u32 = 0x101;
+    const SCENE: u32 = 0x102;
+    const THREADS: u32 = 0x103;
+    const KEYS: u32 = 0x104;
+    const TARGET: u32 = 0x105;
+
+    fn u64w(w: &mut Writer, v: u64) {
+        w.bytes.extend_from_slice(&v.to_le_bytes());
+    }
+
+    fn u64r(r: &mut Reader) -> Result<u64, DecodeError> {
+        let lo = u64::from(r.u32()?);
+        Ok(lo | (u64::from(r.u32()?) << 32))
+    }
+
+    fn len(w: &mut Writer, n: usize) {
+        w.u32(u32::try_from(n).expect("list under 4 G"));
+    }
+
+    fn keys3(w: &mut Writer, v: &[(u8, u8, u64)]) {
+        len(w, v.len());
+        for &(a, b, h) in v {
+            w.u8(a);
+            w.u8(b);
+            u64w(w, h);
+        }
+    }
+
+    fn read_keys3(r: &mut Reader) -> Result<Vec<(u8, u8, u64)>, DecodeError> {
+        let n = r.u32()?;
+        (0..n).map(|_| Ok((r.u8()?, r.u8()?, u64r(r)?))).collect()
+    }
+
+    impl Ref {
+        /// Appends the encoded record (tag, payload length, payload, as
+        /// the scene stream's messages).
+        pub fn write(&self, out: &mut Vec<u8>) {
+            let mut w = Writer::default();
+            let tag = match self {
+                Self::Tag(t) => {
+                    w.u32s(&[t.frame, t.present, t.event_count, t.draws]);
+                    len(&mut w, t.calls.len());
+                    for &(id, n) in &t.calls {
+                        w.u32s(&[id, n]);
+                    }
+                    w.u32(t.present_thread);
+                    TAG
+                }
+                Self::Scene(s) => {
+                    w.u32(s.frame);
+                    w.u8(match s.when {
+                        When::Held => 0,
+                        When::Present => 1,
+                    });
+                    w.u32s(&[s.thread, s.present]);
+                    len(&mut w, s.fields.len());
+                    for (name, bytes) in &s.fields {
+                        w.str(name);
+                        w.blob(bytes);
+                    }
+                    len(&mut w, s.opened.len());
+                    for (at, path) in &s.opened {
+                        w.u32(*at);
+                        w.str(path);
+                    }
+                    SCENE
+                }
+                Self::Threads(list) => {
+                    len(&mut w, list.len());
+                    for t in list {
+                        w.u32s(&[t.id, t.start]);
+                        w.str(&t.role);
+                    }
+                    THREADS
+                }
+                Self::Keys(k) => {
+                    w.u32s(&[k.frame, k.draw]);
+                    len(&mut w, k.vertex.len());
+                    for &(slot, h) in &k.vertex {
+                        w.u8(slot);
+                        u64w(&mut w, h);
+                    }
+                    u64w(&mut w, k.index);
+                    keys3(&mut w, &k.constants);
+                    keys3(&mut w, &k.textures);
+                    len(&mut w, k.targets.len());
+                    for (slot, role) in &k.targets {
+                        w.u8(*slot);
+                        w.str(role);
+                    }
+                    w.str(&k.depth);
+                    KEYS
+                }
+                Self::Target {
+                    frame,
+                    after_draw,
+                    view,
+                    role,
+                    hash,
+                } => {
+                    w.u32s(&[*frame, *after_draw, *view]);
+                    w.str(role);
+                    u64w(&mut w, *hash);
+                    TARGET
+                }
+            };
+            out.extend_from_slice(&tag.to_le_bytes());
+            out.extend_from_slice(
+                &u32::try_from(w.bytes.len())
+                    .expect("record under 4 GiB")
+                    .to_le_bytes(),
+            );
+            out.extend_from_slice(&w.bytes);
+        }
+
+        /// Decodes one record's payload.
+        ///
+        /// # Errors
+        /// When the payload does not match its tag.
+        pub fn read(tag: u32, payload: &[u8]) -> Result<Self, DecodeError> {
+            let mut r = Reader::new(payload);
+            let r = &mut r;
+            Ok(match tag {
+                TAG => {
+                    let [frame, present, event_count, draws] = r.u32s()?;
+                    let n = r.u32()?;
+                    let calls = (0..n)
+                        .map(|_| Ok((r.u32()?, r.u32()?)))
+                        .collect::<Result<_, DecodeError>>()?;
+                    Self::Tag(FrameTag {
+                        frame,
+                        present,
+                        event_count,
+                        draws,
+                        calls,
+                        present_thread: r.u32()?,
+                    })
+                }
+                SCENE => {
+                    let frame = r.u32()?;
+                    let when = match r.u8()? {
+                        0 => When::Held,
+                        1 => When::Present,
+                        _ => return Err(DecodeError("sample point")),
+                    };
+                    let [thread, present] = r.u32s()?;
+                    let n = r.u32()?;
+                    let fields = (0..n)
+                        .map(|_| Ok((r.str()?, r.blob()?)))
+                        .collect::<Result<_, DecodeError>>()?;
+                    let n = r.u32()?;
+                    let opened = (0..n)
+                        .map(|_| Ok((r.u32()?, r.str()?)))
+                        .collect::<Result<_, DecodeError>>()?;
+                    Self::Scene(SceneSample {
+                        frame,
+                        when,
+                        thread,
+                        present,
+                        fields,
+                        opened,
+                    })
+                }
+                THREADS => {
+                    let n = r.u32()?;
+                    Self::Threads(
+                        (0..n)
+                            .map(|_| {
+                                let [id, start] = r.u32s()?;
+                                Ok(ThreadInfo {
+                                    id,
+                                    start,
+                                    role: r.str()?,
+                                })
+                            })
+                            .collect::<Result<_, DecodeError>>()?,
+                    )
+                }
+                KEYS => {
+                    let [frame, draw] = r.u32s()?;
+                    let n = r.u32()?;
+                    let vertex = (0..n)
+                        .map(|_| Ok((r.u8()?, u64r(r)?)))
+                        .collect::<Result<_, DecodeError>>()?;
+                    let index = u64r(r)?;
+                    let constants = read_keys3(r)?;
+                    let textures = read_keys3(r)?;
+                    let n = r.u32()?;
+                    let targets = (0..n)
+                        .map(|_| Ok((r.u8()?, r.str()?)))
+                        .collect::<Result<_, DecodeError>>()?;
+                    Self::Keys(DrawKeys {
+                        frame,
+                        draw,
+                        vertex,
+                        index,
+                        constants,
+                        textures,
+                        targets,
+                        depth: r.str()?,
+                    })
+                }
+                TARGET => {
+                    let [frame, after_draw, view] = r.u32s()?;
+                    Self::Target {
+                        frame,
+                        after_draw,
+                        view,
+                        role: r.str()?,
+                        hash: u64r(r)?,
+                    }
+                }
+                _ => return Err(DecodeError("tag")),
+            })
+        }
+    }
+
+    /// Splits a `capture.ffxref` (after its magic) into records.
+    ///
+    /// # Errors
+    /// On a truncated or malformed file.
+    pub fn read_all(bytes: &[u8]) -> Result<Vec<Ref>, DecodeError> {
+        let mut out = Vec::new();
+        let mut at = 0;
+        while at + 8 <= bytes.len() {
+            let word =
+                |i: usize| u32::from_le_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]);
+            let (tag, n) = (word(at), word(at + 4) as usize);
+            let payload = bytes
+                .get(at + 8..at + 8 + n)
+                .ok_or(DecodeError("truncated record"))?;
+            out.push(Ref::read(tag, payload)?);
+            at += 8 + n;
+        }
+        Ok(out)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn records_round_trip() {
+            let refs = vec![
+                Ref::Tag(FrameTag {
+                    frame: 1,
+                    present: 900,
+                    event_count: 102,
+                    draws: 1234,
+                    calls: vec![(0x1a2c, 5000)],
+                    present_thread: 0x1a2c,
+                }),
+                Ref::Scene(SceneSample {
+                    frame: 0,
+                    when: When::Held,
+                    thread: 7,
+                    present: 899,
+                    fields: vec![("g_CameraMatrix".into(), vec![1, 2, 3])],
+                    opened: vec![(
+                        12,
+                        "ffx_ps2/ffx/master/jppc/event/obj/cd/cdsp0000.ebp".into(),
+                    )],
+                }),
+                Ref::Threads(vec![ThreadInfo {
+                    id: 7,
+                    start: 0x0061_4710,
+                    role: "render".into(),
+                }]),
+                Ref::Keys(DrawKeys {
+                    frame: 0,
+                    draw: 3,
+                    vertex: vec![(0, u64::MAX - 1)],
+                    index: 5,
+                    constants: vec![(b'v', 0, 9)],
+                    textures: vec![(b'p', 1, 10)],
+                    targets: vec![(0, "1920x1080f28b28#0".into())],
+                    depth: String::new(),
+                }),
+                Ref::Target {
+                    frame: 0,
+                    after_draw: 3,
+                    view: 0x1234,
+                    role: "backbuffer".into(),
+                    hash: 0xdead_beef_0000_0001,
+                },
+            ];
+            let mut bytes = Vec::new();
+            for r in &refs {
+                r.write(&mut bytes);
+            }
+            assert_eq!(read_all(&bytes).unwrap(), refs);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
