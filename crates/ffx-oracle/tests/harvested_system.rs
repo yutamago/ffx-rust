@@ -105,3 +105,24 @@ harvest_test!(
         );
     }
 );
+// pc round 7
+harvest_test!(
+    to_btl_draw_info_win,
+    0x0089_3a30,
+    args = 3,
+    |m: &mut Oracle, s| {
+        ffx_system::btl::bridge::btl_draw_info_win(
+            m,
+            s.arg(0),
+            [s.arg(1).cast_signed(), s.arg(2).cast_signed()],
+            |m, f, a| {
+                let f = m.rebase(f);
+                m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+            },
+            |m, f, a| {
+                let f = m.rebase(f);
+                m.call_f64(f, a).unwrap()
+            },
+        );
+    }
+);
