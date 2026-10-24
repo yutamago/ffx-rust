@@ -19,6 +19,7 @@
 //! - [`rcui`]: the field UI helpers.
 //! - [`ke`]: `Ke` resource heaps and lens flare objects.
 //! - [`kedtt`]: the Ke distortion sprites (`KeDttSpr`).
+//! - [`key_frame`]: the renderer's key frame tracks (`yiKeyFrame_main`).
 //! - [`yi`]: the field renderer's state and display objects.
 //! - [`yipoly`]: the renderer's load-time packet builders over the poly
 //!   buffer.
@@ -40,6 +41,7 @@ pub mod guide_update;
 pub mod ke;
 pub mod kedtt;
 pub mod keth;
+pub mod key_frame;
 pub mod model;
 pub mod nkz;
 pub mod packet;

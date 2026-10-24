@@ -2540,3 +2540,28 @@ the CPU. NaN arithmetic operands are left out.
   (`AbmapDrawLinkStrip`) with colour word `[0x100, 0x200, 0, 1, 0x201,
   0x101, 0x300][kind]` (`| 0x1000000` for the selected link `+0x115f8`;
   the original's two jump tables), the others plainly (`0x00a51720`).
+
+## Key frame tracks (small round 7)
+
+`yiKeyFrame_main(r)` (`0x00914a10`, from `yiAnimMain` each frame;
+`ffx_field::key_frame`) steps the 64 tracks at `g_YiRender +0x9cac0`
+(0x28 bytes: `u16 +0` flags, bit 0 on; `u16 +4` kind; `u16 +6` display
+object or animation; `u16 +8`/`+0xa` bone list and entry; `+0xc`/`+0x10`
+character and element; `+0x14` start, `+0x18` current time; `+0x24` the
+key: `u16 +2` interpolation 0 lerp, 1 Hermite, 2 end point; `+4` length;
+`+0x10`/`+0x20` tangents, `+0x30` start, `+0x40` end). The progress is
+`(cur - start) / length` as unsigned floats, at most 1, 0 for a zero
+length, and carries over to the next track when a track has no key.
+Display objects are `0xb4` bytes from `+0x6879c` (matrix, rotation
+`+0x40`, position `+0x50`, order `u16 +0x76`, 2D offset `+0x88`), objects
+counted at `+0x68788`. Kinds (jump table `0x00915104`): 0 position, 1
+rotation (wrapped), 2 2D offset (`graphicSetMaterialUV_006436e0`; x
+forced to 0 when `getInterValefor` has bit 2 and is not negative, except
+objects 0x15..0x1b other than 0x18), 3 texture animation frame
+(`ftol(key +0x40)`, animation `0x720` bytes from `+0x9d9c8`, frames
+`0x1c` bytes from `+0x28`), 4 a character bone's matrix scaled by
+`100 / Ch_GetDataScale` (no bound check, no advance), 5 a model bone
+entry (`+0x9d5c4[list] + 0x20 · entry`: rotation `+8`, offset `+0x14`).
+`+0xba3dc` is copied to `+0xba3e0` first. The original's frame vectors
+for kinds 0 and 1 are not set when the interpolation is none of 0..2
+(stack junk; the port uses 0).

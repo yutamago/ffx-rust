@@ -24748,3 +24748,153 @@ fn small6_h_junk_read_ports_match_the_original() {
         }
     }
 }
+
+/// Small round 7 b: `yiKeyFrame_main` on synthetic render blocks: 64
+/// tracks of every kind (0..5 and none), flag bit 0 on or off, keys with
+/// each interpolation (0..3), zero, small and high lengths, missing keys
+/// (kinds 4 and 5), objects and animations in and out of range, both
+/// clocks, the Valefor byte's bits; the graphics calls, the clocks, the
+/// advances, `Ch_ElemGetMatrix` (fills its matrix) and `Ch_GetDataScale`
+/// (`ST0`) logged, the vector and matrix helpers the game's; the
+/// original's stack zeroed for its never-written vectors.
+#[test]
+#[allow(clippy::too_many_lines)] // the block's set-up, then the call
+fn small7_b_key_frame_main_matches_the_original() {
+    use ffx_field::key_frame;
+    for mut t in [Twin::image(), Twin::snapshot()].into_iter().flatten() {
+        let mut rng = Xorshift(0x5a11_7b01);
+        let log = t.alloc(0x8000);
+        let cursor = t.alloc(4);
+        let (zero, now, valefor, scale) = (t.alloc(4), t.alloc(4), t.alloc(4), t.alloc(4));
+        let elem = t.alloc(0x40);
+        // Ch_ElemGetMatrix's matrix: 16 words from `elem` to argument 2
+        let mut fill = vec![0x8b, 0x54, 0x24, 0x0c]; // mov edx, [esp + 0xc]
+        for w in 0..16u8 {
+            fill.extend([0x8b, 0x0d]); // mov ecx, [elem + 4w]
+            fill.extend((elem + 4 * u32::from(w)).to_le_bytes());
+            fill.extend([0x89, 0x4a, 4 * w]); // mov [edx + 4w], ecx
+        }
+        let mut fld = vec![0xd9, 0x05]; // fld dword [scale]
+        fld.extend(scale.to_le_bytes());
+        for (k, (sym, n, deref, ret, pre)) in [
+            (key_frame::callee::GET_FCOUNT, 0u8, None, now, &[][..]),
+            (key_frame::callee::GET_VCOUNT, 0, None, now, &[]),
+            (key_frame::callee::SET_ROTATION, 3, Some(1u8), zero, &[]),
+            (key_frame::callee::SET_TRANSLATION, 2, Some(1), zero, &[]),
+            (key_frame::callee::SET_OFFSET_2D, 2, Some(1), zero, &[]),
+            (key_frame::callee::GET_INTER_VALEFOR, 0, None, valefor, &[]),
+            (key_frame::callee::ADVANCE, 3, None, zero, &[]),
+            (key_frame::callee::ADVANCE_LINKED, 3, None, zero, &[]),
+            (key_frame::callee::ELEM_GET_MATRIX, 2, None, zero, &fill[..]),
+            (key_frame::callee::GET_DATA_SCALE, 1, None, zero, &fld[..]),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = 0x7b00 + u32::try_from(k).unwrap();
+            small6_stub(&mut t, sym, cursor, id, n, deref, ret, pre);
+        }
+        let vcount = t.a.rebase(key_frame::USE_VCOUNT);
+        let frame = t.b.stack_range().start + 0x100;
+        let r = t.alloc(0xba400);
+        let keys = t.alloc(0x50 * 8);
+        let bones = t.alloc(0x20 * 4 * 4);
+        for round in 0..150u32 {
+            t.put(cursor, log);
+            t.put(vcount, rng.below(2));
+            t.put(now, rng.below(1000));
+            t.put(
+                valefor,
+                [0u32, 4, 0x84, 5, 0xff, 0x7c][rng.below(6) as usize],
+            );
+            // any mantissa: 1 / s · 100 rounds unlike 100 / s
+            t.put(
+                scale,
+                (1.0 + f32::from(u16::try_from(rng.below(0x1_0000)).unwrap()) / 9000.0).to_bits(),
+            );
+            finite_floats(&mut t, elem, 16, &mut rng);
+            t.put(r + 0xba3dc, rng.next());
+            let wide = rng.below(3) == 0;
+            let objects = if wide { 0x1e } else { rng.below(9) };
+            t.put(r + 0x68788, objects);
+            for i in 0..0x20 {
+                let o = r + 0x6879c + 0xb4 * i;
+                finite_floats(&mut t, o + 0x40, 8, &mut rng);
+                t.put(o + 0x76, u16::try_from(rng.below(7)).unwrap());
+            }
+            let anims = rng.below(5);
+            t.put(r + 0x9d9c4, anims);
+            for i in 0..5 {
+                for f in 0..6 {
+                    let at = r + 0x9d9f0 + 0x720 * i + 0x1c * f;
+                    t.put(at, rng.below(2));
+                }
+                t.put(r + 0x9d9c8 + 0x720 * i, rng.next() & !1);
+            }
+            for k in 0..8 {
+                let key = keys + 0x50 * k;
+                t.put(key + 2, u16::try_from(rng.below(4)).unwrap());
+                let length = match rng.below(5) {
+                    0 => 0,
+                    1 => 0x8000_0000 | rng.next(),
+                    _ => 1 + rng.below(60),
+                };
+                t.put(key + 4, length);
+                for i in 0..16 {
+                    t.put(key + 0x10 + 4 * i, float_in(&mut rng, -50, 50));
+                }
+                t.put(key + 0x40, float_in(&mut rng, 0, 6));
+            }
+            for l in 0..4 {
+                t.put(r + 0x9d5c4 + 4 * l, bones + 0x80 * l);
+            }
+            finite_floats(&mut t, bones, 0x80, &mut rng);
+            for n in 0..0x40 {
+                let tr = r + 0x9cac0 + 0x28 * n;
+                let flags = rng.next() & 0xfffe | u32::from(rng.below(4) != 0);
+                t.put(tr, u16::try_from(flags).unwrap());
+                let kind = rng.below(7);
+                t.put(tr + 4, u16::try_from(kind).unwrap());
+                t.put(
+                    tr + 6,
+                    u16::try_from(rng.below(if wide { 0x20 } else { 10 })).unwrap(),
+                );
+                t.put(tr + 8, u16::try_from(rng.below(4)).unwrap());
+                t.put(tr + 0xa, u16::try_from(rng.below(4)).unwrap());
+                t.put(tr + 0xc, rng.next());
+                t.put(tr + 0x10, rng.below(40));
+                let start = rng.next();
+                t.put(tr + 0x14, start);
+                let cur = if rng.below(4) == 0 {
+                    rng.next()
+                } else {
+                    start.wrapping_add(rng.below(80))
+                };
+                t.put(tr + 0x18, cur);
+                // kinds 0..3 read their key (the original faults on 0)
+                let key = if kind >= 4 && rng.below(3) == 0 {
+                    0
+                } else {
+                    keys + 0x50 * rng.below(8)
+                };
+                t.put(tr + 0x24, key);
+            }
+            small6_zero_stack(&mut t);
+            t.same(
+                &format!("yiKeyFrame_main {round}"),
+                |o| o.eax(0x0091_4a10, &[r]),
+                |m| {
+                    key_frame::bridge::yi_key_frame_main(
+                        m,
+                        r,
+                        frame,
+                        &mut |m, f, a| m.call(f, Conv::Cdecl, a).unwrap().eax,
+                        &mut |m, f, a| m.call_f64(f, a).unwrap(),
+                    )
+                },
+            );
+            t.a.clear_dirty();
+            t.b.clear_dirty();
+        }
+    }
+}

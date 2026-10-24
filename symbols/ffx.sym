@@ -1949,6 +1949,7 @@
 0x006435e0 function graphicSetMagicFileAsyncLoadEnable # fh v3:exact 0x00643790
 0x00643610 function graphicSetMapAlphaFast    # fh switch:bsim1.00 0x71001dd660
 0x00643670 function graphicSetMaterialColourScale2 # fh v3:exact 0x00643820
+0x006436e0 function graphicSetMaterialUV_006436e0 # (object, &x, &y): 0x006abf40(object, &x, &y) then 0x006abfc0 on the result (thiscall); yiKeyFrame_main kind 2 hands it the object's +0x88 pair; name ours, a guess: the layout sorts it between graphicSetMaterialColourScale2 and graphicSetMeshVertexColorMorphValue
 0x00643700 function graphicSetMeshVertexColorMorphValue # layout and calls: the Switch name yiSetMIMeParamDObj calls, sorting between graphicSetMaterialColourScale2 and graphicSetMiniMapType, as here; calls MorphManager_GetInstance; only caller yiSetMIMeParamDObj
 0x00643720 function graphicSetMiniMapType     # fh v3:bsim1.00 0x006438d0
 0x00643730 function graphicSetMotionBlurEnable # fh v3:exact 0x006438e0
@@ -12357,7 +12358,7 @@
 0x009148d0 function yiLerpVec4                   # (t, a, b, out): four floats; from 0x009147b0
 0x00914920 function yiAnimDetach              # (scene, obj, kind): active animation slots (+0x9cac0, 0x28 bytes, 64) of obj and kind cleared, count +0x9cabc lowered; kind 2 turns keyframe animation off (yiKeyFrame_attachDObj)
 0x009149a0 function yiAnimDetachAll           # (scene, obj) -> 0: yiAnimDetach without the kind check (every active slot of obj at +0x9cac0 cleared, count +0x9cabc lowered; kind 2 turns keyframe animation off); yiDisposeAnimDObj with a negative kind; name ours
-0x00914a10 function yiKeyFrame_main           # fh switch:cg2 0x710052e1e0
+0x00914a10 function yiKeyFrame_main           # fh switch:cg2 0x710052e1e0; ported and hooked small r7 b (ffx_field::key_frame, field.rs small7_b): cdecl(r) -> 0; 64 tracks at r +0x9cac0 (0x28 B), kinds by jump table 0x00915104 (0 position, 1 rotation, 2 2D offset, 3 texture animation frame, 4 character bone, 5 model bone entry; docs/formats/field.md 'Key frame tracks'); junk read: [ebp-0x34..-0x2c] and [ebp-0x44..-0x3c] never written for a kind 0/1 track whose key interpolation is not 0..2 (0 in the port); test edx,0x10000 at 0x00915076 is dead (edx = movzx word)
 0x00915120 function yiKeyFrameWrapAngles      # (v): four floats past pi less (1 - ftol(x / -2pi)) * 2pi, below -pi plus it (doubles 0x00b67118..38); yiKeyFrame_main; name ours
 0x009151c0 function yiRotMatrixSeq            # fh v3:exact 0x009151c0
 0x009152d0 function yiTexSwap_init            # fh v3:exact 0x009152d0

@@ -5,7 +5,8 @@
 
 use super::{mem, ported};
 use ffx_field::{
-    abmap, camera, freecam, geom, guide, ke, model, nkz, packet, rcdt, rcui, scene, task, vu0, yi,
+    abmap, camera, freecam, geom, guide, ke, key_frame, model, nkz, packet, rcdt, rcui, scene,
+    task, vu0, yi,
 };
 
 ported! {
@@ -3525,6 +3526,18 @@ ported! {
     /// `yiKeyFrameAdvanceLinked(r, track, now)`.
     yiKeyFrameAdvanceLinked @ 0x0091_4070 => extern "C" fn shim_yi_key_frame_advance_linked(r: u32, a: u32, now: u32) -> u32 {
         yi::bridge::yi_key_frame_advance_linked(&mut mem(), r, a, now, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiKeyFrame_main(r)`: the frame's vectors and matrices in a
+    /// `StackFrame` laid out as the original's.
+    yiKeyFrame_main @ 0x0091_4a10 => extern "C" fn shim_yi_key_frame_main(r: u32) -> u32 {
+        let mut w = super::StackFrame::<{ (key_frame::WORK / 4) as usize }>::new();
+        key_frame::bridge::yi_key_frame_main(
+            &mut mem(),
+            r,
+            w.at(),
+            &mut |_, f, a| call_cdecl(f, a),
+            &mut |_, f, a| super::call_cdecl_f64(f, a),
+        )
     }
     /// `yiRectTriOverlapXZ(tri, m, a, b)`.
     yiRectTriOverlapXZ @ 0x0091_0070 => extern "C" fn shim_yi_rect_tri_overlap_xz(tri: u32, m: u32, a: u32, b: u32) -> u32 {
