@@ -14104,7 +14104,7 @@
 0x00a77b30 function Native_FootSetMaterial       # 0x403b (index, material) -> 0; footstep material table 0x01301af8[set 0x01301b00 * 4 + index] = material (read by 0x0083d7e0)
 0x00a77b60 function Native_403c_SetWaterLimit                # 0x403c: args (v f) -> Sg_SetWaterLimit(v) (0x00836660); ported in native_chr (script round 12); name from "Sg_SetWaterLimit(v)" (0x00836660)
 0x00a77b90 function Native_4001_SetSuimen                # 0x4001: args (v f) -> 0: Sg_SetSuimen(v) (0x00836640); ported in native_chr (script round 12); name from "Sg_SetSuimen(v)" (0x00836640)
-0x00a77bc0 function Native_403d_MemSetFast # 0x403d: (v): Sg_MemSetFast; 0; ported in native_mods (script round 19); name ours; name from "Sg_MemSetFast" (0x0083c520)
+0x00a77bc0 function Native_403d # 0x403d: (v): Sg_MemSetFast; 0; ported in native_mods (script round 19); name ours; BSim review: byte 0x013019b5 = v, never read; Sg_MemSetFast role is name only
 0x00a77be0 function Native_403e_PlayerSetDirFix                # 0x403e: args (i, v f) -> Sg_PlayerSetDirFix(i, v) (0x0082d990); ported in native_chr (script round 12); name from "Sg_PlayerSetDirFix(i, v)" (0x0082d990)
 0x00a77c20 function Native_403f                # 0x403f: no args -> 0x0082d930(); ported in native_chr (script round 12)
 0x00a77c30 function Native_SetControlAngle       # 0x4040 float (degrees) -> 0; stick-direction offset 0x01300780 = wrap(deg) + current input angle 0x013007a0 (0x0082d950), used by the player movement code 0x0082d5xx; scripts push 19, -160
@@ -14127,8 +14127,8 @@
 0x00a77ed0 function Native_400c_FilterReset                # 0x400c: no args -> 0: 0x0082cc70(); ported in native_chr (script round 12); name from "0x0082cc70()"=Sg_FilterReset
 0x00a77ee0 function Native_FadeWait              # 0x400d start: empty
 0x00a77ef0 function Native_FadeWait_Poll         # 0x400d poll: done when fade slot 4's counter 0x0130074c is 0 (only fade in ends; follows 0x4004 in 633 of 685 calls)
-0x00a77f00 function Native_400e_EnableCalcMap                # 0x400e: args (v) -> Sg_EnableCalcMap(v) (0x00820440); ported in native_chr (script round 12); name from "Sg_EnableCalcMap(v)" (0x00820440)
-0x00a77f20 function Native_400f_EnableDrawMap                # 0x400f: args (v) -> Sg_EnableDrawMap(v) (0x00820400); ported in native_chr (script round 12); name from "Sg_EnableDrawMap(v)" (0x00820400)
+0x00a77f00 function Native_400e                # 0x400e: args (v) -> Sg_EnableCalcMap(v) (0x00820440); ported in native_chr (script round 12); BSim review: flag 0x012fbbb1 gates the BG draw (Sg_AccDrawBG/yiDisp) in Sg_MainLoop, not a map calc
+0x00a77f20 function Native_400f                # 0x400f: args (v) -> Sg_EnableDrawMap(v) (0x00820400); ported in native_chr (script round 12); BSim review: flag 0x012fbbb2 gates the character draw (Ch_DrawMain) in Sg_MainLoop, not the map draw
 0x00a77f40 function Native_4010 # 0x4010: (v, a f, b f) popped; 0; ported in native_mods (script round 19); name ours
 0x00a77f70 function Native_4011_LightSetDir # 0x4011: (i, x, y, z f): Sg_LightSetDirXYZ; 0; ported in native_mods (script round 19); name ours; name from "Sg_LightSetDirXYZ" (0x008364f0: Sg_LightSetDir(i, xyz))
 0x00a77fd0 function Native_4012_LightSetColor # 0x4012: (i, x, y, z f): 0x00836400; 0; ported in native_mods (script round 19); name ours; name from "0x00836400"=Sg_LightSetColorRGB

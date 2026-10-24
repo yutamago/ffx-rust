@@ -2876,12 +2876,12 @@ ported! {
     Native_500c @ 0x00a7_8d30 => extern "C" fn n_a78d30(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_500c(&mut mem(), w, a, s)
     }
-    /// `Native_400e_EnableCalcMap(worker, args, stack)`.
-    Native_400e_EnableCalcMap @ 0x00a7_7f00 => extern "C" fn n_a77f00(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_400e(worker, args, stack)`.
+    Native_400e @ 0x00a7_7f00 => extern "C" fn n_a77f00(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_400e(&mut mem(), w, a, s)
     }
-    /// `Native_400f_EnableDrawMap(worker, args, stack)`.
-    Native_400f_EnableDrawMap @ 0x00a7_7f20 => extern "C" fn n_a77f20(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_400f(worker, args, stack)`.
+    Native_400f @ 0x00a7_7f20 => extern "C" fn n_a77f20(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_400f(&mut mem(), w, a, s)
     }
     /// `Native_4045_PlayerSetDiving(worker, args, stack)`.
@@ -5580,8 +5580,8 @@ ported! {
     Native_4037_GlobalGetWind @ 0x00a7_7a70 => extern "C" fn n_a77a70(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_4037(&mut mem(), w, a, s)
     }
-    /// `Native_403d_MemSetFast(worker, args, stack)`.
-    Native_403d_MemSetFast @ 0x00a7_7bc0 => extern "C" fn n_a77bc0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_403d(worker, args, stack)`.
+    Native_403d @ 0x00a7_7bc0 => extern "C" fn n_a77bc0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_403d(&mut mem(), w, a, s)
     }
     /// `Native_4010(worker, args, stack)`.

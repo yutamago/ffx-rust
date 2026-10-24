@@ -1482,8 +1482,8 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x400b` | `Native_400b` | - | 0x0082cc00() | - | int `0x00a77e20` (native_chr) |
 | `0x400c` | `Native_400c_FilterReset` | - | 0: 0x0082cc70() | - | int `0x00a77ed0` (native_chr) |
 | `0x400d` | `Native_FadeWait` | - | - (start: a bare ret) | until 0x0082cc10() is 0 | start `0x00a77ee0`, poll `0x00a77ef0` (native_chr) |
-| `0x400e` | `Native_400e_EnableCalcMap` | v | Sg_EnableCalcMap(v) (0x00820440) | - | int `0x00a77f00` (native_chr) |
-| `0x400f` | `Native_400f_EnableDrawMap` | v | Sg_EnableDrawMap(v) (0x00820400) | - | int `0x00a77f20` (native_chr) |
+| `0x400e` | `Native_400e` | v | Sg_EnableCalcMap(v) (0x00820440) | - | int `0x00a77f00` (native_chr) |
+| `0x400f` | `Native_400f` | v | Sg_EnableDrawMap(v) (0x00820400) | - | int `0x00a77f20` (native_chr) |
 | `0x4010` | `Native_4010` | v int, a f, b f | 0 (the three popped and dropped) | - | int `0x00a77f40` (native_mods) |
 | `0x4011` | `Native_4011_LightSetDir` | i int, x f, y f, z f | 0: Sg_LightSetDirXYZ(i, x, y, z) (0x008364f0) | - | int `0x00a77f70` (native_mods) |
 | `0x4012` | `Native_4012_LightSetColor` | i int, x f, y f, z f | 0: 0x00836400(i, x, y, z) | - | int `0x00a77fd0` (native_mods) |
@@ -1529,7 +1529,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x403a` | `Native_403a_AccSetDrawChr` | v | Sg_AccSetDrawChr(v) (0x0082be00) | - | int `0x00a77b10` (native_chr) |
 | `0x403b` | `Native_FootSetMaterial` | index int, material int | 0: Sg_IdSetEffectTable(index, material) (0x0083e9b0) | - | int `0x00a77b30` (native_chr) |
 | `0x403c` | `Native_403c_SetWaterLimit` | v f | Sg_SetWaterLimit(v) (0x00836660) | - | int `0x00a77b60` (native_chr) |
-| `0x403d` | `Native_403d_MemSetFast` | v int | 0: Sg_MemSetFast(v) (0x0083c520) | - | int `0x00a77bc0` (native_mods) |
+| `0x403d` | `Native_403d` | v int | 0: Sg_MemSetFast(v) (0x0083c520) | - | int `0x00a77bc0` (native_mods) |
 | `0x403e` | `Native_403e_PlayerSetDirFix` | i, v f | Sg_PlayerSetDirFix(i, v) (0x0082d990) | - | int `0x00a77be0` (native_chr) |
 | `0x403f` | `Native_403f` | - | 0x0082d930() | - | int `0x00a77c20` (native_chr) |
 | `0x4040` | `Native_SetControlAngle` | degrees f | 0: 0x0082d950(degrees) | - | int `0x00a77c30` (native_chr) |
