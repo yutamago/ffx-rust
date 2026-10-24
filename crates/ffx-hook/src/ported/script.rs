@@ -3340,16 +3340,16 @@ ported! {
     AtelCall_Math_Sin_RF @ 0x0087_7a70 => extern "C" fn n_877a70(w: u32, a: u32, s: u32) -> f64 {
         native_chr::atel_call_math_sin_rf(&mut mem(), w, a, s)
     }
-    /// `Native_b000(worker, args, stack)`.
-    Native_b000 @ 0x0076_e910 => extern "C" fn n_76e910(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_b000_MovieStart(worker, args, stack)`.
+    Native_b000_MovieStart @ 0x0076_e910 => extern "C" fn n_76e910(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_b000(&mut mem(), w, a, s)
     }
-    /// `Native_b000_Result(worker, args, stack)`.
-    Native_b000_Result @ 0x0076_e990 => extern "C" fn n_76e990(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_b000_MovieStart_Result(worker, args, stack)`.
+    Native_b000_MovieStart_Result @ 0x0076_e990 => extern "C" fn n_76e990(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_b000_result(&mut mem(), w, a, s)
     }
-    /// `Native_b001_Result(worker, args, stack)`.
-    Native_b001_Result @ 0x0076_e9f0 => extern "C" fn n_76e9f0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_b001_MovieWait_Result(worker, args, stack)`.
+    Native_b001_MovieWait_Result @ 0x0076_e9f0 => extern "C" fn n_76e9f0(w: u32, a: u32, s: u32) -> u32 {
         native_chr::native_b001_result(&mut mem(), w, a, s)
     }
     /// `Native_4006_FadeInWhite(worker, args, stack)`.
