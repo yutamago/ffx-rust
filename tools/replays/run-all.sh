@@ -38,7 +38,7 @@ for f in "$lin"/*-orig.trace "$lin"/*-orig2.trace; do
 done
 # keep the newest KEEP_RUNS run folders (each is ~30 MB of screenshots)
 ls -1dt "$lin"/runs/*/ 2>/dev/null | tail -n +"$((${KEEP_RUNS:-20} + 1))" | while read -r d; do rm -rf "$d"; done
-replays=(field-walk battle-attack menu-browse boot)
+replays=(field-walk battle-attack menu-browse boot battle-magic)
 
 # Build once, not three times side by side.
 tools/build-hook.sh >/dev/null || exit 1
@@ -86,6 +86,9 @@ echo "replays took $((SECONDS - start)) s ($runs)"
 bad=0
 for r in "${replays[@]}"; do
     [ "$r" = boot ] && continue  # screenshots only
+    if [ ! -f "$traces/$r-orig.trace" ]; then
+        echo "== $r: not recorded (tools/replays/run-all.sh --record $r)"; bad=1; continue
+    fi
     # the pad word's range (press timing): field-walk 3, menu-browse 0
     case $r in field-walk) ign=(--ignore 3) ;; menu-browse) ign=(--ignore 0) ;; *) ign=() ;; esac
     cmp=(python3 tools/replay-compare.py "$traces/$r-orig.trace" "$runs/rust/$r-rust.trace" --also "$traces/$r-orig2.trace" "${ign[@]}")
