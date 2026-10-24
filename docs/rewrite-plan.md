@@ -352,6 +352,13 @@ when its original mode passes:
 - screenshot comparisons against the original game (`tools/shot-compare.py`
   and the replays), within the rounding that different graphics APIs bring.
 
+Order (user's decision, 2026-10-24): the renderer's scene first (the
+external renderer exists, and the replays give it screenshot checks), then
+effects and post-processing, the UI, movies, audio, input and the window.
+Every part is first rebuilt to give the original's output exactly;
+improvements to graphics, sound and input come after M4's parity and stay
+backwards compatible (the original behaviour remains selectable).
+
 - Effects (`ppp`) and the remaster renderer (`graphic*`) are rewritten into
   the scene stream: the Rust side builds the scene instead of reading it out
   of PhyreEngine's.
