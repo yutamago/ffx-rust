@@ -1673,6 +1673,23 @@ pub fn same_float(st0: f64, port: f64) -> bool {
     st0.to_bits() == port.to_bits()
 }
 
+/// Fails the test when a bridge hands a host call `n` words where the
+/// game's host passes at most `max` (`ffx_bridge::Host`, "Call width"):
+/// `what` names the host call (`"Host::call"`), the message the address and
+/// the width. Every test host checks its calls with this before running the
+/// callee, so a call the game refuses (or cuts short) can't pass a parity
+/// test.
+///
+/// # Panics
+/// When `n > max`.
+pub fn check_width(what: &str, addr: u32, n: usize, max: usize) {
+    assert!(
+        n <= max,
+        "{what}({addr:#x}) with {n} words: the game's host passes at most {max} \
+         (ffx_bridge::Host, \"Call width\"); use a wider call"
+    );
+}
+
 /// `raw` stored into an IEEE binary format with `frac` fraction bits and
 /// `ebits` exponent bits, as the x87's `fst` does at round to nearest with
 /// its exceptions masked. The result's bits, right-aligned.
@@ -1795,6 +1812,24 @@ fn run_stub(uc: &mut Unicorn<State>, stub: Stub, addr: u64) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn width_up_to_the_game_hosts_limit_passes() {
+        check_width(
+            "Host::call",
+            0x0088_b4d0,
+            ffx_bridge::CALL_WORDS,
+            ffx_bridge::CALL_WORDS,
+        );
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Host::call(0x88b4d0) with 8 words: the game's host passes at most 6"
+    )]
+    fn width_past_the_game_hosts_limit_fails() {
+        check_width("Host::call", 0x0088_b4d0, 8, ffx_bridge::CALL_WORDS);
+    }
 
     #[test]
     fn f80_values() {

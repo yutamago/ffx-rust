@@ -245,25 +245,32 @@ impl ffx_bridge::Host for TrigHost<'_> {
     fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
         // the game's `Host::call` (`RawMem`) refuses more than six words
         // without calling; wider calls go through `call_n`
-        assert!(
-            args.len() <= 6,
-            "Host::call({addr:#x}) with {} words: the game's RawMem refuses more than 6; use call_n",
-            args.len()
-        );
+        ffx_oracle::check_width("Host::call", addr, args.len(), ffx_bridge::CALL_WORDS);
         self.0.call(addr, args)
     }
 }
 
 impl ffx_script::vm::bridge::run::NativeHost for TrigHost<'_> {
     fn call_n(&mut self, addr: u32, args: &[u32]) -> u32 {
-        assert!(
-            args.len() <= 12,
-            "call_n({addr:#x}) with {} words",
-            args.len()
+        ffx_oracle::check_width(
+            "NativeHost::call_n",
+            addr,
+            args.len(),
+            ffx_script::vm::bridge::run::CALL_N_WORDS,
         );
-        ffx_bridge::Host::call(&mut self.0, addr, args)
+        self.0
+            .0
+            .call(addr, ffx_oracle::Conv::Cdecl, args)
+            .unwrap()
+            .eax
     }
     fn call_float(&mut self, addr: u32, args: &[u32]) -> f64 {
+        ffx_oracle::check_width(
+            "NativeHost::call_float",
+            addr,
+            args.len(),
+            ffx_bridge::CALL_WORDS,
+        );
         self.0.0.call_f64(addr, args).unwrap()
     }
     fn scratch(&mut self) -> u32 {

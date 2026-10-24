@@ -115,11 +115,7 @@ impl v::Host for Run<'_> {
         // this way left the aim unwritten in the game (`Atel_TurnUpdate`,
         // `Atel_MoveUpdate`; event-cliff, 2026-10-24) while these tests,
         // which called with any width, passed.
-        assert!(
-            args.len() <= 6,
-            "Host::call({addr:#x}) with {} words: the game's RawMem refuses more than 6; use call_n",
-            args.len()
-        );
+        ffx_oracle::check_width("Host::call", addr, args.len(), ffx_bridge::CALL_WORDS);
         self.0.call(addr, Conv::Cdecl, args).unwrap().eax
     }
 }
@@ -127,14 +123,16 @@ impl v::Host for Run<'_> {
 impl run::NativeHost for Run<'_> {
     fn call_n(&mut self, addr: u32, args: &[u32]) -> u32 {
         // up to 12 words, as `RawMem`'s
-        assert!(
-            args.len() <= 12,
-            "call_n({addr:#x}) with {} words",
-            args.len()
-        );
+        ffx_oracle::check_width("NativeHost::call_n", addr, args.len(), run::CALL_N_WORDS);
         self.0.call(addr, Conv::Cdecl, args).unwrap().eax
     }
     fn call_float(&mut self, addr: u32, args: &[u32]) -> f64 {
+        ffx_oracle::check_width(
+            "NativeHost::call_float",
+            addr,
+            args.len(),
+            ffx_bridge::CALL_WORDS,
+        );
         let r = self.0.call(addr, Conv::Cdecl, args).unwrap();
         let raw = r.st0_raw.expect("a float native leaves ST0");
         // pop it, as the original's fstp does

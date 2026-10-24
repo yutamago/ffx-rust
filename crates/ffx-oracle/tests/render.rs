@@ -98,6 +98,7 @@ impl Mem for G<'_> {
 
 impl Host for G<'_> {
     fn call(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> u32 {
+        ffx_oracle::check_width("Host::call", addr, args.len(), host::max_words(conv, false));
         let conv = match conv {
             host::Conv::Cdecl => Conv::Cdecl,
             host::Conv::Stdcall => Conv::Stdcall,
@@ -107,6 +108,12 @@ impl Host for G<'_> {
         self.0.call(addr, conv, args).unwrap().eax
     }
     fn call_st0(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f32 {
+        ffx_oracle::check_width(
+            "Host::call_st0",
+            addr,
+            args.len(),
+            host::max_words(conv, true),
+        );
         let conv = match conv {
             host::Conv::Cdecl => Conv::Cdecl,
             host::Conv::Stdcall => Conv::Stdcall,

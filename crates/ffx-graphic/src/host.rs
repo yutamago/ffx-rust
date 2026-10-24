@@ -23,12 +23,32 @@ pub enum Conv {
     Fastcall,
 }
 
+/// The most words [`Host::call`] (`st0` false) or [`Host::call_st0`]
+/// (`st0` true) passes in the game ([`ffx_bridge::RawMem`]) with `conv`:
+/// eight (a fastcall's two register words included), twelve stack words
+/// after `this` for a plain `thiscall`.
+///
+/// The game's host does not refuse a longer list: a cdecl call drops the
+/// words past the limit (the callee reads the caller's stack there), and
+/// the callee-pops conventions pop more than were pushed. Test hosts in
+/// `ffx-oracle` fail a wider call (`ffx_oracle::check_width`), as
+/// `ffx_bridge::Host`'s rule says.
+#[must_use]
+pub const fn max_words(conv: Conv, st0: bool) -> usize {
+    match (conv, st0) {
+        (Conv::Thiscall(_), false) => 12,
+        _ => 8,
+    }
+}
+
 /// Game memory plus calls into original code. In the game a plain call
 /// ([`ffx_bridge::RawMem`]); in `ffx-oracle`, the emulator.
+///
+/// Call width: see [`max_words`] and `ffx_bridge::Host`.
 pub trait Host: Mem {
     /// Calls the function at `addr` (an address in this process, already
-    /// rebased) with up to eight 32-bit stack arguments (twelve for a
-    /// `thiscall`); returns `eax`.
+    /// rebased) with up to [`max_words`] 32-bit arguments (eight, twelve
+    /// stack words for a `thiscall`); returns `eax`.
     fn call(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u32;
 
     /// Calls a function at `addr` that returns a float in `ST0`, as

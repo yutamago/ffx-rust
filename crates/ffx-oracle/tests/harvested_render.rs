@@ -30,6 +30,12 @@ impl ffx_graphic::host::Host for Run<'_> {
     fn call(&mut self, addr: u32, c: ffx_graphic::host::Conv, args: &[u32]) -> u32 {
         use ffx_graphic::host::Conv as H;
         use ffx_oracle::Conv as O;
+        ffx_oracle::check_width(
+            "Host::call",
+            addr,
+            args.len(),
+            ffx_graphic::host::max_words(c, false),
+        );
         let c = match c {
             H::Cdecl => O::Cdecl,
             H::Stdcall => O::Stdcall,

@@ -2260,6 +2260,7 @@ impl Mem for H<'_> {
 
 impl ffx_bridge::Host for H<'_> {
     fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
+        ffx_oracle::check_width("Host::call", addr, args.len(), ffx_bridge::CALL_WORDS);
         self.0
             .call(addr, Conv::Cdecl, args)
             .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))

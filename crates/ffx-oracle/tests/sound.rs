@@ -108,6 +108,7 @@ impl Mem for Run<'_> {
 
 impl Host for Run<'_> {
     fn call(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> u32 {
+        ffx_oracle::check_width("Host::call", addr, args.len(), host::max_words(conv, false));
         let conv = match conv {
             host::Conv::Cdecl => Conv::Cdecl,
             host::Conv::Stdcall => Conv::Stdcall,
@@ -2263,6 +2264,12 @@ impl Host for RunF<'_> {
     }
     fn call_st0(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f32 {
         assert_eq!(conv, host::Conv::Cdecl);
+        ffx_oracle::check_width(
+            "Host::call_st0",
+            addr,
+            args.len(),
+            host::max_words(conv, true),
+        );
         let r = self
             .0
             .call(addr, Conv::Cdecl, args)

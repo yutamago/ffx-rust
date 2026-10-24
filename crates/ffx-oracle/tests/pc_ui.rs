@@ -85,6 +85,7 @@ fn conv(c: host::Conv) -> Conv {
 
 impl Host for Run<'_> {
     fn call(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> u32 {
+        ffx_oracle::check_width("Host::call", addr, args.len(), host::max_words(c, false));
         self.0
             .call(addr, conv(c), args)
             .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
@@ -92,6 +93,7 @@ impl Host for Run<'_> {
     }
 
     fn call_st0(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> f32 {
+        ffx_oracle::check_width("Host::call_st0", addr, args.len(), host::max_words(c, true));
         let r = self
             .0
             .call(addr, conv(c), args)

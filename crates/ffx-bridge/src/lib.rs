@@ -301,9 +301,26 @@ impl Mem for RawMem {
 /// original calls functions that are still original (callbacks the game
 /// stores, callees not ported yet). In the game a plain call
 /// ([`RawMem`]); in `ffx-oracle`, the emulator.
+///
+/// # Call width
+///
+/// [`Host::call`] passes at most [`CALL_WORDS`] (six) words. In the game
+/// ([`RawMem`]) a longer list is refused: nothing is called, the result
+/// is 0, and only a line on stderr (which the game shows nowhere) says
+/// so. A bridge whose callee takes more stack words must use a wider call
+/// its host offers (`NativeHost::call_n` in `ffx-script`, twelve words;
+/// `ffx_graphic::host::Host::call`, eight, twelve for a thiscall), never
+/// this one. Test hosts refuse what the game refuses: in `ffx-oracle` a
+/// call wider than the game's host passes fails the test, naming the
+/// address and the width (`ffx_oracle::check_width`). Before that rule
+/// the oracle hosts took any width, and `Atel_TurnUpdate`'s eight-word
+/// `Math_YawPitchTo` call passed its parity tests while it did nothing in
+/// the game (event-cliff, 2026-10-24). `tools/check-callwidth.py` finds
+/// wide calls the tests don't reach.
 pub trait Host: Mem {
     /// Calls the cdecl function at `addr` (an address in this process,
-    /// already rebased) with up to six 32-bit arguments; returns `EAX`.
+    /// already rebased) with up to [`CALL_WORDS`] 32-bit arguments;
+    /// returns `EAX`. More words are refused in the game: not called, 0.
     fn call(&mut self, addr: u32, args: &[u32]) -> u32;
 
     /// [`SCRATCH_LEN`] bytes of memory the original callees can reach,
@@ -319,6 +336,9 @@ pub trait Host: Mem {
 /// The size of [`Host::callee_scratch`].
 pub const SCRATCH_LEN: u32 = 0x200;
 
+/// The most words [`Host::call`] passes in the game ([`RawMem`]).
+pub const CALL_WORDS: usize = 6;
+
 #[cfg(target_pointer_width = "32")]
 thread_local! {
     /// The game thread's scratch ([`Host::callee_scratch`]).
@@ -328,11 +348,11 @@ thread_local! {
 
 /// Reports a call with more words than a game-side helper passes, on
 /// stderr, without panicking (a failed write is ignored).
-pub fn too_many_arguments(helper: &str, addr: u32, n: usize) {
+pub fn too_many_arguments(helper: &str, addr: u32, n: usize, max: usize) {
     use std::io::Write;
     let _ = writeln!(
         std::io::stderr(),
-        "{helper}: {n} arguments for {addr:#010x}, at most 6; not called"
+        "{helper}: {n} arguments for {addr:#010x}, at most {max}; not called"
     );
 }
 
@@ -342,11 +362,11 @@ impl Host for RawMem {
         type F6 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32) -> u32;
         // No panic here: a panic in a function the game calls ends the
         // process. A longer list is a bridge bug: say so and fail the call.
-        if args.len() > 6 {
-            too_many_arguments("RawMem::call", addr, args.len());
+        if args.len() > CALL_WORDS {
+            too_many_arguments("RawMem::call", addr, args.len(), CALL_WORDS);
             return 0;
         }
-        let mut a = [0u32; 6];
+        let mut a = [0u32; CALL_WORDS];
         a[..args.len()].copy_from_slice(args);
         // SAFETY: the address is a cdecl function of the game taking at
         // most these arguments; cdecl lets the caller pass more than the

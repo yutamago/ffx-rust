@@ -96,16 +96,23 @@ pub const NATIVE_TABLES: Global<u32> = Global::new(0x0132_8558);
 
 /// What [`script_finish_native`] needs beyond [`Host`]: a call whose result
 /// comes back in `ST0` (the float natives).
+///
+/// Call width (`ffx_bridge::Host`'s rule): in the game [`Host::call`] and
+/// [`NativeHost::call_float`] pass at most [`ffx_bridge::CALL_WORDS`] (six)
+/// words and [`NativeHost::call_n`] [`CALL_N_WORDS`] (twelve); each refuses
+/// a longer list without calling (0, or NaN for `call_float`). Test hosts
+/// fail such a call (`ffx_oracle::check_width`).
 pub trait NativeHost: Host {
-    /// Calls the cdecl function at `addr` (rebased) and returns `ST0` as
-    /// an `fstp m64` stores it (exact at the game's 53-bit precision).
+    /// Calls the cdecl function at `addr` (rebased) with up to
+    /// [`ffx_bridge::CALL_WORDS`] words and returns `ST0` as an `fstp m64`
+    /// stores it (exact at the game's 53-bit precision).
     fn call_float(&mut self, addr: u32, args: &[u32]) -> f64;
     /// 64 bytes of memory the game can read and write for the duration of
     /// a native: what the originals' stack locals are when they pass their
     /// address to a callee (`yiGetFogColor(&rgba)`).
     fn scratch(&mut self) -> u32;
-    /// [`Host::call`] for up to 12 arguments (the game's own `Host::call`
-    /// takes six); the default is `Host::call`.
+    /// [`Host::call`] for up to [`CALL_N_WORDS`] arguments (the game's own
+    /// `Host::call` takes six); the default is `Host::call`.
     fn call_n(&mut self, addr: u32, args: &[u32]) -> u32 {
         self.call(addr, args)
     }
@@ -126,6 +133,9 @@ pub trait NativeHost: Host {
     }
 }
 
+/// The most words [`NativeHost::call_n`] passes in the game.
+pub const CALL_N_WORDS: usize = 12;
+
 #[cfg(target_pointer_width = "32")]
 thread_local! {
     static SCRATCH: core::cell::UnsafeCell<[u32; 16]> = const { core::cell::UnsafeCell::new([0; 16]) };
@@ -136,11 +146,16 @@ impl NativeHost for ffx_bridge::RawMem {
     fn call_float(&mut self, addr: u32, args: &[u32]) -> f64 {
         type F6 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32) -> f64;
         // no panic: the natives run inside the game; a longer list fails
-        if args.len() > 6 {
-            ffx_bridge::too_many_arguments("NativeHost::call_float", addr, args.len());
+        if args.len() > ffx_bridge::CALL_WORDS {
+            ffx_bridge::too_many_arguments(
+                "NativeHost::call_float",
+                addr,
+                args.len(),
+                ffx_bridge::CALL_WORDS,
+            );
             return f64::NAN;
         }
-        let mut a = [0u32; 6];
+        let mut a = [0u32; ffx_bridge::CALL_WORDS];
         a[..args.len()].copy_from_slice(args);
         // SAFETY: the address is a cdecl native of the game returning in
         // ST0 and taking at most these arguments; the caller pops them.
@@ -153,10 +168,14 @@ impl NativeHost for ffx_bridge::RawMem {
     fn call_n(&mut self, addr: u32, args: &[u32]) -> u32 {
         type F12 =
             unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
-        // no panic: the natives run inside the game
-        let mut a = [0u32; 12];
-        let n = args.len().min(12);
-        a[..n].copy_from_slice(&args[..n]);
+        // no panic: the natives run inside the game; a longer list would
+        // be cut short, so it fails as `Host::call`'s does
+        if args.len() > CALL_N_WORDS {
+            ffx_bridge::too_many_arguments("NativeHost::call_n", addr, args.len(), CALL_N_WORDS);
+            return 0;
+        }
+        let mut a = [0u32; CALL_N_WORDS];
+        a[..args.len()].copy_from_slice(args);
         // SAFETY: a cdecl function of the game taking at most 12 word
         // arguments; the extra words sit on the caller's side, which pops.
         unsafe {

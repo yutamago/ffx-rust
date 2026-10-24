@@ -584,7 +584,9 @@ const STS: [RegisterX86; 8] = [
 ];
 
 /// An oracle as the bridges' [`ffx_bridge::Host`]: its memory, and its
-/// emulator for the original callees (cdecl; a failing callee panics).
+/// emulator for the original callees (cdecl; a failing callee panics). A
+/// call wider than the game's host passes ([`ffx_bridge::CALL_WORDS`])
+/// fails the test, as the game refuses it ([`crate::check_width`]).
 pub struct OracleHost<'a>(pub &'a mut Oracle);
 
 impl ffx_bridge::Mem for OracleHost<'_> {
@@ -601,6 +603,7 @@ impl ffx_bridge::Mem for OracleHost<'_> {
 
 impl ffx_bridge::Host for OracleHost<'_> {
     fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
+        crate::check_width("Host::call", addr, args.len(), ffx_bridge::CALL_WORDS);
         self.0
             .call(addr, Conv::Cdecl, args)
             .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
