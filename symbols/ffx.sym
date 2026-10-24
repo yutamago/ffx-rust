@@ -5927,7 +5927,7 @@
 0x007a2d30 function Native_70f1_ItemSlotsClear # 0x70f1: () -> 0: frees the actor's 20 u16 slots in g_BtlItemMem2 (0x02310cd8, 0x478 per actor); ported in native_btl2 (script round 18); name ours; name from "frees the actor's 20 u16 slots in g_BtlItemMem2"
 0x007a2d80 function Native_705b_ChrGetCamWidth # 0x705b: args (selector int) -> float 0x00794a70(index) of the selected actor, 0.0 for none; ported in native_btl2 (script round 18); name ours; name from "float 0x00794a70(index)" MsGetChrCamWidth
 0x007a2dc0 function Native_7098_CheckDefenseMotion # 0x7098: MsCheckDefenseMotion(MsGetChr(actor)) (0x007af2f0), 0 without an actor; ported in native_mods (script round 21); name ours; name from "MsCheckDefenseMotion(MsGetChr(actor)) (0x007af2f0)"
-0x007a2df0 function Native_705c_ChrGetCamHeight # 0x705c: args (selector int) -> float 0x0082ab30(model) * +0x3a4 of the selected actor; ported in native_btl2 (script round 18); name ours; name from "0x0082ab30(model) * +0x3a4" Ch_GetCamHeight
+0x007a2df0 function Native_705c # 0x705c: args (selector int) -> float 0x0082ab30(model) * +0x3a4 of the selected actor; ported in native_btl2 (script round 18); name ours; BSim review: returns f32 model +0x4f4; camera-height role only from names (Ch_SetCamHeight cg2)
 0x007a2e60 function Native_70f2_ItemSlotAdd # 0x70f2: args (item int) -> 0: the item into the actor's first free u16 slot (0xff) in g_BtlItemMem2; ported in native_btl2 (script round 18); name ours; name from "the item into the actor's first free u16 slot (0xff) in g_BtlItemMem2"
 0x007a2eb0 function Native_709a # 0x709a: () -> 0 when the worker's actor is the signed byte 0x0112c9e4, else 1; ported in native_btl2 (script round 18); name ours
 0x007a2ee0 function Native_70b9 # 0x70b9: args (selector int) -> float out of 0x00795170(0xb, MsGetChrBit(actor, selector, 0, 1), 0, &out); ported in native_btl2 (script round 18); name ours
@@ -6029,7 +6029,7 @@
 0x007a4da0 function Native_7045 # 0x7045: (sel) -> MsSetMove(first of sel, 0xc) (0x007a9fc0, ST0) over the double at 0x00b43d70, rounded to f32, truncated; ported in native_mods (script round 21); name ours
 0x007a4df0 function Native_70da # 0x70da: the i8 at 0x0112c9dc; ported in native_mods (script round 21); name ours
 0x007a4e00 function Native_70e6_SetOwnerEffect8 # 0x70e6: (sel, b, a): 0x0079ec40(first of sel, b, a); 0; ported in native_mods (script round 21); name ours; name from "0x0079ec40(first of sel, b, a)" MsSetOwnerEffect8_0079ec40
-0x007a4e60 function Native_702d_MotionSpeedReset                # 0x702d: 0x007ab730(actor record); 0; ported in native_btl/native_msg (script round 8); name from "0x007ab730(actor record)" MsMotionSpeedReset
+0x007a4e60 function Native_702d                # 0x702d: 0x007ab730(actor record); 0; ported in native_btl/native_msg (script round 8); BSim review: clears actor +0x415 (move kind, 7 = spline) and +0x417; not a motion speed
 0x007a4e90 function Native_BtlGetBattleId        # 0x7024: () -> Battle_GetBattleId (0x00782970; a jmp thunk); scripts compare it to constants like 0x2050000
 0x007a4ea0 function Native_GetSelfProperty       # 0x70aa: args (property) -> value; Battle_GetActorProperty(self, property, -13 = self)
 0x007a4ee0 function Native_70df # 0x70df: args (v int) -> 1 when 0x0112a8e0 is set and i16 *(*0x0112a9f0) == v >> 16, else 0; ported in native_btl2 (script round 18); name ours
@@ -6125,7 +6125,7 @@
 0x007a6a40 function Native_7043_MsgWaitClose_Poll # 0x7043: poll: handle in the argument word; 5 when 0x008b7ca0(h) == 0; 0 while 0x008b8530(h) == 0; then 0x008ab8f0(h), 5; ported in native_btl2 (script round 18); name ours; name from poll: 5 when TOGetMessageStatus(h) == 0; 0 while !TOIsMessageStatus3Pressed; then TOCloseMessageWindow
 0x007a6a80 function Native_ActorGetId            # 0x7021: args (selector) -> id (+0xe, the ushort that 0x1xxx selectors match) of the first selected actor, -1 if none
 0x007a6ad0 function Native_7068_VoiceStreamWait_Poll # 0x7068: 1 once msVoiceIsStreaming() is 0, else 0; ported in native_mods (script round 21); name ours; name from poll "1 once msVoiceIsStreaming() is 0"
-0x007a6ae0 function Native_70bf_ChrSetBindScale # 0x70bf: args (v f) -> 0; actor +0x3ac = v, 0x00832610(model, v) with a model; ported in native_btl2 (script round 18); name ours; name from "+0x3ac = v, 0x00832610(model, v)" Ch_BindSetScale
+0x007a6ae0 function Native_70bf # 0x70bf: args (v f) -> 0; actor +0x3ac = v, 0x00832610(model, v) with a model; ported in native_btl2 (script round 18); name ours; BSim review: model +0x1b4 = v, inside the binding block +0x1a0..+0x1b8; scale role only from name
 0x007a6b40 function Native_ActorGetSlotRef       # 0x70a1: args (selector) -> monster: actor +0xc byte; party: -6 - position in party list 0x0112c895 (18 entries); 0xff if none; ?meaning
 0x007a6bc0 function Native_706c # 0x706c: (sel, k): for the first actor x of sel, the record of its +0x14 actor: with +0xf2c set and k at most 0x1f, sound k (+0xeac + 4 k) plays (MsSEP3Dregist; ported in native_mods (script round 21); name ours
 0x007a6c50 function Native_70a9_MsgWaitCloseStream # (script r28) 0x70a9 start: (win): argument word = Clamp0To6_007a86e0(win); -> it (table 0x00c430b8); ported in native_btl2; name ours; name from poll: TOCloseMessageWindow, 5 when TOIsMessageStatus3Pressed or (!SndGetStreamState() and state 3)

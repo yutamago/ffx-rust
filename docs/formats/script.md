@@ -2008,7 +2008,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x702a` | `Native_702a` | - | int: actor +0x508 | - | int `0x007a5bc0` (native_btl) |
 | `0x702b` | `Native_702b_ChrGetWaitMotion` | - | int: -1 while the actor's model is busy, else 0 | - | int `0x007a3c50` (native_btl) |
 | `0x702c` | `Native_702c_ChrMoveToTarget` | mode int, p8 f (speed), p7 f, p6 f (acceleration), p5 f, p4 f, p3 f, p2 f, p1 f | int: 0x007a87f0(&to, &from, actor, 0x10, 1) (0 without an actor) | - | int `0x007a45c0` (native_btl) |
-| `0x702d` | `Native_702d_MotionSpeedReset` | - | 0 | - | int `0x007a4e60` (native_btl) |
+| `0x702d` | `Native_702d` | - | 0 | - | int `0x007a4e60` (native_btl) |
 | `0x702e` | `Native_702e_GetTargetDist` | v int: target | float: distance to the target (MsGetTargetDist) | - | float `0x007a6d70` (native_btl) |
 | `0x702f` | `Native_702f_ChrReset` | keep int | 0: resets the actor (+0x508 = 0, MsStatusEffectClear, 0x0079ea90, the system motion again unless +0xdce, MsSetChrVisibleAppear(actor, 0)); with keep +0xdc8 = 0 | - | int `0x007a5140` (native_btl) |
 | `0x7030` | `Native_7030` | - | int: actor +0x412 | - | int `0x007a5090` (native_btl) |
@@ -2055,7 +2055,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x7059` | `Native_7059_GetTargetDist` | v int: target | float: distance (MsGetTargetDist mode 1) | - | float `0x007a6e40` (native_btl) |
 | `0x705a` | `Native_705a_BtlQueueCommand` | targets int, command int | 1, 0 without an actor | - | int `0x007a49f0` (native_btl) |
 | `0x705b` | `Native_705b_ChrGetCamWidth` | selector int | float: 0x00794a70(selected actor), 0.0 for none | - | float `0x007a2d80` (native_btl2) |
-| `0x705c` | `Native_705c_ChrGetCamHeight` | selector int | float: the selected actor's 0x0082ab30(model) times its f32 +0x3a4 (rounded to f32); 0.0 without actor or model | - | float `0x007a2df0` (native_btl2) |
+| `0x705c` | `Native_705c` | selector int | float: the selected actor's 0x0082ab30(model) times its f32 +0x3a4 (rounded to f32); 0.0 without actor or model | - | float `0x007a2df0` (native_btl2) |
 | `0x705d` | `Native_ActorSetFlag36` | a int, b int (dropped) | int: the actor index (+0x36 = 1) | - | int `0x007a51e0` (native_btl) |
 | `0x705e` | `Native_705e_ResetBindEffect` | - | 0; 0x00788e60(actor) | - | int `0x007a5310` (native_btl2) |
 | `0x705f` | `Native_705f_DebugPrint` | v f | debug (mod-tool candidate): dbgPrintf of v (as a double) and the actor (a bare ret in this build); 0 | - | int `0x007a4c30` (not ported) |
@@ -2154,7 +2154,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x70bc` | `Native_70bc_ChrWaitEffect7` | selector int | the selected actor's index (kept in the argument word) | until that actor's +0xe12 is clear (poll 5) | start `0x007a5990`, poll `0x007a5b90` (native_btl2) |
 | `0x70bd` | `Native_70bd_ChrWaitEffect8` | selector int | the selected actor's index (kept in the argument word) | until that actor's +0xe13 is clear (poll 5) | start `0x007a5ed0`, poll `0x007a6030` (native_btl2) |
 | `0x70be` | `Native_70be_ChrGetDir` | selector int | float: the picked actor's direction (MsGetChrDir 0x00794d20) in degrees (MsNearRag(0, d) * 180 / pi) | - | float `0x007a3780` (native_btl) |
-| `0x70bf` | `Native_70bf_ChrSetBindScale` | v f | 0; the actor's f32 +0x3ac = v and, with a model, 0x00832610(model, v) | - | int `0x007a6ae0` (native_btl2) |
+| `0x70bf` | `Native_70bf` | v f | 0; the actor's f32 +0x3ac = v and, with a model, 0x00832610(model, v) | - | int `0x007a6ae0` (native_btl2) |
 | `0x70c0` | `Native_70c0_ChrGetLiftHeight` | sel | float: 0x00794990(first of sel)'s ST0 | - | float `0x007a6c70` (native_mods) |
 | `0x70c1` | `Native_70c1_ChrGetDistance` | b int, a int (selectors) | int: the distance between the two actors' positions (0x00795170 mode 1, 0x007c3030), truncated | - | int `0x007a4b90` (native_btl2) |
 | `0x70c2` | `Native_70c2_ChrGetAngleTo` | a int, b int (selectors) | float: the angle from a's position to b's (0x007c4990's third result; positions from 0x00795170 mode 5) in degrees | - | float `0x007a31d0` (native_btl2) |

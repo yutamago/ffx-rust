@@ -513,7 +513,7 @@ pub fn native_702e<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     callf(h, 0x007a_9a40, &[id, v, 0])
 }
 
-/// `Native_702d_MotionSpeedReset` (`0x007a4e60`, `0x702d`): `0x007ab730(actor record)`; 0.
+/// `Native_702d` (`0x007a4e60`, `0x702d`): `0x007ab730(actor record)`; 0.
 pub fn native_702d<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
     if id != 0xff {

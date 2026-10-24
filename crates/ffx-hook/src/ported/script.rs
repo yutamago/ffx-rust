@@ -2398,8 +2398,8 @@ ported! {
     Native_702e_GetTargetDist @ 0x007a_6d70 => extern "C" fn n_7a6d70(w: u32, a: u32, s: u32) -> f64 {
         native_btl::native_702e(&mut mem(), w, a, s)
     }
-    /// `Native_702d_MotionSpeedReset(worker, args, stack)`.
-    Native_702d_MotionSpeedReset @ 0x007a_4e60 => extern "C" fn n_7a4e60(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_702d(worker, args, stack)`.
+    Native_702d @ 0x007a_4e60 => extern "C" fn n_7a4e60(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_702d(&mut mem(), w, a, s)
     }
     /// `Native_7019_ActReCommand(worker, args, stack)`.
@@ -4784,8 +4784,8 @@ ported! {
     Native_705b_ChrGetCamWidth @ 0x007a_2d80 => extern "C" fn n_7a2d80(w: u32, a: u32, s: u32) -> f64 {
         native_btl2::native_705b(&mut mem(), w, a, s)
     }
-    /// `Native_705c_ChrGetCamHeight(worker, args, stack)`.
-    Native_705c_ChrGetCamHeight @ 0x007a_2df0 => extern "C" fn n_7a2df0(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_705c(worker, args, stack)`.
+    Native_705c @ 0x007a_2df0 => extern "C" fn n_7a2df0(w: u32, a: u32, s: u32) -> f64 {
         native_btl2::native_705c(&mut mem(), w, a, s)
     }
     /// `Native_70f2_ItemSlotAdd(worker, args, stack)`.
@@ -4988,8 +4988,8 @@ ported! {
     Native_704c_Poll @ 0x007a_7cf0 => extern "C" fn n_7a7cf0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_704c_poll(&mut mem(), w, a, s)
     }
-    /// `Native_70bf_ChrSetBindScale(worker, args, stack)`.
-    Native_70bf_ChrSetBindScale @ 0x007a_6ae0 => extern "C" fn n_7a6ae0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70bf(worker, args, stack)`.
+    Native_70bf @ 0x007a_6ae0 => extern "C" fn n_7a6ae0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70bf(&mut mem(), w, a, s)
     }
     /// `Native_70a9_MsgWaitCloseStream_Poll(worker, args, stack)`.

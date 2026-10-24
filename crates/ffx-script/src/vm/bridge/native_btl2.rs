@@ -142,7 +142,7 @@ pub fn native_705b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     callf(h, 0x0079_4a70, &[i])
 }
 
-/// `Native_705c_ChrGetCamHeight` (`0x007a2df0`, `0x705c`, float): `(selector)` -> the
+/// `Native_705c` (`0x007a2df0`, `0x705c`, float): `(selector)` -> the
 /// selected actor's model scale: `0x0082ab30(model)` times the actor's
 /// `f32` `+0x3a4`, rounded to `f32`; 0.0 without an actor or model.
 pub fn native_705c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
@@ -840,7 +840,7 @@ pub fn native_7043_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u
     5
 }
 
-/// `Native_70bf_ChrSetBindScale` (`0x007a6ae0`, `0x70bf`): `(v f)`: the actor's `f32`
+/// `Native_70bf` (`0x007a6ae0`, `0x70bf`): `(v f)`: the actor's `f32`
 /// `+0x3ac` = v and, with a model, `0x00832610(model, v)`; 0.
 pub fn native_70bf<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = atel_pop_stack_float(h, s);
