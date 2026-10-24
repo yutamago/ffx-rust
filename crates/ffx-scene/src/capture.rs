@@ -54,20 +54,25 @@ pub struct TextureRef<'a> {
 }
 
 impl TextureRef<'_> {
-    /// The top mip level's rows, packed; `None` for formats without a
-    /// known shape.
+    /// The top mip level's texels, rows packed; `None` for formats
+    /// without a known block size.
     #[must_use]
     pub fn top_mip(&self) -> Option<Vec<u8>> {
-        let (row_bytes, rows) = key::level_shape(self.desc[4], self.desc[0], self.desc[1])?;
+        let row = key::row_bytes(self.desc[4], self.desc[0])?;
         let sub = self.subresources.first()?;
-        let packed = key::pack_rows(&sub.data, sub.row_pitch as usize, row_bytes, rows);
-        (packed.len() == row_bytes * rows).then_some(packed)
+        Some(key::pack_rows(&sub.data, sub.row_pitch as usize, row))
     }
 
-    /// [`key::texture`] of the top mip.
+    /// The `ffx-drawdiff` key ([`key::texture`]).
     #[must_use]
-    pub fn key(&self) -> Option<u64> {
-        self.top_mip().map(|m| key::texture(&m))
+    pub fn key(&self) -> u64 {
+        key::texture(self.desc, self.subresources)
+    }
+
+    /// [`key::content`] of the top mip's texels.
+    #[must_use]
+    pub fn content(&self) -> Option<u64> {
+        self.top_mip().map(|m| key::content(&m))
     }
 }
 
@@ -112,10 +117,14 @@ impl Capture {
 
     /// The draws, in order, with their index among the frame's commands.
     pub fn draws(&self) -> impl Iterator<Item = (usize, &Draw)> {
-        self.frame.cmds.iter().enumerate().filter_map(|(i, c)| match c {
-            Cmd::Draw(d) => Some((i, &**d)),
-            _ => None,
-        })
+        self.frame
+            .cmds
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| match c {
+                Cmd::Draw(d) => Some((i, &**d)),
+                _ => None,
+            })
     }
 
     /// The scene targets a draw writes, when it is a scene draw.

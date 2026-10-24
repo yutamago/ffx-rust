@@ -3,6 +3,10 @@
 //! family, where each constant it uses comes from, and a verdict on every
 //! static object it binds (`docs/formats/scene.md`).
 
+// Matrix and box arithmetic names its terms as the formulas do (w, v, p,
+// c), and the culling census keeps its draw lists side by side.
+#![allow(clippy::many_single_char_names, clippy::similar_names)]
+
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
@@ -35,6 +39,10 @@ pub enum Verdict {
     RenderTarget,
     /// A texture the game makes at run time (not a render target).
     Generated,
+    /// A texture whose top level has the texels of these file levels, but
+    /// whose key differs: the description (levels, format) is not the one
+    /// the asset side gives it.
+    Texels(Vec<Source>),
     /// None of the above.
     Unexplained,
 }
@@ -48,6 +56,7 @@ impl Verdict {
             Self::Skinned => "skinned",
             Self::RenderTarget => "render-target",
             Self::Generated => "generated",
+            Self::Texels(_) => "texels-only",
             Self::Unexplained => "unexplained",
         }
     }
@@ -132,6 +141,8 @@ pub struct DrawCensus {
     /// View-space depth of the segment's bounds centre (camera looks down
     /// -z: smaller is farther), when the draw has `World` and `scene.View`.
     pub view_z: Option<f32>,
+    /// The instance bounds' `m_render_order`.
+    pub render_order: Option<i32>,
     pub index_count: u32,
     /// How the input layout's elements map to the file's streams.
     pub layout_pairs: Vec<LayoutPair>,
@@ -142,44 +153,59 @@ pub struct DrawCensus {
 /// (`docs/formats/scene.md`, "Constants").
 fn derived(name: &str) -> Option<&'static str> {
     Some(match name {
-        "World" => "the instance's world matrix (PWorldMatrix)",
-        "WorldView" => "World x scene.View",
-        "WorldViewProjection" => "World x scene.ViewProjection",
-        "BoneTransforms" => "skin matrices: bone world x inverse bind",
-        "ClothWorld" => "the cloth simulation's world matrix",
-        "LightViewProjection" | "LVP2" => "shadow cascade view-projection",
-        "MySMScaleBias" | "MySMScaleBias2" => "shadow map scale and bias",
-        "scene.EyePosition" => "camera position (ViewInverse row 3)",
-        "scene.View" => "inverse of the camera world matrix (scene +0xfa04)",
-        "scene.Projection" => "camera projection (fov y +0x154, aspect +0x150, near +0xb8, far +0xbc)",
-        "scene.ViewProjection" => "View x Projection",
-        "scene.ViewProjection2" => "View x Projection (second camera slot)",
-        "scene.ViewInverse" => "the camera world matrix",
-        "scene.cameraNearFar"
-        | "scene.cameraNearTimesFar"
-        | "scene.cameraFarMinusNear" => "camera near and far planes",
-        "scene.ViewportWidthHeight" | "scene.screenWidthHeightInv" => "viewport size",
+        "WorldView" => "modelview 0x83: View . World, f32 sums (node buffer 0x005b7fe0)",
+        "WorldViewProjection" => {
+            "modelviewproj 0x84: ViewProjection . World, f64 sums rounded once (node buffer)"
+        }
+        "BoneTransforms" => "boneTransforms 0x8f: joint world . inverse bind, per m_skinBones",
+        "scene.EyePosition" => "EyePosWS: the camera world's translation",
+        "scene.View" => "view 3: FromMatrix3x4(PCamera +0), the inverse of scene +0xfa04",
+        "scene.Projection" => {
+            "projection 2: PCamera +0x30 in 0..1 depth (fov +0x154, aspect +0x150, near +0xb8, far +0xbc)"
+        }
+        "scene.ViewProjection" => "viewprojection 6: Projection . View",
+        "scene.ViewInverse" => "viewi 4: the camera world 3x4 (scene +0xfa04)",
+        "scene.cameraNearFar" | "scene.cameraNearTimesFar" | "scene.cameraFarMinusNear" => {
+            "NearFarPlane, NearTimesFar, FarMinusNear: camera +0xb8/+0xbc"
+        }
+        "scene.ViewportWidthHeight" => "ViewportWidthHeight: the viewport",
+        "scene.screenWidthHeightInv" => "ScreenWidthHeightInv: 0x00c95100/0x00c95104",
         _ => return None,
     })
 }
 
 fn game_state(name: &str) -> Option<&'static str> {
     Some(match name {
+        "World" => {
+            "model 0x82: the instance's world matrix as the game sets it (map: 10 x unit, map objects PhyreScene_setObjectRotation/Translation 0x0066db00/0x0066e3e0, characters setMeshInstanceWorldMatrix 0x0066d810)"
+        }
         "scene.GlobalAmbientColor" => "g_PhyreApplication +0x50 (graphicSetGlobalAmbientColor)",
-        "scene.FogColor" => "g_PhyreApplication +0x60",
+        "scene.FogColor" => "g_PhyreApplication +0x60 (FogEffectManager)",
         "scene.FogNear" => "g_PhyreApplication +0x70",
         "scene.FogFar" => "g_PhyreApplication +0x74",
         "scene.FogCurve" => "g_PhyreApplication +0x78",
         "scene.FogLimit" => "g_PhyreApplication +0x7c",
         "scene.BGColor" => "g_PhyreApplication +0x80 (graphicSetBackgroundColour)",
-        "scene.GlobalTime" => "the application's clock",
-        "CharacterAmbientLight" | "CharacterShadeColor" | "CharacterShadeCoeff" => {
-            "character lighting (graphicCharacterLighting*)"
+        "scene.GlobalTime" => "g_PhyreApplication +0x120",
+        "scene.ViewProjection2" => "g_PhyreApplication +0x90",
+        "ClothWorld" => "the cloth simulation's matrix (Ch_Cloth*), in the material buffer",
+        "LightViewProjection" | "LVP2" | "MySMScaleBias" | "MySMScaleBias2" => {
+            "shadow cascades, written into material buffers by PhyreScene_RenderShadow 0x00653600"
         }
-        "Light0" | "Light1" | "Light2" | "Light0.m_direction" | "Light0.m_colorIntensity"
-        | "Light1.m_direction" | "Light1.m_colorIntensity" | "Light2.m_direction"
-        | "Light2.m_colorIntensity" => "character lights (graphicCharacterLightingSetLightMatrix)",
-        "LgtMatVec" | "LgtMatClr" => "PS2 light matrices (graphicPS2LightingSetupEffect)",
+        "CharacterAmbientLight" | "CharacterShadeColor" | "CharacterShadeCoeff" => {
+            "character lighting (graphicCharacterLighting*), in the material buffer"
+        }
+        "Light0.m_direction"
+        | "Light0.m_colorIntensity"
+        | "Light1.m_direction"
+        | "Light1.m_colorIntensity"
+        | "Light2.m_direction"
+        | "Light2.m_colorIntensity" => {
+            "character lights (graphicCharacterLightingSetLightMatrix), in the material buffer"
+        }
+        "LgtMatVec" | "LgtMatClr" => {
+            "PS2 light matrices (graphicPS2LightingSetupEffect), in the material buffer"
+        }
         _ => return None,
     })
 }
@@ -194,7 +220,7 @@ fn floats(bytes: &[u8]) -> Vec<f32> {
 }
 
 /// The bytes of a constant in a draw's buffer window.
-fn constant_bytes<'a>(d: &'a Draw, stage: char, slot: u8, offset: u32, size: u32) -> Option<&'a [u8]> {
+fn constant_bytes(d: &Draw, stage: char, slot: u8, offset: u32, size: u32) -> Option<&[u8]> {
     let list = if stage == 'v' { &d.vs_cb } else { &d.ps_cb };
     let data = &list.iter().find(|c| c.0 == slot)?.1;
     data.get(offset as usize..(offset + size) as usize)
@@ -220,6 +246,26 @@ pub fn mul(a: &Mat, b: &Mat) -> Mat {
                 s += a[i * 4 + k] * b[k * 4 + j];
             }
             out[i * 4 + j] = s;
+        }
+    }
+    out
+}
+
+/// As [`mul`], each sum in f64 from k = 0 up and rounded to f32 once (the
+/// x87 at 53 bits): how `WorldViewProjection` is made.
+#[must_use]
+pub fn mul_f64(a: &Mat, b: &Mat) -> Mat {
+    let mut out = [0f32; 16];
+    for i in 0..4 {
+        for j in 0..4 {
+            let mut s = 0f64;
+            for k in 0..4 {
+                s += f64::from(a[i * 4 + k]) * f64::from(b[k * 4 + j]);
+            }
+            #[allow(clippy::cast_possible_truncation)] // the store to f32
+            {
+                out[i * 4 + j] = s as f32;
+            }
         }
     }
     out
@@ -254,15 +300,15 @@ fn used_constants(code: &[u8]) -> Vec<(u8, String, u32, u32)> {
             .bindings
             .iter()
             .find(|x| x.kind == ffx_dxbc::BindKind::ConstantBuffer && x.name == b.name)
-            .map_or(0, |x| x.slot);
+            .map_or(0, |x| u8::try_from(x.slot).unwrap_or(u8::MAX));
         for v in b.variables.iter().filter(|v| v.used) {
             if v.members.is_empty() {
-                out.push((slot as u8, v.name.clone(), v.offset, v.size));
+                out.push((slot, v.name.clone(), v.offset, v.size));
             } else {
                 for m in &v.members {
                     let size = u32::from(m.rows.max(1)) * u32::from(m.columns) * 4;
                     out.push((
-                        slot as u8,
+                        slot,
                         format!("{}.{}", v.name, m.name),
                         v.offset + m.offset,
                         size,
@@ -289,9 +335,9 @@ pub struct LayoutPair {
 /// The `DXGI_FORMAT`s a `PVertexStream.m_type` is read as.
 fn stream_formats(t: u8) -> &'static [u32] {
     match t {
-        1 => &[16],     // float2: R32G32_FLOAT
-        2 => &[6],      // float3: R32G32B32_FLOAT
-        3 => &[2],      // float4: R32G32B32A32_FLOAT
+        1 => &[16],        // float2: R32G32_FLOAT
+        2 => &[6],         // float3: R32G32B32_FLOAT
+        3 => &[2],         // float4: R32G32B32A32_FLOAT
         0x13 => &[28, 30], // four bytes: R8G8B8A8_UNORM or _UINT
         _ => &[],
     }
@@ -329,10 +375,18 @@ fn layout_verdict(
                 *offset == e.offset as usize && stream_formats(*t).contains(&e.format)
             })
         });
-        match hit {
-            Some((name, t, _)) => pairs.push(LayoutPair {
-                stream: name.clone(),
-                stream_type: *t,
+        // An input the mesh has no stream for reads a stand-in: the slot
+        // holds another block of the segment, read with the shader's
+        // format (TEXCOORD1 float3 from the ST block, 4 draws of fw1).
+        let stand_in = || {
+            streams
+                .and_then(|list| list.first())
+                .map(|(name, t, _)| (format!("{name} (stand-in)"), *t))
+        };
+        match hit.map(|(n, t, _)| (n.clone(), *t)).or_else(stand_in) {
+            Some((name, t)) => pairs.push(LayoutPair {
+                stream: name,
+                stream_type: t,
                 semantic: e.semantic.clone(),
                 index: e.index,
                 format: e.format,
@@ -408,7 +462,9 @@ pub fn census(cap: &Capture, index: &AssetIndex) -> Vec<DrawCensus> {
         let number = out.len();
         let pass = {
             let blend = cap.state(d.blend, StateKind::Blend).is_some_and(blend_on);
-            let writes = cap.state(d.depth, StateKind::Depth).is_none_or(depth_writes);
+            let writes = cap
+                .state(d.depth, StateKind::Depth)
+                .is_none_or(depth_writes);
             if blend || !writes {
                 Pass::Transparent
             } else {
@@ -463,7 +519,7 @@ pub fn census(cap: &Capture, index: &AssetIndex) -> Vec<DrawCensus> {
                 });
                 continue;
             };
-            let k = key::buffer(data);
+            let k = key::buffer(desc, data);
             let index_buffer = role == "ib";
             let found: Vec<Source> = index
                 .get(k)
@@ -522,13 +578,16 @@ pub fn census(cap: &Capture, index: &AssetIndex) -> Vec<DrawCensus> {
         }
         let names = ps_code.map(texture_names).unwrap_or_default();
         for &(slot, view) in &d.ps_srv {
-            let role = match names.get(&u32::from(slot)) {
-                Some(n) => format!("ps-t{slot}:{n}"),
-                None => format!("ps-t{slot}"),
-            };
             let tex = cap.view_texture(view);
+            let shape = tex.map_or_else(String::new, |t| {
+                format!("[{}x{}/{} f{}]", t.desc[0], t.desc[1], t.desc[2], t.desc[4])
+            });
+            let role = match names.get(&u32::from(slot)) {
+                Some(n) => format!("ps-t{slot}:{n}{shape}"),
+                None => format!("ps-t{slot}{shape}"),
+            };
             let resource = cap.view_resource(view).unwrap_or(0);
-            let k = tex.and_then(|t| t.key());
+            let k = tex.map(|t| t.key());
             let found: Vec<Source> = k
                 .map(|k| index.get(k))
                 .unwrap_or_default()
@@ -536,10 +595,16 @@ pub fn census(cap: &Capture, index: &AssetIndex) -> Vec<DrawCensus> {
                 .filter(|s| matches!(s, Source::Texture { .. }))
                 .cloned()
                 .collect();
-            // D3D11_BIND_RENDER_TARGET 0x20, D3D11_BIND_DEPTH_STENCIL 0x40
-            let bound_as_target = tex.is_some_and(|t| t.desc[8] & 0x60 != 0);
+            let texels = tex
+                .and_then(|t| t.content())
+                .and_then(|c| index.by_content.get(&c))
+                .cloned()
+                .unwrap_or_default();
+            let bound_as_target = tex.is_some_and(|t| ffx_drawdiff::key::is_target(t.desc));
             let verdict = if !found.is_empty() {
                 Verdict::Matched(found)
+            } else if !texels.is_empty() {
+                Verdict::Texels(texels)
             } else if targets.contains(&resource) || bound_as_target {
                 Verdict::RenderTarget
             } else if tex.is_some_and(|t| t.desc[7] == 2) {
@@ -584,7 +649,9 @@ pub fn census(cap: &Capture, index: &AssetIndex) -> Vec<DrawCensus> {
                 }
             })
             .collect();
-        let view_z = view_depth(cap, d, &consts);
+        let first_bounds = info.and_then(|i| i.bounds.iter().flatten().next().copied());
+        let view_z = first_bounds.and_then(|b| view_depth(d, &consts, &b));
+        let render_order = first_bounds.map(|b| b.render_order);
         out.push(DrawCensus {
             cmd,
             number,
@@ -597,6 +664,7 @@ pub fn census(cap: &Capture, index: &AssetIndex) -> Vec<DrawCensus> {
             bound,
             constants,
             view_z,
+            render_order,
             index_count: d.count,
             layout_pairs,
         });
@@ -604,10 +672,19 @@ pub fn census(cap: &Capture, index: &AssetIndex) -> Vec<DrawCensus> {
     out
 }
 
-/// The view-space z of the draw's vertex bounds centre: positions from the
-/// vertex buffer in slot 0 (`POSITION` at offset 0), through `World` and
-/// `scene.View` (row vectors: `p . World . View`).
-fn view_depth(cap: &Capture, d: &Draw, consts: &[(char, u8, String, u32, u32)]) -> Option<f32> {
+/// The view-space z of an instance's bounds centre, as the renderer's sort
+/// key takes it (`docs/formats/scene.md`, "Sort"): centre
+/// `m_min + m_size * 0.5` in f32, through the draw's `World`, dotted with
+/// the view's z row (`scene.View`'s third stored row), each step rounded
+/// to f32. The
+/// transparent key is this value, the opaque key its negation; the camera
+/// looks down -z, so ascending keys draw transparent far to near and
+/// opaque near to far.
+fn view_depth(
+    d: &Draw,
+    consts: &[(char, u8, String, u32, u32)],
+    bounds: &ffx_phyre::Bounds,
+) -> Option<f32> {
     let find = |name: &str| {
         consts
             .iter()
@@ -616,31 +693,237 @@ fn view_depth(cap: &Capture, d: &Draw, consts: &[(char, u8, String, u32, u32)]) 
             .and_then(mat)
     };
     let (world, view) = (find("World")?, find("scene.View")?);
-    let v = d.vertex.iter().find(|v| v.0 == 0)?;
-    let (_, data) = cap.buffer(v.1)?;
-    let stride = v.2 as usize;
-    if stride < 12 {
-        return None;
+    let c: [f32; 3] = std::array::from_fn(|k| bounds.size[k] * 0.5 + bounds.min[k]);
+    // World is stored transposed: row i of the stored matrix gives
+    // coordinate i.
+    let p: [f32; 3] = std::array::from_fn(|i| {
+        world[i * 4] * c[0] + world[i * 4 + 1] * c[1] + world[i * 4 + 2] * c[2] + world[i * 4 + 3]
+    });
+    let z = &view[8..12];
+    Some(z[3] + (z[0] * p[0] + z[1] * p[1] + z[2] * p[2]))
+}
+
+/// The renderer's order of two visible instances (`docs/formats/scene.md`,
+/// "Sort"; `PCheckVisibleBoundsJob_compareEntries` `0x009f2d70`): render
+/// orders with `ro / 100000000 == 1` first, then `ro % 1000` ascending,
+/// then `(ro % 100000) / 1000` ascending, then the depth key ascending.
+#[must_use]
+pub fn sort_before(a: (i32, f32), b: (i32, f32)) -> bool {
+    let class = |ro: i32| ro / 100_000_000 == 1;
+    if class(a.0) != class(b.0) {
+        return class(a.0);
     }
-    let mut lo = [f32::MAX; 3];
-    let mut hi = [f32::MIN; 3];
-    for c in data.chunks_exact(stride) {
-        for k in 0..3 {
-            let x = f32::from_le_bytes(c[4 * k..4 * k + 4].try_into().ok()?);
-            lo[k] = lo[k].min(x);
-            hi[k] = hi[k].max(x);
+    if a.0 % 1000 != b.0 % 1000 {
+        return a.0 % 1000 < b.0 % 1000;
+    }
+    if (a.0 % 100_000) / 1000 != (b.0 % 100_000) / 1000 {
+        return (a.0 % 100_000) / 1000 < (b.0 % 100_000) / 1000;
+    }
+    a.1 < b.1
+}
+
+/// Checks the frame's draw order against the sort rule: per run of draws
+/// of one pass and one cluster, the instances in draw order (a mesh
+/// instance's segments are drawn together), each pair of neighbours in
+/// rule order. Returns (pairs checked, pairs out of order, the first
+/// ones out of order as text).
+#[must_use]
+pub fn sort_check(draws: &[DrawCensus]) -> (usize, usize, Vec<String>) {
+    let mut instances: Vec<(Pass, String, String, i32, f32, usize)> = Vec::new();
+    for d in draws {
+        let (Some((model, _)), Some(z), Some(ro)) = (&d.segment, d.view_z, d.render_order) else {
+            continue;
+        };
+        let name = d.instances.first().cloned().unwrap_or_default();
+        let key = if d.pass == Pass::Opaque { -z } else { z };
+        if instances
+            .last()
+            .is_some_and(|l| l.0 == d.pass && l.1 == *model && l.2 == name)
+        {
+            continue;
+        }
+        instances.push((d.pass, model.clone(), name, ro, key, d.number));
+    }
+    let (mut checked, mut bad, mut notes) = (0, 0, Vec::new());
+    for w in instances.windows(2) {
+        let (a, b) = (&w[0], &w[1]);
+        if a.0 != b.0 || a.1 != b.1 {
+            continue;
+        }
+        checked += 1;
+        if sort_before((b.3, b.4), (a.3, a.4)) {
+            bad += 1;
+            if notes.len() < 10 {
+                notes.push(format!(
+                    "draw {} {} (ro {}, key {}) after draw {} {} (ro {}, key {})",
+                    b.5, b.2, b.3, b.4, a.5, a.2, a.3, a.4
+                ));
+            }
         }
     }
-    let p = [
-        f32::midpoint(lo[0], hi[0]),
-        f32::midpoint(lo[1], hi[1]),
-        f32::midpoint(lo[2], hi[2]),
-        1.0,
-    ];
-    // Matrices are stored transposed (column-major packing): WorldView's
-    // stored form is `View . World`, and z is its third stored row.
-    let wv = mul(&view, &world);
-    Some((0..4).map(|k| p[k] * wv[8 + k]).sum())
+    (checked, bad, notes)
+}
+
+/// A 4x4 constant of a draw's vertex shader, by name (`World`,
+/// `scene.ViewProjection`, …), used or not.
+fn draw_matrix(cap: &Capture, d: &Draw, name: &str) -> Option<Mat> {
+    let code = cap.shader(d.vs)?;
+    let (slot, _, offset) = all_constants(code).into_iter().find(|c| c.1 == name)?;
+    constant_bytes(d, 'v', slot, offset, 64).and_then(mat)
+}
+
+/// The renderer's frustum test of a box (`BoundingBox_IsVisible_00663a30`
+/// with `ClipOutcode` `0x00652470`): visible unless all eight corners are
+/// strictly outside one plane of the clip volume `-w..w` in x, y and z.
+/// `world` and `view_projection` are as the shaders get them (stored
+/// transposed, depth 0..1); z is taken back to the renderer's `-w..w`
+/// range (`2 z - w`), the range of the camera's `+0x70` matrix it culls
+/// with.
+#[must_use]
+pub fn box_visible(b: &ffx_phyre::Bounds, world: &Mat, view_projection: &Mat) -> bool {
+    let mut all = 0x3fu8;
+    for corner in 0..8 {
+        let c: [f32; 3] =
+            std::array::from_fn(|k| b.min[k] + if corner >> k & 1 == 1 { b.size[k] } else { 0.0 });
+        let p: [f32; 4] = std::array::from_fn(|i| {
+            if i == 3 {
+                1.0
+            } else {
+                world[i * 4] * c[0]
+                    + world[i * 4 + 1] * c[1]
+                    + world[i * 4 + 2] * c[2]
+                    + world[i * 4 + 3]
+            }
+        });
+        let clip: [f32; 4] =
+            std::array::from_fn(|i| (0..4).map(|k| view_projection[i * 4 + k] * p[k]).sum());
+        let (x, y, w) = (clip[0], clip[1], clip[3]);
+        let z = 2.0 * clip[2] - w;
+        let mut code = 0u8;
+        code |= u8::from(x > w) | u8::from(y > w) << 1 | u8::from(z > w) << 2;
+        code |= u8::from(x < -w) << 3 | u8::from(y < -w) << 4 | u8::from(z < -w) << 5;
+        all &= code;
+    }
+    all == 0
+}
+
+/// The culling census: for every model the scene draws from, how the
+/// file's node world matrices compare with the drawn instances' `World`
+/// constants, then the instances that drew nothing this frame and whether
+/// the frustum test rejects them (with the World most drawn instances of
+/// the model share: the game sets map worlds at run time), and any
+/// drawn instance the test would reject. Lines of text.
+#[must_use]
+#[allow(clippy::too_many_lines)] // the world check, then the frustum test, per model
+pub fn cull_check(cap: &Capture, draws: &[DrawCensus], index: &AssetIndex) -> Vec<String> {
+    let mut out = Vec::new();
+    let scene: Vec<&Draw> = cap
+        .draws()
+        .filter(|(_, d)| Capture::scene_targets(d).is_some())
+        .map(|(_, d)| d)
+        .collect();
+    let mut by_model: BTreeMap<String, Vec<&DrawCensus>> = BTreeMap::new();
+    for d in draws {
+        if let Some((m, _)) = &d.segment {
+            by_model.entry(m.clone()).or_default().push(d);
+        }
+    }
+    for (model, list) in by_model {
+        let Some(instances) = index.instances.get(&model) else {
+            continue;
+        };
+        let name = model.rsplit('/').next().unwrap_or(&model);
+        // The captured World of each drawn instance against the file's.
+        let mut drawn: BTreeMap<&str, Option<Mat>> = BTreeMap::new();
+        for d in &list {
+            if let (Some(i), Some(x)) = (d.instances.first(), scene.get(d.number)) {
+                drawn
+                    .entry(i.as_str())
+                    .or_insert_with(|| draw_matrix(cap, x, "World"));
+            }
+        }
+        let (mut same, mut differ) = (0, Vec::new());
+        for i in instances {
+            if let (Some(Some(got)), Some(file)) = (drawn.get(i.name.as_str()), i.world) {
+                if got
+                    .iter()
+                    .zip(&file)
+                    .all(|(a, b)| a.to_bits() == b.to_bits())
+                {
+                    same += 1;
+                } else {
+                    differ.push(format!("{} ({} ulp)", i.name, ulps(got, &file)));
+                }
+            }
+        }
+        out.push(format!(
+            "{name}: World = file node world for {same} drawn instances, differs for {}",
+            differ.len()
+        ));
+        // The World most drawn instances share: what the others are
+        // assumed to have (the game writes map worlds at run time).
+        let mut counts: Vec<(Mat, usize)> = Vec::new();
+        for w in drawn.values().flatten() {
+            match counts
+                .iter_mut()
+                .find(|c| c.0.map(f32::to_bits) == w.map(f32::to_bits))
+            {
+                Some(c) => c.1 += 1,
+                None => counts.push((*w, 1)),
+            }
+        }
+        let common = counts.iter().max_by_key(|c| c.1).map(|c| c.0);
+        if let Some(c) = common {
+            out.push(format!(
+                "  most common World ({} of {}): {c:?}",
+                counts.iter().map(|c| c.1).max().unwrap_or(0),
+                drawn.len()
+            ));
+        }
+        let vp = list.iter().find_map(|d| {
+            scene
+                .get(d.number)
+                .and_then(|x| draw_matrix(cap, x, "scene.ViewProjection"))
+        });
+        let Some(vp) = vp else { continue };
+        let (mut outside, mut inside, mut unknown) = (Vec::new(), Vec::new(), Vec::new());
+        for i in instances
+            .iter()
+            .filter(|i| !drawn.contains_key(i.name.as_str()))
+        {
+            match (i.bounds, common) {
+                (Some(b), Some(w)) => {
+                    if box_visible(&b, &w, &vp) {
+                        inside.push(i.name.clone());
+                    } else {
+                        outside.push(i.name.clone());
+                    }
+                }
+                _ => unknown.push(i.name.clone()),
+            }
+        }
+        out.push(format!(
+            "{name}: {} instances, {} drawn; not drawn (with the common World): {} outside the frustum {outside:?}, {} inside {inside:?}, {} not testable {unknown:?}",
+            instances.len(),
+            drawn.len(),
+            outside.len(),
+            inside.len(),
+            unknown.len(),
+        ));
+        let rejected: Vec<&str> = instances
+            .iter()
+            .filter(|i| drawn.contains_key(i.name.as_str()))
+            .filter(|i| {
+                let world = drawn.get(i.name.as_str()).copied().flatten();
+                matches!((i.bounds, world), (Some(b), Some(w)) if !box_visible(&b, &w, &vp))
+            })
+            .map(|i| i.name.as_str())
+            .collect();
+        if !rejected.is_empty() {
+            out.push(format!("  drawn but outside by the test: {rejected:?}"));
+        }
+    }
+    out
 }
 
 /// Checks of how the derived matrices are computed: for each relation, the
@@ -653,7 +936,9 @@ pub fn matrix_checks(cap: &Capture) -> BTreeMap<&'static str, (usize, usize, u32
         if Capture::scene_targets(d).is_none() {
             continue;
         }
-        let Some(code) = cap.shader(d.vs) else { continue };
+        let Some(code) = cap.shader(d.vs) else {
+            continue;
+        };
         let consts: Vec<(char, u8, String, u32, u32)> = used_constants(code)
             .into_iter()
             .map(|(s, n, o, z)| ('v', s, n, o, z))
@@ -662,7 +947,13 @@ pub fn matrix_checks(cap: &Capture) -> BTreeMap<&'static str, (usize, usize, u32
         let all = all_constants(code);
         let find = |name: &str| {
             all.iter()
-                .chain(consts.iter().map(|c| (c.1, c.2.clone(), c.3)).collect::<Vec<_>>().iter())
+                .chain(
+                    consts
+                        .iter()
+                        .map(|c| (c.1, c.2.clone(), c.3))
+                        .collect::<Vec<_>>()
+                        .iter(),
+                )
                 .find(|c| c.1 == name)
                 .and_then(|c| constant_bytes(d, 'v', c.0, c.2, 64))
                 .and_then(mat)
@@ -721,6 +1012,16 @@ pub fn matrix_checks(cap: &Capture) -> BTreeMap<&'static str, (usize, usize, u32
             check(name, got, a.zip(b).map(|(a, b)| mul(&a, &b)));
             check(reversed, got, a.zip(b).map(|(a, b)| mul(&b, &a)));
         }
+        check(
+            "WorldViewProjection = ViewProjection . World (reversed, f64 sums)",
+            wvp,
+            w.zip(vp).map(|(w, vp)| mul_f64(&vp, &w)),
+        );
+        check(
+            "WorldView = View . World (reversed, f64 sums)",
+            wv,
+            w.zip(v).map(|(w, v)| mul_f64(&v, &w)),
+        );
     }
     out
 }
@@ -739,7 +1040,7 @@ fn all_constants(code: &[u8]) -> Vec<(u8, String, u32)> {
             .bindings
             .iter()
             .find(|x| x.kind == ffx_dxbc::BindKind::ConstantBuffer && x.name == b.name)
-            .map_or(0, |x| x.slot) as u8;
+            .map_or(0, |x| u8::try_from(x.slot).unwrap_or(u8::MAX));
         for v in &b.variables {
             out.push((slot, v.name.clone(), v.offset));
             for m in &v.members {
@@ -761,7 +1062,7 @@ pub fn report(draws: &[DrawCensus]) -> String {
         );
         let _ = write!(
             s,
-            "{:3} cmd {:4} {:?} {}/{} n={} seg={} inst={:?} z={}",
+            "{:3} cmd {:4} {:?} {}/{} n={} seg={} inst={:?} z={} ro={}",
             d.number,
             d.cmd,
             d.pass,
@@ -770,13 +1071,25 @@ pub fn report(draws: &[DrawCensus]) -> String {
             d.index_count,
             seg,
             d.instances,
-            d.view_z.map_or_else(|| "-".into(), |z| format!("{z:.1}")),
+            d.view_z.map_or_else(|| "-".into(), |z| format!("{z:.3}")),
+            d.render_order.map_or_else(|| "-".into(), |r| r.to_string()),
         );
         for b in &d.bound {
+            let tag = if matches!(b.verdict, Verdict::Texels(_)) {
+                "texels-only:"
+            } else {
+                ""
+            };
             let what = match &b.verdict {
-                Verdict::Matched(src) => match src.first() {
-                    Some(Source::Texture { path, level, .. }) => format!(
-                        "{}@L{level}",
+                Verdict::Matched(src) | Verdict::Texels(src) => match src.first() {
+                    Some(Source::Texture {
+                        path,
+                        level,
+                        width,
+                        height,
+                        levels,
+                    }) => format!(
+                        "{tag}{}@L{level}({width}x{height}/{levels})",
                         path.rsplit('/').next().unwrap_or(path)
                     ),
                     Some(Source::Vertices { block, .. }) => format!("block{block}"),
@@ -838,9 +1151,14 @@ pub fn summary(draws: &[DrawCensus]) -> String {
     for ((p, f), n) in &per {
         let _ = writeln!(s, "{p:?}\t{f}\t{n}");
     }
-    let _ = writeln!(s, "\n== bindings per verdict (bindings / distinct objects) ==");
+    let _ = writeln!(
+        s,
+        "\n== bindings per verdict (bindings / distinct objects) =="
+    );
     for ((k, v), n) in &verdicts {
-        let distinct = unique.get(&(*v, k.clone())).map_or(0, std::collections::BTreeSet::len);
+        let distinct = unique
+            .get(&(*v, k.clone()))
+            .map_or(0, std::collections::BTreeSet::len);
         let _ = writeln!(s, "{k}\t{v}\t{n}\t{distinct}");
     }
     let _ = writeln!(s, "\n== constants by source (draw uses) ==");

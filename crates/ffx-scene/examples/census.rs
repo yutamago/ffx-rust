@@ -28,17 +28,28 @@ fn main() {
     if filters.is_empty() {
         filters = vec!["/map/cdsp/cdsp00/".into(), "/ps3data/chr/".into()];
     }
-    let index = AssetIndex::build(&archive, |p| {
-        ffx_scene::assets::is_shader_cluster(p) || filters.iter().any(|f| p.contains(f.as_str()))
-    })
-    .expect("index");
+    let mut index = AssetIndex::new(ffx_scene::assets::TQ_LOW_DROPPED_LEVELS);
+    index
+        .add_archive(&archive, |p| {
+            ffx_scene::assets::is_shader_cluster(p)
+                || filters.iter().any(|f| p.contains(f.as_str()))
+        })
+        .expect("index");
     // FFX_SCENE_MODS=<game>/mods: the loose-file mods the instance loaded.
-    let mut index = index;
     if let Ok(mods) = std::env::var("FFX_SCENE_MODS") {
         index.add_mods(std::path::Path::new(&mods)).expect("mods");
     }
     let draws = census::census(&cap, &index);
     print!("{}", census::report(&draws));
+    println!("\n== culling ==");
+    for line in census::cull_check(&cap, &draws, &index) {
+        println!("{line}");
+    }
+    let (checked, bad, notes) = census::sort_check(&draws);
+    println!("\n== sort rule: {checked} neighbouring instance pairs, {bad} out of order ==");
+    for n in notes {
+        println!("{n}");
+    }
     println!("\n== derived matrices (draws, bit-exact, largest ULP) ==");
     for (name, (n, exact, u)) in census::matrix_checks(&cap) {
         println!("{name}\t{n}\t{exact}\t{u}");

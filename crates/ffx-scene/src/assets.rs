@@ -58,18 +58,99 @@ impl Source {
 #[derive(Debug, Clone)]
 pub struct SegmentInfo {
     pub material: Option<ffx_phyre::Material>,
-    /// Names of the instances that draw the segment.
+    /// Names of the instances that draw the segment, and their bounds.
     pub instances: Vec<String>,
+    pub bounds: Vec<Option<ffx_phyre::Bounds>>,
     /// Whether any instance has a skeleton (skinned).
     pub skinned: bool,
     pub vertices: usize,
     pub indices: usize,
 }
 
+/// Mip levels the game drops from every texture cluster with
+/// `TextureQuality=TQ_LOW` in `GameSetting.ini` (the user's setting, which
+/// the harness copies into its sandbox): measured on all 96 file textures
+/// of the field-walk-1 frame, from 64x512 to 4096x4096
+/// (`docs/formats/scene.md`, "Textures"). The other settings' values are
+/// not known yet.
+pub const TQ_LOW_DROPPED_LEVELS: u32 = 2;
+
+/// The mip level of a texture cluster the game's texture starts at, when
+/// it drops `dropped` levels: never past the last level.
+#[must_use]
+pub fn texture_start_level(t: &ffx_phyre::Texture, dropped: u32) -> u32 {
+    dropped.min(t.mip_levels.saturating_sub(1))
+}
+
+/// The `ffx-drawdiff` key of the texture the game makes from a texture
+/// cluster, starting at mip level `first`: its description (top size,
+/// remaining levels, faces, format) and the first face's (or every
+/// face's) top level.
+#[must_use]
+pub fn file_texture_key(t: &ffx_phyre::Texture, first: u32) -> Option<u64> {
+    let faces: u32 = if t.kind == ffx_phyre::Kind::CubeMap {
+        6
+    } else {
+        1
+    };
+    let format = key::dxgi_format(t.format);
+    let level_dims = |l: u32| ((t.width >> l).max(1), (t.height >> l).max(1));
+    let chain: usize = (0..t.mip_levels)
+        .map(|l| {
+            let (w, h) = level_dims(l);
+            t.format.level_size(w, h)
+        })
+        .sum();
+    let skipped: usize = (0..first)
+        .map(|l| {
+            let (w, h) = level_dims(l);
+            t.format.level_size(w, h)
+        })
+        .sum();
+    let (w, h) = level_dims(first);
+    let len = t.format.level_size(w, h);
+    let desc = [
+        w,
+        h,
+        t.mip_levels.checked_sub(first)?,
+        faces,
+        format,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ];
+    let row = u32::try_from(key::row_bytes(format, w)?).ok()?;
+    // Subresource `face * mips` is a face's top level (D3D11 order); the
+    // key reads only those, so the other levels stay empty here. The file
+    // holds each face's whole chain in turn.
+    let mips = desc[2] as usize;
+    let mut subresources = vec![
+        ffx_gfx::Subresource {
+            row_pitch: 0,
+            data: Vec::new(),
+        };
+        faces as usize * mips
+    ];
+    for f in 0..faces as usize {
+        let at = f * chain + skipped;
+        subresources[f * mips] = ffx_gfx::Subresource {
+            row_pitch: row,
+            data: t.pixels().get(at..at + len)?.to_vec(),
+        };
+    }
+    Some(key::texture(&desc, &subresources))
+}
+
 /// Every object of the indexed clusters, by key.
 #[derive(Debug, Default, Clone)]
 pub struct AssetIndex {
+    /// `ffx-drawdiff` keys of the objects the game makes from the clusters.
     pub by_key: HashMap<u64, Vec<Source>>,
+    /// Texture levels by their texels alone ([`key::content`]).
+    pub by_content: HashMap<u64, Vec<Source>>,
     /// (model path, segment) → its facts.
     pub segments: HashMap<(String, usize), SegmentInfo>,
     /// Shader key → shader effect name (`phyredefaultlitshader.fx`).
@@ -77,9 +158,57 @@ pub struct AssetIndex {
     /// Clusters read, and those that failed to parse (path, why).
     pub read: usize,
     pub failed: Vec<(String, String)>,
+    /// Mip levels the game drops from texture clusters (its texture
+    /// quality setting); [`AssetIndex::new`] takes it.
+    pub dropped_levels: u32,
+    /// Model path → its mesh instances: (name, bounds, segments).
+    pub instances: HashMap<String, Vec<InstanceInfo>>,
+}
+
+/// A model's mesh instance, for the culling census.
+#[derive(Debug, Clone)]
+pub struct InstanceInfo {
+    pub name: String,
+    pub bounds: Option<ffx_phyre::Bounds>,
+    pub segments: Vec<usize>,
+    pub skinned: bool,
+    /// Its node's world matrix as the file's hierarchy gives it (each
+    /// `m_localMatrix` times its parent's, column-major, f32 sums), in
+    /// memory order; `None` without a node.
+    pub world: Option<[f32; 16]>,
+}
+
+/// A node's world matrix: the product of the local matrices up the
+/// parents (column-major: parent . local), in memory order.
+#[must_use]
+pub fn node_world(nodes: &[ffx_phyre::Node], node: usize) -> Option<[f32; 16]> {
+    let n = nodes.get(node)?;
+    let local = n.local;
+    let Some(parent) = n.parent.and_then(|p| node_world(nodes, p)) else {
+        return Some(local);
+    };
+    // Column-major: (P . L)[c][r] = sum_k P[k][r] L[c][k], element [c * 4 + r].
+    Some(std::array::from_fn(|i| {
+        let (c, r) = (i / 4, i % 4);
+        let mut s = 0f32;
+        for k in 0..4 {
+            s += parent[k * 4 + r] * local[c * 4 + k];
+        }
+        s
+    }))
 }
 
 impl AssetIndex {
+    /// An empty index for a game that drops `dropped_levels` mip levels
+    /// from textures ([`TQ_LOW_DROPPED_LEVELS`] on `TQ_LOW`).
+    #[must_use]
+    pub fn new(dropped_levels: u32) -> Self {
+        Self {
+            dropped_levels,
+            ..Self::default()
+        }
+    }
+
     fn add(&mut self, key: u64, source: Source) {
         let list = self.by_key.entry(key).or_default();
         if !list.contains(&source) {
@@ -91,19 +220,19 @@ impl AssetIndex {
     ///
     /// # Errors
     /// When the archive cannot be read.
-    pub fn build(
+    pub fn add_archive(
+        &mut self,
         archive: &ffx_vbf::Archive,
         want: impl Fn(&str) -> bool,
-    ) -> Result<Self, ffx_vbf::Error> {
-        let mut index = Self::default();
+    ) -> Result<(), ffx_vbf::Error> {
         for e in archive.entries() {
             if !e.path.ends_with(".phyre") || !want(&e.path) {
                 continue;
             }
             let bytes = archive.read(e)?;
-            index.add_cluster(&e.path, bytes);
+            self.add_cluster(&e.path, bytes);
         }
-        Ok(index)
+        Ok(())
     }
 
     /// Indexes the loose-file mods of a game folder (`<game>/mods/<mod>/<archive
@@ -157,27 +286,34 @@ impl AssetIndex {
         } else if path.ends_with(".dds.phyre") {
             match ffx_phyre::Texture::parse(bytes) {
                 Ok(t) => {
-                    // Every level of the first face: the game may start
-                    // below the top.
+                    let source = |level| Source::Texture {
+                        path: path.to_owned(),
+                        level,
+                        width: t.width,
+                        height: t.height,
+                        levels: t.mip_levels,
+                    };
+                    // Every level of the first face by its texels alone:
+                    // which level a captured texture starts at.
                     let (mut w, mut h, mut at) = (t.width, t.height, 0);
                     for level in 0..t.mip_levels {
                         let len = t.format.level_size(w, h);
                         let Some(bytes) = t.pixels().get(at..at + len) else {
                             break;
                         };
-                        self.add(
-                            key::texture(bytes),
-                            Source::Texture {
-                                path: path.to_owned(),
-                                level,
-                                width: t.width,
-                                height: t.height,
-                                levels: t.mip_levels,
-                            },
-                        );
+                        let list = self.by_content.entry(key::content(bytes)).or_default();
+                        let s = source(level);
+                        if !list.contains(&s) {
+                            list.push(s);
+                        }
                         at += len;
                         w = (w / 2).max(1);
                         h = (h / 2).max(1);
+                    }
+                    // The texture the game makes from the file.
+                    let first = texture_start_level(&t, self.dropped_levels);
+                    if let Some(k) = file_texture_key(&t, first) {
+                        self.add(k, source(first));
                     }
                 }
                 Err(e) => self.failed.push((path.to_owned(), e.to_string())),
@@ -191,10 +327,23 @@ impl AssetIndex {
     }
 
     fn add_model(&mut self, path: &str, bytes: &[u8], m: &ffx_phyre::Model) {
+        self.instances.insert(
+            path.to_owned(),
+            m.instances
+                .iter()
+                .map(|i| InstanceInfo {
+                    name: i.name.clone(),
+                    bounds: i.bounds,
+                    segments: i.segments.iter().map(|x| x.0).collect(),
+                    skinned: i.skeleton.is_some(),
+                    world: i.node.and_then(|n| node_world(&m.nodes, n)),
+                })
+                .collect(),
+        );
         for (s, seg) in m.buffers().iter().enumerate() {
             if let Some(ix) = bytes.get(seg.indices.clone()) {
                 self.add(
-                    key::buffer(ix),
+                    key::static_buffer(ix, true),
                     Source::Indices {
                         model: path.to_owned(),
                         segment: s,
@@ -204,7 +353,7 @@ impl AssetIndex {
             for (b, block) in seg.blocks.iter().enumerate() {
                 if let Some(vb) = bytes.get(block.bytes.clone()) {
                     self.add(
-                        key::buffer(vb),
+                        key::static_buffer(vb, false),
                         Source::Vertices {
                             model: path.to_owned(),
                             segment: s,
@@ -225,6 +374,7 @@ impl AssetIndex {
                 SegmentInfo {
                     material: segment.material.and_then(|i| m.materials.get(i).cloned()),
                     instances: instances.iter().map(|i| i.name.clone()).collect(),
+                    bounds: instances.iter().map(|i| i.bounds).collect(),
                     skinned: instances.iter().any(|i| i.skeleton.is_some())
                         || !segment.joints.is_empty(),
                     vertices: segment.positions.len(),

@@ -1,80 +1,68 @@
-//! Content keys: what names a GPU object independently of the run, so a
-//! captured draw and an object built from the archive can be matched
-//! (`docs/formats/scene.md`, "Content keys").
-//!
-//! - shaders: FNV-1a 64 of the DXBC container ([`ffx_dxbc::hash`]);
-//! - textures: FNV-1a 64 of the top mip level, rows packed (no pitch
-//!   padding), in the bytes' own row order;
-//! - static vertex and index buffers: FNV-1a 64 of the whole contents.
-//!
-//! These are the keys of the M4 round-1 plan; `ffx-drawdiff` defines the
-//! same scheme for the draw-stream comparison.
+//! Content keys: `ffx-drawdiff`'s scheme (`docs/drawdiff.md`, "Keys"),
+//! plus what the archive side needs to make the same keys: the
+//! descriptions the game gives the objects it makes from clusters
+//! (`docs/formats/scene.md`, "Asset parity").
 
-/// FNV-1a 64.
+pub use ffx_drawdiff::key::{Fnv, Key, buffer, row_bytes, shader, texture};
+
+/// `D3D11_USAGE_IMMUTABLE`: every static vertex and index buffer.
+pub const USAGE_IMMUTABLE: u32 = 1;
+/// `D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_SHADER_RESOURCE`.
+pub const BIND_VERTICES: u32 = 0x9;
+/// `D3D11_BIND_INDEX_BUFFER | D3D11_BIND_SHADER_RESOURCE`.
+pub const BIND_INDICES: u32 = 0xa;
+
+/// The description the game gives a model's vertex buffer (one per
+/// `PDataBlock`) or index buffer (one per segment) of `len` bytes.
 #[must_use]
-pub fn fnv(bytes: &[u8]) -> u64 {
-    ffx_dxbc::hash(bytes)
+pub fn static_buffer_desc(len: usize, indices: bool) -> ffx_gfx::BufferDesc {
+    let bind = if indices { BIND_INDICES } else { BIND_VERTICES };
+    [
+        u32::try_from(len).unwrap_or(u32::MAX),
+        USAGE_IMMUTABLE,
+        bind,
+        0,
+        0,
+        0,
+    ]
 }
 
-/// The key of a shader's bytecode.
+/// The key of a static buffer the game makes from `bytes`.
 #[must_use]
-pub fn shader(bytecode: &[u8]) -> u64 {
-    fnv(bytecode)
+pub fn static_buffer(bytes: &[u8], indices: bool) -> Key {
+    buffer(&static_buffer_desc(bytes.len(), indices), bytes)
 }
 
-/// The key of a static buffer's contents.
+/// The `DXGI_FORMAT` of a texture cluster's format.
 #[must_use]
-pub fn buffer(bytes: &[u8]) -> u64 {
-    fnv(bytes)
+pub fn dxgi_format(format: ffx_phyre::Format) -> u32 {
+    match format {
+        ffx_phyre::Format::Dxt1 => 71,  // BC1_UNORM
+        ffx_phyre::Format::Dxt3 => 74,  // BC2_UNORM
+        ffx_phyre::Format::Dxt5 => 77,  // BC3_UNORM
+        ffx_phyre::Format::Argb8 => 87, // B8G8R8A8_UNORM
+        ffx_phyre::Format::L8 => 61,    // R8_UNORM
+    }
 }
 
-/// The key of a texture's top mip level, given tightly packed rows.
+/// FNV-1a 64 of raw bytes: a texture level's texels alone, to tell which
+/// level of a file a captured texture starts at when its description
+/// differs.
 #[must_use]
-pub fn texture(top_mip: &[u8]) -> u64 {
-    fnv(top_mip)
-}
-
-/// (bytes per row, rows) of one mip level of a `DXGI_FORMAT`, for the
-/// formats the game's scene uses; `None` for others.
-#[must_use]
-pub fn level_shape(format: u32, width: u32, height: u32) -> Option<(usize, usize)> {
-    let blocks = |n: u32| n.div_ceil(4).max(1) as usize;
-    let (w, h) = (width.max(1) as usize, height.max(1) as usize);
-    Some(match format {
-        // BC1
-        70..=72 => (blocks(width) * 8, blocks(height)),
-        // BC2, BC3
-        73..=78 => (blocks(width) * 16, blocks(height)),
-        // BC4
-        79..=81 => (blocks(width) * 8, blocks(height)),
-        // BC5
-        82..=84 => (blocks(width) * 16, blocks(height)),
-        // R32G32B32A32
-        1..=4 => (w * 16, h),
-        // R16G16B16A16
-        9..=14 => (w * 8, h),
-        // R10G10B10A2, R8G8B8A8, R16G16, R32, D24S8, B8G8R8A8/X8
-        23..=45 | 87..=93 => (w * 4, h),
-        // R8G8, R16, D16
-        48..=59 => (w * 2, h),
-        // R8, A8
-        60..=65 => (w, h),
-        _ => return None,
-    })
+pub fn content(bytes: &[u8]) -> Key {
+    Fnv::new().bytes(bytes).finish()
 }
 
 /// A captured subresource's rows without the pitch padding.
 #[must_use]
-pub fn pack_rows(data: &[u8], row_pitch: usize, row_bytes: usize, rows: usize) -> Vec<u8> {
-    let mut out = Vec::with_capacity(row_bytes * rows);
-    for r in 0..rows {
-        let at = r * row_pitch;
-        match data.get(at..at + row_bytes) {
-            Some(row) => out.extend_from_slice(row),
-            None => break,
-        }
+pub fn pack_rows(data: &[u8], row_pitch: usize, row_bytes: usize) -> Vec<u8> {
+    if row_pitch == 0 {
+        return data.to_vec();
     }
-    out
+    data.chunks(row_pitch)
+        .flat_map(|r| &r[..row_bytes.min(r.len())])
+        .copied()
+        .collect()
 }
 
 #[cfg(test)]
@@ -82,18 +70,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fnv_matches_the_reference_values() {
-        assert_eq!(fnv(b""), 0xcbf2_9ce4_8422_2325);
-        assert_eq!(fnv(b"a"), 0xaf63_dc4c_8601_ec8c);
+    fn static_keys_are_drawdiff_keys() {
+        let bytes = [1u8, 2, 3, 4];
+        assert_eq!(
+            static_buffer(&bytes, false),
+            buffer(&[4, 1, 9, 0, 0, 0], &bytes)
+        );
+        assert_ne!(static_buffer(&bytes, false), static_buffer(&bytes, true));
     }
 
     #[test]
-    fn shapes_and_packing() {
-        assert_eq!(level_shape(71, 256, 128), Some((64 * 8, 32)));
-        assert_eq!(level_shape(77, 2, 2), Some((16, 1)));
-        assert_eq!(level_shape(28, 3, 2), Some((12, 2)));
-        assert_eq!(level_shape(999, 1, 1), None);
-        let data = [1, 2, 0, 0, 3, 4, 0, 0];
-        assert_eq!(pack_rows(&data, 4, 2, 2), vec![1, 2, 3, 4]);
+    fn packing() {
+        assert_eq!(pack_rows(&[1, 2, 0, 0, 3, 4, 0, 0], 4, 2), vec![1, 2, 3, 4]);
+        assert_eq!(content(b""), 0xcbf2_9ce4_8422_2325);
     }
 }

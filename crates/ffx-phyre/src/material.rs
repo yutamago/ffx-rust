@@ -360,7 +360,10 @@ impl Resolver<'_> {
         let Some(list) = self.list_of("PMeshInstanceBounds") else {
             return Ok(None);
         };
-        let field = |m: &str| c.member_offset("PMeshInstanceBounds", m).map(|o| o as usize);
+        let field = |m: &str| {
+            c.member_offset("PMeshInstanceBounds", m)
+                .map(|o| o as usize)
+        };
         let (Some(o_min), Some(o_size), Some(o_order)) =
             (field("m_min"), field("m_size"), field("m_render_order"))
         else {

@@ -29,11 +29,20 @@ fn main() {
                 println!("  bind {:?} {} slot {}", b.kind, b.name, b.slot);
             }
             for b in &r.buffers {
-                for v in b.variables.iter().filter(|v| v.used && !v.members.is_empty()) {
+                for v in b
+                    .variables
+                    .iter()
+                    .filter(|v| v.used && !v.members.is_empty())
+                {
                     let m: Vec<String> = v
                         .members
                         .iter()
-                        .map(|m| format!("{}@{}[{}x{}x{}]", m.name, m.offset, m.rows, m.columns, m.elements))
+                        .map(|m| {
+                            format!(
+                                "{}@{}[{}x{}x{}]",
+                                m.name, m.offset, m.rows, m.columns, m.elements
+                            )
+                        })
                         .collect();
                     println!("  struct {}: {}", v.name, m.join(" "));
                 }
