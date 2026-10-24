@@ -334,6 +334,18 @@ characters and motions (`Ch`; motion formats are done); the remaining Atel
 natives; menus and text (`Tk`). It is done when walking, events and the
 menus of a save run on Rust logic and replay identically.
 
+**Done 2026-10-24.**
+- 10,286 functions ported and hooked. 5 are held on purpose: Sg_MainLoop, updateFFX and 0x822490 for M5; opu_v_u2 and pppKeLnsLpTOtDraw until they are observed in-game.
+- 158 functions too short to hook are classified `stub`.
+- All 13 replays in `tools/replays/run-all.sh` give the original's events on Rust logic:
+  - walking (field-walk);
+  - events (event-besaid, event-cliff, event-agency, event-arrival);
+  - menus (menu-browse, menu-shop, menu-grid, menu-save);
+  - battles (battle-attack, battle-magic, battle-overdrive);
+  - the boot (boot).
+- Their screenshots match, or are checked by eye where the original's own runs differ.
+- The event replays found two port bugs, both an 8-word call through a 6-word host (now caught by `tools/check-callwidth.py`). Both are fixed.
+
 ### M4: Rust takes the platform, in-process
 
 Every part of the platform (the scene renderer, effects and
