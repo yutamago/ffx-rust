@@ -355,9 +355,11 @@ when its original mode passes:
 Order (user's decision, 2026-10-24): the renderer's scene first (the
 external renderer exists, and the replays give it screenshot checks), then
 effects and post-processing, the UI, movies, audio, input and the window.
-Every part is first rebuilt to give the original's output exactly;
-improvements to graphics, sound and input come after M4's parity and stay
-backwards compatible (the original behaviour remains selectable).
+Every part is rebuilt to give the original's output exactly. Improvements
+to graphics, sound and input are not part of this rewrite: they are a
+separate project after it, backwards compatible with the original
+behaviour (user, 2026-10-24). The renderer's existing enhanced mode stays
+as it is, but M4 adds no enhancement work.
 
 - Effects (`ppp`) and the remaster renderer (`graphic*`) are rewritten into
   the scene stream: the Rust side builds the scene instead of reading it out
