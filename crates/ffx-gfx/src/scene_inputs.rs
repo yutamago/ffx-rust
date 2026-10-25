@@ -84,6 +84,199 @@ pub struct SceneInputs {
     pub instances: Vec<Instance>,
     /// The materials those instances' segments use.
     pub materials: Vec<Material>,
+    /// The characters' world (`+0x7c`) and the ground-shadow world
+    /// (`+0xbc`) only: what their draws take besides the above
+    /// (`docs/formats/scene-chars.md`). Written after the fields above,
+    /// absent in older records and in the map's.
+    pub chars: Option<Box<CharWorld>>,
+}
+
+/// The character-world part of a record ([`SceneInputs::chars`]).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CharWorld {
+    /// Per entry of [`SceneInputs::instances`], in the same order: its
+    /// skinning inputs.
+    pub instances: Vec<CharInstance>,
+    /// The cloth vertex buffers `batchSetClothVertexBuffers`
+    /// (`0x006365f0`) uploads, per (instance, segment).
+    pub cloth: Vec<Cloth>,
+    /// The character shader's dynamic geometry lists (the blob shadow
+    /// quads `Ch_DrawQuad` `0x00831d10` appends), the current buffer's.
+    pub dyn_geo: Option<DynGeo>,
+    /// The renderer's two camera matrices `generateNodeParameterCaptureBuffer`
+    /// reads (`renderer +0x60` and `+0xa0`, 4x4 each, memory order):
+    /// `WorldViewInverse` is `WorldInverse . (+0x60)`, `WorldView`
+    /// `(+0xa0) . World`.
+    pub renderer: Vec<[f32; 16]>,
+}
+
+/// A `PMeshInstance`'s skinning inputs, as `computeJointMatrices`
+/// (`0x004f6ef0`) and `generateNodeParameterCaptureBuffer`'s
+/// `BoneTransforms` (`0x005b7fe0`, semantic `0x8f`) read them.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CharInstance {
+    /// `+0x6c` (bit 0: the instance world is the identity).
+    pub flags: u32,
+    /// Per joint (mesh `+0x18` of them): the instance's matrix (`+0xc`,
+    /// 16 floats, column-major: the joint relative to its parent) and its
+    /// parent from the mesh's `+0x2c` table (`i32`, -1 the instance
+    /// world).
+    pub joints: Vec<[f32; 16]>,
+    pub joint_parent: Vec<i32>,
+    /// The mesh's skeleton matrices (`+8` count, `+0xc` array): each
+    /// joint's inverse bind matrix.
+    pub skeleton: Vec<[f32; 16]>,
+    /// Per segment (as [`Instance::segments`]): `m_skinBones` (`+8`
+    /// count, `+0xc` array of `PSkinBoneRemap`: hierarchy and skeleton
+    /// matrix index).
+    pub skin_bones: Vec<Vec<[u16; 2]>>,
+}
+
+/// One cloth vertex buffer (`batchSetClothVertexBuffers`).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Cloth {
+    /// Index into [`SceneInputs::instances`] (`u32::MAX`: an instance
+    /// outside this world) and the segment.
+    pub instance: u32,
+    pub segment: u32,
+    /// The graphic character slot (`0x00ccb254` table) and the instance's
+    /// place in its list.
+    pub slot: u32,
+    pub list_index: u32,
+    /// The cloth object's first 16 floats (what `ClothWorld` is set
+    /// from), its `+0x44` (vertex count) and the bytes of its `+0x4c` (16
+    /// per vertex).
+    pub matrix: [f32; 16],
+    pub count: u32,
+    pub vertices: Vec<u8>,
+}
+
+/// The dynamic geometry lists of `ClassChrShaderRender`
+/// (`graphicShaderGetVertexInfo` `0x00643db0`, record `+0x94`): `+4`
+/// vertex count, `+8` index count, then per vertex the arrays at `+0xc`
+/// (12 bytes), `+0x10` (12), `+0x14` (16), `+0x18` (8), and the `u16`
+/// indices at `+0x1c`.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct DynGeo {
+    /// The buffer id (`+0x10` of the manager).
+    pub id: u32,
+    pub vertices: u32,
+    pub indices: u32,
+    pub arrays: [Vec<u8>; 4],
+    pub index_bytes: Vec<u8>,
+}
+
+fn write_mat16(w: &mut Writer, m: &[f32; 16]) {
+    write_floats(w, m);
+}
+
+fn write_mats(w: &mut Writer, v: &[[f32; 16]]) {
+    w.u32(len(v.len()));
+    for m in v {
+        write_mat16(w, m);
+    }
+}
+
+fn read_mats(r: &mut Reader) -> Result<Vec<[f32; 16]>, DecodeError> {
+    let mut out = Vec::new();
+    for _ in 0..count(r, 64)? {
+        out.push(read_floats(r)?);
+    }
+    Ok(out)
+}
+
+impl CharWorld {
+    fn write(&self, w: &mut Writer) {
+        w.u32(len(self.instances.len()));
+        for i in &self.instances {
+            w.u32(i.flags);
+            write_mats(w, &i.joints);
+            w.u32(len(i.joint_parent.len()));
+            for &p in &i.joint_parent {
+                w.i32(p);
+            }
+            write_mats(w, &i.skeleton);
+            w.u32(len(i.skin_bones.len()));
+            for s in &i.skin_bones {
+                w.u32(len(s.len()));
+                for b in s {
+                    w.u32(u32::from(b[0]) | u32::from(b[1]) << 16);
+                }
+            }
+        }
+        w.u32(len(self.cloth.len()));
+        for c in &self.cloth {
+            w.u32s(&[c.instance, c.segment, c.slot, c.list_index, c.count]);
+            write_mat16(w, &c.matrix);
+            w.blob(&c.vertices);
+        }
+        match &self.dyn_geo {
+            Some(d) => {
+                w.u8(1);
+                w.u32s(&[d.id, d.vertices, d.indices]);
+                for a in &d.arrays {
+                    w.blob(a);
+                }
+                w.blob(&d.index_bytes);
+            }
+            None => w.u8(0),
+        }
+        write_mats(w, &self.renderer);
+    }
+
+    fn read(r: &mut Reader) -> Result<Self, DecodeError> {
+        let mut out = Self::default();
+        for _ in 0..count(r, 20)? {
+            let flags = r.u32()?;
+            let joints = read_mats(r)?;
+            let mut joint_parent = Vec::new();
+            for _ in 0..count(r, 4)? {
+                joint_parent.push(r.i32()?);
+            }
+            let skeleton = read_mats(r)?;
+            let mut skin_bones = Vec::new();
+            for _ in 0..count(r, 4)? {
+                let mut s = Vec::new();
+                for _ in 0..count(r, 4)? {
+                    let v = r.u32()?;
+                    #[allow(clippy::cast_possible_truncation)] // two halves
+                    s.push([v as u16, (v >> 16) as u16]);
+                }
+                skin_bones.push(s);
+            }
+            out.instances.push(CharInstance {
+                flags,
+                joints,
+                joint_parent,
+                skeleton,
+                skin_bones,
+            });
+        }
+        for _ in 0..count(r, 88)? {
+            let [instance, segment, slot, list_index, count] = r.u32s()?;
+            out.cloth.push(Cloth {
+                instance,
+                segment,
+                slot,
+                list_index,
+                matrix: read_floats(r)?,
+                count,
+                vertices: r.blob()?,
+            });
+        }
+        if r.u8()? != 0 {
+            let [id, vertices, indices] = r.u32s()?;
+            out.dyn_geo = Some(DynGeo {
+                id,
+                vertices,
+                indices,
+                arrays: [r.blob()?, r.blob()?, r.blob()?, r.blob()?],
+                index_bytes: r.blob()?,
+            });
+        }
+        out.renderer = read_mats(r)?;
+        Ok(out)
+    }
 }
 
 /// A `g_DepthBias` entry: `key * scale + bias` for the bounds it names.
@@ -363,6 +556,10 @@ impl SceneInputs {
             w.str(&m.remap_to);
             w.blob(&m.parameters);
         }
+        if let Some(c) = &self.chars {
+            w.u8(1);
+            c.write(w);
+        }
     }
 
     /// Reads a payload.
@@ -461,6 +658,64 @@ impl SceneInputs {
                 parameters: r.blob()?,
             });
         }
+        // The character part, after everything else (older records end
+        // here).
+        if !r.done() && r.u8()? != 0 {
+            s.chars = Some(Box::new(CharWorld::read(r)?));
+        }
         Ok(s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn round_trip(s: &SceneInputs) -> SceneInputs {
+        let mut w = Writer::default();
+        s.write(&mut w);
+        let mut r = Reader::new(&w.bytes);
+        let back = SceneInputs::read(&mut r).expect("read");
+        assert!(r.done(), "trailing bytes");
+        back
+    }
+
+    #[test]
+    fn the_character_part_round_trips() {
+        let mut s = SceneInputs {
+            world: 0x7c,
+            pass: "Opaque".into(),
+            ..SceneInputs::default()
+        };
+        // Without the part, the bytes are those of a record written
+        // before it existed: nothing follows the materials.
+        assert_eq!(round_trip(&s), s);
+        s.chars = Some(Box::new(CharWorld {
+            instances: vec![CharInstance {
+                flags: 1,
+                joints: vec![[1.5; 16], [2.0; 16]],
+                joint_parent: vec![-1, 0],
+                skeleton: vec![[-1.0; 16]],
+                skin_bones: vec![vec![[1, 2], [0xffff, 7]], vec![]],
+            }],
+            cloth: vec![Cloth {
+                instance: 0,
+                segment: 6,
+                slot: 2,
+                list_index: 0,
+                matrix: [0.5; 16],
+                count: 1,
+                vertices: vec![9; 16],
+            }],
+            dyn_geo: Some(DynGeo {
+                id: 1,
+                vertices: 4,
+                indices: 6,
+                arrays: [vec![1; 48], vec![2; 48], vec![3; 64], vec![4; 32]],
+                index_bytes: vec![0, 0, 2, 0, 1, 0],
+            }),
+            renderer: vec![[1.0; 16], [2.0; 16]],
+        }));
+        assert_eq!(round_trip(&s), s);
     }
 }

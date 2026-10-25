@@ -18,6 +18,8 @@ pub mod build;
 pub mod capture;
 pub mod capture_inputs;
 pub mod census;
+pub mod chars;
+pub mod chars_check;
 pub mod cull;
 pub mod effect;
 pub mod emit;
