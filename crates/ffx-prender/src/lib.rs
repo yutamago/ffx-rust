@@ -44,6 +44,7 @@ pub mod declare;
 pub mod descriptor;
 pub mod dtor;
 pub mod glue;
+pub mod glue10;
 pub mod glue2;
 pub mod glue3;
 pub mod glue4;

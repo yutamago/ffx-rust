@@ -2455,6 +2455,7 @@
 0x00637860 function graphicAsyncTaskCallback  # fh v3:exact 0x00637a10
 0x00637880 function graphicCharacterRegistHelper_00637880 # cdecl(out, obj, x, cb): when obj+4 is set, *out = 0x0063c540(obj, x), then cb(x) if cb; eax = obj / 0 / cb's; graphicCharacterRegistToInstantiate calls it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x00637980 function graphicCharacterUnloadTask # fh v3:exact 0x00637b30
+0x00637b30 function graphicCharacterUnregistLoading_00637b30 # cdecl(chr): each g_GraphicCharacterLoading request (+8) for chr operator_delete'd and replaced by the last, count - 1 (top bit kept), storage PhyreFree'd when owned and empty; the index moves on (a moved request is not rechecked); name ours; ported M4 h3 r3 (ffx_prender::glue10)
 0x00637d90 function FlashSpriteRenderer_Initialize # fh switch:bsim1.00 0x71000028f0 FlashSpriteRenderer::Initialize
 0x00637e30 function PArray_PushInto_00637e30 # exact copy of PArray_PushInto_00629b90 (tools/dupes.py family): thiscall(array; dst, &value), ret 8; graphicCharacterRegistToInstantiate's on g_GraphicCharacterLoading; ported M4 h3 r3 (ffx_system::container)
 0x00637ec0 function PArray_PushInto_00637ec0 # exact copy of PArray_PushInto_00629b90 (tools/dupes.py family); ported M4 h3 r3 (ffx_system::container)
@@ -2849,7 +2850,7 @@
 0x006456d0 function graphicVFXSetPointLightParameters # fh v3:cg5 0x645880
 0x00645710 function graphicVFXSetVisible      # fh v3:exact+call.cs 0x006458c0 cdecl
 0x00645750 function graphicVFXSetZCorrectionValue # fh v3:exact 0x00645900
-0x00645780 function graphicVFXSetup           # fh v3:exact 0x00645930
+0x00645780 function graphicVFXSetup           # fh v3:exact 0x00645930; ported M4 h3 r3 (ffx_prender::glue10): parts' virtual +4 (0, 0); PhyrePrintf(1, 0x00b41a6c / 0x00b41a2c) on a null instance / missing render data
 0x00645840 function graphicVFXSyncPath        # fh v3:exact 0x006459f0
 0x00645860 function graphicVFXUnloadLevelData # fh v3:exact 0x00645a10
 0x006458a0 function graphicVFXUpdate          # fh v3:exact+call.cs 0x00645a50 cdecl
@@ -2997,7 +2998,7 @@
 0x006564a0 function PhyreScene_addChrDrawSituation # fh v3:exact 0x00656650 PhyreScene::addChrDrawSituation
 0x00656590 function PhyreScene_addToPipeline_00656590 # thiscall(scene, entry), ret 4: entry +0x1c = 0, appended to the array +0xfb48 (count, capacity, data; Array_Reserve_00667f80(n + 2 + n/8) when full); only caller graphicCharacterInstanceAddToPipeline; name ours; ported M4 h3 r2 (ffx_prender::glue4)
 0x006565e0 function PhyreScene_AddVFXToList3880 # thiscall(scene, mesh instance): appends to the PArray +0x3880 (count +0x3878, capacity +0x387c) unless present; VfxGeometry_Register_006a52f0 kind 0 with the geometry's byte +0x50 set; no draw pass found for it in PhyreScene_render (effects census); name ours
-0x006566c0 function PhyreScene_detachChrClusterFrom3DWorld # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f7370 PhyreScene::detachChrClusterFrom3DWorld, 2 votes, round 2
+0x006566c0 function PhyreScene_detachChrClusterFrom3DWorld # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f7370 PhyreScene::detachChrClusterFrom3DWorld, 2 votes, round 2; ported M4 h3 r3 (ffx_prender::glue10): despite the name it adds each queued (world, list) pair's clusters with Phyre_PWorld_addCluster, under the scene mutex +0xfb3c, then empties the queue +0x1188
 0x00656780 function PhyreScene_PushMeshMatrix # thiscall(scene, mesh, matrix), ret 8: appends (mesh, the 16 words at matrix) to the array +0x10d84 (0x44-byte entries); graphicAddMeshMatrix's call; name ours
 0x006567e0 function PhyreScene_AddVFXToAfterPostList # thiscall(scene, mesh instance): appends to +0x3888 (count +0x388c, PArray capacity +0x3884, grown by 0x400) unless present; VfxGeometry_Register_006a52f0 kind 4 (0x00ccca58 == 1, or geometry +0x3c bit 8); drawn by PhyreScene_RenderVFXAfterPostProcess; name ours
 0x00656940 function PhyreScene_addVFXDrawEvent # fh v3:exact 0x00656af0 PhyreScene::addVFXDrawEvent
@@ -3103,25 +3104,25 @@
 0x00661c80 function PhyreScene_isVFXTextureLoaded_00661c80 # fh v3:bsim0.97 0x00661e10 PhyreScene::isVFXTextureLoaded
 0x00663a30 function BoundingBox_IsVisible_00663a30 # thiscall(box, m), ret 4: eight corners of the box (corner +0, extent +0x10) through m, 1 when the AND of their ClipOutcodes is 0 (no plane with every corner outside); twin of BoundingBox_IsInside_006d27e0; name ours
 0x00663cc0 function MeshInstance_isVisible_00663cc0 # thiscall(mesh, matrix), ret 4 -> eax: BoundingBox_IsVisible_00663a30 with matrix x the 3x4 world matrix +0xc (PMatrix4_FromMatrix3x4_00451080, PMatrix4_Multiply_004ca360 into locals ebp-0x40/-0x80), or a copy of matrix when +0xc is 0; PhyreScene_RenderABmap and PhyreScene_isMeshVisible_006603c0 call it; name ours; ported M4 h3 r2 (ffx_prender::glue5)
-0x00663d40 function PhyreScene_loadAbConeShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/AbmapShaderCone.cgfx.'; Switch 0x7100200600 PhyreScene::loadAbConeShader (symbols from Fahrenheit's server export)
-0x00663e20 function PhyreScene_loadAbWaveShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/AbmapShaderWave.cgfx.'; Switch 0x71002006a0 PhyreScene::loadAbWaveShader (symbols from Fahrenheit's server export)
+0x00663d40 function PhyreScene_loadAbConeShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/AbmapShaderCone.cgfx.'; Switch 0x7100200600 PhyreScene::loadAbConeShader (symbols from Fahrenheit's server export); ported M4 h3 r3 (ffx_prender::glue10, one shape with the other nine shader loaders: file name, scene slot +0xfa70)
+0x00663e20 function PhyreScene_loadAbWaveShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/AbmapShaderWave.cgfx.'; Switch 0x71002006a0 PhyreScene::loadAbWaveShader (symbols from Fahrenheit's server export); ported M4 h3 r3 (ffx_prender::glue10): slot +0xfa74
 0x00663f00 function PhyreScene_loadAtelVFXTexture_00663f00 # thiscall(scene, id), ret 4: PhyreScene_loadVFXTextureAsync(4, id); graphicAtelLoadTexture_00639310 calls it; name ours; ported M4 h3 (ffx_prender::glue)
 0x00663f20 function PhyreScene_loadCharacter  # fh v3:cg17 0x6640b0 PhyreScene::loadCharacter
 0x006642f0 function PhyreScene_loadCharacterAsync # fh v3:exact 0x00664480 PhyreScene::loadCharacterAsync
-0x00664360 function PhyreScene_loadChrShaShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/ChrY0Shadow.cgfx.phyr'; Switch 0x7100200d30 PhyreScene::loadChrShaShader (symbols from Fahrenheit's server export)
+0x00664360 function PhyreScene_loadChrShaShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/ChrY0Shadow.cgfx.phyr'; Switch 0x7100200d30 PhyreScene::loadChrShaShader (symbols from Fahrenheit's server export); ported M4 h3 r3 (ffx_prender::glue10): slot +0xfa7c
 0x00664440 function PhyreScene_loadCutbufferShader # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/CutBuffer.cgfx.phyre'; Switch 0x71001eaad0 PhyreScene::loadCutbufferShader (symbols from Fahrenheit's server export)
 0x00664550 function PhyreScene_loadMagicFileVFXTexture # fh v3:exact 0x006646e0 PhyreScene::loadMagicFileVFXTexture
 0x00664d10 function PhyreScene_loadMagicFileVFXTextureAsync # layout+callees: sorts between PhyreScene_loadMagicFileVFXTexture and PhyreScene_loadMagicVFXTexture, and its named callees match the Switch 0x7100202b00 PhyreScene_loadMagicFileVFXTextureAsync's (similarity 0.67: AsyncLoadManager_registAsyncLoadTask, AsyncLoadManager_sGetInstance); symbols from Fahrenheit's server export
 0x00664d80 function PhyreScene_loadMagicVFXTexture # fh v3:exact 0x00664f10 PhyreScene::loadMagicVFXTexture
 0x00664f60 function PhyreScene_loadMapVFXTexture # fh v3:cg4 0x6650f0 PhyreScene::loadMapVFXTexture; ported M4 h3 r3 (ffx_prender::glue9): frame names at ebp-0x104/-0x204, sprintf(0x00b43b34) with the map id +0xfaf0
-0x00665010 function PhyreScene_loadMenuNoTextureShader # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/MenuDefaultShaderNT.c'; Switch 0x7100200e70 PhyreScene::loadMenuNoTextureShader (symbols from Fahrenheit's server export)
-0x006650f0 function PhyreScene_loadMenuShader    # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/MenuDefaultShader.cgf'; Switch 0x7100200990 PhyreScene::loadMenuShader (symbols from Fahrenheit's server export)
+0x00665010 function PhyreScene_loadMenuNoTextureShader # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/MenuDefaultShaderNT.c'; Switch 0x7100200e70 PhyreScene::loadMenuNoTextureShader (symbols from Fahrenheit's server export); ported M4 h3 r3 (ffx_prender::glue10): slot +0xfa80
+0x006650f0 function PhyreScene_loadMenuShader    # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/MenuDefaultShader.cgf'; Switch 0x7100200990 PhyreScene::loadMenuShader (symbols from Fahrenheit's server export); ported M4 h3 r3 (ffx_prender::glue10): slot +0xfa84
 0x006651d0 function PhyreScene_loadMenuTexture # fh v3:bsim1.00 0x00665360 PhyreScene::loadMenuTexture
-0x00665200 function PhyreScene_loadNAMenuShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/MenuDefaultShaderNA.c'; Switch 0x7100200a30 PhyreScene::loadNAMenuShader (symbols from Fahrenheit's server export)
-0x006652e0 function PhyreScene_loadNBMenuShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/MenuDefaultShaderNB.c'; Switch 0x7100200b30 PhyreScene::loadNBMenuShader (symbols from Fahrenheit's server export)
-0x006653c0 function PhyreScene_loadNTMenuZTestShader # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/MenuDefaultShaderNTZT'; Switch 0x7100200740 PhyreScene::loadNTMenuZTestShader (symbols from Fahrenheit's server export)
-0x006654a0 function PhyreScene_loadNTNBMenuShader # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/MenuDefaultShaderNTNB'; Switch 0x7100200c30 PhyreScene::loadNTNBMenuShader (symbols from Fahrenheit's server export)
-0x00665580 function PhyreScene_loadOptimizedFontShader # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/OptimizedFontShader.c'; Switch 0x7100200840 PhyreScene::loadOptimizedFontShader (symbols from Fahrenheit's server export)
+0x00665200 function PhyreScene_loadNAMenuShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/MenuDefaultShaderNA.c'; Switch 0x7100200a30 PhyreScene::loadNAMenuShader (symbols from Fahrenheit's server export); ported M4 h3 r3 (ffx_prender::glue10): slot +0xfa88
+0x006652e0 function PhyreScene_loadNBMenuShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/MenuDefaultShaderNB.c'; Switch 0x7100200b30 PhyreScene::loadNBMenuShader (symbols from Fahrenheit's server export); ported M4 h3 r3 (ffx_prender::glue10): slot +0xfa8c
+0x006653c0 function PhyreScene_loadNTMenuZTestShader # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/MenuDefaultShaderNTZT'; Switch 0x7100200740 PhyreScene::loadNTMenuZTestShader (symbols from Fahrenheit's server export); ported M4 h3 r3 (ffx_prender::glue10): slot +0xfa78
+0x006654a0 function PhyreScene_loadNTNBMenuShader # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/MenuDefaultShaderNTNB'; Switch 0x7100200c30 PhyreScene::loadNTNBMenuShader (symbols from Fahrenheit's server export); ported M4 h3 r3 (ffx_prender::glue10): slot +0xfa90
+0x00665580 function PhyreScene_loadOptimizedFontShader # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/OptimizedFontShader.c'; Switch 0x7100200840 PhyreScene::loadOptimizedFontShader (symbols from Fahrenheit's server export); ported M4 h3 r3 (ffx_prender::glue10): slot +0xfa94
 0x00665660 function PhyreScene_loadPersistentVFXTexture # fh v3:exact 0x006657f0 PhyreScene::loadPersistentVFXTexture
 0x006656e0 function PhyreScene_initPostProcess_006656e0 # thiscall(scene): 0x00652910(scene), Instance_006dc800_Get()->0x006ddbf0, +0xcc = app+0x50, +0x10cc = PostProcessManager; SetFields12400_00693be0(pm, +0x10dd0, +0x10dd4, +0xcc, 0) == 0 -> SetByte123b3(1), SetByte123b0(0); PostProcessTweakUtil_initWithSceneContext(GetInstance(), +0xcc: pushed before the getter); PhyreScene_loadCutbufferShader; tail LoadingScreen_initialize(g_LoadingScreen); name ours; ported M4 h3 r3 (ffx_prender::glue8)
 0x00665770 function PhyreScene_loadVFXTexture # fh v3:exact 0x00665900 PhyreScene::loadVFXTexture
@@ -3202,7 +3203,7 @@
 0x00670760 function PhyreScene_textureVideoUnload # fh v3:exact 0x00670900 PhyreScene::textureVideoUnload
 0x00670b00 function PhyreScene_unloadAtelVFXTexture_00670b00 # fh v3:bsim1.00 0x00670ca0 PhyreScene::unloadAtelVFXTexture
 0x00670f00 function PhyreScene_unloadMagicVFXTexture # fh v3:exact 0x006710a0 PhyreScene::unloadMagicVFXTexture
-0x00670fe0 function PhyreScene_unloadMapVFXTexture # fh v3:exact 0x00671180 PhyreScene::unloadMapVFXTexture
+0x00670fe0 function PhyreScene_unloadMapVFXTexture # fh v3:exact 0x00671180 PhyreScene::unloadMapVFXTexture; ported M4 h3 r3 (ffx_prender::glue10)
 0x00671120 function PhyreScene_unloadMenuTexture # fh v3:cg13 0x6712c0 PhyreScene::unloadMenuTexture
 0x00671280 function PhyreScene_unloadPersistentVFXTexture # layout+callees: sorts between PhyreScene_unloadMenuTexture and PhyreScene_unloadVFXTexture, and its named callees match the Switch 0x7100206540 PhyreScene_unloadPersistentVFXTexture's (similarity 1.00: PhyreScene_unloadVFXTexture, fiosUnifyFilename); symbols from Fahrenheit's server export
 0x00671300 function PhyreScene_unloadVFXTexture # fh v3:exact 0x006714a0 PhyreScene::unloadVFXTexture
@@ -3581,11 +3582,11 @@
 0x0069e140 function ClassVFXRenderDataTable_ClassVFXRenderDataTable # fh v3:exact 0x0069e280 ClassVFXRenderDataTable::ClassVFXRenderDataTable
 0x0069e2b0 function GuildMapDynamicGeometry_GuildMapDynamicGeometry # fh v3:exact 0x0069e3f0 GuildMapDynamicGeometry::GuildMapDynamicGeometry
 0x0069e320 function MenuDynamicGeometry_MenuDynamicGeometry # fh v3:exact 0x0069e460 MenuDynamicGeometry::MenuDynamicGeometry
-0x0069e3e0 function VFXDynamicGeometry_VFXDynamicGeometry # fh v3:exact 0x0069e520 VFXDynamicGeometry::VFXDynamicGeometry
+0x0069e3e0 function VFXDynamicGeometry_VFXDynamicGeometry # fh v3:exact 0x0069e520 VFXDynamicGeometry::VFXDynamicGeometry; ported M4 h3 r3 (ffx_prender::glue10)
 0x0069ebd0 function TreeNext_0069ebd0           # ours: (ecx it) -> it: the MSVC tree iterator ++, the same code as opusTree_Next 0x00806a50 (left +0, parent +4, right +8, nil byte +0xd); callers 0x0069caf0, 0x0069eb70, 0x0069eb90, 0x0069ebc0, 0x006a1a70
 0x0069f000 function ClassVFXRenderDataTable_Clear # fh call.cs cdecl
 0x0069f110 function ClassVFXRenderDataTable_ClearByType # fh v3:exact 0x0069f250 ClassVFXRenderDataTable::ClearByType
-0x0069f2b0 function ClassVFXRenderDataTable_ClearVFXDrawData # fh v3:exact+call.cs 0x0069f3f0 thiscall ClassVFXRenderDataTable::ClearVFXDrawData
+0x0069f2b0 function ClassVFXRenderDataTable_ClearVFXDrawData # fh v3:exact+call.cs 0x0069f3f0 thiscall ClassVFXRenderDataTable::ClearVFXDrawData; ported M4 h3 r3 (ffx_prender::glue10): per-buffer draw word +0x34 + 28 id of each 0x6c-byte segment, map walked in order
 0x0069f440 function VFXRenderMap_CreateInstance_0069f440 # cdecl(): without g_VFXRenderMap_00ccca70, operator_new(8) holding (0x006a0360's head node, 0); graphicInitialize; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x0069f4c0 function ClassVFXRenderDataTable_CreateInstance # fh v3:cg2 0x69f600 ClassVFXRenderDataTable::CreateInstance
 0x0069f620 function ClassVFXRenderDataTable_GetDynamicGeometryByInstance # fh v3:exact+call.cs 0x0069f760 thiscall ClassVFXRenderDataTable::GetDynamicGeometryByInstance
@@ -3595,7 +3596,7 @@
 0x0069f7f0 function ClassVFXRenderDataTable_GetVFXDynamicGeometrySegmentFromPool # fh v3:exact 0x0069f930 ClassVFXRenderDataTable::GetVFXDynamicGeometrySegmentFromPool
 0x0069f880 function ClassChrShaderRender_GetVertexInfo # fh v3:bsim1.00 0x0069f9c0 ClassChrShaderRender::GetVertexInfo
 0x0069f890 function ClassVFXRenderDataTable_Insert # fh v3:exact 0x0069f9d0 ClassVFXRenderDataTable::Insert
-0x0069f900 function ClassVFXRenderDataTable_InsertToDeletePool # fh v3:exact 0x0069fa40 ClassVFXRenderDataTable::InsertToDeletePool
+0x0069f900 function ClassVFXRenderDataTable_InsertToDeletePool # fh v3:exact 0x0069fa40 ClassVFXRenderDataTable::InsertToDeletePool; ported M4 h3 r3 (ffx_prender::glue10): its appends read the arguments by address (0x006a2790, 0x006a25e0, PArray_PushInto_006a2670)
 0x0069f9d0 function ChrY0Shadow_createMesh # thiscall(dyn geo manager): instantiates the ChrY0Shadow cluster (PhyreScene +0xfa7c, PhyreScene_loadChrShaShader) into the ground-shadow cluster PhyreScene +0x28c4 (the blob shadow's ClassDynamicMesh, list caps 500 vertices / 1500 indices), sets its material's TextureSamplerState and TextureSampler to the ShadowManager's sampler (0x006d2520) and shadow map; m4-charbuild; name ours
 0x0069fc10 function ClassVFXRenderDataTable_Remove_0069fc10 # thiscall(table, lo, hi), ret 8 -> lo: ClassVFXRenderDataTable_MapFind(&it, &key); a found entry's mesh (+0x18) to ClassVFXRenderDataTable_InsertToDeletePool(lo, hi, 3, mesh), then 0x006a1a70(&it, node) erases it; clears the cached key +0x20/+0x24 when it matches; only caller graphicVFXDestroy; name ours; ported M4 h3 r2 (ffx_prender::glue5)
 0x0069fc70 function ClassVFXRenderDataTable_RemoveDeletedPoolMeshInstances # fh v3:exact 0x0069fdb0 ClassVFXRenderDataTable::RemoveDeletedPoolMeshInstances
@@ -3683,7 +3684,7 @@
 0x006ad8c0 function RenderDelegationHelper_runFlag10 # runs the render delegations with flag 0x10 (2D levels with +0xd4 set); name ours, tentative (M4 T4)
 0x006ad970 function RenderDelegationHelper_runFlag20 # runs the render delegations with flag 0x20, just before Draw3DWorld; name ours, tentative (M4 T4)
 0x006ada20 function RenderDelegationHelper_beforeScene # runs the render delegations whose flags have 0x8 (+0xc), under the mutex 0x00cccaa0; one-shot ones (flag 1) go back to the free list. PhyreScene_render calls it after PhyreScene_RenderShadow and 0x0066b560, before the scene targets (0x00668ef0); 0x00652a10 too. Name by the Switch build's RenderDelegationHelper declaration order (beforeUpdate, afterUpdate, beforeScene, beforePreRender, beforeRenderWorld, afterRenderWorld): flags 0x2 and 0x4 run in 0x00657140 (the update), 0x10, 0x20 (just before Draw3DWorld) and 0x40 (after the worlds) follow in PhyreScene_render; tentative (M4 round 2, Q8)
-0x006adb80 function RenderDelegationHelper_beforeVFX # fh v3:cg5 0x6adcd0 RenderDelegationHelper::beforeVFX
+0x006adb80 function RenderDelegationHelper_beforeVFX # fh v3:cg5 0x6adcd0 RenderDelegationHelper::beforeVFX; ported M4 h3 r3 (ffx_prender::glue10)
 0x006ade20 function RenderDelegationHelper_registerDelegation # fh v3:exact 0x006adf70 RenderDelegationHelper::registerDelegation
 0x006ae1a0 function RenderDelegationHelper_setDataToFreeList # str: its error message names it: "CAS failed at RenderDelegationHelper::setDataToFreeList - in..."
 0x006ae340 function RenderDelegationHelper_unregisterDelegationOfGivenTaskAndData # fh v3:exact 0x006ae490 RenderDelegationHelper::unregisterDelegationOfGivenTaskAndData
@@ -3712,6 +3713,8 @@
 0x006b2380 function TextureAnimation_PrevFrame # thiscall(this): as TextureAnimation_NextFrame with -1; name ours
 0x006b24e0 function PArray_PushInto_006b24e0 # exact copy of PArray_PushInto_00629b90 (tools/dupes.py family); ported M4 h3 r3 (ffx_system::container)
 0x006b2570 function PArray_PushInto_006b2570 # exact copy of PArray_PushInto_00629b90 (tools/dupes.py family); ported M4 h3 r3 (ffx_system::container)
+0x006b2730 function PArray_pushInto32_006b2730 # thiscall(array; dst, &value), ret 8 -> 0 or 0xd (null dst): 0x006ae9c0(dst, old, n) copies the 32-byte elements, 0x006af0d0(slot; &value) constructs the new one, 0x006b01f0(old, n) destroys owned old storage; n+1, dst; SEH frame; name ours; ported M4 h3 r3 (ffx_prender::glue10)
+0x006b2800 function PArray_pushInto64_006b2800 # as PArray_pushInto32_006b2730 for 64-byte elements (0x006aeb20, 0x006af270, 0x006b0230); name ours; ported M4 h3 r3 (ffx_prender::glue10)
 0x006b28f0 function PhyreCursor_IsValid_006b28f0 # as PhyreCursor_IsValid_00660240; name ours
 0x006b29c0 function TextureAnimationManager_registerCharacterInstance # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'register(%s, %u)\\n'; Switch 0x710028dfb0 TextureAnimationManager::registerCharacterInstance (symbols from Fahrenheit's server export)
 0x006b2ca0 function ParallelArray_erase_006b2ca0 # thiscall(this, value), ret 4: value found in the words +0..+8 -> removed with its 20-byte partner (+4..+0xc), ends moved down, the freed word = -1 while count < capacity +0x10; eax the new count, or where the search stopped; name ours; ported M4 h3 r3 (ffx_prender::glue9)
@@ -3856,6 +3859,7 @@
 0x006d27e0 function BoundingBox_IsInside_006d27e0 # thiscall(box, m), ret 4: as BoundingBox_IsVisible_00663a30 with the outcodes ORed (1: every corner inside); name ours
 0x006d2a70 function BoundingBox_IsInsideTransformed_006d2a70 # thiscall(box, m), ret 4: BoundingBox_IsInside_006d27e0 by m times the box's 3x4 at +0xc (PMatrix4_FromMatrix3x4, PMatrix4_Multiply), or by a copy of m without one; returns its answer; name ours
 0x006d2c10 function ShadowManager_loadShadowShaderBinFiles # layout+callees: sorts between ShadowManager_getTextureSampler and ShadowManager_updateShadowMap, and its named callees match the Switch 0x7100277e90 ShadowManager_loadShadowShaderBinFiles's (similarity 0.60: Phyre_PCluster_LoadAssetFile, Phyre_PFramework_PApplication_GetApplication, fiosUnifyFilename); symbols from Fahrenheit's server export
+0x006d2df0 function ShadowManager_resizeShadowTextures_006d2df0 # thiscall(sm) -> 1 unless textures +0x74/+0x78/+0x80/+0x7c all set; else 0x0059c650 on +0x6c/+0x70/+0x60/+0x64 and Phyre_PRendering_PTexture2DBase_setDimensions(texture, g_ShadowSize, g_ShadowSize, 0x00ca310c, 0), first failure returned; name ours; ported M4 h3 r3 (ffx_prender::glue10)
 0x006d3000 function ShadowManager_updateShadowMap # fh v3:exact 0x006d3130 ShadowManager::updateShadowMap
 0x006d3560 function ShadowEntry_Init          # structure: thiscall(this, owner), ret 4: owner +0, 2 at +4, 1.0 at +0x30..+0x3c, the rest of +0xc..+0x50 and +0xa0/+0xa4 cleared; returns this; name ours (layout only)
 0x006d4150 function BrokenScreenEffect_fillFloats_006d4150 # thiscall(this) -> eax: mode +0 = 1 fills [+0x48] with +8 * 4 floats 1.0, mode 2 with the float at 0x00b412c4 (count and pointer re-read per store); only caller 0x006d4780; name ours; ported M4 h3 r2 (ffx_prender::glue4)

@@ -32,6 +32,7 @@ use ffx_prender::glue6::{self, bridge as g6};
 use ffx_prender::glue7::{self, bridge as g7};
 use ffx_prender::glue8::{self, bridge as g8};
 use ffx_prender::glue9::{self, bridge as g9};
+use ffx_prender::glue10::{self, bridge as g10};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -454,6 +455,7 @@ enum This {
 type Port = fn(&mut G, u32, &[u32]) -> Out;
 
 #[derive(Clone, Copy)]
+#[allow(clippy::struct_excessive_bools)] // a case's switches
 struct Case {
     name: &'static str,
     sym: u32,
@@ -477,6 +479,10 @@ struct Case {
     /// The frame's word at `ebp - 4` is the original's security cookie
     /// (the port leaves it out): not compared.
     cookie: bool,
+    /// The frame's top 16 bytes are the original's security cookie and
+    /// C++ exception registration (`fs:[0]`), which the port leaves out:
+    /// not compared.
+    seh: bool,
 }
 
 /// A case's extra set-up: the twins, the synthetic object, `this`, the
@@ -502,6 +508,7 @@ const fn cdecl(
         null_instance: false,
         frame: None,
         cookie: false,
+        seh: false,
     }
 }
 
@@ -525,6 +532,7 @@ const fn method(
         null_instance: false,
         frame: None,
         cookie: false,
+        seh: false,
     }
 }
 
@@ -755,8 +763,13 @@ fn run_cases(t: &mut Twins, cases: &[Case], n: u32, rng: &mut Rng) {
                         let mut y = vec![0; n as usize];
                         Mem::read_bytes(&t.a, from, &mut x);
                         Mem::read_bytes(&t.b, from, &mut y);
-                        if case.cookie && from == lo && n >= 4 {
-                            let cookie = n as usize - 4;
+                        let top = if case.seh {
+                            16
+                        } else {
+                            4 * u32::from(case.cookie)
+                        };
+                        if from == lo && n >= top {
+                            let cookie = (n - top) as usize;
                             x[cookie..].copy_from_slice(&y[cookie..]);
                         }
                         assert_eq!(x, y, "{what}: frame at {from:#x}");
@@ -3193,5 +3206,301 @@ fn batch9_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 12 } else { 60 };
         run_cases(t, CASES9, n, &mut Rng(0x9009_b009));
+    });
+}
+
+// ---- batch 10 (ffx_prender::glue10, round 3) ----
+
+/// The shader loaders: the reader opens or not (`al` alone decides),
+/// the cluster load and the fix-up's result.
+fn prep_shader_bin_load(t: &mut Twins, _: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfa98);
+    *this = scene;
+    let open = [0, 1, 0x100, 0xffff_ff01][rng.below(4) as usize];
+    t.stub_ret(glue10::READER_IS_OPEN, true, 0, 0, open);
+}
+
+macro_rules! shader_case {
+    ($name:literal, $addr:literal, $bin:expr) => {
+        with_seh(framed(
+            Case {
+                prep: Some(prep_shader_bin_load),
+                ..method(
+                    $name,
+                    $addr,
+                    This::Object,
+                    0,
+                    &[
+                        (glue10::FIOS_UNIFY_FILENAME, K::Cdecl(3)),
+                        (glue10::READER_CTOR, K::This(1)),
+                        (glue10::READER_CLOSE, K::This(0)),
+                        (glue10::CLUSTER_MANAGER_INSTANCE, K::Getter),
+                        (glue10::CLUSTER_MANAGER_LOAD, K::This(1)),
+                        (glue10::GET_APPLICATION, K::Cdecl(0)),
+                        (glue10::FIXUP_CLUSTERS, K::Cdecl(2)),
+                        (glue10::READER_DTOR, K::This(0)),
+                    ],
+                    |m, this, _| u(g10::scene_load_shader(m, frame_ebp(), this, $bin)),
+                )
+            },
+            0x12c,
+            0,
+        ))
+    };
+}
+
+const fn with_seh(case: Case) -> Case {
+    Case { seh: true, ..case }
+}
+
+/// The pending instantiation requests, some for `chr`.
+fn prep_unregist(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let chr = rng.below(3);
+    args[0] = chr;
+    let n = rng.below(6);
+    let flag = [0, 0x8000_0000][rng.below(2) as usize];
+    t.global(glue10::CHARACTER_LOADING.sym, flag | n);
+    t.global(glue10::CHARACTER_LOADING_DATA.sym, obj + 0x100);
+    for k in 0..n {
+        let request = obj + 0x200 + 0x20 * k;
+        t.w32(obj + 0x100 + 4 * k, request);
+        let who = rng.below(3);
+        t.w32(request + 8, who);
+    }
+}
+
+/// An effect's geometry (or none) and render data (parts), a vtable
+/// whose `+4` logs and fails now and then.
+fn prep_vfx_setup(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    if rng.chance(6) {
+        args[0] = 0;
+        args[1] = 0;
+    }
+    if rng.chance(3) {
+        args[0] = 0u32.wrapping_sub(rng.below(20000));
+    }
+    t.global(glue10::VFX_RENDER_DATA_TABLE.sym, obj + 0x1800);
+    let geo = if rng.chance(6) { 0 } else { obj + 0x400 };
+    t.stub_ret(glue10::VFX_GET_DYN_GEO, true, 2, 2, geo);
+    let ret = if rng.chance(3) { rng.next() | 1 } else { 0 };
+    let virt = t.stub(None, 0x0010_0004, true, 2, 2, Some(ret));
+    t.w32(obj + 0x400, obj + 0x500);
+    t.w32(obj + 0x504, virt);
+    let data = if rng.chance(5) { 0 } else { obj + 0x600 };
+    t.w32(obj + 0x424, data);
+    t.write(obj + 0x6c0, &[u8::from(rng.chance(2))]);
+    let parts = rng.below(5) as u16;
+    t.write(obj + 0x6c4, &parts.to_le_bytes());
+}
+
+/// The scene's queue of (world, list) pairs, lists with missing clusters.
+fn prep_detach(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0000);
+    *this = scene;
+    let m = rng.next();
+    t.w32(scene + 0xfb3c, m);
+    // a negative count (which the release after the loop checks for)
+    // would make the loop walk 2^31 pairs: the original can't get there
+    // with a valid queue
+    let n = rng.below(4);
+    t.w32(scene + 0x1188, n);
+    let cap = if rng.chance(2) {
+        0x8000_0000 | rng.next()
+    } else {
+        rng.below(8)
+    };
+    t.w32(scene + 0x118c, cap);
+    t.w32(scene + 0x1190, obj + 0x100);
+    {
+        for i in 0..n {
+            let world = rng.next();
+            t.w32(obj + 0x100 + 8 * i, world);
+            let list = obj + 0x200 + 0x40 * i;
+            t.w32(obj + 0x104 + 8 * i, list);
+            let count = rng.below(4);
+            t.w32(list, count);
+            t.w32(list + 8, obj + 0x400 + 0x40 * i);
+            for j in 0..count {
+                let c = if rng.chance(3) { 0 } else { rng.next() };
+                t.w32(obj + 0x400 + 0x40 * i + 4 * j, c);
+            }
+        }
+    }
+}
+
+/// The delegated entries: flagged to run or not, one-shot or not, a
+/// logging callback; the free list taking them back or not.
+fn prep_delegation(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let n = rng.below(6);
+    let flag = [0, 0x8000_0000][rng.below(2) as usize];
+    t.w32(obj, flag | n);
+    t.w32(obj + 4, obj + 0x100);
+    let callback = t.stub(None, 0x0020_0001, false, 1, 0, Some(rng.next()));
+    for k in 0..n {
+        let e = if rng.chance(5) {
+            0
+        } else {
+            obj + 0x200 + 0x20 * k
+        };
+        t.w32(obj + 0x100 + 4 * k, e);
+        if e != 0 {
+            let arg = rng.next();
+            t.w32(e, arg);
+            let buffer = if rng.chance(3) { 0 } else { rng.next() };
+            t.w32(e + 4, buffer);
+            let flags =
+                [0x2000, 0x2001, 0x2001, 1, 0][rng.below(5) as usize] | (rng.next() & 0xdffe);
+            t.w32(e + 0xc, flags);
+            t.w32(e + 0x10, callback);
+        }
+    }
+    let mutex = rng.next();
+    t.global(glue10::DELEGATION_MUTEX.sym, mutex);
+    let r = if rng.chance(2) {
+        0x8000_0000 | rng.next()
+    } else {
+        rng.below(4)
+    };
+    t.stub_ret(glue10::DELEGATION_SET_TO_FREE_LIST, true, 1, 1, r);
+}
+
+fn prep_shadow_resize(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    for off in [0x74, 0x78, 0x80, 0x7c] {
+        let tex = if rng.chance(8) { 0 } else { rng.next() | 1 };
+        t.w32(obj + off, tex);
+    }
+    let r = if rng.chance(2) { 0 } else { rng.word() };
+    t.stub_ret(glue10::TEXTURE_SET_DIMENSIONS, true, 4, 4, r);
+}
+
+fn prep_map_unload(t: &mut Twins, _: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfaf4);
+    *this = scene;
+    t.write(scene + 0x25, &[u8::from(!rng.chance(4))]);
+    let map = [0, 1, rng.below(400), rng.next()][rng.below(4) as usize];
+    t.w32(scene + 0xfaf0, map);
+}
+
+/// The delete pool: a free slot (id 0) or none.
+fn prep_vfx_delete_pool(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let n = rng.below(5);
+    let flag = [0, 0x8000_0000][rng.below(2) as usize];
+    t.w32(obj + 8, flag | n);
+    t.w32(obj + 0xc, obj + 0x100);
+    t.w32(obj + 0x14, obj + 0x200);
+    t.w32(obj + 0x1c, obj + 0x300);
+    for (off, w) in [(0x10, rng.below(5) | flag), (0x18, rng.below(5))] {
+        t.w32(obj + off, w);
+    }
+    for k in 0..n {
+        let (lo, hi) = match rng.below(4) {
+            0 => (0, 0),
+            1 => (0, rng.next()),
+            2 => (rng.next(), 0),
+            _ => (rng.next(), rng.next()),
+        };
+        t.w32(obj + 0x100 + 8 * k, lo);
+        t.w32(obj + 0x104 + 8 * k, hi);
+    }
+    t.stub_ret(glue10::PHYRE_MALLOC, false, 2, 0, obj + 0x400);
+}
+
+fn prep_push_elements(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let n = rng.below(6);
+    let flag = [0, 0x8000_0000][rng.below(2) as usize];
+    t.w32(obj, flag | n);
+    let old = obj + 0x100;
+    t.w32(obj + 4, old);
+    args[0] = [0, obj + 0x400, old][rng.below(3) as usize];
+    args[1] = obj + 0x40;
+}
+
+/// Nodes `lo..hi` (in order) as a balanced tree under `parent`; its root
+/// (`head` when empty).
+fn build_map_tree(
+    t: &mut Twins,
+    lo: u32,
+    hi: u32,
+    parent: u32,
+    head: u32,
+    node: &dyn Fn(u32) -> u32,
+) -> u32 {
+    if lo >= hi {
+        return head;
+    }
+    let mid = u32::midpoint(lo, hi);
+    let n = node(mid);
+    t.w32(n + 4, parent);
+    t.write(n + 0xd, &[0]);
+    let left = build_map_tree(t, lo, mid, n, head, node);
+    let right = build_map_tree(t, mid + 1, hi, n, head, node);
+    t.w32(n, left);
+    t.w32(n + 8, right);
+    n
+}
+
+/// A balanced MSVC map of effects under a head (`+0xd` set), each with
+/// render data whose segments carry per-buffer draw words; the buffer id
+/// (negative now and then).
+fn prep_clear_draw(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let head = obj + 0x40;
+    t.w32(obj, head);
+    t.write(head + 0xd, &[1]);
+    let n = rng.below(6);
+    let node = |k: u32| obj + 0x100 + 0x20 * k;
+    let root = build_map_tree(t, 0, n, head, head, &node);
+    t.w32(head + 4, root);
+    t.w32(head, if n == 0 { head } else { node(0) });
+    t.w32(head + 8, if n == 0 { head } else { node(n - 1) });
+    for k in 0..n {
+        let value = obj + 0x800 + 0x40 * k;
+        t.w32(node(k) + 0x18, value);
+        let data = obj + 0xa00 + 0x100 * k;
+        t.w32(value + 0x24, data);
+        let segments = rng.below(5) as i32 - 1;
+        t.w32(data + 0x90, segments as u32);
+        t.w32(data + 0x94, obj + 0x1000 + 0x1c0 * (k % 5));
+    }
+    let fill = rng.bytes(0xa00);
+    t.write(obj + 0x1000, &fill[..0x8c0]);
+    let id = (rng.below(4) as i32 - 1) as u32;
+    t.stub_ret(glue10::DYN_GEO_CURRENT_BUFFER_ID, false, 0, 0, id);
+}
+
+#[rustfmt::skip]
+const CASES10: &[Case] = &[
+    shader_case!("load_ab_cone_shader", 0x0066_3d40, glue10::AB_CONE),
+    shader_case!("load_ab_wave_shader", 0x0066_3e20, glue10::AB_WAVE),
+    shader_case!("load_chr_sha_shader", 0x0066_4360, glue10::CHR_SHA),
+    shader_case!("load_menu_no_texture_shader", 0x0066_5010, glue10::MENU_NO_TEXTURE),
+    shader_case!("load_menu_shader", 0x0066_50f0, glue10::MENU),
+    shader_case!("load_na_menu_shader", 0x0066_5200, glue10::NA_MENU),
+    shader_case!("load_nb_menu_shader", 0x0066_52e0, glue10::NB_MENU),
+    shader_case!("load_nt_menu_ztest_shader", 0x0066_53c0, glue10::NT_MENU_ZTEST),
+    shader_case!("load_ntnb_menu_shader", 0x0066_54a0, glue10::NTNB_MENU),
+    shader_case!("load_optimized_font_shader", 0x0066_5580, glue10::OPTIMIZED_FONT),
+    Case { prep: Some(prep_unregist), ..cdecl("character_unregist_loading", 0x0063_7b30, 1, &[(glue10::OPERATOR_DELETE, K::Cdecl(1)), (glue10::PHYRE_FREE, K::Cdecl(1))], |m, _, a| { g10::character_unregist_loading(m, a[0]); Out::None }) },
+    Case { prep: Some(prep_vfx_setup), ..cdecl("vfx_setup", 0x0064_5780, 2, &[(glue10::PHYRE_PRINTF, K::Cdecl(2))], |m, _, a| u(g10::vfx_setup(m, a[0], a[1]))) },
+    Case { prep: Some(prep_detach), ..method("scene_detach_chr_cluster", 0x0065_66c0, This::Object, 0, &[(glue10::WAIT_FOR_SINGLE_OBJECT, K::Import(2)), (glue10::RELEASE_MUTEX, K::Import(1)), (glue10::IOB_FUNC, K::ImportC(0)), (glue10::FPRINTF, K::ImportC(2)), (glue10::WORLD_ADD_CLUSTER, K::This(1)), (glue10::ARRAY_RESERVE_668300, K::This(1))], |m, this, _| { g10::scene_detach_chr_cluster(m, this); Out::None }) },
+    Case { prep: Some(prep_delegation), ..method("delegation_before_vfx", 0x006a_db80, This::Object, 0, &[(glue10::WAIT_FOR_SINGLE_OBJECT, K::Import(2)), (glue10::RELEASE_MUTEX, K::Import(1)), (glue10::OPERATOR_DELETE, K::Cdecl(1))], |m, this, _| { g10::delegation_before_vfx(m, this); Out::None }) },
+    Case { prep: Some(prep_shadow_resize), ..method("shadow_resize_textures", 0x006d_2df0, This::Object, 0, &[(glue10::SHADOW_TEXTURE_PREPARE, K::This(0))], |m, this, _| u(g10::shadow_resize_textures(m, this))) },
+    method("vfx_dyn_geo_ctor", 0x0069_e3e0, This::Object, 0, &[], |m, this, _| u(g10::vfx_dyn_geo_ctor(m, this))),
+    with_cookie(framed(Case { prep: Some(prep_map_unload), ..method("scene_unload_map_vfx_texture", 0x0067_0fe0, This::Object, 0, &[(glue10::FIOS_UNIFY_FILENAME, K::Cdecl(3)), (glue10::SPRINTF, K::ImportC(4)), (glue10::SCENE_UNLOAD_VFX_TEXTURE, K::This(2))], |m, this, _| u(g10::scene_unload_map_vfx_texture(m, frame_ebp(), this))) }, 0x204, 0)),
+    framed(Case { prep: Some(prep_vfx_delete_pool), ..method("vfx_insert_to_delete_pool", 0x0069_f900, This::Object, 4, &[(glue10::PUSH_INTO_6A2790, K::This(2)), (glue10::PUSH_INTO_6A25E0, K::This(2)), (glue10::PUSH_INTO_6A2670, K::This(2))], |m, this, a| { let args = frame_ebp() + 8; for (k, &w) in a.iter().enumerate() { m.write(args + 4 * k as u32, w); } u(g10::vfx_insert_to_delete_pool(m, args, this, a[0], a[1], a[2], a[3])) }) }, 0, 16),
+    Case { prep: Some(prep_push_elements), ..method("parray_push_into32", 0x006b_2730, This::Object, 2, &[(glue10::ELEMENTS_32.copy, K::Cdecl(3)), (glue10::ELEMENTS_32.construct, K::This(1)), (glue10::ELEMENTS_32.destroy, K::Cdecl(2))], |m, this, a| u(g10::parray_push_into_elements(m, this, a[0], a[1], glue10::ELEMENTS_32))) },
+    Case { prep: Some(prep_push_elements), ..method("parray_push_into64", 0x006b_2800, This::Object, 2, &[(glue10::ELEMENTS_64.copy, K::Cdecl(3)), (glue10::ELEMENTS_64.construct, K::This(1)), (glue10::ELEMENTS_64.destroy, K::Cdecl(2))], |m, this, a| u(g10::parray_push_into_elements(m, this, a[0], a[1], glue10::ELEMENTS_64))) },
+    Case { prep: Some(prep_clear_draw), ..method("vfx_clear_draw_data", 0x0069_f2b0, This::Object, 0, &[], |m, this, _| { g10::vfx_clear_draw_data(m, this); Out::None }) },
+];
+
+#[test]
+fn batch10_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 12 } else { 60 };
+        run_cases(t, CASES10, n, &mut Rng(0x1010_b010));
     });
 }

@@ -15,6 +15,7 @@ use ffx_prender::glue6::bridge as g6;
 use ffx_prender::glue7::bridge as g7;
 use ffx_prender::glue8::bridge as g8;
 use ffx_prender::glue9::bridge as g9;
+use ffx_prender::glue10::bridge as g10;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1079,4 +1080,105 @@ ported! {
         let mut f = StackFrame::<5>::new();
         g9::update_shadow_map(&mut mem(), f.at() + 0x14, out, [a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11])
     }
+
+    // ---- round 3 batch 10 (ffx_prender::glue10) ----
+    /// `PhyreScene_loadAbConeShader(this)`.
+    PhyreScene_loadAbConeShader @ 0x0066_3d40 => extern "thiscall" fn scene_load_ab_cone_shader(this: u32) -> u32 {
+        load_shader(this, ffx_prender::glue10::AB_CONE)
+    }
+    /// `PhyreScene_loadAbWaveShader(this)`.
+    PhyreScene_loadAbWaveShader @ 0x0066_3e20 => extern "thiscall" fn scene_load_ab_wave_shader(this: u32) -> u32 {
+        load_shader(this, ffx_prender::glue10::AB_WAVE)
+    }
+    /// `PhyreScene_loadChrShaShader(this)`.
+    PhyreScene_loadChrShaShader @ 0x0066_4360 => extern "thiscall" fn scene_load_chr_sha_shader(this: u32) -> u32 {
+        load_shader(this, ffx_prender::glue10::CHR_SHA)
+    }
+    /// `PhyreScene_loadMenuNoTextureShader(this)`.
+    PhyreScene_loadMenuNoTextureShader @ 0x0066_5010 => extern "thiscall" fn scene_load_menu_no_texture_shader(this: u32) -> u32 {
+        load_shader(this, ffx_prender::glue10::MENU_NO_TEXTURE)
+    }
+    /// `PhyreScene_loadMenuShader(this)`.
+    PhyreScene_loadMenuShader @ 0x0066_50f0 => extern "thiscall" fn scene_load_menu_shader(this: u32) -> u32 {
+        load_shader(this, ffx_prender::glue10::MENU)
+    }
+    /// `PhyreScene_loadNAMenuShader(this)`.
+    PhyreScene_loadNAMenuShader @ 0x0066_5200 => extern "thiscall" fn scene_load_na_menu_shader(this: u32) -> u32 {
+        load_shader(this, ffx_prender::glue10::NA_MENU)
+    }
+    /// `PhyreScene_loadNBMenuShader(this)`.
+    PhyreScene_loadNBMenuShader @ 0x0066_52e0 => extern "thiscall" fn scene_load_nb_menu_shader(this: u32) -> u32 {
+        load_shader(this, ffx_prender::glue10::NB_MENU)
+    }
+    /// `PhyreScene_loadNTMenuZTestShader(this)`.
+    PhyreScene_loadNTMenuZTestShader @ 0x0066_53c0 => extern "thiscall" fn scene_load_nt_menu_ztest_shader(this: u32) -> u32 {
+        load_shader(this, ffx_prender::glue10::NT_MENU_ZTEST)
+    }
+    /// `PhyreScene_loadNTNBMenuShader(this)`.
+    PhyreScene_loadNTNBMenuShader @ 0x0066_54a0 => extern "thiscall" fn scene_load_ntnb_menu_shader(this: u32) -> u32 {
+        load_shader(this, ffx_prender::glue10::NTNB_MENU)
+    }
+    /// `PhyreScene_loadOptimizedFontShader(this)`.
+    PhyreScene_loadOptimizedFontShader @ 0x0066_5580 => extern "thiscall" fn scene_load_optimized_font_shader(this: u32) -> u32 {
+        load_shader(this, ffx_prender::glue10::OPTIMIZED_FONT)
+    }
+    /// `graphicCharacterUnregistLoading_00637b30(chr)`.
+    graphicCharacterUnregistLoading_00637b30 @ 0x0063_7b30 => extern "C" fn character_unregist_loading(chr: u32) {
+        g10::character_unregist_loading(&mut mem(), chr);
+    }
+    /// `graphicVFXSetup(lo, hi)`.
+    graphicVFXSetup @ 0x0064_5780 => extern "C" fn vfx_setup(lo: u32, hi: u32) -> u32 {
+        g10::vfx_setup(&mut mem(), lo, hi)
+    }
+    /// `PhyreScene_detachChrClusterFrom3DWorld(this)`.
+    PhyreScene_detachChrClusterFrom3DWorld @ 0x0065_66c0 => extern "thiscall" fn scene_detach_chr_cluster(this: u32) {
+        g10::scene_detach_chr_cluster(&mut mem(), this);
+    }
+    /// `RenderDelegationHelper_beforeVFX(this)`.
+    RenderDelegationHelper_beforeVFX @ 0x006a_db80 => extern "thiscall" fn delegation_before_vfx(this: u32) {
+        g10::delegation_before_vfx(&mut mem(), this);
+    }
+    /// `ShadowManager_resizeShadowTextures_006d2df0(this)`.
+    ShadowManager_resizeShadowTextures_006d2df0 @ 0x006d_2df0 => extern "thiscall" fn shadow_resize_textures(this: u32) -> u32 {
+        g10::shadow_resize_textures(&mut mem(), this)
+    }
+    /// `VFXDynamicGeometry_VFXDynamicGeometry(this)`.
+    VFXDynamicGeometry_VFXDynamicGeometry @ 0x0069_e3e0 => extern "thiscall" fn vfx_dyn_geo_ctor(this: u32) -> u32 {
+        g10::vfx_dyn_geo_ctor(&mut mem(), this)
+    }
+    /// `PhyreScene_unloadMapVFXTexture(this)`.
+    PhyreScene_unloadMapVFXTexture @ 0x0067_0fe0 => extern "thiscall" fn scene_unload_map_vfx_texture(this: u32) -> u32 {
+        let mut f = StackFrame::<0x81>::new();
+        g10::scene_unload_map_vfx_texture(&mut mem(), f.at() + 0x204, this)
+    }
+    /// `ClassVFXRenderDataTable_InsertToDeletePool(this, lo, hi, a, b)`:
+    /// the appends read the arguments by address (a copy here).
+    ClassVFXRenderDataTable_InsertToDeletePool @ 0x0069_f900 => extern "thiscall" fn vfx_insert_to_delete_pool(this: u32, lo: u32, hi: u32, a: u32, b: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        let args = f.at();
+        let mut m = mem();
+        for (k, w) in [lo, hi, a, b].into_iter().enumerate() {
+            ffx_bridge::Mem::write(&mut m, args + 4 * k as u32, w);
+        }
+        g10::vfx_insert_to_delete_pool(&mut m, args, this, lo, hi, a, b)
+    }
+    /// `PArray_pushInto32_006b2730(this, dst, &value)`.
+    PArray_pushInto32_006b2730 @ 0x006b_2730 => extern "thiscall" fn parray_push_into32(this: u32, dst: u32, value: u32) -> u32 {
+        g10::parray_push_into_elements(&mut mem(), this, dst, value, ffx_prender::glue10::ELEMENTS_32)
+    }
+    /// `PArray_pushInto64_006b2800(this, dst, &value)`.
+    PArray_pushInto64_006b2800 @ 0x006b_2800 => extern "thiscall" fn parray_push_into64(this: u32, dst: u32, value: u32) -> u32 {
+        g10::parray_push_into_elements(&mut mem(), this, dst, value, ffx_prender::glue10::ELEMENTS_64)
+    }
+    /// `ClassVFXRenderDataTable_ClearVFXDrawData(this)`.
+    ClassVFXRenderDataTable_ClearVFXDrawData @ 0x0069_f2b0 => extern "thiscall" fn vfx_clear_draw_data(this: u32) {
+        g10::vfx_clear_draw_data(&mut mem(), this);
+    }
+}
+
+/// The scene's shader-bin loaders, with their frame (0x12c bytes below
+/// `ebp`).
+fn load_shader(this: u32, bin: ffx_prender::glue10::ShaderBin) -> u32 {
+    let mut f = StackFrame::<0x4b>::new();
+    g10::scene_load_shader(&mut mem(), f.at() + 0x12c, this, bin)
 }
