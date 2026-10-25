@@ -588,4 +588,60 @@ ported! {
     Phyre_PAnimation_PAnimationAdditiveBlenderController_scalar_deleting_dtor @ 0x0052_edd0 => extern "thiscall" fn delete_52edd0(this: u32, flags: u32) -> u32 {
         controller::bridge::blender_subclass_deleting_dtor(&mut mem(), this, flags, controller::vtable::ADDITIVE_BLENDER)
     }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PArray_float_4__PClassDescriptorAbstract` (0x00509630).
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_float_4__PClassDescriptorAbstract @ 0x0050_9630 => extern "thiscall" fn abstract_509630(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Global(0x00ca_9bfc), size: 0x8, vtable: 0x00b2_579c, buffers: [0x00ca_9c00, 0x00ca_9c10, 0x00ca_9c20] })
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationChannelTarget_4__PClassDescriptorAbstract` (0x00518cd0).
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationChannelTarget_4__PClassDescriptorAbstract @ 0x0051_8cd0 => extern "thiscall" fn abstract_518cd0(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Global(0x00ca_b43c), size: 0x8, vtable: 0x00b2_759c, buffers: [0x00ca_b490, 0x00ca_b4a0, 0x00ca_b4b0] })
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationSlotListIndex_4__PClassDescriptorAbstract` (0x00518d70).
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationSlotListIndex_4__PClassDescriptorAbstract @ 0x0051_8d70 => extern "thiscall" fn abstract_518d70(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Global(0x00ca_b438), size: 0x8, vtable: 0x00b2_7494, buffers: [0x00ca_b460, 0x00ca_b470, 0x00ca_b480] })
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PSharray_Phyre_PAnimation_PAnimationClip__PClassDescriptorAbstract` (0x00518e10).
+    Phyre_PClassDescriptorAbstract_Phyre_PSharray_Phyre_PAnimation_PAnimationClip__PClassDescriptorAbstract @ 0x0051_8e10 => extern "thiscall" fn abstract_518e10(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Global(0x00ca_b440), size: 0x8, vtable: 0x00b2_76a4, buffers: [0x00ca_b4c0, 0x00ca_b4d0, 0x00ca_b4e0] })
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationEvent_4__PClassDescriptorAbstract` (0x0051ec40).
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationEvent_4__PClassDescriptorAbstract @ 0x0051_ec40 => extern "thiscall" fn abstract_51ec40(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Global(0x00ca_b828), size: 0x8, vtable: 0x00b2_7eec, buffers: [0x00ca_b830, 0x00ca_b840, 0x00ca_b850] })
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PArray_unsigned_int_4__PClassDescriptorAbstract` (0x005275f0).
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_unsigned_int_4__PClassDescriptorAbstract @ 0x0052_75f0 => extern "thiscall" fn abstract_5275f0(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Global(0x00ca_c5b4), size: 0x8, vtable: 0x00b2_9394, buffers: [0x00ca_c5f0, 0x00ca_c600, 0x00ca_c610] })
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationSlotFilterDeferredLoad_4__PClassDescriptorAbstract` (0x00527690).
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationSlotFilterDeferredLoad_4__PClassDescriptorAbstract @ 0x0052_7690 => extern "thiscall" fn abstract_527690(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Global(0x00ca_c5b0), size: 0x8, vtable: 0x00b2_928c, buffers: [0x00ca_c5c0, 0x00ca_c5d0, 0x00ca_c5e0] })
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationDataSource_4__PClassDescriptorAbstract` (0x0052b670).
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationDataSource_4__PClassDescriptorAbstract @ 0x0052_b670 => extern "thiscall" fn abstract_52b670(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Global(0x00ca_c868), size: 0x8, vtable: 0x00b2_983c, buffers: [0x00ca_c870, 0x00ca_c880, 0x00ca_c890] })
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationDataSourceListEntry_4__PClassDescriptorAbstract` (0x00533ae0).
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationDataSourceListEntry_4__PClassDescriptorAbstract @ 0x0053_3ae0 => extern "thiscall" fn abstract_533ae0(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Global(0x00ca_d8e8), size: 0x8, vtable: 0x00b2_af04, buffers: [0x00ca_d980, 0x00ca_d990, 0x00ca_d9a0] })
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationNetworkInstanceTarget_4__PClassDescriptorAbstract` (0x00533b80).
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationNetworkInstanceTarget_4__PClassDescriptorAbstract @ 0x0053_3b80 => extern "thiscall" fn abstract_533b80(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Global(0x00ca_d8e4), size: 0x8, vtable: 0x00b2_adfc, buffers: [0x00ca_d950, 0x00ca_d960, 0x00ca_d970] })
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationSlotArray_4__PClassDescriptorAbstract` (0x00533c20).
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PAnimationSlotArray_4__PClassDescriptorAbstract @ 0x0053_3c20 => extern "thiscall" fn abstract_533c20(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Global(0x00ca_d8dc), size: 0x8, vtable: 0x00b2_abec, buffers: [0x00ca_d8f0, 0x00ca_d900, 0x00ca_d910] })
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PQWord_16__PClassDescriptorAbstract` (0x00533cc0).
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PQWord_16__PClassDescriptorAbstract @ 0x0053_3cc0 => extern "thiscall" fn abstract_533cc0(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Global(0x00ca_d8e0), size: 0x8, vtable: 0x00b2_acf4, buffers: [0x00ca_d920, 0x00ca_d930, 0x00ca_d940] })
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PAnimation_PAnimationDataSourceListEntry__PClassDescriptorAbstract` (0x00533d60).
+    Phyre_PClassDescriptorAbstract_Phyre_PAnimation_PAnimationDataSourceListEntry__PClassDescriptorAbstract @ 0x0053_3d60 => extern "thiscall" fn abstract_533d60(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Literal(0x00b2_a444), size: 0x94, vtable: 0x00b2_a3bc, buffers: [0x00ca_d5e0, 0x00ca_d680, 0x00ca_d720] })
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PBlendableAnimationSource_4__PClassDescriptorAbstract` (0x0053e220).
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PAnimation_PBlendableAnimationSource_4__PClassDescriptorAbstract @ 0x0053_e220 => extern "thiscall" fn abstract_53e220(this: u32) -> u32 {
+        descriptor::bridge::abstract_descriptor_ctor(&mut mem(), this, &descriptor::AbstractDescriptor { name: descriptor::Name::Global(0x00ca_e4b4), size: 0x8, vtable: 0x00b2_babc, buffers: [0x00ca_e520, 0x00ca_e530, 0x00ca_e540] })
+    }
 }

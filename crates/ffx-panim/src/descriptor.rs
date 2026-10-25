@@ -40,6 +40,37 @@ pub const CHANNEL_BASE_CTOR: u32 = 0x0050_d150;
 /// `PAnimationChannelBase`'s destructor (`thiscall(this)`).
 pub const CHANNEL_BASE_DTOR: u32 = 0x0050_d1d0;
 
+/// `Phyre::PNamespace::GetGlobalNamespace()` (cdecl, no arguments).
+pub const GET_GLOBAL_NAMESPACE: u32 = 0x0043_e2f0;
+/// `Phyre::PClassDescriptor::PClassDescriptor(ns, name, size, align, base,
+/// 0)` (`thiscall`, pops six words).
+pub const CLASS_DESCRIPTOR_CTOR: u32 = 0x0043_b0a0;
+/// `PClassDescriptor::setDefaultBuffer`, `setValidationBuffer`,
+/// `setWriteMaskBuffer` (`thiscall(this, buffer)`).
+pub const SET_BUFFERS: [u32; 3] = [0x0043_d510, 0x0043_d5b0, 0x0043_d5c0];
+
+/// Where a class descriptor's name comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Name {
+    /// The string pointer held in this global (the `PArray` templates).
+    Global(u32),
+    /// This string in the image.
+    Literal(u32),
+}
+
+/// What a `PClassDescriptorAbstract<T>` constructor (`0x00509630` shape)
+/// fills in: `ffx.sym` addresses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AbstractDescriptor {
+    pub name: Name,
+    /// The instance size (8 for the `PArray`s).
+    pub size: u32,
+    /// `PClassDescriptorAbstract<T>`'s vtable.
+    pub vtable: u32,
+    /// The default, validation and write-mask buffers.
+    pub buffers: [u32; 3],
+}
+
 /// The top bit of a `PArray` count: the elements are not the array's.
 pub(crate) const NOT_OWNED: u32 = 0x8000_0000;
 
@@ -50,8 +81,9 @@ pub(crate) fn free(h: &mut impl Host, p: u32) -> u32 {
 
 pub mod bridge {
     use super::{
-        ADD_TO_NAMESPACE, CHANNEL_BASE_CTOR, CHANNEL_BASE_DTOR, Conv, GET_CLASS_DESCRIPTOR, Host,
-        MINUS_ONE, Mem, NOT_OWNED, REGISTER_TYPE, free,
+        ADD_TO_NAMESPACE, AbstractDescriptor, CHANNEL_BASE_CTOR, CHANNEL_BASE_DTOR,
+        CLASS_DESCRIPTOR_CTOR, Conv, GET_CLASS_DESCRIPTOR, GET_GLOBAL_NAMESPACE, Host, MINUS_ONE,
+        Mem, NOT_OWNED, Name, REGISTER_TYPE, SET_BUFFERS, free,
     };
     use crate::al_one;
 
@@ -257,5 +289,38 @@ pub mod bridge {
         h.write(p + 0x30, 0u32);
         free_owned(h, p + 0x28, true);
         al_one(h.call_sym(CHANNEL_BASE_DTOR, Conv::Thiscall(p), &[]))
+    }
+
+    /// A `PClassDescriptorAbstract<T>` constructor (`thiscall(this)` ->
+    /// `this`; `0x00509630` and its copies): `PClassDescriptor`'s
+    /// constructor with the global namespace, the name, the size, align 4
+    /// and `PBase`'s descriptor as the base; sets flag 2 at `+0x90`, the
+    /// vtable, and the three buffers. The original pushes the
+    /// constructor's arguments before it calls `GetGlobalNamespace` (which
+    /// takes none). SEH frame dropped (nothing here throws).
+    pub fn abstract_descriptor_ctor(h: &mut impl Host, this: u32, d: &AbstractDescriptor) -> u32 {
+        let base = h.call_sym(GET_CLASS_DESCRIPTOR, Conv::Cdecl, &[]);
+        let name = match d.name {
+            Name::Global(g) => {
+                let at = h.rebase(g);
+                h.read(at)
+            }
+            Name::Literal(s) => h.rebase(s),
+        };
+        let ns = h.call_sym(GET_GLOBAL_NAMESPACE, Conv::Cdecl, &[]);
+        h.call_sym(
+            CLASS_DESCRIPTOR_CTOR,
+            Conv::Thiscall(this),
+            &[ns, name, d.size, 4, base, 0],
+        );
+        let flags: u32 = h.read(this + 0x90);
+        h.write(this + 0x90, flags | 2);
+        let vt = h.rebase(d.vtable);
+        h.write(this, vt);
+        for (f, b) in SET_BUFFERS.into_iter().zip(d.buffers) {
+            let b = h.rebase(b);
+            h.call_sym(f, Conv::Thiscall(this), &[b]);
+        }
+        this
     }
 }

@@ -1184,3 +1184,157 @@ fn blender_and_set_destructors_match_the_original() {
         assert!(calls > 10, "{what}: {calls} frees");
     }
 }
+
+// ---- batch 4: PClassDescriptorAbstract<T> constructors ----
+
+/// (constructor, what it fills in), from the disassembly
+/// (`~/ffx-work/m4/port/p2/descparse.py` checks every copy's shape).
+const ABSTRACT: [(u32, descriptor::AbstractDescriptor); 14] = [
+    (
+        0x0050_9630,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Global(0x00ca_9bfc),
+            size: 0x8,
+            vtable: 0x00b2_579c,
+            buffers: [0x00ca_9c00, 0x00ca_9c10, 0x00ca_9c20],
+        },
+    ),
+    (
+        0x0051_8cd0,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Global(0x00ca_b43c),
+            size: 0x8,
+            vtable: 0x00b2_759c,
+            buffers: [0x00ca_b490, 0x00ca_b4a0, 0x00ca_b4b0],
+        },
+    ),
+    (
+        0x0051_8d70,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Global(0x00ca_b438),
+            size: 0x8,
+            vtable: 0x00b2_7494,
+            buffers: [0x00ca_b460, 0x00ca_b470, 0x00ca_b480],
+        },
+    ),
+    (
+        0x0051_8e10,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Global(0x00ca_b440),
+            size: 0x8,
+            vtable: 0x00b2_76a4,
+            buffers: [0x00ca_b4c0, 0x00ca_b4d0, 0x00ca_b4e0],
+        },
+    ),
+    (
+        0x0051_ec40,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Global(0x00ca_b828),
+            size: 0x8,
+            vtable: 0x00b2_7eec,
+            buffers: [0x00ca_b830, 0x00ca_b840, 0x00ca_b850],
+        },
+    ),
+    (
+        0x0052_75f0,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Global(0x00ca_c5b4),
+            size: 0x8,
+            vtable: 0x00b2_9394,
+            buffers: [0x00ca_c5f0, 0x00ca_c600, 0x00ca_c610],
+        },
+    ),
+    (
+        0x0052_7690,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Global(0x00ca_c5b0),
+            size: 0x8,
+            vtable: 0x00b2_928c,
+            buffers: [0x00ca_c5c0, 0x00ca_c5d0, 0x00ca_c5e0],
+        },
+    ),
+    (
+        0x0052_b670,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Global(0x00ca_c868),
+            size: 0x8,
+            vtable: 0x00b2_983c,
+            buffers: [0x00ca_c870, 0x00ca_c880, 0x00ca_c890],
+        },
+    ),
+    (
+        0x0053_3ae0,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Global(0x00ca_d8e8),
+            size: 0x8,
+            vtable: 0x00b2_af04,
+            buffers: [0x00ca_d980, 0x00ca_d990, 0x00ca_d9a0],
+        },
+    ),
+    (
+        0x0053_3b80,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Global(0x00ca_d8e4),
+            size: 0x8,
+            vtable: 0x00b2_adfc,
+            buffers: [0x00ca_d950, 0x00ca_d960, 0x00ca_d970],
+        },
+    ),
+    (
+        0x0053_3c20,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Global(0x00ca_d8dc),
+            size: 0x8,
+            vtable: 0x00b2_abec,
+            buffers: [0x00ca_d8f0, 0x00ca_d900, 0x00ca_d910],
+        },
+    ),
+    (
+        0x0053_3cc0,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Global(0x00ca_d8e0),
+            size: 0x8,
+            vtable: 0x00b2_acf4,
+            buffers: [0x00ca_d920, 0x00ca_d930, 0x00ca_d940],
+        },
+    ),
+    (
+        0x0053_3d60,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Literal(0x00b2_a444),
+            size: 0x94,
+            vtable: 0x00b2_a3bc,
+            buffers: [0x00ca_d5e0, 0x00ca_d680, 0x00ca_d720],
+        },
+    ),
+    (
+        0x0053_e220,
+        descriptor::AbstractDescriptor {
+            name: descriptor::Name::Global(0x00ca_e4b4),
+            size: 0x8,
+            vtable: 0x00b2_babc,
+            buffers: [0x00ca_e520, 0x00ca_e530, 0x00ca_e540],
+        },
+    ),
+];
+
+#[test]
+fn abstract_descriptor_constructors_match_the_original() {
+    for (what, mut t) in Twins::all() {
+        t.stub(descriptor::GET_CLASS_DESCRIPTOR, false, 0, 0, 0x0bad_0001);
+        t.stub(descriptor::GET_GLOBAL_NAMESPACE, false, 0, 0, 0x0bad_0002);
+        t.stub(descriptor::CLASS_DESCRIPTOR_CTOR, true, 6, 6, 0x0bad_0003);
+        for f in descriptor::SET_BUFFERS {
+            t.stub(f, true, 1, 1, 0x0bad_0004);
+        }
+        let mut rng = Rng(0x0abc_0000);
+        for (f, d) in ABSTRACT {
+            let p = t.junk(&mut rng, 0xa0);
+            let before = t.log_entries();
+            t.check(&format!("{what} {f:#x}"), f, Conv::Thiscall(p), &[], |g| {
+                Out::U32(desc::abstract_descriptor_ctor(g, p, &d))
+            });
+            assert_eq!(t.log_entries(), before + 6, "{what} {f:#x}");
+        }
+    }
+}
