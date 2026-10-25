@@ -9,6 +9,7 @@ use super::{mem, ported};
 use ffx_prender::glue::bridge as g;
 use ffx_prender::glue2::bridge as g2;
 use ffx_prender::glue3::bridge as g3;
+use ffx_prender::glue4::bridge as g4;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -537,5 +538,131 @@ ported! {
     /// `graphicCharacterRegistHelper_00637880(out, obj, x, callback)`.
     graphicCharacterRegistHelper_00637880 @ 0x0063_7880 => extern "C" fn character_regist_helper(out: u32, obj: u32, x: u32, callback: u32) -> u32 {
         g3::character_regist_helper(&mut mem(), out, obj, x, callback)
+    }
+
+    // ---- round 2, batch 4 (ffx_prender::glue4) ----
+    /// `graphicResetYIQ()`.
+    graphicResetYIQ @ 0x0064_2cc0 => extern "C" fn graphic_reset_yiq() -> u32 {
+        g4::graphic_reset_yiq(&mut mem())
+    }
+    /// `PhyreScene_resetYIQ(this)`.
+    PhyreScene_resetYIQ @ 0x0066_bf40 => extern "thiscall" fn scene_reset_yiq(this: u32) -> u32 {
+        g4::scene_reset_yiq(&mut mem(), this)
+    }
+    /// `graphicCharacterInstanceUpdateSkeletonounds(list)`.
+    graphicCharacterInstanceUpdateSkeletonounds @ 0x0063_c500 => extern "C" fn update_skeleton_bounds(list: u32) {
+        g4::update_skeleton_bounds(&mut mem(), list);
+    }
+    /// `graphicSetAbmap(5 floats)`.
+    graphicSetAbmap @ 0x0064_2da0 => extern "C" fn set_abmap(a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        g4::set_abmap(&mut mem(), [a, b, c, d, e])
+    }
+    /// `graphicAbmapUpdate()`.
+    graphicAbmapUpdate @ 0x0063_90f0 => extern "C" fn abmap_update() {
+        g4::abmap_update(&mut mem());
+    }
+    /// `PostProcessManager_onShaderBinLoaded_00694c20(data, task)`.
+    PostProcessManager_onShaderBinLoaded_00694c20 @ 0x0069_4c20 => extern "C" fn post_on_shader_bin_loaded(data: u32, task: u32) -> u32 {
+        g4::post_on_shader_bin_loaded(&mut mem(), data, task)
+    }
+    /// `graphicBrokenScreenUpdatePolygonData(a, b, 9 words)`.
+    graphicBrokenScreenUpdatePolygonData @ 0x0063_9500 => extern "C" fn broken_screen_update_polygon_data(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32, h: u32, i: u32, j: u32, k: u32) -> u32 {
+        g4::broken_screen_update_polygon_data(&mut mem(), &[a, b, c, d, e, f, g, h, i, j, k])
+    }
+    /// `ClassVFXRenderDataTable_RemoveDeletedPoolMeshInstances(this)`.
+    ClassVFXRenderDataTable_RemoveDeletedPoolMeshInstances @ 0x0069_fc70 => extern "thiscall" fn vfx_remove_deleted_pool_mesh_instances(this: u32) -> u32 {
+        g4::vfx_remove_deleted_pool_mesh_instances(&mut mem(), this)
+    }
+    /// `PhyreScene_isMeshVisible_006603c0(this, entry)`.
+    PhyreScene_isMeshVisible_006603c0 @ 0x0066_03c0 => extern "thiscall" fn scene_is_mesh_visible(this: u32, entry: u32) -> u32 {
+        g4::scene_is_mesh_visible(&mut mem(), this, entry)
+    }
+    /// `graphicUseOptimizedVFXShaderByVFXInstance(lo, hi)`.
+    graphicUseOptimizedVFXShaderByVFXInstance @ 0x0064_4b10 => extern "C" fn use_optimized_vfx_shader_by_instance(lo: u32, hi: u32) -> u32 {
+        g4::use_optimized_vfx_shader_by_instance(&mut mem(), lo, hi)
+    }
+    /// `PhyreScene_moveClusterTo7c_00658f00(this)`.
+    PhyreScene_moveClusterTo7c_00658f00 @ 0x0065_8f00 => extern "thiscall" fn scene_move_cluster(this: u32) {
+        g4::scene_move_cluster(&mut mem(), this);
+    }
+    /// `PhyreScene_clearList_00658fc0(this)`.
+    PhyreScene_clearList_00658fc0 @ 0x0065_8fc0 => extern "thiscall" fn scene_clear_list_658fc0(this: u32) -> u32 {
+        g4::scene_clear_list(&mut mem(), this)
+    }
+    /// `graphicVFXisAtelShpInstanced(lo, hi)`.
+    graphicVFXisAtelShpInstanced @ 0x0064_5d40 => extern "C" fn vfx_is_atel_shp_instanced(lo: u32, hi: u32) -> u32 {
+        g4::vfx_is_atel_shp_instanced(&mut mem(), lo, hi)
+    }
+    /// `PhyreScene_isSpecialMagic_0065f1f0(this)` (`ecx` passed on).
+    PhyreScene_isSpecialMagic_0065f1f0 @ 0x0065_f1f0 => extern "thiscall" fn scene_is_special_magic(this: u32) -> u32 {
+        g4::scene_is_special_magic(&mut mem(), this)
+    }
+    /// `PhyreScene_UseVFXOptimizedTrans(material, on)`.
+    PhyreScene_UseVFXOptimizedTrans @ 0x0065_4b20 => extern "C" fn use_vfx_optimized_trans(material: u32, on: u32) -> u32 {
+        g4::use_vfx_optimized_trans(&mut mem(), material, on)
+    }
+    /// `PhyreScene_ForceTransparent(material, on)`.
+    PhyreScene_ForceTransparent @ 0x0065_1400 => extern "C" fn force_transparent(material: u32, on: u32) -> u32 {
+        g4::force_transparent(&mut mem(), material, on)
+    }
+    /// `graphicUpdateDistortionVertex(a, b, 6 floats)`.
+    graphicUpdateDistortionVertex @ 0x0064_4940 => extern "C" fn update_distortion_vertex(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32, h: u32) -> u32 {
+        g4::update_distortion_vertex(&mut mem(), a, b, [c, d, e, f, g, h])
+    }
+    /// `PhyreScene_renderPostAA(this, mode)`.
+    PhyreScene_renderPostAA @ 0x0065_35b0 => extern "thiscall" fn scene_render_post_aa(this: u32, mode: u32) -> u32 {
+        g4::scene_render_post_aa(&mut mem(), this, mode)
+    }
+    /// `graphicUseOptimizedVFXShader(geometry, on)`.
+    graphicUseOptimizedVFXShader @ 0x0064_4ac0 => extern "C" fn use_optimized_vfx_shader(geometry: u32, on: u32) -> u32 {
+        g4::use_optimized_vfx_shader(&mut mem(), geometry, on)
+    }
+    /// `PArray_assign_0064ead0(this, other)`.
+    PArray_assign_0064ead0 @ 0x0064_ead0 => extern "thiscall" fn parray_assign_0064ead0(this: u32, other: u32) -> u32 {
+        g4::parray_assign(&mut mem(), ffx_prender::glue4::ARRAY_RESERVE_667F00, this, other)
+    }
+    /// `PArray_assign_0064eb20(this, other)`.
+    PArray_assign_0064eb20 @ 0x0064_eb20 => extern "thiscall" fn parray_assign_0064eb20(this: u32, other: u32) -> u32 {
+        g4::parray_assign(&mut mem(), ffx_prender::glue4::ARRAY_RESERVE_668080, this, other)
+    }
+    /// `PhyreScene_showAutoSavingPrompt(this)`.
+    PhyreScene_showAutoSavingPrompt @ 0x0066_f480 => extern "thiscall" fn scene_show_auto_saving_prompt(this: u32) {
+        g4::scene_show_auto_saving_prompt(&mut mem(), this);
+    }
+    /// `graphicVFXIsTextureWithBpLoaded(7 words)`.
+    graphicVFXIsTextureWithBpLoaded @ 0x0064_5450 => extern "C" fn vfx_is_texture_with_bp_loaded(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32) -> u32 {
+        g4::vfx_is_texture_with_bp_loaded(&mut mem(), &[a, b, c, d, e, f, g])
+    }
+    /// `graphicCharacterInstanceIsVisible(list)`.
+    graphicCharacterInstanceIsVisible @ 0x0063_b230 => extern "C" fn character_instance_is_visible(list: u32) -> u32 {
+        g4::character_instance_is_visible(&mut mem(), list)
+    }
+    /// `PhyreScene_addToPipeline_00656590(this, entry)`.
+    PhyreScene_addToPipeline_00656590 @ 0x0065_6590 => extern "thiscall" fn scene_add_to_pipeline(this: u32, entry: u32) {
+        g4::scene_add_to_pipeline(&mut mem(), this, entry);
+    }
+    /// `VFXDrawEventArray_Push(this, event)`.
+    VFXDrawEventArray_Push @ 0x0065_6350 => extern "thiscall" fn vfx_draw_event_push(this: u32, event: u32) -> u32 {
+        g4::vfx_draw_event_push(&mut mem(), this, event)
+    }
+    /// `PhyreScene_addVFXDrawEvent(this, event)`.
+    PhyreScene_addVFXDrawEvent @ 0x0065_6940 => extern "thiscall" fn scene_add_vfx_draw_event(this: u32, event: u32) -> u32 {
+        g4::scene_add_vfx_draw_event(&mut mem(), this, event)
+    }
+    /// `PRedBlackTree_iteratorBegin_0064dae0(this, tree)`.
+    PRedBlackTree_iteratorBegin_0064dae0 @ 0x0064_dae0 => extern "thiscall" fn tree_iterator_begin(this: u32, tree: u32) -> u32 {
+        g4::tree_iterator_begin(&mut mem(), this, tree)
+    }
+    /// `BrokenScreenEffect_fillFloats_006d4150(this)`.
+    BrokenScreenEffect_fillFloats_006d4150 @ 0x006d_4150 => extern "thiscall" fn broken_fill_floats(this: u32) -> u32 {
+        g4::broken_fill_floats(&mut mem(), this)
+    }
+    /// `ShadowDynamicMesh_descriptorDestroy_006789c0(p)`.
+    ShadowDynamicMesh_descriptorDestroy_006789c0 @ 0x0067_89c0 => extern "stdcall" fn shadow_dynamic_mesh_destroy(p: u32) -> u32 {
+        g4::shadow_dynamic_mesh_destroy(&mut mem(), p)
+    }
+    /// `RenderDelegationHelper_setDataToFreeList(this, data)`.
+    RenderDelegationHelper_setDataToFreeList @ 0x006a_e1a0 => extern "thiscall" fn set_data_to_free_list(this: u32, data: u32) -> u32 {
+        g4::set_data_to_free_list(&mut mem(), this, data)
     }
 }

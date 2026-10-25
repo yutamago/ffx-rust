@@ -2528,7 +2528,10 @@
 0x0064b7e0 function Phyre_PCluster_create_PTexture2D # stdcall (count): Phyre_PCluster_create(count, 0x00ca37d0 PTexture2D descriptor, 0); PhyreEngine code, left original. fh: yiSetRootMatrix (switch bsim1.00, a wrong match)
 0x0064b800 function Phyre_PCluster_create_PWorldMatrix # stdcall (count): Phyre_PCluster_create(count, 0x00c92090 PWorldMatrix descriptor, 0); PhyreEngine code, left original. fh: SqsEeSoundCreateTime (switch bsim1.00, a wrong match)
 0x0064b9f0 function ObjectTree_Find           # structure: thiscall(head, &key): search tree (root head +0xc; nodes +0/+4 children, +0xc u32 key), the node else 0; byte-identical to DynGeoTree_Find; PhyreScene_setObjectTranslation's tree at scene +0x1198; name ours
+0x0064dae0 function PRedBlackTree_iteratorBegin_0064dae0 # thiscall(it, tree), ret 4 -> it: it = (tree, leftmost node from the root +0xc following +0 until the header, Phyre_PRedBlackTree_successor(node) or the header); callers PostProcessManager_renderHDAO, PhyreScene_setMeshInstanceGroupIdVisible; name ours; ported M4 h3 r2 (ffx_prender::glue4)
 0x0064dc00 function PhyreScene_PhyreScene     # fh v3:exact 0x0064ddb0 PhyreScene::PhyreScene
+0x0064ead0 function PArray_assign_0064ead0 # thiscall(this, other), ret 4 -> this: word array (+0 count, +8 data) copy after Array_Reserve_00667f00(count); 4 callers; name ours; ported M4 h3 r2 (ffx_prender::glue4)
+0x0064eb20 function PArray_assign_0064eb20 # thiscall(this, other), ret 4 -> this: as PArray_assign_0064ead0 with Array_Reserve_00668080; name ours; ported M4 h3 r2 (ffx_prender::glue4)
 0x0064f360 function MapIterator_Decrement     # structure: fastcall(it): --it of an MSVC std::map iterator (nodes +0 left, +4 parent, +8 right, +0xd head flag); returns it; name ours
 0x0064fa50 function ThrowStdException_0064fa50   # structure: (x): _CxxThrowException(&x, the throw info at 0x00bf749c); never returns; 12 callers in the PhyreScene code (growing arrays); name ours
 0x0064faa0 function PhyreScene_ChangeToHSVPass # fh v3:bsim1.00 0x0064fc50 PhyreScene::ChangeToHSVPass
@@ -2568,6 +2571,7 @@
 0x00655afc function Catch_All_00655cac        # fh v3:cg2 0x655cac Catch_All@00655cac
 0x00656350 function VFXDrawEventArray_Push # thiscall(array, event16): appends a 16-byte record (count +0, capacity +4, data +8; grows by n/8 + 2 through 0x00668280); PhyreScene_addVFXDrawEvent's array at scene +0xfb54; name ours
 0x006564a0 function PhyreScene_addChrDrawSituation # fh v3:exact 0x00656650 PhyreScene::addChrDrawSituation
+0x00656590 function PhyreScene_addToPipeline_00656590 # thiscall(scene, entry), ret 4: entry +0x1c = 0, appended to the array +0xfb48 (count, capacity, data; Array_Reserve_00667f80(n + 2 + n/8) when full); only caller graphicCharacterInstanceAddToPipeline; name ours; ported M4 h3 r2 (ffx_prender::glue4)
 0x006565e0 function PhyreScene_AddVFXToList3880 # thiscall(scene, mesh instance): appends to the PArray +0x3880 (count +0x3878, capacity +0x387c) unless present; VfxGeometry_Register_006a52f0 kind 0 with the geometry's byte +0x50 set; no draw pass found for it in PhyreScene_render (effects census); name ours
 0x006566c0 function PhyreScene_detachChrClusterFrom3DWorld # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f7370 PhyreScene::detachChrClusterFrom3DWorld, 2 votes, round 2
 0x00656780 function PhyreScene_PushMeshMatrix # thiscall(scene, mesh, matrix), ret 8: appends (mesh, the 16 words at matrix) to the array +0x10d84 (0x44-byte entries); graphicAddMeshMatrix's call; name ours
@@ -2590,6 +2594,8 @@
 0x00658350 function PhyreScene_changeLayerOffset_00658350 # thiscall(scene, layer, x, y), ret 0xc: with +0x93c and +0x1128 set, per list of +0x1134 (+0x112c of them) a PhyreSceneCursor walk; the first instance whose name (+0x2c, tagged) holds "layer%d" gets its 12 floats (+4) [8] += x*[1], [9] += y*[3] (x, y ints made floats) and ends the list; ported (render r23, util::bridge::change_layer_offset); name ours
 0x00658570 function PhyreScene_changeLayerScale_00658570 # thiscall(scene, layer, x, y, sx, sy), ret 0x14: as PhyreScene_changeLayerOffset_00658350, [8] += (2.5 sx + [1]) x 0.5, [9] += (2.5 sy + [3]) y 0.5, then [1] = -2.5 sx, [3] = -2.5 sy; ported (render r23, util::bridge::change_layer_scale); name ours
 0x006587d0 function PhyreScene_change2DSceneNum  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'scene%d'; Switch 0x71001f1a80 PhyreScene::change2DSceneNum (symbols from Fahrenheit's server export); thiscall(scene, n), ret 4: +0xf9c4 = 1 when n == 1, +0x11d8 = n, then each instance of the 2D level's lists whose name holds "scene%d" becomes its target's (+0x1c) +0x1c, the others clear it; ported (render r23, util::bridge::change_2d_scene_num)
+0x00658f00 function PhyreScene_moveClusterTo7c_00658f00 # thiscall(scene): unless +0xfb60 > 0 or byte +0xfb44, Phyre_PWorld_removeCluster(+0x9c, +0x11e4), Phyre_PWorld_addCluster(+0x7c, +0x11e4), byte +0xfb44 = 1; called by PhyreScene_render; name ours; ported M4 h3 r2 (ffx_prender::glue4)
+0x00658fc0 function PhyreScene_clearList_00658fc0 # thiscall(scene) -> eax: +0x10d84 &= 0x80000000; owned (top bit clear) frees +0x10d88 (Phyre_PhyreFree's eax) and clears it, else eax = 0xfe; graphicSceneClearList_0063dac0 jumps here; name ours; ported M4 h3 r2 (ffx_prender::glue4)
 0x00659090 function PhyreScene_releaseVFXMeshes # thiscall(this): add ecx, 0x10d54; jmp 0x00636970 (graphicVFXUnloadLevelData's last call); name ours (the Ghidra dump's operator_new_00659090 from a Switch BSim match does not fit)
 0x006590d0 function std_string_compare_006590d0  # MSVC std::string compare (memcmp of the shorter length, then the lengths); the render agent's finding; own name
 0x00659140 function VFXGeometry_CompareDepth # cdecl(&a, &b) qsort comparator over geometry pointers: -1 when a's +0xdc (f32; -1 for null) is below b's, else 1; PhyreScene_MergeVFXRenderArrays sort mode 2; name ours
@@ -2639,6 +2645,7 @@
 0x0065ee40 function PhyreSceneCursor_Next4    # structure: as PhyreSceneCursor_Next1 with the check 0x00660300; name ours
 0x0065efa0 function PhyreScene_isGlowAfterVFX     # structure: fastcall(scene) -> 0x200 for magic 0x2b9 (MagicFile_GetMagicId), 1 when +0xfb60 or +0xfb74 is above 0, else 0; PhyreScene_render runs PostProcessManager_render (the glow) before PhyreScene_DrawMostVFX when 0, after it otherwise; name ours (docs/formats/postfx.md)
 0x0065f050 function PhyreScene_hide2DLayer    # fh v3:exact 0x0065f1d0 PhyreScene::hide2DLayer
+0x0065f1f0 function PhyreScene_isSpecialMagic_0065f1f0 # (ecx passed on) -> al: MagicFile_GetMagicId() is 0x6a, 0x119, 0x203, 0x241, 0x20a, 0x29b, 0x1bd or 0x10e (rest of eax the id's); PhyreScene_render calls it 3 times; name ours; ported M4 h3 r2 (ffx_prender::glue4)
 0x0065f450 function PhyreScene_initScene         # str-match switch: only user of 2 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/flash/pausemenu.swf'; Switch 0x71001f2610 PhyreScene::initScene (symbols from Fahrenheit's server export)
 0x0065ff30 function PhyreScene_insertRenderDataToDeletePool # layout+callees: sorts between PhyreScene_initScene and PhyreScene_is3DScene, and its named callees match the Switch 0x7100209110 PhyreScene_insertRenderDataToDeletePool's (similarity 1.00: user_free, user_malloc); symbols from Fahrenheit's server export
 0x006601d0 function PhyreScene_is3DScene      # fh v3:bsim1.00 0x00660350 PhyreScene::is3DScene
@@ -2650,6 +2657,7 @@
 0x00660300 function PhyreCursor_IsValid_00660300 # as PhyreCursor_IsValid_00660240; name ours
 0x00660330 function PhyreScene_isAnyBattleMap # thiscall(this) -> al: byte +0x1196 or +0x1197 set (graphicSetIsBattleMap's flags); name ours
 0x00660350 function PhyreScene_isDrawingNonUI2DScene # fh v3:exact 0x006604d0 PhyreScene::isDrawingNonUI2DScene
+0x006603c0 function PhyreScene_isMeshVisible_006603c0 # thiscall(scene, entry), ret 4 -> al: 0 for no entry; 1 when +0x10d8c is set or entry +0x1c is 0; else 0x00663cc0 on entry +0x1c with [+0xdc] + 0x74 (tail call); graphicCharacterInstanceIsVisible calls it; name ours; ported M4 h3 r2 (ffx_prender::glue4)
 0x00660400 function PhyreScene_isOpeningScreenPlaying # () -> al = g_PhyreSceneOpeningPlaying; name Fahrenheit's (Switch BSim)
 0x006604d0 function PhyreScene_isVFXTextureLoaded # fh v3:exact 0x00660650 PhyreScene::isVFXTextureLoaded
 0x00661c80 function PhyreScene_isVFXTextureLoaded_00661c80 # fh v3:bsim0.97 0x00661e10 PhyreScene::isVFXTextureLoaded
@@ -2791,6 +2799,7 @@
 0x00678580 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_ShadowDynamicMesh__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class ShadowDynamicMesh &>::Get" (its own __FUNCTION__ in an error print)
 0x00678660 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_ShadowDynamicMesh__Get_00678660 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class ShadowDynamicMesh *>::Get" (its own __FUNCTION__ in an error print)
 0x006788c0 function ShadowDynamicMesh_Bind       # layout+callees: sorts between Phyre_PScripting_PScriptAccessors_PObjectAccessor_ShadowDynamicMesh__Get and fiosClearOps, and its named callees match the Switch 0x71001ca120 ShadowDynamicMesh_Bind's (similarity 1.00: Phyre_PClassDescriptor_addToNamespace, Phyre_PTypeDispenser_RegisterType); symbols from Fahrenheit's server export
+0x006789c0 function ShadowDynamicMesh_descriptorDestroy_006789c0 # stdcall(p) -> al = 1: virtual slot 0 (argument 0) on p - 4 (on 0 for p = 0); in the ShadowDynamicMesh class descriptors' vtables (+0x2c, +0x74); name ours; ported M4 h3 r2 (ffx_prender::glue4)
 0x006789f0 function ShadowDynamicMesh_updateBuffers_006789f0 # ShadowDynamicMesh_vftable slot 5 (0x00b44c8c), ret 0x10, ecx unread: copies the mesh data (src +0x10/+0x14/+0x18/+0x1c, 12/16/8/12 bytes per vertex, src +0x24 vertices) into four vertex streams (+0x3c data, +4 count) and the src +0x28 indices (+0x20) into the index buffer (+0x38, +8), clears src +4; returns 0; name ours; ported (render round 24)
 0x00678b40 function ReturnZeroStd_00678b40 # stdcall(1 arg), ret 4 -> 0 (vtable only); name ours
 0x00678b50 function ReturnMinus1_00678b50 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
@@ -3043,6 +3052,7 @@
 0x006938d0 function PostProcessTweakUtil_initWithSceneContext # str-match switch: only user of 21 string(s) held once by both builds, e.g. 'Fog far'; Switch 0x7100217870 PostProcessTweakUtil::initWithSceneContext (symbols from Fahrenheit's server export)
 0x00693be0 function SetFields12400_00693be0 # thiscall(this, a, b, c, d), ret 0x10: this[0] = c, +0x12400 = a, +0x12404 = b, then 0x00693d20(this); FUN_006656e0 calls it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x00693d70 function PostProcessManager_onAllShaderBinFilesLoaded # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x710020e4e0 PostProcessManager::onAllShaderBinFilesLoaded, 4 votes, round 1
+0x00694c20 function PostProcessManager_onShaderBinLoaded_00694c20 # cdecl(data, task): async-load callback that 0x00693d20 registers for each of 14 shader bins; task = (manager, i): manager +4 + 4i = data, 0x00693540(manager, i), PostProcessManager_onAllShaderBinFilesLoaded after i = 13 (eax its, else i + 1); name ours; ported M4 h3 r2 (ffx_prender::glue4)
 0x00694c60 function PostProcessManager_prepareGlowMap # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'FullGlowThreshold'; Switch 0x71002152e0 PostProcessManager::prepareGlowMap (symbols from Fahrenheit's server export)
 0x00694f10 function PostProcessManager_render    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'ColorCorrectionBuffer'; Switch 0x7100214b00 PostProcessManager::render (symbols from Fahrenheit's server export)
 0x006953a0 function PostProcessTweakUtil_render  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PostProcess: %.2f fps'; Switch 0x71002183a0 PostProcessTweakUtil::render (symbols from Fahrenheit's server export)
@@ -3356,6 +3366,7 @@
 0x006d2c10 function ShadowManager_loadShadowShaderBinFiles # layout+callees: sorts between ShadowManager_getTextureSampler and ShadowManager_updateShadowMap, and its named callees match the Switch 0x7100277e90 ShadowManager_loadShadowShaderBinFiles's (similarity 0.60: Phyre_PCluster_LoadAssetFile, Phyre_PFramework_PApplication_GetApplication, fiosUnifyFilename); symbols from Fahrenheit's server export
 0x006d3000 function ShadowManager_updateShadowMap # fh v3:exact 0x006d3130 ShadowManager::updateShadowMap
 0x006d3560 function ShadowEntry_Init          # structure: thiscall(this, owner), ret 4: owner +0, 2 at +4, 1.0 at +0x30..+0x3c, the rest of +0xc..+0x50 and +0xa0/+0xa4 cleared; returns this; name ours (layout only)
+0x006d4150 function BrokenScreenEffect_fillFloats_006d4150 # thiscall(this) -> eax: mode +0 = 1 fills [+0x48] with +8 * 4 floats 1.0, mode 2 with the float at 0x00b412c4 (count and pointer re-read per store); only caller 0x006d4780; name ours; ported M4 h3 r2 (ffx_prender::glue4)
 0x006d4de0 function BrokenScreenEffect_GetInstance # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a0b88 BrokenScreenEffect::GetInstance, 2 votes, round 1
 0x006d4e00 function SetFieldConst4_006d4e00      # auto-port shape (store constant to field, thiscall): u8[(a0 + 0x4)] = 0x1; callers: ; name ours
 0x006d4e10 function SetFieldConst5_006d4e10      # auto-port shape (store constant to field, thiscall): u8[(a0 + 0x5)] = 0x1; callers: ; name ours
@@ -17000,6 +17011,7 @@
 0x00c3a4cc label    g_pppEnvSlot              # pointer to where pppInitEnv stores the current ppp environment (rcefMainSetEnv)
 0x00c3a4d0 label    g_AlphaScale              # f32 set by useExtendedAlpha (512 extended, 256 normal)
 0x00c3a4d8 label    g_VfxShapeEnlargeBufferFactor # multiplies the shape draws' vertex counts; set/resetVfxShapeEnlargeBufferFactor
+0x00c3a4dc label g_UseOptimizedVFXShaderArg # the second argument graphicUseOptimizedVFXShaderByVFXInstance passes to graphicUseOptimizedVFXShader; set to 1 after each call; name ours
 0x00c3a500 label    g_pppFpCurrentId          # u32: the playing field effect's +0x44 halfword (pppFpLoop 0x00729c33); pppDrawMdl3Draw (map 0x3e: 0x2c..0x2f), pppDrawMdlTs3Draw/LoopZDraw (per-map ids) patch their requests by it; name ours
 0x00c3a504 label    g_VfxYiqMode              # -1 off; updateVFXRenderData enables YIQ on map 0x188 unless -1; updateVFXRenderDataShp pushes the depth back on level 0x76f at 3..5
 0x00c3a508 label    g_pppProgramTable            # 418 x 0x28-byte particle program records to 0x00c3e658: +0 name ("pppAccele", ...), +8 per-frame step, +0xc draw, +0x14 Sta, +0x1c set-up (Con), +0x20 second set-up (Con2), +0x24 destructor (Des); pppColor -> pppColor/pppColorCon

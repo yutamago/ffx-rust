@@ -25,6 +25,7 @@ use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_prender::glue::{self, bridge as g};
 use ffx_prender::glue2::{self, bridge as g2};
 use ffx_prender::glue3::{self, bridge as g3};
+use ffx_prender::glue4::{self, bridge as g4};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -149,6 +150,8 @@ struct Twins {
     cave: u32,
     cave_next: u32,
     snapshot: bool,
+    /// [`Twins::stub`] logs the word at `ecx` instead of `ecx`.
+    deref_this: bool,
     /// Bytes the stubs replaced, put back by [`Twins::reset`].
     patched: Vec<(u32, Vec<u8>)>,
 }
@@ -173,6 +176,7 @@ impl Twins {
             cave,
             cave_next: cave,
             snapshot,
+            deref_this: false,
             patched: Vec::new(),
         };
         t.log = t.zeros(0x8000);
@@ -296,7 +300,9 @@ impl Twins {
         c.extend((log + 4).to_le_bytes()); // add eax, log + 4
         c.extend([0xc7, 0x00]);
         c.extend(tag.to_le_bytes()); // mov [eax], tag
-        if this {
+        if this && self.deref_this {
+            c.extend([0x8b, 0x11, 0x89, 0x50, 0x04]); // mov edx, [ecx]; mov [eax+4], edx
+        } else if this {
             c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
         }
         for i in 0..n {
@@ -375,6 +381,9 @@ enum K {
     /// A method that leaves `eax` alone (a byte store): logs as
     /// [`K::This`].
     Keep(u32),
+    /// As [`K::Keep`], logging the word at `ecx` (what the callee finds in
+    /// the object's first field) instead of `ecx`.
+    KeepDeref(u32),
     /// A method without arguments returning an address inside the
     /// synthetic object (`+0x200`), for originals that write through it.
     Entry,
@@ -387,6 +396,8 @@ enum K {
     /// A `stdcall` import with `n` words, through its slot (the stub's
     /// address is written into the slot).
     Import(u32),
+    /// A cdecl import with `n` words, through its slot.
+    ImportC(u32),
 }
 
 /// `this` of a case.
@@ -399,6 +410,8 @@ enum This {
     Global(u32),
     /// A thiscall original on the synthetic object.
     Object,
+    /// A stdcall original: no `this`.
+    Stdcall,
 }
 
 /// A port: the oracle, `this` (0 for cdecl originals) and the stack
@@ -565,6 +578,7 @@ const CASES: &[Case] = &[
 ];
 
 /// Runs every case `n` times on `t` (fresh stubs and objects each time).
+#[allow(clippy::too_many_lines)] // the stub kinds
 fn run_cases(t: &mut Twins, cases: &[Case], n: u32, rng: &mut Rng) {
     const OBJ_LEN: usize = 0x2000;
     let obj = t.zeros(OBJ_LEN);
@@ -621,6 +635,11 @@ fn run_cases(t: &mut Twins, cases: &[Case], n: u32, rng: &mut Rng) {
                     K::This(n) => {
                         t.stub(Some(at), sym, true, n, n, Some(ret));
                     }
+                    K::KeepDeref(n) => {
+                        t.deref_this = true;
+                        t.stub(Some(at), sym, true, n, n, None);
+                        t.deref_this = false;
+                    }
                     K::Keep(n) => {
                         t.stub(Some(at), sym, true, n, n, None);
                     }
@@ -639,6 +658,10 @@ fn run_cases(t: &mut Twins, cases: &[Case], n: u32, rng: &mut Rng) {
                         let s = t.stub(None, sym, false, n, n, Some(ret));
                         t.patch(at, &s.to_le_bytes());
                     }
+                    K::ImportC(n) => {
+                        let s = t.stub(None, sym, false, n, 0, Some(ret));
+                        t.patch(at, &s.to_le_bytes());
+                    }
                 }
             }
             let args: Vec<u32> = (0..case.args)
@@ -652,7 +675,7 @@ fn run_cases(t: &mut Twins, cases: &[Case], n: u32, rng: &mut Rng) {
                 .collect();
             let mut args = args;
             let mut this = match case.this {
-                This::None => 0,
+                This::None | This::Stdcall => 0,
                 This::Global(gl) => t.r32(t.rebase(gl)),
                 This::Object => obj,
             };
@@ -661,6 +684,7 @@ fn run_cases(t: &mut Twins, cases: &[Case], n: u32, rng: &mut Rng) {
             }
             let conv = match case.this {
                 This::None => Conv::Cdecl,
+                This::Stdcall => Conv::Stdcall,
                 _ => Conv::Thiscall(this),
             };
             let what = format!("{} #{i}", case.name);
@@ -905,5 +929,452 @@ fn batch3_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 8 } else { 32 };
         run_cases(t, CASES3, n, &mut Rng(0x0bad_cafe));
+    });
+}
+
+// ---- batch 4 (ffx_prender::glue4, round 2) ----
+
+/// One of `vs`.
+fn pick(rng: &mut Rng, vs: &[u32]) -> u32 {
+    vs[rng.below(vs.len() as u32) as usize]
+}
+
+/// A `PArray` of pointers at `obj + 0x40` (count `+0`, elements `+4` at
+/// `obj + 0x100`), or none now and then; `args[0]` = it.
+fn prep_parray(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let n = rng.below(6);
+    let top = if rng.chance(3) { 0x8000_0000 } else { 0 };
+    t.w32(obj + 0x40, n | top);
+    t.w32(obj + 0x44, obj + 0x100);
+    for i in 0..n {
+        t.w32(obj + 0x100 + 4 * i, obj + 0x400 + 0x40 * i);
+    }
+    args[0] = if rng.chance(5) { 0 } else { obj + 0x40 };
+}
+
+/// `prep_parray`, and the scene's visibility test returning `al` 0 most
+/// of the time.
+fn prep_visible_list(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    prep_parray(t, obj, this, args, rng);
+    let r = if rng.chance(3) {
+        rng.next() | 1
+    } else {
+        rng.next() & !0xff
+    };
+    let at = t.rebase(glue4::SCENE_IS_MESH_VISIBLE);
+    t.stub(Some(at), glue4::SCENE_IS_MESH_VISIBLE, true, 1, 1, Some(r));
+}
+
+/// The abmap's state: 4 (delete) half of the time (image only).
+fn prep_abmap4(t: &mut Twins, _: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let abmap = t.r32(t.rebase(glue2::GRAPHIC_ABMAP.sym));
+    if !t.snapshot && abmap != 0 {
+        let v = pick(rng, &[4, 4, 0, 3, 5, 0xffff_ffff]);
+        t.w32(abmap + 4, v);
+    }
+}
+
+/// The loader task `(manager, i)` at `obj + 0x40`, `i` the last (13)
+/// half of the time.
+fn prep_shader_bin(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let i = if rng.chance(2) { 13 } else { rng.below(14) };
+    t.w32(obj + 0x40, obj + 0x100);
+    t.w32(obj + 0x44, i);
+    args[1] = obj + 0x40;
+}
+
+/// The delete pool: count `+8`, keys `+0xc` (8 bytes, about half 0),
+/// mesh instances `+0x1c`.
+fn prep_delete_pool(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let n = rng.below(7);
+    let top = if rng.chance(3) { 0x8000_0000 } else { 0 };
+    t.w32(obj + 8, n | top);
+    t.w32(obj + 0xc, obj + 0x100);
+    t.w32(obj + 0x1c, obj + 0x200);
+    for i in 0..n {
+        let (lo, hi) = match rng.below(4) {
+            0 => (0, 0),
+            1 => (rng.next(), 0),
+            2 => (0, rng.next()),
+            _ => (rng.next(), rng.next()),
+        };
+        t.w32(obj + 0x100 + 8 * i, lo);
+        t.w32(obj + 0x104 + 8 * i, hi);
+        t.w32(obj + 0x200 + 4 * i, obj + 0x400 + 0x20 * i);
+        t.w32(obj + 0x40c + 0x20 * i, 0x1111_1111);
+    }
+}
+
+/// A scene large enough for `+0x10d8c`, an entry with or without a mesh.
+fn prep_mesh_visible(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x10d90);
+    *this = scene;
+    let flag = if rng.chance(3) { rng.word() | 1 } else { 0 };
+    t.w32(scene + 0x0001_0d8c, flag);
+    let camera = rng.next();
+    t.w32(scene + 0xdc, camera);
+    let mesh = if rng.chance(3) { 0 } else { rng.next() | 1 };
+    t.w32(obj + 0x5c, mesh);
+    args[0] = if rng.chance(5) { 0 } else { obj + 0x40 };
+}
+
+/// The instance 0 now and then; the flag global random.
+fn prep_shader_by_instance(t: &mut Twins, _: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    if rng.chance(4) {
+        args[0] = 0;
+        args[1] = 0;
+    }
+    let v = rng.word();
+    t.global(glue4::USE_OPTIMIZED_VFX_SHADER_ARG.sym, v);
+}
+
+/// The scene's cluster fields: `+0xfb60` around 0, byte `+0xfb44`.
+fn prep_move_cluster(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj.wrapping_sub(0xf000);
+    let v = pick(rng, &[0, 0, 1, 0xffff_ffff, 0x8000_0000]);
+    t.w32(obj + 0xb60, v);
+    let b = if rng.chance(2) {
+        0
+    } else {
+        rng.next() as u8 | 1
+    };
+    t.write(obj + 0xb44, &[b]);
+}
+
+/// The scene's list count `+0x10d84`: owned (top bit clear) or not.
+fn prep_clear_list(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj.wrapping_sub(0x0001_0000);
+    let top = if rng.chance(2) { 0x8000_0000 } else { 0 };
+    let v = rng.next() & 0x7fff_ffff | top;
+    t.w32(obj + 0xd84, v);
+}
+
+/// The data lookup returning 0 (the whole loop) half of the time; keys
+/// near the 32-bit carry.
+fn prep_atel_shp(t: &mut Twins, _: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    if rng.chance(2) {
+        let at = t.rebase(glue4::VFX_GET_DATA_BY_INSTANCE);
+        t.stub(
+            Some(at),
+            glue4::VFX_GET_DATA_BY_INSTANCE,
+            true,
+            2,
+            2,
+            Some(0),
+        );
+    }
+    match rng.below(4) {
+        0 => {
+            args[0] = 0;
+            args[1] = 0;
+        }
+        1 => args[0] = 0u32.wrapping_sub(rng.below(60_000)),
+        _ => {}
+    }
+}
+
+/// The magic id: one of the special ones half of the time.
+fn prep_special_magic(t: &mut Twins, _: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let id = if rng.chance(2) {
+        pick(
+            rng,
+            &[0x6a, 0x119, 0x203, 0x241, 0x20a, 0x29b, 0x1bd, 0x10e],
+        )
+    } else {
+        pick(rng, &[0, 0x6b, 0x2b9, 0x1_006a, 0x10e | 0xff00])
+    };
+    let high = if rng.chance(2) {
+        rng.next() & 0xffff_0000
+    } else {
+        0
+    };
+    let at = t.rebase(glue4::MAGIC_ID);
+    t.stub(Some(at), glue4::MAGIC_ID, true, 0, 0, Some(id | high));
+}
+
+/// A material at `m` whose remapping (`+8` from, `+0xc` to) is one of the
+/// passes or none.
+fn material_at(t: &mut Twins, m: u32, rng: &mut Rng) {
+    let passes = [
+        glue4::PASS_SCENE,
+        glue4::PASS_OPTIMIZED_TRANS,
+        glue4::PASS_FORCE_TRANSPARENT,
+        glue4::PASS_KEEP,
+    ];
+    let from = if rng.chance(3) {
+        rng.next()
+    } else {
+        t.rebase(glue4::PASS_SCENE)
+    };
+    let to = if rng.chance(5) {
+        rng.next()
+    } else {
+        let p = pick(rng, &passes);
+        t.rebase(p)
+    };
+    t.w32(m + 8, from);
+    t.w32(m + 0xc, to);
+}
+
+/// A material at `obj + 0x40`; the flag word with its low byte 0 half of
+/// the time.
+fn prep_material(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    material_at(t, obj + 0x40, rng);
+    args[0] = obj + 0x40;
+    args[1] = if rng.chance(2) {
+        rng.next() & !0xff
+    } else {
+        rng.next() | 1
+    };
+}
+
+/// The post-process manager at `+0x10cc`, mode 0, 1 or other.
+fn prep_post_aa(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    t.w32(obj + 0x10cc, obj + 0x1800);
+    args[0] = pick(rng, &[0, 1, 0, 1, 2, 0xffff_ffff]);
+}
+
+/// A geometry at `obj + 0x40` (or none) with a material array at
+/// `obj + 0xc0`, `PArray_Data` giving `obj + 0x200`, materials at
+/// `obj + 0x400`.
+fn prep_vfx_geometry(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    t.w32(obj + 0x4c, obj + 0x80);
+    t.w32(obj + 0x90, obj + 0xc0);
+    let n = rng.below(5);
+    let top = if rng.chance(3) { 0x8000_0000 } else { 0 };
+    t.w32(obj + 0xc0, n | top);
+    for i in 0..n {
+        let m = obj + 0x400 + 0x20 * i;
+        t.w32(obj + 0x200 + 4 * i, m);
+        material_at(t, m, rng);
+    }
+    let at = t.rebase(glue4::PARRAY_DATA);
+    t.stub(Some(at), glue4::PARRAY_DATA, true, 0, 0, Some(obj + 0x200));
+    args[0] = if rng.chance(5) { 0 } else { obj + 0x40 };
+    let any = rng.next();
+    args[1] = pick(rng, &[0, 1, 0x100, any]);
+}
+
+/// Two word arrays (`+0` count, `+8` data): `this` at `obj + 0x40`,
+/// `other` at `obj + 0x80` (or `this`).
+fn prep_assign(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj + 0x40;
+    let n = pick(rng, &[0, 1, 2, 5, 0xffff_ffff]);
+    t.w32(obj + 0x80, n);
+    t.w32(obj + 0x88, obj + 0x200);
+    // a null destination only where its first slot is the only one
+    let dst = if n == 1 && rng.chance(2) {
+        0
+    } else {
+        obj + 0x300
+    };
+    t.w32(obj + 0x48, dst);
+    args[0] = if rng.chance(6) { *this } else { obj + 0x80 };
+}
+
+/// The scene's prompt (`+0x10ddc`) set or 0, the Iggy manager 0 now and
+/// then (image only).
+fn prep_auto_save(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj.wrapping_sub(0x0001_0000);
+    let old = if rng.chance(2) { 0 } else { rng.next() | 1 };
+    t.w32(obj + 0xddc, old);
+    if !t.snapshot && rng.chance(2) {
+        t.global(glue2::IGGY_MENU_MANAGER.sym, 0);
+    }
+}
+
+/// `isVFXTextureLoaded` giving 0..3, the cluster lookup 0 or not.
+fn prep_bp_loaded(t: &mut Twins, _: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let r = pick(rng, &[0, 1, 1, 2, 3, 0x101]);
+    let at = t.rebase(glue4::SCENE_IS_VFX_TEXTURE_LOADED);
+    t.stub(
+        Some(at),
+        glue4::SCENE_IS_VFX_TEXTURE_LOADED,
+        true,
+        7,
+        7,
+        Some(r),
+    );
+    let c = if rng.chance(2) { 0 } else { rng.next() | 1 };
+    let at = t.rebase(glue4::CLUSTER_BY_NAME);
+    t.stub(Some(at), glue4::CLUSTER_BY_NAME, true, 1, 1, Some(c));
+}
+
+/// An array (count, capacity, data) at `a` of `size`-byte entries, its
+/// data at `data` (or 0 when empty); now and then a negative count and
+/// capacity, with the data placed so that the new slot falls on 0 (the
+/// signed compare and the signed `n / 8`).
+fn array_at(t: &mut Twins, a: u32, data: u32, size: u32, rng: &mut Rng) {
+    if rng.chance(6) {
+        // count -10: n = -9, slot = data + (n - 1) * size
+        t.w32(a, 0xffff_fff6);
+        let cap = pick(rng, &[0xffff_ff9c, 0xffff_ffff, 3]);
+        t.w32(a + 4, cap);
+        t.w32(a + 8, 10 * size);
+        return;
+    }
+    let n = rng.below(8);
+    let cap = match rng.below(3) {
+        0 => n,
+        1 => n + 1 + rng.below(3),
+        _ => n.saturating_sub(1),
+    };
+    t.w32(a, n);
+    t.w32(a + 4, cap);
+    let d = if n == 0 && rng.chance(2) { 0 } else { data };
+    t.w32(a + 8, d);
+}
+
+/// The scene's pipeline array at `+0xfb48` (count, capacity, data), an
+/// entry or none.
+fn prep_pipeline(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj.wrapping_sub(0xf000);
+    array_at(t, obj + 0xb48, obj + 0x1000, 4, rng);
+    args[0] = if rng.chance(5) { 0 } else { obj + 0x40 };
+}
+
+/// The draw-event array at `obj + 0x40`, the event at `obj + 0x80`.
+fn prep_event_push(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj + 0x40;
+    array_at(t, obj + 0x40, obj + 0x400, 16, rng);
+    args[0] = obj + 0x80;
+}
+
+/// The scene's event fields (`+0xf8cc`, layers `+0xf910`/`+0xf954`,
+/// counters `+0xfb60`) and an event of type -1..7.
+fn prep_add_event(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj.wrapping_sub(0xf000);
+    let kind = pick(rng, &[0, 1, 2, 3, 4, 5, 6, 7, 0xffff_ffff, 0x8000_0000]);
+    t.w32(obj + 0x80, kind);
+    let layer = pick(rng, &[0, 0, 1, 3, 8, 0xffff_ffff]);
+    t.w32(obj + 0x954, layer);
+    args[0] = obj + 0x80;
+}
+
+/// A tree header at `obj + 0x100` whose root `+0xc` is the header, 0, or a
+/// chain of left links back to the header.
+fn prep_tree(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj + 0x40;
+    let tree = obj + 0x100;
+    let root = match rng.below(4) {
+        0 => tree,
+        1 => 0,
+        _ => {
+            let n = 1 + rng.below(4);
+            for k in 0..n {
+                let node = obj + 0x200 + 0x20 * k;
+                let left = if k + 1 == n { tree } else { node + 0x20 };
+                t.w32(node, left);
+            }
+            obj + 0x200
+        }
+    };
+    t.w32(tree + 0xc, root);
+    args[0] = tree;
+}
+
+/// The fill's mode `+0` (0..3), count `+8` and floats `[+0x48]`.
+fn prep_fill(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let mode = pick(rng, &[1, 2, 1, 2, 0, 3]);
+    t.w32(obj, mode);
+    // 0x4000_0000 * 4 wraps to 0: no stores
+    let n = if rng.chance(6) {
+        0x4000_0000
+    } else {
+        rng.below(7)
+    };
+    t.w32(obj + 8, n);
+    t.w32(obj + 0x48, obj + 0x400);
+}
+
+/// An object at `obj` whose virtual slot 0 is a recording stub; `p` =
+/// `obj + 4`.
+fn prep_descriptor_destroy(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let r = rng.next();
+    let f = t.stub(None, 0xd7, true, 1, 1, Some(r));
+    t.w32(obj, obj + 0x800);
+    t.w32(obj + 0x800, f);
+    args[0] = obj + 4;
+}
+
+/// 64 slots (`+8`, 8 bytes) with `data` in one of them, or none; the
+/// compare-exchange giving 1 or not.
+fn prep_free_list(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let data = rng.next() | 1;
+    for i in 0..64 {
+        t.w32(obj + 8 + 8 * i, data ^ (i + 1));
+    }
+    if !rng.chance(4) {
+        let i = rng.below(64);
+        t.w32(obj + 8 + 8 * i, data);
+    }
+    args[0] = data;
+    let r = if rng.chance(2) { 1 } else { rng.word() };
+    let s = t.stub(
+        None,
+        glue4::INTERLOCKED_COMPARE_EXCHANGE,
+        false,
+        3,
+        3,
+        Some(r),
+    );
+    let at = t.rebase(glue4::INTERLOCKED_COMPARE_EXCHANGE);
+    t.patch(at, &s.to_le_bytes());
+}
+
+/// `this` such that the scene's YIQ fields (`+0xfc88`..) land in the
+/// object.
+fn this_for_yiq(_: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], _: &mut Rng) {
+    *this = obj.wrapping_sub(0xf000);
+}
+
+fn arr<const N: usize>(a: &[u32]) -> [u32; N] {
+    a[..N].try_into().unwrap()
+}
+
+#[rustfmt::skip]
+const CASES4: &[Case] = &[
+    cdecl("graphic_reset_yiq", 0x0064_2cc0, 0, &[(glue4::SCENE_RESET_YIQ, K::This(0))], |m, _, _| u(g4::graphic_reset_yiq(m))),
+    Case { prep: Some(this_for_yiq), ..method("scene_reset_yiq", 0x0066_bf40, This::Object, 0, &[(glue4::SCENE_UPDATE_MAP_YIQ, K::This(0))], |m, this, _| u(g4::scene_reset_yiq(m, this))) },
+    Case { prep: Some(prep_parray), ..cdecl("update_skeleton_bounds", 0x0063_c500, 1, &[(glue4::MESH_UPDATE_BOUNDS_FROM_SKELETON, K::This(0))], |m, _, a| { g4::update_skeleton_bounds(m, a[0]); Out::None }) },
+    Case { float_args: true, ..cdecl("set_abmap", 0x0064_2da0, 5, &[(glue4::SCENE_SET_ABMAP_CAMERA, K::This(5))], |m, _, a| u(g4::set_abmap(m, arr(a)))) },
+    Case { prep: Some(prep_abmap4), ..cdecl("abmap_update", 0x0063_90f0, 0, &[(glue4::ABMAP_DELETE, K::Cdecl(0)), (glue4::ABMAP_UPDATE, K::This(0))], |m, _, _| { g4::abmap_update(m); Out::None }) },
+    Case { prep: Some(prep_shader_bin), ..cdecl("post_on_shader_bin_loaded", 0x0069_4c20, 2, &[(glue::ASYNC_LOAD_INSTANCE, K::Getter), (glue4::POST_SHADER_BIN_STEP, K::This(1)), (glue4::POST_ON_ALL_SHADER_BINS, K::This(0))], |m, _, a| u(g4::post_on_shader_bin_loaded(m, a[0], a[1]))) },
+    Case { null_instance: true, ..cdecl("broken_screen_update_polygon_data", 0x0063_9500, 11, &[(glue::BROKEN_SCREEN_INSTANCE, K::Getter), (glue4::BROKEN_POLYGON, K::This(2)), (glue4::BROKEN_POLYGON_UPDATE, K::This(9))], |m, _, a| u(g4::broken_screen_update_polygon_data(m, &arr(a)))) },
+    Case { prep: Some(prep_delete_pool), ..method("vfx_remove_deleted_pool_mesh_instances", 0x0069_fc70, This::Object, 0, &[], |m, this, _| u(g4::vfx_remove_deleted_pool_mesh_instances(m, this))) },
+    Case { prep: Some(prep_mesh_visible), ..method("scene_is_mesh_visible", 0x0066_03c0, This::Object, 1, &[(glue4::SCENE_MESH_VISIBLE_TEST, K::This(1))], |m, this, a| u(g4::scene_is_mesh_visible(m, this, a[0]))) },
+    Case { prep: Some(prep_shader_by_instance), ..cdecl("use_optimized_vfx_shader_by_instance", 0x0064_4b10, 2, &[(glue4::VFX_GET_DYN_GEO_BY_INSTANCE, K::This(2)), (glue4::USE_OPTIMIZED_VFX_SHADER, K::Cdecl(2))], |m, _, a| u(g4::use_optimized_vfx_shader_by_instance(m, a[0], a[1]))) },
+    Case { prep: Some(prep_move_cluster), ..method("scene_move_cluster", 0x0065_8f00, This::Object, 0, &[(glue4::WORLD_REMOVE_CLUSTER, K::This(1)), (glue4::WORLD_ADD_CLUSTER, K::This(1))], |m, this, _| { g4::scene_move_cluster(m, this); Out::None }) },
+    Case { prep: Some(prep_clear_list), ..method("scene_clear_list", 0x0065_8fc0, This::Object, 0, &[(glue4::PHYRE_FREE, K::Cdecl(1))], |m, this, _| u(g4::scene_clear_list(m, this))) },
+    Case { prep: Some(prep_atel_shp), ..cdecl("vfx_is_atel_shp_instanced", 0x0064_5d40, 2, &[(glue4::VFX_GET_DATA_BY_INSTANCE, K::This(2))], |m, _, a| u(g4::vfx_is_atel_shp_instanced(m, a[0], a[1]))) },
+    Case { prep: Some(prep_special_magic), ..method("scene_is_special_magic", 0x0065_f1f0, This::Object, 0, &[], |m, this, _| u(g4::scene_is_special_magic(m, this))) },
+    Case { prep: Some(prep_material), ..cdecl("use_vfx_optimized_trans", 0x0065_4b20, 2, &[(glue4::MATERIAL_SET_PASS_REMAPPING, K::This(2))], |m, _, a| u(g4::use_vfx_optimized_trans(m, a[0], a[1]))) },
+    Case { prep: Some(prep_material), ..cdecl("force_transparent", 0x0065_1400, 2, &[(glue4::MATERIAL_SET_PASS_REMAPPING, K::This(2))], |m, _, a| u(g4::force_transparent(m, a[0], a[1]))) },
+    Case { float_args: true, ..cdecl("update_distortion_vertex", 0x0064_4940, 8, &[(glue4::DISTORTION_INSTANCE, K::Getter), (glue4::DISTORTION_UPDATE_VERTEX, K::This(8))], |m, _, a| u(g4::update_distortion_vertex(m, a[0], a[1], arr(&a[2..])))) },
+    Case { prep: Some(prep_post_aa), ..method("scene_render_post_aa", 0x0065_35b0, This::Object, 1, &[(glue4::POST_RENDER_FXAA, K::This(2)), (glue4::POST_RENDER_SMAA, K::This(1))], |m, this, a| u(g4::scene_render_post_aa(m, this, a[0]))) },
+    Case { prep: Some(prep_vfx_geometry), ..cdecl("use_optimized_vfx_shader", 0x0064_4ac0, 2, &[(glue4::MATERIAL_SET_PASS_REMAPPING, K::This(2))], |m, _, a| u(g4::use_optimized_vfx_shader(m, a[0], a[1]))) },
+    Case { prep: Some(prep_assign), ..method("parray_assign_0064ead0", 0x0064_ead0, This::Object, 1, &[(glue4::ARRAY_RESERVE_667F00, K::KeepDeref(1))], |m, this, a| u(g4::parray_assign(m, glue4::ARRAY_RESERVE_667F00, this, a[0]))) },
+    Case { prep: Some(prep_assign), ..method("parray_assign_0064eb20", 0x0064_eb20, This::Object, 1, &[(glue4::ARRAY_RESERVE_668080, K::KeepDeref(1))], |m, this, a| u(g4::parray_assign(m, glue4::ARRAY_RESERVE_668080, this, a[0]))) },
+    Case { prep: Some(prep_auto_save), ..method("scene_show_auto_saving_prompt", 0x0066_f480, This::Object, 0, &[(glue4::IGGY_MENU_DTOR, K::This(0)), (glue4::OPERATOR_DELETE, K::Cdecl(1)), (glue4::IGGY_PLAYER_OPEN_SCALED, K::Cdecl(5))], |m, this, _| { g4::scene_show_auto_saving_prompt(m, this); Out::None }) },
+    Case { prep: Some(prep_bp_loaded), ..cdecl("vfx_is_texture_with_bp_loaded", 0x0064_5450, 7, &[(glue4::CLUSTER_INSTANCE, K::Getter)], |m, _, a| u(g4::vfx_is_texture_with_bp_loaded(m, &arr(a)))) },
+    Case { prep: Some(prep_visible_list), ..cdecl("character_instance_is_visible", 0x0063_b230, 1, &[], |m, _, a| u(g4::character_instance_is_visible(m, a[0]))) },
+    Case { prep: Some(prep_pipeline), ..method("scene_add_to_pipeline", 0x0065_6590, This::Object, 1, &[(glue4::ARRAY_RESERVE_667F80, K::Keep(1))], |m, this, a| { g4::scene_add_to_pipeline(m, this, a[0]); Out::None }) },
+    Case { prep: Some(prep_event_push), ..method("vfx_draw_event_push", 0x0065_6350, This::Object, 1, &[(glue4::ARRAY_RESERVE_668280, K::Keep(1))], |m, this, a| u(g4::vfx_draw_event_push(m, this, a[0]))) },
+    Case { prep: Some(prep_add_event), ..method("scene_add_vfx_draw_event", 0x0065_6940, This::Object, 1, &[(glue4::VFX_DRAW_EVENT_PUSH, K::This(1))], |m, this, a| u(g4::scene_add_vfx_draw_event(m, this, a[0]))) },
+    Case { prep: Some(prep_tree), ..method("tree_iterator_begin", 0x0064_dae0, This::Object, 1, &[(glue4::TREE_SUCCESSOR, K::This(1))], |m, this, a| u(g4::tree_iterator_begin(m, this, a[0]))) },
+    Case { prep: Some(prep_fill), ..method("broken_fill_floats", 0x006d_4150, This::Object, 0, &[], |m, this, _| u(g4::broken_fill_floats(m, this))) },
+    Case { prep: Some(prep_descriptor_destroy), ..method("shadow_dynamic_mesh_destroy", 0x0067_89c0, This::Stdcall, 1, &[], |m, _, a| u(g4::shadow_dynamic_mesh_destroy(m, a[0]))) },
+    Case { prep: Some(prep_free_list), ..method("set_data_to_free_list", 0x006a_e1a0, This::Object, 1, &[(glue4::IOB_FUNC, K::ImportC(0)), (glue4::FPRINTF, K::ImportC(3))], |m, this, a| u(g4::set_data_to_free_list(m, this, a[0]))) },
+];
+
+#[test]
+fn batch4_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 8 } else { 40 };
+        run_cases(t, CASES4, n, &mut Rng(0x4b47_1e04));
     });
 }
