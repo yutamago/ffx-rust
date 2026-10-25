@@ -5,9 +5,10 @@
 //! loaded and freed (the main thread and the loader); `Bind` at start-up.
 //! No shim keeps state.
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 use ffx_prender::{
-    basic, class_slots as descriptor, h1_bind, h1_small, h1_small2, registry, texture,
+    basic, class_slots as descriptor, h1_array_type, h1_bind, h1_camera, h1_small, h1_small2,
+    registry, texture,
 };
 
 ported! {
@@ -1970,5 +1971,63 @@ ported! {
     /// `0x004c29b0(this)`: a texture binding released.
     PTextureBinding_release_004c29b0 @ 0x004c_29b0 => extern "thiscall" fn h1_004c29b0(this: u32) -> u32 {
         h1_small2::bridge::release_binding(&mut mem(), this)
+    }
+    // round 3 batch 1 (h1_camera, h1_array_type)
+    /// `0x00456b80(out, fov, aspect, near, far)` -> `out`: the perspective
+    /// matrix. The original's `f32` temporaries live in its float argument
+    /// slots: their last values are written there too.
+    PMatrix4_perspective_00456b80 @ 0x0045_6b80 => extern "C" fn h1_00456b80(out: u32, fov: u32, aspect: u32, near: u32, far: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, last) = h1_camera::bridge::perspective(&mut m, out, fov, aspect, near, far);
+        for (k, word) in (1u32..).zip(last) {
+            ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4 * k), word);
+        }
+        r
+    }
+    /// `0x00455dc0(out, left, right, bottom, top, near, far)` -> `out`: the
+    /// orthographic matrix; its argument slots as the original leaves them.
+    PMatrix4_orthographic_00455dc0 @ 0x0045_5dc0 => extern "C" fn h1_00455dc0(out: u32, left: u32, right: u32, bottom: u32, top: u32, near: u32, far: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, last) = h1_camera::bridge::orthographic(&mut m, out, [left, right, bottom, top, near, far]);
+        for (k, word) in (1u32..).zip(last) {
+            ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4 * k), word);
+        }
+        r
+    }
+    /// `PCameraPerspective::updateProjection(this)` -> the matrix copy's `eax`.
+    Phyre_PCameraPerspective_updateProjection @ 0x0045_6d10 => extern "thiscall" fn h1_00456d10(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ h1_camera::PERSPECTIVE_FRAME as usize / 4 }>::new();
+        h1_camera::bridge::update_perspective(&mut mem(), frame.at(), this)
+    }
+    /// `PCameraOrthographic::updateProjection(this)` -> the matrix copy's `eax`.
+    Phyre_PCameraOrthographic_updateProjection @ 0x0045_5fe0 => extern "thiscall" fn h1_00455fe0(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ h1_camera::ORTHO_FRAME as usize / 4 }>::new();
+        h1_camera::bridge::update_orthographic(&mut mem(), frame.at(), this)
+    }
+    /// `PCameraPerspective::PCameraPerspective(this)` -> `this`.
+    Phyre_PCameraPerspective_PCameraPerspective @ 0x0045_6370 => extern "thiscall" fn h1_00456370(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ h1_camera::PERSPECTIVE_FRAME as usize / 4 }>::new();
+        h1_camera::bridge::construct_perspective(&mut mem(), frame.at(), this)
+    }
+    /// `0x004d5f30(this, x)` -> the object `x` gives when it is a
+    /// `PShaderParameterDefinition`, else 0.
+    PShaderParameterDefinition_findIn_004d5f30 @ 0x004d_5f30 => extern "thiscall" fn h1_004d5f30(this: u32, x: u32) -> u32 {
+        let mut frame = StackFrame::<{ h1_camera::IS_A_FRAME as usize / 4 }>::new();
+        h1_camera::bridge::find_of_class(&mut mem(), frame.at(), this, x)
+    }
+    /// `GetType<PArray<unsigned char, 4>>(name)` -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_unsigned_char_4 @ 0x0049_af10 => extern "C" fn h1_0049af10(name: u32) -> u32 {
+        let k = const { h1_array_type::kind_of(0x0049_af10) };
+        h1_array_type::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<PSharray<PMaterial*>>(name)` -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PSharray_Phyre_PRendering_PMaterial @ 0x0048_acf0 => extern "C" fn h1_0048acf0(name: u32) -> u32 {
+        let k = const { h1_array_type::kind_of(0x0048_acf0) };
+        h1_array_type::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<PSharray<unsigned int>>(name)` -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PSharray_unsigned_int @ 0x004c_f8c0 => extern "C" fn h1_004cf8c0(name: u32) -> u32 {
+        let k = const { h1_array_type::kind_of(0x004c_f8c0) };
+        h1_array_type::bridge::array_type(&mut mem(), &k, name)
     }
 }

@@ -28,13 +28,23 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_prender::{
-    basic, class_slots as descriptor, h1_bind, h1_small, h1_small2, registry, texture,
+    basic, class_slots as descriptor, h1_array_type, h1_bind, h1_camera, h1_small, h1_small2,
+    registry, texture,
 };
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
 const CAVE: u32 = 0x0064_0660;
 const CAVE_LEN: u32 = 1768;
+/// At the cave's start: `fld qword [esp+4]; call [esp+0xc]; ret`, and at
+/// `+16` `fstp st0; ret`, for `Host::call_intrinsic` (a CRT intrinsic with
+/// its argument in `ST0`).
+const TRAMPOLINE_CODE: [u8; 19] = [
+    0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+    0xdd, 0xd8, 0xc3,
+];
+/// The cave's first bytes past the trampoline.
+const TRAMPOLINE_LEN: u32 = 0x20;
 
 /// Deterministic xorshift stream.
 struct Rng(u32);
@@ -77,6 +87,19 @@ impl Host for G<'_> {
             .call(addr, conv, args)
             .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
             .eax
+    }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        let at = self.0.rebase(CAVE);
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let Some(v) = r.st0_f32() else {
+            panic!("intrinsic {addr:#x}: no float in ST0");
+        };
+        self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
+        v
     }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
@@ -137,11 +160,12 @@ impl Twins {
             b,
             log: 0,
             cave,
-            cave_next: cave,
+            cave_next: cave + TRAMPOLINE_LEN,
             cave_end: cave + CAVE_LEN,
             stubs: std::collections::HashMap::new(),
         };
         t.log = t.zeros(0x8000);
+        t.write(cave, &TRAMPOLINE_CODE);
         t
     }
 
@@ -2945,6 +2969,331 @@ fn r2b3_small_methods_match_the_original() {
                 &[],
                 |g| Out::U32(h1_small2::bridge::release_binding(g, binding)),
             );
+        }
+    }
+}
+
+// ---- round 3: camera projections, the class test ----
+
+impl Twins {
+    /// `code` in the cave; its address.
+    fn code(&mut self, code: &[u8]) -> u32 {
+        let addr = self.cave_next;
+        assert!(addr + code.len() as u32 <= self.cave_end, "cave full");
+        self.write(addr, code);
+        self.cave_next = addr + code.len() as u32;
+        addr
+    }
+
+    /// Where the original's first stack argument lands (`Oracle::call`
+    /// pushes from the stack's end - 0x100).
+    fn arg_slots(&self, args: usize) -> u32 {
+        self.a.stack_range().end - 0x100 - 4 * args as u32
+    }
+
+    /// [`Twins::check`] of an original that hands callees the addresses of
+    /// its locals: `low` bytes below its `ebp`. The port gets a frame at
+    /// the same address (filled alike first), the port oracle's own calls
+    /// run below it, and the frames must agree afterwards.
+    #[allow(clippy::too_many_arguments)]
+    fn check_framed(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        low: u32,
+        rng: &mut Rng,
+        port: impl FnOnce(&mut G, u32) -> Out,
+    ) {
+        let ebp = self.arg_slots(args.len()) - 8;
+        let lo = ebp - low;
+        let fill: Vec<u8> = (0..low).map(|_| rng.next() as u8).collect();
+        self.write(lo, &fill);
+        self.b.set_call_top(Some(lo - 0x100));
+        self.check(what, sym, conv, args, |g| port(g, lo));
+        self.b.set_call_top(None);
+        let mut x = vec![0; low as usize];
+        let mut y = vec![0; low as usize];
+        Mem::read_bytes(&self.a, lo, &mut x);
+        Mem::read_bytes(&self.b, lo, &mut y);
+        assert_eq!(x, y, "{what}: the frame");
+    }
+}
+
+/// A camera-like float: mostly ordinary, sometimes [`any_float`].
+fn camera_float(rng: &mut Rng, lo: f32, hi: f32) -> f32 {
+    if rng.next().is_multiple_of(5) {
+        any_float(rng)
+    } else {
+        lo + (hi - lo) * ((rng.next() >> 8) as f32 / 16_777_216.0)
+    }
+}
+
+#[test]
+fn r3_projection_builders_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0456_b801);
+        for case in 0..400u32 {
+            let out = pattern(&mut t, &mut rng, 0x40);
+            let fov = camera_float(&mut rng, 0.05, 3.1);
+            let aspect = camera_float(&mut rng, 0.3, 3.0);
+            let near = camera_float(&mut rng, 0.01, 20.0);
+            let far = if case % 9 == 0 {
+                near
+            } else {
+                camera_float(&mut rng, 10.0, 50_000.0)
+            };
+            let args = [
+                out,
+                fov.to_bits(),
+                aspect.to_bits(),
+                near.to_bits(),
+                far.to_bits(),
+            ];
+            let mut slots = [0; 4];
+            t.check(
+                &format!("{name} perspective {case}"),
+                0x0045_6b80,
+                Conv::Cdecl,
+                &args,
+                |g| {
+                    let (r, s) =
+                        h1_camera::bridge::perspective(g, out, args[1], args[2], args[3], args[4]);
+                    slots = s;
+                    Out::U32(r)
+                },
+            );
+            let at = t.arg_slots(args.len());
+            for (k, &s) in slots.iter().enumerate() {
+                let v: u32 = Mem::read(&t.a, at + 4 + 4 * k as u32);
+                assert_eq!(v, s, "{name} perspective {case}: slot {}", k + 1);
+            }
+
+            let out = pattern(&mut t, &mut rng, 0x40);
+            let mut f6 = [0u32; 6];
+            for k in 0..6 {
+                f6[k] = camera_float(&mut rng, -500.0, 500.0).to_bits();
+                if k % 2 == 1 && case % 11 == 0 {
+                    f6[k] = f6[k - 1];
+                }
+            }
+            let mut args = vec![out];
+            args.extend(f6);
+            let mut slots = [0; 6];
+            t.check(
+                &format!("{name} orthographic {case}"),
+                0x0045_5dc0,
+                Conv::Cdecl,
+                &args,
+                |g| {
+                    let (r, s) = h1_camera::bridge::orthographic(g, out, f6);
+                    slots = s;
+                    Out::U32(r)
+                },
+            );
+            let at = t.arg_slots(args.len());
+            for (k, &s) in slots.iter().enumerate() {
+                let v: u32 = Mem::read(&t.a, at + 4 + 4 * k as u32);
+                assert_eq!(v, s, "{name} orthographic {case}: slot {}", k + 1);
+            }
+        }
+    }
+}
+
+#[test]
+fn r3_camera_updates_match_the_original() {
+    use h1_camera::camera;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0456_d101);
+        for case in 0..300u32 {
+            let cam = pattern(&mut t, &mut rng, 0x160);
+            t.w32(
+                cam + camera::NEAR,
+                camera_float(&mut rng, 0.01, 20.0).to_bits(),
+            );
+            t.w32(
+                cam + camera::FAR,
+                camera_float(&mut rng, 10.0, 50_000.0).to_bits(),
+            );
+            t.w32(
+                cam + camera::ASPECT,
+                camera_float(&mut rng, 0.3, 3.0).to_bits(),
+            );
+            t.w32(
+                cam + camera::FOV,
+                camera_float(&mut rng, 0.05, 3.1).to_bits(),
+            );
+            t.check_framed(
+                &format!("{name} update perspective {case}"),
+                0x0045_6d10,
+                Conv::Thiscall(cam),
+                &[],
+                h1_camera::PERSPECTIVE_FRAME,
+                &mut rng,
+                |g, frame| Out::U32(h1_camera::bridge::update_perspective(g, frame, cam)),
+            );
+            t.check_framed(
+                &format!("{name} update orthographic {case}"),
+                0x0045_5fe0,
+                Conv::Thiscall(cam),
+                &[],
+                h1_camera::ORTHO_FRAME,
+                &mut rng,
+                |g, frame| Out::U32(h1_camera::bridge::update_orthographic(g, frame, cam)),
+            );
+            let cam = pattern(&mut t, &mut rng, 0x160);
+            t.check_framed(
+                &format!("{name} construct perspective {case}"),
+                0x0045_6370,
+                Conv::Thiscall(cam),
+                &[],
+                h1_camera::PERSPECTIVE_FRAME,
+                &mut rng,
+                |g, frame| Out::U32(h1_camera::bridge::construct_perspective(g, frame, cam)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r3_find_of_class_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x04d5_f301);
+        // cells: the object and class the method hands back, what it saw
+        // (x, this), and whether it skips each of its two stores
+        let cells = t.zeros(24);
+        let mut c = vec![0x89, 0x0d];
+        c.extend((cells + 12).to_le_bytes()); // mov [cells+12], ecx
+        c.extend([0x8b, 0x44, 0x24, 0x04, 0xa3]);
+        c.extend((cells + 8).to_le_bytes()); // mov eax, [esp+4]; mov [cells+8], eax
+        for (off, cell, skip) in [(8u8, cells, cells + 16), (12, cells + 4, cells + 20)] {
+            c.extend([0x83, 0x3d]);
+            c.extend(skip.to_le_bytes());
+            c.extend([0x00, 0x75, 0x0c]); // cmp dword [skip], 0; jne past the store
+            c.extend([0x8b, 0x44, 0x24, off, 0x8b, 0x0d]);
+            c.extend(cell.to_le_bytes()); // mov eax, [esp+off]; mov ecx, [cell]
+            c.extend([0x89, 0x08]); // mov [eax], ecx
+        }
+        c.extend([0xc2, 0x0c, 0x00]); // ret 0xc
+        let method = t.code(&c);
+        let vtable = pattern(&mut t, &mut rng, 0x20);
+        t.w32(vtable + 0x10, method);
+        let this = pattern(&mut t, &mut rng, 0x10);
+        t.w32(this, vtable);
+        let wanted = t.rebase(h1_camera::WANTED_CLASS);
+        // classes linked at +0x40 towards higher indices, the wanted class
+        // or 0
+        let classes: Vec<u32> = (0..6).map(|_| pattern(&mut t, &mut rng, 0x44)).collect();
+        for case in 0..300u32 {
+            for (i, &k) in classes.iter().enumerate() {
+                let link = match rng.next() % 4 {
+                    0 => 0,
+                    1 => wanted,
+                    _ if i + 1 < classes.len() => {
+                        classes[i + 1 + (rng.next() as usize % (classes.len() - i - 1))]
+                    }
+                    _ => 0,
+                };
+                t.w32(k + 0x40, link);
+            }
+            let object = if case % 7 == 0 { 0 } else { rng.next() | 1 };
+            let class = match rng.next() % 5 {
+                0 => 0,
+                1 => wanted,
+                _ => classes[rng.next() as usize % classes.len()],
+            };
+            t.w32(cells, object);
+            t.w32(cells + 4, class);
+            t.w32(cells + 16, u32::from(rng.next().is_multiple_of(6)));
+            t.w32(cells + 20, u32::from(rng.next().is_multiple_of(6)));
+            let x = rng.next();
+            t.check_framed(
+                &format!("{name} find of class {case}"),
+                0x004d_5f30,
+                Conv::Thiscall(this),
+                &[x],
+                h1_camera::IS_A_FRAME,
+                &mut rng,
+                |g, frame| Out::U32(h1_camera::bridge::find_of_class(g, frame, this, x)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r3_array_types_match_the_original() {
+    use h1_array_type::{ARRAY_KINDS, Element, kind_of};
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xa77a_0003);
+        t.stub(registry::ATEXIT, false, 1, 0, Ret::Imm(0));
+        t.stub(descriptor::REGISTER_TYPE, false, 1, 0, Ret::Imm(0x0101));
+        t.stub(
+            descriptor::ADD_TO_NAMESPACE,
+            true,
+            0,
+            0,
+            Ret::Imm(0x5a5a_1234),
+        );
+        t.stub(registry::TYPE_U32, false, 0, 0, Ret::Imm(0x00c9_04d0));
+        t.stub(registry::DATA_MEMBER_CTOR, true, 6, 6, Ret::Imm(0x6));
+        t.stub(registry::ANNOTATION_CTOR, true, 3, 3, Ret::Imm(0x3));
+        t.stub(registry::ADD_ANNOTATION, true, 1, 1, Ret::Imm(0x1));
+        // seven words: the last six logged (the first is the descriptor)
+        t.stub_skip(
+            registry::DATA_MEMBER_ARRAY_CTOR,
+            true,
+            1,
+            6,
+            7,
+            Ret::Imm(0x7),
+        );
+        for &(_, k) in ARRAY_KINDS {
+            t.stub(k.desc_ctor, true, 0, 0, Ret::Imm(0xd));
+            if let Element::Call(f) = k.element {
+                t.stub(f, false, 0, 0, Ret::Imm(0x00c9_7000 | (f & 0xfff)));
+            }
+        }
+        for case in 0..64u32 {
+            for &(f, k) in ARRAY_KINDS {
+                assert_eq!(kind_of(f), k);
+                let guard = t.rebase(k.guard);
+                let obj = t.rebase(k.obj);
+                let annotation = t.rebase(k.annotation);
+                let name_global = t.rebase(k.name_global);
+                let array = t.rebase(k.array);
+                t.w32(obj + 0x90, rng.next());
+                t.w32(array + 0x14, rng.next());
+                t.w32(array + 0x38, rng.next() | 1);
+                t.w32(array + 0x2c, rng.next());
+                t.w32(
+                    guard,
+                    [0, 1, 3, 7, 0xf, 5, 9, 0xffff_fff0, 0xb, 0xd][(case % 10) as usize],
+                );
+                t.w32(obj + 0x18, if case % 3 == 0 { 0x1234 } else { 0 });
+                t.w32(
+                    name_global,
+                    if case % 5 < 2 { 0 } else { 0x00b0_0000 + case },
+                );
+                let list = if case % 2 == 0 {
+                    annotation + 4
+                } else {
+                    rng.next()
+                };
+                t.w32(annotation + 4, list);
+                let arg = if case % 7 == 6 {
+                    0
+                } else {
+                    0x00c0_0000 + rng.next() % 0x1000
+                };
+                t.check(
+                    &format!("{name} {f:#x} case {case}"),
+                    f,
+                    Conv::Cdecl,
+                    &[arg],
+                    |g| Out::U32(h1_array_type::bridge::array_type(g, &k, arg)),
+                );
+            }
         }
     }
 }
