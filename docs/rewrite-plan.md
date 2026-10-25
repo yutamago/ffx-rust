@@ -372,6 +372,11 @@ in-game map path in `ffx-hook/src/gfx/scene.rs`) gives the same draws as
 the original on the captured maps. It stays as a second check and as the
 seam for M6's backends.
 
+Order (user's decision, 2026-10-24): the renderer's scene first, then
+effects and post-processing, the UI, movies, audio, input and the window.
+Porting runs the subsystems in parallel, but merges and checks keep that
+order of priority.
+
 What stays as it is in M4:
 - the Direct3D 11 calls (still calls, through the device's vtables);
 - the external DLLs: FMOD (`fmodex.dll`, `fmod_event.dll`) and Iggy
