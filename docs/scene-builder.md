@@ -218,6 +218,49 @@ it the same way: `wire-bsil0300-a` (`tools/replays/draw-bsil0300.txt`)
 builds its 80 map draws with the host's vertices, equal to the capture's
 but for the water sampler's allow entry.
 
+## In the game (`ffx-hook` `gfx/map_build.rs`)
+
+`FFX_RUST_MAP=build` (with the graphics layer; `tools/run-game.sh
+--rust-map=build`, `tools/replays/run-all.sh --rust-map=build`) plugs the
+builder into the map path (`docs/draw.md`, "The map path"): for the
+supported maps (`SUPPORTED`: `cdsp00`, `bsil00`) the builder draws the
+map passes; every other map, and any pass it can't build, goes to the
+recorder (`None`).
+
+- **Main thread, update N** (the builder closure, at the map's
+  `renderWorld`): the pass's record is read as the capture snapshot reads
+  it (`world::scene_inputs_at` on the renderer `app +0x124`: the version
+  1 fields and the `Wire` block). The map's models are loaded once, by
+  their files' ids, through the game's own file functions
+  (`Phyre_PSerialization_PStreamFileWin32_openFile` `0x00607f40`, hooked
+  for mods, `getFileSize` `0x00607dc0`, `read` `0x00608090`, `closeFile`
+  `0x00607d80`; a relative prefix of the root's length, which the archive
+  lookup and the mod index skip); textures the snapshot names
+  (texture animation) are added the same way. `LiveInputs` takes the one
+  record for both passes, and `build_into` builds onto the map's
+  `Resources`, so an object keeps its handle from frame to frame.
+- **Render thread, frame N** (the job, at the end of the pass):
+  `Uploaded::extend` makes the objects new since the last frame (the
+  first frame makes them all: 0.3 s for cdsp00's clusters to load, then
+  the textures), and each built draw becomes a `PassDraw` (`up.state`,
+  its constants as bytes). The host's objects come from the game's own
+  draw in the same place: the map path records the draws it drops for a
+  built pass (`Job` gets them), and the k-th built draw takes the k-th
+  one's scene targets, the shader resources of its external slots (the
+  shadow maps) and the vertex buffers of its external streams (the
+  morphing meshes' ring). If the counts differ, the game's own draws are
+  issued (logged).
+
+Results (2026-10-25, original code otherwise, against `r2a-a`'s
+`draw-field.txt` captures with `~/ffx-work/m4/allow-draw-field.txt` and
+`tests/builder-allow.txt`, `--part all`): fw-101, fw-459 (cdsp0000) and
+besaid-101 (bsil0000), three frames each, 0 differences. The allow list's
+`[*]` entry covers the one artifact of building in the game: the device
+hands the builder's `CreateSamplerState` back the game's equivalent object,
+and the layer records an object's description from the last create, so a
+shared sampler shows the builder's `MaxAnisotropy` 0 in every draw that
+binds it.
+
 ## Inputs from a capture (`capture_inputs.rs`)
 
 For captures without scene inputs (round 1's `fw1..fw3`, round 2's

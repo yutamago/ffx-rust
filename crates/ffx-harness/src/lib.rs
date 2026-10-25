@@ -88,6 +88,8 @@ pub struct Options {
     /// The Rust map path (`--rust-map`, `FFX_RUST_MAP=1`; turns the
     /// graphics layer on too): the map world's passes are drawn through
     /// `ffx-draw` (`ffx-hook`'s `gfx::scene`, `docs/draw.md`).
+    /// `FFX_RUST_MAP=build` (passed on to the game) has the scene builder
+    /// draw the supported maps (`gfx::map_build`).
     pub rust_map: bool,
 }
 
@@ -110,7 +112,7 @@ impl Default for Options {
             hook_disable: std::env::var("FFX_HOOK_DISABLE")
                 .ok()
                 .filter(|v| !v.is_empty()),
-            rust_map: std::env::var("FFX_RUST_MAP").is_ok_and(|v| v == "1"),
+            rust_map: std::env::var("FFX_RUST_MAP").is_ok_and(|v| v == "1" || v == "build"),
         }
     }
 }

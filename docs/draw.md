@@ -276,7 +276,7 @@ ended by a call, refused constant buffers, imports.
 ```rust
 // crates/ffx-hook/src/gfx/scene.rs
 pub struct PassInfo { pub pass: Pass, pub dir: i32, pub app: usize, pub world: usize, pub camera: usize }
-pub type Job = Box<dyn FnOnce(&mut D3d11, &mut Cache) -> Vec<PassDraw> + Send>;
+pub type Job = Box<dyn FnOnce(&mut D3d11, &mut Cache, &[PassDraw]) -> Vec<PassDraw> + Send>;
 pub type Builder = Box<dyn FnMut(&PassInfo) -> Option<Job> + Send>;
 pub fn set_builder(b: Option<Builder>);
 
@@ -295,7 +295,11 @@ through the backend (they stay) or imported (`D3d11::import`,
 `import_bound` for the game's bound targets; dropped after the pass). A
 `PassDraw`'s constant buffers come as bytes in `constants`; `issue` writes
 each into the cache's dynamic buffer for (stage, slot, size) and binds it.
-`None` from the builder leaves the pass to the recorder. With a job,
+`None` from the builder leaves the pass to the recorder. A built pass's
+dropped draws are recorded too and handed to the job (its third
+argument): the game's own draws in the pass, with the host objects the
+built draws bind in the same place (targets, run-time textures, dynamic
+vertices; m4-wire, `docs/scene-builder.md`, "In the game"). With a job,
 `PhyreEngine` still fills and plays the pass's commands (their setters
 run, their draws are dropped), which places the list; a pass with no
 visible instance has no commands, so its job does not run.

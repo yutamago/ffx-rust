@@ -672,6 +672,7 @@ dependencies = [
  "ffx-movie",
  "ffx-pcui",
  "ffx-ps2",
+ "ffx-scene",
  "ffx-script",
  "ffx-sg",
  "ffx-sound",
