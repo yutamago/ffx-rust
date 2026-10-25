@@ -112,11 +112,10 @@ struct SavedCbs {
     count: [u32; CB_SLOTS],
 }
 
-/// The Direct3D 11 backend.
-pub struct D3d11 {
-    device: ID3D11Device,
-    context: ID3D11DeviceContext,
-    context1: Option<ID3D11DeviceContext1>,
+/// One set of objects: those the backend made (kept for its lifetime), or
+/// those it imported from the host (kept until [`D3d11::release_imports`]).
+#[derive(Default)]
+struct Store {
     shaders: Vec<ShaderObj>,
     layouts: Vec<ID3D11InputLayout>,
     blends: Vec<ID3D11BlendState>,
@@ -125,9 +124,56 @@ pub struct D3d11 {
     samplers: Vec<ID3D11SamplerState>,
     buffers: Vec<BufferObj>,
     textures: Vec<(ID3D11Texture2D, TextureDesc)>,
-    views: Vec<(ViewObj, Texture)>,
+    /// A view and the texture behind it (`None`: not a 2D texture).
+    views: Vec<(ViewObj, Option<Texture>)>,
     /// Raw object address → handle, for reading the bound state back.
     known: HashMap<usize, u32>,
+}
+
+/// The handle bit of imported objects: their index in the import store.
+const IMPORTED: u32 = 1 << 31;
+
+/// What a host object is, for [`D3d11::import`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Import {
+    Shader(Stage),
+    Layout,
+    Blend,
+    DepthState,
+    Raster,
+    Sampler,
+    Buffer,
+    View(ViewKind),
+}
+
+/// A constant buffer the context has bound: the raw buffer and its window
+/// in 16-byte constants (`count` 0: the whole buffer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BoundCb {
+    pub buffer: usize,
+    pub first: u32,
+    pub count: u32,
+}
+
+/// [`D3d11::import_bound`]'s result.
+#[derive(Debug, Clone)]
+pub struct BoundNow {
+    /// Everything but the constant buffers, in imported handles.
+    pub state: DrawState,
+    /// Per stage (vertex, pixel) and slot.
+    pub cbs: [[Option<BoundCb>; CB_SLOTS]; 2],
+    /// Raw resources the draw reads: vertex and index buffers, the
+    /// resources behind the shader resource views.
+    pub reads: Vec<usize>,
+}
+
+/// The Direct3D 11 backend.
+pub struct D3d11 {
+    device: ID3D11Device,
+    context: ID3D11DeviceContext,
+    context1: Option<ID3D11DeviceContext1>,
+    own: Store,
+    imported: Store,
     /// What the last draw applied (`None`: unknown, set everything).
     applied: Option<DrawState>,
     saved: Option<Box<Saved>>,
@@ -166,16 +212,8 @@ impl D3d11 {
             device,
             context,
             context1,
-            shaders: Vec::new(),
-            layouts: Vec::new(),
-            blends: Vec::new(),
-            depths: Vec::new(),
-            rasters: Vec::new(),
-            samplers: Vec::new(),
-            buffers: Vec::new(),
-            textures: Vec::new(),
-            views: Vec::new(),
-            known: HashMap::new(),
+            own: Store::default(),
+            imported: Store::default(),
             applied: None,
             saved: None,
         })
@@ -215,81 +253,277 @@ impl D3d11 {
         let mut d = D3D11_TEXTURE2D_DESC::default();
         // SAFETY: a live texture.
         unsafe { tex.GetDesc(&raw mut d) };
-        let desc = TextureDesc {
-            width: d.Width,
-            height: d.Height,
-            mips: d.MipLevels,
-            array_size: d.ArraySize,
-            format: d.Format.0 as u32,
-            samples: d.SampleDesc.Count,
-            quality: d.SampleDesc.Quality,
-            usage: d.Usage.0 as u32,
-            bind: d.BindFlags,
-            cpu_access: d.CPUAccessFlags,
-            misc: d.MiscFlags,
+        let desc = texture_desc_of(&d);
+        let t = match self.raw_handle(raw(&tex)) {
+            Some(h) => Texture(h),
+            None => self.add_texture(true, tex, desc),
         };
-        let t = self.add_texture(tex, desc);
-        Some((self.add_view(obj, t), t))
+        Some((self.add_view(true, obj, Some(t)), t))
+    }
+
+    /// Brings in one of the host's objects, taking a reference on it until
+    /// [`D3d11::release_imports`]; the handle's number for the type `kind`
+    /// names (`Shader(n)`, `Buffer(n)`, ...). An object the backend knows
+    /// already (made or imported) gives its handle again. Views of any
+    /// resource can be imported this way; [`Backend::view_texture`] is
+    /// `None` for those not of a 2D texture.
+    ///
+    /// # Safety
+    /// `object` must be a live object of `kind` on this backend's device.
+    #[allow(clippy::too_many_lines)] // one arm per kind
+    pub unsafe fn import(&mut self, object: *mut c_void, kind: Import) -> Option<u32> {
+        if object.is_null() {
+            return None;
+        }
+        let p = object as usize;
+        if let Some(h) = self.raw_handle(p) {
+            return Some(h);
+        }
+        // SAFETY: the caller's live object of that kind; cloning takes a
+        // reference.
+        unsafe {
+            Some(match kind {
+                Import::Shader(Stage::Vertex) => {
+                    let o = ID3D11VertexShader::from_raw_borrowed(&object)?.clone();
+                    push(
+                        &mut self.imported,
+                        IMPORTED,
+                        p,
+                        |s| &mut s.shaders,
+                        ShaderObj::Vertex(o),
+                    )
+                }
+                Import::Shader(Stage::Pixel) => {
+                    let o = ID3D11PixelShader::from_raw_borrowed(&object)?.clone();
+                    push(
+                        &mut self.imported,
+                        IMPORTED,
+                        p,
+                        |s| &mut s.shaders,
+                        ShaderObj::Pixel(o),
+                    )
+                }
+                Import::Shader(Stage::Geometry) => {
+                    let o = ID3D11GeometryShader::from_raw_borrowed(&object)?.clone();
+                    push(
+                        &mut self.imported,
+                        IMPORTED,
+                        p,
+                        |s| &mut s.shaders,
+                        ShaderObj::Geometry(o),
+                    )
+                }
+                Import::Layout => {
+                    let o = ID3D11InputLayout::from_raw_borrowed(&object)?.clone();
+                    push(&mut self.imported, IMPORTED, p, |s| &mut s.layouts, o)
+                }
+                Import::Blend => {
+                    let o = ID3D11BlendState::from_raw_borrowed(&object)?.clone();
+                    push(&mut self.imported, IMPORTED, p, |s| &mut s.blends, o)
+                }
+                Import::DepthState => {
+                    let o = ID3D11DepthStencilState::from_raw_borrowed(&object)?.clone();
+                    push(&mut self.imported, IMPORTED, p, |s| &mut s.depths, o)
+                }
+                Import::Raster => {
+                    let o = ID3D11RasterizerState::from_raw_borrowed(&object)?.clone();
+                    push(&mut self.imported, IMPORTED, p, |s| &mut s.rasters, o)
+                }
+                Import::Sampler => {
+                    let o = ID3D11SamplerState::from_raw_borrowed(&object)?.clone();
+                    push(&mut self.imported, IMPORTED, p, |s| &mut s.samplers, o)
+                }
+                Import::Buffer => {
+                    let o = ID3D11Buffer::from_raw_borrowed(&object)?.clone();
+                    let mut d = D3D11_BUFFER_DESC::default();
+                    o.GetDesc(&raw mut d);
+                    let desc = BufferDesc {
+                        size: d.ByteWidth,
+                        usage: d.Usage.0 as u32,
+                        bind: d.BindFlags,
+                        cpu_access: d.CPUAccessFlags,
+                        misc: d.MiscFlags,
+                        stride: d.StructureByteStride,
+                    };
+                    let obj = BufferObj {
+                        buffer: o,
+                        desc,
+                        written: Vec::new(),
+                    };
+                    push(&mut self.imported, IMPORTED, p, |s| &mut s.buffers, obj)
+                }
+                Import::View(kind) => {
+                    let (obj, resource) = match kind {
+                        ViewKind::ShaderResource => {
+                            let v = ID3D11ShaderResourceView::from_raw_borrowed(&object)?.clone();
+                            let r = v.GetResource().ok();
+                            (ViewObj::Srv(v), r)
+                        }
+                        ViewKind::RenderTarget => {
+                            let v = ID3D11RenderTargetView::from_raw_borrowed(&object)?.clone();
+                            let r = v.GetResource().ok();
+                            (ViewObj::Rtv(v), r)
+                        }
+                        ViewKind::DepthStencil => {
+                            let v = ID3D11DepthStencilView::from_raw_borrowed(&object)?.clone();
+                            let r = v.GetResource().ok();
+                            (ViewObj::Dsv(v), r)
+                        }
+                    };
+                    let tex = resource.and_then(|r| r.cast::<ID3D11Texture2D>().ok());
+                    let t = tex.map(|tex| match self.raw_handle(raw(&tex)) {
+                        Some(h) => Texture(h),
+                        None => {
+                            let mut d = D3D11_TEXTURE2D_DESC::default();
+                            tex.GetDesc(&raw mut d);
+                            self.add_texture(true, tex, texture_desc_of(&d))
+                        }
+                    });
+                    self.add_view(true, obj, t).0
+                }
+            })
+        }
+    }
+
+    /// Drops the references [`D3d11::import`] and [`D3d11::import_view`]
+    /// took. Their handles are invalid afterwards (and may be given out
+    /// again); call it outside `begin`..`end`.
+    pub fn release_imports(&mut self) {
+        self.imported = Store::default();
+        self.applied = None;
+    }
+
+    /// Objects imported since the last release.
+    #[must_use]
+    pub fn imports(&self) -> usize {
+        self.imported.known.len()
     }
 
     /// The description of a texture.
     #[must_use]
     pub fn texture_desc(&self, t: Texture) -> Option<TextureDesc> {
-        self.textures.get(t.0 as usize).map(|x| x.1)
+        self.texture_obj(t).map(|x| x.1)
     }
 
     /// The bytes last written to a buffer through the backend.
     #[must_use]
     pub fn written(&self, b: Buffer) -> Option<&[u8]> {
-        self.buffers.get(b.0 as usize).map(|x| x.written.as_slice())
+        self.buffer_obj(b).map(|x| x.written.as_slice())
     }
 
-    fn add_texture(&mut self, tex: ID3D11Texture2D, desc: TextureDesc) -> Texture {
-        let h = self.textures.len() as u32;
-        self.known.insert(raw(&tex), h);
-        self.textures.push((tex, desc));
-        Texture(h)
+    /// The store a handle number is in, and its index there.
+    fn part(&self, h: u32) -> (&Store, usize) {
+        if h & IMPORTED == 0 {
+            (&self.own, h as usize)
+        } else {
+            (&self.imported, (h & !IMPORTED) as usize)
+        }
     }
 
-    fn add_view(&mut self, obj: ViewObj, t: Texture) -> View {
-        let h = self.views.len() as u32;
+    fn shader_obj(&self, h: Shader) -> Option<&ShaderObj> {
+        let (s, i) = self.part(h.0);
+        s.shaders.get(i)
+    }
+
+    fn layout_obj(&self, h: Layout) -> Option<&ID3D11InputLayout> {
+        let (s, i) = self.part(h.0);
+        s.layouts.get(i)
+    }
+
+    fn blend_obj(&self, h: Blend) -> Option<&ID3D11BlendState> {
+        let (s, i) = self.part(h.0);
+        s.blends.get(i)
+    }
+
+    fn depth_obj(&self, h: DepthState) -> Option<&ID3D11DepthStencilState> {
+        let (s, i) = self.part(h.0);
+        s.depths.get(i)
+    }
+
+    fn raster_obj(&self, h: Raster) -> Option<&ID3D11RasterizerState> {
+        let (s, i) = self.part(h.0);
+        s.rasters.get(i)
+    }
+
+    fn sampler_obj(&self, h: Sampler) -> Option<&ID3D11SamplerState> {
+        let (s, i) = self.part(h.0);
+        s.samplers.get(i)
+    }
+
+    fn buffer_obj(&self, h: Buffer) -> Option<&BufferObj> {
+        let (s, i) = self.part(h.0);
+        s.buffers.get(i)
+    }
+
+    fn texture_obj(&self, h: Texture) -> Option<&(ID3D11Texture2D, TextureDesc)> {
+        let (s, i) = self.part(h.0);
+        s.textures.get(i)
+    }
+
+    fn view_obj(&self, h: View) -> Option<&(ViewObj, Option<Texture>)> {
+        let (s, i) = self.part(h.0);
+        s.views.get(i)
+    }
+
+    fn add_texture(&mut self, imported: bool, tex: ID3D11Texture2D, desc: TextureDesc) -> Texture {
+        let p = raw(&tex);
+        let (store, bit) = self.store_mut(imported);
+        Texture(push(store, bit, p, |s| &mut s.textures, (tex, desc)))
+    }
+
+    fn add_view(&mut self, imported: bool, obj: ViewObj, t: Option<Texture>) -> View {
         let p = match &obj {
             ViewObj::Srv(v) => raw(v),
             ViewObj::Rtv(v) => raw(v),
             ViewObj::Dsv(v) => raw(v),
         };
-        self.known.insert(p, h);
-        self.views.push((obj, t));
-        View(h)
+        let (store, bit) = self.store_mut(imported);
+        View(push(store, bit, p, |s| &mut s.views, (obj, t)))
+    }
+
+    fn store_mut(&mut self, imported: bool) -> (&mut Store, u32) {
+        if imported {
+            (&mut self.imported, IMPORTED)
+        } else {
+            (&mut self.own, 0)
+        }
     }
 
     fn srv(&self, v: Option<View>) -> Option<ID3D11ShaderResourceView> {
-        match self.views.get(v?.0 as usize) {
+        match self.view_obj(v?) {
             Some((ViewObj::Srv(x), _)) => Some(x.clone()),
             _ => None,
         }
     }
 
     fn rtv(&self, v: Option<View>) -> Option<ID3D11RenderTargetView> {
-        match self.views.get(v?.0 as usize) {
+        match self.view_obj(v?) {
             Some((ViewObj::Rtv(x), _)) => Some(x.clone()),
             _ => None,
         }
     }
 
     fn dsv(&self, v: Option<View>) -> Option<ID3D11DepthStencilView> {
-        match self.views.get(v?.0 as usize) {
+        match self.view_obj(v?) {
             Some((ViewObj::Dsv(x), _)) => Some(x.clone()),
             _ => None,
         }
     }
 
     fn buffer(&self, b: Option<Buffer>) -> Option<&ID3D11Buffer> {
-        self.buffers.get(b?.0 as usize).map(|x| &x.buffer)
+        self.buffer_obj(b?).map(|x| &x.buffer)
+    }
+
+    fn raw_handle(&self, p: usize) -> Option<u32> {
+        self.own
+            .known
+            .get(&p)
+            .or_else(|| self.imported.known.get(&p))
+            .copied()
     }
 
     fn handle<T: Interface>(&self, o: Option<&T>) -> Option<u32> {
-        self.known.get(&raw(o?)).copied()
+        self.raw_handle(raw(o?))
     }
 
     /// Applies the parts of `s` that differ from what the last draw set.
@@ -304,7 +538,7 @@ impl D3d11 {
                 c.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY(s.topology as i32));
             }
             if changed(&|l| l.layout == s.layout) {
-                let l = s.layout.and_then(|l| self.layouts.get(l.0 as usize));
+                let l = s.layout.and_then(|l| self.layout_obj(l));
                 c.IASetInputLayout(l);
             }
             if changed(&|l| l.vertex == s.vertex) {
@@ -337,34 +571,52 @@ impl D3d11 {
                 }
             }
             if changed(&|l| l.vs.shader == s.vs.shader) {
-                let sh = match s.vs.shader.and_then(|h| self.shaders.get(h.0 as usize)) {
+                let sh = match s.vs.shader.and_then(|h| self.shader_obj(h)) {
                     Some(ShaderObj::Vertex(x)) => Some(x),
                     _ => None,
                 };
                 c.VSSetShader(sh, None);
             }
             if changed(&|l| l.ps.shader == s.ps.shader) {
-                let sh = match s.ps.shader.and_then(|h| self.shaders.get(h.0 as usize)) {
+                let sh = match s.ps.shader.and_then(|h| self.shader_obj(h)) {
                     Some(ShaderObj::Pixel(x)) => Some(x),
                     _ => None,
                 };
                 c.PSSetShader(sh, None);
             }
             if changed(&|l| l.gs == s.gs) {
-                let sh = match s.gs.and_then(|h| self.shaders.get(h.0 as usize)) {
+                let sh = match s.gs.and_then(|h| self.shader_obj(h)) {
                     Some(ShaderObj::Geometry(x)) => Some(x),
                     _ => None,
                 };
                 c.GSSetShader(sh, None);
             }
+            // Targets before shader resources, as the game binds them: a view
+            // bound while its texture is still a render target is refused
+            // (the slot stays empty), and binding a target unbinds the
+            // views of its texture, so they are sent again after a change.
+            let targets_changed =
+                changed(&|l| l.targets == s.targets && l.depth_target == s.depth_target);
+            if targets_changed {
+                let mut rtvs: [Option<ID3D11RenderTargetView>; RT_SLOTS] = Default::default();
+                let mut n = 0;
+                for (i, v) in s.targets.iter().enumerate() {
+                    rtvs[i] = self.rtv(*v);
+                    if v.is_some() {
+                        n = i + 1;
+                    }
+                }
+                let dsv = self.dsv(s.depth_target);
+                c.OMSetRenderTargets(Some(&rtvs[..n]), dsv.as_ref());
+            }
             for (stage, st, prev) in [
                 (Stage::Vertex, &s.vs, last.as_ref().map(|l| &l.vs)),
                 (Stage::Pixel, &s.ps, last.as_ref().map(|l| &l.ps)),
             ] {
-                self.apply_stage(stage, st, prev);
+                self.apply_stage(stage, st, prev, targets_changed);
             }
             if changed(&|l| l.raster == s.raster) {
-                c.RSSetState(s.raster.and_then(|r| self.rasters.get(r.0 as usize)));
+                c.RSSetState(s.raster.and_then(|r| self.raster_obj(r)));
             }
             if changed(&|l| l.viewport.map(f32::to_bits) == s.viewport.map(f32::to_bits)) {
                 let v = s.viewport;
@@ -386,40 +638,31 @@ impl D3d11 {
                     bottom: r[3],
                 }]));
             }
-            if changed(&|l| l.targets == s.targets && l.depth_target == s.depth_target) {
-                let mut rtvs: [Option<ID3D11RenderTargetView>; RT_SLOTS] = Default::default();
-                let mut n = 0;
-                for (i, v) in s.targets.iter().enumerate() {
-                    rtvs[i] = self.rtv(*v);
-                    if v.is_some() {
-                        n = i + 1;
-                    }
-                }
-                let dsv = self.dsv(s.depth_target);
-                c.OMSetRenderTargets(Some(&rtvs[..n]), dsv.as_ref());
-            }
             if changed(&|l| {
                 l.blend == s.blend
                     && l.blend_factor.map(f32::to_bits) == s.blend_factor.map(f32::to_bits)
                     && l.sample_mask == s.sample_mask
             }) {
                 c.OMSetBlendState(
-                    s.blend.and_then(|b| self.blends.get(b.0 as usize)),
+                    s.blend.and_then(|b| self.blend_obj(b)),
                     Some(&s.blend_factor),
                     s.sample_mask,
                 );
             }
             if changed(&|l| l.depth == s.depth && l.stencil_ref == s.stencil_ref) {
-                c.OMSetDepthStencilState(
-                    s.depth.and_then(|d| self.depths.get(d.0 as usize)),
-                    s.stencil_ref,
-                );
+                c.OMSetDepthStencilState(s.depth.and_then(|d| self.depth_obj(d)), s.stencil_ref);
             }
         }
         self.applied = Some(*s);
     }
 
-    fn apply_stage(&self, stage: Stage, s: &StageBindings, last: Option<&StageBindings>) {
+    fn apply_stage(
+        &self,
+        stage: Stage,
+        s: &StageBindings,
+        last: Option<&StageBindings>,
+        resend_srvs: bool,
+    ) {
         let c = &self.context;
         // SAFETY: live objects of this device, on the context's thread.
         unsafe {
@@ -456,7 +699,7 @@ impl D3d11 {
                     (Stage::Geometry, ..) => {}
                 }
             }
-            if last.is_none_or(|l| l.srvs != s.srvs) {
+            if resend_srvs || last.is_none_or(|l| l.srvs != s.srvs) {
                 let mut views: [Option<ID3D11ShaderResourceView>; SRV_SLOTS] = Default::default();
                 for (i, v) in s.srvs.iter().enumerate() {
                     views[i] = self.srv(*v);
@@ -470,7 +713,7 @@ impl D3d11 {
             if last.is_none_or(|l| l.samplers != s.samplers) {
                 let mut sm: [Option<ID3D11SamplerState>; SAMPLER_SLOTS] = Default::default();
                 for (i, v) in s.samplers.iter().enumerate() {
-                    sm[i] = v.and_then(|v| self.samplers.get(v.0 as usize)).cloned();
+                    sm[i] = v.and_then(|v| self.sampler_obj(v)).cloned();
                 }
                 match stage {
                     Stage::Vertex => c.VSSetSamplers(0, Some(&sm)),
@@ -478,6 +721,197 @@ impl D3d11 {
                     Stage::Geometry => {}
                 }
             }
+        }
+    }
+
+    /// What the context has bound now, every object imported
+    /// ([`D3d11::import`]): the state for drawing the host's draw again
+    /// later. Constant buffers are left out of the state; they come back
+    /// raw in [`BoundNow::cbs`] with their windows. Read with the `Get*`
+    /// calls, so only live objects are taken.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::needless_range_loop,
+        clippy::many_single_char_names
+    )] // one block per piece of state; parallel arrays; as in `bound`
+    pub fn import_bound(&mut self) -> BoundNow {
+        fn ptr<T: Interface>(o: Option<&T>) -> *mut c_void {
+            o.map_or(std::ptr::null_mut(), Interface::as_raw)
+        }
+        let c = self.context.clone();
+        let c1 = self.context1.clone();
+        let mut s = DrawState::default();
+        let mut reads = Vec::new();
+        let mut cbs = [[None; CB_SLOTS]; 2];
+        // SAFETY: Get* calls with arrays of the documented sizes; every
+        // object they return is alive while its reference is held here,
+        // which is when it is imported.
+        unsafe {
+            s.topology = c.IAGetPrimitiveTopology().0 as u32;
+            let l = c.IAGetInputLayout().ok();
+            s.layout = self.import(ptr(l.as_ref()), Import::Layout).map(Layout);
+            let mut vb: [Option<ID3D11Buffer>; VB_SLOTS] = Default::default();
+            let mut strides = [0u32; VB_SLOTS];
+            let mut offsets = [0u32; VB_SLOTS];
+            c.IAGetVertexBuffers(
+                0,
+                VB_SLOTS as u32,
+                Some(vb.as_mut_ptr()),
+                Some(strides.as_mut_ptr()),
+                Some(offsets.as_mut_ptr()),
+            );
+            for i in 0..VB_SLOTS {
+                let p = ptr(vb[i].as_ref());
+                if !p.is_null() {
+                    reads.push(p as usize);
+                }
+                s.vertex[i] = self.import(p, Import::Buffer).map(|h| VertexBinding {
+                    buffer: Buffer(h),
+                    stride: strides[i],
+                    offset: offsets[i],
+                });
+            }
+            let mut ib = None;
+            let mut fmt = DXGI_FORMAT(0);
+            let mut off = 0;
+            c.IAGetIndexBuffer(Some(&raw mut ib), Some(&raw mut fmt), Some(&raw mut off));
+            let p = ptr(ib.as_ref());
+            if !p.is_null() {
+                reads.push(p as usize);
+            }
+            s.index = self.import(p, Import::Buffer).map(|h| IndexBinding {
+                buffer: Buffer(h),
+                format: fmt.0 as u32,
+                offset: off,
+            });
+            let mut vs = None;
+            c.VSGetShader(&raw mut vs, None, None);
+            s.vs.shader = self
+                .import(ptr(vs.as_ref()), Import::Shader(Stage::Vertex))
+                .map(Shader);
+            let mut ps = None;
+            c.PSGetShader(&raw mut ps, None, None);
+            s.ps.shader = self
+                .import(ptr(ps.as_ref()), Import::Shader(Stage::Pixel))
+                .map(Shader);
+            let mut gs = None;
+            c.GSGetShader(&raw mut gs, None, None);
+            s.gs = self
+                .import(ptr(gs.as_ref()), Import::Shader(Stage::Geometry))
+                .map(Shader);
+            for (k, stage) in [Stage::Vertex, Stage::Pixel].into_iter().enumerate() {
+                let mut cb: [Option<ID3D11Buffer>; CB_SLOTS] = Default::default();
+                let mut first = [0u32; CB_SLOTS];
+                let mut count = [0u32; CB_SLOTS];
+                match (stage, &c1) {
+                    (Stage::Vertex, Some(c1)) => c1.VSGetConstantBuffers1(
+                        0,
+                        CB_SLOTS as u32,
+                        Some(cb.as_mut_ptr()),
+                        Some(first.as_mut_ptr()),
+                        Some(count.as_mut_ptr()),
+                    ),
+                    (Stage::Pixel, Some(c1)) => c1.PSGetConstantBuffers1(
+                        0,
+                        CB_SLOTS as u32,
+                        Some(cb.as_mut_ptr()),
+                        Some(first.as_mut_ptr()),
+                        Some(count.as_mut_ptr()),
+                    ),
+                    (Stage::Vertex, None) => c.VSGetConstantBuffers(0, Some(&mut cb)),
+                    _ => c.PSGetConstantBuffers(0, Some(&mut cb)),
+                }
+                for i in 0..CB_SLOTS {
+                    if let Some(b) = &cb[i] {
+                        let mut d = D3D11_BUFFER_DESC::default();
+                        b.GetDesc(&raw mut d);
+                        // The `…1` getters give a whole buffer as its size
+                        // in constants.
+                        let whole = first[i] == 0 && count[i] * 16 == d.ByteWidth;
+                        cbs[k][i] = Some(BoundCb {
+                            buffer: raw(b),
+                            first: if whole { 0 } else { first[i] },
+                            count: if whole { 0 } else { count[i] },
+                        });
+                    }
+                }
+                let mut srvs: [Option<ID3D11ShaderResourceView>; SRV_SLOTS] = Default::default();
+                let mut sm: [Option<ID3D11SamplerState>; SAMPLER_SLOTS] = Default::default();
+                if stage == Stage::Vertex {
+                    c.VSGetShaderResources(0, Some(&mut srvs));
+                    c.VSGetSamplers(0, Some(&mut sm));
+                } else {
+                    c.PSGetShaderResources(0, Some(&mut srvs));
+                    c.PSGetSamplers(0, Some(&mut sm));
+                }
+                let mut st = StageBindings::default();
+                for i in 0..SRV_SLOTS {
+                    if let Some(v) = &srvs[i]
+                        && let Ok(r) = v.GetResource()
+                    {
+                        reads.push(raw(&r));
+                    }
+                    st.srvs[i] = self
+                        .import(
+                            ptr(srvs[i].as_ref()),
+                            Import::View(ViewKind::ShaderResource),
+                        )
+                        .map(View);
+                }
+                for i in 0..SAMPLER_SLOTS {
+                    st.samplers[i] = self
+                        .import(ptr(sm[i].as_ref()), Import::Sampler)
+                        .map(Sampler);
+                }
+                let at = if stage == Stage::Vertex {
+                    &mut s.vs
+                } else {
+                    &mut s.ps
+                };
+                at.srvs = st.srvs;
+                at.samplers = st.samplers;
+            }
+            let r = c.RSGetState().ok();
+            s.raster = self.import(ptr(r.as_ref()), Import::Raster).map(Raster);
+            let mut n = 1u32;
+            let mut vp = [D3D11_VIEWPORT::default()];
+            c.RSGetViewports(&raw mut n, Some(vp.as_mut_ptr()));
+            let v = vp[0];
+            s.viewport = [
+                v.TopLeftX, v.TopLeftY, v.Width, v.Height, v.MinDepth, v.MaxDepth,
+            ];
+            let mut n = 1u32;
+            let mut sc = [RECT::default()];
+            c.RSGetScissorRects(&raw mut n, Some(sc.as_mut_ptr()));
+            s.scissor = [sc[0].left, sc[0].top, sc[0].right, sc[0].bottom];
+            let mut rtvs: [Option<ID3D11RenderTargetView>; RT_SLOTS] = Default::default();
+            let mut dsv = None;
+            c.OMGetRenderTargets(Some(&mut rtvs), Some(&raw mut dsv));
+            for i in 0..RT_SLOTS {
+                s.targets[i] = self
+                    .import(ptr(rtvs[i].as_ref()), Import::View(ViewKind::RenderTarget))
+                    .map(View);
+            }
+            s.depth_target = self
+                .import(ptr(dsv.as_ref()), Import::View(ViewKind::DepthStencil))
+                .map(View);
+            let mut blend = None;
+            c.OMGetBlendState(
+                Some(&raw mut blend),
+                Some(&mut s.blend_factor),
+                Some(&raw mut s.sample_mask),
+            );
+            s.blend = self.import(ptr(blend.as_ref()), Import::Blend).map(Blend);
+            let mut depth = None;
+            c.OMGetDepthStencilState(Some(&raw mut depth), Some(&raw mut s.stencil_ref));
+            s.depth = self
+                .import(ptr(depth.as_ref()), Import::DepthState)
+                .map(DepthState);
+        }
+        BoundNow {
+            state: s,
+            cbs,
+            reads,
         }
     }
 
@@ -558,7 +992,7 @@ impl D3d11 {
                 }
                 for i in 0..CB_SLOTS {
                     st.cbs[i] = self.handle(cbs[i].as_ref()).map(|h| {
-                        let size = self.buffers.get(h as usize).map_or(0, |b| b.desc.size);
+                        let size = self.buffer_obj(Buffer(h)).map_or(0, |b| b.desc.size);
                         // The `…1` getters report a whole buffer as 0 for
                         // its size in constants.
                         let whole = first[i] == 0 && count[i] * 16 == size;
@@ -768,6 +1202,38 @@ impl D3d11 {
     }
 }
 
+/// Adds `obj` to one of `store`'s lists (`list`) and to its known
+/// objects; its handle number (`bit` marks imports).
+fn push<T>(
+    store: &mut Store,
+    bit: u32,
+    raw: usize,
+    list: fn(&mut Store) -> &mut Vec<T>,
+    obj: T,
+) -> u32 {
+    let v = list(store);
+    let h = v.len() as u32 | bit;
+    v.push(obj);
+    store.known.insert(raw, h);
+    h
+}
+
+fn texture_desc_of(d: &D3D11_TEXTURE2D_DESC) -> TextureDesc {
+    TextureDesc {
+        width: d.Width,
+        height: d.Height,
+        mips: d.MipLevels,
+        array_size: d.ArraySize,
+        format: d.Format.0 as u32,
+        samples: d.SampleDesc.Count,
+        quality: d.SampleDesc.Quality,
+        usage: d.Usage.0 as u32,
+        bind: d.BindFlags,
+        cpu_access: d.CPUAccessFlags,
+        misc: d.MiscFlags,
+    }
+}
+
 fn texture_desc(d: &TextureDesc) -> D3D11_TEXTURE2D_DESC {
     D3D11_TEXTURE2D_DESC {
         Width: d.width,
@@ -834,10 +1300,7 @@ impl Backend for D3d11 {
             ShaderObj::Pixel(x) => raw(x),
             ShaderObj::Geometry(x) => raw(x),
         };
-        let h = self.shaders.len() as u32;
-        self.known.insert(p, h);
-        self.shaders.push(obj);
-        Ok(Shader(h))
+        Ok(Shader(push(&mut self.own, 0, p, |s| &mut s.shaders, obj)))
     }
 
     fn create_layout(&mut self, elements: &[InputElement], vs_dxbc: &[u8]) -> Result<Layout> {
@@ -870,10 +1333,8 @@ impl Backend for D3d11 {
                 .map_err(|e| err("CreateInputLayout", &e))?;
         }
         let l = l.ok_or(Error("no input layout".into()))?;
-        let h = self.layouts.len() as u32;
-        self.known.insert(raw(&l), h);
-        self.layouts.push(l);
-        Ok(Layout(h))
+        let p = raw(&l);
+        Ok(Layout(push(&mut self.own, 0, p, |s| &mut s.layouts, l)))
     }
 
     fn create_blend(&mut self, d: &BlendDesc) -> Result<Blend> {
@@ -902,10 +1363,8 @@ impl Backend for D3d11 {
                 .map_err(|e| err("CreateBlendState", &e))?;
         }
         let s = s.ok_or(Error("no blend state".into()))?;
-        let h = self.blends.len() as u32;
-        self.known.insert(raw(&s), h);
-        self.blends.push(s);
-        Ok(Blend(h))
+        let p = raw(&s);
+        Ok(Blend(push(&mut self.own, 0, p, |st| &mut st.blends, s)))
     }
 
     fn create_depth_state(&mut self, d: &DepthStencilDesc) -> Result<DepthState> {
@@ -933,10 +1392,14 @@ impl Backend for D3d11 {
                 .map_err(|e| err("CreateDepthStencilState", &e))?;
         }
         let s = s.ok_or(Error("no depth-stencil state".into()))?;
-        let h = self.depths.len() as u32;
-        self.known.insert(raw(&s), h);
-        self.depths.push(s);
-        Ok(DepthState(h))
+        let p = raw(&s);
+        Ok(DepthState(push(
+            &mut self.own,
+            0,
+            p,
+            |st| &mut st.depths,
+            s,
+        )))
     }
 
     fn create_raster(&mut self, d: &RasterDesc) -> Result<Raster> {
@@ -960,10 +1423,8 @@ impl Backend for D3d11 {
                 .map_err(|e| err("CreateRasterizerState", &e))?;
         }
         let s = s.ok_or(Error("no rasterizer state".into()))?;
-        let h = self.rasters.len() as u32;
-        self.known.insert(raw(&s), h);
-        self.rasters.push(s);
-        Ok(Raster(h))
+        let p = raw(&s);
+        Ok(Raster(push(&mut self.own, 0, p, |st| &mut st.rasters, s)))
     }
 
     fn create_sampler(&mut self, d: &SamplerDesc) -> Result<Sampler> {
@@ -987,10 +1448,8 @@ impl Backend for D3d11 {
                 .map_err(|e| err("CreateSamplerState", &e))?;
         }
         let s = s.ok_or(Error("no sampler state".into()))?;
-        let h = self.samplers.len() as u32;
-        self.known.insert(raw(&s), h);
-        self.samplers.push(s);
-        Ok(Sampler(h))
+        let p = raw(&s);
+        Ok(Sampler(push(&mut self.own, 0, p, |st| &mut st.samplers, s)))
     }
 
     fn create_buffer(&mut self, desc: &BufferDesc, data: Option<&[u8]>) -> Result<Buffer> {
@@ -1020,14 +1479,13 @@ impl Backend for D3d11 {
                 .map_err(|e| err("CreateBuffer", &e))?;
         }
         let b = b.ok_or(Error("no buffer".into()))?;
-        let h = self.buffers.len() as u32;
-        self.known.insert(raw(&b), h);
-        self.buffers.push(BufferObj {
+        let p = raw(&b);
+        let obj = BufferObj {
             buffer: b,
             desc: *desc,
             written: data.map(<[u8]>::to_vec).unwrap_or_default(),
-        });
-        Ok(Buffer(h))
+        };
+        Ok(Buffer(push(&mut self.own, 0, p, |s| &mut s.buffers, obj)))
     }
 
     fn create_texture(&mut self, desc: &TextureDesc, init: &[InitData]) -> Result<Texture> {
@@ -1052,7 +1510,7 @@ impl Backend for D3d11 {
                 .map_err(|e| err("CreateTexture2D", &e))?;
         }
         let t = t.ok_or(Error("no texture".into()))?;
-        Ok(self.add_texture(t, *desc))
+        Ok(self.add_texture(false, t, *desc))
     }
 
     fn create_view(
@@ -1062,8 +1520,7 @@ impl Backend for D3d11 {
         desc: Option<&ViewDesc>,
     ) -> Result<View> {
         let tex = self
-            .textures
-            .get(texture.0 as usize)
+            .texture_obj(texture)
             .map(|t| t.0.clone())
             .ok_or(Error("no such texture".into()))?;
         let words = desc.map(ViewDesc::words);
@@ -1119,11 +1576,18 @@ impl Backend for D3d11 {
                 }
             }
         };
-        Ok(self.add_view(obj, texture))
+        Ok(self.add_view(false, obj, Some(texture)))
     }
 
     fn write_buffer(&mut self, buffer: Buffer, offset: u32, data: &[u8]) {
-        let Some(b) = self.buffers.get_mut(buffer.0 as usize) else {
+        let b = if buffer.0 & IMPORTED == 0 {
+            self.own.buffers.get_mut(buffer.0 as usize)
+        } else {
+            self.imported
+                .buffers
+                .get_mut((buffer.0 & !IMPORTED) as usize)
+        };
+        let Some(b) = b else {
             return;
         };
         let size = b.desc.size as usize;
@@ -1187,10 +1651,7 @@ impl Backend for D3d11 {
     }
 
     fn copy_texture(&mut self, dst: Texture, src: Texture) {
-        if let (Some(d), Some(s)) = (
-            self.textures.get(dst.0 as usize),
-            self.textures.get(src.0 as usize),
-        ) {
+        if let (Some(d), Some(s)) = (self.texture_obj(dst), self.texture_obj(src)) {
             // SAFETY: live textures of this device.
             unsafe { self.context.CopyResource(&d.0, &s.0) };
         }
@@ -1222,13 +1683,12 @@ impl Backend for D3d11 {
     }
 
     fn view_texture(&self, view: View) -> Option<Texture> {
-        self.views.get(view.0 as usize).map(|v| v.1)
+        self.view_obj(view).and_then(|v| v.1)
     }
 
     fn read_texture(&mut self, texture: Texture) -> Result<Readback> {
         let (tex, desc) = self
-            .textures
-            .get(texture.0 as usize)
+            .texture_obj(texture)
             .cloned()
             .ok_or(Error("no such texture".into()))?;
         if desc.samples > 1 {
