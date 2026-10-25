@@ -8,6 +8,8 @@
 //! - [`world`]: `renderWorld`, `renderWorldCulledSorted`, `mergeResults`;
 //! - [`descriptor`]: the render classes' class-descriptor callbacks and
 //!   `Bind` functions (M4 port round 1, h1-render-a);
+//! - [`registry`]: descriptor constructors, `GetType<T>` singletons,
+//!   `Bind` with a member descriptor (h1-render-a);
 //! - [`texture`], [`basic`]: texture and sampler bases, small engine
 //!   methods (h1-render-a).
 //!
@@ -30,6 +32,7 @@
 pub mod basic;
 pub mod descriptor;
 pub mod mesh;
+pub mod registry;
 pub mod sort;
 pub mod texture;
 pub mod thread;

@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_prender::{basic, descriptor, texture};
+use ffx_prender::{basic, descriptor, registry, texture};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -1150,6 +1150,173 @@ fn small_methods_match_the_original() {
                 &[descriptor],
                 |g| Out::U32(basic::bridge::class_entry(g, world, descriptor)),
             );
+        }
+    }
+}
+
+// ---- batch 4: descriptor constructors, type singletons, Bind with a member ----
+
+#[test]
+fn descriptor_constructors_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xde5c_0001);
+        t.stub(
+            registry::PBASE_DESCRIPTOR,
+            false,
+            0,
+            0,
+            Ret::Imm(0x00c9_02e8),
+        );
+        t.stub(
+            registry::GLOBAL_NAMESPACE,
+            false,
+            0,
+            0,
+            Ret::Imm(0x1234_0000),
+        );
+        t.stub(
+            registry::DESCRIPTOR_BASE_CTOR,
+            true,
+            6,
+            6,
+            Ret::Imm(0x0bad_0001),
+        );
+        t.stub(registry::SET_DEFAULT_BUFFER, true, 1, 1, Ret::Imm(1));
+        t.stub(registry::SET_VALIDATION_BUFFER, true, 1, 1, Ret::Imm(2));
+        t.stub(registry::SET_WRITE_MASK_BUFFER, true, 1, 1, Ret::Imm(3));
+        for &(f, k) in registry::DESCRIPTOR_CTOR {
+            assert_eq!(registry::five_of(registry::DESCRIPTOR_CTOR, f), k);
+            let this = pattern(&mut t, &mut rng, 0xa0);
+            let before = t.log_entries();
+            t.check(
+                &format!("{name} {f:#x}"),
+                f,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(registry::bridge::descriptor_ctor(g, this, k)),
+            );
+            assert_eq!(t.log_entries() - before, 6, "{f:#x}");
+        }
+    }
+}
+
+#[test]
+fn type_singletons_and_member_binds_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        t.stub(registry::ATEXIT, false, 1, 0, Ret::Imm(0));
+        t.stub(descriptor::REGISTER_TYPE, false, 1, 0, Ret::Imm(0x0101));
+        t.stub(
+            descriptor::ADD_TO_NAMESPACE,
+            true,
+            0,
+            0,
+            Ret::Imm(0x5a5a_1234),
+        );
+        for &(_, [_, _, ctor, ..]) in registry::TYPE_SINGLETON {
+            t.stub(ctor, true, 5, 5, Ret::Imm(0x7777));
+        }
+        for &(_, (_, [_, _, ctor, ..])) in registry::BIND_MEMBER {
+            t.stub(ctor, true, 6, 6, Ret::Imm(0x8888));
+        }
+        for guard_word in [0u32, 1, 0xffff_fffe, 3] {
+            for &(f, k) in registry::TYPE_SINGLETON {
+                assert_eq!(registry::singleton_of(f), k);
+                let guard = t.rebase(k[0]);
+                t.w32(guard, guard_word);
+                let before = t.log_entries();
+                t.check(
+                    &format!("{name} {f:#x} guard {guard_word:#x}"),
+                    f,
+                    Conv::Cdecl,
+                    &[],
+                    |g| Out::U32(registry::bridge::type_singleton(g, k)),
+                );
+                assert_eq!(
+                    t.log_entries() - before,
+                    if guard_word & 1 == 0 { 2 } else { 0 }
+                );
+            }
+            for &(f, (d, k)) in registry::BIND_MEMBER {
+                assert_eq!(registry::bind_member_of(f), (d, k));
+                let guard = t.rebase(k[0]);
+                t.w32(guard, guard_word);
+                let before = t.log_entries();
+                t.check(
+                    &format!("{name} {f:#x} guard {guard_word:#x}"),
+                    f,
+                    Conv::Cdecl,
+                    &[],
+                    |g| Out::U32(registry::bridge::bind_member(g, d, k)),
+                );
+                assert_eq!(
+                    t.log_entries() - before,
+                    if guard_word & 1 == 0 { 4 } else { 2 }
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn array_types_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xa77a_0001);
+        t.stub(registry::ATEXIT, false, 1, 0, Ret::Imm(0));
+        t.stub(descriptor::REGISTER_TYPE, false, 1, 0, Ret::Imm(0x0101));
+        t.stub(
+            descriptor::ADD_TO_NAMESPACE,
+            true,
+            0,
+            0,
+            Ret::Imm(0x5a5a_1234),
+        );
+        t.stub(registry::TYPE_U32, false, 0, 0, Ret::Imm(0x00c9_04d0));
+        t.stub(registry::DATA_MEMBER_CTOR, true, 6, 6, Ret::Imm(0x6));
+        t.stub(registry::ANNOTATION_CTOR, true, 3, 3, Ret::Imm(0x3));
+        t.stub(registry::ADD_ANNOTATION, true, 1, 1, Ret::Imm(0x1));
+        // seven words: the first six logged
+        t.stub(registry::DATA_MEMBER_ARRAY_CTOR, true, 6, 7, Ret::Imm(0x7));
+        for &(_, k) in registry::ARRAY_TYPE {
+            t.stub(k.desc_ctor, true, 0, 0, Ret::Imm(0xd));
+        }
+        for case in 0..48u32 {
+            for &(f, k) in registry::ARRAY_TYPE {
+                assert_eq!(registry::array_type_of(f), k);
+                let guard = t.rebase(k.guard);
+                let obj = t.rebase(k.obj);
+                let annotation = t.rebase(k.annotation);
+                let name_global = t.rebase(k.name_global);
+                let array = t.rebase(k.array_member);
+                t.w32(obj + 0x90, rng.next());
+                t.w32(array + 0x38, rng.next() | 1);
+                t.w32(
+                    guard,
+                    [0, 1, 3, 7, 0xf, 5, 9, 0xffff_fff0][(case % 8) as usize],
+                );
+                t.w32(obj + 0x18, if case % 3 == 0 { 0x1234 } else { 0 });
+                t.w32(
+                    name_global,
+                    if case % 5 < 2 { 0 } else { 0x00b0_0000 + case },
+                );
+                let list = if case % 2 == 0 {
+                    annotation + 4
+                } else {
+                    rng.next()
+                };
+                t.w32(annotation + 4, list);
+                let arg = if case % 7 == 6 {
+                    0
+                } else {
+                    0x00c0_0000 + rng.next() % 0x1000
+                };
+                t.check(
+                    &format!("{name} {f:#x} case {case}"),
+                    f,
+                    Conv::Cdecl,
+                    &[arg],
+                    |g| Out::U32(registry::bridge::array_type(g, &k, arg)),
+                );
+            }
         }
     }
 }

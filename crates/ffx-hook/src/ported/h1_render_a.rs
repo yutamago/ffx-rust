@@ -6,7 +6,7 @@
 //! No shim keeps state.
 
 use super::{mem, ported};
-use ffx_prender::{basic, descriptor, texture};
+use ffx_prender::{basic, descriptor, registry, texture};
 
 ported! {
     /// `destroyInstance(descriptor, p)`: the destructor.
@@ -1203,5 +1203,220 @@ ported! {
     /// `0x004d3700(a, b)` -> 1 when `a`'s second word is below `b`'s.
     PhyreLess_bySecondWord_004d3700 @ 0x004d_3700 => extern "C" fn h1_004d3700(a: u32, b: u32) -> u32 {
         basic::bridge::less_by_second(&mem(), a, b)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PTypedObject_4__PClassDescriptorAbstract @ 0x0045_77e0 => extern "thiscall" fn h1_004577e0(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x0045_77e0) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PGeometry_PVertexStream_4__PClassDescriptorAbstract @ 0x0048_1470 => extern "thiscall" fn h1_00481470(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x0048_1470) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PGeometry_PSkinBoneRemap_2__PClassDescriptorAbstract @ 0x0048_6c20 => extern "thiscall" fn h1_00486c20(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x0048_6c20) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PSharray_Phyre_PRendering_PMaterial__PClassDescriptorAbstract @ 0x0048_a310 => extern "thiscall" fn h1_0048a310(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x0048_a310) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_int_4__PClassDescriptorAbstract @ 0x0048_e7e0 => extern "thiscall" fn h1_0048e7e0(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x0048_e7e0) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PMatrix4_4__PClassDescriptorAbstract @ 0x0048_e880 => extern "thiscall" fn h1_0048e880(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x0048_e880) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PGeometry_PMeshSegment_4__PClassDescriptorAbstract @ 0x0048_e920 => extern "thiscall" fn h1_0048e920(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x0048_e920) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PGeometry_PSkeletonJointBounds_4__PClassDescriptorAbstract @ 0x0048_e9c0 => extern "thiscall" fn h1_0048e9c0(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x0048_e9c0) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PString_4__PClassDescriptorAbstract @ 0x0048_ea60 => extern "thiscall" fn h1_0048ea60(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x0048_ea60) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PGeometry_PDynamicMesh_PDynamicSegmentDesc_4__PClassDescriptorAbstract @ 0x0049_6610 => extern "thiscall" fn h1_00496610(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x0049_6610) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_unsigned_char_4__PClassDescriptorAbstract @ 0x0049_9b00 => extern "thiscall" fn h1_00499b00(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x0049_9b00) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// `PTypeDispenser::GetType<T>()` -> the type object.
+    Phyre_PTypeDispenser_GetType_0049d050 @ 0x0049_d050 => extern "C" fn h1_0049d050() -> u32 {
+        let k = const { registry::singleton_of(0x0049_d050) };
+        registry::bridge::type_singleton(&mut mem(), k)
+    }
+    /// `PTypeDispenser::GetType<T>()` -> the type object.
+    Phyre_PTypeDispenser_GetType_0049d100 @ 0x0049_d100 => extern "C" fn h1_0049d100() -> u32 {
+        let k = const { registry::singleton_of(0x0049_d100) };
+        registry::bridge::type_singleton(&mut mem(), k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PRendering_PShaderParameterDefinition_4__PClassDescriptorAbstract @ 0x004a_6730 => extern "thiscall" fn h1_004a6730(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x004a_6730) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PRendering_PShaderStreamDefinition_4__PClassDescriptorAbstract @ 0x004a_67d0 => extern "thiscall" fn h1_004a67d0(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x004a_67d0) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// `T::Bind()` with a member descriptor -> `addToNamespace`'s `eax`.
+    PClassBind_withMember_004a9ec0 @ 0x004a_9ec0 => extern "C" fn h1_004a9ec0() -> u32 {
+        let (d, k) = const { registry::bind_member_of(0x004a_9ec0) };
+        registry::bridge::bind_member(&mut mem(), d, k)
+    }
+    /// `T::Bind()` with a member descriptor -> `addToNamespace`'s `eax`.
+    PClassBind_withMember_004a9f60 @ 0x004a_9f60 => extern "C" fn h1_004a9f60() -> u32 {
+        let (d, k) = const { registry::bind_member_of(0x004a_9f60) };
+        registry::bridge::bind_member(&mut mem(), d, k)
+    }
+    /// `T::Bind()` with a member descriptor -> `addToNamespace`'s `eax`.
+    PClassBind_withMember_004aa210 @ 0x004a_a210 => extern "C" fn h1_004aa210() -> u32 {
+        let (d, k) = const { registry::bind_member_of(0x004a_a210) };
+        registry::bridge::bind_member(&mut mem(), d, k)
+    }
+    /// `T::Bind()` with a member descriptor -> `addToNamespace`'s `eax`.
+    PClassBind_withMember_004aa2b0 @ 0x004a_a2b0 => extern "C" fn h1_004aa2b0() -> u32 {
+        let (d, k) = const { registry::bind_member_of(0x004a_a2b0) };
+        registry::bridge::bind_member(&mut mem(), d, k)
+    }
+    /// `T::Bind()` with a member descriptor -> `addToNamespace`'s `eax`.
+    PClassBind_withMember_004aa350 @ 0x004a_a350 => extern "C" fn h1_004aa350() -> u32 {
+        let (d, k) = const { registry::bind_member_of(0x004a_a350) };
+        registry::bridge::bind_member(&mut mem(), d, k)
+    }
+    /// `T::Bind()` with a member descriptor -> `addToNamespace`'s `eax`.
+    PClassBind_withMember_004aa4f0 @ 0x004a_a4f0 => extern "C" fn h1_004aa4f0() -> u32 {
+        let (d, k) = const { registry::bind_member_of(0x004a_a4f0) };
+        registry::bridge::bind_member(&mut mem(), d, k)
+    }
+    /// `T::Bind()` with a member descriptor -> `addToNamespace`'s `eax`.
+    PClassBind_withMember_004aa590 @ 0x004a_a590 => extern "C" fn h1_004aa590() -> u32 {
+        let (d, k) = const { registry::bind_member_of(0x004a_a590) };
+        registry::bridge::bind_member(&mut mem(), d, k)
+    }
+    /// `T::Bind()` with a member descriptor -> `addToNamespace`'s `eax`.
+    PClassBind_withMember_004aa760 @ 0x004a_a760 => extern "C" fn h1_004aa760() -> u32 {
+        let (d, k) = const { registry::bind_member_of(0x004a_a760) };
+        registry::bridge::bind_member(&mut mem(), d, k)
+    }
+    /// `T::Bind()` with a member descriptor -> `addToNamespace`'s `eax`.
+    PClassBind_withMember_004aa800 @ 0x004a_a800 => extern "C" fn h1_004aa800() -> u32 {
+        let (d, k) = const { registry::bind_member_of(0x004a_a800) };
+        registry::bridge::bind_member(&mut mem(), d, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PRendering_PShaderParameterCaptureBufferLocation_2__PClassDescriptorAbstract @ 0x004b_4790 => extern "thiscall" fn h1_004b4790(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x004b_4790) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PRendering_PShaderParameterCaptureBufferLocationType_2__PClassDescriptorAbstract @ 0x004b_4830 => extern "thiscall" fn h1_004b4830(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x004b_4830) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PRendering_PShaderParameterCaptureBufferLocationTypeConstantBuffer_4__PClassDescriptorAbstract @ 0x004b_48d0 => extern "thiscall" fn h1_004b48d0(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x004b_48d0) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PRendering_PShaderPass_4__PClassDescriptorAbstract @ 0x004b_b9f0 => extern "thiscall" fn h1_004bb9f0(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x004b_b9f0) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// `PTypeDispenser::GetType<T>()` -> the type object.
+    Phyre_PTypeDispenser_GetType_Phyre_PRendering_PTextureFormatBase @ 0x004c_0b10 => extern "C" fn h1_004c0b10() -> u32 {
+        let k = const { registry::singleton_of(0x004c_0b10) };
+        registry::bridge::type_singleton(&mut mem(), k)
+    }
+    /// `PTypeDispenser::GetType<T>()` -> the type object.
+    Phyre_PTypeDispenser_GetType_004c8a70 @ 0x004c_8a70 => extern "C" fn h1_004c8a70() -> u32 {
+        let k = const { registry::singleton_of(0x004c_8a70) };
+        registry::bridge::type_singleton(&mut mem(), k)
+    }
+    /// `PTypeDispenser::GetType<T>()` -> the type object.
+    Phyre_PTypeDispenser_GetType_004c8ba0 @ 0x004c_8ba0 => extern "C" fn h1_004c8ba0() -> u32 {
+        let k = const { registry::singleton_of(0x004c_8ba0) };
+        registry::bridge::type_singleton(&mut mem(), k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PRendering_PShadowCaster_PShadowSplit_4__PClassDescriptorAbstract @ 0x004c_9020 => extern "thiscall" fn h1_004c9020(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x004c_9020) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// The descriptor's constructor (`this`) -> `this`.
+    Phyre_PClassDescriptorAbstract_Phyre_PSharray_unsigned_int__PClassDescriptorAbstract @ 0x004c_f1d0 => extern "thiscall" fn h1_004cf1d0(this: u32) -> u32 {
+        let k = const { registry::five_of(registry::DESCRIPTOR_CTOR, 0x004c_f1d0) };
+        registry::bridge::descriptor_ctor(&mut mem(), this, k)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PGeometry_PVertexStream_4 @ 0x0048_2170 => extern "C" fn h1_00482170(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x0048_2170) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PGeometry_PMeshSegment_4 @ 0x0049_0d70 => extern "C" fn h1_00490d70(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x0049_0d70) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PGeometry_PSkeletonJointBounds_4 @ 0x0049_0f80 => extern "C" fn h1_00490f80(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x0049_0f80) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PString_4 @ 0x0049_1190 => extern "C" fn h1_00491190(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x0049_1190) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PGeometry_PDynamicMesh_PDynamicSegmentDesc_4 @ 0x0049_7260 => extern "C" fn h1_00497260(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x0049_7260) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PRendering_PShaderParameterDefinition_4 @ 0x004a_b0b0 => extern "C" fn h1_004ab0b0(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x004a_b0b0) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PRendering_PShaderStreamDefinition_4 @ 0x004a_b2c0 => extern "C" fn h1_004ab2c0(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x004a_b2c0) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PRendering_PShaderParameterCaptureBufferLocationTypeConstantBuffer_4 @ 0x004b_6d30 => extern "C" fn h1_004b6d30(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x004b_6d30) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PRendering_PShaderPass_4 @ 0x004b_c640 => extern "C" fn h1_004bc640(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x004b_c640) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PRendering_PShadowCaster_PShadowSplit_4 @ 0x004c_ae60 => extern "C" fn h1_004cae60(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x004c_ae60) };
+        registry::bridge::array_type(&mut mem(), &k, name)
     }
 }
