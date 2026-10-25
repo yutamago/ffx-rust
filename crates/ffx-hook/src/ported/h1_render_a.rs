@@ -538,4 +538,413 @@ ported! {
     Phyre_PClassDescriptorConcrete_Phyre_PRendering_PMaterialSwitch__constructInstance @ 0x004d_8610 => extern "thiscall" fn h1_004d8610(_descriptor: u32, p: u32) -> u8 {
         u8::from(descriptor::bridge::construct_init(&mut mem(), p, const { descriptor::init_of(0x004d_8610) }))
     }
+    /// `destroyInstance(descriptor, p)`: the object's virtual destructor.
+    Phyre_PClassDescriptorForType_Phyre_PCameraOrthographic__destroyInstance @ 0x0045_5b70 => extern "thiscall" fn h1_00455b70(_descriptor: u32, p: u32) -> u8 {
+        const { descriptor::listed(descriptor::VIRTUAL_DELETE, 0x0045_5b70) };
+        u8::from(descriptor::bridge::destroy_virtual(&mut mem(), p))
+    }
+    /// `destroyInstance(descriptor, p)`: the object's virtual destructor.
+    Phyre_PClassDescriptorForType_Phyre_PCameraPerspective__destroyInstance @ 0x0045_6950 => extern "thiscall" fn h1_00456950(_descriptor: u32, p: u32) -> u8 {
+        const { descriptor::listed(descriptor::VIRTUAL_DELETE, 0x0045_6950) };
+        u8::from(descriptor::bridge::destroy_virtual(&mut mem(), p))
+    }
+    /// `destroyInstance(descriptor, p)`: frees the untagged block at +4.
+    Phyre_PClassDescriptorForType_Phyre_PAssetReferenceImport__destroyInstance @ 0x0045_dd10 => extern "thiscall" fn h1_0045dd10(_descriptor: u32, p: u32) -> u8 {
+        const { descriptor::listed(descriptor::TAGGED_FREE, 0x0045_dd10) };
+        u8::from(descriptor::bridge::destroy_tagged(&mut mem(), p))
+    }
+    /// `constructInstance(descriptor, p)`: the constructor in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PDataBlock__constructInstance @ 0x0048_3120 => extern "thiscall" fn h1_00483120(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct(&mut mem(), const { descriptor::callee_of(descriptor::CONSTRUCT, 0x0048_3120) }, p))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PGeometry_PVertexStream_4__destroyInstance @ 0x0048_31b0 => extern "thiscall" fn h1_004831b0(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x0048_31b0) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: the release when owned, then the destructor.
+    Phyre_PClassDescriptorForType_Phyre_PGeometry_PDataBlock__destroyInstance @ 0x0048_31f0 => extern "thiscall" fn h1_004831f0(_descriptor: u32, p: u32) -> u8 {
+        let calls = const { descriptor::three_of(descriptor::DESTROY_CHECKED, 0x0048_31f0) };
+        u8::from(descriptor::bridge::destroy_checked(&mut mem(), calls, p))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PGeometry_PDataBlockBase__destroyInstance @ 0x0048_3260 => extern "thiscall" fn h1_00483260(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x0048_3260) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `PArray::setToExternalBuffer(array, buffer, count)` -> 0.
+    Phyre_PArray_setToExternalBuffer_004839d0 @ 0x0048_39d0 => extern "thiscall" fn h1_004839d0(array: u32, buffer: u32, count: u32) -> u32 {
+        let release = const { descriptor::release_of(descriptor::SET_EXTERNAL, 0x0048_39d0) };
+        descriptor::bridge::set_external(&mut mem(), array, buffer, count, release)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PGeometry_PVertexStream_4__setToExternalBuffer @ 0x0048_3a20 => extern "thiscall" fn h1_00483a20(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x0048_3a20) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `constructInstance(descriptor, p)`: the default fields in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PDynamicDataBlock__constructInstance @ 0x0048_4830 => extern "thiscall" fn h1_00484830(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_init(&mut mem(), p, const { descriptor::init_of(0x0048_4830) }))
+    }
+    /// `constructInstance(descriptor, p)`: the constructor in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PIndexDataBlock__constructInstance @ 0x0048_5c80 => extern "thiscall" fn h1_00485c80(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct(&mut mem(), const { descriptor::callee_of(descriptor::CONSTRUCT, 0x0048_5c80) }, p))
+    }
+    /// `destroyInstance(descriptor, p)`: the release when owned, then the destructor.
+    Phyre_PClassDescriptorForType_Phyre_PGeometry_PIndexDataBlock__destroyInstance @ 0x0048_5d10 => extern "thiscall" fn h1_00485d10(_descriptor: u32, p: u32) -> u8 {
+        let calls = const { descriptor::three_of(descriptor::DESTROY_CHECKED, 0x0048_5d10) };
+        u8::from(descriptor::bridge::destroy_checked(&mut mem(), calls, p))
+    }
+    /// `constructInstance(descriptor, p)`: the constructor in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PMeshSegment__constructInstance @ 0x0048_8ef0 => extern "thiscall" fn h1_00488ef0(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct(&mut mem(), const { descriptor::callee_of(descriptor::CONSTRUCT, 0x0048_8ef0) }, p))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PGeometry_PSkinBoneRemap_2__destroyInstance @ 0x0048_8fb0 => extern "thiscall" fn h1_00488fb0(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x0048_8fb0) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PGeometry_PMeshSegmentBase__destroyInstance @ 0x0048_9080 => extern "thiscall" fn h1_00489080(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x0048_9080) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `PArray::setToExternalBuffer(array, buffer, count)` -> 0.
+    Phyre_PArray_setToExternalBuffer_00489880 @ 0x0048_9880 => extern "thiscall" fn h1_00489880(array: u32, buffer: u32, count: u32) -> u32 {
+        let release = const { descriptor::release_of(descriptor::SET_EXTERNAL, 0x0048_9880) };
+        descriptor::bridge::set_external(&mut mem(), array, buffer, count, release)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PGeometry_PSkinBoneRemap_2__setToExternalBuffer @ 0x0048_98d0 => extern "thiscall" fn h1_004898d0(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x0048_98d0) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PSharray_Phyre_PRendering_PMaterial__destroyInstance @ 0x0048_be50 => extern "thiscall" fn h1_0048be50(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x0048_be50) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PGeometry_PMaterialSet__destroyInstance @ 0x0048_be90 => extern "thiscall" fn h1_0048be90(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x0048_be90) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `getArrayStart(member, object)`: the member's getter, or the data word at the member's offset.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PSharray_Phyre_PRendering_PMaterial__getArrayStart @ 0x0048_c060 => extern "thiscall" fn h1_0048c060(member: u32, object: u32) -> u32 {
+        descriptor::bridge::member_start(&mut mem(), member, object)
+    }
+    /// `getCount(member, object)`: the member's getter, or 0.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PSharray_Phyre_PRendering_PMaterial__getCount @ 0x0048_c140 => extern "thiscall" fn h1_0048c140(member: u32, object: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_COUNT, 0x0048_c140) };
+        descriptor::bridge::member_count(&mut mem(), member, object)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PSharray_Phyre_PRendering_PMaterial__setToExternalBuffer @ 0x0048_c730 => extern "thiscall" fn h1_0048c730(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x0048_c730) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PArray_int_4__destroyInstance @ 0x0049_3de0 => extern "thiscall" fn h1_00493de0(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x0049_3de0) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PMatrix4_4__destroyInstance @ 0x0049_3e20 => extern "thiscall" fn h1_00493e20(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x0049_3e20) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PGeometry_PMeshSegment_4__destroyInstance @ 0x0049_3e60 => extern "thiscall" fn h1_00493e60(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x0049_3e60) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PGeometry_PSkeletonJointBounds_4__destroyInstance @ 0x0049_3ea0 => extern "thiscall" fn h1_00493ea0(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x0049_3ea0) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PString_4__destroyInstance @ 0x0049_3ee0 => extern "thiscall" fn h1_00493ee0(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x0049_3ee0) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `PArray::setToExternalBuffer(array, buffer, count)` -> 0.
+    Phyre_PArray_setToExternalBuffer_00495490 @ 0x0049_5490 => extern "thiscall" fn h1_00495490(array: u32, buffer: u32, count: u32) -> u32 {
+        let release = const { descriptor::release_of(descriptor::SET_EXTERNAL, 0x0049_5490) };
+        descriptor::bridge::set_external(&mut mem(), array, buffer, count, release)
+    }
+    /// `PArray::setToExternalBuffer(array, buffer, count)` -> 0.
+    Phyre_PArray_setToExternalBuffer_004954e0 @ 0x0049_54e0 => extern "thiscall" fn h1_004954e0(array: u32, buffer: u32, count: u32) -> u32 {
+        let release = const { descriptor::release_of(descriptor::SET_EXTERNAL, 0x0049_54e0) };
+        descriptor::bridge::set_external(&mut mem(), array, buffer, count, release)
+    }
+    /// `PArray::setToExternalBuffer(array, buffer, count)` -> 0.
+    Phyre_PArray_setToExternalBuffer_00495530 @ 0x0049_5530 => extern "thiscall" fn h1_00495530(array: u32, buffer: u32, count: u32) -> u32 {
+        let release = const { descriptor::release_of(descriptor::SET_EXTERNAL, 0x0049_5530) };
+        descriptor::bridge::set_external(&mut mem(), array, buffer, count, release)
+    }
+    /// `PArray::setToExternalBuffer(array, buffer, count)` -> 0.
+    Phyre_PArray_setToExternalBuffer_00495580 @ 0x0049_5580 => extern "thiscall" fn h1_00495580(array: u32, buffer: u32, count: u32) -> u32 {
+        let release = const { descriptor::release_of(descriptor::SET_EXTERNAL, 0x0049_5580) };
+        descriptor::bridge::set_external(&mut mem(), array, buffer, count, release)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_int_4__setToExternalBuffer @ 0x0049_55d0 => extern "thiscall" fn h1_004955d0(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x0049_55d0) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PMatrix4_4__setToExternalBuffer @ 0x0049_5600 => extern "thiscall" fn h1_00495600(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x0049_5600) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PGeometry_PMeshSegment_4__setToExternalBuffer @ 0x0049_5630 => extern "thiscall" fn h1_00495630(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x0049_5630) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PGeometry_PSkeletonJointBounds_4__setToExternalBuffer @ 0x0049_5660 => extern "thiscall" fn h1_00495660(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x0049_5660) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PString_4__setToExternalBuffer @ 0x0049_5690 => extern "thiscall" fn h1_00495690(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x0049_5690) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `constructInstance(descriptor, p)`: the default fields in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PDynamicMesh_PDynamicSegmentDesc__constructInstance @ 0x0049_8160 => extern "thiscall" fn h1_00498160(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_init(&mut mem(), p, const { descriptor::init_of(0x0049_8160) }))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PGeometry_PDynamicMesh_PDynamicSegmentDesc_4__destroyInstance @ 0x0049_8480 => extern "thiscall" fn h1_00498480(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x0049_8480) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `PArray::setToExternalBuffer(array, buffer, count)` -> 0.
+    Phyre_PArray_setToExternalBuffer_00499220 @ 0x0049_9220 => extern "thiscall" fn h1_00499220(array: u32, buffer: u32, count: u32) -> u32 {
+        let release = const { descriptor::release_of(descriptor::SET_EXTERNAL, 0x0049_9220) };
+        descriptor::bridge::set_external(&mut mem(), array, buffer, count, release)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PGeometry_PDynamicMesh_PDynamicSegmentDesc_4__setToExternalBuffer @ 0x0049_9270 => extern "thiscall" fn h1_00499270(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x0049_9270) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `constructInstance(descriptor, p)`: the constructor in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PConstantBuffer__constructInstance @ 0x004a_04e0 => extern "thiscall" fn h1_004a04e0(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct(&mut mem(), const { descriptor::callee_of(descriptor::CONSTRUCT, 0x004a_04e0) }, p))
+    }
+    /// `destroyInstance(descriptor, p)`: the release when owned, then the destructor.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PConstantBuffer__destroyInstance @ 0x004a_0560 => extern "thiscall" fn h1_004a0560(_descriptor: u32, p: u32) -> u8 {
+        let calls = const { descriptor::three_of(descriptor::DESTROY_CHECKED, 0x004a_0560) };
+        u8::from(descriptor::bridge::destroy_checked(&mut mem(), calls, p))
+    }
+    /// `destroyInstance(descriptor, p)`: frees the untagged block at +4.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PShaderParameterDefinition__destroyInstance @ 0x004a_2f60 => extern "thiscall" fn h1_004a2f60(_descriptor: u32, p: u32) -> u8 {
+        const { descriptor::listed(descriptor::TAGGED_FREE, 0x004a_2f60) };
+        u8::from(descriptor::bridge::destroy_tagged(&mut mem(), p))
+    }
+    /// `(data, count)`: frees each element's untagged block, then `data`.
+    PArray_releaseTaggedElements_004ab4d0 @ 0x004a_b4d0 => extern "C" fn h1_004ab4d0(data: u32, count: u32) {
+        const { descriptor::listed(descriptor::RELEASE_TAGGED, 0x004a_b4d0) };
+        descriptor::bridge::release_tagged(&mut mem(), data, count);
+    }
+    /// `(data, count)`: frees each element's untagged block, then `data`.
+    PArray_releaseTaggedElements_004ab510 @ 0x004a_b510 => extern "C" fn h1_004ab510(data: u32, count: u32) {
+        const { descriptor::listed(descriptor::RELEASE_TAGGED, 0x004a_b510) };
+        descriptor::bridge::release_tagged(&mut mem(), data, count);
+    }
+    /// `constructInstance(descriptor, p)`: the default fields in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderProgramParamsAndStreams__constructInstance @ 0x004b_0290 => extern "thiscall" fn h1_004b0290(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_init(&mut mem(), p, const { descriptor::init_of(0x004b_0290) }))
+    }
+    /// `constructInstance(descriptor, p)`: copies the descriptor's default object.
+    Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderComputeProgram__constructInstance @ 0x004b_02f0 => extern "thiscall" fn h1_004b02f0(_descriptor: u32, p: u32) -> u32 {
+        let calls = const { descriptor::three_of(descriptor::CONSTRUCT_DEFAULT, 0x004b_02f0) };
+        descriptor::bridge::construct_default(&mut mem(), calls, p)
+    }
+    /// `constructInstance(descriptor, p)`: copies the descriptor's default object.
+    Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderFragmentProgram__constructInstance @ 0x004b_0360 => extern "thiscall" fn h1_004b0360(_descriptor: u32, p: u32) -> u32 {
+        let calls = const { descriptor::three_of(descriptor::CONSTRUCT_DEFAULT, 0x004b_0360) };
+        descriptor::bridge::construct_default(&mut mem(), calls, p)
+    }
+    /// `constructInstance(descriptor, p)`: copies the descriptor's default object.
+    Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderGeometryProgram__constructInstance @ 0x004b_03d0 => extern "thiscall" fn h1_004b03d0(_descriptor: u32, p: u32) -> u32 {
+        let calls = const { descriptor::three_of(descriptor::CONSTRUCT_DEFAULT, 0x004b_03d0) };
+        descriptor::bridge::construct_default(&mut mem(), calls, p)
+    }
+    /// `constructInstance(descriptor, p)`: copies the descriptor's default object.
+    Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderVertexProgram__constructInstance @ 0x004b_04c0 => extern "thiscall" fn h1_004b04c0(_descriptor: u32, p: u32) -> u32 {
+        let calls = const { descriptor::three_of(descriptor::CONSTRUCT_DEFAULT, 0x004b_04c0) };
+        descriptor::bridge::construct_default(&mut mem(), calls, p)
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PRendering_PShaderParameterDefinition_4__destroyInstance @ 0x004b_0530 => extern "thiscall" fn h1_004b0530(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x004b_0530) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PRendering_PShaderStreamDefinition_4__destroyInstance @ 0x004b_0570 => extern "thiscall" fn h1_004b0570(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x004b_0570) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: frees the untagged block at +4.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PShaderStreamDefinition__destroyInstance @ 0x004b_0750 => extern "thiscall" fn h1_004b0750(_descriptor: u32, p: u32) -> u8 {
+        const { descriptor::listed(descriptor::TAGGED_FREE, 0x004b_0750) };
+        u8::from(descriptor::bridge::destroy_tagged(&mut mem(), p))
+    }
+    /// `PArray::setToExternalBuffer(array, buffer, count)` -> 0.
+    Phyre_PArray_setToExternalBuffer_004b2660 @ 0x004b_2660 => extern "thiscall" fn h1_004b2660(array: u32, buffer: u32, count: u32) -> u32 {
+        let release = const { descriptor::release_of(descriptor::SET_EXTERNAL, 0x004b_2660) };
+        descriptor::bridge::set_external(&mut mem(), array, buffer, count, release)
+    }
+    /// `PArray::setToExternalBuffer(array, buffer, count)` -> 0.
+    Phyre_PArray_setToExternalBuffer_004b26b0 @ 0x004b_26b0 => extern "thiscall" fn h1_004b26b0(array: u32, buffer: u32, count: u32) -> u32 {
+        let release = const { descriptor::release_of(descriptor::SET_EXTERNAL, 0x004b_26b0) };
+        descriptor::bridge::set_external(&mut mem(), array, buffer, count, release)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PRendering_PShaderParameterDefinition_4__setToExternalBuffer @ 0x004b_2700 => extern "thiscall" fn h1_004b2700(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x004b_2700) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PRendering_PShaderStreamDefinition_4__setToExternalBuffer @ 0x004b_2730 => extern "thiscall" fn h1_004b2730(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x004b_2730) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `constructInstance(descriptor, p)`: the constructor in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderPass__constructInstance @ 0x004b_9690 => extern "thiscall" fn h1_004b9690(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct(&mut mem(), const { descriptor::callee_of(descriptor::CONSTRUCT, 0x004b_9690) }, p))
+    }
+    /// `constructInstance(descriptor, p)`: the default fields in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderPassBase__constructInstance @ 0x004b_96e0 => extern "thiscall" fn h1_004b96e0(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_init(&mut mem(), p, const { descriptor::init_of(0x004b_96e0) }))
+    }
+    /// `constructInstance(descriptor, p)`: the default fields in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderPassParameterLocationTypes__constructInstance @ 0x004b_9720 => extern "thiscall" fn h1_004b9720(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_init(&mut mem(), p, const { descriptor::init_of(0x004b_9720) }))
+    }
+    /// `constructInstance(descriptor, p)`: the default fields in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderPassParameterLocationTypesConstantBuffer__constructInstance @ 0x004b_97b0 => extern "thiscall" fn h1_004b97b0(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_init(&mut mem(), p, const { descriptor::init_of(0x004b_97b0) }))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PRendering_PShaderParameterCaptureBufferLocation_2__destroyInstance @ 0x004b_9820 => extern "thiscall" fn h1_004b9820(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x004b_9820) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PRendering_PShaderParameterCaptureBufferLocationType_2__destroyInstance @ 0x004b_9860 => extern "thiscall" fn h1_004b9860(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x004b_9860) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PRendering_PShaderParameterCaptureBufferLocationTypeConstantBuffer_4__destroyInstance @ 0x004b_98a0 => extern "thiscall" fn h1_004b98a0(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x004b_98a0) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PShaderPassBase__destroyInstance @ 0x004b_9900 => extern "thiscall" fn h1_004b9900(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x004b_9900) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PShaderPassParameterLocationTypes__destroyInstance @ 0x004b_9940 => extern "thiscall" fn h1_004b9940(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x004b_9940) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PShaderPassParameterLocationTypesConstantBuffer__destroyInstance @ 0x004b_9990 => extern "thiscall" fn h1_004b9990(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x004b_9990) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `PArray::setToExternalBuffer(array, buffer, count)` -> 0.
+    Phyre_PArray_setToExternalBuffer_004baa70 @ 0x004b_aa70 => extern "thiscall" fn h1_004baa70(array: u32, buffer: u32, count: u32) -> u32 {
+        let release = const { descriptor::release_of(descriptor::SET_EXTERNAL, 0x004b_aa70) };
+        descriptor::bridge::set_external(&mut mem(), array, buffer, count, release)
+    }
+    /// `PArray::setToExternalBuffer(array, buffer, count)` -> 0.
+    Phyre_PArray_setToExternalBuffer_004bab10 @ 0x004b_ab10 => extern "thiscall" fn h1_004bab10(array: u32, buffer: u32, count: u32) -> u32 {
+        let release = const { descriptor::release_of(descriptor::SET_EXTERNAL, 0x004b_ab10) };
+        descriptor::bridge::set_external(&mut mem(), array, buffer, count, release)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PRendering_PShaderParameterCaptureBufferLocation_2__setToExternalBuffer @ 0x004b_ab60 => extern "thiscall" fn h1_004bab60(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x004b_ab60) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PRendering_PShaderParameterCaptureBufferLocationTypeConstantBuffer_4__setToExternalBuffer @ 0x004b_abc0 => extern "thiscall" fn h1_004babc0(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x004b_abc0) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `PArray::setToExternalBuffer(array, buffer, count)` -> 0.
+    Phyre_PArray_setToExternalBuffer_004bdde0 @ 0x004b_dde0 => extern "thiscall" fn h1_004bdde0(array: u32, buffer: u32, count: u32) -> u32 {
+        let release = const { descriptor::release_of(descriptor::SET_EXTERNAL, 0x004b_dde0) };
+        descriptor::bridge::set_external(&mut mem(), array, buffer, count, release)
+    }
+    /// `setToExternalBuffer(member, object, buffer, count)`: the member's setter, or 0x15.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PRendering_PShaderPass_4__setToExternalBuffer @ 0x004b_de30 => extern "thiscall" fn h1_004bde30(member: u32, object: u32, buffer: u32, count: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_SET_EXTERNAL, 0x004b_de30) };
+        descriptor::bridge::member_set_external(&mut mem(), member, object, buffer, count)
+    }
+    /// `constructInstance(descriptor, p)`: the constructor in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PSamplerState__constructInstance @ 0x004c_0140 => extern "thiscall" fn h1_004c0140(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct(&mut mem(), const { descriptor::callee_of(descriptor::CONSTRUCT, 0x004c_0140) }, p))
+    }
+    /// `constructInstance(descriptor, p)`: the constructor in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTexture2D__constructInstance @ 0x004c_3b00 => extern "thiscall" fn h1_004c3b00(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct(&mut mem(), const { descriptor::callee_of(descriptor::CONSTRUCT, 0x004c_3b00) }, p))
+    }
+    /// `destroyInstance(descriptor, p)`: the release when owned, then the destructor.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PTexture2D__destroyInstance @ 0x004c_3bb0 => extern "thiscall" fn h1_004c3bb0(_descriptor: u32, p: u32) -> u8 {
+        let calls = const { descriptor::three_of(descriptor::DESTROY_CHECKED, 0x004c_3bb0) };
+        u8::from(descriptor::bridge::destroy_checked(&mut mem(), calls, p))
+    }
+    /// `constructInstance(descriptor, p)`: the constructor in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTexture3D__constructInstance @ 0x004c_5360 => extern "thiscall" fn h1_004c5360(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct(&mut mem(), const { descriptor::callee_of(descriptor::CONSTRUCT, 0x004c_5360) }, p))
+    }
+    /// `destroyInstance(descriptor, p)`: the release when owned, then the destructor.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PTexture3D__destroyInstance @ 0x004c_5420 => extern "thiscall" fn h1_004c5420(_descriptor: u32, p: u32) -> u8 {
+        let calls = const { descriptor::three_of(descriptor::DESTROY_CHECKED, 0x004c_5420) };
+        u8::from(descriptor::bridge::destroy_checked(&mut mem(), calls, p))
+    }
+    /// `constructInstance(descriptor, p)`: the constructor in place.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTextureCubeMap__constructInstance @ 0x004c_6b90 => extern "thiscall" fn h1_004c6b90(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct(&mut mem(), const { descriptor::callee_of(descriptor::CONSTRUCT, 0x004c_6b90) }, p))
+    }
+    /// `destroyInstance(descriptor, p)`: the release when owned, then the destructor.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PTextureCubeMap__destroyInstance @ 0x004c_6c40 => extern "thiscall" fn h1_004c6c40(_descriptor: u32, p: u32) -> u8 {
+        let calls = const { descriptor::three_of(descriptor::DESTROY_CHECKED, 0x004c_6c40) };
+        u8::from(descriptor::bridge::destroy_checked(&mut mem(), calls, p))
+    }
+    /// `constructInstance(descriptor, p)`: copies the descriptor's default object.
+    Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PRenderTarget__constructInstance @ 0x004c_8130 => extern "thiscall" fn h1_004c8130(_descriptor: u32, p: u32) -> u32 {
+        let calls = const { descriptor::three_of(descriptor::CONSTRUCT_DEFAULT, 0x004c_8130) };
+        descriptor::bridge::construct_default(&mut mem(), calls, p)
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PSharray_unsigned_int__destroyInstance @ 0x004d_0590 => extern "thiscall" fn h1_004d0590(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x004d_0590) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `destroyInstance(descriptor, p)`: releases the array's block, empties it.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PNodeContext__destroyInstance @ 0x004d_05e0 => extern "thiscall" fn h1_004d05e0(_descriptor: u32, p: u32) -> u8 {
+        let (off, release) = const { descriptor::array_of(0x004d_05e0) };
+        u8::from(descriptor::bridge::destroy_array(&mut mem(), p, off, release))
+    }
+    /// `getCount(member, object)`: the member's getter, or 0.
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PSharray_unsigned_int__getCount @ 0x004d_0780 => extern "thiscall" fn h1_004d0780(member: u32, object: u32) -> u32 {
+        const { descriptor::listed(descriptor::MEMBER_COUNT, 0x004d_0780) };
+        descriptor::bridge::member_count(&mut mem(), member, object)
+    }
+    /// `constructInstance(descriptor, p)`: copies the descriptor's default object.
+    Phyre_PClassDescriptorHeaderWithoutDefaultConstructor_Phyre_PRendering_PParameterBuffer__constructInstance @ 0x004d_70d0 => extern "thiscall" fn h1_004d70d0(_descriptor: u32, p: u32) -> u32 {
+        let calls = const { descriptor::three_of(descriptor::CONSTRUCT_DEFAULT, 0x004d_70d0) };
+        descriptor::bridge::construct_default(&mut mem(), calls, p)
+    }
 }

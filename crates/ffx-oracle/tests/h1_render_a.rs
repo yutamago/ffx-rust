@@ -87,9 +87,20 @@ fn game_dir() -> Option<PathBuf> {
     dir
 }
 
+/// What a recording stub returns in `eax`.
+#[derive(Debug, Clone, Copy)]
+enum Ret {
+    /// This value.
+    Imm(u32),
+    /// The word at this address when it runs.
+    Cell(u32),
+}
+
 /// What the original returns, to compare.
 #[derive(Debug, Clone, Copy)]
 enum Out {
+    /// Nothing the callers read.
+    None,
     /// `eax`.
     U32(u32),
     /// `al`.
@@ -174,12 +185,24 @@ impl Twins {
     }
 
     /// A recording stub at the original `sym` (a `jmp` there): logs
-    /// `sym`, `ecx` and `n` stack arguments, pops `pops` words, returns
-    /// `ret`. Once per address.
-    fn stub(&mut self, sym: u32, n: u32, pops: u32, ret: u32) {
+    /// `sym`, `ecx` (when `this`: a cdecl callee's `ecx` is the caller's
+    /// leftover) and `n` stack arguments, pops `pops` words, returns `ret`.
+    /// Once per address.
+    fn stub(&mut self, sym: u32, this: bool, n: u32, pops: u32, ret: Ret) {
         if self.stubs.contains_key(&sym) {
             return;
         }
+        let addr = self.stub_code(sym, this, n, pops, ret);
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+        self.write(at, &j);
+        self.stubs.insert(sym, addr);
+    }
+
+    /// The stub of [`Twins::stub`] in the cave only (for pointers), `tag`
+    /// its log tag. Returns its address.
+    fn stub_code(&mut self, tag: u32, this: bool, n: u32, pops: u32, ret: Ret) -> u32 {
         assert!(n <= 6);
         let log = self.log;
         let mut c = vec![0xa1];
@@ -188,16 +211,26 @@ impl Twins {
         c.push(0x05);
         c.extend((log + 4).to_le_bytes()); // add eax, log + 4
         c.extend([0xc7, 0x00]);
-        c.extend(sym.to_le_bytes()); // mov [eax], tag
-        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        c.extend(tag.to_le_bytes()); // mov [eax], tag
+        if this {
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        }
         for i in 0..n {
             c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
             c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
         }
         c.extend([0xff, 0x05]);
         c.extend(log.to_le_bytes()); // inc dword [log]
-        c.push(0xb8);
-        c.extend(ret.to_le_bytes()); // mov eax, ret
+        match ret {
+            Ret::Imm(_) => c.push(0xb8),  // mov eax, imm
+            Ret::Cell(_) => c.push(0xa1), // mov eax, [cell]
+        }
+        c.extend(
+            match ret {
+                Ret::Imm(v) | Ret::Cell(v) => v,
+            }
+            .to_le_bytes(),
+        );
         if pops == 0 {
             c.push(0xc3);
         } else {
@@ -208,11 +241,11 @@ impl Twins {
         assert!(addr + c.len() as u32 <= self.cave + CAVE_LEN, "cave full");
         self.write(addr, &c);
         self.cave_next = addr + c.len() as u32;
-        let at = self.rebase(sym);
-        let mut j = vec![0xe9];
-        j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
-        self.write(at, &j);
-        self.stubs.insert(sym, addr);
+        addr
+    }
+
+    fn w32(&mut self, at: u32, v: u32) {
+        self.write(at, &v.to_le_bytes());
     }
 
     fn diff(&mut self, what: &str) {
@@ -249,6 +282,7 @@ impl Twins {
             ra.st0
         );
         match out {
+            Out::None => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
         }
@@ -321,7 +355,7 @@ fn destroy_and_construct_call_the_original_callee() {
         let mut rng = Rng(0x0f1e_2d3c);
         let this = object(&mut t, &mut rng);
         for &(_, callee) in descriptor::DESTROY.iter().chain(descriptor::CONSTRUCT) {
-            t.stub(callee, 0, 0, rng.next());
+            t.stub(callee, true, 0, 0, Ret::Imm(rng.next()));
         }
         for &(f, dtor) in descriptor::DESTROY {
             assert_eq!(descriptor::callee_of(descriptor::DESTROY, f), dtor);
@@ -358,8 +392,20 @@ fn destroy_and_construct_call_the_original_callee() {
 #[test]
 fn bind_matches_the_original() {
     for (name, mut t) in Twins::all() {
-        t.stub(descriptor::REGISTER_TYPE, 1, 0, 0x0000_0101);
-        t.stub(descriptor::ADD_TO_NAMESPACE, 0, 0, 0x5a5a_1234);
+        t.stub(
+            descriptor::REGISTER_TYPE,
+            false,
+            1,
+            0,
+            Ret::Imm(0x0000_0101),
+        );
+        t.stub(
+            descriptor::ADD_TO_NAMESPACE,
+            true,
+            0,
+            0,
+            Ret::Imm(0x5a5a_1234),
+        );
         for &(f, d) in descriptor::BIND {
             assert_eq!(descriptor::callee_of(descriptor::BIND, f), d);
             let before = t.log_entries();
@@ -370,3 +416,293 @@ fn bind_matches_the_original() {
         }
     }
 }
+
+// ---- arrays: destroyInstance, setToExternalBuffer, the element release ----
+
+/// Array header count words: owned (0, 1, 2, many) and external.
+const COUNTS: [u32; 6] = [0, 1, 2, 5, 0x8000_0003, 0x8000_0000];
+
+/// Stubs `PhyreFree` and every element release of the tables.
+fn stub_releases(t: &mut Twins) {
+    t.stub(descriptor::FREE, false, 1, 0, Ret::Imm(0x0bad_f00d));
+    let elements = descriptor::ARRAY_DESTROY
+        .iter()
+        .map(|(_, (_, r))| *r)
+        .chain(descriptor::SET_EXTERNAL.iter().map(|(_, r)| *r));
+    for r in elements.collect::<Vec<_>>() {
+        if let descriptor::Release::Elements(f) = r {
+            t.stub(f, false, 2, 0, Ret::Imm(0x0e1e_0e1e));
+        }
+    }
+}
+
+#[test]
+fn array_destroy_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x7777_1234);
+        let this = object(&mut t, &mut rng);
+        stub_releases(&mut t);
+        for &(f, (off, how)) in descriptor::ARRAY_DESTROY {
+            assert_eq!(descriptor::array_of(f), (off, how));
+            for count in COUNTS {
+                for data in [0, 0x1234_5670 + rng.next() % 0x100] {
+                    let p = object(&mut t, &mut rng);
+                    t.w32(p + off, count);
+                    t.w32(p + off + 4, data);
+                    let before = t.log_entries();
+                    t.check(
+                        &format!("{name} {f:#x} count {count:#x} data {data:#x}"),
+                        f,
+                        Conv::Thiscall(this),
+                        &[p],
+                        |g| Out::U8(u8::from(descriptor::bridge::destroy_array(g, p, off, how))),
+                    );
+                    let calls = t.log_entries() - before;
+                    let owned = descriptor::owned(count);
+                    let want = match how {
+                        descriptor::Release::Free => owned && data != 0,
+                        descriptor::Release::FreeShared { check_null } => {
+                            owned && count > 1 && (data != 0 || !check_null)
+                        }
+                        descriptor::Release::Elements(_) => owned,
+                    };
+                    assert_eq!(calls, u32::from(want), "{f:#x} {count:#x} {data:#x}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn tagged_and_virtual_destroy_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x4242_4242);
+        let this = object(&mut t, &mut rng);
+        stub_releases(&mut t);
+        for &f in descriptor::TAGGED_FREE {
+            for block in [0, 0x2000_0000, 0x2000_0001, 0xffff_fffe, 0xffff_ffff] {
+                let p = object(&mut t, &mut rng);
+                t.w32(p + 4, block);
+                t.check(
+                    &format!("{name} {f:#x} block {block:#x}"),
+                    f,
+                    Conv::Thiscall(this),
+                    &[p],
+                    |g| Out::U8(u8::from(descriptor::bridge::destroy_tagged(g, p))),
+                );
+            }
+        }
+        // the object's vtable: slot 0 a recording stub popping the flags
+        let dtor = t.stub_code(0x00de_1e7e, true, 1, 1, Ret::Imm(0x1357_2468));
+        let vtable = t.alloc(&dtor.to_le_bytes());
+        for &f in descriptor::VIRTUAL_DELETE {
+            let object_ = object(&mut t, &mut rng);
+            t.w32(object_, vtable);
+            let p = object_ + 4;
+            let before = t.log_entries();
+            t.check(
+                &format!("{name} {f:#x}"),
+                f,
+                Conv::Thiscall(this),
+                &[p],
+                |g| Out::U8(u8::from(descriptor::bridge::destroy_virtual(g, p))),
+            );
+            assert_eq!(t.log_entries(), before + 1);
+        }
+    }
+}
+
+#[test]
+fn destroy_checked_and_construct_default_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0dd0_0dd0);
+        let this = object(&mut t, &mut rng);
+        let cell = t.zeros(4);
+        for &(_, [check, release, dtor]) in descriptor::DESTROY_CHECKED {
+            t.stub(check, true, 0, 0, Ret::Cell(cell));
+            t.stub(release, true, 0, 0, Ret::Imm(rng.next()));
+            t.stub(dtor, true, 0, 0, Ret::Imm(rng.next()));
+        }
+        for &(f, calls) in descriptor::DESTROY_CHECKED {
+            assert_eq!(descriptor::three_of(descriptor::DESTROY_CHECKED, f), calls);
+            // only `al` of the check counts
+            for checked in [0, 1, 0x100, 0xffff_ff01, 0x80] {
+                t.w32(cell, checked);
+                let p = object(&mut t, &mut rng);
+                let before = t.log_entries();
+                t.check(
+                    &format!("{name} {f:#x} check {checked:#x}"),
+                    f,
+                    Conv::Thiscall(this),
+                    &[p],
+                    |g| Out::U8(u8::from(descriptor::bridge::destroy_checked(g, calls, p))),
+                );
+                let want = 2 + u32::from(checked & 0xff != 0);
+                assert_eq!(t.log_entries() - before, want, "{f:#x} {checked:#x}");
+            }
+        }
+        for &(_, [_, get, ctor]) in descriptor::CONSTRUCT_DEFAULT {
+            t.stub(get, true, 0, 0, Ret::Cell(cell));
+            t.stub(ctor, true, 1, 1, Ret::Imm(0x7654_3210 ^ ctor));
+        }
+        for &(f, calls) in descriptor::CONSTRUCT_DEFAULT {
+            assert_eq!(
+                descriptor::three_of(descriptor::CONSTRUCT_DEFAULT, f),
+                calls
+            );
+            for default in [0, 0x1111_2222, 0x3333_4400] {
+                t.w32(cell, default);
+                for p in [0, object(&mut t, &mut rng)] {
+                    t.check(
+                        &format!("{name} {f:#x} default {default:#x} p {p:#x}"),
+                        f,
+                        Conv::Thiscall(this),
+                        &[p],
+                        |g| Out::U32(descriptor::bridge::construct_default(g, calls, p)),
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn set_external_and_release_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0001);
+        stub_releases(&mut t);
+        for &(f, how) in descriptor::SET_EXTERNAL {
+            assert_eq!(descriptor::release_of(descriptor::SET_EXTERNAL, f), how);
+            for old in COUNTS {
+                for data in [0, 0x4000_0000] {
+                    for (buffer, count) in [
+                        (0x4000_0000, 3),
+                        (0x5000_0000, 0),
+                        (0x5000_0000, 7),
+                        (0, 2),
+                        (0x5000_0000, 0x8000_0001),
+                        (0x5000_0000, 0x7fff_ffff),
+                    ] {
+                        let array = object(&mut t, &mut rng);
+                        t.w32(array, old);
+                        t.w32(array + 4, data);
+                        t.check(
+                            &format!(
+                                "{name} {f:#x} old {old:#x}/{data:#x} new {buffer:#x}/{count:#x}"
+                            ),
+                            f,
+                            Conv::Thiscall(array),
+                            &[buffer, count],
+                            |g| {
+                                Out::U32(descriptor::bridge::set_external(
+                                    g, array, buffer, count, how,
+                                ))
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn release_tagged_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0002);
+        // the element releases themselves stay original here
+        t.stub(descriptor::FREE, false, 1, 0, Ret::Imm(0x0bad_f00d));
+        for &f in descriptor::RELEASE_TAGGED {
+            for count in [0u32, 1, 2, 5] {
+                let mut bytes = Vec::new();
+                for _ in 0..count.max(1) {
+                    for k in 0..4 {
+                        let w = match (k, rng.next() % 3) {
+                            (1, 0) => 0x2000_0000 + (rng.next() & 0xfff0),
+                            (1, 1) => 0x2000_0001 + (rng.next() & 0xfff0),
+                            _ => rng.next(),
+                        };
+                        bytes.extend(w.to_le_bytes());
+                    }
+                }
+                let data = t.alloc(&bytes);
+                for d in [0, data] {
+                    let before = t.log_entries();
+                    t.check(
+                        &format!("{name} {f:#x} {d:#x} x {count}"),
+                        f,
+                        Conv::Cdecl,
+                        &[d, count],
+                        |g| {
+                            descriptor::bridge::release_tagged(g, d, count);
+                            Out::None
+                        },
+                    );
+                    if d == 0 {
+                        assert_eq!(t.log_entries(), before);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn array_members_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x00ab_cdef);
+        let setter = t.stub_code(0x5e77_e400, true, 2, 2, Ret::Imm(0x0000_0007));
+        let counter = t.stub_code(0xc0c0_0000, true, 0, 0, Ret::Imm(0x0000_0031));
+        let starter = t.stub_code(0x57a7_0000, true, 0, 0, Ret::Imm(0x1000_2000));
+        let class = object(&mut t, &mut rng);
+        let object_ = t.alloc(
+            &(0..64u32)
+                .flat_map(|i| (i * 0x0101_0101).to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        for with in [false, true] {
+            let member = t.zeros(0x40);
+            t.w32(member + 0xc, class);
+            t.w32(class + 0x88, 0x100);
+            t.w32(member + 0x24, 0x100 + 4 * (rng.next() % 60));
+            if with {
+                t.w32(member + 0x3c, setter);
+                t.w32(member + 0x34, counter);
+                t.w32(member + 0x38, starter);
+            }
+            for &f in descriptor::MEMBER_SET_EXTERNAL {
+                let (buffer, count) = (rng.next(), rng.next());
+                t.check(
+                    &format!("{name} {f:#x} with {with}"),
+                    f,
+                    Conv::Thiscall(member),
+                    &[object_, buffer, count],
+                    |g| {
+                        Out::U32(descriptor::bridge::member_set_external(
+                            g, member, object_, buffer, count,
+                        ))
+                    },
+                );
+            }
+            for &f in descriptor::MEMBER_COUNT {
+                t.check(
+                    &format!("{name} {f:#x} with {with}"),
+                    f,
+                    Conv::Thiscall(member),
+                    &[object_],
+                    |g| Out::U32(descriptor::bridge::member_count(g, member, object_)),
+                );
+            }
+            t.check(
+                &format!("{name} start with {with}"),
+                MEMBER_START,
+                Conv::Thiscall(member),
+                &[object_],
+                |g| Out::U32(descriptor::bridge::member_start(g, member, object_)),
+            );
+        }
+    }
+}
+
+/// `PClassDataMemberArrayDynamic<PSharray<PMaterial>>::getArrayStart`.
+const MEMBER_START: u32 = 0x0048_c060;

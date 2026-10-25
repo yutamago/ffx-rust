@@ -24,6 +24,16 @@
 //! stack words), whose `eax` it returns; `d` is `T`'s
 //! `PClassDescriptor` global ([`BIND`]).
 //!
+//! Arrays (`PArray<T>`, `PSharray<T>`: a header `[count | 0x80000000 when
+//! the block is external, data]`): their `destroyInstance` releases an
+//! owned block ([`ARRAY_DESTROY`], [`Release`]) and zeroes the header;
+//! `PArray<T>::setToExternalBuffer(buffer, count)` ([`SET_EXTERNAL`]);
+//! the member descriptors `PClassDataMemberArrayDynamic<T>` forward
+//! `getCount` (slot `0x10`), `getArrayStart` (`0x18`) and
+//! `setToExternalBuffer` (`0x20`) to the member functions they store at
+//! `+0x34`, `+0x38`, `+0x3c`. Classes without a default constructor
+//! copy the descriptor's default object ([`CONSTRUCT_DEFAULT`]).
+//!
 //! The constant of each copy (the init bytes, the callee, the descriptor)
 //! is in the tables below, by the copy's address; the shims and the
 //! oracle tests both read them from here.
@@ -117,6 +127,12 @@ pub const INIT: &[(u32, &[u8])] = &[
         0x004d_8610,
         &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
     ),
+    (0x0048_4830, &[0; 24]),
+    (0x0049_8160, &[0; 16]),
+    (0x004b_0290, &[0; 16]),
+    (0x004b_96e0, &[0; 24]),
+    (0x004b_9720, &[0; 24]),
+    (0x004b_97b0, &[0; 24]),
 ];
 
 /// `destroyInstance` copies and the destructor each calls.
@@ -146,6 +162,15 @@ pub const CONSTRUCT: &[(u32, u32)] = &[
     (0x0045_4960, 0x0045_30a0),
     (0x0045_6930, 0x0045_6370),
     (0x0049_3d80, 0x0043_3700),
+    (0x0048_3120, 0x0055_dc40),
+    (0x0048_5c80, 0x0055_dd30),
+    (0x0048_8ef0, 0x0043_37d0),
+    (0x004a_04e0, 0x0058_3240),
+    (0x004b_9690, 0x0058_3c00),
+    (0x004c_0140, 0x0058_3b20),
+    (0x004c_3b00, 0x0058_4240),
+    (0x004c_5360, 0x0058_42c0),
+    (0x004c_6b90, 0x0058_4400),
 ];
 
 /// `Bind` functions and the descriptor each registers.
@@ -274,10 +299,181 @@ pub const fn listed(table: &[u32], f: u32) -> bool {
     panic!("not in the table");
 }
 
+/// `PhyreFree` (cdecl `(block)`).
+pub const FREE: u32 = 0x0042_fb20;
+
+/// How an owned array block is released: the `PArray` / `PSharray`
+/// header is `[count | 0x80000000 when external, data]`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Release {
+    /// `PhyreFree(data)` unless `data` is 0.
+    Free,
+    /// `PhyreFree(data)` when the count is more than 1 (a `PSharray`'s
+    /// single element lives in the header), unless `data` is 0 when
+    /// `check_null`.
+    FreeShared {
+        /// Whether a 0 `data` is skipped.
+        check_null: bool,
+    },
+    /// `f(data, count)` (cdecl): destroys the elements and frees the
+    /// block.
+    Elements(u32),
+}
+
+/// `destroyInstance` copies of arrays (and classes holding one at an
+/// offset): the array's offset in `p` and how its block is released.
+pub const ARRAY_DESTROY: &[(u32, (u32, Release))] = &[
+    (0x0048_31b0, (0x0, Release::Free)),
+    (0x0048_3260, (0x8, Release::Free)),
+    (0x0048_8fb0, (0x0, Release::Free)),
+    (0x0048_9080, (0x8, Release::Free)),
+    (
+        0x0048_be50,
+        (0x0, Release::FreeShared { check_null: false }),
+    ),
+    (
+        0x0048_be90,
+        (0x0, Release::FreeShared { check_null: false }),
+    ),
+    (0x0049_3de0, (0x0, Release::Free)),
+    (0x0049_3e20, (0x0, Release::Free)),
+    (0x0049_3e60, (0x0, Release::Elements(0x0043_4210))),
+    (0x0049_3ea0, (0x0, Release::Free)),
+    (0x0049_3ee0, (0x0, Release::Elements(0x0043_4360))),
+    (0x0049_8480, (0x0, Release::Free)),
+    (0x004b_0530, (0x0, Release::Elements(0x004a_b4d0))),
+    (0x004b_0570, (0x0, Release::Elements(0x004a_b510))),
+    (0x004b_9820, (0x0, Release::Free)),
+    (0x004b_9860, (0x0, Release::Free)),
+    (0x004b_98a0, (0x0, Release::Free)),
+    (0x004b_9900, (0x10, Release::Free)),
+    (0x004b_9940, (0x10, Release::Free)),
+    (0x004b_9990, (0x10, Release::Free)),
+    (0x004d_0590, (0x0, Release::FreeShared { check_null: true })),
+    (0x004d_05e0, (0x0, Release::FreeShared { check_null: true })),
+];
+
+/// `destroyInstance` copies that free the untagged block at `p + 4`.
+pub const TAGGED_FREE: &[u32] = &[0x0045_dd10, 0x004a_2f60, 0x004b_0750];
+
+/// `destroyInstance` copies that call the object's virtual destructor
+/// through `p - 4` (the descriptor's `p` is past a vtable pointer).
+pub const VIRTUAL_DELETE: &[u32] = &[0x0045_5b70, 0x0045_6950];
+
+/// `destroyInstance` copies: `[check, release, destructor]`, thiscall on
+/// `p`; the release runs when the check's `al` is set.
+pub const DESTROY_CHECKED: &[(u32, [u32; 3])] = &[
+    (0x0048_31f0, [0x0056_2da0, 0x0056_46d0, 0x0055_dfa0]),
+    (0x0048_5d10, [0x0056_2db0, 0x0056_48c0, 0x0055_e060]),
+    (0x004a_0560, [0x0059_5f70, 0x0059_c540, 0x0058_4dc0]),
+    (0x004c_3bb0, [0x0059_5f90, 0x0059_cc40, 0x0058_5840]),
+    (0x004c_5420, [0x0059_5fa0, 0x0059_cf00, 0x0058_58d0]),
+    (0x004c_6c40, [0x0059_5fb0, 0x0059_d0f0, 0x0058_5960]),
+];
+
+/// `constructInstance` copies of classes without a default constructor:
+/// `[descriptor, its default-object getter, copy constructor]`.
+pub const CONSTRUCT_DEFAULT: &[(u32, [u32; 3])] = &[
+    (0x004b_02f0, [0x00c9_1048, 0x0043_cbb0, 0x0058_3b40]),
+    (0x004b_0360, [0x00c9_1048, 0x0043_cbb0, 0x0058_3bc0]),
+    (0x004b_03d0, [0x00c9_1048, 0x0043_cbb0, 0x0058_3be0]),
+    (0x004b_04c0, [0x00c9_1048, 0x0043_cbb0, 0x0058_4060]),
+    (0x004c_8130, [0x00ca_37d0, 0x0043_cbb0, 0x0058_3a60]),
+    (0x004d_70d0, [0x00ca_5ff0, 0x0043_cbb0, 0x004d_6180]),
+];
+
+/// `PArray::setToExternalBuffer` copies and how each releases the old
+/// block.
+pub const SET_EXTERNAL: &[(u32, Release)] = &[
+    (0x0048_39d0, Release::Free),
+    (0x0048_9880, Release::Free),
+    (0x0049_5490, Release::Free),
+    (0x0049_54e0, Release::Elements(0x0043_4210)),
+    (0x0049_5530, Release::Free),
+    (0x0049_5580, Release::Elements(0x0043_4360)),
+    (0x0049_9220, Release::Free),
+    (0x004b_2660, Release::Elements(0x004a_b4d0)),
+    (0x004b_26b0, Release::Elements(0x004a_b510)),
+    (0x004b_aa70, Release::Free),
+    (0x004b_ab10, Release::Free),
+    (0x004b_dde0, Release::Elements(0x004b_c850)),
+];
+
+/// Element releases: each 16-byte element's untagged `+4` block, then the
+/// array's.
+pub const RELEASE_TAGGED: &[u32] = &[0x004a_b4d0, 0x004a_b510];
+
+/// `PClassDataMemberArrayDynamic<T>::setToExternalBuffer` copies.
+pub const MEMBER_SET_EXTERNAL: &[u32] = &[
+    0x0048_3a20,
+    0x0048_98d0,
+    0x0048_c730,
+    0x0049_55d0,
+    0x0049_5600,
+    0x0049_5630,
+    0x0049_5660,
+    0x0049_5690,
+    0x0049_9270,
+    0x004b_2700,
+    0x004b_2730,
+    0x004b_ab60,
+    0x004b_abc0,
+    0x004b_de30,
+];
+
+/// `PClassDataMemberArrayDynamic<T>::getCount` copies.
+pub const MEMBER_COUNT: &[u32] = &[0x0048_c140, 0x004d_0780];
+
+/// The array offset and release of [`ARRAY_DESTROY`] copy `f`.
+#[must_use]
+pub const fn array_of(f: u32) -> (u32, Release) {
+    let mut i = 0;
+    while i < ARRAY_DESTROY.len() {
+        if ARRAY_DESTROY[i].0 == f {
+            return ARRAY_DESTROY[i].1;
+        }
+        i += 1;
+    }
+    panic!("not in the table");
+}
+
+/// The release of [`SET_EXTERNAL`] copy `f`.
+#[must_use]
+pub const fn release_of(table: &[(u32, Release)], f: u32) -> Release {
+    let mut i = 0;
+    while i < table.len() {
+        if table[i].0 == f {
+            return table[i].1;
+        }
+        i += 1;
+    }
+    panic!("not in the table");
+}
+
+/// The three callees of copy `f` in `table`.
+#[must_use]
+pub const fn three_of(table: &[(u32, [u32; 3])], f: u32) -> [u32; 3] {
+    let mut i = 0;
+    while i < table.len() {
+        if table[i].0 == f {
+            return table[i].1;
+        }
+        i += 1;
+    }
+    panic!("not in the table");
+}
+
+/// Whether an array header's count word says the block is the array's
+/// own (no external flag).
+#[must_use]
+pub const fn owned(count: u32) -> bool {
+    count & 0x8000_0000 == 0
+}
+
 pub mod bridge {
     //! The originals over game memory.
 
-    use super::{ADD_TO_NAMESPACE, Conv, Host, REGISTER_TYPE};
+    use super::{ADD_TO_NAMESPACE, Conv, FREE, Host, REGISTER_TYPE, Release, owned};
     use ffx_bridge::Mem;
 
     /// `constructInstance` / `destroyInstance` of a class with nothing
@@ -322,5 +518,170 @@ pub mod bridge {
         let d = h.rebase(d);
         h.call_sym(REGISTER_TYPE, Conv::Cdecl, &[d]);
         h.call_sym(ADD_TO_NAMESPACE, Conv::Thiscall(d), &[])
+    }
+
+    /// Releases an owned block as `how` says (`count` the header word).
+    fn release(h: &mut impl Host, how: Release, count: u32, data: u32) {
+        let n = count & 0x7fff_ffff;
+        match how {
+            Release::Free => {
+                if data != 0 {
+                    h.call_sym(FREE, Conv::Cdecl, &[data]);
+                }
+            }
+            Release::FreeShared { check_null } => {
+                if n > 1 && (data != 0 || !check_null) {
+                    h.call_sym(FREE, Conv::Cdecl, &[data]);
+                }
+            }
+            Release::Elements(f) => {
+                h.call_sym(f, Conv::Cdecl, &[data, n]);
+            }
+        }
+    }
+
+    /// `destroyInstance(p)` of an array at `p + off`: its block released
+    /// when owned, then the header zeroed; true.
+    pub fn destroy_array(h: &mut impl Host, p: u32, off: u32, how: Release) -> bool {
+        let a = p.wrapping_add(off);
+        let count: u32 = h.read(a);
+        if owned(count) {
+            let data: u32 = h.read(a + 4);
+            release(h, how, count, data);
+        }
+        h.write(a + 4, 0u32);
+        h.write(a, 0u32);
+        true
+    }
+
+    /// `destroyInstance(p)`: frees the block at `p + 4` unless its bit 0
+    /// is set (a tagged pointer); true.
+    pub fn destroy_tagged(h: &mut impl Host, p: u32) -> bool {
+        let block: u32 = h.read(p.wrapping_add(4));
+        if block & 1 == 0 {
+            h.call_sym(FREE, Conv::Cdecl, &[block]);
+        }
+        true
+    }
+
+    /// `destroyInstance(p)`: the object at `p - 4` (0 when `p` is 0, as
+    /// the original) runs its virtual destructor (slot 0, flags 0); true.
+    pub fn destroy_virtual(h: &mut impl Host, p: u32) -> bool {
+        let object = if p == 0 { 0 } else { p.wrapping_sub(4) };
+        let vtable: u32 = h.read(object);
+        let f: u32 = h.read(vtable);
+        h.call(f, Conv::Thiscall(object), &[0]);
+        true
+    }
+
+    /// `destroyInstance(p)`: `release(p)` when `check(p)` sets `al`, then
+    /// `dtor(p)` (thiscall); true.
+    pub fn destroy_checked(h: &mut impl Host, [check, release, dtor]: [u32; 3], p: u32) -> bool {
+        if h.call_sym(check, Conv::Thiscall(p), &[]) & 0xff != 0 {
+            h.call_sym(release, Conv::Thiscall(p), &[]);
+        }
+        h.call_sym(dtor, Conv::Thiscall(p), &[]);
+        true
+    }
+
+    /// `constructInstance(p)` without a default constructor: the default
+    /// object from `get(descriptor)`; 0 when there is none. Else the copy
+    /// constructor `ctor(p, default)` unless `p` is 0, and `eax` with
+    /// `al = 1` over the last call's.
+    pub fn construct_default(h: &mut impl Host, [descriptor, get, ctor]: [u32; 3], p: u32) -> u32 {
+        let d = h.rebase(descriptor);
+        let default = h.call_sym(get, Conv::Thiscall(d), &[]);
+        if default == 0 {
+            return 0;
+        }
+        let eax = if p == 0 {
+            default
+        } else {
+            h.call_sym(ctor, Conv::Thiscall(p), &[default])
+        };
+        (eax & !0xff) | 1
+    }
+
+    /// `PArray::setToExternalBuffer(array, buffer, count)`: for `count >=
+    /// 0`, an owned old block other than `buffer` released as `how`, then
+    /// `buffer` with `count` marked external; 0.
+    pub fn set_external(
+        h: &mut impl Host,
+        array: u32,
+        buffer: u32,
+        count: u32,
+        how: Release,
+    ) -> u32 {
+        if (count as i32) < 0 {
+            return 0;
+        }
+        let old: u32 = h.read(array);
+        let data: u32 = h.read(array + 4);
+        if data != buffer && owned(old) {
+            release(h, how, old, data);
+        }
+        h.write(array + 4, buffer);
+        h.write(array, count | 0x8000_0000);
+        0
+    }
+
+    /// `(data, count)`: unless `data` is 0, frees each 16-byte element's
+    /// `+4` block whose bit 0 is clear, then `data`.
+    pub fn release_tagged(h: &mut impl Host, data: u32, count: u32) {
+        if data == 0 {
+            return;
+        }
+        let mut e = data.wrapping_add(4);
+        for _ in 0..count {
+            let block: u32 = h.read(e);
+            if block & 1 == 0 {
+                h.call_sym(FREE, Conv::Cdecl, &[block]);
+            }
+            e = e.wrapping_add(16);
+        }
+        h.call_sym(FREE, Conv::Cdecl, &[data]);
+    }
+
+    /// `PClassDataMemberArrayDynamic::setToExternalBuffer(member, object,
+    /// buffer, count)`: the member's setter (`member +0x3c`, thiscall on
+    /// `object`), or 0x15 without one.
+    pub fn member_set_external(
+        h: &mut impl Host,
+        member: u32,
+        object: u32,
+        buffer: u32,
+        count: u32,
+    ) -> u32 {
+        let f: u32 = h.read(member + 0x3c);
+        if f == 0 {
+            return 0x15;
+        }
+        h.call(f, Conv::Thiscall(object), &[buffer, count])
+    }
+
+    /// `PClassDataMemberArrayDynamic::getCount(member, object)`: the
+    /// member's getter (`member +0x34`), or 0 without one.
+    pub fn member_count(h: &mut impl Host, member: u32, object: u32) -> u32 {
+        let f: u32 = h.read(member + 0x34);
+        if f == 0 {
+            return 0;
+        }
+        h.call(f, Conv::Thiscall(object), &[])
+    }
+
+    /// `PClassDataMemberArrayDynamic::getArrayStart(member, object)`: the
+    /// member's getter (`member +0x38`), or the word at the member's
+    /// offset in `object` (`member +0x24` less its class's base, `member
+    /// +0xc` then `+0x88`).
+    pub fn member_start(h: &mut impl Host, member: u32, object: u32) -> u32 {
+        let f: u32 = h.read(member + 0x38);
+        if f != 0 {
+            return h.call(f, Conv::Thiscall(object), &[]);
+        }
+        let class: u32 = h.read(member + 0xc);
+        let off = h
+            .read::<u32>(member + 0x24)
+            .wrapping_sub(h.read(class + 0x88));
+        h.read(off.wrapping_add(object))
     }
 }
