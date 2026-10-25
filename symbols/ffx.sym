@@ -117,6 +117,7 @@
 0x0042f660 function FFXApplication_exitScene  # fh v3:exact 0x0042f740 FFXApplication::exitScene
 0x0042f690 function FFXApplication_getAppTime # fh v3:exact 0x0042f770 FFXApplication::getAppTime
 0x0042f6d0 function LauncherPath_Init_0042f6d0 # (): once (0x00c8faf0): GetModuleFileNameA, PathRemoveFileSpecA, PathCombineA(0x00c8ff38, dir, "FFX&X-2_LAUNCHER.exe"); 0 code refs (static initializer, guess); ours (platform census 2026-10-25, docs/formats/platform.md; window)
+0x0042f750 function FFXApplication_getModeOr2_0042f750 # thiscall(app) -> 2 while byte +0x338 or +0x33c is set, else app[0]; next to FFXApplication_getAppTime; name ours; ported M4 h3 (ffx_prender::glue2)
 0x0042f770 function FFXApplication_handleInputs # fh v3:exact 0x0042f850 FFXApplication::handleInputs
 0x0042f790 function FFXApplication_pollInputAsync # guess name: 0x006250d0(1), PInputMapper_update, latch, inputODUpdate (the async thread's pass) (platform census 2026-10-25, docs/formats/platform.md; input)
 0x0042f7c0 function FFXApplication_pollInputSync # guess name: as 0x0042f790 but tail-calls vtable +0x1c handleInputs; only from 0x00630cc0 (no refs) (platform census 2026-10-25, docs/formats/platform.md; input)
@@ -1828,10 +1829,12 @@
 0x00638fb0 function graphicAbmapDestory       # fh v3:exact 0x00639160
 0x00638fd0 function graphicAbmapGetVertexInfo    # structure: (a, b) -> AbmapManager_GetVertexInfo(a, b); the graphic* wrapper the area-map effects call (0x007f49e0, 0x00a4ac20, 0x00a657c0, ...); between graphic2DShowLayer and graphicAbmapDestory; name ours after the callee
 0x006390c0 function graphicAbmapResetSegments # cdecl(): with g_GraphicAbmap set, jumps to its body at 0x006853d0 (no other reference): by state +4 (1, or <= 0) the six render data +0xb0.. or +0x98.. get each segment's +4 and +8 zeroed; alphabetical run between graphicAbmapGetVertexInfo and graphicAbmapUpdate; name ours
+0x006390d0 function graphicAbmapResetLayers_006390d0 # cdecl(v): AbmapManager_ResetLayers_006851d0(v) on g_GraphicAbmap when set; name ours; ported M4 h3 (ffx_prender::glue2)
 0x006390f0 function graphicAbmapUpdate        # fh v3:exact 0x006392a0
 0x00639110 function graphicActivateBlurEffectEx  # layout: alphabetical run between graphicAbmapUpdate and graphicActivateLoadingScreen (1 unnamed in the gap); Switch 0x71001d7cc0 graphicActivateBlurEffectEx is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00639130 function graphicActivateLoadingScreen # fh v3:bsim1.00 0x006392e0
 0x00639140 function graphicActivateRadialBlur    # layout+callees: sorts between graphicActivateLoadingScreen and graphicAddScreenFadeTask, and its named callees match the Switch 0x71001d7c50 graphicActivateRadialBlur's (similarity 1.00: BlurEffect_GetInstance, BlurEffect_activate); symbols from Fahrenheit's server export
+0x00639150 function graphicCrossFadeCaptureStart_00639150 # cdecl() -> PostProcessManager: setCrossFadeCaptureEnable(1), SetByte123bb(1) (both leave eax: returns the instance); name ours; ported M4 h3 (ffx_prender::glue2)
 0x00639170 function graphicAddMeshMatrix      # cdecl(list, matrix, id): for each instance of list and each segment of its mesh (0x6c bytes, id +0x18) PhyreScene_PushMeshMatrix(inst, matrix): every segment for id -1, else once at the first match; alphabetical run between graphicActivateRadialBlur and graphicAddScreenFadeTask; name ours
 0x00639240 function graphicAddScreenFadeTask  # fh v3:bsim1.00 0x006393f0
 0x00639280 function graphicAddScreenFadeTaskAfterRender # fh switch:bsim1.00 0x71001d7be0
@@ -1841,6 +1844,7 @@
 0x00639360 function graphicBrokenScreenSetFlag5_00639360 # cdecl(): BrokenScreenEffect_GetInstance -> jmp SetFieldConst5_006d4e10 (byte +5 = 1); opus_encount4_calc calls it; name ours; ported M4 h3 (ffx_prender::glue)
 0x00639370 function graphicBrokenScreenSetFlag4_00639370 # cdecl(): BrokenScreenEffect_GetInstance -> jmp SetFieldConst4_006d4e00 (byte +4 = 1); name ours; ported M4 h3 (ffx_prender::glue)
 0x00639390 function graphicBrokenScreenSetFlag6_00639390 # cdecl(): BrokenScreenEffect_GetInstance -> jmp SetFieldConst6_006d5180 (byte +6 = 1); opus_encount4_calc calls it; name ours; ported M4 h3 (ffx_prender::glue)
+0x006393a0 function graphicBrokenScreenBlockBytes_006393a0 # cdecl(n) -> ((4n-1)>>4 + 23n + 1) << 4 (BrokenScreenEffect_GetInstance called, unused); name ours; ported M4 h3 (ffx_prender::glue2)
 0x006393c0 function BrokenScreenEffect_BufferSize # structure: cdecl(n): after BrokenScreenEffect_GetInstance, ((8n-1)>>4 + 5 + (24n-49)>>4 + 2*((12n-1)>>4) + (16n-1)>>4) << 5, unsigned; name ours
 0x00639470 function graphicBrokenScreenInitializeBlockDataWithGivenBuffer # fh switch:cg2 0x71008b1978
 0x00639490 function graphicBrokenScreenReset     # layout: alphabetical run between graphicBrokenScreenInitializeBlockDataWithGivenBuffer and graphicCameraGetFOVy (6 unnamed in the gap); Switch 0x71001d99f0 graphicBrokenScreenReset is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -1983,6 +1987,7 @@
 0x006411d0 function graphicGetFogNear         # fh v3:cg2 0x641380
 0x006411e0 function graphicGetFreeCameraType     # layout+callees: sorts between graphicGetFogNear and graphicGetGlobalAmbientColor, and its named callees match the Switch 0x71001da520 graphicGetFreeCameraType's (similarity 1.00: FreeCamera_FreeCamera); symbols from Fahrenheit's server export
 0x00641230 function graphicGetGlobalAmbientColor # fh v3:cg2 0x6413e0
+0x006412b0 function graphicMapPartLangOverride_006412b0 # cdecl(a, b): MapPart_LangOverride(a, b) on g_GraphicUi; name ours; ported M4 h3 (ffx_prender::glue2)
 0x006412d0 function SaveDataGetLoc            # fh v3:bsim1.00+call.cs 0x00641480 cdecl
 0x006412f0 function graphicGetLocTextWithLength # fh v3:bsim1.00 0x006414a0
 0x00641310 function graphicGetMagic0146Key    # () -> movzx g_PhyreScene +3; name Fahrenheit's (Switch BSim)
@@ -2118,11 +2123,13 @@
 0x006437e0 function SetGlobal00cec1a0_006437e0   # auto-port shape (store argument to global, cdecl): u32[&0x00cec1a0] = a0; return a0; callers: no direct caller; name ours
 0x006437f0 function graphicSetPauseVideoAtEndFrame # fh switch:bsim1.00 0x71001dd460
 0x00643810 function graphicSetFlipVsnc_00643810 # fh switch:bsim1.00 0x71001cc430
+0x00643890 function graphicBlurEffectSetFloats6c_00643890 # cdecl(f32 a, f32 b): BlurEffect_SetFloats6c(a, b) on [BlurEffectEx_GetInstance()] (returns the instance); name ours; ported M4 h3 (ffx_prender::glue2)
 0x006438e0 function graphicSetScreenFadeAlphaMode # fh v3:exact 0x00643a90
 0x00643900 function graphicSetScreenFadeColor # fh v3:exact 0x00643ab0
 0x00643940 function graphicSetScreenFadeLastReason # fh v3:bsim1.00 0x00643af0
 0x00643980 function graphicSetSpecularMapParams  # layout+callees: sorts between graphicSetScreenFadeLastReason and graphicSetTextureVideoInfo, and its named callees match the Switch 0x71001d7ec0 graphicSetSpecularMapParams's (similarity 1.00: SpecularMapParamsManager_GetInstance, SpecularMapParamsManager_setShadeSpecularMapParams); symbols from Fahrenheit's server export
 0x006439b0 function graphicSetSpecularMapParamsEx # cdecl(id, a, 3 floats, b, 4 floats): SpecularMapParamsManager_SetParams on SpecularMapParamsManager_GetInstance; next to graphicSetSpecularMapParams; name ours
+0x00643a00 function graphicTextureAnimationSetPaused_00643a00 # cdecl(a, paused): TextureAnimationManager_SetPaused(a, paused != 0); name ours; ported M4 h3 (ffx_prender::glue2)
 0x00643a20 function graphicTextureAnimationSetFrame # structure: cdecl(i, frame): TextureAnimationManager_SetFrame(i, frame, 0) on TextureAnimationManager_GetInstance; name ours
 0x00643a40 function graphicSetTextureAnimationFrameByName # cdecl(frame, name): TextureAnimationManager_FindMaterialIndex(name), then TextureAnimationManager_SetFrame(i, frame, 1); prints "SceneName.%s, TextureAnimName.%s." to stdout when it fails; alphabetical run between graphicSetSpecularMapParams and graphicSetTextureVideoInfo; name ours
 0x00643aa0 function graphicSetTextureVideoInfo # fh v3:exact 0x00643c50
@@ -2366,6 +2373,7 @@
 0x0065a760 function PhyreScene_doOnCharacterAllAssetsLoaded # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'textureAnimationChar'; Switch 0x71001fd570 PhyreScene::doOnCharacterAllAssetsLoaded (symbols from Fahrenheit's server export)
 0x0065af60 function PhyreScene_doOnFieldMapAssetLoaded # fh v3:exact 0x0065b0f0 PhyreScene::doOnFieldMapAssetLoaded
 0x0065b5b0 function PhyreScene_drawMainMenuWaveEffect # fh v3:exact 0x0065b740 PhyreScene::drawMainMenuWaveEffect
+0x0065b750 function PhyreScene_deleteIggyMenu_0065b750 # thiscall(scene): IggyMenu_dtor + operator_delete of scene +0x10dc8 when set (the field is left as is); name ours; ported M4 h3 (ffx_prender::glue2)
 0x0065b8a0 function PhyreScene_fieldMapInitialize # str-match switch: only user of 5 string(s) held once by both builds, e.g. 'scene%dlayer%dShape'; Switch 0x71001ef850 PhyreScene::fieldMapInitialize (symbols from Fahrenheit's server export)
 0x0065cbf0 function PhyreScene_fieldMapLoad   # fh v3:exact 0x0065cd70 PhyreScene::fieldMapLoad
 0x0065ce90 function PhyreScene_fieldMapLoadAsync # fh v3:exact 0x0065d010 PhyreScene::fieldMapLoadAsync
@@ -16952,6 +16960,7 @@
 0x00ccca74 label    g_ChrShaderRender # the character shader renderer: graphicShaderGetVertexInfo passes it to ClassChrShaderRender_GetVertexInfo; graphicShadowStart/End_00643dc0/dd0 to 0x0069fcb0/0x0069fe40 (M4 h3)
 0x00ccca84 label    g_CharacterLighting       # Phyre_CharacterLighting_GetInstance; the graphicCharacterLighting* wrappers call its methods
 0x00ccca88 label    g_CharacterLightingTweakUtil # Phyre_CharacterLightingTweakUtil_GetInstance; graphicCharacterLightingSetShadeCoeff's debug hook
+0x00ccca98 label    g_RenderDelegationHelper # graphicsRegisterResetScreenFadeDelegation passes it to RenderDelegationHelper_registerDelegation (M4 h3)
 0x00cccaa4 label    g_ScreenFadeByte          # u8: the last argument ScreenFadeDelegations_processRenderDelegation passes to PostProcessManager_renderScreenFade; name ours
 0x00cccaa8 label    g_TextureAnimationManager # TextureAnimationManager_GetInstance
 0x00cccab0 label    g_DebugMenuManager        # DebugMenuManager_GetInstance; DebugMenuManager_Destroy

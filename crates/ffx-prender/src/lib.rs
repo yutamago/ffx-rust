@@ -24,6 +24,7 @@
 )]
 
 pub mod glue;
+pub mod glue2;
 pub mod mesh;
 pub mod sort;
 pub mod thread;

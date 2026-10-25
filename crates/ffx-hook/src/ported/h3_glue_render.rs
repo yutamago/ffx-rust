@@ -7,6 +7,7 @@
 
 use super::{mem, ported};
 use ffx_prender::glue::bridge as g;
+use ffx_prender::glue2::bridge as g2;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -251,5 +252,227 @@ ported! {
     /// `ClassDynamicGeometry_getReadyA8_006a2010(this)`.
     ClassDynamicGeometry_getReadyA8_006a2010 @ 0x006a_2010 => extern "thiscall" fn get_ready_a8(this: u32) -> u32 {
         g::get_ready_a8(&mem(), this)
+    }
+
+    // ---- batch 2 (ffx_prender::glue2) ----
+    /// `graphicActivateBlurEffectEx(target)`.
+    graphicActivateBlurEffectEx @ 0x0063_9110 => extern "C" fn activate_blur_effect_ex(target: u32) -> u32 {
+        g2::activate_blur_effect_ex(&mut mem(), target)
+    }
+    /// `graphicSetFlipVsnc_00643810(v)`.
+    graphicSetFlipVsnc_00643810 @ 0x0064_3810 => extern "C" fn blur_set_field84(v: u32) -> u32 {
+        g2::blur_set_field84(&mut mem(), v)
+    }
+    /// `graphicBlurEffectSetFloats6c_00643890(a, b)` (float bits).
+    graphicBlurEffectSetFloats6c_00643890 @ 0x0064_3890 => extern "C" fn blur_set_floats(a: u32, b: u32) -> u32 {
+        g2::blur_set_floats(&mut mem(), a, b)
+    }
+    /// `graphicMagicVFXLoadSpecialShaderTable(v)`.
+    graphicMagicVFXLoadSpecialShaderTable @ 0x0064_2090 => extern "C" fn magic_vfx_load_special_shader_table(v: u32) -> u32 {
+        g2::magic_vfx_load_special_shader_table(&mut mem(), v)
+    }
+    /// `graphicSetDistortionSkipped(on)`.
+    graphicSetDistortionSkipped @ 0x0064_2f80 => extern "C" fn set_distortion_skipped(on: u32) -> u32 {
+        g2::set_distortion_skipped(&mut mem(), on)
+    }
+    /// `graphicSetDistortionEnable(on)`.
+    graphicSetDistortionEnable @ 0x0064_2f50 => extern "C" fn set_distortion_enable(on: u32) -> u32 {
+        g2::set_distortion_enable(&mut mem(), on)
+    }
+    /// `graphicSetDistortionBlur(f)` (float bits).
+    graphicSetDistortionBlur @ 0x0064_2f30 => extern "C" fn set_distortion_blur(f: u32) -> u32 {
+        g2::set_distortion_blur(&mut mem(), f)
+    }
+    /// `graphicSetFogLimit(f)` (float bits).
+    graphicSetFogLimit @ 0x0064_31c0 => extern "C" fn set_fog_limit(f: u32) -> u32 {
+        g2::set_fog_limit(&mut mem(), f)
+    }
+    /// `graphicSetMotionBlurWeight(f)` (float bits).
+    graphicSetMotionBlurWeight @ 0x0064_3750 => extern "C" fn set_motion_blur_weight(f: u32) {
+        g2::set_motion_blur_weight(&mut mem(), f);
+    }
+    /// `graphicSetMotionBlurEnable(on)`.
+    graphicSetMotionBlurEnable @ 0x0064_3730 => extern "C" fn set_motion_blur_enable(on: u32) -> u32 {
+        g2::set_motion_blur_enable(&mut mem(), on)
+    }
+    /// `graphicCrossFadeCaptureStart_00639150()`.
+    graphicCrossFadeCaptureStart_00639150 @ 0x0063_9150 => extern "C" fn cross_fade_capture_start() -> u32 {
+        g2::cross_fade_capture_start(&mut mem())
+    }
+    /// `WaterDistortionEffectDelegations_captureFrame(p)`.
+    WaterDistortionEffectDelegations_captureFrame @ 0x006f_5420 => extern "C" fn water_distortion_capture_frame(p: u32) -> u32 {
+        g2::water_distortion_capture_frame(&mut mem(), p)
+    }
+    /// `graphicBrokenScreenUpdateOpacity(f)` (float bits).
+    graphicBrokenScreenUpdateOpacity @ 0x0063_94e0 => extern "C" fn broken_screen_update_opacity(f: u32) -> u32 {
+        g2::broken_screen_update_opacity(&mut mem(), f)
+    }
+    /// `graphicBrokenScreenInitializeBlockDataWithGivenBuffer(a, b, c)`.
+    graphicBrokenScreenInitializeBlockDataWithGivenBuffer @ 0x0063_9470 => extern "C" fn broken_screen_init_block_data(a: u32, b: u32, c: u32) -> u32 {
+        g2::broken_screen_init_block_data(&mut mem(), a, b, c)
+    }
+    /// `graphicBrokenScreenUpdateLightParameters(7 words)`.
+    graphicBrokenScreenUpdateLightParameters @ 0x0063_94b0 => extern "C" fn broken_screen_update_light_parameters(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, k: u32) -> u32 {
+        g2::broken_screen_update_light_parameters(&mut mem(), [a, b, c, d, e, f, k])
+    }
+    /// `graphicBrokenScreenUpdatePolygonWMatrix(a, b, m)`.
+    graphicBrokenScreenUpdatePolygonWMatrix @ 0x0063_9540 => extern "C" fn broken_screen_update_polygon_matrix(a: u32, b: u32, m: u32) -> u32 {
+        g2::broken_screen_update_polygon_matrix(&mut mem(), a, b, m)
+    }
+    /// `graphicBrokenScreenBlockBytes_006393a0(n)`.
+    graphicBrokenScreenBlockBytes_006393a0 @ 0x0063_93a0 => extern "C" fn broken_screen_block_bytes(n: u32) -> u32 {
+        g2::broken_screen_block_bytes(&mut mem(), n)
+    }
+    /// `graphicSetChadist(f)` (float bits).
+    graphicSetChadist @ 0x0064_2ef0 => extern "C" fn set_chadist(f: u32) {
+        g2::set_chadist(&mut mem(), f);
+    }
+    /// `graphicCharacterInsertDrawSituation(chr)`.
+    graphicCharacterInsertDrawSituation @ 0x0063_9ff0 => extern "C" fn character_insert_draw_situation(chr: u32) {
+        g2::character_insert_draw_situation(&mut mem(), chr);
+    }
+    /// `graphicFieldMapUnload()`.
+    graphicFieldMapUnload @ 0x0064_03c0 => extern "C" fn field_map_unload() -> u32 {
+        g2::field_map_unload(&mut mem())
+    }
+    /// `graphicRender()`.
+    graphicRender @ 0x0064_2bb0 => extern "C" fn render() -> u32 {
+        g2::render(&mut mem())
+    }
+    /// `graphicTextureAnimationSetMaterialVisiability(layer, alpha)`.
+    graphicTextureAnimationSetMaterialVisiability @ 0x0064_4120 => extern "C" fn texture_animation_set_material_visibility(layer: u32, alpha: u32) -> u32 {
+        g2::texture_animation_set_material_visibility(&mut mem(), layer, alpha)
+    }
+    /// `graphicSetMagicFileAsyncLoadEnable(v)`.
+    graphicSetMagicFileAsyncLoadEnable @ 0x0064_35e0 => extern "C" fn set_magic_file_async_load_enable(v: u32) -> u32 {
+        g2::set_magic_file_async_load_enable(&mut mem(), v)
+    }
+    /// `PhyreScene_forceUnloadMenuTexture(this, id)` (`this` unused).
+    PhyreScene_forceUnloadMenuTexture @ 0x0065_d780 => extern "thiscall" fn scene_force_unload_menu_texture(_this: u32, id: u32) -> u32 {
+        g2::scene_force_unload_menu_texture(&mut mem(), id)
+    }
+    /// `PhyreScene_unloadMenuTexture(this, id)` (`this` unused).
+    PhyreScene_unloadMenuTexture @ 0x0067_1120 => extern "thiscall" fn scene_unload_menu_texture(_this: u32, id: u32) -> u32 {
+        g2::scene_unload_menu_texture(&mut mem(), id)
+    }
+    /// `PhyreScene_loadMenuTexture(this, id)` (`this` unused).
+    PhyreScene_loadMenuTexture @ 0x0066_51d0 => extern "thiscall" fn scene_load_menu_texture(_this: u32, id: u32) -> u32 {
+        g2::scene_load_menu_texture(&mut mem(), id)
+    }
+    /// `PhyreScene_onCutbufferShaderLoaded(shader, task)`.
+    PhyreScene_onCutbufferShaderLoaded @ 0x0066_6610 => extern "C" fn scene_on_cutbuffer_shader_loaded(shader: u32, task: u32) -> u32 {
+        g2::scene_on_cutbuffer_shader_loaded(&mut mem(), shader, task)
+    }
+    /// `PhyreScene_deleteIggyMenu_0065b750(this)`.
+    PhyreScene_deleteIggyMenu_0065b750 @ 0x0065_b750 => extern "thiscall" fn scene_delete_iggy_menu(this: u32) {
+        g2::scene_delete_iggy_menu(&mut mem(), this);
+    }
+    /// `graphicAsyncTaskCallback(task)`.
+    graphicAsyncTaskCallback @ 0x0063_7860 => extern "C" fn async_task_callback(task: u32) -> u32 {
+        g2::async_task_callback(&mut mem(), task)
+    }
+    /// `graphicRegistAsyncTask(arg, b)`.
+    graphicRegistAsyncTask @ 0x0064_2950 => extern "C" fn regist_async_task(arg: u32, b: u32) -> u32 {
+        g2::regist_async_task(&mut mem(), arg, b)
+    }
+    /// `graphicTryAsyncLoadIfAvailable(arg, b)` (`graphicRegistAsyncTask`'s code).
+    graphicTryAsyncLoadIfAvailable @ 0x0064_42f0 => extern "C" fn try_async_load_if_available(arg: u32, b: u32) -> u32 {
+        g2::regist_async_task(&mut mem(), arg, b)
+    }
+    /// `PhyreScene_asyncDoLoadCharacterTask(task)`.
+    PhyreScene_asyncDoLoadCharacterTask @ 0x0065_7850 => extern "C" fn async_load_character_task(task: u32) -> u32 {
+        g2::async_load_character_task(&mut mem(), task)
+    }
+    /// `PhyreScene_asyncDoloadMagicFileVFXTextureTask(task)`.
+    PhyreScene_asyncDoloadMagicFileVFXTextureTask @ 0x0065_7880 => extern "C" fn async_load_magic_file_vfx_texture_task(task: u32) -> u32 {
+        g2::async_load_magic_file_vfx_texture_task(&mut mem(), task)
+    }
+    /// `PhyreScene_asyncDoloadVFXTextureTask(task)`.
+    PhyreScene_asyncDoloadVFXTextureTask @ 0x0065_78b0 => extern "C" fn async_load_vfx_texture_task(task: u32) -> u32 {
+        g2::async_load_vfx_texture_task(&mut mem(), task)
+    }
+    /// `graphicMenuLoadSpecialTexture(a, b, c)`.
+    graphicMenuLoadSpecialTexture @ 0x0064_2300 => extern "C" fn menu_load_special_texture(a: u32, b: u32, c: u32) -> u32 {
+        g2::menu_load_special_texture(&mut mem(), a, b, c)
+    }
+    /// `graphicAbmapGetVertexInfo(a, b)`.
+    graphicAbmapGetVertexInfo @ 0x0063_8fd0 => extern "C" fn abmap_get_vertex_info(a: u32, b: u32) -> u32 {
+        g2::abmap_get_vertex_info(&mut mem(), a, b)
+    }
+    /// `graphicAbmapResetLayers_006390d0(v)`.
+    graphicAbmapResetLayers_006390d0 @ 0x0063_90d0 => extern "C" fn abmap_reset_layers(v: u32) {
+        g2::abmap_reset_layers(&mut mem(), v);
+    }
+    /// `graphicAbmapCreate(a)`.
+    graphicAbmapCreate @ 0x0063_8f90 => extern "C" fn abmap_create(a: u32) -> u32 {
+        g2::abmap_create(&mut mem(), a)
+    }
+    /// `graphicAbmapDestory()`.
+    graphicAbmapDestory @ 0x0063_8fb0 => extern "C" fn abmap_destroy() {
+        g2::abmap_destroy(&mut mem());
+    }
+    /// `graphicMapPartLangOverride_006412b0(a, b)`.
+    graphicMapPartLangOverride_006412b0 @ 0x0064_12b0 => extern "C" fn map_part_lang_override(a: u32, b: u32) -> u32 {
+        g2::map_part_lang_override(&mut mem(), a, b)
+    }
+    /// `graphicSetUiDrawType(v)`.
+    graphicSetUiDrawType @ 0x0064_3af0 => extern "C" fn set_ui_draw_type(v: u32) {
+        g2::set_ui_draw_type(&mut mem(), v);
+    }
+    /// `graphicMenuReset()`.
+    graphicMenuReset @ 0x0064_2320 => extern "C" fn menu_reset() -> u32 {
+        g2::menu_reset(&mut mem())
+    }
+    /// `graphicMenuUpdate()`.
+    graphicMenuUpdate @ 0x0064_23b0 => extern "C" fn menu_update() -> u32 {
+        g2::menu_update(&mut mem())
+    }
+    /// `graphicUpdateMapYIQ()`.
+    graphicUpdateMapYIQ @ 0x0064_4990 => extern "C" fn update_map_yiq() -> u32 {
+        g2::update_map_yiq(&mut mem())
+    }
+    /// `graphicGetLocTextWithLength(a, b, c)`.
+    graphicGetLocTextWithLength @ 0x0064_12f0 => extern "C" fn get_loc_text_with_length(a: u32, b: u32, c: u32) -> u32 {
+        g2::get_loc_text_with_length(&mut mem(), a, b, c)
+    }
+    /// `graphicSetMaterialUV_006436e0(a, b, c)`.
+    graphicSetMaterialUV_006436e0 @ 0x0064_36e0 => extern "C" fn set_material_uv(a: u32, b: u32, c: u32) -> u32 {
+        g2::set_material_uv(&mut mem(), a, b, c)
+    }
+    /// `graphicTextureAnimationSetPaused_00643a00(a, paused)`.
+    graphicTextureAnimationSetPaused_00643a00 @ 0x0064_3a00 => extern "C" fn texture_animation_set_paused(a: u32, paused: u32) -> u32 {
+        g2::texture_animation_set_paused(&mut mem(), a, paused)
+    }
+    /// `graphicPlayVideo(on)`.
+    graphicPlayVideo @ 0x0064_27c0 => extern "C" fn play_video(on: u32) -> u32 {
+        g2::play_video(&mut mem(), on)
+    }
+    /// `graphicInitFMVPlayer(a, b)`.
+    graphicInitFMVPlayer @ 0x0064_1690 => extern "C" fn init_fmv_player(a: u32, b: u32) -> u32 {
+        g2::init_fmv_player(&mut mem(), a, b)
+    }
+    /// `graphicVideoUpdate()`.
+    graphicVideoUpdate @ 0x0064_5df0 => extern "C" fn video_update() -> u32 {
+        g2::video_update(&mut mem())
+    }
+    /// `graphicsRegisterResetScreenFadeDelegation(v)`.
+    graphicsRegisterResetScreenFadeDelegation @ 0x0064_5e60 => extern "C" fn register_reset_screen_fade_delegation(v: u32) -> u32 {
+        g2::register_reset_screen_fade_delegation(&mut mem(), v)
+    }
+    /// `ShadowManager_Initialize(this)`.
+    ShadowManager_Initialize @ 0x006c_e100 => extern "thiscall" fn shadow_manager_initialize(this: u32) -> u32 {
+        g2::shadow_manager_initialize(&mut mem(), this)
+    }
+    /// `ModelBuffer_ClearAll()`.
+    ModelBuffer_ClearAll @ 0x0072_ac30 => extern "C" fn model_buffer_clear_all() -> u32 {
+        g2::model_buffer_clear_all(&mut mem())
+    }
+    /// `graphicSetForceNoVsync(on)`.
+    graphicSetForceNoVsync @ 0x0064_3200 => extern "C" fn set_force_no_vsync(on: u32) -> u32 {
+        g2::set_force_no_vsync(&mut mem(), on)
+    }
+    /// `FFXApplication_getModeOr2_0042f750(this)`.
+    FFXApplication_getModeOr2_0042f750 @ 0x0042_f750 => extern "thiscall" fn application_mode_or_2(this: u32) -> u32 {
+        g2::application_mode_or_2(&mem(), this)
     }
 }

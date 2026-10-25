@@ -191,18 +191,23 @@ pub mod bridge {
     use ffx_graphic::host::{Conv, Host};
 
     /// Calls `method` on the object in `global`; its `eax`.
-    fn on_global(h: &mut impl Host, global: Global<u32>, method: u32, args: &[u32]) -> u32 {
+    pub(crate) fn on_global(
+        h: &mut impl Host,
+        global: Global<u32>,
+        method: u32,
+        args: &[u32],
+    ) -> u32 {
         let this = global.get(h);
         h.call_sym(method, Conv::Thiscall(this), args)
     }
 
     /// The instance `getter` returns.
-    fn instance(h: &mut impl Host, getter: u32) -> u32 {
+    pub(crate) fn instance(h: &mut impl Host, getter: u32) -> u32 {
         h.call_sym(getter, Conv::Cdecl, &[])
     }
 
     /// Calls `method` on the instance `getter` returns; its `eax`.
-    fn on_instance(h: &mut impl Host, getter: u32, method: u32, args: &[u32]) -> u32 {
+    pub(crate) fn on_instance(h: &mut impl Host, getter: u32, method: u32, args: &[u32]) -> u32 {
         let this = instance(h, getter);
         h.call_sym(method, Conv::Thiscall(this), args)
     }
