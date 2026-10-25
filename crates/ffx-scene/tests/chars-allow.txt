@@ -21,3 +21,27 @@ constant var=SgSpec_CameraVec field=*.SgSpec_CameraVec[0].z cause: junk read, Ch
 # SgSpec_LightVec = (x, z, junk, w) of the light direction; the third word
 # is [ebp-0x3c], about 5e-30 and different in every run.
 constant var=SgSpec_LightVec field=*.SgSpec_LightVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x3c] (the light vector's third word); stale stack in the original, 0 under the junk-read policy
+
+# Sampler states the game sets into a material at run time. The scene
+# inputs record holds a material's live PParameterBuffer, whose sampler
+# slots are pointers (+8 of the slot), so the builder can only bind the
+# cluster's PSamplerState there; the original binds the run-time one.
+# Open item: the record should carry each slot's sampler description (the
+# in-game path reads the live slot and has no such difference).
+
+# AnimSamplerState (register 1) of phyrechrlitshader's texture animation
+# variants (vertex shaders db349612ecc598d8: Tidus's c001 #9 on cdsp0000
+# and bsil0000; f1de6dea8bd5f574: the Besaid NPCs). The cluster's state is
+# wrap with MaxAnisotropy 0; the bound one is clamp with 1, as the other
+# layers' states are: TextureAnimationManager_addAnimatedMaterials
+# (0x006b05d0) replaces layer 1's sampler with the animation's.
+state kind=draw vs=db349612ecc598d8 field=ps.sampler1.* cause: run-time sampler state, the texture animation's layer 1 (TextureAnimationManager_addAnimatedMaterials 0x006b05d0) replaces the cluster's AnimSamplerState; the record holds only the slot's pointer
+state kind=draw vs=f1de6dea8bd5f574 field=ps.sampler1.* cause: run-time sampler state, the texture animation's layer 1 (TextureAnimationManager_addAnimatedMaterials 0x006b05d0) replaces the cluster's AnimSamplerState; the record holds only the slot's pointer
+
+# The blob shadow's TextureSampler state (ChrY0Shadow, vertex shader
+# 31670161ed2ed991, register 0): 0x0069f9d0 sets the shadow mesh's
+# TextureSampler and TextureSamplerState to the ShadowManager's sampler
+# (ShadowManager_getTextureSampler 0x006d2520, an object of the
+# ShadowManager, not of the cluster), which binds a point filter (0); the
+# cluster's own state is linear (0x15).
+state kind=draw vs=31670161ed2ed991 field=ps.sampler0.filter cause: run-time sampler state, 0x0069f9d0 gives the shadow mesh the ShadowManager's sampler (ShadowManager_getTextureSampler 0x006d2520); the record holds only the slot's pointer

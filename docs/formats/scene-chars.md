@@ -248,37 +248,106 @@ candidates: the segment the census's vertex data names). Results:
 
 The 16 bsil0000 constants that are not exact are `WorldInverse` and
 `WorldViewInverse` of one NPC (record instance 12, four draws), 1-2 ulp:
-open item 1.
+open item 2 (no captured shader reads them).
 
-## What a character builder needs next
+## The builder (m4-charbuild)
 
-1. **The bsil0000 `WorldInverse` ulps.** The NPC's world has
-   `-0.99999994` on its diagonal; our inverse comes out 1 ulp short in
-   several elements (as if the determinant were 2 ulp smaller). No
-   arithmetic variant of `0x004cc890` reproduces it from the `World`
-   bits, so the input may differ (a world written between the joint copy
-   and the inverse, or another source): a frida read of the node's
-   `+0x28` matrix and its input would settle it.
-2. **Technique selection per segment** (which segments draw in `Opaque`
-   and which in `Transparent`): the map builder's rule
-   (`selectTechniquePass` `0x005ba690`) applies; the character materials'
-   effect variants come from the character clusters (`chr/*/mdl/d3d11`),
-   which `ffx_scene::map::MapModel` would have to load (not tried).
+[`ffx_scene::chars_build`](../../crates/ffx-scene/src/chars_build.rs)
+`build(clusters, [opaque, transparent], frame) -> Built` makes the
+character world's draws of a frame from its two records (the character
+part included) and the `chr/` clusters, in the map builder's shape
+(`build::Built`: resources and `MapDraw`s, opaque first; `instance`,
+`segment` and `material` are the record's indices). It reuses the map
+builder's resources, sampler descriptions, vertex inputs, culling and sort
+(`crate::build`, `crate::cull`, `crate::sort`).
+
+```bash
+# the gate (skips without FFX_GAME_DIR and FFX_SCENE_CHARS; gates cdsp0000, reports the others)
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD FFX_SCENE_CHARS=... cargo test --release -p ffx-scene --test chars_build -- --nocapture
+# captures: build, swap in, drawdiff report (--out writes the rebuilt captures)
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo run --release -p ffx-scene --example charbuild -- \
+  <capture.ffxgfx>... --allow crates/ffx-scene/tests/chars-allow.txt [--out dir]
+```
+
+### What it does
+
+| Part | How |
+|---|---|
+| Models | The record names no asset for a character instance (all are in the character cluster). [`chars_model`](../../crates/ffx-scene/src/chars_model.rs) ties a record instance to the file instance whose mesh it carries: the segments' `m_materialIndex`, `m_matrixIndex`, `m_modeIndex` (record segment `id`), `m_segmentRenderOrder` and `m_skinBones` words, the mesh's `m_matrixParents` and `m_skeletonMatrices` bit for bit, and for an unskinned instance the bounds (the game copies them; a skinned instance's move). Ties go to the file whose material buffers share the most words with the live ones. `ChrIndex` scans every `chr/**/*.dae.phyre` (about 5 s); `CharClusters::load` appends the models into one `MapModel` (`chars_model::append`) and loads their effects and textures with `build::Clusters::load` |
+| Shadow | The instance of the cluster with a `ClassDynamicMesh` list. Its material is `ChrY0Shadow.cgfx.phyre`'s (D3D11: `shaders/d3d11/chry0shadow.fx.phyre`; `PhyreScene_loadChrShaShader` `0x00664360`, instantiated into `+0x28c4` by `ChrY0Shadow_createMesh` `0x0069f9d0`) |
+| Culling, order | One visibility job per instance list of the walk (bounds `list`), runs of 400, cull, key, `sort::sort`, `sort::merge`; checked on all four captures (same order as the census check) |
+| Segments | Buckets by render order, a null material ends the instance, the live material's remapping (`Opaque` skips a remap from `Transparent`), the variant's render pass, the hidden byte |
+| Context variant | `PEffect_findContextVariant` (`0x004ef440`): the node's packed switches searched in `PEffect +0x2c` `m_contextVariantSwitches`; the index found is the shader of the render pass. `phyrechrlitshader`'s keys are `[0]`, `[0x11]`, `[0x4012]`, `[0x01004013, 0]` (0-3 directional lights, the low four bits the count); a character node has the character lighting's three lights, the shadow none (`ChrY0Shadow` has one context). The map's first-shader rule is the 0-light case |
+| Shader parameters | Location group 4 reads the shader's own buffer (`PShader +0xc` `m_parameterDefinitionsForPasses`, `m_parameterBufferSize` bytes of `0xcd`): `CombinedLightAttenuationCoeff0`/`SpotCoeff0` 0, `...Coeff1` 1 (every captured draw), each light's `m_direction` (type `0xcb`) and `m_colorIntensity` (`0xc2`), 12 bytes each (so `.w` stays `0xcdcdcdcd`), the light in `m_bufferLoc` bits 29-31 |
+| Vertex streams | The map's rule per input; `COLOR1` (`Color`, index 1) of a segment with record cloth vertices reads them from a dynamic buffer at stride 16 (they replace the segment's `Color` block); the shadow's four arrays as dynamic streams 0-3 and its indices widened to `R32_UINT` in a dynamic index buffer, `DrawIndexed(indices, 0, 0)` |
+| Textures, samplers | The file material's, at the `TextureQuality` rule; a slot the file leaves empty binds the host's `External::MaterialTexture` (record material, offset) when the game set one (`FrameInputs::material_textures`; the shadow's map always) |
+| Constants | Scene-wide, live material, per-node (`chars::node_buffer`: `World` from the joint slot, `BoneTransforms`, the inverses) and shader buffers through the location tables with the render thread's copy (`chars::cb_copy`, `0x0059a650`): every source's `float4x4`/`float4x3` entries transposed, a bone list stopping at its marker. `FrameInputs::scene_wide` is in memory order (`scene_wide_to_memory` turns one read back from captured cbs into it) |
+
+`FrameInputs` holds what the records don't: settings, viewport and
+scissor, the scene-wide buffer, the lights per record instance, the
+run-time material textures.
+
+### Inputs read back from the capture (the gate's stand-ins)
+
+`chars_diff::run` builds once, pairs each built draw with the captured
+character draw at its place in the pass (the census's character draws,
+`chars_check::is_char_draw`), reads back what the record lacks, builds
+again and swaps the draws in (`emit::replace_map_draws`):
+
+- the scene-wide buffer, viewport and scissor from the map's draws
+  (`CaptureInputs`, as the map gate);
+- the lights' `m_direction` and `m_colorIntensity`, through the built
+  draws' light slots (`DrawTrace::lights`). The same three lights on every
+  instance of both scenes; not in the record anywhere;
+- run-time textures in slots the file leaves empty (texture animation's
+  blank 8x8 layers 2-6, the shadow map), as the map gate's;
+- the constant words after a bone list (`DrawTrace::unwritten`): the copy
+  stops at the marker, so the game's buffer keeps there what earlier draws
+  (of other programs, earlier frames) left; the shader never reads them,
+  since every blend index of each drawn segment is below its bone count
+  (`chars_diff::blend_index_problems`, checked: none). 29,216 words on
+  cdsp0000, 84,896 on bsil0000.
+
+### Results
+
+| Capture | Built | drawdiff (scene) |
+|---|---|---|
+| chars-cdsp0000-a, -b | 15 opaque + 2 transparent = scene draws 100-116 | 134 items, 0 differences, 5 allowed (below) |
+| chars-bsil0000-a, -b (not gated) | 36 + 8 = scene draws 71-114 | 143 items, 5 differences, 24 allowed |
+
+Allowed (`crates/ffx-scene/tests/chars-allow.txt`, besides the two
+`SgSpec_*` junk reads, which an original capture's record reproduces):
+the run-time sampler states, which the record holds only as pointers:
+`AnimSamplerState` (register 1 of the texture animation variants,
+`TextureAnimationManager_addAnimatedMaterials` `0x006b05d0`: clamp,
+anisotropy 1, where the cluster's is wrap, 0) and the blob shadow's
+`TextureSampler` (the ShadowManager's sampler, `0x006d2520`: point filter).
+
+bsil0000's five differences: one NPC draw's animation layer 1 binds
+another frame of its animated texture (16x16 against the cluster's 16x8:
+the texture animation's run-time state), and the two draws of record
+instance 4, which five files share every recorded field with (`f002`,
+`f090`, `f091`, `f092`, `f170`: same rig, segments, bounds and material
+values, other vertices and textures); the builder takes the first.
+
+## Open items
+
+1. **Record what the builder can't know**: per character instance its
+   mesh's asset (Besaid's instance 4), the character lighting's three
+   lights (direction, colour), and per material slot the live texture and
+   sampler state (texture animation frames and layers, the shadow's
+   sampler). With them the stand-ins and the sampler allow entries go.
+2. **`WorldInverse` ulps** (Besaid instance 12): no captured character
+   shader reads `WorldInverse` or `WorldViewInverse` (not `D3D_SVF_USED`),
+   so the 1-2 ulp never reach a draw's used constants; not settled (the
+   live node `+0x28` matrix would tell).
 3. **Joint matrices without the record**: from `Ch_CalcElement`'s skin
-   matrices (ported) and the mesh's parent table (static, in the
-   cluster), with `chars::joints`; the record gives both for now.
-4. **Cloth and shadow vertices** as dynamic buffers: the record's arrays
-   are what to upload (vertex stream 5 at stride 16; streams 0-3 and
-   32-bit indices for the shadow).
-5. **The material-matrix transpose** applies to the map too: `build.rs`
-   `fill_cb` copies kind-0x31 entries plainly. The map gate passes
-   (cdsp0000's map materials have no such entry whose transpose differs,
-   or the same writers), but a builder sharing the fill must transpose
-   kind `'1'`/`'0'` entries and honour the `0xffffffff` stop.
-6. **Shadow solutions 1 and 3** put cluster `+0x28c4` in world `+0xbc`;
-   the hook records that world too, but no capture of this round has one.
-7. **Names for `symbols/ffx.sym`** (not owned by this task):
-   `0x0059a650` (the constant-buffer fill with the matrix transpose),
-   `0x004cc890` (`inverse(Transform3)`), `0x004f6fc0` (the joint chain),
-   `0x004ca140`/`0x004c9eb0` (Matrix4 times vector / point), `0x00450de0`
-   (Matrix4 from columns), mesh `+0x2c` (joint parents).
+   matrices and the mesh's parent table (now read by `chars_model`), with
+   `chars::joints`; the record gives them for now.
+4. **The context rule's light count** is the character lighting's three
+   lights for every character; the switch handlers (`0x004ef3f0`) that
+   pack a node's lights are not read, nor are other light types.
+5. **Shadow solutions 1 and 3** put cluster `+0x28c4` in world `+0xbc`;
+   no capture has one.
+6. **The material-matrix transpose for the map** (`build.rs` `fill_cb`):
+   m4-wire changes it; the character builder has its own fill.

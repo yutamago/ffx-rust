@@ -11,7 +11,10 @@
 //! [`phyre`]) and the frame's [`frame::SceneInputs`] (from a capture for
 //! now: [`capture_inputs`]), culled ([`cull`]) and sorted ([`sort`]) as
 //! the original does; [`emit`] turns them into a capture for
-//! `ffx-drawdiff`.
+//! `ffx-drawdiff`. The character world (`docs/formats/scene-chars.md`):
+//! [`chars`] (its arithmetic), [`chars_build::build`] (its draws, from the
+//! records' character part and the `chr/` models of [`chars_model`]),
+//! [`chars_diff`] (the gate against captures).
 
 pub mod assets;
 pub mod build;
@@ -19,7 +22,10 @@ pub mod capture;
 pub mod capture_inputs;
 pub mod census;
 pub mod chars;
+pub mod chars_build;
 pub mod chars_check;
+pub mod chars_diff;
+pub mod chars_model;
 pub mod cull;
 pub mod effect;
 pub mod emit;

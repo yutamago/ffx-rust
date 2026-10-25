@@ -146,11 +146,11 @@ pub struct Resources {
     external_ix: HashMap<(External, ViewKind), View>,
 }
 
-fn handle(n: usize) -> u32 {
+pub(crate) fn handle(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
-fn intern<T: PartialEq + Clone>(list: &mut Vec<T>, v: &T) -> u32 {
+pub(crate) fn intern<T: PartialEq + Clone>(list: &mut Vec<T>, v: &T) -> u32 {
     if let Some(i) = list.iter().position(|x| x == v) {
         return handle(i);
     }
@@ -159,7 +159,7 @@ fn intern<T: PartialEq + Clone>(list: &mut Vec<T>, v: &T) -> u32 {
 }
 
 impl Resources {
-    fn shader(&mut self, stage: Stage, code: &[u8]) -> Shader {
+    pub(crate) fn shader(&mut self, stage: Stage, code: &[u8]) -> Shader {
         let key = (stage, code.to_vec());
         if let Some(&s) = self.shader_ix.get(&key) {
             return s;
@@ -170,7 +170,7 @@ impl Resources {
         s
     }
 
-    fn layout(&mut self, elements: Vec<InputElement>, vs: Shader) -> Layout {
+    pub(crate) fn layout(&mut self, elements: Vec<InputElement>, vs: Shader) -> Layout {
         let key = (elements, vs);
         if let Some(&l) = self.layout_ix.get(&key) {
             return l;
@@ -181,14 +181,19 @@ impl Resources {
         l
     }
 
-    fn buffer(&mut self, desc: BufferDesc, data: Vec<u8>) -> Buffer {
+    pub(crate) fn buffer(&mut self, desc: BufferDesc, data: Vec<u8>) -> Buffer {
         self.buffers.push((desc, data));
         Buffer(handle(self.buffers.len() - 1))
     }
 
     /// The game's static buffer of a segment's block (`block` index) or
     /// its indices (`None`): `D3D11_USAGE_IMMUTABLE`, bind flags 9 or 10.
-    fn static_buffer(&mut self, map: &MapModel, segment: usize, block: Option<usize>) -> Buffer {
+    pub(crate) fn static_buffer(
+        &mut self,
+        map: &MapModel,
+        segment: usize,
+        block: Option<usize>,
+    ) -> Buffer {
         let key = (segment, block.unwrap_or(0), block.is_none());
         if let Some(&b) = self.static_ix.get(&key) {
             return b;
@@ -205,7 +210,7 @@ impl Resources {
         b
     }
 
-    fn external(&mut self, e: External, kind: ViewKind) -> View {
+    pub(crate) fn external(&mut self, e: External, kind: ViewKind) -> View {
         if let Some(&v) = self.external_ix.get(&(e, kind)) {
             return v;
         }
@@ -223,7 +228,7 @@ impl Resources {
     /// it: the file's chain from mip `dropped` on (never past the last),
     /// DXT1/3/5 as BC1/2/3, cube maps as 6 slices; a `TEXTURE2D` or
     /// `TEXTURECUBE` view of every level.
-    fn texture(
+    pub(crate) fn texture(
         &mut self,
         import: &str,
         t: &ffx_phyre::Texture,
@@ -484,7 +489,7 @@ struct Builder<'a, I: SceneInputs> {
 /// (`PMeshInstanceSegmentStreamBinding`: the water's `TEXCOORD4/6/7`),
 /// else the first. The element's offset is the stream's in its block.
 /// Blocks are bound at offset 0 with their stride.
-fn vertex_inputs(
+pub(crate) fn vertex_inputs(
     map: &MapModel,
     instance: usize,
     segment: usize,
