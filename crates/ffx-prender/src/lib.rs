@@ -7,8 +7,11 @@
 //! - [`visibility`]: `PVisibilityCheck` and the culling job;
 //! - [`world`]: `renderWorld`, `renderWorldCulledSorted`, `mergeResults`;
 //! - [`array`]: `PArray`/`PSharray` storage helpers (h2-render-b);
+//! - [`declare`]: the `PArray<T>` class descriptors' constructors and
+//!   declarations (h2-render-b round 2);
 //! - [`descriptor`]: the type system's descriptor and array-member slots
 //!   of the render classes (M4 port round 1, h2-render-b);
+//! - [`dtor`]: destructors and storage setters (round 2);
 //! - [`misc`]: small render-interface, material and shader methods (the
 //!   same).
 //!
@@ -29,7 +32,9 @@
 )]
 
 pub mod array;
+pub mod declare;
 pub mod descriptor;
+pub mod dtor;
 pub mod glue;
 pub mod glue2;
 pub mod glue3;

@@ -37,7 +37,9 @@ use ffx_oracle::{Conv, Oracle, Pages};
 mod cases;
 
 use ffx_prender::array::bridge as a;
+use ffx_prender::declare as dc;
 use ffx_prender::descriptor::{Init, bridge as d};
+use ffx_prender::dtor::bridge as dt;
 use ffx_prender::misc::bridge as x;
 
 /// Calling conventions of the cases.
@@ -653,6 +655,72 @@ pub fn prep_element_field(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
     e.w32(a[0] + 0x24, n);
 }
 
+/// A `PArray<T>` descriptor's statics: the guard bits at `desc + 0x94`
+/// (each step done or not), the descriptor's name (`+0x18`, set or not),
+/// the class's name global (`name`), the annotation list head (`+0xc8`:
+/// empty, pointing at itself, or not), the flags word (`+0x90`) and the
+/// member words the declaration writes.
+pub fn prep_declare(e: &mut Env, rng: &mut Rng, a: &mut [u32], desc: u32, name: u32) {
+    let d = e.rebase(desc);
+    let g = rng.below(16) | if rng.chance(3) { rng.next() & !0xf } else { 0 };
+    e.w32(d + 0x94, g);
+    let n = if rng.chance(3) { e.ptr(rng) } else { 0 };
+    e.w32(d + 0x18, n);
+    let ng = e.rebase(name);
+    let v = if rng.chance(2) { e.ptr(rng) } else { 0 };
+    e.w32(ng, v);
+    let head = if rng.chance(2) { d + 0xc8 } else { e.ptr(rng) };
+    e.w32(d + 0xc8, head);
+    let f = rng.next();
+    e.w32(d + 0x90, f);
+    // the member's words the declaration sets (not left from the image)
+    for off in [0x10c, 0x114, 0x118, 0x11c] {
+        let w = rng.next();
+        e.w32(d + off, w);
+    }
+    if rng.chance(8) {
+        a[0] = 0;
+    }
+}
+
+/// The shader's two COM objects (null, or objects whose `Release`
+/// pops one word) and its byte array (count 0, owned or borrowed, data
+/// null or not).
+pub fn prep_release_shader(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    // low enough that `this + 0x4e0` stays in the pointers' part
+    a[0] = e.pool + 4 * rng.below(0x400);
+    for (k, off) in [0x4e0, 0].into_iter().enumerate() {
+        // objects and vtables past the pointers' part: no overlap with `this`
+        let obj = if rng.chance(3) {
+            0
+        } else {
+            e.pool + POOL_PTRS + 0x100 * k as u32
+        };
+        e.w32(a[0] + off, obj);
+        if obj != 0 {
+            let vt = obj + 0x80;
+            let r = e.ret_word(rng);
+            let f = e.handler(1, r);
+            e.w32(obj, vt);
+            e.w32(vt + 8, f);
+        }
+    }
+    let n =
+        if rng.chance(3) { 0 } else { rng.below(4) } | if rng.chance(3) { 0x8000_0000 } else { 0 };
+    e.w32(a[0] + 4, n);
+    let data = if rng.chance(4) { 0 } else { e.ptr(rng) };
+    e.w32(a[0] + 8, data);
+}
+
+/// A `PSharray` at `this + off`: counts 0..3, owned or borrowed, data
+/// null or not.
+pub fn prep_sharray_at(e: &mut Env, rng: &mut Rng, a: &mut [u32], off: u32) {
+    let n = rng.below(4) | if rng.chance(3) { 0x8000_0000 } else { 0 };
+    e.w32(a[0] + off, n);
+    let data = if rng.chance(4) { 0 } else { e.ptr(rng) };
+    e.w32(a[0] + off + 4, data);
+}
+
 fn run(case: &Case, e: &mut Env, rng: &mut Rng, what: &str) {
     e.fill(rng);
     let mut args: Vec<u32> = case.kinds.chars().map(|k| e.arg(rng, k)).collect();
@@ -692,13 +760,16 @@ fn run(case: &Case, e: &mut Env, rng: &mut Rng, what: &str) {
     e.b.clear_dirty();
 }
 
-/// Runs every case whose name contains `filter`'s value (env
-/// `H2_FILTER`, default all).
+/// Runs every case whose name contains one of `filter`'s `|`-separated
+/// values (env `H2_FILTER`, default all).
 fn run_cases(rounds: u32) {
     let filter = std::env::var("H2_FILTER").unwrap_or_default();
     let mut ran = 0;
     for (snap, mut e) in Env::all() {
-        for case in cases::CASES.iter().filter(|c| c.name.contains(&filter)) {
+        for case in cases::CASES
+            .iter()
+            .filter(|c| filter.split('|').any(|f| c.name.contains(f)))
+        {
             for &(sym, n, pops, this) in case.callees {
                 e.stub(sym, n, pops, this);
             }

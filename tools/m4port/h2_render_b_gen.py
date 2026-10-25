@@ -36,7 +36,8 @@ for f in spec_files:
 
 CDECL = {0x0042fb20, 0x004e4740, 0x004e4ec0, 0x004dd770, 0x004e4df0, 0x004f4fc0, 0x00540b80,
          0x0056a700, 0x00588190, 0x004395b0, 0x004dd910, 0x0058a9a0, 0x004ec310, 0x004dd860,
-         0x00949256}
+         0x00949256, 0x00949207, 0x00437fc0, 0x00435740, 0x0043e2f0, 0x004d0e20, 0x0049d050,
+         0x004c8a70}
 ABI = {'C': '"C"', 'S': '"stdcall"', 'T': '"thiscall"'}
 CONV = {'C': 'K::C', 'S': 'K::S', 'T': 'K::T'}
 OUT = {'u32': 'O::U32', 'u8': 'O::U8', '': 'O::None'}
@@ -82,9 +83,15 @@ open(R / 'crates/ffx-hook/src/ported/h2_render_b.rs', 'w').write(
     "//!\n"
     "//! Threads: the descriptor slots run where the serializer loads (the main\n"
     "//! and loader threads), the render-interface setters on the render\n"
-    "//! thread. No shim keeps state; nothing here has a frame.\n\n"
+    "//! thread. No shim keeps state; nothing here has a frame.\n"
+    "//!\n"
+    "//! Round 2 adds the `PArray<T>` class descriptors' constructors and\n"
+    "//! `DeclareClassDescriptor`s (`ffx_prender::declare`), which run where a\n"
+    "//! class is first used (the main and loader threads).\n\n"
     "use super::{mem, ported};\n"
     "use ffx_prender::array::bridge as a;\n"
+    "use ffx_prender::declare as dc;\n"
+    "use ffx_prender::dtor::bridge as dt;\n"
     "use ffx_prender::descriptor::{Init, bridge as d};\n"
     "use ffx_prender::misc::bridge as x;\n\n"
     "ported! {\n" + '\n'.join(shims) + "\n}\n")
