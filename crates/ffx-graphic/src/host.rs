@@ -25,9 +25,12 @@ pub enum Conv {
 
 /// The most words [`Host::call`] (`st0` false) or [`Host::call_st0`] /
 /// [`Host::call_st0_f64`] (`st0` true) passes in the game
-/// ([`ffx_bridge::RawMem`]) with `conv`: eight (a fastcall's two register
-/// words included), twelve stack words after `this` for a plain
-/// `thiscall`.
+/// ([`ffx_bridge::RawMem`]) with `conv`: twelve for a plain `cdecl` call
+/// and twelve stack words after `this` for a plain `thiscall`; eight
+/// otherwise (a fastcall's two register words included). The twelve cdecl
+/// words cover the glue's widest calls: `registAsyncLoadTask`'s nine
+/// (`PhyreScene_loadCharacterAsync`), the point-light setup's ten
+/// (`graphicPS2LightingSetupEffect`).
 ///
 /// The game's host does not refuse a longer list: a cdecl call drops the
 /// words past the limit (the callee reads the caller's stack there), and
@@ -37,7 +40,7 @@ pub enum Conv {
 #[must_use]
 pub const fn max_words(conv: Conv, st0: bool) -> usize {
     match (conv, st0) {
-        (Conv::Thiscall(_), false) => 12,
+        (Conv::Thiscall(_) | Conv::Cdecl, false) => 12,
         _ => 8,
     }
 }
@@ -48,8 +51,9 @@ pub const fn max_words(conv: Conv, st0: bool) -> usize {
 /// Call width: see [`max_words`] and `ffx_bridge::Host`.
 pub trait Host: Mem {
     /// Calls the function at `addr` (an address in this process, already
-    /// rebased) with up to [`max_words`] 32-bit arguments (eight, twelve
-    /// stack words for a `thiscall`); returns `eax`.
+    /// rebased) with up to [`max_words`] 32-bit arguments (twelve for
+    /// `cdecl`, twelve stack words for a `thiscall`, else eight); returns
+    /// `eax`.
     fn call(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u32;
 
     /// Calls a function at `addr` that returns a float in `ST0`, as
@@ -168,23 +172,27 @@ impl Host for ffx_bridge::RawMem {
 
     #[allow(clippy::many_single_char_names)] // the arguments
     fn call(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u32 {
-        type C8 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
-        // the bridges pass at most eight, twelve to a thiscall (no panics
-        // in what the game calls)
+        type C12 =
+            unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
+        // the bridges pass at most twelve to a cdecl or thiscall, eight to
+        // the others (no panics in what the game calls)
         let mut a12 = [0u32; 12];
         for (w, &v) in a12.iter_mut().zip(args) {
             *w = v;
         }
-        let [p, q, r, s, t, u, v, w, ..] = a12;
+        let [p, q, r, s, t, u, v, w, x, y, z, b] = a12;
         let a = [p, q, r, s, t, u, v, w];
         let f = addr as usize;
         // SAFETY: `addr` is a function of this process with this
         // convention and these arguments (the bridges call what the
         // original calls). cdecl lets the caller pass more than the callee
-        // reads; the callee-pops conventions need the exact count.
+        // reads (the zero words past `args` sit on the caller's side of
+        // the stack); the callee-pops conventions need the exact count.
         unsafe {
             match (conv, args.len()) {
-                (Conv::Cdecl, _) => std::mem::transmute::<usize, C8>(f)(p, q, r, s, t, u, v, w),
+                (Conv::Cdecl, _) => {
+                    std::mem::transmute::<usize, C12>(f)(p, q, r, s, t, u, v, w, x, y, z, b)
+                }
                 (Conv::Thiscall(this), n) => thiscall(f, this, n, a12),
                 (Conv::Stdcall, n) => stdcall(f, n, a),
                 (Conv::Fastcall, n) => fastcall(f, n, a),

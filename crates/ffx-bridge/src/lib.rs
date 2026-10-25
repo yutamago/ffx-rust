@@ -309,7 +309,8 @@ impl Mem for RawMem {
 /// is 0, and only a line on stderr (which the game shows nowhere) says
 /// so. A bridge whose callee takes more stack words must use a wider call
 /// its host offers (`NativeHost::call_n` in `ffx-script`, twelve words;
-/// `ffx_graphic::host::Host::call`, eight, twelve for a thiscall), never
+/// `ffx_graphic::host::Host::call`, twelve for a cdecl or thiscall, else
+/// eight), never
 /// this one. Test hosts refuse what the game refuses: in `ffx-oracle` a
 /// call wider than the game's host passes fails the test, naming the
 /// address and the width (`ffx_oracle::check_width`). Before that rule
