@@ -42,6 +42,10 @@ pub enum Init {
     Word(u32, u32),
     /// A byte at the offset.
     Byte(u32, u8),
+    /// The image address `sym` (rebased: a vtable) at the offset.
+    Address(u32, u32),
+    /// A 16-bit word at the offset.
+    Half(u32, u16),
     /// The `f32` at an image address (its `ffx.sym` address), copied by
     /// `fld`/`fstp` (a signalling NaN comes out quiet).
     Float(u32, u32),
@@ -61,6 +65,11 @@ pub mod bridge {
                 match f {
                     Init::Word(off, v) => m.write(p.wrapping_add(off), v),
                     Init::Byte(off, v) => m.write(p.wrapping_add(off), v),
+                    Init::Half(off, v) => m.write(p.wrapping_add(off), v),
+                    Init::Address(off, sym) => {
+                        let a = m.rebase(sym);
+                        m.write(p.wrapping_add(off), a);
+                    }
                     Init::Float(off, sym) => {
                         let bits: u32 = m.read(m.rebase(sym));
                         m.write(p.wrapping_add(off), x87::store(x87::load(bits)));
@@ -81,8 +90,14 @@ pub mod bridge {
     /// `constructInstance(p)` of the classes without a default
     /// constructor: the registry `registry`'s lookup `0x0043cbb0` first
     /// (`al = 0` when it gives null), then, when `p` is not null, the base
-    /// constructor `ctor(p)` (thiscall) and `p + 0x4e0 = 0`; `al = 1`.
-    pub fn construct_registered(h: &mut impl Host, p: u32, registry: u32, ctor: u32) -> u8 {
+    /// constructor `ctor(p)` (thiscall) and the words at `zero`; `al = 1`.
+    pub fn construct_registered(
+        h: &mut impl Host,
+        p: u32,
+        registry: u32,
+        ctor: u32,
+        zero: &[u32],
+    ) -> u8 {
         let f = h.rebase(REGISTRY_LOOKUP);
         let r = h.rebase(registry);
         if h.call(f, Conv::Thiscall(r), &[]) == 0 {
@@ -91,8 +106,83 @@ pub mod bridge {
         if p != 0 {
             let f = h.rebase(ctor);
             h.call(f, Conv::Thiscall(p), &[]);
-            h.write(p + 0x4e0, 0u32);
+            for &off in zero {
+                h.write(p + off, 0u32);
+            }
         }
+        1
+    }
+
+    /// `constructInstance(p)` by a constructor: when `p` is not null,
+    /// `ctor(p)` (thiscall), then the words at `zero`; `al = 1`.
+    pub fn construct_with_ctor(h: &mut impl Host, p: u32, ctor: u32, zero: &[u32]) -> u8 {
+        if p != 0 {
+            let f = h.rebase(ctor);
+            h.call(f, Conv::Thiscall(p), &[]);
+            for &off in zero {
+                h.write(p + off, 0u32);
+            }
+        }
+        1
+    }
+
+    /// `constructInstance(p)` of a class whose first word is its type
+    /// (`registry`'s lookup, `al = 0` when null): when `p` is not null,
+    /// that word and then the initial values; `al = 1`.
+    pub fn construct_typed(h: &mut impl Host, p: u32, registry: u32, fields: &[Init]) -> u8 {
+        let f = h.rebase(REGISTRY_LOOKUP);
+        let r = h.rebase(registry);
+        let t = h.call(f, Conv::Thiscall(r), &[]);
+        if t == 0 {
+            return 0;
+        }
+        if p != 0 {
+            h.write(p, t);
+            construct(h, p, fields);
+        }
+        1
+    }
+
+    /// `constructInstance(p)` of a class holding two types (two
+    /// registries' lookups, `al = 0` when either is null): when `p` is not
+    /// null, `p = (first, second, 0)`; `al = 1`.
+    pub fn construct_two_types(h: &mut impl Host, p: u32, first: u32, second: u32) -> u8 {
+        let f = h.rebase(REGISTRY_LOOKUP);
+        let r = h.rebase(first);
+        let a = h.call(f, Conv::Thiscall(r), &[]);
+        let r = h.rebase(second);
+        let b = h.call(f, Conv::Thiscall(r), &[]);
+        if a == 0 || b == 0 {
+            return 0;
+        }
+        if p != 0 {
+            h.write(p, a);
+            h.write(p + 4, b);
+            h.write(p + 8, 0u32);
+        }
+        1
+    }
+
+    /// destructInstance `(p)` that runs two destructors, `first(p)` and
+    /// `second(p)` (thiscall); `al = 1`.
+    pub fn destruct_with2(h: &mut impl Host, p: u32, first: u32, second: u32) -> u8 {
+        let f = h.rebase(first);
+        h.call(f, Conv::Thiscall(p), &[]);
+        let f = h.rebase(second);
+        h.call(f, Conv::Thiscall(p), &[]);
+        1
+    }
+
+    /// The bound buffer's destructInstance `(p)`: `unbind(p)` when
+    /// `is_bound(p)` (thiscall, `al`), then `dtor(p)`; `al = 1`.
+    pub fn destruct_bound(h: &mut impl Host, p: u32, is_bound: u32, unbind: u32, dtor: u32) -> u8 {
+        let f = h.rebase(is_bound);
+        if h.call(f, Conv::Thiscall(p), &[]) & 0xff != 0 {
+            let f = h.rebase(unbind);
+            h.call(f, Conv::Thiscall(p), &[]);
+        }
+        let f = h.rebase(dtor);
+        h.call(f, Conv::Thiscall(p), &[]);
         1
     }
 

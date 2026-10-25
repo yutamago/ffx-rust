@@ -50,7 +50,7 @@ add(0x004e6a20, 'T', 'pn', 'u32', 'd::construct_by(M, a1, 0x004e_4740)', [(0x004
 add(0x004e6d70, 'T', 'pn', 'u32', 'd::construct_by(M, a1, 0x004e_4ec0)', [(0x004e4ec0, 1, 0)], None)
 add(0x004fa8c0, 'T', 'pn', 'u8', 'd::construct_owned(M, a1, 0x00cb_b300, 0x00b2_3700)', [LOOKUP], None)
 for a in [0x0058e950, 0x0058e990, 0x0058e9d0]:
-    add(a, 'T', 'pn', 'u8', 'd::construct_registered(M, a1, 0x00c9_1048, 0x0058_3f20)',
+    add(a, 'T', 'pn', 'u8', 'd::construct_registered(M, a1, 0x00c9_1048, 0x0058_3f20, &[0x4e0])',
         [LOOKUP, (0x00583f20, 0, 0)], None)
 add(0x0058e770, 'T', 'pn', 'u8', 'd::destruct_with_if(M, a1, 0x0058_3e20)', [(0x00583e20, 0, 0)], None)
 add(0x0058ea10, 'T', 'pn', 'u8', 'd::destruct_with_if(M, a1, 0x0058_3f20)', [(0x00583f20, 0, 0)], None)

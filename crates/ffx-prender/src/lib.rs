@@ -6,6 +6,7 @@
 //! - [`sort`]: the visibility entries' `std::sort` and its comparator;
 //! - [`visibility`]: `PVisibilityCheck` and the culling job;
 //! - [`world`]: `renderWorld`, `renderWorldCulledSorted`, `mergeResults`;
+//! - [`array`]: `PArray`/`PSharray` storage helpers (h2-render-b);
 //! - [`descriptor`]: the type system's descriptor and array-member slots
 //!   of the render classes (M4 port round 1, h2-render-b);
 //! - [`misc`]: small render-interface, material and shader methods (the
@@ -27,6 +28,7 @@
     clippy::similar_names
 )]
 
+pub mod array;
 pub mod descriptor;
 pub mod mesh;
 pub mod misc;

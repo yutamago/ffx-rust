@@ -8,6 +8,7 @@
 //! thread. No shim keeps state; nothing here has a frame.
 
 use super::{mem, ported};
+use ffx_prender::array::bridge as a;
 use ffx_prender::descriptor::{Init, bridge as d};
 use ffx_prender::misc::bridge as x;
 
@@ -250,15 +251,15 @@ ported! {
     }
     /// `Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderComputeProgramD3D11__constructInstance`.
     Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderComputeProgramD3D11__constructInstance @ 0x0058_e950 => extern "thiscall" fn s_0058e950(_a0: u32, a1: u32) -> u8 {
-        d::construct_registered(&mut mem(), a1, 0x00c9_1048, 0x0058_3f20)
+        d::construct_registered(&mut mem(), a1, 0x00c9_1048, 0x0058_3f20, &[0x4e0])
     }
     /// `Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderFragmentProgramD3D11__constructInstance`.
     Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderFragmentProgramD3D11__constructInstance @ 0x0058_e990 => extern "thiscall" fn s_0058e990(_a0: u32, a1: u32) -> u8 {
-        d::construct_registered(&mut mem(), a1, 0x00c9_1048, 0x0058_3f20)
+        d::construct_registered(&mut mem(), a1, 0x00c9_1048, 0x0058_3f20, &[0x4e0])
     }
     /// `Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderGeometryProgramD3D11__constructInstance`.
     Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderGeometryProgramD3D11__constructInstance @ 0x0058_e9d0 => extern "thiscall" fn s_0058e9d0(_a0: u32, a1: u32) -> u8 {
-        d::construct_registered(&mut mem(), a1, 0x00c9_1048, 0x0058_3f20)
+        d::construct_registered(&mut mem(), a1, 0x00c9_1048, 0x0058_3f20, &[0x4e0])
     }
     /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderPassStateD3D11__constructInstance`.
     Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderPassStateD3D11__constructInstance @ 0x0058_e770 => extern "thiscall" fn s_0058e770(_a0: u32, a1: u32) -> u8 {
@@ -711,5 +712,261 @@ ported! {
     /// `Phyre_PRendering_Ctor8_005844a0`.
     Phyre_PRendering_Ctor8_005844a0 @ 0x0058_44a0 => extern "thiscall" fn s_005844a0(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32) -> u32 {
         x::ctor8(&mut mem(), a0, [a1, a2, a3, a4, a5, a6, a7, a8], 0x004c_0c00)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PStructure_Buffer__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PStructure_Buffer__constructInstance @ 0x0050_2840 => extern "thiscall" fn s_00502840(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with_if(&mut mem(), a1, 0x0058_41a0)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PIndirectArgsBuffer__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PIndirectArgsBuffer__constructInstance @ 0x0050_3a80 => extern "thiscall" fn s_00503a80(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with_if(&mut mem(), a1, 0x0058_3420)
+    }
+    /// `Phyre_PClassDescriptorAbstract_Phyre_PAnimation_PAnimatableComponent__slot70`.
+    Phyre_PClassDescriptorAbstract_Phyre_PAnimation_PAnimatableComponent__slot70 @ 0x0054_22e0 => extern "thiscall" fn s_005422e0(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with_if(&mut mem(), a1, 0x0053_e720)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PGameplay_PCameraControllerComponent__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PGameplay_PCameraControllerComponent__constructInstance @ 0x0055_84b0 => extern "thiscall" fn s_005584b0(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with_if(&mut mem(), a1, 0x0055_72e0)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PDataBlockD3D11__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PDataBlockD3D11__constructInstance @ 0x0056_1d60 => extern "thiscall" fn s_00561d60(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with_if(&mut mem(), a1, 0x0055_dc40)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PIndexDataBlockD3D11__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PIndexDataBlockD3D11__constructInstance @ 0x0056_1df0 => extern "thiscall" fn s_00561df0(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with_if(&mut mem(), a1, 0x0055_dd30)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PMeshSegmentD3D11__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PMeshSegmentD3D11__constructInstance @ 0x0056_1e40 => extern "thiscall" fn s_00561e40(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with_if(&mut mem(), a1, 0x0043_37d0)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PSprite_PSpriteCollection__slotb8`.
+    Phyre_PClassDescriptorForType_Phyre_PSprite_PSpriteCollection__slotb8 @ 0x0056_c9c0 => extern "thiscall" fn s_0056c9c0(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with_if(&mut mem(), a1, 0x0056_7110)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PConstantBufferD3D11__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PConstantBufferD3D11__constructInstance @ 0x0058_e600 => extern "thiscall" fn s_0058e600(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with_if(&mut mem(), a1, 0x0058_3240)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderPassD3D11__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderPassD3D11__constructInstance @ 0x0058_e720 => extern "thiscall" fn s_0058e720(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with_if(&mut mem(), a1, 0x0058_3c00)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PStructuredBufferD3D11__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PStructuredBufferD3D11__constructInstance @ 0x0058_e7d0 => extern "thiscall" fn s_0058e7d0(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with_if(&mut mem(), a1, 0x0058_41a0)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTexture3DD3D11__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTexture3DD3D11__constructInstance @ 0x0058_e8b0 => extern "thiscall" fn s_0058e8b0(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with_if(&mut mem(), a1, 0x0058_42c0)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTextureCubeMapD3D11__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTextureCubeMapD3D11__constructInstance @ 0x0058_e900 => extern "thiscall" fn s_0058e900(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with_if(&mut mem(), a1, 0x0058_4400)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PSamplerStateD3D11__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PSamplerStateD3D11__constructInstance @ 0x0058_e6c0 => extern "thiscall" fn s_0058e6c0(_a0: u32, a1: u32) -> u8 {
+        d::construct_with_ctor(&mut mem(), a1, 0x004b_e870, &[0x20])
+    }
+    /// `Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderVertexProgramD3D11__constructInstance`.
+    Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderVertexProgramD3D11__constructInstance @ 0x0058_ea30 => extern "thiscall" fn s_0058ea30(_a0: u32, a1: u32) -> u8 {
+        d::construct_registered(&mut mem(), a1, 0x00c9_1048, 0x0058_3f20, &[0x4e0, 0x4e4, 0x4e8, 0x4ec])
+    }
+    /// `Phyre_PRendering_PEffectVariant_constructInPlace_004e4740`.
+    Phyre_PRendering_PEffectVariant_constructInPlace_004e4740 @ 0x004e_4740 => extern "C" fn s_004e4740(a0: u32) -> u8 {
+        d::construct_typed(&mut mem(), a0, 0x00ca_66e8, &[Init::Word(0x4, 0x0), Init::Word(0x8, 0x0), Init::Word(0xc, 0x0), Init::Word(0x10, 0x0), Init::Word(0x14, 0x0), Init::Word(0x18, 0x0), Init::Half(0x1c, 0), Init::Word(0x20, 0x0), Init::Word(0x24, 0x0), Init::Word(0x28, 0x0), Init::Word(0x2c, 0x0), Init::Word(0x30, 0x0)])
+    }
+    /// `Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PMeshInstanceAttachPoint__constructInstance`.
+    Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PMeshInstanceAttachPoint__constructInstance @ 0x0050_1500 => extern "thiscall" fn s_00501500(_a0: u32, a1: u32) -> u8 {
+        d::construct_two_types(&mut mem(), a1, 0x00c9_2090, 0x00ca_7228)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PRendering_PSamplerStateD3D11__destructInstance`.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PSamplerStateD3D11__destructInstance @ 0x0059_2830 => extern "thiscall" fn s_00592830(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with2(&mut mem(), a1, 0x0059_c770, 0x004b_e970)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PRendering_PShaderComputeProgramD3D11__destructInstance`.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PShaderComputeProgramD3D11__destructInstance @ 0x0059_2890 => extern "thiscall" fn s_00592890(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with2(&mut mem(), a1, 0x0059_c830, 0x0058_5610)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PRendering_PShaderFragmentProgramD3D11__destructInstance`.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PShaderFragmentProgramD3D11__destructInstance @ 0x0059_28f0 => extern "thiscall" fn s_005928f0(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with2(&mut mem(), a1, 0x0059_c890, 0x0058_5610)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PRendering_PShaderGeometryProgramD3D11__destructInstance`.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PShaderGeometryProgramD3D11__destructInstance @ 0x0059_2950 => extern "thiscall" fn s_00592950(_a0: u32, a1: u32) -> u8 {
+        d::destruct_with2(&mut mem(), a1, 0x0059_c8f0, 0x0058_5610)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PRendering_PStructuredBuffer__destructInstance`.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PStructuredBuffer__destructInstance @ 0x0050_28c0 => extern "thiscall" fn s_005028c0(_a0: u32, a1: u32) -> u8 {
+        d::destruct_bound(&mut mem(), a1, 0x0059_5f80, 0x0059_ca60, 0x0058_57b0)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderPassInfo__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderPassInfo__constructInstance @ 0x004d_ffb0 => extern "thiscall" fn s_004dffb0(_a0: u32, a1: u32) -> u8 {
+        d::construct(&mut mem(), a1, &[Init::Word(0x0, 0x0), Init::Word(0x4, 0x0), Init::Word(0x8, 0x0), Init::Word(0xc, 0x0), Init::Word(0x10, 0x0), Init::Word(0x14, 0x0), Init::Word(0x18, 0x0), Init::Word(0x1c, 0x0)])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PSceneRenderPass__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PSceneRenderPass__constructInstance @ 0x004d_ff50 => extern "thiscall" fn s_004dff50(_a0: u32, a1: u32) -> u8 {
+        d::construct(&mut mem(), a1, &[Init::Address(0, 0x00c1_6bd4), Init::Word(0x4, 0x0), Init::Word(0x8, 0x0), Init::Word(0xc, 0x0), Init::Word(0x10, 0x0), Init::Word(0x14, 0x0), Init::Word(0x18, 0x0), Init::Word(0x1c, 0x0), Init::Word(0x20, 0x0), Init::Byte(0x24, 0)])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PSprite_PSpriteAnimationInfoChar__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PSprite_PSpriteAnimationInfoChar__constructInstance @ 0x0056_c920 => extern "thiscall" fn s_0056c920(_a0: u32, a1: u32) -> u8 {
+        d::construct(&mut mem(), a1, &[Init::Word(0x0, 0x0), Init::Float(0x8, 0x00b3_04f4), Init::Word(0x4, 0x0), Init::Word(0xc, 0x0), Init::Word(0x10, 0x0), Init::Word(0x14, 0x0), Init::Word(0x18, 0x0), Init::Word(0x1c, 0x0), Init::Word(0x20, 0x0), Init::Word(0x24, 0x0)])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PSprite_PSpriteAttributes__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PSprite_PSpriteAttributes__constructInstance @ 0x0056_c970 => extern "thiscall" fn s_0056c970(_a0: u32, a1: u32) -> u8 {
+        d::construct(&mut mem(), a1, &[Init::Word(0x0, 0x0), Init::Word(0x4, 0x0), Init::Word(0x8, 0x0), Init::Word(0xc, 0x3f80_0000), Init::Word(0x18, 0x3f80_0000), Init::Word(0x1c, 0x3f80_0000), Init::Word(0x10, 0x0), Init::Word(0x14, 0x0), Init::Float(0x20, 0x00b3_04f8), Init::Float(0x24, 0x00b3_04f8), Init::Float(0x28, 0x00b3_04fc), Init::Word(0x2c, 0x0)])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PSprite_PSpriteAnimationInfoInstance__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PSprite_PSpriteAnimationInfoInstance__constructInstance @ 0x0057_0150 => extern "thiscall" fn s_00570150(_a0: u32, a1: u32) -> u8 {
+        d::construct(&mut mem(), a1, &[Init::Word(0x0, 0x0), Init::Float(0x14, 0x00b3_0710), Init::Word(0x4, 0x0), Init::Word(0x8, 0x0), Init::Word(0x18, 0x0), Init::Word(0x1c, 0x0), Init::Word(0xc, 0xffff_ffff), Init::Word(0x10, 0x0), Init::Half(0x20, 0)])
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PSharray_Phyre_PRendering_PMeshInstanceSegmentStreamBinding_const__destructInstance`.
+    Phyre_PClassDescriptorForType_Phyre_PSharray_Phyre_PRendering_PMeshInstanceSegmentStreamBinding_const__destructInstance @ 0x004f_7750 => extern "thiscall" fn s_004f7750(_a0: u32, a1: u32) -> u8 {
+        a::destruct_sharray(&mut mem(), a1, 0, false)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PRendering_PMeshInstanceSegmentContext__destructInstance`.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PMeshInstanceSegmentContext__destructInstance @ 0x004f_77b0 => extern "thiscall" fn s_004f77b0(_a0: u32, a1: u32) -> u8 {
+        a::destruct_sharray(&mut mem(), a1, 0x1c, false)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PSharray_Phyre_PGeometry_PDataBlockBufferD3D11__destructInstance`.
+    Phyre_PClassDescriptorForType_Phyre_PSharray_Phyre_PGeometry_PDataBlockBufferD3D11__destructInstance @ 0x0056_2310 => extern "thiscall" fn s_00562310(_a0: u32, a1: u32) -> u8 {
+        a::destruct_sharray(&mut mem(), a1, 0, true)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PSharray_Phyre_PGeometry_PIndexDataBlockBufferD3D11__destructInstance`.
+    Phyre_PClassDescriptorForType_Phyre_PSharray_Phyre_PGeometry_PIndexDataBlockBufferD3D11__destructInstance @ 0x0056_2360 => extern "thiscall" fn s_00562360(_a0: u32, a1: u32) -> u8 {
+        a::destruct_sharray(&mut mem(), a1, 0, true)
+    }
+    /// `Phyre_FreeSharrayItems8_004ec310`.
+    Phyre_FreeSharrayItems8_004ec310 @ 0x004e_c310 => extern "C" fn s_004ec310(a0: u32, a1: u32) {
+        a::free_items(&mut mem(), a0, a1, 8, 0, true);
+    }
+    /// `Phyre_FreeSharrayItems24_004f4fc0`.
+    Phyre_FreeSharrayItems24_004f4fc0 @ 0x004f_4fc0 => extern "C" fn s_004f4fc0(a0: u32, a1: u32) {
+        a::free_items(&mut mem(), a0, a1, 0x24, 0x1c, false);
+    }
+    /// `Phyre_PRendering_PMeshInstanceSegmentContext_constructArray_004f6380`.
+    Phyre_PRendering_PMeshInstanceSegmentContext_constructArray_004f6380 @ 0x004f_6380 => extern "C" fn s_004f6380(a0: u32, a1: u32) {
+        a::init_items(&mut mem(), a0, a1, 0x24, &[Init::Word(0x10, 0x0), Init::Word(0x0, 0x0), Init::Word(0x4, 0x0), Init::Word(0x8, 0x0), Init::Word(0xc, 0x0), Init::Word(0x14, 0xffff_ffff), Init::Word(0x18, 0x0), Init::Word(0x1c, 0x0), Init::Word(0x20, 0x0)]);
+    }
+    /// `Phyre_ZeroArray28_0058b070`.
+    Phyre_ZeroArray28_0058b070 @ 0x0058_b070 => extern "C" fn s_0058b070(a0: u32, a1: u32) {
+        a::init_items(&mut mem(), a0, a1, 0x1c, &[Init::Word(0x0, 0x0), Init::Word(0x4, 0x0), Init::Word(0x8, 0x0), Init::Word(0xc, 0x0), Init::Word(0x10, 0x0), Init::Word(0x14, 0x0), Init::Word(0x18, 0x0)]);
+    }
+    /// `Phyre_PArray_PShaderPassInfo_setStorage_004e1610`.
+    Phyre_PArray_PShaderPassInfo_setStorage_004e1610 @ 0x004e_1610 => extern "thiscall" fn s_004e1610(a0: u32, a1: u32, a2: u32) -> u32 {
+        a::set_storage(&mut mem(), a0, a1, a2, Some(0x004d_d770))
+    }
+    /// `Phyre_PArray_PMaterialSwitch_setStorage_004e7950`.
+    Phyre_PArray_PMaterialSwitch_setStorage_004e7950 @ 0x004e_7950 => extern "thiscall" fn s_004e7950(a0: u32, a1: u32, a2: u32) -> u32 {
+        a::set_storage(&mut mem(), a0, a1, a2, Some(0x004e_4df0))
+    }
+    /// `Phyre_PArray_PNodeContext_setStorage_004f0420`.
+    Phyre_PArray_PNodeContext_setStorage_004f0420 @ 0x004f_0420 => extern "thiscall" fn s_004f0420(a0: u32, a1: u32, a2: u32) -> u32 {
+        a::set_storage(&mut mem(), a0, a1, a2, Some(0x004e_c310))
+    }
+    /// `Phyre_PArray_PStreamInputDescD3D11_setStorage_0059b9d0`.
+    Phyre_PArray_PStreamInputDescD3D11_setStorage_0059b9d0 @ 0x0059_b9d0 => extern "thiscall" fn s_0059b9d0(a0: u32, a1: u32, a2: u32) -> u32 {
+        a::set_storage(&mut mem(), a0, a1, a2, Some(0x0058_8190))
+    }
+    /// `Phyre_PArray_setStorage_004f02e0`.
+    Phyre_PArray_setStorage_004f02e0 @ 0x004f_02e0 => extern "thiscall" fn s_004f02e0(a0: u32, a1: u32, a2: u32) -> u32 {
+        a::set_storage(&mut mem(), a0, a1, a2, None)
+    }
+    /// `Phyre_PArray_setStorage_004f0330`.
+    Phyre_PArray_setStorage_004f0330 @ 0x004f_0330 => extern "thiscall" fn s_004f0330(a0: u32, a1: u32, a2: u32) -> u32 {
+        a::set_storage(&mut mem(), a0, a1, a2, None)
+    }
+    /// `Phyre_PArray_setStorage_004f0380`.
+    Phyre_PArray_setStorage_004f0380 @ 0x004f_0380 => extern "thiscall" fn s_004f0380(a0: u32, a1: u32, a2: u32) -> u32 {
+        a::set_storage(&mut mem(), a0, a1, a2, None)
+    }
+    /// `Phyre_PArray_setStorage_004f03d0`.
+    Phyre_PArray_setStorage_004f03d0 @ 0x004f_03d0 => extern "thiscall" fn s_004f03d0(a0: u32, a1: u32, a2: u32) -> u32 {
+        a::set_storage(&mut mem(), a0, a1, a2, None)
+    }
+    /// `Phyre_PArray_setStorage_004fcc00`.
+    Phyre_PArray_setStorage_004fcc00 @ 0x004f_cc00 => extern "thiscall" fn s_004fcc00(a0: u32, a1: u32, a2: u32) -> u32 {
+        a::set_storage(&mut mem(), a0, a1, a2, None)
+    }
+    /// `Phyre_PArray_PShader_clear_004db710`.
+    Phyre_PArray_PShader_clear_004db710 @ 0x004d_b710 => extern "thiscall" fn s_004db710(a0: u32) {
+        a::clear_with_dtor(&mut mem(), a0, 0x004b_bf50, 0x20);
+    }
+    /// `Phyre_PArray_PSceneRenderPass_clear_004e3830`.
+    Phyre_PArray_PSceneRenderPass_clear_004e3830 @ 0x004e_3830 => extern "thiscall" fn s_004e3830(a0: u32) {
+        a::clear_with_dtor(&mut mem(), a0, 0x004d_b9d0, 0x28);
+    }
+    /// `Phyre_PSharray_element20_0055e0f0`.
+    Phyre_PSharray_element20_0055e0f0 @ 0x0055_e0f0 => extern "thiscall" fn s_0055e0f0(a0: u32, a1: u32) -> u32 {
+        a::element(&mut mem(), a0, a1, 0x14)
+    }
+    /// `Phyre_PSharray_element28_00585c90`.
+    Phyre_PSharray_element28_00585c90 @ 0x0058_5c90 => extern "thiscall" fn s_00585c90(a0: u32, a1: u32) -> u32 {
+        a::element(&mut mem(), a0, a1, 0x1c)
+    }
+    /// `Phyre_PRendering_BoundElementWord_00593af0`.
+    Phyre_PRendering_BoundElementWord_00593af0 @ 0x0059_3af0 => extern "thiscall" fn s_00593af0(a0: u32, a1: u32) -> u32 {
+        a::bound_element_word(&mut mem(), a0, a1)
+    }
+    /// `Phyre_PRendering_PSceneRenderPassType_find_004dd860`.
+    Phyre_PRendering_PSceneRenderPassType_find_004dd860 @ 0x004d_d860 => extern "C" fn s_004dd860(a0: u32) -> u32 {
+        x::find_pass_type(&mut mem(), a0)
+    }
+    /// `Phyre_PRendering_PSceneRenderPassType_findBy_004dd8c0`.
+    Phyre_PRendering_PSceneRenderPassType_findBy_004dd8c0 @ 0x004d_d8c0 => extern "C" fn s_004dd8c0(a0: u32) -> u32 {
+        x::find_pass_type_by(&mut mem(), a0, 0x00b0_c398)
+    }
+    /// `Phyre_PRendering_PSceneRenderPassType_PSceneRenderPassType`.
+    Phyre_PRendering_PSceneRenderPassType_PSceneRenderPassType @ 0x004d_b230 => extern "thiscall" fn s_004db230(a0: u32, a1: u32, a2: u32) -> u32 {
+        x::pass_type_init(&mut mem(), a0, a1, a2, 0x004d_d860)
+    }
+    /// `Phyre_PRendering_PSceneRenderPassType_PSceneRenderPassType_004db280`.
+    Phyre_PRendering_PSceneRenderPassType_PSceneRenderPassType_004db280 @ 0x004d_b280 => extern "thiscall" fn s_004db280(a0: u32, _a1: u32, a2: u32) -> u32 {
+        x::pass_type_init(&mut mem(), a0, a2, 1, 0x004d_d860)
+    }
+    /// `Phyre_PRendering_NameIs_004ea7a0`.
+    Phyre_PRendering_NameIs_004ea7a0 @ 0x004e_a7a0 => extern "thiscall" fn s_004ea7a0(a0: u32, a1: u32) -> u8 {
+        x::name_is(&mut mem(), a0, a1)
+    }
+    /// `Phyre_PRendering_PMeshInstanceBounds_setMinAndMax`.
+    Phyre_PRendering_PMeshInstanceBounds_setMinAndMax @ 0x0050_0bd0 => extern "thiscall" fn s_00500bd0(a0: u32, a1: u32, a2: u32) -> u32 {
+        x::set_min_and_max(&mut mem(), a0, a1, a2)
+    }
+    /// `Phyre_PRendering_InitIdentity_00504ec0`.
+    Phyre_PRendering_InitIdentity_00504ec0 @ 0x0050_4ec0 => extern "thiscall" fn s_00504ec0(a0: u32) -> u32 {
+        x::init_fields(&mut mem(), a0, &[Init::Word(0x0, 0x0), Init::Word(0x4, 0x0), Init::Word(0x8, 0x0), Init::Word(0xc, 0x0), Init::Word(0x10, 0x3f80_0000), Init::Word(0x14, 0x0), Init::Word(0x18, 0x0), Init::Word(0x1c, 0x0), Init::Word(0x20, 0x0), Init::Word(0x24, 0x3f80_0000), Init::Word(0x28, 0x0), Init::Word(0x2c, 0x0), Init::Word(0x30, 0x0), Init::Word(0x34, 0x0), Init::Word(0x38, 0x3f80_0000), Init::Word(0x3c, 0x0), Init::Word(0x40, 0x0), Init::Word(0x44, 0x0), Init::Word(0x48, 0x0), Init::Word(0x4c, 0x3f80_0000), Init::Word(0x50, 0x0)])
+    }
+    /// `Phyre_PRendering_PSamplerState_initDefaults_00583100`.
+    Phyre_PRendering_PSamplerState_initDefaults_00583100 @ 0x0058_3100 => extern "thiscall" fn s_00583100(a0: u32, _a1: u32) -> u32 {
+        x::init_fields(&mut mem(), a0, &[Init::Word(0x0, 0x15), Init::Word(0x10, 0x0), Init::Word(0x4, 0x3), Init::Word(0x8, 0x3), Init::Word(0xc, 0x3), Init::Word(0x14, 0x1), Init::Word(0x18, 0x1), Init::Word(0x1c, 0x3f80_0000), Init::Word(0x20, 0x3f80_0000), Init::Word(0x24, 0x3f80_0000), Init::Word(0x28, 0x3f80_0000), Init::Float(0x2c, 0x00b1_f2d0), Init::Float(0x30, 0x00b1_7504)])
+    }
+    /// `Phyre_PRendering_Ctor_00583a60`.
+    Phyre_PRendering_Ctor_00583a60 @ 0x0058_3a60 => extern "thiscall" fn s_00583a60(a0: u32, a1: u32) -> u32 {
+        x::ctor_arg_then_zero(&mut mem(), a0, a1, 0x004c_78a0, &[0x10, 0x14, 0x18, 0x1c, 0x20, 0x24])
+    }
+    /// `Phyre_PRendering_Ctor_00583b80`.
+    Phyre_PRendering_Ctor_00583b80 @ 0x0058_3b80 => extern "thiscall" fn s_00583b80(a0: u32, a1: u32) -> u32 {
+        x::first_then_zero(&mut mem(), a0, a1, 7)
+    }
+    /// `PParameterCaptureBuffer_setValue`.
+    PParameterCaptureBuffer_setValue @ 0x004f_edc0 => extern "thiscall" fn s_004fedc0(a0: u32, a1: u32, a2: u32) -> u32 {
+        x::set_value(&mut mem(), a0, a1, a2, 0x0094_9256)
+    }
+    /// `PEffect_buildNodeContextKey`.
+    PEffect_buildNodeContextKey @ 0x004e_f3f0 => extern "thiscall" fn s_004ef3f0(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) -> u32 {
+        x::build_node_context_key(&mut mem(), a0, [a1, a2, a3, a4, a5, a6])
+    }
+    /// `Phyre_TreeFind_00581670`.
+    Phyre_TreeFind_00581670 @ 0x0058_1670 => extern "thiscall" fn s_00581670(a0: u32, a1: u32) -> u32 {
+        x::tree_find(&mut mem(), a0, a1)
+    }
+    /// `Phyre_PRendering_MapMode8_0058a9a0`.
+    Phyre_PRendering_MapMode8_0058a9a0 @ 0x0058_a9a0 => extern "C" fn s_0058a9a0(a0: u32) -> u32 {
+        x::map_mode8(a0)
+    }
+    /// `Phyre_PGeometry_FormatSize_0055bc40`.
+    Phyre_PGeometry_FormatSize_0055bc40 @ 0x0055_bc40 => extern "C" fn s_0055bc40(a0: u32) -> u32 {
+        x::format_size(a0)
     }
 }

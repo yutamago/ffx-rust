@@ -26,7 +26,7 @@
     clippy::too_many_lines
 )]
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
@@ -36,6 +36,7 @@ use ffx_oracle::{Conv, Oracle, Pages};
 #[path = "h2_render_b/cases.rs"]
 mod cases;
 
+use ffx_prender::array::bridge as a;
 use ffx_prender::descriptor::{Init, bridge as d};
 use ffx_prender::misc::bridge as x;
 
@@ -145,9 +146,11 @@ pub struct Env {
     pub pool: u32,
     log: u32,
     /// Stub cells by callee (or pointer-handler) tag.
-    cells: HashMap<u32, u32>,
+    cells: BTreeMap<u32, u32>,
     /// Handler stubs for pointers, by words popped: (code, cell).
-    handlers: [(u32, u32); 4],
+    handlers: [(u32, u32); 8],
+    /// A cdecl handler (no `ecx` logged, two words, pops none): (code, cell).
+    handler_c: (u32, u32),
     stubbed: Vec<(u32, Vec<u8>)>,
 }
 
@@ -160,15 +163,17 @@ impl Env {
             b,
             pool: 0,
             log: 0,
-            cells: HashMap::new(),
-            handlers: [(0, 0); 4],
+            cells: BTreeMap::new(),
+            handlers: [(0, 0); 8],
+            handler_c: (0, 0),
             stubbed: Vec::new(),
         };
         e.pool = e.zeros(POOL as usize);
         e.log = e.zeros(LOG as usize * 4);
-        for pops in 0..4 {
+        for pops in 0..8 {
             e.handlers[pops as usize] = e.stub_code(0xf00d_0000 + pops, pops, pops, true);
         }
+        e.handler_c = e.stub_code(0xf00d_00c0, 2, 0, false);
         e
     }
 
@@ -294,6 +299,20 @@ impl Env {
         code
     }
 
+    /// The cdecl handler, its return value `ret`.
+    pub fn handler_c(&mut self, ret: u32) -> u32 {
+        let (code, cell) = self.handler_c;
+        self.w32(cell, ret);
+        code
+    }
+
+    /// A NUL-terminated string at `at`.
+    pub fn string(&mut self, at: u32, s: &[u8]) {
+        let mut b = s.to_vec();
+        b.push(0);
+        self.write(at, &b);
+    }
+
     /// A random word for a stub's or handler's result.
     pub fn ret_word(&self, rng: &mut Rng) -> u32 {
         match rng.below(4) {
@@ -347,6 +366,7 @@ impl Env {
             'c' => rng.below(9),
             'b' => rng.below(4),
             'i' => rng.below(8),
+            'w' => rng.below(0x40),
             _ => match rng.below(4) {
                 0 => 0,
                 1 => rng.below(0x100),
@@ -392,7 +412,8 @@ pub fn prep_member(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
 pub fn prep_member_element(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
     prep_member(e, rng, a);
     let m = a[0];
-    let class = e.ptr(rng);
+    // past the pointers' part, so that no field of the member overlaps it
+    let class = e.pool + POOL_PTRS + 0x1800;
     let base = rng.next();
     e.w32(m + 0xc, class);
     e.w32(class + 0x88, base);
@@ -435,6 +456,192 @@ pub fn prep_scale(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
         e.w32(a[0] + 4 * i, f);
     }
     a[2] = nanish(rng);
+}
+
+/// A count word of a few elements, owned or borrowed, and storage.
+pub fn prep_small_count(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let n = if rng.chance(8) {
+        0x100 + rng.below(3)
+    } else {
+        rng.below(5)
+    };
+    let n = n | if rng.chance(3) { 0x8000_0000 } else { 0 };
+    let data = if rng.chance(5) { 0 } else { e.ptr(rng) };
+    e.w32(a[0], n);
+    e.w32(a[0] + 4, data);
+}
+
+/// `setStorage`: the old storage sometimes the new one, counts of both
+/// signs.
+pub fn prep_storage(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    prep_small_count(e, rng, a);
+    if rng.chance(4) {
+        a[1] = e.r32(a[0] + 4);
+    }
+    a[2] = rng.below(6) | if rng.chance(3) { 0x8000_0000 } else { 0 };
+}
+
+/// The bounded table at `this + 0x18` and its flag.
+pub fn prep_bound_element(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let n = rng.below(10) | if rng.chance(4) { 0x8000_0000 } else { 0 };
+    e.w32(a[0] + 0x18, n);
+    let data = e.ptr(rng);
+    e.w32(a[0] + 0x1c, data);
+    let flag = rng.below(4);
+    e.write(a[0] + 0x34, &[flag as u8]);
+}
+
+/// Names for the pass types: short strings, some shared.
+const NAMES: [&[u8]; 5] = [b"", b"a", b"ab", b"opaque", b"opaquE"];
+
+/// A list of named pass types; the name looked up is one of them (the
+/// same pointer or a copy), another string, or null.
+pub fn prep_pass_names(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let strings = e.pool + POOL_PTRS + 0x800;
+    for (i, s) in NAMES.iter().enumerate() {
+        e.string(strings + 0x20 * i as u32, s);
+    }
+    prep_pass_types(e, rng, a);
+    let g = e.rebase(0x00ca_54f8);
+    let mut t = e.r32(g);
+    while t != 0 {
+        let k = rng.below(NAMES.len() as u32);
+        e.w32(t, strings + 0x20 * k);
+        t = e.r32(t + 4);
+    }
+    let copy = strings + 0x200;
+    let k = rng.below(NAMES.len() as u32) as usize;
+    e.string(copy, NAMES[k]);
+    a[0] = match rng.below(4) {
+        0 => 0,
+        1 => copy,
+        _ => strings + 0x20 * rng.below(NAMES.len() as u32),
+    };
+}
+
+/// [`prep_pass_names`] with the compare import replaced by a handler
+/// that says equal (0) or not.
+pub fn prep_pass_names_import(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    prep_pass_names(e, rng, a);
+    let r = u32::from(!rng.chance(3));
+    let f = e.handler_c(r);
+    let slot = e.rebase(0x00b0_c398);
+    e.w32(slot, f);
+}
+
+/// The name word at `this` (tagged or not) and the name compared.
+pub fn prep_name_is(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let strings = e.pool + POOL_PTRS + 0x800;
+    for (i, s) in NAMES.iter().enumerate() {
+        e.string(strings + 0x20 * i as u32, s);
+    }
+    let mine = if rng.chance(6) {
+        0
+    } else {
+        strings + 0x20 * rng.below(5)
+    };
+    e.w32(a[0], mine | rng.below(2));
+    let copy = strings + 0x200;
+    let k = rng.below(5) as usize;
+    e.string(copy, NAMES[k]);
+    a[1] = match rng.below(4) {
+        0 => 0,
+        1 => mine,
+        2 => copy,
+        _ => strings + 0x20 * rng.below(5),
+    };
+}
+
+/// The parameter's offset and size against the buffer's size word.
+pub fn prep_set_value(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let off = rng.below(0x40) as u16;
+    let size = (rng.below(0x40) as u16) | ((rng.below(8) as u16) << 13);
+    e.write(a[1] + 8, &off.to_le_bytes());
+    e.write(a[1] + 0xa, &size.to_le_bytes());
+    let fit = u32::from(off) + u32::from(size & 0x1fff);
+    let words = if rng.chance(3) { fit } else { rng.below(0x90) };
+    e.w32(a[0], words);
+}
+
+/// The two registries' lookups (`0x0043cbb0`, run as they are): each
+/// descriptor's cached type (`+0x70`), or none (bit 31 of `+0x90` and no
+/// default buffer at `+0x64`: the lookup returns the null `+0x70`).
+pub fn prep_two_types(e: &mut Env, rng: &mut Rng, _: &mut [u32]) {
+    for r in [0x00c9_2090, 0x00ca_7228] {
+        let d = e.rebase(r);
+        if rng.chance(3) {
+            e.w32(d + 0x70, 0);
+            e.w32(d + 0x90, 0x8000_0000);
+            e.w32(d + 0x64, 0);
+        } else {
+            let p = e.ptr(rng);
+            e.w32(d + 0x70, p);
+        }
+    }
+}
+
+/// Context switches: a few objects (or nulls) whose virtual method 2
+/// pops seven words and returns 0 or not.
+pub fn prep_context_switches(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let n = rng.below(5);
+    e.w32(a[0] + 0x24, n | if rng.chance(4) { 0x8000_0000 } else { 0 });
+    let list = e.ptr(rng);
+    e.w32(a[0] + 0x28, list);
+    let r = if rng.chance(2) { 0 } else { e.ret_word(rng) };
+    let f = e.handler(7, r);
+    for i in 0..n {
+        let obj = if rng.chance(4) { 0 } else { e.ptr(rng) };
+        e.w32(list + 4 * i, obj);
+        if obj != 0 {
+            let vt = e.ptr(rng);
+            e.w32(obj, vt);
+            e.w32(vt + 8, f);
+        }
+    }
+    e.w32(list + 4 * n, 0);
+}
+
+/// A binary tree of a few nodes (keys 0..16) under the header `tree`,
+/// and a key that is in it or not.
+pub fn prep_tree(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let tree = e.pool + POOL_PTRS + 0x1000;
+    a[0] = tree;
+    let n = rng.below(6);
+    let nodes: Vec<u32> = (0..n).map(|i| tree + 0x20 * (i + 1)).collect();
+    e.w32(tree + 0xc, tree);
+    let mut keys = Vec::new();
+    for &node in &nodes {
+        let k = loop {
+            let k = rng.below(16);
+            if !keys.contains(&k) {
+                break k;
+            }
+        };
+        keys.push(k);
+        e.w32(node, tree);
+        e.w32(node + 4, tree);
+        e.w32(node + 0xc, k);
+        // insert under the root
+        let root = e.r32(tree + 0xc);
+        if root == tree {
+            e.w32(tree + 0xc, node);
+            continue;
+        }
+        let mut cur = root;
+        loop {
+            let v = e.r32(cur + 0xc);
+            let side = if v > k { 0 } else { 4 };
+            let next = e.r32(cur + side);
+            if next == tree {
+                e.w32(cur + side, node);
+                break;
+            }
+            cur = next;
+        }
+    }
+    let key = e.ptr(rng);
+    e.w32(key, rng.below(17));
+    a[1] = key;
 }
 
 /// The element getter's result points into the pool; the count word is

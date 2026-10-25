@@ -325,6 +325,236 @@ pub mod bridge {
         0
     }
 
+    /// `strcmp(a, b) == 0` as the originals inline it (bytes up to the
+    /// first difference or the terminator).
+    fn same_string(m: &mut impl Host, a: u32, b: u32) -> bool {
+        let mut i = 0u32;
+        loop {
+            let x: u8 = m.read(a.wrapping_add(i));
+            if x != m.read::<u8>(b.wrapping_add(i)) {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// `0x004dd860(name)`: the scene render pass type of that name (the
+    /// list at `0x00ca54f8`, its name at `+0`), or 0; 0 for a null name.
+    pub fn find_pass_type(m: &mut impl Host, name: u32) -> u32 {
+        if name == 0 {
+            return 0;
+        }
+        let mut t: u32 = m.read(m.rebase(RENDER_PASS_TYPES));
+        while t != 0 {
+            let n: u32 = m.read(t);
+            if same_string(m, n, name) {
+                return t;
+            }
+            t = m.read(t + 4);
+        }
+        0
+    }
+
+    /// `0x004dd8c0(name)`: [`find_pass_type`] with the C runtime's compare
+    /// through its import slot `cmp` (cdecl, 0 when equal).
+    pub fn find_pass_type_by(h: &mut impl Host, name: u32, cmp: u32) -> u32 {
+        if name == 0 {
+            return 0;
+        }
+        let mut t: u32 = h.read(h.rebase(RENDER_PASS_TYPES));
+        if t == 0 {
+            return 0;
+        }
+        let f: u32 = h.read(h.rebase(cmp));
+        while t != 0 {
+            let n: u32 = h.read(t);
+            if h.call(f, Conv::Cdecl, &[n, name]) == 0 {
+                return t;
+            }
+            t = h.read(t + 4);
+        }
+        0
+    }
+
+    /// `PSceneRenderPassType`'s constructors `(this, name, flag)`: `this =
+    /// (name, 0, flag, -1)`; a named type not yet listed (`find(name)`,
+    /// cdecl) goes to the head of the list at `0x00ca54f8`; returns `this`.
+    pub fn pass_type_init(h: &mut impl Host, this: u32, name: u32, flag: u32, find: u32) -> u32 {
+        h.write(this, name);
+        h.write(this + 4, 0u32);
+        h.write(this + 8, flag as u8);
+        h.write(this + 0xc, u32::MAX);
+        let name: u32 = h.read(this);
+        if name != 0 {
+            let f = h.rebase(find);
+            if h.call(f, Conv::Cdecl, &[name]) == 0 {
+                let g = h.rebase(RENDER_PASS_TYPES);
+                let head: u32 = h.read(g);
+                h.write(this + 4, head);
+                h.write(g, this);
+            }
+        }
+        this
+    }
+
+    /// `0x004ea7a0(this, name)`: whether the name at `this` (its pointer
+    /// less the tag bit 0) is `name`: the same pointer, or both non-null
+    /// and equal strings.
+    pub fn name_is(m: &mut impl Host, this: u32, name: u32) -> u8 {
+        let w: u32 = m.read(this);
+        let s = w.wrapping_sub(w & 1);
+        if s == name {
+            return 1;
+        }
+        if s == 0 || name == 0 {
+            return 0;
+        }
+        u8::from(same_string(m, s, name))
+    }
+
+    /// `PMeshInstanceBounds::setMinAndMax(bounds, min, max)`: `+0 = min`,
+    /// `+0x10 = max - min` (three floats each, the differences rounded to
+    /// `f32` first); returns `max` (left in `eax`).
+    pub fn set_min_and_max(m: &mut impl Host, this: u32, min: u32, max: u32) -> u32 {
+        let mut size = [0u32; 3];
+        for (i, s) in size.iter_mut().enumerate() {
+            let i = 4 * i as u32;
+            let hi = x87::load(m.read(max + i));
+            let lo = x87::load(m.read(min + i));
+            *s = x87::store(x87::sub(hi, lo));
+        }
+        for i in 0..3 {
+            copy_float(m, this + 4 * i, min + 4 * i);
+        }
+        for (i, &s) in size.iter().enumerate() {
+            m.write(this + 0x10 + 4 * i as u32, x87::store(x87::load(s)));
+        }
+        max
+    }
+
+    /// `0x00583b80(this, a)`: `+0 = a`, then `words` words cleared;
+    /// returns `this`.
+    pub fn first_then_zero(m: &mut impl Host, this: u32, a: u32, words: u32) -> u32 {
+        m.write(this, a);
+        for i in 1..=words {
+            m.write(this + 4 * i, 0u32);
+        }
+        this
+    }
+
+    /// The initial values of a constructor; returns `this`.
+    pub fn init_fields(m: &mut impl Host, this: u32, fields: &[crate::descriptor::Init]) -> u32 {
+        crate::descriptor::bridge::construct(m, this, fields);
+        this
+    }
+
+    /// A constructor that runs `base(this; a)` (thiscall), then zeroes
+    /// the words at `zero`; returns `this`.
+    pub fn ctor_arg_then_zero(
+        h: &mut impl Host,
+        this: u32,
+        a: u32,
+        base: u32,
+        zero: &[u32],
+    ) -> u32 {
+        let f = h.rebase(base);
+        h.call(f, Conv::Thiscall(this), &[a]);
+        for &off in zero {
+            h.write(this + off, 0u32);
+        }
+        this
+    }
+
+    /// `PParameterCaptureBuffer::setValue(buffer, desc, src)`: 1 for a
+    /// null `src`; 3 unless the parameter (offset `desc +8`, size `desc
+    /// +0xa` low 13 bits) lies at offset 4 or more and fits the buffer's
+    /// size word; else `memcpy(buffer + offset, src, size)` (cdecl) and 0.
+    pub fn set_value(h: &mut impl Host, buffer: u32, desc: u32, src: u32, memcpy: u32) -> u32 {
+        if src == 0 {
+            return 1;
+        }
+        let off = u32::from(h.read::<u16>(desc + 8));
+        let size = u32::from(h.read::<u16>(desc + 0xa) & 0x1fff);
+        if off + size > h.read::<u32>(buffer) || off < 4 {
+            return 3;
+        }
+        let f = h.rebase(memcpy);
+        h.call(f, Conv::Cdecl, &[buffer.wrapping_add(off), src, size]);
+        0
+    }
+
+    /// `PEffect::buildNodeContextKey(effect, a..f)`: each context switch
+    /// (`effect +0x28`, `+0x24` of them) that is set gets virtual method 2
+    /// `(effect, a..f)`; the first non-zero result is returned, else 0.
+    pub fn build_node_context_key(h: &mut impl Host, effect: u32, args: [u32; 6]) -> u32 {
+        let mut i = 0u32;
+        while i < h.read::<u32>(effect + 0x24) & 0x7fff_ffff {
+            let list: u32 = h.read(effect + 0x28);
+            let obj: u32 = h.read(list.wrapping_add(4 * i));
+            if obj != 0 {
+                let mut a = [effect; 7];
+                a[1..].copy_from_slice(&args);
+                let r = h.call_virtual(obj, 2, &a);
+                if r != 0 {
+                    return r;
+                }
+            }
+            i += 1;
+        }
+        0
+    }
+
+    /// `0x00581670(tree, key)`: the node of the binary tree at `tree`
+    /// (the root at `+0xc`, `tree` itself the end) whose key (`+0xc`) is
+    /// `*key`: left (`+0`) for smaller keys, right (`+4`) for larger; 0
+    /// when absent.
+    pub fn tree_find(m: &mut impl Host, tree: u32, key: u32) -> u32 {
+        let mut node: u32 = m.read(tree + 0xc);
+        if node == tree {
+            return 0;
+        }
+        let k: u32 = m.read(key);
+        loop {
+            let v: u32 = m.read(node + 0xc);
+            if v == k {
+                return node;
+            }
+            node = m.read(node + if v > k { 0 } else { 4 });
+            if node == tree {
+                return 0;
+            }
+        }
+    }
+
+    /// `0x0058a9a0(m)`: the jump table at `0x0058a9ec`.
+    #[must_use]
+    pub fn map_mode8(mode: u32) -> u32 {
+        match mode {
+            0 => 1,
+            1 => 2,
+            2 => 4,
+            3 => 3,
+            4 => 5,
+            5 => 6,
+            6 => 7,
+            _ => 8,
+        }
+    }
+
+    /// `0x0055bc40(format)`: the format's element size (the jump table at
+    /// `0x0055bc9c`), 0 past format `0x32`.
+    #[must_use]
+    pub fn format_size(format: u32) -> u32 {
+        const SIZES: [u8; 51] = [
+            4, 8, 12, 16, 2, 4, 6, 8, 4, 8, 12, 16, 2, 4, 6, 8, 1, 2, 3, 4, 2, 4, 6, 8, 1, 2, 3, 4,
+            4, 8, 12, 16, 2, 4, 6, 8, 1, 2, 3, 4, 2, 4, 6, 8, 1, 2, 3, 4, 0x30, 0x40, 4,
+        ];
+        SIZES.get(format as usize).map_or(0, |&s| u32::from(s))
+    }
+
     /// A thiscall `f(this)` that returns `this` (`0x004fee70`).
     pub fn call_return_this(h: &mut impl Host, this: u32, f: u32) -> u32 {
         let f = h.rebase(f);
