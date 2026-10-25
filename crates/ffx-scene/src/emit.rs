@@ -196,6 +196,7 @@ fn texture_hash(subresources: &[(u32, Vec<u8>)]) -> u64 {
 /// One built draw as a captured one. External objects (scene targets,
 /// run-time textures, the dynamic ring's vertices) are the host's: they
 /// take `host`'s (the captured draw in that place) in the same slot.
+#[allow(clippy::too_many_lines)] // one field per captured draw field
 fn draw(
     d: &crate::build::MapDraw,
     r: &crate::build::Resources,
@@ -203,7 +204,7 @@ fn draw(
     host: Option<&Draw>,
 ) -> Draw {
     let s = &d.state;
-    let (host_vs, host_ps, host_rtv, host_dsv, host_vertex) = match host {
+    let (vs_host, ps_host, rtv_host, dsv_host, vertex_host) = match host {
         Some(h) => (
             &h.vs_srv[..],
             &h.ps_srv[..],
@@ -284,7 +285,7 @@ fn draw(
             .filter_map(|(i, v)| {
                 v.map(|v| {
                     if r.external_buffers.contains_key(&v.buffer.0) {
-                        host_vertex
+                        vertex_host
                             .iter()
                             .find(|x| x.0 == i)
                             .copied()
@@ -300,8 +301,8 @@ fn draw(
         }),
         vs_cb: stage_cbs(Stage::Vertex),
         ps_cb: stage_cbs(Stage::Pixel),
-        vs_srv: views(&s.vs.srvs, host_vs),
-        ps_srv: views(&s.ps.srvs, host_ps),
+        vs_srv: views(&s.vs.srvs, vs_host),
+        ps_srv: views(&s.ps.srvs, ps_host),
         vs_samplers: samplers(&s.vs.samplers),
         ps_samplers: samplers(&s.ps.samplers),
         blend: s.blend.map_or(0, |Blend(x)| at(&ids.blends, x)),
@@ -312,10 +313,10 @@ fn draw(
         raster: s.raster.map_or(0, |Raster(x)| at(&ids.rasters, x)),
         viewport: s.viewport,
         scissor: s.scissor,
-        rtv: views(&s.targets, host_rtv),
+        rtv: views(&s.targets, rtv_host),
         dsv: s.depth_target.map_or(0, |v| {
             if external_view(v) {
-                host_dsv
+                dsv_host
             } else {
                 at(&ids.views, v.0)
             }
