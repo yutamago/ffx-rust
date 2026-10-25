@@ -245,6 +245,12 @@ VOID_OK = {
     # 0x00703910 (call eax at 0x0070394a) passes eax back to
     # ThreadLoop_00703a20 (0x00703a3e), which never reads it (2026-10-24)
     0x00833530: "job callback: ThreadLoop_00703a20 drops the job runner's eax",
+    # FFEscMenu_playMenuSound: FFEscMenu_playSound stores it as a method
+    # pointer in IggyMenuHandlers' records; the invoker
+    # FFEscMenu_callMember_0068dfa0 hands its eax to the dispatcher
+    # IggyMenuHandlers_flush_00a28ff0 (call eax at 0x00a29011), which drops
+    # it (add esp / mov byte / loop) (2026-10-25, m4 h4 r2)
+    0x0068f9b0: "IggyMenuHandlers record invoker: the dispatcher 0x00a28ff0 drops its eax",
 }
 
 # g_MagicImports (ffx.sym): the function table MagicFile_Start hands to

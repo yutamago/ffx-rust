@@ -559,3 +559,81 @@ pub fn sfx_event_set_pan(h: &mut impl Host, event: u32, v: u32) -> u32 {
     };
     h.call_sym(APPLY_PAN, Conv::Thiscall(event), &[pan.to_bits()])
 }
+
+/// `user_free_thunk(p)` is [`USER_FREE`]; the array's storage size.
+/// `SfxIdArray_reserve_0070d3a0(this; n)` (thiscall): without storage
+/// (`+8`), `user_malloc(4n)` and the capacity (`+4`); with it, a new
+/// block for a positive `n` (signed) with the `count` (`+0`) words copied
+/// (`memcpy`, when the allocation worked), the old one freed, then the
+/// capacity and the block (0 for `n <= 0`). Returns the allocation's
+/// `eax` on the first path, `user_free_thunk`'s on the second.
+pub fn sfx_id_array_reserve(h: &mut impl Host, this: u32, n: u32) -> u32 {
+    if h.read::<u32>(this + 8) == 0 {
+        let p = h.call_sym(USER_MALLOC, Conv::Cdecl, &[n.wrapping_mul(4)]);
+        h.write(this + 4, n);
+        h.write(this + 8, p);
+        return p;
+    }
+    let mut p = 0;
+    if n.cast_signed() > 0 {
+        p = h.call_sym(USER_MALLOC, Conv::Cdecl, &[n.wrapping_mul(4)]);
+        if p != 0 {
+            let count = h.read::<u32>(this).wrapping_shl(2);
+            let old = h.read::<u32>(this + 8);
+            h.call_sym(crate::effect::MEMCPY, Conv::Cdecl, &[p, old, count]);
+        }
+    }
+    let old = h.read::<u32>(this + 8);
+    let r = h.call_sym(USER_FREE, Conv::Cdecl, &[old]);
+    h.write(this + 4, n);
+    h.write(this + 8, p);
+    r
+}
+
+/// `FmodMusic_FmodMusic(this)` (0x00708630, thiscall): `+0x30` = 1.0,
+/// eleven words cleared, a `0x2aa8`-byte table (`user_malloc`, kept at
+/// `+0x10`) cleared with `memset`; returns `this`.
+pub fn fmod_music_ctor(h: &mut impl Host, this: u32) -> u32 {
+    h.write(this + 0x30, 1.0f32.to_bits());
+    for off in [0, 4, 8, 0xc, 0x14, 0x18, 0x1c, 0x20, 0x24, 0x28, 0x2c] {
+        h.write(this + off, 0u32);
+    }
+    let table = h.call_sym(USER_MALLOC, Conv::Cdecl, &[0x2aa8]);
+    h.write(this + 0x10, table);
+    h.call_sym(crate::effect::MEMSET, Conv::Cdecl, &[table, 0, 0x2aa8]);
+    this
+}
+
+/// `FmodVoice_clear(voice)` (0x0070a590, thiscall): with an event (`+0x14`)
+/// and its group (`+0x10`), the group's virtual slot 2 `(group, event,
+/// 1)` (stdcall, the release) checked with `ERRCHECK(r, file, 0x297)`
+/// and retried while it fails, at most six times; then the voice's state
+/// words cleared. Returns 0.
+pub fn fmod_voice_clear(h: &mut impl Host, voice: u32) -> u32 {
+    if h.read::<u32>(voice + 0x14) == 0 || h.read::<u32>(voice + 0x10) == 0 {
+        return 0;
+    }
+    let file = h.rebase(FMOD_VOICE_FILE);
+    let mut tries = 0u32;
+    loop {
+        let group = h.read::<u32>(voice + 0x10);
+        let event = h.read::<u32>(voice + 0x14);
+        let vtable = h.read::<u32>(group);
+        let f = h.read::<u32>(vtable + 8);
+        let r = h.call(f, Conv::Stdcall, &[group, event, 1]);
+        h.call_sym(ERRCHECK, Conv::Cdecl, &[r, file, 0x297]);
+        tries += 1;
+        if r == 0 || tries > 5 {
+            break;
+        }
+    }
+    for off in [
+        0x14, 0x54, 0x40, 0x44, 0x60, 0x58, 0x48, 0x10, 0x6c, 0x70, 0x74,
+    ] {
+        h.write(voice + off, 0u32);
+    }
+    0
+}
+
+/// `FmodVoice.cpp`'s path for `ERRCHECK` (`.rdata`).
+pub const FMOD_VOICE_FILE: u32 = 0x00b4_f8c0;

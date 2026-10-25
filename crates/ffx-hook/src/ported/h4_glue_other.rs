@@ -10,9 +10,11 @@
 //! Floats are passed as their bits (`u32`): the originals only copy them
 //! through `fld`/`fstp`, which the bridges model.
 
-use ffx_glue_other::{copies as c, effect as e, menu as mn, misc as m, movie as mv, sound as s};
+use ffx_glue_other::{
+    copies as c, effect as e, frames as fr, menu as mn, misc as m, movie as mv, sound as s,
+};
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 
 ported! {
     /// `iSoundInit_0067a500()`.
@@ -811,5 +813,237 @@ ported! {
     /// `op_gs_store(rect, dst)`.
     op_gs_store @ 0x007e_4540 => extern "C" fn gs_store(rect: u32, dst: u32) -> u32 {
         m::gs_store(&mut mem(), rect, dst)
+    }
+    // Batch 7: the sfx id array's reserve, FmodMusic's constructor, the
+    // movie names, the button remap's constructor, the Iggy heap's block
+    // move, the menu's VRAM block transfers.
+    /// `SfxIdArray_reserve_0070d3a0(this; n)`.
+    SfxIdArray_reserve_0070d3a0 @ 0x0070_d3a0 => extern "thiscall" fn sfx_id_array_reserve(this: u32, n: u32) -> u32 {
+        s::sfx_id_array_reserve(&mut mem(), this, n)
+    }
+    /// `FmodMusic_FmodMusic(this)` -> `this`.
+    FmodMusic_FmodMusic @ 0x0070_8630 => extern "thiscall" fn fmod_music_ctor(this: u32) -> u32 {
+        s::fmod_music_ctor(&mut mem(), this)
+    }
+    /// `PhyFMVPlayerManager_getVideoName(this; id, out)` (`al`).
+    PhyFMVPlayerManager_getVideoName @ 0x006d_93e0 => extern "thiscall" fn fmv_video_name(this: u32, id: u32, out: u32) -> u8 {
+        mv::fmv_video_name(&mut mem(), this, id, out)
+    }
+    /// `RemapButtonIcon_RemapButtonIcon(this)` -> `this`.
+    RemapButtonIcon_RemapButtonIcon @ 0x006e_6330 => extern "thiscall" fn remap_button_icon_ctor(this: u32) -> u32 {
+        mn::remap_button_icon_ctor(&mut mem(), this)
+    }
+    /// `IggyHeap_moveBlock_00a39a90(block, size, owner, kind)`.
+    IggyHeap_moveBlock_00a39a90 @ 0x00a3_9a90 => extern "C" fn iggy_heap_move_block(block: u32, size: u32, owner: u32, kind: u32) -> u32 {
+        mn::iggy_heap_move_block(&mut mem(), block, size, owner, kind)
+    }
+    /// `ClusterSlots_take_0069aba0(this)`.
+    ClusterSlots_take_0069aba0 @ 0x0069_aba0 => extern "thiscall" fn cluster_slots_take(this: u32) -> u32 {
+        mn::cluster_slots_take(&mut mem(), this)
+    }
+    /// `BlurEffectEx_CreateInstance()`.
+    BlurEffectEx_CreateInstance @ 0x006c_49a0 => extern "C" fn blur_ex_create_instance() {
+        e::blur_ex_create_instance(&mut mem());
+    }
+    /// `ChrResourceCache_DelayReleaseStep_0069c010(timer; dt)`.
+    ChrResourceCache_DelayReleaseStep_0069c010 @ 0x0069_c010 => extern "thiscall" fn delay_release_step(timer: u32, dt: u32) {
+        e::delay_release_step(&mut mem(), timer, dt);
+    }
+    /// `MenuMain_LoadVramBlock(buffer, address, size)`.
+    MenuMain_LoadVramBlock @ 0x008a_a710 => extern "C" fn menu_load_vram_block(buffer: u32, address: u32, size: u32) -> u32 {
+        m::menu_vram_block(&mut mem(), true, false, buffer, address, size)
+    }
+    /// `MenuMain_StoreVramBlock(buffer, address, size)`.
+    MenuMain_StoreVramBlock @ 0x008a_ac10 => extern "C" fn menu_store_vram_block(buffer: u32, address: u32, size: u32) -> u32 {
+        m::menu_vram_block(&mut mem(), false, false, buffer, address, size)
+    }
+    /// `MenuMain_StoreFrameBlock(buffer, address, size)`.
+    MenuMain_StoreFrameBlock @ 0x008a_acf0 => extern "C" fn menu_store_frame_block(buffer: u32, address: u32, size: u32) -> u32 {
+        m::menu_vram_block(&mut mem(), false, true, buffer, address, size)
+    }
+    // Batch 8: FMOD voice clear, a post-effect parameter block, the third
+    // save pop-up, the escape menu's resume, text scrolling, the MFIFO
+    // reset.
+    /// `FmodVoice_clear(voice)` -> 0.
+    FmodVoice_clear @ 0x0070_a590 => extern "thiscall" fn fmod_voice_clear(voice: u32) -> u32 {
+        s::fmod_voice_clear(&mut mem(), voice)
+    }
+    /// `PostEffectParams_ctor_00702ff0(this)` -> `this`.
+    PostEffectParams_ctor_00702ff0 @ 0x0070_2ff0 => extern "thiscall" fn post_effect_params_ctor(this: u32) -> u32 {
+        e::post_effect_params_ctor(&mut mem(), this)
+    }
+    /// `SaveDataMachine_showPopUp4_00702ef0(id)`.
+    SaveDataMachine_showPopUp4_00702ef0 @ 0x0070_2ef0 => extern "C" fn save_show_popup4(id: u32) -> u32 {
+        mn::save_show_popup4(&mut mem(), id)
+    }
+    /// `FFEscMenu_resume(menu)`.
+    FFEscMenu_resume @ 0x0068_fe60 => extern "C" fn esc_resume(menu: u32) {
+        mn::esc_resume(&mut mem(), menu);
+    }
+    /// `TextUtil_scrollToVisible(this; n)`.
+    TextUtil_scrollToVisible @ 0x006f_6860 => extern "thiscall" fn text_scroll(this: u32, n: u32) {
+        mn::text_scroll(&mut mem(), this, n);
+    }
+    /// `Sg_MFIFOReset_008432e0()`.
+    Sg_MFIFOReset_008432e0 @ 0x0084_32e0 => extern "C" fn mfifo_reset() -> u32 {
+        m::mfifo_reset(&mut mem())
+    }
+    /// `FFEscMenu_playMenuSound(this; id)`: void, the pointer callers drop
+    /// `eax` (check-clobber `VOID_OK`, dispatcher 0x00a28ff0).
+    FFEscMenu_playMenuSound @ 0x0068_f9b0 => extern "thiscall" fn esc_play_menu_sound(this: u32, id: u32) {
+        mn::esc_play_menu_sound(&mut mem(), this, id);
+    }
+    /// `IggyMenu_callFlashFunction_1(menu, name, 1 values by value)`: the values are
+    /// read from the caller's arguments.
+    IggyMenu_callFlashFunction_1 @ 0x0068_dd40 => extern "C" fn iggy_call_flash_1(_menu: u32, _name: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<4>::new();
+        fr::iggy_call_flash(&mut mem(), frame.at(), 1, args)
+    }
+    /// `IggyMenu_callFlashFunction_2_0068dd80(menu, name, 2 values by value)`: the values are
+    /// read from the caller's arguments.
+    IggyMenu_callFlashFunction_2_0068dd80 @ 0x0068_dd80 => extern "C" fn iggy_call_flash_2(_menu: u32, _name: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<8>::new();
+        fr::iggy_call_flash(&mut mem(), frame.at(), 2, args)
+    }
+    /// `IggyMenu_callFlashFunction_3_0068ddd0(menu, name, 3 values by value)`: the values are
+    /// read from the caller's arguments.
+    IggyMenu_callFlashFunction_3_0068ddd0 @ 0x0068_ddd0 => extern "C" fn iggy_call_flash_3(_menu: u32, _name: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<12>::new();
+        fr::iggy_call_flash(&mut mem(), frame.at(), 3, args)
+    }
+    /// `IggyMenu_callFlashFunction_4_0068de50(menu, name, 4 values by value)`: the values are
+    /// read from the caller's arguments.
+    IggyMenu_callFlashFunction_4_0068de50 @ 0x0068_de50 => extern "C" fn iggy_call_flash_4(_menu: u32, _name: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<16>::new();
+        fr::iggy_call_flash(&mut mem(), frame.at(), 4, args)
+    }
+    /// `IggyMenu_callFlashFunction_5_0068def0(menu, name, 5 values by value)`: the values are
+    /// read from the caller's arguments.
+    IggyMenu_callFlashFunction_5_0068def0 @ 0x0068_def0 => extern "C" fn iggy_call_flash_5(_menu: u32, _name: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<20>::new();
+        fr::iggy_call_flash(&mut mem(), frame.at(), 5, args)
+    }
+    /// `IggyMenu_getArrayS32_00a28b20(this; i)`.
+    IggyMenu_getArrayS32_00a28b20 @ 0x00a2_8b20 => extern "thiscall" fn iggy_array_s32(this: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::ARRAY_S32_FRAME / 4) as usize }>::new();
+        fr::iggy_array_s32(&mut mem(), frame.at(), this, i)
+    }
+    /// `FmodEventTree_getEvent_00710290(this; key)`.
+    FmodEventTree_getEvent_00710290 @ 0x0071_0290 => extern "thiscall" fn fmod_tree_get_event(this: u32, key: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::TREE_EVENT_FRAME / 4) as usize }>::new();
+        fr::fmod_tree_get_event(&mut mem(), frame.at(), this, key)
+    }
+    /// `Distortion_resetRenderTarget_006c24b0(this)`.
+    Distortion_resetRenderTarget_006c24b0 @ 0x006c_24b0 => extern "thiscall" fn distortion_reset_target(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::DISTORTION_FRAME / 4) as usize }>::new();
+        fr::distortion_reset_target(&mut mem(), frame.at(), this)
+    }
+    /// `PostProcessManager_findClusterData_00698a30(this; i)`.
+    PostProcessManager_findClusterData_00698a30 @ 0x0069_8a30 => extern "thiscall" fn post_find_cluster_data(this: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::CLUSTER_CURSOR_FRAME / 4) as usize }>::new();
+        fr::post_find_cluster_data(&mut mem(), frame.at(), this, i)
+    }
+    /// `ScreenFadeDelegations_registerDelegation(r, g, b, a, x, y)`.
+    ScreenFadeDelegations_registerDelegation @ 0x006a_e650 => extern "C" fn screen_fade_register(r: u32, g: u32, b: u32, a: u32, x: u32, y: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::FADE_RECORD_FRAME / 4) as usize }>::new();
+        fr::screen_fade_register(&mut mem(), frame.at(), [r, g, b, a], x, y)
+    }
+    /// `gdraw_MapBuffer_00a3cec0(resource)`.
+    gdraw_MapBuffer_00a3cec0 @ 0x00a3_cec0 => extern "C" fn gdraw_map_buffer(resource: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::MAPPED_FRAME / 4) as usize }>::new();
+        fr::gdraw_map_buffer(&mut mem(), frame.at(), resource)
+    }
+    /// `gdraw_clearBindings_00a3d280()`.
+    gdraw_clearBindings_00a3d280 @ 0x00a3_d280 => extern "C" fn gdraw_clear_bindings() -> u32 {
+        let mut frame = StackFrame::<{ (fr::CLEAR_BINDINGS_FRAME / 4) as usize }>::new();
+        fr::gdraw_clear_bindings(&mut mem(), frame.at())
+    }
+    /// `LocString_Load_0068e180(this; id)`.
+    LocString_Load_0068e180 @ 0x0068_e180 => extern "thiscall" fn loc_string_load(this: u32, id: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::LOC_STRING_FRAME / 4) as usize }>::new();
+        fr::loc_string_load(&mut mem(), frame.at(), this, id)
+    }
+    /// `getFullFilename(out, name)`.
+    getFullFilename @ 0x0070_7aa0 => extern "C" fn full_filename(out: u32, name: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::FULL_FILENAME_FRAME / 4) as usize }>::new();
+        fr::full_filename(&mut mem(), frame.at(), out, name)
+    }
+    /// `ClassLoadedCharacterTable_makeEntry_0069da20(out, name, value)`.
+    ClassLoadedCharacterTable_makeEntry_0069da20 @ 0x0069_da20 => extern "C" fn prototype_entry(out: u32, name: u32, value: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::PROTOTYPE_ENTRY_FRAME / 4) as usize }>::new();
+        fr::prototype_entry(&mut mem(), frame.at(), out, name, value)
+    }
+    /// `ERRCHECK(result, file, line)`: writes its own `result` slot
+    /// (`args`), as the original does.
+    ERRCHECK @ 0x0070_79d0 => extern "C" fn errcheck(_result: u32, _file: u32, _line: u32; args: u32) -> u32 {
+        let mut local = StackFrame::<1>::new();
+        fr::errcheck(&mut mem(), local.at(), args)
+    }
+    /// `printToOutput(prefix, fmt, ...)`: the varargs are the caller's.
+    printToOutput @ 0x0070_7b20 => extern "C" fn print_to_output(_prefix: u32, _fmt: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::PRINT_FRAME / 4) as usize }>::new();
+        fr::print_to_output(&mut mem(), frame.at(), args)
+    }
+    /// `SfxBank_getNumPlayingEvents(this)`.
+    SfxBank_getNumPlayingEvents @ 0x0070_fb20 => extern "thiscall" fn sfx_bank_playing_events(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::BANK_INFO_FRAME / 4) as usize }>::new();
+        fr::sfx_bank_playing_events(&mut mem(), frame.at(), this)
+    }
+    /// `FmodVoice_volumeDirect(this; volume, keep)`.
+    FmodVoice_volumeDirect @ 0x0070_b7f0 => extern "thiscall" fn voice_volume_direct(this: u32, volume: u32, keep: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        fr::voice_volume_direct(&mut mem(), frame.at(), this, volume, keep)
+    }
+    /// `FmodSfx_isPlaying(this; id)`.
+    FmodSfx_isPlaying @ 0x0070_ce90 => extern "thiscall" fn sfx_is_playing(this: u32, id: u32) -> u32 {
+        let mut frame = StackFrame::<4>::new();
+        fr::sfx_is_playing(&mut mem(), frame.at(), this, id)
+    }
+    /// `gdraw_setRenderTargetView_00a38300(view, a, b, c, d)`.
+    gdraw_setRenderTargetView_00a38300 @ 0x00a3_8300 => extern "C" fn gdraw_set_target(view: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::VIEW_DESC_FRAME / 4) as usize }>::new();
+        fr::gdraw_set_target(&mut mem(), frame.at(), view, [a, b, c, d])
+    }
+    /// `gdraw_mapResource_00a3c070(ctx, resource, discard)`.
+    gdraw_mapResource_00a3c070 @ 0x00a3_c070 => extern "C" fn gdraw_map_resource(ctx: u32, resource: u32, discard: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::MAPPED_FRAME / 4) as usize }>::new();
+        fr::gdraw_map_resource(&mut mem(), frame.at(), ctx, resource, discard)
+    }
+    /// `BlurEffect_initialize_006c38b0(this; a, b, c, d, e)`.
+    BlurEffect_initialize_006c38b0 @ 0x006c_38b0 => extern "thiscall" fn blur_initialize(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::BLUR_PATH_FRAME / 4) as usize }>::new();
+        fr::blur_initialize(&mut mem(), frame.at(), this, [a, b, c, d, e])
+    }
+    /// `FmodShout_setVolume(this; volume)`: void, both callers drop `eax`
+    /// (0x0070b308 calls on, 0x0070b46e zeroes it).
+    FmodShout_setVolume @ 0x0070_e400 => extern "thiscall" fn shout_set_volume(this: u32, volume: u32) {
+        let mut frame = StackFrame::<1>::new();
+        fr::shout_set_volume(&mut mem(), frame.at(), this, volume);
+    }
+    /// `gdraw_newPool_00a3bcd0(kind)`: overwrites its own argument, as the
+    /// original does.
+    gdraw_newPool_00a3bcd0 @ 0x00a3_bcd0 => extern "C" fn gdraw_new_pool(_kind: u32; args: u32) -> u32 {
+        fr::gdraw_new_pool(&mut mem(), args)
+    }
+    /// `Distortion_onShaderClusterLoaded_006c28b0(cluster, &distortion)`:
+    /// hands on the address of its own `cluster` argument.
+    Distortion_onShaderClusterLoaded_006c28b0 @ 0x006c_28b0 => extern "C" fn distortion_on_cluster_loaded(_cluster: u32, _holder: u32; args: u32) -> u32 {
+        fr::distortion_on_cluster_loaded(&mut mem(), args)
+    }
+    /// `LoadingScreen_initialize(this)`.
+    LoadingScreen_initialize @ 0x006e_4720 => extern "thiscall" fn loading_screen_initialize(this: u32) -> u32 {
+        m::loading_screen_initialize(&mut mem(), this)
+    }
+    /// `SaveDataMachine_setSaveLoadFocus_00702cd0(i)`.
+    SaveDataMachine_setSaveLoadFocus_00702cd0 @ 0x0070_2cd0 => extern "C" fn save_set_focus(i: u32) -> u32 {
+        m::save_set_focus(&mut mem(), i)
+    }
+    /// `ClusterSlots_give_0069ae20(this; p)`.
+    ClusterSlots_give_0069ae20 @ 0x0069_ae20 => extern "thiscall" fn cluster_slots_give(this: u32, p: u32) -> u32 {
+        m::cluster_slots_give(&mut mem(), this, p)
+    }
+    /// `IggyMenuManager_callback_00a260f0(a, b, c)`.
+    IggyMenuManager_callback_00a260f0 @ 0x00a2_60f0 => extern "stdcall" fn iggy_manager_callback(a: u32, b: u32, c: u32) -> u32 {
+        m::iggy_manager_handle_callback(&mut mem(), a, b, c)
     }
 }

@@ -1131,3 +1131,191 @@ pub fn string_move_ctor(h: &mut impl Host, this: u32, src: u32) -> u32 {
     h.write(this + 0x18, w);
     this
 }
+
+/// `RemapButtonIcon_initPs2MessageInputPcMap(this)`,
+/// `RemapButtonIcon_initPs2UIButtonPcMap(this)` (thiscall).
+pub const REMAP_INIT_MESSAGE: u32 = 0x006e_6730;
+/// See [`REMAP_INIT_MESSAGE`].
+pub const REMAP_INIT_UI: u32 = 0x006e_6890;
+
+/// `RemapButtonIcon_RemapButtonIcon(this)` (0x006e6330, thiscall): the
+/// two scales (`+0x160`, `+0x164`) 1.0, `+0x150` 0 and `+0x154..+0x15c`
+/// -1, both maps filled with -1 bytes (`memset(this, 0xff, 0xb0)` and
+/// `memset(this + 0xb0, 0xff, 0xa0)`), then their PC defaults; returns
+/// `this`.
+pub fn remap_button_icon_ctor(h: &mut impl Host, this: u32) -> u32 {
+    h.write(this + 0x160, 1.0f32.to_bits());
+    h.write(this + 0x164, 1.0f32.to_bits());
+    h.write(this + 0x150, 0u32);
+    for off in [0x154, 0x158, 0x15c] {
+        h.write(this + off, u32::MAX);
+    }
+    h.call_sym(crate::effect::MEMSET, Conv::Cdecl, &[this, u32::MAX, 0xb0]);
+    h.call_sym(
+        crate::effect::MEMSET,
+        Conv::Cdecl,
+        &[this + 0xb0, u32::MAX, 0xa0],
+    );
+    h.call_sym(REMAP_INIT_MESSAGE, Conv::Thiscall(this), &[]);
+    h.call_sym(REMAP_INIT_UI, Conv::Thiscall(this), &[]);
+    this
+}
+
+/// `IggyHeap_moveBlock_00a39a90(block, size, owner, kind)` (cdecl, from
+/// `0x00a3a5f0` and `0x00a3b610`): the block's size (low 28 bits of
+/// `+0x30`) and owner (`+0x14`) set, the size taken from its heap's free
+/// count (`*[block + 0x18]`), the block moved to ring `kind` (`[block +
+/// 0x18] + 0x10 + 56 kind`) and its kind put in the top four bits;
+/// returns the new `+0x30`.
+pub fn iggy_heap_move_block(h: &mut impl Mem, block: u32, size: u32, owner: u32, kind: u32) -> u32 {
+    let word = h.read::<u32>(block + 0x30);
+    h.write(block + 0x30, word ^ ((word ^ size) & 0x0fff_ffff));
+    h.write(block + 0x14, owner);
+    let heap = h.read::<u32>(block + 0x18);
+    let free = h.read::<u32>(heap).wrapping_sub(size);
+    h.write(heap, free);
+    let heap = h.read::<u32>(block + 0x18);
+    let ring = heap.wrapping_add(0x10).wrapping_add(kind.wrapping_mul(56));
+    let prev = h.read::<u32>(block + 0x20);
+    let next = h.read::<u32>(block + 0x1c);
+    h.write(prev.wrapping_add(0x1c), next);
+    let next = h.read::<u32>(block + 0x1c);
+    let prev = h.read::<u32>(block + 0x20);
+    h.write(next.wrapping_add(0x20), prev);
+    h.write(block + 0x1c, ring);
+    let last = h.read::<u32>(ring.wrapping_add(0x20));
+    h.write(block + 0x20, last);
+    h.write(last.wrapping_add(0x1c), block);
+    let next = h.read::<u32>(block + 0x1c);
+    h.write(next.wrapping_add(0x20), block);
+    let word = (h.read::<u32>(block + 0x30) & 0x0fff_ffff) | kind.wrapping_shl(28);
+    h.write(block + 0x30, word);
+    word
+}
+
+/// `ClusterSlots_take_0069aba0`'s overflow message (`.rdata`).
+pub const SLOTS_FULL: u32 = 0x00b4_7cb0;
+
+/// `ClusterSlots_take_0069aba0(this)` (thiscall): the next free one of
+/// 0x400 24-byte slots (`+0x1c`; busy bytes at `+0x601c`, the hint at
+/// `+0x641c`): marks it, moves the hint past the busy ones, returns the
+/// slot; with the hint at the end, `fprintf(stderr, message)` and a fresh
+/// `operator_new(0x18)` instead.
+pub fn cluster_slots_take(h: &mut impl Host, this: u32) -> u32 {
+    let n = h.read::<u32>(this + 0x641c);
+    if n.cast_signed() >= 0x400 {
+        let message = h.rebase(SLOTS_FULL);
+        let iob = IOB_FUNC.get(h);
+        let files = h.call(iob, Conv::Cdecl, &[]);
+        let fprintf = FPRINTF.get(h);
+        h.call(fprintf, Conv::Cdecl, &[files.wrapping_add(0x40), message]);
+        return h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[0x18]);
+    }
+    h.write(this.wrapping_add(n).wrapping_add(0x601c), 1u8);
+    let slot = this.wrapping_add(n.wrapping_mul(24)).wrapping_add(0x1c);
+    let mut k = h.read::<u32>(this + 0x641c).wrapping_add(1);
+    while k.cast_signed() < 0x400 && h.read::<u8>(this.wrapping_add(k).wrapping_add(0x601c)) != 0 {
+        k = k.wrapping_add(1);
+    }
+    h.write(this + 0x641c, k);
+    slot
+}
+
+/// `iggyDataValueSetBool_00a28db0(value, b)` (cdecl).
+pub const DATA_VALUE_SET_BOOL: u32 = 0x00a2_8db0;
+/// The third save pop-up's buffers and names (`0x00702ef0`).
+pub const POPUP3_TEXTS: [(u32, u32); 3] = [
+    (0x00ce_b6a0, 0x00ce_b660),
+    (0x00ce_b8a0, 0x00ce_b670),
+    (0x00ce_baa0, 0x00ce_b680),
+];
+/// See [`POPUP3_TEXTS`].
+pub const POPUP3_BOOL: u32 = 0x00ce_b690;
+/// See [`POPUP3_TEXTS`].
+pub const POPUP3_NAME: u32 = 0x00b4_6cac;
+/// The import slot of `ShowCursor`.
+pub const SHOW_CURSOR: Global<u32> = Global::new(0x00b0_c688);
+/// `Settings_Save(settings)` (thiscall), `g_Settings`.
+pub const SETTINGS_SAVE: u32 = 0x0040_1d80;
+/// See [`SETTINGS_SAVE`].
+pub const SETTINGS: Global<u32> = Global::new(0x022f_b504);
+/// The save menu's open flag (`0x00ce7310`), its enable `0x007029e0`
+/// (cdecl on), and the escape menu's page refresh `0x006fca50`
+/// (thiscall; on).
+pub const SAVE_MENU_OPEN: Global<u32> = Global::new(0x00ce_7310);
+/// See [`SAVE_MENU_OPEN`].
+pub const SAVE_MENU_ENABLE: u32 = 0x0070_29e0;
+/// See [`SAVE_MENU_OPEN`].
+pub const ESC_PAGE_REFRESH: u32 = 0x006f_ca50;
+/// `PMatrix4_toWorldMatrix3x4(matrix; out)` (thiscall).
+pub const TO_WORLD_3X4: u32 = 0x0045_1190;
+
+/// `SaveDataMachine_showPopUp4_00702ef0(id)` (cdecl): the save texts `id`,
+/// 0x204 and 0x205 as three Iggy string values, a `false` value, then
+/// `IggyMenu_callIggyAS3External(save menu; 0, name, 4, values, 1)`'s
+/// `eax`.
+pub fn save_show_popup4(h: &mut impl Host, id: u32) -> u32 {
+    for (k, (text, value)) in POPUP3_TEXTS.into_iter().enumerate() {
+        let text = h.rebase(text);
+        let value = h.rebase(value);
+        let which = [id, 0x204, 0x205][k];
+        h.call_sym(SAVE_DATA_LOC, Conv::Cdecl, &[which, text]);
+        h.call_sym(DATA_VALUE_SET, Conv::Cdecl, &[value, text]);
+    }
+    let flag = h.rebase(POPUP3_BOOL);
+    h.call_sym(DATA_VALUE_SET_BOOL, Conv::Cdecl, &[flag, 0]);
+    let menu = crate::misc::SAVE_MENU.get(h);
+    let name = h.rebase(POPUP3_NAME);
+    let values = h.rebase(POPUP3_TEXTS[0].1);
+    h.call_sym(CALL_AS3, Conv::Thiscall(menu), &[0, name, 4, values, 1])
+}
+
+/// `FFEscMenu_resume(menu)` (0x0068fe60, cdecl): the menu disabled, the
+/// cursor shown once (`+0x130`, `ShowCursor(1)`), what the escape menu
+/// paused resumed (as `FFEscMenu_unpauseAudioVideo` on the dialog
+/// `0x00ccc870`), the settings saved, and with the save menu open, it
+/// enabled and the page refreshed (`0x006fca50(menu; 1)`). Callers read no
+/// result.
+pub fn esc_resume(h: &mut impl Host, menu: u32) {
+    h.call_sym(crate::misc::IGGY_SET_ENABLE, Conv::Thiscall(menu), &[0]);
+    if h.read::<u8>(menu + 0x130) != 1 {
+        h.write(menu + 0x130, 1u8);
+        let f = SHOW_CURSOR.get(h);
+        h.call(f, Conv::Stdcall, &[1]);
+    }
+    let dialog = ESC_DIALOG.get(h);
+    esc_unpause(h, dialog);
+    let settings = SETTINGS.get(h);
+    h.call_sym(SETTINGS_SAVE, Conv::Thiscall(settings), &[]);
+    if SAVE_MENU_OPEN.get(h) != 0 {
+        h.call_sym(SAVE_MENU_ENABLE, Conv::Cdecl, &[1]);
+        h.call_sym(ESC_PAGE_REFRESH, Conv::Thiscall(menu), &[1]);
+    }
+}
+
+/// `TextUtil_scrollToVisible(this; n)` (0x006f6860, thiscall): the
+/// position (`+0x50..+0x58`) moved by `n` (an integer, through `fild`)
+/// steps of the direction `+0x60..+0x68` (x87, each product and sum
+/// rounded to f32), then with a node (`+0x10`) its world matrix rebuilt
+/// (`PMatrix4_toWorldMatrix3x4(node + 0x128; this + 0x20)`). Callers read
+/// no result.
+pub fn text_scroll(h: &mut impl Host, this: u32, n: u32) {
+    let mut pos = [0f32; 3];
+    let mut dir = [0f32; 3];
+    for k in 0..3u32 {
+        let p = f32::from_bits(h.read::<u32>(this + 0x50 + 4 * k));
+        pos[k as usize] = ffx_bridge::x87::round_trip(p);
+        dir[k as usize] = f32::from_bits(h.read::<u32>(this + 0x60 + 4 * k));
+    }
+    #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+    let v = n.cast_signed() as f32;
+    let step = dir.map(|d| ffx_bridge::x87::Reg::load(d).mul_m32(v).store());
+    for k in 0..3 {
+        let p = ffx_bridge::x87::Reg::load(step[k]).add_m32(pos[k]).store();
+        h.write(this + 0x50 + 4 * k as u32, p.to_bits());
+    }
+    let node = h.read::<u32>(this + 0x10);
+    if node != 0 {
+        h.call_sym(TO_WORLD_3X4, Conv::Thiscall(node + 0x128), &[this + 0x20]);
+    }
+}

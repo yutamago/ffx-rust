@@ -645,3 +645,154 @@ pub fn gs_store(h: &mut impl Host, rect: u32, dst: u32) -> u32 {
     h.call_sym(FLUSH_CACHE, Conv::Cdecl, &[0]);
     r
 }
+
+/// `sceGsSetDefLoadImage(img, ...)`, `sceGsExecLoadImage(img, src)` (PS2
+/// stubs, cdecl).
+pub const GS_SET_DEF_LOAD_IMAGE: u32 = 0x0062_f820;
+/// See [`GS_SET_DEF_LOAD_IMAGE`].
+pub const GS_EXEC_LOAD_IMAGE: u32 = 0x0062_f7a0;
+/// The menu's load and store image descriptors (`0x01841cd0`,
+/// `0x01841c70`).
+pub const MENU_LOAD_IMAGE: u32 = 0x0184_1cd0;
+/// See [`MENU_LOAD_IMAGE`].
+pub const MENU_STORE_IMAGE: u32 = 0x0184_1c70;
+
+/// The menu's VRAM block transfers (`MenuMain_LoadVramBlock` 0x008aa710,
+/// `MenuMain_StoreVramBlock` 0x008aac10, `MenuMain_StoreFrameBlock`
+/// 0x008aacf0; cdecl `(buffer, address, size)`): the image set to
+/// `(address / 64, 8, frame, 0, 0, 0x200, size / per / 512)` (C's
+/// truncating divisions; `per` 4 for blocks, 3 for the frame; `frame` 1
+/// for the frame), a flush and a sync, the transfer `(img, buffer)`, a
+/// sync; the last sync's `eax`.
+pub fn menu_vram_block(
+    h: &mut impl Host,
+    load: bool,
+    frame: bool,
+    buffer: u32,
+    address: u32,
+    size: u32,
+) -> u32 {
+    let (set, exec, img) = if load {
+        (GS_SET_DEF_LOAD_IMAGE, GS_EXEC_LOAD_IMAGE, MENU_LOAD_IMAGE)
+    } else {
+        (
+            GS_SET_DEF_STORE_IMAGE,
+            GS_EXEC_STORE_IMAGE,
+            MENU_STORE_IMAGE,
+        )
+    };
+    let img = h.rebase(img);
+    let per = if frame { 3 } else { 4 };
+    let height = size.cast_signed() / per / 512;
+    let base = address.cast_signed() / 64;
+    let args = [
+        img,
+        base.cast_unsigned(),
+        8,
+        u32::from(frame),
+        0,
+        0,
+        0x200,
+        height.cast_unsigned(),
+    ];
+    h.call_sym(set, Conv::Cdecl, &args);
+    h.call_sym(FLUSH_CACHE, Conv::Cdecl, &[0]);
+    h.call_sym(GS_SYNC_PATH, Conv::Cdecl, &[0, 0]);
+    h.call_sym(exec, Conv::Cdecl, &[img, buffer]);
+    h.call_sym(GS_SYNC_PATH, Conv::Cdecl, &[0, 0])
+}
+
+/// `SetGlobals_008431d0(v)` (cdecl).
+pub const SET_GLOBALS_8431D0: u32 = 0x0084_31d0;
+
+/// `Sg_MFIFOReset_008432e0()` (from `Sg_MainLoop`): waits twice for bit 8
+/// of `g_GsRegisterSink` to clear, sets bit 3 and clears bit 2, writes the
+/// reset sequence (0x800000, 0x1ffff0, 0x800000, 0x800000, 0, 0, 0x1c5)
+/// into the sink, then `SetGlobals_008431d0(0x800000)`'s `eax`.
+pub fn mfifo_reset(h: &mut impl Host) -> u32 {
+    mfifo_spad_sync(h);
+    mfifo_spad_sync(h);
+    let v = (GS_REGISTER_SINK.get(h) & !4) | 8;
+    GS_REGISTER_SINK.set(h, v);
+    for w in [0x80_0000, 0x1f_fff0, 0x80_0000, 0x80_0000, 0, 0, 0x1c5] {
+        GS_REGISTER_SINK.set(h, w);
+    }
+    h.call_sym(SET_GLOBALS_8431D0, Conv::Cdecl, &[0x80_0000])
+}
+
+/// `LoadingScreen_loadTextures(this)` (thiscall).
+pub const LOADING_LOAD_TEXTURES: u32 = 0x006e_4770;
+/// `PostProcessManager_GetInstance()`.
+pub const POST_PROCESS_INSTANCE: u32 = 0x0069_2be0;
+/// `PostProcessManager_lookup_006935f0(this; i)` (thiscall).
+pub const POST_PROCESS_LOOKUP: u32 = 0x0069_35f0;
+/// `LoadingScreen_prepareMesh(this)` (thiscall).
+pub const LOADING_PREPARE_MESH: u32 = 0x006e_4920;
+
+/// `LoadingScreen_initialize(this)` (thiscall): its textures, `+0x30 =`
+/// the post-process manager's entry 4 (`PostProcessManager_lookup_006935f0`,
+/// its argument pushed before `PostProcessManager_GetInstance()`), then a
+/// jump to `LoadingScreen_prepareMesh(this)`, whose `eax` it returns.
+pub fn loading_screen_initialize(h: &mut impl Host, this: u32) -> u32 {
+    h.call_sym(LOADING_LOAD_TEXTURES, Conv::Thiscall(this), &[]);
+    let manager = h.call_sym(POST_PROCESS_INSTANCE, Conv::Cdecl, &[]);
+    let entry = h.call_sym(POST_PROCESS_LOOKUP, Conv::Thiscall(manager), &[4]);
+    h.write(this.wrapping_add(0x30), entry);
+    h.call_sym(LOADING_PREPARE_MESH, Conv::Thiscall(this), &[])
+}
+
+/// `iggyDataValueSet_00a28d70(value, text)` (cdecl).
+pub const IGGY_DATA_VALUE_SET: u32 = 0x00a2_8d70;
+/// `IggyMenu_callIggyAS3External(this; target, name, n, values, unused)`.
+pub const CALL_IGGY_AS3: u32 = 0x00a2_8ba0;
+/// The save menu's number text (`0x00cebcb0`) and its `IggyDataValue`
+/// (`0x00cebca0`).
+pub const SAVE_FOCUS_TEXT: (u32, u32) = (0x00ce_bcb0, 0x00ce_bca0);
+/// `"%d"` (`0x00b0f604`).
+pub const FORMAT_INT: u32 = 0x00b0_f604;
+/// `"setSaveLoadFocus"` (`0x00b4ce98`).
+pub const SET_SAVE_LOAD_FOCUS: u32 = 0x00b4_ce98;
+
+/// `SaveDataMachine_setSaveLoadFocus_00702cd0(i)` (cdecl):
+/// `sprintf(text, "%d", i)`, the value set from the text, then
+/// `IggyMenu_callIggyAS3External(g_SaveMenu; 0, "setSaveLoadFocus", 1,
+/// &value, 1)`'s `eax`.
+pub fn save_set_focus(h: &mut impl Host, i: u32) -> u32 {
+    let (text, value) = (h.rebase(SAVE_FOCUS_TEXT.0), h.rebase(SAVE_FOCUS_TEXT.1));
+    let sprintf: u32 = h.read(h.rebase(0x00b0_c3dc));
+    let fmt = h.rebase(FORMAT_INT);
+    h.call(sprintf, Conv::Cdecl, &[text, fmt, i]);
+    h.call_sym(IGGY_DATA_VALUE_SET, Conv::Cdecl, &[value, text]);
+    let menu = SAVE_MENU.get(h);
+    let name = h.rebase(SET_SAVE_LOAD_FOCUS);
+    h.call_sym(CALL_IGGY_AS3, Conv::Thiscall(menu), &[0, name, 1, value, 1])
+}
+
+/// `ClusterSlots_give_0069ae20(this; p)` (thiscall, ret 4): the
+/// counterpart of `ClusterSlots_take_0069aba0`: a block inside the pool
+/// (`+0x1c`, 0x400 blocks of 0x18 bytes) frees its slot (byte `+0x601c +
+/// i` cleared) and lowers the hint `+0x641c` (signed) to it, returning
+/// `i`; any other is `operator_delete`d (its `eax`).
+pub fn cluster_slots_give(h: &mut impl Host, this: u32, p: u32) -> u32 {
+    let first = this.wrapping_add(0x1c);
+    if p < first || p >= this.wrapping_add(0x601c) {
+        return h.call_sym(crate::sound::OPERATOR_DELETE, Conv::Cdecl, &[p]);
+    }
+    let i = (p.wrapping_sub(this).wrapping_sub(0x1c) as i32 / 0x18) as u32;
+    h.write(i.wrapping_add(this).wrapping_add(0x601c), 0u8);
+    let hint: u32 = h.read(this.wrapping_add(0x641c));
+    if (i as i32) < (hint as i32) {
+        h.write(this.wrapping_add(0x641c), i);
+    }
+    i
+}
+
+/// `IggyMenuManager_handle_00a26100(this; a, b, c)` (thiscall, ret 0xc).
+pub const IGGY_MANAGER_HANDLE: u32 = 0x00a2_6100;
+/// `IggyMenuManager_handleCallback_00a260f0(a, b, c)` (stdcall, a
+/// callback): a jump to `0x00a26100` on `g_IggyMenuManager`, whose `eax`
+/// it returns.
+pub fn iggy_manager_handle_callback(h: &mut impl Host, a: u32, b: u32, c: u32) -> u32 {
+    let manager = IGGY_MENU_MANAGER.get(h);
+    h.call_sym(IGGY_MANAGER_HANDLE, Conv::Thiscall(manager), &[a, b, c])
+}

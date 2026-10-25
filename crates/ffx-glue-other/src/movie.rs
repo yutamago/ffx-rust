@@ -239,3 +239,43 @@ pub fn fmv_create_instance(h: &mut impl Host) {
     };
     g.set(h, v);
 }
+
+/// The import slot of `sprintf_s`.
+pub const SPRINTF_S: Global<u32> = Global::new(0x00b0_c394);
+/// `"%s"` (`.rdata`).
+pub const PERCENT_S: u32 = 0x00b0_e160;
+
+/// `PhyFMVPlayerManager_getVideoName(this; id, out)` (0x006d93e0,
+/// thiscall, `al`): the name of movie `id` from the map at `+0x6e8`
+/// (head; nodes: left `+0`, right `+8`, nil byte `+0xd`, key `+0x10`
+/// signed, `std::string` `+0x14`) written to `out` (`sprintf_s(out,
+/// 0x80, "%s", name)`): 1; 0 when there is none.
+pub fn fmv_video_name(h: &mut impl Host, this: u32, id: u32, out: u32) -> u8 {
+    let head = h.read::<u32>(this + 0x6e8);
+    let mut bound = head;
+    let mut n = h.read::<u32>(head + 4);
+    while h.read::<u8>(n + 0xd) == 0 {
+        if h.read::<u32>(n + 0x10).cast_signed() >= id.cast_signed() {
+            bound = n;
+            n = h.read::<u32>(n);
+        } else {
+            n = h.read::<u32>(n + 8);
+        }
+    }
+    let found = if bound != head && id.cast_signed() >= h.read::<u32>(bound + 0x10).cast_signed() {
+        bound
+    } else {
+        head
+    };
+    if found == head {
+        return 0;
+    }
+    let mut name = found + 0x14;
+    if h.read::<u32>(name + 0x14) >= 0x10 {
+        name = h.read::<u32>(name);
+    }
+    let format = h.rebase(PERCENT_S);
+    let f = SPRINTF_S.get(h);
+    h.call(f, Conv::Cdecl, &[out, 0x80, format, name]);
+    1
+}
