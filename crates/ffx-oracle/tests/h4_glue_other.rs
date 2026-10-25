@@ -1708,3 +1708,392 @@ fn copies_of_ports() {
 fn c_free(g: &mut G, p: u32) {
     ffx_glue_other::copies::phyre_free(g, p);
 }
+
+// ---- batch 3
+
+/// FMOD's alloc and read callbacks, the event pause loop.
+#[test]
+fn fmod_alloc_read_pause() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0201);
+        t.stub(s::USER_MALLOC, false, 1, 0);
+        t.stub(s::STREAM_READ, true, 2, 2);
+        t.stub(s::EVENT_SET_PAUSED, false, 2, 2);
+        t.stub(s::ERRCHECK, false, 3, 0);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            for tag in [s::STREAM_READ, s::EVENT_SET_PAUSED, s::ERRCHECK] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            // a block at each alignment
+            let block = t.zeros(0x60) + rng.below(16);
+            t.ret(s::USER_MALLOC, block);
+            let size = [0, 1, 0x20, rng.next()][rng.below(4) as usize];
+            let (k, src) = (rng.next(), rng.next());
+            t.check(
+                &format!("{w} alloc {size:#x} at {block:#x}"),
+                0x0070_66d0,
+                Conv::Stdcall,
+                &[size, k, src],
+                |g| u(s::fmod_memory_alloc(g, size)),
+            );
+            let handle = if rng.below(4) == 0 { 0 } else { rng.next() };
+            let read = if rng.below(4) == 0 {
+                0
+            } else {
+                t.random(&mut rng, 4)
+            };
+            let size = [0, 0x10, 0x100, rng.next()][rng.below(4) as usize];
+            let n = [size, size.wrapping_sub(1), 0, rng.next()][rng.below(4) as usize];
+            t.ret(s::STREAM_READ, n);
+            let buf = rng.next();
+            t.check(
+                &format!("{w} read"),
+                0x0070_85a0,
+                Conv::Stdcall,
+                &[handle, buf, size, read, k],
+                |g| u(s::fmod_file_read(g, handle, buf, size, read)),
+            );
+            let events = t.random(&mut rng, 0x40);
+            let list = t.zeros(0x10);
+            let count = [0, 1, 3, 8, u32::MAX][rng.below(5) as usize];
+            t.w32(list, count);
+            t.w32(list + 8, events);
+            let paused = rng.word();
+            t.check(
+                &format!("{w} setPaused {count}"),
+                0x0070_f100,
+                Conv::Thiscall(list),
+                &[paused],
+                |g| {
+                    s::sfx_event_set_paused(g, list, paused);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+/// The FMV manager's state checks, volume and the map node.
+#[test]
+fn movie_state_volume() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0202);
+        t.stub(mv::VIDEO_SET_VOLUME, true, 1, 1);
+        t.stub(mv::OPERATOR_NEW, false, 1, 0);
+        let bad_alloc = t.stub_code(0xc0de_0301, false, 0, 0);
+        t.g32(0x00b0_c2a0, bad_alloc);
+        for i in 0..50 {
+            let w = format!("{name} {i}");
+            let v = rng.next();
+            t.ret(mv::VIDEO_SET_VOLUME, v);
+            let mgr = t.random(&mut rng, 0x800);
+            let states = t.zeros(0x20);
+            for k in 0..8 {
+                let s = [0, 1, 2, rng.word()][rng.below(4) as usize];
+                t.w32(states + 4 * k, s);
+            }
+            t.w32(mgr + mv::FMV_STATES, states);
+            let n = [0, 1, 3, 8][rng.below(4) as usize];
+            t.w32(mgr + mv::FMV_STATE_COUNT, n);
+            let pending = if rng.below(2) == 0 { 0 } else { rng.next() };
+            t.w32(mgr + mv::FMV_PENDING, pending);
+            let want = [0, 1, 2, rng.word()][rng.below(4) as usize];
+            t.check(
+                &format!("{w} hasState"),
+                0x006d_a1f0,
+                Conv::Thiscall(mgr),
+                &[want],
+                |g| u(mv::fmv_has_state(g, mgr, want)),
+            );
+            let ra = t.check(
+                &format!("{w} StateCheck"),
+                0x006d_a2a0,
+                Conv::Thiscall(mgr),
+                &[],
+                |_| Out::None,
+            );
+            assert_eq!(
+                ra & 0xff,
+                u32::from(mv::fmv_state_check(&G(&mut t.b), mgr)),
+                "{w} StateCheck al"
+            );
+            let g = if rng.below(3) == 0 { 0 } else { mgr };
+            t.g32(e::FMV_PLAYER_MANAGER.global, g);
+            let loaded = [0, 1, rng.next() as u8][rng.below(3) as usize];
+            t.w8(mgr + mv::FMV_LOADED, loaded);
+            let pause = [1, 0, rng.next()][rng.below(3) as usize];
+            t.g32(0x0112_a008, pause);
+            let vol = rng.float();
+            t.check(
+                &format!("{w} SetVolume"),
+                0x006d_abf0,
+                Conv::Cdecl,
+                &[vol],
+                |h| {
+                    mv::fmv_set_volume(h, vol);
+                    Out::None
+                },
+            );
+            let p = if rng.below(5) == 0 {
+                0
+            } else {
+                t.random(&mut rng, 0x14)
+            };
+            t.ret(mv::OPERATOR_NEW, p);
+            if p != 0 {
+                let left = if rng.below(2) == 0 { 0 } else { rng.next() };
+                let right = rng.next();
+                t.check(
+                    &format!("{w} node"),
+                    0x006d_78f0,
+                    Conv::Stdcall,
+                    &[left, right],
+                    |h| u(mv::tree_node_new(h, left, right)),
+                );
+            }
+        }
+    }
+}
+
+/// The menus' records and updates, Iggy references and handler records,
+/// the button remap, map heads and nodes, the icon panel.
+#[test]
+fn menu_records_and_iggy() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0203);
+        let stubs: &[(u32, bool, u32, u32)] = &[
+            (mn::IGGY_MENU_DTOR, true, 0, 0),
+            (s::OPERATOR_DELETE, false, 1, 0),
+            (mn::REMAP_UI_BUTTON_DATA, true, 4, 4),
+            (mn::REMAP_MESSAGE_INPUT_DATA, true, 4, 4),
+            (mn::SWAP_MENU_BUFFER_CHAIN, true, 0, 0),
+            (mn::SET_UP_ALL_MENU_INSTANCE, true, 0, 0),
+            (mn::MAP_NODE_NEW, true, 0, 0),
+            (m::OPERATOR_NEW, false, 1, 0),
+        ];
+        for &(sym, this, n, pops) in stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let from_temp = t.stub_code(0xc0de_0401, false, 3, 3);
+        let path = t.stub_code(0xc0de_0402, false, 3, 3);
+        t.g32(0x00b0_c828, from_temp);
+        t.g32(0x00b0_c82c, path);
+        let invoker = t.stub_code(0xc0de_0403, false, 3, 0);
+        let bad_alloc = t.stub_code(0xc0de_0404, false, 0, 0);
+        t.g32(0x00b0_c2a0, bad_alloc);
+        let scene = t.random(&mut rng, 0x10000);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            for &(sym, ..) in stubs {
+                let v = rng.next();
+                t.ret(sym, v);
+            }
+            for tag in [0xc0de_0401, 0xc0de_0402, 0xc0de_0403] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            let obj = t.random(&mut rng, 0x6000);
+            let th = Conv::Thiscall(obj);
+            let (x, y) = (rng.word(), rng.word());
+            for k in 0..7 {
+                let icon = if rng.below(3) == 0 { 0 } else { rng.next() };
+                t.w32(obj + 4 * k, icon);
+            }
+            // negative indices read below the panel (signed compare): -1, -2
+            let idx = [0, 3, 6, 7, u32::MAX, 0xffff_fffe, 0x7fff_ffff][rng.below(7) as usize];
+            t.check(
+                &format!("{w} hideIcon {idx:#x}"),
+                0x006f_7900,
+                th,
+                &[idx],
+                |g| {
+                    mn::icon_panel_hide_icon(g, obj, idx);
+                    Out::None
+                },
+            );
+            t.check(&format!("{w} valueRef"), 0x00a2_88b0, th, &[x, y], |g| {
+                u(mn::iggy_value_ref_create(g, obj, x, y))
+            });
+            for k in 0..5 {
+                let rec = obj + 4 + 0x14 * k;
+                let flag = [0, 1, rng.next() as u8][rng.below(3) as usize];
+                t.w8(rec, flag);
+                t.w32(rec + 0x10, invoker);
+            }
+            t.check(&format!("{w} flush"), 0x00a2_8ff0, th, &[], |g| {
+                mn::iggy_handlers_flush(g, obj);
+                Out::None
+            });
+            let args: [u32; 5] = std::array::from_fn(|_| rng.word());
+            t.check(&format!("{w} remap"), 0x006e_69e0, th, &args, |g| {
+                u(mn::remap_button_icon(g, obj, args))
+            });
+            t.g32(0x00cc_b9d8, scene);
+            for (at, v) in [
+                (scene + 0xfa9d, rng.below(3)),
+                (scene + 0xfa9c, rng.below(3)),
+                (obj + 0x5b9c, rng.below(3)),
+            ] {
+                let b = if v == 0 { 0 } else { rng.next() as u8 | 1 };
+                t.w8(at, b);
+            }
+            t.check(&format!("{w} UpdateMenu"), 0x0067_faa0, th, &[], |g| {
+                u(mn::menu_update(g, obj))
+            });
+            let ready = [0, 1, rng.next() as u8][rng.below(3) as usize];
+            t.w8(obj + 0x5b9d, ready);
+            let alt = if rng.below(2) == 0 { 0 } else { rng.next() };
+            t.w32(obj + 0x5b7c, alt);
+            let mi = rng.below(16);
+            for table in [0x15f0, 0x4248] {
+                let rec = t.random(&mut rng, 4);
+                t.w32(obj + table + 4 * mi, rec);
+            }
+            t.check(&format!("{w} GetMenuRecord"), 0x0067_b990, th, &[mi], |g| {
+                u(mn::menu_record(g, obj, mi))
+            });
+            let slots = t.random(&mut rng, 0x20);
+            let n = [0, 1, 8, 0x8000_0008][rng.below(4) as usize];
+            t.w32(obj + 8, n);
+            t.w32(obj + 0xc, slots);
+            let menu = match rng.below(3) {
+                0 => 0,
+                1 => rng.next(),
+                _ => {
+                    // sometimes twice: only the first is cleared
+                    let v = rng.next() | 1;
+                    t.w32(slots + 4 * rng.below(8), v);
+                    t.w32(slots + 4 * rng.below(8), v);
+                    v
+                }
+            };
+            t.check(&format!("{w} removeMenu"), 0x00a2_6c50, th, &[menu], |g| {
+                mn::iggy_manager_remove_menu(g, obj, menu);
+                Out::None
+            });
+            let p = t.random(&mut rng, 0x30);
+            t.ret(m::OPERATOR_NEW, p);
+            t.check(&format!("{w} headCopy"), 0x0069_a1e0, th, &[], |g| {
+                u(mn::tree_head_copy(g, obj))
+            });
+            t.ret(mn::MAP_NODE_NEW, p);
+            let key = t.random(&mut rng, 0x10);
+            t.check(&format!("{w} nodeWithKey"), 0x0069_c580, th, &[key], |g| {
+                u(mn::tree_node_new_with_key(g, obj, key))
+            });
+        }
+    }
+}
+
+/// The post-effect setters and constructor, the scene colour, the PS2
+/// shape, the thread call, the text animation.
+#[test]
+fn effects_threads_text() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0204);
+        t.stub(e::FIND_PARAM_BY_NAME, true, 1, 1);
+        t.stub(e::SET_PARAM_VALUE, true, 2, 2);
+        t.stub(e::MEMSET, false, 3, 0);
+        t.stub(m::EASY_SHAPE_XYWHC2, false, 8, 0);
+        t.stub(m::CTRL_PKT, false, 0, 0);
+        let fns: Vec<u32> = (0..4)
+            .map(|k| t.stub_code(0xc0de_0500 + k, k == 0, k, 0))
+            .collect();
+        let big = t.random(&mut rng, 0x1_2400);
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            for tag in [
+                e::FIND_PARAM_BY_NAME,
+                e::SET_PARAM_VALUE,
+                e::MEMSET,
+                m::EASY_SHAPE_XYWHC2,
+                m::CTRL_PKT,
+            ] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            for k in 0..4 {
+                let v = rng.next();
+                t.ret(0xc0de_0500 + k, v);
+            }
+            let off = [0, 1, rng.next() as u8][rng.below(3) as usize];
+            t.w8(big + 0x1_23a0, off);
+            let v = t.zeros(0x10);
+            for k in 0..4 {
+                let f = rng.float();
+                t.w32(v + 4 * k, f);
+            }
+            t.check(
+                &format!("{w} setColor4"),
+                0x0063_8840,
+                Conv::Thiscall(big),
+                &[v],
+                |g| {
+                    e::scene_set_color4(g, big, v);
+                    Out::None
+                },
+            );
+            let obj = t.random(&mut rng, 0x800);
+            let th = Conv::Thiscall(obj);
+            let params = if rng.below(4) == 0 { 0 } else { rng.next() };
+            t.w32(obj + 0x64, params);
+            let param = if rng.below(4) == 0 { 0 } else { rng.next() };
+            t.ret(e::FIND_PARAM_BY_NAME, param);
+            let buffer = if rng.below(4) == 0 {
+                0
+            } else {
+                t.random(&mut rng, 8)
+            };
+            t.w32(obj + 0x60, buffer);
+            let wt = rng.float();
+            t.check(&format!("{w} setWeight"), 0x006c_5600, th, &[wt], |g| {
+                e::motion_blur_set_weight(g, obj, wt);
+                Out::None
+            });
+            t.check(&format!("{w} PostEffect ctor"), 0x006c_5670, th, &[], |g| {
+                u(e::post_effect_ctor(g, obj))
+            });
+            t.g32(0x0187_16cc, rng.next());
+            let (a, b, c) = (rng.word(), rng.word(), rng.word());
+            t.check(
+                &format!("{w} ShapeXY"),
+                0x0090_3a10,
+                Conv::Cdecl,
+                &[a, b, c],
+                |g| u(m::mkp_shape_xy(g, a, b, c)),
+            );
+            let rec = t.random(&mut rng, 0x20);
+            for k in 0..4 {
+                t.w32(rec + 4 * k, fns[k as usize]);
+            }
+            let kind = [0, 1, 2, 3, 4, rng.next()][rng.below(6) as usize];
+            t.w32(rec + 0x10, kind);
+            t.check(
+                &format!("{w} threadCall {kind:#x}"),
+                0x0070_3910,
+                Conv::Thiscall(rec),
+                &[],
+                |g| u(m::thread_call_run(g, rec)),
+            );
+            // the timer near, at and past 300, NaNs too
+            let timer = [
+                rng.float(),
+                299.5f32.to_bits(),
+                300.0f32.to_bits(),
+                (rng.below(400) as f32).to_bits(),
+                0x7fc0_0000,
+            ][rng.below(5) as usize];
+            t.w32(obj + 0x40, timer);
+            let frame =
+                [0, 15, 0x7fff_ffff, u32::MAX, 0x8000_000f, rng.next()][rng.below(6) as usize];
+            t.w32(obj + 0x44, frame);
+            let dt = [rng.float(), 0.5f32.to_bits(), 0, 1.0f32.to_bits()][rng.below(4) as usize];
+            t.check(&format!("{w} animate"), 0x006f_69f0, th, &[dt], |g| {
+                m::text_animate(g, obj, dt);
+                Out::None
+            });
+        }
+    }
+}

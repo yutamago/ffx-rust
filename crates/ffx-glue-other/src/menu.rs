@@ -385,3 +385,178 @@ pub fn alloc_once_2(h: &mut impl Host) {
     }
     ONE_BYTE_2.set(h, p);
 }
+
+/// The import slot of `_IggyValueRefFromTempRef@12`.
+pub const IGGY_REF_FROM_TEMP: Global<u32> = Global::new(0x00b0_c828);
+/// The import slot of `_IggyValuePathFromRef@12`.
+pub const IGGY_PATH_FROM_REF: Global<u32> = Global::new(0x00b0_c82c);
+/// `RemapButtonIcon_remapUIButtonData(this; b, c, d, e)` (thiscall).
+pub const REMAP_UI_BUTTON_DATA: u32 = 0x006e_7300;
+/// `RemapButtonIcon_remapMessgeInputData(this; a, c, d, e)` (thiscall).
+pub const REMAP_MESSAGE_INPUT_DATA: u32 = 0x006e_7050;
+/// `MenuManager_SwapMenuBufferChain(this)` (thiscall).
+pub const SWAP_MENU_BUFFER_CHAIN: u32 = 0x0067_e7f0;
+/// `MenuManager_SetUpAllMenuInstance(this)` (thiscall).
+pub const SET_UP_ALL_MENU_INSTANCE: u32 = 0x0067_e6c0;
+/// The `0x20`-byte map node maker `0x006a0400` (thiscall head).
+pub const MAP_NODE_NEW: u32 = 0x006a_0400;
+
+/// `IconPanel_hideIcon(this; i)` (0x006f7900, thiscall): icon `i` (below
+/// 7, signed) destroyed and its slot cleared, as `IconPanel_hideAllIcons`
+/// does for each. Callers read no result.
+pub fn icon_panel_hide_icon(h: &mut impl Host, this: u32, i: u32) {
+    if i.cast_signed() >= 7 {
+        return;
+    }
+    let slot = this.wrapping_add(i.wrapping_mul(4));
+    let icon = h.read::<u32>(slot);
+    if icon != 0 {
+        h.call_sym(IGGY_MENU_DTOR, Conv::Thiscall(icon), &[]);
+        h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[icon]);
+        h.write(slot, 0u32);
+    }
+}
+
+/// `IggyValueRef_create_00a288b0(this; player, temp)` (thiscall): marks
+/// the reference live (`+0` = 1), keeps the player (`+0x38`), takes a
+/// reference from the temporary one (`IggyValueRefFromTempRef(player,
+/// temp, 0)`, kept at `+4`) and makes its path at `+8`
+/// (`IggyValuePathFromRef(this + 8, player, ref)`); returns `this`.
+pub fn iggy_value_ref_create(h: &mut impl Host, this: u32, player: u32, temp: u32) -> u32 {
+    h.write(this, 1u8);
+    h.write(this + 0x38, player);
+    let f = IGGY_REF_FROM_TEMP.get(h);
+    let r = h.call(f, Conv::Stdcall, &[player, temp, 0]);
+    let player = h.read::<u32>(this + 0x38);
+    h.write(this + 4, r);
+    let f = IGGY_PATH_FROM_REF.get(h);
+    h.call(f, Conv::Stdcall, &[this + 8, player, r]);
+    this
+}
+
+/// `IggyMenuHandlers_flush_00a28ff0(this)` (thiscall, slot 0 of
+/// `FFIggyPauseMenu_vftable` too): each of the five pending handler
+/// records (`+4`, 0x14 bytes: flag, method, arg, this, invoker) run as
+/// `invoker(method, arg, this)` (cdecl) and cleared. Callers read no
+/// result.
+pub fn iggy_handlers_flush(h: &mut impl Host, this: u32) {
+    for k in 0..5 {
+        let rec = this + 4 + 0x14 * k;
+        if h.read::<u8>(rec) == 0 {
+            continue;
+        }
+        let c = h.read::<u32>(rec + 0xc);
+        let invoker = h.read::<u32>(rec + 0x10);
+        let b = h.read::<u32>(rec + 8);
+        let a = h.read::<u32>(rec + 4);
+        h.call(invoker, Conv::Cdecl, &[a, b, c]);
+        h.write(rec, 0u8);
+    }
+}
+
+/// `RemapButtonIcon_remapButtonIcon(this; a, b, c, d, e)` (0x006e69e0,
+/// thiscall): `RemapButtonIcon_remapUIButtonData(this; b, c, d, e)`, then
+/// `RemapButtonIcon_remapMessgeInputData(this; a, c, d, e)`'s `eax`.
+pub fn remap_button_icon(h: &mut impl Host, this: u32, args: [u32; 5]) -> u32 {
+    let [a, b, c, d, e] = args;
+    h.call_sym(REMAP_UI_BUTTON_DATA, Conv::Thiscall(this), &[b, c, d, e]);
+    h.call_sym(
+        REMAP_MESSAGE_INPUT_DATA,
+        Conv::Thiscall(this),
+        &[a, c, d, e],
+    )
+}
+
+/// `MenuManager_UpdateMenu(this)` (0x0067faa0, thiscall): with a swap
+/// pending (`+0x5b9c`), `MenuManager_SwapMenuBufferChain` and the ready
+/// byte `+0x5b9d`; else, unless the scene's bytes `+0xfa9d` or `+0xfa9c`
+/// are set, a jump to `MenuManager_SetUpAllMenuInstance`. Returns the
+/// call's `eax`, or the scene pointer when nothing runs.
+pub fn menu_update(h: &mut impl Host, this: u32) -> u32 {
+    if h.read::<u8>(this + 0x5b9c) != 0 {
+        let r = h.call_sym(SWAP_MENU_BUFFER_CHAIN, Conv::Thiscall(this), &[]);
+        h.write(this + 0x5b9d, 1u8);
+        return r;
+    }
+    let scene = crate::misc::PHYRE_SCENE.get(h);
+    if h.read::<u8>(scene.wrapping_add(0xfa9d)) != 0
+        || h.read::<u8>(scene.wrapping_add(0xfa9c)) != 0
+    {
+        return scene;
+    }
+    h.call_sym(SET_UP_ALL_MENU_INSTANCE, Conv::Thiscall(this), &[])
+}
+
+/// `MenuManager_GetMenuRecord_0067b990(this; i)` (thiscall): 0 until the
+/// menus are ready (`+0x5b9d`); else the first word of menu `i`'s record,
+/// from the table at `+0x15f0` or, with `+0x5b7c` set, `+0x4248`.
+pub fn menu_record(h: &impl Mem, this: u32, i: u32) -> u32 {
+    if h.read::<u8>(this + 0x5b9d) == 0 {
+        return 0;
+    }
+    let table = if h.read::<u32>(this + crate::misc::MENU_ALT) == 0 {
+        0x15f0
+    } else {
+        0x4248
+    };
+    let rec = h.read::<u32>(this.wrapping_add(table).wrapping_add(i.wrapping_mul(4)));
+    h.read(rec)
+}
+
+/// `IggyMenuManager_removeMenu_00a26c50(this; menu)` (thiscall, from
+/// `IggyMenu_dtor_IggyMenu`): the menu's slot in the list (`+8` count, top
+/// bit masked; `+0xc` the slots) cleared, unless the menu is null or not
+/// there. Its caller reads no result.
+pub fn iggy_manager_remove_menu(h: &mut impl Mem, this: u32, menu: u32) {
+    if menu == 0 {
+        return;
+    }
+    let n = h.read::<u32>(this + 8) & 0x7fff_ffff;
+    if n == 0 {
+        return;
+    }
+    let slots = h.read::<u32>(this + 0xc);
+    for i in 0..n {
+        let at = slots.wrapping_add(4 * i);
+        if h.read::<u32>(at) == menu {
+            h.write(at, 0u32);
+            return;
+        }
+    }
+}
+
+/// `TreeHead_copy_0069a1e0(this)` (thiscall): a `0x18`-byte node from
+/// `operator_new` (`std::_Xbad_alloc` called when it fails) whose three
+/// links are `*this` (each read again); returns it.
+pub fn tree_head_copy(h: &mut impl Host, this: u32) -> u32 {
+    let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[0x18]);
+    if p == 0 {
+        let f = crate::movie::XBAD_ALLOC.get(h);
+        h.call(f, Conv::Cdecl, &[]);
+    }
+    let v = h.read::<u32>(this);
+    h.write(p, v);
+    for k in [4u32, 8] {
+        if p.wrapping_add(k) != 0 {
+            let v = h.read::<u32>(this);
+            h.write(p.wrapping_add(k), v);
+        }
+    }
+    p
+}
+
+/// `TreeNode_newWithKey_0069c580(this; key)` (thiscall, `ecx` passed on
+/// to `0x006a0400`): a new map node, its word at `+0xc` cleared and the
+/// 16-byte key copied to `+0x10`; returns the node.
+pub fn tree_node_new_with_key(h: &mut impl Host, this: u32, key: u32) -> u32 {
+    let node = h.call_sym(MAP_NODE_NEW, Conv::Thiscall(this), &[]);
+    h.write(node.wrapping_add(0xc), 0u16);
+    let dst = node.wrapping_add(0x10);
+    if dst != 0 {
+        for k in 0..4 {
+            let w = h.read::<u32>(key.wrapping_add(4 * k));
+            h.write(dst.wrapping_add(4 * k), w);
+        }
+    }
+    node
+}

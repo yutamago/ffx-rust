@@ -335,3 +335,64 @@ pub fn sfx_any_event_flag(h: &impl Mem, list: u32) -> u8 {
     }
     0
 }
+
+/// `user_malloc(n)` (cdecl).
+pub const USER_MALLOC: u32 = 0x0068_7020;
+/// `Phyre_PSerialization_PStreamFile_read(file; buf, size)` (thiscall).
+pub const STREAM_READ: u32 = 0x0060_8090;
+/// `FMOD_ERR_FILE_EOF`, `FmodFile_read`'s short-read result.
+pub const FMOD_ERR_FILE_EOF: u32 = 0x16;
+/// The import thunk of `FMOD::Event::setPaused` (stdcall event, bool).
+pub const EVENT_SET_PAUSED: u32 = 0x0094_8cbe;
+/// `ERRCHECK(result, file, line)` (cdecl).
+pub const ERRCHECK: u32 = 0x0070_79d0;
+/// `SfxEvent.cpp`'s path for `ERRCHECK` (`.rdata`).
+pub const SFX_EVENT_FILE: u32 = 0x00b4_fddc;
+
+/// `FmodMemory_alloc(size, type, source)` (0x007066d0, stdcall, FMOD's
+/// alloc callback): `user_malloc(size + 16)` moved up to the next
+/// 16-byte boundary past the block's start (16 when it is aligned), the
+/// distance kept in the byte before it (`FmodMemory_free` reads it); 0
+/// for size 0.
+pub fn fmod_memory_alloc(h: &mut impl Host, size: u32) -> u32 {
+    if size == 0 {
+        return 0;
+    }
+    let p = h.call_sym(USER_MALLOC, Conv::Cdecl, &[size.wrapping_add(0x10)]);
+    let q = p.wrapping_sub(p & 0xf).wrapping_add(0x10);
+    h.write(q.wrapping_sub(1), (q as u8).wrapping_sub(p as u8));
+    q
+}
+
+/// `FmodFile_read(handle, buf, size, read, user)` (0x007085a0, stdcall,
+/// FMOD's file read callback): with a `read` pointer,
+/// `Phyre_PSerialization_PStreamFile_read(handle; buf, size)` stored there,
+/// `FMOD_ERR_FILE_EOF` when short (unsigned); else 0;
+/// `FMOD_ERR_INVALID_PARAM` for a null handle.
+pub fn fmod_file_read(h: &mut impl Host, handle: u32, buf: u32, size: u32, read: u32) -> u32 {
+    if handle == 0 {
+        return FMOD_ERR_INVALID_PARAM;
+    }
+    if read == 0 {
+        return 0;
+    }
+    let n = h.call_sym(STREAM_READ, Conv::Thiscall(handle), &[buf, size]);
+    h.write(read, n);
+    if n < size { FMOD_ERR_FILE_EOF } else { 0 }
+}
+
+/// `SfxEvent_setPaused(list; paused)` (0x0070f100, thiscall): for each of
+/// the list's `count` (`+0`, signed) events (`+8`, 8-byte entries),
+/// `ERRCHECK(FMOD::Event::setPaused(event, paused), "SfxEvent.cpp", 0xbd)`
+/// (the file and line pushed before the FMOD call). Callers read no
+/// result.
+pub fn sfx_event_set_paused(h: &mut impl Host, list: u32, paused: u32) {
+    let n = h.read::<u32>(list).cast_signed();
+    let file = h.rebase(SFX_EVENT_FILE);
+    for i in 0..n.max(0).cast_unsigned() {
+        let events = h.read::<u32>(list + 8);
+        let event = h.read::<u32>(events.wrapping_add(8 * i));
+        let r = h.call_sym(EVENT_SET_PAUSED, Conv::Stdcall, &[event, paused]);
+        h.call_sym(ERRCHECK, Conv::Cdecl, &[r, file, 0xbd]);
+    }
+}

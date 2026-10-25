@@ -2,7 +2,7 @@
 //! terminate, the PS2 movie layer's scene tests, the small tree heads the
 //! managers allocate.
 
-use ffx_bridge::Global;
+use ffx_bridge::{Global, Mem};
 use ffx_graphic::host::{Conv, Host};
 
 use crate::effect::{FMV_PLAYER_MANAGER, PHYRE_PRINTF};
@@ -113,5 +113,77 @@ pub fn tree_head_new(h: &mut impl Host) -> u32 {
         h.write(p + 8, p);
     }
     h.write(p + 0xc, 0x0101u16);
+    p
+}
+
+/// `PVideoPlaybackWin32_setVolume(video; f32)` (thiscall).
+pub const VIDEO_SET_VOLUME: u32 = 0x00a2_8330;
+/// The movie volume `PhyFMVPlayerManager_SetVolume_006dabf0` keeps
+/// (`0x00c34420`, f32).
+pub const MOVIE_VOLUME: Global<u32> = Global::new(0x00c3_4420);
+/// `PhyFMVPlayerManager +4`: the state count; `+0xc` the states.
+pub const FMV_STATE_COUNT: u32 = 0x4;
+/// `PhyFMVPlayerManager +0xc`.
+pub const FMV_STATES: u32 = 0xc;
+/// `PhyFMVPlayerManager +0x704`.
+pub const FMV_PENDING: u32 = 0x704;
+
+/// Whether one of the manager's `count` (`+4`, unsigned) state words
+/// (`+0xc`) is `v`: the loop of `PhyFMVPlayerManager_hasState_006da1f0`
+/// and `_StateCheck_006da2a0` (it stops reading at the first match).
+fn has_state_word(h: &impl Mem, this: u32, v: u32) -> bool {
+    let n = h.read::<u32>(this + FMV_STATE_COUNT);
+    for i in 0..n {
+        let states = h.read::<u32>(this + FMV_STATES);
+        if h.read::<u32>(states.wrapping_add(4 * i)) == v {
+            return true;
+        }
+    }
+    false
+}
+
+/// `PhyFMVPlayerManager_hasState_006da1f0(this; v)` (thiscall, from
+/// `PhyreScene_render`): 1 when a state word is `v`, else 0.
+pub fn fmv_has_state(h: &impl Mem, this: u32, v: u32) -> u32 {
+    u32::from(has_state_word(h, this, v))
+}
+
+/// `PhyFMVPlayerManager_StateCheck_006da2a0(this)` (thiscall, `al`): 1
+/// when a state word is 1 or nothing is pending (`+0x704`), else 0.
+pub fn fmv_state_check(h: &impl Mem, this: u32) -> u8 {
+    if has_state_word(h, this, 1) {
+        return 1;
+    }
+    u8::from(h.read::<u32>(this + FMV_PENDING) == 0)
+}
+
+/// `PhyFMVPlayerManager_SetVolume_006dabf0(volume)` (cdecl f32): the
+/// volume kept (through `fld`/`fst`); with a manager that has a movie
+/// loaded and the pause word 1, `PVideoPlaybackWin32_setVolume(manager +
+/// 0x38; volume)`. Callers read no result.
+pub fn fmv_set_volume(h: &mut impl Host, volume: u32) {
+    let v = ffx_bridge::x87::round_trip(f32::from_bits(volume)).to_bits();
+    let m = Global::<u32>::new(FMV_PLAYER_MANAGER.global).get(h);
+    MOVIE_VOLUME.set(h, v);
+    if m == 0 || h.read::<u8>(m + FMV_LOADED) == 0 || PAUSE_ENABLE.get(h) != 1 {
+        return;
+    }
+    h.call_sym(VIDEO_SET_VOLUME, Conv::Thiscall(m + FMV_VIDEO), &[v]);
+}
+
+/// `TreeNode_new_006d78f0(left, right)` (stdcall): a `0x14`-byte node from
+/// `operator_new` (`std::_Xbad_alloc` called when it fails) with its two
+/// links: `(left, right)`, or itself twice for a null `left`; returns it.
+pub fn tree_node_new(h: &mut impl Host, left: u32, right: u32) -> u32 {
+    let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[0x14]);
+    if p == 0 {
+        let f = XBAD_ALLOC.get(h);
+        h.call(f, Conv::Cdecl, &[]);
+    }
+    let (a, b) = if left == 0 { (p, p) } else { (left, right) };
+    h.write(p, a);
+    if p.wrapping_add(4) != 0 {
+        h.write(p.wrapping_add(4), b);
+    }
     p
 }

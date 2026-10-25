@@ -419,3 +419,62 @@ pub fn mfifo_end(h: &mut impl Host) -> u32 {
     h.call_sym(SEND_SPAD, Conv::Cdecl, &[p.wrapping_add(0x10)]);
     h.call_sym(DMA_LOSS_REPORT, Conv::Cdecl, &[])
 }
+
+/// `TextUtil_animate_006f69f0`'s period (`.rdata` `0x00b4bf08`, 300.0).
+pub const BLINK_PERIOD: Global<f32> = Global::new(0x00b4_bf08);
+
+/// `TOMkpShapeXY(a, b, c)` (0x00903a10): `g_TOPktCursor =
+/// TOAdpEasyShapeXYWHC2(g_TOPktCursor, a, b, c, 0, 0, 0x80808080,
+/// 0x80808080)`, then a jump to `TOCtrlPkt()`, whose `eax` it returns.
+pub fn mkp_shape_xy(h: &mut impl Host, a: u32, b: u32, c: u32) -> u32 {
+    let cur = PKT_CURSOR.get(h);
+    let grey = 0x8080_8080;
+    let cur = h.call_sym(
+        EASY_SHAPE_XYWHC2,
+        Conv::Cdecl,
+        &[cur, a, b, c, 0, 0, grey, grey],
+    );
+    PKT_CURSOR.set(h, cur);
+    h.call_sym(CTRL_PKT, Conv::Cdecl, &[])
+}
+
+/// `ThreadCall_run_00703910(this)` (thiscall, from `ThreadLoop_00703a20`):
+/// the call the record (`+0x10` its kind) describes: kind 0 a jump to
+/// `this->+0` (with `this`), kinds 1..3 `this->+4/+8/+0xc` with one to
+/// three of the words at `+0x14` (cdecl); its `eax`. Another kind returns
+/// the kind.
+pub fn thread_call_run(h: &mut impl Host, this: u32) -> u32 {
+    let kind = h.read::<u32>(this + 0x10);
+    let n = match kind {
+        0 => {
+            let f = h.read::<u32>(this);
+            return h.call(f, Conv::Thiscall(this), &[]);
+        }
+        1..=3 => kind as usize,
+        _ => return kind,
+    };
+    let mut args = [0u32; 3];
+    // the words are pushed last first: +0x14 + 4 (n - 1) first
+    for k in (0..n).rev() {
+        args[k] = h.read::<u32>(this + 0x14 + 4 * k as u32);
+    }
+    let f = h.read::<u32>(this + 4 * kind);
+    h.call(f, Conv::Cdecl, &args[..n])
+}
+
+/// `TextUtil_animate_006f69f0(this; dt)` (thiscall, from
+/// `PhyreScene_animate`): the timer (`+0x40`) advanced by `dt` (x87,
+/// rounded to f32); past 300 (not equal, not NaN) it restarts at 0 and the
+/// frame (`+0x44`) steps on modulo 16 (C's signed `%`). Callers read no
+/// result.
+pub fn text_animate(h: &mut impl Mem, this: u32, dt: u32) {
+    let timer = f32::from_bits(h.read::<u32>(this + 0x40));
+    let t = x87::Reg::load(f32::from_bits(dt)).add_m32(timer).store();
+    h.write(this + 0x40, t.to_bits());
+    if t.partial_cmp(&BLINK_PERIOD.get(h)) != Some(std::cmp::Ordering::Greater) {
+        return;
+    }
+    h.write(this + 0x40, 0u32);
+    let frame = h.read::<u32>(this + 0x44).wrapping_add(1).cast_signed();
+    h.write(this + 0x44, (frame % 16).cast_unsigned());
+}

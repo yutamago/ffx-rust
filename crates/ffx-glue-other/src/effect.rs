@@ -146,3 +146,67 @@ pub fn on_shader_cluster_loaded(
     h.write(o + field, cluster);
     h.call_sym(on_loaded, Conv::Thiscall(o), &[])
 }
+
+/// `ShaderParams_FindByName(params; name)` (thiscall).
+pub const FIND_PARAM_BY_NAME: u32 = 0x0056_cbf0;
+/// `ShaderParamBuffer_SetValue2(buffer; param, value)` (thiscall).
+pub const SET_PARAM_VALUE: u32 = 0x0063_86c0;
+/// `"BlendWeight"` (`.rdata`).
+pub const BLEND_WEIGHT: u32 = 0x00b4_95d8;
+/// `memset` through its import thunk (cdecl dst, byte, n).
+pub const MEMSET: u32 = 0x0094_964c;
+
+/// `PhyreScene_setColor4_00638840(this; v)` (thiscall, from
+/// `PhyreScene_processVFXDrawEvent`): unless the byte at `+0x123a0` is set,
+/// four floats from `v` to `+0x1238c` through `fld`/`fstp`. Callers read
+/// no result.
+pub fn scene_set_color4(h: &mut impl Mem, this: u32, v: u32) {
+    if h.read::<u8>(this + 0x0001_23a0) != 0 {
+        return;
+    }
+    for k in 0..4 {
+        let x = h.read::<u32>(v.wrapping_add(4 * k));
+        let x = x87::round_trip(f32::from_bits(x)).to_bits();
+        h.write(this + 0x0001_238c + 4 * k, x);
+    }
+}
+
+/// `MotionBlur_setMotionBlurWeight(this; w)` (0x006c5600, thiscall): the
+/// weight at `+0x5c` (through `fld`/`fstp`); with shader parameters
+/// (`+0x64`) that have `"BlendWeight"` and a parameter buffer (`+0x60`),
+/// `ShaderParamBuffer_SetValue2(buffer->+4; param, this + 0x5c)`. Callers
+/// read no result.
+pub fn motion_blur_set_weight(h: &mut impl Host, this: u32, w: u32) {
+    let params = h.read::<u32>(this + 0x64);
+    let w = x87::round_trip(f32::from_bits(w)).to_bits();
+    h.write(this + 0x5c, w);
+    if params == 0 {
+        return;
+    }
+    let name = h.rebase(BLEND_WEIGHT);
+    let param = h.call_sym(FIND_PARAM_BY_NAME, Conv::Thiscall(params), &[name]);
+    if param == 0 {
+        return;
+    }
+    let buffer = h.read::<u32>(this + 0x60);
+    if buffer == 0 {
+        return;
+    }
+    let b = h.read::<u32>(buffer + 4);
+    h.call_sym(SET_PARAM_VALUE, Conv::Thiscall(b), &[param, this + 0x5c]);
+}
+
+/// `PostEffect_PostEffect_006c5670(this)` (thiscall, the constructor
+/// `PostEffect_createInstance_006c5790` calls): four words cleared, four
+/// `0x164`-byte blocks from `+0x10` cleared with `memset` and their bytes
+/// at `+0x5b0` cleared; returns `this`.
+pub fn post_effect_ctor(h: &mut impl Host, this: u32) -> u32 {
+    for k in 0..4 {
+        h.write(this + 4 * k, 0u32);
+    }
+    for i in 0..4 {
+        h.call_sym(MEMSET, Conv::Cdecl, &[this + 0x10 + 0x164 * i, 0, 0x164]);
+        h.write(this + 0x5b0 + i, 0u8);
+    }
+    this
+}

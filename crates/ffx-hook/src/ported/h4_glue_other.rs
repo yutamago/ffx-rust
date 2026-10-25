@@ -520,4 +520,95 @@ ported! {
         let m = mem();
         ffx_sound::ffxfmod::bridge::sfx_find(&m, tree, ffx_bridge::Mem::read(&m, key))
     }
+    // Batch 3: FMOD memory/read callbacks and event pauses, the FMV
+    // manager's state and volume, menu records and updates, Iggy value
+    // references and handler records, map nodes, post-effect setters.
+    /// `FmodMemory_alloc(size, type, source)` (FMOD's alloc callback).
+    FmodMemory_alloc @ 0x0070_66d0 => extern "stdcall" fn fmod_memory_alloc(size: u32, _kind: u32, _source: u32) -> u32 {
+        s::fmod_memory_alloc(&mut mem(), size)
+    }
+    /// `FmodFile_read(handle, buf, size, read, user)`.
+    FmodFile_read @ 0x0070_85a0 => extern "stdcall" fn fmod_file_read(handle: u32, buf: u32, size: u32, read: u32, _user: u32) -> u32 {
+        s::fmod_file_read(&mut mem(), handle, buf, size, read)
+    }
+    /// `SfxEvent_setPaused(list; paused)`.
+    SfxEvent_setPaused @ 0x0070_f100 => extern "thiscall" fn sfx_event_set_paused(list: u32, paused: u32) {
+        s::sfx_event_set_paused(&mut mem(), list, paused);
+    }
+    /// `PhyFMVPlayerManager_hasState_006da1f0(this; v)`.
+    PhyFMVPlayerManager_hasState_006da1f0 @ 0x006d_a1f0 => extern "thiscall" fn fmv_has_state(this: u32, v: u32) -> u32 {
+        mv::fmv_has_state(&mem(), this, v)
+    }
+    /// `PhyFMVPlayerManager_StateCheck_006da2a0(this)` (`al`).
+    PhyFMVPlayerManager_StateCheck_006da2a0 @ 0x006d_a2a0 => extern "thiscall" fn fmv_state_check(this: u32) -> u8 {
+        mv::fmv_state_check(&mem(), this)
+    }
+    /// `PhyFMVPlayerManager_SetVolume_006dabf0(volume)`.
+    PhyFMVPlayerManager_SetVolume_006dabf0 @ 0x006d_abf0 => extern "C" fn fmv_set_volume(volume: u32) {
+        mv::fmv_set_volume(&mut mem(), volume);
+    }
+    /// `TreeNode_new_006d78f0(left, right)`.
+    TreeNode_new_006d78f0 @ 0x006d_78f0 => extern "stdcall" fn tree_node_new(left: u32, right: u32) -> u32 {
+        mv::tree_node_new(&mut mem(), left, right)
+    }
+    /// `IconPanel_hideIcon(this; i)`.
+    IconPanel_hideIcon @ 0x006f_7900 => extern "thiscall" fn icon_panel_hide_icon(this: u32, i: u32) {
+        mn::icon_panel_hide_icon(&mut mem(), this, i);
+    }
+    /// `IggyValueRef_create_00a288b0(this; player, temp)` -> `this`.
+    IggyValueRef_create_00a288b0 @ 0x00a2_88b0 => extern "thiscall" fn iggy_value_ref_create(this: u32, player: u32, temp: u32) -> u32 {
+        mn::iggy_value_ref_create(&mut mem(), this, player, temp)
+    }
+    /// `IggyMenuHandlers_flush_00a28ff0(this)`.
+    IggyMenuHandlers_flush_00a28ff0 @ 0x00a2_8ff0 => extern "thiscall" fn iggy_handlers_flush(this: u32) {
+        mn::iggy_handlers_flush(&mut mem(), this);
+    }
+    /// `RemapButtonIcon_remapButtonIcon(this; a, b, c, d, e)`.
+    RemapButtonIcon_remapButtonIcon @ 0x006e_69e0 => extern "thiscall" fn remap_button_icon(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        mn::remap_button_icon(&mut mem(), this, [a, b, c, d, e])
+    }
+    /// `MenuManager_UpdateMenu(this)`.
+    MenuManager_UpdateMenu @ 0x0067_faa0 => extern "thiscall" fn menu_update(this: u32) -> u32 {
+        mn::menu_update(&mut mem(), this)
+    }
+    /// `MenuManager_GetMenuRecord_0067b990(this; i)`.
+    MenuManager_GetMenuRecord_0067b990 @ 0x0067_b990 => extern "thiscall" fn menu_record(this: u32, i: u32) -> u32 {
+        mn::menu_record(&mem(), this, i)
+    }
+    /// `IggyMenuManager_removeMenu_00a26c50(this; menu)`.
+    IggyMenuManager_removeMenu_00a26c50 @ 0x00a2_6c50 => extern "thiscall" fn iggy_manager_remove_menu(this: u32, menu: u32) {
+        mn::iggy_manager_remove_menu(&mut mem(), this, menu);
+    }
+    /// `TreeHead_copy_0069a1e0(this)`.
+    TreeHead_copy_0069a1e0 @ 0x0069_a1e0 => extern "thiscall" fn tree_head_copy(this: u32) -> u32 {
+        mn::tree_head_copy(&mut mem(), this)
+    }
+    /// `TreeNode_newWithKey_0069c580(this; key)`.
+    TreeNode_newWithKey_0069c580 @ 0x0069_c580 => extern "thiscall" fn tree_node_new_with_key(this: u32, key: u32) -> u32 {
+        mn::tree_node_new_with_key(&mut mem(), this, key)
+    }
+    /// `PhyreScene_setColor4_00638840(this; v)`.
+    PhyreScene_setColor4_00638840 @ 0x0063_8840 => extern "thiscall" fn scene_set_color4(this: u32, v: u32) {
+        e::scene_set_color4(&mut mem(), this, v);
+    }
+    /// `MotionBlur_setMotionBlurWeight(this; w)`.
+    MotionBlur_setMotionBlurWeight @ 0x006c_5600 => extern "thiscall" fn motion_blur_set_weight(this: u32, w: u32) {
+        e::motion_blur_set_weight(&mut mem(), this, w);
+    }
+    /// `PostEffect_PostEffect_006c5670(this)` -> `this`.
+    PostEffect_PostEffect_006c5670 @ 0x006c_5670 => extern "thiscall" fn post_effect_ctor(this: u32) -> u32 {
+        e::post_effect_ctor(&mut mem(), this)
+    }
+    /// `TOMkpShapeXY(a, b, c)`.
+    TOMkpShapeXY @ 0x0090_3a10 => extern "C" fn mkp_shape_xy(a: u32, b: u32, c: u32) -> u32 {
+        m::mkp_shape_xy(&mut mem(), a, b, c)
+    }
+    /// `ThreadCall_run_00703910(this)`.
+    ThreadCall_run_00703910 @ 0x0070_3910 => extern "thiscall" fn thread_call_run(this: u32) -> u32 {
+        m::thread_call_run(&mut mem(), this)
+    }
+    /// `TextUtil_animate_006f69f0(this; dt)`.
+    TextUtil_animate_006f69f0 @ 0x006f_69f0 => extern "thiscall" fn text_animate(this: u32, dt: u32) {
+        m::text_animate(&mut mem(), this, dt);
+    }
 }
