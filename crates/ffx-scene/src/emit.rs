@@ -5,9 +5,8 @@
 use std::collections::HashMap;
 
 use ffx_draw::DrawCall;
-use ffx_draw::backend::{Blend, Buffer, DepthState, Layout, Raster, Sampler, Shader, View};
+use ffx_draw::backend::{Blend, DepthState, Layout, Raster, Sampler, Shader, View};
 use ffx_draw::desc::{Stage, ViewKind};
-use ffx_draw::state::StageBindings;
 use ffx_gfx::{Cmd, Draw, DrawKind, Frame, Id, Msg, StateKind};
 
 use crate::build::{Built, Pass, ViewSource};
@@ -196,13 +195,7 @@ fn texture_hash(subresources: &[(u32, Vec<u8>)]) -> u64 {
 /// One built draw as a captured one. External objects (scene targets,
 /// run-time textures, the dynamic ring's vertices) are the host's: they
 /// take `host`'s (the captured draw in that place) in the same slot.
-fn draw(
-    d: &crate::build::MapDraw,
-    r: &crate::build::Resources,
-    ids: &Ids,
-    cbs: &dyn Fn(Buffer) -> Vec<u8>,
-    host: &Draw,
-) -> Draw {
+fn draw(d: &crate::build::MapDraw, r: &crate::build::Resources, ids: &Ids, host: &Draw) -> Draw {
     let s = &d.state;
     let external_view = |v: View| {
         r.views
@@ -210,10 +203,11 @@ fn draw(
             .is_some_and(|x| matches!(x.source, ViewSource::External(_)))
     };
     let host_slot = |list: &[(u8, Id)], i: u8| list.iter().find(|x| x.0 == i).map_or(0, |x| x.1);
-    let stage_cbs = |st: &StageBindings| -> Vec<(u8, Vec<u8>)> {
-        (0u8..)
-            .zip(st.cbs.iter())
-            .filter_map(|(i, c)| c.map(|c| (i, cbs(c.buffer))))
+    let stage_cbs = |stage: Stage| -> Vec<(u8, Vec<u8>)> {
+        d.constants
+            .iter()
+            .filter(|c| c.0 == stage)
+            .map(|c| (c.1, c.2.clone()))
             .collect()
     };
     let views = |list: &[Option<View>], host: &[(u8, Id)]| -> Vec<(u8, Id)> {
@@ -274,8 +268,8 @@ fn draw(
         index: s.index.map_or((0, 0, 0), |x| {
             (at(&ids.buffers, x.buffer.0), x.format, x.offset)
         }),
-        vs_cb: stage_cbs(&s.vs),
-        ps_cb: stage_cbs(&s.ps),
+        vs_cb: stage_cbs(Stage::Vertex),
+        ps_cb: stage_cbs(Stage::Pixel),
         vs_srv: views(&s.vs.srvs, &host.vs_srv),
         ps_srv: views(&s.ps.srvs, &host.ps_srv),
         vs_samplers: samplers(&s.vs.samplers),
@@ -321,14 +315,6 @@ pub fn replace_map_draws(
         return Err("no captured map draw of a pass".into());
     };
     let (mut msgs, ids) = objects(built, cap.is_hashed());
-    let cbs = |b: Buffer| {
-        built
-            .resources
-            .buffers
-            .get(b.0 as usize)
-            .map(|x| x.1.clone())
-            .unwrap_or_default()
-    };
     let captured = |cmd: usize| match cap.frame.cmds.get(cmd) {
         Some(Cmd::Draw(d)) => Some(&**d),
         _ => None,
@@ -342,7 +328,7 @@ pub fn replace_map_draws(
         for (k, d) in built.pass(pass).enumerate() {
             let at = list.get(k).copied();
             let host = at.and_then(captured).unwrap_or(first);
-            let cmd = Cmd::Draw(Box::new(draw(d, &built.resources, &ids, &cbs, host)));
+            let cmd = Cmd::Draw(Box::new(draw(d, &built.resources, &ids, host)));
             place.entry(at.unwrap_or(last)).or_default().push(cmd);
         }
     }

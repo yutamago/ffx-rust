@@ -270,8 +270,9 @@ fn model_of(c: &Clusters, s: &SceneInputs, wire: Option<&Wire>, cluster: usize) 
 
 impl LiveInputs {
     /// The map passes' inputs from one frame's records (the map world's
-    /// `Opaque*` and `Transparent*` calls; `post*` calls draw nothing of
-    /// the map). `fallback_settings` stand in for a version 1 record's.
+    /// `Opaque*` and `Transparent*` calls, or one of them, whose record
+    /// then serves both passes: the camera, worlds and materials are the
+    /// same at both calls; `post*` calls draw nothing of the map). `fallback_settings` stand in for a version 1 record's.
     ///
     /// # Errors
     /// When the records lack the map's opaque or transparent call, or the
@@ -288,8 +289,16 @@ impl LiveInputs {
                 .iter()
                 .find(|(s, _)| s.world == MAP_WORLD && s.pass.starts_with(p))
         };
-        let (s, wire) = pick("Opaque").ok_or("no map Opaque renderWorld record")?;
-        let (t, _) = pick("Transparent").ok_or("no map Transparent renderWorld record")?;
+        // One pass's record serves both (the in-game builder sees one
+        // `renderWorld` call at a time); the other pass's name follows.
+        let (s, wire) = pick("Opaque")
+            .or_else(|| pick("Transparent"))
+            .ok_or("no map Opaque or Transparent renderWorld record")?;
+        let other = |from: &str, to: &str| s.pass.replacen(from, to, 1);
+        let opaque_name =
+            pick("Opaque").map_or_else(|| other("Transparent", "Opaque"), |(r, _)| r.pass.clone());
+        let transparent_name = pick("Transparent")
+            .map_or_else(|| other("Opaque", "Transparent"), |(r, _)| r.pass.clone());
         let mut notes = Vec::new();
         let settings = wire.as_ref().map_or(fallback_settings, |w| Settings {
             texture_quality: match w.texture_quality {
@@ -417,7 +426,7 @@ impl LiveInputs {
         );
         Ok(Self {
             settings,
-            pass_names: (s.pass.clone(), t.pass.clone()),
+            pass_names: (opaque_name, transparent_name),
             camera: Camera {
                 view,
                 view_projection,

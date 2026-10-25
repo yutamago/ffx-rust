@@ -31,7 +31,7 @@ use ffx_draw::desc::{
     BlendDesc, BufferDesc, DepthStencilDesc, InputElement, RasterDesc, SamplerDesc, Stage,
     TextureDesc, ViewDesc, ViewKind,
 };
-use ffx_draw::state::{CbBinding, IndexBinding, StageBindings, VertexBinding};
+use ffx_draw::state::{IndexBinding, StageBindings, VertexBinding};
 use ffx_draw::{DrawCall, DrawState};
 
 use crate::census::{mul, mul_f64};
@@ -462,8 +462,12 @@ pub struct MapDraw {
     pub instance: usize,
     pub segment: usize,
     pub material: usize,
+    /// Everything bound but the `$Globals` constant buffers, which are in
+    /// `constants` as bytes (`ffx_draw::pass::PassDraw`'s convention).
     pub state: DrawState,
     pub call: DrawCall,
+    /// Per stage with a `$Globals` buffer: its slot and contents.
+    pub constants: Vec<(Stage, u8, Vec<u8>)>,
 }
 
 /// The builder's output.
@@ -617,7 +621,12 @@ pub fn transpose_bytes(b: &[u8]) -> Vec<u8> {
 /// 4x4 transposed, stopping at one whose first word is `0xffffffff` (the
 /// end of a bone list); what it doesn't reach keeps the buffer's fill.
 pub fn copy_matrices(src: &[u8], dst: &mut [u8]) {
-    for (s, d) in src.as_chunks::<64>().0.iter().zip(dst.as_chunks_mut::<64>().0) {
+    for (s, d) in src
+        .as_chunks::<64>()
+        .0
+        .iter()
+        .zip(dst.as_chunks_mut::<64>().0)
+    {
         if s[..4] == [0xff; 4] {
             break;
         }
@@ -908,9 +917,10 @@ impl<I: SceneInputs> Builder<'_, I> {
         let material_bytes = self.material_buffer(material).to_vec();
         let scene = std::mem::take(&mut self.scene_wide);
         let mut stages = [StageBindings::default(), StageBindings::default()];
-        for (b, (prog, params, textures, shader)) in stages.iter_mut().zip([
-            (&sp.vs, &sp.vs_params, &sp.vs_textures, vs),
-            (&sp.ps, &sp.ps_params, &sp.ps_textures, ps),
+        let mut constants = Vec::new();
+        for (b, (stage, prog, params, textures, shader)) in stages.iter_mut().zip([
+            (Stage::Vertex, &sp.vs, &sp.vs_params, &sp.vs_textures, vs),
+            (Stage::Pixel, &sp.ps, &sp.ps_params, &sp.ps_textures, ps),
         ]) {
             b.shader = Some(shader);
             if prog.global_cb != u32::MAX {
@@ -920,21 +930,8 @@ impl<I: SceneInputs> Builder<'_, I> {
                     [&scene, &material_bytes, &node],
                     &mut self.out.notes,
                 );
-                let desc = BufferDesc {
-                    size: prog.cb_size,
-                    usage: ffx_draw::desc::USAGE_DYNAMIC,
-                    bind: ffx_draw::desc::BIND_CONSTANT,
-                    cpu_access: ffx_draw::desc::CPU_WRITE,
-                    misc: 0,
-                    stride: 0,
-                };
-                let buffer = self.out.resources.buffer(desc, data);
-                if let Some(slot) = b.cbs.get_mut(prog.global_cb as usize) {
-                    *slot = Some(CbBinding {
-                        buffer,
-                        first: 0,
-                        count: 0,
-                    });
+                if let Ok(slot) = u8::try_from(prog.global_cb) {
+                    constants.push((stage, slot, data));
                 }
             }
             self.bind_textures(textures, variant, material, b)?;
@@ -954,6 +951,7 @@ impl<I: SceneInputs> Builder<'_, I> {
                 start: 0,
                 base: 0,
             },
+            constants,
         });
         Ok(())
     }
@@ -1046,6 +1044,20 @@ impl<I: SceneInputs> Builder<'_, I> {
 /// On a missing effect or texture, or data the builder doesn't handle
 /// (each named).
 pub fn build(c: &Clusters, inputs: &impl SceneInputs) -> Result<Built, Error> {
+    build_into(c, inputs, Resources::default())
+}
+
+/// [`build`] adding to `resources` (the objects of earlier frames): an
+/// object already there keeps its handle, so a host that made them once
+/// (`upload::Uploaded::extend`) only makes the new ones.
+///
+/// # Errors
+/// As [`build`].
+pub fn build_into(
+    c: &Clusters,
+    inputs: &impl SceneInputs,
+    resources: Resources,
+) -> Result<Built, Error> {
     let settings = inputs.settings();
     let dropped = settings.texture_quality.dropped_levels();
     let mut b = Builder {
@@ -1056,7 +1068,10 @@ pub fn build(c: &Clusters, inputs: &impl SceneInputs) -> Result<Built, Error> {
         anisotropy: settings.anisotropy,
         scene_wide: inputs.scene_wide(),
         materials: HashMap::new(),
-        out: Built::default(),
+        out: Built {
+            resources,
+            ..Built::default()
+        },
     };
     let (opaque, transparent) = inputs.pass_names();
     for (pass, name, is_opaque) in [

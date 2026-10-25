@@ -27,9 +27,15 @@ pub struct Uploaded {
     pub depths: Vec<DepthState>,
     pub rasters: Vec<Raster>,
     pub samplers: Vec<Sampler>,
+    /// External buffers (`Resources::external_buffers`) are [`HOST`].
     pub buffers: Vec<Buffer>,
+    pub textures: Vec<ffx_draw::backend::Texture>,
     pub views: Vec<View>,
 }
+
+/// The handle of an object the host binds per draw (an external buffer;
+/// an external view when the host gives this one).
+pub const HOST: u32 = u32::MAX;
 
 fn get<T: Copy>(list: &[T], i: u32) -> Option<T> {
     list.get(i as usize).copied()
@@ -48,33 +54,54 @@ impl Uploaded {
         external: impl Fn(External) -> Option<View>,
     ) -> Result<Self> {
         let mut up = Self::default();
-        for (stage, code) in &r.shaders {
-            up.shaders.push(b.create_shader(*stage, code)?);
+        up.extend(b, r, external)?;
+        Ok(up)
+    }
+
+    /// Makes the objects `r` holds past those made so far (`r` grows by
+    /// appending: `build::build_into`), so a host keeps one `Uploaded`
+    /// across frames.
+    ///
+    /// # Errors
+    /// As [`Self::new`]; what was made before the failure stays.
+    pub fn extend<B: Backend>(
+        &mut self,
+        b: &mut B,
+        r: &Resources,
+        external: impl Fn(External) -> Option<View>,
+    ) -> Result<()> {
+        for (stage, code) in r.shaders.iter().skip(self.shaders.len()) {
+            self.shaders.push(b.create_shader(*stage, code)?);
         }
-        for (elements, vs) in &r.layouts {
+        for (elements, vs) in r.layouts.iter().skip(self.layouts.len()) {
             let code = r
                 .shaders
                 .get(vs.0 as usize)
                 .ok_or_else(|| Error("layout of an unknown shader".into()))?;
-            up.layouts.push(b.create_layout(elements, &code.1)?);
+            self.layouts.push(b.create_layout(elements, &code.1)?);
         }
-        for d in &r.blends {
-            up.blends.push(b.create_blend(d)?);
+        for d in r.blends.iter().skip(self.blends.len()) {
+            self.blends.push(b.create_blend(d)?);
         }
-        for d in &r.depths {
-            up.depths.push(b.create_depth_state(d)?);
+        for d in r.depths.iter().skip(self.depths.len()) {
+            self.depths.push(b.create_depth_state(d)?);
         }
-        for d in &r.rasters {
-            up.rasters.push(b.create_raster(d)?);
+        for d in r.rasters.iter().skip(self.rasters.len()) {
+            self.rasters.push(b.create_raster(d)?);
         }
-        for d in &r.samplers {
-            up.samplers.push(b.create_sampler(d)?);
+        for d in r.samplers.iter().skip(self.samplers.len()) {
+            self.samplers.push(b.create_sampler(d)?);
         }
-        for (desc, data) in &r.buffers {
-            up.buffers.push(b.create_buffer(desc, Some(data))?);
+        for k in self.buffers.len()..r.buffers.len() {
+            let (desc, data) = &r.buffers[k];
+            let host = u32::try_from(k).is_ok_and(|k| r.external_buffers.contains_key(&k));
+            self.buffers.push(if host {
+                Buffer(HOST)
+            } else {
+                b.create_buffer(desc, Some(data))?
+            });
         }
-        let mut textures = Vec::new();
-        for t in &r.textures {
+        for t in r.textures.iter().skip(self.textures.len()) {
             let init: Vec<InitData> = t
                 .subresources
                 .iter()
@@ -83,21 +110,22 @@ impl Uploaded {
                     data,
                 })
                 .collect();
-            textures.push(b.create_texture(&t.desc, &init)?);
+            self.textures.push(b.create_texture(&t.desc, &init)?);
         }
-        for v in &r.views {
-            up.views.push(match v.source {
+        for v in r.views.iter().skip(self.views.len()) {
+            let view = match v.source {
                 ViewSource::Texture(t) => {
-                    let tex = get(&textures, t.0)
+                    let tex = get(&self.textures, t.0)
                         .ok_or_else(|| Error("view of an unknown texture".into()))?;
                     b.create_view(tex, v.kind, v.desc.as_ref())?
                 }
                 ViewSource::External(e) => {
                     external(e).ok_or_else(|| Error(format!("no host view for {e:?}")))?
                 }
-            });
+            };
+            self.views.push(view);
         }
-        Ok(up)
+        Ok(())
     }
 
     fn stage(&self, s: &StageBindings) -> StageBindings {
