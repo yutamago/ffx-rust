@@ -6,6 +6,7 @@
 //! - [`matrix`] has `PMatrix4` copies, builders and products (x87, 53 bits);
 //! - [`sync`] has `PEventFlagWin32`, `PSemaphoreWin32`, the critical sections,
 //!   thread initialisation, the thread pool's small members;
+//! - [`array`] has `PArray` assignment, comparison and bit fields;
 //! - [`freelist`] has `PFreeList`;
 //! - [`string`] has `PString`, `PStringBuilder` and the aligned allocator;
 //! - [`small`] has the class descriptors' little virtual members (construct
@@ -29,6 +30,7 @@
     clippy::similar_names
 )]
 
+pub mod array;
 pub mod freelist;
 pub mod matrix;
 pub mod small;

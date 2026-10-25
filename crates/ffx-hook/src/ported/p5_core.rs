@@ -274,6 +274,26 @@ ported! {
     PMatrix4_TransformPoint_004c9cb0 @ 0x004c_9cb0 => extern "thiscall" fn p5_004c9cb0(m: u32, out: u32, p: u32) -> u32 {
         ffx_pcore::matrix::bridge::transform_point(&mut mem(), m, out, p)
     }
+    /// `PMatrix4_MulThis_004c9da0` `(a, out, b)` -> `out`.
+    PMatrix4_MulThis_004c9da0 @ 0x004c_9da0 => extern "thiscall" fn p5_004c9da0(a: u32, out: u32, b: u32) -> u32 {
+        ffx_pcore::matrix::bridge::mul_affine(&mut mem(), a, out, b)
+    }
+    /// `PMatrix4_TransformPoint3_004c9eb0` `(m, out, p)` -> `out`.
+    PMatrix4_TransformPoint3_004c9eb0 @ 0x004c_9eb0 => extern "thiscall" fn p5_004c9eb0(m: u32, out: u32, p: u32) -> u32 {
+        ffx_pcore::matrix::bridge::transform3(&mut mem(), m, out, p)
+    }
+    /// `PMatrix4_Rotate3_004ca140` `(m, out, v)` -> `out`.
+    PMatrix4_Rotate3_004ca140 @ 0x004c_a140 => extern "thiscall" fn p5_004ca140(m: u32, out: u32, v: u32) -> u32 {
+        ffx_pcore::matrix::bridge::rotate3(&mut mem(), m, out, v)
+    }
+    /// `PMatrix4_Multiply_004ca360` `(out, a, b)` -> `out`.
+    PMatrix4_Multiply_004ca360 @ 0x004c_a360 => extern "C" fn p5_004ca360(out: u32, a: u32, b: u32) -> u32 {
+        ffx_pcore::matrix::bridge::multiply(&mut mem(), out, a, b)
+    }
+    /// `PObject_MakeInto_004cc030` `(out, x)` -> 0 or `0x13`.
+    PObject_MakeInto_004cc030 @ 0x004c_c030 => extern "C" fn p5_004cc030(out: u32, x: u32) -> u32 {
+        ffx_pcore::array::bridge::make_into(&mut mem(), ffx_pcore::array::MAKE_4CB090, out, x)
+    }
     /// `PClassDesc_Construct2_004cc1d0` `(p)`: 2 word(s) clear when `p` is set; `eax` `p` with `al = 1`.
     PClassDesc_Construct2_004cc1d0 @ 0x004c_c1d0 => extern "stdcall" fn p5_004cc1d0(p: u32) -> u32 {
         ffx_pcore::small::bridge::clear_words(&mut mem(), p, 2)
@@ -290,6 +310,18 @@ ported! {
     PClassDesc_Return1_004cc360 @ 0x004c_c360 => extern "stdcall" fn p5_004cc360(_p: u32) -> u8 {
         1
     }
+    /// `PMatrix4_RotationZ_004cd1f0` `(out, angle)` -> `out`.
+    PMatrix4_RotationZ_004cd1f0 @ 0x004c_d1f0 => extern "C" fn p5_004cd1f0(out: u32, angle: u32) -> u32 {
+        ffx_pcore::matrix::bridge::rotation_z(&mut mem(), out, angle)
+    }
+    /// `PMatrix4_Scale_004cd270` `(out, v)` -> `out`.
+    PMatrix4_Scale_004cd270 @ 0x004c_d270 => extern "C" fn p5_004cd270(out: u32, v: u32) -> u32 {
+        ffx_pcore::matrix::bridge::scale(&mut mem(), out, v)
+    }
+    /// `PObject_MakeInto_004d3d10` `(out, x)` -> 0 or `0x13`.
+    PObject_MakeInto_004d3d10 @ 0x004d_3d10 => extern "C" fn p5_004d3d10(out: u32, x: u32) -> u32 {
+        ffx_pcore::array::bridge::make_into(&mut mem(), ffx_pcore::array::MAKE_4D3830, out, x)
+    }
     /// `PClassDesc_Construct5_004d3eb0` `(p)`.
     PClassDesc_Construct5_004d3eb0 @ 0x004d_3eb0 => extern "stdcall" fn p5_004d3eb0(p: u32) -> u32 {
         ffx_pcore::small::bridge::clear_4d3eb0(&mut mem(), p)
@@ -301,6 +333,14 @@ ported! {
     /// `PArray_Data_004d45a0` `(array)` -> the elements.
     PArray_Data_004d45a0 @ 0x004d_45a0 => extern "thiscall" fn p5_004d45a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PBitArray_setBits_004d55d0` `(bits, value, bit, count)` (its `eax`, the last shift, is unread).
+    PBitArray_setBits_004d55d0 @ 0x004d_55d0 => extern "thiscall" fn p5_004d55d0(this: u32, value: u32, bit: u32, count: u32) {
+        ffx_pcore::array::bridge::set_bits(&mut mem(), this, value, bit, count);
+    }
+    /// `PSharray_compareWords` `(array, words, count)` -> -1, 0 or 1.
+    PSharray_compareWords @ 0x004e_ea10 => extern "thiscall" fn p5_004eea10(this: u32, words: u32, count: u32) -> u32 {
+        ffx_pcore::array::bridge::compare_words(&mut mem(), this, words, count)
     }
     /// `PClassDesc_Construct2_004eea90` `(p)`: 2 word(s) clear when `p` is set; `eax` `p` with `al = 1`.
     PClassDesc_Construct2_004eea90 @ 0x004e_ea90 => extern "stdcall" fn p5_004eea90(p: u32) -> u32 {
@@ -362,6 +402,18 @@ ported! {
     PClassDesc_Callback38_004eeec0 @ 0x004e_eec0 => extern "thiscall" fn p5_004eeec0(this: u32, i: u32) -> u32 {
         ffx_pcore::small::bridge::callback_38(&mut mem(), this, i)
     }
+    /// `PArray_assign_004f9020` `(array, src, n)` -> 0 or 5.
+    PArray_assign_004f9020 @ 0x004f_9020 => extern "thiscall" fn p5_004f9020(this: u32, src: u32, n: u32) -> u32 {
+        ffx_pcore::array::bridge::assign(&mut mem(), this, src, n)
+    }
+    /// `PArray_borrow_004f90b0` `(array, elements, n)` -> 0.
+    PArray_borrow_004f90b0 @ 0x004f_90b0 => extern "thiscall" fn p5_004f90b0(this: u32, elements: u32, n: u32) -> u32 {
+        ffx_pcore::array::bridge::borrow(&mut mem(), this, elements, n)
+    }
+    /// `PArray_assignOrStore_004f9100` `(array, src, n)` -> 0.
+    PArray_assignOrStore_004f9100 @ 0x004f_9100 => extern "thiscall" fn p5_004f9100(this: u32, src: u32, n: u32) -> u32 {
+        ffx_pcore::array::bridge::assign_or_store(&mut mem(), this, src, n)
+    }
     /// `PClassDesc_Callback3c_004f9150` `(this, object, a, b)` -> the callback's `eax` or `0x15`.
     PClassDesc_Callback3c_004f9150 @ 0x004f_9150 => extern "thiscall" fn p5_004f9150(this: u32, object: u32, a: u32, b: u32) -> u32 {
         ffx_pcore::small::bridge::callback_3c(&mut mem(), this, object, a, b)
@@ -369,6 +421,14 @@ ported! {
     /// `PClassDesc_Callback3c_004f9180` `(this, object, a, b)` -> the callback's `eax` or `0x15`.
     PClassDesc_Callback3c_004f9180 @ 0x004f_9180 => extern "thiscall" fn p5_004f9180(this: u32, object: u32, a: u32, b: u32) -> u32 {
         ffx_pcore::small::bridge::callback_3c(&mut mem(), this, object, a, b)
+    }
+    /// `PThreadPool_forward_0057cfe0` `(this, object)` -> the call's `eax`.
+    PThreadPool_forward_0057cfe0 @ 0x0057_cfe0 => extern "thiscall" fn p5_0057cfe0(this: u32, object: u32) -> u32 {
+        ffx_pcore::array::bridge::forward_57cfe0(&mut mem(), this, object)
+    }
+    /// `PThreadPool_allocStack_0057d000` `(this)` -> 0 or `0xd`.
+    PThreadPool_allocStack_0057d000 @ 0x0057_d000 => extern "thiscall" fn p5_0057d000(this: u32) -> u32 {
+        ffx_pcore::array::bridge::alloc_stack(&mut mem(), this)
     }
     /// `Phyre_PPreprocessRingBuffer_allocate` `(ring, size)` -> the block.
     Phyre_PPreprocessRingBuffer_allocate @ 0x005c_d0f0 => extern "thiscall" fn p5_005cd0f0(this: u32, size: u32) -> u32 {

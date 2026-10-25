@@ -6,6 +6,11 @@
 //! The order of reads and writes is the original's, so an output that
 //! overlaps an input gives what the original gives.
 
+/// `_CIsin`'s import thunk (argument and result in `ST0`).
+pub const CI_SIN: u32 = 0x0094_98c8;
+/// `_CIcos`'s import thunk.
+pub const CI_COS: u32 = 0x0094_98c2;
+
 pub mod bridge {
     //! The originals over game memory.
 
@@ -309,5 +314,158 @@ pub mod bridge {
             row_times_vector(h, m, scratch + 16 * r, b + 16 * r);
         }
         from_rows(h, out, [scratch, scratch + 16, scratch + 32, scratch + 48])
+    }
+    /// `fstp dword` of `a * b` (`f32` bits).
+    fn prod(a: u32, b: u32) -> u32 {
+        x87::store(x87::mul(x87::load(a), x87::load(b)))
+    }
+
+    /// `fstp dword` of `a + b` (`f32` bits).
+    fn sum(a: u32, b: u32) -> u32 {
+        x87::store(x87::add(x87::load(a), x87::load(b)))
+    }
+
+    /// `n` words.
+    fn words<const N: usize>(h: &impl Host, at: u32) -> [u32; N] {
+        std::array::from_fn(|i| h.read(at + 4 * i as u32))
+    }
+
+    /// `0x004ca140`'s sums: `v` (3 floats) times the 3x4 `m`'s rotation,
+    /// each product and partial sum stored as `f32`.
+    fn rotate(m: &[u32], v: [u32; 3]) -> [u32; 3] {
+        std::array::from_fn(|c| {
+            let p0 = prod(v[0], m[c]);
+            let p1 = prod(v[1], m[4 + c]);
+            let p2 = prod(v[2], m[8 + c]);
+            sum(p2, sum(p1, p0))
+        })
+    }
+
+    /// The point `v` times the 4x4 `m` (`0x004c9eb0`'s sums: the rotation
+    /// as [`rotate`], then the translation added and stored).
+    fn transform(m: &[u32; 16], v: [u32; 3]) -> [u32; 3] {
+        let r = rotate(m, v);
+        std::array::from_fn(|c| sum(m[12 + c], r[c]))
+    }
+
+    /// Stores a 3-vector as the originals do: `y` (`fstp`), `x` (a word
+    /// copy), `z` (`fstp`).
+    fn put3(h: &mut impl Host, out: u32, v: [u32; 3]) {
+        h.write(out + 4, x87::store(x87::load(v[1])));
+        h.write(out, v[0]);
+        h.write(out + 8, x87::store(x87::load(v[2])));
+    }
+
+    /// The `fld`/`fstp` copy of three floats.
+    fn quiet3(h: &impl Host, at: u32) -> [u32; 3] {
+        std::array::from_fn(|i| x87::store(ld(h, at + 4 * i as u32)))
+    }
+
+    /// `0x004c9eb0(m, out, p)`: `out = (p, 1) m`, three components;
+    /// `out`.
+    pub fn transform3(h: &mut impl Host, m: u32, out: u32, p: u32) -> u32 {
+        let mm: [u32; 16] = words(h, m);
+        let v = quiet3(h, p);
+        let r = transform(&mm, v);
+        put3(h, out, r);
+        out
+    }
+
+    /// `0x004ca140(m, out, v)`: `out = v` times `m`'s rotation; `out`.
+    pub fn rotate3(h: &mut impl Host, m: u32, out: u32, v: u32) -> u32 {
+        let mm: [u32; 12] = words(h, m);
+        let v = quiet3(h, v);
+        let r = rotate(&mm, v);
+        put3(h, out, r);
+        out
+    }
+
+    /// `PMatrix4_MulThis` `0x004c9da0(a, out, b)`: `out = b a` for affine
+    /// matrices (rows 0-2 of `b` through [`rotate3`], row 3 through
+    /// [`transform3`], then `PMatrix4_FromAxes`); `out`.
+    pub fn mul_affine(h: &mut impl Host, a: u32, out: u32, b: u32) -> u32 {
+        let r3 = quiet3(h, b + 0x30);
+        let r2 = quiet3(h, b + 0x20);
+        let r1 = quiet3(h, b + 0x10);
+        let r0 = quiet3(h, b);
+        let am: [u32; 16] = words(h, a);
+        let d = transform(&am, r3);
+        let c = rotate(&am, r2);
+        let bb = rotate(&am, r1);
+        let aa = rotate(&am, r0);
+        for (r, v) in [aa, bb, c, d].into_iter().enumerate() {
+            for (i, w) in v.into_iter().enumerate() {
+                h.write(out + 16 * r as u32 + 4 * i as u32, x87::store(x87::load(w)));
+            }
+            st(h, out + 16 * r as u32 + 0xc, if r == 3 { 1.0 } else { 0.0 });
+        }
+        out
+    }
+
+    /// `PMatrix4_Multiply` `0x004ca360(out, a, b)`: `out = b a`: rows 0-2
+    /// `b[r][0] a0 + b[r][1] a1 + b[r][2] a2` (four columns, one rounding
+    /// each), row 3 `(b3.xyz, 1) a` (`PMatrix4_TransformPoint`); `out`.
+    pub fn multiply(h: &mut impl Host, out: u32, a: u32, b: u32) -> u32 {
+        let am = read16(h, a);
+        let bm = read16(h, b);
+        let e = |i: usize| Reg::load(am[i]);
+        let mut rows = [[0u32; 4]; 4];
+        for (r, row) in rows.iter_mut().enumerate().take(3) {
+            for (c, w) in row.iter_mut().enumerate() {
+                let s = (Reg::load(bm[4 * r]) * e(c) + Reg::load(bm[4 * r + 1]) * e(4 + c))
+                    + Reg::load(bm[4 * r + 2]) * e(8 + c);
+                *w = x87::store(s.value());
+            }
+        }
+        let p = [bm[12], bm[13], bm[14], 0.0];
+        for (c, w) in rows[3].iter_mut().enumerate() {
+            *w = x87::store(row_times(&am, &p, c, true));
+        }
+        for (r, row) in rows.into_iter().enumerate() {
+            for (c, w) in row.into_iter().enumerate() {
+                h.write(out + 16 * r as u32 + 4 * c as u32, x87::store(x87::load(w)));
+            }
+        }
+        out
+    }
+
+    /// `0x004cd1f0(out, angle)`: the rotation about z, rows `(c, s, 0, 0)`,
+    /// `(-s, c, 0, 0)`, then the identity's (`_CIsin`, `_CIcos`, each
+    /// stored as `f32`); `out`.
+    pub fn rotation_z(h: &mut impl Host, out: u32, angle: u32) -> u32 {
+        let x = x87::load(angle);
+        let s = h.call_intrinsic(h.rebase(super::CI_SIN), x);
+        let c = h.call_intrinsic(h.rebase(super::CI_COS), x);
+        let (s, c) = (x87::load(s.to_bits()), x87::load(c.to_bits()));
+        let rows = [
+            [c, s, 0.0, 0.0],
+            [-s, c, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        for (r, row) in rows.into_iter().enumerate() {
+            for (i, x) in row.into_iter().enumerate() {
+                st(h, out + 16 * r as u32 + 4 * i as u32, x);
+            }
+        }
+        out
+    }
+
+    /// `0x004cd270(out, v)`: the scale `diag(v.x, v.y, v.z, 1)`; `out`.
+    pub fn scale(h: &mut impl Host, out: u32, v: u32) -> u32 {
+        let z = ld(h, v + 8);
+        let y = ld(h, v + 4);
+        let x = ld(h, v);
+        for i in 0..16 {
+            let d = match i {
+                0 => x,
+                5 => y,
+                10 => z,
+                15 => 1.0,
+                _ => 0.0,
+            };
+            st(h, out + 4 * i, d);
+        }
+        out
     }
 }

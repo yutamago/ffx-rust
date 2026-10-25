@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_pcore::{freelist, matrix, small, string, sync};
+use ffx_pcore::{array, freelist, matrix, small, string, sync};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -121,7 +121,26 @@ impl Host for G<'_> {
     fn scratch(&mut self) -> u32 {
         tmp(self.0)
     }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        // the trampoline at the cave's start: `fld qword [esp+4]; call
+        // [esp+0xc]; ret`, then at +16 `fstp st(0); ret`
+        let at = self.0.rebase(CAVE);
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap();
+        let v = r.st0_f32().expect("the intrinsic's ST0");
+        self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
+        v
+    }
 }
+
+/// The intrinsic trampoline (see `G::call_intrinsic`).
+const TRAMPOLINE_CODE: [u8; 19] = [
+    0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+    0xdd, 0xd8, 0xc3,
+];
 
 /// Memory only the port uses: the bottom of its oracle's stack, which no
 /// call reaches and the diff leaves out.
@@ -180,6 +199,8 @@ impl Twins {
             cave_next: cave,
         };
         t.log = t.zeros(0x8000);
+        t.code(&TRAMPOLINE_CODE);
+        t.code(&[0x90; 13]);
         t
     }
 
@@ -1168,6 +1189,49 @@ fn matrix_helpers_match_the_original() {
                 _ => t.zeros(64),
             };
             let scratch = tmp(&t.b);
+            if rng.chance(3) {
+                let what = format!("{what} (2)");
+                match rng.below(6) {
+                    0 => t.check(&what, 0x004c_9eb0, Conv::Thiscall(m), &[out, v[2]], |g| {
+                        Out::U32(matrix::bridge::transform3(g, m, out, v[2]))
+                    }),
+                    1 => t.check(&what, 0x004c_a140, Conv::Thiscall(m), &[out, v[3]], |g| {
+                        Out::U32(matrix::bridge::rotate3(g, m, out, v[3]))
+                    }),
+                    2 => {
+                        let b = t.alloc(&rng.floats(16));
+                        let o = [b, m, out][rng.below(3) as usize];
+                        t.check(&what, 0x004c_9da0, Conv::Thiscall(m), &[o, b], |g| {
+                            Out::U32(matrix::bridge::mul_affine(g, m, o, b))
+                        });
+                    }
+                    3 => {
+                        let b = t.alloc(&if wide {
+                            rng.floats_wide(16)
+                        } else {
+                            rng.floats(16)
+                        });
+                        let o = [b, m, out][rng.below(3) as usize];
+                        t.check(&what, 0x004c_a360, Conv::Cdecl, &[o, m, b], |g| {
+                            Out::U32(matrix::bridge::multiply(g, o, m, b))
+                        });
+                    }
+                    4 => {
+                        let angle = if rng.chance(2) {
+                            ((rng.below(20_000) as f32 - 10_000.0) / 1000.0).to_bits()
+                        } else {
+                            rng.float()
+                        };
+                        t.check(&what, 0x004c_d1f0, Conv::Cdecl, &[out, angle], |g| {
+                            Out::U32(matrix::bridge::rotation_z(g, out, angle))
+                        });
+                    }
+                    _ => t.check(&what, 0x004c_d270, Conv::Cdecl, &[out, v[0]], |g| {
+                        Out::U32(matrix::bridge::scale(g, out, v[0]))
+                    }),
+                }
+                continue;
+            }
             match rng.below(15) {
                 0 => t.check(&what, 0x0045_3340, Conv::Thiscall(out), &[m], |g| {
                     Out::U32(matrix::bridge::copy(g, out, m, false))
@@ -1226,5 +1290,194 @@ fn matrix_helpers_match_the_original() {
                 }
             }
         }
+    }
+}
+
+// ---- arrays ----
+
+#[test]
+fn arrays_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x00a1_1a1a);
+        let heap = t.stub_heap();
+        t.stub_ex(array::DESTROY_4F4FC0, false, 2, 0, 0x4f4f);
+        t.stub(array::STORE_43C160, 2, 2, 0x43c1);
+        // the makers return the word in `made`
+        let made = t.zeros(4);
+        for make in [array::MAKE_4CB090, array::MAKE_4D3830] {
+            let mut c = vec![0xa1];
+            c.extend(made.to_le_bytes());
+            c.push(0xc3);
+            let code = t.code(&c);
+            let at = t.rebase(make);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            t.write(at, &j);
+        }
+        // the object at 0x00ca70f8: a vtable whose slot 1 logs `ecx` and
+        // returns the word in `answer`
+        let answer = t.zeros(4);
+        let log = t.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes());
+        c.extend([0xc1, 0xe0, 0x05, 0x05]);
+        c.extend((log + 4).to_le_bytes());
+        c.extend([
+            0xc7, 0x00, 0xf8, 0x70, 0xca, 0x00, 0x89, 0x48, 0x04, 0xff, 0x05,
+        ]);
+        c.extend(log.to_le_bytes());
+        c.push(0xa1);
+        c.extend(answer.to_le_bytes());
+        c.push(0xc3);
+        let slot1 = t.code(&c);
+        let vt = t.alloc(
+            &[0u32, slot1]
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let obj = t.rebase(array::OBJECT_CA70F8);
+        t.w32(obj, vt);
+        let vslot = t.stub_code(0x57cf, 3, 3, 0x57cf);
+        let vt2 = t.alloc(
+            &[0u32, vslot]
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        for i in 0..600 {
+            let what = format!("{name} array {i}");
+            let count = match rng.below(6) {
+                0 => 0,
+                1 => 1,
+                2 => 2 + rng.below(6),
+                3 => 0x8000_0000 | rng.below(8),
+                4 => 0x4000_0003,
+                _ => rng.next(),
+            };
+            let data = t.alloc(&(0..0x40).map(|_| rng.below(4) as u8).collect::<Vec<_>>());
+            let words5 = [count, data, rng.next(), rng.next(), rng.next()];
+            let this = t.alloc(
+                &words5
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            let case = rng.below(9);
+            let what = format!("{what} (case {case})");
+            match case {
+                0 => {
+                    t.w32(made, [0, 0x1000][rng.below(2) as usize]);
+                    let x = rng.next();
+                    let (sym, make) = [
+                        (0x004c_c030, array::MAKE_4CB090),
+                        (0x004d_3d10, array::MAKE_4D3830),
+                    ][rng.below(2) as usize];
+                    let out = t.zeros(4);
+                    t.check(&what, sym, Conv::Cdecl, &[out, x], |g| {
+                        Out::U32(array::bridge::make_into(g, make, out, x))
+                    });
+                }
+                1 => {
+                    let words = t.alloc(&(0..0x40).map(|_| rng.next() as u8).collect::<Vec<_>>());
+                    t.w32(this, words);
+                    let value = rng.next();
+                    let bit = rng.below(200);
+                    let n = [0, 1, 5, 31, 32, 33, 64][rng.below(7) as usize];
+                    t.check(
+                        &what,
+                        0x004d_55d0,
+                        Conv::Thiscall(this),
+                        &[value, bit, n],
+                        |g| {
+                            array::bridge::set_bits(g, this, value, bit, n);
+                            Out::None
+                        },
+                    );
+                }
+                2 => {
+                    let n = count & 0x7fff_ffff;
+                    let cnt = if rng.chance(4) {
+                        rng.below(4)
+                    } else {
+                        n.min(16)
+                    };
+                    if n > 16 && cnt == 16 {
+                        t.w32(this, (count & 0x8000_0000) | 16);
+                    }
+                    let words = if rng.chance(2) {
+                        // the same words, one perhaps changed
+                        let src = small::bridge::array_data(&mut G(&mut t.b), this);
+                        let k = if src == 0 { 0 } else { cnt.min(16) };
+                        let mut w: Vec<u8> = (0..k * 4)
+                            .map(|k| Mem::read::<u8>(&t.b, src.wrapping_add(k)))
+                            .collect();
+                        if rng.chance(2) && !w.is_empty() {
+                            let k = rng.below(w.len() as u32) as usize;
+                            w[k] = w[k].wrapping_add(if rng.chance(2) { 1 } else { 0xff });
+                        }
+                        w.resize(64, 0);
+                        t.alloc(&w)
+                    } else {
+                        t.alloc(&(0..0x40).map(|_| rng.below(4) as u8).collect::<Vec<_>>())
+                    };
+                    t.check(
+                        &what,
+                        0x004e_ea10,
+                        Conv::Thiscall(this),
+                        &[words, cnt],
+                        |g| Out::U32(array::bridge::compare_words(g, this, words, cnt)),
+                    );
+                }
+                3 | 4 => {
+                    let n = [0, 1, 2, 5, 0x8000_0001][rng.below(5) as usize];
+                    let src = match rng.below(3) {
+                        0 => this + 4,
+                        1 => data,
+                        _ => t.alloc(&rng.next().to_le_bytes()),
+                    };
+                    if case == 3 {
+                        t.check(&what, 0x004f_9020, Conv::Thiscall(this), &[src, n], |g| {
+                            Out::U32(array::bridge::assign(g, this, src, n))
+                        });
+                    } else {
+                        t.w32(answer, if rng.chance(2) { 0 } else { rng.next() | 1 });
+                        t.check(&what, 0x004f_9100, Conv::Thiscall(this), &[src, n], |g| {
+                            Out::U32(array::bridge::assign_or_store(g, this, src, n))
+                        });
+                    }
+                }
+                5 => {
+                    let n = [0, 1, 7, 0x8000_0001][rng.below(4) as usize];
+                    let e = if rng.chance(3) { data } else { t.zeros(8) };
+                    t.check(&what, 0x004f_90b0, Conv::Thiscall(this), &[e, n], |g| {
+                        Out::U32(array::bridge::borrow(g, this, e, n))
+                    });
+                }
+                6 => {
+                    let o = t.alloc(&vt2.to_le_bytes());
+                    t.check(&what, 0x0057_cfe0, Conv::Thiscall(this), &[o], |g| {
+                        Out::U32(array::bridge::forward_57cfe0(g, this, o))
+                    });
+                }
+                _ => {
+                    let size = [0, 0x1000, rng.next() & 0xffff][rng.below(3) as usize];
+                    let at = t.rebase(array::STACK_SIZE);
+                    t.w32(at, size);
+                    let mut saved = [0u32; 2];
+                    let fail = rng.chance(3);
+                    if fail {
+                        t.malloc_fails(heap, true, &mut saved);
+                    }
+                    t.check(&what, 0x0057_d000, Conv::Thiscall(this), &[], |g| {
+                        Out::U32(array::bridge::alloc_stack(g, this))
+                    });
+                    if fail {
+                        t.malloc_fails(heap, false, &mut saved);
+                    }
+                }
+            }
+        }
+        assert!(t.log_entries() > 100, "{name}: calls logged");
     }
 }
