@@ -37,8 +37,11 @@ use ffx_oracle::{Conv, Oracle, Pages};
 mod cases;
 
 use ffx_prender::array::bridge as a;
+use ffx_prender::declare as dc;
 use ffx_prender::descriptor::{Init, bridge as d};
+use ffx_prender::dtor::bridge as dt;
 use ffx_prender::misc::bridge as x;
+use ffx_prender::small::bridge as sm;
 
 /// Calling conventions of the cases.
 #[derive(Debug, Clone, Copy)]
@@ -70,6 +73,19 @@ pub struct Case {
     pub callees: &'static [(u32, u32, u32, bool)],
     pub prep: fn(&mut Env, &mut Rng, &mut [u32]),
     pub port: fn(&mut G, &[u32]) -> u32,
+    /// Bytes of the original's frame below `ebp` that callees see (0:
+    /// none): the port gets its frame at the same address
+    /// ([`G::frame`]), its calls below it, and both frames must agree
+    /// after the call (they start with the same junk pattern, so that a
+    /// word the original never writes reads the same in both, and a
+    /// missing store shows).
+    pub frame: u32,
+    /// Words of the frame above it that are not compared (the security
+    /// cookie): the frame starts `frame + gap` bytes below `ebp`.
+    pub gap: u32,
+    /// Callees that store a random word (their cell's second word,
+    /// [`Env::set_out`]) through stack argument `k`: `(callee, k)`.
+    pub writes: &'static [(u32, u32)],
 }
 
 /// Deterministic xorshift stream.
@@ -100,7 +116,14 @@ fn quiet(w: u32) -> u32 {
 }
 
 /// The bridge's view of an oracle.
-pub struct G<'a>(&'a mut Oracle);
+pub struct G<'a>(&'a mut Oracle, u32);
+
+impl G<'_> {
+    /// The port's frame: the original's `ebp - frame` in the other oracle.
+    pub fn frame(&self) -> u32 {
+        self.1
+    }
+}
 
 impl Mem for G<'_> {
     fn read_bytes(&self, addr: u32, out: &mut [u8]) {
@@ -151,6 +174,8 @@ pub struct Env {
     handlers: [(u32, u32); 8],
     /// A cdecl handler (no `ecx` logged, two words, pops none): (code, cell).
     handler_c: (u32, u32),
+    /// Writer handlers by tag: (code, cell).
+    writers: BTreeMap<u32, (u32, u32)>,
     stubbed: Vec<(u32, Vec<u8>)>,
 }
 
@@ -166,6 +191,7 @@ impl Env {
             cells: BTreeMap::new(),
             handlers: [(0, 0); 8],
             handler_c: (0, 0),
+            writers: BTreeMap::new(),
             stubbed: Vec::new(),
         };
         e.pool = e.zeros(POOL as usize);
@@ -234,7 +260,21 @@ impl Env {
     /// A recording stub: logs `tag`, `ecx` (when `this`), `n` stack words; pops `pops`;
     /// returns its cell. Returns (code, cell).
     fn stub_code(&mut self, tag: u32, n: u32, pops: u32, this: bool) -> (u32, u32) {
-        let cell = self.zeros(4);
+        self.stub_code_w(tag, n, pops, this, None)
+    }
+
+    /// [`Env::stub_code`] that also stores the word after its cell
+    /// (`cell + 4`) through its stack argument `write` (an out-pointer),
+    /// as the callees that fill a caller's local do.
+    fn stub_code_w(
+        &mut self,
+        tag: u32,
+        n: u32,
+        pops: u32,
+        this: bool,
+        write: Option<u32>,
+    ) -> (u32, u32) {
+        let cell = self.zeros(8);
         let log = self.log;
         let mut c = vec![0xa1];
         c.extend(log.to_le_bytes()); // mov eax, [log]
@@ -252,6 +292,12 @@ impl Env {
         }
         c.extend([0xff, 0x05]);
         c.extend(log.to_le_bytes()); // inc dword [log]
+        if let Some(k) = write {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * k) as u8]); // mov edx, [esp+4+4k]
+            c.extend([0x8b, 0x0d]);
+            c.extend((cell + 4).to_le_bytes()); // mov ecx, [cell+4]
+            c.extend([0x89, 0x0a]); // mov [edx], ecx
+        }
         c.push(0xa1);
         c.extend(cell.to_le_bytes()); // mov eax, [cell]
         if pops == 0 {
@@ -267,9 +313,9 @@ impl Env {
     }
 
     /// Replaces the original at `sym` by a recording stub (a `jmp`).
-    fn stub(&mut self, sym: u32, n: u32, pops: u32, this: bool) {
+    fn stub(&mut self, sym: u32, n: u32, pops: u32, this: bool, write: Option<u32>) {
         let at = self.rebase(sym);
-        let (code, _) = self.stub_code(sym, n, pops, this);
+        let (code, _) = self.stub_code_w(sym, n, pops, this, write);
         let mut j = vec![0xe9];
         j.extend(code.wrapping_sub(at + 5).to_le_bytes());
         let old = Oracle::read(&mut self.a, at, 5).unwrap();
@@ -285,6 +331,12 @@ impl Env {
         self.b.clear_dirty();
     }
 
+    /// What callee `sym`'s stub stores through its out-pointer.
+    pub fn set_out(&mut self, sym: u32, v: u32) {
+        let c = self.cells[&sym];
+        self.w32(c + 4, v);
+    }
+
     /// The stub cell of callee `sym` (its return value).
     pub fn set_ret(&mut self, sym: u32, v: u32) {
         let c = self.cells[&sym];
@@ -296,6 +348,22 @@ impl Env {
     pub fn handler(&mut self, pops: u32, ret: u32) -> u32 {
         let (code, cell) = self.handlers[pops as usize];
         self.w32(cell, ret);
+        code
+    }
+
+    /// Handler `id`: pops `pops` words, returns `ret` and stores `out`
+    /// through its stack argument `k` (made once per id).
+    pub fn writer(&mut self, id: u32, pops: u32, k: u32, ret: u32, out: u32) -> u32 {
+        let tag = 0xf00d_1000 + id;
+        let (code, cell) = if let Some(&w) = self.writers.get(&tag) {
+            w
+        } else {
+            let w = self.stub_code_w(tag, pops, pops, true, Some(k));
+            self.writers.insert(tag, w);
+            w
+        };
+        self.w32(cell, ret);
+        self.w32(cell + 4, out);
         code
     }
 
@@ -340,9 +408,14 @@ impl Env {
         let log = self.log;
         self.w32(log, 0);
         let cells: Vec<u32> = self.cells.values().copied().collect();
+        // the out words from their own stream, so that adding them left
+        // the earlier cases' random data as it was
+        let mut out = Rng(rng.0 ^ 0x5a5a_0001);
         for c in cells {
             let v = self.ret_word(rng);
             self.w32(c, v);
+            let o = self.ret_word(&mut out);
+            self.w32(c + 4, o);
         }
     }
 
@@ -653,6 +726,187 @@ pub fn prep_element_field(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
     e.w32(a[0] + 0x24, n);
 }
 
+/// A `PArray<T>` descriptor's statics: the guard bits at `desc + 0x94`
+/// (each step done or not), the descriptor's name (`+0x18`, set or not),
+/// the class's name global (`name`), the annotation list head (`+0xc8`:
+/// empty, pointing at itself, or not), the flags word (`+0x90`) and the
+/// member words the declaration writes.
+pub fn prep_declare(e: &mut Env, rng: &mut Rng, a: &mut [u32], desc: u32, name: u32) {
+    let d = e.rebase(desc);
+    let g = rng.below(16) | if rng.chance(3) { rng.next() & !0xf } else { 0 };
+    e.w32(d + 0x94, g);
+    let n = if rng.chance(3) { e.ptr(rng) } else { 0 };
+    e.w32(d + 0x18, n);
+    let ng = e.rebase(name);
+    let v = if rng.chance(2) { e.ptr(rng) } else { 0 };
+    e.w32(ng, v);
+    let head = if rng.chance(2) { d + 0xc8 } else { e.ptr(rng) };
+    e.w32(d + 0xc8, head);
+    let f = rng.next();
+    e.w32(d + 0x90, f);
+    // the member's words the declaration sets (not left from the image)
+    for off in [0x10c, 0x114, 0x118, 0x11c] {
+        let w = rng.next();
+        e.w32(d + off, w);
+    }
+    if rng.chance(8) {
+        a[0] = 0;
+    }
+}
+
+/// The shader's two COM objects (null, or objects whose `Release`
+/// pops one word) and its byte array (count 0, owned or borrowed, data
+/// null or not).
+pub fn prep_release_shader(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    // low enough that `this + 0x4e0` stays in the pointers' part
+    a[0] = e.pool + 4 * rng.below(0x400);
+    for (k, off) in [0x4e0, 0].into_iter().enumerate() {
+        // objects and vtables past the pointers' part: no overlap with `this`
+        let obj = if rng.chance(3) {
+            0
+        } else {
+            e.pool + POOL_PTRS + 0x100 * k as u32
+        };
+        e.w32(a[0] + off, obj);
+        if obj != 0 {
+            let vt = obj + 0x80;
+            let r = e.ret_word(rng);
+            let f = e.handler(1, r);
+            e.w32(obj, vt);
+            e.w32(vt + 8, f);
+        }
+    }
+    let n =
+        if rng.chance(3) { 0 } else { rng.below(4) } | if rng.chance(3) { 0x8000_0000 } else { 0 };
+    e.w32(a[0] + 4, n);
+    let data = if rng.chance(4) { 0 } else { e.ptr(rng) };
+    e.w32(a[0] + 8, data);
+}
+
+/// A `PSharray` at `this + off`: counts 0..3, owned or borrowed, data
+/// null or not.
+pub fn prep_sharray_at(e: &mut Env, rng: &mut Rng, a: &mut [u32], off: u32) {
+    let n = rng.below(4) | if rng.chance(3) { 0x8000_0000 } else { 0 };
+    e.w32(a[0] + off, n);
+    let data = if rng.chance(4) { 0 } else { e.ptr(rng) };
+    e.w32(a[0] + off + 4, data);
+}
+
+/// A `PSharray` at `this + off` holding one to three elements (owned or
+/// borrowed; separate storage in the pool), its first word 0 or not.
+pub fn prep_sharray_first(e: &mut Env, rng: &mut Rng, a: &mut [u32], off: u32) {
+    let n = 1 + rng.below(3);
+    e.w32(a[0] + off, n | if rng.chance(3) { 0x8000_0000 } else { 0 });
+    if n > 1 {
+        // storage apart from `this`
+        let data = e.pool + POOL_PTRS + 0x700 + 4 * rng.below(16);
+        e.w32(a[0] + off + 4, data);
+    }
+    let first = if n == 1 {
+        a[0] + off + 4
+    } else {
+        e.r32(a[0] + off + 4)
+    };
+    let v = if rng.chance(2) { 0 } else { e.ret_word(rng) };
+    e.w32(first, v);
+}
+
+/// The D3D11 context at `this + 0x70`: an object whose methods 13
+/// (three words), 24 (two) and 45 (three) are handlers.
+pub fn prep_context(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let ctx = e.pool + POOL_PTRS + 0x200;
+    let vt = e.pool + POOL_PTRS + 0x300;
+    e.w32(a[0] + 0x70, ctx);
+    e.w32(ctx, vt);
+    for (slot, pops) in [(13, 3), (24, 2), (45, 3)] {
+        let r = e.ret_word(rng);
+        let f = e.handler(pops, r);
+        e.w32(vt + 4 * slot, f);
+    }
+}
+
+/// The resource tables' owner words (0x280 bytes above each of the 0x90
+/// words at `this + 0x1c`): about a third are the slot looked for.
+pub fn prep_owner_table(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    a[0] = e.pool + 4 * rng.below(0x400);
+    for i in 0..0x90 {
+        if rng.chance(3) {
+            e.w32(a[0] + 0x29c + 4 * i, a[2]);
+        }
+    }
+}
+
+/// The once flag of `0x0058ab60`'s message.
+pub fn prep_once(e: &mut Env, rng: &mut Rng, _: &mut [u32]) {
+    let f = e.rebase(0x00cb_4bcc);
+    let v = rng.below(2) as u8;
+    e.write(f, &[v]);
+}
+
+/// The object at `this + 0x133c` (or none), whose method 7 gives a
+/// second object (or none), whose method 7 gives a third (or none), whose
+/// method 8 takes five words.
+pub fn prep_query_chain(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    a[0] = e.pool + 4 * rng.below(0x100);
+    let objs: Vec<u32> = (0..3)
+        .map(|i| e.pool + POOL_PTRS + 0x400 + 0x80 * i)
+        .collect();
+    let first = if rng.chance(4) { 0 } else { objs[0] };
+    e.w32(a[0] + 0x133c, first);
+    for i in 0..3 {
+        let vt = objs[i] + 0x40;
+        e.w32(objs[i], vt);
+        let r = e.ret_word(rng);
+        if i < 2 {
+            let next = if rng.chance(4) { 0 } else { objs[i + 1] };
+            let f = e.writer(i as u32, 3, 2, r, next);
+            e.w32(vt + 4 * 7, f);
+        } else {
+            let f = e.handler(5, r);
+            e.w32(vt + 4 * 8, f);
+        }
+    }
+}
+
+/// The modifier network's table at `this + 0x10` (in the pool) and the
+/// context's small index (`ctx + 0x20`, the context argument `k`).
+pub fn prep_network(e: &mut Env, rng: &mut Rng, a: &mut [u32], k: usize) {
+    let t = e.ptr(rng);
+    e.w32(a[0] + 0x10, t);
+    // the context apart from `this`
+    a[k] = e.pool + POOL_PTRS + 0x600 + 4 * rng.below(8);
+    let i = rng.below(16);
+    e.w32(a[k] + 0x20, i);
+}
+
+/// The four views at `this + 0x168..0x174`: null or objects (apart from
+/// `this`) whose `Release` pops one word.
+pub fn prep_release_views(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    a[0] = e.pool + 4 * rng.below(0x400);
+    for (k, off) in [0x168, 0x16c, 0x170, 0x174].into_iter().enumerate() {
+        let obj = if rng.chance(3) {
+            0
+        } else {
+            e.pool + POOL_PTRS + 0x900 + 0x100 * k as u32
+        };
+        e.w32(a[0] + off, obj);
+        if obj != 0 {
+            let vt = obj + 0x80;
+            let r = e.ret_word(rng);
+            let f = e.handler(1, r);
+            e.w32(obj, vt);
+            e.w32(vt + 8, f);
+        }
+    }
+}
+
+/// `0x004fd8b0`'s guard word: bit 0 set or not, other bits random.
+pub fn prep_static_once(e: &mut Env, rng: &mut Rng, _: &mut [u32]) {
+    let g = e.rebase(0x00c9_628c);
+    let v = rng.next();
+    e.w32(g, v);
+}
+
 fn run(case: &Case, e: &mut Env, rng: &mut Rng, what: &str) {
     e.fill(rng);
     let mut args: Vec<u32> = case.kinds.chars().map(|k| e.arg(rng, k)).collect();
@@ -667,6 +921,15 @@ fn run(case: &Case, e: &mut Env, rng: &mut Rng, what: &str) {
         K::T => &args[1..],
         _ => &args[..],
     };
+    // the original's frame: below the arguments, the return address and
+    // the saved `ebp`, from where `Oracle::call` pushes
+    let ebp = e.a.stack_range().end - 0x100 - 4 * stack.len() as u32 - 8;
+    let lo = ebp - case.gap - case.frame;
+    if case.frame != 0 {
+        let junk: Vec<u8> = (0..case.frame).map(|i| (i * 0x3d + 0x11) as u8).collect();
+        e.write(lo, &junk);
+        e.b.set_call_top(Some(lo - 0x100));
+    }
     let ra =
         e.a.call(addr, conv, stack)
             .unwrap_or_else(|err| panic!("{what}: the original: {err}"));
@@ -675,7 +938,13 @@ fn run(case: &Case, e: &mut Env, rng: &mut Rng, what: &str) {
         "{what}: the original leaves ST0 set ({:?})",
         ra.st0
     );
-    let rb = (case.port)(&mut G(&mut e.b), &args);
+    let rb = (case.port)(&mut G(&mut e.b, lo), &args);
+    if case.frame != 0 {
+        e.b.set_call_top(None);
+        let fa = Oracle::read(&mut e.a, lo, case.frame as usize).unwrap();
+        let fb = Oracle::read(&mut e.b, lo, case.frame as usize).unwrap();
+        assert_eq!(fa, fb, "{what}: the frame differs ({args:x?})");
+    }
     match case.out {
         O::None => {}
         O::U32 => assert_eq!(ra.eax, rb, "{what}: eax ({args:x?})"),
@@ -692,15 +961,19 @@ fn run(case: &Case, e: &mut Env, rng: &mut Rng, what: &str) {
     e.b.clear_dirty();
 }
 
-/// Runs every case whose name contains `filter`'s value (env
-/// `H2_FILTER`, default all).
+/// Runs every case whose name contains one of `filter`'s `|`-separated
+/// values (env `H2_FILTER`, default all).
 fn run_cases(rounds: u32) {
     let filter = std::env::var("H2_FILTER").unwrap_or_default();
     let mut ran = 0;
     for (snap, mut e) in Env::all() {
-        for case in cases::CASES.iter().filter(|c| c.name.contains(&filter)) {
+        for case in cases::CASES
+            .iter()
+            .filter(|c| filter.split('|').any(|f| c.name.contains(f)))
+        {
             for &(sym, n, pops, this) in case.callees {
-                e.stub(sym, n, pops, this);
+                let write = case.writes.iter().find(|w| w.0 == sym).map(|&(_, k)| k);
+                e.stub(sym, n, pops, this, write);
             }
             let mut rng = Rng(0x1234_5678 ^ case.addr);
             for i in 0..rounds {
