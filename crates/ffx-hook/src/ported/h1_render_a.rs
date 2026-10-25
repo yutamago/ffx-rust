@@ -1622,4 +1622,71 @@ ported! {
     PParameterBuffer_writeParameter_004d57d0 @ 0x004d_57d0 => extern "thiscall" fn h1_004d57d0(this: u32, parameter: u32, src: u32) -> u32 {
         basic::bridge::write_parameter(&mut mem(), this, parameter, src)
     }
+    /// `T::Bind()` with a typed member -> `addToNamespace`'s `eax`.
+    PClassBind_withTypedMember_0049fe10 @ 0x0049_fe10 => extern "C" fn h1_0049fe10() -> u32 {
+        let (d, k) = const { registry::bind_typed_of(0x0049_fe10) };
+        registry::bridge::bind_member_typed(&mut mem(), d, k)
+    }
+    /// `T::Bind()` with a typed member -> `addToNamespace`'s `eax`.
+    Phyre_PRendering_PShaderPassStateBase_Bind @ 0x004b_6870 => extern "C" fn h1_004b6870() -> u32 {
+        let (d, k) = const { registry::bind_typed_of(0x004b_6870) };
+        registry::bridge::bind_member_typed(&mut mem(), d, k)
+    }
+    /// `T::Bind()` with a typed member -> `addToNamespace`'s `eax`.
+    PClassBind_withTypedMember_004a1b40 @ 0x004a_1b40 => extern "C" fn h1_004a1b40() -> u32 {
+        let (d, k) = const { registry::bind_typed_of(0x004a_1b40) };
+        registry::bridge::bind_member_typed(&mut mem(), d, k)
+    }
+    /// `T::Bind()` with a typed member -> `addToNamespace`'s `eax`.
+    PClassBind_withTypedMember_004d65b0 @ 0x004d_65b0 => extern "C" fn h1_004d65b0() -> u32 {
+        let (d, k) = const { registry::bind_typed_of(0x004d_65b0) };
+        registry::bridge::bind_member_typed(&mut mem(), d, k)
+    }
+    /// `T::Bind()` with a typed member -> `addToNamespace`'s `eax`.
+    PClassBind_withTypedMember_004a1be0 @ 0x004a_1be0 => extern "C" fn h1_004a1be0() -> u32 {
+        let (d, k) = const { registry::bind_typed_of(0x004a_1be0) };
+        registry::bridge::bind_member_typed(&mut mem(), d, k)
+    }
+    /// `T::Bind()` with a typed member -> `addToNamespace`'s `eax`.
+    PClassBind_withTypedMember_004a1c80 @ 0x004a_1c80 => extern "C" fn h1_004a1c80() -> u32 {
+        let (d, k) = const { registry::bind_typed_of(0x004a_1c80) };
+        registry::bridge::bind_member_typed(&mut mem(), d, k)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PGeometry_PSkinBoneRemap_2 @ 0x0048_7d80 => extern "C" fn h1_00487d80(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x0048_7d80) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PRendering_PShaderParameterCaptureBufferLocation_2 @ 0x004b_6910 => extern "C" fn h1_004b6910(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x004b_6910) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PRendering_PShaderParameterCaptureBufferLocationType_2 @ 0x004b_6b20 => extern "C" fn h1_004b6b20(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x004b_6b20) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `T::Bind()` with two members -> `addToNamespace`'s `eax`.
+    PClassBind_withTwoMembers_004a9de0 @ 0x004a_9de0 => extern "C" fn h1_004a9de0() -> u32 {
+        registry::bridge::bind_two_members(&mut mem(), const { registry::bind_two_of(0x004a_9de0) })
+    }
+    /// `T::Bind()` with two members -> `addToNamespace`'s `eax`.
+    PClassBind_withTwoMembers_004aa130 @ 0x004a_a130 => extern "C" fn h1_004aa130() -> u32 {
+        registry::bridge::bind_two_members(&mut mem(), const { registry::bind_two_of(0x004a_a130) })
+    }
+    /// `T::Bind()` with two members -> `addToNamespace`'s `eax`.
+    PClassBind_withTwoMembers_004aa410 @ 0x004a_a410 => extern "C" fn h1_004aa410() -> u32 {
+        registry::bridge::bind_two_members(&mut mem(), const { registry::bind_two_of(0x004a_a410) })
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_int_4 @ 0x0049_0950 => extern "C" fn h1_00490950(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x0049_0950) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<T>(name)` of an array type -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_Phyre_PMatrix4_4 @ 0x0049_0b60 => extern "C" fn h1_00490b60(name: u32) -> u32 {
+        let k = const { registry::array_type_of(0x0049_0b60) };
+        registry::bridge::array_type(&mut mem(), &k, name)
+    }
 }

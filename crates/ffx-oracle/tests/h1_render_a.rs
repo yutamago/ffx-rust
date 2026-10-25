@@ -191,10 +191,16 @@ impl Twins {
     /// leftover) and `n` stack arguments, pops `pops` words, returns `ret`.
     /// Once per address.
     fn stub(&mut self, sym: u32, this: bool, n: u32, pops: u32, ret: Ret) {
+        self.stub_skip(sym, this, 0, n, pops, ret);
+    }
+
+    /// [`Twins::stub`] logging stack words `skip..skip + n` (for callees
+    /// of more than six words).
+    fn stub_skip(&mut self, sym: u32, this: bool, skip: u32, n: u32, pops: u32, ret: Ret) {
         if self.stubs.contains_key(&sym) {
             return;
         }
-        let addr = self.stub_code(sym, this, n, pops, ret);
+        let addr = self.stub_code_from(sym, this, skip, n, pops, ret);
         let at = self.rebase(sym);
         let mut j = vec![0xe9];
         j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
@@ -205,6 +211,19 @@ impl Twins {
     /// The stub of [`Twins::stub`] in the cave only (for pointers), `tag`
     /// its log tag. Returns its address.
     fn stub_code(&mut self, tag: u32, this: bool, n: u32, pops: u32, ret: Ret) -> u32 {
+        self.stub_code_from(tag, this, 0, n, pops, ret)
+    }
+
+    /// [`Twins::stub_code`] logging stack words `skip..skip + n`.
+    fn stub_code_from(
+        &mut self,
+        tag: u32,
+        this: bool,
+        skip: u32,
+        n: u32,
+        pops: u32,
+        ret: Ret,
+    ) -> u32 {
         assert!(n <= 6);
         let log = self.log;
         let mut c = vec![0xa1];
@@ -218,7 +237,7 @@ impl Twins {
             c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
         }
         for i in 0..n {
-            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * (i + skip)) as u8]); // mov edx, [esp+4+4(i+skip)]
             c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
         }
         c.extend([0xff, 0x05]);
@@ -1275,10 +1294,26 @@ fn array_types_match_the_original() {
         t.stub(registry::DATA_MEMBER_CTOR, true, 6, 6, Ret::Imm(0x6));
         t.stub(registry::ANNOTATION_CTOR, true, 3, 3, Ret::Imm(0x3));
         t.stub(registry::ADD_ANNOTATION, true, 1, 1, Ret::Imm(0x1));
-        // seven words: the first six logged
-        t.stub(registry::DATA_MEMBER_ARRAY_CTOR, true, 6, 7, Ret::Imm(0x7));
+        // seven words: the last six logged (the first is the descriptor)
+        t.stub_skip(
+            registry::DATA_MEMBER_ARRAY_CTOR,
+            true,
+            1,
+            6,
+            7,
+            Ret::Imm(0x7),
+        );
         for &(_, k) in registry::ARRAY_TYPE {
             t.stub(k.desc_ctor, true, 0, 0, Ret::Imm(0xd));
+            if k.other_fn != 0 {
+                t.stub(
+                    k.other_fn,
+                    false,
+                    0,
+                    0,
+                    Ret::Imm(0x00c9_7000 | (k.other_fn & 0xfff)),
+                );
+            }
         }
         for case in 0..48u32 {
             for &(f, k) in registry::ARRAY_TYPE {
@@ -2061,6 +2096,77 @@ fn batch6_extras_match_the_original() {
                 &[parameter, src],
                 |g| Out::U32(basic::bridge::write_parameter(g, buffer, parameter, src)),
             );
+        }
+    }
+}
+
+#[test]
+fn typed_member_binds_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        t.stub(registry::ATEXIT, false, 1, 0, Ret::Imm(0));
+        t.stub(descriptor::REGISTER_TYPE, false, 1, 0, Ret::Imm(0x0101));
+        t.stub(
+            descriptor::ADD_TO_NAMESPACE,
+            true,
+            0,
+            0,
+            Ret::Imm(0x5a5a_1234),
+        );
+        t.stub(registry::DATA_MEMBER_CTOR, true, 6, 6, Ret::Imm(0x6));
+        for &(_, (_, k)) in registry::BIND_MEMBER_TYPED {
+            t.stub(k[3], false, 0, 0, Ret::Imm(0x00c9_0000 | (k[3] & 0xffff)));
+        }
+        for guard_word in [0u32, 1, 0xffff_fffe, 3] {
+            for &(f, (d, k)) in registry::BIND_MEMBER_TYPED {
+                assert_eq!(registry::bind_typed_of(f), (d, k));
+                let guard = t.rebase(k[0]);
+                t.w32(guard, guard_word);
+                let before = t.log_entries();
+                t.check(
+                    &format!("{name} {f:#x} guard {guard_word:#x}"),
+                    f,
+                    Conv::Cdecl,
+                    &[],
+                    |g| Out::U32(registry::bridge::bind_member_typed(g, d, k)),
+                );
+                assert_eq!(
+                    t.log_entries() - before,
+                    if guard_word & 1 == 0 { 5 } else { 2 }
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn two_member_binds_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        t.stub(registry::ATEXIT, false, 1, 0, Ret::Imm(0));
+        t.stub(descriptor::REGISTER_TYPE, false, 1, 0, Ret::Imm(0x0101));
+        t.stub(
+            descriptor::ADD_TO_NAMESPACE,
+            true,
+            0,
+            0,
+            Ret::Imm(0x5a5a_1234),
+        );
+        t.stub(registry::DATA_MEMBER_CTOR, true, 6, 6, Ret::Imm(0x6));
+        for guard_word in [0u32, 1, 2, 3, 0xffff_fff0] {
+            for &(f, k) in registry::BIND_TWO_MEMBERS {
+                assert_eq!(registry::bind_two_of(f), k);
+                let guard = t.rebase(k.1);
+                t.w32(guard, guard_word);
+                let before = t.log_entries();
+                t.check(
+                    &format!("{name} {f:#x} guard {guard_word:#x}"),
+                    f,
+                    Conv::Cdecl,
+                    &[],
+                    |g| Out::U32(registry::bridge::bind_two_members(g, k)),
+                );
+                let made = u32::from(guard_word & 1 == 0) + u32::from(guard_word & 2 == 0);
+                assert_eq!(t.log_entries() - before, 2 + 2 * made);
+            }
         }
     }
 }

@@ -458,6 +458,213 @@ pub const BIND_MEMBER: &[(u32, (u32, [u32; 8]))] = &[
     ),
 ];
 
+/// `Bind` copies with a member whose type comes from a `GetType` call:
+/// `(d, [guard, member, constructor, type getter, name, size, kind,
+/// destructor])`.
+pub const BIND_MEMBER_TYPED: &[(u32, (u32, [u32; 8]))] = &[
+    (
+        0x0049_fe10,
+        (
+            0x00c9_b4c8,
+            [
+                0x00c9_b620,
+                0x00c9_b5f4,
+                0x0057_52a0,
+                0x0043_7fc0,
+                0x00b0_fb4c,
+                0x0,
+                0x10,
+                0x00af_d270,
+            ],
+        ),
+    ),
+    (
+        0x004b_6870,
+        (
+            0x00ca_1630,
+            [
+                0x00ca_18bc,
+                0x00ca_1890,
+                0x0057_52a0,
+                0x0043_7fc0,
+                0x00b1_ca40,
+                0x0,
+                0x10,
+                0x00af_db50,
+            ],
+        ),
+    ),
+    (
+        0x004a_1b40,
+        (
+            0x00c9_b720,
+            [
+                0x00c9_ba40,
+                0x00c9_ba14,
+                0x0057_52a0,
+                0x0043_7e70,
+                0x00b0_f994,
+                0x0,
+                0x0,
+                0x00af_d380,
+            ],
+        ),
+    ),
+    (
+        0x004d_65b0,
+        (
+            0x00ca_4fa8,
+            [
+                0x00ca_5104,
+                0x00ca_50d8,
+                0x0057_52a0,
+                0x0043_7fc0,
+                0x00b1_d350,
+                0x0,
+                0x0,
+                0x00af_e910,
+            ],
+        ),
+    ),
+    (
+        0x004a_1be0,
+        (
+            0x00c9_b7b8,
+            [
+                0x00c9_ba70,
+                0x00c9_ba44,
+                0x0057_52a0,
+                0x0043_7e70,
+                0x00b0_fb4c,
+                0x2,
+                0x0,
+                0x00af_d3a0,
+            ],
+        ),
+    ),
+    (
+        0x004a_1c80,
+        (
+            0x00c9_b850,
+            [
+                0x00c9_baa0,
+                0x00c9_ba74,
+                0x0057_52a0,
+                0x0043_7d30,
+                0x00b0_f98c,
+                0x2,
+                0x0,
+                0x00af_d3c0,
+            ],
+        ),
+    ),
+];
+
+/// The constants of [`BIND_MEMBER_TYPED`] copy `f` (compile time).
+#[must_use]
+pub const fn bind_typed_of(f: u32) -> (u32, [u32; 8]) {
+    let mut i = 0;
+    while i < BIND_MEMBER_TYPED.len() {
+        if BIND_MEMBER_TYPED[i].0 == f {
+            return BIND_MEMBER_TYPED[i].1;
+        }
+        i += 1;
+    }
+    panic!("not in the table");
+}
+
+/// A member descriptor: `[member, other, name, size, kind, destructor]`.
+pub type Member = [u32; 6];
+
+/// A two-member `Bind`'s constants: `(d, guard, first, second)`.
+pub type TwoMembers = (u32, u32, Member, Member);
+
+/// `Bind` copies with two members.
+pub const BIND_TWO_MEMBERS: &[(u32, TwoMembers)] = &[
+    (
+        0x004a_9de0,
+        (
+            0x00c9_c288,
+            0x00c9_cd30,
+            [
+                0x00c9_cd04,
+                0x00ca_8dc8,
+                0x00b1_b76c,
+                0xc,
+                0x12,
+                0x00af_d8e0,
+            ],
+            [
+                0x00c9_cd34,
+                0x00c9_8948,
+                0x00b1_b780,
+                0x10,
+                0x12,
+                0x00af_d780,
+            ],
+        ),
+    ),
+    (
+        0x004a_a130,
+        (
+            0x00c9_c1f0,
+            0x00c9_ccd4,
+            [
+                0x00c9_cca8,
+                0x00ca_8dc8,
+                0x00b1_b78c,
+                0xc,
+                0x12,
+                0x00af_d8b0,
+            ],
+            [
+                0x00c9_ccd8,
+                0x00c9_8948,
+                0x00b1_b7a4,
+                0x10,
+                0x12,
+                0x00af_d880,
+            ],
+        ),
+    ),
+    (
+        0x004a_a410,
+        (
+            0x00c9_c158,
+            0x00c9_cc78,
+            [
+                0x00c9_cc4c,
+                0x00ca_8dc8,
+                0x00b1_b76c,
+                0xc,
+                0x12,
+                0x00af_d8f0,
+            ],
+            [
+                0x00c9_cc7c,
+                0x00c9_8948,
+                0x00b1_b780,
+                0x10,
+                0x12,
+                0x00af_d7a0,
+            ],
+        ),
+    ),
+];
+
+/// The constants of [`BIND_TWO_MEMBERS`] copy `f` (compile time).
+#[must_use]
+pub const fn bind_two_of(f: u32) -> TwoMembers {
+    let mut i = 0;
+    while i < BIND_TWO_MEMBERS.len() {
+        if BIND_TWO_MEMBERS[i].0 == f {
+            return BIND_TWO_MEMBERS[i].1;
+        }
+        i += 1;
+    }
+    panic!("not in the table");
+}
+
 /// The constants of [`DESCRIPTOR_CTOR`] copy `f` (compile time).
 #[must_use]
 pub const fn five_of(table: &[(u32, [u32; 5])], f: u32) -> [u32; 5] {
@@ -534,6 +741,11 @@ pub struct ArrayType {
     pub count_fn: u32,
     pub set_fn: u32,
     pub atexit4: u32,
+    /// The element size (the array member's last argument and `+0x2c`).
+    pub elem: u32,
+    /// The element type's getter (cdecl) when the type is not the
+    /// constant [`ArrayType::array_other`], else 0.
+    pub other_fn: u32,
 }
 
 /// The array types' `GetType` copies.
@@ -561,6 +773,8 @@ pub const ARRAY_TYPE: &[(u32, ArrayType)] = &[
             count_fn: 0x0043_20c0,
             set_fn: 0x0048_39d0,
             atexit4: 0x00af_c590,
+            elem: 4,
+            other_fn: 0,
         },
     ),
     (
@@ -586,6 +800,8 @@ pub const ARRAY_TYPE: &[(u32, ArrayType)] = &[
             count_fn: 0x0043_20c0,
             set_fn: 0x0049_54e0,
             atexit4: 0x00af_cb50,
+            elem: 4,
+            other_fn: 0,
         },
     ),
     (
@@ -611,6 +827,8 @@ pub const ARRAY_TYPE: &[(u32, ArrayType)] = &[
             count_fn: 0x0043_20c0,
             set_fn: 0x0049_5530,
             atexit4: 0x00af_cb60,
+            elem: 4,
+            other_fn: 0,
         },
     ),
     (
@@ -636,6 +854,8 @@ pub const ARRAY_TYPE: &[(u32, ArrayType)] = &[
             count_fn: 0x0043_20c0,
             set_fn: 0x0049_5580,
             atexit4: 0x00af_cb70,
+            elem: 4,
+            other_fn: 0,
         },
     ),
     (
@@ -661,6 +881,8 @@ pub const ARRAY_TYPE: &[(u32, ArrayType)] = &[
             count_fn: 0x0043_20c0,
             set_fn: 0x0049_9220,
             atexit4: 0x00af_ccb0,
+            elem: 4,
+            other_fn: 0,
         },
     ),
     (
@@ -686,6 +908,8 @@ pub const ARRAY_TYPE: &[(u32, ArrayType)] = &[
             count_fn: 0x0043_20c0,
             set_fn: 0x004b_2660,
             atexit4: 0x00af_d7c0,
+            elem: 4,
+            other_fn: 0,
         },
     ),
     (
@@ -711,6 +935,8 @@ pub const ARRAY_TYPE: &[(u32, ArrayType)] = &[
             count_fn: 0x0043_20c0,
             set_fn: 0x004b_26b0,
             atexit4: 0x00af_d7d0,
+            elem: 4,
+            other_fn: 0,
         },
     ),
     (
@@ -736,6 +962,8 @@ pub const ARRAY_TYPE: &[(u32, ArrayType)] = &[
             count_fn: 0x0043_20c0,
             set_fn: 0x004b_ab10,
             atexit4: 0x00af_db20,
+            elem: 4,
+            other_fn: 0,
         },
     ),
     (
@@ -761,6 +989,8 @@ pub const ARRAY_TYPE: &[(u32, ArrayType)] = &[
             count_fn: 0x0043_20c0,
             set_fn: 0x004b_dde0,
             atexit4: 0x00af_dc20,
+            elem: 4,
+            other_fn: 0,
         },
     ),
     (
@@ -786,6 +1016,143 @@ pub const ARRAY_TYPE: &[(u32, ArrayType)] = &[
             count_fn: 0x0043_20c0,
             set_fn: 0x004c_d600,
             atexit4: 0x00af_e630,
+            elem: 4,
+            other_fn: 0,
+        },
+    ),
+    (
+        0x0048_7d80,
+        ArrayType {
+            guard: 0x00c9_9624,
+            obj: 0x00c9_9590,
+            desc_ctor: 0x0048_6c20,
+            vtable: 0x00b1_5184,
+            atexit1: 0x00af_c730,
+            name_global: 0x00c9_98bc,
+            member: 0x00c9_9628,
+            member_name: 0x00b0_fd34,
+            atexit2: 0x00af_c770,
+            annotation_arg: 0x00c9_07f4,
+            annotation: 0x00c9_9654,
+            annotation_vtable: 0x00b0_fd40,
+            atexit3: 0x00af_c720,
+            array_member: 0x00c9_9670,
+            array_name: 0x00b0_fd78,
+            array_other: 0x00c9_9200,
+            array_vtable: 0x00b1_51c8,
+            count_fn: 0x0043_20c0,
+            set_fn: 0x0048_9880,
+            atexit4: 0x00af_c780,
+            elem: 2,
+            other_fn: 0,
+        },
+    ),
+    (
+        0x004b_6910,
+        ArrayType {
+            guard: 0x00ca_1b94,
+            obj: 0x00ca_1b00,
+            desc_ctor: 0x004b_4790,
+            vtable: 0x00b1_ccfc,
+            atexit1: 0x00af_da60,
+            name_global: 0x00ca_24bc,
+            member: 0x00ca_1b98,
+            member_name: 0x00b0_fd34,
+            atexit2: 0x00af_dad0,
+            annotation_arg: 0x00c9_07f4,
+            annotation: 0x00ca_1bc4,
+            annotation_vtable: 0x00b0_fd40,
+            atexit3: 0x00af_da30,
+            array_member: 0x00ca_1be0,
+            array_name: 0x00b0_fd78,
+            array_other: 0x00c9_b720,
+            array_vtable: 0x00b1_cd40,
+            count_fn: 0x0043_20c0,
+            set_fn: 0x004b_aa70,
+            atexit4: 0x00af_db00,
+            elem: 2,
+            other_fn: 0,
+        },
+    ),
+    (
+        0x004b_6b20,
+        ArrayType {
+            guard: 0x00ca_1954,
+            obj: 0x00ca_18c0,
+            desc_ctor: 0x004b_4830,
+            vtable: 0x00b1_caec,
+            atexit1: 0x00af_da80,
+            name_global: 0x00ca_24b4,
+            member: 0x00ca_1958,
+            member_name: 0x00b0_fd34,
+            atexit2: 0x00af_dae0,
+            annotation_arg: 0x00c9_07f4,
+            annotation: 0x00ca_1984,
+            annotation_vtable: 0x00b0_fd40,
+            atexit3: 0x00af_da40,
+            array_member: 0x00ca_19a0,
+            array_name: 0x00b0_fd78,
+            array_other: 0x00c9_b850,
+            array_vtable: 0x00b1_cb30,
+            count_fn: 0x0043_20c0,
+            set_fn: 0x004b_aac0,
+            atexit4: 0x00af_db10,
+            elem: 2,
+            other_fn: 0,
+        },
+    ),
+    (
+        0x0049_0950,
+        ArrayType {
+            guard: 0x00c9_a004,
+            obj: 0x00c9_9f70,
+            desc_ctor: 0x0048_e7e0,
+            vtable: 0x00b1_5dd4,
+            atexit1: 0x00af_c9e0,
+            name_global: 0x00c9_a628,
+            member: 0x00c9_a008,
+            member_name: 0x00b0_fd34,
+            atexit2: 0x00af_cac0,
+            annotation_arg: 0x00c9_07f4,
+            annotation: 0x00c9_a034,
+            annotation_vtable: 0x00b0_fd40,
+            atexit3: 0x00af_c990,
+            array_member: 0x00c9_a050,
+            array_name: 0x00b0_fd78,
+            array_other: 0x0000_0000,
+            array_vtable: 0x00b1_5e18,
+            count_fn: 0x0043_20c0,
+            set_fn: 0x0049_5440,
+            atexit4: 0x00af_cb30,
+            elem: 4,
+            other_fn: 0x0043_7f10,
+        },
+    ),
+    (
+        0x0049_0b60,
+        ArrayType {
+            guard: 0x00c9_a244,
+            obj: 0x00c9_a1b0,
+            desc_ctor: 0x0048_e880,
+            vtable: 0x00b1_5fe4,
+            atexit1: 0x00af_ca00,
+            name_global: 0x00c9_a630,
+            member: 0x00c9_a248,
+            member_name: 0x00b0_fd34,
+            atexit2: 0x00af_cad0,
+            annotation_arg: 0x00c9_07f4,
+            annotation: 0x00c9_a274,
+            annotation_vtable: 0x00b0_fd40,
+            atexit3: 0x00af_c9a0,
+            array_member: 0x00c9_a290,
+            array_name: 0x00b0_fd78,
+            array_other: 0x0000_0000,
+            array_vtable: 0x00b1_6028,
+            count_fn: 0x0043_20c0,
+            set_fn: 0x0049_5490,
+            atexit4: 0x00af_cb40,
+            elem: 4,
+            other_fn: 0x0045_f3f0,
         },
     ),
 ];
@@ -809,7 +1176,7 @@ pub mod bridge {
     use super::{
         ADD_ANNOTATION, ADD_TO_NAMESPACE, ANNOTATION_CTOR, ATEXIT, ArrayType, Conv,
         DATA_MEMBER_ARRAY_CTOR, DATA_MEMBER_CTOR, DESCRIPTOR_BASE_CTOR, GLOBAL_NAMESPACE, Host,
-        PBASE_DESCRIPTOR, REGISTER_TYPE, SET_DEFAULT_BUFFER, SET_VALIDATION_BUFFER,
+        Member, PBASE_DESCRIPTOR, REGISTER_TYPE, SET_DEFAULT_BUFFER, SET_VALIDATION_BUFFER,
         SET_WRITE_MASK_BUFFER, TYPE_U32,
     };
 
@@ -966,15 +1333,12 @@ pub mod bridge {
         let array = h.rebase(k.array_member);
         if flags & 8 == 0 {
             h.write(guard, flags | 8);
-            let args = [
-                obj,
-                h.rebase(k.array_other),
-                h.rebase(k.array_name),
-                4,
-                0,
-                2,
-                4,
-            ];
+            let other = if k.other_fn == 0 {
+                h.rebase(k.array_other)
+            } else {
+                h.call_sym(k.other_fn, Conv::Cdecl, &[])
+            };
+            let args = [obj, other, h.rebase(k.array_name), 4, 0, 2, k.elem];
             h.call_sym(DATA_MEMBER_ARRAY_CTOR, Conv::Thiscall(array), &args);
             let vtable = h.rebase(k.array_vtable);
             h.write(array, vtable);
@@ -985,9 +1349,61 @@ pub mod bridge {
             h.write(array + 0x3c, set);
             at_exit(h, k.atexit4);
         }
-        h.write(array + 0x2c, 4u32);
+        h.write(array + 0x2c, k.elem);
         h.call_sym(REGISTER_TYPE, Conv::Cdecl, &[obj]);
         h.call_sym(ADD_TO_NAMESPACE, Conv::Thiscall(obj), &[]);
         obj
+    }
+
+    /// `T::Bind()` with a member whose type is `type_of()` (cdecl):
+    /// `addToNamespace`'s `eax`.
+    pub fn bind_member_typed(
+        h: &mut impl Host,
+        d: u32,
+        [guard, member, ctor, type_of, name, size, kind, dtor]: [u32; 8],
+    ) -> u32 {
+        let d = h.rebase(d);
+        h.call_sym(REGISTER_TYPE, Conv::Cdecl, &[d]);
+        if first_call(h, guard) {
+            let t = h.call_sym(type_of, Conv::Cdecl, &[]);
+            let member = h.rebase(member);
+            let args = [d, t, h.rebase(name), size, kind, 0];
+            h.call_sym(ctor, Conv::Thiscall(member), &args);
+            let dtor = h.rebase(dtor);
+            h.call_sym(ATEXIT, Conv::Cdecl, &[dtor]);
+        }
+        h.call_sym(ADD_TO_NAMESPACE, Conv::Thiscall(d), &[])
+    }
+
+    /// One member descriptor: its constructor (`PClassDataMember`, on
+    /// `member`: `d`, `other`, `name`, `size`, `kind`, 0) and `atexit`.
+    fn make_member(h: &mut impl Host, d: u32, [member, other, name, size, kind, dtor]: Member) {
+        let member = h.rebase(member);
+        let args = [d, h.rebase(other), h.rebase(name), size, kind, 0];
+        h.call_sym(DATA_MEMBER_CTOR, Conv::Thiscall(member), &args);
+        let dtor = h.rebase(dtor);
+        h.call_sym(ATEXIT, Conv::Cdecl, &[dtor]);
+    }
+
+    /// `T::Bind()` with two members (guard bits 0 and 1 of `guard`):
+    /// `addToNamespace`'s `eax`.
+    pub fn bind_two_members(
+        h: &mut impl Host,
+        (d, guard, first, second): (u32, u32, Member, Member),
+    ) -> u32 {
+        let d = h.rebase(d);
+        h.call_sym(REGISTER_TYPE, Conv::Cdecl, &[d]);
+        let at = h.rebase(guard);
+        let mut flags: u32 = h.read(at);
+        if flags & 1 == 0 {
+            h.write(at, flags | 1);
+            make_member(h, d, first);
+            flags = h.read(at);
+        }
+        if flags & 2 == 0 {
+            h.write(at, flags | 2);
+            make_member(h, d, second);
+        }
+        h.call_sym(ADD_TO_NAMESPACE, Conv::Thiscall(d), &[])
     }
 }
