@@ -23,6 +23,7 @@ use ffx_prender::descriptor::{Init, bridge as d};
 use ffx_prender::dtor::bridge as dt;
 use ffx_prender::h2_more::bridge as hm;
 use ffx_prender::h2_more2::bridge as h2;
+use ffx_prender::h2_more3::bridge as h3;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -1462,6 +1463,47 @@ ported! {
     /// `Phyre_NewConstantBuffer_004f49d0`.
     Phyre_NewConstantBuffer_004f49d0 @ 0x004f_49d0 => extern "C" fn s_004f49d0() -> u32 {
         h2::new_constant_buffer(&mut mem())
+    }
+    /// `Phyre_FreeTagged4_004dbaf0`.
+    Phyre_FreeTagged4_004dbaf0 @ 0x004d_baf0 => extern "thiscall" fn s_004dbaf0(a0: u32) {
+        h3::free_tagged4(&mut mem(), a0);
+    }
+    /// `Phyre_Dtor_00567620`.
+    Phyre_Dtor_00567620 @ 0x0056_7620 => extern "thiscall" fn s_00567620(a0: u32) {
+        h3::free_567620(&mut mem(), a0);
+    }
+    /// `PShaderD3D11_dtor_00585180`.
+    PShaderD3D11_dtor_00585180 @ 0x0058_5180 => extern "thiscall" fn s_00585180(a0: u32) -> u32 {
+        h3::dtor_585180(&mut mem(), a0)
+    }
+    /// `Phyre_PGameplay_Component_ctor_005572e0`.
+    Phyre_PGameplay_Component_ctor_005572e0 @ 0x0055_72e0 => extern "thiscall" fn s_005572e0(a0: u32) -> u32 {
+        h3::component_ctor(&mut mem(), a0)
+    }
+    /// `Phyre_PGameplay_Component_dtor_00557410`.
+    Phyre_PGameplay_Component_dtor_00557410 @ 0x0055_7410 => extern "thiscall" fn s_00557410(a0: u32) -> u32 {
+        h3::component_dtor(&mut mem(), a0)
+    }
+    /// `Phyre_Ctor_004fee80`.
+    Phyre_Ctor_004fee80 @ 0x004f_ee80 => extern "thiscall" fn s_004fee80(a0: u32) -> u32 {
+        h3::ctor_4fee80(&mut mem(), a0)
+    }
+    /// `PTextureD3D11_register_0058cf80`.
+    PTextureD3D11_register_0058cf80 @ 0x0058_cf80 => extern "thiscall" fn s_0058cf80(a0: u32) -> u32 {
+        let mut fr = super::StackFrame::<2>::new();
+        h3::register_texture(&mut mem(), a0, fr.at())
+    }
+    /// `PRendererD3D11_drawIndexed_00592c60`.
+    PRendererD3D11_drawIndexed_00592c60 @ 0x0059_2c60 => extern "thiscall" fn s_00592c60(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u8 {
+        h3::draw_indexed(&mut mem(), a0, a1, a2, a3, a4)
+    }
+    /// `Phyre_PInstanceList_freeObject`.
+    Phyre_PInstanceList_freeObject @ 0x0057_6530 => extern "thiscall" fn s_00576530(a0: u32, a1: u32) -> u32 {
+        h3::free_object(&mut mem(), a0, a1)
+    }
+    /// `Phyre_Ctor_0055dc40`.
+    Phyre_Ctor_0055dc40 @ 0x0055_dc40 => extern "thiscall" fn s_0055dc40(a0: u32) -> u32 {
+        h3::ctor_55dc40(&mut mem(), a0)
     }
 }
 

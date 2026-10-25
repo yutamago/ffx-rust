@@ -995,6 +995,176 @@ pub const CASES: &[Case] = &[
         gap: 0,
         writes: &[],
     },
+    Case {
+        name: "Phyre_FreeTagged4_004dbaf0",
+        addr: 0x004d_baf0,
+        conv: K::T,
+        kinds: "p",
+        out: O::None,
+        callees: &[(0x0042_fb20, 1, 0, false)],
+        prep: no_prep,
+        port: |g, a| {
+            h3::free_tagged4(g, a[0]);
+            0
+        },
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_Dtor_00567620",
+        addr: 0x0056_7620,
+        conv: K::T,
+        kinds: "p",
+        out: O::None,
+        callees: &[(0x0042_fb20, 1, 0, false)],
+        prep: |e, r, a| prep_sharray_at(e, r, a, 0xc),
+        port: |g, a| {
+            h3::free_567620(g, a[0]);
+            0
+        },
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "PShaderD3D11_dtor_00585180",
+        addr: 0x0058_5180,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[
+            (0x0059_c650, 0, 0, true),
+            (0x0042_fb20, 1, 0, false),
+            (0x004c_79f0, 0, 0, true),
+        ],
+        prep: |e, r, a| {
+            prep_sharray_at(e, r, a, 0x20);
+            prep_sharray_at(e, r, a, 0x18);
+        },
+        port: |g, a| h3::dtor_585180(g, a[0]),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PGameplay_Component_ctor_005572e0",
+        addr: 0x0055_72e0,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[
+            (0x0055_3980, 1, 1, true),
+            (0x005d_6cc0, 0, 0, true),
+            (0x005d_ff30, 0, 0, true),
+        ],
+        prep: |e, r, a| a[0] = e.pool + 4 * r.below(0x400),
+        port: |g, a| h3::component_ctor(g, a[0]),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PGameplay_Component_dtor_00557410",
+        addr: 0x0055_7410,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[
+            (0x005e_20c0, 0, 0, true),
+            (0x005d_6d10, 0, 0, true),
+            (0x0055_3a70, 0, 0, true),
+        ],
+        prep: |e, r, a| {
+            a[0] = e.pool + 4 * r.below(0x400);
+            let obj = if r.chance(4) {
+                0
+            } else {
+                e.pool + POOL_PTRS + 0x400
+            };
+            e.w32(a[0] + 0x2bc, obj);
+            if obj != 0 && r.chance(2) {
+                e.w32(a[0] + 0xac, obj + 4);
+            }
+        },
+        port: |g, a| h3::component_dtor(g, a[0]),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_Ctor_004fee80",
+        addr: 0x004f_ee80,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[(0x0094_966a, 5, 5, false), (0x005b_3620, 0, 0, true)],
+        prep: no_prep,
+        port: |g, a| h3::ctor_4fee80(g, a[0]),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "PTextureD3D11_register_0058cf80",
+        addr: 0x0058_cf80,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[
+            (0x0043_17f0, 0, 0, true),
+            (0x0043_1840, 0, 0, true),
+            (0x0059_5ee0, 1, 1, true),
+            (0x0043_19d0, 0, 0, true),
+        ],
+        prep: prep_register_texture,
+        port: |g, a| {
+            let f = g.frame();
+            h3::register_texture(g, a[0], f)
+        },
+        frame: 8,
+        gap: 0xc,
+        writes: &[],
+    },
+    Case {
+        name: "PRendererD3D11_drawIndexed_00592c60",
+        addr: 0x0059_2c60,
+        conv: K::T,
+        kinds: "pvvpi",
+        out: O::U8,
+        callees: &[(0x0058_ab60, 1, 0, false)],
+        prep: prep_draw_indexed,
+        port: |g, a| u32::from(h3::draw_indexed(g, a[0], a[1], a[2], a[3], a[4])),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PInstanceList_freeObject",
+        addr: 0x0057_6530,
+        conv: K::T,
+        kinds: "pn",
+        out: O::U32,
+        callees: &[(0x0049_c7a0, 2, 2, true)],
+        prep: prep_free_object,
+        port: |g, a| h3::free_object(g, a[0], a[1]),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_Ctor_0055dc40",
+        addr: 0x0055_dc40,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[],
+        prep: no_prep,
+        port: |g, a| h3::ctor_55dc40(g, a[0]),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
 ];
 
 /// Argument `i` low in the pool (apart from the objects) and COM
@@ -1130,4 +1300,118 @@ fn named_semantic(g: &mut G) -> u32 {
         0x00b2_062c,
         0x00af_ed30,
     )
+}
+
+/// `0x0058cf80`: the section's first byte, `+0x20` (0 or not), and a
+/// stand-in for `0x00595bf0` that stores a word at `ecx + 0x20` and
+/// returns another (both from the pool block at `0xf00`).
+fn prep_register_texture(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let block = e.pool + POOL_PTRS + 0xf00;
+    e.custom(0x0059_5bf0, |n| {
+        let mut c = vec![0xa1];
+        c.extend(le(block)); // mov eax, [block]
+        c.extend([0x89, 0x41, 0x20]); // mov [ecx+0x20], eax
+        c.extend([0xff, 0x05]);
+        c.extend(le(n)); // inc dword [n]
+        c.push(0xa1);
+        c.extend(le(block + 4)); // mov eax, [block+4]
+        c.push(0xc3);
+        c
+    });
+    let cs = e.rebase(0x00cb_3c94);
+    let b = rng.below(2) as u8;
+    e.write(cs, &[b]);
+    let f = if rng.chance(2) { 0 } else { e.ret_word(rng) };
+    e.w32(a[0] + 0x20, f);
+    let out = if rng.chance(2) { 0 } else { rng.next() };
+    let ret = if rng.chance(2) { 0 } else { e.ret_word(rng) };
+    e.w32(block, out);
+    e.w32(block + 4, ret);
+}
+
+/// `drawIndexed`: the renderer low in the pool, its context (methods
+/// 24, 19, 12), the index object apart (size byte, offset, views).
+fn prep_draw_indexed(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    a[0] = e.pool + 4 * rng.below(0x400);
+    let ctx = e.pool + POOL_PTRS + 0x200;
+    let vt = ctx + 0x40;
+    e.w32(a[0] + 0x70, ctx);
+    e.w32(ctx, vt);
+    for (slot, pops) in [(24, 2), (19, 4), (12, 4)] {
+        let r = e.ret_word(rng);
+        let f = e.handler(pops, r);
+        e.w32(vt + 4 * slot, f);
+    }
+    let topo = if rng.chance(4) { 0 } else { rng.below(6) };
+    e.set_ret(0x0058_ab60, topo);
+    let ix = e.pool + POOL_PTRS + 0x500;
+    a[3] = ix;
+    let size = [8u8, 4, 2, 0][rng.below(4) as usize];
+    e.write(ix + 0xc, &[size]);
+    let bit = rng.below(4) as u8;
+    e.write(ix + 0x30, &[bit]);
+    // a zero count with the bit set reads address 20 i (the original
+    // faults there): not given
+    let n = (1 + rng.below(3)) | if rng.chance(3) { 0x8000_0000 } else { 0 };
+    e.w32(ix + 0x14, n);
+    let views = e.pool + POOL_PTRS + 0x600;
+    e.w32(
+        ix + 0x18,
+        if n & 0x7fff_ffff == 1 {
+            rng.next()
+        } else {
+            views
+        },
+    );
+    for k in 0..8 {
+        let w = rng.next();
+        e.w32(views + 20 * k, w);
+        if n & 0x7fff_ffff == 1 {
+            e.w32(ix + 0x18 + 20 * k, w);
+        }
+    }
+}
+
+/// `freeObject`: the type (stride, slot base), the buffer and its slot
+/// count, the object on a slot, off the stride, outside or null, the
+/// sorted free chain, the destroy flag and virtual method 11.
+fn prep_free_object(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    a[0] = e.pool + 4 * rng.below(0x400);
+    let ty = e.pool + POOL_PTRS + 0x300;
+    let vt = ty + 0x40;
+    e.w32(a[0] + 0x2c, ty);
+    e.w32(ty, vt);
+    let r = e.ret_word(rng);
+    let h = e.handler(1, r);
+    e.w32(vt + 0x2c, h);
+    let stride = 4 * (1 + rng.below(4));
+    e.w32(ty + 0x1c, stride);
+    let base = rng.below(0x100);
+    e.w32(ty + 0x8c, base);
+    let buf = e.pool + POOL_PTRS + 0x800;
+    e.w32(a[0] + 0x34, buf);
+    let n = rng.below(6);
+    e.w32(a[0] + 0x3c, n);
+    let k = rng.below(n + 2);
+    let mut slot = buf + stride * k;
+    if rng.chance(5) {
+        slot += 1 + rng.below(3);
+    }
+    if rng.chance(8) {
+        slot = buf - 4;
+    }
+    if a[1] != 0 {
+        a[1] = slot.wrapping_add(base);
+    }
+    let free: Vec<u32> = (0..=n)
+        .filter(|_| rng.chance(3))
+        .map(|i| buf + stride * i)
+        .collect();
+    for (j, &f) in free.iter().enumerate() {
+        let next = free.get(j + 1).copied().unwrap_or(0);
+        e.w32(f, next);
+    }
+    e.w32(a[0] + 8, free.first().copied().unwrap_or(0));
+    let flag = rng.below(2) as u8;
+    e.write(a[0] + 0x49, &[flag]);
 }
