@@ -60,7 +60,7 @@ pub fn native_c05a<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_c008` (`0x00878390`, `0xc008`): `(var)`: the variable's address
+/// `Native_c008_VarAddressDropOne` (`0x00878390`, `0xc008`): `(var)`: the variable's address
 /// (`AtelGetRealVarAdrs`), unused; 1.
 pub fn native_c008<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -68,14 +68,14 @@ pub fn native_c008<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_c00f` (`0x00878750`, `0xc00f`): as `0xc008`, returning 0.
+/// `Native_c00f_VarAddressDropZero` (`0x00878750`, `0xc00f`): as `0xc008`, returning 0.
 pub fn native_c00f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     atel_get_real_var_adrs(h, w, v);
     0
 }
 
-/// `Native_c05d` (`0x00878470`, `0xc05d`): `(v)` -> `0x00887ca0(v)`; v.
+/// `Native_c05d_SetLang` (`0x00878470`, `0xc05d`): `(v)` -> `0x00887ca0(v)`; v.
 pub fn native_c05d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     call(h, 0x0088_7ca0, &[v]);
@@ -150,13 +150,13 @@ pub fn native_c02e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     kick1(h, s, 7)
 }
 
-/// `Native_c020` (`0x00878ac0`, `0xc020`) and `Native_c021`
+/// `Native_c020_Echo` (`0x00878ac0`, `0xc020`) and `Native_c021_Echo`
 /// (`0x00878ae0`, `0xc021`): `(v)` -> v (popped and returned).
 pub fn native_c020<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     pop(h, s)
 }
 
-/// `Native_c026` (`0x00878ce0`, `0xc026`): `(var, v)` ->
+/// `Native_c026_MusicStandby` (`0x00878ce0`, `0xc026`): `(var, v)` ->
 /// `0x00886a00(AtelGetRealVarAdrs(var), v)`; 1.
 pub fn native_c026<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -166,7 +166,7 @@ pub fn native_c026<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_c032` (`0x00878ef0`, `0xc032`): the worker's running level
+/// `Native_c032_AlwaysTrue` (`0x00878ef0`, `0xc032`): the worker's running level
 /// (`Script_WorkerLevel`), unused; 1.
 pub fn native_c032<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let lvl = i32::from(h.read::<u8>(w + 0x32));
@@ -205,7 +205,7 @@ pub fn native_c023<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_c029` (`0x00878d90`, `0xc029`): `(flags, b, a)` -> `a` when
+/// `Native_c029_TurnSelectAngle` (`0x00878d90`, `0xc029`): `(flags, b, a)` -> `a` when
 /// bit 1 of `flags` is set, else `b`. On the way it wraps the running
 /// level's `+0x884` minus the position's yaw (`0x0088bc20`, a pure angle
 /// wrap whose result is dropped; an infinity never leaves its loop).
@@ -223,7 +223,7 @@ pub fn native_c029<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     if flags & 2 != 0 { a } else { b }
 }
 
-/// `Native_c037` (`0x00878fa0`, `0xc037`): `(i)` -> an entry of the string
+/// `Native_c037_TableGetU16` (`0x00878fa0`, `0xc037`): `(i)` -> an entry of the string
 /// table at `0x008b9130()`: its base plus the `u16` offset `2i` (`2i + 1`
 /// when `0x0086bad0()` is set).
 pub fn native_c037<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
@@ -236,7 +236,7 @@ pub fn native_c037<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     u32::from(h.read::<u16>(t.wrapping_add(k.wrapping_mul(2)))).wrapping_add(t)
 }
 
-/// `Native_c038` (`0x00878fe0`, `0xc038`): `(c, b, var)`: on the CD
+/// `Native_c038_CdCallPair` (`0x00878fe0`, `0xc038`): `(c, b, var)`: on the CD
 /// interface `GetCD()` (`0x0076d0d0`), its `+0x10` with `c`, then its
 /// `+0` with `(b, the variable's address, 0, 0)`; 1.
 pub fn native_c038<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -252,7 +252,7 @@ pub fn native_c038<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_c039` (`0x00879040`, `0xc039`): `(v)` -> the CD interface's
+/// `Native_c039_CdCall8` (`0x00879040`, `0xc039`): `(v)` -> the CD interface's
 /// `+8` with v.
 pub fn native_c039<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let cd = call(h, 0x0076_d0d0, &[]);
@@ -309,18 +309,18 @@ pub fn native_c041<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_c044` (`0x008791a0`, `0xc044`): `(v)`: `0x0088c7f0(v)`; 0.
+/// `Native_c044_RestartSyncH` (`0x008791a0`, `0xc044`): `(v)`: `0x0088c7f0(v)`; 0.
 pub fn native_c044<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     forward(h, s, 0x0088_c7f0);
     0
 }
 
-/// `Native_c045` (`0x008791c0`, `0xc045`): `(v)` -> `0x0088c800(v)`.
+/// `Native_c045_GetSyncH` (`0x008791c0`, `0xc045`): `(v)` -> `0x0088c800(v)`.
 pub fn native_c045<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     forward(h, s, 0x0088_c800)
 }
 
-/// `Native_c046` (`0x008791e0`, `0xc046`): `(v)`: `0x0088c820(v)`; 0.
+/// `Native_c046_DropArg` (`0x008791e0`, `0xc046`): `(v)`: `0x0088c820(v)`; 0.
 pub fn native_c046<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     forward(h, s, 0x0088_c820);
     0
@@ -514,10 +514,10 @@ mixed_calls! {
     /// `Native_8055_MapPartMoveTo` (`0x0091c2d0`, `0x8055`): `(a, b f, c f, d)`:
     /// `0x0091a0f0(a, b, c, d)`; 1.
     native_8055 => [false, true, true, false], 0x0091_a0f0;
-    /// `Native_8063` (`0x0091c600`, `0x8063`): `(a f, b f, c f, d f)`:
+    /// `Native_8063_SetFieldVec4` (`0x0091c600`, `0x8063`): `(a f, b f, c f, d f)`:
     /// `0x0090a200(a, b, c, d)`; 1.
     native_8063 => [true; 4], 0x0090_a200;
-    /// `Native_8064` (`0x0091c6b0`, `0x8064`): six floats to
+    /// `Native_8064_SetFieldVec6` (`0x0091c6b0`, `0x8064`): six floats to
     /// `0x0090a230`; 1.
     native_8064 => [true; 6], 0x0090_a230;
 }

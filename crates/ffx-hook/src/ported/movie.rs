@@ -38,7 +38,7 @@ ported! {
     /// call's own frame, as the original keeps it; without records the
     /// port uses 0 for the original's never-written frame (brief
     /// 2026-10-24). Nobody reads its `eax` (`Sg_MainLoop`,
-    /// `Native_b009_Result`).
+    /// `Native_b009_MovieCameraWait_Result`).
     MovieCameraFrame_0076edc0 @ 0x0076_edc0 => extern "C" fn movie_camera_frame() -> u32 {
         let mut work = super::StackFrame::<{ (mv::CAMERA_WORK / 4) as usize }>::new();
         let at = work.at();

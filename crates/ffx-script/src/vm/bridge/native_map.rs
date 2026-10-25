@@ -59,7 +59,7 @@ macro_rules! pop_calls {
 pop_calls! {
     /// `Native_01a5_TexSwapSetFrame` (`0x008574c0`): `(a, b)` -> `0x00909e30(a, b)`; 1.
     native_01a5 => 2, 0x0090_9e30;
-    /// `Native_806a` (`0x0091af80`): `0x0091a260(x)`; 1.
+    /// `Native_806a_SceneSet104` (`0x0091af80`): `0x0091a260(x)`; 1.
     native_806a => 1, 0x0091_a260;
     /// `Native_MapPartHide` (`0x0091b1e0`, `0x8010`): `0x0091a7c0(part)`; 1.
     native_map_part_hide => 1, 0x0091_a7c0;
@@ -89,7 +89,7 @@ pop_calls! {
     native_805f => 1, 0x0072_95f0;
     /// `Native_8060_FpGroupForceOff` (`0x0091c510`): `0x00729480(x)`; 1.
     native_8060 => 1, 0x0072_9480;
-    /// `Native_8066` (`0x0091c7c0`): `0x0072a750(x)`; 1.
+    /// `Native_8066_FpStopStatus` (`0x0091c7c0`): `0x0072a750(x)`; 1.
     native_8066 => 1, 0x0072_a750;
     /// `Native_BltzSetObjModels` (`0x0091c810`, `0x8067`): `0x00919a80(a, b, c, d)`; 1.
     native_bltz_set_obj_models => 4, 0x0091_9a80;
@@ -160,7 +160,7 @@ pub fn native_8004_poll<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32
 /// `g_MapSpriteRefresh` (`0x025d5eb8`): 2 (or 1/0) before `0x00645e40`.
 pub const MAP_SPRITE_REFRESH: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x025d_5eb8);
 
-/// `Native_806b` (`0x0091afc0`): `(on)`: 2 into `0x025d5eb8` when on, then
+/// `Native_806b_VideoAtEndSetTwo` (`0x0091afc0`): `(on)`: 2 into `0x025d5eb8` when on, then
 /// `0x00645e40()`; 1.
 pub fn native_806b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     if pop(h, s) != 0 {

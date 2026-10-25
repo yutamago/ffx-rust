@@ -9,7 +9,7 @@ use ffx_oracle::{Oracle, OracleHost, harvest_test};
 // junk round 1: the movie camera for the current frame (its frame in stack
 // scratch, the never-written words 0 as the hook has them); eax unchecked:
 // off the camera path the original leaves its stack cookie there, and
-// neither caller (Sg_MainLoop, Native_b009_Result) reads it
+// neither caller (Sg_MainLoop, Native_b009_MovieCameraWait_Result) reads it
 harvest_test!(
     movie_camera_frame,
     0x0076_edc0,
