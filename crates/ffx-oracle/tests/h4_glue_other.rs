@@ -4447,3 +4447,209 @@ fn frames_gdraw_target_map_blur() {
         }
     }
 }
+
+/// The post-effects' vector setters (a copy from their own argument
+/// words), `gdraw_newPool_00a3bcd0` (its argument overwritten),
+/// `Distortion_onShaderClusterLoaded_006c28b0` (its argument's address
+/// handed on).
+#[test]
+fn frames_params_pool_cluster() {
+    const SETTERS: [(u32, fr::ParamSlot); 4] = [
+        (0x006c_45c0, fr::PARAM_48),
+        (0x006c_4680, fr::PARAM_4C),
+        (0x006c_4730, fr::PARAM_50),
+        (0x0070_36f0, fr::PARAM_54),
+    ];
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_2b21);
+        t.stub(fr::MEMCPY, false, 3, 0);
+        let malloc = t.stub_code(fr::GDRAW_MALLOC, false, 3, 3);
+        t.g32(fr::GDRAW_MALLOC, malloc);
+        t.stub(fr::NODE_POOL_INIT, false, 3, 0);
+        t.stub(fr::ASYNC_GET_INSTANCE, false, 0, 0);
+        t.stub(fr::GET_APPLICATION, false, 0, 0);
+        t.stub(fr::FIXUP_CLUSTERS, false, 2, 0);
+        t.stub(fr::DISTORTION_ON_CLUSTER, true, 0, 0);
+        let table = t.rebase(fr::GDRAW_POOL_SIZES);
+        for i in 0..32 {
+            let w = format!("{name} {i}");
+            for tag in [
+                fr::MEMCPY,
+                fr::NODE_POOL_INIT,
+                fr::ASYNC_GET_INSTANCE,
+                fr::GET_APPLICATION,
+                fr::FIXUP_CLUSTERS,
+                fr::DISTORTION_ON_CLUSTER,
+            ] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            // the setters
+            for &(sym, slot) in &SETTERS {
+                let this = t.zeros(0x60);
+                let param = t.zeros(0x10);
+                let offset = [0, 3, 4, 8, 0x40, rng.below(0x1_0000)][rng.below(6) as usize];
+                let size = [0, 0x10, 0x1fff, rng.next() & 0xffff][rng.below(4) as usize];
+                t.write(param + 8, &(offset as u16).to_le_bytes());
+                t.write(param + 0xa, &(size as u16).to_le_bytes());
+                let buffer = t.zeros(4);
+                let limit = offset + (size & 0x1fff);
+                let have = match rng.below(3) {
+                    0 => limit,
+                    1 => limit.wrapping_sub(1),
+                    _ => rng.next(),
+                };
+                t.w32(buffer, have);
+                let holder = t.zeros(8);
+                t.w32(holder + 4, buffer);
+                t.w32(this + slot.holder, holder);
+                t.w32(this + slot.param, param);
+                if rng.below(4) == 0 {
+                    t.w32(this + slot.guard, 0);
+                } else if slot.guard != slot.param {
+                    t.w32(this + slot.guard, rng.next() | 1);
+                }
+                let args = [rng.word(), rng.word(), rng.word(), rng.word()];
+                let ebp = t.ebp_for(4);
+                t.check_framed(
+                    &format!("{w} setParam {sym:#x} offset {offset:#x} size {size:#x}"),
+                    sym,
+                    Conv::Thiscall(this),
+                    &args,
+                    ebp + 8,
+                    &[],
+                    |g| {
+                        put_args(g, ebp + 8, &args);
+                        u(fr::post_set_param(g, slot, this, ebp + 8))
+                    },
+                );
+            }
+            // newPool
+            let kind = rng.below(4);
+            let (n, v) = (rng.below(0x100), rng.next());
+            t.w32(table + 8 * kind, n);
+            t.w32(table + 8 * kind + 4, v);
+            let pool = if rng.below(4) == 0 {
+                0
+            } else {
+                t.random(&mut rng, 0x10)
+            };
+            t.ret(fr::GDRAW_MALLOC, pool);
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} newPool kind {kind}"),
+                0x00a3_bcd0,
+                Conv::Cdecl,
+                &[kind],
+                ebp + 8,
+                &[(0, 4)],
+                |g| {
+                    put_args(g, ebp + 8, &[kind]);
+                    u(fr::gdraw_new_pool(g, ebp + 8))
+                },
+            );
+            // onShaderClusterLoaded
+            let distortion = t.zeros(0x30);
+            let holder = t.zeros(4);
+            t.w32(holder, distortion);
+            let cluster = rng.word();
+            let ebp = t.ebp_for(2);
+            t.check_framed(
+                &format!("{w} distortion cluster loaded"),
+                0x006c_28b0,
+                Conv::Cdecl,
+                &[cluster, holder],
+                ebp + 8,
+                &[(0, 8)],
+                |g| {
+                    put_args(g, ebp + 8, &[cluster, holder]);
+                    u(fr::distortion_on_cluster_loaded(g, ebp + 8))
+                },
+            );
+        }
+    }
+}
+
+/// `LoadingScreen_initialize`, `SaveDataMachine_setSaveLoadFocus_00702cd0`,
+/// `ClusterSlots_give_0069ae20`, `IggyMenuManager_callback_00a260f0`.
+#[test]
+fn frames_loading_focus_slots_callback() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_2b22);
+        t.stub(m::LOADING_LOAD_TEXTURES, true, 0, 0);
+        t.stub(m::POST_PROCESS_INSTANCE, false, 0, 0);
+        t.stub(m::POST_PROCESS_LOOKUP, true, 1, 1);
+        t.stub(m::LOADING_PREPARE_MESH, true, 0, 0);
+        let sprintf = t.stub_code(0x00b0_c3dc, false, 3, 0);
+        t.g32(0x00b0_c3dc, sprintf);
+        t.stub(m::IGGY_DATA_VALUE_SET, false, 2, 0);
+        t.stub(m::CALL_IGGY_AS3, true, 5, 5);
+        t.stub(s::OPERATOR_DELETE, false, 1, 0);
+        t.stub(m::IGGY_MANAGER_HANDLE, true, 3, 3);
+        for i in 0..32 {
+            let w = format!("{name} {i}");
+            for tag in [
+                m::LOADING_LOAD_TEXTURES,
+                m::POST_PROCESS_INSTANCE,
+                m::POST_PROCESS_LOOKUP,
+                m::LOADING_PREPARE_MESH,
+                0x00b0_c3dc,
+                m::IGGY_DATA_VALUE_SET,
+                m::CALL_IGGY_AS3,
+                s::OPERATOR_DELETE,
+                m::IGGY_MANAGER_HANDLE,
+            ] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            let screen = t.random(&mut rng, 0x40);
+            t.check(
+                &format!("{w} LoadingScreen_initialize"),
+                0x006e_4720,
+                Conv::Thiscall(screen),
+                &[],
+                |g| u(m::loading_screen_initialize(g, screen)),
+            );
+            t.g32(0x00ce_b248, rng.word());
+            let x = rng.word();
+            t.check(
+                &format!("{w} setSaveLoadFocus"),
+                0x0070_2cd0,
+                Conv::Cdecl,
+                &[x],
+                |g| u(m::save_set_focus(g, x)),
+            );
+            // the pool: inside (first, last, past the end), before it, after
+            let slots = t.random(&mut rng, 0x6420);
+            let hint = [0, 0x3ff, 0x400, u32::MAX, rng.below(0x400)][rng.below(5) as usize];
+            t.w32(slots + 0x641c, hint);
+            let p = match rng.below(6) {
+                0 => slots + 0x1c,
+                1 => slots + 0x1c + 0x18 * 0x3ff,
+                2 => slots + 0x601c,
+                3 => slots + 0x1b,
+                4 => rng.word(),
+                _ => slots + 0x1c + rng.below(0x6000),
+            };
+            t.check(
+                &format!(
+                    "{w} ClusterSlots_give {:#x} hint {hint:#x}",
+                    p.wrapping_sub(slots)
+                ),
+                0x0069_ae20,
+                Conv::Thiscall(slots),
+                &[p],
+                |g| u(m::cluster_slots_give(g, slots, p)),
+            );
+            t.g32(0x0198_4c6c, rng.word());
+            let (a, b, c) = (rng.word(), rng.word(), rng.word());
+            t.check(
+                &format!("{w} IggyMenuManager callback"),
+                0x00a2_60f0,
+                Conv::Stdcall,
+                &[a, b, c],
+                |g| u(m::iggy_manager_handle_callback(g, a, b, c)),
+            );
+        }
+    }
+}

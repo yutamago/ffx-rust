@@ -1020,4 +1020,30 @@ ported! {
         let mut frame = StackFrame::<1>::new();
         fr::shout_set_volume(&mut mem(), frame.at(), this, volume);
     }
+    /// `gdraw_newPool_00a3bcd0(kind)`: overwrites its own argument, as the
+    /// original does.
+    gdraw_newPool_00a3bcd0 @ 0x00a3_bcd0 => extern "C" fn gdraw_new_pool(_kind: u32; args: u32) -> u32 {
+        fr::gdraw_new_pool(&mut mem(), args)
+    }
+    /// `Distortion_onShaderClusterLoaded_006c28b0(cluster, &distortion)`:
+    /// hands on the address of its own `cluster` argument.
+    Distortion_onShaderClusterLoaded_006c28b0 @ 0x006c_28b0 => extern "C" fn distortion_on_cluster_loaded(_cluster: u32, _holder: u32; args: u32) -> u32 {
+        fr::distortion_on_cluster_loaded(&mut mem(), args)
+    }
+    /// `LoadingScreen_initialize(this)`.
+    LoadingScreen_initialize @ 0x006e_4720 => extern "thiscall" fn loading_screen_initialize(this: u32) -> u32 {
+        m::loading_screen_initialize(&mut mem(), this)
+    }
+    /// `SaveDataMachine_setSaveLoadFocus_00702cd0(i)`.
+    SaveDataMachine_setSaveLoadFocus_00702cd0 @ 0x0070_2cd0 => extern "C" fn save_set_focus(i: u32) -> u32 {
+        m::save_set_focus(&mut mem(), i)
+    }
+    /// `ClusterSlots_give_0069ae20(this; p)`.
+    ClusterSlots_give_0069ae20 @ 0x0069_ae20 => extern "thiscall" fn cluster_slots_give(this: u32, p: u32) -> u32 {
+        m::cluster_slots_give(&mut mem(), this, p)
+    }
+    /// `IggyMenuManager_callback_00a260f0(a, b, c)`.
+    IggyMenuManager_callback_00a260f0 @ 0x00a2_60f0 => extern "stdcall" fn iggy_manager_callback(a: u32, b: u32, c: u32) -> u32 {
+        m::iggy_manager_handle_callback(&mut mem(), a, b, c)
+    }
 }

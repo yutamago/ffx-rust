@@ -719,3 +719,80 @@ pub fn mfifo_reset(h: &mut impl Host) -> u32 {
     }
     h.call_sym(SET_GLOBALS_8431D0, Conv::Cdecl, &[0x80_0000])
 }
+
+/// `LoadingScreen_loadTextures(this)` (thiscall).
+pub const LOADING_LOAD_TEXTURES: u32 = 0x006e_4770;
+/// `PostProcessManager_GetInstance()`.
+pub const POST_PROCESS_INSTANCE: u32 = 0x0069_2be0;
+/// `PostProcessManager_lookup_006935f0(this; i)` (thiscall).
+pub const POST_PROCESS_LOOKUP: u32 = 0x0069_35f0;
+/// `LoadingScreen_prepareMesh(this)` (thiscall).
+pub const LOADING_PREPARE_MESH: u32 = 0x006e_4920;
+
+/// `LoadingScreen_initialize(this)` (thiscall): its textures, `+0x30 =`
+/// the post-process manager's entry 4 (`PostProcessManager_lookup_006935f0`,
+/// its argument pushed before `PostProcessManager_GetInstance()`), then a
+/// jump to `LoadingScreen_prepareMesh(this)`, whose `eax` it returns.
+pub fn loading_screen_initialize(h: &mut impl Host, this: u32) -> u32 {
+    h.call_sym(LOADING_LOAD_TEXTURES, Conv::Thiscall(this), &[]);
+    let manager = h.call_sym(POST_PROCESS_INSTANCE, Conv::Cdecl, &[]);
+    let entry = h.call_sym(POST_PROCESS_LOOKUP, Conv::Thiscall(manager), &[4]);
+    h.write(this.wrapping_add(0x30), entry);
+    h.call_sym(LOADING_PREPARE_MESH, Conv::Thiscall(this), &[])
+}
+
+/// `iggyDataValueSet_00a28d70(value, text)` (cdecl).
+pub const IGGY_DATA_VALUE_SET: u32 = 0x00a2_8d70;
+/// `IggyMenu_callIggyAS3External(this; target, name, n, values, unused)`.
+pub const CALL_IGGY_AS3: u32 = 0x00a2_8ba0;
+/// The save menu's number text (`0x00cebcb0`) and its `IggyDataValue`
+/// (`0x00cebca0`).
+pub const SAVE_FOCUS_TEXT: (u32, u32) = (0x00ce_bcb0, 0x00ce_bca0);
+/// `"%d"` (`0x00b0f604`).
+pub const FORMAT_INT: u32 = 0x00b0_f604;
+/// `"setSaveLoadFocus"` (`0x00b4ce98`).
+pub const SET_SAVE_LOAD_FOCUS: u32 = 0x00b4_ce98;
+
+/// `SaveDataMachine_setSaveLoadFocus_00702cd0(i)` (cdecl):
+/// `sprintf(text, "%d", i)`, the value set from the text, then
+/// `IggyMenu_callIggyAS3External(g_SaveMenu; 0, "setSaveLoadFocus", 1,
+/// &value, 1)`'s `eax`.
+pub fn save_set_focus(h: &mut impl Host, i: u32) -> u32 {
+    let (text, value) = (h.rebase(SAVE_FOCUS_TEXT.0), h.rebase(SAVE_FOCUS_TEXT.1));
+    let sprintf: u32 = h.read(h.rebase(0x00b0_c3dc));
+    let fmt = h.rebase(FORMAT_INT);
+    h.call(sprintf, Conv::Cdecl, &[text, fmt, i]);
+    h.call_sym(IGGY_DATA_VALUE_SET, Conv::Cdecl, &[value, text]);
+    let menu = SAVE_MENU.get(h);
+    let name = h.rebase(SET_SAVE_LOAD_FOCUS);
+    h.call_sym(CALL_IGGY_AS3, Conv::Thiscall(menu), &[0, name, 1, value, 1])
+}
+
+/// `ClusterSlots_give_0069ae20(this; p)` (thiscall, ret 4): the
+/// counterpart of `ClusterSlots_take_0069aba0`: a block inside the pool
+/// (`+0x1c`, 0x400 blocks of 0x18 bytes) frees its slot (byte `+0x601c +
+/// i` cleared) and lowers the hint `+0x641c` (signed) to it, returning
+/// `i`; any other is `operator_delete`d (its `eax`).
+pub fn cluster_slots_give(h: &mut impl Host, this: u32, p: u32) -> u32 {
+    let first = this.wrapping_add(0x1c);
+    if p < first || p >= this.wrapping_add(0x601c) {
+        return h.call_sym(crate::sound::OPERATOR_DELETE, Conv::Cdecl, &[p]);
+    }
+    let i = (p.wrapping_sub(this).wrapping_sub(0x1c) as i32 / 0x18) as u32;
+    h.write(i.wrapping_add(this).wrapping_add(0x601c), 0u8);
+    let hint: u32 = h.read(this.wrapping_add(0x641c));
+    if (i as i32) < (hint as i32) {
+        h.write(this.wrapping_add(0x641c), i);
+    }
+    i
+}
+
+/// `IggyMenuManager_handle_00a26100(this; a, b, c)` (thiscall, ret 0xc).
+pub const IGGY_MANAGER_HANDLE: u32 = 0x00a2_6100;
+/// `IggyMenuManager_handleCallback_00a260f0(a, b, c)` (stdcall, a
+/// callback): a jump to `0x00a26100` on `g_IggyMenuManager`, whose `eax`
+/// it returns.
+pub fn iggy_manager_handle_callback(h: &mut impl Host, a: u32, b: u32, c: u32) -> u32 {
+    let manager = IGGY_MENU_MANAGER.get(h);
+    h.call_sym(IGGY_MANAGER_HANDLE, Conv::Thiscall(manager), &[a, b, c])
+}

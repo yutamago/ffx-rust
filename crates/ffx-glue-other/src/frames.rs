@@ -694,3 +694,133 @@ pub fn shout_set_volume(h: &mut impl Host, frame: u32, this: u32, volume: u32) {
     let file = h.rebase(FMOD_SHOUT_FILE);
     h.call_sym(ERRCHECK, Conv::Cdecl, &[r, file, 0xd9]);
 }
+
+/// `memcpy` (`0x00949256`, the import's thunk; cdecl).
+pub const MEMCPY: u32 = 0x0094_9256;
+
+/// Where a post-effect's parameter setter finds things: the word that
+/// must be set, the parameter record (`+8` its offset, `+0xa` its size in
+/// the low 13 bits), the object whose `+4` is the constant buffer (its
+/// first word the buffer's size).
+#[derive(Clone, Copy)]
+pub struct ParamSlot {
+    /// Offset of the word checked for 0 (no parameter: 0x13).
+    pub guard: u32,
+    /// Offset of the parameter record's pointer.
+    pub param: u32,
+    /// Offset of the buffer holder's pointer.
+    pub holder: u32,
+}
+
+/// `BlurEffectEx_setParam48_006c45c0`: `+0x48`, buffer `(+0x20)+4`.
+pub const PARAM_48: ParamSlot = ParamSlot {
+    guard: 0x48,
+    param: 0x48,
+    holder: 0x20,
+};
+/// `BlurEffectEx_setParam4c_006c4680`: `+0x4c`, buffer `(+0x20)+4`.
+pub const PARAM_4C: ParamSlot = ParamSlot {
+    guard: 0x4c,
+    param: 0x4c,
+    holder: 0x20,
+};
+/// `BlurEffectEx_setParam50_006c4730`: checks `+0x54`, writes `+0x50`'s
+/// parameter, buffer `(+0x20)+4`.
+pub const PARAM_50: ParamSlot = ParamSlot {
+    guard: 0x54,
+    param: 0x50,
+    holder: 0x20,
+};
+/// `RadialBlur_setParam54_007036f0`: `+0x54`, buffer `(+0x2c)+4`.
+pub const PARAM_54: ParamSlot = ParamSlot {
+    guard: 0x54,
+    param: 0x54,
+    holder: 0x2c,
+};
+
+/// The post-effects' vector-parameter setters (thiscall(this; x, y, z,
+/// w), ret 0x10; `args` the address of its four argument words): no
+/// parameter gives 0x13; one whose `offset + size` passes the buffer's
+/// size or whose offset is below 4 gives 3; else `memcpy(buffer + offset,
+/// args, size)` (the size can pass the four words: the bytes after them
+/// are the caller's) and 0.
+pub fn post_set_param(h: &mut impl Host, slot: ParamSlot, this: u32, args: u32) -> u32 {
+    if h.read::<u32>(this.wrapping_add(slot.guard)) == 0 {
+        return 0x13;
+    }
+    let param: u32 = h.read(this.wrapping_add(slot.param));
+    let holder: u32 = h.read(this.wrapping_add(slot.holder));
+    let buffer: u32 = h.read(holder.wrapping_add(4));
+    let offset = u32::from(h.read::<u16>(param.wrapping_add(8)));
+    let size = u32::from(h.read::<u16>(param.wrapping_add(0xa)) & 0x1fff);
+    if offset + size > h.read::<u32>(buffer) || offset < 4 {
+        return 3;
+    }
+    h.call_sym(
+        MEMCPY,
+        Conv::Cdecl,
+        &[offset.wrapping_add(buffer), args, size],
+    );
+    0
+}
+
+/// `_IggyGDrawMallocAnnotated@12` (`0x00b0c86c`, import slot).
+pub const GDRAW_MALLOC: u32 = 0x00b0_c86c;
+/// The pools `gdraw_newPool_00a3bcd0` sizes (`0x00c6d448`: per kind, the
+/// node count and the value).
+pub const GDRAW_POOL_SIZES: u32 = 0x00c6_d448;
+/// `op_node_pool_init_00a39bc0(set, n, v)` (cdecl).
+pub const NODE_POOL_INIT: u32 = 0x00a3_9bc0;
+/// The source file `GDraw` names in its allocations (`0x00b7a5e8`).
+pub const GDRAW_SOURCE: u32 = 0x00b7_a5e8;
+
+/// `gdraw_newPool_00a3bcd0(kind)` (cdecl; `args` the address of its
+/// argument, which it overwrites with the pool's value): `n` nodes and a
+/// value from the table, `_IggyGDrawMallocAnnotated(0x1a8 + 0x38 n,
+/// file, 0x868)`; with memory, `op_node_pool_init_00a39bc0(p, n, value)`
+/// and bit 0 of `+0xc` set to `kind == 2`. Returns the pool (0 when the
+/// allocation failed).
+pub fn gdraw_new_pool(h: &mut impl Host, args: u32) -> u32 {
+    let kind: u32 = h.read(args);
+    let table = h
+        .rebase(GDRAW_POOL_SIZES)
+        .wrapping_add(kind.wrapping_mul(8));
+    let n: u32 = h.read(table);
+    let value: u32 = h.read(table.wrapping_add(4));
+    h.write(args, value);
+    let malloc: u32 = h.read(h.rebase(GDRAW_MALLOC));
+    let source = h.rebase(GDRAW_SOURCE);
+    let size = n.wrapping_mul(0x38).wrapping_add(0x1a8);
+    let pool = h.call(malloc, Conv::Stdcall, &[size, source, 0x868]);
+    if pool == 0 {
+        return 0;
+    }
+    let value: u32 = h.read(args);
+    h.call_sym(NODE_POOL_INIT, Conv::Cdecl, &[pool, n, value]);
+    let flags: u32 = h.read(pool.wrapping_add(0xc));
+    h.write(pool.wrapping_add(0xc), (flags & !1) | u32::from(kind == 2));
+    pool
+}
+
+/// `PApplication_FixupClusters(&cluster, n)` (cdecl).
+pub const FIXUP_CLUSTERS: u32 = 0x0062_3580;
+/// The distortion's handler once its shader cluster is fixed up
+/// (`0x006c2520`, thiscall).
+pub const DISTORTION_ON_CLUSTER: u32 = 0x006c_2520;
+
+/// `Distortion_onShaderClusterLoaded_006c28b0(cluster, &distortion)`
+/// (cdecl; `args` the address of its arguments):
+/// `AsyncLoadManager_sGetInstance()` (unused), the distortion's `+0x20 =
+/// cluster`, `GetApplication()` (unused),
+/// `PApplication_FixupClusters(&args[0], 1)`, then a jump to `0x006c2520`
+/// on the distortion, whose `eax` it returns.
+pub fn distortion_on_cluster_loaded(h: &mut impl Host, args: u32) -> u32 {
+    h.call_sym(ASYNC_GET_INSTANCE, Conv::Cdecl, &[]);
+    let holder: u32 = h.read(args + 4);
+    let distortion: u32 = h.read(holder);
+    let cluster: u32 = h.read(args);
+    h.write(distortion.wrapping_add(0x20), cluster);
+    h.call_sym(GET_APPLICATION, Conv::Cdecl, &[]);
+    h.call_sym(FIXUP_CLUSTERS, Conv::Cdecl, &[args, 1]);
+    h.call_sym(DISTORTION_ON_CLUSTER, Conv::Thiscall(distortion), &[])
+}
