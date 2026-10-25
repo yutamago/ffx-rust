@@ -1653,6 +1653,7 @@ mod tests {
                     remap_to: String::new(),
                     parameters: vec![16, 0, 0, 0, 1, 2],
                 }],
+                chars: None,
             })),
             Msg::Effects(Frame {
                 number: 4,

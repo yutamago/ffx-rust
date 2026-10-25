@@ -202,11 +202,11 @@ pub struct Resources {
     external_buffer_ix: HashMap<External, Buffer>,
 }
 
-fn handle(n: usize) -> u32 {
+pub(crate) fn handle(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
-fn intern<T: PartialEq + Clone>(list: &mut Vec<T>, v: &T) -> u32 {
+pub(crate) fn intern<T: PartialEq + Clone>(list: &mut Vec<T>, v: &T) -> u32 {
     if let Some(i) = list.iter().position(|x| x == v) {
         return handle(i);
     }
@@ -215,7 +215,7 @@ fn intern<T: PartialEq + Clone>(list: &mut Vec<T>, v: &T) -> u32 {
 }
 
 impl Resources {
-    fn shader(&mut self, stage: Stage, code: &[u8]) -> Shader {
+    pub(crate) fn shader(&mut self, stage: Stage, code: &[u8]) -> Shader {
         let key = (stage, code.to_vec());
         if let Some(&s) = self.shader_ix.get(&key) {
             return s;
@@ -226,7 +226,7 @@ impl Resources {
         s
     }
 
-    fn layout(&mut self, elements: Vec<InputElement>, vs: Shader) -> Layout {
+    pub(crate) fn layout(&mut self, elements: Vec<InputElement>, vs: Shader) -> Layout {
         let key = (elements, vs);
         if let Some(&l) = self.layout_ix.get(&key) {
             return l;
@@ -237,14 +237,19 @@ impl Resources {
         l
     }
 
-    fn buffer(&mut self, desc: BufferDesc, data: Vec<u8>) -> Buffer {
+    pub(crate) fn buffer(&mut self, desc: BufferDesc, data: Vec<u8>) -> Buffer {
         self.buffers.push((desc, data));
         Buffer(handle(self.buffers.len() - 1))
     }
 
     /// The game's static buffer of a segment's block (`block` index) or
     /// its indices (`None`): `D3D11_USAGE_IMMUTABLE`, bind flags 9 or 10.
-    fn static_buffer(&mut self, map: &MapModel, segment: usize, block: Option<usize>) -> Buffer {
+    pub(crate) fn static_buffer(
+        &mut self,
+        map: &MapModel,
+        segment: usize,
+        block: Option<usize>,
+    ) -> Buffer {
         let key = (segment, block.unwrap_or(0), block.is_none());
         if let Some(&b) = self.static_ix.get(&key) {
             return b;
@@ -281,7 +286,7 @@ impl Resources {
         b
     }
 
-    fn external(&mut self, e: External, kind: ViewKind) -> View {
+    pub(crate) fn external(&mut self, e: External, kind: ViewKind) -> View {
         if let Some(&v) = self.external_ix.get(&(e, kind)) {
             return v;
         }
@@ -299,7 +304,7 @@ impl Resources {
     /// it: the file's chain from mip `dropped` on (never past the last),
     /// DXT1/3/5 as BC1/2/3, cube maps as 6 slices; a `TEXTURE2D` or
     /// `TEXTURECUBE` view of every level.
-    fn texture(
+    pub(crate) fn texture(
         &mut self,
         import: &str,
         t: &ffx_phyre::Texture,
@@ -637,8 +642,9 @@ pub fn copy_matrices(src: &[u8], dst: &mut [u8]) {
 /// A constant buffer of `size` bytes filled through a location table:
 /// each entry's `size` bytes from its source buffer at its offset go to
 /// its target offset (entries the program doesn't use have target
-/// `u32::MAX`), `float4x4` entries of every source transposed
-/// ([`copy_matrices`]): the shadow cascade `PhyreScene_RenderShadow`
+/// `u32::MAX`), as the render thread's copy writes it (`0x0059a650`,
+/// [`crate::chars::cb_copy`]: `float4x4` and `float4x3` entries of every
+/// source transposed, up to an end mark): the shadow cascade `PhyreScene_RenderShadow`
 /// writes into the material as a `PMatrix4` is its transpose in every
 /// captured map draw (round 2 wire); the node and scene-wide buffers hold
 /// their matrices in memory order too.
@@ -663,8 +669,10 @@ fn fill_cb(size: u32, table: &LocTable, sources: [&[u8]; 3], notes: &mut Vec<Str
             loc.size as usize,
         );
         match (from.get(o..o + n), cb.get_mut(t..t + n)) {
-            (Some(s), Some(d)) if is_matrix(loc) => copy_matrices(s, d),
-            (Some(s), Some(d)) => d.copy_from_slice(s),
+            (Some(s), Some(d)) => {
+                let out = crate::chars::cb_copy(loc.kind, s);
+                d[..out.len()].copy_from_slice(&out);
+            }
             _ => notes.push(format!(
                 "{src:?} parameter at {o:#x} ({n} bytes) to {t:#x}: outside a buffer"
             )),
@@ -692,7 +700,7 @@ struct Builder<'a, I: SceneInputs> {
 /// `TEXCOORD4/6/7`, a second UV set), the one whose `m_streamSet` is the
 /// binding's `m_inputSet`; else the first. The element's offset is the stream's in its block.
 /// Blocks are bound at offset 0 with their stride.
-fn vertex_inputs(
+pub(crate) fn vertex_inputs(
     map: &MapModel,
     instance: usize,
     segment: usize,

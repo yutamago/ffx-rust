@@ -11,6 +11,7 @@ use ffx_gfx::{Cmd, Draw, DrawKind, Frame, Id, Msg, StateKind};
 
 use crate::build::{Built, Pass, ViewSource};
 use crate::capture::Capture;
+use crate::frame::External;
 
 /// Fresh ids start here (the game's object addresses are below).
 const FIRST_ID: Id = 0xf000_0000;
@@ -195,19 +196,48 @@ fn texture_hash(subresources: &[(u32, Vec<u8>)]) -> u64 {
 /// One built draw as a captured one. External objects (scene targets,
 /// run-time textures, the dynamic ring's vertices) are the host's: they
 /// take `host`'s (the captured draw in that place) in the same slot.
-fn draw(d: &crate::build::MapDraw, r: &crate::build::Resources, ids: &Ids, host: &Draw) -> Draw {
+fn draw(
+    d: &crate::build::MapDraw,
+    r: &crate::build::Resources,
+    ids: &Ids,
+    host: Option<&Draw>,
+) -> Draw {
     let s = &d.state;
+    let (host_vs, host_ps, host_rtv, host_dsv, host_vertex) = match host {
+        Some(h) => (
+            &h.vs_srv[..],
+            &h.ps_srv[..],
+            &h.rtv[..],
+            h.dsv,
+            &h.vertex[..],
+        ),
+        None => (&[][..], &[][..], &[][..], 0, &[][..]),
+    };
     let external_view = |v: View| {
         r.views
             .get(v.0 as usize)
             .is_some_and(|x| matches!(x.source, ViewSource::External(_)))
     };
     let host_slot = |list: &[(u8, Id)], i: u8| list.iter().find(|x| x.0 == i).map_or(0, |x| x.1);
+    // The constants as bytes; a builder that binds constant buffers
+    // instead (the character builder) has them in its resources.
     let stage_cbs = |stage: Stage| -> Vec<(u8, Vec<u8>)> {
-        d.constants
+        let own: Vec<(u8, Vec<u8>)> = d
+            .constants
             .iter()
             .filter(|c| c.0 == stage)
             .map(|c| (c.1, c.2.clone()))
+            .collect();
+        if !own.is_empty() {
+            return own;
+        }
+        let st = if stage == Stage::Vertex { &s.vs } else { &s.ps };
+        (0u8..)
+            .zip(st.cbs.iter())
+            .filter_map(|(i, c)| {
+                c.and_then(|c| r.buffers.get(c.buffer.0 as usize))
+                    .map(|b| (i, b.1.clone()))
+            })
             .collect()
     };
     let views = |list: &[Option<View>], host: &[(u8, Id)]| -> Vec<(u8, Id)> {
@@ -254,7 +284,7 @@ fn draw(d: &crate::build::MapDraw, r: &crate::build::Resources, ids: &Ids, host:
             .filter_map(|(i, v)| {
                 v.map(|v| {
                     if r.external_buffers.contains_key(&v.buffer.0) {
-                        host.vertex
+                        host_vertex
                             .iter()
                             .find(|x| x.0 == i)
                             .copied()
@@ -270,8 +300,8 @@ fn draw(d: &crate::build::MapDraw, r: &crate::build::Resources, ids: &Ids, host:
         }),
         vs_cb: stage_cbs(Stage::Vertex),
         ps_cb: stage_cbs(Stage::Pixel),
-        vs_srv: views(&s.vs.srvs, &host.vs_srv),
-        ps_srv: views(&s.ps.srvs, &host.ps_srv),
+        vs_srv: views(&s.vs.srvs, host_vs),
+        ps_srv: views(&s.ps.srvs, host_ps),
         vs_samplers: samplers(&s.vs.samplers),
         ps_samplers: samplers(&s.ps.samplers),
         blend: s.blend.map_or(0, |Blend(x)| at(&ids.blends, x)),
@@ -282,10 +312,10 @@ fn draw(d: &crate::build::MapDraw, r: &crate::build::Resources, ids: &Ids, host:
         raster: s.raster.map_or(0, |Raster(x)| at(&ids.rasters, x)),
         viewport: s.viewport,
         scissor: s.scissor,
-        rtv: views(&s.targets, &host.rtv),
+        rtv: views(&s.targets, host_rtv),
         dsv: s.depth_target.map_or(0, |v| {
             if external_view(v) {
-                host.dsv
+                host_dsv
             } else {
                 at(&ids.views, v.0)
             }
@@ -328,7 +358,7 @@ pub fn replace_map_draws(
         for (k, d) in built.pass(pass).enumerate() {
             let at = list.get(k).copied();
             let host = at.and_then(captured).unwrap_or(first);
-            let cmd = Cmd::Draw(Box::new(draw(d, &built.resources, &ids, host)));
+            let cmd = Cmd::Draw(Box::new(draw(d, &built.resources, &ids, Some(host))));
             place.entry(at.unwrap_or(last)).or_default().push(cmd);
         }
     }
@@ -341,6 +371,93 @@ pub fn replace_map_draws(
         // The built draw for this place; after a pass's last, its extras.
         if let Some(mut built_here) = place.remove(&i) {
             cmds.append(&mut built_here);
+        }
+    }
+    let mut out: Vec<Msg> = cap.objects.values().cloned().collect();
+    out.append(&mut msgs);
+    if let Some(w) = &cap.world {
+        out.push(w.clone());
+    }
+    out.push(Msg::Frame(Frame {
+        number: cap.frame.number,
+        width: cap.frame.width,
+        height: cap.frame.height,
+        cmds,
+    }));
+    Ok(out)
+}
+
+/// The messages of a capture of `cap`'s frame with its map draws swapped
+/// for the builder's as one group per pass (round 2's first form, which
+/// the character builder's gate uses): the built opaque draws where the
+/// first of `opaque` (scene draw numbers) was, the transparent ones where
+/// the first of `transparent` was, every listed scene draw dropped;
+/// external views take the id `external` gives (a captured view's).
+///
+/// # Errors
+/// When a list is empty, or an external view has no captured id.
+pub fn replace_map_draws_grouped(
+    cap: &Capture,
+    built: &Built,
+    opaque: &[usize],
+    transparent: &[usize],
+    external: &dyn Fn(External) -> Option<Id>,
+) -> Result<Vec<Msg>, String> {
+    let (Some(&first_opaque), Some(&first_transparent)) = (opaque.first(), transparent.first())
+    else {
+        return Err("no captured map draw of a pass".into());
+    };
+    let (mut msgs, mut ids) = objects(built, false);
+    let mut missing = Vec::new();
+    for (v, id) in built.resources.views.iter().zip(ids.views.iter_mut()) {
+        if let ViewSource::External(e) = v.source {
+            *id = external(e).unwrap_or_else(|| {
+                missing.push(format!("no captured view for {e:?}"));
+                0
+            });
+        }
+    }
+    if !missing.is_empty() {
+        return Err(missing.join("; "));
+    }
+    let draws = |pass: Pass| -> Vec<Cmd> {
+        built
+            .pass(pass)
+            .map(|d| {
+                let mut x = draw(d, &built.resources, &ids, None);
+                for (list, st) in [(&mut x.vs_srv, &d.state.vs), (&mut x.ps_srv, &d.state.ps)] {
+                    for (slot, id) in list.iter_mut() {
+                        if let Some(Some(v)) = st.srvs.get(usize::from(*slot)) {
+                            *id = at(&ids.views, v.0);
+                        }
+                    }
+                }
+                for (slot, id) in &mut x.rtv {
+                    if let Some(Some(v)) = d.state.targets.get(usize::from(*slot)) {
+                        *id = at(&ids.views, v.0);
+                    }
+                }
+                x.dsv = d.state.depth_target.map_or(0, |v| at(&ids.views, v.0));
+                Cmd::Draw(Box::new(x))
+            })
+            .collect()
+    };
+    let (opaque_draws, transparent_draws) = (draws(Pass::Opaque), draws(Pass::Transparent));
+    let mut scene_number: HashMap<usize, usize> = HashMap::new();
+    for (n, (cmd, _)) in cap
+        .draws()
+        .filter(|(_, d)| Capture::scene_targets(d).is_some())
+        .enumerate()
+    {
+        scene_number.insert(cmd, n);
+    }
+    let mut cmds = Vec::new();
+    for (i, c) in cap.frame.cmds.iter().enumerate() {
+        match scene_number.get(&i) {
+            Some(n) if *n == first_opaque => cmds.extend(opaque_draws.iter().cloned()),
+            Some(n) if *n == first_transparent => cmds.extend(transparent_draws.iter().cloned()),
+            Some(n) if opaque.contains(n) || transparent.contains(n) => {}
+            _ => cmds.push(c.clone()),
         }
     }
     let mut out: Vec<Msg> = cap.objects.values().cloned().collect();

@@ -1,0 +1,47 @@
+# What a character builder's draws may differ in from original captures
+# (docs/formats/scene-chars.md, "Junk reads"). drawdiff rule syntax
+# (docs/drawdiff.md, "Rules"). Both are words Ch_DrawMain (0x0082ed50)
+# hands graphicSgSetSpecular (0x00643cc0) without ever writing them; the
+# junk-read policy of 2026-10-24 makes the port pass 0, so the Rust game's
+# material buffer, and so a builder copying it, has 0 where the original
+# has stale stack. The scene inputs of the original reproduce the stale
+# values bit for bit (tests/chars.rs): they are in the live material
+# buffer, written there by graphicSgSetSpecular through
+# ShaderParamBuffer_SetValue2 (0x006386c0).
+[*]
+
+# SgSpec_CameraVec = (x, z, junk, w) of the camera position in the
+# segment's space; the third word is [ebp-0x2c] of Ch_DrawMain's frame.
+# In every original capture of cdsp0000 (scene draw 112, Tidus's f001
+# object, vertex shader 1e6f10bb647d242c) it holds 0x00000001 (the denormal
+# 1e-45): an integer 1 an earlier call on the main thread left at that
+# stack slot. The port passes 0.0.
+constant var=SgSpec_CameraVec field=*.SgSpec_CameraVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x2c] (the camera vector's third word); 1e-45 (stale integer 1) in the original, 0 under the junk-read policy
+
+# SgSpec_LightVec = (x, z, junk, w) of the light direction; the third word
+# is [ebp-0x3c], about 5e-30 and different in every run.
+constant var=SgSpec_LightVec field=*.SgSpec_LightVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x3c] (the light vector's third word); stale stack in the original, 0 under the junk-read policy
+
+# Sampler states the game sets into a material at run time. The scene
+# inputs record holds a material's live PParameterBuffer, whose sampler
+# slots are pointers (+8 of the slot), so the builder can only bind the
+# cluster's PSamplerState there; the original binds the run-time one.
+# Open item: the record should carry each slot's sampler description (the
+# in-game path reads the live slot and has no such difference).
+
+# AnimSamplerState (register 1) of phyrechrlitshader's texture animation
+# variants (vertex shaders db349612ecc598d8: Tidus's c001 #9 on cdsp0000
+# and bsil0000; f1de6dea8bd5f574: the Besaid NPCs). The cluster's state is
+# wrap with MaxAnisotropy 0; the bound one is clamp with 1, as the other
+# layers' states are: TextureAnimationManager_addAnimatedMaterials
+# (0x006b05d0) replaces layer 1's sampler with the animation's.
+state kind=draw vs=db349612ecc598d8 field=ps.sampler1.* cause: run-time sampler state, the texture animation's layer 1 (TextureAnimationManager_addAnimatedMaterials 0x006b05d0) replaces the cluster's AnimSamplerState; the record holds only the slot's pointer
+state kind=draw vs=f1de6dea8bd5f574 field=ps.sampler1.* cause: run-time sampler state, the texture animation's layer 1 (TextureAnimationManager_addAnimatedMaterials 0x006b05d0) replaces the cluster's AnimSamplerState; the record holds only the slot's pointer
+
+# The blob shadow's TextureSampler state (ChrY0Shadow, vertex shader
+# 31670161ed2ed991, register 0): 0x0069f9d0 sets the shadow mesh's
+# TextureSampler and TextureSamplerState to the ShadowManager's sampler
+# (ShadowManager_getTextureSampler 0x006d2520, an object of the
+# ShadowManager, not of the cluster), which binds a point filter (0); the
+# cluster's own state is linear (0x15).
+state kind=draw vs=31670161ed2ed991 field=ps.sampler0.filter cause: run-time sampler state, 0x0069f9d0 gives the shadow mesh the ShadowManager's sampler (ShadowManager_getTextureSampler 0x006d2520); the record holds only the slot's pointer

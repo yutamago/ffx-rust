@@ -158,7 +158,7 @@ fn err(what: impl Into<String>) -> Error {
     Error(what.into())
 }
 
-fn sampler_state(g: &Graph, o: Obj) -> SamplerState {
+pub(crate) fn sampler_state(g: &Graph, o: Obj) -> SamplerState {
     let c = "PSamplerStateBase";
     let f = |m: &str| g.u32(o, c, m).unwrap_or(0);
     let b = g.field(o, c, "m_borderColor", 4).unwrap_or(&[0; 4]);
