@@ -396,3 +396,89 @@ pub fn sfx_event_set_paused(h: &mut impl Host, list: u32, paused: u32) {
         h.call_sym(ERRCHECK, Conv::Cdecl, &[r, file, 0xbd]);
     }
 }
+
+/// `SfxEvent_volumeFrom127_0070ea20(v)`'s divisor (`.rdata` `0x00b922e8`,
+/// 127.0).
+pub const D_127: Global<f64> = Global::new(0x00b9_22e8);
+/// `FmodMusic_loadEventProject(project, name, out, slot)` (thiscall).
+pub const LOAD_EVENT_PROJECT: u32 = 0x0070_8d40;
+/// `printToOutput(tag, message)` (cdecl).
+pub const PRINT_TO_OUTPUT: u32 = 0x0070_7b20;
+/// `"[Fmod Error]"`, `"FmodMusic::initData: NULL == eventSystem!\n"`,
+/// the two project names (`.rdata`).
+pub const FMOD_ERROR_TAG: u32 = 0x00b4_c30c;
+/// `FmodMusic_initData`'s message.
+pub const NULL_EVENT_SYSTEM: u32 = 0x00b4_f4fc;
+/// The first project's name.
+pub const PROJECT_A: u32 = 0x00b4_f528;
+/// The second project's name.
+pub const PROJECT_B: u32 = 0x00b4_f53c;
+
+/// `SfxEvent_volumeFrom127_0070ea20(v)` (stdcall, `ST0`; from
+/// `SfxEvent_setPan2`/`_setVolume2`): `f32(f32(v) / 127.0)` clamped to
+/// `0..=1` (above 1 gives 1.0, below 0 gives 0.0, through `fstp`/`fld`).
+pub fn volume_from_127(h: &impl Mem, v: u32) -> f32 {
+    #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+    let a = v.cast_signed() as f32;
+    let f = (x87::Reg::load(a) / x87::Reg::constant(D_127.get(h))).store();
+    if f > 1.0 {
+        return 1.0;
+    }
+    if f < 0.0 {
+        return 0.0;
+    }
+    f
+}
+
+/// `FmodMusic_initData(this; system)` (0x00708c00, thiscall): without an
+/// event system, `printToOutput("[Fmod Error]", ...)`'s `eax`; else the
+/// two event projects loaded (`FmodMusic_loadEventProject(system, name,
+/// this + 8, this)` and `(system, name, this + 0xc, this + 4)`), the
+/// second's `eax`.
+pub fn fmod_music_init_data(h: &mut impl Host, this: u32, system: u32) -> u32 {
+    if system == 0 {
+        let tag = h.rebase(FMOD_ERROR_TAG);
+        let message = h.rebase(NULL_EVENT_SYSTEM);
+        return h.call_sym(PRINT_TO_OUTPUT, Conv::Cdecl, &[tag, message]);
+    }
+    let a = h.rebase(PROJECT_A);
+    h.call_sym(
+        LOAD_EVENT_PROJECT,
+        Conv::Thiscall(this),
+        &[system, a, this + 8, this],
+    );
+    let b = h.rebase(PROJECT_B);
+    h.call_sym(
+        LOAD_EVENT_PROJECT,
+        Conv::Thiscall(this),
+        &[system, b, this + 0xc, this + 4],
+    )
+}
+
+/// The word-array assignments `SfxIdArray_assign_0070c5c0` (reserve
+/// `0x0070d3a0`) and `IdArray_assign_007109e0` (`Array_Reserve_00667e00`)
+/// (thiscall `(this; src)`): unless `src` is `this`, the count cleared,
+/// the storage reserved for `src`'s count, `src`'s words (`+8`) copied
+/// (to each non-null slot, `src`'s count read again each round, signed)
+/// and the count set; returns `this`.
+pub fn word_array_assign(h: &mut impl Host, this: u32, src: u32, reserve: u32) -> u32 {
+    if src == this {
+        return this;
+    }
+    h.write(this, 0u32);
+    let n = h.read::<u32>(src);
+    h.call_sym(reserve, Conv::Thiscall(this), &[n]);
+    let mut i = 0u32;
+    while i.cast_signed() < h.read::<u32>(src).cast_signed() {
+        let d = h.read::<u32>(this + 8).wrapping_add(4 * i);
+        if d != 0 {
+            let words = h.read::<u32>(src + 8);
+            let w = h.read::<u32>(words.wrapping_add(4 * i));
+            h.write(d, w);
+        }
+        i = i.wrapping_add(1);
+    }
+    let n = h.read::<u32>(src);
+    h.write(this, n);
+    this
+}

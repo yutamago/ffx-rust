@@ -187,3 +187,31 @@ pub fn tree_node_new(h: &mut impl Host, left: u32, right: u32) -> u32 {
     }
     p
 }
+
+/// `GetDerefU32_006fa200(mgr)` (thiscall): the FMOD manager's word 0.
+pub const FMOD_MANAGER_WORD: u32 = 0x006f_a200;
+/// `PVideoPlaybackWin32_initialize(video; name, 0, fmod)` (thiscall).
+pub const VIDEO_INITIALIZE: u32 = 0x00a2_7cf0;
+
+/// `PhyFMVPlayerManager_fmvPlayer_initialize(name)` (0x006d8f30, stdcall,
+/// on the singleton: message and global read again when null):
+/// `PVideoPlaybackWin32_initialize(m + 0x38; name, 0,
+/// GetDerefU32_006fa200(g_FmodManager))`, playing = 1; the initialize's
+/// `eax`.
+pub fn fmv_initialize(h: &mut impl Host, name: u32) -> u32 {
+    let g = Global::<u32>::new(FMV_PLAYER_MANAGER.global);
+    let mut m = g.get(h);
+    if m == 0 {
+        print_missing(h);
+        m = g.get(h);
+    }
+    let mgr = ffx_sound::fmod::bridge::MANAGER.get(h);
+    let fmod = h.call_sym(FMOD_MANAGER_WORD, Conv::Thiscall(mgr), &[]);
+    let r = h.call_sym(
+        VIDEO_INITIALIZE,
+        Conv::Thiscall(m + FMV_VIDEO),
+        &[name, 0, fmod],
+    );
+    h.write(m + FMV_PLAYING, 1u8);
+    r
+}

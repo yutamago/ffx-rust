@@ -560,3 +560,176 @@ pub fn tree_node_new_with_key(h: &mut impl Host, this: u32, key: u32) -> u32 {
     }
     node
 }
+
+/// `IggyMenu`'s vtable after its destructor ran (`0x00b78c54`, the base
+/// class's).
+pub const IGGY_MENU_BASE_VTABLE: u32 = 0x00b7_8c54;
+/// The player release `0x00a3d720` (thiscall player; arg).
+pub const PLAYER_RELEASE: u32 = 0x00a3_d720;
+/// The player destructor thunk `0x00a3d4d0` (thiscall).
+pub const PLAYER_DTOR: u32 = 0x00a3_d4d0;
+/// `iSfxPause(id)` (cdecl).
+pub const SFX_PAUSE: u32 = 0x0067_a380;
+/// `iVoiceSetPaused(flag)` (cdecl).
+pub const VOICE_SET_PAUSED: u32 = 0x0067_a750;
+/// `graphicVideoPause()`.
+pub const VIDEO_PAUSE: u32 = 0x0064_5de0;
+/// `Phyre_PhyreMalloc_0042fb80(size, align)` (cdecl).
+pub const PHYRE_MALLOC: u32 = 0x0042_fb80;
+/// `TextUtil_resize(text; w, h)` (thiscall).
+pub const TEXT_RESIZE: u32 = 0x006f_6670;
+/// `TextUtil_setPosition_006f6910(text; f32 x, f32 y)` (thiscall).
+pub const TEXT_SET_POSITION: u32 = 0x006f_6910;
+/// The video text's position (`.rdata` `0x00b92268`, `0x00b4a64c`: 2.0,
+/// 17.0).
+pub const VIDEO_TEXT_X: Global<u32> = Global::new(0x00b9_2268);
+/// See [`VIDEO_TEXT_X`].
+pub const VIDEO_TEXT_Y: Global<u32> = Global::new(0x00b4_a64c);
+/// `graphicGetLocTextWithLength(id, dst, n)` (cdecl).
+pub const LOC_TEXT: u32 = 0x0064_12f0;
+/// The import slot of `sprintf`.
+pub const SPRINTF: Global<u32> = Global::new(0x00b0_c3dc);
+/// An empty string (`.rdata` `0x00b8fbeb`).
+pub const EMPTY: u32 = 0x00b8_fbeb;
+/// The escape menu's dialog (`0x00ccc870`).
+pub const ESC_DIALOG: Global<u32> = Global::new(0x00cc_c870);
+/// `SaveDataGetLoc_00647f30(id, dst)` (cdecl).
+pub const SAVE_DATA_LOC: u32 = 0x0064_7f30;
+/// The text converter `0x006e96b0` (cdecl src, dst, n).
+pub const TEXT_CONVERT: u32 = 0x006e_96b0;
+/// `IggyMenu_callIggyAS3External(menu; 0, name, n, values, 1)` (thiscall).
+pub const CALL_AS3: u32 = 0x00a2_8ba0;
+/// The save menu's text buffers: raw (`0x00ceb460`), converted
+/// (`0x00ceb260`), the Iggy value (`0x00ceb250`).
+pub const SAVE_TEXT_RAW: u32 = 0x00ce_b460;
+/// See [`SAVE_TEXT_RAW`].
+pub const SAVE_TEXT: u32 = 0x00ce_b260;
+/// See [`SAVE_TEXT_RAW`].
+pub const SAVE_TEXT_VALUE: u32 = 0x00ce_b250;
+/// `"showPopUpStd"` (`.rdata`).
+pub const SHOW_POPUP_STD: u32 = 0x00b4_c548;
+
+/// `IggyMenu_dtor_IggyMenu(this)` (0x00a28a40, thiscall): the base
+/// vtable; with a player (`+0x6c`), the menu removed from
+/// `g_IggyMenuManager`, the player released (`+0x68`), destroyed and
+/// freed, and `+0x6c` cleared. Callers read no result.
+pub fn iggy_menu_dtor(h: &mut impl Host, this: u32) {
+    let vtable = h.rebase(IGGY_MENU_BASE_VTABLE);
+    let player = h.read::<u32>(this + 0x6c);
+    h.write(this, vtable);
+    if player == 0 {
+        return;
+    }
+    let mgr = IGGY_MENU_MANAGER.get(h);
+    h.call_sym(0x00a2_6c50, Conv::Thiscall(mgr), &[this]);
+    let arg = h.read::<u32>(this + 0x68);
+    let player = h.read::<u32>(this + 0x6c);
+    h.call_sym(PLAYER_RELEASE, Conv::Thiscall(player), &[arg]);
+    let player = h.read::<u32>(this + 0x6c);
+    if player != 0 {
+        h.call_sym(PLAYER_DTOR, Conv::Thiscall(player), &[]);
+        h.call_sym(PHYRE_FREE, Conv::Cdecl, &[player]);
+    }
+    h.write(this + 0x6c, 0u32);
+}
+
+/// `FFEscMenu_unpauseAudioVideo(this)` (0x0068ff60, thiscall): what the
+/// escape menu paused, resumed: sound effects (`+0x116`,
+/// `iSfxPause(0)`), voice (`+0x115`, `iVoiceSetPaused(0)`), video
+/// (`+0x114`, `graphicVideoPause()`), each flag cleared. Callers read no
+/// result.
+pub fn esc_unpause(h: &mut impl Host, this: u32) {
+    if h.read::<u8>(this + 0x116) != 0 {
+        h.call_sym(SFX_PAUSE, Conv::Cdecl, &[0]);
+        h.write(this + 0x116, 0u8);
+    }
+    if h.read::<u8>(this + 0x115) != 0 {
+        h.call_sym(VOICE_SET_PAUSED, Conv::Cdecl, &[0]);
+        h.write(this + 0x115, 0u8);
+    }
+    if h.read::<u8>(this + 0x114) != 0 {
+        h.call_sym(VIDEO_PAUSE, Conv::Cdecl, &[]);
+        h.write(this + 0x114, 0u8);
+    }
+}
+
+/// `PArray_copyNew_006affc0` / `_006b0010` (cdecl `(n, src)`): `n` words
+/// from `src` into a new `Phyre_PhyreMalloc_0042fb80(4n, 4)` block (each
+/// to a non-null slot, `src` advancing only then); the block, or 0 for
+/// `n` 0.
+pub fn parray_copy_new(h: &mut impl Host, n: u32, src: u32) -> u32 {
+    if n == 0 {
+        return 0;
+    }
+    let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[n.wrapping_mul(4), 4]);
+    if p == 0 {
+        return 0;
+    }
+    let mut s = src;
+    for k in 0..n {
+        let d = p.wrapping_add(4 * k);
+        if d != 0 {
+            let w = h.read::<u32>(s);
+            h.write(d, w);
+            s = s.wrapping_add(4);
+        }
+    }
+    p
+}
+
+/// `VideoText_setSize_006dded0(this; w, h)` (thiscall, from
+/// `PhyreScene_resize`): the size kept (`+0x158`, `+0x15c`); when the
+/// bytes `+4` and `+5` are set, `TextUtil_resize(text; w, h)` and
+/// `TextUtil_setPosition_006f6910(text; 2.0, 17.0)` (`.rdata` floats
+/// through `fld`/`fstp`), the resize's `eax` (the setter leaves it); else
+/// `w`.
+pub fn video_text_set_size(h: &mut impl Host, this: u32, w: u32, hh: u32) -> u32 {
+    h.write(this + 0x158, w);
+    h.write(this + 0x15c, hh);
+    if h.read::<u8>(this + 4) == 0 || h.read::<u8>(this + 5) == 0 {
+        return w;
+    }
+    let text = h.read::<u32>(this);
+    let r = h.call_sym(TEXT_RESIZE, Conv::Thiscall(text), &[w, hh]);
+    let y = ffx_bridge::x87::round_trip(f32::from_bits(VIDEO_TEXT_Y.get(h))).to_bits();
+    let text = h.read::<u32>(this);
+    let x = ffx_bridge::x87::round_trip(f32::from_bits(VIDEO_TEXT_X.get(h))).to_bits();
+    h.call_sym(TEXT_SET_POSITION, Conv::Thiscall(text), &[x, y]);
+    r
+}
+
+/// `FFEscMenu_dialogText_0068e560(id)` (cdecl, the handler
+/// `FFEscMenu_addHandler_00702570` registers): the dialog's text
+/// (`+0x131`, 0x100 bytes) from `graphicGetLocTextWithLength(*id, ...)`,
+/// or `sprintf(text, "")` for a null `id`; its kind (`+0x234`) = 5; the
+/// call's `eax`.
+pub fn esc_dialog_text(h: &mut impl Host, id: u32) -> u32 {
+    let dialog = ESC_DIALOG.get(h);
+    let text = dialog.wrapping_add(0x131);
+    let r = if id == 0 {
+        let empty = h.rebase(EMPTY);
+        let f = SPRINTF.get(h);
+        h.call(f, Conv::Cdecl, &[text, empty])
+    } else {
+        let v = h.read::<u32>(id);
+        h.call_sym(LOC_TEXT, Conv::Cdecl, &[v, text, 0x100])
+    };
+    h.write(dialog.wrapping_add(0x234), 5u32);
+    r
+}
+
+/// `SaveDataMachine_showPopUp_00702e90(id)` (cdecl): the save text `id`
+/// (`SaveDataGetLoc_00647f30`) converted (`0x006e96b0`, 0x200 bytes) into
+/// an Iggy string value, then `IggyMenu_callIggyAS3External(save menu; 0,
+/// "showPopUpStd", 1, value, 1)`'s `eax`.
+pub fn save_show_popup(h: &mut impl Host, id: u32) -> u32 {
+    let raw = h.rebase(SAVE_TEXT_RAW);
+    let text = h.rebase(SAVE_TEXT);
+    let value = h.rebase(SAVE_TEXT_VALUE);
+    h.call_sym(SAVE_DATA_LOC, Conv::Cdecl, &[id, raw]);
+    h.call_sym(TEXT_CONVERT, Conv::Cdecl, &[raw, text, 0x200]);
+    h.call_sym(DATA_VALUE_SET, Conv::Cdecl, &[value, text]);
+    let menu = crate::misc::SAVE_MENU.get(h);
+    let name = h.rebase(SHOW_POPUP_STD);
+    h.call_sym(CALL_AS3, Conv::Thiscall(menu), &[0, name, 1, value, 1])
+}

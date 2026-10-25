@@ -210,3 +210,129 @@ pub fn post_effect_ctor(h: &mut impl Host, this: u32) -> u32 {
     }
     this
 }
+
+/// `BrokenScreenEffect`'s piece release `0x006d3600` (thiscall, a jump to
+/// `0x006d3e00`).
+pub const PIECE_RELEASE: u32 = 0x006d_3600;
+/// The shader-parameter writer `0x006e60d0` (cdecl param, a, b).
+pub const PARAM_WRITE: u32 = 0x006e_60d0;
+/// `RadialBlur_resize_007035f0` (thiscall; w, h).
+pub const RADIAL_BLUR_RESIZE: u32 = 0x0070_35f0;
+/// The line effect's resize `0x006f89b0` (thiscall; w, h).
+pub const RADIAL_LINE_RESIZE: u32 = 0x006f_89b0;
+/// `BlurEffectEx_postInitialize(this)` (thiscall).
+pub const BLUR_EX_POST_INITIALIZE: u32 = 0x006c_4b60;
+/// `BlurEffect_isActivated(blur)` (thiscall, `al`).
+pub const BLUR_IS_ACTIVATED: u32 = 0x006c_3940;
+
+/// `BrokenScreenEffect_reset(this)` (0x006d5970, thiscall): with pieces
+/// (`+0x38`), both halves of each of the `+0x34` (signed, read each
+/// round) entries released (`0x006d3600`, the entry read again for the
+/// second), the table dropped; then the opacity (`+8`) = 1.0. Callers read
+/// no result.
+pub fn broken_screen_reset(h: &mut impl Host, this: u32) {
+    if h.read::<u32>(this + 0x38) != 0 {
+        let mut i = 0u32;
+        while i.cast_signed() < h.read::<u32>(this + 0x34).cast_signed() {
+            let table = h.read::<u32>(this + 0x38);
+            let entry = h.read::<u32>(table.wrapping_add(4 * i));
+            if entry != 0 {
+                let a = h.read::<u32>(entry);
+                if a != 0 {
+                    h.call_sym(PIECE_RELEASE, Conv::Thiscall(a), &[]);
+                }
+                let table = h.read::<u32>(this + 0x38);
+                let entry = h.read::<u32>(table.wrapping_add(4 * i));
+                let b = h.read::<u32>(entry.wrapping_add(4));
+                if b != 0 {
+                    h.call_sym(PIECE_RELEASE, Conv::Thiscall(b), &[]);
+                }
+            }
+            i = i.wrapping_add(1);
+        }
+        h.write(this + 0x38, 0u32);
+    }
+    h.write(this + BROKEN_SCREEN_OPACITY, 1.0f32.to_bits());
+}
+
+/// `ShaderParam_Write_006426e0(params, a, b)` (cdecl): `0x006e60d0(param,
+/// a, b)` for each parameter of the array (count `+0`, top bit masked,
+/// read each round; items `+4`); 0, also for a null array.
+pub fn shader_param_write(h: &mut impl Host, params: u32, a: u32, b: u32) -> u32 {
+    if params == 0 {
+        return 0;
+    }
+    let mut i = 0u32;
+    while i < h.read::<u32>(params) & 0x7fff_ffff {
+        let items = h.read::<u32>(params + 4);
+        let p = h.read::<u32>(items.wrapping_add(4 * i));
+        h.call_sym(PARAM_WRITE, Conv::Cdecl, &[p, a, b]);
+        i += 1;
+    }
+    0
+}
+
+/// `BlurEffectEx_initialize(this; a, b, c, d, e)` (0x006c4b00, thiscall):
+/// `+4` = a, `+8` = d, `+0xc` = e; from the `BlurEffect` singleton (asked
+/// each time) its `+0x24`, `+0x34`, `+0x38` to `+0x20`, `+0x30`, `+0x34`;
+/// `+0x2c` = -1, `+0x28` = 0, `+0x38` = 0.0; returns 0.
+pub fn blur_ex_initialize(h: &mut impl Host, this: u32, a: u32, d: u32, e: u32) -> u32 {
+    h.write(this + 4, a);
+    h.write(this + 8, d);
+    h.write(this + 0xc, e);
+    let blur = get_instance(h, BLUR_EFFECT);
+    let v = h.read::<u32>(blur.wrapping_add(0x24));
+    h.write(this + 0x20, v);
+    h.write(this + 0x2c, u32::MAX);
+    h.write(this + 0x28, 0u8);
+    let blur = get_instance(h, BLUR_EFFECT);
+    let v = h.read::<u32>(blur.wrapping_add(0x34));
+    h.write(this + 0x30, v);
+    let blur = get_instance(h, BLUR_EFFECT);
+    let v = h.read::<u32>(blur.wrapping_add(0x38));
+    h.write(this + 0x38, 0u32);
+    h.write(this + 0x34, v);
+    0
+}
+
+/// `RadialBlur_resizeAll_006c3c40(this; w, h)` (thiscall, from
+/// `PhyreScene_resize`): the three render targets (`+0`, `+4`, `+8`)
+/// through `0x00a0e4b0(target, w, h, 1)`, then `RadialBlur_resize_007035f0`
+/// (`+0x18`) and `0x006f89b0` (`+0x1c`); returns 0.
+pub fn radial_blur_resize_all(h: &mut impl Host, this: u32, w: u32, hh: u32) -> u32 {
+    for k in 0..3 {
+        let target = h.read::<u32>(this + 4 * k);
+        h.call_sym(TARGET_RESIZE, Conv::Cdecl, &[target, w, hh, 1]);
+    }
+    let blur = h.read::<u32>(this + 0x18);
+    h.call_sym(RADIAL_BLUR_RESIZE, Conv::Thiscall(blur), &[w, hh]);
+    let line = h.read::<u32>(this + 0x1c);
+    h.call_sym(RADIAL_LINE_RESIZE, Conv::Thiscall(line), &[w, hh]);
+    0
+}
+
+/// `BlurEffectEx_update(this; dt)` (0x006c4e00, thiscall): before the
+/// first set-up (`+0x10` 0) a successful `BlurEffectEx_postInitialize`
+/// stops it (`+0x28` = 0), as does an active `BlurEffect`; stopped, its
+/// counter (`+0x3c`) and weight (`+0x38`) are cleared and `+0x2c` = -1;
+/// running, the counter goes up. Returns 0.
+pub fn blur_ex_update(h: &mut impl Host, this: u32) -> u32 {
+    if h.read::<u32>(this + 0x10) == 0
+        && h.call_sym(BLUR_EX_POST_INITIALIZE, Conv::Thiscall(this), &[]) != 0
+    {
+        h.write(this + 0x28, 0u8);
+    }
+    let blur = get_instance(h, BLUR_EFFECT);
+    if h.call_sym(BLUR_IS_ACTIVATED, Conv::Thiscall(blur), &[]) & 0xff != 0 {
+        h.write(this + 0x28, 0u8);
+    }
+    if h.read::<u8>(this + 0x28) != 0 {
+        let n = h.read::<u32>(this + 0x3c).wrapping_add(1);
+        h.write(this + 0x3c, n);
+        return 0;
+    }
+    h.write(this + 0x3c, 0u32);
+    h.write(this + 0x38, 0u32);
+    h.write(this + 0x2c, u32::MAX);
+    0
+}

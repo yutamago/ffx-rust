@@ -493,6 +493,39 @@ fn voice_start_rereads_the_manager() {
 }
 
 impl Twins {
+    /// A recording stub at `sym` that logs `[ecx]` (the object's first
+    /// word) where [`Twins::stub`] logs `ecx`, then `n` stack words; pops
+    /// `pops`; returns its cell.
+    fn stub_deref(&mut self, sym: u32, n: u32, pops: u32) {
+        let cell = self.zeros(4);
+        self.cells.insert(sym, cell);
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(sym.to_le_bytes()); // mov [eax], sym
+        c.extend([0x8b, 0x11]); // mov edx, [ecx]
+        c.extend([0x89, 0x50, 0x04]); // mov [eax+4], edx
+        for i in 0..n {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0xa1);
+        c.extend(cell.to_le_bytes()); // mov eax, [cell]
+        c.push(0xc2);
+        c.extend(((pops * 4) as u16).to_le_bytes());
+        let f = self.code(&c);
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(f.wrapping_sub(at + 5).to_le_bytes());
+        self.write(at, &j);
+    }
+
     /// A stand-in at `sym` that stores `value` at global `global`, logs
     /// its call as [`Twins::stub`] would (tag `sym`, `ecx` when `this`, no
     /// words) and
@@ -2094,6 +2127,328 @@ fn effects_threads_text() {
                 m::text_animate(g, obj, dt);
                 Out::None
             });
+        }
+    }
+}
+
+// ---- batch 4
+
+/// The volume scale (`ST0`), the music data, the word arrays.
+#[test]
+fn fmod_volume_music_arrays() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0301);
+        t.stub(s::PRINT_TO_OUTPUT, false, 2, 0);
+        t.stub(s::LOAD_EVENT_PROJECT, true, 4, 4);
+        // the reserves log the count they see (`[ecx]`) in the `ecx` slot
+        t.stub_deref(0x0070_d3a0, 1, 1);
+        t.stub_deref(0x0066_7e00, 1, 1);
+        let at = t.rebase(0x0070_ea20);
+        for v in [
+            0u32,
+            1,
+            63,
+            64,
+            126,
+            127,
+            128,
+            200,
+            u32::MAX,
+            0x8000_0000,
+            0x7fff_ffff,
+            1000,
+        ]
+        .into_iter()
+        .chain((0..40).map(|_| rng.word()))
+        {
+            let ra = t.a.call(at, Conv::Stdcall, &[v]).unwrap();
+            let mine = s::volume_from_127(&G(&mut t.b), v);
+            let theirs = ra.st0_f32().expect("ST0");
+            assert_eq!(theirs.to_bits(), mine.to_bits(), "{name} volume {v:#x}");
+            t.diff(&format!("{name} volume {v:#x}"));
+        }
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            for tag in [
+                s::PRINT_TO_OUTPUT,
+                s::LOAD_EVENT_PROJECT,
+                0x0070_d3a0,
+                0x0066_7e00,
+            ] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            let obj = t.random(&mut rng, 0x40);
+            let system = if rng.below(4) == 0 { 0 } else { rng.next() };
+            t.check(
+                &format!("{w} initData"),
+                0x0070_8c00,
+                Conv::Thiscall(obj),
+                &[system],
+                |g| u(s::fmod_music_init_data(g, obj, system)),
+            );
+            for (sym, reserve) in [(0x0070_c5c0, 0x0070_d3a0), (0x0071_09e0, 0x0066_7e00)] {
+                let dst = t.random(&mut rng, 0x10);
+                let storage = t.zeros(0x40);
+                // a null storage faults past the first word, in both
+                t.w32(dst + 8, storage);
+                let src = if rng.below(5) == 0 {
+                    dst
+                } else {
+                    t.random(&mut rng, 0x10)
+                };
+                if src != dst {
+                    let words = t.random(&mut rng, 0x40);
+                    t.w32(src + 8, words);
+                    let n = [0, 1, 5, 16, u32::MAX][rng.below(5) as usize];
+                    t.w32(src, n);
+                }
+                t.check(
+                    &format!("{w} assign {sym:#x}"),
+                    sym,
+                    Conv::Thiscall(dst),
+                    &[src],
+                    |g| u(s::word_array_assign(g, dst, src, reserve)),
+                );
+            }
+        }
+    }
+}
+
+/// The FMV initialize, `IggyMenu`'s destructor, the escape menu's resume
+/// and dialog text, the save pop-up, array copies, the video text size.
+#[test]
+fn menu_lifecycle() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0302);
+        let stubs: &[(u32, bool, u32, u32)] = &[
+            (e::PHYRE_PRINTF, false, 2, 0),
+            (mv::FMOD_MANAGER_WORD, true, 0, 0),
+            (mv::VIDEO_INITIALIZE, true, 3, 3),
+            (0x00a2_6c50, true, 1, 1),
+            (mn::PLAYER_RELEASE, true, 1, 1),
+            (mn::PLAYER_DTOR, true, 0, 0),
+            (mn::PHYRE_FREE, false, 1, 0),
+            (mn::SFX_PAUSE, false, 1, 0),
+            (mn::VOICE_SET_PAUSED, false, 1, 0),
+            (mn::VIDEO_PAUSE, false, 0, 0),
+            (mn::PHYRE_MALLOC, false, 2, 0),
+            (mn::TEXT_RESIZE, true, 2, 2),
+            (mn::LOC_TEXT, false, 3, 0),
+            (mn::SAVE_DATA_LOC, false, 2, 0),
+            (mn::TEXT_CONVERT, false, 3, 0),
+            (mn::DATA_VALUE_SET, false, 2, 0),
+            (mn::CALL_AS3, true, 5, 5),
+        ];
+        for &(sym, this, n, pops) in stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let sprintf = t.stub_code(0xc0de_0601, false, 2, 0);
+        t.g32(0x00b0_c3dc, sprintf);
+        let dialog = t.random(&mut rng, 0x300);
+        t.g32(0x00cc_c870, dialog);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            for &(sym, ..) in stubs {
+                let v = rng.next();
+                t.ret(sym, v);
+            }
+            let v = rng.next();
+            t.ret(0xc0de_0601, v);
+            let mgr = t.random(&mut rng, 0x800);
+            let g = if rng.below(3) == 0 { 0 } else { mgr };
+            t.g32(e::FMV_PLAYER_MANAGER.global, g);
+            t.g32(ffx_sound::fmod::FMOD_MANAGER, rng.next());
+            let x = rng.word();
+            if g != 0 {
+                t.check(
+                    &format!("{w} fmvInitialize"),
+                    0x006d_8f30,
+                    Conv::Stdcall,
+                    &[x],
+                    |h| u(mv::fmv_initialize(h, x)),
+                );
+            }
+            let obj = t.random(&mut rng, 0x400);
+            let th = Conv::Thiscall(obj);
+            let player = if rng.below(3) == 0 { 0 } else { rng.next() };
+            t.w32(obj + 0x6c, player);
+            t.g32(0x0198_4c6c, rng.next());
+            t.check(&format!("{w} IggyMenu dtor"), 0x00a2_8a40, th, &[], |h| {
+                mn::iggy_menu_dtor(h, obj);
+                Out::None
+            });
+            for off in [0x114, 0x115, 0x116] {
+                let b = [0, 1, rng.next() as u8][rng.below(3) as usize];
+                t.w8(obj + off, b);
+            }
+            t.check(&format!("{w} unpause"), 0x0068_ff60, th, &[], |h| {
+                mn::esc_unpause(h, obj);
+                Out::None
+            });
+            let n = [0, 1, 4, 9][rng.below(4) as usize];
+            let src = t.random(&mut rng, 0x40);
+            let block = if rng.below(4) == 0 { 0 } else { t.zeros(0x40) };
+            t.ret(mn::PHYRE_MALLOC, block);
+            for sym in [0x006a_ffc0, 0x006b_0010] {
+                t.check(
+                    &format!("{w} copyNew {sym:#x}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[n, src],
+                    |h| u(mn::parray_copy_new(h, n, src)),
+                );
+            }
+            for off in [4, 5] {
+                let b = [0, 1, rng.next() as u8][rng.below(3) as usize];
+                t.w8(obj + off, b);
+            }
+            // the text the real TextUtil_setPosition writes (it leaves eax)
+            let text = t.random(&mut rng, 0x100);
+            t.w32(obj, text);
+            let (sw, sh) = (rng.word(), rng.word());
+            t.check(
+                &format!("{w} videoTextSize"),
+                0x006d_ded0,
+                th,
+                &[sw, sh],
+                |h| u(mn::video_text_set_size(h, obj, sw, sh)),
+            );
+            let id = if rng.below(3) == 0 {
+                0
+            } else {
+                t.random(&mut rng, 4)
+            };
+            t.check(
+                &format!("{w} dialogText"),
+                0x0068_e560,
+                Conv::Cdecl,
+                &[id],
+                |h| u(mn::esc_dialog_text(h, id)),
+            );
+            t.g32(0x00ce_b248, rng.next());
+            t.check(
+                &format!("{w} showPopUp"),
+                0x0070_2e90,
+                Conv::Cdecl,
+                &[x],
+                |h| u(mn::save_show_popup(h, x)),
+            );
+        }
+        // the manager missing: the message, the global read again
+        let created = t.zeros(0x800);
+        t.stub_store(
+            e::PHYRE_PRINTF,
+            false,
+            e::FMV_PLAYER_MANAGER.global,
+            created,
+            0,
+        );
+        t.g32(e::FMV_PLAYER_MANAGER.global, 0);
+        t.check(
+            &format!("{name} fmvInitialize created"),
+            0x006d_8f30,
+            Conv::Stdcall,
+            &[7],
+            |h| u(mv::fmv_initialize(h, 7)),
+        );
+    }
+}
+
+/// The post effects' reset, initialize, update and resize, the shader
+/// parameter writes, the scene cursor.
+#[test]
+fn effects_lifecycle() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0303);
+        let stubs: &[(u32, bool, u32, u32)] = &[
+            (e::PIECE_RELEASE, true, 0, 0),
+            (e::PARAM_WRITE, false, 3, 0),
+            (e::TARGET_RESIZE, false, 4, 0),
+            (e::RADIAL_BLUR_RESIZE, true, 2, 2),
+            (e::RADIAL_LINE_RESIZE, true, 2, 2),
+            (e::BLUR_EX_POST_INITIALIZE, true, 0, 0),
+            (e::BLUR_IS_ACTIVATED, true, 0, 0),
+            (e::PHYRE_PRINTF, false, 2, 0),
+            (m::CURSOR_BEGIN, true, 0, 0),
+        ];
+        for &(sym, this, n, pops) in stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let blur = t.random(&mut rng, 0x40);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            for &(sym, ..) in stubs {
+                let v = rng.next();
+                t.ret(sym, v);
+            }
+            let flag = (rng.next() & !0xff) | [0, 1][rng.below(2) as usize];
+            t.ret(e::BLUR_IS_ACTIVATED, flag);
+            let posted = [0, 1][rng.below(2) as usize];
+            t.ret(e::BLUR_EX_POST_INITIALIZE, posted);
+            let obj = t.random(&mut rng, 0x100);
+            let th = Conv::Thiscall(obj);
+            // the broken screen's pieces: entries with halves, some null
+            let n = [0, 1, 3, 6, u32::MAX][rng.below(5) as usize];
+            let table = t.zeros(0x20);
+            for k in 0..6 {
+                let entry = if rng.below(4) == 0 { 0 } else { t.zeros(8) };
+                if entry != 0 {
+                    for half in [0, 4] {
+                        let v = if rng.below(3) == 0 { 0 } else { rng.next() };
+                        t.w32(entry + half, v);
+                    }
+                }
+                t.w32(table + 4 * k, entry);
+            }
+            t.w32(obj + 0x34, n);
+            t.w32(obj + 0x38, if rng.below(4) == 0 { 0 } else { table });
+            t.check(&format!("{w} reset"), 0x006d_5970, th, &[], |g| {
+                e::broken_screen_reset(g, obj);
+                Out::None
+            });
+            let params = if rng.below(4) == 0 { 0 } else { t.zeros(8) };
+            if params != 0 {
+                let items = t.random(&mut rng, 0x420);
+                t.w32(params, [0, 1, 5, 0x8000_0003, 0x103][rng.below(5) as usize]);
+                t.w32(params + 4, items);
+            }
+            let (a, b) = (rng.word(), rng.word());
+            t.check(
+                &format!("{w} paramWrite"),
+                0x0064_26e0,
+                Conv::Cdecl,
+                &[params, a, b],
+                |g| u(e::shader_param_write(g, params, a, b)),
+            );
+            // a null BlurEffect would fault in both (its fields are read)
+            t.g32(e::BLUR_EFFECT.global, blur);
+            let args: [u32; 5] = std::array::from_fn(|_| rng.word());
+            let old = rng.next();
+            t.w32(obj + 0x38, old);
+            t.check(&format!("{w} blurEx init"), 0x006c_4b00, th, &args, |g| {
+                u(e::blur_ex_initialize(g, obj, args[0], args[3], args[4]))
+            });
+            t.w32(obj + 0x10, if rng.below(2) == 0 { 0 } else { rng.next() });
+            t.w8(obj + 0x28, [0, 1][rng.below(2) as usize]);
+            t.check(&format!("{w} blurEx update"), 0x006c_4e00, th, &[a], |g| {
+                u(e::blur_ex_update(g, obj))
+            });
+            t.check(&format!("{w} resizeAll"), 0x006c_3c40, th, &[a, b], |g| {
+                u(e::radial_blur_resize_all(g, obj, a, b))
+            });
+            let world = t.random(&mut rng, 0x40);
+            if rng.below(3) == 0 {
+                t.w32(world + 0x1c, world + 0x1c);
+            }
+            let cursor = t.random(&mut rng, 0x40);
+            t.check(
+                &format!("{w} cursor ctor"),
+                0x0063_3880,
+                Conv::Thiscall(cursor),
+                &[world],
+                |g| u(m::scene_cursor_ctor(g, cursor, world)),
+            );
         }
     }
 }

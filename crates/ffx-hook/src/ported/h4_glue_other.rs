@@ -611,4 +611,80 @@ ported! {
     TextUtil_animate_006f69f0 @ 0x006f_69f0 => extern "thiscall" fn text_animate(this: u32, dt: u32) {
         m::text_animate(&mut mem(), this, dt);
     }
+    // Batch 4: FMOD music data and word arrays, the volume scale, the FMV
+    // initialize, IggyMenu's destructor, the escape menu's resume and
+    // dialog text, the save pop-up, post-effect updates and resizes, the
+    // scene cursor.
+    /// `SfxEvent_volumeFrom127_0070ea20(v)` (`ST0`).
+    SfxEvent_volumeFrom127_0070ea20 @ 0x0070_ea20 => extern "stdcall" fn volume_from_127(v: u32) -> f32 {
+        s::volume_from_127(&mem(), v)
+    }
+    /// `FmodMusic_initData(this; system)`.
+    FmodMusic_initData @ 0x0070_8c00 => extern "thiscall" fn fmod_music_init_data(this: u32, system: u32) -> u32 {
+        s::fmod_music_init_data(&mut mem(), this, system)
+    }
+    /// `SfxIdArray_assign_0070c5c0(this; src)` -> `this`.
+    SfxIdArray_assign_0070c5c0 @ 0x0070_c5c0 => extern "thiscall" fn sfx_id_array_assign(this: u32, src: u32) -> u32 {
+        s::word_array_assign(&mut mem(), this, src, 0x0070_d3a0)
+    }
+    /// `IdArray_assign_007109e0(this; src)` -> `this`.
+    IdArray_assign_007109e0 @ 0x0071_09e0 => extern "thiscall" fn id_array_assign(this: u32, src: u32) -> u32 {
+        s::word_array_assign(&mut mem(), this, src, 0x0066_7e00)
+    }
+    /// `PhyFMVPlayerManager_fmvPlayer_initialize(name)`.
+    PhyFMVPlayerManager_fmvPlayer_initialize @ 0x006d_8f30 => extern "stdcall" fn fmv_initialize(name: u32) -> u32 {
+        mv::fmv_initialize(&mut mem(), name)
+    }
+    /// `IggyMenu_dtor_IggyMenu(this)`.
+    IggyMenu_dtor_IggyMenu @ 0x00a2_8a40 => extern "thiscall" fn iggy_menu_dtor(this: u32) {
+        mn::iggy_menu_dtor(&mut mem(), this);
+    }
+    /// `FFEscMenu_unpauseAudioVideo(this)`.
+    FFEscMenu_unpauseAudioVideo @ 0x0068_ff60 => extern "thiscall" fn esc_unpause(this: u32) {
+        mn::esc_unpause(&mut mem(), this);
+    }
+    /// `PArray_copyNew_006affc0(n, src)`.
+    PArray_copyNew_006affc0 @ 0x006a_ffc0 => extern "C" fn parray_copy_new_6affc0(n: u32, src: u32) -> u32 {
+        mn::parray_copy_new(&mut mem(), n, src)
+    }
+    /// `PArray_copyNew_006b0010(n, src)`.
+    PArray_copyNew_006b0010 @ 0x006b_0010 => extern "C" fn parray_copy_new_6b0010(n: u32, src: u32) -> u32 {
+        mn::parray_copy_new(&mut mem(), n, src)
+    }
+    /// `VideoText_setSize_006dded0(this; w, h)`.
+    VideoText_setSize_006dded0 @ 0x006d_ded0 => extern "thiscall" fn video_text_set_size(this: u32, w: u32, h: u32) -> u32 {
+        mn::video_text_set_size(&mut mem(), this, w, h)
+    }
+    /// `FFEscMenu_dialogText_0068e560(id)`.
+    FFEscMenu_dialogText_0068e560 @ 0x0068_e560 => extern "C" fn esc_dialog_text(id: u32) -> u32 {
+        mn::esc_dialog_text(&mut mem(), id)
+    }
+    /// `SaveDataMachine_showPopUp_00702e90(id)`.
+    SaveDataMachine_showPopUp_00702e90 @ 0x0070_2e90 => extern "C" fn save_show_popup(id: u32) -> u32 {
+        mn::save_show_popup(&mut mem(), id)
+    }
+    /// `BrokenScreenEffect_reset(this)`.
+    BrokenScreenEffect_reset @ 0x006d_5970 => extern "thiscall" fn broken_screen_reset(this: u32) {
+        e::broken_screen_reset(&mut mem(), this);
+    }
+    /// `ShaderParam_Write_006426e0(params, a, b)` -> 0.
+    ShaderParam_Write_006426e0 @ 0x0064_26e0 => extern "C" fn shader_param_write(params: u32, a: u32, b: u32) -> u32 {
+        e::shader_param_write(&mut mem(), params, a, b)
+    }
+    /// `BlurEffectEx_initialize(this; a, b, c, d, e)` -> 0.
+    BlurEffectEx_initialize @ 0x006c_4b00 => extern "thiscall" fn blur_ex_initialize(this: u32, a: u32, _b: u32, _c: u32, d: u32, x: u32) -> u32 {
+        e::blur_ex_initialize(&mut mem(), this, a, d, x)
+    }
+    /// `RadialBlur_resizeAll_006c3c40(this; w, h)` -> 0.
+    RadialBlur_resizeAll_006c3c40 @ 0x006c_3c40 => extern "thiscall" fn radial_blur_resize_all(this: u32, w: u32, h: u32) -> u32 {
+        e::radial_blur_resize_all(&mut mem(), this, w, h)
+    }
+    /// `BlurEffectEx_update(this; dt)` -> 0.
+    BlurEffectEx_update @ 0x006c_4e00 => extern "thiscall" fn blur_ex_update(this: u32, _dt: u32) -> u32 {
+        e::blur_ex_update(&mut mem(), this)
+    }
+    /// `PhyreSceneCursor_ctor_00633880(this; world)` -> `this`.
+    PhyreSceneCursor_ctor_00633880 @ 0x0063_3880 => extern "thiscall" fn scene_cursor_ctor(this: u32, world: u32) -> u32 {
+        m::scene_cursor_ctor(&mut mem(), this, world)
+    }
 }

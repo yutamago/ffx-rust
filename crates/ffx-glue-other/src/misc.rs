@@ -478,3 +478,32 @@ pub fn text_animate(h: &mut impl Mem, this: u32, dt: u32) {
     let frame = h.read::<u32>(this + 0x44).wrapping_add(1).cast_signed();
     h.write(this + 0x44, (frame % 16).cast_unsigned());
 }
+
+/// `PhyreSceneCursor_Begin_00637730(cursor)` (thiscall).
+pub const CURSOR_BEGIN: u32 = 0x0063_7730;
+/// The cursor's type word (`0x00ca7228`, an image address).
+pub const CURSOR_TYPE: u32 = 0x00ca_7228;
+
+/// `PhyreSceneCursor_ctor_00633880(this; world)` (thiscall, from
+/// `PhyreScene_doOnFieldMapAssetLoaded` and `0x00658ae0`): five words
+/// cleared, the list (`world + 0x1c`) at `+0x14` and its first node at
+/// `+0x18` (0 for an empty list, which points at itself), the type at
+/// `+0x1c`, then `PhyreSceneCursor_Begin_00637730(this)`; returns `this`.
+pub fn scene_cursor_ctor(h: &mut impl Host, this: u32, world: u32) -> u32 {
+    let list = world.wrapping_add(0x1c);
+    for k in 0..5 {
+        h.write(this + 4 * k, 0u32);
+    }
+    h.write(this + 0x14, list);
+    let first = h.read::<u32>(list);
+    let first = if first == list {
+        0
+    } else {
+        h.read::<u32>(list)
+    };
+    h.write(this + 0x18, first);
+    let ty = h.rebase(CURSOR_TYPE);
+    h.write(this + 0x1c, ty);
+    h.call_sym(CURSOR_BEGIN, Conv::Thiscall(this), &[]);
+    this
+}
