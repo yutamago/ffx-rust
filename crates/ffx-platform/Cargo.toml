@@ -1,0 +1,13 @@
+[package]
+name = "ffx-platform"
+description = "The PC platform boundary of FFX.exe (window, input, settings, Steam, movies): the import census behind docs/formats/platform.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+goblin.workspace = true
+
+[lints]
+workspace = true
