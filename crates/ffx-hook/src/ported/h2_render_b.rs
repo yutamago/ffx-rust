@@ -17,6 +17,7 @@ use ffx_prender::declare as dc;
 use ffx_prender::descriptor::{Init, bridge as d};
 use ffx_prender::dtor::bridge as dt;
 use ffx_prender::misc::bridge as x;
+use ffx_prender::small::bridge as sm;
 
 ported! {
     /// `Phyre_PClassDescriptorAbstract_Phyre_PRendering_PMaterial__fixObjectsAfterLoading`.
@@ -1170,5 +1171,71 @@ ported! {
     /// `Phyre_PArray_PConstantBuffer_setStorage_004fed50`.
     Phyre_PArray_PConstantBuffer_setStorage_004fed50 @ 0x004f_ed50 => extern "thiscall" fn s_004fed50(a0: u32, a1: u32, a2: u32) -> u32 {
         dt::set_storage_dtor(&mut mem(), a0, a1, a2, 0x0049_fa10, 0x3c)
+    }
+    /// `Phyre_PRendering_PModifierNetworkDynamicMeshInstance_vslot1`.
+    Phyre_PRendering_PModifierNetworkDynamicMeshInstance_vslot1 @ 0x004f_c8e0 => extern "thiscall" fn s_004fc8e0(a0: u32, a1: u32) -> u32 {
+        let mut fr = super::StackFrame::<4>::new();
+        sm::network_forward1(&mut mem(), a0, a1, fr.at())
+    }
+    /// `Phyre_PRendering_PModifierNetworkDynamicMeshInstance_vslot2`.
+    Phyre_PRendering_PModifierNetworkDynamicMeshInstance_vslot2 @ 0x004f_c9d0 => extern "thiscall" fn s_004fc9d0(a0: u32, a1: u32, a2: u32) -> u32 {
+        let mut fr = super::StackFrame::<4>::new();
+        sm::network_forward2(&mut mem(), a0, a1, a2, fr.at())
+    }
+    /// `Phyre_PRendering_PTextureD3D11_bind_0058cf20`.
+    Phyre_PRendering_PTextureD3D11_bind_0058cf20 @ 0x0058_cf20 => extern "thiscall" fn s_0058cf20(a0: u32) -> u32 {
+        sm::bind_if_unset(&mut mem(), a0)
+    }
+    /// `Phyre_PRendering_PTexture2DD3D11_bind`.
+    Phyre_PRendering_PTexture2DD3D11_bind @ 0x0058_db00 => extern "thiscall" fn s_0058db00(a0: u32) -> u32 {
+        sm::texture_bind(&mut mem(), a0)
+    }
+    /// `PRendererD3D11_draw_00592b60`.
+    PRendererD3D11_draw_00592b60 @ 0x0059_2b60 => extern "thiscall" fn s_00592b60(a0: u32, a1: u32, a2: u32, a3: u32) -> u8 {
+        sm::draw(&mut mem(), a0, a1, a2, a3)
+    }
+    /// `Phyre_PRendering_PBounds_forward_005008c0`.
+    Phyre_PRendering_PBounds_forward_005008c0 @ 0x0050_08c0 => extern "thiscall" fn s_005008c0(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        let mut fr = super::StackFrame::<8>::new();
+        sm::bounds_forward(&mut mem(), a0, a1, a2, a3, fr.at())
+    }
+    /// `Phyre_PSharray_elementWord1_00593e30`.
+    Phyre_PSharray_elementWord1_00593e30 @ 0x0059_3e30 => extern "thiscall" fn s_00593e30(a0: u32, a1: u32) -> u32 {
+        sm::element_word1(&mut mem(), a0, a1)
+    }
+    /// `PRendererD3D11_setScissorRect_0059aaf0`.
+    PRendererD3D11_setScissorRect_0059aaf0 @ 0x0059_aaf0 => extern "thiscall" fn s_0059aaf0(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u32 {
+        let mut fr = super::StackFrame::<4>::new();
+        sm::set_scissor(&mut mem(), a0, [a1, a2, a3, a4], fr.at())
+    }
+    /// `PShaderResourceTables_unbindAll_00598a80`.
+    PShaderResourceTables_unbindAll_00598a80 @ 0x0059_8a80 => extern "stdcall" fn s_00598a80(a0: u32, a1: u32, a2: u32) -> u32 {
+        sm::unbind_all(&mut mem(), a0, a1, a2)
+    }
+    /// `PShaderResourceTable_unbindSlot_00598b50`.
+    PShaderResourceTable_unbindSlot_00598b50 @ 0x0059_8b50 => extern "thiscall" fn s_00598b50(a0: u32, _a1: u32, a2: u32) -> u32 {
+        sm::unbind_table(&mut mem(), a0, a2)
+    }
+    /// `PRendererD3D11_mapPrimitiveTopology`.
+    PRendererD3D11_mapPrimitiveTopology @ 0x0058_ab60 => extern "C" fn s_0058ab60(a0: u32) -> u32 {
+        sm::topology(&mut mem(), a0)
+    }
+    /// `PRendererD3D11_setBlendFactors_005998f0`.
+    PRendererD3D11_setBlendFactors_005998f0 @ 0x0059_98f0 => extern "thiscall" fn s_005998f0(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        sm::set_blend_pair(&mut mem(), a0, a1, a2, a3)
+    }
+    /// `PRendererD3D11_mapBlendFactor`.
+    PRendererD3D11_mapBlendFactor @ 0x0058_a8f0 => extern "C" fn s_0058a8f0(a0: u32) -> u32 {
+        sm::blend_factor(a0)
+    }
+    /// `PRendererD3D11_getDisplayModeList_005940d0`.
+    PRendererD3D11_getDisplayModeList_005940d0 @ 0x0059_40d0 => extern "thiscall" fn s_005940d0(a0: u32, a1: u32, a2: u32) -> u32 {
+        let mut fr = super::StackFrame::<2>::new();
+        sm::query_and_set(&mut mem(), a0, a1, a2, fr.at())
+    }
+    /// `Phyre_PSprite_elementOffset_00563900`.
+    Phyre_PSprite_elementOffset_00563900 @ 0x0056_3900 => extern "thiscall" fn s_00563900(a0: u32, a1: u32, a2: u32) -> u32 {
+        let mut fr = super::StackFrame::<1>::new();
+        sm::element_offset(&mut mem(), a0, a1, a2, fr.at())
     }
 }

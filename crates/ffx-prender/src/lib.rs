@@ -40,6 +40,7 @@ pub mod glue2;
 pub mod glue3;
 pub mod mesh;
 pub mod misc;
+pub mod small;
 pub mod sort;
 pub mod thread;
 pub mod visibility;

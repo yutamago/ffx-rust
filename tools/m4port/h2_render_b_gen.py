@@ -16,6 +16,12 @@ Each spec row: (addr, abi, kinds, ret, body, callees, prep)
   body: Rust expression over `M` (the host) and a0..aN
   callees: [(addr, stack words, pops)] stubbed with recording stubs
   prep: name of a prep fn in the test file, or None
+  callees: (addr, words, pops[, k]): k = the stub stores a word through
+         stack argument k (an out-pointer)
+  gap (optional, after frame): uncompared bytes between the frame and ebp
+  frame (optional): bytes of the original's frame below ebp that callees
+         see; the body names the port's frame FRAME (a StackFrame in the
+         shim, the original's frame address in the test)
 """
 import re, sys, importlib.util, pathlib
 
@@ -37,7 +43,7 @@ for f in spec_files:
 CDECL = {0x0042fb20, 0x004e4740, 0x004e4ec0, 0x004dd770, 0x004e4df0, 0x004f4fc0, 0x00540b80,
          0x0056a700, 0x00588190, 0x004395b0, 0x004dd910, 0x0058a9a0, 0x004ec310, 0x004dd860,
          0x00949256, 0x00949207, 0x00437fc0, 0x00435740, 0x0043e2f0, 0x004d0e20, 0x0049d050,
-         0x004c8a70}
+         0x004c8a70, 0x0058ab60, 0x004ffe40, 0x004352f0, 0x0058a8f0, 0x00560e90}
 ABI = {'C': '"C"', 'S': '"stdcall"', 'T': '"thiscall"'}
 CONV = {'C': 'K::C', 'S': 'K::S', 'T': 'K::T'}
 OUT = {'u32': 'O::U32', 'u8': 'O::U8', '': 'O::None'}
@@ -50,18 +56,24 @@ def hexu(a):
 shims = []
 cases = []
 seen = set()
-for (addr, abi, kinds, ret, body, callees, prep) in rows:
+for row in rows:
+    (addr, abi, kinds, ret, body, callees, prep) = row[:7]
+    frame = row[7] if len(row) > 7 else 0
+    gap = row[8] if len(row) > 8 else 0
     assert addr not in seen, hex(addr)
     seen.add(addr)
     name = SYM[addr]
     args = [f"a{i}" for i in range(len(kinds))]
     rt = f" -> {ret}" if ret else ''
-    b = body.replace('M', '&mut mem()')
+    b = body.replace('FRAME', 'fr.at()').replace('M', '&mut mem()')
     stmt = b if ret else b + ';'
+    if frame:
+        assert frame % 4 == 0
+        stmt = f"let mut fr = super::StackFrame::<{frame // 4}>::new();\n        {stmt}"
     unused = [a for a in args if not re.search(r'\b' + a + r'\b', body)]
     params = ', '.join((f"_{a}" if a in unused else a) + ": u32" for a in args)
     shims.append(f"    /// `{name}`.\n    {name} @ {hexu(addr)} => extern {ABI[abi]} fn s_{addr:08x}({params}){rt} {{\n        {stmt}\n    }}")
-    pb = body.replace('M', 'g')
+    pb = body.replace('FRAME', 'g.frame()').replace('M', 'g')
     for i, a in enumerate(args):
         pb = re.sub(r'\b' + a + r'\b', f'a[{i}]', pb)
     gv = 'g' if re.search(r'\bg\b', pb) else '_'
@@ -72,8 +84,9 @@ for (addr, abi, kinds, ret, body, callees, prep) in rows:
         port = f"|{gv}, {av}| u32::from({pb})"
     else:
         port = f"|{gv}, {av}| {{\n            {pb};\n            0\n        }}"
-    cl = ', '.join(f"({hexu(c)}, {n}, {p}, {'false' if c in CDECL else 'true'})" for c, n, p in callees)
-    cases.append(f"    Case {{\n        name: \"{name}\",\n        addr: {hexu(addr)},\n        conv: {CONV[abi]},\n        kinds: \"{kinds}\",\n        out: {OUT[ret]},\n        callees: &[{cl}],\n        prep: {prep or 'no_prep'},\n        port: {port},\n    }},")
+    cl = ', '.join(f"({hexu(c[0])}, {c[1]}, {c[2]}, {'false' if c[0] in CDECL else 'true'})" for c in callees)
+    wr = ', '.join(f"({hexu(c[0])}, {c[3]})" for c in callees if len(c) > 3)
+    cases.append(f"    Case {{\n        name: \"{name}\",\n        addr: {hexu(addr)},\n        conv: {CONV[abi]},\n        kinds: \"{kinds}\",\n        out: {OUT[ret]},\n        callees: &[{cl}],\n        prep: {prep or 'no_prep'},\n        port: {port},\n        frame: {frame:#x},\n        gap: {gap},\n        writes: &[{wr}],\n    }},")
 
 open(R / 'crates/ffx-hook/src/ported/h2_render_b.rs', 'w').write(
     "//! `ffx-prender`, M4 port round 1, list h2-render-b: `PhyreEngine`'s\n"
@@ -92,6 +105,7 @@ open(R / 'crates/ffx-hook/src/ported/h2_render_b.rs', 'w').write(
     "use ffx_prender::array::bridge as a;\n"
     "use ffx_prender::declare as dc;\n"
     "use ffx_prender::dtor::bridge as dt;\n"
+    "use ffx_prender::small::bridge as sm;\n"
     "use ffx_prender::descriptor::{Init, bridge as d};\n"
     "use ffx_prender::misc::bridge as x;\n\n"
     "ported! {\n" + '\n'.join(shims) + "\n}\n")
