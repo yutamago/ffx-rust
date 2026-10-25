@@ -26,6 +26,7 @@ mod main;
 mod map;
 mod menu;
 mod movie;
+mod p3_other_a;
 mod pc_ui;
 mod phyre_render;
 mod ps2_emu;
@@ -55,6 +56,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(map::hooks());
     all.extend(menu::hooks());
     all.extend(movie::hooks());
+    all.extend(p3_other_a::hooks());
     all.extend(pc_ui::hooks());
     all.extend(phyre_render::hooks());
     all.extend(ps2_emu::hooks());

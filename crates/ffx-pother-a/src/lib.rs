@@ -1,0 +1,70 @@
+//! `PhyreEngine`'s "other" code the game reaches (M4 port round 1, list
+//! `p3-other-a`, `~/ffx-work/m4/port/plan.md`), ported function by
+//! function from FFX.exe with the M3 recipe (`docs/porting.md`, "Library
+//! code"):
+//!
+//! - [`class`]: the type system's lookups and class registration (the
+//!   `Bind` sequences: type dispenser, namespace);
+//! - [`object`]: small constructors, destructors and the class
+//!   descriptors' create/destroy callbacks (`mov al, 1; ret 4`).
+//!
+//! What this list does not hold (the class descriptor, the type
+//! dispenser, the heap, the red-black tree) is called at its address
+//! through [`ffx_graphic::host::Host`], as other ports call original code.
+
+// 32-bit game addresses and words.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::many_single_char_names,
+    clippy::similar_names
+)]
+
+use ffx_graphic::host::{Conv, Host};
+
+pub mod class;
+pub mod object;
+
+/// `Phyre_PhyreFree` (cdecl `(p)`).
+pub const PHYRE_FREE: u32 = 0x0042_fb20;
+
+/// Calls the original at `sym` as a `thiscall` on `this`.
+pub fn thiscall(h: &mut impl Host, sym: u32, this: u32, args: &[u32]) -> u32 {
+    let f = h.rebase(sym);
+    h.call(f, Conv::Thiscall(this), args)
+}
+
+/// Calls the original at `sym` as a cdecl function.
+pub fn cdecl(h: &mut impl Host, sym: u32, args: &[u32]) -> u32 {
+    let f = h.rebase(sym);
+    h.call(f, Conv::Cdecl, args)
+}
+
+/// `Phyre_PhyreFree(p)`; its `eax`.
+pub fn free(h: &mut impl Host, p: u32) -> u32 {
+    cdecl(h, PHYRE_FREE, &[p])
+}
+
+/// `eax` after `mov al, v` over `eax`.
+#[must_use]
+pub const fn with_al(eax: u32, v: u8) -> u32 {
+    (eax & !0xff) | v as u32
+}
+
+/// Byte-wise C string equality, as the originals' inlined `strcmp` loop
+/// (two bytes per round) tests it.
+pub fn str_eq(h: &impl Host, a: u32, b: u32) -> bool {
+    let mut i = 0u32;
+    loop {
+        let x: u8 = h.read(a.wrapping_add(i));
+        let y: u8 = h.read(b.wrapping_add(i));
+        if x != y {
+            return false;
+        }
+        if x == 0 {
+            return true;
+        }
+        i = i.wrapping_add(1);
+    }
+}

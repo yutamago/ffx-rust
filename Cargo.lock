@@ -689,6 +689,7 @@ dependencies = [
  "ffx-motion",
  "ffx-movie",
  "ffx-pcui",
+ "ffx-pother-a",
  "ffx-prender",
  "ffx-ps2",
  "ffx-scene",
@@ -779,6 +780,7 @@ dependencies = [
  "ffx-movie",
  "ffx-pcui",
  "ffx-phyre",
+ "ffx-pother-a",
  "ffx-prender",
  "ffx-ps2",
  "ffx-script",
@@ -828,6 +830,14 @@ dependencies = [
  "ffx-dxbc",
  "ffx-phyre",
  "ffx-vbf",
+]
+
+[[package]]
+name = "ffx-pother-a"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+ "ffx-graphic",
 ]
 
 [[package]]

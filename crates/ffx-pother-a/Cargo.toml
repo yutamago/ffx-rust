@@ -1,0 +1,14 @@
+[package]
+name = "ffx-pother-a"
+description = "PhyreEngine's other code the game reaches (M4 port round 1, list p3-other-a): class registration, small object constructors and callbacks, gameplay and physics bindings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-bridge.workspace = true
+ffx-graphic.workspace = true
+
+[lints]
+workspace = true

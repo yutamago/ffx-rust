@@ -18,6 +18,7 @@ ffx-field.workspace = true
 ffx-gfx.workspace = true
 ffx-graphic.workspace = true
 ffx-prender.workspace = true
+ffx-pother-a.workspace = true
 ffx-kernel.workspace = true
 ffx-menu.workspace = true
 ffx-monster.workspace = true
