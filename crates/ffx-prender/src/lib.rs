@@ -14,6 +14,12 @@
 //! - [`dtor`]: destructors and storage setters (round 2);
 //! - [`misc`]: small render-interface, material and shader methods (the
 //!   same).
+//! - [`descriptor`]: the render classes' class-descriptor callbacks and
+//!   `Bind` functions (M4 port round 1, h1-render-a);
+//! - [`registry`]: descriptor constructors, `GetType<T>` singletons,
+//!   `Bind` with a member descriptor (h1-render-a);
+//! - [`texture`], [`basic`]: texture and sampler bases, small engine
+//!   methods (h1-render-a).
 //!
 //! Everything the slice does not port (the world cursors, the job system,
 //! the ring allocators, the math helpers, `D3D11`) is called at its
@@ -32,6 +38,8 @@
 )]
 
 pub mod array;
+pub mod basic;
+pub mod class_slots;
 pub mod declare;
 pub mod descriptor;
 pub mod dtor;
@@ -40,8 +48,10 @@ pub mod glue2;
 pub mod glue3;
 pub mod mesh;
 pub mod misc;
+pub mod registry;
 pub mod small;
 pub mod sort;
+pub mod texture;
 pub mod thread;
 pub mod visibility;
 pub mod world;
