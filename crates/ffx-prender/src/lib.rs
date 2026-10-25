@@ -54,6 +54,7 @@ pub mod h1_bind;
 pub mod h1_camera;
 pub mod h1_small;
 pub mod h1_small2;
+pub mod h1_small3;
 pub mod mesh;
 pub mod misc;
 pub mod registry;

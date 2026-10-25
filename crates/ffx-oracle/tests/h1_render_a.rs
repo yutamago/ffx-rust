@@ -29,7 +29,7 @@ use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_prender::{
     basic, class_slots as descriptor, h1_array_type, h1_bind, h1_camera, h1_small, h1_small2,
-    registry, texture,
+    h1_small3, registry, texture,
 };
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -3006,6 +3006,22 @@ impl Twins {
         rng: &mut Rng,
         port: impl FnOnce(&mut G, u32) -> Out,
     ) {
+        self.check_framed_part(what, sym, conv, args, (low, low), rng, port);
+    }
+
+    /// [`Twins::check_framed`] comparing only the frame's first
+    /// `low.1` bytes (the rest the original's own: SEH records).
+    #[allow(clippy::too_many_arguments)]
+    fn check_framed_part(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        (low, compared): (u32, u32),
+        rng: &mut Rng,
+        port: impl FnOnce(&mut G, u32) -> Out,
+    ) {
         let ebp = self.arg_slots(args.len()) - 8;
         let lo = ebp - low;
         let fill: Vec<u8> = (0..low).map(|_| rng.next() as u8).collect();
@@ -3013,8 +3029,8 @@ impl Twins {
         self.b.set_call_top(Some(lo - 0x100));
         self.check(what, sym, conv, args, |g| port(g, lo));
         self.b.set_call_top(None);
-        let mut x = vec![0; low as usize];
-        let mut y = vec![0; low as usize];
+        let mut x = vec![0; compared as usize];
+        let mut y = vec![0; compared as usize];
         Mem::read_bytes(&self.a, lo, &mut x);
         Mem::read_bytes(&self.b, lo, &mut y);
         assert_eq!(x, y, "{what}: the frame");
@@ -3294,6 +3310,571 @@ fn r3_array_types_match_the_original() {
                     |g| Out::U32(h1_array_type::bridge::array_type(g, &k, arg)),
                 );
             }
+        }
+    }
+}
+
+// ---- round 3 batch 2: small methods (h1_small3) ----
+
+/// A count word: small, sometimes "not owned", sometimes 0.
+fn count_word(rng: &mut Rng) -> u32 {
+    let n = rng.next() % 5;
+    match rng.next() % 4 {
+        0 => n | 0x8000_0000,
+        _ => n,
+    }
+}
+
+#[test]
+fn r3_dtors_match_the_original() {
+    use h1_small3::{DTORS, Rel, dtor_of};
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xd7d7_0003);
+        let ret = t.zeros(4);
+        t.stub(basic::FREE, false, 1, 0, Ret::Cell(ret));
+        for f in [
+            h1_small3::RELEASE_TAGGED_16,
+            h1_small3::RELEASE_TAGGED_16B,
+            h1_small3::RELEASE_TAGGED_WORDS,
+        ] {
+            t.stub(f, false, 2, 0, Ret::Cell(ret));
+        }
+        t.stub(
+            h1_small3::RELEASE_SHADER_PASSES,
+            true,
+            0,
+            0,
+            Ret::ThisAnd(ret),
+        );
+        for case in 0..200u32 {
+            t.w32(ret, rng.next());
+            for &(f, k) in DTORS {
+                assert_eq!(dtor_of(f), k);
+                let this = pattern(&mut t, &mut rng, 0x20);
+                for (count, data, how) in k.arrays {
+                    t.w32(this + count, count_word(&mut rng));
+                    if how == Rel::Free && rng.next().is_multiple_of(4) {
+                        t.w32(this + data, 0);
+                    }
+                }
+                t.check(
+                    &format!("{name} dtor {f:#x} {case}"),
+                    f,
+                    Conv::Thiscall(this),
+                    &[],
+                    |g| Out::U32(h1_small3::bridge::dtor(g, &k, this)),
+                );
+            }
+            let this = pattern(&mut t, &mut rng, 0x20);
+            t.w32(this + 8, count_word(&mut rng));
+            if case % 3 == 0 {
+                t.w32(this + 4, rng.next() & !1);
+            }
+            t.check(
+                &format!("{name} tagged dtor {case}"),
+                0x004a_8910,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(h1_small3::bridge::tagged_dtor(g, this)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r3_entries_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0006_c003);
+        let ret = t.zeros(4);
+        t.stub(
+            h1_small3::ENTRY6C_MEMBER_CTOR,
+            true,
+            0,
+            0,
+            Ret::ThisAnd(ret),
+        );
+        t.stub(h1_small3::ENTRY6C_MEMBER_DTOR, true, 0, 0, Ret::Cell(ret));
+        t.stub(h1_small3::ELEMENT40_DTOR, true, 0, 0, Ret::Cell(ret));
+        t.stub(basic::FREE, false, 1, 0, Ret::Cell(ret));
+        for case in 0..120u32 {
+            t.w32(ret, rng.next());
+            let e = pattern(&mut t, &mut rng, 0x6c);
+            t.check(
+                &format!("{name} entry ctor {case}"),
+                0x0043_37d0,
+                Conv::Thiscall(e),
+                &[],
+                |g| Out::U32(h1_small3::bridge::entry6c_ctor(g, e)),
+            );
+            let n = rng.next() % 4;
+            let (data, n) = if case % 10 == 0 {
+                (0, 1)
+            } else {
+                (pattern(&mut t, &mut rng, 0x6c * 4), n)
+            };
+            let mut slot = None;
+            t.check(
+                &format!("{name} entries ctor {case}"),
+                0x0043_4430,
+                Conv::Cdecl,
+                &[data, n],
+                |g| {
+                    slot = h1_small3::bridge::entry6c_construct(g, data, n);
+                    Out::None
+                },
+            );
+            let v: u32 = Mem::read(&t.a, t.arg_slots(2) + 4);
+            assert_eq!(v, slot.unwrap_or(n), "{name} entries ctor {case}: slot");
+            // destroy: arrays of 0x40-byte elements and plain blocks
+            let n = rng.next() % 4;
+            let data = if case % 9 == 0 {
+                0
+            } else {
+                pattern(&mut t, &mut rng, 0x6c * 4)
+            };
+            if data != 0 {
+                for i in 0..n {
+                    let e = data + 0x6c * i;
+                    t.w32(e + 0x28, count_word(&mut rng));
+                    t.w32(e + 8, count_word(&mut rng));
+                    if rng.next().is_multiple_of(4) {
+                        t.w32(e + 0x2c, 0);
+                    }
+                    if rng.next().is_multiple_of(4) {
+                        t.w32(e + 0xc, 0);
+                    }
+                }
+            }
+            t.check(
+                &format!("{name} entries dtor {case}"),
+                0x0043_4210,
+                Conv::Cdecl,
+                &[data, n],
+                |g| Out::U32(h1_small3::bridge::entry6c_destroy(g, data, n)),
+            );
+            let v: u32 = Mem::read(&t.a, t.arg_slots(2) + 4);
+            let want = if data != 0 && n != 0 { 0 } else { n };
+            assert_eq!(v, want, "{name} entries dtor {case}: slot");
+        }
+    }
+}
+
+#[test]
+fn r3_view_ctor_and_lock_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x04d6_1803);
+        let ret = t.zeros(8);
+        t.stub(h1_small3::RELEASE_TAGGED_16, false, 2, 0, Ret::Cell(ret));
+        t.stub(h1_small3::THREAD_ID, false, 0, 0, Ret::Cell(ret + 4));
+        t.stub(h1_small3::EVENT_SIGNAL, true, 0, 0, Ret::Cell(ret));
+        let cas = t.stub_code(0xca5, false, 3, 3, Ret::Cell(ret));
+        let import = t.rebase(h1_small3::INTERLOCKED_CAS);
+        t.w32(import, cas);
+        for case in 0..200u32 {
+            t.w32(ret, rng.next());
+            let this = pattern(&mut t, &mut rng, 0x40);
+            let p = match case % 5 {
+                0 => this,
+                1 => this - 0x18,
+                _ => pattern(&mut t, &mut rng, 0x40),
+            };
+            t.check(
+                &format!("{name} view ctor {case}"),
+                0x004d_6180,
+                Conv::Thiscall(this),
+                &[p],
+                |g| Out::U32(h1_small3::bridge::view_ctor(g, this, p)),
+            );
+            let lock = pattern(&mut t, &mut rng, 0x18);
+            let tid = 0x1000 + rng.next() % 3;
+            t.w32(ret + 4, tid);
+            t.w32(lock + 0x10, 0x1000 + rng.next() % 3);
+            t.w32(lock + 0x14, rng.next() % 3);
+            t.w32(lock + 0xc, (rng.next() % 4) as i32 as u32 - 1);
+            t.check(
+                &format!("{name} lock release {case}"),
+                h1_small3::LOCK_RELEASE,
+                Conv::Thiscall(lock),
+                &[],
+                |g| Out::U32(h1_small3::bridge::lock_release(g, lock)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r3_render_scope_matches_the_original() {
+    use h1_small3 as s;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0463_d503);
+        let ret = t.zeros(8);
+        t.stub(s::LOCK_CTOR, true, 0, 0, Ret::ThisAnd(ret));
+        t.stub(s::INTERFACE_CTOR, true, 0, 0, Ret::ThisAnd(ret));
+        t.stub(s::ATEXIT, false, 1, 0, Ret::Imm(0));
+        t.stub(s::LOCK_TAKE, true, 0, 0, Ret::Cell(ret));
+        t.stub(s::LOCK_DEPTH, true, 0, 0, Ret::Cell(ret + 4));
+        t.stub(s::INTERFACE_BIND, true, 0, 0, Ret::Cell(ret));
+        t.stub(s::INTERFACE_UNBIND, true, 0, 0, Ret::Cell(ret));
+        t.stub(s::LOCK_RELEASE, true, 0, 0, Ret::ThisAnd(ret));
+        let (lg, ig) = (t.rebase(s::LOCK_GUARD), t.rebase(s::INTERFACE_GUARD));
+        for case in 0..100u32 {
+            t.w32(ret, rng.next());
+            t.w32(ret + 4, rng.next() % 3);
+            t.w32(lg, rng.next() % 4);
+            t.w32(ig, rng.next() % 4);
+            let this = pattern(&mut t, &mut rng, 8);
+            t.check(
+                &format!("{name} scope enter {case}"),
+                0x0046_3d50,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(s::bridge::render_scope_enter(g, this)),
+            );
+            t.w32(ret + 4, rng.next() % 3);
+            t.w32(lg, rng.next() % 4);
+            t.w32(ig, rng.next() % 4);
+            let this = if case % 2 == 0 {
+                this
+            } else {
+                pattern(&mut t, &mut rng, 8)
+            };
+            t.check(
+                &format!("{name} scope leave {case}"),
+                0x0046_3e90,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(s::bridge::render_scope_leave(g, this)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r3_resizes_match_the_original() {
+    use h1_small3::{RESIZES, resize_of};
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0443_d203);
+        let ret = t.zeros(4);
+        t.stub(basic::MALLOC, false, 2, 0, Ret::Cell(ret));
+        t.stub(basic::FREE, false, 1, 0, Ret::Imm(0x0f0f));
+        for &(_, k) in RESIZES {
+            t.stub(k.copy, false, 3, 0, Ret::Imm(0xc0));
+            t.stub(k.init, false, 2, 0, Ret::Imm(0x1e));
+        }
+        for case in 0..200u32 {
+            for &(f, k) in RESIZES {
+                assert_eq!(resize_of(f), k);
+                let block = if case % 6 == 0 { 0 } else { rng.next() | 0x10 };
+                t.w32(ret, block);
+                let this = pattern(&mut t, &mut rng, 8);
+                let n = rng.next() % 5;
+                let word = match case % 5 {
+                    0 => n,
+                    1 => n | 0x8000_0000,
+                    _ => count_word(&mut rng),
+                };
+                t.w32(this, word);
+                match case % 7 {
+                    0 => t.w32(this + 4, 0),
+                    1 => t.w32(this + 4, block),
+                    _ => {}
+                }
+                let mut slot = None;
+                t.check(
+                    &format!("{name} resize {f:#x} {case}"),
+                    f,
+                    Conv::Thiscall(this),
+                    &[n],
+                    |g| {
+                        let (eax, s) = h1_small3::bridge::resize(g, &k, this, n);
+                        slot = s;
+                        Out::U32(eax)
+                    },
+                );
+                let v: u32 = Mem::read(&t.a, t.arg_slots(1));
+                assert_eq!(v, slot.unwrap_or(n), "{name} resize {f:#x} {case}: slot");
+            }
+        }
+    }
+}
+
+#[test]
+fn r3_world_initialize_matches_the_original() {
+    use h1_small3 as s;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0443_a403);
+        let cells = t.zeros(8);
+        let k = s::resize_of(0x0044_3d20);
+        t.stub(basic::MALLOC, false, 2, 0, Ret::Cell(cells));
+        t.stub(basic::FREE, false, 1, 0, Ret::Imm(0));
+        t.stub(k.copy, false, 3, 0, Ret::Imm(0));
+        t.stub(k.init, false, 2, 0, Ret::Imm(0));
+        t.stub(s::GLOBAL_NAMESPACE, false, 0, 0, Ret::Cell(cells + 4));
+        let count_global = t.rebase(s::WORLD_CLASS_COUNT);
+        for case in 0..150u32 {
+            let count = rng.next() % 5;
+            t.w32(count_global, count);
+            // the new block: entry 0 linked to itself
+            let block = if case % 11 == 0 {
+                0
+            } else {
+                pattern(&mut t, &mut rng, 20 * 6)
+            };
+            if block != 0 {
+                t.w32(block, block);
+                t.w32(block + 4, block);
+            }
+            t.w32(cells, block);
+            let this = pattern(&mut t, &mut rng, 0x10);
+            t.w32(
+                this + 8,
+                if case % 13 == 0 {
+                    count + 1
+                } else {
+                    count + 2 + rng.next() % 3
+                },
+            );
+            if case % 13 == 0 {
+                let own = pattern(&mut t, &mut rng, 20 * 6);
+                t.w32(own, own);
+                t.w32(own + 4, own);
+                t.w32(this + 0xc, own);
+            }
+            // the namespace's classes: linked at +0x2c, parents at +0x40
+            let ns = pattern(&mut t, &mut rng, 0x10);
+            let classes: Vec<u32> = (0..5).map(|_| pattern(&mut t, &mut rng, 0x90)).collect();
+            let used = (rng.next() % 6) as usize;
+            let mut next = ns + 8;
+            for (i, &c) in classes.iter().enumerate().take(used).rev() {
+                t.w32(c + 0x2c, next);
+                next = c + 0x2c;
+                let index = match rng.next() % 4 {
+                    0 => u32::MAX,
+                    _ => rng.next() % (count + 1),
+                };
+                t.w32(c + 0x80, index);
+                let parent = if i + 1 < classes.len() && rng.next() & 1 == 0 {
+                    classes[i + 1 + rng.next() as usize % (classes.len() - i - 1)]
+                } else {
+                    0
+                };
+                t.w32(c + 0x40, parent);
+            }
+            for &c in &classes[used..] {
+                t.w32(c + 0x40, 0);
+            }
+            t.w32(
+                ns + 8,
+                match case % 17 {
+                    0 => 0,
+                    1 => 0x2c,
+                    _ => next,
+                },
+            );
+            t.w32(cells + 4, ns);
+            t.check(
+                &format!("{name} world initialize {case}"),
+                0x0044_3a40,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(s::bridge::world_initialize(g, &k, this)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r3_parameter_buffer_and_pass_match_the_original() {
+    use h1_small3 as s;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x04d7_1903);
+        let cells = t.zeros(0x20);
+        t.stub(
+            s::PARAMETER_BUFFER_HELPER,
+            false,
+            0,
+            0,
+            Ret::Cell(cells + 0x18),
+        );
+        t.stub(s::RELEASE_TAGGED_16, false, 2, 0, Ret::Cell(cells));
+        let visit = t.stub_code(0x15, true, 2, 2, Ret::Imm(0x77));
+        let vtable = pattern(&mut t, &mut rng, 0x40);
+        t.w32(vtable + 0x3c, visit);
+        let this = pattern(&mut t, &mut rng, 0x10);
+        t.w32(this, vtable);
+        for (i, &f) in s::PASS_UNBIND.iter().enumerate() {
+            let words = [3, 3, 2, 1, 1][i];
+            t.stub(f, true, words, words, Ret::Cell(cells + 4 + 4 * i as u32));
+        }
+        for case in 0..200u32 {
+            t.w32(cells, rng.next());
+            t.w32(cells + 0x18, rng.next());
+            let p = pattern(&mut t, &mut rng, 0x10);
+            t.w32(p + 8, count_word(&mut rng));
+            t.check_framed_part(
+                &format!("{name} parameter buffer {case}"),
+                0x004d_7190,
+                Conv::Thiscall(this),
+                &[p],
+                (0x14, 8),
+                &mut rng,
+                |g, frame| Out::U32(s::bridge::destroy_parameter_buffer(g, frame, this, p)),
+            );
+            for i in 0..5 {
+                let v = if rng.next().is_multiple_of(9) {
+                    rng.next()
+                } else {
+                    0
+                };
+                t.w32(cells + 4 + 4 * i, v);
+            }
+            let (a, b) = (rng.next(), rng.next());
+            t.check(
+                &format!("{name} unbind pass {case}"),
+                0x004b_a540,
+                Conv::Thiscall(this),
+                &[a, b],
+                |g| Out::U32(s::bridge::unbind_pass(g, this, a, b)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r3_visit_nested_matches_the_original() {
+    use h1_small3 as s;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x047f_a103);
+        let cells = t.zeros(0x10);
+        t.stub(s::NESTED_FIND, true, 1, 1, Ret::Cell(cells + 4));
+        // the entry visit moves the offset it is handed, then records
+        let visit = t.stub_code(s::NESTED_VISIT, true, 4, 4, Ret::Imm(0x5150));
+        let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x83, 0x00, 0x30, 0xe9]; // mov eax, [esp+8]; add dword [eax], 0x30; jmp
+        let at = t.cave_next;
+        c.extend(visit.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let moved = t.code(&c);
+        let target = t.rebase(s::NESTED_VISIT);
+        let mut j = vec![0xe9];
+        j.extend(moved.wrapping_sub(target + 5).to_le_bytes());
+        t.write(target, &j);
+        let get_class = t.stub_code(0x9c, true, 0, 0, Ret::Cell(cells));
+        let vtable = pattern(&mut t, &mut rng, 0x10);
+        t.w32(vtable + 4, get_class);
+        let object = pattern(&mut t, &mut rng, 0x10);
+        t.w32(object, vtable);
+        for case in 0..400u32 {
+            let visitor = pattern(&mut t, &mut rng, 0x20);
+            t.w32(visitor + 0x18, u32::from(case % 10 == 0));
+            t.w32(visitor + 0xc, rng.next() % 64);
+            t.w32(visitor + 0x10, rng.next() % 64);
+            let class = if case % 12 == 0 {
+                0
+            } else {
+                pattern(&mut t, &mut rng, 0x90)
+            };
+            if class != 0 {
+                t.w32(class + 0x8c, rng.next() % 32);
+                t.w32(class + 0x1c, rng.next() % 9);
+            }
+            t.w32(cells, class);
+            let entry = if rng.next() & 1 == 0 {
+                0
+            } else {
+                pattern(&mut t, &mut rng, 0x10)
+            };
+            if entry != 0 {
+                let info = if rng.next().is_multiple_of(3) {
+                    0
+                } else {
+                    pattern(&mut t, &mut rng, 0x20)
+                };
+                t.w32(entry + 4, info);
+                if info != 0 {
+                    t.w32(info + 0x18, rng.next() % 32);
+                    t.w32(info + 4, (rng.next() % 9) | (rng.next() & 0xf000_0000));
+                }
+            }
+            t.w32(cells + 4, entry);
+            let base = rng.next() % 64;
+            let count = rng.next() % 6;
+            let flags = rng.next() % 4;
+            let args = [base, count, object, flags];
+            let slot = t.arg_slots(4) + 12;
+            t.b.set_call_top(Some(t.arg_slots(4) - 0x100));
+            t.check(
+                &format!("{name} visit nested {case}"),
+                0x0047_fa10,
+                Conv::Thiscall(visitor),
+                &args,
+                |g| {
+                    // the port's flags slot starts as the original's does
+                    Mem::write(g, slot, flags);
+                    s::bridge::visit_nested(g, slot, visitor, base, count, object, flags);
+                    Out::None
+                },
+            );
+            t.b.set_call_top(None);
+            let x: u32 = Mem::read(&t.a, slot);
+            let y: u32 = Mem::read(&t.b, slot);
+            assert_eq!(x, y, "{name} visit nested {case}: the offset slot");
+        }
+    }
+}
+
+#[test]
+fn r3_switch_for_name_matches_the_original() {
+    use h1_small3 as s;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x04d3_8303);
+        let cells = t.zeros(12);
+        t.stub(s::FIND_BY_NAME, false, 1, 0, Ret::Cell(cells));
+        t.stub(s::PRINTF, false, 3, 0, Ret::Imm(0));
+        // the block allocator refills the list (ecx) from cells + 8, then
+        // records
+        let alloc = t.stub_code(s::ALLOCATE_BLOCK, true, 1, 1, Ret::Imm(0));
+        let mut c = vec![0xa1];
+        c.extend((cells + 8).to_le_bytes()); // mov eax, [cells+8]
+        c.extend([0x89, 0x01, 0xe9]); // mov [ecx], eax; jmp
+        let at = t.cave_next;
+        c.extend(alloc.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let refill = t.code(&c);
+        let target = t.rebase(s::ALLOCATE_BLOCK);
+        let mut j = vec![0xe9];
+        j.extend(refill.wrapping_sub(target + 5).to_le_bytes());
+        t.write(target, &j);
+        t.stub(s::MEMCPY, false, 3, 0, Ret::Imm(0));
+        t.stub(s::SWITCH_CTOR, true, 2, 2, Ret::ThisAnd(cells + 4));
+        t.w32(cells + 4, 0xffff_fff0);
+        for case in 0..200u32 {
+            let found = if case % 3 == 0 { rng.next() | 1 } else { 0 };
+            t.w32(cells, found);
+            let n = if case % 10 == 0 {
+                0
+            } else {
+                cstr(&mut t, &"NUM_SWITCH"[..(rng.next() % 10) as usize])
+            };
+            for (head, _) in [s::SWITCH_LIST, s::NAME_LIST] {
+                let head = t.rebase(head);
+                let block = if rng.next().is_multiple_of(4) {
+                    0
+                } else {
+                    pattern(&mut t, &mut rng, 0x20)
+                };
+                t.w32(head, block);
+            }
+            let refill = if case % 3 == 1 {
+                0
+            } else {
+                pattern(&mut t, &mut rng, 0x20)
+            };
+            t.w32(cells + 8, refill);
+            t.check(
+                &format!("{name} switch for name {case}"),
+                0x004d_3830,
+                Conv::Cdecl,
+                &[n],
+                |g| Out::U32(s::bridge::switch_for_name(g, n)),
+            );
         }
     }
 }

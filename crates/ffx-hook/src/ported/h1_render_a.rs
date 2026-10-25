@@ -8,7 +8,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_prender::{
     basic, class_slots as descriptor, h1_array_type, h1_bind, h1_camera, h1_small, h1_small2,
-    registry, texture,
+    h1_small3, registry, texture,
 };
 
 ported! {
@@ -2029,5 +2029,106 @@ ported! {
     Phyre_PTypeDispenser_GetType_Phyre_PSharray_unsigned_int @ 0x004c_f8c0 => extern "C" fn h1_004cf8c0(name: u32) -> u32 {
         let k = const { h1_array_type::kind_of(0x004c_f8c0) };
         h1_array_type::bridge::array_type(&mut mem(), &k, name)
+    }
+    // round 3 batch 2 (h1_small3)
+    /// `PDynamicDataBlock_dtor_00484160(this)`: its arrays released; the last call's `eax`.
+    PDynamicDataBlock_dtor_00484160 @ 0x0048_4160 => extern "thiscall" fn h1_00484160(this: u32) -> u32 {
+        let k = const { h1_small3::dtor_of(0x0048_4160) };
+        h1_small3::bridge::dtor(&mut mem(), &k, this)
+    }
+    /// `Phyre_PGeometry_PDynamicMesh_dtor_004969f0(this)`: its arrays released; the last call's `eax`.
+    Phyre_PGeometry_PDynamicMesh_dtor_004969f0 @ 0x0049_69f0 => extern "thiscall" fn h1_004969f0(this: u32) -> u32 {
+        let k = const { h1_small3::dtor_of(0x0049_69f0) };
+        h1_small3::bridge::dtor(&mut mem(), &k, this)
+    }
+    /// `PArrayPair_dtor_00499dc0(this)`: its arrays released; the last call's `eax`.
+    PArrayPair_dtor_00499dc0 @ 0x0049_9dc0 => extern "thiscall" fn h1_00499dc0(this: u32) -> u32 {
+        let k = const { h1_small3::dtor_of(0x0049_9dc0) };
+        h1_small3::bridge::dtor(&mut mem(), &k, this)
+    }
+    /// `PShaderProgramParamsAndStreams_dtor_004a8860(this)`: its arrays released; the last call's `eax`.
+    PShaderProgramParamsAndStreams_dtor_004a8860 @ 0x004a_8860 => extern "thiscall" fn h1_004a8860(this: u32) -> u32 {
+        let k = const { h1_small3::dtor_of(0x004a_8860) };
+        h1_small3::bridge::dtor(&mut mem(), &k, this)
+    }
+    /// `Phyre_PRendering_PShader_dtor_004bbf50(this)`: its arrays released; the last call's `eax`.
+    Phyre_PRendering_PShader_dtor_004bbf50 @ 0x004b_bf50 => extern "thiscall" fn h1_004bbf50(this: u32) -> u32 {
+        let k = const { h1_small3::dtor_of(0x004b_bf50) };
+        h1_small3::bridge::dtor(&mut mem(), &k, this)
+    }
+    /// `0x004a8910(this)`: the shader source's blocks released.
+    PShaderSource_dtor_004a8910 @ 0x004a_8910 => extern "thiscall" fn h1_004a8910(this: u32) -> u32 {
+        h1_small3::bridge::tagged_dtor(&mut mem(), this)
+    }
+    /// `0x004337d0(this)` -> `this`: a mesh segment entry's defaults.
+    PMeshSegmentEntry_ctor_004337d0 @ 0x0043_37d0 => extern "thiscall" fn h1_004337d0(this: u32) -> u32 {
+        h1_small3::bridge::entry6c_ctor(&mut mem(), this)
+    }
+    /// `0x00434430(data, n)`: `n` entries constructed; the `n` slot ends
+    /// at the last entry, as the original leaves it.
+    PMeshSegmentEntries_construct_00434430 @ 0x0043_4430 => extern "C" fn h1_00434430(data: u32, n: u32; slots: u32) {
+        let mut m = mem();
+        if let Some(last) = h1_small3::bridge::entry6c_construct(&mut m, data, n) {
+            ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4), last);
+        }
+    }
+    /// `0x00434210(data, n)` -> `PhyreFree`'s `eax`: `n` entries destroyed
+    /// and `data` freed; the `n` slot ends at 0.
+    PMeshSegmentEntries_destroy_00434210 @ 0x0043_4210 => extern "C" fn h1_00434210(data: u32, n: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let eax = h1_small3::bridge::entry6c_destroy(&mut m, data, n);
+        if data != 0 && n != 0 {
+            ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4), 0u32);
+        }
+        eax
+    }
+    /// `0x004d6180(this, p)` -> `this`: a view of `p`'s parameter array.
+    PParameterBufferView_ctor_004d6180 @ 0x004d_6180 => extern "thiscall" fn h1_004d6180(this: u32, p: u32) -> u32 {
+        h1_small3::bridge::view_ctor(&mut mem(), this, p)
+    }
+    /// `0x004319d0(lock)`: the recursive lock released; the last call's `eax`.
+    PRecursiveLock_release_004319d0 @ 0x0043_19d0 => extern "thiscall" fn h1_004319d0(this: u32) -> u32 {
+        h1_small3::bridge::lock_release(&mut mem(), this)
+    }
+    /// `0x00463d50(this)` -> `this`: the render lock taken.
+    PRenderScopeLock_enter_00463d50 @ 0x0046_3d50 => extern "thiscall" fn h1_00463d50(this: u32) -> u32 {
+        h1_small3::bridge::render_scope_enter(&mut mem(), this)
+    }
+    /// `0x00463e90(this)`: the render lock released; its `eax`.
+    PRenderScopeLock_leave_00463e90 @ 0x0046_3e90 => extern "thiscall" fn h1_00463e90(this: u32) -> u32 {
+        h1_small3::bridge::render_scope_leave(&mut mem(), this)
+    }
+    /// `0x00443d20(this, n)` -> 0 or 0xd: the 20-byte entry array resized.
+    PArray20_resize_00443d20 @ 0x0044_3d20 => extern "thiscall" fn h1_00443d20(this: u32, n: u32) -> u32 {
+        let k = const { h1_small3::resize_of(0x0044_3d20) };
+        h1_small3::bridge::resize(&mut mem(), &k, this, n).0
+    }
+    /// `0x00483710(this, n)` -> 0 or 0xd: the 12-byte element array resized.
+    PArray12_resize_00483710 @ 0x0048_3710 => extern "thiscall" fn h1_00483710(this: u32, n: u32) -> u32 {
+        let k = const { h1_small3::resize_of(0x0048_3710) };
+        h1_small3::bridge::resize(&mut mem(), &k, this, n).0
+    }
+    /// `PWorld::initialize(this)` -> 0 or the resize's error.
+    Phyre_PWorld_initialize @ 0x0044_3a40 => extern "thiscall" fn h1_00443a40(this: u32) -> u32 {
+        let k = const { h1_small3::resize_of(0x0044_3d20) };
+        h1_small3::bridge::world_initialize(&mut mem(), &k, this)
+    }
+    /// `destroyInstance(descriptor, p)` of `PParameterBuffer`: `al` 1.
+    Phyre_PClassDescriptorHeaderWithoutDefaultConstructor_Phyre_PRendering_PParameterBuffer__destroyInstance @ 0x004d_7190 => extern "thiscall" fn h1_004d7190(descriptor: u32, p: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        h1_small3::bridge::destroy_parameter_buffer(&mut mem(), frame.at(), descriptor, p)
+    }
+    /// `0x004ba540(this, a, b)` -> the first non-zero unbind result.
+    PShaderPass_unbindResources_004ba540 @ 0x004b_a540 => extern "thiscall" fn h1_004ba540(this: u32, a: u32, b: u32) -> u32 {
+        h1_small3::bridge::unbind_pass(&mut mem(), this, a, b)
+    }
+    /// `PFindNestedClassVisitor` slot 1 `(this, base, count, object, flags)`.
+    PFindNestedClassVisitor_visit_0047fa10 @ 0x0047_fa10 => extern "thiscall" fn h1_0047fa10(this: u32, base: u32, count: u32, object: u32, flags: u32) {
+        let mut slot = StackFrame::<1>::new();
+        h1_small3::bridge::visit_nested(&mut mem(), slot.at(), this, base, count, object, flags);
+    }
+    /// `0x004d3830(name)` -> the context switch of that name, made when new.
+    PContextSwitch_findOrCreate_004d3830 @ 0x004d_3830 => extern "C" fn h1_004d3830(name: u32) -> u32 {
+        h1_small3::bridge::switch_for_name(&mut mem(), name)
     }
 }
