@@ -8,7 +8,7 @@
 //! The descriptors' vtable slots that are the same few bytes in many
 //! classes are each their own original, so each gets its own line.
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 use ffx_pload::{cluster, descriptor, stream};
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
@@ -328,5 +328,119 @@ ported! {
     /// `0x00595fb0`: whether `+0x64` is set.
     Phyre_hasWord64_00595fb0 @ 0x0059_5fb0 => extern "thiscall" fn has_word_64_b(this: u32) -> u32 {
         cluster::bridge::has_word_64(&mem(), this)
+    }
+    // ---- batch 3: cluster lists, arrays, files ----
+    /// `PCluster::allocateInstanceList(n, desc, c)`.
+    Phyre_PCluster_allocateInstanceList @ 0x0044_0b70 => extern "thiscall" fn allocate_instance_list(this: u32, n: u32, desc: u32, c: u32) -> u32 {
+        cluster::bridge::allocate_instance_list(&mut mem(), this, n, desc, c)
+    }
+    /// The cluster arena's allocator `(size, align)`.
+    Phyre_PCluster_arenaAlloc_00440cf0 @ 0x0044_0cf0 => extern "thiscall" fn arena_alloc(this: u32, size: u32, align: u32) -> u32 {
+        cluster::bridge::arena_alloc(&mut mem(), this, size, align)
+    }
+    /// A list's entry by key `(key)`.
+    Phyre_PList_findByKey_00575d40 @ 0x0057_5d40 => extern "thiscall" fn find_by_key(this: u32, key: u32) -> u32 {
+        cluster::bridge::find_by_key(&mem(), this, key)
+    }
+    /// Unlinks every entry of a list.
+    Phyre_PList_clear_005758e0 @ 0x0057_58e0 => extern "thiscall" fn clear_list(this: u32) -> u32 {
+        cluster::bridge::clear_list(&mut mem(), this)
+    }
+    /// The cluster header's magic and size check.
+    Phyre_PSerialization_PBinary_PClusterHeader_isValid_0047f9d0 @ 0x0047_f9d0 => extern "thiscall" fn header_is_valid(this: u32) -> u8 {
+        cluster::bridge::header_is_valid(&mem(), this)
+    }
+    /// `(a, header, c, d)`: the header's three words.
+    Phyre_PBinary_copyHeaderWords_004647a0 @ 0x0046_47a0 => extern "thiscall" fn copy_header_words(this: u32, _a: u32, header: u32, _c: u32, _d: u32) -> u32 {
+        cluster::bridge::copy_header_words(&mut mem(), this, header)
+    }
+    /// Red-black tree lookup `(&key)`, copy 1.
+    Phyre_PRedBlackTree_find_00576ef0 @ 0x0057_6ef0 => extern "thiscall" fn tree_find_a(this: u32, key: u32) -> u32 {
+        cluster::bridge::tree_find(&mem(), this, key)
+    }
+    /// Red-black tree lookup `(&key)`, copy 2.
+    Phyre_PRedBlackTree_find_00581620 @ 0x0058_1620 => extern "thiscall" fn tree_find_b(this: u32, key: u32) -> u32 {
+        cluster::bridge::tree_find(&mem(), this, key)
+    }
+    /// `PArray<u8>::setData(data, count)`.
+    Phyre_PArray_u8_setData_0044a2d0 @ 0x0044_a2d0 => extern "thiscall" fn array_set_data_u8(this: u32, data: u32, count: i32) -> u32 {
+        cluster::bridge::array_set_data(&mut mem(), this, data, count)
+    }
+    /// `PArray<PBitmapFontCharInfo>::setData(data, count)`.
+    Phyre_PArray_PBitmapFontCharInfo_setData_00a2db70 @ 0x00a2_db70 => extern "thiscall" fn array_set_data_char_info(this: u32, data: u32, count: i32) -> u32 {
+        cluster::bridge::array_set_data(&mut mem(), this, data, count)
+    }
+    /// `PClassDescriptor<PArray<u8>>::destructInstance(p)`.
+    Phyre_PClassDescriptor_PArray_u8_destructInstance @ 0x0044_9540 => extern "stdcall" fn array_destroy_9540(p: u32) -> u8 {
+        cluster::bridge::array_destroy(&mut mem(), p)
+    }
+    /// `PClassDescriptor<PArray<PTypedObject>>::destructInstance(p)`.
+    Phyre_PClassDescriptor_PArray_PTypedObject_destructInstance @ 0x0045_9670 => extern "stdcall" fn array_destroy_9670(p: u32) -> u8 {
+        cluster::bridge::array_destroy(&mut mem(), p)
+    }
+    /// `PClassDescriptor<PMorphModifierWeightsUserDataObject>::destructInstance(p)`.
+    Phyre_PClassDescriptor_PMorphModifierWeightsUserDataObject_destructInstance @ 0x005c_baa0 => extern "stdcall" fn array_destroy_baa0(p: u32) -> u8 {
+        cluster::bridge::array_destroy(&mut mem(), p)
+    }
+    /// `PClassDescriptor<PArray<PBitmapFontCharInfo>>::destructInstance(p)`.
+    Phyre_PClassDescriptor_PArray_PBitmapFontCharInfo_destructInstance @ 0x00a2_d5d0 => extern "stdcall" fn array_destroy_d5d0(p: u32) -> u8 {
+        cluster::bridge::array_destroy(&mut mem(), p)
+    }
+    /// `PClassDescriptorConcrete<PBitmapFontCharInfo>::constructInstance(p)`.
+    Phyre_PClassDescriptorConcrete_PBitmapFontCharInfo_constructInstance @ 0x00a2_d520 => extern "stdcall" fn char_info_ctor(p: u32) -> u32 {
+        cluster::bridge::char_info_ctor(&mut mem(), p)
+    }
+    /// `PDepthOfField::PDepthOfField()`.
+    Phyre_PPostProcessing_PDepthOfField_PDepthOfField @ 0x009f_bd40 => extern "thiscall" fn depth_of_field_ctor(this: u32) -> u32 {
+        cluster::bridge::depth_of_field_ctor(&mut mem(), this)
+    }
+    /// Creates the object's data when its first word is 0.
+    Phyre_ensureCreated_0058dba0 @ 0x0058_dba0 => extern "thiscall" fn ensure_created(this: u32) -> u32 {
+        cluster::bridge::ensure_created(&mut mem(), this)
+    }
+    /// `0x0043be30(out, name)`: the class descriptor named `name`.
+    Phyre_PClassDescriptor_findByName_0043be30 @ 0x0043_be30 => extern "C" fn find_class_descriptor(out: u32, name: u32) -> u32 {
+        descriptor::bridge::find_class_descriptor(&mut mem(), out, name)
+    }
+    /// An enum value table's registration `(entry)`.
+    Phyre_PTypeEnum_registerEntry_00507ad0 @ 0x0050_7ad0 => extern "C" fn register_enum_entry(entry: u32) -> u32 {
+        descriptor::bridge::register_enum_entry(&mut mem(), entry)
+    }
+    /// Fills `n` 0x14-byte entries `(at, n)`.
+    Phyre_PClassDescriptor_initEntries_0043bcf0 @ 0x0043_bcf0 => extern "C" fn init_entries(at: u32, n: u32) {
+        descriptor::bridge::init_entries(&mut mem(), at, n);
+    }
+    /// Deletes a namespace's owned class descriptors.
+    Phyre_PNamespace_releaseOwned_0043dde0 @ 0x0043_dde0 => extern "thiscall" fn release_owned(this: u32) {
+        descriptor::bridge::release_owned(&mut mem(), this);
+    }
+    /// `PClassDataMemberArray::PClassDataMemberArray(a, b, c, d, e, f, g)`.
+    Phyre_PClassDataMemberArray_PClassDataMemberArray @ 0x0057_5ef0 => extern "thiscall" fn member_array_ctor(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32) -> u32 {
+        descriptor::bridge::member_array_ctor(&mut mem(), this, [a, b, c, d, e, f, g])
+    }
+    /// `PClassDataMemberArrayFixedSize::PClassDataMemberArrayFixedSize(a, ty, c, d, e, size)`.
+    Phyre_PClassDataMemberArrayFixedSize_PClassDataMemberArrayFixedSize @ 0x0057_5f30 => extern "thiscall" fn member_array_fixed_ctor(this: u32, a: u32, ty: u32, c: u32, d: u32, e: u32, size: u32) -> u32 {
+        descriptor::bridge::member_array_fixed_ctor(&mut mem(), this, [a, ty, c, d, e, size])
+    }
+    /// An instance list's instance data `(i)`.
+    Phyre_PInstanceList_instanceData_005765e0 @ 0x0057_65e0 => extern "thiscall" fn instance_data(this: u32, i: u32) -> u32 {
+        descriptor::bridge::instance_data(&mem(), this, i)
+    }
+    /// `PAssetReferenceImport::ResolveFixup(slot, id, c, name)`.
+    Phyre_PAssetReferenceImport_ResolveFixup @ 0x0045_d9b0 => extern "C" fn resolve_asset_fixup(slot: u32, id: u32, c: u32, name: u32) -> u32 {
+        descriptor::bridge::resolve_asset_fixup(&mut mem(), slot, id, c, name)
+    }
+    /// `PStreamFile::PStreamFile(path, b, c, d, e)`.
+    Phyre_PSerialization_PStreamFile_ctor @ 0x0060_7bc0 => extern "thiscall" fn file_ctor(this: u32, path: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        stream::bridge::file_ctor(&mut mem(), this, [path, b, c, d, e])
+    }
+    /// `PStreamFile::closeFile()`.
+    Phyre_PSerialization_PStreamFile_closeFile @ 0x0060_7d80 => extern "thiscall" fn close_file(this: u32) -> u32 {
+        stream::bridge::close_file(&mut mem(), this)
+    }
+    /// `PStreamFile::read(buffer, size)`; `ReadFile`'s count in this frame.
+    Phyre_PSerialization_PStreamFile_read @ 0x0060_8090 => extern "thiscall" fn file_read(this: u32, buffer: u32, size: u32) -> u32 {
+        let mut count = StackFrame::<1>::new();
+        stream::bridge::file_read(&mut mem(), count.at(), this, buffer, size)
     }
 }

@@ -325,4 +325,156 @@ pub mod bridge {
         h.write(out, v);
         core::found_or_error(v)
     }
+
+    /// `0x0043be30` (cdecl `(out, name)`): the class descriptor named
+    /// `name` (`0x00439040()` gives the type dispenser, `0x00437570` looks
+    /// the name up, thiscall) into `out`; 0, or
+    /// [`crate::error::NOT_FOUND`] for none (and for no name, storing 0).
+    pub fn find_class_descriptor(h: &mut impl Host, out: u32, name: u32) -> u32 {
+        if name == 0 {
+            h.write(out, 0u32);
+            return core::found_or_error(0);
+        }
+        let dispenser = h.call_sym(0x0043_9040, Conv::Cdecl, &[]);
+        let v = h.call_sym(0x0043_7570, Conv::Thiscall(dispenser), &[name]);
+        h.write(out, v);
+        core::found_or_error(v)
+    }
+
+    /// An enum value table's registration (`0x00507ad0`, cdecl
+    /// `(entry)`): [`crate::error::NO_NAME`] for an entry without a name,
+    /// [`crate::error::DUPLICATE`] when the name is registered already
+    /// (`0x00507a30`), else pushes it on the list at `0x00ca9734`; 0.
+    pub fn register_enum_entry(h: &mut impl Host, entry: u32) -> u32 {
+        let name: u32 = h.read(entry);
+        if name == 0 {
+            return crate::error::NO_NAME;
+        }
+        if h.call_sym(0x0050_7a30, Conv::Cdecl, &[name]) != 0 {
+            return crate::error::DUPLICATE;
+        }
+        let head = h.rebase(0x00ca_9734);
+        let first: u32 = h.read(head);
+        h.write(entry + 4, first);
+        h.write(head, entry);
+        0
+    }
+
+    /// Fills `n` 0x14-byte entries at `at` (`0x0043bcf0`, cdecl): two
+    /// zero words, three `-1` words each (an entry at address 0 is
+    /// skipped, as the original's null test does).
+    pub fn init_entries(m: &mut impl Mem, at: u32, n: u32) {
+        let mut e = at;
+        for _ in 0..n {
+            if e != 0 {
+                m.write(e, [0u32, 0, u32::MAX, u32::MAX, u32::MAX]);
+            }
+            e = e.wrapping_add(0x14);
+        }
+    }
+
+    /// `0x0043dde0` (thiscall on a namespace): for each class descriptor
+    /// of its list at `+8` (linked through the descriptors' `+0x2c`)
+    /// whose flags have bit 0, slot 7 with 1 (its deleting destructor).
+    /// The next one is read before the call.
+    pub fn release_owned(h: &mut impl Host, ns: u32) {
+        let head = ns + 8;
+        let entry = |link: u32| {
+            if link == head || link == 0 {
+                0
+            } else {
+                link.wrapping_sub(0x2c)
+            }
+        };
+        let first: u32 = h.read(head);
+        let mut d = entry(first);
+        while d != 0 {
+            let link: u32 = h.read(d + 0x2c);
+            let next = entry(link);
+            let flags: u32 = h.read(d + FLAGS);
+            if flags & 1 != 0 {
+                h.call_virtual(d, 7, &[1]);
+            }
+            d = next;
+        }
+    }
+
+    /// `PClassDataMemberArray::PClassDataMemberArray(member, a, b, c, d,
+    /// e, f, g)` (`0x00575ef0`, thiscall): the `PClassDataMember`
+    /// constructor (`0x005752a0`) with `a..f`, then `g`, `f`, its vtable;
+    /// returns `member`.
+    pub fn member_array_ctor(h: &mut impl Host, member: u32, args: [u32; 7]) -> u32 {
+        h.call_sym(0x0057_52a0, Conv::Thiscall(member), &args[..6]);
+        h.write(member + 0x2c, args[6]);
+        h.write(member + 0x30, args[5]);
+        let vt = h.rebase(0x00b3_0a60);
+        h.write(member, vt);
+        member
+    }
+
+    /// `PClassDataMemberArrayFixedSize::PClassDataMemberArrayFixedSize(member,
+    /// a, ty, c, d, e, size)` (`0x00575f30`, thiscall): the
+    /// `PClassDataMember` constructor with `(a, ty, c, d, e, 1)`, then
+    /// `size`, the type's `+0x20`, 1, its vtable; returns `member`.
+    pub fn member_array_fixed_ctor(h: &mut impl Host, member: u32, args: [u32; 6]) -> u32 {
+        let [name, ty, offset, flags, extra, size] = args;
+        let element: u32 = h.read(ty + 0x20);
+        h.call_sym(
+            0x0057_52a0,
+            Conv::Thiscall(member),
+            &[name, ty, offset, flags, extra, 1],
+        );
+        h.write(member + 0x34, size);
+        h.write(member + 0x2c, element);
+        h.write(member + 0x30, 1u32);
+        let vt = h.rebase(0x00b3_0a90);
+        h.write(member, vt);
+        member
+    }
+
+    /// `0x005765e0` (thiscall `(i)` on an instance list): the address of
+    /// instance `i`'s data (`+0x34` plus `i` times the class size, then
+    /// the class's `+0x8c`), or 0 when `i` is out of range or the instance
+    /// is in the list at `+8` (linked through the first word).
+    pub fn instance_data(m: &impl Mem, list: u32, i: u32) -> u32 {
+        let count: u32 = m.read(list + 0x3c);
+        if i >= count {
+            return 0;
+        }
+        let class: u32 = m.read(list + 0x2c);
+        let size: u32 = m.read(class + 0x1c);
+        let base: u32 = m.read(list + 0x34);
+        let at = size.wrapping_mul(i).wrapping_add(base);
+        let mut e: u32 = m.read(list + 8);
+        while e != 0 {
+            if e == at {
+                return 0;
+            }
+            e = m.read(e);
+        }
+        let offset: u32 = m.read(class + 0x8c);
+        offset.wrapping_add(at)
+    }
+
+    /// `PAssetReferenceImport::ResolveFixup(slot, id, c, name)`
+    /// (`0x0045d9b0`, cdecl): the cluster named `name`
+    /// (`0x0045cd00(name, &g_assetTree)`), else
+    /// [`crate::error::MISSING_CLUSTER`]; links `slot` into the import
+    /// list of the entry the big-endian `u16` at `id` picks (12-byte
+    /// entries at the cluster's `+0x30`, list head at `+8`); 0.
+    pub fn resolve_asset_fixup(h: &mut impl Host, slot: u32, id: u32, c: u32, name: u32) -> u32 {
+        let _ = c;
+        let index: u16 = h.read(id);
+        let tree = h.rebase(0x00c9_4030);
+        let cluster = h.call_sym(0x0045_cd00, Conv::Cdecl, &[name, tree]);
+        if cluster == 0 {
+            return crate::error::MISSING_CLUSTER;
+        }
+        let table: u32 = h.read(cluster + 0x30);
+        let entry = table.wrapping_add(u32::from(index.swap_bytes()) * 12);
+        let first: u32 = h.read(entry + 8);
+        h.write(slot, first);
+        h.write(entry + 8, slot);
+        0
+    }
 }

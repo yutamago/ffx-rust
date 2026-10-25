@@ -35,4 +35,11 @@ pub mod error {
     pub const NOT_FOUND: u32 = 0x13;
     /// A read or write that moved fewer bytes than asked: 9.
     pub const SHORT_IO: u32 = 9;
+    /// An enum entry without a name (`0x00507ad0`): 0x11.
+    pub const NO_NAME: u32 = 0x11;
+    /// An enum entry whose name is registered already (`0x00507ad0`):
+    /// 0x12.
+    pub const DUPLICATE: u32 = 0x12;
+    /// An asset import whose cluster is not loaded (`0x0045d9b0`): 7.
+    pub const MISSING_CLUSTER: u32 = 7;
 }

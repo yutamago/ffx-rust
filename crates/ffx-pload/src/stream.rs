@@ -28,6 +28,9 @@ pub const CLOSE_FILE: u32 = 0x0060_7d80;
 pub const IS_OPEN: u32 = 0x0060_7f20;
 /// `PStreamFile::read(buffer, size)` (thiscall).
 pub const READ: u32 = 0x0060_8090;
+/// `PStreamFileWin32::openFile(path, ...)` (thiscall, five words; the
+/// mods wrap it, `docs/hooking.md`).
+pub const OPEN_FILE: u32 = 0x0060_7f40;
 /// `PStream::PStream(name)` (thiscall).
 pub const STREAM_CTOR: u32 = 0x0060_f050;
 
@@ -59,9 +62,71 @@ pub mod core {
 /// The ports over game memory.
 pub mod bridge {
     use super::{
-        ASSET_TREE, CLOSE_FILE, Conv, FREE, Host, IS_OPEN, Mem, READ, READER_FILE, READER_VTABLE,
-        SERIALIZATION_READY, STREAM_CTOR, STREAM_PREFIX, STREAM_VTABLE, core,
+        ASSET_TREE, CLOSE_FILE, Conv, FREE, Host, IS_OPEN, Mem, OPEN_FILE, READ, READER_FILE,
+        READER_VTABLE, SERIALIZATION_READY, STREAM_CTOR, STREAM_PREFIX, STREAM_VTABLE, core,
     };
+
+    /// An import's address (the word in the import table at `slot`).
+    fn import(h: &impl Host, slot: u32) -> u32 {
+        h.read(h.rebase(slot))
+    }
+
+    /// `PStreamFile::PStreamFile(file, path, b, c, d, e)` (`0x00607bc0`,
+    /// thiscall): no handle (`-1`), no archive entry; opens `path` with
+    /// `openFile` (`0x00607f40`, thiscall, five words) when it is not 0;
+    /// returns `file`.
+    pub fn file_ctor(h: &mut impl Host, file: u32, args: [u32; 5]) -> u32 {
+        h.write(file, u32::MAX);
+        h.write(file + 4, 0u32);
+        if args[0] != 0 {
+            h.call_sym(OPEN_FILE, Conv::Thiscall(file), &args);
+        }
+        file
+    }
+
+    /// `PStreamFile::closeFile(file)` (`0x00607d80`, thiscall): releases
+    /// the archive entry (`0x0061aa50`, thiscall), or flushes and closes
+    /// the loose file's handle (the imports at `0x00b0c144` and
+    /// `0x00b0c0dc`, stdcall). `al` = 1 over the last value `eax` held: the
+    /// handle (`-1`), or the close's result.
+    pub fn close_file(h: &mut impl Host, file: u32) -> u32 {
+        let entry: u32 = h.read(file + 4);
+        if entry != 0 {
+            h.call_sym(0x0061_aa50, Conv::Thiscall(entry), &[]);
+            h.write(file + 4, 0u32);
+        }
+        let handle: u32 = h.read(file);
+        if handle == u32::MAX {
+            return (handle & !0xff) | 1;
+        }
+        let flush = import(h, 0x00b0_c144);
+        h.call(flush, Conv::Stdcall, &[handle]);
+        let handle: u32 = h.read(file);
+        let close = import(h, 0x00b0_c0dc);
+        let r = h.call(close, Conv::Stdcall, &[handle]);
+        h.write(file, u32::MAX);
+        (r & !0xff) | 1
+    }
+
+    /// `PStreamFile::read(file, buffer, size)` (`0x00608090`, thiscall):
+    /// from the archive entry (`0x0061aa60`, thiscall), or `ReadFile` on
+    /// the loose handle (the import at `0x00b0c140`) into `count`, a word
+    /// the callee writes (the original's local); the count read, 0 without
+    /// a file.
+    pub fn file_read(h: &mut impl Host, count: u32, file: u32, buffer: u32, size: u32) -> u32 {
+        let entry: u32 = h.read(file + 4);
+        if entry != 0 {
+            return h.call_sym(0x0061_aa60, Conv::Thiscall(entry), &[buffer, size]);
+        }
+        let handle: u32 = h.read(file);
+        h.write(count, 0u32);
+        if handle == u32::MAX {
+            return 0;
+        }
+        let read = import(h, 0x00b0_c140);
+        h.call(read, Conv::Stdcall, &[handle, buffer, size, count, 0]);
+        h.read(count)
+    }
 
     /// `PNamespacePacked::needsEndianSwap(ns)` (`0x0042b830`, thiscall):
     /// whether its first word is 0.

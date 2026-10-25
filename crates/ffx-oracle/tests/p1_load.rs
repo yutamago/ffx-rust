@@ -988,3 +988,447 @@ fn cluster_constructors_match_the_original() {
         }
     }
 }
+
+// ---- batch 3: cluster arenas, lists, trees, arrays ----
+
+/// A circular intrusive list at `head` (two words) of `keys.len()`
+/// entries of 0x20 bytes, linked through `entry + 4`, each key at
+/// `entry + 0xc`. Returns the entries.
+fn list(t: &mut Twins, head: u32, keys: &[u32]) -> Vec<u32> {
+    let entries: Vec<u32> = keys.iter().map(|_| t.zeros(0x20)).collect();
+    let links: Vec<u32> = entries.iter().map(|e| e + 4).collect();
+    let n = links.len();
+    if n == 0 {
+        t.w32(head, head);
+        t.w32(head + 4, head);
+        return entries;
+    }
+    t.w32(head, links[0]);
+    t.w32(head + 4, links[n - 1]);
+    for i in 0..n {
+        let next = if i + 1 < n { links[i + 1] } else { head };
+        let prev = if i == 0 { head } else { links[i - 1] };
+        t.w32(links[i], next);
+        t.w32(links[i] + 4, prev);
+        t.w32(entries[i] + 0xc, keys[i]);
+    }
+    entries
+}
+
+#[test]
+fn cluster_helpers_match_the_original() {
+    let mut rng = Rng(0x5eed_1234);
+    for (label, mut t) in Twins::all() {
+        // allocateInstanceList: allocateInstanceListForSize recorded
+        t.stub(0x0044_0ba0, true, 4, 4, 0x123);
+        let desc = t.junk(0x40, 1);
+        let cl = t.junk(0x40, 2);
+        for n in [0, 3] {
+            let what = format!("{label}: allocateInstanceList {n}");
+            t.check(&what, 0x0044_0b70, Conv::Thiscall(cl), &[n, desc, 9], |g| {
+                Out::U32(c::allocate_instance_list(g, cl, n, desc, 9))
+            });
+        }
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+        // the arena
+        t.w32(cl + 0x24, 0);
+        let what = format!("{label}: arenaAlloc, no arena");
+        t.check(&what, 0x0044_0cf0, Conv::Thiscall(cl), &[4, 4], |g| {
+            Out::U32(c::arena_alloc(g, cl, 4, 4))
+        });
+        let arena = t.zeros(0x10);
+        t.w32(cl + 0x24, arena);
+        t.w32(arena + 4, 0x0010_0000);
+        t.w32(arena + 8, 0x100);
+        for i in 0..42 {
+            // the first two end exactly at the arena's end and one past it
+            let (used, size, align) = match i {
+                0 => (0, 0x100, 1),
+                1 => (0, 0x101, 1),
+                _ => (rng.next() % 0x110, rng.next() % 0x40, 1 << (rng.next() % 6)),
+            };
+            t.w32(arena + 0xc, used);
+            let what = format!("{label}: arenaAlloc {used:#x} {size:#x} {align}");
+            t.check(
+                &what,
+                0x0044_0cf0,
+                Conv::Thiscall(cl),
+                &[size, align],
+                |g| Out::U32(c::arena_alloc(g, cl, size, align)),
+            );
+        }
+        // lists: find by key, then clear
+        for keys in [&[][..], &[7][..], &[1, 2, 3][..]] {
+            let head = t.zeros(8);
+            list(&mut t, head, keys);
+            for key in [1, 3, 7, 9] {
+                let what = format!("{label}: findByKey {keys:?} {key}");
+                t.check(&what, 0x0057_5d40, Conv::Thiscall(head), &[key], |g| {
+                    Out::U32(c::find_by_key(g, head, key))
+                });
+            }
+            let what = format!("{label}: clear {keys:?}");
+            t.check(&what, 0x0057_58e0, Conv::Thiscall(head), &[], |g| {
+                Out::U32(c::clear_list(g, head))
+            });
+        }
+        // the header check
+        let header = t.zeros(0x20);
+        let w = [0x0102_0304u32, 0, 3, 2, 5, 0x10, 0, 0x40];
+        let size = 0x40 + 0x20 + 4 * (3 + 9 * 2 + 6 * 5) + 0x10;
+        for (magic, sz) in [(w[0], size), (w[0], size + 1), (0x0403_0201, size)] {
+            let mut v = w;
+            v[0] = magic;
+            v[1] = sz;
+            for (i, x) in v.iter().enumerate() {
+                t.w32(header + 4 * i as u32, *x);
+            }
+            let what = format!("{label}: header isValid {magic:#x} {sz:#x}");
+            t.check(&what, 0x0047_f9d0, Conv::Thiscall(header), &[], |g| {
+                Out::U8(c::header_is_valid(g, header))
+            });
+        }
+        // copyHeaderWords
+        let src = t.zeros(0x60);
+        for words in [
+            [0, 0, 0],
+            [1, 0, 0],
+            [0, 2, 0],
+            [0, 0, 3],
+            [4, 5, 6],
+            [7, 8, 0],
+        ] {
+            for (i, x) in words.iter().enumerate() {
+                t.w32(src + 0x48 + 4 * i as u32, *x);
+            }
+            let dst = t.junk(0x20, 3);
+            let what = format!("{label}: copyHeaderWords {words:?}");
+            t.check(
+                &what,
+                0x0046_47a0,
+                Conv::Thiscall(dst),
+                &[1, src, 2, 3],
+                |g| Out::U32(c::copy_header_words(g, dst, src)),
+            );
+        }
+        // the red-black tree: root 10, left 5, right 20, 20's right 30
+        let tree = t.zeros(0x20);
+        let node = |t: &mut Twins, key: u32| {
+            let n = t.zeros(0x20);
+            t.w32(n, tree);
+            t.w32(n + 4, tree);
+            t.w32(n + 0xc, key);
+            n
+        };
+        let (r, l, rr, rrr) = (
+            node(&mut t, 10),
+            node(&mut t, 5),
+            node(&mut t, 20),
+            node(&mut t, 30),
+        );
+        t.w32(r, l);
+        t.w32(r + 4, rr);
+        t.w32(rr + 4, rrr);
+        let key = t.zeros(4);
+        for root in [tree, r] {
+            t.w32(tree + 0xc, root);
+            for k in [5, 10, 20, 30, 1, 15, 99] {
+                t.w32(key, k);
+                for sym in [0x0057_6ef0, 0x0058_1620] {
+                    let what = format!("{label}: tree find {sym:#x} {k}");
+                    t.check(&what, sym, Conv::Thiscall(tree), &[key], |g| {
+                        Out::U32(c::tree_find(g, tree, key))
+                    });
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn arrays_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(descriptor::FREE, false, 1, 0, 0x5a);
+        // setData
+        for sym in [0x0044_a2d0, 0x00a2_db70] {
+            for (word, old, data, count) in [
+                (5, 0x00aa_0000, 0x00bb_0000, 3i32),
+                (0x8000_0005, 0x00aa_0000, 0x00bb_0000, 3),
+                (5, 0, 0x00bb_0000, 3),
+                (5, 0x00bb_0000, 0x00bb_0000, 0),
+                (5, 0x00aa_0000, 0x00bb_0000, -1),
+                (0x7fff_ffff, 0x00aa_0000, 0, 0x7fff_ffff),
+            ] {
+                let arr = t.zeros(8);
+                t.w32(arr, word);
+                t.w32(arr + 4, old);
+                let what = format!("{label}: setData {sym:#x} {word:#x} {old:#x} {count}");
+                t.check(
+                    &what,
+                    sym,
+                    Conv::Thiscall(arr),
+                    &[data, count.cast_unsigned()],
+                    |g| Out::U32(c::array_set_data(g, arr, data, count)),
+                );
+            }
+        }
+        assert_eq!(t.log_entries(), 2 * 2);
+        t.reset();
+        // destructInstance
+        t.stub(descriptor::FREE, false, 1, 0, 0x5a);
+        for sym in [0x0044_9540, 0x0045_9670, 0x005c_baa0, 0x00a2_d5d0] {
+            for (word, data) in [(5, 0x00aa_0000), (0x8000_0005, 0x00aa_0000), (5, 0)] {
+                let arr = t.zeros(8);
+                t.w32(arr, word);
+                t.w32(arr + 4, data);
+                let what = format!("{label}: destroy {sym:#x} {word:#x} {data:#x}");
+                t.check(&what, sym, Conv::Stdcall, &[arr], |g| {
+                    Out::U8(c::array_destroy(g, arr))
+                });
+            }
+        }
+        assert_eq!(t.log_entries(), 4);
+        t.reset();
+        // the char info constructor
+        let p = t.junk(0x40, 9);
+        for at in [0, p, p + 0x33] {
+            let what = format!("{label}: char info ctor {at:#x}");
+            t.check(&what, 0x00a2_d520, Conv::Stdcall, &[at], |g| {
+                Out::U32(c::char_info_ctor(g, at))
+            });
+        }
+        // PDepthOfField: its base recorded
+        t.stub(0x009f_bd90, true, 0, 0, 0x5b);
+        let dof = t.junk(0x1000, 4);
+        let what = format!("{label}: PDepthOfField");
+        t.check(&what, 0x009f_bd40, Conv::Thiscall(dof), &[], |g| {
+            Out::U32(c::depth_of_field_ctor(g, dof))
+        });
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+        // ensureCreated: 0x00590800 recorded
+        t.stub(0x0059_0800, true, 4, 4, 0x5c);
+        let words = t.zeros(8);
+        for (count, first, inline) in [
+            (1, 0, true),
+            (1, 9, true),
+            (0x8000_0001, 0, true),
+            (2, 0, false),
+            (3, 0, false),
+            (3, 9, false),
+        ] {
+            let obj = t.junk(0x70, 5);
+            t.w32(obj + 0x20, count);
+            if inline {
+                t.w32(obj + 0x24, first);
+            } else {
+                t.w32(obj + 0x24, words);
+                t.w32(words, first);
+            }
+            let what = format!("{label}: ensureCreated {count:#x} {first}");
+            t.check(&what, 0x0058_dba0, Conv::Thiscall(obj), &[], |g| {
+                Out::U32(c::ensure_created(g, obj))
+            });
+        }
+        assert_eq!(t.log_entries(), 4);
+        t.reset();
+    }
+}
+
+#[test]
+fn descriptor_helpers_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // findByName: the dispenser and its lookup recorded
+        let out = t.junk(4, 1);
+        for found in [0, 0x00de_5c00] {
+            t.stub(0x0043_9040, false, 0, 0, 0x0d15);
+            t.stub(0x0043_7570, true, 1, 1, found);
+            for name in [0, 0x00ab_c000] {
+                let what = format!("{label}: findByName {name:#x} {found:#x}");
+                t.check(&what, 0x0043_be30, Conv::Cdecl, &[out, name], |g| {
+                    Out::U32(d::find_class_descriptor(g, out, name))
+                });
+            }
+            assert_eq!(t.log_entries(), 2);
+            t.reset();
+        }
+        // enum entries
+        for dup in [0, 1] {
+            t.stub(0x0050_7a30, false, 1, 0, dup);
+            for name in [0, 0x00ab_c000] {
+                let entry = t.junk(8, 2);
+                t.w32(entry, name);
+                let what = format!("{label}: registerEntry {name:#x} {dup}");
+                t.check(&what, 0x0050_7ad0, Conv::Cdecl, &[entry], |g| {
+                    Out::U32(d::register_enum_entry(g, entry))
+                });
+            }
+            t.reset();
+        }
+        // initEntries
+        for n in [0, 1, 5] {
+            let at = t.junk(0x80, 3);
+            let what = format!("{label}: initEntries {n}");
+            t.check(&what, 0x0043_bcf0, Conv::Cdecl, &[at, n], |g| {
+                d::init_entries(g, at, n);
+                Out::None
+            });
+        }
+        // releaseOwned: descriptors with slot 7 recorded
+        let ns = t.zeros(0x20);
+        let flags = [1u32, 0, 3, 0x8000_0000, 1];
+        let descs: Vec<u32> = flags
+            .iter()
+            .map(|&f| {
+                let o = t.object(&[0, 0, 0, 0, 0, 0, 0, 1]);
+                let d = t.zeros(0xa0);
+                let vt = t.r32(o);
+                t.w32(d, vt);
+                t.w32(d + descriptor::FLAGS, f);
+                d
+            })
+            .collect();
+        let head = ns + 8;
+        for (i, &d) in descs.iter().enumerate() {
+            let next = descs.get(i + 1).map_or(head, |n| n + 0x2c);
+            t.w32(d + 0x2c, next);
+        }
+        for first in [head, descs[0] + 0x2c] {
+            t.w32(head, first);
+            let what = format!("{label}: releaseOwned {first:#x}");
+            t.check(&what, 0x0043_dde0, Conv::Thiscall(ns), &[], |g| {
+                d::release_owned(g, ns);
+                Out::None
+            });
+        }
+        assert_eq!(t.log_entries(), 3);
+        t.reset();
+        // the member array constructors: PClassDataMember's recorded
+        t.stub(0x0057_52a0, true, 6, 6, 0x5d);
+        let member = t.junk(0x40, 4);
+        let args = [1, 2, 3, 4, 5, 6, 7];
+        let what = format!("{label}: PClassDataMemberArray");
+        t.check(&what, 0x0057_5ef0, Conv::Thiscall(member), &args, |g| {
+            Out::U32(d::member_array_ctor(g, member, args))
+        });
+        let ty = t.junk(0x40, 5);
+        let args = [1, ty, 3, 4, 5, 6];
+        let what = format!("{label}: PClassDataMemberArrayFixedSize");
+        t.check(&what, 0x0057_5f30, Conv::Thiscall(member), &args, |g| {
+            Out::U32(d::member_array_fixed_ctor(g, member, args))
+        });
+        assert_eq!(t.log_entries(), 2);
+        t.reset();
+        // instance data
+        let class = t.junk(0x90, 6);
+        t.w32(class + 0x1c, 0x18);
+        t.w32(class + 0x8c, 0x10);
+        let il = t.junk(0x40, 7);
+        t.w32(il + 0x3c, 4);
+        t.w32(il + 0x2c, class);
+        let base = t.zeros(0x100);
+        t.w32(il + 0x34, base);
+        // the free list (linked through the first word) holds instance 2
+        t.w32(il + 8, base + 2 * 0x18);
+        for i in [0, 1, 2, 3, 4, u32::MAX] {
+            let what = format!("{label}: instanceData {i}");
+            t.check(&what, 0x0057_65e0, Conv::Thiscall(il), &[i], |g| {
+                Out::U32(d::instance_data(g, il, i))
+            });
+        }
+        // ResolveFixup: the cluster lookup recorded
+        let table = t.zeros(12 * 0x300);
+        let cluster = t.zeros(0x40);
+        t.w32(cluster + 0x30, table);
+        let id = t.zeros(4);
+        for (found, index) in [(0, 1u16), (cluster, 1), (cluster, 0x0102)] {
+            t.stub(0x0045_cd00, false, 2, 0, found);
+            t.write(id, &index.to_le_bytes());
+            let slot = t.junk(4, 8);
+            let what = format!("{label}: ResolveFixup {found:#x} {index:#x}");
+            t.check(
+                &what,
+                0x0045_d9b0,
+                Conv::Cdecl,
+                &[slot, id, 3, 0x00ab_0000],
+                |g| Out::U32(d::resolve_asset_fixup(g, slot, id, 3, 0x00ab_0000)),
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn stream_files_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the constructor: openFile recorded
+        t.stub(stream::OPEN_FILE, true, 5, 5, 0x5e);
+        for path in [0, 0x00ab_c000] {
+            let file = t.junk(8, 1);
+            let args = [path, 2, 3, 4, 5];
+            let what = format!("{label}: PStreamFile {path:#x}");
+            t.check(&what, 0x0060_7bc0, Conv::Thiscall(file), &args, |g| {
+                Out::U32(s::file_ctor(g, file, args))
+            });
+        }
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+        // closeFile: the entry's release and the two imports recorded
+        t.stub(0x0061_aa50, true, 0, 0, 0x5f);
+        let flush = t.stub_code(0xf1, false, 1, 1, 0x1234_5601);
+        let close = t.stub_code(0xf2, false, 1, 1, 0x00ab_cd77);
+        let (iat_flush, iat_close) = (t.rebase(0x00b0_c144), t.rebase(0x00b0_c0dc));
+        t.w32(iat_flush, flush);
+        t.w32(iat_close, close);
+        for (handle, entry) in [
+            (u32::MAX, 0),
+            (u32::MAX, 0x0011_0000),
+            (0x44, 0),
+            (0x48, 0x0011_0000),
+        ] {
+            let file = t.zeros(8);
+            t.w32(file, handle);
+            t.w32(file + 4, entry);
+            let what = format!("{label}: closeFile {handle:#x} {entry:#x}");
+            t.check(&what, 0x0060_7d80, Conv::Thiscall(file), &[], |g| {
+                Out::U32(s::close_file(g, file))
+            });
+        }
+        assert_eq!(t.log_entries(), 2 + 2 * 2);
+        t.reset();
+        // read: from the entry (recorded), or ReadFile (a stub that
+        // stores half the size as the count), or nothing
+        t.stub(0x0061_aa60, true, 2, 2, 0x60);
+        let read_file = [
+            0x8b, 0x44, 0x24, 0x10, // mov eax, [esp+0x10]
+            0x8b, 0x4c, 0x24, 0x0c, // mov ecx, [esp+0xc]
+            0xd1, 0xe9, // shr ecx, 1 (a short read)
+            0x89, 0x08, // mov [eax], ecx
+            0xb8, 1, 0, 0, 0, // mov eax, 1
+            0xc2, 0x14, 0x00, // ret 0x14
+        ];
+        let rf = t.a.alloc_code(&read_file).unwrap();
+        assert_eq!(t.b.alloc_code(&read_file).unwrap(), rf);
+        let iat_read = t.rebase(0x00b0_c140);
+        t.w32(iat_read, rf);
+        for (handle, entry) in [(u32::MAX, 0), (u32::MAX, 0x0011_0000), (0x44, 0)] {
+            let file = t.zeros(8);
+            t.w32(file, handle);
+            t.w32(file + 4, entry);
+            let what = format!("{label}: read {handle:#x} {entry:#x}");
+            t.check(
+                &what,
+                0x0060_8090,
+                Conv::Thiscall(file),
+                &[0x00b0_0000, 0x321],
+                |g| {
+                    let count = g.scratch();
+                    Out::U32(s::file_read(g, count, file, 0x00b0_0000, 0x321))
+                },
+            );
+        }
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+    }
+}
