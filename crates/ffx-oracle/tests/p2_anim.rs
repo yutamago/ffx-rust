@@ -22,6 +22,8 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_panim::array::{self, Old, bridge as arr};
+use ffx_panim::controller::{self, bridge as ctl};
 use ffx_panim::descriptor::{self, bridge as desc};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -229,6 +231,15 @@ impl Twins {
         let addr = self.cave_next;
         assert!(addr + c.len() as u32 <= self.cave + CAVE_LEN, "cave full");
         self.write(addr, &c);
+        self.cave_next = addr + c.len() as u32;
+        addr
+    }
+
+    /// Code in the cave (heap memory does not execute).
+    fn code(&mut self, c: &[u8]) -> u32 {
+        let addr = self.cave_next;
+        assert!(addr + c.len() as u32 <= self.cave + CAVE_LEN, "cave full");
+        self.write(addr, c);
         self.cave_next = addr + c.len() as u32;
         addr
     }
@@ -545,5 +556,631 @@ fn flagged_strings_are_freed_as_the_original() {
                 );
             }
         }
+    }
+}
+
+// ---- batch 2: virtual destructs, method callbacks, registrations ----
+
+/// Destruct callbacks through the object's virtual destructor.
+const VIRTUAL: [u32; 11] = [
+    0x0052_20a0,
+    0x0052_2c60,
+    0x0052_3810,
+    0x0052_4c70,
+    0x0052_61a0,
+    0x0052_a180,
+    0x0052_e1f0,
+    0x0052_f6e0,
+    0x0053_0620,
+    0x0053_1480,
+    0x0053_a8a0,
+];
+
+#[test]
+fn virtual_destructs_match_the_original() {
+    for (what, mut t) in Twins::all() {
+        let mut rng = Rng(0xdead_0001);
+        for &f in &VIRTUAL {
+            for _ in 0..3 {
+                // the deleting destructor: thiscall(this, flags), pops 1
+                let ret = rng.next();
+                let dtor = t.stub_code(0xd700_0000 | f, true, 1, 1, ret);
+                let vtable = t.zeros(8);
+                t.w32(vtable, dtor);
+                let obj = t.junk(&mut rng, 0x20);
+                t.w32(obj, vtable);
+                let p = obj + 4;
+                let before = t.log_entries();
+                t.check(&format!("{what} {f:#x}"), f, Conv::Stdcall, &[p], |g| {
+                    Out::U32(desc::destroy_virtual(g, p))
+                });
+                assert_eq!(t.log_entries(), before + 1, "{what} {f:#x}");
+            }
+            t.cave_next = t.cave;
+        }
+    }
+}
+
+/// (callback, method it runs, null check)
+const METHOD_CALLS: [(u32, u32, bool); 6] = [
+    (0x0050_f710, 0x0050_d1d0, false),
+    (0x0051_6310, 0x0051_3240, false),
+    (0x0051_6330, 0x0051_33f0, false),
+    (0x0051_ca00, 0x0051_9380, false),
+    (0x0053_a700, 0x0053_4360, true),
+    (0x0053_a720, 0x0053_4450, true),
+];
+
+#[test]
+fn method_callbacks_match_the_original() {
+    for (what, mut t) in Twins::all() {
+        let mut rng = Rng(0x00c0_ffee);
+        for (f, method, null_check) in METHOD_CALLS {
+            t.stub(method, true, 0, 0, 0x7700_0000 | (f & 0xffff));
+            for i in 0..4 {
+                let p = if null_check && i == 0 {
+                    0
+                } else {
+                    t.junk(&mut rng, 0x20)
+                };
+                let before = t.log_entries();
+                t.check(
+                    &format!("{what} {f:#x} p={p:#x}"),
+                    f,
+                    Conv::Stdcall,
+                    &[p],
+                    |g| {
+                        if null_check {
+                            Out::U8(u8::from(desc::call_on_nonnull(g, p, method)))
+                        } else {
+                            Out::U32(desc::call_on(g, p, method))
+                        }
+                    },
+                );
+                assert_eq!(t.log_entries(), before + u32::from(p != 0), "{what} {f:#x}");
+            }
+        }
+    }
+}
+
+#[test]
+fn registrations_match_the_original() {
+    for (what, mut t) in Twins::all() {
+        t.stub(descriptor::REGISTER_TYPE, false, 1, 0, 0x1111_1111);
+        t.stub(descriptor::ADD_TO_NAMESPACE, true, 0, 0, 0x2222_2222);
+        for (f, d) in [
+            (0x0050_8450, 0x00ca_9810),
+            (0x0052_1300, 0x00ca_b858),
+            (0x0053_6210, 0x00ca_cdb0),
+        ] {
+            t.check(&format!("{what} {f:#x}"), f, Conv::Cdecl, &[], |g| {
+                Out::U32(desc::register(g, d))
+            });
+            assert!(t.log_entries() >= 2);
+        }
+    }
+}
+
+// ---- batch 2: PArray setters, dynamic member callbacks ----
+
+#[test]
+fn array_setters_match_the_original() {
+    let setters = [
+        (0x0050_aff0, Old::Free),
+        (0x0051_dba0, Old::Free),
+        (0x0052_aae0, Old::Free),
+        (0x0051_7380, Old::FreeAlways),
+        (0x0051_db50, Old::Targets),
+    ];
+    for (what, mut t) in Twins::all() {
+        t.stub(PHYRE_FREE, false, 1, 0, FREE_EAX);
+        t.stub(array::CHANNEL_DTOR, true, 0, 0, 0x0d70_0000);
+        let mut rng = Rng(0x5e77_e400);
+        let mut freed = 0;
+        for (f, old) in setters {
+            for i in 0..16 {
+                let n = rng.below(4);
+                let prev = match i % 4 {
+                    0 => 0,
+                    _ => elements(&mut t, &mut rng, n, 0x1c, 0x14),
+                };
+                let flags = if rng.chance(3) { n | 0x8000_0000 } else { n };
+                let a = array(&mut t, &mut rng, flags, prev);
+                let els = if i % 5 == 1 {
+                    prev
+                } else {
+                    0x4000_0000 + rng.below(0x100) * 4
+                };
+                let count = if rng.chance(4) {
+                    0x8000_0000 | rng.below(10)
+                } else {
+                    rng.below(10)
+                };
+                let before = t.log_entries();
+                t.check(
+                    &format!("{what} {f:#x} {i}"),
+                    f,
+                    Conv::Thiscall(a),
+                    &[els, count],
+                    |g| Out::U32(arr::set_borrowed(g, a, els, count, old)),
+                );
+                freed += t.log_entries() - before;
+            }
+        }
+        // PArray<PAnimationChannel>: element destructors, then the array
+        for i in 0..24 {
+            let n = rng.below(4);
+            let prev = if i % 4 == 0 {
+                0
+            } else {
+                t.junk(&mut rng, (n * 0x34 + 4) as usize)
+            };
+            let flags = if rng.chance(3) { n | 0x8000_0000 } else { n };
+            let a = array(&mut t, &mut rng, flags, prev);
+            let els = if i % 5 == 1 {
+                prev
+            } else {
+                0x4000_0000 + rng.below(0x100) * 4
+            };
+            let count = if rng.chance(3) {
+                0x8000_0000 | rng.below(10)
+            } else {
+                rng.below(10)
+            };
+            let before = t.log_entries();
+            if i % 2 == 0 {
+                t.check(
+                    &format!("{what} assign {i}"),
+                    0x0051_7270,
+                    Conv::Thiscall(a),
+                    &[els, count],
+                    |g| Out::U32(arr::assign_channels(g, a, els, count)),
+                );
+            } else {
+                t.check(
+                    &format!("{what} set channels {i}"),
+                    0x0051_73d0,
+                    Conv::Thiscall(a),
+                    &[els, count],
+                    |g| Out::U32(arr::set_channels(g, a, els, count)),
+                );
+            }
+            freed += t.log_entries() - before;
+        }
+        assert!(freed > 30, "{what}: {freed} calls");
+    }
+}
+
+#[test]
+fn dynamic_member_callbacks_match_the_original() {
+    for (what, mut t) in Twins::all() {
+        let mut rng = Rng(0x00d1_ca11);
+        for f in [
+            0x0050_b040,
+            0x0051_73f0,
+            0x0051_7420,
+            0x0051_dc40,
+            0x0051_dc70,
+            0x0052_ab80,
+        ] {
+            for i in 0..3 {
+                let desc = t.junk(&mut rng, 0x60);
+                let target = if i == 0 {
+                    0
+                } else {
+                    t.stub_code(0xf3c0_0000 | i, true, 2, 2, rng.next())
+                };
+                t.w32(desc + 0x3c, target);
+                let (obj, a, b) = (rng.next(), rng.next(), rng.next());
+                t.check(
+                    &format!("{what} {f:#x} {i}"),
+                    f,
+                    Conv::Thiscall(desc),
+                    &[obj, a, b],
+                    |g| Out::U32(arr::forward_3c(g, desc, obj, a, b)),
+                );
+            }
+        }
+        for f in [0x0051_66f0, 0x0051_cf10] {
+            for i in 0..4 {
+                let desc = t.junk(&mut rng, 0x60);
+                // the fallback reads [desc+0x24] - [class+0x88] + i
+                let class = t.junk(&mut rng, 0x100);
+                let table = t.junk(&mut rng, 0x40);
+                t.w32(desc + 0xc, class);
+                t.w32(class + 0x88, 0x100);
+                t.w32(desc + 0x24, table + 0x100);
+                let idx = rng.below(8) * 4;
+                // a callee that logs ecx (i) and edx (desc)
+                let target = if i < 2 {
+                    0
+                } else {
+                    stub_edx(&mut t, rng.next())
+                };
+                t.w32(desc + 0x38, target);
+                t.check(
+                    &format!("{what} {f:#x} {i}"),
+                    f,
+                    Conv::Thiscall(desc),
+                    &[idx],
+                    |g| Out::U32(arr::forward_38(g, desc, idx)),
+                );
+            }
+        }
+        for i in 0..3 {
+            let desc = t.junk(&mut rng, 0x60);
+            let target = if i == 0 {
+                0
+            } else {
+                t.stub_code(0xf340_0000 | i, true, 0, 0, rng.next())
+            };
+            t.w32(desc + 0x34, target);
+            let obj = rng.next();
+            t.check(
+                &format!("{what} 0x51d0b0 {i}"),
+                0x0051_d0b0,
+                Conv::Thiscall(desc),
+                &[obj],
+                |g| Out::U32(arr::forward_34(g, desc, obj)),
+            );
+        }
+        t.cave_next = t.cave;
+    }
+}
+
+/// A stub that logs `ecx` and `edx` (as its first argument word) and
+/// returns `ret` (no stack arguments).
+fn stub_edx(t: &mut Twins, ret: u32) -> u32 {
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(0xed00_0000u32.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    c.push(0xc3);
+    let addr = t.cave_next;
+    t.write(addr, &c);
+    t.cave_next = addr + c.len() as u32;
+    addr
+}
+
+// ---- batch 2: controller constructors and destructors ----
+
+#[test]
+fn controller_constructors_match_the_original() {
+    type Ctor = fn(&mut G, u32) -> u32;
+    let ctors: [(u32, Ctor); 9] = [
+        (0x0052_11f0, |g, p| ctl::hierarchy_node_ctor(g, p)),
+        (0x0052_1a50, |g, p| ctl::time_controller_ctor(g, p)),
+        (0x0052_25a0, |g, p| ctl::time_interval_ctor(g, p)),
+        (0x0052_31e0, |g, p| ctl::time_scale_offset_ctor(g, p)),
+        (0x0052_3d20, |g, p| ctl::data_source_ctor(g, p)),
+        (0x0052_5240, |g, p| ctl::controller_ctor(g, p)),
+        (0x0052_b820, |g, p| ctl::blender_ctor(g, p)),
+        (0x0052_d660, |g, p| ctl::weighted_blender_ctor(g, p)),
+        (0x0053_0dd0, |g, p| ctl::target_blender_ctor(g, p)),
+    ];
+    for (what, mut t) in Twins::all() {
+        let mut rng = Rng(0x00c7_0000);
+        for (f, ctor) in ctors {
+            for _ in 0..2 {
+                let p = t.junk(&mut rng, 0x40);
+                t.check(&format!("{what} {f:#x}"), f, Conv::Thiscall(p), &[], |g| {
+                    Out::U32(ctor(g, p))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn controller_destructors_match_the_original() {
+    use controller::vtable as vt;
+    use ctl::Dtor;
+    type Dt = fn(&mut G, u32);
+    let dtors: [(u32, Dt); 6] = [
+        (0x0052_1220, |g, p| ctl::hierarchy_node_dtor(g, p)),
+        (0x0052_2600, |g, p| {
+            ctl::dtor_over_node(g, p, vt::TIME_INTERVAL);
+        }),
+        (0x0052_3240, |g, p| {
+            ctl::dtor_over_node(g, p, vt::TIME_SCALE_OFFSET);
+        }),
+        (0x0052_3d60, |g, p| ctl::data_source_dtor(g, p)),
+        (0x0052_52c0, |g, p| {
+            ctl::dtor_over_data_source(g, p, vt::CONTROLLER);
+        }),
+        (0x0053_0e40, |g, p| {
+            ctl::dtor_over_data_source(g, p, vt::TARGET_BLENDER);
+        }),
+    ];
+    let deleting = [
+        (0x0052_1b80, Dtor::Node),
+        (0x0052_26d0, Dtor::OverNode(vt::TIME_INTERVAL)),
+        (0x0052_3310, Dtor::OverNode(vt::TIME_SCALE_OFFSET)),
+        (0x0052_4740, Dtor::OverDataSource(vt::EVENT_CONTROLLER)),
+        (0x0052_5390, Dtor::OverDataSource(vt::CONTROLLER)),
+        (0x0052_8180, Dtor::Original(controller::dtor::SLOT_FILTER)),
+        (0x0053_0180, Dtor::OverDataSource(vt::SPU_TARGET_BLENDER)),
+        (0x0053_0f20, Dtor::OverDataSource(vt::TARGET_BLENDER)),
+        (
+            0x0053_57d0,
+            Dtor::Original(controller::dtor::NETWORK_INSTANCE),
+        ),
+        (
+            0x0053_f3d0,
+            Dtor::Original(controller::dtor::ANIMATABLE_COMPONENT),
+        ),
+    ];
+    for (what, mut t) in Twins::all() {
+        t.stub(PHYRE_FREE, false, 1, 0, FREE_EAX);
+        for f in [
+            controller::dtor::SLOT_FILTER,
+            controller::dtor::NETWORK_INSTANCE,
+            controller::dtor::ANIMATABLE_COMPONENT,
+        ] {
+            t.stub(f, true, 0, 0, 0x0d7d_0000);
+        }
+        let mut rng = Rng(0x00d7_0000);
+        for (f, dtor) in dtors {
+            let p = t.junk(&mut rng, 0x40);
+            t.check(&format!("{what} {f:#x}"), f, Conv::Thiscall(p), &[], |g| {
+                dtor(g, p);
+                Out::None
+            });
+        }
+        for (f, dtor) in deleting {
+            for flags in [0, 1, 2, 3, 0xffff_fffe, 0xffff_ffff] {
+                let p = t.junk(&mut rng, 0x40);
+                let before = t.log_entries();
+                t.check(
+                    &format!("{what} {f:#x} flags={flags:#x}"),
+                    f,
+                    Conv::Thiscall(p),
+                    &[flags],
+                    |g| Out::U32(ctl::deleting_dtor(g, p, flags, dtor)),
+                );
+                let extra = u32::from(matches!(dtor, Dtor::Original(_)));
+                assert_eq!(
+                    t.log_entries(),
+                    before + (flags & 1) + extra,
+                    "{what} {f:#x}"
+                );
+            }
+        }
+    }
+}
+
+// ---- batch 3: controller construct callbacks, channels, blender destructors ----
+
+#[test]
+fn controller_construct_callbacks_match_the_original() {
+    type Ctor = fn(&mut G, u32) -> u32;
+    let cbs: [(u32, Ctor); 10] = [
+        (0x0052_2040, |g, p| ctl::time_controller_ctor(g, p)),
+        (0x0052_2bf0, |g, p| ctl::time_interval_ctor(g, p)),
+        (0x0052_37a0, |g, p| ctl::time_scale_offset_ctor(g, p)),
+        (0x0052_4c00, |g, p| ctl::event_controller_ctor(g, p)),
+        (0x0052_6130, |g, p| ctl::controller_ctor(g, p)),
+        (0x0052_e180, |g, p| ctl::weighted_blender_ctor(g, p)),
+        (0x0052_f670, |g, p| ctl::additive_blender_ctor(g, p)),
+        (0x0053_05c0, |g, p| ctl::spu_target_blender_ctor(g, p)),
+        (0x0053_1420, |g, p| ctl::target_blender_ctor(g, p)),
+        (0x0052_a060, |g, p| ctl::slot_filter_ctor(g, p)),
+    ];
+    for (what, mut t) in Twins::all() {
+        let mut rng = Rng(0x00cb_0000);
+        for (f, ctor) in cbs {
+            for i in 0..3 {
+                let p = if i == 0 { 0 } else { t.junk(&mut rng, 0x40) };
+                t.check(
+                    &format!("{what} {f:#x} p={p:#x}"),
+                    f,
+                    Conv::Stdcall,
+                    &[p],
+                    |g| Out::U8(u8::from(ctl::construct(g, p, ctor))),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn channel_callbacks_match_the_original() {
+    for (what, mut t) in Twins::all() {
+        t.stub(PHYRE_FREE, false, 1, 0, FREE_EAX);
+        t.stub(descriptor::CHANNEL_BASE_CTOR, true, 0, 0, 0x0c70_0000);
+        t.stub(descriptor::CHANNEL_BASE_DTOR, true, 0, 0, 0x0d70_0000);
+        let mut rng = Rng(0x00c4_a000);
+        for i in 0..4 {
+            let p = if i == 0 { 0 } else { t.junk(&mut rng, 0x40) };
+            for (f, words) in [(0x0050_c510, 6), (0x0050_d6b0, 8)] {
+                let p2 = if p == 0 { 0 } else { t.junk(&mut rng, 0x40) };
+                t.check(
+                    &format!("{what} {f:#x} {i}"),
+                    f,
+                    Conv::Stdcall,
+                    &[p2],
+                    |g| Out::U8(u8::from(desc::construct_described(g, p2, words))),
+                );
+            }
+            for f in [0x0050_e5e0, 0x0050_f6b0] {
+                let p2 = if p == 0 { 0 } else { t.junk(&mut rng, 0x40) };
+                t.check(
+                    &format!("{what} {f:#x} {i}"),
+                    f,
+                    Conv::Stdcall,
+                    &[p2],
+                    |g| Out::U8(u8::from(desc::construct_channel(g, p2))),
+                );
+            }
+        }
+        for i in 0..8 {
+            let p = t.junk(&mut rng, 0x40);
+            let n = count(&mut rng);
+            t.w32(p + 0x28, n);
+            t.w32(p + 0x2c, if i % 3 == 0 { 0 } else { 0x1000_0000 + i });
+            t.check(
+                &format!("{what} 0x50e650 {i}"),
+                0x0050_e650,
+                Conv::Stdcall,
+                &[p],
+                |g| Out::U32(desc::destroy_channel(g, p)),
+            );
+        }
+    }
+}
+
+#[test]
+fn list_entry_and_word_copies_match_the_original() {
+    for (what, mut t) in Twins::all() {
+        let mut rng = Rng(0x0ce0_0000);
+        for _ in 0..3 {
+            let p = t.junk(&mut rng, 0xa0);
+            t.check(
+                &format!("{what} 0x534360"),
+                0x0053_4360,
+                Conv::Thiscall(p),
+                &[],
+                |g| Out::U32(ffx_panim::network::bridge::list_entry_ctor(g, p)),
+            );
+        }
+        // PhyreMalloc: a stub handing out fresh zeroed blocks in turn
+        let pool = t.zeros(0x400);
+        let next = t.zeros(4);
+        t.w32(next, pool);
+        let mut c = vec![0xa1];
+        c.extend(next.to_le_bytes()); // mov eax, [next]
+        c.extend([0x8b, 0x4c, 0x24, 0x04]); // mov ecx, [esp+4]
+        c.extend([0x01, 0x0d]);
+        c.extend(next.to_le_bytes()); // add [next], ecx
+        c.push(0xc3);
+        let malloc = t.code(&c);
+        let at = t.rebase(array::PHYRE_MALLOC);
+        let mut j = vec![0xe9];
+        j.extend(malloc.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        for n in [0, 1, 2, 5, 9] {
+            let src = t.junk(&mut rng, 0x40);
+            t.check(
+                &format!("{what} 0x5281e0 n={n}"),
+                0x0052_81e0,
+                Conv::Cdecl,
+                &[n, src],
+                |g| Out::U32(arr::copy_words(g, n, src)),
+            );
+        }
+        // a failed allocation
+        let zero = t.code(&[0x31, 0xc0, 0xc3]); // xor eax, eax; ret
+        let mut j = vec![0xe9];
+        j.extend(zero.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        let src = t.junk(&mut rng, 0x10);
+        t.check(
+            &format!("{what} 0x5281e0 no memory"),
+            0x0052_81e0,
+            Conv::Cdecl,
+            &[3, src],
+            |g| Out::U32(arr::copy_words(g, 3, src)),
+        );
+    }
+}
+
+#[test]
+fn blender_and_set_destructors_match_the_original() {
+    use controller::vtable as vt;
+    for (what, mut t) in Twins::all() {
+        t.stub(PHYRE_FREE, false, 1, 0, FREE_EAX);
+        let mut rng = Rng(0x00b1_e4d0);
+        let mut calls = 0;
+        for i in 0..10 {
+            // an object with owned and borrowed arrays at +0..+0x1c
+            let p = t.junk(&mut rng, 0x40);
+            let arrays: &[u32] = match i % 7 {
+                0 => &[0xc],
+                2 => &[0xc, 0x18],
+                3 => &[0, 8, 0x10],
+                _ => &[0xc, 0x14],
+            };
+            for &off in arrays {
+                let n = rng.below(3);
+                let flags = if rng.chance(3) { n | 0x8000_0000 } else { n };
+                let els = if i % 4 == 0 {
+                    0
+                } else {
+                    elements(&mut t, &mut rng, n, 0x1c, 0x14)
+                };
+                t.w32(p + off, flags);
+                t.w32(p + off + 4, els);
+            }
+            let before = t.log_entries();
+            match i % 7 {
+                0 => t.check(
+                    &format!("{what} blender {i}"),
+                    0x0052_b8e0,
+                    Conv::Thiscall(p),
+                    &[],
+                    |g| {
+                        ctl::blender_dtor(g, p);
+                        Out::None
+                    },
+                ),
+                1 => t.check(
+                    &format!("{what} weighted {i}"),
+                    0x0052_d6b0,
+                    Conv::Thiscall(p),
+                    &[],
+                    |g| {
+                        ctl::blender_subclass_dtor(g, p, vt::WEIGHTED_BLENDER);
+                        Out::None
+                    },
+                ),
+                2 => t.check(
+                    &format!("{what} slot filter {i}"),
+                    0x0052_7ba0,
+                    Conv::Thiscall(p),
+                    &[],
+                    |g| {
+                        ctl::slot_filter_dtor(g, p);
+                        Out::None
+                    },
+                ),
+                3 => t.check(
+                    &format!("{what} set {i}"),
+                    0x0051_9380,
+                    Conv::Thiscall(p),
+                    &[],
+                    |g| {
+                        ctl::animation_set_dtor(g, p);
+                        Out::None
+                    },
+                ),
+                k => {
+                    let (f, v) = if k % 2 == 0 {
+                        (0x0052_d940, vt::WEIGHTED_BLENDER)
+                    } else {
+                        (0x0052_edd0, vt::ADDITIVE_BLENDER)
+                    };
+                    let flags = rng.next();
+                    t.check(
+                        &format!("{what} {f:#x} {i}"),
+                        f,
+                        Conv::Thiscall(p),
+                        &[flags],
+                        |g| Out::U32(ctl::blender_subclass_deleting_dtor(g, p, flags, v)),
+                    );
+                }
+            }
+            calls += t.log_entries() - before;
+        }
+        assert!(calls > 10, "{what}: {calls} frees");
     }
 }

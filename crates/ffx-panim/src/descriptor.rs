@@ -26,15 +26,33 @@ pub const PHYRE_FREE: u32 = 0x0042_fb20;
 /// construct callback loads for its end time.
 pub const MINUS_ONE: u32 = 0x00b9_2340;
 
-/// The top bit of a `PArray` count: the elements are not the array's.
-const NOT_OWNED: u32 = 0x8000_0000;
+/// `Phyre::PTypeDispenser::RegisterType(desc)` (cdecl).
+pub const REGISTER_TYPE: u32 = 0x0043_95b0;
+/// `Phyre::PClassDescriptor::addToNamespace()` (`thiscall`, no stack
+/// arguments).
+pub const ADD_TO_NAMESPACE: u32 = 0x0043_c140;
 
-fn free(h: &mut impl Host, p: u32) -> u32 {
+/// `Phyre::PBase::GetClassDescriptor()` (cdecl; returns `PBase`'s
+/// descriptor), which the channel-target construct callbacks store first.
+pub const GET_CLASS_DESCRIPTOR: u32 = 0x0043_5740;
+/// `PAnimationChannelBase`'s constructor (`thiscall(this)`).
+pub const CHANNEL_BASE_CTOR: u32 = 0x0050_d150;
+/// `PAnimationChannelBase`'s destructor (`thiscall(this)`).
+pub const CHANNEL_BASE_DTOR: u32 = 0x0050_d1d0;
+
+/// The top bit of a `PArray` count: the elements are not the array's.
+pub(crate) const NOT_OWNED: u32 = 0x8000_0000;
+
+/// `Phyre::PhyreFree(p)`; returns its `eax`.
+pub(crate) fn free(h: &mut impl Host, p: u32) -> u32 {
     h.call_sym(PHYRE_FREE, Conv::Cdecl, &[p])
 }
 
 pub mod bridge {
-    use super::{Host, MINUS_ONE, Mem, NOT_OWNED, free};
+    use super::{
+        ADD_TO_NAMESPACE, CHANNEL_BASE_CTOR, CHANNEL_BASE_DTOR, Conv, GET_CLASS_DESCRIPTOR, Host,
+        MINUS_ONE, Mem, NOT_OWNED, REGISTER_TYPE, free,
+    };
     use crate::al_one;
 
     /// Construct callbacks that store `words` at `p` when `p` is not null
@@ -157,5 +175,87 @@ pub mod bridge {
             free(h, s);
         }
         true
+    }
+
+    /// The destruct callback of a class with a virtual destructor
+    /// (`0x005220a0` and its copies): the instance pointer is `p`, the
+    /// object starts 4 bytes before it (`p - 4`, or null for a null `p`,
+    /// which the original then reads through as well); calls its vtable's
+    /// slot 0 (the deleting destructor) with flags 0, as a `thiscall`.
+    /// Returns `eax`: the destructor's with `al = 1`.
+    pub fn destroy_virtual(h: &mut impl Host, p: u32) -> u32 {
+        let obj = if p == 0 { 0 } else { p.wrapping_sub(4) };
+        let vtable: u32 = h.read(obj);
+        let dtor: u32 = h.read(vtable);
+        al_one(h.call(dtor, Conv::Thiscall(obj), &[0]))
+    }
+
+    /// A callback that runs the class's destructor `method` (an `ffx.sym`
+    /// address, `thiscall(this)`) on `p` (destruct: `0x0050f710` and
+    /// others). Returns `eax`: the method's with `al = 1`.
+    pub fn call_on(h: &mut impl Host, p: u32, method: u32) -> u32 {
+        al_one(h.call_sym(method, Conv::Thiscall(p), &[]))
+    }
+
+    /// As [`call_on`], but nothing for a null `p` (construct: `0x0053a700`,
+    /// `0x0053a720` run the constructor). Returns `true` in `al` (the rest
+    /// of `eax` is the caller's for a null `p`).
+    pub fn call_on_nonnull(h: &mut impl Host, p: u32, method: u32) -> bool {
+        if p != 0 {
+            h.call_sym(method, Conv::Thiscall(p), &[]);
+        }
+        true
+    }
+
+    /// A class's registration (`0x00508450` and its copies):
+    /// `PTypeDispenser::RegisterType(desc)`, then tail-calls
+    /// `desc->addToNamespace()`. `desc` is the descriptor's `ffx.sym`
+    /// address. Returns `addToNamespace`'s `eax`.
+    pub fn register(h: &mut impl Host, desc: u32) -> u32 {
+        let d = h.rebase(desc);
+        h.call_sym(REGISTER_TYPE, Conv::Cdecl, &[d]);
+        h.call_sym(ADD_TO_NAMESPACE, Conv::Thiscall(d), &[])
+    }
+
+    /// A construct callback whose class starts with a descriptor pointer
+    /// (`0x0050c510`: `PAnimationChannelTarget`, six more words;
+    /// `0x0050d6b0`: `PAnimationChannelBase`, eight): when `p` is not
+    /// null, `GetClassDescriptor()` at `+0`, then `words` zero words.
+    /// Returns `true` in `al` (callers test `al`).
+    pub fn construct_described(h: &mut impl Host, p: u32, words: u32) -> bool {
+        if p != 0 {
+            let d = h.call_sym(GET_CLASS_DESCRIPTOR, Conv::Cdecl, &[]);
+            h.write(p, d);
+            for i in 1..=words {
+                h.write(p + 4 * i, 0u32);
+            }
+        }
+        true
+    }
+
+    /// The construct callback of a channel class (`0x0050e5e0`:
+    /// `PAnimationChannel`; `0x0050f6b0`: `PAnimationConstantChannel`,
+    /// whose four words are `0.0f`): `PAnimationChannelBase`'s constructor
+    /// on `p`, then four zero words at `+0x24`. Nothing for a null `p`.
+    /// Returns `true` in `al`.
+    pub fn construct_channel(h: &mut impl Host, p: u32) -> bool {
+        if p != 0 {
+            h.call_sym(CHANNEL_BASE_CTOR, Conv::Thiscall(p), &[]);
+            for off in [0x24, 0x28, 0x2c, 0x30] {
+                h.write(p + off, 0u32);
+            }
+        }
+        true
+    }
+
+    /// `PAnimationChannel`'s destruct callback (`0x0050e650`): zeroes
+    /// `+0x24` and `+0x30`, frees the owned `PArray` at `+0x28`, then runs
+    /// `PAnimationChannelBase`'s destructor. Returns `eax`: the
+    /// destructor's with `al = 1`.
+    pub fn destroy_channel(h: &mut impl Host, p: u32) -> u32 {
+        h.write(p + 0x24, 0u32);
+        h.write(p + 0x30, 0u32);
+        free_owned(h, p + 0x28, true);
+        al_one(h.call_sym(CHANNEL_BASE_DTOR, Conv::Thiscall(p), &[]))
     }
 }

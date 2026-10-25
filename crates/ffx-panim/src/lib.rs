@@ -5,13 +5,21 @@
 //! - [`descriptor`]: the class-descriptor callbacks the type system calls
 //!   through the `PClassDescriptor*` vtables (construct and destruct an
 //!   instance, fix objects after loading) of the animation classes and
-//!   their `PArray`s.
+//!   their `PArray`s, and the classes' registrations;
+//! - [`array`]: `PArray` setters and the dynamic array members'
+//!   forwarding callbacks;
+//! - [`controller`]: the animation controllers' constructors and
+//!   destructors;
+//! - [`network`]: `PAnimationNetworkInstance`'s parts.
 //!
 //! Everything this list does not hold (`Phyre::PhyreFree`, the type
 //! registry, other classes' methods) is called at its address through
 //! [`ffx_graphic::host::Host`].
 
+pub mod array;
+pub mod controller;
 pub mod descriptor;
+pub mod network;
 
 /// `mov al, 1` over an `eax` that held `eax`: what the callbacks that end
 /// that way leave for their caller.
