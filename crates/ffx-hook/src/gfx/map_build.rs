@@ -65,11 +65,31 @@ struct MapState {
     uploaded: Arc<Mutex<Option<Uploaded>>>,
 }
 
+/// The other pass of the last update built: its draws wait for its call.
+struct Waiting {
+    update: u32,
+    pass: Pass,
+    draws: Vec<MapDraw>,
+    resources: Arc<Mutex<Resources>>,
+    uploaded: Arc<Mutex<Option<Uploaded>>>,
+}
+
 /// The main thread's state.
 #[derive(Default)]
 struct Main {
     maps: HashMap<Vec<String>, MapState>,
     failed: Vec<Vec<String>>,
+    waiting: Option<Waiting>,
+}
+
+fn make_job(
+    draws: Vec<MapDraw>,
+    resources: Arc<Mutex<Resources>>,
+    uploaded: Arc<Mutex<Option<Uploaded>>>,
+) -> Job {
+    Box::new(move |b: &mut D3d11, _c: &mut Cache, host: &[PassDraw]| {
+        job(b, &resources, &uploaded, &draws, host)
+    })
 }
 
 static BUILT: AtomicU64 = AtomicU64::new(0);
@@ -147,12 +167,34 @@ fn read_game_file(archive_path: &str) -> Option<Vec<u8>> {
 }
 
 impl Main {
+    /// One map pass. Both passes of an update are built at its first map
+    /// call (the inputs are the same at both: camera, worlds, materials);
+    /// the other's draws wait for its call.
+    #[allow(clippy::too_many_lines)] // one pass: inputs, models, build
     fn pass(&mut self, info: &PassInfo) -> Option<Job> {
-        let (s, wire) =
-            crate::world::scene_inputs_at(info.app + RENDERER, info.world, info.camera, info.dir)?;
-        if !s.pass.starts_with("Opaque") && !s.pass.starts_with("Transparent") {
+        // Other maps leave at once (the snapshot below is not free).
+        let symbol = crate::world::map_symbol()?;
+        if !SUPPORTED.contains(&symbol.as_str()) {
             return None;
         }
+        let name = crate::world::renderer_pass(info.app + RENDERER);
+        if !name.starts_with("Opaque") && !name.starts_with("Transparent") {
+            return None;
+        }
+        let update = crate::harness::update_label();
+        if let Some(w) = self.waiting.take()
+            && w.update == update
+            && w.pass == info.pass
+        {
+            return Some(make_job(w.draws, w.resources, w.uploaded));
+        }
+        let t = std::time::Instant::now();
+        let (s, wire) = crate::world::with_direct_reads(|| {
+            crate::world::scene_inputs_at(info.app + RENDERER, info.world, info.camera, info.dir)
+        })?;
+        let read_us = t.elapsed().as_micros();
+        let counts = crate::world::direct_read_counts();
+        let phases = crate::world::snapshot_phases();
         let supported = s
             .clusters
             .iter()
@@ -229,21 +271,40 @@ impl Main {
                 }
             }
         };
-        let want = match info.pass {
+        let of = |p: Pass| match p {
             Pass::Opaque => ffx_scene::build::Pass::Opaque,
             Pass::Transparent => ffx_scene::build::Pass::Transparent,
         };
-        let draws: Vec<MapDraw> = built.pass(want).cloned().collect();
+        let other = match info.pass {
+            Pass::Opaque => Pass::Transparent,
+            Pass::Transparent => Pass::Opaque,
+        };
+        let draws: Vec<MapDraw> = built.pass(of(info.pass)).cloned().collect();
+        let later: Vec<MapDraw> = built.pass(of(other)).cloned().collect();
         if let Ok(mut r) = map.resources.lock() {
             *r = built.resources;
         }
-        counted(&BUILT, "passes built");
-        let resources = Arc::clone(&map.resources);
-        let uploaded = Arc::clone(&map.uploaded);
-        Some(Box::new(
-            move |b: &mut D3d11, _c: &mut Cache, host: &[PassDraw]| {
-                job(b, &resources, &uploaded, &draws, host)
-            },
+        self.waiting = Some(Waiting {
+            update,
+            pass: other,
+            draws: later,
+            resources: Arc::clone(&map.resources),
+            uploaded: Arc::clone(&map.uploaded),
+        });
+        let n = BUILT.fetch_add(1, Ordering::Relaxed) + 1;
+        if n.is_power_of_two() {
+            log(&format!(
+                "  gfx: map builder: {n} passes built ({symbol}: inputs {read_us} us ({} reads, {} pages, parts {phases:?} us), all {} us, {} draws)",
+                counts.0,
+                counts.1,
+                t.elapsed().as_micros(),
+                draws.len()
+            ));
+        }
+        Some(make_job(
+            draws,
+            Arc::clone(&map.resources),
+            Arc::clone(&map.uploaded),
         ))
     }
 }
