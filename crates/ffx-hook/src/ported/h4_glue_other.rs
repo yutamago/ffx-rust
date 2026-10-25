@@ -812,4 +812,51 @@ ported! {
     op_gs_store @ 0x007e_4540 => extern "C" fn gs_store(rect: u32, dst: u32) -> u32 {
         m::gs_store(&mut mem(), rect, dst)
     }
+    // Batch 7: the sfx id array's reserve, FmodMusic's constructor, the
+    // movie names, the button remap's constructor, the Iggy heap's block
+    // move, the menu's VRAM block transfers.
+    /// `SfxIdArray_reserve_0070d3a0(this; n)`.
+    SfxIdArray_reserve_0070d3a0 @ 0x0070_d3a0 => extern "thiscall" fn sfx_id_array_reserve(this: u32, n: u32) -> u32 {
+        s::sfx_id_array_reserve(&mut mem(), this, n)
+    }
+    /// `FmodMusic_FmodMusic(this)` -> `this`.
+    FmodMusic_FmodMusic @ 0x0070_8630 => extern "thiscall" fn fmod_music_ctor(this: u32) -> u32 {
+        s::fmod_music_ctor(&mut mem(), this)
+    }
+    /// `PhyFMVPlayerManager_getVideoName(this; id, out)` (`al`).
+    PhyFMVPlayerManager_getVideoName @ 0x006d_93e0 => extern "thiscall" fn fmv_video_name(this: u32, id: u32, out: u32) -> u8 {
+        mv::fmv_video_name(&mut mem(), this, id, out)
+    }
+    /// `RemapButtonIcon_RemapButtonIcon(this)` -> `this`.
+    RemapButtonIcon_RemapButtonIcon @ 0x006e_6330 => extern "thiscall" fn remap_button_icon_ctor(this: u32) -> u32 {
+        mn::remap_button_icon_ctor(&mut mem(), this)
+    }
+    /// `IggyHeap_moveBlock_00a39a90(block, size, owner, kind)`.
+    IggyHeap_moveBlock_00a39a90 @ 0x00a3_9a90 => extern "C" fn iggy_heap_move_block(block: u32, size: u32, owner: u32, kind: u32) -> u32 {
+        mn::iggy_heap_move_block(&mut mem(), block, size, owner, kind)
+    }
+    /// `ClusterSlots_take_0069aba0(this)`.
+    ClusterSlots_take_0069aba0 @ 0x0069_aba0 => extern "thiscall" fn cluster_slots_take(this: u32) -> u32 {
+        mn::cluster_slots_take(&mut mem(), this)
+    }
+    /// `BlurEffectEx_CreateInstance()`.
+    BlurEffectEx_CreateInstance @ 0x006c_49a0 => extern "C" fn blur_ex_create_instance() {
+        e::blur_ex_create_instance(&mut mem());
+    }
+    /// `ChrResourceCache_DelayReleaseStep_0069c010(timer; dt)`.
+    ChrResourceCache_DelayReleaseStep_0069c010 @ 0x0069_c010 => extern "thiscall" fn delay_release_step(timer: u32, dt: u32) {
+        e::delay_release_step(&mut mem(), timer, dt);
+    }
+    /// `MenuMain_LoadVramBlock(buffer, address, size)`.
+    MenuMain_LoadVramBlock @ 0x008a_a710 => extern "C" fn menu_load_vram_block(buffer: u32, address: u32, size: u32) -> u32 {
+        m::menu_vram_block(&mut mem(), true, false, buffer, address, size)
+    }
+    /// `MenuMain_StoreVramBlock(buffer, address, size)`.
+    MenuMain_StoreVramBlock @ 0x008a_ac10 => extern "C" fn menu_store_vram_block(buffer: u32, address: u32, size: u32) -> u32 {
+        m::menu_vram_block(&mut mem(), false, false, buffer, address, size)
+    }
+    /// `MenuMain_StoreFrameBlock(buffer, address, size)`.
+    MenuMain_StoreFrameBlock @ 0x008a_acf0 => extern "C" fn menu_store_frame_block(buffer: u32, address: u32, size: u32) -> u32 {
+        m::menu_vram_block(&mut mem(), false, true, buffer, address, size)
+    }
 }

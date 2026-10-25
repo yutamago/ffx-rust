@@ -1131,3 +1131,92 @@ pub fn string_move_ctor(h: &mut impl Host, this: u32, src: u32) -> u32 {
     h.write(this + 0x18, w);
     this
 }
+
+/// `RemapButtonIcon_initPs2MessageInputPcMap(this)`,
+/// `RemapButtonIcon_initPs2UIButtonPcMap(this)` (thiscall).
+pub const REMAP_INIT_MESSAGE: u32 = 0x006e_6730;
+/// See [`REMAP_INIT_MESSAGE`].
+pub const REMAP_INIT_UI: u32 = 0x006e_6890;
+
+/// `RemapButtonIcon_RemapButtonIcon(this)` (0x006e6330, thiscall): the
+/// two scales (`+0x160`, `+0x164`) 1.0, `+0x150` 0 and `+0x154..+0x15c`
+/// -1, both maps filled with -1 bytes (`memset(this, 0xff, 0xb0)` and
+/// `memset(this + 0xb0, 0xff, 0xa0)`), then their PC defaults; returns
+/// `this`.
+pub fn remap_button_icon_ctor(h: &mut impl Host, this: u32) -> u32 {
+    h.write(this + 0x160, 1.0f32.to_bits());
+    h.write(this + 0x164, 1.0f32.to_bits());
+    h.write(this + 0x150, 0u32);
+    for off in [0x154, 0x158, 0x15c] {
+        h.write(this + off, u32::MAX);
+    }
+    h.call_sym(crate::effect::MEMSET, Conv::Cdecl, &[this, u32::MAX, 0xb0]);
+    h.call_sym(
+        crate::effect::MEMSET,
+        Conv::Cdecl,
+        &[this + 0xb0, u32::MAX, 0xa0],
+    );
+    h.call_sym(REMAP_INIT_MESSAGE, Conv::Thiscall(this), &[]);
+    h.call_sym(REMAP_INIT_UI, Conv::Thiscall(this), &[]);
+    this
+}
+
+/// `IggyHeap_moveBlock_00a39a90(block, size, owner, kind)` (cdecl, from
+/// `0x00a3a5f0` and `0x00a3b610`): the block's size (low 28 bits of
+/// `+0x30`) and owner (`+0x14`) set, the size taken from its heap's free
+/// count (`*[block + 0x18]`), the block moved to ring `kind` (`[block +
+/// 0x18] + 0x10 + 56 kind`) and its kind put in the top four bits;
+/// returns the new `+0x30`.
+pub fn iggy_heap_move_block(h: &mut impl Mem, block: u32, size: u32, owner: u32, kind: u32) -> u32 {
+    let word = h.read::<u32>(block + 0x30);
+    h.write(block + 0x30, word ^ ((word ^ size) & 0x0fff_ffff));
+    h.write(block + 0x14, owner);
+    let heap = h.read::<u32>(block + 0x18);
+    let free = h.read::<u32>(heap).wrapping_sub(size);
+    h.write(heap, free);
+    let heap = h.read::<u32>(block + 0x18);
+    let ring = heap.wrapping_add(0x10).wrapping_add(kind.wrapping_mul(56));
+    let prev = h.read::<u32>(block + 0x20);
+    let next = h.read::<u32>(block + 0x1c);
+    h.write(prev.wrapping_add(0x1c), next);
+    let next = h.read::<u32>(block + 0x1c);
+    let prev = h.read::<u32>(block + 0x20);
+    h.write(next.wrapping_add(0x20), prev);
+    h.write(block + 0x1c, ring);
+    let last = h.read::<u32>(ring.wrapping_add(0x20));
+    h.write(block + 0x20, last);
+    h.write(last.wrapping_add(0x1c), block);
+    let next = h.read::<u32>(block + 0x1c);
+    h.write(next.wrapping_add(0x20), block);
+    let word = (h.read::<u32>(block + 0x30) & 0x0fff_ffff) | kind.wrapping_shl(28);
+    h.write(block + 0x30, word);
+    word
+}
+
+/// `ClusterSlots_take_0069aba0`'s overflow message (`.rdata`).
+pub const SLOTS_FULL: u32 = 0x00b4_7cb0;
+
+/// `ClusterSlots_take_0069aba0(this)` (thiscall): the next free one of
+/// 0x400 24-byte slots (`+0x1c`; busy bytes at `+0x601c`, the hint at
+/// `+0x641c`): marks it, moves the hint past the busy ones, returns the
+/// slot; with the hint at the end, `fprintf(stderr, message)` and a fresh
+/// `operator_new(0x18)` instead.
+pub fn cluster_slots_take(h: &mut impl Host, this: u32) -> u32 {
+    let n = h.read::<u32>(this + 0x641c);
+    if n.cast_signed() >= 0x400 {
+        let message = h.rebase(SLOTS_FULL);
+        let iob = IOB_FUNC.get(h);
+        let files = h.call(iob, Conv::Cdecl, &[]);
+        let fprintf = FPRINTF.get(h);
+        h.call(fprintf, Conv::Cdecl, &[files.wrapping_add(0x40), message]);
+        return h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[0x18]);
+    }
+    h.write(this.wrapping_add(n).wrapping_add(0x601c), 1u8);
+    let slot = this.wrapping_add(n.wrapping_mul(24)).wrapping_add(0x1c);
+    let mut k = h.read::<u32>(this + 0x641c).wrapping_add(1);
+    while k.cast_signed() < 0x400 && h.read::<u8>(this.wrapping_add(k).wrapping_add(0x601c)) != 0 {
+        k = k.wrapping_add(1);
+    }
+    h.write(this + 0x641c, k);
+    slot
+}

@@ -645,3 +645,59 @@ pub fn gs_store(h: &mut impl Host, rect: u32, dst: u32) -> u32 {
     h.call_sym(FLUSH_CACHE, Conv::Cdecl, &[0]);
     r
 }
+
+/// `sceGsSetDefLoadImage(img, ...)`, `sceGsExecLoadImage(img, src)` (PS2
+/// stubs, cdecl).
+pub const GS_SET_DEF_LOAD_IMAGE: u32 = 0x0062_f820;
+/// See [`GS_SET_DEF_LOAD_IMAGE`].
+pub const GS_EXEC_LOAD_IMAGE: u32 = 0x0062_f7a0;
+/// The menu's load and store image descriptors (`0x01841cd0`,
+/// `0x01841c70`).
+pub const MENU_LOAD_IMAGE: u32 = 0x0184_1cd0;
+/// See [`MENU_LOAD_IMAGE`].
+pub const MENU_STORE_IMAGE: u32 = 0x0184_1c70;
+
+/// The menu's VRAM block transfers (`MenuMain_LoadVramBlock` 0x008aa710,
+/// `MenuMain_StoreVramBlock` 0x008aac10, `MenuMain_StoreFrameBlock`
+/// 0x008aacf0; cdecl `(buffer, address, size)`): the image set to
+/// `(address / 64, 8, frame, 0, 0, 0x200, size / per / 512)` (C's
+/// truncating divisions; `per` 4 for blocks, 3 for the frame; `frame` 1
+/// for the frame), a flush and a sync, the transfer `(img, buffer)`, a
+/// sync; the last sync's `eax`.
+pub fn menu_vram_block(
+    h: &mut impl Host,
+    load: bool,
+    frame: bool,
+    buffer: u32,
+    address: u32,
+    size: u32,
+) -> u32 {
+    let (set, exec, img) = if load {
+        (GS_SET_DEF_LOAD_IMAGE, GS_EXEC_LOAD_IMAGE, MENU_LOAD_IMAGE)
+    } else {
+        (
+            GS_SET_DEF_STORE_IMAGE,
+            GS_EXEC_STORE_IMAGE,
+            MENU_STORE_IMAGE,
+        )
+    };
+    let img = h.rebase(img);
+    let per = if frame { 3 } else { 4 };
+    let height = size.cast_signed() / per / 512;
+    let base = address.cast_signed() / 64;
+    let args = [
+        img,
+        base.cast_unsigned(),
+        8,
+        u32::from(frame),
+        0,
+        0,
+        0x200,
+        height.cast_unsigned(),
+    ];
+    h.call_sym(set, Conv::Cdecl, &args);
+    h.call_sym(FLUSH_CACHE, Conv::Cdecl, &[0]);
+    h.call_sym(GS_SYNC_PATH, Conv::Cdecl, &[0, 0]);
+    h.call_sym(exec, Conv::Cdecl, &[img, buffer]);
+    h.call_sym(GS_SYNC_PATH, Conv::Cdecl, &[0, 0])
+}

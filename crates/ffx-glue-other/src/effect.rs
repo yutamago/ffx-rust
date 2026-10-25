@@ -378,3 +378,71 @@ pub fn broken_screen_update_light(h: &mut impl Mem, this: u32, p: [u32; 7]) -> u
     }
     p[6]
 }
+
+/// `BlurEffectEx_CreateInstance`'s message (`.rdata`).
+pub const BLUR_EX_NEEDS_BLUR: u32 = 0x00b4_94f0;
+/// `BlurEffectEx`'s constructor `0x006c4820` (thiscall) and size.
+pub const BLUR_EX_CTOR: u32 = 0x006c_4820;
+/// `ChrResourceCacheManager_applyDelayedRelease(timer)` (thiscall).
+pub const APPLY_DELAYED_RELEASE: u32 = 0x0069_a6b0;
+/// The delay-release limits: state 1's (`0x00b3eb94`, 3.0), state 0's
+/// time-out (`0x00b47de8`, 12.0).
+pub const RELEASE_LIMIT: Global<f32> = Global::new(0x00b3_eb94);
+/// See [`RELEASE_LIMIT`].
+pub const RELEASE_TIMEOUT: Global<f32> = Global::new(0x00b4_7de8);
+/// The time-out message (`.rdata`).
+pub const RELEASE_TIMEOUT_MESSAGE: u32 = 0x00b4_7dbc;
+
+/// `BlurEffectEx_CreateInstance()` (0x006c49a0): a message when the
+/// `BlurEffect` singleton is missing (asked through its `GetInstance`,
+/// which prints its own), then unless it exists, `BlurEffectEx`'s
+/// constructor on `operator_new(0x70)` into `0x00cdebfc` (0 when the
+/// allocation fails). The SEH frame is not kept. Callers read no result.
+pub fn blur_ex_create_instance(h: &mut impl Host) {
+    if h.call_sym(BLUR_EFFECT.get, Conv::Cdecl, &[]) == 0 {
+        let message = h.rebase(BLUR_EX_NEEDS_BLUR);
+        h.call_sym(PHYRE_PRINTF, Conv::Cdecl, &[1, message]);
+    }
+    let g = Global::<u32>::new(BLUR_EFFECT_EX.global);
+    if g.get(h) != 0 {
+        return;
+    }
+    let p = h.call_sym(crate::misc::OPERATOR_NEW, Conv::Cdecl, &[0x70]);
+    let v = if p == 0 {
+        0
+    } else {
+        h.call_sym(BLUR_EX_CTOR, Conv::Thiscall(p), &[])
+    };
+    g.set(h, v);
+}
+
+/// `ChrResourceCache_DelayReleaseStep_0069c010(timer; dt)` (thiscall): in
+/// states 0 and 1 (`+0`) the time (`+4`) advances by `dt` (x87, rounded
+/// to f32); state 1 past 3.0, or state 0 past 12.0 (with the message
+/// `fprintf(stdout, ...)`), applies the delayed release
+/// (`ChrResourceCacheManager_applyDelayedRelease(timer)`). Callers read
+/// no result.
+pub fn delay_release_step(h: &mut impl Host, timer: u32, dt: u32) {
+    let state = h.read::<u32>(timer);
+    if state > 1 {
+        return;
+    }
+    let time = f32::from_bits(h.read::<u32>(timer + 4));
+    let t = x87::Reg::load(f32::from_bits(dt)).add_m32(time).store();
+    h.write(timer + 4, t.to_bits());
+    let apply = if state == 1 {
+        RELEASE_LIMIT.get(h) < t
+    } else if t > RELEASE_TIMEOUT.get(h) {
+        let message = h.rebase(RELEASE_TIMEOUT_MESSAGE);
+        let iob = crate::menu::IOB_FUNC.get(h);
+        let files = h.call(iob, Conv::Cdecl, &[]);
+        let fprintf = crate::menu::FPRINTF.get(h);
+        h.call(fprintf, Conv::Cdecl, &[files.wrapping_add(0x20), message]);
+        true
+    } else {
+        false
+    };
+    if apply {
+        h.call_sym(APPLY_DELAYED_RELEASE, Conv::Thiscall(timer), &[]);
+    }
+}

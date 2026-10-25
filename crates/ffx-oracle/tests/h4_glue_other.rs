@@ -131,6 +131,8 @@ enum Out {
     None,
     /// `eax`.
     U32(u32),
+    /// `al` (the rest of `eax` is the caller's).
+    U8(u8),
 }
 
 struct Twins {
@@ -327,6 +329,7 @@ impl Twins {
         match out {
             Out::None => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
+            Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
         }
         self.diff(what);
         ra.eax
@@ -3067,6 +3070,317 @@ fn ps2_bg_store_fill() {
                 Conv::Cdecl,
                 &[rect, dst],
                 |g| u(m::gs_store(g, rect, dst)),
+            );
+        }
+    }
+}
+
+// ---- batch 7
+
+/// A binary search tree over sorted `keys` (`nodes[lo..hi]`, the middle
+/// one the root; leaves link to `head`); its root.
+fn build(t: &mut Twins, nodes: &[u32], keys: &[i32], head: u32, lo: usize, hi: usize) -> u32 {
+    if lo >= hi {
+        return head;
+    }
+    let mid = usize::midpoint(lo, hi);
+    let nd = nodes[mid];
+    t.w8(nd + 0xd, 0);
+    t.w32(nd + 0x10, keys[mid] as u32);
+    let l = build(t, nodes, keys, head, lo, mid);
+    let r = build(t, nodes, keys, head, mid + 1, hi);
+    t.w32(nd, l);
+    t.w32(nd + 8, r);
+    nd
+}
+
+/// The sfx id array's reserve, `FmodMusic`'s and the button remap's
+/// constructors, the movie names.
+#[test]
+fn reserve_ctors_names() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0601);
+        let stubs: &[(u32, bool, u32, u32)] = &[
+            (s::USER_MALLOC, false, 1, 0),
+            (s::USER_FREE, false, 1, 0),
+            (e::MEMCPY, false, 3, 0),
+            (e::MEMSET, false, 3, 0),
+            (mn::REMAP_INIT_MESSAGE, true, 0, 0),
+            (mn::REMAP_INIT_UI, true, 0, 0),
+        ];
+        for &(sym, this, n, pops) in stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let sprintf_s = t.stub_code(0xc0de_0901, false, 4, 0);
+        t.g32(0x00b0_c394, sprintf_s);
+        let mut found = 0u32;
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            for &(sym, ..) in stubs {
+                let r = rng.next();
+                t.ret(sym, r);
+            }
+            let r = rng.next();
+            t.ret(0xc0de_0901, r);
+            let malloc = if rng.below(4) == 0 { 0 } else { rng.next() };
+            t.ret(s::USER_MALLOC, malloc);
+            let arr = t.random(&mut rng, 0x10);
+            if rng.below(3) == 0 {
+                t.w32(arr + 8, 0);
+            }
+            let n = [0, 1, 4, u32::MAX, 0x8000_0000, rng.below(64)][rng.below(6) as usize];
+            t.check(
+                &format!("{w} reserve {n:#x}"),
+                0x0070_d3a0,
+                Conv::Thiscall(arr),
+                &[n],
+                |g| u(s::sfx_id_array_reserve(g, arr, n)),
+            );
+            let obj = t.random(&mut rng, 0x200);
+            t.check(
+                &format!("{w} FmodMusic"),
+                0x0070_8630,
+                Conv::Thiscall(obj),
+                &[],
+                |g| u(s::fmod_music_ctor(g, obj)),
+            );
+            t.check(
+                &format!("{w} RemapButtonIcon"),
+                0x006e_6330,
+                Conv::Thiscall(obj),
+                &[],
+                |g| u(mn::remap_button_icon_ctor(g, obj)),
+            );
+            // the movie map: a head, a balanced tree of 0..6 keyed nodes
+            let head = t.zeros(0x40);
+            t.w8(head + 0xd, 1);
+            let n_nodes = rng.below(7);
+            let mut keys: Vec<i32> = (0..n_nodes).map(|_| rng.below(20) as i32 - 5).collect();
+            keys.sort_unstable();
+            keys.dedup();
+            let nodes: Vec<u32> = keys.iter().map(|_| t.random(&mut rng, 0x40)).collect();
+            let root = build(&mut t, &nodes, &keys, head, 0, nodes.len());
+            t.w32(head + 4, root);
+            // short and long names
+            for &nd in &nodes {
+                let cap = [0xf, 0x10, 0x20][rng.below(3) as usize];
+                t.w32(nd + 0x14 + 0x14, cap);
+            }
+            let mgr = t.zeros(0x700);
+            t.w32(mgr + 0x6e8, head);
+            let id = (rng.below(24) as i32 - 6) as u32;
+            let out = rng.next();
+            // the id is one of the keys half the time
+            let id = if keys.is_empty() || rng.below(2) == 0 {
+                id
+            } else {
+                keys[rng.below(keys.len() as u32) as usize] as u32
+            };
+            t.check(
+                &format!("{w} videoName {id:#x}"),
+                0x006d_93e0,
+                Conv::Thiscall(mgr),
+                &[id, out],
+                |g| {
+                    let r = mv::fmv_video_name(g, mgr, id, out);
+                    found += u32::from(r);
+                    Out::U8(r)
+                },
+            );
+        }
+        assert!(found >= 10, "{name}: names found {found}");
+    }
+}
+
+/// The Iggy heap's block move, the menu's VRAM block transfers.
+#[test]
+fn heap_move_vram_blocks() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0602);
+        let stubs: &[(u32, bool, u32, u32)] = &[
+            (m::GS_SET_DEF_LOAD_IMAGE, false, 8, 0),
+            (m::GS_SET_DEF_STORE_IMAGE, false, 8, 0),
+            (m::GS_EXEC_LOAD_IMAGE, false, 2, 0),
+            (m::GS_EXEC_STORE_IMAGE, false, 2, 0),
+            (m::GS_SYNC_PATH, false, 2, 0),
+        ];
+        for &(sym, this, n, pops) in stubs {
+            t.stub(sym, this, n, pops);
+        }
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            for &(sym, ..) in stubs {
+                let r = rng.next();
+                t.ret(sym, r);
+            }
+            let (buffer, address) = (
+                rng.next(),
+                [0, 63, 64, u32::MAX, 0xffff_ffc0, rng.next()][rng.below(6) as usize],
+            );
+            let size =
+                [0, 3, 4, 2047, 2048, u32::MAX, 0xffff_f000, rng.next()][rng.below(8) as usize];
+            for (sym, load, frame) in [
+                (0x008a_a710, true, false),
+                (0x008a_ac10, false, false),
+                (0x008a_acf0, false, true),
+            ] {
+                t.check(
+                    &format!("{w} vram {sym:#x} {size:#x}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[buffer, address, size],
+                    |g| u(m::menu_vram_block(g, load, frame, buffer, address, size)),
+                );
+            }
+            // the heap: rings at heap + 0x10 + 56 k, a block in ring 0
+            let heap = t.zeros(0x200);
+            t.w32(heap, rng.next());
+            for k in 0..4 {
+                let block_ring = heap + 0x10 + 56 * k;
+                t.w32(block_ring + 0x1c, block_ring);
+                t.w32(block_ring + 0x20, block_ring);
+            }
+            let block = t.random(&mut rng, 0x40);
+            t.w32(block + 0x18, heap);
+            let ring0 = heap + 0x10;
+            t.w32(ring0 + 0x1c, block);
+            t.w32(ring0 + 0x20, block);
+            t.w32(block + 0x1c, ring0);
+            t.w32(block + 0x20, ring0);
+            let (size, owner, kind) = (rng.next(), rng.next(), rng.below(4));
+            t.check(
+                &format!("{w} moveBlock {kind}"),
+                0x00a3_9a90,
+                Conv::Cdecl,
+                &[block, size, owner, kind],
+                |g| u(mn::iggy_heap_move_block(g, block, size, owner, kind)),
+            );
+        }
+    }
+}
+
+/// The cluster slots.
+#[test]
+fn cluster_slots() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0603);
+        t.stub(m::OPERATOR_NEW, false, 1, 0);
+        let iob = t.stub_code(0xc0de_0a01, false, 0, 0);
+        let fprintf = t.stub_code(0xc0de_0a02, false, 2, 0);
+        t.g32(0x00b0_c350, iob);
+        t.g32(0x00b0_c38c, fprintf);
+        let slots = t.zeros(0x6420);
+        for i in 0..40 {
+            for tag in [m::OPERATOR_NEW, 0xc0de_0a01, 0xc0de_0a02] {
+                let r = rng.next();
+                t.ret(tag, r);
+            }
+            // a few busy runs, the hint anywhere
+            for _ in 0..4 {
+                let at = rng.below(0x400);
+                for k in at..(at + rng.below(6)).min(0x400) {
+                    t.w8(slots + 0x601c + k, 1);
+                }
+            }
+            let hint = [0, 0x3ff, 0x400, 0x401, rng.below(0x400)][rng.below(5) as usize];
+            t.w32(slots + 0x641c, hint);
+            t.check(
+                &format!("{name} {i} take {hint:#x}"),
+                0x0069_aba0,
+                Conv::Thiscall(slots),
+                &[],
+                |g| u(mn::cluster_slots_take(g, slots)),
+            );
+        }
+    }
+}
+
+/// `BlurEffectEx_CreateInstance`, the character cache's delayed release.
+#[test]
+fn blur_ex_create_and_release_step() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0604);
+        t.stub(e::BLUR_EFFECT.get, false, 0, 0);
+        t.stub(e::PHYRE_PRINTF, false, 2, 0);
+        t.stub(m::OPERATOR_NEW, false, 1, 0);
+        t.stub(e::BLUR_EX_CTOR, true, 0, 0);
+        t.stub(e::APPLY_DELAYED_RELEASE, true, 0, 0);
+        let iob = t.stub_code(0xc0de_0b01, false, 0, 0);
+        let fprintf = t.stub_code(0xc0de_0b02, false, 2, 0);
+        t.g32(0x00b0_c350, iob);
+        t.g32(0x00b0_c38c, fprintf);
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            for tag in [
+                e::PHYRE_PRINTF,
+                e::BLUR_EX_CTOR,
+                e::APPLY_DELAYED_RELEASE,
+                0xc0de_0b01,
+                0xc0de_0b02,
+            ] {
+                let r = rng.next();
+                t.ret(tag, r);
+            }
+            let blur = if rng.below(3) == 0 { 0 } else { rng.next() };
+            t.ret(e::BLUR_EFFECT.get, blur);
+            let p = if rng.below(4) == 0 { 0 } else { rng.next() };
+            t.ret(m::OPERATOR_NEW, p);
+            t.g32(
+                e::BLUR_EFFECT_EX.global,
+                if rng.below(2) == 0 { 0 } else { rng.next() },
+            );
+            t.check(
+                &format!("{w} BlurEx create"),
+                0x006c_49a0,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    e::blur_ex_create_instance(g);
+                    Out::None
+                },
+            );
+            let timer = t.zeros(8);
+            t.w32(timer, [0, 1, 2, u32::MAX][rng.below(4) as usize]);
+            let time = [
+                rng.float(),
+                2.9f32.to_bits(),
+                3.0f32.to_bits(),
+                11.9f32.to_bits(),
+                12.0f32.to_bits(),
+                0x7fc0_0000,
+            ][rng.below(6) as usize];
+            t.w32(timer + 4, time);
+            let dt = [0, 0x3c88_8889, 1.0f32.to_bits(), rng.float()][rng.below(4) as usize];
+            t.check(
+                &format!("{w} releaseStep"),
+                0x0069_c010,
+                Conv::Thiscall(timer),
+                &[dt],
+                |g| {
+                    e::delay_release_step(g, timer, dt);
+                    Out::None
+                },
+            );
+        }
+        // exactly at the limits: not past them
+        for (state, time) in [(0u32, 12.0f32), (1, 3.0), (0, 11.0), (1, 2.0)] {
+            let timer = t.zeros(8);
+            t.w32(timer, state);
+            t.w32(timer + 4, time.to_bits());
+            let dt = if time < 3.5 || (11.5..12.0).contains(&time) {
+                1.0f32.to_bits()
+            } else {
+                0
+            };
+            t.check(
+                &format!("{name} release at {time}"),
+                0x0069_c010,
+                Conv::Thiscall(timer),
+                &[dt],
+                |g| {
+                    e::delay_release_step(g, timer, dt);
+                    Out::None
+                },
             );
         }
     }
