@@ -1365,30 +1365,30 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x021b` | `Native_021b_CheckCaptMonster` | b int, a int | int: 0x00872aa0(1, b, a, 0) | - | int `0x0085d8c0` (native_move) |
 | `0x021c` | `Native_021c_CheckCaptMonster` | id | int: AtelCheckCaptMonster(2, 0, id, 0) (0x00872aa0) | - | int `0x0085db90` (native_mods) |
 | `0x021d` | `Native_021d_PrimerHandOut` | - | int: 1 when a primer flagged +3 bit 3 was handed out (0x007ab970, 0x008c30d0) | - | int `0x0085dcd0` (native_move) |
-| `0x021e` | `Native_021e` | - | 1: 0x0090a420() | - | int `0x00858e40` (native_move) |
+| `0x021e` | `Native_021e_RenderInitFog` | - | 1: 0x0090a420() | - | int `0x00858e40` (native_move) |
 | `0x021f` | `Native_021f_EnableLoveParam` | i | int: AtelSetLoveParamDisable(i, 0) (0x00870250); i | - | int `0x0085dfc0` (native_mods) |
 | `0x0220` | `Native_0220_DisableLoveParam` | v int: 0x00870250(v, 1) | int: v | - | int `0x0085e010` (native_move) |
-| `0x0221` | `Native_0221` | i int | int: word i of the table at 0x00c86e28 | - | int `0x0085e110` (native_move) |
-| `0x0222` | `Native_0222` | i | int: the word at 0x00c8756c + 4 i | - | int `0x0085e380` (native_mods) |
+| `0x0221` | `Native_0221_GetTable00c86e28` | i int | int: word i of the table at 0x00c86e28 | - | int `0x0085e110` (native_move) |
+| `0x0222` | `Native_0222_GetTable00c8756c` | i | int: the word at 0x00c8756c + 4 i | - | int `0x0085e380` (native_mods) |
 | `0x0223` | `Native_0223_SetVibrateConfig` | on | int: bit 4 of the save menu word (MsGetSaveMenu, 0x00785290) = on != 0, TkRefreshActuator() (0x00872480); on != 0 | - | int `0x0085e460` (native_mods) |
-| `0x0224` | `Native_0224` | - | int: bit 4 of the save menu word | - | int `0x0085e800` (native_mods) |
-| `0x0225` | `Native_0225` | v int: 0x00870f60(v) | int: v | - | int `0x0085ea10` (native_move) |
+| `0x0224` | `Native_0224_SaveMenuGetBit4` | - | int: bit 4 of the save menu word | - | int `0x0085e800` (native_mods) |
+| `0x0225` | `Native_0225_ShopSetRatio` | v int: 0x00870f60(v) | int: v | - | int `0x0085ea10` (native_move) |
 | `0x0226` | `Native_0226_FpSetDisp` | on int: 0x00729050(on != 0) | int: on != 0 | - | int `0x0085eb80` (native_move) |
-| `0x0227` | `Native_0227` | on | int: 0x00873dd0(on != 0); on != 0 | - | int `0x0085ac20` (native_mods) |
-| `0x0228` | `Native_0228` | flags, b, a | int: how far the current level's turn target (+0x884 + level * 0x44) is from the position block's yaw (+0x34), wrapped (Math_WrapAngle) and made absolute, over the double at 0x00b92288 (flags bit 1) or 0x00b11338, at most 1, times a (bit 1) or b, truncated; each step rounded to f32 | - | int `0x0085b060` (native_mods) |
+| `0x0227` | `Native_0227_SaveEventE8Set` | on | int: 0x00873dd0(on != 0); on != 0 | - | int `0x0085ac20` (native_mods) |
+| `0x0228` | `Native_0228_TurnTargetDistance` | flags, b, a | int: how far the current level's turn target (+0x884 + level * 0x44) is from the position block's yaw (+0x34), wrapped (Math_WrapAngle) and made absolute, over the double at 0x00b92288 (flags bit 1) or 0x00b11338, at most 1, times a (bit 1) or b, truncated; each step rounded to f32 | - | int `0x0085b060` (native_mods) |
 | `0x0229` | `SetFieldBits38_0085ece0` | - | 1: the worker's +0x38 bit 9 | - | int `0x0085ece0` (native_move) |
 | `0x022a` | `SetFieldBits38_0085ed40` | - | int: the worker's +0x38 gets bit 10; 1 (the auto-port's shim stays) | - | int `0x0085ed40` (native_mods) |
 | `0x022b` | `SetFields_0085eea0` | - | args +0 = 0, +4 = 10 (the auto-port's shim stays); the args address | - | start `0x0085eea0`, poll `0x0085efb0` (native_mods) |
-| `0x022c` | `Native_022c` | i, v | int: SetByte_0186a429_008ca370(i, v); 1 | - | int `0x0085f2e0` (native_mods) |
+| `0x022c` | `Native_022c_SetByte0186a429` | i, v | int: SetByte_0186a429_008ca370(i, v); 1 | - | int `0x0085f2e0` (native_mods) |
 | `0x022d` | `Native_022d_WaitPadButton` | mask | args +0 = mask; mask | - | start `0x0085f4c0`, poll `0x0085f600` (native_mods) |
 | `0x022e` | `Native_022e_SetMcfpInWater` | d int, c int, b int, a int: 0x00870280(d, c, b, a) | 1 | - | int `0x0085f860` (native_move) |
-| `0x022f` | `Native_022f` | slot int, on int: the slot model's 0x0082b970 and +0xb08 bit 1 | int: on != 0 | - | int `0x00855fb0` (native_move) |
+| `0x022f` | `Native_022f_ChrSetVu1Clipmode` | slot int, on int: the slot model's 0x0082b970 and +0xb08 bit 1 | int: on != 0 | - | int `0x00855fb0` (native_move) |
 | `0x0230` | `SetFieldBits38_0085fb10` | - | int: the worker's +0x38 gets bit 11; 1 (the auto-port's shim stays) | - | int `0x0085fb10` (native_mods) |
-| `0x0231` | `Native_0231` | worker int: its +0x38 bit 11 | 1 | - | int `0x0085fca0` (native_move) |
+| `0x0231` | `Native_0231_WorkerSetFlag38Bit11` | worker int: its +0x38 bit 11 | 1 | - | int `0x0085fca0` (native_move) |
 | `0x0232` | `Native_0232_PulseDummyCtrlPending` | b | args +0 = 1 << b, +4 = ReturnConst2_00a54750() (2); that count | - | start `0x0085a4b0`, poll `0x0085a5f0` (native_mods) |
 | `0x0233` | `Native_0233_SetMainFrameRatio` | v | int: TkMn2SetMainFrameRatioDiff(v) (0x008ab260); v | - | int `0x0085fe10` (native_mods) |
 | `0x0234` | `Native_0234_FlushAlbhedDic` | - | 1: 0x0086a040() | - | int `0x0085fff0` (native_move) |
-| `0x0235` | `Native_0235` | as 0x008729d0 | as 0x008729d0 (a jump) | - | int `0x00860170` (native_move) |
+| `0x0235` | `Native_0235_GetGlobal01325b8c` | as 0x008729d0 | as 0x008729d0 (a jump) | - | int `0x00860170` (native_move) |
 | `0x0236` | `Native_0236_MsgGetText` | msg int | int: the message text (0x0086b170 or 0x0086bf30) | - | int `0x00860350` (native_move) |
 | `0x0237` | `Native_0237_BuildChoiceText` | n int, mask int, list var, dst var: list of n string pointers; mask bit i enables entry i | int: k << 8 (k choices): the choice text in dst (copied once more after its end) | - | int `0x008604c0` (native_move) |
 | `0x0238` | `Native_0238_GetEventFlag` | i | int: bit i of the save block's bit set at +0x4c (0 past it) | - | int `0x0085eb30` (native_mods) |
@@ -1398,37 +1398,37 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x023c` | `Native_023c_AllHelpEventFlags` | b int, n int | int: 1 when 0x0086b9e0(b + i) is set for every i below n | - | int `0x0085c600` (native_move) |
 | `0x023d` | `Native_023d` | - | 1: 0x00647e40, 0x00642390(7) when [0x025d5ebc], 0x00786b00, 0x00782050, 0x0088d1c0(0), 0x00643e70 | - | int `0x00856520` (native_move) |
 | `0x023e` | `Native_023e_SepLock` | id int | int: id; SndSepLock(id) (0x00886dd0) | - | int `0x00856640` (native_sys) |
-| `0x023f` | `Native_023f` | v int: 0x008749e0(v) | int: v | - | int `0x00856770` (native_move) |
+| `0x023f` | `Native_023f_SetGlobal01327f4c` | v int: 0x008749e0(v) | int: v | - | int `0x00856770` (native_move) |
 | `0x0240` | `Native_0240_SetWeaponInvisible` | b int, on int: 0x007ad5e0(b, on != 0) | int: on != 0 | - | int `0x008568d0` (native_move) |
 | `0x0241` | `CT_0241_ret` | on int: field state bit 3 | int: on != 0 | - | int `0x00856ad0` (native) |
 | `0x0242` | `Native_0242_GetHddStatus` | as 0x00777e90 | as 0x00777e90 (a jump) | - | int `0x00857200` (native_move) |
-| `0x0243` | `Native_0243` | as 0x007787b0 | as 0x007787b0 (a jump) | - | int `0x00857350` (native_move) |
+| `0x0243` | `Native_0243_GetHddWord518` | as 0x007787b0 | as 0x007787b0 (a jump) | - | int `0x00857350` (native_move) |
 | `0x0244` | `Native_0244` | - | 1: 0x007fb690() | - | int `0x008574b0` (native_move) |
-| `0x0245` | `Native_0245` | - | 1: 0x007fb680() | - | int `0x00857690` (native_move) |
-| `0x0246` | `Native_0246` | - | int: 0x007fb730(); 1 | - | int `0x00857810` (native_mods) |
-| `0x0247` | `Native_0247` | - | int: 0x007fb720(); 1 | - | int `0x00857910` (native_mods) |
-| `0x0248` | `Native_0248` | - | int: 0x007fb520(); 1 | - | int `0x008579f0` (native_mods) |
-| `0x0249` | `Native_0249` | - | int: 0x007fb510(); 1 | - | int `0x00857b60` (native_mods) |
+| `0x0245` | `Native_0245_SetGlobal011a0080Bit11` | - | 1: 0x007fb680() | - | int `0x00857690` (native_move) |
+| `0x0246` | `Native_0246_ClearGlobal011a0080Bit13` | - | int: 0x007fb730(); 1 | - | int `0x00857810` (native_mods) |
+| `0x0247` | `Native_0247_SetGlobal011a0080Bit13` | - | int: 0x007fb720(); 1 | - | int `0x00857910` (native_mods) |
+| `0x0248` | `Native_0248_ClearGlobal011a0080Bit12` | - | int: 0x007fb520(); 1 | - | int `0x008579f0` (native_mods) |
+| `0x0249` | `Native_0249_SetGlobal011a0080Bit12` | - | int: 0x007fb510(); 1 | - | int `0x00857b60` (native_mods) |
 | `0x024a` | `Native_024a_SetHddConfig` | on int: bit 13 of *0x00785290(), then 0x008724a0() | int: on != 0 | - | int `0x00857cb0` (native_move) |
 | `0x024b` | `Native_024b_ChrSetHideEvent` | slot int, on int: 0x0082b2c0(model, on) for a used slot with a motion | int: on != 0 | - | int `0x00857e30` (native_move) |
 | `0x024c` | `SetFieldBits38_008580a0` | - | 1: the worker's +0x38 bit 12 | - | int `0x008580a0` (native_move) |
-| `0x024d` | `Native_024d` | on int: the ctrl work's +0x210 bit 6 | int: on != 0 | - | int `0x00856dc0` (native_move) |
-| `0x024e` | `Native_024e` | v | int: the current ctrl work's +0x214 = v; v | - | int `0x0085d4b0` (native_mods) |
-| `0x024f` | `Native_024f` | - | int: the buttons of 0x0086af60() through Pad_MapButtons | - | int `0x0085d890` (native_mods) |
-| `0x0250` | `Native_0250` | - | int: 0x0086af60(), the low word | - | int `0x0085de60` (native_mods) |
-| `0x0251` | `Native_0251` | i int | int: bit i of the flag word for 0x0086af60() | - | int `0x0085e5e0` (native_move) |
-| `0x0252` | `Native_0252` | b | int: bit b of 0x0086af60() | - | int `0x0085ef50` (native_mods) |
+| `0x024d` | `Native_024d_CtrlSetField210Bit6` | on int: the ctrl work's +0x210 bit 6 | int: on != 0 | - | int `0x00856dc0` (native_move) |
+| `0x024e` | `Native_024e_CtrlSetField214` | v | int: the current ctrl work's +0x214 = v; v | - | int `0x0085d4b0` (native_mods) |
+| `0x024f` | `Native_024f_PadMapButtonsHist1c` | - | int: the buttons of 0x0086af60() through Pad_MapButtons | - | int `0x0085d890` (native_mods) |
+| `0x0250` | `Native_0250_PadGetButtonsLow1c` | - | int: 0x0086af60(), the low word | - | int `0x0085de60` (native_mods) |
+| `0x0251` | `Native_0251_PadTestBit1c` | i int | int: bit i of the flag word for 0x0086af60() | - | int `0x0085e5e0` (native_move) |
+| `0x0252` | `Native_0252_PadTestButtonBit1c` | b | int: bit b of 0x0086af60() | - | int `0x0085ef50` (native_mods) |
 | `0x0253` | `Native_LangGroupNotJpAsia` | - | int: 1 unless the language group (0x00641100) is 0, 3 or 4 | - | int `0x00858210` (native_move) |
-| `0x0254` | `Native_0254` | v int: bits 14..15 of *0x00785290(), then 0x00a53de0(0x0112ec7c) | int: v | - | int `0x008585d0` (native_move) |
-| `0x0255` | `Native_0255` | - | int: bits 14..15 of *0x00785290() | - | int `0x00858430` (native_move) |
-| `0x0256` | `Native_0256` | window int: +0x28 = 0x8000 | int: window | - | int `0x00858710` (native_move) |
-| `0x0257` | `Native_0257` | window int: +0x28 = 0 | int: window | - | int `0x008588b0` (native_move) |
+| `0x0254` | `Native_0254_SaveMenuSetBits1415` | v int: bits 14..15 of *0x00785290(), then 0x00a53de0(0x0112ec7c) | int: v | - | int `0x008585d0` (native_move) |
+| `0x0255` | `Native_0255_SaveMenuGetBits1415` | - | int: bits 14..15 of *0x00785290() | - | int `0x00858430` (native_move) |
+| `0x0256` | `Native_0256_MsgWinSetFlag28` | window int: +0x28 = 0x8000 | int: window | - | int `0x00858710` (native_move) |
+| `0x0257` | `Native_0257_MsgWinClearField28` | window int: +0x28 = 0 | int: window | - | int `0x008588b0` (native_move) |
 | `0x0258` | `Native_0258_SetEnglishMode` | on | when on != 0 differs from 0x0086bbc0(), args +0 = 0, MsSetSaveConfigEnglish(on) (0x00785ed0) and TOSwapInternationalEnvInit(0x0086bbc0()) (0x008b0920, its EAX); else args +0 = -1 | - | start `0x00858a60`, poll `0x00858da0` (native_mods) |
-| `0x0259` | `Native_0259` | i int, v f: 0x00872530(i, v) | float: v | - | float `0x00858fc0` (native_move) |
+| `0x0259` | `Native_0259_SetScale` | i int, v f: 0x00872530(i, v) | float: v | - | float `0x00858fc0` (native_move) |
 | `0x025a` | `Native_025a_GetAsiaMode` | - | int: jumps to 0x0086a7f0 | - | int `0x008590e0` (native_mods) |
 | `0x025b` | `Native_025b_UnlockAchievement` | v int: 0x00822380 (0x17 as 0x16, 0x19 as 0x18; 0x16 nothing) | int: the value used | - | int `0x00859270` (native_move) |
-| `0x025c` | `Native_025c` | as 0x0086c270 | as 0x0086c270 (a jump) | - | int `0x00859400` (native_move) |
-| `0x025d` | `Native_025d` | v int: [0x01325ac4] | int: v | - | int `0x00859c20` (native_move) |
+| `0x025c` | `Native_025c_NoOp` | as 0x0086c270 | as 0x0086c270 (a jump) | - | int `0x00859400` (native_move) |
+| `0x025d` | `Native_025d_SetGlobal01325ac4` | v int: [0x01325ac4] | int: v | - | int `0x00859c20` (native_move) |
 | `0x025e` | `Native_025e` | v int | int: 0x00643e80(v) | - | int `0x00859d50` (native_move) |
 | `0x025f` | `Native_025f` | b int, a int: 0x00643500(b, a) | 0 | - | int `0x00859e20` (native_move) |
 | `0x0260` | `Native_0260_AlwaysTrue` | _ int | 1 | - | int `0x00859f10` (native_move) |
@@ -1436,10 +1436,10 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x0262` | `Native_0262_AlwaysTrue` | - | 1 | - | int `0x0085a110` (native_move) |
 | `0x0263` | `Native_0263_AlwaysTrue` | - | 1 | - | int `0x0085a120` (native_move) |
 | `0x0264` | `Native_0264_SetBgmType` | v int: 0x008cc150(v) | 0 | - | int `0x0085a230` (native_move) |
-| `0x0265` | `Native_0265` | - | int: [0x00cccacc] | - | int `0x0085a7f0` (native_move) |
-| `0x0266` | `Native_0266` | as 0x008cc140 | as 0x008cc140 (a jump) | - | int `0x0085a410` (native_move) |
+| `0x0265` | `Native_0265_GetGlobal00cccacc` | - | int: [0x00cccacc] | - | int `0x0085a7f0` (native_move) |
+| `0x0266` | `Native_0266_SaveEventGetBit5ec` | as 0x008cc140 | as 0x008cc140 (a jump) | - | int `0x0085a410` (native_move) |
 | `0x0267` | `Native_0267` | as 0x013b | 1 when done; int slot: the choice (-1 none) | as 0x013b; a choice with status 1 calls 0x008cc150 | start `0x008602a0`, poll `0x0085a540`, int `0x0085a620` (native_msg) |
-| `0x1000` | `Native_1000` | slot int, a int, b int, v int | 1: ctrl work +0xa4 slot (0..31) = a/8 | 0x80, b/4, the worker's +0x2e, v (cleared for negative a or b) | - | int `0x008779c0` (native_chr) |
+| `0x1000` | `Native_1000_CtrlSetSlotEntry` | slot int, a int, b int, v int | 1: ctrl work +0xa4 slot (0..31) = a/8 | 0x80, b/4, the worker's +0x2e, v (cleared for negative a or b) | - | int `0x008779c0` (native_chr) |
 | `0x1001` | `AtelCall_Math_Sin_RF` | v f | float: CIsin(v) (0x0088c3a0) | - | float `0x00877a70` (native_chr) |
 | `0x1002` | `AtelCall_Math_Cos_RF` | v f | float: CIcos(v) (0x0088b3e0) | - | float `0x00877aa0` (native_chr) |
 | `0x1003` | `AtelCall_Math_Tan_RF` | v f | float: CItan(v) (0x0088c420) | - | float `0x00877ad0` (native_mods) |
@@ -1449,8 +1449,8 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x1007` | `AtelCall_Math_InvSqrt_RF` | v f | float: 1 / sqrt(v), the root and the quotient rounded to f32 | - | float `0x00877ba0` (native_mods) |
 | `0x1008` | `Native_1008_SinTable` | angle int | int: Math_SinTable2(angle) (0x0088c380) | - | int `0x00877bd0` (native_mods) |
 | `0x1009` | `Native_1009_CosTable` | angle int | int: Math_CosTable(angle) (0x0088c120) | - | int `0x00877bf0` (native_mods) |
-| `0x100a` | `Native_100a` | v int | int: the popped value; int: the popped value | - | int `0x008778b0` (native_chr) |
-| `0x100b` | `Native_100b` | v int | int: v << 15 | - | int `0x008778d0` (native_mods) |
+| `0x100a` | `Native_100a_Echo` | v int | int: the popped value; int: the popped value | - | int `0x008778b0` (native_chr) |
+| `0x100b` | `Native_100b_ShiftLeft15` | v int | int: v << 15 | - | int `0x008778d0` (native_mods) |
 | `0x100c` | `AtelCall_Math_Ftoul_RI` | x f | int: x times the double at 0x00b51588, rounded to f32, truncated (_ftol2_sse) | - | int `0x008778f0` (native_mods) |
 | `0x100d` | `Native_100d_AngleTo15Bits` | angle f | int: Math_AngleTo15Bits(angle) (0x0088c040) | - | int `0x00877920` (native_mods) |
 | `0x100e` | `Native_100e_AngleTo12Bits` | angle f | int: Math_AngleTo12Bits(angle) (0x0088bfe0) | - | int `0x00877950` (native_mods) |
@@ -1479,12 +1479,12 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x4008` | `Native_4008_FilterAdd` | d, c, b, a | Sg_FilterAdd(d, c, b, a) (0x0082cc20) | - | int `0x00a77e30` (native_chr) |
 | `0x4009` | `Native_4009_FilterSub` | d, c, b, a | Sg_FilterSub(d, c, b, a) (0x0082cc80) | - | int `0x00a77e80` (native_chr) |
 | `0x400a` | `Native_MotionBlur` | v int | 0 (motion blur) | - | int `0x00a77e00` (native_move) |
-| `0x400b` | `Native_400b` | - | 0x0082cc00() | - | int `0x00a77e20` (native_chr) |
+| `0x400b` | `Native_400b_ClearGlobal0130074c` | - | 0x0082cc00() | - | int `0x00a77e20` (native_chr) |
 | `0x400c` | `Native_400c_FilterReset` | - | 0: 0x0082cc70() | - | int `0x00a77ed0` (native_chr) |
 | `0x400d` | `Native_FadeWait` | - | - (start: a bare ret) | until 0x0082cc10() is 0 | start `0x00a77ee0`, poll `0x00a77ef0` (native_chr) |
-| `0x400e` | `Native_400e` | v | Sg_EnableCalcMap(v) (0x00820440) | - | int `0x00a77f00` (native_chr) |
-| `0x400f` | `Native_400f` | v | Sg_EnableDrawMap(v) (0x00820400) | - | int `0x00a77f20` (native_chr) |
-| `0x4010` | `Native_4010` | v int, a f, b f | 0 (the three popped and dropped) | - | int `0x00a77f40` (native_mods) |
+| `0x400e` | `Native_400e_EnableCalcMap` | v | Sg_EnableCalcMap(v) (0x00820440) | - | int `0x00a77f00` (native_chr) |
+| `0x400f` | `Native_400f_EnableDrawMap` | v | Sg_EnableDrawMap(v) (0x00820400) | - | int `0x00a77f20` (native_chr) |
+| `0x4010` | `Native_4010_DropArgs` | v int, a f, b f | 0 (the three popped and dropped) | - | int `0x00a77f40` (native_mods) |
 | `0x4011` | `Native_4011_LightSetDir` | i int, x f, y f, z f | 0: Sg_LightSetDirXYZ(i, x, y, z) (0x008364f0) | - | int `0x00a77f70` (native_mods) |
 | `0x4012` | `Native_4012_LightSetColor` | i int, x f, y f, z f | 0: 0x00836400(i, x, y, z) | - | int `0x00a77fd0` (native_mods) |
 | `0x4013` | `Native_LightSet` | light int (0-3), r int, g int, b int, pitch int (deg), yaw int (deg) | 0 | - | int `0x00a78030` (native_move) |
@@ -1499,8 +1499,8 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x401c` | `Native_401c_AccEnableBG` | v | Sg_AccEnableBG(v) (0x0082be10) | - | int `0x00a781f0` (native_chr) |
 | `0x401d` | `Native_MenuOpen` | menu int | the start's result; poll 1 when done; int slot the menu result (0x00821740) | one frame (g_MenuWaitFrames) | start `0x00a78210`, poll `0x00a78270`, int `0x00a782a0` (native_move) |
 | `0x401e` | `Native_401e_SgTest` | v int | debug (mod-tool candidate): Sg_Test(v) (0x008467b0: map-test setup, a sync print, a 64 KiB scratch allocation and its release); its result | - | int `0x00a782c0` (not ported) |
-| `0x401f` | `Native_401f` | - | 0x00840e40() | - | int `0x00a782e0` (native_chr) |
-| `0x4020` | `Native_4020` | - | 0: 0x00840e50() | - | int `0x00a782f0` (native_chr) |
+| `0x401f` | `Native_401f_CacheClear` | - | 0x00840e40() | - | int `0x00a782e0` (native_chr) |
+| `0x4020` | `Native_4020_CacheClearFast` | - | 0: 0x00840e50() | - | int `0x00a782f0` (native_chr) |
 | `0x4021` | `Native_4021_CacheDisposeChr` | v int | int: Sg_CacheDisposeChr(v) (0x00840e60) | - | int `0x00a78300` (native_mods) |
 | `0x4022` | `Native_4022_SetKeepFps` | v | Sg_SetKeepFps(v) (0x00821ae0) | - | int `0x00a78320` (native_chr) |
 | `0x4023` | `Native_4023_PLightAllocate` | v | Sg_PLightAllocate(v) (0x00831950) | - | int `0x00a78340` (native_chr) |
@@ -1521,7 +1521,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x4032` | `Native_4032_PLightSetAttenuation` | i int, a f | 0: Sg_PLightSetAttenuation(i, a) (0x00831bf0) | - | int `0x00a77980` (native_mods) |
 | `0x4033` | `Native_4033_PLightGetAttenuation` | i int | float: Sg_PLightGetAttenuation(i) (0x00831a40) | - | float `0x00a779c0` (native_mods) |
 | `0x4034` | `Native_4034_SetMapAlphaFast` | v | Sg_SetMapAlphaFast(v) (0x00821b00); 0.0 | - | float `0x00a779e0` (native_chr) |
-| `0x4035` | `Native_4035` | - | 0.0 (Sg_GetMapAlphaFast() (0x008205d0) called, its value dropped) | - | float `0x00a77a00` (native_mods) |
+| `0x4035` | `Native_4035_GetMapAlphaDropped` | - | 0.0 (Sg_GetMapAlphaFast() (0x008205d0) called, its value dropped) | - | float `0x00a77a00` (native_mods) |
 | `0x4036` | `Native_4036_GlobalSetWind` | x f, y f, z f | Sg_GlobalSetWind(x, y, z) (0x00824e30) | - | int `0x00a77a10` (native_chr) |
 | `0x4037` | `Native_4037_GlobalGetWind` | x int, y int, z int | 0: Sg_GlobalGetWind(x, y, z) (0x00824dd0) with the popped words as they are | - | int `0x00a77a70` (native_mods) |
 | `0x4038` | `Native_4038_MemDump` | - | debug (mod-tool candidate): Sg_MemDump() (0x0083bb50: prints the memory pools and Cache_Dump), with no argument (it takes the stack's leftover); 0 | - | int `0x00a77ab0` (not ported) |
@@ -1529,14 +1529,14 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x403a` | `Native_403a_AccSetDrawChr` | v | Sg_AccSetDrawChr(v) (0x0082be00) | - | int `0x00a77b10` (native_chr) |
 | `0x403b` | `Native_FootSetMaterial` | index int, material int | 0: Sg_IdSetEffectTable(index, material) (0x0083e9b0) | - | int `0x00a77b30` (native_chr) |
 | `0x403c` | `Native_403c_SetWaterLimit` | v f | Sg_SetWaterLimit(v) (0x00836660) | - | int `0x00a77b60` (native_chr) |
-| `0x403d` | `Native_403d` | v int | 0: Sg_MemSetFast(v) (0x0083c520) | - | int `0x00a77bc0` (native_mods) |
+| `0x403d` | `Native_403d_SgMemSetFast` | v int | 0: Sg_MemSetFast(v) (0x0083c520) | - | int `0x00a77bc0` (native_mods) |
 | `0x403e` | `Native_403e_PlayerSetDirFix` | i, v f | Sg_PlayerSetDirFix(i, v) (0x0082d990) | - | int `0x00a77be0` (native_chr) |
-| `0x403f` | `Native_403f` | - | 0x0082d930() | - | int `0x00a77c20` (native_chr) |
+| `0x403f` | `Native_403f_CameraGetYaw` | - | 0x0082d930() | - | int `0x00a77c20` (native_chr) |
 | `0x4040` | `Native_SetControlAngle` | degrees f | 0: 0x0082d950(degrees) | - | int `0x00a77c30` (native_chr) |
 | `0x4041` | `Native_Empty_00a77c60` | - | 0 (an empty handler) | - | int `0x00a77c60` (native_mods) |
 | `0x4042` | `Native_Empty_00a77c70` | - | 0 (an empty handler) | - | int `0x00a77c70` (native_mods) |
 | `0x4043` | `Native_4043_SetShadowDir` | b, a | Ch_DrawSetShadowDir(b, a) (0x00830120) | - | int `0x00a77c80` (native_chr) |
-| `0x4044` | `Native_4044` | - | three popped and dropped; 0 | - | int `0x00a77cb0` (native_chr) |
+| `0x4044` | `Native_4044_DropThree` | - | three popped and dropped; 0 | - | int `0x00a77cb0` (native_chr) |
 | `0x4045` | `Native_4045_PlayerSetDiving` | v | 0x0082d9d0(v) | - | int `0x00a77ce0` (native_chr) |
 | `0x4046` | `Native_4046_SetShadowSemi` | v | Ch_DrawSetShadowSemi(v) (0x00821b20) | - | int `0x00a77d00` (native_chr) |
 | `0x4047` | `Native_ChrSetMotion_5000` | motion int | 0 | - | int `0x00a78770` (native) (as `0x5000`: group 4's table runs into group 5's) |
@@ -1551,7 +1551,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x4050` | `Native_ChrSetPushWeight` | weight f (push weight) | float: previous weight | - | float `0x00a78b30` (native) (as `0x5009`: group 4's table runs into group 5's) |
 | `0x4051` | `Native_500a_ChrSetHitHeight` | height f | 0: Ch_SetHitHeight(model, height) (0x0082b320) for a model | - | int `0x00a78c20` (native_mods) |
 | `0x4052` | `Native_500b_ChrSetGroundHeight` | v f | 0: Ch_SetJimen(model, v) (0x0082b360) | - | int `0x00a78b90` (native_chr) (as `0x500b`: group 4's table runs into group 5's) |
-| `0x4053` | `Native_500c` | v | popped and dropped (the original only prints a warning for a model); 0 | - | int `0x00a78d30` (native_chr) (as `0x500c`: group 4's table runs into group 5's) |
+| `0x4053` | `Native_500c_DropArg` | v | popped and dropped (the original only prints a warning for a model); 0 | - | int `0x00a78d30` (native_chr) (as `0x500c`: group 4's table runs into group 5's) |
 | `0x4054` | `Native_500d_ChrSetHideEvent` | v int | 0: Ch_SetHideEvent(model, v) (0x0082b2c0) | - | int `0x00a78df0` (native_chr) (as `0x500d`: group 4's table runs into group 5's) |
 | `0x4055` | `Native_ChrSetGroundFollow` | on int: stick to the ground | 0 | - | int `0x00a78cb0` (native) (as `0x500e`: group 4's table runs into group 5's) |
 | `0x4056` | `Native_ChrSetBodyHit` | on int: collide with characters | 0 | - | int `0x00a78da0` (native) (as `0x500f`: group 4's table runs into group 5's) |
@@ -1617,7 +1617,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x4094` | `Native_504d_ChrAllSetThickness` | v f | Ch_AllSetThicknessEvent(v) (0x0082a8d0); 0.0 | - | float `0x00a786e0` (native_chr) (as `0x504d`: group 4's table runs into group 5's) |
 | `0x4095` | `Native_ChrLoad` | chr int | int: 0x00829ef0's result | - | int `0x00a79800` (native_move) (as `0x504e`: group 4's table runs into group 5's) |
 | `0x4096` | `Native_504f_ChrDataReadSync` | slot int | int: args +0xc, Ch_DataReadSync(slot)'s result (0x0082a040) | until Ch_DataReadSync(slot) is 0 (poll 1), or 5 with args +8 set | start `0x00a79340`, poll `0x00a79380`, int `0x00a79410` (native_chr) (as `0x504f`: group 4's table runs into group 5's) |
-| `0x4097` | `Native_5050` | worker int, v int | 0: Ch_MotionSet737(that worker's model, v) (0x00837570) | - | int `0x00a78710` (native_chr) (as `0x5050`: group 4's table runs into group 5's) |
+| `0x4097` | `Native_5050_ChrMotionSet737` | worker int, v int | 0: Ch_MotionSet737(that worker's model, v) (0x00837570) | - | int `0x00a78710` (native_chr) (as `0x5050`: group 4's table runs into group 5's) |
 | `0x4098` | `Native_ChrGetMotionFrame` | - | int: motion frame (8.8) | - | int `0x00a78750` (native) (as `0x5051`: group 4's table runs into group 5's) |
 | `0x4099` | `Native_5052_ChrAttachDirectOffset` | worker, point, x f, y f, z f | Ch_BindToElemDirectOfs(model, that worker's model, point, x, y, z) (0x008326e0); worker -1 detaches with the offset | - | int `0x00a787e0` (native_chr) (as `0x5052`: group 4's table runs into group 5's) |
 | `0x409a` | `Native_5053_ChrGetElemDirect` | i int, id int | int: Ch_ElemGetDirect(worker i's model, id) (0x00833bf0), 0 without a model | - | int `0x00a78900` (native_mods) |
@@ -1637,7 +1637,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x40a8` | `Native_5061_ChrReadMgrp` | b int, a int | 0: Ch_MgrpRead(b, a) (0x00836a40) | - | int `0x00a78f80` (native_chr) (as `0x5061`: group 4's table runs into group 5's) |
 | `0x40a9` | `Native_5062_ChrSyncSystemMgrp` | id int, n int, keep int | the id; the poll 5 when done; int slot the args word +0xc (with keep, ChN_ReadSystemMGRPsync's result) | with keep set one call of ChN_ReadSystemMGRPsync(id, n) (0x00836a50), else until it returns 0 | start `0x00a79030`, poll `0x00a79070`, int `0x00a79120` (native_mods) |
 | `0x40aa` | `Native_5063_ChrSyncSystemMgrp` | id int, n int | int: args +0xc, ChN_ReadSystemMGRPsync(id, n)'s result (0x00836a50) | as 0x504f | start `0x00a79160`, poll `0x00a791a0`, int `0x00a79210` (native_chr) (as `0x5063`: group 4's table runs into group 5's) |
-| `0x40ab` | `Native_5064` | id int, keep int | the id; the poll 5 (with keep) or 1 when done; int slot the args word +0xc | with keep set one call of Ch_DataReadSync(id) (0x0082a040), else until it returns 0 | start `0x00a79240`, poll `0x00a79290`, int `0x00a79300` (native_mods) |
+| `0x40ab` | `Native_5064_ChrDataReadSync` | id int, keep int | the id; the poll 5 (with keep) or 1 when done; int slot the args word +0xc | with keep set one call of Ch_DataReadSync(id) (0x0082a040), else until it returns 0 | start `0x00a79240`, poll `0x00a79290`, int `0x00a79300` (native_mods) |
 | `0x40ac` | `Native_5065_ChrReadEventMgrp` | v int | 0: 0x00837650(v) (the dbgPrintf left out) | - | int `0x00a79420` (native_chr) (as `0x5065`: group 4's table runs into group 5's) |
 | `0x40ad` | `Native_5066_ChrSyncEventMgrp` | n | start: args +0 = n, +0xc = 0; EAX n; poll: 1 once 0x00837670(n) is 0 (the dbgPrintf left out), else 0; int: args +0xc | see the poll | start `0x00a79480`, poll `0x00a794d0`, int `0x00a79540` (native_chr) (as `0x5066`: group 4's table runs into group 5's) |
 | `0x40ae` | `Native_5067_ChrSetDrawCull` | v | Ch_DrawSetCull(model, v) (0x008300b0) | - | int `0x00a79580` (native_chr) (as `0x5067`: group 4's table runs into group 5's) |
@@ -1694,7 +1694,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x5009` | `Native_ChrSetPushWeight` | weight f (push weight) | float: previous weight | - | float `0x00a78b30` (native) |
 | `0x500a` | `Native_500a_ChrSetHitHeight` | height f | 0: Ch_SetHitHeight(model, height) (0x0082b320) for a model | - | int `0x00a78c20` (native_mods) |
 | `0x500b` | `Native_500b_ChrSetGroundHeight` | v f | 0: Ch_SetJimen(model, v) (0x0082b360) | - | int `0x00a78b90` (native_chr) |
-| `0x500c` | `Native_500c` | v | popped and dropped (the original only prints a warning for a model); 0 | - | int `0x00a78d30` (native_chr) |
+| `0x500c` | `Native_500c_DropArg` | v | popped and dropped (the original only prints a warning for a model); 0 | - | int `0x00a78d30` (native_chr) |
 | `0x500d` | `Native_500d_ChrSetHideEvent` | v int | 0: Ch_SetHideEvent(model, v) (0x0082b2c0) | - | int `0x00a78df0` (native_chr) |
 | `0x500e` | `Native_ChrSetGroundFollow` | on int: stick to the ground | 0 | - | int `0x00a78cb0` (native) |
 | `0x500f` | `Native_ChrSetBodyHit` | on int: collide with characters | 0 | - | int `0x00a78da0` (native) |
@@ -1760,7 +1760,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x504d` | `Native_504d_ChrAllSetThickness` | v f | Ch_AllSetThicknessEvent(v) (0x0082a8d0); 0.0 | - | float `0x00a786e0` (native_chr) |
 | `0x504e` | `Native_ChrLoad` | chr int | int: 0x00829ef0's result | - | int `0x00a79800` (native_move) |
 | `0x504f` | `Native_504f_ChrDataReadSync` | slot int | int: args +0xc, Ch_DataReadSync(slot)'s result (0x0082a040) | until Ch_DataReadSync(slot) is 0 (poll 1), or 5 with args +8 set | start `0x00a79340`, poll `0x00a79380`, int `0x00a79410` (native_chr) |
-| `0x5050` | `Native_5050` | worker int, v int | 0: Ch_MotionSet737(that worker's model, v) (0x00837570) | - | int `0x00a78710` (native_chr) |
+| `0x5050` | `Native_5050_ChrMotionSet737` | worker int, v int | 0: Ch_MotionSet737(that worker's model, v) (0x00837570) | - | int `0x00a78710` (native_chr) |
 | `0x5051` | `Native_ChrGetMotionFrame` | - | int: motion frame (8.8) | - | int `0x00a78750` (native) |
 | `0x5052` | `Native_5052_ChrAttachDirectOffset` | worker, point, x f, y f, z f | Ch_BindToElemDirectOfs(model, that worker's model, point, x, y, z) (0x008326e0); worker -1 detaches with the offset | - | int `0x00a787e0` (native_chr) |
 | `0x5053` | `Native_5053_ChrGetElemDirect` | i int, id int | int: Ch_ElemGetDirect(worker i's model, id) (0x00833bf0), 0 without a model | - | int `0x00a78900` (native_mods) |
@@ -1780,7 +1780,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x5061` | `Native_5061_ChrReadMgrp` | b int, a int | 0: Ch_MgrpRead(b, a) (0x00836a40) | - | int `0x00a78f80` (native_chr) |
 | `0x5062` | `Native_5062_ChrSyncSystemMgrp` | id int, n int, keep int | the id; the poll 5 when done; int slot the args word +0xc (with keep, ChN_ReadSystemMGRPsync's result) | with keep set one call of ChN_ReadSystemMGRPsync(id, n) (0x00836a50), else until it returns 0 | start `0x00a79030`, poll `0x00a79070`, int `0x00a79120` (native_mods) |
 | `0x5063` | `Native_5063_ChrSyncSystemMgrp` | id int, n int | int: args +0xc, ChN_ReadSystemMGRPsync(id, n)'s result (0x00836a50) | as 0x504f | start `0x00a79160`, poll `0x00a791a0`, int `0x00a79210` (native_chr) |
-| `0x5064` | `Native_5064` | id int, keep int | the id; the poll 5 (with keep) or 1 when done; int slot the args word +0xc | with keep set one call of Ch_DataReadSync(id) (0x0082a040), else until it returns 0 | start `0x00a79240`, poll `0x00a79290`, int `0x00a79300` (native_mods) |
+| `0x5064` | `Native_5064_ChrDataReadSync` | id int, keep int | the id; the poll 5 (with keep) or 1 when done; int slot the args word +0xc | with keep set one call of Ch_DataReadSync(id) (0x0082a040), else until it returns 0 | start `0x00a79240`, poll `0x00a79290`, int `0x00a79300` (native_mods) |
 | `0x5065` | `Native_5065_ChrReadEventMgrp` | v int | 0: 0x00837650(v) (the dbgPrintf left out) | - | int `0x00a79420` (native_chr) |
 | `0x5066` | `Native_5066_ChrSyncEventMgrp` | n | start: args +0 = n, +0xc = 0; EAX n; poll: 1 once 0x00837670(n) is 0 (the dbgPrintf left out), else 0; int: args +0xc | see the poll | start `0x00a79480`, poll `0x00a794d0`, int `0x00a79540` (native_chr) |
 | `0x5067` | `Native_5067_ChrSetDrawCull` | v | Ch_DrawSetCull(model, v) (0x008300b0) | - | int `0x00a79580` (native_chr) |
