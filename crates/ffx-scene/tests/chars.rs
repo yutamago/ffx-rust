@@ -23,7 +23,7 @@ const INVERSE_ULP: u32 = 4;
 fn the_allow_list_parses() {
     let rules = ffx_drawdiff::rules::parse("chars-allow.txt", include_str!("chars-allow.txt"))
         .expect("allow list");
-    assert_eq!(rules.len(), 2);
+    assert_eq!(rules.len(), 5);
 }
 
 #[test]
