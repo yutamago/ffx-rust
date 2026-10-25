@@ -11,6 +11,7 @@ use ffx_prender::glue2::bridge as g2;
 use ffx_prender::glue3::bridge as g3;
 use ffx_prender::glue4::bridge as g4;
 use ffx_prender::glue5::bridge as g5;
+use ffx_prender::glue6::bridge as g6;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -753,5 +754,105 @@ ported! {
     MeshInstance_isVisible_00663cc0 @ 0x0066_3cc0 => extern "thiscall" fn mesh_instance_is_visible(this: u32, matrix: u32) -> u32 {
         let mut f = StackFrame::<0x20>::new();
         g5::mesh_instance_is_visible(&mut mem(), f.at() + 0x80, this, matrix)
+    }
+
+    // ---- round 2, batch 6 (ffx_prender::glue6) ----
+    /// `ClassVFXRenderDataTable_CreateInstance()`.
+    ClassVFXRenderDataTable_CreateInstance @ 0x0069_f4c0 => extern "C" fn create_vfx_render_data_table() {
+        g6::create_singleton(&mut mem(), ffx_prender::glue6::VFX_RENDER_DATA_TABLE_SINGLETON);
+    }
+    /// `BrokenScreenEffect_CreateInstance_006d4d30()`.
+    BrokenScreenEffect_CreateInstance_006d4d30 @ 0x006d_4d30 => extern "C" fn create_broken_screen() {
+        g6::create_singleton(&mut mem(), ffx_prender::glue6::BROKEN_SCREEN_SINGLETON);
+    }
+    /// `FreeCamera_CreateInstance_0042f260()`.
+    FreeCamera_CreateInstance_0042f260 @ 0x0042_f260 => extern "C" fn create_free_camera() -> u32 {
+        g6::free_camera_instance(&mut mem())
+    }
+    /// `ClusterManager_CreateInstance_0069a060()`.
+    ClusterManager_CreateInstance_0069a060 @ 0x0069_a060 => extern "C" fn create_cluster_manager() {
+        g6::create_singleton(&mut mem(), ffx_prender::glue6::CLUSTER_MANAGER_SINGLETON);
+    }
+    /// `VfxShaderManager_CreateInstance_006c1420()`.
+    VfxShaderManager_CreateInstance_006c1420 @ 0x006c_1420 => extern "C" fn create_vfx_shader_manager() {
+        g6::create_singleton(&mut mem(), ffx_prender::glue6::VFX_SHADER_MANAGER_SINGLETON);
+    }
+    /// `Distortion_CreateInstance_006c2190()`.
+    Distortion_CreateInstance_006c2190 @ 0x006c_2190 => extern "C" fn create_distortion() {
+        g6::create_singleton(&mut mem(), ffx_prender::glue6::DISTORTION_SINGLETON);
+    }
+    /// `ShadowManager_CreateInstance_006c9500()`.
+    ShadowManager_CreateInstance_006c9500 @ 0x006c_9500 => extern "C" fn create_shadow_manager() {
+        g6::create_singleton(&mut mem(), ffx_prender::glue6::SHADOW_MANAGER_SINGLETON);
+    }
+    /// `VFXRenderMap_CreateInstance_0069f440()`.
+    VFXRenderMap_CreateInstance_0069f440 @ 0x0069_f440 => extern "C" fn create_vfx_render_map() {
+        g6::create_vfx_render_map(&mut mem());
+    }
+    /// `PhyreScene_onFieldMapAssetLoaded(asset, task)`.
+    PhyreScene_onFieldMapAssetLoaded @ 0x0066_6630 => extern "C" fn scene_on_field_map_asset_loaded(asset: u32, task: u32) -> u32 {
+        g6::scene_on_field_map_asset_loaded(&mut mem(), asset, task)
+    }
+    /// `PhyreScene_onVfxTextureLoaded_00666880(cluster, task)`.
+    PhyreScene_onVfxTextureLoaded_00666880 @ 0x0066_6880 => extern "C" fn scene_on_vfx_texture_loaded(cluster: u32, task: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        g6::scene_on_vfx_texture_loaded(&mut mem(), f.at(), cluster, task)
+    }
+    /// `graphicProcessPs2DataLoadingCallback()`.
+    graphicProcessPs2DataLoadingCallback @ 0x0064_27f0 => extern "C" fn process_ps2_data_loading_callback() -> u32 {
+        g6::process_ps2_data_loading_callback(&mut mem())
+    }
+    /// `PhyreScene_RenderDTTVFX(this)`.
+    PhyreScene_RenderDTTVFX @ 0x0065_31b0 => extern "thiscall" fn scene_render_dtt_vfx(this: u32) -> u32 {
+        g6::scene_render_dtt_vfx(&mut mem(), this)
+    }
+    /// `SamplerHolder_ctor_006f5ae0(this, owner)`.
+    SamplerHolder_ctor_006f5ae0 @ 0x006f_5ae0 => extern "thiscall" fn sampler_holder_ctor(this: u32, owner: u32) -> u32 {
+        g6::sampler_holder_ctor(&mut mem(), this, owner)
+    }
+    /// `PhyreScene_deletePoolObject56_0065a430(this, object, cluster)`.
+    PhyreScene_deletePoolObject56_0065a430 @ 0x0065_a430 => extern "thiscall" fn scene_delete_pool_object56(this: u32, object: u32, cluster: u32) -> u32 {
+        g6::scene_delete_pool_object56(&mut mem(), this, object, cluster)
+    }
+    /// `PhyreScene_deletePoolObject28_0065a1d0(this, object, cluster)`.
+    PhyreScene_deletePoolObject28_0065a1d0 @ 0x0065_a1d0 => extern "thiscall" fn scene_delete_pool_object28(this: u32, object: u32, cluster: u32) -> u32 {
+        g6::scene_delete_pool_object28(&mut mem(), this, object, cluster)
+    }
+    /// `graphicLevelSetName(name)`.
+    graphicLevelSetName @ 0x0064_1db0 => extern "C" fn level_set_name(name: u32) -> u32 {
+        g6::level_set_name(&mut mem(), name)
+    }
+    /// `PostProcessManager_lookup_006935f0(this, i)`.
+    PostProcessManager_lookup_006935f0 @ 0x0069_35f0 => extern "thiscall" fn post_lookup(this: u32, i: u32) -> u32 {
+        let mut f = StackFrame::<8>::new();
+        g6::post_lookup(&mut mem(), f.at() + 0x20, this, i)
+    }
+    /// `PhyreScene_registClustersToAddToWorld(this, a, b)`.
+    PhyreScene_registClustersToAddToWorld @ 0x0066_8550 => extern "thiscall" fn scene_regist_clusters_to_add(this: u32, a: u32, b: u32) -> u32 {
+        g6::scene_regist_clusters_to_add(&mut mem(), this, a, b)
+    }
+    /// `PhyreScene_beginRenderOpeningScreen(this)`.
+    PhyreScene_beginRenderOpeningScreen @ 0x0065_79d0 => extern "thiscall" fn scene_begin_render_opening_screen(this: u32) -> u32 {
+        g6::scene_begin_render_opening_screen(&mut mem(), this)
+    }
+    /// `BrokenScreenEffect_setColour_006d4620(this, colour)`.
+    BrokenScreenEffect_setColour_006d4620 @ 0x006d_4620 => extern "thiscall" fn broken_set_colour(this: u32, colour: u32) {
+        g6::broken_set_colour(&mut mem(), this, colour);
+    }
+    /// `PRedBlackTree_insertNew_0065fd50(this, &key, &value)`.
+    PRedBlackTree_insertNew_0065fd50 @ 0x0065_fd50 => extern "thiscall" fn tree_insert_new_0065fd50(this: u32, key: u32, value: u32) -> u32 {
+        g6::tree_insert_new(&mut mem(), ffx_prender::glue6::TREE_INSERT_64C020, this, key, value)
+    }
+    /// `PRedBlackTree_insertNew_006c0810(this, &key, &value)`.
+    PRedBlackTree_insertNew_006c0810 @ 0x006c_0810 => extern "thiscall" fn tree_insert_new_006c0810(this: u32, key: u32, value: u32) -> u32 {
+        g6::tree_insert_new(&mut mem(), ffx_prender::glue6::TREE_INSERT_6BE960, this, key, value)
+    }
+    /// `PhyreScene_renderOpeningScreen(this)`.
+    PhyreScene_renderOpeningScreen @ 0x0066_b2e0 => extern "thiscall" fn scene_render_opening_screen(this: u32) -> u32 {
+        g6::scene_render_opening_screen(&mut mem(), this)
+    }
+    /// `PSamplerStates_init_006f5470()`.
+    PSamplerStates_init_006f5470 @ 0x006f_5470 => extern "C" fn sampler_states_init() -> u32 {
+        g6::sampler_states_init(&mut mem())
     }
 }

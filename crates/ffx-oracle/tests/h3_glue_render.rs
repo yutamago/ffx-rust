@@ -28,6 +28,7 @@ use ffx_prender::glue2::{self, bridge as g2};
 use ffx_prender::glue3::{self, bridge as g3};
 use ffx_prender::glue4::{self, bridge as g4};
 use ffx_prender::glue5::{self, bridge as g5};
+use ffx_prender::glue6::{self, bridge as g6};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -1758,5 +1759,355 @@ fn batch5_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 8 } else { 40 };
         run_cases(t, CASES5, n, &mut Rng(0x5eed_b005));
+    });
+}
+
+// ---- batch 6 (ffx_prender::glue6, round 2) ----
+
+impl Twins {
+    /// A recording stub at `sym` (logging `ecx`) that first stores the
+    /// words `writes` at `[ecx + off]` (an object the callee fills).
+    fn stub_this_out(
+        &mut self,
+        sym: u32,
+        n: u32,
+        pops: u32,
+        ret: Option<u32>,
+        writes: &[(u8, u32)],
+    ) {
+        let log = self.stub(None, sym, true, n, pops, ret);
+        let mut c = vec![];
+        for &(off, v) in writes {
+            c.extend([0xc7, 0x41, off]); // mov dword [ecx+off], v
+            c.extend(v.to_le_bytes());
+        }
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+
+    /// A recording stub at `sym` returning `ret`.
+    fn stub_ret(&mut self, sym: u32, this: bool, n: u32, pops: u32, ret: u32) {
+        let at = self.rebase(sym);
+        self.stub(Some(at), sym, this, n, pops, Some(ret));
+    }
+}
+
+const SINGLETONS: [glue6::Singleton; 7] = [
+    glue6::VFX_RENDER_DATA_TABLE_SINGLETON,
+    glue6::BROKEN_SCREEN_SINGLETON,
+    glue6::FREE_CAMERA_SINGLETON,
+    glue6::CLUSTER_MANAGER_SINGLETON,
+    glue6::VFX_SHADER_MANAGER_SINGLETON,
+    glue6::DISTORTION_SINGLETON,
+    glue6::SHADOW_MANAGER_SINGLETON,
+];
+
+/// Every singleton global 0 or set; `operator new` giving memory or 0.
+fn prep_singletons(t: &mut Twins, obj: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    for s in SINGLETONS {
+        let v = if rng.chance(2) { 0 } else { rng.next() | 1 };
+        t.global(s.global.sym, v);
+    }
+    let v = if rng.chance(2) { 0 } else { rng.next() | 1 };
+    t.global(glue6::VFX_RENDER_MAP.sym, v);
+    let p = if rng.chance(4) { 0 } else { obj + 0x100 };
+    t.stub_ret(glue6::OPERATOR_NEW, false, 1, 0, p);
+}
+
+/// The task `(scene, a, b, list, reader, c, flag)` at `obj + 0x40`, the
+/// list's count `[list]` equal to the reader's or not.
+fn prep_asset_loaded(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let task = obj + 0x40;
+    for k in [0, 1, 2, 4, 5] {
+        let w = rng.next();
+        t.w32(task + 4 * k, w);
+    }
+    t.w32(task + 0xc, obj + 0x100);
+    let flag = if rng.chance(2) { 0 } else { rng.next() };
+    t.w32(task + 0x18, flag);
+    let count = rng.below(5);
+    t.w32(obj + 0x100, count);
+    let r = if rng.chance(2) { count } else { count + 1 };
+    t.stub_ret(glue6::ASSET_LIST_COUNT, true, 0, 0, r);
+    args[1] = task;
+}
+
+/// A scene at `obj + 0x1800` with its arrays `+0x60`, `+0x3c`, `+0x54`;
+/// the task `(id, a, b, c)` at `obj + 0x40`.
+fn prep_vfx_texture_loaded(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = obj + 0x1800;
+    t.global(SCENE, scene);
+    t.w32(scene + 0x60, obj + 0x1000);
+    t.w32(scene + 0x3c, obj + 0x1100);
+    t.w32(scene + 0x54, obj + 0x1200);
+    t.w32(obj + 0x40, rng.below(16));
+    for k in 1..4 {
+        let w = rng.next();
+        t.w32(obj + 0x40 + 4 * k, w);
+    }
+    args[1] = obj + 0x40;
+}
+
+/// The PS2 loader's list (count 0..4, data at `obj + 0x100`).
+fn prep_ps2_list(t: &mut Twins, obj: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let m = rng.next();
+    t.global(glue6::PS2_LOAD_MUTEX.sym, m);
+    let list = t.rebase(glue6::PS2_LOAD_LIST);
+    t.w32(list, rng.below(5));
+    let cap = rng.next();
+    t.w32(list + 4, cap);
+    t.w32(list + 8, obj + 0x100);
+}
+
+/// A scene with the renderer (`+0xd0`) and the mesh list (`+0x3854`,
+/// `+0x385c`); `beginScene` failing now and then.
+fn prep_dtt(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x3860);
+    *this = scene;
+    t.w32(scene + 0xd0, obj + 0x100);
+    let n = rng.below(5);
+    t.w32(scene + 0x3854, n);
+    t.w32(scene + 0x385c, obj + 0x300);
+    for k in 0..n {
+        let mesh = if rng.chance(4) {
+            0
+        } else {
+            obj + 0x400 + 0x40 * k
+        };
+        t.w32(obj + 0x300 + 4 * k, mesh);
+    }
+    let r = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    t.stub_ret(glue6::RENDERER_BEGIN_SCENE, true, 1, 1, r);
+}
+
+/// A pool of `size`-byte slots in the scene (`base` field, used bytes,
+/// lowest free) and an object with a recording destructor in it, or not.
+fn pool_at(
+    t: &mut Twins,
+    obj: u32,
+    this: &mut u32,
+    args: &mut [u32],
+    rng: &mut Rng,
+    fields: [u32; 3],
+    size: u32,
+) {
+    let scene = obj.wrapping_sub(0xf000);
+    *this = scene;
+    let object = obj + 0x300;
+    let i = pick(rng, &[0, 5, 0xbb7, 0xbb8, 0xffff_ffff, 100]);
+    let low = if rng.chance(3) { rng.below(size) } else { 0 };
+    let base = if rng.chance(5) {
+        // just above the object: the division rounds toward 0 (index 0)
+        object + 1 + rng.below(size - 1)
+    } else {
+        object.wrapping_sub(size.wrapping_mul(i)).wrapping_sub(low)
+    };
+    t.w32(fields[0] - 0xf000 + obj, base);
+    t.w32(fields[1] - 0xf000 + obj, obj + 0x1000);
+    let free = pick(rng, &[0, 3, 6, 0xbb8, 0xffff_ffff]);
+    t.w32(fields[2] - 0xf000 + obj, free);
+    let r = rng.next();
+    let f = t.stub(None, 0xd7, true, 1, 1, Some(r));
+    t.w32(object, obj + 0x800);
+    t.w32(obj + 0x800, f);
+    args[0] = match rng.below(6) {
+        0 => 0,
+        1 => 0xffff_fffc,
+        _ => object,
+    };
+    args[1] = if rng.chance(3) {
+        rng.next()
+    } else {
+        scene + 0x12d4
+    };
+}
+
+fn prep_pool56(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    pool_at(t, obj, this, args, rng, [0xfb90, 0xfb9c, 0xfba0], 56);
+}
+
+fn prep_pool28(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    pool_at(t, obj, this, args, rng, [0xfba4, 0xfbb0, 0xfbb4], 28);
+}
+
+/// The lookup's entries (`+4 + 4i`), each list empty or not, and the
+/// cursor search finding an object or not.
+fn prep_post_lookup(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let i = rng.below(4);
+    args[0] = i;
+    let entry = if rng.chance(5) { 0 } else { obj + 0x100 };
+    t.w32(obj + 4 + 4 * i, entry);
+    let list = obj + 0x11c;
+    let first = if rng.chance(2) { list } else { obj + 0x400 };
+    t.w32(list, first);
+    let found = if rng.chance(3) { 0 } else { rng.next() | 1 };
+    let object = rng.next();
+    let base = rng.next();
+    // a miss leaves the object fields as the port wrote them
+    let writes: &[(u8, u32)] = if found == 0 && rng.chance(2) {
+        &[(0xc, 0)]
+    } else if found == 0 {
+        &[(0xc, 0), (0x10, object | 1)]
+    } else {
+        &[(0xc, found), (0x10, object), (0, base)]
+    };
+    t.stub_this_out(glue6::CURSOR_SEEK3, 0, 0, None, writes);
+}
+
+/// A scene large enough for the mutex `+0xfb3c`, its array at `+0x1188`.
+fn prep_regist_clusters(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfb40);
+    *this = scene;
+    let m = rng.next();
+    t.w32(scene + 0xfb3c, m);
+    array_at(t, scene + 0x1188, obj + 0x400, 8, rng);
+}
+
+/// The Iggy player opened or not; the application at `obj + 0x400`.
+fn prep_opening(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj.wrapping_sub(0x0001_0000);
+    let player = if rng.chance(3) { 0 } else { obj + 0x200 };
+    t.stub_ret(glue6::IGGY_PLAYER_OPEN, false, 5, 0, player);
+    t.stub_ret(glue6::GET_APPLICATION, false, 0, 0, obj + 0x400);
+    let b = rng.next() as u8;
+    let at = t.rebase(glue6::OPENING_PLAYING.sym);
+    t.write(at, &[b]);
+}
+
+/// The broken screen's mode and a colour at `obj + 0x80`.
+fn prep_colour(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let mode = pick(rng, &[1, 2, 1, 2, 0, 3]);
+    t.w32(obj, mode);
+    for k in 0..4 {
+        let f = if k == 3 && rng.chance(2) {
+            // alphas around 1, where the clamp works
+            [0.0f32, 0.5, 1.0, 1.5, 2.0, 0.999, 3.0][rng.below(7) as usize]
+        } else {
+            rng.float()
+        };
+        t.write(obj + 0x80 + 4 * k, &f.to_le_bytes());
+    }
+    args[0] = obj + 0x80;
+}
+
+/// A free list (`+0x18`) with a node or empty (refilled or not), the key
+/// and value at `obj + 0x80`, the insert refusing now and then.
+fn prep_tree_insert(
+    t: &mut Twins,
+    obj: u32,
+    this: &mut u32,
+    args: &mut [u32],
+    rng: &mut Rng,
+    insert: u32,
+) {
+    let tree = obj + 0x40;
+    *this = tree;
+    let node = obj + 0x200;
+    t.w32(node, obj + 0x240);
+    let head = if rng.chance(3) { 0 } else { node };
+    t.w32(tree + 0x18, head);
+    let refill = if rng.chance(2) { 0 } else { node };
+    t.stub_this_out(glue6::FREE_LIST_ALLOCATE_BLOCK, 1, 1, None, &[(0, refill)]);
+    let r = if rng.chance(2) { 0 } else { rng.next() | 1 };
+    t.stub_ret(insert, true, 1, 1, r);
+    args[0] = obj + 0x80;
+    args[1] = obj + 0x84;
+}
+
+fn prep_tree_insert_64c020(
+    t: &mut Twins,
+    obj: u32,
+    this: &mut u32,
+    args: &mut [u32],
+    rng: &mut Rng,
+) {
+    prep_tree_insert(t, obj, this, args, rng, glue6::TREE_INSERT_64C020);
+}
+
+fn prep_tree_insert_6be960(
+    t: &mut Twins,
+    obj: u32,
+    this: &mut u32,
+    args: &mut [u32],
+    rng: &mut Rng,
+) {
+    prep_tree_insert(t, obj, this, args, rng, glue6::TREE_INSERT_6BE960);
+}
+
+/// The application at `obj + 0x400` (slot 10 a stub), its renderer at
+/// `+0x124` (slot 2 a stub); `flip`, slot 2 and the window messages
+/// failing or quitting now and then; the Iggy menus or none.
+fn prep_render_opening(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let app = obj + 0x400;
+    t.stub_ret(glue6::GET_APPLICATION, false, 0, 0, app);
+    let s10 = t.stub(None, 0xa10, true, 0, 0, Some(1));
+    t.w32(app, obj + 0x900);
+    t.w32(obj + 0x900 + 40, s10);
+    let renderer = app + 0x124;
+    let r2 = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    let s2 = t.stub(None, 0xa02, true, 0, 0, Some(r2));
+    t.w32(renderer, obj + 0xa00);
+    t.w32(obj + 0xa08, s2);
+    let flip = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    t.stub_ret(glue6::RENDERER_FLIP, true, 0, 0, flip);
+    let quit = u32::from(rng.chance(3));
+    t.stub_ret(glue6::PROCESS_WINDOWS_MESSAGE, false, 0, 0, quit);
+    let menus = if rng.chance(3) { 0 } else { rng.next() | 1 };
+    t.global(glue6::IGGY_MENU_MANAGER.sym, menus);
+}
+
+/// The two sampler descriptions: random bytes, the flag bit 7 set or not.
+fn prep_samplers(t: &mut Twins, _: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    for desc in [glue6::SAMPLER_DESC_A, glue6::SAMPLER_DESC_B] {
+        let at = t.rebase(desc);
+        let b = rng.bytes(0x24);
+        t.write(at, &b);
+        let flags = rng.next() & !0x80 | if rng.chance(2) { 0x80 } else { 0 };
+        t.w32(at + 0x1c, flags);
+    }
+}
+
+#[rustfmt::skip]
+const CASES6: &[Case] = &[
+    Case { prep: Some(prep_singletons), ..cdecl("create_vfx_render_data_table", 0x0069_f4c0, 0, &[(0x0069_e140, K::This(0))], |m, _, _| { g6::create_singleton(m, glue6::VFX_RENDER_DATA_TABLE_SINGLETON); Out::None }) },
+    Case { prep: Some(prep_singletons), ..cdecl("create_broken_screen", 0x006d_4d30, 0, &[(0x006d_4ba0, K::This(0))], |m, _, _| { g6::create_singleton(m, glue6::BROKEN_SCREEN_SINGLETON); Out::None }) },
+    Case { prep: Some(prep_singletons), ..cdecl("create_free_camera", 0x0042_f260, 0, &[(0x0067_fe70, K::This(0))], |m, _, _| u(g6::free_camera_instance(m))) },
+    Case { prep: Some(prep_singletons), ..cdecl("create_cluster_manager", 0x0069_a060, 0, &[(0x0069_9ab0, K::This(0))], |m, _, _| { g6::create_singleton(m, glue6::CLUSTER_MANAGER_SINGLETON); Out::None }) },
+    Case { prep: Some(prep_singletons), ..cdecl("create_vfx_shader_manager", 0x006c_1420, 0, &[(0x006b_f4a0, K::This(0))], |m, _, _| { g6::create_singleton(m, glue6::VFX_SHADER_MANAGER_SINGLETON); Out::None }) },
+    Case { prep: Some(prep_singletons), ..cdecl("create_distortion", 0x006c_2190, 0, &[(0x006c_2010, K::This(0))], |m, _, _| { g6::create_singleton(m, glue6::DISTORTION_SINGLETON); Out::None }) },
+    Case { prep: Some(prep_singletons), ..cdecl("create_shadow_manager", 0x006c_9500, 0, &[(0x006c_7d80, K::This(0))], |m, _, _| { g6::create_singleton(m, glue6::SHADOW_MANAGER_SINGLETON); Out::None }) },
+    Case { prep: Some(prep_singletons), ..cdecl("create_vfx_render_map", 0x0069_f440, 0, &[(glue6::MAP_BUY_HEAD_NODE, K::This(0))], |m, _, _| { g6::create_vfx_render_map(m); Out::None }) },
+    Case { prep: Some(prep_asset_loaded), ..cdecl("scene_on_field_map_asset_loaded", 0x0066_6630, 2, &[(glue6::ASYNC_LOAD_INSTANCE, K::Getter), (glue6::SCENE_DO_ON_FIELD_MAP_ASSET_LOADED, K::This(7)), (glue6::SCENE_DO_ON_ALL_FIELD_MAP_ASSETS_LOADED, K::This(4))], |m, _, a| u(g6::scene_on_field_map_asset_loaded(m, a[0], a[1]))) },
+    framed(Case { prep: Some(prep_vfx_texture_loaded), ..cdecl("scene_on_vfx_texture_loaded", 0x0066_6880, 2, &[(glue6::ASYNC_LOAD_INSTANCE, K::Getter), (glue6::GET_APPLICATION, K::Cdecl(0)), (glue6::FIXUP_CLUSTERS, K::Cdecl(2)), (glue6::SCENE_REGIST_VFX_TEXTURE, K::This(3))], |m, _, a| u(g6::scene_on_vfx_texture_loaded(m, frame_ebp(), a[0], a[1]))) }, 0, 4),
+    Case { prep: Some(prep_ps2_list), ..cdecl("process_ps2_data_loading_callback", 0x0064_27f0, 0, &[(glue6::WAIT_FOR_SINGLE_OBJECT, K::Import(2)), (glue6::RELEASE_MUTEX, K::Import(1)), (glue6::SA_READ_CALLBACK, K::Cdecl(1)), (glue6::PS2_LOAD_LIST_RESET, K::This(1))], |m, _, _| u(g6::process_ps2_data_loading_callback(m))) },
+    Case { prep: Some(prep_dtt), ..method("scene_render_dtt_vfx", 0x0065_31b0, This::Object, 0, &[(glue6::RENDER_MESH_INSTANCE, K::This(4)), (glue6::RENDERER_END_SCENE, K::This(1))], |m, this, _| u(g6::scene_render_dtt_vfx(m, this))) },
+    method("sampler_holder_ctor", 0x006f_5ae0, This::Object, 1, &[(glue6::SAMPLER_STATE_CTOR, K::This(0))], |m, this, a| u(g6::sampler_holder_ctor(m, this, a[0]))),
+    Case { prep: Some(prep_pool56), ..method("scene_delete_pool_object56", 0x0065_a430, This::Object, 2, &[(glue6::POOL56_DTOR, K::This(0)), (glue6::CLUSTER_DELETE_OBJECT, K::This(1))], |m, this, a| u(g6::scene_delete_pool_object56(m, this, a[0], a[1]))) },
+    Case { prep: Some(prep_pool28), ..method("scene_delete_pool_object28", 0x0065_a1d0, This::Object, 2, &[(glue6::CLUSTER_DELETE_OBJECT, K::This(1))], |m, this, a| u(g6::scene_delete_pool_object28(m, this, a[0], a[1]))) },
+    cdecl("level_set_name", 0x0064_1db0, 1, &[(glue6::HASH_U, K::Cdecl(1)), (glue6::IOB_FUNC, K::ImportC(0)), (glue6::FPRINTF, K::ImportC(3)), (glue6::POST_PROCESS_INSTANCE, K::Getter), (glue6::POST_SET_HDAO_SETTING, K::This(1)), (glue6::SCENE_SET_LEVEL_NAME_HASH, K::This(1)), (glue6::SCENE_SET_LEVEL_NAME, K::This(1))], |m, _, a| u(g6::level_set_name(m, a[0]))),
+    framed(Case { prep: Some(prep_post_lookup), ..method("post_lookup", 0x0069_35f0, This::Object, 1, &[], |m, this, a| u(g6::post_lookup(m, frame_ebp(), this, a[0]))) }, 0x20, 0),
+    Case { prep: Some(prep_regist_clusters), ..method("scene_regist_clusters_to_add", 0x0066_8550, This::Object, 2, &[(glue6::WAIT_FOR_SINGLE_OBJECT, K::Import(2)), (glue6::RELEASE_MUTEX, K::Import(1)), (glue6::ARRAY_RESERVE_668300, K::Keep(1))], |m, this, a| u(g6::scene_regist_clusters_to_add(m, this, a[0], a[1]))) },
+    Case { prep: Some(prep_opening), ..method("scene_begin_render_opening_screen", 0x0065_79d0, This::Object, 0, &[(glue6::IGGY_SET_CALLBACK, K::This(2)), (glue6::RENDERER_SET_CLEAR_COLOR, K::This(4))], |m, this, _| u(g6::scene_begin_render_opening_screen(m, this))) },
+    Case { prep: Some(prep_colour), ..method("broken_set_colour", 0x006d_4620, This::Object, 1, &[], |m, this, a| { g6::broken_set_colour(m, this, a[0]); Out::None }) },
+    Case { prep: Some(prep_tree_insert_64c020), ..method("tree_insert_new_0065fd50", 0x0065_fd50, This::Object, 2, &[(glue6::FREE_LIST_DEALLOCATE, K::This(1)), (glue6::TREE_POST_INSERT, K::This(1))], |m, this, a| u(g6::tree_insert_new(m, glue6::TREE_INSERT_64C020, this, a[0], a[1]))) },
+    Case { prep: Some(prep_tree_insert_6be960), ..method("tree_insert_new_006c0810", 0x006c_0810, This::Object, 2, &[(glue6::FREE_LIST_DEALLOCATE, K::This(1)), (glue6::TREE_POST_INSERT, K::This(1))], |m, this, a| u(g6::tree_insert_new(m, glue6::TREE_INSERT_6BE960, this, a[0], a[1]))) },
+    Case { prep: Some(prep_render_opening), ..method("scene_render_opening_screen", 0x0066_b2e0, This::Object, 0, &[(glue6::RENDERER_BEGIN_SCENE, K::This(1)), (glue6::RENDERER_END_SCENE, K::This(1)), (glue6::IGGY_MENU_RENDER, K::This(0)), (glue6::EXIT_PROCESS, K::Import(1)), (glue6::SLEEP_MS, K::Cdecl(1)), (glue6::SCENE_DO_DELETE_MESH_INSTANCES, K::This(0))], |m, this, _| u(g6::scene_render_opening_screen(m, this))) },
+    Case { prep: Some(prep_samplers), ..cdecl("sampler_states_init", 0x006f_5470, 0, &[(glue6::SAMPLER_CREATE, K::This(0))], |m, _, _| u(g6::sampler_states_init(m))) },
+];
+
+#[test]
+fn batch6_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 8 } else { 40 };
+        run_cases(t, CASES6, n, &mut Rng(0x6006_b006));
     });
 }

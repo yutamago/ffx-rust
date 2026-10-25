@@ -110,6 +110,7 @@
 0x0042f0f0 function FFXApplication_dtor_FFXApplication # structure: restores FFXApplication_vftable, posts WM_CLOSE (SendMessageW 0x10) when the window flag is set, then the PApplication destructor 0x00620bc0; the Switch's ~FFXApplication likewise ends in PApplication::~PApplication
 0x0042f120 function Phyre_PString_dtor_PString   # structure: fastcall(this): Phyre_PhyreFree(the buffer) unless bit 0 (external buffer) is set; the Switch's Phyre::PString::~PString calls PhyreFree; 101 callers, mostly unwind funclets
 0x0042f150 function FFXApplication_scalar_deleting_dtor # structure: ~FFXApplication body then Phyre_PhyreFree(this) when flag bit 0; the second ~FFXApplication of the Switch (deleting form)
+0x0042f260 function FreeCamera_CreateInstance_0042f260 # cdecl(): without g_FreeCamera, operator_new(0x340) + FreeCamera_FreeCamera (0 when the allocation fails); C++ exception frame (dropped in the port); 11 callers; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x0042f4d0 function ResetToLauncher              # structure: (): SendMessageW(main window, WM_CLOSE); callers are fatal file errors (BigFileStream_fileTaskUncompress, fiosOpen, Game_InitFileSystem, PhyreFIOS_LoadMagicfilePrx); Switch ResetToLauncher (88 bytes) is the free function of FFXApplication.cpp, and its decorated name ?ResetToLauncher@@ sorts before the ?afterGraphicSync@FFXApplication@@ methods, as here
 0x0042f4f0 function FFXApplication_afterGraphicSync # fh v3:exact 0x0042f5d0 FFXApplication::afterGraphicSync
 0x0042f520 function FFXApplication_animate    # fh v3:exact 0x0042f600 FFXApplication::animate
@@ -2603,8 +2604,10 @@
 0x00659290 function PhyreScene_convertMapPath # fh v3:exact 0x00659420 PhyreScene::convertMapPath
 0x006593d0 function PhyreScene_copyPreviousFrameBufferForDtt # fh v3:exact 0x00659560 PhyreScene::copyPreviousFrameBufferForDtt
 0x00659c30 function PhyreScene_createRWTTTarget  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PhyreScene_colorTargetRWTT'; Switch 0x71001eba60 PhyreScene::createRWTTTarget (symbols from Fahrenheit's server export)
+0x0065a1d0 function PhyreScene_deletePoolObject28_0065a1d0 # thiscall(scene, object, cluster), ret 8: an object of the scene's 28-byte pool (cluster +0x12d4; base +0xfba4, used bytes [+0xfbb0], lowest free +0xfbb4, index <= 0xbb7, signed division by 28) frees its slot and runs virtual slot 0 (0); else cluster->Phyre_PCluster_deleteObject(object + 4); eax this + 0x12d4 or the division's low product otherwise; only caller ClassDynamicGeometry_clear; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x0065a250 function PhyreScene_deleteObjectInCluster_0065a250 # thiscall(scene, object, cluster), ret 8 -> eax: an object of the scene's pool cluster (+0x12d4; 16-byte slots from [+0xfbb8], index <= 0xbb7) clears its used byte ([+0xfbc4] + i), lowers the free index +0xfbc8 and runs virtual slot 0 (0) (its eax); else cluster->Phyre_PCluster_deleteObject(object + 4) unless object or object + 4 is 0 (eax this + 0x12d4 then); only caller ClassDynamicGeometry_clear; name ours; ported M4 h3 r2 (ffx_prender::glue5)
 0x0065a2c0 function PhyreScene_deleteMaterialInCluster # layout+callees: sorts between PhyreScene_createRWTTTarget and PhyreScene_deletePMeshInstanceInCluster, and its named callees match the Switch 0x7100207e90 PhyreScene_deleteMaterialInCluster's (similarity 1.00: Phyre_PCluster_deleteObjectWithInstanceList); symbols from Fahrenheit's server export
+0x0065a430 function PhyreScene_deletePoolObject56_0065a430 # thiscall(scene, object, cluster), ret 8: the 56-byte pool (base +0xfb90, used [+0xfb9c], lowest free +0xfba0), its objects through 0x00433af0; others cluster->Phyre_PCluster_deleteObject(object); ClassDynamicGeometry_clear calls it 4 times; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x0065a4a0 function PhyreScene_deleteMaterialSetInCluster # layout+callees: sorts between PhyreScene_deleteMaterialInCluster and PhyreScene_deletePMeshInstanceInCluster, and its named callees match the Switch 0x7100207cf0 PhyreScene_deleteMaterialSetInCluster's (similarity 1.00: Phyre_PCluster_deleteObject); symbols from Fahrenheit's server export
 0x0065a4c0 function PhyreScene_deletePMeshInstanceInCluster # fh v3:exact 0x0065a650 PhyreScene::deletePMeshInstanceInCluster
 0x0065a620 function PhyreScene_doDeleteMeshInstances # fh v3:exact+call.cs 0x0065a7b0 thiscall PhyreScene::doDeleteMeshInstances
@@ -2650,6 +2653,7 @@
 0x0065f050 function PhyreScene_hide2DLayer    # fh v3:exact 0x0065f1d0 PhyreScene::hide2DLayer
 0x0065f1f0 function PhyreScene_isSpecialMagic_0065f1f0 # (ecx passed on) -> al: MagicFile_GetMagicId() is 0x6a, 0x119, 0x203, 0x241, 0x20a, 0x29b, 0x1bd or 0x10e (rest of eax the id's); PhyreScene_render calls it 3 times; name ours; ported M4 h3 r2 (ffx_prender::glue4)
 0x0065f450 function PhyreScene_initScene         # str-match switch: only user of 2 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/flash/pausemenu.swf'; Switch 0x71001f2610 PhyreScene::initScene (symbols from Fahrenheit's server export)
+0x0065fd50 function PRedBlackTree_insertNew_0065fd50 # thiscall(tree, &key, &value), ret 8 -> 0, 0xe (free list +0x18 empty after Phyre_PFreeList_allocateNewBlock([+0x20])) or 0x12 (0x0064c020 refused; node back to the list): node from the free list linked to itself with *key, *value at +0xc/+0x10, then Phyre_PRedBlackTree_postInsertFinalize; only caller 0x00658ae0; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x0065ff30 function PhyreScene_insertRenderDataToDeletePool # layout+callees: sorts between PhyreScene_initScene and PhyreScene_is3DScene, and its named callees match the Switch 0x7100209110 PhyreScene_insertRenderDataToDeletePool's (similarity 1.00: user_free, user_malloc); symbols from Fahrenheit's server export
 0x006601d0 function PhyreScene_is3DScene      # fh v3:bsim1.00 0x00660350 PhyreScene::is3DScene
 0x006601e0 function PhyreScene_isMotionBlurOn_006601e0 # thiscall(scene) -> al: 1 if byte +1 > 4; else [+0x10cc] byte +0x123bb and MotionBlur byte +0x58; PhyreScene_render/processVFXDrawEvent call it; name ours; ported M4 h3 (ffx_prender::glue3)
@@ -2694,6 +2698,7 @@
 0x00666630 function PhyreScene_onFieldMapAssetLoaded # fh v3:exact 0x006667c0 PhyreScene::onFieldMapAssetLoaded
 0x006666a0 function PhyreScene_onFontTextureLoaded # fh switch:bsim0.92 0x7100206c90 PhyreScene::onFontTextureLoaded
 0x00666740 function PhyreScene_onMenuTextureLoaded # fh v3:exact 0x006668d0 PhyreScene::onMenuTextureLoaded
+0x00666880 function PhyreScene_onVfxTextureLoaded_00666880 # cdecl(cluster, task): async callback PhyreScene_loadMagicFileVFXTexture registers; task = (id, a, b, c): PApplication_FixupClusters(&cluster, 1), scene arrays +0x60/+0x3c/+0x54 [id] = 1/a/b, then 0x00656ae0(id, c, a) (its eax); name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x00666c20 function PhyreScene_InitializeAllUsedRenderTargets # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f38e0 PhyreScene::InitializeAllUsedRenderTargets, 3 votes, round 2
 0x00666e40 function PhyreScene_processVFXDrawEvent # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f7430 PhyreScene::processVFXDrawEvent, 5 votes, round 2
 0x00667620 function std_vector_push_back_00667620 # thiscall(vector, &value), ret 4: std::vector<u32> push_back (+0 begin, +4 end, +8 capacity end; 0x00655c60(1) grows it), a value inside the vector re-read by index after growing; only caller 0x0065ae40; name ours; ported M4 h3 r2 (ffx_prender::glue5)
@@ -3054,6 +3059,7 @@
 0x00692c40 function PostProcessManager_copyBuffer # fh v3:exact 0x00692d70 PostProcessManager::copyBuffer
 0x00692e90 function PostProcessManager_copyDepthBuffer # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100213280 PostProcessManager::copyDepthBuffer, 4 votes, round 1
 0x00693530 function PostProcessManager_degradeResolution # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2008 PostProcessManager::degradeResolution, 16 votes, round 1
+0x006935f0 function PostProcessManager_lookup_006935f0 # thiscall(this, i), ret 4 -> the object entry +4 + 4i's list (+0x1c) holds of the class at 0x00ca5ff0 (an 8-word cursor at ebp-0x20 searched with PhyreSceneCursor_Seek3; cursor +0x10 + +0), or 0; 14 callers; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x006938d0 function PostProcessTweakUtil_initWithSceneContext # str-match switch: only user of 21 string(s) held once by both builds, e.g. 'Fog far'; Switch 0x7100217870 PostProcessTweakUtil::initWithSceneContext (symbols from Fahrenheit's server export)
 0x00693be0 function SetFields12400_00693be0 # thiscall(this, a, b, c, d), ret 0x10: this[0] = c, +0x12400 = a, +0x12404 = b, then 0x00693d20(this); FUN_006656e0 calls it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x00693d70 function PostProcessManager_onAllShaderBinFilesLoaded # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x710020e4e0 PostProcessManager::onAllShaderBinFilesLoaded, 4 votes, round 1
@@ -3091,6 +3097,7 @@
 0x00699300 function ClusterManager_newEntry_00699300 # thiscall(mgr, key), ret 4: e = 0x0069a1e0(mgr); word e+0xc = 0; e+0x10/+0x14 = key[0], key[1] (unless e+0x10 is 0); returns e; ClusterManager_loadPCluster calls it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x006996ba function Catch_All_006997fa        # fh v3:cg2 0x6997fa Catch_All@006997fa
 0x00699ee0 function std_Tree_const_iterator_inc_00699ee0 # same bytes as std_Tree_const_iterator_inc_006352b0
+0x0069a060 function ClusterManager_CreateInstance_0069a060 # cdecl(): without g_ClusterManager, operator_new(0x6420) + 0x00699ab0; graphicInitialize; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x0069a130 function FreeOwnedArray_0069a130 # cdecl(items, n): non-null items: each 8-byte entry +4 with low bit clear PhyreFree(d), then PhyreFree(items); name ours
 0x0069a1a0 function ClusterManager_GetInstance # fh v3:bsim1.00 0x0069a2e0 ClusterManager::GetInstance
 0x0069a1b0 function StdMap_NewHead_0069a1b0 # (): operator new(0x18), links +0/+4/+8 to itself, +0xc = 0x101 (colour, nil); null: jmp std::_Xbad_alloc; name ours
@@ -3131,6 +3138,7 @@
 0x0069f000 function ClassVFXRenderDataTable_Clear # fh call.cs cdecl
 0x0069f110 function ClassVFXRenderDataTable_ClearByType # fh v3:exact 0x0069f250 ClassVFXRenderDataTable::ClearByType
 0x0069f2b0 function ClassVFXRenderDataTable_ClearVFXDrawData # fh v3:exact+call.cs 0x0069f3f0 thiscall ClassVFXRenderDataTable::ClearVFXDrawData
+0x0069f440 function VFXRenderMap_CreateInstance_0069f440 # cdecl(): without g_VFXRenderMap_00ccca70, operator_new(8) holding (0x006a0360's head node, 0); graphicInitialize; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x0069f4c0 function ClassVFXRenderDataTable_CreateInstance # fh v3:cg2 0x69f600 ClassVFXRenderDataTable::CreateInstance
 0x0069f620 function ClassVFXRenderDataTable_GetDynamicGeometryByInstance # fh v3:exact+call.cs 0x0069f760 thiscall ClassVFXRenderDataTable::GetDynamicGeometryByInstance
 0x0069f6c0 function ClassLoadedCharacterTable_GetInstance # fh v3:bsim1.00 0x0069f800 ClassLoadedCharacterTable::GetInstance
@@ -3298,14 +3306,17 @@
 0x006bfe90 function VfxShaderManager_analysisSpecialShaderBlock # str-match switch: only user of 6 string(s) held once by both builds, e.g. 'texture_name'; Switch 0x710028f9f0 VfxShaderManager::analysisSpecialShaderBlock (symbols from Fahrenheit's server export)
 0x006c0560 function VfxShaderManager_combineTextureNameInCurrentLevel # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s%s/%s%s'; Switch 0x7100290ef0 VfxShaderManager::combineTextureNameInCurrentLevel (symbols from Fahrenheit's server export)
 0x006c06e0 function VfxShaderManager_FindShader # thiscall(manager, texture name, &flags) -> shader: the special-shader table by texture name (PStringTree, when +0x60/+0x98 are set; then *flags = -1), else the flags table (UIntTree keyed by the VSP flags, vfxShader_fx.txt); 0 when neither has it; ClassDynamicGeometry_SetShader_006a4800 retries with only VSP_ENABLE_TEXTURE (8) kept; name ours
+0x006c0810 function PRedBlackTree_insertNew_006c0810 # thiscall(tree, &key, &value), ret 8: PRedBlackTree_insertNew_0065fd50 with the insert 0x006be960; VfxShaderManager_loadShader and VfxShaderManager_onShaderLoaded_006c13e0 call it; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x006c0a70 function VfxShaderManager_loadShader  # str-match switch: only user of 29 string(s) held once by both builds, e.g. 'VSP_GROUND_SPECIAL'; Switch 0x710028f140 VfxShaderManager::loadShader (symbols from Fahrenheit's server export)
 0x006c0fb0 function VfxShaderManager_loadSpecialShaderTableForMagicFile # fh v3:bsim1.00 0x006c10f0 VfxShaderManager::loadSpecialShaderTableForMagicFile
 0x006c0fc0 function VfxShaderManager_loadVfxShader # str-match switch: only user of 3 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/'; Switch 0x710028ef60 VfxShaderManager::loadVfxShader (symbols from Fahrenheit's server export)
 0x006c13e0 function VfxShaderManager_onShaderLoaded_006c13e0 # cdecl(cluster, task): async-load callback VfxShaderManager_loadShader registers; with a cluster, task = (manager, id): the task slot becomes id, manager->0x006c0810(&id, &cluster), then PApplication_FixupClusters(&cluster, 1) (eax its; else the loader instance); name ours; ported M4 h3 r2 (ffx_prender::glue5)
+0x006c1420 function VfxShaderManager_CreateInstance_006c1420 # cdecl(): without the instance 0x00cdeb80 (VfxShaderManager_sGetInstance), operator_new(0x9c) + 0x006bf4a0; graphicInitialize; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x006c14c0 function VfxShaderManager_sGetInstance # fh v3:bsim1.00 0x006c1600 VfxShaderManager::sGetInstance
 0x006c1520 function VfxShaderManager_setupSpecialShaderParameters # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'sampler2D'; Switch 0x71002907d0 VfxShaderManager::setupSpecialShaderParameters (symbols from Fahrenheit's server export)
 0x006c19b0 function VfxShaderManager_unloadSpecialShaderTable # fh v3:exact 0x006c1af0 VfxShaderManager::unloadSpecialShaderTable
 0x006c1c50 function VfxShaderManager_unloadSpecialShaderTable_magic # fh v3:exact 0x006c1d90 VfxShaderManager::unloadSpecialShaderTable_magic
+0x006c2190 function Distortion_CreateInstance_006c2190 # cdecl(): without the instance 0x00cdeb88 (Distortion_GetInstance), operator_new(0x80) + 0x006c2010; graphicInitialize; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x006c2290 function Distortion_GetInstance    # fh v3:bsim1.00 0x006c23d0 Distortion::GetInstance
 0x006c2350 function Distortion_createRenderTarget # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Distortion_colorTarget'; Switch 0x710025c920 Distortion::createRenderTarget (symbols from Fahrenheit's server export)
 0x006c26d0 function ReturnConst180_006c26d0      # auto-port shape (return constant, cdecl): return 0x180; callers: ; name ours
@@ -3351,6 +3362,7 @@
 0x006c74d0 function FloatSort_Median3         # structure: cdecl(a, b, c, less): orders three floats by less (std::_Med3); name ours
 0x006c7730 function FloatHeap_PushHeap        # structure: cdecl(base, hole, top, &value, less): std::_Push_heap on floats; name ours
 0x006c8040 function ShadowManager_AlreadyinShadowMap # fh v3:exact 0x006c8180 ShadowManager::AlreadyinShadowMap
+0x006c9500 function ShadowManager_CreateInstance_006c9500 # cdecl(): without g_ShadowManager, operator_new(0x4068) + 0x006c7d80; graphicInitialize; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x006cc8b0 function Compute_006cc8b0             # auto-port shape (arithmetic on arguments, cdecl): return (a0 == 0x1); callers: no direct caller; name ours
 0x006cc8c0 function Compute_006cc8c0             # auto-port shape (arithmetic on arguments, cdecl): return (a0 != 0x2083); callers: no direct caller; name ours
 0x006cc980 function GetASpareGradMeshInstance # str-match: the only user of "GetASpareGradMeshInstance() , Shouldn't get here, contact cg please"; thiscall(pool, &extra), ret 4: takes the first free of the current set's (0x00cdec24) 16 slots (+0xdc4), extra = +0xd44 word, returns its +0xcc4 word
@@ -3376,8 +3388,10 @@
 0x006d3000 function ShadowManager_updateShadowMap # fh v3:exact 0x006d3130 ShadowManager::updateShadowMap
 0x006d3560 function ShadowEntry_Init          # structure: thiscall(this, owner), ret 4: owner +0, 2 at +4, 1.0 at +0x30..+0x3c, the rest of +0xc..+0x50 and +0xa0/+0xa4 cleared; returns this; name ours (layout only)
 0x006d4150 function BrokenScreenEffect_fillFloats_006d4150 # thiscall(this) -> eax: mode +0 = 1 fills [+0x48] with +8 * 4 floats 1.0, mode 2 with the float at 0x00b412c4 (count and pointer re-read per store); only caller 0x006d4780; name ours; ported M4 h3 r2 (ffx_prender::glue4)
+0x006d4620 function BrokenScreenEffect_setColour_006d4620 # thiscall(this, colour), ret 4: 4 floats to +0x30; v = f32(K - (1 - alpha)^2) with K the double at 0x00b499c0, clamped to 1 (fcom; NaN kept); mode +0 1: alpha +0x3c = v; 2: colour +0x30..+0x38 = 1 and alpha v; 3 callers in BrokenScreenEffect; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x006d46a0 function BrokenScreenEffect_setConstant_006d46a0 # thiscall(this, 4 words), ret 0x10 -> 0x13 without the entry +0xa0, 3 when entry offset (+8, u16) + length (+0xa & 0x1fff) passes the buffer size ([[+0x1c] + 4] +0) or the offset is below 4, else memcpy(buffer + offset, &words, length) and 0; only caller 0x006d44c0; name ours; ported M4 h3 r2 (ffx_prender::glue5)
 0x006d4710 function BrokenScreenEffect_setConstant_006d4710 # thiscall(this, 4 words), ret 0x10: BrokenScreenEffect_setConstant_006d46a0 with the entry +0xa4; only caller 0x006d44c0; name ours; ported M4 h3 r2 (ffx_prender::glue5)
+0x006d4d30 function BrokenScreenEffect_CreateInstance_006d4d30 # cdecl(): without the instance 0x00cdec98 (BrokenScreenEffect_GetInstance), operator_new(0x78) + 0x006d4ba0; graphicInitialize; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x006d4de0 function BrokenScreenEffect_GetInstance # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a0b88 BrokenScreenEffect::GetInstance, 2 votes, round 1
 0x006d4e00 function SetFieldConst4_006d4e00      # auto-port shape (store constant to field, thiscall): u8[(a0 + 0x4)] = 0x1; callers: ; name ours
 0x006d4e10 function SetFieldConst5_006d4e10      # auto-port shape (store constant to field, thiscall): u8[(a0 + 0x5)] = 0x1; callers: ; name ours
@@ -3665,6 +3679,7 @@
 0x006f5370 function Add_006f5370 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x006f5380 function AddU16_006f5380 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x006f5420 function WaterDistortionEffectDelegations_captureFrame # layout+callees: sorts between AssetListReader_readListFile and WaterDistortionEffectDelegations_processWaterDistortion, and its named callees match the Switch 0x710029aea0 WaterDistortionEffectDelegations_captureFrame's (similarity 1.00: PostProcessManager_GetInstance, PostProcessManager_copyBuffer); symbols from Fahrenheit's server export
+0x006f5470 function PSamplerStates_init_006f5470 # cdecl() -> eax: the sampler descriptions 0x00ce8208 and 0x00ce822c get defaults unless their flag word +0x1c has bit 7 (address modes +2/+3 = 2; first: filters +0/+1 = 1, second: cleared), each created by 0x0058cf80 (thiscall; tail call); PhyreScene_initScene; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x006f54f0 function WaterDistortionEffectDelegations_processWaterDistortion # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Water distortion materials hit: %d\\n'; Switch 0x710029aef0 WaterDistortionEffectDelegations::processWaterDistortion (symbols from Fahrenheit's server export)
 0x006f5750 function AddU16_006f5750 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x006f5760 function WaterWaveController_setBuoyancyFix # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'buoyancyFix'; Switch 0x710029bb60 WaterWaveController::setBuoyancyFix (symbols from Fahrenheit's server export)
@@ -3675,6 +3690,7 @@
 0x006f5870 function WaterWaveController_setScrollSpeed # str-match switch: only user of 8 string(s) held once by both builds, e.g. 'ScrollSpeed_tex0_X'; Switch 0x710029bc60 WaterWaveController::setScrollSpeed (symbols from Fahrenheit's server export)
 0x006f59a0 function WaterWaveController_setSineWaveStrength # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'sineWaveStrength'; Switch 0x710029b880 WaterWaveController::setSineWaveStrength (symbols from Fahrenheit's server export)
 0x006f5a00 function Add_006f5a00 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
+0x006f5ae0 function SamplerHolder_ctor_006f5ae0 # thiscall(this, owner), ret 4 -> this: +0/+4/+8 = 0, PSamplerStateD3D11_ctor(+0xc), +0x30 = owner, +0x34 = 0; C++ exception frame (dropped in the port); TextUtil_doOnAllTextUtilAssetsLoaded; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x006f5b50 function TextUtil_TextUtil         # fh v3:exact 0x006f5c90 TextUtil::TextUtil
 0x006f5e30 function TextUtil_appendLine          # structure: thiscall(this, text): stores a copy of text in the first empty line slot of the line array (+0x74 count, +0x78 PStrings), "file error" path; 10 callers are the *TweakUtil initialize functions adding lines; Switch TextUtil::appendLine (596 bytes)
 0x006f6070 function TextUtil_changeLine          # structure: thiscall(this, i, text): if i < line count, assign line i (0x00445cf0) and set the dirty flag +0x70; Switch TextUtil::changeLine; 35 callers (tweak utils updating values)
@@ -17217,6 +17233,7 @@
 0x00ccc8a0 label    g_PostProcessManager      # PostProcessManager_GetInstance; a pointer (0x00692be0 is mov eax, [0x00ccc8a0]; ret); screen fade +0x1238c rgba floats (graphicGetScreenFadeColor 0x00641390), +0x1239c alpha mode, +0x123a0 lock byte, +0x123a4 last reason (docs/formats/render.md)
 0x00ccca4c label    g_ClusterManager          # the instance ClusterManager_GetInstance returns
 0x00ccca6c label    g_VFXRenderDataTable      # the ClassVFXRenderDataTable (std::map head +0, cached key +0x20/+0x24 and geometry +0x28): graphicVFXGetRenderDataByInstance, graphicVFXUpdate
+0x00ccca70 label g_VFXRenderMap_00ccca70 # VFXRenderMap_CreateInstance_0069f440's 8-byte holder of a std::map head; name ours
 0x00ccca74 label    g_ChrShaderRender # the character shader renderer: graphicShaderGetVertexInfo passes it to ClassChrShaderRender_GetVertexInfo; graphicShadowStart/End_00643dc0/dd0 to 0x0069fcb0/0x0069fe40 (M4 h3)
 0x00ccca84 label    g_CharacterLighting       # Phyre_CharacterLighting_GetInstance; the graphicCharacterLighting* wrappers call its methods
 0x00ccca88 label    g_CharacterLightingTweakUtil # Phyre_CharacterLightingTweakUtil_GetInstance; graphicCharacterLightingSetShadeCoeff's debug hook
