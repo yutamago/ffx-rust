@@ -571,3 +571,77 @@ pub fn acc_set_frame_chr(h: &mut impl Host) -> u32 {
     let end = h.call_sym(GS_END2, Conv::Cdecl, &[]);
     h.call_sym(SEND_SPAD, Conv::Cdecl, &[end])
 }
+
+/// `Sg_AccDrawBG`'s switch (`0x01300777`, byte).
+pub const ACC_BG: Global<u8> = Global::new(0x0130_0777);
+/// `operator_new_006304c0(n)` (cdecl).
+pub const OPERATOR_NEW_2: u32 = 0x0063_04c0;
+/// The particle fill buffers (`0x00cec1a8`, six) and the request words
+/// after them (`0x00cec1c0`, twelve).
+pub const FILL_BUFFERS: u32 = 0x00ce_c1a8;
+/// See [`FILL_BUFFERS`].
+pub const FILL_REQUESTS: u32 = 0x00ce_c1c0;
+/// `sceGsSetDefStoreImage(img, ...)`, `sceGsSyncPath(a, b)`,
+/// `sceGsExecStoreImage(img, dst)` (PS2 stubs, cdecl).
+pub const GS_SET_DEF_STORE_IMAGE: u32 = 0x0062_f830;
+/// See [`GS_SET_DEF_STORE_IMAGE`].
+pub const GS_SYNC_PATH: u32 = 0x0062_f880;
+/// See [`GS_SET_DEF_STORE_IMAGE`].
+pub const GS_EXEC_STORE_IMAGE: u32 = 0x0062_f7b0;
+/// `op_gs_store`'s image descriptor (`0x011a0900`).
+pub const GS_STORE_IMAGE: u32 = 0x011a_0900;
+
+/// `Sg_AccDrawBG()` (0x0082be80): with the switch on, the frame packet of
+/// `Sg_AccSetFrameChr` (switch read again: `Sg_GsFRAME_16`/`FRAME2_16`
+/// or `Sg_DrawSetFrame`); off, the scratchpad pointer.
+pub fn acc_draw_bg(h: &mut impl Host) -> u32 {
+    let spad = h.call_sym(GET_SPAD_PTR, Conv::Cdecl, &[]);
+    if ACC_BG.get(h) == 0 {
+        return spad;
+    }
+    h.call_sym(GS_SET_PACKET, Conv::Cdecl, &[spad]);
+    h.call_sym(GS_START_VIF, Conv::Cdecl, &[]);
+    if ACC_BG.get(h) == 0 {
+        h.call_sym(DRAW_SET_FRAME, Conv::Cdecl, &[]);
+    } else {
+        h.call_sym(GS_FRAME_16, Conv::Cdecl, &[0xd0, 0]);
+        h.call_sym(GS_FRAME2_16, Conv::Cdecl, &[0xd0, 0]);
+    }
+    let end = h.call_sym(GS_END2, Conv::Cdecl, &[]);
+    h.call_sym(SEND_SPAD, Conv::Cdecl, &[end])
+}
+
+/// `JobSchedule_pppPart_initFillBufferRequest()` (0x00728750): six fill
+/// buffers of `0x2c6b8` bytes (`operator_new_006304c0`), the twelve
+/// request words cleared; returns 0.
+pub fn init_fill_buffer_request(h: &mut impl Host) -> u32 {
+    let buffers = h.rebase(FILL_BUFFERS);
+    for k in 0..6 {
+        let p = h.call_sym(OPERATOR_NEW_2, Conv::Cdecl, &[0x2_c6b8]);
+        h.write(buffers + 4 * k, p);
+    }
+    let requests = h.rebase(FILL_REQUESTS);
+    for k in 0..12 {
+        h.write(requests + 4 * k, 0u32);
+    }
+    0
+}
+
+/// `op_gs_store(rect, dst)` (0x007e4540): the PS2 store-image sequence:
+/// `sceGsSetDefStoreImage(img, rect's seven u16 fields)`, a path sync and
+/// `FlushCache(0)`, `sceGsExecStoreImage(img, dst)`, a sync and a flush;
+/// the last sync's `eax` (`FlushCache` is a bare `ret`).
+pub fn gs_store(h: &mut impl Host, rect: u32, dst: u32) -> u32 {
+    let img = h.rebase(GS_STORE_IMAGE);
+    let mut args = [img, 0, 0, 0, 0, 0, 0, 0];
+    for k in 0..7 {
+        args[1 + k] = u32::from(h.read::<u16>(rect + 2 * k as u32));
+    }
+    h.call_sym(GS_SET_DEF_STORE_IMAGE, Conv::Cdecl, &args);
+    h.call_sym(GS_SYNC_PATH, Conv::Cdecl, &[0, 0]);
+    h.call_sym(FLUSH_CACHE, Conv::Cdecl, &[0]);
+    h.call_sym(GS_EXEC_STORE_IMAGE, Conv::Cdecl, &[img, dst]);
+    let r = h.call_sym(GS_SYNC_PATH, Conv::Cdecl, &[0, 0]);
+    h.call_sym(FLUSH_CACHE, Conv::Cdecl, &[0]);
+    r
+}

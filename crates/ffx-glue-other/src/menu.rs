@@ -884,3 +884,250 @@ pub fn iggy_heap_take_free(h: &mut impl Mem, heap: u32) -> u32 {
     h.write(n + 0x14, 0u32);
     n
 }
+
+/// `iSfxIsPaused()`, `iVoiceIsPaused()` (cdecl).
+pub const SFX_IS_PAUSED: u32 = 0x0067_a330;
+/// See [`SFX_IS_PAUSED`].
+pub const VOICE_IS_PAUSED: u32 = 0x0067_a6c0;
+/// `PhyreScene_isPlayingVideo()`.
+pub const IS_PLAYING_VIDEO: u32 = 0x0064_5db0;
+/// `PhyreSceneCursor_SetNode(cursor; node)` (thiscall).
+pub const CURSOR_SET_NODE: u32 = 0x0044_1dc0;
+/// The import slots of `WaitForSingleObject`, `ReleaseMutex` and
+/// `memmove`.
+pub const WAIT_FOR_SINGLE_OBJECT: Global<u32> = Global::new(0x00b0_c0f8);
+/// See [`WAIT_FOR_SINGLE_OBJECT`].
+pub const RELEASE_MUTEX: Global<u32> = Global::new(0x00b0_c1c0);
+/// See [`WAIT_FOR_SINGLE_OBJECT`].
+pub const MEMMOVE: Global<u32> = Global::new(0x00b0_c34c);
+/// The character list's mutex (`0x00ccca78`).
+pub const CHARACTER_MUTEX: Global<u32> = Global::new(0x00cc_ca78);
+/// The second save pop-up's buffers and names (`0x00702d20`).
+pub const POPUP2_TEXT: u32 = 0x00ce_bcd8;
+/// See [`POPUP2_TEXT`].
+pub const POPUP2_VALUES: u32 = 0x00ce_bcb8;
+/// See [`POPUP2_TEXT`].
+pub const POPUP2_NUMBER: u32 = 0x00ce_bed8;
+/// See [`POPUP2_TEXT`].
+pub const POPUP2_FORMAT: u32 = 0x00b4_ceac;
+/// See [`POPUP2_TEXT`].
+pub const POPUP2_NAME: u32 = 0x00b4_ceb4;
+
+/// `FFEscMenu_pauseAudioVideo(this)` (0x0068f940, thiscall): what is not
+/// paused yet gets paused and flagged for `FFEscMenu_unpauseAudioVideo`
+/// (sound effects `+0x116`, voice `+0x115`, video `+0x114`; a flag set
+/// before its pause call, cleared when already paused). Returns
+/// `PhyreScene_isPlayingVideo`'s `eax` when the video is not paused here,
+/// else a jump to `graphicVideoPause`, whose `eax` it returns.
+pub fn esc_pause(h: &mut impl Host, this: u32) -> u32 {
+    if h.call_sym(SFX_IS_PAUSED, Conv::Cdecl, &[]) == 0 {
+        h.write(this + 0x116, 1u8);
+        h.call_sym(SFX_PAUSE, Conv::Cdecl, &[1]);
+    } else {
+        h.write(this + 0x116, 0u8);
+    }
+    if h.call_sym(VOICE_IS_PAUSED, Conv::Cdecl, &[]) == 0 {
+        h.write(this + 0x115, 1u8);
+        h.call_sym(VOICE_SET_PAUSED, Conv::Cdecl, &[1]);
+    } else {
+        h.write(this + 0x115, 0u8);
+    }
+    let playing = h.call_sym(IS_PLAYING_VIDEO, Conv::Cdecl, &[]);
+    if playing != 0 {
+        h.write(this + 0x114, 0u8);
+        return playing;
+    }
+    h.write(this + 0x114, 1u8);
+    h.call_sym(VIDEO_PAUSE, Conv::Cdecl, &[])
+}
+
+/// `PArray_destroyObjects_006af630(this)` (thiscall): an owned array (top
+/// bit of `+0` clear) of `0x40`-byte objects at `+4`: each one's virtual
+/// slot 0 `(obj; 0)`, then `Phyre_PhyreFree`; the array emptied either
+/// way. Callers read no result.
+pub fn parray_destroy_objects(h: &mut impl Host, this: u32) {
+    let head = h.read::<u32>(this);
+    if head >> 31 == 0 {
+        let data = h.read::<u32>(this + 4);
+        if data != 0 {
+            let mut e = data;
+            for _ in 0..head & 0x7fff_ffff {
+                h.call_virtual(e, 0, &[0]);
+                e = e.wrapping_add(0x40);
+            }
+            h.call_sym(PHYRE_FREE, Conv::Cdecl, &[data]);
+        }
+    }
+    h.write(this + 4, 0u32);
+    h.write(this, 0u32);
+}
+
+/// The scene cursors' step to the next node: `+0x18` becomes its node's
+/// successor (`*node`), or 0 when that is the list head (`+0x14`); the
+/// step `PhyreSceneCursor_Next` and `_Begin` repeat.
+fn cursor_step(h: &mut impl Mem, this: u32) {
+    let node = h.read::<u32>(this + 0x18);
+    if node == 0 {
+        return;
+    }
+    let next = h.read::<u32>(node);
+    let head = h.read::<u32>(this + 0x14);
+    h.write(this + 0x18, if next == head { 0 } else { next });
+}
+
+/// The end of the cursor walks: `PhyreSceneCursor_SetNode(this; node)`'s
+/// `eax` on a node, else the cursor's five words cleared (`eax` 0).
+fn cursor_settle(h: &mut impl Host, this: u32) -> u32 {
+    let node = h.read::<u32>(this + 0x18);
+    if node != 0 {
+        return h.call_sym(CURSOR_SET_NODE, Conv::Thiscall(this), &[node]);
+    }
+    for k in 0..5 {
+        h.write(this + 4 * k, 0u32);
+    }
+    0
+}
+
+/// `PhyreSceneCursor_Begin_006a2260` / `_006f6300` (thiscall): unless the
+/// cursor is valid already (`is_valid`, `al`), steps until it is, then
+/// settles on its node (see [`cursor_settle`]).
+pub fn cursor_begin(h: &mut impl Host, this: u32, is_valid: u32) -> u32 {
+    // `al` only
+    if h.call_sym(is_valid, Conv::Thiscall(this), &[]) as u8 == 0 {
+        loop {
+            cursor_step(h, this);
+            if h.call_sym(is_valid, Conv::Thiscall(this), &[]) & 0xff != 0 {
+                break;
+            }
+        }
+    }
+    cursor_settle(h, this)
+}
+
+/// `PhyreSceneCursor_Next_006a22d0(this)` (thiscall): steps at least once,
+/// until the cursor is valid (`PhyreCursor_IsValid_006a29c0`), then
+/// settles on its node.
+pub fn cursor_next(h: &mut impl Host, this: u32, is_valid: u32) -> u32 {
+    loop {
+        cursor_step(h, this);
+        if h.call_sym(is_valid, Conv::Thiscall(this), &[]) & 0xff != 0 {
+            break;
+        }
+    }
+    cursor_settle(h, this)
+}
+
+/// `SaveDataMachine_showPopUp2_00702d20(n, id)` (cdecl): the save text
+/// `id` and `sprintf(buffer, "%d"-like format, n)` as two Iggy values,
+/// then `IggyMenu_callIggyAS3External(save menu; 0, name, 2, values, 1)`'s
+/// `eax`.
+pub fn save_show_popup2(h: &mut impl Host, n: u32, id: u32) -> u32 {
+    let text = h.rebase(POPUP2_TEXT);
+    let values = h.rebase(POPUP2_VALUES);
+    let number = h.rebase(POPUP2_NUMBER);
+    h.call_sym(SAVE_DATA_LOC, Conv::Cdecl, &[id, text]);
+    h.call_sym(DATA_VALUE_SET, Conv::Cdecl, &[values, text]);
+    let format = h.rebase(POPUP2_FORMAT);
+    let f = SPRINTF.get(h);
+    h.call(f, Conv::Cdecl, &[number, format, n]);
+    h.call_sym(DATA_VALUE_SET, Conv::Cdecl, &[values + 0x10, number]);
+    let menu = crate::misc::SAVE_MENU.get(h);
+    let name = h.rebase(POPUP2_NAME);
+    h.call_sym(CALL_AS3, Conv::Thiscall(menu), &[0, name, 2, values, 1])
+}
+
+/// `ClassLoadedCharacterTable_existPrototype(this; id)` (0x006a1e80,
+/// thiscall, `al`): an in-order walk of the table's tree (head `*this`,
+/// nodes: left `+0`, parent `+4`, right `+8`, nil byte `+0xd`) for a node
+/// whose `+0x28` is `id`.
+pub fn exist_prototype(h: &impl Mem, this: u32, id: u32) -> u8 {
+    let head = h.read::<u32>(this);
+    let mut n = h.read::<u32>(head);
+    while n != head {
+        if h.read::<u32>(n + 0x28) == id {
+            return 1;
+        }
+        if h.read::<u8>(n + 0xd) != 0 {
+            continue;
+        }
+        let right = h.read::<u32>(n + 8);
+        if h.read::<u8>(right + 0xd) == 0 {
+            // the leftmost node of the right subtree
+            n = right;
+            let mut l = h.read::<u32>(n);
+            while h.read::<u8>(l + 0xd) == 0 {
+                n = l;
+                l = h.read::<u32>(n);
+            }
+        } else {
+            // up while coming from the right
+            let mut p = h.read::<u32>(n + 4);
+            while h.read::<u8>(p + 0xd) == 0 && n == h.read::<u32>(p + 8) {
+                n = p;
+                p = h.read::<u32>(n + 4);
+            }
+            n = p;
+        }
+    }
+    0
+}
+
+/// `ClassCharacter_removeInstance(this; chr)` (0x006a2b90, thiscall):
+/// under the character mutex (`WaitForSingleObject(m, INFINITE)`), the
+/// first `chr` in the vector (`+8` begin, `+0xc` end) removed (`memmove`
+/// of the rest, end - 4); `ReleaseMutex(m)`'s `eax`.
+pub fn character_remove_instance(h: &mut impl Host, this: u32, chr: u32) -> u32 {
+    let m = CHARACTER_MUTEX.get(h);
+    let f = WAIT_FOR_SINGLE_OBJECT.get(h);
+    h.call(f, Conv::Stdcall, &[m, u32::MAX]);
+    let mut p = h.read::<u32>(this + 8);
+    let end = h.read::<u32>(this + 0xc);
+    while p < end {
+        if h.read::<u32>(p) == chr {
+            let end = h.read::<u32>(this + 0xc);
+            let from = p.wrapping_add(4);
+            let n = end.wrapping_sub(from) & !3;
+            let f = MEMMOVE.get(h);
+            h.call(f, Conv::Cdecl, &[p, from, n]);
+            let e = h.read::<u32>(this + 0xc).wrapping_sub(4);
+            h.write(this + 0xc, e);
+            break;
+        }
+        p = p.wrapping_add(4);
+    }
+    let m = CHARACTER_MUTEX.get(h);
+    let f = RELEASE_MUTEX.get(h);
+    h.call(f, Conv::Stdcall, &[m])
+}
+
+/// `StdString_moveCtor_0069c270(this; src, _)` (thiscall, `ret 8`): an
+/// `std::string` (16-byte buffer or pointer at `+0`, size `+0x10`,
+/// capacity `+0x14`) moved from `src`: short strings copied (`memmove` of
+/// size + 1 bytes), long ones take `src`'s pointer; `src` left empty;
+/// the word at `+0x18` copied too. Returns `this`.
+pub fn string_move_ctor(h: &mut impl Host, this: u32, src: u32) -> u32 {
+    h.write(this + 0x14, 0xfu32);
+    h.write(this + 0x10, 0u32);
+    h.write(this, 0u8);
+    if h.read::<u32>(src + 0x14) < 0x10 {
+        let n = h.read::<u32>(src + 0x10).wrapping_add(1);
+        if n != 0 {
+            let f = MEMMOVE.get(h);
+            h.call(f, Conv::Cdecl, &[this, src, n]);
+        }
+    } else {
+        let p = h.read::<u32>(src);
+        h.write(this, p);
+        h.write(src, 0u32);
+    }
+    let size = h.read::<u32>(src + 0x10);
+    h.write(this + 0x10, size);
+    let cap = h.read::<u32>(src + 0x14);
+    h.write(this + 0x14, cap);
+    h.write(src + 0x14, 0xfu32);
+    h.write(src + 0x10, 0u32);
+    h.write(src, 0u8);
+    let w = h.read::<u32>(src + 0x18);
+    h.write(this + 0x18, w);
+    this
+}

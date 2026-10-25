@@ -747,4 +747,69 @@ ported! {
     Sg_AccSetFrameChr @ 0x0082_be20 => extern "C" fn acc_set_frame_chr() -> u32 {
         m::acc_set_frame_chr(&mut mem())
     }
+    // Batch 6: SfxEvent's 0..127 volume and pan, the FMV manager's
+    // creation, the escape menu's pause, array and character list
+    // clean-ups, the scene cursors' walks, the second save pop-up, the
+    // prototype lookup, a string move, PS2 frame and store helpers, the
+    // particle fill buffers.
+    /// `SfxEvent_setVolume(event; v)`.
+    SfxEvent_setVolume @ 0x0070_f1a0 => extern "thiscall" fn sfx_event_set_volume_127(event: u32, v: u32) -> u32 {
+        s::sfx_event_set_volume_127(&mut mem(), event, v)
+    }
+    /// `SfxEvent_setPan(event; v)`.
+    SfxEvent_setPan @ 0x0070_ef80 => extern "thiscall" fn sfx_event_set_pan(event: u32, v: u32) -> u32 {
+        s::sfx_event_set_pan(&mut mem(), event, v)
+    }
+    /// `PhyFMVPlayerManager_CreateInstance()`.
+    PhyFMVPlayerManager_CreateInstance @ 0x006d_7130 => extern "C" fn fmv_create_instance() {
+        mv::fmv_create_instance(&mut mem());
+    }
+    /// `FFEscMenu_pauseAudioVideo(this)`.
+    FFEscMenu_pauseAudioVideo @ 0x0068_f940 => extern "thiscall" fn esc_pause(this: u32) -> u32 {
+        mn::esc_pause(&mut mem(), this)
+    }
+    /// `PArray_destroyObjects_006af630(this)`.
+    PArray_destroyObjects_006af630 @ 0x006a_f630 => extern "thiscall" fn parray_destroy_objects(this: u32) {
+        mn::parray_destroy_objects(&mut mem(), this);
+    }
+    /// `PhyreSceneCursor_Begin_006a2260(this)`.
+    PhyreSceneCursor_Begin_006a2260 @ 0x006a_2260 => extern "thiscall" fn cursor_begin_6a2260(this: u32) -> u32 {
+        mn::cursor_begin(&mut mem(), this, 0x006a_29c0)
+    }
+    /// `PhyreSceneCursor_Begin_006f6300(this)`.
+    PhyreSceneCursor_Begin_006f6300 @ 0x006f_6300 => extern "thiscall" fn cursor_begin_6f6300(this: u32) -> u32 {
+        mn::cursor_begin(&mut mem(), this, 0x006f_63b0)
+    }
+    /// `PhyreSceneCursor_Next_006a22d0(this)`.
+    PhyreSceneCursor_Next_006a22d0 @ 0x006a_22d0 => extern "thiscall" fn cursor_next_6a22d0(this: u32) -> u32 {
+        mn::cursor_next(&mut mem(), this, 0x006a_29c0)
+    }
+    /// `SaveDataMachine_showPopUp2_00702d20(n, id)`.
+    SaveDataMachine_showPopUp2_00702d20 @ 0x0070_2d20 => extern "C" fn save_show_popup2(n: u32, id: u32) -> u32 {
+        mn::save_show_popup2(&mut mem(), n, id)
+    }
+    /// `ClassLoadedCharacterTable_existPrototype(this; id)` (`al`).
+    ClassLoadedCharacterTable_existPrototype @ 0x006a_1e80 => extern "thiscall" fn exist_prototype(this: u32, id: u32) -> u8 {
+        mn::exist_prototype(&mem(), this, id)
+    }
+    /// `ClassCharacter_removeInstance(this; chr)`.
+    ClassCharacter_removeInstance @ 0x006a_2b90 => extern "thiscall" fn character_remove_instance(this: u32, chr: u32) -> u32 {
+        mn::character_remove_instance(&mut mem(), this, chr)
+    }
+    /// `StdString_moveCtor_0069c270(this; src, unused)` -> `this`.
+    StdString_moveCtor_0069c270 @ 0x0069_c270 => extern "thiscall" fn string_move_ctor(this: u32, src: u32, _unused: u32) -> u32 {
+        mn::string_move_ctor(&mut mem(), this, src)
+    }
+    /// `Sg_AccDrawBG()`.
+    Sg_AccDrawBG @ 0x0082_be80 => extern "C" fn acc_draw_bg() -> u32 {
+        m::acc_draw_bg(&mut mem())
+    }
+    /// `JobSchedule_pppPart_initFillBufferRequest()` -> 0.
+    JobSchedule_pppPart_initFillBufferRequest @ 0x0072_8750 => extern "C" fn init_fill_buffer_request() -> u32 {
+        m::init_fill_buffer_request(&mut mem())
+    }
+    /// `op_gs_store(rect, dst)`.
+    op_gs_store @ 0x007e_4540 => extern "C" fn gs_store(rect: u32, dst: u32) -> u32 {
+        m::gs_store(&mut mem(), rect, dst)
+    }
 }

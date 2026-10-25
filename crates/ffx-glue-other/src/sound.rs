@@ -521,3 +521,41 @@ pub fn fmod_event_info_init(h: &mut impl Mem, this: u32) -> u32 {
     }
     this
 }
+
+/// `SfxEvent_applyVolume_0070f140(event; f32)` (thiscall).
+pub const APPLY_VOLUME: u32 = 0x0070_f140;
+/// `SfxEvent_applyPan(event; f32)` (thiscall).
+pub const APPLY_PAN: u32 = 0x0070_eeb0;
+/// `SfxEvent_setPan`'s 1.0 and -1.0 (`.rdata` `0x00b92248` f64,
+/// `0x00b92340` f32).
+pub const D_ONE: Global<f64> = Global::new(0x00b9_2248);
+/// See [`D_ONE`].
+pub const F_MINUS_ONE: Global<f32> = Global::new(0x00b9_2340);
+
+/// `SfxEvent_setVolume(event; v)` (0x0070f1a0, thiscall):
+/// `SfxEvent_applyVolume_0070f140(event; volume)` with the volume of
+/// [`volume_from_127`]; its `eax`.
+pub fn sfx_event_set_volume_127(h: &mut impl Host, event: u32, v: u32) -> u32 {
+    let f = volume_from_127(h, v).to_bits();
+    h.call_sym(APPLY_VOLUME, Conv::Thiscall(event), &[f])
+}
+
+/// `SfxEvent_setPan(event; v)` (0x0070ef80, thiscall): the pan
+/// `f32(f32(v) / 127.0 * 2 - 1.0)` (x87, one rounding to f32 at the
+/// end) clamped to `-1..=1`, then `SfxEvent_applyPan(event; pan)`'s `eax`.
+pub fn sfx_event_set_pan(h: &mut impl Host, event: u32, v: u32) -> u32 {
+    #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+    let a = v.cast_signed() as f32;
+    let q = x87::div(f64::from(a), D_127.get(h));
+    let p = x87::sub(x87::add(q, q), D_ONE.get(h));
+    let p = f32::from_bits(x87::store(p));
+    let low = F_MINUS_ONE.get(h);
+    let pan = if p > 1.0 {
+        1.0
+    } else if low > p {
+        low
+    } else {
+        p
+    };
+    h.call_sym(APPLY_PAN, Conv::Thiscall(event), &[pan.to_bits()])
+}

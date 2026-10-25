@@ -215,3 +215,27 @@ pub fn fmv_initialize(h: &mut impl Host, name: u32) -> u32 {
     h.write(m + FMV_PLAYING, 1u8);
     r
 }
+
+/// `PhyFMVPlayerManager_PhyFMVPlayerManager(this)` (thiscall).
+pub const FMV_CTOR: u32 = 0x006d_6970;
+/// The manager's size.
+pub const FMV_SIZE: u32 = 0x750;
+
+/// `PhyFMVPlayerManager_CreateInstance()` (0x006d7130): unless
+/// `g_FMVPlayerManager` is set, the constructor on `operator_new(0x750)`
+/// into it (0 when the allocation fails). The original's exception frame
+/// (an `operator delete` should the constructor throw) is not kept:
+/// nothing on this path throws. Callers read no result.
+pub fn fmv_create_instance(h: &mut impl Host) {
+    let g = Global::<u32>::new(FMV_PLAYER_MANAGER.global);
+    if g.get(h) != 0 {
+        return;
+    }
+    let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[FMV_SIZE]);
+    let v = if p == 0 {
+        0
+    } else {
+        h.call_sym(FMV_CTOR, Conv::Thiscall(p), &[])
+    };
+    g.set(h, v);
+}

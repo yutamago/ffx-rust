@@ -2733,3 +2733,341 @@ fn accumulation_frames() {
         }
     }
 }
+
+// ---- batch 6
+
+/// `SfxEvent`'s 0..127 volume and pan, the FMV manager's creation, the
+/// escape menu's pause.
+#[test]
+fn sfx_scales_fmv_pause() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0501);
+        let stubs: &[(u32, bool, u32, u32)] = &[
+            (s::APPLY_VOLUME, true, 1, 1),
+            (s::APPLY_PAN, true, 1, 1),
+            (mv::OPERATOR_NEW, false, 1, 0),
+            (mv::FMV_CTOR, true, 0, 0),
+            (mn::SFX_IS_PAUSED, false, 0, 0),
+            (mn::VOICE_IS_PAUSED, false, 0, 0),
+            (mn::IS_PLAYING_VIDEO, false, 0, 0),
+            (mn::SFX_PAUSE, false, 1, 0),
+            (mn::VOICE_SET_PAUSED, false, 1, 0),
+            (mn::VIDEO_PAUSE, false, 0, 0),
+        ];
+        for &(sym, this, n, pops) in stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let mut values = vec![
+            0u32,
+            1,
+            63,
+            64,
+            126,
+            127,
+            128,
+            200,
+            u32::MAX,
+            0x8000_0000,
+            0x7fff_ffff,
+            0xffff_ff81,
+            0xffff_ff80,
+        ];
+        values.extend((0..40).map(|_| rng.word()));
+        for (i, v) in values.into_iter().enumerate() {
+            let w = format!("{name} {i}");
+            for &(sym, ..) in stubs {
+                let r = rng.next();
+                t.ret(sym, r);
+            }
+            for sym in [mn::SFX_IS_PAUSED, mn::VOICE_IS_PAUSED, mn::IS_PLAYING_VIDEO] {
+                let r = if rng.below(2) == 0 { 0 } else { rng.next() };
+                t.ret(sym, r);
+            }
+            let event = rng.next();
+            t.check(
+                &format!("{w} setVolume {v:#x}"),
+                0x0070_f1a0,
+                Conv::Thiscall(event),
+                &[v],
+                |g| u(s::sfx_event_set_volume_127(g, event, v)),
+            );
+            t.check(
+                &format!("{w} setPan {v:#x}"),
+                0x0070_ef80,
+                Conv::Thiscall(event),
+                &[v],
+                |g| u(s::sfx_event_set_pan(g, event, v)),
+            );
+            let g0 = if rng.below(2) == 0 { 0 } else { rng.next() };
+            t.g32(e::FMV_PLAYER_MANAGER.global, g0);
+            let p = if rng.below(4) == 0 { 0 } else { rng.next() };
+            t.ret(mv::OPERATOR_NEW, p);
+            t.check(
+                &format!("{w} CreateInstance"),
+                0x006d_7130,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    mv::fmv_create_instance(g);
+                    Out::None
+                },
+            );
+            let obj = t.random(&mut rng, 0x200);
+            t.check(
+                &format!("{w} pause"),
+                0x0068_f940,
+                Conv::Thiscall(obj),
+                &[],
+                |g| u(mn::esc_pause(g, obj)),
+            );
+        }
+    }
+}
+
+/// Array and character list clean-ups, the scene cursors, the second
+/// save pop-up, the prototype lookup, the string move.
+#[test]
+fn lists_cursors_strings() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0502);
+        let stubs: &[(u32, bool, u32, u32)] = &[
+            (mn::PHYRE_FREE, false, 1, 0),
+            (mn::CURSOR_SET_NODE, true, 1, 1),
+            (mn::SAVE_DATA_LOC, false, 2, 0),
+            (mn::DATA_VALUE_SET, false, 2, 0),
+            (mn::CALL_AS3, true, 5, 5),
+        ];
+        for &(sym, this, n, pops) in stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let vslot = t.stub_code(0xc0de_0801, true, 1, 1);
+        let vtable = t.zeros(4);
+        t.w32(vtable, vslot);
+        let sprintf = t.stub_code(0xc0de_0802, false, 3, 0);
+        t.g32(0x00b0_c3dc, sprintf);
+        let wait = t.stub_code(0xc0de_0803, false, 2, 2);
+        t.g32(0x00b0_c0f8, wait);
+        let release = t.stub_code(0xc0de_0804, false, 1, 1);
+        t.g32(0x00b0_c1c0, release);
+        let memmove = t.stub_code(0xc0de_0805, false, 3, 0);
+        t.g32(0x00b0_c34c, memmove);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            for &(sym, ..) in stubs {
+                let r = rng.next();
+                t.ret(sym, r);
+            }
+            for tag in 0xc0de_0801..=0xc0de_0805 {
+                let r = rng.next();
+                t.ret(tag, r);
+            }
+            // an array of objects
+            let arr = t.zeros(8);
+            let n = rng.below(4);
+            let data = if rng.below(4) == 0 { 0 } else { t.zeros(0x100) };
+            for k in 0..n {
+                if data != 0 {
+                    t.w32(data + 0x40 * k, vtable);
+                }
+            }
+            t.w32(arr, n | [0, 0x8000_0000][rng.below(2) as usize]);
+            t.w32(arr + 4, data);
+            t.check(
+                &format!("{w} destroyObjects"),
+                0x006a_f630,
+                Conv::Thiscall(arr),
+                &[],
+                |g| {
+                    mn::parray_destroy_objects(g, arr);
+                    Out::None
+                },
+            );
+            // a scene cursor over a ring of nodes (link at +0) with the
+            // list head at +0x14 and nodes the validity check accepts
+            let cursor = t.random(&mut rng, 0x20);
+            let list = t.zeros(0x50);
+            let count = 1 + rng.below(4);
+            let nodes: Vec<u32> = (0..count).map(|_| t.zeros(0x50)).collect();
+            for k in 0..nodes.len() {
+                let next = if k + 1 < nodes.len() {
+                    nodes[k + 1]
+                } else {
+                    list
+                };
+                t.w32(nodes[k], next);
+            }
+            t.w32(list, nodes[0]);
+            t.w32(cursor + 0x14, list);
+            // the validity checks walk the list's chain at +0x2c/+0x40
+            t.w32(list + 0x2c, if rng.below(3) == 0 { 0 } else { nodes[0] });
+            for k in 0..nodes.len() {
+                let next = if k + 1 < nodes.len() { nodes[k + 1] } else { 0 };
+                t.w32(nodes[k] + 0x40, next);
+            }
+            let target = nodes[rng.below(count) as usize];
+            t.w32(cursor + 0x1c, target);
+            let start = [0, nodes[0], nodes[(count - 1) as usize]][rng.below(3) as usize];
+            // sometimes the start is valid already: its chain (+0x2c)
+            // holds the cursor's target and its +0x40 is set
+            if start != 0 && rng.below(2) == 0 {
+                t.w32(start + 0x2c, target);
+                t.w32(start + 0x40, 1 + rng.below(8));
+            }
+            for (sym, check) in [
+                (0x006a_2260, 0x006a_29c0),
+                (0x006f_6300, 0x006f_63b0),
+                (0x006a_22d0, 0x006a_29c0),
+            ] {
+                t.w32(cursor + 0x18, start);
+                t.check(
+                    &format!("{w} cursor {sym:#x}"),
+                    sym,
+                    Conv::Thiscall(cursor),
+                    &[],
+                    |g| {
+                        if sym == 0x006a_22d0 {
+                            u(mn::cursor_next(g, cursor, check))
+                        } else {
+                            u(mn::cursor_begin(g, cursor, check))
+                        }
+                    },
+                );
+            }
+            let (a, b) = (rng.word(), rng.word());
+            t.g32(0x00ce_b248, rng.next());
+            t.check(
+                &format!("{w} popup2"),
+                0x0070_2d20,
+                Conv::Cdecl,
+                &[a, b],
+                |g| u(mn::save_show_popup2(g, a, b)),
+            );
+            // a character vector
+            let chars = t.random(&mut rng, 0x20);
+            let len = rng.below(9);
+            let holder = t.zeros(0x10);
+            t.w32(holder + 8, chars);
+            t.w32(holder + 0xc, chars + 4 * len);
+            let chr = if len > 0 && rng.below(2) == 0 {
+                Mem::read(&t.b, chars + 4 * rng.below(len))
+            } else {
+                rng.next()
+            };
+            t.check(
+                &format!("{w} removeInstance"),
+                0x006a_2b90,
+                Conv::Thiscall(holder),
+                &[chr],
+                |g| u(mn::character_remove_instance(g, holder, chr)),
+            );
+            // std::string moves: short and long
+            let src = t.random(&mut rng, 0x20);
+            let cap = [0xf, 0x10, 0x20, rng.next()][rng.below(4) as usize];
+            t.w32(src + 0x14, cap);
+            t.w32(src + 0x10, [0, 5, 15, u32::MAX][rng.below(4) as usize]);
+            let dst = t.random(&mut rng, 0x20);
+            let unused = rng.next();
+            t.check(
+                &format!("{w} string move"),
+                0x0069_c270,
+                Conv::Thiscall(dst),
+                &[src, unused],
+                |g| u(mn::string_move_ctor(g, dst, src)),
+            );
+        }
+        // the prototype table: a small red-black-like tree of nil-marked nodes
+        for i in 0..30 {
+            let head = t.zeros(0x30);
+            t.w8(head + 0xd, 1);
+            let n = rng.below(6);
+            let nodes: Vec<u32> = (0..n).map(|_| t.random(&mut rng, 0x30)).collect();
+            // a right-leaning chain: each node's right child the next
+            for (k, &nd) in nodes.iter().enumerate() {
+                t.w8(nd + 0xd, 0);
+                t.w32(nd, head);
+                let parent = if k == 0 { head } else { nodes[k - 1] };
+                t.w32(nd + 4, parent);
+                let right = if k + 1 < nodes.len() {
+                    nodes[k + 1]
+                } else {
+                    head
+                };
+                t.w32(nd + 8, right);
+                t.w32(nd + 0x28, rng.below(8));
+            }
+            t.w32(head, if nodes.is_empty() { head } else { nodes[0] });
+            let table = t.zeros(4);
+            t.w32(table, head);
+            let id = rng.below(8);
+            let ra = t.check(
+                &format!("{name} {i} existPrototype"),
+                0x006a_1e80,
+                Conv::Thiscall(table),
+                &[id],
+                |_| Out::None,
+            );
+            assert_eq!(
+                ra & 0xff,
+                u32::from(mn::exist_prototype(&G(&mut t.b), table, id)),
+                "{name} {i} existPrototype al"
+            );
+        }
+    }
+}
+
+/// PS2 frame and store helpers, the particle fill buffers.
+#[test]
+fn ps2_bg_store_fill() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0503);
+        let stubs: &[(u32, bool, u32, u32)] = &[
+            (m::GET_SPAD_PTR, false, 0, 0),
+            (m::GS_SET_PACKET, false, 1, 0),
+            (m::GS_START_VIF, false, 0, 0),
+            (m::GS_END2, false, 0, 0),
+            (m::SEND_SPAD, false, 1, 0),
+            (m::GS_FRAME_16, false, 2, 0),
+            (m::GS_FRAME2_16, false, 2, 0),
+            (m::DRAW_SET_FRAME, false, 0, 0),
+            (m::OPERATOR_NEW_2, false, 1, 0),
+            (m::GS_SET_DEF_STORE_IMAGE, false, 8, 0),
+            (m::GS_SYNC_PATH, false, 2, 0),
+            // FlushCache stays the bare `ret` it is: it leaves eax
+            (m::GS_EXEC_STORE_IMAGE, false, 2, 0),
+        ];
+        for &(sym, this, n, pops) in stubs {
+            t.stub(sym, this, n, pops);
+        }
+        for i in 0..20 {
+            for &(sym, ..) in stubs {
+                let r = rng.next();
+                t.ret(sym, r);
+            }
+            let on = [0, 1, rng.next() as u8][rng.below(3) as usize];
+            t.write(t.rebase(0x0130_0777), &[on]);
+            t.check(
+                &format!("{name} {i} drawBG"),
+                0x0082_be80,
+                Conv::Cdecl,
+                &[],
+                |g| u(m::acc_draw_bg(g)),
+            );
+            t.check(
+                &format!("{name} {i} fillBuffers"),
+                0x0072_8750,
+                Conv::Cdecl,
+                &[],
+                |g| u(m::init_fill_buffer_request(g)),
+            );
+            let rect = t.random(&mut rng, 0x10);
+            let dst = rng.next();
+            t.check(
+                &format!("{name} {i} gsStore"),
+                0x007e_4540,
+                Conv::Cdecl,
+                &[rect, dst],
+                |g| u(m::gs_store(g, rect, dst)),
+            );
+        }
+    }
+}
