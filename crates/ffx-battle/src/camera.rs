@@ -3156,7 +3156,7 @@ pub mod bridge {
     }
 
     /// `MsCameraSetFocusList_007bf520(id, side, flags, focus, weight)`
-    /// (`0x007bf520`, name ours; callers `Native_Cam_601c`, `Native_601e`
+    /// (`0x007bf520`, name ours; callers `Native_Cam_601c`, `Native_601e_CamSetFocusList`
     /// and two of the debug menu): for a request `id` the camera knows
     /// ([`ms_camera_id_check`]), its focus record on side `side & 1` of
     /// camera `id & 0xff` (request `id >> 8 & 0xff` of 0x130 bytes from

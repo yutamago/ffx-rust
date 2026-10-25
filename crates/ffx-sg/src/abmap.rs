@@ -1560,7 +1560,7 @@ pub mod bridge {
     pub const DATA_INIT_PATH: u32 = 0x580;
 
     /// `eiAbmDataInit(save)` (`0x00a53de0`, Fahrenheit's name; from
-    /// `MsSetSaveStartGame` and `Native_0254`): the save's sphere grid
+    /// `MsSetSaveStartGame` and `Native_0254_SaveMenuSetBits1415`): the save's sphere grid
     /// reset for the grid the menu word picks (bits 14-15).
     ///
     /// Once ([`DATA_LOADED`]): each of the 70 grid data files

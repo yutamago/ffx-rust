@@ -149,7 +149,7 @@ pub mod bridge {
     }
 
     /// `MovieCameraFrame_0076edc0()` (from `Sg_MainLoop` and
-    /// `Native_b009_Result`): while `g_WaitFramesByTime` is set and
+    /// `Native_b009_MovieCameraWait_Result`): while `g_WaitFramesByTime` is set and
     /// `movie_have_camera()`, the movie camera for the renderer's current
     /// frame ([`camera_frame`]; out of range: `SetByte_012fb8fb(0)`). From
     /// the record (when [`CAMERA_DATA`] is loaded; the original reads

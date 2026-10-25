@@ -5712,7 +5712,7 @@ fn copy_cstr(m: &mut impl Mem, from: u32, to: u32) {
 }
 
 /// `Atel_StreamSeek_00885bf0(start, count, sector, id, pos)` (name ours;
-/// caller `Native_01d6`): a sound stream's file name
+/// caller `Native_01d6_VoiceGetStreamPos`): a sound stream's file name
 /// (`SndStreamPCName(id, frame)`, 16 bytes) becomes the CD's current
 /// stream name (`0x013300c0`); for `pos` -1 also the upper-cased DVD name
 /// (`0x013300a0`, `SndToUpper`), `0x01330098` = `0x78`, `*sector` = `0x19`,
@@ -10052,7 +10052,7 @@ pub fn atel_play_time_update<H: ffx_bridge::Host>(
 /// request, its pan in `EAX`.
 const SND3D_FOOT_REQUEST: u32 = 0x0087_6950;
 
-/// `AtelCalcSound(req, play)` (`0x00876930`; caller `Native_0109`):
+/// `AtelCalcSound(req, play)` (`0x00876930`; caller `Native_0109_Snd3dCalc`):
 /// `Snd3dFootRequest(req, play, 0x100)`, its `EAX` (the pan) handed on.
 pub fn atel_calc_sound(h: &mut impl ffx_bridge::Host, req: u32, play: u32) -> u32 {
     host_call(h, SND3D_FOOT_REQUEST, &[req, play, 0x100])

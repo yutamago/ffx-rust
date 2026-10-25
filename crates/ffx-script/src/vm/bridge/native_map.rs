@@ -59,7 +59,7 @@ macro_rules! pop_calls {
 pop_calls! {
     /// `Native_01a5_TexSwapSetFrame` (`0x008574c0`): `(a, b)` -> `0x00909e30(a, b)`; 1.
     native_01a5 => 2, 0x0090_9e30;
-    /// `Native_806a` (`0x0091af80`): `0x0091a260(x)`; 1.
+    /// `Native_806a_SceneSet104` (`0x0091af80`): `0x0091a260(x)`; 1.
     native_806a => 1, 0x0091_a260;
     /// `Native_MapPartHide` (`0x0091b1e0`, `0x8010`): `0x0091a7c0(part)`; 1.
     native_map_part_hide => 1, 0x0091_a7c0;
@@ -67,9 +67,9 @@ pop_calls! {
     native_8011 => 3, 0x0091_ab30;
     /// `Native_801d_MapPartSetFrame` (`0x0091b400`): `0x0091a930(a, b)`; 1.
     native_801d => 2, 0x0091_a930;
-    /// `Native_801e` (`0x0091b430`): `0x0091a080(x)`; 1.
+    /// `Native_801e_MapPartAnimeFlag0On` (`0x0091b430`): `0x0091a080(x)`; 1.
     native_801e => 1, 0x0091_a080;
-    /// `Native_801f` (`0x0091b450`): `0x0091a030(x)`; 1.
+    /// `Native_801f_MapPartAnimeFlag0Off` (`0x0091b450`): `0x0091a030(x)`; 1.
     native_801f => 1, 0x0091_a030;
     /// `Native_8020_MapPartAnimOn` (`0x0091b470`): `0x00919f90(x)`; 1.
     native_8020 => 1, 0x0091_9f90;
@@ -89,7 +89,7 @@ pop_calls! {
     native_805f => 1, 0x0072_95f0;
     /// `Native_8060_FpGroupForceOff` (`0x0091c510`): `0x00729480(x)`; 1.
     native_8060 => 1, 0x0072_9480;
-    /// `Native_8066` (`0x0091c7c0`): `0x0072a750(x)`; 1.
+    /// `Native_8066_FpStopStatus` (`0x0091c7c0`): `0x0072a750(x)`; 1.
     native_8066 => 1, 0x0072_a750;
     /// `Native_BltzSetObjModels` (`0x0091c810`, `0x8067`): `0x00919a80(a, b, c, d)`; 1.
     native_bltz_set_obj_models => 4, 0x0091_9a80;
@@ -104,7 +104,7 @@ pub fn native_8059<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_01e4` (`0x00858c90`): `(x, y, z, n)`: returns
+/// `Native_01e4_SetFieldVec3Int` (`0x00858c90`): `(x, y, z, n)`: returns
 /// `0x0090a470(x, y, z, n)`'s `EAX`.
 pub fn native_01e4<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let n = pop(h, s);
@@ -114,7 +114,7 @@ pub fn native_01e4<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0090_a470, &[x, y, z, n])
 }
 
-/// `Native_01e6` (`0x008591d0`): `(n, x, y)`: `0x0090a430(n, x, y)`;
+/// `Native_01e6_SetFieldPair` (`0x008591d0`): `(n, x, y)`: `0x0090a430(n, x, y)`;
 /// returns `n`.
 pub fn native_01e6<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let y = popf(h, s);
@@ -160,7 +160,7 @@ pub fn native_8004_poll<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32
 /// `g_MapSpriteRefresh` (`0x025d5eb8`): 2 (or 1/0) before `0x00645e40`.
 pub const MAP_SPRITE_REFRESH: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x025d_5eb8);
 
-/// `Native_806b` (`0x0091afc0`): `(on)`: 2 into `0x025d5eb8` when on, then
+/// `Native_806b_VideoAtEndSetTwo` (`0x0091afc0`): `(on)`: 2 into `0x025d5eb8` when on, then
 /// `0x00645e40()`; 1.
 pub fn native_806b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     if pop(h, s) != 0 {
@@ -170,7 +170,7 @@ pub fn native_806b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_805c` (`0x0091c470`): `(on)`: `on != 0` into `0x025d5eb8`, then
+/// `Native_805c_VideoAtEndSet` (`0x0091c470`): `(on)`: `on != 0` into `0x025d5eb8`, then
 /// `0x00645e40()`; 1.
 pub fn native_805c<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let on = u32::from(pop(h, s) != 0);
@@ -211,9 +211,9 @@ call_ones! {
     native_8007 => 0x0072_9740;
     /// `Native_8008` (`0x0091b060`): `0x007296a0()`; 1.
     native_8008 => 0x0072_96a0;
-    /// `Native_802c` (`0x0091b680`): `0x0091a220()`; 1.
+    /// `Native_802c_SetChain193bf80Bit0` (`0x0091b680`): `0x0091a220()`; 1.
     native_802c => 0x0091_a220;
-    /// `Native_802d` (`0x0091b690`): `0x0091a200()`; 1.
+    /// `Native_802d_ClearChain193bf80Bit0` (`0x0091b690`): `0x0091a200()`; 1.
     native_802d => 0x0091_a200;
 }
 
@@ -270,7 +270,7 @@ pub fn native_map_part_show<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) 
     1
 }
 
-/// `Native_8014` (`0x0091b280`): `(n, x)` -> `0x0091acc0(n, x)`; 1.
+/// `Native_8014_MapPartSet14` (`0x0091b280`): `(n, x)` -> `0x0091acc0(n, x)`; 1.
 pub fn native_8014<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let x = popf(h, s);
     let n = pop(h, s);
@@ -278,7 +278,7 @@ pub fn native_8014<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_8026` (`0x0091b550`): `(a, x, b, c, d)` (x a float) ->
+/// `Native_8026_SceneSetC0` (`0x0091b550`): `(a, x, b, c, d)` (x a float) ->
 /// `0x0091ad80(a, x, b, c, d)`; 1.
 pub fn native_8026<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let d = pop(h, s);
@@ -315,7 +315,7 @@ pub fn native_8036<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     on_off(h, s, 0x0072_9440, 0x0072_9400)
 }
 
-/// `Native_8001` (`0x0091c5b0`): `(on)`: `0x00909e20(0x10)` and
+/// `Native_8001_RenderSetFlag10` (`0x0091c5b0`): `(on)`: `0x00909e20(0x10)` and
 /// `0x00643df0(1)`, or `0x00909e10(0x10)` and `0x00643df0(0)`; returns
 /// `on`.
 pub fn native_8001<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
@@ -339,7 +339,7 @@ pub fn native_804f<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_805d` (`0x0091c4a0`): `0x007297e0()`, then `0x0091a930(i, 0)`
+/// `Native_805d_MapPartAnimeResetAll` (`0x0091c4a0`): `0x007297e0()`, then `0x0091a930(i, 0)`
 /// for each `i` below `0x0091a3d0()` (asked again each time); 1.
 pub fn native_805d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     call(h, 0x0072_97e0, &[]);
