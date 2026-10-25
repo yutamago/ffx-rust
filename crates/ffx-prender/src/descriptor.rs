@@ -133,6 +133,117 @@ pub const INIT: &[(u32, &[u8])] = &[
     (0x004b_96e0, &[0; 24]),
     (0x004b_9720, &[0; 24]),
     (0x004b_97b0, &[0; 24]),
+    (
+        0x0048_0a00,
+        &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x34, 0xff],
+    ),
+    (0x0049_3da0, &[0; 32]),
+    (0x004a_0530, &[0; 9]),
+    (
+        0x004a_ffc0,
+        &[
+            0x4b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ],
+    ),
+    (
+        0x004b_0000,
+        &[
+            0xde, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ],
+    ),
+    (
+        0x004b_0030,
+        &[
+            0xe2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ],
+    ),
+    (
+        0x004b_0060,
+        &[
+            0x4c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ],
+    ),
+    (
+        0x004b_00a0,
+        &[
+            0x49, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ],
+    ),
+    (
+        0x004b_00e0,
+        &[
+            0x4d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ],
+    ),
+    (
+        0x004b_0110,
+        &[
+            0x4e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ],
+    ),
+    (
+        0x004b_0140,
+        &[
+            0x47, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ],
+    ),
+    (
+        0x004b_0180,
+        &[
+            0x48, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ],
+    ),
+    (
+        0x004b_01c0,
+        &[
+            0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ],
+    ),
+    (
+        0x004b_01f0,
+        &[
+            0x43, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ],
+    ),
+    (
+        0x004b_0220,
+        &[
+            0x44, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ],
+    ),
+    (
+        0x004b_0250,
+        &[
+            0x4a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ],
+    ),
+    (
+        0x004b_02c0,
+        &[
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x34, 0x00,
+        ],
+    ),
+    (
+        0x004b_0440,
+        &[
+            0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ],
+    ),
+    (0x004b_9770, &[0; 16]),
 ];
 
 /// `destroyInstance` copies and the destructor each calls.
@@ -353,8 +464,15 @@ pub const ARRAY_DESTROY: &[(u32, (u32, Release))] = &[
     (0x004d_05e0, (0x0, Release::FreeShared { check_null: true })),
 ];
 
-/// `destroyInstance` copies that free the untagged block at `p + 4`.
-pub const TAGGED_FREE: &[u32] = &[0x0045_dd10, 0x004a_2f60, 0x004b_0750];
+/// `destroyInstance` copies that free the untagged block at `p + off`
+/// (a pointer whose bit 0 marks it as not owned), by offset.
+pub const TAGGED_FREE: &[(u32, u32)] = &[
+    (0x0045_4980, 0xcc),
+    (0x0045_dd10, 0x4),
+    (0x004a_2f60, 0x4),
+    (0x004b_0750, 0x4),
+    (0x004d_86c0, 0x10),
+];
 
 /// `destroyInstance` copies that call the object's virtual destructor
 /// through `p - 4` (the descriptor's `p` is past a vtable pointer).
@@ -470,6 +588,61 @@ pub const fn owned(count: u32) -> bool {
     count & 0x8000_0000 == 0
 }
 
+/// `(offset, bytes)` runs of default fields.
+pub type Spans = &'static [(u32, &'static [u8])];
+
+/// `constructInstance` copies whose default fields leave gaps: `(offset,
+/// bytes)` runs.
+pub const INIT_SPANS: &[(u32, Spans)] = &[
+    (
+        0x0048_5cd0,
+        &[
+            (
+                0x0,
+                &[
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x34,
+                    0x00, 0x00,
+                ],
+            ),
+            (0x10, &[0; 4]),
+        ],
+    ),
+    (
+        0x004a_2ea0,
+        &[
+            (0x0, &[0; 2]),
+            (0x4, &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x34]),
+        ],
+    ),
+];
+
+/// Callbacks that hand `p` to a cdecl function of the class and return its
+/// `eax`.
+pub const FORWARD: &[(u32, u32)] = &[
+    (0x0045_dcd0, 0x0045_c9e0),
+    (0x0045_dd70, 0x0045_cd60),
+    (0x004d_7230, 0x004d_66c0),
+];
+
+/// `constructInstance` copies that make an empty `PWorld` (a list head).
+pub const LIST_HEAD: &[u32] = &[0x0044_3400];
+
+/// `destroyInstance` copies with `PTextureCommonBase`'s destructor inlined.
+pub const TEXTURE_DESTROY: &[u32] = &[0x004c_26e0];
+
+/// The runs of [`INIT_SPANS`] copy `f`.
+#[must_use]
+pub const fn spans_of(f: u32) -> Spans {
+    let mut i = 0;
+    while i < INIT_SPANS.len() {
+        if INIT_SPANS[i].0 == f {
+            return INIT_SPANS[i].1;
+        }
+        i += 1;
+    }
+    panic!("not in the table");
+}
+
 pub mod bridge {
     //! The originals over game memory.
 
@@ -554,10 +727,10 @@ pub mod bridge {
         true
     }
 
-    /// `destroyInstance(p)`: frees the block at `p + 4` unless its bit 0
-    /// is set (a tagged pointer); true.
-    pub fn destroy_tagged(h: &mut impl Host, p: u32) -> bool {
-        let block: u32 = h.read(p.wrapping_add(4));
+    /// `destroyInstance(p)`: frees the block at `p + off` unless its bit
+    /// 0 is set (a tagged pointer); true.
+    pub fn destroy_tagged(h: &mut impl Host, p: u32, off: u32) -> bool {
+        let block: u32 = h.read(p.wrapping_add(off));
         if block & 1 == 0 {
             h.call_sym(FREE, Conv::Cdecl, &[block]);
         }
@@ -683,5 +856,38 @@ pub mod bridge {
             .read::<u32>(member + 0x24)
             .wrapping_sub(h.read(class + 0x88));
         h.read(off.wrapping_add(object))
+    }
+
+    /// `constructInstance(p)`: each `(offset, bytes)` run at `p` unless `p`
+    /// is 0; true.
+    pub fn construct_spans(m: &mut impl Mem, p: u32, spans: &[(u32, &[u8])]) -> bool {
+        if p != 0 {
+            for &(off, bytes) in spans {
+                m.write_bytes(p + off, bytes);
+            }
+        }
+        true
+    }
+
+    /// A callback that hands `p` to the class's cdecl function `f`: its
+    /// `eax`.
+    pub fn forward(h: &mut impl Host, f: u32, p: u32) -> u32 {
+        h.call_sym(f, Conv::Cdecl, &[p])
+    }
+
+    /// `constructInstance(p)` of `PWorld`: `PWorld::PWorld` in place
+    /// unless `p` is 0; true.
+    pub fn construct_list_head(m: &mut impl Mem, p: u32) -> bool {
+        if p != 0 {
+            crate::basic::bridge::world_ctor(m, p);
+        }
+        true
+    }
+
+    /// `destroyInstance(p)` of `PTextureCommonBase`: its destructor's body
+    /// on `p`; true.
+    pub fn destroy_texture(h: &mut impl Host, p: u32) -> bool {
+        crate::texture::bridge::common_dtor(h, p);
+        true
     }
 }

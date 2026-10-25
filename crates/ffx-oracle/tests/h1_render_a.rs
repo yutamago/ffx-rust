@@ -16,6 +16,7 @@
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
+    clippy::many_single_char_names,
     clippy::similar_names,
     clippy::too_many_lines
 )]
@@ -25,7 +26,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_prender::descriptor;
+use ffx_prender::{basic, descriptor, texture};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -479,16 +480,18 @@ fn tagged_and_virtual_destroy_match_the_original() {
         let mut rng = Rng(0x4242_4242);
         let this = object(&mut t, &mut rng);
         stub_releases(&mut t);
-        for &f in descriptor::TAGGED_FREE {
+        for &(f, off) in descriptor::TAGGED_FREE {
+            assert_eq!(descriptor::callee_of(descriptor::TAGGED_FREE, f), off);
             for block in [0, 0x2000_0000, 0x2000_0001, 0xffff_fffe, 0xffff_ffff] {
-                let p = object(&mut t, &mut rng);
-                t.w32(p + 4, block);
+                let bytes: Vec<u8> = (0..0x100).map(|_| rng.next() as u8).collect();
+                let p = t.alloc(&bytes);
+                t.w32(p + off, block);
                 t.check(
                     &format!("{name} {f:#x} block {block:#x}"),
                     f,
                     Conv::Thiscall(this),
                     &[p],
-                    |g| Out::U8(u8::from(descriptor::bridge::destroy_tagged(g, p))),
+                    |g| Out::U8(u8::from(descriptor::bridge::destroy_tagged(g, p, off))),
                 );
             }
         }
@@ -706,3 +709,447 @@ fn array_members_match_the_original() {
 
 /// `PClassDataMemberArrayDynamic<PSharray<PMaterial>>::getArrayStart`.
 const MEMBER_START: u32 = 0x0048_c060;
+
+// ---- batch 3: more descriptor callbacks, texture and sampler bases, small methods ----
+
+/// A constructor's port.
+type Ctor = fn(&mut G, u32) -> u32;
+
+/// A buffer of `n` pattern bytes.
+fn pattern(t: &mut Twins, rng: &mut Rng, n: usize) -> u32 {
+    let bytes: Vec<u8> = (0..n).map(|_| rng.next() as u8).collect();
+    t.alloc(&bytes)
+}
+
+#[test]
+fn more_descriptor_callbacks_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x3333_aaaa);
+        let this = object(&mut t, &mut rng);
+        t.stub(texture::PRINTF, false, 2, 0, Ret::Imm(0x0000_0040));
+        t.stub(texture::RELEASE_DATA, true, 0, 0, Ret::Imm(0x0000_0d0d));
+        for &(f, spans) in descriptor::INIT_SPANS {
+            assert_eq!(descriptor::spans_of(f), spans);
+            for p in [0, pattern(&mut t, &mut rng, 0x40)] {
+                t.check(
+                    &format!("{name} {f:#x}({p:#x})"),
+                    f,
+                    Conv::Thiscall(this),
+                    &[p],
+                    |g| Out::U8(u8::from(descriptor::bridge::construct_spans(g, p, spans))),
+                );
+            }
+        }
+        for &(f, callee) in descriptor::FORWARD {
+            t.stub(callee, false, 1, 0, Ret::Imm(0x7700_0000 ^ callee));
+            let p = pattern(&mut t, &mut rng, 0x20);
+            t.check(
+                &format!("{name} {f:#x}"),
+                f,
+                Conv::Thiscall(this),
+                &[p],
+                |g| Out::U32(descriptor::bridge::forward(g, callee, p)),
+            );
+        }
+        for &f in descriptor::LIST_HEAD {
+            for p in [0, pattern(&mut t, &mut rng, 0x20)] {
+                t.check(
+                    &format!("{name} {f:#x}({p:#x})"),
+                    f,
+                    Conv::Thiscall(this),
+                    &[p],
+                    |g| Out::U8(u8::from(descriptor::bridge::construct_list_head(g, p))),
+                );
+            }
+        }
+        for &f in descriptor::TEXTURE_DESTROY {
+            for (flag, data) in [(0u8, 0u32), (1, 0), (0, 0x2222_0000), (0x80, 0x2222_0000)] {
+                let p = pattern(&mut t, &mut rng, 0x40);
+                t.write(p + 4, &[flag]);
+                t.w32(p + 0x18, data);
+                let before = t.log_entries();
+                t.check(
+                    &format!("{name} {f:#x} {flag} {data:#x}"),
+                    f,
+                    Conv::Thiscall(this),
+                    &[p],
+                    |g| Out::U8(u8::from(descriptor::bridge::destroy_texture(g, p))),
+                );
+                assert_eq!(
+                    t.log_entries() - before,
+                    u32::from(flag != 0) + u32::from(data != 0)
+                );
+            }
+        }
+    }
+}
+
+const COMMON_CTOR: u32 = 0x004c_1d70;
+const CTOR_2D: u32 = 0x004c_2f90;
+const CTOR_3D: u32 = 0x004c_47a0;
+const CTOR_CUBE: u32 = 0x004c_6070;
+const COMMON_DTOR: u32 = 0x004c_1df0;
+const DTOR_THUNKS: [u32; 3] = [0x004c_3070, 0x004c_4890, 0x004c_6150];
+const RELEASE_THUNK: u32 = 0x004c_79f0;
+const MIP_COUNT: u32 = 0x004c_2430;
+const UPDATE_MAX_LEVEL: u32 = 0x004c_4250;
+const SET_DATA: u32 = 0x004c_28f0;
+const SAMPLER_CTOR: u32 = 0x004b_e870;
+const SAMPLER_SETTERS: [(u32, u32); 4] = [
+    (0x004c_07f0, texture::SET_MIN_FILTER),
+    (0x004c_0870, texture::SET_WRAP_S),
+    (0x004c_08a0, texture::SET_WRAP_T),
+    (0x004c_0840, texture::SET_WRAP_R),
+];
+
+#[test]
+fn texture_and_sampler_bases_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x7e47_0001);
+        let ctors: [(u32, Ctor); 5] = [
+            (COMMON_CTOR, |g, p| texture::bridge::common_ctor(g, p)),
+            (CTOR_2D, |g, p| texture::bridge::ctor_2d(g, p)),
+            (CTOR_3D, |g, p| texture::bridge::ctor_3d(g, p)),
+            (CTOR_CUBE, |g, p| texture::bridge::ctor_cube(g, p)),
+            (SAMPLER_CTOR, |g, p| texture::bridge::sampler_ctor(g, p)),
+        ];
+        for (f, port) in ctors {
+            let p = pattern(&mut t, &mut rng, 0x40);
+            t.check(
+                &format!("{name} ctor {f:#x}"),
+                f,
+                Conv::Thiscall(p),
+                &[],
+                |g| Out::U32(port(g, p)),
+            );
+        }
+        // the destructor and its thunks: the message and the release
+        t.stub(texture::PRINTF, false, 2, 0, Ret::Imm(0x0000_0040));
+        t.stub(texture::RELEASE_DATA, true, 0, 0, Ret::Imm(0x0000_0d0d));
+        for f in std::iter::once(COMMON_DTOR).chain(DTOR_THUNKS) {
+            for (flag, data) in [(0u8, 0u32), (2, 0), (0, 0x2222_0000), (1, 0x2222_0000)] {
+                let p = pattern(&mut t, &mut rng, 0x40);
+                t.write(p + 4, &[flag]);
+                t.w32(p + 0x18, data);
+                let before = t.log_entries();
+                t.check(
+                    &format!("{name} dtor {f:#x} {flag} {data:#x}"),
+                    f,
+                    Conv::Thiscall(p),
+                    &[],
+                    |g| {
+                        texture::bridge::common_dtor(g, p);
+                        Out::None
+                    },
+                );
+                assert_eq!(
+                    t.log_entries() - before,
+                    u32::from(flag != 0) + u32::from(data != 0)
+                );
+            }
+        }
+        let data = pattern(&mut t, &mut rng, 0x10);
+        t.check(
+            &format!("{name} release thunk"),
+            RELEASE_THUNK,
+            Conv::Thiscall(data),
+            &[],
+            |g| Out::U32(texture::bridge::release_data(g, data)),
+        );
+        // the mip count and the max level
+        for i in 0..400 {
+            let mut size = || match rng.next() % 4 {
+                0 => rng.next() % 4,
+                1 => 1 << (rng.next() % 32),
+                2 => rng.next() % 5000,
+                _ => rng.next(),
+            };
+            let (w, h, d) = (size(), size(), size());
+            t.check(
+                &format!("{name} mips {w} {h} {d}"),
+                MIP_COUNT,
+                Conv::Cdecl,
+                &[w, h, d],
+                |_| Out::U32(texture::mip_count(w, h, d)),
+            );
+            let p = pattern(&mut t, &mut rng, 0x40);
+            let flags = rng.next();
+            t.w32(p + 0x14, flags);
+            t.w32(p + 0x1c, w);
+            t.w32(p + 0x20, h);
+            if i % 3 == 0 {
+                // the stored level already right
+                let level = if flags & 2 != 0 {
+                    texture::mip_count(w, h, 0)
+                } else {
+                    Mem::read(&t.b, p + 0xc)
+                };
+                t.w32(p + 0x10, level);
+            }
+            t.check(
+                &format!("{name} max level {i}"),
+                UPDATE_MAX_LEVEL,
+                Conv::Thiscall(p),
+                &[],
+                |g| Out::U32(texture::bridge::update_max_level(g, p)),
+            );
+        }
+        // the data object
+        for case in 0..6 {
+            let p = pattern(&mut t, &mut rng, 0x40);
+            let old = match case {
+                0 => 0,
+                _ => pattern(&mut t, &mut rng, 0x10),
+            };
+            t.w32(p + 0x18, old);
+            if old != 0 {
+                t.write(old + 4, &[u8::from(case % 2 == 0)]);
+                t.w32(old, if case < 4 { p } else { p + 4 });
+            }
+            let new = rng.next();
+            t.check(
+                &format!("{name} set data {case}"),
+                SET_DATA,
+                Conv::Thiscall(p),
+                &[new],
+                |g| Out::U32(texture::bridge::set_data(g, p, new)),
+            );
+        }
+        // the sampler setters
+        for (f, off) in SAMPLER_SETTERS {
+            for flags in [0u32, 0x80, 0x7f, 0xffff_ff7f, 0x180] {
+                let p = pattern(&mut t, &mut rng, 0x20);
+                t.w32(p + 0x1c, flags);
+                let v = rng.next();
+                t.check(
+                    &format!("{name} setter {f:#x} {flags:#x}"),
+                    f,
+                    Conv::Thiscall(p),
+                    &[v],
+                    |g| Out::U32(texture::bridge::sampler_set(g, p, off, v as u8)),
+                );
+            }
+        }
+    }
+}
+
+const CLEAR_WORD: u32 = 0x0042_fcc0;
+const CLEAR_9: u32 = 0x0049_f990;
+const WORLD_CTOR: u32 = 0x0044_29e0;
+const CTOR_4A1660: u32 = 0x004a_1660;
+const CLEAR_24: u32 = 0x004b_5050;
+const DYNAMIC_MESH_CTOR: u32 = 0x0049_68c0;
+const CTOR_47FBE0: u32 = 0x0047_fbe0;
+const SCENE_INIT: u32 = 0x0043_2be0;
+const SPRITE_INIT: u32 = 0x0043_4be0;
+const SAMPLER_NEW: u32 = 0x004b_e860;
+const CTOR_4835D0: u32 = 0x0048_35d0;
+const LESS_BY_SECOND: u32 = 0x004d_3700;
+const FORWARD_VISIT: u32 = 0x0047_fac0;
+const INIT_ELEMENTS: u32 = 0x0048_2d70;
+const FIND_ENTRY: u32 = 0x004b_d770;
+const RELEASE_PASSES: u32 = 0x004b_c850;
+const CLASS_ENTRY: u32 = 0x0044_37e0;
+const PLATFORM_ID: u32 = 0x0046_4710;
+
+#[test]
+fn small_methods_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xba51_c000);
+        let ctors: [(u32, Ctor); 6] = [
+            (CLEAR_WORD, |g, p| basic::bridge::clear_word(g, p)),
+            (CLEAR_9, |g, p| basic::bridge::clear_9(g, p)),
+            (WORLD_CTOR, |g, p| basic::bridge::world_ctor(g, p)),
+            (CTOR_4A1660, |g, p| basic::bridge::ctor_4a1660(g, p)),
+            (CLEAR_24, |g, p| basic::bridge::clear_24(g, p)),
+            (DYNAMIC_MESH_CTOR, |g, p| {
+                basic::bridge::dynamic_mesh_ctor(g, p)
+            }),
+        ];
+        for (f, port) in ctors {
+            let p = pattern(&mut t, &mut rng, 0x40);
+            t.check(
+                &format!("{name} ctor {f:#x}"),
+                f,
+                Conv::Thiscall(p),
+                &[],
+                |g| Out::U32(port(g, p)),
+            );
+        }
+        let p = pattern(&mut t, &mut rng, 0x20);
+        let (a, b) = (rng.next(), rng.next());
+        t.check(
+            &format!("{name} 47fbe0"),
+            CTOR_47FBE0,
+            Conv::Thiscall(p),
+            &[a, b],
+            |g| Out::U32(basic::bridge::ctor_47fbe0(g, p, a, b as u8)),
+        );
+        t.check(
+            &format!("{name} platform id"),
+            PLATFORM_ID,
+            Conv::Cdecl,
+            &[],
+            |_| Out::U32(basic::RENDERER_ID),
+        );
+        // initializers and forwarders with recording callees
+        t.stub(basic::NODE_REGISTER, false, 0, 0, Ret::Imm(0x11));
+        for f in basic::SPRITE_REGISTER {
+            t.stub(f, false, 0, 0, Ret::Imm(f));
+        }
+        t.stub(basic::SAMPLER_D3D11_CTOR, true, 0, 0, Ret::Imm(0x5a5a));
+        t.stub(basic::STREAM_CTOR, true, 1, 1, Ret::Imm(0x0051_7ea0));
+        t.stub(basic::SHADER_PASS_DTOR, true, 0, 0, Ret::Imm(0x0d70));
+        t.stub(basic::FREE, false, 1, 0, Ret::Imm(0xf4ee));
+        let this = object(&mut t, &mut rng);
+        t.check(
+            &format!("{name} scene init"),
+            SCENE_INIT,
+            Conv::Thiscall(this),
+            &[],
+            |g| Out::U32(basic::bridge::scene_initialize(g)),
+        );
+        t.check(
+            &format!("{name} sprite init"),
+            SPRITE_INIT,
+            Conv::Thiscall(this),
+            &[],
+            |g| Out::U32(basic::bridge::sprite_initialize(g)),
+        );
+        t.check(
+            &format!("{name} sampler new"),
+            SAMPLER_NEW,
+            Conv::Thiscall(this),
+            &[],
+            |g| Out::U32(basic::bridge::sampler_d3d11_new(g, this)),
+        );
+        let p = pattern(&mut t, &mut rng, 0x40);
+        let (a, b, c) = (rng.next(), rng.next(), rng.next());
+        t.check(
+            &format!("{name} 4835d0"),
+            CTOR_4835D0,
+            Conv::Thiscall(p),
+            &[a, b, c],
+            |g| Out::U32(basic::bridge::ctor_4835d0(g, p, a, b, c)),
+        );
+        // the visitor's virtual slot 1 (four words, popped)
+        let visit = t.stub_code(0x0000_0715, true, 4, 4, Ret::Imm(0x0000_0909));
+        let vtable = t.alloc(
+            &[0u32, visit]
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let visitor = pattern(&mut t, &mut rng, 0x10);
+        t.w32(visitor, vtable);
+        let args = [rng.next(), rng.next(), rng.next(), rng.next(), rng.next()];
+        t.check(
+            &format!("{name} visit"),
+            FORWARD_VISIT,
+            Conv::Thiscall(visitor),
+            &args,
+            |g| {
+                Out::U32(basic::bridge::forward_visit(
+                    g,
+                    visitor,
+                    [args[0], args[1], args[2], args[3]],
+                ))
+            },
+        );
+        // comparators and lookups
+        for i in 0..300 {
+            let (x, y) = (pattern(&mut t, &mut rng, 8), pattern(&mut t, &mut rng, 8));
+            if i % 4 == 0 {
+                let w: u32 = Mem::read(&t.b, x + 4);
+                t.w32(y + 4, w);
+            }
+            t.check(
+                &format!("{name} less {i}"),
+                LESS_BY_SECOND,
+                Conv::Cdecl,
+                &[x, y],
+                |g| Out::U32(basic::bridge::less_by_second(g, x, y)),
+            );
+        }
+        for count in [0u32, 1, 3, 6] {
+            let data = pattern(&mut t, &mut rng, 12 * 6 + 4);
+            t.check(
+                &format!("{name} init elements {count}"),
+                INIT_ELEMENTS,
+                Conv::Cdecl,
+                &[data, count],
+                |g| {
+                    basic::bridge::init_elements(g, data, count);
+                    Out::None
+                },
+            );
+        }
+        t.check(
+            &format!("{name} init elements at 0"),
+            INIT_ELEMENTS,
+            Conv::Cdecl,
+            &[0, 1],
+            |g| {
+                basic::bridge::init_elements(g, 0, 1);
+                Out::None
+            },
+        );
+        for case in 0..24u32 {
+            let n = case % 5;
+            let data = pattern(&mut t, &mut rng, 16 * 5);
+            let this = pattern(&mut t, &mut rng, 0x20);
+            t.w32(this + 0x14, n | if case % 3 == 0 { 0x8000_0000 } else { 0 });
+            t.w32(this + 0x18, data);
+            // a 0 first word (key 0 must not find it)
+            t.w32(data, 0);
+            let key = match case % 4 {
+                0 => 0,
+                1 | 2 if n > 1 => {
+                    // the key also mid-entry before it: a wrong stride finds that
+                    let j = 1 + rng.next() % (n - 1);
+                    let k = 0x4000_0000 | rng.next();
+                    t.w32(data + 16 * j, k);
+                    t.w32(data + 16 * (j - 1) + 8, k);
+                    k
+                }
+                _ => rng.next(),
+            };
+            t.check(
+                &format!("{name} find {case}"),
+                FIND_ENTRY,
+                Conv::Thiscall(this),
+                &[key],
+                |g| Out::U32(basic::bridge::find_entry(g, this, key)),
+            );
+        }
+        for count in [0u32, 1, 3] {
+            let data = pattern(&mut t, &mut rng, 0x254 * 3);
+            for d in [0, data] {
+                t.check(
+                    &format!("{name} release passes {d:#x} {count}"),
+                    RELEASE_PASSES,
+                    Conv::Cdecl,
+                    &[d, count],
+                    |g| {
+                        basic::bridge::release_shader_passes(g, d, count);
+                        Out::None
+                    },
+                );
+            }
+        }
+        for case in 0..10u32 {
+            let world = pattern(&mut t, &mut rng, 0x10);
+            let descriptor = pattern(&mut t, &mut rng, 0x90);
+            let id = case % 5;
+            t.w32(world + 8, 3 | if case % 2 == 0 { 0x8000_0000 } else { 0 });
+            t.w32(descriptor + 0x80, if case == 9 { 0xffff_fff0 } else { id });
+            t.check(
+                &format!("{name} class entry {case}"),
+                CLASS_ENTRY,
+                Conv::Thiscall(world),
+                &[descriptor],
+                |g| Out::U32(basic::bridge::class_entry(g, world, descriptor)),
+            );
+        }
+    }
+}
