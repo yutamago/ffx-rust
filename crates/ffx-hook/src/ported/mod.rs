@@ -22,6 +22,7 @@ mod auto;
 mod battle;
 mod chara;
 mod h2_render_b;
+mod h3_glue_render;
 mod kernel;
 mod main;
 mod map;
@@ -58,6 +59,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(menu::hooks());
     all.extend(movie::hooks());
     all.extend(pc_ui::hooks());
+    all.extend(h3_glue_render::hooks());
     all.extend(phyre_render::hooks());
     all.extend(ps2_emu::hooks());
     all.extend(render::hooks());

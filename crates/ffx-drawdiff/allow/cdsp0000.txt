@@ -23,3 +23,12 @@ constant var=scene field=*.cb0.scene.GlobalTime cause: the game's f32 time since
 # [ebp-0x3c], a stack word it never writes (ffx_chara::draw_main; the port
 # passes 0 under the junk-read policy of 2026-10-24).
 constant var=SgSpec_LightVec field=*.SgSpec_LightVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x3c] (the light vector's third word)
+
+# The camera vector Ch_DrawMain (0x0082ed50) passes to graphicSgSetSpecular
+# has a third word it never writes ([ebp-0x2c]). In the original it holds
+# whatever an earlier call left on the stack (a stale integer 1, read as
+# 1e-45); ported functions further up the stack leave other words there
+# (h3-glue-render, 2026-10-25: 0x004c0000), and the port of Ch_DrawMain
+# passes 0 (junk-read policy, 2026-10-24). Never a drawn difference: the
+# shader uses the vector's x, y and w only (docs/formats/scene-chars.md).
+constant var=SgSpec_CameraVec field=*.SgSpec_CameraVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x2c] (the camera vector's third word); its value depends on what earlier calls left on the stack
