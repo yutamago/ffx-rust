@@ -35,6 +35,7 @@ ffx-sound = { path = "crates/ffx-sound" }
 ffx-studio = { path = "crates/ffx-studio" }
 ffx-system = { path = "crates/ffx-system" }
 ffx-text = { path = "crates/ffx-text" }
+ffx-uidraw = { path = "crates/ffx-uidraw" }
 ffx-vbf = { path = "crates/ffx-vbf" }
 ffx-vfx = { path = "crates/ffx-vfx" }
 anyhow = "1.0.104"

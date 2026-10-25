@@ -899,6 +899,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-uidraw"
+version = "0.1.0"
+dependencies = [
+ "ffx-drawdiff",
+ "ffx-dxbc",
+ "ffx-gfx",
+ "ffx-phyre",
+ "ffx-vbf",
+]
+
+[[package]]
 name = "ffx-vbf"
 version = "0.1.0"
 dependencies = [

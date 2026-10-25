@@ -1,0 +1,17 @@
+[package]
+name = "ffx-uidraw"
+description = "The UI and 2D draws: what the menus, the fonts and the Iggy screens draw, and from what (M4 census)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-drawdiff = { path = "../ffx-drawdiff" }
+ffx-dxbc.workspace = true
+ffx-gfx.workspace = true
+ffx-phyre.workspace = true
+ffx-vbf.workspace = true
+
+[lints]
+workspace = true
