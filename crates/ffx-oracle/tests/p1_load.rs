@@ -1795,7 +1795,10 @@ fn enum_lookups_match_the_original() {
         let tables = descriptor::ENUM_TABLES
             .iter()
             .map(|&(f, head)| (f, head, 4, 8))
-            .chain([(0x0050_7a30, 0x00ca_9734, 0, 4)]);
+            .chain([
+                (0x0050_7a30, 0x00ca_9734, 0, 4),
+                (0x0057_87d0, 0x00cc_969c, 0, 4),
+            ]);
         for (f, head, name_at, next_at) in tables {
             // three entries, last first in the list
             let mut first = 0;
@@ -1815,6 +1818,153 @@ fn enum_lookups_match_the_original() {
                     });
                 }
             }
+        }
+    }
+}
+
+// ---- batch 5: the GetType<T> statics ----
+
+#[test]
+fn type_statics_match_the_original() {
+    use ffx_pload::types;
+    for (label, mut t) in Twins::all() {
+        t.stub(types::ATEXIT, false, 1, 0, 0);
+        // each getter the first time (guard cleared), then again
+        for (i, row) in types::PRIMITIVES.iter().enumerate() {
+            let guard = t.rebase(row.object) + 0x2c;
+            let g = t.r32(guard);
+            t.w32(guard, g & !1);
+            for pass in 0..2 {
+                let what = format!("{label}: primitive {i} ({:#x}) pass {pass}", row.getter);
+                t.check(&what, row.getter, Conv::Cdecl, &[], |g| {
+                    Out::U32(types::bridge::primitive(g, row))
+                });
+            }
+        }
+        for (i, row) in types::ENUMS.iter().enumerate() {
+            let guard = t.rebase(row.object) + 0x34;
+            let g = t.r32(guard);
+            t.w32(guard, g & !1);
+            for pass in 0..2 {
+                let what = format!("{label}: enum {i} ({:#x}) pass {pass}", row.getter);
+                t.check(&what, row.getter, Conv::Cdecl, &[], |g| {
+                    Out::U32(types::bridge::enum_type(g, row))
+                });
+            }
+        }
+        let guard = t.rebase(types::DISPENSER) + 0x18;
+        let g = t.r32(guard);
+        t.w32(guard, g & !1);
+        for pass in 0..2 {
+            let what = format!("{label}: dispenser pass {pass}");
+            t.check(&what, 0x0043_9040, Conv::Cdecl, &[], |g| {
+                Out::U32(types::bridge::dispenser(g))
+            });
+        }
+        // one atexit per first pass
+        assert_eq!(t.log_entries(), 13 + 9 + 1);
+        t.reset();
+    }
+}
+
+#[test]
+fn batch5_helpers_match_the_original() {
+    use ffx_pload::types;
+    for (label, mut t) in Twins::all() {
+        // the asset registry's static
+        t.stub(types::ATEXIT, false, 1, 0, 0);
+        let guard = t.rebase(types::ASSET_REGISTRY) + 0x18;
+        let g = t.r32(guard);
+        t.w32(guard, g & !1);
+        for pass in 0..2 {
+            let what = format!("{label}: asset registry pass {pass}");
+            t.check(&what, 0x0045_d420, Conv::Cdecl, &[], |g| {
+                Out::U32(types::bridge::list_static(
+                    g,
+                    types::ASSET_REGISTRY,
+                    types::ASSET_REGISTRY_DTOR,
+                ))
+            });
+        }
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+        // the reader file's destructor and the string release: frees recorded
+        t.stub(descriptor::FREE, false, 1, 0, 0);
+        t.stub(0x0043_4360, false, 2, 0, 0);
+        for name in [0x00ab_0000, 0x00ab_0001] {
+            let r = t.junk(0x20, 1);
+            t.w32(r + 8, name);
+            let what = format!("{label}: reader file dtor {name:#x}");
+            t.check(&what, 0x0057_67c0, Conv::Thiscall(r), &[], |g| {
+                s::reader_file_dtor(g, r);
+                Out::None
+            });
+        }
+        for (word, text) in [
+            (0, 0x00ab_0000),
+            (1, 0x00ab_0000),
+            (1, 0x00ab_0001),
+            (2, 0x00ab_0000),
+            (3, 0x00ab_0000),
+            (0x4000_0003, 0x00ab_0000),
+            (0x8000_0003, 0x00ab_0000),
+        ] {
+            let st = t.zeros(8);
+            t.w32(st, word);
+            t.w32(st + 4, text);
+            let what = format!("{label}: string release {word:#x} {text:#x}");
+            t.check(&what, 0x0044_af00, Conv::Thiscall(st), &[], |g| {
+                d::string_release(g, st);
+                Out::None
+            });
+        }
+        assert_eq!(t.log_entries(), 1 + 4);
+        t.reset();
+        // constructInGlobal: the namespace and 0x00447690 recorded
+        t.stub(descriptor::GLOBAL_NAMESPACE, false, 0, 0, 0x00ee_0000);
+        t.stub(0x0044_7690, true, 3, 3, 0x12);
+        for p in [0, 0x00ab_c000] {
+            let what = format!("{label}: constructInGlobal {p:#x}");
+            t.check(&what, 0x0044_9420, Conv::Stdcall, &[p], |g| {
+                Out::U8(d::construct_in_global(g, p))
+            });
+        }
+        assert_eq!(t.log_entries(), 2);
+        t.reset();
+        // the cluster teardown: clear and 0x0049c5b0 recorded, the
+        // namespace's release run (one owned descriptor)
+        t.stub(0x0044_0eb0, true, 0, 0, 0);
+        t.stub(0x0049_c5b0, true, 0, 0, 0);
+        let cl = t.zeros(0x60);
+        let o = t.object(&[0, 0, 0, 0, 0, 0, 0, 1]);
+        let desc = t.zeros(0xa0);
+        let vt = t.r32(o);
+        t.w32(desc, vt);
+        t.w32(desc + descriptor::FLAGS, 1);
+        t.w32(cl + 8, desc + 0x2c);
+        t.w32(desc + 0x2c, cl + 8);
+        let what = format!("{label}: cluster teardown");
+        t.check(&what, 0x0043_faa0, Conv::Thiscall(cl), &[], |g| {
+            c::cluster_teardown(g, cl);
+            Out::None
+        });
+        assert_eq!(t.log_entries(), 3);
+        t.reset();
+        // PClassMember: the allocator recorded (memcpy runs)
+        let name = t.alloc(b"m_value\0");
+        for (flags, block) in [(0, 0), (2, 0), (1, 0), (0x8000_0001, 1)] {
+            let buf = if block == 0 { 0 } else { t.zeros(16) };
+            t.stub(0x0042_fb80, false, 2, 0, buf);
+            let m = t.junk(0x20, 2);
+            let what = format!("{label}: PClassMember {flags:#x} {buf:#x}");
+            t.check(
+                &what,
+                0x0043_a080,
+                Conv::Thiscall(m),
+                &[0x77, name, flags],
+                |g| Out::U32(d::member_ctor(g, m, 0x77, name, flags)),
+            );
+            t.reset();
         }
     }
 }

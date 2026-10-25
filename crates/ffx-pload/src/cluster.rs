@@ -473,4 +473,13 @@ pub mod bridge {
         m.write(this + 0x10, [0u32; 6]);
         this
     }
+
+    /// `PCluster`'s teardown (`0x0043faa0`, thiscall): `PClusterBase::clear`
+    /// (`0x00440eb0`), `0x0049c5b0` on `+0x28`, then its namespace's owned
+    /// descriptors (`0x0043dde0`).
+    pub fn cluster_teardown(h: &mut impl Host, cluster: u32) {
+        h.call_sym(0x0044_0eb0, Conv::Thiscall(cluster), &[]);
+        h.call_sym(0x0049_c5b0, Conv::Thiscall(cluster + 0x28), &[]);
+        crate::descriptor::bridge::release_owned(h, cluster);
+    }
 }

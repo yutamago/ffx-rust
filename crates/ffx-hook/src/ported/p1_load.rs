@@ -9,7 +9,7 @@
 //! classes are each their own original, so each gets its own line.
 
 use super::{StackFrame, mem, ported};
-use ffx_pload::{cluster, descriptor, stream};
+use ffx_pload::{cluster, descriptor, stream, types};
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
 /// constructs one in place).
@@ -615,5 +615,128 @@ ported! {
     /// `PNamespace::remove(desc)`.
     Phyre_PNamespace_remove_0043ec40 @ 0x0043_ec40 => extern "thiscall" fn namespace_remove(this: u32, desc: u32) -> u32 {
         descriptor::bridge::namespace_remove(&mut mem(), this, desc)
+    }
+
+    // ---- batch 5: the GetType<T> statics ----
+    /// `PTypeDispenser::GetType<PType>()`.
+    Phyre_PTypeDispenser_GetType_Phyre_PType @ 0x0043_74d0 => extern "C" fn get_type_4374d0() -> u32 {
+        types::bridge::primitive(&mut mem(), &types::PRIMITIVES[0])
+    }
+    /// `PTypeDispenser::GetType<PChar>()`.
+    Phyre_PTypeDispenser_GetType_PChar @ 0x0043_7c90 => extern "C" fn get_type_437c90() -> u32 {
+        types::bridge::primitive(&mut mem(), &types::PRIMITIVES[1])
+    }
+    /// `PTypeDispenser::GetType<PUInt8>()`.
+    Phyre_PTypeDispenser_GetType_PUInt8 @ 0x0043_7d30 => extern "C" fn get_type_437d30() -> u32 {
+        types::bridge::primitive(&mut mem(), &types::PRIMITIVES[2])
+    }
+    /// `PTypeDispenser::GetType<PInt16>()`.
+    Phyre_PTypeDispenser_GetType_PInt16 @ 0x0043_7dd0 => extern "C" fn get_type_437dd0() -> u32 {
+        types::bridge::primitive(&mut mem(), &types::PRIMITIVES[3])
+    }
+    /// `PTypeDispenser::GetType<PUInt16>()`.
+    Phyre_PTypeDispenser_GetType_PUInt16 @ 0x0043_7e70 => extern "C" fn get_type_437e70() -> u32 {
+        types::bridge::primitive(&mut mem(), &types::PRIMITIVES[4])
+    }
+    /// `PTypeDispenser::GetType<PInt32>()`.
+    Phyre_PTypeDispenser_GetType_PInt32 @ 0x0043_7f10 => extern "C" fn get_type_437f10() -> u32 {
+        types::bridge::primitive(&mut mem(), &types::PRIMITIVES[5])
+    }
+    /// `PTypeDispenser::GetType<PUInt32>()`.
+    Phyre_PTypeDispenser_GetType_unsigned_int @ 0x0043_7fc0 => extern "C" fn get_type_437fc0() -> u32 {
+        types::bridge::primitive(&mut mem(), &types::PRIMITIVES[6])
+    }
+    /// `PTypeDispenser::GetType<float>()`.
+    Phyre_PTypeDispenser_GetType_float @ 0x0043_8060 => extern "C" fn get_type_438060() -> u32 {
+        types::bridge::primitive(&mut mem(), &types::PRIMITIVES[7])
+    }
+    /// `PTypeDispenser::GetType<double>()`.
+    Phyre_PTypeDispenser_GetType_double @ 0x0043_8100 => extern "C" fn get_type_438100() -> u32 {
+        types::bridge::primitive(&mut mem(), &types::PRIMITIVES[8])
+    }
+    /// `PTypeDispenser::GetType<PUInt128>()`.
+    Phyre_PTypeDispenser_GetType_PUInt128 @ 0x0043_81b0 => extern "C" fn get_type_4381b0() -> u32 {
+        types::bridge::primitive(&mut mem(), &types::PRIMITIVES[9])
+    }
+    /// `PTypeDispenser::GetType<PInt64>()`.
+    Phyre_PTypeDispenser_GetType_PInt64 @ 0x0043_8250 => extern "C" fn get_type_438250() -> u32 {
+        types::bridge::primitive(&mut mem(), &types::PRIMITIVES[10])
+    }
+    /// `PTypeDispenser::GetType<PUInt64>()`.
+    Phyre_PTypeDispenser_GetType_PUInt64 @ 0x0043_82f0 => extern "C" fn get_type_4382f0() -> u32 {
+        types::bridge::primitive(&mut mem(), &types::PRIMITIVES[11])
+    }
+    /// `PTypeDispenser::GetType<bool>()`.
+    Phyre_PTypeDispenser_GetType_bool @ 0x0043_8390 => extern "C" fn get_type_438390() -> u32 {
+        types::bridge::primitive(&mut mem(), &types::PRIMITIVES[12])
+    }
+    /// `PTypeDispenser::GetType<PAnimationKeyDataType>()`.
+    Phyre_PTypeDispenser_GetType_Phyre_PAnimation_PAnimationKeyDataType @ 0x0050_78c0 => extern "C" fn get_type_5078c0() -> u32 {
+        types::bridge::enum_type(&mut mem(), &types::ENUMS[0])
+    }
+    /// `PTypeDispenser::GetType<PLODMetricType>()`.
+    Phyre_PTypeDispenser_GetType_Phyre_PLOD_PLODMetricType @ 0x005c_bc80 => extern "C" fn get_type_5cbc80() -> u32 {
+        types::bridge::enum_type(&mut mem(), &types::ENUMS[1])
+    }
+    /// `PTypeDispenser::GetType<PLODBlendType>()`.
+    Phyre_PTypeDispenser_GetType_Phyre_PLOD_PLODBlendType @ 0x005c_c0e0 => extern "C" fn get_type_5cc0e0() -> u32 {
+        types::bridge::enum_type(&mut mem(), &types::ENUMS[2])
+    }
+    /// `PTypeDispenser::GetType<PInputTypeSemantic>()`.
+    Phyre_PTypeDispenser_GetType_Phyre_PInputs_PInputTypeSemantic @ 0x009f_4730 => extern "C" fn get_type_9f4730() -> u32 {
+        types::bridge::enum_type(&mut mem(), &types::ENUMS[3])
+    }
+    /// `PTypeDispenser::GetType<PInputAxisSemantic>()`.
+    Phyre_PTypeDispenser_GetType_Phyre_PInputs_PInputAxisSemantic @ 0x00a2_dce0 => extern "C" fn get_type_a2dce0() -> u32 {
+        types::bridge::enum_type(&mut mem(), &types::ENUMS[4])
+    }
+    /// `PTypeDispenser::GetType<PInputJoypadButtonSemantic>()`.
+    Phyre_PTypeDispenser_GetType_Phyre_PInputs_PInputJoypadButtonSemantic @ 0x00a2_e150 => extern "C" fn get_type_a2e150() -> u32 {
+        types::bridge::enum_type(&mut mem(), &types::ENUMS[5])
+    }
+    /// `PTypeDispenser::GetType<PInputKeySemantic>()`.
+    Phyre_PTypeDispenser_GetType_Phyre_PInputs_PInputKeySemantic @ 0x00a2_e5c0 => extern "C" fn get_type_a2e5c0() -> u32 {
+        types::bridge::enum_type(&mut mem(), &types::ENUMS[6])
+    }
+    /// `PTypeDispenser::GetType<PInputMouseButtonSemantic>()`.
+    Phyre_PTypeDispenser_GetType_Phyre_PInputs_PInputMouseButtonSemantic @ 0x00a2_ea30 => extern "C" fn get_type_a2ea30() -> u32 {
+        types::bridge::enum_type(&mut mem(), &types::ENUMS[7])
+    }
+    /// `PTypeDispenser::GetType<PInputChannelSemantic>()`.
+    Phyre_PTypeDispenser_GetType_Phyre_PInputs_PInputChannelSemantic @ 0x00a3_23a0 => extern "C" fn get_type_a323a0() -> u32 {
+        types::bridge::enum_type(&mut mem(), &types::ENUMS[8])
+    }
+    /// `PTypeDispenser`'s static.
+    Phyre_PTypeDispenser_Instance_00439040 @ 0x0043_9040 => extern "C" fn type_dispenser() -> u32 {
+        types::bridge::dispenser(&mut mem())
+    }
+    /// The asset registry's static.
+    Phyre_PAssetReference_Registry_0045d420 @ 0x0045_d420 => extern "C" fn asset_registry() -> u32 {
+        types::bridge::list_static(&mut mem(), types::ASSET_REGISTRY, types::ASSET_REGISTRY_DTOR)
+    }
+    /// `PStreamReaderFile::~PStreamReaderFile()`.
+    Phyre_PSerialization_PStreamReaderFile_dtor_PStreamReaderFile @ 0x0057_67c0 => extern "thiscall" fn reader_file_dtor(this: u32) {
+        stream::bridge::reader_file_dtor(&mut mem(), this);
+    }
+    /// `PString`'s release.
+    Phyre_PString_release_0044af00 @ 0x0044_af00 => extern "thiscall" fn string_release(this: u32) {
+        descriptor::bridge::string_release(&mut mem(), this);
+    }
+    /// The serialization enum's lookup by name (list at `0x00cc969c`, name `+0`, next `+4`).
+    Phyre_PTypeEnum_find_005787d0 @ 0x0057_87d0 => extern "C" fn enum_find_5787d0(name: u32) -> u32 {
+        let m = mem();
+        descriptor::bridge::enum_find(&m, 0x00cc_969c, 0, 4, name)
+    }
+    /// A global-namespace class's constructInstance `(p)`.
+    Phyre_PClassDescriptorConcrete_constructInGlobal_00449420 @ 0x0044_9420 => extern "stdcall" fn construct_in_global(p: u32) -> u8 {
+        descriptor::bridge::construct_in_global(&mut mem(), p)
+    }
+    /// `PCluster`'s teardown.
+    Phyre_PCluster_teardown_0043faa0 @ 0x0043_faa0 => extern "thiscall" fn cluster_teardown(this: u32) {
+        cluster::bridge::cluster_teardown(&mut mem(), this);
+    }
+    /// `PClassMember::PClassMember(a, name, flags)`.
+    Phyre_PClassMember_PClassMember @ 0x0043_a080 => extern "thiscall" fn member_ctor(this: u32, a: u32, name: u32, flags: u32) -> u32 {
+        descriptor::bridge::member_ctor(&mut mem(), this, a, name, flags)
     }
 }

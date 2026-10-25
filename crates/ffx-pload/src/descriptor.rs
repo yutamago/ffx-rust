@@ -623,6 +623,59 @@ pub mod bridge {
         }
         0
     }
+
+    /// A `PString`'s release (`0x0044af00`, thiscall): unless it does not
+    /// own its text (bit 31 of the length word), frees it: a length over
+    /// 1 through `0x00434360(text, length)`, a length of 1 through free
+    /// when the pointer's bit 0 is clear; then clears both words.
+    pub fn string_release(h: &mut impl Host, s: u32) {
+        let word: u32 = h.read(s);
+        if word >> 31 == 0 {
+            let n = word & 0x7fff_ffff;
+            let text: u32 = h.read(s + 4);
+            if n > 1 {
+                h.call_sym(0x0043_4360, Conv::Cdecl, &[text, n]);
+            } else if n == 1 && text & 1 == 0 {
+                h.call_sym(FREE, Conv::Cdecl, &[text]);
+            }
+        }
+        h.write(s + 4, 0u32);
+        h.write(s, 0u32);
+    }
+
+    /// A descriptor's slot 10 for a class built in the global namespace
+    /// (`0x00449420`, stdcall `(p)`): when `p` is not 0,
+    /// `0x00447690(p; GetGlobalNamespace(), 0, 0x00435740())`; `al` = 1.
+    pub fn construct_in_global(h: &mut impl Host, p: u32) -> u8 {
+        if p != 0 {
+            let ty = h.call_sym(0x0043_5740, Conv::Cdecl, &[]);
+            let ns = h.call_sym(GLOBAL_NAMESPACE, Conv::Cdecl, &[]);
+            h.call_sym(0x0044_7690, Conv::Thiscall(p), &[ns, 0, ty]);
+        }
+        1
+    }
+
+    /// `PClassMember::PClassMember(member, a, name, flags)`
+    /// (`0x0043a080`, thiscall): an empty link, `a`, the name and the
+    /// flags; with flags bit 0 the name is copied into a new block
+    /// (`0x0042fb80(len, 1)`, then `memcpy`; 0 when it fails). Returns
+    /// `member`.
+    pub fn member_ctor(h: &mut impl Host, member: u32, a: u32, name: u32, flags: u32) -> u32 {
+        h.write(member, [member, member, a, name, flags]);
+        if flags & 1 != 0 {
+            let mut len = 0u32;
+            while h.read::<u8>(name + len) != 0 {
+                len += 1;
+            }
+            let size = len + 1;
+            let copy = h.call_sym(0x0042_fb80, Conv::Cdecl, &[size, 1]);
+            if copy != 0 {
+                h.call_sym(0x0094_9256, Conv::Cdecl, &[copy, name, size]);
+            }
+            h.write(member + 0xc, copy);
+        }
+        member
+    }
 }
 
 /// `PNamespace::GetGlobalNamespace()` (cdecl).

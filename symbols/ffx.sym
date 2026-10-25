@@ -191,9 +191,20 @@
 0x00437960 function Phyre_PType_putValueToScriptContext # str-match switch: only user of 1 string(s) held once by both builds, e.g. "Type::putValueToScriptContext: Not implemented for '%s' type"; Switch 0x71000a9160 Phyre::PType::putValueToScriptContext (symbols from Fahrenheit's server export)
 0x00437980 function Phyre_PType_resolveFixupForAddress # fh switch:bsim1.00 0x71000a9230 Phyre::PType::resolveFixupForAddress
 0x004379b0 function Phyre_PType_setFixupFunctions # fh v3:bsim1.00 0x00437ab0 Phyre::PType::setFixupFunctions
+0x00437c90 function Phyre_PTypeDispenser_GetType_PChar # GetType<PChar>: function-local static (PType built inline), guard bit 0, atexit dtor; ported (ffx-pload, types::PRIMITIVES[1]); name ours, from the type name string
+0x00437d30 function Phyre_PTypeDispenser_GetType_PUInt8 # GetType<PUInt8>: function-local static (PType built inline), guard bit 0, atexit dtor; ported (ffx-pload, types::PRIMITIVES[2]); name ours, from the type name string
+0x00437dd0 function Phyre_PTypeDispenser_GetType_PInt16 # GetType<PInt16>: function-local static (PType built inline), guard bit 0, atexit dtor; ported (ffx-pload, types::PRIMITIVES[3]); name ours, from the type name string
+0x00437e70 function Phyre_PTypeDispenser_GetType_PUInt16 # GetType<PUInt16>: function-local static (PType built inline), guard bit 0, atexit dtor; ported (ffx-pload, types::PRIMITIVES[4]); name ours, from the type name string
+0x00437f10 function Phyre_PTypeDispenser_GetType_PInt32 # GetType<PInt32>: function-local static (PType built inline), guard bit 0, atexit dtor; ported (ffx-pload, types::PRIMITIVES[5]); name ours, from the type name string
 0x00437fc0 function Phyre_PTypeDispenser_GetType_unsigned_int # fh v3:cg41 0x4380b0 Phyre::PTypeDispenser::GetType<unsigned_int>
 0x00438060 function Phyre_PTypeDispenser_GetType_float # fh v3:bsim1.00 0x00438150 Phyre::PTypeDispenser::GetType<float>
+0x00438100 function Phyre_PTypeDispenser_GetType_double # GetType<double>: function-local static (PType built inline), guard bit 0, atexit dtor; ported (ffx-pload, types::PRIMITIVES[8]); name ours, from the type name string
+0x004381b0 function Phyre_PTypeDispenser_GetType_PUInt128 # GetType<PUInt128>: function-local static (PType built inline), guard bit 0, atexit dtor; ported (ffx-pload, types::PRIMITIVES[9]); name ours, from the type name string
+0x00438250 function Phyre_PTypeDispenser_GetType_PInt64 # GetType<PInt64>: function-local static (PType built inline), guard bit 0, atexit dtor; ported (ffx-pload, types::PRIMITIVES[10]); name ours, from the type name string
+0x004382f0 function Phyre_PTypeDispenser_GetType_PUInt64 # GetType<PUInt64>: function-local static (PType built inline), guard bit 0, atexit dtor; ported (ffx-pload, types::PRIMITIVES[11]); name ours, from the type name string
+0x00438390 function Phyre_PTypeDispenser_GetType_bool # GetType<bool>: function-local static (PType built inline), guard bit 0, atexit dtor; ported (ffx-pload, types::PRIMITIVES[12]); name ours, from the type name string
 0x00438630 function Phyre_PTypeDispenser_findByName_00438630 # as 0x00437570 with 0x00438680; ported (ffx-pload); name ours
+0x00439040 function Phyre_PTypeDispenser_Instance_00439040 # cdecl: PTypeDispenser's function-local static 0x00c905f0 (six list words = itself; guard 0x00c90608 bit 0; atexit 0x00af9f30); returns it; called by findByName 0x0043be30; ported (ffx-pload); name ours
 0x00439510 function Phyre_PTypeDispenser_RegisterDefaultTypes # fh v3:exact 0x00439600 Phyre::PTypeDispenser::RegisterDefaultTypes
 0x004395b0 function Phyre_PTypeDispenser_RegisterType # fh v3:exact 0x004396a0 Phyre::PTypeDispenser::RegisterType
 0x004398c0 function Phyre_PTypeDefault_bool__getValueFromScriptContext # fh switch:bsim1.00 0x71000aa280 Phyre::PTypeDefault<bool>::getValueFromScriptContext
@@ -251,6 +262,7 @@
 0x0043f800 function Phyre_PCluster_PCluster   # fh v3:exact 0x0043f8f0 Phyre::PCluster::PCluster
 0x0043f820 function Phyre_PClusterBase_PClusterBase # fh v3:exact 0x0043f910 Phyre::PClusterBase::PClusterBase
 0x0043fa30 function Phyre_PCluster_dtor_PCluster # fh v3:exact 0x0043fb20 Phyre::PCluster::~PCluster
+0x0043faa0 function Phyre_PCluster_teardown_0043faa0 # thiscall: PClusterBase_clear 0x00440eb0, 0x0049c5b0 on +0x28, releaseOwned 0x0043dde0 (SEH frame only); ported (ffx-pload); name ours
 0x0043ffe0 function Phyre_PCluster_Bind       # fh v3:cg4 0x4400b0 Phyre::PCluster::Bind
 0x004402e0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PCluster__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PCluster &>::Get" (its own __FUNCTION__ in an error print)
 0x004403b0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PCluster__Get_004403b0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PCluster *>::Get" (its own __FUNCTION__ in an error print)
@@ -314,12 +326,14 @@
 0x004489e0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PClassDescriptorDynamic__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PClassDescriptorDynamic *>::Get" (its own __FUNCTION__ in an error print)
 0x00449380 function Phyre_PClassDescriptorDynamic_bindBase # slot 12 (+0x30) of Phyre_PClassDescriptorDynamic_vftable; thiscall: base +0x40 not in its namespace -> base's slot 12 (tail jmp); ported (ffx-pload); name ours
 0x00449400 function Phyre_PClassDescriptorConcrete_PArray_u8_constructInstance # slot 10 of Phyre_PClassDescriptorConcrete_Phyre_PArray_unsigned_char_1__vftable; stdcall(p): zeroes p[0], p[1]; eax = p with al 1; ported (ffx-pload); name ours
+0x00449420 function Phyre_PClassDescriptorConcrete_constructInGlobal_00449420 # stdcall(p): when p, 0x00447690(p; GetGlobalNamespace(), 0, 0x00435740()); al 1 (SEH frame only); ported (ffx-pload); name ours
 0x00449540 function Phyre_PClassDescriptor_PArray_u8_destructInstance # slot 11 of the PArray<u8> descriptor vtables; stdcall(array): frees owned data (bit 31 clear, not 0), zeroes both words; al 1; ported (ffx-pload); name ours
 0x00449580 function Phyre_PClassDescriptor_PClassDescriptorDynamic_destructInstance # slot 11 of the PClassDescriptorDynamic descriptor vtables; stdcall(p): vslot 7 (arg 0) of p - 0x18 (0 for 0); al 1; ported (ffx-pload); name ours
 0x00449650 function Phyre_PClassDescriptorAbstract_Phyre_PClassDescriptorDynamic__fixObjectsAfterLoading # fh switch:bsim1.00 0x7100176330 Phyre::PClassDescriptorAbstract<Phyre::PClassDescriptorDynamic>::fixObjectsAfterLoading
 0x0044a2d0 function Phyre_PArray_u8_setData_0044a2d0 # thiscall(data, count): nothing for count < 0; frees the owned old data (count bit 31 clear), stores data and count | 0x80000000; eax 0; stored as a pointer by 0x00448450; ported (ffx-pload); name ours
 0x0044a320 function Phyre_PClassDataMemberArrayDynamic_PArray_u8_resize # slot 8 (+0x20) of Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_unsigned_char_1__vftable; thiscall(array, a, b): +0x3c thiscall(array; a, b) or 0x15; ported (ffx-pload); name ours
 0x0044ac10 function Phyre_PClassDescriptorConcrete_Phyre_PSharray_Phyre_PString__PClassDescriptorConcrete # fh v3:cg4 0x44acf0 Phyre::PClassDescriptorConcrete<Phyre::PSharray<Phyre::PString>>::PClassDescriptorConcrete
+0x0044af00 function Phyre_PString_release_0044af00 # thiscall: unless bit 31 of the length word: length > 1 -> 0x00434360(text, length), length 1 with text bit 0 clear -> free; clears both words; ported (ffx-pload); name ours
 0x0044b2b0 function Phyre_PClusterDependencyList_Bind # fh v3:cg4 0x44b390 Phyre::PClusterDependencyList::Bind
 0x0044b3b0 function Phyre_PSharray_Phyre_PString__DeclareClassDescriptor # fh v3:cg6 0x44b490 Phyre::PSharray<Phyre::PString>::DeclareClassDescriptor
 0x0044b5d0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PSharray_Phyre_PString__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PSharray<class Phyre::PString> &>::Get" (its own __FUNCTION__ in an error print)
@@ -388,6 +402,7 @@
 0x0045cfd0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAssetReference__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PAssetReference *>::Get" (its own __FUNCTION__ in an error print)
 0x0045d0b0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAssetReferenceImport__Get_0045d0b0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PAssetReferenceImport *>::Get" (its own __FUNCTION__ in an error print)
 0x0045d300 function Phyre_PAssetReferenceImport_GetFixup # fh v3:exact 0x0045d3c0 Phyre::PAssetReferenceImport::GetFixup
+0x0045d420 function Phyre_PAssetReference_Registry_0045d420 # cdecl: function-local static 0x00c9424c (six list words = itself; guard +0x18 bit 0; atexit 0x00afaf70), as PTypeDispenser's 0x00439040; returns it; ported (ffx-pload); name ours
 0x0045d600 function Phyre_PAssetReference_InitializeAssetTree # fh v3:exact 0x0045d6c0 Phyre::PAssetReference::InitializeAssetTree
 0x0045d9b0 function Phyre_PAssetReferenceImport_ResolveFixup # fh v3:exact 0x0045da70 Phyre::PAssetReferenceImport::ResolveFixup
 0x0045dd70 function Phyre_PFramework_PInputDeviceTouchNX_update # fh switch:bsim1.00 0x71001b7120 Phyre::PFramework::PInputDeviceTouchNX::update
@@ -1123,6 +1138,7 @@
 0x00576980 function Phyre_PSerialization_PStreamReaderFile_isOpen # fh v3:cg8 0x576af0 Phyre::PSerialization::PStreamReaderFile::isOpen
 0x00576ef0 function Phyre_PRedBlackTree_find_00576ef0 # thiscall(&key): node with unsigned key +0xc == *key from the root +0xc (left +0 when greater, right +4), the tree itself as nil; 0 when missing; ported (ffx-pload); name ours
 0x00577760 function Phyre_PSerialization_recordInit_00577760 # thiscall(a, b, c, flag): [0..8] = a, b, c, byte +0xc = flag, +0x10..+0x24 zero; returns this; ported (ffx-pload); name ours
+0x005787d0 function Phyre_PTypeEnum_find_005787d0 # cdecl(name): entry of the list 0x00cc969c (name +0, next +4) named name, 0 for none or no name; ported (ffx-pload); name ours
 0x00579310 function PCluster_Analyze          # prints "Analyzing cluster '%s'" and every table size; names the header words (array/pointer/pointer-array fixup sizes and counts, header class counts and fixups)
 0x0057a280 function Fixup_FindMember          # thiscall(cache; member index or -1, &object, byte offset, ...): member index < namespace member count -> member table entry, else Class_FindMemberByOffset (cached)
 0x0057a320 function Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_fixupDataPointers # str-match switch: only user of 1 string(s) held once by both builds, e.g. "Array fixup refers to array '%s::%s' not in current runtime\\"; Switch 0x71000fbdb0 Phyre::PSerialization::PBinary::PInternal::PClusterReaderBinary::fixupDataPointers (symbols from Fahrenheit's server export)

@@ -16,6 +16,8 @@ use ffx_graphic::host::{Conv, Host};
 
 /// `PStreamReader`'s vtable.
 pub const READER_VTABLE: u32 = 0x00b3_1430;
+/// `PStreamReaderFile`'s vtable.
+pub const READER_FILE_VTABLE: u32 = 0x00b3_0ac0;
 /// `PStream`'s vtable.
 pub const STREAM_VTABLE: u32 = 0x00b3_eccc;
 /// Where a `PStreamReaderFile` keeps its `PStreamFile`.
@@ -63,7 +65,8 @@ pub mod core {
 pub mod bridge {
     use super::{
         ASSET_TREE, CLOSE_FILE, Conv, FREE, Host, IS_OPEN, Mem, OPEN_FILE, READ, READER_FILE,
-        READER_VTABLE, SERIALIZATION_READY, STREAM_CTOR, STREAM_PREFIX, STREAM_VTABLE, core,
+        READER_FILE_VTABLE, READER_VTABLE, SERIALIZATION_READY, STREAM_CTOR, STREAM_PREFIX,
+        STREAM_VTABLE, core,
     };
 
     /// An import's address (the word in the import table at `slot`).
@@ -176,6 +179,16 @@ pub mod bridge {
         let vt = h.rebase(READER_VTABLE);
         h.write(reader, vt);
         stream_dtor(h, reader);
+    }
+
+    /// `PStreamReaderFile::~PStreamReaderFile(reader)` (`0x005767c0`,
+    /// thiscall): its vtable, [`reader_dtor`], then its file's destructor
+    /// (`0x00607c10`, an empty body).
+    pub fn reader_file_dtor(h: &mut impl Host, reader: u32) {
+        let vt = h.rebase(READER_FILE_VTABLE);
+        h.write(reader, vt);
+        reader_dtor(h, reader);
+        h.call_sym(0x0060_7c10, Conv::Thiscall(reader + READER_FILE), &[]);
     }
 
     /// `PStreamReader::PStreamReader(reader, name)` (`0x0057dc40`,
