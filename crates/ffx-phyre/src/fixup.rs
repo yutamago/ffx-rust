@@ -405,6 +405,36 @@ impl Cluster {
             .collect())
     }
 
+    /// The pointer-array fixups, grouped by instance list: per record
+    /// `[member, object, pointers, _]`. The loader points each record's
+    /// member at the next `pointers` slots of the list's pointer block
+    /// (`Cluster_ApplyPointerArrayFixups` `0x0057acd0`, which unpacks them
+    /// with `Cluster_UnpackArrayFixups` `0x0060dac0` from the list
+    /// headers' `+0x20` counts).
+    ///
+    /// # Errors
+    /// Fails on truncated or malformed fixup data.
+    pub fn pointer_array_fixups(&self, bytes: &[u8]) -> Result<Vec<Vec<ArrayFixup>>> {
+        let size = self.header.pointer_array_fixup_size as usize;
+        let packed = bytes
+            .get(self.fixups_offset..self.fixups_offset + size)
+            .ok_or(Error::Malformed("pointer-array fixups outside the file"))?;
+        let lists: Vec<(u32, u32)> = self
+            .lists
+            .iter()
+            .map(|l| (l.pointer_array_fixups, l.count))
+            .collect();
+        let (flat, used) = unpack_array_fixups(packed, &lists)?;
+        if used != packed.len() {
+            return Err(Error::Malformed("pointer-array fixups do not add up"));
+        }
+        let mut flat = flat.into_iter();
+        Ok(lists
+            .iter()
+            .map(|&(n, _)| flat.by_ref().take(n as usize).collect())
+            .collect())
+    }
+
     /// The array fixups, grouped by instance list.
     ///
     /// # Errors

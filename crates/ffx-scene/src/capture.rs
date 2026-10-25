@@ -82,12 +82,21 @@ impl Capture {
     /// # Errors
     /// On a wrong magic, a malformed stream or a stream without a frame.
     pub fn read(bytes: &[u8]) -> Result<Self, Error> {
+        Self::read_frames(bytes)?.pop().ok_or(Error::NoFrame)
+    }
+
+    /// Reads every frame of a capture file (`frames N` captures hold
+    /// several), each with the objects and the `World` message.
+    ///
+    /// # Errors
+    /// On a wrong magic, a malformed stream or a stream without a frame.
+    pub fn read_frames(bytes: &[u8]) -> Result<Vec<Self>, Error> {
         let rest = bytes
             .strip_prefix(&ffx_gfx::CAPTURE_MAGIC[..])
             .ok_or(Error::Magic)?;
         let msgs = ffx_gfx::read_all(rest).map_err(|e| Error::Decode(e.0))?;
         let mut objects = HashMap::new();
-        let mut frame = None;
+        let mut frames = Vec::new();
         let mut world = None;
         for m in msgs {
             let id = match &m {
@@ -103,16 +112,49 @@ impl Capture {
                 (Some(id), m) => {
                     objects.insert(id, m);
                 }
-                (None, Msg::Frame(f)) => frame = Some(f),
+                (None, Msg::Frame(f)) => frames.push(f),
                 (None, m @ Msg::World { .. }) => world = Some(m),
                 _ => {}
             }
         }
-        Ok(Self {
-            objects,
-            frame: frame.ok_or(Error::NoFrame)?,
-            world,
+        if frames.is_empty() {
+            return Err(Error::NoFrame);
+        }
+        Ok(frames
+            .into_iter()
+            .map(|frame| Self {
+                objects: objects.clone(),
+                frame,
+                world: world.clone(),
+            })
+            .collect())
+    }
+
+    /// Whether the capture is hash-only (`gfxcapture ... hash`): its
+    /// static vertex buffers hold the 8-byte content hash of their bytes
+    /// (`ffx-hook` `gfx/capture.rs` `light_msg`).
+    #[must_use]
+    pub fn is_hashed(&self) -> bool {
+        self.objects.values().any(|m| {
+            matches!(m, Msg::Texture { subresources, .. }
+                if subresources.len() == 1
+                    && subresources[0].row_pitch == 0
+                    && subresources[0].data.len() == 8)
         })
+    }
+
+    /// The FNV-1a 64 of a static vertex buffer's bytes: as stored in a
+    /// hash-only capture, computed in a full one.
+    #[must_use]
+    pub fn vertex_content(&self, id: u32) -> Option<u64> {
+        let (desc, data) = self.buffer(id)?;
+        if desc[1] == 2 {
+            return None;
+        }
+        if data.len() == 8 && desc[0] != 8 {
+            return Some(u64::from_le_bytes(data.try_into().ok()?));
+        }
+        Some(key::content(data))
     }
 
     /// The draws, in order, with their index among the frame's commands.

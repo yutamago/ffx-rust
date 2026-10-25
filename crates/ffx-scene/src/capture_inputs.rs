@@ -33,7 +33,7 @@ use ffx_gfx::Draw;
 use crate::build::Clusters;
 use crate::capture::Capture;
 use crate::effect::{ShaderPass, Source};
-use crate::frame::{Camera, External, Mat, SceneInputs, Settings};
+use crate::frame::{Camera, External, Mat, SceneInputs, Settings, SlotTexture};
 
 /// Material values the game writes at run time, taken from the capture:
 /// the shadow cascades `PhyreScene_RenderShadow` (`0x00653600`) writes into
@@ -138,22 +138,6 @@ impl CaptureInputs {
         msaa: bool,
     ) -> Result<Self, String> {
         let map = &c.map;
-        // Segments by their index buffer's key, blocks by their key.
-        let mut by_indices: HashMap<u64, Vec<usize>> = HashMap::new();
-        for (s, seg) in map.segments.iter().enumerate() {
-            let ix = map.bytes.get(seg.indices.clone()).unwrap_or_default();
-            by_indices
-                .entry(crate::key::static_buffer(ix, true))
-                .or_default()
-                .push(s);
-        }
-        let block_key = |s: usize, b: usize| {
-            let bytes = map
-                .bytes
-                .get(map.segments[s].blocks[b].bytes.clone())
-                .unwrap_or_default();
-            crate::key::static_buffer(bytes, false)
-        };
         let mut matched = Vec::new();
         let mut scene_wide = Vec::new();
         let mut node_worlds: HashMap<usize, Mat> = HashMap::new();
@@ -163,46 +147,21 @@ impl CaptureInputs {
         let mut externals = HashMap::new();
         let mut viewport = None;
         let mut camera_draw = None;
-        let scene: Vec<&Draw> = cap
-            .draws()
-            .filter(|(_, d)| Capture::scene_targets(d).is_some())
-            .map(|(_, d)| d)
-            .collect();
-        for (number, d) in scene.iter().enumerate() {
-            let Some((desc, data)) = cap.buffer(d.index.0) else {
+        for found in crate::gate::map_draws(cap, c) {
+            let crate::gate::Found {
+                number,
+                cmd,
+                segment,
+                instances: candidates,
+                material,
+                effect,
+                ..
+            } = found;
+            let Some(ffx_gfx::Cmd::Draw(d)) = cap.frame.cmds.get(cmd) else {
                 continue;
             };
-            let Some(candidates) = by_indices.get(&crate::key::buffer(desc, data)) else {
-                continue;
-            };
-            let vb_keys: Vec<u64> = d
-                .vertex
-                .iter()
-                .filter_map(|v| {
-                    cap.buffer(v.1)
-                        .map(|(desc, data)| crate::key::buffer(desc, data))
-                })
-                .collect();
-            let Some(&segment) = candidates.iter().find(|&&s| {
-                vb_keys
-                    .iter()
-                    .all(|k| (0..map.segments[s].blocks.len()).any(|b| block_key(s, b) == *k))
-            }) else {
-                continue;
-            };
-            // The instances that draw the segment (several share a mesh);
-            // the material and effect are the first one's (a shared mesh
-            // shares its default materials).
-            let candidates: Vec<usize> = (0..map.instances.len())
-                .filter(|&i| map.instances[i].segments.contains(&segment))
-                .collect();
-            let Some(&first) = candidates.first() else {
-                continue;
-            };
-            let Some(material) = map.material(first, segment) else {
-                continue;
-            };
-            let effect = map.materials[material].effect.clone();
+            let d: &Draw = d;
+            let first = candidates[0];
             let (Some(vs), Some(ps)) = (cap.shader(d.vs), cap.shader(d.ps)) else {
                 continue;
             };
@@ -297,7 +256,7 @@ impl CaptureInputs {
                 externals.insert(External::Depth, t.depth);
             }
             viewport.get_or_insert((d.viewport, d.scissor));
-            camera_draw.get_or_insert(*d);
+            camera_draw.get_or_insert(d);
             matched.push(Matched {
                 number,
                 segment,
@@ -419,7 +378,11 @@ impl CaptureInputs {
             if out.len() < o + n {
                 out.resize(o + n, 0);
             }
-            out[o..o + n].copy_from_slice(from);
+            if group == Source::Material && crate::build::is_matrix(loc) {
+                out[o..o + n].copy_from_slice(&crate::build::transpose_bytes(from));
+            } else {
+                out[o..o + n].copy_from_slice(from);
+            }
         }
     }
 
@@ -444,26 +407,7 @@ impl CaptureInputs {
     }
 }
 
-/// The render pass type and shader pass of an effect variant (the
-/// material's first, then any loaded one) whose programs are these.
-fn find_pass<'a>(
-    c: &'a Clusters,
-    effect: &str,
-    vs: &[u8],
-    ps: &[u8],
-) -> Option<(&'a str, &'a ShaderPass)> {
-    let own = c.effects.get(effect).into_iter();
-    let rest = c.effects.values();
-    own.chain(rest).find_map(|v| {
-        v.passes.iter().find_map(|p| {
-            p.shaders
-                .iter()
-                .flat_map(|s| &s.passes)
-                .find(|sp| sp.vs.code == vs && sp.ps.code == ps)
-                .map(|sp| (p.pass_type.as_str(), sp))
-        })
-    })
-}
+use crate::gate::find_pass;
 
 impl SceneInputs for CaptureInputs {
     fn settings(&self) -> Settings {
@@ -518,9 +462,17 @@ impl SceneInputs for CaptureInputs {
         self.materials.get(&material).cloned().unwrap_or_default()
     }
 
-    fn material_texture_set(&self, material: usize, offset: u32) -> bool {
-        self.externals
-            .contains_key(&External::MaterialTexture { material, offset })
+    fn material_texture(&self, material: usize, offset: u32, file: Option<&str>) -> SlotTexture {
+        match file {
+            Some(f) => SlotTexture::Import(f.to_owned()),
+            None if self
+                .externals
+                .contains_key(&External::MaterialTexture { material, offset }) =>
+            {
+                SlotTexture::Runtime
+            }
+            None => SlotTexture::Empty,
+        }
     }
 
     fn scene_wide(&self) -> Vec<u8> {

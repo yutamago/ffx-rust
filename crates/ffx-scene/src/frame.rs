@@ -116,6 +116,27 @@ pub enum External {
         material: usize,
         offset: u32,
     },
+    /// Vertices the game writes every frame into its dynamic vertex ring
+    /// (the `Vertex` stream of a morphing mesh instance, `MorphManager`):
+    /// instance, segment and the block whose layout they have.
+    DynamicVertices {
+        instance: usize,
+        segment: usize,
+        block: usize,
+    },
+}
+
+/// What a material's texture slot holds this frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SlotTexture {
+    /// A texture cluster, by its import id (`PS3Data/.../x.dds`): the
+    /// cluster's own, or one the game put there (texture animation).
+    Import(String),
+    /// A texture the game made at run time (the shadow maps):
+    /// [`External::MaterialTexture`].
+    Runtime,
+    /// Nothing: no texture is bound.
+    Empty,
 }
 
 /// The game state one frame's map draws come from.
@@ -129,6 +150,15 @@ pub trait SceneInputs {
     /// The world's `PMeshInstanceBounds` in its order: the map
     /// instance each one points at.
     fn bounds_order(&self) -> Vec<usize>;
+    /// The visibility jobs: [`Self::bounds_order`] in runs of at most 400
+    /// (`startJobsForAllBounds` `0x009f2250`), per instance list of the
+    /// walk.
+    fn jobs(&self) -> Vec<Vec<usize>> {
+        self.bounds_order()
+            .chunks(400)
+            .map(<[usize]>::to_vec)
+            .collect()
+    }
     /// Whether the bounds' `m_meshInstance` is set (the game clears it to
     /// hide an instance).
     fn instance_shown(&self, instance: usize) -> bool;
@@ -143,10 +173,13 @@ pub trait SceneInputs {
     /// A material's live `PParameterBuffer` bytes (values at their
     /// definitions' offsets).
     fn material_buffer(&self, material: usize) -> Vec<u8>;
-    /// Whether the game has set a texture into a material's sampler slot
-    /// whose cluster names none (the shadow maps `MySMSampler`); a slot
-    /// left empty binds nothing (`EnvironmentMapSampler` on cdsp0000).
-    fn material_texture_set(&self, material: usize, offset: u32) -> bool;
+    /// The texture in a material's sampler slot (`offset`: the sampler
+    /// definition's), given the cluster's import for it (`file`). The
+    /// game sets run-time textures into slots the cluster leaves empty
+    /// (the shadow maps `MySMSampler`) and swaps others (texture
+    /// animation); a slot left empty binds nothing (`EnvironmentMapSampler`
+    /// on cdsp0000).
+    fn material_texture(&self, material: usize, offset: u32, file: Option<&str>) -> SlotTexture;
     /// The scene-wide parameter buffer (`PSceneWideParameters_getBuffer`).
     fn scene_wide(&self) -> Vec<u8>;
     /// `D3D11_VIEWPORT` of the scene targets.

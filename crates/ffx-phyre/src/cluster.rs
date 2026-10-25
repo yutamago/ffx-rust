@@ -56,6 +56,13 @@ pub struct InstanceList {
     pub array_fixups: u32,
     /// Number of pointer fixups in this list's objects.
     pub pointer_fixups: u32,
+    /// Number of pointer-array fixups (header `+0x20`), and the pointers
+    /// they hold together (`m_pointersInArraysCount`, `+0x14`): the
+    /// loader gives each list a block of that many pointers after its
+    /// data and hands it out to the pointer arrays in fixup order
+    /// (`Cluster_ApplyPointerArrayFixups` `0x0057acd0`).
+    pub pointer_array_fixups: u32,
+    pub pointers_in_arrays: u32,
     /// File offset of the first object; arrays follow the objects.
     pub offset: usize,
 }
@@ -199,6 +206,8 @@ impl Cluster {
                 arrays_size: u32_at(bytes, at + 16)?,
                 array_fixups: u32_at(bytes, at + 0x18)?,
                 pointer_fixups: u32_at(bytes, at + 0x1c)?,
+                pointer_array_fixups: u32_at(bytes, at + 0x20)?,
+                pointers_in_arrays: u32_at(bytes, at + 0x14)?,
                 offset,
             };
             offset += (list.objects_size + list.arrays_size) as usize;

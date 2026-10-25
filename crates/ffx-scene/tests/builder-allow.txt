@@ -18,3 +18,11 @@
 # In-game the builder's call gets the same object (to confirm with the
 # in-game path, R2c).
 state kind=draw ps=0366ec86c954e905 field=ps.sampler2.max_anisotropy cause: Direct3D 11 hands back the existing equivalent sampler object (MaxAnisotropy is irrelevant to filter 0x15); the capture shows the description the layer recorded for that object (1), the game and the builder pass 0
+
+[bsil0000]
+
+# The same cause on the beach water (phyrewatershader ps 91184e0d7f258ef2,
+# sampler s1, the CubeMapSamplerState with m_maxAnisotropy 0.0): the
+# capture shows the description the layer recorded for the equivalent
+# sampler object (MaxAnisotropy 1); the game and the builder pass 0.
+state kind=draw ps=91184e0d7f258ef2 field=ps.sampler1.max_anisotropy cause: Direct3D 11 hands back the existing equivalent sampler object (MaxAnisotropy is irrelevant to filter 0x15); the capture shows the description the layer recorded for that object (1), the game and the builder pass 0

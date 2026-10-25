@@ -207,8 +207,10 @@ pub unsafe extern "thiscall" fn render_world(
     dir: i32,
 ) -> u32 {
     if crate::gfx::capture::inputs_wanted() && world_offset(world as usize) == MAP_WORLD {
-        if let Some(s) = scene_inputs_at(renderer as usize, world as usize, camera as usize, dir) {
-            crate::gfx::capture::add_inputs(s);
+        if let Some((s, wire)) =
+            scene_inputs_at(renderer as usize, world as usize, camera as usize, dir)
+        {
+            crate::gfx::capture::add_inputs(s, Some(wire));
         }
         if watch::wanted() && !watch::armed() {
             watch::arm(&watch_targets(world as usize));
@@ -555,7 +557,10 @@ pub fn scene_inputs_at(
     world: usize,
     camera: usize,
     dir: i32,
-) -> Option<ffx_gfx::scene_inputs::SceneInputs> {
+) -> Option<(
+    ffx_gfx::scene_inputs::SceneInputs,
+    ffx_gfx::scene_inputs::Wire,
+)> {
     use ffx_gfx::scene_inputs as si;
     let app = word(crate::rebase(G_PHYRE_APPLICATION)).unwrap_or(0);
     let scene = word(crate::rebase(G_PHYRE_SCENE)).unwrap_or(0);
@@ -635,7 +640,136 @@ pub fn scene_inputs_at(
             bias,
         });
     }
-    Some(s)
+    let wire = wire_at(camera, &r);
+    Some((s, wire))
+}
+
+/// `Phyre_PRenderInterface` (`0x00c94f00`) `+0x1340`: the texture
+/// quality (`Phyre_PRenderInterface_setTextureQuality` `0x0058e000`).
+const TEXTURE_QUALITY: u32 = 0x00c9_6240;
+/// The anisotropy setting `PSamplerStateD3D11` (`0x00595bf0`) reads.
+const ANISOTROPY: u32 = 0x00c2_5370;
+/// The asset reference tree's header (`0x0045d420`): nil node `+0`, root
+/// `+0xc`; nodes are `PAssetReference +4` (left `+0`, right `+4`, parent
+/// and colour `+8`), the reference's id `+0x18`, asset `+0x1c`
+/// (`Phyre_PAssetReference_GetAssetReferenceByAsset` `0x0045cb50`,
+/// `Phyre_PRedBlackTree_successor` `0x00575160`).
+const ASSET_TREE: u32 = 0x00c9_424c;
+/// Nodes walked at most.
+const ASSETS_MAX: usize = 1 << 17;
+
+/// A `PString`'s text (the pointer's low bit is a flag).
+fn pstring(p: usize) -> Option<String> {
+    let p = p & !1;
+    (p != 0).then(|| cstr(p)).flatten()
+}
+
+/// The asset ids of `wanted` objects, from the asset reference tree.
+fn asset_ids(
+    wanted: &std::collections::HashSet<usize>,
+) -> std::collections::HashMap<usize, String> {
+    let mut out = std::collections::HashMap::new();
+    let nil = crate::rebase(ASSET_TREE);
+    let mut stack = vec![word(nil + 0xc).unwrap_or(nil)];
+    let mut seen = 0;
+    while let Some(node) = stack.pop() {
+        if node == nil || node == 0 || seen >= ASSETS_MAX || out.len() == wanted.len() {
+            continue;
+        }
+        seen += 1;
+        let Some(b) = bytes(node, 0x1c) else {
+            continue;
+        };
+        let w = |o: usize| u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]) as usize;
+        stack.push(w(0));
+        stack.push(w(4));
+        if wanted.contains(&w(0x18))
+            && let Some(id) = pstring(w(0x14))
+        {
+            out.insert(w(0x18), id);
+        }
+    }
+    out
+}
+
+/// The [`ffx_gfx::scene_inputs::Wire`] block of a `renderWorld` call:
+/// the camera's world matrix, the texture settings, the clusters' files and the materials' textures.
+fn wire_at(camera: usize, r: &Resolver) -> ffx_gfx::scene_inputs::Wire {
+    use ffx_gfx::scene_inputs as si;
+    let world_ptr = word(camera + 0xb0).unwrap_or(0);
+    let mut wire = si::Wire {
+        camera_world: (world_ptr != 0).then(|| floats::<12>(world_ptr)).flatten(),
+        texture_quality: u32_at(crate::rebase(TEXTURE_QUALITY)).unwrap_or(u32::MAX),
+        anisotropy: u32_at(crate::rebase(ANISOTROPY)).unwrap_or(0),
+        ..si::Wire::default()
+    };
+    // Clusters: their first asset reference's id, up to the `#`.
+    let mut clusters: Vec<(usize, u32)> = r.cluster_ix.iter().map(|(&c, &i)| (c, i)).collect();
+    clusters.sort_by_key(|c| c.1);
+    for (c, _) in clusters {
+        let id = r
+            .lists
+            .iter()
+            .filter(|l| l.cluster == c && l.class.rsplit("::").next() == Some("PAssetReference"))
+            .find_map(|l| {
+                let (obj, _) = *l.objects().first()?;
+                pstring(word(obj + 0x18)?)
+            })
+            .unwrap_or_default();
+        wire.cluster_assets
+            .push(id.split('#').next().unwrap_or_default().to_owned());
+    }
+    // Materials' texture slots, then their textures' ids.
+    let mut materials: Vec<(usize, u32)> = r.material_ix.iter().map(|(&m, &i)| (m, i)).collect();
+    materials.sort_by_key(|m| m.1);
+    let mut slots = Vec::new();
+    for &(m, _) in &materials {
+        let variant = word(m).unwrap_or(0);
+        let buf = word(m + 4).unwrap_or(0);
+        let n = if variant == 0 {
+            0
+        } else {
+            u32_at(variant + 0x20).unwrap_or(0) & 0x7fff_ffff
+        };
+        let defs = word(variant + 0x24).unwrap_or(0);
+        let mut list = Vec::new();
+        for k in 0..n.min(PARAMETERS_MAX) as usize {
+            let Some(e) = bytes(defs + 16 * k, 16) else {
+                break;
+            };
+            if !matches!(e[2], 0x42 | 0x44) {
+                continue;
+            }
+            let offset = u32::from(u16::from_le_bytes([e[8], e[9]]));
+            let texture = if buf == 0 {
+                0
+            } else {
+                word(buf + offset as usize + 0xc).unwrap_or(0)
+            };
+            list.push((offset, e[2], texture));
+        }
+        slots.push(list);
+    }
+    let wanted: std::collections::HashSet<usize> = slots
+        .iter()
+        .flatten()
+        .map(|t| t.2)
+        .filter(|&t| t != 0)
+        .collect();
+    let ids = asset_ids(&wanted);
+    for list in slots {
+        wire.material_textures.push(
+            list.into_iter()
+                .map(|(offset, kind, texture)| si::MaterialTexture {
+                    offset,
+                    kind,
+                    set: texture != 0,
+                    asset: ids.get(&texture).cloned().unwrap_or_default(),
+                })
+                .collect(),
+        );
+    }
+    wire
 }
 
 /// The scene's switches that hide map parts (group mask, 2D layers) and

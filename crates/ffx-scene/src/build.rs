@@ -36,7 +36,7 @@ use ffx_draw::{DrawCall, DrawState};
 
 use crate::census::{mul, mul_f64};
 use crate::effect::{EffectVariant, LocTable, Program, ShaderPass, Source};
-use crate::frame::{Camera, External, Mat, SceneInputs};
+use crate::frame::{Camera, External, Mat, SceneInputs, SlotTexture};
 use crate::map::{self, MapModel};
 use crate::sort::{self, Entry};
 
@@ -56,11 +56,14 @@ fn err(what: impl Into<String>) -> Error {
     Error(what.into())
 }
 
-/// The static data of a map: its model and every effect variant and
-/// texture its materials import.
+/// The static data of a map: its models (one per cluster of the world,
+/// appended into one [`MapModel`]) and every effect variant and texture
+/// their materials import.
 #[derive(Debug, Clone)]
 pub struct Clusters {
     pub map: MapModel,
+    /// Per model: its archive path and its instances in [`Self::map`].
+    pub models: Vec<(String, std::ops::Range<usize>)>,
     /// By import id (`PS3Data/Shaders/X.fx#MD5`).
     pub effects: HashMap<String, EffectVariant>,
     /// By import id (`PS3Data/map/.../tex/x.dds`).
@@ -74,32 +77,81 @@ impl Clusters {
     /// # Errors
     /// When the model, an effect or a texture is missing or doesn't parse.
     pub fn load(read: impl Fn(&str) -> Option<Vec<u8>>, model_path: &str) -> Result<Self, Error> {
-        let bytes = read(model_path).ok_or_else(|| err(format!("{model_path}: not found")))?;
-        let map = MapModel::parse(bytes).map_err(|e| err(format!("{model_path}: {e}")))?;
-        let mut effects = HashMap::new();
-        let mut textures = HashMap::new();
-        for m in &map.materials {
-            if !effects.contains_key(&m.effect) {
+        Self::load_models(read, &[model_path])
+    }
+
+    /// Loads several models (a world's clusters, in its order) into one.
+    ///
+    /// # Errors
+    /// As [`Self::load`].
+    pub fn load_models(
+        read: impl Fn(&str) -> Option<Vec<u8>>,
+        model_paths: &[&str],
+    ) -> Result<Self, Error> {
+        let mut out = Self {
+            map: MapModel {
+                instances: Vec::new(),
+                segments: Vec::new(),
+                materials: Vec::new(),
+                bytes: Vec::new(),
+            },
+            models: Vec::new(),
+            effects: HashMap::new(),
+            textures: HashMap::new(),
+        };
+        for &path in model_paths {
+            let bytes = read(path).ok_or_else(|| err(format!("{path}: not found")))?;
+            let model = MapModel::parse(bytes).map_err(|e| err(format!("{path}: {e}")))?;
+            let n = model.instances.len();
+            let base = out.map.append(model);
+            out.models.push((path.to_owned(), base..base + n));
+        }
+        for m in &out.map.materials {
+            if !out.effects.contains_key(&m.effect) {
                 let path = map::archive_path(&m.effect);
                 let bytes = read(&path).ok_or_else(|| err(format!("{path}: not found")))?;
                 let v = EffectVariant::parse(bytes).map_err(|e| err(format!("{path}: {e}")))?;
-                effects.insert(m.effect.clone(), v);
-            }
-            for t in &m.textures {
-                if !textures.contains_key(&t.import) {
-                    let path = map::archive_path(&t.import);
-                    let bytes = read(&path).ok_or_else(|| err(format!("{path}: not found")))?;
-                    let tex = ffx_phyre::Texture::parse(bytes)
-                        .map_err(|e| err(format!("{path}: {e}")))?;
-                    textures.insert(t.import.clone(), tex);
-                }
+                out.effects.insert(m.effect.clone(), v);
             }
         }
-        Ok(Self {
-            map,
-            effects,
-            textures,
-        })
+        let imports: Vec<String> = out
+            .map
+            .materials
+            .iter()
+            .flat_map(|m| m.textures.iter().map(|t| t.import.clone()))
+            .collect();
+        out.add_textures(&read, &imports)?;
+        Ok(out)
+    }
+
+    /// Loads texture clusters by import id (those the game sets into
+    /// materials at run time: texture animation), skipping loaded ones.
+    ///
+    /// # Errors
+    /// When a texture is missing or doesn't parse.
+    pub fn add_textures(
+        &mut self,
+        read: impl Fn(&str) -> Option<Vec<u8>>,
+        imports: &[String],
+    ) -> Result<(), Error> {
+        for import in imports {
+            if self.textures.contains_key(import) {
+                continue;
+            }
+            let path = map::archive_path(import);
+            let bytes = read(&path).ok_or_else(|| err(format!("{path}: not found")))?;
+            let tex = ffx_phyre::Texture::parse(bytes).map_err(|e| err(format!("{path}: {e}")))?;
+            self.textures.insert(import.clone(), tex);
+        }
+        Ok(())
+    }
+
+    /// The model loaded from `path` (an archive path), by index.
+    #[must_use]
+    pub fn model_of(&self, path: &str) -> Option<usize> {
+        self.models
+            .iter()
+            .position(|m| m.0.eq_ignore_ascii_case(path))
     }
 }
 
@@ -142,8 +194,12 @@ pub struct Resources {
     shader_ix: HashMap<(Stage, Vec<u8>), Shader>,
     layout_ix: HashMap<(Vec<InputElement>, Shader), Layout>,
     static_ix: HashMap<(usize, usize, bool), Buffer>,
+    /// Vertex buffers the host provides (`External::DynamicVertices`),
+    /// by handle: in `buffers` with a dynamic description and no data.
+    pub external_buffers: HashMap<u32, External>,
     texture_ix: HashMap<String, View>,
     external_ix: HashMap<(External, ViewKind), View>,
+    external_buffer_ix: HashMap<External, Buffer>,
 }
 
 fn handle(n: usize) -> u32 {
@@ -205,6 +261,26 @@ impl Resources {
         b
     }
 
+    /// A vertex buffer the host fills (the dynamic ring's vertices of a
+    /// morphing mesh): a dynamic description of the block's size.
+    fn external_buffer(&mut self, e: External, len: usize) -> Buffer {
+        if let Some(&b) = self.external_buffer_ix.get(&e) {
+            return b;
+        }
+        let desc = BufferDesc {
+            size: handle(len),
+            usage: ffx_draw::desc::USAGE_DYNAMIC,
+            bind: 1,
+            cpu_access: ffx_draw::desc::CPU_WRITE,
+            misc: 0,
+            stride: 0,
+        };
+        let b = self.buffer(desc, Vec::new());
+        self.external_buffers.insert(b.0, e);
+        self.external_buffer_ix.insert(e, b);
+        b
+    }
+
     fn external(&mut self, e: External, kind: ViewKind) -> View {
         if let Some(&v) = self.external_ix.get(&(e, kind)) {
             return v;
@@ -244,7 +320,11 @@ impl Resources {
         let chain: usize = (0..t.mip_levels).map(size).sum();
         let mips = t.mip_levels - first;
         let mut subresources = Vec::new();
-        for face in 0..faces as usize {
+        if !cube {
+            subresources = upload_subresources(t, first, format)
+                .ok_or_else(|| err(format!("{import}: format {format}")))?;
+        }
+        for face in 0..if cube { faces as usize } else { 0 } {
             let mut at = face * chain + (0..first).map(size).sum::<usize>();
             for l in first..t.mip_levels {
                 let len = size(l);
@@ -288,6 +368,84 @@ impl Resources {
         self.texture_ix.insert(import.to_owned(), v);
         Ok(v)
     }
+}
+
+/// The subresources a 2D texture cluster gets on the device, as the game
+/// loads and uploads it:
+///
+/// - `Phyre_PBinary_loadClusterTextures` (`0x00465ab0`, `0x00466160..`)
+///   reads every level of the file into one buffer, the levels below
+///   `first` all at its start (each overwriting the last), the others in
+///   turn;
+/// - the upload (`0x0058fc20`, `0x0058fe1f..`) gives level `k` of the
+///   texture the data at the sum of the earlier levels' sizes, a level's
+///   size `bpp * w * h / 8` with `w` and `h` halved per level without a
+///   floor: a side that reaches 0 counts as the top level's (both
+///   rounded up to 4 for block formats), and the row pitch from the same
+///   width. Device levels whose side went to 0 therefore read past the
+///   levels read, into what the dropped levels left there (round 2 wire:
+///   cdsp0000's 16x128, 32x128 and 128x32 textures, whose last one or two
+///   levels are bytes of the file's level 1). Bytes past the buffer are
+///   taken as 0.
+///
+/// Packed rows (row pitch = row bytes), as `ffx-drawdiff` keys them.
+fn upload_subresources(
+    t: &ffx_phyre::Texture,
+    first: u32,
+    format: u32,
+) -> Option<Vec<(u32, Vec<u8>)>> {
+    let dims = |l: u32| ((t.width >> l).max(1), (t.height >> l).max(1));
+    let size = |l: u32| {
+        let (w, h) = dims(l);
+        t.format.level_size(w, h)
+    };
+    let chain: usize = (0..t.mip_levels).map(size).sum();
+    let pixels = t.pixels();
+    // The loader's buffer.
+    let mut buf = vec![0u8; chain];
+    let mut pos = 0;
+    let mut at = 0;
+    for l in 0..t.mip_levels {
+        let len = size(l);
+        let src = pixels.get(at..at + len)?;
+        buf.get_mut(pos..pos + len)?.copy_from_slice(src);
+        at += len;
+        if l >= first {
+            pos += len;
+        }
+    }
+    // The upload's level layout.
+    let (bpp, block) = match t.format {
+        ffx_phyre::Format::Dxt1 => (4, true),
+        ffx_phyre::Format::Dxt3 | ffx_phyre::Format::Dxt5 => (8, true),
+        ffx_phyre::Format::Argb8 => (32, false),
+        ffx_phyre::Format::L8 => (8, false),
+    };
+    let round = |x: usize| if block { (x + 3) & !3 } else { x };
+    let (top_w, top_h) = (t.width >> first, t.height >> first);
+    let (mut w, mut h) = (top_w as usize, top_h as usize);
+    let mut off = 0usize;
+    let mut out = Vec::new();
+    for k in 0..t.mip_levels - first {
+        let uw = round(if w == 0 { top_w as usize } else { w });
+        let uh = round(if h == 0 { top_h as usize } else { h });
+        let pitch = bpp * uw * if block { 4 } else { 1 } / 8;
+        let (dw, dh) = ((top_w >> k).max(1), (top_h >> k).max(1));
+        let row = crate::key::row_bytes(format, dw)? as usize;
+        let rows = if block { dh.div_ceil(4) } else { dh } as usize;
+        let mut data = Vec::with_capacity(row * rows);
+        for r in 0..rows {
+            let s = off + r * pitch;
+            for i in s..s + row {
+                data.push(buf.get(i).copied().unwrap_or(0));
+            }
+        }
+        out.push((handle(row), data));
+        off += bpp * uw * uh / 8;
+        w >>= 1;
+        h >>= 1;
+    }
+    Some(out)
 }
 
 /// Which of the two map passes.
@@ -431,10 +589,34 @@ fn node_buffer(
     buf
 }
 
+/// Whether a location entry is a `float4x4` (data type `0x31`, which the
+/// entry's kind repeats).
+#[must_use]
+pub fn is_matrix(loc: &crate::effect::Loc) -> bool {
+    loc.kind == 0x31 && loc.size == 64
+}
+
+/// A 4x4 of floats transposed, as bytes: a material's matrix as the
+/// game keeps it (`PMatrix4`, column-major) and as the shaders get it.
+/// The node and scene-wide values are built in the shaders' order.
+#[must_use]
+pub fn transpose_bytes(b: &[u8]) -> Vec<u8> {
+    let mut out = vec![0u8; b.len()];
+    for i in 0..16 {
+        let j = (i % 4) * 4 + i / 4;
+        if let (Some(d), Some(s)) = (out.get_mut(4 * i..4 * i + 4), b.get(4 * j..4 * j + 4)) {
+            d.copy_from_slice(s);
+        }
+    }
+    out
+}
+
 /// A constant buffer of `size` bytes filled through a location table:
 /// each entry's `size` bytes from its source buffer at its offset go to
 /// its target offset (entries the program doesn't use have target
-/// `u32::MAX`).
+/// `u32::MAX`), a material's `float4x4` transposed: the shadow cascade
+/// `PhyreScene_RenderShadow` writes into the material as a `PMatrix4` is
+/// its transpose in every captured map draw (round 2 wire).
 fn fill_cb(size: u32, table: &LocTable, sources: [&[u8]; 3], notes: &mut Vec<String>) -> Vec<u8> {
     let mut cb = vec![0xcd_u8; size as usize];
     for (src, loc) in table.sourced() {
@@ -456,6 +638,9 @@ fn fill_cb(size: u32, table: &LocTable, sources: [&[u8]; 3], notes: &mut Vec<Str
             loc.size as usize,
         );
         match (from.get(o..o + n), cb.get_mut(t..t + n)) {
+            (Some(s), Some(d)) if src == Source::Material && is_matrix(loc) => {
+                d.copy_from_slice(&transpose_bytes(s));
+            }
             (Some(s), Some(d)) => d.copy_from_slice(s),
             _ => notes.push(format!(
                 "{src:?} parameter at {o:#x} ({n} bytes) to {t:#x}: outside a buffer"
@@ -479,10 +664,10 @@ struct Builder<'a, I: SceneInputs> {
 /// The input layout and vertex bindings of a segment for a vertex
 /// program. Each shader input (`PStreamInputDescD3D11`: semantic, render
 /// type, semantic index, format, slot) reads one of the segment's streams
-/// of its render type: the `m_inputSet`-th (1-based, in block order) when
-/// the instance's segment context binds the type and semantic index
-/// (`PMeshInstanceSegmentStreamBinding`: the water's `TEXCOORD4/6/7`),
-/// else the first. The element's offset is the stream's in its block.
+/// of its render type: when the instance's segment context binds the type
+/// and semantic index (`PMeshInstanceSegmentStreamBinding`: the water's
+/// `TEXCOORD4/6/7`, a second UV set), the one whose `m_streamSet` is the
+/// binding's `m_inputSet`; else the first. The element's offset is the stream's in its block.
 /// Blocks are bound at offset 0 with their stride.
 fn vertex_inputs(
     map: &MapModel,
@@ -501,31 +686,26 @@ fn vertex_inputs(
         .map_or(&[][..], Vec::as_slice);
     let mut out = Vec::new();
     for input in &vs.inputs {
-        // The binding's input set, as a rank among the sets the context
-        // binds for the type (cdsp00 numbers them 1, 2; bsil00 0, 1).
-        let mut sets: Vec<u8> = bindings
-            .iter()
-            .filter(|b| b.render_type == input.render_type)
-            .map(|b| b.input_set)
-            .collect();
-        sets.sort_unstable();
-        sets.dedup();
+        // The binding's input set names the stream by its `m_streamSet`.
         let set = bindings
             .iter()
             .find(|b| b.render_type == input.render_type && u32::from(b.index) == input.index)
-            .and_then(|b| sets.iter().position(|&x| x == b.input_set))
-            .map_or(1, |k| k + 1);
-        let found = seg
+            .map(|b| b.input_set);
+        let mut streams = seg
             .blocks
             .iter()
             .enumerate()
             .flat_map(|(b, block)| block.streams.iter().map(move |s| (b, s)))
-            .filter(|(_, s)| s.render_type == input.render_type)
-            .nth(set - 1)
-            .map(|(b, s)| (b, s.offset));
+            .filter(|(_, s)| s.render_type == input.render_type);
+        let found = match set {
+            Some(k) => streams.find(|(_, s)| s.stream_set == k),
+            None => streams.next(),
+        }
+        .map(|(b, s)| (b, s.offset));
+        let set = set.map_or_else(|| "first".to_owned(), |k| format!("set {k}"));
         if found.is_none() {
             notes.push(format!(
-                "segment {segment}: no {} stream {set} for {}{}",
+                "segment {segment}: no {} stream ({set}) for {}{}",
                 input.render_type, input.semantic, input.index
             ));
         }
@@ -555,11 +735,10 @@ impl<I: SceneInputs> Builder<'_, I> {
 
     /// The visible instances of one pass, in draw order.
     fn visible(&self, opaque: bool) -> Vec<usize> {
-        let order = self.inputs.bounds_order();
         let mut runs = Vec::new();
-        for job in order.chunks(400) {
+        for job in self.inputs.jobs() {
             let mut entries = Vec::new();
-            for &i in job {
+            for &i in &job {
                 let Some(b) = self.c.map.instances.get(i).and_then(|x| x.bounds) else {
                     continue;
                 };
@@ -666,9 +845,22 @@ impl<I: SceneInputs> Builder<'_, I> {
         let ps = res.shader(Stage::Pixel, &sp.ps.code);
         let inputs = vertex_inputs(&c.map, instance, segment, &sp.vs, &mut self.out.notes);
         let mut elements = Vec::new();
+        let dynamic = c.map.instances[instance].dynamic;
         for (e, block) in inputs {
             if let Some(b) = block {
-                let buffer = res.static_buffer(&c.map, segment, Some(b));
+                let blk = &seg.blocks[b];
+                let buffer = if dynamic && blk.streams.iter().any(|s| s.render_type == "Vertex") {
+                    res.external_buffer(
+                        External::DynamicVertices {
+                            instance,
+                            segment,
+                            block: b,
+                        },
+                        blk.stride * blk.count,
+                    )
+                } else {
+                    res.static_buffer(&c.map, segment, Some(b))
+                };
                 if let Some(slot) = state.vertex.get_mut(e.slot as usize) {
                     *slot = Some(VertexBinding {
                         buffer,
@@ -783,32 +975,27 @@ impl<I: SceneInputs> Builder<'_, I> {
             };
             match def.kind {
                 0x42 | 0x44 => {
-                    let view = match mat
+                    let offset = u32::from(loc.offset);
+                    let file = mat
                         .textures
                         .iter()
-                        .find(|t| t.offset == u32::from(loc.offset))
-                    {
-                        Some(t) => {
-                            let tex =
-                                self.c.textures.get(&t.import).ok_or_else(|| {
-                                    err(format!("texture {} not loaded", t.import))
-                                })?;
-                            self.out.resources.texture(&t.import, tex, self.dropped)?
+                        .find(|t| t.offset == offset)
+                        .map(|t| t.import.as_str());
+                    let view = match self.inputs.material_texture(material, offset, file) {
+                        SlotTexture::Import(import) => {
+                            let tex = self
+                                .c
+                                .textures
+                                .get(&import)
+                                .ok_or_else(|| err(format!("texture {import} not loaded")))?;
+                            self.out.resources.texture(&import, tex, self.dropped)?
                         }
-                        None if self
-                            .inputs
-                            .material_texture_set(material, u32::from(loc.offset)) =>
-                        {
-                            self.out.resources.external(
-                                External::MaterialTexture {
-                                    material,
-                                    offset: u32::from(loc.offset),
-                                },
-                                ViewKind::ShaderResource,
-                            )
-                        }
+                        SlotTexture::Runtime => self.out.resources.external(
+                            External::MaterialTexture { material, offset },
+                            ViewKind::ShaderResource,
+                        ),
                         // No texture in the slot: nothing bound.
-                        None => continue,
+                        SlotTexture::Empty => continue,
                     };
                     if let Some(slot) = b.srvs.get_mut(reg) {
                         *slot = Some(view);

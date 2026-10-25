@@ -48,6 +48,14 @@ pub struct Instance {
     /// state itself is game state, `docs/formats/scene-maps.md`).
     pub dobj_flag: u32,
     pub group_id: i32,
+    /// Its bounds object's index among the cluster's
+    /// `PMeshInstanceBounds` (the snapshot's bounds slot).
+    pub bounds_slot: Option<usize>,
+    /// Whether `m_dynamicMeshInstance` (`+0x18`) is set: a morphing
+    /// mesh (`PModifierNetworkDynamicMeshInstance`), whose `Vertex`
+    /// stream the game writes every frame into the dynamic vertex ring
+    /// (`MorphManager`); the other streams stay the file's.
+    pub dynamic: bool,
 }
 
 /// A vertex stream of a block.
@@ -58,6 +66,9 @@ pub struct Stream {
     /// `m_type`: 1 float2, 2 float3, 3 float4, 0x13 four bytes.
     pub data_type: u8,
     pub offset: usize,
+    /// `m_streamSet` (`+9`): the set a segment context's stream binding
+    /// names by its `m_inputSet`.
+    pub stream_set: u8,
 }
 
 /// A `PDataBlock`: one vertex buffer.
@@ -270,6 +281,7 @@ impl MapModel {
                                 .to_owned(),
                             data_type: g.u8(st, "PVertexStream", "m_type").unwrap_or(0),
                             offset: g.u32(st, "PVertexStream", "m_offset").unwrap_or(0) as usize,
+                            stream_set: g.u8(st, "PVertexStream", "m_streamSet").unwrap_or(0),
                         })
                         .collect(),
                     bytes: bb.bytes.clone(),
@@ -301,7 +313,7 @@ impl MapModel {
         // Bounds by instance.
         let bound_objs = g.objects("PMeshInstanceBounds");
         let bounds_of = |inst: Obj| {
-            bound_objs.iter().find_map(|&b| {
+            bound_objs.iter().enumerate().find_map(|(k, &b)| {
                 let c = "PMeshInstanceBounds";
                 let t = g.ptr(b, c, "m_meshInstance", 0)?;
                 (t.list == inst.list && t.first == inst.index).then(|| {
@@ -309,11 +321,14 @@ impl MapModel {
                         let at = b.at + g.offset(c, m).unwrap_or(0) as usize;
                         std::array::from_fn(|k| f32::from_bits(g.word_at(at + 4 * k).unwrap_or(0)))
                     };
-                    Bounds {
-                        min: v3("m_min"),
-                        size: v3("m_size"),
-                        render_order: g.u32(b, c, "m_render_order").unwrap_or(0).cast_signed(),
-                    }
+                    (
+                        k,
+                        Bounds {
+                            min: v3("m_min"),
+                            size: v3("m_size"),
+                            render_order: g.u32(b, c, "m_render_order").unwrap_or(0).cast_signed(),
+                        },
+                    )
                 })
             })
         };
@@ -351,22 +366,14 @@ impl MapModel {
                     let Some(off) = g.offset(cc, "m_streamBindings") else {
                         return Vec::new();
                     };
-                    let count = g.word_at(ctx.at + off as usize).unwrap_or(0) & 0x7fff_ffff;
                     // A `PSharray` of pointers: one inline (+4), or more
-                    // through an array of pointers. That array's
-                    // pointer-array fixups are not decoded: the bindings
-                    // are taken as `count` objects in a row from the
-                    // first target (right on cdsp00; open item).
-                    let objs: Vec<Obj> = g.pointers[ctx.list]
-                        .iter()
-                        .filter(|f| {
-                            f.object() == ctx.index && f.member() == 0x8000_0000 | (off + 4)
-                        })
-                        .flat_map(|f| {
-                            (f.target()..f.target() + count.max(1))
-                                .map(|k| g.obj(f.target_list() as usize, k))
-                        })
-                        .take(count as usize)
+                    // through a pointer array (its pointer-array fixup).
+                    let objs: Vec<Obj> = g
+                        .pointer_array(ctx, off)
+                        .into_iter()
+                        .flatten()
+                        .filter(|t| t.user.is_none() && t.list < g.c.lists.len())
+                        .map(|t| g.obj(t.list, t.first))
                         .collect();
                     objs.into_iter()
                         .map(|b| {
@@ -384,11 +391,14 @@ impl MapModel {
                         .collect()
                 })
                 .collect();
+            let bounds = bounds_of(i);
             instances.push(Instance {
                 name,
                 segments: segs,
                 materials: set,
-                bounds: bounds_of(i),
+                bounds: bounds.map(|b| b.1),
+                bounds_slot: bounds.map(|b| b.0),
+                dynamic: g.ptr(i, c, "m_dynamicMeshInstance", 0).is_some(),
                 contexts,
                 dobj_kind: g.u32(i, c, "m_DObjKind").unwrap_or(0).cast_signed(),
                 dobj_flag: g.u32(i, c, "m_dObjFlag").unwrap_or(0),
@@ -401,6 +411,38 @@ impl MapModel {
             materials,
             bytes: g.bytes,
         })
+    }
+
+    /// Appends another model's instances, segments and materials (a world
+    /// with several clusters, `PWorld +0`): its indices and byte ranges
+    /// move past this model's. Returns where its instances start.
+    pub fn append(&mut self, other: Self) -> usize {
+        let (inst_base, seg_base, mat_base, byte_base) = (
+            self.instances.len(),
+            self.segments.len(),
+            self.materials.len(),
+            self.bytes.len(),
+        );
+        let shift = |r: &std::ops::Range<usize>| r.start + byte_base..r.end + byte_base;
+        for mut s in other.segments {
+            s.indices = shift(&s.indices);
+            for b in &mut s.blocks {
+                b.bytes = shift(&b.bytes);
+            }
+            self.segments.push(s);
+        }
+        for mut i in other.instances {
+            for s in &mut i.segments {
+                *s += seg_base;
+            }
+            for m in i.materials.iter_mut().flatten() {
+                *m += mat_base;
+            }
+            self.instances.push(i);
+        }
+        self.materials.extend(other.materials);
+        self.bytes.extend(other.bytes);
+        inst_base
     }
 
     /// A segment's material for an instance (through the instance's set).
