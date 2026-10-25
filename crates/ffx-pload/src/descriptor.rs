@@ -95,8 +95,8 @@ pub mod core {
 pub mod bridge {
     use super::{
         CALCULATE_DEFAULT, CALCULATE_VALIDATION, COMPUTED, Conv, DEFAULT_BUFFER, DEFAULT_INSTANCE,
-        FLAGS, FREE, Host, IN_NAMESPACE, Mem, NAMESPACE, NAMESPACE_ADD, PARENT, REGISTER_TYPE,
-        core,
+        FLAGS, FREE, GLOBAL_NAMESPACE, Host, IN_NAMESPACE, Mem, NAMESPACE, NAMESPACE_ADD, PARENT,
+        REGISTER_TYPE, core,
     };
 
     /// `PClassDescriptor::isInNamespace(desc)` (`0x0043cfb0`, thiscall):
@@ -477,4 +477,165 @@ pub mod bridge {
         h.write(entry + 8, slot);
         0
     }
+
+    /// The type dispenser's name hash (`0x00437570`, `0x00438630`): from
+    /// 0x7b5, `h = h * 33 + (byte & 0x1f)` over the name's bytes; 0x7b5
+    /// for no name.
+    pub fn name_hash(m: &impl Mem, name: u32) -> u32 {
+        let mut h: u32 = 0x7b5;
+        if name == 0 {
+            return h;
+        }
+        let mut p = name;
+        loop {
+            let b: u8 = m.read(p);
+            if b == 0 {
+                return h;
+            }
+            h = h.wrapping_add(h << 5).wrapping_add(u32::from(b & 0x1f));
+            p += 1;
+        }
+    }
+
+    /// The dispensers' lookups by name (`0x00437570` with `0x004375c0`,
+    /// `0x00438630` with `0x00438680`; thiscall `(name)`): the key `(hash,
+    /// name)` in `key` (two words; the original's frame), then
+    /// `find(this; &key)`; its `eax`.
+    pub fn find_by_name(h: &mut impl Host, find: u32, key: u32, this: u32, name: u32) -> u32 {
+        let hash = name_hash(h, name);
+        h.write(key, [hash, name]);
+        h.call_sym(find, Conv::Thiscall(this), &[key])
+    }
+
+    /// `0x0043cbb0` (thiscall): the descriptor's instance at `+0x70`, or
+    /// (computing the buffers as [`default_buffer`] does) its default
+    /// buffer plus `+0x8c`, flagging `0x20000000`; 0 without either.
+    pub fn default_instance(h: &mut impl Host, desc: u32) -> u32 {
+        let inst: u32 = h.read(desc + 0x70);
+        if inst != 0 {
+            return inst;
+        }
+        let buffer = default_buffer(h, desc);
+        if buffer == 0 {
+            return h.read(desc + 0x70);
+        }
+        let offset: u32 = h.read(desc + 0x8c);
+        let flags: u32 = h.read(desc + FLAGS);
+        h.write(desc + FLAGS, flags | 0x2000_0000);
+        offset.wrapping_add(buffer)
+    }
+
+    /// `PClassDescriptor<PBitmapFontCharInfo...>` slot 10 (`0x00a2d570`,
+    /// stdcall `(p)`): `al` = 0 without the font descriptor's instance
+    /// (`0x0043cbb0` on `0x00ca37d0`); else clears `p` (a byte, a word, two
+    /// floats, four words) and stores the instance at `+0x20`; `al` = 1.
+    pub fn construct_with_default(h: &mut impl Host, p: u32) -> u8 {
+        let desc = h.rebase(0x00ca_37d0);
+        let inst = default_instance(h, desc);
+        if inst == 0 {
+            return 0;
+        }
+        if p != 0 {
+            h.write(p, 0u8);
+            h.write(p + 4, [0u32; 7]);
+            h.write(p + 0x20, inst);
+        }
+        1
+    }
+
+    /// A descriptor's slot 10 for a class holding its type (`0x00444760`,
+    /// stdcall `(p)`): `[p] = 0`, `[p + 4] = 0x00435740()` when `p` is not
+    /// 0; `al` = 1.
+    pub fn construct_typed(h: &mut impl Host, p: u32) -> u8 {
+        if p != 0 {
+            let ty = h.call_sym(0x0043_5740, Conv::Cdecl, &[]);
+            h.write(p, 0u32);
+            h.write(p + 4, ty);
+        }
+        1
+    }
+
+    /// `PNamespace::remove(ns, desc)` (`0x0043ec40`, thiscall): unlinks
+    /// `desc` (its link at `+0x2c`); when the namespace's list at `+8` is
+    /// then empty and it is not the global namespace
+    /// (`GetGlobalNamespace`, `0x0043e2f0`, called again before), unlinks
+    /// the namespace itself (its link at `+0`). `eax` as the original
+    /// leaves it: the first descriptor left, the global namespace, or the
+    /// namespace's old `prev`.
+    pub fn namespace_remove(h: &mut impl Host, ns: u32, desc: u32) -> u32 {
+        unlink(h, desc + 0x2c);
+        let head = ns + 8;
+        let first: u32 = h.read(head);
+        if first != head && first != 0 && first.wrapping_sub(0x2c) != 0 {
+            return first.wrapping_sub(0x2c);
+        }
+        let global = h.call_sym(GLOBAL_NAMESPACE, Conv::Cdecl, &[]);
+        if ns == global {
+            return global;
+        }
+        h.call_sym(GLOBAL_NAMESPACE, Conv::Cdecl, &[]);
+        unlink(h, ns)
+    }
+
+    /// Unlinks the intrusive link at `link` and leaves it empty; returns
+    /// its old `prev`.
+    fn unlink(m: &mut impl Mem, link: u32) -> u32 {
+        let next: u32 = m.read(link);
+        let prev: u32 = m.read(link + 4);
+        m.write(next + 4, prev);
+        m.write(prev, next);
+        m.write(link, [link, link]);
+        prev
+    }
+
+    /// A C string compare, as the originals' inline `strcmp`.
+    fn same_name(m: &impl Mem, a: u32, b: u32) -> bool {
+        let mut i = 0;
+        loop {
+            let x: u8 = m.read(a + i);
+            let y: u8 = m.read(b + i);
+            if x != y {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            i += 1;
+        }
+    }
+
+    /// The enum value tables' lookups by name (cdecl `(name)`): the entry
+    /// of the list at `head` (a global) whose name (at `name_at`) is
+    /// `name`, entries linked through `next_at`; 0 for none or no name.
+    /// `0x00507a30` (`0x00ca9734`, name `+0`, next `+4`) and eight
+    /// others with name `+4`, next `+8` ([`ENUM_TABLES`]).
+    pub fn enum_find(m: &impl Mem, head: u32, name_at: u32, next_at: u32, name: u32) -> u32 {
+        if name == 0 {
+            return 0;
+        }
+        let mut e: u32 = m.read(m.rebase(head));
+        while e != 0 {
+            let n: u32 = m.read(e + name_at);
+            if same_name(m, n, name) {
+                return e;
+            }
+            e = m.read(e + next_at);
+        }
+        0
+    }
 }
+
+/// `PNamespace::GetGlobalNamespace()` (cdecl).
+pub const GLOBAL_NAMESPACE: u32 = 0x0043_e2f0;
+
+/// The enum lookups with name `+4` and next `+8`: (function, list head).
+pub const ENUM_TABLES: [(u32, u32); 8] = [
+    (0x005c_be40, 0x00cb_d908),
+    (0x005c_c2a0, 0x00cb_d944),
+    (0x009f_48f0, 0x0194_359c),
+    (0x00a2_dea0, 0x01a8_5318),
+    (0x00a2_e310, 0x01a8_5354),
+    (0x00a2_e780, 0x01a8_5390),
+    (0x00a2_ebf0, 0x01a8_53cc),
+    (0x00a3_2560, 0x01a8_5578),
+];

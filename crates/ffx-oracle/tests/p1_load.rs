@@ -1432,3 +1432,389 @@ fn stream_files_match_the_original() {
         t.reset();
     }
 }
+
+// ---- batch 4: iterators, enum lookups, namespace helpers ----
+
+const SEEKS: [u32; 12] = [
+    0x0046_4b40,
+    0x0046_4bb0,
+    0x0046_4c20,
+    0x0046_4c90,
+    0x0046_4d00,
+    0x0046_4d70,
+    0x0046_4de0,
+    0x0046_4e50,
+    0x0046_4ec0,
+    0x0046_4f30,
+    0x0046_4fa0,
+    0x0046_5010,
+];
+const NEXTS: [u32; 5] = [
+    0x0046_5080,
+    0x0046_5140,
+    0x0046_5260,
+    0x0046_5380,
+    0x0046_53e0,
+];
+
+/// An owner whose list (head at `+0x1c`, linked through the elements'
+/// first word) holds four elements for the wanted class `want`: no
+/// match, a match with count 0, two matches. Returns the owner and the
+/// elements.
+fn iter_owner(t: &mut Twins, want: u32) -> (u32, [u32; 4]) {
+    let owner = t.zeros(0x40);
+    let end = owner + 0x1c;
+    let e: Vec<u32> = (0..4).map(|_| t.zeros(0x50)).collect();
+    let other = t.zeros(0x50);
+    for i in 0..4 {
+        let next = if i < 3 { e[i + 1] } else { end };
+        t.w32(e[i], next);
+    }
+    t.w32(end, e[0]);
+    // e0's chain: other only; e1: want, count 0; e2: other then want; e3: want
+    t.w32(e[0] + 0x2c, other);
+    t.w32(e[1] + 0x2c, want);
+    t.w32(e[2] + 0x2c, other);
+    t.w32(other + 0x40, 0);
+    t.w32(e[3] + 0x2c, want);
+    t.w32(e[2] + 0x40, 2);
+    t.w32(e[3] + 0x40, 1);
+    // e2's chain goes on from `other` to `want` through a second node
+    let other2 = t.zeros(0x50);
+    t.w32(e[2] + 0x2c, other2);
+    t.w32(other2 + 0x40, want);
+    (owner, [e[0], e[1], e[2], e[3]])
+}
+
+#[test]
+fn iterators_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(0x0044_1dc0, true, 1, 1, 0x77);
+        let want = t.zeros(0x50);
+        let (owner, e) = iter_owner(&mut t, want);
+        let end = owner + 0x1c;
+        for (k, &sym) in SEEKS.iter().chain(NEXTS.iter()).enumerate() {
+            let seek = k < SEEKS.len();
+            for cur in [e[0], e[1], e[2], e[3], 0] {
+                let it = t.junk(0x20, 1);
+                t.w32(it + 0x14, end);
+                t.w32(it + 0x18, cur);
+                t.w32(it + 0x1c, want);
+                let what = format!("{label}: iter {sym:#x} {cur:#x}");
+                t.check(&what, sym, Conv::Thiscall(it), &[], |g| {
+                    Out::U32(if seek {
+                        c::iter_seek(g, it)
+                    } else {
+                        c::iter_next(g, it)
+                    })
+                });
+            }
+        }
+        // iterBegin: the wanted class is the global one
+        let class = t.rebase(0x00cb_1120);
+        let (owner, _) = iter_owner(&mut t, class);
+        let it = t.junk(0x20, 2);
+        let what = format!("{label}: iterBegin");
+        t.check(&what, 0x0046_38f0, Conv::Thiscall(it), &[owner], |g| {
+            Out::U32(c::iter_begin(g, it, owner))
+        });
+        // an empty list whose head looks like a match: the head is never
+        // an element
+        let empty = t.zeros(0x80);
+        t.w32(empty + 0x1c, empty + 0x1c);
+        t.w32(empty + 0x1c + 0x2c, class);
+        t.w32(empty + 0x1c + 0x40, 1);
+        let what = format!("{label}: iterBegin, empty");
+        t.check(&what, 0x0046_38f0, Conv::Thiscall(it), &[empty], |g| {
+            Out::U32(c::iter_begin(g, it, empty))
+        });
+        t.reset();
+    }
+}
+
+#[test]
+fn cluster_walks_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the PClusterHeader constructInstance, its constructor run as is
+        let p = t.junk(0x60, 1);
+        for at in [0, p] {
+            let what = format!("{label}: construct header {at:#x}");
+            t.check(&what, 0x0046_9460, Conv::Stdcall, &[at], |g| {
+                Out::U8(c::construct_header(g, at))
+            });
+        }
+        // FixupClusters, both passes recorded
+        let list = t.zeros(16);
+        t.w32(list, 0x00c1_0000);
+        t.w32(list + 8, 0x00c2_0000);
+        for (resolve, fixup) in [(0, 0), (5, 0), (0, 7)] {
+            t.stub(0x0044_1f20, true, 0, 0, resolve);
+            t.stub(0x0044_1620, true, 0, 0, fixup);
+            for n in [0, 4] {
+                let what = format!("{label}: FixupClusters {resolve} {fixup} {n}");
+                t.check(&what, 0x0062_3580, Conv::Cdecl, &[list, n], |g| {
+                    Out::U32(c::fixup_clusters(g, list, n))
+                });
+            }
+            t.reset();
+        }
+        // findById
+        let items: Vec<u32> = (0..3)
+            .map(|i| {
+                let e = t.zeros(0x30);
+                t.w32(e + 0x2c, 10 + i);
+                e
+            })
+            .collect();
+        let data = t.zeros(12);
+        t.w32(data, items[0]);
+        t.w32(data + 8, items[2]);
+        let one = t.zeros(8);
+        t.w32(one, 0x8000_0001);
+        t.w32(one + 4, items[1]);
+        let three = t.zeros(8);
+        t.w32(three, 3);
+        t.w32(three + 4, data);
+        let none = t.zeros(4);
+        let zero = t.zeros(8);
+        for arr in [one, three, zero] {
+            let r = t.zeros(4);
+            t.w32(r, arr);
+            for id in [10, 11, 12, 13] {
+                let what = format!("{label}: findById {arr:#x} {id}");
+                t.check(&what, 0x0045_cd00, Conv::Cdecl, &[r, id], |g| {
+                    Out::U32(c::find_by_id(g, r, id))
+                });
+            }
+        }
+        let what = format!("{label}: findById, no array");
+        t.check(&what, 0x0045_cd00, Conv::Cdecl, &[none, 10], |g| {
+            Out::U32(c::find_by_id(g, none, 10))
+        });
+        // mapping entries
+        let map = t.zeros(0x20);
+        t.w32(map + 4, 0x8000_0003);
+        t.w32(map + 8, 0x0010_0000);
+        t.w32(map + 0x10, 0x0020_0000);
+        let empty_map = t.zeros(0x20);
+        for (m, i, pre) in [
+            (map, 0, 0),
+            (map, 2, 0),
+            (map, 3, 0),
+            (map, 4, 0),
+            (map, 9, 5),
+            (empty_map, 0, 0),
+            (empty_map, 1, 0),
+        ] {
+            let a = t.zeros(4);
+            let b = t.zeros(4);
+            t.w32(b, pre);
+            let what = format!("{label}: mapping entry {m:#x} {i}");
+            t.check(&what, 0x0047_e730, Conv::Thiscall(m), &[i, a, b], |g| {
+                Out::U8(c::mapping_entry(g, m, i, a, b))
+            });
+        }
+        // zeroed entries and the record
+        for sym in [0x0047_baa0, 0x0047_bb00] {
+            for n in [0, 1, 3] {
+                let at = t.junk(0x80, 3);
+                let what = format!("{label}: zeroEntries {sym:#x} {n}");
+                t.check(&what, sym, Conv::Cdecl, &[at, n], |g| {
+                    c::zero_entries(g, at, n);
+                    Out::None
+                });
+            }
+        }
+        let rec = t.junk(0x30, 4);
+        let what = format!("{label}: recordInit");
+        t.check(
+            &what,
+            0x0057_7760,
+            Conv::Thiscall(rec),
+            &[1, 2, 3, 0x1234_56ab],
+            |g| Out::U32(c::record_init(g, rec, 1, 2, 3, 0x1234_56ab)),
+        );
+    }
+}
+
+/// A stub for a `thiscall (&key)` lookup that copies the key's two words
+/// to `out` (the key's address differs between the original's frame and
+/// the port's) and returns `ret`.
+fn key_stub(t: &mut Twins, out: u32, ret: u32) -> u32 {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+    c.extend([0x8b, 0x10, 0x89, 0x15]); // mov edx, [eax]; mov [out], edx
+    c.extend(out.to_le_bytes());
+    c.extend([0x8b, 0x50, 0x04, 0x89, 0x15]); // mov edx, [eax+4]; mov [out+4], edx
+    c.extend((out + 4).to_le_bytes());
+    c.extend([0x89, 0x0d]); // mov [out+8], ecx
+    c.extend((out + 8).to_le_bytes());
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    c.extend([0xc2, 0x04, 0x00]); // ret 4
+    let at = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+    at
+}
+
+#[test]
+fn namespace_helpers_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the dispensers' lookups by name: the key copied by the stub
+        for (sym, find) in [(0x0043_7570, 0x0043_75c0), (0x0043_8630, 0x0043_8680)] {
+            let out = t.zeros(12);
+            let code = key_stub(&mut t, out, 0x4444);
+            let at = t.rebase(find);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+            let name = t.alloc(b"PClassDescriptor\0");
+            let empty = t.alloc(b"\0");
+            for n in [name, empty, 0] {
+                let what = format!("{label}: findByName {sym:#x} {n:#x}");
+                t.check(&what, sym, Conv::Thiscall(0x00d1_5000), &[n], |g| {
+                    let key = g.scratch();
+                    Out::U32(d::find_by_name(g, find, key, 0x00d1_5000, n))
+                });
+            }
+            t.reset();
+        }
+        // getDefaultInstance on a fake descriptor
+        t.stub(descriptor::CALCULATE_DEFAULT, true, 0, 0, 1);
+        t.stub(descriptor::CALCULATE_VALIDATION, true, 0, 0, 2);
+        let obj = t.object(&[0; 13]);
+        let desc = t.zeros(0xa0);
+        let vt = t.r32(obj);
+        t.w32(desc, vt);
+        for (inst, flags, buffer) in [
+            (0x55, 0, 0),
+            (0, 0x8000_0000, 0),
+            (0, 0x8000_0000, 0x900),
+            (0, 0, 0x900),
+            (0, 0x4000_0000, 0),
+        ] {
+            t.w32(desc + 0x70, inst);
+            t.w32(desc + descriptor::FLAGS, flags);
+            t.w32(desc + descriptor::DEFAULT_BUFFER, buffer);
+            t.w32(desc + 0x8c, 0x10);
+            let what = format!("{label}: getDefaultInstance {inst:#x} {flags:#x} {buffer:#x}");
+            t.check(&what, 0x0043_cbb0, Conv::Thiscall(desc), &[], |g| {
+                Out::U32(d::default_instance(g, desc))
+            });
+        }
+        t.reset();
+        // the real descriptors (snapshots)
+        if t.snapshot {
+            for (i, real) in t.descriptors(48).into_iter().enumerate() {
+                let what = format!("{label}: real getDefaultInstance {i}");
+                t.check(&what, 0x0043_cbb0, Conv::Thiscall(real), &[], |g| {
+                    Out::U32(d::default_instance(g, real))
+                });
+            }
+        }
+        // constructWithDefault: the font descriptor's instance set by hand
+        let font = t.rebase(0x00ca_37d0);
+        let p = t.junk(0x30, 5);
+        for inst in [0x0abc_0000, 0] {
+            t.w32(font + 0x70, inst);
+            t.w32(font + descriptor::FLAGS, 0x8000_0000);
+            t.w32(font + descriptor::DEFAULT_BUFFER, 0);
+            for at in [p, 0] {
+                let what = format!("{label}: constructWithDefault {inst:#x} {at:#x}");
+                t.check(&what, 0x00a2_d570, Conv::Stdcall, &[at], |g| {
+                    Out::U8(d::construct_with_default(g, at))
+                });
+            }
+        }
+        // constructTyped
+        for at in [p, 0] {
+            let what = format!("{label}: constructTyped {at:#x}");
+            t.check(&what, 0x0044_4760, Conv::Stdcall, &[at], |g| {
+                Out::U8(d::construct_typed(g, at))
+            });
+        }
+        // PNamespace::remove: GetGlobalNamespace recorded
+        for global_is_ns in [false, true] {
+            for keep_one in [true, false] {
+                let parent = t.zeros(8);
+                let ns = t.zeros(0x20);
+                let sibling = t.zeros(8);
+                // parent -> ns -> sibling -> parent
+                t.w32(parent, ns);
+                t.w32(parent + 4, sibling);
+                t.w32(ns, sibling);
+                t.w32(ns + 4, parent);
+                t.w32(sibling, parent);
+                t.w32(sibling + 4, ns);
+                let head = ns + 8;
+                let d1 = t.zeros(0x40);
+                let d2 = t.zeros(0x40);
+                let (l1, l2) = (d1 + 0x2c, d2 + 0x2c);
+                if keep_one {
+                    t.w32(head, l1);
+                    t.w32(head + 4, l2);
+                    t.w32(l1, l2);
+                    t.w32(l1 + 4, head);
+                    t.w32(l2, head);
+                    t.w32(l2 + 4, l1);
+                } else {
+                    t.w32(head, l2);
+                    t.w32(head + 4, l2);
+                    t.w32(l2, head);
+                    t.w32(l2 + 4, head);
+                }
+                t.stub(
+                    descriptor::GLOBAL_NAMESPACE,
+                    false,
+                    0,
+                    0,
+                    if global_is_ns { ns } else { 0x00ee_0000 },
+                );
+                let what = format!("{label}: namespace remove {global_is_ns} {keep_one}");
+                t.check(&what, 0x0043_ec40, Conv::Thiscall(ns), &[d2], |g| {
+                    Out::U32(d::namespace_remove(g, ns, d2))
+                });
+                t.reset();
+            }
+        }
+    }
+}
+
+#[test]
+fn enum_lookups_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let names: Vec<u32> = [&b"Linear\0"[..], b"Lin\0", b"Step\0"]
+            .iter()
+            .map(|n| t.alloc(n))
+            .collect();
+        let probes: Vec<u32> = [&b"Linear\0"[..], b"Step\0", b"Li\0", b"Stepx\0", b"\0"]
+            .iter()
+            .map(|n| t.alloc(n))
+            .collect();
+        let tables = descriptor::ENUM_TABLES
+            .iter()
+            .map(|&(f, head)| (f, head, 4, 8))
+            .chain([(0x0050_7a30, 0x00ca_9734, 0, 4)]);
+        for (f, head, name_at, next_at) in tables {
+            // three entries, last first in the list
+            let mut first = 0;
+            for &n in &names {
+                let e = t.zeros(0x10);
+                t.w32(e + name_at, n);
+                t.w32(e + next_at, first);
+                first = e;
+            }
+            let h = t.rebase(head);
+            for start in [first, 0] {
+                t.w32(h, start);
+                for &probe in probes.iter().chain([0u32].iter()) {
+                    let what = format!("{label}: enum {f:#x} {start:#x} {probe:#x}");
+                    t.check(&what, f, Conv::Cdecl, &[probe], |g| {
+                        Out::U32(d::enum_find(g, head, name_at, next_at, probe))
+                    });
+                }
+            }
+        }
+    }
+}

@@ -443,4 +443,177 @@ ported! {
         let mut count = StackFrame::<1>::new();
         stream::bridge::file_read(&mut mem(), count.at(), this, buffer, size)
     }
+
+    // ---- batch 4: iterators, enum lookups, namespace helpers ----
+    /// The class-member iterator's seek, copy 1.
+    Phyre_PClusterHeader_iterSeek_00464b40 @ 0x0046_4b40 => extern "thiscall" fn iter_seek_464b40(this: u32) -> u32 {
+        cluster::bridge::iter_seek(&mut mem(), this)
+    }
+    /// The class-member iterator's seek, copy 2.
+    Phyre_PClusterHeader_iterSeek_00464bb0 @ 0x0046_4bb0 => extern "thiscall" fn iter_seek_464bb0(this: u32) -> u32 {
+        cluster::bridge::iter_seek(&mut mem(), this)
+    }
+    /// The class-member iterator's seek, copy 3.
+    Phyre_PClusterHeader_iterSeek_00464c20 @ 0x0046_4c20 => extern "thiscall" fn iter_seek_464c20(this: u32) -> u32 {
+        cluster::bridge::iter_seek(&mut mem(), this)
+    }
+    /// The class-member iterator's seek, copy 4.
+    Phyre_PClusterHeader_iterSeek_00464c90 @ 0x0046_4c90 => extern "thiscall" fn iter_seek_464c90(this: u32) -> u32 {
+        cluster::bridge::iter_seek(&mut mem(), this)
+    }
+    /// The class-member iterator's seek, copy 5.
+    Phyre_PClusterHeader_iterSeek_00464d00 @ 0x0046_4d00 => extern "thiscall" fn iter_seek_464d00(this: u32) -> u32 {
+        cluster::bridge::iter_seek(&mut mem(), this)
+    }
+    /// The class-member iterator's seek, copy 6.
+    Phyre_PClusterHeader_iterSeek_00464d70 @ 0x0046_4d70 => extern "thiscall" fn iter_seek_464d70(this: u32) -> u32 {
+        cluster::bridge::iter_seek(&mut mem(), this)
+    }
+    /// The class-member iterator's seek, copy 7.
+    Phyre_PClusterHeader_iterSeek_00464de0 @ 0x0046_4de0 => extern "thiscall" fn iter_seek_464de0(this: u32) -> u32 {
+        cluster::bridge::iter_seek(&mut mem(), this)
+    }
+    /// The class-member iterator's seek, copy 8.
+    Phyre_PClusterHeader_iterSeek_00464e50 @ 0x0046_4e50 => extern "thiscall" fn iter_seek_464e50(this: u32) -> u32 {
+        cluster::bridge::iter_seek(&mut mem(), this)
+    }
+    /// The class-member iterator's seek, copy 9.
+    Phyre_PClusterHeader_iterSeek_00464ec0 @ 0x0046_4ec0 => extern "thiscall" fn iter_seek_464ec0(this: u32) -> u32 {
+        cluster::bridge::iter_seek(&mut mem(), this)
+    }
+    /// The class-member iterator's seek, copy 10.
+    Phyre_PClusterHeader_iterSeek_00464f30 @ 0x0046_4f30 => extern "thiscall" fn iter_seek_464f30(this: u32) -> u32 {
+        cluster::bridge::iter_seek(&mut mem(), this)
+    }
+    /// The class-member iterator's seek, copy 11.
+    Phyre_PClusterHeader_iterSeek_00464fa0 @ 0x0046_4fa0 => extern "thiscall" fn iter_seek_464fa0(this: u32) -> u32 {
+        cluster::bridge::iter_seek(&mut mem(), this)
+    }
+    /// The class-member iterator's seek, copy 12.
+    Phyre_PClusterHeader_iterSeek_00465010 @ 0x0046_5010 => extern "thiscall" fn iter_seek_465010(this: u32) -> u32 {
+        cluster::bridge::iter_seek(&mut mem(), this)
+    }
+    /// The class-member iterator's next, copy 1.
+    Phyre_PClusterHeader_iterNext_00465080 @ 0x0046_5080 => extern "thiscall" fn iter_next_465080(this: u32) -> u32 {
+        cluster::bridge::iter_next(&mut mem(), this)
+    }
+    /// The class-member iterator's next, copy 2.
+    Phyre_PClusterHeader_iterNext_00465140 @ 0x0046_5140 => extern "thiscall" fn iter_next_465140(this: u32) -> u32 {
+        cluster::bridge::iter_next(&mut mem(), this)
+    }
+    /// The class-member iterator's next, copy 3.
+    Phyre_PClusterHeader_iterNext_00465260 @ 0x0046_5260 => extern "thiscall" fn iter_next_465260(this: u32) -> u32 {
+        cluster::bridge::iter_next(&mut mem(), this)
+    }
+    /// The class-member iterator's next, copy 4.
+    Phyre_PClusterHeader_iterNext_00465380 @ 0x0046_5380 => extern "thiscall" fn iter_next_465380(this: u32) -> u32 {
+        cluster::bridge::iter_next(&mut mem(), this)
+    }
+    /// The class-member iterator's next, copy 5.
+    Phyre_PClusterHeader_iterNext_004653e0 @ 0x0046_53e0 => extern "thiscall" fn iter_next_4653e0(this: u32) -> u32 {
+        cluster::bridge::iter_next(&mut mem(), this)
+    }
+    /// An enum value table's lookup by name (list at `0x00cb_d908`).
+    Phyre_PTypeEnum_find_005cbe40 @ 0x005c_be40 => extern "C" fn enum_find_5cbe40(name: u32) -> u32 {
+        let m = mem();
+        descriptor::bridge::enum_find(&m, 0x00cb_d908, 4, 8, name)
+    }
+    /// An enum value table's lookup by name (list at `0x00cb_d944`).
+    Phyre_PTypeEnum_find_005cc2a0 @ 0x005c_c2a0 => extern "C" fn enum_find_5cc2a0(name: u32) -> u32 {
+        let m = mem();
+        descriptor::bridge::enum_find(&m, 0x00cb_d944, 4, 8, name)
+    }
+    /// An enum value table's lookup by name (list at `0x0194_359c`).
+    Phyre_PTypeEnum_find_009f48f0 @ 0x009f_48f0 => extern "C" fn enum_find_9f48f0(name: u32) -> u32 {
+        let m = mem();
+        descriptor::bridge::enum_find(&m, 0x0194_359c, 4, 8, name)
+    }
+    /// An enum value table's lookup by name (list at `0x01a8_5318`).
+    Phyre_PTypeEnum_find_00a2dea0 @ 0x00a2_dea0 => extern "C" fn enum_find_a2dea0(name: u32) -> u32 {
+        let m = mem();
+        descriptor::bridge::enum_find(&m, 0x01a8_5318, 4, 8, name)
+    }
+    /// An enum value table's lookup by name (list at `0x01a8_5354`).
+    Phyre_PTypeEnum_find_00a2e310 @ 0x00a2_e310 => extern "C" fn enum_find_a2e310(name: u32) -> u32 {
+        let m = mem();
+        descriptor::bridge::enum_find(&m, 0x01a8_5354, 4, 8, name)
+    }
+    /// An enum value table's lookup by name (list at `0x01a8_5390`).
+    Phyre_PTypeEnum_find_00a2e780 @ 0x00a2_e780 => extern "C" fn enum_find_a2e780(name: u32) -> u32 {
+        let m = mem();
+        descriptor::bridge::enum_find(&m, 0x01a8_5390, 4, 8, name)
+    }
+    /// An enum value table's lookup by name (list at `0x01a8_53cc`).
+    Phyre_PTypeEnum_find_00a2ebf0 @ 0x00a2_ebf0 => extern "C" fn enum_find_a2ebf0(name: u32) -> u32 {
+        let m = mem();
+        descriptor::bridge::enum_find(&m, 0x01a8_53cc, 4, 8, name)
+    }
+    /// An enum value table's lookup by name (list at `0x01a8_5578`).
+    Phyre_PTypeEnum_find_00a32560 @ 0x00a3_2560 => extern "C" fn enum_find_a32560(name: u32) -> u32 {
+        let m = mem();
+        descriptor::bridge::enum_find(&m, 0x01a8_5578, 4, 8, name)
+    }
+    /// `PAnimationKeyDataType`'s lookup by name (name `+0`, next `+4`).
+    Phyre_PTypeEnum_find_00507a30 @ 0x0050_7a30 => extern "C" fn enum_find_507a30(name: u32) -> u32 {
+        let m = mem();
+        descriptor::bridge::enum_find(&m, 0x00ca_9734, 0, 4, name)
+    }
+    /// `0x004638f0(owner)`: an iterator over `owner`'s list, sought.
+    Phyre_PClusterHeader_iterBegin_004638f0 @ 0x0046_38f0 => extern "thiscall" fn iter_begin(this: u32, owner: u32) -> u32 {
+        cluster::bridge::iter_begin(&mut mem(), this, owner)
+    }
+    /// `PClassDescriptorConcrete<PClusterHeader>::constructInstance(p)`.
+    Phyre_PClassDescriptorConcrete_PClusterHeader_constructInstance @ 0x0046_9460 => extern "stdcall" fn construct_header(p: u32) -> u8 {
+        cluster::bridge::construct_header(&mut mem(), p)
+    }
+    /// `PApplication::FixupClusters(clusters, n)`.
+    PApplication_FixupClusters @ 0x0062_3580 => extern "C" fn fixup_clusters(clusters: u32, n: u32) -> u32 {
+        cluster::bridge::fixup_clusters(&mut mem(), clusters, n)
+    }
+    /// `0x0045cd00(&array, id)`.
+    Phyre_PArray_findById_0045cd00 @ 0x0045_cd00 => extern "C" fn find_by_id(array: u32, id: u32) -> u32 {
+        cluster::bridge::find_by_id(&mem(), array, id)
+    }
+    /// `0x0047e730(i, &a, &b)`.
+    Phyre_PSerialization_PBinary_PInternal_PNamespaceMapping_entry_0047e730 @ 0x0047_e730 => extern "thiscall" fn mapping_entry(this: u32, i: u32, a: u32, b: u32) -> u8 {
+        cluster::bridge::mapping_entry(&mut mem(), this, i, a, b)
+    }
+    /// `0x0047baa0(at, n)`: zeroes 0x20-byte entries.
+    Phyre_zeroEntries_0047baa0 @ 0x0047_baa0 => extern "C" fn zero_entries_a(at: u32, n: u32) {
+        cluster::bridge::zero_entries(&mut mem(), at, n);
+    }
+    /// `0x0047bb00(at, n)`: zeroes 0x20-byte entries.
+    Phyre_zeroEntries_0047bb00 @ 0x0047_bb00 => extern "C" fn zero_entries_b(at: u32, n: u32) {
+        cluster::bridge::zero_entries(&mut mem(), at, n);
+    }
+    /// `0x00577760(a, b, c, flag)`.
+    Phyre_PSerialization_recordInit_00577760 @ 0x0057_7760 => extern "thiscall" fn record_init(this: u32, a: u32, b: u32, c: u32, flag: u32) -> u32 {
+        cluster::bridge::record_init(&mut mem(), this, a, b, c, flag)
+    }
+    /// The type dispenser's lookup by name `(name)` (`0x004375c0`).
+    Phyre_PTypeDispenser_findByName_00437570 @ 0x0043_7570 => extern "thiscall" fn find_by_name_a(this: u32, name: u32) -> u32 {
+        let mut key = StackFrame::<2>::new();
+        descriptor::bridge::find_by_name(&mut mem(), 0x0043_75c0, key.at(), this, name)
+    }
+    /// The type dispenser's lookup by name `(name)` (`0x00438680`).
+    Phyre_PTypeDispenser_findByName_00438630 @ 0x0043_8630 => extern "thiscall" fn find_by_name_b(this: u32, name: u32) -> u32 {
+        let mut key = StackFrame::<2>::new();
+        descriptor::bridge::find_by_name(&mut mem(), 0x0043_8680, key.at(), this, name)
+    }
+    /// `PClassDescriptor::getDefaultInstance()`.
+    Phyre_PClassDescriptor_getDefaultInstance_0043cbb0 @ 0x0043_cbb0 => extern "thiscall" fn default_instance(this: u32) -> u32 {
+        descriptor::bridge::default_instance(&mut mem(), this)
+    }
+    /// The `PBitmapFont`-typed descriptor's constructInstance `(p)`.
+    Phyre_PClassDescriptorConcrete_constructWithDefault_00a2d570 @ 0x00a2_d570 => extern "stdcall" fn construct_with_default(p: u32) -> u8 {
+        descriptor::bridge::construct_with_default(&mut mem(), p)
+    }
+    /// A typed class's constructInstance `(p)`.
+    Phyre_PClassDescriptorConcrete_constructTyped_00444760 @ 0x0044_4760 => extern "stdcall" fn construct_typed(p: u32) -> u8 {
+        descriptor::bridge::construct_typed(&mut mem(), p)
+    }
+    /// `PNamespace::remove(desc)`.
+    Phyre_PNamespace_remove_0043ec40 @ 0x0043_ec40 => extern "thiscall" fn namespace_remove(this: u32, desc: u32) -> u32 {
+        descriptor::bridge::namespace_remove(&mut mem(), this, desc)
+    }
 }

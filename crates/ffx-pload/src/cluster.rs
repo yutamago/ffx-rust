@@ -314,4 +314,163 @@ pub mod bridge {
         h.write(this + 0x64, 1u32);
         0
     }
+
+    // ---- the class-member iterators (`PClusterHeader`'s instance walk) ----
+    //
+    // An iterator: five result words (`+0..+0x10`, filled by `0x00441dc0`),
+    // the list's end (`+0x14`), the current element (`+0x18`, linked
+    // through its first word) and the class it looks for (`+0x1c`).
+
+    /// One step: the next element, or 0 at the end.
+    fn iter_step(m: &mut impl Mem, it: u32) {
+        let cur: u32 = m.read(it + 0x18);
+        if cur != 0 {
+            let next: u32 = m.read(cur);
+            let end: u32 = m.read(it + 0x14);
+            m.write(it + 0x18, if next == end { 0 } else { next });
+        }
+    }
+
+    /// The end of a walk: the element's data through `0x00441dc0`
+    /// (thiscall, its `eax`), or the results cleared and 0.
+    fn iter_finish(h: &mut impl Host, it: u32) -> u32 {
+        let cur: u32 = h.read(it + 0x18);
+        if cur != 0 {
+            return h.call_sym(0x0044_1dc0, Conv::Thiscall(it), &[cur]);
+        }
+        h.write(it, [0u32; 5]);
+        0
+    }
+
+    /// The iterators' seek (twelve copies, `0x00464b40`..`0x00465010`,
+    /// thiscall): steps until the current element lists the class
+    /// (`PClassDataMember_listsClass`), then [`iter_finish`].
+    pub fn iter_seek(h: &mut impl Host, it: u32) -> u32 {
+        while crate::descriptor::bridge::member_lists_class(h, it) == 0 {
+            iter_step(h, it);
+        }
+        iter_finish(h, it)
+    }
+
+    /// The iterators' next (five copies, `0x00465080`..`0x004653e0`,
+    /// thiscall): one step at least, then as [`iter_seek`].
+    pub fn iter_next(h: &mut impl Host, it: u32) -> u32 {
+        loop {
+            iter_step(h, it);
+            if crate::descriptor::bridge::member_lists_class(h, it) != 0 {
+                break;
+            }
+        }
+        iter_finish(h, it)
+    }
+
+    /// `0x004638f0` (thiscall `(owner)`): an iterator over `owner`'s list
+    /// at `+0x1c` for the class at `0x00cb1120`, sought to its first
+    /// element ([`iter_seek`]); returns the iterator.
+    pub fn iter_begin(h: &mut impl Host, it: u32, owner: u32) -> u32 {
+        h.write(it, [0u32; 5]);
+        let end = owner + 0x1c;
+        h.write(it + 0x14, end);
+        let first: u32 = h.read(end);
+        h.write(it + 0x18, if first == end { 0 } else { first });
+        let class = h.rebase(0x00cb_1120);
+        h.write(it + 0x1c, class);
+        iter_seek(h, it);
+        it
+    }
+
+    /// The `PClusterHeader` descriptor's constructInstance (`0x00469460`,
+    /// stdcall `(p)`): [`header_ctor`] when `p` is not 0; `al` = 1.
+    pub fn construct_header(h: &mut impl Host, p: u32) -> u8 {
+        if p != 0 {
+            header_ctor(h, p);
+        }
+        1
+    }
+
+    /// `PApplication::FixupClusters(clusters, n)` (`0x00623580`, cdecl):
+    /// `resolveAssetReferences` (`0x00441f20`) on every cluster, then
+    /// `fixupInstances` (`0x00441620`), both thiscall; the first error, or
+    /// 0. Null entries are skipped.
+    pub fn fixup_clusters(h: &mut impl Host, clusters: u32, n: u32) -> u32 {
+        let end = clusters.wrapping_add(n.wrapping_mul(4));
+        for f in [0x0044_1f20, 0x0044_1620] {
+            let mut p = clusters;
+            while p < end {
+                let c: u32 = h.read(p);
+                if c != 0 {
+                    let r = h.call_sym(f, Conv::Thiscall(c), &[]);
+                    if r != 0 {
+                        return r;
+                    }
+                }
+                p += 4;
+            }
+        }
+        0
+    }
+
+    /// `0x0045cd00` (cdecl `(&array, id)`): the element of a `PArray` of
+    /// pointers (count `+0` with bit 31 masked, data inline at `+4` for
+    /// one, else `+4` points at it) whose `+0x2c` is `id`, or 0.
+    pub fn find_by_id(m: &impl Mem, array: u32, id: u32) -> u32 {
+        let a: u32 = m.read(array);
+        if a == 0 {
+            return 0;
+        }
+        let n: u32 = m.read(a);
+        let n = n & 0x7fff_ffff;
+        for i in 0..n {
+            let data = if n > 1 { m.read(a + 4) } else { a + 4 };
+            let e: u32 = m.read(data.wrapping_add(4 * i));
+            if e != 0 {
+                let v: u32 = m.read(e + 0x2c);
+                if v == id {
+                    return e;
+                }
+            }
+        }
+        0
+    }
+
+    /// `0x0047e730` (thiscall `(i, &a, &b)` on a mapping): element `i` of
+    /// the first table (`+8`, 12-byte entries, count `+4` with bit 31
+    /// masked) into `*a`, or of the second one (`+0x10`, 32-byte entries,
+    /// from 1 past the first's count) into `*b`; whether `*a` or `*b` is
+    /// set (`al`).
+    pub fn mapping_entry(m: &mut impl Mem, map: u32, i: u32, a: u32, b: u32) -> u8 {
+        let n: u32 = m.read(map + 4);
+        let n = n & 0x7fff_ffff;
+        if i < n {
+            let t: u32 = m.read(map + 8);
+            m.write(a, t.wrapping_add(i.wrapping_mul(12)));
+        } else {
+            let t: u32 = m.read(map + 0x10);
+            m.write(b, (i.wrapping_sub(n).wrapping_sub(1) << 5).wrapping_add(t));
+        }
+        let vb: u32 = m.read(b);
+        let va: u32 = m.read(a);
+        u8::from(vb != 0 || va != 0)
+    }
+
+    /// Zeroes `n` 0x20-byte entries at `at` (`0x0047baa0`, `0x0047bb00`,
+    /// cdecl; an entry at address 0 is skipped).
+    pub fn zero_entries(m: &mut impl Mem, at: u32, n: u32) {
+        let mut e = at;
+        for _ in 0..n {
+            if e != 0 {
+                m.write(e, [0u32; 8]);
+            }
+            e = e.wrapping_add(0x20);
+        }
+    }
+
+    /// `0x00577760` (thiscall `(a, b, c, flag)`): stores the three words
+    /// and the flag's low byte, zeroes `+0x10..+0x24`; returns `this`.
+    pub fn record_init(m: &mut impl Mem, this: u32, a: u32, b: u32, c: u32, flag: u32) -> u32 {
+        m.write(this, [a, b, c]);
+        m.write(this + 0xc, flag as u8);
+        m.write(this + 0x10, [0u32; 6]);
+        this
+    }
 }
