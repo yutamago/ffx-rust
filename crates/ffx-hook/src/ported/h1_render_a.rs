@@ -6,7 +6,7 @@
 //! No shim keeps state.
 
 use super::{mem, ported};
-use ffx_prender::{basic, class_slots as descriptor, h1_bind, registry, texture};
+use ffx_prender::{basic, class_slots as descriptor, h1_bind, h1_small, registry, texture};
 
 ported! {
     /// `destroyInstance(descriptor, p)`: the destructor.
@@ -1913,5 +1913,39 @@ ported! {
     /// `Phyre_PRendering_PSamplerStateBase_Bind()`: registers its class descriptor and members.
     Phyre_PRendering_PSamplerStateBase_Bind @ 0x004b_ed60 => extern "C" fn h1_004bed60() -> u32 {
         h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004b_ed60) })
+    }
+    // round 2: small methods (h1_small)
+    /// `0x004525a0(out, v)` -> `out`: `v` normalised. The original's `f32`
+    /// temporaries live in `v`'s argument slot: its last value (the inverse
+    /// length) is written there too.
+    Vector3_normalize_004525a0 @ 0x0045_25a0 => extern "C" fn h1_004525a0(out: u32, v: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, slot) = h1_small::bridge::normalize(&mut m, out, v);
+        ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4), slot);
+        r
+    }
+    /// `PWorldCursor::nextList(cursor)` -> `cursor`.
+    PWorldCursor_nextList_00443ef0 @ 0x0044_3ef0 => extern "fastcall" fn h1_00443ef0(cursor: u32) -> u32 {
+        h1_small::bridge::next_list(&mut mem(), cursor)
+    }
+    /// `PContextSwitchLights::PContextSwitchLights(this)` -> `this`.
+    Phyre_PRendering_PContextSwitchLights_PContextSwitchLights @ 0x004d_2fa0 => extern "thiscall" fn h1_004d2fa0(this: u32) -> u32 {
+        h1_small::bridge::context_switch_lights(&mut mem(), this)
+    }
+    /// `0x00434e40(this, data, count)` -> the count word.
+    PArray40_setBuffer_00434e40 @ 0x0043_4e40 => extern "thiscall" fn h1_00434e40(this: u32, data: u32, count: u32) -> u32 {
+        h1_small::bridge::set_buffer40(&mut mem(), this, data, count)
+    }
+    /// `destroyInstance(descriptor, p)`: frees the switch's two blocks; true.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PMaterialSwitch__destroyInstance @ 0x004d_86e0 => extern "thiscall" fn h1_004d86e0(_descriptor: u32, p: u32) -> u8 {
+        h1_small::bridge::free_two(&mut mem(), p)
+    }
+    /// `0x004d66c0(p)` -> 0: the entries' counts marked "not owned".
+    PParameterBuffer_markUnowned_004d66c0 @ 0x004d_66c0 => extern "C" fn h1_004d66c0(p: u32) -> u32 {
+        h1_small::bridge::mark_unowned(&mut mem(), p)
+    }
+    /// `PTexture2DBase::setDimensions(this, width, height, format, mips)` -> 0 or 3.
+    Phyre_PRendering_PTexture2DBase_setDimensions @ 0x004c_40c0 => extern "thiscall" fn h1_004c40c0(this: u32, width: u32, height: u32, format: u32, mips: u32) -> u32 {
+        h1_small::bridge::set_dimensions(&mut mem(), this, width, height, format, mips)
     }
 }
