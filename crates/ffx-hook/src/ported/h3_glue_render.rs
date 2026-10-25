@@ -14,6 +14,7 @@ use ffx_prender::glue5::bridge as g5;
 use ffx_prender::glue6::bridge as g6;
 use ffx_prender::glue7::bridge as g7;
 use ffx_prender::glue8::bridge as g8;
+use ffx_prender::glue9::bridge as g9;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -998,5 +999,84 @@ ported! {
     graphicCharacterInstanceSetClothVertexBuffers @ 0x0063_b740 => extern "C" fn character_set_cloth_vertex_buffers() {
         let mut f = StackFrame::<2>::new();
         g8::character_set_cloth_vertex_buffers(&mut mem(), f.at() + 8);
+    }
+
+    // ---- round 3 batch 9 (ffx_prender::glue9) ----
+    /// `PhyreScene_deletePMeshInstanceInCluster(this, mesh, cluster)`.
+    PhyreScene_deletePMeshInstanceInCluster @ 0x0065_a4c0 => extern "thiscall" fn scene_delete_pmesh_instance(this: u32, mesh: u32, cluster: u32) {
+        g9::scene_delete_pmesh_instance(&mut mem(), this, mesh, cluster);
+    }
+    /// `PhyreScene_doDeleteMeshInstances(this)`.
+    PhyreScene_doDeleteMeshInstances @ 0x0065_a620 => extern "thiscall" fn scene_do_delete_mesh_instances(this: u32) {
+        g9::scene_do_delete_mesh_instances(&mut mem(), this);
+    }
+    /// `PhyreScene_doOnAllFieldMapAssetsLoaded(this, a, b, list, reader)`.
+    PhyreScene_doOnAllFieldMapAssetsLoaded @ 0x0065_a6c0 => extern "thiscall" fn scene_do_on_all_field_map_assets_loaded(this: u32, a: u32, _b: u32, list: u32, reader: u32) -> u32 {
+        g9::scene_do_on_all_field_map_assets_loaded(&mut mem(), this, a, list, reader)
+    }
+    /// `ClassVFXRenderDataTable_GetVFXDynamicGeometryFromPool(this, &segment, &geometry)`.
+    ClassVFXRenderDataTable_GetVFXDynamicGeometryFromPool @ 0x0069_f750 => extern "thiscall" fn vfx_geometry_from_pool(this: u32, out: u32, geometry: u32) -> u32 {
+        g9::vfx_geometry_from_pool(&mut mem(), this, out, geometry)
+    }
+    /// `ParallelArray_erase_006b2ca0(this, value)`.
+    ParallelArray_erase_006b2ca0 @ 0x006b_2ca0 => extern "thiscall" fn parallel_erase(this: u32, value: u32) -> u32 {
+        g9::parallel_erase(&mut mem(), this, value)
+    }
+    /// `BrokenScreenEffect_setVertex_006d49f0(this, i, p0, .., p7)`.
+    BrokenScreenEffect_setVertex_006d49f0 @ 0x006d_49f0 => extern "thiscall" fn broken_set_vertex(this: u32, i: u32, p0: u32, p1: u32, p2: u32, p3: u32, p4: u32, p5: u32, p6: u32, p7: u32) {
+        g9::broken_set_vertex(&mut mem(), this, i, [p0, p1, p2, p3, p4, p5, p6, p7]);
+    }
+    /// `PRedBlackTree_insertArray_0065fca0(this, &key, &array)`.
+    PRedBlackTree_insertArray_0065fca0 @ 0x0065_fca0 => extern "thiscall" fn tree_insert_array(this: u32, key: u32, array: u32) -> u32 {
+        g9::tree_insert_array(&mut mem(), this, key, array)
+    }
+    /// `PhyreScene_newPoolArray_00659860(this, cluster)`.
+    PhyreScene_newPoolArray_00659860 @ 0x0065_9860 => extern "thiscall" fn scene_new_pool_array(this: u32, cluster: u32) -> u32 {
+        g9::scene_new_pool_array(&mut mem(), this, cluster)
+    }
+    /// `PhyreScene_newPoolObject56_00659910(this, cluster)`.
+    PhyreScene_newPoolObject56_00659910 @ 0x0065_9910 => extern "thiscall" fn scene_new_pool_object56(this: u32, cluster: u32) -> u32 {
+        g9::scene_new_pool_object56(&mut mem(), this, cluster)
+    }
+    /// `Distortion_ctor_006c2010(this)`.
+    Distortion_ctor_006c2010 @ 0x006c_2010 => extern "thiscall" fn distortion_ctor(this: u32) -> u32 {
+        g9::distortion_ctor(&mut mem(), this)
+    }
+    /// `PhyreScene_renderCaptureTexture(this)`.
+    PhyreScene_renderCaptureTexture @ 0x0066_b130 => extern "thiscall" fn scene_render_capture_texture(this: u32) -> u32 {
+        g9::scene_render_capture_texture(&mut mem(), this)
+    }
+    /// `graphicCheckChrClusterRelationship()`.
+    graphicCheckChrClusterRelationship @ 0x0063_d9c0 => extern "C" fn check_chr_cluster_relationship() -> u32 {
+        g9::check_chr_cluster_relationship(&mut mem())
+    }
+    /// `PhyreScene_loadMapVFXTexture(this)`.
+    PhyreScene_loadMapVFXTexture @ 0x0066_4f60 => extern "thiscall" fn scene_load_map_vfx_texture(this: u32) -> u32 {
+        let mut f = StackFrame::<0x81>::new();
+        g9::scene_load_map_vfx_texture(&mut mem(), f.at() + 0x204, this)
+    }
+    /// `PhyreScene_setVFXTextureLayout_00656ae0(id, kind, name)`: `sscanf`
+    /// writes the caller's argument slots, as in the original.
+    PhyreScene_setVFXTextureLayout_00656ae0 @ 0x0065_6ae0 => extern "stdcall" fn scene_set_vfx_texture_layout(id: u32, kind: u32, name: u32; slots: u32) {
+        let mut f = StackFrame::<4>::new();
+        g9::scene_set_vfx_texture_layout(&mut mem(), slots, f.at(), id, kind, name);
+    }
+    /// `PhyreScene_findNamedTexture_00660420(this, name)`.
+    PhyreScene_findNamedTexture_00660420 @ 0x0066_0420 => extern "thiscall" fn scene_find_named(this: u32, name: u32) -> u32 {
+        g9::scene_find_named(&mut mem(), this, name)
+    }
+    /// `PhyreScene_setResolutionScale_00652910(this)`.
+    PhyreScene_setResolutionScale_00652910 @ 0x0065_2910 => extern "thiscall" fn scene_set_resolution_scale(this: u32) -> u32 {
+        g9::scene_set_resolution_scale(&mut mem(), this)
+    }
+    /// `BrokenScreenEffect_renderPass_006d55b0(this, i, a, b)`.
+    BrokenScreenEffect_renderPass_006d55b0 @ 0x006d_55b0 => extern "thiscall" fn broken_render_pass(this: u32, i: u32, a: u32, b: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        g9::broken_render_pass(&mut mem(), f.at() + 0x10, this, i, a, b)
+    }
+    /// `graphicUpdateShadowMap(out, a1, .., a11)`: 16 bytes through `out`.
+    graphicUpdateShadowMap @ 0x0064_4a00 => extern "C" fn update_shadow_map(out: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32, a10: u32, a11: u32) -> u32 {
+        let mut f = StackFrame::<5>::new();
+        g9::update_shadow_map(&mut mem(), f.at() + 0x14, out, [a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11])
     }
 }
