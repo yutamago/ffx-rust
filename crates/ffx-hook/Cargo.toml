@@ -21,6 +21,7 @@ ffx-glue-other.workspace = true
 ffx-pload.workspace = true
 ffx-prender.workspace = true
 ffx-panim.workspace = true
+ffx-pother-a.workspace = true
 ffx-kernel.workspace = true
 ffx-menu.workspace = true
 ffx-monster.workspace = true
