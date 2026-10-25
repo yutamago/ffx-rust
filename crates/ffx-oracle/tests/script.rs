@@ -16453,7 +16453,7 @@ fn small4b_chr_reg_callback_matches_the_original() {
     small4b_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
 
-/// Small round 4 d on one pair: `Native_805d` (its callees stood in),
+/// Small round 4 d on one pair: `Native_805d_MapPartAnimeResetAll` (its callees stood in),
 /// `Atel_EffectCallback_00861f90` (the
 /// effect read and state logged, the poll from a sequence, `dbgPrintf`
 /// logged) and `AtelFlushAlbhedDic` (`TkMsImportantSet` logged).
@@ -16473,7 +16473,7 @@ fn small4d_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str)
             (0x0088_e790, 1, false),
         ],
     );
-    // Native_805d: the reset logged, the part count from a sequence
+    // Native_805d_MapPartAnimeResetAll: the reset logged, the part count from a sequence
     // (asked again after each part), the frame set logged
     let parts = r27_stubs(
         a,
@@ -16501,7 +16501,7 @@ fn small4d_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str)
             0x0091_c4a0,
             &[0, 0, 0],
             true,
-            &format!("Native_805d {what} {round}"),
+            &format!("Native_805d_MapPartAnimeResetAll {what} {round}"),
             |r| ffx_script::vm::bridge::native_map::native_805d(r, 0, 0, 0),
         );
     }

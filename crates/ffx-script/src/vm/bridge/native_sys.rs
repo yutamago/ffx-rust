@@ -451,13 +451,13 @@ macro_rules! mixed_calls {
 }
 
 int_forwards! {
-    /// `Native_8012` (`0x0091b240`, `0x8012`): `(v)` -> `0x0091a440(v)`.
+    /// `Native_8012_MapPartGet0C` (`0x0091b240`, `0x8012`): `(v)` -> `0x0091a440(v)`.
     native_8012 => 0x0091_a440;
-    /// `Native_8013` (`0x0091b260`, `0x8013`): `(v)` -> `0x0091a490(v)`.
+    /// `Native_8013_MapPartGet10` (`0x0091b260`, `0x8013`): `(v)` -> `0x0091a490(v)`.
     native_8013 => 0x0091_a490;
-    /// `Native_8017` (`0x0091b320`, `0x8017`): `(v)` -> `0x0091a580(v)`.
+    /// `Native_8017_MapPartGet24` (`0x0091b320`, `0x8017`): `(v)` -> `0x0091a580(v)`.
     native_8017 => 0x0091_a580;
-    /// `Native_8018` (`0x0091b340`, `0x8018`): `(v)` -> `0x0091a5d0(v)`.
+    /// `Native_8018_MapPartGet28` (`0x0091b340`, `0x8018`): `(v)` -> `0x0091a5d0(v)`.
     native_8018 => 0x0091_a5d0;
     /// `Native_801a_MapPartGetWidth` (`0x0091b3a0`, `0x801a`): `(v)` -> `0x0091a620(v)`.
     native_801a => 0x0091_a620;
@@ -472,7 +472,7 @@ int_forwards! {
 }
 
 float_forwards! {
-    /// `Native_8015` (`0x0091b2c0`, `0x8015`, float): `(v)` ->
+    /// `Native_8015_MapPartGet14` (`0x0091b2c0`, `0x8015`, float): `(v)` ->
     /// `0x0091a670(v)`'s float.
     native_8015 => 0x0091_a670;
     /// `Native_8050_MapPartScaleX` (`0x0091c1a0`, `0x8050`, float): `(v)` ->
@@ -492,9 +492,9 @@ float_forwards! {
 mixed_calls! {
     /// `Native_805a_FpResetStick` (`0x0091c3f0`, `0x805a`): `(v)`: `0x0072a120(v)`; 1.
     native_805a => [false], 0x0072_a120;
-    /// `Native_8061` (`0x0091c580`, `0x8061`): `(v)`: `0x00908580(v)`; 1.
+    /// `Native_8061_RenderSetParam` (`0x0091c580`, `0x8061`): `(v)`: `0x00908580(v)`; 1.
     native_8061 => [false], 0x0090_8580;
-    /// `Native_8016` (`0x0091b2e0`, `0x8016`): `(a, b, c)`:
+    /// `Native_8016_MapPartSet24` (`0x0091b2e0`, `0x8016`): `(a, b, c)`:
     /// `0x0091ac40(a, b, c)`; 1.
     native_8016 => [false, false, false], 0x0091_ac40;
     /// `Native_8019_MapPartSetSize` (`0x0091b360`, `0x8019`): `(a, b, c)`:
@@ -505,7 +505,7 @@ mixed_calls! {
     native_8023 => [true, true], 0x0091_ad40;
     /// `Native_8028_BgSetScrBank` (`0x0091b5d0`, `0x8028`): `(v f)`: `0x0091ad10(v)`; 1.
     native_8028 => [true], 0x0091_ad10;
-    /// `Native_802a` (`0x0091b610`, `0x802a`): `(a, b f, c, d f)`:
+    /// `Native_802a_SceneSetDC` (`0x0091b610`, `0x802a`): `(a, b f, c, d f)`:
     /// `0x0091aa00(a, b, c, d)`; 1.
     native_802a => [true, false, true, false], 0x0091_aa00;
     /// `Native_8052_MapPartSetPos` (`0x0091c1e0`, `0x8052`): `(a, b f, c f)`:

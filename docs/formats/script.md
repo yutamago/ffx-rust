@@ -2217,50 +2217,50 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x70fb` | `Native_70fb_SearchScriptTarget` | p5, p4, p3, p2, p1 | int: 0x007a8f60(actor, p5, -16, p3, 0, p2) when 0x007a8b40(actor, p5, p4) and 0x007a8ad0(p5, p1) both hold, else (or for 0xff) 0xff | - | int `0x007a37e0` (native_mods) |
 | `0x70fc` | `Native_70fc_BtlGetRandFixed` | - | int: the u16 at 0x01136410 | - | int `0x007a3440` (native_mods) |
 | `0x70fd` | `Native_70fd_ActorSetSlotPair` | b int, a int | int: the actor index; unless the u16 0x01136410 is set, the actor's +0x714 = 1, +0x726/+0x727 = a, +0x728/+0x729 = b | - | int `0x007a3a10` (native_btl2) |
-| `0x70fe` | `Native_70fe` | e int, d int, b int, a int | 0; the actor's +0x714 = 1, +0x726 = a, +0x728 = b, +0x727 = d, +0x729 = e | - | int `0x007a3b80` (native_btl2) |
+| `0x70fe` | `Native_70fe_ActorSetSlotQuad` | e int, d int, b int, a int | 0; the actor's +0x714 = 1, +0x726 = a, +0x728 = b, +0x727 = d, +0x729 = e | - | int `0x007a3b80` (native_btl2) |
 | `0x70ff` | `Native_70ff_BtlGetTargets` | - | int: the actor's +0xdc0, also stored in the word 0x0112c8d0 | - | int `0x007a3d00` (native_btl2) |
-| `0x7100` | `Native_7100` | sel | int: 0x007a8be0(MsGetChrBit(actor, sel, 0, 1)) (0x00794330) | - | int `0x007a7d20` (native_mods) |
-| `0x7101` | `Native_7101` | - | int: the i8 at 0x0112a905 | - | int `0x007a7f60` (native_mods) |
-| `0x7102` | `Native_7102` | a int, b int (selectors) | int: actor a's index (0xff for none), stored in actor b's +0x438 (+0x439 = 1) | - | int `0x007a35d0` (native_btl2) |
+| `0x7100` | `Native_7100_AnyChrMotion` | sel | int: 0x007a8be0(MsGetChrBit(actor, sel, 0, 1)) (0x00794330) | - | int `0x007a7d20` (native_mods) |
+| `0x7101` | `Native_7101_BtlGetDebugFull` | - | int: the i8 at 0x0112a905 | - | int `0x007a7f60` (native_mods) |
+| `0x7102` | `Native_7102_ActorSetField438` | a int, b int (selectors) | int: actor a's index (0xff for none), stored in actor b's +0x438 (+0x439 = 1) | - | int `0x007a35d0` (native_btl2) |
 | `0x7103` | `Native_7103_ChrSetNeckTarget` | selector int, x f, y f, z f | 0: the selected actor's model (0x00795080) gets mode 3 and the vector at +0x4c0 (0x008350a0) | - | int `0x007a3880` (native_btl2) |
 | `0x7104` | `Native_7104_ComBufAdd` | a int, b int, c int | int: 0x0079d2a0(a, b, c) | - | int `0x007a6600` (native_btl) |
-| `0x7105` | `Native_7105_Poll` | - | 5 when done | until the actor's +0xe17 is set | poll `0x007a6730` (native_btl2) |
+| `0x7105` | `Native_7105_WaitActorFieldE17_Poll` | - | 5 when done | until the actor's +0xe17 is set | poll `0x007a6730` (native_btl2) |
 | `0x7106` | `CT_7106_ret_doesChrKnowCommand` | selector int, command int | int: MsGetSaveCommand(picked, command) (0x00785020) | - | int `0x007a30a0` (native_btl) |
-| `0x7107` | `Native_7107` | n int | int: ftol((MsDirTurn(chr, yaw +0x514[+0x511]) - +0x490) / pi * n) (0x007a9650; f32 steps) | - | int `0x007a6800` (native_btl) |
+| `0x7107` | `Native_7107_ChrDirTurnSteps` | n int | int: ftol((MsDirTurn(chr, yaw +0x514[+0x511]) - +0x490) / pi * n) (0x007a9650; f32 steps) | - | int `0x007a6800` (native_btl) |
 | `0x7108` | `Native_7108_ChrSetDirTarget` | a int, b int | 0 | - | int `0x007a40a0` (native_btl) |
-| `0x7109` | `Native_7109` | selector int, reset int, f f | int: the number of picked actors; each with a model: +0x407 = 1, with reset 0x00796070(i, 0), +0x505 = 1, +0x50c = 0; +0x43d = 0, +0x538 = f | - | int `0x007a3df0` (native_btl) |
-| `0x710a` | `Native_710a` | - | int: the i8 at 0x0112ca10, which becomes 1 | - | int `0x007a3970` (native_mods) |
-| `0x710b` | `Native_710b_Poll` | - | 5 when done | until the byte 0x0112ca10 is set | poll `0x007a3a80` (native_btl2) |
-| `0x710c` | `Native_710c` | - | int: the signed byte 0x0112ca0d, first counted down by 1 while above 0 (only with an actor) | - | int `0x007a2c10` (native_btl2) |
-| `0x710d` | `Native_710d` | - | 0; the actor's +0x411 = 0 | - | int `0x007a3c20` (native_btl2) |
-| `0x710e` | `Native_710e` | - | int: the first set byte +0 of the four 0x007b19d0(k) records, 0 for none | - | int `0x007a3c00` (native_mods) |
-| `0x710f` | `Native_710f` | - | int: that record's byte +1, 0 for none | - | int `0x007a3c90` (native_mods) |
-| `0x7110` | `Native_7110` | selector int (5 is 0 while the word 0x011363bc is set) | int: the selected actor's index; its model's +0x4d4 = 1 (0x00834770) | - | int `0x007a3d30` (native_btl2) |
-| `0x7111` | `Native_7111` | selector int (5 is 0 while the word 0x011363bc is set) | int: the selected actor's index; its model's +0x4d4 = 0 | - | int `0x007a3ff0` (native_btl2) |
+| `0x7109` | `Native_7109_SelSetGravMode` | selector int, reset int, f f | int: the number of picked actors; each with a model: +0x407 = 1, with reset 0x00796070(i, 0), +0x505 = 1, +0x50c = 0; +0x43d = 0, +0x538 = f | - | int `0x007a3df0` (native_btl) |
+| `0x710a` | `Native_710a_BtlSetByteCa10` | - | int: the i8 at 0x0112ca10, which becomes 1 | - | int `0x007a3970` (native_mods) |
+| `0x710b` | `Native_710b_WaitByteCa10_Poll` | - | 5 when done | until the byte 0x0112ca10 is set | poll `0x007a3a80` (native_btl2) |
+| `0x710c` | `Native_710c_BtlCountCommandHold` | - | int: the signed byte 0x0112ca0d, first counted down by 1 while above 0 (only with an actor) | - | int `0x007a2c10` (native_btl2) |
+| `0x710d` | `Native_710d_ActorClearField411` | - | 0; the actor's +0x411 = 0 | - | int `0x007a3c20` (native_btl2) |
+| `0x710e` | `Native_710e_ReelFirstSetByte` | - | int: the first set byte +0 of the four 0x007b19d0(k) records, 0 for none | - | int `0x007a3c00` (native_mods) |
+| `0x710f` | `Native_710f_ReelGetByte1` | - | int: that record's byte +1, 0 for none | - | int `0x007a3c90` (native_mods) |
+| `0x7110` | `Native_7110_ChrSetMouthAutoTalk` | selector int (5 is 0 while the word 0x011363bc is set) | int: the selected actor's index; its model's +0x4d4 = 1 (0x00834770) | - | int `0x007a3d30` (native_btl2) |
+| `0x7111` | `Native_7111_ChrClearMouthAutoTalk` | selector int (5 is 0 while the word 0x011363bc is set) | int: the selected actor's index; its model's +0x4d4 = 0 | - | int `0x007a3ff0` (native_btl2) |
 | `0x7112` | `Native_7112_ChrSetDirTarget` | c int, _ f (dropped), b int, a int | 0; 0x00795eb0(actor, c, 1, -1, b, a) | - | int `0x007a43d0` (native_btl2) |
-| `0x7113` | `Native_7113` | - | int: the byte 0x0112c9e5 = 1; 0 | - | int `0x007a8090` (native_mods) |
-| `0x7114` | `Native_7114` | - | int: the byte 0x0112c9e5 = 2; 0 | - | int `0x007a80a0` (native_mods) |
+| `0x7113` | `Native_7113_BtlSetStealRule` | - | int: the byte 0x0112c9e5 = 1; 0 | - | int `0x007a8090` (native_mods) |
+| `0x7114` | `Native_7114_BtlSetStealRule` | - | int: the byte 0x0112c9e5 = 2; 0 | - | int `0x007a80a0` (native_mods) |
 | `0x7115` | `Native_7115_ChrSetDirLeave` | - | 0: MsSetChrDirLeave(actor) (0x00795e70) | - | int `0x007a4560` (native_btl) |
 | `0x7116` | `Native_7116_EffectSetGuard` | - | int: MsEffectSetGuard(actor) (0x0079e510) | - | int `0x007a6930` (native_mods) |
 | `0x7117` | `Native_7117_BtlQueueCommand` | targets int, command int | 1: Battle_QueueCommand(actor, command, MsGetChrBit(actor, targets, 0, 1, 1, 0x40)) after MsMotionPosCheck when +0x3f9 is set; 0 without an actor | - | int `0x007a4b00` (native_btl) |
-| `0x7118` | `Native_7118` | v int | int: v; the byte 0x0112ca11 = v | - | int `0x007a81d0` (native_btl) |
-| `0x7119` | `Native_7119` | v int | int: v; the byte 0x0112ca12 = v | - | int `0x007a8430` (native_btl2) |
+| `0x7118` | `Native_7118_BtlSetNoSummonReturn` | v int | int: v; the byte 0x0112ca11 = v | - | int `0x007a81d0` (native_btl) |
+| `0x7119` | `Native_7119_BtlSetCounterOn` | v int | int: v; the byte 0x0112ca12 = v | - | int `0x007a8430` (native_btl2) |
 | `0x711a` | `Native_711a_ChrSetWind` | selector int, a f, b f, c f | 0; the selected actor's model (0x00795080) gets 0x00824c90(model, c, b, a) | - | int `0x007a4160` (native_btl2) |
-| `0x711b` | `Native_711b` | v int | int: v & 1, stored in the byte 0x0112ca13 | - | int `0x007a3dd0` (native_btl2) |
-| `0x711c` | `Native_711c` | v int | int: v; the u16 0x0112c94e = v | - | int `0x007a8530` (native_btl) |
+| `0x711b` | `Native_711b_BtlSetByteCa13` | v int | int: v & 1, stored in the byte 0x0112ca13 | - | int `0x007a3dd0` (native_btl2) |
+| `0x711c` | `Native_711c_BtlSetEndEffect` | v int | int: v; the u16 0x0112c94e = v | - | int `0x007a8530` (native_btl) |
 | `0x711d` | `Native_711d_ChrSetShadowHeight` | height f | 0: Ch_ShadowSetHeight(MsGetChrHandle(actor), height) for a model (0x00795080, 0x00830cb0) | - | int `0x007a4330` (native_btl) |
-| `0x711e` | `Native_711e` | - | int: the i8 at 0x0112ca15 | - | int `0x007a3f40` (native_mods) |
+| `0x711e` | `Native_711e_BtlGetCommand3029Count` | - | int: the i8 at 0x0112ca15 | - | int `0x007a3f40` (native_mods) |
 | `0x711f` | `Native_711f_BtlMsgDrawAmes` | - | int: as 0x7042 from the table at *0x0112a998, only when MsGetBattleMessageFlag() (0x00784e40) is set and the word at 0x01841d20 is not 0; 0 | - | int `0x007a6200` (native_mods) |
 | `0x7120` | `Native_7120_BtlMsgShow` | b, a | int: 0x0079d090(a), b dropped; 0 | - | int `0x007a65a0` (native_mods) |
 | `0x7121` | `Native_7121_BtlMsgDrawAlbhed` | win, k | int: as 0x70b7 from *0x0112a998 with 0x711f's checks; 0 | - | int `0x007a6790` (native_mods) |
-| `0x7122` | `Native_7122` | selector int | int: the selected actor's index; its model's +0x4d4 = 1 | - | int `0x007a3ef0` (native_btl2) |
+| `0x7122` | `Native_7122_ChrSetField4d4` | selector int | int: the selected actor's index; its model's +0x4d4 = 1 | - | int `0x007a3ef0` (native_btl2) |
 | `0x7123` | `Native_7123_ChrAttachWeapon` | weapon int | int: MsAttachWeapon(5, weapon)'s result | - | int `0x007a2980` (native_btl2) |
 | `0x7124` | `Native_7124_SetVoiceId` | id | int: 0x0112c250 = id; MsSetVoiceId(id) (0x007b2b50) when MsGetBattleMessageFlag(); id | - | int `0x007a7ee0` (native_mods) |
 | `0x7125` | `Native_7125_ChrAttachWeapon` | - | 0; MsAttachWeapon(4, 0) when the worker's actor is 4 | - | int `0x007a8650` (native_btl2) |
-| `0x7126` | `Native_7126` | i int | int: i (0xff for a negative i); actor i's +0x3e = 1 and its two parts' (0x00795b10(i, k)) +0x3e = 1 | - | int `0x007a8550` (native_btl2) |
+| `0x7126` | `Native_7126_ActorSetField3eWeapons` | i int | int: i (0xff for a negative i); actor i's +0x3e = 1 and its two parts' (0x00795b10(i, k)) +0x3e = 1 | - | int `0x007a8550` (native_btl2) |
 | `0x7127` | `Native_7127_MonsterSetVisible` | b, a | int: 0x007969a0(b, a) | - | int `0x007a5240` (native_mods) |
 | `0x8000` | `Native_FieldSetMaskBit` | group int, on int: map draw group (TkSetMapGroupDrawStatus) | int: group | - | int `0x0091c530` (native) |
-| `0x8001` | `Native_8001` | on int: rendering on/off (yiRenderEnable bit 0x10, 0x00643df0) | int: on | - | int `0x0091c5b0` (native_map) |
+| `0x8001` | `Native_8001_RenderSetFlag10` | on int: rendering on/off (yiRenderEnable bit 0x10, 0x00643df0) | int: on | - | int `0x0091c5b0` (native_map) |
 | `0x8002` | `Native_FpRun` | fp int: field program, restart int (0 ends it) | int: restart | - | int `0x0091c670` (native) |
 | `0x8003` | `Native_FpRunMode2` | fp int | 1 | - | int `0x0091c7a0` (native) |
 | `0x8004` | `Native_MapSpriteWait` | sprite int: map sprite object | 5 when done | until the object is done | start `0x0091af60`, poll `0x0091afa0` (native_map) |
@@ -2277,41 +2277,41 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x800f` | `Native_MapPartShow` | part int: map part | 1 | - | int `0x0091b1a0` (native_map) |
 | `0x8010` | `Native_MapPartHide` | part int | 1 | - | int `0x0091b1e0` (native_map) |
 | `0x8011` | `Native_8011_MapPartSetOffset` | a int, b int, c int | 1 | - | int `0x0091b200` (native_map) |
-| `0x8012` | `Native_8012` | v int | int: 0x0091a440(v) | - | int `0x0091b240` (native_sys) |
-| `0x8013` | `Native_8013` | v int | int: 0x0091a490(v) | - | int `0x0091b260` (native_sys) |
-| `0x8014` | `Native_8014` | part int, v f: map part +0x14 (Yn_MapPartSet14) | 1 | - | int `0x0091b280` (native_map) |
-| `0x8015` | `Native_8015` | v int | float: 0x0091a670(v) | - | float `0x0091b2c0` (native_sys) |
-| `0x8016` | `Native_8016` | a int, b int, c int | 1; 0x0091ac40(a, b, c) | - | int `0x0091b2e0` (native_sys) |
-| `0x8017` | `Native_8017` | v int | int: 0x0091a580(v) | - | int `0x0091b320` (native_sys) |
-| `0x8018` | `Native_8018` | v int | int: 0x0091a5d0(v) | - | int `0x0091b340` (native_sys) |
+| `0x8012` | `Native_8012_MapPartGet0C` | v int | int: 0x0091a440(v) | - | int `0x0091b240` (native_sys) |
+| `0x8013` | `Native_8013_MapPartGet10` | v int | int: 0x0091a490(v) | - | int `0x0091b260` (native_sys) |
+| `0x8014` | `Native_8014_MapPartSet14` | part int, v f: map part +0x14 (Yn_MapPartSet14) | 1 | - | int `0x0091b280` (native_map) |
+| `0x8015` | `Native_8015_MapPartGet14` | v int | float: 0x0091a670(v) | - | float `0x0091b2c0` (native_sys) |
+| `0x8016` | `Native_8016_MapPartSet24` | a int, b int, c int | 1; 0x0091ac40(a, b, c) | - | int `0x0091b2e0` (native_sys) |
+| `0x8017` | `Native_8017_MapPartGet24` | v int | int: 0x0091a580(v) | - | int `0x0091b320` (native_sys) |
+| `0x8018` | `Native_8018_MapPartGet28` | v int | int: 0x0091a5d0(v) | - | int `0x0091b340` (native_sys) |
 | `0x8019` | `Native_8019_MapPartSetSize` | a int, b int, c int | 1; 0x0091ac80(a, b, c) | - | int `0x0091b360` (native_sys) |
 | `0x801a` | `Native_801a_MapPartGetWidth` | v int | int: 0x0091a620(v) | - | int `0x0091b3a0` (native_sys) |
 | `0x801b` | `Native_801b_MapPartGetHeight` | v int | int: 0x0091a3f0(v) | - | int `0x0091b3c0` (native_sys) |
 | `0x801c` | `Native_801c_MapPartAnimCount` | v int | int: 0x0091a2a0(v) | - | int `0x0091b3e0` (native_sys) |
 | `0x801d` | `Native_801d_MapPartSetFrame` | part int, frame int: map part animation frame | 1 | - | int `0x0091b400` (native_map) |
-| `0x801e` | `Native_801e` | part int: animation flag 0 on | 1 | - | int `0x0091b430` (native_map) |
-| `0x801f` | `Native_801f` | part int: animation flag 0 off | 1 | - | int `0x0091b450` (native_map) |
+| `0x801e` | `Native_801e_MapPartAnimeFlag0On` | part int: animation flag 0 on | 1 | - | int `0x0091b430` (native_map) |
+| `0x801f` | `Native_801f_MapPartAnimeFlag0Off` | part int: animation flag 0 off | 1 | - | int `0x0091b450` (native_map) |
 | `0x8020` | `Native_8020_MapPartAnimOn` | part int: animation on | 1 | - | int `0x0091b470` (native_map) |
 | `0x8021` | `Native_8021_MapPartAnimOff` | part int: animation off | 1 | - | int `0x0091b490` (native_map) |
 | `0x8022` | `Native_8022_MapPartAnimMode` | part int, bits int: animation mode (bits 8-11) | 1 | - | int `0x0091b4b0` (native_map) |
 | `0x8023` | `Native_8023_BgSetScrOffset` | a f, b f | 1; 0x0091ad40(a, b) | - | int `0x0091b4e0` (native_sys) |
-| `0x8024` | `Native_8024` | - | float: jumps to Yn_SceneGetB8 (0x0091a700) | - | float `0x0091b530` (native_mods) |
-| `0x8025` | `Native_8025` | - | float: jumps to Yn_SceneGetBC (0x0091a730) | - | float `0x0091b540` (native_mods) |
-| `0x8026` | `Native_8026` | a int, b f, c int, d int, e int: scene +0xc0..+0xd0 (Yn_SceneSetC0) | 1 | - | int `0x0091b550` (native_map) |
-| `0x8027` | `Native_8027` | - | int: 0x0091a900(); 1 | - | int `0x0091b5c0` (native_mods) |
+| `0x8024` | `Native_8024_SceneGetB8` | - | float: jumps to Yn_SceneGetB8 (0x0091a700) | - | float `0x0091b530` (native_mods) |
+| `0x8025` | `Native_8025_SceneGetBC` | - | float: jumps to Yn_SceneGetBC (0x0091a730) | - | float `0x0091b540` (native_mods) |
+| `0x8026` | `Native_8026_SceneSetC0` | a int, b f, c int, d int, e int: scene +0xc0..+0xd0 (Yn_SceneSetC0) | 1 | - | int `0x0091b550` (native_map) |
+| `0x8027` | `Native_8027_SceneWaveC0Stop` | - | int: 0x0091a900(); 1 | - | int `0x0091b5c0` (native_mods) |
 | `0x8028` | `Native_8028_BgSetScrBank` | v f | 1; 0x0091ad10(v) | - | int `0x0091b5d0` (native_sys) |
-| `0x8029` | `Native_8029` | - | float: jumps to Yn_SceneGetAC (0x0091a6d0) | - | float `0x0091b600` (native_mods) |
-| `0x802a` | `Native_802a` | a int, b f, c int, d f | 1; 0x0091aa00(a, b, c, d) | - | int `0x0091b610` (native_sys) |
-| `0x802b` | `Native_802b` | - | int: 0x0091a8d0(); 1 | - | int `0x0091b670` (native_mods) |
-| `0x802c` | `Native_802c` | - | 1 | - | int `0x0091b680` (native_map) |
-| `0x802d` | `Native_802d` | - | 1 | - | int `0x0091b690` (native_map) |
+| `0x8029` | `Native_8029_SceneGetAC` | - | float: jumps to Yn_SceneGetAC (0x0091a6d0) | - | float `0x0091b600` (native_mods) |
+| `0x802a` | `Native_802a_SceneSetDC` | a int, b f, c int, d f | 1; 0x0091aa00(a, b, c, d) | - | int `0x0091b610` (native_sys) |
+| `0x802b` | `Native_802b_ResetChain193bf80` | - | int: 0x0091a8d0(); 1 | - | int `0x0091b670` (native_mods) |
+| `0x802c` | `Native_802c_SetChain193bf80Bit0` | - | 1 | - | int `0x0091b680` (native_map) |
+| `0x802d` | `Native_802d_ClearChain193bf80Bit0` | - | 1 | - | int `0x0091b690` (native_map) |
 | `0x802e` | `Native_802e_MapPartAnimRate` | part int, rate int: animation rate | 1 | - | int `0x0091b6a0` (native_map) |
 | `0x802f` | `Native_802f_MapPartLastFrame` | part int: animation to its last frame | 1 | - | int `0x0091b6d0` (native_map) |
 | `0x8030` | `Native_8030_MapPartSetAlpha` | a int, b int | 1 | - | int `0x0091b6f0` (native_map) |
 | `0x8031` | `Native_8031_MapPartGetAlpha` | v int | int: 0x0091a2e0(v) | - | int `0x0091b720` (native_sys) |
 | `0x8032` | `Native_8032_GuideMapSetLimit` | limit f: guide map limit | 1 | - | int `0x0091b740` (native_map) |
 | `0x8033` | `Native_8033_GuideMapGetLimit` | - | float: jumps to Yn_GuideMapGetLimit (0x00919ca0) | - | float `0x0091b770` (native_mods) |
-| `0x8034` | `Native_8034` | - | int: 0x00919b70(); 1 | - | int `0x0091b780` (native_mods) |
+| `0x8034` | `Native_8034_FpDispDebug` | - | int: 0x00919b70(); 1 | - | int `0x0091b780` (native_mods) |
 | `0x8035` | `Native_8035_FpRunGroup` | group int, on int: the group's field programs restarted (Fp_RestartGroup) or ended (Fp_EndGroup) | int: on | - | int `0x0091b790` (native_map) |
 | `0x8036` | `Native_8036_FpShowGroup` | id int, on int: 0x00729440 or 0x00729400 | int: on | - | int `0x0091b7d0` (native_map) |
 | `0x8037` | `Native_FogSetParams` | a f, b f, c f: fog parameters | 1 | - | int `0x0091b810` (native_map) |
@@ -2335,9 +2335,9 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x8049` | `Native_BackGetRed` | - | int: back red | - | int `0x0091c000` (native_map) |
 | `0x804a` | `Native_BackGetGreen` | - | int: back green | - | int `0x0091c030` (native_map) |
 | `0x804b` | `Native_BackGetBlue` | - | int: back blue | - | int `0x0091c060` (native_map) |
-| `0x804c` | `Native_804c` | part, v f | int: Yn_MapPartSet44_0091abc0(part, v, v); 1 | - | int `0x0091c090` (native_mods) |
-| `0x804d` | `Native_804d` | part, v f | int: Yn_MapPartSet44_0091abc0(part, v, 0.0); 1 | - | int `0x0091c0d0` (native_mods) |
-| `0x804e` | `Native_804e` | part, v f | int: Yn_MapPartSet44_0091abc0(part, 0.0, v); 1 | - | int `0x0091c110` (native_mods) |
+| `0x804c` | `Native_804c_MapPartSet44Both` | part, v f | int: Yn_MapPartSet44_0091abc0(part, v, v); 1 | - | int `0x0091c090` (native_mods) |
+| `0x804d` | `Native_804d_MapPartSet44First` | part, v f | int: Yn_MapPartSet44_0091abc0(part, v, 0.0); 1 | - | int `0x0091c0d0` (native_mods) |
+| `0x804e` | `Native_804e_MapPartSet44Second` | part, v f | int: Yn_MapPartSet44_0091abc0(part, 0.0, v); 1 | - | int `0x0091c110` (native_mods) |
 | `0x804f` | `Native_804f_MapPartScaleTo` | part int, s f, frames int: map part scaled to (s, s) over frames | 1 | - | int `0x0091c150` (native_map) |
 | `0x8050` | `Native_8050_MapPartScaleX` | v int | float: 0x0091a530(v) | - | float `0x0091c1a0` (native_sys) |
 | `0x8051` | `Native_8051_MapPartScaleY` | v int | float: 0x0091a4e0(v) | - | float `0x0091c1c0` (native_sys) |
@@ -2351,12 +2351,12 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x8059` | `Native_8059_FpSetStickMap` | a int, b int: pppFpSetStickMap(b, a) | 1 | - | int `0x0091c3c0` (native_map) |
 | `0x805a` | `Native_805a_FpResetStick` | v int | 1; 0x0072a120(v) | - | int `0x0091c3f0` (native_sys) |
 | `0x805b` | `Native_FpSetStickPos` | n int, x f, y f, z f | 1 | - | int `0x0091c410` (native_map) |
-| `0x805c` | `Native_805c` | on int | 1 | - | int `0x0091c470` (native_map) |
-| `0x805d` | `Native_805d` | - | 1 | - | int `0x0091c4a0` (native_map) |
+| `0x805c` | `Native_805c_VideoAtEndSet` | on int | 1 | - | int `0x0091c470` (native_map) |
+| `0x805d` | `Native_805d_MapPartAnimeResetAll` | - | 1 | - | int `0x0091c4a0` (native_map) |
 | `0x805e` | `Native_805e_GuideSetMapNo` | map int: guide map number (Yn_GuideMapSetMapNo) | 1 | - | int `0x0091c4d0` (native_map) |
 | `0x805f` | `Native_805f_FpFree` | x int | 1 | - | int `0x0091c4f0` (native_map) |
 | `0x8060` | `Native_8060_FpGroupForceOff` | x int | 1 | - | int `0x0091c510` (native_map) |
-| `0x8061` | `Native_8061` | v int | 1; 0x00908580(v) | - | int `0x0091c580` (native_sys) |
+| `0x8061` | `Native_8061_RenderSetParam` | v int | 1; 0x00908580(v) | - | int `0x0091c580` (native_sys) |
 | `0x8062` | `Native_8062` | - | int: 0x00908440(); 1 | - | int `0x0091c5a0` (native_mods) |
 | `0x8063` | `Native_8063` | a f, b f, c f, d f | 1; 0x0090a200(a, b, c, d) | - | int `0x0091c600` (native_sys) |
 | `0x8064` | `Native_8064` | six floats | 1; 0x0090a230(the six floats) | - | int `0x0091c6b0` (native_sys) |

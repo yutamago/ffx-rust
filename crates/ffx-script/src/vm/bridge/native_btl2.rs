@@ -104,7 +104,7 @@ pub fn native_70c4<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     r
 }
 
-/// `Native_710c` (`0x007a2c10`, `0x710c`): with an actor, the signed byte
+/// `Native_710c_BtlCountCommandHold` (`0x007a2c10`, `0x710c`): with an actor, the signed byte
 /// `0x0112ca0d` counts down to 0; -> its value (sign-extended).
 pub fn native_710c<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -331,7 +331,7 @@ pub fn native_70f7<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_7102` (`0x007a35d0`, `0x7102`): `(b, a)` (selectors): actor
+/// `Native_7102_ActorSetField438` (`0x007a35d0`, `0x7102`): `(b, a)` (selectors): actor
 /// `b`'s `+0x439` = 1 and `+0x438` = actor `a` (0xff for none); -> that
 /// index (0xff for none).
 pub fn native_7102<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -393,7 +393,7 @@ pub fn native_70fd<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     id
 }
 
-/// `Native_710b_Poll` (`0x007a3a80`, `0x710b`, poll): 5 once the byte
+/// `Native_710b_WaitByteCa10_Poll` (`0x007a3a80`, `0x710b`, poll): 5 once the byte
 /// `0x0112ca10` is set, else 0.
 pub fn native_710b_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     if h.read::<u8>(h.rebase(0x0112_ca10)) == 0 {
@@ -411,7 +411,7 @@ pub fn native_7004<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_70fe` (`0x007a3b80`, `0x70fe`): `(e, d, b, a)`: the actor's
+/// `Native_70fe_ActorSetSlotQuad` (`0x007a3b80`, `0x70fe`): `(e, d, b, a)`: the actor's
 /// `+0x714` = 1 (`u16`) and the bytes `+0x726` = a, `+0x728` = b, `+0x727`
 /// = d, `+0x729` = e; 0. No actor check.
 pub fn native_70fe<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -429,7 +429,7 @@ pub fn native_70fe<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_710d` (`0x007a3c20`, `0x710d`): the actor's `+0x411` = 0; 0.
+/// `Native_710d_ActorClearField411` (`0x007a3c20`, `0x710d`): the actor's `+0x411` = 0; 0.
 pub fn native_710d<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
     if id != 0xff {
@@ -466,14 +466,14 @@ fn model_4d4<H: NativeHost>(h: &mut H, w: u32, s: u32, remap: bool, v: u32) -> u
     i
 }
 
-/// `Native_7110` (`0x007a3d30`, `0x7110`): `(selector)`: the selected
+/// `Native_7110_ChrSetMouthAutoTalk` (`0x007a3d30`, `0x7110`): `(selector)`: the selected
 /// actor's model `+0x4d4` = 1 (selector 5 is 0 while the word
 /// `0x011363bc` is set); -> the index.
 pub fn native_7110<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     model_4d4(h, w, s, true, 1)
 }
 
-/// `Native_711b` (`0x007a3dd0`, `0x711b`): `(v)`: the byte `0x0112ca13` =
+/// `Native_711b_BtlSetByteCa13` (`0x007a3dd0`, `0x711b`): `(v)`: the byte `0x0112ca13` =
 /// v & 1; -> v & 1.
 pub fn native_711b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s) & 1;
@@ -481,13 +481,13 @@ pub fn native_711b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_7122` (`0x007a3ef0`, `0x7122`): `(selector)`: the selected
+/// `Native_7122_ChrSetField4d4` (`0x007a3ef0`, `0x7122`): `(selector)`: the selected
 /// actor's model `+0x4d4` = 1; -> the index.
 pub fn native_7122<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     model_4d4(h, w, s, false, 1)
 }
 
-/// `Native_7111` (`0x007a3ff0`, `0x7111`): as `0x7110` with `+0x4d4` = 0.
+/// `Native_7111_ChrClearMouthAutoTalk` (`0x007a3ff0`, `0x7111`): as `0x7110` with `+0x4d4` = 0.
 pub fn native_7111<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     model_4d4(h, w, s, true, 0)
 }
@@ -735,7 +735,7 @@ pub fn native_7064_result<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) ->
     0
 }
 
-/// `Native_7105_Poll` (`0x007a6730`, `0x7105`, poll): 5 once the actor's
+/// `Native_7105_WaitActorFieldE17_Poll` (`0x007a6730`, `0x7105`, poll): 5 once the actor's
 /// `+0xe17` is set, else 0. No actor check.
 pub fn native_7105_poll<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -1090,7 +1090,7 @@ pub fn native_70d6<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0078_9bf0, &[ci, cj, r, x, y, 0, z, 0, 0, 0, 0])
 }
 
-/// `Native_7119` (`0x007a8430`, `0x7119`): `(v)`: the byte `0x0112ca12` =
+/// `Native_7119_BtlSetCounterOn` (`0x007a8430`, `0x7119`): `(v)`: the byte `0x0112ca12` =
 /// v; v.
 pub fn native_7119<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -1098,7 +1098,7 @@ pub fn native_7119<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_7126` (`0x007a8550`, `0x7126`): `(i)`: actor i's `+0x3e` = 1
+/// `Native_7126_ActorSetField3eWeapons` (`0x007a8550`, `0x7126`): `(i)`: actor i's `+0x3e` = 1
 /// and the same for both of its parts (`0x00795b10(i, k)`); -> i, or 0xff
 /// for a negative i.
 pub fn native_7126<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {

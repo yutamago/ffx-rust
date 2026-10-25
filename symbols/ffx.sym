@@ -5636,7 +5636,7 @@
 0x00795e70 function MsSetChrDirLeave             # layout: alphabetical run between MsSetChrDirF and MsSetChrDirTarget (1 unnamed in the gap); Switch 0x710034a650 MsSetChrDirLeave is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (i): an actor (MsBtlChrNumCheck) with +0x42e set gets +0x42b = 0xc; ported (ffx_battle::minor, battle round 29)
 0x00795eb0 function MsSetChrDirTarget         # fh v3:exact 0x00795ec0
 0x00795ff0 function MsSetChrFloat53c_00795ff0 # ours: (i, flag, f) -> actor: f32 +0x53c = f (fld/fstp), +0x510 = flag & 1, -1; else 0; no direct caller; ported (ffx_battle::minor, battle round 29)
-0x00796070 function MsSetChrGravMode_00796070 # ours: (i, mode) -> actor: old (i8) +0x34, +0x34 = (u8)mode, Ch_SetGravMode(chr, (i8)mode); non-actor 1; callers Native_7009_ChrSetGravMode, Native_7109; ported (ffx_battle::minor, battle round 29)
+0x00796070 function MsSetChrGravMode_00796070 # ours: (i, mode) -> actor: old (i8) +0x34, +0x34 = (u8)mode, Ch_SetGravMode(chr, (i8)mode); non-actor 1; callers Native_7009_ChrSetGravMode, Native_7109_SelSetGravMode; ported (ffx_battle::minor, battle round 29)
 0x007960d0 function MsSetChrMotionLevel       # fh v3:cg2 0x7960e0
 0x00796110 function MsSetChrMoveFlag          # fh v3:cg4 0x796120
 0x00796150 function MsSetChrPos               # fh v3:exact 0x00796160
@@ -5937,7 +5937,7 @@
 0x007a2b10 function Native_7039_ChrDeathTerminate                # 0x7039: 0x0078cca0(actor, record), 0x007a8f20(); 0; ported in native_btl/native_move (script round 9); name from "0x0078cca0(actor, record), 0x007a8f20()" MsDeathTerminate, resetZanmatoSepList
 0x007a2b50 function Native_70e4_GetDamageLimit # 0x70e4: (b, a) -> MsGetDamageLimit(first of b, first of a) (0x0079a860, each through Battle_FirstSelectedActor); ported in native_mods (script round 21); name ours; name from "MsGetDamageLimit(first of b, first of a) (0x0079a860)"
 0x007a2ba0 function Native_70c4_ActorHasWeaponFlag # 0x70c4: args (selector int) -> 1 when a weapon slot of the selected actor holds a weapon with +3 bit 3; ported in native_btl2 (script round 18); name from 1 when a weapon slot of the selected actor holds a weapon with +3 bit 3 (MsGetSaveWeapon)
-0x007a2c10 function Native_710c # 0x710c: () -> the signed byte 0x0112ca0d after counting it down (with an actor); ported in native_btl2 (script round 18); name ours
+0x007a2c10 function Native_710c_BtlCountCommandHold # 0x710c: () -> the signed byte 0x0112ca0d after counting it down (with an actor); ported in native_btl2 (script round 18); name from the signed byte 0x0112ca0d (g_BtlCommandHold) after counting it down
 0x007a2c50 function Native_01b2_copy_007a2c50    # 0x70ec: args (v int) -> 0x007904b0(v); the same code as Native_01b2_GetItemCount (0x00859360; call targets equal), a copy the compiler kept, and the Rust handler is Native_01b2_GetItemCount's; ported in native_btl2 (script round 18); own name
 0x007a2c70 function Native_7080_ChrSetAltParts # 0x7080: (v): 0x008720e0(handle, v) with MsGetChrHandle(2) (0x00795080) when there is one; 0; ported in native_mods (script round 21); name ours; name from "0x008720e0(handle, v)" Atel_SetChrAltParts_008720e0
 0x007a2ca0 function Native_70ed_SaveItemUse                # 0x70ed: args (b int, a int) -> int: MsSaveItemUse(b, a) (0x00790550); ported in native_btl (script round 12); name from "MsSaveItemUse(b, a) (0x00790550)"
@@ -5973,7 +5973,7 @@
 0x007a3560 function Native_70f7_BtlListAppend # 0x70f7: args (v int) -> v; appended to the u16 list 0x011363f0 (count 0x011363ec, 16 at most); ported in native_btl2 (script round 18); name ours; name from "appended to the u16 list 0x011363f0 (count 0x011363ec, 16 at most)"
 0x007a35a0 function Native_ActorPlayMotion       # 0x7007: args (motion; bit 0x8000 = no blend) -> length in frames << 8 / speed; plays a motion on the script's battle actor (0x007a8fc0, 0x00837d00)
 0x007a35c0 function Native_7002_BtlLabelExe_Poll             # native 0x7002 poll handler (g_NativeTables group 7 entry 0x2, ffx-script native_counts); 493 calls in the shipped scripts; name by id; (script r28) returns 1; ported in native_btl2; name from start "0x00781c90(a, 1, b)" MsBattleLabelExe; poll returns 1
-0x007a35d0 function Native_7102 # 0x7102: args (a int, b int) -> index of a (0xff none); actor b's +0x438 = it, +0x439 = 1; ported in native_btl2 (script round 18); name ours
+0x007a35d0 function Native_7102_ActorSetField438 # 0x7102: args (a int, b int) -> index of a (0xff none); actor b's +0x438 = it, +0x439 = 1; ported in native_btl2 (script round 18); name from actor b's +0x438 = index of a (0xff none), +0x439 = 1
 0x007a3650 function Native_70c3_ChrGetTargetDir                # 0x70c3 (float): args (selector int) -> float: MsGetChrTargetDir(picked, 0) (0x007958c0) in degrees, as 0x70be; ported in native_btl (script round 12); name from "MsGetChrTargetDir(picked, 0) (0x007958c0) in degrees"
 0x007a36c0 function Native_706f_ActorPlayMotion                # 0x706f: 0x007a8fc0(worker, args, stack, 1); ported in native_btl/native_msg (script round 8); name from "0x007a8fc0(worker, args, stack, 1)" Battle_ScriptPlayMotion (core of 0x7007)
 0x007a36e0 function Native_70f8_BtlListNext # 0x70f8: the next u16 of the list at 0x011363f0 (read index 0x011363ed, count 0x011363ec, the index advanced), 0 past the end; ported in native_mods (script round 21); name ours; name from "the next u16 of the list at 0x011363f0 (read index advanced), 0 past the end"
@@ -5985,33 +5985,33 @@
 0x007a3900 function Native_708b_EncGetGroupWeight                # 0x708b: args (v int) -> int: 0x00782940(v); ported in native_btl (script round 12); name from "0x00782940(v)" MsFldGetSceneHigh: byte>>4, the weight nibble Enc_SetGroupWeight writes
 0x007a3920 function Native_708c_EncSetGroupWeight                # 0x708c: (a, b): 0x00782ba0(a, b); ported in native_btl/native_move (script round 9); name from "0x00782ba0(a, b)" Enc_SetGroupWeight_00782ba0
 0x007a3950 function Native_70c6_GetEffectCameraWord # 0x70c6: (v) -> 0x007b7ed0(v); ported in native_mods (script round 21); name ours; name from "0x007b7ed0(v)" MsEffectGetCameraBuf_007b7ed0 (g_BtlEffectCameraWords)
-0x007a3970 function Native_710a # 0x710a: the i8 at 0x0112ca10, which becomes 1; ported in native_mods (script round 21); name ours
+0x007a3970 function Native_710a_BtlSetByteCa10 # 0x710a: the i8 at 0x0112ca10, which becomes 1; ported in native_mods (script round 21); name from the i8 at 0x0112ca10 becomes 1; 0
 0x007a3980 function Native_ActorWaitMotion       # 0x7008 (poll): waits until the self actor's motion ends (0x007a8c50/0x008392c0); returns 5 when done or no actor; used right after 0x7007
 0x007a39d0 function Native_BtlSetFlagBded # 0x7001: (v): the byte 0x0112bded = v & 1; 0; ported in native_mods (script round 21); 0x7001: args (flag) -> 0; byte 0x0112bded = flag & 1 (cleared at battle load 0x00781020); ?meaning; every battle script's worker 1 entry 0 calls it with 0
 0x007a39f0 function Native_70c7_GetEffectCameraFloat # 0x70c7: (v) -> 0x007b7ef0(v)'s ST0; ported in native_mods (script round 21); name ours; name from "0x007b7ef0(v)'s ST0" MsEffectGetCameraBufFloat_007b7ef0
 0x007a3a10 function Native_70fd_ActorSetSlotPair # 0x70fd: args (b int, a int) -> actor index; unless u16 0x01136410: actor +0x714 = 1, +0x726/+0x727 = a, +0x728/+0x729 = b; ported in native_btl2 (script round 18); name from actor index; unless g_BtlRandFixed: actor +0x714 = 1, +0x726/+0x727 = a, +0x728/+0x729 = b
-0x007a3a80 function Native_710b_Poll # 0x710b: () -> 5 once the byte 0x0112ca10 is set, else 0; ported in native_btl2 (script round 18); name ours
+0x007a3a80 function Native_710b_WaitByteCa10_Poll # 0x710b: () -> 5 once the byte 0x0112ca10 is set, else 0; ported in native_btl2 (script round 18); name from poll: 5 once the byte 0x0112ca10 is set
 0x007a3aa0 function Native_7004_BtlSetCenterScale # 0x7004: args (v f) -> 0; the f32 0x0112bde4 = v; ported in native_btl2 (script round 18); name from g_BtlCenterScale (0x0112bde4) = v (f32); 0
 0x007a3ac0 function Atel_GetBattleCountF # 0x70f0: the i32 at 0x0112c900 as f32 (helpers::atel_get_battle_count_f, whose shim it is); ported in native_mods (script round 21)
 0x007a3ae0 function Native_709d_WaitActorField425                # 0x709d (poll): no args -> 5 when there is no actor or its +0x425 is clear, else 0; ported in native_btl (script round 12); name from poll: 5 when there is no actor or its +0x425 is clear, else 0
 0x007a3b20 function Native_7009_ChrSetGravMode                # 0x7009: (b): 0x00796070(actor, b & 1 == 0); 0; ported in native_btl/native_move (script round 9); name from "0x00796070(actor, b & 1 == 0)" MsSetChrGravMode_00796070
-0x007a3b80 function Native_70fe # 0x70fe: args (e, d, b, a) -> 0; actor +0x714 = 1, +0x726 = a, +0x728 = b, +0x727 = d, +0x729 = e; ported in native_btl2 (script round 18); name ours
-0x007a3c00 function Native_710e # 0x710e: the first set byte +0 of the four 0x007b19d0(k) records, 0 for none; ported in native_mods (script round 21); name ours
-0x007a3c20 function Native_710d # 0x710d: () -> 0; the actor's +0x411 = 0; ported in native_btl2 (script round 18); name ours
+0x007a3b80 function Native_70fe_ActorSetSlotQuad # 0x70fe: args (e, d, b, a) -> 0; actor +0x714 = 1, +0x726 = a, +0x728 = b, +0x727 = d, +0x729 = e; ported in native_btl2 (script round 18); name from actor +0x714 = 1, +0x726 = a, +0x728 = b, +0x727 = d, +0x729 = e; 0
+0x007a3c00 function Native_710e_ReelFirstSetByte # 0x710e: the first set byte +0 of the four 0x007b19d0(k) records, 0 for none; ported in native_mods (script round 21); name from the first set byte +0 of the four 0x007b19d0 (MsGetReelEntry) records, 0 for none
+0x007a3c20 function Native_710d_ActorClearField411 # 0x710d: () -> 0; the actor's +0x411 = 0; ported in native_btl2 (script round 18); name from actor +0x411 = 0; 0
 0x007a3c50 function Native_702b_ChrGetWaitMotion                # 0x702b: -1 when the actor model is busy (0x008392c0), else 0; ported in native_btl/native_msg (script round 8); name from "-1 when the actor model is busy (0x008392c0)" Ch_GetWaitMotion
-0x007a3c90 function Native_710f # 0x710f: that record's byte +1, 0 for none; ported in native_mods (script round 21); name ours
+0x007a3c90 function Native_710f_ReelGetByte1 # 0x710f: that record's byte +1, 0 for none; ported in native_mods (script round 21); name from byte +1 of that record, 0 for none
 0x007a3cc0 function Native_7033_ActorSetField32                # 0x7033: (b): actor +0x32 = b & 1; 0; ported in native_btl/native_move (script round 9); name from actor +0x32 = b & 1; 0
 0x007a3d00 function Native_70ff_BtlGetTargets # 0x70ff: () -> the actor's +0xdc0, copied to the word 0x0112c8d0; ported in native_btl2 (script round 18); name ours; name from "the actor's +0xdc0, copied to the word 0x0112c8d0"; +0xdc0 target mask
-0x007a3d30 function Native_7110 # 0x7110: args (selector int) -> index; the selected actor's model +0x4d4 = 1 (selector 5 -> 0 while 0x011363bc); ported in native_btl2 (script round 18); name ours
+0x007a3d30 function Native_7110_ChrSetMouthAutoTalk # 0x7110: args (selector int) -> index; the selected actor's model +0x4d4 = 1 (selector 5 -> 0 while 0x011363bc); ported in native_btl2 (script round 18); name from 0x00834770 = Ch_MouthSetAutoTalk: the selected actor's model +0x4d4 = 1
 0x007a3d90 function Native_7003_ChrSetDirTarget                # 0x7003: (a, b) -> 0x00795eb0(actor, 2, 0, -1, b, a); 0; ported in native_btl/native_msg (script round 8); name from "0x00795eb0(actor, 2, 0, -1, b, a)" MsSetChrDirTarget
-0x007a3dd0 function Native_711b # 0x711b: args (v int) -> v & 1; the byte 0x0112ca13 = it; ported in native_btl2 (script round 18); name ours
-0x007a3df0 function Native_7109                # 0x7109: args (selector int, reset int, f f) -> int: the number of picked actors; each with a model: +0x407 = 1, with reset 0x00796070(i, 0), +0x505 = 1, +0x50c = 0; +0x43d = 0, +0x538 = f; ported in native_btl (script round 12)
+0x007a3dd0 function Native_711b_BtlSetByteCa13 # 0x711b: args (v int) -> v & 1; the byte 0x0112ca13 = it; ported in native_btl2 (script round 18); name from byte 0x0112ca13 = v & 1; v & 1
+0x007a3df0 function Native_7109_SelSetGravMode                # 0x7109: args (selector int, reset int, f f) -> int: the number of picked actors; each with a model: +0x407 = 1, with reset 0x00796070(i, 0), +0x505 = 1, +0x50c = 0; +0x43d = 0, +0x538 = f; ported in native_btl (script round 12); name from the number of picked actors; each with a model: +0x407 = 1, MsSetChrGravMode (0x00796070)
 0x007a3eb0 function Native_7055_ChrSetBodyHit                # 0x7055: (b): 0x00796f20(record, 0, b & 1); 0; ported in native_btl/native_move (script round 9); name from "0x00796f20(record, 0, b & 1)" msSetChrBodyHit
-0x007a3ef0 function Native_7122 # 0x7122: args (selector int) -> index; the selected actor's model +0x4d4 = 1; ported in native_btl2 (script round 18); name ours
-0x007a3f40 function Native_711e # 0x711e: the i8 at 0x0112ca15; ported in native_mods (script round 21); name ours
+0x007a3ef0 function Native_7122_ChrSetField4d4 # 0x7122: args (selector int) -> index; the selected actor's model +0x4d4 = 1; ported in native_btl2 (script round 18); name from the selected actor's model +0x4d4 = 1; index
+0x007a3f40 function Native_711e_BtlGetCommand3029Count # 0x711e: the i8 at 0x0112ca15; ported in native_mods (script round 21); name from the i8 at 0x0112ca15 (g_BtlCommand3029Count)
 0x007a3f50 function Native_7006_ChrSetDirTarget                # 0x7006: (a, b): with actor +0x41d set, 0x00795eb0(actor, 1, 0, -1, b, a); 0; ported in native_btl/native_msg (script round 8); name from "with actor +0x41d set, 0x00795eb0(actor, 1, ...)" MsSetChrDirTarget
 0x007a3fb0 function Native_7029_ActorSetField505                # 0x7029: (b): actor +0x505 = b & 1; 0; ported in native_btl/native_move (script round 9); name from actor +0x505 = b & 1; 0
-0x007a3ff0 function Native_7111 # 0x7111: args (selector int) -> index; the selected actor's model +0x4d4 = 0 (selector 5 -> 0 while 0x011363bc); ported in native_btl2 (script round 18); name ours
+0x007a3ff0 function Native_7111_ChrClearMouthAutoTalk # 0x7111: args (selector int) -> index; the selected actor's model +0x4d4 = 0 (selector 5 -> 0 while 0x011363bc); ported in native_btl2 (script round 18); name from the selected actor's model +0x4d4 = 0
 0x007a4050 function Native_7017_ChrSetEffect7                # 0x7017: (a, b): actor +0xe12 += 1 when 0x0079eb10(actor, a, 7, b, 1); 0; ported in native_btl/native_move (script round 9); name from "+0xe12 += 1 when 0x0079eb10(actor, a, 7, b, 1)" MsSetChrEffect_0079eb10 kind 7
 0x007a40a0 function Native_7108_ChrSetDirTarget                # 0x7108: (a, b): MsSetChrDirTarget(actor, 1, 1, -1, b, a) with +0x41d; 0; ported in native_btl/native_move (script round 9); name from "MsSetChrDirTarget(actor, 1, 1, -1, b, a) with +0x41d"
 0x007a4100 function Native_700a_ChrSetHeight                # 0x700a: (b, f): actor +0x538 = f, +0x50c = b, 0x007ab300(actor); 0; ported in native_btl/native_msg (script round 8); name from "+0x538 = f, +0x50c = b, 0x007ab300(actor)" MsSetChrHeight
@@ -6131,10 +6131,10 @@
 0x007a6640 function Native_70b7_MsgDrawEvjimakuAlbhed # 0x70b7: (win, k): TODrawAMES_EVJIMAKU_ALBHED(win, text k) (0x0089b290) from *0x0112a9b8; 0; ported in native_mods (script round 21); name ours; name from "TODrawAMES_EVJIMAKU_ALBHED(win, text k) (0x0089b290)"
 0x007a66a0 function Native_701b_CueAddCommand                # 0x701b: args (targets int, v int) -> 0: 0x007ac940(actor, v, MsGetChrBit(actor, targets, 0, 1)); ported in native_btl (script round 12); name from "0x007ac940(actor, v, MsGetChrBit(...))" MsCueAddCommand_007ac940
 0x007a6700 function Native_708f_ActorGetBasicDivide                # 0x708f: (v): 0x007a8720(actor, v, 1); ported in native_btl/native_move (script round 9); name from 0x007a8720 = MsGetBasicDivide (actor, v, 1)
-0x007a6730 function Native_7105_Poll # 0x7105: poll: 5 once the actor's +0xe17 is set (no actor check); ported in native_btl2 (script round 18); name ours
+0x007a6730 function Native_7105_WaitActorFieldE17_Poll # 0x7105: poll: 5 once the actor's +0xe17 is set (no actor check); ported in native_btl2 (script round 18); name from poll: 5 once the actor's +0xe17 is set (no actor check)
 0x007a6760 function Native_7065_BtlStreamStart_Poll # 0x7065: GetCD(); done (5) once 0x007a8c20() is set and msVoiceCheckStanby(0) (0x007b2c10) is 0; ported in native_mods (script round 21); name ours; name from "SndStartStream() (0x00887630)"; poll waits msVoiceCheckStanby
 0x007a6790 function Native_7121_BtlMsgDrawAlbhed # 0x7121: (win, k): as 0x70b7 from *0x0112a998 with 0x711f's checks; 0; ported in native_mods (script round 21); name ours; name from "as 0x70b7 from *0x0112a998 with 0x711f's checks" (TODrawAMES_EVJIMAKU_ALBHED)
-0x007a6800 function Native_7107                # 0x7107: args (n int) -> int: ftol((MsDirTurn(chr, yaw +0x514[+0x511]) - +0x490) / pi * n) (0x007a9650; f32 steps); ported in native_btl (script round 12)
+0x007a6800 function Native_7107_ChrDirTurnSteps                # 0x7107: args (n int) -> int: ftol((MsDirTurn(chr, yaw +0x514[+0x511]) - +0x490) / pi * n) (0x007a9650; f32 steps); ported in native_btl (script round 12); name from ftol((MsDirTurn (0x007a9650) (chr, yaw +0x514[+0x511]) - +0x490) / pi * n)
 0x007a6870 function Native_BtlCountActorsInBoth  # 0x701e: args (selector a, selector b) -> number of actors in both masks (Battle_SelectActors)
 0x007a6930 function Native_7116_EffectSetGuard # 0x7116: MsEffectSetGuard(actor) (0x0079e510); ported in native_mods (script round 21); name ours; name from "MsEffectSetGuard(actor) (0x0079e510)"
 0x007a6950 function Native_7065_BtlStreamStart # 0x7065: SndStartStream() (0x00887630); 0; ported in native_mods (script round 21); name ours; name from "SndStartStream() (0x00887630)"; poll waits msVoiceCheckStanby
@@ -6214,29 +6214,29 @@
 0x007a7cb0 function Native_70cc_BtlSetTargets                # 0x70cc: (selector): actor +0xdc0 = the set; ported in native_btl/native_move (script round 9); name from "actor +0xdc0 = the set"; +0xdc0 is the target mask (Native_BtlSelectTarget)
 0x007a7cf0 function Native_704c_ChrWaitMotionBit_Poll # (script r28) 0x704c poll: 5 once MsAnyChrMotion_007a8be0(argument word) is 0, else 0 (table 0x00c42aec); ported in native_btl2; name from start: argument word = MsGetChrBit(actor, selector, 0, 1); poll: 5 once MsAnyChrMotion (0x007a8be0) of it is 0
 0x007a7d10 function Native_70eb_BtlRandom # 0x70eb: brnd(0x11) (0x007988f0); ported in native_mods (script round 21); name ours; name from "brnd(0x11) (0x007988f0)" (battle RNG)
-0x007a7d20 function Native_7100 # 0x7100: (sel) -> 0x007a8be0(MsGetChrBit(actor, sel, 0, 1)) (0x00794330); ported in native_mods (script round 21); name ours
+0x007a7d20 function Native_7100_AnyChrMotion # 0x7100: (sel) -> 0x007a8be0(MsGetChrBit(actor, sel, 0, 1)) (0x00794330); ported in native_mods (script round 21); name from 0x007a8be0 = MsAnyChrMotion (MsGetChrBit(actor, sel, 0, 1))
 0x007a7d60 function Native_70cd_BtlAddTargets                # 0x70cd: (selector): actor +0xdc0 |= MsGetChrBit set; the set; ported in native_btl/native_move (script round 9); name from "actor +0xdc0 or= MsGetChrBit set"; +0xdc0 target mask
 0x007a7da0 function Native_70e3_BtlAllocMemory # 0x70e3: args (v int) -> 0; once: 0x0112be9c = v, 0x0083c4a0(0x40), 0x0112be98 = 0x00687020(v), 0x00799f00(it, v); ported in native_btl2 (script round 18); name ours; name from "once: 0x0112be9c = v, ... = user_malloc(v), MsMemCheckRegist(it, v)"
 0x007a7df0 function Native_70b3_SetVoiceWait # 0x70b3: args (v int) -> 0x007b2b60(v); ported in native_btl2 (script round 18); name ours; name from "0x007b2b60(v)" MsSetVoiceWait
 0x007a7e10 function Native_7052_ActorSetTargetActor              # 0x7052: (a, b, v): picked actor a targets picked actor b (+0x43f = b, +0x441 = v, 0x00796f20, 0x00796150); b's +0x440 counts up; 0; ported in native_btl/native_move (script round 10); name from picked actor a targets picked actor b (+0x43f = b, +0x441 = v); MsSetChrBodyHit, MsSetChrPos
 0x007a7ee0 function Native_7124_SetVoiceId # 0x7124: (id): 0x0112c250 = id; MsSetVoiceId(id) (0x007b2b50) when MsGetBattleMessageFlag(); id; ported in native_mods (script round 21); name ours; name from "MsSetVoiceId(id) (0x007b2b50) when MsGetBattleMessageFlag()"
 0x007a7f20 function Native_70ce_BtlRemoveTargets                # 0x70ce: (selector): actor +0xdc0 &= !the set; ported in native_btl/native_move (script round 9); name from "actor +0xdc0 &= !the set"; +0xdc0 target mask
-0x007a7f60 function Native_7101 # 0x7101: the i8 at 0x0112a905; ported in native_mods (script round 21); name ours
+0x007a7f60 function Native_7101_BtlGetDebugFull # 0x7101: the i8 at 0x0112a905; ported in native_mods (script round 21); name from i8 at 0x0112a905 (g_BtlDebugFull)
 0x007a7f70 function Native_70cf_BtlGetVoiceEvent # 0x70cf: the i8 at *0x0112a9c0 + 1; ported in native_mods (script round 21); name from i8 at *0x0112a9c0 + 1 (g_BtlVoiceEvent)
 0x007a7f80 function Native_70dd_BtlSetWordC8fc # 0x70dd: args (v int) -> v; the word 0x0112c8fc = v; ported in native_btl2 (script round 18); name from word 0x0112c8fc = v; v
 0x007a7fa0 function Native_70d5_SelSetField6d1                # 0x70d5: (selector): actor +0x6d1 = picked; picked; ported in native_btl/native_move (script round 9); name from selected actors' +0x6d1 = picked
 0x007a7fe0 function Native_7054_ChrSetPosOptpos                # 0x7054: args (to int, from int, point int) -> 0: the from actor's model point (Ch_OptposGet 0x008354f0) through 0x0079e1b0(0, &v) into MsSetChrPosReset(to, &v) (0x00796220); ported in native_btl (script round 12); name from "from actor's model point (Ch_OptposGet) ... into MsSetChrPosReset(to, &v)"
-0x007a8090 function Native_7113 # 0x7113: the byte 0x0112c9e5 = 1; 0; ported in native_mods (script round 21); name ours
-0x007a80a0 function Native_7114 # 0x7114: the byte 0x0112c9e5 = 2; 0; ported in native_mods (script round 21); name ours
+0x007a8090 function Native_7113_BtlSetStealRule # 0x7113: the byte 0x0112c9e5 = 1; 0; ported in native_mods (script round 21); name from g_BtlStealRule (0x0112c9e5) = 1; 0
+0x007a80a0 function Native_7114_BtlSetStealRule # 0x7114: the byte 0x0112c9e5 = 2; 0; ported in native_mods (script round 21); name from g_BtlStealRule (0x0112c9e5) = 2; 0
 0x007a80b0 function Native_70d6_CalcDamageCommand # 0x70d6: args (c, b, a) -> 0x00789bf0(chr i, chr j, r, ...) with r = 0x0078ce50(i, 0, -1, 0, &a), i/j selected by c/b; ported in native_btl2 (script round 18); name ours; name from "0x00789bf0(chr i, chr j, r, ...)" MsCalcDamageCommand with MsGetCommand
 0x007a8160 function Native_7058_ChrCheckMotion                # 0x7058: (selector, motion): 0 when the picked actor motion +0x3f0 is 0x007a8c80(it, motion), else -1; ported in native_btl/native_move (script round 9); name from "0 when the picked actor motion +0x3f0 is 0x007a8c80(it, motion), else -1" ms_motion_trans
-0x007a81d0 function Native_7118                # 0x7118: args (v int) -> int: v; the byte 0x0112ca11 = v; ported in native_btl (script round 12)
+0x007a81d0 function Native_7118_BtlSetNoSummonReturn                # 0x7118: args (v int) -> int: v; the byte 0x0112ca11 = v; ported in native_btl (script round 12); name from g_BtlNoSummonReturn (0x0112ca11) = v; v
 0x007a81f0 function Native_707d_BtlSetFlag              # 0x707d: (k, v): battle flag k = v & 1 (table of 26 globals around 0x0112a8f8); k 0/10/11/21/22 call the battle module; v; ported in native_btl/native_move (script round 10); name from "battle flag k = v & 1 (table of 26 globals around 0x0112a8f8)"
-0x007a8430 function Native_7119 # 0x7119: args (v int) -> v; the byte 0x0112ca12 = v; ported in native_btl2 (script round 18); name ours
+0x007a8430 function Native_7119_BtlSetCounterOn # 0x7119: args (v int) -> v; the byte 0x0112ca12 = v; ported in native_btl2 (script round 18); name from g_BtlCounterOn (0x0112ca12) = v; v
 0x007a8450 function Native_70e0_ActorPartnerReady                # 0x70e0: 1 when the actor can act and its partner (+0xded) has +0xdf1 clear; ported in native_btl/native_move (script round 9); name from 1 when the actor can act and its partner (+0xded) has +0xdf1 clear
 0x007a84c0 function Native_706b_ChrModelSetHide                # 0x706b: (selector, a, b): 0x0082aea0(picked model, a, b & 1); 0; ported in native_btl/native_move (script round 9); name from "0x0082aea0(picked model, a, b & 1)" Ch_ModelSetHide
-0x007a8530 function Native_711c                # 0x711c: args (v int) -> int: v; the u16 0x0112c94e = v; ported in native_btl (script round 12)
-0x007a8550 function Native_7126 # 0x7126: args (i int) -> i (0xff when negative); actor i and both parts (0x00795b10) +0x3e = 1; ported in native_btl2 (script round 18); name ours
+0x007a8530 function Native_711c_BtlSetEndEffect                # 0x711c: args (v int) -> int: v; the u16 0x0112c94e = v; ported in native_btl (script round 12); name from u16 g_BtlEndEffect (0x0112c94e) = v; v
+0x007a8550 function Native_7126_ActorSetField3eWeapons # 0x7126: args (i int) -> i (0xff when negative); actor i and both parts (0x00795b10) +0x3e = 1; ported in native_btl2 (script round 18); name from actor i and both weapon parts (0x00795b10 MsGetWeapon) +0x3e = 1; i (0xff when negative)
 0x007a85a0 function Native_70e1_ActorPartnerDf1Clear # 0x70e1: () -> 1 when MsGetChr((i8) actor +0xded) +0xdf1 is clear (the 0xff test on the sign-extended byte never matches); ported in native_btl2 (script round 18); name from 1 when MsGetChr(the actor's +0xded) +0xdf1 is clear
 0x007a85f0 function Native_7073_ChrAttachWeapon # 0x7073: args (weapon int) -> MsAttachWeapon(actor, weapon) (0x00793330); ported in native_btl2 (script round 18); name ours; name from "MsAttachWeapon(actor, weapon) (0x00793330)"
 0x007a8620 function Native_7000_ActorClearDf2                # 0x7000: actor +0xdf2 = 0; 0; ported in native_btl/native_msg (script round 8); name from actor +0xdf2 = 0; 0
@@ -6252,7 +6252,7 @@
 0x007a89c0 function MsSetChrVisibleBtl2Event  # fh switch:cg2 0x7100348680; (actor, mask, reset) -> u32: each actor i < 0x1f in mask: MsSetRamChr keeping +0x5c2/+0x5c3, MsRelife(i, a, 1), +0x43e 0, +0x65c/+0x65d = 3 MsGetRomCTBcount(+0x5ac), its character Ch_SetShadeCol(1, 1, 1, 0), Ch_SetTransparent(1, 0), Ch_SetHideEffect(0) (reset: op_chr_status_reset_exception_wrap_007fae90), MsStatusEffectCheck, MsSetMotion(i, 0x27, 0, 0, 1, actor, &same); 1 when a same came back set (one frame word, never cleared); ported (ffx_battle::exchange, battle round 34)
 0x007a8ad0 function MsRandCheck_007a8ad0 # ours: (id, n) -> n < 0: 1; id && u16 0x01136410: id == it; else r = brnd(0x12) & 0xff, dbgPrintf("debug:RAND %04x %d<%d\n", id, r, n), r < n; callers Native_70f3_RandCheck, Native_70fb_SearchScriptTarget; ported (ffx_battle::minor, battle round 29)
 0x007a8b40 function MsSetCommandScriptTarget_007a8b40 # ours: cdecl (i, id, flags): actor +0xdc0 = MsGetCommandTarget2(i, id, flags, 1); returns it unless MsCheckUseCommand(i, MsGetComData(id, 0), 0) < 0 (then 0); dbgPrintf of the bits; natives 0x70f4/0x70fb; ported (ffx_battle::minor, battle round 32)
-0x007a8be0 function MsAnyChrMotion_007a8be0 # ours: (bits) -> 1 when an actor i < 31 in bits has MsGetChr(i) + 0x432 set; callers FUN_007a7cf0, Native_7100; ported (ffx_battle::minor, battle round 29)
+0x007a8be0 function MsAnyChrMotion_007a8be0 # ours: (bits) -> 1 when an actor i < 31 in bits has MsGetChr(i) + 0x432 set; callers FUN_007a7cf0, Native_7100_AnyChrMotion; ported (ffx_battle::minor, battle round 29)
 0x007a8c20 function MsBattleStatusMenuless_007a8c20 # ours: () -> g_BtlStatus in {1, 2, 0x18, 0x1b, 0x1e}; ported (ffx_battle::minor, battle round 29)
 0x007a8c50 function MsWaitMotionPick_007a8c50 # ours: (chr, actor, v) -> Ch_GetWaitMotion(chr) && !(i8) actor+0x434 ? 0 : v; ported (ffx_battle::minor, battle round 29)
 0x007a8c80 function ms_motion_trans           # fh v3:exact 0x007a8ca0
@@ -12532,41 +12532,41 @@
 0x0091b1a0 function Native_MapPartShow           # 0x800f: args (part index) -> 1; language override through 0x006412b0, then 0x0091a830 clears bit 0 of the 0xc0-byte map part entry and enables it (0x00644120(i, 1))
 0x0091b1e0 function Native_MapPartHide           # 0x8010: args (part index) -> 1; 0x0091a7c0 sets bit 0 and disables the part (0x00644120(i, 0))
 0x0091b200 function Native_8011_MapPartSetOffset               # 0x8011: `0x0091ab30(a, b, c)`; 1. (ffx_script::vm::bridge::native_map); name from Yn_MapPartSetOffset(part, x, y): +0xc = x, +0x10 = y
-0x0091b240 function Native_8012 # 0x8012: args (v) -> 0x0091a440(v); ported in native_sys (script round 18); name ours
-0x0091b260 function Native_8013 # 0x8013: args (v) -> 0x0091a490(v); ported in native_sys (script round 18); name ours
-0x0091b280 function Native_8014               # 0x8014: `(n, x)` -> `0x0091acc0(n, x)`; 1. (ffx_script::vm::bridge::native_map)
-0x0091b2c0 function Native_8015 # 0x8015: args (v) -> float 0x0091a670(v); ported in native_sys (script round 18); name ours
-0x0091b2e0 function Native_8016 # 0x8016: args (a, b, c) -> 1: 0x0091ac40(a, b, c); ported in native_sys (script round 18); name ours
-0x0091b320 function Native_8017 # 0x8017: args (v) -> 0x0091a580(v); ported in native_sys (script round 18); name ours
-0x0091b340 function Native_8018 # 0x8018: args (v) -> 0x0091a5d0(v); ported in native_sys (script round 18); name ours
+0x0091b240 function Native_8012_MapPartGet0C # 0x8012: args (v) -> 0x0091a440(v); ported in native_sys (script round 18); name from 0x0091a440 = Yn_MapPartGet0C (v)
+0x0091b260 function Native_8013_MapPartGet10 # 0x8013: args (v) -> 0x0091a490(v); ported in native_sys (script round 18); name from 0x0091a490 = Yn_MapPartGet10 (v)
+0x0091b280 function Native_8014_MapPartSet14               # 0x8014: `(n, x)` -> `0x0091acc0(n, x)`; 1. (ffx_script::vm::bridge::native_map); name from 0x0091acc0 = Yn_MapPartSet14 (n, x); 1
+0x0091b2c0 function Native_8015_MapPartGet14 # 0x8015: args (v) -> float 0x0091a670(v); ported in native_sys (script round 18); name from 0x0091a670 = Yn_MapPartGet14 (v), float
+0x0091b2e0 function Native_8016_MapPartSet24 # 0x8016: args (a, b, c) -> 1: 0x0091ac40(a, b, c); ported in native_sys (script round 18); name from 0x0091ac40 = Yn_MapPartSet24 (a, b, c); 1
+0x0091b320 function Native_8017_MapPartGet24 # 0x8017: args (v) -> 0x0091a580(v); ported in native_sys (script round 18); name from 0x0091a580 = Yn_MapPartGet24 (v)
+0x0091b340 function Native_8018_MapPartGet28 # 0x8018: args (v) -> 0x0091a5d0(v); ported in native_sys (script round 18); name from 0x0091a5d0 = Yn_MapPartGet28 (v)
 0x0091b360 function Native_8019_MapPartSetSize # 0x8019: args (a, b, c) -> 1: 0x0091ac80(a, b, c); ported in native_sys (script round 18); name ours; name from Yn_MapPartSetSize(a, b, c)
 0x0091b3a0 function Native_801a_MapPartGetWidth # 0x801a: args (v) -> 0x0091a620(v); ported in native_sys (script round 18); name ours; name from Yn_MapPartGetWidth(v)
 0x0091b3c0 function Native_801b_MapPartGetHeight # 0x801b: args (v) -> 0x0091a3f0(v); ported in native_sys (script round 18); name ours; name from Yn_MapPartGetHeight(v)
 0x0091b3e0 function Native_801c_MapPartAnimCount # 0x801c: args (v) -> 0x0091a2a0(v); ported in native_sys (script round 18); name ours; name from Yn_MapPartAnimeGetCount(v)
 0x0091b400 function Native_801d_MapPartSetFrame               # 0x801d: `0x0091a930(a, b)`; 1. (ffx_script::vm::bridge::native_map); name from Yn_MapPartAnimeSetFrame(a, b)
-0x0091b430 function Native_801e               # 0x801e: `0x0091a080(x)`; 1. (ffx_script::vm::bridge::native_map)
-0x0091b450 function Native_801f               # 0x801f: `0x0091a030(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b430 function Native_801e_MapPartAnimeFlag0On               # 0x801e: `0x0091a080(x)`; 1. (ffx_script::vm::bridge::native_map); name from 0x0091a080 = Yn_MapPartAnimeFlag0On (x); 1
+0x0091b450 function Native_801f_MapPartAnimeFlag0Off               # 0x801f: `0x0091a030(x)`; 1. (ffx_script::vm::bridge::native_map); name from 0x0091a030 = Yn_MapPartAnimeFlag0Off (x); 1
 0x0091b470 function Native_8020_MapPartAnimOn               # 0x8020: `0x00919f90(x)`; 1. (ffx_script::vm::bridge::native_map); name from Yn_MapPartAnimeOn(x)
 0x0091b490 function Native_8021_MapPartAnimOff               # 0x8021: `0x00919f40(x)`; 1. (ffx_script::vm::bridge::native_map); name from Yn_MapPartAnimeOff(x)
 0x0091b4b0 function Native_8022_MapPartAnimMode               # 0x8022: `0x00919fe0(a, b)`; 1. (ffx_script::vm::bridge::native_map); name from Yn_MapPartAnimeSetMode(a, b)
 0x0091b4e0 function Native_8023_BgSetScrOffset # 0x8023: args (a f, b f) -> 1: 0x0091ad40(a, b); ported in native_sys (script round 18); name ours; name from Yn_PreBgSetScrOffset(a, b): scene +0xb8/+0xbc, rcbgSceneSetMatrix
-0x0091b530 function Native_8024 # 0x8024: jumps to Yn_SceneGetB8 (0x0091a700); ported in native_mods (script round 21); name ours
-0x0091b540 function Native_8025 # 0x8025: jumps to Yn_SceneGetBC (0x0091a730); ported in native_mods (script round 21); name ours
-0x0091b550 function Native_8026               # 0x8026: `(a, x, b, c, d)` (x a float) -> `0x0091ad80(a, x, b, c, d)`; 1. (ffx_script::vm::bridge::native_map)
-0x0091b5c0 function Native_8027 # 0x8027: 0x0091a900(); 1; ported in native_mods (script round 21); name ours
+0x0091b530 function Native_8024_SceneGetB8 # 0x8024: jumps to Yn_SceneGetB8 (0x0091a700); ported in native_mods (script round 21); name from jumps to Yn_SceneGetB8 (0x0091a700)
+0x0091b540 function Native_8025_SceneGetBC # 0x8025: jumps to Yn_SceneGetBC (0x0091a730); ported in native_mods (script round 21); name from jumps to Yn_SceneGetBC (0x0091a730)
+0x0091b550 function Native_8026_SceneSetC0               # 0x8026: `(a, x, b, c, d)` (x a float) -> `0x0091ad80(a, x, b, c, d)`; 1. (ffx_script::vm::bridge::native_map); name from 0x0091ad80 = Yn_SceneSetC0 (a, x, b, c, d); 1
+0x0091b5c0 function Native_8027_SceneWaveC0Stop # 0x8027: 0x0091a900(); 1; ported in native_mods (script round 21); name from 0x0091a900 passes the object at [[[0x0193bf80]] + 8] to rcbgSceneWaveC0Stop (0x00921200), which ends the wave Yn_SceneSetC0 starts; 1
 0x0091b5d0 function Native_8028_BgSetScrBank # 0x8028: args (v f) -> 1: 0x0091ad10(v); ported in native_sys (script round 18); name ours; name from Yn_PreBgSetScrBank(v)
-0x0091b600 function Native_8029 # 0x8029: jumps to Yn_SceneGetAC (0x0091a6d0); ported in native_mods (script round 21); name ours
-0x0091b610 function Native_802a # 0x802a: args (a, b f, c, d f) -> 1: 0x0091aa00(a, b, c, d); ported in native_sys (script round 18); name ours
-0x0091b670 function Native_802b # 0x802b: 0x0091a8d0(); 1; ported in native_mods (script round 21); name ours
-0x0091b680 function Native_802c               # 0x802c: `0x0091a220()`; 1. (ffx_script::vm::bridge::native_map)
-0x0091b690 function Native_802d               # 0x802d: `0x0091a200()`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b600 function Native_8029_SceneGetAC # 0x8029: jumps to Yn_SceneGetAC (0x0091a6d0); ported in native_mods (script round 21); name from jumps to Yn_SceneGetAC (0x0091a6d0)
+0x0091b610 function Native_802a_SceneSetDC # 0x802a: args (a, b f, c, d f) -> 1: 0x0091aa00(a, b, c, d); ported in native_sys (script round 18); name from 0x0091aa00 = Yn_SceneSetDC (a, b, c, d); 1
+0x0091b670 function Native_802b_ResetChain193bf80 # 0x802b: 0x0091a8d0(); 1; ported in native_mods (script round 21); name from 0x0091a8d0: the object at [[[0x0193bf80]] + 8] goes to 0x00920650, which zeroes its +0xac float and +0xdc; 1
+0x0091b680 function Native_802c_SetChain193bf80Bit0               # 0x802c: `0x0091a220()`; 1. (ffx_script::vm::bridge::native_map); name from 0x0091a220: or [[[0x0193bf80]] + 8], 1 (bit 0 of the object at the chain); 1
+0x0091b690 function Native_802d_ClearChain193bf80Bit0               # 0x802d: `0x0091a200()`; 1. (ffx_script::vm::bridge::native_map); name from 0x0091a200: and [[[0x0193bf80]] + 8], 0xfffffffe (bit 0 of the object at the chain); 1
 0x0091b6a0 function Native_802e_MapPartAnimRate               # 0x802e: `0x0091a9c0(a, b)`; 1. (ffx_script::vm::bridge::native_map); name from Yn_MapPartAnimeSetRate(a, b)
 0x0091b6d0 function Native_802f_MapPartLastFrame               # 0x802f: `0x0091a970(x)`; 1. (ffx_script::vm::bridge::native_map); name from Yn_MapPartAnimeSetLastFrame(x)
 0x0091b6f0 function Native_8030_MapPartSetAlpha               # 0x8030: `0x0091aa90(a, b)`; 1. (ffx_script::vm::bridge::native_map); name from Yn_MapPartSetAlpha(a, b)
 0x0091b720 function Native_8031_MapPartGetAlpha # 0x8031: args (v) -> 0x0091a2e0(v); ported in native_sys (script round 18); name ours; name from Yn_MapPartGetAlpha(v)
 0x0091b740 function Native_8032_GuideMapSetLimit               # 0x8032: `(x)` -> `0x00919df0(x)`; 1. (ffx_script::vm::bridge::native_map); name from Yn_GuideMapSetLimit(x): rcbgGuideSetLimit
 0x0091b770 function Native_8033_GuideMapGetLimit # 0x8033: jumps to Yn_GuideMapGetLimit (0x00919ca0); ported in native_mods (script round 21); name ours; name from jumps to Yn_GuideMapGetLimit: rcbgGuideGetLimit
-0x0091b780 function Native_8034 # 0x8034: 0x00919b70(); 1; ported in native_mods (script round 21); name ours
+0x0091b780 function Native_8034_FpDispDebug # 0x8034: 0x00919b70(); 1; ported in native_mods (script round 21); name from jumps through 0x00919b70 to pppFpDispDebug (0x00729060); 1
 0x0091b790 function Native_8035_FpRunGroup               # 0x8035: `0x00729530`/`0x007294f0`. (ffx_script::vm::bridge::native_map); name from Fp_RestartGroup / Fp_EndGroup by the argument (group form of Native_FpRun)
 0x0091b7d0 function Native_8036_FpShowGroup               # 0x8036: `0x00729440`/`0x00729400`. (ffx_script::vm::bridge::native_map); name from pppFpGroupDispOn / pppFpGroupDispOff (group form of Native_FpShow)
 0x0091b810 function Native_FogSetParams       # 0x8037: `(a, b, c)` -> `yiSetFogParam(a, b, c)`; on stage `0x140` also `0x006431e0(a)`, `0x006431a0(b)`, `0x006431c0(c / 255)` and `0x00643180(1.0)`; 1. (ffx_script::vm::bridge::native_map)
@@ -12590,9 +12590,9 @@
 0x0091c000 function Native_BackGetRed         # 0x8049: the back colour's red. (ffx_script::vm::bridge::native_map)
 0x0091c030 function Native_BackGetGreen       # 0x804a: green. (ffx_script::vm::bridge::native_map)
 0x0091c060 function Native_BackGetBlue        # 0x804b: blue. (ffx_script::vm::bridge::native_map)
-0x0091c090 function Native_804c # 0x804c: (part, v f): Yn_MapPartSet44_0091abc0(part, v, v); 1; ported in native_mods (script round 21); name ours
-0x0091c0d0 function Native_804d # 0x804d: (part, v f): Yn_MapPartSet44_0091abc0(part, v, 0.0); 1; ported in native_mods (script round 21); name ours
-0x0091c110 function Native_804e # 0x804e: (part, v f): Yn_MapPartSet44_0091abc0(part, 0.0, v); 1; ported in native_mods (script round 21); name ours
+0x0091c090 function Native_804c_MapPartSet44Both # 0x804c: (part, v f): Yn_MapPartSet44_0091abc0(part, v, v); 1; ported in native_mods (script round 21); name from 0x0091abc0 = Yn_MapPartSet44 (part, v, v); 1
+0x0091c0d0 function Native_804d_MapPartSet44First # 0x804d: (part, v f): Yn_MapPartSet44_0091abc0(part, v, 0.0); 1; ported in native_mods (script round 21); name from 0x0091abc0 = Yn_MapPartSet44 (part, v, 0.0); 1
+0x0091c110 function Native_804e_MapPartSet44Second # 0x804e: (part, v f): Yn_MapPartSet44_0091abc0(part, 0.0, v); 1; ported in native_mods (script round 21); name from 0x0091abc0 = Yn_MapPartSet44 (part, 0.0, v); 1
 0x0091c150 function Native_804f_MapPartScaleTo               # 0x804f: `(a, x, b)` -> `0x0091a150(a, x, x, b)`; 1. (ffx_script::vm::bridge::native_map); name from Yn_MapPartScaleTo(a, x, x, b)
 0x0091c1a0 function Native_8050_MapPartScaleX # 0x8050: args (v) -> float 0x0091a530(v); ported in native_sys (script round 18); name ours; name from getter: float Yn_MapPartGetScaleX(v)
 0x0091c1c0 function Native_8051_MapPartScaleY # 0x8051: args (v) -> float 0x0091a4e0(v); ported in native_sys (script round 18); name ours; name from getter: float Yn_MapPartGetScaleY(v)
@@ -12606,15 +12606,15 @@
 0x0091c3c0 function Native_8059_FpSetStickMap               # 0x8059: `(a, b)` -> `0x0072a590(b, a)` (the top first); 1. (ffx_script::vm::bridge::native_map); name from pppFpSetStickMap(b, a)
 0x0091c3f0 function Native_805a_FpResetStick # 0x805a: args (v) -> 1: 0x0072a120(v); ported in native_sys (script round 18); name ours; name from pppFpResetStick(v)
 0x0091c410 function Native_FpSetStickPos      # 0x805b: `(n, x, y, z)` -> `pppFpSetStickPos(n, &[z, y, x])` (the floats in pop order); 1. (ffx_script::vm::bridge::native_map)
-0x0091c470 function Native_805c               # 0x805c: `(on)`: `on != 0` into `0x025d5eb8`, then `0x00645e40()`; 1. (ffx_script::vm::bridge::native_map)
-0x0091c4a0 function Native_805d               # 0x805d: `0x007297e0()`, then `0x0091a930(i, 0)` for each `i` below `0x0091a3d0()` (asked again each time); 1. (ffx_script::vm::bridge::native_map); hooked small r4 d
+0x0091c470 function Native_805c_VideoAtEndSet               # 0x805c: `(on)`: `on != 0` into `0x025d5eb8`, then `0x00645e40()`; 1. (ffx_script::vm::bridge::native_map); name from on != 0 into 0x025d5eb8, then 0x00645e40 (graphicisVideoAtEndFrame); 1
+0x0091c4a0 function Native_805d_MapPartAnimeResetAll               # 0x805d: `0x007297e0()`, then `0x0091a930(i, 0)` for each `i` below `0x0091a3d0()` (asked again each time); 1. (ffx_script::vm::bridge::native_map); hooked small r4 d; name from 0x007297e0(), then Yn_MapPartAnimeSetFrame (i, 0) for each i below Yn_MapPartCount (0x0091a3d0)
 0x0091c4d0 function Native_805e_GuideSetMapNo               # 0x805e: `Yn_GuideMapSetMapNo`'s caller `0x00919da0(x)`; 1. (ffx_script::vm::bridge::native_map); name from Yn_GuideMapSetMapNo(x)
 0x0091c4f0 function Native_805f_FpFree               # 0x805f: `0x007295f0(x)`; 1. (ffx_script::vm::bridge::native_map); name from pppFpIDfree(x): frees every effect with that id
 0x0091c510 function Native_8060_FpGroupForceOff               # 0x8060: `0x00729480(x)`; 1. (ffx_script::vm::bridge::native_map); name from pppFpGrpForceOff(x)
 0x0091c530 function Native_FieldSetMaskBit       # 0x8000: args (bit, on) -> bit; 0x0088eba0 sets/clears the bit in 0x018ded0c (default -9/-1, saved by Script init 0x00865dc0); ?meaning; map 0x188 forces bit 14 on
-0x0091c580 function Native_8061 # 0x8061: args (v) -> 1: 0x00908580(v); ported in native_sys (script round 18); name ours
+0x0091c580 function Native_8061_RenderSetParam # 0x8061: args (v) -> 1: 0x00908580(v); ported in native_sys (script round 18); name from 0x00908580 = yiSetRenderParam (v); 1
 0x0091c5a0 function Native_8062 # 0x8062: 0x00908440(); 1; ported in native_mods (script round 21); name ours
-0x0091c5b0 function Native_8001               # 0x8001: `(on)`: `0x00909e20(0x10)` and `0x00643df0(1)`, or `0x00909e10(0x10)` and `0x00643df0(0)`; returns `on`. (ffx_script::vm::bridge::native_map)
+0x0091c5b0 function Native_8001_RenderSetFlag10               # 0x8001: `(on)`: `0x00909e20(0x10)` and `0x00643df0(1)`, or `0x00909e10(0x10)` and `0x00643df0(0)`; returns `on`. (ffx_script::vm::bridge::native_map); name from (on): yiRenderEnable (0x00909e20, 0x10) with 0x00643df0(1), or yiRenderDisable (0x00909e10, 0x10) with 0x00643df0(0); on
 0x0091c600 function Native_8063 # 0x8063: args (a f, b f, c f, d f) -> 1: 0x0090a200(a, b, c, d); ported in native_sys (script round 18); name ours
 0x0091c670 function Native_FpRun                 # 0x8002: args (fp id, restart) -> restart; restart != 0: Fp_Restart (run from start), 0: Fp_End
 0x0091c6b0 function Native_8064 # 0x8064: args (six floats) -> 1: 0x0090a230(...); ported in native_sys (script round 18); name ours

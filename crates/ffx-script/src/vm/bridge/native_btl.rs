@@ -1573,7 +1573,7 @@ pub fn native_708e<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     sb(h, c + 0x508)
 }
 
-/// `Native_7107` (`0x007a6800`, `0x7107`): `(n)`: `ftol((MsDirTurn(chr,
+/// `Native_7107_ChrDirTurnSteps` (`0x007a6800`, `0x7107`): `(n)`: `ftol((MsDirTurn(chr,
 /// yaw) - +0x490) / pi * n)`, the yaw the actor's `+0x514` entry `+0x511`
 /// (`0x007a9650` returns `ST0`; the steps round to `f32`).
 pub fn native_7107<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -1802,7 +1802,7 @@ pub fn native_70ed<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0079_0550, &[b, a1])
 }
 
-/// `Native_7109` (`0x007a3df0`, `0x7109`): `(selector, reset, f)`: for
+/// `Native_7109_SelSetGravMode` (`0x007a3df0`, `0x7109`): `(selector, reset, f)`: for
 /// each picked actor with a model: `+0x407` = 1; with reset,
 /// `0x00796070(i, 0)`, `+0x505` = 1, `+0x50c` = 0; `+0x43d` = 0, `+0x538`
 /// = f. The number of picked actors.
@@ -2156,7 +2156,7 @@ pub fn native_70ef<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7118` (`0x007a81d0`, `0x7118`): `(v)`: the byte `0x0112ca11` =
+/// `Native_7118_BtlSetNoSummonReturn` (`0x007a81d0`, `0x7118`): `(v)`: the byte `0x0112ca11` =
 /// v; v.
 pub fn native_7118<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -2164,7 +2164,7 @@ pub fn native_7118<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_711c` (`0x007a8530`, `0x711c`): `(v)`: the `u16` `0x0112c94e`
+/// `Native_711c_BtlSetEndEffect` (`0x007a8530`, `0x711c`): `(v)`: the `u16` `0x0112c94e`
 /// = v; v.
 pub fn native_711c<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
