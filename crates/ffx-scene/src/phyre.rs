@@ -31,6 +31,8 @@ pub struct Graph {
     pub bytes: Vec<u8>,
     pub pointers: Vec<Vec<PointerFixup>>,
     pub arrays: Vec<Vec<ArrayFixup>>,
+    /// Pointer-array fixups by list (`[member, object, pointers, _]`).
+    pub pointer_arrays: Vec<Vec<ArrayFixup>>,
 }
 
 impl std::fmt::Debug for Graph {
@@ -46,12 +48,54 @@ impl Graph {
         let c = Cluster::parse(&bytes)?;
         let pointers = c.pointer_fixups(&bytes)?;
         let arrays = c.array_fixups(&bytes)?;
+        let pointer_arrays = c.pointer_array_fixups(&bytes)?;
         Ok(Self {
             c,
             bytes,
             pointers,
             arrays,
+            pointer_arrays,
         })
+    }
+
+    /// The elements of a `PSharray` of pointers at byte `offset` of `o`
+    /// (count word at `offset`, `& 0x7fffffff`): one element sits inline
+    /// at `offset + 4`; more go through a pointer array there, whose
+    /// length its pointer-array fixup gives
+    /// (`Cluster_ApplyPointerArrayFixups` `0x0057acd0`). Either way the
+    /// pointer fixups of the `offset + 4` field fill the elements, each
+    /// record naming its element in its sixth word (`0x0057acd0` hands
+    /// the array to the member's setter, which the pointer fixups then
+    /// index). `None` for an element no fixup fills (a null pointer).
+    #[must_use]
+    pub fn pointer_array(&self, o: Obj, offset: u32) -> Vec<Option<Target>> {
+        let count = self.word_at(o.at + offset as usize).unwrap_or(0) & 0x7fff_ffff;
+        let field = 0x8000_0000 | (offset + 4);
+        let len = if count > 1 {
+            self.pointer_arrays
+                .get(o.list)
+                .and_then(|l| {
+                    l.iter()
+                        .find(|f| f.object() == o.index && f.member() == field)
+                })
+                .map_or(count, |f| f.0[2])
+        } else {
+            count
+        };
+        let mut out = vec![None; len as usize];
+        for f in self.pointers.get(o.list).into_iter().flatten() {
+            if f.object() != o.index || f.member() != field {
+                continue;
+            }
+            let slot = if count > 1 { f.count() as usize } else { 0 };
+            if let Some(s) = out.get_mut(slot) {
+                *s = Some(Target {
+                    count: 1,
+                    ..Self::target(f)
+                });
+            }
+        }
+        out
     }
 
     /// The class name of a list.

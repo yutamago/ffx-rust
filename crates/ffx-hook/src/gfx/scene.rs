@@ -4,6 +4,8 @@
 //!
 //! On with `FFX_RUST_MAP=1` (and the graphics layer, `FFX_GFX=1`; the
 //! harness option `rust_map` and `tools/run-game.sh --rust-map` set both).
+//! `FFX_RUST_MAP=build` draws the supported maps with the scene builder
+//! instead (`super::map_build`, `tools/run-game.sh --rust-map=build`).
 //!
 //! Two threads. `PhyreScene_render` (`0x00668930`) runs on the main thread
 //! and renders the map world (scene `+0xac`) through
@@ -32,7 +34,9 @@
 //!    draws are taken from the proxy context's vtable: recorded (the
 //!    context's bound state, `D3d11::import_bound`, the game's objects
 //!    imported, and the constant buffer windows from the layer's copies),
-//!    or, when the pass has a builder job, dropped. The state setters reach
+//!    or, when the pass has a builder job, dropped (and recorded as the
+//!    job's host draws: the game's objects the built draws bind, such as
+//!    the targets). The state setters reach
 //!    the device as usual, so `PhyreEngine`'s cache of what is bound stays
 //!    true.
 //! 3. The pass ends at the first draw that is not a tagged command's, at a
@@ -164,9 +168,11 @@ pub struct PassInfo {
 }
 
 /// The render-thread half of a built pass: given the backend (the game's
-/// bound targets are `D3d11::import_bound`'s) and the cache, the pass's
+/// bound targets are `D3d11::import_bound`'s), the cache and the game's
+/// own draws of the pass as recorded (not made: its host objects, the
+/// targets, run-time textures and dynamic vertices, imported), the pass's
 /// draws.
-pub type Job = Box<dyn FnOnce(&mut D3d11, &mut Cache) -> Vec<PassDraw> + Send>;
+pub type Job = Box<dyn FnOnce(&mut D3d11, &mut Cache, &[PassDraw]) -> Vec<PassDraw> + Send>;
 
 /// A draw list source for the map passes. Called on the main thread at
 /// `renderWorld`'s place (update N) with the pass; returns the job that
@@ -202,6 +208,8 @@ struct MapPath {
     backend: D3d11,
     cache: Cache,
     pending: Vec<PassDraw>,
+    /// A built pass's dropped draws, as recorded (the job's host draws).
+    host: Vec<PassDraw>,
     /// Raw resources the pending draws read (vertex, index, shader
     /// resource views' resources).
     reads: HashSet<usize>,
@@ -272,7 +280,8 @@ unsafe fn call_target(at: usize) -> Option<usize> {
 /// # Safety
 /// `module` must be the main module, before other threads run game code.
 pub unsafe fn install(module: usize) {
-    if !std::env::var("FFX_RUST_MAP").is_ok_and(|v| v == "1") {
+    let mode = std::env::var("FFX_RUST_MAP").unwrap_or_default();
+    if mode != "1" && mode != "build" {
         return;
     }
     if !super::ENABLED.load(Ordering::Acquire) {
@@ -339,6 +348,10 @@ pub unsafe fn install(module: usize) {
             && write_rel(allocate, 0xe9, alloc as *const () as usize)
     };
     ON.store(ok, Ordering::Release);
+    if ok && mode == "build" {
+        set_builder(Some(super::map_build::builder()));
+        log("  gfx: rust map: the scene builder draws the supported maps");
+    }
     log(&format!(
         "  gfx: rust map: {} ({} renderWorld calls, the ring allocator, 2 handler calls)",
         if ok { "on" } else { "patching failed" },
@@ -502,6 +515,7 @@ fn ready(g: &mut Option<MapPath>) -> bool {
         backend,
         cache: Cache::default(),
         pending: Vec::new(),
+        host: Vec::new(),
         reads: HashSet::new(),
         current: None,
         stats: Stats::default(),
@@ -532,7 +546,8 @@ fn end_pass(p: &mut MapPath) {
     give_slots();
     let job = tag.job.lock().ok().and_then(|mut j| j.take());
     if let Some(job) = job {
-        let draws = job(&mut p.backend, &mut p.cache);
+        let host = std::mem::take(&mut p.host);
+        let draws = job(&mut p.backend, &mut p.cache, &host);
         ISSUING.store(true, Ordering::Release);
         let done = issue(&mut p.backend, &mut p.cache, &draws);
         ISSUING.store(false, Ordering::Release);
@@ -748,6 +763,8 @@ fn on_draw(d: Draw) -> bool {
         .as_ref()
         .is_some_and(|t| t.job.lock().is_ok_and(|j| j.is_some()));
     if built {
+        let (draw, _) = recorded(&mut p.backend, d);
+        p.host.push(draw);
         p.stats.dropped += 1;
         return true;
     }

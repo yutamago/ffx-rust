@@ -346,7 +346,12 @@ pub fn run(
         settings,
         viewport: map_inputs.viewport(),
         scissor: map_inputs.scissor(),
-        scene_wide: chars_build::scene_wide_to_memory(&map_inputs.scene_wide(), tables),
+        // `CaptureInputs` reads the scene-wide matrices back in memory
+        // order already (the cb copy's transpose undone, m4-wire).
+        scene_wide: {
+            let _ = tables;
+            map_inputs.scene_wide()
+        },
         lights: HashMap::new(),
         material_textures: HashSet::new(),
     };
@@ -374,7 +379,7 @@ pub fn run(
     let blend_problems = blend_index_problems(&c, records[0], &built);
     let unwritten_words = take_unwritten(&cap, &mut built, &traces, &passes);
     let ext = externals(&cap, &built, &passes);
-    let msgs = crate::emit::replace_map_draws(&cap, &built, &opaque, &transparent, &|e| {
+    let msgs = crate::emit::replace_map_draws_grouped(&cap, &built, &opaque, &transparent, &|e| {
         ext.get(&e).copied().or_else(|| map_inputs.external_view(e))
     })?;
     Ok(Outcome {

@@ -866,6 +866,8 @@ impl Builder<'_> {
                 start: 0,
                 base: 0,
             },
+            // Bound as constant buffers in the resources (above).
+            constants: Vec::new(),
         });
         Ok(())
     }

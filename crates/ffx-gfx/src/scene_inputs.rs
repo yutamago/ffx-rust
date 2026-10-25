@@ -410,6 +410,146 @@ pub struct Material {
     pub parameters: Vec<u8>,
 }
 
+/// The tag of the `SceneInputs` message (`Msg::SceneInputs`), for
+/// [`write_message`] and readers that walk the raw stream.
+pub const MSG_TAG: u32 = 15;
+
+/// Extension blocks after the record (and its character part's flag,
+/// which [`write_message`] writes as 0 when there is no part): `(tag u32,
+/// length u32, bytes)` each, to the end of the payload. `Msg::read` stops
+/// before them, [`read_extensions`] skips tags it doesn't know, so blocks
+/// can be added without a new version.
+/// [`Wire`]'s tag.
+pub const EXT_WIRE: u32 = 0x5752_0001;
+
+/// What the scene builder needs beyond version 1 (block [`EXT_WIRE`],
+/// M4 round 2 m4-wire, `docs/scene-builder.md`, "Inputs from the
+/// snapshot").
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Wire {
+    /// The camera's world matrix, `*(PCamera +0xb0)` (`None`: the pointer
+    /// is 0, identity): `PSceneWideParametersKey_initialize`
+    /// (`0x004fe940`) copies it into the key's `+0xb0`, the source of
+    /// `ViewInverse` and `EyePosition`.
+    pub camera_world: Option<Matrix3x4>,
+    /// `Phyre_PRenderInterface` `+0x1340` (`0x00c96240`): the texture
+    /// quality the textures were loaded with (0 high, 1 medium, 2 low).
+    pub texture_quality: u32,
+    /// The anisotropy setting (`0x00c25370`), as its bits.
+    pub anisotropy: u32,
+    /// Per [`SceneInputs::clusters`] entry: the id of the cluster's first
+    /// `PAssetReference` (`+0x18`), up to its `#`: the file it was
+    /// loaded from (`PS3Data/map/bsil/bsil00/mdl/bsil00.dae`).
+    pub cluster_assets: Vec<String>,
+    /// Per [`SceneInputs::materials`] entry: its texture slots.
+    pub material_textures: Vec<Vec<MaterialTexture>>,
+}
+
+/// A material's texture slot: a tweakable definition of the material's
+/// effect variant (`*(PMaterial +0)`, `m_tweakableShaderParameterDefinitions`
+/// `+0x20`) of type `0x42` or `0x44` and the texture its 16-byte slot in
+/// the parameter buffer holds (`+0xc`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MaterialTexture {
+    /// The definition's offset in the parameter buffer, and its type.
+    pub offset: u32,
+    pub kind: u8,
+    /// Whether the slot holds a texture.
+    pub set: bool,
+    /// The texture's asset id (its `PAssetReference` in the asset tree,
+    /// `Phyre_PAssetReference_GetAssetReferenceByAsset` `0x0045cb50`),
+    /// e.g. `PS3Data/map/bsil/bsil00/tex/x.dds`; empty for a texture made
+    /// at run time (the shadow maps) or not found.
+    pub asset: String,
+}
+
+impl Wire {
+    fn write(&self, w: &mut Writer) {
+        write_matrix(w, self.camera_world.as_ref());
+        w.u32(self.texture_quality);
+        w.u32(self.anisotropy);
+        w.u32(len(self.cluster_assets.len()));
+        for a in &self.cluster_assets {
+            w.str(a);
+        }
+        w.u32(len(self.material_textures.len()));
+        for m in &self.material_textures {
+            w.u32(len(m.len()));
+            for t in m {
+                w.u32(t.offset);
+                w.u8(t.kind);
+                w.u8(u8::from(t.set));
+                w.str(&t.asset);
+            }
+        }
+    }
+
+    fn read(r: &mut Reader) -> Result<Self, DecodeError> {
+        let mut out = Self {
+            camera_world: read_matrix(r)?,
+            ..Self::default()
+        };
+        out.texture_quality = r.u32()?;
+        out.anisotropy = r.u32()?;
+        for _ in 0..count(r, 4)? {
+            out.cluster_assets.push(r.str()?);
+        }
+        for _ in 0..count(r, 4)? {
+            let mut m = Vec::new();
+            for _ in 0..count(r, 10)? {
+                m.push(MaterialTexture {
+                    offset: r.u32()?,
+                    kind: r.u8()?,
+                    set: r.u8()? != 0,
+                    asset: r.str()?,
+                });
+            }
+            out.material_textures.push(m);
+        }
+        Ok(out)
+    }
+}
+
+/// Writes a whole `SceneInputs` message (tag, length, payload) with the
+/// [`Wire`] block after the version 1 fields.
+pub fn write_message(s: &SceneInputs, wire: Option<&Wire>, out: &mut Vec<u8>) {
+    let mut w = Writer::default();
+    s.write(&mut w);
+    if let Some(x) = wire {
+        // The character part's flag comes first (a record without the
+        // part ends at its materials, so a block would read as one).
+        if s.chars.is_none() {
+            w.u8(0);
+        }
+        let mut block = Writer::default();
+        x.write(&mut block);
+        w.u32(EXT_WIRE);
+        w.blob(&block.bytes);
+    }
+    out.extend_from_slice(&MSG_TAG.to_le_bytes());
+    out.extend_from_slice(&len(w.bytes.len()).to_le_bytes());
+    out.extend_from_slice(&w.bytes);
+}
+
+/// Reads a `SceneInputs` payload with its extension blocks: the record
+/// and its [`Wire`] block, when it has one.
+///
+/// # Errors
+/// On a malformed record or block.
+pub fn read_extensions(payload: &[u8]) -> Result<(SceneInputs, Option<Wire>), DecodeError> {
+    let mut r = Reader::new(payload);
+    let s = SceneInputs::read(&mut r)?;
+    let mut wire = None;
+    while r.at + 8 <= r.bytes.len() {
+        let tag = r.u32()?;
+        let block = r.blob()?;
+        if tag == EXT_WIRE {
+            wire = Some(Wire::read(&mut Reader::new(&block))?);
+        }
+    }
+    Ok((s, wire))
+}
+
 fn write_opt_u32(w: &mut Writer, v: Option<u32>) {
     match v {
         Some(v) => {
@@ -717,5 +857,39 @@ mod tests {
             renderer: vec![[1.0; 16], [2.0; 16]],
         }));
         assert_eq!(round_trip(&s), s);
+    }
+
+    #[test]
+    fn the_wire_block_follows_version_1() {
+        let s = SceneInputs {
+            pass: "OpaqueNoMSAA".into(),
+            dir: 1,
+            materials: vec![Material::default()],
+            ..SceneInputs::default()
+        };
+        let wire = Wire {
+            camera_world: Some([2.0; 12]),
+            texture_quality: 2,
+            anisotropy: 1f32.to_bits(),
+            cluster_assets: vec!["PS3Data/map/cdsp/cdsp00/mdl/cdsp00.dae".into()],
+            material_textures: vec![vec![MaterialTexture {
+                offset: 0x40,
+                kind: 0x42,
+                set: true,
+                asset: "PS3Data/x.dds".into(),
+            }]],
+        };
+        let mut out = Vec::new();
+        write_message(&s, Some(&wire), &mut out);
+        // The tag is the one `Msg` writes, and `Msg` still reads it.
+        let mut plain = Vec::new();
+        crate::Msg::SceneInputs(Box::new(s.clone())).write(&mut plain);
+        assert_eq!(out[..4], plain[..4]);
+        let msgs = crate::read_all(&out).expect("messages");
+        assert!(matches!(&msgs[..], [crate::Msg::SceneInputs(x)] if **x == s));
+        let (back, w) = read_extensions(&out[8..]).expect("extensions");
+        assert_eq!((back, w), (s.clone(), Some(wire)));
+        // A version 1 payload has no block.
+        assert_eq!(read_extensions(&plain[8..]).expect("v1").1, None);
     }
 }

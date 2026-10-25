@@ -150,59 +150,15 @@ pub fn bone_matrices(c: &CharInstance, joints: &[Mat], segment: usize) -> Vec<Op
         .unwrap_or_default()
 }
 
-/// `a b - c d` with the products exact and one rounding to `f32` (the
-/// x87 at 53 bits, then the store).
-#[allow(clippy::cast_possible_truncation)] // the f32 store
-fn diff_of_products(a: f32, b: f32, c: f32, d: f32) -> f32 {
-    (f64::from(a) * f64::from(b) - f64::from(c) * f64::from(d)) as f32
-}
-
 /// `PMatrix4_Inverse_004cc0c0`: the inverse of the affine part of `m`
 /// (memory order) as Vectormath's `inverse(Transform3)` (`0x004cc890`)
-/// computes it: the cross products of the columns (each component one
-/// rounding), the determinant `(c2.x t2.x + c2.y t2.y) + c2.z t2.z` and
-/// `1 / det` as `f32` steps, each element times it, the translation
-/// `-((i0 tx + i1 ty) + i2 tz)` per row as `f32` steps (checked on the
-/// captured draws); bottom row 0 0 0
-/// 1 (`0x004c9360`).
+/// computes it; one port for the map's `ViewInverse` and the characters'
+/// `WorldInverse` ([`crate::live::affine_inverse`], traced from the asm:
+/// the determinant's sums keep the unrounded products, `1 / det` is
+/// rounded at 53 bits first).
 #[must_use]
 pub fn affine_inverse(m: &Mat) -> Mat {
-    let p = |i: usize| m[i];
-    let dp = diff_of_products;
-    // cross(c1, c2), cross(c2, c0), cross(c0, c1).
-    let t0 = [
-        dp(p(5), p(10), p(9), p(6)),
-        dp(p(8), p(6), p(4), p(10)),
-        dp(p(4), p(9), p(5), p(8)),
-    ];
-    let t1 = [
-        dp(p(9), p(2), p(1), p(10)),
-        dp(p(0), p(10), p(8), p(2)),
-        dp(p(8), p(1), p(9), p(0)),
-    ];
-    let t2 = [
-        dp(p(1), p(6), p(5), p(2)),
-        dp(p(4), p(2), p(0), p(6)),
-        dp(p(0), p(5), p(1), p(4)),
-    ];
-    let det = p(8) * t2[0];
-    let det = det + p(9) * t2[1];
-    let det = det + p(10) * t2[2];
-    let inv = 1.0 / det;
-    let mut out = [0.0f32; 16];
-    for r in 0..3 {
-        out[r] = [t0[0], t1[0], t2[0]][r] * inv;
-        out[4 + r] = [t0[1], t1[1], t2[1]][r] * inv;
-        out[8 + r] = [t0[2], t1[2], t2[2]][r] * inv;
-    }
-    for r in 0..3 {
-        let s = out[r] * p(12);
-        let s = s + out[4 + r] * p(13);
-        let s = s + out[8 + r] * p(14);
-        out[12 + r] = -s;
-    }
-    out[15] = 1.0;
-    out
+    crate::live::affine_inverse(m)
 }
 
 /// What the per-node buffer of one draw is made from.

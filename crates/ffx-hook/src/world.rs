@@ -94,13 +94,138 @@ pub const EVENT_COUNT: u32 = 0x0132_5d94;
 /// At most this many 2D-layer entries are sampled.
 const LAYERS_MAX: u32 = 256;
 
+thread_local! {
+    /// While set (the in-game builder's reads on the main thread,
+    /// [`with_direct_reads`]) reads are made directly.
+    static DIRECT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Regions checked in the current direct run (`VirtualQuery`'s
+    /// ranges: start, end, readable), the last readable one first.
+    static REGIONS: std::cell::RefCell<Vec<(usize, usize, bool)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// Reads and page checks of the last [`with_direct_reads`].
+    static COUNTS: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
+    /// Microseconds of the last snapshot's parts: lists, bounds, the rest,
+    /// the `Wire` block.
+    static PHASES: std::cell::Cell<[u128; 4]> = const { std::cell::Cell::new([0; 4]) };
+}
+
+/// The last snapshot's parts' times (microseconds): lists, bounds and
+/// instances, switches and depth bias, the `Wire` block.
+#[must_use]
+pub fn snapshot_phases() -> [u128; 4] {
+    PHASES.with(std::cell::Cell::get)
+}
+
+/// The reads and page checks the last [`with_direct_reads`] made.
+#[must_use]
+pub fn direct_read_counts() -> (u64, u64) {
+    COUNTS.with(std::cell::Cell::get)
+}
+
+/// Runs `f` with this thread's reads made directly, each page checked
+/// once with `VirtualQuery` (committed, readable, not a guard page)
+/// instead of a `ReadProcessMemory` per read: the snapshot takes about
+/// 10 ms a pass through `ReadProcessMemory`, too slow for the game's
+/// frame (`gfx::map_build`).
+pub fn with_direct_reads<T>(f: impl FnOnce() -> T) -> T {
+    REGIONS.with(|r| r.borrow_mut().clear());
+    COUNTS.with(|c| c.set((0, 0)));
+    DIRECT.with(|d| d.set(true));
+    let out = f();
+    DIRECT.with(|d| d.set(false));
+    REGIONS.with(|r| r.borrow_mut().clear());
+    out
+}
+
+/// The region `VirtualQuery` reports around `at`: its start, end and
+/// whether it is committed and readable.
+fn region(at: usize) -> (usize, usize, bool) {
+    use windows_sys::Win32::System::Memory::{
+        MEM_COMMIT, MEMORY_BASIC_INFORMATION, PAGE_GUARD, PAGE_NOACCESS, VirtualQuery,
+    };
+    // SAFETY: a zeroed out-structure of the size passed.
+    let mut mbi: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
+    // SAFETY: VirtualQuery only reads the address space's bookkeeping.
+    let n = unsafe {
+        VirtualQuery(
+            at as *const std::ffi::c_void,
+            &raw mut mbi,
+            std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
+        )
+    };
+    if n == 0 {
+        let page = at & !0xfff;
+        return (page, page + 0x1000, false);
+    }
+    let start = mbi.BaseAddress as usize;
+    let ok = mbi.State == MEM_COMMIT
+        && mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD) == 0
+        && mbi.Protect != 0;
+    (start, start.saturating_add(mbi.RegionSize), ok)
+}
+
+/// In direct mode (`None` otherwise): whether `len` bytes at `at` are
+/// readable. Each region is asked about once a run (`VirtualQuery`
+/// gives a whole region of like pages: a few calls cover the map's
+/// data).
+fn readable(at: usize, len: usize) -> Option<bool> {
+    if !DIRECT.with(std::cell::Cell::get) {
+        return None;
+    }
+    let end = at.checked_add(len.max(1))?;
+    COUNTS.with(|c| c.set((c.get().0 + 1, c.get().1)));
+    REGIONS.with(|r| {
+        let mut r = r.borrow_mut();
+        let mut from = at;
+        while from < end {
+            let found = r.iter().position(|&(s, e, _)| s <= from && from < e);
+            let k = match found {
+                Some(k) => k,
+                None => {
+                    COUNTS.with(|c| c.set((c.get().0, c.get().1 + 1)));
+                    r.push(region(from));
+                    r.len() - 1
+                }
+            };
+            let (_, e, ok) = r[k];
+            if !ok {
+                return Some(false);
+            }
+            if k != 0 {
+                r.swap(0, k);
+            }
+            from = e;
+        }
+        Some(true)
+    })
+}
+
 fn bytes(at: usize, len: usize) -> Option<Vec<u8>> {
-    (at != 0).then(|| crate::harness::read_memory(at, len).ok())?
+    if at == 0 {
+        return None;
+    }
+    match readable(at, len) {
+        // SAFETY: every page of the range is committed and readable (the
+        // game frees no map data while its renderWorld runs).
+        Some(true) => Some(unsafe { std::slice::from_raw_parts(at as *const u8, len) }.to_vec()),
+        Some(false) => None,
+        None => crate::harness::read_memory(at, len).ok(),
+    }
 }
 
 fn word(at: usize) -> Option<usize> {
-    let b = bytes(at, 4)?;
-    Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+    if at == 0 {
+        return None;
+    }
+    match readable(at, 4) {
+        // SAFETY: as in `bytes`.
+        Some(true) => Some(unsafe { std::ptr::read_unaligned(at as *const u32) } as usize),
+        Some(false) => None,
+        None => {
+            let b = crate::harness::read_memory(at, 4).ok()?;
+            Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+        }
+    }
 }
 
 /// The scene inputs, by name, as raw bytes (absent when unreadable). Plain
@@ -214,10 +339,10 @@ pub unsafe extern "thiscall" fn render_world(
     if crate::gfx::capture::inputs_wanted() {
         let offset = world_offset(world as usize);
         if matches!(offset, MAP_WORLD | CHAR_WORLD | SHADOW_WORLD)
-            && let Some(s) =
+            && let Some((s, wire)) =
                 scene_inputs_at(renderer as usize, world as usize, camera as usize, dir)
         {
-            crate::gfx::capture::add_inputs(s);
+            crate::gfx::capture::add_inputs(s, Some(wire));
         }
         if offset == MAP_WORLD && watch::wanted() && !watch::armed() {
             watch::arm(&watch_targets(world as usize));
@@ -564,7 +689,10 @@ pub fn scene_inputs_at(
     world: usize,
     camera: usize,
     dir: i32,
-) -> Option<ffx_gfx::scene_inputs::SceneInputs> {
+) -> Option<(
+    ffx_gfx::scene_inputs::SceneInputs,
+    ffx_gfx::scene_inputs::Wire,
+)> {
     use ffx_gfx::scene_inputs as si;
     let app = word(crate::rebase(G_PHYRE_APPLICATION)).unwrap_or(0);
     let scene = word(crate::rebase(G_PHYRE_SCENE)).unwrap_or(0);
@@ -578,6 +706,7 @@ pub fn scene_inputs_at(
         screen: [u32_at(screen).unwrap_or(0), u32_at(screen + 4).unwrap_or(0)],
         ..si::SceneInputs::default()
     };
+    let t0 = std::time::Instant::now();
     let clusters = world_clusters(world);
     let mut names = std::collections::HashMap::new();
     let lists = clusters
@@ -598,6 +727,7 @@ pub fn scene_inputs_at(
         instance_ix: std::collections::HashMap::new(),
         material_ix: std::collections::HashMap::new(),
     };
+    let t1 = std::time::Instant::now();
     // The bounds, in the renderer's order.
     let mut bounds_at = std::collections::HashMap::new();
     let walk = world_lists_of(world, crate::rebase(BOUNDS_CLASS));
@@ -628,6 +758,7 @@ pub fn scene_inputs_at(
             });
         }
     }
+    let t2 = std::time::Instant::now();
     if scene != 0 {
         scene_switches(&mut s, scene, &mut r);
     }
@@ -647,7 +778,186 @@ pub fn scene_inputs_at(
     if s.world != MAP_WORLD {
         s.chars = Some(Box::new(char_world(&r, renderer)));
     }
-    Some(s)
+    let t3 = std::time::Instant::now();
+    let wire = wire_at(camera, &r);
+    let t4 = std::time::Instant::now();
+    PHASES.with(|p| {
+        p.set([
+            (t1 - t0).as_micros(),
+            (t2 - t1).as_micros(),
+            (t3 - t2).as_micros(),
+            (t4 - t3).as_micros(),
+        ]);
+    });
+    Some((s, wire))
+}
+
+/// `Phyre_PRenderInterface` (`0x00c94f00`) `+0x1340`: the texture
+/// quality (`Phyre_PRenderInterface_setTextureQuality` `0x0058e000`).
+const TEXTURE_QUALITY: u32 = 0x00c9_6240;
+/// The anisotropy setting `PSamplerStateD3D11` (`0x00595bf0`) reads.
+const ANISOTROPY: u32 = 0x00c2_5370;
+/// The asset reference tree's header (`0x0045d420`): nil node `+0`, root
+/// `+0xc`; nodes are `PAssetReference +4` (left `+0`, right `+4`, parent
+/// and colour `+8`), the reference's id `+0x18`, asset `+0x1c`
+/// (`Phyre_PAssetReference_GetAssetReferenceByAsset` `0x0045cb50`,
+/// `Phyre_PRedBlackTree_successor` `0x00575160`).
+const ASSET_TREE: u32 = 0x00c9_424c;
+/// Nodes walked at most.
+const ASSETS_MAX: usize = 1 << 17;
+/// Asset ids by object, for the model cluster they were found under.
+type AssetCache = (usize, std::collections::HashMap<usize, String>);
+static ASSET_CACHE: Mutex<Option<AssetCache>> = Mutex::new(None);
+
+/// A `PString`'s text (the pointer's low bit is a flag).
+fn pstring(p: usize) -> Option<String> {
+    let p = p & !1;
+    (p != 0).then(|| cstr(p)).flatten()
+}
+
+/// The asset ids of `wanted` objects, from the asset reference tree.
+fn asset_ids(
+    wanted: &std::collections::HashSet<usize>,
+) -> std::collections::HashMap<usize, String> {
+    let mut out = std::collections::HashMap::new();
+    let nil = crate::rebase(ASSET_TREE);
+    let mut stack = vec![word(nil + 0xc).unwrap_or(nil)];
+    let mut seen = 0;
+    while let Some(node) = stack.pop() {
+        if node == nil || node == 0 || seen >= ASSETS_MAX || out.len() == wanted.len() {
+            continue;
+        }
+        seen += 1;
+        let Some(b) = bytes(node, 0x1c) else {
+            continue;
+        };
+        let w = |o: usize| u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]) as usize;
+        stack.push(w(0));
+        stack.push(w(4));
+        if wanted.contains(&w(0x18))
+            && let Some(id) = pstring(w(0x14))
+        {
+            out.insert(w(0x18), id);
+        }
+    }
+    out
+}
+
+/// The [`ffx_gfx::scene_inputs::Wire`] block of a `renderWorld` call:
+/// the camera's world matrix, the texture settings, the clusters' files and the materials' textures.
+fn wire_at(camera: usize, r: &Resolver) -> ffx_gfx::scene_inputs::Wire {
+    use ffx_gfx::scene_inputs as si;
+    let world_ptr = word(camera + 0xb0).unwrap_or(0);
+    let mut wire = si::Wire {
+        camera_world: (world_ptr != 0).then(|| floats::<12>(world_ptr)).flatten(),
+        texture_quality: u32_at(crate::rebase(TEXTURE_QUALITY)).unwrap_or(u32::MAX),
+        anisotropy: u32_at(crate::rebase(ANISOTROPY)).unwrap_or(0),
+        ..si::Wire::default()
+    };
+    // Clusters: their first asset reference's id, up to the `#`.
+    let mut clusters: Vec<(usize, u32)> = r.cluster_ix.iter().map(|(&c, &i)| (c, i)).collect();
+    clusters.sort_by_key(|c| c.1);
+    for (c, _) in clusters {
+        let id = r
+            .lists
+            .iter()
+            .filter(|l| l.cluster == c && l.class.rsplit("::").next() == Some("PAssetReference"))
+            .find_map(|l| {
+                let (obj, _) = *l.objects().first()?;
+                pstring(word(obj + 0x18)?)
+            })
+            .unwrap_or_default();
+        wire.cluster_assets
+            .push(id.split('#').next().unwrap_or_default().to_owned());
+    }
+    // Materials' texture slots, then their textures' ids.
+    let mut materials: Vec<(usize, u32)> = r.material_ix.iter().map(|(&m, &i)| (m, i)).collect();
+    materials.sort_by_key(|m| m.1);
+    let mut slots = Vec::new();
+    for &(m, _) in &materials {
+        let variant = word(m).unwrap_or(0);
+        let buf = word(m + 4).unwrap_or(0);
+        let n = if variant == 0 {
+            0
+        } else {
+            u32_at(variant + 0x20).unwrap_or(0) & 0x7fff_ffff
+        };
+        let defs = word(variant + 0x24).unwrap_or(0);
+        let mut list = Vec::new();
+        for k in 0..n.min(PARAMETERS_MAX) as usize {
+            let Some(e) = bytes(defs + 16 * k, 16) else {
+                break;
+            };
+            if !matches!(e[2], 0x42 | 0x44) {
+                continue;
+            }
+            let offset = u32::from(u16::from_le_bytes([e[8], e[9]]));
+            let texture = if buf == 0 {
+                0
+            } else {
+                word(buf + offset as usize + 0xc).unwrap_or(0)
+            };
+            list.push((offset, e[2], texture));
+        }
+        slots.push(list);
+    }
+    let wanted: std::collections::HashSet<usize> = slots
+        .iter()
+        .flatten()
+        .map(|t| t.2)
+        .filter(|&t| t != 0)
+        .collect();
+    // Ids found before (by the model cluster: a new map frees the old
+    // textures); the tree is walked only for pointers not seen yet.
+    let ids = {
+        let mut cache = ASSET_CACHE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cache = cache.get_or_insert_with(|| (r.model, std::collections::HashMap::new()));
+        if cache.0 != r.model {
+            *cache = (r.model, std::collections::HashMap::new());
+        }
+        let new: std::collections::HashSet<usize> = wanted
+            .iter()
+            .copied()
+            .filter(|t| !cache.1.contains_key(t))
+            .collect();
+        if !new.is_empty() {
+            let found = asset_ids(&new);
+            for t in new {
+                cache
+                    .1
+                    .insert(t, found.get(&t).cloned().unwrap_or_default());
+            }
+        }
+        cache.1.clone()
+    };
+    for list in slots {
+        wire.material_textures.push(
+            list.into_iter()
+                .map(|(offset, kind, texture)| si::MaterialTexture {
+                    offset,
+                    kind,
+                    set: texture != 0,
+                    asset: ids.get(&texture).cloned().unwrap_or_default(),
+                })
+                .collect(),
+        );
+    }
+    wire
+}
+
+/// The pass a renderer draws (`+0x48`: `OpaqueNoMSAA`, `postOpaque`, ...).
+#[must_use]
+pub fn renderer_pass(renderer: usize) -> String {
+    pass_name(word(renderer + 0x48).unwrap_or(0))
+}
+
+/// The map model's symbol (`PhyreScene +0xd8`, e.g. `cdsp00`), cheaply.
+#[must_use]
+pub fn map_symbol() -> Option<String> {
+    let scene = word(crate::rebase(G_PHYRE_SCENE))?;
+    (scene != 0).then(|| word(scene + 0xd8).and_then(cstr))?
 }
 
 /// Limits on the character part (a damaged object must not make a huge

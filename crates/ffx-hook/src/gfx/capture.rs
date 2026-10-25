@@ -153,8 +153,11 @@ pub struct Capture {
     /// `State::reborn`'s length when the capture started.
     reborn_at: usize,
     /// The scene builder's inputs at each map `renderWorld` call
-    /// (`crate::world::render_world`).
-    inputs: Vec<ffx_gfx::scene_inputs::SceneInputs>,
+    /// (`crate::world::render_world`), each with its `Wire` block.
+    inputs: Vec<(
+        ffx_gfx::scene_inputs::SceneInputs,
+        Option<ffx_gfx::scene_inputs::Wire>,
+    )>,
 }
 
 static PENDING: Mutex<Option<Capture>> = Mutex::new(None);
@@ -177,7 +180,10 @@ pub fn inputs_wanted() -> bool {
 /// tagged with the update that made it (the main thread renders update
 /// `n` right after it; the render thread draws it later, see
 /// [`end_frame`], which gives the record its capture frame).
-pub fn add_inputs(mut inputs: ffx_gfx::scene_inputs::SceneInputs) {
+pub fn add_inputs(
+    mut inputs: ffx_gfx::scene_inputs::SceneInputs,
+    wire: Option<ffx_gfx::scene_inputs::Wire>,
+) {
     inputs.update = crate::harness::update_label();
     inputs.thread = thread_id();
     inputs.frame = u32::MAX;
@@ -194,7 +200,7 @@ pub fn add_inputs(mut inputs: ffx_gfx::scene_inputs::SceneInputs) {
             inputs.instances.len(),
             inputs.materials.len()
         ));
-        c.inputs.push(inputs);
+        c.inputs.push((inputs, wire));
     } else {
         // The capture ended some other way.
         INPUTS_WANTED.store(false, Ordering::Release);
@@ -1447,7 +1453,7 @@ unsafe fn end_frame(s: &mut State, c: &mut Capture, swap_chain: Ptr) {
     // The scene inputs of the update this frame shows.
     if let Some(label) = crate::harness::present_label() {
         let mut n = 0;
-        for i in &mut c.inputs {
+        for (i, _) in &mut c.inputs {
             if i.update == label {
                 i.frame = c.frame;
                 n += 1;
@@ -1990,8 +1996,8 @@ fn snapshot(s: &State, c: &mut Capture) -> Vec<u8> {
     // captured frame shows are left out).
     let mut inputs = std::mem::take(&mut c.inputs);
     for f in std::mem::take(&mut c.frames) {
-        for i in inputs.extract_if(.., |i| i.frame == f.number) {
-            ffx_gfx::Msg::SceneInputs(Box::new(i)).write(&mut out);
+        for (i, wire) in inputs.extract_if(.., |(i, _)| i.frame == f.number) {
+            ffx_gfx::scene_inputs::write_message(&i, wire.as_ref(), &mut out);
         }
         ffx_gfx::Msg::Frame(f).write(&mut out);
     }

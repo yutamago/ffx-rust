@@ -24,9 +24,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = args
         .first()
         .ok_or("usage: inputs <capture.ffxgfx> [--camera] [--app]")?;
-    let list = ffx_scene::inputs::read(&std::fs::read(path)?)?;
-    for s in &list {
+    let list = ffx_scene::inputs::read_wired(&std::fs::read(path)?)?;
+    for (s, wire) in &list {
         println!("{}", ffx_scene::inputs::summary(s));
+        if let Some(w) = wire
+            && args.iter().any(|a| a == "--wire")
+        {
+            println!("  wire: camera world {:?}", w.camera_world);
+            println!(
+                "  texture quality {} anisotropy {}",
+                w.texture_quality,
+                f32::from_bits(w.anisotropy)
+            );
+            println!("  clusters {:?}", w.cluster_assets);
+            for (m, t) in w.material_textures.iter().enumerate() {
+                for t in t {
+                    println!(
+                        "  material {m} slot {:#x} kind {:#x} set {} {}",
+                        t.offset, t.kind, t.set, t.asset
+                    );
+                }
+            }
+        }
         if args.iter().any(|a| a == "--camera") {
             println!("  camera:{}", floats(&s.camera, 0));
         }
