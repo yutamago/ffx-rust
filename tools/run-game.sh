@@ -75,6 +75,11 @@ fi
 if [[ -n "${FFX_HOOK_HITS:-}" ]]; then
     export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_HITS/p"
 fi
+# FMOD call log (crates/ffx-hook/src/fmod_log.rs): FFX_FMOD_LOG names the
+# file every FMOD call is written to (a WSL path, best on /mnt/c).
+if [[ -n "${FFX_FMOD_LOG:-}" ]]; then
+    export WSLENV="${WSLENV:+$WSLENV:}FFX_FMOD_LOG/p"
+fi
 case "$lang" in jp|en|fr|de|it|es|kr|ch) ;; *) echo "unknown language $lang" >&2; exit 2 ;; esac
 if [[ -n "$instance" ]]; then
     game="$("$repo/tools/instance.sh" "$instance" ${mods[@]+"${mods[@]}"})"

@@ -535,8 +535,8 @@ ids are not: `g_FMVUnskippableIds` `0x00b49b08`); `g_FMVSkipped`
 
 | Thread | Proc | Work |
 |---|---|---|
-| reading | `PVideoPlaybackWin32__ReadingThread` `0x00a27880` | `PVideoPlaybackWin32_DemuxLoop` `0x00a27650`: mkvparser clusters and blocks, video packets to one queue, Vorbis packets to another; loops from the first cluster when looping |
-| decoding | `PVideoPlaybackWin32__VideoDecodingThread` `0x00a27b90` | `PVideoPlaybackWin32_DecodeLoop` `0x00a279b0`: `vpx_codec_decode`, one `vpx_codec_get_frame`, the Y, U, V planes into a 30-slot I420 queue |
+| reading | `PVideoPlaybackWin32_initialize` `0x00a27880` | `PVideoPlaybackWin32_DemuxLoop` `0x00a27650`: mkvparser clusters and blocks, video packets to one queue, Vorbis packets to another; loops from the first cluster when looping |
+| decoding | `PVideoPlaybackWin32_open` `0x00a27b90` | `PVideoPlaybackWin32_DecodeLoop` `0x00a279b0`: `vpx_codec_decode`, one `vpx_codec_get_frame`, the Y, U, V planes into a 30-slot I420 queue |
 | FMOD stream | `PVideoPlaybackWin32_FmodReadCallback_00a27ee0` | `PVideoPlaybackWin32_AudioRead_00a27170`: 0x1000 frames per call, `vorbis_synthesis_pcmout`, s16 = clamp(floor(f x 32767.0 + 0.5)) interleaved; silent while prebuffering |
 | main or render | `UpdateTexture` / `updateVideoCallback` `0x006dae00` | `updateTexture`: one decoded frame into the next of three Y, U, V texture sets (`Map`/`Unmap` or `UpdateSubresource`) |
 

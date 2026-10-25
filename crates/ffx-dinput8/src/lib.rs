@@ -94,6 +94,9 @@ unsafe fn install_hooks(base: usize) {
         }
         Err(wrong) => log(&format!("  not patching: {wrong}")),
     }
+    // FMOD call log (FFX_FMOD_LOG): import and vtable slots only.
+    // SAFETY: forwarded from the caller.
+    unsafe { ffx_hook::fmod_log::install(base) };
     // Last, so it only arms bytes no hook or patch owns.
     // SAFETY: forwarded from the caller.
     unsafe { ffx_hook::coverage::install(base) };

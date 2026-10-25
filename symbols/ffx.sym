@@ -2554,6 +2554,7 @@
 0x00679a00 function ReturnAddress_00679a00 # () -> 0x00b42a34 (an address in the image); name ours
 0x00679ab0 function Semaphore_Construct # thiscall(this, n), ret 4 -> this: *this = CreateSemaphoreW(0, n, n, 0) through 0x00b0c1e0; name ours
 0x00679c60 function VsyncThreadImpl_run       # thread body (vtable +4): while running (+0x18) call the handler (+0x10), WaitForSingleObject(semaphore +0x1c, 16 ms); the PS2 vsync interrupt on real time
+0x00679db0 function Thread_Start_00679db0        # entry of the threads 0x00679cb0 creates (CreateThread, suspended): calls the thread object's vtable +4, sets its +0xc, ExitThread; the FmodManager thread's start address in every FMOD call log (docs/formats/audio-platform.md); name ours
 0x00679e60 function createVsyncEmuThread      # fh v3:exact 0x0067a010
 0x00679f20 function endVsyncEmuThread         # fh v3:exact 0x0067a0d0
 0x00679f80 function VsyncEmu_Wake             # ReleaseSemaphore(vsync thread +0x1c): runs the vsync handler now instead of after the 16 ms wait
@@ -3445,6 +3446,7 @@
 0x006f9d80 function PhyreFIOSStreamFile_seek  # fh v3:exact 0x006f9e60 PhyreFIOSStreamFile::seek
 0x006fa130 function FmodManager_createThread     # str: the thread is named "FmodManager"; Switch FmodManager::createThread (116 bytes) sits in the same place after getSystemTimeInMsec/registCommandAsync in the file
 0x006fa190 function FmodManager_Destroy       # (): when g_FmodManager: its deleting destructor (vtable +0, thiscall 1), SleepThread(), g_FmodManager = 0; only caller iFmodFinalize; FMOD glue; name ours
+0x006fa1b0 label FmodManager_threadMain       # the FmodManager thread's body (pushed by the FmodManager ctor 0x006f9de0): while mgr+0x4c runs FmodManager_tick 0x006fa700, then drains the queue (0x006fa7e0), FfxFmod_shutDown, mgr+0x4d = 1; every FMOD Designer call of the game runs here (FMOD call logs, docs/formats/audio-platform.md); name ours
 0x006fa200 function GetDerefU32_006fa200         # auto-port shape (return deref u32 (pointer chain), thiscall): t0 = u32[(a0 + 0x8)]; t1 = u32[(t0 + 0x8)]; return t1; callers: ; name ours
 0x006fa210 function FmodManager_getSystemTimeInMsec # structure: graphicGetTimeInMicroseconds converted to a float of milliseconds; Switch FmodManager::getSystemTimeInMsec (36 bytes), here just before the registCommandAsync overloads as there
 0x006fa280 function FmodManager_registCommandAsync1 # structure: (cmd) -> Fmod_PushCommand(cmd, 0, 0, 0, 0); one of the registCommandAsync overloads with defaulted arguments (Switch has five FmodManager::registCommandAsync, 28-40 bytes beside the 556-byte main one, which is our Fmod_PushCommand); 1-argument form; ours: thiscall(mgr; cmd), ret 4: Fmod_PushCommand(cmd, 0, 0, 0, 0)
@@ -3459,6 +3461,7 @@
 0x006fa500 function FmodManager_registCommandSync # thiscall(mgr; cmd, a, b, c, d), ret 0x14: "registCommandSync TimeOut"; cmd/args at mgr +0x30..+0x40, done +0x44, result +0x48; 0x11-0x13/0x16/0x19/0x41 run on the caller's thread, the rest wait for the FMOD thread (event +0x18/+0x1c, 2 x 5 ms); 0x3f also answers 1 for a queued 0x33 of the id; str-match switch: only user of 1 string(s) held once by both builds, e.g. 'registCommandSync TimeOut: %d\\n'; Switch 0x71002371d0 FmodManager::registCommandSync (symbols from Fahrenheit's server export)
 0x006fa690 function FmodManager_signalMusicStart # fh v3:exact 0x006fa770 FmodManager::signalMusicStart
 0x006fa6c0 function FmodManager_signalVoiceStart # layout+callees: sorts between FmodManager_signalMusicStart and SyncManager_SyncManager, and its named callees match the Switch 0x7100237500 FmodManager_signalVoiceStart's (similarity 1.00: FfxFmod_voiceSetStartSignal); symbols from Fahrenheit's server export
+0x006fa700 function FmodManager_tick             # fastcall(mgr): graphicGetTimeInMicroseconds; before 33.333 ms since mgr+0x20 waits on mgr+0x18 (WaitForSingleObjectEx, alertable) for the rest; else FfxFmod_soundLoop and mgr+0x20 advances by whole periods; then runs the queue (0x006fa7e0). The FMOD clock is the game clock (virtual in the harness); name ours
 0x006fa8b0 function SyncManager_SyncManager   # fh v3:cg2 0x6fa990 SyncManager::SyncManager
 0x006fa8d0 function SyncManager_initData      # fh v3:exact 0x006fa9b0 SyncManager::initData
 0x006faa30 function SyncManager_initSyncFileList # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/%sData/SyncData/SyncDataList.txt'; Switch 0x71002380d0 SyncManager::initSyncFileList (symbols from Fahrenheit's server export)
@@ -3527,6 +3530,9 @@
 0x00705fa0 function cdc_Matrix_RotY           # thiscall(m, sin, cos), ret 8: columns 0 and 2 of each row turned (z' = z c - x s, x' = z s + x c); returns m; between RotX and RotZ, called by FFXVu0RotMatrixY; name ours
 0x00706070 function cdc_Matrix_RotZ           # fh v3:exact 0x00706160 cdc::Matrix::RotZ
 0x007063f0 function cdc_Transpose             # fh v3:exact 0x007064e0 cdc::Transpose
+0x007066d0 function FmodMemory_alloc             # stdcall(size, type, src), ret 0xc: FMOD_Memory_Initialize's alloc callback (0x00706839): user_malloc(size + 16) aligned to 16, pad count at ptr-1; size 0 gives NULL; name ours
+0x00706710 function FmodMemory_free              # stdcall(ptr, type, src), ret 0xc: FMOD_Memory_Initialize's free callback: user_free(ptr - ptr[-1]); name ours
+0x00706730 function FmodMemory_realloc           # stdcall(ptr, size, type, src), ret 0x10: FMOD_Memory_Initialize's realloc callback: new aligned block, copies min(size, old size - pad), frees the old; name ours
 0x007067d0 function FfxFmod_getNowPlayMusic   # thiscall(FfxFmod) -> FmodMusic +0x18 (the playing music); Switch FfxFmod::getNowPlayMusic by the PC build's alphabetical order of FfxFmod.cpp
 0x00706820 function FfxFmod_initEventSystem      # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'EventSystem create failed!\\n'; Switch 0x710029ef80 FfxFmod::initEventSystem (symbols from Fahrenheit's server export)
 0x00706920 function FfxFmod_initLoadMasterBank # thiscall(FfxFmod), cmd 0x2b: FmodMusic/FmodVoice initTempData (empty on PC); Switch FfxFmod::initLoadMasterBank by the PC build's alphabetical order of FfxFmod.cpp
@@ -3680,6 +3686,10 @@
 0x00708400 function FmodCmd_soundSetMusicVolume # cdecl(FfxFmod, args*): FMOD command 0x43's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::soundSetMusicVolume; name ours
 0x00708430 function FmodCmd_soundSetVoiceVolume # cdecl(FfxFmod, args*): FMOD command 0x44's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::soundSetVoiceVolume; name ours
 0x00708460 function FmodCmd_soundSetSfxVolume # cdecl(FfxFmod, args*): FMOD command 0x45's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::soundSetSfxVolume; name ours
+0x007084d0 function FmodFile_close               # stdcall(handle, userdata), ret 8: System::setFileSystem close callback (0x00706906): NULL gives 0x25, else PStreamFile closeFile, dtor, delete; name ours
+0x00708510 function FmodFile_open                # stdcall(name, unicode, filesize*, handle*, userdata*), ret 0x14: System::setFileSystem open callback: a PStreamFile on name + g_00c3a480 (VBF through the Phyre file layer), *filesize from PhyreFIOSStreamFile_getFileSize; 0x17 (file not found) when it does not open; name ours
+0x007085a0 function FmodFile_read                # stdcall(handle, buf, size, read*, userdata), ret 0x14: System::setFileSystem read callback: PStreamFile_read, 0x16 (end of file) on a short read, 0x25 for a NULL handle; name ours
+0x007085e0 function FmodFile_seek                # stdcall(handle, pos, userdata), ret 0xc: System::setFileSystem seek callback: PhyreFIOSStreamFile_seek(pos, 0) from the start; name ours
 0x00708610 function FfxFmod_SetGlobal00c3a480_00708610 # auto-port shape (store constant to global, cdecl): u32[&0x00c3a480] = 0x0; callers: FfxFmod_initEventSystem; name ours
 0x00708630 function FmodMusic_FmodMusic       # fh switch:bsim0.92 0x71002a0b00 FmodMusic::FmodMusic
 0x00708720 function FmodMusic_clear           # thiscall(FmodMusic; id); Switch FmodMusic::clear by the PC build's alphabetical order of FmodMusic.cpp
@@ -3764,13 +3774,18 @@
 0x0070e480 function FmodShout_start           # thiscall(shout; a, b, c, d, mute, &status0, &status1, arg), ret 0x20: Switch FmodShout::start; called by FmodVoice::shoutStart
 0x0070eac0 function SfxEvent_delayStart       # thiscall(event; delay, b, c), ret 0xc: Switch SfxEvent::delayStart by the alphabetical order; called by FmodSfx_delayStart
 0x0070ec40 function SfxEvent_isPlaying        # thiscall(event) -> al: Switch SfxEvent::isPlaying by the order; called by FmodSfx::canStartNewEvent
+0x0070eeb0 function SfxEvent_applyPan            # thiscall(SfxEvent): for each instance with its flag set: Event::getChannelGroup, getNumChannels, getChannel(i), Channel::setPan(pan -1..1) on every channel (FMOD call log: callers 0x0070eeea..0x0070ef59); name ours
 0x0070ef80 function SfxEvent_setPan           # thiscall(event; pan), ret 4: the first Switch SfxEvent::setPan; called by FmodSfx::setPan
 0x0070f000 function SfxEvent_setPan2          # thiscall(event; pan, frames), ret 8: the second SfxEvent::setPan; called by FmodSfx::setPan3
+0x0070f100 function SfxEvent_setPaused           # thiscall(SfxEvent): Event::setPaused(FmodSfx +0 byte) on every instance (from FmodSfx_pause 0x0070d0c0); name ours
+0x0070f140 function SfxEvent_setVolume           # thiscall(SfxEvent): Event::setVolume(entire +0x24 x requested +0x20) on every instance whose flag byte is set (FMOD call log caller 0x0070f182); name ours
 0x0070f1a0 function SfxEvent_setVolume        # thiscall(event; volume), ret 4: the first Switch SfxEvent::setVolume; called by FmodSfx::setVolume
 0x0070f210 function SfxEvent_setVolume2       # thiscall(event; volume, frames), ret 8: the second SfxEvent::setVolume; called by FmodSfx::setVolume3
 0x0070f310 function SfxEvent_start            # thiscall(event; b, c), ret 8: Switch SfxEvent::start by the order; called by FmodSfx_Start/forceStart
 0x0070f490 function SfxEvent_stop             # thiscall(event; immediate), ret 4: Switch SfxEvent::stop by the order; called by FmodSfx::stop
 0x0070f930 function SfxBank_dtor_SfxBank         # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'this=0x%p, Unload Fmod Project\\n'; Switch 0x71002a8060 SfxBank::~SfxBank (symbols from Fahrenheit's server export)
+0x0070fb20 function SfxBank_getNumPlayingEvents  # thiscall(SfxBank): EventProject::getInfo (vtable +4) into a 0x11c-byte FMOD_EVENT_PROJECTINFO, returns its +0x114; FmodSfx_update and the unloads delete a bank only when 0; called twice per FMOD tick per loaded bank (FMOD call log); name ours
+0x0070fcd0 function SfxBank_stopAllEvents        # thiscall(SfxBank, immediate): EventProject::stopAllEvents (vtable +0x24); 1 from FmodSfx_shutdown, 0 from unloadProjectBySeq; name ours
 0x0070fd20 function vfxIntTree_Find           # thiscall (this, key) -> the node whose i32 at +0xc is *key, else 0: from the root this+0xc, child [0] when the node's key is greater, [1] when less, the header (this) ends; callers 0x00710270/0x00710290
 0x0070fd70 function vfxIntTree_InsertFinalize_0070fd70 # thiscall(this, node), ret 4: vfxIntTree_Insert, 0x12 when the key is taken, else Phyre_PRedBlackTree_postInsertFinalize(node) on this and 0; name ours; ported (round 33, tree::bridge::vfx_int_tree_insert_finalize)
 0x0070fda0 function vfxIntTree_Insert         # thiscall (this, node) -> 0, or the node already holding the key: node+8 (parent link, bit 0 colour) gets bit 0, children = this, linked under the search's last node ((node+8 & 1) + parent), as vfxIntTree_Find walks
@@ -13932,7 +13947,7 @@
 0x00a273b0 function PVideoPlaybackWin32_AudioInit_00a273b0 # fastcall(player) -> al: the Vorbis headers, then an FMOD stream (System::createSound, playSound, Channel::setPriority); called by PVideoPlaybackWin32__ReadingThread; library; name ours
 0x00a27650 function PVideoPlaybackWin32_DemuxLoop # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a27880 function PVideoPlaybackWin32__ReadingThread # the reading thread's proc (created by PVideoPlaybackWin32_initialize 0x00a27cf0): waits event +0x2ac, runs PVideoPlaybackWin32_DemuxLoop 0x00a27650 while state 1/2; the name moved here from 0x00a27cf0 (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a278f0 function PVideoPlaybackWin32_AudioShutdown # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a278f0 function PVideoPlaybackWin32_AudioShutdown # thiscall(player): wakes the packet ring, Channel::stop, spins (Sleep 1) on Sound::getOpenState until READY, Sound::release, clears +0x29c/+0x2a0, the Vorbis state and the ring; from the close 0x00a28350; name ours (movie audio, pc-audio; name from the platform census)
 0x00a279b0 function PVideoPlaybackWin32_DecodeLoop # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a27b90 function PVideoPlaybackWin32__VideoDecodingThread # the decoding thread's proc (created by PVideoPlaybackWin32_open 0x00a27f20): PVideoPlaybackWin32_DecodeLoop 0x00a279b0; the name moved here from 0x00a27f20 (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a27bd0 function Phyre_PVideo_PVideoPlaybackWin32_getCurrentTime # fh v3:exact+call.cs 0x00a27bd0 thiscall Phyre::PVideo::PVideoPlaybackWin32::getCurrentTime
@@ -13942,11 +13957,11 @@
 0x00a27cf0 function PVideoPlaybackWin32_initialize # thiscall(player, 0, depth, FMOD::System*): sets the FMOD system, the queue depth (0 -> 30), starts the reading thread 0x00a27880; the old name came from the thread-name string it passes, depth, starts reading thread (platform census 2026-10-25, docs/formats/platform.md; movie); was PVideoPlaybackWin32__ReadingThread
 0x00a27e10 function PVideoPlaybackWin32_seek # guess: returns 1, no-op (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a27e20 function PVideoPlaybackWin32_MapTexture # guess: bind if needed, map buffer (i+1) % count (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a27e90 function PVideoPlaybackWin32_togglePause # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a27e90 function PVideoPlaybackWin32_togglePause # thiscall(player): state +0xe4 1 -> 2 Channel::setPaused(true), 2 -> 1 setPaused(false); name ours (movie audio, pc-audio; name from the platform census)
 0x00a27ee0 function PVideoPlaybackWin32_FmodReadCallback_00a27ee0 # stdcall(sound, data, len), ret 0xc: 0x00a7c8fe(sound, &player) (FMOD Sound::getUserData), then PVideoPlaybackWin32_AudioRead_00a27170(player, data, len); returns 0; its address pushed at 0x00a275d2 (AudioInit's FMOD stream setup); name ours
 0x00a27f20 function PVideoPlaybackWin32_open # thiscall(player, path, loop): opens the WebM, vpx_codec_dec_init, starts the decoding thread 0x00a27b90; the old name came from the thread-name string it passes; -> 0/-1/-2/-3 (platform census 2026-10-25, docs/formats/platform.md; movie); was PVideoPlaybackWin32__VideoDecodingThread
 0x00a282f0 function PVideoPlaybackWin32_play # guess: state 1, setPaused(false); no refs (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a28330 function PVideoPlaybackWin32_setVolume # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a28330 function PVideoPlaybackWin32_setVolume # thiscall(player, f32): Channel::setVolume on the movie's channel; returns r == 0; name ours (movie audio, pc-audio; name from the platform census)
 0x00a28350 function PVideoPlaybackWin32_close # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a28430 function PVideoPlaybackWin32_terminate # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a284a0 function Phyre_PVideo_PVideoPlaybackWin32_updateTexture # fh v3:exact 0x00a284a0 Phyre::PVideo::PVideoPlaybackWin32::updateTexture
