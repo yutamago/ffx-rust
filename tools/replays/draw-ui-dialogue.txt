@@ -1,0 +1,42 @@
+# UI draw captures (M4 UI census, docs/formats/ui-draw.md): full Direct3D 11
+# captures (contents, not hashes) of two frames that need no save:
+#   title   the title menu (map 0x17), an Iggy (Flash) movie over the
+#           title's 3D scene: the Iggy draws
+#   choice  New Game's "Select a Sphere Grid to use!" (map 0x17 still):
+#           an event message window with a choice, the Tk window and font
+#           draws of the dialogue code (g_AtelMsgWindows 0x01326d70)
+# From launch: the logo (memochek, map 0x15c) runs into the opening (map
+# 0x15d); a few seconds in (its count 256..511) Start skips to the title
+# (map 0x17, previous 0x15d; Start on the logo itself sometimes went on to
+# the opening anyway), whose count 101 is shot and captured (as boot.txt's
+# shot 4); then the title's menu: Up to New Game, Enter.
+# Needs the graphics layer (FFX_GFX=1); not part of run-all.sh. Run it with
+#   FFX_GFX=1 FFX_TEST_VOLUME=0 target/release/examples/replay \
+#     tools/replays/draw-ui-dialogue.txt '<windows path of a folder>\draw-ui-dialogue.trace' original
+# Captures land beside the trace ($OUT\title, $OUT\choice), 100-200 MB
+# each: keep them in ~/ffx-work/m4/captures, never in the repository.
+#
+# Each capture starts with `now` while lockstep holds the render thread in
+# Present after a wait, as draw-field.txt does; `frames 1` and `wait 1`
+# record the next frame.
+waitfor 0x0112ca90:4 5d015c01 ffffffff 3000
+waitfor 0x01325d94:4 00010000 00ffffff 3000
+press start 3 20
+waitfor 0x0112ca90:4 17005d01 ffffffff 3000
+lockstep on
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+read 0x01325d94 4
+shot $OUT\draw-ui-title.bmp
+gfxcapture $OUT\title frames 1 now async
+wait 1
+gfxcapture result
+# New Game: the Flash menu reads keys (Up, Enter)
+key c8 3 20
+key 1c 3 20
+wait 60
+read 0x01326d70 0x60
+shot $OUT\draw-ui-choice.bmp
+gfxcapture $OUT\choice frames 1 now async
+wait 1
+gfxcapture result

@@ -1,0 +1,57 @@
+# UI draw captures (M4 UI census, docs/formats/ui-draw.md): full Direct3D 11
+# captures (contents, not hashes) of three menu frames from save slot 1
+# (ffx_001: on the main machine the salvage ship deck cdsp0000, on
+# PC2 Macalania mcfr0400; the menus' draws are the same kind either
+# way), the way menu-browse.txt opens them:
+#   menu-main   the main menu (menu-browse-1: triangle, 40 frames)
+#   menu-items  down, down, circle (menu-browse-2's keys: the item list where
+#               the cursor starts on Items; Abilities' character choice on
+#               PC2's save, whose cursor starts on Sphere Grid)
+#   menu-esc    Esc (DirectInput scan code 1) from the field: the PC pause
+#               menu
+# Needs the graphics layer (FFX_GFX=1); not part of run-all.sh. Run it with
+#   FFX_GFX=1 FFX_TEST_VOLUME=0 target/release/examples/replay \
+#     tools/replays/draw-ui-menu.txt '<windows path of a folder>\draw-ui-menu.trace' original
+# Captures land beside the trace ($OUT\menu-main, ...), 100-200 MB each:
+# keep them in ~/ffx-work/m4/captures, never in the repository.
+#
+# Each capture starts with `now` while lockstep holds the render thread in
+# Present after a wait, as draw-field.txt does; `frames 1` and `wait 1`
+# record the next frame.
+# boot as draw-ui-dialogue.txt does (into the opening, Start to the title),
+# then `loadsave 1` once the title's count is past 127, so the count's
+# 64..127 range can only be the save's map (`load direct 1` taps Start on
+# the logo, which here sometimes ran into the opening and never saw the
+# title it waits for)
+waitfor 0x0112ca90:4 5d015c01 ffffffff 3000
+waitfor 0x01325d94:4 00010000 00ffffff 3000
+press start 3 20
+waitfor 0x0112ca90:4 17005d01 ffffffff 3000
+waitfor 0x01325d94:4 80000000 80ffffff 3000
+loadsave 1
+lockstep on
+waitfor 0x01325d94:4 40000000 c0ffffff 3000
+read 0x0112ca90 4
+# the field takes input only after its fade-in (menu-browse.txt: 120)
+wait 120
+press triangle 4 40
+shot $OUT\draw-ui-menu-1.bmp
+gfxcapture $OUT\menu-main frames 1 now async
+wait 1
+gfxcapture result
+press down 4 15
+press down 4 15
+press circle 4 40
+shot $OUT\draw-ui-menu-2.bmp
+gfxcapture $OUT\menu-items frames 1 now async
+wait 1
+gfxcapture result
+# back to the field: out of the item list, close the menu
+press cross 4 30
+press triangle 4 30
+wait 60
+key 1 4 40
+shot $OUT\draw-ui-menu-3.bmp
+gfxcapture $OUT\menu-esc frames 1 now async
+wait 1
+gfxcapture result
