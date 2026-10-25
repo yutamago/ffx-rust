@@ -349,34 +349,51 @@ menus of a save run on Rust logic and replay identically.
 ### M4: Rust takes the platform, in-process
 
 Every part of the platform (the scene renderer, effects and
-post-processing, the UI, movies, audio, input and the window) is rebuilt
-in Rust inside the game's process and must give the original's output
+post-processing, the UI, movies, audio, input and the window) moves to
+Rust inside the game's process and must give the original's output
 exactly. Improvements to graphics, sound and input are not part of this
 rewrite: they are a separate project after it, backwards compatible with
 the original behaviour (user, 2026-10-24). The external renderer
 (`ffx-render`, its enhanced mode) is parked and gets no M4 work.
 
-Order (user's decision, 2026-10-24): the renderer's scene first, then
-effects and post-processing, the UI, movies, audio, input and the window.
+**Ported, not rebuilt (user, 2026-10-25).** M4 ports the platform code
+the game reaches, function by function with the M3 pipeline: the
+statically linked PhyreEngine and the game's glue over it (`graphic*`,
+`PhyreScene`, the FMOD and Iggy wrappers, the movie manager). Output is
+identical by construction, and every function has a parity test. The
+m4-pilot measured it (`~/ffx-work/m4/pilot-report.md`):
+- the game reaches 2,799 of PhyreEngine's 24,943 functions (514 of
+  2,084 KB) and 1,494 glue functions;
+- a 21-function slice of the map's render chain ported at about 3.5
+  minutes per function and passed drawdiff and the replays.
 
-The renderer draws on the game's own D3D11 device with the game's own
-DXBC shaders, so its output can be bit-identical. It issues its draws
-through a thin backend layer of its own with only a D3D11 backend: M6's
-platforms add Vulkan or wgpu behind it (reusing `ffx-dxbc`'s DXBC→WGSL
-translation). Each part replaces the old engine only when it passes:
+A first rebuild (round 2: `ffx-scene`'s map and character builders, the
+in-game map path in `ffx-hook/src/gfx/scene.rs`) gives the same draws as
+the original on the captured maps. It stays as a second check and as the
+seam for M6's backends.
 
-- a draw-stream comparison: the D3D11 calls the Rust side makes (draws,
-  order, shaders, constants, state, resources) against the ones PhyreEngine
-  makes for the same frame, captured in the same process, call by call
-  (`ffx-drawdiff`);
+What stays as it is in M4:
+- the Direct3D 11 calls (still calls, through the device's vtables);
+- the external DLLs: FMOD (`fmodex.dll`, `fmod_event.dll`) and Iggy
+  (`iggy_w32.dll`);
+- the open-source libraries linked into FFX.exe (libvpx, vorbis,
+  mkvparser);
+- the CRT and the platform category.
+
+M5 replaces them: Rust `std`, open-source decoders, the PC screens
+rewritten in Rust, and for FMOD either a port of the subset the game uses
+or a 32-bit helper process that loads the player's DLLs (decided at M5).
+
+Each part replaces the original only when it passes:
+
+- a draw-stream comparison: the D3D11 calls of the ported code (draws,
+  order, shaders, constants, state, resources) against the original's for
+  the same frame, captured in the same process, call by call
+  (`ffx-drawdiff`, references `~/ffx-work/m4/captures/ref-*`);
 - the replays and screenshot comparisons against the original game
-  (`tools/replays/run-all.sh`, `tools/shot-compare.py`).
-
-- Effects (`ppp`) and the remaster renderer (`graphic*`) are rewritten into
-  the Rust scene builder: Rust builds the scene instead of PhyreEngine.
-- Audio (FSB/FEV decoding, mixer), input and the window, movies, and the PC
-  UI screens are rewritten in Rust in-process. FMOD and Iggy are no longer
-  used; D3D11 stays as the first backend.
+  (`tools/replays/run-all.sh`, `tools/shot-compare.py`);
+- for audio, FMOD's mixed output written with its WAV writer, compared
+  sample for sample (sound may be on, on the main machine only).
 
 ### M5: inversion
 
