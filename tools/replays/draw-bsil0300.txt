@@ -1,0 +1,45 @@
+# Draw capture (M4 round 2, docs/formats/scene-maps.md): one full-mode
+# frame of the Besaid river below the cliff (map 0x29, the event-cliff
+# map; bsil0300, level /map/bsil/bsil03/), reached from save ffx_003 by
+# event-besaid.txt's walk (off the beach to map 0x14, Wakka's trigger,
+# right to map 0x29), at ctrl work 0's frame count 32 (event-besaid-3).
+# Original code; needs the graphics layer. Not part of run-all.sh (no
+# trace, no shots to compare). Run it with
+#   FFX_GFX=1 target/release/examples/replay tools/replays/draw-bsil0300.txt \
+#     '<windows folder>\draw.trace' original
+# The capture lands beside the trace ($OUT\bsil0300-32, 70-130 MB of
+# capture.ffxgfx): keep it in ~/ffx-work/m4/captures, never in git.
+# Two runs are compared with drawdiff and allow/bsil0300.txt
+# (docs/formats/scene-maps.md, "Captures").
+#
+# The `readp` lines log the level name hash (g_PhyreScene +0xfaf4,
+# graphicLevelSetName's hashU) and the shadow solution (+0xf9cc,
+# ShadowManager_selectShadowSolution) in the replay's output.
+#
+# `gfxcapture ... now async` while lockstep holds the render thread in
+# Present: the capture records the next frame (`wait 1`).
+load direct 3 bsil0000
+lockstep on
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+pad down+left
+waitfor 0x0112ca90:4 14004600 ffffffff 600
+pad
+waitfor 0x01325d94:4 20000000 e0ffffff 1500
+pad up
+waitfor 0x0112d67c:2 7700 ffff 600
+pad
+wait 40
+waitfor 0x01326d84:4 00000000 ffffffff 3000
+wait 120
+pad right
+waitfor 0x0112ca90:4 29001400 ffffffff 900
+pad
+waitfor 0x01325d94:4 20000000 e0ffffff 1500
+read 0x01325d94 4
+readp 0x00ccb9d8 0xfaf4 4
+readp 0x00ccb9d8 0xf9cc 4
+shot $OUT\draw-bsil0300.bmp
+gfxcapture $OUT\bsil0300-32 now async
+wait 1
+gfxcapture result

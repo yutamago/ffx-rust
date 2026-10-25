@@ -67,19 +67,38 @@ pub struct SegmentInfo {
     pub indices: usize,
 }
 
-/// Mip levels the game drops from every texture cluster with
-/// `TextureQuality=TQ_LOW` in `GameSetting.ini` (the user's setting, which
-/// the harness copies into its sandbox): measured on all 96 file textures
-/// of the field-walk-1 frame, from 64x512 to 4096x4096
-/// (`docs/formats/scene.md`, "Textures"). The other settings' values are
-/// not known yet.
+/// The texture quality index of `TextureQuality=TQ_LOW` (`TQ_HIGH` 0,
+/// `TQ_MEDIUM` 1, `TQ_LOW` 2: `Settings_SetValue` `0x00401930` stores the
+/// value's index; `docs/formats/scene-maps.md`, Q1): the number of top
+/// mip levels the game drops from a texture cluster, subject to
+/// [`texture_start_level`]'s two exceptions.
 pub const TQ_LOW_DROPPED_LEVELS: u32 = 2;
 
-/// The mip level of a texture cluster the game's texture starts at, when
-/// it drops `dropped` levels: never past the last level.
+/// The mip level of a texture cluster the game's texture starts at, for
+/// texture quality `q` (the levels to drop): `Phyre_PBinary_loadClusterTextures`
+/// (`0x00465ab0`, from `0x00466129`). A texture with `q` or fewer levels
+/// past the first keeps them all; otherwise the drop backs off while the
+/// new top level (`width >> q`, `height >> q`, doubled per step back)
+/// would be under 4 px wide or high.
 #[must_use]
-pub fn texture_start_level(t: &ffx_phyre::Texture, dropped: u32) -> u32 {
-    dropped.min(t.mip_levels.saturating_sub(1))
+pub fn texture_start_level(t: &ffx_phyre::Texture, q: u32) -> u32 {
+    start_level(t.width, t.height, t.mip_levels, q)
+}
+
+/// [`texture_start_level`] on the header's numbers.
+#[must_use]
+pub fn start_level(width: u32, height: u32, levels: u32, q: u32) -> u32 {
+    let extra = levels.saturating_sub(1);
+    if extra < q {
+        return 0;
+    }
+    let (mut w, mut h, mut drop) = (width >> q, height >> q, q);
+    while drop > 0 && (w < 4 || h < 4) {
+        w *= 2;
+        h *= 2;
+        drop -= 1;
+    }
+    drop
 }
 
 /// The `ffx-drawdiff` key of the texture the game makes from a texture
@@ -142,6 +161,25 @@ pub fn file_texture_key(t: &ffx_phyre::Texture, first: u32) -> Option<u64> {
         };
     }
     Some(key::texture(&desc, &subresources))
+}
+
+#[cfg(test)]
+mod level_tests {
+    use super::start_level;
+
+    #[test]
+    fn the_games_mip_drop() {
+        assert_eq!(start_level(2048, 2048, 12, 2), 2);
+        assert_eq!(start_level(2048, 2048, 12, 0), 0);
+        // q or fewer levels past the first: all kept
+        assert_eq!(start_level(1024, 1024, 1, 2), 0);
+        assert_eq!(start_level(1024, 1024, 2, 2), 0);
+        assert_eq!(start_level(1024, 1024, 3, 2), 2);
+        // the new top would be under 4 px: the drop backs off
+        assert_eq!(start_level(8, 8, 4, 2), 1);
+        assert_eq!(start_level(16, 4, 5, 2), 0);
+        assert_eq!(start_level(64, 512, 10, 1), 1);
+    }
 }
 
 /// Every object of the indexed clusters, by key.
