@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_prender::{basic, class_slots as descriptor, registry, texture};
+use ffx_prender::{basic, class_slots as descriptor, h1_bind, registry, texture};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -117,6 +117,8 @@ struct Twins {
     log: u32,
     cave: u32,
     cave_next: u32,
+    /// The end of the stub area.
+    cave_end: u32,
     /// Stubs written, by original address.
     stubs: std::collections::HashMap<u32, u32>,
 }
@@ -132,6 +134,7 @@ impl Twins {
             log: 0,
             cave,
             cave_next: cave,
+            cave_end: cave + CAVE_LEN,
             stubs: std::collections::HashMap::new(),
         };
         t.log = t.zeros(0x8000);
@@ -259,7 +262,7 @@ impl Twins {
             c.extend(((pops * 4) as u16).to_le_bytes());
         }
         let addr = self.cave_next;
-        assert!(addr + c.len() as u32 <= self.cave + CAVE_LEN, "cave full");
+        assert!(addr + c.len() as u32 <= self.cave_end, "cave full");
         self.write(addr, &c);
         self.cave_next = addr + c.len() as u32;
         addr
@@ -2429,6 +2432,150 @@ fn batch8_extras_match_the_original() {
                 &[],
                 |g| Out::U32(basic::bridge::renderer_context(g)),
             );
+        }
+    }
+}
+
+// ---- round 2 ----
+
+/// Every guard word of a `Bind`'s steps, outer and inner.
+fn bind_guards(steps: &[h1_bind::Step], out: &mut Vec<u32>) {
+    for s in steps {
+        if let h1_bind::Step::Guard(g, _, inner) = *s {
+            if !out.contains(&g) {
+                out.push(g);
+            }
+            bind_guards(inner, out);
+        }
+    }
+}
+
+/// Every word a `Bind`'s `Or`/`And` steps change.
+fn bind_flag_words(steps: &[h1_bind::Step], out: &mut Vec<u32>) {
+    for s in steps {
+        match *s {
+            h1_bind::Step::Guard(_, _, inner) => bind_flag_words(inner, out),
+            h1_bind::Step::Or(at, _) | h1_bind::Step::And(at, _) => out.push(at),
+            _ => {}
+        }
+    }
+}
+
+/// Every call target and class member of a `Bind`'s steps.
+fn bind_callees(steps: &[h1_bind::Step], calls: &mut Vec<(u32, u32)>, classes: &mut Vec<u32>) {
+    use h1_bind::{Step, Ty};
+    let ty = |t: Ty, calls: &mut Vec<(u32, u32)>| match t {
+        Ty::Addr(_) => {}
+        Ty::Call(f) => calls.push((f, 0)),
+        Ty::CallWith(f, _) => calls.push((f, 1)),
+    };
+    for s in steps {
+        match *s {
+            Step::Guard(_, _, inner) => bind_callees(inner, calls, classes),
+            Step::Member { ty: t, .. } | Step::Array { ty: t, .. } => ty(t, calls),
+            Step::Class { member, .. } => classes.push(member),
+            Step::Call(f, arg) => calls.push((f, u32::from(arg.is_some()))),
+            Step::Descriptor { ctor, .. } => calls.push((ctor, 0x100)),
+            Step::AtExit(_) | Step::Store(..) | Step::Or(..) | Step::And(..) => {}
+        }
+    }
+}
+
+#[test]
+fn multi_member_binds_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xb1d0_0002);
+        // more stubs than the cave holds (and the heap is not executable):
+        // they go over `FUN_00a83bf0` (16,988 bytes, no callers)
+        t.cave = t.rebase(0x00a8_3bf0);
+        t.cave_next = t.cave;
+        t.cave_end = t.cave + 0x4000;
+        t.stub(registry::ATEXIT, false, 1, 0, Ret::Imm(0));
+        t.stub(descriptor::REGISTER_TYPE, false, 1, 0, Ret::Imm(0x0101));
+        t.stub(
+            descriptor::ADD_TO_NAMESPACE,
+            true,
+            0,
+            0,
+            Ret::Imm(0x5a5a_1234),
+        );
+        for ctor in [registry::DATA_MEMBER_CTOR, 0x0057_5f30, 0x0057_5370] {
+            t.stub(ctor, true, 6, 6, Ret::Imm(0x6));
+        }
+        t.stub_skip(h1_bind::ARRAY_MEMBER_CTOR, true, 1, 6, 7, Ret::Imm(0x7));
+        t.stub(h1_bind::CLASS_MEMBER_CTOR, true, 3, 3, Ret::Imm(0x3));
+        let found = t.zeros(4);
+        t.stub(h1_bind::FIND_MEMBER, true, 1, 1, Ret::Cell(found));
+        let mut classes = vec![];
+        for &(_, k) in h1_bind::BINDS {
+            let mut calls = vec![];
+            bind_callees(k.steps, &mut calls, &mut classes);
+            for (f, kind) in calls {
+                if kind == 0x100 {
+                    t.stub(f, true, 0, 0, Ret::Imm(0xd));
+                } else {
+                    // cdecl getters: their ecx is the caller's leftover
+                    t.stub(f, false, kind, 0, Ret::Imm(0x00c9_7000 | (f & 0xfff)));
+                }
+            }
+        }
+        for case in 0..12u32 {
+            for &(f, k) in h1_bind::BINDS {
+                assert_eq!(h1_bind::bind_of(f), k);
+                let mut guards = vec![];
+                bind_guards(k.steps, &mut guards);
+                for g in guards {
+                    let word = match case {
+                        0 => 0,
+                        1 => u32::MAX,
+                        _ => rng.next() & rng.next(),
+                    };
+                    let at = t.rebase(g);
+                    t.w32(at, word);
+                }
+                let mut flag_words = vec![];
+                bind_flag_words(k.steps, &mut flag_words);
+                for w in flag_words {
+                    let at = t.rebase(w);
+                    let v = rng.next();
+                    t.w32(at, v);
+                }
+                // class members: an owner with a list (empty, or two nodes),
+                // a name or none, and the owner knowing it or not
+                for &m in &classes {
+                    let m = t.rebase(m);
+                    let owner = t.zeros(0x60);
+                    let head = owner + 0x4c;
+                    let first = t.zeros(8);
+                    let second = t.zeros(8);
+                    if rng.next() & 1 == 0 {
+                        t.w32(head, head);
+                        t.w32(head + 4, head);
+                    } else {
+                        t.w32(head, first);
+                        t.w32(first, second);
+                        t.w32(second, head);
+                        t.w32(head + 4, second);
+                        t.w32(second + 4, first);
+                        t.w32(first + 4, head);
+                    }
+                    t.w32(m + 8, owner);
+                    let named = if rng.next().is_multiple_of(3) {
+                        0
+                    } else {
+                        owner
+                    };
+                    t.w32(m + 0xc, named);
+                }
+                t.w32(found, rng.next() & 1);
+                t.check(
+                    &format!("{name} {f:#x} case {case}"),
+                    f,
+                    Conv::Cdecl,
+                    &[],
+                    |g| Out::U32(h1_bind::bridge::bind(g, k)),
+                );
+            }
         }
     }
 }
