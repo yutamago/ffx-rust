@@ -36,7 +36,7 @@ fn main() {
     let game = std::env::var("FFX_GAME_DIR").expect("FFX_GAME_DIR");
     let archive = ffx_vbf::Archive::open(std::path::Path::new(&game).join("data/FFX_Data.vbf"))
         .expect("archive");
-    let mut seen: BTreeMap<(u16, u32), BTreeMap<String, usize>> = BTreeMap::new();
+    let mut seen: BTreeMap<(u16, u32, u8), BTreeMap<String, usize>> = BTreeMap::new();
     for model in std::env::args().skip(1) {
         let c = Clusters::load(
             |p| archive.find(p).and_then(|e| archive.read(e).ok()),
@@ -54,7 +54,7 @@ fn main() {
                                 }
                                 let n = name_at(&prog.code, prog.global_cb, loc.target);
                                 *seen
-                                    .entry((loc.offset, loc.size))
+                                    .entry((loc.offset, loc.size, loc.kind))
                                     .or_default()
                                     .entry(n)
                                     .or_default() += 1;
@@ -65,7 +65,7 @@ fn main() {
             }
         }
     }
-    for ((o, s), names) in seen {
-        println!("{o:#06x} {s:3} {names:?}");
+    for ((o, s, k), names) in seen {
+        println!("{o:#06x} {s:3} kind {k:#04x} {names:?}");
     }
 }

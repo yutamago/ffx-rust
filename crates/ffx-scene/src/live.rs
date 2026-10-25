@@ -45,7 +45,7 @@ pub enum SceneValue {
     /// `size` bytes of `g_PhyreApplication` at this offset (the
     /// renderer's context, `app +0x40`, at `offset - 0x40`).
     App(usize),
-    /// A matrix there, in memory order (the shaders get its transpose).
+    /// A matrix there (memory order, as the buffer holds every matrix).
     AppMatrix(usize),
     ScreenInverse,
     ViewProjection,
@@ -91,6 +91,13 @@ pub const SCENE_WIDE_LEN: usize = 0x264;
 #[derive(Debug, Clone, Default)]
 pub struct Fallback {
     pub eye_position: Option<[f32; 4]>,
+}
+
+/// A matrix in the shaders' order as the buffer holds it (memory order:
+/// the constant buffer copy transposes every `float4x4`,
+/// `build::copy_matrices`).
+fn memory(m: Mat) -> Vec<f32> {
+    inputs::transpose(&m).to_vec()
 }
 
 fn put(buf: &mut [u8], at: usize, words: &[f32]) {
@@ -194,17 +201,14 @@ pub fn scene_wide(
             }
             SceneValue::AppMatrix(o) => (0..16)
                 .map(|k| inputs::app_f32(s, o + 4 * k))
-                .collect::<Option<Vec<f32>>>()
-                .map(|m| {
-                    let m: Mat = std::array::from_fn(|k| m[k]);
-                    inputs::transpose(&m).to_vec()
-                }),
+                .collect::<Option<Vec<f32>>>(),
             SceneValue::ScreenInverse => Some(vec![inverse(w), inverse(h)]),
-            SceneValue::ViewProjection => inputs::view_projection(s).map(|m| m.to_vec()),
-            SceneValue::View => inputs::view(s).map(|m| m.to_vec()),
-            SceneValue::Projection => inputs::projection(s).map(|m| m.to_vec()),
-            SceneValue::ViewInverse => inputs::view(s)
-                .map(|v| inputs::transpose(&affine_inverse(&inputs::transpose(&v))).to_vec()),
+            SceneValue::ViewProjection => inputs::view_projection(s).map(memory),
+            SceneValue::View => inputs::view(s).map(memory),
+            SceneValue::Projection => inputs::projection(s).map(memory),
+            SceneValue::ViewInverse => {
+                inputs::view(s).map(|v| affine_inverse(&inputs::transpose(&v)).to_vec())
+            }
             SceneValue::EyePosition => camera_world
                 .map(|m| [m[8], m[9], m[10], 1.0])
                 .or(fallback.eye_position)

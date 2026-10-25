@@ -554,11 +554,12 @@ const IDENTITY: Mat = [
 ];
 
 /// The per-node parameter buffer of a variant (`0x005b7fe0`): each
-/// untweakable definition's value at its offset. `World` (semantic 0x82)
-/// is the instance's world, `WorldView` (0x83) `View . World` with f32
-/// sums, `WorldViewProjection` (0x84) `ViewProjection . World` with f64
-/// sums rounded once (`docs/formats/scene.md`, "Constants"). Others are
-/// left 0 and noted.
+/// untweakable definition's value at its offset, matrices in memory order
+/// (the transpose of the shaders' order; [`fill_cb`] transposes them).
+/// `World` (semantic 0x82) is the instance's world, `WorldView` (0x83)
+/// `View . World` with f32 sums, `WorldViewProjection` (0x84)
+/// `ViewProjection . World` with f64 sums rounded once
+/// (`docs/formats/scene.md`, "Constants"). Others are left 0 and noted.
 fn node_buffer(
     v: &EffectVariant,
     camera: &Camera,
@@ -579,6 +580,7 @@ fn node_buffer(
                 continue;
             }
         };
+        let m = crate::inputs::transpose(&m);
         let at = d.offset as usize;
         for (k, x) in m.iter().enumerate() {
             if let Some(dst) = buf.get_mut(at + 4 * k..at + 4 * k + 4) {
@@ -589,16 +591,15 @@ fn node_buffer(
     buf
 }
 
-/// Whether a location entry is a `float4x4` (data type `0x31`, which the
-/// entry's kind repeats).
+/// Whether a location entry holds `float4x4`s (data type `0x31`, which
+/// the entry's kind repeats).
 #[must_use]
 pub fn is_matrix(loc: &crate::effect::Loc) -> bool {
-    loc.kind == 0x31 && loc.size == 64
+    loc.kind == 0x31 && loc.size.is_multiple_of(64) && loc.size > 0
 }
 
-/// A 4x4 of floats transposed, as bytes: a material's matrix as the
-/// game keeps it (`PMatrix4`, column-major) and as the shaders get it.
-/// The node and scene-wide values are built in the shaders' order.
+/// A 4x4 of floats transposed, as bytes: a matrix as the game keeps it
+/// (`PMatrix4`, column-major) and as the shaders get it, and back.
 #[must_use]
 pub fn transpose_bytes(b: &[u8]) -> Vec<u8> {
     let mut out = vec![0u8; b.len()];
@@ -611,12 +612,27 @@ pub fn transpose_bytes(b: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Copies a `float4x4` entry as the render thread's constant buffer copy
+/// does (`0x0059a650`, m4-chars, `docs/formats/scene-chars.md`): each
+/// 4x4 transposed, stopping at one whose first word is `0xffffffff` (the
+/// end of a bone list); what it doesn't reach keeps the buffer's fill.
+pub fn copy_matrices(src: &[u8], dst: &mut [u8]) {
+    for (s, d) in src.as_chunks::<64>().0.iter().zip(dst.as_chunks_mut::<64>().0) {
+        if s[..4] == [0xff; 4] {
+            break;
+        }
+        d.copy_from_slice(&transpose_bytes(s));
+    }
+}
+
 /// A constant buffer of `size` bytes filled through a location table:
 /// each entry's `size` bytes from its source buffer at its offset go to
 /// its target offset (entries the program doesn't use have target
-/// `u32::MAX`), a material's `float4x4` transposed: the shadow cascade
-/// `PhyreScene_RenderShadow` writes into the material as a `PMatrix4` is
-/// its transpose in every captured map draw (round 2 wire).
+/// `u32::MAX`), `float4x4` entries of every source transposed
+/// ([`copy_matrices`]): the shadow cascade `PhyreScene_RenderShadow`
+/// writes into the material as a `PMatrix4` is its transpose in every
+/// captured map draw (round 2 wire); the node and scene-wide buffers hold
+/// their matrices in memory order too.
 fn fill_cb(size: u32, table: &LocTable, sources: [&[u8]; 3], notes: &mut Vec<String>) -> Vec<u8> {
     let mut cb = vec![0xcd_u8; size as usize];
     for (src, loc) in table.sourced() {
@@ -638,9 +654,7 @@ fn fill_cb(size: u32, table: &LocTable, sources: [&[u8]; 3], notes: &mut Vec<Str
             loc.size as usize,
         );
         match (from.get(o..o + n), cb.get_mut(t..t + n)) {
-            (Some(s), Some(d)) if src == Source::Material && is_matrix(loc) => {
-                d.copy_from_slice(&transpose_bytes(s));
-            }
+            (Some(s), Some(d)) if is_matrix(loc) => copy_matrices(s, d),
             (Some(s), Some(d)) => d.copy_from_slice(s),
             _ => notes.push(format!(
                 "{src:?} parameter at {o:#x} ({n} bytes) to {t:#x}: outside a buffer"
@@ -1139,5 +1153,25 @@ mod tests {
             ]
         );
         assert_eq!(notes, Vec::<String>::new());
+    }
+
+    #[test]
+    fn matrices_go_in_transposed_up_to_the_end_mark() {
+        // Two float4x4s: the first 0..16, the second starts 0xffffffff.
+        let mut src: Vec<u8> = (0u32..16).flat_map(u32::to_le_bytes).collect();
+        src.extend([0xff; 4]);
+        src.extend([0u8; 60]);
+        let mut dst = vec![0xcd_u8; 128];
+        copy_matrices(&src, &mut dst);
+        let word = |i: usize| u32::from_le_bytes(dst[4 * i..4 * i + 4].try_into().expect("word"));
+        // Row-major for column vectors: element (r, c) from word c * 4 + r.
+        assert_eq!([word(0), word(1), word(4), word(7)], [0, 4, 1, 13]);
+        assert!(dst[64..].iter().all(|&b| b == 0xcd));
+        assert!(is_matrix(&Loc {
+            offset: 0,
+            target: 0,
+            size: 128,
+            kind: 0x31
+        }));
     }
 }

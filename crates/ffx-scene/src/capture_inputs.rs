@@ -188,6 +188,8 @@ impl CaptureInputs {
                         node[at + 4 * k + 3],
                     ])
                 });
+                // The node buffer holds it in memory order.
+                let m = crate::inputs::transpose(&m);
                 world = m.iter().any(|x| *x != 0.0).then_some(m);
             }
             // The instance: one already seen with this World (another of
@@ -378,8 +380,8 @@ impl CaptureInputs {
             if out.len() < o + n {
                 out.resize(o + n, 0);
             }
-            if group == Source::Material && crate::build::is_matrix(loc) {
-                out[o..o + n].copy_from_slice(&crate::build::transpose_bytes(from));
+            if crate::build::is_matrix(loc) {
+                crate::build::copy_matrices(from, &mut out[o..o + n]);
             } else {
                 out[o..o + n].copy_from_slice(from);
             }
