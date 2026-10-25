@@ -1816,6 +1816,7 @@
 0x00638720 function ShaderParam_CopyToBuffer_00638720 # thiscall(buffer, param, src): copies the parameter's bytes (+8 offset, +0xa size & 0x1fff) into the buffer when they fit, 1 for no source; callers batchSetClothVertexBuffers, the deferred-lighting shadows; same code as ShaderParam_CopyToBuffer_00698960; the render agent's finding (shader parameters into material buffers); own name
 0x00638780 function ShaderParamBuffer_SetValue   # structure: thiscall(buffer {u32 size, data...}, param {+8 u16 offset, +10 u16 size & 0x1fff}, src): memcpy src into the buffer at the parameter's offset; 1 for a null src, 3 out of range, 0 done; a template instance inlined on the Switch (memcpy in PostProcessManager::copyBuffer); twin of 0x006386c0; name ours
 0x00638aa0 function SplitScreenSetCamera      # cdecl(m): sceVu0InversMatrix4x4 of a copy of m, signs of elements 0, 1, 6, 10, 12, 13 flipped, PMatrix4_toWorldMatrix3x4 into g_PhyreScene +0x10d94..+0x10dc0; called next to SplitScreenStart (0x007bca8a); alphabetical before SplitScreenStart; name ours
+0x00638d20 function graphicResetSplitScreen_00638d20 # cdecl(): if PhyreScene_GetSplitScreenStat(g_PhyreScene) == 1, PhyreScene_SetSplitScreenStat(g_PhyreScene; 0)'s eax, else the state; caller Cam_Apply; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x00638d40 function SplitScreenStart             # callees: its named callees match the Switch 0x71001d1df0 SplitScreenStart's (similarity 1.00: PhyreScene_GetSplitScreenStat, PhyreScene_SetSplitScreenStat, PhyreScene_SetSplitScreenType); symbols from Fahrenheit's server export
 0x00638d90 function cgraphicSetNowUIType      # fh v3:bsim1.00 0x00638f40
 0x00638dd0 function Empty_00638dd0             # (): an empty function (ret); Ch_DrawMain calls it before debugClearClothDebugDraw
@@ -1838,6 +1839,7 @@
 0x006392c0 function graphicAddScreenFadeTaskBeforeVFX # fh switch:bsim1.00 0x71001d7bd0
 0x00639330 function graphicAtelUnloadTexture  # fh v3:bsim1.00 0x006394e0
 0x006393c0 function BrokenScreenEffect_BufferSize # structure: cdecl(n): after BrokenScreenEffect_GetInstance, ((8n-1)>>4 + 5 + (24n-49)>>4 + 2*((12n-1)>>4) + (16n-1)>>4) << 5, unsigned; name ours
+0x00639450 function graphicBrokenScreenInit_00639450 # cdecl(n, buf): ShadowEntries_Init_006d54c0(BrokenScreenEffect_GetInstance(); n, buf)'s eax (arguments pushed before the getter, which takes none); caller opus_encount4_init; name ours; ported (ffx_glue_other::effect, m4 h4 r1)
 0x00639470 function graphicBrokenScreenInitializeBlockDataWithGivenBuffer # fh switch:cg2 0x71008b1978
 0x00639490 function graphicBrokenScreenReset     # layout: alphabetical run between graphicBrokenScreenInitializeBlockDataWithGivenBuffer and graphicCameraGetFOVy (6 unnamed in the gap); Switch 0x71001d99f0 graphicBrokenScreenReset is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006394a0 function graphicBrokenScreenStartKeepFrame # layout: alphabetical run between graphicBrokenScreenInitializeBlockDataWithGivenBuffer and graphicCameraGetFOVy (6 unnamed in the gap); Switch 0x71001d9a40 graphicBrokenScreenStartKeepFrame is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -2133,7 +2135,7 @@
 0x00644150 function graphicTextureAnimationSetMaterialUV_00644150 # cdecl(a, b, u, v, key): names "G"+a and "Animation"+b (sprintf %d), then TextureAnimationManager_setMaterialUV_006b33c0(s1, s2, u, v, key); name ours; ported (render round 24)
 0x00644280 function graphicTextureVideoPlay   # fh v3:exact+call.cs 0x00644430 cdecl
 0x006442c0 function graphicTextureVideoUpdate # fh call.cs cdecl
-0x006442d0 function TextLayerInfos_dtor_TextLayerInfos # fh switch:bsim1.00 0x710084bc10 TextLayerInfos::~TextLayerInfos
+0x006442d0 function graphicChrDelayReleaseStep_006442d0 # fh switch:bsim1.00 0x710084bc10 TextLayerInfos::~TextLayerInfos; cdecl(f32 dt): ChrResourceCache_DelayReleaseStep_0069c010(ClusterManager_GetInstance(); dt)'s eax (dt through fld/fstp, pushed before the getter); Fahrenheit's Switch BSim match TextLayerInfos::~TextLayerInfos does not fit this body; name ours; ported (ffx_glue_other::effect, m4 h4 r1); was TextLayerInfos_dtor_TextLayerInfos
 0x006442f0 function graphicTryAsyncLoadIfAvailable # fh v3:bsim1.00 0x006444a0
 0x00644320 function graphicUiElementRemap     # fh v3:exact 0x006444d0
 0x006447c0 function graphicUiRemapX # cdecl(x) -> st0: f32(x * 512.0 / 1280.0), beside graphicUiRemapX2 (/1920); name ours
@@ -2543,7 +2545,7 @@
 0x00678b40 function ReturnZeroStd_00678b40 # stdcall(1 arg), ret 4 -> 0 (vtable only); name ours
 0x00678b50 function ReturnMinus1_00678b50 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x006793e0 function PhyreFIOS_LoadMagicfilePrx # fh v3:exact 0x00679590 PhyreFIOS::LoadMagicfilePrx
-0x006794f0 function PhyreFIOS_UnloadMagicfilePrx # fh v3:cg2 0x6796a0 PhyreFIOS::UnloadMagicfilePrx
+0x006794f0 function PhyreFIOS_UnloadMagicfilePrx # fh v3:cg2 0x6796a0 PhyreFIOS::UnloadMagicfilePrx; ported (ffx_glue_other::misc, m4 h4 r1): jmp PhyreFIOS_UnloadPrx (cdecl, 1 word)
 0x00679500 function fiosClearOps              # fh v3:bsim1.00 0x006796b0
 0x00679510 function fiosClose                 # fh v3:exact 0x006796c0
 0x00679560 function fiosDeleteCompletedOps    # fh v3:bsim1.00 0x00679710
@@ -2598,34 +2600,35 @@
 0x0067a3a0 function iSfxPlayBattleStreaming   # fh v3:bsim1.00 0x0067a550
 0x0067a3c0 function iSfxSetPan                # (id, pan): FMOD cmd 0x3d (coalesced per id in Fmod_PushCommand); handler 0x00708340 -> 0x00706e90 -> 0x0070d640 -> 0x0070ef80: pan/127*2-1 clamped to -1..1; called by SqsSePanDirect 0x0081e460; was the fh BSim name iSfxSetVolume (swapped); fh: iSfxSetVolume
 0x0067a3e0 function iSfxSetPanTranslate       # (id, pan, frames): FMOD cmd 0x3e; called by SqsSePanTranslate 0x0081e480
-0x0067a400 function iSfxSetVolume             # (id, volume): FMOD cmd 0x3b (coalesced per id); handler 0x00708300 -> 0x00706ed0 -> 0x0070d6e0 -> 0x0070f1a0: volume/127 clamped to 0..1; called by SqsSeVolumeDirect 0x0081e820; fh: iSfxSetPan (BSim, swapped with 0x0067a3c0)
-0x0067a420 function iSfxSetVolumeTranslate    # fh v3:bsim1.00 0x0067a5d0
-0x0067a440 function iSfxStart                 # fh v3:cg2 0x67a5f0
-0x0067a460 function iSfxStop                  # fh v3:bsim1.00 0x0067a610
-0x0067a480 function iSfxStopAllNonBlockingSound # fh v3:bsim1.00 0x0067a630
-0x0067a4a0 function iSfxStopNonBlockingSound  # fh v3:bsim1.00 0x0067a650
+0x0067a400 function iSfxSetVolume             # (id, volume): FMOD cmd 0x3b (coalesced per id); handler 0x00708300 -> 0x00706ed0 -> 0x0070d6e0 -> 0x0070f1a0: volume/127 clamped to 0..1; called by SqsSeVolumeDirect 0x0081e820; fh: iSfxSetPan (BSim, swapped with 0x0067a3c0); ported (ffx_glue_other::sound, m4 h4 r1): command 0x3b (id, volume)
+0x0067a420 function iSfxSetVolumeTranslate    # fh v3:bsim1.00 0x0067a5d0; ported (ffx_glue_other::sound, m4 h4 r1): command 0x3c (id, volume, frames)
+0x0067a440 function iSfxStart                 # fh v3:cg2 0x67a5f0; ported (ffx_glue_other::sound, m4 h4 r1): command 0x33 (id, a, b)
+0x0067a460 function iSfxStop                  # fh v3:bsim1.00 0x0067a610; ported (ffx_glue_other::sound, m4 h4 r1): command 0x36 (id)
+0x0067a480 function iSfxStopAllNonBlockingSound # fh v3:bsim1.00 0x0067a630; ported (ffx_glue_other::sound, m4 h4 r1): command 0x37 (id, id >> 31 by cdq)
+0x0067a4a0 function iSfxStopNonBlockingSound  # fh v3:bsim1.00 0x0067a650; ported (ffx_glue_other::sound, m4 h4 r1): command 0x38 (id)
 0x0067a4c0 function iSfxStopNonLoopSound      # fh v3:bsim1.00 0x0067a670
-0x0067a4d0 function iSfxUnloadAllData         # fh v3:bsim1.00 0x0067a680
+0x0067a4d0 function iSfxUnloadAllData         # fh v3:bsim1.00 0x0067a680; ported (ffx_glue_other::sound, m4 h4 r1): command 0x31
 0x0067a4e0 function iShoutStart               # (a, b, volume) -> 0: FMOD cmd 6; called by SndStartShoutStream; name ours by alphabetical slot (iSfxUnloadAllData..iSoundLoop)
+0x0067a500 function iSoundInit_0067a500 # cdecl() -> eax of FmodManager_registCommandAsync1(g_FmodManager; 1): FMOD command 1 (FmodCmd_soundInit); called by Sg_MainInit (the dump's "movie_init" is 0x0076eff0's name); name ours; ported (ffx_glue_other::sound, m4 h4 r1)
 0x0067a570 function iSoundSetMute             # fh v3:bsim1.00 0x0067a720
 0x0067a590 function iSoundSetSfxVolume           # layout: alphabetical run between iSoundSetMute and iSoundStageFlush (2 unnamed in the gap); Switch 0x710021bcd0 iSoundSetSfxVolume is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0067a5b0 function iSoundSetVoiceVolume         # layout: alphabetical run between iSoundSetMute and iSoundStageFlush (2 unnamed in the gap); Switch 0x710021bcb0 iSoundSetVoiceVolume is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0067a5d0 function iSoundStageFlush          # fh v3:bsim1.00 0x0067a780
+0x0067a5d0 function iSoundStageFlush          # fh v3:bsim1.00 0x0067a780; ported (ffx_glue_other::sound, m4 h4 r1): command 0x04 (stage)
 0x0067a600 function iSoundUpdate                 # layout+callees: sorts between iSoundStageFlush and iVoiceDataChange, and its named callees match the Switch 0x710021b230 iSoundUpdate's (similarity 1.00: FmodManager_registCommandAsync); symbols from Fahrenheit's server export; ours: () g_Settings volumes +0x14/+0x1c/+0x18/+0x20 (0 when +0x10) as commands 0x42..0x45, +0x14 / 100.0 to PhyFMVPlayerManager_SetVolume_006dabf0 (fmod::bridge::i_sound_update)
-0x0067a6a0 function iVoiceDataChange          # fh v3:exact 0x0067a850
-0x0067a6c0 function iVoiceIsPaused               # layout: alphabetical run between iVoiceDataChange and iVoicePanDirect (1 unnamed in the gap); Switch 0x710021b4a0 iVoiceIsPaused is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0067a6a0 function iVoiceDataChange          # fh v3:exact 0x0067a850; ported (ffx_glue_other::sound, m4 h4 r1): command 0x09 (id), returns 0
+0x0067a6c0 function iVoiceIsPaused               # layout: alphabetical run between iVoiceDataChange and iVoicePanDirect (1 unnamed in the gap); Switch 0x710021b4a0 iVoiceIsPaused is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (ffx_glue_other::sound, m4 h4 r1): sync command 0x12
 0x0067a6d0 function iVoicePanDirect           # fh v3:bsim1.00 0x0067a880
 0x0067a6f0 function iVoicePanTranslate # (a, b): FMOD cmd 0xb; SndVagStreamPanTranslate's slot (0x00887980) jumps here; layout: alphabetical run between iVoicePanDirect and iVoicePlayStatus (1 unnamed in the gap); Switch 0x710021b370 iVoicePanTranslate is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0067a710 function iVoicePlayStatus          # fh v3:bsim1.00 0x0067a8c0
-0x0067a720 function iVoiceRead                # (id): FMOD cmd 0x10 (handler 0x00707dc0 = FfxFmod_voiceRead); called by SndStandbyStream
-0x0067a750 function iVoiceSetPaused           # fh v3:bsim1.00 0x0067a900
-0x0067a770 function iVoiceStart # (pan, volume) -> 0: voice start signal (0x006fa6c0) then FMOD cmd 0xf; called by SndStartStream/SndStartStream2; layout: alphabetical run between iVoiceSetPaused and iVoiceStop (1 unnamed in the gap); Switch 0x710021b410 iVoiceStart is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0067a7a0 function iVoiceStop                # fh v3:bsim1.00 0x0067a950
+0x0067a710 function iVoicePlayStatus          # fh v3:bsim1.00 0x0067a8c0; ported (ffx_glue_other::sound, m4 h4 r1): sync command 0x11
+0x0067a720 function iVoiceRead                # (id): FMOD cmd 0x10 (handler 0x00707dc0 = FfxFmod_voiceRead); called by SndStandbyStream; ported (ffx_glue_other::sound, m4 h4 r1): command 0x10 (id)
+0x0067a750 function iVoiceSetPaused           # fh v3:bsim1.00 0x0067a900; ported (ffx_glue_other::sound, m4 h4 r1): command 0x08 (flag)
+0x0067a770 function iVoiceStart # (pan, volume) -> 0: voice start signal (0x006fa6c0) then FMOD cmd 0xf; called by SndStartStream/SndStartStream2; layout: alphabetical run between iVoiceSetPaused and iVoiceStop (1 unnamed in the gap); Switch 0x710021b410 iVoiceStart is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (ffx_glue_other::sound, m4 h4 r1): FmodManager_signalVoiceStart(g_FmodManager), then command 0x0f (pan, volume) with g_FmodManager read again; returns 0
+0x0067a7a0 function iVoiceStop                # fh v3:bsim1.00 0x0067a950; ported (ffx_glue_other::sound, m4 h4 r1): command 0x0a
 0x0067a7b0 function iVoiceVolumeDirect        # fh v3:exact 0x0067a960
 0x0067a7d0 function iVoiceVolumeTranslate     # (frames, volume): FMOD cmd 0xd; SndVagStreamVolumeTranslate jumps here
-0x0067a8e0 function iSyncDataChange           # fh v3:bsim1.00 0x0067aa90
-0x0067a930 function iSyncGetData                 # layout+callees: sorts between iSyncDataChange and iSyncInitialize, and its named callees match the Switch 0x7100225650 iSyncGetData's (similarity 1.00: SyncManager_syncGetData); symbols from Fahrenheit's server export
-0x0067a950 function iSyncInit                    # layout+callees: sorts between iSyncDataChange and iSyncInitialize, and its named callees match the Switch 0x7100225710 iSyncInit's (similarity 1.00: SyncManager_syncInit); symbols from Fahrenheit's server export
+0x0067a8e0 function iSyncDataChange           # fh v3:bsim1.00 0x0067aa90; ported (ffx_glue_other::sound, m4 h4 r1): SyncManager_syncDataChangeAsync(g_SyncManager 0x00ce9014; id)
+0x0067a930 function iSyncGetData                 # layout+callees: sorts between iSyncDataChange and iSyncInitialize, and its named callees match the Switch 0x7100225650 iSyncGetData's (similarity 1.00: SyncManager_syncGetData); symbols from Fahrenheit's server export; ported (ffx_glue_other::sound, m4 h4 r1): SyncManager_syncGetData(g_SyncManager; a, b, c)
+0x0067a950 function iSyncInit                    # layout+callees: sorts between iSyncDataChange and iSyncInitialize, and its named callees match the Switch 0x7100225710 iSyncInit's (similarity 1.00: SyncManager_syncInit); symbols from Fahrenheit's server export; ported (ffx_glue_other::sound, m4 h4 r1): tail jump to SyncManager_syncInit(g_SyncManager)
 0x0067a960 function iSyncInitialize           # fh v3:exact 0x0067ab10
 0x0067a9f0 function EternalCalm_FileSize_0067a9f0 # (path) -> sceFileSize of the opened file, "failed to open EternalCalm data file: %s"; callers getEternalCalmMgrpSize, getEternalCalmSceneSize; own name
 0x0067aa50 function Table_00c334d4_0067aa50 # cdecl(x): word x - *0x00c33468 of the 7 at 0x00c334d4, 0 outside; caller Cd_QueueRead; name ours
@@ -2641,7 +2644,7 @@
 0x0067b200 function PArray_Reset_0067b200 # thiscall: count +0 top bit clear and buffer non-null: PhyreFree(+4); +0, +4 = 0; name ours
 0x0067b7d0 function DJB_hash                  # fh v3:bsim1.00 0x0067b980
 0x0067b800 function op_vertex_normal_point4   # fh switch:bsim1.00 0x71003df230
-0x0067b970 function MenuManager_GetMenuCount  # fh v3:exact 0x0067bb20 MenuManager::GetMenuCount
+0x0067b970 function MenuManager_GetMenuCount  # fh v3:exact 0x0067bb20 MenuManager::GetMenuCount; ported (ffx_glue_other::misc, m4 h4 r1): thiscall: [+0x5b7c] == 0 ? [+0x2c50] : [+0x5840]
 0x0067b990 function MenuManager_GetMenuRecord_0067b990 # thiscall(this, i) -> the i-th menu record of the current chain (+0x5b7c: 0 the list at +0x15f0, else +0x4248; each entry a pointer to the record pointer), 0 unless +0x5b9d; PhyreScene_DrawNormalUI walks them (record +0xc the mesh instance, [+0x24]+0xb4 the type); name ours (pc-ui2d, docs/formats/ui-draw.md)
 0x0067b9d0 function MenuManager_GetMenuMeshInstace # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'RenderAfterVFX'; Switch 0x7100228750 MenuManager::GetMenuMeshInstace (symbols from Fahrenheit's server export)
 0x0067ba50 function MenuManager_GetMenuVertexInfo # fh v3:exact 0x0067bc00 MenuManager::GetMenuVertexInfo
@@ -2747,6 +2750,7 @@
 0x0068dd40 function IggyMenu_callFlashFunction_1 # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71008a4518 IggyMenu::callFlashFunction<1>, 4 votes, round 1
 0x0068ddd0 function IggyMenu_callFlashFunction_3_0068ddd0 # cdecl(menu, name, 3 IggyDataValues by value: 14 words): copies the values into its frame, IggyMenu_callIggyAS3External(0, name, 3, values, 1); the 1/2/3/4/5-value family 0x0068dd40/0x0068dd80/this/0x0068de50/0x0068def0, named after Fahrenheit's IggyMenu::callFlashFunction<1> at 0x0068dd40; name ours (pc round 3)
 0x0068def0 function IggyMenu_callFlashFunction_5_0068def0 # cdecl(menu, name, 5 IggyDataValues by value: 22 words): IggyMenu_callIggyAS3External(0, name, 5, values, 1); family of 0x0068ddd0; name ours (pc round 3)
+0x0068dfa0 function FFEscMenu_callMember_0068dfa0 # cdecl(this, f, arg): f thiscall(this; arg) (callee pops its word), its eax; stored by FFEscMenu_playSound and 0x006ff1e0; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x0068e180 function LocString_Load_0068e180 # thiscall(this, id), ret 4: graphicGetLocTextWithLength(id, frame, 0x100), then 0x006e96b0(frame, this, 0x100); returns this (callers chain it into 0x0068e270); a 0x110-byte text + IggyDataValue at +0x100; name ours (pc round 3)
 0x0068e270 function LocString_ToValue_0068e270 # thiscall(this, out), ret 4: iggyDataValueSet_00a28d70(this + 0x100, this), the value's 4 words to out; name ours (pc round 3)
 0x0068e330 function SetFieldConst4_0068e330      # auto-port shape (store constant to field, thiscall): u8[(a0 + 0x4)] = 0x0; callers: no direct caller; name ours
@@ -2774,12 +2778,14 @@
 0x00690c00 function Index4At8_00690c00 # thiscall(this; i), ret 4 -> this[2] + 4 i (vtable only); name ours
 0x00690f70 function AsyncLoadManager_createChildrenRequestList # fh v3:exact 0x006910a0 AsyncLoadManager::createChildrenRequestList
 0x00691180 function AsyncLoadManager_createThread # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'AsyncLoadManager'; Switch 0x710024bf30 AsyncLoadManager::createThread (symbols from Fahrenheit's server export)
+0x00691350 function AsyncLoadManager_RegistTaskRequest_run_00691350 # thiscall(this): [this+4]([this+8]) cdecl, its eax; slot 1 of AsyncLoadManager_RegistTaskRequest_vftable (0x00b46f98); name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x00691630 function AsyncLoadManager_isAllRequestDone # fh v3:exact 0x00691760 AsyncLoadManager::isAllRequestDone
 0x00691660 function AsyncLoadManager_loadCluster # fh v3:exact 0x00691790 AsyncLoadManager::loadCluster
 0x006918b0 function AsyncLoadManager_registAsyncLoadTask # fh v3:exact 0x006919e0 AsyncLoadManager::registAsyncLoadTask
 0x00691b40 function AsyncLoadManager_sGetInstance # fh v3:bsim1.00 0x00691c70 AsyncLoadManager::sGetInstance
 0x00691b50 function SetGlobal_00ccc890 # cdecl(v): *0x00ccc890 = v, returns v; name ours
 0x00691b60 function SetGlobal_00ccc894 # cdecl(v): *0x00ccc894 = v, returns v; name ours
+0x00691d40 function AsyncLoadManager_waitTasks_00691d40 # thiscall(this): SleepThread() while (+0x20 or +0x2c set) and +0x14 set; caller 0x00693d20; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x00691dc0 function MapFindU32_00691dc0 # thiscall(head; &key), ret 4: the same lookup as MapFindU32_0062fe50; callers 0x006935d0, 0x006985d0; name ours
 0x00691e60 function TaggedTreeInsert_00691e60 # the same code as TaggedTreeInsert_0060c990; callers 0x00691e30, 0x00693c50; name ours
 0x00692bc0 function PostProcessTweakUtil_Destroy # (): virtual destructor (1) of g_PostProcessTweakUtil, then clears it; name ours
@@ -2840,6 +2846,7 @@
 0x0069b650 function PArray_PushInto_0069b650 # thiscall(this, dst, &value), ret 8: null dst -> 0xd; old count words copied to dst, *value appended, old buffer PhyreFree-d when owned and not dst; +4 = dst, +0 = count + 1; returns 0; name ours
 0x0069b7b0 function ChrResourceCacheManager_isChrDelayedRelease # fh v3:bsim1.00 0x0069b8f0 ChrResourceCacheManager::isChrDelayedRelease
 0x0069b940 function ClusterManager_loadPCluster # fh v4:user_defined+call.cs thiscall ClusterManager::loadPCluster
+0x0069bb00 function ClusterManager_loadPClusterJump_0069bb00 # thiscall(this; path) ret 4: bare jmp to ClusterManager_loadPCluster (push ebp; mov ebp, esp; pop ebp; jmp); callers MenuTextureManager_*; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x0069bb80 function ChrResourceCacheManager_onLoadPCluster # fh v3:exact 0x0069bcc0 ChrResourceCacheManager::onLoadPCluster
 0x0069bda0 function Identity_0069bda0 # cdecl(x) -> x (frame-pointer build); name ours
 0x0069bdb0 function ClusterManager_releasePCluster # fh v4:user_defined+call.cs thiscall ClusterManager::releasePCluster
@@ -2889,7 +2896,7 @@
 0x006a1e80 function ClassLoadedCharacterTable_existPrototype # fh v3:exact 0x006a1fc0 ClassLoadedCharacterTable::existPrototype
 0x006a1f60 function ClassVFXRenderDataTable_MapFind # thiscall(this, out, &key), ret 8: std::map<u64, geometry>::find over the table's tree (head at this+0; node +0x10 key, +0x18 geometry); *out = node or the head, returns out; called by ClassVFXRenderDataTable_GetDynamicGeometryByInstance; name ours
 0x006a2110 function ClassLoadedCharacterTable_getPrototypeByFilename # fh v3:exact 0x006a2250 ClassLoadedCharacterTable::getPrototypeByFilename
-0x006a2370 function ClassDynamicGeometry_hide # fh v3:bsim1.00 0x006a24b0 ClassDynamicGeometry::hide
+0x006a2370 function ClassDynamicGeometry_hide # fh v3:bsim1.00 0x006a24b0 ClassDynamicGeometry::hide; ported (ffx_glue_other::misc, m4 h4 r1): mesh +0xc: PhyreScene_setMeshVisible(g_PhyreScene; mesh, 0)'s eax, else 0
 0x006a28b0 function ClassLoadedCharacterTable_insertPrototype # fh v3:exact 0x006a29f0 ClassLoadedCharacterTable::insertPrototype
 0x006a29a0 function PhyreScene_LoadCompute_006a29a0 # auto-port shape (load and compute, thiscall): t0 = u32[(a0 + 0xc)]; t1 = u32[(a0 + 0x8)]; return ((t0 - t1) >>s 0x2); callers: PhyreScene_DrawZPrePass; name ours
 0x006a29c0 function PhyreCursor_IsValid_006a29c0 # structure: the same code as PhyreCursor_IsValid_00441e10
@@ -2910,7 +2917,7 @@
 0x006a46e0 function VFXDynamicGeometry_SetupWithShader # thiscall(geometry, shader, cluster): +0x20 shader, +0x2c cluster; per segment of the render data (+0x24: +0x90 count, +0x94 0x6c-byte segments) collects +4/+8/+0x20/+0 and runs the vtable's set-up slots +0x18, +0x14, +0x20, +0x24, +0x1c; byte +0x30 = 1 when +0x18 fails; ClassDynamicGeometry_SetShader_006a4800's tail; name ours
 0x006a4800 function ClassDynamicGeometry_SetShader_006a4800 # vtable slot 0x00b47e74 (ClassDynamicGeometry's table); thiscall(this, _, target), ret 8; name ours: VfxShaderManager_sGetInstance()->0x006c06e0(name, &+0x3c) into +0x20 (the name buffer is never filled: stack garbage, read only by a manager keyed by name); 0: again with key (+0x3c & 8 ? 8 : 0); g_PhyreScene +0xf9c6 = g_CurrentMapNo in {0x10a, 0xdf, 0xcd, 0xdd}; 0x006a46e0(this; +0x20, target or g_PhyreScene + 0x2874), its eax (security_check_cookie leaves eax; the virtual callers read it: returning nothing lost the field searchlight beams); ported (ffx_pcui::dyngeo, pc round 2)
 0x006a48d0 function ClassDynamicGeometry_SetShaderGl_006a48d0 # vtable slot 0x00b47e44; thiscall(this, _, target), ret 8; name ours: the name is the material path [[+0x24]+0x94]+0x20 after its first "GL/" (strstr 0x00b47f78, strncpy into the 0x80-byte frame buffer, no length check), else the buffer as it was; the lookup as 0x006a4800's; 0x006a46e0(this; +0x20, target or g_PhyreScene + 0x12d4), its eax (as 0x006a4800's); ported (ffx_pcui::dyngeo, pc round 2)
-0x006a49e0 function ClassDynamicGeometry_show # fh v3:bsim1.00 0x006a4b30 ClassDynamicGeometry::show
+0x006a49e0 function ClassDynamicGeometry_show # fh v3:bsim1.00 0x006a4b30 ClassDynamicGeometry::show; ported (ffx_glue_other::misc, m4 h4 r1): mesh +0xc: PhyreScene_setMeshVisible(g_PhyreScene; mesh, 1)'s eax, else 0
 0x006a4a50 function ClassDynamicGeometry_updateRenderData # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'zMatrix'; Switch 0x71001e1870 ClassDynamicGeometry::updateRenderData (symbols from Fahrenheit's server export)
 0x006a5070 function GuildMapDynamicGeometry_updateRenderData # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'OffsetX'; Switch 0x71001e4070 GuildMapDynamicGeometry::updateRenderData (symbols from Fahrenheit's server export)
 0x006a52f0 function VfxGeometry_Register_006a52f0 # thiscall(this, kind), ret 4 -> r: bit 30 clear: r = vtable +0x28(kind); bit 31 = the draw flag (low byte of the argument word); [0x00ccca58] == 1 (kind != 2) or this+0x3c bit 8 -> kind 4; this+0x24 set and r 0: on g_PhyreScene kind 0 FUN_006565e0([this+0xc]) (byte +0x50) or PhyreScene_AddDrawEntry(this, flag), 1 FUN_006a0d40, 2 FUN_00656990, 4 FUN_006567e0; name ours; ported (round 33, small::bridge::vfx_geometry_register)
@@ -3030,19 +3037,20 @@
 0x006c1520 function VfxShaderManager_setupSpecialShaderParameters # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'sampler2D'; Switch 0x71002907d0 VfxShaderManager::setupSpecialShaderParameters (symbols from Fahrenheit's server export)
 0x006c19b0 function VfxShaderManager_unloadSpecialShaderTable # fh v3:exact 0x006c1af0 VfxShaderManager::unloadSpecialShaderTable
 0x006c1c50 function VfxShaderManager_unloadSpecialShaderTable_magic # fh v3:exact 0x006c1d90 VfxShaderManager::unloadSpecialShaderTable_magic
-0x006c2290 function Distortion_GetInstance    # fh v3:bsim1.00 0x006c23d0 Distortion::GetInstance
+0x006c2290 function Distortion_GetInstance    # fh v3:bsim1.00 0x006c23d0 Distortion::GetInstance; ported (ffx_glue_other::effect, m4 h4 r1): g 0x00cdeb88; null: Phyre_PhyrePrintf(1, 0x00b492d8), global read again
 0x006c2350 function Distortion_createRenderTarget # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Distortion_colorTarget'; Switch 0x710025c920 Distortion::createRenderTarget (symbols from Fahrenheit's server export)
 0x006c26d0 function ReturnConst180_006c26d0      # auto-port shape (return constant, cdecl): return 0x180; callers: ; name ours
 0x006c2700 function ReturnConst51_006c2700       # auto-port shape (return constant, cdecl): return 0x51; callers: ; name ours
 0x006c2dc0 function Distortion_renderDistortion  # layout+callees: sorts between Distortion_createRenderTarget and Distortion_resize, and its named callees match the Switch 0x710025e620 Distortion_renderDistortion's (similarity 0.75: Distortion_createRenderTarget, Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRendererBase_setClearColor); symbols from Fahrenheit's server export
-0x006c2fd0 function Distortion_resize            # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2748 Distortion::resize, 2 votes, round 4
+0x006c2fd0 function Distortion_resize            # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2748 Distortion::resize, 2 votes, round 4; ported (ffx_glue_other::effect, m4 h4 r1): thiscall(this; w, h) ret 8: 0x00a0e4b0([this+0x28], w, h, 1); 0
 0x006c2ff0 function Distortion_setupDistortionGrid # layout: alphabetical run between Distortion_resize and Distortion_updateDistortionBlur (2 unnamed in the gap); Switch 0x710025cc90 Distortion::setupDistortionGrid is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006c31c0 function Distortion_terminate         # layout: alphabetical run between Distortion_resize and Distortion_updateDistortionBlur (2 unnamed in the gap); Switch 0x710025e900 Distortion::terminate is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006c3230 function Distortion_updateDistortionBlur # fh v3:exact 0x006c3370 Distortion::updateDistortionBlur
 0x006c3240 function Distortion_updateDistortionVertex # fh v3:exact 0x006c3380 Distortion::updateDistortionVertex
-0x006c3580 function BlurEffect_GetInstance       # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a0878 BlurEffect::GetInstance, 2 votes, round 2
+0x006c3580 function BlurEffect_GetInstance       # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a0878 BlurEffect::GetInstance, 2 votes, round 2; ported (ffx_glue_other::effect, m4 h4 r1): g 0x00cdeba0, message 0x00b49414
 0x006c35a0 function BlurEffect_activate       # fh switch:bsim1.00 0x710024d870 BlurEffect::activate
 0x006c35d0 function BlurEffect_doOnShaderClusterLoaded # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'BlurEffect_frontBuffer'; Switch 0x710024d3e0 BlurEffect::doOnShaderClusterLoaded (symbols from Fahrenheit's server export)
+0x006c3950 function BlurEffect_onShaderClusterLoaded_006c3950 # cdecl(cluster, &blur): AsyncLoadManager_sGetInstance() (unused), [blur]+0x20 = cluster, tail jump BlurEffect_doOnShaderClusterLoaded([blur]); a callback stored by 0x006c38b0; name ours; ported (ffx_glue_other::effect, m4 h4 r1)
 0x006c4000 function Compute_006c4000             # auto-port shape (arithmetic on arguments, cdecl): return (a0 + a1); callers: no direct caller; name ours
 0x006c40c0 function ResetAndConstruct_006c40c0 # structure: thiscall(this): SetFields_006c47a0, then 0x00585230 on this +0x24 (tail call); name ours
 0x006c44d0 function BlurEffect_SetField84 # thiscall(this, v), ret 4: +0x84 = v (BlurEffect_activate zeroes it); name ours
@@ -3051,13 +3059,13 @@
 0x006c4710 function BlurEffect_SetFloats6c # thiscall(this, a, b), ret 8: floats +0x6c, +0x70; name ours
 0x006c47a0 function SetFields_006c47a0           # auto-port shape (several stores: set field (constants, arguments, addresses), thiscall): u8[(a0 + 0x58)] = 0x0; u32[a0] = 0x0; u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x14)] = 0x0; u32[(a0 + 0x20)] = 0x0; u32[(a0 + 0x18)] = 0x0; u32[(a0 + 0x10)] = 0x0; u32[(a0 + 0x1c)] = 0x0; u32[(a0 + 0x48)] = 0x0; u32[(a0 + 0x4c)] = 0x0; u32[(a0 + 0x50)] = 0x0; u32[(a0 + 0x54)] = 0x0; return 0x0; callers: ; name ours
 0x006c49a0 function BlurEffectEx_CreateInstance  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'BlurEffectEx: BlurEffect singleton is not created yet.'; Switch 0x710024e270 BlurEffectEx::CreateInstance (symbols from Fahrenheit's server export)
-0x006c4a70 function BlurEffectEx_GetInstance     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a08a8 BlurEffectEx::GetInstance, 3 votes, round 1
+0x006c4a70 function BlurEffectEx_GetInstance     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a08a8 BlurEffectEx::GetInstance, 3 votes, round 1; ported (ffx_glue_other::effect, m4 h4 r1): g 0x00cdebfc, message 0x00b49528
 0x006c4a90 function BlurEffect_setTarget # thiscall(this, v), ret 4: +0x2c = v, byte +0x28 = 1; name ours
 0x006c4b00 function BlurEffectEx_initialize      # layout+callees: sorts between BlurEffectEx_GetInstance and BlurEffectEx_postInitialize, and its named callees match the Switch 0x710024e480 BlurEffectEx_initialize's (similarity 1.00: BlurEffect_GetInstance); symbols from Fahrenheit's server export
 0x006c4b60 function BlurEffectEx_postInitialize  # layout+callees: sorts between BlurEffectEx_GetInstance and MotionBlur_GetInstance, and its named callees match the Switch 0x710024e4e0 BlurEffectEx_postInitialize's (similarity 0.60: BlurEffect_GetInstance, Phyre_PCluster_create, Phyre_PRendering_PEffectVariant_createMaterial); symbols from Fahrenheit's server export
 0x006c4cf0 function BlurEffectEx_render          # layout+callees: sorts between BlurEffectEx_GetInstance and MotionBlur_GetInstance, and its named callees match the Switch 0x710024e750 BlurEffectEx_render's (similarity 0.67: PostProcessManager_GetInstance, PostProcessManager_copyBuffer); symbols from Fahrenheit's server export
 0x006c4e00 function BlurEffectEx_update          # layout+callees: sorts between BlurEffectEx_render and MotionBlur_GetInstance, and its named callees match the Switch 0x710024e6e0 BlurEffectEx_update's (similarity 0.67: BlurEffectEx_postInitialize, BlurEffect_GetInstance); symbols from Fahrenheit's server export
-0x006c5130 function MotionBlur_GetInstance    # fh v3:bsim1.00 0x006c5270 MotionBlur::GetInstance
+0x006c5130 function MotionBlur_GetInstance    # fh v3:bsim1.00 0x006c5270 MotionBlur::GetInstance; ported (ffx_glue_other::effect, m4 h4 r1): g 0x00cdec04, message 0x00b49560
 0x006c5360 function MotionBlur_initialize        # layout+callees: sorts between MotionBlur_GetInstance and MotionBlur_setMotionBlurWeight, and its named callees match the Switch 0x71002645b0 MotionBlur_initialize's (similarity 1.00: AsyncLoadManager_loadCluster, AsyncLoadManager_sGetInstance, fiosUnifyFilename); symbols from Fahrenheit's server export
 0x006c5410 function MotionBlur_renderMotionBlur  # layout+callees: sorts between MotionBlur_GetInstance and MotionBlur_setMotionBlurWeight, and its named callees match the Switch 0x7100264630 MotionBlur_renderMotionBlur's (similarity 0.80: Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRenderer_beginScene, Phyre_PRendering_PRenderer_endScene); symbols from Fahrenheit's server export
 0x006c5600 function MotionBlur_setMotionBlurWeight # fh v3:exact 0x006c5740 MotionBlur::setMotionBlurWeight
@@ -3099,7 +3107,7 @@
 0x006d2c10 function ShadowManager_loadShadowShaderBinFiles # layout+callees: sorts between ShadowManager_getTextureSampler and ShadowManager_updateShadowMap, and its named callees match the Switch 0x7100277e90 ShadowManager_loadShadowShaderBinFiles's (similarity 0.60: Phyre_PCluster_LoadAssetFile, Phyre_PFramework_PApplication_GetApplication, fiosUnifyFilename); symbols from Fahrenheit's server export
 0x006d3000 function ShadowManager_updateShadowMap # fh v3:exact 0x006d3130 ShadowManager::updateShadowMap
 0x006d3560 function ShadowEntry_Init          # structure: thiscall(this, owner), ret 4: owner +0, 2 at +4, 1.0 at +0x30..+0x3c, the rest of +0xc..+0x50 and +0xa0/+0xa4 cleared; returns this; name ours (layout only)
-0x006d4de0 function BrokenScreenEffect_GetInstance # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a0b88 BrokenScreenEffect::GetInstance, 2 votes, round 1
+0x006d4de0 function BrokenScreenEffect_GetInstance # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a0b88 BrokenScreenEffect::GetInstance, 2 votes, round 1; ported (ffx_glue_other::effect, m4 h4 r1): g 0x00cdec98, message 0x00b49aac
 0x006d4e00 function SetFieldConst4_006d4e00      # auto-port shape (store constant to field, thiscall): u8[(a0 + 0x4)] = 0x1; callers: ; name ours
 0x006d4e10 function SetFieldConst5_006d4e10      # auto-port shape (store constant to field, thiscall): u8[(a0 + 0x5)] = 0x1; callers: ; name ours
 0x006d4e20 function BrokenScreenEffect_captureFrame # layout+callees: sorts between BrokenScreenEffect_GetInstance and BrokenScreenEffect_createRenderTarget, and its named callees match the Switch 0x710024f410 BrokenScreenEffect_captureFrame's (similarity 0.62: BrokenScreenEffect_createRenderTarget, PhyreScene_getLinearSampler, Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_renderMeshInstance); symbols from Fahrenheit's server export
@@ -3111,7 +3119,8 @@
 0x006d5670 function BrokenScreenEffect_isActivatedForCurrentFrame # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2398 BrokenScreenEffect::isActivatedForCurrentFrame, 2 votes, round 2
 0x006d5680 function BrokenScreenEffect_render    # layout: alphabetical run between BrokenScreenEffect_isActivatedForCurrentFrame and BrokenScreenEffect_resize (2 unnamed in the gap); Switch 0x710024f9d0 BrokenScreenEffect::render is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006d5970 function BrokenScreenEffect_reset     # layout: alphabetical run between BrokenScreenEffect_isActivatedForCurrentFrame and BrokenScreenEffect_resize (2 unnamed in the gap); Switch 0x710024f170 BrokenScreenEffect::reset is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x006d59c0 function BrokenScreenEffect_resize    # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2738 BrokenScreenEffect::resize, 2 votes, round 4
+0x006d59c0 function BrokenScreenEffect_resize    # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2738 BrokenScreenEffect::resize, 2 votes, round 4; ported (ffx_glue_other::effect, m4 h4 r1): thiscall(this; w, h) ret 8: 0x00a0e4b0([this], w, h, 1); 0
+0x006d59e0 function BrokenScreenEffect_setOpacity # thiscall(this; f32) ret 4: fld/fstp to +8 (eax untouched); caller graphicBrokenScreenUpdateOpacity; the dump's name; ported (ffx_glue_other::effect, m4 h4 r1)
 0x006d59f0 function graphicSetFieldConst6_006d59f0 # auto-port shape (store constant to field, thiscall): u8[(a0 + 0x6)] = 0x0; callers: graphicBrokenScreenStartKeepFrame; name ours
 0x006d5a70 function BrokenScreenEffect_updateLightParameters # fh switch:bsim1.00 0x710024f970 BrokenScreenEffect::updateLightParameters
 0x006d5d49 function Catch_All_006d5e79        # fh v3:cg2 0x6d5e79 Catch_All@006d5e79
@@ -3121,7 +3130,7 @@
 0x006d7130 function PhyFMVPlayerManager_CreateInstance # fh v3:cg2 0x6d7260 PhyFMVPlayerManager::CreateInstance
 0x006d71b0 function PhyFMVPlayerManager_DestroyFMVPlayer # string "DestroyFMVPlayer when updateTextureCallback in progress" (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006d7370 function PhyFMVPlayerManager_DestroyInstance # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x006d73a0 function PhyFMVPlayerManager_GetInstance # fh v3:bsim1.00 0x006d74d0 PhyFMVPlayerManager::GetInstance
+0x006d73a0 function PhyFMVPlayerManager_GetInstance # fh v3:bsim1.00 0x006d74d0 PhyFMVPlayerManager::GetInstance; ported (ffx_glue_other::effect, m4 h4 r1): g_FMVPlayerManager, message 0x00b49b98
 0x006d7430 function PhyFMVPlayerManager_PlayVideo # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'start to play video:%s\\n'; Switch 0x7100267240 PhyFMVPlayerManager::PlayVideo (symbols from Fahrenheit's server export)
 0x006d7570 function PhyFMVPlayerManager_Render   # layout+callees: sorts between PhyFMVPlayerManager_PlayVideo and PhyFMVPlayerManager_UpdateTexture, and its named callees match the Switch 0x7100267a00 PhyFMVPlayerManager_Render's (similarity 0.62: Phyre_PCamera_updateViewMatrices, Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRendererBase_setClearColor, Phyre_PRendering_PRenderer_beginScene, Phyre_PRendering_PRenderer_endScene); symbols from Fahrenheit's server export
 0x006d7680 function PhyFMVPlayerManager_UpdateTexture # fh v3:exact+call.cs 0x006d77b0 thiscall PhyFMVPlayerManager::UpdateTexture
@@ -3146,7 +3155,7 @@
 0x006d9c80 function PhyFMVPlayerManager_initialize # fh v3:exact 0x006d9db0 PhyFMVPlayerManager::initialize
 0x006da240 function PhyFMVPlayerManager_isVideoAtEndFrame # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006da2a0 function PhyFMVPlayerManager_StateCheck_006da2a0 # fastcall(mgr) -> al: 1 when one of the count (+4) states at +0xc is 1, or +0x704 is 0; else 0 (eax's upper bytes what was there); only caller 0x00641ce0 (graphic, under PhyFMVPlayerManager_GetInstance), which Native_b00a_MovieStartPicture_Poll waits on; movie player glue; name ours
-0x006da460 function PhyFMVPlayerManager_onShaderClusterLoaded # AsyncLoadManager callback (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x006da460 function PhyFMVPlayerManager_onShaderClusterLoaded # AsyncLoadManager callback (platform census 2026-10-25, docs/formats/platform.md; movie); ported (ffx_glue_other::effect, m4 h4 r1): cdecl(cluster, &mgr): AsyncLoadManager_sGetInstance() (unused), [mgr]+0x360 = cluster, tail jump PhyFMVPlayerManager_doOnShaderBinFilesLoaded([mgr])
 0x006da480 function PhyFMVPlayerDelegation_onTextureVideoPlay # fh v3:bsim1.00 0x006da5b0 PhyFMVPlayerDelegation::onTextureVideoPlay
 0x006da490 function PhyFMVPlayerDelegation_onTextureVideoStop # fh v3:bsim1.00 0x006da5c0 PhyFMVPlayerDelegation::onTextureVideoStop
 0x006da4b0 function PhyFMVPlayerManager_pauseMovie # fh v3:exact 0x006da5e0 PhyFMVPlayerManager::pauseMovie
@@ -3168,6 +3177,7 @@
 0x006dbf50 function JobSchedule_JobScheduler_waitForComplete # fh v3:exact 0x006dc080 JobSchedule::JobScheduler::waitForComplete
 0x006dc010 function std_map_cstr_find_006dc010 # thiscall(head; key*), ret 4: the node whose tagged string key (+0xc, bit 0 stripped) equals *key (strcmp order, address order when either is null), or 0; root head+0xc, children +0/+4; callers 0x006dc8d0/0x006dd230/0x006dd7b0; name ours
 0x006dc8a0 function Instance_006dc800_Get     # () -> [0x00cdede8], the object 0x006dc800 creates (0x006dc870 clears it); Fahrenheit's BSim match says MorphManager::GetInstance, but MorphManager_GetInstance is 0x006abf40
+0x006ddeb0 function VideoText_render_006ddeb0 # thiscall(this; a) ret 4: when bytes +4 and +5 are set, tail jump TextUtil_render([this]; a); eax junk otherwise; callers PhyreScene_RenderVideoAndItsUI, PhyreScene_render; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x006de700 function DynGeoMemManager_clearDynGeoMemory # fh v3:exact+call.cs 0x006de830 thiscall DynGeoMemManager::clearDynGeoMemory
 0x006de940 function DynGeoMemManager_getBufferFromDynGeoMemory # fh v3:exact 0x006dea70 DynGeoMemManager::getBufferFromDynGeoMemory
 0x006de9f0 function DynGeoMemManager_getCurrentBufferId # fh v3:exact 0x006deb20 DynGeoMemManager::getCurrentBufferId
@@ -3212,6 +3222,7 @@
 0x006e4ff0 function LoadingScreen_setParameterManually # fh switch:bsim1.00 0x7100228000 LoadingScreen::setParameterManually
 0x006e5020 function LoadingScreen_terminate      # layout+callees: sorts between LoadingScreen_setParameterManually and LoadingScreen_unloadTextures, and its named callees match the Switch 0x7100227e00 LoadingScreen_terminate's (similarity 1.00: LoadingScreen_unloadTextures, Phyre_PCluster_dtor_PCluster); symbols from Fahrenheit's server export
 0x006e5050 function LoadingScreen_unloadTextures # layout+callees: sorts between LoadingScreen_setParameterManually and RemapButtonIcon_sDestoryInstance, and its named callees match the Switch 0x7100227e80 LoadingScreen_unloadTextures's (similarity 1.00: ClusterManager_GetInstance, ClusterManager_releasePCluster); symbols from Fahrenheit's server export
+0x006e5490 function graphicInitialize_allocOnce_006e5490 # cdecl(): [0x00ce5194] = operator_new(1) unless set; caller graphicInitialize (eax junk when set); name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x006e55d0 function GetGlobal00ce5194_006e55d0   # auto-port shape (return global u32, cdecl): t0 = u32[&0x00ce5194]; return t0; callers: ; name ours
 0x006e56d0 function RemapButtonIcon_sDestoryInstance # fh switch:bsim1.00 0x710022fc60 RemapButtonIcon::sDestoryInstance
 0x006e56f0 function Phyre_Virtuos_AssetsSharingManager_FixID # fh switch:bsim1.00 0x71000c6670 Phyre::Virtuos::AssetsSharingManager::FixID
@@ -3221,7 +3232,7 @@
 0x006e6330 function RemapButtonIcon_RemapButtonIcon # fh v3:exact 0x006e6460 RemapButtonIcon::RemapButtonIcon
 0x006e63f0 function RemapButtonIcon_getButtonIconUV # layout+callees: sorts between RemapButtonIcon_RemapButtonIcon and RemapButtonIcon_getCurrentControlMachine, and its named callees match the Switch 0x7100230a50 RemapButtonIcon_getButtonIconUV's (similarity 0.75: RemapButtonIcon_getJoypadUV, Virtuos_InputManager_getInstance, Virtuos_InputManager_getVibrationFlag); symbols from Fahrenheit's server export
 0x006e6430 function Settings_GetFfxBinding # (slot) -> g_Settings +0x60 + slot*4 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
-0x006e6450 function RemapButtonIcon_getCurrentControlMachine # fh v3:bsim1.00 0x006e6580 RemapButtonIcon::getCurrentControlMachine
+0x006e6450 function RemapButtonIcon_getCurrentControlMachine # fh v3:bsim1.00 0x006e6580 RemapButtonIcon::getCurrentControlMachine; ported (ffx_glue_other::misc, m4 h4 r1): movzx of Virtuos_InputManager_getVibrationFlag(Virtuos_InputManager_getInstance())'s al
 0x006e6460 function RemapButtonIcon_getJoypadUV # fh v3:exact 0x006e6590 RemapButtonIcon::getJoypadUV
 0x006e6650 function AddrOfGlobal00c35030_006e6650 # auto-port shape (return address of global, cdecl): return &0x00c35030; callers: ; name ours
 0x006e6660 function RemapButtonIcon_getPadIconPath # fh v3:cg2 0x6e6790 RemapButtonIcon::getPadIconPath
@@ -3353,6 +3364,7 @@
 0x006f2520 function SetMember394_006f2520 # thiscall(this; v), ret 4: this+0x394 = v, returns v; caller 0x00648f80 (save data); name ours
 0x006f2530 function SaveDataManager_setSaveDataIconString # fh v3:exact 0x006f2670 SaveDataManager::setSaveDataIconString
 0x006f2560 function SaveDataManager_setSaveDataInfo # fh v3:exact 0x006f26a0 SaveDataManager::setSaveDataInfo
+0x006f29f0 function crossThreadImpl_run_006f29f0 # thiscall(this): [this+0x10]([this+0x14]) cdecl when set; returns 0; slot 1 of crossThreadImpl_vftable (0x00b4bbd0); name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x006f2a40 function Thread_Sleep # cdecl(ms): Sleep(ms), its eax left; name ours
 0x006f2be0 function Event_Reset # cdecl(&event): ResetEvent(*event) through 0x00b0c0f0; name ours
 0x006f2bf0 function Event_Set # cdecl(&event): SetEvent(*event) through 0x00b0c0ec; name ours
@@ -3408,8 +3420,9 @@
 0x006f6640 function TextUtil_reset               # layout+callees: sorts between TextUtil_render and TextUtil_setEnabled, and its named callees match the Switch 0x710021a290 TextUtil_reset's (similarity 1.00: Phyre_PStringBuilder_operator); symbols from Fahrenheit's server export
 0x006f6670 function TextUtil_resize              # layout: alphabetical run between TextUtil_reset and TextUtil_setEnabled (2 unnamed in the gap); Switch 0x710021a940 TextUtil::resize is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006f6860 function TextUtil_scrollToVisible     # layout: alphabetical run between TextUtil_reset and TextUtil_setEnabled (2 unnamed in the gap); Switch 0x7100219f80 TextUtil::scrollToVisible is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x006f68f0 function TextUtil_setEnabled          # structure: thiscall(this, b): +0x80 = b (the flag TextUtil_render checks); Switch TextUtil::setEnabled (12 bytes); 21 callers
-0x006f6930 function TextUtil_setTitleText        # structure: thiscall(this, text): assigns the title PString (0x00445cf0) and sets dirty +0x70; called by the *TweakUtil render functions (e.g. "PostProcess: %.2f fps"); Switch TextUtil::setTitleText
+0x006f68f0 function TextUtil_setEnabled          # structure: thiscall(this, b): +0x80 = b (the flag TextUtil_render checks); Switch TextUtil::setEnabled (12 bytes); 21 callers; ported (ffx_glue_other::misc, m4 h4 r1): thiscall(this; b) ret 4: byte +0x80; al = b, upper eax untouched (no caller reads it)
+0x006f6910 function TextUtil_setPosition_006f6910 # thiscall(this; f32 x, f32 y) ret 8: fld/fstp to +0x84, +0x88; next to TextUtil_setTitleText, callers 0x006ddc80/0x006dded0/0x006ddf40; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
+0x006f6930 function TextUtil_setTitleText        # structure: thiscall(this, text): assigns the title PString (0x00445cf0) and sets dirty +0x70; called by the *TweakUtil render functions (e.g. "PostProcess: %.2f fps"); Switch TextUtil::setTitleText; ported (ffx_glue_other::misc, m4 h4 r1): Phyre_PString_Assign(this+0x7c; s), byte +0x70 = 1, the assignment's eax
 0x006f6950 function TextUtil_terminate           # structure: frees the text buffers and releases the clusters (ClusterManager_releasePCluster); Switch TextUtil::terminate
 0x006f6dc0 function LoadCameraData            # fh v3:exact 0x006f6f00; cdecl(movie): the old g_CameraData freed (operator_delete_00630540) and cleared; movies 0x2e/0x48/0x20/0x46 get a zeroed operator_new block of 0x38658/0xfff0/0x3ba30/0x29388 bytes and g_CameraDataWords 0xe196/0x3ffc/0xee8c/0xa4e2 (bytes / 4); fiosUnifyFilename("/FFX_Data/GameData/PS3Data/Video/") + sprintf "%s%d%s" movie ".dat", fiosOpen(path, 1); not opened: dbgPrintf "Virtuos Error: Cannot open camera.dat file!!!"; else 0xa8-byte fiosReads copied one after another while a read returns 0xa8 (other movies: copied to address 0), fiosClose; ported (ffx_pcui::camera, pc round 2)
 0x006f6f80 function UnloadCameraData          # fh v3:bsim1.00 0x006f70c0
@@ -3464,9 +3477,9 @@
 0x006fa4e0 function FmodManager_registCommandSync4         # thiscall(mgr; cmd, a, b, c), ret 0x10
 0x006fa500 function FmodManager_registCommandSync # thiscall(mgr; cmd, a, b, c, d), ret 0x14: "registCommandSync TimeOut"; cmd/args at mgr +0x30..+0x40, done +0x44, result +0x48; 0x11-0x13/0x16/0x19/0x41 run on the caller's thread, the rest wait for the FMOD thread (event +0x18/+0x1c, 2 x 5 ms); 0x3f also answers 1 for a queued 0x33 of the id; str-match switch: only user of 1 string(s) held once by both builds, e.g. 'registCommandSync TimeOut: %d\\n'; Switch 0x71002371d0 FmodManager::registCommandSync (symbols from Fahrenheit's server export)
 0x006fa690 function FmodManager_signalMusicStart # fh v3:exact 0x006fa770 FmodManager::signalMusicStart
-0x006fa6c0 function FmodManager_signalVoiceStart # layout+callees: sorts between FmodManager_signalMusicStart and SyncManager_SyncManager, and its named callees match the Switch 0x7100237500 FmodManager_signalVoiceStart's (similarity 1.00: FfxFmod_voiceSetStartSignal); symbols from Fahrenheit's server export
+0x006fa6c0 function FmodManager_signalVoiceStart # layout+callees: sorts between FmodManager_signalMusicStart and SyncManager_SyncManager, and its named callees match the Switch 0x7100237500 FmodManager_signalVoiceStart's (similarity 1.00: FfxFmod_voiceSetStartSignal); symbols from Fahrenheit's server export; ported (ffx_glue_other::sound, m4 h4 r1): thiscall, FfxFmod_voiceSetStartSignal(mgr+8; 1)'s eax
 0x006fa700 function FmodManager_tick             # fastcall(mgr): graphicGetTimeInMicroseconds; before 33.333 ms since mgr+0x20 waits on mgr+0x18 (WaitForSingleObjectEx, alertable) for the rest; else FfxFmod_soundLoop and mgr+0x20 advances by whole periods; then runs the queue (0x006fa7e0). The FMOD clock is the game clock (virtual in the harness); name ours
-0x006fa8b0 function SyncManager_SyncManager   # fh v3:cg2 0x6fa990 SyncManager::SyncManager
+0x006fa8b0 function SyncManager_SyncManager   # fh v3:cg2 0x6fa990 SyncManager::SyncManager; ported (ffx_glue_other::sound, m4 h4 r1): thiscall, SyncManager_initData(this), returns this
 0x006fa8d0 function SyncManager_initData      # fh v3:exact 0x006fa9b0 SyncManager::initData
 0x006faa30 function SyncManager_initSyncFileList # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/%sData/SyncData/SyncDataList.txt'; Switch 0x71002380d0 SyncManager::initSyncFileList (symbols from Fahrenheit's server export)
 0x006faba0 function SyncManager_initSyncVoiceList # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/%sData/SyncData/SyncVoiceList.txt'; Switch 0x71002381f0 SyncManager::initSyncVoiceList (symbols from Fahrenheit's server export)
@@ -3502,6 +3515,7 @@
 0x006fc9b0 function FFEscMenu_refreshParameterAndSpecialPageEnableState # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'setEnableKeyBindings'; Switch 0x7100245e50 FFEscMenu::refreshParameterAndSpecialPageEnableState (symbols from Fahrenheit's server export)
 0x006fcca0 function FFEscMenu_initializeVideoSettingPage # guess (reads keys 2, 9..18; next to the audio page) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006fedf0 function FFEscMenu_buildResolutionList # guess: mode list, selects the current Resolution (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006ff020 function FFEscMenu_rebuildVideoSettingPage_006ff020 # thiscall(this): FFEscMenu_buildResolutionList(this), tail jump FFEscMenu_initializeVideoSettingPage(this); callers 0x0068dfd0, 0x0068f3c0; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x006ff290 function FFEscMenu_applyVideoSettings # callback queued by EscMenuVideoSettingRefresh (0x006ff4b0) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006ff4b0 function FFEscMenu_onVideoSettingRefresh # "EscMenuVideoSettingRefresh" (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006ff4f0 function FFEscMenu_onVoiceVolumeChanged # table 0x00c39640 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
@@ -3516,9 +3530,11 @@
 0x00701c50 function FFEscMenu_ShowPadIncompletePopUp_00701c50 # cdecl(menu), queued by 0x00701e40 (EscMenuControllerSettingIncomplete): 0x00701470 with texts 0x37b, 0x37a; name ours; ported (ffx_pcui::menus, pc round 3)
 0x00701fa0 function FFEscMenu_initializeControllerSettingPage # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'controllerBindingItem'; Switch 0x71002a9150 FFEscMenu::initializeControllerSettingPage (symbols from Fahrenheit's server export)
 0x00702660 function FFEscMenu_updateSpecialFeaturePage # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'addSpecialFeaturePageItem'; Switch 0x7100245b90 FFEscMenu::updateSpecialFeaturePage (symbols from Fahrenheit's server export)
+0x00702a70 function SaveDataMachine_disableMenu_00702a70 # cdecl(): IggyMenu_setEnable([0x00ceb248]; 0)'s eax; callers SaveDataMachine_LoadDone and three neighbours; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x00702fd0 function Add_00702fd0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x00702fe0 function AddU16_00702fe0 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x00703230 function RadialBlur_initialize        # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'RadialBlur_capturedFrame'; Switch 0x710026c6b0 RadialBlur::initialize (symbols from Fahrenheit's server export)
+0x007035f0 function RadialBlur_resize_007035f0 # thiscall(this; w, h) ret 8: 0x00a0e4b0([this+0x68], w, h, 1); 0 (as Distortion_resize); after RadialBlur_initialize, caller 0x006c3c40; name ours; ported (ffx_glue_other::effect, m4 h4 r1)
 0x00703750 function CopyFloats4_00703750 # thiscall(this; src), ret 4: 4 floats from src to this+4 through the x87 stack, returns src; caller 0x006c3970; name ours
 0x007037e0 function CopyFloats2_007037e0 # thiscall(this; src), ret 4: 2 floats from src to this+0x14 through the x87 stack, returns src; caller 0x006c3970; name ours
 0x00703a20 function ThreadLoop_00703a20        # fastcall(this): never returns: forever 0x006db8a0(this+0x10) on *0x00cdede4 (WaitForSingleObject import 0x00b0c0f8), 0x00703910 on its result, 0x006db800(result, this+0x10); no callers (a thread entry); name ours
@@ -3535,7 +3551,7 @@
 0x00706070 function cdc_Matrix_RotZ           # fh v3:exact 0x00706160 cdc::Matrix::RotZ
 0x007063f0 function cdc_Transpose             # fh v3:exact 0x007064e0 cdc::Transpose
 0x007066d0 function FmodMemory_alloc             # stdcall(size, type, src), ret 0xc: FMOD_Memory_Initialize's alloc callback (0x00706839): user_malloc(size + 16) aligned to 16, pad count at ptr-1; size 0 gives NULL; name ours
-0x00706710 function FmodMemory_free              # stdcall(ptr, type, src), ret 0xc: FMOD_Memory_Initialize's free callback: user_free(ptr - ptr[-1]); name ours
+0x00706710 function FmodMemory_free              # stdcall(ptr, type, src), ret 0xc: FMOD_Memory_Initialize's free callback: user_free(ptr - ptr[-1]); name ours; ported (ffx_glue_other::sound, m4 h4 r1): stdcall(p, type, source) ret 0xc: unless null, user_free_thunk(p - byte[p - 1]); eax junk on the null path (FMOD's free callback, no result)
 0x00706730 function FmodMemory_realloc           # stdcall(ptr, size, type, src), ret 0x10: FMOD_Memory_Initialize's realloc callback: new aligned block, copies min(size, old size - pad), frees the old; name ours
 0x007067d0 function FfxFmod_getNowPlayMusic   # thiscall(FfxFmod) -> FmodMusic +0x18 (the playing music); Switch FfxFmod::getNowPlayMusic by the PC build's alphabetical order of FfxFmod.cpp
 0x00706820 function FfxFmod_initEventSystem      # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'EventSystem create failed!\\n'; Switch 0x710029ef80 FfxFmod::initEventSystem (symbols from Fahrenheit's server export)
@@ -3701,7 +3717,7 @@
 0x00708900 function FmodMusic_crossPlay       # thiscall(FmodMusic; id, frames, event system); Switch FmodMusic::crossPlay by the PC build's alphabetical order of FmodMusic.cpp
 0x00708a00 function FmodMusic_dataSend        # thiscall(FmodMusic; id, event system); Switch FmodMusic::dataSend by the PC build's alphabetical order of FmodMusic.cpp
 0x00708af0 function FmodMusic_forceClearAll   # thiscall(FmodMusic); Switch FmodMusic::forceClearAll by the PC build's alphabetical order of FmodMusic.cpp
-0x00708be0 function FmodMusic_getState        # thiscall(FmodMusic); Switch FmodMusic::getState by the PC build's alphabetical order of FmodMusic.cpp
+0x00708be0 function FmodMusic_getState        # thiscall(FmodMusic); Switch FmodMusic::getState by the PC build's alphabetical order of FmodMusic.cpp; ported (ffx_glue_other::sound, m4 h4 r1): cdecl(id): id <= 0xb5 unsigned ? word id of 0x00b4f1c8 : -1
 0x00708c00 function FmodMusic_initData        # thiscall(FmodMusic; event system); Switch FmodMusic::initData by the PC build's alphabetical order of FmodMusic.cpp
 0x00708c60 function FmodMusic_initList           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71002a1120 FmodMusic::initList, 6 votes, round 1
 0x00708d30 function FmodMusic_initTempData    # thiscall(FmodMusic; event system): empty on PC (ret 4); Switch FmodMusic::initTempData by the PC build's alphabetical order of FmodMusic.cpp
@@ -4725,17 +4741,17 @@
 0x0076ed10 function Movie_IsBusy_0076ed10 # name ours; cdecl (): 0 when graphicIsVideoPlaying or 0x00641ce0 says a video plays and neither movie_with3DScene nor g_MoviePictureOn, else 1 (all three asked first); callers Sg_MainCheckMenu, 0x00873620; ported (ffx_script helpers, script round 24 c)
 0x0076ed70 function make_yi_font16               # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impe'; Switch 0x7100322120 make_yi_font16 (symbols from Fahrenheit's server export)
 0x0076edc0 function MovieCameraFrame_0076edc0 # (), from Sg_MainLoop and Native_b009_MovieCameraWait_Result: with g_WaitFramesByTime and movie_have_camera(), the camera record (0xa8 bytes) for graphicGetCurrentFrame() (movie 0x2e: +1 except at 0x47b, capped 0x4d8; 0x46: capped 0x3ca; negative or >= g_CameraDataWords/42: SetByte_012fb8fb(0)): on = ftol(rec+0), screen rec+4, camera rec+0x44, look/eye rec+0x84, aspect rec+0xa4 into its frame (ebp-0xac); setScreenDataAspectZ(aspect), MsSetCameraMatrix(on, screen, camera, look, eye, aspect), Cam_Apply(0) unless rcbgSceneSetMatrix_Cross(); with g_CameraData null it passes its never-written frame with on 0; name ours; ported pc round 4, hooked junk r1 (ffx_movie::bridge::movie_camera_frame); junk reads (0, brief 2026-10-24) with g_CameraData null: [ebp-0xac] (aspect), [ebp-0xa4..-0x64] (camera matrix), [ebp-0x64..-0x24] (screen matrix), [ebp-0x24..-0x4] (look-at, eye)
-0x0076efa0 function movie_err                 # fh v3:bsim1.00 0x0076f0b0
+0x0076efa0 function movie_err                 # fh v3:bsim1.00 0x0076f0b0; ported (ffx_glue_other::misc, m4 h4 r1): dbgPrintf(0x00b52658); eax untouched (dbgPrintf is a bare ret)
 0x0076efb0 function movie_frame_prog          # fh v3:bsim1.00 0x0076f0c0
 0x0076efc0 function movie_have_camera         # fh v3:exact 0x0076f0d0
-0x0076eff0 function movie_init                # fh v3:bsim1.00 0x0076f100
+0x0076eff0 function movie_init                # fh v3:bsim1.00 0x0076f100; ported (ffx_glue_other::misc, m4 h4 r1): dbgPrintf(0x00b52268); eax untouched
 0x0076f020 function movie_load_image          # fh v3:cg2 0x76f130
 0x0076f030 function movie_load_image_set         # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impe'; Switch 0x71003220f0 movie_load_image_set (symbols from Fahrenheit's server export)
 0x0076f040 function movie_play_prog           # fh v3:bsim1.00 0x0076f150
 0x0076f060 function movie_run_check           # fh v3:bsim1.00 0x0076f170
 0x0076f070 function movie_start_debug_name       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impe'; Switch 0x7100321c80 movie_start_debug_name (symbols from Fahrenheit's server export)
-0x0076f080 function movie_start_prog          # fh v3:bsim1.00 0x0076f190
-0x0076f090 function movie_stop_prog           # fh v3:bsim1.00 0x0076f1a0
+0x0076f080 function movie_start_prog          # fh v3:bsim1.00 0x0076f190; ported (ffx_glue_other::misc, m4 h4 r1): dbgPrintf(0x00b52570); eax untouched
+0x0076f090 function movie_stop_prog           # fh v3:bsim1.00 0x0076f1a0; ported (ffx_glue_other::misc, m4 h4 r1): dbgPrintf(0x00b523a0); eax untouched
 0x0076f0a0 function movie_sync_prog           # fh v3:bsim1.00 0x0076f1b0
 0x0076f0c0 function movie_with3DScene         # fh v3:exact 0x0076f1d0
 0x0076f0f0 function sa_camera_set                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impe'; Switch 0x7100321ff0 sa_camera_set (symbols from Fahrenheit's server export)
@@ -8682,7 +8698,7 @@
 0x00841cf0 function Sg_GsSetPacket            # fh v3:exact 0x00841cf0
 0x00841d10 function Sg_GsStart                # fh v3:exact 0x00841d10
 0x00841d50 function Sg_GsStartVIF             # fh v3:bsim1.00 0x00841d50
-0x00841d60 function Sg_GsSync                 # fh switch:bsim1.00 0x7100431b80
+0x00841d60 function Sg_GsSync                 # fh switch:bsim1.00 0x7100431b80; ported (ffx_glue_other::misc, m4 h4 r1): sceDmaSync([0x023cbbf4], 0, 0)'s eax
 0x00841d80 function Sg_GsTEST                 # fh v3:bsim1.00 0x00841d80
 0x00841e30 function Sg_GsTEST2                # fh v3:bsim1.00 0x00841e30
 0x00841ee0 function Sg_GsTEXFLUSH             # fh v3:exact 0x00841ee0
@@ -8718,7 +8734,7 @@
 0x00843210 function Sg_GetIsPrerend           # fh v3:exact 0x00843210
 0x00843220 function Sg_GetSpadPtr             # fh v3:exact 0x00843220
 0x00843260 function Sg_MFIFOEnd               # fh v3:exact 0x00843260
-0x008432d0 function Sg_MFIFOSpadSync          # fh v3:exact 0x008432d0
+0x008432d0 function Sg_MFIFOSpadSync          # fh v3:exact 0x008432d0; ported (ffx_glue_other::misc, m4 h4 r1): spins while g_GsRegisterSink & 0x100; returns the word last read
 0x00843360 function Sg_MFIFOSync              # fh v3:exact 0x00843360
 0x00843590 function StoreComputedToGlobal_00843590 # auto-port shape (store computed to global, cdecl): t0 = u32[&0x00c4df4c]; u32[&0x00c4df4c] = ((t0 + 0xffffffff) & 0x1); return ((t0 + 0xffffffff) & 0x1); callers: ; name ours
 0x008435a0 function Sg_MatrixFromDir          # (m, dir, rows): d = |dir|, s = |(0,0,1) x d|, u = |s x d| (FFXVu0Normalize, Sg_VecCross), m = identity, then s, u, d into the rows in nibbles 2, 1, 0 of rows (0x12 from Ch_DrawMain and 0x008440f0); name ours; ported (ffx_sg::vec)
@@ -11307,7 +11323,7 @@
 0x008b71f0 function TOGetExtMesWHFontL2          # layout+callees: sorts between TOGetEasyMesWHForCredits and TOGetFontInfo, and its named callees match the Switch 0x71004f1540 TOGetExtMesWHFontL2's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008b7240 function TOGetFontInfo             # fh v3:exact 0x008b71f0; (text, out) -> next: page +0, cell parity +4, box +8..+0x14, slant +0x18, width +0x1c (width-table byte / 4), +0x20 18.0; dictionary codes from 0x2c, two-byte tables 0x26..0x2b, icon 6, fixed 10.0 box otherwise
 0x008b78b0 function TOGetFontInfoInterMode       # layout and calls: the Switch name after TOGetFontInfo here (TOGetFontInfoInterMode, 744 bytes, calls TOGetFFXLang; ours 801, calls TOGetFFXLang); cdecl(text, out, inter) -> next: outside languages 0/9/10 with inter set: codes >= 0x2c width table 4 (page word 0x143d40, slant +0x18 untouched), 6 + byte: table 5 (0x143d60, slant 0), else text back; else Japanese without English 0x5c..0x5e: fixed box (10.0 wide, 70..80 x 0..18); languages 9/10 lead 4 -> +0x410; codes < 0x2c text back; >= 0x2c width table 0 (0x143c00), lead < 0x30 sets (not adds) the 0xd0 row, slant 2.0 for glyphs 0xea..0x103; cell as TOGetFontInfo; ported (system r39, tolib::bridge::to_get_font_info_inter_mode)
-0x008b7be0 function TOGetFontWidthInterMode      # layout and calls: (a, b, c) -> TOGetFontWidth(a, b, c, TOGetInternationalBaseDicType()); the Switch's TOGetFontWidthInterMode (calls TOGetFFXLang and _TOGetFontWidth) sorts after TOGetFontInfoInterMode, as here
+0x008b7be0 function TOGetFontWidthInterMode      # layout and calls: (a, b, c) -> TOGetFontWidth(a, b, c, TOGetInternationalBaseDicType()); the Switch's TOGetFontWidthInterMode (calls TOGetFFXLang and _TOGetFontWidth) sorts after TOGetFontInfoInterMode, as here; ported (ffx_glue_other::misc, m4 h4 r1): TOGetFontWidth(a, b, c, TOGetInternationalBaseDicType())'s eax
 0x008b7c00 function TOGetFontWidthForLang     # cdecl(text, kind, out, _): TOGetFontWidth(text, kind, out, lang 0/9/10 ? 0 : 4); name ours
 0x008b7c40 function TOGetTable_01868a90       # (i) -> [[0x01868a90 + 4 i] + 0xc]; name ours
 0x008b7c60 function TOGetLineFeedHeight       # fh v3:bsim1.00 0x008b7c10
@@ -11364,6 +11380,7 @@
 0x008b9ec0 function BtlEnd_InParty            # (chr): 1 when chr is one of MsGetSavePartyMember(&a, &b, &c)'s three slots and not 0xff, else 0 (stack cookie); caller 0x008bde00; name ours
 0x008b9f30 function BtlEnd_DrawCaption_008b9f30 # () -> eax: battle-end caption plate inside TOMakePktScissor(0, 0, 0x200, 0x1a0): u16 0x0186a168 0 -> text [0x025cc594] (0x4004) on one plate (y 925, text 927), else [0x025cc58c] (0x400a) cut at its first TOGetGroup 1 code into two lines on plates y 870/925 (text 872/927); width = remapX2(80) + w when wider than remapX2(660), else remapX2(740); right-aligned at remapX2(1806); scale 0.78; ported in menu round 31; name ours
 0x008ba370 function BtlEnd_RowX               # (i, n) (7-n)*44/2 + 44i + 76; own name
+0x008ba390 function MsSaveAddAPJump_008ba390 # cdecl(chr, n): bare jmp to MsSaveAddAP_00784610; caller BtlEnd_AddAP_008bdaf0; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x008ba3a0 function BtlEnd_AddGil             # (gil): jmp MsPayGIL(-gil); caller 0x008ba590 (battle results gil); name ours
 0x008ba3c0 function BtlEnd_ApStep             # (chr) the same step for MsGetNextAP; own name
 0x008ba400 function BtlEnd_CompactList        # entries (14 bytes from 0x01869f20, count u8 0x01869f18) with +9 set swapped to the front, +2 stays; at most 3; own name
@@ -11415,7 +11432,7 @@
 0x008be800 function TOMenuInit                # fh v3:exact 0x008be7d0
 0x008be840 function TOMenuTryOpen_008be840 # cdecl(mode) -> 0 opened (or movie fade/pause still on after TkMenuStart), 1 not allowed (GetU32_00c5a084 0, AtelGetHyoukaMenuEnable != 1 with mode 0, or MsBattleGetStatus != 0); keeps MsGetSaveConfigEnglish in 0x0186a1cc and relayouts messages when it changed; caller Sg_MainCheckMenu; ported ffx_system::tolib::menu_try_open (pc r8); name ours
 0x008be9b0 function SetGlobal_00c5a084 # cdecl(v): *0x00c5a084 = v, returns v; name ours
-0x008bea20 function TOMenuDrawKickTmp         # fh v3:bsim1.00+call.cs 0x008be9f0 cdecl
+0x008bea20 function TOMenuDrawKickTmp         # fh v3:bsim1.00+call.cs 0x008be9f0 cdecl; ported (ffx_glue_other::misc, m4 h4 r1): TOClosePktbuff(), tail jump TODrawKick()
 0x008bea30 function TOMenuGetAbilitymapWorkAdrs # fh v3:bsim1.00 0x008bea00
 0x008bea50 function TOMenuGetArmsHelp         # (id) -> MsMenuGetHelp(5, id, MsGetSaveConfigHiragana()); first of the TOMenuGet{menu}Help/Mes pairs laid out alphabetically after TOMenuGetAbilitymapWorkAdrs (Arms 5, Build 6, Config 7, GetCommand*, GetImportant*, HelpWork*, Item 8, Main 9, Menu1 1, Menu2 2, Name 10, PacketBuff*, Save 3, Status 11, Summon 12; anchors TOMenuGetNameMes/StatusMes/SummonMes); table 5 is Arms in the TkMenu copy too; cdecl(id): MsMenuGetHelp(5, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
 0x008bea70 function TOMenuGetArmsMes          # (id) -> MsMenuGetText(5, id, MsGetSaveConfigHiragana()); see TOMenuGetArmsHelp; cdecl(id): MsMenuGetText(5, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
@@ -11698,7 +11715,7 @@
 0x008cbab0 function MenuConfig_DrawRows      # (): TODrawMenuBG, then MenuConfig_DrawOptionRow(0, 0, row) and TkMn2DrawKickSyncPacket2 for each of g_TkMenuConfigRows; eax of the last call; ported in menu round 29; name ours
 0x008cbae0 function MenuConfig_DrawOptionRow # (_, _, row): one config menu row: record GetDerefU32_008cbaa0(row) (count +4, choice +8, enabled +0xc, title u16 +0x18, option texts u16 every 4 bytes from +0x1c), rows share 740 PS2 px (g_TkMenuConfigRows); frame 0x008cb530, title, backing shape, cross cursor, options (measured at 0.68, drawn at 0.78), brush on the choice, help on the cursor row; the PC row (g_TkMenuConfigLocRow) uses SaveDataGetLoc 0x1cd / 0x1d0-2k / 0x1d1-2k; caller 0x008cbab0; ported in menu round 28; name ours
 0x008cc150 function SndSetBgmTypeSave         # (on) -> eax of iMusicRefreshBgmType (tail call): MsGetSaveEventAddress() +0x5ec = (on != 0), then iMusicRefreshBgmType queues it; callers Native_0264_SetBgmType and Native_0267_MsgSelectBgmType_Poll's choices; name ours (snd::bridge::snd_set_bgm_type_save)
-0x008cc170 function iMusicRefreshBgmType      # fh v3:exact 0x008cc140
+0x008cc170 function iMusicRefreshBgmType      # fh v3:exact 0x008cc140; ported (ffx_glue_other::sound, m4 h4 r1): iMuiscSetBgmType(byte [MsGetSaveEventAddress() + 0x5ec] & 1)'s eax
 0x008cc1b0 function MenuSummon_Open_008cc1b0   # cdecl(m) -> the last TkMenuGetCurrentSummonPos(): the summon menu's open entry (+0xc of slot 7's record 0x00c5a720, TkMenuMainOpenMode; misfiled as sound): m+0x1c 0; command rows g_TkMenuSummonCmdKinds 0, 1 (key item 0xa01e or 0xa022), 2 (0xa01f) with TkMenuSummonMes/Help(kind) in a 6-word frame (texts, helps; rows past the count unwritten, never read); count to g_TkMenuSummonRestartCount; two or more rows: TkMenuOpenSubCmdWindowRect(0x008ceec0, texts, helps, n, 1, remap X 210, Y 155, X 1500, Y 54 (done Y 54 first)), MenuSubCmd_CenterOpen, TkMenuSetSubCmdWindowCursor(0); 0x023cc3c8 = 0, 0x023cc3c4/c0/bc = TkMenuGetCurrentSummonPos(); ported (ffx_menu::tk, small r6); name ours
 0x008cc330 function TkMenuCtrlSummon          # fh v3:exact+call.cs 0x008cc300 cdecl; (m) -> eax: aeon menu step, jump table 0x008cca28 on +0x1c (0..36); windows 0x0186a5a0 command list, g_TkMenuSummonStatusWindow, 0x0186a5a8 growth items, 0x0186a5ac stats; 13 command list: cancelled sound 0x80000004 -> 0x22 (3 with g_TkMenuSummonRestartCount > 1), picked by row kind u8 0x0186a5b0[row]: 0 => 14 status, 1 => 16 growth (aeon > 13 refused, 0x80000003), 2 => 24 stats; 19 item kind byte +2: 4 asks (0xa, 0xb, 0xc), 5/7/else notices 8/6/7; 21 yes: MsSetSaveCommand(aeon, item, 1), MsSaveItemUse of the TkMn2GetSummonGrow record, sound 0x80000066, TkMn2RefreshList(3) => 22 notice 0xd; 27 stat row: macro params (aeon, TOMenuGetStatusMes(g_NkzAeonStats+0xc [row*28]), u8 +6 of MenuSummon_GrowEntry(row)), in g_TkMenuSummonGrowMask asks (0xe, 0xb, 0xc) else notice 9 (affordable) / 6; 29 yes MenuSummon_GrowStat(row, aeon), sound 0x80000067, MenuSummon_RefreshGrowMasks -> 30 notice 0xf; 36 TkMenuMainSleepMenu(7), tail TkMenuMainActiveMenu(1, 0); ported in menu round 33
 0x008ccb10 function MenuSummon_CloseStatusWindow# TkMn2InitStatusBG, close request for 0x0186a5a4, forget it; own name
@@ -12350,7 +12367,7 @@
 0x00902840 function TOMkpMovieMessageImage    # fh switch:cg2 0x71008bdad8
 0x009029b0 function TOMkpPadButtonData        # fh v3:exact 0x009029b0
 0x00902ef0 function TOMkpRotateShapeXYWHUVC2  # fh v3:cg12 0x902ef0
-0x00903300 function TOMkpSetEnvSubFont        # fh v3:exact 0x00903300
+0x00903300 function TOMkpSetEnvSubFont        # fh v3:exact 0x00903300; ported (ffx_glue_other::misc, m4 h4 r1): g_TOPktCursor = Identity_008f2f70(g_TOPktCursor), tail jump TOCtrlPkt()
 0x009034b0 function TOMkpShapePartIndexXYWHC2 # fh v3:exact 0x009034b0
 0x00903a10 function TOMkpShapeXY              # fh v3:exact 0x00903a10
 0x00903a50 function TOMkpShapeXYC2               # layout: the three unnamed functions between TOMkpShapeXY and TOMkpShapeXYWHUV take the Switch names sorting there, in order (TOMkpShapeXYC2, TOMkpShapeXYDirect, TOMkpShapeXYWHC2); this one passes no width/height (0, 0) to TOAdpEasyShapeXYWHC2, then TOCtrlPkt
@@ -13947,7 +13964,7 @@
 0x00a26240 function IggyMenuManager_createInstance # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x710089f8c8 IggyMenuManager::createInstance, 3 votes, round 1
 0x00a265a0 function IggyMenuManager_ApplyViewport_00a265a0 # thiscall(this) from the viewport setters 0x00a26a20/0x00a26bd0; name ours: for i below (+8 & 0x7fffffff), re-read each time: menu = (+0xc)[i]; non-null: 0x00a28f40(menu; +0x18, +0x2c - +0x1c - +0x24, +0x20, +0x24) (x, bottom-up y, w, h); ported (ffx_pcui::menus, pc round 2)
 0x00a267f0 function IggyMenuManager_Render_00a267f0 # fastcall(manager): when +0x30 is set binds the back buffer (setColorTarget(0, 0), no depth), beginScene(0), then for layers 0..2 every menu (+0xc list, count +8 & 0x7fffffff) whose +0x98 is the layer through IggyMenu_Draw_00a28eb0, then IggyMenuManager_EndDraw_00a362e0, endScene(1); callers PhyreScene_render (after the post chain's last copy), the loading and opening screens 0x0066b1e0/0x0066b2e0, 0x00642be0; name ours (pc-ui2d, docs/formats/ui-draw.md)
-0x00a26960 function IggyMenuManager_SetViewportJump_00a26960 # bare jmp to IggyMenuManager_SetViewport_00a26a20 (push ebp; mov ebp, esp; pop ebp; jmp), from PhyreScene_resize 0x0066c580 (which then xors eax); name ours
+0x00a26960 function IggyMenuManager_SetViewportJump_00a26960 # bare jmp to IggyMenuManager_SetViewport_00a26a20 (push ebp; mov ebp, esp; pop ebp; jmp), from PhyreScene_resize 0x0066c580 (which then xors eax); name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x00a26a20 function IggyMenuManager_SetViewport_00a26a20 # thiscall(this, w, h), ret 8, from 0x00a262e0 and the jmp 0x00a26960; name ours: r = f32(f32(w)/f32(h)) against g_IggyTargetAspect a: a == r (0, 0, w, h); a > r letterbox k = f32(r * 0.5625) (0, ftol((1-k)h*0.5), w, ftol(kh)); else (NaN too) pillarbox q = f32(a * (1/r)) (ftol((1-q)w*0.5), 0, ftol(qw), h) into +0x18..+0x24, screen (w, h) at +0x28/+0x2c; only when a word changes, then IggyMenuManager_ApplyViewport_00a265a0 (eax its; else h or the last ftol, no caller reads it); ported (ffx_pcui::menus, pc round 3)
 0x00a26e70 function PVideoPlaybackWin32_ctor # 3 CDataFrameQueue, 2 PThread, VbfMkvReader +0x118, 2 PEventFlag (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a26f30 function PVideoPlaybackWin32_dtor_00a26f30 # thiscall: destroys members +0x118 (0x00a3e040), +0x80, +0x40, +0 (0x00a3dd50) under an SEH frame; called by unwind funclets and 0x006d6d00; PhyreEngine video player (library); name ours
@@ -13973,18 +13990,22 @@
 0x00a27ee0 function PVideoPlaybackWin32_FmodReadCallback_00a27ee0 # stdcall(sound, data, len), ret 0xc: 0x00a7c8fe(sound, &player) (FMOD Sound::getUserData), then PVideoPlaybackWin32_AudioRead_00a27170(player, data, len); returns 0; its address pushed at 0x00a275d2 (AudioInit's FMOD stream setup); name ours
 0x00a27f20 function PVideoPlaybackWin32_open # thiscall(player, path, loop): opens the WebM, vpx_codec_dec_init, starts the decoding thread 0x00a27b90; the old name came from the thread-name string it passes; -> 0/-1/-2/-3 (platform census 2026-10-25, docs/formats/platform.md; movie); was PVideoPlaybackWin32__VideoDecodingThread
 0x00a282f0 function PVideoPlaybackWin32_play # guess: state 1, setPaused(false); no refs (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a28330 function PVideoPlaybackWin32_setVolume # thiscall(player, f32): Channel::setVolume on the movie's channel; returns r == 0; name ours (movie audio, pc-audio; name from the platform census)
+0x00a28330 function PVideoPlaybackWin32_setVolume # thiscall(player, f32): Channel::setVolume on the movie's channel; returns r == 0; name ours (movie audio, pc-audio; name from the platform census); ported (ffx_glue_other::sound, m4 h4 r1): thiscall(this; f32), ret 4: FMOD::Channel::setVolume(this+0x2a0, f) through the import thunk 0x00948d12; 1 when it returns FMOD_OK (neg/sbb/inc), else 0
 0x00a28350 function PVideoPlaybackWin32_close # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a28430 function PVideoPlaybackWin32_terminate # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a284a0 function Phyre_PVideo_PVideoPlaybackWin32_updateTexture # fh v3:exact 0x00a284a0 Phyre::PVideo::PVideoPlaybackWin32::updateTexture
+0x00a28a20 function IggyValueRef_free_00a28a20 # thiscall(this): when byte [this] is set, _IggyValueRefFree@8([this+0x38], [this+4]) (import 0x00b0c820); eax junk when not set; 10 callers in the escape and save menus; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x00a28a40 function IggyMenu_dtor_IggyMenu       # structure: fastcall(this): restores IggyMenu_vftable, releases the Iggy player (+0x6c, +0x68) and frees with Phyre_PhyreFree; 24 callers are the IggyMenu subclasses' destructors and menu teardown, as the Switch's IggyMenu::~IggyMenu callers (FFEscMenu::~FFEscMenu, IconPanel::~IconPanel, ...)
 0x00a28ba0 function IggyMenu_callIggyAS3External # fh v3:exact 0x00a28ba0 IggyMenu::callIggyAS3External
+0x00a28c00 function IggyMenuHandlers_callCdecl_00a28c00 # cdecl(ctx, f, arg): f(arg) cdecl, its eax; stored by IggyMenuHandlers_addCall; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x00a28d10 function GetDerefU32_00a28d10         # auto-port shape (return deref u32 (pointer chain), thiscall): t0 = u32[(a0 + 0x6c)]; t1 = u32[t0]; return t1; callers:  and 7 more; name ours
 0x00a28d30 function iggyDataValueSet          # fh v3:exact 0x00a28d30
 0x00a28d70 function iggyDataValueSet_00a28d70 # fh v3:exact 0x00a28d70
 0x00a28db0 function iggyDataValueSet_00a28db0 # cdecl(v, b): when v, type 3 (boolean) and the zero-extended byte b at +8; beside Fahrenheit's iggyDataValueSet overloads (0x00a28d30 int, 0x00a28d70 string), named in their pattern; callers 0x0068dd20, 0x006fca50; name ours
+0x00a28dd0 function IggyValue_setType9_00a28dd0 # cdecl(value, v): unless value is null, [value] = 9, [value+8] = v (eax junk when null); 13 callers in FFEscMenu_initializeVideoSettingPage and neighbours; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x00a28df0 function IggyMenuHandlers_addCall  # thiscall(this, f, arg) -> al: first of 5 slots (this+4, 0x14 each, used byte first) with used 0 gets (0, f, arg, 0x00a28c00 = call f(arg)) and used 1; al 0 when full; callers attach the Iggy menus' key handlers (0x0068f6b0 adds onDefaultKey); name ours
 0x00a28e40 function IggyMenuHandlers_add      # thiscall(this, a, b, c, handler) -> al: as IggyMenuHandlers_addCall with the four words given (0x0068dfb0 passes handler 0x0068dfa0); name ours
+0x00a28e90 function IggyMenu_addCallback_00a28e90 # thiscall(this; a, b) ret 8: 0x00a266b0(g_IggyMenuManager; this, a, b)'s eax; 29 callers (FFEscMenu_registerCallbacks, PhyreScene_beginRenderOpeningScreen); name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x00a28eb0 function IggyMenu_Draw_00a28eb0 # fastcall(menu) -> 0 or the queue's error: when enabled (+0x70) with a player (+0x68) and +0x6c, IggyPlayer_QueueDraw_00a3d9b0(+0x68); name ours (pc-ui2d)
 0x00a28ee0 function IggyMenu_replay           # fh v3:bsim1.00 0x00a28ee0 IggyMenu::replay
 0x00a28ef0 function IggyMenu_setEnable        # fh v3:bsim1.00 0x00a28ef0 IggyMenu::setEnable

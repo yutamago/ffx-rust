@@ -21,6 +21,7 @@ ffx-field = { path = "crates/ffx-field" }
 ffx-fxdraw = { path = "crates/ffx-fxdraw" }
 ffx-gfx = { path = "crates/ffx-gfx" }
 ffx-graphic = { path = "crates/ffx-graphic" }
+ffx-glue-other = { path = "crates/ffx-glue-other" }
 ffx-harness = { path = "crates/ffx-harness" }
 ffx-hook = { path = "crates/ffx-hook" }
 ffx-kernel = { path = "crates/ffx-kernel" }
