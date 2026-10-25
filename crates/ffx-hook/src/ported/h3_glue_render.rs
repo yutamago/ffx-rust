@@ -13,6 +13,7 @@ use ffx_prender::glue4::bridge as g4;
 use ffx_prender::glue5::bridge as g5;
 use ffx_prender::glue6::bridge as g6;
 use ffx_prender::glue7::bridge as g7;
+use ffx_prender::glue8::bridge as g8;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -885,5 +886,117 @@ ported! {
     /// `PhyreScene_loadVFXTextureAsync(this, id, name)`.
     PhyreScene_loadVFXTextureAsync @ 0x0066_5f60 => extern "thiscall" fn scene_load_vfx_texture_async(this: u32, id: u32, name: u32) -> u32 {
         g7::scene_load_vfx_texture_async(&mut mem(), this, id, name)
+    }
+
+    // ---- round 3 batch 8 (ffx_prender::glue8, and PArray_PushInto copies) ----
+    /// `PArray_PushInto_00637e30(this; dst, value)`: the same code as
+    /// `PArray_PushInto_00629b90`.
+    PArray_PushInto_00637e30 @ 0x0063_7e30 => extern "thiscall" fn parray_push_into_00637e30(this: u32, dst: u32, value: u32) -> u32 {
+        ffx_system::container::bridge::parray_push_into(&mut mem(), this, dst, value, ffx_glue_other::copies::phyre_free)
+    }
+    /// `PArray_PushInto_00637ec0(this; dst, value)`: the same code as
+    /// `PArray_PushInto_00629b90`.
+    PArray_PushInto_00637ec0 @ 0x0063_7ec0 => extern "thiscall" fn parray_push_into_00637ec0(this: u32, dst: u32, value: u32) -> u32 {
+        ffx_system::container::bridge::parray_push_into(&mut mem(), this, dst, value, ffx_glue_other::copies::phyre_free)
+    }
+    /// `PArray_PushInto_0065fac0(this; dst, value)`: the same code as
+    /// `PArray_PushInto_00629b90`.
+    PArray_PushInto_0065fac0 @ 0x0065_fac0 => extern "thiscall" fn parray_push_into_0065fac0(this: u32, dst: u32, value: u32) -> u32 {
+        ffx_system::container::bridge::parray_push_into(&mut mem(), this, dst, value, ffx_glue_other::copies::phyre_free)
+    }
+    /// `PArray_PushInto_0065fb50(this; dst, value)`: the same code as
+    /// `PArray_PushInto_00629b90`.
+    PArray_PushInto_0065fb50 @ 0x0065_fb50 => extern "thiscall" fn parray_push_into_0065fb50(this: u32, dst: u32, value: u32) -> u32 {
+        ffx_system::container::bridge::parray_push_into(&mut mem(), this, dst, value, ffx_glue_other::copies::phyre_free)
+    }
+    /// `PArray_PushInto_006b24e0(this; dst, value)`: the same code as
+    /// `PArray_PushInto_00629b90`.
+    PArray_PushInto_006b24e0 @ 0x006b_24e0 => extern "thiscall" fn parray_push_into_006b24e0(this: u32, dst: u32, value: u32) -> u32 {
+        ffx_system::container::bridge::parray_push_into(&mut mem(), this, dst, value, ffx_glue_other::copies::phyre_free)
+    }
+    /// `PArray_PushInto_006b2570(this; dst, value)`: the same code as
+    /// `PArray_PushInto_00629b90`.
+    PArray_PushInto_006b2570 @ 0x006b_2570 => extern "thiscall" fn parray_push_into_006b2570(this: u32, dst: u32, value: u32) -> u32 {
+        ffx_system::container::bridge::parray_push_into(&mut mem(), this, dst, value, ffx_glue_other::copies::phyre_free)
+    }
+    /// `PArray_PushInto_006d26d0(this; dst, value)`: the same code as
+    /// `PArray_PushInto_00629b90`.
+    PArray_PushInto_006d26d0 @ 0x006d_26d0 => extern "thiscall" fn parray_push_into_006d26d0(this: u32, dst: u32, value: u32) -> u32 {
+        ffx_system::container::bridge::parray_push_into(&mut mem(), this, dst, value, ffx_glue_other::copies::phyre_free)
+    }
+    /// `PArray_PushInto_006dea60(this; dst, value)`: the same code as
+    /// `PArray_PushInto_00629b90`.
+    PArray_PushInto_006dea60 @ 0x006d_ea60 => extern "thiscall" fn parray_push_into_006dea60(this: u32, dst: u32, value: u32) -> u32 {
+        ffx_system::container::bridge::parray_push_into(&mut mem(), this, dst, value, ffx_glue_other::copies::phyre_free)
+    }
+    /// `PhyreScene_releaseClusterObjects_00658f40(this)`.
+    PhyreScene_releaseClusterObjects_00658f40 @ 0x0065_8f40 => extern "thiscall" fn scene_release_cluster_objects(this: u32) {
+        g8::scene_release_cluster_objects(&mut mem(), this);
+    }
+    /// `PhyreScene_isSpecialMagicId_0065efd0(id)`.
+    PhyreScene_isSpecialMagicId_0065efd0 @ 0x0065_efd0 => extern "stdcall" fn is_special_magic_id(id: u32) -> u32 {
+        g8::is_listed_65efd0(id)
+    }
+    /// `PhyreScene_releasePoolArray_0065a3a0(this, array, cluster)`.
+    PhyreScene_releasePoolArray_0065a3a0 @ 0x0065_a3a0 => extern "thiscall" fn scene_release_pool_array(this: u32, array: u32, cluster: u32) {
+        g8::scene_release_pool_array(&mut mem(), this, array, cluster);
+    }
+    /// `ClassVFXRenderDataTable_GetVFXDynamicGeometrySegmentFromPool(this, &segment, &data)`.
+    ClassVFXRenderDataTable_GetVFXDynamicGeometrySegmentFromPool @ 0x0069_f7f0 => extern "thiscall" fn vfx_segment_from_pool(this: u32, out: u32, data: u32) -> u32 {
+        g8::vfx_segment_from_pool(&mut mem(), this, out, data)
+    }
+    /// `PhyreScene_clearArrays_00659000(this)`.
+    PhyreScene_clearArrays_00659000 @ 0x0065_9000 => extern "thiscall" fn scene_clear_arrays(this: u32) -> u32 {
+        g8::scene_clear_arrays(&mut mem(), this)
+    }
+    /// `PhyreScene_updateCameras_00671be0(this)`.
+    PhyreScene_updateCameras_00671be0 @ 0x0067_1be0 => extern "thiscall" fn scene_update_cameras(this: u32) {
+        g8::scene_update_cameras(&mut mem(), this);
+    }
+    /// `PRedBlackTree_insert_006be960(this, node)`.
+    PRedBlackTree_insert_006be960 @ 0x006b_e960 => extern "thiscall" fn tree_insert_6be960(this: u32, node: u32) -> u32 {
+        g8::tree_find_or_link(&mut mem(), this, node)
+    }
+    /// `BrokenScreenEffect_render_006d44c0(this)`.
+    BrokenScreenEffect_render_006d44c0 @ 0x006d_44c0 => extern "thiscall" fn broken_render(this: u32) -> u32 {
+        g8::broken_render(&mut mem(), this)
+    }
+    /// `SamplerPair_init_006b3f40(this)`.
+    SamplerPair_init_006b3f40 @ 0x006b_3f40 => extern "thiscall" fn sampler_pair_init(this: u32) -> u32 {
+        g8::sampler_pair_init(&mut mem(), this)
+    }
+    /// `graphicCharacterRegistToInstantiate(a, chr, c, d)`: the request
+    /// goes into the caller's `chr` slot; `eax` 0 for a null `chr` (its two
+    /// callers in `Ch_Allocate` don't read it).
+    graphicCharacterRegistToInstantiate @ 0x0063_d370 => extern "C" fn character_regist_to_instantiate(a: u32, chr: u32, c: u32, d: u32; slots: u32) -> u32 {
+        g8::character_regist_to_instantiate(&mut mem(), slots, a, chr, c, d).unwrap_or(0)
+    }
+    /// `graphicLevelAnalysisName(path)`.
+    graphicLevelAnalysisName @ 0x0064_1d00 => extern "C" fn level_analysis_name(path: u32) {
+        let mut f = StackFrame::<9>::new();
+        g8::level_analysis_name(&mut mem(), f.at() + 0x24, path);
+    }
+    /// `PhyreScene_initPostProcess_006656e0(this)`.
+    PhyreScene_initPostProcess_006656e0 @ 0x0066_56e0 => extern "thiscall" fn scene_init_post_process(this: u32) -> u32 {
+        g8::scene_init_post_process(&mut mem(), this)
+    }
+    /// `graphicVFXDestroy(lo, hi)`.
+    graphicVFXDestroy @ 0x0064_5280 => extern "C" fn vfx_destroy(lo: u32, hi: u32) {
+        g8::vfx_destroy(&mut mem(), lo, hi);
+    }
+    /// `PostProcessManager_checkShaderBin_00693540(this, i)`.
+    PostProcessManager_checkShaderBin_00693540 @ 0x0069_3540 => extern "thiscall" fn post_check_shader_bin(this: u32, i: u32) -> u32 {
+        let mut f = StackFrame::<8>::new();
+        g8::post_check_shader_bin(&mut mem(), f.at() + 0x20, this, i)
+    }
+    /// `PhyreScene_loadPersistentVFXTexture(this)`.
+    PhyreScene_loadPersistentVFXTexture @ 0x0066_5660 => extern "thiscall" fn scene_load_persistent_vfx_texture(this: u32) -> u32 {
+        let mut f = StackFrame::<0x81>::new();
+        g8::scene_load_persistent_vfx_texture(&mut mem(), f.at() + 0x204, this)
+    }
+    /// `graphicCharacterInstanceSetClothVertexBuffers()`.
+    graphicCharacterInstanceSetClothVertexBuffers @ 0x0063_b740 => extern "C" fn character_set_cloth_vertex_buffers() {
+        let mut f = StackFrame::<2>::new();
+        g8::character_set_cloth_vertex_buffers(&mut mem(), f.at() + 8);
     }
 }
