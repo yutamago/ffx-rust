@@ -688,6 +688,7 @@ dependencies = [
  "ffx-monster",
  "ffx-motion",
  "ffx-movie",
+ "ffx-pcore",
  "ffx-pcui",
  "ffx-prender",
  "ffx-ps2",
@@ -777,6 +778,7 @@ dependencies = [
  "ffx-monster",
  "ffx-motion",
  "ffx-movie",
+ "ffx-pcore",
  "ffx-pcui",
  "ffx-phyre",
  "ffx-prender",
@@ -793,6 +795,14 @@ dependencies = [
  "lz4_flex",
  "thiserror",
  "unicorn-engine",
+]
+
+[[package]]
+name = "ffx-pcore"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+ "ffx-graphic",
 ]
 
 [[package]]

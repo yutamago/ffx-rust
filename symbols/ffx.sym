@@ -127,9 +127,11 @@
 0x0042f9a0 function FFXApplication_resize      # ours: slot 9 of FFXApplication_vftable (0x00b0d9bc), right after FFXApplication_render as the class's methods sort; thiscall(this): 0x00642cd0 (PhyreScene_resize on the scene 0x00ccb9d8), then a tail jump to the base class's resize 0x0062c260 (fastcall this: viewport, render targets), whose eax it returns; ported (ffx_sg::app, main round 16)
 0x0042f9b0 function FFXApplication_ApplySettings # g_PhyreScene (0x00ccb9d8) ? PhyreScene_ApplySettings : 0 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x0042fa70 function PostReset                 # fh v3:exact 0x0042fb50
+0x0042fae0 function Phyre_PhyreMallocArray_0042fae0 # cdecl(n, size): user_malloc(n * size + 0x14) placed 16-aligned past a header word (the raw pointer); the block or 0; name ours
 0x0042fb20 function Phyre_PhyreFree           # fh v3:exact 0x0042fc00 Phyre::PhyreFree
 0x0042fb40 function Phyre_PhyreMalloc         # fh v3:exact 0x0042fc20 Phyre::PhyreMalloc
 0x0042fb80 function Phyre_PhyreMalloc_0042fb80 # fh v3:exact 0x0042fc60 Phyre::PhyreMalloc
+0x0042fbd0 function Phyre_PhyreRealloc_0042fbd0 # cdecl(p, size): user_realloc(p's raw pointer, size + 0x14), or user_malloc for null, placed 16-aligned; the block or 0; name ours
 0x0042fc80 function Phyre_PEventFlagWin32_PEventFlagWin32 # fh v3:bsim1.00 0x0042fd60 Phyre::PEventFlagWin32::PEventFlagWin32
 0x0042fc90 function Phyre_PSemaphoreWin32_PSemaphoreWin32 # fh v3:bsim1.00 0x0042fd70 Phyre::PSemaphoreWin32::PSemaphoreWin32
 0x0042fca0 function Phyre_PThreadInitializationWin32_PThreadInitializationWin32 # fh v3:cg2 0x42fd80 Phyre::PThreadInitializationWin32::PThreadInitializationWin32
@@ -142,6 +144,7 @@
 0x004301e0 function Phyre_PEventFlagWin32_reset # fh v3:bsim1.00 0x004302d0 Phyre::PEventFlagWin32::reset
 0x00430200 function Phyre_PEventFlagWin32_signal # fh v3:bsim1.00 0x004302f0 Phyre::PEventFlagWin32::signal
 0x00430210 function Phyre_PSemaphoreWin32_signal # fh v3:exact 0x00430300 Phyre::PSemaphoreWin32::signal
+0x00430280 function Phyre_PEventFlagWin32_waitTimeout_00430280 # thiscall(this, ms), ret 4: WaitForSingleObject(handle, ms); 0; PCriticalSectionSimple's lock waits 20 ms on it; name ours
 0x004302a0 function Phyre_PEventFlagWin32_wait # fh v3:bsim1.00 0x00430390 Phyre::PEventFlagWin32::wait
 0x004302b0 function Phyre_PSemaphoreWin32_wait # fh v3:bsim1.00 0x004303a0 Phyre::PSemaphoreWin32::wait
 0x00430340 function Phyre_PTypeDispenser_GetClassDescriptor_Phyre_PTimer # fh v3:exact 0x00430430 Phyre::PTypeDispenser::GetClassDescriptor<Phyre::PTimer>
@@ -150,10 +153,13 @@
 0x00430d60 function Phyre_PhyreExit           # fh v3:exact 0x00430e50 Phyre::PhyreExit
 0x00430dd0 function Phyre_PhyreInit           # fh v3:exact 0x00430ed0 Phyre::PhyreInit
 0x00431690 function Phyre_PCriticalSectionSimple_PCriticalSectionSimple # fh v3:cg2 0x431790 Phyre::PCriticalSectionSimple::PCriticalSectionSimple
+0x004316d0 function Phyre_PEventFlagWithByte_init_004316d0 # thiscall(this): an event flag at +0 (no handle) and byte +4 clear; this; name ours
 0x004316f0 function Phyre_PThreadInitializationBase_PThreadInitializationBase # fh v3:exact 0x004317f0 Phyre::PThreadInitializationBase::PThreadInitializationBase
 0x004317a0 function Phyre_PThreadInitializationBase_GetDefaultThreadName # fh v3:bsim1.00 0x004318a0 Phyre::PThreadInitializationBase::GetDefaultThreadName
 0x004317f0 function Phyre_PCriticalSectionBase_initialize # fh v3:exact 0x004318f0 Phyre::PCriticalSectionBase::initialize
+0x004318c0 function Phyre_PCriticalSectionSimple_lockWait_004318c0 # thiscall(cs, lock), ret 4: waiter count +0xc up, InterlockedCompareExchange(lock, 1, 0) until free (waitTimeout 20 ms on the event +4 between tries), lock[1]++, ResetEvent, waiter count down; returns that InterlockedExchangeAdd's result; PCriticalSectionSimple::lock's body; name ours
 0x00431920 function Phyre_PCriticalSectionSimple_lock # fh v3:bsim1.00 0x00431a20 Phyre::PCriticalSectionSimple::lock
+0x00431950 function Phyre_PCriticalSectionBase_release_00431950 # thiscall(cs): when byte +0 is set, clears it, 0x00430240(cs + 4) (the event flag's release) and clears byte +8; name ours
 0x00431a80 function Phyre_PCriticalSectionSimple_unlock # fh v3:exact 0x00431b80 Phyre::PCriticalSectionSimple::unlock
 0x004320e0 function Phyre_PSerialization_PUtilitySerialization_initialize # fh switch:bsim1.00 0x710007dc00 Phyre::PSerialization::PUtilitySerialization::initialize
 0x004322c0 function Phyre_PGeometry_PUtilityGeometry_initialize # fh switch:bsim1.00 0x710009a4a0 Phyre::PGeometry::PUtilityGeometry::initialize
@@ -278,11 +284,18 @@
 0x004448c0 function Phyre_PTypedObject_swap   # fh switch:bsim1.00 0x71000c0b90 Phyre::PTypedObject::swap
 0x00444ab0 function Phyre_PStringBuilder_dtor_PStringBuilder # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710087e018 Phyre::PStringBuilder::~PStringBuilder, 3 votes, round 2
 0x00444bf0 function Phyre_PStringBuilder_operator # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'NULL Pointer'; Switch 0x71000beb70 Phyre::PStringBuilder::operator+= (symbols from Fahrenheit's server export)
+0x00444c50 function Phyre_AllocCopy_00444c50 # cdecl(n, src, count): PhyreMalloc(n, 1) filled with count bytes of src; the block, 0 for n = 0 or no memory; name ours
+0x00444ce0 function Phyre_PStringBuilder_append_00444ce0 # thiscall(builder, s, n), ret 8: appends n bytes and a terminator (grow 0x00444e90 to len + n + 0x80 when needed), the length cut at the first zero (memchr); nothing for n = 0 on a non-empty builder; name ours
 0x004454a0 function Phyre_PString_Bind        # fh v3:exact 0x00445570 Phyre::PString::Bind
 0x00445630 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PString__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PString &>::Get" (its own __FUNCTION__ in an error print)
 0x00445700 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PString__Get_00445700 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PString *>::Get" (its own __FUNCTION__ in an error print)
+0x004459e0 function PClassDesc_Construct1_004459e0 # stdcall(p), ret 4: a class descriptor member (vtable +0x28/+0x2c): clears 1 word(s) at p when p is set; al = 1 over p; name ours
+0x00445a00 function PClassDesc_DestroyPString_00445a00 # stdcall(string), ret 4: class descriptor destroy: PhyreFree(*string) unless bit 0 (borrowed); al = 1; name ours
+0x00445a20 function PClassDesc_Return0_00445a20 # stdcall(p), ret 4: xor eax, eax; a class descriptor member; name ours
 0x00445b40 function Phyre_PClassDescriptorForType_Phyre_PRendering_PTextureCommonBase__getPointerFromScriptContext # fh switch:bsim1.00 0x710006e270 Phyre::PClassDescriptorForType<Phyre::PRendering::PTextureCommonBase>::getPointerFromScriptContext
 0x00445cf0 function Phyre_PString_Assign      # thiscall(this, text), ret 4: copies text into a PhyreMalloc'd buffer (null for null), frees the old one unless bit 0 of the pointer is set; 0, or 0xd when the allocation fails; graphicVFXSetMeshInstanceName's callee; name ours
+0x00445d60 function PClassDesc_Callback3c_00445d60 # thiscall(desc, object, a, b), ret 0xc: the callback at desc +0x3c (thiscall(object; a, b)), or 0x15 without one; name ours
+0x00445d90 function Phyre_PString_fixup_00445d90 # thiscall(string, offset, unused), ret 8: the text becomes offset + 1 (0 stays 0), the old one freed unless borrowed; 5 for an odd offset, else 0; a PString class descriptor member; name ours
 0x00446490 function Phyre_PClassDataMemberDynamic_Bind # fh v3:exact 0x00446560 Phyre::PClassDataMemberDynamic::Bind
 0x004466d0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PClassDataMemberDynamic__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PClassDataMemberDynamic *>::Get" (its own __FUNCTION__ in an error print)
 0x00446870 function Phyre_PClassDataMemberDynamic_IsDefaultInstance # fh switch:bsim1.00 0x71001739e0 Phyre::PClassDataMemberDynamic::IsDefaultInstance
@@ -300,9 +313,16 @@
 0x0044b710 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PClusterDependencyList__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PClusterDependencyList &>::Get" (its own __FUNCTION__ in an error print)
 0x0044b7e0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PSharray_Phyre_PString__Get_0044b7e0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PSharray<class Phyre::PString> *>::Get" (its own __FUNCTION__ in an error print)
 0x0044b970 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PClusterDependencyList__Get_0044b970 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PClusterDependencyList *>::Get" (its own __FUNCTION__ in an error print)
+0x0044c2b0 function PClassDesc_Construct2_0044c2b0 # stdcall(p), ret 4: a class descriptor member (vtable +0x28/+0x2c): clears 2 word(s) at p when p is set; al = 1 over p; name ours
+0x0044c2d0 function PClassDesc_Construct2_0044c2d0 # stdcall(p), ret 4: a class descriptor member (vtable +0x28/+0x2c): clears 2 word(s) at p when p is set; al = 1 over p; name ours
+0x0044c2f0 function PClassDesc_DestroyForward_0044c2f0 # stdcall(p), ret 4: class descriptor member (vtable +0x2c): thiscall 0x44af00(p); al = 1; name ours
+0x0044c310 function PClassDesc_DestroyForward_0044c310 # stdcall(p), ret 4: class descriptor member (vtable +0x2c): thiscall 0x44af00(p); al = 1; name ours
 0x0044cbe0 function Phyre_PThreadPool_PThreadPool # fh v3:exact 0x0044ccc0 Phyre::PThreadPool::PThreadPool
 0x0044ccd0 function Phyre_PThreadPool_deleting_dtor_0044ccd0 # thiscall(pool; flags): vtable Phyre_PThreadPool_vftable, 0x0044d070, operator_delete when flags & 1; PhyreEngine library; name ours
 0x0044cd30 function Phyre_PThreadPool_GetSingleton # fh v3:exact 0x0044ce10 Phyre::PThreadPool::GetSingleton
+0x0044cde0 function Phyre_PThreadPool_GetThreadCount # cdecl() -> the word 0x00c0b950 (the thread count); Ghidra's name
+0x0044ce10 function Phyre_PThreadPool_SetThreadCount_0044ce10 # cdecl(n): the word 0x00c0b950 (GetThreadCount's) = n; returns n; name ours
+0x0044ce20 function Phyre_PThreadPool_SetStackSize # cdecl(n): the word 0x00c0b954 = n; returns n; Ghidra's name
 0x0044ce70 function Phyre_PThreadPool_startThreads # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PhyreEngineWorkerThread'; Switch 0x71000bf410 Phyre::PThreadPool::startThreads (symbols from Fahrenheit's server export)
 0x0044d880 function Phyre_PComponent_Bind     # fh v3:exact 0x0044d960 Phyre::PComponent::Bind
 0x0044db40 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PComponent__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PComponent &>::Get" (its own __FUNCTION__ in an error print)
@@ -316,6 +336,8 @@
 0x0044f8c0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PEntity__Get_0044f8c0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PEntity *>::Get" (its own __FUNCTION__ in an error print)
 0x0044f9a0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PWorldMatrix__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PWorldMatrix *>::Get" (its own __FUNCTION__ in an error print)
 0x00450350 function Phyre_PClassDescriptorConcrete_Phyre_PEntity__getValueFromScriptContext # fh switch:bsim0.90 0x71000b4480 Phyre::PClassDescriptorConcrete<Phyre::PEntity>::getValueFromScriptContext
+0x00450d40 function PMatrix4_FromRows_00450d40 # thiscall(m, r0, r1, r2, r3), ret 0x10: the four rows from four 4-vectors (x87 copies); m; name ours
+0x00450de0 function PMatrix4_FromAxes_00450de0 # thiscall(m, a, b, c, d), ret 0x10: rows (a, 0), (b, 0), (c, 0), (d, 1) from four 3-vectors, all read first; m; PMatrix4_lookAt's; name ours
 0x00451080 function PMatrix4_FromMatrix3x4_00451080 # thiscall(out, m), ret 4: out = the 4x4 of the 3x4 m (rows from m's columns +0xc/+0x1c/+0x2c..., 0 and 1 filled in; x87 copies); BoundingBox_IsInsideTransformed_006d2a70's call; name ours
 0x00451190 function PMatrix4_toWorldMatrix3x4 # structure: thiscall(dst, m): rows 1-3 of a 4x4 to a 3x4, row 0's x/y/z as the last column; graphicCameraSetWorldMatrix and PhyreScene_setAbmapCamera build the camera world matrix with it; name ours
 0x004514a0 function Phyre_PWorldMatrix_Bind   # fh v3:exact 0x00451580 Phyre::PWorldMatrix::Bind
@@ -324,7 +346,11 @@
 0x00451970 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PWorldMatrix_const__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PWorldMatrix const &>::Get" (its own __FUNCTION__ in an error print)
 0x00451bb0 function PMatrix4_Identity_00451bb0 # cdecl(out): the 4x4 identity (16 word stores); PhyreScene_Project3DPointOntoScreen's call; name ours
 0x00451c30 function PMatrix4_lookAt           # structure: thiscall(m, eye, target, up): normalises up and target - eye (_CIsqrt), cross products into a view basis; reads 3 floats of each vector; PhyreScene_setAbmapCamera and Phyre_CharacterLighting_setLightDir; name ours
+0x00451fe0 function PClassDesc_ConstructWorldMatrix_00451fe0 # stdcall(p), ret 4: PWorldMatrix's class descriptor construct (vtable +0x28): p = toWorldMatrix3x4(identity) when p is set; al = 1; name ours
+0x00452080 function PClassDesc_Return1_00452080 # stdcall(p), ret 4: mov al, 1 (vtable +0x2c; dispatchers 0x43c55c 0x43c577 0x43cf1b 0x4d7549 0x5764db 0x5765ac 0x4495fc drop eax, 0x449624 passes it on); name ours
+0x00452090 function PClassDesc_Return0_00452090 # stdcall(p), ret 4: xor eax, eax; a class descriptor member; name ours
 0x00452300 function Phyre_PClassDescriptorForType_Phyre_PEntity__getPointerFromScriptContext # fh switch:bsim1.00 0x71000b4500 Phyre::PClassDescriptorForType<Phyre::PEntity>::getPointerFromScriptContext
+0x004530a0 function PObject_InitDefaults_004530a0 # thiscall(this): this as the identity's 3x4 (toWorldMatrix3x4), then +0x30..+0x148: three identities' rows and the constants 0x00b10f38..0x00b10f54; this; name ours
 0x00453340 function PMatrix4_Copy_00453340 # thiscall(out, m), ret 4: copies the 16 words of m, returns out; PhyreScene_Project3DPointOntoScreen's call; name ours
 0x004537d0 function Phyre_PCamera_Bind        # fh v3:exact 0x004538a0 Phyre::PCamera::Bind
 0x00454070 function Phyre_PCameraProjection_Bind # fh v3:exact 0x00454140 Phyre::PCameraProjection::Bind
@@ -474,9 +500,14 @@
 0x0049b280 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PGeometry_PShape__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PGeometry::PShape &>::Get" (its own __FUNCTION__ in an error print)
 0x0049b350 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PArray_unsigned_char_4__Get_0049b350 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PArray<unsigned char,4> *>::Get" (its own __FUNCTION__ in an error print)
 0x0049b4e0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PGeometry_PShape__Get_0049b4e0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PGeometry::PShape *>::Get" (its own __FUNCTION__ in an error print)
+0x0049bb00 function PClassDesc_Construct2_0049bb00 # stdcall(p), ret 4: a class descriptor member (vtable +0x28/+0x2c): clears 2 word(s) at p when p is set; al = 1 over p; name ours
+0x0049bb20 function PClassDesc_Construct6_0049bb20 # stdcall(p), ret 4: class descriptor member: six words clear, half word +0x18 = 0x3434 when p is set; al = 1 over p; name ours
+0x0049bb60 function PClassDesc_DestroyArray_0049bb60 # stdcall(array), ret 4: class descriptor destroy (vtable +0x2c): PhyreFree(array[1]) unless the count's top bit (borrowed) or a null buffer, then both words clear; al = 1; name ours
+0x0049bba0 function PClassDesc_DestroyForward_0049bba0 # stdcall(p), ret 4: class descriptor member (vtable +0x2c): thiscall 0x499dc0(p); al = 1; name ours
 0x0049c480 function Phyre_PFreeList_PFreeList # fh v3:exact 0x0049c550 Phyre::PFreeList::PFreeList
 0x0049c5b0 function Phyre_PFreeList_dtor_PFreeList # fh v3:bsim1.00 0x0049c680 Phyre::PFreeList::~PFreeList
 0x0049c7a0 function Phyre_PFreeList_addItemToFreeList # fh v3:exact 0x0049c870 Phyre::PFreeList::addItemToFreeList
+0x0049c7c0 function Phyre_PFreeList_linkItems_0049c7c0 # thiscall(list, first, n), ret 8: links n items from first (list +4 apart) in front of the free list; 0, 1 when first is null and n is not 0; allocateNewBlock's; name ours
 0x0049c8d0 function Phyre_PFreeList_allocateNewBlock # fh v3:exact 0x0049c9a0 Phyre::PFreeList::allocateNewBlock
 0x0049c980 function Phyre_PFreeList_deallocate # fh v3:bsim1.00 0x0049ca50 Phyre::PFreeList::deallocate
 0x0049cc10 function Phyre_PFreeList_reset     # fh v3:bsim1.00 0x0049cce0 Phyre::PFreeList::reset
@@ -633,6 +664,7 @@
 0x004c82b0 function Phyre_PRendering_PRenderTargetBase_getViewportSize # fh v3:exact 0x004c83d0 Phyre::PRendering::PRenderTargetBase::getViewportSize
 0x004c9360 function PMatrix4_SetAffine_004c9360 # thiscall(out, m), ret 4: out = m's words 0-2, 4-6, 8-10, 12-14 (each fld/fstp), words 3, 7, 11 0 and 15 1; returns out; PMatrix4_Inverse_004cc0c0's last step; name ours (M4 round 2 wire)
 0x004c9430 function PMatrix4_Copy_004c9430 # thiscall(out, m), ret 4: copies the 16 words of m four at a time, returns out; PhyreScene_Project3DPointOntoScreen's call; name ours
+0x004c9bc0 function PMatrix4_TimesRows_004c9bc0 # thiscall(m, out, b), ret 8: out = b m, each row of b through PMatrix4_RowTimes into the frame, then PMatrix4_FromRows; out; name ours
 0x004c9c20 function PMatrix4_RowTimes_004c9c20 # thiscall(m, out, v), ret 8: out = the row vector v (4 floats) times the 4x4 m (x87, each component stored); name ours
 0x004c9cb0 function PMatrix4_TransformPoint_004c9cb0 # thiscall(m, out, p), ret 8: out = (p.x, p.y, p.z, 1) times the 4x4 m (x87, each component summed x, y, z then the translation row); the box clip tests' call; name ours
 0x004c9da0 function PMatrix4_MulThis_004c9da0      # thiscall(a; out, b): out = a . b (Vectormath column-major); renderMeshInstance's model products; name ours (M4 T4 scene research)
@@ -646,6 +678,10 @@
 0x004cb560 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PShadowCaster__Get_004cb560 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PShadowCaster *>::Get" (its own __FUNCTION__ in an error print)
 0x004cb640 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PShadowCaster_PShadowSplit__Get_004cb640 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PShadowCaster::PShadowSplit *>::Get" (its own __FUNCTION__ in an error print)
 0x004cc0c0 function PMatrix4_Inverse_004cc0c0 # cdecl(out, m): the inverse of the 4x4 m (its 3x3 and translation rows into a local, 0x004cc890, then 0x004c9360 into out), returns out; PhyreScene_Project3DPointOntoScreen's call; name ours
+0x004cc1d0 function PClassDesc_Construct2_004cc1d0 # stdcall(p), ret 4: a class descriptor member (vtable +0x28/+0x2c): clears 2 word(s) at p when p is set; al = 1 over p; name ours
+0x004cc240 function PClassDesc_Construct_004cc240 # stdcall(p), ret 4: class descriptor member: +0xc0..+0xdc = 0, c, 0.0, c, 0, 0, 0, 0 (c the float 0x00b92318) when p is set; al = 1 over p; name ours
+0x004cc2a0 function PClassDesc_DestroyArray_004cc2a0 # stdcall(array), ret 4: class descriptor destroy (vtable +0x2c): PhyreFree(array[1]) unless the count's top bit (borrowed) or a null buffer, then both words clear; al = 1; name ours
+0x004cc360 function PClassDesc_Return1_004cc360 # stdcall(p), ret 4: mov al, 1 (vtable +0x2c; dispatchers 0x43c55c 0x43c577 0x43cf1b 0x4d7549 0x5764db 0x5765ac 0x4495fc drop eax, 0x449624 passes it on); name ours
 0x004cc890 function Vectormath_Transform3_inverse # m4-chars: inverse(Transform3); WorldInverse (docs/formats/scene-chars.md); m4-wire: cdecl(out, m): the inverse of an affine 4x4 (memory order): nine cofactors, each a difference of two products stored as a float; det = c20*m8 stored, + c21*m9 stored, + c22*m10 stored; inv = 1/det stored; out 3x3 = cofactor * inv stored; translation -(m14*r2 + (m13*r1 + m12*r0)), each product and sum stored; words 3, 7, 11, 15 not written; ported as ffx_scene::live::affine_inverse (ViewInverse, exact on every captured cdsp0000/bsil0000 frame); name ours (M4 round 2 wire)
 0x004ceac0 function cosf                         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710087ab28 cosf, 7 votes, round 1
 0x004ceae0 function sinf                         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100882ae8 sinf, 5 votes, round 2
@@ -657,6 +693,8 @@
 0x004d2fa0 function Phyre_PRendering_PContextSwitchLights_PContextSwitchLights # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'NUM_LIGHTS'; Switch 0x71000d83f0 Phyre::PRendering::PContextSwitchLights::PContextSwitchLights (symbols from Fahrenheit's server export)
 0x004d38f0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PMeshSegmentContext__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PMeshSegmentContext &>::Get" (its own __FUNCTION__ in an error print)
 0x004d39c0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PMeshSegmentContext__Get_004d39c0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PMeshSegmentContext *>::Get" (its own __FUNCTION__ in an error print)
+0x004d3eb0 function PClassDesc_Construct5_004d3eb0 # stdcall(p), ret 4: class descriptor member: +0x10 then +0..+0xc clear when p is set; al = 1 over p; name ours
+0x004d3ee0 function PClassDesc_Return1_004d3ee0 # stdcall(p), ret 4: mov al, 1 (vtable +0x2c; dispatchers 0x43c55c 0x43c577 0x43cf1b 0x4d7549 0x5764db 0x5765ac 0x4495fc drop eax, 0x449624 passes it on); name ours
 0x004d45a0 function PArray_Data_004d45a0 # thiscall(array): the elements: count (& 0x7fffffff) > 1 the pointer at +4, 1 the inline element at +4, 0 null; TextureAnimationManager_setMaterialUV_006b33c0 calls it on a texture array; name ours
 0x004d4810 function Phyre_PRendering_PContextSwitchLights_getStringsFromPackedState # str-match switch: only user of 2 string(s) held once by both builds, e.g. '-DLIGHTTYPE_'; Switch 0x71000d7f10 Phyre::PRendering::PContextSwitchLights::getStringsFromPackedState (symbols from Fahrenheit's server export)
 0x004d4ba0 function Phyre_PRendering_PContextSwitchShaderLODLevel_getStringsFromPackedState # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71000d9870 Phyre::PRendering::PContextSwitchShaderLODLevel::getStringsFromPackedState, 4 votes, round 2
@@ -712,6 +750,21 @@
 0x004ed0d0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PArray_Phyre_PRendering_PNodeContext_4__Get_004ed0d0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PArray<class Phyre::PRendering::PNodeContext,4> *>::Get" (its own __FUNCTION__ in an error print)
 0x004ed260 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PEffect__Get_004ed260 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PEffect *>::Get" (its own __FUNCTION__ in an error print)
 0x004eea10 function PSharray_compareWords # thiscall(sharray, words, count): -1/1 when the PSharray<PUInt32>'s length (word 0 & 0x7fffffff) is below/above count, else word by word unsigned; 0 equal; the comparator of 0x004ef440; m4-charbuild; name ours
+0x004eea90 function PClassDesc_Construct2_004eea90 # stdcall(p), ret 4: a class descriptor member (vtable +0x28/+0x2c): clears 2 word(s) at p when p is set; al = 1 over p; name ours
+0x004eeab0 function PClassDesc_Construct2_004eeab0 # stdcall(p), ret 4: a class descriptor member (vtable +0x28/+0x2c): clears 2 word(s) at p when p is set; al = 1 over p; name ours
+0x004eead0 function PClassDesc_Construct2_004eead0 # stdcall(p), ret 4: a class descriptor member (vtable +0x28/+0x2c): clears 2 word(s) at p when p is set; al = 1 over p; name ours
+0x004eeaf0 function PClassDesc_Construct2_004eeaf0 # stdcall(p), ret 4: a class descriptor member (vtable +0x28/+0x2c): clears 2 word(s) at p when p is set; al = 1 over p; name ours
+0x004eeb10 function PClassDesc_Construct2_004eeb10 # stdcall(p), ret 4: a class descriptor member (vtable +0x28/+0x2c): clears 2 word(s) at p when p is set; al = 1 over p; name ours
+0x004eeb30 function PClassDesc_ConstructForward_004eeb30 # stdcall(p), ret 4: class descriptor member (vtable +0x28): thiscall 0x4e9f70(p) when p is set; al = 1; name ours
+0x004eeb50 function PClassDesc_DestroyArray_004eeb50 # stdcall(array), ret 4: class descriptor destroy (vtable +0x2c): PhyreFree(array[1]) unless the count's top bit (borrowed), then both words clear; al = 1; name ours
+0x004eeb90 function PClassDesc_DestroyArray_004eeb90 # stdcall(array), ret 4: class descriptor destroy (vtable +0x2c): PhyreFree(array[1]) unless the count's top bit (borrowed), then both words clear; al = 1; name ours
+0x004eebd0 function PClassDesc_DestroyArray_004eebd0 # stdcall(array), ret 4: class descriptor destroy (vtable +0x2c): PhyreFree(array[1]) unless the count's top bit (borrowed), then both words clear; al = 1; name ours
+0x004eec10 function PClassDesc_DestroyArray_004eec10 # stdcall(array), ret 4: class descriptor destroy (vtable +0x2c): PhyreFree(array[1]) unless the count's top bit (borrowed), then both words clear; al = 1; name ours
+0x004eec50 function PClassDesc_DestroyArrayElements_004eec50 # stdcall(array), ret 4: class descriptor destroy: 0x004ec310(elements, count & 0x7fffffff) unless borrowed, then both words clear; al = 1; name ours
+0x004eec90 function PClassDesc_DestroyForward_004eec90 # stdcall(p), ret 4: class descriptor member (vtable +0x2c): thiscall 0x4ea2d0(p); al = 1; name ours
+0x004eed00 function PClassDesc_Return0_004eed00 # stdcall(p), ret 4: xor eax, eax; a class descriptor member; name ours
+0x004eee60 function PClassDesc_Callback38_004eee60 # thiscall(desc, i), ret 4: the callback at desc +0x38 (thiscall(i)), else the word at i in desc +0x24 relocated by [desc +0xc] +0x88; name ours
+0x004eeec0 function PClassDesc_Callback38_004eeec0 # thiscall(desc, i), ret 4: the callback at desc +0x38 (thiscall(i)), else the word at i in desc +0x24 relocated by [desc +0xc] +0x88; name ours
 0x004ef3f0 function PEffect_buildNodeContextKey # thiscall(effect, node args...): each of m_contextSwitches' handlers (+0x24 count, +0x28 array) writes its packed switches for the node (vtable +8); stops at the first non-zero return; m4-charbuild; name ours
 0x004ef440 function PEffect_findContextVariant # thiscall: builds the node's packed switches (0x004ef3f0) and binary-searches m_contextVariantSwitches (+0x2c, PNodeContext) with 0x004eea10; the index found is the render pass's shader (phyrechrlitshader: [0], [0x11], [0x4012], [0x01004013, 0] for 0-3 directional lights; characters take the 3-light one); m4-charbuild (docs/formats/scene-chars.md, "The builder"); name ours
 0x004f2c50 function Phyre_PRendering_PMeshInstance_dtor_PMeshInstance # fh v3:exact 0x004f2db0 Phyre::PRendering::PMeshInstance::~PMeshInstance
@@ -731,6 +784,8 @@
 0x004f6ef0 function Phyre_PRendering_PMeshInstance_computeJointMatrices # joint 0 = FromMatrix3x4(*(inst +4)) (identity when inst +0x6c bit 0), the others through 0x004f6fc0: the model matrix (semantic 0x82) and BoneTransforms' joint worlds; name ours (M4 T4, docs/formats/scene.md)
 0x004f6fc0 function PMeshInstance_computeJointMatrix # m4-chars: called by computeJointMatrices 0x004f6ef0; joint = parent joint . instance +0xc matrix, parents by index table at mesh +0x2c (docs/formats/scene-chars.md)
 0x004f8010 function Phyre_PClassDescriptorForType_Phyre_PScene_PNode__getPointerFromScriptContext # fh switch:bsim1.00 0x71000f1c20 Phyre::PClassDescriptorForType<Phyre::PScene::PNode>::getPointerFromScriptContext
+0x004f9150 function PClassDesc_Callback3c_004f9150 # thiscall(desc, object, a, b), ret 0xc: the callback at desc +0x3c (thiscall(object; a, b)), or 0x15 without one; name ours
+0x004f9180 function PClassDesc_Callback3c_004f9180 # thiscall(desc, object, a, b), ret 0xc: the callback at desc +0x3c (thiscall(object; a, b)), or 0x15 without one; name ours
 0x004f93f0 function PMatrix4_Transpose_004f93f0    # out = transpose(m): the *it/*t shader semantics; name ours (M4 T4)
 0x004f96a0 function Phyre_PRendering_PMeshInstance_updateBoundsFromSkeleton # fh v3:exact 0x004f9810 Phyre::PRendering::PMeshInstance::updateBoundsFromSkeleton
 0x004fa540 function Phyre_PRendering_PDynamicMeshInstance_Bind # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'm_dynamicMesh'; Switch 0x710000d210 Phyre::PRendering::PDynamicMeshInstance::Bind (symbols from Fahrenheit's server export)
@@ -1226,6 +1281,7 @@
 0x005cd010 function Phyre_PPreprocessRingBuffer_GetSingleton # fh v3:exact 0x005cd190 Phyre::PPreprocessRingBuffer::GetSingleton
 0x005cd0f0 function Phyre_PPreprocessRingBuffer_allocate # fh v3:exact 0x005cd270 Phyre::PPreprocessRingBuffer::allocate
 0x005cd110 function Phyre_PRingBuffer_Phyre_PPreprocessRingBufferBlock__allocateBlock # fh v3:exact 0x005cd290 Phyre::PRingBuffer<Phyre::PPreprocessRingBufferBlock>::allocateBlock
+0x005cd340 function PRingBuffer_fits_005cd340 # thiscall(ring, n), ret 4: al = (used +0x24 < read +0x28 and used + n >= read) or (used + n >= end +0x1c and read == start +0x18), over the word +0x28; name ours
 0x005cdba0 function Phyre_PAnimation_PAnimationChannelTargetBindDataMember_bindTargets # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Not binding %s:%s because array index (%d) exceeds array siz'; Switch 0x71001a7a80 Phyre::PAnimation::PAnimationChannelTargetBindDataMember::bindTargets (symbols from Fahrenheit's server export)
 0x005cdf50 function Phyre_PAnimation_PAnimationChannelTargetBindFunction_bindTargets # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Bound function %s does not take a single const Vectormath::A'; Switch 0x71001a7ed0 Phyre::PAnimation::PAnimationChannelTargetBindFunction::bindTargets (symbols from Fahrenheit's server export)
 0x005ce050 function Phyre_PAnimation_PAnimationChannelTargetBindMethod_bindTargets # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Bound method %s does not take a single const Vectormath::Aos'; Switch 0x71001a80a0 Phyre::PAnimation::PAnimationChannelTargetBindMethod::bindTargets (symbols from Fahrenheit's server export)
@@ -14019,6 +14075,15 @@
 0x00a339e0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PGame_PGameSettings__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PGame::PGameSettings &>::Get" (its own __FUNCTION__ in an error print)
 0x00a33ab0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PArray_Phyre_PInputs_PInputMap_4__Get_00a33ab0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PArray<class Phyre::PInputs::PInputMap *,4> *>::Get" (its own __FUNCTION__ in an error print)
 0x00a33c40 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PGame_PGameSettings__Get_00a33c40 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PGame::PGameSettings *>::Get" (its own __FUNCTION__ in an error print)
+0x00a34270 function PClassDesc_Construct2_00a34270 # stdcall(p), ret 4: a class descriptor member (vtable +0x28/+0x2c): clears 2 word(s) at p when p is set; al = 1 over p; name ours
+0x00a34290 function PClassDesc_Construct3_00a34290 # stdcall(p), ret 4: a class descriptor member (vtable +0x28/+0x2c): clears 3 word(s) at p when p is set; al = 1 over p; name ours
+0x00a342c0 function PClassDesc_DestroyArray_00a342c0 # stdcall(array), ret 4: class descriptor destroy (vtable +0x2c): PhyreFree(array[1]) unless the count's top bit (borrowed), then both words clear; al = 1; name ours
+0x00a34300 function PClassDesc_DestroyArray_00a34300 # stdcall(array), ret 4: class descriptor destroy (vtable +0x2c): PhyreFree(array[1]) unless the count's top bit (borrowed), then both words clear; al = 1; name ours
+0x00a34910 function ComRelease_Slot_00a34910 # cdecl(slot): IUnknown::Release of *slot (vtable +8) and the slot cleared, when set; name ours
+0x00a34a30 function Pair_Clear_00a34a30 # thiscall(this): two words clear; this; name ours
+0x00a34a60 function Config_InitDefaults_00a34a60 # thiscall(this): (0x2000000, 10, 0x200000, 1); this; name ours
+0x00a34ae0 function Call_00a3baf0_00a34ae0 # cdecl(p): q = p[1]; q[2] = thiscall 0x00a3baf0(q[0]; p[0], q[1]); returns it; name ours
+0x00a34b10 function State_InitBuffers_00a34b10 # cdecl(n): [0x01a858b4] +0x998.. = 0x00a35a70(n, 1), n, 0, 0; +0x9a8.. = 0x00a35a70(3n/4, 2), 3n/4, 0, 0; +0x9c0 = min(n/16, 0x2000) & ~3; al = both buffers set, over the state pointer; name ours
 0x00a362e0 function IggyMenuManager_EndDraw_00a362e0 # (): when the GDraw context 0x01a858c4 exists with +4 set, queues a render-thread command (0x005b5880(0x00a34b00, 0x00a37fe0)); name ours (pc-ui2d)
 0x00a37410 function gdraw_rt_bind_00a37410     # ours: stdcall(a) (ret 4): Iggy GDraw D3D11 slot 0x01a8583c (stored at 0x00a35946 by FUN_00a35780; refs.py: that store only); [0x01a858b4]+4 device context: OMSetRenderTargets (+0x84) on +0x784 (and +0x788 when set) and RSSetState (+0xac, +0x7ac), 0x00a3bed0 per target, then 0x00a3c570/0x00a3cd30/0x00a3c350; platform (effects r54)
 0x00a38480 function StoreComputed_00a38480       # auto-port shape (several stores: computed, into field, stdcall): t0 = u32[(a0 + 0xc)]; u32[a1] = t0; t1 = u32[(a0 + 0x10)]; u32[(a1 + 0x4)] = t1; t2 = u32[(a0 + 0x30)]; u32[(a1 + 0x8)] = (t2 & 0xfffffff); return (t2 & 0xfffffff); callers: no direct caller; name ours
