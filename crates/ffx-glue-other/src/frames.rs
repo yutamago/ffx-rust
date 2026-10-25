@@ -262,9 +262,28 @@ fn gdraw_context(h: &impl Mem) -> u32 {
 /// a `GDraw` warning (the code after the others) and return 0.
 pub fn gdraw_map_buffer(h: &mut impl Host, frame: u32, resource: u32) -> u32 {
     let ctx = gdraw_context(h);
+    gdraw_map(h, frame, ctx, resource, 4)
+}
+
+/// `gdraw_mapResource_00a3c070(ctx, resource, discard)` (cdecl): as
+/// [`gdraw_map_buffer`] on the context it is given, `WRITE_DISCARD` (4)
+/// when the byte `discard` is set, else `WRITE_NO_OVERWRITE` (5).
+pub fn gdraw_map_resource(
+    h: &mut impl Host,
+    frame: u32,
+    ctx: u32,
+    resource: u32,
+    discard: u32,
+) -> u32 {
+    let kind = if discard as u8 == 0 { 5 } else { 4 };
+    gdraw_map(h, frame, ctx, resource, kind)
+}
+
+/// `Map(ctx, resource, 0, kind, 0, &mapped)` and its warnings.
+fn gdraw_map(h: &mut impl Host, frame: u32, ctx: u32, resource: u32, kind: u32) -> u32 {
     let vtable: u32 = h.read(ctx);
     let map: u32 = h.read(vtable.wrapping_add(0x38));
-    let hr = h.call(map, Conv::Stdcall, &[ctx, resource, 0, 4, 0, frame]);
+    let hr = h.call(map, Conv::Stdcall, &[ctx, resource, 0, kind, 0, frame]);
     if (hr as i32) >= 0 {
         return h.read(frame);
     }
@@ -362,4 +381,316 @@ pub fn prototype_entry(h: &mut impl Host, frame: u32, out: u32, name: u32, value
         h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[p]);
     }
     out
+}
+
+/// `ERRCHECK(result, file, line)` (cdecl).
+pub const ERRCHECK: u32 = 0x0070_79d0;
+/// `FMOD_ErrorString(result)` (cdecl).
+pub const FMOD_ERROR_STRING: u32 = 0x0070_7590;
+/// `printToOutput(prefix, fmt, ...)` (cdecl).
+pub const PRINT_TO_OUTPUT: u32 = 0x0070_7b20;
+/// `FMOD_Memory_GetStats(&current, &max, blocking)` (`0x00948cdc`, the
+/// import's thunk; stdcall).
+pub const FMOD_MEMORY_GET_STATS: u32 = 0x0094_8cdc;
+/// `g_FmodMaxMemory` (`0x00cec17c`): the largest peak [`errcheck`] has
+/// reported (signed).
+pub const FMOD_MAX_MEMORY: u32 = 0x00ce_c17c;
+/// `ERRCHECK`'s strings: the error's prefix and format, the memory
+/// report's prefix and format.
+pub const ERRCHECK_STRINGS: [u32; 4] = [0x00b4_c30c, 0x00b4_f140, 0x00b4_f190, 0x00b4_f178];
+/// `vsprintf` (`0x00b0c430`, import slot).
+pub const VSPRINTF: u32 = 0x00b0_c430;
+/// `Phyre_PhyrePrintf(level, text)` (cdecl).
+pub const PHYRE_PRINTF: u32 = 0x0043_52f0;
+
+/// `ERRCHECK(result, file, line)` (cdecl; `local` its one local word,
+/// `args` the address of its arguments, which it writes): a nonzero
+/// `result` is printed (`printToOutput(prefix, fmt, result,
+/// FMOD_ErrorString(result), file, line)`); then
+/// `FMOD_Memory_GetStats(&local, &args[0], 0)` (both zeroed first) writes
+/// FMOD's peak over the `result` slot; a peak above `g_FmodMaxMemory`
+/// (signed) is printed and stored. Returns the peak (the slot, read
+/// again after the print).
+pub fn errcheck(h: &mut impl Host, local: u32, args: u32) -> u32 {
+    let result: u32 = h.read(args);
+    let [prefix, fmt, mem_prefix, mem_fmt] = ERRCHECK_STRINGS.map(|a| h.rebase(a));
+    if result != 0 {
+        let file: u32 = h.read(args + 4);
+        let line: u32 = h.read(args + 8);
+        let text = h.call_sym(FMOD_ERROR_STRING, Conv::Cdecl, &[result]);
+        h.call_sym(
+            PRINT_TO_OUTPUT,
+            Conv::Cdecl,
+            &[prefix, fmt, result, text, file, line],
+        );
+    }
+    h.write(local, 0u32);
+    h.write(args, 0u32);
+    h.call_sym(FMOD_MEMORY_GET_STATS, Conv::Stdcall, &[local, args, 0]);
+    let peak: u32 = h.read(args);
+    let max_at = h.rebase(FMOD_MAX_MEMORY);
+    let known: u32 = h.read(max_at);
+    if (peak as i32) <= (known as i32) {
+        return peak;
+    }
+    h.call_sym(PRINT_TO_OUTPUT, Conv::Cdecl, &[mem_prefix, mem_fmt, peak]);
+    let peak: u32 = h.read(args);
+    h.write(max_at, peak);
+    peak
+}
+
+/// Bytes of [`print_to_output`]'s frame: the line (`0x200`), the text
+/// (`0x200`), the cookie.
+pub const PRINT_FRAME: u32 = 0x404;
+
+/// `printToOutput(prefix, fmt, ...)` (cdecl; `args` the address of its
+/// arguments): `vsprintf(text, fmt, &args[2])` into `frame + 0x200`,
+/// `sprintf(line, "%s%s", prefix, text)` into `frame`, then
+/// `Phyre_PhyrePrintf(2, line)`'s `eax`.
+pub fn print_to_output(h: &mut impl Host, frame: u32, args: u32) -> u32 {
+    let prefix: u32 = h.read(args);
+    let fmt: u32 = h.read(args + 4);
+    let text = frame + 0x200;
+    let vsprintf: u32 = h.read(h.rebase(VSPRINTF));
+    h.call(vsprintf, Conv::Cdecl, &[text, fmt, args + 8]);
+    let sprintf = SPRINTF.get(h);
+    let two = h.rebase(FORMAT_TWO_STRINGS);
+    h.call(sprintf, Conv::Cdecl, &[frame, two, prefix, text]);
+    h.call_sym(PHYRE_PRINTF, Conv::Cdecl, &[2, frame])
+}
+
+/// Bytes of [`sfx_bank_playing_events`]'s frame (the event info, then the
+/// cookie).
+pub const BANK_INFO_FRAME: u32 = 0x120;
+/// The file name `SfxBank_getNumPlayingEvents` passes to `ERRCHECK`
+/// (`0x00b4fe84`).
+pub const SFX_BANK_FILE: u32 = 0x00b4_fe84;
+
+/// `SfxBank_getNumPlayingEvents(this)` (thiscall): without a bank
+/// (`*this`) 0; else the info block in its frame (words `+0` and
+/// `+0x104..=+0x118` zeroed), the bank's method `+4(bank, &info)`
+/// checked by `ERRCHECK(r, file, 0x74)`, and the info's `+0x114`.
+pub fn sfx_bank_playing_events(h: &mut impl Host, frame: u32, this: u32) -> u32 {
+    let bank: u32 = h.read(this);
+    if bank == 0 {
+        return 0;
+    }
+    h.write(frame, 0u32);
+    for off in (0x104..=0x118).step_by(4) {
+        h.write(frame + off, 0u32);
+    }
+    let vtable: u32 = h.read(bank);
+    let f: u32 = h.read(vtable.wrapping_add(4));
+    let r = h.call(f, Conv::Stdcall, &[bank, frame]);
+    let file = h.rebase(SFX_BANK_FILE);
+    h.call_sym(ERRCHECK, Conv::Cdecl, &[r, file, 0x74]);
+    h.read(frame + 0x114)
+}
+
+/// The channel's state query (`0x00948ca6`, an FMOD import's thunk;
+/// stdcall `(channel, &state)`).
+pub const FMOD_GET_STATE: u32 = 0x0094_8ca6;
+/// The channel's volume setter (`0x00948cb2`, an FMOD import's thunk;
+/// stdcall `(channel, volume)`).
+pub const FMOD_SET_VOLUME: u32 = 0x0094_8cb2;
+/// The file name `FmodVoice` passes to `ERRCHECK` (`0x00b4f8c0`).
+pub const FMOD_VOICE_FILE: u32 = 0x00b4_f8c0;
+/// The divisor `FmodVoice_volumeDirect` scales by (`0x00b922e8`, f64).
+pub const VOICE_VOLUME_DIVISOR: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b9_22e8);
+
+/// `FmodVoice_volumeDirect(this; volume, keep)` (thiscall, ret 8; `frame`
+/// its state word): with a channel (`+0x14`), its state (`ERRCHECK`, line
+/// 0x31c); when bit 8 is set: `keep == 1` stores the volume at `+0x50`; a
+/// mute flag (`+0x80 == 1`) makes it 0; the channel's volume becomes
+/// `f32(+0x88 * (volume / divisor))` (x87, `ERRCHECK` line 0x326).
+/// Returns 0. The state word starts as `this` (`push ecx`).
+pub fn voice_volume_direct(
+    h: &mut impl Host,
+    frame: u32,
+    this: u32,
+    volume: u32,
+    keep: u32,
+) -> u32 {
+    // `push ecx` makes the state word: `this` until the query writes it
+    h.write(frame, this);
+    let channel: u32 = h.read(this.wrapping_add(0x14));
+    if channel == 0 {
+        return 0;
+    }
+    let file = h.rebase(FMOD_VOICE_FILE);
+    let r = h.call_sym(FMOD_GET_STATE, Conv::Stdcall, &[channel, frame]);
+    h.call_sym(ERRCHECK, Conv::Cdecl, &[r, file, 0x31c]);
+    if h.read::<u8>(frame) & 8 == 0 {
+        return 0;
+    }
+    let mut v = ffx_bridge::x87::load(volume);
+    if keep == 1 {
+        h.write(this.wrapping_add(0x50), ffx_bridge::x87::store(v));
+    }
+    if h.read::<u32>(this.wrapping_add(0x80)) == 1 {
+        v = 0.0;
+    }
+    let scale = ffx_bridge::x87::load(h.read(this.wrapping_add(0x88)));
+    let q = ffx_bridge::x87::div(v, VOICE_VOLUME_DIVISOR.get(h));
+    let p = ffx_bridge::x87::store(ffx_bridge::x87::mul(scale, q));
+    let channel: u32 = h.read(this.wrapping_add(0x14));
+    let r = h.call_sym(FMOD_SET_VOLUME, Conv::Stdcall, &[channel, p]);
+    h.call_sym(ERRCHECK, Conv::Cdecl, &[r, file, 0x326]);
+    0
+}
+
+/// `WaitForSingleObject` (`0x00b0c0f8`, import slot).
+pub const WAIT_FOR_SINGLE_OBJECT: u32 = 0x00b0_c0f8;
+/// `ReleaseMutex` (`0x00b0c1c0`, import slot).
+pub const RELEASE_MUTEX: u32 = 0x00b0_c1c0;
+/// `SfxEventTree_Find(tree; &id)` (thiscall).
+pub const SFX_EVENT_TREE_FIND: u32 = 0x0070_ba70;
+/// `FmodSfx_anyEventFlag_0070ed30(list)` (thiscall, `al`).
+pub const SFX_ANY_EVENT_FLAG: u32 = 0x0070_ed30;
+
+/// `FmodSfx_isPlaying(this; id)` (thiscall, ret 4; `frame` its saved
+/// `this` word, then the saved `ebp`, the return address and the `id`
+/// slot, whose address it passes): under the mutex `+0xcc`, the node of
+/// `id` in the tree at `+0x64`; with one, 1 when one of its list's
+/// (`+0x10`: count, `+8` the array) non-null events has its flag
+/// (`FmodSfx_anyEventFlag_0070ed30`), else 0. Returns that in `al` over
+/// `ReleaseMutex`'s `eax`.
+pub fn sfx_is_playing(h: &mut impl Host, frame: u32, this: u32, id: u32) -> u32 {
+    let wait: u32 = h.read(h.rebase(WAIT_FOR_SINGLE_OBJECT));
+    let mutex: u32 = h.read(this.wrapping_add(0xcc));
+    h.write(frame, this);
+    h.call(wait, Conv::Stdcall, &[mutex, u32::MAX]);
+    let slot = frame + 0xc;
+    h.write(slot, id);
+    let node = h.call_sym(
+        SFX_EVENT_TREE_FIND,
+        Conv::Thiscall(this.wrapping_add(0x64)),
+        &[slot],
+    );
+    let mut playing = 0;
+    if node != 0 && node.wrapping_add(0x10) != 0 {
+        let list = node.wrapping_add(0x10);
+        let mut i = 0u32;
+        while i < h.read::<u32>(list) {
+            let events: u32 = h.read(list.wrapping_add(8));
+            let event: u32 = h.read(events.wrapping_add(4 * i));
+            if event != 0 && h.call_sym(SFX_ANY_EVENT_FLAG, Conv::Thiscall(event), &[]) & 0xff != 0
+            {
+                playing = 1;
+                break;
+            }
+            i += 1;
+        }
+    }
+    let release: u32 = h.read(h.rebase(RELEASE_MUTEX));
+    let mutex: u32 = h.read(this.wrapping_add(0xcc));
+    let eax = h.call(release, Conv::Stdcall, &[mutex]);
+    (eax & !0xff) | playing
+}
+
+/// Bytes of [`gdraw_set_target`]'s frame (the view's description).
+pub const VIEW_DESC_FRAME: u32 = 0x14;
+
+/// `gdraw_setRenderTargetView_00a38300(view, a, b, c, d)` (cdecl): bumps
+/// the `GDraw` state's 64-bit counter `+0xac0` and clears `+0xab8` when
+/// that is set; the view's description (`GetDesc`, vtable `+0x20`, into
+/// its frame); then the state's `+0x78c = b`, `+0x780 = view`, `+0x790 =
+/// (dimension == 6)`, `+0x784 = a`, `+0x6c8 = c`, `+0x6cc = d`. Returns
+/// `d`.
+pub fn gdraw_set_target(h: &mut impl Host, frame: u32, view: u32, args: [u32; 4]) -> u32 {
+    let [a, b, c, d] = args;
+    let state_at = h.rebase(GDRAW_STATE);
+    let state: u32 = h.read(state_at);
+    if h.read::<u32>(state.wrapping_add(0xab8)) != 0 {
+        let lo: u32 = h.read(state.wrapping_add(0xac0));
+        let (lo2, carry) = lo.overflowing_add(1);
+        h.write(state.wrapping_add(0xac0), lo2);
+        h.write(state.wrapping_add(0xab8), 0u32);
+        let hi: u32 = h.read(state.wrapping_add(0xac4));
+        h.write(state.wrapping_add(0xac4), hi.wrapping_add(u32::from(carry)));
+    }
+    let vtable: u32 = h.read(view);
+    let f: u32 = h.read(vtable.wrapping_add(0x20));
+    h.call(f, Conv::Stdcall, &[view, frame]);
+    let state: u32 = h.read(state_at);
+    h.write(state.wrapping_add(0x78c), b);
+    h.write(state.wrapping_add(0x780), view);
+    let dim: u32 = h.read(frame + 4);
+    h.write(state.wrapping_add(0x790), u32::from(dim == 6));
+    h.write(state.wrapping_add(0x784), a);
+    h.write(state.wrapping_add(0x6c8), c);
+    h.write(state.wrapping_add(0x6cc), d);
+    d
+}
+
+/// `fiosUnifyFilename(name, buf, n)` (cdecl).
+pub const FIOS_UNIFY: u32 = 0x0067_9820;
+/// The blur shader cluster's name (`0x00c343e8`, a pointer).
+pub const BLUR_CLUSTER_NAME: u32 = 0x00c3_43e8;
+/// `AsyncLoadManager_sGetInstance()`.
+pub const ASYNC_GET_INSTANCE: u32 = 0x0069_1b40;
+/// `AsyncLoadManager_loadCluster(mgr, 0, path, callback, 1, arg64)`
+/// (cdecl).
+pub const ASYNC_LOAD_CLUSTER: u32 = 0x0069_1660;
+/// `BlurEffect_onShaderClusterLoaded_006c3950`.
+pub const BLUR_ON_LOADED: u32 = 0x006c_3950;
+/// Bytes of [`blur_initialize`]'s frame (the path, then the cookie).
+pub const BLUR_PATH_FRAME: u32 = 0x104;
+
+/// `BlurEffect_initialize_006c38b0(this; a, b, c, d, e)` (thiscall, ret
+/// 0x14): `+0x14 = a`, `+0x2c = d`, `+0x30 = e`, `+0x34 = b`, `+0x38 = c`;
+/// the cluster's path in its frame (`fiosUnifyFilename`), loaded through
+/// `AsyncLoadManager_loadCluster(mgr, 0, path,
+/// BlurEffect_onShaderClusterLoaded_006c3950, 1, this as i64)`. Returns 0.
+pub fn blur_initialize(h: &mut impl Host, frame: u32, this: u32, args: [u32; 5]) -> u32 {
+    let [a, b, c, d, e] = args;
+    h.write(this.wrapping_add(0x14), a);
+    h.write(this.wrapping_add(0x2c), d);
+    h.write(this.wrapping_add(0x30), e);
+    h.write(this.wrapping_add(0x34), b);
+    h.write(this.wrapping_add(0x38), c);
+    let name: u32 = h.read(h.rebase(BLUR_CLUSTER_NAME));
+    h.call_sym(FIOS_UNIFY, Conv::Cdecl, &[name, frame, 0x100]);
+    let mgr = h.call_sym(ASYNC_GET_INSTANCE, Conv::Cdecl, &[]);
+    let callback = h.rebase(BLUR_ON_LOADED);
+    let high = if (this as i32) < 0 { u32::MAX } else { 0 };
+    h.call_sym(
+        ASYNC_LOAD_CLUSTER,
+        Conv::Cdecl,
+        &[mgr, 0, frame, callback, 1, this, high],
+    );
+    0
+}
+
+/// The shout's volume getter (`0x00948d18`, an FMOD import's thunk;
+/// stdcall `(channel, &volume)`).
+pub const FMOD_SHOUT_GET: u32 = 0x0094_8d18;
+/// The shout's volume setter (`0x00948d12`, an FMOD import's thunk;
+/// stdcall `(channel, volume)`).
+pub const FMOD_SHOUT_SET: u32 = 0x0094_8d12;
+/// The file name `FmodShout` passes to `ERRCHECK` (`0x00b4fd34`).
+pub const FMOD_SHOUT_FILE: u32 = 0x00b4_fd34;
+
+/// `FmodShout_setVolume(this; volume)` (thiscall, ret 4; `frame` its
+/// volume word): with a channel (`+4` set; the handle at `+8`), reads the
+/// current volume into its frame (1.0 first); when that succeeds, sets
+/// `volume` (through `fld`/`fstp`) and checks it (`ERRCHECK`, line 0xd9).
+/// Callers read no result (the original leaves the caller's `eax` when
+/// `+4` is 0).
+pub fn shout_set_volume(h: &mut impl Host, frame: u32, this: u32, volume: u32) {
+    // `push ecx` makes the volume word: `this` until it is set
+    h.write(frame, this);
+    if h.read::<u32>(this.wrapping_add(4)) == 0 {
+        return;
+    }
+    h.write(frame, 1.0f32.to_bits());
+    let channel: u32 = h.read(this.wrapping_add(8));
+    if h.call_sym(FMOD_SHOUT_GET, Conv::Stdcall, &[channel, frame]) != 0 {
+        return;
+    }
+    let v = ffx_bridge::x87::round_trip(f32::from_bits(volume)).to_bits();
+    let channel: u32 = h.read(this.wrapping_add(8));
+    let r = h.call_sym(FMOD_SHOUT_SET, Conv::Stdcall, &[channel, v]);
+    let file = h.rebase(FMOD_SHOUT_FILE);
+    h.call_sym(ERRCHECK, Conv::Cdecl, &[r, file, 0xd9]);
 }

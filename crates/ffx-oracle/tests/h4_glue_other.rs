@@ -4041,3 +4041,409 @@ fn frames_fade_gdraw_strings() {
         }
     }
 }
+
+/// Writes `words` at `at` in the port's oracle (where the original's
+/// caller pushed them).
+fn put_args(g: &mut G, at: u32, words: &[u32]) {
+    let bytes: Vec<u8> = words.iter().flat_map(|v| v.to_le_bytes()).collect();
+    Mem::write_bytes(g, at, &bytes);
+}
+
+/// `printToOutput` (varargs from the caller's arguments), then `ERRCHECK`
+/// (its peak written over its own argument) with `printToOutput` stubbed.
+#[test]
+fn frames_errcheck_print() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_2b11);
+        let vsprintf = t.stub_code(fr::VSPRINTF, false, 3, 0);
+        t.g32(fr::VSPRINTF, vsprintf);
+        let sprintf = t.stub_code(0x00b0_c3dc, false, 4, 0);
+        t.g32(0x00b0_c3dc, sprintf);
+        t.stub(fr::PHYRE_PRINTF, false, 2, 0);
+        for i in 0..16 {
+            let v = rng.next();
+            t.ret(fr::PHYRE_PRINTF, v);
+            let n = 2 + rng.below(5);
+            let words: Vec<u32> = (0..n).map(|_| rng.word()).collect();
+            let ebp = t.ebp_for(n);
+            let frame = ebp - fr::PRINT_FRAME;
+            t.check_framed(
+                &format!("{name} {i} printToOutput {n}"),
+                fr::PRINT_TO_OUTPUT,
+                Conv::Cdecl,
+                &words,
+                frame,
+                &[],
+                |g| {
+                    put_args(g, ebp + 8, &words);
+                    u(fr::print_to_output(g, frame, ebp + 8))
+                },
+            );
+        }
+        t.stub(fr::FMOD_ERROR_STRING, false, 1, 0);
+        // the print logs 6 words when only the error is printed, 3 when the
+        // memory report (3 words) follows
+        let print6 = t.stub_code(fr::PRINT_TO_OUTPUT, false, 6, 0);
+        let print3 = t.stub_code(fr::PRINT_TO_OUTPUT + 1, false, 3, 0);
+        let (current, peak) = (t.zeros(4), t.zeros(4));
+        let stats = t.stub_out(
+            fr::FMOD_MEMORY_GET_STATS,
+            false,
+            3,
+            3,
+            &[
+                Write {
+                    arg: Some(0),
+                    offset: 0,
+                    cell: current,
+                },
+                Write {
+                    arg: Some(1),
+                    offset: 0,
+                    cell: peak,
+                },
+            ],
+        );
+        let stats_quiet = t.stub_code(fr::FMOD_MEMORY_GET_STATS + 1, false, 3, 3);
+        for i in 0..32 {
+            let w = format!("{name} {i}");
+            let v = rng.next();
+            t.ret(fr::FMOD_ERROR_STRING, v);
+            let result = [0, 0, 1, rng.word()][rng.below(4) as usize];
+            let known =
+                [0, 1, u32::MAX, 0x7fff_ffff, 0x8000_0000, rng.next()][rng.below(6) as usize];
+            let p = match rng.below(4) {
+                0 => known,
+                1 => known.wrapping_add(1),
+                2 => known.wrapping_sub(1),
+                _ => rng.next(),
+            };
+            t.w32(peak, p);
+            let c = rng.next();
+            t.w32(current, c);
+            t.g32(fr::FMOD_MAX_MEMORY, known);
+            let quiet = rng.below(5) == 0;
+            t.jump(
+                fr::FMOD_MEMORY_GET_STATS,
+                if quiet { stats_quiet } else { stats },
+            );
+            let reported = if quiet { 0 } else { p };
+            let both = (reported as i32) > (known as i32);
+            t.jump(fr::PRINT_TO_OUTPUT, if both { print3 } else { print6 });
+            let args = [result, rng.word(), rng.word()];
+            let ebp = t.ebp_for(3);
+            t.check_framed(
+                &format!("{w} ERRCHECK {result:#x} peak {p:#x} known {known:#x} quiet {quiet}"),
+                fr::ERRCHECK,
+                Conv::Cdecl,
+                &args,
+                ebp - 4,
+                &[(0, 4), (0xc, 12)],
+                |g| {
+                    put_args(g, ebp + 8, &args);
+                    u(fr::errcheck(g, ebp - 4, ebp + 8))
+                },
+            );
+        }
+    }
+}
+
+/// `SfxBank_getNumPlayingEvents`, `FmodVoice_volumeDirect`,
+/// `FmodSfx_isPlaying`, `FmodShout_setVolume`.
+#[test]
+fn frames_fmod_bank_voice_sfx_shout() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_2b12);
+        t.stub(fr::ERRCHECK, false, 3, 0);
+        // the bank's info method fills the playing count
+        let playing = t.zeros(4);
+        let info = t.stub_out(
+            0x104,
+            false,
+            2,
+            2,
+            &[Write {
+                arg: Some(1),
+                offset: 0x114,
+                cell: playing,
+            }],
+        );
+        let bank_vtable = t.zeros(8);
+        t.w32(bank_vtable + 4, info);
+        // the channel's state
+        let state = t.zeros(4);
+        t.stub_at(
+            fr::FMOD_GET_STATE,
+            false,
+            2,
+            2,
+            &[Write {
+                arg: Some(1),
+                offset: 0,
+                cell: state,
+            }],
+        );
+        t.stub(fr::FMOD_SET_VOLUME, false, 2, 2);
+        // the sfx mutex, tree and per-event flag (each event's own first
+        // word, so the loop can stop anywhere)
+        let wait = t.stub_code(fr::WAIT_FOR_SINGLE_OBJECT, false, 2, 2);
+        t.g32(fr::WAIT_FOR_SINGLE_OBJECT, wait);
+        let release = t.stub_code(fr::RELEASE_MUTEX, false, 1, 1);
+        t.g32(fr::RELEASE_MUTEX, release);
+        t.stub(fr::SFX_EVENT_TREE_FIND, true, 1, 1);
+        let flag_log = t.stub_code(fr::SFX_ANY_EVENT_FLAG, true, 0, 0);
+        let flag_cell = t.cells[&fr::SFX_ANY_EVENT_FLAG];
+        let mut c = vec![0x8b, 0x01, 0xa3]; // mov eax, [ecx]; mov [cell], eax
+        c.extend(flag_cell.to_le_bytes());
+        c.push(0xe9);
+        let at = t.cave_next;
+        c.extend(flag_log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let flag = t.code(&c);
+        t.jump(fr::SFX_ANY_EVENT_FLAG, flag);
+        // the shout
+        t.stub(fr::FMOD_SHOUT_GET, false, 2, 2);
+        t.stub(fr::FMOD_SHOUT_SET, false, 2, 2);
+        for i in 0..32 {
+            let w = format!("{name} {i}");
+            for tag in [
+                fr::ERRCHECK,
+                0x104,
+                fr::FMOD_GET_STATE,
+                fr::FMOD_SET_VOLUME,
+                fr::WAIT_FOR_SINGLE_OBJECT,
+                fr::RELEASE_MUTEX,
+                fr::FMOD_SHOUT_SET,
+            ] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            // getNumPlayingEvents
+            let this = t.zeros(4);
+            if rng.below(4) != 0 {
+                let bank = t.zeros(8);
+                t.w32(bank, bank_vtable);
+                t.w32(this, bank);
+            }
+            let v = rng.next();
+            t.w32(playing, v);
+            let frame = t.ebp_for(0) - fr::BANK_INFO_FRAME;
+            t.check_framed(
+                &format!("{w} getNumPlayingEvents"),
+                0x0070_fb20,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 4), (0x104, 0x18)],
+                |g| u(fr::sfx_bank_playing_events(g, frame, this)),
+            );
+            // volumeDirect
+            let voice = t.random(&mut rng, 0x90);
+            if rng.below(5) == 0 {
+                t.w32(voice + 0x14, 0);
+            }
+            t.w32(voice + 0x80, rng.below(3));
+            let scale = rng.float();
+            t.w32(voice + 0x88, scale);
+            let s = [0, 8, 0xff, 0xf7, rng.next()][rng.below(5) as usize];
+            t.w32(state, s);
+            let volume = rng.float();
+            let keep = rng.below(3);
+            let frame = t.ebp_for(2) - 4;
+            t.check_framed(
+                &format!("{w} volumeDirect state {s:#x} keep {keep}"),
+                0x0070_b7f0,
+                Conv::Thiscall(voice),
+                &[volume, keep],
+                frame,
+                &[(0, 4)],
+                |g| u(fr::voice_volume_direct(g, frame, voice, volume, keep)),
+            );
+            // isPlaying
+            let sfx = t.random(&mut rng, 0xd0);
+            let node = match rng.below(5) {
+                0 => 0,
+                1 => 0xffff_fff0,
+                _ => {
+                    let n = rng.below(6);
+                    let events = t.zeros(4 * n as usize);
+                    for k in 0..n {
+                        let e = match rng.below(3) {
+                            0 => 0,
+                            _ => {
+                                let e = t.zeros(4);
+                                let f = [0, 0x100, 1, rng.next()][rng.below(4) as usize];
+                                t.w32(e, f);
+                                e
+                            }
+                        };
+                        t.w32(events + 4 * k, e);
+                    }
+                    let node = t.zeros(0x20);
+                    t.w32(node + 0x10, n);
+                    t.w32(node + 0x18, events);
+                    node
+                }
+            };
+            t.ret(fr::SFX_EVENT_TREE_FIND, node);
+            let id = rng.word();
+            let frame = t.ebp_for(1) - 4;
+            t.check_framed(
+                &format!("{w} isPlaying"),
+                0x0070_ce90,
+                Conv::Thiscall(sfx),
+                &[id],
+                frame,
+                &[(0, 4)],
+                |g| u(fr::sfx_is_playing(g, frame, sfx, id)),
+            );
+            // setVolume
+            let shout = t.random(&mut rng, 0x10);
+            if rng.below(4) == 0 {
+                t.w32(shout + 4, 0);
+            }
+            let got = if rng.below(3) == 0 { rng.next() } else { 0 };
+            t.ret(fr::FMOD_SHOUT_GET, got);
+            let volume = rng.float();
+            let frame = t.ebp_for(1) - 4;
+            t.check_framed(
+                &format!("{w} shout setVolume"),
+                0x0070_e400,
+                Conv::Thiscall(shout),
+                &[volume],
+                frame,
+                &[(0, 4)],
+                |g| {
+                    fr::shout_set_volume(g, frame, shout, volume);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+/// The `GDraw` target setter and resource map, `BlurEffect_initialize_006c38b0`.
+#[test]
+fn frames_gdraw_target_map_blur() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_2b13);
+        let dim = t.zeros(4);
+        let desc = t.stub_out(
+            0x20,
+            false,
+            2,
+            2,
+            &[Write {
+                arg: Some(1),
+                offset: 4,
+                cell: dim,
+            }],
+        );
+        let view_vtable = t.zeros(0x40);
+        t.w32(view_vtable + 0x20, desc);
+        let mapped = t.zeros(4);
+        let map = t.stub_out(
+            0x38,
+            false,
+            6,
+            6,
+            &[Write {
+                arg: Some(5),
+                offset: 0,
+                cell: mapped,
+            }],
+        );
+        let ctx_vtable = t.zeros(0x40);
+        t.w32(ctx_vtable + 0x38, map);
+        let warn4 = t.stub_code(fr::GDRAW_SEND_WARNING + 4, false, 4, 0);
+        let warn5 = t.stub_code(fr::GDRAW_SEND_WARNING, false, 5, 0);
+        let path = t.zeros(4);
+        t.stub_at(
+            fr::FIOS_UNIFY,
+            false,
+            3,
+            0,
+            &[Write {
+                arg: Some(1),
+                offset: 0,
+                cell: path,
+            }],
+        );
+        t.stub(fr::ASYNC_GET_INSTANCE, false, 0, 0);
+        t.stub(fr::ASYNC_LOAD_CLUSTER, false, 7, 0);
+        for i in 0..32 {
+            let w = format!("{name} {i}");
+            for tag in [0x20, fr::ASYNC_GET_INSTANCE, fr::ASYNC_LOAD_CLUSTER] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            // setRenderTargetView
+            let state = t.random(&mut rng, 0xb00);
+            if rng.below(2) == 0 {
+                t.w32(state + 0xab8, 0);
+            }
+            t.w32(
+                state + 0xac0,
+                [0, u32::MAX, rng.next()][rng.below(3) as usize],
+            );
+            t.g32(fr::GDRAW_STATE, state);
+            let view = t.zeros(8);
+            t.w32(view, view_vtable);
+            let d = [6, 5, 7, rng.next()][rng.below(4) as usize];
+            t.w32(dim, d);
+            let args = [rng.word(), rng.word(), rng.word(), rng.word()];
+            let frame = t.ebp_for(5) - fr::VIEW_DESC_FRAME;
+            t.check_framed(
+                &format!("{w} setRenderTargetView dim {d}"),
+                0x00a3_8300,
+                Conv::Cdecl,
+                &[view, args[0], args[1], args[2], args[3]],
+                frame,
+                &[(4, 4)],
+                |g| u(fr::gdraw_set_target(g, frame, view, args)),
+            );
+            // mapResource
+            let ctx = t.zeros(8);
+            t.w32(ctx, ctx_vtable);
+            let hr = [0, 1, fr::E_OUTOFMEMORY, 0x8000_4005, rng.next()][rng.below(5) as usize];
+            t.ret(0x38, hr);
+            t.g32(
+                fr::GDRAW_SEND_WARNING,
+                if hr == fr::E_OUTOFMEMORY {
+                    warn4
+                } else {
+                    warn5
+                },
+            );
+            let p = rng.next();
+            t.w32(mapped, p);
+            let resource = rng.word();
+            let discard = [0, 1, 0x100, rng.next()][rng.below(4) as usize];
+            let frame = t.ebp_for(3) - fr::MAPPED_FRAME;
+            t.check_framed(
+                &format!("{w} mapResource {hr:#x} discard {discard:#x}"),
+                0x00a3_c070,
+                Conv::Cdecl,
+                &[ctx, resource, discard],
+                frame,
+                &[(0, 4)],
+                |g| u(fr::gdraw_map_resource(g, frame, ctx, resource, discard)),
+            );
+            // BlurEffect_initialize
+            let blur = t.random(&mut rng, 0x40);
+            t.g32(fr::BLUR_CLUSTER_NAME, rng.word());
+            let v = rng.next();
+            t.w32(path, v);
+            let args = [rng.word(), rng.word(), rng.word(), rng.word(), rng.word()];
+            let frame = t.ebp_for(5) - fr::BLUR_PATH_FRAME;
+            t.check_framed(
+                &format!("{w} BlurEffect_initialize"),
+                0x006c_38b0,
+                Conv::Thiscall(blur),
+                &args,
+                frame,
+                &[(0, 4)],
+                |g| u(fr::blur_initialize(g, frame, blur, args)),
+            );
+        }
+    }
+}

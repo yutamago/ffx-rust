@@ -973,4 +973,51 @@ ported! {
         let mut frame = StackFrame::<{ (fr::PROTOTYPE_ENTRY_FRAME / 4) as usize }>::new();
         fr::prototype_entry(&mut mem(), frame.at(), out, name, value)
     }
+    /// `ERRCHECK(result, file, line)`: writes its own `result` slot
+    /// (`args`), as the original does.
+    ERRCHECK @ 0x0070_79d0 => extern "C" fn errcheck(_result: u32, _file: u32, _line: u32; args: u32) -> u32 {
+        let mut local = StackFrame::<1>::new();
+        fr::errcheck(&mut mem(), local.at(), args)
+    }
+    /// `printToOutput(prefix, fmt, ...)`: the varargs are the caller's.
+    printToOutput @ 0x0070_7b20 => extern "C" fn print_to_output(_prefix: u32, _fmt: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::PRINT_FRAME / 4) as usize }>::new();
+        fr::print_to_output(&mut mem(), frame.at(), args)
+    }
+    /// `SfxBank_getNumPlayingEvents(this)`.
+    SfxBank_getNumPlayingEvents @ 0x0070_fb20 => extern "thiscall" fn sfx_bank_playing_events(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::BANK_INFO_FRAME / 4) as usize }>::new();
+        fr::sfx_bank_playing_events(&mut mem(), frame.at(), this)
+    }
+    /// `FmodVoice_volumeDirect(this; volume, keep)`.
+    FmodVoice_volumeDirect @ 0x0070_b7f0 => extern "thiscall" fn voice_volume_direct(this: u32, volume: u32, keep: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        fr::voice_volume_direct(&mut mem(), frame.at(), this, volume, keep)
+    }
+    /// `FmodSfx_isPlaying(this; id)`.
+    FmodSfx_isPlaying @ 0x0070_ce90 => extern "thiscall" fn sfx_is_playing(this: u32, id: u32) -> u32 {
+        let mut frame = StackFrame::<4>::new();
+        fr::sfx_is_playing(&mut mem(), frame.at(), this, id)
+    }
+    /// `gdraw_setRenderTargetView_00a38300(view, a, b, c, d)`.
+    gdraw_setRenderTargetView_00a38300 @ 0x00a3_8300 => extern "C" fn gdraw_set_target(view: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::VIEW_DESC_FRAME / 4) as usize }>::new();
+        fr::gdraw_set_target(&mut mem(), frame.at(), view, [a, b, c, d])
+    }
+    /// `gdraw_mapResource_00a3c070(ctx, resource, discard)`.
+    gdraw_mapResource_00a3c070 @ 0x00a3_c070 => extern "C" fn gdraw_map_resource(ctx: u32, resource: u32, discard: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::MAPPED_FRAME / 4) as usize }>::new();
+        fr::gdraw_map_resource(&mut mem(), frame.at(), ctx, resource, discard)
+    }
+    /// `BlurEffect_initialize_006c38b0(this; a, b, c, d, e)`.
+    BlurEffect_initialize_006c38b0 @ 0x006c_38b0 => extern "thiscall" fn blur_initialize(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::BLUR_PATH_FRAME / 4) as usize }>::new();
+        fr::blur_initialize(&mut mem(), frame.at(), this, [a, b, c, d, e])
+    }
+    /// `FmodShout_setVolume(this; volume)`: void, both callers drop `eax`
+    /// (0x0070b308 calls on, 0x0070b46e zeroes it).
+    FmodShout_setVolume @ 0x0070_e400 => extern "thiscall" fn shout_set_volume(this: u32, volume: u32) {
+        let mut frame = StackFrame::<1>::new();
+        fr::shout_set_volume(&mut mem(), frame.at(), this, volume);
+    }
 }
