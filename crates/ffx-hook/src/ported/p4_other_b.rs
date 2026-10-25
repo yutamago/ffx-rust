@@ -7,7 +7,7 @@
 //! their objects live. No shim keeps state.
 
 use super::{mem, ported};
-use ffx_pother_b::{object, physics, small};
+use ffx_pother_b::{methods, object, physics, small};
 
 ported! {
     /// `constructInstance(desc, obj)` -> 1: `[+0] = 0, [+4] = Phyre_PBase_GetClassDescriptor(), [+8] = 0, [+0xc] = the same, [+0x10] = 0.0f when obj is non-null`.
@@ -556,5 +556,90 @@ ported! {
     /// `DynamicBuffer_upload(this, data, size)` -> 0.
     DynamicBuffer_upload_006f89b0 @ 0x006f_89b0 => extern "thiscall" fn dynamic_buffer_upload(this: u32, data: u32, size: u32) -> u32 {
         small::bridge::upload(&mut mem(), this, data, size)
+    }
+    /// `ClothInstancingDynamicMesh_waitIdle(mesh)` (vtable `+0x1c`, `ret 4`).
+    ClothInstancingDynamicMesh_waitIdle_006e2df0 @ 0x006e_2df0 => extern "stdcall" fn cloth_wait_idle(mesh: u32) {
+        methods::bridge::wait_idle(&mut mem(), mesh);
+    }
+    /// `CharacterLightingTweakUtil::resize(tw, w, h)`.
+    Phyre_CharacterLightingTweakUtil_resize @ 0x006a_a3d0 => extern "thiscall" fn tweak_resize(tw: u32, w: u32, h: u32) -> u32 {
+        methods::bridge::tweak_resize(&mut mem(), tw, w, h)
+    }
+    /// `ClothInstancingDynamicMesh` vtable slot 5 `(mesh, a, b, c, d)`.
+    ClothInstancingDynamicMesh_vslot5_006e2150 @ 0x006e_2150 => extern "thiscall" fn cloth_slot5(mesh: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        methods::bridge::cloth_slot5(&mut mem(), mesh, a, b, c, d)
+    }
+    /// `CharacterLighting::setRotation(cl, i, x, y)`.
+    Phyre_CharacterLighting_setRotation @ 0x006a_aea0 => extern "thiscall" fn set_rotation(cl: u32, i: u32, x: u32, y: u32) {
+        methods::bridge::set_rotation(&mut mem(), cl, i, x, y);
+    }
+    /// `FogEffectManager_copyParameters(fog)` -> the source.
+    FogEffectManager_copyParameters_006e3b80 @ 0x006e_3b80 => extern "thiscall" fn fog_copy(fog: u32) -> u32 {
+        methods::bridge::fog_copy(&mut mem(), fog)
+    }
+    /// `SearchTree_findSigned(tree, &key)`.
+    SearchTree_findSigned_0064b9a0 @ 0x0064_b9a0 => extern "thiscall" fn tree_find_signed(tree: u32, key: u32) -> u32 {
+        methods::bridge::tree_find(&mut mem(), tree, key, true)
+    }
+    /// `SearchTree_findUnsigned(tree, &key)`.
+    SearchTree_findUnsigned_006a5ec0 @ 0x006a_5ec0 => extern "thiscall" fn tree_find_unsigned(tree: u32, key: u32) -> u32 {
+        methods::bridge::tree_find(&mut mem(), tree, key, false)
+    }
+    /// `ClothInstancingDynamicMesh_setSlotBuffer(mesh, a, b, i)`.
+    ClothInstancingDynamicMesh_setSlotBuffer_006e2ac0 @ 0x006e_2ac0 => extern "thiscall" fn cloth_slot_buffer(mesh: u32, a: u32, b: u32, i: u32) -> u32 {
+        methods::bridge::cloth_slot_buffer(&mut mem(), mesh, a, b, i)
+    }
+    /// `constructInstance(desc, obj)` of `ClassDynamicMeshInstance`.
+    Phyre_PClassDescriptorWithoutDefaultConstructor_ClassDynamicMeshInstance__constructInstance @ 0x0067_39f0 => extern "thiscall" fn construct_class_mesh_instance(_desc: u32, obj: u32) -> u8 {
+        object::bridge::construct_mesh_instance_default(&mut mem(), obj, 0x00cc_ba18, 0x00b4_4128)
+    }
+    /// `constructInstance(desc, obj)` of `DistortionGridDynamicMeshInstance`.
+    Phyre_PClassDescriptorWithoutDefaultConstructor_DistortionGridDynamicMeshInstance__constructInstance @ 0x0067_4ff0 => extern "thiscall" fn construct_distortion_instance(_desc: u32, obj: u32) -> u8 {
+        object::bridge::construct_mesh_instance_default(&mut mem(), obj, 0x00cc_bbe0, 0x00b4_4460)
+    }
+    /// `constructInstance(desc, obj)` of `RadialLineDynamicMeshInstance`.
+    Phyre_PClassDescriptorWithoutDefaultConstructor_RadialLineDynamicMeshInstance__constructInstance @ 0x0067_5950 => extern "thiscall" fn construct_radial_instance(_desc: u32, obj: u32) -> u8 {
+        object::bridge::construct_mesh_instance_default(&mut mem(), obj, 0x00cc_be88, 0x00b4_45d0)
+    }
+    /// `constructInstance(desc, obj)` of `BrokenScreenPolygonDynamicMeshInstance`.
+    Phyre_PClassDescriptorWithoutDefaultConstructor_BrokenScreenPolygonDynamicMeshInstance__constructInstance @ 0x0067_6fb0 => extern "thiscall" fn construct_broken_instance(_desc: u32, obj: u32) -> u8 {
+        object::bridge::construct_mesh_instance_default(&mut mem(), obj, 0x00cc_c058, 0x00b4_4910)
+    }
+    /// `constructInstance(desc, obj)` of `DistortionGridDynamicMesh`.
+    Phyre_PClassDescriptorConcrete_DistortionGridDynamicMesh__constructInstance @ 0x0067_4460 => extern "thiscall" fn construct_distortion_mesh(_desc: u32, obj: u32) -> u8 {
+        object::bridge::construct_mesh(&mut mem(), obj, 0x00b4_4288)
+    }
+    /// `constructInstance(desc, obj)` of `RadialLineDynamicMesh`.
+    Phyre_PClassDescriptorConcrete_RadialLineDynamicMesh__constructInstance @ 0x0067_63a0 => extern "thiscall" fn construct_radial_mesh(_desc: u32, obj: u32) -> u8 {
+        object::bridge::construct_mesh(&mut mem(), obj, 0x00b4_4740)
+    }
+    /// `constructInstance(desc, obj)` of `BrokenScreenPolygonDynamicMesh`.
+    Phyre_PClassDescriptorConcrete_BrokenScreenPolygonDynamicMesh__constructInstance @ 0x0067_7a00 => extern "thiscall" fn construct_broken_mesh(_desc: u32, obj: u32) -> u8 {
+        object::bridge::construct_mesh(&mut mem(), obj, 0x00b4_4a90)
+    }
+    /// `BrokenScreenPolygonDynamicMeshInstance_populatePreprocessData(inst,
+    /// out, x)` -> 0.
+    BrokenScreenPolygonDynamicMeshInstance_populatePreprocessData_006770f0 @ 0x0067_70f0 => extern "thiscall" fn broken_screen_preprocess(inst: u32, out: u32, _x: u32) -> u32 {
+        methods::bridge::broken_screen_preprocess(&mut mem(), inst, out)
+    }
+    /// `PInput_GetDevice(kind, index)`.
+    PInput_GetDevice @ 0x0062_3c90 => extern "C" fn get_device(kind: u32, index: u32) -> u32 {
+        methods::bridge::get_device(&mut mem(), kind, index)
+    }
+    /// `CharacterLightingTweakUtil::setShadeCoeff_dbgHook(tw, id, coeff, mode)`.
+    Phyre_CharacterLightingTweakUtil_setShadeCoeff_dbgHook @ 0x006a_afc0 => extern "thiscall" fn tweak_set_shade_coeff(tw: u32, id: u32, coeff: u32, mode: u32) {
+        methods::bridge::tweak_set_shade_coeff(&mut mem(), tw, id, coeff, mode);
+    }
+    /// `CharacterLighting_setIntensity(cl, i, value)`.
+    CharacterLighting_setIntensity_006aa8c0 @ 0x006a_a8c0 => extern "thiscall" fn set_intensity(cl: u32, i: u32, value: u32) {
+        methods::bridge::set_intensity(&mut mem(), cl, i, value);
+    }
+    /// `FogEffectManager_setLimit(fog, limit)`.
+    FogEffectManager_setLimit_006e3aa0 @ 0x006e_3aa0 => extern "thiscall" fn fog_set_limit(fog: u32, limit: u32) {
+        methods::bridge::fog_set_limit(&mut mem(), fog, limit);
+    }
+    /// `FogEffectManager_create()`.
+    FogEffectManager_create_006e3240 @ 0x006e_3240 => extern "C" fn fog_create() {
+        methods::bridge::fog_create(&mut mem());
     }
 }

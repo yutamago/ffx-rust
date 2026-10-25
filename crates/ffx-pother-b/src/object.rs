@@ -23,13 +23,58 @@ pub const DYNAMIC_MESH_INSTANCE_CTOR: u32 = 0x004f_a420;
 pub const REGISTER_TYPE: u32 = 0x0043_95b0;
 /// `Phyre_PClassDescriptor_addToNamespace` (thiscall `(desc)`).
 pub const ADD_TO_NAMESPACE: u32 = 0x0043_c140;
+/// `0x0043cbb0` (thiscall `(desc)`): a class descriptor's default object
+/// (building its default buffer first when needed), or 0.
+pub const DESCRIPTOR_DEFAULT_OBJECT: u32 = 0x0043_cbb0;
+/// `PDynamicMesh`'s constructor `0x004968c0` (thiscall `(this)`).
+pub const DYNAMIC_MESH_CTOR: u32 = 0x0049_68c0;
 
 pub mod bridge {
     //! The originals over game memory.
 
     use super::{
-        ADD_TO_NAMESPACE, Conv, DYNAMIC_MESH_INSTANCE_CTOR, Host, PHYRE_FREE, REGISTER_TYPE,
+        ADD_TO_NAMESPACE, Conv, DESCRIPTOR_DEFAULT_OBJECT, DYNAMIC_MESH_CTOR,
+        DYNAMIC_MESH_INSTANCE_CTOR, Host, PHYRE_FREE, REGISTER_TYPE,
     };
+
+    /// A dynamic mesh's `constructInstance(obj)` (`Concrete` descriptor):
+    /// for a non-null `obj`, `PDynamicMesh(obj)` and `*obj = vtable`.
+    pub fn construct_mesh(h: &mut impl Host, obj: u32, vtable: u32) -> u8 {
+        if obj != 0 {
+            let f = h.rebase(DYNAMIC_MESH_CTOR);
+            h.call(f, Conv::Thiscall(obj), &[]);
+            let vt = h.rebase(vtable);
+            h.write(obj, vt);
+        }
+        1
+    }
+
+    /// A mesh instance's `constructInstance(obj)` (`WithoutDefaultConstructor`
+    /// descriptor): the mesh is the default object of the mesh class's
+    /// descriptor `mesh_desc` (an `ffx.sym` address) less 4; without one,
+    /// 0. Else, for a non-null `obj`, `PDynamicMeshInstance(obj, mesh)` and
+    /// `*obj = vtable`, and 1.
+    pub fn construct_mesh_instance_default(
+        h: &mut impl Host,
+        obj: u32,
+        mesh_desc: u32,
+        vtable: u32,
+    ) -> u8 {
+        let desc = h.rebase(mesh_desc);
+        let f = h.rebase(DESCRIPTOR_DEFAULT_OBJECT);
+        let object = h.call(f, Conv::Thiscall(desc), &[]);
+        if object == 0 || object == 4 {
+            return 0;
+        }
+        let mesh = object - 4;
+        if obj != 0 {
+            let f = h.rebase(DYNAMIC_MESH_INSTANCE_CTOR);
+            h.call(f, Conv::Thiscall(obj), &[mesh]);
+            let vt = h.rebase(vtable);
+            h.write(obj, vt);
+        }
+        1
+    }
 
     /// A scalar deleting destructor: `*this = vtable` (an `ffx.sym`
     /// address) when given, the base destructor `base` when given, then

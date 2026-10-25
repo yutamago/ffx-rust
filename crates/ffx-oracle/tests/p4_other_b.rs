@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use ffx_bridge::{Mem, x87};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_pother_b::{object, physics, small};
+use ffx_pother_b::{methods, object, physics, small};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -908,6 +908,454 @@ fn small_forwarders_match_the_original() {
             );
             t.check(&what("shaders"), 0x006d_f3c0, Conv::Cdecl, &[], |g| {
                 Out::U32(small::bridge::load_shaders(g))
+            });
+        }
+    }
+}
+
+// ---- methods: lighting, tweak utility, fog, cloth meshes, trees ----
+
+/// A float word for the x87 copies: modest values, quiet NaNs, infinities
+/// and random words that are not signalling NaNs.
+fn float_word(rng: &mut Rng) -> u32 {
+    loop {
+        let w = if rng.chance(2) {
+            float(rng).to_bits()
+        } else {
+            rng.next()
+        };
+        if !x87::is_snan(w) {
+            return w;
+        }
+    }
+}
+
+#[test]
+fn methods_wait_idle_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        // the sleep stub adds its argument to [total], counts down [count]
+        // and clears [*flag] at 0
+        let count = t.zeros(12);
+        let flag_at = count + 4;
+        let total = count + 8;
+        let mut code = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+        code.extend([0x01, 0x05]);
+        code.extend(total.to_le_bytes()); // add [total], eax
+        code.extend([0xff, 0x0d]);
+        code.extend(count.to_le_bytes()); // dec dword [count]
+        code.extend([0x75, 0x0b]); // jnz ret
+        code.push(0xa1);
+        code.extend(flag_at.to_le_bytes()); // mov eax, [flag_at]
+        code.extend([0xc7, 0x00, 0, 0, 0, 0]); // mov dword [eax], 0
+        code.push(0xc3);
+        let sleep = t.a.alloc_code(&code).unwrap();
+        assert_eq!(t.b.alloc_code(&code).unwrap(), sleep);
+        let at = t.rebase(methods::SLEEP);
+        let mut j = vec![0xe9];
+        j.extend(sleep.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        let mut rng = Rng(0x0517_ee90);
+        for i in 0..24 {
+            let mesh = t.zeros(0x80);
+            t.fill(&mut rng, mesh, 0x80);
+            let off = rng.below(0x18) * 4;
+            t.w32(mesh + 8, off);
+            let flag = mesh + 8 + off;
+            let n = rng.below(4);
+            if n == 0 {
+                t.w32(flag, 0);
+            } else if flag != mesh + 8 {
+                t.w32(flag, rng.next() | 1);
+            }
+            t.w32(count, n.max(1));
+            t.w32(flag_at, flag);
+            t.check(
+                &format!("{name} wait case {i}"),
+                0x006e_2df0,
+                Conv::Stdcall,
+                &[mesh],
+                |g| {
+                    methods::bridge::wait_idle(g, mesh);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn methods_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x3e70_0d50);
+        t.stub(methods::TEXT_RESIZE, true, 2, 2, 0x7e77_0000);
+        t.stub(methods::APPLY_ROTATION, true, 1, 1, 0x0a0a_0000);
+        t.stub(methods::CLOTH_PREPARE, true, 3, 3, 0x0c1a_0000);
+        t.stub(methods::OPERATOR_NEW, false, 1, 0, 0x0123_4560);
+        t.stub(methods::MEMSET, false, 3, 0, 0x0beb_0000);
+        let vt = t.vtable(8, 4);
+        // a vtable whose slot 5 returns 0
+        let zero = t.stub_code(0x7e00_0105, true, 4, 4, 0);
+        let vt0 = t.zeros(0x20);
+        t.w32(vt0 + 20, zero);
+        let buf = t.zeros(0x2000);
+        for i in 0..48 {
+            t.fill(&mut rng, buf, 0x2000);
+            let what = |s: &str| format!("{name} {s} case {i}");
+            let (a, b, c, d) = (rng.next(), rng.next(), rng.next(), rng.next());
+            // tweak resize, text up or not
+            t.write(buf + 0xc8, &[u8::from(rng.chance(2))]);
+            t.check(
+                &what("resize"),
+                0x006a_a3d0,
+                Conv::Thiscall(buf),
+                &[a, b],
+                |g| Out::U32(methods::bridge::tweak_resize(g, buf, a, b)),
+            );
+            // cloth slot 5: the inner mesh's answer 0 or not
+            let inner = t.zeros(0x10);
+            t.w32(inner, vt);
+            t.w32(buf + 0x1c, inner);
+            if rng.chance(2) {
+                t.w32(inner, vt0);
+            }
+            t.check(
+                &what("cloth slot 5"),
+                0x006e_2150,
+                Conv::Thiscall(buf),
+                &[a, b, c, d],
+                |g| Out::U32(methods::bridge::cloth_slot5(g, buf, a, b, c, d)),
+            );
+            // rotation: index 0..4 (3 is skipped), flags both ways
+            let idx = rng.below(5);
+            t.write(buf + 0x1cc, &[u8::from(!rng.chance(4))]);
+            if rng.chance(2) {
+                t.w32(buf + 0xf0, 0);
+            }
+            let (x, y) = (float_word(&mut rng), float_word(&mut rng));
+            t.check(
+                &what("rotation"),
+                0x006a_aea0,
+                Conv::Thiscall(buf),
+                &[idx, x, y],
+                |g| {
+                    methods::bridge::set_rotation(g, buf, idx, x, y);
+                    Out::None
+                },
+            );
+            // fog copy from a source of float words, sometimes overlapping
+            // the destination (the copy order shows)
+            let src = if rng.chance(3) {
+                buf + 4 * rng.below(8)
+            } else {
+                t.zeros(0x40)
+            };
+            for k in 0..16 {
+                let w = float_word(&mut rng);
+                t.w32(src + 4 * k, w);
+            }
+            t.w32(buf + 0xa0, src);
+            t.check(
+                &what("fog copy"),
+                0x006e_3b80,
+                Conv::Thiscall(buf),
+                &[],
+                |g| Out::U32(methods::bridge::fog_copy(g, buf)),
+            );
+            // cloth slot buffer: slot empty or not
+            let slot = rng.below(16);
+            if rng.chance(2) {
+                t.w32(buf + 0x210 + 4 * slot, 0);
+            }
+            t.check(
+                &what("slot buffer"),
+                0x006e_2ac0,
+                Conv::Thiscall(buf),
+                &[a, b, slot],
+                |g| Out::U32(methods::bridge::cloth_slot_buffer(g, buf, a, b, slot)),
+            );
+        }
+    }
+}
+
+/// A search tree of `n` nodes with keys from `keys`, built as a binary
+/// search tree (greater keys to `[node]`, smaller to `[node + 4]`), leaves
+/// pointing at the sentinel `tree`.
+fn search_tree(t: &mut Twins, keys: &[u32], signed: bool) -> u32 {
+    let tree = t.zeros(0x10);
+    t.w32(tree + 0xc, tree);
+    let mut nodes: Vec<(u32, u32)> = Vec::new();
+    for &k in keys {
+        let node = t.zeros(0x10);
+        t.w32(node, tree);
+        t.w32(node + 4, tree);
+        t.w32(node + 0xc, k);
+        if nodes.is_empty() {
+            t.w32(tree + 0xc, node);
+        } else {
+            let mut at = nodes[0].0;
+            loop {
+                let ak = nodes.iter().find(|n| n.0 == at).unwrap().1;
+                let greater = if signed {
+                    (ak as i32) > (k as i32)
+                } else {
+                    ak > k
+                };
+                if ak == k {
+                    break;
+                }
+                let link = if greater { at } else { at + 4 };
+                let next: u32 = Mem::read(&t.b, link);
+                if next == tree {
+                    t.w32(link, node);
+                    break;
+                }
+                at = next;
+            }
+        }
+        nodes.push((node, k));
+    }
+    tree
+}
+
+#[test]
+fn methods_tree_find_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x7ee5_eed5);
+        for i in 0..200 {
+            let signed = i % 2 == 0;
+            let sym = if signed { 0x0064_b9a0 } else { 0x006a_5ec0 };
+            let n = rng.below(12) as usize;
+            let keys: Vec<u32> = (0..n)
+                .map(|_| match rng.below(3) {
+                    0 => rng.below(16),
+                    1 => 0xffff_fff0 + rng.below(16),
+                    _ => rng.next(),
+                })
+                .collect();
+            let tree = search_tree(&mut t, &keys, signed);
+            let key = if !keys.is_empty() && rng.chance(2) {
+                keys[rng.below(n as u32) as usize]
+            } else {
+                rng.next()
+            };
+            let key_at = t.zeros(4);
+            t.w32(key_at, key);
+            t.check(
+                &format!("{name} find case {i}"),
+                sym,
+                Conv::Thiscall(tree),
+                &[key_at],
+                |g| Out::U32(methods::bridge::tree_find(g, tree, key_at, signed)),
+            );
+        }
+    }
+}
+
+#[test]
+fn methods_mesh_constructors_match_the_original() {
+    // (address, the mesh class descriptor or 0 for a Concrete mesh, vtable)
+    const CTORS: &[(u32, u32, u32)] = &[
+        (0x0067_39f0, 0x00cc_ba18, 0x00b4_4128),
+        (0x0067_4ff0, 0x00cc_bbe0, 0x00b4_4460),
+        (0x0067_5950, 0x00cc_be88, 0x00b4_45d0),
+        (0x0067_6fb0, 0x00cc_c058, 0x00b4_4910),
+        (0x0067_4460, 0, 0x00b4_4288),
+        (0x0067_63a0, 0, 0x00b4_4740),
+        (0x0067_7a00, 0, 0x00b4_4a90),
+    ];
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0c70_75ed);
+        t.stub(object::DYNAMIC_MESH_CTOR, true, 0, 0, 0x0d0d_0d0d);
+        t.stub(object::DYNAMIC_MESH_INSTANCE_CTOR, true, 1, 1, 0x0c0c_0c0c);
+        // the default-object lookup returns [answer]
+        let answer = t.zeros(4);
+        let mut code = vec![0xa1];
+        code.extend(answer.to_le_bytes()); // mov eax, [answer]
+        code.push(0xc3);
+        let lookup = t.a.alloc_code(&code).unwrap();
+        assert_eq!(t.b.alloc_code(&code).unwrap(), lookup);
+        let at = t.rebase(object::DESCRIPTOR_DEFAULT_OBJECT);
+        let mut j = vec![0xe9];
+        j.extend(lookup.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        for &(sym, desc, vt) in CTORS {
+            for i in 0..12 {
+                let obj = if i == 0 {
+                    0
+                } else {
+                    let o = t.zeros(0x20);
+                    t.fill(&mut rng, o, 0x20);
+                    o
+                };
+                t.w32(
+                    answer,
+                    [0, 4, 0x1000_0004, rng.next()][rng.below(4) as usize],
+                );
+                let what = format!("{name} {sym:#x} case {i}");
+                t.check(&what, sym, Conv::Thiscall(rng.next()), &[obj], |g| {
+                    Out::U8(if desc == 0 {
+                        object::bridge::construct_mesh(g, obj, vt)
+                    } else {
+                        object::bridge::construct_mesh_instance_default(g, obj, desc, vt)
+                    })
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn methods_devices_and_counts_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0de7_1ce5);
+        // one vtable per device kind 0..4, slot 1 returning the kind
+        let kinds: Vec<u32> = (0..4)
+            .map(|k| {
+                let f = t.stub_code(0x7d00_0000 + k, true, 0, 0, k);
+                let vt = t.zeros(8);
+                t.w32(vt + 4, f);
+                vt
+            })
+            .collect();
+        let head = t.rebase(methods::G_INPUT_DEVICE_LIST);
+        for i in 0..64 {
+            let n = rng.below(7);
+            let devices: Vec<u32> = (0..n).map(|_| t.zeros(0x10)).collect();
+            // the list ends at the head, at 0 or at a link of 4 (device 0)
+            let end = [head, head, 0, 4][rng.below(4) as usize];
+            for (k, &d) in devices.iter().enumerate() {
+                let kind = kinds[rng.below(4) as usize];
+                t.w32(d, kind);
+                let next = devices.get(k + 1).map_or(end, |&n| n + 4);
+                t.w32(d + 4, next);
+            }
+            t.w32(head, devices.first().map_or(head, |&d| d + 4));
+            let (kind, index) = (rng.below(5), rng.below(4));
+            t.check(
+                &format!("{name} device case {i}"),
+                0x0062_3c90,
+                Conv::Cdecl,
+                &[kind, index],
+                |g| Out::U32(methods::bridge::get_device(g, kind, index)),
+            );
+            // the mesh counts through the original getters
+            let mesh = t.zeros(0x60);
+            t.fill(&mut rng, mesh, 0x60);
+            t.w32(mesh + 8, [6, 8, 1, rng.next()][rng.below(4) as usize]);
+            let owner = t.zeros(0x20);
+            t.w32(owner + 0x1c, mesh);
+            let inst = t.zeros(0x10);
+            t.w32(inst + 4, owner);
+            let out = t.zeros(0x30);
+            t.check(
+                &format!("{name} counts case {i}"),
+                0x0067_70f0,
+                Conv::Thiscall(inst),
+                &[out, 0],
+                |g| Out::U32(methods::bridge::broken_screen_preprocess(g, inst, out)),
+            );
+        }
+    }
+}
+
+#[test]
+fn methods_lighting_and_fog_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0f09_11b7);
+        t.stub(methods::APPLY_INTENSITY, true, 2, 2, 0x0a11_0000);
+        t.stub(methods::OPERATOR_NEW_SCALAR, false, 1, 0, 0);
+        // the lock check returns [locked] (al)
+        let locked = t.zeros(4);
+        let mut code = vec![0xa1];
+        code.extend(locked.to_le_bytes()); // mov eax, [locked]
+        code.push(0xc3);
+        let lock = t.a.alloc_code(&code).unwrap();
+        assert_eq!(t.b.alloc_code(&code).unwrap(), lock);
+        let at = t.rebase(methods::FOG_LOCKED);
+        let mut j = vec![0xe9];
+        j.extend(lock.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        let buf = t.zeros(0x400);
+        let table = t.zeros(1200);
+        let fresh = t.zeros(0x100);
+        for i in 0..48 {
+            t.fill(&mut rng, buf, 0x400);
+            t.fill(&mut rng, table, 1200);
+            let what = |s: &str| format!("{name} {s} case {i}");
+            // the tweak table: the id present (once or twice) or not
+            t.write(buf, &[u8::from(!rng.chance(4))]);
+            t.w32(buf + 0xf8, table);
+            let id = rng.next();
+            for _ in 0..rng.below(3) {
+                // the last entry (99) often: the search's bound
+                let k = if rng.chance(3) { 99 } else { rng.below(100) };
+                t.w32(table + 12 * k, id);
+            }
+            let mode = [2, 0, 1, rng.next()][rng.below(4) as usize];
+            let coeff = float_word(&mut rng);
+            t.check(
+                &what("tweak coeff"),
+                0x006a_afc0,
+                Conv::Thiscall(buf),
+                &[id, coeff, mode],
+                |g| {
+                    methods::bridge::tweak_set_shade_coeff(g, buf, id, coeff, mode);
+                    Out::None
+                },
+            );
+            // the intensities
+            let idx = rng.below(5);
+            t.write(buf + 0x1cc, &[u8::from(!rng.chance(4))]);
+            if rng.chance(2) {
+                t.w32(buf + 0xf0, 0);
+            }
+            let value = float_word(&mut rng);
+            t.check(
+                &what("intensity"),
+                0x006a_a8c0,
+                Conv::Thiscall(buf),
+                &[idx, value],
+                |g| {
+                    methods::bridge::set_intensity(g, buf, idx, value);
+                    Out::None
+                },
+            );
+            // the fog limit, locked or not
+            let src = t.zeros(0x40);
+            for k in 0..16 {
+                let w = float_word(&mut rng);
+                t.w32(src + 4 * k, w);
+            }
+            t.w32(buf + 0xa0, src);
+            t.w32(locked, [0, 1, 0x100, 0xff][rng.below(4) as usize]);
+            let limit = float_word(&mut rng);
+            t.check(
+                &what("fog limit"),
+                0x006e_3aa0,
+                Conv::Thiscall(buf),
+                &[limit],
+                |g| {
+                    methods::bridge::fog_set_limit(g, buf, limit);
+                    Out::None
+                },
+            );
+            // the fog manager's creation: present, new fails, new succeeds
+            let g_at = t.rebase(methods::G_FOG_EFFECT_MANAGER);
+            let case = rng.below(3);
+            t.w32(g_at, if case == 0 { rng.next() | 1 } else { 0 });
+            let at = t.rebase(methods::OPERATOR_NEW_SCALAR);
+            let ret = if case == 2 { fresh } else { 0 };
+            let mut code = vec![0xb8];
+            code.extend(ret.to_le_bytes()); // mov eax, ret
+            code.push(0xc3);
+            let newf = t.a.alloc_code(&code).unwrap();
+            assert_eq!(t.b.alloc_code(&code).unwrap(), newf);
+            let mut j = vec![0xe9];
+            j.extend(newf.wrapping_sub(at + 5).to_le_bytes());
+            t.write(at, &j);
+            t.check(&what("fog create"), 0x006e_3240, Conv::Cdecl, &[], |g| {
+                methods::bridge::fog_create(g);
+                Out::None
             });
         }
     }
