@@ -1,0 +1,41 @@
+# Noise allow list of bsil0000 (Besaid beach, save slot 3): what differs
+# between two runs of the original code at ctrl work 0's event count 101
+# (tools/replays/draw-bsil0000.txt; docs/formats/scene-maps.md). Moved from
+# ~/ffx-work/m4/allow-draw-field.txt's [bsil0000] section (M4 T2, hash-mode
+# captures orig3/orig4 with the harness before 2026-10-24), then checked on
+# the round-2 full-mode pair bsil0000-a/-b (harness-main-thread, no user
+# mods): that pair differs only in SgSpec_LightVec[0].z. The other rules
+# stay because they were seen on this map; their causes are not fixed.
+[bsil0000]
+
+# As cdsp0000: the game's f32 time since start (Phyre_PFramework_PApplication_frame
+# 0x00627940) rounds by the load's frame count. Equal in bsil0000-a/-b.
+constant var=scene field=*.cb0.scene.GlobalTime cause: the game's f32 time since start rounds differently when the load took another number of frames (a few ulp)
+
+# Every pair: Ch_DrawMain (0x0082ed50) passes graphicSgSetSpecular
+# (0x00643cc0) a light vector whose third word, [ebp-0x3c], it never writes.
+constant var=SgSpec_LightVec field=*.SgSpec_LightVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x3c] (the light vector's third word)
+
+# The chocobo icon at the bottom right (viewport 50x50 at 1220,660, scissor
+# 1220-1270 x 660-710; event-besaid.txt and shot-compare.py mask it): the
+# chocobo model's draws (vertex shaders 3ed98be438f1788c, db4c42c82f869fe7)
+# into a 50x50 target and the quads (0259336042bd8dbd) that compose it. How
+# many draws a frame makes, and their constants, follow the icon's
+# wall-clock phase (T2: frames of 276, 255 and 251 draws, in another order
+# in every run). Not drawn at all in bsil0000-a/-b.
+any vs=3ed98be438f1788c cause: chocobo icon model, animated by the wall clock
+any vs=db4c42c82f869fe7 cause: chocobo icon model, animated by the wall clock
+any vs=0259336042bd8dbd cause: chocobo icon quads, composed with the wall-clock icon
+
+# T2: a 16x8 BC3 texture (5 mips) of this draw (ps srv1) is replaced by the
+# asset loader while the capture runs (`reborn` lines in frames.txt: 4 to 6
+# objects created at reused addresses), at a frame that depends on the
+# loader's timing (AsyncLoadManager, docs/rewrite-plan.md "Determinism").
+# Equal in bsil0000-a/-b.
+resource vs=f1de6dea8bd5f574 field=ps.srv1 cause: asset loader replaces the texture at a load-timing-dependent frame
+
+# T2: two draws of this shader read a ring (vb1) whose contents alternate
+# between two versions from frame to frame, in a phase not pinned to ctrl
+# work 0's count (original runs orig1 and orig3 had opposite phases).
+# Equal in bsil0000-a/-b.
+resource vs=0d19616adb13ee23 field=vb1 cause: two-phase ring animation whose phase is not pinned to ctrl work 0's count (differs between original runs)

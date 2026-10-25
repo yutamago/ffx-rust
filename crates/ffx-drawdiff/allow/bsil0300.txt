@@ -1,0 +1,37 @@
+# Noise allow list of bsil0300 (the Besaid river below the cliff, map 0x29,
+# event-cliff's map), reached from save slot 3 by event-besaid's walk: what
+# differs between two runs of the original code at ctrl work 0's event
+# count 32 (tools/replays/draw-bsil0300.txt, captures bsil0300-a/-b;
+# docs/formats/scene-maps.md).
+[bsil0300]
+
+# 17 f32 ulp (1.1344666 | 1.1344687) in every draw's vs and ps `scene`
+# buffer. As cdsp0000: the game's f32 time since start
+# (Phyre_PFramework_PApplication_frame 0x00627940); here the walk before
+# the map (the voiced line on map 0x14 waits for the voice stream, which
+# plays in real time) changes how many frames ran, so the rounding differs
+# more than after a plain load.
+constant var=scene field=*.cb0.scene.GlobalTime cause: the game's f32 time since start rounds differently when another number of frames ran before the map (the walk waits on a real-time voice line)
+
+# As cdsp0000 and bsil0000: Ch_DrawMain (0x0082ed50) passes
+# graphicSgSetSpecular (0x00643cc0) a light vector whose third word,
+# [ebp-0x3c], it never writes.
+constant var=SgSpec_LightVec field=*.SgSpec_LightVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x3c] (the light vector's third word)
+
+# The chocobo icon at the bottom right (viewport 50x50 at 1220,660): the
+# chocobo model (vertex shaders 3ed98be438f1788c, db4c42c82f869fe7) into a
+# 50x50 target and the quads (0259336042bd8dbd) that compose it. Run a has
+# 216 items and run b 195 (34 of a's missing in b, 13 of b's extra): their number,
+# order, viewports, scissors, targets and constants follow the icon's
+# wall-clock phase (as bsil0000, T2).
+any vs=3ed98be438f1788c cause: chocobo icon model, animated by the wall clock
+any vs=db4c42c82f869fe7 cause: chocobo icon model, animated by the wall clock
+any vs=0259336042bd8dbd cause: chocobo icon quads, composed with the wall-clock icon
+
+# The minimap (scissor 97..337 x 56..236, the minimap viewport; stencilled,
+# CPU-built ring mesh, 567 indices): its NORMAL0 stream (vb1, a ring)
+# holds colour-like values (k/512: 0.498, 0.249, ...), and one of them
+# differs between the runs in 30 of the vertices (0x3e1c0000 0.152 in a,
+# 0x3ce00000 0.027 in b): an animated value whose phase is not pinned to
+# ctrl work 0's count. The minimap's pixels are equal in both runs' shots.
+resource vs=af2fbdc4f5970aca field=vb1 cause: minimap mesh: an animated per-vertex value in its NORMAL0 ring whose phase is not pinned to ctrl work 0's count (pixels equal)
