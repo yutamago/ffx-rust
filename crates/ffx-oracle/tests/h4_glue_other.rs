@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
-use ffx_glue_other::{effect as e, menu as mn, misc as m, movie as mv, sound as s};
+use ffx_glue_other::{effect as e, frames as fr, menu as mn, misc as m, movie as mv, sound as s};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -3504,6 +3504,539 @@ fn voice_params_resume_scroll() {
                 Conv::Cdecl,
                 &[],
                 |g| u(m::mfifo_reset(g)),
+            );
+        }
+    }
+}
+
+// ---- round 2: originals that hand callees their own frame ----
+
+/// What a [`Twins::stub_out`] stub writes before it logs: the word in
+/// `cell` at `offset` past its `ecx` (`arg` `None`) or past its stack
+/// argument `arg`.
+struct Write {
+    arg: Option<u8>,
+    offset: u32,
+    cell: u32,
+}
+
+impl Twins {
+    /// A stub like [`Twins::stub_code`] that first stores cells through
+    /// pointers it is handed (a callee filling the caller's locals).
+    fn stub_out(&mut self, tag: u32, this: bool, n: u32, pops: u32, writes: &[Write]) -> u32 {
+        let mut c = Vec::new();
+        for w in writes {
+            match w.arg {
+                None => c.extend([0x89, 0xc8]),                     // mov eax, ecx
+                Some(i) => c.extend([0x8b, 0x44, 0x24, 4 + 4 * i]), // mov eax, [esp+4+4i]
+            }
+            c.extend([0x8b, 0x15]);
+            c.extend(w.cell.to_le_bytes()); // mov edx, [cell]
+            c.extend([0x89, 0x90]);
+            c.extend(w.offset.to_le_bytes()); // mov [eax+off], edx
+        }
+        let rest = self.stub_code(tag, this, n, pops);
+        c.push(0xe9);
+        let at = self.cave_next;
+        c.extend(rest.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp rest
+        self.code(&c)
+    }
+
+    /// [`Twins::stub_out`] jumped to from the original `sym`; its address.
+    fn stub_at(&mut self, sym: u32, this: bool, n: u32, pops: u32, writes: &[Write]) -> u32 {
+        let addr = self.stub_out(sym, this, n, pops, writes);
+        self.jump(sym, addr);
+        addr
+    }
+
+    /// A `jmp` from the original `sym` to `addr` (switching between a
+    /// stub that writes and one that does not).
+    fn jump(&mut self, sym: u32, addr: u32) {
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+        self.write(at, &j);
+    }
+
+    /// Where the original's `ebp` lands for a call with `words` stack
+    /// arguments ([`Oracle::call`] pushes them from the top of the stack
+    /// less `0x100`, then the return address; the original pushes `ebp`).
+    fn ebp_for(&self, words: u32) -> u32 {
+        assert_eq!(self.a.stack_range(), self.b.stack_range());
+        self.a.stack_range().end - 0x100 - 4 * words - 8
+    }
+
+    /// [`Twins::check`] for an original whose frame (`frame`, `len` bytes)
+    /// callees see: the port's oracle gets the same block, its own calls
+    /// below it; afterwards the bytes of `compare` (offsets and lengths in
+    /// the frame) must agree.
+    #[allow(clippy::too_many_arguments)]
+    fn check_framed(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        frame: u32,
+        compare: &[(u32, usize)],
+        port: impl FnOnce(&mut G) -> Out,
+    ) -> u32 {
+        // the same junk in both frames first: a word the port forgets to
+        // write then differs
+        for &(off, len) in compare {
+            let junk: Vec<u8> = (0..len).map(|k| 0xa5 ^ k as u8).collect();
+            self.write(frame + off, &junk);
+        }
+        self.b.set_call_top(Some(frame - 0x100));
+        let eax = self.check(what, sym, conv, args, port);
+        self.b.set_call_top(None);
+        for &(off, len) in compare {
+            let mut x = vec![0; len];
+            let mut y = vec![0; len];
+            self.a.read_bytes(frame + off, &mut x);
+            self.b.read_bytes(frame + off, &mut y);
+            assert_eq!(x, y, "{what}: frame +{off:#x}");
+        }
+        eax
+    }
+}
+
+/// The `IggyMenu_callFlashFunction_<n>` family and
+/// `IggyMenu_getArrayS32_00a28b20` (its value written over its own
+/// argument).
+#[test]
+fn frames_iggy_flash_calls_and_array() {
+    const FLASH: [u32; 5] = [
+        0x0068_dd40,
+        0x0068_dd80,
+        0x0068_ddd0,
+        0x0068_de50,
+        0x0068_def0,
+    ];
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_2b01);
+        t.stub(mn::CALL_AS3, true, 5, 5);
+        let value = t.zeros(4);
+        let make = t.stub_code(fr::IGGY_PATH_MAKE_ARRAY_REF, false, 3, 3);
+        let get = t.stub_out(
+            fr::IGGY_VALUE_GET_S32,
+            false,
+            4,
+            4,
+            &[Write {
+                arg: Some(3),
+                offset: 0,
+                cell: value,
+            }],
+        );
+        t.g32(fr::IGGY_PATH_MAKE_ARRAY_REF, make);
+        // a failing get leaves the argument slot as it was
+        let get_quiet = t.stub_code(fr::IGGY_VALUE_GET_S32 + 1, false, 4, 4);
+        for i in 0..16 {
+            let w = format!("{name} {i}");
+            for (k, &sym) in FLASH.iter().enumerate() {
+                let n = k as u32 + 1;
+                let words: Vec<u32> = (0..2 + 4 * n).map(|_| rng.word()).collect();
+                let args = t.alloc(
+                    &words
+                        .iter()
+                        .flat_map(|v| v.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                );
+                let r = rng.next();
+                t.ret(mn::CALL_AS3, r);
+                let frame = t.ebp_for(2 + 4 * n) - fr::flash_values_below_ebp(n);
+                t.check_framed(
+                    &format!("{w} callFlashFunction {n}"),
+                    sym,
+                    Conv::Cdecl,
+                    &words,
+                    frame,
+                    &[(0, 16 * n as usize)],
+                    |g| u(fr::iggy_call_flash(g, frame, n, args)),
+                );
+            }
+            let this = rng.word();
+            let x = rng.word();
+            let v = rng.next();
+            t.w32(value, v);
+            let quiet = rng.below(3) == 0;
+            t.g32(fr::IGGY_VALUE_GET_S32, if quiet { get_quiet } else { get });
+            let frame = t.ebp_for(1) - 0x18;
+            t.check_framed(
+                &format!("{w} getArrayS32 (quiet {quiet})"),
+                0x00a2_8b20,
+                Conv::Thiscall(this),
+                &[x],
+                frame,
+                &[(0x20, 4)],
+                |g| u(fr::iggy_array_s32(g, frame, this, x)),
+            );
+        }
+        assert!(t.log_entries() > 0);
+    }
+}
+
+/// `FmodEventTree_getEvent_00710290`, `Distortion_resetRenderTarget_006c24b0`,
+/// `PostProcessManager_findClusterData_00698a30`.
+#[test]
+fn frames_tree_event_distortion_cluster_cursor() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_2b02);
+        // the event tree: a project whose vtable +0x24 fills the result
+        let result = t.zeros(4);
+        let method = t.stub_out(
+            0x24,
+            false,
+            4,
+            4,
+            &[Write {
+                arg: Some(3),
+                offset: 0,
+                cell: result,
+            }],
+        );
+        let vtable = t.zeros(0x40);
+        t.w32(vtable + 0x24, method);
+        let project = t.zeros(0x10);
+        t.w32(project, vtable);
+        t.stub(fr::INT_TREE_FIND, true, 1, 1);
+        // the distortion's callees
+        t.stub(fr::RENDER_TARGET_RELEASE, true, 0, 0);
+        t.stub(fr::SHADER_PARAMS_FIND, true, 1, 1);
+        t.stub(fr::SHADER_PARAMS_SET, true, 2, 2);
+        // the cursor's step fills +0, +0xc, +0x10
+        let cells = [t.zeros(4), t.zeros(4), t.zeros(4)];
+        let cursor_quiet = t.stub_code(fr::CLUSTER_CURSOR_NEXT + 1, true, 0, 0);
+        let cursor = t.stub_at(
+            fr::CLUSTER_CURSOR_NEXT,
+            true,
+            0,
+            0,
+            &[
+                Write {
+                    arg: None,
+                    offset: 0,
+                    cell: cells[0],
+                },
+                Write {
+                    arg: None,
+                    offset: 0xc,
+                    cell: cells[1],
+                },
+                Write {
+                    arg: None,
+                    offset: 0x10,
+                    cell: cells[2],
+                },
+            ],
+        );
+        for i in 0..24 {
+            let w = format!("{name} {i}");
+            // getEvent
+            let tree = t.zeros(0x10);
+            t.w32(tree, if rng.below(4) == 0 { 0 } else { project });
+            let node = match rng.below(4) {
+                0 => 0,
+                1 => 0xffff_fff0,
+                _ => {
+                    let n = t.zeros(0x20);
+                    t.w32(n + 0x10, rng.word());
+                    n
+                }
+            };
+            t.ret(fr::INT_TREE_FIND, node);
+            let r = rng.next();
+            t.w32(result, r);
+            t.ret(0x24, rng.next());
+            let key = rng.word();
+            let frame = t.ebp_for(1) - 4;
+            t.check_framed(
+                &format!("{w} getEvent"),
+                0x0071_0290,
+                Conv::Thiscall(tree),
+                &[key],
+                frame,
+                &[(0, 4)],
+                |g| u(fr::fmod_tree_get_event(g, frame, tree, key)),
+            );
+            // resetRenderTarget
+            let this = t.random(&mut rng, 0x80);
+            let shader = if rng.below(3) == 0 { 0 } else { rng.word() };
+            t.w32(this + 0x2c, shader);
+            let owner = t.random(&mut rng, 8);
+            t.w32(this + 0x30, owner);
+            let found = if rng.below(3) == 0 { 0 } else { rng.next() };
+            t.ret(fr::SHADER_PARAMS_FIND, found);
+            for tag in [fr::RENDER_TARGET_RELEASE, fr::SHADER_PARAMS_SET] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            let frame = t.ebp_for(0) - fr::DISTORTION_FRAME;
+            t.check_framed(
+                &format!("{w} resetRenderTarget"),
+                0x006c_24b0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &if found != 0 && shader != 0 {
+                    vec![(0, 16)]
+                } else {
+                    vec![]
+                },
+                |g| u(fr::distortion_reset_target(g, frame, this)),
+            );
+            // findClusterData
+            let k = rng.below(4);
+            let manager = t.zeros(0x20);
+            let cluster = match rng.below(4) {
+                0 => 0,
+                _ => {
+                    let c = t.zeros(0x40);
+                    let head = match rng.below(3) {
+                        0 => c + 0x1c,
+                        1 => 0,
+                        _ => rng.word(),
+                    };
+                    t.w32(c + 0x1c, head);
+                    c
+                }
+            };
+            t.w32(manager + 4 + 4 * k, cluster);
+            let quiet = rng.below(4) == 0;
+            t.jump(
+                fr::CLUSTER_CURSOR_NEXT,
+                if quiet { cursor_quiet } else { cursor },
+            );
+            for &c in &cells {
+                let v = if rng.below(3) == 0 { 0 } else { rng.next() };
+                t.w32(c, v);
+            }
+            let frame = t.ebp_for(1) - fr::CLUSTER_CURSOR_FRAME;
+            t.check_framed(
+                &format!("{w} findClusterData"),
+                0x0069_8a30,
+                Conv::Thiscall(manager),
+                &[k],
+                frame,
+                &if cluster == 0 {
+                    vec![]
+                } else {
+                    vec![(0, 0x20)]
+                },
+                |g| u(fr::post_find_cluster_data(g, frame, manager, k)),
+            );
+        }
+    }
+}
+
+/// `ScreenFadeDelegations_registerDelegation`, the two Iggy `GDraw` D3D11
+/// helpers, `LocString_Load_0068e180`, `getFullFilename`,
+/// `ClassLoadedCharacterTable_makeEntry_0069da20`.
+#[test]
+fn frames_fade_gdraw_strings() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_2b03);
+        t.stub(fr::GET_APPLICATION, false, 0, 0);
+        t.stub(fr::REGISTER_DELEGATION, true, 4, 4);
+        // GDraw's context: Map fills pData
+        let mapped = t.zeros(4);
+        let vtable = t.zeros(0x80);
+        let map = t.stub_out(
+            0x38,
+            false,
+            6,
+            6,
+            &[Write {
+                arg: Some(5),
+                offset: 0,
+                cell: mapped,
+            }],
+        );
+        t.w32(vtable + 0x38, map);
+        for (slot, n) in [(0x20, 4), (0x48, 6), (0x4c, 4)] {
+            let f = t.stub_code(slot, false, n, n);
+            t.w32(vtable + slot, f);
+        }
+        let ctx = t.zeros(8);
+        t.w32(ctx, vtable);
+        let state = t.zeros(8);
+        t.w32(state + 4, ctx);
+        t.g32(fr::GDRAW_STATE, state);
+        // the out-of-memory warning passes 4 words, the other 5 (a stub
+        // logging 5 would log the caller's stack junk after the 4)
+        let warn4 = t.stub_code(fr::GDRAW_SEND_WARNING + 4, false, 4, 0);
+        let warn5 = t.stub_code(fr::GDRAW_SEND_WARNING, false, 5, 0);
+        // strings
+        let text = t.zeros(4);
+        t.stub_at(
+            mn::LOC_TEXT,
+            false,
+            3,
+            0,
+            &[Write {
+                arg: Some(1),
+                offset: 0,
+                cell: text,
+            }],
+        );
+        t.stub(mn::TEXT_CONVERT, false, 3, 0);
+        t.stub(fr::MEMSET, false, 3, 0);
+        let dir = t.zeros(4);
+        t.stub_at(
+            fr::DATA_DIRECTORY,
+            false,
+            3,
+            0,
+            &[Write {
+                arg: Some(1),
+                offset: 4,
+                cell: dir,
+            }],
+        );
+        let sprintf = t.stub_code(0x00b0_c3dc, false, 4, 0);
+        t.g32(0x00b0_c3dc, sprintf);
+        let (cap, ptr) = (t.zeros(4), t.zeros(4));
+        // an assign that keeps the empty string's capacity 0xf
+        let assign_quiet = t.stub_code(fr::STRING_ASSIGN + 1, true, 3, 3);
+        let assign = t.stub_at(
+            fr::STRING_ASSIGN,
+            true,
+            3,
+            3,
+            &[
+                Write {
+                    arg: None,
+                    offset: 0x14,
+                    cell: cap,
+                },
+                Write {
+                    arg: None,
+                    offset: 0,
+                    cell: ptr,
+                },
+            ],
+        );
+        t.stub(fr::STRING_MOVE_CTOR, true, 2, 2);
+        t.stub(fr::OPERATOR_DELETE, false, 1, 0);
+        for i in 0..24 {
+            let w = format!("{name} {i}");
+            for tag in [
+                fr::GET_APPLICATION,
+                fr::REGISTER_DELEGATION,
+                0x20,
+                0x48,
+                0x4c,
+                fr::GDRAW_SEND_WARNING,
+                mn::LOC_TEXT,
+                mn::TEXT_CONVERT,
+                fr::MEMSET,
+                fr::DATA_DIRECTORY,
+                0x00b0_c3dc,
+                fr::STRING_ASSIGN,
+                fr::STRING_MOVE_CTOR,
+            ] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            // registerDelegation
+            let scene = t.zeros(0x100);
+            t.w32(scene + 0xdc, if rng.below(3) == 0 { 0 } else { rng.word() });
+            t.g32(fr::PHYRE_SCENE, scene);
+            t.g32(fr::RENDER_DELEGATION_HELPER, rng.word());
+            let colour = [rng.float(), rng.float(), rng.float(), rng.float()];
+            let (x, y) = (rng.word(), rng.word());
+            let args = [colour[0], colour[1], colour[2], colour[3], x, y];
+            let frame = t.ebp_for(6) - fr::FADE_RECORD_FRAME;
+            t.check_framed(
+                &format!("{w} registerDelegation"),
+                0x006a_e650,
+                Conv::Cdecl,
+                &args,
+                frame,
+                &[(0, 0x20)],
+                |g| u(fr::screen_fade_register(g, frame, colour, x, y)),
+            );
+            // gdraw
+            let hr = [0, 1, fr::E_OUTOFMEMORY, 0x8000_4005, rng.next()][rng.below(5) as usize];
+            t.ret(0x38, hr);
+            t.g32(
+                fr::GDRAW_SEND_WARNING,
+                if hr == fr::E_OUTOFMEMORY {
+                    warn4
+                } else {
+                    warn5
+                },
+            );
+            let p = rng.next();
+            t.w32(mapped, p);
+            let resource = rng.word();
+            let frame = t.ebp_for(1) - fr::MAPPED_FRAME;
+            t.check_framed(
+                &format!("{w} mapBuffer {hr:#x}"),
+                0x00a3_cec0,
+                Conv::Cdecl,
+                &[resource],
+                frame,
+                &[(0, 4)],
+                |g| u(fr::gdraw_map_buffer(g, frame, resource)),
+            );
+            let frame = t.ebp_for(0) - fr::CLEAR_BINDINGS_FRAME;
+            t.check_framed(
+                &format!("{w} clearBindings"),
+                0x00a3_d280,
+                Conv::Cdecl,
+                &[],
+                frame,
+                &[(0, 8)],
+                |g| u(fr::gdraw_clear_bindings(g, frame)),
+            );
+            // LocString_Load
+            let v = rng.next();
+            t.w32(text, v);
+            let (this, id) = (rng.word(), rng.word());
+            let frame = t.ebp_for(1) - fr::LOC_STRING_FRAME;
+            t.check_framed(
+                &format!("{w} LocString_Load"),
+                0x0068_e180,
+                Conv::Thiscall(this),
+                &[id],
+                frame,
+                &[(0, 4)],
+                |g| u(fr::loc_string_load(g, frame, this, id)),
+            );
+            // getFullFilename
+            let v = rng.next();
+            t.w32(dir, v);
+            let (out, file) = (rng.word(), rng.word());
+            let frame = t.ebp_for(2) - fr::FULL_FILENAME_FRAME;
+            t.check_framed(
+                &format!("{w} getFullFilename"),
+                0x0070_7aa0,
+                Conv::Cdecl,
+                &[out, file],
+                frame,
+                &[(0, 1), (4, 4)],
+                |g| u(fr::full_filename(g, frame, out, file)),
+            );
+            // makeEntry
+            let c = [0, 0xf, 0x10, 0x11, rng.next()][rng.below(5) as usize];
+            t.w32(cap, c);
+            let quiet = rng.below(4) == 0;
+            t.jump(fr::STRING_ASSIGN, if quiet { assign_quiet } else { assign });
+            let v = rng.next();
+            t.w32(ptr, v);
+            let value = t.random(&mut rng, 4);
+            let (out, src) = (rng.word(), rng.word());
+            let frame = t.ebp_for(3) - fr::PROTOTYPE_ENTRY_FRAME;
+            t.check_framed(
+                &format!("{w} makeEntry cap {c:#x}"),
+                0x0069_da20,
+                Conv::Cdecl,
+                &[out, src, value],
+                frame,
+                &[(0, 8), (0x14, 0xc)],
+                |g| u(fr::prototype_entry(g, frame, out, src, value)),
             );
         }
     }

@@ -31,6 +31,7 @@
 
 pub mod copies;
 pub mod effect;
+pub mod frames;
 pub mod menu;
 pub mod misc;
 pub mod movie;

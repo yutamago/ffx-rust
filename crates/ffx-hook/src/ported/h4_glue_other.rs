@@ -10,9 +10,11 @@
 //! Floats are passed as their bits (`u32`): the originals only copy them
 //! through `fld`/`fstp`, which the bridges model.
 
-use ffx_glue_other::{copies as c, effect as e, menu as mn, misc as m, movie as mv, sound as s};
+use ffx_glue_other::{
+    copies as c, effect as e, frames as fr, menu as mn, misc as m, movie as mv, sound as s,
+};
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 
 ported! {
     /// `iSoundInit_0067a500()`.
@@ -885,5 +887,90 @@ ported! {
     /// `Sg_MFIFOReset_008432e0()`.
     Sg_MFIFOReset_008432e0 @ 0x0084_32e0 => extern "C" fn mfifo_reset() -> u32 {
         m::mfifo_reset(&mut mem())
+    }
+    /// `FFEscMenu_playMenuSound(this; id)`: void, the pointer callers drop
+    /// `eax` (check-clobber `VOID_OK`, dispatcher 0x00a28ff0).
+    FFEscMenu_playMenuSound @ 0x0068_f9b0 => extern "thiscall" fn esc_play_menu_sound(this: u32, id: u32) {
+        mn::esc_play_menu_sound(&mut mem(), this, id);
+    }
+    /// `IggyMenu_callFlashFunction_1(menu, name, 1 values by value)`: the values are
+    /// read from the caller's arguments.
+    IggyMenu_callFlashFunction_1 @ 0x0068_dd40 => extern "C" fn iggy_call_flash_1(_menu: u32, _name: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<4>::new();
+        fr::iggy_call_flash(&mut mem(), frame.at(), 1, args)
+    }
+    /// `IggyMenu_callFlashFunction_2_0068dd80(menu, name, 2 values by value)`: the values are
+    /// read from the caller's arguments.
+    IggyMenu_callFlashFunction_2_0068dd80 @ 0x0068_dd80 => extern "C" fn iggy_call_flash_2(_menu: u32, _name: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<8>::new();
+        fr::iggy_call_flash(&mut mem(), frame.at(), 2, args)
+    }
+    /// `IggyMenu_callFlashFunction_3_0068ddd0(menu, name, 3 values by value)`: the values are
+    /// read from the caller's arguments.
+    IggyMenu_callFlashFunction_3_0068ddd0 @ 0x0068_ddd0 => extern "C" fn iggy_call_flash_3(_menu: u32, _name: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<12>::new();
+        fr::iggy_call_flash(&mut mem(), frame.at(), 3, args)
+    }
+    /// `IggyMenu_callFlashFunction_4_0068de50(menu, name, 4 values by value)`: the values are
+    /// read from the caller's arguments.
+    IggyMenu_callFlashFunction_4_0068de50 @ 0x0068_de50 => extern "C" fn iggy_call_flash_4(_menu: u32, _name: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<16>::new();
+        fr::iggy_call_flash(&mut mem(), frame.at(), 4, args)
+    }
+    /// `IggyMenu_callFlashFunction_5_0068def0(menu, name, 5 values by value)`: the values are
+    /// read from the caller's arguments.
+    IggyMenu_callFlashFunction_5_0068def0 @ 0x0068_def0 => extern "C" fn iggy_call_flash_5(_menu: u32, _name: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<20>::new();
+        fr::iggy_call_flash(&mut mem(), frame.at(), 5, args)
+    }
+    /// `IggyMenu_getArrayS32_00a28b20(this; i)`.
+    IggyMenu_getArrayS32_00a28b20 @ 0x00a2_8b20 => extern "thiscall" fn iggy_array_s32(this: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::ARRAY_S32_FRAME / 4) as usize }>::new();
+        fr::iggy_array_s32(&mut mem(), frame.at(), this, i)
+    }
+    /// `FmodEventTree_getEvent_00710290(this; key)`.
+    FmodEventTree_getEvent_00710290 @ 0x0071_0290 => extern "thiscall" fn fmod_tree_get_event(this: u32, key: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::TREE_EVENT_FRAME / 4) as usize }>::new();
+        fr::fmod_tree_get_event(&mut mem(), frame.at(), this, key)
+    }
+    /// `Distortion_resetRenderTarget_006c24b0(this)`.
+    Distortion_resetRenderTarget_006c24b0 @ 0x006c_24b0 => extern "thiscall" fn distortion_reset_target(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::DISTORTION_FRAME / 4) as usize }>::new();
+        fr::distortion_reset_target(&mut mem(), frame.at(), this)
+    }
+    /// `PostProcessManager_findClusterData_00698a30(this; i)`.
+    PostProcessManager_findClusterData_00698a30 @ 0x0069_8a30 => extern "thiscall" fn post_find_cluster_data(this: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::CLUSTER_CURSOR_FRAME / 4) as usize }>::new();
+        fr::post_find_cluster_data(&mut mem(), frame.at(), this, i)
+    }
+    /// `ScreenFadeDelegations_registerDelegation(r, g, b, a, x, y)`.
+    ScreenFadeDelegations_registerDelegation @ 0x006a_e650 => extern "C" fn screen_fade_register(r: u32, g: u32, b: u32, a: u32, x: u32, y: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::FADE_RECORD_FRAME / 4) as usize }>::new();
+        fr::screen_fade_register(&mut mem(), frame.at(), [r, g, b, a], x, y)
+    }
+    /// `gdraw_MapBuffer_00a3cec0(resource)`.
+    gdraw_MapBuffer_00a3cec0 @ 0x00a3_cec0 => extern "C" fn gdraw_map_buffer(resource: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::MAPPED_FRAME / 4) as usize }>::new();
+        fr::gdraw_map_buffer(&mut mem(), frame.at(), resource)
+    }
+    /// `gdraw_clearBindings_00a3d280()`.
+    gdraw_clearBindings_00a3d280 @ 0x00a3_d280 => extern "C" fn gdraw_clear_bindings() -> u32 {
+        let mut frame = StackFrame::<{ (fr::CLEAR_BINDINGS_FRAME / 4) as usize }>::new();
+        fr::gdraw_clear_bindings(&mut mem(), frame.at())
+    }
+    /// `LocString_Load_0068e180(this; id)`.
+    LocString_Load_0068e180 @ 0x0068_e180 => extern "thiscall" fn loc_string_load(this: u32, id: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::LOC_STRING_FRAME / 4) as usize }>::new();
+        fr::loc_string_load(&mut mem(), frame.at(), this, id)
+    }
+    /// `getFullFilename(out, name)`.
+    getFullFilename @ 0x0070_7aa0 => extern "C" fn full_filename(out: u32, name: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::FULL_FILENAME_FRAME / 4) as usize }>::new();
+        fr::full_filename(&mut mem(), frame.at(), out, name)
+    }
+    /// `ClassLoadedCharacterTable_makeEntry_0069da20(out, name, value)`.
+    ClassLoadedCharacterTable_makeEntry_0069da20 @ 0x0069_da20 => extern "C" fn prototype_entry(out: u32, name: u32, value: u32) -> u32 {
+        let mut frame = StackFrame::<{ (fr::PROTOTYPE_ENTRY_FRAME / 4) as usize }>::new();
+        fr::prototype_entry(&mut mem(), frame.at(), out, name, value)
     }
 }
