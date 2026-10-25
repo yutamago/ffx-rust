@@ -6,7 +6,9 @@
 //! No shim keeps state.
 
 use super::{mem, ported};
-use ffx_prender::{basic, class_slots as descriptor, registry, texture};
+use ffx_prender::{
+    basic, class_slots as descriptor, h1_bind, h1_small, h1_small2, registry, texture,
+};
 
 ported! {
     /// `destroyInstance(descriptor, p)`: the destructor.
@@ -1732,5 +1734,241 @@ ported! {
     /// `0x004649d0()` -> the renderer context.
     PRendererContext_instance_004649d0 @ 0x0046_49d0 => extern "C" fn h1_004649d0() -> u32 {
         basic::bridge::renderer_context(&mut mem())
+    }
+    // round 2: the Bind functions with several members (h1_bind)
+    /// `Phyre_PRendering_PTextureCubeMapBase_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PTextureCubeMapBase_Bind @ 0x004c_6500 => extern "C" fn h1_004c6500() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004c_6500) })
+    }
+    /// `Phyre_PCameraPerspective_Bind()`: registers its class descriptor and members.
+    Phyre_PCameraPerspective_Bind @ 0x0045_6540 => extern "C" fn h1_00456540() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0045_6540) })
+    }
+    /// `Phyre_PRendering_PShadowCaster_PShadowSplit_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShadowCaster_PShadowSplit_Bind @ 0x004c_ad80 => extern "C" fn h1_004cad80() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004c_ad80) })
+    }
+    /// `Phyre_PRendering_PMaterialSwitch_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PMaterialSwitch_Bind @ 0x004d_80a0 => extern "C" fn h1_004d80a0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004d_80a0) })
+    }
+    /// `Phyre_PGeometry_PSkinBoneRemap_Bind()`: registers its class descriptor and members.
+    Phyre_PGeometry_PSkinBoneRemap_Bind @ 0x0048_7ca0 => extern "C" fn h1_00487ca0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0048_7ca0) })
+    }
+    /// `Phyre_PRendering_PTexture2DBase_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PTexture2DBase_Bind @ 0x004c_3400 => extern "C" fn h1_004c3400() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004c_3400) })
+    }
+    /// `Phyre_PRendering_PRenderTargetBase_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PRenderTargetBase_Bind @ 0x004c_7b70 => extern "C" fn h1_004c7b70() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004c_7b70) })
+    }
+    /// `Phyre_PWorld_Bind()`: registers its class descriptor and members.
+    Phyre_PWorld_Bind @ 0x0044_2e30 => extern "C" fn h1_00442e30() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0044_2e30) })
+    }
+    /// `Phyre_PRendering_PShaderPassParameterLocationTypesBase_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShaderPassParameterLocationTypesBase_Bind @ 0x004b_6680 => extern "C" fn h1_004b6680() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004b_6680) })
+    }
+    /// `Phyre_PRendering_PShaderPassParameterLocationTypes_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShaderPassParameterLocationTypes_Bind @ 0x004b_6580 => extern "C" fn h1_004b6580() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004b_6580) })
+    }
+    /// `Phyre_PRendering_PShaderPassParameterLocationTypesConstantBuffer_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShaderPassParameterLocationTypesConstantBuffer_Bind @ 0x004b_6770 => extern "C" fn h1_004b6770() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004b_6770) })
+    }
+    /// `Phyre_PRendering_PNodeContext_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PNodeContext_Bind @ 0x004c_f7c0 => extern "C" fn h1_004cf7c0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004c_f7c0) })
+    }
+    /// `Phyre_PRendering_PShaderParameterCaptureBufferRWByteAddressBuffer_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShaderParameterCaptureBufferRWByteAddressBuffer_Bind @ 0x004a_a000 => extern "C" fn h1_004aa000() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004a_a000) })
+    }
+    /// `Phyre_PRendering_PShaderParameterCaptureBufferTextureBase_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShaderParameterCaptureBufferTextureBase_Bind @ 0x004a_a630 => extern "C" fn h1_004aa630() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004a_a630) })
+    }
+    /// `Phyre_PRendering_PShaderParameterCaptureBufferLocationTypeConstantBuffer_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShaderParameterCaptureBufferLocationTypeConstantBuffer_Bind @ 0x004a_1d20 => extern "C" fn h1_004a1d20() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004a_1d20) })
+    }
+    /// `Phyre_PRendering_PTexture3DBase_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PTexture3DBase_Bind @ 0x004c_4c40 => extern "C" fn h1_004c4c40() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004c_4c40) })
+    }
+    /// `Phyre_PRendering_PParameterBuffer_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PParameterBuffer_Bind @ 0x004d_6470 => extern "C" fn h1_004d6470() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004d_6470) })
+    }
+    /// `Phyre_PCameraOrthographic_Bind()`: registers its class descriptor and members.
+    Phyre_PCameraOrthographic_Bind @ 0x0045_55e0 => extern "C" fn h1_004555e0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0045_55e0) })
+    }
+    /// `Phyre_PGeometry_PVertexStream_Bind()`: registers its class descriptor and members.
+    Phyre_PGeometry_PVertexStream_Bind @ 0x0048_0510 => extern "C" fn h1_00480510() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0048_0510) })
+    }
+    /// `Phyre_PGeometry_PDynamicMesh_PDynamicSegmentDesc_Bind()`: registers its class descriptor and members.
+    Phyre_PGeometry_PDynamicMesh_PDynamicSegmentDesc_Bind @ 0x0049_70e0 => extern "C" fn h1_004970e0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0049_70e0) })
+    }
+    /// `Phyre_PGeometry_PSkeletonJointBounds_Bind()`: registers its class descriptor and members.
+    Phyre_PGeometry_PSkeletonJointBounds_Bind @ 0x0049_07c0 => extern "C" fn h1_004907c0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0049_07c0) })
+    }
+    /// `Phyre_PRendering_PShaderProgramParamsAndStreams_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShaderProgramParamsAndStreams_Bind @ 0x004a_a8c0 => extern "C" fn h1_004aa8c0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004a_a8c0) })
+    }
+    /// `Phyre_PGeometry_PIndexDataBlockBase_Bind()`: registers its class descriptor and members.
+    Phyre_PGeometry_PIndexDataBlockBase_Bind @ 0x0048_5470 => extern "C" fn h1_00485470() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0048_5470) })
+    }
+    /// `Phyre_PRendering_PShaderSource_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShaderSource_Bind @ 0x004a_aa70 => extern "C" fn h1_004aaa70() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004a_aa70) })
+    }
+    /// `Phyre_PGeometry_PDataBlockBase_Bind()`: registers its class descriptor and members.
+    Phyre_PGeometry_PDataBlockBase_Bind @ 0x0048_1f80 => extern "C" fn h1_00481f80() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0048_1f80) })
+    }
+    /// `Phyre_PRendering_PShadowCaster_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShadowCaster_Bind @ 0x004c_aba0 => extern "C" fn h1_004caba0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004c_aba0) })
+    }
+    /// `Phyre_PCameraProjection_Bind()`: registers its class descriptor and members.
+    Phyre_PCameraProjection_Bind @ 0x0045_4070 => extern "C" fn h1_00454070() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0045_4070) })
+    }
+    /// `Phyre_PGeometry_PDynamicMesh_Bind()`: registers its class descriptor and members.
+    Phyre_PGeometry_PDynamicMesh_Bind @ 0x0049_6ee0 => extern "C" fn h1_00496ee0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0049_6ee0) })
+    }
+    /// `Phyre_PRendering_PMaterial_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PMaterial_Bind @ 0x004d_7e90 => extern "C" fn h1_004d7e90() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004d_7e90) })
+    }
+    /// `Phyre_PRendering_PShaderParameterDefinition_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShaderParameterDefinition_Bind @ 0x004a_1e50 => extern "C" fn h1_004a1e50() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004a_1e50) })
+    }
+    /// `Phyre_PRendering_PShaderStreamDefinition_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShaderStreamDefinition_Bind @ 0x004a_ac50 => extern "C" fn h1_004aac50() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004a_ac50) })
+    }
+    /// `Phyre_PRendering_PShaderPassBase_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShaderPassBase_Bind @ 0x004b_6350 => extern "C" fn h1_004b6350() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004b_6350) })
+    }
+    /// `Phyre_PGeometry_PDynamicDataBlock_Bind()`: registers its class descriptor and members.
+    Phyre_PGeometry_PDynamicDataBlock_Bind @ 0x0048_4300 => extern "C" fn h1_00484300() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0048_4300) })
+    }
+    /// `Phyre_PRendering_PTextureCommonBase_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PTextureCommonBase_Bind @ 0x004c_1fb0 => extern "C" fn h1_004c1fb0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004c_1fb0) })
+    }
+    /// `Phyre_PGeometry_PMaterialSet_Bind()`: registers its class descriptor and members.
+    Phyre_PGeometry_PMaterialSet_Bind @ 0x0048_aa00 => extern "C" fn h1_0048aa00() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0048_aa00) })
+    }
+    /// `Phyre_PRendering_PShader_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PShader_Bind @ 0x004b_c360 => extern "C" fn h1_004bc360() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004b_c360) })
+    }
+    /// `Phyre_PGeometry_PShape_Bind()`: registers its class descriptor and members.
+    Phyre_PGeometry_PShape_Bind @ 0x0049_a180 => extern "C" fn h1_0049a180() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0049_a180) })
+    }
+    /// `Phyre_PSerialization_PBinary_PInternal_PInstanceListHeader_Bind()`: registers its class descriptor and members.
+    Phyre_PSerialization_PBinary_PInternal_PInstanceListHeader_Bind @ 0x0046_a340 => extern "C" fn h1_0046a340() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0046_a340) })
+    }
+    /// `Phyre_PGeometry_PMeshSegmentBase_Bind()`: registers its class descriptor and members.
+    Phyre_PGeometry_PMeshSegmentBase_Bind @ 0x0048_7990 => extern "C" fn h1_00487990() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0048_7990) })
+    }
+    /// `Phyre_PWorldMatrix_Bind()`: registers its class descriptor and members.
+    Phyre_PWorldMatrix_Bind @ 0x0045_14a0 => extern "C" fn h1_004514a0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0045_14a0) })
+    }
+    /// `Phyre_PInstancesComponent_Bind()`: registers its class descriptor and members.
+    Phyre_PInstancesComponent_Bind @ 0x0045_80c0 => extern "C" fn h1_004580c0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0045_80c0) })
+    }
+    /// `Phyre_PGeometry_PMesh_Bind()`: registers its class descriptor and members.
+    Phyre_PGeometry_PMesh_Bind @ 0x0049_0250 => extern "C" fn h1_00490250() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0049_0250) })
+    }
+    /// `Phyre_PCamera_Bind()`: registers its class descriptor and members.
+    Phyre_PCamera_Bind @ 0x0045_37d0 => extern "C" fn h1_004537d0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0045_37d0) })
+    }
+    /// `Phyre_PRendering_PLight_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PLight_Bind @ 0x0049_d8c0 => extern "C" fn h1_0049d8c0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x0049_d8c0) })
+    }
+    /// `Phyre_PRendering_PSamplerStateBase_Bind()`: registers its class descriptor and members.
+    Phyre_PRendering_PSamplerStateBase_Bind @ 0x004b_ed60 => extern "C" fn h1_004bed60() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { h1_bind::bind_of(0x004b_ed60) })
+    }
+    // round 2: small methods (h1_small)
+    /// `0x004525a0(out, v)` -> `out`: `v` normalised. The original's `f32`
+    /// temporaries live in `v`'s argument slot: its last value (the inverse
+    /// length) is written there too.
+    Vector3_normalize_004525a0 @ 0x0045_25a0 => extern "C" fn h1_004525a0(out: u32, v: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, slot) = h1_small::bridge::normalize(&mut m, out, v);
+        ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4), slot);
+        r
+    }
+    /// `PWorldCursor::nextList(cursor)` -> `cursor`.
+    PWorldCursor_nextList_00443ef0 @ 0x0044_3ef0 => extern "fastcall" fn h1_00443ef0(cursor: u32) -> u32 {
+        h1_small::bridge::next_list(&mut mem(), cursor)
+    }
+    /// `PContextSwitchLights::PContextSwitchLights(this)` -> `this`.
+    Phyre_PRendering_PContextSwitchLights_PContextSwitchLights @ 0x004d_2fa0 => extern "thiscall" fn h1_004d2fa0(this: u32) -> u32 {
+        h1_small::bridge::context_switch_lights(&mut mem(), this)
+    }
+    /// `0x00434e40(this, data, count)` -> the count word.
+    PArray40_setBuffer_00434e40 @ 0x0043_4e40 => extern "thiscall" fn h1_00434e40(this: u32, data: u32, count: u32) -> u32 {
+        h1_small::bridge::set_buffer40(&mut mem(), this, data, count)
+    }
+    /// `destroyInstance(descriptor, p)`: frees the switch's two blocks; true.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PMaterialSwitch__destroyInstance @ 0x004d_86e0 => extern "thiscall" fn h1_004d86e0(_descriptor: u32, p: u32) -> u8 {
+        h1_small::bridge::free_two(&mut mem(), p)
+    }
+    /// `0x004d66c0(p)` -> 0: the entries' counts marked "not owned".
+    PParameterBuffer_markUnowned_004d66c0 @ 0x004d_66c0 => extern "C" fn h1_004d66c0(p: u32) -> u32 {
+        h1_small::bridge::mark_unowned(&mut mem(), p)
+    }
+    /// `PTexture2DBase::setDimensions(this, width, height, format, mips)` -> 0 or 3.
+    Phyre_PRendering_PTexture2DBase_setDimensions @ 0x004c_40c0 => extern "thiscall" fn h1_004c40c0(this: u32, width: u32, height: u32, format: u32, mips: u32) -> u32 {
+        h1_small::bridge::set_dimensions(&mut mem(), this, width, height, format, mips)
+    }
+    // round 2 batch 3 (h1_small2)
+    /// `constructInstance(descriptor, p)` of `PMaterial`: `al` 1, or 0 when a lookup fails.
+    Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PMaterial__constructInstance @ 0x004d_8630 => extern "thiscall" fn h1_004d8630(_descriptor: u32, p: u32) -> u8 {
+        h1_small2::bridge::construct_material(&mut mem(), p)
+    }
+    /// `destroyInstance(descriptor, p)` of `PMeshSegment`: true.
+    Phyre_PClassDescriptorForType_Phyre_PGeometry_PMeshSegment__destroyInstance @ 0x0048_8ff0 => extern "thiscall" fn h1_00488ff0(_descriptor: u32, p: u32) -> u8 {
+        h1_small2::bridge::destroy_mesh_segment(&mut mem(), p)
+    }
+    /// `0x0048c650(this, data, count)` -> 0 or 5.
+    PSharray_setToExternalBuffer_0048c650 @ 0x0048_c650 => extern "thiscall" fn h1_0048c650(this: u32, data: u32, count: u32) -> u32 {
+        h1_small2::bridge::sharray_set(&mut mem(), this, data, count)
+    }
+    /// `0x0047fae0()` -> the named-semantic type object.
+    PTypeDispenser_GetType_PRenderDataType_0047fae0 @ 0x0047_fae0 => extern "C" fn h1_0047fae0() -> u32 {
+        h1_small2::bridge::semantic_type(&mut mem(), h1_small2::SEMANTIC_TYPE)
+    }
+    /// `0x004c29b0(this)`: a texture binding released.
+    PTextureBinding_release_004c29b0 @ 0x004c_29b0 => extern "thiscall" fn h1_004c29b0(this: u32) -> u32 {
+        h1_small2::bridge::release_binding(&mut mem(), this)
     }
 }
