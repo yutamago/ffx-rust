@@ -29,6 +29,7 @@ ffx-monster = { path = "crates/ffx-monster" }
 ffx-motion = { path = "crates/ffx-motion" }
 ffx-movie = { path = "crates/ffx-movie" }
 ffx-pcui = { path = "crates/ffx-pcui" }
+ffx-pother-b = { path = "crates/ffx-pother-b" }
 ffx-postfx = { path = "crates/ffx-postfx" }
 ffx-prender = { path = "crates/ffx-prender" }
 ffx-phyre = { path = "crates/ffx-phyre" }
