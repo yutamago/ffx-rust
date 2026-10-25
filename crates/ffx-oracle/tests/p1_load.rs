@@ -24,7 +24,9 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_pload::cluster::{self, bridge as c};
 use ffx_pload::descriptor::{self, bridge as d, core};
+use ffx_pload::stream::{self, bridge as s};
 
 /// Deterministic xorshift stream.
 struct Rng(u32);
@@ -700,6 +702,289 @@ fn key_data_type_parse_matches_the_original() {
                 Out::U32(d::parse_key_data_type(g, out, 0x0dea_d000))
             });
             t.reset();
+        }
+    }
+}
+
+// ---- PClassDataMember::listsClass (twelve copies) ----
+
+const LISTS_CLASS: [u32; 12] = [
+    0x0046_5830,
+    0x0046_5860,
+    0x0046_5890,
+    0x0046_58c0,
+    0x0046_58f0,
+    0x0046_5920,
+    0x0046_5950,
+    0x0046_5980,
+    0x0046_59b0,
+    0x0046_59e0,
+    0x0046_5a10,
+    0x0046_5a40,
+];
+
+#[test]
+fn lists_class_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let member = t.junk(0x40, 5);
+        let class = t.zeros(0x60);
+        // a chain of three entries linked through +0x40
+        let e: Vec<u32> = (0..3).map(|_| t.zeros(0x50)).collect();
+        t.w32(e[0] + 0x40, e[1]);
+        t.w32(e[1] + 0x40, e[2]);
+        let cases: [(u32, u32, u32, u32); 8] = [
+            // (class, head, wanted, count)
+            (0, 0, 0, 0),
+            (class, 0, e[0], 1),
+            (class, e[0], e[0], 1),
+            (class, e[0], e[2], 7),
+            (class, e[0], e[2], 0),
+            (class, e[0], 0x1234, 1),
+            (class, e[1], e[0], 1),
+            (class, e[0], e[1], 0x8000_0000),
+        ];
+        for sym in LISTS_CLASS {
+            for (i, &(c, head, want, count)) in cases.iter().enumerate() {
+                t.w32(member + 0x18, c);
+                t.w32(member + 0x1c, want);
+                t.w32(class + 0x2c, head);
+                t.w32(class + 0x40, count);
+                let what = format!("{label}: listsClass {sym:#x} case {i}");
+                t.check(&what, sym, Conv::Thiscall(member), &[], |g| {
+                    Out::U8(d::member_lists_class(g, member))
+                });
+            }
+        }
+    }
+}
+
+// ---- streams and the start-up ----
+
+#[test]
+fn stream_wrappers_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // needsEndianSwap
+        let ns = t.junk(8, 1);
+        for v in [0, 1, 0x8000_0000] {
+            t.w32(ns, v);
+            let what = format!("{label}: needsEndianSwap {v:#x}");
+            t.check(&what, 0x0042_b830, Conv::Thiscall(ns), &[], |g| {
+                Out::U32(s::needs_endian_swap(g, ns))
+            });
+        }
+        // the reader file's forwarders, recorded
+        let reader = t.junk(0x40, 2);
+        t.stub(stream::CLOSE_FILE, true, 0, 0, 0x0101_0101);
+        t.stub(stream::IS_OPEN, true, 0, 0, 0x0202_0201);
+        t.stub(stream::READ, true, 2, 2, 0x333);
+        let what = format!("{label}: reader close");
+        t.check(&what, 0x0057_6930, Conv::Thiscall(reader), &[], |g| {
+            Out::U32(s::reader_close(g, reader))
+        });
+        let what = format!("{label}: reader isOpen");
+        t.check(&what, 0x0057_6980, Conv::Thiscall(reader), &[], |g| {
+            Out::U32(s::reader_is_open(g, reader))
+        });
+        let what = format!("{label}: reader read");
+        t.check(
+            &what,
+            0x0057_6950,
+            Conv::Thiscall(reader),
+            &[0xb0f, 0x40],
+            |g| Out::U32(s::reader_read(g, reader, 0xb0f, 0x40)),
+        );
+        assert_eq!(t.log_entries(), 3);
+        t.reset();
+        // the writer's close, recorded
+        t.stub(0x0043_1850, true, 1, 1, 0x444);
+        let what = format!("{label}: writer close");
+        t.check(&what, 0x0043_1840, Conv::Thiscall(reader), &[], |g| {
+            Out::U32(s::writer_close(g, reader))
+        });
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+        // the destructors: free recorded
+        t.stub(stream::FREE, false, 1, 0, 0x55);
+        for (sym, name) in [
+            (0x0060_f0c0, 0x00ab_0000),
+            (0x0060_f0c0, 0x00ab_0001),
+            (0x0057_dc70, 0x00ab_0010),
+            (0x0057_dc70, 0x00ab_0011),
+        ] {
+            let obj = t.junk(0x20, 3);
+            t.w32(obj + 8, name);
+            let what = format!("{label}: dtor {sym:#x} {name:#x}");
+            t.check(&what, sym, Conv::Thiscall(obj), &[], |g| {
+                if sym == 0x0060_f0c0 {
+                    s::stream_dtor(g, obj);
+                } else {
+                    s::reader_dtor(g, obj);
+                }
+                Out::None
+            });
+        }
+        assert_eq!(t.log_entries(), 2);
+        t.reset();
+        // the reader's constructor with PStream's own (no name: no
+        // allocation), which writes PStream's vtable first
+        let obj = t.junk(0x20, 5);
+        let what = format!("{label}: reader ctor, real PStream");
+        t.check(&what, 0x0057_dc40, Conv::Thiscall(obj), &[0], |g| {
+            Out::U32(s::reader_ctor(g, obj, 0))
+        });
+        // the reader's constructor, PStream's recorded
+        t.stub(stream::STREAM_CTOR, true, 1, 1, 0x66);
+        let obj = t.junk(0x20, 4);
+        let what = format!("{label}: reader ctor");
+        t.check(
+            &what,
+            0x0057_dc40,
+            Conv::Thiscall(obj),
+            &[0x00ab_cdef],
+            |g| Out::U32(s::reader_ctor(g, obj, 0x00ab_cdef)),
+        );
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+        // counted reads through slot 5 (returns 0x1005)
+        let r = t.object(&[0, 0, 0, 0, 0, 2]);
+        t.w32(r + 0xc, 0xffff_fff0);
+        for size in [0x1005, 7] {
+            let what = format!("{label}: reader read counted {size:#x}");
+            t.check(&what, 0x0057_dd10, Conv::Thiscall(r), &[0xb0, size], |g| {
+                Out::U32(s::reader_read_counted(g, r, 0xb0, size))
+            });
+            let what = format!("{label}: reader readExact {size:#x}");
+            t.check(&what, 0x0057_dd30, Conv::Thiscall(r), &[0xb0, size], |g| {
+                Out::U32(s::reader_read_exact(g, r, 0xb0, size))
+            });
+        }
+        assert_eq!(t.log_entries(), 4);
+        t.reset();
+    }
+}
+
+#[test]
+fn start_up_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // SetStreamPrefix and the flag getter
+        for v in [0x00ab_c000, 0] {
+            let what = format!("{label}: SetStreamPrefix {v:#x}");
+            t.check(&what, 0x0060_7d40, Conv::Cdecl, &[v], |g| {
+                Out::U32(s::set_stream_prefix(g, v))
+            });
+        }
+        let flag = t.rebase(stream::SERIALIZATION_READY.sym);
+        for v in [0u8, 1, 0x80] {
+            t.write(flag, &[v]);
+            let what = format!("{label}: IsInitialized {v}");
+            t.check(&what, 0x0043_2020, Conv::Cdecl, &[], |g| {
+                Out::U8(s::serialization_ready(g))
+            });
+        }
+        let what = format!("{label}: GetPlatformId");
+        t.check(&what, 0x005f_0490, Conv::Cdecl, &[], |_| {
+            Out::U32(stream::PLATFORM_ID)
+        });
+        // PUtilitySerialization::initialize: the Binds and the
+        // registration recorded
+        t.write(flag, &[0]);
+        t.stub(0x0046_8890, false, 0, 0, 1);
+        t.stub(0x0046_9a70, false, 0, 0, 2);
+        t.stub(0x0046_a340, false, 0, 0, 3);
+        t.stub(descriptor::REGISTER_TYPE, false, 1, 0, 4);
+        t.stub(descriptor::NAMESPACE_ADD, true, 1, 1, 5);
+        let what = format!("{label}: serialization initialize");
+        t.check(&what, 0x0043_20e0, Conv::Cdecl, &[], |g| {
+            Out::U32(s::serialization_init(g))
+        });
+        assert_eq!(t.log_entries(), 5);
+        t.reset();
+        // the asset tree, set up or not
+        let tree = t.rebase(stream::ASSET_TREE);
+        t.stub(0x0043_17f0, true, 0, 0, 0x77);
+        for v in [1u8, 0] {
+            t.write(tree, &[v]);
+            let what = format!("{label}: InitializeAssetTree {v}");
+            t.check(&what, 0x0045_d600, Conv::Cdecl, &[], |g| {
+                Out::U32(s::init_asset_tree(g))
+            });
+        }
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+        // PUtilityGame::initialize
+        t.stub(0x00a3_3540, false, 0, 0, 0x88);
+        let what = format!("{label}: game initialize");
+        t.check(&what, 0x009f_4c80, Conv::Cdecl, &[], |g| {
+            Out::U32(s::game_init(g))
+        });
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+    }
+}
+
+// ---- clusters ----
+
+#[test]
+fn cluster_constructors_match_the_original() {
+    let mut rng = Rng(0x00c0_ffee);
+    for (label, mut t) in Twins::all() {
+        let obj = t.junk(0x80, 6);
+        let what = format!("{label}: PNamespace");
+        t.check(&what, 0x0043_dd80, Conv::Thiscall(obj), &[], |g| {
+            Out::U32(c::namespace_ctor(g, obj))
+        });
+        // the PClusterHeader constructor runs the base's as it is
+        let obj = t.junk(0x80, 7);
+        let what = format!("{label}: PClusterHeader");
+        t.check(&what, 0x0046_9980, Conv::Thiscall(obj), &[], |g| {
+            Out::U32(c::header_ctor(g, obj))
+        });
+        // the cluster constructors: PClusterBase's recorded
+        t.stub(cluster::CLUSTER_BASE_CTOR, true, 0, 0, 0x99);
+        let obj = t.junk(0x80, 8);
+        let what = format!("{label}: PClusterBase init");
+        t.check(&what, 0x0057_6630, Conv::Thiscall(obj), &[], |g| {
+            Out::U32(c::cluster_base_init(g, obj))
+        });
+        let what = format!("{label}: PCluster");
+        t.check(&what, 0x0043_f800, Conv::Thiscall(obj), &[], |g| {
+            Out::U32(c::cluster_ctor(g, obj))
+        });
+        assert_eq!(t.log_entries(), 2);
+        t.reset();
+        // forwarders, recorded
+        t.stub(0x0047_86a0, true, 4, 4, 0xaa);
+        t.stub(0x0046_5ab0, true, 3, 3, 0xbb);
+        let what = format!("{label}: mapping init");
+        t.check(&what, 0x0047_87e0, Conv::Thiscall(obj), &[1, 2, 3], |g| {
+            Out::U32(c::mapping_init(g, obj, 1, 2, 3))
+        });
+        let what = format!("{label}: loadClusterTextures thunk");
+        t.check(&what, 0x0046_5aa0, Conv::Thiscall(obj), &[4, 5, 6], |g| {
+            Out::U32(c::load_cluster_textures(g, obj, 4, 5, 6))
+        });
+        assert_eq!(t.log_entries(), 2);
+        t.reset();
+        // the two small getters
+        for i in 0..12 {
+            let v = match i {
+                0 => 0,
+                1 => 0x8000_0000,
+                2 => 1,
+                _ => rng.next(),
+            };
+            t.w32(obj + 0x20, v);
+            t.w32(obj + 0x64, v);
+            let what = format!("{label}: countAtLeastOne {v:#x}");
+            t.check(&what, 0x0059_3bd0, Conv::Thiscall(obj), &[], |g| {
+                Out::U32(c::count_at_least_one(g, obj))
+            });
+            for sym in [0x0059_5fa0, 0x0059_5fb0] {
+                let what = format!("{label}: hasWord64 {sym:#x} {v:#x}");
+                t.check(&what, sym, Conv::Thiscall(obj), &[], |g| {
+                    Out::U32(c::has_word_64(g, obj))
+                });
+            }
         }
     }
 }

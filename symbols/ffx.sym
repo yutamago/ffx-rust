@@ -83,6 +83,7 @@
 0x004294c0 function mkvparser_Tracks_GetTracksCount # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00429da0 function mkvparser_Tracks_GetTrackByNumber # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00429de0 function mkvparser_Tracks_GetTrackByIndex # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0042b830 function Phyre_PSerialization_PBinary_PInternal_PNamespacePacked_needsEndianSwap # thiscall: eax = (first word == 0); ported (ffx-pload); Ghidra dump name
 0x0042c880 function mkvparser_Cluster_GetFirst # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x0042c9d0 function mkvparser_Cluster_GetNext # "Error parsing next block of cluster" on < 0 (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x0042d050 function mkvparser_BlockEntry_EOS # GetKind() == 0 (platform census 2026-10-25, docs/formats/platform.md; movie)
@@ -154,8 +155,10 @@
 0x004316f0 function Phyre_PThreadInitializationBase_PThreadInitializationBase # fh v3:exact 0x004317f0 Phyre::PThreadInitializationBase::PThreadInitializationBase
 0x004317a0 function Phyre_PThreadInitializationBase_GetDefaultThreadName # fh v3:bsim1.00 0x004318a0 Phyre::PThreadInitializationBase::GetDefaultThreadName
 0x004317f0 function Phyre_PCriticalSectionBase_initialize # fh v3:exact 0x004318f0 Phyre::PCriticalSectionBase::initialize
+0x00431840 function Phyre_PSerialization_PStreamWriterFile_close # thiscall: 0x00431850(this; this + 0x10), its eax; ported (ffx-pload); Ghidra dump name
 0x00431920 function Phyre_PCriticalSectionSimple_lock # fh v3:bsim1.00 0x00431a20 Phyre::PCriticalSectionSimple::lock
 0x00431a80 function Phyre_PCriticalSectionSimple_unlock # fh v3:exact 0x00431b80 Phyre::PCriticalSectionSimple::unlock
+0x00432020 function Phyre_PSerialization_PUtilitySerialization_IsInitialized # al = byte 0x00c90280 (set by initialize); ported (ffx-pload); Ghidra dump name
 0x004320e0 function Phyre_PSerialization_PUtilitySerialization_initialize # fh switch:bsim1.00 0x710007dc00 Phyre::PSerialization::PUtilitySerialization::initialize
 0x004322c0 function Phyre_PGeometry_PUtilityGeometry_initialize # fh switch:bsim1.00 0x710009a4a0 Phyre::PGeometry::PUtilityGeometry::initialize
 0x00432820 function Phyre_PRendering_PUtilityRendering_initialize # fh v3:exact 0x00432920 Phyre::PRendering::PUtilityRendering::initialize
@@ -407,11 +410,25 @@
 0x00462ee0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PMatrix4x3__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PMatrix4x3 *>::Get" (its own __FUNCTION__ in an error print)
 0x00463150 function Phyre_PClassDescriptor_PMatrix4x3_destructInstance # slot 11 of the PMatrix4x3 descriptor vtables; stdcall(p) -> al 1; ported (ffx-pload); name ours
 0x004631e0 function Phyre_PClassDescriptorForType_Phyre_PBase__getPointerFromScriptContext # fh switch:bsim1.00 0x71000a4ce0 Phyre::PClassDescriptorForType<Phyre::PBase>::getPointerFromScriptContext
+0x00465830 function Phyre_PClassDataMember_listsClass_00465830 # thiscall: class +0x18 (1 without), walks its +0x2c chain through +0x40 for +0x1c, then class +0x40 != 0; al only; 12 identical copies 0x00465830..0x00465a40 (callers 0x00464b40.. per member type); ported (ffx-pload); name ours
+0x00465860 function Phyre_PClassDataMember_listsClass_00465860 # copy of 0x00465830; ported (ffx-pload); name ours
+0x00465890 function Phyre_PClassDataMember_listsClass_00465890 # copy of 0x00465830; ported (ffx-pload); name ours
+0x004658c0 function Phyre_PClassDataMember_listsClass_004658c0 # copy of 0x00465830; ported (ffx-pload); name ours
+0x004658f0 function Phyre_PClassDataMember_listsClass_004658f0 # copy of 0x00465830; ported (ffx-pload); name ours
+0x00465920 function Phyre_PClassDataMember_listsClass_00465920 # copy of 0x00465830; ported (ffx-pload); name ours
+0x00465950 function Phyre_PClassDataMember_listsClass_00465950 # copy of 0x00465830; ported (ffx-pload); name ours
+0x00465980 function Phyre_PClassDataMember_listsClass_00465980 # copy of 0x00465830; ported (ffx-pload); name ours
+0x004659b0 function Phyre_PClassDataMember_listsClass_004659b0 # copy of 0x00465830; ported (ffx-pload); name ours
+0x004659e0 function Phyre_PClassDataMember_listsClass_004659e0 # copy of 0x00465830; ported (ffx-pload); name ours
+0x00465a10 function Phyre_PClassDataMember_listsClass_00465a10 # copy of 0x00465830; ported (ffx-pload); name ours
+0x00465a40 function Phyre_PClassDataMember_listsClass_00465a40 # copy of 0x00465830; ported (ffx-pload); name ours
+0x00465aa0 function Phyre_PBinary_loadClusterTextures_thunk # thiscall(a, b, c): tail jmp to Phyre_PBinary_loadClusterTextures (ret 0xc); called by loadCluster; ported (ffx-pload); name ours
 0x00465ab0 function Phyre_PBinary_loadClusterTextures # (via the thunk 0x00465aa0 from Phyre_PSerialization_PBinary_loadCluster): uploads a cluster's PTexture2D objects (descriptor 0x00ca37d0); the texture quality (Phyre_PRenderInterface_getTextureQuality on 0x00c94f00, = g_Settings +0x34) is the number of top mip levels dropped: with header +0xc (mip levels - 1) >= q, q backs off one level while the top's width or height shifted by q is below 4 (0x00466126..0x00466148); the dropped levels' data is read into the same place (not kept) and Phyre_PRendering_PTexture2DBase_setDimensions gets (w >> q, h >> q, format, levels - 1 - q) (0x004661f5..0x00466218); name ours, PhyreEngine code (docs/formats/scene-maps.md, Q1)
 0x00466da0 function Phyre_PBinary_reloadClusterTextures # the same mip drop as Phyre_PBinary_loadClusterTextures for one reloaded file (getTextureQuality call at 0x00466e27); its caller is Phyre_PRenderInterface_setTextureQuality, once per registered texture file when the quality changes; name ours
 0x00467930 function Phyre_PhyreInitializeMemoryAllocator # fh v3:bsim1.00 0x004679f0 Phyre::PhyreInitializeMemoryAllocator
 0x00468040 function Phyre_PError_GetErrorString  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PError::getErrorString: Result ID out of known result range'; Switch 0x71000b5900 Phyre::PError::GetErrorString (symbols from Fahrenheit's server export)
 0x00468090 function Phyre_PError_SetLastError    # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s(%d): %s: '; Switch 0x71000b5790 Phyre::PError::SetLastError (symbols from Fahrenheit's server export)
+0x00468870 function Phyre_PSerialization_PBinary_PClusterHeader_Register # cdecl: RegisterType(0x00c96b40), then addToNamespace on it (tail jmp, its eax); called by PUtilitySerialization_initialize; ported (ffx-pload); name ours
 0x00468890 function Phyre_PSerialization_PBinary_PClusterHeaderBase_Bind # fh v3:exact 0x00468950 Phyre::PSerialization::PBinary::PClusterHeaderBase::Bind
 0x00468e70 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PSerialization_PBinary_PClusterHeader__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PSerialization::PBinary::PClusterHeader &>::Get" (its own __FUNCTION__ in an error print)
 0x00468f40 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PSerialization_PBinary_PClusterHeaderBase__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PSerialization::PBinary::PClusterHeaderBase &>::Get" (its own __FUNCTION__ in an error print)
@@ -420,6 +437,7 @@
 0x004694b0 function Phyre_PClassDescriptorConcrete_PClusterHeaderBase_constructInstance # slot 10 of Phyre_PClassDescriptorConcrete_..._PClusterHeaderBase__vftable; stdcall(p): 0x00468670 ctor on p when not 0; al 1; ported (ffx-pload); name ours
 0x004694d0 function Phyre_PClassDescriptor_PClusterHeader_destructInstance # slot 11 of the PClusterHeader descriptor vtables; stdcall(p) -> al 1; ported (ffx-pload); name ours
 0x004694e0 function Phyre_PClassDescriptor_PClusterHeaderBase_destructInstance # slot 11 of the PClusterHeaderBase descriptor vtables; stdcall(p) -> al 1; ported (ffx-pload); name ours
+0x00469980 function Phyre_PSerialization_PBinary_PClusterHeader_PClusterHeader # thiscall ctor: 0x00468670 (PClusterHeaderBase ctor: 'RYHP', 0x54, ...), zeroes +0x48..+0x54; returns this; ported (ffx-pload); name ours
 0x00469a70 function Phyre_PSerialization_PBinary_PClusterHeaderNVN_Bind # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'm_indexBufferSize'; Switch 0x710011ebe0 Phyre::PSerialization::PBinary::PClusterHeaderNVN::Bind (symbols from Fahrenheit's server export)
 0x00469ba0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PSerialization_PBinary_PClusterHeaderD3D11__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PSerialization::PBinary::PClusterHeaderD3D11 &>::Get" (its own __FUNCTION__ in an error print)
 0x00469c70 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PSerialization_PBinary_PClusterHeaderD3D11__Get_00469c70 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PSerialization::PBinary::PClusterHeaderD3D11 *>::Get" (its own __FUNCTION__ in an error print)
@@ -427,6 +445,7 @@
 0x0046a340 function Phyre_PSerialization_PBinary_PInternal_PInstanceListHeader_Bind # fh v3:exact 0x0046a400 Phyre::PSerialization::PBinary::PInternal::PInstanceListHeader::Bind
 0x0046a640 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PSerialization_PBinary_PInternal_PInstanceListHeader__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PSerialization::PBinary::PInternal::PInstanceListHeader &>::Get" (its own __FUNCTION__ in an error print)
 0x0046a710 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PSerialization_PBinary_PInternal_PInstanceListHeader__Get_0046a710 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PSerialization::PBinary::PInternal::PInstanceListHeader *>::Get" (its own __FUNCTION__ in an error print)
+0x004787e0 function Phyre_PSerialization_PBinary_PInternal_PNamespaceMapping_init # thiscall(a, b, c): 0x004786a0(this; a, b, 1, c) (which builds the mapping, 0x0047c8b0); returns this; callers loadCluster, 0x00579120; ported (ffx-pload); name ours
 0x0047c190 function Phyre_PSerialization_PBinary_PInternal_PNamespaceMapping_allocateMissingClassDescriptors # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'Unable to find super class %d (of %d) when creating dynamic '; Switch 0x7100114cd0 Phyre::PSerialization::PBinary::PInternal::PNamespaceMapping::allocateMissingClassDescriptors (symbols from Fahrenheit's server export)
 0x0047c8b0 function Phyre_PSerialization_PBinary_PInternal_PNamespaceMapping_build # str-match switch: only user of 3 string(s) held once by both builds, e.g. "Unable to find type '%s' on load. Has the type been register"; Switch 0x7100113dd0 Phyre::PSerialization::PBinary::PInternal::PNamespaceMapping::build (symbols from Fahrenheit's server export)
 0x0047cc80 function Phyre_PSerialization_PBinary_PInternal_PNamespaceMapping_PClassDescriptorMapping_checkIfMatches # str-match switch: only user of 15 string(s) held once by both builds, e.g. "Class '%s' has resized from %d bytes (in file) to %d bytes ("; Switch 0x7100107890 Phyre::PSerialization::PBinary::PInternal::PNamespaceMapping::PClassDescriptorMapping::checkIfMatches (symbols from Fahrenheit's server export)
@@ -793,6 +812,7 @@
 0x00506bc0 function Phyre_PClassDescriptor_PNode_slot14 # slot 14 of the PNode descriptor vtables; stdcall(x) -> 0; ported (ffx-pload); name ours
 0x00506f40 function Phyre_PClassDescriptorForType_Phyre_PWorldMatrix__getPointerFromScriptContext # fh switch:bsim1.00 0x71000c17c0 Phyre::PClassDescriptorForType<Phyre::PWorldMatrix>::getPointerFromScriptContext
 0x005078c0 function Phyre_PTypeDispenser_GetType_Phyre_PAnimation_PAnimationKeyDataType # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PAnimationKeyDataType'; Switch 0x7100144a20 Phyre::PTypeDispenser::GetType<Phyre::PAnimation::PAnimationKeyDataType> (symbols from Fahrenheit's server export)
+0x00507b50 function Phyre_PAnimation_PAnimationKeyDataType_parse # cdecl(out, name): *out = 0x00507a30(name) (name lookup in 0x00ca9734); 0 or 0x13 when not found; pushed as a callback by GetType_PAnimationKeyDataType; ported (ffx-pload); name ours
 0x00508470 function Phyre_PAnimation_PAnimationSlotListIndex_Bind # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'm_animKeyType'; Switch 0x71001524e0 Phyre::PAnimation::PAnimationSlotListIndex::Bind (symbols from Fahrenheit's server export)
 0x005085f0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAnimation_PAnimationSlotArray__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PAnimation::PAnimationSlotArray &>::Get" (its own __FUNCTION__ in an error print)
 0x005086c0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAnimation_PAnimationSlotListIndex__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PAnimation::PAnimationSlotListIndex &>::Get" (its own __FUNCTION__ in an error print)
@@ -1057,6 +1077,7 @@
 0x005766d0 function Phyre_PSerialization_PStreamReaderFile_PStreamReaderFile # fh v3:exact 0x00576840 Phyre::PSerialization::PStreamReaderFile::PStreamReaderFile
 0x005767c0 function Phyre_PSerialization_PStreamReaderFile_dtor_PStreamReaderFile # fh v3:cg6 0x576930 Phyre::PSerialization::PStreamReaderFile::~PStreamReaderFile
 0x00576930 function Phyre_PSerialization_PStreamReaderFile_close # fh v3:cg6 0x576aa0 Phyre::PSerialization::PStreamReaderFile::close
+0x00576950 function Phyre_PSerialization_PStreamReaderFile_read # slot 5 (+0x14) of Phyre_PSerialization_PStreamReaderFile_vftable; thiscall(buffer, size): PStreamFile_read on this + 0x14 (tail jmp); ported (ffx-pload); name ours
 0x00576980 function Phyre_PSerialization_PStreamReaderFile_isOpen # fh v3:cg8 0x576af0 Phyre::PSerialization::PStreamReaderFile::isOpen
 0x00579310 function PCluster_Analyze          # prints "Analyzing cluster '%s'" and every table size; names the header words (array/pointer/pointer-array fixup sizes and counts, header class counts and fixups)
 0x0057a280 function Fixup_FindMember          # thiscall(cache; member index or -1, &object, byte offset, ...): member index < namespace member count -> member table entry, else Class_FindMemberByOffset (cached)
@@ -1073,6 +1094,9 @@
 0x0057d4f0 function Phyre_PThreadPoolWorkStealing_initialize # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'WorkerThread%d\\n'; Switch 0x71000bfa10 Phyre::PThreadPoolWorkStealing::initialize (symbols from Fahrenheit's server export)
 0x0057da20 function Phyre_PThreadPoolWorkStealing_workerThread # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'WorkerThread:%d'; Switch 0x71000c01b0 Phyre::PThreadPoolWorkStealing::workerThread (symbols from Fahrenheit's server export)
 0x0057dc40 function Phyre_PSerialization_PStreamReader_PStreamReader # fh v3:cg2 0x57ddb0 Phyre::PSerialization::PStreamReader::PStreamReader
+0x0057dc70 function Phyre_PSerialization_PStreamReader_dtor # thiscall: vtable 0x00b31430, then PStream_dtor (tail jmp); called by the PStreamReaderFile dtors; ported (ffx-pload); name ours
+0x0057dd10 function Phyre_PSerialization_PStreamReader_read # thiscall(buffer, size): vslot 5, adds the count to +0xc, returns it; called by loadAndFixHeaderClasses; ported (ffx-pload); name ours
+0x0057dd30 function Phyre_PSerialization_PStreamReader_readExact # thiscall(buffer, size): as 0x0057dd10, then 0 or 9 when short (neg/sbb/and 9); 32 callers (loadClusterTextures, ...); ported (ffx-pload); name ours
 0x00583b20 function PSamplerStateD3D11_ctor # thiscall(this): PSamplerStateBase_ctor 0x004be870, +0x20 (the device object) = 0; m4-charbuild; name ours
 0x00584240 function Phyre_PRendering_PTexture2DD3D11_PTexture2DD3D11 # fh v3:exact 0x005843d0 Phyre::PRendering::PTexture2DD3D11::PTexture2DD3D11
 0x00587300 function Phyre_PRendering_PShaderPassNVN_Bind # str-match switch: only user of 9 string(s) held once by both builds, e.g. 'm_state'; Switch 0x710002d780 Phyre::PRendering::PShaderPassNVN::Bind (symbols from Fahrenheit's server export)
@@ -1123,12 +1147,15 @@
 0x0058e170 function Renderer_SetVSync # renderer +0x131c = arg (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x0058fc20 function PTexture2DD3D11_CreateDeviceTexture_0058fc20 # thiscall(texture, data, ...): fills the D3D11_SUBRESOURCE_DATA per level from the loader's buffer (0x0058fe1f..): level k at the sum of the earlier levels' bpp*w*h/8, w and h halved per level without a floor and a 0 side taken as the top level's (both rounded up to 4 for block formats), the row pitch from the same width; then the device's create (vtable +0x14); so a non-square texture's last levels read past the levels loaded (ffx_scene::build::upload_subresources); name ours (M4 round 2 wire)
 0x00593760 function Renderer_PresentFlip      # thiscall(renderer) -> al: the render thread's flip command (from Phyre_PRendering_PRenderThread_processRenderCommands, call at 0x006159b6): null swap chain object at +0x74 gives 0, else its +0x20(obj, +0x131c != 0, 0), which calls IDXGISwapChain::Present (the harness's present hook sees caller 0x00593782); one per successful Phyre_PRendering_PRenderer_flip (measured: flips == flip commands run == presents after the start-up screens); wrapped by the harness (present_flip) to label each present with its update; name ours
+0x00593bd0 function Phyre_countAtLeastOne_00593bd0 # thiscall: +0x20 & 0x7fffffff, 1 for 0; callers 0x0058f9f0 (8 sites); ported (ffx-pload); name ours
 0x005947d0 function Phyre_PRenderInterface_getTextureQuality # thiscall(this) -> +0x1340 (0 TQ_HIGH, 1 TQ_MEDIUM, 2 TQ_LOW: top mip levels to drop); callers Phyre_PBinary_loadClusterTextures, Phyre_PBinary_reloadClusterTextures; name ours
 0x00594be0 function Phyre_PClassDescriptorConcrete_Phyre_PRendering_PSamplerState__getValueFromScriptContext # fh switch:bsim0.99 0x710004fab0 Phyre::PClassDescriptorConcrete<Phyre::PRendering::PSamplerState>::getValueFromScriptContext
 0x00594f40 function Phyre_PRendering_PRenderInterfaceNVN_getViewportSize # fh switch:bsim1.00 0x710003b4d0 Phyre::PRendering::PRenderInterfaceNVN::getViewportSize
 0x00595750 function PRendererD3D11_initWindow_00595750 # thiscall(renderer, &g_WindowDisplayInfo): GetClientRect of info.hwnd, then 0x00595800; callers PApplication onInit 0x0062a9ca; name guess (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00595800 function PRendererD3D11_createDeviceAndSwapChain_00595800 # D3D11CreateDevice probe (>= FL10.0), D3D11CreateDeviceAndSwapChain(HARDWARE, {11_0,10_1,10_0}, windowed swap chain R8G8B8A8, 1 buffer, DISCARD, ALLOW_MODE_SWITCH), MakeWindowAssociation(NO_ALT_ENTER); name guess; guess: D3D11CreateDevice; FL 10.0 with MSAA+HDAO -> MSAA 0 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam, window)
 0x00595f90 function Phyre_PRendering_PTexture2DD3D11_isBound # fh v3:bsim1.00 0x00596120 Phyre::PRendering::PTexture2DD3D11::isBound
+0x00595fa0 function Phyre_hasWord64_00595fa0 # thiscall: eax = (+0x64 != 0); callers 0x004648e0.. (15 refs); ported (ffx-pload); name ours
+0x00595fb0 function Phyre_hasWord64_00595fb0 # copy of 0x00595fa0 (15 refs, 0x00464910..); ported (ffx-pload); name ours
 0x00598a30 function Phyre_PRendering_PShaderPassNVN_releaseShaderPass # fh switch:bsim1.00 0x710002db80 Phyre::PRendering::PShaderPassNVN::releaseShaderPass
 0x0059a650 function PRenderThread_copyConstantBuffer # m4-chars: render-thread constant-buffer copy; transposes every float4x4/float4x3 location entry, stops at a 0xffffffff first word (docs/formats/scene-chars.md)
 0x0059b3d0 function Phyre_PRendering_PShaderProgramBindingNVN_setTextureParameters # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Invalid constant buffer location : %d'; Switch 0x7100032bc0 Phyre::PRendering::PShaderProgramBindingNVN::setTextureParameters (symbols from Fahrenheit's server export)
@@ -1381,6 +1408,7 @@
 0x005ef710 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PPhysics_PPhysicsWorldBase__Get_005ef710 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PPhysics::PPhysicsWorldBase *>::Get" (its own __FUNCTION__ in an error print)
 0x005ef7f0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PPhysics_PPhysicsWorldBullet__Get_005ef7f0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PPhysics::PPhysicsWorldBullet *>::Get" (its own __FUNCTION__ in an error print)
 0x005ef8d0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PPhysics_PRaycastResult__Get_005ef8d0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PPhysics::PRaycastResult *>::Get" (its own __FUNCTION__ in an error print)
+0x005f0490 function Phyre_PPlatform_PPlatform_GetPlatformId # eax 0x424c4c54 ('TLLB'); ported (ffx-pload); Ghidra dump name
 0x005f09a0 function Phyre_PPhysics_PPhysicsRigidBodyBase_PCollisionGroupBindDescriptor # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PCollisionGroup'; Switch 0x710017d440 Phyre::PPhysics::PPhysicsRigidBodyBase::PCollisionGroupBindDescriptor (symbols from Fahrenheit's server export)
 0x005f0a40 function Phyre_PPhysics_PPhysicsRigidBodyBase_PRigidBodyTypeBindDescriptor # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PRigidBodyType'; Switch 0x710017d500 Phyre::PPhysics::PPhysicsRigidBodyBase::PRigidBodyTypeBindDescriptor (symbols from Fahrenheit's server export)
 0x005f5530 function Phyre_PPhysics_PPhysicsShapeBase_allocatePlatformInstance # fh switch:bsim1.00 0x710017ed30 Phyre::PPhysics::PPhysicsShapeBase::allocatePlatformInstance
@@ -1473,6 +1501,7 @@
 0x0060ed40 function Phyre_PProfiling_PProcessorProfileTimelineCpu_initialize # fh v3:bsim1.00 0x0060ef30 Phyre::PProfiling::PProcessorProfileTimelineCpu::initialize
 0x0060ede0 function Phyre_PProfiling_PProcessorProfileTimelineCollection_removeTimeline # fh v3:bsim1.00 0x0060efa0 Phyre::PProfiling::PProcessorProfileTimelineCollection::removeTimeline
 0x0060f050 function Phyre_PSerialization_PStream_PStream # fh v3:exact 0x0060f210 Phyre::PSerialization::PStream::PStream
+0x0060f0c0 function Phyre_PSerialization_PStream_dtor # thiscall: vtable 0x00b3eccc, frees the name (+8) unless bit 0 is set; ported (ffx-pload); name ours
 0x00611290 function Phyre_PSerialization_PBinary_PInternal_POutputInstanceListVector_POutputInstanceListVector # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Initialization'; Switch 0x71001a66e0 Phyre::PSerialization::PBinary::PInternal::POutputInstanceListVector::POutputInstanceListVector (symbols from Fahrenheit's server export)
 0x0061205d function Catch_All_0061221d        # fh v3:cg2 0x61221d Catch_All@0061221d
 0x00612290 function Phyre_PSerialization_PBinary_PInternal_POutputInstanceListVector_addInstanceList # str-match switch: only user of 4 string(s) held once by both builds, e.g. "Adding instance list (objects @ 0x%p) containing class '%s' "; Switch 0x71001a6960 Phyre::PSerialization::PBinary::PInternal::POutputInstanceListVector::addInstanceList (symbols from Fahrenheit's server export)
@@ -13874,6 +13903,7 @@
 0x009f4100 function PVisibilityCheck_isBoxOccluded # occlusion test of a visible box, only with occluders present; name ours (M4 T4)
 0x009f4650 function Phyre_PInputs_PUtilityInputs_initialize # fh switch:bsim1.00 0x71007fa4d0 Phyre::PInputs::PUtilityInputs::initialize
 0x009f4730 function Phyre_PTypeDispenser_GetType_Phyre_PInputs_PInputTypeSemantic # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PInputTypeSemantic'; Switch 0x71007f9730 Phyre::PTypeDispenser::GetType<Phyre::PInputs::PInputTypeSemantic> (symbols from Fahrenheit's server export)
+0x009f4c80 function Phyre_PGame_PUtilityGame_initialize # cdecl: 0x00a33540(); eax 0; ported (ffx-pload); Ghidra dump name
 0x00a03500 function Phyre_PPostProcessing_PDeferredLightingBase_Bind # str-match switch: only user of 5 string(s) held once by both builds, e.g. 'm_instantLightIntensity'; Switch 0x7100812c70 Phyre::PPostProcessing::PDeferredLightingBase::Bind (symbols from Fahrenheit's server export)
 0x00a037c0 function Phyre_PPostProcessing_PDepthOfFieldBase_Bind # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'm_focusPlaneDistance'; Switch 0x710081bb50 Phyre::PPostProcessing::PDepthOfFieldBase::Bind (symbols from Fahrenheit's server export)
 0x00a03990 function Phyre_PPostProcessing_PGlowBase_Bind # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'm_glowAmountScale'; Switch 0x7100826fb0 Phyre::PPostProcessing::PGlowBase::Bind (symbols from Fahrenheit's server export)

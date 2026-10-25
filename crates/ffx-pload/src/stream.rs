@@ -38,6 +38,9 @@ pub const SERIALIZATION_READY: Global<u8> = Global::new(0x00c9_0280);
 /// The asset tree (`PAssetReference`), its first byte its initialized
 /// flag.
 pub const ASSET_TREE: u32 = 0x00c9_40c4;
+/// `PPlatform::GetPlatformId()`'s result (`0x005f0490`): `"TLLB"` read as
+/// a little-endian word.
+pub const PLATFORM_ID: u32 = 0x424c_4c54;
 
 /// Pure parts.
 pub mod core {

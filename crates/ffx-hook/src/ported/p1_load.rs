@@ -9,7 +9,7 @@
 //! classes are each their own original, so each gets its own line.
 
 use super::{mem, ported};
-use ffx_pload::{cluster, descriptor};
+use ffx_pload::{cluster, descriptor, stream};
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
 /// constructs one in place).
@@ -168,5 +168,165 @@ ported! {
     /// `0x00575d70(x)`: the block header of `this`'s array.
     Phyre_PArray_blockHeader_00575d70 @ 0x0057_5d70 => extern "thiscall" fn block_header(this: u32, x: u32) -> u32 {
         descriptor::bridge::block_header(&mem(), this, x)
+    }
+    /// `PClassDataMember::listsClass` copy 1.
+    Phyre_PClassDataMember_listsClass_00465830 @ 0x0046_5830 => extern "thiscall" fn lists_class_5830(this: u32) -> u8 {
+        descriptor::bridge::member_lists_class(&mem(), this)
+    }
+    /// `PClassDataMember::listsClass` copy 2.
+    Phyre_PClassDataMember_listsClass_00465860 @ 0x0046_5860 => extern "thiscall" fn lists_class_5860(this: u32) -> u8 {
+        descriptor::bridge::member_lists_class(&mem(), this)
+    }
+    /// `PClassDataMember::listsClass` copy 3.
+    Phyre_PClassDataMember_listsClass_00465890 @ 0x0046_5890 => extern "thiscall" fn lists_class_5890(this: u32) -> u8 {
+        descriptor::bridge::member_lists_class(&mem(), this)
+    }
+    /// `PClassDataMember::listsClass` copy 4.
+    Phyre_PClassDataMember_listsClass_004658c0 @ 0x0046_58c0 => extern "thiscall" fn lists_class_58c0(this: u32) -> u8 {
+        descriptor::bridge::member_lists_class(&mem(), this)
+    }
+    /// `PClassDataMember::listsClass` copy 5.
+    Phyre_PClassDataMember_listsClass_004658f0 @ 0x0046_58f0 => extern "thiscall" fn lists_class_58f0(this: u32) -> u8 {
+        descriptor::bridge::member_lists_class(&mem(), this)
+    }
+    /// `PClassDataMember::listsClass` copy 6.
+    Phyre_PClassDataMember_listsClass_00465920 @ 0x0046_5920 => extern "thiscall" fn lists_class_5920(this: u32) -> u8 {
+        descriptor::bridge::member_lists_class(&mem(), this)
+    }
+    /// `PClassDataMember::listsClass` copy 7.
+    Phyre_PClassDataMember_listsClass_00465950 @ 0x0046_5950 => extern "thiscall" fn lists_class_5950(this: u32) -> u8 {
+        descriptor::bridge::member_lists_class(&mem(), this)
+    }
+    /// `PClassDataMember::listsClass` copy 8.
+    Phyre_PClassDataMember_listsClass_00465980 @ 0x0046_5980 => extern "thiscall" fn lists_class_5980(this: u32) -> u8 {
+        descriptor::bridge::member_lists_class(&mem(), this)
+    }
+    /// `PClassDataMember::listsClass` copy 9.
+    Phyre_PClassDataMember_listsClass_004659b0 @ 0x0046_59b0 => extern "thiscall" fn lists_class_59b0(this: u32) -> u8 {
+        descriptor::bridge::member_lists_class(&mem(), this)
+    }
+    /// `PClassDataMember::listsClass` copy 10.
+    Phyre_PClassDataMember_listsClass_004659e0 @ 0x0046_59e0 => extern "thiscall" fn lists_class_59e0(this: u32) -> u8 {
+        descriptor::bridge::member_lists_class(&mem(), this)
+    }
+    /// `PClassDataMember::listsClass` copy 11.
+    Phyre_PClassDataMember_listsClass_00465a10 @ 0x0046_5a10 => extern "thiscall" fn lists_class_5a10(this: u32) -> u8 {
+        descriptor::bridge::member_lists_class(&mem(), this)
+    }
+    /// `PClassDataMember::listsClass` copy 12.
+    Phyre_PClassDataMember_listsClass_00465a40 @ 0x0046_5a40 => extern "thiscall" fn lists_class_5a40(this: u32) -> u8 {
+        descriptor::bridge::member_lists_class(&mem(), this)
+    }
+    /// Registers `PClusterHeader`'s type and adds it to its namespace.
+    Phyre_PSerialization_PBinary_PClusterHeader_Register @ 0x0046_8870 => extern "C" fn register_cluster_header() -> u32 {
+        descriptor::bridge::register_cluster_header(&mut mem())
+    }
+    /// `PAnimationKeyDataType`'s parser `(out, name)`.
+    Phyre_PAnimation_PAnimationKeyDataType_parse @ 0x0050_7b50 => extern "C" fn parse_key_data_type(out: u32, name: u32) -> u32 {
+        descriptor::bridge::parse_key_data_type(&mut mem(), out, name)
+    }
+
+    // ---- streams, start-up ----
+    /// `PNamespacePacked::needsEndianSwap()`.
+    Phyre_PSerialization_PBinary_PInternal_PNamespacePacked_needsEndianSwap @ 0x0042_b830 => extern "thiscall" fn needs_endian_swap(this: u32) -> u32 {
+        stream::bridge::needs_endian_swap(&mem(), this)
+    }
+    /// `PStreamReaderFile::close()`.
+    Phyre_PSerialization_PStreamReaderFile_close @ 0x0057_6930 => extern "thiscall" fn reader_close(this: u32) -> u32 {
+        stream::bridge::reader_close(&mut mem(), this)
+    }
+    /// `PStreamReaderFile::isOpen()`.
+    Phyre_PSerialization_PStreamReaderFile_isOpen @ 0x0057_6980 => extern "thiscall" fn reader_is_open(this: u32) -> u32 {
+        stream::bridge::reader_is_open(&mut mem(), this)
+    }
+    /// `PStreamReaderFile::read(buffer, size)`.
+    Phyre_PSerialization_PStreamReaderFile_read @ 0x0057_6950 => extern "thiscall" fn reader_file_read(this: u32, buffer: u32, size: u32) -> u32 {
+        stream::bridge::reader_read(&mut mem(), this, buffer, size)
+    }
+    /// `PStreamWriterFile::close()`.
+    Phyre_PSerialization_PStreamWriterFile_close @ 0x0043_1840 => extern "thiscall" fn writer_close(this: u32) -> u32 {
+        stream::bridge::writer_close(&mut mem(), this)
+    }
+    /// `PStream::~PStream()`.
+    Phyre_PSerialization_PStream_dtor @ 0x0060_f0c0 => extern "thiscall" fn stream_dtor(this: u32) {
+        stream::bridge::stream_dtor(&mut mem(), this);
+    }
+    /// `PStreamReader::~PStreamReader()`.
+    Phyre_PSerialization_PStreamReader_dtor @ 0x0057_dc70 => extern "thiscall" fn reader_dtor(this: u32) {
+        stream::bridge::reader_dtor(&mut mem(), this);
+    }
+    /// `PStreamReader::PStreamReader(name)`.
+    Phyre_PSerialization_PStreamReader_PStreamReader @ 0x0057_dc40 => extern "thiscall" fn reader_ctor(this: u32, name: u32) -> u32 {
+        stream::bridge::reader_ctor(&mut mem(), this, name)
+    }
+    /// `PStreamReader::read(buffer, size)`.
+    Phyre_PSerialization_PStreamReader_read @ 0x0057_dd10 => extern "thiscall" fn reader_read(this: u32, buffer: u32, size: u32) -> u32 {
+        stream::bridge::reader_read_counted(&mut mem(), this, buffer, size)
+    }
+    /// `PStreamReader::readExact(buffer, size)`.
+    Phyre_PSerialization_PStreamReader_readExact @ 0x0057_dd30 => extern "thiscall" fn reader_read_exact(this: u32, buffer: u32, size: u32) -> u32 {
+        stream::bridge::reader_read_exact(&mut mem(), this, buffer, size)
+    }
+    /// `PStreamFile::SetStreamPrefix(prefix)`.
+    Phyre_PSerialization_PStreamFile_SetStreamPrefix @ 0x0060_7d40 => extern "C" fn set_stream_prefix(prefix: u32) -> u32 {
+        stream::bridge::set_stream_prefix(&mut mem(), prefix)
+    }
+    /// `PUtilitySerialization::IsInitialized()`.
+    Phyre_PSerialization_PUtilitySerialization_IsInitialized @ 0x0043_2020 => extern "C" fn serialization_ready() -> u8 {
+        stream::bridge::serialization_ready(&mem())
+    }
+    /// `PUtilitySerialization::initialize()`.
+    Phyre_PSerialization_PUtilitySerialization_initialize @ 0x0043_20e0 => extern "C" fn serialization_init() -> u32 {
+        stream::bridge::serialization_init(&mut mem())
+    }
+    /// `PAssetReference::InitializeAssetTree()`.
+    Phyre_PAssetReference_InitializeAssetTree @ 0x0045_d600 => extern "C" fn init_asset_tree() -> u32 {
+        stream::bridge::init_asset_tree(&mut mem())
+    }
+    /// `PUtilityGame::initialize()`.
+    Phyre_PGame_PUtilityGame_initialize @ 0x009f_4c80 => extern "C" fn game_init() -> u32 {
+        stream::bridge::game_init(&mut mem())
+    }
+    /// `PPlatform::GetPlatformId()`: `'TLLB'`.
+    Phyre_PPlatform_PPlatform_GetPlatformId @ 0x005f_0490 => extern "C" fn platform_id() -> u32 {
+        stream::PLATFORM_ID
+    }
+
+    // ---- clusters ----
+    /// `PNamespace::PNamespace()`.
+    Phyre_PNamespace_PNamespace @ 0x0043_dd80 => extern "thiscall" fn namespace_ctor(this: u32) -> u32 {
+        cluster::bridge::namespace_ctor(&mut mem(), this)
+    }
+    /// `0x00576630`: `PClusterBase::PClusterBase()`, returns `this`.
+    Phyre_PCluster_operator_new @ 0x0057_6630 => extern "thiscall" fn cluster_base_init(this: u32) -> u32 {
+        cluster::bridge::cluster_base_init(&mut mem(), this)
+    }
+    /// `PCluster::PCluster()`.
+    Phyre_PCluster_PCluster @ 0x0043_f800 => extern "thiscall" fn cluster_ctor(this: u32) -> u32 {
+        cluster::bridge::cluster_ctor(&mut mem(), this)
+    }
+    /// `PClusterHeader::PClusterHeader()`.
+    Phyre_PSerialization_PBinary_PClusterHeader_PClusterHeader @ 0x0046_9980 => extern "thiscall" fn header_ctor(this: u32) -> u32 {
+        cluster::bridge::header_ctor(&mut mem(), this)
+    }
+    /// `PNamespaceMapping` set-up `(a, b, c)`.
+    Phyre_PSerialization_PBinary_PInternal_PNamespaceMapping_init @ 0x0047_87e0 => extern "thiscall" fn mapping_init(this: u32, a: u32, b: u32, c: u32) -> u32 {
+        cluster::bridge::mapping_init(&mut mem(), this, a, b, c)
+    }
+    /// `0x00465aa0(a, b, c)`: `loadClusterTextures`.
+    Phyre_PBinary_loadClusterTextures_thunk @ 0x0046_5aa0 => extern "thiscall" fn load_cluster_textures(this: u32, a: u32, b: u32, c: u32) -> u32 {
+        cluster::bridge::load_cluster_textures(&mut mem(), this, a, b, c)
+    }
+    /// `0x00593bd0`: `+0x20`'s low 31 bits, at least 1.
+    Phyre_countAtLeastOne_00593bd0 @ 0x0059_3bd0 => extern "thiscall" fn count_at_least_one(this: u32) -> u32 {
+        cluster::bridge::count_at_least_one(&mem(), this)
+    }
+    /// `0x00595fa0`: whether `+0x64` is set.
+    Phyre_hasWord64_00595fa0 @ 0x0059_5fa0 => extern "thiscall" fn has_word_64_a(this: u32) -> u32 {
+        cluster::bridge::has_word_64(&mem(), this)
+    }
+    /// `0x00595fb0`: whether `+0x64` is set.
+    Phyre_hasWord64_00595fb0 @ 0x0059_5fb0 => extern "thiscall" fn has_word_64_b(this: u32) -> u32 {
+        cluster::bridge::has_word_64(&mem(), this)
     }
 }
