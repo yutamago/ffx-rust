@@ -1292,6 +1292,19 @@ static FLIP_LABELS: [AtomicU32; 64] = [const { AtomicU32::new(NO_LABEL) }; 64];
 static PRESENT_LABEL: AtomicU32 = AtomicU32::new(NO_LABEL);
 /// Presents so far, for `stats`.
 static PRESENTS: AtomicU32 = AtomicU32::new(0);
+
+/// The updates run so far: on the main thread after an update, the label
+/// its flip gets (`gfx::capture` tags scene inputs with it).
+pub fn update_label() -> u32 {
+    FRAME.load(Ordering::Acquire)
+}
+
+/// The label of the update the render thread's current flip shows (render
+/// thread, inside `Present`), when known.
+pub fn present_label() -> Option<u32> {
+    let l = PRESENT_LABEL.load(Ordering::Acquire);
+    (l != NO_LABEL).then_some(l)
+}
 /// A present without a known label was seen after the main loop started.
 static UNLABELLED: AtomicBool = AtomicBool::new(false);
 /// The virtual vsync handler runs on one thread at a time.

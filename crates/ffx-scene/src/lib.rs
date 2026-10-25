@@ -22,6 +22,7 @@ pub mod cull;
 pub mod effect;
 pub mod emit;
 pub mod frame;
+pub mod inputs;
 pub mod key;
 pub mod map;
 pub mod phyre;

@@ -278,6 +278,63 @@ Results on `fw1-a` (bindings, distinct objects):
   "skinned" (not in the archive), and his 8 layouts and 13 texture
   bindings as unexplained.
 
+## Scene inputs
+
+Round 2 (R2a). While a capture runs, `ffx-hook` reads what the builder
+needs at every map `renderWorld` and writes it into `capture.ffxgfx` as
+`SceneInputs` messages (tag 15, `ffx_gfx::scene_inputs`). Each frame's
+messages come right before its `Frame`. `ffx_scene::inputs` reads them
+and derives the matrices.
+
+- **Where.** The hook wraps
+  `Phyre_PRendering_PRenderer_renderWorldCulledSorted` (`0x009f3c30`,
+  thiscall(renderer, world, camera, context, dir), the body of
+  `PApplication_renderWorld`) for world scene `+0xac`. Another agent may
+  hook `renderWorld` itself, so this hook sits one call below it. With no
+  capture running it costs one atomic load per call.
+- **When.** `renderWorld` runs on the **main thread**, right after the
+  update, and records PhyreEngine's commands. The render thread makes the
+  Direct3D calls a frame later. Each record is therefore tagged with the
+  harness's update label (`update`, the label the frame's flip gets). At
+  each captured `Present` the capture gives the records of the update that
+  frame shows (`harness::present_label`) its frame number, and leaves out
+  records no captured frame shows. Four calls per update: `OpaqueNoMSAA`
+  (dir 1), `TransparentNoMSAA` (-1), `postOpaque` (1) and
+  `postTransparent` (-1). All four see the same camera and Worlds.
+- **What** (no pointers: objects become indices):
+  - pass, dir, world offset;
+  - the camera's first `0x180` bytes. This pointer is 4 bytes past scene
+    `+0xdc`'s: view 3x4 `+0`, projection `+0x30`, culling
+    view-projection `+0x70`, near `+0xb4`, far `+0xb8`, aspect `+0x14c`,
+    FOV `+0x150`;
+  - `g_PhyreApplication +0x40..+0x180` (ambient, fog, background,
+    `ViewProjection2`, `GlobalTime`) and the screen size `0x00c95100`;
+  - the group mask (`+0xfb14`), shadow solution (`+0xf9cc`), alpha-fast
+    flag (`+0xd4`) and 2D layers (`+0x1140`) of the scene;
+  - `g_DepthBias` entries (keys resolved to bounds);
+  - every `PMeshInstanceBounds` in the visibility check's walk order: the
+    world's class table, then each instance list's live objects, free
+    slots passed (`PWorldCursor_*`, `ffx.sym`). Each carries `m_min`,
+    `m_size`, the live `m_render_order`, `*m_worldMatrix`, and the
+    instance as (cluster, slot in the cluster's `PMeshInstance` list,
+    which is the file's instance order);
+  - each instance's world 3x4, segments (material index, joint, hidden
+    byte `+0x14`, id, `m_segmentRenderOrder`) and material set. Also
+    FFX's `m_groupID` `+0x48`, `m_DObjKind` `+0x4c`, `m_dObjFlag` `+0x54`
+    and object id `+0x58`;
+  - each material's remapping (`+8`, `+0xc`) and its live
+    `PParameterBuffer` (size word included, so a parameter's offset indexes
+    it);
+  - the clusters: position in the world's list, the model's symbol (scene
+    `+0xd8`, `cdsp00`), and their instance lists.
+- **Check.** `ffx-scene`'s `tests/inputs.rs` (`FFX_SCENE_INPUTS`, with
+  `FFX_GAME_DIR`) ties every map draw to its instance through the census.
+  On fw-101 and fw-459 of two original runs (`~/ffx-work/m4/captures/
+  r2a-{a,b}`) it reproduces `scene.View`, `scene.Projection`,
+  `scene.ViewProjection` (536/536), `World`, `WorldView` and
+  `WorldViewProjection` (446/446) bit for bit. The two runs' records
+  differ only in `GlobalTime` (`+0x120`, by about 1e-6).
+
 ## Round 2: open questions
 
 1. Texture quality: which function drops the levels, and how many
@@ -289,11 +346,113 @@ Results on `fw1-a` (bindings, distinct objects):
 3. `FBXASC056_0Shape` (cdsp00) passes the box test with the common World
    and does not draw: find what hides it (`m_meshInstance` 0, a 2D layer,
    group ids) and record the game state that does it.
+
+   **Answer (R2a): nothing hides it; it is outside the frustum.** Its World
+   is not the common one. On fw-101 and fw-459 (two runs each,
+   `ffx-scene/tests/inputs.rs`), slots 27 `FBXASC056_0Shape` and 28
+   `FBXASC057_0Shape` hold the same mesh, mirrored. Both are turned about
+   y (3x4 words 3 and 4: -2.07, -9.78, so cosine -0.21) and moved to
+   x = +123.7 and -123.7 (words 8-10). With its own World, slot 27 fails
+   `BoundingBox_IsVisible_00663a30` on both frames. Nothing else holds it
+   back: its bounds' `m_meshInstance` is set, no segment is hidden, and
+   its `m_groupID` 0xc is inside the group mask (`PhyreScene +0xfb14` =
+   0xfffffff7; the mask clears only group 3, which no cdsp00 instance
+   uses).
+
+   Round 1 got this wrong in two ways. It tested every undrawn instance
+   with the common World. And the census ties a draw to an instance through
+   its vertex data. Two separate meshes with equal contents look like one,
+   so draw 99, which is `FBXASC057_0Shape` (World x = -123.7), was
+   credited to `FBXASC056_0Shape`, the first of the two. With the
+   snapshot's Worlds every map instance that drew passes the box test, and
+   every map instance that did not draw fails it (10 on fw-101, 9 on
+   fw-459). The builder must cull with the live World (scene inputs,
+   below), not the file's or the common one.
 4. World matrices: map instances get 10 x unit and some a rotation at run
    time; trace who writes them for every map instance (the object tree at
    scene `+0x1198`).
+
+   **Answer (R2a).** Each map instance has one world matrix: the 3x4 at
+   `*(PMeshInstance +4)`. Its bounds' `m_worldMatrix` (`+0xc`) points at
+   the same matrix (`world_shared` in the snapshot: true for all 29). Two
+   writers fill it:
+   - **At load**, `PhyreScene_doOnFieldMapAssetLoaded` (`0x0065af60`),
+     for the model cluster (`AssetListReader_isModel`), walks every
+     `PMeshInstance`. It takes the file's node world
+     (`PMatrix4_FromMatrix3x4` `0x00451080`) times 10 x unit for a 3D map
+     (`(-2.5, -2.5, 1)` scale and a `(-256, -224)` shift for 2D maps),
+     converts it back to a 3x4 (`PMatrix4_toWorldMatrix3x4`), copies it
+     into `*(inst +4)` and points `*(inst +0x1c) +0xc` at it. The file's
+     node worlds are identity on cdsp00, which gives the common
+     `[0, 10, 0, 10, 0, 0, 10, 0, 0, 0, 0, 0]`.
+   - **Every frame, for the map's objects (DObjs)**, the main thread runs
+     `yiDisp` (`0x00908480`), then `yiRender_draw` (`0x0090bf10`, ported
+     in `ffx_field::yi`), then `graphicObjectSetTranslation` /
+     `graphicObjectSetRotation` (`0x006426c0` / `0x006426a0`). These reach
+     `PhyreScene_setObjectTranslation` (`0x0066e3e0`) and
+     `PhyreScene_setObjectRotation` (`0x0066db00`). Both find the object
+     id in the object tree (scene `+0x1198`) and rewrite each listed
+     mesh's 3x4 (`docs/formats/render.md`, "Object translation/rotation").
+     Event scripts (`yiSetRotTransDObj` `0x0090a750`,
+     `yiSetRotTransGroup` `0x0090a830`, the `yiAdd*` pair) call the same
+     two.
+
+   A write watch confirmed it (`watch-worlds` in `FFX_GFX`,
+   `ffx-hook` `world::watch`: x86 debug registers on four matrix words of
+   every thread, armed at a capture's first map `renderWorld`; run
+   `r2a-w` of `draw-field.txt`). Over the two updates after arming:
+
+   | Instance | Writes per update | Writer |
+   |---|---|---|
+   | slots 0 and 1 (DObj kind 1, `FBXASC0491/0492`, swaying) | 1 | `setObjectRotation` (store before `0x0066e369`) |
+   | slot 22 (the crane, object id 3) | 2 | `setObjectRotation` (`0x0066e357`) and `setObjectTranslation` (`0x0066e47c`) |
+   | slot 2 (a common one) | 0 | none |
+   | Besaid slots 7-9 | 2 | both (`0x0066e34e`, `0x0066e476`) |
+
+   Every write came from the main thread. So the Worlds are game state that
+   moves every frame for the DObjs and is fixed at load for everything
+   else. The builder takes them from the snapshot. `World` = the 3x4
+   through `PMatrix4_FromMatrix3x4`, transposed into the shader's order
+   (`ffx_scene::inputs::world`). This is bit-exact on all 446 map draws of
+   the four captures.
 5. The scene-wide buffer's re-upload (only when its key changes) and the
    per-draw constant buffer versions: the D3D call stream depends on them.
+
+   **Answer (R2a).** The scene-wide values are not a Direct3D buffer of
+   their own:
+   - `PSceneWideParameters_getBuffer` (`0x004fdec0`) keeps them in a CPU
+     parameter capture buffer, in a ring of slots (count at `+0x10`).
+     `allocateAndFillParameterBuffers` (`0x005b5a50`) calls it for every
+     draw.
+   - It first builds a `PSceneWideParametersKey` (`0x004fe940`): the
+     camera's view (`+0..+0x2c`), its projection (`+0x30`, depth taken to
+     0..1 with near `+0xb4` and far `+0xb8`), the camera's `+0xb0`, and
+     the viewport. It compares the key with the cached one that
+     `+0x34 & 1` picks. When they are equal it reuses the slot. When they
+     differ it moves to the next slot, waits for that slot's refcount to
+     reach 0 (printing "Waiting for Scene Wide parameter buffer to become
+     free" after 10⁶ sleeps), and refills it. So on the map passes it is
+     refilled once per camera change, and the copies stay the same within
+     a pass.
+   - `allocateAndFillParameterBuffers` copies those values into each
+     draw's own `$Globals`, together with the material's
+     `PParameterBuffer` and the per-node values.
+   - The draw command (`0x005ba380`) refcounts the capture buffers into
+     0x48-byte entries of the render ring
+     (`Phyre_PRendering_PRenderRingBufferSegmented_allocate`).
+
+   All of this runs on the **main thread**: `renderWorld` records
+   PhyreEngine commands one update ahead of the render thread, which makes
+   the Direct3D calls (see "Scene inputs" below). On the Direct3D side every
+   draw writes the `$Globals` buffer of each stage it binds (vs slot 0, ps
+   slot 0) exactly once. In `fw1-a`, 197 draws over 78 buffers, each
+   buffer's version rises by one per draw that binds it: no version is
+   reused and none is skipped (`~/ffx-work/m4/r2a/cbver.py` over
+   `frame.txt`). Each shader program has its own buffer, so versions are
+   per program and stage, and the starting values carry over from earlier
+   frames. A builder that issues one constant-buffer write per draw and
+   stage reproduces the call stream. Version numbers differ by object
+   lifetime, and drawdiff compares contents, not versions.
 6. `m_render_order` across maps: values seen are 0-12; other maps may use
    the /1e8 class or the thousands field, and lists over 400 bounds go
    through the merge comparator, which ignores the `% 1000` fields.

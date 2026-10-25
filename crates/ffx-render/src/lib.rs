@@ -254,7 +254,7 @@ impl Renderer {
             Msg::Frame(frame) => self.draw_frame(&frame, filter)?,
             // Overlay input is the live loop's, glowing effects the enhanced
             // renderer's (lights).
-            Msg::Input { .. } | Msg::Effects(_) | Msg::Minimap(_) => {}
+            Msg::Input { .. } | Msg::Effects(_) | Msg::Minimap(_) | Msg::SceneInputs(_) => {}
             Msg::World { scene, camera } => self.world = World { scene, camera },
         }
         Ok(())
