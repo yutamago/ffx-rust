@@ -1809,6 +1809,7 @@
 0x00637730 function PhyreSceneCursor_Begin_00637730 # thiscall(cursor): while PhyreCursor_IsValid_copy_00637f80 fails, the node (+0x18) follows itself (0 at the end node +0x14); then PhyreSceneCursor_SetNode on it, or the first five words cleared; the layer functions 0x00658350/0x00658570/0x006587d0 begin their cursors with it; glue in classes.tsv; name ours
 0x006377a0 function PhyreSceneCursor_Next_006377a0 # thiscall(cursor): PhyreSceneCursor_Begin_00637730 stepping first (the next valid node); name ours
 0x00637860 function graphicAsyncTaskCallback  # fh v3:exact 0x00637a10
+0x00637880 function graphicCharacterRegistHelper_00637880 # cdecl(out, obj, x, cb): when obj+4 is set, *out = 0x0063c540(obj, x), then cb(x) if cb; eax = obj / 0 / cb's; graphicCharacterRegistToInstantiate calls it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x00637980 function graphicCharacterUnloadTask # fh v3:exact 0x00637b30
 0x00637d90 function FlashSpriteRenderer_Initialize # fh switch:bsim1.00 0x71000028f0 FlashSpriteRenderer::Initialize
 0x00637f50 function inverseMatrix             # fh switch:bsim1.00 0x71001d16f0
@@ -2123,6 +2124,8 @@
 0x006437e0 function SetGlobal00cec1a0_006437e0   # auto-port shape (store argument to global, cdecl): u32[&0x00cec1a0] = a0; return a0; callers: no direct caller; name ours
 0x006437f0 function graphicSetPauseVideoAtEndFrame # fh switch:bsim1.00 0x71001dd460
 0x00643810 function graphicSetFlipVsnc_00643810 # fh switch:bsim1.00 0x71001cc430
+0x00643830 function graphicBlurEffectSetPositiveParams_00643830 # cdecl(4 floats): BlurEffectEx_SetPositiveParams on [BlurEffectEx_GetInstance()] (returns the instance); name ours; ported M4 h3 (ffx_prender::glue3)
+0x00643860 function graphicBlurEffectSetFloats74_00643860 # cdecl(4 floats): BlurEffect_SetFloats74 on [BlurEffectEx_GetInstance()] (returns the instance); name ours; ported M4 h3 (ffx_prender::glue3)
 0x00643890 function graphicBlurEffectSetFloats6c_00643890 # cdecl(f32 a, f32 b): BlurEffect_SetFloats6c(a, b) on [BlurEffectEx_GetInstance()] (returns the instance); name ours; ported M4 h3 (ffx_prender::glue2)
 0x006438e0 function graphicSetScreenFadeAlphaMode # fh v3:exact 0x00643a90
 0x00643900 function graphicSetScreenFadeColor # fh v3:exact 0x00643ab0
@@ -2333,6 +2336,7 @@
 0x00654960 function PhyreScene_UpdateTextureVideo # fh v3:exact+call.cs 0x00654b10 thiscall PhyreScene::UpdateTextureVideo
 0x00654b20 function PhyreScene_UseVFXOptimizedTrans # fh v3:bsim1.00 0x00654cd0 PhyreScene::UseVFXOptimizedTrans
 0x00654cc0 function PhyreScene_VFXSyncPath    # fh v3:exact 0x00654e70 PhyreScene::VFXSyncPath
+0x00654ed0 function std_Tree_BuyHeadNode_00654ed0 # cdecl() -> operator_new(0x2c) node: parent/left/right = itself, word +0xc = 0x101 (colour, isnil); jmp [std::_Xbad_alloc] on failure; PhyreScene_PhyreScene and 5 map constructors call it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x006555d3 function Catch_All_00655783        # fh v3:cg2 0x655783 Catch_All@00655783
 0x00655afc function Catch_All_00655cac        # fh v3:cg2 0x655cac Catch_All@00655cac
 0x00656350 function VFXDrawEventArray_Push # thiscall(array, event16): appends a 16-byte record (count +0, capacity +4, data +8; grows by n/8 + 2 through 0x00668280); PhyreScene_addVFXDrawEvent's array at scene +0xfb54; name ours
@@ -2411,6 +2415,7 @@
 0x0065f450 function PhyreScene_initScene         # str-match switch: only user of 2 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/flash/pausemenu.swf'; Switch 0x71001f2610 PhyreScene::initScene (symbols from Fahrenheit's server export)
 0x0065ff30 function PhyreScene_insertRenderDataToDeletePool # layout+callees: sorts between PhyreScene_initScene and PhyreScene_is3DScene, and its named callees match the Switch 0x7100209110 PhyreScene_insertRenderDataToDeletePool's (similarity 1.00: user_free, user_malloc); symbols from Fahrenheit's server export
 0x006601d0 function PhyreScene_is3DScene      # fh v3:bsim1.00 0x00660350 PhyreScene::is3DScene
+0x006601e0 function PhyreScene_isMotionBlurOn_006601e0 # thiscall(scene) -> al: 1 if byte +1 > 4; else [+0x10cc] byte +0x123bb and MotionBlur byte +0x58; PhyreScene_render/processVFXDrawEvent call it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x00660240 function PhyreCursor_IsValid_00660240 # thiscall(this) -> al: valid without a list (+0x18), else when the list's nodes (+0x2c, linked at +0x40) still hold +0x1c and the list's +0x40 is set; one of six identical template copies (0x00660270, 0x006602a0, 0x006602d0, 0x00660300, 0x006b28f0); name ours
 0x00660270 function PhyreCursor_IsValid_00660270 # as PhyreCursor_IsValid_00660240; name ours
 0x006602a0 function PhyreCursor_IsValid_006602a0 # as PhyreCursor_IsValid_00660240; name ours
@@ -2444,6 +2449,7 @@
 0x00665660 function PhyreScene_loadPersistentVFXTexture # fh v3:exact 0x006657f0 PhyreScene::loadPersistentVFXTexture
 0x00665770 function PhyreScene_loadVFXTexture # fh v3:exact 0x00665900 PhyreScene::loadVFXTexture
 0x00665f60 function PhyreScene_loadVFXTextureAsync # layout+callees: sorts between PhyreScene_loadVFXTexture and PhyreScene_onCharacterAssetLoaded, and its named callees match the Switch 0x7100202a90 PhyreScene_loadVFXTextureAsync's (similarity 0.67: AsyncLoadManager_registAsyncLoadTask, AsyncLoadManager_sGetInstance); symbols from Fahrenheit's server export
+0x006662f0 function PhyreScene_check1195_006662f0 # thiscall(scene) -> al: byte +0x1195 == 0 ? Check_01326b28() == 0 : byte +0x1196 != 0; PhyreScene_render calls it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x006663d0 function PhyreScene_onCharacterAssetLoaded # fh v3:exact 0x00666560 PhyreScene::onCharacterAssetLoaded
 0x00666610 function PhyreScene_onCutbufferShaderLoaded # fh switch:bsim1.00 0x7100200dd0 PhyreScene::onCutbufferShaderLoaded
 0x00666630 function PhyreScene_onFieldMapAssetLoaded # fh v3:exact 0x006667c0 PhyreScene::onFieldMapAssetLoaded
@@ -2808,6 +2814,7 @@
 0x00692e90 function PostProcessManager_copyDepthBuffer # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100213280 PostProcessManager::copyDepthBuffer, 4 votes, round 1
 0x00693530 function PostProcessManager_degradeResolution # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2008 PostProcessManager::degradeResolution, 16 votes, round 1
 0x006938d0 function PostProcessTweakUtil_initWithSceneContext # str-match switch: only user of 21 string(s) held once by both builds, e.g. 'Fog far'; Switch 0x7100217870 PostProcessTweakUtil::initWithSceneContext (symbols from Fahrenheit's server export)
+0x00693be0 function SetFields12400_00693be0 # thiscall(this, a, b, c, d), ret 0x10: this[0] = c, +0x12400 = a, +0x12404 = b, then 0x00693d20(this); FUN_006656e0 calls it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x00693d70 function PostProcessManager_onAllShaderBinFilesLoaded # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x710020e4e0 PostProcessManager::onAllShaderBinFilesLoaded, 4 votes, round 1
 0x00694c60 function PostProcessManager_prepareGlowMap # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'FullGlowThreshold'; Switch 0x71002152e0 PostProcessManager::prepareGlowMap (symbols from Fahrenheit's server export)
 0x00694f10 function PostProcessManager_render    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'ColorCorrectionBuffer'; Switch 0x7100214b00 PostProcessManager::render (symbols from Fahrenheit's server export)
@@ -2822,6 +2829,7 @@
 0x00697490 function PostProcessManager_renderScreenFade # fh v3:exact 0x006975d0 PostProcessManager::renderScreenFade
 0x00697670 function PostProcessManager_renderUSM # str-match switch: only user of 7 string(s) held once by both builds, e.g. 'USMSamplerState'; Switch 0x7100213770 PostProcessManager::renderUSM (symbols from Fahrenheit's server export)
 0x00697e10 function PostProcessManager_setMSAA     # structure: thiscall(pp, samples): 0/2/4/8/16 else 0x13; +0x122b4 = samples != 0 (PostProcessManager_renderHDAOPass resolves depth then), unbinds and sets byte +5 (sample count) of the colour, depth and normal surfaces +0x8c/+0x90/+0x94; PhyreScene_ApplySettings passes g_Settings +0x38 (MSAA); name ours (docs/formats/postfx.md)
+0x00698060 function PhyreScene_resizeTarget_00698060 # thiscall(this, a, b), ret 8: +0x188/+0x18c = a, b; with byte +0x180 tail-calls TextUtil_resize(this+8, a, b), else eax = a; PhyreScene_resize calls it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x00698110 function PostProcessManager_resolveDepth # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'DepthBuffer2'; Switch 0x71002168d0 PostProcessManager::resolveDepth (symbols from Fahrenheit's server export)
 0x006983e0 function PostProcessManager_SetByte123b1 # thiscall(this, v), ret 4: byte +0x123b1 = v; name ours
 0x006983f0 function PostProcessManager_SetByte123b0 # thiscall(this, v), ret 4: byte +0x123b0 = v; name ours
@@ -2838,6 +2846,7 @@
 0x00698960 function ShaderParam_CopyToBuffer_00698960 # the same bytes as ShaderParam_CopyToBuffer_00638720 (a second copy); callers 0x00695ba0, 0x006b33c0, 0x006b3660; own name
 0x006989c0 function PostProcessManager_setAllSwitches # thiscall(this, v), ret 4: bytes +0x123b0..+0x123b3 = v; name ours
 0x00698f70 function PostProcessManager_resetCrossFade # thiscall(this): unless +0x123a0, while g_PostProcessManager +0x123a8 == 1: +0x1239c = 0, float +0x12398 = 0; name ours
+0x00699300 function ClusterManager_newEntry_00699300 # thiscall(mgr, key), ret 4: e = 0x0069a1e0(mgr); word e+0xc = 0; e+0x10/+0x14 = key[0], key[1] (unless e+0x10 is 0); returns e; ClusterManager_loadPCluster calls it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x006996ba function Catch_All_006997fa        # fh v3:cg2 0x6997fa Catch_All@006997fa
 0x00699ee0 function std_Tree_const_iterator_inc_00699ee0 # same bytes as std_Tree_const_iterator_inc_006352b0
 0x0069a130 function FreeOwnedArray_0069a130 # cdecl(items, n): non-null items: each 8-byte entry +4 with low bit clear PhyreFree(d), then PhyreFree(items); name ours
@@ -3035,6 +3044,7 @@
 0x006bc130 function CharacterAnimationTweakUtil_updateAnimation # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100294b20 CharacterAnimationTweakUtil::updateAnimation, 2 votes, round 1
 0x006bc210 function ViewerManager_DrawTexAnimInfo_006bc210 # thiscall(this = g_ViewerManager, dt), ret 4: when this+0x30 contains "grid00" (strstr) and [0x00cccad4]+0x18 is set, that object's virtual 1(dt), its group id and ID strings (0x006b2050, 0x006b2060: PString text, sprintf_s "%s") and float pairs (0x006b1ce0, 0x006b1cc0) with 0x006b1f90's eax go to 0x00829c00 (forwards to the renderer, 10 words); only caller TextureAnimation_Animate_00672000, only under g_FFXIsDebug with debug menu type 5: debug (classify REVIEWED); name ours
 0x006bc960 function ReturnGlobalSx8_006bc960     # auto-port shape (return global sx8, cdecl): t0 = u8[&0x00cccab8]; return sx8(t0); callers: ; name ours
+0x006bcc40 function graphicCreatePauseGame_006bcc40 # cdecl(): when g_GraphicPauseGame is 0, operator_new(0x12c) + ctor 0x006bca90 into it (0 when new fails); graphicInitialize calls it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x006bcc70 function graphicPauseGameDestroy # (): virtual destructor (1) of g_GraphicPauseGame, then clears it; name ours
 0x006bcc90 function graphicCheckPauseGame     # () -> g_GraphicPauseGame; name Fahrenheit's (Switch BSim)
 0x006bd290 function PhyreScene_ReturnConst0_006bd290 # auto-port shape (return constant, stdcall): return 0x0; callers: PhyreScene_render; name ours

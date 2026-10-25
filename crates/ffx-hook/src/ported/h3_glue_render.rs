@@ -8,6 +8,7 @@
 use super::{mem, ported};
 use ffx_prender::glue::bridge as g;
 use ffx_prender::glue2::bridge as g2;
+use ffx_prender::glue3::bridge as g3;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -474,5 +475,67 @@ ported! {
     /// `FFXApplication_getModeOr2_0042f750(this)`.
     FFXApplication_getModeOr2_0042f750 @ 0x0042_f750 => extern "thiscall" fn application_mode_or_2(this: u32) -> u32 {
         g2::application_mode_or_2(&mem(), this)
+    }
+
+    // ---- batch 3 (ffx_prender::glue3) ----
+    /// `graphicSetMaterialColourScale2(4 floats)` (bits).
+    graphicSetMaterialColourScale2 @ 0x0064_3670 => extern "C" fn set_material_colour_scale2(a: u32, b: u32, c: u32, d: u32) {
+        g3::set_material_colour_scale2(&mut mem(), [a, b, c, d]);
+    }
+    /// `graphicBlurEffectSetPositiveParams_00643830(4 floats)` (bits).
+    graphicBlurEffectSetPositiveParams_00643830 @ 0x0064_3830 => extern "C" fn blur_set_positive_params(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        g3::blur_set_positive_params(&mut mem(), [a, b, c, d])
+    }
+    /// `graphicBlurEffectSetFloats74_00643860(4 floats)` (bits).
+    graphicBlurEffectSetFloats74_00643860 @ 0x0064_3860 => extern "C" fn blur_set_floats74(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        g3::blur_set_floats74(&mut mem(), [a, b, c, d])
+    }
+    /// `graphicAddScreenFadeTask(4 floats, e)`.
+    graphicAddScreenFadeTask @ 0x0063_9240 => extern "C" fn add_screen_fade_task(a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        g3::add_screen_fade_task(&mut mem(), [a, b, c, d], e, 0x1001)
+    }
+    /// `graphicAddScreenFadeTaskAfterRender(4 floats, e)`.
+    graphicAddScreenFadeTaskAfterRender @ 0x0063_9280 => extern "C" fn add_screen_fade_task_after_render(a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        g3::add_screen_fade_task(&mut mem(), [a, b, c, d], e, 0x801)
+    }
+    /// `PhyreScene_asyncDoFieldMapLoadTask(task)`.
+    PhyreScene_asyncDoFieldMapLoadTask @ 0x0065_7820 => extern "C" fn async_field_map_load_task(task: u32) -> u32 {
+        g3::async_field_map_load_task(&mut mem(), task)
+    }
+    /// `SetFields12400_00693be0(this, a, b, c, d)` (`d` unused).
+    SetFields12400_00693be0 @ 0x0069_3be0 => extern "thiscall" fn set_fields_12400(this: u32, a: u32, b: u32, c: u32, _d: u32) -> u32 {
+        g3::set_fields_12400(&mut mem(), this, a, b, c)
+    }
+    /// `ClusterManager_newEntry_00699300(this, key)`.
+    ClusterManager_newEntry_00699300 @ 0x0069_9300 => extern "thiscall" fn cluster_new_entry(this: u32, key: u32) -> u32 {
+        g3::cluster_new_entry(&mut mem(), this, key)
+    }
+    /// `PhyreScene_isMotionBlurOn_006601e0(this)`: `al`.
+    PhyreScene_isMotionBlurOn_006601e0 @ 0x0066_01e0 => extern "thiscall" fn scene_is_motion_blur_on(this: u32) -> u8 {
+        g3::scene_is_motion_blur_on(&mut mem(), this)
+    }
+    /// `PhyreScene_check1195_006662f0(this)`: `al`.
+    PhyreScene_check1195_006662f0 @ 0x0066_62f0 => extern "thiscall" fn scene_check_1195(this: u32) -> u8 {
+        g3::scene_check_1195(&mut mem(), this)
+    }
+    /// `PhyreScene_isGlowAfterVFX(this)`: `al`.
+    PhyreScene_isGlowAfterVFX @ 0x0065_efa0 => extern "thiscall" fn scene_is_glow_after_vfx(this: u32) -> u8 {
+        g3::scene_is_glow_after_vfx(&mut mem(), this)
+    }
+    /// `graphicCreatePauseGame_006bcc40()`.
+    graphicCreatePauseGame_006bcc40 @ 0x006b_cc40 => extern "C" fn create_pause_game() {
+        g3::create_pause_game(&mut mem());
+    }
+    /// `std_Tree_BuyHeadNode_00654ed0()`.
+    std_Tree_BuyHeadNode_00654ed0 @ 0x0065_4ed0 => extern "C" fn tree_buy_head_node() -> u32 {
+        g3::tree_buy_head_node(&mut mem())
+    }
+    /// `PhyreScene_resizeTarget_00698060(this, a, b)`.
+    PhyreScene_resizeTarget_00698060 @ 0x0069_8060 => extern "thiscall" fn scene_resize_target(this: u32, a: u32, b: u32) -> u32 {
+        g3::scene_resize_target(&mut mem(), this, a, b)
+    }
+    /// `graphicCharacterRegistHelper_00637880(out, obj, x, callback)`.
+    graphicCharacterRegistHelper_00637880 @ 0x0063_7880 => extern "C" fn character_regist_helper(out: u32, obj: u32, x: u32, callback: u32) -> u32 {
+        g3::character_regist_helper(&mut mem(), out, obj, x, callback)
     }
 }

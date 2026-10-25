@@ -24,6 +24,7 @@ use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_prender::glue::{self, bridge as g};
 use ffx_prender::glue2::{self, bridge as g2};
+use ffx_prender::glue3::{self, bridge as g3};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -135,6 +136,8 @@ enum Out {
     None,
     /// `eax`.
     U32(u32),
+    /// `al` (the rest of `eax` is the caller's or garbage).
+    U8(u8),
 }
 
 struct Twins {
@@ -356,6 +359,7 @@ impl Twins {
         match out {
             Out::None => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
+            Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
         }
         self.diff(what);
     }
@@ -371,6 +375,9 @@ enum K {
     /// A method that leaves `eax` alone (a byte store): logs as
     /// [`K::This`].
     Keep(u32),
+    /// A method without arguments returning an address inside the
+    /// synthetic object (`+0x200`), for originals that write through it.
+    Entry,
     /// cdecl: logs `n` stack words, pops none.
     Cdecl(u32),
     /// A singleton getter (cdecl, no arguments): on the image a stub
@@ -620,6 +627,9 @@ fn run_cases(t: &mut Twins, cases: &[Case], n: u32, rng: &mut Rng) {
                     K::Cdecl(n) => {
                         t.stub(Some(at), sym, false, n, 0, Some(ret));
                     }
+                    K::Entry => {
+                        t.stub(Some(at), sym, true, 0, 0, Some(obj + 0x200));
+                    }
                     K::Getter => {
                         if !snapshot {
                             t.stub(Some(at), sym, false, 0, 0, Some(instance));
@@ -802,5 +812,98 @@ fn batch2_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 8 } else { 32 };
         run_cases(t, CASES2, n, &mut Rng(0x9e37_79b9));
+    });
+}
+
+// ---- batch 3 (ffx_prender::glue3) ----
+
+/// The low scene fields (`+1`, `+0x10cc`, `+0x1195`) on the object
+/// itself, with `+0x10cc` pointing at a post-process object in it.
+fn prep_scene_low(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let post = (obj + 0x1800).wrapping_sub(0x0001_23bb);
+    t.w32(obj + 0x10cc, post);
+    let v = if rng.chance(2) { 0 } else { rng.next() as u8 };
+    t.write(obj + 0x1800, &[v]);
+    let b = [0, 1, 4, 5, 0xff][rng.below(5) as usize];
+    t.write(obj + 1, &[b]);
+}
+
+/// `obj +4` set or 0, and a recording callback or none.
+fn prep_regist_helper(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    args[0] = obj + 0x1000;
+    args[1] = obj;
+    if rng.chance(3) {
+        t.w32(obj + 4, 0);
+    }
+    args[3] = if rng.chance(3) {
+        0
+    } else {
+        let r = rng.word();
+        t.stub(None, 0xcb, false, 1, 0, Some(r))
+    };
+}
+
+/// `key` = the object.
+fn prep_key(_: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], _: &mut Rng) {
+    args[0] = obj + 0x40;
+}
+
+/// The magic id: 0x2b9 now and then, and the two counters around 0.
+fn prep_glow(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let base = obj.wrapping_sub(0xf000);
+    *this = base;
+    let id = if rng.chance(3) { 0x2b9 } else { rng.word() };
+    let at = t.rebase(glue3::MAGIC_ID);
+    t.stub(Some(at), glue3::MAGIC_ID, true, 0, 0, Some(id));
+    for off in [0xfb60, 0xfb74] {
+        let v = [0, 1, 0xffff_ffff, 0x8000_0000, 7][rng.below(5) as usize];
+        t.w32(base + off, v);
+    }
+}
+
+/// `this` = a fresh object large enough for `+0x12404` (the diff then
+/// sees every store).
+fn prep_12400(t: &mut Twins, _: u32, this: &mut u32, _: &mut [u32], _: &mut Rng) {
+    *this = t.zeros(0x12408);
+}
+
+/// The pause-game global: set or 0.
+fn prep_pause(t: &mut Twins, _: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let v = if rng.chance(2) { 0 } else { rng.next() | 1 };
+    t.global(glue3::PAUSE_GAME.sym, v);
+}
+
+/// `operator new` gives the object, or 0 now and then.
+fn prep_new(t: &mut Twins, obj: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let p = if rng.chance(4) { 0 } else { obj + 0x100 };
+    let at = t.rebase(glue3::OPERATOR_NEW);
+    t.stub(Some(at), glue3::OPERATOR_NEW, false, 1, 0, Some(p));
+}
+
+#[rustfmt::skip]
+const CASES3: &[Case] = &[
+    Case { float_args: true, ..cdecl("set_material_colour_scale2", 0x0064_3670, 4, &[(glue3::SCENE_SET_MATERIAL_COLOUR_SCALE2, K::This(4))], |m, _, a| { g3::set_material_colour_scale2(m, [a[0], a[1], a[2], a[3]]); Out::None }) },
+    Case { float_args: true, ..cdecl("blur_set_positive_params", 0x0064_3830, 4, &[(glue2::BLUR_EX_INSTANCE, K::Getter), (glue3::BLUR_SET_POSITIVE_PARAMS, K::Keep(4))], |m, _, a| u(g3::blur_set_positive_params(m, [a[0], a[1], a[2], a[3]]))) },
+    Case { float_args: true, ..cdecl("blur_set_floats74", 0x0064_3860, 4, &[(glue2::BLUR_EX_INSTANCE, K::Getter), (glue3::BLUR_SET_FLOATS74, K::Keep(4))], |m, _, a| u(g3::blur_set_floats74(m, [a[0], a[1], a[2], a[3]]))) },
+    Case { float_args: true, ..cdecl("add_screen_fade_task", 0x0063_9240, 5, &[(glue3::SCREEN_FADE_REGISTER, K::Cdecl(6))], |m, _, a| u(g3::add_screen_fade_task(m, [a[0], a[1], a[2], a[3]], a[4], 0x1001))) },
+    Case { float_args: true, ..cdecl("add_screen_fade_task_after_render", 0x0063_9280, 5, &[(glue3::SCREEN_FADE_REGISTER, K::Cdecl(6))], |m, _, a| u(g3::add_screen_fade_task(m, [a[0], a[1], a[2], a[3]], a[4], 0x801))) },
+    Case { prep: Some(arg_object), ..cdecl("async_field_map_load_task", 0x0065_7820, 1, &[(glue::ASYNC_LOAD_INSTANCE, K::Getter), (glue3::SCENE_FIELD_MAP_LOAD, K::This(2)), (glue3::OPERATOR_DELETE_TASK, K::Cdecl(1))], |m, _, a| u(g3::async_field_map_load_task(m, a[0]))) },
+    Case { prep: Some(prep_12400), ..method("set_fields_12400", 0x0069_3be0, This::Object, 4, &[(glue3::FIELDS_12400_UPDATE, K::This(0))], |m, this, a| u(g3::set_fields_12400(m, this, a[0], a[1], a[2]))) },
+    Case { prep: Some(prep_key), ..method("cluster_new_entry", 0x0069_9300, This::Object, 1, &[(glue3::CLUSTER_ALLOC_ENTRY, K::Entry)], |m, this, a| u(g3::cluster_new_entry(m, this, a[0]))) },
+    Case { prep: Some(prep_scene_low), ..method("scene_is_motion_blur_on", 0x0066_01e0, This::Object, 0, &[(glue2::MOTION_BLUR_INSTANCE, K::Getter)], |m, this, _| Out::U8(g3::scene_is_motion_blur_on(m, this))) },
+    Case { prep: Some(prep_scene_low), ..method("scene_check_1195", 0x0066_62f0, This::Object, 0, &[(glue3::CHECK_01326B28, K::Cdecl(0))], |m, this, _| Out::U8(g3::scene_check_1195(m, this))) },
+    Case { prep: Some(prep_glow), ..method("scene_is_glow_after_vfx", 0x0065_efa0, This::Object, 0, &[], |m, this, _| Out::U8(g3::scene_is_glow_after_vfx(m, this))) },
+    Case { prep: Some(prep_pause), ..cdecl("create_pause_game", 0x006b_cc40, 0, &[(glue3::OPERATOR_NEW, K::Cdecl(1)), (glue3::PAUSE_GAME_CTOR, K::This(0))], |m, _, _| { g3::create_pause_game(m); Out::None }) },
+    Case { prep: Some(prep_new), ..cdecl("tree_buy_head_node", 0x0065_4ed0, 0, &[(glue3::XBAD_ALLOC, K::Import(0))], |m, _, _| u(g3::tree_buy_head_node(m))) },
+    method("scene_resize_target", 0x0069_8060, This::Object, 2, &[(glue3::TEXT_RESIZE, K::This(2))], |m, this, a| u(g3::scene_resize_target(m, this, a[0], a[1]))),
+    Case { prep: Some(prep_regist_helper), ..cdecl("character_regist_helper", 0x0063_7880, 4, &[(glue3::CHARACTER_LOOKUP, K::Cdecl(2))], |m, _, a| u(g3::character_regist_helper(m, a[0], a[1], a[2], a[3]))) },
+];
+
+#[test]
+fn batch3_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 8 } else { 32 };
+        run_cases(t, CASES3, n, &mut Rng(0x0bad_cafe));
     });
 }
