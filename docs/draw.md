@@ -21,7 +21,8 @@ a capture" with the Rust scene builder.
 | `backend` | The `Backend` trait and its handles (`Shader`, `Layout`, `Blend`, `DepthState`, `Raster`, `Sampler`, `Buffer`, `Texture`, `View`) |
 | `cache` | The pipeline-state layer: one backend object per shader (by its DXBC), input layout (elements and vertex shader), state description and constant buffer size, made on first use |
 | `replay` | A `capture.ffxgfx` issued through a backend: `Capture::parse`, `select_scene`, `Replayer`, and `compare_draws` / `write_capture` for checking it |
-| `d3d11` (Windows) | `D3d11`, the backend on a device and context it is given |
+| `pass` | A draw list for one pass of a world: `PassDraw` (state, call, constant buffer windows as bytes, buffer writes), `Pass`, and `issue` (between `begin` and `end`). The map path's entry ([below](#the-map-path)) |
+| `d3d11` (Windows) | `D3d11`, the backend on a device and context it is given; `import`/`import_view` bring in the host's objects (a reference each, until `release_imports`), `import_bound` the context's whole bound state |
 
 The vocabulary is Direct3D 11's: DXGI formats, `D3D11_BLEND`,
 `D3D11_FILTER` and the rest keep their numbers, because the game's data and

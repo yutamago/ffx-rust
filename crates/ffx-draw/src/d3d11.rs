@@ -591,11 +591,29 @@ impl D3d11 {
                 };
                 c.GSSetShader(sh, None);
             }
+            // Targets before shader resources, as the game binds them: a view
+            // bound while its texture is still a render target is refused
+            // (the slot stays empty), and binding a target unbinds the
+            // views of its texture, so they are sent again after a change.
+            let targets_changed =
+                changed(&|l| l.targets == s.targets && l.depth_target == s.depth_target);
+            if targets_changed {
+                let mut rtvs: [Option<ID3D11RenderTargetView>; RT_SLOTS] = Default::default();
+                let mut n = 0;
+                for (i, v) in s.targets.iter().enumerate() {
+                    rtvs[i] = self.rtv(*v);
+                    if v.is_some() {
+                        n = i + 1;
+                    }
+                }
+                let dsv = self.dsv(s.depth_target);
+                c.OMSetRenderTargets(Some(&rtvs[..n]), dsv.as_ref());
+            }
             for (stage, st, prev) in [
                 (Stage::Vertex, &s.vs, last.as_ref().map(|l| &l.vs)),
                 (Stage::Pixel, &s.ps, last.as_ref().map(|l| &l.ps)),
             ] {
-                self.apply_stage(stage, st, prev);
+                self.apply_stage(stage, st, prev, targets_changed);
             }
             if changed(&|l| l.raster == s.raster) {
                 c.RSSetState(s.raster.and_then(|r| self.raster_obj(r)));
@@ -620,18 +638,6 @@ impl D3d11 {
                     bottom: r[3],
                 }]));
             }
-            if changed(&|l| l.targets == s.targets && l.depth_target == s.depth_target) {
-                let mut rtvs: [Option<ID3D11RenderTargetView>; RT_SLOTS] = Default::default();
-                let mut n = 0;
-                for (i, v) in s.targets.iter().enumerate() {
-                    rtvs[i] = self.rtv(*v);
-                    if v.is_some() {
-                        n = i + 1;
-                    }
-                }
-                let dsv = self.dsv(s.depth_target);
-                c.OMSetRenderTargets(Some(&rtvs[..n]), dsv.as_ref());
-            }
             if changed(&|l| {
                 l.blend == s.blend
                     && l.blend_factor.map(f32::to_bits) == s.blend_factor.map(f32::to_bits)
@@ -650,7 +656,13 @@ impl D3d11 {
         self.applied = Some(*s);
     }
 
-    fn apply_stage(&self, stage: Stage, s: &StageBindings, last: Option<&StageBindings>) {
+    fn apply_stage(
+        &self,
+        stage: Stage,
+        s: &StageBindings,
+        last: Option<&StageBindings>,
+        resend_srvs: bool,
+    ) {
         let c = &self.context;
         // SAFETY: live objects of this device, on the context's thread.
         unsafe {
@@ -687,7 +699,7 @@ impl D3d11 {
                     (Stage::Geometry, ..) => {}
                 }
             }
-            if last.is_none_or(|l| l.srvs != s.srvs) {
+            if resend_srvs || last.is_none_or(|l| l.srvs != s.srvs) {
                 let mut views: [Option<ID3D11ShaderResourceView>; SRV_SLOTS] = Default::default();
                 for (i, v) in s.srvs.iter().enumerate() {
                     views[i] = self.srv(*v);

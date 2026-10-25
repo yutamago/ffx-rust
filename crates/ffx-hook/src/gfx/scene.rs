@@ -432,9 +432,7 @@ unsafe extern "C" fn mesh_command_2(iface: usize, command: usize) -> u32 {
 /// A mesh-instance command on the render thread: a tagged one's draws go
 /// to its pass.
 fn mesh_command(which: usize, iface: usize, command: usize) -> u32 {
-    let handler = HANDLERS_AT
-        .get(which)
-        .map_or(0, |h| h.load(Ordering::Acquire));
+    let handler = HANDLERS_AT[which % HANDLERS_AT.len()].load(Ordering::Acquire);
     // SAFETY: the original handler, same arguments.
     let call = || unsafe {
         let f: Handler = std::mem::transmute(handler);
@@ -854,7 +852,7 @@ fn give_slots() {
 }
 
 fn previous(i: usize) -> usize {
-    PREVIOUS.get(i).map_or(0, |p| p.load(Ordering::Acquire))
+    PREVIOUS[i % PREVIOUS.len()].load(Ordering::Acquire)
 }
 
 /// A clear, copy, dispatch, read-back or indirect draw: the open pass ends
