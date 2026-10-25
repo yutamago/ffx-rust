@@ -507,3 +507,67 @@ pub fn scene_cursor_ctor(h: &mut impl Host, this: u32, world: u32) -> u32 {
     h.call_sym(CURSOR_BEGIN, Conv::Thiscall(this), &[]);
     this
 }
+
+/// `Sg_GsSetPacket(p)`, `Sg_GsStartVIF()`, `Sg_GsTEST(...)`,
+/// `Sg_GsZBUF(on)`, `Sg_GsEnd2()`, `Sg_GsFRAME_16(fbp, mask)`,
+/// `Sg_GsFRAME2_16(fbp, mask)`, `Sg_DrawSetFrame()`, and the map frame's
+/// alpha set-up `0x0082baf0(a)` (all cdecl).
+pub const GS_SET_PACKET: u32 = 0x0084_1cf0;
+/// See [`GS_SET_PACKET`].
+pub const GS_START_VIF: u32 = 0x0084_1d50;
+/// See [`GS_SET_PACKET`].
+pub const GS_TEST: u32 = 0x0084_1d80;
+/// See [`GS_SET_PACKET`].
+pub const GS_ZBUF: u32 = 0x0084_22f0;
+/// See [`GS_SET_PACKET`].
+pub const GS_END2: u32 = 0x0084_1800;
+/// See [`GS_SET_PACKET`].
+pub const GS_FRAME_16: u32 = 0x0084_19d0;
+/// See [`GS_SET_PACKET`].
+pub const GS_FRAME2_16: u32 = 0x0084_1970;
+/// See [`GS_SET_PACKET`].
+pub const DRAW_SET_FRAME: u32 = 0x0082_cf80;
+/// See [`GS_SET_PACKET`].
+pub const ACC_ALPHA: u32 = 0x0082_baf0;
+/// `Sg_AccSetFrameMap`'s switch (`0x01300776`, byte).
+pub const ACC_MAP: Global<u8> = Global::new(0x0130_0776);
+/// `Sg_AccSetFrameChr`'s switch (`0x01300778`, byte).
+pub const ACC_CHR: Global<u8> = Global::new(0x0130_0778);
+
+/// `Sg_AccSetFrameMap()` (0x0082bc50): with the switch on, a GS packet at
+/// the scratchpad: `Sg_GsSetPacket(spad)`, `Sg_GsStartVIF()`,
+/// `Sg_GsTEST(0, 0, 0, 0, 0, 0, 1, 1)`, `Sg_GsZBUF(1)`, `0x0082baf0(0x80)`,
+/// `Sg_GsZBUF(0)`, `SendSpadToMFIFO(Sg_GsEnd2())`, whose `eax` it returns;
+/// off, the scratchpad pointer.
+pub fn acc_set_frame_map(h: &mut impl Host) -> u32 {
+    let spad = h.call_sym(GET_SPAD_PTR, Conv::Cdecl, &[]);
+    if ACC_MAP.get(h) == 0 {
+        return spad;
+    }
+    h.call_sym(GS_SET_PACKET, Conv::Cdecl, &[spad]);
+    h.call_sym(GS_START_VIF, Conv::Cdecl, &[]);
+    h.call_sym(GS_TEST, Conv::Cdecl, &[0, 0, 0, 0, 0, 0, 1, 1]);
+    h.call_sym(GS_ZBUF, Conv::Cdecl, &[1]);
+    h.call_sym(ACC_ALPHA, Conv::Cdecl, &[0x80]);
+    h.call_sym(GS_ZBUF, Conv::Cdecl, &[0]);
+    let end = h.call_sym(GS_END2, Conv::Cdecl, &[]);
+    h.call_sym(SEND_SPAD, Conv::Cdecl, &[end])
+}
+
+/// `Sg_AccSetFrameChr()` (0x0082be20): a GS packet at the scratchpad
+/// (`Sg_GsSetPacket`, `Sg_GsStartVIF`), then with the switch on
+/// `Sg_GsFRAME_16(0xd0, 0)` and `Sg_GsFRAME2_16(0xd0, 0)`, off
+/// `Sg_DrawSetFrame()`; `SendSpadToMFIFO(Sg_GsEnd2())`'s `eax`.
+pub fn acc_set_frame_chr(h: &mut impl Host) -> u32 {
+    let spad = h.call_sym(GET_SPAD_PTR, Conv::Cdecl, &[]);
+    h.call_sym(GS_SET_PACKET, Conv::Cdecl, &[spad]);
+    h.call_sym(GS_START_VIF, Conv::Cdecl, &[]);
+    if ACC_CHR.get(h) == 0 {
+        h.call_sym(DRAW_SET_FRAME, Conv::Cdecl, &[]);
+    } else {
+        h.call_sym(GS_FRAME_16, Conv::Cdecl, &[0xd0, 0]);
+        h.call_sym(GS_FRAME2_16, Conv::Cdecl, &[0xd0, 0]);
+    }
+    let end = h.call_sym(GS_END2, Conv::Cdecl, &[]);
+    h.call_sym(SEND_SPAD, Conv::Cdecl, &[end])
+}

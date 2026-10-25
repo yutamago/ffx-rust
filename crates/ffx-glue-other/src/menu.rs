@@ -733,3 +733,154 @@ pub fn save_show_popup(h: &mut impl Host, id: u32) -> u32 {
     let name = h.rebase(SHOW_POPUP_STD);
     h.call_sym(CALL_AS3, Conv::Thiscall(menu), &[0, name, 1, value, 1])
 }
+
+/// The import slots of `_IggyPlayerCreateFastNameUTF8@12`,
+/// `_IggyPlayerCallFunctionRS@20`, `_IggyPlayerCallbackResultPath@4` and
+/// `_IggyValueSetStringUTF8RS@20`, and `Sleep`.
+pub const IGGY_CREATE_FAST_NAME: Global<u32> = Global::new(0x00b0_c850);
+/// See [`IGGY_CREATE_FAST_NAME`].
+pub const IGGY_CALL_FUNCTION: Global<u32> = Global::new(0x00b0_c854);
+/// See [`IGGY_CREATE_FAST_NAME`].
+pub const IGGY_CALLBACK_RESULT_PATH: Global<u32> = Global::new(0x00b0_c818);
+/// See [`IGGY_CREATE_FAST_NAME`].
+pub const IGGY_SET_STRING: Global<u32> = Global::new(0x00b0_c81c);
+/// See [`IGGY_CREATE_FAST_NAME`].
+pub const SLEEP: Global<u32> = Global::new(0x00b0_c100);
+/// `IggyMenuManager_ApplyViewport_00a265a0(mgr)` (thiscall).
+pub const APPLY_VIEWPORT: u32 = 0x00a2_65a0;
+/// `LocalizationManager_GetInstance()`.
+pub const LOCALIZATION: u32 = 0x006d_b070;
+/// `GetDerefU32_00a28d10(p)` (thiscall).
+pub const DEREF: u32 = 0x00a2_8d10;
+/// The language suffixes `"_kr"`, `"_ch"`, `"_s"` (`.rdata`).
+pub const SUFFIX_KR: u32 = 0x00b4_b50c;
+/// See [`SUFFIX_KR`].
+pub const SUFFIX_CH: u32 = 0x00b4_b510;
+/// See [`SUFFIX_KR`].
+pub const SUFFIX_S: u32 = 0x00b4_b514;
+/// The escape menu's audio preview handlers and their names: four
+/// `(name slot, handler)` pairs, then `(name, handler)`.
+pub const AUDIO_PREVIEW: [(u32, u32); 4] = [
+    (0x00c3_9638, 0x006f_f5b0),
+    (0x00c3_9650, 0x006f_f4f0),
+    (0x00c3_9668, 0x006f_f530),
+    (0x00c3_9680, 0x006f_f570),
+];
+/// The fifth handler's name (`.rdata`) and handler.
+pub const AUDIO_PREVIEW_LAST: (u32, u32) = (0x00b4_c7c0, 0x006f_f5f0);
+/// `IggyMenu_addCallback_00a28e90(menu; name, handler)` (thiscall).
+pub const ADD_CALLBACK_MENU: u32 = 0x00a2_8e90;
+
+/// A C string's length, as the inline `strlen` loops count it.
+fn strlen(h: &impl Mem, s: u32) -> u32 {
+    let mut n = 0u32;
+    while h.read::<u8>(s.wrapping_add(n)) != 0 {
+        n = n.wrapping_add(1);
+    }
+    n
+}
+
+/// `IggyMenu_callIggyAS3External(this; target, name, n, values, unused)`
+/// (0x00a28ba0, thiscall): the player (`**(this + 0x6c)`); the name made
+/// a fast name (`IggyPlayerCreateFastNameUTF8(player, name, strlen)`,
+/// retried after `Sleep(5)` while it returns 0, `Sleep` read once), then
+/// `IggyPlayerCallFunctionRS(player, target, fast, n, values)`'s `eax`.
+pub fn iggy_call_as3(h: &mut impl Host, this: u32, args: [u32; 4]) -> u32 {
+    let [target, name, n, values] = args;
+    let holder = h.read::<u32>(this + 0x6c);
+    let player = h.read::<u32>(holder);
+    let sleep = SLEEP.get(h);
+    let fast = loop {
+        let len = strlen(h, name);
+        let f = IGGY_CREATE_FAST_NAME.get(h);
+        let r = h.call(f, Conv::Stdcall, &[player, name, len]);
+        if r != 0 {
+            break r;
+        }
+        h.call(sleep, Conv::Stdcall, &[5]);
+    };
+    let f = IGGY_CALL_FUNCTION.get(h);
+    h.call(f, Conv::Stdcall, &[player, target, fast, n, values])
+}
+
+/// `IggyMenuManager_setViewportRect_00a26bd0(this; r0..r5)` (thiscall,
+/// from `PostProcessManager_setNon16By9Viewport`): unless the six words
+/// at `+0x18` already equal them, stores them and returns
+/// `IggyMenuManager_ApplyViewport_00a265a0`'s `eax`; else the last word.
+pub fn iggy_set_viewport_rect(h: &mut impl Host, this: u32, r: [u32; 6]) -> u32 {
+    let same = (0..6).all(|k| h.read::<u32>(this + 0x18 + 4 * k) == r[k as usize]);
+    if same {
+        return r[5];
+    }
+    for (k, v) in (0u32..).zip(r) {
+        h.write(this + 0x18 + 4 * k, v);
+    }
+    h.call_sym(APPLY_VIEWPORT, Conv::Thiscall(this), &[])
+}
+
+/// `IggyPlayer_resultLanguageSuffix_006e9510(callback)` (cdecl, the
+/// result callback `IggyPlayerOpen*` installs): the language's suffix
+/// (`LocalizationManager +4`: 9 `"_kr"`, 10 `"_ch"`, else `"_s"`) as the
+/// callback's UTF-8 result (`IggyValueSetStringUTF8RS(
+/// IggyPlayerCallbackResultPath(*callback), 0, 0, suffix, strlen)`'s
+/// `eax`).
+pub fn iggy_language_suffix(h: &mut impl Host, callback: u32) -> u32 {
+    let loc = h.call_sym(LOCALIZATION, Conv::Cdecl, &[]);
+    let suffix = match h.read::<u32>(loc.wrapping_add(4)) {
+        9 => SUFFIX_KR,
+        10 => SUFFIX_CH,
+        _ => SUFFIX_S,
+    };
+    let suffix = h.rebase(suffix);
+    let v = h.call_sym(DEREF, Conv::Thiscall(callback), &[]);
+    let f = IGGY_CALLBACK_RESULT_PATH.get(h);
+    let path = h.call(f, Conv::Stdcall, &[v]);
+    let len = strlen(h, suffix);
+    let f = IGGY_SET_STRING.get(h);
+    h.call(f, Conv::Stdcall, &[path, 0, 0, suffix, len])
+}
+
+/// `FFEscMenu_registerAudioPreviewCallbacks(this)` (0x006ffa20,
+/// thiscall): five `IggyMenu_addCallback_00a28e90(this; name, handler)`;
+/// the last one's `eax`.
+pub fn esc_register_audio_preview(h: &mut impl Host, this: u32) -> u32 {
+    for (slot, handler) in AUDIO_PREVIEW {
+        let name = h.read::<u32>(h.rebase(slot));
+        let handler = h.rebase(handler);
+        h.call_sym(ADD_CALLBACK_MENU, Conv::Thiscall(this), &[name, handler]);
+    }
+    let (name, handler) = AUDIO_PREVIEW_LAST;
+    let name = h.rebase(name);
+    let handler = h.rebase(handler);
+    h.call_sym(ADD_CALLBACK_MENU, Conv::Thiscall(this), &[name, handler])
+}
+
+/// `IggyHeap_takeFree_00a39a30(heap)` (cdecl, from `opd_config_memory`
+/// and `0x00a3b610`): the first block of the free ring (`heap + 0x10`,
+/// links `+0x1c` next / `+0x20` prev) unlinked, linked in front of its
+/// owner's used ring (`[block + 0x18] + 0x160`), marked (`+0x30` =
+/// 0x60000000, `+0x14` = 0) and returned; 0 when the ring is empty.
+pub fn iggy_heap_take_free(h: &mut impl Mem, heap: u32) -> u32 {
+    let ring = heap.wrapping_add(0x10);
+    let n = h.read::<u32>(ring + 0x1c);
+    if n == ring {
+        return 0;
+    }
+    let prev = h.read::<u32>(n + 0x20);
+    let next = h.read::<u32>(n + 0x1c);
+    let owner = h.read::<u32>(n + 0x18);
+    h.write(prev.wrapping_add(0x1c), next);
+    let next = h.read::<u32>(n + 0x1c);
+    let prev = h.read::<u32>(n + 0x20);
+    h.write(next.wrapping_add(0x20), prev);
+    let used = owner.wrapping_add(0x160);
+    h.write(n + 0x1c, used);
+    let last = h.read::<u32>(used.wrapping_add(0x20));
+    h.write(n + 0x20, last);
+    h.write(last.wrapping_add(0x1c), n);
+    let next = h.read::<u32>(n + 0x1c);
+    h.write(next.wrapping_add(0x20), n);
+    h.write(n + 0x30, 0x6000_0000u32);
+    h.write(n + 0x14, 0u32);
+    n
+}

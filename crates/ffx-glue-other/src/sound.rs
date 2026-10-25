@@ -482,3 +482,42 @@ pub fn word_array_assign(h: &mut impl Host, this: u32, src: u32, reserve: u32) -
     h.write(this, n);
     this
 }
+
+/// The import thunk of `FMOD::Event::setVolume` (stdcall event, f32).
+pub const EVENT_SET_VOLUME: u32 = 0x0094_8cb2;
+
+/// `SfxEvent_applyVolume_0070f140(list; volume)` (thiscall): the volume
+/// kept (`+0x20`, through `fld`/`fstp`); for each of the `count` (`+0`,
+/// signed) events (`+8`, 8-byte entries) whose byte at `+4` is set,
+/// `ERRCHECK(FMOD::Event::setVolume(event, f32(+0x24 * +0x20)),
+/// "SfxEvent.cpp", 0x12e)`. Callers read no result.
+pub fn sfx_event_set_volume(h: &mut impl Host, list: u32, volume: u32) {
+    let v = x87::round_trip(f32::from_bits(volume)).to_bits();
+    let n = h.read::<u32>(list).cast_signed();
+    h.write(list + 0x20, v);
+    let file = h.rebase(SFX_EVENT_FILE);
+    for i in 0..n.max(0).cast_unsigned() {
+        let events = h.read::<u32>(list + 8);
+        if h.read::<u8>(events.wrapping_add(8 * i + 4)) == 0 {
+            continue;
+        }
+        let scale = f32::from_bits(h.read::<u32>(list + 0x24));
+        let vol = f32::from_bits(h.read::<u32>(list + 0x20));
+        let product = x87::Reg::load(scale).mul_m32(vol).store();
+        let product = x87::round_trip(product).to_bits();
+        let event = h.read::<u32>(events.wrapping_add(8 * i));
+        let r = h.call_sym(EVENT_SET_VOLUME, Conv::Stdcall, &[event, product]);
+        h.call_sym(ERRCHECK, Conv::Cdecl, &[r, file, 0x12e]);
+    }
+}
+
+/// `FmodEventInfo_Init(this)` (0x0070a140, thiscall): thirteen words
+/// cleared (`+0x24` through `fldz`/`fstp`, +0.0); returns `this`.
+pub fn fmod_event_info_init(h: &mut impl Mem, this: u32) -> u32 {
+    h.write(this, 0u32);
+    h.write(this + 0x24, 0.0f32.to_bits());
+    for off in [4, 8, 0xc, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x28, 0x2c, 0x30] {
+        h.write(this + off, 0u32);
+    }
+    this
+}

@@ -687,4 +687,64 @@ ported! {
     PhyreSceneCursor_ctor_00633880 @ 0x0063_3880 => extern "thiscall" fn scene_cursor_ctor(this: u32, world: u32) -> u32 {
         m::scene_cursor_ctor(&mut mem(), this, world)
     }
+    // Batch 5: SfxEvent volumes, FMOD event info, the shader-parameter
+    // copies, the broken screen's light, Iggy calls, the viewport rect,
+    // the language suffix callback, the audio preview callbacks, the Iggy
+    // heap, the PS2 accumulation frames.
+    /// `SfxEvent_applyVolume_0070f140(list; volume)`.
+    SfxEvent_applyVolume_0070f140 @ 0x0070_f140 => extern "thiscall" fn sfx_event_set_volume(list: u32, volume: u32) {
+        s::sfx_event_set_volume(&mut mem(), list, volume);
+    }
+    /// `FmodEventInfo_Init(this)` -> `this`.
+    FmodEventInfo_Init @ 0x0070_a140 => extern "thiscall" fn fmod_event_info_init(this: u32) -> u32 {
+        s::fmod_event_info_init(&mut mem(), this)
+    }
+    /// `ShaderParamBuffer_SetValue2(buffer; param, src)`.
+    ShaderParamBuffer_SetValue2 @ 0x0063_86c0 => extern "thiscall" fn shader_param_set_value2(buffer: u32, param: u32, src: u32) -> u32 {
+        e::shader_param_copy(&mut mem(), buffer, param, src)
+    }
+    /// `ShaderParam_CopyToBuffer_00638720(buffer; param, src)`.
+    ShaderParam_CopyToBuffer_00638720 @ 0x0063_8720 => extern "thiscall" fn shader_param_copy_638720(buffer: u32, param: u32, src: u32) -> u32 {
+        e::shader_param_copy(&mut mem(), buffer, param, src)
+    }
+    /// `ShaderParamBuffer_SetValue(buffer; param, src)`.
+    ShaderParamBuffer_SetValue @ 0x0063_8780 => extern "thiscall" fn shader_param_set_value(buffer: u32, param: u32, src: u32) -> u32 {
+        e::shader_param_copy(&mut mem(), buffer, param, src)
+    }
+    /// `ShaderParam_CopyToBuffer_00698960(buffer; param, src)`.
+    ShaderParam_CopyToBuffer_00698960 @ 0x0069_8960 => extern "thiscall" fn shader_param_copy_698960(buffer: u32, param: u32, src: u32) -> u32 {
+        e::shader_param_copy(&mut mem(), buffer, param, src)
+    }
+    /// `BrokenScreenEffect_updateLightParameters(this; p0..p6)` -> `p6`.
+    BrokenScreenEffect_updateLightParameters @ 0x006d_5a70 => extern "thiscall" fn broken_screen_update_light(this: u32, p0: u32, p1: u32, p2: u32, p3: u32, p4: u32, p5: u32, p6: u32) -> u32 {
+        e::broken_screen_update_light(&mut mem(), this, [p0, p1, p2, p3, p4, p5, p6])
+    }
+    /// `IggyMenu_callIggyAS3External(this; target, name, n, values, unused)`.
+    IggyMenu_callIggyAS3External @ 0x00a2_8ba0 => extern "thiscall" fn iggy_call_as3(this: u32, target: u32, name: u32, n: u32, values: u32, _unused: u32) -> u32 {
+        mn::iggy_call_as3(&mut mem(), this, [target, name, n, values])
+    }
+    /// `IggyMenuManager_setViewportRect_00a26bd0(this; r0..r5)`.
+    IggyMenuManager_setViewportRect_00a26bd0 @ 0x00a2_6bd0 => extern "thiscall" fn iggy_set_viewport_rect(this: u32, r0: u32, r1: u32, r2: u32, r3: u32, r4: u32, r5: u32) -> u32 {
+        mn::iggy_set_viewport_rect(&mut mem(), this, [r0, r1, r2, r3, r4, r5])
+    }
+    /// `IggyPlayer_resultLanguageSuffix_006e9510(callback)`.
+    IggyPlayer_resultLanguageSuffix_006e9510 @ 0x006e_9510 => extern "C" fn iggy_language_suffix(callback: u32) -> u32 {
+        mn::iggy_language_suffix(&mut mem(), callback)
+    }
+    /// `FFEscMenu_registerAudioPreviewCallbacks(this)`.
+    FFEscMenu_registerAudioPreviewCallbacks @ 0x006f_fa20 => extern "thiscall" fn esc_register_audio_preview(this: u32) -> u32 {
+        mn::esc_register_audio_preview(&mut mem(), this)
+    }
+    /// `IggyHeap_takeFree_00a39a30(heap)`.
+    IggyHeap_takeFree_00a39a30 @ 0x00a3_9a30 => extern "C" fn iggy_heap_take_free(heap: u32) -> u32 {
+        mn::iggy_heap_take_free(&mut mem(), heap)
+    }
+    /// `Sg_AccSetFrameMap()`.
+    Sg_AccSetFrameMap @ 0x0082_bc50 => extern "C" fn acc_set_frame_map() -> u32 {
+        m::acc_set_frame_map(&mut mem())
+    }
+    /// `Sg_AccSetFrameChr()`.
+    Sg_AccSetFrameChr @ 0x0082_be20 => extern "C" fn acc_set_frame_chr() -> u32 {
+        m::acc_set_frame_chr(&mut mem())
+    }
 }

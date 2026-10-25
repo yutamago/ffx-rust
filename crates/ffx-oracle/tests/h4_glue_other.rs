@@ -2452,3 +2452,284 @@ fn effects_lifecycle() {
         }
     }
 }
+
+// ---- batch 5
+
+/// `SfxEvent` volumes, FMOD event info, the shader-parameter copies, the
+/// broken screen's light parameters.
+#[test]
+fn volumes_params_light() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0401);
+        t.stub(s::EVENT_SET_VOLUME, false, 2, 2);
+        t.stub(s::ERRCHECK, false, 3, 0);
+        t.stub(e::MEMCPY, false, 3, 0);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            for tag in [s::EVENT_SET_VOLUME, s::ERRCHECK, e::MEMCPY] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            let list = t.random(&mut rng, 0x30);
+            let events = t.zeros(0x40);
+            for k in 0..8 {
+                let ev = rng.next();
+                t.w32(events + 8 * k, ev);
+                let on = if rng.below(3) == 0 {
+                    0
+                } else {
+                    rng.next() as u8 | 1
+                };
+                t.w8(events + 8 * k + 4, on);
+            }
+            t.w32(list, [0, 1, 4, 8, u32::MAX][rng.below(5) as usize]);
+            t.w32(list + 8, events);
+            let scale = rng.float();
+            t.w32(list + 0x24, scale);
+            let vol = rng.float();
+            t.check(
+                &format!("{w} setVolume"),
+                0x0070_f140,
+                Conv::Thiscall(list),
+                &[vol],
+                |g| {
+                    s::sfx_event_set_volume(g, list, vol);
+                    Out::None
+                },
+            );
+            let info = t.random(&mut rng, 0x40);
+            t.check(
+                &format!("{w} eventInfo"),
+                0x0070_a140,
+                Conv::Thiscall(info),
+                &[],
+                |g| u(s::fmod_event_info_init(g, info)),
+            );
+            let buffer = t.zeros(8);
+            t.w32(
+                buffer,
+                [0, 3, 4, 0x20, 0x100, rng.next()][rng.below(6) as usize],
+            );
+            let param = t.random(&mut rng, 0x10);
+            let off = [0u16, 3, 4, 8, 0x1c, rng.next() as u16][rng.below(6) as usize];
+            let size = [0u16, 4, 0x10, 0x2010, 0xe004, rng.next() as u16][rng.below(6) as usize];
+            t.write(param + 8, &off.to_le_bytes());
+            t.write(param + 0xa, &size.to_le_bytes());
+            let src = if rng.below(5) == 0 { 0 } else { rng.next() };
+            for sym in [0x0063_86c0, 0x0063_8720, 0x0063_8780, 0x0069_8960] {
+                t.check(
+                    &format!("{w} paramCopy {sym:#x}"),
+                    sym,
+                    Conv::Thiscall(buffer),
+                    &[param, src],
+                    |g| u(e::shader_param_copy(g, buffer, param, src)),
+                );
+            }
+            let obj = t.random(&mut rng, 0x40);
+            let p: [u32; 7] = std::array::from_fn(|_| {
+                if rng.below(3) == 0 {
+                    0
+                } else {
+                    let at = t.zeros(4);
+                    let f = rng.float();
+                    t.w32(at, f);
+                    at
+                }
+            });
+            t.check(
+                &format!("{w} light"),
+                0x006d_5a70,
+                Conv::Thiscall(obj),
+                &p,
+                |g| u(e::broken_screen_update_light(g, obj, p)),
+            );
+        }
+    }
+}
+
+impl Twins {
+    /// A stand-in at the import slot `slot` (stdcall, `pops` words) that
+    /// returns 0 for its first `fails` calls, then runs `then` (a stub's
+    /// code: logs and returns its cell).
+    fn failing_then(&mut self, slot: u32, fails: u32, pops: u32, then: u32) {
+        let cnt = self.zeros(4);
+        self.w32(cnt, fails);
+        let mut c = vec![0xff, 0x0d];
+        c.extend(cnt.to_le_bytes()); // dec dword [cnt]
+        c.extend([0x78, 0x05]); // js +5
+        c.extend([0x31, 0xc0]); // xor eax, eax
+        c.push(0xc2);
+        c.extend(((pops * 4) as u16).to_le_bytes()); // ret pops*4
+        c.push(0xe9);
+        let at = self.cave_next + c.len() as u32 + 4;
+        c.extend(then.wrapping_sub(at).to_le_bytes()); // jmp then
+        let f = self.code(&c);
+        let s = self.rebase(slot);
+        self.w32(s, f);
+    }
+}
+
+/// Iggy calls, the viewport rect, the language suffix, the audio preview
+/// callbacks, the Iggy heap.
+#[test]
+fn iggy_calls_and_heap() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0402);
+        t.stub(mn::APPLY_VIEWPORT, true, 0, 0);
+        t.stub(mn::LOCALIZATION, false, 0, 0);
+        t.stub(mn::DEREF, true, 0, 0);
+        t.stub(mn::ADD_CALLBACK_MENU, true, 2, 2);
+        let call_fn = t.stub_code(0xc0de_0701, false, 5, 5);
+        t.g32(0x00b0_c854, call_fn);
+        let sleep = t.stub_code(0xc0de_0702, false, 1, 1);
+        t.g32(0x00b0_c100, sleep);
+        let path = t.stub_code(0xc0de_0703, false, 1, 1);
+        t.g32(0x00b0_c818, path);
+        let set_string = t.stub_code(0xc0de_0704, false, 5, 5);
+        t.g32(0x00b0_c81c, set_string);
+        let fast = t.stub_code(0xc0de_0705, false, 3, 3);
+        let loc = t.random(&mut rng, 0x10);
+        for i in 0..30 {
+            let w = format!("{name} {i}");
+            for tag in [
+                mn::APPLY_VIEWPORT,
+                mn::DEREF,
+                mn::ADD_CALLBACK_MENU,
+                0xc0de_0701,
+                0xc0de_0702,
+                0xc0de_0703,
+                0xc0de_0704,
+            ] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            let v = rng.next() | 1;
+            t.ret(0xc0de_0705, v);
+            // the fast name fails 0..2 times first
+            t.failing_then(0x00b0_c850, rng.below(3), 3, fast);
+            let obj = t.random(&mut rng, 0x100);
+            let holder = t.random(&mut rng, 4);
+            t.w32(obj + 0x6c, holder);
+            let text = t.alloc(b"showPopUpStd\0");
+            let args = [rng.word(), text, rng.word(), rng.word()];
+            t.check(
+                &format!("{w} AS3"),
+                0x00a2_8ba0,
+                Conv::Thiscall(obj),
+                &[args[0], args[1], args[2], args[3], 0],
+                |g| u(mn::iggy_call_as3(g, obj, args)),
+            );
+            let r: [u32; 6] = std::array::from_fn(|_| rng.word());
+            if rng.below(2) == 0 {
+                for k in 0..6 {
+                    t.w32(obj + 0x18 + 4 * k, r[k as usize]);
+                }
+                if rng.below(2) == 0 {
+                    let k = rng.below(6);
+                    t.w32(obj + 0x18 + 4 * k, r[k as usize] ^ 1);
+                }
+            }
+            t.check(
+                &format!("{w} viewportRect"),
+                0x00a2_6bd0,
+                Conv::Thiscall(obj),
+                &r,
+                |g| u(mn::iggy_set_viewport_rect(g, obj, r)),
+            );
+            t.w32(loc + 4, [9, 10, 0, 11, rng.next()][rng.below(5) as usize]);
+            t.ret(mn::LOCALIZATION, loc);
+            let cb = rng.next();
+            t.check(
+                &format!("{w} suffix"),
+                0x006e_9510,
+                Conv::Cdecl,
+                &[cb],
+                |g| u(mn::iggy_language_suffix(g, cb)),
+            );
+            t.check(
+                &format!("{w} audioPreview"),
+                0x006f_fa20,
+                Conv::Thiscall(obj),
+                &[],
+                |g| u(mn::esc_register_audio_preview(g, obj)),
+            );
+            // the heap: a free ring with 0..3 blocks, the owners' used rings
+            let heap = t.zeros(0x40);
+            let free_ring = heap + 0x10;
+            let owner = t.zeros(0x200);
+            let used = owner + 0x160;
+            let other = t.zeros(0x40);
+            t.w32(used + 0x1c, other);
+            t.w32(used + 0x20, other);
+            t.w32(other + 0x1c, used);
+            t.w32(other + 0x20, used);
+            let blocks: Vec<u32> = (0..rng.below(4))
+                .map(|_| t.random(&mut rng, 0x40))
+                .collect();
+            let mut prev = free_ring;
+            for &b in &blocks {
+                t.w32(prev + 0x1c, b);
+                t.w32(b + 0x20, prev);
+                t.w32(b + 0x18, owner);
+                prev = b;
+            }
+            t.w32(prev + 0x1c, free_ring);
+            t.w32(free_ring + 0x20, prev);
+            t.check(
+                &format!("{w} heapTake"),
+                0x00a3_9a30,
+                Conv::Cdecl,
+                &[heap],
+                |g| u(mn::iggy_heap_take_free(g, heap)),
+            );
+        }
+    }
+}
+
+/// The PS2 accumulation frames.
+#[test]
+fn accumulation_frames() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0403);
+        let stubs: &[(u32, bool, u32, u32)] = &[
+            (m::GET_SPAD_PTR, false, 0, 0),
+            (m::GS_SET_PACKET, false, 1, 0),
+            (m::GS_START_VIF, false, 0, 0),
+            (m::GS_TEST, false, 8, 0),
+            (m::GS_ZBUF, false, 1, 0),
+            (m::ACC_ALPHA, false, 1, 0),
+            (m::GS_END2, false, 0, 0),
+            (m::SEND_SPAD, false, 1, 0),
+            (m::GS_FRAME_16, false, 2, 0),
+            (m::GS_FRAME2_16, false, 2, 0),
+            (m::DRAW_SET_FRAME, false, 0, 0),
+        ];
+        for &(sym, this, n, pops) in stubs {
+            t.stub(sym, this, n, pops);
+        }
+        for i in 0..20 {
+            for &(sym, ..) in stubs {
+                let v = rng.next();
+                t.ret(sym, v);
+            }
+            let on = [0, 1, rng.next() as u8][rng.below(3) as usize];
+            t.write(t.rebase(0x0130_0776), &[on]);
+            let on2 = [0, 1, rng.next() as u8][rng.below(3) as usize];
+            t.write(t.rebase(0x0130_0778), &[on2]);
+            t.check(
+                &format!("{name} {i} frameMap {on}"),
+                0x0082_bc50,
+                Conv::Cdecl,
+                &[],
+                |g| u(m::acc_set_frame_map(g)),
+            );
+            t.check(
+                &format!("{name} {i} frameChr {on2}"),
+                0x0082_be20,
+                Conv::Cdecl,
+                &[],
+                |g| u(m::acc_set_frame_chr(g)),
+            );
+        }
+    }
+}

@@ -336,3 +336,45 @@ pub fn blur_ex_update(h: &mut impl Host, this: u32) -> u32 {
     h.write(this + 0x2c, u32::MAX);
     0
 }
+
+/// `memcpy` through its import thunk (cdecl dst, src, n).
+pub const MEMCPY: u32 = 0x0094_9256;
+
+/// The shader-parameter copies `ShaderParamBuffer_SetValue2`
+/// (0x006386c0), `ShaderParam_CopyToBuffer_00638720`,
+/// `ShaderParamBuffer_SetValue` (0x00638780) and
+/// `ShaderParam_CopyToBuffer_00698960` (thiscall `(buffer; param, src)`,
+/// the same code): 1 for a null `src`; 3 when the parameter's range
+/// (offset `+8` and size `+0xa` & 0x1fff, words) ends past the buffer's
+/// size (`+0`, unsigned) or starts in its 4-byte header; else
+/// `memcpy(buffer + offset, src, size)` and 0.
+pub fn shader_param_copy(h: &mut impl Host, buffer: u32, param: u32, src: u32) -> u32 {
+    if src == 0 {
+        return 1;
+    }
+    let offset = u32::from(h.read::<u16>(param + 8));
+    let size = u32::from(h.read::<u16>(param + 0xa) & 0x1fff);
+    if offset + size > h.read::<u32>(buffer) || offset < 4 {
+        return 3;
+    }
+    h.call_sym(
+        MEMCPY,
+        Conv::Cdecl,
+        &[buffer.wrapping_add(offset), src, size],
+    );
+    0
+}
+
+/// `BrokenScreenEffect_updateLightParameters(this; p0..p6)` (0x006d5a70,
+/// thiscall): each non-null pointer's float copied (through `fld`/`fstp`)
+/// to `+0xc`, `+0x10`, `+0x14`, `+0x1c`, `+0x20`, `+0x24`, `+0x28`;
+/// returns the last pointer (its `eax`).
+pub fn broken_screen_update_light(h: &mut impl Mem, this: u32, p: [u32; 7]) -> u32 {
+    for (ptr, off) in p.into_iter().zip([0xc, 0x10, 0x14, 0x1c, 0x20, 0x24, 0x28]) {
+        if ptr != 0 {
+            let v = h.read::<u32>(ptr);
+            h.write(this + off, x87::round_trip(f32::from_bits(v)).to_bits());
+        }
+    }
+    p[6]
+}
