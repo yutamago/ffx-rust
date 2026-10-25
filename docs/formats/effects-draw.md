@@ -1,0 +1,316 @@
+# Effect draws: what PhyreEngine draws for the effects, and from what
+
+The M4 census of the effects (`docs/rewrite-plan.md`, M4; the scene's was
+`docs/formats/scene.md`): every effect draw of captured battle frames,
+traced to the `VFXDynamicGeometry` it draws, the effect object that made
+it (ppp object or op record), the `PhyreScene` list and pass that draw it,
+its shader, states and constants. It is the spec for the effects part of
+the Rust scene builder. Crate: [`crates/ffx-fxdraw`](../../crates/ffx-fxdraw).
+
+```bash
+# one frame: every draw with its producer, the effect state table, the gate
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo run --release -p ffx-fxdraw --example census -- \
+  ~/ffx-work/m4/captures/fx-magic/battle-magic-2 ~/ffx-work/m4/captures/fx-magic/battle-magic-2.snap
+# the gate over every <name>/ + <name>.snap pair of the folders (skips when unset)
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD \
+  FFX_FXDRAW_CAPTURES=~/ffx-work/m4/captures/fx-magic:~/ffx-work/m4/captures/fx-overdrive \
+  cargo test --release -p ffx-fxdraw --test captures
+```
+
+Other examples: `draws` (a capture's draws with targets, shader families
+and ring slots), `probe` (where a draw's ring bytes sit in a snapshot),
+`peek` (words of a snapshot; `find` for a word).
+
+## The captures
+
+`tools/replays/draw-fx-magic.txt` and `draw-fx-overdrive.txt` are
+`battle-magic.txt` and `battle-overdrive.txt` up to their last effect shot,
+with a hash capture (`gfxcapture … hash frames 1 now async`) and a memory
+snapshot (`snapshot`) at each effect shot: battle-magic 1-3 (magic 481,
+the `op_shape_draw` burst) and battle-overdrive 2 (Spiral Cut), 3 and 4
+(Valefor's entry, magic 0x253) and 6 and 7 (Valefor's overdrive). Original
+code (`original`), graphics layer on (`FFX_GFX=1`), sound off.
+
+The snapshot is taken one frame after the capture's held point (`wait 1`,
+then `snapshot`): the effect vertices a captured frame draws are those of
+the update after the held point. A 3-frame capture against snapshots taken
+0, 3 and 4 frames after the held point showed it: frame k's effect draws
+match the snapshot taken k + 1 frames on (frame 2 against the 3-frame
+snapshot: 205 of 212 traced at once, against 22-43 for every other pair).
+`PhyreScene_render` merges the frame's VFX arrays itself
+(`PhyreScene_MergeVFXRenderArrays` `0x00654650`, render thread), while the
+main thread runs the next update.
+
+**On PC2** (2026-10-25) the replays' saves are missing (the main
+machine's `ffx_001` is `cdsp0000`, its `ffx_005` `kami0100`; here slot 1 is
+story 3210 at Macalania). The captures above were taken with variants of
+the two scripts (`~/ffx-work/m4/pcfx-scripts/`, not in git): save 1, the
+party written (Rikku, Tidus, Wakka for the magic; Yuna and Tidus for the
+overdrive), battle `genk16_03` on land for both, Tidus using the first
+item of his list (a Hi-Potion: item 1's effect IDs, table `+0x84`, made 481
+as item 0's), Valefor's overdrive matched by the ID's high byte, and the
+load waits raised to 300000 frames (a battle took up to 17000 lockstep
+frames to load here). Same effects, other party, map and timing: the
+numbers below are these captures'. The scripts in git are for the main
+machine's saves.
+
+## Where the effects are drawn
+
+`PhyreScene_render` (`0x00668930`), for these battle frames, in this order
+(draw indices of battle-magic-2; the census's "runs"):
+
+| Draws | Producer | Pass |
+|---|---|---|
+| 0-65 | the 3D scene (map, characters, monsters, blob shadows) | Draw3DWorld into the scene targets (`docs/formats/scene.md`) |
+| 66-78 | post | the glow chain (`phyreglow.fx`, 13 draws) |
+| (64-70 in overdrive 6/7) | late world | the world at scene `+0x9c` and the postOpaque/postTransparent passes, into the colour target alone, after the glow: Valefor in its overdrive (7 `phyrechrlitshader` draws) |
+| 79-284 | **effects** | `PhyreScene_DrawMostVFX` (`0x00650670`) |
+| 285-286 | post | `copybuffer.fx`, `brightnessshader.fx` (`phyreblur.fx` and `phyredistortionshader.fx` in some frames) |
+| 287-353 | UI | `menudefaultshader*.fx`, the fonts |
+| 354 | post | the final copy to the back buffer |
+
+Every effect draw of the eight frames is in one block, the
+`DrawMostVFX` pass: Transparent pass name (`0x00c169d4`), into the scene
+colour target (`1280x720` R8G8B8A8, view format 28) against the scene
+depth (R24G8, depth test on, write off), one render target only (the
+normal target of the scene pass is not bound).
+
+### The VFX lists of `PhyreScene`
+
+A `VFXDynamicGeometry` is put on a list every frame by its update
+(`VfxGeometry_Register_006a52f0`, vtable `+8`, called by
+`graphicVFXUpdateWithType` `0x00645ba0` with the type in its flags):
+
+| Kind (flags) | List | Drawn by |
+|---|---|---|
+| 0, flag bit 31 set (`graphicVFXPath3Update`) | `+0x38cc` (fixed, 0xc00 entries, count `+0xf8cc`): the mesh instance (`geometry +0xc`) | `PhyreScene_DrawMostVFX` |
+| 0, bit 31 clear | `+0x68cc` (count `+0xf8d0`): the geometry itself, to be depth-sorted | merged into `+0x38cc` by `PhyreScene_MergeVFXRenderArrays` |
+| 0, geometry byte `+0x50` set | `+0x3880` (count `+0x3878`) (`PhyreScene_AddVFXToList3880` `0x006565e0`) | no pass found in `PhyreScene_render` (open question 4) |
+| 1 | `+0x3868` (count `+0x3860`) (`0x006a0d40`) | `PhyreScene_DrawUI2DVFX` (`0x00650ea0`), only while fading |
+| 2 | `+0x385c` (count `+0x3854`) (`0x00656990`) | `PhyreScene_RenderDTTVFX` (`0x006531b0`) |
+| 4 (`0x00ccca58 == 1` and kind != 2, or geometry `+0x3c` bit 8) | `+0x3888` (count `+0x388c`) (`0x006567e0`) | `PhyreScene_RenderVFXAfterPostProcess` (`0x006538d0`) |
+
+Bit 30 of the flags skips the geometry's own update (vtable `+0x28`,
+`VFXDynamicGeometry_updateRenderDataWithoutAddingToArray`).
+
+`PhyreScene_MergeVFXRenderArrays` (`0x00654650`) closes the current sync
+path (`PhyreScene_VFXSyncPath` `0x00654cc0` opens them; counts at `+0xf8d4`
+and `+0xf914`, `+0xf954` paths) and rebuilds `+0x38cc` path by path: that
+path's unsorted mesh instances first, then its sorted geometries' mesh
+instances. The sort (`PhyreScene_GetVFXSortMode` `0x006721b0`): mode 1 (the
+default, and 24 magic IDs) puts the geometries into 4096 buckets by `ftol`
+of their depth (geometry `+0xdc`, f32, -1 from the constructor), each
+bucket in insertion order; mode 2 (magic 0x203, 0x29b) is the CRT `qsort`
+with `VFXGeometry_CompareDepth` (`0x00659140`); mode 0 (five level hashes)
+leaves them. `PhyreScene_AddDrawEntry` (`0x00656c10`) sets `+0x10d2c` when
+the mode is not 0.
+
+`PhyreScene_DrawMostVFX` then renders the list in order: each non-zero
+entry through `renderMeshInstance(mi, mi +0x10, 0, scene +0xd0 +0x13c)`,
+with the draw events (`PhyreScene_addVFXDrawEvent` `0x00656940`, 16-byte
+records at `+0xfb5c`, count `+0xfb54`) run when their position (`+4`, the
+list count at the time of the event) is reached
+(`PhyreScene_processVFXDrawEvent` `0x00666e40`: 0 characters with the
+event camera, 1 copy the colour or depth buffer, 2 screen fade, 3
+PS2-lighting set-up `0x006e5a40`, 4 specular, 5 draw a character, 6 a
+z pre-pass). For magic 0x296 the geometry of instance (0x78, 0x5bc) is
+held back and drawn last. No frame here had an event.
+
+A mesh instance draws one indexed draw per segment of its render data
+with indices (segment `+8` > 0), in segment order.
+
+### What the census checked
+
+The census builds that sequence from the snapshot (every list entry, the
+geometry whose `+0xc` is the entry, its segments with indices) and aligns
+it with the captured effect draws (draws with the VFX vertex layout or a
+`vfx*.fx` shader), a pair counting only when the draw's ring bytes are the
+segment's: the four vertex arrays from the draw's first record and the
+indices relative to their smallest. On all eight frames:
+
+- every expected draw is drawn, in list order, and every effect draw is an
+  expected one, but for 24 draws (battle-magic-1: 7, battle-magic-3: 17)
+  whose list entry the snapshot holds as 0: their geometry sits in the
+  table's delete pool (destroyed by `graphicVFXDestroy`, which zeroes the
+  entry, `PhyreScene_removeVFXFromRenderArray` `0x006687a0`), with the
+  bytes the frame drew, at a zeroed entry between its neighbours' places;
+- only `DrawMostVFX` was in use (the other four lists were empty).
+
+## The geometry
+
+`VFXDynamicGeometry` (constructor `0x0069e3e0`, vtable `0x00b47e40`), what
+the census reads:
+
+| Offset | Meaning |
+|---|---|
+| `+0x0c` | the mesh instance the lists hold |
+| `+0x20` | the shader (`ClassDynamicGeometry_SetShader_006a4800`) |
+| `+0x24` | the render data (`docs/formats/render.md`): `+0x90` segment count, `+0x94` segments of `0x6c` bytes |
+| `+0x2c` | the cluster the shader came from (default `g_PhyreScene +0x2874`) |
+| `+0x3c` | the VSP flags (below) |
+| `+0x50` | byte: list `+0x3880` instead |
+| `+0xdc` | f32 depth key of the sort (-1 at construction) |
+
+A segment's vertex arrays (`graphicDynGeoMemManagerGetBufferForSegment`
+`0x0063fdb0`): `+4` vertices, `+8` indices, `+0xc` positions (12 bytes a
+vertex), `+0x10` normals (12), `+0x14` colours (16), `+0x18` uvs (8),
+`+0x1c` indices (u16); the same at `+0x2c + 0x1c n` for buffer slot `n`.
+The draw binds them as rings: positions slot 0, normals slot 1, colours
+slot 2, uvs slot 3 (strides 12, 12, 16, 8; `POSITION0` f6, `NORMAL0` f6,
+`COLOR0` f2, `TEXCOORD0` f16), the indices as a ring `R16_UINT` buffer, the
+bytes as the arrays hold them (the census compares them byte for byte).
+In these frames every drawn segment used its own arrays (slot `+4`).
+
+The table (`g_VFXRenderDataTable` `0x00ccca6c`, `docs/formats/render.md`)
+also keeps a delete pool: count `+8` (bit 31 a flag), keys `+0xc` (8 bytes
+each), counters `+0x14`, geometries `+0x1c`
+(`ClassVFXRenderDataTable_UpdateDeletePool` `0x0069fe50` counts them down
+and clears their segments).
+
+## Shaders
+
+The shader is picked by the geometry's VSP flags (`+0x3c`): 
+`VfxShaderManager_FindShader` (`0x006c06e0`) looks the texture name up in
+the level's or spell's special-shader table first, then the flags in the
+table that `VfxShaderManager_loadVfxShader` (`0x006c0fc0`) builds from
+`ffx_data/gamedata/ps3data/shaders/vfxShader_fx.txt` (`Name.fx.phyre:VSP_A|VSP_B`
+lines, the bit values in the file's own comment block: `VSP_ZMAT` 1,
+`VSP_ALPHA_ADDITIVE` 2, `VSP_ENABLE_TEXTURE` 8, `VSP_ALPHA_SUBSTRACT` 0x10,
+`VSP_ALPHA_SUBSTRACT2` 0x20, `VSP_ZWRITE_ENABLE` 0x40, …;
+`VfxShaderManager_loadShader` `0x006c0a70`). With no match,
+`ClassDynamicGeometry_SetShader_006a4800` retries with only bit 8 kept. The
+census reads the same file from the archive: every effect draw's pixel
+shader is the file's shader for its flags (0 mismatches, 0 unlisted flags).
+
+| Flags | Shader (pixel; vertex) | Draws |
+|---|---|---|
+| `0xa` additive, texture | `vfxadditiveshader.fx`; vertex shader shared with `vfxadditivenclipshader.fx` | 836 |
+| `0x8` modulate, texture | `vfxdefaultshader.fx` | 149 |
+| `0x18` subtract, texture | `vfxsubstractshader.fx`; vertex `vfxdefaultshader.fx`'s | 46 |
+| `0x9` zmat, modulate, texture | `vfxshapeshader.fx` | 10 |
+| `0x2` additive | `vfxadditiveshadernt.fx` | 1 |
+
+(The family of a shader is the first archive cluster holding its bytecode;
+several clusters share vertex shaders.) The field capture `fw1-a` adds
+`vfxadditiveshadernt`, `vfxzmatadditiventshader`/`vfxshapeshadernt` and
+`vfxnzadditiveshadernt` (one draw after the UI: another list, open
+question 4).
+
+## States and constants
+
+From `ffx-drawdiff`'s decoding (Direct3D 11 enum values), per flags and
+pixel shader, over the eight frames:
+
+| Flags, shader | Blend (src/dest/op, alpha) | Depth | Raster |
+|---|---|---|---|
+| `0xa` `vfxadditiveshader` | 2/2/1 (one, one, add) or 5/2/1 (src alpha, one, add); alpha 2/1/1 | test on, `LESS_EQUAL` (4), write off | cull none (1) |
+| `0x8` `vfxdefaultshader` | 5/6/1 (src alpha, inv src alpha) or 2/6/1; alpha 2/1/1 | the same | the same |
+| `0x18` `vfxsubstractshader` | 2/2/3 (one, one, reverse subtract) | the same | the same |
+| `0x9` `vfxshapeshader` | 5/6/1 | the same | the same |
+| `0x2` `vfxadditiveshadernt` | 2/2/1 | the same | the same |
+
+Write mask 15. One flags value can come with two source factors (open
+question 2).
+
+Used constants (`cb0` of each stage; reflection, used variables only):
+
+| Shader | Vertex | Pixel |
+|---|---|---|
+| all | `WorldViewProjection` | `softParticleContrast`, `softParticleEnabled`, `softParticleScale` |
+| `vfxadditiveshader` | | also `cameraFadeoutFactor`, `doCameraFadeout` |
+| `vfxshapeshader` (zmat) | also `ViewProjection`, `zCrct`, `zMatrix` | |
+
+`WorldViewProjection` and `ViewProjection` are PhyreEngine's derived values
+(`docs/formats/scene.md`, "Constants"); `zMatrix`/`zCrct` are the z-matrix
+correction (`VFXDynamicGeometry_setZCorrectionValue` `0x006a3b20`); the
+soft-particle and camera-fade values are material parameters of the VFX
+shaders (where they are written: open question 3). The billboard
+particles' positions in the arrays are camera-facing quads with one z for
+all four corners (the fill requests carry `g_pppFillMatrix`,
+`docs/formats/render.md`); which matrix `WorldViewProjection` then holds
+for them is for round 2 to check against the frame's camera.
+
+## Instance keys and makers
+
+A geometry is found in the table by its 64-bit instance key, `(lo, hi)` as
+the setup calls pass it (`graphicVFXGetRenderDataByInstance(lo, hi)`); a
+several-part effect keeps part `i` at `lo + 10000 i`. The key says who made
+it:
+
+| Key | Maker | Setup callers |
+|---|---|---|
+| `(g_pppCurrentProgram, object)` | a ppp program of the ppp object at `hi` (`pppRunPartStd` `0x00716c40`) | `pppDrawShape0` `0x00740a70` and the other ppp draws (`InitVFXRenderData`, `…Shp`, `…ShapeField`, `…Line`, `…Path3…`) |
+| `(0, record)` | the op effect system: the op record at `hi` (0x50-byte records in `FFX.exe`'s op area after `g_Op3dListener` `0x0113fcd0`, or the heap) | `opp_md` `0x008020a0`, `opp_anm` `0x00811120`, `opp_anmm` `0x008124b0`, `opp_anm_yodare` `0x00811bc0`, `opus_0283_draw` `0x00a76770`, `opus_0582_*`, `opu_mdc_break` `0x00804270`, `opp_md_break_init_a74410` |
+| fixed pairs | `opus_0706_noise_draw` `(0x15, …)`, `opus_0706_noise_update`/`_acc_update` `(1|2, 0x2c2)`, `opus_0154_wave_draw` `(b, 0x9a)`, `setPolyTris0434`/`setPolyQuad0434` `(0|1, id)`, `AtelExecDrawShape`, `rcbgGuideUpdateWalk`, `rcefModelProc`, … | |
+
+For a ppp key the census walks object `+8` (its birth record) `+0` (the
+program list), entry `index` (`+0x28 + 0x10 index`, count `+0x26`) to the
+`g_pppProgramTable` record. A list inside a spell overlay is read from
+the overlay's file (`magicFiles/FFX/magic_<id>.dll`, mapped at the base in
+`g_MagicFile_Handle`; snapshots leave modules out): on disk an entry's
+first word is the table index, which the loader turns into the record's
+address (magic 481's shape part: `pppPoint`, `pppAngle`, `pppScale`,
+`pppColor`, `pppMatrixXYZ`, `pppDrawMatrixFront`, `pppDrawShape`,
+`pppVertexAp`).
+
+Makers over the eight frames:
+
+| Frame (overlay) | Effect draws | ppp | op | other |
+|---|---|---|---|---|
+| battle-magic-1 (481) | 192 | 189 | 3 | 0 |
+| battle-magic-2 (481) | 206 | 188 | 18 | 0 |
+| battle-magic-3 (481) | 353 | 349 | 3 | 1 |
+| battle-overdrive-2 (390, Spiral Cut) | 37 | 4 (object in the overlay's image) | 32 | 1 |
+| battle-overdrive-3 (595, Valefor's entry) | 21 | 0 | 21 | 0 |
+| battle-overdrive-4 (595) | 21 | 0 | 21 | 0 |
+| battle-overdrive-6 (604, the overdrive) | 75 | 42 | 33 | 0 |
+| battle-overdrive-7 (604) | 137 | 110 | 27 | 0 |
+| **all** | **1042** | **882** | **158** | **2** |
+
+Of the 882 ppp draws, 92 name a drawing program (`pppKeLnsLp`, the
+lens-flare loop, in the overdrive); for the other 786 the key's index
+names a program without a draw or runner (`pppVertexAp`, `pppVertexApLc`,
+`pppRandUpFV`): the draws come from that ppp object, but which program of
+it made the instance is not settled (open question 1). The census marks
+them `NO-DRAW`.
+
+## Gate
+
+Every effect draw of the eight captured frames is traced: 1042 of 1042, to
+the `DrawMostVFX` list place it is drawn from (1018 by the list entry, 24
+by a zeroed entry and the delete pool), the geometry and segment whose
+bytes it draws, the instance key and its maker (ppp object or op record),
+and the shader its flags give (`cargo test -p ffx-fxdraw --test captures`:
+"8 frames, 1042 effect draws traced"; no unexplained draw of any class in
+the frames). `tests/synthetic.rs` checks the census itself on a synthetic
+frame.
+
+## Open questions
+
+1. **Which ppp program made the instance.** The key's low word is
+   `g_pppCurrentProgram`, but for 786 draws it names `pppVertexAp`,
+   `pppVertexApLc` or `pppRandUpFV`, which have no draw (`pppVertexAp`
+   births particles at vertices, `pppBornVertex`). Either the born objects
+   draw with the parent's index left in `g_pppCurrentProgram`, or the draws
+   run later (the OT list, `pppOtFunc_Control` `0x00716ac0`). A coverage
+   run of `pppDrawShape0` with the program index and object logged settles
+   it.
+2. **The blend factors.** Flags `0xa` draw with source factor one or
+   source alpha, flags `0x8` with source alpha or one; the geometry's words
+   `+0x30..+0x5c` do not tell them apart. Candidates: the alpha function
+   (`calculateVFXSP_AlphaFunction`, `g_AlphaScale`), the material's
+   blend set by `ClassDynamicGeometry_setupMaterial` (`0x006a3b50`).
+3. **The VFX material constants** (`softParticle*`, `cameraFadeout*`,
+   `zCrct`): who writes them and when.
+4. **The other lists**: no frame used `+0x3880` (no draw pass found for
+   it), the DTT, UI 2D or after-post lists; the field capture's
+   `vfxnzadditiveshadernt` draw after the UI comes from one of them. Field
+   and event effects and the spells with draw events (copy buffer, screen
+   fade, character draws) need captures of their own.
+5. **The op records**: name the op system's record layout (0x50 bytes,
+   `FFX.exe` area after `g_Op3dListener`) and which `opp_*` function each
+   record belongs to; the census stops at the record.
+6. **The late world** (scene `+0x9c` and the post passes): the scene
+   builder's, with the summon's character drawn after the glow.
+7. **PC2 captures** use other saves and timing (above); the main
+   machine should take the git scripts' captures and run the gate on them.
