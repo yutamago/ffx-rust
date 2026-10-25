@@ -90,15 +90,124 @@ pub const LOD_TYPES: [u32; 2] = [0x005c_bc80, 0x005c_c0e0];
 /// `PLODLevel::Bind`, `PLODGroup::Bind`.
 pub const LOD_BINDS: [u32; 2] = [0x005a_3910, 0x005a_34b0];
 
+/// The head of the list `0x0054d130` searches (`{name, next}`).
+pub const NAMED_LIST3: u32 = 0x00ca_ece8;
+/// `Phyre_PBase_GetClassDescriptor`.
+pub const PBASE_GET_DESCRIPTOR: u32 = 0x0043_5740;
+/// `Phyre_PClassDescriptor_PClassDescriptor_0043b0a0` (thiscall `(d, ns,
+/// name, size, align, base, 0)`).
+pub const CLASS_DESCRIPTOR_INIT6: u32 = 0x0043_b0a0;
+
+/// An array class descriptor (`PArray<T>`/`PSharray<T>`): where its name
+/// pointer is, the element size, its vtable and its three buffers.
+#[derive(Debug, Clone, Copy)]
+pub struct ArrayDescriptor {
+    pub name: u32,
+    pub size: u32,
+    pub vtable: u32,
+    pub buffers: [u32; 3],
+}
+
+const fn array(name: u32, size: u32, vtable: u32, b: u32, c: u32, d: u32) -> ArrayDescriptor {
+    ArrayDescriptor {
+        name,
+        size,
+        vtable,
+        buffers: [b, c, d],
+    }
+}
+
+/// The array descriptors' constructors: `(function, descriptor)`.
+pub const ARRAY_DESCRIPTORS: [(u32, ArrayDescriptor); 7] = [
+    (
+        0x0054_7020,
+        array(
+            0x00ca_ec6c,
+            8,
+            0x00b2_c2b4,
+            0x00ca_ecc0,
+            0x00ca_ecd0,
+            0x00ca_ece0,
+        ),
+    ),
+    (
+        0x0054_ddd0,
+        array(
+            0x00ca_f1a4,
+            8,
+            0x00b2_c90c,
+            0x00ca_f1c0,
+            0x00ca_f1d0,
+            0x00ca_f1e0,
+        ),
+    ),
+    (
+        0x0055_d500,
+        array(
+            0x00cb_1b64,
+            0x18,
+            0x00b2_ef9c,
+            0x00cb_1c00,
+            0x00cb_1c20,
+            0x00cb_1c40,
+        ),
+    ),
+    (
+        0x0055_d5a0,
+        array(
+            0x00cb_1b60,
+            0x18,
+            0x00b2_ee94,
+            0x00cb_1ba0,
+            0x00cb_1bc0,
+            0x00cb_1be0,
+        ),
+    ),
+    (
+        0x0058_1930,
+        array(
+            0x00cb_aa48,
+            8,
+            0x00b3_3ca4,
+            0x00cb_aa50,
+            0x00cb_aa60,
+            0x00cb_aa70,
+        ),
+    ),
+    (
+        0x005a_1f80,
+        array(
+            0x00cb_b1fc,
+            8,
+            0x00b3_4cb4,
+            0x00cb_b240,
+            0x00cb_b250,
+            0x00cb_b260,
+        ),
+    ),
+    (
+        0x005a_2020,
+        array(
+            0x00cb_b1f8,
+            8,
+            0x00b3_4bac,
+            0x00cb_b210,
+            0x00cb_b220,
+            0x00cb_b230,
+        ),
+    ),
+];
+
 pub mod bridge {
     //! The originals over game memory.
 
     use super::{
-        ADD_TO_NAMESPACE, BASE_DESCRIPTOR_NAME, CALLBACK_DESCRIPTORS, CLASS_DESCRIPTOR_INIT,
-        DESCRIPTOR_BASE_VFTABLE, DESCRIPTOR_TYPE, GLOBAL_NAMESPACE, Host, LOD_BINDS,
-        LOD_INITIALIZED, LOD_PRE_INIT, LOD_TYPES, NAMED_LIST, NAMED_LIST2, PBASE_DESCRIPTOR,
-        REGISTER_TYPE, SET_DEFAULT_BUFFER, SET_VALIDATION_BUFFER, SET_WRITE_MASK_BUFFER,
-        SHADER_PASS_INIT, cdecl, str_eq, thiscall, with_al,
+        ADD_TO_NAMESPACE, ArrayDescriptor, BASE_DESCRIPTOR_NAME, CALLBACK_DESCRIPTORS,
+        CLASS_DESCRIPTOR_INIT, CLASS_DESCRIPTOR_INIT6, DESCRIPTOR_BASE_VFTABLE, DESCRIPTOR_TYPE,
+        GLOBAL_NAMESPACE, Host, LOD_BINDS, LOD_INITIALIZED, LOD_PRE_INIT, LOD_TYPES, NAMED_LIST,
+        NAMED_LIST2, NAMED_LIST3, PBASE_DESCRIPTOR, PBASE_GET_DESCRIPTOR, REGISTER_TYPE,
+        SET_DEFAULT_BUFFER, SET_VALIDATION_BUFFER, SET_WRITE_MASK_BUFFER, SHADER_PASS_INIT, cdecl,
+        str_eq, thiscall, with_al,
     };
 
     /// `0x004359d0` (thiscall `(class, name)`): the class's member (a
@@ -282,6 +391,50 @@ pub mod bridge {
         let vt = h.rebase(DESCRIPTOR_BASE_VFTABLE);
         h.write(d, vt);
         h.write(d + 0x1c, 0u32);
+        d
+    }
+
+    /// `0x0054d130(name)`: [`find_named`] over the list at
+    /// `0x00caece8` (`{name, next}`).
+    pub fn find_named3(h: &mut impl Host, name: u32) -> u32 {
+        if name == 0 {
+            return 0;
+        }
+        let mut e: u32 = h.read(h.rebase(NAMED_LIST3));
+        while e != 0 {
+            let n: u32 = h.read(e);
+            if str_eq(h, n, name) {
+                return e;
+            }
+            e = h.read(e + 4);
+        }
+        0
+    }
+
+    /// An array class descriptor's constructor (thiscall `(d)`,
+    /// `0x00547020` and its copies, [`super::ArrayDescriptor`]):
+    /// `PClassDescriptor(d, GetGlobalNamespace(), *name, size, 4,
+    /// PBase's descriptor, 0)` (the name word read before the namespace
+    /// call, `PBase`'s descriptor fetched first), `+0x90 |= 2`, the vtable,
+    /// the three buffers; `d`.
+    pub fn array_descriptor_init(h: &mut impl Host, d: u32, a: &ArrayDescriptor) -> u32 {
+        let base = cdecl(h, PBASE_GET_DESCRIPTOR, &[]);
+        let name: u32 = h.read(h.rebase(a.name));
+        let ns = cdecl(h, GLOBAL_NAMESPACE, &[]);
+        thiscall(
+            h,
+            CLASS_DESCRIPTOR_INIT6,
+            d,
+            &[ns, name, a.size, 4, base, 0],
+        );
+        let flags: u32 = h.read(d + 0x90);
+        h.write(d + 0x90, flags | 2);
+        let vt = h.rebase(a.vtable);
+        h.write(d, vt);
+        let [b0, b1, b2] = a.buffers.map(|b| h.rebase(b));
+        thiscall(h, SET_DEFAULT_BUFFER, d, &[b0]);
+        thiscall(h, SET_VALIDATION_BUFFER, d, &[b1]);
+        thiscall(h, SET_WRITE_MASK_BUFFER, d, &[b2]);
         d
     }
 }

@@ -45,6 +45,8 @@ pub const SCRIPTABLE_VFTABLE: u32 = 0x00b2_d200;
 pub const ANNOTATION_VFTABLE: u32 = 0x00b3_0a00;
 /// `Phyre_PIClassDataMemberDynamicType_vftable`.
 pub const DYNAMIC_TYPE_VFTABLE: u32 = 0x00b3_09cc;
+/// `Phyre_PPhysics_PPhysicsShapeBase_vftable`.
+pub const SHAPE_BASE_VFTABLE: u32 = 0x00b3_9508;
 /// `Phyre_PhyreOS_Sleep` (cdecl `(ms)`).
 pub const SLEEP: u32 = 0x0043_0030;
 /// `0x00584ea0` (thiscall `(object)`).
@@ -56,8 +58,8 @@ pub mod bridge {
     use super::{
         ANNOTATION_VFTABLE, DYNAMIC_TYPE_VFTABLE, Host, LOCATOR_DESCRIPTOR, NAME_DESCRIPTOR,
         NAME_LIST, NODE_RELEASE, NODE_TREE, PBASE_DESCRIPTOR, PBASE_GET_DESCRIPTOR, REF_INIT,
-        REF_RELEASE, SCRIPTABLE_VFTABLE, SLEEP, TREE_REMOVE, UNLINK_OWNER, WAIT_RELEASE, free,
-        thiscall, with_al,
+        REF_RELEASE, SCRIPTABLE_VFTABLE, SHAPE_BASE_VFTABLE, SLEEP, TREE_REMOVE, UNLINK_OWNER,
+        WAIT_RELEASE, free, thiscall, with_al,
     };
 
     /// `0x00435740` `Phyre_PBase_GetClassDescriptor()`.
@@ -410,5 +412,46 @@ pub mod bridge {
         }
         thiscall(h, WAIT_RELEASE, p, &[]);
         1
+    }
+
+    /// `0x005a6dd0` / `0x005a6ec0` / `0x005d5060` (destroy): `f(p)`
+    /// (thiscall), null or not.
+    pub fn destroy_call_always(h: &mut impl Host, f: u32, p: u32) -> u8 {
+        thiscall(h, f, p, &[]);
+        1
+    }
+
+    /// The physics shapes' scalar deleting destructors (thiscall `(this,
+    /// flags)`, `0x005e6740` and its copies): the vtable `vt` (the
+    /// destructor chain's last, `PPhysicsShapeBase`'s or another), then
+    /// frees `this` when `flags & 1`; `this`.
+    pub fn base_delete(h: &mut impl Host, this: u32, flags: u32, vt: u32) -> u32 {
+        let v = h.rebase(vt);
+        h.write(this, v);
+        if flags & 1 != 0 {
+            free(h, this);
+        }
+        this
+    }
+
+    /// The `Bullet` shapes' scalar deleting destructors (`0x005e66b0` and
+    /// its copies): its own vtable, the Bullet object at `+off` deleted
+    /// (its slot 0, flags 1) and cleared, `+0x58` cleared, then the
+    /// `PPhysicsShapeBase` vtable and the free when `flags & 1`; `this`.
+    pub fn bullet_delete(h: &mut impl Host, this: u32, flags: u32, vt: u32, off: u32) -> u32 {
+        let v = h.rebase(vt);
+        h.write(this, v);
+        let obj: u32 = h.read(this + off);
+        if obj != 0 {
+            h.call_virtual(obj, 0, &[1]);
+        }
+        h.write(this + off, 0u32);
+        h.write(this + 0x58, 0u32);
+        let base = h.rebase(SHAPE_BASE_VFTABLE);
+        h.write(this, base);
+        if flags & 1 != 0 {
+            free(h, this);
+        }
+        this
     }
 }

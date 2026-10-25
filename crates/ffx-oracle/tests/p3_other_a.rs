@@ -991,3 +991,160 @@ fn physics_callbacks_match_the_original() {
         t.unstub_all();
     }
 }
+
+#[test]
+fn destructors_and_array_descriptors_match_the_original() {
+    let base_dtors: [(u32, u32); 10] = [
+        (0x005e_6740, 0x00b3_9508),
+        (0x005e_68f0, 0x00b3_b0a8),
+        (0x005e_6b10, 0x00b3_9508),
+        (0x005e_6cc0, 0x00b3_9508),
+        (0x005e_6dd0, 0x00b3_9508),
+        (0x005e_6f80, 0x00b3_9508),
+        (0x005e_6fe0, 0x00b3_9508),
+        (0x005e_70a0, 0x00b3_9508),
+        (0x005e_7160, 0x00b3_9508),
+        (0x005e_7190, 0x00b3_9508),
+    ];
+    let bullet_dtors: [(u32, u32, u32); 7] = [
+        (0x005e_66b0, 0x00b3_9bf0, 0x6c),
+        (0x005e_6770, 0x00b3_9bf0, 0x6c),
+        (0x005e_6830, 0x00b3_a1e0, 0x68),
+        (0x005e_6a80, 0x00b3_a1e0, 0x68),
+        (0x005e_6b40, 0x00b3_a1e0, 0x68),
+        (0x005e_7010, 0x00b3_9900, 0x60),
+        (0x005e_70d0, 0x00b3_9900, 0x60),
+    ];
+    let calls: [(u32, u32); 5] = [
+        (0x0055_2800, 0x0055_2200),
+        (0x0055_af00, 0x0055_9530),
+        (0x005a_6d30, 0x005a_2520),
+        (0x005a_6d80, 0x005a_2630),
+        (0x005d_0590, 0x005c_f1e0),
+    ];
+    let always: [(u32, u32); 3] = [
+        (0x005a_6dd0, 0x005a_2700),
+        (0x005a_6ec0, 0x005a_29d0),
+        (0x005d_5060, 0x005d_4770),
+    ];
+    let scalar: [(u32, u32); 5] = [
+        (0x005c_f690, 0x005c_f420),
+        (0x005e_6800, 0x005e_2030),
+        (0x005e_68c0, 0x005e_2030),
+        (0x005e_6c90, 0x005e_2360),
+        (0x005e_6cf0, 0x005e_2360),
+    ];
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0dd0_0b1e);
+        t.stub(ffx_pother_a::PHYRE_FREE, 1, 0, StubRet::Value(0x1111));
+        for &(_, f) in calls.iter().chain(&always).chain(&scalar) {
+            let at = t.rebase(f);
+            if !t.saved.iter().any(|(a, _)| *a == at) {
+                t.stub(f, 0, 0, StubRet::Value(f));
+            }
+        }
+        // the Bullet objects' deleting destructor (slot 0, one word)
+        let del = t.stub_code(0xde1e, 1, 1, StubRet::Value(0xde));
+        let vt = t.zeros(8);
+        t.w32(vt, del);
+        for round in 0..6u32 {
+            let p = t.random(&mut rng, 0x80);
+            let flags = round % 4;
+            for &(sym, v) in &base_dtors {
+                t.check("base delete", sym, Conv::Thiscall(p), &[flags], ALL, |g| {
+                    object::bridge::base_delete(g, p, flags, v)
+                });
+            }
+            for &(sym, v, off) in &bullet_dtors {
+                let obj = if round % 3 == 0 {
+                    0
+                } else {
+                    let o = t.random(&mut rng, 0x10);
+                    t.w32(o, vt);
+                    o
+                };
+                t.w32(p + off, obj);
+                t.w32(p + 0x58, rng.next());
+                t.check(
+                    "bullet delete",
+                    sym,
+                    Conv::Thiscall(p),
+                    &[flags],
+                    ALL,
+                    |g| object::bridge::bullet_delete(g, p, flags, v, off),
+                );
+            }
+            for &(sym, f) in &scalar {
+                t.check("scalar", sym, Conv::Thiscall(p), &[flags], ALL, |g| {
+                    object::bridge::scalar_delete(g, f, p, flags)
+                });
+            }
+            for q in [p, 0] {
+                for &(sym, f) in &calls {
+                    t.check("call", sym, Conv::Stdcall, &[q], AL, |g| {
+                        u32::from(object::bridge::destroy_call(g, f, q))
+                    });
+                }
+                for &(sym, f) in &always {
+                    t.check("always", sym, Conv::Stdcall, &[q], AL, |g| {
+                        u32::from(object::bridge::destroy_call_always(g, f, q))
+                    });
+                }
+                for sym in [0x005a_6cf0, 0x005a_6d10] {
+                    t.check("pair", sym, Conv::Stdcall, &[q], ALL, |g| {
+                        object::bridge::create_pair(g, q)
+                    });
+                }
+            }
+            let count = [0, 1, 2, 0x8000_0007, 0x4000_0002, rng.next()][round as usize];
+            t.w32(p, count);
+            t.w32(p + 4, rng.next());
+            t.check("array", 0x005a_6df0, Conv::Stdcall, &[p], AL, |g| {
+                u32::from(object::bridge::destroy_array_gt1(g, p, 0))
+            });
+        }
+        // the array descriptors: PBase's descriptor runs as it is, the
+        // namespace and descriptor calls are stubs
+        t.stub(class::GLOBAL_NAMESPACE, 0, 0, StubRet::Value(0x0e5e));
+        t.stub(class::CLASS_DESCRIPTOR_INIT6, 6, 6, StubRet::Value(0));
+        t.stub(class::SET_DEFAULT_BUFFER, 1, 1, StubRet::Value(1));
+        t.stub(class::SET_VALIDATION_BUFFER, 1, 1, StubRet::Value(2));
+        t.stub(class::SET_WRITE_MASK_BUFFER, 1, 1, StubRet::Value(3));
+        for (sym, a) in class::ARRAY_DESCRIPTORS {
+            let d = t.random(&mut rng, 0xa0);
+            let name = t.rebase(a.name);
+            let v = rng.next();
+            t.w32(name, v);
+            let n0 = t.calls();
+            t.check("array descriptor", sym, Conv::Thiscall(d), &[], ALL, |g| {
+                class::bridge::array_descriptor_init(g, d, &a)
+            });
+            assert_eq!(t.calls(), n0 + 5);
+        }
+        // the third named list
+        let g = t.rebase(class::NAMED_LIST3);
+        let real = t.r32(g);
+        let names: Vec<u32> = ["x", "xy", "abc", ""].iter().map(|s| t.string(s)).collect();
+        let mut first = 0;
+        for &s in names.iter().rev() {
+            let e = t.zeros(8);
+            t.w32(e, s);
+            t.w32(e + 4, first);
+            first = e;
+        }
+        let qs: Vec<u32> = ["x", "xy", "xyz", "abc", "", "q"]
+            .iter()
+            .map(|s| t.string(s))
+            .collect();
+        for head in [real, first] {
+            t.w32(g, head);
+            for &q in qs.iter().chain(&[0]) {
+                t.check("findNamed3", 0x0054_d130, Conv::Cdecl, &[q], ALL, |g| {
+                    class::bridge::find_named3(g, q)
+                });
+            }
+        }
+        t.w32(g, real);
+        t.unstub_all();
+    }
+}

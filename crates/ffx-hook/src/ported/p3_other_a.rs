@@ -415,4 +415,168 @@ ported! {
     Phyre_PPhysics_DestroyBody_005f8100 @ 0x005f_8100 => extern "stdcall" fn destroy_5f8100(p: u32) -> u8 {
         physics::destroy_body(&mut mem(), p)
     }
+    /// `0x005e6740(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_ShapeDelete_005e6740 @ 0x005e_6740 => extern "thiscall" fn delete_5e6740(this: u32, flags: u32) -> u32 {
+        object::base_delete(&mut mem(), this, flags, 0x00b3_9508)
+    }
+    /// `0x005e68f0(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_ShapeDelete_005e68f0 @ 0x005e_68f0 => extern "thiscall" fn delete_5e68f0(this: u32, flags: u32) -> u32 {
+        object::base_delete(&mut mem(), this, flags, 0x00b3_b0a8)
+    }
+    /// `0x005e6b10(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_ShapeDelete_005e6b10 @ 0x005e_6b10 => extern "thiscall" fn delete_5e6b10(this: u32, flags: u32) -> u32 {
+        object::base_delete(&mut mem(), this, flags, 0x00b3_9508)
+    }
+    /// `0x005e6cc0(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_ShapeDelete_005e6cc0 @ 0x005e_6cc0 => extern "thiscall" fn delete_5e6cc0(this: u32, flags: u32) -> u32 {
+        object::base_delete(&mut mem(), this, flags, 0x00b3_9508)
+    }
+    /// `0x005e6dd0(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_ShapeDelete_005e6dd0 @ 0x005e_6dd0 => extern "thiscall" fn delete_5e6dd0(this: u32, flags: u32) -> u32 {
+        object::base_delete(&mut mem(), this, flags, 0x00b3_9508)
+    }
+    /// `0x005e6f80(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_ShapeDelete_005e6f80 @ 0x005e_6f80 => extern "thiscall" fn delete_5e6f80(this: u32, flags: u32) -> u32 {
+        object::base_delete(&mut mem(), this, flags, 0x00b3_9508)
+    }
+    /// `0x005e6fe0(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_ShapeDelete_005e6fe0 @ 0x005e_6fe0 => extern "thiscall" fn delete_5e6fe0(this: u32, flags: u32) -> u32 {
+        object::base_delete(&mut mem(), this, flags, 0x00b3_9508)
+    }
+    /// `0x005e70a0(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_ShapeDelete_005e70a0 @ 0x005e_70a0 => extern "thiscall" fn delete_5e70a0(this: u32, flags: u32) -> u32 {
+        object::base_delete(&mut mem(), this, flags, 0x00b3_9508)
+    }
+    /// `0x005e7160(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_ShapeDelete_005e7160 @ 0x005e_7160 => extern "thiscall" fn delete_5e7160(this: u32, flags: u32) -> u32 {
+        object::base_delete(&mut mem(), this, flags, 0x00b3_9508)
+    }
+    /// `0x005e7190(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_ShapeDelete_005e7190 @ 0x005e_7190 => extern "thiscall" fn delete_5e7190(this: u32, flags: u32) -> u32 {
+        object::base_delete(&mut mem(), this, flags, 0x00b3_9508)
+    }
+    /// `0x005e66b0(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_BulletShapeDelete_005e66b0 @ 0x005e_66b0 => extern "thiscall" fn delete_5e66b0(this: u32, flags: u32) -> u32 {
+        object::bullet_delete(&mut mem(), this, flags, 0x00b3_9bf0, 0x6c)
+    }
+    /// `0x005e6770(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_BulletShapeDelete_005e6770 @ 0x005e_6770 => extern "thiscall" fn delete_5e6770(this: u32, flags: u32) -> u32 {
+        object::bullet_delete(&mut mem(), this, flags, 0x00b3_9bf0, 0x6c)
+    }
+    /// `0x005e6830(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_BulletShapeDelete_005e6830 @ 0x005e_6830 => extern "thiscall" fn delete_5e6830(this: u32, flags: u32) -> u32 {
+        object::bullet_delete(&mut mem(), this, flags, 0x00b3_a1e0, 0x68)
+    }
+    /// `0x005e6a80(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_BulletShapeDelete_005e6a80 @ 0x005e_6a80 => extern "thiscall" fn delete_5e6a80(this: u32, flags: u32) -> u32 {
+        object::bullet_delete(&mut mem(), this, flags, 0x00b3_a1e0, 0x68)
+    }
+    /// `0x005e6b40(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_BulletShapeDelete_005e6b40 @ 0x005e_6b40 => extern "thiscall" fn delete_5e6b40(this: u32, flags: u32) -> u32 {
+        object::bullet_delete(&mut mem(), this, flags, 0x00b3_a1e0, 0x68)
+    }
+    /// `0x005e7010(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_BulletShapeDelete_005e7010 @ 0x005e_7010 => extern "thiscall" fn delete_5e7010(this: u32, flags: u32) -> u32 {
+        object::bullet_delete(&mut mem(), this, flags, 0x00b3_9900, 0x60)
+    }
+    /// `0x005e70d0(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_BulletShapeDelete_005e70d0 @ 0x005e_70d0 => extern "thiscall" fn delete_5e70d0(this: u32, flags: u32) -> u32 {
+        object::bullet_delete(&mut mem(), this, flags, 0x00b3_9900, 0x60)
+    }
+    /// `0x00547020(d)`: an array class descriptor's constructor -> `d`.
+    Phyre_PClassDescriptorArray_init_00547020 @ 0x0054_7020 => extern "thiscall" fn array_descriptor_547020(d: u32) -> u32 {
+        class::array_descriptor_init(&mut mem(), d, &ffx_pother_a::class::ARRAY_DESCRIPTORS[0].1)
+    }
+    /// `0x0054ddd0(d)`: an array class descriptor's constructor -> `d`.
+    Phyre_PClassDescriptorArray_init_0054ddd0 @ 0x0054_ddd0 => extern "thiscall" fn array_descriptor_54ddd0(d: u32) -> u32 {
+        class::array_descriptor_init(&mut mem(), d, &ffx_pother_a::class::ARRAY_DESCRIPTORS[1].1)
+    }
+    /// `0x0055d500(d)`: an array class descriptor's constructor -> `d`.
+    Phyre_PClassDescriptorArray_init_0055d500 @ 0x0055_d500 => extern "thiscall" fn array_descriptor_55d500(d: u32) -> u32 {
+        class::array_descriptor_init(&mut mem(), d, &ffx_pother_a::class::ARRAY_DESCRIPTORS[2].1)
+    }
+    /// `0x0055d5a0(d)`: an array class descriptor's constructor -> `d`.
+    Phyre_PClassDescriptorArray_init_0055d5a0 @ 0x0055_d5a0 => extern "thiscall" fn array_descriptor_55d5a0(d: u32) -> u32 {
+        class::array_descriptor_init(&mut mem(), d, &ffx_pother_a::class::ARRAY_DESCRIPTORS[3].1)
+    }
+    /// `0x00581930(d)`: an array class descriptor's constructor -> `d`.
+    Phyre_PClassDescriptorArray_init_00581930 @ 0x0058_1930 => extern "thiscall" fn array_descriptor_581930(d: u32) -> u32 {
+        class::array_descriptor_init(&mut mem(), d, &ffx_pother_a::class::ARRAY_DESCRIPTORS[4].1)
+    }
+    /// `0x005a1f80(d)`: an array class descriptor's constructor -> `d`.
+    Phyre_PClassDescriptorArray_init_005a1f80 @ 0x005a_1f80 => extern "thiscall" fn array_descriptor_5a1f80(d: u32) -> u32 {
+        class::array_descriptor_init(&mut mem(), d, &ffx_pother_a::class::ARRAY_DESCRIPTORS[5].1)
+    }
+    /// `0x005a2020(d)`: an array class descriptor's constructor -> `d`.
+    Phyre_PClassDescriptorArray_init_005a2020 @ 0x005a_2020 => extern "thiscall" fn array_descriptor_5a2020(d: u32) -> u32 {
+        class::array_descriptor_init(&mut mem(), d, &ffx_pother_a::class::ARRAY_DESCRIPTORS[6].1)
+    }
+    /// `0x00552800(p)` (destroy callback): `0x00552200(p)` unless null.
+    Phyre_DestroyCall_00552800 @ 0x0055_2800 => extern "stdcall" fn destroy_552800(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x0055_2200, p)
+    }
+    /// `0x0055af00(p)` (destroy callback): `0x00559530(p)` unless null.
+    Phyre_DestroyCall_0055af00 @ 0x0055_af00 => extern "stdcall" fn destroy_55af00(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x0055_9530, p)
+    }
+    /// `0x005a6d30(p)` (destroy callback): `0x005a2520(p)` unless null.
+    Phyre_DestroyCall_005a6d30 @ 0x005a_6d30 => extern "stdcall" fn destroy_5a6d30(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x005a_2520, p)
+    }
+    /// `0x005a6d80(p)` (destroy callback): `0x005a2630(p)` unless null.
+    Phyre_DestroyCall_005a6d80 @ 0x005a_6d80 => extern "stdcall" fn destroy_5a6d80(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x005a_2630, p)
+    }
+    /// `0x005d0590(p)` (destroy callback): `0x005cf1e0(p)` unless null.
+    Phyre_DestroyCall_005d0590 @ 0x005d_0590 => extern "stdcall" fn destroy_5d0590(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x005c_f1e0, p)
+    }
+    /// `0x005a6dd0(p)` (destroy callback): `0x005a2700(p)`.
+    Phyre_DestroyCallAlways_005a6dd0 @ 0x005a_6dd0 => extern "stdcall" fn destroy_5a6dd0(p: u32) -> u8 {
+        object::destroy_call_always(&mut mem(), 0x005a_2700, p)
+    }
+    /// `0x005a6ec0(p)` (destroy callback): `0x005a29d0(p)`.
+    Phyre_DestroyCallAlways_005a6ec0 @ 0x005a_6ec0 => extern "stdcall" fn destroy_5a6ec0(p: u32) -> u8 {
+        object::destroy_call_always(&mut mem(), 0x005a_29d0, p)
+    }
+    /// `0x005d5060(p)` (destroy callback): `0x005d4770(p)`.
+    Phyre_DestroyCallAlways_005d5060 @ 0x005d_5060 => extern "stdcall" fn destroy_5d5060(p: u32) -> u8 {
+        object::destroy_call_always(&mut mem(), 0x005d_4770, p)
+    }
+    /// `0x005cf690(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_ScalarDelete_005cf690 @ 0x005c_f690 => extern "thiscall" fn scalar_delete_5cf690(this: u32, flags: u32) -> u32 {
+        object::scalar_delete(&mut mem(), 0x005c_f420, this, flags)
+    }
+    /// `0x005e6800(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_ScalarDelete_005e6800 @ 0x005e_6800 => extern "thiscall" fn scalar_delete_5e6800(this: u32, flags: u32) -> u32 {
+        object::scalar_delete(&mut mem(), 0x005e_2030, this, flags)
+    }
+    /// `0x005e68c0(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_ScalarDelete_005e68c0 @ 0x005e_68c0 => extern "thiscall" fn scalar_delete_5e68c0(this: u32, flags: u32) -> u32 {
+        object::scalar_delete(&mut mem(), 0x005e_2030, this, flags)
+    }
+    /// `0x005e6c90(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_ScalarDelete_005e6c90 @ 0x005e_6c90 => extern "thiscall" fn scalar_delete_5e6c90(this: u32, flags: u32) -> u32 {
+        object::scalar_delete(&mut mem(), 0x005e_2360, this, flags)
+    }
+    /// `0x005e6cf0(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_ScalarDelete_005e6cf0 @ 0x005e_6cf0 => extern "thiscall" fn scalar_delete_5e6cf0(this: u32, flags: u32) -> u32 {
+        object::scalar_delete(&mut mem(), 0x005e_2360, this, flags)
+    }
+    /// `0x005a6cf0(p)` (create callback).
+    Phyre_CreatePair_005a6cf0 @ 0x005a_6cf0 => extern "stdcall" fn create_pair_5a6cf0(p: u32) -> u32 {
+        object::create_pair(&mut mem(), p)
+    }
+    /// `0x005a6d10(p)` (create callback).
+    Phyre_CreatePair_005a6d10 @ 0x005a_6d10 => extern "stdcall" fn create_pair_5a6d10(p: u32) -> u32 {
+        object::create_pair(&mut mem(), p)
+    }
+    /// `0x005a6df0(p)` (destroy callback).
+    Phyre_DestroyArray_005a6df0 @ 0x005a_6df0 => extern "stdcall" fn destroy_array_5a6df0(p: u32) -> u8 {
+        object::destroy_array_gt1(&mut mem(), p, 0)
+    }
+    /// `0x0054d130(name)` -> the entry or 0.
+    Phyre_FindNamed_0054d130 @ 0x0054_d130 => extern "C" fn find_named3(name: u32) -> u32 {
+        class::find_named3(&mut mem(), name)
+    }
 }
