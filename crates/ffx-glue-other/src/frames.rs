@@ -28,7 +28,7 @@ pub const INT_TREE_FIND: u32 = 0x0070_fd20;
 pub const RENDER_TARGET_RELEASE: u32 = 0x0044_0ea0;
 /// `ShaderParams_FindByName(shader; name)` (thiscall).
 pub const SHADER_PARAMS_FIND: u32 = 0x0056_cbf0;
-/// `ShaderParams_setValue_0056e670(this; param, &value)` (thiscall).
+/// `Phyre_PParameterBuffer_setTextureChecked_0056e670(this; param, &value)` (thiscall).
 pub const SHADER_PARAMS_SET: u32 = 0x0056_e670;
 /// The parameter name `Distortion_resetRenderTarget_006c24b0` clears
 /// (`0x00b425d8`).
