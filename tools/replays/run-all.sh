@@ -39,7 +39,9 @@
 # runs and compares the replays as usual with the map world drawn through
 # ffx-draw (FFX_RUST_MAP=1, which turns the graphics layer on too): the
 # recorded originals are the same, so the run passes only where the Rust map
-# draws what PhyreEngine draws.
+# draws what PhyreEngine draws. `--rust-map=build` has the scene builder draw
+# the supported maps (FFX_RUST_MAP=build, docs/scene-builder.md, "In the game";
+# the others are recorded and re-issued as with --rust-map).
 set -u
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo"
@@ -95,10 +97,11 @@ each() {
 start=$SECONDS
 hits=""
 rust_map=""
-while [ "${1:-}" = --hits ] || [ "${1:-}" = --rust-map ]; do
+while [ "${1:-}" = --hits ] || [ "${1:-}" = --rust-map ] || [ "${1:-}" = --rust-map=build ]; do
     case $1 in
         --hits) hits="$runs/hits"; mkdir -p "$hits" ;;
         --rust-map) rust_map=1; export FFX_RUST_MAP=1 ;;
+        --rust-map=build) rust_map=1; export FFX_RUST_MAP=build ;;
     esac
     shift
 done

@@ -53,8 +53,8 @@ Transparent `0x00c169d4`, OpaqueNoMSAA `0x00c169e4`, TransparentNoMSAA
 | World | Holds |
 |---|---|
 | scene `+0xac` | the 3D map (`PhyreScene_fieldMapLoad` `0x0065cbf0`) |
-| scene `+0x7c` | the characters (cluster `+0x11e4`, moved there by `attachChrClusterTo3DWorld`), and cluster `+0x28c4` (ground shadows) when the shadow solution is 0 or 2 |
-| scene `+0xbc` | cluster `+0x28c4` when the shadow solution (`+0xf9cc`, from `ShadowManager_selectShadowSolution` `0x006ccd10`) is 1 or 3 |
+| scene `+0x7c` | the characters (cluster `+0x11e4`, moved there by `attachChrClusterTo3DWorld`), and cluster `+0x28c4` (ground shadows) when the shadow solution is 0 or 2 (cdsp0000's: 2) |
+| scene `+0xbc` | cluster `+0x28c4` when the shadow solution (`+0xf9cc`, from `ShadowManager_selectShadowSolution` `0x006ccd10`) is 1 or 3; with 4 it is in no world |
 
 Order with `+0xd4` (map alpha fast) clear, as on this frame:
 
@@ -69,10 +69,24 @@ Order with `+0xd4` (map alpha fast) clear, as on this frame:
 8. `PhyreScene_DrawMeshMatrices(0)` in Transparent.
 
 With `+0xd4` set the transparent order is map, `+0xbc`, z pre-pass,
-characters. The opening and close of the frame (shadow maps
-`PhyreScene_RenderShadow` `0x00653600` for solutions 2-4, HDAO, the
-post-process chain) are outside the scene targets; on this frame the
-shadow-map target is cleared and nothing is drawn into it.
+characters. The opening and close of the frame (the shadow maps, HDAO,
+the post-process chain) are outside the scene targets.
+
+**Shadows (corrected in round 2).** Round 1 had cdsp0000 at shadow
+solution 0. It is **2**: read in the game at `*g_PhyreScene +0xf9cc`,
+and `ShadowManager_selectShadowSolution`'s table agrees
+(`docs/formats/scene-maps.md`, Q7). `PhyreScene_RenderShadow`
+(`0x00653600`) runs on every field frame, for every solution, before
+the scene targets are cleared: for 2, 3 and 4 the cascade pass
+`0x006c9e50`, which then writes the cascade matrices and samplers into
+the map materials (`LightViewProjection`, `LVP2`, `MySMScaleBias*`;
+below), for 0 and 1 `0x006ce6f0`; then, for all but 4, `0x006caee0`.
+Both `0x006c9e50` and `0x006caee0` return at once while the `Shadow`
+setting (ShadowManager `+0x4060`) is 0, as in the test sandbox, so no
+reference capture draws into the shadow targets: on this frame the
+1024 x 1024 targets are cleared, nothing is drawn into them, and the
+materials still get this frame's cascade values. Cluster `+0x28c4`, the
+blob shadows, is in the characters' world for solution 2 (draw 115).
 
 The capture shows exactly that: 128 scene draws (draws with two render
 targets and a depth buffer, as `gfx/live.rs` defines scene draws).
@@ -271,8 +285,20 @@ Results on `fw1-a` (bindings, distinct objects):
   positions (they also read `ClothWorld`): CPU-built.
 - Render targets (bind flags with `RENDER_TARGET`): the two 1024 x 1024
   `MySMSampler` shadow maps (and an 8 x 8 one), sampled by 10 map draws;
-  nothing is drawn into them this frame, so their contents date from an
-  earlier frame (round 2 must reproduce them).
+  nothing is drawn into them (`Shadow=0`: `PhyreScene_RenderShadow`'s
+  passes return at once, "Passes" above), so they keep what they held
+  since they were made. The builder binds them as the host's
+  (`External::MaterialTexture`).
+- Texture levels (round 2 wire). A texture's device levels are not
+  always the file's chain: `Phyre_PBinary_loadClusterTextures` reads the
+  dropped top levels into the start of its buffer, and the upload
+  (`0x0058fc20`) halves width and height per level without a floor and
+  takes a side that reaches 0 as the top level's, so a non-square
+  texture's last levels sit past the levels read and hold bytes of a
+  dropped level (cdsp0000: four 16x128, 32x128 and 128x32 textures).
+  Full captures key a texture by its top level and don't see it; hash
+  captures hash every level. `ffx_scene::build` does the same
+  (`upload_subresources`).
 - Characters: Tidus's model and texture match only the mod's files.
   Without `FFX_SCENE_MODS` the census lists his static buffers as
   "skinned" (not in the archive), and his 8 layouts and 13 texture
@@ -327,6 +353,21 @@ and derives the matrices.
     it);
   - the clusters: position in the world's list, the model's symbol (scene
     `+0xd8`, `cdsp00`), and their instance lists.
+- **The `Wire` block** (round 2 m4-wire, `ffx_gfx::scene_inputs::Wire`):
+  an extension block after the record and its character part's flag (tag `0x57520001`;
+  version 1 readers stop before it, `read_extensions` skips tags it does
+  not know). It holds the camera's world matrix (`*(PCamera +0xb0)`, the
+  source of `EyePosition`), the texture quality
+  (`Phyre_PRenderInterface +0x1340`, `0x00c96240`) and the anisotropy
+  setting (`0x00c25370`), each cluster's file (its first
+  `PAssetReference`'s id up to the `#`), and each material's texture
+  slots: per `0x42`/`0x44` definition of its effect variant, whether the
+  slot holds a texture (`+0xc` of the 16-byte slot) and that texture's
+  asset id, found in the asset reference tree (`0x00c9424c`, walked as
+  `Phyre_PAssetReference_GetAssetReferenceByAsset` `0x0045cb50` does).
+  Texture animation shows there: on `bsil0000` material 159 holds
+  `tex/texswap/12032_20_000_000_4_128_128_001.dds`, not its cluster's
+  texture. Run-time textures (the shadow maps) have no asset id.
 - **Check.** `ffx-scene`'s `tests/inputs.rs` (`FFX_SCENE_INPUTS`, with
   `FFX_GAME_DIR`) ties every map draw to its instance through the census.
   On fw-101 and fw-459 of two original runs (`~/ffx-work/m4/captures/
@@ -456,8 +497,14 @@ and derives the matrices.
 6. `m_render_order` across maps: values seen are 0-12; other maps may use
    the /1e8 class or the thousands field, and lists over 400 bounds go
    through the merge comparator, which ignores the `% 1000` fields.
-7. The shadow maps: solution 0 here; `PhyreScene_RenderShadow` and the
+7. The shadow maps: ~~solution 0 here~~ solution 2 here (corrected in
+   round 2, "Passes" above); `PhyreScene_RenderShadow` and the
    ground-shadow cluster `+0x28c4` for the other solutions.
+
+   **Answer (R2d, `docs/formats/scene-maps.md`, Q7).** Solutions 0, 2 and
+   4 are measured (`kami0100`, `cdsp0000` and `bsil0300`, `bsil0000`);
+   `PhyreScene_RenderShadow` runs for all of them and, with `Shadow=0`,
+   draws nothing.
 8. Unidentified: `0x006ada20` and `0x00695ba0` in `PhyreScene_render`,
    `0x005bafc0`; whether the multithreaded branch of
    `renderMeshInstanceList` ever runs.

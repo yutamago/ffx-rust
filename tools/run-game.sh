@@ -18,6 +18,8 @@
 #   --gfx       graphics layer on (FFX_GFX; crates/ffx-hook/src/gfx)
 #   --rust-map  the map world drawn through ffx-draw (FFX_RUST_MAP; with --gfx;
 #               crates/ffx-hook/src/gfx/scene.rs, docs/draw.md)
+#   --rust-map=build  the same, the supported maps built by the scene builder
+#               (FFX_RUST_MAP=build; gfx/map_build.rs, docs/scene-builder.md)
 #   --fast      no frame limiter: frames back to back, game time still 1/60 s each
 #   --virtual-clock  (with --fast) game time never follows real time: exactly
 #               one frame interval per frame, and reads are synchronous; implies
@@ -58,7 +60,8 @@ while [[ $# -gt 0 ]]; do
         --call-log) export FFX_HARNESS_CALL_LOG="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_CALL_LOG"; shift ;;
         --renderer) export FFX_RENDERER=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_RENDERER:FFX_RENDER_TEST:FFX_GFX_REDIRECT:FFX_GFX_SHARE:FFX_GFX_FENCE:FFX_RENDER_BACKEND:FFX_RENDERER_SKIP:FFX_RENDER_EXPORT_MATERIALS:FFX_RENDER_GLOW_DUMP/p"; renderer=1 ;;
         --gfx) export FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_GFX:FFX_GFX_REDIRECT" ;;
-        --rust-map) export FFX_RUST_MAP=1 FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_RUST_MAP:FFX_GFX:FFX_GFX_REDIRECT" ;;
+        --rust-map) export FFX_RUST_MAP="${FFX_RUST_MAP:-1}" FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_RUST_MAP:FFX_GFX:FFX_GFX_REDIRECT" ;;
+        --rust-map=build) export FFX_RUST_MAP=build FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_RUST_MAP:FFX_GFX:FFX_GFX_REDIRECT" ;;
         --seed) export FFX_HARNESS_SEED="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_SEED"; shift ;;
         --hook-disable) export FFX_HOOK_DISABLE="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_DISABLE"; shift ;;
         *) echo "unknown option $1" >&2; exit 2 ;;

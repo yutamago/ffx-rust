@@ -13,7 +13,8 @@
 
 use ffx_gfx::Msg;
 pub use ffx_gfx::scene_inputs::{
-    Bounds, Cluster, DepthBias, Instance, Material, Matrix3x4, SceneInputs, Segment,
+    Bounds, Cluster, DepthBias, Instance, Material, MaterialTexture, Matrix3x4, SceneInputs,
+    Segment, Wire,
 };
 
 use crate::capture::Error;
@@ -36,6 +37,33 @@ pub fn read(bytes: &[u8]) -> Result<Vec<SceneInputs>, Error> {
             _ => None,
         })
         .collect())
+}
+
+/// The `SceneInputs` records of a capture file with their [`Wire`]
+/// blocks (`None` in captures taken before the block existed, e.g.
+/// `r2a-a`), in stream order.
+///
+/// # Errors
+/// On a wrong magic or a malformed stream.
+pub fn read_wired(bytes: &[u8]) -> Result<Vec<(SceneInputs, Option<Wire>)>, Error> {
+    let mut rest = bytes
+        .strip_prefix(&ffx_gfx::CAPTURE_MAGIC[..])
+        .ok_or(Error::Magic)?;
+    let mut out = Vec::new();
+    while rest.len() >= 8 {
+        let tag = u32::from_le_bytes([rest[0], rest[1], rest[2], rest[3]]);
+        let len = u32::from_le_bytes([rest[4], rest[5], rest[6], rest[7]]) as usize;
+        let payload = rest
+            .get(8..8 + len)
+            .ok_or(Error::Decode("truncated message"))?;
+        if tag == ffx_gfx::scene_inputs::MSG_TAG {
+            out.push(
+                ffx_gfx::scene_inputs::read_extensions(payload).map_err(|e| Error::Decode(e.0))?,
+            );
+        }
+        rest = &rest[8 + len..];
+    }
+    Ok(out)
 }
 
 /// `PMatrix4_FromMatrix3x4` (`0x00451080`): the 4x4 of a 3x4, in memory

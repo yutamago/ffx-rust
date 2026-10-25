@@ -67,10 +67,10 @@ fn the_builders_map_draws_are_the_captured_ones() {
         let (opaque, transparent) = inputs.pass_numbers();
         assert_eq!(opaque, (0..100).collect::<Vec<_>>(), "{path}");
         assert_eq!(transparent, (117..128).collect::<Vec<_>>(), "{path}");
-        let msgs = ffx_scene::emit::replace_map_draws(&cap, &built, &opaque, &transparent, &|e| {
-            inputs.external_view(e)
-        })
-        .expect("emit");
+        let (opaque, transparent) =
+            ffx_scene::gate::pass_cmds(&ffx_scene::gate::map_draws(&cap, &clusters));
+        let msgs =
+            ffx_scene::emit::replace_map_draws(&cap, &built, &opaque, &transparent).expect("emit");
         let a = ffx_drawdiff::capture::Capture::parse(&bytes).expect("A");
         let b = ffx_drawdiff::capture::Capture::from_msgs(&msgs);
         let opts = ffx_drawdiff::diff::Options {

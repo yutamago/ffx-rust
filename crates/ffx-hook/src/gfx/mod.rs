@@ -12,6 +12,7 @@
 
 pub mod capture;
 pub mod live;
+pub mod map_build;
 mod proxy;
 pub mod replay;
 pub mod scene;

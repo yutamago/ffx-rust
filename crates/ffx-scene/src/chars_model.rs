@@ -458,28 +458,9 @@ impl EffectContexts {
 /// Appends `m` to `into` (segment, material and byte ranges moved on);
 /// returns the instance range `m`'s instances got.
 pub fn append(into: &mut MapModel, m: MapModel) -> Range<usize> {
-    let (seg0, mat0, byte0) = (into.segments.len(), into.materials.len(), into.bytes.len());
-    let first = into.instances.len();
-    let shift = |r: &Range<usize>| r.start + byte0..r.end + byte0;
-    for mut i in m.instances {
-        for s in &mut i.segments {
-            *s += seg0;
-        }
-        for x in i.materials.iter_mut().flatten() {
-            *x += mat0;
-        }
-        into.instances.push(i);
-    }
-    for mut s in m.segments {
-        for b in &mut s.blocks {
-            b.bytes = shift(&b.bytes);
-        }
-        s.indices = shift(&s.indices);
-        into.segments.push(s);
-    }
-    into.materials.extend(m.materials);
-    into.bytes.extend_from_slice(&m.bytes);
-    first..into.instances.len()
+    let n = m.instances.len();
+    let first = into.append(m);
+    first..first + n
 }
 
 #[cfg(test)]

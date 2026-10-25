@@ -26,6 +26,7 @@ ffx-movie.workspace = true
 ffx-pcui.workspace = true
 ffx-ps2.workspace = true
 ffx-script.workspace = true
+ffx-scene = { path = "../ffx-scene" }
 ffx-sg.workspace = true
 ffx-sound.workspace = true
 ffx-system.workspace = true

@@ -76,11 +76,10 @@ fn main() {
     for n in &built.notes {
         println!("note: {n}");
     }
-    let (opaque, transparent) = inputs.pass_numbers();
-    let msgs = ffx_scene::emit::replace_map_draws(&cap, &built, &opaque, &transparent, &|e| {
-        inputs.external_view(e)
-    })
-    .expect("emit");
+    let (opaque, transparent) =
+        ffx_scene::gate::pass_cmds(&ffx_scene::gate::map_draws(&cap, &clusters));
+    let msgs =
+        ffx_scene::emit::replace_map_draws(&cap, &built, &opaque, &transparent).expect("emit");
     let bytes = ffx_scene::emit::capture_bytes(&msgs);
     if let Some(o) = out {
         std::fs::write(&o, &bytes).expect("write");
