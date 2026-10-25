@@ -76,6 +76,13 @@ impl Rng {
             }
         }
     }
+    /// Floats of very different sizes and signs (sums that cancel).
+    fn floats_wide(&mut self, n: usize) -> Vec<u8> {
+        const W: [f32; 8] = [1e10, -1e10, 1.0, 3.0, 1e-5, 7e9, -3.3e9, 0.1];
+        (0..n)
+            .flat_map(|_| W[self.below(8) as usize].to_bits().to_le_bytes())
+            .collect()
+    }
     fn floats(&mut self, n: usize) -> Vec<u8> {
         (0..n).flat_map(|_| self.float().to_le_bytes()).collect()
     }
@@ -762,7 +769,7 @@ fn class_members_match_the_original() {
                 }),
                 4 | 5 => {
                     // owned or borrowed buffers, null or a real block
-                    let count = rng.next() & 0x8000_00ff;
+                    let count = rng.next() & 0xc000_00ff;
                     let data = match rng.below(3) {
                         0 => 0,
                         _ => t.zeros(0x40),
@@ -826,7 +833,7 @@ fn class_members_match_the_original() {
                     });
                 }
                 10 => {
-                    let owner = t.alloc(&rng.next().to_le_bytes().repeat(0x30));
+                    let owner = t.alloc(&(0..0xc0).map(|_| rng.next() as u8).collect::<Vec<_>>());
                     t.w32(q + 0x38, if rng.chance(2) { 0 } else { cb38 });
                     t.w32(q + 0xc, owner);
                     let table = t.alloc(&(0..0x40).map(|_| rng.next() as u8).collect::<Vec<_>>());
@@ -885,10 +892,21 @@ fn class_members_match_the_original() {
                             _ => rng.next(),
                         })
                         .collect();
+                    let mut words = words;
+                    if rng.chance(3) {
+                        words[0] = words[4]; // start == read
+                    }
                     for (k, w) in words.iter().enumerate() {
                         t.w32(q + 0x18 + 4 * k as u32, *w);
                     }
-                    let n = [0, 1, 0x1000, rng.next(), rng.below(0x4000)][rng.below(5) as usize];
+                    let (end, used, read) = (words[1], words[3], words[4]);
+                    let n = match rng.below(7) {
+                        0 => read.wrapping_sub(used),
+                        1 => end.wrapping_sub(used),
+                        2 => read.wrapping_sub(used).wrapping_sub(1),
+                        3 => end.wrapping_sub(used).wrapping_sub(1),
+                        _ => [0, 1, 0x1000, rng.next(), rng.below(0x4000)][rng.below(5) as usize],
+                    };
                     t.check(&what, 0x005c_d340, Conv::Thiscall(q), &[n], |g| {
                         Out::U32(small::bridge::ring_fits(g, q, n))
                     });
@@ -929,12 +947,24 @@ fn a34b10_matches_the_original() {
         let state = t.zeros(0xa00);
         let g = t.rebase(small::A34_STATE);
         t.w32(g, state);
+        let rets = t.zeros(12);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+        c.extend([0x8b, 0x04, 0x85]);
+        c.extend(rets.to_le_bytes()); // mov eax, [rets + eax*4]
+        c.push(0xc3);
+        let code = t.code(&c);
+        let at = t.rebase(small::A35A70);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
         for i in 0..60 {
-            let ret = [0, 0x1000_0000, rng.next()][rng.below(3) as usize];
-            // the allocator: logs, returns `ret` (0 on some calls)
-            t.cave_next = t.cave;
-            t.stub_ex(small::A35A70, false, 2, 0, ret);
-            let n = [0, 4, 0x2_0000, 0x10_0000, rng.next()][rng.below(5) as usize];
+            // the allocator: returns the word of `rets` its kind (1, 2)
+            // picks, 0 on some calls
+            let pick = |r: &mut Rng| [0, 0x1000_0000, r.next()][r.below(3) as usize];
+            let (r1, r2) = (pick(&mut rng), pick(&mut rng));
+            t.w32(rets + 4, r1);
+            t.w32(rets + 8, r2);
+            let n = [0, 4, 0x13, 0x1234, 0x2_0000, 0x10_0000, rng.next()][rng.below(7) as usize];
             t.check(
                 &format!("{name} a34b10 {i}"),
                 0x00a3_4b10,
@@ -1051,6 +1081,10 @@ fn strings_match_the_original() {
                     } else {
                         (len as u32 + 1).min(rng.below(len as u32 + 2))
                     };
+                    if rng.chance(3) {
+                        let need = blen + u32::from(blen == 0) + n;
+                        t.w32(b, (cap & 0x8000_0000) | need);
+                    }
                     if rng.chance(2) {
                         let ra =
                             t.a.call(t.a.rebase(0x0044_4ce0), Conv::Thiscall(b), &[sp, n])
@@ -1114,8 +1148,19 @@ fn matrix_helpers_match_the_original() {
         let mut rng = Rng(0x0dd0_beef);
         for i in 0..1500 {
             let what = format!("{name} matrix {i}");
-            let m = t.alloc(&rng.floats(16));
-            let v = [0; 4].map(|_| t.alloc(&rng.floats(4)));
+            let wide = rng.chance(3);
+            let m = t.alloc(&if wide {
+                rng.floats_wide(16)
+            } else {
+                rng.floats(16)
+            });
+            let v = [0; 4].map(|_| {
+                t.alloc(&if wide {
+                    rng.floats_wide(4)
+                } else {
+                    rng.floats(4)
+                })
+            });
             // outputs apart, or over an input
             let out = match rng.below(4) {
                 0 => m,
