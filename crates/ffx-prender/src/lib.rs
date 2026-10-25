@@ -48,6 +48,7 @@ pub mod glue2;
 pub mod glue3;
 pub mod h1_bind;
 pub mod h1_small;
+pub mod h1_small2;
 pub mod mesh;
 pub mod misc;
 pub mod registry;

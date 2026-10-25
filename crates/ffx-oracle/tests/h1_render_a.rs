@@ -27,7 +27,9 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_prender::{basic, class_slots as descriptor, h1_bind, h1_small, registry, texture};
+use ffx_prender::{
+    basic, class_slots as descriptor, h1_bind, h1_small, h1_small2, registry, texture,
+};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -96,6 +98,8 @@ enum Ret {
     Imm(u32),
     /// The word at this address when it runs.
     Cell(u32),
+    /// `ecx` and the word at this address (distinct results per `this`).
+    ThisAnd(u32),
 }
 
 /// What the original returns, to compare.
@@ -246,15 +250,18 @@ impl Twins {
         c.extend([0xff, 0x05]);
         c.extend(log.to_le_bytes()); // inc dword [log]
         match ret {
-            Ret::Imm(_) => c.push(0xb8),  // mov eax, imm
-            Ret::Cell(_) => c.push(0xa1), // mov eax, [cell]
+            Ret::Imm(_) => c.push(0xb8),                    // mov eax, imm
+            Ret::Cell(_) | Ret::ThisAnd(_) => c.push(0xa1), // mov eax, [cell]
         }
         c.extend(
             match ret {
-                Ret::Imm(v) | Ret::Cell(v) => v,
+                Ret::Imm(v) | Ret::Cell(v) | Ret::ThisAnd(v) => v,
             }
             .to_le_bytes(),
         );
+        if matches!(ret, Ret::ThisAnd(_)) {
+            c.extend([0x21, 0xc8]); // and eax, ecx
+        }
         if pops == 0 {
             c.push(0xc3);
         } else {
@@ -2817,6 +2824,126 @@ fn r2b2_small_methods_match_the_original() {
                 Conv::Thiscall(tex),
                 &[w, h, f, mips],
                 |g| Out::U32(h1_small::bridge::set_dimensions(g, tex, w, h, f, mips)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r2b3_small_methods_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0048_c651);
+        t.stub(basic::FREE, false, 1, 0, Ret::Imm(0));
+        t.stub(registry::ATEXIT, false, 1, 0, Ret::Imm(0));
+        let lookups = t.zeros(4);
+        // each lookup gives its descriptor masked by the cell: both,
+        // neither, or only the first (0x...ff0 & 0xfb0 != 0, 0x...040 & 0xfb0 == 0)
+        t.stub(h1_small2::DESCRIPTOR_GET, true, 0, 0, Ret::ThisAnd(lookups));
+        t.stub(h1_small2::MATERIAL_CTOR, true, 2, 2, Ret::Imm(0x1234_5678));
+        for (dtor, _) in h1_small2::SEGMENT_DTORS {
+            t.stub(dtor, true, 0, 0, Ret::Imm(0x55));
+        }
+        t.stub(h1_small2::SEMANTIC_TYPE[2], true, 5, 5, Ret::Imm(0x5));
+        for (i, &f) in h1_small2::UNBIND.iter().enumerate() {
+            t.stub(f, true, 1, 1, Ret::Imm(0x00ab_0000 + i as u32));
+        }
+        for case in 0..64u32 {
+            // PMaterial's constructInstance: either lookup 0 or both found
+            t.w32(lookups, [0, u32::MAX, 0xfb0][(rng.next() % 3) as usize]);
+            let p = if rng.next().is_multiple_of(4) {
+                0
+            } else {
+                rng.next()
+            };
+            let d = rng.next();
+            t.check(
+                &format!("{name} material {case}"),
+                0x004d_8630,
+                Conv::Thiscall(d),
+                &[p],
+                |g| Out::U8(h1_small2::bridge::construct_material(g, p)),
+            );
+            // PMeshSegment's destroyInstance
+            let seg = pattern(&mut t, &mut rng, 0x40);
+            if rng.next().is_multiple_of(4) {
+                t.w32(seg + 0xc, 0);
+            }
+            let d = rng.next();
+            t.check(
+                &format!("{name} mesh segment {case}"),
+                0x0048_8ff0,
+                Conv::Thiscall(d),
+                &[seg],
+                |g| Out::U8(h1_small2::bridge::destroy_mesh_segment(g, seg)),
+            );
+            // PSharray buffer
+            let arr = t.zeros(8);
+            let n = [0, 1, 2, 5, 0x7fff_ffff][(rng.next() % 5) as usize];
+            let word = n | if rng.next() & 1 == 0 { 0x8000_0000 } else { 0 };
+            t.w32(arr, word);
+            let data = pattern(&mut t, &mut rng, 8);
+            let old = match rng.next() % 3 {
+                0 => data,
+                1 => arr + 4,
+                _ => rng.next(),
+            };
+            t.w32(arr + 4, old);
+            let data = if rng.next().is_multiple_of(5) {
+                arr + 4
+            } else {
+                data
+            };
+            let count = match rng.next() % 5 {
+                0 => 1,
+                1 => 0x8000_0000 | rng.next(),
+                2 => 0x8000_0000,
+                _ => rng.next() % 9,
+            };
+            t.check(
+                &format!("{name} sharray {case}"),
+                0x0048_c650,
+                Conv::Thiscall(arr),
+                &[data, count],
+                |g| Out::U32(h1_small2::bridge::sharray_set(g, arr, data, count)),
+            );
+            // the named-semantic type singleton
+            let guard = t.rebase(h1_small2::SEMANTIC_TYPE[0]);
+            let g = [0, 1, 2, 0xffff_fffe, 0xffff_ffff][(rng.next() % 5) as usize];
+            t.w32(guard, g);
+            t.check(
+                &format!("{name} semantic type {case}"),
+                0x0047_fae0,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    Out::U32(h1_small2::bridge::semantic_type(
+                        g,
+                        h1_small2::SEMANTIC_TYPE,
+                    ))
+                },
+            );
+            // a texture binding
+            let binding = t.zeros(8);
+            let texture = pattern(&mut t, &mut rng, 0x20);
+            let kind = [0u8, 1, 2, 3, 0xff][(rng.next() % 5) as usize];
+            t.write(binding + 4, &[kind, rng.next() as u8, 0, 0]);
+            t.w32(
+                binding,
+                if rng.next().is_multiple_of(5) {
+                    0
+                } else {
+                    texture
+                },
+            );
+            if !rng.next().is_multiple_of(4) {
+                t.w32(texture + 0x18, binding);
+            }
+            t.check(
+                &format!("{name} binding {case}"),
+                0x004c_29b0,
+                Conv::Thiscall(binding),
+                &[],
+                |g| Out::U32(h1_small2::bridge::release_binding(g, binding)),
             );
         }
     }

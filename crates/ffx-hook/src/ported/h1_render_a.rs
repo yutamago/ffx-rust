@@ -6,7 +6,9 @@
 //! No shim keeps state.
 
 use super::{mem, ported};
-use ffx_prender::{basic, class_slots as descriptor, h1_bind, h1_small, registry, texture};
+use ffx_prender::{
+    basic, class_slots as descriptor, h1_bind, h1_small, h1_small2, registry, texture,
+};
 
 ported! {
     /// `destroyInstance(descriptor, p)`: the destructor.
@@ -1947,5 +1949,26 @@ ported! {
     /// `PTexture2DBase::setDimensions(this, width, height, format, mips)` -> 0 or 3.
     Phyre_PRendering_PTexture2DBase_setDimensions @ 0x004c_40c0 => extern "thiscall" fn h1_004c40c0(this: u32, width: u32, height: u32, format: u32, mips: u32) -> u32 {
         h1_small::bridge::set_dimensions(&mut mem(), this, width, height, format, mips)
+    }
+    // round 2 batch 3 (h1_small2)
+    /// `constructInstance(descriptor, p)` of `PMaterial`: `al` 1, or 0 when a lookup fails.
+    Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PMaterial__constructInstance @ 0x004d_8630 => extern "thiscall" fn h1_004d8630(_descriptor: u32, p: u32) -> u8 {
+        h1_small2::bridge::construct_material(&mut mem(), p)
+    }
+    /// `destroyInstance(descriptor, p)` of `PMeshSegment`: true.
+    Phyre_PClassDescriptorForType_Phyre_PGeometry_PMeshSegment__destroyInstance @ 0x0048_8ff0 => extern "thiscall" fn h1_00488ff0(_descriptor: u32, p: u32) -> u8 {
+        h1_small2::bridge::destroy_mesh_segment(&mut mem(), p)
+    }
+    /// `0x0048c650(this, data, count)` -> 0 or 5.
+    PSharray_setToExternalBuffer_0048c650 @ 0x0048_c650 => extern "thiscall" fn h1_0048c650(this: u32, data: u32, count: u32) -> u32 {
+        h1_small2::bridge::sharray_set(&mut mem(), this, data, count)
+    }
+    /// `0x0047fae0()` -> the named-semantic type object.
+    PTypeDispenser_GetType_PRenderDataType_0047fae0 @ 0x0047_fae0 => extern "C" fn h1_0047fae0() -> u32 {
+        h1_small2::bridge::semantic_type(&mut mem(), h1_small2::SEMANTIC_TYPE)
+    }
+    /// `0x004c29b0(this)`: a texture binding released.
+    PTextureBinding_release_004c29b0 @ 0x004c_29b0 => extern "thiscall" fn h1_004c29b0(this: u32) -> u32 {
+        h1_small2::bridge::release_binding(&mut mem(), this)
     }
 }
