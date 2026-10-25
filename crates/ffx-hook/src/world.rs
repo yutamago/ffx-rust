@@ -173,6 +173,11 @@ pub static RENDER_WORLD_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 
 /// The map's world in `PhyreScene` (`PhyreScene_fieldMapLoad`).
 pub const MAP_WORLD: u32 = 0xac;
+/// The characters' world (`attachChrClusterTo3DWorld`; the ground-shadow
+/// cluster `+0x28c4` too for shadow solutions 0 and 2) and the
+/// ground-shadow world of solutions 1 and 3 (`docs/formats/scene-chars.md`).
+pub const CHAR_WORLD: u32 = 0x7c;
+pub const SHADOW_WORLD: u32 = 0xbc;
 /// The `PMeshInstanceBounds` class descriptor (the cursor
 /// `renderWorldCulledSorted` makes with `0x004ff6e0` and hands to
 /// `startJobsForAllBounds`; `0x01a85420`, the other cursor's, is
@@ -206,11 +211,15 @@ pub unsafe extern "thiscall" fn render_world(
     context: u32,
     dir: i32,
 ) -> u32 {
-    if crate::gfx::capture::inputs_wanted() && world_offset(world as usize) == MAP_WORLD {
-        if let Some(s) = scene_inputs_at(renderer as usize, world as usize, camera as usize, dir) {
+    if crate::gfx::capture::inputs_wanted() {
+        let offset = world_offset(world as usize);
+        if matches!(offset, MAP_WORLD | CHAR_WORLD | SHADOW_WORLD)
+            && let Some(s) =
+                scene_inputs_at(renderer as usize, world as usize, camera as usize, dir)
+        {
             crate::gfx::capture::add_inputs(s);
         }
-        if watch::wanted() && !watch::armed() {
+        if offset == MAP_WORLD && watch::wanted() && !watch::armed() {
             watch::arm(&watch_targets(world as usize));
         }
     }
@@ -635,7 +644,221 @@ pub fn scene_inputs_at(
             bias,
         });
     }
+    if s.world != MAP_WORLD {
+        s.chars = Some(Box::new(char_world(&r, renderer)));
+    }
     Some(s)
+}
+
+/// Limits on the character part (a damaged object must not make a huge
+/// record).
+const JOINTS_MAX: u32 = 1024;
+const SKIN_BONES_MAX: u32 = 1024;
+const CHAR_SLOTS_MAX: u32 = 256;
+const CLOTH_VERTICES_MAX: u32 = 1 << 16;
+/// `graphicCharacterInstance*`'s table: the count (`0x00ccb250`) and the
+/// slots (`0x00ccb254`), as `graphicCharacterInstanceSetClothVertexBuffers`
+/// (`0x0063b740`) walks them.
+const CHAR_TABLE_COUNT: u32 = 0x00cc_b250;
+const CHAR_TABLE: u32 = 0x00cc_b254;
+/// The `ClassChrShaderRender` dynamic geometry manager (what
+/// `graphicShadowStart_00643dc0` passes to `DynGeo_ResetCurrentBuffer`).
+const DYN_GEO: u32 = 0x00cc_ca74;
+/// The dynamic geometry arrays: record offset and bytes per vertex
+/// (`DynGeo_ResetCurrentBuffer` clears 500 vertices' worth of each).
+const DYN_GEO_ARRAYS: [(usize, usize); 4] = [(0xc, 12), (0x10, 12), (0x14, 16), (0x18, 8)];
+const DYN_GEO_VERTICES_MAX: u32 = 500;
+const DYN_GEO_INDICES_MAX: u32 = 1500;
+
+/// `n` 4x4 matrices (64 bytes each) at `at`.
+fn mats(at: usize, n: u32) -> Vec<[f32; 16]> {
+    if at == 0 {
+        return Vec::new();
+    }
+    (0..n as usize)
+        .map_while(|k| floats::<16>(at + 64 * k))
+        .collect()
+}
+
+/// A Phyre array's count and items (`+0` count with bit 31 a flag, `+4`
+/// the items' pointer).
+fn array_at(at: usize) -> (u32, usize) {
+    (
+        u32_at(at).unwrap_or(0) & 0x7fff_ffff,
+        word(at + 4).unwrap_or(0),
+    )
+}
+
+/// The character part of a record (`ffx_gfx::scene_inputs::CharWorld`):
+/// per instance the skinning inputs, the cloth vertex buffers and the
+/// dynamic geometry lists.
+fn char_world(r: &Resolver, renderer: usize) -> ffx_gfx::scene_inputs::CharWorld {
+    use ffx_gfx::scene_inputs as si;
+    let mut by_index: Vec<(usize, u32)> = r.instance_ix.iter().map(|(&p, &i)| (p, i)).collect();
+    by_index.sort_by_key(|&(_, i)| i);
+    let mut out = si::CharWorld::default();
+    for &(inst, _) in &by_index {
+        out.instances.push(char_instance(inst));
+    }
+    out.cloth = cloth(r);
+    out.dyn_geo = dyn_geo();
+    out.renderer = mats(renderer + 0x60, 2);
+    out
+}
+
+/// The skinning inputs of `PMeshInstance` `inst`
+/// (`Phyre_PRendering_PMeshInstance_computeJointMatrices` `0x004f6ef0`,
+/// `0x004f6fc0`; `BoneTransforms` in `0x005b7fe0`): the instance's `+0x6c`
+/// and `+0xc` joint matrices, the mesh's `+0x18` joint count, `+0x2c`
+/// parent table and `+8` skeleton matrices, each segment's `+8`
+/// `m_skinBones`.
+fn char_instance(inst: usize) -> ffx_gfx::scene_inputs::CharInstance {
+    use ffx_gfx::scene_inputs as si;
+    let mut out = si::CharInstance {
+        flags: u32_at(inst + 0x6c).unwrap_or(0),
+        ..si::CharInstance::default()
+    };
+    let mesh = word(inst).unwrap_or(0);
+    if mesh == 0 {
+        return out;
+    }
+    let n = (u32_at(mesh + 0x18).unwrap_or(0) & 0x7fff_ffff).min(JOINTS_MAX);
+    out.joints = mats(word(inst + 0xc).unwrap_or(0), n);
+    // The parent of each joint (`0x004f6fc0`: joint k = joint[parent] .
+    // its `+0xc` matrix; -1 is the instance world, slot -1 of the
+    // output).
+    let table = word(mesh + 0x2c).unwrap_or(0);
+    if table != 0 && n > 0 {
+        out.joint_parent = bytes(table, 4 * n as usize)
+            .unwrap_or_default()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| i32::from_le_bytes(*b))
+            .collect();
+    }
+    let (count, at) = array_at(mesh + 8);
+    out.skeleton = mats(at, count.min(JOINTS_MAX));
+    let (segs, seg_at) = array_at(mesh);
+    for s in 0..segs.min(SEGMENTS_MAX) as usize {
+        let (nb, bones) = array_at(seg_at + 0x6c * s + 8);
+        let nb = nb.min(SKIN_BONES_MAX) as usize;
+        let list = if bones == 0 || nb == 0 {
+            Vec::new()
+        } else {
+            bytes(bones, 4 * nb)
+                .unwrap_or_default()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|b| {
+                    [
+                        u16::from_le_bytes([b[0], b[1]]),
+                        u16::from_le_bytes([b[2], b[3]]),
+                    ]
+                })
+                .collect()
+        };
+        out.skin_bones.push(list);
+    }
+    out
+}
+
+/// The cloth vertex buffers, as `batchSetClothVertexBuffers`
+/// (`0x006365f0`) finds them: per used slot of the character table (`+0`
+/// the instance list, `+4` a parallel table, `+8` 0, `+0xc` 2, `+0x14`
+/// the instance count, `+0x30` per instance a table of cloth objects by
+/// segment + 1), per segment whose `+0x20` and `+0x24` halves are not -1
+/// and whose cloth object is set.
+fn cloth(r: &Resolver) -> Vec<ffx_gfx::scene_inputs::Cloth> {
+    use ffx_gfx::scene_inputs as si;
+    let mut out = Vec::new();
+    let n = u32_at(crate::rebase(CHAR_TABLE_COUNT))
+        .unwrap_or(0)
+        .min(CHAR_SLOTS_MAX);
+    for slot in 0..n {
+        let Some(entry) = word(crate::rebase(CHAR_TABLE) + 4 * slot as usize).filter(|&e| e != 0)
+        else {
+            continue;
+        };
+        let Some(f) = bytes(entry, 0x18) else {
+            continue;
+        };
+        let w = |o: usize| u32::from_le_bytes([f[o], f[o + 1], f[o + 2], f[o + 3]]) as usize;
+        let (list, other) = (w(0), w(4));
+        if list == 0 || other == 0 || w(8) != 0 || w(0xc) != 2 {
+            continue;
+        }
+        let count = (w(0x14) as u32).min(CHAR_SLOTS_MAX);
+        let insts = word(list + 4).unwrap_or(0);
+        for k in 0..count as usize {
+            let inst = word(insts + 4 * k).unwrap_or(0);
+            let table = word(entry + 0x30 + 4 * k).unwrap_or(0);
+            let mesh = if inst == 0 {
+                0
+            } else {
+                word(inst).unwrap_or(0)
+            };
+            let parallel = word(other + 4 + 4 * k).unwrap_or(0);
+            if inst == 0 || table == 0 || mesh == 0 || parallel == 0 {
+                continue;
+            }
+            let (segs, seg_at) = array_at(mesh);
+            for s in 0..segs.min(SEGMENTS_MAX) as usize {
+                let Some(halves) = bytes(seg_at + 0x6c * s + 0x20, 8) else {
+                    continue;
+                };
+                if halves[0..2] == [0xff, 0xff] || halves[4..6] == [0xff, 0xff] {
+                    continue;
+                }
+                let Some(obj) = word(table + 4 * (s + 1)).filter(|&o| o != 0) else {
+                    continue;
+                };
+                if word(parallel + 4 * (s + 1)).unwrap_or(0) == 0 {
+                    continue;
+                }
+                let vertices = u32_at(obj + 0x44).unwrap_or(0).min(CLOTH_VERTICES_MAX);
+                let data = word(obj + 0x4c).unwrap_or(0);
+                out.push(si::Cloth {
+                    instance: r.instance_ix.get(&inst).copied().unwrap_or(u32::MAX),
+                    segment: s as u32,
+                    slot,
+                    list_index: k as u32,
+                    matrix: floats::<16>(obj).unwrap_or_default(),
+                    count: vertices,
+                    vertices: bytes(data, 16 * vertices as usize).unwrap_or_default(),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// The dynamic geometry lists of the current buffer (`DynGeo_ResetCurrentBuffer`
+/// `0x0069fcb0`: manager `+0x10` the id, record `[[manager + 4 id] +0x94]`).
+fn dyn_geo() -> Option<ffx_gfx::scene_inputs::DynGeo> {
+    use ffx_gfx::scene_inputs as si;
+    let manager = word(crate::rebase(DYN_GEO)).filter(|&m| m != 0)?;
+    let id = u32_at(manager + 0x10)?;
+    let buffer = word(manager + 4 * (id as usize & 0xff))?;
+    let rec = word(buffer + 0x94).filter(|&r| r != 0)?;
+    let vertices = u32_at(rec + 4)?;
+    let indices = u32_at(rec + 8)?;
+    let nv = vertices.min(DYN_GEO_VERTICES_MAX) as usize;
+    let array = |off: usize, size: usize| {
+        word(rec + off)
+            .and_then(|p| bytes(p, size * nv))
+            .unwrap_or_default()
+    };
+    Some(si::DynGeo {
+        id,
+        vertices,
+        indices,
+        arrays: DYN_GEO_ARRAYS.map(|(off, size)| array(off, size)),
+        index_bytes: word(rec + 0x1c)
+            .and_then(|p| bytes(p, 2 * indices.min(DYN_GEO_INDICES_MAX) as usize))
+            .unwrap_or_default(),
+    })
 }
 
 /// The scene's switches that hide map parts (group mask, 2D layers) and

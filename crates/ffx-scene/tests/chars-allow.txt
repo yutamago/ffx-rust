@@ -1,0 +1,23 @@
+# What a character builder's draws may differ in from original captures
+# (docs/formats/scene-chars.md, "Junk reads"). drawdiff rule syntax
+# (docs/drawdiff.md, "Rules"). Both are words Ch_DrawMain (0x0082ed50)
+# hands graphicSgSetSpecular (0x00643cc0) without ever writing them; the
+# junk-read policy of 2026-10-24 makes the port pass 0, so the Rust game's
+# material buffer, and so a builder copying it, has 0 where the original
+# has stale stack. The scene inputs of the original reproduce the stale
+# values bit for bit (tests/chars.rs): they are in the live material
+# buffer, written there by graphicSgSetSpecular through
+# ShaderParamBuffer_SetValue2 (0x006386c0).
+[*]
+
+# SgSpec_CameraVec = (x, z, junk, w) of the camera position in the
+# segment's space; the third word is [ebp-0x2c] of Ch_DrawMain's frame.
+# In every original capture of cdsp0000 (scene draw 112, Tidus's f001
+# object, vertex shader 1e6f10bb647d242c) it holds 0x00000001 (the denormal
+# 1e-45): an integer 1 an earlier call on the main thread left at that
+# stack slot. The port passes 0.0.
+constant var=SgSpec_CameraVec field=*.SgSpec_CameraVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x2c] (the camera vector's third word); 1e-45 (stale integer 1) in the original, 0 under the junk-read policy
+
+# SgSpec_LightVec = (x, z, junk, w) of the light direction; the third word
+# is [ebp-0x3c], about 5e-30 and different in every run.
+constant var=SgSpec_LightVec field=*.SgSpec_LightVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x3c] (the light vector's third word); stale stack in the original, 0 under the junk-read policy
