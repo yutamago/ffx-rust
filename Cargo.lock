@@ -698,6 +698,7 @@ dependencies = [
  "ffx-monster",
  "ffx-motion",
  "ffx-movie",
+ "ffx-panim",
  "ffx-pcui",
  "ffx-pload",
  "ffx-prender",
@@ -789,6 +790,7 @@ dependencies = [
  "ffx-monster",
  "ffx-motion",
  "ffx-movie",
+ "ffx-panim",
  "ffx-pcui",
  "ffx-phyre",
  "ffx-pload",
@@ -806,6 +808,14 @@ dependencies = [
  "lz4_flex",
  "thiserror",
  "unicorn-engine",
+]
+
+[[package]]
+name = "ffx-panim"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+ "ffx-graphic",
 ]
 
 [[package]]

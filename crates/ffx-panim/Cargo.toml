@@ -1,0 +1,14 @@
+[package]
+name = "ffx-panim"
+description = "PhyreEngine's PAnimation code ported from FFX.exe (M4 port round 1, list p2-anim): class-descriptor callbacks, PArray helpers, controller constructors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-bridge.workspace = true
+ffx-graphic.workspace = true
+
+[lints]
+workspace = true
