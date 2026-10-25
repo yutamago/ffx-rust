@@ -29,6 +29,7 @@ use ffx_prender::glue3::{self, bridge as g3};
 use ffx_prender::glue4::{self, bridge as g4};
 use ffx_prender::glue5::{self, bridge as g5};
 use ffx_prender::glue6::{self, bridge as g6};
+use ffx_prender::glue7::{self, bridge as g7};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -128,6 +129,17 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         self.0.call(addr, conv(c), args).unwrap().eax
     }
+    fn call_st0_f64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> f64 {
+        ffx_oracle::check_width(
+            "Host::call_st0_f64",
+            addr,
+            args.len(),
+            host::max_words(c, true),
+        );
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        r.st0.unwrap_or_else(|| panic!("{addr:#x}: no ST0"))
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
@@ -142,6 +154,10 @@ enum Out {
     U32(u32),
     /// `al` (the rest of `eax` is the caller's or garbage).
     U8(u8),
+    /// `edx:eax`.
+    U64(u64),
+    /// `ST0`, compared bit for bit as `fst qword` stores it.
+    F64(f64),
 }
 
 struct Twins {
@@ -360,13 +376,27 @@ impl Twins {
             .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
         let poison = self.rebase(POISON_AT);
         let out = bridge(&mut G(&mut self.b, poison));
-        assert!(
-            ra.st0_raw.is_none(),
-            "{what}: the original leaves ST0 set ({:?}); the port returns {out:?}",
-            ra.st0
-        );
+        if let Out::F64(v) = out {
+            assert!(
+                ra.st0_is(v),
+                "{what}: ST0 {:?}, the port {v:?} ({:#x})",
+                ra.st0,
+                v.to_bits()
+            );
+        } else {
+            assert!(
+                ra.st0_raw.is_none(),
+                "{what}: the original leaves ST0 set ({:?}); the port returns {out:?}",
+                ra.st0
+            );
+        }
         match out {
-            Out::None => {}
+            Out::None | Out::F64(_) => {}
+            Out::U64(v) => assert_eq!(
+                (u64::from(ra.edx) << 32) | u64::from(ra.eax),
+                v,
+                "{what}: edx:eax"
+            ),
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
         }
@@ -2110,4 +2140,193 @@ fn batch6_glue_matches_the_original() {
         let n = if t.snapshot { 8 } else { 40 };
         run_cases(t, CASES6, n, &mut Rng(0x6006_b006));
     });
+}
+
+// ---- batch 7 (ffx_prender::glue7, round 3) ----
+
+impl Twins {
+    /// A recording stub at `sym` (cdecl, no arguments) that leaves the
+    /// `double` `value` in `ST0`.
+    fn stub_f64(&mut self, sym: u32, value: f64) {
+        let cell = self.code(&value.to_bits().to_le_bytes());
+        let log = self.stub(None, sym, false, 0, 0, Some(0));
+        let mut c = vec![0xdd, 0x05]; // fld qword [cell]
+        c.extend(cell.to_le_bytes());
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// A clock reading: seconds since start-up, 0, negative, huge, or any
+/// double that is not a signalling NaN.
+fn clock(rng: &mut Rng) -> f64 {
+    loop {
+        let v = match rng.below(6) {
+            0 => f64::from(rng.below(1 << 20)) + f64::from(rng.next()) / 4_294_967_296.0,
+            1 => 0.0,
+            2 => -f64::from(rng.next()) / 1000.0,
+            3 => [
+                1e13,
+                9.3e12,
+                9.2233e12,
+                -9.2233e12,
+                1e300,
+                f64::INFINITY,
+                f64::NAN,
+            ][rng.below(7) as usize],
+            4 => f64::from(rng.below(100)) + 0.5,
+            _ => f64::from_bits((u64::from(rng.next()) << 32) | u64::from(rng.next())),
+        };
+        let b = v.to_bits();
+        let snan = b & 0x7ff0_0000_0000_0000 == 0x7ff0_0000_0000_0000
+            && b & 0x000f_ffff_ffff_ffff != 0
+            && b & 0x0008_0000_0000_0000 == 0;
+        if !snan {
+            return v;
+        }
+    }
+}
+
+/// The timer stubbed with a clock reading, a random start time; the
+/// application object `obj` (its `+0x28` paused time, a float).
+fn prep_clock(t: &mut Twins, obj: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let now = clock(rng);
+    t.stub_f64(glue7::TIMER_GET_TIME, now);
+    let start = if rng.chance(3) {
+        clock(rng)
+    } else {
+        now - f64::from(rng.below(5000))
+    };
+    let at = t.rebase(glue7::APP_START_TIME.sym);
+    t.write(at, &start.to_bits().to_le_bytes());
+    t.stub_ret(glue7::GET_APPLICATION, false, 0, 0, obj);
+    let paused = rng.float();
+    t.w32(obj + 0x28, paused.to_bits());
+}
+
+/// Floats in the two float slots, the effect 0 now and then, the frame
+/// skipped now and then (on the snapshot too).
+fn prep_ps2_lighting(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    args[4] = rng.float().to_bits();
+    args[7] = rng.float().to_bits();
+    args[0] = if rng.chance(5) { 0 } else { obj };
+    let skip = if rng.chance(4) { rng.word() } else { 0 };
+    t.global(glue7::GRAPHIC_SKIP_FRAME.sym, skip);
+}
+
+/// The manager `this` (high addresses too, for the sign words).
+fn prep_shader_bins(_: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = if rng.chance(3) {
+        0x8000_0000 | rng.next()
+    } else {
+        obj
+    };
+}
+
+/// A name of 0 to 40 bytes at `obj + 0x600`, the new buffer at
+/// `obj + 0x1000` (prefilled), `this` and the value any word.
+fn prep_async(
+    t: &mut Twins,
+    obj: u32,
+    this: &mut u32,
+    args: &mut [u32],
+    rng: &mut Rng,
+    name_arg: usize,
+) {
+    let len = rng.below(41) as usize;
+    let mut name: Vec<u8> = (0..len).map(|_| (rng.next() % 255 + 1) as u8).collect();
+    name.push(0);
+    t.write(obj + 0x600, &name);
+    args[name_arg] = obj + 0x600;
+    let fill = rng.bytes(64);
+    t.write(obj + 0x1000, &fill);
+    t.stub_ret(glue7::OPERATOR_NEW_6304C0, false, 1, 0, obj + 0x1000);
+    *this = if rng.chance(3) {
+        0x8000_0000 | rng.next()
+    } else {
+        obj
+    };
+    args[1 - name_arg] = rng.word();
+}
+
+fn prep_async_name0(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    prep_async(t, obj, this, args, rng, 0);
+}
+
+fn prep_async_name1(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    prep_async(t, obj, this, args, rng, 1);
+}
+
+#[rustfmt::skip]
+const CASES7: &[Case] = &[
+    Case { prep: Some(prep_clock), ..cdecl("get_time", 0x0064_1410, 0, &[], |m, _, _| Out::F64(g7::get_time(m))) },
+    Case { prep: Some(prep_clock), ..cdecl("get_time_in_microseconds", 0x0064_1420, 0, &[], |m, _, _| Out::U64(g7::get_time_in_microseconds(m))) },
+    Case { prep: Some(prep_ps2_lighting), ..cdecl("ps2_lighting_setup_effect", 0x0064_2750, 11, &[(glue7::REGISTER_POINT_LIGHT, K::Cdecl(10))], |m, _, a| u(g7::ps2_lighting_setup_effect(m, arr(a)))) },
+    Case { prep: Some(prep_shader_bins), ..method("post_load_shader_bin_files", 0x0069_3d20, This::Object, 0, &[(glue7::ASYNC_LOAD_INSTANCE, K::Getter), (glue7::LOAD_CLUSTER, K::Cdecl(9)), (glue7::WAIT_TASKS, K::This(0))], |m, this, _| u(g7::post_load_shader_bin_files(m, this))) },
+    Case { prep: Some(prep_async_name0), ..method("scene_load_character_async", 0x0066_42f0, This::Object, 2, &[(glue7::ASYNC_LOAD_INSTANCE, K::Getter), (glue7::REGIST_ASYNC_LOAD_TASK, K::Cdecl(9)), (glue7::ASYNC_LOAD_NEW_CHARACTER, K::Cdecl(0))], |m, this, a| u(g7::scene_load_character_async(m, this, a[0], a[1]))) },
+    Case { prep: Some(prep_async_name1), ..method("scene_load_magic_file_vfx_texture_async", 0x0066_4d10, This::Object, 2, &[(glue7::ASYNC_LOAD_INSTANCE, K::Getter), (glue7::REGIST_ASYNC_LOAD_TASK, K::Cdecl(9))], |m, this, a| u(g7::scene_load_magic_file_vfx_texture_async(m, this, a[0], a[1]))) },
+    Case { prep: Some(prep_async_name1), ..method("scene_load_vfx_texture_async", 0x0066_5f60, This::Object, 2, &[(glue7::ASYNC_LOAD_INSTANCE, K::Getter), (glue7::REGIST_ASYNC_LOAD_TASK, K::Cdecl(9))], |m, this, a| u(g7::scene_load_vfx_texture_async(m, this, a[0], a[1]))) },
+];
+
+#[test]
+fn batch7_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 12 } else { 60 };
+        run_cases(t, CASES7, n, &mut Rng(0x7007_b007));
+    });
+}
+
+#[test]
+fn batch7_ftol2_64_matches_the_original() {
+    // _ftol2 (0x00949816) on the x87 values the clock gives it
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x0f70_1264);
+    let ftol2 = t.rebase(0x0094_9816);
+    // fld qword [esp+4]; call f; ret
+    let cell = t.zeros(8);
+    let mut c = vec![0xdd, 0x05];
+    c.extend(cell.to_le_bytes());
+    let at = t.cave_next;
+    c.push(0xe8);
+    c.extend(ftol2.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+    c.push(0xc3);
+    let code = t.code(&c);
+    for i in 0..4000 {
+        let x = match i {
+            0..=20 => [
+                0.0,
+                -0.0,
+                0.4,
+                0.5,
+                0.6,
+                -0.4,
+                -0.5,
+                -0.6,
+                1.5,
+                -1.5,
+                2.5,
+                -2.5,
+                4_294_967_296.0,
+                -4_294_967_296.0,
+                4_294_967_295.5,
+                -4_294_967_296.5,
+                9.2e18,
+                -9_223_372_036_854_775_808.0,
+                9_223_372_036_854_775_808.0,
+                1e300,
+                f64::NAN,
+            ][i],
+            _ => clock(&mut rng) * if rng.chance(2) { 1e6 } else { 1.0 },
+        };
+        t.write(cell, &x.to_bits().to_le_bytes());
+        let r = t.a.call(code, Conv::Cdecl, &[]).unwrap();
+        let got = (u64::from(r.edx) << 32) | u64::from(r.eax);
+        assert_eq!(got, glue7::ftol2_64(x), "{x:e}");
+    }
 }

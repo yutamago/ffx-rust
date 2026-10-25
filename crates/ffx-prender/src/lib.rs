@@ -49,6 +49,7 @@ pub mod glue3;
 pub mod glue4;
 pub mod glue5;
 pub mod glue6;
+pub mod glue7;
 pub mod mesh;
 pub mod misc;
 pub mod registry;

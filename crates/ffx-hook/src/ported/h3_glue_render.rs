@@ -12,6 +12,7 @@ use ffx_prender::glue3::bridge as g3;
 use ffx_prender::glue4::bridge as g4;
 use ffx_prender::glue5::bridge as g5;
 use ffx_prender::glue6::bridge as g6;
+use ffx_prender::glue7::bridge as g7;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -854,5 +855,35 @@ ported! {
     /// `PSamplerStates_init_006f5470()`.
     PSamplerStates_init_006f5470 @ 0x006f_5470 => extern "C" fn sampler_states_init() -> u32 {
         g6::sampler_states_init(&mut mem())
+    }
+
+    // ---- round 3 batch 7 (ffx_prender::glue7) ----
+    /// `graphicGetTime()`: a `float` in `ST0`.
+    graphicGetTime @ 0x0064_1410 => extern "C" fn get_time() -> f64 {
+        g7::get_time(&mut mem())
+    }
+    /// `graphicGetTimeInMicroseconds()`: 64 bits in `edx:eax`.
+    graphicGetTimeInMicroseconds @ 0x0064_1420 => extern "C" fn get_time_in_microseconds() -> u64 {
+        g7::get_time_in_microseconds(&mut mem())
+    }
+    /// `graphicPS2LightingSetupEffect(effect, a1, .., a10)`.
+    graphicPS2LightingSetupEffect @ 0x0064_2750 => extern "C" fn ps2_lighting_setup_effect(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32, a10: u32) -> u32 {
+        g7::ps2_lighting_setup_effect(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10])
+    }
+    /// `PostProcessManager_loadShaderBinFiles_00693d20(this)`.
+    PostProcessManager_loadShaderBinFiles_00693d20 @ 0x0069_3d20 => extern "thiscall" fn post_load_shader_bin_files(this: u32) -> u32 {
+        g7::post_load_shader_bin_files(&mut mem(), this)
+    }
+    /// `PhyreScene_loadCharacterAsync(this, name, id)`.
+    PhyreScene_loadCharacterAsync @ 0x0066_42f0 => extern "thiscall" fn scene_load_character_async(this: u32, name: u32, id: u32) -> u32 {
+        g7::scene_load_character_async(&mut mem(), this, name, id)
+    }
+    /// `PhyreScene_loadMagicFileVFXTextureAsync(this, id, name)`.
+    PhyreScene_loadMagicFileVFXTextureAsync @ 0x0066_4d10 => extern "thiscall" fn scene_load_magic_file_vfx_texture_async(this: u32, id: u32, name: u32) -> u32 {
+        g7::scene_load_magic_file_vfx_texture_async(&mut mem(), this, id, name)
+    }
+    /// `PhyreScene_loadVFXTextureAsync(this, id, name)`.
+    PhyreScene_loadVFXTextureAsync @ 0x0066_5f60 => extern "thiscall" fn scene_load_vfx_texture_async(this: u32, id: u32, name: u32) -> u32 {
+        g7::scene_load_vfx_texture_async(&mut mem(), this, id, name)
     }
 }
