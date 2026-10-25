@@ -1680,8 +1680,8 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x40d3` | `Native_508c_ChrPlayInclOf` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 2, 1) (as 0x508a) | - | int `0x00a7a7a0` (native_mods) |
 | `0x40d4` | `Native_508d_ChrTexAnimTimer` | v | Ch_TextureSetAnimTimer(model, v) (0x0083d070) | - | int `0x00a7a7e0` (native_chr) (as `0x508d`: group 4's table runs into group 5's) |
 | `0x40d5` | `Native_508e_ChrSetClothGravity` | v | Ch_ClothEnableGrav(model, v) (0x008245f0) | - | int `0x00a7a850` (native_chr) (as `0x508e`: group 4's table runs into group 5's) |
-| `0x40d6` | `Native_508f` | v int (popped only for a model) | 0: the model's +0x870 byte = v | - | int `0x00a7a8a0` (native_chr) (as `0x508f`: group 4's table runs into group 5's) |
-| `0x40d7` | `Native_5090` | v | the model's +0x871 byte, popped only for a model | - | int `0x00a7a8d0` (native_chr) (as `0x5090`: group 4's table runs into group 5's) |
+| `0x40d6` | `Native_508f_ChrSetField870` | v int (popped only for a model) | 0: the model's +0x870 byte = v | - | int `0x00a7a8a0` (native_chr) (as `0x508f`: group 4's table runs into group 5's) |
+| `0x40d7` | `Native_5090_ChrGetField871` | v | the model's +0x871 byte, popped only for a model | - | int `0x00a7a8d0` (native_chr) (as `0x5090`: group 4's table runs into group 5's) |
 | `0x5000` | `Native_ChrSetMotion_5000` | motion int | 0 | - | int `0x00a78770` (native) |
 | `0x5001` | `Native_ChrLoadMotionGroup` | n int | int: 0, Chr_LoadMotionGroup(n) (0x008375f0) | - (the poll returns 5) | start `0x00a799b0`, poll `0x00a79a10`, int `0x00a79a20` (native_chr) |
 | `0x5002` | `Native_5002_ChrSetSequence` | seq int | 0: Ch_SetSequence(model, seq) (0x00837ac0) for a model | - | int `0x00a787a0` (native_mods) |
@@ -1823,8 +1823,8 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x508c` | `Native_508c_ChrPlayInclOf` | as Native_PlayMotionCommon | 0: Native_PlayMotionCommon(worker, stack, 2, 1) (as 0x508a) | - | int `0x00a7a7a0` (native_mods) |
 | `0x508d` | `Native_508d_ChrTexAnimTimer` | v | Ch_TextureSetAnimTimer(model, v) (0x0083d070) | - | int `0x00a7a7e0` (native_chr) |
 | `0x508e` | `Native_508e_ChrSetClothGravity` | v | Ch_ClothEnableGrav(model, v) (0x008245f0) | - | int `0x00a7a850` (native_chr) |
-| `0x508f` | `Native_508f` | v int (popped only for a model) | 0: the model's +0x870 byte = v | - | int `0x00a7a8a0` (native_chr) |
-| `0x5090` | `Native_5090` | v | the model's +0x871 byte, popped only for a model | - | int `0x00a7a8d0` (native_chr) |
+| `0x508f` | `Native_508f_ChrSetField870` | v int (popped only for a model) | 0: the model's +0x870 byte = v | - | int `0x00a7a8a0` (native_chr) |
+| `0x5090` | `Native_5090_ChrGetField871` | v | the model's +0x871 byte, popped only for a model | - | int `0x00a7a8d0` (native_chr) |
 | `0x6000` | `Native_CamSuspend` | worker int | int: camera handle (channel suspended) | - | int `0x007b8ea0` (native_cam) |
 | `0x6001` | `Native_CamResume` | worker int | int: camera handle (channel resumed) | - | int `0x007b8f30` (native_cam) |
 | `0x6002` | `Native_CamSetPos` | x f, y f, z f: eye position | 0 | - | int `0x007b9220` (native_cam) |
@@ -1835,16 +1835,16 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x6007` | `Native_Cam_6007` | a f, b f, c f, d f, e f, f f: eye, kind 5 (0x007bf420 mode 0) | 0 | - | int `0x007b93a0` (native_cam) |
 | `0x6008` | `Native_Cam_6008` | as 0x6007, kind 6 (mode 1) | 0 | - | int `0x007b93c0` (native_cam) |
 | `0x6009` | `Native_6009_CamSetTarget` | - | int: 0x007bab90(worker, args, stack, 1); 0 | - | int `0x007b93e0` (native_mods) |
-| `0x600a` | `Native_600a` | - | 0x007bb2b0(..., 1, 0); 0 | - | int `0x007b9440` (native_chr) |
+| `0x600a` | `Native_600a_CamLineFilter` | - | 0x007bb2b0(..., 1, 0); 0 | - | int `0x007b9440` (native_chr) |
 | `0x600b` | `Native_600b_CamAddLineArea` | - | int: 0x007bb2b0(worker, args, stack, 1, 1); 0 | - | int `0x007b9480` (native_mods) |
-| `0x600c` | `Native_600c` | - | int: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 0); 0 | - | int `0x007b94c0` (native_mods) |
+| `0x600c` | `Native_600c_CamEyeAddCircleArea` | - | int: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 0); 0 | - | int `0x007b94c0` (native_mods) |
 | `0x600d` | `Native_600d_CamAddCircleArea` | - | int: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 1); 0 | - | int `0x007b9500` (native_mods) |
-| `0x600e` | `Native_600e` | on | int: 0x007bf1a0(cam, 1, on & 1); the camera handle | - | int `0x007b95a0` (native_mods) |
+| `0x600e` | `Native_600e_CamEyeSetChannelFlagF5` | on | int: 0x007bf1a0(cam, 1, on & 1); the camera handle | - | int `0x007b95a0` (native_mods) |
 | `0x600f` | `Native_Cam_600f` | - | int: camera handle (0x007bed10(cam, 1), eye half) | - | int `0x007b9520` (native_cam) |
 | `0x6010` | `Native_CamMove` | frames int: eye moves to its set position, linear | 0 | no (0x601a waits) | int `0x007b96c0` (native_cam) |
 | `0x6011` | `Native_Cam_6011` | frames int: eye move, mode 1, type 1 | 0 | - | int `0x007b9730` (native_cam) |
 | `0x6012` | `Native_Cam_6012` | frames int: eye move, type 3 | 0 | - | int `0x007b9800` (native_cam) |
-| `0x6013` | `Native_6013` | frames | MsCameraMoveFrame(cam, 1, 1, frames, 3) (0x007bde50); 0 | - | int `0x007b9870` (native_chr) |
+| `0x6013` | `Native_6013_CamEyeMoveFrame` | frames | MsCameraMoveFrame(cam, 1, 1, frames, 3) (0x007bde50); 0 | - | int `0x007b9870` (native_chr) |
 | `0x6014` | `Native_CamMoveEased` | accel int, hold int, decel int, curve int: eased eye move | 0 | - | int `0x007b9940` (native_cam) |
 | `0x6015` | `Native_CamMoveEased1` | accel int, hold int, decel int, curve int: as 0x6014, mode 1 | 0 | - | int `0x007b9980` (native_cam) |
 | `0x6016` | `Native_CamMoveFinish` | - | int: camera handle (eye transition applied now; with magic 0x92 the second call arms Native_BtlRandom) | - | int `0x007b9b40` (native_cam) |
@@ -1855,28 +1855,28 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x601b` | `Native_601b_CamIsMoving` | - | Cam_IsMoving(cam, 1) (0x007bdd20) | - | int `0x007b9ca0` (native_chr) |
 | `0x601c` | `Native_Cam_601c` | var int: variable reference, degrees f | int: camera handle (0x007bf520(cam, 1, 1, &var, radians)) | - | int `0x007b8330` (native_cam) |
 | `0x601d` | `Native_Cam_601d` | var int, degrees f, y f, x f | int: camera handle (0x007bf600(cam, 1, 1, &var, radians, y, x)) | - | int `0x007b8470` (native_cam) |
-| `0x601e` | `Native_601e` | var, deg f | 0x007bf520(cam, 1, 0, &var, deg * pi / 180); the camera | - | int `0x007b83d0` (native_chr) |
+| `0x601e` | `Native_601e_CamSetFocusList` | var, deg f | 0x007bf520(cam, 1, 0, &var, deg * pi / 180); the camera | - | int `0x007b83d0` (native_chr) |
 | `0x601f` | `Native_Cam_601f` | as 0x601d, mode 0 | int: camera handle | - | int `0x007b8530` (native_cam) |
 | `0x6020` | `Native_CamRefSetPos` | x f, y f, z f: reference (look-at) position | 0 | - | int `0x007b9d00` (native_cam) |
 | `0x6021` | `Native_Cam_6021` | x var, y var, z var: variable references | 0 (the reference position stored) | - | int `0x007b9d40` (native_cam) |
 | `0x6022` | `Native_6022_CamRefSetPolar` | - | int: 0x007bb5d0(worker, args, stack, 0, 0); 0 | - | int `0x007b9e10` (native_mods) |
 | `0x6023` | `Native_6023_CamRefAddPolar` | - | int: 0x007bb5d0(worker, args, stack, 0, -1); 0 | - | int `0x007b9e90` (native_mods) |
-| `0x6024` | `Native_6024` | - | int: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, -1); 0 | - | int `0x007b9f20` (native_mods) |
-| `0x6025` | `Native_6025` | - | int: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 0); 0 | - | int `0x007b9fa0` (native_mods) |
-| `0x6026` | `Native_6026` | - | int: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 1); 0 | - | int `0x007b9fc0` (native_mods) |
+| `0x6024` | `Native_6024_CamEyeAddAreaMinus1` | - | int: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, -1); 0 | - | int `0x007b9f20` (native_mods) |
+| `0x6025` | `Native_6025_CamEyeAddArea0` | - | int: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 0); 0 | - | int `0x007b9fa0` (native_mods) |
+| `0x6026` | `Native_6026_CamEyeAddArea1` | - | int: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 1); 0 | - | int `0x007b9fc0` (native_mods) |
 | `0x6027` | `Native_CamRefSetTarget` | target int, bone int, y f: reference follows a target | 0 | - | int `0x007b9fe0` (native_cam) |
 | `0x6028` | `Native_Cam_6028` | five floats: reference constraint, kind 0 | 0 | - | int `0x007ba0e0` (native_cam) |
 | `0x6029` | `Native_CamRefAddLineArea` | x1 f, z1 f, x2 f, z2 f, r f: reference kept near a segment | 0 | - | int `0x007ba1d0` (native_cam) |
-| `0x602a` | `Native_602a` | - | 0x007bb370(..., 0, 0); 0 | - | int `0x007ba1f0` (native_chr) |
+| `0x602a` | `Native_602a_CamRefAddCircleArea` | - | 0x007bb370(..., 0, 0); 0 | - | int `0x007ba1f0` (native_chr) |
 | `0x602b` | `Native_CamRefAddCircleArea` | x f, z f, r f: reference kept by a circle | 0 | - | int `0x007ba2d0` (native_cam) |
-| `0x602c` | `Native_602c` | on | int: 0x007bf1a0(cam, 0, on & 1); the camera handle | - | int `0x007ba350` (native_mods) |
+| `0x602c` | `Native_602c_CamRefSetChannelFlagF5` | on | int: 0x007bf1a0(cam, 0, on & 1); the camera handle | - | int `0x007ba350` (native_mods) |
 | `0x602d` | `Native_CamRefClearAreas` | - | int: camera handle (reference constraints cleared) | - | int `0x007ba2f0` (native_cam) |
 | `0x602e` | `Native_CamFocusTimeLinear` | frames int: focus move, linear | 0 | - | int `0x007b7f70` (native_cam) |
-| `0x602f` | `Native_602f` | frames | int: MsCameraMoveFrame(cam, 0, 1, frames, 1); 0 | - | int `0x007b7fe0` (native_mods) |
+| `0x602f` | `Native_602f_CamRefMoveFrame` | frames | int: MsCameraMoveFrame(cam, 0, 1, frames, 1); 0 | - | int `0x007b7fe0` (native_mods) |
 | `0x6030` | `Native_Cam_6030` | frames int: focus move, type 3 | 0 | - | int `0x007b8050` (native_cam) |
-| `0x6031` | `Native_6031` | frames | int: MsCameraMoveFrame(cam, 0, 1, frames, 3); 0 | - | int `0x007b80c0` (native_mods) |
+| `0x6031` | `Native_6031_CamRefMoveFrame3` | frames | int: MsCameraMoveFrame(cam, 0, 1, frames, 3); 0 | - | int `0x007b80c0` (native_mods) |
 | `0x6032` | `Native_CamFocusTimeEase` | accel int, hold int, decel int, curve int: eased focus move | 0 | - | int `0x007b8130` (native_cam) |
-| `0x6033` | `Native_6033` | - | 0x007ba5b0(worker, args, stack, 0, 1); 0 | - | int `0x007b8150` (native_chr) |
+| `0x6033` | `Native_6033_CamRefMoveAcc` | - | 0x007ba5b0(worker, args, stack, 0, 1); 0 | - | int `0x007b8150` (native_chr) |
 | `0x6034` | `Native_CamFocusCut` | - | int: camera handle (focus jumps to its target) | - | int `0x007b8210` (native_cam) |
 | `0x6035` | `Native_Cam_6035` | as 0x6017 for the focus half | 0 | - | int `0x007b8170` (native_cam) |
 | `0x6036` | `Native_6036_CamRefSetDir` | - | int: 0x007bb210(worker, args, stack, 0); 0 | - | int `0x007b8190` (native_mods) |
@@ -1891,7 +1891,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x603f` | `Native_Cam_603f` | a int, b int, c f (/100): focus (0x007c5c60) | 0 | - | int `0x007b86f0` (native_cam) |
 | `0x6040` | `Native_CamEyeOrbitScaled` | actor a int, actor b int, height f, yaw f (deg), pitch f (deg), distance f: eye orbit scaled by actor size | 0 | - | int `0x007b8710` (native_cam) |
 | `0x6041` | `Native_CamFocusOrbitScaled` | as 0x6040 for the focus | 0 | - | int `0x007b8730` (native_cam) |
-| `0x6042` | `Native_6042` | v | 0x007bdf90(cam, 0, v ^ 0xffff); the camera | - | int `0x007b85f0` (native_chr) |
+| `0x6042` | `Native_6042_CamRefMoveStat` | v | 0x007bdf90(cam, 0, v ^ 0xffff); the camera | - | int `0x007b85f0` (native_chr) |
 | `0x6043` | `Native_Cam_6043` | v int | int: camera handle (0x007bdf90(cam, 1, v ^ 0xffff)) | - | int `0x007b8660` (native_cam) |
 | `0x6044` | `Native_CamEyeOrbit` | as 0x6040, distance absolute | 0 | - | int `0x007b8750` (native_cam) |
 | `0x6045` | `Native_CamFocusOrbit` | as 0x6044 for the focus | 0 | - | int `0x007b8770` (native_cam) |
@@ -1901,7 +1901,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x6049` | `Native_CamPathAddEye` | - | int: camera handle (the eye appended to path list 1) | - | int `0x007b9e30` (native_cam) |
 | `0x604a` | `Native_Cam_604a` | - | int: camera handle (the focus path list is cleared) | - | int `0x007b9eb0` (native_cam) |
 | `0x604b` | `Native_CamPathAddFocus` | - | int: camera handle (the focus appended to path list 0) | - | int `0x007b9f40` (native_cam) |
-| `0x604c` | `Native_604c` | - | 0x007badb0(..., 1, 3); 0 | - | int `0x007b8790` (native_chr) |
+| `0x604c` | `Native_604c_CamEyeSetBtlPc` | - | 0x007badb0(..., 1, 3); 0 | - | int `0x007b8790` (native_chr) |
 | `0x604d` | `Native_Cam_604d` | as 0x6040, mode 4 | 0 | - | int `0x007b87b0` (native_cam) |
 | `0x604e` | `Native_604e_CamSetScreenVector` | - | six: 0x007bc930(f, 1), 0x007bc890(f, e, d, c, b, a, 0); 0 | - | int `0x007b8ad0` (native_chr) |
 | `0x604f` | `Native_604f_CamSetScreenCamera` | v | 0x007bc950(v, 0, v) | - | int `0x007b8b80` (native_chr) |
@@ -1958,16 +1958,16 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x6082` | `Native_6082_CamEyeShakeKind7` | - | the shake with (1, 7) | - | int `0x007b9300` (native_chr) |
 | `0x6083` | `Native_Cam_6083` | as 0x605c, flags 8 | int: camera handle | - | int `0x007b9340` (native_cam) |
 | `0x6084` | `Native_Cam_6084` | as 0x605d, flags 8 | int: camera handle | - | int `0x007b9380` (native_cam) |
-| `0x6085` | `Native_6085` | - | int: 0x007ba460(worker, args, stack, 1); 0 | - | int `0x007b92a0` (native_mods) |
-| `0x6086` | `Native_6086` | - | int: 0x007ba460(worker, args, stack, 0); 0 | - | int `0x007b9d80` (native_mods) |
+| `0x6085` | `Native_6085_CamGetEyeVars` | - | int: 0x007ba460(worker, args, stack, 1); 0 | - | int `0x007b92a0` (native_mods) |
+| `0x6086` | `Native_6086_CamGetRefVars` | - | int: 0x007ba460(worker, args, stack, 0); 0 | - | int `0x007b9d80` (native_mods) |
 | `0x6087` | `Native_Cam_6087` | - | int: camera handle (0x007beae0(cam, 0)) | - | int `0x007b8a10` (native_cam) |
 | `0x6088` | `Native_Cam_6088` | - | int: camera handle (0x007beae0(cam, 1)) | - | int `0x007b8a70` (native_cam) |
 | `0x6089` | `Native_6089_ScreenShakeKind9` | p8, p7, p6, p5, p4 f, p3, p2 f, p1 | int: MsScreenShake2(p8, p7, 9, p6, p5, p4, p3, p2, p1) (0x007c57b0); 0 | - | int `0x007b9630` (native_mods) |
-| `0x7000` | `Native_7000` | - | 0 (actor +0xdf2 = 0) | - | int `0x007a8620` (native_btl) |
+| `0x7000` | `Native_7000_ActorClearDf2` | - | 0 (actor +0xdf2 = 0) | - | int `0x007a8620` (native_btl) |
 | `0x7001` | `Native_BtlSetFlagBded` | v | int: the byte 0x0112bded = v & 1; 0 | - | int `0x007a39d0` (native_mods) |
 | `0x7002` | `Native_7002_BtlLabelExe` | a int, b int | the start's result; poll returns 1 at once | no | start `0x007a3530` (native_btl), poll `0x007a35c0` (native_btl2) |
 | `0x7003` | `Native_7003_ChrSetDirTarget` | a int, b int | 0 (0x00795eb0(actor, 2, 0, -1, b, a)) | - | int `0x007a3d90` (native_btl) |
-| `0x7004` | `Native_7004` | v f | 0; the f32 0x0112bde4 = v | - | int `0x007a3aa0` (native_btl2) |
+| `0x7004` | `Native_7004_BtlSetCenterScale` | v f | 0; the f32 0x0112bde4 = v | - | int `0x007a3aa0` (native_btl2) |
 | `0x7005` | `Native_BtlIsUnderwater` | - | int: the i8 at 0x0112c9ce | - | int `0x007a4550` (native_mods) |
 | `0x7006` | `Native_7006_ChrSetDirTarget` | a int, b int | 0 (as 0x7003 with 1, when actor +0x41d) | - | int `0x007a3f50` (native_btl) |
 | `0x7007` | `Native_ActorPlayMotion` | as 0x007a8fc0(worker, args, stack, 0) | its result | - | int `0x007a35a0` (native_move) |
@@ -1976,14 +1976,14 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x700a` | `Native_700a_ChrSetHeight` | b int, f f | 0 (actor +0x50c = b, +0x538 = f) | - | int `0x007a4100` (native_btl) |
 | `0x700b` | `Native_BtlUseCommand` | targets int (selector), command int | 1 if used, else 0 (actor cannot act) | - | int `0x007a44b0` (native_btl) |
 | `0x700c` | `Native_700c_BtlMoveTargetDist` | - | 0 (0x007a9150(worker, args, stack, 0.0)) | - | int `0x007a4310` (native_btl) |
-| `0x700d` | `Native_700d` | mode int, k int | int: 0x007a87f0(&to, &from, actor, abs k, 0); with the actor locked (+0x44e), 1 for a negative k else 0 | - | int `0x007a63f0` (native_btl) |
+| `0x700d` | `Native_700d_ActorMoveTowardTarget` | mode int, k int | int: 0x007a87f0(&to, &from, actor, abs k, 0); with the actor locked (+0x44e), 1 for a negative k else 0 | - | int `0x007a63f0` (native_btl) |
 | `0x700e` | `Native_700e_BtlSetDamage` | sel | int: MsSetDamage(actor, sel, 0) (0x0078d980) for an actor; 0 | - | int `0x007a5690` (native_mods) |
 | `0x700f` | `Native_GetActorProperty` | selector int, property int | int: MsGetChrStatInfo's value | - | int `0x007a4d50` (native_btl) |
 | `0x7010` | `Native_BtlSelectTarget` | a int, b int, c int, d int | int: the selected target | - | int `0x007a5af0` (native_btl) |
-| `0x7011` | `Native_7011` | v int | 0; the byte 0x0112a8fc = v & 1 | - | int `0x007a4280` (native_btl2) |
-| `0x7012` | `Native_7012` | - | 0 | - | int `0x007a29a0` (native_btl) |
-| `0x7013` | `Native_7013` | v f | 0; with a model, 0x0082b840(model, v) | - | int `0x007a5840` (native_btl2) |
-| `0x7014` | `Native_7014` | - | int: the word 0x0112c8d8 | - | int `0x007a4430` (native_btl) |
+| `0x7011` | `Native_7011_BtlSetDebugCameraSleep` | v int | 0; the byte 0x0112a8fc = v & 1 | - | int `0x007a4280` (native_btl2) |
+| `0x7012` | `Native_7012_ActorStepState23` | - | 0 | - | int `0x007a29a0` (native_btl) |
+| `0x7013` | `Native_7013_ChrSetSp` | v f | 0; with a model, 0x0082b840(model, v) | - | int `0x007a5840` (native_btl2) |
+| `0x7014` | `Native_7014_BtlGetParsedCommand` | - | int: the word 0x0112c8d8 | - | int `0x007a4430` (native_btl) |
 | `0x7015` | `Native_DebugPrint` | v int | 0 (debug print) | - | int `0x007a4910` (native_btl) |
 | `0x7016` | `Native_ActorQueueMotion` | motion int | 0 (queued on the actor) | - | int `0x007a2a20` (native_btl) |
 | `0x7017` | `Native_7017_ChrSetEffect7` | a int, b int | 0 | - | int `0x007a4050` (native_btl) |
@@ -1991,58 +1991,58 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x7019` | `Native_7019_ActReCommand` | - | int: 0x007acc90(actor) | - | int `0x007a62d0` (native_btl) |
 | `0x701a` | `Native_701a_GetComInfo` | a int, b int | int: 0x0078cd30(actor, a, b) | - | int `0x007a6390` (native_btl) |
 | `0x701b` | `Native_701b_CueAddCommand` | targets int, v int | 0: 0x007ac940(actor, v, MsGetChrBit(actor, targets, 0, 1)) | - | int `0x007a66a0` (native_btl) |
-| `0x701c` | `Native_701c` | v int | 0 (actor +0x420 = v) | - | int `0x007a59d0` (native_btl) |
-| `0x701d` | `Native_701d` | - | int: actor +0x420 (signed) | - | int `0x007a5bf0` (native_btl) |
+| `0x701c` | `Native_701c_ActorSetField420` | v int | 0 (actor +0x420 = v) | - | int `0x007a59d0` (native_btl) |
+| `0x701d` | `Native_701d_ActorGetField420` | - | int: actor +0x420 (signed) | - | int `0x007a5bf0` (native_btl) |
 | `0x701e` | `Native_BtlCountActorsInBoth` | a int, b int: selectors | int: actors both pick | - | int `0x007a6870` (native_btl) |
-| `0x701f` | `Native_701f` | v int | 0: the actor's +0x3f1 = v | - | int `0x007a5f80` (native_btl) |
+| `0x701f` | `Native_701f_ActorSetField3f1` | v int | 0: the actor's +0x3f1 = v | - | int `0x007a5f80` (native_btl) |
 | `0x7020` | `Native_7020_CheckStartEffect` | - | int: 0x007a92c0(actor, its +0xdc0), 0 without an actor | - | int `0x007a53b0` (native_btl2) |
 | `0x7021` | `Native_ActorGetId` | selector int | int: the picked actor's id, -1 for none | - | int `0x007a6a80` (native_btl) |
-| `0x7022` | `Native_7022` | v int | 0: the byte 0x0112c9dc = v | - | int `0x007a4cd0` (native_btl) |
-| `0x7023` | `Native_7023` | selector int | int: ftol of the mean of MsSetMove(i, 1) (0x007a9fc0) over the picked actors (f32 sum and mean) | - | int `0x007a4940` (native_btl) |
+| `0x7022` | `Native_7022_BtlSetFirstAttack` | v int | 0: the byte 0x0112c9dc = v | - | int `0x007a4cd0` (native_btl) |
+| `0x7023` | `Native_7023_SelMeanSetMove` | selector int | int: ftol of the mean of MsSetMove(i, 1) (0x007a9fc0) over the picked actors (f32 sum and mean) | - | int `0x007a4940` (native_btl) |
 | `0x7024` | `Native_BtlGetBattleId` | - | int: MsGetBattleScene() | - | int `0x007a4e90` (native_btl) |
 | `0x7025` | `Native_7025_ActTargetSearch` | d int, c int, b int, a int | int: out of MsActTargetSearch(actor, d, c, b, 4, a, 0, &out) (0x007acd40), whose result goes to 0x00796430(actor, r) | - | int `0x007a5cf0` (native_btl) |
-| `0x7026` | `Native_7026` | v int | 0 (actor +0x44f = v) | - | int `0x007a5d80` (native_btl) |
-| `0x7027` | `Native_7027` | - | int: the actor's byte +0x44f, 0 without an actor | - | int `0x007a5e90` (native_btl2) |
+| `0x7026` | `Native_7026_ActorSetField44f` | v int | 0 (actor +0x44f = v) | - | int `0x007a5d80` (native_btl) |
+| `0x7027` | `Native_7027_ActorGetField44f` | - | int: the actor's byte +0x44f, 0 without an actor | - | int `0x007a5e90` (native_btl2) |
 | `0x7028` | `Native_7028_ChrSetScale` | x f, y f, z f: the actor's +0x3a0..+0x3a8 and its model's 0x0082b560(model, 7, ..) | 0 | - | int `0x007a6970` (native_btl) |
-| `0x7029` | `Native_7029` | b int | 0 (actor +0x505 = b & 1) | - | int `0x007a3fb0` (native_btl) |
-| `0x702a` | `Native_702a` | - | int: actor +0x508 | - | int `0x007a5bc0` (native_btl) |
+| `0x7029` | `Native_7029_ActorSetField505` | b int | 0 (actor +0x505 = b & 1) | - | int `0x007a3fb0` (native_btl) |
+| `0x702a` | `Native_702a_ActorGetField508` | - | int: actor +0x508 | - | int `0x007a5bc0` (native_btl) |
 | `0x702b` | `Native_702b_ChrGetWaitMotion` | - | int: -1 while the actor's model is busy, else 0 | - | int `0x007a3c50` (native_btl) |
 | `0x702c` | `Native_702c_ChrMoveToTarget` | mode int, p8 f (speed), p7 f, p6 f (acceleration), p5 f, p4 f, p3 f, p2 f, p1 f | int: 0x007a87f0(&to, &from, actor, 0x10, 1) (0 without an actor) | - | int `0x007a45c0` (native_btl) |
-| `0x702d` | `Native_702d` | - | 0 | - | int `0x007a4e60` (native_btl) |
+| `0x702d` | `Native_702d_MotionSpeedReset` | - | 0 | - | int `0x007a4e60` (native_btl) |
 | `0x702e` | `Native_702e_GetTargetDist` | v int: target | float: distance to the target (MsGetTargetDist) | - | float `0x007a6d70` (native_btl) |
 | `0x702f` | `Native_702f_ChrReset` | keep int | 0: resets the actor (+0x508 = 0, MsStatusEffectClear, 0x0079ea90, the system motion again unless +0xdce, MsSetChrVisibleAppear(actor, 0)); with keep +0xdc8 = 0 | - | int `0x007a5140` (native_btl) |
-| `0x7030` | `Native_7030` | - | int: actor +0x412 | - | int `0x007a5090` (native_btl) |
-| `0x7031` | `Native_7031` | - | 0 (actor +0x432 = 1) | - | int `0x007a2d00` (native_btl) |
-| `0x7032` | `Native_7032` | selector int, angle f (degrees) | 0 | - | int `0x007a6f70` (native_btl) |
-| `0x7033` | `Native_7033` | b int | 0 (actor +0x32 = b & 1) | - | int `0x007a3cc0` (native_btl) |
-| `0x7034` | `Native_7034` | v int | int: v | - | int `0x007a5330` (native_btl) |
-| `0x7035` | `Native_7035` | - | int: the byte 0x0112c9f1 | - | int `0x007a53a0` (native_btl) |
+| `0x7030` | `Native_7030_ActorGetField412` | - | int: actor +0x412 | - | int `0x007a5090` (native_btl) |
+| `0x7031` | `Native_7031_ActorSetField432` | - | 0 (actor +0x432 = 1) | - | int `0x007a2d00` (native_btl) |
+| `0x7032` | `Native_7032_ActorSetRadians514` | selector int, angle f (degrees) | 0 | - | int `0x007a6f70` (native_btl) |
+| `0x7033` | `Native_7033_ActorSetField32` | b int | 0 (actor +0x32 = b & 1) | - | int `0x007a3cc0` (native_btl) |
+| `0x7034` | `Native_7034_BtlSetEndForced` | v int | int: v | - | int `0x007a5330` (native_btl) |
+| `0x7035` | `Native_7035_BtlGetEndForced` | - | int: the byte 0x0112c9f1 | - | int `0x007a53a0` (native_btl) |
 | `0x7036` | `Native_7036_ChrSetTransparent` | a f, b f, n int | 0: MsSetChrTransparentVisible(actor, a, b, n, 1) (0x00796550) | - | int `0x007a7180` (native_btl) |
 | `0x7037` | `Native_7037_ChrAddExtraCommand` | b int, a int | int: 0x007ac840(actor, a, b, 1) | - | int `0x007a6d30` (native_btl) |
 | `0x7038` | `Native_7038_ChrDelExtraCommand` | b int, a int | int: 0x007acb40(actor, a, b) | - | int `0x007a6dd0` (native_btl) |
 | `0x7039` | `Native_7039_ChrDeathTerminate` | - | 0 | - | int `0x007a2b10` (native_btl) |
-| `0x703a` | `Native_703a` | v int | 0: the actor's +0x3fc (u16) = v through f32, truncated | - | int `0x007a7360` (native_btl) |
+| `0x703a` | `Native_703a_ActorSetField3fc` | v int | 0: the actor's +0x3fc (u16) = v through f32, truncated | - | int `0x007a7360` (native_btl) |
 | `0x703b` | `CT_703B_ret_setCommandDisabled` | selector int, a int, b int | int: actors handled | - | int `0x007a6ef0` (native_btl) |
 | `0x703c` | `Native_703c_AtelRequestSystem` | v int | the request handle; poll 0x007a8700 | until it ends | start `0x007a5540`, poll `0x007a5680` (native_btl) |
-| `0x703d` | `Native_703d` | - | int: the byte 0x0112a8e4 = 0; 0 | - | int `0x007a5980` (native_mods) |
-| `0x703e` | `Native_703e_Poll` | - | with 0x0112a8e4 set, 0x0112a8e5 drops to 0 when it is 1. Unless the i8 at 0x0112c9e4 is negative and 0x0112c9d0, 0x0112c9d8, 0x0112bde1, 0x0112c944 are all 0, the pair at 0x0112ca08 = (0xff, 0xde) and it waits (0). Else the first of the 31 actors that is busy (+0xdc8 with +0x508, +0x432 or +0xdfb: kind 0xdf) or acting (+0x10 with +0x436 or +0xdf0: 0xdd) goes to 0x0112ca08 with its kind and it waits; none: done (5) | - | poll `0x007a5a10` (native_mods) |
+| `0x703d` | `Native_703d_BtlCameraStateClear` | - | int: the byte 0x0112a8e4 = 0; 0 | - | int `0x007a5980` (native_mods) |
+| `0x703e` | `Native_703e_WaitBtlIdle_Poll` | - | with 0x0112a8e4 set, 0x0112a8e5 drops to 0 when it is 1. Unless the i8 at 0x0112c9e4 is negative and 0x0112c9d0, 0x0112c9d8, 0x0112bde1, 0x0112c944 are all 0, the pair at 0x0112ca08 = (0xff, 0xde) and it waits (0). Else the first of the 31 actors that is busy (+0xdc8 with +0x508, +0x432 or +0xdfb: kind 0xdf) or acting (+0x10 with +0x436 or +0xdf0: 0xdd) goes to 0x0112ca08 with its kind and it waits; none: done (5) | - | poll `0x007a5a10` (native_mods) |
 | `0x703f` | `Native_BtlRunEvent` | event int, a int | the event handle; poll its 0x007a8700 | until the event ends | start `0x007a5df0`, poll `0x007a5ec0` (native_btl) |
 | `0x7040` | `Native_7040_MagicEffectStart` | v int | int: 0x0079e8c0(actor, v); 0 without an actor | - | int `0x007a5610` (native_btl) |
 | `0x7041` | `Native_7041_NoOp` | - | 0 | - | int `0x007a56d0` (native_btl) |
 | `0x7042` | `Native_7042_MsgDrawAmes` | win, k, x, y, anchor | int: 0x0112c250 = k; TODrawAMES(win clamped 0..6, text k, x, y, anchor) (0x0089b140) from the table at *0x0112a9b8 when there is one; 0 | - | int `0x007a6060` (native_mods) |
 | `0x7043` | `Native_7043_MsgWaitClose_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is set (then 0x008ab8f0(handle)); the handle is the argument word | start `0x007a6a10`, poll `0x007a6a40` (native_btl2) |
 | `0x7044` | `Native_7044_MsgCloseWindow` | win | int: TOCloseMessageWindow(win clamped 0..6) (0x008ab8f0); 0 | - | int `0x007a6e10` (native_mods) |
-| `0x7045` | `Native_7045` | sel | int: MsSetMove(first of sel, 0xc) (0x007a9fc0, ST0) over the double at 0x00b43d70, rounded to f32, truncated | - | int `0x007a4da0` (native_mods) |
+| `0x7045` | `Native_7045_SelFirstSetMove` | sel | int: MsSetMove(first of sel, 0xc) (0x007a9fc0, ST0) over the double at 0x00b43d70, rounded to f32, truncated | - | int `0x007a4da0` (native_mods) |
 | `0x7046` | `Native_7046_MoveSplineSet` | v int | 0: MsMoveSplineSet(v) (0x007ab140) | - | int `0x007a5220` (native_btl) |
 | `0x7047` | `Native_7047_MoveSplineRegist` | i int, a int | 0 | - | int `0x007a5270` (native_btl) |
 | `0x7048` | `Native_7048_MoveSplineRegistPos` | i int, x f, y f, z f | 0 | - | int `0x007a53f0` (native_btl) |
 | `0x7049` | `Native_7049_ChrMoveSpline` | d int, c int, f f, a int | 0: 0x007ab010(d, actor, c, f, a) | - | int `0x007a55a0` (native_btl) |
-| `0x704a` | `Native_704a` | selector int | int: picked actors with +0x415 set | - | int `0x007a58d0` (native_btl) |
+| `0x704a` | `Native_704a_SelCountField415` | selector int | int: picked actors with +0x415 set | - | int `0x007a58d0` (native_btl) |
 | `0x704b` | `Native_704b_ChrSetMotion` | selector int, motion int, b int | the args word: 1 when MsSetMotion(i, motion, b, 0, 1, worker, &out) (0x007ab360) set out for any picked actor | until 0x007a8700(args) is done | start `0x007a7640`, poll `0x007a7850` (native_btl) |
-| `0x704c` | `Native_704c` | selector int | the argument word = MsGetChrBit(actor, selector, 0, 1), returned | - | start `0x007a7bf0` (native_btl2), poll `0x007a7cf0` (native_btl2) |
+| `0x704c` | `Native_704c_ChrWaitMotionBit` | selector int | the argument word = MsGetChrBit(actor, selector, 0, 1), returned | - | start `0x007a7bf0` (native_btl2), poll `0x007a7cf0` (native_btl2) |
 | `0x704d` | `Native_704d_NoOp` | - | int: 0 (xor eax, eax; ret) | - | int `0x007a74e0` (native_mods) |
-| `0x704e` | `Native_704e` | v int | 0; the actor's bytes +0x3f5 and +0x3f6 = v | - | int `0x007a7530` (native_btl2) |
-| `0x704f` | `Native_704f` | selector int, v int | 0; every actor below 31 in MsGetChrBit(actor, selector, 0, 1) gets the byte +0xddd = v | - | int `0x007a70c0` (native_btl2) |
+| `0x704e` | `Native_704e_ActorSetField3f5` | v int | 0; the actor's bytes +0x3f5 and +0x3f6 = v | - | int `0x007a7530` (native_btl2) |
+| `0x704f` | `Native_704f_SelSetFieldDdd` | selector int, v int | 0; every actor below 31 in MsGetChrBit(actor, selector, 0, 1) gets the byte +0xddd = v | - | int `0x007a70c0` (native_btl2) |
 | `0x7050` | `Native_7050_ChrVisibleBtl2Event` | selector int | the args word: MsSetChrVisibleBtl2Event(worker, MsGetChrBit(actor, selector, 0, 1), -1) (0x007a89c0) | until 0x007a8700(args) is done | start `0x007a7400`, poll `0x007a74f0` (native_btl) |
 | `0x7051` | `Native_7051_WaitEffect7` | - | 5 when done | until actor +0xe12 is 0 | poll `0x007a5890` (native_btl) |
 | `0x7052` | `Native_7052` | a int: selector, b int: target selector, v int | 0 | - | int `0x007a7e10` (native_btl) |

@@ -5929,7 +5929,7 @@
 0x007a2780 function MsStoneRegist             # fh v3:exact 0x007a27a0
 0x007a27e0 function Native_707e_BtlGetFlag              # 0x707e: (k): battle flag k - 1 (2: both 0x0112a8f9 and 0x0112a8f8), 0 for k without one; ported in native_btl/native_move (script round 10); name from "(k): battle flag k - 1"
 0x007a2980 function Native_7123_ChrAttachWeapon # 0x7123: args (weapon int) -> MsAttachWeapon(5, weapon) (0x00793330); ported in native_btl2 (script round 18); name ours; name from "MsAttachWeapon(5, weapon) (0x00793330)"
-0x007a29a0 function Native_7012                # 0x7012: actor +0x435 = 0; state +0xdfb 2 -> 3, else +0x432 = 0; 0; ported in native_btl/native_move (script round 9)
+0x007a29a0 function Native_7012_ActorStepState23                # 0x7012: actor +0x435 = 0; state +0xdfb 2 -> 3, else +0x432 = 0; 0; ported in native_btl/native_move (script round 9); name from actor +0x435 = 0; battle state +0xdfb 2 -> 3, else +0x432 = 0 (the effect.rs state step); 0
 0x007a29f0 function Native_7074_ChrDetachWeapon # 0x7074: (v) -> MsDetachWeapon(actor, v) (0x00793f10); ported in native_mods (script round 21); name ours; name from "MsDetachWeapon(actor, v) (0x00793f10)"
 0x007a2a20 function Native_ActorQueueMotion      # 0x7016: args (motion) -> 0; self actor: clears motion state (0x007ab6c0) and sets +0x3f2 = motion; 0x007aa160 plays it next frame through 0x007ab360 (255 = none, idle); used after 0x7007/0x7008
 0x007a2a80 function Native_707a_GetDamageResult                # 0x707a: (selector): 0x0079a920(picked, its -16 pick, 0, 0, 0); ported in native_btl/native_move (script round 9); name from "0x0079a920(picked, ...)" MsGetDamageResult
@@ -5943,7 +5943,7 @@
 0x007a2ca0 function Native_70ed_SaveItemUse                # 0x70ed: args (b int, a int) -> int: MsSaveItemUse(b, a) (0x00790550); ported in native_btl (script round 12); name from "MsSaveItemUse(b, a) (0x00790550)"
 0x007a2cd0 function Native_70ad_EquipmentHasUnmarked # 0x70ad: jumps to 0x007ad6e0; ported in native_mods (script round 21); name ours; name from "jumps to 0x007ad6e0" MsEquipmentHasUnmarked_007ad6e0
 0x007a2ce0 function Native_7086_ChrUseMpLimit                # 0x7086: 0x0078e5a0(actor); 0; ported in native_btl/native_move (script round 9); name from "0x0078e5a0(actor)" MsUseChrMpLimit
-0x007a2d00 function Native_7031                # 0x7031: actor +0x432 = 1; 0; ported in native_btl/native_move (script round 9)
+0x007a2d00 function Native_7031_ActorSetField432                # 0x7031: actor +0x432 = 1; 0; ported in native_btl/native_move (script round 9); name from actor +0x432 = 1; 0
 0x007a2d30 function Native_70f1_ItemSlotsClear # 0x70f1: () -> 0: frees the actor's 20 u16 slots in g_BtlItemMem2 (0x02310cd8, 0x478 per actor); ported in native_btl2 (script round 18); name ours; name from "frees the actor's 20 u16 slots in g_BtlItemMem2"
 0x007a2d80 function Native_705b_ChrGetCamWidth # 0x705b: args (selector int) -> float 0x00794a70(index) of the selected actor, 0.0 for none; ported in native_btl2 (script round 18); name ours; name from "float 0x00794a70(index)" MsGetChrCamWidth
 0x007a2dc0 function Native_7098_CheckDefenseMotion # 0x7098: MsCheckDefenseMotion(MsGetChr(actor)) (0x007af2f0), 0 without an actor; ported in native_mods (script round 21); name ours; name from "MsCheckDefenseMotion(MsGetChr(actor)) (0x007af2f0)"
@@ -5991,7 +5991,7 @@
 0x007a39f0 function Native_70c7_GetEffectCameraFloat # 0x70c7: (v) -> 0x007b7ef0(v)'s ST0; ported in native_mods (script round 21); name ours; name from "0x007b7ef0(v)'s ST0" MsEffectGetCameraBufFloat_007b7ef0
 0x007a3a10 function Native_70fd # 0x70fd: args (b int, a int) -> actor index; unless u16 0x01136410: actor +0x714 = 1, +0x726/+0x727 = a, +0x728/+0x729 = b; ported in native_btl2 (script round 18); name ours
 0x007a3a80 function Native_710b_Poll # 0x710b: () -> 5 once the byte 0x0112ca10 is set, else 0; ported in native_btl2 (script round 18); name ours
-0x007a3aa0 function Native_7004 # 0x7004: args (v f) -> 0; the f32 0x0112bde4 = v; ported in native_btl2 (script round 18); name ours
+0x007a3aa0 function Native_7004_BtlSetCenterScale # 0x7004: args (v f) -> 0; the f32 0x0112bde4 = v; ported in native_btl2 (script round 18); name from g_BtlCenterScale (0x0112bde4) = v (f32); 0
 0x007a3ac0 function Atel_GetBattleCountF # 0x70f0: the i32 at 0x0112c900 as f32 (helpers::atel_get_battle_count_f, whose shim it is); ported in native_mods (script round 21)
 0x007a3ae0 function Native_709d                # 0x709d (poll): no args -> 5 when there is no actor or its +0x425 is clear, else 0; ported in native_btl (script round 12)
 0x007a3b20 function Native_7009_ChrSetGravMode                # 0x7009: (b): 0x00796070(actor, b & 1 == 0); 0; ported in native_btl/native_move (script round 9); name from "0x00796070(actor, b & 1 == 0)" MsSetChrGravMode_00796070
@@ -6000,7 +6000,7 @@
 0x007a3c20 function Native_710d # 0x710d: () -> 0; the actor's +0x411 = 0; ported in native_btl2 (script round 18); name ours
 0x007a3c50 function Native_702b_ChrGetWaitMotion                # 0x702b: -1 when the actor model is busy (0x008392c0), else 0; ported in native_btl/native_msg (script round 8); name from "-1 when the actor model is busy (0x008392c0)" Ch_GetWaitMotion
 0x007a3c90 function Native_710f # 0x710f: that record's byte +1, 0 for none; ported in native_mods (script round 21); name ours
-0x007a3cc0 function Native_7033                # 0x7033: (b): actor +0x32 = b & 1; 0; ported in native_btl/native_move (script round 9)
+0x007a3cc0 function Native_7033_ActorSetField32                # 0x7033: (b): actor +0x32 = b & 1; 0; ported in native_btl/native_move (script round 9); name from actor +0x32 = b & 1; 0
 0x007a3d00 function Native_70ff_BtlGetTargets # 0x70ff: () -> the actor's +0xdc0, copied to the word 0x0112c8d0; ported in native_btl2 (script round 18); name ours; name from "the actor's +0xdc0, copied to the word 0x0112c8d0"; +0xdc0 target mask
 0x007a3d30 function Native_7110 # 0x7110: args (selector int) -> index; the selected actor's model +0x4d4 = 1 (selector 5 -> 0 while 0x011363bc); ported in native_btl2 (script round 18); name ours
 0x007a3d90 function Native_7003_ChrSetDirTarget                # 0x7003: (a, b) -> 0x00795eb0(actor, 2, 0, -1, b, a); 0; ported in native_btl/native_msg (script round 8); name from "0x00795eb0(actor, 2, 0, -1, b, a)" MsSetChrDirTarget
@@ -6010,7 +6010,7 @@
 0x007a3ef0 function Native_7122 # 0x7122: args (selector int) -> index; the selected actor's model +0x4d4 = 1; ported in native_btl2 (script round 18); name ours
 0x007a3f40 function Native_711e # 0x711e: the i8 at 0x0112ca15; ported in native_mods (script round 21); name ours
 0x007a3f50 function Native_7006_ChrSetDirTarget                # 0x7006: (a, b): with actor +0x41d set, 0x00795eb0(actor, 1, 0, -1, b, a); 0; ported in native_btl/native_msg (script round 8); name from "with actor +0x41d set, 0x00795eb0(actor, 1, ...)" MsSetChrDirTarget
-0x007a3fb0 function Native_7029                # 0x7029: (b): actor +0x505 = b & 1; 0; ported in native_btl/native_move (script round 9)
+0x007a3fb0 function Native_7029_ActorSetField505                # 0x7029: (b): actor +0x505 = b & 1; 0; ported in native_btl/native_move (script round 9); name from actor +0x505 = b & 1; 0
 0x007a3ff0 function Native_7111 # 0x7111: args (selector int) -> index; the selected actor's model +0x4d4 = 0 (selector 5 -> 0 while 0x011363bc); ported in native_btl2 (script round 18); name ours
 0x007a4050 function Native_7017_ChrSetEffect7                # 0x7017: (a, b): actor +0xe12 += 1 when 0x0079eb10(actor, a, 7, b, 1); 0; ported in native_btl/native_move (script round 9); name from "+0xe12 += 1 when 0x0079eb10(actor, a, 7, b, 1)" MsSetChrEffect_0079eb10 kind 7
 0x007a40a0 function Native_7108_ChrSetDirTarget                # 0x7108: (a, b): MsSetChrDirTarget(actor, 1, 1, -1, b, a) with +0x41d; 0; ported in native_btl/native_move (script round 9); name from "MsSetChrDirTarget(actor, 1, 1, -1, b, a) with +0x41d"
@@ -6018,14 +6018,14 @@
 0x007a4160 function Native_711a_ChrSetWind # 0x711a: args (selector int, a f, b f, c f) -> 0: 0x00824c90(model, c, b, a) on the selected actor's model; ported in native_btl2 (script round 18); name ours; name from "0x00824c90(model, c, b, a)" Ch_WindSet
 0x007a41e0 function Native_7082_ChrSetEffect                # 0x7082: args (b int, a int) -> int: 0x0079eb10(actor, b, 1, a, 1); ported in native_btl (script round 12); name from "0x0079eb10(actor, b, 1, a, 1)" MsSetChrEffect_0079eb10
 0x007a4220 function Native_7057_ChrSetDirTarget                # 0x7057: args (target int, f f (dropped), b int, a int) -> 0: MsSetChrDirTarget(actor, target, 0, -1, b, a) (0x00795eb0); ported in native_btl (script round 12); name from "MsSetChrDirTarget(actor, target, 0, -1, b, a)"
-0x007a4280 function Native_7011 # 0x7011: args (v int) -> 0; the byte 0x0112a8fc = v & 1; ported in native_btl2 (script round 18); name ours
+0x007a4280 function Native_7011_BtlSetDebugCameraSleep # 0x7011: args (v int) -> 0; the byte 0x0112a8fc = v & 1; ported in native_btl2 (script round 18); name from g_BtlDebugCameraSleepOn (0x0112a8fc) = v & 1; 0
 0x007a42a0 function Native_7083_WeaponEffectCreate                # 0x7083: args (n int, _ int) -> 0: for n > 0 with +0xe15 set and no +0xea8, op_et_weapon_unit(model, 0, ...) (0x007fc9b0) into +0xea8; ported in native_btl (script round 12); name from "op_et_weapon_unit(model, 0, ...) (0x007fc9b0) into +0xea8"
 0x007a4310 function Native_700c_BtlMoveTargetDist                # 0x700c: 0x007a9150(worker, args, stack, 0.0); 0; ported in native_btl/native_msg (script round 8); name from "0x007a9150(worker, args, stack, 0.0)" Atel_BtlMoveTargetDist
 0x007a4330 function Native_711d_ChrSetShadowHeight                # 0x711d: args (height f) -> 0: Ch_ShadowSetHeight(MsGetChrHandle(actor), height) for a model (0x00795080, 0x00830cb0); ported in native_btl (script round 12); name from "Ch_ShadowSetHeight(MsGetChrHandle(actor), height)"
 0x007a4380 function Native_70d0 # 0x70d0: args (v int) -> 0; the byte 0x0112c9de = v & 1; ported in native_btl2 (script round 18); name ours
 0x007a43a0 function Native_7085                # 0x7085: as 0x700c, the returned record +0x418 = 1; 0; ported in native_btl/native_msg (script round 8)
 0x007a43d0 function Native_7112_ChrSetDirTarget # 0x7112: args (c int, _ f, b int, a int) -> 0: 0x00795eb0(actor, c, 1, -1, b, a); ported in native_btl2 (script round 18); name ours; name from "0x00795eb0(actor, c, 1, -1, b, a)" MsSetChrDirTarget
-0x007a4430 function Native_7014                # 0x7014: no args -> int: the word 0x0112c8d8; ported in native_btl (script round 12)
+0x007a4430 function Native_7014_BtlGetParsedCommand                # 0x7014: no args -> int: the word 0x0112c8d8; ported in native_btl (script round 12); name from g_BtlParsedCommand (0x0112c8d8)
 0x007a4440 function Native_7084_ResetAfterImage                # 0x7084: 0x00788e30(record); 0; ported in native_btl/native_move (script round 9); name from "0x00788e30(record)" MsResetAfterImage
 0x007a4470 function Native_7053_BtlMoveTargetDist                # 0x7053: args (f f) -> 0: 0x007a9150(worker, args, stack, f); ported in native_btl (script round 12); name from "0x007a9150(worker, args, stack, f)" Atel_BtlMoveTargetDist
 0x007a44b0 function Native_BtlUseCommand         # 0x700b: args (target selector, command id e.g. 0x3048/0x4008) -> 1 if queued; if the self actor can act (0x007b24a0), resolves the targets (Battle_SelectActors) and queues the command (0x007ac9c0)
@@ -6034,7 +6034,7 @@
 0x007a4580 function Native_7062_ChrSetEffect8                # 0x7062: (a, b): 0x0079eba0(actor, a, b, 1); ported in native_btl/native_move (script round 9); name from "0x0079eba0(actor, a, b, 1)" MsSetChrEffect8_0079eba0
 0x007a45c0 function Native_702c_ChrMoveToTarget              # 0x702c: (m, eight floats): the actor's jump/move to its target: frames from the distance, speed and acceleration, per-frame steps +0x46c..+0x484; 0x007a87f0(&to, &from, actor, 0x10, 1); ported in native_btl/native_move (script round 10); name from "the actor's jump/move to its target: frames from the distance, speed and acceleration"
 0x007a4910 function Native_DebugPrint            # 0x7015: args (value) -> 0; prints "***** %d : %x : c%02d *****" with the value and the actor index
-0x007a4940 function Native_7023                # 0x7023: args (selector int) -> int: ftol of the mean of MsSetMove(i, 1) (0x007a9fc0) over the picked actors (f32 sum and mean); ported in native_btl (script round 12)
+0x007a4940 function Native_7023_SelMeanSetMove                # 0x7023: args (selector int) -> int: ftol of the mean of MsSetMove(i, 1) (0x007a9fc0) over the picked actors (f32 sum and mean); ported in native_btl (script round 12); name from ftol of the mean of MsSetMove(i, 1) (0x007a9fc0) over the picked actors
 0x007a49c0 function Native_7090_EtCriticalEffect # 0x7090: (v): MsEtCriticalEffect(actor, v) (0x0079e590); 0; ported in native_mods (script round 21); name ours; name from "MsEtCriticalEffect(actor, v) (0x0079e590)"
 0x007a49f0 function Native_705a_BtlQueueCommand                # 0x705a: (targets, command): 0x007ac9c0(actor, command, MsGetChrBit(.., 0, 1, 1, -1)); 1; ported in native_btl/native_move (script round 9); name from "0x007ac9c0(actor, command, MsGetChrBit(...))" Battle_QueueCommand
 0x007a4a60 function Native_70b1_DebugPrint                # 0x70b1: args (v int) -> debug (mod-tool candidate): dbgPrintf("##### %d : %x : c%02d #####", v, v, actor) (a bare ret in this build); 0; debug, not ported (mod-tool candidate); name from "dbgPrintf(" %d : %x : c%02d ", v, v, actor) (a bare ret in this build)"
@@ -6043,19 +6043,19 @@
 0x007a4b90 function Native_70c1_ChrGetDistance # 0x70c1: args (b int, a int) -> int distance between the selected actors (0x007c3030), truncated by _ftol2_sse; ported in native_btl2 (script round 18); name ours; name from "int distance between the selected actors (0x007c3030)" MsPointLen2D
 0x007a4c30 function Native_705f_DebugPrint # 0x705f: args (v f) -> 0: dbgPrintf(0x00b54e84, (double)v, actor), a bare ret in this build; debug native, not ported (script round 18); name ours; name from "dbgPrintf(0x00b54e84, (double)v, actor), a bare ret in this build; debug native"
 0x007a4c70 function Native_70e5_SetOwnerEffect7 # 0x70e5: (sel, b, a): 0x0079eca0(first of sel, b, a); 0; ported in native_mods (script round 21); name ours; name from "0x0079eca0(first of sel, b, a)" MsSetOwnerEffect7_0079eca0
-0x007a4cd0 function Native_7022                # 0x7022: args (v int) -> 0: the byte 0x0112c9dc = v; ported in native_btl (script round 12)
+0x007a4cd0 function Native_7022_BtlSetFirstAttack                # 0x7022: args (v int) -> 0: the byte 0x0112c9dc = v; ported in native_btl (script round 12); name from g_BtlFirstAttack (0x0112c9dc) = v; 0
 0x007a4cf0 function Native_70bb                # 0x70bb: args (v int) -> 0: the actor's +0x415 = 0x10, +0x417 = 0, +0x452 = 0, +0x45a = v (u16); ported in native_btl (script round 12)
 0x007a4d50 function Native_GetActorProperty      # 0x700f: args (actor selector, property) -> value; Battle_GetActorProperty(self, property, selector), averaged over the selected actors
-0x007a4da0 function Native_7045 # 0x7045: (sel) -> MsSetMove(first of sel, 0xc) (0x007a9fc0, ST0) over the double at 0x00b43d70, rounded to f32, truncated; ported in native_mods (script round 21); name ours
+0x007a4da0 function Native_7045_SelFirstSetMove # 0x7045: (sel) -> MsSetMove(first of sel, 0xc) (0x007a9fc0, ST0) over the double at 0x00b43d70, rounded to f32, truncated; ported in native_mods (script round 21); name from MsSetMove(first actor of sel, 0xc) (0x007a9fc0) over the double at 0x00b43d70, as f32, truncated
 0x007a4df0 function Native_70da # 0x70da: the i8 at 0x0112c9dc; ported in native_mods (script round 21); name ours
 0x007a4e00 function Native_70e6_SetOwnerEffect8 # 0x70e6: (sel, b, a): 0x0079ec40(first of sel, b, a); 0; ported in native_mods (script round 21); name ours; name from "0x0079ec40(first of sel, b, a)" MsSetOwnerEffect8_0079ec40
-0x007a4e60 function Native_702d                # 0x702d: 0x007ab730(actor record); 0; ported in native_btl/native_msg (script round 8); BSim review: clears actor +0x415 (move kind, 7 = spline) and +0x417; not a motion speed
+0x007a4e60 function Native_702d_MotionSpeedReset                # 0x702d: 0x007ab730(actor record); 0; ported in native_btl/native_msg (script round 8); BSim review: clears actor +0x415 (move kind, 7 = spline) and +0x417; not a motion speed; name from 0x007ab730 = MsMotionSpeedReset (actor record); 0
 0x007a4e90 function Native_BtlGetBattleId        # 0x7024: () -> Battle_GetBattleId (0x00782970; a jmp thunk); scripts compare it to constants like 0x2050000; 5 bytes to its last ret/jmp (the dump says 1; symbols/sizes.tsv); hooked, parity in script.rs size_fixed_natives_match_the_original (natives-size)
 0x007a4ea0 function Native_GetSelfProperty       # 0x70aa: args (property) -> value; Battle_GetActorProperty(self, property, -13 = self)
 0x007a4ee0 function Native_70df # 0x70df: args (v int) -> 1 when 0x0112a8e0 is set and i16 *(*0x0112a9f0) == v >> 16, else 0; ported in native_btl2 (script round 18); name ours
 0x007a4f20 function Native_70d4_ChrSetEffect8 # 0x70d4: (sel, b, a) -> 0x0079eba0(first of sel, b, a, 1); ported in native_mods (script round 21); name ours; name from "0x0079eba0(first of sel, b, a, 1)" MsSetChrEffect8_0079eba0
 0x007a4f80 function Native_70b0_ChrGetMoveSteps              # 0x70b0: (selector): picked actor's step count from +0x40e (scaled by +0x3fc/+0x400) or the +0x4cc/+0x4d0 steps to cover 0x007a9fc0(i, 12) - +0x4bc; ported in native_btl/native_move (script round 10); name from "picked actor's step count from +0x40e ... or the steps to cover 0x007a9fc0(i, 12)"
-0x007a5090 function Native_7030                # 0x7030: actor +0x412; ported in native_btl/native_move (script round 9)
+0x007a5090 function Native_7030_ActorGetField412                # 0x7030: actor +0x412; ported in native_btl/native_move (script round 9); name from actor +0x412
 0x007a50c0 function Native_SetActorsProperty     # 0x7018: args (actor selector, property, value) -> 0; Battle_SetActorProperty(self, property, selector, value); hack for battle 0xd40000 props 0x54/0xed
 0x007a5140 function Native_702f_ChrReset                # 0x702f: args (keep int) -> 0: resets the actor (+0x508 = 0, MsStatusEffectClear, 0x0079ea90, the system motion again unless +0xdce, MsSetChrVisibleAppear(actor, 0)); with keep +0xdc8 = 0; ported in native_btl (script round 12); name from "resets the actor (+0x508 = 0, MsStatusEffectClear, ..., MsSetChrVisibleAppear)"
 0x007a51e0 function Native_ActorSetFlag36        # 0x705d: args (a, b; both ignored) -> self index; self actor +0x36 = 1; ?0x00797080 then calls 0x007fb290 on the model the next time the actor is shown
@@ -6064,9 +6064,9 @@
 0x007a5270 function Native_7047_MoveSplineRegist                # 0x7047: (i, a): 0x007ab0b0(i, actor, a, 0); 0; ported in native_btl/native_move (script round 9); name from "0x007ab0b0(i, actor, a, 0)" MsMoveSplineRegist
 0x007a52b0 function Native_70b6 # 0x70b6: (sel) -> MsSetMove(first of sel, 0xc) over 0x007a88e0(the actor's record) (both ST0, the divisor rounded to f32), rounded to f32, truncated; ported in native_mods (script round 21); name ours
 0x007a5310 function Native_705e_ResetBindEffect # 0x705e: () -> 0: 0x00788e60(actor); ported in native_btl2 (script round 18); name ours; name from "0x00788e60(actor)" MsResetBindEffect
-0x007a5330 function Native_7034                # 0x7034: (v): 0x0112c9f1 = v, 0x0112a8e0 1 -> 2; v; ported in native_btl/native_move (script round 9)
+0x007a5330 function Native_7034_BtlSetEndForced                # 0x7034: (v): 0x0112c9f1 = v, 0x0112a8e0 1 -> 2; v; ported in native_btl/native_move (script round 9); name from g_BtlEndForced (0x0112c9f1) = v, g_BtlStatus (0x0112a8e0) 1 -> 2; v
 0x007a5360 function Native_SetActorProperty   # func 0x70ab: pops value, property, actor; calls 0x007b4b70
-0x007a53a0 function Native_7035                # 0x7035: no args -> int: the byte 0x0112c9f1; ported in native_btl (script round 12)
+0x007a53a0 function Native_7035_BtlGetEndForced                # 0x7035: no args -> int: the byte 0x0112c9f1; ported in native_btl (script round 12); name from g_BtlEndForced (0x0112c9f1) byte
 0x007a53b0 function Native_7020_CheckStartEffect # 0x7020: () -> 0x007a92c0(actor, actor +0xdc0), 0 without an actor; ported in native_btl2 (script round 18); name ours; name from "0x007a92c0(actor, actor +0xdc0)" MsCheckStartEffect
 0x007a53f0 function Native_7048_MoveSplineRegistPos                # 0x7048: (i, x, y, z) -> 0x007ab0b0(i, 0, 0, &[x, y, z]); 0; ported in native_btl/native_msg (script round 8); name from "0x007ab0b0(i, 0, 0, &[x, y, z])" MsMoveSplineRegist with a point
 0x007a5450 function Native_7077 # 0x7077: (sel, a): MsGetTargetDist(x, a, 0) (0x007a9a40, 0.0 when the first actor x of sel is 0xff) over the double at 0x00b49968 plus the one at 0x00b43d80, r; ported in native_mods (script round 21); name ours
@@ -6081,32 +6081,32 @@
 0x007a56f0 function Native_7076_MoveBallSpline # 0x7076: (c, f f, a): MsSetBallSplineInit(actor) (0x007b7c80), the actor's +0x45a = c and +0x452 = 0 (u16s), MsSetBallSpline(actor) (0x007b78c0), MsMoveSpline(; name ours; ported in native_btl (small r6; MsSetBallSplineInit's own frame junk is its hooked port's; test small6b with stand-ins); name from "MsSetBallSplineInit(actor), ... MsSetBallSpline(actor), MsMoveSpline("
 0x007a5780 function Native_7097_AtelRequestSystem                # 0x7097 start: (v): once at a time (0x0112a8e4) 0x007981e0(v, 2, worker, &out); out into args; ported in native_btl/native_msg (script round 8); name from start "0x007981e0(v, 2, worker, &out)" MsAtelRequestSystem; poll waits
 0x007a57e0 function Native_70a8_ChrSetMotionInfo                # 0x70a8: (selector, property, value f): MsSetChrMotionInfo(picked, property, value); 0; ported in native_btl/native_move (script round 9); name from "MsSetChrMotionInfo(picked, property, value)"
-0x007a5840 function Native_7013 # 0x7013: args (v f) -> 0: 0x0082b840(model, v) when the actor has a model; ported in native_btl2 (script round 18); name ours
+0x007a5840 function Native_7013_ChrSetSp # 0x7013: args (v f) -> 0: 0x0082b840(model, v) when the actor has a model; ported in native_btl2 (script round 18); name from 0x0082b840 = Ch_SetSp (model, v) when the actor has a model; 0
 0x007a5890 function Native_7051_WaitEffect7                # 0x7051 poll: 5 once actor +0xe12 is 0; ported in native_btl/native_move (script round 9); name from poll "5 once actor +0xe12 is 0"; +0xe12 counts kind-7 effects (7017, MsSetChrEffect_0079eb10)
 0x007a58c0 function Native_7097_AtelRequestSystem_Poll           # 0x7097 poll: 0x007a8700(args); ported in native_btl/native_msg (script round 8); name from start "0x007981e0(v, 2, worker, &out)" MsAtelRequestSystem; poll waits
-0x007a58d0 function Native_704a                # 0x704a: (selector): how many picked actors have +0x415 set; ported in native_btl/native_msg (script round 8)
+0x007a58d0 function Native_704a_SelCountField415                # 0x704a: (selector): how many picked actors have +0x415 set; ported in native_btl/native_msg (script round 8); name from how many picked actors have +0x415 set
 0x007a5930 function Native_SetSelfFloatProperty  # 0x70b2: args (property 0-9, float value) -> 0; 0x007b4a90 sets self actor float fields (+0x4bc..; 9 also sets the model's +0x4e4 through 0x0082b880)
-0x007a5980 function Native_703d # 0x703d: the byte 0x0112a8e4 = 0; 0; ported in native_mods (script round 21); name ours
+0x007a5980 function Native_703d_BtlCameraStateClear # 0x703d: the byte 0x0112a8e4 = 0; 0; ported in native_mods (script round 21); name from g_BtlCameraState (0x0112a8e4) = 0; 0
 0x007a5990 function Native_70bc_ChrWaitEffect7 # 0x70bc: args (selector int) start: the selected actor into the argument word; -> its index; ported in native_btl2 (script round 18); name ours; name from poll "5 once the actor in the argument word has +0xe12 clear" (kind-7 effect count)
-0x007a59d0 function Native_701c                # 0x701c: (v): actor +0x420 = v; 0; ported in native_btl/native_move (script round 9)
-0x007a5a10 function Native_703e_Poll # 0x703e: with 0x0112a8e4 set, 0x0112a8e5 drops to 0 when it is 1. Unless the i8 at 0x0112c9e4 is negative and 0x0112c9d0, 0x0112c9d8, 0x0112bde1, 0x0112c944 ar; ported in native_mods (script round 21); name ours
+0x007a59d0 function Native_701c_ActorSetField420                # 0x701c: (v): actor +0x420 = v; 0; ported in native_btl/native_move (script round 9); name from actor +0x420 = v; 0
+0x007a5a10 function Native_703e_WaitBtlIdle_Poll # 0x703e: with 0x0112a8e4 set, 0x0112a8e5 drops to 0 when it is 1. Unless the i8 at 0x0112c9e4 is negative and 0x0112c9d0, 0x0112c9d8, 0x0112bde1, 0x0112c944 ar; ported in native_mods (script round 21); name from poll: waits (0) while g_BtlCameraOnce, g_BtlPause, g_BtlEffectOverlayBusy, the cue counts or the turn-end actor say so, else 5
 0x007a5af0 function Native_BtlSelectTarget       # 0x7010: args (selector, property, unused, mode) -> chosen actor index; keeps actors with property 4 and 0x52, filters by the property (mode 0 any, 1 highest, 2 lowest, |0x80 zero), ties random (Rng 4); sets the self's target mask (+0xdc0, 0x00796430)
 0x007a5b90 function Native_70bc_ChrWaitEffect7_Poll # 0x70bc: poll: 5 once the actor in the argument word has +0xe12 clear; ported in native_btl2 (script round 18); name ours; name from poll "5 once the actor in the argument word has +0xe12 clear" (kind-7 effect count)
-0x007a5bc0 function Native_702a                # 0x702a: actor +0x508 (i8); ported in native_btl/native_move (script round 9)
-0x007a5bf0 function Native_701d                # 0x701d: actor +0x420 (i8), 0 without one; ported in native_btl/native_msg (script round 8)
+0x007a5bc0 function Native_702a_ActorGetField508                # 0x702a: actor +0x508 (i8); ported in native_btl/native_move (script round 9); name from actor +0x508 (i8)
+0x007a5bf0 function Native_701d_ActorGetField420                # 0x701d: actor +0x420 (i8), 0 without one; ported in native_btl/native_msg (script round 8); name from actor +0x420 (i8); 0 without an actor
 0x007a5c20 function Native_708e                # 0x708e: no args -> int: the actor's signed +0x508 after MsMotionPosCheck (0x007aa100; +0x4f0 = 10.0, +0x34 = 1 around it when +0x608 and +0x505 are set); ported in native_btl (script round 12)
 0x007a5cb0 function Native_70d1_ChrGetEffect7Count                # 0x70d1: args (selector int) -> int: the picked actor's +0xe12; ported in native_btl (script round 12); name from "the picked actor's +0xe12" (kind-7 effect count, MsSetChrEffect_0079eb10)
 0x007a5cf0 function Native_7025_ActTargetSearch                # 0x7025: args (d int, c int, b int, a int) -> int: out of MsActTargetSearch(actor, d, c, b, 4, a, 0, &out) (0x007acd40), whose result goes to 0x00796430(actor, r); ported in native_btl (script round 12); name from "MsActTargetSearch(actor, d, c, b, 4, a, 0, &out)" result to MsSetChrScriptTargets
 0x007a5d60 function Native_7081_Poll # 0x7081: done (5) when the byte 0x0112c022 is 1, else 0; ported in native_mods (script round 21); name ours
-0x007a5d80 function Native_7026                # 0x7026: (v): actor +0x44f = v; 0; ported in native_btl/native_msg (script round 8)
+0x007a5d80 function Native_7026_ActorSetField44f                # 0x7026: (v): actor +0x44f = v; 0; ported in native_btl/native_msg (script round 8); name from actor +0x44f = v; 0
 0x007a5dc0 function Native_7063_WaitEffect8                # 0x7063 (poll): no args -> 5 when the actor's +0xe13 is clear, else 0; ported in native_btl (script round 12); name from poll "5 when the actor's +0xe13 is clear"; +0xe13 counts kind-8 effects (MsSetChrEffect8_0079eba0)
 0x007a5df0 function Native_BtlRunEvent           # 0x703f (start): args (slot 1-based, event handler id e.g. 28) ; runs the handler via Battle_RunEvent(slot-1, 0xff, id, ...), finish flag -> result
 0x007a5e50 function Native_707f_ChrResetBtlPos                # 0x707f: (selector): 0x007ab2a0(picked); 0; ported in native_btl/native_move (script round 9); name from "0x007ab2a0(picked)" MsSetBtlPosReset
-0x007a5e90 function Native_7027 # 0x7027: () -> the actor's byte +0x44f, 0 without an actor; ported in native_btl2 (script round 18); name ours
+0x007a5e90 function Native_7027_ActorGetField44f # 0x7027: () -> the actor's byte +0x44f, 0 without an actor; ported in native_btl2 (script round 18); name from actor +0x44f (byte); 0 without an actor
 0x007a5ec0 function Native_BtlRunEvent_Poll      # 0x703f (poll): 0x007a8700: returns 5 once the flag set by the start handler is 0, else 1
 0x007a5ed0 function Native_70bd_ChrWaitEffect8 # 0x70bd: args (selector int) start: the selected actor into the argument word; -> its index; ported in native_btl2 (script round 18); name ours; name from poll "5 once the actor in the argument word has +0xe13 clear" (kind-8 effect count)
 0x007a5f10 function Native_7092_ChrGetGroundDist # 0x7092: args (selector int) -> int (0x00794fb0(i) - v.y of 0x007956e0(i, &v)) * 100, truncated; ported in native_btl2 (script round 18); name ours; name from "(0x00794fb0(i) - v.y of 0x007956e0(i, &v)) * 100" MsGetChrGround, MsGetChrPos
-0x007a5f80 function Native_701f                # 0x701f: args (v int) -> 0: the actor's +0x3f1 = v; ported in native_btl (script round 12)
+0x007a5f80 function Native_701f_ActorSetField3f1                # 0x701f: args (v int) -> 0: the actor's +0x3f1 = v; ported in native_btl (script round 12); name from actor +0x3f1 = v; 0
 0x007a5fc0 function Native_70f9_SearchScriptTarget # 0x70f9: (p5, p4, p3, p2, p1) -> 0x007a8f60(actor, p5, p4, p3, p2, p1); ported in native_mods (script round 21); name ours; name from "0x007a8f60(actor, p5, p4, p3, p2, p1)" MsSearchScriptTarget_007a8f60
 0x007a6030 function Native_70bd_ChrWaitEffect8_Poll # 0x70bd: poll: 5 once the actor in the argument word has +0xe13 clear; ported in native_btl2 (script round 18); name ours; name from poll "5 once the actor in the argument word has +0xe13 clear" (kind-8 effect count)
 0x007a6060 function Native_7042_MsgDrawAmes # 0x7042: (win, k, x, y, anchor): 0x0112c250 = k; TODrawAMES(win clamped 0..6, text k, x, y, anchor) (0x0089b140) from the table at *0x0112a9b8 when there is on; ported in native_mods (script round 21); name ours; name from "TODrawAMES(win clamped 0..6, text k, x, y, anchor)" (opens window and message)
@@ -6121,7 +6121,7 @@
 0x007a6330 function Native_7072_MsgDrawEvjimaku # 0x7072: (win, k): TODrawAMES_EVJIMAKU(win, text k) (0x0089b230) from *0x0112a9b8; 0; ported in native_mods (script round 21); name ours; name from "TODrawAMES_EVJIMAKU(win, text k) (0x0089b230)"
 0x007a6390 function Native_701a_GetComInfo                # 0x701a: (a, b) -> 0x0078cd30(actor, a, b); ported in native_btl/native_msg (script round 8); name from "(a, b) -> 0x0078cd30(actor, a, b)" MsGetComInfo
 0x007a63d0 function Native_7064_BtlStreamStandby # 0x7064: args (v int) start: v into the argument word and 0x0112c24c; -> v; ported in native_btl2 (script round 18); name ours; name from start stores v; poll waits GetCD/msVoiceCheckStanby; result "0x00887570(v)" SndStandbyStream
-0x007a63f0 function Native_700d              # 0x700d: (mode, k): unless the actor is locked (+0x44e), 0x007a87f0(&to, &from, actor, |k|, 0) toward the target 0x007a9ac0 finds; ported in native_btl/native_move (script round 10)
+0x007a63f0 function Native_700d_ActorMoveTowardTarget              # 0x700d: (mode, k): unless the actor is locked (+0x44e), 0x007a87f0(&to, &from, actor, |k|, 0) toward the target 0x007a9ac0 finds; ported in native_btl/native_move (script round 10); name from unless the actor is locked (+0x44e): MsGetDirDivide (0x007a87f0) toward MsGetMoveTargetPos (0x007a9ac0)
 0x007a64c0 function Native_7064_BtlStreamStandby_Poll # 0x7064: poll: 0x0076d0d0(); 5 when 0x007a8c20() and !0x007b2c10(1); no function start in the dump, runs in Rust only through the dispatch; ported in native_btl2 (script round 18); name ours; name from start stores v; poll waits GetCD/msVoiceCheckStanby; result "0x00887570(v)" SndStandbyStream
 0x007a64f0 function Native_70ef_EffectSendSignal                # 0x70ef: args (selector int, signal int) -> 0: MsEffectSendSignal(picked, signal) (0x0079e4f0); ported in native_btl (script round 12); name from "MsEffectSendSignal(picked, signal) (0x0079e4f0)"
 0x007a6540 function Native_7078_ChrGetComInfo                # 0x7078: args (selector int, b int, a int) -> int: MsGetComInfo(picked, b, a) (0x0078cd30); ported in native_btl (script round 12); name from "MsGetComInfo(picked, b, a) (0x0078cd30)"
@@ -6161,11 +6161,11 @@
 0x007a6e80 function Native_7056_BtlSpecialInit # 0x7056: (v): MsBattleSpecialInit(v) (0x0079de60); 0; ported in native_mods (script round 21); name ours; name from "MsBattleSpecialInit(v) (0x0079de60)"
 0x007a6ea0 function Native_706d_SoundStreamPlay_Int # (script r28) 0x706d third slot: outside the water with MsBattleStatusMenuless_007a8c20: MsSoundStreamPlay(Battle_FirstSelectedActor(actor, word 1, 0, 1), word 0), 0; else 1; ported in native_btl2; name ours; name from Int slot "MsSoundStreamPlay(Battle_FirstSelectedActor(...), word 0)"; poll waits SndSyncMusicStandby
 0x007a6ef0 function CT_703B_ret_setCommandDisabled # fh v3:exact 0x007a6f10 +CT_703B_ret_setCommandDisabled
-0x007a6f70 function Native_7032              # 0x7032: (selector, degrees): radians into +0x514/+0x518 of every picked actor, +0x512 = 1; 0; ported in native_btl/native_move (script round 10)
+0x007a6f70 function Native_7032_ActorSetRadians514              # 0x7032: (selector, degrees): radians into +0x514/+0x518 of every picked actor, +0x512 = 1; 0; ported in native_btl/native_move (script round 10); name from radians into +0x514/+0x518 of every picked actor, +0x512 = 1; 0
 0x007a7010 function Native_7070 # 0x7070: SetByte_00c58ef4(1) (0x0089bc60); 0; ported in native_mods (script round 21); name ours
 0x007a7020 function Native_706e_ChrSetVoice                # 0x706e (start): args (selector int, voice int) -> the args word: 1 when MsSetVoice(i, voice, 1, worker, &out) (0x007a0720) set out for any picked actor; ported in native_btl (script round 12); name from start and poll: "MsSetVoice(i, voice, 1, worker, &out)"
 0x007a70b0 function Native_7071                # 0x7071: no args -> 0: 0x0089bc60(0); ported in native_btl (script round 12)
-0x007a70c0 function Native_704f # 0x704f: args (selector int, v int) -> 0; the selected actors' +0xddd = v; ported in native_btl2 (script round 18); name ours
+0x007a70c0 function Native_704f_SelSetFieldDdd # 0x704f: args (selector int, v int) -> 0; the selected actors' +0xddd = v; ported in native_btl2 (script round 18); name from the selected actors' +0xddd = v; 0
 0x007a7130 function Native_70b4_WeaponSetTransparent # 0x70b4: for an actor, +0xf65 = 8, MsResetWeaponEffectAttribute(actor, record) (0x0079ea90), then 0x007ad5b0(actor, +0xf64, +0xf65); 0; ported in native_mods (script round 21); name ours; name from "MsResetWeaponEffectAttribute(actor, record), then 0x007ad5b0" MsWeaponSetTransparent_007ad5b0
 0x007a7180 function Native_7036_ChrSetTransparent                # 0x7036: args (a f, b f, n int) -> 0: MsSetChrTransparentVisible(actor, a, b, n, 1) (0x00796550); ported in native_btl (script round 12); name from "MsSetChrTransparentVisible(actor, a, b, n, 1)"
 0x007a71f0 function Native_706e_ChrSetVoice_Poll           # 0x706e (poll): args (selector int, voice int) -> the args word: 1 when MsSetVoice(i, voice, 1, worker, &out) (0x007a0720) set out for any picked actor; ported in native_btl (script round 12); name from start and poll: "MsSetVoice(i, voice, 1, worker, &out)"
@@ -6173,7 +6173,7 @@
 0x007a7260 function Native_707c_Poll # 0x707c: poll: 5 without an actor, or when +0xf2c is set or +0xf2e clear on the actor (its +0x14 actor when +0x11 is clear); ported in native_btl2 (script round 18); name ours
 0x007a72c0 function Native_7094_ChrSetTransparent # 0x7094: (b f, a f, v): MsSetChrTransparentVisible(actor, b, a, v, record +0x423) (0x00796550) for an actor; 0; ported in native_mods (script round 21); name ours; name from "MsSetChrTransparentVisible(actor, b, a, v, record +0x423)"
 0x007a7340 function Native_BtlSetPadOrientation # 0x7099: (v): the byte 0x0112c9cd = v & 3; that value; ported in native_mods (script round 21); 0x7099: args (n) -> 0; 0x0112c9cd = n & 3; 0x0089d390 uses it to rotate the d-pad bits (0x1000/0x2000/0x4000/0x8000) for cursor movement; set with each camera shot
-0x007a7360 function Native_703a                # 0x703a: args (v int) -> 0: the actor's +0x3fc (u16) = v through f32, truncated; ported in native_btl (script round 12)
+0x007a7360 function Native_703a_ActorSetField3fc                # 0x703a: args (v int) -> 0: the actor's +0x3fc (u16) = v through f32, truncated; ported in native_btl (script round 12); name from actor +0x3fc (u16) = v through f32, truncated; 0
 0x007a73d0 function Native_70a0 # 0x70a0: args (v int) -> the old signed byte 0x0112c9fc; it = v & 1; ported in native_btl2 (script round 18); name ours
 0x007a7400 function Native_7050_ChrVisibleBtl2Event                # 0x7050 (start): args (selector int) -> the args word: MsSetChrVisibleBtl2Event(worker, MsGetChrBit(actor, selector, 0, 1), -1) (0x007a89c0); ported in native_btl (script round 12); name from start and poll: "MsSetChrVisibleBtl2Event(worker, MsGetChrBit(...), -1)"
 0x007a7440 function Native_70a2_RegMotionRead                # 0x70a2 start: (v): g_011363e8 = 1, v into args; 0x0079ccf0(v); ported in native_btl/native_msg (script round 8); name from start "0x0079ccf0(v)" MsRegMotionRead; poll waits g_BtlRegMotionFlag
@@ -6181,7 +6181,7 @@
 0x007a74e0 function Native_704d_NoOp # 0x704d: 0 (xor eax, eax; ret); ported in native_mods (script round 21); name ours; name from "0 (xor eax, eax; ret)"
 0x007a74f0 function Native_7050_ChrVisibleBtl2Event_Poll           # 0x7050 (poll): args (selector int) -> the args word: MsSetChrVisibleBtl2Event(worker, MsGetChrBit(actor, selector, 0, 1), -1) (0x007a89c0); ported in native_btl (script round 12); name from start and poll: "MsSetChrVisibleBtl2Event(worker, MsGetChrBit(...), -1)"
 0x007a7500 function Native_70a2_RegMotionRead_Poll             # native 0x70a2 poll handler (g_NativeTables group 7 entry 0xa2, ffx-script native_counts); 193 calls in the shipped scripts; name by id; (script r28) 0 without g_BtlRegMotionFlag, else 5 once g_Native70a2Flag is 0 (cleared while set, 0); ported in native_btl2; name from start "0x0079ccf0(v)" MsRegMotionRead; poll waits g_BtlRegMotionFlag
-0x007a7530 function Native_704e # 0x704e: args (v int) -> 0; actor +0x3f5 = +0x3f6 = v; ported in native_btl2 (script round 18); name ours
+0x007a7530 function Native_704e_ActorSetField3f5 # 0x704e: args (v int) -> 0; actor +0x3f5 = +0x3f6 = v; ported in native_btl2 (script round 18); name from actor +0x3f5 = +0x3f6 = v; 0
 0x007a7580 function Native_706a # 0x706a: args (selector int) -> 0 when +0xdc0 == 1 << index for the selected actor, else -1; ported in native_btl2 (script round 18); name ours
 0x007a75e0 function Native_70c8_ChrSePlay2 # 0x70c8: (sel, a) -> 0x0079fda0(first of sel, a), 0 for none; ported in native_mods (script round 21); name ours; name from "0x0079fda0(first of sel, a)" MsChrSePlay2_0079fda0
 0x007a7630 function Native_70a4                # 0x70a4: no args -> 0: 0x0079cca0(); ported in native_btl (script round 12)
@@ -6208,11 +6208,11 @@
 0x007a7b30 function Native_7096                # 0x7096: no args -> int: the signed byte 0x0112c9fa; ported in native_btl (script round 12)
 0x007a7b40 function Native_70cb_RegSePlay3 # 0x70cb: (sel, se) -> MsRegSEplay3(first of sel, se) (0x007a0170), 0 for none; ported in native_mods (script round 21); name ours; name from "MsRegSEplay3(first of sel, se) (0x007a0170)"
 0x007a7b90 function Native_70ee # 0x70ee: args (b int, a int) -> 0x30de..0x30e2 by a + b (thresholds 0x20, 0x30, 0x3f, 0x50); ported in native_btl2 (script round 18); name ours
-0x007a7bf0 function Native_704c # 0x704c: args (selector int) start: argument word = MsGetChrBit(actor, selector, 0, 1); -> it; ported in native_btl2 (script round 18); name ours
+0x007a7bf0 function Native_704c_ChrWaitMotionBit # 0x704c: args (selector int) start: argument word = MsGetChrBit(actor, selector, 0, 1); -> it; ported in native_btl2 (script round 18); name from start: argument word = MsGetChrBit(actor, selector, 0, 1); poll: 5 once MsAnyChrMotion (0x007a8be0) of it is 0
 0x007a7c20 function Native_70c5 # 0x70c5: 1 when the byte 0x0112c9f5 is set; ported in native_mods (script round 21); name ours
 0x007a7c40 function Native_7089_RegSeFade # 0x7089: (sel, se, frames) -> MsRegSEfade(first of sel, se, frames) (0x007a00d0), 0 for none; ported in native_mods (script round 21); name ours; name from "MsRegSEfade(first of sel, se, frames) (0x007a00d0)"
 0x007a7cb0 function Native_70cc_BtlSetTargets                # 0x70cc: (selector): actor +0xdc0 = the set; ported in native_btl/native_move (script round 9); name from "actor +0xdc0 = the set"; +0xdc0 is the target mask (Native_BtlSelectTarget)
-0x007a7cf0 function Native_704c_Poll # (script r28) 0x704c poll: 5 once MsAnyChrMotion_007a8be0(argument word) is 0, else 0 (table 0x00c42aec); ported in native_btl2; name ours
+0x007a7cf0 function Native_704c_ChrWaitMotionBit_Poll # (script r28) 0x704c poll: 5 once MsAnyChrMotion_007a8be0(argument word) is 0, else 0 (table 0x00c42aec); ported in native_btl2; name from start: argument word = MsGetChrBit(actor, selector, 0, 1); poll: 5 once MsAnyChrMotion (0x007a8be0) of it is 0
 0x007a7d10 function Native_70eb_BtlRandom # 0x70eb: brnd(0x11) (0x007988f0); ported in native_mods (script round 21); name ours; name from "brnd(0x11) (0x007988f0)" (battle RNG)
 0x007a7d20 function Native_7100 # 0x7100: (sel) -> 0x007a8be0(MsGetChrBit(actor, sel, 0, 1)) (0x00794330); ported in native_mods (script round 21); name ours
 0x007a7d60 function Native_70cd_BtlAddTargets                # 0x70cd: (selector): actor +0xdc0 |= MsGetChrBit set; the set; ported in native_btl/native_move (script round 9); name from "actor +0xdc0 or= MsGetChrBit set"; +0xdc0 target mask
@@ -6239,13 +6239,13 @@
 0x007a8550 function Native_7126 # 0x7126: args (i int) -> i (0xff when negative); actor i and both parts (0x00795b10) +0x3e = 1; ported in native_btl2 (script round 18); name ours
 0x007a85a0 function Native_70e1 # 0x70e1: () -> 1 when MsGetChr((i8) actor +0xded) +0xdf1 is clear (the 0xff test on the sign-extended byte never matches); ported in native_btl2 (script round 18); name ours
 0x007a85f0 function Native_7073_ChrAttachWeapon # 0x7073: args (weapon int) -> MsAttachWeapon(actor, weapon) (0x00793330); ported in native_btl2 (script round 18); name ours; name from "MsAttachWeapon(actor, weapon) (0x00793330)"
-0x007a8620 function Native_7000                # 0x7000: actor +0xdf2 = 0; 0; ported in native_btl/native_msg (script round 8)
+0x007a8620 function Native_7000_ActorClearDf2                # 0x7000: actor +0xdf2 = 0; 0; ported in native_btl/native_msg (script round 8); name from actor +0xdf2 = 0; 0
 0x007a8650 function Native_7125_ChrAttachWeapon # 0x7125: () -> 0; MsAttachWeapon(4, 0) for actor 4; ported in native_btl2 (script round 18); name ours; name from "MsAttachWeapon(4, 0) for actor 4"
 0x007a8680 function Native_70e7_SetCommandTargets # 0x70e7: args (command int) -> actor +0xdc0 = 0x007996d0(actor, command, !(rec +0x1a) >> 1 & 1, 1), rec = 0x0078ce50(actor, 0, -1, 0, &command); ported in native_btl2 (script round 18); name ours; name from "actor +0xdc0 = 0x007996d0(actor, command, ...)" MsGetCommandTarget; +0xdc0 target mask
-0x007a86e0 function Clamp0To6_007a86e0           # structure: (n) -> n clamped to 0..6; called by the eight battle natives 0x007a6060..0x007a6e10 next to Native_7000; name ours; ported (ffx_battle::misc, battle round 29)
+0x007a86e0 function Clamp0To6_007a86e0           # structure: (n) -> n clamped to 0..6; called by the eight battle natives 0x007a6060..0x007a6e10 next to Native_7000_ActorClearDf2; name ours; ported (ffx_battle::misc, battle round 29)
 0x007a8700 function GetFieldPtr0_007a8700        # auto-port shape (return address of a field's target, cdecl): t0 = u32[a0]; return (((t0 == 0x0) * 0x4) + 0x1); callers: Native_703c_AtelRequestSystem_Poll, Native_7097_AtelRequestSystem_Poll, Native_BtlRunEvent_Poll and 4 more; name ours
 0x007a8720 function MsGetBasicDivide          # callees: its named callees match the Switch 0x7100382290 MsGetBasicDivide's (similarity 1.00: MsGetChr, MsGetChrDir, MsNearRag); symbols from Fahrenheit's server export; (i, n, mode) -> eax: the turn d = f32(MsNearRag(facing, +0x514[i8 +0x511]) - facing) (facing MsNearRag(0, MsGetChrDir)), deg = d*180/g_PiF64 + 360 times f32(n): mode ? trunc(/360) % n : (1 - trunc(/-180)) % 2n / 2; caller Native_708f; ported (ffx_battle::body, battle round 28)
-0x007a87f0 function MsGetDirDivide            # callees: its named callees match the Switch 0x7100382180 MsGetDirDivide's (similarity 1.00: MsGetChrDir, MsNearRag, MsPointLen, MsVectorRect2Polar); symbols from Fahrenheit's server export; (from, to, i, n, mode) -> eax: MsGetBasicDivide's sectors of the turn from actor i's facing to the yaw from -> to (MsVectorRect2Polar, MsNearRag), 0 turn when MsPointLen is 0.0; callers Native_702c_ChrMoveToTarget, Native_700d; ported (ffx_battle::body, battle round 28)
+0x007a87f0 function MsGetDirDivide            # callees: its named callees match the Switch 0x7100382180 MsGetDirDivide's (similarity 1.00: MsGetChrDir, MsNearRag, MsPointLen, MsVectorRect2Polar); symbols from Fahrenheit's server export; (from, to, i, n, mode) -> eax: MsGetBasicDivide's sectors of the turn from actor i's facing to the yaw from -> to (MsVectorRect2Polar, MsNearRag), 0 turn when MsPointLen is 0.0; callers Native_702c_ChrMoveToTarget, Native_700d_ActorMoveTowardTarget; ported (ffx_battle::body, battle round 28)
 0x007a88e0 function MsCueMoveSpeed_007a88e0 # ours: (cue) -> ST0 f = f32 +0x4d4, doubled when +0xc == 0x1d and MsGetChr(+0x14) + 0x3fb set; ported (ffx_battle::minor, battle round 29)
 0x007a8920 function addMonDieSe                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Please increase ZanmatoSep Size\\n'; Switch 0x7100382390 addMonDieSe (symbols from Fahrenheit's server export); (id) -> 1 added to g_ZanmatoSepList (count, then ids); 0 if there or (dbgPrintf) count >= 9; ported (ffx_battle::minor, battle round 30)
 0x007a8970 function MsGetGlobal0112c8d8_007a8970 # auto-port shape (return global u32, cdecl): t0 = u32[&0x0112c8d8]; return t0; callers: MsSetChrStatInfo; name ours
@@ -6487,11 +6487,11 @@
 0x007b7f30 function MsEffectSetCameraBuf_007b7f30 # ours: (i, v): g_BtlEffectCameraWords[i] = v for i <= 15 (unsigned); no direct caller (a native's table); ported (ffx_battle::misc, battle round 29)
 0x007b7f50 function MsEffectSetCameraBufFloat # fh v3:exact 0x007b7ed0
 0x007b7f70 function Native_CamFocusTimeLinear    # 0x602e: args (frames) -> 0; linear transition time for the battle camera's focus point (half 0, 0x007bde50 type 1); paired with 0x6010 (eye half)
-0x007b7fe0 function Native_602f # 0x602f: (frames): MsCameraMoveFrame(cam, 0, 1, frames, 1); 0; ported in native_mods (script round 19); name ours
+0x007b7fe0 function Native_602f_CamRefMoveFrame # 0x602f: (frames): MsCameraMoveFrame(cam, 0, 1, frames, 1); 0; ported in native_mods (script round 19); name from MsCameraMoveFrame (cam, 0, 1, frames, 1): the ref half (0); 0
 0x007b8050 function Native_Cam_6030            # 0x6030: (frames): MsCameraMoveFrame(cam, 0, 0, frames, 3); 0; ported in native_cam
-0x007b80c0 function Native_6031 # 0x6031: (frames): MsCameraMoveFrame(cam, 0, 1, frames, 3); 0; ported in native_mods (script round 19); name ours
+0x007b80c0 function Native_6031_CamRefMoveFrame3 # 0x6031: (frames): MsCameraMoveFrame(cam, 0, 1, frames, 3); 0; ported in native_mods (script round 19); name from MsCameraMoveFrame (cam, 0, 1, frames, 3): the ref half (0); 0
 0x007b8130 function Native_CamFocusTimeEase      # 0x6032: args (accel, hold, decel frames, curve) -> 0; eased transition for the focus (half 0, 0x007bd860 type 2: total = sum); e.g. (20, 10, 20, 0)
-0x007b8150 function Native_6033                # 0x6033: no args -> 0x007ba5b0(worker, args, stack, 0, 1); 0; ported in native_chr (script round 12)
+0x007b8150 function Native_6033_CamRefMoveAcc                # 0x6033: no args -> 0x007ba5b0(worker, args, stack, 0, 1); 0; ported in native_chr (script round 12); name from 0x007ba5b0 = MsAtelCameraMoveAcc (worker, args, stack, 0, 1); 0
 0x007b8170 function Native_Cam_6035            # 0x6035: 0x007bb520(w, a, s, 0); 0; ported in native_cam
 0x007b8190 function Native_6036_CamRefSetDir # 0x6036: 0x007bb210(worker, args, stack, 0); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraDirVector(side 0) -> MsCameraSetDirVector
 0x007b81b0 function Native_6037_CamRefResetDir # 0x6037: MsCameraResetDirVector(cam, 0) (0x007bec90); the camera handle; ported in native_mods (script round 19); name ours; name from MsCameraResetDirVector(cam, 0)
@@ -6499,10 +6499,10 @@
 0x007b8270 function Native_CamFocusWait          # 0x6038 (poll): waits until the focus half's transition ends (0x007bdd20(cam, 0) == 0 -> 5); 0x601a is the eye version ("CameraWaitStart!")
 0x007b82d0 function Native_6039_CamFocusIsMoving # 0x6039: Cam_IsMoving(cam, 0) (0x007bdd20); ported in native_mods (script round 19); name ours; name from Cam_IsMoving(cam, 0); side 0 as Native_CamFocusWait
 0x007b8330 function Native_Cam_601c            # 0x601c: (var, degrees): 0x007bf520(cam, 1, 1, &var, radians); the handle; ported in native_cam
-0x007b83d0 function Native_601e                # 0x601e: args (var, deg f) -> 0x007bf520(cam, 1, 0, &var, deg * pi / 180); the camera; ported in native_chr (script round 12)
+0x007b83d0 function Native_601e_CamSetFocusList                # 0x601e: args (var, deg f) -> 0x007bf520(cam, 1, 0, &var, deg * pi / 180); the camera; ported in native_chr (script round 12); name from 0x007bf520 = MsCameraSetFocusList (cam, 1, 0, &var, deg * pi / 180)
 0x007b8470 function Native_Cam_601d            # 0x601d: (var, degrees, y, x): 0x007bf600(cam, 1, 1, &var, radians, y, x); the handle; ported in native_cam
 0x007b8530 function Native_Cam_601f            # 0x601f: as 0x601d with 0 for the mode; ported in native_cam
-0x007b85f0 function Native_6042                # 0x6042: args (v) -> 0x007bdf90(cam, 0, v ^ 0xffff); the camera; ported in native_chr (script round 12)
+0x007b85f0 function Native_6042_CamRefMoveStat                # 0x6042: args (v) -> 0x007bdf90(cam, 0, v ^ 0xffff); the camera; ported in native_chr (script round 12); name from 0x007bdf90 = MsCameraMoveStat (cam, 0, v ^ 0xffff)
 0x007b8660 function Native_Cam_6043            # 0x6043: (v): 0x007bdf90(cam, 1, v ^ 0xffff); the handle; ported in native_cam
 0x007b86d0 function Native_603e_CamSetBtl # 0x603e: 0x007bad10(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraSetBtl(side 1) -> MsCameraSetBtl(cam, side, actor, 0, a, b, lift)
 0x007b86f0 function Native_Cam_603f            # 0x603f: 0x007bad10(w, a, s, 0); 0; ported in native_cam
@@ -6510,7 +6510,7 @@
 0x007b8730 function Native_CamFocusOrbitScaled   # 0x6041: same as 0x6040 for the focus point (half 0, mode 1); most common shot setup, e.g. (-2, -1, 49, 0, 0, -70)
 0x007b8750 function Native_CamEyeOrbit           # 0x6044: same as 0x6040 with mode 2: distance/10 + actor size (absolute); eye half; e.g. (-2, -1, 30, -160, 0, 150)
 0x007b8770 function Native_CamFocusOrbit         # 0x6045: same as 0x6044 for the focus point (half 0, mode 2)
-0x007b8790 function Native_604c                # 0x604c: no args -> 0x007badb0(..., 1, 3); 0; ported in native_chr (script round 12)
+0x007b8790 function Native_604c_CamEyeSetBtlPc                # 0x604c: no args -> 0x007badb0(..., 1, 3); 0; ported in native_chr (script round 12); name from 0x007badb0 = MsAtelCameraSetBtlPc (worker, args, stack, 1, 3); 0
 0x007b87b0 function Native_Cam_604d            # 0x604d: 0x007badb0(w, a, s, 1, 4); 0; ported in native_cam
 0x007b87d0 function Native_6065_CamSetPriority # 0x6065: (p): MsCameraPriority(cam, p) (0x007be0a0); the camera handle; ported in native_mods (script round 19); name ours; name from MsCameraPriority(cam, p)
 0x007b8840 function Native_Cam_607d            # 0x607d: (v): 0x007bcdd0(cam, v); the handle; ported in native_cam
@@ -6558,7 +6558,7 @@
 0x007b9240 function Native_6072_CamFocusShakeKind6 # 0x6072: MsAtelCameraShake(.., 0, 6)'s EAX; ported in native_mods (script round 19); name ours; name from MsAtelCameraShake(.., side 0, kind 6)
 0x007b9260 function Native_CamGetPos             # 0x6003: args (&x, &y, &z) variable refs -> 0; stores the eye position (side 1) through Script_VarAddress into three script vars (Cam_GetPos 0x007bd420)
 0x007b9280 function Native_6073_CamEyeShakeKind6 # 0x6073: MsAtelCameraShake(.., 1, 6)'s EAX; ported in native_mods (script round 19); name ours; name from MsAtelCameraShake(.., side 1, kind 6)
-0x007b92a0 function Native_6085 # 0x6085: 0x007ba460(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours
+0x007b92a0 function Native_6085_CamGetEyeVars # 0x6085: 0x007ba460(worker, args, stack, 1); 0; ported in native_mods (script round 19); name from 0x007ba460 = Atel_CamGetRefVars (worker, args, stack, 1): the eye half (1)
 0x007b92c0 function Native_6081_CamFocusShakeKind7                # 0x6081: no args -> the shake with (0, 7); ported in native_chr (script round 12); name from dump: MsAtelCameraShake(.., side 0, kind 7)
 0x007b92e0 function Native_CamSetPolar           # 0x6004: args (theta deg, phi deg, len) -> 0; sets the eye (side 1) in polar form around its reference, degrees * pi/180 (Cam_SetPolar 0x007bf700; "theta,phi,len" in the camera dump)
 0x007b9300 function Native_6082_CamEyeShakeKind7                # 0x6082: no args -> the shake with (1, 7); ported in native_chr (script round 12); name from dump: MsAtelCameraShake(.., side 1, kind 7)
@@ -6571,23 +6571,23 @@
 0x007b93e0 function Native_6009_CamSetTarget # 0x6009: 0x007bab90(worker, args, stack, 1); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraFocus(side 1) -> MsCameraSetAtelFocus; eye twin of Native_CamRefSetTarget (side 0)
 0x007b9400 function Native_Cam_603c            # 0x603c: 0x007bac40(w, a, s, 1); 0; ported in native_cam
 0x007b9420 function Native_605e_ScreenShakeKind1                # 0x605e: no args -> 0x007bb840(..., 1); 0; ported in native_chr (script round 12); name from MsAtelScreenShake(.., 1) -> MsScreenShake kind 1
-0x007b9440 function Native_600a                # 0x600a: no args -> 0x007bb2b0(..., 1, 0); 0; ported in native_chr (script round 12)
+0x007b9440 function Native_600a_CamLineFilter                # 0x600a: no args -> 0x007bb2b0(..., 1, 0); 0; ported in native_chr (script round 12); name from 0x007bb2b0 = MsAtelCameraLineFilter (worker, args, stack, 1, 0); 0
 0x007b9460 function Native_6068_ScreenShakeKind2 # 0x6068: MsAtelScreenShake(worker, args, stack, 2) (0x007bb840); 0; ported in native_mods (script round 19); name ours; name from MsAtelScreenShake(.., 2)
 0x007b9480 function Native_600b_CamAddLineArea # 0x600b: 0x007bb2b0(worker, args, stack, 1, 1); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraLineFilter(side 1, kind 1): eye twin of Native_CamRefAddLineArea (side 0, kind 1)
 0x007b94a0 function Native_Cam_606b            # 0x606b: 0x007bb840(w, a, s, 3); 0; ported in native_cam
-0x007b94c0 function Native_600c # 0x600c: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 0); 0; ported in native_mods (script round 19); name ours
+0x007b94c0 function Native_600c_CamEyeAddCircleArea # 0x600c: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 0); 0; ported in native_mods (script round 19); name from 0x007bb370 = MsAtelCameraRefAddCircleArea (worker, args, stack, 1, 0): the eye half (1); 0
 0x007b94e0 function Native_606e_ScreenShakeKind4                # 0x606e: no args -> 0x007bb840(..., 4); 0; ported in native_chr (script round 12); name from MsAtelScreenShake(.., 4)
 0x007b9500 function Native_600d_CamAddCircleArea # 0x600d: MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, 1, 1); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraRefAddCircleArea(side 1, kind 1): eye twin of Native_CamRefAddCircleArea (0, 1)
 0x007b9520 function Native_Cam_600f            # 0x600f: 0x007bed10(cam, 1); the handle; ported in native_cam
 0x007b9580 function Native_Cam_6071            # 0x6071: 0x007bb840(w, a, s, 5); 0; ported in native_cam
-0x007b95a0 function Native_600e # 0x600e: (on): 0x007bf1a0(cam, 1, on & 1); the camera handle; ported in native_mods (script round 19); name ours
+0x007b95a0 function Native_600e_CamEyeSetChannelFlagF5 # 0x600e: (on): 0x007bf1a0(cam, 1, on & 1); the camera handle; ported in native_mods (script round 19); name from 0x007bf1a0 = MsCameraSetChannelFlagF5 (cam, 1, on & 1): the eye half (1); the camera handle
 0x007b9610 function Native_6074_ScreenShakeKind6                # 0x6074: no args -> 0x007bb840(worker, args, stack, 6); 0; ported in native_chr (script round 12); name from MsAtelScreenShake(.., 6)
 0x007b9630 function Native_6089_ScreenShakeKind9 # 0x6089: (p8, p7, p6, p5, p4 f, p3, p2 f, p1): MsScreenShake2(p8, p7, 9, p6, p5, p4, p3, p2, p1) (0x007c57b0); 0; ported in native_mods (script round 19); name ours; name from MsScreenShake2(p8, p7, 9, ...): screen shake, "kind-9 springs"
 0x007b96c0 function Native_CamMove               # 0x6010: args (frames) -> 0; starts the eye (side 1) moving to its set position over n frames, linear (Cam_StartMove 0x007bde50, mode 0)
 0x007b9730 function Native_Cam_6011            # 0x6011: (frames): MsCameraMoveFrame(cam, 1, 1, frames, 1); 0; ported in native_cam
 0x007b97a0 function Native_Cam_605f            # 0x605f: 0x007c4f50(cam, 0); 0; ported in native_cam
 0x007b9800 function Native_Cam_6012            # 0x6012: (frames): MsCameraMoveFrame(cam, 1, 0, frames, 3); 0; ported in native_cam
-0x007b9870 function Native_6013                # 0x6013: args (frames) -> MsCameraMoveFrame(cam, 1, 1, frames, 3) (0x007bde50); 0; ported in native_chr (script round 12)
+0x007b9870 function Native_6013_CamEyeMoveFrame                # 0x6013: args (frames) -> MsCameraMoveFrame(cam, 1, 1, frames, 3) (0x007bde50); 0; ported in native_chr (script round 12); name from 0x007bde50 = MsCameraMoveFrame (cam, 1, 1, frames, 3): the eye half (1)
 0x007b98e0 function Native_Cam_6060            # 0x6060: 0x007c4f50(cam, 1); 0; ported in native_cam
 0x007b9940 function Native_CamMoveEased          # 0x6014: args (accel frames, hold frames, decel frames, curve?) -> 0; eye move, total = a+b+c frames, type 2 (Cam_StartMoveEased 0x007bd860, mode 0); scripts push e.g. 20,30,20,0
 0x007b9960 function Native_6061_ScreenResetShake                # 0x6061: args (v) -> MsScreenResetShake(v) (0x007c56c0); ported in native_chr (script round 12); name from MsScreenResetShake(v)
@@ -6606,29 +6606,29 @@
 0x007b9d20 function Native_Cam_6046            # 0x6046: returns 0x007bb970(w, a, s, 1); ported in native_cam
 0x007b9d40 function Native_Cam_6021            # 0x6021: 0x007ba3c0(w, a, s, 0); 0; ported in native_cam
 0x007b9d60 function Native_Cam_6047            # 0x6047: returns 0x007bb970(w, a, s, 0); ported in native_cam
-0x007b9d80 function Native_6086 # 0x6086: 0x007ba460(worker, args, stack, 0); 0; ported in native_mods (script round 19); name ours
+0x007b9d80 function Native_6086_CamGetRefVars # 0x6086: 0x007ba460(worker, args, stack, 0); 0; ported in native_mods (script round 19); name from 0x007ba460 = Atel_CamGetRefVars (worker, args, stack, 0): the ref half (0)
 0x007b9da0 function Native_Cam_6048            # 0x6048: MsCameraGetID(cam) == cam clears g_BtlSplines[1]; the handle; ported in native_cam
 0x007b9e10 function Native_6022_CamRefSetPolar # 0x6022: 0x007bb5d0(worker, args, stack, 0, 0); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraPolar(side 0, add 0) -> Cam_SetPolar; ref twin of Native_CamSetPolar
 0x007b9e30 function Native_CamPathAddEye         # 0x6049: () -> cam; 0x007baac0(cam, 1): appends the eye's yaw/pitch/distance and roll to path list 1 (0x01136b60, max 32), used by the path move 0x007ba020 (>= 3 points)
 0x007b9e90 function Native_6023_CamRefAddPolar # 0x6023: 0x007bb5d0(worker, args, stack, 0, -1); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraPolar(side 0, -1); dump: nonzero add -> Cam_AddPolar
 0x007b9eb0 function Native_Cam_604a            # 0x604a: as 0x6048 for g_BtlSplines[0]; ported in native_cam
-0x007b9f20 function Native_6024 # 0x6024: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, -1); 0; ported in native_mods (script round 19); name ours
+0x007b9f20 function Native_6024_CamEyeAddAreaMinus1 # 0x6024: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, -1); 0; ported in native_mods (script round 19); name from MsAtelCameraEyeAddArea (worker, args, stack, 0, -1)
 0x007b9f40 function Native_CamPathAddFocus       # 0x604b: () -> cam; 0x007baac0(cam, 0): appends the focus point to path list 0
-0x007b9fa0 function Native_6025 # 0x6025: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 0); 0; ported in native_mods (script round 19); name ours
-0x007b9fc0 function Native_6026 # 0x6026: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 1); 0; ported in native_mods (script round 19); name ours
+0x007b9fa0 function Native_6025_CamEyeAddArea0 # 0x6025: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 0); 0; ported in native_mods (script round 19); name from MsAtelCameraEyeAddArea (worker, args, stack, 0, 0)
+0x007b9fc0 function Native_6026_CamEyeAddArea1 # 0x6026: MsAtelCameraEyeAddArea_007bb410(worker, args, stack, 0, 1); 0; ported in native_mods (script round 19); name from MsAtelCameraEyeAddArea (worker, args, stack, 0, 1)
 0x007b9fe0 function Native_CamRefSetTarget       # 0x6027: args (target, bone?, y offset) -> 0; ref (side 0) follow mode 3: +0xc = target, +0xe = bone, offset (0,y,0) (0x007beeb0); scripts push (0, -1, y); ?target/bone meaning
 0x007ba000 function Native_603d_CamRefSetYaw # 0x603d: 0x007bac40(worker, args, stack, 0); 0; ported in native_mods (script round 19); name ours; name from MsAtelCameraYaw(side 0) -> MsCameraSetAtelYaw(cam, side, yaw, pitch, length)
 0x007ba020 function Native_Cam_6059            # 0x6059: (path, a): focus along path (0/1 battle spline lists, else a variable): 0x007bfe70(cam, 0, path, 0.0, a); 0; ported in native_cam
 0x007ba0e0 function Native_Cam_6028            # 0x6028: 0x007bb2b0(w, a, s, 0, 0); 0; ported in native_cam
 0x007ba100 function Native_Cam_605a            # 0x605a: (path, t, a): as 0x6059 from t; ported in native_cam
 0x007ba1d0 function Native_CamRefAddLineArea     # 0x6029: args (x1, z1, x2, z2, r) floats -> 0; adds a segment constraint (max 5, count at side +0xc4) to the ref (0x007bf0b0 stores dir, origin, -dot, |dir|^2, r); ?keeps the ref within r of the segment
-0x007ba1f0 function Native_602a                # 0x602a: no args -> 0x007bb370(..., 0, 0); 0; ported in native_chr (script round 12)
+0x007ba1f0 function Native_602a_CamRefAddCircleArea                # 0x602a: no args -> 0x007bb370(..., 0, 0); 0; ported in native_chr (script round 12); name from 0x007bb370 = MsAtelCameraRefAddCircleArea (worker, args, stack, 0, 0): the ref half (0); 0
 0x007ba210 function Native_Cam_605b            # 0x605b: (path, a): eye along path: 0x007bfd90(cam, 1, path, a); 0; ported in native_cam
 0x007ba2d0 function Native_CamRefAddCircleArea   # 0x602b: args (x, z, r) -> 0; adds a circle constraint (type 3) to the ref's list (0x007bf1f0); ?keeps the ref inside/around the circle
 0x007ba2f0 function Native_CamRefClearAreas      # 0x602d: no args -> camera handle; clears the ref's constraint count (byte 0x01137634 + side/channel, 0x007bed10)
-0x007ba350 function Native_602c # 0x602c: (on): 0x007bf1a0(cam, 0, on & 1); the camera handle; ported in native_mods (script round 19); name ours
+0x007ba350 function Native_602c_CamRefSetChannelFlagF5 # 0x602c: (on): 0x007bf1a0(cam, 0, on & 1); the camera handle; ported in native_mods (script round 19); name from 0x007bf1a0 = MsCameraSetChannelFlagF5 (cam, 0, on & 1): the ref half (0); the camera handle
 0x007ba3c0 function Atel_CamGetVars_007ba3c0 # name ours; cdecl (worker, args, stack, side): three popped variable words (z, y, x) as addresses; the worker's camera +0x3c (MsAtelGetCameraID(5, worker is the event map camera, 0) when 0); Cam_GetPos(camera, side, &x, &y, &z), its EAX; callers Native_CamGetPos, Native_Cam_6021; ported (ffx_script helpers, script round 24 d)
-0x007ba460 function Atel_CamGetRefVars_007ba460 # name ours; cdecl: 0x007ba3c0's copy with Cam_GetRefPos_007bd4b0; callers Native_6085, Native_6086; ported (ffx_script helpers, script round 24 d)
+0x007ba460 function Atel_CamGetRefVars_007ba460 # name ours; cdecl: 0x007ba3c0's copy with Cam_GetRefPos_007bd4b0; callers Native_6085_CamGetEyeVars, Native_6086_CamGetRefVars; ported (ffx_script helpers, script round 24 d)
 0x007ba5b0 function MsAtelCameraMoveAcc_007ba5b0 # ours: camera native (worker, _, stack, side, mode): camera as MsAtelGetCamera_007baa50(w, 0, 0); ints a, b, c, d popped -> MsCameraMoveAcc(cam, side, mode, d, c, b, a), its eax; ported (ffx_battle::camera_native, battle round 29)
 0x007ba650 function MsAtelCameraInit          # fh v3:exact 0x007ba5d0
 0x007ba6d0 function MsAtelFreeCameraID           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100391fa0 MsAtelFreeCameraID, 2 votes, round 1
@@ -14347,8 +14347,8 @@
 0x00a7a830 function Native_5045_ChrPlayMarksOf # 0x5045/0x408c: Native_PlayMotionCommon(worker, stack, 0, 1); 0; ported in native_mods (script round 19); name ours; name from PlayMotionCommon(.., 0, 1): mode 0 = Chr_PlayMotionMarks, other worker
 0x00a7a850 function Native_508e_ChrSetClothGravity                # 0x508e: args (v) -> Ch_ClothEnableGrav(model, v) (0x008245f0); ported in native_chr (script round 12); name from Ch_ClothEnableGrav(model, v)
 0x00a7a880 function Native_5046_ChrPlayMotionOf                # 0x5046: no args -> Native_PlayMotionCommon(worker, stack, 1, 1); ported in native_chr (script round 12); name from PlayMotionCommon(.., 1, 1): mode 1 = Chr_PlayMotion, other worker
-0x00a7a8a0 function Native_508f                # 0x508f: args (v int (popped only for a model)) -> 0: the model's +0x870 byte = v; ported in native_chr (script round 12)
-0x00a7a8d0 function Native_5090                # 0x5090: args (v) -> the model's +0x871 byte, popped only for a model; ported in native_chr (script round 12)
+0x00a7a8a0 function Native_508f_ChrSetField870                # 0x508f: args (v int (popped only for a model)) -> 0: the model's +0x870 byte = v; ported in native_chr (script round 12); name from the model's +0x870 byte = v (popped only for a model); 0
+0x00a7a8d0 function Native_5090_ChrGetField871                # 0x5090: args (v) -> the model's +0x871 byte, popped only for a model; ported in native_chr (script round 12); name from the model's +0x871 byte (popped only for a model)
 0x00a7a900 function Native_5047_ChrSetSequenceOf                # 0x5047: args (worker int, v int) -> 0: Ch_SetSequence(that worker's model, v) (0x00837ac0); ported in native_chr (script round 12); name from Ch_SetSequence(that worker's model, v)
 0x00a7a940 function Native_5048_ChrSetSequenceOf                # 0x5048: no args -> as 0x5047; ported in native_chr (script round 12); name from "as 0x5047" (Ch_SetSequence on that worker's model)
 0x00a7a980 function Native_GetChrOptPos_00a7a980 # (r25 e) pops x/y/z variable words, an attachment index (mode 0) and a worker; stores Ch_OptposGet (or +0x6b4 for mode 2) into the variables; caller Native_5036_ChrGetOptPos; own name

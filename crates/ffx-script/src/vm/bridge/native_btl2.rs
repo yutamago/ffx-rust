@@ -403,7 +403,7 @@ pub fn native_710b_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> 
     }
 }
 
-/// `Native_7004` (`0x007a3aa0`, `0x7004`): `(v f)`: the `f32`
+/// `Native_7004_BtlSetCenterScale` (`0x007a3aa0`, `0x7004`): `(v f)`: the `f32`
 /// `0x0112bde4` = v; 0.
 pub fn native_7004<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = atel_pop_stack_float(h, s);
@@ -509,7 +509,7 @@ pub fn native_711a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7011` (`0x007a4280`, `0x7011`): `(v)`: the byte `0x0112a8fc` =
+/// `Native_7011_BtlSetDebugCameraSleep` (`0x007a4280`, `0x7011`): `(v)`: the byte `0x0112a8fc` =
 /// v & 1; 0.
 pub fn native_7011<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -589,7 +589,7 @@ pub fn native_7020<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     call(h, 0x007a_92c0, &[id, v])
 }
 
-/// `Native_7013` (`0x007a5840`, `0x7013`): `(v f)`: with an actor that has
+/// `Native_7013_ChrSetSp` (`0x007a5840`, `0x7013`): `(v f)`: with an actor that has
 /// a model, `0x0082b840(model, v)`; 0.
 pub fn native_7013<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = atel_pop_stack_float(h, s);
@@ -638,7 +638,7 @@ pub fn native_70bc_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u
     poll_clear(h, a, 0xe12)
 }
 
-/// `Native_7027` (`0x007a5e90`, `0x7027`): the actor's byte `+0x44f`, 0
+/// `Native_7027_ActorGetField44f` (`0x007a5e90`, `0x7027`): the actor's byte `+0x44f`, 0
 /// without an actor.
 pub fn native_7027<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -771,7 +771,7 @@ pub fn native_70a9<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
     clamped_window(h, a, s)
 }
 
-/// `Native_704c_Poll` (`0x007a7cf0`, `0x704c`, poll): 5 once no actor in
+/// `Native_704c_ChrWaitMotionBit_Poll` (`0x007a7cf0`, `0x704c`, poll): 5 once no actor in
 /// the argument word's bits is in motion (`MsAnyChrMotion_007a8be0`), else
 /// 0.
 pub fn native_704c_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
@@ -883,7 +883,7 @@ pub fn native_706d<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
     y
 }
 
-/// `Native_704f` (`0x007a70c0`, `0x704f`): `(selector, v)`: every actor
+/// `Native_704f_SelSetFieldDdd` (`0x007a70c0`, `0x704f`): `(selector, v)`: every actor
 /// below 31 in `MsGetChrBit(actor, selector, 0, 1)` gets the byte `+0xddd`
 /// = v; 0.
 pub fn native_704f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -930,7 +930,7 @@ pub fn native_70a0<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     old
 }
 
-/// `Native_704e` (`0x007a7530`, `0x704e`): `(v)`: the actor's bytes
+/// `Native_704e_ActorSetField3f5` (`0x007a7530`, `0x704e`): `(v)`: the actor's bytes
 /// `+0x3f5` and `+0x3f6` = v; 0.
 pub fn native_704e<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let id = actor(h, w);
@@ -1029,7 +1029,7 @@ pub fn native_70ee<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     }
 }
 
-/// `Native_704c` (`0x007a7bf0`, `0x704c`, start): `(selector)`: the
+/// `Native_704c_ChrWaitMotionBit` (`0x007a7bf0`, `0x704c`, start): `(selector)`: the
 /// argument word = `MsGetChrBit(actor, selector, 0, 1)`; -> it.
 pub fn native_704c<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     let id = actor(h, w);

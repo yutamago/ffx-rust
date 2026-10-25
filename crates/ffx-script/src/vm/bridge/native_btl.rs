@@ -338,7 +338,7 @@ pub fn native_7085<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7000` (`0x007a8620`, `0x7000`): the actor's `+0xdf2` = 0; 0.
+/// `Native_7000_ActorClearDf2` (`0x007a8620`, `0x7000`): the actor's `+0xdf2` = 0; 0.
 pub fn native_7000<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
     if id != 0xff {
@@ -489,7 +489,7 @@ pub fn native_7097<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     request_system(h, w, a, s, 1)
 }
 
-/// `Native_7026` (`0x007a5d80`, `0x7026`): `(v)`: the actor's `+0x44f` =
+/// `Native_7026_ActorSetField44f` (`0x007a5d80`, `0x7026`): `(v)`: the actor's `+0x44f` =
 /// `v`; 0.
 pub fn native_7026<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -513,7 +513,7 @@ pub fn native_702e<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     callf(h, 0x007a_9a40, &[id, v, 0])
 }
 
-/// `Native_702d` (`0x007a4e60`, `0x702d`): `0x007ab730(actor record)`; 0.
+/// `Native_702d_MotionSpeedReset` (`0x007a4e60`, `0x702d`): `0x007ab730(actor record)`; 0.
 pub fn native_702d<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
     if id != 0xff {
@@ -533,7 +533,7 @@ pub fn native_7019<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     }
 }
 
-/// `Native_704a` (`0x007a58d0`, `0x704a`): `(selector)`: how many picked
+/// `Native_704a_SelCountField415` (`0x007a58d0`, `0x704a`): `(selector)`: how many picked
 /// actors have `+0x415` set.
 pub fn native_704a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let id = actor(h, w);
@@ -551,7 +551,7 @@ pub fn native_704a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     n
 }
 
-/// `Native_701d` (`0x007a5bf0`, `0x701d`): the actor's `+0x420` (signed),
+/// `Native_701d_ActorGetField420` (`0x007a5bf0`, `0x701d`): the actor's `+0x420` (signed),
 /// 0 without one.
 pub fn native_701d<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -684,17 +684,17 @@ fn set_byte<H: NativeHost>(h: &mut H, w: u32, s: u32, off: u32, mask: u32) -> u3
     0
 }
 
-/// `Native_7029` (`0x007a3fb0`, `0x7029`): `(b)`: `+0x505` = b & 1; 0.
+/// `Native_7029_ActorSetField505` (`0x007a3fb0`, `0x7029`): `(b)`: `+0x505` = b & 1; 0.
 pub fn native_7029<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     set_byte(h, w, s, 0x505, 1)
 }
 
-/// `Native_701c` (`0x007a59d0`, `0x701c`): `(v)`: `+0x420` = v; 0.
+/// `Native_701c_ActorSetField420` (`0x007a59d0`, `0x701c`): `(v)`: `+0x420` = v; 0.
 pub fn native_701c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     set_byte(h, w, s, 0x420, 0xff)
 }
 
-/// `Native_7033` (`0x007a3cc0`, `0x7033`): `(b)`: `+0x32` = b & 1; 0.
+/// `Native_7033_ActorSetField32` (`0x007a3cc0`, `0x7033`): `(b)`: `+0x32` = b & 1; 0.
 pub fn native_7033<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     set_byte(h, w, s, 0x32, 1)
 }
@@ -838,7 +838,7 @@ pub fn native_debug_print<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> 
     0
 }
 
-/// `Native_7012` (`0x007a29a0`, `0x7012`): `+0x435` = 0 and, for state
+/// `Native_7012_ActorStepState23` (`0x007a29a0`, `0x7012`): `+0x435` = 0 and, for state
 /// (`+0xdfb`) 2, the state 3, else `+0x432` = 0; 0.
 pub fn native_7012<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -957,7 +957,7 @@ pub fn native_70b5<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_7031` (`0x007a2d00`, `0x7031`): `+0x432` = 1; 0.
+/// `Native_7031_ActorSetField432` (`0x007a2d00`, `0x7031`): `+0x432` = 1; 0.
 pub fn native_7031<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
     let c = chr(h, id);
@@ -967,7 +967,7 @@ pub fn native_7031<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_7030` (`0x007a5090`, `0x7030`): `+0x412`, 0 without an actor.
+/// `Native_7030_ActorGetField412` (`0x007a5090`, `0x7030`): `+0x412`, 0 without an actor.
 pub fn native_7030<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
     if id == 0xff {
@@ -977,7 +977,7 @@ pub fn native_7030<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     u32::from(h.read::<u8>(c + 0x412))
 }
 
-/// `Native_702a` (`0x007a5bc0`, `0x702a`): `+0x508` (signed), 0 without an
+/// `Native_702a_ActorGetField508` (`0x007a5bc0`, `0x702a`): `+0x508` (signed), 0 without an
 /// actor.
 pub fn native_702a<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -1023,7 +1023,7 @@ pub fn native_7084<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     0
 }
 
-/// `Native_7034` (`0x007a5330`, `0x7034`): `(v)`: `0x0112c9f1` = v and,
+/// `Native_7034_BtlSetEndForced` (`0x007a5330`, `0x7034`): `(v)`: `0x0112c9f1` = v and,
 /// when `0x0112a8e0` is 1, it becomes 2; `v`.
 pub fn native_7034<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -1366,7 +1366,7 @@ pub fn native_707e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     }
 }
 
-/// `Native_700d` (`0x007a63f0`, `0x700d`): `(mode, k)`: unless the actor
+/// `Native_700d_ActorMoveTowardTarget` (`0x007a63f0`, `0x700d`): `(mode, k)`: unless the actor
 /// is locked (`+0x44e`: a negative `k` then gives 1 for a set sign bit,
 /// else 0), with `|k|` (only made positive without the lock),
 /// `0x007a87f0(&to, &from, actor, k, 0)` for the target `0x007a9ac0`
@@ -1397,7 +1397,7 @@ pub fn native_700d<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x007a_87f0, &[to, from, id, k, 0])
 }
 
-/// `Native_7032` (`0x007a6f70`, `0x7032`): `(selector, degrees)`: the
+/// `Native_7032_ActorSetRadians514` (`0x007a6f70`, `0x7032`): `(selector, degrees)`: the
 /// angle (radians, `0x007c04c0(0, it)`) into `+0x514` and `+0x518` of
 /// every picked actor, `+0x512` = 1; 0.
 pub fn native_7032<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -1478,12 +1478,12 @@ fn near_degrees(h: &mut impl NativeHost, yaw: u32) -> f64 {
     r32(x87::div(x87::mul(r, 180.0), PI_F32))
 }
 
-/// `Native_7035` (`0x007a53a0`, `0x7035`): the byte `0x0112c9f1`.
+/// `Native_7035_BtlGetEndForced` (`0x007a53a0`, `0x7035`): the byte `0x0112c9f1`.
 pub fn native_7035<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     u32::from(h.read::<u8>(h.rebase(0x0112_c9f1)))
 }
 
-/// `Native_7014` (`0x007a4430`, `0x7014`): the word `0x0112c8d8`.
+/// `Native_7014_BtlGetParsedCommand` (`0x007a4430`, `0x7014`): the word `0x0112c8d8`.
 pub fn native_7014<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     h.read(h.rebase(0x0112_c8d8))
 }
@@ -1947,7 +1947,7 @@ pub fn native_70d7<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_701f` (`0x007a5f80`, `0x701f`): `(v)`: the actor's `+0x3f1` =
+/// `Native_701f_ActorSetField3f1` (`0x007a5f80`, `0x701f`): `(v)`: the actor's `+0x3f1` =
 /// v; 0.
 pub fn native_701f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -1959,7 +1959,7 @@ pub fn native_701f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7022` (`0x007a4cd0`, `0x7022`): `(v)`: the byte `0x0112c9dc` =
+/// `Native_7022_BtlSetFirstAttack` (`0x007a4cd0`, `0x7022`): `(v)`: the byte `0x0112c9dc` =
 /// v; 0.
 pub fn native_7022<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -1967,7 +1967,7 @@ pub fn native_7022<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7023` (`0x007a4940`, `0x7023`): `(selector)`: `ftol` of the
+/// `Native_7023_SelMeanSetMove` (`0x007a4940`, `0x7023`): `(selector)`: `ftol` of the
 /// mean of `MsSetMove(i, 1)` (`0x007a9fc0`, `ST0`) over the picked actors
 /// (0 for none; the sum and the mean round to `f32`).
 pub fn native_7023<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -2096,7 +2096,7 @@ pub fn native_7053<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_703a` (`0x007a7360`, `0x703a`): `(v)`: the actor's `+0x3fc`
+/// `Native_703a_ActorSetField3fc` (`0x007a7360`, `0x703a`): `(v)`: the actor's `+0x3fc`
 /// (`u16`) = v through `f32`, truncated.
 pub fn native_703a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
