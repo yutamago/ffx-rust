@@ -2192,7 +2192,6 @@
 0x00645de0 function graphicVideoPause         # fh v3:bsim1.00 0x00645f90
 0x00645df0 function graphicVideoUpdate        # fh v3:exact+call.cs 0x00645fa0 cdecl
 0x00645e40 function graphicSetWaveStrength_00645e40 # mov ecx,[0x00ccb9d8]; jmp PhyreScene_setWaveStrength; callers Native_806b/805c; was graphicisVideoAtEndFrame, which is 0x00645e50 (platform census 2026-10-25)
-0x00645e50 function graphicIsVideoAtEndFrame_00645e50 # -> 0x006da240; caller Native_b00b_Poll (see the 0x00645e40 note) (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00645e50 function graphicisVideoAtEndFrame # -> PhyFMVPlayerManager_isVideoAtEndFrame 0x006da240; caller Native_b00b_Poll; the Switch name (layout match) moved here from 0x00645e40, a setWaveStrength wrapper (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00645e60 function graphicsRegisterResetScreenFadeDelegation # layout: alphabetical run between graphicVideoUpdate and setLuluODKeyboardInput (3 unnamed in the gap); Switch 0x71001dc5d0 graphicsRegisterResetScreenFadeDelegation is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00645e90 function setFarPlane                  # layout: alphabetical run between graphicVideoUpdate and setLuluODKeyboardInput (3 unnamed in the gap); Switch 0x71001dcbb0 setFarPlane is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
