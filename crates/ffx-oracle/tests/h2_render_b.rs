@@ -35,11 +35,18 @@ use ffx_oracle::{Conv, Oracle, Pages};
 
 #[path = "h2_render_b/cases.rs"]
 mod cases;
+#[path = "h2_render_b/cases3.rs"]
+mod cases3;
 
 use ffx_prender::array::bridge as a;
 use ffx_prender::declare as dc;
 use ffx_prender::descriptor::{Init, bridge as d};
 use ffx_prender::dtor::bridge as dt;
+use ffx_prender::h2_bind::bridge as hb;
+use ffx_prender::h2_more::bridge as hm;
+use ffx_prender::h2_more2::bridge as h2;
+use ffx_prender::h2_more3::bridge as h3;
+use ffx_prender::h2_more4::bridge as h4;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -321,6 +328,32 @@ impl Env {
         let old = Oracle::read(&mut self.a, at, 5).unwrap();
         self.stubbed.push((at, old));
         self.write(at, &j);
+    }
+
+    /// Replaces the original at `sym` by `make(count)`'s code, where
+    /// `count` is two fresh zero words the code may count and log in
+    /// (callees that must change state between calls: a counter a spin
+    /// wait polls, a cursor's next list). Once per case: a later call
+    /// for the same callee keeps the first code.
+    pub fn custom(&mut self, sym: u32, make: impl FnOnce(u32) -> Vec<u8>) {
+        let at = self.rebase(sym);
+        if self.stubbed.iter().any(|s| s.0 == at) {
+            return;
+        }
+        let count = self.zeros(8);
+        let c = make(count);
+        let code = self.a.alloc_code(&c).unwrap();
+        assert_eq!(self.b.alloc_code(&c).unwrap(), code);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut self.a, at, 5).unwrap();
+        self.stubbed.push((at, old));
+        self.write(at, &j);
+    }
+
+    /// The stub cell (return word) of callee `sym`.
+    pub fn cell(&self, sym: u32) -> u32 {
+        self.cells[&sym]
     }
 
     fn unstub_all(&mut self) {
@@ -969,6 +1002,7 @@ fn run_cases(rounds: u32) {
     for (snap, mut e) in Env::all() {
         for case in cases::CASES
             .iter()
+            .chain(cases3::CASES)
             .filter(|c| filter.split('|').any(|f| c.name.contains(f)))
         {
             for &(sym, n, pops, this) in case.callees {
@@ -999,7 +1033,7 @@ fn h2_render_b_ports_match_the_original() {
 #[test]
 fn h2_render_b_cases_are_unique() {
     let mut seen = std::collections::HashSet::new();
-    for c in cases::CASES {
+    for c in cases::CASES.iter().chain(cases3::CASES) {
         assert!(seen.insert(c.addr), "{} twice", c.name);
     }
     let _ = (Init::Word(0, 0), x::map_mode(0));
