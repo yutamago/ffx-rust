@@ -29,6 +29,7 @@ constant var=SgSpec_LightVec field=*.SgSpec_LightVec[0].z cause: junk read, Ch_D
 # whatever an earlier call left on the stack (a stale integer 1, read as
 # 1e-45); ported functions further up the stack leave other words there
 # (h3-glue-render, 2026-10-25: 0x004c0000), and the port of Ch_DrawMain
-# passes 0 (junk-read policy, 2026-10-24). Never a drawn difference: the
-# shader uses the vector's x, y and w only (docs/formats/scene-chars.md).
+# passes 0 (junk-read policy, 2026-10-24). The shader reads the variable;
+# whether the word changes pixels is not checked here (the replays' shots of
+# these frames match the original at 0 pixels).
 constant var=SgSpec_CameraVec field=*.SgSpec_CameraVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x2c] (the camera vector's third word); its value depends on what earlier calls left on the stack
