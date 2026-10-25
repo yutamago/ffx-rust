@@ -8,7 +8,7 @@
 //! original code's.
 
 use super::{mem, ported};
-use ffx_pother_a::{class::bridge as class, object::bridge as object};
+use ffx_pother_a::{class::bridge as class, object::bridge as object, physics::bridge as physics};
 
 ported! {
     /// `Phyre_PBase_GetClassDescriptor()` -> `PBase`'s descriptor.
@@ -262,5 +262,157 @@ ported! {
     /// `0x00587d50()`: registers `0x00cb3ad0`.
     Phyre_RegisterClass_00587d50 @ 0x0058_7d50 => extern "C" fn register_587d50() -> u32 {
         class::register(&mut mem(), 0x00cb_3ad0)
+    }
+    /// `0x005f7a10(p)`: `PPhysicsBox`'s create callback.
+    Phyre_PPhysics_PPhysicsBox_create_005f7a10 @ 0x005f_7a10 => extern "stdcall" fn create_5f7a10(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::BOX) as u8
+    }
+    /// `0x005f7a50(p)`: `PPhysicsBoxBase`'s create callback.
+    Phyre_PPhysics_PPhysicsBoxBase_create_005f7a50 @ 0x005f_7a50 => extern "stdcall" fn create_5f7a50(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::BOX_BASE) as u8
+    }
+    /// `0x005f7a90(p)`: `PPhysicsBoxBullet`'s create callback.
+    Phyre_PPhysics_PPhysicsBoxBullet_create_005f7a90 @ 0x005f_7a90 => extern "stdcall" fn create_5f7a90(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::BOX_BULLET) as u8
+    }
+    /// `0x005f7ad0(p)`: `PPhysicsCapsule`'s create callback.
+    Phyre_PPhysics_PPhysicsCapsule_create_005f7ad0 @ 0x005f_7ad0 => extern "stdcall" fn create_5f7ad0(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::CAPSULE) as u8
+    }
+    /// `0x005f7b20(p)`: `PPhysicsCapsuleBase`'s create callback.
+    Phyre_PPhysics_PPhysicsCapsuleBase_create_005f7b20 @ 0x005f_7b20 => extern "stdcall" fn create_5f7b20(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::CAPSULE_BASE) as u8
+    }
+    /// `0x005f7b70(p)`: `PPhysicsCapsuleBullet`'s create callback.
+    Phyre_PPhysics_PPhysicsCapsuleBullet_create_005f7b70 @ 0x005f_7b70 => extern "stdcall" fn create_5f7b70(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::CAPSULE_BULLET) as u8
+    }
+    /// `0x005f7cd0(p)`: `PPhysicsCylinder`'s create callback.
+    Phyre_PPhysics_PPhysicsCylinder_create_005f7cd0 @ 0x005f_7cd0 => extern "stdcall" fn create_5f7cd0(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::CYLINDER) as u8
+    }
+    /// `0x005f7d20(p)`: `PPhysicsCylinderBase`'s create callback.
+    Phyre_PPhysics_PPhysicsCylinderBase_create_005f7d20 @ 0x005f_7d20 => extern "stdcall" fn create_5f7d20(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::CYLINDER_BASE) as u8
+    }
+    /// `0x005f7d60(p)`: `PPhysicsCylinderBullet`'s create callback.
+    Phyre_PPhysics_PPhysicsCylinderBullet_create_005f7d60 @ 0x005f_7d60 => extern "stdcall" fn create_5f7d60(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::CYLINDER_BULLET) as u8
+    }
+    /// `0x005f7e50(p)`: `PPhysicsMesh`'s create callback.
+    Phyre_PPhysics_PPhysicsMesh_create_005f7e50 @ 0x005f_7e50 => extern "stdcall" fn create_5f7e50(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::MESH) as u8
+    }
+    /// `0x005f7ea0(p)`: `PPhysicsMeshBase`'s create callback.
+    Phyre_PPhysics_PPhysicsMeshBase_create_005f7ea0 @ 0x005f_7ea0 => extern "stdcall" fn create_5f7ea0(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::MESH_BASE) as u8
+    }
+    /// `0x005f7ee0(p)`: `PPhysicsMeshBullet`'s create callback.
+    Phyre_PPhysics_PPhysicsMeshBullet_create_005f7ee0 @ 0x005f_7ee0 => extern "stdcall" fn create_5f7ee0(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::MESH_BULLET) as u8
+    }
+    /// `0x005f7f60(p)`: `PPhysicsPlane`'s create callback.
+    Phyre_PPhysics_PPhysicsPlane_create_005f7f60 @ 0x005f_7f60 => extern "stdcall" fn create_5f7f60(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::PLANE) as u8
+    }
+    /// `0x005f7fb0(p)`: `PPhysicsPlaneBase`'s create callback.
+    Phyre_PPhysics_PPhysicsPlaneBase_create_005f7fb0 @ 0x005f_7fb0 => extern "stdcall" fn create_5f7fb0(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::PLANE_BASE) as u8
+    }
+    /// `0x005f7ff0(p)`: `PPhysicsPlaneBullet`'s create callback.
+    Phyre_PPhysics_PPhysicsPlaneBullet_create_005f7ff0 @ 0x005f_7ff0 => extern "stdcall" fn create_5f7ff0(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::PLANE_BULLET) as u8
+    }
+    /// `0x005f8170(p)`: `PPhysicsShape`'s create callback.
+    Phyre_PPhysics_PPhysicsShape_create_005f8170 @ 0x005f_8170 => extern "stdcall" fn create_5f8170(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::SHAPE) as u8
+    }
+    /// `0x005f81a0(p)`: `PPhysicsShapeBullet`'s create callback.
+    Phyre_PPhysics_PPhysicsShapeBullet_create_005f81a0 @ 0x005f_81a0 => extern "stdcall" fn create_5f81a0(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::SHAPE_BULLET) as u8
+    }
+    /// `0x005f81d0(p)`: `PPhysicsSphere`'s create callback.
+    Phyre_PPhysics_PPhysicsSphere_create_005f81d0 @ 0x005f_81d0 => extern "stdcall" fn create_5f81d0(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::SPHERE) as u8
+    }
+    /// `0x005f8210(p)`: `PPhysicsSphereBase`'s create callback.
+    Phyre_PPhysics_PPhysicsSphereBase_create_005f8210 @ 0x005f_8210 => extern "stdcall" fn create_5f8210(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::SPHERE_BASE) as u8
+    }
+    /// `0x005f8250(p)`: `PPhysicsSphereBullet`'s create callback.
+    Phyre_PPhysics_PPhysicsSphereBullet_create_005f8250 @ 0x005f_8250 => extern "stdcall" fn create_5f8250(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::SPHERE_BULLET) as u8
+    }
+    /// `0x005f8290(p)`: `PPhysicsTaperedCapsule`'s create callback.
+    Phyre_PPhysics_PPhysicsTaperedCapsule_create_005f8290 @ 0x005f_8290 => extern "stdcall" fn create_5f8290(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::TAPERED_CAPSULE) as u8
+    }
+    /// `0x005f82e0(p)`: `PPhysicsTaperedCylinder`'s create callback.
+    Phyre_PPhysics_PPhysicsTaperedCylinder_create_005f82e0 @ 0x005f_82e0 => extern "stdcall" fn create_5f82e0(p: u32) -> u8 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::TAPERED_CYLINDER) as u8
+    }
+    /// `0x005f79f0(p)` (create callback).
+    Phyre_PPhysics_CreatePair_005f79f0 @ 0x005f_79f0 => extern "stdcall" fn create_5f79f0(p: u32) -> u32 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::PAIR)
+    }
+    /// `0x005f7db0(p)` (create callback).
+    Phyre_PPhysics_CreateHeader_005f7db0 @ 0x005f_7db0 => extern "stdcall" fn create_5f7db0(p: u32) -> u32 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::BYTE_HEADER)
+    }
+    /// `0x005f7e30(p)` (create callback).
+    Phyre_PPhysics_CreateVec3Zero_005f7e30 @ 0x005f_7e30 => extern "stdcall" fn create_5f7e30(p: u32) -> u32 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::VEC3_ZERO)
+    }
+    /// `0x005f7f30(p)` (create callback).
+    Phyre_PPhysics_CreateTriple_005f7f30 @ 0x005f_7f30 => extern "stdcall" fn create_5f7f30(p: u32) -> u32 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::TRIPLE)
+    }
+    /// `0x005f8390(p)` (create callback).
+    Phyre_PPhysics_CreateTailPair_005f8390 @ 0x005f_8390 => extern "stdcall" fn create_5f8390(p: u32) -> u32 {
+        physics::create(&mut mem(), p, &ffx_pother_a::physics::TAIL_PAIR)
+    }
+    /// `0x005f7bc0(p)` (destroy callback): `0x005dff30(p)` unless null.
+    Phyre_PPhysics_DestroyCall_005f7bc0 @ 0x005f_7bc0 => extern "stdcall" fn destroy_5f7bc0(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x005d_ff30, p)
+    }
+    /// `0x005f7be0(p)` (destroy callback): `0x005e01c0(p)` unless null.
+    Phyre_PPhysics_DestroyCall_005f7be0 @ 0x005f_7be0 => extern "stdcall" fn destroy_5f7be0(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x005e_01c0, p)
+    }
+    /// `0x005f7c30(p)` (destroy callback): `0x005e0050(p)` unless null.
+    Phyre_PPhysics_DestroyCall_005f7c30 @ 0x005f_7c30 => extern "stdcall" fn destroy_5f7c30(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x005e_0050, p)
+    }
+    /// `0x005f7c80(p)` (destroy callback): `0x005e01c0(p)` unless null.
+    Phyre_PPhysics_DestroyCall_005f7c80 @ 0x005f_7c80 => extern "stdcall" fn destroy_5f7c80(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x005e_01c0, p)
+    }
+    /// `0x005f7de0(p)` (destroy callback): `0x005e0330(p)` unless null.
+    Phyre_PPhysics_DestroyCall_005f7de0 @ 0x005f_7de0 => extern "stdcall" fn destroy_5f7de0(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x005e_0330, p)
+    }
+    /// `0x005f80b0(p)` (destroy callback): `0x005e0590(p)` unless null.
+    Phyre_PPhysics_DestroyCall_005f80b0 @ 0x005f_80b0 => extern "stdcall" fn destroy_5f80b0(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x005e_0590, p)
+    }
+    /// `0x005f8330(p)` (destroy callback): `0x005e0970(p)` unless null.
+    Phyre_PPhysics_DestroyCall_005f8330 @ 0x005f_8330 => extern "stdcall" fn destroy_5f8330(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x005e_0970, p)
+    }
+    /// `0x005f8350(p)` (destroy callback): `0x005e0900(p)` unless null.
+    Phyre_PPhysics_DestroyCall_005f8350 @ 0x005f_8350 => extern "stdcall" fn destroy_5f8350(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x005e_0900, p)
+    }
+    /// `0x005f8370(p)` (destroy callback): `0x005e0970(p)` unless null.
+    Phyre_PPhysics_DestroyCall_005f8370 @ 0x005f_8370 => extern "stdcall" fn destroy_5f8370(p: u32) -> u8 {
+        object::destroy_call(&mut mem(), 0x005e_0970, p)
+    }
+    /// `0x005f8040(p)` (destroy callback).
+    Phyre_PPhysics_DestroyBody_005f8040 @ 0x005f_8040 => extern "stdcall" fn destroy_5f8040(p: u32) -> u8 {
+        physics::destroy_body(&mut mem(), p)
+    }
+    /// `0x005f8100(p)` (destroy callback).
+    Phyre_PPhysics_DestroyBody_005f8100 @ 0x005f_8100 => extern "stdcall" fn destroy_5f8100(p: u32) -> u8 {
+        physics::destroy_body(&mut mem(), p)
     }
 }

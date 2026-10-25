@@ -6,7 +6,8 @@
 //! - [`class`]: the type system's lookups and class registration (the
 //!   `Bind` sequences: type dispenser, namespace);
 //! - [`object`]: small constructors, destructors and the class
-//!   descriptors' create/destroy callbacks (`mov al, 1; ret 4`).
+//!   descriptors' create/destroy callbacks (`mov al, 1; ret 4`);
+//! - [`physics`]: the physics classes' create callbacks.
 //!
 //! What this list does not hold (the class descriptor, the type
 //! dispenser, the heap, the red-black tree) is called at its address
@@ -25,6 +26,7 @@ use ffx_graphic::host::{Conv, Host};
 
 pub mod class;
 pub mod object;
+pub mod physics;
 
 /// `Phyre_PhyreFree` (cdecl `(p)`).
 pub const PHYRE_FREE: u32 = 0x0042_fb20;

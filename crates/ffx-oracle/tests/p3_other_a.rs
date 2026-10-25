@@ -903,3 +903,91 @@ fn registration_matches_the_original() {
         t.unstub_all();
     }
 }
+
+#[test]
+fn physics_callbacks_match_the_original() {
+    use ffx_pother_a::physics::{self as ph, Create};
+    let creates: [(u32, &Create, u32); 27] = [
+        (0x005f_7a10, &ph::BOX, AL),
+        (0x005f_7a50, &ph::BOX_BASE, AL),
+        (0x005f_7a90, &ph::BOX_BULLET, AL),
+        (0x005f_7ad0, &ph::CAPSULE, AL),
+        (0x005f_7b20, &ph::CAPSULE_BASE, AL),
+        (0x005f_7b70, &ph::CAPSULE_BULLET, AL),
+        (0x005f_7cd0, &ph::CYLINDER, AL),
+        (0x005f_7d20, &ph::CYLINDER_BASE, AL),
+        (0x005f_7d60, &ph::CYLINDER_BULLET, AL),
+        (0x005f_7e50, &ph::MESH, AL),
+        (0x005f_7ea0, &ph::MESH_BASE, AL),
+        (0x005f_7ee0, &ph::MESH_BULLET, AL),
+        (0x005f_7f60, &ph::PLANE, AL),
+        (0x005f_7fb0, &ph::PLANE_BASE, AL),
+        (0x005f_7ff0, &ph::PLANE_BULLET, AL),
+        (0x005f_8170, &ph::SHAPE, AL),
+        (0x005f_81a0, &ph::SHAPE_BULLET, AL),
+        (0x005f_81d0, &ph::SPHERE, AL),
+        (0x005f_8210, &ph::SPHERE_BASE, AL),
+        (0x005f_8250, &ph::SPHERE_BULLET, AL),
+        (0x005f_8290, &ph::TAPERED_CAPSULE, AL),
+        (0x005f_82e0, &ph::TAPERED_CYLINDER, AL),
+        (0x005f_79f0, &ph::PAIR, ALL),
+        (0x005f_7db0, &ph::BYTE_HEADER, ALL),
+        (0x005f_7e30, &ph::VEC3_ZERO, ALL),
+        (0x005f_7f30, &ph::TRIPLE, ALL),
+        (0x005f_8390, &ph::TAIL_PAIR, ALL),
+    ];
+    let calls: [(u32, u32); 9] = [
+        (0x005f_7bc0, 0x005d_ff30),
+        (0x005f_7be0, 0x005e_01c0),
+        (0x005f_7c30, 0x005e_0050),
+        (0x005f_7c80, 0x005e_01c0),
+        (0x005f_7de0, 0x005e_0330),
+        (0x005f_80b0, 0x005e_0590),
+        (0x005f_8330, 0x005e_0970),
+        (0x005f_8350, 0x005e_0900),
+        (0x005f_8370, 0x005e_0970),
+    ];
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5f7a_1000);
+        t.stub(ph::SHAPE_BASE, 0, 0, StubRet::Value(0x00ba_5e00));
+        for (_, f) in calls {
+            let at = t.rebase(f);
+            if !t.saved.iter().any(|(a, _)| *a == at) {
+                t.stub(f, 0, 0, StubRet::Value(f));
+            }
+        }
+        let big = t.random(&mut rng, 0x400);
+        let carry = ((big + 0xff) & !0xff) + 0xfc;
+        for p in [0, t.random(&mut rng, 0x100), carry] {
+            for &(sym, c, mask) in &creates {
+                let n0 = t.calls();
+                t.check("create", sym, Conv::Stdcall, &[p], mask, |g| {
+                    ph::bridge::create(g, p, c)
+                });
+                if p != 0 && c.base.is_some() {
+                    assert_eq!(t.calls(), n0 + 1, "{sym:#x}: one base call");
+                }
+                // fresh garbage for the next one
+                if p != 0 {
+                    let junk: Vec<u8> = (0..0x70).map(|_| rng.next() as u8).collect();
+                    t.write(p, &junk);
+                }
+            }
+            for (sym, f) in calls {
+                t.check("destroy", sym, Conv::Stdcall, &[p], AL, |g| {
+                    u32::from(object::bridge::destroy_call(g, f, p))
+                });
+            }
+            for sym in [0x005f_8040, 0x005f_8100] {
+                if p != 0 {
+                    let junk: Vec<u8> = (0..0xe8).map(|_| rng.next() as u8).collect();
+                    t.write(p, &junk);
+                }
+                t.check("body", sym, Conv::Stdcall, &[p], AL, |g| {
+                    u32::from(ph::bridge::destroy_body(g, p))
+                });
+            }
+        }
+        t.unstub_all();
+    }
+}
