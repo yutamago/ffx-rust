@@ -185,9 +185,12 @@ pub(crate) const fn stack_words(abi: &str, sizes: &[usize]) -> usize {
 }
 
 /// Whether a shim may take the caller's argument slots (`ported!`): the
-/// extra last argument must be a stack word, so not thiscall or fastcall.
+/// extra last argument must be a stack word. thiscall qualifies (`this`
+/// stays in `ecx`, which the thunk saves and never changes; the slots word
+/// follows the stack arguments, and the shim pops it with them); fastcall
+/// does not.
 pub(crate) const fn slots_abi(abi: &str) -> bool {
-    matches!(abi.as_bytes(), b"C" | b"cdecl" | b"stdcall")
+    matches!(abi.as_bytes(), b"C" | b"cdecl" | b"stdcall" | b"thiscall")
 }
 
 /// Whether the callee pops its stack arguments (everything but cdecl).
@@ -346,7 +349,8 @@ pub(crate) fn call_thiscall(f: u32, this: u32, a: &[u32]) -> u32 {
 /// stores into its own argument slots (MSVC reuses them as scratch, and
 /// `op_random` leaves its result there) needs its shim to write them
 /// through `slots` for callers that read the word after the call
-/// (`tools/check-argslots.py`). cdecl and stdcall only.
+/// (`tools/check-argslots.py`). cdecl, stdcall and thiscall (there `slots`
+/// is the address of the first stack argument, the word after `this`).
 macro_rules! ported {
     ($( $(#[$doc:meta])* $name:ident @ $addr:literal => extern $abi:literal fn $shim:ident($($arg:ident: $ty:ty),* $(; $slots:ident: $sty:ty)?) $(-> $ret:ty)? $body:block )*) => {
         $(
@@ -417,7 +421,7 @@ macro_rules! thunk {
         const POPS: usize = $crate::ported::callee_pops($abi) as usize;
         const _: () = assert!(
             $crate::ported::slots_abi($abi),
-            "argument slots only for cdecl and stdcall shims"
+            "argument slots only for cdecl, stdcall and thiscall shims"
         );
         #[unsafe(naked)]
         unsafe extern "C" fn thunk() {
