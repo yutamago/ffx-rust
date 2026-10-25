@@ -1562,6 +1562,10 @@ ported! {
     Phyre_PRendering_PShaderPassNVN_Bind @ 0x0058_7300 => extern "C" fn s_00587300() -> u32 {
         hb::bind(&mut mem(), &ffx_prender::h2_bind::B_00587300)
     }
+    /// `Phyre_PRendering_PMeshInstanceBounds_Bind`.
+    Phyre_PRendering_PMeshInstanceBounds_Bind @ 0x004f_fa30 => extern "C" fn s_004ffa30() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_004FFA30)
+    }
 }
 
 /// The `PNamedSemanticDescriptor` constructor's words in

@@ -11,7 +11,8 @@
 //!
 //! Member kinds:
 //! - [`Member`]: `PClassDataMember::PClassDataMember(member; class, type,
-//!   name, offset, a, b)` (`0x005752a0`), the type an image address or a
+//!   name, offset, a, b)` (`0x005752a0`; fixed-size arrays
+//!   `0x00575f30`), the type an image address or a
 //!   type getter's result (`PTypeDispenser::GetType<T>()`);
 //! - [`Array`]: a `PArray<T>` member: the array's class descriptor built
 //!   once first (its own guard: constructor, flag bit 1 of `+0x90`
@@ -21,9 +22,7 @@
 
 use ffx_graphic::host::{Conv, Host};
 
-use crate::declare::{
-    ADD_TO_NAMESPACE, ATEXIT, DATA_MEMBER_CTOR, MEMBER_ARRAY_CTOR, REGISTER_TYPE,
-};
+use crate::declare::{ADD_TO_NAMESPACE, ATEXIT, MEMBER_ARRAY_CTOR, REGISTER_TYPE};
 
 /// A data member's type.
 #[derive(Debug, Clone, Copy)]
@@ -40,6 +39,9 @@ pub enum Ty {
 /// A plain data member.
 #[derive(Debug, Clone, Copy)]
 pub struct Member {
+    /// The member's constructor: `PClassDataMember` (`0x005752a0`) or
+    /// `PClassDataMemberArrayFixedSize` (`0x00575f30`), same arguments.
+    pub ctor: u32,
     /// The guard word and its bit.
     pub guard: (u32, u32),
     pub member: u32,
@@ -98,8 +100,8 @@ pub mod bridge {
     //! The originals over game memory.
 
     use super::{
-        ADD_TO_NAMESPACE, ATEXIT, Array, Bind, Conv, DATA_MEMBER_CTOR, Host, MEMBER_ARRAY_CTOR,
-        Member, REGISTER_TYPE, Step, Ty,
+        ADD_TO_NAMESPACE, ATEXIT, Array, Bind, Conv, Host, MEMBER_ARRAY_CTOR, Member,
+        REGISTER_TYPE, Step, Ty,
     };
 
     /// Sets the guard's bit and says whether it was clear (the static
@@ -131,7 +133,7 @@ pub mod bridge {
         let name = h.rebase(m.name);
         let at = h.rebase(m.member);
         h.call_sym(
-            DATA_MEMBER_CTOR,
+            m.ctor,
             Conv::Thiscall(at),
             &[class, ty, name, m.off, m.a, m.b],
         );
@@ -257,6 +259,7 @@ pub const B_00501110: Bind = Bind {
     class: 0x00ca_8bd8,
     steps: &[
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_8c98, 0x1),
             member: 0x00ca_8c6c,
             ty: Ty::Image(0x00c9_2090),
@@ -267,6 +270,7 @@ pub const B_00501110: Bind = Bind {
             atexit: 0x00af_fa00,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_8c98, 0x2),
             member: 0x00ca_8c9c,
             ty: Ty::Image(0x00ca_7228),
@@ -277,6 +281,7 @@ pub const B_00501110: Bind = Bind {
             atexit: 0x00af_fa10,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_8c98, 0x4),
             member: 0x00ca_8cc8,
             ty: Ty::Get(0x0043_7fc0),
@@ -294,6 +299,7 @@ pub const B_0056A390: Bind = Bind {
     class: 0x00cb_1e20,
     steps: &[
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_27c4, 0x1),
             member: 0x00cb_2798,
             ty: Ty::Image(0x00ca_37d0),
@@ -355,6 +361,7 @@ pub const B_0055ECA0: Bind = Bind {
             bits: 0x10,
         },
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_1318, 0x2),
             member: 0x00cb_131c,
             ty: Ty::Image(0x00cb_1120),
@@ -372,6 +379,7 @@ pub const B_004F4800: Bind = Bind {
     class: 0x00ca_70f8,
     steps: &[
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_72e8, 0x1),
             member: 0x00ca_72bc,
             ty: Ty::Get(0x0047_fae0),
@@ -382,6 +390,7 @@ pub const B_004F4800: Bind = Bind {
             atexit: 0x00af_f6d0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_72e8, 0x2),
             member: 0x00ca_72ec,
             ty: Ty::Image(0x00c9_1048),
@@ -392,6 +401,7 @@ pub const B_004F4800: Bind = Bind {
             atexit: 0x00af_f6a0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_72e8, 0x4),
             member: 0x00ca_7318,
             ty: Ty::Get(0x0043_7e70),
@@ -402,6 +412,7 @@ pub const B_004F4800: Bind = Bind {
             atexit: 0x00af_f6b0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_72e8, 0x8),
             member: 0x00ca_7344,
             ty: Ty::Get(0x0043_7d30),
@@ -412,6 +423,7 @@ pub const B_004F4800: Bind = Bind {
             atexit: 0x00af_f5d0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_72e8, 0x10),
             member: 0x00ca_7370,
             ty: Ty::Get(0x0043_7d30),
@@ -429,6 +441,7 @@ pub const B_004DC870: Bind = Bind {
     class: 0x00ca_5660,
     steps: &[
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_59e8, 0x1),
             member: 0x00ca_59bc,
             ty: Ty::Get(0x0043_7fc0),
@@ -439,6 +452,7 @@ pub const B_004DC870: Bind = Bind {
             atexit: 0x00af_ed90,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_59e8, 0x2),
             member: 0x00ca_59ec,
             ty: Ty::Get(0x0043_7fc0),
@@ -449,6 +463,7 @@ pub const B_004DC870: Bind = Bind {
             atexit: 0x00af_eda0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_59e8, 0x4),
             member: 0x00ca_5a18,
             ty: Ty::Get(0x0043_7fc0),
@@ -459,6 +474,7 @@ pub const B_004DC870: Bind = Bind {
             atexit: 0x00af_ed70,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_59e8, 0x8),
             member: 0x00ca_5a44,
             ty: Ty::Get(0x0043_7fc0),
@@ -469,6 +485,7 @@ pub const B_004DC870: Bind = Bind {
             atexit: 0x00af_ed80,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_59e8, 0x10),
             member: 0x00ca_5a70,
             ty: Ty::Get(0x0043_7fc0),
@@ -486,6 +503,7 @@ pub const B_0056F990: Bind = Bind {
     class: 0x00cb_3158,
     steps: &[
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3218, 0x1),
             member: 0x00cb_31ec,
             ty: Ty::Image(0x00c9_2090),
@@ -496,6 +514,7 @@ pub const B_0056F990: Bind = Bind {
             atexit: 0x00b0_3530,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3218, 0x2),
             member: 0x00cb_321c,
             ty: Ty::Image(0x00cb_1cf0),
@@ -506,6 +525,7 @@ pub const B_0056F990: Bind = Bind {
             atexit: 0x00b0_3550,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3218, 0x4),
             member: 0x00cb_3248,
             ty: Ty::Image(0x00cb_1eb8),
@@ -516,6 +536,7 @@ pub const B_0056F990: Bind = Bind {
             atexit: 0x00b0_3540,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3218, 0x8),
             member: 0x00cb_3274,
             ty: Ty::Get(0x0043_8390),
@@ -526,6 +547,7 @@ pub const B_0056F990: Bind = Bind {
             atexit: 0x00b0_3510,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3218, 0x10),
             member: 0x00cb_32a0,
             ty: Ty::Get(0x0043_8390),
@@ -543,6 +565,7 @@ pub const B_00540750: Bind = Bind {
     class: 0x00ca_d9a8,
     steps: &[
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_db00, 0x1),
             member: 0x00ca_dad4,
             ty: Ty::Image(0x00ca_a7e8),
@@ -553,6 +576,7 @@ pub const B_00540750: Bind = Bind {
             atexit: 0x00b0_14d0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_db00, 0x2),
             member: 0x00ca_db04,
             ty: Ty::Image(0x00ca_ba08),
@@ -563,6 +587,7 @@ pub const B_00540750: Bind = Bind {
             atexit: 0x00b0_1570,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_db00, 0x4),
             member: 0x00ca_db30,
             ty: Ty::Image(0x00ca_bba8),
@@ -573,6 +598,7 @@ pub const B_00540750: Bind = Bind {
             atexit: 0x00b0_1580,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_db00, 0x8),
             member: 0x00ca_db5c,
             ty: Ty::Image(0x00ca_bf68),
@@ -583,6 +609,7 @@ pub const B_00540750: Bind = Bind {
             atexit: 0x00b0_14f0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_db00, 0x10),
             member: 0x00ca_db88,
             ty: Ty::Get(0x0043_8060),
@@ -593,6 +620,7 @@ pub const B_00540750: Bind = Bind {
             atexit: 0x00b0_1560,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_db00, 0x20),
             member: 0x00ca_dbb4,
             ty: Ty::Get(0x0043_8060),
@@ -610,6 +638,7 @@ pub const B_004DCDD0: Bind = Bind {
     class: 0x00ca_55c8,
     steps: &[
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_5884, 0x1),
             member: 0x00ca_5858,
             ty: Ty::Image(0x00c9_1048),
@@ -620,6 +649,7 @@ pub const B_004DCDD0: Bind = Bind {
             atexit: 0x00af_eeb0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_5884, 0x2),
             member: 0x00ca_5888,
             ty: Ty::Get(0x0043_7fc0),
@@ -630,6 +660,7 @@ pub const B_004DCDD0: Bind = Bind {
             atexit: 0x00af_eec0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_5884, 0x4),
             member: 0x00ca_58b4,
             ty: Ty::Image(0x00c9_1048),
@@ -640,6 +671,7 @@ pub const B_004DCDD0: Bind = Bind {
             atexit: 0x00af_ee20,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_5884, 0x8),
             member: 0x00ca_58e0,
             ty: Ty::Get(0x0043_7fc0),
@@ -650,6 +682,7 @@ pub const B_004DCDD0: Bind = Bind {
             atexit: 0x00af_ee30,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_5884, 0x10),
             member: 0x00ca_590c,
             ty: Ty::Image(0x00c9_1048),
@@ -660,6 +693,7 @@ pub const B_004DCDD0: Bind = Bind {
             atexit: 0x00af_ee40,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_5884, 0x20),
             member: 0x00ca_5938,
             ty: Ty::Get(0x0043_7fc0),
@@ -670,6 +704,7 @@ pub const B_004DCDD0: Bind = Bind {
             atexit: 0x00af_ee50,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_5884, 0x40),
             member: 0x00ca_5964,
             ty: Ty::Image(0x00c9_1048),
@@ -680,6 +715,7 @@ pub const B_004DCDD0: Bind = Bind {
             atexit: 0x00af_ed40,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_5884, 0x80),
             member: 0x00ca_5990,
             ty: Ty::Get(0x0043_7fc0),
@@ -697,6 +733,7 @@ pub const B_00568DC0: Bind = Bind {
     class: 0x00cb_1c58,
     steps: &[
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_2010, 0x1),
             member: 0x00cb_1fe4,
             ty: Ty::Get(0x0043_8060),
@@ -707,6 +744,7 @@ pub const B_00568DC0: Bind = Bind {
             atexit: 0x00b0_2f50,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_2010, 0x2),
             member: 0x00cb_2014,
             ty: Ty::Get(0x0043_8060),
@@ -717,6 +755,7 @@ pub const B_00568DC0: Bind = Bind {
             atexit: 0x00b0_2f60,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_2010, 0x4),
             member: 0x00cb_2040,
             ty: Ty::Get(0x0043_8060),
@@ -727,6 +766,7 @@ pub const B_00568DC0: Bind = Bind {
             atexit: 0x00b0_2f80,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_2010, 0x8),
             member: 0x00cb_206c,
             ty: Ty::Get(0x0043_8060),
@@ -737,6 +777,7 @@ pub const B_00568DC0: Bind = Bind {
             atexit: 0x00b0_2e60,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_2010, 0x10),
             member: 0x00cb_2098,
             ty: Ty::Get(0x0043_8060),
@@ -747,6 +788,7 @@ pub const B_00568DC0: Bind = Bind {
             atexit: 0x00b0_3070,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_2010, 0x20),
             member: 0x00cb_20c4,
             ty: Ty::Get(0x0043_8060),
@@ -757,6 +799,7 @@ pub const B_00568DC0: Bind = Bind {
             atexit: 0x00b0_3090,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_2010, 0x40),
             member: 0x00cb_20f0,
             ty: Ty::Get(0x0043_8060),
@@ -767,6 +810,7 @@ pub const B_00568DC0: Bind = Bind {
             atexit: 0x00b0_3020,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_2010, 0x80),
             member: 0x00cb_211c,
             ty: Ty::Get(0x0043_8060),
@@ -777,6 +821,7 @@ pub const B_00568DC0: Bind = Bind {
             atexit: 0x00b0_3040,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_2010, 0x100),
             member: 0x00cb_2148,
             ty: Ty::Get(0x0043_8060),
@@ -787,6 +832,7 @@ pub const B_00568DC0: Bind = Bind {
             atexit: 0x00b0_2fa0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_2010, 0x200),
             member: 0x00cb_2174,
             ty: Ty::Get(0x0043_8060),
@@ -797,6 +843,7 @@ pub const B_00568DC0: Bind = Bind {
             atexit: 0x00b0_2fb0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_2010, 0x400),
             member: 0x00cb_21a0,
             ty: Ty::Get(0x0043_8060),
@@ -807,6 +854,7 @@ pub const B_00568DC0: Bind = Bind {
             atexit: 0x00b0_2e90,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_2010, 0x800),
             member: 0x00cb_21cc,
             ty: Ty::Get(0x0043_8060),
@@ -824,6 +872,7 @@ pub const B_004DCA40: Bind = Bind {
     class: 0x00ca_5530,
     steps: &[
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_5758, 0x1),
             member: 0x00ca_572c,
             ty: Ty::GetArg(0x004d_9b80, 0x4),
@@ -914,6 +963,7 @@ pub const B_004DCA40: Bind = Bind {
             atexit: 0x00af_ee70,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_5758, 0x20),
             member: 0x00ca_582c,
             ty: Ty::Get(0x0043_8390),
@@ -931,6 +981,7 @@ pub const B_004E4270: Bind = Bind {
     class: 0x00ca_5ff0,
     steps: &[
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_60b0, 0x1),
             member: 0x00ca_6084,
             ty: Ty::Image(0x00ca_66e8),
@@ -1001,6 +1052,7 @@ pub const B_004E4270: Bind = Bind {
             atexit: 0x00af_f000,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_60b0, 0x10),
             member: 0x00ca_6150,
             ty: Ty::Get(0x0043_7e70),
@@ -1051,6 +1103,7 @@ pub const B_004E4270: Bind = Bind {
             atexit: 0x00af_f060,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_60b0, 0x80),
             member: 0x00ca_61e4,
             ty: Ty::Get(0x0043_7e70),
@@ -1061,6 +1114,7 @@ pub const B_004E4270: Bind = Bind {
             atexit: 0x00af_f030,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00ca_60b0, 0x100),
             member: 0x00ca_6210,
             ty: Ty::Get(0x0043_7e70),
@@ -1078,6 +1132,7 @@ pub const B_00587300: Bind = Bind {
     class: 0x00cb_3448,
     steps: &[
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3ea0, 0x1),
             member: 0x00cb_3e74,
             ty: Ty::Image(0x00cb_34e0),
@@ -1088,6 +1143,7 @@ pub const B_00587300: Bind = Bind {
             atexit: 0x00b0_3d60,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3ea0, 0x2),
             member: 0x00cb_3ea4,
             ty: Ty::Image(0x00ca_1468),
@@ -1098,6 +1154,7 @@ pub const B_00587300: Bind = Bind {
             atexit: 0x00b0_3d90,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3ea0, 0x4),
             member: 0x00cb_3ed0,
             ty: Ty::Image(0x00ca_1468),
@@ -1108,6 +1165,7 @@ pub const B_00587300: Bind = Bind {
             atexit: 0x00b0_3ca0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3ea0, 0x8),
             member: 0x00cb_3efc,
             ty: Ty::Image(0x00ca_1468),
@@ -1118,6 +1176,7 @@ pub const B_00587300: Bind = Bind {
             atexit: 0x00b0_3cc0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3ea0, 0x10),
             member: 0x00cb_3f28,
             ty: Ty::Image(0x00ca_1468),
@@ -1128,6 +1187,7 @@ pub const B_00587300: Bind = Bind {
             atexit: 0x00b0_3c30,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3ea0, 0x20),
             member: 0x00cb_3f54,
             ty: Ty::Image(0x00ca_1468),
@@ -1138,6 +1198,7 @@ pub const B_00587300: Bind = Bind {
             atexit: 0x00b0_3da0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3ea0, 0x40),
             member: 0x00cb_3f80,
             ty: Ty::Image(0x00ca_1468),
@@ -1148,6 +1209,7 @@ pub const B_00587300: Bind = Bind {
             atexit: 0x00b0_3cb0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3ea0, 0x80),
             member: 0x00cb_3fac,
             ty: Ty::Image(0x00ca_1468),
@@ -1158,6 +1220,7 @@ pub const B_00587300: Bind = Bind {
             atexit: 0x00b0_3cd0,
         }),
         Step::Member(Member {
+            ctor: 0x0057_52a0,
             guard: (0x00cb_3ea0, 0x100),
             member: 0x00cb_3fd8,
             ty: Ty::Image(0x00ca_1468),
@@ -1166,6 +1229,68 @@ pub const B_00587300: Bind = Bind {
             a: 0x10,
             b: 0x0,
             atexit: 0x00b0_3c40,
+        }),
+    ],
+};
+
+/// `Phyre_PRendering_PMeshInstanceBounds_Bind`.
+pub const B_004FFA30: Bind = Bind {
+    class: 0x00ca_89b8,
+    steps: &[
+        Step::Member(Member {
+            ctor: 0x0057_52a0,
+            guard: (0x00ca_8a78, 0x1),
+            member: 0x00ca_8a4c,
+            ty: Ty::Image(0x00ca_7228),
+            name: 0x00b2_437c,
+            off: 0x1c,
+            a: 0x2,
+            b: 0x0,
+            atexit: 0x00af_f990,
+        }),
+        Step::Member(Member {
+            ctor: 0x0057_52a0,
+            guard: (0x00ca_8a78, 0x2),
+            member: 0x00ca_8a7c,
+            ty: Ty::Image(0x00c9_2090),
+            name: 0x00b1_069c,
+            off: 0xc,
+            a: 0x2,
+            b: 0x0,
+            atexit: 0x00af_f9d0,
+        }),
+        Step::Member(Member {
+            ctor: 0x0057_52a0,
+            guard: (0x00ca_8a78, 0x4),
+            member: 0x00ca_8aa8,
+            ty: Ty::Get(0x0043_7f10),
+            name: 0x00b2_438c,
+            off: 0x20,
+            a: 0x0,
+            b: 0x0,
+            atexit: 0x00af_f9b0,
+        }),
+        Step::Member(Member {
+            ctor: 0x0057_5f30,
+            guard: (0x00ca_8a78, 0x8),
+            member: 0x00ca_8ad4,
+            ty: Ty::Get(0x0043_8060),
+            name: 0x00b1_5b4c,
+            off: 0x0,
+            a: 0x0,
+            b: 0x3,
+            atexit: 0x00af_f9a0,
+        }),
+        Step::Member(Member {
+            ctor: 0x0057_5f30,
+            guard: (0x00ca_8a78, 0x10),
+            member: 0x00ca_8b0c,
+            ty: Ty::Get(0x0043_8060),
+            name: 0x00b0_fb4c,
+            off: 0x10,
+            a: 0x0,
+            b: 0x3,
+            atexit: 0x00af_f9c0,
         }),
     ],
 };

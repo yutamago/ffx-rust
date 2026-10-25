@@ -1467,6 +1467,27 @@ pub const CASES: &[Case] = &[
         gap: 0,
         writes: &[],
     },
+    Case {
+        name: "Phyre_PRendering_PMeshInstanceBounds_Bind",
+        addr: 0x004f_fa30,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_7f10, 0, 0, false),
+            (0x0043_8060, 0, 0, false),
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5f30, 6, 6, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_004FFA30),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_004FFA30),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
 ];
 
 /// Argument `i` low in the pool (apart from the objects) and COM
