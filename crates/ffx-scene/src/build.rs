@@ -1,0 +1,862 @@
+//! The scene builder for the map world (scene `+0xac`): `build(clusters,
+//! inputs)` gives the map's draws of the opaque and the transparent pass
+//! as `ffx-draw` [`DrawState`]s and [`DrawCall`]s, with the objects they
+//! use in [`Resources`] (`docs/scene-builder.md`).
+//!
+//! Per pass, as `PApplication_renderWorld` (`0x0062be70`) →
+//! `renderWorldCulledSorted` (`0x009f3c30`) does it:
+//!
+//! 1. cull and key every `PMeshInstanceBounds` in jobs of 400
+//!    ([`crate::cull`], `PCheckVisibleBoundsJob_execute` `0x009f3160`),
+//!    sort each job's entries and merge the jobs ([`crate::sort`]);
+//! 2. draw each instance (`renderMeshInstance` `0x005b9a90`): its
+//!    segments in four buckets by `m_segmentRenderOrder`, a null material
+//!    ending the instance, the material's pass remapping, the effect
+//!    variant's render pass for the pass (`selectTechniquePass`
+//!    `0x005ba690`), the hidden byte; one draw per shader pass;
+//! 3. per draw: the pass's programs, input layout and states, the
+//!    segment's buffers, the material's textures and samplers, and the
+//!    constant buffers filled through the pass's location tables
+//!    (`allocateAndFillParameterBuffers` `0x005b5a50`).
+
+// Draw building names its handles and buffers (b, c, d, s, ...).
+#![allow(clippy::many_single_char_names)]
+
+use std::collections::HashMap;
+
+use ffx_draw::backend::{
+    Blend, Buffer, DepthState, Layout, Raster, Sampler, Shader, Texture, View,
+};
+use ffx_draw::desc::{
+    BlendDesc, BufferDesc, DepthStencilDesc, InputElement, RasterDesc, SamplerDesc, Stage,
+    TextureDesc, ViewDesc, ViewKind,
+};
+use ffx_draw::state::{CbBinding, IndexBinding, StageBindings, VertexBinding};
+use ffx_draw::{DrawCall, DrawState};
+
+use crate::census::{mul, mul_f64};
+use crate::effect::{EffectVariant, LocTable, Program, ShaderPass, Source};
+use crate::frame::{Camera, External, Mat, SceneInputs};
+use crate::map::{self, MapModel};
+use crate::sort::{self, Entry};
+
+/// A build error: what was being built and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Error(pub String);
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Error {}
+
+fn err(what: impl Into<String>) -> Error {
+    Error(what.into())
+}
+
+/// The static data of a map: its model and every effect variant and
+/// texture its materials import.
+#[derive(Debug, Clone)]
+pub struct Clusters {
+    pub map: MapModel,
+    /// By import id (`PS3Data/Shaders/X.fx#MD5`).
+    pub effects: HashMap<String, EffectVariant>,
+    /// By import id (`PS3Data/map/.../tex/x.dds`).
+    pub textures: HashMap<String, ffx_phyre::Texture>,
+}
+
+impl Clusters {
+    /// Loads a map model and what it imports through `read` (archive path
+    /// → bytes; the archive, or the mod folder first as the hook does).
+    ///
+    /// # Errors
+    /// When the model, an effect or a texture is missing or doesn't parse.
+    pub fn load(read: impl Fn(&str) -> Option<Vec<u8>>, model_path: &str) -> Result<Self, Error> {
+        let bytes = read(model_path).ok_or_else(|| err(format!("{model_path}: not found")))?;
+        let map = MapModel::parse(bytes).map_err(|e| err(format!("{model_path}: {e}")))?;
+        let mut effects = HashMap::new();
+        let mut textures = HashMap::new();
+        for m in &map.materials {
+            if !effects.contains_key(&m.effect) {
+                let path = map::archive_path(&m.effect);
+                let bytes = read(&path).ok_or_else(|| err(format!("{path}: not found")))?;
+                let v = EffectVariant::parse(bytes).map_err(|e| err(format!("{path}: {e}")))?;
+                effects.insert(m.effect.clone(), v);
+            }
+            for t in &m.textures {
+                if !textures.contains_key(&t.import) {
+                    let path = map::archive_path(&t.import);
+                    let bytes = read(&path).ok_or_else(|| err(format!("{path}: not found")))?;
+                    let tex = ffx_phyre::Texture::parse(bytes)
+                        .map_err(|e| err(format!("{path}: {e}")))?;
+                    textures.insert(t.import.clone(), tex);
+                }
+            }
+        }
+        Ok(Self {
+            map,
+            effects,
+            textures,
+        })
+    }
+}
+
+/// A texture's description and its subresources (mips of slice 0, then
+/// of slice 1, ...): row pitch and bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextureData {
+    pub desc: TextureDesc,
+    pub subresources: Vec<(u32, Vec<u8>)>,
+}
+
+/// What a view shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ViewSource {
+    Texture(Texture),
+    /// The host's: a scene target or a texture the game sets at run time.
+    External(External),
+}
+
+/// A view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ViewData {
+    pub source: ViewSource,
+    pub kind: ViewKind,
+    pub desc: Option<ViewDesc>,
+}
+
+/// The objects the draws use; handles index these lists.
+#[derive(Debug, Default, Clone)]
+pub struct Resources {
+    pub shaders: Vec<(Stage, Vec<u8>)>,
+    pub layouts: Vec<(Vec<InputElement>, Shader)>,
+    pub blends: Vec<BlendDesc>,
+    pub depths: Vec<DepthStencilDesc>,
+    pub rasters: Vec<RasterDesc>,
+    pub samplers: Vec<SamplerDesc>,
+    pub buffers: Vec<(BufferDesc, Vec<u8>)>,
+    pub textures: Vec<TextureData>,
+    pub views: Vec<ViewData>,
+    shader_ix: HashMap<(Stage, Vec<u8>), Shader>,
+    layout_ix: HashMap<(Vec<InputElement>, Shader), Layout>,
+    static_ix: HashMap<(usize, usize, bool), Buffer>,
+    texture_ix: HashMap<String, View>,
+    external_ix: HashMap<(External, ViewKind), View>,
+}
+
+fn handle(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+fn intern<T: PartialEq + Clone>(list: &mut Vec<T>, v: &T) -> u32 {
+    if let Some(i) = list.iter().position(|x| x == v) {
+        return handle(i);
+    }
+    list.push(v.clone());
+    handle(list.len() - 1)
+}
+
+impl Resources {
+    fn shader(&mut self, stage: Stage, code: &[u8]) -> Shader {
+        let key = (stage, code.to_vec());
+        if let Some(&s) = self.shader_ix.get(&key) {
+            return s;
+        }
+        self.shaders.push(key.clone());
+        let s = Shader(handle(self.shaders.len() - 1));
+        self.shader_ix.insert(key, s);
+        s
+    }
+
+    fn layout(&mut self, elements: Vec<InputElement>, vs: Shader) -> Layout {
+        let key = (elements, vs);
+        if let Some(&l) = self.layout_ix.get(&key) {
+            return l;
+        }
+        self.layouts.push(key.clone());
+        let l = Layout(handle(self.layouts.len() - 1));
+        self.layout_ix.insert(key, l);
+        l
+    }
+
+    fn buffer(&mut self, desc: BufferDesc, data: Vec<u8>) -> Buffer {
+        self.buffers.push((desc, data));
+        Buffer(handle(self.buffers.len() - 1))
+    }
+
+    /// The game's static buffer of a segment's block (`block` index) or
+    /// its indices (`None`): `D3D11_USAGE_IMMUTABLE`, bind flags 9 or 10.
+    fn static_buffer(&mut self, map: &MapModel, segment: usize, block: Option<usize>) -> Buffer {
+        let key = (segment, block.unwrap_or(0), block.is_none());
+        if let Some(&b) = self.static_ix.get(&key) {
+            return b;
+        }
+        let seg = &map.segments[segment];
+        let range = match block {
+            Some(k) => seg.blocks[k].bytes.clone(),
+            None => seg.indices.clone(),
+        };
+        let data = map.bytes.get(range).unwrap_or_default().to_vec();
+        let w = crate::key::static_buffer_desc(data.len(), block.is_none());
+        let b = self.buffer(BufferDesc::from_words(w), data);
+        self.static_ix.insert(key, b);
+        b
+    }
+
+    fn external(&mut self, e: External, kind: ViewKind) -> View {
+        if let Some(&v) = self.external_ix.get(&(e, kind)) {
+            return v;
+        }
+        self.views.push(ViewData {
+            source: ViewSource::External(e),
+            kind,
+            desc: None,
+        });
+        let v = View(handle(self.views.len() - 1));
+        self.external_ix.insert((e, kind), v);
+        v
+    }
+
+    /// The shader resource view of a texture cluster as the game makes
+    /// it: the file's chain from mip `dropped` on (never past the last),
+    /// DXT1/3/5 as BC1/2/3, cube maps as 6 slices; a `TEXTURE2D` or
+    /// `TEXTURECUBE` view of every level.
+    fn texture(
+        &mut self,
+        import: &str,
+        t: &ffx_phyre::Texture,
+        dropped: u32,
+    ) -> Result<View, Error> {
+        if let Some(&v) = self.texture_ix.get(import) {
+            return Ok(v);
+        }
+        let cube = t.kind == ffx_phyre::Kind::CubeMap;
+        let faces: u32 = if cube { 6 } else { 1 };
+        let first = crate::assets::texture_start_level(t, dropped);
+        let format = crate::key::dxgi_format(t.format);
+        let dims = |l: u32| ((t.width >> l).max(1), (t.height >> l).max(1));
+        let size = |l: u32| {
+            let (w, h) = dims(l);
+            t.format.level_size(w, h)
+        };
+        let chain: usize = (0..t.mip_levels).map(size).sum();
+        let mips = t.mip_levels - first;
+        let mut subresources = Vec::new();
+        for face in 0..faces as usize {
+            let mut at = face * chain + (0..first).map(size).sum::<usize>();
+            for l in first..t.mip_levels {
+                let len = size(l);
+                let data = t
+                    .pixels()
+                    .get(at..at + len)
+                    .ok_or_else(|| err(format!("{import}: level {l} outside the file")))?
+                    .to_vec();
+                let row = crate::key::row_bytes(format, dims(l).0)
+                    .ok_or_else(|| err(format!("{import}: format {format}")))?;
+                subresources.push((handle(row), data));
+                at += len;
+            }
+        }
+        let (w, h) = dims(first);
+        let desc = TextureDesc {
+            width: w,
+            height: h,
+            mips,
+            array_size: faces,
+            format,
+            samples: 1,
+            quality: 0,
+            usage: 0,
+            bind: ffx_draw::desc::BIND_SHADER_RESOURCE,
+            cpu_access: 0,
+            misc: if cube { 4 } else { 0 },
+        };
+        self.textures.push(TextureData { desc, subresources });
+        let tex = Texture(handle(self.textures.len() - 1));
+        self.views.push(ViewData {
+            source: ViewSource::Texture(tex),
+            kind: ViewKind::ShaderResource,
+            desc: Some(ViewDesc {
+                format,
+                dimension: if cube { 9 } else { 4 },
+                fields: [0, mips, 0, 0],
+            }),
+        });
+        let v = View(handle(self.views.len() - 1));
+        self.texture_ix.insert(import.to_owned(), v);
+        Ok(v)
+    }
+}
+
+/// Which of the two map passes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Pass {
+    Opaque,
+    Transparent,
+}
+
+/// One built draw, with where it comes from.
+#[derive(Debug, Clone)]
+pub struct MapDraw {
+    pub pass: Pass,
+    pub instance: usize,
+    pub segment: usize,
+    pub material: usize,
+    pub state: DrawState,
+    pub call: DrawCall,
+}
+
+/// The builder's output.
+#[derive(Debug, Clone, Default)]
+pub struct Built {
+    pub resources: Resources,
+    /// The opaque pass's draws, then the transparent pass's.
+    pub draws: Vec<MapDraw>,
+    /// What the builder could not do exactly (each a cause).
+    pub notes: Vec<String>,
+}
+
+impl Built {
+    /// The draws of a pass.
+    pub fn pass(&self, pass: Pass) -> impl Iterator<Item = &MapDraw> {
+        self.draws.iter().filter(move |d| d.pass == pass)
+    }
+}
+
+/// `PSamplerStateD3D11`'s description (`0x00595bf0`): the filter from the
+/// min and mag filters and the compare flag (`m_flags` bit 6,
+/// `0x0058aa10`), `0x55` (anisotropic) when the anisotropy setting is
+/// above 1; the wrap modes (`0x0058ab10`: 1 wrap, 3 border, 4 mirror,
+/// else clamp); the LOD bias; the anisotropy truncated (the setting's,
+/// rounded, when above 1); `LESS_EQUAL` with the compare flag, else
+/// `NEVER`; the border bytes times the `f64` `1/255` at `0x00b34258`;
+/// the LOD range of `CD3D11_SAMPLER_DESC(D3D11_DEFAULT)`.
+#[must_use]
+pub fn sampler_desc(s: &map::SamplerState, anisotropy: f32) -> SamplerDesc {
+    let compare = (s.flags >> 6) & 1 != 0;
+    let mag = u32::from(s.mag_filter != 0);
+    let mut filter = match s.min_filter {
+        0 | 2 => mag * 4,
+        1 | 3 => mag * 4 + 0x10,
+        4 => mag * 4 + 1,
+        5 => mag * 4 + 0x11,
+        _ => 0,
+    };
+    let aniso = anisotropy > 1.0;
+    if aniso {
+        filter = 0x55;
+    }
+    if compare {
+        filter |= 0x80;
+    }
+    let wrap = |w: u8| match w {
+        1 => 1,
+        3 => 4,
+        4 => 2,
+        _ => 3,
+    };
+    // `fistp` under a chopping control word; out of range or NaN gives
+    // the integer indefinite, whose low word is 0.
+    let chop = |x: f32| -> u32 {
+        if x.is_finite() && x.abs() < 9.2e18 {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            // the low word of the fistp qword
+            {
+                (x.trunc() as i64) as u32
+            }
+        } else {
+            0
+        }
+    };
+    let max_anisotropy = if aniso {
+        chop(anisotropy.round_ties_even())
+    } else {
+        chop(s.max_anisotropy)
+    };
+    let scale = f64::from_bits(0x3f70_1010_2000_0000);
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    let border = s.border.map(|b| ((f64::from(b) * scale) as f32).to_bits());
+    SamplerDesc {
+        filter,
+        address: s.wrap.map(wrap),
+        mip_lod_bias: s.lod_bias.to_bits(),
+        max_anisotropy,
+        comparison: if compare { 4 } else { 1 },
+        border,
+        min_lod: (-f32::MAX).to_bits(),
+        max_lod: f32::MAX.to_bits(),
+    }
+}
+
+/// The identity, for an instance without a world matrix.
+const IDENTITY: Mat = [
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+];
+
+/// The per-node parameter buffer of a variant (`0x005b7fe0`): each
+/// untweakable definition's value at its offset. `World` (semantic 0x82)
+/// is the instance's world, `WorldView` (0x83) `View . World` with f32
+/// sums, `WorldViewProjection` (0x84) `ViewProjection . World` with f64
+/// sums rounded once (`docs/formats/scene.md`, "Constants"). Others are
+/// left 0 and noted.
+fn node_buffer(
+    v: &EffectVariant,
+    camera: &Camera,
+    world: &Mat,
+    notes: &mut Vec<String>,
+) -> Vec<u8> {
+    let mut buf = vec![0u8; usize::from(v.untweakable_size).max(16)];
+    for d in &v.untweakable {
+        let m = match d.kind {
+            0x82 => *world,
+            0x83 => mul(&camera.view, world),
+            0x84 => mul_f64(&camera.view_projection, world),
+            k => {
+                let note = format!("per-node semantic {k:#x} ({}) left 0", d.name);
+                if !notes.contains(&note) {
+                    notes.push(note);
+                }
+                continue;
+            }
+        };
+        let at = d.offset as usize;
+        for (k, x) in m.iter().enumerate() {
+            if let Some(dst) = buf.get_mut(at + 4 * k..at + 4 * k + 4) {
+                dst.copy_from_slice(&x.to_le_bytes());
+            }
+        }
+    }
+    buf
+}
+
+/// A constant buffer of `size` bytes filled through a location table:
+/// each entry's `size` bytes from its source buffer at its offset go to
+/// its target offset (entries the program doesn't use have target
+/// `u32::MAX`).
+fn fill_cb(size: u32, table: &LocTable, sources: [&[u8]; 3], notes: &mut Vec<String>) -> Vec<u8> {
+    let mut cb = vec![0xcd_u8; size as usize];
+    for (src, loc) in table.sourced() {
+        if loc.target == u32::MAX {
+            continue;
+        }
+        let from = match src {
+            Source::SceneWide => sources[0],
+            Source::Material => sources[1],
+            Source::Node => sources[2],
+            Source::Other => {
+                notes.push(format!("location group 4 entry at {:#x}", loc.offset));
+                continue;
+            }
+        };
+        let (o, t, n) = (
+            usize::from(loc.offset),
+            loc.target as usize,
+            loc.size as usize,
+        );
+        match (from.get(o..o + n), cb.get_mut(t..t + n)) {
+            (Some(s), Some(d)) => d.copy_from_slice(s),
+            _ => notes.push(format!(
+                "{src:?} parameter at {o:#x} ({n} bytes) to {t:#x}: outside a buffer"
+            )),
+        }
+    }
+    cb
+}
+
+struct Builder<'a, I: SceneInputs> {
+    c: &'a Clusters,
+    inputs: &'a I,
+    camera: Camera,
+    dropped: u32,
+    anisotropy: f32,
+    scene_wide: Vec<u8>,
+    materials: HashMap<usize, Vec<u8>>,
+    out: Built,
+}
+
+/// The input layout and vertex bindings of a segment for a vertex
+/// program. Each shader input (`PStreamInputDescD3D11`: semantic, render
+/// type, semantic index, format, slot) reads one of the segment's streams
+/// of its render type: the `m_inputSet`-th (1-based, in block order) when
+/// the instance's segment context binds the type and semantic index
+/// (`PMeshInstanceSegmentStreamBinding`: the water's `TEXCOORD4/6/7`),
+/// else the first. The element's offset is the stream's in its block.
+/// Blocks are bound at offset 0 with their stride.
+fn vertex_inputs(
+    map: &MapModel,
+    instance: usize,
+    segment: usize,
+    vs: &Program,
+    notes: &mut Vec<String>,
+) -> Vec<(InputElement, Option<usize>)> {
+    let seg = &map.segments[segment];
+    let inst = &map.instances[instance];
+    let bindings = inst
+        .segments
+        .iter()
+        .position(|&s| s == segment)
+        .and_then(|k| inst.contexts.get(k))
+        .map_or(&[][..], Vec::as_slice);
+    let mut out = Vec::new();
+    for input in &vs.inputs {
+        let set = bindings
+            .iter()
+            .find(|b| b.render_type == input.render_type && u32::from(b.index) == input.index)
+            .map_or(1, |b| usize::from(b.input_set.max(1)));
+        let found = seg
+            .blocks
+            .iter()
+            .enumerate()
+            .flat_map(|(b, block)| block.streams.iter().map(move |s| (b, s)))
+            .filter(|(_, s)| s.render_type == input.render_type)
+            .nth(set - 1)
+            .map(|(b, s)| (b, s.offset));
+        if found.is_none() {
+            notes.push(format!(
+                "segment {segment}: no {} stream {set} for {}{}",
+                input.render_type, input.semantic, input.index
+            ));
+        }
+        out.push((
+            InputElement {
+                semantic: input.semantic.clone(),
+                index: input.index,
+                format: input.format,
+                slot: input.slot,
+                offset: found.map_or(0, |(_, o)| handle(o)),
+                per_instance: false,
+                step: 0,
+            },
+            found.map(|(b, _)| b),
+        ));
+    }
+    out
+}
+
+impl<I: SceneInputs> Builder<'_, I> {
+    fn material_buffer(&mut self, m: usize) -> &[u8] {
+        let inputs = self.inputs;
+        self.materials
+            .entry(m)
+            .or_insert_with(|| inputs.material_buffer(m))
+    }
+
+    /// The visible instances of one pass, in draw order.
+    fn visible(&self, opaque: bool) -> Vec<usize> {
+        let order = self.inputs.bounds_order();
+        let mut runs = Vec::new();
+        for job in order.chunks(400) {
+            let mut entries = Vec::new();
+            for &i in job {
+                let Some(b) = self.c.map.instances.get(i).and_then(|x| x.bounds) else {
+                    continue;
+                };
+                if !self.inputs.instance_shown(i) {
+                    continue;
+                }
+                let world = self.inputs.world(i);
+                let m = crate::cull::cull_matrix(&self.camera.cull, world.as_ref());
+                if !crate::cull::box_visible(b.min, b.size, &m) {
+                    continue;
+                }
+                let p = crate::cull::centre(b.min, b.size, world.as_ref());
+                let key =
+                    crate::cull::depth_key(&self.camera.view, opaque, p, self.inputs.depth_bias(i));
+                entries.push(Entry {
+                    instance: i,
+                    key,
+                    render_order: self.inputs.render_order(i).unwrap_or(b.render_order),
+                });
+            }
+            sort::sort(&mut entries);
+            if !entries.is_empty() {
+                runs.push(entries);
+            }
+        }
+        sort::merge(&runs)
+    }
+
+    fn instance(&mut self, pass: Pass, pass_name: &str, instance: usize) -> Result<(), Error> {
+        let c = self.c;
+        let inst = &c.map.instances[instance];
+        for bucket in 0..4 {
+            for &segment in &inst.segments {
+                let seg = &c.map.segments[segment];
+                if seg.render_order != bucket {
+                    continue;
+                }
+                // A null material ends the instance.
+                let Some(material) = c.map.material(instance, segment) else {
+                    return Ok(());
+                };
+                let mat = &c.map.materials[material];
+                if pass_name == "Opaque"
+                    && mat.remap_from.as_deref() == Some("Transparent")
+                    && mat.remap_to.as_deref() != Some("Transparent")
+                {
+                    continue;
+                }
+                let variant = c
+                    .effects
+                    .get(&mat.effect)
+                    .ok_or_else(|| err(format!("effect {} not loaded", mat.effect)))?;
+                let pass_type = if mat.remap_from.as_deref() == Some(pass_name) {
+                    mat.remap_to.as_deref().unwrap_or(pass_name)
+                } else {
+                    pass_name
+                };
+                let Some(render_pass) = variant.pass(pass_type) else {
+                    continue;
+                };
+                // The shader is the render pass's context variant for the
+                // node (`0x004ef440`: a search over the effect's context
+                // switches, `NUM_LIGHTS`, ...), not ported: the first
+                // shader, which every map draw of cdsp0000 uses.
+                let Some(shader) = render_pass.shaders.first() else {
+                    continue;
+                };
+                if self.inputs.segment_hidden(segment) {
+                    continue;
+                }
+                for sp in &shader.passes {
+                    self.draw(pass, instance, segment, material, variant, sp)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_lines)] // one draw's every binding
+    fn draw(
+        &mut self,
+        pass: Pass,
+        instance: usize,
+        segment: usize,
+        material: usize,
+        variant: &EffectVariant,
+        sp: &ShaderPass,
+    ) -> Result<(), Error> {
+        let c = self.c;
+        let seg = &c.map.segments[segment];
+        let mut state = DrawState {
+            topology: match seg.primitive {
+                2 => 4,
+                p => return Err(err(format!("segment {segment}: primitive type {p}"))),
+            },
+            sample_mask: u32::MAX,
+            stencil_ref: u32::from(sp.state.stencil_ref),
+            viewport: self.inputs.viewport(),
+            scissor: self.inputs.scissor(),
+            ..DrawState::default()
+        };
+        let res = &mut self.out.resources;
+        let vs = res.shader(Stage::Vertex, &sp.vs.code);
+        let ps = res.shader(Stage::Pixel, &sp.ps.code);
+        let inputs = vertex_inputs(&c.map, instance, segment, &sp.vs, &mut self.out.notes);
+        let mut elements = Vec::new();
+        for (e, block) in inputs {
+            if let Some(b) = block {
+                let buffer = res.static_buffer(&c.map, segment, Some(b));
+                if let Some(slot) = state.vertex.get_mut(e.slot as usize) {
+                    *slot = Some(VertexBinding {
+                        buffer,
+                        stride: handle(seg.blocks[b].stride),
+                        offset: 0,
+                    });
+                }
+            }
+            elements.push(e);
+        }
+        state.layout = Some(res.layout(elements, vs));
+        state.index = Some(IndexBinding {
+            buffer: res.static_buffer(&c.map, segment, None),
+            format: 57,
+            offset: 0,
+        });
+        let blend = BlendDesc::from_d3d11(&sp.state.blend).map_err(|e| err(e.to_string()))?;
+        state.blend = Some(Blend(intern(&mut res.blends, &blend)));
+        let depth =
+            DepthStencilDesc::from_d3d11(&sp.state.depth).map_err(|e| err(e.to_string()))?;
+        state.depth = Some(DepthState(intern(&mut res.depths, &depth)));
+        let raster = RasterDesc::from_d3d11(&sp.state.raster).map_err(|e| err(e.to_string()))?;
+        state.raster = Some(Raster(intern(&mut res.rasters, &raster)));
+        state.targets[0] = Some(res.external(External::Color, ViewKind::RenderTarget));
+        state.targets[1] = Some(res.external(External::Normal, ViewKind::RenderTarget));
+        state.depth_target = Some(res.external(External::Depth, ViewKind::DepthStencil));
+
+        // Constant buffers.
+        let world = self.inputs.world(instance).unwrap_or(IDENTITY);
+        let node = node_buffer(variant, &self.camera, &world, &mut self.out.notes);
+        let material_bytes = self.material_buffer(material).to_vec();
+        let scene = std::mem::take(&mut self.scene_wide);
+        let mut stages = [StageBindings::default(), StageBindings::default()];
+        for (b, (prog, params, textures, shader)) in stages.iter_mut().zip([
+            (&sp.vs, &sp.vs_params, &sp.vs_textures, vs),
+            (&sp.ps, &sp.ps_params, &sp.ps_textures, ps),
+        ]) {
+            b.shader = Some(shader);
+            if prog.global_cb != u32::MAX {
+                let data = fill_cb(
+                    prog.cb_size,
+                    params,
+                    [&scene, &material_bytes, &node],
+                    &mut self.out.notes,
+                );
+                let desc = BufferDesc {
+                    size: prog.cb_size,
+                    usage: ffx_draw::desc::USAGE_DYNAMIC,
+                    bind: ffx_draw::desc::BIND_CONSTANT,
+                    cpu_access: ffx_draw::desc::CPU_WRITE,
+                    misc: 0,
+                    stride: 0,
+                };
+                let buffer = self.out.resources.buffer(desc, data);
+                if let Some(slot) = b.cbs.get_mut(prog.global_cb as usize) {
+                    *slot = Some(CbBinding {
+                        buffer,
+                        first: 0,
+                        count: 0,
+                    });
+                }
+            }
+            self.bind_textures(textures, variant, material, b)?;
+        }
+        self.scene_wide = scene;
+        let [vsb, psb] = stages;
+        state.vs = vsb;
+        state.ps = psb;
+        self.out.draws.push(MapDraw {
+            pass,
+            instance,
+            segment,
+            material,
+            state,
+            call: DrawCall::Indexed {
+                count: seg.index_count,
+                start: 0,
+                base: 0,
+            },
+        });
+        Ok(())
+    }
+
+    /// Textures and samplers through a texture location table: a
+    /// material sampler (0x42) puts its texture in register `target`, a
+    /// sampler state (0x47) its state in sampler `target`.
+    fn bind_textures(
+        &mut self,
+        table: &LocTable,
+        variant: &EffectVariant,
+        material: usize,
+        b: &mut StageBindings,
+    ) -> Result<(), Error> {
+        let mat = &self.c.map.materials[material];
+        for (src, loc) in table.sourced() {
+            if loc.target == u32::MAX {
+                continue;
+            }
+            let reg = loc.target as usize;
+            if src != Source::Material {
+                self.out.notes.push(format!(
+                    "{src:?} texture slot at {:#x} used (register {reg}): not supported",
+                    loc.offset
+                ));
+                continue;
+            }
+            let Some(def) = variant.tweakable_at(loc.offset) else {
+                self.out
+                    .notes
+                    .push(format!("no tweakable at {:#x}", loc.offset));
+                continue;
+            };
+            match def.kind {
+                0x42 | 0x44 => {
+                    let view = match mat
+                        .textures
+                        .iter()
+                        .find(|t| t.offset == u32::from(loc.offset))
+                    {
+                        Some(t) => {
+                            let tex =
+                                self.c.textures.get(&t.import).ok_or_else(|| {
+                                    err(format!("texture {} not loaded", t.import))
+                                })?;
+                            self.out.resources.texture(&t.import, tex, self.dropped)?
+                        }
+                        None if self
+                            .inputs
+                            .material_texture_set(material, u32::from(loc.offset)) =>
+                        {
+                            self.out.resources.external(
+                                External::MaterialTexture {
+                                    material,
+                                    offset: u32::from(loc.offset),
+                                },
+                                ViewKind::ShaderResource,
+                            )
+                        }
+                        // No texture in the slot: nothing bound.
+                        None => continue,
+                    };
+                    if let Some(slot) = b.srvs.get_mut(reg) {
+                        *slot = Some(view);
+                    }
+                }
+                0x47 => {
+                    let Some((_, s)) = mat.samplers.iter().find(|s| s.0 == u32::from(loc.offset))
+                    else {
+                        self.out.notes.push(format!(
+                            "material {material}: no sampler state at {:#x} ({})",
+                            loc.offset, def.name
+                        ));
+                        continue;
+                    };
+                    let desc = sampler_desc(s, self.anisotropy);
+                    let h = Sampler(intern(&mut self.out.resources.samplers, &desc));
+                    if let Some(slot) = b.samplers.get_mut(reg) {
+                        *slot = Some(h);
+                    }
+                }
+                k => self
+                    .out
+                    .notes
+                    .push(format!("texture table entry {} of kind {k:#x}", def.name)),
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Builds the map world's draws for one frame.
+///
+/// # Errors
+/// On a texture quality whose mip drop is not known, a missing effect or
+/// texture, or data the builder doesn't handle (each named).
+pub fn build(c: &Clusters, inputs: &impl SceneInputs) -> Result<Built, Error> {
+    let settings = inputs.settings();
+    let dropped = settings.texture_quality.dropped_levels().map_err(Error)?;
+    let mut b = Builder {
+        c,
+        inputs,
+        camera: inputs.camera(),
+        dropped,
+        anisotropy: settings.anisotropy,
+        scene_wide: inputs.scene_wide(),
+        materials: HashMap::new(),
+        out: Built::default(),
+    };
+    let (opaque, transparent) = inputs.pass_names();
+    for (pass, name, is_opaque) in [
+        (Pass::Opaque, opaque, true),
+        (Pass::Transparent, transparent, false),
+    ] {
+        for i in b.visible(is_opaque) {
+            b.instance(pass, &name, i)?;
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    b.out.notes.retain(|n| seen.insert(n.clone()));
+    Ok(b.out)
+}

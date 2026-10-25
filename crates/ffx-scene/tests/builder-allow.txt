@@ -1,0 +1,20 @@
+# What the scene builder's map draws may differ in from the captured map
+# draws (the builder gate, tests/builder.rs; docs/scene-builder.md,
+# "Allowed differences"). drawdiff rule syntax (docs/drawdiff.md, "Rules").
+[cdsp0000]
+
+# The water's CubeMapSamplerState (phyrewatershader, sampler s2) is the
+# material's PSamplerState with m_maxAnisotropy 0.0, so the game passes
+# MaxAnisotropy 0 to CreateSamplerState (PSamplerStateD3D11 0x00595bf0
+# truncates it); the builder makes the same description. The capture holds
+# no sampler object with that description: the device returned the object
+# 0x3a311fa0, whose recorded description has MaxAnisotropy 1 and is
+# otherwise the same (filter 0x15, clamp x3, NEVER). Direct3D 11 returns an
+# existing state object for an equivalent description, and MaxAnisotropy
+# does not matter to a non-anisotropic filter. The graphics layer records,
+# per object, the description of the last CreateSamplerState that returned
+# it (ffx-hook gfx/mod.rs create_state), so which of the equivalent
+# descriptions the capture shows depends on the order the game made them.
+# In-game the builder's call gets the same object (to confirm with the
+# in-game path, R2c).
+state kind=draw ps=0366ec86c954e905 field=ps.sampler2.max_anisotropy cause: Direct3D 11 hands back the existing equivalent sampler object (MaxAnisotropy is irrelevant to filter 0x15); the capture shows the description the layer recorded for that object (1), the game and the builder pass 0
