@@ -71,17 +71,22 @@ pub mod bridge {
         )
     }
 
-    /// Frame offsets (the original's `ebp - 0x9c` is offset 0).
-    const MESH_BOUNDS: u32 = 0x00;
-    const OCCLUDERS: u32 = 0x20;
-    const CHECK: u32 = 0x40;
-    const RANGE: u32 = 0x80;
-    const OUT: u32 = 0x88;
-    const INIT: u32 = 0x90;
+    /// Frame offsets: the port's own matrix first (`PVisibilityCheck`'s
+    /// camera matrix, in the original a callee's frame), then the
+    /// original's locals from its `ebp - 0x9c` on. The frame ends where the
+    /// original's locals end, so a test can put it at their address
+    /// without touching the caller's stack.
+    const INIT: u32 = 0x00;
+    const LOCALS: u32 = visibility::INIT_FRAME;
+    const MESH_BOUNDS: u32 = LOCALS;
+    const OCCLUDERS: u32 = LOCALS + 0x20;
+    const CHECK: u32 = LOCALS + 0x40;
+    const RANGE: u32 = LOCALS + 0x80;
+    const OUT: u32 = LOCALS + 0x88;
 
     /// `renderWorldCulledSorted(renderer, world, camera, ctx, pass)`:
-    /// 0. `frame` is [`super::FRAME`] bytes; its first `0x90` are the
-    /// original's locals at the same offsets.
+    /// 0. `frame` is [`super::FRAME`] bytes: `frame + 0x40` is the
+    /// original's `ebp - 0x9c`.
     #[allow(clippy::cast_possible_wrap)] // the pass is a signed word
     pub fn culled_sorted(
         h: &mut impl Host,

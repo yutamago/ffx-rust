@@ -151,6 +151,19 @@ chain with this recipe. What it adds:
   (`Phyre_PGeometry_PDynamicMesh_getDataBlockCount` is a thiscall on the
   dynamic mesh). A stub that does not log `ecx` cannot catch a port that
   forgets it: give stubs of library callees `this = true`.
+  `python3 -I tools/check-thisarg.py` (needs `FFX_GAME_DIR`, about 3 s)
+  scans for this statically. It finds every original that reads `ecx`
+  before writing it on some path from its entry, then every port call to
+  one that passes no `ecx` (`Conv::Cdecl`/`Conv::Stdcall`,
+  `ffx_bridge::Host::call`, `call_cdecl*`, `call0`, and per-file
+  forwarding helpers). It must report "0 problems", like
+  check-callwidth. Targets it can't resolve (pointers from memory) are
+  counted, not checked.
+- **Real states.** `tools/harvest-render.sh` harvests the render chain's
+  calls by running `graphicRender` (`0x00642bb0`) on the snapshots: every
+  world of the frame, with the culling jobs run by the waiting thread.
+  The game-update drivers of `tools/harvest.sh` never render.
+  `tests/harvested_phyre_render.rs` checks the ports on those calls.
 - **One hook per address.** Where a wrapper already owns an address
   (`renderWorldCulledSorted`'s capture wrapper in `world.rs`), the wrapper
   calls the port instead of its trampoline, behind its own

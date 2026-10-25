@@ -922,7 +922,7 @@ fn render_world_culled_sorted_matches_the_original() {
             // address and the saved ebp; the port's at the same place, its
             // calls below it
             let top = call_top(&t.a);
-            let frame = top - 24 - 0x9c;
+            let frame = top - 24 - 0x9c - visibility::INIT_FRAME;
             t.b.set_call_top(Some(frame - 0x100));
             let args = [world, camera, ctx, pass];
             t.check(
