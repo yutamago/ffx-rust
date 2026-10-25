@@ -73,6 +73,7 @@
 //! | `events` | `ok <n>` then `n` lines: files opened since the last call |
 //! | `gfxcapture <windows dir>` | `ok <n> draws`: the next frame's D3D11 calls (`gfx`, needs `FFX_GFX=1`) |
 //! | `gfxreplay <capture.ffxgfx> [out dir]` | the capture's scene drawn by `ffx-draw` in place of the game's in the next frame, compared with the capture (`gfx::replay`, `docs/draw.md`) |
+//! | `rustmap [on\|off]` | the Rust map path's statistics (`gfx::scene`, needs `FFX_RUST_MAP=1`), or turns it on or off from the next map pass |
 //! | `gfxstats` | `ok frames <n> draws <n>`: draws in the last frame |
 //! | `overlay` | shows or hides the live renderer's overlay (as F10): `ok <shown>` |
 //! | `overlayclick <x> <y>` | a left click in the overlay, in back buffer pixels |
@@ -2021,6 +2022,7 @@ fn command(line: &str) -> Result<String, String> {
         }
         "gfxcapture" => crate::gfx::capture(&words[1..].join(" ")),
         "gfxreplay" => crate::gfx::replay::request(&words[1..].join(" ")),
+        "rustmap" => crate::gfx::scene::request(&words[1..].join(" ")),
         "overlay" => format!("ok {}", crate::gfx::live::toggle_overlay()),
         "editor" => {
             crate::gfx::live::toggle_editor();

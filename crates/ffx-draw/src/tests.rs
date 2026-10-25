@@ -407,3 +407,77 @@ fn real_capture() {
         );
     }
 }
+
+#[test]
+fn a_pass_list_is_issued_between_begin_and_end() {
+    use crate::pass::{BufferWrite, Constants, PassDraw, issue};
+    use crate::state::VertexBinding;
+    let mut b = Mock::default();
+    let mut cache = crate::cache::Cache::default();
+    let vb = Buffer(900);
+    let mut state = DrawState {
+        topology: 4,
+        ..DrawState::default()
+    };
+    state.vertex[0] = Some(VertexBinding {
+        buffer: vb,
+        stride: 12,
+        offset: 24,
+    });
+    let first = PassDraw {
+        state,
+        call: DrawCall::Indexed {
+            count: 6,
+            start: 0,
+            base: 0,
+        },
+        constants: vec![
+            Constants {
+                stage: Stage::Vertex,
+                slot: 0,
+                data: vec![1; 40],
+            },
+            Constants {
+                stage: Stage::Pixel,
+                slot: 2,
+                data: vec![2; 16],
+            },
+        ],
+        writes: vec![BufferWrite {
+            buffer: vb,
+            offset: 0,
+            data: vec![7; 48],
+        }],
+    };
+    let second = PassDraw {
+        constants: vec![Constants {
+            stage: Stage::Vertex,
+            slot: 0,
+            data: vec![3; 40],
+        }],
+        writes: vec![],
+        call: DrawCall::Plain { count: 3, start: 1 },
+        ..first.clone()
+    };
+    let done = issue(&mut b, &mut cache, &[first, second]);
+    assert_eq!(done.draws, 2);
+    assert_eq!(done.refused, 0);
+    assert_eq!(b.log.first().map(String::as_str), Some("begin"));
+    assert_eq!(b.log.last().map(String::as_str), Some("end"));
+    assert_eq!(b.draws.len(), 2);
+    // The vertex stage's window is padded to 48 bytes; one buffer per
+    // stage, slot and size, written before each draw.
+    let vs0 = b.draws[0].0.vs.cbs[0].expect("vs cb0");
+    assert_eq!(b.draws[1].0.vs.cbs[0].map(|c| c.buffer), Some(vs0.buffer));
+    assert_eq!((vs0.first, vs0.count), (0, 0));
+    assert!(b.draws[0].0.ps.cbs[2].is_some());
+    assert!(b.draws[0].0.ps.cbs[0].is_none());
+    assert_eq!(b.written.get(&vs0.buffer).map(Vec::len), Some(48));
+    assert_eq!(b.written[&vs0.buffer][..40], [3; 40]);
+    assert_eq!(b.written.get(&vb).map(Vec::len), Some(48));
+    assert_eq!(b.draws[1].1, DrawCall::Plain { count: 3, start: 1 });
+    // An empty list touches nothing.
+    let mut quiet = Mock::default();
+    assert_eq!(issue(&mut quiet, &mut cache, &[]).draws, 0);
+    assert_eq!(quiet.log.len(), 0);
+}

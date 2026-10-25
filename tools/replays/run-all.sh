@@ -34,6 +34,12 @@
 # symbols/hook-hits.txt (tools/hook-hits.py) and writes the report to
 # FFX_HITS_REPORT (default ~/ffx-work/agents/coverage/hook-hits-report.txt).
 # The exit code is the comparison's; the session is not a parity replay.
+# Rust map mode (docs/draw.md, "The map path"):
+#   tools/replays/run-all.sh --rust-map [--hits]
+# runs and compares the replays as usual with the map world drawn through
+# ffx-draw (FFX_RUST_MAP=1, which turns the graphics layer on too): the
+# recorded originals are the same, so the run passes only where the Rust map
+# draws what PhyreEngine draws.
 set -u
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo"
@@ -88,10 +94,20 @@ each() {
 }
 start=$SECONDS
 hits=""
-if [ "${1:-}" = --hits ]; then
+rust_map=""
+while [ "${1:-}" = --hits ] || [ "${1:-}" = --rust-map ]; do
+    case $1 in
+        --hits) hits="$runs/hits"; mkdir -p "$hits" ;;
+        --rust-map) rust_map=1; export FFX_RUST_MAP=1 ;;
+    esac
     shift
-    hits="$runs/hits"
-    mkdir -p "$hits"
+done
+if [ -z "$rust_map" ]; then
+    unset FFX_RUST_MAP  # only through --rust-map
+fi
+if [ "${1:-}" = --record ] && [ -n "$rust_map" ]; then
+    echo "--record runs the original code: no --rust-map" >&2
+    exit 2
 fi
 if [ "${1:-}" = --record ]; then
     shift
@@ -111,7 +127,7 @@ if [ "${1:-}" = --record ]; then
     exit 0
 fi
 each rust
-echo "replays took $((SECONDS - start)) s ($runs)"
+echo "replays took $((SECONDS - start)) s ($runs)${rust_map:+, rust map}"
 bad=0
 for r in "${replays[@]}"; do
     [ "$r" = boot ] && continue  # screenshots only
