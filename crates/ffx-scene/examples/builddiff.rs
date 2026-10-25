@@ -1,7 +1,7 @@
 //! Builds the map world of a capture's frame and diffs it against the
 //! captured map draws: `builddiff <capture.ffxgfx> [out.ffxgfx]
-//! [--allow F] [--limit N]`, with `FFX_GAME_DIR` set (cdsp0000 only for
-//! now). Prints the drawdiff report of the scene part and the builder's
+//! [--allow F] [--limit N]`, with `FFX_GAME_DIR` set. The map model is
+//! the capture's scene's (`bsil0000`: `map/bsil/bsil00/`), one cluster. Prints the drawdiff report of the scene part and the builder's
 //! notes; writes the rebuilt capture when asked.
 use ffx_scene::build::{Clusters, build};
 use ffx_scene::capture::Capture;
@@ -33,11 +33,15 @@ fn main() {
         .expect("archive");
     let read = |p: &str| archive.find(p).and_then(|e| archive.read(e).ok());
     let t = std::time::Instant::now();
-    let clusters = Clusters::load(
-        read,
-        "ffx_data/gamedata/ps3data/map/cdsp/cdsp00/mdl/d3d11/cdsp00.dae.phyre",
-    )
-    .expect("clusters");
+    // The scene `bsil0000` is map model `bsil00` of area `bsil`.
+    let scene = match &cap.world {
+        Some(ffx_gfx::Msg::World { scene, .. }) => scene.clone(),
+        _ => "cdsp0000".into(),
+    };
+    let (area, map) = (&scene[..4], &scene[..6]);
+    let model = format!("ffx_data/gamedata/ps3data/map/{area}/{map}/mdl/d3d11/{map}.dae.phyre");
+    eprintln!("scene {scene}: {model}");
+    let clusters = Clusters::load(read, &model).expect("clusters");
     eprintln!("clusters in {:.2} s", t.elapsed().as_secs_f64());
     let settings = Settings {
         texture_quality: TextureQuality::Low,
@@ -60,13 +64,23 @@ fn main() {
         built.draws.len(),
         t.elapsed().as_secs_f64()
     );
+    if std::env::var_os("BUILDDIFF_MATCHED").is_some() {
+        for m in &inputs.matched {
+            let i = &clusters.map.instances[m.instance];
+            println!(
+                "matched {} seg {} {} material {} {} contexts {:?}",
+                m.number, m.segment, i.name, m.material, m.effect, i.contexts
+            );
+        }
+    }
     for n in &built.notes {
         println!("note: {n}");
     }
-    let replaced: Vec<usize> = inputs.matched.iter().map(|m| m.number).collect();
-    let msgs =
-        ffx_scene::emit::replace_map_draws(&cap, &built, &replaced, &|e| inputs.external_view(e))
-            .expect("emit");
+    let (opaque, transparent) = inputs.pass_numbers();
+    let msgs = ffx_scene::emit::replace_map_draws(&cap, &built, &opaque, &transparent, &|e| {
+        inputs.external_view(e)
+    })
+    .expect("emit");
     let bytes = ffx_scene::emit::capture_bytes(&msgs);
     if let Some(o) = out {
         std::fs::write(&o, &bytes).expect("write");

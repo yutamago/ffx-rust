@@ -64,7 +64,10 @@ fn the_builders_map_draws_are_the_captured_ones() {
         let built = build(&clusters, &inputs).expect("build");
         assert_eq!(built.pass(Pass::Opaque).count(), 100, "{path}");
         assert_eq!(built.pass(Pass::Transparent).count(), 11, "{path}");
-        let msgs = ffx_scene::emit::replace_map_draws(&cap, &built, &numbers, &|e| {
+        let (opaque, transparent) = inputs.pass_numbers();
+        assert_eq!(opaque, (0..100).collect::<Vec<_>>(), "{path}");
+        assert_eq!(transparent, (117..128).collect::<Vec<_>>(), "{path}");
+        let msgs = ffx_scene::emit::replace_map_draws(&cap, &built, &opaque, &transparent, &|e| {
             inputs.external_view(e)
         })
         .expect("emit");
@@ -93,13 +96,23 @@ fn the_builders_map_draws_are_the_captured_ones() {
 }
 
 #[test]
-fn a_texture_quality_without_a_known_mip_drop_fails_clearly() {
+fn every_texture_quality_builds() {
     let Some((captures, clusters, mut settings)) = setup() else {
         return;
     };
     let cap = Capture::read(&std::fs::read(&captures[0]).expect("capture")).expect("capture");
-    settings.texture_quality = ffx_scene::frame::TextureQuality::High;
-    let inputs = CaptureInputs::new(&cap, &clusters, settings, false).expect("inputs");
-    let e = build(&clusters, &inputs).expect_err("TQ_HIGH");
-    assert!(e.0.contains("TQ_LOW"), "{e}");
+    let mut widest = Vec::new();
+    for q in [
+        ffx_scene::frame::TextureQuality::High,
+        ffx_scene::frame::TextureQuality::Medium,
+        ffx_scene::frame::TextureQuality::Low,
+    ] {
+        settings.texture_quality = q;
+        let inputs = CaptureInputs::new(&cap, &clusters, settings, false).expect("inputs");
+        let built = build(&clusters, &inputs).expect("build");
+        let w = built.resources.textures.iter().map(|t| t.desc.width).max();
+        widest.push(w.unwrap_or(0));
+    }
+    // cdsp00's largest map texture is 2048 wide: 2048, 1024, 512.
+    assert_eq!(widest, vec![2048, 1024, 512]);
 }

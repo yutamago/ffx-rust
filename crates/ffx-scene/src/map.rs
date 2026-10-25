@@ -41,6 +41,13 @@ pub struct Instance {
     pub bounds: Option<Bounds>,
     /// Per segment (same order as `segments`): its context's stream bindings.
     pub contexts: Vec<Vec<StreamBinding>>,
+    /// `m_DObjKind`: 1 puts the bounds in the first sort class at map
+    /// init (`MorphManager_registerClusterMorphs` `0x006aca10`).
+    pub dobj_kind: i32,
+    /// `m_dObjFlag` and `m_groupID` (what the game hides by; the hidden
+    /// state itself is game state, `docs/formats/scene-maps.md`).
+    pub dobj_flag: u32,
+    pub group_id: i32,
 }
 
 /// A vertex stream of a block.
@@ -346,16 +353,20 @@ impl MapModel {
                     };
                     let count = g.word_at(ctx.at + off as usize).unwrap_or(0) & 0x7fff_ffff;
                     // A `PSharray` of pointers: one inline (+4), or more
-                    // through an array of pointers.
+                    // through an array of pointers. That array's
+                    // pointer-array fixups are not decoded: the bindings
+                    // are taken as `count` objects in a row from the
+                    // first target (right on cdsp00; open item).
                     let objs: Vec<Obj> = g.pointers[ctx.list]
                         .iter()
                         .filter(|f| {
                             f.object() == ctx.index && f.member() == 0x8000_0000 | (off + 4)
                         })
                         .flat_map(|f| {
-                            let n = if count > 1 { f.count().max(1) } else { 1 };
-                            (f.target()..f.target() + n).map(|k| g.obj(f.target_list() as usize, k))
+                            (f.target()..f.target() + count.max(1))
+                                .map(|k| g.obj(f.target_list() as usize, k))
                         })
+                        .take(count as usize)
                         .collect();
                     objs.into_iter()
                         .map(|b| {
@@ -379,6 +390,9 @@ impl MapModel {
                 materials: set,
                 bounds: bounds_of(i),
                 contexts,
+                dobj_kind: g.u32(i, c, "m_DObjKind").unwrap_or(0).cast_signed(),
+                dobj_flag: g.u32(i, c, "m_dObjFlag").unwrap_or(0),
+                group_id: g.u32(i, c, "m_groupID").unwrap_or(0).cast_signed(),
             });
         }
         Ok(Self {

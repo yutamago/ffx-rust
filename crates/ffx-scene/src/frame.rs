@@ -42,19 +42,18 @@ impl TextureQuality {
         })
     }
 
-    /// The mip levels the game drops from every texture cluster. Only
-    /// `TQ_LOW` is known (2, measured on all 96 textures of cdsp0000,
-    /// `docs/formats/scene.md`); the function that drops them for the
-    /// other levels is still being found (round 2, Q1).
-    ///
-    /// # Errors
-    /// For `TQ_MEDIUM` and `TQ_HIGH`.
-    pub fn dropped_levels(self) -> Result<u32, String> {
+    /// The setting's index (`TQ_HIGH` 0, `TQ_MEDIUM` 1, `TQ_LOW` 2;
+    /// `g_Settings +0x34`): the top mip levels the game drops from a
+    /// texture cluster (`Phyre_PBinary_loadClusterTextures` `0x00465ab0`,
+    /// with the exceptions of [`crate::assets::texture_start_level`];
+    /// `docs/formats/scene-maps.md`, Q1). Only `TQ_LOW` is checked
+    /// against captures (cdsp0000).
+    #[must_use]
+    pub fn dropped_levels(self) -> u32 {
         match self {
-            Self::Low => Ok(crate::assets::TQ_LOW_DROPPED_LEVELS),
-            q => Err(format!(
-                "texture quality {q:?}: the mip levels it drops are not known yet (only TQ_LOW)"
-            )),
+            Self::High => 0,
+            Self::Medium => 1,
+            Self::Low => crate::assets::TQ_LOW_DROPPED_LEVELS,
         }
     }
 }
@@ -164,8 +163,9 @@ mod tests {
     fn texture_quality_from_the_ini() {
         let ini = "[Graphics]\r\nQuality=VQ_LOW\r\nTextureQuality=TQ_LOW\r\nMSAA=0\r\n";
         assert_eq!(TextureQuality::from_ini(ini), Some(TextureQuality::Low));
-        assert_eq!(TextureQuality::Low.dropped_levels(), Ok(2));
-        assert!(TextureQuality::High.dropped_levels().is_err());
+        assert_eq!(TextureQuality::Low.dropped_levels(), 2);
+        assert_eq!(TextureQuality::Medium.dropped_levels(), 1);
+        assert_eq!(TextureQuality::High.dropped_levels(), 0);
         assert_eq!(TextureQuality::from_ini("x=1"), None);
     }
 }

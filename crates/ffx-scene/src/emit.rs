@@ -233,33 +233,24 @@ fn draw(d: &crate::build::MapDraw, ids: &Ids, cbs: &dyn Fn(Buffer) -> Vec<u8>) -
     }
 }
 
-/// The messages of a capture of `cap`'s frame with the map draws
-/// `replaced` (scene draw numbers: the opaque run, then the transparent
-/// run) swapped for the builder's draws of each pass. Errors name the
-/// external views that have no captured counterpart.
+/// The messages of a capture of `cap`'s frame with its map draws swapped
+/// for the builder's: the builder's opaque draws go where the first of
+/// `opaque` (scene draw numbers) was, its transparent draws where the
+/// first of `transparent` was, and every listed scene draw is dropped.
 ///
 /// # Errors
-/// When `replaced` is not two runs of consecutive scene draws, or an
-/// external view has no captured id.
+/// When a list is empty, or an external view has no captured id.
 pub fn replace_map_draws(
     cap: &Capture,
     built: &Built,
-    replaced: &[usize],
+    opaque: &[usize],
+    transparent: &[usize],
     external: &dyn Fn(External) -> Option<Id>,
 ) -> Result<Vec<Msg>, String> {
-    let mut runs: Vec<Vec<usize>> = Vec::new();
-    for &n in replaced {
-        match runs.last_mut() {
-            Some(r) if r.last() == Some(&(n - 1)) => r.push(n),
-            _ => runs.push(vec![n]),
-        }
-    }
-    if runs.len() != 2 {
-        return Err(format!(
-            "the map draws are {} runs of scene draws, not two (opaque, transparent)",
-            runs.len()
-        ));
-    }
+    let (Some(&first_opaque), Some(&first_transparent)) = (opaque.first(), transparent.first())
+    else {
+        return Err("no captured map draw of a pass".into());
+    };
     let (mut msgs, ids, missing) = objects(built, external);
     if !missing.is_empty() {
         return Err(missing.join("; "));
@@ -278,7 +269,7 @@ pub fn replace_map_draws(
             .map(|d| Cmd::Draw(Box::new(draw(d, &ids, &cbs))))
             .collect()
     };
-    let (opaque, transparent) = (draws(Pass::Opaque), draws(Pass::Transparent));
+    let (opaque_draws, transparent_draws) = (draws(Pass::Opaque), draws(Pass::Transparent));
     let mut scene_number: HashMap<usize, usize> = HashMap::new();
     for (n, (cmd, _)) in cap
         .draws()
@@ -290,9 +281,9 @@ pub fn replace_map_draws(
     let mut cmds = Vec::new();
     for (i, c) in cap.frame.cmds.iter().enumerate() {
         match scene_number.get(&i) {
-            Some(n) if *n == runs[0][0] => cmds.extend(opaque.iter().cloned()),
-            Some(n) if *n == runs[1][0] => cmds.extend(transparent.iter().cloned()),
-            Some(n) if replaced.contains(n) => {}
+            Some(n) if *n == first_opaque => cmds.extend(opaque_draws.iter().cloned()),
+            Some(n) if *n == first_transparent => cmds.extend(transparent_draws.iter().cloned()),
+            Some(n) if opaque.contains(n) || transparent.contains(n) => {}
             _ => cmds.push(c.clone()),
         }
     }

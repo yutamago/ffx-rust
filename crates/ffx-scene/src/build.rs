@@ -501,10 +501,20 @@ fn vertex_inputs(
         .map_or(&[][..], Vec::as_slice);
     let mut out = Vec::new();
     for input in &vs.inputs {
+        // The binding's input set, as a rank among the sets the context
+        // binds for the type (cdsp00 numbers them 1, 2; bsil00 0, 1).
+        let mut sets: Vec<u8> = bindings
+            .iter()
+            .filter(|b| b.render_type == input.render_type)
+            .map(|b| b.input_set)
+            .collect();
+        sets.sort_unstable();
+        sets.dedup();
         let set = bindings
             .iter()
             .find(|b| b.render_type == input.render_type && u32::from(b.index) == input.index)
-            .map_or(1, |b| usize::from(b.input_set.max(1)));
+            .and_then(|b| sets.iter().position(|&x| x == b.input_set))
+            .map_or(1, |k| k + 1);
         let found = seg
             .blocks
             .iter()
@@ -832,11 +842,11 @@ impl<I: SceneInputs> Builder<'_, I> {
 /// Builds the map world's draws for one frame.
 ///
 /// # Errors
-/// On a texture quality whose mip drop is not known, a missing effect or
-/// texture, or data the builder doesn't handle (each named).
+/// On a missing effect or texture, or data the builder doesn't handle
+/// (each named).
 pub fn build(c: &Clusters, inputs: &impl SceneInputs) -> Result<Built, Error> {
     let settings = inputs.settings();
-    let dropped = settings.texture_quality.dropped_levels().map_err(Error)?;
+    let dropped = settings.texture_quality.dropped_levels();
     let mut b = Builder {
         c,
         inputs,
@@ -859,4 +869,88 @@ pub fn build(c: &Clusters, inputs: &impl SceneInputs) -> Result<Built, Error> {
     let mut seen = std::collections::HashSet::new();
     b.out.notes.retain(|n| seen.insert(n.clone()));
     Ok(b.out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::effect::Loc;
+
+    fn state(min: u8, mag: u8, wrap: [u8; 3], aniso: f32, flags: u32) -> map::SamplerState {
+        map::SamplerState {
+            min_filter: min,
+            mag_filter: mag,
+            wrap,
+            lod_bias: 0.0,
+            max_anisotropy: aniso,
+            border: [0, 0, 0, 255],
+            base_level: 0,
+            max_level: 0x400,
+            flags,
+        }
+    }
+
+    #[test]
+    fn sampler_descriptions_as_the_game_makes_them() {
+        // cdsp0000's TextureSamplerState: linear, wrap, anisotropy 0
+        let d = sampler_desc(&state(5, 1, [1, 1, 1], 0.0, 0), 1.0);
+        assert_eq!(
+            (d.filter, d.address, d.max_anisotropy, d.comparison),
+            (0x15, [1, 1, 1], 0, 1)
+        );
+        assert_eq!(d.border[3], 1f32.to_bits());
+        assert_eq!(
+            (d.min_lod, d.max_lod),
+            ((-f32::MAX).to_bits(), f32::MAX.to_bits())
+        );
+        // the water's: clamp (wrap 0 and 2 are clamp), anisotropy 1
+        let d = sampler_desc(&state(5, 1, [0, 2, 3], 1.0, 0), 1.0);
+        assert_eq!((d.address, d.max_anisotropy), ([3, 3, 4], 1));
+        // the compare flag (bit 6): a comparison filter and LESS_EQUAL
+        let d = sampler_desc(&state(1, 1, [0; 3], 1.0, 0x40), 1.0);
+        assert_eq!((d.filter, d.comparison), (0x94, 4));
+        // an anisotropy setting above 1 makes every sampler anisotropic
+        let d = sampler_desc(&state(0, 0, [4; 3], 1.0, 0), 8.0);
+        assert_eq!((d.filter, d.address, d.max_anisotropy), (0x55, [2; 3], 8));
+    }
+
+    #[test]
+    fn constant_buffers_through_a_location_table() {
+        let table = LocTable {
+            starts: [0, 1, 2, 0],
+            counts: [1, 1, 1, 0],
+            entries: vec![
+                Loc {
+                    offset: 4,
+                    target: 0,
+                    size: 4,
+                    kind: 0,
+                },
+                Loc {
+                    offset: 8,
+                    target: 4,
+                    size: 4,
+                    kind: 0,
+                },
+                Loc {
+                    offset: 0,
+                    target: u32::MAX,
+                    size: 4,
+                    kind: 0,
+                },
+            ],
+        };
+        let scene = [0, 0, 0, 0, 1, 2, 3, 4];
+        let material = [0, 0, 0, 0, 0, 0, 0, 0, 5, 6, 7, 8];
+        let mut notes = Vec::new();
+        let cb = fill_cb(16, &table, [&scene, &material, &[]], &mut notes);
+        // unused bytes keep the 0xcd fill of the game's heap
+        assert_eq!(
+            cb,
+            [
+                1, 2, 3, 4, 5, 6, 7, 8, 0xcd, 0xcd, 0xcd, 0xcd, 0xcd, 0xcd, 0xcd, 0xcd
+            ]
+        );
+        assert_eq!(notes, Vec::<String>::new());
+    }
 }

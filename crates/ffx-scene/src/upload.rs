@@ -145,3 +145,125 @@ impl Uploaded {
         out
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ffx_draw::DrawCall;
+    use ffx_draw::backend::{Readback, Texture};
+    use ffx_draw::desc::{
+        BlendDesc, BufferDesc, DepthStencilDesc, InputElement, RasterDesc, SamplerDesc, Stage,
+        TextureDesc, ViewDesc, ViewKind,
+    };
+
+    use super::*;
+    use crate::build::{TextureData, ViewData};
+
+    /// Hands out handles from 101 on and lists the objects made.
+    #[derive(Default)]
+    struct Counter {
+        next: u32,
+        made: Vec<&'static str>,
+    }
+
+    impl Counter {
+        fn id(&mut self, what: &'static str) -> u32 {
+            self.made.push(what);
+            self.next += 1;
+            100 + self.next
+        }
+    }
+
+    impl Backend for Counter {
+        fn begin(&mut self) {}
+        fn end(&mut self) {}
+        fn create_shader(&mut self, _: Stage, _: &[u8]) -> Result<Shader> {
+            Ok(Shader(self.id("shader")))
+        }
+        fn create_layout(&mut self, _: &[InputElement], _: &[u8]) -> Result<Layout> {
+            Ok(Layout(self.id("layout")))
+        }
+        fn create_blend(&mut self, _: &BlendDesc) -> Result<Blend> {
+            Ok(Blend(self.id("blend")))
+        }
+        fn create_depth_state(&mut self, _: &DepthStencilDesc) -> Result<DepthState> {
+            Ok(DepthState(self.id("depth")))
+        }
+        fn create_raster(&mut self, _: &RasterDesc) -> Result<Raster> {
+            Ok(Raster(self.id("raster")))
+        }
+        fn create_sampler(&mut self, _: &SamplerDesc) -> Result<Sampler> {
+            Ok(Sampler(self.id("sampler")))
+        }
+        fn create_buffer(&mut self, _: &BufferDesc, _: Option<&[u8]>) -> Result<Buffer> {
+            Ok(Buffer(self.id("buffer")))
+        }
+        fn create_texture(&mut self, _: &TextureDesc, init: &[InitData]) -> Result<Texture> {
+            assert_eq!(init.len(), 1);
+            Ok(Texture(self.id("texture")))
+        }
+        fn create_view(&mut self, _: Texture, _: ViewKind, _: Option<&ViewDesc>) -> Result<View> {
+            Ok(View(self.id("view")))
+        }
+        fn write_buffer(&mut self, _: Buffer, _: u32, _: &[u8]) {}
+        fn clear_target(&mut self, _: View, _: [f32; 4]) {}
+        fn clear_depth(&mut self, _: View, _: u32, _: f32, _: u8) {}
+        fn copy_texture(&mut self, _: Texture, _: Texture) {}
+        fn draw(&mut self, _: &DrawState, _: DrawCall) {}
+        fn view_texture(&self, _: View) -> Option<Texture> {
+            None
+        }
+        fn read_texture(&mut self, _: Texture) -> Result<Readback> {
+            Err(Error("no readback".into()))
+        }
+    }
+
+    #[test]
+    fn objects_are_made_and_states_moved_onto_the_backends_handles() {
+        let mut r = Resources::default();
+        r.shaders.push((Stage::Vertex, vec![1]));
+        r.layouts.push((Vec::new(), Shader(0)));
+        r.buffers.push((
+            BufferDesc::from_words([16, 2, 4, 0x1_0000, 0, 0]),
+            vec![0; 16],
+        ));
+        r.textures.push(TextureData {
+            desc: TextureDesc::from_words([4, 4, 1, 1, 71, 1, 0, 0, 8, 0, 0]),
+            subresources: vec![(8, vec![0; 8])],
+        });
+        r.views.push(ViewData {
+            source: ViewSource::Texture(Texture(0)),
+            kind: ViewKind::ShaderResource,
+            desc: None,
+        });
+        r.views.push(ViewData {
+            source: ViewSource::External(External::Color),
+            kind: ViewKind::RenderTarget,
+            desc: None,
+        });
+        let mut b = Counter::default();
+        let up = Uploaded::new(&mut b, &r, |e| (e == External::Color).then_some(View(7)))
+            .expect("upload");
+        assert_eq!(b.made, ["shader", "layout", "buffer", "texture", "view"]);
+        let mut s = DrawState {
+            layout: Some(Layout(0)),
+            ..DrawState::default()
+        };
+        s.vs.shader = Some(Shader(0));
+        s.vs.cbs[0] = Some(CbBinding {
+            buffer: Buffer(0),
+            first: 0,
+            count: 0,
+        });
+        s.vs.srvs[0] = Some(View(0));
+        s.targets[0] = Some(View(1));
+        let t = up.state(&s);
+        assert_eq!(t.layout, Some(Layout(102)));
+        assert_eq!(t.vs.shader, Some(Shader(101)));
+        assert_eq!(t.vs.cbs[0].map(|c| c.buffer), Some(Buffer(103)));
+        assert_eq!(t.vs.srvs[0], Some(View(105)));
+        assert_eq!(t.targets[0], Some(View(7)));
+        // A host without the external view: refused.
+        let mut b = Counter::default();
+        assert!(Uploaded::new(&mut b, &r, |_| None).is_err());
+    }
+}

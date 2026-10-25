@@ -20,8 +20,11 @@
 //!   hidden by the game (`m_meshInstance` 0; cdsp0000's
 //!   `FBXASC056_0Shape`, round 2 Q3).
 //!
-//! What a capture can't tell (hidden bytes, depth biases, render orders
-//! changed at run time) is taken as the cluster has it.
+//! - the render orders are the file's with the class the game adds at
+//!   map init (`m_DObjKind` 1).
+//!
+//! What a capture can't tell (hidden bytes, depth biases) is taken as the
+//! cluster has it.
 
 use std::collections::HashMap;
 
@@ -51,6 +54,8 @@ pub struct Matched {
     pub instance: usize,
     pub material: usize,
     pub effect: String,
+    /// Whether the shader pass is of an opaque render pass type.
+    pub opaque: bool,
 }
 
 /// Scene inputs read back from a capture.
@@ -71,6 +76,8 @@ pub struct CaptureInputs {
     /// The map draws found, in capture order.
     pub matched: Vec<Matched>,
     instance_count: usize,
+    /// Per instance: the file's render order and `m_DObjKind`.
+    render_orders: Vec<(i32, i32)>,
 }
 
 fn word_slice(d: &Draw, vertex: bool, slot: u32) -> Option<&[u8]> {
@@ -183,27 +190,30 @@ impl CaptureInputs {
             }) else {
                 continue;
             };
-            let Some(instance) = map
-                .instances
-                .iter()
-                .position(|i| i.segments.contains(&segment))
-            else {
+            // The instances that draw the segment (several share a mesh);
+            // the material and effect are the first one's (a shared mesh
+            // shares its default materials).
+            let candidates: Vec<usize> = (0..map.instances.len())
+                .filter(|&i| map.instances[i].segments.contains(&segment))
+                .collect();
+            let Some(&first) = candidates.first() else {
                 continue;
             };
-            let Some(material) = map.material(instance, segment) else {
+            let Some(material) = map.material(first, segment) else {
                 continue;
             };
             let effect = map.materials[material].effect.clone();
             let (Some(vs), Some(ps)) = (cap.shader(d.vs), cap.shader(d.ps)) else {
                 continue;
             };
-            let Some(sp) = find_pass(c, &effect, vs, ps) else {
+            let Some((pass_type, sp)) = find_pass(c, &effect, vs, ps) else {
                 continue;
             };
             let variant = &c.effects[&effect];
             Self::invert(d, sp, true, &mut scene_wide, None);
             Self::invert(d, sp, false, &mut scene_wide, None);
             // World from the per-node entries.
+            let mut world = None;
             if let Some(w) = variant.untweakable.iter().find(|u| u.kind == 0x82) {
                 let mut node =
                     vec![0u8; usize::from(variant.untweakable_size).max(w.offset as usize + 64)];
@@ -219,9 +229,26 @@ impl CaptureInputs {
                         node[at + 4 * k + 3],
                     ])
                 });
-                if m.iter().any(|x| *x != 0.0) {
-                    node_worlds.insert(instance, m);
-                }
+                world = m.iter().any(|x| *x != 0.0).then_some(m);
+            }
+            // The instance: one already seen with this World (another of
+            // its segments), else the first not seen yet.
+            let instance = world
+                .and_then(|w| {
+                    candidates
+                        .iter()
+                        .copied()
+                        .find(|i| node_worlds.get(i).is_some_and(|x| bits(x) == bits(&w)))
+                })
+                .or_else(|| {
+                    candidates
+                        .iter()
+                        .copied()
+                        .find(|i| !node_worlds.contains_key(i))
+                })
+                .unwrap_or(first);
+            if let Some(w) = world {
+                node_worlds.insert(instance, w);
             }
             // Material values written at run time.
             let buf = materials
@@ -277,6 +304,7 @@ impl CaptureInputs {
                 instance,
                 material,
                 effect,
+                opaque: pass_type.starts_with("Opaque"),
             });
         }
         let d = camera_draw.ok_or("no scene draw of the capture is a draw of the map")?;
@@ -316,6 +344,11 @@ impl CaptureInputs {
             externals,
             matched,
             instance_count: map.instances.len(),
+            render_orders: map
+                .instances
+                .iter()
+                .map(|i| (i.bounds.map_or(0, |b| b.render_order), i.dobj_kind))
+                .collect(),
         };
         // Instances the box test keeps that draw nothing: hidden.
         let drawn: std::collections::HashSet<usize> =
@@ -390,6 +423,20 @@ impl CaptureInputs {
         }
     }
 
+    /// The matched scene draw numbers of the opaque and the transparent
+    /// pass.
+    #[must_use]
+    pub fn pass_numbers(&self) -> (Vec<usize>, Vec<usize>) {
+        let pick = |o: bool| {
+            self.matched
+                .iter()
+                .filter(|m| m.opaque == o)
+                .map(|m| m.number)
+                .collect()
+        };
+        (pick(true), pick(false))
+    }
+
     /// The captured view id of an external resource.
     #[must_use]
     pub fn external_view(&self, e: External) -> Option<u32> {
@@ -397,17 +444,24 @@ impl CaptureInputs {
     }
 }
 
-/// The shader pass of an effect variant (the material's first, then any
-/// loaded one) whose programs are these.
-fn find_pass<'a>(c: &'a Clusters, effect: &str, vs: &[u8], ps: &[u8]) -> Option<&'a ShaderPass> {
+/// The render pass type and shader pass of an effect variant (the
+/// material's first, then any loaded one) whose programs are these.
+fn find_pass<'a>(
+    c: &'a Clusters,
+    effect: &str,
+    vs: &[u8],
+    ps: &[u8],
+) -> Option<(&'a str, &'a ShaderPass)> {
     let own = c.effects.get(effect).into_iter();
     let rest = c.effects.values();
     own.chain(rest).find_map(|v| {
-        v.passes
-            .iter()
-            .flat_map(|p| &p.shaders)
-            .flat_map(|s| &s.passes)
-            .find(|sp| sp.vs.code == vs && sp.ps.code == ps)
+        v.passes.iter().find_map(|p| {
+            p.shaders
+                .iter()
+                .flat_map(|s| &s.passes)
+                .find(|sp| sp.vs.code == vs && sp.ps.code == ps)
+                .map(|sp| (p.pass_type.as_str(), sp))
+        })
     })
 }
 
@@ -440,8 +494,16 @@ impl SceneInputs for CaptureInputs {
         self.worlds.get(&instance).copied().or(self.common_world)
     }
 
-    fn render_order(&self, _instance: usize) -> Option<i32> {
-        None
+    /// The file's order, plus 100,000,000 for `m_DObjKind` 1 (what
+    /// `MorphManager_registerClusterMorphs` `0x006aca10` adds at map init,
+    /// `docs/formats/scene-maps.md`, Q6).
+    fn render_order(&self, instance: usize) -> Option<i32> {
+        let (b, kind) = self.render_orders.get(instance).copied()?;
+        Some(if kind == 1 {
+            b.wrapping_add(100_000_000)
+        } else {
+            b
+        })
     }
 
     fn segment_hidden(&self, _segment: usize) -> bool {
