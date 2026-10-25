@@ -1667,7 +1667,7 @@ const UNINIT: [Uninit; 9] = [
         ],
         fixup: Some((17, 0x00c6_13d8)),
     },
-    // 0x007a8720 (MsGetTargetDir, behind Native_708f) reads the angle
+    // 0x007a8720 (MsGetTargetDir, behind Native_708f_ActorGetBasicDivide) reads the angle
     // 0x00794d20 leaves at [ebp-4] (unwritten for some actors), and
     // [ebp-8]. Site: sub esp, 8; push edi; push dword [ebp+8]. Stub: pop
     // eax; mov dword [ebp-4], 0; mov dword [ebp-8], 0; then those three;

@@ -328,7 +328,7 @@ pub fn native_700c<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7085` (`0x007a43a0`, `0x7085`): as `0x700c`, the returned
+/// `Native_7085_BtlMoveTargetDistMark` (`0x007a43a0`, `0x7085`): as `0x700c`, the returned
 /// record's `+0x418` = 1; 0.
 pub fn native_7085<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     let r = atel_btl_move_target_dist(h, w, a, s, x87::store(0.0));
@@ -699,7 +699,7 @@ pub fn native_7033<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     set_byte(h, w, s, 0x32, 1)
 }
 
-/// `Native_70e0` (`0x007a8450`, `0x70e0`): 1 when the actor can act and its
+/// `Native_70e0_ActorPartnerReady` (`0x007a8450`, `0x70e0`): 1 when the actor can act and its
 /// partner (`+0xded`) has `+0xdf1` clear, else 0.
 pub fn native_70e0<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -932,7 +932,7 @@ pub fn native_7093<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     call(h, 0x0079_1780, &[id, c])
 }
 
-/// `Native_708f` (`0x007a6700`, `0x708f`): `(v)` -> `0x007a8720(actor, v,
+/// `Native_708f_ActorGetBasicDivide` (`0x007a6700`, `0x708f`): `(v)` -> `0x007a8720(actor, v,
 /// 1)`.
 pub fn native_708f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -947,7 +947,7 @@ pub fn native_708c<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0078_2ba0, &[a, b])
 }
 
-/// `Native_70b5` (`0x007a2f40`, `0x70b5`): `+0x400` = `0xffff`; 0.
+/// `Native_70b5_ActorClearField400` (`0x007a2f40`, `0x70b5`): `+0x400` = `0xffff`; 0.
 pub fn native_70b5<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
     if id != 0xff {
@@ -1003,7 +1003,7 @@ pub fn native_707f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_70d5` (`0x007a7fa0`, `0x70d5`): `(selector)`: the picked index
+/// `Native_70d5_SelSetField6d1` (`0x007a7fa0`, `0x70d5`): `(selector)`: the picked index
 /// into the worker's actor's `+0x6d1`; that index.
 pub fn native_70d5<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let p = pop(h, s);
@@ -1080,7 +1080,7 @@ pub fn native_70ce<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     bits_dc0(h, w, s, |v, m| v & !m)
 }
 
-/// `Native_70a5` (`0x007a76f0`, `0x70a5`): `(x, y, z)` floats into
+/// `Native_70a5_BtlSetMapCenter` (`0x007a76f0`, `0x70a5`): `(x, y, z)` floats into
 /// `0x0112a8d0`..`0x0112a8d8` (z first), `0x0112a8dc` = 1.0,
 /// `0x0112c9fd` = 1; 0.
 pub fn native_70a5<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
@@ -1420,7 +1420,7 @@ pub fn native_7032<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7052` (`0x007a7e10`, `0x7052`): `(a, b, v)`: picked actor `a`
+/// `Native_7052_ActorSetTargetActor` (`0x007a7e10`, `0x7052`): `(a, b, v)`: picked actor `a`
 /// targets picked actor `b` (`+0x43f` = b, `+0x441` = v, `0x00796f20`,
 /// its position (`0x00796ea0`) handed to `0x00796150(a, ..)`), `b`'s
 /// `+0x440` counts up; 0.
@@ -1488,7 +1488,7 @@ pub fn native_7014<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     h.read(h.rebase(0x0112_c8d8))
 }
 
-/// `Native_7096` (`0x007a7b30`, `0x7096`): the signed byte `0x0112c9fa`.
+/// `Native_7096_BtlGetReflected` (`0x007a7b30`, `0x7096`): the signed byte `0x0112c9fa`.
 pub fn native_7096<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     sb(h, h.rebase(0x0112_c9fa))
 }
@@ -1551,7 +1551,7 @@ pub fn native_7050<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     r
 }
 
-/// `Native_708e` (`0x007a5c20`, `0x708e`): `MsMotionPosCheck(actor, chr)`
+/// `Native_708e_ActorMotionPosCheck` (`0x007a5c20`, `0x708e`): `MsMotionPosCheck(actor, chr)`
 /// (`0x007aa100`), with `+0x4f0` = 10.0 and `+0x34` = 1 around the call
 /// when `+0x608` and `+0x505` are set; the actor's signed `+0x508`.
 pub fn native_708e<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
@@ -1653,7 +1653,7 @@ pub fn native_7078<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0078_cd30, &[i, b, a1])
 }
 
-/// `Native_70a4` (`0x007a7630`, `0x70a4`): `0x0079cca0()`; 0.
+/// `Native_70a4_ChnSystemMgrpReset` (`0x007a7630`, `0x70a4`): `0x0079cca0()`; 0.
 pub fn native_70a4<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     call(h, 0x0079_cca0, &[]);
     0
@@ -1910,7 +1910,7 @@ pub fn native_7082<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0079_eb10, &[id, b, 1, a1, 1])
 }
 
-/// `Native_709d` (`0x007a3ae0`, `0x709d`, poll): 5 when there is no actor
+/// `Native_709d_WaitActorField425` (`0x007a3ae0`, `0x709d`, poll): 5 when there is no actor
 /// or its `+0x425` is clear, else 0.
 pub fn native_709d<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = actor(h, w);
@@ -2042,7 +2042,7 @@ pub fn native_70c3<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     near_degrees(h, d)
 }
 
-/// `Native_70ea` (`0x007a7b10`, `0x70ea`): `(v)`: `MsSet01130838(v)`
+/// `Native_70ea_SetGlobal01130838` (`0x007a7b10`, `0x70ea`): `(v)`: `MsSet01130838(v)`
 /// (`0x007b2b40`); v.
 pub fn native_70ea<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -2111,7 +2111,7 @@ pub fn native_703a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_7071` (`0x007a70b0`, `0x7071`): `0x0089bc60(0)`; 0.
+/// `Native_7071_ClearByte00c58ef4` (`0x007a70b0`, `0x7071`): `0x0089bc60(0)`; 0.
 pub fn native_7071<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     call(h, 0x0089_bc60, &[0]);
     0
@@ -2130,7 +2130,7 @@ pub fn native_708b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0078_2940, &[v])
 }
 
-/// `Native_70bb` (`0x007a4cf0`, `0x70bb`): `(v)`: the actor's `+0x415` =
+/// `Native_70bb_ActorSetField45a` (`0x007a4cf0`, `0x70bb`): `(v)`: the actor's `+0x415` =
 /// 0x10, `+0x417` = 0, `+0x452` = 0, `+0x45a` = v (`u16`); 0.
 pub fn native_70bb<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);

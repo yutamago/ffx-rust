@@ -2435,8 +2435,8 @@ ported! {
     Native_700c_BtlMoveTargetDist @ 0x007a_4310 => extern "C" fn n_7a4310(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_700c(&mut mem(), w, a, s)
     }
-    /// `Native_7085(worker, args, stack)`.
-    Native_7085 @ 0x007a_43a0 => extern "C" fn n_7a43a0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_7085_BtlMoveTargetDistMark(worker, args, stack)`.
+    Native_7085_BtlMoveTargetDistMark @ 0x007a_43a0 => extern "C" fn n_7a43a0(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_7085(&mut mem(), w, a, s)
     }
     /// `Native_7000_ActorClearDf2(worker, args, stack)`.
@@ -2577,8 +2577,8 @@ ported! {
     Native_7033_ActorSetField32 @ 0x007a_3cc0 => extern "C" fn n_7a3cc0(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_7033(&mut mem(), w, a, s)
     }
-    /// `Native_70e0(worker, args, stack)`.
-    Native_70e0 @ 0x007a_8450 => extern "C" fn n_7a8450(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70e0_ActorPartnerReady(worker, args, stack)`.
+    Native_70e0_ActorPartnerReady @ 0x007a_8450 => extern "C" fn n_7a8450(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_70e0(&mut mem(), w, a, s)
     }
     /// `Native_703c_AtelRequestSystem(worker, args, stack)`.
@@ -2653,16 +2653,16 @@ ported! {
     Native_7093_CheckRestMotion @ 0x007a_60f0 => extern "C" fn n_7a60f0(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_7093(&mut mem(), w, a, s)
     }
-    /// `Native_708f(worker, args, stack)`.
-    Native_708f @ 0x007a_6700 => extern "C" fn n_7a6700(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_708f_ActorGetBasicDivide(worker, args, stack)`.
+    Native_708f_ActorGetBasicDivide @ 0x007a_6700 => extern "C" fn n_7a6700(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_708f(&mut mem(), w, a, s)
     }
     /// `Native_708c_EncSetGroupWeight(worker, args, stack)`.
     Native_708c_EncSetGroupWeight @ 0x007a_3920 => extern "C" fn n_7a3920(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_708c(&mut mem(), w, a, s)
     }
-    /// `Native_70b5(worker, args, stack)`.
-    Native_70b5 @ 0x007a_2f40 => extern "C" fn n_7a2f40(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70b5_ActorClearField400(worker, args, stack)`.
+    Native_70b5_ActorClearField400 @ 0x007a_2f40 => extern "C" fn n_7a2f40(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_70b5(&mut mem(), w, a, s)
     }
     /// `Native_7031_ActorSetField432(worker, args, stack)`.
@@ -2685,8 +2685,8 @@ ported! {
     Native_707f_ChrResetBtlPos @ 0x007a_5e50 => extern "C" fn n_7a5e50(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_707f(&mut mem(), w, a, s)
     }
-    /// `Native_70d5(worker, args, stack)`.
-    Native_70d5 @ 0x007a_7fa0 => extern "C" fn n_7a7fa0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70d5_SelSetField6d1(worker, args, stack)`.
+    Native_70d5_SelSetField6d1 @ 0x007a_7fa0 => extern "C" fn n_7a7fa0(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_70d5(&mut mem(), w, a, s)
     }
     /// `Native_7084_ResetAfterImage(worker, args, stack)`.
@@ -2717,8 +2717,8 @@ ported! {
     Native_70ce_BtlRemoveTargets @ 0x007a_7f20 => extern "C" fn n_7a7f20(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_70ce(&mut mem(), w, a, s)
     }
-    /// `Native_70a5(worker, args, stack)`.
-    Native_70a5 @ 0x007a_76f0 => extern "C" fn n_7a76f0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70a5_BtlSetMapCenter(worker, args, stack)`.
+    Native_70a5_BtlSetMapCenter @ 0x007a_76f0 => extern "C" fn n_7a76f0(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_70a5(&mut mem(), w, a, s)
     }
     /// `Native_702c_ChrMoveToTarget(worker, args, stack)`.
@@ -2749,8 +2749,8 @@ ported! {
     Native_7032_ActorSetRadians514 @ 0x007a_6f70 => extern "C" fn n_7a6f70(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_7032(&mut mem(), w, a, s)
     }
-    /// `Native_7052(worker, args, stack)`.
-    Native_7052 @ 0x007a_7e10 => extern "C" fn n_7a7e10(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_7052_ActorSetTargetActor(worker, args, stack)`.
+    Native_7052_ActorSetTargetActor @ 0x007a_7e10 => extern "C" fn n_7a7e10(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_7052(&mut mem(), w, a, s)
     }
     /// `AtelCall_Math_ATan2_RF(worker, args, stack)`.
@@ -3481,8 +3481,8 @@ ported! {
     Native_706e_ChrSetVoice_Poll @ 0x007a_71f0 => extern "C" fn n_7a71f0(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_btl_run_event_poll(&mut mem(), w, a, s)
     }
-    /// `Native_708e(worker, args, stack)`.
-    Native_708e @ 0x007a_5c20 => extern "C" fn n_7a5c20(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_708e_ActorMotionPosCheck(worker, args, stack)`.
+    Native_708e_ActorMotionPosCheck @ 0x007a_5c20 => extern "C" fn n_7a5c20(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_708e(&mut mem(), w, a, s)
     }
     /// `Native_7107(worker, args, stack)`.
@@ -3585,8 +3585,8 @@ ported! {
     Native_7082_ChrSetEffect @ 0x007a_41e0 => extern "C" fn n_7a41e0(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_7082(&mut mem(), w, a, s)
     }
-    /// `Native_709d(worker, args, stack)`.
-    Native_709d @ 0x007a_3ae0 => extern "C" fn n_7a3ae0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_709d_WaitActorField425(worker, args, stack)`.
+    Native_709d_WaitActorField425 @ 0x007a_3ae0 => extern "C" fn n_7a3ae0(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_709d(&mut mem(), w, a, s)
     }
     /// `Native_70d7_DamageSetMotion(worker, args, stack)`.
@@ -3617,8 +3617,8 @@ ported! {
     Native_70c3_ChrGetTargetDir @ 0x007a_3650 => extern "C" fn n_7a3650(w: u32, a: u32, s: u32) -> f64 {
         native_btl::native_70c3(&mut mem(), w, a, s)
     }
-    /// `Native_70ea(worker, args, stack)`.
-    Native_70ea @ 0x007a_7b10 => extern "C" fn n_7a7b10(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70ea_SetGlobal01130838(worker, args, stack)`.
+    Native_70ea_SetGlobal01130838 @ 0x007a_7b10 => extern "C" fn n_7a7b10(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_70ea(&mut mem(), w, a, s)
     }
     /// `Native_7115_ChrSetDirLeave(worker, args, stack)`.
@@ -3653,8 +3653,8 @@ ported! {
     Native_708b_EncGetGroupWeight @ 0x007a_3900 => extern "C" fn n_7a3900(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_708b(&mut mem(), w, a, s)
     }
-    /// `Native_70bb(worker, args, stack)`.
-    Native_70bb @ 0x007a_4cf0 => extern "C" fn n_7a4cf0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70bb_ActorSetField45a(worker, args, stack)`.
+    Native_70bb_ActorSetField45a @ 0x007a_4cf0 => extern "C" fn n_7a4cf0(w: u32, a: u32, s: u32) -> u32 {
         native_btl::native_70bb(&mut mem(), w, a, s)
     }
     /// `Native_70ef_EffectSendSignal(worker, args, stack)`.
@@ -4853,8 +4853,8 @@ ported! {
     Native_7123_ChrAttachWeapon @ 0x007a_2980 => extern "C" fn n_7a2980(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_7123(&mut mem(), w, a, s)
     }
-    /// `Native_70c4(worker, args, stack)`.
-    Native_70c4 @ 0x007a_2ba0 => extern "C" fn n_7a2ba0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70c4_ActorHasWeaponFlag(worker, args, stack)`.
+    Native_70c4_ActorHasWeaponFlag @ 0x007a_2ba0 => extern "C" fn n_7a2ba0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70c4(&mut mem(), w, a, s)
     }
     /// `Native_710c(worker, args, stack)`.
@@ -4873,28 +4873,28 @@ ported! {
     Native_705b_ChrGetCamWidth @ 0x007a_2d80 => extern "C" fn n_7a2d80(w: u32, a: u32, s: u32) -> f64 {
         native_btl2::native_705b(&mut mem(), w, a, s)
     }
-    /// `Native_705c(worker, args, stack)`.
-    Native_705c @ 0x007a_2df0 => extern "C" fn n_7a2df0(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_705c_ChrGetCamHeight(worker, args, stack)`.
+    Native_705c_ChrGetCamHeight @ 0x007a_2df0 => extern "C" fn n_7a2df0(w: u32, a: u32, s: u32) -> f64 {
         native_btl2::native_705c(&mut mem(), w, a, s)
     }
     /// `Native_70f2_ItemSlotAdd(worker, args, stack)`.
     Native_70f2_ItemSlotAdd @ 0x007a_2e60 => extern "C" fn n_7a2e60(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70f2(&mut mem(), w, a, s)
     }
-    /// `Native_709a(worker, args, stack)`.
-    Native_709a @ 0x007a_2eb0 => extern "C" fn n_7a2eb0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_709a_BtlIsTurnEndActor(worker, args, stack)`.
+    Native_709a_BtlIsTurnEndActor @ 0x007a_2eb0 => extern "C" fn n_7a2eb0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_709a(&mut mem(), w, a, s)
     }
-    /// `Native_70b9(worker, args, stack)`.
-    Native_70b9 @ 0x007a_2ee0 => extern "C" fn n_7a2ee0(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_70b9_ChrGetInfoB(worker, args, stack)`.
+    Native_70b9_ChrGetInfoB @ 0x007a_2ee0 => extern "C" fn n_7a2ee0(w: u32, a: u32, s: u32) -> f64 {
         native_btl2::native_70b9(&mut mem(), w, a, s)
     }
     /// `Native_70f5_CheckUseCommand(worker, args, stack)`.
     Native_70f5_CheckUseCommand @ 0x007a_2f80 => extern "C" fn n_7a2f80(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70f5(&mut mem(), w, a, s)
     }
-    /// `Native_70ba(worker, args, stack)`.
-    Native_70ba @ 0x007a_3040 => extern "C" fn n_7a3040(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_70ba_ChrGetInfoA(worker, args, stack)`.
+    Native_70ba_ChrGetInfoA @ 0x007a_3040 => extern "C" fn n_7a3040(w: u32, a: u32, s: u32) -> f64 {
         native_btl2::native_70ba(&mut mem(), w, a, s)
     }
     /// `Native_709b_ChrGetPosY(worker, args, stack)`.
@@ -4905,16 +4905,16 @@ ported! {
     Native_70c2_ChrGetAngleTo @ 0x007a_31d0 => extern "C" fn n_7a31d0(w: u32, a: u32, s: u32) -> f64 {
         native_btl2::native_70c2(&mut mem(), w, a, s)
     }
-    /// `Native_709c(worker, args, stack)`.
-    Native_709c @ 0x007a_3330 => extern "C" fn n_7a3330(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_709c_ActorAngleTo(worker, args, stack)`.
+    Native_709c_ActorAngleTo @ 0x007a_3330 => extern "C" fn n_7a3330(w: u32, a: u32, s: u32) -> f64 {
         native_btl2::native_709c(&mut mem(), w, a, s)
     }
-    /// `Native_70d8(worker, args, stack)`.
-    Native_70d8 @ 0x007a_3400 => extern "C" fn n_7a3400(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70d8_BtlSetByteCa06(worker, args, stack)`.
+    Native_70d8_BtlSetByteCa06 @ 0x007a_3400 => extern "C" fn n_7a3400(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70d8(&mut mem(), w, a, s)
     }
-    /// `Native_70fa(worker, args, stack)`.
-    Native_70fa @ 0x007a_3420 => extern "C" fn n_7a3420(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70fa_BtlSetRandFixed(worker, args, stack)`.
+    Native_70fa_BtlSetRandFixed @ 0x007a_3420 => extern "C" fn n_7a3420(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70fa(&mut mem(), w, a, s)
     }
     /// `Native_709f_GetTargetDirDiff(worker, args, stack)`.
@@ -4933,8 +4933,8 @@ ported! {
     Native_7103_ChrSetNeckTarget @ 0x007a_3880 => extern "C" fn n_7a3880(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_7103(&mut mem(), w, a, s)
     }
-    /// `Native_70fd(worker, args, stack)`.
-    Native_70fd @ 0x007a_3a10 => extern "C" fn n_7a3a10(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70fd_ActorSetSlotPair(worker, args, stack)`.
+    Native_70fd_ActorSetSlotPair @ 0x007a_3a10 => extern "C" fn n_7a3a10(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70fd(&mut mem(), w, a, s)
     }
     /// `Native_710b_Poll(worker, args, stack)`.
@@ -4981,8 +4981,8 @@ ported! {
     Native_7011_BtlSetDebugCameraSleep @ 0x007a_4280 => extern "C" fn n_7a4280(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_7011(&mut mem(), w, a, s)
     }
-    /// `Native_70d0(worker, args, stack)`.
-    Native_70d0 @ 0x007a_4380 => extern "C" fn n_7a4380(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70d0_BtlSetByte9de(worker, args, stack)`.
+    Native_70d0_BtlSetByte9de @ 0x007a_4380 => extern "C" fn n_7a4380(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70d0(&mut mem(), w, a, s)
     }
     /// `Native_7112_ChrSetDirTarget(worker, args, stack)`.
@@ -4993,8 +4993,8 @@ ported! {
     Native_70c1_ChrGetDistance @ 0x007a_4b90 => extern "C" fn n_7a4b90(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70c1(&mut mem(), w, a, s)
     }
-    /// `Native_70df(worker, args, stack)`.
-    Native_70df @ 0x007a_4ee0 => extern "C" fn n_7a4ee0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70df_BtlCheckSceneField(worker, args, stack)`.
+    Native_70df_BtlCheckSceneField @ 0x007a_4ee0 => extern "C" fn n_7a4ee0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70df(&mut mem(), w, a, s)
     }
     /// `Native_705e_ResetBindEffect(worker, args, stack)`.
@@ -5077,8 +5077,8 @@ ported! {
     Native_704c_ChrWaitMotionBit_Poll @ 0x007a_7cf0 => extern "C" fn n_7a7cf0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_704c_poll(&mut mem(), w, a, s)
     }
-    /// `Native_70bf(worker, args, stack)`.
-    Native_70bf @ 0x007a_6ae0 => extern "C" fn n_7a6ae0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70bf_ChrBindSetScale(worker, args, stack)`.
+    Native_70bf_ChrBindSetScale @ 0x007a_6ae0 => extern "C" fn n_7a6ae0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70bf(&mut mem(), w, a, s)
     }
     /// `Native_70a9_MsgWaitCloseStream_Poll(worker, args, stack)`.
@@ -5093,28 +5093,28 @@ ported! {
     Native_704f_SelSetFieldDdd @ 0x007a_70c0 => extern "C" fn n_7a70c0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_704f(&mut mem(), w, a, s)
     }
-    /// `Native_707c_Poll(worker, args, stack)`.
-    Native_707c_Poll @ 0x007a_7260 => extern "C" fn n_7a7260(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_707c_WaitActorF2c_Poll(worker, args, stack)`.
+    Native_707c_WaitActorF2c_Poll @ 0x007a_7260 => extern "C" fn n_7a7260(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_707c_poll(&mut mem(), w, a, s)
     }
-    /// `Native_70a0(worker, args, stack)`.
-    Native_70a0 @ 0x007a_73d0 => extern "C" fn n_7a73d0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70a0_BtlSetSpCameraOn(worker, args, stack)`.
+    Native_70a0_BtlSetSpCameraOn @ 0x007a_73d0 => extern "C" fn n_7a73d0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70a0(&mut mem(), w, a, s)
     }
     /// `Native_704e_ActorSetField3f5(worker, args, stack)`.
     Native_704e_ActorSetField3f5 @ 0x007a_7530 => extern "C" fn n_7a7530(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_704e(&mut mem(), w, a, s)
     }
-    /// `Native_706a(worker, args, stack)`.
-    Native_706a @ 0x007a_7580 => extern "C" fn n_7a7580(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_706a_ActorCheckTargetBit(worker, args, stack)`.
+    Native_706a_ActorCheckTargetBit @ 0x007a_7580 => extern "C" fn n_7a7580(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_706a(&mut mem(), w, a, s)
     }
-    /// `Native_70a6(worker, args, stack)`.
-    Native_70a6 @ 0x007a_77a0 => extern "C" fn n_7a77a0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70a6_BtlSetEscapeRule(worker, args, stack)`.
+    Native_70a6_BtlSetEscapeRule @ 0x007a_77a0 => extern "C" fn n_7a77a0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70a6(&mut mem(), w, a, s)
     }
-    /// `Native_70b8(worker, args, stack)`.
-    Native_70b8 @ 0x007a_7860 => extern "C" fn n_7a7860(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70b8_BtlSetMenuSkipOn(worker, args, stack)`.
+    Native_70b8_BtlSetMenuSkipOn @ 0x007a_7860 => extern "C" fn n_7a7860(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70b8(&mut mem(), w, a, s)
     }
     /// `Native_7075_WeaponSetMotion(worker, args, stack)`.
@@ -5125,8 +5125,8 @@ ported! {
     Native_7075_WeaponSetMotion_Poll @ 0x007a_7aa0 => extern "C" fn n_7a7aa0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_7075_poll(&mut mem(), w, a, s)
     }
-    /// `Native_70ee(worker, args, stack)`.
-    Native_70ee @ 0x007a_7b90 => extern "C" fn n_7a7b90(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70ee_CalcLevelFromSum(worker, args, stack)`.
+    Native_70ee_CalcLevelFromSum @ 0x007a_7b90 => extern "C" fn n_7a7b90(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70ee(&mut mem(), w, a, s)
     }
     /// `Native_704c_ChrWaitMotionBit(worker, args, stack)`.
@@ -5141,8 +5141,8 @@ ported! {
     Native_70b3_SetVoiceWait @ 0x007a_7df0 => extern "C" fn n_7a7df0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70b3(&mut mem(), w, a, s)
     }
-    /// `Native_70dd(worker, args, stack)`.
-    Native_70dd @ 0x007a_7f80 => extern "C" fn n_7a7f80(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70dd_BtlSetWordC8fc(worker, args, stack)`.
+    Native_70dd_BtlSetWordC8fc @ 0x007a_7f80 => extern "C" fn n_7a7f80(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70dd(&mut mem(), w, a, s)
     }
     /// `Native_70d6_CalcDamageCommand(worker, args, stack)`.
@@ -5157,8 +5157,8 @@ ported! {
     Native_7126 @ 0x007a_8550 => extern "C" fn n_7a8550(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_7126(&mut mem(), w, a, s)
     }
-    /// `Native_70e1(worker, args, stack)`.
-    Native_70e1 @ 0x007a_85a0 => extern "C" fn n_7a85a0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70e1_ActorPartnerDf1Clear(worker, args, stack)`.
+    Native_70e1_ActorPartnerDf1Clear @ 0x007a_85a0 => extern "C" fn n_7a85a0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70e1(&mut mem(), w, a, s)
     }
     /// `Native_7073_ChrAttachWeapon(worker, args, stack)`.
@@ -6505,8 +6505,8 @@ ported! {
     Native_BtlFindActor @ 0x007a_6170 => extern "C" fn n_7a6170(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_7069(&mut mem(), w, a, s)
     }
-    /// `Native_706c(worker, args, stack)`.
-    Native_706c @ 0x007a_6bc0 => extern "C" fn n_7a6bc0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_706c_ActorPlaySound(worker, args, stack)`.
+    Native_706c_ActorPlaySound @ 0x007a_6bc0 => extern "C" fn n_7a6bc0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_706c(&mut mem(), w, a, s)
     }
     /// `Native_7072_MsgDrawEvjimaku(worker, args, stack)`.
@@ -6517,8 +6517,8 @@ ported! {
     Native_7074_ChrDetachWeapon @ 0x007a_29f0 => extern "C" fn n_7a29f0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_7074(&mut mem(), w, a, s)
     }
-    /// `Native_7077(worker, args, stack)`.
-    Native_7077 @ 0x007a_5450 => extern "C" fn n_7a5450(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_7077_SelGetTargetDist(worker, args, stack)`.
+    Native_7077_SelGetTargetDist @ 0x007a_5450 => extern "C" fn n_7a5450(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_7077(&mut mem(), w, a, s)
     }
     /// `Native_7079_ChrRefreshEquipment(worker, args, stack)`.
@@ -6565,8 +6565,8 @@ ported! {
     Native_70b4_WeaponSetTransparent @ 0x007a_7130 => extern "C" fn n_7a7130(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_70b4(&mut mem(), w, a, s)
     }
-    /// `Native_70b6(worker, args, stack)`.
-    Native_70b6 @ 0x007a_52b0 => extern "C" fn n_7a52b0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70b6_SelCueMoveSpeed(worker, args, stack)`.
+    Native_70b6_SelCueMoveSpeed @ 0x007a_52b0 => extern "C" fn n_7a52b0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_70b6(&mut mem(), w, a, s)
     }
     /// `Native_70b7_MsgDrawEvjimakuAlbhed(worker, args, stack)`.
@@ -6629,8 +6629,8 @@ ported! {
     Native_70f9_SearchScriptTarget @ 0x007a_5fc0 => extern "C" fn n_7a5fc0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_70f9(&mut mem(), w, a, s)
     }
-    /// `Native_70fb(worker, args, stack)`.
-    Native_70fb @ 0x007a_37e0 => extern "C" fn n_7a37e0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_70fb_SearchScriptTarget(worker, args, stack)`.
+    Native_70fb_SearchScriptTarget @ 0x007a_37e0 => extern "C" fn n_7a37e0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_70fb(&mut mem(), w, a, s)
     }
     /// `Native_7100(worker, args, stack)`.
