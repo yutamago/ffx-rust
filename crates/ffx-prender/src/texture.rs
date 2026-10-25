@@ -185,4 +185,30 @@ pub mod bridge {
         m.write(this + off, value);
         0
     }
+
+    /// The texture data object's constructor `0x004c78a0(this, texture)`
+    /// -> `this`: `+4` a `u16` 0, `+8` 1, `+0xc` 0, `+0` the texture;
+    /// the texture's flags `+0x14` get bit 8, and the object becomes its
+    /// data (`+0x18`) when it has none or its old one is its own.
+    pub fn data_ctor(m: &mut impl Mem, this: u32, texture: u32) -> u32 {
+        m.write(this + 4, 0u16);
+        m.write(this + 8, 1u32);
+        m.write(this + 0xc, 0u32);
+        m.write(this, texture);
+        let old: u32 = m.read(texture + 0x18);
+        let flags: u32 = m.read(texture + 0x14);
+        m.write(texture + 0x14, flags | 0x100);
+        let take = old == 0 || {
+            let owner = if m.read::<u8>(old + 4) == 0 {
+                m.read(old)
+            } else {
+                0
+            };
+            owner == texture
+        };
+        if take {
+            m.write(texture + 0x18, this);
+        }
+        this
+    }
 }

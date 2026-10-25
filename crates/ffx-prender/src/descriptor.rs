@@ -244,6 +244,14 @@ pub const INIT: &[(u32, &[u8])] = &[
         ],
     ),
     (0x004b_9770, &[0; 16]),
+    (0x0048_3170, &[0; 22]),
+    (
+        0x004b_d5a0,
+        &[
+            0x0f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0,
+        ],
+    ),
 ];
 
 /// `destroyInstance` copies and the destructor each calls.
@@ -515,6 +523,7 @@ pub const SET_EXTERNAL: &[(u32, Release)] = &[
     (0x004b_aa70, Release::Free),
     (0x004b_ab10, Release::Free),
     (0x004b_dde0, Release::Elements(0x004b_c850)),
+    (0x0049_5440, Release::Free),
 ];
 
 /// Element releases: each 16-byte element's untagged `+4` block, then the
@@ -642,6 +651,13 @@ pub const fn spans_of(f: u32) -> Spans {
     }
     panic!("not in the table");
 }
+
+/// `PCameraOrthographic`'s constructInstance pieces: the base at `p + 4`
+/// (`0x004530a0`, thiscall), its vtable, its setup (`0x00455fe0`, thiscall).
+pub const CAMERA_ORTHO: [u32; 3] = [0x0045_30a0, 0x00b1_1040, 0x0045_5fe0];
+/// `PShaderSource`'s default object: the
+/// descriptor and its getter (constructInstance `0x004b0470`).
+pub const SHADER_SOURCE_DEFAULT: [u32; 2] = [0x00c9_1048, 0x0043_cbb0];
 
 pub mod bridge {
     //! The originals over game memory.
@@ -889,5 +905,61 @@ pub mod bridge {
     pub fn destroy_texture(h: &mut impl Host, p: u32) -> bool {
         crate::texture::bridge::common_dtor(h, p);
         true
+    }
+
+    /// `constructInstance(p)` of `PTextureCommonBase`: its constructor in
+    /// place unless `p` is 0; true.
+    pub fn construct_texture(m: &mut impl Mem, p: u32) -> bool {
+        if p != 0 {
+            crate::texture::bridge::common_ctor(m, p);
+        }
+        true
+    }
+
+    /// `constructInstance(p)` of `PSamplerStateBase`: its constructor in
+    /// place unless `p` is 0; true.
+    pub fn construct_sampler(m: &mut impl Mem, p: u32) -> bool {
+        if p != 0 {
+            crate::texture::bridge::sampler_ctor(m, p);
+        }
+        true
+    }
+
+    /// `constructInstance(p)` of `PCameraOrthographic` unless `p` is 0:
+    /// the base at `p + 4`, 1.0 at `+0x150` and `+0x154`, its vtable, its
+    /// setup; true.
+    pub fn construct_camera_ortho(
+        h: &mut impl Host,
+        [base, vtable, setup]: [u32; 3],
+        p: u32,
+    ) -> bool {
+        if p != 0 {
+            h.call_sym(base, Conv::Thiscall(p + 4), &[]);
+            h.write(p + 0x150, 1.0f32);
+            h.write(p + 0x154, 1.0f32);
+            let vtable = h.rebase(vtable);
+            h.write(p, vtable);
+            h.call_sym(setup, Conv::Thiscall(p), &[]);
+        }
+        true
+    }
+
+    /// `constructInstance(p)` from the descriptor's default object
+    /// pointer: 0 without one; else unless `p` is 0 the object at `+0`
+    /// and four words 0, and `eax` = `p` with `al = 1`.
+    pub fn construct_default_fields(h: &mut impl Host, [descriptor, get]: [u32; 2], p: u32) -> u32 {
+        let d = h.rebase(descriptor);
+        let default = h.call_sym(get, Conv::Thiscall(d), &[]);
+        if default == 0 {
+            return 0;
+        }
+        if p != 0 {
+            h.write(p, default);
+            for i in 1..5 {
+                h.write(p + 4 * i, 0u32);
+            }
+        }
+        // `al = 1` over `p`, which the original has in `eax` by then
+        (p & !0xff) | 1
     }
 }

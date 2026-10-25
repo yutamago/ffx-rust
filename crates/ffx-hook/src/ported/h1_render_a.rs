@@ -1419,4 +1419,125 @@ ported! {
         let k = const { registry::array_type_of(0x004c_ae60) };
         registry::bridge::array_type(&mut mem(), &k, name)
     }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PDataBlockBase__constructInstance` (thiscall).
+    Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PDataBlockBase__constructInstance @ 0x0048_3170 => extern "thiscall" fn h1_00483170(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_init(&mut mem(), p, const { descriptor::init_of(0x0048_3170) }))
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShader__constructInstance` (thiscall).
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShader__constructInstance @ 0x004b_d5a0 => extern "thiscall" fn h1_004bd5a0(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_init(&mut mem(), p, const { descriptor::init_of(0x004b_d5a0) }))
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTextureCommonBase__constructInstance` (thiscall).
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTextureCommonBase__constructInstance @ 0x004c_26a0 => extern "thiscall" fn h1_004c26a0(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_texture(&mut mem(), p))
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PSamplerStateBase__constructInstance` (thiscall).
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PSamplerStateBase__constructInstance @ 0x004c_0190 => extern "thiscall" fn h1_004c0190(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_sampler(&mut mem(), p))
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PCameraOrthographic__constructInstance` (thiscall).
+    Phyre_PClassDescriptorConcrete_Phyre_PCameraOrthographic__constructInstance @ 0x0045_5b30 => extern "thiscall" fn h1_00455b30(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_camera_ortho(&mut mem(), descriptor::CAMERA_ORTHO, p))
+    }
+    /// `Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderSource__constructInstance` (thiscall).
+    Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PRendering_PShaderSource__constructInstance @ 0x004b_0470 => extern "thiscall" fn h1_004b0470(_descriptor: u32, p: u32) -> u32 {
+        descriptor::bridge::construct_default_fields(&mut mem(), descriptor::SHADER_SOURCE_DEFAULT, p)
+    }
+    /// `Phyre_PArray_setToExternalBuffer_00495440` (thiscall).
+    Phyre_PArray_setToExternalBuffer_00495440 @ 0x0049_5440 => extern "thiscall" fn h1_00495440(array: u32, buffer: u32, count: u32) -> u32 {
+        let release = const { descriptor::release_of(descriptor::SET_EXTERNAL, 0x0049_5440) };
+        descriptor::bridge::set_external(&mut mem(), array, buffer, count, release)
+    }
+    /// `PWorld_initClassEntries_00443150` (C).
+    PWorld_initClassEntries_00443150 @ 0x0044_3150 => extern "C" fn h1_00443150(data: u32, count: u32) {
+        basic::bridge::init_list_heads(&mut mem(), data, count);
+    }
+    /// `PhyreInitElements16_00497db0` (C).
+    PhyreInitElements16_00497db0 @ 0x0049_7db0 => extern "C" fn h1_00497db0(data: u32, count: u32) {
+        basic::bridge::zero_elements16(&mut mem(), data, count);
+    }
+    /// `PhyreCopyElements16_0049f450` (C).
+    PhyreCopyElements16_0049f450 @ 0x0049_f450 => extern "C" fn h1_0049f450(dst: u32, src: u32, count: u32) {
+        basic::bridge::copy_elements16(&mut mem(), dst, src, count);
+    }
+    /// `PhyreCopyElements12_00480bb0` (C).
+    PhyreCopyElements12_00480bb0 @ 0x0048_0bb0 => extern "C" fn h1_00480bb0(dst: u32, src: u32, count: u32) {
+        basic::bridge::copy_elements10(&mut mem(), dst, src, count);
+    }
+    /// `PArray_releaseTaggedWords_00434360` (C).
+    PArray_releaseTaggedWords_00434360 @ 0x0043_4360 => extern "C" fn h1_00434360(data: u32, count: u32) {
+        basic::bridge::release_tagged_words(&mut mem(), data, count);
+    }
+    /// `PType_create_0047fdf0` (C).
+    PType_create_0047fdf0 @ 0x0047_fdf0 => extern "C" fn h1_0047fdf0(out: u32, name: u32) -> u32 {
+        basic::bridge::create_result(&mut mem(), 0x0047_fca0, out, name)
+    }
+    /// `PType_create_0049e900` (C).
+    PType_create_0049e900 @ 0x0049_e900 => extern "C" fn h1_0049e900(out: u32, name: u32) -> u32 {
+        basic::bridge::create_result(&mut mem(), 0x0049_e2c0, out, name)
+    }
+    /// `PType_create_004c13f0` (C).
+    PType_create_004c13f0 @ 0x004c_13f0 => extern "C" fn h1_004c13f0(out: u32, name: u32) -> u32 {
+        basic::bridge::create_result(&mut mem(), 0x004c_0f10, out, name)
+    }
+    /// `PType_register_0047fdb0` (C).
+    PType_register_0047fdb0 @ 0x0047_fdb0 => extern "C" fn h1_0047fdb0(obj: u32) -> u32 {
+        basic::bridge::register_named(&mut mem(), obj, 0x0047_fca0, 0x00c9_85b0, None)
+    }
+    /// `PType_register_004c1000` (C).
+    PType_register_004c1000 @ 0x004c_1000 => extern "C" fn h1_004c1000(obj: u32) -> u32 {
+        basic::bridge::register_named(&mut mem(), obj, 0x004c_0f10, 0x00ca_2f04, Some(0x00ca_2f08))
+    }
+    /// `Phyre_PCameraOrthographic_deletingDtor_00455560` (thiscall).
+    Phyre_PCameraOrthographic_deletingDtor_00455560 @ 0x0045_5560 => extern "thiscall" fn h1_00455560(this: u32, flags: u32) -> u32 {
+        basic::bridge::camera_delete(&mut mem(), this, flags, 0x00b1_0f5c)
+    }
+    /// `Phyre_PCameraPerspective_deletingDtor_00456500` (thiscall).
+    Phyre_PCameraPerspective_deletingDtor_00456500 @ 0x0045_6500 => extern "thiscall" fn h1_00456500(this: u32, flags: u32) -> u32 {
+        basic::bridge::camera_delete(&mut mem(), this, flags, 0x00b1_0f5c)
+    }
+    /// `PhyreCtor_eventOwner_004315e0` (thiscall).
+    PhyreCtor_eventOwner_004315e0 @ 0x0043_15e0 => extern "thiscall" fn h1_004315e0(this: u32) -> u32 {
+        basic::bridge::event_owner_ctor(&mut mem(), this)
+    }
+    /// `PhyreCtor_zero32_00463d10` (thiscall).
+    PhyreCtor_zero32_00463d10 @ 0x0046_3d10 => extern "thiscall" fn h1_00463d10(this: u32) -> u32 {
+        basic::bridge::clear_32(&mut mem(), this)
+    }
+    /// `PType_find_0047fca0` (C).
+    PType_find_0047fca0 @ 0x0047_fca0 => extern "C" fn h1_0047fca0(name: u32) -> u32 {
+        basic::bridge::find_named(&mem(), 0x00c9_85b0, 0, 4, name)
+    }
+    /// `PType_find_004c0f10` (C).
+    PType_find_004c0f10 @ 0x004c_0f10 => extern "C" fn h1_004c0f10(name: u32) -> u32 {
+        basic::bridge::find_named(&mem(), 0x00ca_2f04, 0, 4, name)
+    }
+    /// `PType_find_0049e2c0` (C).
+    PType_find_0049e2c0 @ 0x0049_e2c0 => extern "C" fn h1_0049e2c0(name: u32) -> u32 {
+        basic::bridge::find_named(&mem(), 0x00c9_aef8, 4, 8, name)
+    }
+    /// `PType_find_004cb090` (C).
+    PType_find_004cb090 @ 0x004c_b090 => extern "C" fn h1_004cb090(name: u32) -> u32 {
+        basic::bridge::find_named(&mem(), 0x00ca_43a8, 4, 8, name)
+    }
+    /// `PType_find_004d3780` (C).
+    PType_find_004d3780 @ 0x004d_3780 => extern "C" fn h1_004d3780(name: u32) -> u32 {
+        basic::bridge::find_named(&mem(), 0x00ca_4e18, 4, 8, name)
+    }
+    /// `PhyreFindByName_004d37e0` (C).
+    PhyreFindByName_004d37e0 @ 0x004d_37e0 => extern "C" fn h1_004d37e0(name: u32) -> u32 {
+        basic::bridge::find_named_by(&mut mem(), 0x00ca_4e18, 0x00b0_c398, name)
+    }
+    /// `PSharray_element20_004348c0` (thiscall).
+    PSharray_element20_004348c0 @ 0x0043_48c0 => extern "thiscall" fn h1_004348c0(this: u32, i: u32) -> u32 {
+        basic::bridge::sharray_element(&mem(), this, i)
+    }
+    /// `PSharray_element20_00434910` (thiscall).
+    PSharray_element20_00434910 @ 0x0043_4910 => extern "thiscall" fn h1_00434910(this: u32, i: u32) -> u32 {
+        basic::bridge::sharray_element(&mem(), this, i)
+    }
+    /// `PTextureData_ctor_004c78a0` (thiscall).
+    PTextureData_ctor_004c78a0 @ 0x004c_78a0 => extern "thiscall" fn h1_004c78a0(this: u32, texture: u32) -> u32 {
+        texture::bridge::data_ctor(&mut mem(), this, texture)
+    }
 }

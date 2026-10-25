@@ -1320,3 +1320,361 @@ fn array_types_match_the_original() {
         }
     }
 }
+
+// ---- batch 5: more constructInstance, element loops, type lists, cameras ----
+
+/// A port taking `p`.
+type Port = fn(&mut G, u32) -> Out;
+
+/// A C string in both oracles.
+fn cstr(t: &mut Twins, s: &str) -> u32 {
+    let mut b = s.as_bytes().to_vec();
+    b.push(0);
+    t.alloc(&b)
+}
+
+#[test]
+fn batch5_descriptor_callbacks_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xb5b5_0001);
+        let this = object(&mut t, &mut rng);
+        let [base, _, setup] = descriptor::CAMERA_ORTHO;
+        t.stub(base, true, 0, 0, Ret::Imm(0xba5e));
+        t.stub(setup, true, 0, 0, Ret::Imm(0x5e7));
+        let cell = t.zeros(4);
+        t.stub(
+            descriptor::SHADER_SOURCE_DEFAULT[1],
+            true,
+            0,
+            0,
+            Ret::Cell(cell),
+        );
+        let cases: [(u32, Port); 4] = [
+            (0x004c_26a0, |g, p| {
+                Out::U8(u8::from(descriptor::bridge::construct_texture(g, p)))
+            }),
+            (0x004c_0190, |g, p| {
+                Out::U8(u8::from(descriptor::bridge::construct_sampler(g, p)))
+            }),
+            (0x0045_5b30, |g, p| {
+                Out::U8(u8::from(descriptor::bridge::construct_camera_ortho(
+                    g,
+                    descriptor::CAMERA_ORTHO,
+                    p,
+                )))
+            }),
+            (0x004b_0470, |g, p| {
+                Out::U32(descriptor::bridge::construct_default_fields(
+                    g,
+                    descriptor::SHADER_SOURCE_DEFAULT,
+                    p,
+                ))
+            }),
+        ];
+        for (f, port) in cases {
+            for default in [0u32, 0x1234_5600, 0x0abc_def1] {
+                t.w32(cell, default);
+                for p in [0, pattern(&mut t, &mut rng, 0x160)] {
+                    t.check(
+                        &format!("{name} {f:#x}({p:#x}) default {default:#x}"),
+                        f,
+                        Conv::Thiscall(this),
+                        &[p],
+                        |g| port(g, p),
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn element_loops_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xe1e3_0001);
+        t.stub(basic::FREE, false, 1, 0, Ret::Imm(0xf4ee));
+        for count in [0u32, 1, 2, 5] {
+            let dst = pattern(&mut t, &mut rng, 20 * 5 + 4);
+            let src = pattern(&mut t, &mut rng, 20 * 5 + 4);
+            for d in [dst, 0] {
+                if d == 0 && count > 1 {
+                    continue; // the next element would be at a small address
+                }
+                t.check(
+                    &format!("{name} list heads {d:#x} {count}"),
+                    0x0044_3150,
+                    Conv::Cdecl,
+                    &[d, count],
+                    |g| {
+                        basic::bridge::init_list_heads(g, d, count);
+                        Out::None
+                    },
+                );
+                t.check(
+                    &format!("{name} zero16 {d:#x} {count}"),
+                    0x0049_7db0,
+                    Conv::Cdecl,
+                    &[d, count],
+                    |g| {
+                        basic::bridge::zero_elements16(g, d, count);
+                        Out::None
+                    },
+                );
+                t.check(
+                    &format!("{name} copy16 {d:#x} {count}"),
+                    0x0049_f450,
+                    Conv::Cdecl,
+                    &[d, src, count],
+                    |g| {
+                        basic::bridge::copy_elements16(g, d, src, count);
+                        Out::None
+                    },
+                );
+                // a fresh destination: the 16-byte copy made it equal to `src`
+                let d = if d == 0 {
+                    0
+                } else {
+                    pattern(&mut t, &mut rng, 20 * 5 + 4)
+                };
+                t.check(
+                    &format!("{name} copy12 {d:#x} {count}"),
+                    0x0048_0bb0,
+                    Conv::Cdecl,
+                    &[d, src, count],
+                    |g| {
+                        basic::bridge::copy_elements10(g, d, src, count);
+                        Out::None
+                    },
+                );
+            }
+            let words: Vec<u8> = (0..count.max(1))
+                .flat_map(|_| {
+                    let w = 0x2000_0000 | (rng.next() & 0xfff3) | (rng.next() & 1);
+                    w.to_le_bytes()
+                })
+                .collect();
+            let data = t.alloc(&words);
+            for d in [data, 0] {
+                t.check(
+                    &format!("{name} tagged words {d:#x} {count}"),
+                    0x0043_4360,
+                    Conv::Cdecl,
+                    &[d, count],
+                    |g| {
+                        basic::bridge::release_tagged_words(g, d, count);
+                        Out::None
+                    },
+                );
+            }
+        }
+    }
+}
+
+/// The type lists: `(find, head, name offset, link offset)`.
+const TYPE_LISTS: [(u32, u32, u32, u32); 5] = [
+    (0x0047_fca0, 0x00c9_85b0, 0, 4),
+    (0x004c_0f10, 0x00ca_2f04, 0, 4),
+    (0x0049_e2c0, 0x00c9_aef8, 4, 8),
+    (0x004c_b090, 0x00ca_43a8, 4, 8),
+    (0x004d_3780, 0x00ca_4e18, 4, 8),
+];
+
+#[test]
+fn type_lists_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x7e7e_0001);
+        let words = ["alpha", "beta", "betb", "be", "", "PTexture2D", "PTexture2"];
+        for (find, head, name_off, next_off) in TYPE_LISTS {
+            // a fresh list of entries named by `words`
+            let mut first = 0;
+            for w in words.iter().rev() {
+                let e = pattern(&mut t, &mut rng, 0x10);
+                let s = cstr(&mut t, w);
+                t.w32(e + name_off, s);
+                t.w32(e + next_off, first);
+                first = e;
+            }
+            let at = t.rebase(head);
+            for list in [first, 0] {
+                t.w32(at, list);
+                for q in [
+                    "beta",
+                    "be",
+                    "",
+                    "PTexture2",
+                    "PTexture2D",
+                    "gamma",
+                    "alphaX",
+                ] {
+                    let s = cstr(&mut t, q);
+                    t.check(
+                        &format!("{name} find {find:#x} {q:?}"),
+                        find,
+                        Conv::Cdecl,
+                        &[s],
+                        |g| Out::U32(basic::bridge::find_named(g, head, name_off, next_off, s)),
+                    );
+                }
+                t.check(
+                    &format!("{name} find {find:#x} null"),
+                    find,
+                    Conv::Cdecl,
+                    &[0],
+                    |g| Out::U32(basic::bridge::find_named(g, head, name_off, next_off, 0)),
+                );
+            }
+            t.w32(at, first);
+        }
+        // the create callbacks and the registrations, with the lookups stubbed
+        let cell = t.zeros(4);
+        for (find, ..) in TYPE_LISTS {
+            t.stub(find, false, 1, 0, Ret::Cell(cell));
+        }
+        for (f, find) in [
+            (0x0047_fdf0, 0x0047_fca0),
+            (0x0049_e900, 0x0049_e2c0),
+            (0x004c_13f0, 0x004c_0f10),
+        ] {
+            for found in [0, 0x4000_1230] {
+                t.w32(cell, found);
+                let out = pattern(&mut t, &mut rng, 4);
+                let s = rng.next();
+                t.check(
+                    &format!("{name} create {f:#x} {found:#x}"),
+                    f,
+                    Conv::Cdecl,
+                    &[out, s],
+                    |g| Out::U32(basic::bridge::create_result(g, find, out, s)),
+                );
+            }
+        }
+        for (f, find, head, table) in [
+            (0x0047_fdb0, 0x0047_fca0, 0x00c9_85b0, None),
+            (0x004c_1000, 0x004c_0f10, 0x00ca_2f04, Some(0x00ca_2f08)),
+        ] {
+            for (named, found) in [(0, 0), (0x1111_0000, 0x2222_0000), (0x1111_0000, 0)] {
+                t.w32(cell, found);
+                let obj = pattern(&mut t, &mut rng, 0x10);
+                t.w32(obj, named);
+                t.w32(obj + 8, rng.next() % 8);
+                t.check(
+                    &format!("{name} register {f:#x} {named:#x} {found:#x}"),
+                    f,
+                    Conv::Cdecl,
+                    &[obj],
+                    |g| Out::U32(basic::bridge::register_named(g, obj, find, head, table)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn find_by_import_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x1f1f_0001);
+        // the compare import: a recording stub that returns a cell
+        let cell = t.zeros(4);
+        let compare = t.stub_code(0x00c0_c0c0, false, 2, 0, Ret::Cell(cell));
+        let slot = t.rebase(0x00b0_c398);
+        t.w32(slot, compare);
+        let mut first = 0;
+        for _ in 0..4 {
+            let e = pattern(&mut t, &mut rng, 0x10);
+            t.w32(e + 8, first);
+            first = e;
+        }
+        let head = t.rebase(0x00ca_4e18);
+        for list in [first, 0] {
+            t.w32(head, list);
+            for (q, verdict) in [(0x5555_0000, 0), (0x5555_0004, 1), (0, 0)] {
+                t.w32(cell, verdict);
+                t.check(
+                    &format!("{name} find by {list:#x} {q:#x} {verdict}"),
+                    0x004d_37e0,
+                    Conv::Cdecl,
+                    &[q],
+                    |g| Out::U32(basic::bridge::find_named_by(g, 0x00ca_4e18, 0x00b0_c398, q)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn cameras_events_sharrays_and_texture_data_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xca3e_0001);
+        t.stub(basic::FREE, false, 1, 0, Ret::Imm(0xf4ee));
+        t.stub(basic::EVENT_FLAG_CTOR, true, 0, 0, Ret::Imm(0xe7));
+        for f in [0x0045_5560, 0x0045_6500] {
+            for (flags, block) in [
+                (0, 0x2000_0000),
+                (1, 0x2000_0001),
+                (3, 0),
+                (0xfe, 0x2000_0000),
+            ] {
+                let p = pattern(&mut t, &mut rng, 0xe0);
+                t.w32(p + 0xd0, block);
+                t.check(
+                    &format!("{name} delete {f:#x} {flags} {block:#x}"),
+                    f,
+                    Conv::Thiscall(p),
+                    &[flags],
+                    |g| Out::U32(basic::bridge::camera_delete(g, p, flags, 0x00b1_0f5c)),
+                );
+            }
+        }
+        let p = pattern(&mut t, &mut rng, 0x20);
+        t.check(
+            &format!("{name} event owner"),
+            0x0043_15e0,
+            Conv::Thiscall(p),
+            &[],
+            |g| Out::U32(basic::bridge::event_owner_ctor(g, p)),
+        );
+        let p = pattern(&mut t, &mut rng, 0x20);
+        t.check(
+            &format!("{name} zero32"),
+            0x0046_3d10,
+            Conv::Thiscall(p),
+            &[],
+            |g| Out::U32(basic::bridge::clear_32(g, p)),
+        );
+        for f in [0x0043_48c0, 0x0043_4910] {
+            for n in [0u32, 1, 2, 7, 0x8000_0001, 0x8000_0000] {
+                let p = pattern(&mut t, &mut rng, 0x20);
+                t.w32(p + 0x14, n);
+                let i = rng.next() % 9;
+                t.check(
+                    &format!("{name} element {f:#x} {n:#x} {i}"),
+                    f,
+                    Conv::Thiscall(p),
+                    &[i],
+                    |g| Out::U32(basic::bridge::sharray_element(g, p, i)),
+                );
+            }
+        }
+        for case in 0..6 {
+            let texture = pattern(&mut t, &mut rng, 0x20);
+            let this = pattern(&mut t, &mut rng, 0x10);
+            let old = if case == 0 {
+                0
+            } else {
+                pattern(&mut t, &mut rng, 0x10)
+            };
+            t.w32(texture + 0x18, old);
+            if old != 0 {
+                t.write(old + 4, &[u8::from(case % 2 == 0)]);
+                t.w32(old, if case < 4 { texture } else { this });
+            }
+            t.check(
+                &format!("{name} data ctor {case}"),
+                0x004c_78a0,
+                Conv::Thiscall(this),
+                &[texture],
+                |g| Out::U32(texture::bridge::data_ctor(g, this, texture)),
+            );
+        }
+    }
+}
