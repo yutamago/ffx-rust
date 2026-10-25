@@ -933,4 +933,40 @@ ported! {
     Phyre_PRendering_PRenderRingBufferSegmented_nextSegment_00613eb0 @ 0x0061_3eb0 => extern "thiscall" fn p_00613eb0(ring: u32) {
         misc::bridge::ring_next_segment(&mut mem(), ring);
     }
+    /// `Phyre_PArray_setViewCallback_005af8d0`.
+    Phyre_PArray_setViewCallback_005af8d0 @ 0x005a_f8d0 => extern "thiscall" fn p_005af8d0(arr: u32, data: u32, count: u32) -> u32 {
+        misc::bridge::array_set_view(&mut mem(), misc::bridge::Release::Free, arr, data, count)
+    }
+    /// `Phyre_PArray_setViewCallback_005b33c0`.
+    Phyre_PArray_setViewCallback_005b33c0 @ 0x005b_33c0 => extern "thiscall" fn p_005b33c0(arr: u32, data: u32, count: u32) -> u32 {
+        misc::bridge::array_set_view(&mut mem(), misc::bridge::Release::Free, arr, data, count)
+    }
+    /// `Phyre_PArray_setViewCallback_005af920`.
+    Phyre_PArray_setViewCallback_005af920 @ 0x005a_f920 => extern "thiscall" fn p_005af920(arr: u32, data: u32, count: u32) -> u32 {
+        misc::bridge::array_set_view(&mut mem(), misc::bridge::Release::FreeSet, arr, data, count)
+    }
+    /// `Phyre_PArray_setViewCallback_005af970`.
+    Phyre_PArray_setViewCallback_005af970 @ 0x005a_f970 => extern "thiscall" fn p_005af970(arr: u32, data: u32, count: u32) -> u32 {
+        misc::bridge::array_set_view(&mut mem(), misc::bridge::Release::FreeSet, arr, data, count)
+    }
+    /// `Phyre_PArray_setViewCallback_005c7a10`.
+    Phyre_PArray_setViewCallback_005c7a10 @ 0x005c_7a10 => extern "thiscall" fn p_005c7a10(arr: u32, data: u32, count: u32) -> u32 {
+        misc::bridge::array_set_view(&mut mem(), misc::bridge::Release::FreeSet, arr, data, count)
+    }
+    /// `Phyre_PArray_setViewCallback_005c7a60`.
+    Phyre_PArray_setViewCallback_005c7a60 @ 0x005c_7a60 => extern "thiscall" fn p_005c7a60(arr: u32, data: u32, count: u32) -> u32 {
+        misc::bridge::array_set_view(&mut mem(), misc::bridge::Release::FreeSet, arr, data, count)
+    }
+    /// `Phyre_PArray_setViewCallback_005c79c0`.
+    Phyre_PArray_setViewCallback_005c79c0 @ 0x005c_79c0 => extern "thiscall" fn p_005c79c0(arr: u32, data: u32, count: u32) -> u32 {
+        misc::bridge::array_set_view(&mut mem(), misc::bridge::Release::With(0x005c_1ef0), arr, data, count)
+    }
+    /// `Phyre_PDynamicGeometry_freeRecords_005c1ef0`.
+    Phyre_PDynamicGeometry_freeRecords_005c1ef0 @ 0x005c_1ef0 => extern "C" fn p_005c1ef0(records: u32, n: u32) -> u32 {
+        misc::bridge::free_records(&mut mem(), records, n)
+    }
+    /// `Phyre_PDynamicGeometry_addNamed_005c8660`.
+    Phyre_PDynamicGeometry_addNamed_005c8660 @ 0x005c_8660 => extern "C" fn p_005c8660(node: u32) -> u32 {
+        misc::bridge::add_named(&mut mem(), node)
+    }
 }

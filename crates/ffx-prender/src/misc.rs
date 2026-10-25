@@ -601,4 +601,95 @@ pub mod bridge {
             h.write(ring.wrapping_add(0xc), wrap(start.wrapping_add(seg)));
         }
     }
+
+    /// How a `PArray`'s `setView` callback releases the old buffer.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Release {
+        /// `PhyreFree(old)`, a null one too (65 bytes).
+        Free,
+        /// `PhyreFree(old)` when it is set (69 bytes).
+        FreeSet,
+        /// `free(old, count & 0x7fffffff)` (cdecl; the elements' own
+        /// release, 74 bytes).
+        With(u32),
+    }
+
+    /// A `PArray`'s `setView(arr, data, count)` callback (thiscall, `ret
+    /// 8`; the member's `+0x3c` callback `member_call` runs): for a
+    /// non-negative `count`, an owned old buffer (bit 31 of `arr +0`
+    /// clear) other than `data` is released, then `arr = {count | bit
+    /// 31, data}`, a view the array does not own. Returns 0.
+    pub fn array_set_view(
+        h: &mut impl Host,
+        release: Release,
+        arr: u32,
+        data: u32,
+        count: u32,
+    ) -> u32 {
+        if count & 0x8000_0000 != 0 {
+            return 0;
+        }
+        let old: u32 = h.read(arr.wrapping_add(4));
+        let header: u32 = h.read(arr);
+        if old != data && header & 0x8000_0000 == 0 {
+            match release {
+                Release::Free => {
+                    h.call_sym(PHYRE_FREE, Conv::Cdecl, &[old]);
+                }
+                Release::FreeSet if old != 0 => {
+                    h.call_sym(PHYRE_FREE, Conv::Cdecl, &[old]);
+                }
+                Release::FreeSet => {}
+                Release::With(f) => {
+                    h.call_sym(f, Conv::Cdecl, &[old, header & 0x7fff_ffff]);
+                }
+            }
+        }
+        h.write(arr.wrapping_add(4), data);
+        h.write(arr, count | 0x8000_0000);
+        0
+    }
+
+    /// `0x005c1ef0(records, n)` (cdecl): frees an array of `n` 20-byte
+    /// records, each holding a `PArray` at `+0xc` (its owned, set buffer
+    /// freed, then zeroed), then the records themselves; nothing for null
+    /// `records`. Returns `PhyreFree`'s `eax`, 0 for null `records` (the
+    /// original leaves the caller's `eax` there; its callers, the
+    /// destroy and `setView` callbacks, drop it).
+    pub fn free_records(h: &mut impl Host, records: u32, n: u32) -> u32 {
+        if records == 0 {
+            return 0;
+        }
+        for i in 0..n {
+            let arr = records.wrapping_add(0xc).wrapping_add(i.wrapping_mul(20));
+            let count: u32 = h.read(arr);
+            if count & 0x8000_0000 == 0 {
+                let data: u32 = h.read(arr.wrapping_add(4));
+                if data != 0 {
+                    h.call_sym(PHYRE_FREE, Conv::Cdecl, &[data]);
+                }
+            }
+            h.write(arr.wrapping_add(4), 0u32);
+            h.write(arr, 0u32);
+        }
+        h.call_sym(PHYRE_FREE, Conv::Cdecl, &[records])
+    }
+
+    /// `0x005c8660(node)` (cdecl): adds a `{name, next}` node to the named
+    /// list ([`super::NAMED_LIST`]) at its head: 0x11 for a null name,
+    /// 0x12 when the name is already there ([`find_named`]), else 0.
+    pub fn add_named(h: &mut impl Host, node: u32) -> u32 {
+        let name: u32 = h.read(node);
+        if name == 0 {
+            return 0x11;
+        }
+        if find_named(h, name) != 0 {
+            return 0x12;
+        }
+        let head = h.rebase(super::NAMED_LIST);
+        let first: u32 = h.read(head);
+        h.write(node.wrapping_add(4), first);
+        h.write(head, node);
+        0
+    }
 }

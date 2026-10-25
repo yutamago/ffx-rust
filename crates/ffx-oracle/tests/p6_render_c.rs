@@ -1444,3 +1444,116 @@ fn misc_ring_next_segment_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn misc_array_set_view_matches_the_original() {
+    use misc::bridge::Release;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8888_b5b5);
+        let cases = [
+            (0x005a_f8d0, Release::Free),
+            (0x005b_33c0, Release::Free),
+            (0x005a_f920, Release::FreeSet),
+            (0x005a_f970, Release::FreeSet),
+            (0x005c_7a10, Release::FreeSet),
+            (0x005c_7a60, Release::FreeSet),
+            (0x005c_79c0, Release::With(0x005c_1ef0)),
+        ];
+        for (f, release) in cases {
+            for i in 0..24 {
+                let arr = object(&mut t, &mut rng, 2, false);
+                let header = rng.below(50) | if i % 2 == 0 { 0x8000_0000 } else { 0 };
+                let old = if i % 3 == 0 { 0 } else { rng.next() };
+                t.w32(arr, header);
+                t.w32(arr + 4, old);
+                let data = if i % 5 == 0 { old } else { rng.next() };
+                let count = if i % 7 == 0 {
+                    0x8000_0000 | rng.next()
+                } else {
+                    rng.below(100)
+                };
+                t.stub(misc::PHYRE_FREE, false, 1, 0, rng.next());
+                t.stub(0x005c_1ef0, false, 2, 0, rng.next());
+                t.check(
+                    &format!("{name} {f:#x} #{i}"),
+                    f,
+                    Conv::Thiscall(arr),
+                    &[data, count],
+                    |g| Out::U32(misc::bridge::array_set_view(g, release, arr, data, count)),
+                );
+                t.unstub(misc::PHYRE_FREE);
+                t.unstub(0x005c_1ef0);
+            }
+        }
+    }
+}
+
+#[test]
+fn misc_free_records_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x9999_b5b5);
+        for i in 0..24 {
+            let n = if i % 4 == 0 { 0 } else { rng.below(6) };
+            let records = if i % 6 == 0 {
+                0
+            } else {
+                object(&mut t, &mut rng, 5 * n.max(1), false)
+            };
+            if records != 0 {
+                for k in 0..n {
+                    let at = records + 20 * k + 0xc;
+                    t.w32(
+                        at,
+                        rng.below(9) | if rng.chance(2) { 0x8000_0000 } else { 0 },
+                    );
+                    t.w32(at + 4, if rng.chance(3) { 0 } else { rng.next() });
+                }
+            }
+            t.stub(misc::PHYRE_FREE, false, 1, 0, rng.next());
+            let addr = t.rebase(0x005c_1ef0);
+            let ra = t.a.call(addr, Conv::Cdecl, &[records, n]).unwrap();
+            let rb = misc::bridge::free_records(&mut G(&mut t.b), records, n);
+            if records != 0 {
+                assert_eq!(ra.eax, rb, "{name} #{i}: eax");
+            }
+            t.diff(&format!("{name} records #{i}"));
+            t.unstub(misc::PHYRE_FREE);
+        }
+    }
+}
+
+#[test]
+fn misc_add_named_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xaaaa_b5b5);
+        let head = t.rebase(misc::NAMED_LIST);
+        let words = ["a", "ab", "position", "normal", "uv0"];
+        for i in 0..24 {
+            let mut first = 0;
+            for _ in 0..rng.below(4) {
+                let s = words[rng.below(words.len() as u32) as usize];
+                let at = t.alloc(&[s.as_bytes(), &[0]].concat());
+                let node = t.zeros(8);
+                t.w32(node, at);
+                t.w32(node + 4, first);
+                first = node;
+            }
+            t.w32(head, first);
+            let node = object(&mut t, &mut rng, 2, false);
+            let s = words[rng.below(words.len() as u32) as usize];
+            let at = if i % 5 == 0 {
+                0
+            } else {
+                t.alloc(&[s.as_bytes(), &[0]].concat())
+            };
+            t.w32(node, at);
+            t.check(
+                &format!("{name} add #{i}"),
+                0x005c_8660,
+                Conv::Cdecl,
+                &[node],
+                |g| Out::U32(misc::bridge::add_named(g, node)),
+            );
+        }
+    }
+}
