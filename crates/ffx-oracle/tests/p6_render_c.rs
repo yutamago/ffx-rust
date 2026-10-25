@@ -1686,3 +1686,96 @@ fn descriptor_construct_ssao_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn misc_window_and_text_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xeeee_b7b7);
+        let slot = t.rebase(misc::SET_WINDOW_TEXT_SLOT);
+        let set_text = t.stub_code(0x0062_cf60, false, 2, 2, 1);
+        t.w32(slot, set_text);
+        let cache = t.rebase(misc::TEXT_PASS_CACHE);
+        for i in 0..8 {
+            let app = object(&mut t, &mut rng, 0x100, false);
+            let title = rng.next();
+            // the assign leaves a string word with or without its flag bit
+            let s = rng.next();
+            let code = t.stub_code(misc::PSTRING_ASSIGN, true, 1, 1, 0);
+            t.jump(misc::PSTRING_ASSIGN, code);
+            t.w32(app + 0x398, s);
+            t.check(
+                &format!("{name} title #{i}"),
+                0x0062_cf60,
+                Conv::Thiscall(app),
+                &[title],
+                |g| Out::U32(misc::bridge::set_window_title(g, app, title)),
+            );
+            t.unstub(misc::PSTRING_ASSIGN);
+            let k = rng.below(4);
+            t.w32(cache + 4 * k, if i % 2 == 0 { 0 } else { rng.next() });
+            t.stub(misc::FIND_RENDER_PASS, false, 1, 0, rng.next());
+            t.check(
+                &format!("{name} pass #{i}"),
+                0x00a3_e9b0,
+                Conv::Cdecl,
+                &[k],
+                |g| Out::U32(misc::bridge::text_render_pass(g, k)),
+            );
+            t.unstub(misc::FIND_RENDER_PASS);
+        }
+    }
+}
+
+#[test]
+fn misc_frame_queue_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xffff_b7b7);
+        for i in 0..20 {
+            let thread = object(&mut t, &mut rng, 0x60, false);
+            t.w32(thread + 0x154, [0, 1, 14, 15][i % 4]);
+            t.stub_at(misc::SEMAPHORE_WAIT, 0);
+            t.stub_at(misc::EVENT_SIGNAL, 0);
+            let (a, b, c) = (rng.next(), rng.next(), rng.next());
+            t.check(
+                &format!("{name} queue #{i}"),
+                0x0061_5210,
+                Conv::Thiscall(thread),
+                &[a, b, c],
+                |g| Out::U32(misc::bridge::queue_frame(g, thread, a, b, c)),
+            );
+            // the renderer's submit: the queue stubbed with a result
+            let renderer = object(&mut t, &mut rng, 0x20, false);
+            if i % 3 == 0 {
+                t.w32(renderer + 0x44, 0);
+            } else {
+                let sem = object(&mut t, &mut rng, 2, false);
+                t.w32(renderer + 0x44, sem);
+            }
+            t.stub(misc::RENDER_THREAD_INSTANCE, false, 0, 0, thread);
+            t.stub(
+                misc::QUEUE_FRAME,
+                true,
+                3,
+                3,
+                if i % 4 == 1 { rng.next() } else { 0 },
+            );
+            t.stub_at(misc::RING_NEXT_SEGMENT, 0);
+            t.check(
+                &format!("{name} submit #{i}"),
+                0x005b_6c50,
+                Conv::Thiscall(renderer),
+                &[],
+                |g| Out::U32(misc::bridge::renderer_submit_frame(g, renderer)),
+            );
+            for f in [
+                misc::SEMAPHORE_WAIT,
+                misc::EVENT_SIGNAL,
+                misc::RENDER_THREAD_INSTANCE,
+                misc::QUEUE_FRAME,
+                misc::RING_NEXT_SEGMENT,
+            ] {
+                t.unstub(f);
+            }
+        }
+    }
+}

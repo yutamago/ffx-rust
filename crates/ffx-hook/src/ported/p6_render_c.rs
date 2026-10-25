@@ -1013,4 +1013,20 @@ ported! {
     Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PScreenSpaceAmbientOcclusionD3D11__constructInstance @ 0x00a0_faa0 => extern "thiscall" fn p_00a0faa0(_desc: u32, obj: u32) -> u32 {
         descriptor::bridge::construct_ssao(&mut mem(), obj, 0x00b7_4c48, None)
     }
+    /// `Phyre_PFramework_PApplication_setWindowTitle`.
+    Phyre_PFramework_PApplication_setWindowTitle @ 0x0062_cf60 => extern "thiscall" fn p_0062cf60(app: u32, title: u32) -> u32 {
+        misc::bridge::set_window_title(&mut mem(), app, title)
+    }
+    /// `Phyre_PText_PUtilityText_GetRenderPassForTechnique`.
+    Phyre_PText_PUtilityText_GetRenderPassForTechnique @ 0x00a3_e9b0 => extern "C" fn p_00a3e9b0(i: u32) -> u32 {
+        misc::bridge::text_render_pass(&mut mem(), i)
+    }
+    /// `Phyre_PRendering_PRenderThread_queueFrame_00615210`.
+    Phyre_PRendering_PRenderThread_queueFrame_00615210 @ 0x0061_5210 => extern "thiscall" fn p_00615210(thread: u32, a: u32, b: u32, c: u32) -> u32 {
+        misc::bridge::queue_frame(&mut mem(), thread, a, b, c)
+    }
+    /// `Phyre_PRendering_PRendererBase_submitFrame_005b6c50`.
+    Phyre_PRendering_PRendererBase_submitFrame_005b6c50 @ 0x005b_6c50 => extern "thiscall" fn p_005b6c50(renderer: u32) -> u32 {
+        misc::bridge::renderer_submit_frame(&mut mem(), renderer)
+    }
 }
