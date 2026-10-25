@@ -651,7 +651,7 @@ pub fn native_00e5<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     u32::from(on)
 }
 
-/// `Native_01d5` (`0x008561e0`, `0x01d5`): `(a, b)`: the CD interface's
+/// `Native_01d5_CdSetField88` (`0x008561e0`, `0x01d5`): `(a, b)`: the CD interface's
 /// `+0x88(a, b)`; 1.
 pub fn native_01d5<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let cd = call(h, 0x0076_d0d0, &[]);
@@ -707,7 +707,7 @@ pub fn native_023e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_01d7` (`0x00856740`, `0x01d7`): `(v)`: the CD interface's
+/// `Native_01d7_CdSetField8c` (`0x00856740`, `0x01d7`): `(v)`: the CD interface's
 /// `+0x8c(v)`; v.
 pub fn native_01d7<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let cd = call(h, 0x0076_d0d0, &[]);
@@ -733,7 +733,7 @@ pub fn native_01ef<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_01dd` (`0x00857660`, `0x01dd`, start): `(v)`: v into the
+/// `Native_01dd_VibrateWait3Arg` (`0x00857660`, `0x01dd`, start): `(v)`: v into the
 /// argument word; v. Its poll (`0x008577f0`) is a copy of
 /// `Native_01de_VibrateWait3_Poll`.
 pub fn native_01dd<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
@@ -765,18 +765,18 @@ fn record_field<H: NativeHost>(h: &mut H, s: u32, off: u32) -> u32 {
     h.read(r.wrapping_add(off))
 }
 
-/// `Native_01a9` (`0x00858500`, `0x01a9`): `(i)` -> the word `+0x50` of
+/// `Native_01a9_SavePlayerGetField50` (`0x00858500`, `0x01a9`): `(i)` -> the word `+0x50` of
 /// the record `0x00785330(i)`.
 pub fn native_01a9<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     record_field(h, s, 0x50)
 }
 
-/// `Native_01aa` (`0x00858690`, `0x01aa`): as `0x01a9` with `+0x58`.
+/// `Native_01aa_SavePlayerGetField58` (`0x00858690`, `0x01aa`): as `0x01a9` with `+0x58`.
 pub fn native_01aa<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     record_field(h, s, 0x58)
 }
 
-/// `Native_01e1` (`0x008586e0`, `0x01e1`): for a worker attached as kind 1
+/// `Native_01e1_ChrGetEffectLevel` (`0x008586e0`, `0x01e1`): for a worker attached as kind 1
 /// (`+0xaa`) with a character, `0x0082a9a0(chr)`; else 0.
 pub fn native_01e1<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     if h.read::<u8>(w + 0xaa) != 1 {

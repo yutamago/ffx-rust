@@ -5712,7 +5712,7 @@ fn copy_cstr(m: &mut impl Mem, from: u32, to: u32) {
 }
 
 /// `Atel_StreamSeek_00885bf0(start, count, sector, id, pos)` (name ours;
-/// caller `Native_01d6`): a sound stream's file name
+/// caller `Native_01d6_VoiceGetStreamPos`): a sound stream's file name
 /// (`SndStreamPCName(id, frame)`, 16 bytes) becomes the CD's current
 /// stream name (`0x013300c0`); for `pos` -1 also the upper-cased DVD name
 /// (`0x013300a0`, `SndToUpper`), `0x01330098` = `0x78`, `*sector` = `0x19`,

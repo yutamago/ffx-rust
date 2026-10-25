@@ -104,7 +104,7 @@ pub fn native_8059<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_01e4` (`0x00858c90`): `(x, y, z, n)`: returns
+/// `Native_01e4_SetFieldVec3Int` (`0x00858c90`): `(x, y, z, n)`: returns
 /// `0x0090a470(x, y, z, n)`'s `EAX`.
 pub fn native_01e4<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let n = pop(h, s);
@@ -114,7 +114,7 @@ pub fn native_01e4<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0090_a470, &[x, y, z, n])
 }
 
-/// `Native_01e6` (`0x008591d0`): `(n, x, y)`: `0x0090a430(n, x, y)`;
+/// `Native_01e6_SetFieldPair` (`0x008591d0`): `(n, x, y)`: `0x0090a430(n, x, y)`;
 /// returns `n`.
 pub fn native_01e6<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let y = popf(h, s);
