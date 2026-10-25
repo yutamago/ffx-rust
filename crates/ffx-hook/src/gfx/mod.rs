@@ -14,6 +14,7 @@ mod capture;
 pub mod live;
 mod proxy;
 pub mod replay;
+pub mod scene;
 pub mod vt;
 
 use std::collections::HashMap;
@@ -434,6 +435,8 @@ pub unsafe fn install(module: usize) {
         CREATE_DEVICE.store(original, Ordering::Release);
         log("  gfx: D3D11CreateDevice patched");
     }
+    // SAFETY: forwarded from the caller.
+    unsafe { scene::install(module) };
 }
 
 type CreateDeviceFn = unsafe extern "system" fn(
@@ -2174,6 +2177,7 @@ unsafe extern "system" fn resolve_subresource(
 // ---- Present ----
 
 unsafe extern "system" fn present(swap_chain: Ptr, interval: u32, flags: u32) -> i32 {
+    scene::on_present();
     FRAME.fetch_add(1, Ordering::AcqRel);
     LAST_DRAWS.store(DRAWS.swap(0, Ordering::AcqRel), Ordering::Release);
     rehook();
