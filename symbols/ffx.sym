@@ -1836,7 +1836,11 @@
 0x00639240 function graphicAddScreenFadeTask  # fh v3:bsim1.00 0x006393f0
 0x00639280 function graphicAddScreenFadeTaskAfterRender # fh switch:bsim1.00 0x71001d7be0
 0x006392c0 function graphicAddScreenFadeTaskBeforeVFX # fh switch:bsim1.00 0x71001d7bd0
+0x00639310 function graphicAtelLoadTexture_00639310 # cdecl(id): mov ecx, [g_PhyreScene]; call PhyreScene_loadAtelVFXTexture_00663f00(id); pairs with graphicAtelUnloadTexture 0x00639330; Atel_LoadEventTexList calls it; name ours; ported M4 h3 (ffx_prender::glue)
 0x00639330 function graphicAtelUnloadTexture  # fh v3:bsim1.00 0x006394e0
+0x00639360 function graphicBrokenScreenSetFlag5_00639360 # cdecl(): BrokenScreenEffect_GetInstance -> jmp SetFieldConst5_006d4e10 (byte +5 = 1); opus_encount4_calc calls it; name ours; ported M4 h3 (ffx_prender::glue)
+0x00639370 function graphicBrokenScreenSetFlag4_00639370 # cdecl(): BrokenScreenEffect_GetInstance -> jmp SetFieldConst4_006d4e00 (byte +4 = 1); name ours; ported M4 h3 (ffx_prender::glue)
+0x00639390 function graphicBrokenScreenSetFlag6_00639390 # cdecl(): BrokenScreenEffect_GetInstance -> jmp SetFieldConst6_006d5180 (byte +6 = 1); opus_encount4_calc calls it; name ours; ported M4 h3 (ffx_prender::glue)
 0x006393c0 function BrokenScreenEffect_BufferSize # structure: cdecl(n): after BrokenScreenEffect_GetInstance, ((8n-1)>>4 + 5 + (24n-49)>>4 + 2*((12n-1)>>4) + (16n-1)>>4) << 5, unsigned; name ours
 0x00639470 function graphicBrokenScreenInitializeBlockDataWithGivenBuffer # fh switch:cg2 0x71008b1978
 0x00639490 function graphicBrokenScreenReset     # layout: alphabetical run between graphicBrokenScreenInitializeBlockDataWithGivenBuffer and graphicCameraGetFOVy (6 unnamed in the gap); Switch 0x71001d99f0 graphicBrokenScreenReset is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -1908,6 +1912,7 @@
 0x0063d9a0 function graphicCharacterUnloadTask_thunk_0063d9a0 # jmp graphicCharacterUnloadTask; the Cache_* releasers call it on an entry's models (+0x10, +0x14); name ours
 0x0063d9c0 function graphicCheckChrClusterRelationship # fh v3:exact 0x0063db70
 0x0063da80 function graphicIsEscMenuActive    # () -> 1 when g_FFEscMenu exists and is open (+0x70) or has a selection (+0xe4 >= 0); the frame loop's callers around graphicRender test it; name ours
+0x0063dac0 function graphicSceneClearList_0063dac0 # cdecl(): mov ecx, [g_PhyreScene]; jmp 0x00658fc0 (keeps only bit 31 of scene +0x10d84; frees +0x10d88 when that leaves 0); Sg_MainLoop and g_MagicImports+0xe84; name ours; ported M4 h3 (ffx_prender::glue)
 0x0063dd50 function graphicClothFree             # layout+callees: sorts between graphicCheckChrClusterRelationship and graphicClothMemPrintStats, and its named callees match the Switch 0x71001ceb70 graphicClothFree's (similarity 1.00: mspace_free, user_free); symbols from Fahrenheit's server export
 0x0063dd90 function graphicClothMalloc           # layout+callees: sorts between graphicCheckChrClusterRelationship and graphicClothMemPrintStats, and its named callees match the Switch 0x71001ceb10 graphicClothMalloc's (similarity 1.00: mspace_memalign, user_aligned_malloc); symbols from Fahrenheit's server export
 0x0063ddc0 function graphicClothMemPrintStats # fh v3:cg2 0x63df70
@@ -2010,6 +2015,7 @@
 0x00641c00 function graphicIsInCut2DScene     # fh v3:cg4 0x641db0
 0x00641c10 function graphicIsInLucaTheater    # fh v3:bsim1.00 0x00641dc0
 0x00641c20 function graphicIsBattleMap        # () -> movzx g_PhyreScene +0x1197 (the previous battle-map flag, graphicSetIsBattleMap); name Fahrenheit's (Switch BSim)
+0x00641c40 function graphicIsLoadingScreenActive_00641c40 # cdecl() -> application byte +0x3a0 != 0 (PhyreScene_startLoadingScreen/stopLoadingScreen set it); MovieCdReadTaskLoop calls it; name ours; ported M4 h3 (ffx_prender::glue)
 0x00641c60 function graphicIsMagicFileAsyncLoadAvailable # fh v3:bsim1.00 0x00641e10
 0x00641c70 function graphicIsMiniMapInBlitzBall # fh v3:bsim1.00 0x00641e20
 0x00641cb0 function graphicIsScreenFadeColorLocked # fh v3:bsim1.00 0x00641e60
@@ -2062,6 +2068,7 @@
 0x00642950 function graphicRegistAsyncTask    # fh v3:bsim1.00 0x00642b00
 0x00642b90 function Phyre_PAnimation_PAnimationChannelTargetBindScene_dtor_PAnimationChannelTargetBindScene # fh switch:bsim1.00 0x71001a8400 Phyre::PAnimation::PAnimationChannelTargetBindScene::~PAnimationChannelTargetBindScene
 0x00642bb0 function graphicRender             # fh v3:exact 0x00642d60
+0x00642c00 function graphicRenderLoadingScreen_00642c00 # cdecl(): mov ecx, [g_PhyreScene]; jmp PhyreScene_renderLoadingScreen; MovieCdReadTaskLoop calls it; name ours; ported M4 h3 (ffx_prender::glue)
 0x00642c30 function graphicRenderVideo           # layout+callees: sorts between graphicRender and graphicResetButtonIconScale, and its named callees match the Switch 0x71001cc390 graphicRenderVideo's (similarity 1.00: PhyFMVPlayerManager_GetInstance, PhyFMVPlayerManager_Render); symbols from Fahrenheit's server export
 0x00642c60 function graphicResetButtonIconScale # fh v3:cg7 0x642e10
 0x00642c70 function graphicResetHasRunDrawFocusInThisFrame # fh v3:cg3 0x642e20
@@ -2193,6 +2200,7 @@
 0x00645ba0 function graphicVFXUpdateWithType  # fh v3:exact+call.cs 0x00645d50 cdecl
 0x00645d40 function graphicVFXisAtelShpInstanced # fh v3:exact 0x00645ef0
 0x00645d90 function graphicVideoGetElapsedFrame  # layout+callees: sorts between graphicVFXisAtelShpInstanced and graphicVideoPause, and its named callees match the Switch 0x71001d9dd0 graphicVideoGetElapsedFrame's (similarity 1.00: PhyFMVPlayerManager_GetInstance, PhyFMVPlayerManager_getCurrentFrame); symbols from Fahrenheit's server export
+0x00645db0 function PhyreScene_isPlayingVideo # cdecl() -> movzx PhyFMVPlayerManager_GetInstance() byte +0x6fc (Ghidra's name); ported M4 h3 (ffx_prender::glue)
 0x00645de0 function graphicVideoPause         # fh v3:bsim1.00 0x00645f90
 0x00645df0 function graphicVideoUpdate        # fh v3:exact+call.cs 0x00645fa0 cdecl
 0x00645e40 function graphicSetWaveStrength_00645e40 # mov ecx,[0x00ccb9d8]; jmp PhyreScene_setWaveStrength; callers Native_806b/805c; was graphicisVideoAtEndFrame, which is 0x00645e50 (platform census 2026-10-25)
@@ -2408,6 +2416,7 @@
 0x00663a30 function BoundingBox_IsVisible_00663a30 # thiscall(box, m), ret 4: eight corners of the box (corner +0, extent +0x10) through m, 1 when the AND of their ClipOutcodes is 0 (no plane with every corner outside); twin of BoundingBox_IsInside_006d27e0; name ours
 0x00663d40 function PhyreScene_loadAbConeShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/AbmapShaderCone.cgfx.'; Switch 0x7100200600 PhyreScene::loadAbConeShader (symbols from Fahrenheit's server export)
 0x00663e20 function PhyreScene_loadAbWaveShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/AbmapShaderWave.cgfx.'; Switch 0x71002006a0 PhyreScene::loadAbWaveShader (symbols from Fahrenheit's server export)
+0x00663f00 function PhyreScene_loadAtelVFXTexture_00663f00 # thiscall(scene, id), ret 4: PhyreScene_loadVFXTextureAsync(4, id); graphicAtelLoadTexture_00639310 calls it; name ours; ported M4 h3 (ffx_prender::glue)
 0x00663f20 function PhyreScene_loadCharacter  # fh v3:cg17 0x6640b0 PhyreScene::loadCharacter
 0x006642f0 function PhyreScene_loadCharacterAsync # fh v3:exact 0x00664480 PhyreScene::loadCharacterAsync
 0x00664360 function PhyreScene_loadChrShaShader  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/ChrY0Shadow.cgfx.phyr'; Switch 0x7100200d30 PhyreScene::loadChrShaShader (symbols from Fahrenheit's server export)
@@ -2468,6 +2477,7 @@
 0x0066ce70 function PhyreScene_setCameraWorldMatrix # fh v3:exact 0x0066d000 PhyreScene::setCameraWorldMatrix
 0x0066cf80 function PhyreScene_setCurrentLevelName # fh v3:bsim1.00 0x0066d110 PhyreScene::setCurrentLevelName
 0x0066cf90 function PhyreScene_setCurrentLevelNameHash # fh v3:exact 0x0066d120 PhyreScene::setCurrentLevelNameHash
+0x0066cfb0 function PhyreScene_setMagicPath_0066cfb0 # thiscall(scene, path), ret 4: jmp Phyre_PString_Assign on scene +0xfafc; graphicMagicSetPath calls it; name ours; ported M4 h3 (ffx_prender::glue)
 0x0066cfe0 function PhyreScene_SetByte01      # thiscall(this, v), ret 4: byte +1 = v; name ours
 0x0066d000 function PhyreScene_setEnableRenderWorldToTexture # fh v3:cg2 0x66d190 PhyreScene::setEnableRenderWorldToTexture
 0x0066d1b0 function PhyreScene_SetByte03      # thiscall(this, v), ret 4: byte +3 = v (the magic 0146 key graphicGetMagic0146Key reads; 0x00641e40 sets it with g_GraphicLevelFilter); name ours
@@ -2483,6 +2493,7 @@
 0x0066e5e0 function PhyreScene_SetNumberText  # structure: thiscall(scene, n), ret 4: with +0xfc00 set, +0xfc64 = n and sprintf(+0xfc68, "%d", n); name ours
 0x0066e7b0 function PhyreScene_SetMeshesVisible # structure: thiscall(scene, on): every mesh of +0x11d0 (+0x11c8) with a draw entry (+0x1c) gets the entry's +0x1c = mesh or 0; 0x00643df0 wraps it with on = (arg != 0); name ours
 0x0066e800 function PhyreScene_setTextureVideoInfo # fh v3:exact 0x0066e990 PhyreScene::setTextureVideoInfo
+0x0066e830 function PhyreScene_setToBeDeletePath_0066e830 # thiscall(scene, path), ret 4: jmp Phyre_PString_Assign on scene +0xfb00; graphicMagicSetToBeDeletePath calls it; name ours; ported M4 h3 (ffx_prender::glue)
 0x0066e850 function PhyreScene_setWaveStrength   # layout+callees: sorts between PhyreScene_setTextureVideoInfo and PhyreScene_setupColorCorrection, and its named callees match the Switch 0x7100208d10 PhyreScene_setWaveStrength's (similarity 0.88: WaterWaveController_setBuoyancyFix, WaterWaveController_setCircleWaveStrength, WaterWaveController_setDraughtOffset, WaterWaveController_setFoamStrength, WaterWaveController_setMultiTexBlendFactor); symbols from Fahrenheit's server export
 0x0066ea70 function PhyreScene_SetColourPair  # structure: thiscall(scene, r, g, b, r2, g2, b2, second): (r, g, b, 1) and (r2, g2, b2, 0) at +0xfc8c, or +0xfcac with second; 0x00643b30 wraps it; name ours
 0x0066ed00 function PhyreScene_setupColorCorrection # str-match switch: only user of 2 string(s) held once by both builds, e.g. '_ColorCorrection'; Switch 0x71001ed590 PhyreScene::setupColorCorrection (symbols from Fahrenheit's server export)
@@ -2888,6 +2899,7 @@
 0x006a19d0 function std_Tree_erase_range_006a19d0 # ours: thiscall (this, out, first, last) -> out: MSVC _Tree::erase(first, last) (whole tree: 0x006a0fe0 clear; else node by node through 0x006a1a70 with the in-order successor walk, nil byte +0xd); std::map code of ClassVFXRenderDataTable (callers 0x0069e6b0, 0x0069e770, 0x0069e900, 0x0069f110, 0x006a0bd0); REVIEWED platform
 0x006a1e80 function ClassLoadedCharacterTable_existPrototype # fh v3:exact 0x006a1fc0 ClassLoadedCharacterTable::existPrototype
 0x006a1f60 function ClassVFXRenderDataTable_MapFind # thiscall(this, out, &key), ret 8: std::map<u64, geometry>::find over the table's tree (head at this+0; node +0x10 key, +0x18 geometry); *out = node or the head, returns out; called by ClassVFXRenderDataTable_GetDynamicGeometryByInstance; name ours
+0x006a2010 function ClassDynamicGeometry_getReadyA8_006a2010 # thiscall(this) -> record = this +0xa8; byte record+4 == 0 ? record[0] : 0; ClassDynamicGeometry_setupMaterial+0x49d calls it; name ours; ported M4 h3 (ffx_prender::glue)
 0x006a2110 function ClassLoadedCharacterTable_getPrototypeByFilename # fh v3:exact 0x006a2250 ClassLoadedCharacterTable::getPrototypeByFilename
 0x006a2370 function ClassDynamicGeometry_hide # fh v3:bsim1.00 0x006a24b0 ClassDynamicGeometry::hide
 0x006a28b0 function ClassLoadedCharacterTable_insertPrototype # fh v3:exact 0x006a29f0 ClassLoadedCharacterTable::insertPrototype
@@ -16937,6 +16949,7 @@
 0x00ccc8a0 label    g_PostProcessManager      # PostProcessManager_GetInstance; a pointer (0x00692be0 is mov eax, [0x00ccc8a0]; ret); screen fade +0x1238c rgba floats (graphicGetScreenFadeColor 0x00641390), +0x1239c alpha mode, +0x123a0 lock byte, +0x123a4 last reason (docs/formats/render.md)
 0x00ccca4c label    g_ClusterManager          # the instance ClusterManager_GetInstance returns
 0x00ccca6c label    g_VFXRenderDataTable      # the ClassVFXRenderDataTable (std::map head +0, cached key +0x20/+0x24 and geometry +0x28): graphicVFXGetRenderDataByInstance, graphicVFXUpdate
+0x00ccca74 label    g_ChrShaderRender # the character shader renderer: graphicShaderGetVertexInfo passes it to ClassChrShaderRender_GetVertexInfo; graphicShadowStart/End_00643dc0/dd0 to 0x0069fcb0/0x0069fe40 (M4 h3)
 0x00ccca84 label    g_CharacterLighting       # Phyre_CharacterLighting_GetInstance; the graphicCharacterLighting* wrappers call its methods
 0x00ccca88 label    g_CharacterLightingTweakUtil # Phyre_CharacterLightingTweakUtil_GetInstance; graphicCharacterLightingSetShadeCoeff's debug hook
 0x00cccaa4 label    g_ScreenFadeByte          # u8: the last argument ScreenFadeDelegations_processRenderDelegation passes to PostProcessManager_renderScreenFade; name ours
