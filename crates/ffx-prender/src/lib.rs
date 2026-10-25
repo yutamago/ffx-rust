@@ -12,6 +12,7 @@
 //! - [`descriptor`]: the type system's descriptor and array-member slots
 //!   of the render classes (M4 port round 1, h2-render-b);
 //! - [`dtor`]: destructors and storage setters (round 2);
+//! - [`h2_bind`]: the render classes' `Bind()` registrations (round 3);
 //! - [`h2_more`], [`h2_more2`], [`h2_more3`]: the larger render methods of h2-render-b
 //!   round 3;
 //! - [`misc`]: small render-interface, material and shader methods (the
@@ -40,6 +41,7 @@ pub mod dtor;
 pub mod glue;
 pub mod glue2;
 pub mod glue3;
+pub mod h2_bind;
 pub mod h2_more;
 pub mod h2_more2;
 pub mod h2_more3;

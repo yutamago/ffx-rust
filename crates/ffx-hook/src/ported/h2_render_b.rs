@@ -21,6 +21,7 @@ use ffx_prender::array::bridge as a;
 use ffx_prender::declare as dc;
 use ffx_prender::descriptor::{Init, bridge as d};
 use ffx_prender::dtor::bridge as dt;
+use ffx_prender::h2_bind::bridge as hb;
 use ffx_prender::h2_more::bridge as hm;
 use ffx_prender::h2_more2::bridge as h2;
 use ffx_prender::h2_more3::bridge as h3;
@@ -1504,6 +1505,62 @@ ported! {
     /// `Phyre_Ctor_0055dc40`.
     Phyre_Ctor_0055dc40 @ 0x0055_dc40 => extern "thiscall" fn s_0055dc40(a0: u32) -> u32 {
         h3::ctor_55dc40(&mut mem(), a0)
+    }
+    /// `Phyre_PRendering_PMeshInstanceSegmentContext_Bind`.
+    Phyre_PRendering_PMeshInstanceSegmentContext_Bind @ 0x004f_4700 => extern "C" fn s_004f4700() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_004F4700)
+    }
+    /// `Phyre_PRendering_PModifierNetworkDynamicMeshInstance_Bind`.
+    Phyre_PRendering_PModifierNetworkDynamicMeshInstance_Bind @ 0x004f_b8c0 => extern "C" fn s_004fb8c0() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_004FB8C0)
+    }
+    /// `Phyre_PRendering_PMeshInstanceAttachPoint_Bind`.
+    Phyre_PRendering_PMeshInstanceAttachPoint_Bind @ 0x0050_1110 => extern "C" fn s_00501110() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_00501110)
+    }
+    /// `Phyre_PSprite_PTextureAtlasInfo_Bind`.
+    Phyre_PSprite_PTextureAtlasInfo_Bind @ 0x0056_a390 => extern "C" fn s_0056a390() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_0056A390)
+    }
+    /// `Phyre_PGeometry_PMeshSegmentNVN_Bind`.
+    Phyre_PGeometry_PMeshSegmentNVN_Bind @ 0x0055_eca0 => extern "C" fn s_0055eca0() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_0055ECA0)
+    }
+    /// `Phyre_PRendering_PMeshInstanceSegmentStreamBinding_Bind`.
+    Phyre_PRendering_PMeshInstanceSegmentStreamBinding_Bind @ 0x004f_4800 => extern "C" fn s_004f4800() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_004F4800)
+    }
+    /// `Phyre_PRendering_PContextVariantFoldingTable_Bind`.
+    Phyre_PRendering_PContextVariantFoldingTable_Bind @ 0x004d_c870 => extern "C" fn s_004dc870() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_004DC870)
+    }
+    /// `Phyre_PSprite_PSpriteAnimationInfoInstance_Bind`.
+    Phyre_PSprite_PSpriteAnimationInfoInstance_Bind @ 0x0056_f990 => extern "C" fn s_0056f990() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_0056F990)
+    }
+    /// `Phyre_PAnimation_PBlendableAnimationSource_Bind`.
+    Phyre_PAnimation_PBlendableAnimationSource_Bind @ 0x0054_0750 => extern "C" fn s_00540750() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_00540750)
+    }
+    /// `Phyre_PRendering_PShaderPassInfo_Bind`.
+    Phyre_PRendering_PShaderPassInfo_Bind @ 0x004d_cdd0 => extern "C" fn s_004dcdd0() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_004DCDD0)
+    }
+    /// `Phyre_PSprite_PSpriteAttributes_Bind`.
+    Phyre_PSprite_PSpriteAttributes_Bind @ 0x0056_8dc0 => extern "C" fn s_00568dc0() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_00568DC0)
+    }
+    /// `Phyre_PRendering_PSceneRenderPass_Bind`.
+    Phyre_PRendering_PSceneRenderPass_Bind @ 0x004d_ca40 => extern "C" fn s_004dca40() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_004DCA40)
+    }
+    /// `Phyre_PRendering_PEffectVariant_Bind`.
+    Phyre_PRendering_PEffectVariant_Bind @ 0x004e_4270 => extern "C" fn s_004e4270() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_004E4270)
+    }
+    /// `Phyre_PRendering_PShaderPassNVN_Bind`.
+    Phyre_PRendering_PShaderPassNVN_Bind @ 0x0058_7300 => extern "C" fn s_00587300() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_00587300)
     }
 }
 

@@ -1165,6 +1165,308 @@ pub const CASES: &[Case] = &[
         gap: 0,
         writes: &[],
     },
+    Case {
+        name: "Phyre_PRendering_PMeshInstanceSegmentContext_Bind",
+        addr: 0x004f_4700,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x004f_2160, 0, 0, true),
+            (0x004f_4d60, 1, 0, false),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_004F4700),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_004F4700),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PRendering_PModifierNetworkDynamicMeshInstance_Bind",
+        addr: 0x004f_b8c0,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x004f_b1e0, 0, 0, true),
+            (0x004f_ba50, 1, 0, false),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_004FB8C0),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_004FB8C0),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PRendering_PMeshInstanceAttachPoint_Bind",
+        addr: 0x0050_1110,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_7fc0, 0, 0, false),
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_00501110),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_00501110),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PSprite_PTextureAtlasInfo_Bind",
+        addr: 0x0056_a390,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x0056_6810, 0, 0, true),
+            (0x0056_a4d0, 1, 0, false),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_0056A390),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_0056A390),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PGeometry_PMeshSegmentNVN_Bind",
+        addr: 0x0055_eca0,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x0055_d460, 0, 0, true),
+            (0x0055_edf0, 1, 0, false),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_0055ECA0),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_0055ECA0),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PRendering_PMeshInstanceSegmentStreamBinding_Bind",
+        addr: 0x004f_4800,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_7d30, 0, 0, false),
+            (0x0043_7e70, 0, 0, false),
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x0047_fae0, 0, 0, false),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_004F4800),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_004F4800),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PRendering_PContextVariantFoldingTable_Bind",
+        addr: 0x004d_c870,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_7fc0, 0, 0, false),
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_004DC870),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_004DC870),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PSprite_PSpriteAnimationInfoInstance_Bind",
+        addr: 0x0056_f990,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_8390, 0, 0, false),
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_0056F990),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_0056F990),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PAnimation_PBlendableAnimationSource_Bind",
+        addr: 0x0054_0750,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_8060, 0, 0, false),
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_00540750),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_00540750),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PRendering_PShaderPassInfo_Bind",
+        addr: 0x004d_cdd0,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_7fc0, 0, 0, false),
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_004DCDD0),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_004DCDD0),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PSprite_PSpriteAttributes_Bind",
+        addr: 0x0056_8dc0,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_8060, 0, 0, false),
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_00568DC0),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_00568DC0),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PRendering_PSceneRenderPass_Bind",
+        addr: 0x004d_ca40,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_8390, 0, 0, false),
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x0048_ea60, 0, 0, true),
+            (0x0049_1190, 1, 0, false),
+            (0x004d_9b80, 1, 0, false),
+            (0x004d_a8e0, 0, 0, true),
+            (0x004d_a980, 0, 0, true),
+            (0x004d_aa20, 0, 0, true),
+            (0x004d_d0c0, 1, 0, false),
+            (0x004d_d2d0, 1, 0, false),
+            (0x004d_d4e0, 1, 0, false),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_004DCA40),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_004DCA40),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PRendering_PEffectVariant_Bind",
+        addr: 0x004e_4270,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_7e70, 0, 0, false),
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x004a_6730, 0, 0, true),
+            (0x004a_b0b0, 1, 0, false),
+            (0x004e_3100, 0, 0, true),
+            (0x004e_31a0, 0, 0, true),
+            (0x004e_3240, 0, 0, true),
+            (0x004e_47b0, 1, 0, false),
+            (0x004e_49c0, 1, 0, false),
+            (0x004e_4bd0, 1, 0, false),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_004E4270),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_004E4270),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PRendering_PShaderPassNVN_Bind",
+        addr: 0x0058_7300,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x0057_52a0, 6, 6, true),
+            (0x0057_5ef0, 7, 7, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| prep_bind(e, r, &ffx_prender::h2_bind::B_00587300),
+        port: |g, _| hb::bind(g, &ffx_prender::h2_bind::B_00587300),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
 ];
 
 /// Argument `i` low in the pool (apart from the objects) and COM
@@ -1414,4 +1716,38 @@ fn prep_free_object(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
     e.w32(a[0] + 8, free.first().copied().unwrap_or(0));
     let flag = rng.below(2) as u8;
     e.write(a[0] + 0x49, &[flag]);
+}
+
+/// A `Bind()`: every guard word of its table random (each static built
+/// or not), the array descriptors' flag words, the base calls' globals.
+fn prep_bind(e: &mut Env, rng: &mut Rng, b: &ffx_prender::h2_bind::Bind) {
+    use ffx_prender::h2_bind::Step;
+    for step in b.steps {
+        let guards: Vec<u32> = match step {
+            Step::Member(m) => vec![m.guard.0],
+            Step::Array(a) => {
+                let d = e.rebase(a.desc);
+                let f = rng.next();
+                e.w32(d + 0x90, f);
+                vec![a.guard.0, a.desc_guard.0]
+            }
+            Step::Base { global, .. } => {
+                let g = e.rebase(*global);
+                let w = e.ret_word(rng);
+                e.w32(g, w);
+                vec![]
+            }
+            Step::Or { at, .. } => {
+                let at = e.rebase(*at);
+                let w = rng.next();
+                e.w32(at, w);
+                vec![]
+            }
+        };
+        for g in guards {
+            let g = e.rebase(g);
+            let v = rng.next() & rng.next();
+            e.w32(g, v);
+        }
+    }
 }
