@@ -42,6 +42,115 @@ pub mod bridge {
     //! The originals over game memory.
 
     use super::{COUNT, Conv, Host, com, storage, x87};
+    use crate::descriptor::Init;
+
+    /// `0x004f6f70(this; joint)`: the identity matrix into the 0x40 bytes
+    /// below `joint` (`fld1`/`fldz` stores), then the tail call
+    /// `PMeshInstance::computeJointMatrix(this; joint)` (thiscall);
+    /// returns its `eax`.
+    pub fn joint_from_identity(h: &mut impl Host, this: u32, joint: u32) -> u32 {
+        let m = joint.wrapping_sub(0x40);
+        for i in 0..16 {
+            let v: u32 = if i % 5 == 0 { 0x3f80_0000 } else { 0 };
+            h.write(m.wrapping_add(4 * i), v);
+        }
+        h.call_sym(0x004f_6fc0, Conv::Thiscall(this), &[joint])
+    }
+
+    /// `0x005934c0(holder, x)` (stdcall): the four tables at `+0x10`,
+    /// `+0x18`, `+0x14`, `+0x1c` (in that order), each that is set given
+    /// `(holder, x)` by its own method (thiscall); returns 0.
+    pub fn bind_all(h: &mut impl Host, holder: u32, x: u32) -> u32 {
+        for (off, f) in [
+            (0x10, 0x0059_3510),
+            (0x18, 0x0059_3380),
+            (0x14, 0x0059_32b0),
+            (0x1c, 0x0059_30e0),
+        ] {
+            let t: u32 = h.read(holder + off);
+            if t != 0 {
+                h.call_sym(f, Conv::Thiscall(t), &[holder, x]);
+            }
+        }
+        0
+    }
+
+    /// `0x005833b0(this)`: words 0..2 zeroed, the eight 0x17c-byte
+    /// entries at `+0x2c` built by `eh vector constructor iterator`
+    /// (stdcall; constructor `0x00583e20`, destructor `0x004bc000`), words
+    /// 3..10 zeroed; returns `this`.
+    pub fn state_cache_ctor(h: &mut impl Host, this: u32) -> u32 {
+        for i in 0..3 {
+            h.write(this + 4 * i, 0u32);
+        }
+        let ctor = h.rebase(0x0058_3e20);
+        let dtor = h.rebase(0x004b_c000);
+        h.call_sym(
+            0x0094_966a,
+            Conv::Stdcall,
+            &[this + 0x2c, 0x17c, 8, ctor, dtor],
+        );
+        for i in 3..11 {
+            h.write(this + 4 * i, 0u32);
+        }
+        this
+    }
+
+    /// `0x0059c950(this)`: `Release` of the views at `+0x168`, `+0x16c`,
+    /// `+0x174`, `+0x170` (in that order) when set, each nulled.
+    pub fn release_views(h: &mut impl Host, this: u32) {
+        for off in [0x168, 0x16c, 0x174, 0x170] {
+            let obj: u32 = h.read(this + off);
+            if obj != 0 {
+                com(h, obj, obj, 2, &[]);
+                h.write(this + off, 0u32);
+            }
+        }
+    }
+
+    /// `constructInstance(p)` of a class whose members have constructors:
+    /// when `p` is not null, the initial values, then each member's
+    /// `ctor(p + off)` (thiscall); `al = 1`.
+    pub fn construct_members(
+        h: &mut impl Host,
+        p: u32,
+        fields: &[Init],
+        members: &[(u32, u32)],
+    ) -> u8 {
+        if p != 0 {
+            crate::descriptor::bridge::construct(h, p, fields);
+            for &(off, ctor) in members {
+                h.call_sym(ctor, Conv::Thiscall(p + off), &[]);
+            }
+        }
+        1
+    }
+
+    /// A function-local static's getter: on first use (bit 0 of the
+    /// `guard` word clear) the bit set, `ctor(object)` (thiscall) and
+    /// `atexit(dtor)`; returns the object.
+    pub fn static_once(h: &mut impl Host, guard: u32, object: u32, ctor: u32, dtor: u32) -> u32 {
+        let g = h.rebase(guard);
+        let o = h.rebase(object);
+        let v: u32 = h.read(g);
+        if v & 1 == 0 {
+            h.write(g, v | 1);
+            h.call_sym(ctor, Conv::Thiscall(o), &[]);
+            let d = h.rebase(dtor);
+            h.call_sym(crate::declare::ATEXIT, Conv::Cdecl, &[d]);
+        }
+        o
+    }
+
+    /// `constructInstance(p)` by a constructor and then initial values:
+    /// when `p` is not null, `ctor(p)` (thiscall) and `fields`; `al = 1`.
+    pub fn construct_then(h: &mut impl Host, p: u32, ctor: u32, fields: &[Init]) -> u8 {
+        if p != 0 {
+            h.call_sym(ctor, Conv::Thiscall(p), &[]);
+            crate::descriptor::bridge::construct(h, p, fields);
+        }
+        1
+    }
 
     /// `PModifierNetworkDynamicMeshInstance` vslot 1 `(this; ctx)`: a
     /// 0x10-byte frame `(ctx, this, [this+0x10][ctx.index], 0)` handed to

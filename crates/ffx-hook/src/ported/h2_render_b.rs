@@ -1238,4 +1238,32 @@ ported! {
         let mut fr = super::StackFrame::<1>::new();
         sm::element_offset(&mut mem(), a0, a1, a2, fr.at())
     }
+    /// `Phyre_PRendering_PMeshInstance_computeJointMatrixFromIdentity`.
+    Phyre_PRendering_PMeshInstance_computeJointMatrixFromIdentity @ 0x004f_6f70 => extern "thiscall" fn s_004f6f70(a0: u32, a1: u32) -> u32 {
+        sm::joint_from_identity(&mut mem(), a0, a1)
+    }
+    /// `PShaderResourceTables_bindAll_005934c0`.
+    PShaderResourceTables_bindAll_005934c0 @ 0x0059_34c0 => extern "stdcall" fn s_005934c0(a0: u32, a1: u32) -> u32 {
+        sm::bind_all(&mut mem(), a0, a1)
+    }
+    /// `PRenderStateCache_ctor_005833b0`.
+    PRenderStateCache_ctor_005833b0 @ 0x0058_33b0 => extern "thiscall" fn s_005833b0(a0: u32) -> u32 {
+        sm::state_cache_ctor(&mut mem(), a0)
+    }
+    /// `PShaderD3D11_releaseViews_0059c950`.
+    PShaderD3D11_releaseViews_0059c950 @ 0x0059_c950 => extern "thiscall" fn s_0059c950(a0: u32) {
+        sm::release_views(&mut mem(), a0);
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PIndirectArgsBufferD3D11__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PIndirectArgsBufferD3D11__constructInstance @ 0x0058_e650 => extern "thiscall" fn s_0058e650(_a0: u32, a1: u32) -> u8 {
+        sm::construct_then(&mut mem(), a1, 0x0050_31e0, &[Init::Word(8, 0), Init::Word(0xc, 0), Init::Word(0x10, 0), Init::Byte(0x14, 0)])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PAnimation_PBlendableAnimationSource__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PAnimation_PBlendableAnimationSource__constructInstance @ 0x0054_2330 => extern "thiscall" fn s_00542330(_a0: u32, a1: u32) -> u8 {
+        sm::construct_members(&mut mem(), a1, &[Init::Word(4, 0x3f80_0000), Init::Word(0, 0), Init::Word(8, 0x3f80_0000)], &[(0xc, 0x0052_25a0), (0x24, 0x0052_31e0), (0x38, 0x0052_5240)])
+    }
+    /// `Phyre_PRendering_GetRenderStateCache_004fd8b0`.
+    Phyre_PRendering_GetRenderStateCache_004fd8b0 @ 0x004f_d8b0 => extern "C" fn s_004fd8b0() -> u32 {
+        sm::static_once(&mut mem(), 0x00c9_628c, 0x00c9_4f00, 0x004f_ee70, 0x00af_b710)
+    }
 }

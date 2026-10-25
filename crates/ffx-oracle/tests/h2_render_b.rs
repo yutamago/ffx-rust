@@ -879,6 +879,34 @@ pub fn prep_network(e: &mut Env, rng: &mut Rng, a: &mut [u32], k: usize) {
     e.w32(a[k] + 0x20, i);
 }
 
+/// The four views at `this + 0x168..0x174`: null or objects (apart from
+/// `this`) whose `Release` pops one word.
+pub fn prep_release_views(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    a[0] = e.pool + 4 * rng.below(0x400);
+    for (k, off) in [0x168, 0x16c, 0x170, 0x174].into_iter().enumerate() {
+        let obj = if rng.chance(3) {
+            0
+        } else {
+            e.pool + POOL_PTRS + 0x900 + 0x100 * k as u32
+        };
+        e.w32(a[0] + off, obj);
+        if obj != 0 {
+            let vt = obj + 0x80;
+            let r = e.ret_word(rng);
+            let f = e.handler(1, r);
+            e.w32(obj, vt);
+            e.w32(vt + 8, f);
+        }
+    }
+}
+
+/// `0x004fd8b0`'s guard word: bit 0 set or not, other bits random.
+pub fn prep_static_once(e: &mut Env, rng: &mut Rng, _: &mut [u32]) {
+    let g = e.rebase(0x00c9_628c);
+    let v = rng.next();
+    e.w32(g, v);
+}
+
 fn run(case: &Case, e: &mut Env, rng: &mut Rng, what: &str) {
     e.fill(rng);
     let mut args: Vec<u32> = case.kinds.chars().map(|k| e.arg(rng, k)).collect();

@@ -27,3 +27,14 @@ add(0x0058a8f0, 'C', 'w', 'u32', 'sm::blend_factor(a0)', [], None)
 add(0x005940d0, 'T', 'pvv', 'u32', 'sm::query_and_set(M, a0, a1, a2, FRAME)', [], 'prep_query_chain', 8)
 add(0x00563900, 'T', 'pip', 'u32', 'sm::element_offset(M, a0, a1, a2, FRAME)', [(0x00560e90, 3, 0, 0)],
     '|e, r, a| prep_sharray_first(e, r, a, 0x14)', 4)
+
+# batch 3
+add(0x004f6f70, 'T', 'pp', 'u32', 'sm::joint_from_identity(M, a0, a1)', [(0x004f6fc0, 1, 1)], '|e, r, a| a[1] = e.ptr(r) + 0x40')
+add(0x005934c0, 'S', 'pv', 'u32', 'sm::bind_all(M, a0, a1)', [(0x00593510, 2, 2), (0x00593380, 2, 2), (0x005932b0, 2, 2), (0x005930e0, 2, 2)], None)
+add(0x005833b0, 'T', 'p', 'u32', 'sm::state_cache_ctor(M, a0)', [(0x0094966a, 5, 5)], None)
+add(0x0059c950, 'T', 'p', '', 'sm::release_views(M, a0)', [], 'prep_release_views')
+add(0x0058e650, 'T', 'pn', 'u8', 'sm::construct_then(M, a1, 0x0050_31e0, &[Init::Word(8, 0), Init::Word(0xc, 0), Init::Word(0x10, 0), Init::Byte(0x14, 0)])', [(0x005031e0, 0, 0)], None)
+add(0x00542330, 'T', 'pn', 'u8', 'sm::construct_members(M, a1, &[Init::Word(4, 0x3f80_0000), Init::Word(0, 0), Init::Word(8, 0x3f80_0000)], &[(0xc, 0x0052_25a0), (0x24, 0x0052_31e0), (0x38, 0x0052_5240)])',
+    [(0x005225a0, 0, 0), (0x005231e0, 0, 0), (0x00525240, 0, 0)], None)
+add(0x004fd8b0, 'C', '', 'u32', 'sm::static_once(M, 0x00c9_628c, 0x00c9_4f00, 0x004f_ee70, 0x00af_b710)',
+    [(0x004fee70, 0, 0), (0x00949207, 1, 0)], 'prep_static_once')
