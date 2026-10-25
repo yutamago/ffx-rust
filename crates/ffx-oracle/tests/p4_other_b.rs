@@ -12,6 +12,7 @@
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
     clippy::cast_sign_loss,
     clippy::many_single_char_names,
     clippy::similar_names,
@@ -21,10 +22,10 @@
 
 use std::path::PathBuf;
 
-use ffx_bridge::Mem;
+use ffx_bridge::{Mem, x87};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_pother_b::{object, physics};
+use ffx_pother_b::{object, physics, small};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -94,7 +95,6 @@ fn game_dir() -> Option<PathBuf> {
 
 /// What the original returns, to compare.
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)] // not every kind is used yet
 enum Out {
     /// Nothing the callers read.
     None,
@@ -102,6 +102,8 @@ enum Out {
     U32(u32),
     /// `al`.
     U8(u8),
+    /// A float in `ST0`.
+    F32(f32),
 }
 
 struct Twins {
@@ -277,13 +279,24 @@ impl Twins {
             .call(addr, conv, args)
             .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
         let out = port(&mut G(&mut self.b));
+        if let Out::F32(v) = out {
+            // the shim returns it in ST0 (`fld`), which quiets a
+            // signalling NaN as the original's does
+            let got = ra
+                .st0_f32()
+                .unwrap_or_else(|| panic!("{what}: the original leaves no ST0"));
+            let want = x87::store(x87::load(v.to_bits()));
+            assert_eq!(got.to_bits(), want, "{what}: ST0");
+            self.diff(what);
+            return;
+        }
         assert!(
             ra.st0_raw.is_none(),
             "{what}: the original leaves ST0 set ({:?})",
             ra.st0
         );
         match out {
-            Out::None => {}
+            Out::None | Out::F32(_) => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
         }
@@ -642,6 +655,260 @@ fn object_boilerplate_matches_the_original() {
                 };
                 assert_eq!(calls, want, "{what}: calls");
             }
+        }
+    }
+}
+
+// ---- small methods: input devices, lighting, dynamic meshes ----
+
+/// A float of a modest range, a quiet NaN or an infinity (no signalling
+/// NaNs: the emulator keeps those).
+fn float(rng: &mut Rng) -> f32 {
+    match rng.below(8) {
+        0 => f32::from_bits(0x7fc0_1234),
+        1 => f32::INFINITY,
+        2 => -0.0,
+        _ => (rng.below(20_000) as f32 - 10_000.0) / 37.0,
+    }
+}
+
+#[test]
+fn small_constants_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0c0f_fee0);
+        for i in 0..16 {
+            let w: Vec<u32> = (0..4).map(|_| rng.next()).collect();
+            let this = rng.next();
+            let what = |s: &str| format!("{name} {s} case {i}");
+            t.check(
+                &what("profile init"),
+                0x0060_ed40,
+                Conv::Thiscall(this),
+                &w[..1],
+                |_| Out::U32(0),
+            );
+            t.check(
+                &what("async construct"),
+                0x0061_7de0,
+                Conv::Thiscall(this),
+                &w[..1],
+                |_| Out::U8(1),
+            );
+            t.check(
+                &what("async destruct"),
+                0x0061_7df0,
+                Conv::Thiscall(this),
+                &w[..1],
+                |_| Out::U8(1),
+            );
+            t.check(
+                &what("callable construct"),
+                0x0061_a0a0,
+                Conv::Thiscall(this),
+                &w[..1],
+                |_| Out::U8(0),
+            );
+            t.check(
+                &what("keyboard slot 1"),
+                0x0062_81f0,
+                Conv::Thiscall(this),
+                &[],
+                |_| Out::U32(1),
+            );
+            t.check(
+                &what("default mesh slot 5"),
+                0x006e_21b0,
+                Conv::Thiscall(this),
+                &w,
+                |_| Out::U32(w[1]),
+            );
+            let f = float(&mut rng);
+            t.check(
+                &what("shade coeff"),
+                0x006a_77a0,
+                Conv::Thiscall(this),
+                &[w[0], f.to_bits(), w[2]],
+                |_| Out::F32(f),
+            );
+        }
+    }
+}
+
+#[test]
+fn small_getters_and_setters_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x7357_1234);
+        let buf = t.zeros(0x400);
+        for i in 0..64 {
+            t.fill(&mut rng, buf, 0x400);
+            let what = |s: &str| format!("{name} {s} case {i}");
+            // input devices
+            let key = match rng.below(5) {
+                0 => rng.below(0x1c),
+                1 => 0x1c + rng.below(4),
+                2 => 0xffff_ff00 | rng.below(0x100),
+                _ => rng.below(0x100),
+            };
+            t.check(
+                &what("keyboard"),
+                0x0062_89a0,
+                Conv::Thiscall(buf),
+                &[key],
+                |g| Out::U32(small::bridge::keyboard_button(g, buf, key)),
+            );
+            let button = match rng.below(4) {
+                0 => 0xb + rng.below(3),
+                1 => rng.below(0x20),
+                2 => 0xffff_ff0b,
+                _ => rng.next(),
+            };
+            t.check(
+                &what("mouse"),
+                0x0062_89d0,
+                Conv::Thiscall(buf),
+                &[button],
+                |g| Out::U32(small::bridge::mouse_button(g, buf, button)),
+            );
+            // singletons
+            for (sym, global) in [
+                (0x006a_6e30, small::G_CHARACTER_LIGHTING),
+                (0x006a_6e40, small::G_CHARACTER_LIGHTING_TWEAK),
+                (0x006a_bf40, small::G_MORPH_MANAGER),
+                (0x006e_32c0, small::G_FOG_EFFECT_MANAGER),
+            ] {
+                if rng.chance(2) {
+                    let at = t.rebase(global);
+                    let v = rng.next();
+                    t.w32(at, v);
+                }
+                t.check(&what("singleton"), sym, Conv::Cdecl, &[], |g| {
+                    Out::U32(small::bridge::singleton(g, global))
+                });
+            }
+            t.check(
+                &what("init ok"),
+                0x006a_9ad0,
+                Conv::Thiscall(buf),
+                &[],
+                |g| Out::U8(small::bridge::is_init_successful(g, buf)),
+            );
+            // the coefficient store, flag byte both ways
+            if rng.chance(2) {
+                t.write(buf, &[0]);
+            }
+            let slot = rng.below(32);
+            let value = float(&mut rng).to_bits();
+            t.check(
+                &what("coefficient"),
+                0x006a_a920,
+                Conv::Thiscall(buf),
+                &[slot, value],
+                |g| {
+                    small::bridge::set_coefficient(g, buf, slot, value);
+                    Out::None
+                },
+            );
+            let (a, b) = (rng.next(), rng.next());
+            t.check(
+                &what("map id"),
+                0x006a_ad00,
+                Conv::Thiscall(buf),
+                &[a, b],
+                |g| Out::U32(small::bridge::set_map_id_flag_changed(g, buf, a, b)),
+            );
+            let slot = rng.below(16);
+            t.check(
+                &what("vertex buffer"),
+                0x006e_2b10,
+                Conv::Thiscall(buf),
+                &[a, slot],
+                |g| Out::U32(small::bridge::set_slot(g, buf, a, slot)),
+            );
+            t.check(&what("clear"), 0x006e_0800, Conv::Thiscall(buf), &[], |g| {
+                Out::U32(small::bridge::clear(g, buf))
+            });
+        }
+    }
+}
+
+#[test]
+fn small_iterator_valid_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0dd5_eed5);
+        for i in 0..200 {
+            let it = t.zeros(0x40);
+            let node = t.zeros(0x80);
+            // a list of 0..5 entries linked by +0x40
+            let n = rng.below(5);
+            let entries: Vec<u32> = (0..n).map(|_| t.zeros(0x50)).collect();
+            for (k, &e) in entries.iter().enumerate() {
+                let next = entries.get(k + 1).copied().unwrap_or(0);
+                t.w32(e + 0x40, next);
+            }
+            t.w32(node + 0x2c, entries.first().copied().unwrap_or(0));
+            let key = if !entries.is_empty() && rng.chance(2) {
+                entries[rng.below(n) as usize]
+            } else {
+                rng.next() | 1
+            };
+            t.w32(it + 0x1c, key);
+            t.w32(node + 0x40, [0, 1, 0x8000_0000][rng.below(3) as usize]);
+            t.w32(it + 0x18, if rng.chance(6) { 0 } else { node });
+            t.check(
+                &format!("{name} iterator case {i}"),
+                0x006a_9a80,
+                Conv::Thiscall(it),
+                &[],
+                |g| Out::U8(small::bridge::iterator_valid(g, it)),
+            );
+        }
+    }
+}
+
+#[test]
+fn small_forwarders_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x00f0_ba12);
+        t.stub(small::UPLOAD, false, 4, 0, 0x0b0b_0b0b);
+        t.stub(small::DYN_GEO_BUFFER_ID, false, 0, 0, 0x0000_1234);
+        for (k, f) in small::SHADER_LOADS.into_iter().enumerate() {
+            t.stub(f, false, 0, 0, 0x5ade_0000 + k as u32);
+        }
+        let vt = t.vtable(4, 1);
+        for i in 0..24 {
+            let what = |s: &str| format!("{name} {s} case {i}");
+            let obj = t.zeros(0x40);
+            t.fill(&mut rng, obj, 0x40);
+            let mesh = t.zeros(0x40);
+            t.fill(&mut rng, mesh, 0x40);
+            t.w32(mesh, vt);
+            t.w32(obj + 0xc, mesh);
+            let out = t.zeros(0x20);
+            let (x, y) = (rng.next(), rng.next());
+            t.check(
+                &what("slot 1 + 8"),
+                0x006e_23d0,
+                Conv::Thiscall(obj),
+                &[x],
+                |g| Out::U32(small::bridge::mesh_slot1_plus8(g, obj, x)),
+            );
+            t.check(
+                &what("upload"),
+                0x006f_89b0,
+                Conv::Thiscall(obj),
+                &[x, y],
+                |g| Out::U32(small::bridge::upload(g, obj, x, y)),
+            );
+            t.check(
+                &what("preprocess"),
+                0x0067_3b20,
+                Conv::Thiscall(obj),
+                &[out, y],
+                |g| Out::U32(small::bridge::populate_preprocess_data(g, obj, out)),
+            );
+            t.check(&what("shaders"), 0x006d_f3c0, Conv::Cdecl, &[], |g| {
+                Out::U32(small::bridge::load_shaders(g))
+            });
         }
     }
 }

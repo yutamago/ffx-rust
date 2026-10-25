@@ -7,7 +7,7 @@
 //! their objects live. No shim keeps state.
 
 use super::{mem, ported};
-use ffx_pother_b::{object, physics};
+use ffx_pother_b::{object, physics, small};
 
 ported! {
     /// `constructInstance(desc, obj)` -> 1: `[+0] = 0, [+4] = Phyre_PBase_GetClassDescriptor(), [+8] = 0, [+0xc] = the same, [+0x10] = 0.0f when obj is non-null`.
@@ -462,5 +462,99 @@ ported! {
     /// `DistortionGridDynamicMeshInstance` vtable slot 1 `(this, x)` -> 0x18.
     DistortionGridDynamicMeshInstance_getKind_6750e0 @ 0x0067_50e0 => extern "thiscall" fn konst_6750e0(_this: u32, _x: u32) -> u32 {
         0x18
+    }
+    /// `PProcessorProfileTimelineCpu::initialize(this, x)` -> 0.
+    Phyre_PProfiling_PProcessorProfileTimelineCpu_initialize @ 0x0060_ed40 => extern "thiscall" fn profile_timeline_initialize(_this: u32, _x: u32) -> u32 {
+        0
+    }
+    /// `constructInstance(desc, obj)` -> 1 (nothing to build).
+    Phyre_PClassDescriptorConcrete_Phyre_PScripting_PAsyncProcessHeader__constructInstance @ 0x0061_7de0 => extern "thiscall" fn construct_async_process_header(_desc: u32, _obj: u32) -> u8 {
+        1
+    }
+    /// `destructInstance(desc, obj)` -> 1 (nothing to destroy).
+    Phyre_PClassDescriptorForType_Phyre_PScripting_PAsyncProcessHeader__destructInstance @ 0x0061_7df0 => extern "thiscall" fn destruct_async_process_header(_desc: u32, _obj: u32) -> u8 {
+        physics::bridge::destruct_nothing()
+    }
+    /// `constructInstance(desc, obj)` -> 0 (no default constructor).
+    Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PScripting_PClassCallableMethodScript__constructInstance @ 0x0061_a0a0 => extern "thiscall" fn construct_callable_method_script(_desc: u32, _obj: u32) -> u8 {
+        0
+    }
+    /// `PInputDeviceKeyboard` vtable slot 1 `(kb)` -> 1.
+    PInputDeviceKeyboard_vslot1_006281f0 @ 0x0062_81f0 => extern "thiscall" fn keyboard_slot1(_kb: u32) -> u32 {
+        1
+    }
+    /// `PInputDeviceKeyboard_getButton(kb, i)`.
+    PInputDeviceKeyboard_getButton @ 0x0062_89a0 => extern "thiscall" fn keyboard_get_button(kb: u32, i: u32) -> u32 {
+        small::bridge::keyboard_button(&mut mem(), kb, i)
+    }
+    /// `PInputDeviceMouse_getButton(mouse, i)`.
+    PInputDeviceMouse_getButton @ 0x0062_89d0 => extern "thiscall" fn mouse_get_button(mouse: u32, i: u32) -> u32 {
+        small::bridge::mouse_button(&mut mem(), mouse, i)
+    }
+    /// `CharacterLighting::GetInstance()`.
+    Phyre_CharacterLighting_GetInstance @ 0x006a_6e30 => extern "C" fn character_lighting_instance() -> u32 {
+        small::bridge::singleton(&mut mem(), small::G_CHARACTER_LIGHTING)
+    }
+    /// `CharacterLightingTweakUtil::GetInstance()`.
+    Phyre_CharacterLightingTweakUtil_GetInstance @ 0x006a_6e40 => extern "C" fn character_lighting_tweak_instance() -> u32 {
+        small::bridge::singleton(&mut mem(), small::G_CHARACTER_LIGHTING_TWEAK)
+    }
+    /// `MorphManager::GetInstance()`.
+    MorphManager_GetInstance @ 0x006a_bf40 => extern "C" fn morph_manager_instance() -> u32 {
+        small::bridge::singleton(&mut mem(), small::G_MORPH_MANAGER)
+    }
+    /// `FogEffectManager::GetInstance()`.
+    Phyre_FogEffectManager_GetInstance @ 0x006e_32c0 => extern "C" fn fog_effect_manager_instance() -> u32 {
+        small::bridge::singleton(&mut mem(), small::G_FOG_EFFECT_MANAGER)
+    }
+    /// `CharacterLighting::calcShadeCoeffWithConfidence(cl, a, coeff, c)`
+    /// -> `coeff` in `ST0`.
+    Phyre_CharacterLighting_calcShadeCoeffWithConfidence @ 0x006a_77a0 => extern "thiscall" fn calc_shade_coeff_with_confidence(_cl: u32, _a: u32, coeff: f32, _c: u32) -> f32 {
+        coeff
+    }
+    /// `CharacterLighting_isInitSuccessful(cl)` -> `al`.
+    Phyre_CharacterLighting_isInitSuccessful @ 0x006a_9ad0 => extern "thiscall" fn is_init_successful(cl: u32) -> u8 {
+        small::bridge::is_init_successful(&mut mem(), cl)
+    }
+    /// `CharacterLighting_iteratorValid(it)` -> `al`.
+    CharacterLighting_iteratorValid_006a9a80 @ 0x006a_9a80 => extern "thiscall" fn iterator_valid(it: u32) -> u8 {
+        small::bridge::iterator_valid(&mut mem(), it)
+    }
+    /// `CharacterLighting_setCoefficient(cl, i, value)`.
+    CharacterLighting_setCoefficient_006aa920 @ 0x006a_a920 => extern "thiscall" fn set_coefficient(cl: u32, i: u32, value: u32) {
+        small::bridge::set_coefficient(&mut mem(), cl, i, value);
+    }
+    /// `CharacterLighting::setMapIdFlagChanged(cl, a, b)` -> `b`.
+    Phyre_CharacterLighting_setMapIdFlagChanged @ 0x006a_ad00 => extern "thiscall" fn set_map_id_flag_changed(cl: u32, a: u32, b: u32) -> u32 {
+        small::bridge::set_map_id_flag_changed(&mut mem(), cl, a, b)
+    }
+    /// `ClassDynamicMeshInstance::populatePreprocessData(inst, out, x)` -> 0.
+    ClassDynamicMeshInstance_populatePreprocessData @ 0x0067_3b20 => extern "thiscall" fn populate_preprocess_data(inst: u32, out: u32, _x: u32) -> u32 {
+        small::bridge::populate_preprocess_data(&mut mem(), inst, out)
+    }
+    /// `CharacterShaderManager::loadShader()`.
+    Phyre_CharacterShaderManager_loadShader @ 0x006d_f3c0 => extern "C" fn load_shader() -> u32 {
+        small::bridge::load_shaders(&mut mem())
+    }
+    /// `Clear4(this)` -> `this`.
+    Clear4_006e0800 @ 0x006e_0800 => extern "thiscall" fn clear4(this: u32) -> u32 {
+        small::bridge::clear(&mut mem(), this)
+    }
+    /// `DynamicMeshDefaultImplementation` vtable slot 5 `(this, a, b, c, d)`
+    /// -> `b`.
+    DynamicMeshDefaultImplementation_vslot5_006e21b0 @ 0x006e_21b0 => extern "thiscall" fn default_mesh_slot5(_this: u32, _a: u32, b: u32, _c: u32, _d: u32) -> u32 {
+        b
+    }
+    /// `ClothInstancingDynamicMeshInstance` vtable slot 1 `(inst, x)`.
+    ClothInstancingDynamicMeshInstance_vslot1_006e23d0 @ 0x006e_23d0 => extern "thiscall" fn cloth_instance_slot1(inst: u32, x: u32) -> u32 {
+        small::bridge::mesh_slot1_plus8(&mut mem(), inst, x)
+    }
+    /// `ClothInstancingDynamicMesh_setVertexBuffer(mesh, value, i)` -> `value`.
+    ClothInstancingDynamicMesh_setVertexBuffer_006e2b10 @ 0x006e_2b10 => extern "thiscall" fn cloth_set_vertex_buffer(mesh: u32, value: u32, i: u32) -> u32 {
+        small::bridge::set_slot(&mut mem(), mesh, value, i)
+    }
+    /// `DynamicBuffer_upload(this, data, size)` -> 0.
+    DynamicBuffer_upload_006f89b0 @ 0x006f_89b0 => extern "thiscall" fn dynamic_buffer_upload(this: u32, data: u32, size: u32) -> u32 {
+        small::bridge::upload(&mut mem(), this, data, size)
     }
 }

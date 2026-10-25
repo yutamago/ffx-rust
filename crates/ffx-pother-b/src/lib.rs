@@ -22,6 +22,7 @@
 
 pub mod object;
 pub mod physics;
+pub mod small;
 
 /// `Phyre_PhyreFree` (cdecl `(ptr)`).
 pub const PHYRE_FREE: u32 = 0x0042_fb20;
