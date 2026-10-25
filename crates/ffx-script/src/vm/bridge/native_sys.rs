@@ -662,7 +662,7 @@ pub fn native_01d5<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_00a1` (`0x00856220`, `0x00a1`): `(win, v)`: the message
+/// `Native_00a1_MsgWinSetColor` (`0x00856220`, `0x00a1`): `(win, v)`: the message
 /// window's `+0x10` = v; v.
 pub fn native_00a1<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -692,7 +692,7 @@ pub fn native_019b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_001e` (`0x00856490`, `0x001e`, float): `(v f, _ f)` -> v as
+/// `Native_001e_FloatDropTop` (`0x00856490`, `0x001e`, float): `(v f, _ f)` -> v as
 /// `AtelPopStackFloat` leaves it (the top is popped and dropped).
 pub fn native_001e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> f64 {
     atel_pop_stack_float(h, s);

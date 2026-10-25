@@ -794,18 +794,18 @@ pub fn native_get_entrance_y<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32)
     entrance(h, w, 0x10)
 }
 
-/// `Native_002c` (`0x0085a1a0`, `0x002c`, float): `(v)` ->
+/// `Native_002c_LevelSet5f8` (`0x0085a1a0`, `0x002c`, float): `(v)` ->
 /// `0x00871500(worker, level, v)`'s `ST0`.
 pub fn native_002c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     turn_speed(h, w, s, 0x0087_1500)
 }
 
-/// `Native_002b` (`0x0085a0b0`, `0x002b`, float): `0x00871520`.
+/// `Native_002b_LevelSet5f4` (`0x0085a0b0`, `0x002b`, float): `0x00871520`.
 pub fn native_002b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     turn_speed(h, w, s, 0x0087_1520)
 }
 
-/// `Native_0021` (`0x00859430`, `0x0021`, float): `(yaw)`: the wrapped yaw
+/// `Native_0021_MoveSetYaw` (`0x00859430`, `0x0021`, float): `(yaw)`: the wrapped yaw
 /// into the move block's `+0x44`; `ST0` it.
 pub fn native_0021<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     let m = move_block(h, w);
@@ -859,7 +859,7 @@ pub fn native_0091<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> f64 {
     x87::load(h.read(p + 0x34))
 }
 
-/// `Native_0004` (`0x0085ecb0`, `0x0004`): `(v)`: `+0xa8` = v, `+0xaa` =
+/// `Native_0004_WorkerSetType4` (`0x0085ecb0`, `0x0004`): `(v)`: `+0xa8` = v, `+0xaa` =
 /// 4; 0.
 pub fn native_0004<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -925,8 +925,8 @@ pub fn native_00a7<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_0058` (`0x00855f80`, `0x0058`): pushes the float at `0x00b92340`
-/// and goes on as `Native_0059` (`0x00855cd0`).
+/// `Native_0058_TriggerSetPointDefault` (`0x00855f80`, `0x0058`): pushes the float at `0x00b92340`
+/// and goes on as `Native_0059_TriggerSetPoint` (`0x00855cd0`).
 pub fn native_0058<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     let f = h.read::<u32>(h.rebase(0x00b9_2340));
     atel_push_stack_float(h, s, f);
@@ -1521,7 +1521,7 @@ pub fn native_00f6_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u
     }
 }
 
-/// `Native_0055` (`0x0085fa20`, `0x0055`): `(r)`: for triggers (types 2, 3,
+/// `Native_0055_TriggerSetRadius` (`0x0085fa20`, `0x0055`): `(r)`: for triggers (types 2, 3,
 /// 5, 6) the position's `+0x1c`; 1, else 0.
 pub fn native_0055<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let p = atel_get_pos_work_adrs(h, w);
@@ -1640,7 +1640,7 @@ fn tail<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32, f: u32) -> u32 {
     call(h, f, &[w, a, s])
 }
 
-/// `Native_0087` (`0x0085cf90`, `0x0087`): jumps to `0x0086c1c0`.
+/// `Native_0087_GetNowEventJumpId` (`0x0085cf90`, `0x0087`): jumps to `0x0086c1c0`.
 pub fn native_0087<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     tail(h, w, a, s, 0x0086_c1c0)
 }
@@ -1650,7 +1650,7 @@ pub fn native_0086<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     tail(h, w, a, s, 0x0086_c1f0)
 }
 
-/// `Native_0088` (`0x0085d160`, `0x0088`): jumps to `0x0086bca0`.
+/// `Native_0088_GetLastEventJumpMapNo` (`0x0085d160`, `0x0088`): jumps to `0x0086bca0`.
 pub fn native_0088<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     tail(h, w, a, s, 0x0086_bca0)
 }
@@ -1660,7 +1660,7 @@ pub fn native_010e<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     tail(h, w, a, s, 0x0090_6b10)
 }
 
-/// `Native_002a` (`0x00859bb0`, `0x002a`, float): `(pitch)`: wrapped into
+/// `Native_002a_TurnSetPitch` (`0x00859bb0`, `0x002a`, float): `(pitch)`: wrapped into
 /// the turn block's `+0x28`, and the wrapped rest to the position's pitch
 /// (`+0x38`) into `+0x34`; `ST0` the pitch.
 pub fn native_002a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
@@ -1675,7 +1675,7 @@ pub fn native_002a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     x87::load(y)
 }
 
-/// `Native_0059` (`0x00855cd0`, `0x0059`): `(r, h, z1)`: for point triggers
+/// `Native_0059_TriggerSetPoint` (`0x00855cd0`, `0x0059`): `(r, h, z1)`: for point triggers
 /// (types 3, 6) the position's `+0x30` = z1, `+0x38` = h, `+0x1c` = r; 1,
 /// else 0.
 pub fn native_0059<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -1908,7 +1908,7 @@ pub fn native_017e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_0025` (`0x00859d80`, `0x0025`, float): `(yaw)` wrapped into the
+/// `Native_0025_PosSetYaw` (`0x00859d80`, `0x0025`, float): `(yaw)` wrapped into the
 /// position's `+0x34`; `ST0` it.
 pub fn native_0025<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     let p = atel_get_pos_work_adrs(h, w);
@@ -1951,7 +1951,7 @@ pub fn native_0128<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0088_b730, &[cp(f), d[0], d[1], d[2]])
 }
 
-/// `Native_0069` (`0x008589d0`, `0x0069`): `(window, b, a)`: the window's
+/// `Native_0069_MsgWinSetBytes1e` (`0x008589d0`, `0x0069`): `(window, b, a)`: the window's
 /// `+0x1e` = b, `+0x1f` = a; `window`.
 pub fn native_0069<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let a = pop(h, s);
@@ -2150,7 +2150,7 @@ pub fn native_016b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     call3(h, s, 0x0088_6b40)
 }
 
-/// `Native_005a` (`0x00856170`, `0x005a`): `(yaw)`: for point triggers
+/// `Native_005a_TriggerSetPointYaw` (`0x00856170`, `0x005a`): `(yaw)`: for point triggers
 /// (types 3, 6) the position's `+0x34`; 0.
 pub fn native_005a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let p = atel_get_pos_work_adrs(h, w);
@@ -2223,7 +2223,7 @@ pub fn native_01c9<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_009a` (`0x00860390`, `0x009a`): `(v)`: for types 5 and 6 the
+/// `Native_009a_PosSetField28` (`0x00860390`, `0x009a`): `(v)`: for types 5 and 6 the
 /// position's `+0x28` = v; `v`.
 pub fn native_009a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -2241,7 +2241,7 @@ pub fn native_00de_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> 
     super::helpers::atel_effect_end_poll(h)
 }
 
-/// `Native_0094` (`0x0085f0b0`, `0x0094`, float): `0x0086f040(worker, v)`;
+/// `Native_0094_CurLevelSet5ec` (`0x0085f0b0`, `0x0094`, float): `0x0086f040(worker, v)`;
 /// `ST0` `v`.
 pub fn native_0094<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     set_f(h, w, s, 0x0086_f040)
@@ -2273,7 +2273,7 @@ pub fn native_0207<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     1
 }
 
-/// `Native_0090` (`0x0085e270`, `0x0090`, float): the position's `+0x20`.
+/// `Native_0090_PosGetField20` (`0x0085e270`, `0x0090`, float): the position's `+0x20`.
 pub fn native_0090<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> f64 {
     let p = atel_get_pos_work_adrs(h, w);
     x87::load(h.read(p + 0x20))
@@ -2446,7 +2446,7 @@ pub fn native_0160<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0079_0800, &[v])
 }
 
-/// `Native_0010` (`0x00856910`, `0x0010`): jumps to `0x0086c1d0`.
+/// `Native_0010_GetNowEventJumpIndex` (`0x00856910`, `0x0010`): jumps to `0x0086c1d0`.
 pub fn native_0010<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     tail(h, w, a, s, 0x0086_c1d0)
 }
@@ -2579,7 +2579,7 @@ pub fn native_00ec<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     u32::MAX
 }
 
-/// `Native_0089` (`0x0085d280`, `0x0089`): jumps to `0x0086bc70`.
+/// `Native_0089_GetLastEventJumpId` (`0x0085d280`, `0x0089`): jumps to `0x0086bc70`.
 pub fn native_0089<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     tail(h, w, a, s, 0x0086_bc70)
 }
@@ -2899,7 +2899,7 @@ pub fn native_00e8<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_0030` (`0x0085a7c0`, `0x0030`, float): `(v)` ->
+/// `Native_0030_TurnSet880` (`0x0085a7c0`, `0x0030`, float): `(v)` ->
 /// `0x00871540(worker, level, v)`'s `ST0`.
 pub fn native_0030<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     let v = popf(h, s);
@@ -3293,7 +3293,7 @@ pub fn native_012b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     u32::from(v)
 }
 
-/// `Native_0092` (`0x0085eac0`, `0x0092`, float): `(worker)`: its
+/// `Native_0092_PosGetField20Of` (`0x0085eac0`, `0x0092`, float): `(worker)`: its
 /// position's `+0x20`.
 pub fn native_0092<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> f64 {
     let i = pop(h, s);
@@ -3387,7 +3387,7 @@ pub fn native_0202<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_0098` (`0x0085fb50`, `0x0098`): `(var, n)`: `0x00870fc0(worker,
+/// `Native_0098_VarSetCurLevel` (`0x0085fb50`, `0x0098`): `(var, n)`: `0x00870fc0(worker,
 /// the variable's address)`, `0x00871610(worker, n as float)`,
 /// `0x00871630(worker, 0)`; 1.
 pub fn native_0098<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -3465,7 +3465,7 @@ pub fn native_0135<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     tail(h, w, a, s, 0x0078_4e80)
 }
 
-/// `Native_00a2` (`0x00856570`, `0x00a2`): `(window, a, b, c, d)` bytes:
+/// `Native_00a2_MsgWinSetColorBytes` (`0x00856570`, `0x00a2`): `(window, a, b, c, d)` bytes:
 /// the window's `+0x10` = `a << 24 | d << 16 | c << 8 | b` (pushed and
 /// popped back); it.
 pub fn native_00a2<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
@@ -3674,7 +3674,7 @@ pub fn native_00c4<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     u32::from(h.read::<u16>(m + 2) & 0x7f != 0)
 }
 
-/// `Native_0003` (`0x0085ebd0`, `0x0003`): `(v)`: `+0xa8` = v, `+0xaa` =
+/// `Native_0003_WorkerSetType3` (`0x0085ebd0`, `0x0003`): `(v)`: `+0xa8` = v, `+0xaa` =
 /// 3; 0.
 pub fn native_0003<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -4104,7 +4104,7 @@ pub fn native_009b<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     native_trigger_set_line(h, w, a, s)
 }
 
-/// `Native_0047` (`0x0085db70`, `0x0047`): the flag word
+/// `Native_0047_PadMapButtons` (`0x0085db70`, `0x0047`): the flag word
 /// `0x00888c40(0, 0, 0x0086af80())`.
 pub fn native_0047<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     let x = call(h, 0x0086_af80, &[]) & 0xffff;

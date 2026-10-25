@@ -827,8 +827,8 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x0000` | `Native_WaitFrames_0000` | frames int (10 becomes 40 in battle scene 0x610000 with magic 0x290) | 1 when done | the frames (counted by real frames when g_WaitFramesByTime is set) | start `0x0085c4e0`, poll `0x0085c6b0` (native_move) |
 | `0x0001` | `Native_SetModel` | model int | 0 (the worker's character allocated and placed) | - | int `0x0085d000` (native_move) |
 | `0x0002` | `Native_AttachCamera` | camera int, mode int, _ int | 0: attaches the worker to camera (+0xaa 2, 0x007ba9a0) after detaching it | - | int `0x0085e920` (native_move) |
-| `0x0003` | `Native_0003` | v int: +0xa8 (+0xaa = 3) | 0 | - | int `0x0085ebd0` (native_move) |
-| `0x0004` | `Native_0004` | v int: worker +0xa8 (+0xaa = 4) | 0 | - | int `0x0085ecb0` (native_move) |
+| `0x0003` | `Native_0003_WorkerSetType3` | v int: +0xa8 (+0xaa = 3) | 0 | - | int `0x0085ebd0` (native_move) |
+| `0x0004` | `Native_0004_WorkerSetType4` | v int: worker +0xa8 (+0xaa = 4) | 0 | - | int `0x0085ecb0` (native_move) |
 | `0x0005` | `Native_WorkerDetach` | pushes 0, then as Worker_Detach (0x019d) | Worker_Detach's result | - | int `0x0085cdc0` (native_move) |
 | `0x0006` | `Native_0006_ChrAttachModel` | slot int, model int, motion int | 1 (model attached in the slot), 0 without a character or model | - | int `0x0085e620` (native_move) |
 | `0x0007` | `Native_0007_ChrDetachModel` | slot int: 0x00862780(worker, slot) | 1 | - | int `0x0085c8c0` (native_move) |
@@ -837,10 +837,10 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x000a` | `GetFieldU8aa_0085f2d0` | - | int: the worker's type (+0xaa; the auto-port's shim stays) | - | int `0x0085f2d0` (native_mods) |
 | `0x000b` | `GetFieldU16a8_0085f360` | - | int: the worker's +0xa8 (u16; the auto-port's shim stays) | - | int `0x0085f360` (native_mods) |
 | `0x000c` | `Native_000c_SgSetPlayer` | i | int: Sg_SetPlayer(i) (0x0082dad0); i | - | int `0x0085f640` (native_mods) |
-| `0x000d` | `Native_000d` | - | int: jumps to 0x0086bc70 | - | int `0x008565f0` (native_mods) |
-| `0x000e` | `Native_000e` | - | int: jumps to 0x0086bc80 | - | int `0x008566a0` (native_mods) |
-| `0x000f` | `Native_000f` | - | int: jumps to 0x0086c1c0 | - | int `0x00856790` (native_mods) |
-| `0x0010` | `Native_0010` | as 0x0086c1d0 | as 0x0086c1d0 (a jump) | - | int `0x00856910` (native_move) |
+| `0x000d` | `Native_000d_GetLastEventJumpId` | - | int: jumps to 0x0086bc70 | - | int `0x008565f0` (native_mods) |
+| `0x000e` | `Native_000e_GetLastEventJumpIndex` | - | int: jumps to 0x0086bc80 | - | int `0x008566a0` (native_mods) |
+| `0x000f` | `Native_000f_GetNowEventJumpId` | - | int: jumps to 0x0086c1c0 | - | int `0x00856790` (native_mods) |
+| `0x0010` | `Native_0010_GetNowEventJumpIndex` | as 0x0086c1d0 | as 0x0086c1d0 (a jump) | - | int `0x00856910` (native_move) |
 | `0x0011` | `Native_MapChange` | map int, entrance int: map change | 0 | - | int `0x008581c0` (native_move) |
 | `0x0012` | `Native_0012_SetPosXZ` | x f, z f: 0x00870970(worker, x, z, 0) | 0 | - | int `0x0085f800` (native_move) |
 | `0x0013` | `CT_0013_setPosition` | x f, y f, z f: the worker's position | 0 | - | int `0x0085faa0` (native) |
@@ -854,27 +854,27 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x001b` | `Native_TurnWait` | - | 5 when done | until the turn block's mode (+2 & 0x1f) is 0 | poll `0x00857b30` (native) |
 | `0x001c` | `Native_MoveSetFrames` | elapsed int, frames int: the move block's timer (+0xc, +8) | float: elapsed | - | float `0x00855f10` (native) |
 | `0x001d` | `Native_TurnSetFrames` | elapsed int, frames int: the turn block's timer (frames <= 0 become 1) | float: elapsed | - | float `0x008560d0` (native) |
-| `0x001e` | `Native_001e` | v f, _ f | float: v (the top is dropped) | - | float `0x00856490` (native_sys) |
+| `0x001e` | `Native_001e_FloatDropTop` | v f, _ f | float: v (the top is dropped) | - | float `0x00856490` (native_sys) |
 | `0x001f` | `Native_GetYawToMoveTarget` | - | float: yaw from the worker to the move target | - | float `0x008587a0` (native_move) |
 | `0x0020` | `Native_GetPitchToMoveTarget` | - | float: the pitch to the move target (second result of 0x0088b4d0) | - | float `0x00858d30` (native_move) |
-| `0x0021` | `Native_0021` | yaw f (radians) | float: the wrapped yaw (move block +0x44) | - | float `0x00859430` (native_move) |
-| `0x0022` | `Native_0022` | a f | float: the current level's turn block (+0x600 + level * 0x4c) +0 = Math_WrapAngle(a); that angle | - | float `0x00859510` (native_mods) |
-| `0x0023` | `Native_0023` | v f | float: position block +0x20 = v; v | - | float `0x008591a0` (native_mods) |
-| `0x0024` | `Native_0024` | v f | float: position block +0x24 = v; v | - | float `0x008592f0` (native_mods) |
-| `0x0025` | `Native_0025` | yaw f (radians) | float: the wrapped yaw (position +0x34) | - | float `0x00859d80` (native_move) |
-| `0x0026` | `Native_0026` | a f | float: position block +0x30 = the wrapped angle; that angle | - | float `0x00859e50` (native_mods) |
-| `0x0027` | `Native_0027` | a f | float: position block +0x38 = the wrapped angle; that angle | - | float `0x00859f30` (native_mods) |
+| `0x0021` | `Native_0021_MoveSetYaw` | yaw f (radians) | float: the wrapped yaw (move block +0x44) | - | float `0x00859430` (native_move) |
+| `0x0022` | `Native_0022_TurnSetAngle` | a f | float: the current level's turn block (+0x600 + level * 0x4c) +0 = Math_WrapAngle(a); that angle | - | float `0x00859510` (native_mods) |
+| `0x0023` | `Native_0023_PosSetField20` | v f | float: position block +0x20 = v; v | - | float `0x008591a0` (native_mods) |
+| `0x0024` | `Native_0024_PosSetField24` | v f | float: position block +0x24 = v; v | - | float `0x008592f0` (native_mods) |
+| `0x0025` | `Native_0025_PosSetYaw` | yaw f (radians) | float: the wrapped yaw (position +0x34) | - | float `0x00859d80` (native_move) |
+| `0x0026` | `Native_0026_PosSetAngle30` | a f | float: position block +0x30 = the wrapped angle; that angle | - | float `0x00859e50` (native_mods) |
+| `0x0027` | `Native_0027_PosSetAngle38` | a f | float: position block +0x38 = the wrapped angle; that angle | - | float `0x00859f30` (native_mods) |
 | `0x0028` | `Native_TurnSetYaw` | yaw f (radians) | float: the wrapped yaw (turn target +0x20, remaining +0x2c) | - | float `0x00859640` (native) |
 | `0x0029` | `Native_TurnSetPitch` | angle f (radians, pitch) | float: the wrapped angle (+0x24, remaining +0x30) | - | float `0x00859880` (native) |
-| `0x002a` | `Native_002a` | pitch f (radians) | float: the wrapped pitch (turn block +0x28; the rest to the position's pitch in +0x34) | - | float `0x00859bb0` (native_move) |
-| `0x002b` | `Native_002b` | v f | float: 0x00871520(worker, level, v) | - | float `0x0085a0b0` (native_move) |
-| `0x002c` | `Native_002c` | v f | float: 0x00871500(worker, level, v) | - | float `0x0085a1a0` (native_move) |
+| `0x002a` | `Native_002a_TurnSetPitch` | pitch f (radians) | float: the wrapped pitch (turn block +0x28; the rest to the position's pitch in +0x34) | - | float `0x00859bb0` (native_move) |
+| `0x002b` | `Native_002b_LevelSet5f4` | v f | float: 0x00871520(worker, level, v) | - | float `0x0085a0b0` (native_move) |
+| `0x002c` | `Native_002c_LevelSet5f8` | v f | float: 0x00871500(worker, level, v) | - | float `0x0085a1a0` (native_move) |
 | `0x002d` | `Native_SetArriveRadiusAll` | r f: arrive radius of every level | float: r | - | float `0x00858020` (native_move) |
 | `0x002e` | `Native_TurnSetSpeed` | speed f: turn block +0x10 | float: speed | - | float `0x0085a2a0` (native_move) |
 | `0x002f` | `Native_TurnSetSpeed2` | speed f: turn block +0x18 | float: speed | - | float `0x0085a5c0` (native_move) |
-| `0x0030` | `Native_0030` | v f | float: 0x00871540(worker, level, v) | - | float `0x0085a7c0` (native_move) |
-| `0x0031` | `Native_0031` | - | int: Atel_SetWorkerFlag200(worker, 1) (0x008712a0), 0x0086a0e0(); 1 | - | int `0x00856ba0` (native_mods) |
-| `0x0032` | `Native_0032` | - | int: Atel_SetWorkerFlag200(worker, 0), 0x0086a0e0(); 0 | - | int `0x00856da0` (native_mods) |
+| `0x0030` | `Native_0030_TurnSet880` | v f | float: 0x00871540(worker, level, v) | - | float `0x0085a7c0` (native_move) |
+| `0x0031` | `Native_0031_WorkerSetFlag200` | - | int: Atel_SetWorkerFlag200(worker, 1) (0x008712a0), 0x0086a0e0(); 1 | - | int `0x00856ba0` (native_mods) |
+| `0x0032` | `Native_0032_WorkerClearFlag200` | - | int: Atel_SetWorkerFlag200(worker, 0), 0x0086a0e0(); 0 | - | int `0x00856da0` (native_mods) |
 | `0x0033` | `Native_GetWorkerId` | worker int (-1 = self) | int: its id (+0x2e) | - | int `0x0085ba50` (native) |
 | `0x0034` | `Native_EnableTrigger` | kind int: trigger bit (0 talk) | int: kind (worker +0xab gets the bit) | - | int `0x0085c060` (native) |
 | `0x0035` | `Native_DisableTrigger` | kind int | 0 (clears worker +0xab's bit) | - | int `0x0085c280` (native) |
@@ -888,33 +888,33 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x003d` | `Native_003d_CopyTurnAnglesAll` | - | 0 (0x0086db80(worker, 0xff)) | - | int `0x0085c3e0` (native_move) |
 | `0x003e` | `Native_003e_CopyTurnAngles` | mask | int: Atel_CopyTurnAngles(worker, mask) (0x0086db80); 0 | - | int `0x0085c470` (native_mods) |
 | `0x003f` | `Native_TurnGetField38` | - | float: the turn block's +0x38 | - | float `0x0085c590` (native) |
-| `0x0040` | `Native_0040` | - | float: the current level's +0x48 block's +0x3c | - | float `0x0085c740` (native_mods) |
-| `0x0041` | `Native_0041` | - | float: the current level's +0x48 block's +0x40 | - | float `0x0085c840` (native_mods) |
+| `0x0040` | `Native_0040_LevelGetBlock48Field3c` | - | float: the current level's +0x48 block's +0x3c | - | float `0x0085c740` (native_mods) |
+| `0x0041` | `Native_0041_LevelGetBlock48Field40` | - | float: the current level's +0x48 block's +0x40 | - | float `0x0085c840` (native_mods) |
 | `0x0042` | `Native_SetPartyIndex` | i int: party index (bound character for type-1 workers; slot, 0xf from 8) | int: i | - | int `0x0085cb40` (native_move) |
 | `0x0043` | `Native_SetPlayer` | - | int: the worker id (the player is set to it, 0x0086f6a0) | - | int `0x0085c9a0` (native_move) |
 | `0x0044` | `Native_0044_PadHeld` | - | int: the flag word 0x00888c40(0, 0, 0x0086af30()) | - | int `0x0085d4e0` (native_move) |
 | `0x0045` | `Native_0045_PadRepeat` | - | int: the buttons of 0x0086af50() through Pad_MapButtons | - | int `0x0085d760` (native_mods) |
 | `0x0046` | `Native_PadPressed` | - | int: buttons pressed this frame, remapped | - | int `0x0085d9b0` (native) |
-| `0x0047` | `Native_0047` | - | int: the flag word 0x00888c40(0, 0, 0x0086af80()) | - | int `0x0085db70` (native_move) |
+| `0x0047` | `Native_0047_PadMapButtons` | - | int: the flag word 0x00888c40(0, 0, 0x0086af80()) | - | int `0x0085db70` (native_move) |
 | `0x0048` | `Native_0048_PadHeldRaw` | - | int: AtelGetControlerT() (0x0086af30), the low word | - | int `0x0085dcc0` (native_mods) |
 | `0x0049` | `Native_0049_PadRepeatRaw` | - | int: 0x0086af50(), the low word | - | int `0x0085ddc0` (native_mods) |
 | `0x004a` | `Native_004a_PadPressedRaw` | - | int: AtelGetControler() (0x0086af70), the low word | - | int `0x0085dff0` (native_mods) |
-| `0x004b` | `Native_004b` | - | int: 0x0086af80(), the low word | - | int `0x0085e0d0` (native_mods) |
+| `0x004b` | `Native_004b_PadGetButtonsLow` | - | int: 0x0086af80(), the low word | - | int `0x0085e0d0` (native_mods) |
 | `0x004c` | `Native_004c_PadIsHeld` | i int | int: bit i of the flag word for 0x0086af30() | - | int `0x0085e130` (native_move) |
 | `0x004d` | `Native_004d_PadIsPressed` | i int | int: bit i of the flag word for 0x0086af70() (0 for worker 11 on story 0x31 with [0x0112d6c9] bit 5) | - | int `0x0085e820` (native_move) |
-| `0x004e` | `Native_004e` | b | int: bit b of 0x0086af80()'s buttons through Pad_MapButtons | - | int `0x0085ea80` (native_mods) |
+| `0x004e` | `Native_004e_PadTestMapButton` | b | int: bit b of 0x0086af80()'s buttons through Pad_MapButtons | - | int `0x0085ea80` (native_mods) |
 | `0x004f` | `Native_004f_PadIsRepeat` | b | int: bit b of 0x0086af50()'s buttons through Pad_MapButtons | - | int `0x0085e3c0` (native_mods) |
 | `0x0050` | `Native_0050_PadIsHeldRaw` | i int | int: bit i of 0x0086af30() | - | int `0x0085ec60` (native_move) |
 | `0x0051` | `Native_0051_PadIsPressedRaw` | i int | int: bit i of 0x0086af70() | - | int `0x0085f0e0` (native_move) |
-| `0x0052` | `Native_0052` | b | int: bit b of 0x0086af80() | - | int `0x0085f2a0` (native_mods) |
+| `0x0052` | `Native_0052_PadTestButtonBit` | b | int: bit b of 0x0086af80() | - | int `0x0085f2a0` (native_mods) |
 | `0x0053` | `Native_0053_PadIsRepeatRaw` | b | int: bit b of 0x0086af50() | - | int `0x0085eda0` (native_mods) |
 | `0x0054` | `Native_TriggerSetLine` | x0 f, y0 f, z0 f, x1 f, y1 f, z1 f: the line ends (+0, +0x30) | int: 1 for line triggers (types 2, 5), else 0 | - | int `0x0085f370` (native_move) |
-| `0x0055` | `Native_0055` | r f: position +0x1c | int: 1 for triggers (types 2, 3, 5, 6), else 0 | - | int `0x0085fa20` (native_move) |
+| `0x0055` | `Native_0055_TriggerSetRadius` | r f: position +0x1c | int: 1 for triggers (types 2, 3, 5, 6), else 0 | - | int `0x0085fa20` (native_move) |
 | `0x0056` | `Native_TriggerSetActive` | on int | 1 for trigger workers (types 2, 3, 5, 6: +0x34 bit 7 = on), else 0 | - | int `0x0085fbf0` (native) |
 | `0x0057` | `Native_TriggerSetPoint` | x f, y f, z f: the trigger point | int: 1 for point triggers (types 3, 6), else 0 | - | int `0x008603e0` (native_move) |
-| `0x0058` | `Native_0058` | as 0x0059, after the float at 0x00b92340 is pushed | as 0x0059 (0x00855cd0) | - | int `0x00855f80` (native_move) |
-| `0x0059` | `Native_0059` | z1 f, h f, r f: position +0x30, +0x38, +0x1c | int: 1 for point triggers (types 3, 6), else 0 | - | int `0x00855cd0` (native_move) |
-| `0x005a` | `Native_005a` | yaw f: position +0x34 of point triggers (types 3, 6) | 0 | - | int `0x00856170` (native_move) |
+| `0x0058` | `Native_0058_TriggerSetPointDefault` | as 0x0059, after the float at 0x00b92340 is pushed | as 0x0059 (0x00855cd0) | - | int `0x00855f80` (native_move) |
+| `0x0059` | `Native_0059_TriggerSetPoint` | z1 f, h f, r f: position +0x30, +0x38, +0x1c | int: 1 for point triggers (types 3, 6), else 0 | - | int `0x00855cd0` (native_move) |
+| `0x005a` | `Native_005a_TriggerSetPointYaw` | yaw f: position +0x34 of point triggers (types 3, 6) | 0 | - | int `0x00856170` (native_move) |
 | `0x005b` | `Native_SetTouchRange_copy_00856600` | as Native_SetTouchRange | as Native_SetTouchRange | - | int `0x00856600` (native_sys) |
 | `0x005c` | `Native_TriggerSetActive2` | on int | as 0x0056 | - | int `0x008600c0` (native) |
 | `0x005d` | `Native_ControlEnable` | - | 1 (player control on) | - | int `0x008566b0` (native) |
@@ -927,9 +927,9 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x0064` | `Native_MsgSetText` | window int, msg int: message index in the event's table | 0 (window text and flags set) | - | int `0x00857870` (native_msg) |
 | `0x0065` | `Native_MsgSetPos` | window int, x int, y int, anchor int | 0 (three windows of maps 0x17, 0xab, 0xd4 are moved) | - | int `0x008580c0` (native_msg) |
 | `0x0066` | `Native_MsgSetStyle` | window int, style int | int: window | - | int `0x00858360` (native) |
-| `0x0067` | `Native_0067` | i, v | int: v's low and high halves pushed back, then as 0x0068 (the window's +4 = low, +6 = high); 0 | - | int `0x00858850` (native_mods) |
-| `0x0068` | `Native_0068` | i, b, a | int: message window i's +4 = b, +6 = a; 0 | - | int `0x00858640` (native_mods) |
-| `0x0069` | `Native_0069` | window int, b int, a int: +0x1e = b, +0x1f = a (bytes) | int: window | - | int `0x008589d0` (native_move) |
+| `0x0067` | `Native_0067_MsgWinSetWords46Split` | i, v | int: v's low and high halves pushed back, then as 0x0068 (the window's +4 = low, +6 = high); 0 | - | int `0x00858850` (native_mods) |
+| `0x0068` | `Native_0068_MsgWinSetWords46` | i, b, a | int: message window i's +4 = b, +6 = a; 0 | - | int `0x00858640` (native_mods) |
+| `0x0069` | `Native_0069_MsgWinSetBytes1e` | window int, b int, a int: +0x1e = b, +0x1f = a (bytes) | int: window | - | int `0x008589d0` (native_move) |
 | `0x006a` | `Native_MsgOpen` | window int, mode int (0, 2, 66: choice flags) | int: window (opened, state 1) | - | int `0x00858b50` (native_msg) |
 | `0x006b` | `Native_MsgClose` | window int | int: window (closes it) | - | int `0x00859060` (native_msg) |
 | `0x006c` | `Native_SetMoveSpeed` | speed f: worker move speed | float: speed | - | float `0x00857f40` (native_move) |
@@ -938,16 +938,16 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x006f` | `Native_SetTurnParam10` | a f: turn block +0x10 of all levels | float: a | - | float `0x0085af20` (native_move) |
 | `0x0070` | `Native_SetTurnParam18` | a f: turn block +0x18 of all levels | float: a | - | float `0x0085b230` (native_move) |
 | `0x0071` | `Native_SetTurnParam1C` | a f: turn block +0x1c of all levels | float: a | - | float `0x0085b480` (native_move) |
-| `0x0072` | `Native_0072` | v | int: SetField_00870520(worker, level, v) (the level's move block +0x5bc word); v | - | int `0x0085bb50` (native_mods) |
-| `0x0073` | `Native_0073` | v | int: SetField_00871170(worker, level, v) (the level's turn block +0x868 word); v | - | int `0x0085bc90` (native_mods) |
+| `0x0072` | `Native_0072_MoveSetField5bc` | v | int: SetField_00870520(worker, level, v) (the level's move block +0x5bc word); v | - | int `0x0085bb50` (native_mods) |
+| `0x0073` | `Native_0073_TurnSetField868` | v | int: SetField_00871170(worker, level, v) (the level's turn block +0x868 word); v | - | int `0x0085bc90` (native_mods) |
 | `0x0074` | `Native_SetMoveMOT` | v int: move motion | int: v | - | int `0x0085bdc0` (native_move) |
-| `0x0075` | `Native_0075` | v | int: SetFields_0086f120(worker, v); v | - | int `0x0085bf40` (native_mods) |
+| `0x0075` | `Native_0075_SetFields0086f120` | v | int: SetFields_0086f120(worker, v); v | - | int `0x0085bf40` (native_mods) |
 | `0x0076` | `Native_GetOwnWorkerType` | - | int: the worker's type (0x0086a7b0) | - | int `0x0085f5a0` (native_move) |
 | `0x0077` | `Native_WorkerStopMove` | worker int | 0 (stops its move) | - | int `0x0085b620` (native) |
 | `0x0078` | `Native_WorkerStopTurn` | worker int | 0 (stops its turn) | - | int `0x0085b950` (native) |
-| `0x0079` | `Native_0079` | v | int: v (popped and returned) | - | int `0x0085c040` (native_mods) |
+| `0x0079` | `Native_0079_Echo` | v | int: v (popped and returned) | - | int `0x0085c040` (native_mods) |
 | `0x007a` | `Native_LineExtend` | back f, front f: how far the line ends move out | int: 1 for line triggers (types 2, 5), else 0 | - | int `0x0085c130` (native_move) |
-| `0x007b` | `Native_007b` | i | int: ReturnConst_008b7cc0(text i) (0x008b7cc0), the text from Msg_Text1 (0x0086b170) when 0x0086bbc0() is set, else Msg_Text (0x0086bf30) | - | int `0x00857ea0` (native_mods) |
+| `0x007b` | `Native_007b_MsgGetText` | i | int: ReturnConst_008b7cc0(text i) (0x008b7cc0), the text from Msg_Text1 (0x0086b170) when 0x0086bbc0() is set, else Msg_Text (0x0086bf30) | - | int `0x00857ea0` (native_mods) |
 | `0x007c` | `Native_MsgWait_End` | window int | 1 when done; int slot 0 (closes it) | until the window is closed or in state 4 (open with its text shown and the ctrl work's bit 2: closed then) | start `0x0085b7c0`, poll `0x0085b980`, int `0x0085ba80` (native_msg) |
 | `0x007d` | `Native_MsgSelect` | window int[, a int[, b int]]: choice window | 1 when done; int slot: the choice (-1 none) | until the window is closed or in state 4, or open with its input done (closed then) | start `0x00859710`, poll `0x00859c50`, int `0x0085a6f0` (native_msg) |
 | `0x007e` | `Native_007e_GetCtrlTopId` | - | int: jumps to AtelGetNowCtrlTopId (0x0086c1a0) | - | int `0x0085c580` (native_mods) |
@@ -959,34 +959,34 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x0084` | `Native_MsgWaitEx_End` | window int, x int | 1 when done; int slot 0 (closes it) | as 0x007c | start `0x0085abd0`, poll `0x0085ae90`, int `0x0085b6d0` (native_msg) |
 | `0x0085` | `Native_SetTouchRange` | r f: touch range (pos +0x48) | 1 | - | int `0x00856460` (native_move) |
 | `0x0086` | `Native_0086_GetEventJumpMap` | as 0x0086c1f0 | as 0x0086c1f0 (a jump) | - | int `0x0085cdb0` (native_move) |
-| `0x0087` | `Native_0087` | as 0x0086c1c0 | as 0x0086c1c0 (a jump) | - | int `0x0085cf90` (native_move) |
-| `0x0088` | `Native_0088` | as 0x0086bca0 | as 0x0086bca0 (a jump) | - | int `0x0085d160` (native_move) |
-| `0x0089` | `Native_0089` | as 0x0086bc70 | as 0x0086bc70 (a jump) | - | int `0x0085d280` (native_move) |
+| `0x0087` | `Native_0087_GetNowEventJumpId` | as 0x0086c1c0 | as 0x0086c1c0 (a jump) | - | int `0x0085cf90` (native_move) |
+| `0x0088` | `Native_0088_GetLastEventJumpMapNo` | as 0x0086bca0 | as 0x0086bca0 (a jump) | - | int `0x0085d160` (native_move) |
+| `0x0089` | `Native_0089_GetLastEventJumpId` | as 0x0086bc70 | as 0x0086bc70 (a jump) | - | int `0x0085d280` (native_move) |
 | `0x008a` | `Native_008a_GetMapCameraId` | - | int: jumps to AtelGetEventMapCameraId (0x0086b5d0) | - | int `0x0085d3b0` (native_mods) |
 | `0x008b` | `Native_LineGetCrossSide` | - | int: side of the crossed line (0x008632b0), else from worker +0x36 (-1 for 3) | - | int `0x0085d410` (native_move) |
-| `0x008c` | `Native_008c` | - | int: the current ctrl work's +0x1f4 | - | int `0x0085d8b0` (native_mods) |
+| `0x008c` | `Native_008c_CtrlGetRemoveClears` | - | int: the current ctrl work's +0x1f4 | - | int `0x0085d8b0` (native_mods) |
 | `0x008d` | `Native_SetTYZAngle` | angle f: pos +0x4c | float: the angle | - | float `0x008577c0` (native_move) |
-| `0x008e` | `Native_008e` | v f | float: position block +0x1c = v; v | - | float `0x0085db40` (native_mods) |
+| `0x008e` | `Native_008e_PosSetRadius` | v f | float: position block +0x1c = v; v | - | float `0x0085db40` (native_mods) |
 | `0x008f` | `Native_MsgIsReady` | window int | 1 when closed, in state 4, or open with its text done; else 0 | - | int `0x0085de10` (native) |
-| `0x0090` | `Native_0090` | - | float: the position's +0x20 | - | float `0x0085e270` (native_move) |
+| `0x0090` | `Native_0090_PosGetField20` | - | float: the position's +0x20 | - | float `0x0085e270` (native_move) |
 | `0x0091` | `Native_0091_GetYaw` | - | float: the position's yaw (+0x34) | - | float `0x0085e0b0` (native_move) |
-| `0x0092` | `Native_0092` | worker int | float: its position's +0x20 | - | float `0x0085eac0` (native_move) |
+| `0x0092` | `Native_0092_PosGetField20Of` | worker int | float: its position's +0x20 | - | float `0x0085eac0` (native_move) |
 | `0x0093` | `Native_0093_GetWorkerYaw` | worker int | float: its yaw (position +0x34) | - | float `0x0085e8f0` (native_move) |
-| `0x0094` | `Native_0094` | v f: 0x0086f040(worker, v) | float: v | - | float `0x0085f0b0` (native_move) |
+| `0x0094` | `Native_0094_CurLevelSet5ec` | v f: 0x0086f040(worker, v) | float: v | - | float `0x0085f0b0` (native_move) |
 | `0x0095` | `Native_SetYaw` | yaw f | float: the wrapped yaw (turn stopped, character turned) | - | float `0x0085f170` (native_move) |
 | `0x0096` | `Native_SetPitch` | pitch f (radians) | float: the wrapped pitch (position +0x24, +0x30) | - | float `0x0085f460` (native_move) |
 | `0x0097` | `Native_MsgGetState` | window int | int: state (0 closed, 1 opening, 2 open, 3 closing, 4) | - | int `0x0085fa80` (native) |
-| `0x0098` | `Native_0098` | var int, n int: 0x00870fc0(worker, &var), 0x00871610(worker, n), 0x00871630(worker, 0) | 1 | - | int `0x0085fb50` (native_move) |
+| `0x0098` | `Native_0098_VarSetCurLevel` | var int, n int: 0x00870fc0(worker, &var), 0x00871610(worker, n), 0x00871630(worker, 0) | 1 | - | int `0x0085fb50` (native_move) |
 | `0x0099` | `Native_0099_SetPosOnSpline` | &points, n | int: 0x00862b20(&p, points, n), then AtelSetPos3d(worker, p, 0); 1 | - | int `0x0085fd80` (native_mods) |
-| `0x009a` | `Native_009a` | v int: position +0x28 for types 5, 6 | int: v | - | int `0x00860390` (native_move) |
+| `0x009a` | `Native_009a_PosSetField28` | v int: position +0x28 for types 5, 6 | int: v | - | int `0x00860390` (native_move) |
 | `0x009b` | `Native_009b_TriggerSetLineVec` | b var, a var: two vectors pushed as the line for 0x0054 | as 0x0054 | - | int `0x0085f750` (native_move) |
 | `0x009c` | `Native_009c_SetPosOnSpline3` | &points, n | int: 0x00862b70(&p, points, n), then AtelSetPos3d(worker, p, 0); 1 | - | int `0x00860000` (native_mods) |
 | `0x009d` | `Native_MsgSetFlags` | window int, flags int | int: window | - | int `0x008584d0` (native) |
 | `0x009e` | `Native_MsgSetValue` | window int, slot int, type int, value int: inline text variable | int: window | - | int `0x00855c70` (native_msg) |
 | `0x009f` | `Native_009f_MsgSetMacroValue` | win int, n int, v int | int: win; TOMacroSetValue(win, n, v) (0x008b8980) | - | int `0x00856090` (native_sys) |
 | `0x00a0` | `Native_00a0_MsgSetMacroType` | win int, n int, t int | int: win; TOMacroSetType(win, n, t) | - | int `0x00855ed0` (native_sys) |
-| `0x00a1` | `Native_00a1` | win int, v int | int: v; the message window's +0x10 = v | - | int `0x00856220` (native_sys) |
-| `0x00a2` | `Native_00a2` | window int, d int, c int, b int, a int: bytes | int: the colour word a << 24 | d << 16 | c << 8 | b (window +0x10) | - | int `0x00856570` (native_move) |
+| `0x00a1` | `Native_00a1_MsgWinSetColor` | win int, v int | int: v; the message window's +0x10 = v | - | int `0x00856220` (native_sys) |
+| `0x00a2` | `Native_00a2_MsgWinSetColorBytes` | window int, d int, c int, b int, a int: bytes | int: the colour word a << 24 | d << 16 | c << 8 | b (window +0x10) | - | int `0x00856570` (native_move) |
 | `0x00a3` | `Native_GetWorkerPos` | worker int, x var, y var, z var | 0 (its position stored) | - | int `0x00856e20` (native_move) |
 | `0x00a4` | `Native_00a4_WorkerDistance` | b int, a int: workers | float: the distance between them | - | float `0x008566c0` (native_move) |
 | `0x00a5` | `Native_00a5_WorkerDistanceXZ` | b int, a int: workers | float: the x-z distance between them | - | float `0x00856990` (native_move) |
