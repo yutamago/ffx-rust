@@ -1,0 +1,17 @@
+[package]
+name = "ffx-fxdraw"
+description = "Effects draw census: each captured effect draw traced to the vfx object and the PhyreEngine path that draws it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-bridge.workspace = true
+ffx-drawdiff = { path = "../ffx-drawdiff" }
+ffx-dxbc.workspace = true
+ffx-gfx.workspace = true
+ffx-vbf.workspace = true
+
+[lints]
+workspace = true

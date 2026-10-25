@@ -1,0 +1,90 @@
+# Draw captures for the effects census (docs/formats/effects-draw.md): a hash
+# capture (docs/renderer.md, "Reference captures") of one frame at each of
+# battle-magic's effect shots, and a memory snapshot one frame later, so the
+# census can find each effect draw's vertex bytes in the game state that
+# made them. The captured frame's effect vertices are those of the update
+# after the held point: a snapshot at the held point holds the previous
+# fill, one taken after `wait 1` holds the frame's (2026-10-25, a 3-frame
+# capture against snapshots after 0, 3 and 4 frames: frame k matched the
+# snapshot taken k + 1 frames on). Needs the graphics layer (FFX_GFX=1);
+# not part of run-all.sh. Run it on the original code with
+#   FFX_TEST_VOLUME=0 FFX_GFX=1 target/release/examples/replay \
+#     tools/replays/draw-fx-magic.txt '<windows folder>\draw-fx-magic.trace' original
+# Captures land beside the trace ($OUT\<name>\, $OUT\<name>.snap; 1-5 MB
+# and about 70 MB each): keep them in ~/ffx-work/m4/captures, never in the
+# repository. The script is battle-magic.txt's up to its last effect shot;
+# the capture's frame shifts the later waits by one.
+#
+# The original's comments, as in battle-magic.txt:
+# Battle magic: the one effect that reaches op_shape_draw (0x007ed0c0).
+# Its only caller is magic_0481.dll (g_MagicImports slot 242, 0x00c650b0),
+# an event effect: no command, item or monster ability in the kernel tables
+# plays magic 481 (the nearest are Jecht Beam 482 and Jecht Bomber 478),
+# and the overlay moves on only when the event script sets its effect flags
+# (AtelGetEffectFlag 0..11 and 15, g_AtelEffectFlags 0x01326b70).
+#
+# So: the same save and battle as battle-attack (cdsp00, underwater), the
+# first item record (+0x10/+0x12, the effect IDs on land and underwater;
+# MsGetMagicEffNum) made to play magic 481, Rikku uses it on herself, and
+# the script sets the effect flags itself, one more every 60 frames, the
+# way the event would. The flag waits are the effect's clock: each shot is
+# a fixed number of frames after a flag, counted from the frame the magic
+# file is loaded (g_MagicFile_Handle 0x00c64cac, a module base: low half
+# 0, -1 before). With flags 0..5 set the effect has not called
+# op_shape_draw yet; flag 6 starts the burst that does (coverage mode,
+# FFX_COVERAGE, one-time int3 on 0x007ed0c0: no hit up to flag 5 + 90
+# frames, hit by flag 6 + 30). The item heals Rikku afterwards.
+#
+# Ranges: the magic ID (0x00c64ca0, 481 while it plays, -1 after), the
+# effect flags, the HP (+0x5d0) of the first 8 actors (as battle-attack).
+# Screenshots (battle-magic-<n>.bmp): 1 the stage before (flag 5),
+# 2 and 3 the shape burst (flag 6, 10 and 30 frames in).
+load direct 1 cdsp0000
+lockstep on
+wait 10
+battle 3 0 0
+waitfor 0x0112a8e0:1 01 ff 4000
+writep 0x0112a940 0x24 e101e101
+trace 0x00c64ca0:4 0x01326b70:4 *0x011334d4+0x5d0:4 *0x011334d4+0x1560:4 *0x011334d4+0x24f0:4 *0x011334d4+0x3480:4 *0x011334d4+0x4410:4 *0x011334d4+0x53a0:4 *0x011334d4+0x6330:4 *0x011334d4+0x72c0:4
+wait 60
+# Item, the first item, Rikku
+press down 4 30
+press down 4 30
+press circle 4 30
+press circle 4 30
+press circle 4 0
+waitfor 0x00c64ca0:4 e1010000 ffffffff 600
+waitfor 0x00c64cac:2 0000 ffff 1200
+read 0x00c64ca0 0x10
+wait 60
+write 0x01326b70 01000000
+wait 60
+write 0x01326b70 03000000
+wait 60
+write 0x01326b70 07000000
+wait 60
+write 0x01326b70 0f000000
+wait 60
+write 0x01326b70 1f000000
+wait 60
+write 0x01326b70 3f000000
+wait 30
+shot $OUT\battle-magic-1.bmp
+gfxcapture $OUT\battle-magic-1 hash frames 1 now async
+wait 1
+snapshot $OUT\battle-magic-1.snap
+gfxcapture result
+wait 29  # one frame less: the capture ran one
+write 0x01326b70 7f000000
+wait 10
+shot $OUT\battle-magic-2.bmp
+gfxcapture $OUT\battle-magic-2 hash frames 1 now async
+wait 1
+snapshot $OUT\battle-magic-2.snap
+gfxcapture result
+wait 19  # one frame less: the capture ran one
+shot $OUT\battle-magic-3.bmp
+gfxcapture $OUT\battle-magic-3 hash frames 1 now async
+wait 1
+snapshot $OUT\battle-magic-3.snap
+gfxcapture result
