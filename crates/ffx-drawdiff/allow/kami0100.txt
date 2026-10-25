@@ -1,0 +1,11 @@
+# Noise allow list of kami0100 (Thunder Plains travel agency, indoor; save
+# slot 5): what differs between two runs of the original code at ctrl work
+# 0's event count 101 (tools/replays/draw-kami0100.txt, captures
+# kami0100-a/-b; docs/formats/scene-maps.md).
+[kami0100]
+
+# 270 words, 3 f32 ulp (3.4367654 | 3.4367661): every draw's vs and ps
+# `scene` buffer. As cdsp0000: the game's f32 time since start
+# (Phyre_PFramework_PApplication_frame 0x00627940) rounds by the load's
+# frame count.
+constant var=scene field=*.cb0.scene.GlobalTime cause: the game's f32 time since start rounds differently when the load took another number of frames (a few ulp)

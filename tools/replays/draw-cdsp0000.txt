@@ -1,0 +1,29 @@
+# Draw capture (M4 round 2, docs/formats/scene-maps.md): one full-mode
+# frame of the salvage ship deck (cdsp0000, level /map/cdsp/cdsp00/, save ffx_001)
+# at ctrl work 0's frame count 101, as field-walk-1 and draw-field's
+# fw-101. Original code; needs the graphics layer. Not part of
+# run-all.sh (no trace, no shots to compare). Run it with
+#   FFX_GFX=1 target/release/examples/replay tools/replays/draw-cdsp0000.txt \
+#     '<windows folder>\draw.trace' original
+# The capture lands beside the trace ($OUT\cdsp0000-101, 70-130 MB of
+# capture.ffxgfx): keep it in ~/ffx-work/m4/captures, never in git.
+# Two runs are compared with drawdiff and allow/cdsp0000.txt
+# (docs/formats/scene-maps.md, "Captures").
+#
+# The `readp` lines log the level name hash (g_PhyreScene +0xfaf4,
+# graphicLevelSetName's hashU) and the shadow solution (+0xf9cc,
+# ShadowManager_selectShadowSolution) in the replay's output.
+#
+# `gfxcapture ... now async` while lockstep holds the render thread in
+# Present: the capture records the next frame (`wait 1`).
+load direct 1 cdsp0000
+lockstep on
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+read 0x01325d94 4
+readp 0x00ccb9d8 0xfaf4 4
+readp 0x00ccb9d8 0xf9cc 4
+shot $OUT\draw-cdsp0000.bmp
+gfxcapture $OUT\cdsp0000-101 now async
+wait 1
+gfxcapture result
