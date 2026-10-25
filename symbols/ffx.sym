@@ -21,10 +21,17 @@
 0x004013a0 function ReturnAddress_004013a0 # () -> 0x00b7c79c (an address in the image); name ours
 0x00401480 function ReturnAddress_00401480 # () -> 0x00b7c7b4 (an address in the image); name ours
 0x00401530 function ReturnAddress_00401530 # () -> 0x00b7c7d8 (an address in the image); name ours
+0x004016e0 function Settings_JoinBindings # guess: ints -> "a,b,c" std::string (used by Settings_Format) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00401880 function Settings_Construct        # GameSetting.ini path at +0x430; field 0 = language index
+0x00401920 function Settings_dtor # empty; Game_Main calls it before delete g_Settings (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00401930 function Settings_SetValue          # thiscall(settings, key, value string): looks the value up in key's table of 8 strings at 0x00c89f48 + key * 0x20 (stricmp) and stores its index at settings + 4 * key (Resolution, the key bindings and a few others parsed apart); called per key=value line by 0x00401e00 under Settings_Load; so Shadow (key 12) "0".."3" -> +0x30 = 0..3, TextureQuality (key 13) TQ_HIGH/TQ_MEDIUM/TQ_LOW -> +0x34 = 0/1/2 (docs/formats/scene-maps.md, Q1); name ours
+0x00401c80 function Settings_SetPath # copies the wide path to +0x430 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00401cb0 function Settings_Load             # reads Documents\Square Enix\...\GameSetting.ini (Language=jp|en|fr|de|it|es|kr|ch)
+0x00401d80 function Settings_Save # _wfopen(path, "wb"), Settings_Format, fwrite; callers Settings_Load (no file), PhyreScene_initScene, FFEscMenu_resume/_update/QuitConfirmed (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x00401e00 function Settings_Parse # whole-file parser: getline, '=', key table 0x00c8a248, presets 0x00b7cba8 for absent keys and keys 11..18 unless VQ_CUSTOM (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x004022f0 function Settings_Format # "Key=Value\n" for the 24 keys into a buffer, returns the length (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00402a00 function SetWordAt_00402a00 # thiscall(this, i, v), ret 8: this[i] = v, returns 0; name ours
+0x00402a20 function Settings_DetectQuality # Quality = first preset matching keys 11..18 (mask 0x00b7cb90), else VQ_CUSTOM (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00402b00 function Settings_CopyDefaultTables # thiscall(settings) -> 0: the 0x51-word tables 0x00c8a538, 0x00c8a3f0, 0x00c8a2a8 to +0x60, +0x1a4, +0x2e8, +0x42c = 0x51; caller Settings_Load; name ours
 0x00402b50 function CopyTable_00c8a538 # thiscall(this): the 0x51 words at 0x00c8a538 to +0x60, +0x42c = 0x51; caller 0x0065f450; name ours
 0x00402be0 function GetTable_00c8a538 # stdcall(i), ret 4: word i of the table at 0x00c8a538; callers 0x00700da0, 0x00701fa0; name ours
@@ -35,13 +42,53 @@
 0x00404740 function std_string_Copy              # structure: thiscall(this, new size, old size): MSVC basic_string<char>::_Copy, reallocates the buffer (operator_new, copy, operator_delete); called by every growing std::string operation; name ours
 0x00405b90 function ReturnConst80_00405b90       # auto-port shape (return constant, cdecl): return 0x80; callers: ; name ours
 0x00405ba0 function ReturnConst_00405ba0 # () -> 0x80; name ours
+0x00405bb0 function Settings_ValidateBindings # (list, n, slot filter): codes 0..0x7f with a key name, no duplicates (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x00405cb0 function Settings_IsFfxBindingSlot # slot filter for ffxKeyBinding (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x00405d00 function Settings_IsFfx2BindingSlot # slot filter for ffx2KeyBinding (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x00405d80 function Settings_IsLmBindingSlot # slot filter for lmKeyBinding (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00405e20 function zlib_uncompress           # zlib 1.2.x uncompress(dst, &dst_len, src, src_len), cdecl; replaced by ffx-hook
 0x00406000 function zlib_inflateInit_         # called first by zlib_uncompress; stream ptr in ECX
 0x00406230 function zlib_inflate              # called with Z_FINISH by zlib_uncompress
 0x004078b0 function zlib_inflateEnd
+0x00409370 function vpx_codec_destroy # libvpx 1.4.0 vpx_codec.c: iface->destroy(+0x10), clears ctx; called by 0x00a28350 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00409460 function vpx_internal_error # _vsnprintf into info+8 (0x4f), longjmp when info+0x58 set (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x004094c0 function vpx_codec_dec_init_ver # (ctx, iface, cfg, flags, ver 9); 0x00a27fcd passes (ctx+0x130, vp8_dx, NULL, 0, 9) (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00409680 function vpx_codec_decode # (ctx, data, size, user_priv, deadline); decode thread 0x00a279f0 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x004096e0 function vpx_codec_get_frame # (ctx, &iter) -> vpx_image_t* (planes +0x24, strides +0x34) (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0040a430 function vpx_codec_vp8_dx # returns &vpx_codec_vp8_dx_algo 0x00b7f728 ("WebM Project VP8 Decoder v1.4.0") (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0040a5d0 function vpx_mem_set_functions # 7 hooks (Phyre malloc/calloc/realloc/free + 0x00a26fb0/fd0/fc0) (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0040a630 function vpx_mem_unset_functions # called by 0x00a28350 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0040c350 function vp8mt_decoder_create # strings "pbi->h_decoding_thread", _beginthreadex, CreateSemaphoreW (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0040c8a0 function vp8mt_alloc_temp_buffers # strings "pbi->mt_yabove_row" ... (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x0040d2c0 function vpx_setup_rtcd_0040d2c0      # libvpx run-time CPU detection: SIMD caps from the VPX_SIMD_CAPS / VPX_SIMD_CAPS_MASK environment variables or CPUID (MMX, SSE, SSE2, SSE3, SSSE3, SSE4.1, AVX), then stores the matching DSP routine (0x00a7c920..0x00a8d87a and C wrappers near 0x00417830) in each function pointer; own name
+0x0040db70 function vpx_once_0040db70 # guess: vpx_ports/vpx_once.h Windows once() (CS + Interlocked) (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0041b0b0 function vpx_once_0041b0b0 # guess: second copy of once() (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0041b2b0 function get_cpu_count_0041b2b0 # guess: GetNativeSystemInfo via GetProcAddress, else GetSystemInfo (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0041e5b0 function mkvparser_SetAllocator # Phyre addition: globals 0x022fb510/14 = (malloc, free); from 0x00a27ff2 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0041e5d0 function mkvparser_ResetAllocator # back to CRT malloc/free; from 0x00a28350 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0041fd10 function mkvparser_Segment_delete # guess: ~Segment (0x0041fa80) + custom free (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0041fd50 function mkvparser_Segment_CreateInstance # asserts pReader/pos >= 0; open 0x00a28017 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00421450 function mkvparser_Segment_Load # asserts m_clusters == NULL, m_pInfo, m_pTracks (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00423840 function mkvparser_Segment_GetFirst # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x004238d0 function mkvparser_Segment_GetNext # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x004251b0 function mkvparser_Segment_GetTracks # returns +0x74 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00425200 function mkvparser_Segment_GetDuration # asserts m_pInfo (+0x70), ns (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00427b10 function mkvparser_Track_GetType # +0x20: 1 video, 2 audio (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00427b80 function mkvparser_Track_GetCodecPrivate # (&size) -> data (Vorbis headers) (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00428db0 function mkvparser_VideoTrack_GetWidth # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00428dc0 function mkvparser_VideoTrack_GetHeight # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00428dd0 function mkvparser_VideoTrack_GetFrameRate # double +0xa0 (0 in the shipped files) (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00429170 function mkvparser_AudioTrack_GetSamplingRate # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00429180 function mkvparser_AudioTrack_GetChannels # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x004294c0 function mkvparser_Tracks_GetTracksCount # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00429da0 function mkvparser_Tracks_GetTrackByNumber # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00429de0 function mkvparser_Tracks_GetTrackByIndex # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0042c880 function mkvparser_Cluster_GetFirst # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0042c9d0 function mkvparser_Cluster_GetNext # "Error parsing next block of cluster" on < 0 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0042d050 function mkvparser_BlockEntry_EOS # GetKind() == 0 (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x0042d3c0 function ReturnConst2_0042d3c0        # auto-port shape (return constant, cdecl): return 0x2; callers: no direct caller; name ours
 0x0042e060 function ReturnFieldU32PointerChain_0042e060 # auto-port shape (return field u32 (pointer chain), thiscall): t0 = u32[(a0 + 0x10)]; t1 = u32[(a0 + 0x14)]; return t0; callers: ; name ours
+0x0042e0c0 function mkvparser_Block_GetFrameCount # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x0042e0d0 function libwebm_mkvparser_Block_GetFrame # thiscall(block; idx) -> &frames[idx] (16-byte {i64 pos, len}): its asserts name libwebm's mkvparser.cpp ('idx < m_frame_count', 'f.pos > 0', 'f.len > 0'); library (the PhyreEngine video player's WebM demuxer); name by the library's API
 0x0042e1d0 function SetGlobals_0042e1d0          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x00c8b248] = a0; u32[&0x00c8b24c] = a1; u32[&0x00c8b244] = a2; u32[&0x00c8b240] = a3; return a3; callers: ; name ours
 0x0042e200 function SeveralStoresCopyIntoGlobal_0042e200 # auto-port shape (several stores: copy into global, cdecl): t0 = u32[&0x00b0c578]; u32[&0x00c8b248] = &0x00949d80; u32[&0x00c8b24c] = &0x00949d3e; u32[&0x00c8b244] = t0; u32[&0x00c8b240] = &0x009495f2; return t0; callers: ; name ours
@@ -69,12 +116,16 @@
 0x0042f600 function FFXApplication_exitApplication # fh v3:exact 0x0042f6e0 FFXApplication::exitApplication
 0x0042f660 function FFXApplication_exitScene  # fh v3:exact 0x0042f740 FFXApplication::exitScene
 0x0042f690 function FFXApplication_getAppTime # fh v3:exact 0x0042f770 FFXApplication::getAppTime
+0x0042f6d0 function LauncherPath_Init_0042f6d0 # (): once (0x00c8faf0): GetModuleFileNameA, PathRemoveFileSpecA, PathCombineA(0x00c8ff38, dir, "FFX&X-2_LAUNCHER.exe"); 0 code refs (static initializer, guess); ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x0042f770 function FFXApplication_handleInputs # fh v3:exact 0x0042f850 FFXApplication::handleInputs
+0x0042f790 function FFXApplication_pollInputAsync # guess name: 0x006250d0(1), PInputMapper_update, latch, inputODUpdate (the async thread's pass) (platform census 2026-10-25, docs/formats/platform.md; input)
+0x0042f7c0 function FFXApplication_pollInputSync # guess name: as 0x0042f790 but tail-calls vtable +0x1c handleInputs; only from 0x00630cc0 (no refs) (platform census 2026-10-25, docs/formats/platform.md; input)
 0x0042f7f0 function FFXApplication_initApplication # fh v3:exact 0x0042f8d0 FFXApplication::initApplication
 0x0042f8e0 function FFXApplication_initScene  # fh v3:bsim1.00 0x0042f9c0 FFXApplication::initScene
 0x0042f8f0 function FFXApplication_prePhyreInit # fh switch:bsim1.00 0x7100000fa0 FFXApplication::prePhyreInit
 0x0042f930 function FFXApplication_render        # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100000ba0 FFXApplication::render, 2 votes, round 1
 0x0042f9a0 function FFXApplication_resize      # ours: slot 9 of FFXApplication_vftable (0x00b0d9bc), right after FFXApplication_render as the class's methods sort; thiscall(this): 0x00642cd0 (PhyreScene_resize on the scene 0x00ccb9d8), then a tail jump to the base class's resize 0x0062c260 (fastcall this: viewport, render targets), whose eax it returns; ported (ffx_sg::app, main round 16)
+0x0042f9b0 function FFXApplication_ApplySettings # g_PhyreScene (0x00ccb9d8) ? PhyreScene_ApplySettings : 0 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x0042fa70 function PostReset                 # fh v3:exact 0x0042fb50
 0x0042fb20 function Phyre_PhyreFree           # fh v3:exact 0x0042fc00 Phyre::PhyreFree
 0x0042fb40 function Phyre_PhyreMalloc         # fh v3:exact 0x0042fc20 Phyre::PhyreMalloc
@@ -85,6 +136,7 @@
 0x0042fd80 function Phyre_PTimerWin32_GetTime # seconds (GetSystemTimePreciseAsFileTime, or QueryPerformanceCounter); wrapped by the harness (fast mode); was Time_Now
 0x0042fe10 function Phyre_PTimerWin32_Initialize # fh v3:exact 0x0042ff00 Phyre::PTimerWin32::Initialize
 0x00430030 function Phyre_PhyreOS_Sleep       # fh v3:bsim1.00 0x00430120 Phyre::PhyreOS::Sleep
+0x00430040 function Phyre_PTimerWin32_Terminate # timeEndPeriod(5), pairs with Phyre_PTimerWin32_Initialize's timeBeginPeriod(5); called by Phyre_PhyreExit; name guess (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00430050 function Phyre_PEventFlagWin32_initialize # fh v3:exact 0x00430140 Phyre::PEventFlagWin32::initialize
 0x00430080 function Phyre_PSemaphoreWin32_initialize # fh v3:exact 0x00430170 Phyre::PSemaphoreWin32::initialize
 0x004301e0 function Phyre_PEventFlagWin32_reset # fh v3:bsim1.00 0x004302d0 Phyre::PEventFlagWin32::reset
@@ -1038,11 +1090,16 @@
 0x0058a2d0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PTexture3DD3D11__Get_0058a2d0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PTexture3DD3D11 *>::Get" (its own __FUNCTION__ in an error print)
 0x0058a3b0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PTextureCubeMapD3D11__Get_0058a3b0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PTextureCubeMapD3D11 *>::Get" (its own __FUNCTION__ in an error print)
 0x0058db00 function Phyre_PRendering_PTexture2DD3D11_bind # fh v3:bsim1.00 0x0058dc90 Phyre::PRendering::PTexture2DD3D11::bind
+0x0058de30 function Renderer_SetAnisotropy # float 0x00c25370, releases the cached samplers (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x0058df00 function Renderer_SetDisplayMode # thiscall(w, h): DXGI GetDisplayModeList, ResizeTarget on a match (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x0058e000 function Phyre_PRenderInterface_setTextureQuality # thiscall(this = 0x00c94f00, q), ret 4: when q differs from +0x1340, stores it and reloads every texture file of the list at +0x1344 through Phyre_PBinary_reloadClusterTextures; callers Phyre_PFramework_PApplication_onInit 0x0062aa0f (g_Settings +0x34 at start) and Phyre_PFramework_PApplication_frame 0x00627bcc (when the application's +0x15 flag asks for it, e.g. after the options change); class a guess (the render thread's PhyreEngine object 0x00c94f00); name ours
+0x0058e170 function Renderer_SetVSync # renderer +0x131c = arg (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00593760 function Renderer_PresentFlip      # thiscall(renderer) -> al: the render thread's flip command (from Phyre_PRendering_PRenderThread_processRenderCommands, call at 0x006159b6): null swap chain object at +0x74 gives 0, else its +0x20(obj, +0x131c != 0, 0), which calls IDXGISwapChain::Present (the harness's present hook sees caller 0x00593782); one per successful Phyre_PRendering_PRenderer_flip (measured: flips == flip commands run == presents after the start-up screens); wrapped by the harness (present_flip) to label each present with its update; name ours
 0x005947d0 function Phyre_PRenderInterface_getTextureQuality # thiscall(this) -> +0x1340 (0 TQ_HIGH, 1 TQ_MEDIUM, 2 TQ_LOW: top mip levels to drop); callers Phyre_PBinary_loadClusterTextures, Phyre_PBinary_reloadClusterTextures; name ours
 0x00594be0 function Phyre_PClassDescriptorConcrete_Phyre_PRendering_PSamplerState__getValueFromScriptContext # fh switch:bsim0.99 0x710004fab0 Phyre::PClassDescriptorConcrete<Phyre::PRendering::PSamplerState>::getValueFromScriptContext
 0x00594f40 function Phyre_PRendering_PRenderInterfaceNVN_getViewportSize # fh switch:bsim1.00 0x710003b4d0 Phyre::PRendering::PRenderInterfaceNVN::getViewportSize
+0x00595750 function PRendererD3D11_initWindow_00595750 # thiscall(renderer, &g_WindowDisplayInfo): GetClientRect of info.hwnd, then 0x00595800; callers PApplication onInit 0x0062a9ca; name guess (platform census 2026-10-25, docs/formats/platform.md; window)
+0x00595800 function PRendererD3D11_createDeviceAndSwapChain_00595800 # D3D11CreateDevice probe (>= FL10.0), D3D11CreateDeviceAndSwapChain(HARDWARE, {11_0,10_1,10_0}, windowed swap chain R8G8B8A8, 1 buffer, DISCARD, ALLOW_MODE_SWITCH), MakeWindowAssociation(NO_ALT_ENTER); name guess; guess: D3D11CreateDevice; FL 10.0 with MSAA+HDAO -> MSAA 0 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam, window)
 0x00595f90 function Phyre_PRendering_PTexture2DD3D11_isBound # fh v3:bsim1.00 0x00596120 Phyre::PRendering::PTexture2DD3D11::isBound
 0x00598a30 function Phyre_PRendering_PShaderPassNVN_releaseShaderPass # fh switch:bsim1.00 0x710002db80 Phyre::PRendering::PShaderPassNVN::releaseShaderPass
 0x0059a650 function PRenderThread_copyConstantBuffer # m4-chars: render-thread constant-buffer copy; transposes every float4x4/float4x3 location entry, stops at a 0xffffffff first word (docs/formats/scene-chars.md)
@@ -1477,12 +1534,21 @@
 0x0061f810 function Phyre_PFramework_PApplication_PApplication # fh v3:exact 0x0061f9d0 Phyre::PFramework::PApplication::PApplication
 0x0061fc20 function Phyre_PFramework_PApplicationScriptBuffer_PApplicationScriptBuffer # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001a9020 Phyre::PFramework::PApplicationScriptBuffer::PApplicationScriptBuffer, 2 votes, round 1
 0x0061fd50 function Phyre_PFramework_PApplicationScriptProxy_PApplicationScriptProxy # layout+callees: sorts between Phyre_PFramework_PApplicationScriptBuffer_PApplicationScriptBuffer and Phyre_PFramework_PApplication_dtor_PApplication, and its named callees match the Switch 0x71001a9b50 Phyre_PFramework_PApplicationScriptProxy_PApplicationScriptProxy's (similarity 1.00: Phyre_PFramework_PApplicationScriptBuffer_PApplicationScriptBuffer, Phyre_PFramework_PApplicationScriptProxy_registerScriptCommands); symbols from Fahrenheit's server export
+0x0061fff0 function PInputDeviceKeyboard_ctor # (dev): list link, arrays +0x18/+0x118/+0x218 cleared (platform census 2026-10-25, docs/formats/platform.md; input)
+0x006200d0 function PInputDeviceMouse_ctor # (state {inside, dev}): 5 mappings at +0x18 (platform census 2026-10-25, docs/formats/platform.md; input)
+0x006201a0 function PInputDevicePad_ctor # (dev): 4 axis mappings at +0x6c, buttons +0x18/+0x28, DIDEVICEINSTANCE +0x12c cleared (platform census 2026-10-25, docs/formats/platform.md; input)
 0x00620bc0 function Phyre_PFramework_PApplication_dtor_PApplication # structure: frees the application's render surfaces and buffers (PRenderSurface dtor, eh_vector_destructor_iterator, PhyreFree); called by both FFXApplication destructors as on the Switch
 0x00622050 function Phyre_PFramework_PApplication_Bind # fh v3:exact 0x00622210 Phyre::PFramework::PApplication::Bind
 0x006227b0 function Phyre_PFramework_PApplicationViewport_Bind # fh v3:exact 0x00622970 Phyre::PFramework::PApplicationViewport::Bind
 0x00622b60 function Phyre_PFramework_PInputMapper_Bind # fh v3:exact 0x00622d20 Phyre::PFramework::PInputMapper::Bind
+0x00622d40 function PApplicationScriptProxy_buttonPress # script "Buttonpress": pad 0 latched byte by name (Circle..Right) = 1 (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00622ed0 function PApplicationScriptProxy_buttonRelease # the same = 0 (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00623220 function Settings_Create # new(0x63c) + Settings_Construct into g_Settings; no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00623310 function Phyre_PFramework_PApplicationScriptProxy_Echo # fh switch:bsim1.00 0x71001ab0c0 Phyre::PFramework::PApplicationScriptProxy::Echo
+0x00623330 function Input_EnumDevicesCallback # DIEnumDevicesCallback for Input_InitDirectInput: dwDevType byte +0x24 0x12 mouse -> 0x00624020, 0x13 keyboard -> Input_AddKeyboard, 0x14/0x15/0x18 -> Input_AddPadDevice; returns 1 (platform census 2026-10-25, docs/formats/platform.md; input)
+0x006233a0 function Input_EnumAxesSetRange # DIEnumDeviceObjectsCallback (ctx = device): axes (dwType & 3) get SetProperty(DIPROP_RANGE, BYID, -255..255) (platform census 2026-10-25, docs/formats/platform.md; input)
 0x00623470 function Steam_Init                # RestartAppIfNecessary(0), SteamAPI_Init; sets g_SteamReady on success, result ignored by caller
+0x00623500 function Steam_Shutdown # SteamAPI_Shutdown; xor eax,eax; no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00623580 function PApplication_FixupClusters # fh v4:user_defined+call.cs cdecl
 0x006235d0 function Phyre_PFramework_PApplicationScriptProxy_Framerate # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Framerate:%s: %f %d\\n'; Switch 0x71001aac70 Phyre::PFramework::PApplicationScriptProxy::Framerate (symbols from Fahrenheit's server export)
 0x00623660 function Phyre_PFramework_PApplicationScriptProxy_Frames # layout+callees: sorts between Phyre_PFramework_PApplicationScriptProxy_Framerate and Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PFramework_PInputMapper__Get, and its named callees match the Switch 0x71001aaa30 Phyre_PFramework_PApplicationScriptProxy_Frames's (similarity 1.00: Phyre_PFramework_PApplicationScriptProxy_applyFrameInput, Phyre_PFramework_PApplication_frame); symbols from Fahrenheit's server export
@@ -1491,43 +1557,87 @@
 0x00623990 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PFramework_PApplicationViewport__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PFramework::PApplicationViewport *>::Get" (its own __FUNCTION__ in an error print)
 0x00623a70 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PFramework_PInputMapper__Get_00623a70 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PFramework::PInputMapper *>::Get" (its own __FUNCTION__ in an error print)
 0x00623b90 function Phyre_PFramework_PApplication_GetApplication # fh v3:bsim1.00 0x00623d50 Phyre::PFramework::PApplication::GetApplication
+0x00623c90 function PInput_GetDevice # (type, n) -> the n-th device of type (0 mouse, 1 keyboard, 2 pad, 3 touch) in the list 0x00c30fa8, or 0 (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00623d50 function PWindowWin32_AttachToHost # (host, hwnd): SetParent(hwnd, host), SendMessageA(host, RegisterWindowMessageA("PHYREMSG_SENDHWND"), hwnd, 0); caller the WndProc on PHYREMSG_HOSTHWND; ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00623fa0 function Input_AddKeyboard          # CreateDevice, keyboard data format, SetCooperativeLevel(6: non-exclusive, foreground), Acquire
+0x00624020 function Input_AddMouse # CreateDevice, c_dfDIMouse2 0x00b6a214, SetCooperativeLevel 6, Acquire, PInputDeviceMouse 0x11c bytes (platform census 2026-10-25, docs/formats/platform.md; input)
 0x006240e0 function Input_AddPadDevice         # DirectInput enumeration callback for game controllers: XInput device ("Creating new XInput Device") for XInput-capable ones, else DirectInput
 0x00624350 function Input_InitDirectInput      # DirectInput8Create, then EnumDevices(all, attached only, 0x00623330)
+0x006243a0 function Input_InitDirectInput_copy_006243a0 # the same code as Input_InitDirectInput 0x00624350 (DirectInput8Create through the thunk 0x0094a914, EnumDevices with 0x00623330); tools/refs.py: 0 refs, a copy the compiler kept (platform census 2026-10-25, docs/formats/platform.md; input)
+0x006244f0 function Input_IsXInputDevice # WMI: CLSID_WbemLocator, root\cimv2, Win32_PNPEntity DeviceID with "IG_" and VID_/PID_ == the DirectInput product id; caller Input_AddPadDevice; ours (Microsoft sample's name); (&guidProduct.Data1): WMI Win32_PNPEntity DeviceID with "IG_", VID_/PID_ == Data1 (platform census 2026-10-25, docs/formats/platform.md; input, window)
+0x006249b0 function Input_RequestRescan # byte 0x00cc9cd0 = 1 (no refs; the WndProc sets it inline on DBT_DEVICEARRIVAL) (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00624d40 function Input_EnumPadsCallback # rescan callback (PInput_Update): types 0x14/0x15/0x18 -> Input_AddPadDevice (platform census 2026-10-25, docs/formats/platform.md; input)
 0x00625090 function Phyre_PFramework_PWindowWin32Base_SetFlipVSyncInterval # fh v3:exact+call.cs 0x00625250 cdecl Phyre::PFramework::PWindowWin32Base::SetFlipVSyncInterval
+0x006250e0 function PWindowWin32_MouseHookProc # WH_MOUSE hook: WM_LBUTTONUP during a non-client drag -> PostMessageA(g_hWnd, WM_NCLBUTTONUP); CallNextHookEx; ours (platform census 2026-10-25, docs/formats/platform.md; window)
+0x00625130 function Phyre_PFramework_PWindowWin32Base_WndProc # lpfnWndProc of "PhyreFrameworkClass" (RegisterClassA in 0x00626cb0): WM_CREATE/DESTROY/SIZE/ACTIVATE/CLOSE(launcher)/ERASEBKGND/GETMINMAXINFO/NC button drag hook/Alt+F4 box/DEVICECHANGE, PHYREMSG_HOSTHWND; class per the "[PWindowWin32Base] has focus" string of 0x0062a460; name guess; guess name: WM_CREATE hwnd 0x00cc9ce8, WM_ACTIVATE 0x0062a460, WM_DEVICECHANGE arrival -> rescan, Alt+F4 confirm, WM_CLOSE relaunches FFX&X-2_LAUNCHER.exe (platform census 2026-10-25, docs/formats/platform.md; input, window)
+0x00625680 function Input_Shutdown # destroys every device in 0x00c30fa8, releases IDirectInput8 0x00cc9cd4 (platform census 2026-10-25, docs/formats/platform.md; input)
 0x00625770 function Phyre_PFramework_PInput_Update # fh v4:user_defined+call.cs stdcall Phyre::PFramework::PInput::Update
+0x00625ca0 function PInputDeviceKeyboard_bind # vtable +8: mapping -> key raw byte +0x1fc+id (id >= 0x1c) (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00625d10 function PInputDeviceMouse_bind # vtable +8: ids 0xb-0xd buttons +0x10d+id, 1-9 axes +0x10c/+0x110/+0x114 (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00625dd0 function PInputDevicePad_bind # vtable +8: ids 0xb-0x1a buttons +0x38d+id, axes 1-10 (platform census 2026-10-25, docs/formats/platform.md; input)
 0x00626060 function Phyre_PFramework_PApplication_animate # fh v3:bsim1.00 0x00626210 Phyre::PFramework::PApplication::animate
 0x00626070 function Phyre_PFramework_PApplicationScriptProxy_applyFrameInput # str-match switch: only user of 5 string(s) held once by both builds, e.g. 'INPUT:%d:%s:%d:%d:%d @ frame=%d\\n'; Switch 0x71001ab100 Phyre::PFramework::PApplicationScriptProxy::applyFrameInput (symbols from Fahrenheit's server export)
+0x006268e0 function CrashDump_UnhandledExceptionFilter # SetUnhandledExceptionFilter target (Game_Main): CoreDump.dmp via MiniDumpWriteDump type 0x1824 when g_CrashDumpEnabled 0x00c30f90; ours (platform census 2026-10-25, docs/formats/platform.md; window)
+0x00626960 function PInputMapper_consumePadButton # (id, pad): latched byte -> 0, returns whether it was set (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00626aa0 function PInputMapper_attachPads # pads 0..17 into mapper +0x38[i], axis mappings ids 1,2,4,5 with threshold 0.2f (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00626cb0 function Phyre_PFramework_PWindowWin32Base_createWindow # thiscall(window, title suffix): RegisterClassA "PhyreFrameworkClass", fullscreen mode change, style WS_POPUP / 0xca0000, AdjustWindowRect, CreateWindowExA, ImmAssociateContext(0), GWL_USERDATA, RegisterDeviceNotificationA; name guess (platform census 2026-10-25, docs/formats/platform.md; window)
+0x006270a0 function Phyre_PFramework_PWindowWin32Base_restoreDisplay # fastcall(window): ChangeDisplaySettingsA(NULL, 0) when fullscreen, ReleaseDC(g_hWnd, window[1]); caller WndProc WM_CLOSE; name guess (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00627480 function Phyre_PFramework_PApplicationScript_executeNextCommand # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Unrecognised command %s(%s)\\n'; Switch 0x71001a98c0 Phyre::PFramework::PApplicationScript::executeNextCommand (symbols from Fahrenheit's server export)
 0x006275c0 function Phyre_PFramework_PApplication_exitApplication # fh v3:bsim1.00 0x00627770 Phyre::PFramework::PApplication::exitApplication
 0x006275d0 function Phyre_PFramework_PApplication_exitScene # fh v3:bsim1.00 0x00627780 Phyre::PFramework::PApplication::exitScene
 0x006276e0 function Phyre_PFramework_PApplicationScriptBuffer_findNextCommand # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Badly formed command %s\\n'; Switch 0x71001a9480 Phyre::PFramework::PApplicationScriptBuffer::findNextCommand (symbols from Fahrenheit's server export)
+0x00627850 function PApplication_NotifySuspend_00627850 # (): vfunc 0 of each element of the tree at 0x00cc9ee4; WndProc on non-client drag start and around the Alt+F4 box; name guess (platform census 2026-10-25, docs/formats/platform.md; window)
+0x006278b0 function PApplication_NotifyResume_006278b0 # (): vfunc 1 of each element of the same tree; WndProc on drag end / after the box; name guess (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00627940 function Phyre_PFramework_PApplication_frame # fh v3:exact+call.cs 0x00627af0 thiscall Phyre::PFramework::PApplication::frame
+0x00628170 function PInput_GetPadIndex # (device) -> index among type-2 devices, -1 (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00628320 function PInputMapper_latchButtons # 7 keyboards and 18 pads: latched[id] = getButton(id) when it changed since the last call (platform census 2026-10-25, docs/formats/platform.md; input)
 0x00628460 function Phyre_PFramework_PApplication_isKeyDown # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71008a3248 Phyre::PFramework::PApplication::isKeyDown, 6 votes, round 2
+0x00628470 function PInputMapper_getStickAxis # thiscall(mapper, axis 0-3, pad) -> f32 with the 0.2 cross deadzone; isKeyDown 0x00628460 jumps here (platform census 2026-10-25, docs/formats/platform.md; input)
 0x006288b0 function Phyre_PClassDescriptorForType_Phyre_PRendering_PMeshInstance__getPointerFromScriptContext # fh switch:bsim1.00 0x7100013be0 Phyre::PClassDescriptorForType<Phyre::PRendering::PMeshInstance>::getPointerFromScriptContext
 0x006288d0 function Phyre_PClassDescriptorForType_Phyre_PPhysics_PPhysicsCharacterControllerBase__getPointerFromScriptContext # fh switch:bsim1.00 0x710018d990 Phyre::PClassDescriptorForType<Phyre::PPhysics::PPhysicsCharacterControllerBase>::getPointerFromScriptContext
+0x006289a0 function PInputDeviceKeyboard_getButton # vtable +0xc: +0x1fc+id for id > 0x1b (platform census 2026-10-25, docs/formats/platform.md; input)
+0x006289f0 function PInputDevicePad_getButton # vtable +0xc: raw byte +0x38d+id for id 0xb..0x1a (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00628a40 function PInputDeviceMouse_getAxis # vtable +0x10: x/y/wheel / 255 (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00628ad0 function PInputDevicePad_getAxis # vtable +0x10: ids 1-6 /255, 7-10 /1023, 0x11/0x12 trigger bytes /255 (platform census 2026-10-25, docs/formats/platform.md; input)
+0x006297a0 function PApplication_getWindowDisplayInfo # fastcall(app) -> app+0x264 (&g_WindowDisplayInfo, HWND first); ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00629800 function Phyre_PFramework_PApplication_handleInputs # fh v3:bsim1.00 0x006299b0 Phyre::PFramework::PApplication::handleInputs
 0x00629820 function Phyre_PFramework_PApplication_initScene # fh v3:bsim1.00 0x006299d0 Phyre::PFramework::PApplication::initScene
+0x00629a40 function PApplication_Startup_00629a40 # (argv, argc) -> 0/9: icon/hook/drag globals = 0, SetThreadExecutionState(CONTINUOUS|SYSTEM|DISPLAY), Phyre_PhyreInit, 0x00629ab0; caller Game_Main; ours (platform census 2026-10-25, docs/formats/platform.md; window)
+0x00629ab0 function PApplication_InitWindowAndApp_00629ab0 # thiscall(app, argv, argc): createWindow, g_WindowDisplayInfo 0x00cca310 -> app+0x264, host attach, PApplication onInit (onExit on failure); 9 on window failure; ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00629b90 function PArray_PushInto_00629b90 # thiscall(this, dst, &value), ret 8: null dst -> 0xd; old count words copied to dst, *value appended, old buffer PhyreFree-d when owned and not dst; +4 = dst, +0 = count + 1; returns 0; name ours
 0x00629ca0 function Input_KeyDown             # thiscall(manager, key, pad), ret 8: al = pad state byte [[manager+0x2b8]+0x38+4 pad]+0x18+key-11 != 0 for key 11..26, pad < 0x12; upper eax as left (key-11 or the table); name ours, next to Input_KeyHeld
 0x00629d50 function Input_KeyHeld              # thiscall(devices, binding, device): binding >= 28 is Phyre key binding-28 in the keyboard state
 0x00629e40 function Phyre_PFramework_PApplication_logKeyboardInput # str-match switch: only user of 3 string(s) held once by both builds, e.g. '%d:%s:%s:+:%d\\n'; Switch 0x71001b0740 Phyre::PFramework::PApplication::logKeyboardInput (symbols from Fahrenheit's server export)
 0x0062a130 function Phyre_PFramework_PApplication_onExit # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'INFO: Wrote %d bytes to log file: %s\\n'; Switch 0x71001af6e0 Phyre::PFramework::PApplication::onExit (symbols from Fahrenheit's server export)
+0x0062a460 function Phyre_PFramework_PWindowWin32Base_setFocus # (bool) from WM_ACTIVATE; "[PWindowWin32Base] has focus %d"; fullscreen only: mode restore/reapply, WS_POPUP, SetWindowPos NOTOPMOST/TOP; name guess from the string; "[PWindowWin32Base] has focus %d": fullscreen mode switch only; guess: "[PWindowWin32Base] has focus %d"; restores the fullscreen mode (platform census 2026-10-25, docs/formats/platform.md; input, settings/Steam, window)
 0x0062a600 function Phyre_PFramework_PApplication_onInit # fh v3:exact 0x0062a7b0 Phyre::PFramework::PApplication::onInit
+0x0062abf0 function PApplication_RequestResize_0062abf0 # thiscall(app, w, h): app+0x26c/+0x270, app+0x14 = 1; 0 refs; ours (platform census 2026-10-25, docs/formats/platform.md; window)
+0x0062ac50 function PApplication_Startup_Dead_0062ac50 # 0 refs: icon/hook/drag globals = 0, SetThreadExecutionState(0x80000003); copy of 0x00629a40's head; ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x0062ac70 function Phyre_PFramework_PApplication_prePhyreInit # fh v3:bsim1.00 0x0062ae20 Phyre::PFramework::PApplication::prePhyreInit
+0x0062ac90 function CreateDocumentsFolders_0062ac90 # Documents (SHGetFolderPathW CSIDL_PERSONAL) + "\Square Enix\" and "FINAL FANTASY X&X-2 HD Remaster\" CreateDirectoryW when missing; caller Game_Main; ours (platform census 2026-10-25, docs/formats/platform.md; window)
+0x0062adc0 function Phyre_PFramework_PApplication_parseCommandLine # -h/-help/-?, script=, log=, input=, timestep=, resolution=, msaa=, vsync=, host=, fullscreen=, borderless=; caller Game_Main (argc >= 2); name guess; script= log= input= timestep= resolution= msaa= vsync= host= fullscreen= borderless= (platform census 2026-10-25, docs/formats/platform.md; settings/Steam, window)
 0x0062b5f0 function Phyre_PFramework_PApplicationScriptProxy_readInputLog # str-match switch: only user of 4 string(s) held once by both builds, e.g. '%d:%d:%d'; Switch 0x71001abce0 Phyre::PFramework::PApplicationScriptProxy::readInputLog (symbols from Fahrenheit's server export)
 0x0062bb60 function Phyre_PFramework_PApplicationScriptProxy_registerScriptCommands # str-match switch: only user of 12 string(s) held once by both builds, e.g. 'Timestep'; Switch 0x71001a9ba0 Phyre::PFramework::PApplicationScriptProxy::registerScriptCommands (symbols from Fahrenheit's server export)
 0x0062be00 function Phyre_PFramework_PApplicationViewport_render # layout+callees: sorts between Phyre_PFramework_PApplicationScriptProxy_registerScriptCommands and Phyre_PFramework_PApplication_renderMeshInstances, and its named callees match the Switch 0x71001b2b40 Phyre_PFramework_PApplicationViewport_render's (similarity 1.00: Phyre_PRendering_PRendererBase_setViewport); symbols from Fahrenheit's server export
 0x0062be50 function Phyre_PFramework_PApplication_renderMeshInstances # fh switch:bsim1.00 0x71001b1ba0 Phyre::PFramework::PApplication::renderMeshInstances
 0x0062be70 function Phyre_PFramework_PApplication_renderWorld # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a1f58 Phyre::PFramework::PApplication::renderWorld, 16 votes, round 1
+0x0062bea0 function PApplication_setMousePosition_0062bea0 # thiscall(app, x, y), ret 8: input +0x2b8: +0xa8 = x, +0xac = y, +0xb0/+0xb4 = 0; caller FreeCamera_handleInput; ours (platform census 2026-10-25, docs/formats/platform.md; window)
+0x0062bf00 function Phyre_PFramework_PWindowWin32Base_applyScreenMode # ScreenMode 0/1/2 from g_Settings: CDS_RESET or mode change, GWL_STYLE 0xca0000/WS_POPUP, SetWindowPos at 0,0, WM_SETICON; via thunk 0x0062bef0 from the settings apply 0x006ff290; name guess; guess: g_Settings ScreenMode/Resolution -> ChangeDisplaySettings / window style; from the video menu (platform census 2026-10-25, docs/formats/platform.md; settings/Steam, window)
 0x0062c6f0 function Phyre_PFramework_PApplication_scriptedFrame # layout+callees: sorts between Phyre_PFramework_PApplication_renderWorld and Phyre_PFramework_PInputDevicePad_setVibration, and its named callees match the Switch 0x71001af1a0 Phyre_PFramework_PApplication_scriptedFrame's (similarity 1.00: Phyre_PFramework_PApplicationScript_executeNextCommand); symbols from Fahrenheit's server export
+0x0062c990 function PInputMapper_setKey # thiscall(app, key, v, kbd): keyboard kbd latched[key-0x1c] = v (platform census 2026-10-25, docs/formats/platform.md; input)
+0x0062cad0 function Settings_SetThreadUILanguage # *g_Settings language 0..7 -> SetThreadUILanguage(0x411, 0x409, 0x40c, 0x407, 0x410, 0x40a, 0x412, 0x7c04); caller Game_Main; ours; SetThreadUILanguage from *g_Settings (0x411 jp ... 0x7c04 ch) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam, window)
 0x0062cb70 function Phyre_PFramework_PInputDevicePad_setVibration # fh v3:exact 0x0062cd20 Phyre::PFramework::PInputDevicePad::setVibration
 0x0062cf50 function Phyre_PFramework_PApplication_setWindowIconID # structure: this +0x39c = id, its only caller FFXApplication_FFXApplication; Switch PApplication::setWindowIconID (8 bytes) is called by FFXApplication::FFXApplication
+0x0062cf60 function Phyre_PFramework_PApplication_setWindowTitle # thiscall(app, title): PString assign to +0x398, SetWindowTextA(g_hWnd); caller FFXApplication_initApplication; name guess (pairs with setWindowIconID) (platform census 2026-10-25, docs/formats/platform.md; window)
+0x0062d550 function PInputDevice_updateMappings # fastcall: each bound mapping's state +0x24, pressed +0x25, released +0x26 (platform census 2026-10-25, docs/formats/platform.md; input)
 0x0062d5c0 function Keyboard_Update            # GetDeviceState(256); Phyre key i is down when scan code table[i] (0x00c30e90) is
-0x0062d9d0 function Phyre_PFramework_PInputDeviceTouch_allocateEvent # layout+callees: sorts between Phyre_PFramework_PApplication_setWindowIconID and Phyre_PFramework_PInputDeviceTouch_update, and its named callees match the Switch 0x71001b4ce0 Phyre_PFramework_PInputDeviceTouch_allocateEvent's (similarity 1.00: Phyre_PhyrePrintf); symbols from Fahrenheit's server export
+0x0062d6f0 function Phyre_PFramework_PInputDeviceMouse_update # PInputDeviceMouse_vftable+0x14: DIMOUSESTATE, absolute mode from GetCursorPos/GetWindowRect/GetWindowInfo, fullscreen ClipCursor; name guess (slot as PInputDevice_vftable+0x14 0x0062d550); vtable +0x14: GetDeviceState(DIMOUSESTATE2), absolute mode by GetCursorPos (platform census 2026-10-25, docs/formats/platform.md; input, window)
+0x0062d9d0 function PInputDevicePadDirectInput_update # vtable +0x14 of 0x00b3ff80 (refs.py: the only ref); GetDeviceStatus, Poll, GetDeviceState(DIJOYSTATE2); replaces the layout guess Phyre_PFramework_PInputDeviceTouch_allocateEvent (platform census 2026-10-25, docs/formats/platform.md; input); was Phyre_PFramework_PInputDeviceTouch_allocateEvent
 0x0062dba0 function PadXInput_Update           # XInputGetState for the device's user index
 0x0062de50 function Phyre_PFramework_PInputDeviceTouch_update # fh switch:cg2 0x71001b4e10 Phyre::PFramework::PInputDeviceTouch::update
+0x0062e040 function PInputMapper_update # attachPads, mouse deltas/buttons, pad 0 sticks; +0xa7 activity flag (platform census 2026-10-25, docs/formats/platform.md; input)
 0x0062e340 function App_Frame                  # one frame: update and render (called by Game_Main's loop)
+0x0062e3a0 function PApplication_updateMouseCamera_0062e3a0 # thiscall(app, camera, ...): mouse delta (+0x2b8 +0xa8.. ) and edge test (GetClientRect) into camera vfuncs +0x1c/+0x20/+0x24; caller FreeCamera_handleInput; ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x0062ee50 function Game_Main                 # WinMain body called from the CRT entry; returns the process exit code. Its loop is the frame limiter: a frame (App_Frame) each DAT_00c30e88 x 1/59.94 s of Time_Now, Sleep in between (0x0062f3bb)
 0x0062f4c0 function FlushCache                # fh v3:bsim1.00 0x0062f670
 0x0062f4e0 function memclear                  # fh v3:bsim1.00 0x0062f690 +memclear
@@ -1610,6 +1720,7 @@
 0x00630c60 function inputGetCurTime           # fh v3:exact 0x00630e10
 0x00630c80 function inputGetCurrDeviceButtonInfo # fh v3:bsim1.00 0x00630e30
 0x00630c90 function inputGetCurrDeviceStickInfo # fh v3:bsim1.00 0x00630e40
+0x00630cb0 function Input_AsyncPoll # GetApplication, 0x0042f790; callers 0x0068d740, 0x0068dc30 (platform census 2026-10-25, docs/formats/platform.md; input)
 0x00630cd0 function inputIsHoldButton         # fh v3:cg3 0x630e80
 0x00630cf0 function inputIsPressButton        # fh v3:cg9 0x630ea0
 0x00630d10 function inputIsReleaseButton         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710021abd0 inputIsReleaseButton, 2 votes, round 1
@@ -1622,6 +1733,7 @@
 0x00631170 function Index8At8_00631170 # thiscall(this; i), ret 4 -> this[2] + 8 i (vtable only); name ours
 0x00631180 function Index8At8_00631180 # thiscall(this; i), ret 4 -> this[2] + 8 i (vtable only); name ours
 0x006311b0 function Table60_Get               # thiscall(this, i), ret 4: [this + 0x60 + 4 i]; callers 0x00700da0, 0x00701fa0; name ours
+0x00631270 function InputManager_ClearHoldTimers # +8..+0x78 = 0, +0x88 = inputGetCurTime() (platform census 2026-10-25, docs/formats/platform.md; input)
 0x006312e0 function Virtuos_InputManager_getButtonInfo # fh v3:bsim1.00 0x00631490 Virtuos::InputManager::getButtonInfo
 0x00631300 function Virtuos_InputManager_getInstance # fh v3:bsim1.00 0x006314b0 Virtuos::InputManager::getInstance
 0x00631310 function Virtuos_InputManager_getStickInfo # fh v3:bsim1.00 0x006314c0 Virtuos::InputManager::getStickInfo
@@ -1635,6 +1747,7 @@
 0x00632930 function InputManager_SwapState_00632930 # thiscall(this; out, a, b, c), ret 0x10 -> out: the three words at +0xac to out, replaced by a, b, c; +0, +4 zeroed; caller 0x00630df0 (input manager); name ours
 0x006329c0 function Virtuos_InputManager_setVibration # fh v3:exact 0x00632b70 Virtuos::InputManager::setVibration
 0x00632a30 function Virtuos_InputManager_updateInput # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4; was Input_UpdatePad
+0x006330e0 function InputManager_UpdateHoldTimers # 29 per-bit hold timers advanced while held (platform census 2026-10-25, docs/formats/platform.md; input)
 0x006331a0 function Add_006331a0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x006331b0 function AddU16_006331b0 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x006332d0 function Identity_006332d0 # cdecl(x) -> x (frame-pointer build); name ours
@@ -1853,6 +1966,7 @@
 0x006410e0 function TOGetFFXLang              # () -> [LocalizationManager_GetInstance()+4]: 0 jp, 1 us, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch; 0 without a manager (asks twice); was Lang_Get
 0x00641100 function LocalizationManager_GetWord0 # (): *LocalizationManager_GetInstance(), 0 when there is none (calls GetInstance twice); callers 0x006604d0, 0x008ad4d0; name ours
 0x00641130 function graphicGetCut2DSceneBias  # fh v3:bsim1.00 0x006412e0
+0x00641140 function graphicGetVideoEndTime # guess: -> 0x006d91d0; Native_b00c (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00641150 function graphicGetFileReadSemaId  # fh v3:cg2 0x641300
 0x00641160 function graphicGetFogColor        # fh v3:cg2 0x641310
 0x006411b0 function graphicGetFogFar          # fh v3:cg2 0x641360
@@ -1896,6 +2010,7 @@
 0x00641c70 function graphicIsMiniMapInBlitzBall # fh v3:bsim1.00 0x00641e20
 0x00641cb0 function graphicIsScreenFadeColorLocked # fh v3:bsim1.00 0x00641e60
 0x00641cc0 function graphicIsSplitScreenEnabled  # layout+callees: sorts between graphicIsScreenFadeColorLocked and graphicIsVideoPlaying, and its named callees match the Switch 0x71001d1ea0 graphicIsSplitScreenEnabled's (similarity 1.00: PhyreScene_GetSplitScreenStat); symbols from Fahrenheit's server export
+0x00641ce0 function graphicIsVideoBusy # guess: -> PhyFMVPlayerManager_StateCheck_006da2a0 (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00641cf0 function graphicIsVideoPlaying     # fh v3:bsim1.00+call.cs 0x00641ea0 cdecl
 0x00641d00 function graphicLevelAnalysisName  # fh v3:exact 0x00641eb0
 0x00641d90 function graphicLevelGetName          # layout+callees: sorts between graphicLevelAnalysisName and graphicLevelGetNameHash, and its named callees match the Switch 0x71001cc640 graphicLevelGetName's (similarity 1.00: PhyreScene_getCurrentLevelName); symbols from Fahrenheit's server export
@@ -1931,6 +2046,7 @@
 0x006426c0 function graphicObjectSetTranslation # fh v3:bsim1.00 0x00642870
 0x006426e0 function ShaderParam_Write_006426e0   # (param, value, ...) writes a shader parameter into a material's parameter buffer (0x006e60d0); callers render set-up (0x006c5c90, 0x006e5a40); the render agent's finding (docs/formats/render.md on its branch, 91cdf20); own name
 0x00642750 function graphicPS2LightingSetupEffect # fh v3:exact 0x00642900
+0x006427c0 function graphicPlayVideo # guess: PlayVideo(arg != 0) (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006427e0 function graphicPreviousLevelGetNameHash # fh v3:bsim1.00 0x00642990
 0x006427f0 function graphicProcessPs2DataLoadingCallback # fh v3:exact 0x006429a0
 0x00642860 function graphicProcessWindowsMessage # fh v3:exact 0x00642a10
@@ -2075,7 +2191,9 @@
 0x00645d90 function graphicVideoGetElapsedFrame  # layout+callees: sorts between graphicVFXisAtelShpInstanced and graphicVideoPause, and its named callees match the Switch 0x71001d9dd0 graphicVideoGetElapsedFrame's (similarity 1.00: PhyFMVPlayerManager_GetInstance, PhyFMVPlayerManager_getCurrentFrame); symbols from Fahrenheit's server export
 0x00645de0 function graphicVideoPause         # fh v3:bsim1.00 0x00645f90
 0x00645df0 function graphicVideoUpdate        # fh v3:exact+call.cs 0x00645fa0 cdecl
-0x00645e40 function graphicisVideoAtEndFrame     # layout: alphabetical run between graphicVideoUpdate and setLuluODKeyboardInput (3 unnamed in the gap); Switch 0x71001dd490 graphicisVideoAtEndFrame is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00645e40 function graphicSetWaveStrength_00645e40 # mov ecx,[0x00ccb9d8]; jmp PhyreScene_setWaveStrength; callers Native_806b/805c; was graphicisVideoAtEndFrame, which is 0x00645e50 (platform census 2026-10-25)
+0x00645e50 function graphicIsVideoAtEndFrame_00645e50 # -> 0x006da240; caller Native_b00b_Poll (see the 0x00645e40 note) (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00645e50 function graphicisVideoAtEndFrame # -> PhyFMVPlayerManager_isVideoAtEndFrame 0x006da240; caller Native_b00b_Poll; the Switch name (layout match) moved here from 0x00645e40, a setWaveStrength wrapper (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00645e60 function graphicsRegisterResetScreenFadeDelegation # layout: alphabetical run between graphicVideoUpdate and setLuluODKeyboardInput (3 unnamed in the gap); Switch 0x71001dc5d0 graphicsRegisterResetScreenFadeDelegation is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00645e90 function setFarPlane                  # layout: alphabetical run between graphicVideoUpdate and setLuluODKeyboardInput (3 unnamed in the gap); Switch 0x71001dcbb0 setFarPlane is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00645eb0 function setLuluODKeyboardInput    # fh v3:exact 0x00646060
@@ -2105,6 +2223,7 @@
 0x00647f30 function SaveDataGetLoc_00647f30   # fh v3:bsim1.00 0x006480e0
 0x00647f70 function SaveDataGetScreenState    # fh v3:cg4 0x648120
 0x00647fb0 function SaveData_Init # (): SaveDataManager_initSaveDataSys(g_SaveFileBuffer 0x01597f70, 0x6900), trophies; docs/formats/save.md; name ours
+0x00647fe0 function Game_InitSystems_00647fe0 # guess: 0x006f1c10, 0x006f0330, StatsAndAchievements_Create if g_SteamReady, ...; from FFXApplication_initApplication (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00648020 function SaveDataIsAlbhedLoaded    # fh v3:bsim1.00 0x006481d0
 0x00648040 function SaveDataIsBusy            # fh v3:bsim1.00 0x006481f0
 0x00648060 function SaveDataIsDeletingFinished # fh v3:cg2 0x648210
@@ -2590,6 +2709,8 @@
 0x00687060 function user_realloc              # cdecl(p, size): jmp UserHeap_Realloc; name ours (after user_mem_size)
 0x00687070 function vsnprintf1K_00687070         # structure: (buffer, fmt, ...) -> _vsnprintf_s(buffer, 0x400, fmt, args); used by the four user-heap report printers 0x006882a0..0x006885f0, next to user_malloc/user_realloc; name ours
 0x00687190 function Init68_00687190 # thiscall(this; a, b), ret 8 -> this: +0 a, +8 b, +4 and +0xc..+0x40 zeroed; callers 0x006870b0, 0x00687130; name ours
+0x00687850 function StackWalker_LoadModules_SymInit_00687850 # SymGetSearchPath, GetUserNameA, OnSymInit vfunc; StackWalker library pattern; guess (platform census 2026-10-25, docs/formats/platform.md; window)
+0x00687c10 function StackWalker_LoadModule # GetFileVersionInfoSizeA/GetFileVersionInfoA/VerQueryValueW("\\") version, symbol type strings "-nosymbols-"/"COFF"/"CV"/"PDB"/"-exported-"; StackWalker library pattern; guess (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00689510 function TouchRecord_Reset # thiscall(rec) -> rec: one TouchRecords_Init record reset; callers 0x00689580, 0x006897d0; name ours
 0x006895c0 function PArray_Reset_006895c0 # thiscall: count +0 top bit clear and buffer non-null: PhyreFree(+4); +0, +4 = 0; name ours
 0x006895f0 function PArray_Reset_006895f0 # thiscall: count +0 top bit clear and buffer non-null: PhyreFree(+4); +0, +4 = 0; name ours
@@ -2603,12 +2724,15 @@
 0x0068b470 function GuiTouch_handleEvent      # thiscall(this, event): pointer event (+8 x, +0xc y, +0x18 kind 0-5, +0x1c pointer id) to every active button group: buttons strictly containing it take hover (0/4/5), press (1: id, phase 1, start pos, graphicGetTime), 2; buttons of that pointer then follow moves (phase 3/4) and the release (3: end pos, drag); called per event by 0x0068a3a0; name ours
 0x0068b6d0 function GuiTouch_hover            # thiscall(this, x, y): every active hover region (+0x154, count +0x150 & 0x7fffffff, 0x150 each) gets at +4 the first of its 32 i16 rects (+0xe, 10 bytes: l t r b) strictly containing (x, y), else -1; 0x0068a3a0 calls it for move events (kind 0, 4, 5); name ours
 0x0068c830 function AsyncControllerTaskManager_AsyncControllerTaskManager # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'AsyncControllerTaskManager'; Switch 0x710024a280 AsyncControllerTaskManager::AsyncControllerTaskManager (symbols from Fahrenheit's server export)
+0x0068cc10 function AsyncControllerTaskManager_PushControllerInfo # under mutex +0x40 while 0x0133c930: word and 4 stick floats queued (platform census 2026-10-25, docs/formats/platform.md; input)
 0x0068cc90 function AsyncControllerTaskManager_ClearControllerInfo # fh v3:exact 0x0068ce30 AsyncControllerTaskManager::ClearControllerInfo
 0x0068ccd0 function AsyncControllerTaskManager_GetControllerInfo # fh v3:exact 0x0068ce70 AsyncControllerTaskManager::GetControllerInfo
 0x0068d5b0 function CopyFields_0068d5b0          # auto-port shape (several stores: copy into field, thiscall): t0 = u32[(a0 + 0xc)]; t1 = u32[a0]; u32[(a1 + 0x4)] = 0x0; u32[a1] = t1; u32[(a1 + 0x8)] = t0; return a1; callers: AsyncControllerTaskManager_GetControllerInfo; name ours
 0x0068d5d0 function CopyFields_0068d5d0          # auto-port shape (several stores: copy into field, thiscall): t0 = u32[(a0 + 0xc)]; t1 = u32[a0]; u32[(a1 + 0x4)] = 0x0; u32[a1] = t1; u32[(a1 + 0x8)] = t0; return a1; callers: AsyncControllerTaskManager_GetControllerInfo; name ours
+0x0068d740 function AsyncControllerTaskManager_ThreadMain # thread entry: 60 Hz inputODUpdate polls while 0x0133c930 == 1, else Sleep(16) (platform census 2026-10-25, docs/formats/platform.md; input)
 0x0068db00 function AsyncControllerTaskManager_sCreateInstance # layout+callees: sorts between AsyncControllerTaskManager_GetControllerInfo and AsyncControllerTaskManager_sGetInstance, and its named callees match the Switch 0x710024a600 AsyncControllerTaskManager_sCreateInstance's (similarity 1.00: AsyncControllerTaskManager_AsyncControllerTaskManager); symbols from Fahrenheit's server export
 0x0068dc10 function AsyncControllerTaskManager_sGetInstance # fh v3:bsim1.00 0x0068ddb0 AsyncControllerTaskManager::sGetInstance
+0x0068dc30 function AsyncControllerTaskManager_Tick # one pass of the thread loop (no refs) (platform census 2026-10-25, docs/formats/platform.md; input)
 0x0068dd40 function IggyMenu_callFlashFunction_1 # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71008a4518 IggyMenu::callFlashFunction<1>, 4 votes, round 1
 0x0068ddd0 function IggyMenu_callFlashFunction_3_0068ddd0 # cdecl(menu, name, 3 IggyDataValues by value: 14 words): copies the values into its frame, IggyMenu_callIggyAS3External(0, name, 3, values, 1); the 1/2/3/4/5-value family 0x0068dd40/0x0068dd80/this/0x0068de50/0x0068def0, named after Fahrenheit's IggyMenu::callFlashFunction<1> at 0x0068dd40; name ours (pc round 3)
 0x0068def0 function IggyMenu_callFlashFunction_5_0068def0 # cdecl(menu, name, 5 IggyDataValues by value: 22 words): IggyMenu_callIggyAS3External(0, name, 5, values, 1); family of 0x0068ddd0; name ours (pc round 3)
@@ -2616,6 +2740,7 @@
 0x0068e270 function LocString_ToValue_0068e270 # thiscall(this, out), ret 4: iggyDataValueSet_00a28d70(this + 0x100, this), the value's 4 words to out; name ours (pc round 3)
 0x0068e330 function SetFieldConst4_0068e330      # auto-port shape (store constant to field, thiscall): u8[(a0 + 0x4)] = 0x0; callers: no direct caller; name ours
 0x0068e340 function SetFieldConst4_0068e340      # auto-port shape (store constant to field, thiscall): u8[(a0 + 0x4)] = 0x1; callers: no direct caller; name ours
+0x0068e350 function Settings_SaveGlobal # mov ecx,[g_Settings]; jmp Settings_Save (no code refs) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x0068e530 function FFEscMenu_vfunc_0068e530  # vtable slot at 0x00b46c24; thiscall(this, a, b), ret 8; name ours: 0x007018a0(this, a, b) and, when it returns al 1, 0x00a28c10(this, a, b); eax the last call's; ported (ffx_pcui::menus, pc round 2)
 0x0068e6f0 function FFEscMenu_initializeMainSettingPage # str-match switch: only user of 9 string(s) held once by both builds, e.g. 'setHomePage'; Switch 0x71002448a0 FFEscMenu::initializeMainSettingPage (symbols from Fahrenheit's server export)
 0x0068f6f0 function FFEscMenu_onSpecialFeatureHelpString # fh switch:bsim1.00 0x7100245de0 FFEscMenu::onSpecialFeatureHelpString
@@ -2977,8 +3102,11 @@
 0x006d5a70 function BrokenScreenEffect_updateLightParameters # fh switch:bsim1.00 0x710024f970 BrokenScreenEffect::updateLightParameters
 0x006d5d49 function Catch_All_006d5e79        # fh v3:cg2 0x6d5e79 Catch_All@006d5e79
 0x006d6970 function PhyFMVPlayerManager_PhyFMVPlayerManager # fh v3:exact 0x006d6aa0 PhyFMVPlayerManager::PhyFMVPlayerManager
+0x006d6d00 function PhyFMVPlayerManager_dtor # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006d6ff0 function std_Tree_const_iterator_inc_006d6ff0 # same bytes as std_Tree_const_iterator_inc_006352b0 (the movie player's std::map)
 0x006d7130 function PhyFMVPlayerManager_CreateInstance # fh v3:cg2 0x6d7260 PhyFMVPlayerManager::CreateInstance
+0x006d71b0 function PhyFMVPlayerManager_DestroyFMVPlayer # string "DestroyFMVPlayer when updateTextureCallback in progress" (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x006d7370 function PhyFMVPlayerManager_DestroyInstance # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006d73a0 function PhyFMVPlayerManager_GetInstance # fh v3:bsim1.00 0x006d74d0 PhyFMVPlayerManager::GetInstance
 0x006d7430 function PhyFMVPlayerManager_PlayVideo # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'start to play video:%s\\n'; Switch 0x7100267240 PhyFMVPlayerManager::PlayVideo (symbols from Fahrenheit's server export)
 0x006d7570 function PhyFMVPlayerManager_Render   # layout+callees: sorts between PhyFMVPlayerManager_PlayVideo and PhyFMVPlayerManager_UpdateTexture, and its named callees match the Switch 0x7100267a00 PhyFMVPlayerManager_Render's (similarity 0.62: Phyre_PCamera_updateViewMatrices, Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRendererBase_setClearColor, Phyre_PRendering_PRenderer_beginScene, Phyre_PRendering_PRenderer_endScene); symbols from Fahrenheit's server export
@@ -2990,14 +3118,21 @@
 0x006d86e0 function PhyFMVPlayerManager_doOnShaderBinFilesLoaded # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'imageWidth'; Switch 0x7100265c60 PhyFMVPlayerManager::doOnShaderBinFilesLoaded (symbols from Fahrenheit's server export)
 0x006d8940 function std_Tree_erase_range_006d8940 # same bytes as std_Tree_erase_range_00636d60 (MSVC std::map erase(first, last)); the movie player's map; name ours
 0x006d8a00 function std_Tree_erase_006d8a00   # MSVC std::map erase(iterator): unlinks and rebalances, then destroys the node (a std::string at +0x28; 0x00636e20 is the same code for +0x24); the movie player's map; name ours
+0x006d8cb0 function PhyFMVPlayerManager_processRequests # guess: Switch-era request list (play/pause), only a jmp ref (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x006d8f30 function PhyFMVPlayerManager_fmvPlayer_initialize # guess, pair of fmvPlayer_terminate (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x006d8f80 function PhyFMVPlayerManager_resumeMovie # togglePause, +0x6fc = 0 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x006d8fc0 function PhyFMVPlayerManager_fmvPlayer_play # guess: open(path, loop), error box 0x7833 (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006d9180 function PhyFMVPlayerManager_fmvPlayer_terminate # fh switch:bsim1.00 0x71002671f0 PhyFMVPlayerManager::fmvPlayer_terminate
 0x006d91b0 function PhyFMVPlayerManager_getCurrentFrame # fh v3:bsim1.00 0x006d92e0 PhyFMVPlayerManager::getCurrentFrame
+0x006d91d0 function PhyFMVPlayerManager_getEndTimeMs # guess (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006d93e0 function PhyFMVPlayerManager_getVideoName # fh v3:exact 0x006d9510 PhyFMVPlayerManager::getVideoName
 0x006d9460 function PhyFMVPlayerManager_handleInput # layout: alphabetical run between PhyFMVPlayerManager_getVideoName and PhyFMVPlayerManager_initPauseMenuAssets (1 unnamed in the gap); Switch 0x7100267b40 PhyFMVPlayerManager::handleInput is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006d9570 function PhyFMVPlayerManager_initPauseMenuAssets # str-match switch: only user of 3 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Shaders/GCM/PauseMenuShader.fx.ph'; Switch 0x7100268470 PhyFMVPlayerManager::initPauseMenuAssets (symbols from Fahrenheit's server export)
 0x006d98e0 function PhyFMVPlayerManager_initSubtitleTimestamps # str-match switch: only user of 4 string(s) held once by both builds, e.g. '/MetaMenu/GameData/PS3Data/Video/JP/timestamp_JP.txt'; Switch 0x7100268b00 PhyFMVPlayerManager::initSubtitleTimestamps (symbols from Fahrenheit's server export)
 0x006d9c80 function PhyFMVPlayerManager_initialize # fh v3:exact 0x006d9db0 PhyFMVPlayerManager::initialize
+0x006da240 function PhyFMVPlayerManager_isVideoAtEndFrame # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006da2a0 function PhyFMVPlayerManager_StateCheck_006da2a0 # fastcall(mgr) -> al: 1 when one of the count (+4) states at +0xc is 1, or +0x704 is 0; else 0 (eax's upper bytes what was there); only caller 0x00641ce0 (graphic, under PhyFMVPlayerManager_GetInstance), which Native_b00a_Poll waits on; movie player glue; name ours
+0x006da460 function PhyFMVPlayerManager_onShaderClusterLoaded # AsyncLoadManager callback (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006da480 function PhyFMVPlayerDelegation_onTextureVideoPlay # fh v3:bsim1.00 0x006da5b0 PhyFMVPlayerDelegation::onTextureVideoPlay
 0x006da490 function PhyFMVPlayerDelegation_onTextureVideoStop # fh v3:bsim1.00 0x006da5c0 PhyFMVPlayerDelegation::onTextureVideoStop
 0x006da4b0 function PhyFMVPlayerManager_pauseMovie # fh v3:exact 0x006da5e0 PhyFMVPlayerManager::pauseMovie
@@ -3005,6 +3140,8 @@
 0x006da750 function PhyFMVPlayerManager_renderPauseBG # layout+callees: sorts between PhyFMVPlayerManager_readCreditsText and PhyFMVPlayerManager_updateVideoCallback, and its named callees match the Switch 0x7100269280 PhyFMVPlayerManager_renderPauseBG's (similarity 1.00: graphicDrawUIElement); symbols from Fahrenheit's server export
 0x006da8b0 function PhyFMVPlayerManager_renderPauseMenu # layout+callees: sorts between PhyFMVPlayerManager_readCreditsText and PhyFMVPlayerManager_updateVideoCallback, and its named callees match the Switch 0x7100269370 PhyFMVPlayerManager_renderPauseMenu's (similarity 1.00: Phyre_PRendering_PRendererBase_renderMeshInstance); symbols from Fahrenheit's server export
 0x006dabf0 function PhyFMVPlayerManager_SetVolume_006dabf0 # cdecl(f32 volume 0..1): 0x00c34420 = volume; while the movie player (0x00cded3c) plays (+0x6d0) and g_WaitFramesByTime == 1, also 0x00a28330(volume) (PVideoPlayback); caller iSoundUpdate; movie player glue; name ours
+0x006dac50 function PhyFMVPlayerManager_updateSubtitles # guess: timestamps +0x724.., unreferenced (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x006dad30 function PhyFMVPlayerManager_updatePauseMenuAlpha # "alphaScale" ping-pong, unreferenced (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006dae00 function PhyFMVPlayerManager_updateVideoCallback # fh v3:exact 0x006daf30 PhyFMVPlayerManager::updateVideoCallback
 0x006db070 function LocalizationManager_GetInstance # () -> g_LocalizationManager; while null Phyre_PhyrePrintf(1, "sLanguageManager singleton is not created yet.") first; was LangManager_Get
 0x006db090 function LocalizationManager_Initialize # settings language index -> game language id; was LangManager_FromSettings; thiscall(this) -> 0: *g_Settings 1..5 -> (1, 1 us/2 fr/4 de/5 it/3 es, 1), 6 -> (3, 9, 0), 7 -> (3, 10, 0), else (0, 0, 0) into +0, +4, +8; ported (system round 32)
@@ -3069,6 +3206,7 @@
 0x006e6160 function Phyre_PS2LightingSetup_setupCharacterShader # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'MaterialDiffuse'; Switch 0x710026b4b0 Phyre::PS2LightingSetup::setupCharacterShader (symbols from Fahrenheit's server export)
 0x006e6330 function RemapButtonIcon_RemapButtonIcon # fh v3:exact 0x006e6460 RemapButtonIcon::RemapButtonIcon
 0x006e63f0 function RemapButtonIcon_getButtonIconUV # layout+callees: sorts between RemapButtonIcon_RemapButtonIcon and RemapButtonIcon_getCurrentControlMachine, and its named callees match the Switch 0x7100230a50 RemapButtonIcon_getButtonIconUV's (similarity 0.75: RemapButtonIcon_getJoypadUV, Virtuos_InputManager_getInstance, Virtuos_InputManager_getVibrationFlag); symbols from Fahrenheit's server export
+0x006e6430 function Settings_GetFfxBinding # (slot) -> g_Settings +0x60 + slot*4 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006e6450 function RemapButtonIcon_getCurrentControlMachine # fh v3:bsim1.00 0x006e6580 RemapButtonIcon::getCurrentControlMachine
 0x006e6460 function RemapButtonIcon_getJoypadUV # fh v3:exact 0x006e6590 RemapButtonIcon::getJoypadUV
 0x006e6650 function AddrOfGlobal00c35030_006e6650 # auto-port shape (return address of global, cdecl): return &0x00c35030; callers: ; name ours
@@ -3136,21 +3274,45 @@
 0x006ef2d0 function crossAssertIsValidFloat   # fh v3:exact 0x006ef410
 0x006ef6f0 function fix_mappic                # fh call.cs cdecl; (map) -> save-list picture number (m%d, m%d_1 from 1000): 0 outside 1..=0x15c, map - 1 for 26 maps, fixed ones for 3/7/0x13/0x59/0x147..0x14f/0xaf..0xb1/0xe8/0xe9/0x100, map + 1000 on 0xd8/0x1f/0x101/0x11c/0x81/0x15c/0xf4..0xf7 when the player (0x00ccb9a8) is nearer the second picture's point (f32 squared distances); ported (system round 37)
 0x006efbd0 function SaveDataMachine_CheckFile # load state 0xf: after the 30-frame timer 0x00ce72e4, SaveDataCheckCrc; bad: buffer zeroed, message 0x208, state 0x10; good: 0x11 (docs/formats/save.md); name ours
+0x006efd10 function SaveDataMachine_MergeFileFlags_006efd10 # state 0x19: reads ffx_NNN, ORs its +0x3d50 word into the current save buffer's; state 0x19 -> timer 30; guess (platform census 2026-10-25, docs/formats/platform.md; window)
 0x006f0020 function SaveDataMachine_LoadDone # load state 0x11: closes the Flash screen, SaveDataSaveLoadSucceed(3), SaveDataSetDialogState(0), state 0xa, busy 0x00ce7310 = 0; name ours
 0x006f0070 function SaveDataMachine_ReadFile # load state 0xe (list entry): _wfopen/fread "%s%s%03d" (g_SaveFolder, "ffx_", g_SortedSaveTable slot) into 0x00ce7308, 0x00ce7304 bytes; timer 30, state 0xf; name ours
 0x006f01d0 function SaveDataMachine_StartLoad # (size, buffer): 0x00ce7304/0x00ce7308 = them, busy 0x00ce7310 = 1, state 0xb, SetUpDefaultSaveFolder, opens the Flash list; from SaveDataManager_doLoad; name ours
 0x006f0220 function SaveDataMachine_BuildList # load state 0xb: SaveDataMachine_ScanFiles, SortSaveTable_006f0fb0, fills the Flash list (message 0x1fd; 0x20b with no file); state 0xc; name ours
 0x006f0330 function SetUpDefaultSaveFolder    # Documents (SHGetFolderPathW CSIDL_PERSONAL) + Square Enix\FINAL FANTASY X&X-2 HD Remaster\FINAL FANTASY X\; was Save_InitFolder
 0x006f0510 function SaveDataManager_debugSave_Internal_6f0650 # fh call.cs cdecl
+0x006f0860 function SaveDataMachine_WriteFile # save state: slot = table entry or the first free of 1..199, `wb` fwrite 0x00ce7308 x 0x00ce7304; state 5; ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x006f0950 function SaveDataMachine_Update # (): the PC save/load state machine on g_SaveMachineState 0x00ce72e8 (jump of 20 states: 1-6 save, 0xb-0x11 load, 0x15-0x1b Al Bhed); called from SaveData_Update; name ours
 0x006f0a70 function SaveDataMachine_ScanFiles # (): ffx_000..ffx_199 in g_SaveFolder: CreateFileW + GetFileTime per file into g_SortedSaveTable (slot, yymmdd, seconds), present flags 0x00ce7c78, counts 0x00ce72f4/0x00ce72f8; name ours
+0x006f0c60 function SaveDataMachine_ReadHeaders # (first, end): each listed save's 0x40-byte header -> list strings (slot, name, date, location + play time); ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x006f0fb0 function SortSaveTable_006f0fb0 # (): entries 1..199 of g_SortedSaveTable (3 words) selection-sorted by words 1, 2 descending (signed); callers 0x006eff00/0x006f0220/0x006f0800 (save-data area); name ours
-0x006f1510 function StatsAndAchievements_Unlock_006f1510 # thiscall(this, id), ret 4: with this+0x4d set (the Steam stats received), id <= 0x21 and record id's achieved byte (g_AchievementRecords +0x184) clear: StatsAndAchievements_SetAchievement_006f1900(id), then AchievementTryObtainPlat (which, once records 1..33 are achieved and record 0, the platinum, is not, calls this with 0); callers SaveDataUnlockAchievement (0x006488d6) and AchievementTryObtainPlat (0x006f1573) only (tools/refs.py): platform, the Steam achievement layer (classify REVIEWED); class from Fahrenheit's CCallback<StatsAndAchievements,...> vtables; name ours
+0x006f1060 function CCallback_UserAchievementStored_ctor # (obj, fn): RegisterCallback 1103 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f10b0 function CCallback_UserStatsReceived_ctor # 1101 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f1100 function CCallback_UserStatsStored_ctor # 1102 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f1170 function CGameID_ctor_AppId # low 24 bits = app id (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f11a0 function StatsAndAchievements_ctor # three callbacks, GetAppID, records 0x00c35790 x 0x22, RequestCurrentStats when logged on (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f1310 function CCallback_UserAchievementStored_dtor # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f1330 function CCallback_UserStatsReceived_dtor # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f1350 function CCallback_UserStatsStored_dtor # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f1370 function StatsAndAchievements_dtor # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f13c0 function StatsAndAchievements_scalar_deleting_dtor # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f1420 function StatsAndAchievements_ResetAll # SteamUserStats()->ResetAllStats(true) (+0x54); BasicDebugTweakUtil item 0xc (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f1430 function StatsAndAchievements_Create # new(0x50) -> 0x00ce81a8 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f14a0 function StatsAndAchievements_Destroy # no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f1510 function StatsAndAchievements_Unlock_006f1510 # thiscall(this, id), ret 4: with this+0x4d set (the constructor sets it and nothing clears it; +0x4c is "stats received", platform census 2026-10-25), id <= 0x21 and record id's achieved byte (g_AchievementRecords +0x184) clear: StatsAndAchievements_SetAchievement_006f1900(id), then AchievementTryObtainPlat (which, once records 1..33 are achieved and record 0, the platinum, is not, calls this with 0); callers SaveDataUnlockAchievement (0x006488d6) and AchievementTryObtainPlat (0x006f1573) only (tools/refs.py): platform, the Steam achievement layer (classify REVIEWED); class from Fahrenheit's CCallback<StatsAndAchievements,...> vtables; name ours
 0x006f1550 function AchievementTryObtainPlat  # fh v3:exact 0x006f1690 +AchievementTryObtainPlat
 0x006f1580 function ReturnConst_006f1580 # () -> 0x98; name ours
 0x006f1590 function ReturnConst_006f1590 # () -> 0x18; name ours
 0x006f15a0 function ReturnConst_006f15a0 # () -> 0x10; name ours
 0x006f15b0 function AchievementManager_GetInstance # () -> [0x00ce81a8]; SaveDataUnlockAchievement and BasicDebugTweakUtil_handleInput ask for it; name ours
+0x006f15e0 function StatsAndAchievements_OnUserAchievementStored # empty (ret 4) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f15f0 function StatsAndAchievements_OnUserStatsReceived # +0x4c = 1, GetAchievement + display name/desc per record (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f16d0 function StatsAndAchievements_OnUserStatsStored # empty (ret 4) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f16e0 function CCallback_UserAchievementStored_Register # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f1730 function CCallback_UserStatsReceived_Register # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f1780 function CCallback_UserStatsStored_Register # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f17d0 function StatsAndAchievements_RequestStats # if +0x4d and logged on: RequestCurrentStats; no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f18b0 function StatsAndAchievements_SetAchievementByName # (name): SetAchievement + StoreStats; no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f1900 function StatsAndAchievements_SetAchievement_006f1900 # thiscall(this, id), ret 4: with +0x4d set, record id's achieved byte = 1 and +0x188 = 0, then SteamUserStats()->SetAchievement(record +0 name) (vtable +0x1c) and ->StoreStats() (+0x28); only caller StatsAndAchievements_Unlock_006f1510; name ours
 0x006f1ce0 function SaveDataManager_doLoad    # fh v3:exact 0x006f1e20 SaveDataManager::doLoad
 0x006f1d70 function SaveDataManager_doSave    # fh v3:exact 0x006f1eb0 SaveDataManager::doSave
@@ -3183,9 +3345,11 @@
 0x006f2ce0 function SignalSema                # fh v3:bsim1.00 0x006f2e20; cdecl(&sema) -> 1 (0 for null): ReleaseSemaphore(**sema, 1, 0)
 0x006f2d10 function SleepThread # () -> 0: Sleep(10) through 0x00b0c100; name ours (the PS2 libkernel call it stands for)
 0x006f2d20 function SleepThreadInMillisecond  # fh v3:exact 0x006f2e60; cdecl(ms) -> 0: Sleep(ms) through 0x00b0c100
+0x006f2d30 function StartThread_ps2 # guess: arg to +0x14, ResumeThread (platform census 2026-10-25, docs/formats/platform.md; input)
 0x006f2d80 function WaitSema # cdecl(&sema) -> 1 (0 for null): WaitForSingleObject(**sema, INFINITE); name ours (PS2 libkernel)
 0x006f2da0 function WaitSemaTimeout # cdecl(&sema, ms) -> 1 (0 for null): WaitForSingleObject(**sema, ms); name ours
 0x006f2de0 function Mutex_Create              # () -> new 4-byte object holding CreateMutexW(0, 0, 0) (import 0x00b0c198); Script_Run creates g_ScriptRunMutex with it
+0x006f2e10 function CreateThread_ps2 # guess (PS2 libkernel CreateThread stand-in): crossThreadImpl, named thread via 0x00679cb0 (platform census 2026-10-25, docs/formats/platform.md; input)
 0x006f2ed0 function Mutex_Lock                # (mutex): WaitForSingleObject(*mutex, INFINITE) (import 0x00b0c0f8)
 0x006f2f50 function Mutex_Unlock              # (mutex): ReleaseMutex(*mutex) (import 0x00b0c1c0)
 0x006f2f70 function SetField0_006f2f70           # auto-port shape (store argument to field, cdecl): t0 = u32[a0]; u32[a0] = a1; return t0; callers: ; name ours
@@ -3320,6 +3484,15 @@
 0x006fc3f0 function FFEscMenu_initializeParameterChangePage # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'spinnerButton'; Switch 0x7100245fd0 FFEscMenu::initializeParameterChangePage (symbols from Fahrenheit's server export)
 0x006fc7b0 function FFEscMenu_onParameterButtonClicked # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Function not Available now!'; Switch 0x7100246150 FFEscMenu::onParameterButtonClicked (symbols from Fahrenheit's server export)
 0x006fc9b0 function FFEscMenu_refreshParameterAndSpecialPageEnableState # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'setEnableKeyBindings'; Switch 0x7100245e50 FFEscMenu::refreshParameterAndSpecialPageEnableState (symbols from Fahrenheit's server export)
+0x006fcca0 function FFEscMenu_initializeVideoSettingPage # guess (reads keys 2, 9..18; next to the audio page) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006fedf0 function FFEscMenu_buildResolutionList # guess: mode list, selects the current Resolution (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006ff290 function FFEscMenu_applyVideoSettings # callback queued by EscMenuVideoSettingRefresh (0x006ff4b0) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006ff4b0 function FFEscMenu_onVideoSettingRefresh # "EscMenuVideoSettingRefresh" (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006ff4f0 function FFEscMenu_onVoiceVolumeChanged # table 0x00c39640 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006ff530 function FFEscMenu_onMusicVolumeChanged # table 0x00c39658 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006ff570 function FFEscMenu_onSfxVolumeChanged # table 0x00c39670 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006ff5b0 function FFEscMenu_onMasterVolumeChanged # table 0x00c39628 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006ff660 function FFEscMenu_onAudioSettingRefresh # "EscMenuAudioSettingRefresh" (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006ff770 function FFEscMenu_initializeAudioSettingPage # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'addAudioPageItem'; Switch 0x71002a8b20 FFEscMenu::initializeAudioSettingPage (symbols from Fahrenheit's server export)
 0x006ffa20 function FFEscMenu_registerAudioPreviewCallbacks # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'ExitAudioMenu'; Switch 0x71002a8950 FFEscMenu::registerAudioPreviewCallbacks (symbols from Fahrenheit's server export)
 0x00700da0 function FFEscMenu_initializeKeyboardSettingPage # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'keyboardBindingItem'; Switch 0x71002a9960 FFEscMenu::initializeKeyboardSettingPage (symbols from Fahrenheit's server export)
@@ -13732,6 +13905,7 @@
 0x00a24fb0 function Phyre_PPostProcessing_PDeferredLightingNVN_PDeferredLightingRenderTargets_unbindAll # fh switch:bsim1.00 0x7100816de0 Phyre::PPostProcessing::PDeferredLightingNVN::PDeferredLightingRenderTargets::unbindAll
 0x00a24fe0 function Phyre_PPostProcessing_PDeferredLightingNVN_PDeferredRenderRenderTargets_unbindAll # fh switch:bsim1.00 0x7100816e20 Phyre::PPostProcessing::PDeferredLightingNVN::PDeferredRenderRenderTargets::unbindAll
 0x00a25020 function Phyre_PPostProcessing_PDeferredLightingNVN_PLightPrepassRenderTargets_unbindAll # fh switch:bsim1.00 0x7100816db0 Phyre::PPostProcessing::PDeferredLightingNVN::PLightPrepassRenderTargets::unbindAll
+0x00a25990 function MouseState_createInstance_00a25990 # (): 0x7c-byte singleton 0x01984c68, +0x78 = GetSystemMetrics(SM_SWAPBUTTON) != 0; caller 0x00630f40; guess (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00a25a30 function GetGlobal01984c68_00a25a30   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01984c68]; return t0; callers: ; name ours
 0x00a25db0 function IggyMenuManager_SetFields_00a25db0 # auto-port shape (several stores: set field (constants, arguments, addresses), thiscall): u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x0; u32[(a0 + 0x14)] = 0x0; u32[(a0 + 0x18)] = 0x0; u32[(a0 + 0x1c)] = 0x0; u32[(a0 + 0x20)] = 0x0; u32[(a0 + 0x24)] = 0x0; u32[(a0 + 0x28)] = 0x0; u32[(a0 + 0x2c)] = 0x0; u8[(a0 + 0x30)] = 0x1; return a0; callers: IggyMenuManager_createInstance; name ours
 0x00a26240 function IggyMenuManager_createInstance # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x710089f8c8 IggyMenuManager::createInstance, 3 votes, round 1
@@ -13739,6 +13913,7 @@
 0x00a267f0 function IggyMenuManager_Render_00a267f0 # fastcall(manager): when +0x30 is set binds the back buffer (setColorTarget(0, 0), no depth), beginScene(0), then for layers 0..2 every menu (+0xc list, count +8 & 0x7fffffff) whose +0x98 is the layer through IggyMenu_Draw_00a28eb0, then IggyMenuManager_EndDraw_00a362e0, endScene(1); callers PhyreScene_render (after the post chain's last copy), the loading and opening screens 0x0066b1e0/0x0066b2e0, 0x00642be0; name ours (pc-ui2d, docs/formats/ui-draw.md)
 0x00a26960 function IggyMenuManager_SetViewportJump_00a26960 # bare jmp to IggyMenuManager_SetViewport_00a26a20 (push ebp; mov ebp, esp; pop ebp; jmp), from PhyreScene_resize 0x0066c580 (which then xors eax); name ours
 0x00a26a20 function IggyMenuManager_SetViewport_00a26a20 # thiscall(this, w, h), ret 8, from 0x00a262e0 and the jmp 0x00a26960; name ours: r = f32(f32(w)/f32(h)) against g_IggyTargetAspect a: a == r (0, 0, w, h); a > r letterbox k = f32(r * 0.5625) (0, ftol((1-k)h*0.5), w, ftol(kh)); else (NaN too) pillarbox q = f32(a * (1/r)) (ftol((1-q)w*0.5), 0, ftol(qw), h) into +0x18..+0x24, screen (w, h) at +0x28/+0x2c; only when a word changes, then IggyMenuManager_ApplyViewport_00a265a0 (eax its; else h or the last ftol, no caller reads it); ported (ffx_pcui::menus, pc round 3)
+0x00a26e70 function PVideoPlaybackWin32_ctor # 3 CDataFrameQueue, 2 PThread, VbfMkvReader +0x118, 2 PEventFlag (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a26f30 function PVideoPlaybackWin32_dtor_00a26f30 # thiscall: destroys members +0x118 (0x00a3e040), +0x80, +0x40, +0 (0x00a3dd50) under an SEH frame; called by unwind funclets and 0x006d6d00; PhyreEngine video player (library); name ours
 0x00a26fb0 function PVideoPlaybackWin32_memcpy_00a26fb0 # cdecl(dst, src, n): memcpy; Fahrenheit's Switch match calls it MovieAllocate; a decoder callback of the PhyreEngine video player (library); name ours
 0x00a26fc0 function PVideoPlaybackWin32_memmove_00a26fc0 # cdecl(dst, src, n): memmove (a jmp); a decoder callback of the PhyreEngine video player (library); name ours
@@ -13746,12 +13921,25 @@
 0x00a26fe0 function PVideoPlaybackWin32_CopyPlane_00a26fe0 # cdecl(dst, dst stride, src, src stride, row bytes, rows): one memcpy when the strides agree, else row by row; called by 0x00a284a0 (video frames); library; name ours
 0x00a27170 function PVideoPlaybackWin32_AudioRead_00a27170 # thiscall(player, s16 out, unused), ret 8: +0x2a8 set: al 0; else while +0x2a4 samples are wanted and +0xd8 != 1: vorbis_synthesis_pcmout (+0x1b0) blocks to interleaved s16 over +0x184 channels (f32(x * 32767 + 0.5), floor, ftol, clamped -0x8000..0x7fff; 'Clipping in frame %ld' with +0x1f0 to stderr), vorbis_synthesis_read; none decoded: queue +0x80 packets (+0x178 u64 count, +0x160/+0x164 ogg_packet) to vorbis_synthesis (+0x220) / blockin; returns 1 when done (or +0xf0 clear); called by the FMOD read callback 0x00a27ee0, which drops it; name ours; ported (ffx_pcui::video, pc round 3)
 0x00a273b0 function PVideoPlaybackWin32_AudioInit_00a273b0 # fastcall(player) -> al: the Vorbis headers, then an FMOD stream (System::createSound, playSound, Channel::setPriority); called by PVideoPlaybackWin32__ReadingThread; library; name ours
+0x00a27650 function PVideoPlaybackWin32_DemuxLoop # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a27880 function PVideoPlaybackWin32__ReadingThread # the reading thread's proc (created by PVideoPlaybackWin32_initialize 0x00a27cf0): waits event +0x2ac, runs PVideoPlaybackWin32_DemuxLoop 0x00a27650 while state 1/2; the name moved here from 0x00a27cf0 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a278f0 function PVideoPlaybackWin32_AudioShutdown # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a279b0 function PVideoPlaybackWin32_DecodeLoop # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a27b90 function PVideoPlaybackWin32__VideoDecodingThread # the decoding thread's proc (created by PVideoPlaybackWin32_open 0x00a27f20): PVideoPlaybackWin32_DecodeLoop 0x00a279b0; the name moved here from 0x00a27f20 (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a27bd0 function Phyre_PVideo_PVideoPlaybackWin32_getCurrentTime # fh v3:exact+call.cs 0x00a27bd0 thiscall Phyre::PVideo::PVideoPlaybackWin32::getCurrentTime
 0x00a27c40 function Phyre_PVideo_PVideoPlaybackWin32_getEndTime # fh v3:bsim1.00+call.cs 0x00a27c40 thiscall Phyre::PVideo::PVideoPlaybackWin32::getEndTime
+0x00a27c50 function PVideoPlaybackWin32_isPlaying # guess (Phyre API name) (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a27cb0 function Phyre_PVideo_PVideoPlaybackNX_getSDKMemoryStats # fh switch:bsim1.00 0x710080ae80 Phyre::PVideo::PVideoPlaybackNX::getSDKMemoryStats
-0x00a27cf0 function PVideoPlaybackWin32__ReadingThread # str: the only user of the string "PVideoPlaybackWin32::_ReadingThread" (its own __FUNCTION__ in an error print)
+0x00a27cf0 function PVideoPlaybackWin32_initialize # thiscall(player, 0, depth, FMOD::System*): sets the FMOD system, the queue depth (0 -> 30), starts the reading thread 0x00a27880; the old name came from the thread-name string it passes, depth, starts reading thread (platform census 2026-10-25, docs/formats/platform.md; movie); was PVideoPlaybackWin32__ReadingThread
+0x00a27e10 function PVideoPlaybackWin32_seek # guess: returns 1, no-op (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a27e20 function PVideoPlaybackWin32_MapTexture # guess: bind if needed, map buffer (i+1) % count (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a27e90 function PVideoPlaybackWin32_togglePause # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a27ee0 function PVideoPlaybackWin32_FmodReadCallback_00a27ee0 # stdcall(sound, data, len), ret 0xc: 0x00a7c8fe(sound, &player) (FMOD Sound::getUserData), then PVideoPlaybackWin32_AudioRead_00a27170(player, data, len); returns 0; its address pushed at 0x00a275d2 (AudioInit's FMOD stream setup); name ours
-0x00a27f20 function PVideoPlaybackWin32__VideoDecodingThread # str: the only user of the string "PVideoPlaybackWin32::_VideoDecodingThread" (its own __FUNCTION__ in an error print)
+0x00a27f20 function PVideoPlaybackWin32_open # thiscall(player, path, loop): opens the WebM, vpx_codec_dec_init, starts the decoding thread 0x00a27b90; the old name came from the thread-name string it passes; -> 0/-1/-2/-3 (platform census 2026-10-25, docs/formats/platform.md; movie); was PVideoPlaybackWin32__VideoDecodingThread
+0x00a282f0 function PVideoPlaybackWin32_play # guess: state 1, setPaused(false); no refs (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a28330 function PVideoPlaybackWin32_setVolume # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a28350 function PVideoPlaybackWin32_close # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a28430 function PVideoPlaybackWin32_terminate # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a284a0 function Phyre_PVideo_PVideoPlaybackWin32_updateTexture # fh v3:exact 0x00a284a0 Phyre::PVideo::PVideoPlaybackWin32::updateTexture
 0x00a28a40 function IggyMenu_dtor_IggyMenu       # structure: fastcall(this): restores IggyMenu_vftable, releases the Iggy player (+0x6c, +0x68) and frees with Phyre_PhyreFree; 24 callers are the IggyMenu subclasses' destructors and menu teardown, as the Switch's IggyMenu::~IggyMenu callers (FFEscMenu::~FFEscMenu, IconPanel::~IconPanel, ...)
 0x00a28ba0 function IggyMenu_callIggyAS3External # fh v3:exact 0x00a28ba0 IggyMenu::callIggyAS3External
@@ -13818,8 +14006,22 @@
 0x00a3d7c0 function AddrOfGlobal01a858cc_00a3d7c0 # auto-port shape (return address of global, cdecl): return &0x01a858cc; callers: ; name ours
 0x00a3d9b0 function IggyPlayer_QueueDraw_00a3d9b0 # fastcall(player) -> 0 or error: allocates an 8-byte render-thread command (0x005b5940(0x00a3d6d0, 8, &cmd)) holding the player and 0x00a3d9f0 (IggyPlayerReadyToTick under the critical section 0x01a858cc, then the draw): Iggy draws on PhyreEngine's render thread, where every captured Direct3D call is made; name ours (pc-ui2d)
 0x00a3dd00 function SetFields_00a3dd00           # auto-port shape (several stores: set field (constants, arguments, addresses), thiscall): u32[(a0 + 0xc)] = a3; u32[(a0 + 0x10)] = a4; u32[(a0 + 0x14)] = a1; u32[(a0 + 0x18)] = a2; return a2; callers: ; name ours
-0x00a3dd50 function StoreAddressToField_00a3dd50 # auto-port shape (store address to field, thiscall): u32[a0] = &0x00b7a9e4; callers:  and 4 more; name ours
-0x00a3e030 function SetFields_00a3e030           # auto-port shape (several stores: set field (constants, arguments, addresses), thiscall): u32[a0] = &0x00b7a9fc; u32[(a0 + 0x10)] = 0x0; return a0; callers: ; name ours
+0x00a3dd20 function CDataFrameQueue_ctor # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3dd50 function CDataFrameQueue_dtor # rename of StoreAddressToField_00a3dd50 (platform census 2026-10-25, docs/formats/platform.md; movie); was StoreAddressToField_00a3dd50
+0x00a3dd90 function CDataFrameQueue_Front # blocking (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3ddc0 function CDataFrameQueue_Pop # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3dde0 function CDataFrameQueue_Count # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3ddf0 function CDataFrameQueue_Init # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3dea0 function CDataFrameQueue_Close # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3dec0 function CDataFrameQueue_Reserve # blocking (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3df00 function CDataFrameQueue_Commit # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3df20 function CDataFrameQueue_Destroy # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3e030 function VbfMkvReader_ctor # rename of SetFields_00a3e030 (platform census 2026-10-25, docs/formats/platform.md; movie); was SetFields_00a3e030
+0x00a3e040 function VbfMkvReader_dtor # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3e150 function VbfMkvReader_Close # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3e1b0 function VbfMkvReader_Length # vtable slot 1 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3e1f0 function VbfMkvReader_Open # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3e2b0 function VbfMkvReader_Read # vtable slot 0 (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a3e9b0 function Phyre_PText_PUtilityText_GetRenderPassForTechnique # fh v3:exact 0x00a3e9b0 Phyre::PText::PUtilityText::GetRenderPassForTechnique
 0x00a40270 function Phyre_POccluderGeometry_POccluderGeometryObject_Bind # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'm_planeCount'; Switch 0x710080eec0 Phyre::POccluderGeometry::POccluderGeometryObject::Bind (symbols from Fahrenheit's server export)
 0x00a41210 function Phyre_POccluderGeometry_POccluderGeometryObject_CreateOccluderGeometryObject # layout+callees: sorts between Phyre_POccluderGeometry_POccluderGeometryObject_Bind and Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_POccluderGeometry_POccluderGeometryObject__Get, and its named callees match the Switch 0x710080f220 Phyre_POccluderGeometry_POccluderGeometryObject_CreateOccluderGeometryObject's (similarity 1.00: Phyre_PCluster_create); symbols from Fahrenheit's server export
@@ -14425,6 +14627,20 @@
 0x00a7c880 function TkMenuStartScene          # fh v3:exact 0x00a7c880
 0x00a7c8a0 function TkMenuStopScene           # fh v3:exact 0x00a7c8a0
 0x00a8d87a function crt_abs_thunk             # g_MagicImports slot 392: jmp [0x00b0c5b4] (MSVCR110 abs); hidden from the dump
+0x00a8f650 function vorbis_synthesis_headerin # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a8fd80 function vorbis_info_clear # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a8ffd0 function vorbis_info_init # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a90030 function vorbis_comment_clear # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a90420 function vorbis_comment_init # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a909e0 function vorbis_synthesis_read # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a90a10 function vorbis_synthesis_pcmout # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a90a70 function vorbis_synthesis_blockin # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a910e0 function vorbis_synthesis_init # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a917a0 function vorbis_dsp_clear # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a92040 function vorbis_block_clear # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a921b0 function vorbis_block_init # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a92460 function vorbis_synthesis # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00af9ba0 function FFXApplication_atexit_dtor # static FFXApplication (0x00c8fb78) destructor: vftable, WM_CLOSE when 0x00c8fae4 == 1, PApplication dtor; ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00b0d998 label FFXApplication_vftable       # fh v4:imported FFXApplication::vftable
 0x00b0d9cc label std_error_category_vftable   # fh v4:imported std::error_category::vftable
 0x00b0d9e8 label std__Generic_error_category_vftable # fh v4:imported std::_Generic_error_category::vftable
@@ -15984,6 +16200,7 @@
 0x00b486b8 label ViewerManager_vftable        # fh v4:imported ViewerManager::vftable
 0x00b486bc label g_ChrStrC001               # "c001", Tidus's model name (Ch_CbMapping)
 0x00b48e30 label AutoTestManager_vftable      # fh v4:imported AutoTestManager::vftable
+0x00b49b08 label g_FMVUnskippableIds # 16 u32 movie ids (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00b4a1dc label    s_LanguageManagerNotCreated # "sLanguageManager singleton is not created yet." (LocalizationManager_GetInstance)
 0x00b4a81c label Phyre_PClassDescriptorForType_Phyre_DynamicMeshDefaultImplmenetation__vftable # fh v4:imported Phyre::PClassDescriptorForType<Phyre::DynamicMeshDefaultImplmenetation>::vftable
 0x00b4a864 label Phyre_PClassDescriptorAbstract_Phyre_DynamicMeshDefaultImplmenetation__vftable # fh v4:imported Phyre::PClassDescriptorAbstract<Phyre::DynamicMeshDefaultImplmenetation>::vftable
@@ -16035,6 +16252,10 @@
 0x00b5b9fc label    g_AtelVersion                # build date and time string AtelGetVersion returns (__DATE__ " " __TIME__ style)
 0x00b5ec4f label    g_GsDefDrawEnv2           # i8 1: what sceGsSetDefDrawEnv2 returns; also read by MsBattleProcess, TkInit
 0x00b69fe0 label type_info_vftable            # fh v4:imported type_info::vftable
+0x00b6a214 label c_dfDIMouse2 # (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00b6a41c label c_dfDIKeyboard # (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00b6a624 label c_dfDIJoystick2 # (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00b6bddc label IID_IDirectInput8A # (platform census 2026-10-25, docs/formats/platform.md; input)
 0x00b6ed04 label btCollisionShape_vftable     # fh v4:imported btCollisionShape::vftable
 0x00b6ed44 label btConvexShape_vftable        # fh v4:imported btConvexShape::vftable
 0x00b6eda4 label btConvexInternalAabbCachingShape_vftable # fh v4:imported btConvexInternalAabbCachingShape::vftable
@@ -16441,6 +16662,7 @@
 0x00b7cb1c label std_basic_ostringstream_char_std_char_traits_char_std_allocator_char__vftable # fh v4:imported std::basic_ostringstream<char,std::char_traits<char>,std::allocator<char>_>::vftable
 0x00b7cb2c label std_basic_stringbuf_char_std_char_traits_char_std_allocator_char__vftable # fh v4:imported std::basic_stringbuf<char,std::char_traits<char>,std::allocator<char>_>::vftable
 0x00b7cb6c label std_basic_stringstream_char_std_char_traits_char_std_allocator_char__vftable # fh v4:imported std::basic_stringstream<char,std::char_traits<char>,std::allocator<char>_>::vftable
+0x00b7cba8 label g_SettingsPresets # [24 keys][LOW, MEDIUM, HIGH, CUSTOM] int32 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00b8f4b8 label    libogg_mask              # u32[33]: (1 << n) - 1, libogg's bitwise.c mask table (libogg_oggpack_*)
 0x00b8f790 label std_basic_istringstream_char_std_char_traits_char_std_allocator_char__vftable # fh v4:imported std::basic_istringstream<char,std::char_traits<char>,std::allocator<char>_>::vftable
 0x00b9208c label mkvparser_VideoTrack_vftable # fh v4:imported mkvparser::VideoTrack::vftable
@@ -16459,8 +16681,12 @@
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
 0x00c0b950 label    g_PThreadPoolThreadCount  # Phyre_PThreadPool_GetThreadCount's word; 1 in field (read 2026-10-25, cdsp0000); Phyre_PRendering_PRendererBase_renderMeshInstanceList takes its multithreaded branch only when it is not 0 and equals the count of the PApplication's renderer list (*g_PhyreApplication +0x48, 0 in field): never in these runs
 0x00c30e88 label    g_FrameVsyncs             # u32: vsyncs a frame (Phyre_PFramework_PWindowWin32Base_SetFlipVSyncInterval 0x00625090 writes it); Game_Main's limiter runs a frame each g_FrameVsyncs x 0.016683333333333335 s of Phyre_PTimerWin32_GetTime; name ours
+0x00c30e90 label g_PhyreKeyToDik # 96 Phyre key -> DIK bytes (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00c30f90 label g_CrashDumpEnabled # (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00c30f94 label NvOptimusEnablement          # fh v4:imported
 0x00c30f98 label AmdPowerXpressRequestHighPerformance # fh v4:imported
+0x00c30fa8 label g_PInputDeviceList # list head (tail 0x00c30fac) (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00c32270 label g_KeyAliases # 4 x {src, dst, latch}: RAlt/RCtrl/RShift/NumEnter -> LAlt/LCtrl/LShift/Enter (platform census 2026-10-25, docs/formats/platform.md; input)
 0x00c322a0 label    g_TexAnimPrefixG # char*: "G" (0x00b8f7bc), the first name prefix of graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0 and graphicTextureAnimationSetMaterialUV_00644150; name ours
 0x00c322a4 label    g_TexAnimPrefixAnimation # char*: "Animation" (0x00b0e104), their second prefix; name ours
 0x00c322a8 label    g_GraphicTextureVideoInfo # u16 graphicGetTextureVideoInfo returns
@@ -16470,6 +16696,7 @@
 0x00c33468 label    g_EternalCalmFirstMap     # first of the 7 Eternal Calm maps (a map = PS2 file number / 18, as CDfileSize_CD asks): isEternalCalmScene/Mgrp, getEternalCalmSceneName/Size subtract it
 0x00c334b8 label    g_EternalCalmSceneNames   # 7 pointers to "host0:/ffx_master/jppc/event/obj..." paths, indexed by getEternalCalmSceneName
 0x00c34408 label    g_ShadowSize              # ShadowManager_GetShadowSize
+0x00c34420 label g_MovieVolume # f32, default 1.0, SetVolume_006dabf0 (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00c3577c label g_SaveFilePrefix # pointer to L"ffx_" (the save file names "%s%s%03d", SaveDataMachine_ReadFile)
 0x00c35794 label g_AchievementRecords # 34 Steam achievement records of 400 bytes: +0 the API name (record 0 "ACH_COMPLETION_OF_FFX", the platinum), +0x184 byte achieved, +0x188 dword; StatsAndAchievements_SetAchievement_006f1900, AchievementTryObtainPlat (records 1..33); name ours
 0x00c38e18 label g_CameraDataWords # LoadCameraData's block size in words; 0x0076ee38 divides it by 42 (0xa8-byte records) for the frame bound; name ours
@@ -16628,9 +16855,21 @@
 0x00ca89b8 label    g_PMeshInstanceBounds_ClassDescriptor # PhyreEngine class descriptor: +0x18 name, +0x1c object size (0x24), +0x40 parent, +0x80 class id (146 on cdsp0000); 0x004ff6e0's class (M4 round 2)
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
+0x00cc9cd0 label g_InputRescan # (platform census 2026-10-25, docs/formats/platform.md; input, window)
+0x00cc9cd1 label g_WindowBorderless # (platform census 2026-10-25, docs/formats/platform.md; window)
+0x00cc9cd2 label g_WindowHosted # (platform census 2026-10-25, docs/formats/platform.md; window)
+0x00cc9cd3 label g_WindowNcDrag # (platform census 2026-10-25, docs/formats/platform.md; window)
+0x00cc9cd4 label g_DirectInput8 # (platform census 2026-10-25, docs/formats/platform.md; input, window)
 0x00cc9cd8 label    g_PhyreApplication        # Phyre_PFramework_PApplication_GetApplication; fog colour/near/far/limit +0x60..+0x7c, ambient +0x50, background +0x80, keyframe-anim byte +0x3ac, window size +0x26c/+0x270 (docs/formats/render.md); a pointer (GetApplication 0x00623b90 returns it); +0x50..+0x8f sampled by the reference captures as app+0x50 (graphicSetGlobalAmbientColor 0x00643270 writes +0x50/+0x54/+0x58, graphicGetFogColor 0x00641160 reads +0x60/+0x64/+0x68)
+0x00cc9ce0 label g_HostHwnd # (platform census 2026-10-25, docs/formats/platform.md; window)
+0x00cc9ce8 label g_hWnd # (platform census 2026-10-25, docs/formats/platform.md; input, window)
+0x00cc9cec label g_hWindowIcon # (platform census 2026-10-25, docs/formats/platform.md; window)
+0x00cc9cf0 label g_hMouseHook # (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
 0x00cc9d00 label    g_FrameLimiterLast        # f64: the last frame's time less g_AppStartTime (Game_Main 0x0062f34a: now - start - the overshoot clamped to one interval); the harness's fast_sleep steps the virtual clock to it + one interval; name ours
+0x00cca308 label g_MsgHostHwnd # (platform census 2026-10-25, docs/formats/platform.md; window)
+0x00cca30c label g_XInputPadCount # (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00cca310 label g_WindowDisplayInfo # (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00ccb170 label    g_Virtuos_InputManager    # the object Virtuos_InputManager_getInstance returns
 0x00ccb228 label    g_GraphicScreenDttOffset  # two floats: graphicScreenSetDttOffset / graphicScreenGetDttOffset
 0x00ccb248 label    g_EtBreathFlags              # op_et_bindeff2_breath_on sets bit 0 for characters 1 and 0x65
@@ -16673,6 +16912,8 @@
 0x00cdec1c label    g_SpecularMapParamsManager # SpecularMapParamsManager_GetInstance
 0x00cdec24 label    g_GradMeshSet             # the grad-mesh pool's current set (GetASpareGradMeshInstance)
 0x00cdec28 label    g_ShadowManager           # ShadowManager_getInstance
+0x00cded31 label g_FMVSkipped # set by handleInput's skip, cleared by initialize (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00cded3c label g_FMVPlayerManager # sFMVPlayerManager singleton (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00cded58 label    g_LocalizationManager     # the language manager (+4 language, TOGetFFXLang)
 0x00cdedf0 label    g_DynGeoFillBuffer        # graphicDynGeoFillBufferIsValid: *(*this) != 0
 0x00ce5170 label    g_FogEffectManager        # Phyre_FogEffectManager_GetInstance; graphicSetChrFogFade
@@ -16689,6 +16930,7 @@
 0x00ce7308 label g_SaveMachineBuffer # buffer to read into or write from (0x01597f70), SaveDataMachine_StartLoad
 0x00ce7310 label g_SaveMachineBusy # 1 from SaveDataMachine_StartLoad until the load is done
 0x00ce7318 label g_SortedSaveTable # 200 x 3 words, sorted by SortSaveTable_006f0fb0; name ours
+0x00ce81a8 label g_StatsAndAchievements # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
 0x00ce82ac label g_CameraData # the movie camera records LoadCameraData reads (0xa8 bytes per frame), null when none; UnloadCameraData frees it; read at 0x0076ee50 (movie frame); name ours
 0x00ce82b4 label    g_SpdCtrl_b4              # cleared by SpdCtrl_Init; the speed level, SpdCtrl_ScaleElapsedTime's index into g_SpdCtrlScales (0: off); name ours

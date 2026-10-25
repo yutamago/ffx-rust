@@ -793,6 +793,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-platform"
+version = "0.1.0"
+dependencies = [
+ "goblin",
+]
+
+[[package]]
 name = "ffx-postfx"
 version = "0.1.0"
 dependencies = [

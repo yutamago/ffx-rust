@@ -1,10 +1,12 @@
 # Movies (`ffx_movie`)
 
 The movie player is PC-port and PhyreEngine code that stays original
-(glue and library): `PhyFMVPlayerManager` (`0x006d6970..0x006dae00`) and
-`PVideoPlaybackWin32` (from `0x00a26f30`: WebM demuxing, libvpx
-video, Vorbis audio played through an FMOD stream, `0x00a273b0` and its
-read callback `0x00a27170`).
+(glue and library): `PhyFMVPlayerManager` (`0x006d6970..0x006daec0`) and
+`PVideoPlaybackWin32` (`0x00a26e70..0x00a28890`: WebM demuxing with
+libwebm's mkvparser, libvpx 1.4.0 VP8 video, libVorbis 1.3.5 audio played
+through an FMOD stream, `0x00a273b0` and its read callback `0x00a27170`).
+Its boundary, threads, timing and every import it calls are in
+`docs/formats/platform.md` ("Movies").
 
 ## `FFXSamp0UnitMatrix` (`0x0093d900`)
 
