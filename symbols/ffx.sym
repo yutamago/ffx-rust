@@ -592,6 +592,7 @@
 0x004cb560 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PShadowCaster__Get_004cb560 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PShadowCaster *>::Get" (its own __FUNCTION__ in an error print)
 0x004cb640 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PShadowCaster_PShadowSplit__Get_004cb640 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PShadowCaster::PShadowSplit *>::Get" (its own __FUNCTION__ in an error print)
 0x004cc0c0 function PMatrix4_Inverse_004cc0c0 # cdecl(out, m): the inverse of the 4x4 m (its 3x3 and translation rows into a local, 0x004cc890, then 0x004c9360 into out), returns out; PhyreScene_Project3DPointOntoScreen's call; name ours
+0x004cc890 function Vectormath_Transform3_inverse # m4-chars: inverse(Transform3); WorldInverse (docs/formats/scene-chars.md)
 0x004ceac0 function cosf                         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710087ab28 cosf, 7 votes, round 1
 0x004ceae0 function sinf                         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100882ae8 sinf, 5 votes, round 2
 0x004cf7c0 function Phyre_PRendering_PNodeContext_Bind # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'm_packedSwitches'; Switch 0x71000ea380 Phyre::PRendering::PNodeContext::Bind (symbols from Fahrenheit's server export)
@@ -670,6 +671,7 @@
 0x004f5920 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PMeshInstanceSegmentContext__Get_004f5920 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PMeshInstanceSegmentContext *>::Get" (its own __FUNCTION__ in an error print)
 0x004f5a00 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PMeshInstanceSegmentStreamBinding__Get_004f5a00 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PMeshInstanceSegmentStreamBinding *>::Get" (its own __FUNCTION__ in an error print)
 0x004f6ef0 function Phyre_PRendering_PMeshInstance_computeJointMatrices # joint 0 = FromMatrix3x4(*(inst +4)) (identity when inst +0x6c bit 0), the others through 0x004f6fc0: the model matrix (semantic 0x82) and BoneTransforms' joint worlds; name ours (M4 T4, docs/formats/scene.md)
+0x004f6fc0 function PMeshInstance_computeJointMatrix # m4-chars: called by computeJointMatrices 0x004f6ef0; joint = parent joint . instance +0xc matrix, parents by index table at mesh +0x2c (docs/formats/scene-chars.md)
 0x004f8010 function Phyre_PClassDescriptorForType_Phyre_PScene_PNode__getPointerFromScriptContext # fh switch:bsim1.00 0x71000f1c20 Phyre::PClassDescriptorForType<Phyre::PScene::PNode>::getPointerFromScriptContext
 0x004f93f0 function PMatrix4_Transpose_004f93f0    # out = transpose(m): the *it/*t shader semantics; name ours (M4 T4)
 0x004f96a0 function Phyre_PRendering_PMeshInstance_updateBoundsFromSkeleton # fh v3:exact 0x004f9810 Phyre::PRendering::PMeshInstance::updateBoundsFromSkeleton
@@ -1038,6 +1040,7 @@
 0x00594f40 function Phyre_PRendering_PRenderInterfaceNVN_getViewportSize # fh switch:bsim1.00 0x710003b4d0 Phyre::PRendering::PRenderInterfaceNVN::getViewportSize
 0x00595f90 function Phyre_PRendering_PTexture2DD3D11_isBound # fh v3:bsim1.00 0x00596120 Phyre::PRendering::PTexture2DD3D11::isBound
 0x00598a30 function Phyre_PRendering_PShaderPassNVN_releaseShaderPass # fh switch:bsim1.00 0x710002db80 Phyre::PRendering::PShaderPassNVN::releaseShaderPass
+0x0059a650 function PRenderThread_copyConstantBuffer # m4-chars: render-thread constant-buffer copy; transposes every float4x4/float4x3 location entry, stops at a 0xffffffff first word (docs/formats/scene-chars.md)
 0x0059b3d0 function Phyre_PRendering_PShaderProgramBindingNVN_setTextureParameters # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Invalid constant buffer location : %d'; Switch 0x7100032bc0 Phyre::PRendering::PShaderProgramBindingNVN::setTextureParameters (symbols from Fahrenheit's server export)
 0x0059cc40 function Phyre_PRendering_PTexture2DD3D11_unbind # fh v3:exact 0x0059cdd0 Phyre::PRendering::PTexture2DD3D11::unbind
 0x0059e520 function TrophyManager_Install     # thiscall(this, arg), ret 4: xor eax,eax (nothing to install on PC); fh switch:bsim1.00 0x710023fda0 TrophyManager::Install
