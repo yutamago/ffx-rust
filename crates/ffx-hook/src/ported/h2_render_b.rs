@@ -22,6 +22,7 @@ use ffx_prender::declare as dc;
 use ffx_prender::descriptor::{Init, bridge as d};
 use ffx_prender::dtor::bridge as dt;
 use ffx_prender::h2_more::bridge as hm;
+use ffx_prender::h2_more2::bridge as h2;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -1378,6 +1379,89 @@ ported! {
     /// `Phyre_GetNamedSemanticDescriptor_004d9b80`.
     Phyre_GetNamedSemanticDescriptor_004d9b80 @ 0x004d_9b80 => extern "C" fn s_004d9b80() -> u32 {
         hm::static_once_args(&mut mem(), 0x00ca_5728, 0x00ca_56f4, 0x005a_0200, &NAMED_SEMANTIC_ARGS, 0x00b2_062c, 0x00af_ed30)
+    }
+    /// `Phyre_WaitAndClear_0055e060`.
+    Phyre_WaitAndClear_0055e060 @ 0x0055_e060 => extern "thiscall" fn s_0055e060(a0: u32) {
+        h2::wait_and_clear(&mut mem(), a0);
+    }
+    /// `PBufferD3D11_dtor_00584ea0`.
+    PBufferD3D11_dtor_00584ea0 @ 0x0058_4ea0 => extern "thiscall" fn s_00584ea0(a0: u32) -> u32 {
+        h2::release_buffer(&mut mem(), a0)
+    }
+    /// `Phyre_PInstanceList_freeBuffer`.
+    Phyre_PInstanceList_freeBuffer @ 0x0057_64a0 => extern "thiscall" fn s_005764a0(a0: u32) {
+        let mut fr = super::StackFrame::<7>::new();
+        h2::free_buffer(&mut mem(), a0, fr.at());
+    }
+    /// `Phyre_PDynamicMeshInstanceSub_scalarDtor_004fb770`.
+    Phyre_PDynamicMeshInstanceSub_scalarDtor_004fb770 @ 0x004f_b770 => extern "thiscall" fn s_004fb770(a0: u32, a1: u32) -> u32 {
+        h2::dynamic_dtor(&mut mem(), a0, a1)
+    }
+    /// `Phyre_PDynamicMeshInstanceSub_constructInstance_004fc630`.
+    Phyre_PDynamicMeshInstanceSub_constructInstance_004fc630 @ 0x004f_c630 => extern "thiscall" fn s_004fc630(_a0: u32, a1: u32) -> u8 {
+        h2::construct_dynamic(&mut mem(), a1)
+    }
+    /// `Phyre_FreePairs_004e4df0`.
+    Phyre_FreePairs_004e4df0 @ 0x004e_4df0 => extern "C" fn s_004e4df0(a0: u32, a1: u32) {
+        h2::free_pairs(&mut mem(), a0, a1);
+    }
+    /// `Phyre_Vec3Max_004f84f0`.
+    Phyre_Vec3Max_004f84f0 @ 0x004f_84f0 => extern "C" fn s_004f84f0(a0: u32, a1: u32, a2: u32) -> u32 {
+        h2::vec3_select(&mut mem(), a0, a1, a2, true)
+    }
+    /// `Phyre_Vec3Min_004f8580`.
+    Phyre_Vec3Min_004f8580 @ 0x004f_8580 => extern "C" fn s_004f8580(a0: u32, a1: u32, a2: u32) -> u32 {
+        h2::vec3_select(&mut mem(), a0, a1, a2, false)
+    }
+    /// `Phyre_Ctor_00583240`.
+    Phyre_Ctor_00583240 @ 0x0058_3240 => extern "thiscall" fn s_00583240(a0: u32) -> u32 {
+        h2::ctor_block(&mut mem(), a0, 0x0049_f990, 0xc, 0x10, 4, &[0x38, 0x20, 0x24, 0x28, 0x2c, 0x30, 0x34], None)
+    }
+    /// `PBufferD3D11_destructInstance_00592780`.
+    PBufferD3D11_destructInstance_00592780 @ 0x0059_2780 => extern "thiscall" fn s_00592780(_a0: u32, a1: u32) -> u8 {
+        h2::destruct_buffer(&mut mem(), a1)
+    }
+    /// `Phyre_PClassDescriptor_PTexture2DD3D11_constructInstance_0058e820`.
+    Phyre_PClassDescriptor_PTexture2DD3D11_constructInstance_0058e820 @ 0x0058_e820 => extern "thiscall" fn s_0058e820(_a0: u32, a1: u32) -> u8 {
+        h2::construct_texture2d(&mut mem(), a1)
+    }
+    /// `Phyre_Ctor_00584400`.
+    Phyre_Ctor_00584400 @ 0x0058_4400 => extern "thiscall" fn s_00584400(a0: u32) -> u32 {
+        h2::ctor_block(&mut mem(), a0, 0x004c_6070, 0x20, 0x24, 5, &[0x64], Some((0x38, 0x2c)))
+    }
+    /// `Phyre_Ctor_005841a0`.
+    Phyre_Ctor_005841a0 @ 0x0058_41a0 => extern "thiscall" fn s_005841a0(a0: u32) -> u32 {
+        h2::ctor_block(&mut mem(), a0, 0x0050_1c40, 0x14, 0x18, 5, &[0x44, 0x2c, 0x30, 0x34, 0x38, 0x3c, 0x40], None)
+    }
+    /// `Phyre_Ctor_005842c0`.
+    Phyre_Ctor_005842c0 @ 0x0058_42c0 => extern "thiscall" fn s_005842c0(a0: u32) -> u32 {
+        h2::ctor_block(&mut mem(), a0, 0x004c_47a0, 0x28, 0x2c, 5, &[0x64, 0x40, 0x44, 0x48, 0x4c, 0x50, 0x54, 0x58, 0x5c, 0x60], None)
+    }
+    /// `PShaderProgramD3D11_dtor_005856b0`.
+    PShaderProgramD3D11_dtor_005856b0 @ 0x0058_56b0 => extern "thiscall" fn s_005856b0(a0: u32) -> u32 {
+        h2::program_dtor(&mut mem(), a0)
+    }
+    /// `Phyre_FreeTwoArrays_00585610`.
+    Phyre_FreeTwoArrays_00585610 @ 0x0058_5610 => extern "thiscall" fn s_00585610(a0: u32) {
+        h2::free_two_arrays(&mut mem(), a0);
+    }
+    /// `Phyre_PRendering_PDynamicMeshInstance_Bind`.
+    Phyre_PRendering_PDynamicMeshInstance_Bind @ 0x004f_a540 => extern "C" fn s_004fa540() -> u32 {
+        h2::dynamic_mesh_bind(&mut mem())
+    }
+    /// `PRendererD3D11_setViewport_0058c790`.
+    PRendererD3D11_setViewport_0058c790 @ 0x0058_c790 => extern "thiscall" fn s_0058c790(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u32 {
+        let mut fr = super::StackFrame::<7>::new();
+        h2::set_viewport_rect(&mut mem(), a0, [a1, a2, a3, a4], fr.at())
+    }
+    /// `PRendererD3D11_setTargetClearColor_00599f30`.
+    PRendererD3D11_setTargetClearColor_00599f30 @ 0x0059_9f30 => extern "thiscall" fn s_00599f30(a0: u32, a1: u32, a2: u32) -> u32 {
+        let mut fr = super::StackFrame::<4>::new();
+        h2::set_target_color(&mut mem(), a0, a1, a2, fr.at())
+    }
+    /// `Phyre_NewConstantBuffer_004f49d0`.
+    Phyre_NewConstantBuffer_004f49d0 @ 0x004f_49d0 => extern "C" fn s_004f49d0() -> u32 {
+        h2::new_constant_buffer(&mut mem())
     }
 }
 

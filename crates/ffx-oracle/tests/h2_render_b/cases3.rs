@@ -626,7 +626,492 @@ pub const CASES: &[Case] = &[
         gap: 0,
         writes: &[],
     },
+    Case {
+        name: "Phyre_WaitAndClear_0055e060",
+        addr: 0x0055_e060,
+        conv: K::T,
+        kinds: "p",
+        out: O::None,
+        callees: &[
+            (0x0056_4680, 0, 0, true),
+            (0x0056_48c0, 0, 0, true),
+            (0x0042_fb20, 1, 0, false),
+        ],
+        prep: |e, r, a| prep_sharray_at(e, r, a, 0x14),
+        port: |g, a| {
+            h2::wait_and_clear(g, a[0]);
+            0
+        },
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "PBufferD3D11_dtor_00584ea0",
+        addr: 0x0058_4ea0,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[(0x0050_32c0, 0, 0, true)],
+        prep: |e, r, a| prep_com_slots(e, r, a, 0, &[0x10, 0xc, 8]),
+        port: |g, a| h2::release_buffer(g, a[0]),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PInstanceList_freeBuffer",
+        addr: 0x0057_64a0,
+        conv: K::T,
+        kinds: "p",
+        out: O::None,
+        callees: &[(0x0042_fb20, 1, 0, false)],
+        prep: prep_free_buffer,
+        port: |g, a| {
+            let f = g.frame();
+            h2::free_buffer(g, a[0], f);
+            0
+        },
+        frame: 0x1c,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PDynamicMeshInstanceSub_scalarDtor_004fb770",
+        addr: 0x004f_b770,
+        conv: K::T,
+        kinds: "pb",
+        out: O::U32,
+        callees: &[(0x0042_fb20, 1, 0, false), (0x004f_a470, 0, 0, true)],
+        prep: no_prep,
+        port: |g, a| h2::dynamic_dtor(g, a[0], a[1]),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PDynamicMeshInstanceSub_constructInstance_004fc630",
+        addr: 0x004f_c630,
+        conv: K::T,
+        kinds: "vn",
+        out: O::U8,
+        callees: &[(0x0043_cbb0, 0, 0, true), (0x004f_a420, 1, 1, true)],
+        prep: |e, r, _| {
+            if r.chance(4) {
+                e.set_ret(0x0043_cbb0, 4);
+            }
+        },
+        port: |g, a| u32::from(h2::construct_dynamic(g, a[1])),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_FreePairs_004e4df0",
+        addr: 0x004e_4df0,
+        conv: K::C,
+        kinds: "nc",
+        out: O::None,
+        callees: &[(0x0042_fb20, 1, 0, false)],
+        prep: no_prep,
+        port: |g, a| {
+            h2::free_pairs(g, a[0], a[1]);
+            0
+        },
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_Vec3Max_004f84f0",
+        addr: 0x004f_84f0,
+        conv: K::C,
+        kinds: "ppp",
+        out: O::U32,
+        callees: &[],
+        prep: prep_vec3,
+        port: |g, a| h2::vec3_select(g, a[0], a[1], a[2], true),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_Vec3Min_004f8580",
+        addr: 0x004f_8580,
+        conv: K::C,
+        kinds: "ppp",
+        out: O::U32,
+        callees: &[],
+        prep: prep_vec3,
+        port: |g, a| h2::vec3_select(g, a[0], a[1], a[2], false),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_Ctor_00583240",
+        addr: 0x0058_3240,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[(0x0049_f990, 0, 0, true)],
+        prep: no_prep,
+        port: |g, a| {
+            h2::ctor_block(
+                g,
+                a[0],
+                0x0049_f990,
+                0xc,
+                0x10,
+                4,
+                &[0x38, 0x20, 0x24, 0x28, 0x2c, 0x30, 0x34],
+                None,
+            )
+        },
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "PBufferD3D11_destructInstance_00592780",
+        addr: 0x0059_2780,
+        conv: K::T,
+        kinds: "vp",
+        out: O::U8,
+        callees: &[(0x0050_32c0, 0, 0, true)],
+        prep: |e, r, a| prep_com_slots(e, r, a, 1, &[0x10, 0xc, 8]),
+        port: |g, a| u32::from(h2::destruct_buffer(g, a[1])),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PClassDescriptor_PTexture2DD3D11_constructInstance_0058e820",
+        addr: 0x0058_e820,
+        conv: K::T,
+        kinds: "vn",
+        out: O::U8,
+        callees: &[
+            (0x004c_2f90, 0, 0, true),
+            (0x0058_b070, 2, 0, false),
+            (0x0094_964c, 3, 0, false),
+        ],
+        prep: no_prep,
+        port: |g, a| u32::from(h2::construct_texture2d(g, a[1])),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_Ctor_00584400",
+        addr: 0x0058_4400,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[(0x004c_6070, 0, 0, true), (0x0094_964c, 3, 0, false)],
+        prep: no_prep,
+        port: |g, a| {
+            h2::ctor_block(
+                g,
+                a[0],
+                0x004c_6070,
+                0x20,
+                0x24,
+                5,
+                &[0x64],
+                Some((0x38, 0x2c)),
+            )
+        },
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_Ctor_005841a0",
+        addr: 0x0058_41a0,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[(0x0050_1c40, 0, 0, true)],
+        prep: no_prep,
+        port: |g, a| {
+            h2::ctor_block(
+                g,
+                a[0],
+                0x0050_1c40,
+                0x14,
+                0x18,
+                5,
+                &[0x44, 0x2c, 0x30, 0x34, 0x38, 0x3c, 0x40],
+                None,
+            )
+        },
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_Ctor_005842c0",
+        addr: 0x0058_42c0,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[(0x004c_47a0, 0, 0, true)],
+        prep: no_prep,
+        port: |g, a| {
+            h2::ctor_block(
+                g,
+                a[0],
+                0x004c_47a0,
+                0x28,
+                0x2c,
+                5,
+                &[0x64, 0x40, 0x44, 0x48, 0x4c, 0x50, 0x54, 0x58, 0x5c, 0x60],
+                None,
+            )
+        },
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "PShaderProgramD3D11_dtor_005856b0",
+        addr: 0x0058_56b0,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[
+            (0x0059_c9c0, 0, 0, true),
+            (0x0058_8190, 2, 0, false),
+            (0x0058_5610, 0, 0, true),
+        ],
+        prep: |e, r, a| {
+            a[0] = e.pool + 4 * r.below(0x380);
+            let n = r.below(4) | if r.chance(2) { 0x8000_0000 } else { 0 };
+            e.w32(a[0] + 0x4e0, n);
+        },
+        port: |g, a| h2::program_dtor(g, a[0]),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_FreeTwoArrays_00585610",
+        addr: 0x0058_5610,
+        conv: K::T,
+        kinds: "p",
+        out: O::None,
+        callees: &[(0x0042_fb20, 1, 0, false)],
+        prep: |e, r, a| {
+            prep_sharray_at(e, r, a, 0xc);
+            prep_sharray_at(e, r, a, 4);
+        },
+        port: |g, a| {
+            h2::free_two_arrays(g, a[0]);
+            0
+        },
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PRendering_PDynamicMeshInstance_Bind",
+        addr: 0x004f_a540,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_95b0, 1, 0, false),
+            (0x0057_52a0, 6, 6, true),
+            (0x0094_9207, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+        ],
+        prep: |e, r, _| prep_guard(e, r, 0x00ca_7fe8),
+        port: |g, _| h2::dynamic_mesh_bind(g),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "PRendererD3D11_setViewport_0058c790",
+        addr: 0x0058_c790,
+        conv: K::T,
+        kinds: "pvvvv",
+        out: O::U32,
+        callees: &[],
+        prep: prep_viewport,
+        port: |g, a| {
+            let f = g.frame();
+            h2::set_viewport_rect(g, a[0], [a[1], a[2], a[3], a[4]], f)
+        },
+        frame: 0x1c,
+        gap: 4,
+        writes: &[],
+    },
+    Case {
+        name: "PRendererD3D11_setTargetClearColor_00599f30",
+        addr: 0x0059_9f30,
+        conv: K::T,
+        kinds: "pnc",
+        out: O::U32,
+        callees: &[(0x005b_3620, 0, 0, true), (0x005b_3640, 0, 0, true)],
+        prep: |e, r, _| {
+            let p = e.ptr(r);
+            e.set_ret(0x005b_3620, p);
+        },
+        port: |g, a| {
+            let f = g.frame();
+            h2::set_target_color(g, a[0], a[1], a[2], f)
+        },
+        frame: 0x10,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_NewConstantBuffer_004f49d0",
+        addr: 0x004f_49d0,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0042_fb40, 1, 0, false),
+            (0x0058_3240, 0, 0, true),
+            (0x0059_9a80, 1, 1, true),
+            (0x0059_5f70, 0, 0, true),
+            (0x0058_cf20, 0, 0, true),
+        ],
+        prep: |e, r, _| {
+            let p = if r.chance(4) { 0 } else { e.ptr(r) };
+            e.set_ret(0x0042_fb40, p);
+            if p != 0 && r.chance(3) {
+                let n = 8 | if r.chance(2) { 0x8000_0000 } else { 0 };
+                e.w32(p + 0xc, n);
+            }
+            let b = if r.chance(2) { 0x100 } else { 1 };
+            e.set_ret(0x0059_5f70, b);
+        },
+        port: |g, _| h2::new_constant_buffer(g),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
 ];
+
+/// Argument `i` low in the pool (apart from the objects) and COM
+/// objects (or nulls) whose `Release` pops one word at its `offs`.
+fn prep_com_slots(e: &mut Env, rng: &mut Rng, a: &mut [u32], i: usize, offs: &[u32]) {
+    a[i] = e.pool + 4 * rng.below(0x400);
+    let p = a[i];
+    for (k, &off) in (0u32..).zip(offs) {
+        let obj = if rng.chance(3) {
+            0
+        } else {
+            e.pool + POOL_PTRS + 0x100 * k
+        };
+        e.w32(p + off, obj);
+        if obj != 0 {
+            let vt = obj + 0x80;
+            let r = e.ret_word(rng);
+            let f = e.handler(1, r);
+            e.w32(obj, vt);
+            e.w32(vt + 8, f);
+        }
+    }
+}
+
+/// `PInstanceList::freeBuffer`: the scene cursor `SetNode` fills (from a
+/// block in the pool: slot, free slot, stride, count, offset), its free
+/// chain among the slots, the type whose method 11 pops one word.
+fn prep_free_buffer(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let src = e.pool + POOL_PTRS + 0xe00;
+    e.custom(0x0044_1dc0, |n| {
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xa3]; // mov eax, [esp+4]; mov [n], eax
+        c.extend(le(n));
+        for i in 0..5u8 {
+            c.push(0xa1);
+            c.extend(le(src + 4 * u32::from(i))); // mov eax, [src+4i]
+            c.extend([0x89, 0x41, 4 * i]); // mov [ecx+4i], eax
+        }
+        c.extend([0xc2, 0x04, 0x00]);
+        c
+    });
+    let slots = src + 0x40;
+    let stride = 4 * (1 + rng.below(3));
+    let count = rng.below(6);
+    let mut free: Vec<u32> = (1..=count)
+        .filter(|_| rng.chance(3))
+        .map(|i| slots + stride * i)
+        .collect();
+    free.sort_unstable();
+    for (k, &f) in free.iter().enumerate() {
+        let next = free.get(k + 1).copied().unwrap_or_else(|| e.ptr(rng));
+        e.w32(f, next);
+    }
+    let head = free.first().copied().unwrap_or_else(|| e.ptr(rng));
+    let off = rng.below(0x40);
+    for (i, w) in (0u32..).zip([slots, head, stride, count, off]) {
+        e.w32(src + 4 * i, w);
+    }
+    let ty = e.pool + POOL_PTRS + 0x300;
+    let vt = ty + 0x40;
+    e.w32(a[0] + 0x2c, ty);
+    e.w32(ty, vt);
+    let r = e.ret_word(rng);
+    let h = e.handler(1, r);
+    e.w32(vt + 0x2c, h);
+}
+
+/// Two 3-vectors of floats (NaNs, equal pairs, signed zeros).
+fn prep_vec3(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let pick = |rng: &mut Rng| -> u32 {
+        match rng.below(6) {
+            0 if rng.chance(2) => [0, 0x8000_0000][rng.below(2) as usize],
+            0 => [
+                0x7fc0_0000,
+                0xffc0_1234,
+                0,
+                0x8000_0000,
+                0x7f80_0000,
+                0xff80_0000,
+            ][rng.below(6) as usize],
+            1 => 0x3f80_0000,
+            _ => ((rng.below(400) as f32 - 200.0) / 3.0).to_bits(),
+        }
+    };
+    for i in 0..3 {
+        let x = pick(rng);
+        let mut y = if rng.chance(4) { x } else { pick(rng) };
+        // equal but different: which one wins shows
+        if rng.chance(5) {
+            y = x ^ 0x8000_0000;
+            if x & 0x7fff_ffff != 0 {
+                y = x;
+            }
+        }
+        e.w32(a[1] + 4 * i, x);
+        e.w32(a[2] + 4 * i, y);
+    }
+}
+
+/// `setViewport`: the renderer low in the pool (its height word at
+/// `+0x1338`), the context at `+0x70` whose method 44 pops three words.
+fn prep_viewport(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    a[0] = e.pool + 4 * rng.below(0x100);
+    let hgt = rng.below(0x800);
+    e.w32(a[0] + 0x1338, hgt);
+    let ctx = e.pool + POOL_PTRS + 0x200;
+    let vt = ctx + 0x40;
+    e.w32(a[0] + 0x70, ctx);
+    e.w32(ctx, vt);
+    let r = e.ret_word(rng);
+    let h = e.handler(3, r);
+    e.w32(vt + 0xb0, h);
+    for w in &mut a[1..5] {
+        if rng.chance(2) {
+            *w = rng.below(0x1000);
+        }
+    }
+}
 
 /// The shims' call of `0x004d9950`/`0x004d9b80`.
 fn named_semantic(g: &mut G) -> u32 {

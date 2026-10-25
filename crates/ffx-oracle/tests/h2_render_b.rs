@@ -43,6 +43,7 @@ use ffx_prender::declare as dc;
 use ffx_prender::descriptor::{Init, bridge as d};
 use ffx_prender::dtor::bridge as dt;
 use ffx_prender::h2_more::bridge as hm;
+use ffx_prender::h2_more2::bridge as h2;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
