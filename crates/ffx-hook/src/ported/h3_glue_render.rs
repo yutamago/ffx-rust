@@ -5,11 +5,12 @@
 //! Threads: the main thread, and the loader's `asyncFFXInitialize` job;
 //! the shims keep no state.
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 use ffx_prender::glue::bridge as g;
 use ffx_prender::glue2::bridge as g2;
 use ffx_prender::glue3::bridge as g3;
 use ffx_prender::glue4::bridge as g4;
+use ffx_prender::glue5::bridge as g5;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -664,5 +665,93 @@ ported! {
     /// `RenderDelegationHelper_setDataToFreeList(this, data)`.
     RenderDelegationHelper_setDataToFreeList @ 0x006a_e1a0 => extern "thiscall" fn set_data_to_free_list(this: u32, data: u32) -> u32 {
         g4::set_data_to_free_list(&mut mem(), this, data)
+    }
+
+    // ---- round 2, batch 5 (ffx_prender::glue5) ----
+    /// `PhyreSceneCursor_Next_006377a0(this)`.
+    PhyreSceneCursor_Next_006377a0 @ 0x0063_77a0 => extern "thiscall" fn cursor_next_6377a0(this: u32) -> u32 {
+        g5::cursor_next(&mut mem(), this, ffx_prender::glue5::CURSOR_IS_VALID_637F80)
+    }
+    /// `PhyreSceneCursor_Next_006b22e0(this)`.
+    PhyreSceneCursor_Next_006b22e0 @ 0x006b_22e0 => extern "thiscall" fn cursor_next_6b22e0(this: u32) -> u32 {
+        g5::cursor_next(&mut mem(), this, ffx_prender::glue5::CURSOR_IS_VALID_6B28F0)
+    }
+    /// `PhyreSceneCursor_Begin_00637730(this)`.
+    PhyreSceneCursor_Begin_00637730 @ 0x0063_7730 => extern "thiscall" fn cursor_begin_637730(this: u32) -> u32 {
+        g5::cursor_begin(&mut mem(), this, ffx_prender::glue5::CURSOR_IS_VALID_637F80)
+    }
+    /// `PhyreSceneCursor_Begin_0065eb60(this)`.
+    PhyreSceneCursor_Begin_0065eb60 @ 0x0065_eb60 => extern "thiscall" fn cursor_begin_65eb60(this: u32) -> u32 {
+        g5::cursor_begin(&mut mem(), this, ffx_prender::glue5::CURSOR_IS_VALID_660270)
+    }
+    /// `PhyreSceneCursor_Begin_006b2230(this)`.
+    PhyreSceneCursor_Begin_006b2230 @ 0x006b_2230 => extern "thiscall" fn cursor_begin_6b2230(this: u32) -> u32 {
+        g5::cursor_begin(&mut mem(), this, ffx_prender::glue5::CURSOR_IS_VALID_6B28F0)
+    }
+    /// `PArray_pushBack20_006562f0(this, entry)`.
+    PArray_pushBack20_006562f0 @ 0x0065_62f0 => extern "thiscall" fn parray_push_back20(this: u32, entry: u32) -> u32 {
+        g5::parray_push_back20(&mut mem(), this, entry)
+    }
+    /// `PhyreScene_deleteObjectInCluster_0065a250(this, object, cluster)`.
+    PhyreScene_deleteObjectInCluster_0065a250 @ 0x0065_a250 => extern "thiscall" fn scene_delete_object_in_cluster(this: u32, object: u32, cluster: u32) -> u32 {
+        g5::scene_delete_object_in_cluster(&mut mem(), this, object, cluster)
+    }
+    /// `std_vector_push_back_00667620(this, value)`.
+    std_vector_push_back_00667620 @ 0x0066_7620 => extern "thiscall" fn vector_push_back(this: u32, value: u32) {
+        g5::vector_push_back(&mut mem(), this, value);
+    }
+    /// `graphicEnableChrClusterDelayRelease()`.
+    graphicEnableChrClusterDelayRelease @ 0x0064_0090 => extern "C" fn enable_chr_cluster_delay_release() -> u32 {
+        g5::enable_chr_cluster_delay_release(&mut mem())
+    }
+    /// `graphicVFX2DSetup(lo, hi)`.
+    graphicVFX2DSetup @ 0x0064_4b50 => extern "C" fn vfx_2d_setup(lo: u32, hi: u32) -> u32 {
+        g5::vfx_2d_setup(&mut mem(), lo, hi)
+    }
+    /// `PhyreScene_onMenuTextureLoaded(cluster)`: the argument's slot in a
+    /// frame of its own.
+    PhyreScene_onMenuTextureLoaded @ 0x0066_6740 => extern "C" fn scene_on_menu_texture_loaded(cluster: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        g5::scene_on_menu_texture_loaded(&mut mem(), f.at(), cluster)
+    }
+    /// `VfxShaderManager_onShaderLoaded_006c13e0(cluster, task)`.
+    VfxShaderManager_onShaderLoaded_006c13e0 @ 0x006c_13e0 => extern "C" fn vfx_shader_on_loaded(cluster: u32, task: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        g5::vfx_shader_on_loaded(&mut mem(), f.at(), cluster, task)
+    }
+    /// `PhyreScene_setMaterialVisibilityBySetAlpha(material, visible)`.
+    PhyreScene_setMaterialVisibilityBySetAlpha @ 0x0066_d5c0 => extern "stdcall" fn scene_set_material_visibility(material: u32, visible: u32) {
+        let mut f = StackFrame::<4>::new();
+        g5::scene_set_material_visibility(&mut mem(), f.at() + 0x10, material, visible);
+    }
+    /// `graphicProcessWindowsMessage()`.
+    graphicProcessWindowsMessage @ 0x0064_2860 => extern "C" fn process_windows_message() -> u32 {
+        let mut f = StackFrame::<8>::new();
+        g5::process_windows_message(&mut mem(), f.at() + 0x1c)
+    }
+    /// `BrokenScreenEffect_setConstant_006d46a0(this, 4 words)`.
+    BrokenScreenEffect_setConstant_006d46a0 @ 0x006d_46a0 => extern "thiscall" fn broken_set_constant_a0(this: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        let mut f = StackFrame::<6>::new();
+        g5::broken_set_constant(&mut mem(), f.at(), this, [a, b, c, d], 0xa0)
+    }
+    /// `BrokenScreenEffect_setConstant_006d4710(this, 4 words)`.
+    BrokenScreenEffect_setConstant_006d4710 @ 0x006d_4710 => extern "thiscall" fn broken_set_constant_a4(this: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        let mut f = StackFrame::<6>::new();
+        g5::broken_set_constant(&mut mem(), f.at(), this, [a, b, c, d], 0xa4)
+    }
+    /// `ClassVFXRenderDataTable_Remove_0069fc10(this, lo, hi)`.
+    ClassVFXRenderDataTable_Remove_0069fc10 @ 0x0069_fc10 => extern "thiscall" fn vfx_table_remove(this: u32, lo: u32, hi: u32) -> u32 {
+        let mut f = StackFrame::<5>::new();
+        g5::vfx_table_remove(&mut mem(), f.at() + 4, this, lo, hi)
+    }
+    /// `ClassVFXRenderDataTable_Insert(this, lo, hi, geometry)`.
+    ClassVFXRenderDataTable_Insert @ 0x0069_f890 => extern "thiscall" fn vfx_table_insert(this: u32, lo: u32, hi: u32, geometry: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        g5::vfx_table_insert(&mut mem(), f.at() + 0x10, this, lo, hi, geometry)
+    }
+    /// `MeshInstance_isVisible_00663cc0(this, matrix)`.
+    MeshInstance_isVisible_00663cc0 @ 0x0066_3cc0 => extern "thiscall" fn mesh_instance_is_visible(this: u32, matrix: u32) -> u32 {
+        let mut f = StackFrame::<0x20>::new();
+        g5::mesh_instance_is_visible(&mut mem(), f.at() + 0x80, this, matrix)
     }
 }
