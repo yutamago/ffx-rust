@@ -23,6 +23,7 @@
     clippy::similar_names
 )]
 
+pub mod descriptor;
 pub mod mesh;
 pub mod sort;
 pub mod thread;
