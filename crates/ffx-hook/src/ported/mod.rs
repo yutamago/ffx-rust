@@ -34,6 +34,7 @@ mod p1_load;
 mod p2_anim;
 mod p3_other_a;
 mod p4_other_b;
+mod p5_core;
 mod pc_ui;
 mod phyre_render;
 mod ps2_emu;
@@ -69,6 +70,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(p1_load::hooks());
     all.extend(p3_other_a::hooks());
     all.extend(p4_other_b::hooks());
+    all.extend(p5_core::hooks());
     all.extend(pc_ui::hooks());
     all.extend(h3_glue_render::hooks());
     all.extend(p2_anim::hooks());

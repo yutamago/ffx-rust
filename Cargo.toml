@@ -35,6 +35,7 @@ ffx-postfx = { path = "crates/ffx-postfx" }
 ffx-pload = { path = "crates/ffx-pload" }
 ffx-prender = { path = "crates/ffx-prender" }
 ffx-panim = { path = "crates/ffx-panim" }
+ffx-pcore = { path = "crates/ffx-pcore" }
 ffx-phyre = { path = "crates/ffx-phyre" }
 ffx-pother-a = { path = "crates/ffx-pother-a" }
 ffx-platform = { path = "crates/ffx-platform" }
