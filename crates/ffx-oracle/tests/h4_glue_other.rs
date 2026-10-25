@@ -3385,3 +3385,126 @@ fn blur_ex_create_and_release_step() {
         }
     }
 }
+
+// ---- batch 8
+
+/// FMOD voice clear, the post-effect parameter block, the third save
+/// pop-up, the escape menu's resume, text scrolling, the MFIFO reset.
+#[test]
+fn voice_params_resume_scroll() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0701);
+        let stubs: &[(u32, bool, u32, u32)] = &[
+            (s::ERRCHECK, false, 3, 0),
+            (e::SAMPLER_STATE_CTOR, true, 0, 0),
+            (mn::SAVE_DATA_LOC, false, 2, 0),
+            (mn::DATA_VALUE_SET, false, 2, 0),
+            (mn::DATA_VALUE_SET_BOOL, false, 2, 0),
+            (mn::CALL_AS3, true, 5, 5),
+            (m::IGGY_SET_ENABLE, true, 1, 1),
+            (mn::SFX_PAUSE, false, 1, 0),
+            (mn::VOICE_SET_PAUSED, false, 1, 0),
+            (mn::VIDEO_PAUSE, false, 0, 0),
+            (mn::SETTINGS_SAVE, true, 0, 0),
+            (mn::SAVE_MENU_ENABLE, false, 1, 0),
+            (mn::ESC_PAGE_REFRESH, true, 1, 1),
+            (mn::TO_WORLD_3X4, true, 1, 1),
+            (m::SET_GLOBALS_8431D0, false, 1, 0),
+        ];
+        for &(sym, this, n, pops) in stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let release = t.stub_code(0xc0de_0c01, false, 3, 3);
+        let vtable = t.zeros(0x10);
+        t.w32(vtable + 8, release);
+        let show_cursor = t.stub_code(0xc0de_0c02, false, 1, 1);
+        t.g32(0x00b0_c688, show_cursor);
+        let dialog = t.random(&mut rng, 0x200);
+        t.g32(0x00cc_c870, dialog);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            for &(sym, ..) in stubs {
+                let r = rng.next();
+                t.ret(sym, r);
+            }
+            let r = if rng.below(3) == 0 { 0 } else { rng.next() };
+            t.ret(0xc0de_0c01, r);
+            let v = rng.next();
+            t.ret(0xc0de_0c02, v);
+            let voice = t.random(&mut rng, 0x80);
+            let group = t.zeros(4);
+            t.w32(group, vtable);
+            t.w32(voice + 0x10, if rng.below(4) == 0 { 0 } else { group });
+            t.w32(voice + 0x14, if rng.below(4) == 0 { 0 } else { rng.next() });
+            t.check(
+                &format!("{w} voiceClear"),
+                0x0070_a590,
+                Conv::Thiscall(voice),
+                &[],
+                |g| u(s::fmod_voice_clear(g, voice)),
+            );
+            let params = t.random(&mut rng, 0x80);
+            t.check(
+                &format!("{w} params ctor"),
+                0x0070_2ff0,
+                Conv::Thiscall(params),
+                &[],
+                |g| u(e::post_effect_params_ctor(g, params)),
+            );
+            t.g32(0x00ce_b248, rng.next());
+            let id = rng.word();
+            t.check(
+                &format!("{w} popup4"),
+                0x0070_2ef0,
+                Conv::Cdecl,
+                &[id],
+                |g| u(mn::save_show_popup4(g, id)),
+            );
+            let menu = t.random(&mut rng, 0x200);
+            t.w8(menu + 0x130, [0, 1, 2][rng.below(3) as usize]);
+            for off in [0x114, 0x115, 0x116] {
+                let b = [0, 1, rng.next() as u8][rng.below(3) as usize];
+                t.w8(dialog + off, b);
+            }
+            t.g32(0x022f_b504, rng.next());
+            t.g32(0x00ce_7310, if rng.below(2) == 0 { 0 } else { rng.next() });
+            t.check(
+                &format!("{w} resume"),
+                0x0068_fe60,
+                Conv::Cdecl,
+                &[menu],
+                |g| {
+                    mn::esc_resume(g, menu);
+                    Out::None
+                },
+            );
+            let text = t.zeros(0x80);
+            for off in [0x50, 0x54, 0x58, 0x60, 0x64, 0x68] {
+                let f = rng.float();
+                t.w32(text + off, f);
+            }
+            t.w32(text + 0x10, if rng.below(3) == 0 { 0 } else { rng.next() });
+            let steps =
+                [0, 1, u32::MAX, 0x7fff_ffff, 0x0100_0001, rng.word()][rng.below(6) as usize];
+            t.check(
+                &format!("{w} scroll {steps:#x}"),
+                0x006f_6860,
+                Conv::Thiscall(text),
+                &[steps],
+                |g| {
+                    mn::text_scroll(g, text, steps);
+                    Out::None
+                },
+            );
+            let sink = rng.next() & !0x100;
+            t.g32(0x0230_56e8, sink);
+            t.check(
+                &format!("{w} mfifoReset"),
+                0x0084_32e0,
+                Conv::Cdecl,
+                &[],
+                |g| u(m::mfifo_reset(g)),
+            );
+        }
+    }
+}

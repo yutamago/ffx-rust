@@ -446,3 +446,30 @@ pub fn delay_release_step(h: &mut impl Host, timer: u32, dt: u32) {
         h.call_sym(APPLY_DELAYED_RELEASE, Conv::Thiscall(timer), &[]);
     }
 }
+
+/// `PSamplerStateD3D11_ctor(state)` (thiscall).
+pub const SAMPLER_STATE_CTOR: u32 = 0x0058_3b20;
+/// `PostEffectParams_ctor_00702ff0`'s 0.5 (`.rdata` `0x00b92194`).
+pub const HALF: Global<u32> = Global::new(0x00b9_2194);
+
+/// `PostEffectParams_ctor_00702ff0(this)` (thiscall, from `0x006c32d0`):
+/// the flag byte and `+0x1c..+0x2c` cleared, the sampler state at `+0x30`
+/// constructed, `+0x54..+0x6c` cleared, the scales `+4`, `+8`, `+0xc`,
+/// `+0x14`, `+0x18` 1.0 and `+0x10` 0.5 (through `fld`/`fstp`); returns
+/// `this`.
+pub fn post_effect_params_ctor(h: &mut impl Host, this: u32) -> u32 {
+    h.write(this, 0u8);
+    for off in [0x1c, 0x20, 0x24, 0x28, 0x2c] {
+        h.write(this + off, 0u32);
+    }
+    h.call_sym(SAMPLER_STATE_CTOR, Conv::Thiscall(this + 0x30), &[]);
+    for off in [0x54, 0x58, 0x5c, 0x60, 0x64, 0x68, 0x6c] {
+        h.write(this + off, 0u32);
+    }
+    for off in [0x14, 0x18, 0x4, 0x8, 0xc] {
+        h.write(this + off, 1.0f32.to_bits());
+    }
+    let half = x87::round_trip(f32::from_bits(HALF.get(h))).to_bits();
+    h.write(this + 0x10, half);
+    this
+}

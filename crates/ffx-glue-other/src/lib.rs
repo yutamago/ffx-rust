@@ -4,9 +4,15 @@
 //! `SyncManager` calls, the post-effect and movie singletons, and the
 //! small menu, Iggy and text helpers.
 //!
-//! - [`sound`]: `iSfx*`, `iVoice*`, `iSync*` and FMOD callbacks;
-//! - [`effect`]: the post-effect singletons and their small methods;
-//! - [`misc`]: forwarders, menu, Iggy and text helpers.
+//! - [`sound`]: `iSfx*`, `iVoice*`, `iSync*`, FMOD's memory/file/event
+//!   callbacks, `SfxEvent` and `FmodMusic`/`FmodVoice` helpers;
+//! - [`effect`]: the post-effect singletons and their small methods,
+//!   shader-parameter copies, the character cache's release timer;
+//! - [`movie`]: `PhyFMVPlayerManager` and the PS2 movie layer's tests;
+//! - [`menu`]: the escape and save menus, `IggyMenu`/`IggyMenuManager`,
+//!   `IconPanel`, `TextUtil`, scene cursors, the Iggy heap;
+//! - [`misc`]: forwarders, PS2 packet/DMA/GS helpers;
+//! - [`copies`]: exact copies of other modules' ports (`tools/dupes.py`).
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address

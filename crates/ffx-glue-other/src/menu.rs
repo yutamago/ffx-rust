@@ -1220,3 +1220,102 @@ pub fn cluster_slots_take(h: &mut impl Host, this: u32) -> u32 {
     h.write(this + 0x641c, k);
     slot
 }
+
+/// `iggyDataValueSetBool_00a28db0(value, b)` (cdecl).
+pub const DATA_VALUE_SET_BOOL: u32 = 0x00a2_8db0;
+/// The third save pop-up's buffers and names (`0x00702ef0`).
+pub const POPUP3_TEXTS: [(u32, u32); 3] = [
+    (0x00ce_b6a0, 0x00ce_b660),
+    (0x00ce_b8a0, 0x00ce_b670),
+    (0x00ce_baa0, 0x00ce_b680),
+];
+/// See [`POPUP3_TEXTS`].
+pub const POPUP3_BOOL: u32 = 0x00ce_b690;
+/// See [`POPUP3_TEXTS`].
+pub const POPUP3_NAME: u32 = 0x00b4_6cac;
+/// The import slot of `ShowCursor`.
+pub const SHOW_CURSOR: Global<u32> = Global::new(0x00b0_c688);
+/// `Settings_Save(settings)` (thiscall), `g_Settings`.
+pub const SETTINGS_SAVE: u32 = 0x0040_1d80;
+/// See [`SETTINGS_SAVE`].
+pub const SETTINGS: Global<u32> = Global::new(0x022f_b504);
+/// The save menu's open flag (`0x00ce7310`), its enable `0x007029e0`
+/// (cdecl on), and the escape menu's page refresh `0x006fca50`
+/// (thiscall; on).
+pub const SAVE_MENU_OPEN: Global<u32> = Global::new(0x00ce_7310);
+/// See [`SAVE_MENU_OPEN`].
+pub const SAVE_MENU_ENABLE: u32 = 0x0070_29e0;
+/// See [`SAVE_MENU_OPEN`].
+pub const ESC_PAGE_REFRESH: u32 = 0x006f_ca50;
+/// `PMatrix4_toWorldMatrix3x4(matrix; out)` (thiscall).
+pub const TO_WORLD_3X4: u32 = 0x0045_1190;
+
+/// `SaveDataMachine_showPopUp4_00702ef0(id)` (cdecl): the save texts `id`,
+/// 0x204 and 0x205 as three Iggy string values, a `false` value, then
+/// `IggyMenu_callIggyAS3External(save menu; 0, name, 4, values, 1)`'s
+/// `eax`.
+pub fn save_show_popup4(h: &mut impl Host, id: u32) -> u32 {
+    for (k, (text, value)) in POPUP3_TEXTS.into_iter().enumerate() {
+        let text = h.rebase(text);
+        let value = h.rebase(value);
+        let which = [id, 0x204, 0x205][k];
+        h.call_sym(SAVE_DATA_LOC, Conv::Cdecl, &[which, text]);
+        h.call_sym(DATA_VALUE_SET, Conv::Cdecl, &[value, text]);
+    }
+    let flag = h.rebase(POPUP3_BOOL);
+    h.call_sym(DATA_VALUE_SET_BOOL, Conv::Cdecl, &[flag, 0]);
+    let menu = crate::misc::SAVE_MENU.get(h);
+    let name = h.rebase(POPUP3_NAME);
+    let values = h.rebase(POPUP3_TEXTS[0].1);
+    h.call_sym(CALL_AS3, Conv::Thiscall(menu), &[0, name, 4, values, 1])
+}
+
+/// `FFEscMenu_resume(menu)` (0x0068fe60, cdecl): the menu disabled, the
+/// cursor shown once (`+0x130`, `ShowCursor(1)`), what the escape menu
+/// paused resumed (as `FFEscMenu_unpauseAudioVideo` on the dialog
+/// `0x00ccc870`), the settings saved, and with the save menu open, it
+/// enabled and the page refreshed (`0x006fca50(menu; 1)`). Callers read no
+/// result.
+pub fn esc_resume(h: &mut impl Host, menu: u32) {
+    h.call_sym(crate::misc::IGGY_SET_ENABLE, Conv::Thiscall(menu), &[0]);
+    if h.read::<u8>(menu + 0x130) != 1 {
+        h.write(menu + 0x130, 1u8);
+        let f = SHOW_CURSOR.get(h);
+        h.call(f, Conv::Stdcall, &[1]);
+    }
+    let dialog = ESC_DIALOG.get(h);
+    esc_unpause(h, dialog);
+    let settings = SETTINGS.get(h);
+    h.call_sym(SETTINGS_SAVE, Conv::Thiscall(settings), &[]);
+    if SAVE_MENU_OPEN.get(h) != 0 {
+        h.call_sym(SAVE_MENU_ENABLE, Conv::Cdecl, &[1]);
+        h.call_sym(ESC_PAGE_REFRESH, Conv::Thiscall(menu), &[1]);
+    }
+}
+
+/// `TextUtil_scrollToVisible(this; n)` (0x006f6860, thiscall): the
+/// position (`+0x50..+0x58`) moved by `n` (an integer, through `fild`)
+/// steps of the direction `+0x60..+0x68` (x87, each product and sum
+/// rounded to f32), then with a node (`+0x10`) its world matrix rebuilt
+/// (`PMatrix4_toWorldMatrix3x4(node + 0x128; this + 0x20)`). Callers read
+/// no result.
+pub fn text_scroll(h: &mut impl Host, this: u32, n: u32) {
+    let mut pos = [0f32; 3];
+    let mut dir = [0f32; 3];
+    for k in 0..3u32 {
+        let p = f32::from_bits(h.read::<u32>(this + 0x50 + 4 * k));
+        pos[k as usize] = ffx_bridge::x87::round_trip(p);
+        dir[k as usize] = f32::from_bits(h.read::<u32>(this + 0x60 + 4 * k));
+    }
+    #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+    let v = n.cast_signed() as f32;
+    let step = dir.map(|d| ffx_bridge::x87::Reg::load(d).mul_m32(v).store());
+    for k in 0..3 {
+        let p = ffx_bridge::x87::Reg::load(step[k]).add_m32(pos[k]).store();
+        h.write(this + 0x50 + 4 * k as u32, p.to_bits());
+    }
+    let node = h.read::<u32>(this + 0x10);
+    if node != 0 {
+        h.call_sym(TO_WORLD_3X4, Conv::Thiscall(node + 0x128), &[this + 0x20]);
+    }
+}

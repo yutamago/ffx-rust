@@ -859,4 +859,31 @@ ported! {
     MenuMain_StoreFrameBlock @ 0x008a_acf0 => extern "C" fn menu_store_frame_block(buffer: u32, address: u32, size: u32) -> u32 {
         m::menu_vram_block(&mut mem(), false, true, buffer, address, size)
     }
+    // Batch 8: FMOD voice clear, a post-effect parameter block, the third
+    // save pop-up, the escape menu's resume, text scrolling, the MFIFO
+    // reset.
+    /// `FmodVoice_clear(voice)` -> 0.
+    FmodVoice_clear @ 0x0070_a590 => extern "thiscall" fn fmod_voice_clear(voice: u32) -> u32 {
+        s::fmod_voice_clear(&mut mem(), voice)
+    }
+    /// `PostEffectParams_ctor_00702ff0(this)` -> `this`.
+    PostEffectParams_ctor_00702ff0 @ 0x0070_2ff0 => extern "thiscall" fn post_effect_params_ctor(this: u32) -> u32 {
+        e::post_effect_params_ctor(&mut mem(), this)
+    }
+    /// `SaveDataMachine_showPopUp4_00702ef0(id)`.
+    SaveDataMachine_showPopUp4_00702ef0 @ 0x0070_2ef0 => extern "C" fn save_show_popup4(id: u32) -> u32 {
+        mn::save_show_popup4(&mut mem(), id)
+    }
+    /// `FFEscMenu_resume(menu)`.
+    FFEscMenu_resume @ 0x0068_fe60 => extern "C" fn esc_resume(menu: u32) {
+        mn::esc_resume(&mut mem(), menu);
+    }
+    /// `TextUtil_scrollToVisible(this; n)`.
+    TextUtil_scrollToVisible @ 0x006f_6860 => extern "thiscall" fn text_scroll(this: u32, n: u32) {
+        mn::text_scroll(&mut mem(), this, n);
+    }
+    /// `Sg_MFIFOReset_008432e0()`.
+    Sg_MFIFOReset_008432e0 @ 0x0084_32e0 => extern "C" fn mfifo_reset() -> u32 {
+        m::mfifo_reset(&mut mem())
+    }
 }

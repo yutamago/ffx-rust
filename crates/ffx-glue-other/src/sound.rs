@@ -603,3 +603,37 @@ pub fn fmod_music_ctor(h: &mut impl Host, this: u32) -> u32 {
     h.call_sym(crate::effect::MEMSET, Conv::Cdecl, &[table, 0, 0x2aa8]);
     this
 }
+
+/// `FmodVoice_clear(voice)` (0x0070a590, thiscall): with an event (`+0x14`)
+/// and its group (`+0x10`), the group's virtual slot 2 `(group, event,
+/// 1)` (stdcall, the release) checked with `ERRCHECK(r, file, 0x297)`
+/// and retried while it fails, at most six times; then the voice's state
+/// words cleared. Returns 0.
+pub fn fmod_voice_clear(h: &mut impl Host, voice: u32) -> u32 {
+    if h.read::<u32>(voice + 0x14) == 0 || h.read::<u32>(voice + 0x10) == 0 {
+        return 0;
+    }
+    let file = h.rebase(FMOD_VOICE_FILE);
+    let mut tries = 0u32;
+    loop {
+        let group = h.read::<u32>(voice + 0x10);
+        let event = h.read::<u32>(voice + 0x14);
+        let vtable = h.read::<u32>(group);
+        let f = h.read::<u32>(vtable + 8);
+        let r = h.call(f, Conv::Stdcall, &[group, event, 1]);
+        h.call_sym(ERRCHECK, Conv::Cdecl, &[r, file, 0x297]);
+        tries += 1;
+        if r == 0 || tries > 5 {
+            break;
+        }
+    }
+    for off in [
+        0x14, 0x54, 0x40, 0x44, 0x60, 0x58, 0x48, 0x10, 0x6c, 0x70, 0x74,
+    ] {
+        h.write(voice + off, 0u32);
+    }
+    0
+}
+
+/// `FmodVoice.cpp`'s path for `ERRCHECK` (`.rdata`).
+pub const FMOD_VOICE_FILE: u32 = 0x00b4_f8c0;

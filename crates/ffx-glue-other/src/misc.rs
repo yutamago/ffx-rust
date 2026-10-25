@@ -701,3 +701,21 @@ pub fn menu_vram_block(
     h.call_sym(exec, Conv::Cdecl, &[img, buffer]);
     h.call_sym(GS_SYNC_PATH, Conv::Cdecl, &[0, 0])
 }
+
+/// `SetGlobals_008431d0(v)` (cdecl).
+pub const SET_GLOBALS_8431D0: u32 = 0x0084_31d0;
+
+/// `Sg_MFIFOReset_008432e0()` (from `Sg_MainLoop`): waits twice for bit 8
+/// of `g_GsRegisterSink` to clear, sets bit 3 and clears bit 2, writes the
+/// reset sequence (0x800000, 0x1ffff0, 0x800000, 0x800000, 0, 0, 0x1c5)
+/// into the sink, then `SetGlobals_008431d0(0x800000)`'s `eax`.
+pub fn mfifo_reset(h: &mut impl Host) -> u32 {
+    mfifo_spad_sync(h);
+    mfifo_spad_sync(h);
+    let v = (GS_REGISTER_SINK.get(h) & !4) | 8;
+    GS_REGISTER_SINK.set(h, v);
+    for w in [0x80_0000, 0x1f_fff0, 0x80_0000, 0x80_0000, 0, 0, 0x1c5] {
+        GS_REGISTER_SINK.set(h, w);
+    }
+    h.call_sym(SET_GLOBALS_8431D0, Conv::Cdecl, &[0x80_0000])
+}
