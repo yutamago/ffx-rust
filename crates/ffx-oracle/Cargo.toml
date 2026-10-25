@@ -21,6 +21,7 @@ ffx-chara.workspace = true
 ffx-core.workspace = true
 ffx-field.workspace = true
 ffx-graphic.workspace = true
+ffx-pload.workspace = true
 ffx-prender.workspace = true
 ffx-kernel.workspace = true
 ffx-menu.workspace = true

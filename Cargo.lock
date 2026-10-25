@@ -689,6 +689,7 @@ dependencies = [
  "ffx-motion",
  "ffx-movie",
  "ffx-pcui",
+ "ffx-pload",
  "ffx-prender",
  "ffx-ps2",
  "ffx-scene",
@@ -779,6 +780,7 @@ dependencies = [
  "ffx-movie",
  "ffx-pcui",
  "ffx-phyre",
+ "ffx-pload",
  "ffx-prender",
  "ffx-ps2",
  "ffx-script",
@@ -818,6 +820,14 @@ name = "ffx-platform"
 version = "0.1.0"
 dependencies = [
  "goblin",
+]
+
+[[package]]
+name = "ffx-pload"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+ "ffx-graphic",
 ]
 
 [[package]]
