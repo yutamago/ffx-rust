@@ -27,6 +27,7 @@ mod map;
 mod menu;
 mod movie;
 mod pc_ui;
+mod phyre_render;
 mod ps2_emu;
 mod render;
 mod script;
@@ -40,6 +41,7 @@ mod vfx_shape;
 
 pub(crate) use battle::ms_screen_process;
 pub(crate) use map::rcbg_guide_update_ex;
+pub(crate) use phyre_render::{culled_sorted, culled_sorted_on};
 
 /// Every replacement, for the hook table.
 #[must_use]
@@ -54,6 +56,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(menu::hooks());
     all.extend(movie::hooks());
     all.extend(pc_ui::hooks());
+    all.extend(phyre_render::hooks());
     all.extend(ps2_emu::hooks());
     all.extend(render::hooks());
     all.extend(script::hooks());
