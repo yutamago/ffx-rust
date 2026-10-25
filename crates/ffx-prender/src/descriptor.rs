@@ -1057,4 +1057,13 @@ pub mod bridge {
         }
         true
     }
+
+    /// `constructInstance(p)` of `PTexture3DBase`: its constructor in place
+    /// unless `p` is 0; true.
+    pub fn construct_texture_3d(m: &mut impl Mem, p: u32) -> bool {
+        if p != 0 {
+            crate::texture::bridge::ctor_3d(m, p);
+        }
+        true
+    }
 }

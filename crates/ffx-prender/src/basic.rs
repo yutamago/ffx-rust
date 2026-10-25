@@ -60,6 +60,23 @@ pub const ELEMENT40_DTOR: u32 = 0x0055_dfa0;
 /// The CRT's `memcpy` (cdecl).
 pub const MEMCPY: u32 = 0x0094_9256;
 
+/// `PRenderer` draw wrappers `0x00498500` calls (thiscall on the
+/// context): indexed instanced (four words), indexed (three words).
+pub const DRAW_INSTANCED: u32 = 0x0059_2c60;
+/// See [`DRAW_INSTANCED`].
+pub const DRAW_INDEXED: u32 = 0x0059_2b60;
+/// The renderer context, its guard word, constructor and `atexit`
+/// destructor (`0x004649d0`).
+pub const CONTEXT: u32 = 0x00c9_4f00;
+/// See [`CONTEXT`].
+pub const CONTEXT_GUARD: u32 = 0x00c9_628c;
+/// See [`CONTEXT`].
+pub const CONTEXT_CTOR: u32 = 0x004f_ee70;
+/// See [`CONTEXT`].
+pub const CONTEXT_DTOR: u32 = 0x00af_b710;
+/// The CRT's `atexit` (cdecl).
+pub const ATEXIT: u32 = 0x0094_9207;
+
 /// The renderer id `0x00464710` returns: `"11XD"` read as a little-endian
 /// word.
 pub const RENDERER_ID: u32 = 0x4458_3131;
@@ -68,7 +85,8 @@ pub mod bridge {
     //! The originals over game memory.
 
     use super::{
-        APPLY_DEFAULTS, APPLY_MEMBER, Conv, DEFAULTS_OBJECT, DYNAMIC_MESH_VTABLE, ELEMENT40_DTOR,
+        APPLY_DEFAULTS, APPLY_MEMBER, ATEXIT, CONTEXT, CONTEXT_CTOR, CONTEXT_DTOR, CONTEXT_GUARD,
+        Conv, DEFAULTS_OBJECT, DRAW_INDEXED, DRAW_INSTANCED, DYNAMIC_MESH_VTABLE, ELEMENT40_DTOR,
         EVENT_FLAG_CTOR, FREE, Host, ITERATOR_FIRST, ITERATOR_TAG, MALLOC, MATERIAL_BYTE, MEMCPY,
         Mem, NODE_REGISTER, SAMPLER_D3D11_CTOR, SHADER_PASS_DTOR, SPRITE_MEMBER_CTOR,
         SPRITE_REGISTER, STREAM_CTOR, UTILITIES, UTILITY_VTABLES,
@@ -706,5 +724,243 @@ pub mod bridge {
         }
         h.call_sym(MEMCPY, Conv::Cdecl, &[this.wrapping_add(off), src, size]);
         0
+    }
+
+    /// `0x004bbe40(this)`: the array at `this` (count, data) of 0x254-byte
+    /// `PShaderPass`es: when owned and allocated, each one's destructor
+    /// and `PhyreFree(data)`; then emptied.
+    pub fn release_shader_pass_array(h: &mut impl Host, this: u32) {
+        let count: u32 = h.read(this);
+        if count & 0x8000_0000 == 0 {
+            let data: u32 = h.read(this + 4);
+            if data != 0 {
+                let mut e = data;
+                for _ in 0..count & 0x7fff_ffff {
+                    h.call_sym(SHADER_PASS_DTOR, Conv::Thiscall(e), &[]);
+                    e = e.wrapping_add(0x254);
+                }
+                h.call_sym(FREE, Conv::Cdecl, &[data]);
+            }
+        }
+        h.write(this + 4, 0u32);
+        h.write(this, 0u32);
+    }
+
+    /// `0x00433700(this)` -> `this`: fourteen words 0.
+    pub fn clear_56(m: &mut impl Mem, this: u32) -> u32 {
+        for i in 0..14 {
+            m.write(this + 4 * i, 0u32);
+        }
+        this
+    }
+
+    /// `PRenderTargetBase::getViewportSize(this, width, height)`: by the
+    /// kind byte `+4` of the target reference (`+0` the object): 0 and 1
+    /// the object's `+0x1c`, `+0x20`; 2 (a cube map) its `+0x1c` for both;
+    /// 0x15 without an object; other kinds 0 without writing.
+    pub fn viewport_size(m: &mut impl Mem, this: u32, width: u32, height: u32) -> u32 {
+        let kind: u8 = m.read(this + 4);
+        if kind > 2 {
+            return 0;
+        }
+        let object: u32 = m.read(this);
+        if object == 0 {
+            return 0x15;
+        }
+        if kind == 2 {
+            let size: u32 = m.read(object + 0x1c);
+            m.write(height, size);
+            m.write(width, size);
+        } else {
+            let w: u32 = m.read(object + 0x1c);
+            m.write(width, w);
+            let h: u32 = m.read(object + 0x20);
+            m.write(height, h);
+        }
+        0
+    }
+
+    /// `0x00498500(ctx, _, segment, blocks, indirect, extra)` (stdcall):
+    /// with an `indirect` draw, `DRAW_INDEXED_INSTANCED(ctx; segment +0x10,
+    /// indirect +8, indirect, extra)`; else `DRAW_INDEXED(ctx; segment
+    /// +0x10, 0, first)` where `first` is the first nonzero `+4` word of
+    /// the 0x40-byte entries of the `blocks` array (or the last read, 0).
+    /// That call's `eax`.
+    pub fn draw_segment(
+        h: &mut impl Host,
+        ctx: u32,
+        segment: u32,
+        blocks: u32,
+        indirect: u32,
+        extra: u32,
+    ) -> u32 {
+        let mut first = 0;
+        if indirect == 0 {
+            let n = h.read::<u32>(blocks) & 0x7fff_ffff;
+            if n != 0 {
+                let mut e = h.read::<u32>(blocks + 4).wrapping_add(4);
+                for _ in 0..n {
+                    first = h.read(e);
+                    if first != 0 {
+                        break;
+                    }
+                    e = e.wrapping_add(0x40);
+                }
+            }
+        } else {
+            first = h.read(indirect + 8);
+        }
+        let stream: u32 = h.read(segment + 0x10);
+        if indirect != 0 {
+            h.call_sym(
+                DRAW_INSTANCED,
+                Conv::Thiscall(ctx),
+                &[stream, first, indirect, extra],
+            )
+        } else {
+            h.call_sym(DRAW_INDEXED, Conv::Thiscall(ctx), &[stream, 0, first])
+        }
+    }
+
+    /// `PWorld::addInstanceList(world, list)`: for each class of the list
+    /// (descriptors from `list +0x2c`, linked at `+0x40`) that has an
+    /// entry in the world (id `+0x80` below the count), the entry's size
+    /// grows by `list +0x3c` and its count by one; the list's node `+0x20`
+    /// is linked after the first such entry's head.
+    pub fn add_instance_list(m: &mut impl Mem, world: u32, list: u32) {
+        let mut linked = false;
+        let mut d: u32 = m.read(list + 0x2c);
+        while d != 0 {
+            let id: u32 = m.read(d + 0x80);
+            if id < m.read::<u32>(world + 8) & 0x7fff_ffff {
+                let e = m.read::<u32>(world + 0xc).wrapping_add(id.wrapping_mul(20));
+                if e != 0 {
+                    if !linked {
+                        let first: u32 = m.read(e);
+                        let node = list + 0x20;
+                        m.write(node, first);
+                        m.write(node + 4, e);
+                        m.write(e, node);
+                        m.write(first + 4, node);
+                        linked = true;
+                    }
+                    let size = m.read::<u32>(e + 8).wrapping_add(m.read(list + 0x3c));
+                    m.write(e + 8, size);
+                    let count = m.read::<u32>(e + 0xc).wrapping_add(1);
+                    m.write(e + 0xc, count);
+                }
+            }
+            d = m.read(d + 0x40);
+        }
+    }
+
+    /// `PWorld::removeInstanceList(world, list)` -> 0: the reverse of
+    /// [`add_instance_list`]: the list's node unlinked (and pointed at
+    /// itself) at the first entry, each entry's size and count reduced.
+    pub fn remove_instance_list(m: &mut impl Mem, world: u32, list: u32) -> u32 {
+        let mut unlinked = false;
+        let mut d: u32 = m.read(list + 0x2c);
+        while d != 0 {
+            let id: u32 = m.read(d + 0x80);
+            if id < m.read::<u32>(world + 8) & 0x7fff_ffff {
+                let e = m.read::<u32>(world + 0xc).wrapping_add(id.wrapping_mul(20));
+                if e != 0 {
+                    if !unlinked {
+                        let node = list + 0x20;
+                        let next: u32 = m.read(node);
+                        let prev: u32 = m.read(node + 4);
+                        m.write(next + 4, prev);
+                        m.write(prev, next);
+                        m.write(node, node);
+                        m.write(node + 4, node);
+                        unlinked = true;
+                    }
+                    let size = m.read::<u32>(e + 8).wrapping_sub(m.read(list + 0x3c));
+                    m.write(e + 8, size);
+                    let count = m.read::<u32>(e + 0xc).wrapping_sub(1);
+                    m.write(e + 0xc, count);
+                }
+            }
+            d = m.read(d + 0x40);
+        }
+        0
+    }
+
+    /// The instance lists of a cluster (its list head at `+0x1c`): the
+    /// first, or 0 when the list is empty.
+    fn first_list(m: &impl Mem, head: u32) -> u32 {
+        let first: u32 = m.read(head);
+        if first == head { 0 } else { first }
+    }
+
+    /// `PWorld::addCluster(world, cluster)`: out of its old world first
+    /// (`cluster +0x40`), then linked into this world's list (node
+    /// `cluster +0x48`), and each of its instance lists added.
+    pub fn add_cluster(m: &mut impl Mem, world: u32, cluster: u32) {
+        let old: u32 = m.read(cluster + 0x40);
+        if old != 0 {
+            remove_cluster(m, old, cluster);
+        }
+        let first: u32 = m.read(world);
+        let node = cluster + 0x48;
+        m.write(node, first);
+        m.write(node + 4, world);
+        m.write(world, node);
+        m.write(first + 4, node);
+        m.write(cluster + 0x40, world);
+        let head = cluster + 0x1c;
+        let mut list = first_list(m, head);
+        while list != 0 {
+            add_instance_list(m, world, list);
+            let next: u32 = m.read(list);
+            list = if next == head { 0 } else { next };
+        }
+    }
+
+    /// `PWorld::removeCluster(world, cluster)`: when the cluster is in
+    /// this world, unlinked (its node pointed at itself, `+0x40` 0) and
+    /// each of its instance lists removed.
+    pub fn remove_cluster(m: &mut impl Mem, world: u32, cluster: u32) {
+        if m.read::<u32>(cluster + 0x40) != world {
+            return;
+        }
+        let node = cluster + 0x48;
+        let next: u32 = m.read(node);
+        let prev: u32 = m.read(node + 4);
+        m.write(next + 4, prev);
+        m.write(prev, next);
+        m.write(node, node);
+        m.write(node + 4, node);
+        m.write(cluster + 0x40, 0u32);
+        let head = cluster + 0x1c;
+        let mut list = first_list(m, head);
+        while list != 0 {
+            remove_instance_list(m, world, list);
+            let next: u32 = m.read(list);
+            list = if next == head { 0 } else { next };
+        }
+    }
+
+    /// `0x004649d0()`: the renderer context (`0x00c94f00`), constructed
+    /// (`0x004fee70`, thiscall) and registered with `atexit` on the first
+    /// call (bit 0 of `0x00c9628c`).
+    pub fn renderer_context(h: &mut impl Host) -> u32 {
+        let guard = h.rebase(CONTEXT_GUARD);
+        let obj = h.rebase(CONTEXT);
+        let flags: u32 = h.read(guard);
+        if flags & 1 == 0 {
+            h.write(guard, flags | 1);
+            h.call_sym(CONTEXT_CTOR, Conv::Thiscall(obj), &[]);
+            let dtor = h.rebase(CONTEXT_DTOR);
+            h.call_sym(ATEXIT, Conv::Cdecl, &[dtor]);
+        }
+        obj
+    }
+
+    /// `0x004d7560(this, a, b)`: the cdecl function stored at `this +0x94`
+    /// called with `(a, b)`; its `eax`.
+    pub fn call_stored(h: &mut impl Host, this: u32, a: u32, b: u32) -> u32 {
+        let f: u32 = h.read(this + 0x94);
+        h.call(f, Conv::Cdecl, &[a, b])
     }
 }

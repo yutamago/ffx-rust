@@ -1689,4 +1689,48 @@ ported! {
         let k = const { registry::array_type_of(0x0049_0b60) };
         registry::bridge::array_type(&mut mem(), &k, name)
     }
+    /// `PWorld::addCluster(world, cluster)`.
+    Phyre_PWorld_addCluster @ 0x0044_3250 => extern "thiscall" fn h1_00443250(world: u32, cluster: u32) {
+        basic::bridge::add_cluster(&mut mem(), world, cluster);
+    }
+    /// `PWorld::addInstanceList(world, list)`.
+    Phyre_PWorld_addInstanceList @ 0x0044_3320 => extern "thiscall" fn h1_00443320(world: u32, list: u32) {
+        basic::bridge::add_instance_list(&mut mem(), world, list);
+    }
+    /// `PWorld::removeCluster(world, cluster)`.
+    Phyre_PWorld_removeCluster @ 0x0044_3b70 => extern "thiscall" fn h1_00443b70(world: u32, cluster: u32) {
+        basic::bridge::remove_cluster(&mut mem(), world, cluster);
+    }
+    /// `PWorld::removeInstanceList(world, list)` -> 0.
+    Phyre_PWorld_removeInstanceList @ 0x0044_3c20 => extern "thiscall" fn h1_00443c20(world: u32, list: u32) -> u32 {
+        basic::bridge::remove_instance_list(&mut mem(), world, list)
+    }
+    /// `0x004bbe40(this)`: releases an array of `PShaderPass`es.
+    PArray_releaseShaderPasses_004bbe40 @ 0x004b_be40 => extern "thiscall" fn h1_004bbe40(this: u32) {
+        basic::bridge::release_shader_pass_array(&mut mem(), this);
+    }
+    /// `0x00433700(this)` -> `this`.
+    PhyreCtor_zero56_00433700 @ 0x0043_3700 => extern "thiscall" fn h1_00433700(this: u32) -> u32 {
+        basic::bridge::clear_56(&mut mem(), this)
+    }
+    /// `PRenderTargetBase::getViewportSize(this, width, height)` -> 0 or 0x15.
+    Phyre_PRendering_PRenderTargetBase_getViewportSize @ 0x004c_82b0 => extern "thiscall" fn h1_004c82b0(this: u32, width: u32, height: u32) -> u32 {
+        basic::bridge::viewport_size(&mut mem(), this, width, height)
+    }
+    /// `0x00498500(ctx, _, segment, blocks, indirect, extra)` -> the draw's `eax`.
+    PMeshDraw_drawSegment_00498500 @ 0x0049_8500 => extern "stdcall" fn h1_00498500(ctx: u32, _unused: u32, segment: u32, blocks: u32, indirect: u32, extra: u32) -> u32 {
+        basic::bridge::draw_segment(&mut mem(), ctx, segment, blocks, indirect, extra)
+    }
+    /// `constructInstance(descriptor, p)` of `PTexture3DBase`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTexture3DBase__constructInstance @ 0x004c_53b0 => extern "thiscall" fn h1_004c53b0(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_texture_3d(&mut mem(), p))
+    }
+    /// `0x004d7560(this, a, b)` -> the stored function's `eax`.
+    PClassDescriptorHeader_callStored_004d7560 @ 0x004d_7560 => extern "thiscall" fn h1_004d7560(this: u32, a: u32, b: u32) -> u32 {
+        basic::bridge::call_stored(&mut mem(), this, a, b)
+    }
+    /// `0x004649d0()` -> the renderer context.
+    PRendererContext_instance_004649d0 @ 0x0046_49d0 => extern "C" fn h1_004649d0() -> u32 {
+        basic::bridge::renderer_context(&mut mem())
+    }
 }

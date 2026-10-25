@@ -2170,3 +2170,265 @@ fn two_member_binds_match_the_original() {
         }
     }
 }
+
+/// A world (`+0` its cluster list head, `+8` the entry count, `+0xc` the
+/// 20-byte class entries, each an empty list head) with `n` entries.
+fn world(t: &mut Twins, rng: &mut Rng, n: u32, owned: bool) -> u32 {
+    let w = pattern(t, rng, 0x10);
+    t.w32(w, w);
+    t.w32(w + 4, w);
+    t.w32(w + 8, n | if owned { 0 } else { 0x8000_0000 });
+    let entries = pattern(t, rng, 20 * n as usize + 4);
+    for i in 0..n {
+        let e = entries + 20 * i;
+        t.w32(e, e);
+        t.w32(e + 4, e);
+    }
+    t.w32(w + 0xc, entries);
+    w
+}
+
+/// An instance list whose classes have the ids `ids` (`+0x2c` the first
+/// descriptor, linked at `+0x40`; `+0x20` its node; `+0x3c` its size).
+fn instance_list(t: &mut Twins, rng: &mut Rng, ids: &[u32]) -> u32 {
+    let l = pattern(t, rng, 0x40);
+    let mut next = 0;
+    for &id in ids.iter().rev() {
+        let d = pattern(t, rng, 0x84);
+        t.w32(d + 0x80, id);
+        t.w32(d + 0x40, next);
+        next = d;
+    }
+    t.w32(l + 0x2c, next);
+    t.w32(l + 0x20, l + 0x20);
+    t.w32(l + 0x24, l + 0x20);
+    t.w32(l + 0x3c, 0x100 + rng.next() % 0x100);
+    l
+}
+
+/// A cluster holding `lists` (`+0x1c` their head, chained at `+0`;
+/// `+0x40` its world; `+0x48` its node).
+fn cluster(t: &mut Twins, rng: &mut Rng, lists: &[u32], world: u32) -> u32 {
+    let c = pattern(t, rng, 0x50);
+    let head = c + 0x1c;
+    let mut next = head;
+    for &l in lists.iter().rev() {
+        t.w32(l, next);
+        next = l;
+    }
+    t.w32(head, next);
+    t.w32(c + 0x40, world);
+    t.w32(c + 0x48, c + 0x48);
+    t.w32(c + 0x4c, c + 0x48);
+    c
+}
+
+#[test]
+fn world_lists_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xb8b8_0001);
+        for case in 0..30u32 {
+            let n = 1 + case % 5;
+            let w = world(&mut t, &mut rng, n, case % 7 != 0);
+            let ids: Vec<u32> = (0..case % 4).map(|_| rng.next() % (n + 2)).collect();
+            let l = instance_list(&mut t, &mut rng, &ids);
+            t.check(
+                &format!("{name} add list {case}"),
+                0x0044_3320,
+                Conv::Thiscall(w),
+                &[l],
+                |g| {
+                    basic::bridge::add_instance_list(g, w, l);
+                    Out::None
+                },
+            );
+            t.check(
+                &format!("{name} remove list {case}"),
+                0x0044_3c20,
+                Conv::Thiscall(w),
+                &[l],
+                |g| Out::U32(basic::bridge::remove_instance_list(g, w, l)),
+            );
+            // clusters: into a world, moved to another, removed
+            let lists: Vec<u32> = (0..case % 3)
+                .map(|_| {
+                    let ids: Vec<u32> = (0..=(rng.next() % 3))
+                        .map(|_| rng.next() % (n + 1))
+                        .collect();
+                    instance_list(&mut t, &mut rng, &ids)
+                })
+                .collect();
+            let c = cluster(&mut t, &mut rng, &lists, 0);
+            t.check(
+                &format!("{name} add cluster {case}"),
+                0x0044_3250,
+                Conv::Thiscall(w),
+                &[c],
+                |g| {
+                    basic::bridge::add_cluster(g, w, c);
+                    Out::None
+                },
+            );
+            let w2 = world(&mut t, &mut rng, n, true);
+            t.check(
+                &format!("{name} move cluster {case}"),
+                0x0044_3250,
+                Conv::Thiscall(w2),
+                &[c],
+                |g| {
+                    basic::bridge::add_cluster(g, w2, c);
+                    Out::None
+                },
+            );
+            t.check(
+                &format!("{name} remove cluster elsewhere {case}"),
+                0x0044_3b70,
+                Conv::Thiscall(w),
+                &[c],
+                |g| {
+                    basic::bridge::remove_cluster(g, w, c);
+                    Out::None
+                },
+            );
+            t.check(
+                &format!("{name} remove cluster {case}"),
+                0x0044_3b70,
+                Conv::Thiscall(w2),
+                &[c],
+                |g| {
+                    basic::bridge::remove_cluster(g, w2, c);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn batch8_small_methods_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xb8b8_0002);
+        t.stub(basic::FREE, false, 1, 0, Ret::Imm(0xf4ee));
+        t.stub(basic::SHADER_PASS_DTOR, true, 0, 0, Ret::Imm(0x0d70));
+        for (count, data) in [
+            (0u32, 0x4000_0000u32),
+            (2, 0x4000_0000),
+            (2, 0),
+            (0x8000_0002, 0x4000_0000),
+        ] {
+            let p = pattern(&mut t, &mut rng, 0x10);
+            t.w32(p, count);
+            t.w32(p + 4, data);
+            t.check(
+                &format!("{name} passes {count:#x} {data:#x}"),
+                0x004b_be40,
+                Conv::Thiscall(p),
+                &[],
+                |g| {
+                    basic::bridge::release_shader_pass_array(g, p);
+                    Out::None
+                },
+            );
+        }
+        let p = pattern(&mut t, &mut rng, 0x40);
+        t.check(
+            &format!("{name} zero56"),
+            0x0043_3700,
+            Conv::Thiscall(p),
+            &[],
+            |g| Out::U32(basic::bridge::clear_56(g, p)),
+        );
+        for kind in [0u8, 1, 2, 3, 0xff] {
+            for has in [false, true] {
+                let target = pattern(&mut t, &mut rng, 0x10);
+                let object = pattern(&mut t, &mut rng, 0x24);
+                t.w32(target, if has { object } else { 0 });
+                t.write(target + 4, &[kind]);
+                let (w, h) = (pattern(&mut t, &mut rng, 4), pattern(&mut t, &mut rng, 4));
+                t.check(
+                    &format!("{name} viewport {kind} {has}"),
+                    0x004c_82b0,
+                    Conv::Thiscall(target),
+                    &[w, h],
+                    |g| Out::U32(basic::bridge::viewport_size(g, target, w, h)),
+                );
+            }
+        }
+        // the segment draw: both wrappers stubbed
+        t.stub(basic::DRAW_INSTANCED, true, 4, 4, Ret::Imm(0x4444));
+        t.stub(basic::DRAW_INDEXED, true, 3, 3, Ret::Imm(0x3333));
+        for case in 0..12u32 {
+            let ctx = pattern(&mut t, &mut rng, 0x10);
+            let segment = pattern(&mut t, &mut rng, 0x20);
+            let n = case % 4;
+            let entries = pattern(&mut t, &mut rng, 0x40 * 4);
+            for i in 0..4 {
+                if !rng.next().is_multiple_of(3) || i + 1 < n {
+                    t.w32(entries + 0x40 * i + 4, 0);
+                }
+            }
+            let blocks = pattern(&mut t, &mut rng, 8);
+            t.w32(blocks, n | if case % 5 == 0 { 0x8000_0000 } else { 0 });
+            t.w32(blocks + 4, entries);
+            let indirect = if case % 3 == 0 {
+                pattern(&mut t, &mut rng, 0x10)
+            } else {
+                0
+            };
+            let extra = rng.next();
+            let unused = rng.next();
+            t.check(
+                &format!("{name} draw segment {case}"),
+                0x0049_8500,
+                Conv::Stdcall,
+                &[ctx, unused, segment, blocks, indirect, extra],
+                |g| {
+                    Out::U32(basic::bridge::draw_segment(
+                        g, ctx, segment, blocks, indirect, extra,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn batch8_extras_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xb8b8_0003);
+        let this = object(&mut t, &mut rng);
+        for p in [0, pattern(&mut t, &mut rng, 0x30)] {
+            t.check(
+                &format!("{name} 3d construct {p:#x}"),
+                0x004c_53b0,
+                Conv::Thiscall(this),
+                &[p],
+                |g| Out::U8(u8::from(descriptor::bridge::construct_texture_3d(g, p))),
+            );
+        }
+        let stored = t.stub_code(0x0057_0ed0, false, 2, 0, Ret::Imm(0x5707));
+        let d = pattern(&mut t, &mut rng, 0x98);
+        t.w32(d + 0x94, stored);
+        let (a, b) = (rng.next(), rng.next());
+        t.check(
+            &format!("{name} call stored"),
+            0x004d_7560,
+            Conv::Thiscall(d),
+            &[a, b],
+            |g| Out::U32(basic::bridge::call_stored(g, d, a, b)),
+        );
+        t.stub(basic::CONTEXT_CTOR, true, 0, 0, Ret::Imm(0xc7));
+        t.stub(basic::ATEXIT, false, 1, 0, Ret::Imm(0));
+        for guard_word in [0u32, 1, 2, 0xffff_ffff] {
+            let guard = t.rebase(basic::CONTEXT_GUARD);
+            t.w32(guard, guard_word);
+            t.check(
+                &format!("{name} context {guard_word:#x}"),
+                0x0046_49d0,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(basic::bridge::renderer_context(g)),
+            );
+        }
+    }
+}
