@@ -23,6 +23,9 @@
     clippy::similar_names
 )]
 
+pub mod copies;
 pub mod effect;
+pub mod menu;
 pub mod misc;
+pub mod movie;
 pub mod sound;

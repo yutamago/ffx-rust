@@ -258,3 +258,80 @@ pub fn i_music_refresh_bgm_type(h: &mut impl Host) -> u32 {
     let t = u32::from(h.read::<u8>(save + SAVE_BGM_TYPE)) & 1;
     h.call_sym(SET_BGM_TYPE, Conv::Cdecl, &[t])
 }
+
+/// `Phyre_PSerialization_PStreamFileWin32_isOpen(file)` (thiscall, `al`).
+pub const STREAM_IS_OPEN: u32 = 0x0060_7f20;
+/// The stream seek `0x006080e0` (thiscall; pos, whence).
+pub const STREAM_SEEK: u32 = 0x0060_80e0;
+/// `Phyre_PSerialization_PStreamFile_closeFile(file)` (thiscall).
+pub const STREAM_CLOSE: u32 = 0x0060_7d80;
+/// The stream's empty method `0x00607c10` (a bare `ret`, thiscall).
+pub const STREAM_RELEASE: u32 = 0x0060_7c10;
+/// `operator_delete(p)` (cdecl).
+pub const OPERATOR_DELETE: u32 = 0x0063_0390;
+/// `PhyreFIOSStreamFile_seek` (thiscall; pos, whence).
+pub const FIOS_SEEK: u32 = 0x006f_9d80;
+/// `FMOD_ERR_INVALID_PARAM`, what the file callbacks return for a null
+/// handle (`lea eax, [ecx + 0x25]` with `ecx` 0).
+pub const FMOD_ERR_INVALID_PARAM: u32 = 0x25;
+
+/// `eventcallback(event, type, a, b, out)` (0x00707a50, stdcall, FMOD's
+/// event callback): for types 2 and 4, `*out = 0`; returns 0.
+pub fn event_callback(h: &mut impl Mem, kind: u32, out: u32) -> u32 {
+    if kind == 2 || kind == 4 {
+        h.write(out, 0u32);
+    }
+    0
+}
+
+/// `PhyreFIOSStreamFile_seek(this; pos, whence)` (0x006f9d80, thiscall):
+/// the stream's seek when it is open (`al` of `isOpen`), else -1.
+pub fn fios_seek(h: &mut impl Host, this: u32, pos: u32, whence: u32) -> u32 {
+    let open = h.call_sym(STREAM_IS_OPEN, Conv::Thiscall(this), &[]) & 0xff;
+    if open == 0 {
+        return u32::MAX;
+    }
+    h.call_sym(STREAM_SEEK, Conv::Thiscall(this), &[pos, whence])
+}
+
+/// `FmodFile_seek(handle, pos, user)` (0x007085e0, stdcall, FMOD's file
+/// seek callback): `PhyreFIOSStreamFile_seek(handle; pos, 0)`, 0
+/// (`FMOD_OK`); `FMOD_ERR_INVALID_PARAM` for a null handle.
+pub fn fmod_file_seek(h: &mut impl Host, handle: u32, pos: u32) -> u32 {
+    if handle == 0 {
+        return FMOD_ERR_INVALID_PARAM;
+    }
+    h.call_sym(FIOS_SEEK, Conv::Thiscall(handle), &[pos, 0]);
+    0
+}
+
+/// `FmodFile_close(handle, user)` (0x007084d0, stdcall, FMOD's file close
+/// callback): closes the stream, its empty release method, `operator
+/// delete`; 0; `FMOD_ERR_INVALID_PARAM` for a null handle.
+pub fn fmod_file_close(h: &mut impl Host, handle: u32) -> u32 {
+    if handle == 0 {
+        return FMOD_ERR_INVALID_PARAM;
+    }
+    h.call_sym(STREAM_CLOSE, Conv::Thiscall(handle), &[]);
+    h.call_sym(STREAM_RELEASE, Conv::Thiscall(handle), &[]);
+    h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[handle]);
+    0
+}
+
+/// `FmodSfx_anyEventFlag_0070ed30(list)` (thiscall): whether one of the
+/// list's `count` (`+0`, signed) 8-byte entries at `+8` has its byte at
+/// `+4` set (`al`; the rest of `eax` the caller's, which no caller reads).
+pub fn sfx_any_event_flag(h: &impl Mem, list: u32) -> u8 {
+    let n = h.read::<u32>(list).cast_signed();
+    if n <= 0 {
+        return 0;
+    }
+    let mut p = h.read::<u32>(list + 8).wrapping_add(4);
+    for _ in 0..n {
+        if h.read::<u8>(p) != 0 {
+            return 1;
+        }
+        p = p.wrapping_add(8);
+    }
+    0
+}

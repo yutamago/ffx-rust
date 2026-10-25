@@ -344,3 +344,78 @@ pub fn set_env_sub_font(h: &mut impl Host) -> u32 {
     PKT_CURSOR.set(h, c);
     h.call_sym(CTRL_PKT, Conv::Cdecl, &[])
 }
+
+/// `TOSetScreenWH(w, h)` (cdecl).
+pub const SET_SCREEN_WH: u32 = 0x0090_48f0;
+/// `sceDmaGetChan(n)` (cdecl).
+pub const DMA_GET_CHAN: u32 = 0x0062_f6e0;
+/// The DMA channel `TOInitScreen_008fae20` keeps (`0x018716f4`).
+pub const TO_DMA_CHAN: Global<u32> = Global::new(0x0187_16f4);
+/// `TOAddPktMenuIconRGBA(a, b, c, d, r, g, b, a)` (cdecl).
+pub const ADD_PKT_MENU_ICON_RGBA: u32 = 0x008e_b270;
+/// `TOAdpEasyShapeXYWHC2(cursor, a, b, c, 0, 0, d, e)` (cdecl).
+pub const EASY_SHAPE_XYWHC2: u32 = 0x008e_d380;
+/// `FlushCache(n)` (a bare `ret`).
+pub const FLUSH_CACHE: u32 = 0x0062_f4c0;
+/// `sceDmaSend(chan, tag)` (a bare `ret`).
+pub const DMA_SEND: u32 = 0x0062_f710;
+/// `Sg_GetSpadPtr()`.
+pub const GET_SPAD_PTR: u32 = 0x0084_3220;
+/// `SendSpadToMFIFO(end)`.
+pub const SEND_SPAD: u32 = 0x0084_3200;
+/// The DMA loss report `0x00843560` (cdecl).
+pub const DMA_LOSS_REPORT: u32 = 0x0084_3560;
+
+/// `TOInitScreen_008fae20()` (from `TOInit`): `TOSetScreenWH(0x200,
+/// 0x1a0)`, then channel 1 (`sceDmaGetChan`) kept at `0x018716f4` and
+/// returned.
+pub fn to_init_screen(h: &mut impl Host) -> u32 {
+    h.call_sym(SET_SCREEN_WH, Conv::Cdecl, &[0x200, 0x1a0]);
+    let chan = h.call_sym(DMA_GET_CHAN, Conv::Cdecl, &[1]);
+    TO_DMA_CHAN.set(h, chan);
+    chan
+}
+
+/// `TOAddPktMenuIcon(a, b, c, d)` (0x008eb240):
+/// `TOAddPktMenuIconRGBA(a, b, c, d, 0x80, 0x80, 0x80, 0x80)`'s `eax`.
+pub fn add_pkt_menu_icon(h: &mut impl Host, a: u32, b: u32, c: u32, d: u32) -> u32 {
+    h.call_sym(
+        ADD_PKT_MENU_ICON_RGBA,
+        Conv::Cdecl,
+        &[a, b, c, d, 0x80, 0x80, 0x80, 0x80],
+    )
+}
+
+/// `TOMkpShapeXYC2(a, b, c, d, e)` (0x00903a50): `g_TOPktCursor =
+/// TOAdpEasyShapeXYWHC2(g_TOPktCursor, a, b, c, 0, 0, d, e)`, then a jump
+/// to `TOCtrlPkt()`, whose `eax` it returns.
+pub fn mkp_shape_xyc2(h: &mut impl Host, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+    let cur = PKT_CURSOR.get(h);
+    let cur = h.call_sym(EASY_SHAPE_XYWHC2, Conv::Cdecl, &[cur, a, b, c, 0, 0, d, e]);
+    PKT_CURSOR.set(h, cur);
+    h.call_sym(CTRL_PKT, Conv::Cdecl, &[])
+}
+
+/// `rcPacketDataDraw(packet)` (0x00927600): the PS2 DMA sequence on
+/// channel 2: `FlushCache(0)`, `sceDmaSend(chan, *packet)`,
+/// `sceDmaSync(chan, 0, 0)`'s `eax`.
+pub fn rc_packet_data_draw(h: &mut impl Host, packet: u32) -> u32 {
+    let chan = h.call_sym(DMA_GET_CHAN, Conv::Cdecl, &[2]);
+    h.call_sym(FLUSH_CACHE, Conv::Cdecl, &[0]);
+    let tag = h.read::<u32>(packet);
+    h.call_sym(DMA_SEND, Conv::Cdecl, &[chan, tag]);
+    h.call_sym(DMA_SYNC, Conv::Cdecl, &[chan, 0, 0])
+}
+
+/// `Sg_MFIFOEnd()` (0x00843260): an end tag (`0xf0000000`, three zero
+/// words) at the scratchpad pointer, `SendSpadToMFIFO(after it)`, then a
+/// jump to the DMA loss report `0x00843560`, whose `eax` it returns.
+pub fn mfifo_end(h: &mut impl Host) -> u32 {
+    let p = h.call_sym(GET_SPAD_PTR, Conv::Cdecl, &[]);
+    h.write(p, 0xf000_0000u32);
+    for k in 1..4 {
+        h.write(p.wrapping_add(4 * k), 0u32);
+    }
+    h.call_sym(SEND_SPAD, Conv::Cdecl, &[p.wrapping_add(0x10)]);
+    h.call_sym(DMA_LOSS_REPORT, Conv::Cdecl, &[])
+}

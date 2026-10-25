@@ -10,7 +10,7 @@
 //! Floats are passed as their bits (`u32`): the originals only copy them
 //! through `fld`/`fstp`, which the bridges model.
 
-use ffx_glue_other::{effect as e, misc as m, sound as s};
+use ffx_glue_other::{copies as c, effect as e, menu as mn, misc as m, movie as mv, sound as s};
 
 use super::{mem, ported};
 
@@ -304,5 +304,220 @@ ported! {
     /// `TOMkpSetEnvSubFont()`.
     TOMkpSetEnvSubFont @ 0x0090_3300 => extern "C" fn set_env_sub_font() -> u32 {
         m::set_env_sub_font(&mut mem())
+    }
+
+    // Batch 2: FMOD file callbacks, the movie manager, menus and text, PS2
+    // packet helpers, and exact copies of other modules' ports.
+    /// `eventcallback(event, type, a, b, out)` (FMOD's event callback).
+    eventcallback @ 0x0070_7a50 => extern "stdcall" fn event_callback(_event: u32, kind: u32, _a: u32, _b: u32, out: u32) -> u32 {
+        s::event_callback(&mut mem(), kind, out)
+    }
+    /// `PhyreFIOSStreamFile_seek(this; pos, whence)`.
+    PhyreFIOSStreamFile_seek @ 0x006f_9d80 => extern "thiscall" fn fios_seek(this: u32, pos: u32, whence: u32) -> u32 {
+        s::fios_seek(&mut mem(), this, pos, whence)
+    }
+    /// `FmodFile_seek(handle, pos, user)`.
+    FmodFile_seek @ 0x0070_85e0 => extern "stdcall" fn fmod_file_seek(handle: u32, pos: u32, _user: u32) -> u32 {
+        s::fmod_file_seek(&mut mem(), handle, pos)
+    }
+    /// `FmodFile_close(handle, user)`.
+    FmodFile_close @ 0x0070_84d0 => extern "stdcall" fn fmod_file_close(handle: u32, _user: u32) -> u32 {
+        s::fmod_file_close(&mut mem(), handle)
+    }
+    /// `FmodSfx_anyEventFlag_0070ed30(list)` (`al`).
+    FmodSfx_anyEventFlag_0070ed30 @ 0x0070_ed30 => extern "thiscall" fn sfx_any_event_flag(list: u32) -> u8 {
+        s::sfx_any_event_flag(&mem(), list)
+    }
+
+    /// `movie_with3DScene()`.
+    movie_with3DScene @ 0x0076_f0c0 => extern "C" fn movie_with_3d_scene() -> u32 {
+        mv::with_3d_scene(&mut mem())
+    }
+    /// `movie_have_camera()`.
+    movie_have_camera @ 0x0076_efc0 => extern "C" fn movie_have_camera() -> u32 {
+        mv::have_camera(&mut mem())
+    }
+    /// `PhyFMVPlayerManager_fmvPlayer_terminate(this)`.
+    PhyFMVPlayerManager_fmvPlayer_terminate @ 0x006d_9180 => extern "thiscall" fn fmv_terminate(this: u32) -> u32 {
+        mv::fmv_terminate(&mut mem(), this)
+    }
+    /// `PhyFMVPlayerManager_pauseMovie(this)`.
+    PhyFMVPlayerManager_pauseMovie @ 0x006d_a4b0 => extern "thiscall" fn fmv_pause(this: u32) {
+        mv::fmv_pause(&mut mem(), this);
+    }
+    /// `PhyFMVPlayerManager_resumeMovie()`.
+    PhyFMVPlayerManager_resumeMovie @ 0x006d_8f80 => extern "C" fn fmv_resume() -> u32 {
+        mv::fmv_resume(&mut mem())
+    }
+    /// `TreeHead_new_006d78c0()`.
+    TreeHead_new_006d78c0 @ 0x006d_78c0 => extern "C" fn tree_head_new_6d78c0() -> u32 {
+        mv::tree_head_new(&mut mem())
+    }
+    /// `TreeHead_new_006a0360()`.
+    TreeHead_new_006a0360 @ 0x006a_0360 => extern "C" fn tree_head_new_6a0360() -> u32 {
+        mv::tree_head_new(&mut mem())
+    }
+
+    /// `FFEscMenu_addHandler_00702570(this; i)`.
+    FFEscMenu_addHandler_00702570 @ 0x0070_2570 => extern "thiscall" fn esc_add_handler(this: u32, i: u32) -> u32 {
+        mn::esc_add_handler(&mut mem(), this, i)
+    }
+    /// `ClassDynamicGeometry_applyBuffer_006a46c0(this)` -> 0.
+    ClassDynamicGeometry_applyBuffer_006a46c0 @ 0x006a_46c0 => extern "thiscall" fn geometry_apply_buffer(this: u32) -> u32 {
+        mn::geometry_apply_buffer(&mut mem(), this)
+    }
+    /// `IggyMenu_Draw_00a28eb0(this)`.
+    IggyMenu_Draw_00a28eb0 @ 0x00a2_8eb0 => extern "thiscall" fn iggy_menu_draw(this: u32) -> u32 {
+        mn::iggy_menu_draw(&mut mem(), this)
+    }
+    /// `PCluster_createInRoot_006f7a00(name)` (`ecx` passed on to
+    /// `Phyre_PCluster_create`).
+    PCluster_createInRoot_006f7a00 @ 0x006f_7a00 => extern "thiscall" fn cluster_create_in_root(ecx: u32, name: u32) -> u32 {
+        mn::cluster_create_in_root(&mut mem(), ecx, name)
+    }
+    /// `AsyncLoadManager_LoadClusterRequest_run_00691320(this)`.
+    AsyncLoadManager_LoadClusterRequest_run_00691320 @ 0x0069_1320 => extern "thiscall" fn load_cluster_request_run(this: u32) -> u32 {
+        mn::load_cluster_request_run(&mut mem(), this)
+    }
+    /// `MotionBlur_onShaderClusterLoaded_006c53e0(cluster, &args)`.
+    MotionBlur_onShaderClusterLoaded_006c53e0 @ 0x006c_53e0 => extern "C" fn motion_blur_on_loaded(cluster: u32, args: u32) -> u32 {
+        mn::motion_blur_on_loaded(&mut mem(), cluster, args)
+    }
+    /// `graphicVideoPlayIfReady_007185e0()`.
+    graphicVideoPlayIfReady_007185e0 @ 0x0071_85e0 => extern "C" fn video_play_if_ready() -> u32 {
+        mn::video_play_if_ready(&mut mem())
+    }
+    /// `TextUtil_onTextUtilAssetLoaded(asset, &slot)`.
+    TextUtil_onTextUtilAssetLoaded @ 0x006f_63f0 => extern "C" fn text_on_asset_loaded(asset: u32, slot: u32) -> u32 {
+        mn::text_on_asset_loaded(&mut mem(), asset, slot)
+    }
+    /// `IconPanel_create_006f77f0()`.
+    IconPanel_create_006f77f0 @ 0x006f_77f0 => extern "C" fn icon_panel_create() -> u32 {
+        mn::icon_panel_create(&mut mem())
+    }
+    /// `PhyreScene_chrLoadCountdown_00782fa0()`.
+    PhyreScene_chrLoadCountdown_00782fa0 @ 0x0078_2fa0 => extern "C" fn chr_load_countdown() {
+        mn::chr_load_countdown(&mut mem());
+    }
+    /// `TextUtil_changeLine(this; i, s)`.
+    TextUtil_changeLine @ 0x006f_6070 => extern "thiscall" fn text_change_line(this: u32, i: u32, s: u32) -> u32 {
+        mn::text_change_line(&mut mem(), this, i, s)
+    }
+    /// `IggyMenuManager_createInstance()`.
+    IggyMenuManager_createInstance @ 0x00a2_6240 => extern "C" fn iggy_menu_manager_create() {
+        mn::create_instance(&mut mem(), mn::IGGY_MENU_MANAGER_NEW);
+    }
+    /// `RemapButtonIcon_sCreatInstance()`.
+    RemapButtonIcon_sCreatInstance @ 0x006e_76c0 => extern "C" fn remap_button_icon_create() {
+        mn::create_instance(&mut mem(), mn::REMAP_BUTTON_ICON);
+    }
+    /// `PostEffect_createInstance_006c5790()`.
+    PostEffect_createInstance_006c5790 @ 0x006c_5790 => extern "C" fn post_effect_create() {
+        mn::create_instance(&mut mem(), mn::POST_EFFECT);
+    }
+    /// `IconPanel_setVisible(this; on)`.
+    IconPanel_setVisible @ 0x006f_7940 => extern "thiscall" fn icon_panel_set_visible(this: u32, on: u32) {
+        mn::icon_panel_set_visible(&mut mem(), this, on);
+    }
+    /// `IconPanel_hideAllIcons(this)`.
+    IconPanel_hideAllIcons @ 0x006f_78d0 => extern "thiscall" fn icon_panel_hide_all(this: u32) {
+        mn::icon_panel_hide_all(&mut mem(), this);
+    }
+    /// `MenuDynamicGeometry_resetMaterials(this)`.
+    MenuDynamicGeometry_resetMaterials @ 0x006a_2c60 => extern "thiscall" fn reset_materials(this: u32) -> u32 {
+        mn::reset_materials(&mut mem(), this)
+    }
+    /// `BrokenScreenEffect_getEntryWord_006d5190(this; i, k)`.
+    BrokenScreenEffect_getEntryWord_006d5190 @ 0x006d_5190 => extern "thiscall" fn broken_screen_entry_word(this: u32, i: u32, k: u32) -> u32 {
+        mn::broken_screen_entry_word(&mem(), this, i, k)
+    }
+    /// `CheckEncounterKey()`.
+    CheckEncounterKey @ 0x006f_75c0 => extern "C" fn check_encounter_key() -> u32 {
+        mn::check_encounter_key(&mut mem())
+    }
+    /// `LocString_ToValue_0068e270(this; out)` -> `out`.
+    LocString_ToValue_0068e270 @ 0x0068_e270 => extern "thiscall" fn loc_string_to_value(this: u32, out: u32) -> u32 {
+        mn::loc_string_to_value(&mut mem(), this, out)
+    }
+    /// `PArray_destroy_006b01f0(array, n)`.
+    PArray_destroy_006b01f0 @ 0x006b_01f0 => extern "C" fn parray_destroy_20(array: u32, n: u32) {
+        mn::parray_destroy(&mut mem(), array, n, 0x20);
+    }
+    /// `PArray_destroy_006b0230(array, n)`.
+    PArray_destroy_006b0230 @ 0x006b_0230 => extern "C" fn parray_destroy_40(array: u32, n: u32) {
+        mn::parray_destroy(&mut mem(), array, n, 0x40);
+    }
+    /// `graphicInitialize_allocOnce2_006e56a0()`.
+    graphicInitialize_allocOnce2_006e56a0 @ 0x006e_56a0 => extern "C" fn alloc_once_2() {
+        mn::alloc_once_2(&mut mem());
+    }
+
+    /// `TOInitScreen_008fae20()`.
+    TOInitScreen_008fae20 @ 0x008f_ae20 => extern "C" fn to_init_screen() -> u32 {
+        m::to_init_screen(&mut mem())
+    }
+    /// `TOAddPktMenuIcon(a, b, c, d)`.
+    TOAddPktMenuIcon @ 0x008e_b240 => extern "C" fn add_pkt_menu_icon(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        m::add_pkt_menu_icon(&mut mem(), a, b, c, d)
+    }
+    /// `TOMkpShapeXYC2(a, b, c, d, e)`.
+    TOMkpShapeXYC2 @ 0x0090_3a50 => extern "C" fn mkp_shape_xyc2(a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        m::mkp_shape_xyc2(&mut mem(), a, b, c, d, e)
+    }
+    /// `rcPacketDataDraw(packet)`.
+    rcPacketDataDraw @ 0x0092_7600 => extern "C" fn rc_packet_data_draw(packet: u32) -> u32 {
+        m::rc_packet_data_draw(&mut mem(), packet)
+    }
+    /// `Sg_MFIFOEnd()`.
+    Sg_MFIFOEnd @ 0x0084_3260 => extern "C" fn mfifo_end() -> u32 {
+        m::mfifo_end(&mut mem())
+    }
+
+    /// `PhyreCursor_IsValid_copy_00637f80(this)`: the same code as
+    /// `PhyreCursor_IsValid_00441e10` (tools/dupes.py).
+    PhyreCursor_IsValid_copy_00637f80 @ 0x0063_7f80 => extern "thiscall" fn cursor_valid_637f80(this: u32) -> u8 {
+        ffx_graphic::managers::bridge::cursor_valid(&mem(), this)
+    }
+    /// `PhyreCursor_IsValid_006f63b0(this)`: the same code.
+    PhyreCursor_IsValid_006f63b0 @ 0x006f_63b0 => extern "thiscall" fn cursor_valid_6f63b0(this: u32) -> u8 {
+        ffx_graphic::managers::bridge::cursor_valid(&mem(), this)
+    }
+    /// `TaggedTreeInsert_0069dae0(this; node)`: the same code as
+    /// `TaggedTreeInsert_0060c990`.
+    TaggedTreeInsert_0069dae0 @ 0x0069_dae0 => extern "thiscall" fn tagged_tree_insert_69dae0(this: u32, node: u32) -> u32 {
+        ffx_system::stl::bridge::tagged_tree_insert(&mut mem(), this, node)
+    }
+    /// `PArray_PushInto_006a2670(this; dst, value)`: the same code as
+    /// `PArray_PushInto_00629b90`.
+    PArray_PushInto_006a2670 @ 0x006a_2670 => extern "thiscall" fn parray_push_into_6a2670(this: u32, dst: u32, value: u32) -> u32 {
+        ffx_system::container::bridge::parray_push_into(&mut mem(), this, dst, value, c::phyre_free)
+    }
+    /// `PArray_PushInto_006a2700(this; dst, value)`: the same code.
+    PArray_PushInto_006a2700 @ 0x006a_2700 => extern "thiscall" fn parray_push_into_6a2700(this: u32, dst: u32, value: u32) -> u32 {
+        ffx_system::container::bridge::parray_push_into(&mut mem(), this, dst, value, c::phyre_free)
+    }
+    /// `vfxIntTree_Insert_0070bb20(this; node)`: the same code as
+    /// `vfxIntTree_Insert`.
+    vfxIntTree_Insert_0070bb20 @ 0x0070_bb20 => extern "thiscall" fn vfx_int_tree_insert_70bb20(this: u32, node: u32) -> u32 {
+        ffx_vfx::tree::bridge::vfx_int_tree_insert(&mut mem(), this, node)
+    }
+    /// `vfxIntTree_Insert_0070bba0(this; node)`: the same code.
+    vfxIntTree_Insert_0070bba0 @ 0x0070_bba0 => extern "thiscall" fn vfx_int_tree_insert_70bba0(this: u32, node: u32) -> u32 {
+        ffx_vfx::tree::bridge::vfx_int_tree_insert(&mut mem(), this, node)
+    }
+    /// `vfxIntTree_Insert_00710540(this; node)`: the same code.
+    vfxIntTree_Insert_00710540 @ 0x0071_0540 => extern "thiscall" fn vfx_int_tree_insert_710540(this: u32, node: u32) -> u32 {
+        ffx_vfx::tree::bridge::vfx_int_tree_insert(&mut mem(), this, node)
+    }
+    /// `SfxEventTree_Find_0070ba20(tree; &key)`: the same code as
+    /// `SfxEventTree_Find`.
+    SfxEventTree_Find_0070ba20 @ 0x0070_ba20 => extern "thiscall" fn sfx_event_tree_find_70ba20(tree: u32, key: u32) -> u32 {
+        let m = mem();
+        ffx_sound::ffxfmod::bridge::sfx_find(&m, tree, ffx_bridge::Mem::read(&m, key))
+    }
+    /// `SfxEventTree_Find_007104c0(tree; &key)`: the same code.
+    SfxEventTree_Find_007104c0 @ 0x0071_04c0 => extern "thiscall" fn sfx_event_tree_find_7104c0(tree: u32, key: u32) -> u32 {
+        let m = mem();
+        ffx_sound::ffxfmod::bridge::sfx_find(&m, tree, ffx_bridge::Mem::read(&m, key))
     }
 }
