@@ -692,4 +692,31 @@ pub mod bridge {
         h.write(head, node);
         0
     }
+
+    /// A derived constructor (`0x009fc2b0`, `0x009fc480`, `0x009fc4e0`,
+    /// `0x009fc650`): the base constructor (thiscall), the words at
+    /// `zeros` zeroed, the class's vtable and the word at `+4` where given
+    /// (image addresses). Returns `obj`.
+    pub fn derived_ctor_zeroed(
+        h: &mut impl Host,
+        obj: u32,
+        base: u32,
+        vtable: Option<u32>,
+        word4: Option<u32>,
+        zeros: &[u32],
+    ) -> u32 {
+        h.call_sym(base, Conv::Thiscall(obj), &[]);
+        for &at in zeros {
+            h.write(obj.wrapping_add(at), 0u32);
+        }
+        if let Some(v) = vtable {
+            let v = h.rebase(v);
+            h.write(obj, v);
+        }
+        if let Some(w) = word4 {
+            let w = h.rebase(w);
+            h.write(obj.wrapping_add(4), w);
+        }
+        obj
+    }
 }

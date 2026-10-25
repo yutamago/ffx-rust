@@ -21,6 +21,16 @@ use ffx_graphic::host::{Conv, Host};
 /// `Phyre_PhyreFree(ptr)` (cdecl).
 pub const PHYRE_FREE: u32 = 0x0042_fb20;
 
+/// The five floats the screen-space ambient occlusion effects' construct
+/// copies to `+0x14..+0x24` (`.rdata`).
+pub const SSAO_DEFAULTS: [u32; 5] = [
+    0x00b7_8b48,
+    0x00b2_607c,
+    0x00b7_8b50,
+    0x00b7_8b54,
+    0x00b1_0f38,
+];
+
 /// `al = 1` over `eax`'s upper bytes, as `mov al, 1` leaves it.
 #[must_use]
 pub const fn al_one(eax: u32) -> u32 {
@@ -257,6 +267,51 @@ pub mod bridge {
         let offset: u32 = h.read(member.wrapping_add(0x24));
         let base: u32 = h.read(class.wrapping_add(0x88));
         h.read(offset.wrapping_sub(base).wrapping_add(obj))
+    }
+
+    /// `constructInstance(obj)` through a constructor that zeroes more
+    /// words (`PMotionBlur*`, `PDepthOfField*`; SEH frames): as
+    /// [`construct_with`], then the words at `zeros`.
+    pub fn construct_with_zeroed(
+        h: &mut impl Host,
+        obj: u32,
+        ctor: u32,
+        vtable: Option<u32>,
+        word4: Option<u32>,
+        zeros: &[u32],
+    ) -> u8 {
+        construct_with(h, obj, ctor, vtable, word4);
+        if obj != 0 {
+            for &at in zeros {
+                h.write(obj.wrapping_add(at), 0u32);
+            }
+        }
+        1
+    }
+
+    /// `constructInstance(obj)` of the screen-space ambient occlusion
+    /// effects (94 bytes, 3 copies), when `obj` is set: the vtable,
+    /// `word4` at `+4` (0 when not given; image addresses), `+8` = `+0xc`
+    /// = 0, the `u16` at `+0x10` = 0x100, and the five default floats
+    /// `+0x14..+0x24` copied from [`super::SSAO_DEFAULTS`] (`fld`/`fstp`).
+    pub fn construct_ssao(h: &mut impl Host, obj: u32, vtable: u32, word4: Option<u32>) -> u32 {
+        if obj != 0 {
+            let v = h.rebase(vtable);
+            h.write(obj, v);
+            let w = word4.map_or(0, |w| h.rebase(w));
+            h.write(obj.wrapping_add(4), w);
+            h.write(obj.wrapping_add(8), 0u32);
+            h.write(obj.wrapping_add(0xc), 0u32);
+            h.write(obj.wrapping_add(0x10), 0x100u16);
+            for (i, src) in super::SSAO_DEFAULTS.into_iter().enumerate() {
+                let x: f32 = h.read(h.rebase(src));
+                h.write(
+                    obj.wrapping_add(0x14 + 4 * i as u32),
+                    ffx_bridge::x87::round_trip(x),
+                );
+            }
+        }
+        al_one(obj)
     }
 }
 

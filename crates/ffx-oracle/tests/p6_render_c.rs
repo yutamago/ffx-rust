@@ -1557,3 +1557,132 @@ fn misc_add_named_matches_the_original() {
         }
     }
 }
+
+/// (original, constructor, vtable, word at `+4`, zeroed words).
+type CtorCase = (u32, u32, Option<u32>, Option<u32>, &'static [u32]);
+
+/// The words `+0x90..=+0xa8` the `PGlow` constructors zero.
+const GLOW_ZEROS: [u32; 7] = [0xa8, 0x90, 0x9c, 0x94, 0xa0, 0x98, 0xa4];
+
+#[test]
+fn misc_derived_ctors_zeroed_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xbbbb_b6b6);
+        let cases: [CtorCase; 4] = [
+            (
+                0x009f_c2b0,
+                0x009f_c310,
+                Some(0x00b7_55f0),
+                Some(0x0194_4180),
+                &GLOW_ZEROS,
+            ),
+            (
+                0x009f_c480,
+                0x009f_c310,
+                Some(0x00b7_54f0),
+                None,
+                &GLOW_ZEROS,
+            ),
+            (
+                0x009f_c4e0,
+                0x009f_c310,
+                Some(0x00b7_53e8),
+                None,
+                &GLOW_ZEROS,
+            ),
+            (
+                0x009f_c650,
+                0x009f_c540,
+                None,
+                None,
+                &[0x78, 0x84, 0x7c, 0x88, 0x80, 0x8c],
+            ),
+        ];
+        for (f, base, vt, w4, zeros) in cases {
+            for i in 0..3 {
+                let obj = object(&mut t, &mut rng, 0x30, false);
+                t.stub_at(base, rng.next());
+                t.check(
+                    &format!("{name} {f:#x} #{i}"),
+                    f,
+                    Conv::Thiscall(obj),
+                    &[],
+                    |g| {
+                        Out::U32(misc::bridge::derived_ctor_zeroed(
+                            g, obj, base, vt, w4, zeros,
+                        ))
+                    },
+                );
+                t.unstub(base);
+            }
+        }
+    }
+}
+
+#[test]
+fn descriptor_construct_with_zeroed_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xcccc_b6b6);
+        let dof: &[u32] = &[0xfb0, 0xfb4, 0xfb8, 0xfbc];
+        let cases: [CtorCase; 4] = [
+            (0x00a0_f910, 0x009f_cbb0, Some(0x00b7_4928), None, &[0xd4c]),
+            (
+                0x00a0_f850,
+                0x009f_cbb0,
+                Some(0x00b7_4a30),
+                Some(0x0194_3aa8),
+                &[0xd4c],
+            ),
+            (0x00a0_f220, 0x009f_bd90, Some(0x00b7_4590), None, dof),
+            (
+                0x00a0_f140,
+                0x009f_bd90,
+                Some(0x00b7_4698),
+                Some(0x0194_38e0),
+                dof,
+            ),
+        ];
+        for (f, ctor, vt, w4, zeros) in cases {
+            for i in 0..3 {
+                let obj = object(&mut t, &mut rng, 0x400, i == 0);
+                t.stub_at(ctor, rng.next());
+                t.check(
+                    &format!("{name} {f:#x} #{i}"),
+                    f,
+                    Conv::Thiscall(DESC),
+                    &[obj],
+                    |g| {
+                        Out::U8(descriptor::bridge::construct_with_zeroed(
+                            g, obj, ctor, vt, w4, zeros,
+                        ))
+                    },
+                );
+                t.unstub(ctor);
+            }
+        }
+    }
+}
+
+#[test]
+fn descriptor_construct_ssao_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xdddd_b6b6);
+        let cases = [
+            (0x00a0_f9e0, 0x00b7_4d60, Some(0x0194_3c70)),
+            (0x00a0_fa40, 0x00b7_4b30, None),
+            (0x00a0_faa0, 0x00b7_4c48, None),
+        ];
+        for (f, vt, w4) in cases {
+            for i in 0..3 {
+                let obj = object(&mut t, &mut rng, 12, i == 0);
+                t.check(
+                    &format!("{name} {f:#x} #{i}"),
+                    f,
+                    Conv::Thiscall(DESC),
+                    &[obj],
+                    |g| Out::U32(descriptor::bridge::construct_ssao(g, obj, vt, w4)),
+                );
+            }
+        }
+    }
+}
