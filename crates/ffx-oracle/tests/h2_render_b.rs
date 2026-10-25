@@ -46,6 +46,7 @@ use ffx_prender::h2_bind::bridge as hb;
 use ffx_prender::h2_more::bridge as hm;
 use ffx_prender::h2_more2::bridge as h2;
 use ffx_prender::h2_more3::bridge as h3;
+use ffx_prender::h2_more4::bridge as h4;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 

@@ -25,6 +25,7 @@ use ffx_prender::h2_bind::bridge as hb;
 use ffx_prender::h2_more::bridge as hm;
 use ffx_prender::h2_more2::bridge as h2;
 use ffx_prender::h2_more3::bridge as h3;
+use ffx_prender::h2_more4::bridge as h4;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -1565,6 +1566,18 @@ ported! {
     /// `Phyre_PRendering_PMeshInstanceBounds_Bind`.
     Phyre_PRendering_PMeshInstanceBounds_Bind @ 0x004f_fa30 => extern "C" fn s_004ffa30() -> u32 {
         hb::bind(&mut mem(), &ffx_prender::h2_bind::B_004FFA30)
+    }
+    /// `Phyre_WaitAndClear_0055dfa0`.
+    Phyre_WaitAndClear_0055dfa0 @ 0x0055_dfa0 => extern "thiscall" fn s_0055dfa0(a0: u32) {
+        h4::wait_and_clear2(&mut mem(), a0);
+    }
+    /// `PRenderStateBlock_ctor_00583e20`.
+    PRenderStateBlock_ctor_00583e20 @ 0x0058_3e20 => extern "thiscall" fn s_00583e20(a0: u32) -> u32 {
+        h4::state_block_ctor(&mut mem(), a0)
+    }
+    /// `PConstantBufferD3D11_resizeSlots_00599a80`.
+    PConstantBufferD3D11_resizeSlots_00599a80 @ 0x0059_9a80 => extern "thiscall" fn s_00599a80(a0: u32, a1: u32) -> u32 {
+        h4::resize_slots(&mut mem(), a0, a1)
     }
 }
 

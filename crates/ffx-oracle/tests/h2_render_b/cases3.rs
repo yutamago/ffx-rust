@@ -1488,6 +1488,61 @@ pub const CASES: &[Case] = &[
         gap: 0,
         writes: &[],
     },
+    Case {
+        name: "Phyre_WaitAndClear_0055dfa0",
+        addr: 0x0055_dfa0,
+        conv: K::T,
+        kinds: "p",
+        out: O::None,
+        callees: &[
+            (0x0056_4630, 0, 0, true),
+            (0x0056_46d0, 0, 0, true),
+            (0x0042_fb20, 1, 0, false),
+        ],
+        prep: |e, r, a| {
+            prep_sharray_at(e, r, a, 0x18);
+            prep_sharray_at(e, r, a, 8);
+        },
+        port: |g, a| {
+            h4::wait_and_clear2(g, a[0]);
+            0
+        },
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "PRenderStateBlock_ctor_00583e20",
+        addr: 0x0058_3e20,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[(0x0058_2f50, 1, 1, true)],
+        prep: |e, r, a| {
+            a[0] = e.pool + 4 * r.below(0x380);
+            let g = e.rebase(0x00b3_144c);
+            // the bytes after it too: only the first one is an argument
+            let w = r.next();
+            e.w32(g, w);
+        },
+        port: |g, a| h4::state_block_ctor(g, a[0]),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "PConstantBufferD3D11_resizeSlots_00599a80",
+        addr: 0x0059_9a80,
+        conv: K::T,
+        kinds: "pc",
+        out: O::U32,
+        callees: &[(0x0042_fb20, 1, 0, false)],
+        prep: prep_resize_slots,
+        port: |g, a| h4::resize_slots(g, a[0], a[1]),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
 ];
 
 /// Argument `i` low in the pool (apart from the objects) and COM
@@ -1770,5 +1825,33 @@ fn prep_bind(e: &mut Env, rng: &mut Rng, b: &ffx_prender::h2_bind::Bind) {
             let v = rng.next() & rng.next();
             e.w32(g, v);
         }
+    }
+}
+
+/// `0x00599a80`: the busy word `+0x38` (mostly 0), the slot array at
+/// `+0xc` (count sometimes `n`, owned or not; one slot inline, more in
+/// storage apart), the slots' words.
+fn prep_resize_slots(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    // the resize stand-in sets the count (the owned bit kept) and logs it
+    e.custom(0x0059_9460, |n| {
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xa3]; // mov eax, [esp+4]; mov [n], eax
+        c.extend(le(n));
+        c.extend([0x8b, 0x11]); // mov edx, [ecx]
+        c.extend([0x81, 0xe2, 0, 0, 0, 0x80]); // and edx, 0x80000000
+        c.extend([0x09, 0xd0, 0x89, 0x01]); // or eax, edx; mov [ecx], eax
+        c.extend([0xc2, 0x04, 0x00]);
+        c
+    });
+    a[0] = e.pool + 4 * rng.below(0x400);
+    let busy = u32::from(rng.chance(5));
+    e.w32(a[0] + 0x38, busy);
+    let n = if rng.chance(4) { a[1] } else { rng.below(9) };
+    let n = n | if rng.chance(3) { 0x8000_0000 } else { 0 };
+    e.w32(a[0] + 0xc, n);
+    let data = e.pool + POOL_PTRS + 0x700;
+    e.w32(a[0] + 0x10, data);
+    for k in 0..36 {
+        let w = if rng.chance(2) { 0 } else { e.ret_word(rng) };
+        e.w32(data + 4 * k, w);
     }
 }
