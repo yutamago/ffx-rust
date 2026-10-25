@@ -10,7 +10,7 @@
 // Local `type F = …` aliases sit next to the calls that use them.
 #![allow(clippy::items_after_statements)]
 
-mod capture;
+pub mod capture;
 pub mod live;
 mod proxy;
 pub mod replay;

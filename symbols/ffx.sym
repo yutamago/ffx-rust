@@ -214,9 +214,11 @@
 0x00443250 function Phyre_PWorld_addCluster   # fh v3:exact 0x00443320 Phyre::PWorld::addCluster
 0x00443320 function Phyre_PWorld_addInstanceList # fh v3:exact 0x004433f0 Phyre::PWorld::addInstanceList
 0x004436a0 function Phyre_PWorld_getInstanceCountForScript # layout+callees: sorts between Phyre_PWorld_addInstanceList and Phyre_PWorld_removeCluster, and its named callees match the Switch 0x71000aabb0 Phyre_PWorld_getInstanceCountForScript's (similarity 0.67: Phyre_PNamespace_GetGlobalNamespace, Phyre_PNamespace_getClassDescriptor); symbols from Fahrenheit's server export
+0x004437e0 function PWorld_classEntry_004437e0 # thiscall(world, class descriptor) -> the world's entry for the class: world +0xc + id (descriptor +0x80) * 0x14, or 0 when id >= (world +8) & 0x7fffffff; entry +0 chains the class's instance lists (their +0x20 links) into the next entry, +0x10 the class's depth; name ours (M4 round 2, scene inputs)
 0x00443a40 function Phyre_PWorld_initialize      # layout+callees: sorts between Phyre_PWorld_addInstanceList and Phyre_PWorld_removeCluster, and its named callees match the Switch 0x71000aacb0 Phyre_PWorld_initialize's (similarity 1.00: Phyre_PNamespace_GetGlobalNamespace); symbols from Fahrenheit's server export
 0x00443b70 function Phyre_PWorld_removeCluster # fh v3:exact 0x00443c40 Phyre::PWorld::removeCluster
 0x00443c20 function Phyre_PWorld_removeInstanceList # fh v3:exact 0x00443cf0 Phyre::PWorld::removeInstanceList
+0x00443ef0 function PWorldCursor_nextList_00443ef0 # fastcall(cursor): the next instance-list link (+0x20) of the chain; at the next class entry it goes on while that entry's depth (+0x10) is greater than the cursor's class depth (cursor +4), else ends (0); name ours (M4 round 2, crates/ffx-hook/src/world.rs world_lists_of)
 0x004443f0 function Phyre_PTypedObject_Bind   # fh v3:cg5 0x4444c0 Phyre::PTypedObject::Bind
 0x00444530 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PTypedObject__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PTypedObject *>::Get" (its own __FUNCTION__ in an error print)
 0x00444880 function Phyre_PClassDescriptorAbstract_Phyre_PTypedObject__putValueToScriptContext # fh switch:bsim1.00 0x71000c0c00 Phyre::PClassDescriptorAbstract<Phyre::PTypedObject>::putValueToScriptContext
@@ -682,9 +684,11 @@
 0x004fe940 function Phyre_PRendering_PSceneWideParameters_PSceneWideParametersKey_initialize # fh v3:exact 0x004fea90 Phyre::PRendering::PSceneWideParameters::PSceneWideParametersKey::initialize
 0x004fedc0 function PParameterCaptureBuffer_setValue # writes a value only when its offset is >= 4 and offset + size fits the buffer's size word, then memcpy of size bytes; name ours (M4 T4)
 0x004fee50 function Phyre_PRendering_PRenderInterfaceBase_PDynamicProcessBufferAllocation_PDynamicProcessBufferAllocation # fh switch:cg2 0x710089ce58 Phyre::PRendering::PRenderInterfaceBase::PDynamicProcessBufferAllocation::PDynamicProcessBufferAllocation
+0x004ff6e0 function PWorldCursor_MeshInstanceBounds_004ff6e0 # thiscall(cursor, world), ret 4: a cursor over the world's PMeshInstanceBounds and subclasses (class 0x00ca89b8), at its first live object (0x005009f0); renderWorldCulledSorted's, handed to startJobsForAllBounds; name ours (M4 round 2)
 0x004ffa30 function Phyre_PRendering_PMeshInstanceBounds_Bind # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'm_meshInstance'; Switch 0x71000167d0 Phyre::PRendering::PMeshInstanceBounds::Bind (symbols from Fahrenheit's server export)
 0x004ffc00 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PMeshInstanceBounds__Get_004ffc00 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PRendering::PMeshInstanceBounds &>::Get" (its own __FUNCTION__ in an error print)
 0x004ffce0 function Phyre_PRendering_PMeshInstanceBounds_GetBoundsPoints # fh switch:bsim1.00 0x7100016de0 Phyre::PRendering::PMeshInstanceBounds::GetBoundsPoints
+0x005009f0 function PWorldCursor_skipEmpty_005009f0 # fastcall(cursor): to the first live object: lists without objects skipped (0x00443ef0), free slots passed (instance list +8: ascending, each holding the next); cursor +0xc object, +0x10 next free slot, +0x14 stride (class +0x1c), +0x18 objects left; same body as 0x009f3930; name ours (M4 round 2)
 0x00500bd0 function Phyre_PRendering_PMeshInstanceBounds_setMinAndMax # fh v3:bsim1.00 0x00500d30 Phyre::PRendering::PMeshInstanceBounds::setMinAndMax
 0x00500c20 function Phyre_PRendering_PMeshInstanceBounds_setMinAndSize # fh switch:bsim1.00 0x7100016a90 Phyre::PRendering::PMeshInstanceBounds::setMinAndSize
 0x00501110 function Phyre_PRendering_PMeshInstanceAttachPoint_Bind # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'm_destination'; Switch 0x71000e88c0 Phyre::PRendering::PMeshInstanceAttachPoint::Bind (symbols from Fahrenheit's server export)
@@ -13586,6 +13590,7 @@
 0x009f17c0 function std_sort_VisibleEntries        # MSVC std::_Sort on 12-byte (instance, key, render order) entries with PCheckVisibleBoundsJob_compareEntries: insertion sort up to 32, unstable above; name ours (M4 T4)
 0x009f20f0 function Phyre_PRendering_PVisibilityCheck_startOccluderJobs # iterates POccluderGeometryInstance; none on field maps, so occlusion stays off; name ours, class a guess (M4 T4)
 0x009f2250 function Phyre_PRendering_PVisibilityCheck_startJobsForAllBounds # per PMeshInstanceBounds instance list of the world: startJobsForObjects 0x009f4000 (jobs of at most 400 objects); name ours, class a guess (M4 T4)
+0x009f23f0 function PWorldCursor_OccluderGeometryInstance_009f23f0 # thiscall(cursor, world), ret 4: as 0x004ff6e0 for POccluderGeometryInstance (class 0x01a85420), the occluder cursor of renderWorldCulledSorted; name ours (M4 round 2)
 0x009f2580 function Phyre_PRendering_PVisibilityCheck_PVisibilityCheck # (camera, dir): keeps the camera's +0x70 view-projection for the frustum test and the view z row of FromMatrix3x4(PCamera +0) as the depth plane, negated for dir >= 0; name ours, class a guess (M4 T4, docs/formats/scene.md)
 0x009f26c0 function Phyre_PRendering_PVisibilityCheck_dtor # frees the job lists; name ours, class a guess (M4 T4)
 0x009f2d70 function PCheckVisibleBoundsJob_compareEntries # a before b: render order /1e8 == 1 first, then ro % 1000, then (ro % 100000) / 1000 ascending, then the depth key strictly smaller; checked on the field-walk-1 frame (docs/formats/scene.md); name ours (M4 T4)
@@ -13593,7 +13598,10 @@
 0x009f30d0 function Phyre_PRendering_PVisibilityCheck_waitAndCount # waits on the thread-pool jobs and counts their 12-byte entries; name ours, class a guess (M4 T4)
 0x009f3160 function PCheckVisibleBoundsJob_execute # vtable slot 1: per PMeshInstanceBounds, skips m_meshInstance 0, tests the box against viewproj . world (BoundingBox_IsVisible_00663a30), keys it by the depth plane . box centre (g_DepthBias applied), sorts; name ours (M4 T4, docs/formats/scene.md)
 0x009f3660 function Phyre_PRendering_PVisibilityCheck_mergeResults # k-way merge of the per-job sorted entries by the /1e8 class and the key only, earlier job first on ties; name ours, class a guess (M4 T4)
+0x009f3810 function PWorldCursor_runLength_009f3810 # fastcall(cursor) -> the objects up to the next free slot, or all left in the list: one startJobsForObjects call of startJobsForAllBounds (jobs of at most 400 inside); name ours (M4 round 2)
+0x009f3930 function PWorldCursor_skipEmpty_009f3930 # copy of 0x005009f0 (the occluder cursor's); name ours (M4 round 2)
 0x009f3c30 function Phyre_PRendering_PRenderer_renderWorldCulledSorted # thiscall(renderer; world, camera, filter, dir), renderWorld's body: visibility check (cull, depth key, sort) then renderMeshInstanceList; name ours, class a guess (M4 T4, docs/formats/scene.md)
+0x009f3dc0 function PWorldCursor_advance_009f3dc0 # thiscall(cursor, n), ret 4: steps n live objects, passing free slots and moving on to later lists (0x005009f0); name ours (M4 round 2)
 0x009f4000 function Phyre_PRendering_PVisibilityCheck_startJobsForObjects # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PCheckVisibleBoundsJob'; Switch 0x71007fa8d0 Phyre::PRendering::PVisibilityCheck::startJobsForObjects (symbols from Fahrenheit's server export)
 0x009f4100 function PVisibilityCheck_isBoxOccluded # occlusion test of a visible box, only with occluders present; name ours (M4 T4)
 0x009f4650 function Phyre_PInputs_PUtilityInputs_initialize # fh switch:bsim1.00 0x71007fa4d0 Phyre::PInputs::PUtilityInputs::initialize
@@ -16576,6 +16584,7 @@
 0x00c8f980 label    g_Vu0_VfMove              # emulated VU0 register pppVu0MoveVia copies through
 0x00c8fac4 label    g_Vu0_Status              # emulated VU0 status flags: setZSFlag sets 0x40 (sticky zero), setSSFlag 0x80 (sticky sign)
 0x00c90278 label    g_AppStartTime            # f64: the clock at start-up (written by Phyre_PhyreInit 0x00430dd0); Game_Main's limiter and Phyre_PFramework_PApplication_frame subtract it; name ours
+0x00ca89b8 label    g_PMeshInstanceBounds_ClassDescriptor # PhyreEngine class descriptor: +0x18 name, +0x1c object size (0x24), +0x40 parent, +0x80 class id (146 on cdsp0000); 0x004ff6e0's class (M4 round 2)
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
 0x00cc9cd8 label    g_PhyreApplication        # Phyre_PFramework_PApplication_GetApplication; fog colour/near/far/limit +0x60..+0x7c, ambient +0x50, background +0x80, keyframe-anim byte +0x3ac, window size +0x26c/+0x270 (docs/formats/render.md); a pointer (GetApplication 0x00623b90 returns it); +0x50..+0x8f sampled by the reference captures as app+0x50 (graphicSetGlobalAmbientColor 0x00643270 writes +0x50/+0x54/+0x58, graphicGetFogColor 0x00641160 reads +0x60/+0x64/+0x68)
@@ -17832,6 +17841,7 @@
 0x01942998 label    g_DepthBias_Count         # entries in use; DepthBiasHooks_clearDepthBias zeroes it
 0x0194299c label    g_DepthBias               # 256 entries of 12 bytes (u32, f32 scale, f32): DepthBiasHooks_clearDepthBias resets them to (0, 1.0, 0.0)
 0x01984c6c label    g_IggyMenuManager # IggyMenuManager_createInstance (0x00a26240) stores the new 0x34-byte manager here, 0x00a26270 deletes it and clears it; SpdCtrl_Tick needs it set; name ours
+0x01a85420 label    g_POccluderGeometryInstance_ClassDescriptor # PhyreEngine class descriptor (object size 8); 0x009f23f0's class (M4 round 2)
 0x01a85ba4 label    g_Use200ThunderFile          # SetGlobal_01a85ba4 (BasicDebugTweakUtil_handleInput) sets it; PcFileName_00a42c00 then puts 200thunder_ before kami0400.ebp; name ours
 0x01a85ba8 label    g_FullArenaLocalization   # toggled (non-zero -> 0, 0 -> 1) by setFullArenaLocalizationEnable; read by 0x00a42c00, 0x00a42fa0
 0x01a85bb0 label    g_ReadChgName_From        # 16 u32 (FILE_NAME_CHG_TBL_CNT, read_debug.c): set_read_chgname(a, b) puts a in the first zero slot, b in g_ReadChgName_To; clear_read_chgname zeroes both

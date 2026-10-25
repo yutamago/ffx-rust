@@ -12,6 +12,7 @@
 //! payload, little-endian.
 
 pub mod ring;
+pub mod scene_inputs;
 
 use std::fmt;
 
@@ -231,6 +232,9 @@ pub enum Msg {
     /// The game's field minimap as its update left it this frame (the
     /// hook draws none of it when the renderer draws its own).
     Minimap(Minimap),
+    /// What the scene builder needs at one `renderWorld` call (reference
+    /// captures; [`scene_inputs`]).
+    SceneInputs(Box<scene_inputs::SceneInputs>),
 }
 
 /// The field minimap's state, in the game's space (ground x/z, y down).
@@ -383,6 +387,7 @@ const INPUT: u32 = 11;
 const WORLD: u32 = 12;
 const EFFECTS: u32 = 13;
 const MINIMAP: u32 = 14;
+const SCENE_INPUTS: u32 = 15;
 
 fn slots_u8(w: &mut Writer, v: &[(u8, Id)]) {
     w.len_of(v);
@@ -720,6 +725,10 @@ impl Msg {
                 }
                 MINIMAP
             }
+            Self::SceneInputs(s) => {
+                s.write(&mut w);
+                SCENE_INPUTS
+            }
         };
         out.extend_from_slice(&tag.to_le_bytes());
         out.extend_from_slice(
@@ -931,6 +940,7 @@ impl Msg {
                     mesh,
                 })
             }
+            SCENE_INPUTS => Self::SceneInputs(Box::new(scene_inputs::SceneInputs::read(&mut r)?)),
             _ => return Err(DecodeError("tag")),
         })
     }
@@ -1578,6 +1588,72 @@ mod tests {
                     triangles: vec![[0, 1, 0]],
                 }),
             }),
+            Msg::SceneInputs(Box::new(scene_inputs::SceneInputs {
+                frame: 1,
+                update: 2,
+                thread: 3,
+                world: 0xac,
+                pass: "OpaqueNoMSAA".into(),
+                dir: -1,
+                camera: vec![1, 2, 3],
+                app: vec![4; 8],
+                screen: [1920, 1080],
+                group_mask: 0xffff_fff7,
+                shadow_solution: 2,
+                alpha_fast: 1,
+                layer_group: 1,
+                layers: vec![scene_inputs::Layer {
+                    shown: 1,
+                    group: -1,
+                    id: -2,
+                    has_mesh: true,
+                    mesh: Some((0, 3)),
+                }],
+                depth_bias_count: 1,
+                depth_bias: vec![scene_inputs::DepthBias {
+                    bounds: Some(0),
+                    scale: 2.0,
+                    bias: -1.0,
+                }],
+                clusters: vec![scene_inputs::Cluster {
+                    index: 3,
+                    name: "cdsp00".into(),
+                    lists: vec![("PMeshInstance".into(), 29)],
+                }],
+                bounds: vec![scene_inputs::Bounds {
+                    cluster: 0,
+                    slot: 5,
+                    list: 0,
+                    min: [1.0, 2.0, 3.0],
+                    size: [4.0, 5.0, 6.0],
+                    world: Some([10.0; 12]),
+                    instance: None,
+                    render_order: 4,
+                }],
+                instances: vec![scene_inputs::Instance {
+                    cluster: 0,
+                    slot: 7,
+                    world: None,
+                    world_shared: true,
+                    segments: vec![scene_inputs::Segment {
+                        material: 1,
+                        matrix: 0,
+                        hidden: 1,
+                        id: 9,
+                        render_order: 2,
+                    }],
+                    materials: vec![None, Some(0)],
+                    group_id: 0xc,
+                    dobj_kind: 1,
+                    dobj_flag: 0x101,
+                    obj_id: 8,
+                }],
+                materials: vec![scene_inputs::Material {
+                    remap_from: "Opaque".into(),
+                    remap_to: String::new(),
+                    parameters: vec![16, 0, 0, 0, 1, 2],
+                }],
+            })),
             Msg::Effects(Frame {
                 number: 4,
                 width: 1280,

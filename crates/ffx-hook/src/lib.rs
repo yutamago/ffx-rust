@@ -211,6 +211,15 @@ pub fn hooks() -> Vec<Hook> {
             original: Some(&mods::CD_FILE_SIZE_PC_ORIGINAL),
             steal: 0,
         },
+        Hook {
+            name: "Phyre_PRendering_PRenderer_renderWorldCulledSorted",
+            address: 0x009f_3c30,
+            // push ebp; mov ebp, esp; push -1
+            prologue: &[0x55, 0x8b, 0xec, 0x6a, 0xff],
+            replacement: world::render_world as *const () as usize,
+            original: Some(&world::RENDER_WORLD_ORIGINAL),
+            steal: 0,
+        },
     ];
     all.extend(ported::hooks());
     all

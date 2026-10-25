@@ -8,4 +8,5 @@
 pub mod assets;
 pub mod capture;
 pub mod census;
+pub mod inputs;
 pub mod key;

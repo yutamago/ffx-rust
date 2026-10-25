@@ -8,7 +8,10 @@
 //! a few MB, for comparing runs). Either can run over several frames and
 //! tags each frame (`Present` count, ctrl work 0's frame count, the
 //! threads that made the calls) and samples the scene inputs
-//! (`crate::world::scene_inputs`).
+//! (`crate::world::scene_inputs`). The map's `renderWorld` calls add the
+//! scene builder's inputs ([`add_inputs`], `crate::world::render_world`):
+//! `SceneInputs` messages before each frame of `capture.ffxgfx`
+//! (`docs/formats/scene.md`, "Scene inputs").
 //!
 //! All GPU read-backs here call the original methods directly: the layer's
 //! own hooks take the state lock, which the caller already holds. Nothing
@@ -20,7 +23,7 @@ use std::ffi::c_void;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 
@@ -149,6 +152,9 @@ pub struct Capture {
     backbuffer: usize,
     /// `State::reborn`'s length when the capture started.
     reborn_at: usize,
+    /// The scene builder's inputs at each map `renderWorld` call
+    /// (`crate::world::render_world`).
+    inputs: Vec<ffx_gfx::scene_inputs::SceneInputs>,
 }
 
 static PENDING: Mutex<Option<Capture>> = Mutex::new(None);
@@ -157,6 +163,43 @@ static DRAW_RANGE: Mutex<Option<(u32, u32)>> = Mutex::new(None);
 static RESULT: Mutex<Option<Receiver<String>>> = Mutex::new(None);
 /// The swap chain of the last `Present`.
 static SWAP_CHAIN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// Whether a capture is running: the `renderWorld` hook then reads the
+/// scene inputs ([`add_inputs`]).
+static INPUTS_WANTED: AtomicBool = AtomicBool::new(false);
+
+/// Whether a capture wants scene inputs now (one atomic load: the
+/// `renderWorld` hook asks on every call).
+pub fn inputs_wanted() -> bool {
+    INPUTS_WANTED.load(Ordering::Acquire)
+}
+
+/// Adds the scene inputs of a `renderWorld` call to the running capture,
+/// tagged with the update that made it (the main thread renders update
+/// `n` right after it; the render thread draws it later, see
+/// [`end_frame`], which gives the record its capture frame).
+pub fn add_inputs(mut inputs: ffx_gfx::scene_inputs::SceneInputs) {
+    inputs.update = crate::harness::update_label();
+    inputs.thread = thread_id();
+    inputs.frame = u32::MAX;
+    let mut s = state();
+    if let Some(c) = s.capture.as_mut() {
+        c.lines.push(format!(
+            "scene_inputs update {} thread {} world {:#x} pass {} dir {} bounds {} instances {} materials {}",
+            inputs.update,
+            inputs.thread,
+            inputs.world,
+            inputs.pass,
+            inputs.dir,
+            inputs.bounds.len(),
+            inputs.instances.len(),
+            inputs.materials.len()
+        ));
+        c.inputs.push(inputs);
+    } else {
+        // The capture ended some other way.
+        INPUTS_WANTED.store(false, Ordering::Release);
+    }
+}
 
 /// The swap chain's buffer 0 (the swap chain keeps it alive).
 ///
@@ -260,6 +303,7 @@ impl Capture {
             gpu_written: HashSet::new(),
             backbuffer: 0,
             reborn_at: 0,
+            inputs: Vec::new(),
         }
     }
 
@@ -374,6 +418,7 @@ pub fn request(args: &str) -> String {
         let mut s = state();
         c.reborn_at = s.reborn.len();
         s.capture = Some(c);
+        INPUTS_WANTED.store(true, Ordering::Release);
     } else if let Ok(mut p) = PENDING.lock() {
         *p = Some(c);
     }
@@ -1399,6 +1444,18 @@ unsafe fn end_frame(s: &mut State, c: &mut Capture, swap_chain: Ptr) {
         present_thread: c.present_thread,
     }));
     c.add_sample(sample(c.frame, When::Present));
+    // The scene inputs of the update this frame shows.
+    if let Some(label) = crate::harness::present_label() {
+        let mut n = 0;
+        for i in &mut c.inputs {
+            if i.update == label {
+                i.frame = c.frame;
+                n += 1;
+            }
+        }
+        c.lines
+            .push(format!("shows update {label}, {n} scene inputs"));
+    }
     c.frames.push(ffx_gfx::Frame {
         number: c.frame,
         width: s.bound.viewport[2] as u32,
@@ -1428,6 +1485,8 @@ pub unsafe fn on_present(swap_chain: Ptr) {
             s.capture = Some(c);
             return;
         }
+        INPUTS_WANTED.store(false, Ordering::Release);
+        c.lines.extend(crate::world::watch::report());
         let reply = if c.opts.hash {
             finish_hashed(&s, c)
         } else {
@@ -1458,6 +1517,7 @@ pub unsafe fn on_present(swap_chain: Ptr) {
         c.lines
             .push(format!("start at present {}", present_count()));
         s.capture = Some(c);
+        INPUTS_WANTED.store(true, Ordering::Release);
     }
 }
 
@@ -1926,7 +1986,13 @@ fn snapshot(s: &State, c: &mut Capture) -> Vec<u8> {
         m.write(&mut out);
     }
     crate::world::msg().write(&mut out);
+    // Each frame's scene inputs before the frame (inputs of updates no
+    // captured frame shows are left out).
+    let mut inputs = std::mem::take(&mut c.inputs);
     for f in std::mem::take(&mut c.frames) {
+        for i in inputs.extract_if(.., |i| i.frame == f.number) {
+            ffx_gfx::Msg::SceneInputs(Box::new(i)).write(&mut out);
+        }
         ffx_gfx::Msg::Frame(f).write(&mut out);
     }
     out
