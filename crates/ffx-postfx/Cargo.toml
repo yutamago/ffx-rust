@@ -1,0 +1,16 @@
+[package]
+name = "ffx-postfx"
+description = "Post-processing census: the draws PhyreEngine makes after the scene (HDAO, glow, fades, the composite), for the Rust renderer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-drawdiff = { path = "../ffx-drawdiff" }
+ffx-dxbc.workspace = true
+ffx-phyre.workspace = true
+ffx-vbf.workspace = true
+
+[lints]
+workspace = true
