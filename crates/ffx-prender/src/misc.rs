@@ -47,6 +47,11 @@ pub const OPERATOR_NEW: u32 = 0x0063_0310;
 /// The import slot `0x00625850` jumps through when `operator_new` fails
 /// (the bad-alloc throw).
 pub const BAD_ALLOC_SLOT: u32 = 0x00b0_c2a0;
+/// The image address `0x005b3580` stores at `+0x18` (a default object).
+pub const DEFAULT_0018: u32 = 0x00ca_34cc;
+/// The head of the named list `0x005c84f0` searches (`{name, next}`
+/// nodes; the modifier types' semantic names).
+pub const NAMED_LIST: u32 = 0x00cb_d348;
 
 pub mod bridge {
     //! The originals over game memory.
@@ -388,5 +393,212 @@ pub mod bridge {
         h.write(node.wrapping_add(8), node);
         h.write(node.wrapping_add(0xc), 0x101u16);
         node
+    }
+
+    /// A constructor that zeroes the first `words` words of `obj`; returns
+    /// `obj` (`0x00613d90`: 5, `0x005b4560`: 7).
+    pub fn zero_words(h: &mut impl Host, obj: u32, words: u32) -> u32 {
+        for i in 0..words {
+            h.write(obj.wrapping_add(4 * i), 0u32);
+        }
+        obj
+    }
+
+    /// `0x005b3580(obj)` (thiscall) -> `obj`: six zero words, then the
+    /// image address `0x00ca34cc` at `+0x18`.
+    pub fn zero6_with_default(h: &mut impl Host, obj: u32) -> u32 {
+        zero_words(h, obj, 6);
+        let d = h.rebase(super::DEFAULT_0018);
+        h.write(obj.wrapping_add(0x18), d);
+        obj
+    }
+
+    /// `0x005bf340(obj)` (thiscall) -> `obj`: the words `+0..+0x30`
+    /// and `+0x38`, `+0x3c` zeroed, the byte `+0x34` too.
+    pub fn zero_modifier(h: &mut impl Host, obj: u32) -> u32 {
+        for at in (0..0x34).step_by(4).chain([0x38, 0x3c]) {
+            h.write(obj.wrapping_add(at), 0u32);
+        }
+        h.write(obj.wrapping_add(0x34), 0u8);
+        obj
+    }
+
+    /// `0x005b8b00(buffer, desc)` (thiscall): the bytes `desc` names in
+    /// `buffer` (offset `u16 +8`, length `u16 +0xa & 0x1fff`): `buffer +
+    /// offset` when the range ends within the size at `buffer +0` and
+    /// starts past that 4-byte header, else 0.
+    pub fn buffer_slice(h: &mut impl Host, buffer: u32, desc: u32) -> u32 {
+        let offset = u32::from(h.read::<u16>(desc.wrapping_add(8)));
+        let len = u32::from(h.read::<u16>(desc.wrapping_add(0xa))) & 0x1fff;
+        let size: u32 = h.read(buffer);
+        if len + offset > size || offset < 4 {
+            return 0;
+        }
+        offset.wrapping_add(buffer)
+    }
+
+    /// `0x005b88e0(obj, i)` (thiscall): the address of the 20-byte record
+    /// `i`'s `+0x10` in `obj`'s array (`+0x20` count, bit 31 the
+    /// not-owned flag; `+0x24` the data, or the one record inline at
+    /// `+0x24` for a count of 1; 0 for none).
+    pub fn record_address(h: &mut impl Host, obj: u32, i: u32) -> u32 {
+        let n = h.read::<u32>(obj.wrapping_add(0x20)) & 0x7fff_ffff;
+        let data = match n {
+            0 => 0,
+            1 => obj.wrapping_add(0x24),
+            _ => h.read(obj.wrapping_add(0x24)),
+        };
+        data.wrapping_add(i.wrapping_mul(5).wrapping_add(4).wrapping_mul(4))
+    }
+
+    /// `0x005b44c0(obj, a, b, c, d, e)` (thiscall, `ret 0x14`) -> `obj`:
+    /// `{a, b, c, 0, d, e, 0, 0, 0, 0}` and `+0x68`, `+0x6c` = 0.
+    pub fn stream_ctor(h: &mut impl Host, obj: u32, args: [u32; 5]) -> u32 {
+        let [a, b, c, d, e] = args;
+        for (at, v) in [(0, a), (4, b), (8, c), (0xc, 0), (0x10, d), (0x14, e)] {
+            h.write(obj.wrapping_add(at), v);
+        }
+        for at in [0x18, 0x1c, 0x20, 0x24, 0x68, 0x6c] {
+            h.write(obj.wrapping_add(at), 0u32);
+        }
+        obj
+    }
+
+    /// `0x005c8100(obj, a..j)` (thiscall, `ret 0x28`) -> `obj`: a
+    /// modifier-network record from ten words (`args[0]` at `+0`, the
+    /// arrays at `+8` and `+0x10` marked not owned, bit 31), the rest
+    /// zeroed and `+0x3c` = -1. `args[8]` is not read.
+    pub fn network_record_ctor(h: &mut impl Host, obj: u32, args: [u32; 10]) -> u32 {
+        let w = |i: usize| args[i];
+        h.write(obj, w(0));
+        h.write(obj.wrapping_add(4), 0u32);
+        h.write(obj.wrapping_add(0xc), w(5));
+        h.write(obj.wrapping_add(8), w(3) | 0x8000_0000);
+        h.write(obj.wrapping_add(0x14), w(6));
+        h.write(obj.wrapping_add(0x10), w(4) | 0x8000_0000);
+        h.write(obj.wrapping_add(0x2c), w(7));
+        h.write(obj.wrapping_add(0x28), w(9));
+        h.write(obj.wrapping_add(0x20), w(1));
+        h.write(obj.wrapping_add(0x24), w(2));
+        for at in [0x18, 0x1c, 0x34, 0x30, 0x38] {
+            h.write(obj.wrapping_add(at), 0u32);
+        }
+        h.write(obj.wrapping_add(0x3c), u32::MAX);
+        obj
+    }
+
+    /// `0x005c84f0(name)` (cdecl): the node of the list at
+    /// [`super::NAMED_LIST`] (`{name, next}`) whose name equals `name`
+    /// (byte for byte, up to the terminator), or 0 (also for a null
+    /// `name`).
+    pub fn find_named(h: &mut impl Host, name: u32) -> u32 {
+        if name == 0 {
+            return 0;
+        }
+        let mut node: u32 = h.read(h.rebase(super::NAMED_LIST));
+        while node != 0 {
+            let s: u32 = h.read(node);
+            if same_string(h, s, name) {
+                return node;
+            }
+            node = h.read(node.wrapping_add(4));
+        }
+        0
+    }
+
+    /// Whether the strings at `a` and `b` are equal (the inlined `strcmp`
+    /// of `0x005c84f0`, which only tests for 0).
+    fn same_string(h: &impl Host, a: u32, b: u32) -> bool {
+        let mut i = 0u32;
+        loop {
+            let x: u8 = h.read(a.wrapping_add(i));
+            if x != h.read::<u8>(b.wrapping_add(i)) {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// `0x005b52b0(array)` (cdecl): how many of the array's 16-byte
+    /// entries (`+0` count, bit 31 the not-owned flag; `+4` data) have a
+    /// kind byte (`+2`) of 0x12, 0x42, 0x43, 0x44 or 0xd9..=0xdc.
+    pub fn count_kinds(h: &mut impl Host, array: u32) -> u32 {
+        let n = h.read::<u32>(array) & 0x7fff_ffff;
+        let data: u32 = h.read(array.wrapping_add(4));
+        let mut count = 0u32;
+        for i in 0..n {
+            let kind: u8 = h.read(data.wrapping_add(2).wrapping_add(i.wrapping_mul(16)));
+            if matches!(kind, 0x42 | 0xd9..=0xdc | 0x12 | 0x43 | 0x44) {
+                count = count.wrapping_add(1);
+            }
+        }
+        count
+    }
+
+    /// `0x005b5370(base, list, out)` (cdecl) -> the end of `out`: for each
+    /// of `list`'s 16-byte entries (`+0` count & 0x7fffffff, `+4` data),
+    /// the slot at `base + u16 entry+8`: when its object (`slot +0`) is
+    /// set, the address of the object's 20-byte record `slot +8` plus
+    /// 0x10 (the object's array: `+0x18` count, bit 31 the not-owned flag;
+    /// `+0x1c` the data, inline for a count of 1) goes to `out`.
+    pub fn gather_records(h: &mut impl Host, base: u32, list: u32, out: u32) -> u32 {
+        let n = h.read::<u32>(list) & 0x7fff_ffff;
+        let mut out = out;
+        for i in 0..n {
+            let entries: u32 = h.read(list.wrapping_add(4));
+            let off =
+                u32::from(h.read::<u16>(entries.wrapping_add(i.wrapping_mul(16)).wrapping_add(8)));
+            let slot = off.wrapping_add(base);
+            let obj: u32 = h.read(slot);
+            if obj == 0 {
+                continue;
+            }
+            let count = h.read::<u32>(obj.wrapping_add(0x18)) & 0x7fff_ffff;
+            let data = match count {
+                0 => 0,
+                1 => obj.wrapping_add(0x1c),
+                _ => h.read(obj.wrapping_add(0x1c)),
+            };
+            let index: u32 = h.read(slot.wrapping_add(8));
+            h.write(
+                out,
+                data.wrapping_add(index.wrapping_mul(20)).wrapping_add(0x10),
+            );
+            out = out.wrapping_add(4);
+        }
+        out
+    }
+
+    /// `0x00613eb0(ring)` (thiscall): steps the segmented ring (`+0`
+    /// start, `+4` end, `+8` cursor, `+0xc` the next segment's end,
+    /// `+0x10` the segment size) to its next segment: the cursor moves
+    /// to the pending end when there is one, the next end is the cursor
+    /// plus a segment, wrapped past the end; a next end before the cursor
+    /// restarts both at the start.
+    pub fn ring_next_segment(h: &mut impl Host, ring: u32) {
+        let pending: u32 = h.read(ring.wrapping_add(0xc));
+        if pending != 0 {
+            h.write(ring.wrapping_add(8), pending);
+        }
+        let seg: u32 = h.read(ring.wrapping_add(0x10));
+        let end: u32 = h.read(ring.wrapping_add(4));
+        let cursor: u32 = h.read(ring.wrapping_add(8));
+        let start: u32 = h.read(ring);
+        let wrap = |e: u32| {
+            if e > end {
+                e.wrapping_add(start.wrapping_sub(end))
+            } else {
+                e
+            }
+        };
+        let next = wrap(cursor.wrapping_add(seg));
+        h.write(ring.wrapping_add(0xc), next);
+        if next < cursor {
+            h.write(ring.wrapping_add(8), start);
+            h.write(ring.wrapping_add(0xc), wrap(start.wrapping_add(seg)));
+        }
     }
 }

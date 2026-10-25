@@ -877,4 +877,60 @@ ported! {
     Phyre_PText_PUtilityText_initialize @ 0x00a3_ea40 => extern "C" fn p_00a3ea40() -> u32 {
         misc::bridge::text_initialize(&mut mem())
     }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierNetworkInfoPacket_ModifierCode__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierNetworkInfoPacket_ModifierCode__constructInstance @ 0x005c_5c00 => extern "thiscall" fn p_005c5c00(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_zeroed(&mut mem(), obj, 8)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceJoypadAxis__constructInstance`.
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceJoypadAxis__constructInstance @ 0x009e_b060 => extern "thiscall" fn p_009eb060(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_input_pair(&mut mem(), obj, [0x0194_0c98, 0x00c6_8240, 0x00b7_0c28])
+    }
+    /// `Phyre_PRendering_zero6DefaultCtor_005b3580`.
+    Phyre_PRendering_zero6DefaultCtor_005b3580 @ 0x005b_3580 => extern "thiscall" fn p_005b3580(obj: u32) -> u32 {
+        misc::bridge::zero6_with_default(&mut mem(), obj)
+    }
+    /// `Phyre_PRendering_zero7Ctor_005b4560`.
+    Phyre_PRendering_zero7Ctor_005b4560 @ 0x005b_4560 => extern "thiscall" fn p_005b4560(obj: u32) -> u32 {
+        misc::bridge::zero_words(&mut mem(), obj, 7)
+    }
+    /// `Phyre_PRendering_PRenderRingBufferSegmented_ctor_00613d90`.
+    Phyre_PRendering_PRenderRingBufferSegmented_ctor_00613d90 @ 0x0061_3d90 => extern "thiscall" fn p_00613d90(ring: u32) -> u32 {
+        misc::bridge::zero_words(&mut mem(), ring, 5)
+    }
+    /// `Phyre_PDynamicGeometry_PModifierAndInputs_PModifierAndInputs_005bf340`.
+    Phyre_PDynamicGeometry_PModifierAndInputs_PModifierAndInputs_005bf340 @ 0x005b_f340 => extern "thiscall" fn p_005bf340(obj: u32) -> u32 {
+        misc::bridge::zero_modifier(&mut mem(), obj)
+    }
+    /// `Phyre_PRendering_bufferSlice_005b8b00`.
+    Phyre_PRendering_bufferSlice_005b8b00 @ 0x005b_8b00 => extern "thiscall" fn p_005b8b00(buffer: u32, desc: u32) -> u32 {
+        misc::bridge::buffer_slice(&mut mem(), buffer, desc)
+    }
+    /// `Phyre_PRendering_recordAddress_005b88e0`.
+    Phyre_PRendering_recordAddress_005b88e0 @ 0x005b_88e0 => extern "thiscall" fn p_005b88e0(obj: u32, i: u32) -> u32 {
+        misc::bridge::record_address(&mut mem(), obj, i)
+    }
+    /// `Phyre_PRendering_streamCtor_005b44c0`.
+    Phyre_PRendering_streamCtor_005b44c0 @ 0x005b_44c0 => extern "thiscall" fn p_005b44c0(obj: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        misc::bridge::stream_ctor(&mut mem(), obj, [a, b, c, d, e])
+    }
+    /// `Phyre_PDynamicGeometry_networkRecordCtor_005c8100`.
+    Phyre_PDynamicGeometry_networkRecordCtor_005c8100 @ 0x005c_8100 => extern "thiscall" fn p_005c8100(obj: u32, a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32) -> u32 {
+        misc::bridge::network_record_ctor(&mut mem(), obj, [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9])
+    }
+    /// `Phyre_PDynamicGeometry_findNamed_005c84f0`.
+    Phyre_PDynamicGeometry_findNamed_005c84f0 @ 0x005c_84f0 => extern "C" fn p_005c84f0(name: u32) -> u32 {
+        misc::bridge::find_named(&mut mem(), name)
+    }
+    /// `Phyre_PRendering_countKinds_005b52b0`.
+    Phyre_PRendering_countKinds_005b52b0 @ 0x005b_52b0 => extern "C" fn p_005b52b0(array: u32) -> u32 {
+        misc::bridge::count_kinds(&mut mem(), array)
+    }
+    /// `Phyre_PRendering_gatherRecords_005b5370`.
+    Phyre_PRendering_gatherRecords_005b5370 @ 0x005b_5370 => extern "C" fn p_005b5370(base: u32, list: u32, out: u32) -> u32 {
+        misc::bridge::gather_records(&mut mem(), base, list, out)
+    }
+    /// `Phyre_PRendering_PRenderRingBufferSegmented_nextSegment_00613eb0`.
+    Phyre_PRendering_PRenderRingBufferSegmented_nextSegment_00613eb0 @ 0x0061_3eb0 => extern "thiscall" fn p_00613eb0(ring: u32) {
+        misc::bridge::ring_next_segment(&mut mem(), ring);
+    }
 }

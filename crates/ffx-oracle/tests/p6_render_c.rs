@@ -592,6 +592,17 @@ fn descriptor_shims_match_their_families() {
             ),
         );
     }
+    for &(a, [x, y, vt]) in family::CONSTRUCT_INPUT_PAIR {
+        want.insert(
+            a,
+            format!(
+                "descriptor::bridge::construct_input_pair(&mut mem(), obj, [{}, {}, {}])",
+                hex(x),
+                hex(y),
+                hex(vt)
+            ),
+        );
+    }
     for &(a, ctor, vt, w) in family::CONSTRUCT_WITH {
         want.insert(
             a,
@@ -639,7 +650,7 @@ fn descriptor_shims_match_their_families() {
         assert_eq!(src.matches(&key).count(), 1, "{a:#x}: hooked twice");
         seen += 1;
     }
-    assert_eq!(seen, 102 + 79);
+    assert_eq!(seen, 102 + 79 + 2);
 }
 
 /// A port of a constructor shape, on `obj`.
@@ -1197,6 +1208,239 @@ fn misc_calls_match_the_original() {
                 Out::U32(misc::bridge::tree_head(g))
             });
             t.unstub(misc::OPERATOR_NEW);
+        }
+    }
+}
+
+#[test]
+fn descriptor_construct_input_pair_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0a1b_2c3d);
+        for &(f, fields) in family::CONSTRUCT_INPUT_PAIR {
+            for i in 0..3 {
+                let obj = object(&mut t, &mut rng, 10, i == 0);
+                t.check(
+                    &format!("{name} {f:#x} #{i}"),
+                    f,
+                    Conv::Thiscall(DESC),
+                    &[obj],
+                    |g| Out::U8(descriptor::bridge::construct_input_pair(g, obj, fields)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn misc_constructors_b4_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x4444_b4b4);
+        for i in 0..6 {
+            let w = |s: &str| format!("{name} {s} #{i}");
+            for (f, n) in [(0x0061_3d90, 5), (0x005b_4560, 7)] {
+                let obj = object(&mut t, &mut rng, 0x20, false);
+                t.check(&w(&format!("{f:#x}")), f, Conv::Thiscall(obj), &[], |g| {
+                    Out::U32(misc::bridge::zero_words(g, obj, n))
+                });
+            }
+            let obj = object(&mut t, &mut rng, 0x20, false);
+            t.check(&w("zero6"), 0x005b_3580, Conv::Thiscall(obj), &[], |g| {
+                Out::U32(misc::bridge::zero6_with_default(g, obj))
+            });
+            let obj = object(&mut t, &mut rng, 0x20, false);
+            t.check(&w("modifier"), 0x005b_f340, Conv::Thiscall(obj), &[], |g| {
+                Out::U32(misc::bridge::zero_modifier(g, obj))
+            });
+            let obj = object(&mut t, &mut rng, 0x20, false);
+            let a5 = [rng.next(), rng.next(), rng.next(), rng.next(), rng.next()];
+            t.check(&w("stream"), 0x005b_44c0, Conv::Thiscall(obj), &a5, |g| {
+                Out::U32(misc::bridge::stream_ctor(g, obj, a5))
+            });
+            let obj = object(&mut t, &mut rng, 0x20, false);
+            let a10: [u32; 10] = std::array::from_fn(|_| rng.next());
+            t.check(&w("record"), 0x005c_8100, Conv::Thiscall(obj), &a10, |g| {
+                Out::U32(misc::bridge::network_record_ctor(g, obj, a10))
+            });
+        }
+    }
+}
+
+#[test]
+fn misc_arrays_b4_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5555_b4b4);
+        for i in 0..32 {
+            let w = |s: &str| format!("{name} {s} #{i}");
+            // buffer slices: offsets around the header, lengths around the size
+            let buffer = object(&mut t, &mut rng, 4, false);
+            let desc = object(&mut t, &mut rng, 4, false);
+            let offset = [0, 3, 4, 5, rng.below(0x100), rng.below(0x10000)][i as usize % 6];
+            let len = rng.below(0x10000);
+            t.write(desc + 8, &(offset as u16).to_le_bytes());
+            t.write(desc + 0xa, &(len as u16).to_le_bytes());
+            let size =
+                (offset + (len & 0x1fff)).wrapping_add([0, 1, u32::MAX][rng.below(3) as usize]);
+            t.w32(buffer, size);
+            t.check(
+                &w("slice"),
+                0x005b_8b00,
+                Conv::Thiscall(buffer),
+                &[desc],
+                |g| Out::U32(misc::bridge::buffer_slice(g, buffer, desc)),
+            );
+            // record addresses for 0, 1 and many records
+            let obj = object(&mut t, &mut rng, 0x10, false);
+            let count = [0, 1, 2, 0x8000_0001, rng.next()][i as usize % 5];
+            t.w32(obj + 0x20, count);
+            let k = rng.below(8);
+            t.check(&w("record"), 0x005b_88e0, Conv::Thiscall(obj), &[k], |g| {
+                Out::U32(misc::bridge::record_address(g, obj, k))
+            });
+            // kinds
+            // one array longer than a byte's count
+            let n = if i == 7 { 300 } else { rng.below(12) };
+            let data = object(&mut t, &mut rng, 4 * n.max(1), false);
+            let kinds = [
+                0x42u8, 0xd9, 0xda, 0xdb, 0xdc, 0x12, 0x43, 0x44, 0x41, 0xdd, 0x11, 0x45, 0xd8, 0,
+            ];
+            for e in 0..n {
+                let kind = kinds[rng.below(kinds.len() as u32) as usize];
+                t.write(data + 16 * e + 2, &[kind]);
+            }
+            let array = object(&mut t, &mut rng, 2, false);
+            t.w32(array, n | if rng.chance(2) { 0x8000_0000 } else { 0 });
+            t.w32(array + 4, data);
+            t.check(&w("kinds"), 0x005b_52b0, Conv::Cdecl, &[array], |g| {
+                Out::U32(misc::bridge::count_kinds(g, array))
+            });
+            // gather: slots in a base block, objects with 0, 1, many records
+            let base = object(&mut t, &mut rng, 0x40, false);
+            let n = rng.below(6);
+            let entries = object(&mut t, &mut rng, 4 * n.max(1), false);
+            for e in 0..n {
+                let off = 12 * rng.below(8);
+                t.write(entries + 16 * e + 8, &(off as u16).to_le_bytes());
+                let o = if rng.chance(3) {
+                    0
+                } else {
+                    let o = object(&mut t, &mut rng, 8, false);
+                    t.w32(o + 0x18, [0, 1, 3, 0x8000_0001][rng.below(4) as usize]);
+                    o
+                };
+                t.w32(base + off, o);
+            }
+            let list = object(&mut t, &mut rng, 2, false);
+            t.w32(list, n | if rng.chance(2) { 0x8000_0000 } else { 0 });
+            t.w32(list + 4, entries);
+            let out = object(&mut t, &mut rng, 8, false);
+            t.check(
+                &w("gather"),
+                0x005b_5370,
+                Conv::Cdecl,
+                &[base, list, out],
+                |g| Out::U32(misc::bridge::gather_records(g, base, list, out)),
+            );
+        }
+    }
+}
+
+#[test]
+fn misc_find_named_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x6666_b4b4);
+        let head = t.rebase(misc::NAMED_LIST);
+        let words = [
+            "", "a", "ab", "abc", "abd", "position", "positio", "normal", "Normal",
+        ];
+        for i in 0..40 {
+            // names sharing a long prefix with the query
+            if i >= 24 {
+                let (have, want) = [
+                    ("position", "positio"),
+                    ("positio", "position"),
+                    ("abcdx", "abcdy"),
+                ][i as usize % 3];
+                let bytes = [have.as_bytes(), &[0]].concat();
+                let at = t.alloc(&bytes);
+                let node = t.zeros(8);
+                t.w32(node, at);
+                t.w32(head, node);
+                let bytes = [want.as_bytes(), &[0]].concat();
+                let q = t.alloc(&bytes);
+                t.check(
+                    &format!("{name} prefix #{i}"),
+                    0x005c_84f0,
+                    Conv::Cdecl,
+                    &[q],
+                    |g| Out::U32(misc::bridge::find_named(g, q)),
+                );
+                continue;
+            }
+            // a fresh list of up to 5 names
+            let mut next = 0;
+            for _ in 0..rng.below(6) {
+                let s = words[rng.below(words.len() as u32) as usize];
+                let bytes = [s.as_bytes(), &[0]].concat();
+                let at = t.alloc(&bytes);
+                let node = t.zeros(8);
+                t.w32(node, at);
+                t.w32(node + 4, next);
+                next = node;
+            }
+            t.w32(head, next);
+            let q = if i % 6 == 0 {
+                0
+            } else {
+                let s = words[rng.below(words.len() as u32) as usize];
+                let bytes = [s.as_bytes(), &[0]].concat();
+                t.alloc(&bytes)
+            };
+            t.check(
+                &format!("{name} find #{i}"),
+                0x005c_84f0,
+                Conv::Cdecl,
+                &[q],
+                |g| Out::U32(misc::bridge::find_named(g, q)),
+            );
+        }
+    }
+}
+
+#[test]
+fn misc_ring_next_segment_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x7777_b4b4);
+        let ring = t.zeros(20);
+        for i in 0..64 {
+            let start = 0x1000 * rng.below(8);
+            let end = start + rng.below(0x1000);
+            let cursor = start + 1 + rng.below(0x1200);
+            let pending = if i % 3 == 0 {
+                0
+            } else {
+                start + rng.below(0x1200)
+            };
+            // a segment that ends exactly at the end, and ones longer
+            // than the ring (the restart wraps too)
+            let seg = [
+                0,
+                1,
+                end - start,
+                rng.below(0x800),
+                rng.below(0x2000),
+                end.wrapping_sub(if pending == 0 { cursor } else { pending }),
+                end - start + 1 + rng.below(0x100),
+                // cursor + segment overflows while start + segment does
+                // not: the restart's own wrap
+                cursor.wrapping_neg() + rng.below(cursor - start + 1),
+            ][i as usize % 8];
+            for (k, v) in [start, end, cursor, pending, seg].into_iter().enumerate() {
+                t.w32(ring + 4 * k as u32, v);
+            }
+            let addr = t.rebase(0x0061_3eb0);
+            t.a.call(addr, Conv::Thiscall(ring), &[]).unwrap();
+            misc::bridge::ring_next_segment(&mut G(&mut t.b), ring);
+            t.diff(&format!("{name} next #{i}"));
         }
     }
 }

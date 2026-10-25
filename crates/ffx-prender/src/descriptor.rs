@@ -166,6 +166,19 @@ pub mod bridge {
         al_one(obj)
     }
 
+    /// `constructInstance(obj)` of an input source with two more zero
+    /// words (`+0x1c`, `+0x18`; 111 bytes, in an SEH frame): as
+    /// [`construct_input`]. `al = 1`; the rest of `eax` is `obj`'s, or a
+    /// stack address for a null `obj`, which no caller reads.
+    pub fn construct_input_pair(h: &mut impl Host, obj: u32, fields: [u32; 3]) -> u8 {
+        construct_input(h, obj, fields);
+        if obj != 0 {
+            h.write(obj.wrapping_add(0x1c), 0u32);
+            h.write(obj.wrapping_add(0x18), 0u32);
+        }
+        1
+    }
+
     /// `constructInstance(obj)` through a constructor (21, 76, 86 and 93
     /// bytes): `ctor(obj)` (thiscall, no stack words; the larger copies
     /// open an SEH frame around it, which nothing here throws through),
@@ -379,6 +392,7 @@ pub mod family {
         (0x005b_29b0, 5),
         (0x005c_5b50, 5),
         (0x005c_5bb0, 5),
+        (0x005c_5c00, 8),
     ];
     /// [`super::bridge::construct_unset_pair`].
     pub const CONSTRUCT_UNSET_PAIR: &[u32] = &[0x005c_5c80];
@@ -491,4 +505,7 @@ pub mod family {
     ];
     /// [`super::bridge::member_get`].
     pub const MEMBER_GET: &[u32] = &[0x005a_e3a0, 0x005b_2b40];
+    /// [`super::bridge::construct_input_pair`]: (original, [`+4`, `+8`, vtable]).
+    pub const CONSTRUCT_INPUT_PAIR: &[(u32, [u32; 3])] =
+        &[(0x009e_b060, [0x0194_0c98, 0x00c6_8240, 0x00b7_0c28])];
 }
