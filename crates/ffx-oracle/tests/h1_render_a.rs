@@ -15,6 +15,7 @@
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
     clippy::cast_sign_loss,
     clippy::many_single_char_names,
     clippy::similar_names,
@@ -1674,6 +1675,391 @@ fn cameras_events_sharrays_and_texture_data_match_the_original() {
                 Conv::Thiscall(this),
                 &[texture],
                 |g| Out::U32(texture::bridge::data_ctor(g, this, texture)),
+            );
+        }
+    }
+}
+
+// ---- batch 6 ----
+
+#[test]
+fn batch6_small_methods_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xb6b6_0001);
+        let this = object(&mut t, &mut rng);
+        for p in [0, pattern(&mut t, &mut rng, 0x40)] {
+            let spans = descriptor::spans_of(0x0048_8f40);
+            t.check(
+                &format!("{name} 488f40 {p:#x}"),
+                0x0048_8f40,
+                Conv::Thiscall(this),
+                &[p],
+                |g| Out::U8(u8::from(descriptor::bridge::construct_spans(g, p, spans))),
+            );
+            let init = descriptor::init_of(0x004a_2ec0);
+            t.check(
+                &format!("{name} 4a2ec0 {p:#x}"),
+                0x004a_2ec0,
+                Conv::Thiscall(this),
+                &[p],
+                |g| Out::U8(u8::from(descriptor::bridge::construct_init(g, p, init))),
+            );
+        }
+        for count in [0u32, 1, 4] {
+            let dst = pattern(&mut t, &mut rng, 20 * 4);
+            let src = pattern(&mut t, &mut rng, 20 * 4);
+            for d in [dst, 0] {
+                if d == 0 && count > 1 {
+                    continue;
+                }
+                t.check(
+                    &format!("{name} copy20 {d:#x} {count}"),
+                    0x0044_2290,
+                    Conv::Cdecl,
+                    &[d, src, count],
+                    |g| {
+                        basic::bridge::copy_elements20(g, d, src, count);
+                        Out::None
+                    },
+                );
+            }
+        }
+        for n in [0u32, 1, 2, 7, 0x8000_0001, 0x8000_0000] {
+            let p = pattern(&mut t, &mut rng, 0x24);
+            t.w32(p + 0x18, n);
+            let i = rng.next() % 9;
+            t.check(
+                &format!("{name} element at 18 {n:#x} {i}"),
+                0x0043_4870,
+                Conv::Thiscall(p),
+                &[i],
+                |g| Out::U32(basic::bridge::sharray_element_at(g, p + 0x18, i)),
+            );
+            let a = pattern(&mut t, &mut rng, 0x10);
+            t.w32(a, n);
+            let data = pattern(&mut t, &mut rng, 0x20);
+            if n & 0x7fff_ffff > 1 {
+                t.w32(a + 4, data);
+            }
+            for i in [0u32, 1, 6, 7, 8] {
+                let v = rng.next();
+                t.check(
+                    &format!("{name} sharray set {n:#x} {i}"),
+                    0x0048_c540,
+                    Conv::Thiscall(a),
+                    &[i, v],
+                    |g| Out::U32(basic::bridge::sharray_set(g, a, i, v)),
+                );
+            }
+        }
+        // the data-block count
+        for case in 0..20u32 {
+            let mesh = pattern(&mut t, &mut rng, 0x20);
+            let runs = pattern(&mut t, &mut rng, 0x40);
+            let blocks = pattern(&mut t, &mut rng, 12 * 8);
+            for k in 0..8 {
+                if rng.next().is_multiple_of(2) {
+                    t.w32(blocks + 12 * k, 0);
+                }
+            }
+            t.w32(mesh + 8, 8 | if case % 3 == 0 { 0x8000_0000 } else { 0 });
+            t.w32(mesh + 0xc, blocks);
+            t.w32(mesh + 0x14, runs);
+            let kind = rng.next() % 4;
+            let first = rng.next() % 8;
+            t.w32(runs + 16 * kind, first);
+            t.w32(
+                runs + 16 * kind + 4,
+                (rng.next() % (9 - first)).min(8 - first),
+            );
+            t.check(
+                &format!("{name} data blocks {case}"),
+                0x0049_8770,
+                Conv::Thiscall(mesh),
+                &[kind],
+                |g| Out::U32(basic::bridge::data_block_count(g, mesh, kind)),
+            );
+        }
+        // the projection's depth range
+        for case in 0..400u32 {
+            let camera = pattern(&mut t, &mut rng, 0x40);
+            let kind: u32 = match case % 4 {
+                0 | 1 => 0,
+                2 => 0x8000_0000,
+                _ => ((rng.next() % 2000) as f32 / 7.0).to_bits(),
+            };
+            t.w32(camera + 0x3c, kind);
+            let mut f = || -> u32 {
+                match rng.next() % 6 {
+                    0 => 0,
+                    1 => ((rng.next() % 100_000) as f32 / 3.0).to_bits(),
+                    2 => (-((rng.next() % 1000) as f32) / 7.0).to_bits(),
+                    3 => [
+                        0x7f80_0000u32,
+                        0xff80_0000,
+                        0x7fc0_0000,
+                        0xffc0_1234,
+                        1,
+                        0x7f7f_ffff,
+                    ][(rng.next() % 6) as usize],
+                    _ => ((rng.next() % 5000) as f32 + 0.25).to_bits(),
+                }
+            };
+            let (near, far) = (f(), f());
+            t.check(
+                &format!("{name} depth {case} {near:#x} {far:#x}"),
+                0x0045_4260,
+                Conv::Cdecl,
+                &[camera, near, far],
+                |g| {
+                    basic::bridge::depth_range_zero_one(g, camera, near, far);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn batch6_objects_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xb6b6_0002);
+        t.stub(basic::FREE, false, 1, 0, Ret::Imm(0xf4ee));
+        let cell = t.zeros(4);
+        t.stub(basic::MALLOC, false, 2, 0, Ret::Cell(cell));
+        for block in [0, pattern(&mut t, &mut rng, 4)] {
+            t.w32(cell, block);
+            let p = pattern(&mut t, &mut rng, 0x20);
+            let (a, b) = (rng.next(), rng.next());
+            t.check(
+                &format!("{name} material {block:#x}"),
+                0x004d_7b10,
+                Conv::Thiscall(p),
+                &[a, b],
+                |g| Out::U32(basic::bridge::material_ctor(g, p, a, b)),
+            );
+        }
+        // the defaults object: a vtable whose slot 1 returns the cell
+        let get = t.stub_code(0x00de_fa17, true, 0, 0, Ret::Cell(cell));
+        let vtable = t.alloc(
+            &[0u32, get]
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let object_ = t.rebase(basic::DEFAULTS_OBJECT);
+        t.w32(object_, vtable);
+        t.stub(basic::APPLY_DEFAULTS, true, 2, 2, Ret::Imm(0xa));
+        t.stub(basic::APPLY_MEMBER, true, 2, 2, Ret::Imm(0xb));
+        for default in [0, 0x1357_9000] {
+            t.w32(cell, default);
+            let p = pattern(&mut t, &mut rng, 0x10);
+            for (buffer, flag) in [(p + 4, 1), (p + 4, 0), (p + 8, 1), (rng.next(), 2)] {
+                t.check(
+                    &format!("{name} apply {default:#x} {buffer:#x} {flag}"),
+                    0x0048_c6e0,
+                    Conv::Thiscall(p),
+                    &[buffer, flag],
+                    |g| Out::U32(basic::bridge::apply_defaults(g, p, buffer, flag)),
+                );
+            }
+        }
+        t.stub(basic::ITERATOR_FIRST, true, 0, 0, Ret::Imm(0x1f));
+        for empty in [true, false] {
+            let list = pattern(&mut t, &mut rng, 0x24);
+            if empty {
+                t.w32(list + 0x1c, list + 0x1c);
+            }
+            let p = pattern(&mut t, &mut rng, 0x20);
+            t.check(
+                &format!("{name} iterator {empty}"),
+                0x0046_3bf0,
+                Conv::Thiscall(p),
+                &[list],
+                |g| Out::U32(basic::bridge::iterator_ctor(g, p, list)),
+            );
+        }
+        // the utilities list: empty, a lower priority before, a higher one first
+        t.stub(basic::SPRITE_MEMBER_CTOR, true, 0, 0, Ret::Imm(0x5));
+        let head = t.rebase(basic::UTILITIES);
+        for prios in [
+            vec![],
+            vec![0x10u32],
+            vec![0x10, 0x20],
+            vec![0x100],
+            vec![0x10, 0xff, 0x10],
+        ] {
+            let mut first = 0;
+            for &prio in prios.iter().rev() {
+                let e = pattern(&mut t, &mut rng, 0x10);
+                t.w32(e + 4, first);
+                t.w32(e + 0xc, prio);
+                first = e;
+            }
+            t.w32(head, first);
+            let p = pattern(&mut t, &mut rng, 0x20);
+            t.check(
+                &format!("{name} sprite utility {prios:x?}"),
+                0x0043_3870,
+                Conv::Thiscall(p),
+                &[],
+                |g| Out::U32(basic::bridge::utility_sprite_ctor(g, p)),
+            );
+        }
+        for old in [0u32, 3, 0x8000_0002] {
+            for data in [0u32, 0x4000_0000] {
+                for (buffer, count) in [
+                    (0x4000_0000, 2),
+                    (0x5000_0000, 0),
+                    (0x5000_0000, 0x8000_0000),
+                ] {
+                    let p = pattern(&mut t, &mut rng, 0x10);
+                    t.w32(p + 8, old);
+                    t.w32(p + 0xc, data);
+                    t.check(
+                        &format!("{name} set at 8 {old:#x} {data:#x} {buffer:#x} {count:#x}"),
+                        0x0048_3810,
+                        Conv::Thiscall(p),
+                        &[buffer, count],
+                        |g| Out::U32(basic::bridge::set_external_at8(g, p, buffer, count)),
+                    );
+                }
+            }
+        }
+        // PWorld's release: lists of nodes linked through +0x48
+        for (n, count, data) in [
+            (0u32, 0u32, 0u32),
+            (1, 2, 0x4000_0000),
+            (3, 0x8000_0002, 0x4000_0000),
+            (2, 1, 0),
+        ] {
+            let world = pattern(&mut t, &mut rng, 0x10);
+            let mut link = world;
+            for _ in 0..n {
+                let node = pattern(&mut t, &mut rng, 0x50);
+                t.w32(node + 0x48, link);
+                link = node + 0x48;
+            }
+            t.w32(world, if n == 0 && count == 0 { world } else { link });
+            t.w32(world + 8, count);
+            t.w32(world + 0xc, data);
+            t.check(
+                &format!("{name} world release {n}"),
+                0x0044_2a80,
+                Conv::Thiscall(world),
+                &[],
+                |g| {
+                    basic::bridge::world_release(g, world);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn batch6_extras_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xb6b6_0003);
+        let this = object(&mut t, &mut rng);
+        t.stub(
+            descriptor::PBASE_DESCRIPTOR,
+            false,
+            0,
+            0,
+            Ret::Imm(0x00c9_02e8),
+        );
+        let cases: [(u32, Port); 4] = [
+            (0x004c_3b50, |g, p| {
+                Out::U8(u8::from(descriptor::bridge::construct_texture_2d(g, p)))
+            }),
+            (0x004c_6be0, |g, p| {
+                Out::U8(u8::from(descriptor::bridge::construct_texture_cube(g, p)))
+            }),
+            (0x0049_ebc0, |g, p| {
+                Out::U8(u8::from(descriptor::bridge::construct_light(
+                    g,
+                    descriptor::LIGHT,
+                    p,
+                )))
+            }),
+            (0x0045_dc70, |g, p| {
+                Out::U8(u8::from(descriptor::bridge::construct_asset_import(g, p)))
+            }),
+        ];
+        for (f, port) in cases {
+            for p in [0, pattern(&mut t, &mut rng, 0x40)] {
+                t.check(
+                    &format!("{name} {f:#x}({p:#x})"),
+                    f,
+                    Conv::Thiscall(this),
+                    &[p],
+                    |g| port(g, p),
+                );
+            }
+        }
+        // the constant buffer's destructor
+        let calls = descriptor::three_of(descriptor::DESTROY_CHECKED, 0x004a_0560);
+        let cell = t.zeros(4);
+        t.stub(calls[0], true, 0, 0, Ret::Cell(cell));
+        t.stub(calls[1], true, 0, 0, Ret::Imm(0x11));
+        t.stub(calls[2], true, 0, 0, Ret::Imm(0x2233_4455));
+        for checked in [0, 1, 0x100] {
+            t.w32(cell, checked);
+            let p = pattern(&mut t, &mut rng, 0x10);
+            t.check(
+                &format!("{name} constant buffer dtor {checked:#x}"),
+                0x0049_fa10,
+                Conv::Thiscall(p),
+                &[],
+                |g| Out::U32(basic::bridge::dtor_checked(g, calls, p)),
+            );
+        }
+        // the 0x40-byte array release
+        t.stub(basic::FREE, false, 1, 0, Ret::Imm(0xf4ee));
+        t.stub(basic::ELEMENT40_DTOR, true, 0, 0, Ret::Imm(0x40));
+        for (count, data) in [
+            (0u32, 0x4000_0000u32),
+            (3, 0x4000_0000),
+            (3, 0),
+            (0x8000_0003, 0x4000_0000),
+            (0, 0),
+        ] {
+            let p = pattern(&mut t, &mut rng, 0x10);
+            t.w32(p, count);
+            t.w32(p + 4, data);
+            t.check(
+                &format!("{name} release40 {count:#x} {data:#x}"),
+                0x0043_3900,
+                Conv::Thiscall(p),
+                &[],
+                |g| {
+                    basic::bridge::release_array40(g, p);
+                    Out::None
+                },
+            );
+        }
+        // the parameter write (memcpy stubbed)
+        t.stub(basic::MEMCPY, false, 3, 0, Ret::Imm(0x0e0e));
+        for case in 0..90u32 {
+            let buffer = pattern(&mut t, &mut rng, 0x20);
+            t.w32(buffer, 0x40 + case % 3);
+            let parameter = pattern(&mut t, &mut rng, 0x10);
+            let off = [0u16, 3, 4, 8, 0x30, 0x3c][(case % 6) as usize];
+            let size = [0u16, 4, 8, 0x10, 0xe004][(case % 5) as usize];
+            t.write(parameter + 8, &off.to_le_bytes());
+            t.write(parameter + 0xa, &size.to_le_bytes());
+            if case % 4 == 0 {
+                // exactly full
+                t.w32(buffer, u32::from(off) + u32::from(size & 0x1fff));
+            }
+            let src = if case % 7 == 0 { 0 } else { rng.next() };
+            t.check(
+                &format!("{name} write parameter {case}"),
+                0x004d_57d0,
+                Conv::Thiscall(buffer),
+                &[parameter, src],
+                |g| Out::U32(basic::bridge::write_parameter(g, buffer, parameter, src)),
             );
         }
     }

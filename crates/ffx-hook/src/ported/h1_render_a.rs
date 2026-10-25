@@ -1540,4 +1540,86 @@ ported! {
     PTextureData_ctor_004c78a0 @ 0x004c_78a0 => extern "thiscall" fn h1_004c78a0(this: u32, texture: u32) -> u32 {
         texture::bridge::data_ctor(&mut mem(), this, texture)
     }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PMeshSegmentBase__constructInstance` (thiscall).
+    Phyre_PClassDescriptorConcrete_Phyre_PGeometry_PMeshSegmentBase__constructInstance @ 0x0048_8f40 => extern "thiscall" fn h1_00488f40(_descriptor: u32, p: u32) -> u8 {
+        let spans = const { descriptor::spans_of(0x0048_8f40) };
+        u8::from(descriptor::bridge::construct_spans(&mut mem(), p, spans))
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderParameterDefinition__constructInstance` (thiscall).
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderParameterDefinition__constructInstance @ 0x004a_2ec0 => extern "thiscall" fn h1_004a2ec0(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_init(&mut mem(), p, const { descriptor::init_of(0x004a_2ec0) }))
+    }
+    /// `PhyreCopyElements20_00442290` (C).
+    PhyreCopyElements20_00442290 @ 0x0044_2290 => extern "C" fn h1_00442290(dst: u32, src: u32, count: u32) {
+        basic::bridge::copy_elements20(&mut mem(), dst, src, count);
+    }
+    /// `PSharray_element20_00434870` (thiscall).
+    PSharray_element20_00434870 @ 0x0043_4870 => extern "thiscall" fn h1_00434870(this: u32, i: u32) -> u32 {
+        basic::bridge::sharray_element_at(&mem(), this + 0x18, i)
+    }
+    /// `Phyre_PGeometry_PDynamicMesh_getDataBlockCount` (thiscall).
+    Phyre_PGeometry_PDynamicMesh_getDataBlockCount @ 0x0049_8770 => extern "thiscall" fn h1_00498770(mesh: u32, kind: u32) -> u32 {
+        basic::bridge::data_block_count(&mem(), mesh, kind)
+    }
+    /// `Phyre_PCamera_ConvertProjectionMatrixDepthRangeToZeroOne` (C).
+    Phyre_PCamera_ConvertProjectionMatrixDepthRangeToZeroOne @ 0x0045_4260 => extern "C" fn h1_00454260(camera: u32, near: u32, far: u32) {
+        basic::bridge::depth_range_zero_one(&mut mem(), camera, near, far);
+    }
+    /// `Phyre_PRendering_PMaterial_PMaterial` (thiscall).
+    Phyre_PRendering_PMaterial_PMaterial @ 0x004d_7b10 => extern "thiscall" fn h1_004d7b10(this: u32, a: u32, b: u32) -> u32 {
+        basic::bridge::material_ctor(&mut mem(), this, a, b)
+    }
+    /// `PSharray_setWord_0048c540` (thiscall).
+    PSharray_setWord_0048c540 @ 0x0048_c540 => extern "thiscall" fn h1_0048c540(array: u32, i: u32, v: u32) -> u32 {
+        basic::bridge::sharray_set(&mut mem(), array, i, v)
+    }
+    /// `PClassDataMember_applyDefaults_0048c6e0` (thiscall).
+    PClassDataMember_applyDefaults_0048c6e0 @ 0x0048_c6e0 => extern "thiscall" fn h1_0048c6e0(this: u32, buffer: u32, flag: u32) -> u32 {
+        basic::bridge::apply_defaults(&mut mem(), this, buffer, flag)
+    }
+    /// `PTextureIterator_ctor_00463bf0` (thiscall).
+    PTextureIterator_ctor_00463bf0 @ 0x0046_3bf0 => extern "thiscall" fn h1_00463bf0(this: u32, list: u32) -> u32 {
+        basic::bridge::iterator_ctor(&mut mem(), this, list)
+    }
+    /// `Phyre_PSprite_PUtilitySprite_PUtilitySprite` (thiscall).
+    Phyre_PSprite_PUtilitySprite_PUtilitySprite @ 0x0043_3870 => extern "thiscall" fn h1_00433870(this: u32) -> u32 {
+        basic::bridge::utility_sprite_ctor(&mut mem(), this)
+    }
+    /// `PDataBlock_setToExternalBuffer_00483810` (thiscall).
+    PDataBlock_setToExternalBuffer_00483810 @ 0x0048_3810 => extern "thiscall" fn h1_00483810(this: u32, buffer: u32, count: u32) -> u32 {
+        basic::bridge::set_external_at8(&mut mem(), this, buffer, count)
+    }
+    /// `Phyre_PWorld_releaseEntries_00442a80` (thiscall).
+    Phyre_PWorld_releaseEntries_00442a80 @ 0x0044_2a80 => extern "thiscall" fn h1_00442a80(this: u32) {
+        basic::bridge::world_release(&mut mem(), this);
+    }
+    /// `constructInstance(descriptor, p)` of `PTexture2DBase`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTexture2DBase__constructInstance @ 0x004c_3b50 => extern "thiscall" fn h1_004c3b50(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_texture_2d(&mut mem(), p))
+    }
+    /// `constructInstance(descriptor, p)` of `PTextureCubeMapBase`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTextureCubeMapBase__constructInstance @ 0x004c_6be0 => extern "thiscall" fn h1_004c6be0(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_texture_cube(&mut mem(), p))
+    }
+    /// `constructInstance(descriptor, p)` of `PLight`.
+    Phyre_PClassDescriptorConcrete_Phyre_PRendering_PLight__constructInstance @ 0x0049_ebc0 => extern "thiscall" fn h1_0049ebc0(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_light(&mut mem(), descriptor::LIGHT, p))
+    }
+    /// `constructInstance(descriptor, p)` of `PAssetReferenceImport`.
+    Phyre_PClassDescriptorConcrete_Phyre_PAssetReferenceImport__constructInstance @ 0x0045_dc70 => extern "thiscall" fn h1_0045dc70(_descriptor: u32, p: u32) -> u8 {
+        u8::from(descriptor::bridge::construct_asset_import(&mut mem(), p))
+    }
+    /// `PConstantBuffer`'s destructor (`this`) -> the last call's `eax`.
+    Phyre_PRendering_PConstantBuffer_dtor_PConstantBuffer @ 0x0049_fa10 => extern "thiscall" fn h1_0049fa10(this: u32) -> u32 {
+        let calls = const { descriptor::three_of(descriptor::DESTROY_CHECKED, 0x004a_0560) };
+        basic::bridge::dtor_checked(&mut mem(), calls, this)
+    }
+    /// `0x00433900(this)`: releases an array of 0x40-byte elements.
+    PArray_release40_00433900 @ 0x0043_3900 => extern "thiscall" fn h1_00433900(this: u32) {
+        basic::bridge::release_array40(&mut mem(), this);
+    }
+    /// `0x004d57d0(this, parameter, src)` -> 0, 1 or 3.
+    PParameterBuffer_writeParameter_004d57d0 @ 0x004d_57d0 => extern "thiscall" fn h1_004d57d0(this: u32, parameter: u32, src: u32) -> u32 {
+        basic::bridge::write_parameter(&mut mem(), this, parameter, src)
+    }
 }

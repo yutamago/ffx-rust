@@ -252,6 +252,10 @@ pub const INIT: &[(u32, &[u8])] = &[
             0, 0, 0, 0,
         ],
     ),
+    (
+        0x004a_2ec0,
+        &[0x00, 0x00, 0x46, 0x34, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ),
 ];
 
 /// `destroyInstance` copies and the destructor each calls.
@@ -623,6 +627,23 @@ pub const INIT_SPANS: &[(u32, Spans)] = &[
             (0x4, &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x34]),
         ],
     ),
+    (
+        0x0048_8f40,
+        &[
+            (
+                0x0,
+                &[
+                    0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0x06, 0, 0, 0, 0,
+                ],
+            ),
+            (
+                0x18,
+                &[
+                    0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                ],
+            ),
+        ],
+    ),
 ];
 
 /// Callbacks that hand `p` to a cdecl function of the class and return its
@@ -659,10 +680,18 @@ pub const CAMERA_ORTHO: [u32; 3] = [0x0045_30a0, 0x00b1_1040, 0x0045_5fe0];
 /// descriptor and its getter (constructInstance `0x004b0470`).
 pub const SHADER_SOURCE_DEFAULT: [u32; 2] = [0x00c9_1048, 0x0043_cbb0];
 
+/// `PLight`'s constructInstance constants: the image floats at `+0`..`+8`,
+/// `+0x20`, `+0x2c` and the pointer at `+0x18`.
+pub const LIGHT: [u32; 4] = [0x00b9_2194, 0x00b1_7500, 0x00b1_7504, 0x00c1_0814];
+/// `PBase::GetClassDescriptor()` (cdecl).
+pub const PBASE_DESCRIPTOR: u32 = 0x0043_5740;
+
 pub mod bridge {
     //! The originals over game memory.
 
-    use super::{ADD_TO_NAMESPACE, Conv, FREE, Host, REGISTER_TYPE, Release, owned};
+    use super::{
+        ADD_TO_NAMESPACE, Conv, FREE, Host, PBASE_DESCRIPTOR, REGISTER_TYPE, Release, owned,
+    };
     use ffx_bridge::Mem;
 
     /// `constructInstance` / `destroyInstance` of a class with nothing
@@ -961,5 +990,71 @@ pub mod bridge {
         }
         // `al = 1` over `p`, which the original has in `eax` by then
         (p & !0xff) | 1
+    }
+
+    /// `constructInstance(p)` of `PTexture2DBase`: its constructor in place
+    /// unless `p` is 0; true.
+    pub fn construct_texture_2d(m: &mut impl Mem, p: u32) -> bool {
+        if p != 0 {
+            crate::texture::bridge::ctor_2d(m, p);
+        }
+        true
+    }
+
+    /// `constructInstance(p)` of `PTextureCubeMapBase`: its constructor in
+    /// place unless `p` is 0; true.
+    pub fn construct_texture_cube(m: &mut impl Mem, p: u32) -> bool {
+        if p != 0 {
+            crate::texture::bridge::ctor_cube(m, p);
+        }
+        true
+    }
+
+    /// `constructInstance(p)` of `PLight` unless `p` is 0: the image's
+    /// float three times, 1.0, 0, 0, a pointer, 0.0, a float, 1.0, 0.0, a
+    /// float, 0.0 (each through the x87, as `fld`/`fst` copies them); true.
+    pub fn construct_light(m: &mut impl Mem, [a, b, c, ptr]: [u32; 4], p: u32) -> bool {
+        use ffx_bridge::x87;
+        if p != 0 {
+            let copy = |m: &mut _, at: u32| -> u32 {
+                let at = Mem::rebase(m, at);
+                x87::store(x87::load(Mem::read(m, at)))
+            };
+            let a = copy(m, a);
+            let b = copy(m, b);
+            let c = copy(m, c);
+            let one = 1.0f32.to_bits();
+            let ptr = m.rebase(ptr);
+            for (off, v) in [
+                (0, a),
+                (4, a),
+                (8, a),
+                (0xc, one),
+                (0x10, 0),
+                (0x14, 0),
+                (0x18, ptr),
+                (0x1c, 0),
+                (0x20, b),
+                (0x24, one),
+                (0x28, 0),
+                (0x2c, c),
+                (0x30, 0),
+            ] {
+                m.write(p + off, v);
+            }
+        }
+        true
+    }
+
+    /// `constructInstance(p)` of `PAssetReferenceImport` unless `p` is 0:
+    /// `PBase::GetClassDescriptor()` at `+0`, two words 0; true.
+    pub fn construct_asset_import(h: &mut impl Host, p: u32) -> bool {
+        if p != 0 {
+            let d = h.call_sym(PBASE_DESCRIPTOR, Conv::Cdecl, &[]);
+            h.write(p, d);
+            h.write(p + 4, 0u32);
+            h.write(p + 8, 0u32);
+        }
+        true
     }
 }

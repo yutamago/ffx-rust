@@ -32,6 +32,34 @@ pub const FREE: u32 = 0x0042_fb20;
 /// `PEventFlagWin32::PEventFlagWin32` (thiscall).
 pub const EVENT_FLAG_CTOR: u32 = 0x0042_fc80;
 
+/// `PhyreMalloc` (cdecl `(size, alignment)`).
+pub const MALLOC: u32 = 0x0042_fb80;
+/// The byte a new `PMaterial`'s one-byte block starts with.
+pub const MATERIAL_BYTE: u32 = 0x00b8_fbeb;
+/// The global object whose virtual slot 1 gives the default buffer
+/// (`0x0048c6e0`).
+pub const DEFAULTS_OBJECT: u32 = 0x00ca_5268;
+/// `PClassDescriptor::applyDefaultBufferWithValidation` (thiscall, two
+/// words).
+pub const APPLY_DEFAULTS: u32 = 0x0043_c160;
+/// The member's own apply (`0x0048c650`, thiscall, two words).
+pub const APPLY_MEMBER: u32 = 0x0048_c650;
+/// The iterator's first step (`0x00464f30`, thiscall).
+pub const ITERATOR_FIRST: u32 = 0x0046_4f30;
+/// The iterator's type tag (`PTexture2D`'s descriptor).
+pub const ITERATOR_TAG: u32 = 0x00ca_37d0;
+/// `PUtility`'s list of utilities (sorted by `+0xc`).
+pub const UTILITIES: u32 = 0x00c9_01a8;
+/// `PUtility`'s vtable, its `+8` table, `PUtilitySprite`'s vtable.
+pub const UTILITY_VTABLES: [u32; 3] = [0x00b0_e078, 0x00b0_e14c, 0x00b0_e140];
+/// The sprite utility's member constructor (`0x00433700`, thiscall).
+pub const SPRITE_MEMBER_CTOR: u32 = 0x0043_3700;
+
+/// The 0x40-byte element destructor of `0x00433900`'s array (thiscall).
+pub const ELEMENT40_DTOR: u32 = 0x0055_dfa0;
+/// The CRT's `memcpy` (cdecl).
+pub const MEMCPY: u32 = 0x0094_9256;
+
 /// The renderer id `0x00464710` returns: `"11XD"` read as a little-endian
 /// word.
 pub const RENDERER_ID: u32 = 0x4458_3131;
@@ -40,9 +68,12 @@ pub mod bridge {
     //! The originals over game memory.
 
     use super::{
-        Conv, DYNAMIC_MESH_VTABLE, EVENT_FLAG_CTOR, FREE, Host, Mem, NODE_REGISTER,
-        SAMPLER_D3D11_CTOR, SHADER_PASS_DTOR, SPRITE_REGISTER, STREAM_CTOR,
+        APPLY_DEFAULTS, APPLY_MEMBER, Conv, DEFAULTS_OBJECT, DYNAMIC_MESH_VTABLE, ELEMENT40_DTOR,
+        EVENT_FLAG_CTOR, FREE, Host, ITERATOR_FIRST, ITERATOR_TAG, MALLOC, MATERIAL_BYTE, MEMCPY,
+        Mem, NODE_REGISTER, SAMPLER_D3D11_CTOR, SHADER_PASS_DTOR, SPRITE_MEMBER_CTOR,
+        SPRITE_REGISTER, STREAM_CTOR, UTILITIES, UTILITY_VTABLES,
     };
+    use ffx_bridge::x87;
 
     /// `0x0042fcc0(this)` -> `this`: one word 0.
     pub fn clear_word(m: &mut impl Mem, this: u32) -> u32 {
@@ -420,12 +451,260 @@ pub mod bridge {
     /// the address of element `i`'s `+0x10` (the single element lives in the
     /// header, at `this + 0x18`; with none, from address 0).
     pub fn sharray_element(m: &impl Mem, this: u32, i: u32) -> u32 {
-        let n = m.read::<u32>(this + 0x14) & 0x7fff_ffff;
+        sharray_element_at(m, this + 0x14, i)
+    }
+
+    /// [`sharray_element`] of the `PSharray` header at `array` (count,
+    /// data).
+    pub fn sharray_element_at(m: &impl Mem, array: u32, i: u32) -> u32 {
+        let n = m.read::<u32>(array) & 0x7fff_ffff;
         let base = match n {
             0 => 0,
-            1 => this + 0x18,
-            _ => m.read(this + 0x18),
+            1 => array + 4,
+            _ => m.read(array + 4),
         };
         base.wrapping_add(i.wrapping_mul(20)).wrapping_add(16)
+    }
+
+    /// `0x00442290(dst, src, count)`: as [`copy_elements16`] with 20-byte
+    /// elements.
+    pub fn copy_elements20(m: &mut impl Mem, dst: u32, src: u32, count: u32) {
+        let (mut d, mut s) = (dst, src);
+        for _ in 0..count {
+            if d != 0 {
+                for i in 0..5 {
+                    let w: u32 = m.read(s + 4 * i);
+                    m.write(d + 4 * i, w);
+                }
+                s = s.wrapping_add(20);
+            }
+            d = d.wrapping_add(20);
+        }
+    }
+
+    /// `PDynamicMesh::getDataBlockCount(mesh, kind)`: of the kind's run of
+    /// 12-byte blocks (`mesh +0x14` + 16 * kind: first, count; blocks at
+    /// `mesh +0xc`, `mesh +8` of them), how many have a 0 first word. A
+    /// first index out of range reads from address 0, as the original.
+    pub fn data_block_count(m: &impl Mem, mesh: u32, kind: u32) -> u32 {
+        let run = m
+            .read::<u32>(mesh + 0x14)
+            .wrapping_add(kind.wrapping_mul(16));
+        let first: u32 = m.read(run);
+        let n: u32 = m.read(run + 4);
+        let mut e = if first < m.read::<u32>(mesh + 8) & 0x7fff_ffff {
+            m.read::<u32>(mesh + 0xc)
+                .wrapping_add(first.wrapping_mul(12))
+        } else {
+            0
+        };
+        let mut count = 0;
+        for _ in 0..n {
+            if m.read::<u32>(e) == 0 {
+                count += 1;
+            }
+            e = e.wrapping_add(12);
+        }
+        count
+    }
+
+    /// `PCamera::ConvertProjectionMatrixDepthRangeToZeroOne(camera, near,
+    /// far)` (cdecl, `f32` bits): with a 0 at `camera +0x3c` (a
+    /// perspective projection), `+0x28` = far / (near - far) and `+0x38` =
+    /// far * near / (near - far); else `+0x28` = 1 / (near - far) and
+    /// `+0x38` = near / (near - far); on the x87 at 53 bits.
+    pub fn depth_range_zero_one(m: &mut impl Mem, camera: u32, near: u32, far: u32) {
+        let (n, f) = (x87::load(near), x87::load(far));
+        let d = x87::sub(n, f);
+        let (a, b) = if x87::load(m.read(camera + 0x3c)) == 0.0 {
+            (x87::div(f, d), x87::div(x87::mul(f, n), d))
+        } else {
+            (x87::div(1.0, d), x87::div(n, d))
+        };
+        m.write(camera + 0x28, x87::store(a));
+        m.write(camera + 0x38, x87::store(b));
+    }
+
+    /// `PMaterial::PMaterial(this, a, b)` -> `this`: `a`, `b`, two words
+    /// 0, a one-byte block (`PhyreMalloc(1, 2)`, its byte from the image)
+    /// and 0.
+    pub fn material_ctor(h: &mut impl Host, this: u32, a: u32, b: u32) -> u32 {
+        h.write(this, a);
+        h.write(this + 4, b);
+        h.write(this + 8, 0u32);
+        h.write(this + 0xc, 0u32);
+        let block = h.call_sym(MALLOC, Conv::Cdecl, &[1, 2]);
+        if block != 0 {
+            let at = h.rebase(MATERIAL_BYTE);
+            let byte: u8 = h.read(at);
+            h.write(block, byte);
+        }
+        h.write(this + 0x10, block);
+        h.write(this + 0x14, 0u32);
+        this
+    }
+
+    /// `0x0048c540(array, i, v)`: a `PSharray` of words' element `i` set
+    /// to `v`: 0, or 3 when `i` is not below the count.
+    pub fn sharray_set(m: &mut impl Mem, array: u32, i: u32, v: u32) -> u32 {
+        let n = m.read::<u32>(array) & 0x7fff_ffff;
+        if i >= n {
+            return 3;
+        }
+        let base = if n > 1 { m.read(array + 4) } else { array + 4 };
+        m.write(base.wrapping_add(i.wrapping_mul(4)), v);
+        0
+    }
+
+    /// `0x0048c6e0(this, buffer, flag)` -> 0: with the default buffer of
+    /// the global defaults object (its virtual slot 1), `buffer == this +
+    /// 4` and `flag == 1`, `applyDefaultBufferWithValidation(default,
+    /// buffer, 1)`; else the member's own apply `0x0048c650(this, buffer,
+    /// flag)`.
+    pub fn apply_defaults(h: &mut impl Host, this: u32, buffer: u32, flag: u32) -> u32 {
+        let object = h.rebase(DEFAULTS_OBJECT);
+        let default = h.call_virtual(object, 1, &[]);
+        if buffer == this + 4 && flag == 1 && default != 0 {
+            h.call_sym(APPLY_DEFAULTS, Conv::Thiscall(default), &[buffer, flag]);
+        } else {
+            h.call_sym(APPLY_MEMBER, Conv::Thiscall(this), &[buffer, flag]);
+        }
+        0
+    }
+
+    /// `0x00463bf0(this, list)` -> `this`: an iterator over the list head
+    /// at `list + 0x1c`: five words 0, the head, its first entry (0 when
+    /// the list is empty), the `PTexture2D` tag; then its first step.
+    pub fn iterator_ctor(h: &mut impl Host, this: u32, list: u32) -> u32 {
+        let head = list.wrapping_add(0x1c);
+        for i in 0..5 {
+            h.write(this + 4 * i, 0u32);
+        }
+        h.write(this + 0x14, head);
+        let first: u32 = h.read(head);
+        h.write(this + 0x18, if first == head { 0 } else { first });
+        let tag = h.rebase(ITERATOR_TAG);
+        h.write(this + 0x1c, tag);
+        h.call_sym(ITERATOR_FIRST, Conv::Thiscall(this), &[]);
+        this
+    }
+
+    /// `PUtilitySprite::PUtilitySprite(this)` -> `this`: as a `PUtility`
+    /// of priority 0xff linked into the utilities list before the first
+    /// one of priority 0xff or more, then its own vtable and member.
+    pub fn utility_sprite_ctor(h: &mut impl Host, this: u32) -> u32 {
+        let utility = h.rebase(UTILITY_VTABLES[0]);
+        let table = h.rebase(UTILITY_VTABLES[1]);
+        let sprite = h.rebase(UTILITY_VTABLES[2]);
+        h.write(this, utility);
+        h.write(this + 8, table);
+        h.write(this + 0xc, 0xffu32);
+        let mut link = h.rebase(UTILITIES);
+        if h.read::<u32>(link) != 0 {
+            loop {
+                let e: u32 = h.read(link);
+                if h.read::<u32>(e + 0xc) >= 0xff {
+                    break;
+                }
+                link = e + 4;
+                if h.read::<u32>(e + 4) == 0 {
+                    break;
+                }
+            }
+        }
+        let next: u32 = h.read(link);
+        h.write(this + 4, next);
+        h.write(link, this);
+        h.write(this, sprite);
+        h.call_sym(SPRITE_MEMBER_CTOR, Conv::Thiscall(this + 0x10), &[]);
+        this
+    }
+
+    /// `0x00483810(this, buffer, count)`: the array at `this + 8` set to
+    /// the external `buffer` (an owned old block other than it freed): 0;
+    /// 5 for a negative count.
+    pub fn set_external_at8(h: &mut impl Host, this: u32, buffer: u32, count: u32) -> u32 {
+        if (count as i32) < 0 {
+            return 5;
+        }
+        let old: u32 = h.read(this + 8);
+        let data: u32 = h.read(this + 0xc);
+        if data != buffer && old & 0x8000_0000 == 0 && data != 0 {
+            h.call_sym(FREE, Conv::Cdecl, &[data]);
+        }
+        h.write(this + 0xc, buffer);
+        h.write(this + 8, count | 0x8000_0000);
+        0
+    }
+
+    /// `PWorld`'s destructor body (`0x00442a80(this)`): each node of the
+    /// list at `this` (links at node `+0x48`, the node 0x48 before them)
+    /// gets `+0x40` = 0; then the class entries' block freed when owned,
+    /// and the array emptied.
+    pub fn world_release(h: &mut impl Host, this: u32) {
+        let mut link: u32 = h.read(this);
+        while link != this && link != 0 {
+            let node = link.wrapping_sub(0x48);
+            if node == 0 {
+                break;
+            }
+            h.write(node + 0x40, 0u32);
+            link = h.read(node + 0x48);
+        }
+        let count: u32 = h.read(this + 8);
+        if count & 0x8000_0000 == 0 {
+            let data: u32 = h.read(this + 0xc);
+            if data != 0 {
+                h.call_sym(FREE, Conv::Cdecl, &[data]);
+            }
+        }
+        h.write(this + 0xc, 0u32);
+        h.write(this + 8, 0u32);
+    }
+
+    /// `PConstantBuffer`'s destructor (`this`): `release(this)` when
+    /// `check(this)` sets `al`, then `dtor(this)`, whose `eax` it returns.
+    pub fn dtor_checked(h: &mut impl Host, [check, release, dtor]: [u32; 3], this: u32) -> u32 {
+        if h.call_sym(check, Conv::Thiscall(this), &[]) & 0xff != 0 {
+            h.call_sym(release, Conv::Thiscall(this), &[]);
+        }
+        h.call_sym(dtor, Conv::Thiscall(this), &[])
+    }
+
+    /// `0x00433900(this)`: an array of 0x40-byte elements at `this`
+    /// (count, data): when owned and allocated, each element's destructor
+    /// (`0x0055dfa0`, thiscall) and `PhyreFree(data)`; then emptied.
+    pub fn release_array40(h: &mut impl Host, this: u32) {
+        let count: u32 = h.read(this);
+        if count & 0x8000_0000 == 0 {
+            let data: u32 = h.read(this + 4);
+            if data != 0 {
+                let mut e = data;
+                for _ in 0..count & 0x7fff_ffff {
+                    h.call_sym(ELEMENT40_DTOR, Conv::Thiscall(e), &[]);
+                    e = e.wrapping_add(0x40);
+                }
+                h.call_sym(FREE, Conv::Cdecl, &[data]);
+            }
+        }
+        h.write(this + 4, 0u32);
+        h.write(this, 0u32);
+    }
+
+    /// `0x004d57d0(this, parameter, src)`: copies the parameter's bytes
+    /// (`u16` offset `+8`, size the low 13 bits of `+0xa`) from `src` into
+    /// the buffer at `this` (`+0` its size) with the CRT's `memcpy`: 0;
+    /// 3 when they don't fit or the offset is below 4; 1 without `src`.
+    pub fn write_parameter(h: &mut impl Host, this: u32, parameter: u32, src: u32) -> u32 {
+        if src == 0 {
+            return 1;
+        }
+        let off = u32::from(h.read::<u16>(parameter + 8));
+        let size = u32::from(h.read::<u16>(parameter + 0xa) & 0x1fff);
+        if off + size > h.read::<u32>(this) || off < 4 {
+            return 3;
+        }
+        h.call_sym(MEMCPY, Conv::Cdecl, &[this.wrapping_add(off), src, size]);
+        0
     }
 }
