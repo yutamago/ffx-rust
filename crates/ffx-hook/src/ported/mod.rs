@@ -24,6 +24,7 @@ mod chara;
 mod h1_render_a;
 mod h2_render_b;
 mod h3_glue_render;
+mod h4_glue_other;
 mod kernel;
 mod main;
 mod map;
@@ -55,6 +56,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(chara::hooks());
     all.extend(h2_render_b::hooks());
     all.extend(h1_render_a::hooks());
+    all.extend(h4_glue_other::hooks());
     all.extend(kernel::hooks());
     all.extend(main::hooks());
     all.extend(map::hooks());

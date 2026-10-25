@@ -649,6 +649,15 @@ name = "ffx-gfx"
 version = "0.1.0"
 
 [[package]]
+name = "ffx-glue-other"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+ "ffx-graphic",
+ "ffx-sound",
+]
+
+[[package]]
 name = "ffx-graphic"
 version = "0.1.0"
 dependencies = [
@@ -682,6 +691,7 @@ dependencies = [
  "ffx-draw",
  "ffx-field",
  "ffx-gfx",
+ "ffx-glue-other",
  "ffx-graphic",
  "ffx-kernel",
  "ffx-menu",
@@ -771,6 +781,7 @@ dependencies = [
  "ffx-chara",
  "ffx-core",
  "ffx-field",
+ "ffx-glue-other",
  "ffx-graphic",
  "ffx-kernel",
  "ffx-menu",

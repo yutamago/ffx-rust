@@ -1,0 +1,15 @@
+[package]
+name = "ffx-glue-other"
+description = "The remaster's glue outside rendering, ported from FFX.exe (M4 port round 1, list h4): the FMOD queue's entry points, the post-effect and movie singletons, menu and Iggy helpers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-bridge.workspace = true
+ffx-graphic.workspace = true
+ffx-sound.workspace = true
+
+[lints]
+workspace = true
