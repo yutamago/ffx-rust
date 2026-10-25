@@ -417,4 +417,320 @@ ported! {
     Phyre_PClassDescriptorForType_Phyre_PPostProcessing_PScreenSpaceReflectionD3D11__destroyInstance @ 0x00a1_0da0 => extern "thiscall" fn d_00a10da0(_desc: u32, obj: u32) -> u32 {
         descriptor::bridge::destroy_virtual(&mut mem(), obj)
     }
+    /// `Phyre_PDynamicGeometry_PModifierNetworkDynamicMesh_deleting_dtor` (`dtor_free`).
+    Phyre_PDynamicGeometry_PModifierNetworkDynamicMesh_deleting_dtor @ 0x005a_ade0 => extern "thiscall" fn d_005aade0(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x005a_a4b0))
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierNetworkDynamicMeshSegment__constructInstance` (`zero4`).
+    Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierNetworkDynamicMeshSegment__constructInstance @ 0x005a_db00 => extern "thiscall" fn d_005adb00(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_zeroed(&mut mem(), obj, 4)
+    }
+    /// `Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_unsigned_char_const_4__vfunc_18` (`member_get`).
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_unsigned_char_const_4__vfunc_18 @ 0x005a_e3a0 => extern "thiscall" fn d_005ae3a0(member: u32, obj: u32) -> u32 {
+        descriptor::bridge::member_get(&mut mem(), member, obj)
+    }
+    /// `Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_unsigned_char_const_4__vfunc_20` (`member_call`).
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_unsigned_char_const_4__vfunc_20 @ 0x005a_f9c0 => extern "thiscall" fn d_005af9c0(member: u32, obj: u32, a: u32, b: u32) -> u32 {
+        descriptor::bridge::member_call(&mut mem(), member, obj, a, b)
+    }
+    /// `Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PDynamicGeometry_PModifierNetworkDynamicMeshSegment_4__vfunc_20` (`member_call`).
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PDynamicGeometry_PModifierNetworkDynamicMeshSegment_4__vfunc_20 @ 0x005a_f9f0 => extern "thiscall" fn d_005af9f0(member: u32, obj: u32, a: u32, b: u32) -> u32 {
+        descriptor::bridge::member_call(&mut mem(), member, obj, a, b)
+    }
+    /// `Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PDynamicGeometry_PRenderStream_4__vfunc_20` (`member_call`).
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PDynamicGeometry_PRenderStream_4__vfunc_20 @ 0x005a_fa20 => extern "thiscall" fn d_005afa20(member: u32, obj: u32, a: u32, b: u32) -> u32 {
+        descriptor::bridge::member_call(&mut mem(), member, obj, a, b)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierNetworkInstance__constructInstance` (`zero5`).
+    Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierNetworkInstance__constructInstance @ 0x005b_29b0 => extern "thiscall" fn d_005b29b0(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_zeroed(&mut mem(), obj, 5)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierNetworkInstanceInput__constructInstance` (`minus2zero`).
+    Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierNetworkInstanceInput__constructInstance @ 0x005b_29f0 => extern "thiscall" fn d_005b29f0(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_unset_pair_zeroed(&mut mem(), obj)
+    }
+    /// `Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PBase_const_4__vfunc_18` (`member_get`).
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PBase_const_4__vfunc_18 @ 0x005b_2b40 => extern "thiscall" fn d_005b2b40(member: u32, obj: u32) -> u32 {
+        descriptor::bridge::member_get(&mut mem(), member, obj)
+    }
+    /// `Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PBase_const_4__vfunc_20` (`member_call`).
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PBase_const_4__vfunc_20 @ 0x005b_3410 => extern "thiscall" fn d_005b3410(member: u32, obj: u32, a: u32, b: u32) -> u32 {
+        descriptor::bridge::member_call(&mut mem(), member, obj, a, b)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierAndInputs__constructInstance` (`zero5`).
+    Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierAndInputs__constructInstance @ 0x005c_5b50 => extern "thiscall" fn d_005c5b50(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_zeroed(&mut mem(), obj, 5)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierAndInputs__vfunc_110` (`ctor`).
+    Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierAndInputs__vfunc_110 @ 0x005c_5b90 => extern "thiscall" fn d_005c5b90(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x005b_f340, None, None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierNetworkBuffer__constructInstance` (`zero5`).
+    Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierNetworkBuffer__constructInstance @ 0x005c_5bb0 => extern "thiscall" fn d_005c5bb0(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_zeroed(&mut mem(), obj, 5)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PRenderStreamInput__constructInstance` (`minus2`).
+    Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PRenderStreamInput__constructInstance @ 0x005c_5c80 => extern "thiscall" fn d_005c5c80(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_unset_pair(&mut mem(), obj)
+    }
+    /// `Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PDynamicGeometry_PModifierAndInputs_4__vfunc_20` (`member_call`).
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PDynamicGeometry_PModifierAndInputs_4__vfunc_20 @ 0x005c_7ab0 => extern "thiscall" fn d_005c7ab0(member: u32, obj: u32, a: u32, b: u32) -> u32 {
+        descriptor::bridge::member_call(&mut mem(), member, obj, a, b)
+    }
+    /// `Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PDynamicGeometry_PModifierNetworkBuffer_4__vfunc_20` (`member_call`).
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PDynamicGeometry_PModifierNetworkBuffer_4__vfunc_20 @ 0x005c_7ae0 => extern "thiscall" fn d_005c7ae0(member: u32, obj: u32, a: u32, b: u32) -> u32 {
+        descriptor::bridge::member_call(&mut mem(), member, obj, a, b)
+    }
+    /// `Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PDynamicGeometry_PRenderStreamInput_4__vfunc_20` (`member_call`).
+    Phyre_PClassDataMemberArrayDynamic_Phyre_PArray_Phyre_PDynamicGeometry_PRenderStreamInput_4__vfunc_20 @ 0x005c_7b10 => extern "thiscall" fn d_005c7b10(member: u32, obj: u32, a: u32, b: u32) -> u32 {
+        descriptor::bridge::member_call(&mut mem(), member, obj, a, b)
+    }
+    /// `Phyre_PFramework_PApplicationViewport_deleting_dtor` (`vt_free`).
+    Phyre_PFramework_PApplicationViewport_deleting_dtor @ 0x0062_1ba0 => extern "thiscall" fn d_00621ba0(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, Some(0x00b3_ff50), None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PFramework_PInputMapper__constructInstance` (`ctor`).
+    Phyre_PClassDescriptorConcrete_Phyre_PFramework_PInputMapper__constructInstance @ 0x0062_6c20 => extern "thiscall" fn d_00626c20(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x0062_0590, None, None)
+    }
+    /// `ClassDynamicMesh_deleting_dtor` (`vt_dtor_free`).
+    ClassDynamicMesh_deleting_dtor @ 0x0067_2760 => extern "thiscall" fn d_00672760(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, Some(0x00b4_3ed8), Some(0x0049_69f0))
+    }
+    /// `Phyre_PClassDescriptorConcrete_ClassDynamicMesh__constructInstance` (`ctor_seh_vt`).
+    Phyre_PClassDescriptorConcrete_ClassDynamicMesh__constructInstance @ 0x0067_2ad0 => extern "thiscall" fn d_00672ad0(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x0049_68c0, Some(0x00b4_3ed8), None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputAction__constructInstance` (`vt_zero3`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputAction__constructInstance @ 0x009e_b010 => extern "thiscall" fn d_009eb010(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_vtable_zeroed(&mut mem(), obj, 0x00b7_2080, None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionAngularVelocityX__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionAngularVelocityX__constructInstance @ 0x009e_b1f0 => extern "thiscall" fn d_009eb1f0(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_14e8, 0x00c6_82e8, 0x00b7_1a38])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionAngularVelocityY__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionAngularVelocityY__constructInstance @ 0x009e_b230 => extern "thiscall" fn d_009eb230(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_1580, 0x00c6_82f4, 0x00b7_1b40])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionAngularVelocityZ__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionAngularVelocityZ__constructInstance @ 0x009e_b270 => extern "thiscall" fn d_009eb270(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_1618, 0x00c6_8300, 0x00b7_1c48])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionLinearAccelerationX__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionLinearAccelerationX__constructInstance @ 0x009e_b2b0 => extern "thiscall" fn d_009eb2b0(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_16b0, 0x00c6_830c, 0x00b7_1d50])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionLinearAccelerationY__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionLinearAccelerationY__constructInstance @ 0x009e_b2f0 => extern "thiscall" fn d_009eb2f0(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_1748, 0x00c6_8318, 0x00b7_1e60])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionLinearAccelerationZ__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionLinearAccelerationZ__constructInstance @ 0x009e_b330 => extern "thiscall" fn d_009eb330(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_17e0, 0x00c6_8324, 0x00b7_1f70])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionQuatW__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionQuatW__constructInstance @ 0x009e_b370 => extern "thiscall" fn d_009eb370(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_1450, 0x00c6_82dc, 0x00b7_1938])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionQuatX__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionQuatX__constructInstance @ 0x009e_b3b0 => extern "thiscall" fn d_009eb3b0(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_1288, 0x00c6_82b8, 0x00b7_1638])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionQuatY__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionQuatY__constructInstance @ 0x009e_b3f0 => extern "thiscall" fn d_009eb3f0(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_1320, 0x00c6_82c4, 0x00b7_1738])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionQuatZ__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceMotionQuatZ__constructInstance @ 0x009e_b430 => extern "thiscall" fn d_009eb430(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_13b8, 0x00c6_82d0, 0x00b7_1838])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceTouchDragX__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceTouchDragX__constructInstance @ 0x009e_b620 => extern "thiscall" fn d_009eb620(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_1028, 0x00c6_8270, 0x00b7_1438])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceTouchDragY__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceTouchDragY__constructInstance @ 0x009e_b660 => extern "thiscall" fn d_009eb660(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_10c0, 0x00c6_827c, 0x00b7_1538])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceTouchPinch__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceTouchPinch__constructInstance @ 0x009e_b6a0 => extern "thiscall" fn d_009eb6a0(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_0f90, 0x00c6_82a0, 0x00b7_1128])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceTouchRotate__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceTouchRotate__constructInstance @ 0x009e_b6e0 => extern "thiscall" fn d_009eb6e0(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_0ef8, 0x00c6_82ac, 0x00b7_1028])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceTouchTwoFingerDragX__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceTouchTwoFingerDragX__constructInstance @ 0x009e_b720 => extern "thiscall" fn d_009eb720(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_1158, 0x00c6_8288, 0x00b7_1228])
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceTouchTwoFingerDragY__constructInstance` (`input52`).
+    Phyre_PClassDescriptorConcrete_Phyre_PInputs_PInputSourceTouchTwoFingerDragY__constructInstance @ 0x009e_b760 => extern "thiscall" fn d_009eb760(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_input(&mut mem(), obj, [0x0194_11f0, 0x00c6_8294, 0x00b7_1330])
+    }
+    /// `Phyre_PPostProcessing_PDeferredLighting_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PDeferredLighting_deleting_dtor @ 0x00a0_26a0 => extern "thiscall" fn d_00a026a0(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_dc00))
+    }
+    /// `Phyre_PPostProcessing_PDeferredLightingD3D11_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PDeferredLightingD3D11_deleting_dtor @ 0x00a0_2770 => extern "thiscall" fn d_00a02770(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_dc00))
+    }
+    /// `Phyre_PPostProcessing_PDepthOfFieldBase_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PDepthOfFieldBase_deleting_dtor @ 0x00a0_2820 => extern "thiscall" fn d_00a02820(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_dd30))
+    }
+    /// `Phyre_PPostProcessing_PFXAA_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PFXAA_deleting_dtor @ 0x00a0_29f0 => extern "thiscall" fn d_00a029f0(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_df60))
+    }
+    /// `Phyre_PPostProcessing_PFXAABase_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PFXAABase_deleting_dtor @ 0x00a0_2a20 => extern "thiscall" fn d_00a02a20(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_df60))
+    }
+    /// `Phyre_PPostProcessing_PFXAAD3D11_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PFXAAD3D11_deleting_dtor @ 0x00a0_2a50 => extern "thiscall" fn d_00a02a50(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_df60))
+    }
+    /// `Phyre_PPostProcessing_PGlow_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PGlow_deleting_dtor @ 0x00a0_2a80 => extern "thiscall" fn d_00a02a80(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_e0d0))
+    }
+    /// `Phyre_PPostProcessing_PGlowBase_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PGlowBase_deleting_dtor @ 0x00a0_2ab0 => extern "thiscall" fn d_00a02ab0(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_e020))
+    }
+    /// `Phyre_PPostProcessing_PGlowD3D11_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PGlowD3D11_deleting_dtor @ 0x00a0_2ae0 => extern "thiscall" fn d_00a02ae0(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_e0d0))
+    }
+    /// `Phyre_PPostProcessing_PGlowGPUBase_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PGlowGPUBase_deleting_dtor @ 0x00a0_2b10 => extern "thiscall" fn d_00a02b10(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_e0d0))
+    }
+    /// `Phyre_PPostProcessing_PMLAA_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PMLAA_deleting_dtor @ 0x00a0_2d00 => extern "thiscall" fn d_00a02d00(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_e2a0))
+    }
+    /// `Phyre_PPostProcessing_PMLAABase_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PMLAABase_deleting_dtor @ 0x00a0_2d30 => extern "thiscall" fn d_00a02d30(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_e2a0))
+    }
+    /// `Phyre_PPostProcessing_PMLAAD3D11_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PMLAAD3D11_deleting_dtor @ 0x00a0_2d60 => extern "thiscall" fn d_00a02d60(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_e2a0))
+    }
+    /// `Phyre_PPostProcessing_PMotionBlurBase_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PMotionBlurBase_deleting_dtor @ 0x00a0_2f10 => extern "thiscall" fn d_00a02f10(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_e640))
+    }
+    /// `Phyre_PPostProcessing_PPostEffectBase_deleting_dtor` (`vt_free`).
+    Phyre_PPostProcessing_PPostEffectBase_deleting_dtor @ 0x00a0_2fc0 => extern "thiscall" fn d_00a02fc0(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, Some(0x00b7_4058), None)
+    }
+    /// `Phyre_PPostProcessing_PScreenSpaceAmbientOcclusion_deleting_dtor` (`vt_free`).
+    Phyre_PPostProcessing_PScreenSpaceAmbientOcclusion_deleting_dtor @ 0x00a0_3020 => extern "thiscall" fn d_00a03020(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, Some(0x00b7_4058), None)
+    }
+    /// `Phyre_PPostProcessing_PScreenSpaceAmbientOcclusionBase_deleting_dtor` (`vt_free`).
+    Phyre_PPostProcessing_PScreenSpaceAmbientOcclusionBase_deleting_dtor @ 0x00a0_3050 => extern "thiscall" fn d_00a03050(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, Some(0x00b7_4058), None)
+    }
+    /// `Phyre_PPostProcessing_PScreenSpaceAmbientOcclusionD3D11_deleting_dtor` (`vt_free`).
+    Phyre_PPostProcessing_PScreenSpaceAmbientOcclusionD3D11_deleting_dtor @ 0x00a0_3080 => extern "thiscall" fn d_00a03080(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, Some(0x00b7_4058), None)
+    }
+    /// `Phyre_PPostProcessing_PScreenSpaceReflection_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PScreenSpaceReflection_deleting_dtor @ 0x00a0_30b0 => extern "thiscall" fn d_00a030b0(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_e890))
+    }
+    /// `Phyre_PPostProcessing_PScreenSpaceReflectionBase_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PScreenSpaceReflectionBase_deleting_dtor @ 0x00a0_30e0 => extern "thiscall" fn d_00a030e0(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_e890))
+    }
+    /// `Phyre_PPostProcessing_PScreenSpaceReflectionD3D11_deleting_dtor` (`dtor_free`).
+    Phyre_PPostProcessing_PScreenSpaceReflectionD3D11_deleting_dtor @ 0x00a0_3110 => extern "thiscall" fn d_00a03110(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::deleting_dtor(&mut mem(), this, flags, None, Some(0x009f_e890))
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PDeferredLighting__constructInstance` (`ctor_seh_vt2`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PDeferredLighting__constructInstance @ 0x00a0_f040 => extern "thiscall" fn d_00a0f040(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_bb30, Some(0x00b7_4380), Some(0x0194_3718))
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PDeferredLightingBase__constructInstance` (`ctor_seh`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PDeferredLightingBase__constructInstance @ 0x00a0_f0a0 => extern "thiscall" fn d_00a0f0a0(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_b830, None, None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PDeferredLightingD3D11__constructInstance` (`ctor_seh`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PDeferredLightingD3D11__constructInstance @ 0x00a0_f0f0 => extern "thiscall" fn d_00a0f0f0(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_bb30, None, None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PDepthOfFieldBase__constructInstance` (`ctor_seh`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PDepthOfFieldBase__constructInstance @ 0x00a0_f1d0 => extern "thiscall" fn d_00a0f1d0(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_bd90, None, None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PFXAA__constructInstance` (`ctor_seh_vt2`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PFXAA__constructInstance @ 0x00a0_f2a0 => extern "thiscall" fn d_00a0f2a0(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_c160, Some(0x00b7_5c88), Some(0x0194_45a8))
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PFXAABase__constructInstance` (`ctor_seh`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PFXAABase__constructInstance @ 0x00a0_f300 => extern "thiscall" fn d_00a0f300(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_c160, None, None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PFXAAD3D11__constructInstance` (`ctor_seh_vt`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PFXAAD3D11__constructInstance @ 0x00a0_f350 => extern "thiscall" fn d_00a0f350(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_c160, Some(0x00b7_5b88), None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PGlow__constructInstance` (`ctor_seh`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PGlow__constructInstance @ 0x00a0_f3b0 => extern "thiscall" fn d_00a0f3b0(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_c2b0, None, None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PGlowBase__constructInstance` (`ctor_seh`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PGlowBase__constructInstance @ 0x00a0_f400 => extern "thiscall" fn d_00a0f400(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_c310, None, None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PGlowD3D11__constructInstance` (`ctor_seh`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PGlowD3D11__constructInstance @ 0x00a0_f450 => extern "thiscall" fn d_00a0f450(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_c480, None, None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PGlowGPUBase__constructInstance` (`ctor_seh`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PGlowGPUBase__constructInstance @ 0x00a0_f4a0 => extern "thiscall" fn d_00a0f4a0(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_c4e0, None, None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PMLAA__constructInstance` (`ctor_seh_vt2`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PMLAA__constructInstance @ 0x00a0_f6f0 => extern "thiscall" fn d_00a0f6f0(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_c7e0, Some(0x00b7_50b8), Some(0x0194_3e88))
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PMLAABase__constructInstance` (`ctor_seh`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PMLAABase__constructInstance @ 0x00a0_f750 => extern "thiscall" fn d_00a0f750(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_c7e0, None, None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PMLAAD3D11__constructInstance` (`ctor_seh_vt`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PMLAAD3D11__constructInstance @ 0x00a0_f7a0 => extern "thiscall" fn d_00a0f7a0(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_c7e0, Some(0x00b7_4fb8), None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PMotionBlurBase__constructInstance` (`ctor_seh`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PMotionBlurBase__constructInstance @ 0x00a0_f8c0 => extern "thiscall" fn d_00a0f8c0(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_cbb0, None, None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PPostEffectBase__constructInstance` (`vt_zero3_w`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PPostEffectBase__constructInstance @ 0x00a0_f970 => extern "thiscall" fn d_00a0f970(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_vtable_zeroed(&mut mem(), obj, 0x00b7_4058, Some(0x100))
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PPostEffectManager__constructInstance` (`zero4`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PPostEffectManager__constructInstance @ 0x00a0_f9b0 => extern "thiscall" fn d_00a0f9b0(_desc: u32, obj: u32) -> u32 {
+        descriptor::bridge::construct_zeroed(&mut mem(), obj, 4)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PScreenSpaceReflection__constructInstance` (`ctor_seh_vt2`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PScreenSpaceReflection__constructInstance @ 0x00a0_fb00 => extern "thiscall" fn d_00a0fb00(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_d080, Some(0x00b7_5fa8), Some(0x0194_4770))
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PScreenSpaceReflectionBase__constructInstance` (`ctor_seh`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PScreenSpaceReflectionBase__constructInstance @ 0x00a0_fb60 => extern "thiscall" fn d_00a0fb60(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_d080, None, None)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PScreenSpaceReflectionD3D11__constructInstance` (`ctor_seh_vt`).
+    Phyre_PClassDescriptorConcrete_Phyre_PPostProcessing_PScreenSpaceReflectionD3D11__constructInstance @ 0x00a0_fbb0 => extern "thiscall" fn d_00a0fbb0(_desc: u32, obj: u32) -> u8 {
+        descriptor::bridge::construct_with(&mut mem(), obj, 0x009f_d080, Some(0x00b7_5e98), None)
+    }
 }

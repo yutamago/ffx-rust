@@ -209,10 +209,39 @@ impl Twins {
         self.code(&c)
     }
 
+    /// A recording stub of a callee with no stack words that may read
+    /// `ecx` and `edx`: logs `tag`, `ecx`, `edx` and the word at `ecx`
+    /// (which a destructor's caller may have just written); returns `ret`.
+    fn stub_regs(&mut self, tag: u32, ret: u32) -> u32 {
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(tag.to_le_bytes()); // mov [eax], tag
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+        c.extend([0x8b, 0x11]); // mov edx, [ecx]
+        c.extend([0x89, 0x50, 0x0c]); // mov [eax+0xc], edx
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0xb8);
+        c.extend(ret.to_le_bytes()); // mov eax, ret
+        c.push(0xc3);
+        self.code(&c)
+    }
+
     /// [`Twins::stub_code`] placed at the original `sym` (a `jmp` there).
     fn stub(&mut self, sym: u32, this: bool, n: u32, pops: u32, ret: u32) {
-        let at = self.rebase(sym);
         let addr = self.stub_code(sym, this, n, pops, ret);
+        self.jump(sym, addr);
+    }
+
+    /// A `jmp` to `addr` written over the original `sym`.
+    fn jump(&mut self, sym: u32, addr: u32) {
+        let at = self.rebase(sym);
         let mut j = vec![0xe9];
         j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
         let old = Oracle::read(&mut self.a, at, 5).unwrap();
@@ -513,6 +542,79 @@ fn descriptor_shims_match_their_families() {
     for &a in family::ARRAY_INIT {
         want.insert(a, "descriptor::bridge::array_init(&mut mem(), arr)".into());
     }
+    let opt = |v: Option<u32>| v.map_or("None".to_string(), |v| format!("Some({})", hex(v)));
+    for &(a, n) in family::CONSTRUCT_ZEROED {
+        want.insert(
+            a,
+            format!("descriptor::bridge::construct_zeroed(&mut mem(), obj, {n})"),
+        );
+    }
+    for &a in family::CONSTRUCT_UNSET_PAIR {
+        want.insert(
+            a,
+            "descriptor::bridge::construct_unset_pair(&mut mem(), obj)".into(),
+        );
+    }
+    for &a in family::CONSTRUCT_UNSET_PAIR_ZEROED {
+        want.insert(
+            a,
+            "descriptor::bridge::construct_unset_pair_zeroed(&mut mem(), obj)".into(),
+        );
+    }
+    for &(a, vt, half) in family::CONSTRUCT_VTABLE_ZEROED {
+        let half = half.map_or("None".to_string(), |v| format!("Some({v:#x})"));
+        want.insert(
+            a,
+            format!(
+                "descriptor::bridge::construct_vtable_zeroed(&mut mem(), obj, {}, {half})",
+                hex(vt)
+            ),
+        );
+    }
+    for &(a, [x, y, vt]) in family::CONSTRUCT_INPUT {
+        want.insert(
+            a,
+            format!(
+                "descriptor::bridge::construct_input(&mut mem(), obj, [{}, {}, {}])",
+                hex(x),
+                hex(y),
+                hex(vt)
+            ),
+        );
+    }
+    for &(a, ctor, vt, w) in family::CONSTRUCT_WITH {
+        want.insert(
+            a,
+            format!(
+                "descriptor::bridge::construct_with(&mut mem(), obj, {}, {}, {})",
+                hex(ctor),
+                opt(vt),
+                opt(w)
+            ),
+        );
+    }
+    for &(a, vt, dtor) in family::DELETING_DTOR {
+        want.insert(
+            a,
+            format!(
+                "descriptor::bridge::deleting_dtor(&mut mem(), this, flags, {}, {})",
+                opt(vt),
+                opt(dtor)
+            ),
+        );
+    }
+    for &a in family::MEMBER_CALL {
+        want.insert(
+            a,
+            "descriptor::bridge::member_call(&mut mem(), member, obj, a, b)".into(),
+        );
+    }
+    for &a in family::MEMBER_GET {
+        want.insert(
+            a,
+            "descriptor::bridge::member_get(&mut mem(), member, obj)".into(),
+        );
+    }
     let mut seen = 0;
     for (a, body) in &want {
         let key = format!(" @ {} => ", hex(*a));
@@ -527,5 +629,193 @@ fn descriptor_shims_match_their_families() {
         assert_eq!(src.matches(&key).count(), 1, "{a:#x}: hooked twice");
         seen += 1;
     }
-    assert_eq!(seen, 102);
+    assert_eq!(seen, 102 + 79);
+}
+
+/// A port of a constructor shape, on `obj`.
+type Port = Box<dyn Fn(&mut G, u32) -> u32>;
+
+/// An object of `n` random words (0 when `null`).
+fn object(t: &mut Twins, rng: &mut Rng, n: u32, null: bool) -> u32 {
+    if null {
+        return 0;
+    }
+    let obj = t.zeros(4 * n as usize);
+    for k in 0..n {
+        t.w32(obj + 4 * k, rng.next());
+    }
+    obj
+}
+
+#[test]
+fn descriptor_construct_inline_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0c0c_5151);
+        let cases: Vec<(u32, Port)> = family::CONSTRUCT_ZEROED
+            .iter()
+            .map(|&(f, n)| {
+                let p: Port = Box::new(move |g, o| descriptor::bridge::construct_zeroed(g, o, n));
+                (f, p)
+            })
+            .chain(family::CONSTRUCT_UNSET_PAIR.iter().map(|&f| {
+                let p: Port = Box::new(|g, o| descriptor::bridge::construct_unset_pair(g, o));
+                (f, p)
+            }))
+            .chain(family::CONSTRUCT_UNSET_PAIR_ZEROED.iter().map(|&f| {
+                let p: Port =
+                    Box::new(|g, o| descriptor::bridge::construct_unset_pair_zeroed(g, o));
+                (f, p)
+            }))
+            .chain(
+                family::CONSTRUCT_VTABLE_ZEROED
+                    .iter()
+                    .map(|&(f, vt, half)| {
+                        let p: Port = Box::new(move |g, o| {
+                            descriptor::bridge::construct_vtable_zeroed(g, o, vt, half)
+                        });
+                        (f, p)
+                    }),
+            )
+            .chain(family::CONSTRUCT_INPUT.iter().map(|&(f, fields)| {
+                let p: Port =
+                    Box::new(move |g, o| descriptor::bridge::construct_input(g, o, fields));
+                (f, p)
+            }))
+            .collect();
+        for (f, port) in &cases {
+            for i in 0..3 {
+                let obj = object(&mut t, &mut rng, 8, i == 0);
+                t.check(
+                    &format!("{name} {f:#x} #{i}"),
+                    *f,
+                    Conv::Thiscall(DESC),
+                    &[obj],
+                    |g| Out::U32(port(g, obj)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn descriptor_construct_with_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x00de_c0de);
+        for &(f, ctor, vt, w) in family::CONSTRUCT_WITH {
+            for i in 0..3 {
+                let obj = object(&mut t, &mut rng, 4, i == 0);
+                // logs the word at obj the constructor finds
+                let r = rng.next();
+                let code = t.stub_regs(ctor, r);
+                t.jump(ctor, code);
+                let before = t.log_entries();
+                t.check(
+                    &format!("{name} {f:#x} #{i}"),
+                    f,
+                    Conv::Thiscall(DESC),
+                    &[obj],
+                    |g| Out::U8(descriptor::bridge::construct_with(g, obj, ctor, vt, w)),
+                );
+                assert_eq!(t.log_entries(), before + u32::from(obj != 0), "{f:#x}");
+                t.unstub(ctor);
+            }
+        }
+    }
+}
+
+#[test]
+fn descriptor_deleting_dtor_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0bad_f00d);
+        for &(f, vt, dtor) in family::DELETING_DTOR {
+            for (i, flags) in [0, 1, 2, 3, 0x100, 0xffff_fffe, rng.next()]
+                .into_iter()
+                .enumerate()
+            {
+                let this = object(&mut t, &mut rng, 4, false);
+                if let Some(d) = dtor {
+                    // logs the vtable word the destructor finds
+                    let r = rng.next();
+                    let code = t.stub_regs(d, r);
+                    t.jump(d, code);
+                }
+                t.stub(descriptor::PHYRE_FREE, false, 1, 0, rng.next());
+                let before = t.log_entries();
+                t.check(
+                    &format!("{name} {f:#x} #{i} flags {flags:#x}"),
+                    f,
+                    Conv::Thiscall(this),
+                    &[flags],
+                    |g| Out::U32(descriptor::bridge::deleting_dtor(g, this, flags, vt, dtor)),
+                );
+                let calls = u32::from(dtor.is_some()) + (flags & 1);
+                assert_eq!(t.log_entries(), before + calls, "{f:#x}");
+                t.unstub(descriptor::PHYRE_FREE);
+                if let Some(d) = dtor {
+                    t.unstub(d);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn descriptor_member_call_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x3c3c_0020);
+        for &f in family::MEMBER_CALL {
+            for i in 0..4 {
+                let member = object(&mut t, &mut rng, 0x10, false);
+                let cb = if i == 0 {
+                    0
+                } else {
+                    let r = rng.next();
+                    t.stub_code(f, true, 2, 2, r)
+                };
+                t.w32(member + 0x3c, cb);
+                let (obj, a, b) = (rng.next(), rng.next(), rng.next());
+                t.check(
+                    &format!("{name} {f:#x} #{i}"),
+                    f,
+                    Conv::Thiscall(member),
+                    &[obj, a, b],
+                    |g| Out::U32(descriptor::bridge::member_call(g, member, obj, a, b)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn descriptor_member_get_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x3838_0018);
+        for &f in family::MEMBER_GET {
+            for i in 0..6 {
+                let member = object(&mut t, &mut rng, 0x10, false);
+                let class = object(&mut t, &mut rng, 0x30, false);
+                let obj = object(&mut t, &mut rng, 0x20, false);
+                let cb = if i < 3 {
+                    0
+                } else {
+                    let r = rng.next();
+                    t.stub_regs(f, r)
+                };
+                t.w32(member + 0x38, cb);
+                t.w32(member + 0xc, class);
+                // the count's offset in the instance: member +0x24 less
+                // the class's +0x88
+                let base = rng.next();
+                t.w32(class + 0x88, base);
+                t.w32(member + 0x24, base.wrapping_add(4 * rng.below(0x20)));
+                t.check(
+                    &format!("{name} {f:#x} #{i}"),
+                    f,
+                    Conv::Thiscall(member),
+                    &[obj],
+                    |g| Out::U32(descriptor::bridge::member_get(g, member, obj)),
+                );
+            }
+        }
+    }
 }
