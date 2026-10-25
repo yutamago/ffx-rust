@@ -25,6 +25,7 @@
 
 pub mod descriptor;
 pub mod mesh;
+pub mod misc;
 pub mod sort;
 pub mod thread;
 pub mod visibility;

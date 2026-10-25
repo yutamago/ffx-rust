@@ -13,6 +13,8 @@
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
+    clippy::many_single_char_names,
+    clippy::similar_names,
     clippy::too_many_lines
 )]
 
@@ -213,6 +215,12 @@ impl Twins {
     /// `ecx` and `edx`: logs `tag`, `ecx`, `edx` and the word at `ecx`
     /// (which a destructor's caller may have just written); returns `ret`.
     fn stub_regs(&mut self, tag: u32, ret: u32) -> u32 {
+        self.stub_this(tag, ret, true)
+    }
+
+    /// [`Twins::stub_regs`], logging `edx` only when `edx` (a thiscall
+    /// callee's `edx` is the caller's scratch).
+    fn stub_this(&mut self, tag: u32, ret: u32, edx: bool) -> u32 {
         let log = self.log;
         let mut c = vec![0xa1];
         c.extend(log.to_le_bytes()); // mov eax, [log]
@@ -222,7 +230,9 @@ impl Twins {
         c.extend([0xc7, 0x00]);
         c.extend(tag.to_le_bytes()); // mov [eax], tag
         c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
-        c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+        if edx {
+            c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+        }
         c.extend([0x8b, 0x11]); // mov edx, [ecx]
         c.extend([0x89, 0x50, 0x0c]); // mov [eax+0xc], edx
         c.extend([0xff, 0x05]);
@@ -706,7 +716,7 @@ fn descriptor_construct_with_matches_the_original() {
                 let obj = object(&mut t, &mut rng, 4, i == 0);
                 // logs the word at obj the constructor finds
                 let r = rng.next();
-                let code = t.stub_regs(ctor, r);
+                let code = t.stub_this(ctor, r, false);
                 t.jump(ctor, code);
                 let before = t.log_entries();
                 t.check(
@@ -736,7 +746,7 @@ fn descriptor_deleting_dtor_matches_the_original() {
                 if let Some(d) = dtor {
                     // logs the vtable word the destructor finds
                     let r = rng.next();
-                    let code = t.stub_regs(d, r);
+                    let code = t.stub_this(d, r, false);
                     t.jump(d, code);
                 }
                 t.stub(descriptor::PHYRE_FREE, false, 1, 0, rng.next());
@@ -816,6 +826,377 @@ fn descriptor_member_get_matches_the_original() {
                     |g| Out::U32(descriptor::bridge::member_get(g, member, obj)),
                 );
             }
+        }
+    }
+}
+
+// ---- small engine functions (`ffx_prender::misc`) ----
+
+use ffx_prender::misc;
+
+impl Twins {
+    /// A thiscall stub with no stack words at `sym` logging `ecx` and the
+    /// word at `ecx`; returns `ret`.
+    fn stub_at(&mut self, sym: u32, ret: u32) {
+        let code = self.stub_this(sym, ret, false);
+        self.jump(sym, code);
+    }
+}
+
+#[test]
+fn misc_constants_and_globals_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x1111_2222);
+        t.check(
+            &format!("{name} nvn"),
+            0x0059_d2e0,
+            Conv::Cdecl,
+            &[],
+            |_| Out::U32(0x17),
+        );
+        for f in [0x0060_ed70, 0x0060_ee00] {
+            let (a, b) = (rng.next(), rng.next());
+            t.check(&format!("{name} {f:#x}"), f, Conv::Stdcall, &[a, b], |_| {
+                Out::U32(0)
+            });
+        }
+        let app = t.rebase(misc::APPLICATION);
+        let v = rng.next();
+        t.w32(app, v);
+        t.check(&format!("{name} app"), 0x0062_3b90, Conv::Cdecl, &[], |g| {
+            Out::U32(misc::bridge::get_application(g))
+        });
+        for (i, format) in [0x4a, 0x13, 0x90, 0x91, 0x14, 0x92, 0x1_004a, 0, rng.next()]
+            .into_iter()
+            .enumerate()
+        {
+            t.check(
+                &format!("{name} format #{i}"),
+                0x005a_04d0,
+                Conv::Cdecl,
+                &[format],
+                |_| Out::U32(misc::bridge::format_in_set(format)),
+            );
+        }
+        for n in [0, 1, 2, 3, 0x8000_0000, rng.next()] {
+            t.check(
+                &format!("{name} flip {n:#x}"),
+                0x0062_5090,
+                Conv::Cdecl,
+                &[n],
+                |g| Out::U32(misc::bridge::set_flip_interval(g, n)),
+            );
+        }
+    }
+}
+
+#[test]
+fn misc_setters_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x3333_4444);
+        for i in 0..8 {
+            let obj = object(&mut t, &mut rng, 0x110, false);
+            let (a, b, c) = (rng.next(), rng.next(), rng.next());
+            let w = |s: &str| format!("{name} {s} #{i}");
+            t.check(&w("icon"), 0x0062_cf50, Conv::Thiscall(obj), &[a], |g| {
+                Out::U32(misc::bridge::set_window_icon_id(g, obj, a))
+            });
+            let obj = object(&mut t, &mut rng, 0x110, false);
+            t.check(
+                &w("surface"),
+                0x005b_35c0,
+                Conv::Thiscall(obj),
+                &[a, b],
+                |g| Out::U32(misc::bridge::render_surface_ctor(g, obj, a, b)),
+            );
+            let obj = object(&mut t, &mut rng, 0x110, false);
+            t.check(&w("zero4"), 0x005b_3620, Conv::Thiscall(obj), &[], |g| {
+                Out::U32(misc::bridge::zero4(g, obj))
+            });
+            let obj = object(&mut t, &mut rng, 0x110, false);
+            t.check(
+                &w("three"),
+                0x005b_3660,
+                Conv::Thiscall(obj),
+                &[a, b, c],
+                |g| Out::U32(misc::bridge::set_three(g, obj, a, b, c)),
+            );
+            let obj = object(&mut t, &mut rng, 0x110, false);
+            t.check(
+                &w("ring"),
+                0x0061_3e80,
+                Conv::Thiscall(obj),
+                &[a, b, c],
+                |g| Out::U32(misc::bridge::ring_init(g, obj, a, b, c)),
+            );
+            let obj = object(&mut t, &mut rng, 0x110, false);
+            t.stub_at(misc::CRITICAL_SECTION_INIT, rng.next());
+            t.check(
+                &w("range"),
+                0x0062_9840,
+                Conv::Thiscall(obj),
+                &[a, b],
+                |g| Out::U32(misc::bridge::range_init(g, obj, a, b)),
+            );
+            t.unstub(misc::CRITICAL_SECTION_INIT);
+            let obj = object(&mut t, &mut rng, 0x110, false);
+            t.stub_at(misc::EVENT_FLAG_CTOR, rng.next());
+            t.check(&w("kick"), 0x0061_3fc0, Conv::Thiscall(obj), &[], |g| {
+                Out::U32(misc::bridge::kick_ctor(g, obj))
+            });
+            t.unstub(misc::EVENT_FLAG_CTOR);
+            for (f, base, vt, w4) in [
+                (0x0067_2630, 0x0049_68c0, 0x00b4_3ed8, None),
+                (0x009f_c140, 0x009f_c160, 0x00b7_5c88, Some(0x0194_45a8)),
+                (0x009f_c7c0, 0x009f_c7e0, 0x00b7_50b8, Some(0x0194_3e88)),
+            ] {
+                let obj = object(&mut t, &mut rng, 0x110, false);
+                t.stub_at(base, rng.next());
+                t.check(&w(&format!("{f:#x}")), f, Conv::Thiscall(obj), &[], |g| {
+                    Out::U32(misc::bridge::derived_ctor(g, obj, base, vt, w4))
+                });
+                t.unstub(base);
+            }
+        }
+    }
+}
+
+#[test]
+fn misc_lookups_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5555_6666);
+        for i in 0..24 {
+            let w = |s: &str| format!("{name} {s} #{i}");
+            // the cursor's run length
+            let cursor = object(&mut t, &mut rng, 8, false);
+            let at = rng.below(1000);
+            let end = if i % 3 == 0 { at } else { rng.below(1000) };
+            t.w32(cursor + 0xc, at);
+            t.w32(cursor + 0x10, end);
+            t.w32(cursor + 0x14, 1 + rng.below(40));
+            t.check(&w("run"), 0x009f_3810, Conv::Thiscall(cursor), &[], |g| {
+                Out::U32(misc::bridge::cursor_run_length(g, cursor))
+            });
+            // PArray element
+            let data = object(&mut t, &mut rng, 8, false);
+            let arr = object(&mut t, &mut rng, 4, false);
+            t.w32(
+                arr + 4,
+                rng.below(10) | if rng.chance(2) { 0x8000_0000 } else { 0 },
+            );
+            t.w32(arr + 8, data);
+            let idx = if rng.chance(4) {
+                rng.next()
+            } else {
+                rng.below(12)
+            };
+            t.check(&w("at"), 0x005b_2c70, Conv::Thiscall(arr), &[idx], |g| {
+                Out::U32(misc::bridge::array_at(g, arr, idx))
+            });
+        }
+    }
+}
+
+#[test]
+fn misc_ring_allocators_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x7777_8888);
+        let ring = t.zeros(16);
+        let out = t.zeros(4);
+        for i in 0..64 {
+            let start = 0x1000 * rng.below(16);
+            let end = start + rng.below(0x2000);
+            let cursor = start + rng.below(0x2400);
+            // the boundaries: blocks that end exactly at the ring's end,
+            // or one byte past it, from the cursor or from the start
+            let size = match i % 8 {
+                0 => 0,
+                1 => rng.below(0x100),
+                2 => rng.below(0x2400),
+                3 => end.wrapping_sub(cursor),
+                4 => end.wrapping_sub(cursor).wrapping_add(1),
+                5 => end - start,
+                6 => end - start + 1,
+                _ => rng.next(),
+            };
+            t.w32(ring, start);
+            t.w32(ring + 4, end);
+            t.w32(ring + 8, cursor);
+            t.w32(out, rng.next());
+            t.check(
+                &format!("{name} segmented #{i}"),
+                0x0061_3e10,
+                Conv::Thiscall(ring),
+                &[size],
+                |g| Out::U32(misc::bridge::segmented_allocate(g, ring, size)),
+            );
+            t.check(
+                &format!("{name} step #{i}"),
+                0x0061_3f00,
+                Conv::Thiscall(ring),
+                &[cursor, size, out],
+                |g| {
+                    Out::U32(misc::bridge::step_for_allocation(
+                        g, ring, cursor, size, out,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn misc_calls_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x9999_aaaa);
+        for i in 0..6 {
+            let w = |s: &str| format!("{name} {s} #{i}");
+            for f in misc::APPLICATION_BINDS.into_iter().chain(misc::TEXT_BINDS) {
+                t.stub(f, false, 0, 0, rng.next());
+            }
+            t.check(&w("pre"), 0x0062_ac70, Conv::Cdecl, &[], |g| {
+                Out::U32(misc::bridge::pre_phyre_init(g))
+            });
+            t.check(&w("text"), 0x00a3_ea40, Conv::Cdecl, &[], |g| {
+                Out::U32(misc::bridge::text_initialize(g))
+            });
+            for f in misc::APPLICATION_BINDS.into_iter().chain(misc::TEXT_BINDS) {
+                t.unstub(f);
+            }
+            // the render thread's wrappers
+            let thread = object(&mut t, &mut rng, 0x60, false);
+            let cmd = object(&mut t, &mut rng, 4, false);
+            t.w32(cmd + 4, thread);
+            t.stub(misc::RENDER_THREAD_INSTANCE, false, 0, 0, thread);
+            t.stub_at(misc::RENDER_THREAD_SYNC, rng.next());
+            t.stub_at(misc::RENDER_THREAD_ENTRY, rng.next());
+            t.stub_at(misc::EVENT_SIGNAL, rng.next());
+            t.stub_at(misc::SEMAPHORE_WAIT, rng.next());
+            t.check(&w("sync"), 0x005b_c3f0, Conv::Cdecl, &[], |g| {
+                Out::U32(misc::bridge::sync_render(g))
+            });
+            t.check(&w("entry"), 0x0061_4710, Conv::Cdecl, &[thread], |g| {
+                Out::U32(misc::bridge::static_thread_entry(g, thread))
+            });
+            t.check(&w("signal"), 0x0061_4700, Conv::Cdecl, &[cmd], |g| {
+                Out::U32(misc::bridge::signal_sync_flag(g, cmd))
+            });
+            t.check(&w("flip"), 0x0061_4c00, Conv::Thiscall(thread), &[], |g| {
+                Out::U32(misc::bridge::get_flip_slot(g, thread))
+            });
+            for f in [
+                misc::RENDER_THREAD_INSTANCE,
+                misc::RENDER_THREAD_SYNC,
+                misc::RENDER_THREAD_ENTRY,
+                misc::EVENT_SIGNAL,
+                misc::SEMAPHORE_WAIT,
+            ] {
+                t.unstub(f);
+            }
+            // registration
+            t.stub(misc::REGISTER_TYPE, false, 1, 0, rng.next());
+            t.stub_at(misc::ADD_TO_NAMESPACE, rng.next());
+            t.check(&w("register"), 0x0067_2790, Conv::Cdecl, &[], |g| {
+                Out::U32(misc::bridge::register_dynamic_mesh(g))
+            });
+            t.unstub(misc::REGISTER_TYPE);
+            t.unstub(misc::ADD_TO_NAMESPACE);
+            // renderMeshInstance with the renderer's pass
+            let renderer = object(&mut t, &mut rng, 0x50, false);
+            let instance = object(&mut t, &mut rng, 8, false);
+            t.stub(misc::RENDER_MESH_INSTANCE, true, 4, 4, rng.next());
+            t.check(
+                &w("mesh"),
+                0x005b_9a70,
+                Conv::Thiscall(renderer),
+                &[instance],
+                |g| Out::U32(misc::bridge::render_instance(g, renderer, instance)),
+            );
+            t.unstub(misc::RENDER_MESH_INSTANCE);
+            // pooled handle release
+            let owner = object(&mut t, &mut rng, 8, false);
+            let pool = object(&mut t, &mut rng, 4, false);
+            t.w32(owner + 0x14, pool);
+            let handle = object(&mut t, &mut rng, 2, false);
+            t.w32(handle, if i % 2 == 0 { 0 } else { owner });
+            t.stub(0x004b_a540, true, 2, 2, rng.next());
+            let addr = t.rebase(0x0061_c890);
+            t.a.call(addr, Conv::Thiscall(handle), &[]).unwrap();
+            misc::bridge::release_handle(&mut G(&mut t.b), 0x004b_a540, handle);
+            t.diff(&w("release"));
+            t.unstub(0x004b_a540);
+            // lookup
+            let out = object(&mut t, &mut rng, 1, false);
+            let x = rng.next();
+            t.stub(
+                0x005c_84f0,
+                false,
+                1,
+                0,
+                if i % 2 == 0 { 0 } else { rng.next() },
+            );
+            t.check(&w("lookup"), 0x005c_86e0, Conv::Cdecl, &[out, x], |g| {
+                Out::U32(misc::bridge::lookup_into(g, 0x005c_84f0, out, x))
+            });
+            t.unstub(0x005c_84f0);
+            // the 16-byte table at +0x38
+            let table = object(&mut t, &mut rng, 16, false);
+            let obj = object(&mut t, &mut rng, 0x10, false);
+            t.w32(obj + 0x38, table);
+            let k = rng.below(4);
+            if i % 3 == 0 {
+                t.w32(table + 16 * k, 0);
+            }
+            let (x, y) = (rng.next(), rng.next());
+            t.stub(0x005c_6680, true, 1, 1, rng.next());
+            t.stub(0x005c_6c30, true, 2, 2, rng.next());
+            t.check(
+                &w("table1"),
+                0x005a_ead0,
+                Conv::Thiscall(obj),
+                &[k, x],
+                |g| Out::U32(misc::bridge::table_call(g, 0x005c_6680, obj, k, &[x])),
+            );
+            t.check(
+                &w("table2"),
+                0x005a_ece0,
+                Conv::Thiscall(obj),
+                &[k, x, y],
+                |g| Out::U32(misc::bridge::table_call(g, 0x005c_6c30, obj, k, &[x, y])),
+            );
+            t.unstub(0x005c_6680);
+            t.unstub(0x005c_6c30);
+            // Iggy's allocation callbacks
+            t.stub(misc::PHYRE_MALLOC, false, 2, 0, rng.next());
+            t.stub(misc::PHYRE_FREE, false, 1, 0, rng.next());
+            let (u, s, p) = (rng.next(), rng.next(), rng.next());
+            t.check(&w("alloc"), 0x00a3_e5a0, Conv::Stdcall, &[u, s, p], |g| {
+                Out::U32(misc::bridge::iggy_alloc(g, s))
+            });
+            t.check(&w("free"), 0x00a3_e5c0, Conv::Stdcall, &[u, p], |g| {
+                Out::U32(misc::bridge::iggy_free(g, p))
+            });
+            t.unstub(misc::PHYRE_MALLOC);
+            t.unstub(misc::PHYRE_FREE);
+            // the header's callback (cdecl)
+            let header = object(&mut t, &mut rng, 0x30, false);
+            let r = rng.next();
+            let cb = t.stub_code(0x005c_7f50, false, 2, 0, r);
+            t.w32(header + 0x94, cb);
+            t.check(
+                &w("header"),
+                0x005c_7f50,
+                Conv::Thiscall(header),
+                &[x, y],
+                |g| Out::U32(misc::bridge::header_call(g, header, x, y)),
+            );
+            // the tree head node
+            let node = object(&mut t, &mut rng, 5, false);
+            t.stub(misc::OPERATOR_NEW, false, 1, 0, node);
+            t.check(&w("tree"), 0x0062_5850, Conv::Cdecl, &[], |g| {
+                Out::U32(misc::bridge::tree_head(g))
+            });
+            t.unstub(misc::OPERATOR_NEW);
         }
     }
 }
