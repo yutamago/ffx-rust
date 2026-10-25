@@ -21,6 +21,7 @@ use crate::Hook;
 mod auto;
 mod battle;
 mod chara;
+mod h2_render_b;
 mod kernel;
 mod main;
 mod map;
@@ -50,6 +51,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(auto::hooks());
     all.extend(battle::hooks());
     all.extend(chara::hooks());
+    all.extend(h2_render_b::hooks());
     all.extend(kernel::hooks());
     all.extend(main::hooks());
     all.extend(map::hooks());

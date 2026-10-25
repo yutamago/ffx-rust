@@ -5,7 +5,11 @@
 //!
 //! - [`sort`]: the visibility entries' `std::sort` and its comparator;
 //! - [`visibility`]: `PVisibilityCheck` and the culling job;
-//! - [`world`]: `renderWorld`, `renderWorldCulledSorted`, `mergeResults`.
+//! - [`world`]: `renderWorld`, `renderWorldCulledSorted`, `mergeResults`;
+//! - [`descriptor`]: the type system's descriptor and array-member slots
+//!   of the render classes (M4 port round 1, h2-render-b);
+//! - [`misc`]: small render-interface, material and shader methods (the
+//!   same).
 //!
 //! Everything the slice does not port (the world cursors, the job system,
 //! the ring allocators, the math helpers, `D3D11`) is called at its
@@ -23,7 +27,9 @@
     clippy::similar_names
 )]
 
+pub mod descriptor;
 pub mod mesh;
+pub mod misc;
 pub mod sort;
 pub mod thread;
 pub mod visibility;
