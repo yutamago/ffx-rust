@@ -354,7 +354,7 @@ and derives the matrices.
   - the clusters: position in the world's list, the model's symbol (scene
     `+0xd8`, `cdsp00`), and their instance lists.
 - **The `Wire` block** (round 2 m4-wire, `ffx_gfx::scene_inputs::Wire`):
-  an extension block after the version 1 fields (tag `0x57520001`;
+  an extension block after the record and its character part's flag (tag `0x57520001`;
   version 1 readers stop before it, `read_extensions` skips tags it does
   not know). It holds the camera's world matrix (`*(PCamera +0xb0)`, the
   source of `EyePosition`), the texture quality

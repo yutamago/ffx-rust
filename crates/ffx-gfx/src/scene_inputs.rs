@@ -414,10 +414,11 @@ pub struct Material {
 /// [`write_message`] and readers that walk the raw stream.
 pub const MSG_TAG: u32 = 15;
 
-/// Extension blocks after the version 1 fields: `(tag u32, length u32,
-/// bytes)` each, to the end of the payload. Readers of version 1 stop
-/// before them (`Msg::read` ignores the rest), [`read_extensions`] skips
-/// tags it doesn't know, so blocks can be added without a new version.
+/// Extension blocks after the record (and its character part's flag,
+/// which [`write_message`] writes as 0 when there is no part): `(tag u32,
+/// length u32, bytes)` each, to the end of the payload. `Msg::read` stops
+/// before them, [`read_extensions`] skips tags it doesn't know, so blocks
+/// can be added without a new version.
 /// [`Wire`]'s tag.
 pub const EXT_WIRE: u32 = 0x5752_0001;
 

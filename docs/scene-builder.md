@@ -221,16 +221,25 @@ but for the water sampler's allow entry.
 ## In the game (`ffx-hook` `gfx/map_build.rs`)
 
 `FFX_RUST_MAP=build` (with the graphics layer; `tools/run-game.sh
---rust-map=build`, `tools/replays/run-all.sh --rust-map=build`) plugs the
+--rust-map=build`, `tools/replays/run-all.sh --rust-map=build`, which passes all 12 traces and the shots like the plain run, 2026-10-25) plugs the
 builder into the map path (`docs/draw.md`, "The map path"): for the
 supported maps (`SUPPORTED`: `cdsp00`, `bsil00`) the builder draws the
 map passes; every other map, and any pass it can't build, goes to the
 recorder (`None`).
 
 - **Main thread, update N** (the builder closure, at the map's
-  `renderWorld`): the pass's record is read as the capture snapshot reads
-  it (`world::scene_inputs_at` on the renderer `app +0x124`: the version
-  1 fields and the `Wire` block). The map's models are loaded once, by
+  `renderWorld`): other maps leave at once (the model's symbol,
+  `PhyreScene +0xd8`). At the update's first map pass the record is read
+  as the capture snapshot reads it (`world::scene_inputs_at` on the
+  renderer `app +0x124`: the version 1 fields and the `Wire` block) and
+  both passes are built; the other pass takes its draws at its own call.
+  The reads are made directly (`world::with_direct_reads`: each memory
+  region checked once a run with `VirtualQuery`, about 10 a run, instead
+  of a `ReadProcessMemory` per read): about 2 ms for the record and 4 ms
+  for the update on cdsp0000 and bsil0000 (`ReadProcessMemory` took 10 ms
+  a pass, which the realtime replays did not keep up with). The texture
+  ids are looked up in the asset tree once per object (per model
+  cluster). The map's models are loaded once, by
   their files' ids, through the game's own file functions
   (`Phyre_PSerialization_PStreamFileWin32_openFile` `0x00607f40`, hooked
   for mods, `getFileSize` `0x00607dc0`, `read` `0x00608090`, `closeFile`
@@ -251,10 +260,12 @@ recorder (`None`).
   morphing meshes' ring). If the counts differ, the game's own draws are
   issued (logged).
 
-Results (2026-10-25, original code otherwise, against `r2a-a`'s
-`draw-field.txt` captures with `~/ffx-work/m4/allow-draw-field.txt` and
-`tests/builder-allow.txt`, `--part all`): fw-101, fw-459 (cdsp0000) and
-besaid-101 (bsil0000), three frames each, 0 differences. The allow list's
+Results (2026-10-25, original code otherwise, against `r2a-a`'s and
+`r2a-b`'s `draw-field.txt` captures with `~/ffx-work/m4/allow-draw-field.txt`
+and `tests/builder-allow.txt`, `--part all`): fw-101, fw-459 (cdsp0000)
+and besaid-101 (bsil0000), three frames each, 0 differences in every
+builder-mode run (`~/ffx-work/m4/wire/capture-build.sh`,
+`diff-build.sh`). The allow list's
 `[*]` entry covers the one artifact of building in the game: the device
 hands the builder's `CreateSamplerState` back the game's equivalent object,
 and the layer records an object's description from the last create, so a
@@ -304,7 +315,7 @@ From the snapshot (`tests/live.rs`, `wirediff`):
 |---|---|---|---|
 | r2a-a, r2a-b fw-101, 3 frames each (hash mode) | version 1 | 100, 11 | 134 items, 0 differences, 7 allowed |
 | r2a-a, r2a-b fw-459, 3 frames each (hash mode) | version 1 | 100, 12 | 148 items, 0 differences, 8 allowed |
-| wire-cdsp0000-a, -b (`draw-cdsp0000.txt`, full mode) | `Wire` | 100, 11 | 134 items, 0 differences, 7 allowed |
+| wire-cdsp0000-a, -b (`draw-cdsp0000.txt`, full mode; taken again after the character part joined the record) | `Wire` | 100, 11 | 134 items, 0 differences, 7 allowed |
 | wire-bsil0000-a, -b (`draw-bsil0000.txt`, full mode) | `Wire` | 71, 21 | 143 items, 0 differences, 1 allowed |
 | r2a-a, r2a-b besaid-101, 3 frames each (hash mode) | version 1 | 71, 21 | 143 items, 1 difference: the texture-animated slot (no texture ids in version 1), 1 allowed |
 | wire-bsil0300-a (bonus, `draw-bsil0300.txt`) | `Wire` | 76, 4 | 100 items, 0 differences, 1 allowed |
