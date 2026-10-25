@@ -94,6 +94,11 @@ use crate::log::log;
 /// Set when the harness is on.
 pub static ENABLED: AtomicBool = AtomicBool::new(false);
 static FRAME: AtomicU32 = AtomicU32::new(0);
+
+/// The frame count of the harness (0 when it is off).
+pub fn frame() -> u32 {
+    FRAME.load(Ordering::Relaxed)
+}
 static CREATE_DEVICE_AND_SWAP_CHAIN: AtomicUsize = AtomicUsize::new(0);
 static SHOW_WINDOW: AtomicUsize = AtomicUsize::new(0);
 static XINPUT_GET_STATE: AtomicUsize = AtomicUsize::new(0);

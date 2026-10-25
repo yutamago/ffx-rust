@@ -88,6 +88,8 @@ pub enum Outcome {
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod coverage;
 #[cfg(all(windows, target_arch = "x86"))]
+pub mod fmod_log;
+#[cfg(all(windows, target_arch = "x86"))]
 pub mod gfx;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod harness;
