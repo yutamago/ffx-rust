@@ -915,7 +915,7 @@ pub fn native_set_radius44<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) ->
     x87::load(f)
 }
 
-/// `Native_00a7` (`0x00857820`, `0x00a7`): `(worker)`: its `+0x34` bit 1
+/// `Native_00a7_WorkerClearFlag34Bit1` (`0x00857820`, `0x00a7`): `(worker)`: its `+0x34` bit 1
 /// cleared; 0.
 pub fn native_00a7<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let i = pop(h, s);
@@ -933,7 +933,7 @@ pub fn native_0058<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     call(h, 0x0085_5cd0, &[w, a, s])
 }
 
-/// `Native_00fb` (`0x00858ac0`, `0x00fb`): `(window)` -> `0x008b8010(window)`.
+/// `Native_00fb_MsgWinTableByte2` (`0x00858ac0`, `0x00fb`): `(window)` -> `0x008b8010(window)`.
 pub fn native_00fb<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     call(h, 0x008b_8010, &[v])
@@ -1021,7 +1021,7 @@ pub fn native_0007<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_012a` (`0x0085c890`, `0x012a`): `(b, a)` -> `0x00874970(b, a)`; `b`.
+/// `Native_012a_SpriteSetFlag` (`0x0085c890`, `0x012a`): `(b, a)` -> `0x00874970(b, a)`; `b`.
 pub fn native_012a<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let a = pop(h, s);
     let b = pop(h, s);
@@ -1192,7 +1192,7 @@ pub fn native_set_party_index<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32)
     v
 }
 
-/// `Native_0158` (`0x0085cfa0`, `0x0158`): `(slot)`: the party slot alone;
+/// `Native_0158_PartySlotSet` (`0x0085cfa0`, `0x0158`): `(slot)`: the party slot alone;
 /// `slot`.
 pub fn native_0158<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -1655,7 +1655,7 @@ pub fn native_0088<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     tail(h, w, a, s, 0x0086_bca0)
 }
 
-/// `Native_010e` (`0x0085af50`, `0x010e`): jumps to `0x00906b10`.
+/// `Native_010e_GetGlobal011307a0` (`0x0085af50`, `0x010e`): jumps to `0x00906b10`.
 pub fn native_010e<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     tail(h, w, a, s, 0x0090_6b10)
 }
@@ -1699,7 +1699,7 @@ pub fn native_random16<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u
     call(h, 0x0079_88f0, &[2]) & 0xffff
 }
 
-/// `Native_013e` (`0x00856890`, `0x013e`): `(on)`: `+0x36` bit 15; `on != 0`.
+/// `Native_013e_WorkerSetFlag36Bit15` (`0x00856890`, `0x013e`): `(on)`: `+0x36` bit 15; `on != 0`.
 pub fn native_013e<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = u32::from(pop(h, s) != 0);
     let f = h.read::<u16>(w + worker::FLAGS2);
@@ -1762,12 +1762,12 @@ fn music_end<H: NativeHost>(h: &mut H, s: u32, f: u32) -> u32 {
     1
 }
 
-/// `Native_0103` (`0x008593a0`, `0x0103`): `0x00886800`.
+/// `Native_0103_MusicClearIfTrack` (`0x008593a0`, `0x0103`): `0x00886800`.
 pub fn native_0103<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     music_end(h, s, 0x0088_6800)
 }
 
-/// `Native_016d` (`0x008595b0`, `0x016d`): `0x00886a60`.
+/// `Native_016d_MusicStop` (`0x008595b0`, `0x016d`): `0x00886a60`.
 pub fn native_016d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     music_end(h, s, 0x0088_6a60)
 }
@@ -1808,7 +1808,7 @@ pub fn native_minimap_set_corner<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: 
     v
 }
 
-/// `Native_00a8` (`0x00857950`, `0x00a8`): `(worker)`: its `+0x34` bit 1
+/// `Native_00a8_WorkerSetFlag34Bit1` (`0x00857950`, `0x00a8`): `(worker)`: its `+0x34` bit 1
 /// set; 1.
 pub fn native_00a8<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let i = pop(h, s);
@@ -1884,7 +1884,7 @@ pub fn native_012d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     h.read(g + 0x2c + i * 4)
 }
 
-/// `Native_00ce` (`0x0085c2b0`, `0x00ce`): `(v)` into `+0xb16`; `v`.
+/// `Native_00ce_WorkerSetFieldB16` (`0x0085c2b0`, `0x00ce`): `(v)` into `+0xb16`; `v`.
 pub fn native_00ce<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     #[allow(clippy::cast_possible_truncation)] // the original stores AX
@@ -1986,7 +1986,7 @@ pub fn native_0139_result<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u
     call(h, 0x008b_7c40, &[v])
 }
 
-/// `Native_00b1` (`0x00856a50`, `0x00b1`, float): `(v)` into the move
+/// `Native_00b1_MoveSetField18` (`0x00856a50`, `0x00b1`, float): `(v)` into the move
 /// block's `+0x18`; `ST0` it.
 pub fn native_00b1<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     let m = move_block(h, w);
@@ -1996,7 +1996,7 @@ pub fn native_00b1<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     x87::load(v)
 }
 
-/// `Native_00e9` (`0x00856660`, `0x00e9`): `(on)`: the current ctrl
+/// `Native_00e9_CtrlSetByte1Bit4` (`0x00856660`, `0x00e9`): `(on)`: the current ctrl
 /// work's `+1` bit 4; `on != 0`.
 pub fn native_00e9<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let c = super::atel_get_cur_ctrl_work(h);
@@ -2007,7 +2007,7 @@ pub fn native_00e9<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_0117` (`0x0085bc50`, `0x0117`): `(worker)`: its `+0x36` bit 10
+/// `Native_0117_WorkerSetFlag36Bits` (`0x0085bc50`, `0x0117`): `(worker)`: its `+0x36` bit 10
 /// cleared, bits 9 and 12 set; `worker`.
 pub fn native_0117<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -2040,7 +2040,7 @@ pub fn native_0181<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> f64 {
     x87::load(h.read(p + 0x38))
 }
 
-/// `Native_015f` (`0x0085b650`, `0x015f`): `0x0088e790(v)`; `v`.
+/// `Native_015f_ImportantSet` (`0x0085b650`, `0x015f`): `0x0088e790(v)`; `v`.
 pub fn native_015f<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     call(h, 0x0088_e790, &[v]);
@@ -2163,7 +2163,7 @@ pub fn native_005a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_00be` (`0x00859950`, `0x00be`): `(on)`: the current ctrl
+/// `Native_00be_CtrlSetBit7` (`0x00859950`, `0x00be`): `(on)`: the current ctrl
 /// work's bit 7; `on != 0`.
 pub fn native_00be<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let c = super::atel_get_cur_ctrl_work(h);
@@ -2200,7 +2200,7 @@ fn byte_888c00<H: NativeHost>(h: &mut H, x: u32) -> u32 {
     call(h, 0x0088_8c00, &[0, 0, x]) & 0xff
 }
 
-/// `Native_0121` (`0x0085d1d0`, `0x0121`): `(i)` clamped to 0..=13: the
+/// `Native_0121_PadGetBindFlag` (`0x0085d1d0`, `0x0121`): `(i)` clamped to 0..=13: the
 /// flag byte of `0x00888cf0(0, 0, i)`.
 pub fn native_0121<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s).cast_signed().clamp(0, 0xd).cast_unsigned();
@@ -2301,7 +2301,7 @@ pub fn native_0196<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_0109` (`0x0085a870`, `0x0109`): `(i)`: the record
+/// `Native_0109_Snd3dCalc` (`0x0085a870`, `0x0109`): `(i)`: the record
 /// `0x008773f0(i)` gets `0x00876930(it, 1)` when its first word is set; 1.
 pub fn native_0109<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let i = pop(h, s);
@@ -2359,7 +2359,7 @@ pub fn native_00db_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u
     }
 }
 
-/// `Native_011d` (`0x0085c650`, `0x011d`): `(b, a)`: `0x008749b0(b, a)`; `b`.
+/// `Native_011d_SpriteSet13` (`0x0085c650`, `0x011d`): `(b, a)`: `0x008749b0(b, a)`; `b`.
 pub fn native_011d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let a = pop(h, s);
     let b = pop(h, s);
@@ -2389,7 +2389,7 @@ pub fn native_025c<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     tail(h, w, a, s, 0x0086_c270)
 }
 
-/// `Native_00bd` (`0x00859840`, `0x00bd`): `(n)` (at least 1):
+/// `Native_00bd_SkipRequestLevels` (`0x00859840`, `0x00bd`): `(n)` (at least 1):
 /// `0x00871730(worker id, n - 1)`; `n`.
 pub fn native_00bd<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let mut v = pop(h, s);
@@ -2412,7 +2412,7 @@ pub fn native_01e2<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     tail(h, w, a, s, 0x0090_85a0)
 }
 
-/// `Native_0106` (`0x0085a010`, `0x0106`): `(i, b, var)`: the record
+/// `Native_0106_Snd3dSetVar` (`0x0085a010`, `0x0106`): `(i, b, var)`: the record
 /// `0x008773f0(i)` gets `+0` = b, `+4` = `0x00a44700(the variable's
 /// address)`; 1.
 pub fn native_0106<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
@@ -2547,7 +2547,7 @@ pub fn native_017b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_016c` (`0x008594c0`, `0x016c`): the current music (when not
+/// `Native_016c_MusicStopCurrent` (`0x008594c0`, `0x016c`): the current music (when not
 /// negative) `0x00886a60`, current music -1; 1.
 pub fn native_016c<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
     let i = call(h, 0x0087_3b00, &[]);
@@ -2718,7 +2718,7 @@ pub fn native_0141<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_00cf` (`0x0085c400`, `0x00cf`): `(v)` into `+0xaf0`; `v`.
+/// `Native_00cf_WorkerSetFieldAf0` (`0x0085c400`, `0x00cf`): `(v)` into `+0xaf0`; `v`.
 pub fn native_00cf<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     h.write(w + 0xaf0, v);
@@ -2938,13 +2938,13 @@ pub fn native_022f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     slot_flag(h, w, s, 0x0082_b970, 1)
 }
 
-/// `Native_0174` (`0x0085e3a0`, `0x0174`, float): the position's `+0x30`.
+/// `Native_0174_PosGetField30` (`0x0085e3a0`, `0x0174`, float): the position's `+0x30`.
 pub fn native_0174<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> f64 {
     let p = atel_get_pos_work_adrs(h, w);
     x87::load(h.read(p + 0x30))
 }
 
-/// `Native_0161` (`0x0085b760`, `0x0161`): `0x0088e780(v)`; `v`.
+/// `Native_0161_ImportantReset` (`0x0085b760`, `0x0161`): `0x0088e780(v)`; `v`.
 pub fn native_0161<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     call(h, 0x0088_e780, &[v]);
@@ -2995,7 +2995,7 @@ pub fn native_0209<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     1
 }
 
-/// `Native_010d` (`0x0085ac90`, `0x010d`): `(i)` up to `0xfe`:
+/// `Native_010d_ImportantSetIndexed` (`0x0085ac90`, `0x010d`): `(i)` up to `0xfe`:
 /// `0x0088e790(0xa004 + i)`; 1, else 0.
 pub fn native_010d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
@@ -3154,7 +3154,7 @@ pub fn native_01f8<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     b
 }
 
-/// `Native_0114` (`0x0085b670`, `0x0114`): `(b, a)`: the current ctrl
+/// `Native_0114_CtrlSetByte2Bits` (`0x0085b670`, `0x0114`): `(b, a)`: the current ctrl
 /// work's `+2` bit 1 = a, bit 2 = b; `b != 0`.
 pub fn native_0114<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let c = super::atel_get_cur_ctrl_work(h);
@@ -3283,7 +3283,7 @@ pub fn native_012e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     x
 }
 
-/// `Native_012b` (`0x0085dc50`, `0x012b`): `(on)`: the current ctrl
+/// `Native_012b_CtrlSetByte2Bit6` (`0x0085dc50`, `0x012b`): `(on)`: the current ctrl
 /// work's `+2` bit 6; `on != 0`.
 pub fn native_012b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let c = super::atel_get_cur_ctrl_work(h);
@@ -3482,7 +3482,7 @@ pub fn native_00a2<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_00ee` (`0x008572b0`, `0x00ee`): `(worker)`: its `+0x34` bit 5.
+/// `Native_00ee_WorkerGetFlag34Bit5` (`0x008572b0`, `0x00ee`): `(worker)`: its `+0x34` bit 5.
 pub fn native_00ee<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let i = pop(h, s);
     let o = work(h, i);
@@ -3496,7 +3496,7 @@ pub fn native_020d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_0149` (`0x00858580`, `0x0149`): `(on)`: the current ctrl
+/// `Native_0149_CtrlSetByte2Bit7` (`0x00858580`, `0x0149`): `(on)`: the current ctrl
 /// work's `+2` bit 7; `on != 0`.
 pub fn native_0149<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = u8::from(pop(h, s) != 0);
@@ -3573,7 +3573,7 @@ pub fn native_0037<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     levels_863fe0(h, i)
 }
 
-/// `Native_0159` (`0x0085d290`, `0x0159`): `(worker, slot)`: the party
+/// `Native_0159_PartySlotSetOf` (`0x0085d290`, `0x0159`): `(worker, slot)`: the party
 /// slot for that worker; `slot`.
 pub fn native_0159<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let c = super::atel_get_cur_ctrl_work(h);
@@ -3790,7 +3790,7 @@ pub fn native_01c5_result<H: NativeHost>(h: &mut H, w: u32, a: u32, _s: u32) -> 
     st
 }
 
-/// `Native_0115` (`0x0085b8c0`, `0x0115`): `(on)`: the current ctrl
+/// `Native_0115_CtrlSetByte2Bit3` (`0x0085b8c0`, `0x0115`): `(on)`: the current ctrl
 /// work's `+2` bit 3; `on != 0`.
 pub fn native_0115<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let c = super::atel_get_cur_ctrl_work(h);
@@ -3968,7 +3968,7 @@ pub fn native_019e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     call(h, 0x0086_c530, &[v])
 }
 
-/// `Native_00c9` (`0x0085b560`, `0x00c9`, float): `(i)`: the signed word
+/// `Native_00c9_EntranceGetField6` (`0x0085b560`, `0x00c9`, float): `(i)`: the signed word
 /// `+6` of `0x0086c020(worker, i)` as a float.
 pub fn native_00c9<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     let i = pop(h, s);
@@ -4541,13 +4541,13 @@ pub fn native_0154<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     bound_887100(h, w, 1)
 }
 
-/// `Native_0110` (`0x0085b260`, `0x0110`): `(v)` -> `0x008b7c40(v)`.
+/// `Native_0110_GetTable01868a90` (`0x0085b260`, `0x0110`): `(v)` -> `0x008b7c40(v)`.
 pub fn native_0110<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     call(h, 0x008b_7c40, &[v])
 }
 
-/// `Native_010f` (`0x0085afd0`, `0x010f`): `(window, c, b, a)`: the
+/// `Native_010f_MsgWinSetBytes22` (`0x0085afd0`, `0x010f`): `(window, c, b, a)`: the
 /// window's `+0x22` = c, `+0x23` = b, `+0x24` = a; `window`.
 pub fn native_010f<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let a = pop(h, s);
@@ -4564,7 +4564,7 @@ pub fn native_010f<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     i
 }
 
-/// `Native_00f9` (`0x00858780`, `0x00f9`): 1 (the debug build answers
+/// `Native_00f9_AlwaysTrue` (`0x00858780`, `0x00f9`): 1 (the debug build answers
 /// `TkGetEventNewGame` instead when `TkIsDebug`).
 pub fn native_00f9<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     if call(h, 0x0088_7d10, &[]) != 0 {
@@ -4573,7 +4573,7 @@ pub fn native_00f9<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     1
 }
 
-/// `Native_00ef` (`0x00857470`, `0x00ef`): `(on)`: `+0x36` bit 11;
+/// `Native_00ef_WorkerSetFlag36Bit11` (`0x00857470`, `0x00ef`): `(on)`: `+0x36` bit 11;
 /// `on != 0`.
 pub fn native_00ef<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = u16::from(pop(h, s) != 0);
@@ -4600,12 +4600,12 @@ pub fn native_00e6<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     0
 }
 
-/// `Native_00e1` (`0x00857fb0`, `0x00e1`): jumps to `0x0086a9d0`.
+/// `Native_00e1_GetBattleStatusSys` (`0x00857fb0`, `0x00e1`): jumps to `0x0086a9d0`.
 pub fn native_00e1<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     tail(h, w, a, s, 0x0086_a9d0)
 }
 
-/// `Native_00da` (`0x00857c30`, `0x00da`): jumps to `0x0086a9b0`.
+/// `Native_00da_GetBattleStatus` (`0x00857c30`, `0x00da`): jumps to `0x0086a9b0`.
 pub fn native_00da<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     tail(h, w, a, s, 0x0086_a9b0)
 }
@@ -4793,7 +4793,7 @@ pub fn native_0127<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     native_0128(h, w, a, s)
 }
 
-/// `Native_0107` (`0x0085a1f0`, `0x0107`): `(i, v)`: the record
+/// `Native_0107_Snd3dSetField8` (`0x0085a1f0`, `0x0107`): `(i, v)`: the record
 /// `0x008773f0(i)` with an object (`+4`, its `+0` bit 1 set) gets `+8` =
 /// v; 1.
 pub fn native_0107<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {

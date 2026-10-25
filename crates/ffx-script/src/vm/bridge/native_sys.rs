@@ -641,7 +641,7 @@ pub fn native_009f<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     win
 }
 
-/// `Native_00e5` (`0x00856130`, `0x00e5`): `(on)`: bit 3 of the current
+/// `Native_00e5_CtrlSetByte1Bit3` (`0x00856130`, `0x00e5`): `(on)`: bit 3 of the current
 /// ctrl work's `+1` = on != 0; -> that bit.
 pub fn native_00e5<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let c = atel_get_cur_ctrl_work(h);

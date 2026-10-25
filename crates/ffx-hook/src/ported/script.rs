@@ -3733,16 +3733,16 @@ ported! {
     Native_SetRadius44 @ 0x0085_72e0 => extern "C" fn n_8572e0(w: u32, a: u32, s: u32) -> f64 {
         native_move::native_set_radius44(&mut mem(), w, a, s)
     }
-    /// `Native_00a7(worker, args, stack)`.
-    Native_00a7 @ 0x0085_7820 => extern "C" fn n_857820(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_00a7_WorkerClearFlag34Bit1(worker, args, stack)`.
+    Native_00a7_WorkerClearFlag34Bit1 @ 0x0085_7820 => extern "C" fn n_857820(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_00a7(&mut mem(), w, a, s)
     }
     /// `Native_0058_TriggerSetPointDefault(worker, args, stack)`.
     Native_0058_TriggerSetPointDefault @ 0x0085_5f80 => extern "C" fn n_855f80(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0058(&mut mem(), w, a, s)
     }
-    /// `Native_00fb(worker, args, stack)`.
-    Native_00fb @ 0x0085_8ac0 => extern "C" fn n_858ac0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_00fb_MsgWinTableByte2(worker, args, stack)`.
+    Native_00fb_MsgWinTableByte2 @ 0x0085_8ac0 => extern "C" fn n_858ac0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_00fb(&mut mem(), w, a, s)
     }
     /// `Native_0180_CurMusicVolumeTranslate(worker, args, stack)`.
@@ -3789,8 +3789,8 @@ ported! {
     Native_0007_ChrDetachModel @ 0x0085_c8c0 => extern "C" fn n_85c8c0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0007(&mut mem(), w, a, s)
     }
-    /// `Native_012a(worker, args, stack)`.
-    Native_012a @ 0x0085_c890 => extern "C" fn n_85c890(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_012a_SpriteSetFlag(worker, args, stack)`.
+    Native_012a_SpriteSetFlag @ 0x0085_c890 => extern "C" fn n_85c890(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_012a(&mut mem(), w, a, s)
     }
     /// `Native_0133_WorkerTriggerSetActive(worker, args, stack)`.
@@ -3821,8 +3821,8 @@ ported! {
     Native_SetPartyIndex @ 0x0085_cb40 => extern "C" fn n_85cb40(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_set_party_index(&mut mem(), w, a, s)
     }
-    /// `Native_0158(worker, args, stack)`.
-    Native_0158 @ 0x0085_cfa0 => extern "C" fn n_85cfa0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0158_PartySlotSet(worker, args, stack)`.
+    Native_0158_PartySlotSet @ 0x0085_cfa0 => extern "C" fn n_85cfa0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0158(&mut mem(), w, a, s)
     }
     /// `Native_GetPitchToMoveTarget(worker, args, stack)`.
@@ -3909,8 +3909,8 @@ ported! {
     Native_0059_TriggerSetPoint @ 0x0085_5cd0 => extern "C" fn n_855cd0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0059(&mut mem(), w, a, s)
     }
-    /// `Native_013e(worker, args, stack)`.
-    Native_013e @ 0x0085_6890 => extern "C" fn n_856890(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_013e_WorkerSetFlag36Bit15(worker, args, stack)`.
+    Native_013e_WorkerSetFlag36Bit15 @ 0x0085_6890 => extern "C" fn n_856890(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_013e(&mut mem(), w, a, s)
     }
     /// `Native_004c_PadIsHeld(worker, args, stack)`.
@@ -3925,12 +3925,12 @@ ported! {
     Native_SetMapMarkerPos @ 0x0085_c2d0 => extern "C" fn n_85c2d0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_set_map_marker_pos(&mut mem(), w, a, s)
     }
-    /// `Native_0103(worker, args, stack)`.
-    Native_0103 @ 0x0085_93a0 => extern "C" fn n_8593a0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0103_MusicClearIfTrack(worker, args, stack)`.
+    Native_0103_MusicClearIfTrack @ 0x0085_93a0 => extern "C" fn n_8593a0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0103(&mut mem(), w, a, s)
     }
-    /// `Native_016d(worker, args, stack)`.
-    Native_016d @ 0x0085_95b0 => extern "C" fn n_8595b0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_016d_MusicStop(worker, args, stack)`.
+    Native_016d_MusicStop @ 0x0085_95b0 => extern "C" fn n_8595b0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_016d(&mut mem(), w, a, s)
     }
     /// `Native_01e9_MsgCloseWait(worker, args, stack)`.
@@ -3945,8 +3945,8 @@ ported! {
     Native_MinimapSetCorner @ 0x0085_7c40 => extern "C" fn n_857c40(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_minimap_set_corner(&mut mem(), w, a, s)
     }
-    /// `Native_00a8(worker, args, stack)`.
-    Native_00a8 @ 0x0085_7950 => extern "C" fn n_857950(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_00a8_WorkerSetFlag34Bit1(worker, args, stack)`.
+    Native_00a8_WorkerSetFlag34Bit1 @ 0x0085_7950 => extern "C" fn n_857950(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_00a8(&mut mem(), w, a, s)
     }
     /// `Native_014a_SetBattleEndStatus(worker, args, stack)`.
@@ -3977,8 +3977,8 @@ ported! {
     Native_012d_SaveCounterGet @ 0x0085_df80 => extern "C" fn n_85df80(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_012d(&mut mem(), w, a, s)
     }
-    /// `Native_00ce(worker, args, stack)`.
-    Native_00ce @ 0x0085_c2b0 => extern "C" fn n_85c2b0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_00ce_WorkerSetFieldB16(worker, args, stack)`.
+    Native_00ce_WorkerSetFieldB16 @ 0x0085_c2b0 => extern "C" fn n_85c2b0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_00ce(&mut mem(), w, a, s)
     }
     /// `Native_017e_MusicCrossStart(worker, args, stack)`.
@@ -4017,16 +4017,16 @@ ported! {
     Native_0139_MsgChoice_Result @ 0x0085_f900 => extern "C" fn n_85f900(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0139_result(&mut mem(), w, a, s)
     }
-    /// `Native_00b1(worker, args, stack)`.
-    Native_00b1 @ 0x0085_6a50 => extern "C" fn n_856a50(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_00b1_MoveSetField18(worker, args, stack)`.
+    Native_00b1_MoveSetField18 @ 0x0085_6a50 => extern "C" fn n_856a50(w: u32, a: u32, s: u32) -> f64 {
         native_move::native_00b1(&mut mem(), w, a, s)
     }
-    /// `Native_00e9(worker, args, stack)`.
-    Native_00e9 @ 0x0085_6660 => extern "C" fn n_856660(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_00e9_CtrlSetByte1Bit4(worker, args, stack)`.
+    Native_00e9_CtrlSetByte1Bit4 @ 0x0085_6660 => extern "C" fn n_856660(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_00e9(&mut mem(), w, a, s)
     }
-    /// `Native_0117(worker, args, stack)`.
-    Native_0117 @ 0x0085_bc50 => extern "C" fn n_85bc50(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0117_WorkerSetFlag36Bits(worker, args, stack)`.
+    Native_0117_WorkerSetFlag36Bits @ 0x0085_bc50 => extern "C" fn n_85bc50(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0117(&mut mem(), w, a, s)
     }
     /// `Native_01da_VibrateStartLevel3(worker, args, stack)`.
@@ -4041,8 +4041,8 @@ ported! {
     Native_LineExtend @ 0x0085_c130 => extern "C" fn n_85c130(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_line_extend(&mut mem(), w, a, s)
     }
-    /// `Native_015f(worker, args, stack)`.
-    Native_015f @ 0x0085_b650 => extern "C" fn n_85b650(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_015f_ImportantSet(worker, args, stack)`.
+    Native_015f_ImportantSet @ 0x0085_b650 => extern "C" fn n_85b650(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_015f(&mut mem(), w, a, s)
     }
     /// `Native_0257(worker, args, stack)`.
@@ -4093,16 +4093,16 @@ ported! {
     Native_005a_TriggerSetPointYaw @ 0x0085_6170 => extern "C" fn n_856170(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_005a(&mut mem(), w, a, s)
     }
-    /// `Native_00be(worker, args, stack)`.
-    Native_00be @ 0x0085_9950 => extern "C" fn n_859950(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_00be_CtrlSetBit7(worker, args, stack)`.
+    Native_00be_CtrlSetBit7 @ 0x0085_9950 => extern "C" fn n_859950(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_00be(&mut mem(), w, a, s)
     }
     /// `Native_01a4_DobjSetMimeParam1(worker, args, stack)`.
     Native_01a4_DobjSetMimeParam1 @ 0x0085_7360 => extern "C" fn n_857360(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_01a4(&mut mem(), w, a, s)
     }
-    /// `Native_0121(worker, args, stack)`.
-    Native_0121 @ 0x0085_d1d0 => extern "C" fn n_85d1d0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0121_PadGetBindFlag(worker, args, stack)`.
+    Native_0121_PadGetBindFlag @ 0x0085_d1d0 => extern "C" fn n_85d1d0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0121(&mut mem(), w, a, s)
     }
     /// `Native_0122_PadGetAnalog(worker, args, stack)`.
@@ -4149,8 +4149,8 @@ ported! {
     Native_0196_FpBindAttached @ 0x0085_fce0 => extern "C" fn n_85fce0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0196(&mut mem(), w, a, s)
     }
-    /// `Native_0109(worker, args, stack)`.
-    Native_0109 @ 0x0085_a870 => extern "C" fn n_85a870(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0109_Snd3dCalc(worker, args, stack)`.
+    Native_0109_Snd3dCalc @ 0x0085_a870 => extern "C" fn n_85a870(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0109(&mut mem(), w, a, s)
     }
     /// `Native_0108_Snd3dSetPos(worker, args, stack)`.
@@ -4165,24 +4165,24 @@ ported! {
     Native_00db_EventEffectRead_Poll @ 0x0085_eaf0 => extern "C" fn n_85eaf0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_00db_poll(&mut mem(), w, a, s)
     }
-    /// `Native_011d(worker, args, stack)`.
-    Native_011d @ 0x0085_c650 => extern "C" fn n_85c650(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_011d_SpriteSet13(worker, args, stack)`.
+    Native_011d_SpriteSet13 @ 0x0085_c650 => extern "C" fn n_85c650(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_011d(&mut mem(), w, a, s)
     }
     /// `Native_00dc_EventEffectStart_Poll(worker, args, stack)`.
     Native_00dc_EventEffectStart_Poll @ 0x0085_ee70 => extern "C" fn n_85ee70(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_00dc_poll(&mut mem(), w, a, s)
     }
-    /// `Native_00bd(worker, args, stack)`.
-    Native_00bd @ 0x0085_9840 => extern "C" fn n_859840(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_00bd_SkipRequestLevels(worker, args, stack)`.
+    Native_00bd_SkipRequestLevels @ 0x0085_9840 => extern "C" fn n_859840(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_00bd(&mut mem(), w, a, s)
     }
     /// `Native_01ad_AddMonsterCapture(worker, args, stack)`.
     Native_01ad_AddMonsterCapture @ 0x0085_8b30 => extern "C" fn n_858b30(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_01ad(&mut mem(), w, a, s)
     }
-    /// `Native_0106(worker, args, stack)`.
-    Native_0106 @ 0x0085_a010 => extern "C" fn n_85a010(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0106_Snd3dSetVar(worker, args, stack)`.
+    Native_0106_Snd3dSetVar @ 0x0085_a010 => extern "C" fn n_85a010(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0106(&mut mem(), w, a, s)
     }
     /// `Native_0177(worker, args, stack)`.
@@ -4273,8 +4273,8 @@ ported! {
     Native_0141_MsgSetTextVar @ 0x0085_7a00 => extern "C" fn n_857a00(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0141(&mut mem(), w, a, s)
     }
-    /// `Native_00cf(worker, args, stack)`.
-    Native_00cf @ 0x0085_c400 => extern "C" fn n_85c400(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_00cf_WorkerSetFieldAf0(worker, args, stack)`.
+    Native_00cf_WorkerSetFieldAf0 @ 0x0085_c400 => extern "C" fn n_85c400(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_00cf(&mut mem(), w, a, s)
     }
     /// `Native_020b(worker, args, stack)`.
@@ -4313,12 +4313,12 @@ ported! {
     Native_022f @ 0x0085_5fb0 => extern "C" fn n_855fb0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_022f(&mut mem(), w, a, s)
     }
-    /// `Native_0174(worker, args, stack)`.
-    Native_0174 @ 0x0085_e3a0 => extern "C" fn n_85e3a0(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_0174_PosGetField30(worker, args, stack)`.
+    Native_0174_PosGetField30 @ 0x0085_e3a0 => extern "C" fn n_85e3a0(w: u32, a: u32, s: u32) -> f64 {
         native_move::native_0174(&mut mem(), w, a, s)
     }
-    /// `Native_0161(worker, args, stack)`.
-    Native_0161 @ 0x0085_b760 => extern "C" fn n_85b760(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0161_ImportantReset(worker, args, stack)`.
+    Native_0161_ImportantReset @ 0x0085_b760 => extern "C" fn n_85b760(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0161(&mut mem(), w, a, s)
     }
     /// `Native_016a_MusicVolumeDirect(worker, args, stack)`.
@@ -4337,8 +4337,8 @@ ported! {
     Native_0209_BindEffWaterOn @ 0x0085_f430 => extern "C" fn n_85f430(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0209(&mut mem(), w, a, s)
     }
-    /// `Native_010d(worker, args, stack)`.
-    Native_010d @ 0x0085_ac90 => extern "C" fn n_85ac90(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_010d_ImportantSetIndexed(worker, args, stack)`.
+    Native_010d_ImportantSetIndexed @ 0x0085_ac90 => extern "C" fn n_85ac90(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_010d(&mut mem(), w, a, s)
     }
     /// `Native_0194(worker, args, stack)`.
@@ -4377,8 +4377,8 @@ ported! {
     Native_01f8_MusicFadeOutTrack @ 0x0085_e570 => extern "C" fn n_85e570(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_01f8(&mut mem(), w, a, s)
     }
-    /// `Native_0114(worker, args, stack)`.
-    Native_0114 @ 0x0085_b670 => extern "C" fn n_85b670(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0114_CtrlSetByte2Bits(worker, args, stack)`.
+    Native_0114_CtrlSetByte2Bits @ 0x0085_b670 => extern "C" fn n_85b670(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0114(&mut mem(), w, a, s)
     }
     /// `Native_0220_DisableLoveParam(worker, args, stack)`.
@@ -4413,8 +4413,8 @@ ported! {
     Native_012e_SaveCounterAdd @ 0x0085_e040 => extern "C" fn n_85e040(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_012e(&mut mem(), w, a, s)
     }
-    /// `Native_012b(worker, args, stack)`.
-    Native_012b @ 0x0085_dc50 => extern "C" fn n_85dc50(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_012b_CtrlSetByte2Bit6(worker, args, stack)`.
+    Native_012b_CtrlSetByte2Bit6 @ 0x0085_dc50 => extern "C" fn n_85dc50(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_012b(&mut mem(), w, a, s)
     }
     /// `Native_0092_PosGetField20Of(worker, args, stack)`.
@@ -4469,16 +4469,16 @@ ported! {
     Native_00a2_MsgWinSetColorBytes @ 0x0085_6570 => extern "C" fn n_856570(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_00a2(&mut mem(), w, a, s)
     }
-    /// `Native_00ee(worker, args, stack)`.
-    Native_00ee @ 0x0085_72b0 => extern "C" fn n_8572b0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_00ee_WorkerGetFlag34Bit5(worker, args, stack)`.
+    Native_00ee_WorkerGetFlag34Bit5 @ 0x0085_72b0 => extern "C" fn n_8572b0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_00ee(&mut mem(), w, a, s)
     }
     /// `Native_020d(worker, args, stack)`.
     Native_020d @ 0x0085_bf70 => extern "C" fn n_85bf70(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_020d(&mut mem(), w, a, s)
     }
-    /// `Native_0149(worker, args, stack)`.
-    Native_0149 @ 0x0085_8580 => extern "C" fn n_858580(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0149_CtrlSetByte2Bit7(worker, args, stack)`.
+    Native_0149_CtrlSetByte2Bit7 @ 0x0085_8580 => extern "C" fn n_858580(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0149(&mut mem(), w, a, s)
     }
     /// `Native_0146_MinimapSetSize(worker, args, stack)`.
@@ -4501,8 +4501,8 @@ ported! {
     Native_0037_WorkerStopTurnAll @ 0x0085_b780 => extern "C" fn n_85b780(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0037(&mut mem(), w, a, s)
     }
-    /// `Native_0159(worker, args, stack)`.
-    Native_0159 @ 0x0085_d290 => extern "C" fn n_85d290(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0159_PartySlotSetOf(worker, args, stack)`.
+    Native_0159_PartySlotSetOf @ 0x0085_d290 => extern "C" fn n_85d290(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0159(&mut mem(), w, a, s)
     }
     /// `Native_0204(worker, args, stack)`.
@@ -4573,8 +4573,8 @@ ported! {
     Native_01c5_Result @ 0x0085_d8f0 => extern "C" fn n_85d8f0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_01c5_result(&mut mem(), w, a, s)
     }
-    /// `Native_0115(worker, args, stack)`.
-    Native_0115 @ 0x0085_b8c0 => extern "C" fn n_85b8c0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0115_CtrlSetByte2Bit3(worker, args, stack)`.
+    Native_0115_CtrlSetByte2Bit3 @ 0x0085_b8c0 => extern "C" fn n_85b8c0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0115(&mut mem(), w, a, s)
     }
     /// `Native_00fa_SetEventNewGame(worker, args, stack)`.
@@ -4613,8 +4613,8 @@ ported! {
     Native_019e_IsCtrl0Running @ 0x0085_6950 => extern "C" fn n_856950(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_019e(&mut mem(), w, a, s)
     }
-    /// `Native_00c9(worker, args, stack)`.
-    Native_00c9 @ 0x0085_b560 => extern "C" fn n_85b560(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_00c9_EntranceGetField6(worker, args, stack)`.
+    Native_00c9_EntranceGetField6 @ 0x0085_b560 => extern "C" fn n_85b560(w: u32, a: u32, s: u32) -> f64 {
         native_move::native_00c9(&mut mem(), w, a, s)
     }
     /// `Native_01d2_MsgTextMatchesSave(worker, args, stack)`.
@@ -4753,16 +4753,16 @@ ported! {
     Native_0154_SndFootOn @ 0x0085_97a0 => extern "C" fn n_8597a0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0154(&mut mem(), w, a, s)
     }
-    /// `Native_0110(worker, args, stack)`.
-    Native_0110 @ 0x0085_b260 => extern "C" fn n_85b260(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0110_GetTable01868a90(worker, args, stack)`.
+    Native_0110_GetTable01868a90 @ 0x0085_b260 => extern "C" fn n_85b260(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0110(&mut mem(), w, a, s)
     }
-    /// `Native_010f(worker, args, stack)`.
-    Native_010f @ 0x0085_afd0 => extern "C" fn n_85afd0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_010f_MsgWinSetBytes22(worker, args, stack)`.
+    Native_010f_MsgWinSetBytes22 @ 0x0085_afd0 => extern "C" fn n_85afd0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_010f(&mut mem(), w, a, s)
     }
-    /// `Native_00ef(worker, args, stack)`.
-    Native_00ef @ 0x0085_7470 => extern "C" fn n_857470(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_00ef_WorkerSetFlag36Bit11(worker, args, stack)`.
+    Native_00ef_WorkerSetFlag36Bit11 @ 0x0085_7470 => extern "C" fn n_857470(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_00ef(&mut mem(), w, a, s)
     }
     /// `Native_00e6_PartyIsInSlot(worker, args, stack)`.
@@ -4821,8 +4821,8 @@ ported! {
     Native_0127_WorkerInTouchRange @ 0x0085_db10 => extern "C" fn n_85db10(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0127(&mut mem(), w, a, s)
     }
-    /// `Native_0107(worker, args, stack)`.
-    Native_0107 @ 0x0085_a1f0 => extern "C" fn n_85a1f0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0107_Snd3dSetField8(worker, args, stack)`.
+    Native_0107_Snd3dSetField8 @ 0x0085_a1f0 => extern "C" fn n_85a1f0(w: u32, a: u32, s: u32) -> u32 {
         native_move::native_0107(&mut mem(), w, a, s)
     }
     /// `Native_00b4_SetTkAntiY(worker, args, stack)`.
@@ -5477,8 +5477,8 @@ ported! {
     Native_009f_MsgSetMacroValue @ 0x0085_6090 => extern "C" fn n_856090(w: u32, a: u32, s: u32) -> u32 {
         native_sys::native_009f(&mut mem(), w, a, s)
     }
-    /// `Native_00e5(worker, args, stack)`.
-    Native_00e5 @ 0x0085_6130 => extern "C" fn n_856130(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_00e5_CtrlSetByte1Bit3(worker, args, stack)`.
+    Native_00e5_CtrlSetByte1Bit3 @ 0x0085_6130 => extern "C" fn n_856130(w: u32, a: u32, s: u32) -> u32 {
         native_sys::native_00e5(&mut mem(), w, a, s)
     }
     /// `Native_01d5(worker, args, stack)`.
@@ -6005,28 +6005,28 @@ ported! {
     Native_00ff_SndSepPanDirect @ 0x0086_02c0 => extern "C" fn n_8602c0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_00ff(&mut mem(), w, a, s)
     }
-    /// `Native_0118(worker, args, stack)`.
-    Native_0118 @ 0x0085_bae0 => extern "C" fn n_85bae0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0118_WorkerSetFlag36Bit10(worker, args, stack)`.
+    Native_0118_WorkerSetFlag36Bit10 @ 0x0085_bae0 => extern "C" fn n_85bae0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_0118(&mut mem(), w, a, s)
     }
     /// `Native_011e_SpriteSetAlpha(worker, args, stack)`.
     Native_011e_SpriteSetAlpha @ 0x0085_caf0 => extern "C" fn n_85caf0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_011e(&mut mem(), w, a, s)
     }
-    /// `Native_0123(worker, args, stack)`.
-    Native_0123 @ 0x0085_d440 => extern "C" fn n_85d440(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0123_Echo(worker, args, stack)`.
+    Native_0123_Echo @ 0x0085_d440 => extern "C" fn n_85d440(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_0079(&mut mem(), w, a, s)
     }
-    /// `Native_0124(worker, args, stack)`.
-    Native_0124 @ 0x0085_d530 => extern "C" fn n_85d530(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_0124_Echo(worker, args, stack)`.
+    Native_0124_Echo @ 0x0085_d530 => extern "C" fn n_85d530(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_0079(&mut mem(), w, a, s)
     }
     /// `Native_0125_SetPosXZ(worker, args, stack)`.
     Native_0125_SetPosXZ @ 0x0085_fc50 => extern "C" fn n_85fc50(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_0125(&mut mem(), w, a, s)
     }
-    /// `Native_012c(worker, args, stack)`.
-    Native_012c @ 0x0085_ddd0 => extern "C" fn n_85ddd0(w: u32, a: u32, s: u32) -> u32 {
+    /// `Native_012c_CtrlSetWords4(worker, args, stack)`.
+    Native_012c_CtrlSetWords4 @ 0x0085_ddd0 => extern "C" fn n_85ddd0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_012c(&mut mem(), w, a, s)
     }
     /// `Native_012f_SaveCounterSub(worker, args, stack)`.
@@ -6109,16 +6109,16 @@ ported! {
     Native_0170_BackupEventJump @ 0x0085_c530 => extern "C" fn n_85c530(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_0170(&mut mem(), w, a, s)
     }
-    /// `Native_0173(worker, args, stack)`.
-    Native_0173 @ 0x0085_e7a0 => extern "C" fn n_85e7a0(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_0173_PosGetField24(worker, args, stack)`.
+    Native_0173_PosGetField24 @ 0x0085_e7a0 => extern "C" fn n_85e7a0(w: u32, a: u32, s: u32) -> f64 {
         native_mods::native_0173(&mut mem(), w, a, s)
     }
-    /// `Native_0175(worker, args, stack)`.
-    Native_0175 @ 0x0085_eec0 => extern "C" fn n_85eec0(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_0175_PosGetField24Of(worker, args, stack)`.
+    Native_0175_PosGetField24Of @ 0x0085_eec0 => extern "C" fn n_85eec0(w: u32, a: u32, s: u32) -> f64 {
         native_mods::native_0175(&mut mem(), w, a, s)
     }
-    /// `Native_0176(worker, args, stack)`.
-    Native_0176 @ 0x0085_ec30 => extern "C" fn n_85ec30(w: u32, a: u32, s: u32) -> f64 {
+    /// `Native_0176_PosGetField30Of(worker, args, stack)`.
+    Native_0176_PosGetField30Of @ 0x0085_ec30 => extern "C" fn n_85ec30(w: u32, a: u32, s: u32) -> f64 {
         native_mods::native_0176(&mut mem(), w, a, s)
     }
     /// `Native_0178_GetEffectFlag(worker, args, stack)`.

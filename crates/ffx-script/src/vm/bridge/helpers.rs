@@ -10052,7 +10052,7 @@ pub fn atel_play_time_update<H: ffx_bridge::Host>(
 /// request, its pan in `EAX`.
 const SND3D_FOOT_REQUEST: u32 = 0x0087_6950;
 
-/// `AtelCalcSound(req, play)` (`0x00876930`; caller `Native_0109`):
+/// `AtelCalcSound(req, play)` (`0x00876930`; caller `Native_0109_Snd3dCalc`):
 /// `Snd3dFootRequest(req, play, 0x100)`, its `EAX` (the pan) handed on.
 pub fn atel_calc_sound(h: &mut impl ffx_bridge::Host, req: u32, play: u32) -> u32 {
     host_call(h, SND3D_FOOT_REQUEST, &[req, play, 0x100])
