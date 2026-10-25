@@ -125,6 +125,56 @@ in the script, with the dispatcher addresses as the reason.
   replacements must equal the trace with `--hook-disable replacements`.
 - `tools/progress.py` counts it as replaced.
 
+## Library code: PhyreEngine and Direct3D 11 (M4 pilot)
+
+The M4 pilot (`crates/ffx-prender`, `crates/ffx-oracle/tests/phyre_render.rs`,
+`~/ffx-work/m4/pilot-report.md`) ported part of `PhyreEngine`'s map render
+chain with this recipe. What it adds:
+
+- **Frames callees see.** Engine code hands the addresses of its locals to
+  callees (cursors, block lists, the blend factor), and recording stubs
+  log them. The test computes where the original's frame is (the call
+  pushes from `Oracle::stack_range().end - 0x100`: arguments, the return
+  address, `ebp`, then the `ebp` offsets from the disassembly), gives the
+  port a frame at the same address in the other oracle, and moves that
+  oracle's own calls below it with `Oracle::set_call_top`. Both then log
+  the same pointers, and after the call the two frames can be compared
+  byte for byte (what a callee only reads through a pointer). The bridge
+  takes the frame as an argument, laid out at the original's `ebp`
+  offsets; the shim passes a `StackFrame`.
+- **COM.** `ID3D11DeviceContext` methods stay calls through the object's
+  vtable (`stdcall`, `this` first on the stack). The test builds fake
+  objects whose vtables point at recording stubs that log and pop the
+  method's words (`com_object`).
+- **Hidden `this`.** Ghidra shows some engine methods as plain functions;
+  check in the disassembly what the caller leaves in `ecx`
+  (`Phyre_PGeometry_PDynamicMesh_getDataBlockCount` is a thiscall on the
+  dynamic mesh). A stub that does not log `ecx` cannot catch a port that
+  forgets it: give stubs of library callees `this = true`.
+  `python3 -I tools/check-thisarg.py` (needs `FFX_GAME_DIR`, about 3 s)
+  scans for this statically. It finds every original that reads `ecx`
+  before writing it on some path from its entry, then every port call to
+  one that passes no `ecx` (`Conv::Cdecl`/`Conv::Stdcall`,
+  `ffx_bridge::Host::call`, `call_cdecl*`, `call0`, and per-file
+  forwarding helpers). It must report "0 problems", like
+  check-callwidth. Targets it can't resolve (pointers from memory) are
+  counted, not checked.
+- **Real states.** `tools/harvest-render.sh` harvests the render chain's
+  calls by running `graphicRender` (`0x00642bb0`) on the snapshots: every
+  world of the frame, with the culling jobs run by the waiting thread.
+  The game-update drivers of `tools/harvest.sh` never render.
+  `tests/harvested_phyre_render.rs` checks the ports on those calls.
+- **One hook per address.** Where a wrapper already owns an address
+  (`renderWorldCulledSorted`'s capture wrapper in `world.rs`), the wrapper
+  calls the port instead of its trampoline, behind its own
+  `FFX_HOOK_DISABLE` name.
+- **Gate on the original code.** `FFX_HOOK_ONLY=<names>` (`ffx-dinput8`,
+  passed on by `tools/run-game.sh`) installs only the named replacements,
+  so a capture holds the original code plus the slice. Compare it with
+  captures of the same build run `original`, not older ones: the harness
+  changes what a capture sees (`orig3`/`orig4` of 2026-10-24 no longer
+  match a fresh original capture of `tools/replays/draw-field.txt`).
+
 ## Choosing what to port
 
 `tools/worklist.py --module <m> --named` lists the functions of a module

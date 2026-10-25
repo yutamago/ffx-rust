@@ -7,15 +7,21 @@
 #
 # Usage: tools/coverage-run.sh [--no-replays] [save slots (ffx_00N), default 0 1 2 3 5]
 # Hits add up: symbols/coverage.txt keeps the union of every run.
+#
+# COVERAGE_ALL=1 arms every function of the dump (PhyreEngine and the CRT
+# included, tools/coverage.py candidates --all) and does not merge into
+# symbols/coverage.txt: the hits stay in $COVERAGE_DIR/cand.txt.hits.
+# COVERAGE_REPLAYS="a b ..." picks the replays (default field-walk
+# battle-attack menu-browse); COVERAGE_DIR the Windows-drive folder.
 set -u
 source "$(dirname "$0")/in-game-slot.sh"
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo"
 export FFX_GAME_DIR="${FFX_GAME_DIR:-$HOME/steam-games/FFX-X2-HD}"
-lin=/mnt/c/Users/USER/AppData/Local/Temp/ffx-coverage
-win='C:\Users\USER\AppData\Local\Temp\ffx-coverage'
+lin="${COVERAGE_DIR:-/mnt/c/Users/USER/AppData/Local/Temp/ffx-coverage}"
 mkdir -p "$lin"
-python3 -I tools/coverage.py candidates "$lin/cand.txt"
+win="$(wslpath -w "$lin")"
+python3 -I tools/coverage.py candidates ${COVERAGE_ALL:+--all} "$lin/cand.txt"
 rm -f "$lin/cand.txt.hits"
 export FFX_COVERAGE="$lin/cand.txt"
 log="$FFX_GAME_DIR/ffx-hook.log"
@@ -30,7 +36,7 @@ run() { # script, tag
 replays=1
 if [[ "${1:-}" == --no-replays ]]; then replays=0; shift; fi
 if [[ $replays == 1 ]]; then
-    for r in field-walk battle-attack menu-browse; do run "tools/replays/$r.txt" "$r"; done
+    for r in ${COVERAGE_REPLAYS:-field-walk battle-attack menu-browse}; do run "tools/replays/$r.txt" "$r"; done
 fi
 for s in "${@:-0 1 2 3 5}"; do
     for e in $s; do
@@ -38,4 +44,8 @@ for s in "${@:-0 1 2 3 5}"; do
         run "$lin/session-$e.txt" "session-$e"
     done
 done
-python3 -I tools/coverage.py merge "$lin/cand.txt.hits"
+if [[ -z "${COVERAGE_ALL:-}" ]]; then
+    python3 -I tools/coverage.py merge "$lin/cand.txt.hits"
+else
+    echo "hits: $lin/cand.txt.hits ($(sort -u "$lin/cand.txt.hits" | wc -l) functions)"
+fi

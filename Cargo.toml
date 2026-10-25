@@ -30,6 +30,7 @@ ffx-motion = { path = "crates/ffx-motion" }
 ffx-movie = { path = "crates/ffx-movie" }
 ffx-pcui = { path = "crates/ffx-pcui" }
 ffx-postfx = { path = "crates/ffx-postfx" }
+ffx-prender = { path = "crates/ffx-prender" }
 ffx-phyre = { path = "crates/ffx-phyre" }
 ffx-platform = { path = "crates/ffx-platform" }
 ffx-ps2 = { path = "crates/ffx-ps2" }

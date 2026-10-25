@@ -76,13 +76,26 @@ unsafe fn install_hooks(base: usize) {
     // SAFETY: forwarded from the caller.
     unsafe { ffx_hook::gfx::install(base) };
     let disabled = std::env::var("FFX_HOOK_DISABLE").unwrap_or_default();
-    let disabled: Vec<&str> = disabled
+    let mut disabled: Vec<&str> = disabled
         .split(',')
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .collect();
+    let hooks = ffx_hook::hooks();
+    // `FFX_HOOK_ONLY`: every replacement not named there stays original,
+    // so a run can hold the original code plus a few ports (the M4
+    // pilot's gate against the original captures)
+    let only = std::env::var("FFX_HOOK_ONLY").ok();
+    if let Some(only) = &only {
+        let keep: Vec<&str> = only.split(',').map(str::trim).collect();
+        for h in &hooks {
+            if h.original.is_none() && !keep.contains(&h.name) {
+                disabled.push(h.name);
+            }
+        }
+    }
     // SAFETY: forwarded from the caller.
-    match unsafe { ffx_hook::install(base, &ffx_hook::hooks(), &disabled) } {
+    match unsafe { ffx_hook::install(base, &hooks, &disabled) } {
         Ok(results) => {
             // One write: the log may sit on a slow share (WSL), and
             // opening it once per hook made start-up take minutes.

@@ -1,0 +1,395 @@
+#!/usr/bin/env python3
+"""Finds calls into original code that leave out `ecx` where the callee
+reads it: a method called as a plain function (m4-pilot, 2026-10-25).
+
+  tools/check-thisarg.py [-v] [--root DIR] [--exe FFX.exe]
+
+Ghidra shows some methods as plain functions; their callers leave the
+object in `ecx` (`Phyre_PGeometry_PDynamicMesh_getDataBlockCount`
+0x00498770: `mov ecx, [edi+4]` ... `push eax; call 0x498770`). A port that
+calls such a callee with `Conv::Cdecl` or `Conv::Stdcall` (or through
+`ffx_bridge::Host::call`, `call_cdecl`, `call0`) hands it whatever `ecx`
+held: the m4-pilot's handler crashed the game that way while its oracle
+test, whose stub did not log `ecx`, passed.
+
+Two halves:
+
+1. Which originals take `ecx`. For a function, every path from its entry
+   is followed (jumps and both sides of branches, up to a few hundred
+   instructions) until `ecx` is written. It takes `ecx` when an
+   instruction on some path reads `ecx`, `cx`, `cl` or `ch` before that:
+   as a source operand, in an address, as a `rep`/`loop`/`jecxz` count,
+   or as the destination of a read-modify-write (`add ecx, 4`, `cmp`,
+   `test`, `inc`). `push ecx` is not counted (MSVC's prologues reserve a
+   slot with it). A `call` or `jmp` to another function with `ecx` still
+   unwritten takes it when the callee does (thunks, wrappers); a call
+   otherwise ends the path (the callee may clobber `ecx`).
+2. Which calls in crates/*/src (ffx-oracle and ffx-studio left out) pass
+   no `ecx`: `.call(target, Conv::Cdecl|Conv::Stdcall, ..)`,
+   `.call_st0(..)`, `.call_sym(SYM, Conv::Cdecl|Conv::Stdcall, ..)`,
+   `ffx_bridge` `.call(target, &[..])` (cdecl), and ffx-hook's
+   `call_cdecl*`/`call0`. The target is resolved when it is a literal, a
+   `const NAME: u32 = 0x..` (the same file first, then the crate, then
+   anywhere), `x.rebase(..)`/`rebase(..)` of one, or a local assigned one
+   of those earlier in the same function (`let f = h.rebase(NAME);`).
+   Targets it can't resolve (pointers read from memory, parameters) are
+   counted, not reported.
+
+Every resolved call to an original that takes `ecx` is a problem unless
+REVIEWED below names it (file, callee, why the port is right). A REVIEWED
+entry that no longer matches is reported, so the table stays true.
+
+Prints one line per problem and "N problems"; exits 1 when there are any.
+-v also lists every resolved call.
+"""
+import argparse
+import collections
+import os
+import pathlib
+import re
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import disasm_cache  # noqa: E402
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+SKIP_CRATES = {"ffx-oracle", "ffx-studio"}
+IMAGE_LO, IMAGE_HI = 0x00401000, 0x00b00000  # .text
+
+# (file, callee address) -> why the port's call without ecx is right
+REVIEWED = {
+}
+
+# --- 1. which originals take ecx ---
+
+ECX = re.compile(r"\b(ecx|cx|cl|ch)\b")
+WRITES = {"mov", "lea", "movzx", "movsx", "pop", "movd", "cvttss2si", "cvttsd2si", "cvtss2si", "setb"}
+ZEROING = {"xor", "sub", "sbb"}
+BRANCH = re.compile(r"^(j[a-z]+)\s+0x([0-9a-f]+)$")
+CALL = re.compile(r"^call\s+0x([0-9a-f]+)$")
+JMP = re.compile(r"^jmp\s+0x([0-9a-f]+)$")
+END = re.compile(r"^(ret|retn|int3|ud2|hlt)\b|^jmp\s+(DWORD PTR|e[a-z]x)|^\(bad\)|^\.byte")
+LIMIT = 400
+
+
+def split_insn(text):
+    """(mnemonic, [operands]) of an objdump Intel line (prefixes kept on the
+    mnemonic: `rep movs ...`)."""
+    parts = text.split(None, 1)
+    if not parts:
+        return "", []
+    op = parts[0]
+    rest = parts[1] if len(parts) > 1 else ""
+    if op in ("rep", "repz", "repnz", "repe", "repne", "lock") and rest:
+        sub = rest.split(None, 1)
+        op = op + " " + sub[0]
+        rest = sub[1] if len(sub) > 1 else ""
+    ops = [o.strip() for o in re.split(r",(?![^\[]*\])", rest)] if rest else []
+    return op, ops
+
+
+def effect(text):
+    """'read', 'write' or None for `ecx` in one instruction."""
+    op, ops = split_insn(text)
+    base = op.split()[-1] if op else ""
+    if op.startswith(("rep", "repz", "repnz", "repe", "repne")) and op.split()[0] != "lock":
+        return "read"  # the count
+    if base.startswith("loop") or base == "jecxz":
+        return "read"
+    if base == "push" and ops == ["ecx"]:
+        return None  # a reserved slot in MSVC prologues
+    if base == "call":
+        return None  # handled by the walker
+    if not ops:
+        return None
+    dst, srcs = ops[0], ops[1:]
+    if base == "lea" and len(ops) == 2 and re.fullmatch(r"(\w+),?", dst) and \
+            re.fullmatch(r"\[" + re.escape(dst) + r"\+0x0\]", srcs[0].replace(" ", "")):
+        return None  # `lea ecx, [ecx+0x0]`: alignment padding
+    if any(ECX.search(s) for s in srcs):
+        if base in ZEROING and len(ops) == 2 and ops[0] == ops[1] == "ecx":
+            return "write"
+        return "read"
+    if ECX.search(dst):
+        if dst == "ecx" and base in WRITES:
+            return "write"
+        if dst == "ecx" and base == "imul" and len(ops) == 3:
+            return "write"
+        if dst in ("cl", "ch", "cx") and (base in WRITES or base.startswith("set")):
+            # a partial write; taken as the end of the caller's ecx (code
+            # that keeps the rest of a `this` and writes cl is not MSVC's)
+            return "write"
+        if "[" in dst:
+            return "read"  # an address
+        if base == "xchg":
+            return "read"
+        return "read"  # read-modify-write, cmp, test
+    return None
+
+
+class Walker:
+    def __init__(self, exe, starts):
+        self.cache = disasm_cache.for_exe(exe)
+        self.cache.load()
+        self.starts = sorted(starts)
+        self.memo = {}
+
+    def code(self, a):
+        return self.cache.get(a, 0x400)
+
+    def takes(self, f, depth=0):
+        """Whether the function at `f` reads `ecx` before writing it."""
+        if f in self.memo:
+            return self.memo[f]
+        self.memo[f] = False  # recursion guard
+        if depth > 6 or not IMAGE_LO <= f < IMAGE_HI:
+            return False
+        code = self.code(f)
+        addrs = sorted(code)
+        index = {a: i for i, a in enumerate(addrs)}
+        seen = set()
+        todo = [f]
+        steps = 0
+        result = False
+        while todo and not result:
+            pc = todo.pop()
+            while pc in index and pc not in seen and steps < LIMIT:
+                seen.add(pc)
+                steps += 1
+                text = code[pc]
+                m = CALL.match(text)
+                if m:
+                    if self.takes(int(m[1], 16), depth + 1):
+                        result = True
+                    break  # ecx clobbered from here
+                m = JMP.match(text)
+                if m:
+                    t = int(m[1], 16)
+                    if t in index and f <= t:
+                        pc = t
+                        continue
+                    if self.takes(t, depth + 1):
+                        result = True
+                    break
+                if END.match(text):
+                    break
+                e = effect(text)
+                if e == "read":
+                    result = True
+                    break
+                if e == "write":
+                    break
+                m = BRANCH.match(text)
+                if m:
+                    t = int(m[2], 16)
+                    if t in index:
+                        todo.append(t)
+                i = index[pc] + 1
+                pc = addrs[i] if i < len(addrs) else None
+        self.memo[f] = result
+        return result
+
+
+# --- 2. calls without ecx in the ports ---
+
+TOKEN = re.compile(r'//[^\n]*|/\*.*?\*/|b?"(?:\\.|[^"\\])*"', re.S)
+CONST = re.compile(r"\bconst\s+([A-Z][A-Z0-9_]*)\s*:\s*u32\s*=\s*(0x[0-9a-fA-F_]+)\s*;")
+FN = re.compile(r"\bfn\s+([a-zA-Z_][a-zA-Z0-9_]*)")
+LET = re.compile(r"\blet\s+(?:mut\s+)?([a-z_][a-z0-9_]*)\s*(?::\s*u32\s*)?=\s*([^;]+);")
+NO_ECX = re.compile(r"Conv::(Cdecl|Stdcall)\b")
+
+
+def blank(src):
+    return TOKEN.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), src)
+
+
+def args_of(code, i):
+    """The top-level arguments of the call whose `(` is at `i`."""
+    depth, start, out = 0, i + 1, []
+    for j in range(i, len(code)):
+        c = code[j]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0:
+                out.append(code[start:j].strip())
+                return out
+        elif c == "," and depth == 1:
+            out.append(code[start:j].strip())
+            start = j + 1
+    return out
+
+
+def number(s):
+    try:
+        return int(s.replace("_", ""), 16) if s.lower().startswith("0x") else None
+    except ValueError:
+        return None
+
+
+class Resolver:
+    def __init__(self, files):
+        self.by_file = {}
+        self.by_crate = collections.defaultdict(dict)
+        self.anywhere = collections.defaultdict(set)
+        for f, code in files.items():
+            consts = {n: number(v) for n, v in CONST.findall(code)}
+            self.by_file[f] = consts
+            crate = f.split("/")[1]
+            self.by_crate[crate].update(consts)
+            for n, v in consts.items():
+                self.anywhere[n].add(v)
+
+    def const(self, f, name):
+        if name in self.by_file.get(f, {}):
+            return self.by_file[f][name]
+        crate = f.split("/")[1]
+        if name in self.by_crate[crate]:
+            return self.by_crate[crate][name]
+        vals = self.anywhere.get(name, set())
+        return next(iter(vals)) if len(vals) == 1 else None
+
+    def expr(self, f, e, lets, depth=0):
+        """The address an expression names, or None."""
+        e = e.strip().lstrip("&").strip()
+        if depth > 4:
+            return None
+        m = re.fullmatch(r"(?:[\w.()]+\.)?rebase\((.+)\)", e) or re.fullmatch(r"crate::rebase\((.+)\)", e)
+        if m:
+            return self.expr(f, m[1], lets, depth + 1)
+        m = re.fullmatch(r"(?:\w+::)*([A-Z][A-Z0-9_]*)", e)
+        if m:
+            return self.const(f, m[1])
+        n = number(e)
+        if n is not None:
+            return n
+        if re.fullmatch(r"[a-z_][a-z0-9_]*", e) and e in lets:
+            return self.expr(f, lets[e], {k: v for k, v in lets.items() if k != e}, depth + 1)
+        return None
+
+
+PRIMITIVE = r"(\.call|\.call_st0|\.call_sym|\.call_sym_st0|\bcall_cdecl(?:_f64|_f32|_u64|_words)?|\bcall0)"
+
+
+def params_of(code, fn_start):
+    """The parameter names of the `fn` whose keyword is at `fn_start`."""
+    i = code.find("(", fn_start)
+    if i < 0:
+        return []
+    names = []
+    for p in args_of(code, i):
+        m = re.match(r"(?:mut\s+)?([a-z_][a-z0-9_]*)\s*:", p)
+        names.append(m[1] if m else None)
+    return names
+
+
+def calls(f, code, resolver, forwarders):
+    """(line, callee, how) of the calls in `code` that pass no ecx, the
+    count of unresolved ones, and the forwarders found: functions passing
+    a parameter of theirs on as such a call's target, `name -> (index,
+    how)` (their callers are then checked with that argument)."""
+    out, unresolved, found = [], 0, {}
+    fns = [(m.start(), m[1]) for m in FN.finditer(code)]
+    names = "|".join(re.escape(n) for n in forwarders)
+    pattern = "(?:" + PRIMITIVE + rf"|(?<![\w.])({names or '(?!x)x'}))"
+    for m in re.finditer(pattern + r"\s*\(", code):
+        name = (m.group(1) or m.group(2) or "").lstrip(".")
+        i = m.end() - 1
+        a = args_of(code, i)
+        if not a:
+            continue
+        start, fname = max(((s, n) for s, n in fns if s < m.start()), default=(0, None))
+        if code[start:m.start()].rstrip().endswith("fn " + name) or re.search(r"\bfn\s+" + re.escape(name) + r"\s*$", code[max(0, m.start() - 40):m.start() + len(name)]):
+            continue  # the definition itself
+        how, at = None, 0
+        if m.group(2):
+            idx, how = forwarders[name]
+            if idx >= len(a):
+                continue
+            at = idx
+            how = f"{name} -> {how}"
+        elif name in ("call", "call_st0", "call_sym", "call_sym_st0"):
+            if len(a) >= 3 and NO_ECX.search(a[1]):
+                how = f"{name}({a[1]})"
+            elif name == "call" and len(a) == 2 and a[1].startswith("&"):
+                how = "ffx_bridge Host::call (cdecl)"
+        else:
+            how = name
+        if how is None:
+            continue
+        body = code[start:m.start()]
+        lets = {}
+        for lm in LET.finditer(body):
+            lets[lm[1]] = lm[2]
+        target = resolver.expr(f, a[at], lets)
+        line = code.count("\n", 0, m.start()) + 1
+        if target is None:
+            # a parameter passed on: the function is a forwarder
+            e = a[at].strip().lstrip("&")
+            for _ in range(4):
+                if e in lets:
+                    e = lets[e].strip()
+            mm = re.fullmatch(r"(?:[\w.()]+\.|crate::)?rebase\((\w+)\)(?:\s+as\s+u32)?", e)
+            p = mm[1] if mm else e
+            ps = params_of(code, start) if fname else []
+            if fname and p in ps:
+                found[fname] = (ps.index(p) - (1 if ps and ps[0] is None else 0), how)
+            else:
+                unresolved += 1
+            continue
+        out.append((line, target, how))
+    return out, unresolved, found
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-v", action="store_true")
+    ap.add_argument("--root", default=str(ROOT))
+    ap.add_argument("--exe", default=os.path.join(os.environ.get("FFX_GAME_DIR", os.path.expanduser("~/steam-games/FFX-X2-HD")), "FFX.exe"))
+    args = ap.parse_args()
+    root = pathlib.Path(args.root)
+    files = {}
+    for p in sorted(root.glob("crates/*/src/**/*.rs")):
+        rel = p.relative_to(root).as_posix()
+        if rel.split("/")[1] in SKIP_CRATES:
+            continue
+        files[rel] = blank(p.read_text(encoding="utf-8"))
+    resolver = Resolver(files)
+    found, unresolved = [], 0
+    for f, code in files.items():
+        # forwarders are per file (private `fn call(h, sym, args)` helpers),
+        # found to a fixed point
+        fwd = {}
+        for _ in range(6):
+            c, u, new = calls(f, code, resolver, fwd)
+            if set(new) <= set(fwd):
+                break
+            for k, v in new.items():
+                fwd.setdefault(k, v)
+        unresolved += u
+        found += [(f, *x) for x in c]
+    walker = Walker(args.exe, [])
+    walker.cache.prefetch([(t, 0x400) for t in sorted({t for _, _, t, _ in found if IMAGE_LO <= t < IMAGE_HI})])
+    problems, used = [], set()
+    for f, line, target, how in found:
+        takes = walker.takes(target)
+        if args.v:
+            print(f"{f}:{line}: {target:#010x} {how}{'  TAKES ECX' if takes else ''}")
+        if not takes:
+            continue
+        if (f, target) in REVIEWED:
+            used.add((f, target))
+            continue
+        problems.append(f"{f}:{line}: {target:#010x} reads ecx on entry, called through {how} (no ecx)")
+    walker.cache.save()
+    for k in sorted(set(REVIEWED) - used):
+        problems.append(f"REVIEWED entry {k} matches no call any more")
+    for p in problems:
+        print(p)
+    print(f"{len(problems)} problems ({len(found)} calls resolved, {unresolved} not resolved)")
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

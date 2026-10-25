@@ -68,6 +68,10 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+# FFX_HOOK_ONLY (ffx-dinput8): only these replacements are installed
+if [[ -n "${FFX_HOOK_ONLY:-}" ]]; then
+    export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_ONLY"
+fi
 # Coverage mode (crates/ffx-hook/src/coverage.rs): FFX_COVERAGE names the
 # candidate list; /p turns the WSL path into a Windows one for the game.
 if [[ -n "${FFX_COVERAGE:-}" ]]; then

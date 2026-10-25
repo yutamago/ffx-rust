@@ -931,6 +931,16 @@ impl Oracle {
         self.uc.get_data_mut().max_instructions = n;
     }
 
+    /// Where [`Oracle::call`] pushes its arguments (`None`: the top of the
+    /// oracle's stack, less `0x100`), for a port of an original whose
+    /// frame callees see (pointers to its locals in their logs, in objects
+    /// they keep): the port's oracle gets its frame at the original's
+    /// frame address and its calls below it, so both pass the same
+    /// pointers (`tests/phyre_render.rs`).
+    pub fn set_call_top(&mut self, top: Option<u32>) {
+        self.uc.get_data_mut().call_top = top.map(u64::from);
+    }
+
     /// The instruction budget of each [`Oracle::call`].
     #[must_use]
     pub fn max_instructions(&self) -> usize {

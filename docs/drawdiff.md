@@ -281,6 +281,49 @@ into `~/ffx-work/m4/captures/<name>-{a,b}`. Captures stay out of git.
 
 drawdiff reads a pair in 0.28 s and compares it in under 10 ms.
 
+### draw-field references (ref-a, ref-b, ref-c)
+
+`~/ffx-work/m4/captures/ref-{a,b,c}` hold the original-code captures of
+`tools/replays/draw-field.txt`: fw-101, fw-459 and besaid-101, three
+frames each, hash mode. They were recorded on 2026-10-25 on main plus
+m4-pilot (merge 94442b2f, FFX.exe build check passed), with
+`FFX_GFX=1 target/release/examples/replay tools/replays/draw-field.txt
+'<win dir>\draw-field.trace' original`
+(`~/ffx-work/m4/pilot/capture.sh <worktree> <tag> original`). They
+replace orig3/orig4 (2026-10-24). Those no longer match an original capture
+on the current harness: the camera is off by 8214 ulp and 13 draws are
+missing or extra in fw-101, while two fresh original runs agree.
+
+The three references give 0 differences against each other in drawdiff,
+and pass `~/ffx-work/m4/draw-field-gate.sh` (hashes) pairwise, with
+`~/ffx-work/m4/allow-draw-field.txt`. The update a capture holds at event
+count 101 ranges from 361 to 425 across them, because load time varies.
+Gate a change against two of them:
+
+```bash
+DRAWDIFF=target/release/drawdiff ~/ffx-work/m4/draw-field-gate.sh ref-a <run>
+DRAWDIFF=target/release/drawdiff ~/ffx-work/m4/draw-field-gate.sh ref-b <run>
+```
+
+To capture the original code plus only some ports, set `FFX_HOOK_ONLY` to
+the replacements to keep (`ffx-dinput8`; `tools/run-game.sh` passes it on).
+
+Known varying parts, beyond the allow list:
+- In fw-101, character draw 113 (index count 2928) binds a 32x16 texture
+  as BC3 (`f77`) in every original capture so far (5 of 5). In 2 of 8
+  runs of the original code plus the full m4-pilot slice it bound the
+  same texture as BC1 (`f71`). The 6 other runs had BC3, 3 of them on the
+  very build that gave the 2 BC1 runs. Every `selectTechniquePass`, `allocateAndFillParameterBuffers` and
+  `findTechniqueByPass` call of a deck frame matches the original on its
+  harvested state, so the variation comes from load timing, not from a
+  port. docs/draw.md saw the same texture vary between two rust-map runs.
+  A difference there needs a rerun before it counts.
+- The post-processing targets after draws 177-180 (fw-101) and 191-194
+  (fw-459), and the back buffer, differ between runs. The hash comparison
+  excuses them only when a noisy draw comes before them, so an unlucky
+  pairing reports them as beyond the noise. If the drawdiff part of the
+  same pair is 0, rerun against the other reference.
+
 ## Noise in cdsp0000
 
 Six original captures (fw1..fw3, a and b) gave 15 pairs, each with 0

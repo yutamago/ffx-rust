@@ -348,6 +348,11 @@ pub unsafe extern "thiscall" fn render_world(
             watch::arm(&watch_targets(world as usize));
         }
     }
+    // the M4 pilot's port (`ffx_prender::world`), unless turned off
+    if crate::ported::culled_sorted_on() {
+        #[allow(clippy::cast_sign_loss)] // the pass word as passed
+        return crate::ported::culled_sorted(renderer as u32, world, camera, context, dir as u32);
+    }
     // SAFETY: the trampoline runs the original with the same arguments.
     unsafe {
         let original: unsafe extern "thiscall" fn(

@@ -2,6 +2,8 @@
 """Runtime coverage of the functions tools/classify.py calls dead or debug.
 
   tools/coverage.py candidates OUT     # the list ffx-hook's coverage mode arms
+  tools/coverage.py candidates --all OUT  # every function of the dump instead
+                                       # (game, PhyreEngine, CRT: m4-pilot)
   FFX_COVERAGE=OUT <launch the game>   # tools/run-game.sh passes it on
   tools/coverage.py merge OUT.hits...  # adds the hits to symbols/coverage.txt
   tools/classify.py                    # functions that ran leave "dead"
@@ -27,7 +29,10 @@ def exe_path():
     return pathlib.Path(os.environ.get("FFX_GAME_DIR", "~/steam-games/FFX-X2-HD")).expanduser() / "FFX.exe"
 
 
-def candidates(out):
+def candidates(out, everything=False):
+    """`<address> <first byte>` lines: the dead and debug functions of
+    symbols/classes.tsv, or with `everything` every function of the Ghidra
+    dump (tools/progress.py), the statically linked libraries included."""
     cls = {}
     for line in (REPO / "symbols/classes.tsv").read_text(encoding="utf-8").splitlines():
         if line and not line.startswith("#"):
@@ -36,7 +41,12 @@ def candidates(out):
     _, secs = classify.read_pe(exe_path())
     text = [(va, blob) for name, va, blob, code in secs if code]
     lines = []
-    for a in sorted(a for a, c in cls.items() if c in ("dead", "debug")):
+    if everything:
+        import progress
+        wanted = sorted(a for a, _, _ in progress.functions())
+    else:
+        wanted = sorted(a for a, c in cls.items() if c in ("dead", "debug"))
+    for a in wanted:
         for va, blob in text:
             if va <= a < va + len(blob):
                 lines.append(f"{a:08x} {blob[a - va]:02x}")
@@ -59,11 +69,13 @@ def merge(paths):
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("candidates").add_argument("out")
+    c = sub.add_parser("candidates")
+    c.add_argument("--all", action="store_true", help="every function of the dump")
+    c.add_argument("out")
     sub.add_parser("merge").add_argument("hits", nargs="+")
     args = ap.parse_args()
     if args.cmd == "candidates":
-        candidates(args.out)
+        candidates(args.out, args.all)
     else:
         merge(args.hits)
 
