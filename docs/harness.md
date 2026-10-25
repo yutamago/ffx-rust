@@ -177,6 +177,14 @@ the hits file is opened once per first hit. `tools/coverage-run.sh` runs
 the replays and `tools/replays/coverage-session.txt` on every save in the
 game slot and merges the hits into `symbols/coverage.txt`; the last run's
 logs and outputs are in `~/ffx-work/agents/coverage/`.
+`COVERAGE_ALL=1` arms every function of the dump instead (55,871, the
+statically linked `PhyreEngine` and CRT included; `coverage.py candidates
+--all`) and leaves `symbols/coverage.txt` alone; `COVERAGE_REPLAYS` picks
+the replays, `COVERAGE_DIR` the folder. `tools/coverage-phyre.py <hits>`
+groups such a run's hits by module and `PhyreEngine` subsystem (the M4
+pilot's measurement, `~/ffx-work/m4/pilot-report.md`). Each hit is one
+write since 2026-10-25 (before, `writeln!` could split a line and other
+threads' lines landed inside it).
 
 ## Hook-hit mode
 

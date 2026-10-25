@@ -124,7 +124,10 @@ pub fn hit(at: usize) -> bool {
             .append(true)
             .open(&armed.hits)
         {
-            let _ = writeln!(f, "0x{image:08x}");
+            // one write per line: `writeln!` may split it into several
+            // writes, which other threads' lines then land between (the
+            // m4-pilot run lost 81 of 10,632 lines that way)
+            let _ = f.write_all(format!("0x{image:08x}\n").as_bytes());
         }
     }
     true
