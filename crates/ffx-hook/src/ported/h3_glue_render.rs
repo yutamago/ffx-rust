@@ -50,6 +50,7 @@ use ffx_prender::h3_glue41::bridge as g41;
 use ffx_prender::h3_glue42::bridge as g42;
 use ffx_prender::h3_glue43::bridge as g43;
 use ffx_prender::h3_glue44::bridge as g44;
+use ffx_prender::h3_glue45::bridge as g45;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1981,6 +1982,14 @@ ported! {
     graphicInitScene @ 0x0064_16c0 => extern "C" fn graphic_init_scene() -> u32 {
         let mut f = StackFrame::<3>::new();
         g44::graphic_init_scene(&mut mem(), f.at() + 0xc)
+    }
+
+    // ---- round 12 batch 46 (ffx_prender::h3_glue45) ----
+    /// The auto-test manager's console thread `0x006bd1e0` (never
+    /// returns; its argument is never read; 32 KB stack): lines from
+    /// `std::cin` to the manager's command handlers.
+    AutoTestManager_inputThread_006bd1e0 @ 0x006b_d1e0 => extern "C" fn auto_test_input_thread() {
+        g45::input_thread(&mut mem())
     }
 }
 

@@ -5017,6 +5017,7 @@
 0x006bcc40 function graphicCreatePauseGame_006bcc40 # cdecl(): when g_GraphicPauseGame is 0, operator_new(0x12c) + ctor 0x006bca90 into it (0 when new fails); graphicInitialize calls it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x006bcc70 function graphicPauseGameDestroy # (): virtual destructor (1) of g_GraphicPauseGame, then clears it; name ours
 0x006bcc90 function graphicCheckPauseGame     # () -> g_GraphicPauseGame; name Fahrenheit's (Switch BSim)
+0x006bd1e0 function AutoTestManager_inputThread_006bd1e0 # thread procedure started by AutoTestManager_ctor_006bca90 (descriptor at 0x006bcb12: stack 0x8000, argument 0x00cccb10, never read); endless: memset 0x00cd4b10 (100), std::cin.getline(buf, 99) through the MSVCP110 import slots 0x00b0c200/0x00b0c1fc, a non-empty line printf("Input:%s\n") and strstr("EnableAutoTest"): at the start -> 0x006bce00(this=[0x00cccb00]; line), else when [0x00cccb00]+0x129 -> 0x006bccb0; SleepThreadInMillisecond(5); name ours; ported M4 h3 r12 (ffx_prender::h3_glue45)
 0x006bd290 function PhyreScene_ReturnConst0_006bd290 # auto-port shape (return constant, stdcall): return 0x0; callers: PhyreScene_render; name ours
 0x006be700 function UIntTree_Find             # structure: thiscall(head, &key), byte-identical to DynGeoTree_Find; VfxShaderManager's maps (0x006c0000); name ours
 0x006be750 function PStringTree_Find          # structure: thiscall(head, &key): search tree keyed by PString text (pointer with flag bit 0; strcmp, by pointer when either is null); VfxShaderManager's maps; name ours

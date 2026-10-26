@@ -62,23 +62,9 @@ pub mod bridge {
 
     #[allow(clippy::wildcard_imports)] // the module's constants
     use super::*;
+    use crate::h3_glue12::bridge::str_eq;
     use ffx_bridge::x87;
     use ffx_graphic::host::{Conv, Host};
-
-    /// The C strings at `a` and `b` compare equal (the inlined `strcmp`).
-    fn str_eq(h: &impl Host, a: u32, b: u32) -> bool {
-        let mut k = 0u32;
-        loop {
-            let x: u8 = h.read(a.wrapping_add(k));
-            if x != h.read::<u8>(b.wrapping_add(k)) {
-                return false;
-            }
-            if x == 0 {
-                return true;
-            }
-            k = k.wrapping_add(1);
-        }
-    }
 
     fn global(h: &impl Host, sym: u32) -> u32 {
         h.read(h.rebase(sym))

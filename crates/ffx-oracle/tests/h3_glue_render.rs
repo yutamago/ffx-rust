@@ -67,6 +67,7 @@ use ffx_prender::h3_glue41::{self as h41, bridge as gh41};
 use ffx_prender::h3_glue42::{self as h42, bridge as gh42};
 use ffx_prender::h3_glue43::{self as h43, bridge as gh43};
 use ffx_prender::h3_glue44::{self as h44, bridge as gh44};
+use ffx_prender::h3_glue45::{self as h45, bridge as gh45};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -10819,5 +10820,109 @@ fn batch45_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 200 } else { 600 };
         run_cases(t, CASES44, n, &mut Rng(0x4444_b045));
+    });
+}
+
+// ---- round 12 batch 46 (ffx_prender::h3_glue45) ----
+
+impl Twins {
+    /// A recording stub only in the cave (tagged `tag`, as [`Twins::stub`],
+    /// `eax` kept) whose calls return `values` in turn; its address.
+    fn seq_code(&mut self, tag: u32, this: bool, n: u32, pops: u32, values: &[u32]) -> u32 {
+        let words: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let table = self.alloc(&words);
+        let ptr = self.alloc(&table.to_le_bytes());
+        let log = self.stub(None, tag, this, n, pops, None);
+        let mut c = vec![0x8b, 0x15];
+        c.extend(ptr.to_le_bytes()); // mov edx, [ptr]
+        c.extend([0x8b, 0x02]); // mov eax, [edx]
+        c.extend([0x83, 0xc2, 0x04]); // add edx, 4
+        c.extend([0x89, 0x15]);
+        c.extend(ptr.to_le_bytes()); // mov [ptr], edx
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        self.code(&c)
+    }
+}
+
+/// The console thread `0x006bd1e0` (an endless loop), N passes: its
+/// argument (never read by the original) is the pass counter. The
+/// `SleepThreadInMillisecond` stand-in counts an argument other than 5
+/// in the counter's next word, counts the passes down and, once spent,
+/// leaves the original's frame (`add esp, 8; pop edi; pop esi; mov
+/// esp, ebp; pop ebp; ret`) when called from one of the loop's two
+/// sleeps (their return addresses); the port side runs passes until the
+/// count is spent. The line is empty, the prefix or another word;
+/// `strstr` answers the buffer, another address or 0; the instance's
+/// `+0x129` is set or not.
+fn prep_input_thread45(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let count = t.zeros(8);
+    t.w32(count, 1 + rng.below(4));
+    args[0] = count;
+    let buffer = t.rebase(h45::BUFFER);
+    let lines: [&[u8]; 4] = [b"\0", b"EnableAutoTest 1\0", b"Go\0", b"x\0"];
+    let line = lines[rng.below(4) as usize];
+    t.write(buffer, line);
+    let instance = t.rebase(h45::INSTANCE);
+    t.w32(instance, obj);
+    t.write(obj + 0x129, &[u8::from(rng.chance(2))]);
+    let cin_slot = t.rebase(h45::CIN_SLOT);
+    t.w32(cin_slot, obj + 0x400);
+    let r = rng.next();
+    let getline = t.stub(None, h45::GETLINE_SLOT, true, 3, 3, Some(r));
+    let slot = t.rebase(h45::GETLINE_SLOT);
+    t.w32(slot, getline);
+    let r = rng.next();
+    let printf = t.stub(None, h45::PRINTF_SLOT, false, 2, 0, Some(r));
+    let slot = t.rebase(h45::PRINTF_SLOT);
+    t.w32(slot, printf);
+    let found: Vec<u32> = (0..8)
+        .map(|_| pick(rng, &[buffer, buffer, buffer + 1, 0]))
+        .collect();
+    let strstr = t.seq_code(h45::STRSTR_SLOT, false, 2, 0, &found);
+    let slot = t.rebase(h45::STRSTR_SLOT);
+    t.w32(slot, strstr);
+    let returns = [t.rebase(0x006b_d264), t.rebase(0x006b_d283)];
+    let mut c = vec![0x83, 0x7c, 0x24, 0x04, 0x05]; // cmp dword [esp + 4], 5
+    c.extend([0x74, 0x06, 0xff, 0x05]); // je +6; inc dword [count + 4]
+    c.extend((count + 4).to_le_bytes());
+    c.extend([0xff, 0x0d]); // dec dword [count]
+    c.extend(count.to_le_bytes());
+    c.extend([0x7f, 0x12]); // jg ret
+    for (k, ra) in returns.into_iter().enumerate() {
+        c.extend([0x81, 0x3c, 0x24]); // cmp dword [esp], ra
+        c.extend(ra.to_le_bytes());
+        c.extend([0x74, if k == 0 { 0x0c } else { 0x03 }]); // je escape
+    }
+    c.extend([0x31, 0xc0, 0xc3]); // ret: xor eax, eax; ret
+    c.extend([0x83, 0xc4, 0x08, 0x5f, 0x5e, 0x8b, 0xe5, 0x5d, 0xc3]); // escape
+    let code = t.code(&c);
+    let site = t.rebase(h45::SLEEP);
+    let mut j = vec![0xe9];
+    j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+    t.patch(site, &j);
+}
+
+#[rustfmt::skip]
+const CASES45: &[Case] = &[
+    Case { prep: Some(prep_input_thread45), ..cdecl("input_thread", 0x006b_d1e0, 1, &[(h45::MEMSET, K::Cdecl(3)), (h45::ENABLE_COMMAND, K::This(1)), (h45::OTHER_COMMAND, K::This(1))], |m, _, a| {
+        let printf: u32 = m.read(m.rebase(h45::PRINTF_SLOT));
+        let strstr: u32 = m.read(m.rebase(h45::STRSTR_SLOT));
+        loop {
+            gh45::input_pass(m, printf, strstr);
+            if m.read::<i32>(a[0]) <= 0 {
+                break;
+            }
+        }
+        Out::None
+    }) },
+];
+
+#[test]
+fn batch46_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 100 } else { 400 };
+        run_cases(t, CASES45, n, &mut Rng(0x4545_b046));
     });
 }
