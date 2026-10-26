@@ -10,8 +10,8 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_pload::{
-    cluster, descriptor, p1_bind, p1_buffers, p1_d3d, p1_declare, p1_fixup, p1_lists, p1_loader,
-    p1_misc, p1_post, p1_reader, p1_tree, p1_types, stream, types,
+    cluster, descriptor, p1_bind, p1_buffers, p1_d3d, p1_declare, p1_fixup, p1_fixups, p1_lists,
+    p1_loader, p1_misc, p1_post, p1_reader, p1_tree, p1_types, stream, types,
 };
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
@@ -1264,5 +1264,11 @@ ported! {
         let at = slot.at();
         ffx_bridge::Mem::write(&mut mem(), at, cursor);
         p1_lists::bridge::read_instance_lists(&mut mem(), this, stream, at, size)
+    }
+    // ---- continuation round 3, batch 5 (p1_fixups) ----
+    /// `PClusterReaderBinary::loadUserFixups(stream, ctx, &results, &names)`; the result being built and the entry outputs in this frame.
+    Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_loadUserFixups @ 0x0057_c5d0 => extern "thiscall" fn load_user_fixups(this: u32, stream: u32, ctx: u32, results: u32, names: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_fixups::bridge::FIXUPS_FRAME as usize / 4 }>::new();
+        p1_fixups::bridge::load_user_fixups(&mut mem(), this, stream, ctx, results, names, f.at())
     }
 }

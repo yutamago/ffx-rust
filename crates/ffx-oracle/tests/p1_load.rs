@@ -6154,3 +6154,188 @@ fn p1d_read_instance_lists_matches_the_original() {
         }
     }
 }
+
+// ---- continuation round 3, batch 5 (ffx_pload::p1_fixups) ----
+
+#[test]
+fn p1d_load_user_fixups_matches_the_original() {
+    use ffx_pload::p1_fixups::bridge as pfu;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xf1c5_0002);
+        let import = t.rebase(0x00c9_4030);
+        for case in 0..40u32 {
+            let n = [0u32, 1, 2, 3, 5][(case % 5) as usize];
+            let nb = 0x40u32;
+            // the records the stream "reads" into the malloc'd block
+            let records = t.zeros(12 * 6);
+            for i in 0..n {
+                t.w32(records + 12 * i, i + 1);
+                t.w32(
+                    records + 12 * i + 4,
+                    [3u32, 0x1f, 0x20, 8][((i + case) % 4) as usize],
+                );
+                t.w32(records + 12 * i + 8, 4 * i);
+            }
+            let block = if case % 13 == 12 { 0 } else { records };
+            t.stub(0x0042_fb80, false, 2, 0, block);
+            t.stub(0x0042_fb20, false, 1, 0, 0);
+            // the stream's read fails at its `fail`th call (none past 2)
+            let fail = [9u32, 1, 2][(case % 3) as usize] * u32::from(case % 4 == 3);
+            {
+                let ok = t.stub_code(0x0057_dd30, true, 2, 2, 0);
+                let no = t.stub_code(0x0057_dd31, true, 2, 2, 9);
+                let calls = t.zeros(4);
+                let code = t.a.alloc_code(&[0x90; 32]).unwrap();
+                assert_eq!(t.b.alloc_code(&[0x90; 32]).unwrap(), code);
+                let mut c = vec![0xff, 0x05];
+                c.extend(calls.to_le_bytes()); // inc dword [calls]
+                c.extend([0x83, 0x3d]);
+                c.extend(calls.to_le_bytes());
+                c.push(fail as u8); // cmp dword [calls], fail
+                c.extend([0x75, 0x05]); // jne +5
+                c.push(0xe9);
+                let j = no.wrapping_sub(code + c.len() as u32 + 4);
+                c.extend(j.to_le_bytes());
+                c.push(0xe9);
+                let j = ok.wrapping_sub(code + c.len() as u32 + 4);
+                c.extend(j.to_le_bytes());
+                t.write(code, &c);
+                let at = t.rebase(0x0057_dd30);
+                let mut j = vec![0xe9];
+                j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+                let old = Oracle::read(&mut t.a, at, 5).unwrap();
+                t.saved.entry(at).or_insert(old);
+                t.write(at, &j);
+            }
+            t.stub(0x0057_6d20, false, 1, 0, 0);
+            // PhyrePrintf: the format and, for the formats with one,
+            // the argument (the two-word calls leave caller junk there)
+            {
+                let log = t.log;
+                let skip: Vec<u32> = [0x00b3_106c, 0x00b3_1078, 0x00b7_cae0]
+                    .iter()
+                    .map(|&f| t.rebase(f))
+                    .collect();
+                let mut c = vec![0xa1];
+                c.extend(log.to_le_bytes()); // mov eax, [log]
+                c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+                c.push(0x05);
+                c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+                c.extend([0xc7, 0x00, 0xf0, 0x52, 0x43, 0x00]); // mov [eax], tag
+                c.extend([0x8b, 0x54, 0x24, 0x08]); // mov edx, [esp+8]
+                c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+                let mut jumps = Vec::new();
+                for f in skip {
+                    c.extend([0x81, 0xfa]);
+                    c.extend(f.to_le_bytes()); // cmp edx, f
+                    c.extend([0x74, 0x00]); // je skip
+                    jumps.push(c.len() - 1);
+                }
+                c.extend([0x8b, 0x54, 0x24, 0x0c]); // mov edx, [esp+0xc]
+                c.extend([0x89, 0x50, 0x0c]); // mov [eax+0xc], edx
+                let target = c.len();
+                for j in jumps {
+                    c[j] = (target - j - 1) as u8;
+                }
+                c.extend([0xff, 0x05]);
+                c.extend(log.to_le_bytes()); // inc dword [log]
+                c.extend([0x31, 0xc0, 0xc3]); // xor eax, eax; ret
+                let code = t.a.alloc_code(&c).unwrap();
+                assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+                let at = t.rebase(0x0043_52f0);
+                let mut j = vec![0xe9];
+                j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+                let old = Oracle::read(&mut t.a, at, 5).unwrap();
+                t.saved.entry(at).or_insert(old);
+                t.write(at, &j);
+            }
+            // the resolver: writes a value and a last word, or nothing,
+            // or there is none (0x15)
+            let resolver = if case % 3 == 0 {
+                0
+            } else {
+                let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+                if case % 3 == 1 {
+                    c.extend([0xc7, 0x00, 0x34, 0x12, 0, 0]); // mov dword [eax], 0x1234
+                    c.extend([0xc7, 0x40, 0x0c, 0xdd, 0xcc, 0xbb, 0xaa]); // mov dword [eax+0xc], 0xaabbccdd
+                    c.extend([0x8b, 0x4c, 0x24, 0x10]); // mov ecx, [esp+0x10]
+                    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+                }
+                c.push(0xc3);
+                let at = t.a.alloc_code(&c).unwrap();
+                assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+                at
+            };
+            let class = match case / 5 % 4 {
+                0 => import,
+                1 => 0,
+                _ => {
+                    let c = t.junk(0x40, 9);
+                    t.w32(c + 0x28, resolver);
+                    t.w32(c + 0x18, if case % 2 == 0 { 0 } else { 0x00c3_0000 });
+                    c
+                }
+            };
+            // the mapping entry: through a, through b, b null, unknown
+            let holder_a = t.junk(0x10, 7);
+            t.w32(holder_a + 4, class);
+            let holder_b = t.junk(0x10, 8);
+            t.w32(holder_b + 8, class);
+            let (k, v, ret) = match case / 3 % 4 {
+                0 => (1u32, holder_a, 1u32),
+                1 => (2, holder_b, 0x101),
+                2 => (2, 0, 1),
+                _ => (1, holder_a, 0x1200),
+            };
+            let entry = t.stub_out_code(0x0047_e730, 3, k, v, ret);
+            let at = t.rebase(0x0047_e730);
+            let mut j = vec![0xe9];
+            j.extend(entry.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+            let header = t.junk(0x40, 2);
+            t.w32(header + 0x30, n);
+            t.w32(header + 0x34, nb);
+            let reader = t.junk(0x20, 3);
+            t.w32(reader + 8, header);
+            t.write(reader + 0xc, &[(case % 2) as u8]);
+            let names_block = t.junk(nb as usize, 4);
+            let names = t.zeros(8);
+            let sized = case % 7 != 3;
+            let count = match case % 7 {
+                3 => 7 | (case & 0x10) << 27,
+                5 => nb | 0x8000_0000,
+                _ => nb,
+            };
+            t.w32(names, count);
+            let _ = sized;
+            t.w32(names + 4, names_block);
+            let out = t.zeros(0x10 * 6);
+            let results = t.zeros(8);
+            t.w32(results, if case % 6 == 5 { 9 } else { n });
+            t.w32(results + 4, out);
+            let stream = t.junk(0x10, 5);
+            let ctx = 0x00c4_0000 + case;
+            let ebp = t.a.stack_range().end - 0x100 - 16 - 8;
+            let frame = ebp - 0x3c;
+            t.write(frame, &[0; 0x2c]);
+            t.b.set_call_top(Some(frame - 0x100));
+            let what = format!("{label}: load user fixups {case}");
+            t.check(
+                &what,
+                0x0057_c5d0,
+                Conv::Thiscall(reader),
+                &[stream, ctx, results, names],
+                |g| {
+                    Out::U32(pfu::load_user_fixups(
+                        g, reader, stream, ctx, results, names, frame,
+                    ))
+                },
+            );
+            t.b.set_call_top(None);
+            let _ = &mut rng;
+            t.reset();
+        }
+    }
+}
