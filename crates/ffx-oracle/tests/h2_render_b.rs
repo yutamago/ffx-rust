@@ -35,6 +35,8 @@ use ffx_oracle::{Conv, Oracle, Pages};
 
 #[path = "h2_render_b/cases.rs"]
 mod cases;
+#[path = "h2_render_b/cases10.rs"]
+mod cases10;
 #[path = "h2_render_b/cases3.rs"]
 mod cases3;
 #[path = "h2_render_b/cases4.rs"]
@@ -1021,6 +1023,7 @@ fn run_cases(rounds: u32) {
             .chain(cases7::CASES)
             .chain(cases8::CASES)
             .chain(cases9::CASES)
+            .chain(cases10::CASES)
             .filter(|c| filter.split('|').any(|f| c.name.contains(f)))
         {
             for &(sym, n, pops, this) in case.callees {
@@ -1060,6 +1063,7 @@ fn h2_render_b_cases_are_unique() {
         .chain(cases7::CASES)
         .chain(cases8::CASES)
         .chain(cases9::CASES)
+        .chain(cases10::CASES)
     {
         assert!(seen.insert(c.addr), "{} twice", c.name);
     }

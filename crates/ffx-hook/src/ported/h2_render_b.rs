@@ -31,6 +31,7 @@ use ffx_prender::h2_more6::bridge as h6;
 use ffx_prender::h2_more7::bridge as h7;
 use ffx_prender::h2_more8::bridge as h8;
 use ffx_prender::h2_more9::bridge as h9;
+use ffx_prender::h2_more10::bridge as h10;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -1920,6 +1921,26 @@ ported! {
     PMeshInstance_computeJointMatrix @ 0x004f_6fc0 => extern "thiscall" fn s_004f6fc0(this: u32, out: u32) {
         let mut fr = super::StackFrame::<67>::new();
         h9::compute_joint_matrix(&mut mem(), this, out, fr.at());
+    }
+    /// `Phyre_PRendering_PMeshInstance_updateBoundsFromSkeleton`.
+    Phyre_PRendering_PMeshInstance_updateBoundsFromSkeleton @ 0x004f_96a0 => extern "thiscall" fn s_004f96a0(this: u32) -> u32 {
+        let mut fr = super::StackFrame::<40>::new();
+        h10::update_bounds_from_skeleton(&mut mem(), this, fr.at())
+    }
+    /// `PBounds_transformBox_004f63d0`.
+    PBounds_transformBox_004f63d0 @ 0x004f_63d0 => extern "C" fn s_004f63d0(lo: u32, hi: u32, out_lo: u32, out_hi: u32, m: u32) {
+        let mut fr = super::StackFrame::<76>::new();
+        h10::transform_box(&mut mem(), lo, hi, out_lo, out_hi, m, fr.at());
+    }
+    /// `PBounds_transformBox_004ffe40` (an exact copy of `0x004f63d0`).
+    PBounds_transformBox_004ffe40 @ 0x004f_fe40 => extern "C" fn s_004ffe40(lo: u32, hi: u32, out_lo: u32, out_hi: u32, m: u32) {
+        let mut fr = super::StackFrame::<76>::new();
+        h10::transform_box(&mut mem(), lo, hi, out_lo, out_hi, m, fr.at());
+    }
+    /// `Phyre_PRendering_PSceneWideParameters_PSceneWideParametersKey_initialize`.
+    Phyre_PRendering_PSceneWideParameters_PSceneWideParametersKey_initialize @ 0x004f_e940 => extern "thiscall" fn s_004fe940(this: u32, camera: u32, vector: u32, viewport: u32) -> u32 {
+        let mut fr = super::StackFrame::<37>::new();
+        h10::scene_key_initialize(&mut mem(), this, camera, vector, viewport, fr.at())
     }
     // continuation round: the six large Binds (h2_binds2 tables on h1_bind's steps)
     /// `Phyre_PRendering_PEffect_Bind`.
