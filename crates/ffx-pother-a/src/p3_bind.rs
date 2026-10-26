@@ -68,18 +68,35 @@ pub enum Ty {
     Get(u32),
 }
 
+/// A word a [`Step::Call`] passes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Arg {
+    /// An image address (rebased).
+    Addr(u32),
+    /// A constant.
+    Imm(u32),
+    /// The word at an image address, read when the call is made.
+    Mem(u32),
+    /// A getter's result (cdecl `()`).
+    Get(u32),
+    /// A getter's result (cdecl `(k)`, `k` a constant).
+    Get1(u32, u32),
+}
+
 /// One step of a `Bind`, in the original's order. Addresses are
-/// `ffx.sym` addresses (rebased when run).
+/// `ffx.sym` addresses (rebased when run). Blocks ([`Step::Once`],
+/// [`Step::IfZeroByte`], [`Step::Owner`], [`Step::IfSelf`]) run up to
+/// their matching [`Step::End`] and may nest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step {
     /// `RegisterType(descriptor)`; the descriptor of the steps after it.
     Register(u32),
     /// The guard word of the [`Step::Once`] blocks after it.
     Guard(u32),
-    /// Runs the steps up to the next [`Step::End`] once: when the guard's
-    /// `bit` is clear, sets it and runs them; else skips them.
+    /// Runs its block once: when the guard's `bit` is clear, sets it and
+    /// runs the block; else skips it.
     Once(u32),
-    /// The end of a [`Step::Once`] block.
+    /// The end of a block.
     End,
     /// A data member: `ctor(member, descriptor, type, name, offset, size,
     /// flags)`.
@@ -101,10 +118,14 @@ pub enum Step {
     AtExit(u32),
     /// `*a = v` (both addresses).
     Store(u32, u32),
+    /// `*a = v` (`v` a constant).
+    StoreImm(u32, u32),
     /// `*a = 0`.
     Zero(u32),
     /// `*a |= v`.
     Or(u32, u32),
+    /// `*a &= v`.
+    And(u32, u32),
     /// `addToNamespace(descriptor)`, the `eax` returned.
     AddToNamespace,
     /// `PClassDescriptor(descriptor, GetGlobalNamespace(), name, size,
@@ -115,32 +136,58 @@ pub enum Step {
         size: u32,
         align: u32,
     },
-    /// Runs the steps up to the next [`Step::EndIf`] when the byte at the
-    /// address is 0.
+    /// Runs its block when the byte at the address is 0.
     IfZeroByte(u32),
-    /// The end of a [`Step::IfZeroByte`] block.
-    EndIf,
     /// `*(u8 *)a = v`.
     StoreByte(u32, u8),
-    /// The descriptor returned (the wrappers' getters), not the namespace
-    /// call's `eax`.
+    /// The descriptor returned (the wrappers' and array getters'), not the
+    /// namespace call's `eax`.
     ReturnDescriptor,
+    /// `f(args...)`, a `thiscall` on `this` when there is one, else cdecl;
+    /// its `eax` unused. The words are evaluated last to first, as the
+    /// original pushes them (getters run in that order).
+    Call {
+        f: u32,
+        this: Option<u32>,
+        args: &'static [Arg],
+    },
+    /// The array getters' owner block: runs when the argument is non-zero
+    /// and the descriptor's owner word `slot` is 0, after setting `slot`
+    /// to the cached owner `cache` (set to the argument when 0 first).
+    Owner { slot: u32, cache: u32 },
+    /// Runs its block when the word at the address holds the address (an
+    /// annotation list still empty: its head points at itself).
+    IfSelf(u32),
 }
 
 pub mod bridge {
     //! The originals over game memory.
 
     use super::{
-        ADD_TO_NAMESPACE, ATEXIT, CLASS_DESCRIPTOR_INIT, CLASS_MEMBER, Find, GLOBAL_NAMESPACE,
+        ADD_TO_NAMESPACE, ATEXIT, Arg, CLASS_DESCRIPTOR_INIT, CLASS_MEMBER, Find, GLOBAL_NAMESPACE,
         Host, REGISTER_TYPE, Step, Ty, cdecl, thiscall,
     };
 
-    /// The index of the next `end` step from `i` (or the table's end).
-    fn skip(steps: &[Step], mut i: usize, end: Step) -> usize {
-        while i < steps.len() && steps[i] != end {
-            i += 1;
+    /// The most words a [`Step::Call`] passes.
+    const MAX_ARGS: usize = 8;
+
+    /// The index of the [`Step::End`] closing the block opened at `i` (or
+    /// the table's end).
+    fn skip(steps: &[Step], i: usize) -> usize {
+        let mut depth = 0usize;
+        let mut j = i + 1;
+        while j < steps.len() {
+            match steps[j] {
+                Step::Once(_) | Step::IfZeroByte(_) | Step::Owner { .. } | Step::IfSelf(_) => {
+                    depth += 1;
+                }
+                Step::End if depth == 0 => return j,
+                Step::End => depth -= 1,
+                _ => {}
+            }
+            j += 1;
         }
-        i
+        j
     }
 
     /// A [`Step::Method`] of the class `d`.
@@ -161,9 +208,80 @@ pub mod bridge {
         }
     }
 
+    /// A [`Step::Call`]: the words last to first, then the call.
+    fn call(h: &mut impl Host, f: u32, this: Option<u32>, args: &[Arg]) {
+        let mut w = [0u32; MAX_ARGS];
+        let n = args.len().min(MAX_ARGS);
+        for k in (0..n).rev() {
+            w[k] = match args[k] {
+                Arg::Addr(a) => h.rebase(a),
+                Arg::Imm(v) => v,
+                Arg::Mem(a) => {
+                    let a = h.rebase(a);
+                    h.read(a)
+                }
+                Arg::Get(g) => cdecl(h, g, &[]),
+                Arg::Get1(g, v) => cdecl(h, g, &[v]),
+            };
+        }
+        match this {
+            Some(t) => {
+                let t = h.rebase(t);
+                thiscall(h, f, t, &w[..n]);
+            }
+            None => {
+                cdecl(h, f, &w[..n]);
+            }
+        }
+    }
+
+    /// The plain stores: [`Step::Store`], [`Step::StoreImm`],
+    /// [`Step::Zero`], [`Step::Or`], [`Step::And`], [`Step::StoreByte`].
+    fn store(h: &mut impl Host, s: Step) {
+        match s {
+            Step::Store(a, v) => {
+                let (a, v) = (h.rebase(a), h.rebase(v));
+                h.write(a, v);
+            }
+            Step::StoreImm(a, v) => {
+                let a = h.rebase(a);
+                h.write(a, v);
+            }
+            Step::Zero(a) => {
+                let a = h.rebase(a);
+                h.write(a, 0u32);
+            }
+            Step::Or(a, v) => {
+                let a = h.rebase(a);
+                let w: u32 = h.read(a);
+                h.write(a, w | v);
+            }
+            Step::And(a, v) => {
+                let a = h.rebase(a);
+                let w: u32 = h.read(a);
+                h.write(a, w & v);
+            }
+            Step::StoreByte(a, v) => {
+                let a = h.rebase(a);
+                h.write(a, v);
+            }
+            _ => {}
+        }
+    }
+
     /// Runs a `Bind` table; `eax` as the original returns it (the
     /// namespace call's).
     pub fn bind(h: &mut impl Host, steps: &[Step]) -> u32 {
+        run(h, steps, 0)
+    }
+
+    /// Runs an array getter's table (cdecl `(owner)`); `eax` is the
+    /// descriptor.
+    pub fn getter(h: &mut impl Host, steps: &[Step], owner: u32) -> u32 {
+        run(h, steps, owner)
+    }
+
+    fn run(h: &mut impl Host, steps: &[Step], param: u32) -> u32 {
         // the class's descriptor: the original pushes it as an immediate,
         // so the members and the result use it even when the block that
         // constructs it (a wrapper's first `Once`) is skipped
@@ -189,7 +307,7 @@ pub mod bridge {
                     if w & bit == 0 {
                         h.write(guard, w | bit);
                     } else {
-                        i = skip(steps, i, Step::End);
+                        i = skip(steps, i);
                     }
                 }
                 Step::Member {
@@ -213,19 +331,12 @@ pub mod bridge {
                     let f = h.rebase(f);
                     cdecl(h, ATEXIT, &[f]);
                 }
-                Step::Store(a, v) => {
-                    let (a, v) = (h.rebase(a), h.rebase(v));
-                    h.write(a, v);
-                }
-                Step::Zero(a) => {
-                    let a = h.rebase(a);
-                    h.write(a, 0u32);
-                }
-                Step::Or(a, v) => {
-                    let a = h.rebase(a);
-                    let w: u32 = h.read(a);
-                    h.write(a, w | v);
-                }
+                Step::Store(..)
+                | Step::StoreImm(..)
+                | Step::Zero(_)
+                | Step::Or(..)
+                | Step::And(..)
+                | Step::StoreByte(..) => store(h, steps[i]),
                 Step::AddToNamespace => eax = thiscall(h, ADD_TO_NAMESPACE, d, &[]),
                 Step::Descriptor {
                     descriptor,
@@ -241,16 +352,32 @@ pub mod bridge {
                 Step::IfZeroByte(a) => {
                     let a = h.rebase(a);
                     if h.read::<u8>(a) != 0 {
-                        i = skip(steps, i, Step::EndIf);
+                        i = skip(steps, i);
                     }
                 }
-                // the ends of the blocks
-                Step::End | Step::EndIf => {}
-                Step::StoreByte(a, v) => {
-                    let a = h.rebase(a);
-                    h.write(a, v);
-                }
+                // the end of a block that ran
+                Step::End => {}
                 Step::ReturnDescriptor => eax = d,
+                Step::Call { f, this, args } => call(h, f, this, args),
+                Step::Owner { slot, cache } => {
+                    let (slot, cache) = (h.rebase(slot), h.rebase(cache));
+                    if param != 0 && h.read::<u32>(slot) == 0 {
+                        let mut owner: u32 = h.read(cache);
+                        if owner == 0 {
+                            owner = param;
+                            h.write(cache, owner);
+                        }
+                        h.write(slot, owner);
+                    } else {
+                        i = skip(steps, i);
+                    }
+                }
+                Step::IfSelf(a) => {
+                    let a = h.rebase(a);
+                    if h.read::<u32>(a) != a {
+                        i = skip(steps, i);
+                    }
+                }
             }
             i += 1;
         }
@@ -1121,7 +1248,7 @@ pub const PHYRE_PCLASSDESCRIPTORWRAPPER_CD3D11_BLEND_DESC_GET_0057E610: &[Step] 
     Step::Or(0x00cb_48f0, 0x10),
     Step::AddToNamespace,
     Step::StoreByte(0x00cb_4880, 0x1),
-    Step::EndIf,
+    Step::End,
     Step::ReturnDescriptor,
 ];
 
@@ -1237,7 +1364,7 @@ pub const PHYRE_PCLASSDESCRIPTORWRAPPER_CD3D11_DEPTH_STENCIL_DESC_GET_0057E7B0: 
     Step::End,
     Step::AddToNamespace,
     Step::StoreByte(0x00cb_4460, 0x1),
-    Step::EndIf,
+    Step::End,
     Step::ReturnDescriptor,
 ];
 
@@ -1377,7 +1504,7 @@ pub const PHYRE_PCLASSDESCRIPTORWRAPPER_CD3D11_RASTERIZER_DESC_GET_0057EAC0: &[S
     Step::End,
     Step::AddToNamespace,
     Step::StoreByte(0x00cb_40a0, 0x1),
-    Step::EndIf,
+    Step::End,
     Step::ReturnDescriptor,
 ];
 
@@ -1445,7 +1572,7 @@ pub const PHYRE_PCLASSDESCRIPTORWRAPPER_D3D11_DEPTH_STENCILOP_DESC_GET_0057EE70:
     Step::End,
     Step::AddToNamespace,
     Step::StoreByte(0x00cb_4300, 0x1),
-    Step::EndIf,
+    Step::End,
     Step::ReturnDescriptor,
 ];
 
@@ -1561,7 +1688,7 @@ pub const PHYRE_PCLASSDESCRIPTORWRAPPER_D3D11_RENDER_TARGET_BLEND_DESC_GET_0057F
     Step::End,
     Step::AddToNamespace,
     Step::StoreByte(0x00cb_4668, 0x1),
-    Step::EndIf,
+    Step::End,
     Step::ReturnDescriptor,
 ];
 
@@ -2927,8 +3054,2065 @@ pub const PHYRE_PPHYSICS_PRAYCASTRESULT_BIND: &[Step] = &[
     Step::AddToNamespace,
 ];
 
-/// Every table with its original's address.
-pub const BINDS: [(u32, &[Step]); 39] = [
+// Round 2 (continuation d): Binds with calls, and the array getters.
+
+/// `0x0054_5480` `Phyre_PGameplay_PLocator_Bind`.
+pub const PHYRE_PGAMEPLAY_PLOCATOR_BIND: &[Step] = &[
+    Step::Register(0x00ca_e550),
+    Step::Guard(0x00ca_e648),
+    Step::Once(0x1),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00ca_e61c,
+        ty: Ty::Addr(0x00c9_2090),
+        name: 0x00b1_0d80,
+        offset: 0x0,
+        size: 0x2,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_1a30),
+    Step::End,
+    Step::Once(0x2),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00ca_e64c,
+        ty: Ty::Addr(0x00c9_1048),
+        name: 0x00b1_0dc0,
+        offset: 0x4,
+        size: 0x0,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_1a40),
+    Step::End,
+    Step::Once(0x4),
+    Step::Call {
+        f: 0x0057_52a0,
+        this: Some(0x00ca_e678),
+        args: &[
+            Arg::Addr(0x00ca_e550),
+            Arg::Get1(0x0054_4e00, 0xc),
+            Arg::Addr(0x00b2_bf54),
+            Arg::Imm(0x8),
+            Arg::Imm(0x2),
+            Arg::Imm(0x0),
+        ],
+    },
+    Step::AtExit(0x00b0_1a50),
+    Step::End,
+    Step::Once(0x8),
+    Step::Method {
+        member: 0x00ca_e6a4,
+        name: 0x00b1_071c,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_19b0),
+    Step::End,
+    Step::Store(0x00ca_e6bc, 0x00b2_bff4),
+    Step::Store(0x00ca_e6c0, 0x0054_6280),
+    Step::Store(0x00ca_e6b8, 0x00ca_e6bc),
+    Step::Once(0x10),
+    Step::Method {
+        member: 0x00ca_e6cc,
+        name: 0x00b1_7458,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1a60),
+    Step::End,
+    Step::Store(0x00ca_e6e4, 0x00b2_bf64),
+    Step::Store(0x00ca_e6e8, 0x0054_6440),
+    Step::Store(0x00ca_e6e0, 0x00ca_e6e4),
+    Step::Once(0x20),
+    Step::Method {
+        member: 0x00ca_e6f4,
+        name: 0x00b2_4e74,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_19f0),
+    Step::End,
+    Step::Store(0x00ca_e70c, 0x00b2_c00c),
+    Step::Store(0x00ca_e710, 0x0054_6290),
+    Step::Store(0x00ca_e708, 0x00ca_e70c),
+    Step::Once(0x40),
+    Step::Method {
+        member: 0x00ca_e71c,
+        name: 0x00b2_4e6c,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1aa0),
+    Step::End,
+    Step::Store(0x00ca_e734, 0x00b2_bf7c),
+    Step::Store(0x00ca_e738, 0x0054_6450),
+    Step::Store(0x00ca_e730, 0x00ca_e734),
+    Step::AddToNamespace,
+];
+
+/// `0x0054_7ef0` `Phyre_PGameplay_PSpline_Bind`.
+pub const PHYRE_PGAMEPLAY_PSPLINE_BIND: &[Step] = &[
+    Step::Register(0x00ca_e7b8),
+    Step::Call {
+        f: 0x0045_fd90,
+        this: None,
+        args: &[],
+    },
+    Step::Call {
+        f: 0x0054_8a90,
+        this: None,
+        args: &[Arg::Mem(0x00c2_0cf4)],
+    },
+    Step::Guard(0x00ca_e880),
+    Step::Once(0x1),
+    Step::Guard(0x00ca_eb3c),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x0054_7020,
+        this: Some(0x00ca_eaa8),
+        args: &[],
+    },
+    Step::And(0x00ca_eb38, 0xffff_fffd),
+    Step::Store(0x00ca_eaa8, 0x00b2_c2fc),
+    Step::AtExit(0x00b0_1b50),
+    Step::End,
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00ca_e84c),
+        args: &[
+            Arg::Addr(0x00ca_e7b8),
+            Arg::Addr(0x00ca_eaa8),
+            Arg::Addr(0x00b2_c1a4),
+            Arg::Imm(0x4),
+            Arg::Imm(0x0),
+            Arg::Imm(0x3),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00ca_e84c, 0x00b2_c178),
+    Step::AtExit(0x00b0_1d70),
+    Step::End,
+    Step::Or(0x00ca_e860, 0x10),
+    Step::Call {
+        f: 0x0045_fd90,
+        this: None,
+        args: &[],
+    },
+    Step::Call {
+        f: 0x0054_8a90,
+        this: None,
+        args: &[Arg::Mem(0x00c2_0cf8)],
+    },
+    Step::Guard(0x00ca_e880),
+    Step::Once(0x2),
+    Step::Guard(0x00ca_eb3c),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x0054_7020,
+        this: Some(0x00ca_eaa8),
+        args: &[],
+    },
+    Step::And(0x00ca_eb38, 0xffff_fffd),
+    Step::Store(0x00ca_eaa8, 0x00b2_c2fc),
+    Step::AtExit(0x00b0_1b50),
+    Step::End,
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00ca_e884),
+        args: &[
+            Arg::Addr(0x00ca_e7b8),
+            Arg::Addr(0x00ca_eaa8),
+            Arg::Addr(0x00b2_c1b4),
+            Arg::Imm(0xc),
+            Arg::Imm(0x0),
+            Arg::Imm(0x3),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00ca_e884, 0x00b2_c178),
+    Step::AtExit(0x00b0_1da0),
+    Step::End,
+    Step::Or(0x00ca_e898, 0x10),
+    Step::Guard(0x00ca_e880),
+    Step::Once(0x4),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00ca_e8b8,
+        ty: Ty::Addr(0x00c9_2090),
+        name: 0x00b1_0d80,
+        offset: 0x14,
+        size: 0x12,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_1dc0),
+    Step::End,
+    Step::Once(0x8),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00ca_e8e4,
+        ty: Ty::Get(0x0043_8390),
+        name: 0x00b2_c1c0,
+        offset: 0x18,
+        size: 0x10,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_1db0),
+    Step::End,
+    Step::Once(0x10),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00ca_e910,
+        ty: Ty::Get(0x0043_8060),
+        name: 0x00b2_c1cc,
+        offset: 0x1c,
+        size: 0x10,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_1dd0),
+    Step::End,
+    Step::Once(0x20),
+    Step::Method {
+        member: 0x00ca_e93c,
+        name: 0x00b2_c1d8,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1b10),
+    Step::End,
+    Step::Store(0x00ca_e954, 0x00b2_c3ec),
+    Step::Store(0x00ca_e95c, 0x0054_98c0),
+    Step::Zero(0x00ca_e960),
+    Step::Store(0x00ca_e950, 0x00ca_e954),
+    Step::Once(0x40),
+    Step::Method {
+        member: 0x00ca_e964,
+        name: 0x00b2_c1e8,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1bf0),
+    Step::End,
+    Step::Store(0x00ca_e97c, 0x00b2_c3ec),
+    Step::Store(0x00ca_e984, 0x0054_b230),
+    Step::Zero(0x00ca_e988),
+    Step::Store(0x00ca_e978, 0x00ca_e97c),
+    Step::Once(0x80),
+    Step::Method {
+        member: 0x00ca_e98c,
+        name: 0x00b2_c1f4,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1d30),
+    Step::End,
+    Step::Store(0x00ca_e9a4, 0x00b2_c404),
+    Step::Store(0x00ca_e9ac, 0x0054_bdb0),
+    Step::Zero(0x00ca_e9b0),
+    Step::Store(0x00ca_e9a0, 0x00ca_e9a4),
+    Step::Once(0x100),
+    Step::Method {
+        member: 0x00ca_e9b4,
+        name: 0x00b2_c204,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1bb0),
+    Step::End,
+    Step::Store(0x00ca_e9cc, 0x00b2_c41c),
+    Step::Store(0x00ca_e9d4, 0x0054_b220),
+    Step::Zero(0x00ca_e9d8),
+    Step::Store(0x00ca_e9c8, 0x00ca_e9cc),
+    Step::Once(0x200),
+    Step::Method {
+        member: 0x00ca_e9dc,
+        name: 0x00b2_c210,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1b70),
+    Step::End,
+    Step::Store(0x00ca_e9f4, 0x00b2_c434),
+    Step::Store(0x00ca_e9fc, 0x0054_b1b0),
+    Step::Zero(0x00ca_ea00),
+    Step::Store(0x00ca_e9f0, 0x00ca_e9f4),
+    Step::Once(0x400),
+    Step::Method {
+        member: 0x00ca_ea04,
+        name: 0x00b2_c228,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1c70),
+    Step::End,
+    Step::Store(0x00ca_ea1c, 0x00b2_c434),
+    Step::Store(0x00ca_ea24, 0x0054_b300),
+    Step::Zero(0x00ca_ea28),
+    Step::Store(0x00ca_ea18, 0x00ca_ea1c),
+    Step::Once(0x800),
+    Step::Method {
+        member: 0x00ca_ea2c,
+        name: 0x00b2_c238,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1cf0),
+    Step::End,
+    Step::Store(0x00ca_ea44, 0x00b2_c44c),
+    Step::Store(0x00ca_ea4c, 0x0054_b320),
+    Step::Zero(0x00ca_ea50),
+    Step::Store(0x00ca_ea40, 0x00ca_ea44),
+    Step::Once(0x1000),
+    Step::Method {
+        member: 0x00ca_ea54,
+        name: 0x00b2_c254,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1cb0),
+    Step::End,
+    Step::Store(0x00ca_ea6c, 0x00b2_c44c),
+    Step::Store(0x00ca_ea74, 0x0054_b520),
+    Step::Zero(0x00ca_ea78),
+    Step::Store(0x00ca_ea68, 0x00ca_ea6c),
+    Step::Once(0x2000),
+    Step::Method {
+        member: 0x00ca_ea7c,
+        name: 0x00b1_071c,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1c30),
+    Step::End,
+    Step::Store(0x00ca_ea94, 0x00b2_c370),
+    Step::Store(0x00ca_ea9c, 0x0054_b240),
+    Step::Zero(0x00ca_eaa0),
+    Step::Store(0x00ca_ea90, 0x00ca_ea94),
+    Step::AddToNamespace,
+];
+
+/// `0x0054_e7f0` `Phyre_PGameplay_PTrigger_Bind`.
+pub const PHYRE_PGAMEPLAY_PTRIGGER_BIND: &[Step] = &[
+    Step::Register(0x00ca_ed58),
+    Step::Guard(0x00ca_ee18),
+    Step::Once(0x1),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00ca_edec,
+        ty: Ty::Get(0x0054_ce90),
+        name: 0x00b0_f98c,
+        offset: 0x0,
+        size: 0x2,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_1f80),
+    Step::End,
+    Step::Once(0x2),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00ca_ee1c,
+        ty: Ty::Addr(0x00c9_2090),
+        name: 0x00b1_0d80,
+        offset: 0xc,
+        size: 0x2,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_1f50),
+    Step::End,
+    Step::Once(0x4),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00ca_ee48,
+        ty: Ty::Addr(0x00c9_2090),
+        name: 0x00b2_c738,
+        offset: 0x10,
+        size: 0x0,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_1f60),
+    Step::End,
+    Step::Call {
+        f: 0x0054_ecb0,
+        this: None,
+        args: &[Arg::Mem(0x00c2_1428)],
+    },
+    Step::Once(0x8),
+    Step::Guard(0x00ca_f00c),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x0054_ddd0,
+        this: Some(0x00ca_ef78),
+        args: &[],
+    },
+    Step::And(0x00ca_f008, 0xffff_fffd),
+    Step::Store(0x00ca_ef78, 0x00b2_c954),
+    Step::AtExit(0x00b0_1e50),
+    Step::End,
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00ca_ee74),
+        args: &[
+            Arg::Addr(0x00ca_ed58),
+            Arg::Addr(0x00ca_ef78),
+            Arg::Addr(0x00b2_c7b0),
+            Arg::Imm(0x4),
+            Arg::Imm(0x0),
+            Arg::Imm(0x4),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00ca_ee74, 0x00b2_c784),
+    Step::AtExit(0x00b0_1f70),
+    Step::End,
+    Step::Guard(0x00ca_ee18),
+    Step::Once(0x10),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00ca_eea8,
+        ty: Ty::Get(0x0043_8390),
+        name: 0x00b2_c7c4,
+        offset: 0x40,
+        size: 0x0,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_1f40),
+    Step::End,
+    Step::Once(0x20),
+    Step::Method {
+        member: 0x00ca_eed4,
+        name: 0x00b2_c7d0,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1ef0),
+    Step::End,
+    Step::Store(0x00ca_eeec, 0x00b2_c9c8),
+    Step::Store(0x00ca_eef0, 0x0055_0430),
+    Step::Store(0x00ca_eee8, 0x00ca_eeec),
+    Step::Once(0x40),
+    Step::Method {
+        member: 0x00ca_eefc,
+        name: 0x00b2_c7e0,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1e70),
+    Step::End,
+    Step::Store(0x00ca_ef14, 0x00b2_ca5c),
+    Step::Store(0x00ca_ef18, 0x0055_0160),
+    Step::Store(0x00ca_ef10, 0x00ca_ef14),
+    Step::Once(0x80),
+    Step::Method {
+        member: 0x00ca_ef24,
+        name: 0x00b2_c7ec,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1fa0),
+    Step::End,
+    Step::Store(0x00ca_ef3c, 0x00b2_c9e0),
+    Step::Store(0x00ca_ef40, 0x0055_05f0),
+    Step::Store(0x00ca_ef38, 0x00ca_ef3c),
+    Step::Once(0x100),
+    Step::Method {
+        member: 0x00ca_ef4c,
+        name: 0x00b1_071c,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_1eb0),
+    Step::End,
+    Step::Store(0x00ca_ef64, 0x00b2_ca74),
+    Step::Store(0x00ca_ef68, 0x0055_01d0),
+    Step::Store(0x00ca_ef60, 0x00ca_ef64),
+    Step::AddToNamespace,
+];
+
+/// `0x0055_e960` `Phyre_PGeometry_PDataBlockD3D11_Bind`.
+pub const PHYRE_PGEOMETRY_PDATABLOCKD3D11_BIND: &[Step] = &[
+    Step::Register(0x00cb_1250),
+    Step::Call {
+        f: 0x0055_f000,
+        this: None,
+        args: &[Arg::Mem(0x00c2_34e4)],
+    },
+    Step::Guard(0x00cb_140c),
+    Step::Once(0x1),
+    Step::Guard(0x00cb_173c),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x0055_d500,
+        this: Some(0x00cb_16a8),
+        args: &[],
+    },
+    Step::And(0x00cb_1738, 0xffff_fffd),
+    Step::Store(0x00cb_16a8, 0x00b2_efe4),
+    Step::AtExit(0x00b0_2a90),
+    Step::End,
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cb_13d8),
+        args: &[
+            Arg::Addr(0x00cb_1250),
+            Arg::Addr(0x00cb_16a8),
+            Arg::Addr(0x00b2_eb4c),
+            Arg::Imm(0x18),
+            Arg::Imm(0x0),
+            Arg::Imm(0x4),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00cb_13d8, 0x00b2_ec50),
+    Step::AtExit(0x00b0_2ad0),
+    Step::End,
+    Step::Guard(0x00cb_140c),
+    Step::Once(0x2),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_1410,
+        ty: Ty::Get(0x0043_7fc0),
+        name: 0x00b2_eb58,
+        offset: 0x38,
+        size: 0x0,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_2b20),
+    Step::End,
+    Step::Once(0x4),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_143c,
+        ty: Ty::Get(0x0043_7fc0),
+        name: 0x00b2_ec7c,
+        offset: 0x30,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_2b70),
+    Step::End,
+    Step::AddToNamespace,
+];
+
+/// `0x0055_eb10` `Phyre_PGeometry_PIndexDataBlockD3D11_Bind`.
+pub const PHYRE_PGEOMETRY_PINDEXDATABLOCKD3D11_BIND: &[Step] = &[
+    Step::Register(0x00cb_1120),
+    Step::Call {
+        f: 0x0055_f220,
+        this: None,
+        args: &[Arg::Mem(0x00c2_34e0)],
+    },
+    Step::Guard(0x00cb_137c),
+    Step::Once(0x1),
+    Step::Guard(0x00cb_161c),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x0055_d5a0,
+        this: Some(0x00cb_1588),
+        args: &[],
+    },
+    Step::And(0x00cb_1618, 0xffff_fffd),
+    Step::Store(0x00cb_1588, 0x00b2_eedc),
+    Step::AtExit(0x00b0_2ab0),
+    Step::End,
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cb_1348),
+        args: &[
+            Arg::Addr(0x00cb_1120),
+            Arg::Addr(0x00cb_1588),
+            Arg::Addr(0x00b2_eb4c),
+            Arg::Imm(0x14),
+            Arg::Imm(0x0),
+            Arg::Imm(0x4),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00cb_1348, 0x00b2_eb20),
+    Step::AtExit(0x00b0_2ae0),
+    Step::End,
+    Step::Guard(0x00cb_137c),
+    Step::Once(0x2),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_1380,
+        ty: Ty::Get(0x0043_7fc0),
+        name: 0x00b2_eb58,
+        offset: 0x34,
+        size: 0x0,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_2b30),
+    Step::End,
+    Step::Once(0x4),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_13ac,
+        ty: Ty::Get(0x0043_7fc0),
+        name: 0x00b2_eb64,
+        offset: 0x2c,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_2b60),
+    Step::End,
+    Step::AddToNamespace,
+];
+
+/// `0x0058_7790` `Phyre_PRendering_PShaderProgramD3D11_Bind`.
+pub const PHYRE_PRENDERING_PSHADERPROGRAMD3D11_BIND: &[Step] = &[
+    Step::Register(0x00cb_36a8),
+    Step::Call {
+        f: 0x0043_7d30,
+        this: None,
+        args: &[],
+    },
+    Step::Call {
+        f: 0x0044_8450,
+        this: None,
+        args: &[Arg::Mem(0x00c2_6600)],
+    },
+    Step::Guard(0x00cb_4b14),
+    Step::Once(0x1),
+    Step::Guard(0x00c9_165c),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x0044_73f0,
+        this: Some(0x00c9_15c8),
+        args: &[],
+    },
+    Step::And(0x00c9_1658, 0xffff_fffd),
+    Step::Store(0x00c9_15c8, 0x00b0_fcf4),
+    Step::AtExit(0x00af_a420),
+    Step::End,
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cb_4ae0),
+        args: &[
+            Arg::Addr(0x00cb_36a8),
+            Arg::Addr(0x00c9_15c8),
+            Arg::Addr(0x00b3_3704),
+            Arg::Imm(0xc),
+            Arg::Imm(0x0),
+            Arg::Imm(0x3),
+            Arg::Imm(0x1),
+        ],
+    },
+    Step::Store(0x00cb_4ae0, 0x00b0_fbe0),
+    Step::AtExit(0x00b0_3c20),
+    Step::End,
+    Step::Or(0x00cb_4af4, 0x10),
+    Step::Guard(0x00cb_4b14),
+    Step::Once(0x2),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_4b18,
+        ty: Ty::Get(0x0043_7fc0),
+        name: 0x00b3_3714,
+        offset: 0x14,
+        size: 0x10,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_3c50),
+    Step::End,
+    Step::Once(0x4),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_4b44,
+        ty: Ty::Get(0x0043_7fc0),
+        name: 0x00b3_372c,
+        offset: 0x18,
+        size: 0x10,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_3ce0),
+    Step::End,
+    Step::Once(0x8),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_4b70,
+        ty: Ty::Get(0x0043_7fc0),
+        name: 0x00b3_3748,
+        offset: 0x4dc,
+        size: 0x10,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_3d50),
+    Step::End,
+    Step::AddToNamespace,
+];
+
+/// `0x0058_7bf0` `Phyre_PRendering_PStreamInputLayoutD3D11_Bind`.
+pub const PHYRE_PRENDERING_PSTREAMINPUTLAYOUTD3D11_BIND: &[Step] = &[
+    Step::Register(0x00cb_3610),
+    Step::Call {
+        f: 0x0058_7f60,
+        this: None,
+        args: &[Arg::Mem(0x00c2_65fc)],
+    },
+    Step::Guard(0x00cb_4adc),
+    Step::Once(0x1),
+    Step::Guard(0x00cb_4cec),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x0058_1930,
+        this: Some(0x00cb_4c58),
+        args: &[],
+    },
+    Step::And(0x00cb_4ce8, 0xffff_fffd),
+    Step::Store(0x00cb_4c58, 0x00b3_3cec),
+    Step::AtExit(0x00b0_3bf0),
+    Step::End,
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cb_4aa8),
+        args: &[
+            Arg::Addr(0x00cb_3610),
+            Arg::Addr(0x00cb_4c58),
+            Arg::Addr(0x00b1_435c),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+            Arg::Imm(0x3),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00cb_4aa8, 0x00b3_36d8),
+    Step::AtExit(0x00b0_3d80),
+    Step::End,
+    Step::Or(0x00cb_4abc, 0x10),
+    Step::AddToNamespace,
+];
+
+/// `0x005a_34b0` `Phyre_PLOD_PLODGroup_Bind`.
+pub const PHYRE_PLOD_PLODGROUP_BIND: &[Step] = &[
+    Step::Register(0x00cb_ab20),
+    Step::Call {
+        f: 0x005a_4660,
+        this: None,
+        args: &[Arg::Mem(0x00c2_6d34)],
+    },
+    Step::Guard(0x00cb_aca4),
+    Step::Once(0x1),
+    Step::Guard(0x00cb_afe4),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x005a_1f80,
+        this: Some(0x00cb_af50),
+        args: &[],
+    },
+    Step::And(0x00cb_afe0, 0xffff_fffd),
+    Step::Store(0x00cb_af50, 0x00b3_4cfc),
+    Step::AtExit(0x00b0_3e20),
+    Step::End,
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cb_ac70),
+        args: &[
+            Arg::Addr(0x00cb_ab20),
+            Arg::Addr(0x00cb_af50),
+            Arg::Addr(0x00b3_4af0),
+            Arg::Imm(0x3c),
+            Arg::Imm(0x0),
+            Arg::Imm(0x3),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00cb_ac70, 0x00b3_4ac4),
+    Step::AtExit(0x00b0_3ef0),
+    Step::End,
+    Step::Guard(0x00cb_aca4),
+    Step::Once(0x2),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_aca8,
+        ty: Ty::Get(0x0045_fd90),
+        name: 0x00b3_4afc,
+        offset: 0x0,
+        size: 0x0,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_3f60),
+    Step::End,
+    Step::Once(0x4),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_acd4,
+        ty: Ty::Get(0x0045_fd90),
+        name: 0x00b3_4b08,
+        offset: 0x10,
+        size: 0x0,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_3f30),
+    Step::End,
+    Step::Once(0x8),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_ad00,
+        ty: Ty::Get(0x0043_8060),
+        name: 0x00b3_4b14,
+        offset: 0x28,
+        size: 0x0,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_3ea0),
+    Step::End,
+    Step::Once(0x10),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_ad2c,
+        ty: Ty::Get(0x0043_8060),
+        name: 0x00b3_4b24,
+        offset: 0x2c,
+        size: 0x0,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_3f80),
+    Step::End,
+    Step::Once(0x20),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_ad58,
+        ty: Ty::Get(0x005c_bc80),
+        name: 0x00b3_4b40,
+        offset: 0x34,
+        size: 0x2,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_3f20),
+    Step::End,
+    Step::Once(0x40),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_ad84,
+        ty: Ty::Get(0x005c_c0e0),
+        name: 0x00b3_4b50,
+        offset: 0x38,
+        size: 0x2,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_3f00),
+    Step::End,
+    Step::Once(0x80),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_adb0,
+        ty: Ty::Get(0x0043_8390),
+        name: 0x00b2_df04,
+        offset: 0x44,
+        size: 0x0,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_3ee0),
+    Step::End,
+    Step::Once(0x100),
+    Step::Method {
+        member: 0x00cb_addc,
+        name: 0x00b2_df10,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_3fa0),
+    Step::End,
+    Step::Store(0x00cb_adf4, 0x00b3_4d70),
+    Step::Store(0x00cb_adf8, 0x005a_7d10),
+    Step::Store(0x00cb_adf0, 0x00cb_adf4),
+    Step::Once(0x200),
+    Step::Method {
+        member: 0x00cb_ae04,
+        name: 0x00b1_071c,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_3e60),
+    Step::End,
+    Step::Store(0x00cb_ae1c, 0x00b3_4d88),
+    Step::Store(0x00cb_ae20, 0x005a_7410),
+    Step::Store(0x00cb_ae18, 0x00cb_ae1c),
+    Step::AddToNamespace,
+];
+
+/// `0x005a_3910` `Phyre_PLOD_PLODLevel_Bind`.
+pub const PHYRE_PLOD_PLODLEVEL_BIND: &[Step] = &[
+    Step::Register(0x00cb_aa88),
+    Step::Guard(0x00cb_abe0),
+    Step::Once(0x1),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_abb4,
+        ty: Ty::Addr(0x00cb_ab20),
+        name: 0x00b3_4a1c,
+        offset: 0x0,
+        size: 0x2,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_3f10),
+    Step::End,
+    Step::Call {
+        f: 0x005a_4870,
+        this: None,
+        args: &[Arg::Mem(0x00c2_6d30)],
+    },
+    Step::Once(0x2),
+    Step::Guard(0x00cb_aec4),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x005a_2020,
+        this: Some(0x00cb_ae30),
+        args: &[],
+    },
+    Step::And(0x00cb_aec0, 0xffff_fffd),
+    Step::Store(0x00cb_ae30, 0x00b3_4bf4),
+    Step::AtExit(0x00b0_3e40),
+    Step::End,
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cb_abe4),
+        args: &[
+            Arg::Addr(0x00cb_aa88),
+            Arg::Addr(0x00cb_ae30),
+            Arg::Addr(0x00b3_4a74),
+            Arg::Imm(0x4),
+            Arg::Imm(0x0),
+            Arg::Imm(0x4),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00cb_abe4, 0x00b3_4a48),
+    Step::AtExit(0x00b0_3f50),
+    Step::End,
+    Step::Guard(0x00cb_abe0),
+    Step::Once(0x4),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_ac18,
+        ty: Ty::Get(0x0043_8060),
+        name: 0x00b3_4a84,
+        offset: 0xc,
+        size: 0x0,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_3f70),
+    Step::End,
+    Step::Once(0x8),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_ac44,
+        ty: Ty::Get(0x0043_8060),
+        name: 0x00b3_4a98,
+        offset: 0x10,
+        size: 0x0,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_3f40),
+    Step::End,
+    Step::AddToNamespace,
+];
+
+/// `0x005d_49d0` `Phyre_PScripting_PScript_Bind`.
+pub const PHYRE_PSCRIPTING_PSCRIPT_BIND: &[Step] = &[
+    Step::Register(0x00cb_e410),
+    Step::Call {
+        f: 0x0043_7d30,
+        this: None,
+        args: &[],
+    },
+    Step::Call {
+        f: 0x0044_8450,
+        this: None,
+        args: &[Arg::Mem(0x00c2_a04c)],
+    },
+    Step::Guard(0x00cb_e4d8),
+    Step::Once(0x1),
+    Step::Guard(0x00c9_165c),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x0044_73f0,
+        this: Some(0x00c9_15c8),
+        args: &[],
+    },
+    Step::And(0x00c9_1658, 0xffff_fffd),
+    Step::Store(0x00c9_15c8, 0x00b0_fcf4),
+    Step::AtExit(0x00af_a420),
+    Step::End,
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cb_e4a4),
+        args: &[
+            Arg::Addr(0x00cb_e410),
+            Arg::Addr(0x00c9_15c8),
+            Arg::Addr(0x00b3_9040),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+            Arg::Imm(0x3),
+            Arg::Imm(0x1),
+        ],
+    },
+    Step::Store(0x00cb_e4a4, 0x00b0_fbe0),
+    Step::AtExit(0x00b0_4b20),
+    Step::End,
+    Step::Or(0x00cb_e4b8, 0x8),
+    Step::Call {
+        f: 0x0049_1190,
+        this: None,
+        args: &[Arg::Mem(0x00c2_a050)],
+    },
+    Step::Guard(0x00cb_e4d8),
+    Step::Once(0x2),
+    Step::Guard(0x00c9_a124),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x0048_ea60,
+        this: Some(0x00c9_a090),
+        args: &[],
+    },
+    Step::And(0x00c9_a120, 0xffff_fffd),
+    Step::Store(0x00c9_a090, 0x00b1_5edc),
+    Step::AtExit(0x00af_ca60),
+    Step::End,
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cb_e4dc),
+        args: &[
+            Arg::Addr(0x00cb_e410),
+            Arg::Addr(0x00c9_a090),
+            Arg::Addr(0x00b3_9050),
+            Arg::Imm(0x8),
+            Arg::Imm(0x0),
+            Arg::Imm(0x3),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00cb_e4dc, 0x00b1_5c94),
+    Step::AtExit(0x00b0_4ae0),
+    Step::End,
+    Step::Or(0x00cb_e4f0, 0x8),
+    Step::Guard(0x00cb_e4d8),
+    Step::Once(0x4),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_e510,
+        ty: Ty::Addr(0x00c9_1048),
+        name: 0x00b2_d458,
+        offset: 0x10,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_4b00),
+    Step::End,
+    Step::Once(0x8),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_e53c,
+        ty: Ty::Addr(0x00c9_1048),
+        name: 0x00b2_d46c,
+        offset: 0x14,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_4b10),
+    Step::End,
+    Step::Once(0x10),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_e568,
+        ty: Ty::Addr(0x00c9_1048),
+        name: 0x00b3_9060,
+        offset: 0x18,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_4ac0),
+    Step::End,
+    Step::Once(0x20),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_e594,
+        ty: Ty::Addr(0x00c9_1048),
+        name: 0x00b3_9074,
+        offset: 0x1c,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_4b30),
+    Step::End,
+    Step::Once(0x40),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_e5c0,
+        ty: Ty::Get(0x0043_8390),
+        name: 0x00b3_9084,
+        offset: 0x20,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_4af0),
+    Step::End,
+    Step::Once(0x80),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cb_e5ec,
+        ty: Ty::Get(0x0043_7fc0),
+        name: 0x00b2_d484,
+        offset: 0x24,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_4ad0),
+    Step::End,
+    Step::AddToNamespace,
+];
+
+/// `0x005e_9490` `Phyre_PPhysics_PPhysicsRigidBodyBase_Bind`.
+pub const PHYRE_PPHYSICS_PPHYSICSRIGIDBODYBASE_BIND: &[Step] = &[
+    Step::Register(0x00cb_f0f8),
+    Step::Guard(0x00cc_0784),
+    Step::Once(0x1),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0758,
+        ty: Ty::Get(0x0043_8060),
+        name: 0x00b3_bc2c,
+        offset: 0xc0,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_59e0),
+    Step::End,
+    Step::Once(0x2),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0788,
+        ty: Ty::Get(0x0043_7d30),
+        name: 0x00b3_bc34,
+        offset: 0xc4,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5b30),
+    Step::End,
+    Step::Once(0x4),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_07b4,
+        ty: Ty::Get(0x0046_2aa0),
+        name: 0x00b3_bc44,
+        offset: 0x4,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5a00),
+    Step::End,
+    Step::Once(0x8),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_07e0,
+        ty: Ty::Get(0x0045_fd90),
+        name: 0x00b3_bc5c,
+        offset: 0x34,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5950),
+    Step::End,
+    Step::Once(0x10),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_080c,
+        ty: Ty::Get(0x0045_f7c0),
+        name: 0x00b3_bc70,
+        offset: 0x44,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5940),
+    Step::End,
+    Step::Once(0x20),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0838,
+        ty: Ty::Get(0x0045_fd90),
+        name: 0x00b3_bc88,
+        offset: 0x54,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5910),
+    Step::End,
+    Step::Once(0x40),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0864,
+        ty: Ty::Get(0x0045_fd90),
+        name: 0x00b3_bc98,
+        offset: 0x64,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5930),
+    Step::End,
+    Step::Once(0x80),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0890,
+        ty: Ty::Get(0x0045_fd90),
+        name: 0x00b3_bcb0,
+        offset: 0x74,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5920),
+    Step::End,
+    Step::Once(0x100),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_08bc,
+        ty: Ty::Addr(0x00ca_91f8),
+        name: 0x00b3_bac4,
+        offset: 0x98,
+        size: 0xa,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5c30),
+    Step::End,
+    Step::Once(0x200),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_08e8,
+        ty: Ty::Addr(0x00c9_2090),
+        name: 0x00b3_bad4,
+        offset: 0x9c,
+        size: 0xa,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5c50),
+    Step::End,
+    Step::Once(0x400),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0914,
+        ty: Ty::Addr(0x00cb_ed68),
+        name: 0x00b2_ff14,
+        offset: 0x94,
+        size: 0xa,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5a10),
+    Step::End,
+    Step::Call {
+        f: 0x005e_b130,
+        this: None,
+        args: &[Arg::Mem(0x00c2_a104)],
+    },
+    Step::Once(0x800),
+    Step::Guard(0x00cc_55ec),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x005d_d0a0,
+        this: Some(0x00cc_5558),
+        args: &[],
+    },
+    Step::And(0x00cc_55e8, 0xffff_fffd),
+    Step::Store(0x00cc_5558, 0x00b3_c7ac),
+    Step::AtExit(0x00b0_5430),
+    Step::End,
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cc_0940),
+        args: &[
+            Arg::Addr(0x00cb_f0f8),
+            Arg::Addr(0x00cc_5558),
+            Arg::Addr(0x00b3_bd18),
+            Arg::Imm(0xa0),
+            Arg::Imm(0x0),
+            Arg::Imm(0x4),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00cc_0940, 0x00b3_bcec),
+    Step::AtExit(0x00b0_5bb0),
+    Step::End,
+    Step::Or(0x00cc_0954, 0x8),
+    Step::Guard(0x00cc_0784),
+    Step::Once(0x1000),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0974,
+        ty: Ty::Get(0x0045_fd90),
+        name: 0x00b2_87d4,
+        offset: 0x84,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5b60),
+    Step::End,
+    Step::Once(0x2000),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_09a0,
+        ty: Ty::Get(0x0043_8060),
+        name: 0x00b3_bd24,
+        offset: 0xa8,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_59b0),
+    Step::End,
+    Step::Once(0x4000),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_09cc,
+        ty: Ty::Get(0x0043_8060),
+        name: 0x00b3_bd34,
+        offset: 0xac,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5760),
+    Step::End,
+    Step::Once(0x8000),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_09f8,
+        ty: Ty::Addr(0x00cb_f228),
+        name: 0x00b1_0444,
+        offset: 0x0,
+        size: 0xa,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5aa0),
+    Step::End,
+    Step::Once(0x10000),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0a24,
+        ty: Ty::Addr(0x00cb_ef30),
+        name: 0x00b3_bd48,
+        offset: 0xb0,
+        size: 0xa,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5a50),
+    Step::End,
+    Step::Once(0x20000),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0a50,
+        ty: Ty::Addr(0x00cb_f228),
+        name: 0x00b3_bd50,
+        offset: 0xb8,
+        size: 0xa,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5ab0),
+    Step::End,
+    Step::Once(0x40000),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0a7c,
+        ty: Ty::Get(0x0043_7d30),
+        name: 0x00b3_bd6c,
+        offset: 0xbc,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5780),
+    Step::End,
+    Step::Once(0x80000),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0aa8,
+        ty: Ty::Get(0x0043_8390),
+        name: 0x00b2_c7c4,
+        offset: 0xc5,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5840),
+    Step::End,
+    Step::Once(0x0010_0000),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0ad4,
+        ty: Ty::Addr(0x00cb_e2f0),
+        name: 0x00b3_bb98,
+        offset: 0xd0,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5b90),
+    Step::End,
+    Step::Once(0x0020_0000),
+    Step::Method {
+        member: 0x00cc_0b00,
+        name: 0x00b3_bd80,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_5da0),
+    Step::End,
+    Step::Store(0x00cc_0b18, 0x00b3_c838),
+    Step::Store(0x00cc_0b1c, 0x0060_2720),
+    Step::Store(0x00cc_0b14, 0x00cc_0b18),
+    Step::Once(0x0040_0000),
+    Step::Method {
+        member: 0x00cc_0b28,
+        name: 0x00b3_bda0,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_5eb0),
+    Step::End,
+    Step::Store(0x00cc_0b40, 0x00b3_c850),
+    Step::Store(0x00cc_0b44, 0x0060_6660),
+    Step::Store(0x00cc_0b3c, 0x00cc_0b40),
+    Step::Once(0x0080_0000),
+    Step::Method {
+        member: 0x00cc_0b50,
+        name: 0x00b3_bdbc,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_5e20),
+    Step::End,
+    Step::Store(0x00cc_0b68, 0x00b3_c868),
+    Step::Store(0x00cc_0b6c, 0x0060_3470),
+    Step::Store(0x00cc_0b64, 0x00cc_0b68),
+    Step::Once(0x0100_0000),
+    Step::Method {
+        member: 0x00cc_0b78,
+        name: 0x00b3_bdd0,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_5de0),
+    Step::End,
+    Step::Store(0x00cc_0b90, 0x00b3_c880),
+    Step::Store(0x00cc_0b94, 0x0060_3440),
+    Step::Store(0x00cc_0b8c, 0x00cc_0b90),
+    Step::Once(0x0200_0000),
+    Step::Method {
+        member: 0x00cc_0ba0,
+        name: 0x00b3_bde8,
+        find: FIND_METHOD,
+    },
+    Step::AtExit(0x00b0_5650),
+    Step::End,
+    Step::Store(0x00cc_0bb8, 0x00b3_d950),
+    Step::Store(0x00cc_0bbc, 0x005f_d270),
+    Step::Store(0x00cc_0bb4, 0x00cc_0bb8),
+    Step::AddToNamespace,
+];
+
+/// `0x005e_9f70` `Phyre_PPhysics_PPhysicsShapeBase_Bind`.
+pub const PHYRE_PPHYSICS_PPHYSICSSHAPEBASE_BIND: &[Step] = &[
+    Step::Register(0x00cb_f2c0),
+    Step::Guard(0x00cc_0e38),
+    Step::Once(0x1),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0e0c,
+        ty: Ty::Get(0x0043_8390),
+        name: 0x00b3_c180,
+        offset: 0x4,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5900),
+    Step::End,
+    Step::Once(0x2),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0e3c,
+        ty: Ty::Get(0x0043_8060),
+        name: 0x00b3_bc2c,
+        offset: 0x8,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_59f0),
+    Step::End,
+    Step::Once(0x4),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0e68,
+        ty: Ty::Get(0x0043_8060),
+        name: 0x00b3_c18c,
+        offset: 0xc,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5820),
+    Step::End,
+    Step::Once(0x8),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0e94,
+        ty: Ty::Addr(0x00cb_ed68),
+        name: 0x00b2_ff14,
+        offset: 0x10,
+        size: 0xa,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5a20),
+    Step::End,
+    Step::Once(0x10),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0ec0,
+        ty: Ty::Get(0x0046_2aa0),
+        name: 0x00b3_c198,
+        offset: 0x14,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5c70),
+    Step::End,
+    Step::Once(0x20),
+    Step::Member {
+        ctor: DATA,
+        member: 0x00cc_0eec,
+        ty: Ty::Get(0x0045_fd90),
+        name: 0x00b2_87d4,
+        offset: 0x44,
+        size: 0x8,
+        flags: 0x0,
+    },
+    Step::AtExit(0x00b0_5b70),
+    Step::End,
+    Step::Once(0x40),
+    Step::Member {
+        ctor: DATA_WRAPPED,
+        member: 0x00cc_0f18,
+        ty: Ty::Get(0x0043_7f10),
+        name: 0x00b0_f98c,
+        offset: 0x54,
+        size: 0x8,
+        flags: 0x8,
+    },
+    Step::AtExit(0x00b0_5c80),
+    Step::End,
+    Step::AddToNamespace,
+];
+
+/// `0x0054_8a90` `Phyre_PArray_Vector3__DeclareClassDescriptor`.
+pub const PHYRE_PARRAY_VECTOR3__DECLARECLASSDESCRIPTOR: &[Step] = &[
+    Step::Guard(0x00ca_eb3c),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x0054_7020,
+        this: Some(0x00ca_eaa8),
+        args: &[],
+    },
+    Step::And(0x00ca_eb38, 0xffff_fffd),
+    Step::Store(0x00ca_eaa8, 0x00b2_c2fc),
+    Step::AtExit(0x00b0_1b50),
+    Step::End,
+    Step::Owner {
+        slot: 0x00ca_eac0,
+        cache: 0x00ca_ec6c,
+    },
+    Step::Once(0x2),
+    Step::Call {
+        f: 0x0057_52a0,
+        this: Some(0x00ca_eb40),
+        args: &[
+            Arg::Addr(0x00ca_eaa8),
+            Arg::Get(0x0043_7fc0),
+            Arg::Addr(0x00b0_fd34),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+        ],
+    },
+    Step::AtExit(0x00b0_1d80),
+    Step::End,
+    Step::Once(0x4),
+    Step::Call {
+        f: 0x0057_5840,
+        this: Some(0x00ca_eb6c),
+        args: &[Arg::Addr(0x00c9_07f4), Arg::Get(0x0043_7fc0), Arg::Imm(0x0)],
+    },
+    Step::Store(0x00ca_eb6c, 0x00b0_fd40),
+    Step::StoreImm(0x00ca_eb84, 0x7fff_ffff),
+    Step::AtExit(0x00b0_1b00),
+    Step::End,
+    Step::IfSelf(0x00ca_eb70),
+    Step::Call {
+        f: 0x0057_5c10,
+        this: Some(0x00ca_eb5c),
+        args: &[Arg::Addr(0x00ca_eb6c)],
+    },
+    Step::End,
+    Step::Once(0x8),
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00ca_eb88),
+        args: &[
+            Arg::Addr(0x00ca_eaa8),
+            Arg::Get(0x0045_fd90),
+            Arg::Addr(0x00b0_fd78),
+            Arg::Imm(0x4),
+            Arg::Imm(0x0),
+            Arg::Imm(0x2),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00ca_eb88, 0x00b2_c340),
+    Step::Store(0x00ca_ebbc, 0x0043_20c0),
+    Step::Zero(0x00ca_ebc0),
+    Step::Store(0x00ca_ebc4, 0x0054_cac0),
+    Step::AtExit(0x00b0_1d90),
+    Step::End,
+    Step::StoreImm(0x00ca_ebb4, 0x4),
+    Step::Register(0x00ca_eaa8),
+    Step::AddToNamespace,
+    Step::End,
+    Step::ReturnDescriptor,
+];
+
+/// `0x0055_f000` `Phyre_PSharray_Phyre_PGeometry_PDataBlockBufferD3D11__DeclareClassDescriptor`.
+pub const PHYRE_PSHARRAY_PHYRE_PGEOMETRY_PDATABLOCKBUFFERD3D11__DECLARECLASSDESCRIPTOR: &[Step] = &[
+    Step::Guard(0x00cb_173c),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x0055_d500,
+        this: Some(0x00cb_16a8),
+        args: &[],
+    },
+    Step::And(0x00cb_1738, 0xffff_fffd),
+    Step::Store(0x00cb_16a8, 0x00b2_efe4),
+    Step::AtExit(0x00b0_2a90),
+    Step::End,
+    Step::Owner {
+        slot: 0x00cb_16c0,
+        cache: 0x00cb_1b64,
+    },
+    Step::Once(0x2),
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cb_1740),
+        args: &[
+            Arg::Addr(0x00cb_16a8),
+            Arg::Addr(0x00cb_11b8),
+            Arg::Addr(0x00b0_edd0),
+            Arg::Imm(0x4),
+            Arg::Imm(0x0),
+            Arg::Imm(0x2),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00cb_1740, 0x00b2_f028),
+    Step::Store(0x00cb_1774, 0x0043_20c0),
+    Step::Zero(0x00cb_1778),
+    Step::Store(0x00cb_177c, 0x0056_42e0),
+    Step::AtExit(0x00b0_2b80),
+    Step::End,
+    Step::Or(0x00cb_1754, 0x40),
+    Step::Store(0x00cb_1778, 0x0056_2a40),
+    Step::StoreImm(0x00cb_176c, 0x4),
+    Step::Once(0x4),
+    Step::Call {
+        f: 0x0057_52a0,
+        this: Some(0x00cb_1780),
+        args: &[
+            Arg::Addr(0x00cb_16a8),
+            Arg::Get(0x0043_7fc0),
+            Arg::Addr(0x00b0_fd34),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+        ],
+    },
+    Step::AtExit(0x00b0_2b00),
+    Step::End,
+    Step::Once(0x8),
+    Step::Call {
+        f: 0x0057_5840,
+        this: Some(0x00cb_17ac),
+        args: &[Arg::Addr(0x00c9_07f4), Arg::Get(0x0043_7fc0), Arg::Imm(0x0)],
+    },
+    Step::Store(0x00cb_17ac, 0x00b0_fd40),
+    Step::StoreImm(0x00cb_17c4, 0x7fff_ffff),
+    Step::AtExit(0x00b0_2a50),
+    Step::End,
+    Step::IfSelf(0x00cb_17b0),
+    Step::Call {
+        f: 0x0057_5c10,
+        this: Some(0x00cb_179c),
+        args: &[Arg::Addr(0x00cb_17ac)],
+    },
+    Step::End,
+    Step::Register(0x00cb_16a8),
+    Step::AddToNamespace,
+    Step::End,
+    Step::ReturnDescriptor,
+];
+
+/// `0x0055_f220` `Phyre_PSharray_Phyre_PGeometry_PIndexDataBlockBufferD3D11__DeclareClassDescriptor`.
+pub const PHYRE_PSHARRAY_PHYRE_PGEOMETRY_PINDEXDATABLOCKBUFFERD3D11__DECLARECLASSDESCRIPTOR:
+    &[Step] = &[
+    Step::Guard(0x00cb_161c),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x0055_d5a0,
+        this: Some(0x00cb_1588),
+        args: &[],
+    },
+    Step::And(0x00cb_1618, 0xffff_fffd),
+    Step::Store(0x00cb_1588, 0x00b2_eedc),
+    Step::AtExit(0x00b0_2ab0),
+    Step::End,
+    Step::Owner {
+        slot: 0x00cb_15a0,
+        cache: 0x00cb_1b60,
+    },
+    Step::Once(0x2),
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cb_1620),
+        args: &[
+            Arg::Addr(0x00cb_1588),
+            Arg::Addr(0x00cb_1088),
+            Arg::Addr(0x00b0_edd0),
+            Arg::Imm(0x4),
+            Arg::Imm(0x0),
+            Arg::Imm(0x2),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00cb_1620, 0x00b2_ef20),
+    Step::Store(0x00cb_1654, 0x0043_20c0),
+    Step::Zero(0x00cb_1658),
+    Step::Store(0x00cb_165c, 0x0056_4330),
+    Step::AtExit(0x00b0_2b90),
+    Step::End,
+    Step::Or(0x00cb_1634, 0x40),
+    Step::Store(0x00cb_1658, 0x0056_2a60),
+    Step::StoreImm(0x00cb_164c, 0x4),
+    Step::Once(0x4),
+    Step::Call {
+        f: 0x0057_52a0,
+        this: Some(0x00cb_1660),
+        args: &[
+            Arg::Addr(0x00cb_1588),
+            Arg::Get(0x0043_7fc0),
+            Arg::Addr(0x00b0_fd34),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+        ],
+    },
+    Step::AtExit(0x00b0_2b10),
+    Step::End,
+    Step::Once(0x8),
+    Step::Call {
+        f: 0x0057_5840,
+        this: Some(0x00cb_168c),
+        args: &[Arg::Addr(0x00c9_07f4), Arg::Get(0x0043_7fc0), Arg::Imm(0x0)],
+    },
+    Step::Store(0x00cb_168c, 0x00b0_fd40),
+    Step::StoreImm(0x00cb_16a4, 0x7fff_ffff),
+    Step::AtExit(0x00b0_2a60),
+    Step::End,
+    Step::IfSelf(0x00cb_1690),
+    Step::Call {
+        f: 0x0057_5c10,
+        this: Some(0x00cb_167c),
+        args: &[Arg::Addr(0x00cb_168c)],
+    },
+    Step::End,
+    Step::Register(0x00cb_1588),
+    Step::AddToNamespace,
+    Step::End,
+    Step::ReturnDescriptor,
+];
+
+/// `0x0058_7f60` `Phyre_PArray_Phyre_PRendering_PStreamInputDescD3D11__DeclareClassDescriptor`.
+pub const PHYRE_PARRAY_PHYRE_PRENDERING_PSTREAMINPUTDESCD3D11__DECLARECLASSDESCRIPTOR: &[Step] = &[
+    Step::Guard(0x00cb_4cec),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x0058_1930,
+        this: Some(0x00cb_4c58),
+        args: &[],
+    },
+    Step::And(0x00cb_4ce8, 0xffff_fffd),
+    Step::Store(0x00cb_4c58, 0x00b3_3cec),
+    Step::AtExit(0x00b0_3bf0),
+    Step::End,
+    Step::Owner {
+        slot: 0x00cb_4c70,
+        cache: 0x00cb_aa48,
+    },
+    Step::Once(0x2),
+    Step::Call {
+        f: 0x0057_52a0,
+        this: Some(0x00cb_4cf0),
+        args: &[
+            Arg::Addr(0x00cb_4c58),
+            Arg::Get(0x0043_7fc0),
+            Arg::Addr(0x00b0_fd34),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+        ],
+    },
+    Step::AtExit(0x00b0_3c60),
+    Step::End,
+    Step::Once(0x4),
+    Step::Call {
+        f: 0x0057_5840,
+        this: Some(0x00cb_4d1c),
+        args: &[Arg::Addr(0x00c9_07f4), Arg::Get(0x0043_7fc0), Arg::Imm(0x0)],
+    },
+    Step::Store(0x00cb_4d1c, 0x00b0_fd40),
+    Step::StoreImm(0x00cb_4d34, 0x7fff_ffff),
+    Step::AtExit(0x00b0_3b40),
+    Step::End,
+    Step::IfSelf(0x00cb_4d20),
+    Step::Call {
+        f: 0x0057_5c10,
+        this: Some(0x00cb_4d0c),
+        args: &[Arg::Addr(0x00cb_4d1c)],
+    },
+    Step::End,
+    Step::Once(0x8),
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cb_4d38),
+        args: &[
+            Arg::Addr(0x00cb_4c58),
+            Arg::Addr(0x00cb_3578),
+            Arg::Addr(0x00b0_fd78),
+            Arg::Imm(0x4),
+            Arg::Imm(0x0),
+            Arg::Imm(0x2),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00cb_4d38, 0x00b3_3d30),
+    Step::Store(0x00cb_4d6c, 0x0043_20c0),
+    Step::Zero(0x00cb_4d70),
+    Step::Store(0x00cb_4d74, 0x0059_b9d0),
+    Step::AtExit(0x00b0_3c90),
+    Step::End,
+    Step::StoreImm(0x00cb_4d64, 0x4),
+    Step::Register(0x00cb_4c58),
+    Step::AddToNamespace,
+    Step::End,
+    Step::ReturnDescriptor,
+];
+
+/// `0x005a_4660` `Phyre_PArray_Phyre_PLOD_PLODLevel__DeclareClassDescriptor`.
+pub const PHYRE_PARRAY_PHYRE_PLOD_PLODLEVEL__DECLARECLASSDESCRIPTOR: &[Step] = &[
+    Step::Guard(0x00cb_afe4),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x005a_1f80,
+        this: Some(0x00cb_af50),
+        args: &[],
+    },
+    Step::And(0x00cb_afe0, 0xffff_fffd),
+    Step::Store(0x00cb_af50, 0x00b3_4cfc),
+    Step::AtExit(0x00b0_3e20),
+    Step::End,
+    Step::Owner {
+        slot: 0x00cb_af68,
+        cache: 0x00cb_b1fc,
+    },
+    Step::Once(0x2),
+    Step::Call {
+        f: 0x0057_52a0,
+        this: Some(0x00cb_afe8),
+        args: &[
+            Arg::Addr(0x00cb_af50),
+            Arg::Get(0x0043_7fc0),
+            Arg::Addr(0x00b0_fd34),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+        ],
+    },
+    Step::AtExit(0x00b0_3eb0),
+    Step::End,
+    Step::Once(0x4),
+    Step::Call {
+        f: 0x0057_5840,
+        this: Some(0x00cb_b014),
+        args: &[Arg::Addr(0x00c9_07f4), Arg::Get(0x0043_7fc0), Arg::Imm(0x0)],
+    },
+    Step::Store(0x00cb_b014, 0x00b0_fd40),
+    Step::StoreImm(0x00cb_b02c, 0x7fff_ffff),
+    Step::AtExit(0x00b0_3e00),
+    Step::End,
+    Step::IfSelf(0x00cb_b018),
+    Step::Call {
+        f: 0x0057_5c10,
+        this: Some(0x00cb_b004),
+        args: &[Arg::Addr(0x00cb_b014)],
+    },
+    Step::End,
+    Step::Once(0x8),
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cb_b030),
+        args: &[
+            Arg::Addr(0x00cb_af50),
+            Arg::Addr(0x00cb_aa88),
+            Arg::Addr(0x00b0_fd78),
+            Arg::Imm(0x4),
+            Arg::Imm(0x0),
+            Arg::Imm(0x2),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00cb_b030, 0x00b3_4d40),
+    Step::Store(0x00cb_b064, 0x0043_20c0),
+    Step::Zero(0x00cb_b068),
+    Step::Store(0x00cb_b06c, 0x005a_8230),
+    Step::AtExit(0x00b0_3ed0),
+    Step::End,
+    Step::StoreImm(0x00cb_b05c, 0x4),
+    Step::Register(0x00cb_af50),
+    Step::AddToNamespace,
+    Step::End,
+    Step::ReturnDescriptor,
+];
+
+/// `0x005a_4870` `Phyre_PSharray_Phyre_PRendering_PMeshInstance__DeclareClassDescriptor`.
+pub const PHYRE_PSHARRAY_PHYRE_PRENDERING_PMESHINSTANCE__DECLARECLASSDESCRIPTOR: &[Step] = &[
+    Step::Guard(0x00cb_aec4),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x005a_2020,
+        this: Some(0x00cb_ae30),
+        args: &[],
+    },
+    Step::And(0x00cb_aec0, 0xffff_fffd),
+    Step::Store(0x00cb_ae30, 0x00b3_4bf4),
+    Step::AtExit(0x00b0_3e40),
+    Step::End,
+    Step::Owner {
+        slot: 0x00cb_ae48,
+        cache: 0x00cb_b1f8,
+    },
+    Step::Once(0x2),
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cb_aec8),
+        args: &[
+            Arg::Addr(0x00cb_ae30),
+            Arg::Addr(0x00ca_7228),
+            Arg::Addr(0x00b0_edd0),
+            Arg::Imm(0x4),
+            Arg::Imm(0x2),
+            Arg::Imm(0x2),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00cb_aec8, 0x00b3_4c38),
+    Step::Store(0x00cb_aefc, 0x0043_20c0),
+    Step::Zero(0x00cb_af00),
+    Step::Store(0x00cb_af04, 0x005a_8250),
+    Step::AtExit(0x00b0_3f90),
+    Step::End,
+    Step::Or(0x00cb_aedc, 0x40),
+    Step::Store(0x00cb_af00, 0x005a_7590),
+    Step::StoreImm(0x00cb_aef4, 0x4),
+    Step::Once(0x4),
+    Step::Call {
+        f: 0x0057_52a0,
+        this: Some(0x00cb_af08),
+        args: &[
+            Arg::Addr(0x00cb_ae30),
+            Arg::Get(0x0043_7fc0),
+            Arg::Addr(0x00b0_fd34),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+        ],
+    },
+    Step::AtExit(0x00b0_3ec0),
+    Step::End,
+    Step::Once(0x8),
+    Step::Call {
+        f: 0x0057_5840,
+        this: Some(0x00cb_af34),
+        args: &[Arg::Addr(0x00c9_07f4), Arg::Get(0x0043_7fc0), Arg::Imm(0x0)],
+    },
+    Step::Store(0x00cb_af34, 0x00b0_fd40),
+    Step::StoreImm(0x00cb_af4c, 0x7fff_ffff),
+    Step::AtExit(0x00b0_3e10),
+    Step::End,
+    Step::IfSelf(0x00cb_af38),
+    Step::Call {
+        f: 0x0057_5c10,
+        this: Some(0x00cb_af24),
+        args: &[Arg::Addr(0x00cb_af34)],
+    },
+    Step::End,
+    Step::Register(0x00cb_ae30),
+    Step::AddToNamespace,
+    Step::End,
+    Step::ReturnDescriptor,
+];
+
+/// `0x005e_b130` `Phyre_PSharray_Phyre_PPhysics_PPhysicsShape__DeclareClassDescriptor`.
+pub const PHYRE_PSHARRAY_PHYRE_PPHYSICS_PPHYSICSSHAPE__DECLARECLASSDESCRIPTOR: &[Step] = &[
+    Step::Guard(0x00cc_55ec),
+    Step::Once(0x1),
+    Step::Call {
+        f: 0x005d_d0a0,
+        this: Some(0x00cc_5558),
+        args: &[],
+    },
+    Step::And(0x00cc_55e8, 0xffff_fffd),
+    Step::Store(0x00cc_5558, 0x00b3_c7ac),
+    Step::AtExit(0x00b0_5430),
+    Step::End,
+    Step::Owner {
+        slot: 0x00cc_5570,
+        cache: 0x00cc_77fc,
+    },
+    Step::Once(0x2),
+    Step::Call {
+        f: 0x0057_5ef0,
+        this: Some(0x00cc_55f0),
+        args: &[
+            Arg::Addr(0x00cc_5558),
+            Arg::Addr(0x00cb_f358),
+            Arg::Addr(0x00b0_edd0),
+            Arg::Imm(0x4),
+            Arg::Imm(0x2),
+            Arg::Imm(0x2),
+            Arg::Imm(0x4),
+        ],
+    },
+    Step::Store(0x00cc_55f0, 0x00b3_c7f0),
+    Step::Store(0x00cc_5624, 0x0043_20c0),
+    Step::Zero(0x00cc_5628),
+    Step::Store(0x00cc_562c, 0x0060_3e50),
+    Step::AtExit(0x00b0_5c90),
+    Step::End,
+    Step::Or(0x00cc_5604, 0x40),
+    Step::Store(0x00cc_5628, 0x005f_e400),
+    Step::StoreImm(0x00cc_561c, 0x4),
+    Step::Once(0x4),
+    Step::Call {
+        f: 0x0057_52a0,
+        this: Some(0x00cc_5630),
+        args: &[
+            Arg::Addr(0x00cc_5558),
+            Arg::Get(0x0043_7fc0),
+            Arg::Addr(0x00b0_fd34),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+            Arg::Imm(0x0),
+        ],
+    },
+    Step::AtExit(0x00b0_5810),
+    Step::End,
+    Step::Once(0x8),
+    Step::Call {
+        f: 0x0057_5840,
+        this: Some(0x00cc_565c),
+        args: &[Arg::Addr(0x00c9_07f4), Arg::Get(0x0043_7fc0), Arg::Imm(0x0)],
+    },
+    Step::Store(0x00cc_565c, 0x00b0_fd40),
+    Step::StoreImm(0x00cc_5674, 0x7fff_ffff),
+    Step::AtExit(0x00b0_51e0),
+    Step::End,
+    Step::IfSelf(0x00cc_5660),
+    Step::Call {
+        f: 0x0057_5c10,
+        this: Some(0x00cc_564c),
+        args: &[Arg::Addr(0x00cc_565c)],
+    },
+    Step::End,
+    Step::Register(0x00cc_5558),
+    Step::AddToNamespace,
+    Step::End,
+    Step::ReturnDescriptor,
+];
+
+/// Every `Bind` table with its original's address.
+pub const BINDS: [(u32, &[Step]); 51] = [
     (0x0044_d880, PHYRE_PCOMPONENT_BIND),
     (0x0044_f120, PHYRE_PENTITY_BIND),
     (0x0045_aa60, PHYRE_PNAMECOMPONENT_BIND),
@@ -2989,4 +5173,46 @@ pub const BINDS: [(u32, &[Step]); 39] = [
     (0x005e_a550, PHYRE_PPHYSICS_PPHYSICSWORLD_BIND),
     (0x005e_aab0, PHYRE_PPHYSICS_PPHYSICSWORLDBASE_BIND),
     (0x005e_ad30, PHYRE_PPHYSICS_PRAYCASTRESULT_BIND),
+    (0x0054_5480, PHYRE_PGAMEPLAY_PLOCATOR_BIND),
+    (0x0054_7ef0, PHYRE_PGAMEPLAY_PSPLINE_BIND),
+    (0x0054_e7f0, PHYRE_PGAMEPLAY_PTRIGGER_BIND),
+    (0x0055_e960, PHYRE_PGEOMETRY_PDATABLOCKD3D11_BIND),
+    (0x0055_eb10, PHYRE_PGEOMETRY_PINDEXDATABLOCKD3D11_BIND),
+    (0x0058_7790, PHYRE_PRENDERING_PSHADERPROGRAMD3D11_BIND),
+    (0x0058_7bf0, PHYRE_PRENDERING_PSTREAMINPUTLAYOUTD3D11_BIND),
+    (0x005a_34b0, PHYRE_PLOD_PLODGROUP_BIND),
+    (0x005a_3910, PHYRE_PLOD_PLODLEVEL_BIND),
+    (0x005d_49d0, PHYRE_PSCRIPTING_PSCRIPT_BIND),
+    (0x005e_9490, PHYRE_PPHYSICS_PPHYSICSRIGIDBODYBASE_BIND),
+    (0x005e_9f70, PHYRE_PPHYSICS_PPHYSICSSHAPEBASE_BIND),
+];
+
+/// Every array getter's table with its original's address (cdecl
+/// `(owner)`, the descriptor returned).
+pub const GETTERS: [(u32, &[Step]); 7] = [
+    (0x0054_8a90, PHYRE_PARRAY_VECTOR3__DECLARECLASSDESCRIPTOR),
+    (
+        0x0055_f000,
+        PHYRE_PSHARRAY_PHYRE_PGEOMETRY_PDATABLOCKBUFFERD3D11__DECLARECLASSDESCRIPTOR,
+    ),
+    (
+        0x0055_f220,
+        PHYRE_PSHARRAY_PHYRE_PGEOMETRY_PINDEXDATABLOCKBUFFERD3D11__DECLARECLASSDESCRIPTOR,
+    ),
+    (
+        0x0058_7f60,
+        PHYRE_PARRAY_PHYRE_PRENDERING_PSTREAMINPUTDESCD3D11__DECLARECLASSDESCRIPTOR,
+    ),
+    (
+        0x005a_4660,
+        PHYRE_PARRAY_PHYRE_PLOD_PLODLEVEL__DECLARECLASSDESCRIPTOR,
+    ),
+    (
+        0x005a_4870,
+        PHYRE_PSHARRAY_PHYRE_PRENDERING_PMESHINSTANCE__DECLARECLASSDESCRIPTOR,
+    ),
+    (
+        0x005e_b130,
+        PHYRE_PSHARRAY_PHYRE_PPHYSICS_PPHYSICSSHAPE__DECLARECLASSDESCRIPTOR,
+    ),
 ];
