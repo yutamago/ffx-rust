@@ -23,7 +23,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
-use ffx_glue_other::{h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd};
+use ffx_glue_other::{
+    h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be,
+};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -2563,5 +2565,85 @@ fn bd_make_texture_end() {
             assert_eq!(x, y, "{w}: frame");
         }
         assert!(ok > 50, "{name}: {ok}");
+    }
+}
+
+// ---- batch 5 (ffx_glue_other::h4b_e)
+
+/// `AbmapDrawScreenQuad_00a4b260`: the vertex block from a stub, the
+/// divisor random; skipped frames draw nothing.
+#[test]
+fn be_screen_quad() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b801);
+        t.stub(be::ABMAP_VERTEX_INFO, 2, false);
+        let ebp = t.ebp_for(0);
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &[be::ABMAP_VERTEX_INFO]);
+            t.constants(&mut rng, &[], &[0x00b9_21f0]);
+            let skip = rng.pick(&[0, 0, 0, 1]);
+            t.g32(be::SKIP_FRAME, skip);
+            let info = random_block(&mut t, &mut rng, 0x98);
+            let v = random_block(&mut t, &mut rng, 0x24);
+            t.w32(info + 0x94, v);
+            for (off, n) in [
+                (0x20, 0x10),
+                (0xc, 0x30),
+                (0x10, 0x30),
+                (0x14, 0x40),
+                (0x1c, 0x10),
+            ] {
+                let b = random_block(&mut t, &mut rng, n);
+                t.w32(v + off, b);
+            }
+            t.ret(be::ABMAP_VERTEX_INFO, info);
+            t.check_framed(&w, 0x00a4_b260, &[], ebp - 0xc, &[], |g| {
+                be::screen_quad(g, ebp - 0x40);
+                Out::None
+            });
+        }
+    }
+}
+
+/// `MenuConfig_DrawRowFrame_008cb530`: the 13 boxes from float stubs and
+/// random constants; the argument slots compared.
+#[test]
+fn be_row_frame() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b802);
+        let mut tags = cursor_stubs(&mut t);
+        t.stub(be::CROSS_BOX, 6, false);
+        tags.push(be::CROSS_BOX);
+        let f32s = [
+            0x00b5_f430,
+            0x00b3_eb9c,
+            0x00b9_2308,
+            0x00b4_bf08,
+            0x00b6_5c0c,
+            0x00b5_ef78,
+            0x00b6_5c14,
+            0x00b6_5c18,
+            0x00b9_2268,
+            0x00b3_eb94,
+        ];
+        let ebp = t.ebp_for(2);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            cursor_floats(&mut t, &mut rng, &f32s, &[]);
+            let a = [rng.float(), rng.float()];
+            for (k, v) in a.iter().enumerate() {
+                t.b.write(ebp + 8 + 4 * k as u32, &v.to_le_bytes()).unwrap();
+            }
+            t.b.set_call_top(Some(ebp - 0x100));
+            t.check(&w, 0x008c_b530, &a, |g| {
+                u(be::row_frame(g, a[0], a[1], Some(ebp + 8)))
+            });
+            t.b.set_call_top(None);
+            let x = Oracle::read(&mut t.a, ebp + 8, 8).unwrap();
+            let y = Oracle::read(&mut t.b, ebp + 8, 8).unwrap();
+            assert_eq!(x, y, "{w}: argument slots");
+        }
     }
 }

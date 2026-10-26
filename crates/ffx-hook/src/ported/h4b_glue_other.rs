@@ -6,7 +6,7 @@
 //! drawers, the GS layer's frame code). Frames the originals hand callees
 //! are `StackFrame`s; nothing is kept between calls.
 
-use ffx_glue_other::{h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd};
+use ffx_glue_other::{h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be};
 
 use super::{StackFrame, mem, ported};
 
@@ -164,5 +164,18 @@ ported! {
     gdraw_makeTextureEnd_00a3a200 @ 0x00a3_a200 => extern "stdcall" fn make_texture_end(info: u32, stats: u32) -> u32 {
         let mut f = StackFrame::<0x53>::new();
         bd::make_texture_end(&mut mem(), f.at(), info, stats)
+    }
+
+    // ---- batch 5 (ffx_glue_other::h4b_e)
+
+    /// `AbmapDrawScreenQuad_00a4b260()`: the screen size in a frame.
+    AbmapDrawScreenQuad_00a4b260 @ 0x00a4_b260 => extern "C" fn screen_quad() {
+        let mut f = StackFrame::<2>::new();
+        be::screen_quad(&mut mem(), f.at());
+    }
+    /// `MenuConfig_DrawRowFrame_008cb530(x, y)`: the last edges in the
+    /// slots.
+    MenuConfig_DrawRowFrame_008cb530 @ 0x008c_b530 => extern "C" fn row_frame(x: u32, y: u32; slots: u32) -> u32 {
+        be::row_frame(&mut mem(), x, y, Some(slots))
     }
 }
