@@ -22,6 +22,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_panim::p2_more::{self as more, bridge as mb};
 use ffx_panim::{p2_bind, p2_declare};
 use ffx_pother_a::p3_bind;
 use ffx_prender::{declare as dc, h1_bind as h1b};
@@ -235,6 +236,27 @@ impl Twins {
         self.write(at, &j);
     }
 
+    /// An object whose vtable slots `0..words.len()` are recording stubs
+    /// (methods tagged `base + 4 * slot`, taking `words[slot]` words and
+    /// returning `rets[slot]`), `size` bytes of random words after its
+    /// vtable pointer.
+    fn object(&mut self, rng: &mut Rng, base: u32, words: &[u32], rets: &[Ret], size: u32) -> u32 {
+        let slots: Vec<u32> = (0u32..)
+            .zip(words.iter().zip(rets))
+            .map(|(i, (&n, &r))| self.stub_code(base + 4 * i, true, n, n, r))
+            .collect();
+        let vt: Vec<u8> = slots.iter().flat_map(|s| s.to_le_bytes()).collect();
+        let vt = self.alloc(&vt);
+        let o = self.random(rng, size as usize);
+        self.w32(o, vt);
+        o
+    }
+
+    fn random(&mut self, rng: &mut Rng, n: usize) -> u32 {
+        let v: Vec<u8> = (0..n).map(|_| rng.next() as u8).collect();
+        self.alloc(&v)
+    }
+
     /// Puts back every stubbed original.
     fn unstub_all(&mut self) {
         for (at, bytes) in std::mem::take(&mut self.saved) {
@@ -251,11 +273,23 @@ impl Twins {
     /// Runs the original at `sym` on `a` and `port` on `b`; compares all
     /// of `eax` and every byte written.
     fn check(&mut self, what: &str, sym: u32, args: &[u32], port: impl FnOnce(&mut G) -> u32) {
+        self.check_conv(what, sym, Conv::Cdecl, args, port);
+    }
+
+    /// [`Twins::check`] in another calling convention.
+    fn check_conv(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        port: impl FnOnce(&mut G) -> u32,
+    ) {
         self.fresh_log();
         let f = self.rebase(sym);
         let ra = self
             .a
-            .call(f, Conv::Cdecl, args)
+            .call(f, conv, args)
             .unwrap_or_else(|e| panic!("{} {what}: original: {e}", self.label));
         let rb = port(&mut G(&mut self.b));
         assert_eq!(
@@ -567,6 +601,343 @@ fn declarations_match_the_original() {
                     Decl::Sharray(c) => p2_declare::bridge::declare_sharray(g, name, &c),
                 });
             }
+        }
+        t.unstub_all();
+    }
+}
+
+/// The `PAnimationClipBinding` header's callbacks: the `+0x94` handler
+/// (stream objects with recording vtables), the `+0x3c` forwarder and the
+/// destruct callback (its visitor logged by contents: the original's is
+/// on its stack).
+#[test]
+fn clip_binding_header_matches_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0b1d_1a7a);
+        let skip = t.zeros(4);
+        let align = t.zeros(4);
+        t.stub(more::TYPE_U16, false, 0, 0, Ret::Imm(0x00c9_0016));
+        for case in 0..24u32 {
+            let stream = t.object(
+                &mut rng,
+                0x7100,
+                &[0, 4, 5, 0],
+                &[
+                    Ret::Imm(0),
+                    Ret::Imm(0x7104),
+                    Ret::Imm(0x7108),
+                    Ret::Cell(skip),
+                ],
+                0x10,
+            );
+            let other = t.object(
+                &mut rng,
+                0x7200,
+                &[0, 0, 0, 1],
+                &[Ret::Imm(0), Ret::Imm(0), Ret::Imm(0), Ret::Cell(align)],
+                0x10,
+            );
+            t.w32(stream + 4, other);
+            // any alignment: the caches block is rounded up to 4 bytes
+            let header = t.random(&mut rng, 0x44) + case % 4;
+            for off in [2, 4, 6] {
+                let v = if case % 4 == 3 {
+                    rng.next()
+                } else {
+                    rng.below(40)
+                };
+                t.write(header + off, &(v as u16).to_le_bytes());
+            }
+            let s = match case % 6 {
+                0 => 1,
+                1 => 0x100,
+                2 => rng.next() & !0xff,
+                _ => 0,
+            };
+            t.w32(skip, s);
+            let al = match case % 7 {
+                0 => 0,
+                1 => 3,
+                2 => rng.next(),
+                n => 1 << n,
+            };
+            t.w32(align, al);
+            t.check(
+                &format!("header visit case {case}"),
+                0x0051_0f90,
+                &[header, stream],
+                |g| mb::header_visit(g, header, stream),
+            );
+            // the forwarder: the handler at +0x94 (cdecl, two words)
+            let f = t.stub_code(0x7300, false, 2, 0, Ret::Imm(rng.next()));
+            let this = t.random(&mut rng, 0x100);
+            t.w32(this + 0x94, f);
+            t.check_conv(
+                &format!("header +0x3c case {case}"),
+                0x0051_1ac0,
+                Conv::Thiscall(this),
+                &[header, stream],
+                |g| mb::header_slot3c(g, this, header, stream),
+            );
+        }
+        // the destruct callback: vslot +0x3c logs the object and the
+        // visitor's two words, `ret 8`
+        let log = t.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(0x7400u32.to_le_bytes()); // mov [eax], tag
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+        c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+        c.extend([0x8b, 0x54, 0x24, 0x08]); // mov edx, [esp+8]
+        c.extend([0x8b, 0x0a]); // mov ecx, [edx]
+        c.extend([0x89, 0x48, 0x0c]); // mov [eax+0xc], ecx
+        c.extend([0x8b, 0x4a, 0x04]); // mov ecx, [edx+4]
+        c.extend([0x89, 0x48, 0x10]); // mov [eax+0x10], ecx
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0xb8);
+        c.extend(0x1234_5600u32.to_le_bytes()); // mov eax, ...
+        c.extend([0xc2, 0x08, 0x00]); // ret 8
+        let visit = t.code(&c);
+        t.stub(more::DELETE_CHILDREN_ARG, true, 0, 0, Ret::Imm(0x00cb_aa78));
+        for case in 0..4u32 {
+            let mut vt: Vec<u32> = (0..0x10).map(|_| rng.next()).collect();
+            vt[0xf] = visit;
+            let vt: Vec<u8> = vt.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let vt = t.alloc(&vt);
+            let this = t.random(&mut rng, 0x20);
+            t.w32(this, vt);
+            let object = rng.next();
+            t.check_conv(
+                &format!("header destruct case {case}"),
+                0x0051_1130,
+                Conv::Thiscall(this),
+                &[object],
+                |g| {
+                    let frame = g.0.stack_range().start + 0x80;
+                    mb::header_destruct(g, this, object, frame)
+                },
+            );
+        }
+        t.unstub_all();
+    }
+}
+
+/// `PAnimationClipBinding`'s fix-up and `PAnimationClip`'s
+/// fix-after-loading callback.
+#[test]
+fn clip_fixups_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0f12_0b1d);
+        for case in 0..32u32 {
+            // 2-byte aligned (u16 fields), so the records' 4-byte rounding shows
+            let this = t.random(&mut rng, 0x304) + 2 * (case % 2);
+            for off in [2, 4, 6] {
+                let v = if case == 7 { 0xfffe } else { rng.below(24) };
+                t.write(this + off, &(v as u16).to_le_bytes());
+            }
+            // targets: t+0x24 -> a block whose +8 is read, t+0x2c
+            let targets: Vec<u32> = (0..6)
+                .map(|_| {
+                    let tg = t.random(&mut rng, 0x30);
+                    let a = t.random(&mut rng, 0x10);
+                    t.w32(tg + 0x24, a);
+                    tg
+                })
+                .collect();
+            let table: Vec<u8> = targets.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let table = t.alloc(&table);
+            let n = rng.below(6);
+            let entry = t.random(&mut rng, 0x10);
+            let flag = if rng.chance(3) { 0x8000_0000 } else { 0 };
+            // (bits 16-30 of the count would mean 65536 records and more)
+            t.w32(entry + 4, n | flag);
+            t.w32(entry + 8, table);
+            // the records' target indices
+            let h6 = u32::from(Mem::read::<u16>(&t.a, this + 6));
+            let h4 = u32::from(Mem::read::<u16>(&t.a, this + 4));
+            let h2 = u32::from(Mem::read::<u16>(&t.a, this + 2));
+            let p = this.wrapping_add((((h6 + 3) & !3) + (h4 + h2) * 2 + 4) * 2);
+            let rec = p + (p.wrapping_neg() & 3);
+            if case == 7 {
+                // keys past the block: no records
+                t.w32(entry + 4, 0);
+            } else {
+                for i in 0..n {
+                    let k = rng.below(6) as u16;
+                    t.write(rec + 0x10 * i + 0xc, &k.to_le_bytes());
+                }
+            }
+            t.check_conv(
+                &format!("binding fixup case {case}"),
+                0x0051_1980,
+                Conv::Thiscall(this),
+                &[entry],
+                |g| mb::clip_binding_fixup(g, this, entry),
+            );
+        }
+        // the clip: entries with a binding or none; the fix-up's result
+        let r = t.zeros(4);
+        t.stub(more::CLIP_BINDING_FIXUP, true, 1, 1, Ret::Cell(r));
+        for case in 0..16u32 {
+            let stride = 4 + 4 * rng.below(4);
+            let n = rng.below(6);
+            let entries = t.random(&mut rng, (stride * 6) as usize);
+            for i in 0..n {
+                let b = if rng.chance(3) { 0 } else { rng.next() | 1 };
+                t.w32(entries + stride * i, b);
+            }
+            let info = t.random(&mut rng, 0x20);
+            t.w32(info + 0x1c, stride);
+            let clip = t.random(&mut rng, 0x40);
+            t.w32(clip + 0x2c, info);
+            t.w32(clip + 0x30, entries);
+            t.w32(clip + 0x3c, n);
+            let v = if case % 3 == 0 { rng.next() } else { 0 };
+            t.w32(r, v);
+            t.check_conv(
+                &format!("clip fix after loading case {case}"),
+                0x0051_6370,
+                Conv::Stdcall,
+                &[clip],
+                |g| mb::clip_fix_after_loading(g, clip),
+            );
+        }
+        t.unstub_all();
+    }
+}
+
+/// A float's bits, no signalling NaN (the emulator keeps them).
+fn float(rng: &mut Rng) -> u32 {
+    match rng.below(8) {
+        0 => [
+            0,
+            0x8000_0000,
+            0x3f80_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc0_0001,
+        ][rng.below(6) as usize],
+        1 => rng.next() & 0x807f_ffff,
+        _ => (rng.next() & 0x807f_ffff) | ((100 + rng.below(56)) << 23),
+    }
+}
+
+/// The 3x3 copy (aliasing included) and `PAnimationNetworkInstance`'s
+/// constructor, destructor and thread pool.
+#[test]
+fn network_instance_and_matrix_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x3a3a_0e7e);
+        for case in 0..12u32 {
+            let words: Vec<u8> = (0..0x40)
+                .flat_map(|_| float(&mut rng).to_le_bytes())
+                .collect();
+            let src = t.alloc(&words);
+            let dst = match case % 3 {
+                0 => src,
+                1 => src + 4,
+                _ => t.random(&mut rng, 0x40),
+            };
+            t.check_conv(
+                &format!("upper 3x3 case {case}"),
+                0x0053_1a40,
+                Conv::Thiscall(dst),
+                &[src],
+                |g| mb::upper3x3(g, dst, src),
+            );
+        }
+        for case in 0..2u32 {
+            let this = t.random(&mut rng, 0x40);
+            t.check_conv(
+                &format!("network ctor case {case}"),
+                0x0053_4450,
+                Conv::Thiscall(this),
+                &[],
+                |g| mb::network_instance_ctor(g, this),
+            );
+        }
+        t.stub(more::PHYRE_FREE, false, 1, 0, Ret::Imm(0x00f4_ee00));
+        for case in 0..24u32 {
+            let this = t.random(&mut rng, 0x40);
+            for at in [4, 0xc, 0x20, 0x2c] {
+                let owned = if rng.chance(2) { 0 } else { 0x8000_0000 };
+                t.w32(this + at, owned | (rng.next() & 0xff));
+                let data = if rng.chance(3) { 0 } else { rng.next() | 1 };
+                t.w32(this + at + 4, data);
+            }
+            t.check_conv(
+                &format!("network dtor case {case}"),
+                0x0053_4b10,
+                Conv::Thiscall(this),
+                &[],
+                |g| mb::network_instance_dtor(g, this),
+            );
+        }
+        let block = t.zeros(4);
+        let list = t.zeros(4);
+        t.stub(more::PHYRE_MALLOC, false, 1, 0, Ret::Cell(block));
+        t.stub(more::FREE_LIST_CTOR, true, 4, 4, Ret::Cell(list));
+        let pool = t.rebase(more::THREAD_POOL);
+        for case in 0..8u32 {
+            let p = if case & 1 == 0 { 0 } else { rng.next() };
+            t.w32(pool, p);
+            let b = if case & 2 == 0 { 0 } else { rng.next() };
+            t.w32(block, b);
+            let l = if case & 4 == 0 { 0 } else { rng.next() };
+            t.w32(list, l);
+            t.check(&format!("thread pool case {case}"), 0x0053_9640, &[], |g| {
+                mb::initialize_thread_pool(g)
+            });
+        }
+        t.unstub_all();
+    }
+}
+
+/// `PAnimatableComponent`'s constructor and destructor.
+#[test]
+fn animatable_component_matches_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0a1a_c0c0);
+        t.stub(more::OBJECT_REF_INIT, true, 1, 1, Ret::Imm(0x00e0_0001));
+        t.stub(more::OBJECT_REF_RELEASE, true, 0, 0, Ret::Imm(0x00e0_0002));
+        for f in [
+            more::WEIGHTED_BLENDER_CTOR,
+            more::WEIGHTED_BLENDER_DTOR,
+            more::TARGET_BLENDER_CTOR,
+            more::TARGET_BLENDER_DTOR,
+            more::NETWORK_INSTANCE_CTOR,
+            more::NETWORK_INSTANCE_DTOR,
+        ] {
+            t.stub(f, true, 0, 0, Ret::Imm(f));
+        }
+        t.stub(more::DELETE_ARRAY_4C, false, 2, 0, Ret::Imm(0x00e0_0003));
+        for case in 0..2u32 {
+            let this = t.random(&mut rng, 0x90);
+            t.check_conv(
+                &format!("animatable ctor case {case}"),
+                0x0053_e720,
+                Conv::Thiscall(this),
+                &[],
+                |g| mb::animatable_ctor(g, this),
+            );
+        }
+        for case in 0..8u32 {
+            let this = t.random(&mut rng, 0x90);
+            let owned = if case % 2 == 0 { 0 } else { 0x8000_0000 };
+            t.w32(this + 0x14, owned | rng.below(9));
+            t.check_conv(
+                &format!("animatable dtor case {case}"),
+                0x0053_ebd0,
+                Conv::Thiscall(this),
+                &[],
+                |g| mb::animatable_dtor(g, this),
+            );
         }
         t.unstub_all();
     }

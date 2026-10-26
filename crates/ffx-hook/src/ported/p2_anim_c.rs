@@ -1,15 +1,19 @@
 //! `PhyreEngine`'s `PAnimation` code, list `p2-anim` continued
-//! (`ffx_panim::p2_bind`, `ffx_panim::p2_declare`).
+//! (`ffx_panim::p2_bind`, `ffx_panim::p2_declare`, `ffx_panim::p2_more`).
 //!
 //! The animation classes' `Bind()` functions, as tables run by h1's
 //! interpreter (`ffx_prender::h1_bind`) and, for
 //! `PTimeController::Bind`, p3's (`ffx_pother_a::p3_bind`); their
 //! `PArray<T>` / `PSharray<T>` declarations, the plain ones run by h2's
-//! `ffx_prender::declare`. Start-up code on the main thread; nothing keeps
-//! state of its own.
+//! `ffx_prender::declare`, start-up code on the main thread; then
+//! `PAnimationClipBinding`'s and `PAnimationClip`'s loading callbacks,
+//! `PAnimationNetworkInstance`'s and `PAnimatableComponent`'s constructors
+//! and destructors (loading threads too), a matrix copy. Nothing keeps
+//! state of its own; the one local a callee sees is a per-call
+//! `StackFrame`.
 
-use super::{mem, ported};
-use ffx_panim::{p2_bind, p2_declare};
+use super::{StackFrame, mem, ported};
+use ffx_panim::{p2_bind, p2_declare, p2_more::bridge as more};
 use ffx_pother_a::p3_bind;
 use ffx_prender::{declare, h1_bind};
 
@@ -90,6 +94,42 @@ ported! {
     Phyre_PAnimation_PAnimatableComponent_Bind @ 0x0053_f510 => extern "C" fn bind_0053f510() -> u32 {
         h1_bind::bridge::bind(&mut mem(), const { p2_bind::bind_of(0x0053_f510) })
     }
+    /// `Phyre_PAnimation_PAnimationChannelBase_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PAnimation_PAnimationChannelBase_Bind @ 0x0050_d2f0 => extern "C" fn bind_0050d2f0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { p2_bind::bind_of(0x0050_d2f0) })
+    }
+    /// `Phyre_PAnimation_PAnimationConstantChannel_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PAnimation_PAnimationConstantChannel_Bind @ 0x0050_f330 => extern "C" fn bind_0050f330() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { p2_bind::bind_of(0x0050_f330) })
+    }
+    /// `Phyre_PAnimation_PTimeScaleOffsetController_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PAnimation_PTimeScaleOffsetController_Bind @ 0x0052_3340 => extern "C" fn bind_00523340() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { p2_bind::bind_of(0x0052_3340) })
+    }
+    /// `Phyre_PAnimation_PAnimationDataSource_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PAnimation_PAnimationDataSource_Bind @ 0x0052_3e00 => extern "C" fn bind_00523e00() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { p2_bind::bind_of(0x0052_3e00) })
+    }
+    /// `Phyre_PAnimation_PAnimationController_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PAnimation_PAnimationController_Bind @ 0x0052_5440 => extern "C" fn bind_00525440() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { p2_bind::bind_of(0x0052_5440) })
+    }
+    /// `Phyre_PAnimation_PAnimationWeightedBlenderController_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PAnimation_PAnimationWeightedBlenderController_Bind @ 0x0052_d9e0 => extern "C" fn bind_0052d9e0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { p2_bind::bind_of(0x0052_d9e0) })
+    }
+    /// `Phyre_PAnimation_PAnimationAdditiveBlenderController_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PAnimation_PAnimationAdditiveBlenderController_Bind @ 0x0052_ee70 => extern "C" fn bind_0052ee70() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { p2_bind::bind_of(0x0052_ee70) })
+    }
+    /// `Phyre_PAnimation_PAnimationSpuTargetBlenderController_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PAnimation_PAnimationSpuTargetBlenderController_Bind @ 0x0053_01b0 => extern "C" fn bind_005301b0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { p2_bind::bind_of(0x0053_01b0) })
+    }
+    /// `Phyre_PAnimation_PAnimationTargetBlenderController_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PAnimation_PAnimationTargetBlenderController_Bind @ 0x0053_0f50 => extern "C" fn bind_00530f50() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { p2_bind::bind_of(0x0053_0f50) })
+    }
     /// `Phyre_PAnimation_PTimeController_Bind()` -> `addToNamespace`'s `eax`.
     Phyre_PAnimation_PTimeController_Bind @ 0x0052_1bb0 => extern "C" fn bind_00521bb0() -> u32 {
         p3_bind::bridge::bind(&mut mem(), p2_bind::TIME_CONTROLLER)
@@ -149,5 +189,51 @@ ported! {
     /// `Phyre_PSharray_Phyre_PAnimation_PAnimationClip_ptr__DeclareClassDescriptor(name)` -> the descriptor.
     Phyre_PSharray_Phyre_PAnimation_PAnimationClip_ptr__DeclareClassDescriptor @ 0x0051_a650 => extern "C" fn declare_0051a650(name: u32) -> u32 {
         p2_declare::bridge::declare_sharray(&mut mem(), name, &p2_declare::CLIP_SHARRAY)
+    }
+    // batch 2: the hand-written ones (ffx_panim::p2_more)
+    /// `Phyre_PAnimation_PAnimationClipBinding_headerVisit_00510f90`.
+    Phyre_PAnimation_PAnimationClipBinding_headerVisit_00510f90 @ 0x0051_0f90 => extern "C" fn header_visit_00510f90(header: u32, stream: u32) -> u32 {
+        more::header_visit(&mut mem(), header, stream)
+    }
+    /// `Phyre_PClassDescriptorHeader_Phyre_PAnimation_PAnimationClipBinding__destructInstance`.
+    Phyre_PClassDescriptorHeader_Phyre_PAnimation_PAnimationClipBinding__destructInstance @ 0x0051_1130 => extern "thiscall" fn header_destruct_00511130(this: u32, object: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        more::header_destruct(&mut mem(), this, object, frame.at())
+    }
+    /// `Phyre_PAnimation_PAnimationClipBinding_fixup_00511980`.
+    Phyre_PAnimation_PAnimationClipBinding_fixup_00511980 @ 0x0051_1980 => extern "thiscall" fn fixup_00511980(this: u32, entry: u32) -> u32 {
+        more::clip_binding_fixup(&mut mem(), this, entry)
+    }
+    /// `Phyre_PClassDescriptorHeader_Phyre_PAnimation_PAnimationClipBinding__slot3c`.
+    Phyre_PClassDescriptorHeader_Phyre_PAnimation_PAnimationClipBinding__slot3c @ 0x0051_1ac0 => extern "thiscall" fn header_slot3c_00511ac0(this: u32, header: u32, stream: u32) -> u32 {
+        more::header_slot3c(&mut mem(), this, header, stream)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PAnimation_PAnimationClip__fixObjectsAfterLoading`.
+    Phyre_PClassDescriptorConcrete_Phyre_PAnimation_PAnimationClip__fixObjectsAfterLoading @ 0x0051_6370 => extern "stdcall" fn fix_after_loading_00516370(object: u32) -> u32 {
+        more::clip_fix_after_loading(&mut mem(), object)
+    }
+    /// `Vectormath_Matrix3_fromMatrix4Upper_00531a40`.
+    Vectormath_Matrix3_fromMatrix4Upper_00531a40 @ 0x0053_1a40 => extern "thiscall" fn upper3x3_00531a40(this: u32, src: u32) -> u32 {
+        more::upper3x3(&mut mem(), this, src)
+    }
+    /// `Phyre_PAnimation_PAnimationNetworkInstance_PAnimationNetworkInstance`.
+    Phyre_PAnimation_PAnimationNetworkInstance_PAnimationNetworkInstance @ 0x0053_4450 => extern "thiscall" fn ctor_00534450(this: u32) -> u32 {
+        more::network_instance_ctor(&mut mem(), this)
+    }
+    /// `Phyre_PAnimation_PAnimationNetworkInstance_dtor_PAnimationNetworkInstance`.
+    Phyre_PAnimation_PAnimationNetworkInstance_dtor_PAnimationNetworkInstance @ 0x0053_4b10 => extern "thiscall" fn dtor_00534b10(this: u32) -> u32 {
+        more::network_instance_dtor(&mut mem(), this)
+    }
+    /// `Phyre_PAnimation_PAnimationNetworkInstance_InitializeThreadPool`.
+    Phyre_PAnimation_PAnimationNetworkInstance_InitializeThreadPool @ 0x0053_9640 => extern "C" fn thread_pool_00539640() -> u32 {
+        more::initialize_thread_pool(&mut mem())
+    }
+    /// `Phyre_PAnimation_PAnimatableComponent_PAnimatableComponent`.
+    Phyre_PAnimation_PAnimatableComponent_PAnimatableComponent @ 0x0053_e720 => extern "thiscall" fn ctor_0053e720(this: u32) -> u32 {
+        more::animatable_ctor(&mut mem(), this)
+    }
+    /// `Phyre_PAnimation_PAnimatableComponent_dtor_PAnimatableComponent`.
+    Phyre_PAnimation_PAnimatableComponent_dtor_PAnimatableComponent @ 0x0053_ebd0 => extern "thiscall" fn dtor_0053ebd0(this: u32) -> u32 {
+        more::animatable_dtor(&mut mem(), this)
     }
 }

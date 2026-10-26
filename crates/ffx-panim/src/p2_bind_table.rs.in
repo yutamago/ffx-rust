@@ -99,6 +99,17 @@
             Step::AtExit(0x00b0_02d0),
         ]),
     ] }),
+    // 0x50d2f0
+    (0x0050_d2f0, Bind { d: 0x00ca_9f30, steps: &[
+        Step::Guard(0x00ca_9ff0, 0x1, &[
+            Step::Member { ctor: 0x0057_52a0, member: 0x00ca_9fc4, ty: Ty::Call(0x0050_78c0), name: 0x00b2_5ea4, words: [0x1c, 0x12, 0x0] },
+            Step::AtExit(0x00b0_0350),
+        ]),
+        Step::Guard(0x00ca_9ff0, 0x2, &[
+            Step::Member { ctor: 0x0057_5370, member: 0x00ca_9ff4, ty: Ty::Call(0x0043_7f10), name: 0x00b2_54f4, words: [0x20, 0x10, 0x3] },
+            Step::AtExit(0x00b0_0340),
+        ]),
+    ] }),
     // Phyre_PAnimation_PAnimationChannel_Bind
     (0x0050_e120, Bind { d: 0x00ca_a0b8, steps: &[
         Step::Guard(0x00ca_a178, 0x1, &[
@@ -123,6 +134,14 @@
             Step::Member { ctor: 0x0057_52a0, member: 0x00ca_a1b0, ty: Ty::Call(0x0043_7fc0), name: 0x00b2_5744, words: [0x30, 0x10, 0x0] },
             Step::AtExit(0x00b0_0380),
         ]),
+    ] }),
+    // 0x50f330
+    (0x0050_f330, Bind { d: 0x00ca_a298, steps: &[
+        Step::Guard(0x00ca_a364, 0x1, &[
+            Step::Member { ctor: 0x0057_5f30, member: 0x00ca_a32c, ty: Ty::Call(0x0043_8060), name: 0x00b2_0040, words: [0x24, 0x0, 0x4] },
+            Step::AtExit(0x00b0_03d0),
+        ]),
+        Step::Or(0x00ca_a340, 0x10),
     ] }),
     // Phyre_PAnimation_PAnimationClipBinding_Bind
     (0x0051_0450, Bind { d: 0x00ca_a558, steps: &[
@@ -390,6 +409,28 @@
             Step::AtExit(0x00b0_0bd0),
         ]),
     ] }),
+    // 0x523340
+    (0x0052_3340, Bind { d: 0x00ca_bba8, steps: &[
+        Step::Guard(0x00ca_bc68, 0x1, &[
+            Step::Member { ctor: 0x0057_52a0, member: 0x00ca_bc3c, ty: Ty::Addr(0x00ca_b920), name: 0x00b0_fb54, words: [0x8, 0x12, 0x0] },
+            Step::AtExit(0x00b0_0c30),
+        ]),
+        Step::Guard(0x00ca_bc68, 0x2, &[
+            Step::Member { ctor: 0x0057_52a0, member: 0x00ca_bc6c, ty: Ty::Call(0x0043_8060), name: 0x00b2_87d4, words: [0xc, 0x10, 0x0] },
+            Step::AtExit(0x00b0_0c40),
+        ]),
+        Step::Guard(0x00ca_bc68, 0x4, &[
+            Step::Member { ctor: 0x0057_52a0, member: 0x00ca_bc98, ty: Ty::Call(0x0043_8060), name: 0x00b0_f994, words: [0x10, 0x10, 0x0] },
+            Step::AtExit(0x00b0_0c20),
+        ]),
+    ] }),
+    // 0x523e00
+    (0x0052_3e00, Bind { d: 0x00ca_bd28, steps: &[
+        Step::Guard(0x00ca_bde8, 0x1, &[
+            Step::Member { ctor: 0x0057_52a0, member: 0x00ca_bdbc, ty: Ty::Addr(0x00ca_aea8), name: 0x00b2_8924, words: [0x8, 0x12, 0x0] },
+            Step::AtExit(0x00b0_0c70),
+        ]),
+    ] }),
     // Phyre_PAnimation_PAnimationEventController_Bind
     (0x0052_4770, Bind { d: 0x00ca_be20, steps: &[
         Step::Guard(0x00ca_bee0, 0x1, &[
@@ -399,6 +440,17 @@
         Step::Guard(0x00ca_bee0, 0x2, &[
             Step::Member { ctor: 0x0057_52a0, member: 0x00ca_bee4, ty: Ty::Addr(0x00ca_b920), name: 0x00b2_8b58, words: [0x10, 0x12, 0x0] },
             Step::AtExit(0x00b0_0cb0),
+        ]),
+    ] }),
+    // 0x525440
+    (0x0052_5440, Bind { d: 0x00ca_bf68, steps: &[
+        Step::Guard(0x00ca_c028, 0x1, &[
+            Step::Member { ctor: 0x0057_52a0, member: 0x00ca_bffc, ty: Ty::Addr(0x00ca_a7e8), name: 0x00b2_8d6c, words: [0xc, 0x12, 0x0] },
+            Step::AtExit(0x00b0_0ce0),
+        ]),
+        Step::Guard(0x00ca_c028, 0x2, &[
+            Step::Member { ctor: 0x0057_52a0, member: 0x00ca_c02c, ty: Ty::Addr(0x00ca_b920), name: 0x00b2_8b58, words: [0x10, 0x12, 0x0] },
+            Step::AtExit(0x00b0_0cf0),
         ]),
     ] }),
     // Phyre_PAnimation_PAnimationSlotFilter_Bind
@@ -461,6 +513,54 @@
             Step::AtExit(0x00b0_0ea0),
         ]),
         Step::Or(0x00ca_c6c0, 0x10),
+    ] }),
+    // 0x52d9e0
+    (0x0052_d9e0, Bind { d: 0x00ca_c898, steps: &[
+        Step::Call(0x0043_8060, None),
+        Step::Call(0x0050_9da0, Some(0x00c1_e568)),
+        Step::Guard(0x00ca_c960, 0x1, &[
+            Step::Guard(0x00ca_9b44, 0x1, &[
+                Step::Descriptor { obj: 0x00ca_9ab0, ctor: 0x0050_9630 },
+                Step::And(0x00ca_9b40, 0xffff_fffd),
+                Step::Store(0x00ca_9ab0, Val::Addr(0x00b2_57e4)),
+                Step::AtExit(0x00b0_0130),
+            ]),
+            Step::Array { member: 0x00ca_c92c, ty: Ty::Addr(0x00ca_9ab0), name: 0x00b2_9c34, words: [0x14, 0x0, 0x3, 0x4] },
+            Step::Store(0x00ca_c92c, Val::Addr(0x00b2_570c)),
+            Step::AtExit(0x00b0_0ed0),
+        ]),
+        Step::Or(0x00ca_c940, 0x10),
+    ] }),
+    // 0x52ee70
+    (0x0052_ee70, Bind { d: 0x00ca_c9d0, steps: &[
+        Step::Call(0x0043_8060, None),
+        Step::Call(0x0050_9da0, Some(0x00c1_e6f0)),
+        Step::Guard(0x00ca_ca98, 0x1, &[
+            Step::Guard(0x00ca_9b44, 0x1, &[
+                Step::Descriptor { obj: 0x00ca_9ab0, ctor: 0x0050_9630 },
+                Step::And(0x00ca_9b40, 0xffff_fffd),
+                Step::Store(0x00ca_9ab0, Val::Addr(0x00b2_57e4)),
+                Step::AtExit(0x00b0_0130),
+            ]),
+            Step::Array { member: 0x00ca_ca64, ty: Ty::Addr(0x00ca_9ab0), name: 0x00b2_9c34, words: [0x14, 0x0, 0x3, 0x4] },
+            Step::Store(0x00ca_ca64, Val::Addr(0x00b2_570c)),
+            Step::AtExit(0x00b0_0f00),
+        ]),
+        Step::Or(0x00ca_ca78, 0x10),
+    ] }),
+    // 0x5301b0
+    (0x0053_01b0, Bind { d: 0x00ca_cb00, steps: &[
+        Step::Guard(0x00ca_cbc0, 0x1, &[
+            Step::Member { ctor: 0x0057_52a0, member: 0x00ca_cb94, ty: Ty::Addr(0x00ca_bd28), name: 0x00b2_91c0, words: [0xc, 0x12, 0x0] },
+            Step::AtExit(0x00b0_0f30),
+        ]),
+    ] }),
+    // 0x530f50
+    (0x0053_0f50, Bind { d: 0x00ca_cc00, steps: &[
+        Step::Guard(0x00ca_ccc0, 0x1, &[
+            Step::Member { ctor: 0x0057_52a0, member: 0x00ca_cc94, ty: Ty::Addr(0x00ca_bd28), name: 0x00b2_91c0, words: [0xc, 0x12, 0x0] },
+            Step::AtExit(0x00b0_0f60),
+        ]),
     ] }),
     // Phyre_PAnimation_PAnimationDataSourceListEntry_Bind
     (0x0053_5bf0, Bind { d: 0x00ca_cd18, steps: &[

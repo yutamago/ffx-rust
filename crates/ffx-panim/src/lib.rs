@@ -26,6 +26,7 @@ pub mod descriptor;
 pub mod network;
 pub mod p2_bind;
 pub mod p2_declare;
+pub mod p2_more;
 
 /// `mov al, 1` over an `eax` that held `eax`: what the callbacks that end
 /// that way leave for their caller.
