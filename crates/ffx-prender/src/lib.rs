@@ -74,6 +74,8 @@ pub mod h2_more6;
 pub mod h2_more7;
 pub mod mesh;
 pub mod misc;
+pub mod p6_binds;
+pub mod p6_binds1;
 pub mod p6_descriptor;
 pub mod p6_misc;
 pub mod p6_more;

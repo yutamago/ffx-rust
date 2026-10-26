@@ -5,9 +5,111 @@ use std::path::PathBuf;
 
 use ffx_oracle::Conv;
 use ffx_prender::declare as dc;
+use ffx_prender::h1_bind as h1b;
+use ffx_prender::h2_bind::{self as hb, Step, Ty};
+use ffx_prender::p6_binds as binds;
+use ffx_prender::p6_binds1 as binds1;
 use ffx_prender::p6_more as more;
 
 use super::{DESC, G, Out, Rng, Twins, object};
+
+/// Empties the call log (it holds 1,023 entries; the count would run on
+/// into other allocations).
+fn fresh(t: &mut Twins) {
+    let log = t.log;
+    t.w32(log, 0);
+}
+
+#[test]
+fn binds_match_the_original() {
+    let src = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../ffx-hook/src/ported/p6_render_c2.rs"),
+    )
+    .unwrap();
+    for &(a, _) in binds::BINDS {
+        let key = format!(" @ {:#06x}_{:04x} => ", a >> 16, a & 0xffff);
+        let at = src.find(&key).unwrap_or_else(|| panic!("{a:#x}: no shim"));
+        assert!(
+            src[at..].contains(&format!("&binds::B_{a:08X})")),
+            "{a:#x}: shim table"
+        );
+    }
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_0009);
+        for &(f, b) in binds::BINDS {
+            // (callee, logs ecx, words logged, words popped)
+            let mut callees = vec![
+                (dc::REGISTER_TYPE, false, 1, 0),
+                (dc::ADD_TO_NAMESPACE, true, 0, 0),
+                (dc::ATEXIT, false, 1, 0),
+            ];
+            for step in b.steps {
+                match step {
+                    Step::Member(m) => {
+                        callees.push((m.ctor, true, 6, 6));
+                        match m.ty {
+                            Ty::Get(g) => callees.push((g, false, 0, 0)),
+                            Ty::GetArg(g, _) => callees.push((g, false, 1, 0)),
+                            Ty::Image(_) => {}
+                        }
+                    }
+                    Step::Array(a) => {
+                        callees.push((dc::MEMBER_ARRAY_CTOR, true, 6, 7));
+                        callees.push((a.desc_ctor, true, 0, 0));
+                    }
+                    Step::Base { func, .. } => callees.push((*func, false, 1, 0)),
+                    Step::Or { .. } => {}
+                }
+            }
+            callees.sort_by_key(|c| c.0);
+            callees.dedup_by_key(|c| c.0);
+            for &(s, this, n, pops) in &callees {
+                t.stub(s, this, n, pops, rng.next());
+            }
+            for i in 0..12 {
+                for step in b.steps {
+                    let guards = match step {
+                        Step::Member(m) => vec![m.guard.0],
+                        Step::Array(a) => {
+                            let d = t.rebase(a.desc);
+                            let v = rng.next();
+                            t.w32(d + 0x90, v);
+                            vec![a.guard.0, a.desc_guard.0]
+                        }
+                        Step::Base { global, .. } => {
+                            let g = t.rebase(*global);
+                            let v = rng.next();
+                            t.w32(g, v);
+                            vec![]
+                        }
+                        Step::Or { at, .. } => {
+                            let at = t.rebase(*at);
+                            let v = rng.next();
+                            t.w32(at, v);
+                            vec![]
+                        }
+                    };
+                    for g in guards {
+                        let g = t.rebase(g);
+                        let v = match i {
+                            0 => 0,
+                            1 => u32::MAX,
+                            _ => rng.next() & rng.next(),
+                        };
+                        t.w32(g, v);
+                    }
+                }
+                fresh(&mut t);
+                t.check(&format!("{name} {f:#x} #{i}"), f, Conv::Cdecl, &[], |g| {
+                    Out::U32(hb::bridge::bind(g, b))
+                });
+            }
+            for &(s, ..) in &callees {
+                t.unstub(s);
+            }
+        }
+    }
+}
 
 #[test]
 fn more_shims_match_their_tables() {
@@ -73,6 +175,7 @@ fn more_abstract_ctors_match_the_original() {
                     t.w32(g, v);
                 }
                 let this = object(&mut t, &mut rng, 0x30, false);
+                fresh(&mut t);
                 t.check(
                     &format!("{name} {f:#x} #{i}"),
                     f,
@@ -136,6 +239,7 @@ fn more_declares_match_the_original() {
                     t.w32(d + off, w);
                 }
                 let arg = if i % 8 == 7 { 0 } else { rng.next() | 1 };
+                fresh(&mut t);
                 t.check(
                     &format!("{name} {f:#x} #{i}"),
                     f,
@@ -201,6 +305,7 @@ fn more_skip_empty_copy_matches_the_original() {
             let left = if rng.chance(4) { 1 + rng.below(3) } else { 0 };
             t.w32(cur + 0x18, left);
             let addr = t.rebase(0x009f_3930);
+            fresh(&mut t);
             t.a.call(addr, Conv::Fastcall, &[cur]).unwrap();
             ffx_prender::h2_more::bridge::skip_empty(&mut G(&mut t.b), cur);
             t.diff(&format!("{name} skipEmpty #{i}"));
@@ -253,6 +358,7 @@ fn more_semantic_checks_match_the_original() {
             for &(f, rule, default) in more::SEMANTIC_CHECKS {
                 t.w32(src + 0x20, a);
                 t.w32(src + 0x24, b);
+                fresh(&mut t);
                 t.check(
                     &format!("{name} {f:#x} #{i}"),
                     f,
@@ -264,6 +370,7 @@ fn more_semantic_checks_match_the_original() {
             for &f in more::MOUSE_DELTA_CHECKS {
                 t.w32(src + 0x20, a);
                 t.w32(src + 0x24, b);
+                fresh(&mut t);
                 t.check(
                     &format!("{name} {f:#x} #{i}"),
                     f,
@@ -284,6 +391,7 @@ fn more_input_constructors_match_the_original() {
             t.stub(check, true, 0, 0, rng.next());
             for i in 0..6 {
                 let obj = object(&mut t, &mut rng, 0x10, i == 0);
+                fresh(&mut t);
                 t.check(
                     &format!("{name} {f:#x} #{i}"),
                     f,
@@ -296,6 +404,7 @@ fn more_input_constructors_match_the_original() {
         }
         for i in 0..6 {
             let obj = object(&mut t, &mut rng, 0x10, i == 0);
+            fresh(&mut t);
             t.check(
                 &format!("{name} mouse button #{i}"),
                 0x009e_b470,
@@ -394,6 +503,7 @@ fn more_delegation_runs_match_the_original() {
                 let n = rng.below(7);
                 let flags = [flag, 1, flag << 1];
                 let helper = delegations(&mut t, &mut rng, n, &flags, callback, scratch);
+                fresh(&mut t);
                 t.check(
                     &format!("{name} {f:#x} #{i}"),
                     f,
@@ -423,6 +533,7 @@ fn more_delegation_compact_and_ctor_match_the_original() {
                 t.w32(data + 4 * k, v);
             }
             let addr = t.rebase(more::COMPACT);
+            fresh(&mut t);
             t.a.call(addr, Conv::Thiscall(helper), &[]).unwrap();
             more::bridge::compact_delegations(&mut G(&mut t.b), helper);
             t.diff(&format!("{name} compact #{i} (n {n})"));
@@ -430,6 +541,7 @@ fn more_delegation_compact_and_ctor_match_the_original() {
         t.stub(more::DELEGATION_FREE_LIST_INIT, true, 0, 0, rng.next());
         for i in 0..4 {
             let helper = object(&mut t, &mut rng, 4, false);
+            fresh(&mut t);
             t.check(
                 &format!("{name} ctor #{i}"),
                 0x006a_d0d0,
@@ -439,5 +551,162 @@ fn more_delegation_compact_and_ctor_match_the_original() {
             );
         }
         t.unstub(more::DELEGATION_FREE_LIST_INIT);
+    }
+}
+
+/// The `Bind`s' dropped-result calls that take a word (cdecl): the
+/// `PArray<T>` declarations (`DeclareClassDescriptor(name)`), from their
+/// call sites' `push dword [global]`.
+const ONE_WORD_CALLS: &[u32] = &[
+    0x0049_0950,
+    0x0050_9da0,
+    0x0053_7400,
+    0x005a_b580,
+    0x005a_b790,
+    0x005a_b9a0,
+    0x005b_17c0,
+    0x005c_18c0,
+    0x005c_1ad0,
+    0x00a0_74c0,
+    0x00a2_c6c0,
+];
+
+/// Every guard word, flag word (`Or`/`And`, and the globals `Call`
+/// passes), call target (with its
+/// words: 0x100 for a descriptor constructor, thiscall) and class member
+/// of an h1-format `Bind`'s steps.
+fn h1_bind_parts(
+    steps: &[h1b::Step],
+    guards: &mut Vec<u32>,
+    flags: &mut Vec<u32>,
+    calls: &mut Vec<(u32, u32)>,
+    classes: &mut Vec<u32>,
+) {
+    use h1b::{Step, Ty as T1};
+    let ty = |t: T1, calls: &mut Vec<(u32, u32)>| match t {
+        T1::Addr(_) => {}
+        T1::Call(f) => calls.push((f, 0)),
+        T1::CallWith(f, _) => calls.push((f, 1)),
+    };
+    for s in steps {
+        match *s {
+            Step::Guard(g, _, inner) => {
+                if !guards.contains(&g) {
+                    guards.push(g);
+                }
+                h1_bind_parts(inner, guards, flags, calls, classes);
+            }
+            Step::Member { ty: t, .. } | Step::Array { ty: t, .. } => ty(t, calls),
+            Step::Class { member, .. } => classes.push(member),
+            Step::Call(f, arg) => {
+                // the stub's words come from the machine code, not from
+                // the table under test
+                assert_eq!(arg.is_some(), ONE_WORD_CALLS.contains(&f), "{f:#x}");
+                calls.push((f, u32::from(ONE_WORD_CALLS.contains(&f))));
+                // the argument's global, randomised like a flag word
+                if let Some(g) = arg {
+                    flags.push(g);
+                }
+            }
+            Step::Descriptor { ctor, .. } => calls.push((ctor, 0x100)),
+            Step::Or(at, _) | Step::And(at, _) => flags.push(at),
+            Step::AtExit(_) | Step::Store(..) => {}
+        }
+    }
+}
+
+#[test]
+fn binds_with_class_members_match_the_original() {
+    let src = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../ffx-hook/src/ported/p6_render_c2.rs"),
+    )
+    .unwrap();
+    for &(a, _) in binds1::BINDS {
+        let hex = format!("{:#06x}_{:04x}", a >> 16, a & 0xffff);
+        let at = src
+            .find(&format!(" @ {hex} => "))
+            .unwrap_or_else(|| panic!("{a:#x}: no shim"));
+        assert!(
+            src[at..].contains(&format!("binds1::bind_of({hex})")),
+            "{a:#x}: shim table"
+        );
+    }
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_000a);
+        t.stub(dc::ATEXIT, false, 1, 0, 0);
+        t.stub(dc::REGISTER_TYPE, false, 1, 0, 0x0101);
+        t.stub(dc::ADD_TO_NAMESPACE, true, 0, 0, 0x5a5a_1234);
+        for ctor in [dc::DATA_MEMBER_CTOR, 0x0057_5f30, 0x0057_5370] {
+            t.stub(ctor, true, 6, 6, 6);
+        }
+        t.stub(h1b::ARRAY_MEMBER_CTOR, true, 6, 7, 7);
+        t.stub(h1b::CLASS_MEMBER_CTOR, true, 3, 3, 3);
+        let mut stubbed = vec![];
+        for &(f, k) in binds1::BINDS {
+            let (mut guards, mut flags, mut calls, mut classes) = (vec![], vec![], vec![], vec![]);
+            h1_bind_parts(k.steps, &mut guards, &mut flags, &mut calls, &mut classes);
+            for (c, kind) in calls {
+                if stubbed.contains(&c) {
+                    continue;
+                }
+                stubbed.push(c);
+                if kind == 0x100 {
+                    t.stub(c, true, 0, 0, 0xd);
+                } else {
+                    // cdecl getters: their ecx is the caller's leftover
+                    t.stub(c, false, kind, 0, 0x00c9_7000 | (c & 0xfff));
+                }
+            }
+            for case in 0..12u32 {
+                assert_eq!(binds1::bind_of(f), k);
+                for &g in &guards {
+                    let word = match case {
+                        0 => 0,
+                        1 => u32::MAX,
+                        _ => rng.next() & rng.next(),
+                    };
+                    let at = t.rebase(g);
+                    t.w32(at, word);
+                }
+                for &w in &flags {
+                    let at = t.rebase(w);
+                    let v = rng.next();
+                    t.w32(at, v);
+                }
+                // class members: an owner with a list (empty, or two
+                // nodes), a name or none, the owner knowing it or not
+                for &m in &classes {
+                    let m = t.rebase(m);
+                    let owner = t.zeros(0x60);
+                    let head = owner + 0x4c;
+                    let first = t.zeros(8);
+                    let second = t.zeros(8);
+                    if rng.chance(2) {
+                        t.w32(head, head);
+                        t.w32(head + 4, head);
+                    } else {
+                        t.w32(head, first);
+                        t.w32(first, second);
+                        t.w32(second, head);
+                        t.w32(head + 4, second);
+                        t.w32(second + 4, first);
+                        t.w32(first + 4, head);
+                    }
+                    t.w32(m + 8, owner);
+                    let named = if rng.chance(3) { 0 } else { owner };
+                    t.w32(m + 0xc, named);
+                }
+                t.stub(h1b::FIND_MEMBER, true, 1, 1, rng.next() & 1);
+                fresh(&mut t);
+                t.check(
+                    &format!("{name} {f:#x} case {case}"),
+                    f,
+                    Conv::Cdecl,
+                    &[],
+                    |g| Out::U32(h1b::bridge::bind(g, k)),
+                );
+                t.unstub(h1b::FIND_MEMBER);
+            }
+        }
     }
 }

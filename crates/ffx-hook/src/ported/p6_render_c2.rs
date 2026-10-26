@@ -3,7 +3,9 @@
 //! ported (`ffx_prender::declare`, `ffx_prender::h2_more`).
 
 use super::{mem, ported};
-use ffx_prender::{declare, h2_more, p6_more as more};
+use ffx_prender::{
+    declare, h1_bind, h2_bind, h2_more, p6_binds as binds, p6_binds1 as binds1, p6_more as more,
+};
 
 ported! {
     /// `PClassDescriptorAbstract<PArray<T>>`'s constructor (`this`) -> `this`.
@@ -171,5 +173,105 @@ ported! {
     /// The render delegation helper's constructor (`this`) -> `this`.
     RenderDelegationHelper_RenderDelegationHelper @ 0x006a_d0d0 => extern "thiscall" fn s_006ad0d0(this: u32) -> u32 {
         more::bridge::delegation_helper_ctor(&mut mem(), this)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PModifierNetworkDynamicMeshSegment_Bind @ 0x005a_b400 => extern "C" fn s_005ab400() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_005AB400)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PModifierNetworkInstanceInput_Bind @ 0x005b_1600 => extern "C" fn s_005b1600() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_005B1600)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PModifierNetworkInstancePacketInput_Bind @ 0x005b_16e0 => extern "C" fn s_005b16e0() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_005B16E0)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PModifierNetworkBuffer_Bind @ 0x005c_0eb0 => extern "C" fn s_005c0eb0() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_005C0EB0)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PModifierNetworkInfoPacket_Buffer_Bind @ 0x005c_1390 => extern "C" fn s_005c1390() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_005C1390)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PModifierNetworkInfoPacket_ModifierCode_Bind @ 0x005c_1430 => extern "C" fn s_005c1430() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_005C1430)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PModifierNetworkInfoPacket_ModifierInstance_Bind @ 0x005c_1560 => extern "C" fn s_005c1560() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_005C1560)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PRenderStream_Bind @ 0x005c_16e0 => extern "C" fn s_005c16e0() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_005C16E0)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PRenderStreamInput_Bind @ 0x005c_17c0 => extern "C" fn s_005c17c0() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_005C17C0)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPostProcessing_PDeferredLightingBase_Bind @ 0x00a0_3500 => extern "C" fn s_00a03500() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_00A03500)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPostProcessing_PDepthOfFieldBase_Bind @ 0x00a0_37c0 => extern "C" fn s_00a037c0() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_00A037C0)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPostProcessing_PGlowBase_Bind @ 0x00a0_3990 => extern "C" fn s_00a03990() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_00A03990)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPostProcessing_PMotionBlurBase_Bind @ 0x00a0_3c20 => extern "C" fn s_00a03c20() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_00A03C20)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPostProcessing_PPostEffectBase_Bind @ 0x00a0_3ce0 => extern "C" fn s_00a03ce0() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_00A03CE0)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPostProcessing_PScreenSpaceReflectionBase_Bind @ 0x00a0_41c0 => extern "C" fn s_00a041c0() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_00A041C0)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PText_PBitmapFontCharInfo_Bind @ 0x00a2_c350 => extern "C" fn s_00a2c350() -> u32 {
+        h2_bind::bridge::bind(&mut mem(), &binds::B_00A2C350)
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PModifierNetworkDynamicMesh_Bind @ 0x005a_b0e0 => extern "C" fn s_005ab0e0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { binds1::bind_of(0x005a_b0e0) })
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PModifierNetworkInstance_Bind @ 0x005b_1400 => extern "C" fn s_005b1400() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { binds1::bind_of(0x005b_1400) })
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PModifierNetwork_Bind @ 0x005c_0970 => extern "C" fn s_005c0970() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { binds1::bind_of(0x005c_0970) })
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PModifierNetworkInfoPacket_Bind @ 0x005c_1080 => extern "C" fn s_005c1080() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { binds1::bind_of(0x005c_1080) })
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PMorphModifierWeightsUserDataObject_Bind @ 0x005c_b420 => extern "C" fn s_005cb420() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { binds1::bind_of(0x005c_b420) })
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPostProcessing_PPostEffectManager_Bind @ 0x00a0_3dc0 => extern "C" fn s_00a03dc0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { binds1::bind_of(0x00a0_3dc0) })
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PText_PBitmapFont_Bind @ 0x00a2_c020 => extern "C" fn s_00a2c020() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { binds1::bind_of(0x00a2_c020) })
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PFramework_PApplicationViewport_Bind @ 0x0062_27b0 => extern "C" fn s_006227b0() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { binds1::bind_of(0x0062_27b0) })
+    }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PFramework_PInputMapper_Bind @ 0x0062_2b60 => extern "C" fn s_00622b60() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { binds1::bind_of(0x0062_2b60) })
     }
 }
