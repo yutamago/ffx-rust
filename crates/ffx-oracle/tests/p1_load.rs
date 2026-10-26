@@ -2226,3 +2226,268 @@ fn batch6_clusters_match_the_original() {
         t.reset();
     }
 }
+
+// ---- batch 7 ----
+
+#[test]
+fn batch7_clusters_match_the_original() {
+    use ffx_pload::types;
+    for (label, mut t) in Twins::all() {
+        // releaseBlocks: frees recorded
+        t.stub(descriptor::FREE, false, 1, 0, 0);
+        let rec = t.junk(0x28, 1);
+        let what = format!("{label}: releaseBlocks");
+        t.check(&what, 0x0059_89b0, Conv::Thiscall(rec), &[], |g| {
+            c::release_blocks(g, rec);
+            Out::None
+        });
+        assert_eq!(t.log_entries(), 4);
+        t.reset();
+        // placeOverallocation
+        for (over, align, cur) in [
+            (0, 4, 0x100),
+            (3, 0, 0x101),
+            (3, 8, 0x101),
+            (3, 8, 0),
+            (3, 0, 0),
+            (5, 16, 0x1003),
+        ] {
+            let class = t.zeros(0x80);
+            t.w32(class + 0x74, over);
+            t.w32(class + 0x78, align);
+            t.w32(class + 0x1c, 0x18);
+            let list = t.junk(0x48, 2);
+            t.w32(list + 0x2c, class);
+            t.w32(list + 0x3c, 4);
+            t.w32(list + 0x44, 0x13);
+            t.w32(list + 0x34, 0x0010_0001);
+            let cursor = t.zeros(4);
+            t.w32(cursor, cur);
+            let what = format!("{label}: placeOverallocation {over} {align} {cur:#x}");
+            t.check(&what, 0x0057_8300, Conv::Cdecl, &[cursor, list], |g| {
+                c::place_overallocation(g, cursor, list);
+                Out::None
+            });
+        }
+        // the tree insert, then lookups through the ported find
+        let tree = t.zeros(0x20);
+        t.w32(tree + 0xc, tree);
+        for (i, key) in [10u32, 5, 20, 7, 10, 30, 1].into_iter().enumerate() {
+            let node = t.junk(0x20, i as u8);
+            t.w32(node + 0xc, key);
+            let what = format!("{label}: tree insert {key}");
+            t.check(&what, 0x0058_1750, Conv::Thiscall(tree), &[node], |g| {
+                Out::U32(c::tree_insert(g, tree, node))
+            });
+        }
+        // PCluster::create: the list allocation and initializeInstance recorded
+        let list = t.zeros(0x40);
+        t.w32(list + 0x30, 0x0020_0000);
+        for (flags, n, got) in [(8, 3, list), (0, 0, list), (0, 3, 0), (0, 3, list)] {
+            t.stub(0x0043_52f0, false, 3, 0, 0);
+            t.stub(0x0044_0ba0, true, 4, 4, got);
+            t.stub(0x0043_ce00, true, 1, 1, 0);
+            let desc = t.zeros(0xa0);
+            t.w32(desc + 0x90, flags);
+            t.w32(desc + 0x1c, 0x24);
+            t.w32(desc + 0x18, 0x00ab_0000);
+            let cl = t.zeros(0x48);
+            let what = format!("{label}: create {flags} {n} {got:#x}");
+            t.check(&what, 0x0044_1010, Conv::Thiscall(cl), &[n, desc, 7], |g| {
+                Out::U32(c::create(g, cl, n, desc, 7))
+            });
+            t.reset();
+        }
+        // PClusterBase's destructor: the registry and the teardown's callees recorded
+        t.stub(0x004f_ee70, true, 0, 0, 0);
+        t.stub(types::ATEXIT, false, 1, 0, 0);
+        t.stub(0x0059_8c50, true, 1, 1, 0);
+        t.stub(0x0044_0eb0, true, 0, 0, 0);
+        t.stub(0x0049_c5b0, true, 0, 0, 0);
+        let guard = t.rebase(0x00c9_628c);
+        let gv = t.r32(guard);
+        t.w32(guard, gv & !1);
+        for pass in 0..2 {
+            let cl = t.zeros(0x60);
+            t.w32(cl + 8, cl + 8);
+            let what = format!("{label}: PClusterBase dtor {pass}");
+            t.check(&what, 0x0057_6640, Conv::Thiscall(cl), &[], |g| {
+                c::cluster_base_dtor(g, cl);
+                Out::None
+            });
+        }
+        assert_eq!(t.log_entries(), 2 + 3 * 2);
+        t.reset();
+    }
+}
+
+#[test]
+fn batch7_descriptors_match_the_original() {
+    use ffx_pload::types;
+    for (label, mut t) in Twins::all() {
+        // findMember over a descriptor and its parent
+        let names: Vec<u32> = [&b"a\0"[..], b"bb\0", b"ccc\0"]
+            .iter()
+            .map(|n| t.alloc(n))
+            .collect();
+        let child = t.zeros(0xa0);
+        let parent = t.zeros(0xa0);
+        t.w32(child + descriptor::PARENT, parent);
+        for (d, ns) in [(child, &names[..2]), (parent, &names[2..])] {
+            let head = d + 0x44;
+            let mut prev = head;
+            t.w32(head, head);
+            t.w32(head + 4, head);
+            for &n in ns {
+                let m = t.zeros(0x30);
+                t.w32(m + 0x10, n);
+                let link = m + 4;
+                t.w32(prev, link);
+                t.w32(link + 4, prev);
+                t.w32(link, head);
+                t.w32(head + 4, link);
+                prev = link;
+            }
+            // a member without a name
+            let m = t.zeros(0x30);
+            let link = m + 4;
+            t.w32(prev, link);
+            t.w32(link + 4, prev);
+            t.w32(link, head);
+            t.w32(head + 4, link);
+        }
+        let probes: Vec<u32> = [&b"a\0"[..], b"ccc\0", b"cc\0", b"\0"]
+            .iter()
+            .map(|n| t.alloc(n))
+            .collect();
+        for d in [child, parent, 0] {
+            for &p in probes.iter().chain([0u32].iter()) {
+                let what = format!("{label}: findMember {d:#x} {p:#x}");
+                t.check(&what, 0x0043_5ca0, Conv::Thiscall(d), &[p], |g| {
+                    Out::U32(d::find_member(g, d, p))
+                });
+            }
+        }
+        // findNamed over a list at +0x54
+        let owner = t.zeros(0x60);
+        let head = owner + 0x54;
+        let e1 = t.zeros(0x10);
+        let e2 = t.zeros(0x10);
+        let e3 = t.zeros(0x10);
+        t.w32(head, e1);
+        t.w32(e1, e2);
+        t.w32(e2, e3);
+        t.w32(e3, head);
+        t.w32(e1 + 0xc, names[0]);
+        t.w32(e3 + 0xc, names[2]);
+        // an empty list whose head looks like a named entry: the head is
+        // never an entry
+        let empty = t.zeros(0x70);
+        t.w32(empty + 0x54, empty + 0x54);
+        t.w32(empty + 0x54 + 0xc, names[0]);
+        for o in [owner, empty] {
+            for &p in probes.iter().chain([0u32].iter()) {
+                let what = format!("{label}: findNamed {o:#x} {p:#x}");
+                t.check(&what, 0x0043_06b0, Conv::Thiscall(o), &[p], |g| {
+                    Out::U32(d::find_named(g, o, p))
+                });
+            }
+        }
+        // the dynamic member's scalar deleting destructor
+        t.stub(descriptor::FREE, false, 1, 0, 0);
+        t.stub(0x0057_5470, true, 0, 0, 0);
+        for (name, flags) in [(0x00ab_0000, 0), (0x00ab_0001, 1), (0x00ab_0000, 3)] {
+            let m = t.junk(0x30, 3);
+            t.w32(m + 0x2c, name);
+            let what = format!("{label}: member dynamic delete {name:#x} {flags}");
+            t.check(&what, 0x0044_6400, Conv::Thiscall(m), &[flags], |g| {
+                Out::U32(d::delete_member_dynamic(g, m, flags))
+            });
+        }
+        assert_eq!(t.log_entries(), 2 + 3 + 2);
+        t.reset();
+        // PArray<T*>::resize
+        for (block, count, old, n) in [
+            (1, 4, 0x00aa_0000, 4),
+            (1, 4, 0x00aa_0000, 3),
+            (0, 4, 0x00aa_0000, 3),
+            (1, 4, 0, 3),
+            (1, 0x8000_0004, 0x00aa_0000, 3),
+            (1, 4, 0x00aa_0000, 0),
+        ] {
+            let buf = if block == 0 { 0 } else { t.junk(16, 4) };
+            t.stub(descriptor::ALLOC, false, 2, 0, buf);
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            let arr = t.zeros(8);
+            t.w32(arr, count);
+            t.w32(arr + 4, old);
+            let what = format!("{label}: ptr resize {buf:#x} {count:#x} {old:#x} {n}");
+            t.check(&what, 0x0047_efc0, Conv::Thiscall(arr), &[n], |g| {
+                Out::U32(d::pointer_array_resize(g, arr, n))
+            });
+            t.reset();
+        }
+        // the PArray<PTypedObject> destructInstance
+        t.stub(descriptor::FREE, false, 1, 0, 0);
+        t.stub(0x0044_d730, true, 0, 0, 0);
+        for (word, data) in [(3, 0x00aa_0000), (0x8000_0003, 0x00aa_0000), (3, 0)] {
+            let p = t.junk(0x20, 5);
+            t.w32(p + 0xc, word);
+            t.w32(p + 0x10, data);
+            let what = format!("{label}: destroyTypedArray {word:#x} {data:#x}");
+            t.check(&what, 0x0045_96b0, Conv::Stdcall, &[p], |g| {
+                Out::U8(d::destroy_typed_array(g, p))
+            });
+        }
+        assert_eq!(t.log_entries(), 1 + 3);
+        t.reset();
+        // InitializeGlobalClassDescriptors: on the image with a built
+        // namespace of fake descriptors, on the snapshots over the real one
+        if !t.snapshot {
+            t.stub(types::ATEXIT, false, 1, 0, 0);
+            t.stub(descriptor::CALCULATE_VALIDATION, true, 0, 0, 0);
+            let ns = t.rebase(types::GLOBAL_NAMESPACE);
+            // calculateDefaultBuffer copies the descriptor's +0x8c (set by
+            // the first pass) and the namespace's state to `seen`
+            let seen = t.zeros(8);
+            let mut code = vec![0x8b, 0x81, 0x8c, 0, 0, 0, 0xa3]; // mov eax, [ecx+0x8c]; mov [seen], eax
+            code.extend(seen.to_le_bytes());
+            code.push(0xa1); // mov eax, [ns+0x10]
+            code.extend((ns + 0x10).to_le_bytes());
+            code.push(0xa3); // mov [seen+4], eax
+            code.extend((seen + 4).to_le_bytes());
+            code.push(0xc3);
+            let at = t.a.alloc_code(&code).unwrap();
+            assert_eq!(t.b.alloc_code(&code).unwrap(), at);
+            let calc = t.rebase(descriptor::CALCULATE_DEFAULT);
+            let mut j = vec![0xe9];
+            j.extend(at.wrapping_sub(calc + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, calc, 5).unwrap();
+            t.saved.entry(calc).or_insert(old);
+            t.write(calc, &j);
+            let head = ns + 8;
+            let o = t.object(&[0; 13]);
+            let vt = t.r32(o);
+            let mut prev = head;
+            t.w32(ns + 0x1c, 1);
+            for (i, flags) in [0u32, 0x8000_0000, 0x4000_0000].into_iter().enumerate() {
+                let dsc = t.zeros(0xa0);
+                t.w32(dsc, vt);
+                t.w32(dsc + descriptor::FLAGS, flags);
+                t.w32(dsc + 0x84, 0x10 * (i as u32 + 1));
+                let link = dsc + 0x2c;
+                t.w32(prev, link);
+                t.w32(link + 4, prev);
+                t.w32(link, head);
+                t.w32(head + 4, link);
+                prev = link;
+            }
+        }
+        let what = format!("{label}: InitializeGlobalClassDescriptors");
+        t.check(&what, 0x0043_e440, Conv::Cdecl, &[], |g| {
+            d::init_global_descriptors(g);
+            Out::None
+        });
+        t.reset();
+    }
+}

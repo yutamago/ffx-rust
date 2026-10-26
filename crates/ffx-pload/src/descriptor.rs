@@ -871,6 +871,146 @@ pub mod bridge {
         }
         1
     }
+
+    /// An intrusive list's entry: `link - back`, or 0 at the head or 0.
+    fn entry_at(link: u32, head: u32, back: u32) -> u32 {
+        if link == head || link == 0 {
+            0
+        } else {
+            link.wrapping_sub(back)
+        }
+    }
+
+    /// `PNamespace::InitializeGlobalClassDescriptors()` (`0x0043e440`):
+    /// on the global namespace (state `+0x10` = 1, then 2), every class
+    /// descriptor's [`update_base_offsets`], then every one's
+    /// [`default_buffer`].
+    pub fn init_global_descriptors(h: &mut impl Host) {
+        let ns = crate::types::bridge::global_namespace(h);
+        let head = ns + 8;
+        h.write(ns + 0x10, 1u32);
+        for pass in 0..2 {
+            let first: u32 = h.read(head);
+            let mut d = entry_at(first, head, 0x2c);
+            while d != 0 {
+                if pass == 0 {
+                    update_base_offsets(h, d);
+                } else {
+                    default_buffer(h, d);
+                }
+                let link: u32 = h.read(d + 0x2c);
+                d = entry_at(link, head, 0x2c);
+            }
+        }
+        h.write(ns + 0x10, 2u32);
+    }
+
+    /// `0x00435ca0` (thiscall `(name)` on a class descriptor): the member
+    /// named `name` of the descriptor or a parent (member lists at
+    /// `+0x44`, links at member `+4`, names at `+0x10`), or 0.
+    pub fn find_member(m: &impl Mem, desc: u32, name: u32) -> u32 {
+        if name == 0 {
+            return 0;
+        }
+        let mut d = desc;
+        while d != 0 {
+            let head = d + 0x44;
+            let first: u32 = m.read(head);
+            let mut e = entry_at(first, head, 4);
+            while e != 0 {
+                let n: u32 = m.read(e + 0x10);
+                if n != 0 && same_name(m, n, name) {
+                    return e;
+                }
+                let link: u32 = m.read(e + 4);
+                e = entry_at(link, head, 4);
+            }
+            d = m.read(d + PARENT);
+        }
+        0
+    }
+
+    /// `PClassDataMemberDynamic`'s scalar deleting destructor
+    /// (`0x00446400`, thiscall `(flags)`): its vtable, `+0x10` = 0, frees
+    /// its name block (`+0x2c`, bit 0 clear), the `PClassDataMember`
+    /// destructor (`0x00575470`), then frees itself with flags bit 0;
+    /// returns it.
+    pub fn delete_member_dynamic(h: &mut impl Host, member: u32, flags: u32) -> u32 {
+        let vt = h.rebase(0x00b0_f900);
+        h.write(member, vt);
+        h.write(member + 0x10, 0u32);
+        let name: u32 = h.read(member + 0x2c);
+        if name & 1 == 0 {
+            h.call_sym(FREE, Conv::Cdecl, &[name]);
+        }
+        h.call_sym(0x0057_5470, Conv::Thiscall(member), &[]);
+        if flags & 1 != 0 {
+            h.call_sym(FREE, Conv::Cdecl, &[member]);
+        }
+        member
+    }
+
+    /// `PArray<T*>::resize(array, n)` (`0x0047efc0`, thiscall): as
+    /// [`array_resize`] with `n` zeroed words (alignment 4), except that
+    /// the old block is freed whenever it is owned, even when 0.
+    pub fn pointer_array_resize(h: &mut impl Host, array: u32, n: u32) -> u32 {
+        let count: u32 = h.read(array);
+        if n == count {
+            return 0;
+        }
+        let mut block = 0;
+        if n != 0 {
+            block = h.call_sym(ALLOC, Conv::Cdecl, &[n.wrapping_mul(4), 4]);
+            if block == 0 {
+                return crate::error::NO_BLOCK;
+            }
+            for i in 0..n {
+                h.write(block + 4 * i, 0u32);
+            }
+        }
+        let old: u32 = h.read(array + 4);
+        if old != block && count >> 31 == 0 {
+            h.call_sym(FREE, Conv::Cdecl, &[old]);
+        }
+        h.write(array + 4, block);
+        h.write(array, n);
+        0
+    }
+
+    /// The `PArray<PTypedObject>` descriptor's slot 11 (`0x004596b0`,
+    /// stdcall `(p)`): frees the array at `+0xc` when owned, clears it,
+    /// then `0x0044d730(p)`; `al` = 1.
+    pub fn destroy_typed_array(h: &mut impl Host, p: u32) -> u8 {
+        let word: u32 = h.read(p + 0xc);
+        let data: u32 = h.read(p + 0x10);
+        if word >> 31 == 0 && data != 0 {
+            h.call_sym(FREE, Conv::Cdecl, &[data]);
+        }
+        h.write(p + 0xc, [0u32; 2]);
+        h.call_sym(0x0044_d730, Conv::Thiscall(p), &[]);
+        1
+    }
+
+    /// `0x004306b0` (thiscall `(name)`): the entry of the list at `+0x54`
+    /// (linked through the first word) whose name (`+0xc`) is `name`, or
+    /// 0 (also for no name).
+    pub fn find_named(m: &impl Mem, this: u32, name: u32) -> u32 {
+        if name == 0 {
+            return 0;
+        }
+        let head = this + 0x54;
+        let first: u32 = m.read(head);
+        let mut e = if first == head { 0 } else { first };
+        while e != 0 {
+            let n: u32 = m.read(e + 0xc);
+            if n != 0 && same_name(m, n, name) {
+                return e;
+            }
+            let next: u32 = m.read(e);
+            e = if next == head { 0 } else { next };
+        }
+        0
+    }
 }
 
 /// `PNamespace::GetGlobalNamespace()` (cdecl).

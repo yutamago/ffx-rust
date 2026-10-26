@@ -799,4 +799,48 @@ ported! {
     Phyre_PSerialization_PStream_PStream @ 0x0060_f050 => extern "thiscall" fn stream_ctor(this: u32, name: u32) -> u32 {
         stream::bridge::stream_ctor(&mut mem(), this, name)
     }
+    /// Frees a record's four blocks.
+    Phyre_releaseBlocks_005989b0 @ 0x0059_89b0 => extern "thiscall" fn release_blocks(this: u32) {
+        cluster::bridge::release_blocks(&mut mem(), this);
+    }
+    /// Places an instance list's over-allocation `(&cursor, list)`.
+    Phyre_PInstanceList_placeOverallocation_00578300 @ 0x0057_8300 => extern "C" fn place_overallocation(cursor: u32, list: u32) {
+        cluster::bridge::place_overallocation(&mut mem(), cursor, list);
+    }
+    /// The red-black tree insert `(node)`.
+    Phyre_PRedBlackTree_insert_00581750 @ 0x0058_1750 => extern "thiscall" fn tree_insert(this: u32, node: u32) -> u32 {
+        cluster::bridge::tree_insert(&mut mem(), this, node)
+    }
+    /// `PCluster::create(n, desc, c)`.
+    Phyre_PCluster_create @ 0x0044_1010 => extern "thiscall" fn cluster_create(this: u32, n: u32, desc: u32, c: u32) -> u32 {
+        cluster::bridge::create(&mut mem(), this, n, desc, c)
+    }
+    /// `PClusterBase::~PClusterBase()`.
+    Phyre_PClusterBase_dtor_00576640 @ 0x0057_6640 => extern "thiscall" fn cluster_base_dtor(this: u32) {
+        cluster::bridge::cluster_base_dtor(&mut mem(), this);
+    }
+    /// `PNamespace::InitializeGlobalClassDescriptors()`.
+    Phyre_PNamespace_InitializeGlobalClassDescriptors @ 0x0043_e440 => extern "C" fn init_global_descriptors() {
+        descriptor::bridge::init_global_descriptors(&mut mem());
+    }
+    /// A class descriptor's member by name `(name)`.
+    Phyre_PClassDescriptor_findMember_00435ca0 @ 0x0043_5ca0 => extern "thiscall" fn find_member(this: u32, name: u32) -> u32 {
+        descriptor::bridge::find_member(&mem(), this, name)
+    }
+    /// `PClassDataMemberDynamic`'s scalar deleting destructor `(flags)`.
+    Phyre_PClassDataMemberDynamic_scalarDeletingDtor_00446400 @ 0x0044_6400 => extern "thiscall" fn delete_member_dynamic(this: u32, flags: u32) -> u32 {
+        descriptor::bridge::delete_member_dynamic(&mut mem(), this, flags)
+    }
+    /// `PArray<T*>::resize(n)`.
+    Phyre_PArray_ptr_resize_0047efc0 @ 0x0047_efc0 => extern "thiscall" fn pointer_array_resize(this: u32, n: u32) -> u32 {
+        descriptor::bridge::pointer_array_resize(&mut mem(), this, n)
+    }
+    /// `PClassDescriptor<PArray<PTypedObject>>`'s second destructInstance `(p)`.
+    Phyre_PClassDescriptor_destroyTypedArray_004596b0 @ 0x0045_96b0 => extern "stdcall" fn destroy_typed_array(p: u32) -> u8 {
+        descriptor::bridge::destroy_typed_array(&mut mem(), p)
+    }
+    /// An entry of the list at `+0x54` by name `(name)`.
+    Phyre_findNamed_004306b0 @ 0x0043_06b0 => extern "thiscall" fn find_named(this: u32, name: u32) -> u32 {
+        descriptor::bridge::find_named(&mem(), this, name)
+    }
 }
