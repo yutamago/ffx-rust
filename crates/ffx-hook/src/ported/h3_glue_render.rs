@@ -39,6 +39,7 @@ use ffx_prender::h3_glue30::bridge as g30;
 use ffx_prender::h3_glue31::bridge as g31;
 use ffx_prender::h3_glue32::bridge as g32;
 use ffx_prender::h3_glue33::bridge as g33;
+use ffx_prender::h3_glue34::bridge as g34;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1809,6 +1810,20 @@ ported! {
     ShadowCamera_isCasterVisible_006c9270 @ 0x006c_9270 => extern "thiscall" fn shadow_caster_visible(this: u32, m: u32; slots: u32) -> u8 {
         let mut f = StackFrame::<0x18>::new();
         g33::caster_visible(&mut mem(), f.at() + 0x60, slots, this, m)
+    }
+
+    // ---- round 8 batch 34 (ffx_prender::h3_glue34) ----
+    /// `PhyreScene_fieldMapLoadAsync(this, path, b)`: the field map's load
+    /// request; 0, or 0x13 without the file.
+    PhyreScene_fieldMapLoadAsync @ 0x0065_ce90 => extern "thiscall" fn scene_field_map_load_async(this: u32, path: u32, b: u32) -> u32 {
+        let mut f = StackFrame::<0x59>::new();
+        g34::field_map_load_async(&mut mem(), f.at() + 0x164, this, path, b)
+    }
+    /// `PhyreScene_readAssetHeader(this, path, b)`: the map's asset
+    /// header into the scene's asset list; 0, or 5 without the file.
+    PhyreScene_readAssetHeader @ 0x0066_7bb0 => extern "thiscall" fn scene_read_asset_header(this: u32, path: u32, b: u32) -> u32 {
+        let mut f = StackFrame::<0x5f>::new();
+        g34::read_asset_header(&mut mem(), f.at() + 0x17c, this, path, b)
     }
 }
 

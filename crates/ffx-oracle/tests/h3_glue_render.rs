@@ -56,6 +56,7 @@ use ffx_prender::h3_glue30::{self as h30, bridge as gh30};
 use ffx_prender::h3_glue31::{self as h31, bridge as gh31};
 use ffx_prender::h3_glue32::{self as h32, bridge as gh32};
 use ffx_prender::h3_glue33::{self as h33, bridge as gh33};
+use ffx_prender::h3_glue34::{self as h34, bridge as gh34};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -8704,5 +8705,139 @@ fn batch33_glue_matches_the_original() {
         run_cases(t, CASES33, n, &mut Rng(0x3333_b033));
         let n = if t.snapshot { 300 } else { 3000 };
         run_cases(t, CASES33_FLOAT, n, &mut Rng(0x3333_f033));
+    });
+}
+
+// ---- round 8 batch 34 (ffx_prender::h3_glue34) ----
+
+/// An MSVC string `assign` stub writing all six words of the string
+/// (the original leaves the unused ones to whatever the stack held):
+/// inline or on the heap.
+fn stub_assign34(t: &mut Twins, rng: &mut Rng) {
+    let mut words: Vec<(u8, u32)> = (0..4).map(|k| (4 * k as u8, rng.next())).collect();
+    words.push((0x10, rng.below(0x20)));
+    // the capacity the original set (0xf) kept now and then
+    if !rng.chance(3) {
+        words.push((0x14, pick(rng, &[0x10, 0x1f])));
+    }
+    let ret = rng.next();
+    t.stub_set_this(h34::STRING_ASSIGN, 2, ret, &words);
+    // getPlatformSpecificPath's result: inline, at 16 or on the heap
+    let cap = pick(rng, &[0xf, 0x10, 0x1f]);
+    let data = rng.next();
+    let log = t.stub(None, h34::PLATFORM_PATH, false, 7, 0, Some(0));
+    // mov eax, [esp+4]; mov dword [eax+0x14], cap; mov dword [eax], data; jmp log
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x40, 0x14];
+    c.extend(cap.to_le_bytes());
+    c.extend([0xc7, 0x00]);
+    c.extend(data.to_le_bytes());
+    let at = t.cave_next;
+    c.push(0xe9);
+    c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+    let code = t.code(&c);
+    let site = t.rebase(h34::PLATFORM_PATH);
+    let mut j = vec![0xe9];
+    j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+    t.patch(site, &j);
+}
+
+/// The path, `b` (its low byte set or not), the map (0x220 or not), the
+/// file there or not, `znkd12` in the path or not.
+fn prep_load_async(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0000);
+    *this = scene;
+    // the fields the load clears, set before
+    for at in [0xd8, 0xf95c, 0xf960, 0xf964, 0xf968] {
+        let v = rng.next() | 1;
+        t.w32(scene + at, v);
+    }
+    t.write(scene + 0xf9c4, &[1]);
+    let path = obj + 0x200;
+    let len = rng.below(12) as usize;
+    let mut text: Vec<u8> = (0..len).map(|_| b'a' + rng.below(26) as u8).collect();
+    text.push(0);
+    t.write(path, &text);
+    args[0] = path;
+    args[1] = rng.word() ^ (rng.below(2) << 8);
+    let map = if rng.chance(3) {
+        0x220
+    } else {
+        rng.below(0x400)
+    };
+    t.w32(scene + 0xfaf4, map);
+    if !t.snapshot {
+        let v = rng.next() as u8;
+        let at = t.rebase(h34::PHYRE_SCENE_3D.sym);
+        t.write(at, &[v]);
+    }
+    t.stub_alloc(h34::OPERATOR_NEW_ARRAY, obj + 0x400);
+    stub_assign34(t, rng);
+    let exists = if rng.chance(4) { 0 } else { rng.next() | 1 };
+    t.stub_ret(h34::FILE_EXISTS, false, 1, 0, exists);
+    let found = if rng.chance(3) { rng.next() | 1 } else { 0 };
+    t.stub_import_c(h34::STRSTR, 2, found);
+}
+
+const LOAD_ASYNC_STUBS: &[(u32, K)] = &[
+    (h34::CONVERT_MAP_PATH, K::This(3)),
+    (h34::OPERATOR_DELETE_ARRAY, K::Cdecl(1)),
+    (h34::OPERATOR_DELETE, K::Cdecl(1)),
+    (h34::ASYNC_LOAD_INSTANCE, K::Cdecl(0)),
+    (h34::ASYNC_REGIST_TASK, K::Cdecl(9)),
+];
+
+/// The path, `b`, the file open or not, and the header's names: none
+/// (no vector), 0 to 3 of them, inline or on the heap.
+fn prep_read_header(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1200);
+    *this = scene;
+    args[0] = rng.next();
+    args[1] = rng.word() ^ (rng.below(2) << 8);
+    stub_assign34(t, rng);
+    let open = if rng.chance(4) {
+        rng.next() & !0xff
+    } else {
+        rng.next() | 1
+    };
+    t.stub_ret(h34::READER_IS_OPEN, true, 0, 0, open);
+    let n = rng.below(4);
+    let begin = if rng.chance(5) { 0 } else { obj + 0x600 };
+    let end = if begin == 0 { 0 } else { begin + 0x18 * n };
+    for k in 0..n {
+        let at = obj + 0x600 + 0x18 * k;
+        for j in 0..4 {
+            let v = rng.next();
+            t.w32(at + 4 * j, v);
+        }
+        let size = rng.below(0x20);
+        t.w32(at + 0x10, size);
+        let cap = pick(rng, &[0xf, 0x10, 0x1f]);
+        t.w32(at + 0x14, cap);
+    }
+    let ret = rng.next();
+    let cap = rng.next();
+    t.stub_set_this(h34::READ_NAMES, 1, ret, &[(0, begin), (4, end), (8, cap)]);
+}
+
+const READ_HEADER_STUBS: &[(u32, K)] = &[
+    (h34::CONVERT_MAP_PATH, K::This(3)),
+    (h34::READER_CTOR, K::This(1)),
+    (h34::READER_CLOSE, K::This(0)),
+    (h34::READER_DTOR, K::This(0)),
+    (h34::ADD_ASSET_HEADER, K::This(1)),
+    (h34::OPERATOR_DELETE, K::Cdecl(1)),
+];
+
+#[rustfmt::skip]
+const CASES34: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_load_async), ..method("field_map_load_async", 0x0065_ce90, This::Object, 2, LOAD_ASYNC_STUBS, |m, this, a| u(gh34::field_map_load_async(m, frame_ebp(), this, a[0], a[1]))) }), 0x13c, 0),
+    framed(with_seh(Case { prep: Some(prep_read_header), ..method("read_asset_header", 0x0066_7bb0, This::Object, 2, READ_HEADER_STUBS, |m, this, a| u(gh34::read_asset_header(m, frame_ebp(), this, a[0], a[1]))) }), 0x154, 0),
+];
+
+#[test]
+fn batch34_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES34, n, &mut Rng(0x3434_b034));
     });
 }
