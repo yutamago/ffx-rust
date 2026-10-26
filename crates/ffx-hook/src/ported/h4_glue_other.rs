@@ -11,8 +11,8 @@
 //! through `fld`/`fstp`, which the bridges model.
 
 use ffx_glue_other::{
-    copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, menu as mn,
-    misc as m, movie as mv, r3, sound as s,
+    copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
+    menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1405,5 +1405,34 @@ ported! {
     /// `FmodMusic_forceClearAll(this)`.
     FmodMusic_forceClearAll @ 0x0070_8af0 => extern "thiscall" fn music_force_clear_all(this: u32) {
         c3::music_force_clear_all(&mut mem(), this);
+    }
+    // ---- continuation round, batch 4 (ffx_glue_other::h4_c4)
+    /// `BlurEffectEx_render(this)`.
+    BlurEffectEx_render @ 0x006c_4cf0 => extern "thiscall" fn blur_ex_render(this: u32) -> u32 {
+        c4::blur_ex_render(&mut mem(), this)
+    }
+    /// `FmodVoice_checkEvent_0070a4a0(this; system)`.
+    FmodVoice_checkEvent_0070a4a0 @ 0x0070_a4a0 => extern "thiscall" fn voice_check_event(this: u32, system: u32) {
+        let mut frame = StackFrame::<1>::new();
+        c4::voice_check_event(&mut mem(), frame.at(), this, system);
+    }
+    /// `IggyMenu_callFlashFunction_6_006fcaf0(menu, name, six 16-byte
+    /// values)`: 26 stack words.
+    IggyMenu_callFlashFunction_6_006fcaf0 @ 0x006f_caf0 => extern "C" fn call_flash_6(menu: u32, name: u32, v0: u32, v1: u32, v2: u32, v3: u32, v4: u32, v5: u32, v6: u32, v7: u32, v8: u32, v9: u32, v10: u32, v11: u32, v12: u32, v13: u32, v14: u32, v15: u32, v16: u32, v17: u32, v18: u32, v19: u32, v20: u32, v21: u32, v22: u32, v23: u32) -> u32 {
+        let mut frame = StackFrame::<{ (c4::FLASH_6_FRAME / 4) as usize }>::new();
+        c4::call_flash_6(&mut mem(), frame.at(), menu, name, &[v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23])
+    }
+    /// `String_replaceFirst_00702590(text, from, to)`.
+    String_replaceFirst_00702590 @ 0x0070_2590 => extern "C" fn string_replace_first(text: u32, from: u32, to: u32) -> u8 {
+        c4::string_replace_first(&mut mem(), text, from, to)
+    }
+    /// `MenuTextureManager_UnloadMainMenuWaveTexture()`.
+    MenuTextureManager_UnloadMainMenuWaveTexture @ 0x0067_efa0 => extern "C" fn unload_main_menu_wave_texture() {
+        let mut frame = StackFrame::<{ (c4::WAVE_FRAME / 4) as usize }>::new();
+        c4::unload_main_menu_wave_texture(&mut mem(), frame.at());
+    }
+    /// `MenuVertexInfo_move_0067dc70(from, to)`.
+    MenuVertexInfo_move_0067dc70 @ 0x0067_dc70 => extern "stdcall" fn vertex_info_move(from: u32, to: u32) -> u32 {
+        c4::vertex_info_move(&mut mem(), from, to)
     }
 }

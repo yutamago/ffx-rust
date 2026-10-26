@@ -25,8 +25,8 @@ use std::path::PathBuf;
 
 use ffx_bridge::Mem;
 use ffx_glue_other::{
-    effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, menu as mn, misc as m,
-    movie as mv, r3, sound as s,
+    effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4, menu as mn,
+    misc as m, movie as mv, r3, sound as s,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -7120,6 +7120,201 @@ fn c3_music_clears() {
                     c3::music_force_clear_all(g, music);
                     Out::None
                 },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round, batch 4 (ffx_glue_other::h4_c4)
+
+/// The extended blur's render, the voice's event check, the six-value
+/// Flash call, the string replace, the wave-texture unload and the
+/// vertex-info move.
+#[test]
+fn c4_blur_voice_menu() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c401);
+        let stubs: [(u32, bool, u32, u32); 14] = [
+            (m::POST_PROCESS_INSTANCE, false, 0, 0),
+            (c4::COPY_BUFFER, true, 6, 6),
+            (c4::BLUR_PASS, true, 2, 2),
+            (fr::ERRCHECK, false, 3, 0),
+            (c4::VOICE_READ, true, 2, 2),
+            (c4::CALL_AS3, true, 5, 5),
+            (fr::MEMCPY, false, 3, 0),
+            (fr::MEMSET, false, 3, 0),
+            (c4::SET_UI_UNLOADED, true, 1, 1),
+            (c4::UNIFY_FILENAME, false, 3, 0),
+            (c4::SET_MATERIAL_UNLOADED, false, 1, 1),
+            (c4::FORCE_UNLOAD_MENU_TEXTURE, true, 1, 1),
+            (0x0bad_0408, false, 3, 3),
+            (0x0bad_0478, false, 2, 0),
+        ];
+        let mut codes = [0; 2];
+        for (k, &(sym, this, n, pops)) in stubs.iter().enumerate() {
+            match k {
+                12 | 13 => codes[k - 12] = t.stub_code(sym, this, n, pops),
+                _ => t.stub(sym, this, n, pops),
+            }
+        }
+        let [free_event, strstr] = codes;
+        t.g32(c4::STRSTR.sym, strstr);
+        let group_vtable = t.zeros(0x10);
+        t.w32(group_vtable + 8, free_event);
+        let state_cell = t.zeros(4);
+        t.stub_at(
+            fr::FMOD_GET_STATE,
+            false,
+            2,
+            2,
+            &[Write {
+                arg: Some(1),
+                offset: 0,
+                cell: state_cell,
+            }],
+        );
+        let table = t.rebase(c4::WAVE_TEXTURES);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.next();
+                t.ret(sym, v);
+            }
+            // BlurEffectEx_render
+            let blur = t.random(&mut rng, 0x40);
+            t.w8(blur + 0x28, [0, 1, 1, 1][rng.below(4) as usize]);
+            t.w32(blur + 0x2c, [0, 1, 2][rng.below(3) as usize]);
+            t.w32(blur + 0x3c, [0, 1, 2][rng.below(3) as usize]);
+            for off in [0xc, 0x18] {
+                let rt = t.random(&mut rng, 8);
+                t.w8(rt + 4, [0, 1][rng.below(2) as usize]);
+                t.w32(blur + off, rt);
+            }
+            t.check(
+                &format!("{w} blur render"),
+                0x006c_4cf0,
+                Conv::Thiscall(blur),
+                &[],
+                |g| u(c4::blur_ex_render(g, blur)),
+            );
+            // FmodVoice_checkEvent
+            let voice = t.random(&mut rng, 0x80);
+            if rng.below(4) == 0 {
+                t.w32(voice + 0x14, 0);
+            }
+            if rng.below(3) != 0 {
+                let group = t.zeros(4);
+                t.w32(group, group_vtable);
+                t.w32(voice + 0x10, group);
+            } else {
+                t.w32(voice + 0x10, 0);
+            }
+            t.w32(voice + 0x60, [0, 1, 1, 2][rng.below(4) as usize]);
+            t.w32(voice + 0x5c, [0, rng.next()][rng.below(2) as usize]);
+            let r = [0, 0x1e][rng.below(2) as usize];
+            t.ret(fr::FMOD_GET_STATE, r);
+            let v = rng.next();
+            t.w32(state_cell, v);
+            let system = rng.next();
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} voice check {r:#x}"),
+                0x0070_a4a0,
+                Conv::Thiscall(voice),
+                &[system],
+                ebp - 4,
+                &[(0, 4)],
+                |g| {
+                    c4::voice_check_event(g, ebp - 4, voice, system);
+                    Out::None
+                },
+            );
+            // the six-value Flash call
+            let args: [u32; 26] = std::array::from_fn(|_| rng.next());
+            let values: [u32; 24] = std::array::from_fn(|k| args[k + 2]);
+            let ebp = t.ebp_for(26);
+            t.check_framed(
+                &format!("{w} flash 6"),
+                0x006f_caf0,
+                Conv::Cdecl,
+                &args,
+                ebp - 0x64,
+                &[(0, 0x60)],
+                |g| u(c4::call_flash_6(g, ebp - 0x64, args[0], args[1], &values)),
+            );
+            // the string replace
+            let texts: &[&[u8]] = &[b"Video %s here", b"%s", b"none", b"a%sb%s", b"yes"];
+            let text = texts[rng.below(texts.len() as u32) as usize];
+            // junk after the terminator: a moved terminator must be written
+            let mut buf = text.to_vec();
+            buf.push(0);
+            buf.resize(0x40, 0xaa);
+            let tp = t.alloc(&buf);
+            let froms: &[&[u8]] = &[b"%s", b"s", b"e"];
+            let pattern = froms[rng.below(froms.len() as u32) as usize];
+            let mut fb = pattern.to_vec();
+            fb.push(0);
+            let from = t.alloc(&fb);
+            let tos: &[&[u8]] = &[b"\0", b"x\0", b"ab\0", b"long text\0"];
+            let to = t.alloc(tos[rng.below(tos.len() as u32) as usize]);
+            let found = text.windows(pattern.len()).position(|x| x == pattern);
+            t.ret(0x0bad_0478, found.map_or(0, |k| tp + k as u32));
+            t.check(
+                &format!("{w} replace in {text:?}"),
+                0x0070_2590,
+                Conv::Cdecl,
+                &[tp, from, to],
+                |g| Out::U8(c4::string_replace_first(g, tp, from, to)),
+            );
+            // the wave-texture unload
+            for k in 0..70u32 {
+                let v = [0, rng.next()][rng.below(4).min(1) as usize];
+                t.w32(table + 4 * k, v);
+            }
+            // the original reads **(ui + 0x2bd4) for the geometry's ecx
+            let ui = t.zeros(0x2bd8);
+            let geometry = t.random(&mut rng, 4);
+            t.w32(ui + 0x2bd4, geometry);
+            t.g32(c4::GRAPHIC_UI.sym, ui);
+            let scene = rng.next();
+            t.g32(c4::PHYRE_SCENE.sym, scene);
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} wave unload"),
+                0x0067_efa0,
+                Conv::Cdecl,
+                &[],
+                ebp - 0x104,
+                &[(0, 0x100)],
+                |g| {
+                    c4::unload_main_menu_wave_texture(g, ebp - 0x104);
+                    Out::None
+                },
+            );
+            // the vertex-info move
+            let record = |t: &mut Twins, rng: &mut Rng| {
+                let r = t.zeros(0x98);
+                let info = t.random(rng, 0x24);
+                for (off, n) in [(0x14, 16), (0x1c, 3), (0x10, 12), (0x18, 8), (0xc, 12)] {
+                    let a = t.random(rng, 4 * n);
+                    t.w32(info + off, a);
+                }
+                t.w32(r + 0x94, info);
+                r
+            };
+            let from = record(&mut t, &mut rng);
+            let to = record(&mut t, &mut rng);
+            let v = rng.next();
+            t.g32(c4::VERTEX_INFO_DEFAULT.sym, v);
+            t.check(
+                &format!("{w} vertex move"),
+                0x0067_dc70,
+                Conv::Stdcall,
+                &[from, to],
+                |g| u(c4::vertex_info_move(g, from, to)),
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
