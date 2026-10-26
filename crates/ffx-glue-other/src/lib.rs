@@ -14,7 +14,10 @@
 //! - [`misc`]: forwarders, PS2 packet/DMA/GS helpers;
 //! - [`copies`]: exact copies of other modules' ports (`tools/dupes.py`);
 //! - [`r3`]: round 3: the wide cluster/font calls, singletons, array
-//!   helpers, dlmalloc's `create_mspace_with_base`, menu textures.
+//!   helpers, dlmalloc's `create_mspace_with_base`, menu textures;
+//! - [`h4_c1`]: the continuation round: the accumulation buffer's GS
+//!   quads, menu lookups, FMOD event collectors, texture-animation
+//!   records, the escape menu's string arrays.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -34,6 +37,7 @@
 pub mod copies;
 pub mod effect;
 pub mod frames;
+pub mod h4_c1;
 pub mod menu;
 pub mod misc;
 pub mod movie;

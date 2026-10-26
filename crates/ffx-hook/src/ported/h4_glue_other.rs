@@ -11,7 +11,8 @@
 //! through `fld`/`fstp`, which the bridges model.
 
 use ffx_glue_other::{
-    copies as c, effect as e, frames as fr, menu as mn, misc as m, movie as mv, r3, sound as s,
+    copies as c, effect as e, frames as fr, h4_c1 as c1, menu as mn, misc as m, movie as mv, r3,
+    sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1214,5 +1215,87 @@ ported! {
     MenuDynamicGeometry_setMeshWorldMatrix @ 0x006a_2e60 => extern "thiscall" fn set_mesh_world_matrix(this: u32) -> u32 {
         let mut frame = StackFrame::<{ (r3::MESH_WORLD_FRAME / 4) as usize }>::new();
         r3::set_mesh_world_matrix(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round, batch 1 (ffx_glue_other::h4_c1)
+    /// `Sg_AccDrawAlphaQuad_0082baf0(fix)`.
+    Sg_AccDrawAlphaQuad_0082baf0 @ 0x0082_baf0 => extern "C" fn acc_draw_alpha_quad(fix: u32) -> u32 {
+        c1::acc_draw_alpha_quad(&mut mem(), fix)
+    }
+    /// `Sg_DrawFilterQuad_0082bb90(z)`.
+    Sg_DrawFilterQuad_0082bb90 @ 0x0082_bb90 => extern "C" fn draw_filter_quad(z: u32) -> u32 {
+        c1::draw_filter_quad(&mut mem(), z)
+    }
+    /// `sg_AccSetCurrent()`.
+    sg_AccSetCurrent @ 0x0082_ce90 => extern "C" fn acc_set_current() {
+        c1::acc_set_current(&mut mem());
+    }
+    /// `MenuManager_TakeSingleRecord_0067c210(this; chain)`.
+    MenuManager_TakeSingleRecord_0067c210 @ 0x0067_c210 => extern "thiscall" fn take_single_record(this: u32, chain: u32) -> u32 {
+        c1::take_single_record(&mut mem(), this, chain)
+    }
+    /// `MenuManager_findNameIndex_0067e310(this; name)`.
+    MenuManager_findNameIndex_0067e310 @ 0x0067_e310 => extern "thiscall" fn find_name_index(this: u32, name: u32) -> u32 {
+        c1::find_name_index(&mut mem(), this, name)
+    }
+    /// `PArray_reset16_0068bc60(this)`.
+    PArray_reset16_0068bc60 @ 0x0068_bc60 => extern "thiscall" fn parray_reset16(this: u32) {
+        c1::parray_reset16(&mut mem(), this);
+    }
+    /// `PArray8_appendInto_006a2790(this; dst, &value)`.
+    PArray8_appendInto_006a2790 @ 0x006a_2790 => extern "thiscall" fn parray8_append_into(this: u32, dst: u32, value: u32) -> u32 {
+        c1::parray8_append_into(&mut mem(), this, dst, value)
+    }
+    /// `op_texels_mip_00a384d0(dst, dst_step, w, h, src, src_step, size)`.
+    op_texels_mip_00a384d0 @ 0x00a3_84d0 => extern "C" fn texels_mip(dst: u32, dst_step: u32, w: u32, rows: u32, src: u32, src_step: u32, size: u32) {
+        c1::texels_mip(&mut mem(), [dst, dst_step, w, rows, src, src_step, size]);
+    }
+    /// `SfxEventGroup_appendEvents_00710ae0(this; key, out)`: hands its
+    /// callees its own argument slots, as the original does.
+    SfxEventGroup_appendEvents_00710ae0 @ 0x0071_0ae0 => extern "thiscall" fn append_group_events(this: u32, _key: u32, _out: u32; args: u32) -> u8 {
+        c1::append_group_events(&mut mem(), this, args)
+    }
+    /// `SfxBank_appendEventById_0070fa80(this; id, out)`.
+    SfxBank_appendEventById_0070fa80 @ 0x0070_fa80 => extern "thiscall" fn append_event_by_id(this: u32, id: u32, out: u32) -> u8 {
+        c1::append_event_by_id(&mut mem(), this, id, out)
+    }
+    /// `ChrResourceCacheManager_enableChrDelayRelease(this)`.
+    ChrResourceCacheManager_enableChrDelayRelease @ 0x0069_ae80 => extern "thiscall" fn enable_chr_delay_release(this: u32) -> u32 {
+        c1::enable_chr_delay_release(&mut mem(), this)
+    }
+    /// `FFEscMenu_refreshParameterAndSpecialPageEnableState(this)`.
+    FFEscMenu_refreshParameterAndSpecialPageEnableState @ 0x006f_c9b0 => extern "thiscall" fn esc_refresh_page_state(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (c1::REFRESH_FRAME / 4) as usize }>::new();
+        c1::esc_refresh_page_state(&mut mem(), frame.at(), this)
+    }
+    /// `IggyStringArray_ctor_006fcbc0(this; root, names, n)`.
+    IggyStringArray_ctor_006fcbc0 @ 0x006f_cbc0 => extern "thiscall" fn iggy_string_array_ctor(this: u32, root: u32, names: u32, n: u32) -> u32 {
+        let mut frame = StackFrame::<{ (c1::STRING_ARRAY_FRAME / 4) as usize }>::new();
+        c1::iggy_string_array_ctor(&mut mem(), frame.at(), this, [root, names, n])
+    }
+    /// `TextureAnimationInfo_dtor_006afd60(this; flags)`.
+    TextureAnimationInfo_dtor_006afd60 @ 0x006a_fd60 => extern "thiscall" fn texture_animation_info_dtor(this: u32, flags: u32) -> u32 {
+        c1::texture_animation_info_dtor(&mut mem(), this, flags)
+    }
+    /// `TextureAnimationInfoChar_dtor_006af7f0(this)`.
+    TextureAnimationInfoChar_dtor_006af7f0 @ 0x006a_f7f0 => extern "thiscall" fn texture_animation_info_char_dtor(this: u32) {
+        c1::texture_animation_info_char_dtor(&mut mem(), this);
+    }
+    /// `TextureAnimationManager_ctor_006af370(this)`.
+    TextureAnimationManager_ctor_006af370 @ 0x006a_f370 => extern "thiscall" fn texture_animation_manager_ctor(this: u32) -> u32 {
+        c1::texture_animation_manager_ctor(&mut mem(), this)
+    }
+    /// `TextureAnimationMaterial_dtor_006af690(this)`.
+    TextureAnimationMaterial_dtor_006af690 @ 0x006a_f690 => extern "thiscall" fn texture_animation_material_dtor(this: u32) {
+        c1::texture_animation_material_dtor(&mut mem(), this);
+    }
+    /// `TextureAnimationMaterial_assign_006afaf0(this; src)`.
+    TextureAnimationMaterial_assign_006afaf0 @ 0x006a_faf0 => extern "thiscall" fn texture_animation_material_assign(this: u32, src: u32) -> u32 {
+        c1::texture_animation_material_assign(&mut mem(), this, src)
+    }
+    /// `TOAdpMenuIconItemAbmap(pkt, item, x, y, colour)`: the twelve-word
+    /// text call through `call_cdecl_words`.
+    TOAdpMenuIconItemAbmap @ 0x008f_0700 => extern "C" fn adp_menu_icon_item(pkt: u32, item: u32, x: u32, y: u32, colour: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        c1::adp_menu_icon_item(&mut mem(), frame.at(), [pkt, item, x, y, colour], &mut |_, f, a| super::call_cdecl_words(f, a))
     }
 }
