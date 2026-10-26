@@ -25,7 +25,9 @@ use std::path::PathBuf;
 
 use ffx_bridge::Mem;
 use ffx_glue_other::{
-    frames as fr, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2, h4_e3 as e3, h4_e4 as e4, h4_e5 as e5,
+    frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
+    h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
+    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -145,6 +147,10 @@ impl Host for G<'_> {
         self.pop();
         v
     }
+    fn call_u64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> u64 {
+        let r = self.ret(addr, c, args, true);
+        u64::from(r.edx) << 32 | u64::from(r.eax)
+    }
     fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
         let b = x.to_bits();
         let r = self
@@ -175,6 +181,8 @@ enum Out {
     None,
     /// `eax`.
     U32(u32),
+    /// `edx:eax`.
+    U64(u64),
 }
 
 fn u(v: u32) -> Out {
@@ -217,6 +225,8 @@ struct Twins {
     cells: HashMap<u32, u32>,
     /// The `ST0` cell (`f64`) of each float stub, by tag.
     fcells: HashMap<u32, u32>,
+    /// The `edx` cell of each 64-bit stub, by tag.
+    hi_cells: HashMap<u32, u32>,
 }
 
 impl Twins {
@@ -233,6 +243,7 @@ impl Twins {
             cave_next: cave,
             cells: HashMap::new(),
             fcells: HashMap::new(),
+            hi_cells: HashMap::new(),
         };
         t.log = t.zeros(0x4_0000);
         t.tramp = t.code(&TRAMPOLINE);
@@ -350,6 +361,37 @@ impl Twins {
         float: bool,
         writes: &[Write],
     ) -> u32 {
+        self.stub_code_edx(tag, this, n, pops, float, writes, None)
+    }
+
+    /// A 64-bit stub at the original `sym`: [`Twins::stub_at`] that also
+    /// returns `edx` from a second cell ([`Twins::ret_u64`]).
+    fn stub_u64(&mut self, sym: u32, this: bool, n: u32, pops: u32) {
+        let hi = self.zeros(4);
+        self.hi_cells.insert(sym, hi);
+        let addr = self.stub_code_edx(sym, this, n, pops, false, &[], Some(hi));
+        self.jump(sym, addr);
+    }
+
+    /// Sets the `edx:eax` result of the stub tagged `tag`.
+    fn ret_u64(&mut self, tag: u32, v: u64) {
+        self.ret(tag, v as u32);
+        let hi = self.hi_cells[&tag];
+        self.w32(hi, (v >> 32) as u32);
+    }
+
+    /// [`Twins::stub_code`], with `edx` loaded from `edx` at the end.
+    #[allow(clippy::too_many_arguments)]
+    fn stub_code_edx(
+        &mut self,
+        tag: u32,
+        this: bool,
+        n: u32,
+        pops: u32,
+        float: bool,
+        writes: &[Write],
+        edx: Option<u32>,
+    ) -> u32 {
         assert!(n <= 14);
         let cell = self.zeros(4);
         self.cells.insert(tag, cell);
@@ -390,6 +432,10 @@ impl Twins {
             self.fcells.insert(tag, f);
             c.extend([0xdd, 0x05]);
             c.extend(f.to_le_bytes()); // fld qword [f]
+        }
+        if let Some(hi) = edx {
+            c.extend([0x8b, 0x15]);
+            c.extend(hi.to_le_bytes()); // mov edx, [hi]
         }
         if pops == 0 {
             c.push(0xc3);
@@ -486,8 +532,13 @@ impl Twins {
             "{what}: the original leaves ST0 set ({:?})",
             ra.st0
         );
-        if let Out::U32(v) = out {
-            assert_eq!(ra.eax, v, "{what}: eax");
+        match out {
+            Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
+            Out::U64(v) => {
+                assert_eq!(ra.eax, v as u32, "{what}: eax");
+                assert_eq!(ra.edx, (v >> 32) as u32, "{what}: edx");
+            }
+            Out::None => {}
         }
         self.diff(what);
         ra.eax
@@ -2170,5 +2221,1877 @@ fn e5_music(cross: bool) {
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 4, batch 1 (ffx_glue_other::h4_f1)
+
+/// `graphicGetTimeInMicroseconds`.
+const TIME_US: u32 = 0x0064_1420;
+
+/// Random words over `n` bytes at a fresh block; its address.
+fn random_block(t: &mut Twins, rng: &mut Rng, n: u32) -> u32 {
+    let at = t.zeros(n as usize);
+    for k in 0..n / 4 {
+        let v = rng.next();
+        t.w32(at + 4 * k, v);
+    }
+    at
+}
+
+fn rand_u64(rng: &mut Rng) -> u64 {
+    (u64::from(rng.next()) << 32) | u64::from(rng.next())
+}
+
+/// The voice's start and restart.
+#[test]
+fn f1_voice() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f101);
+        let state = t.zeros(4);
+        t.stub_at(fr::FMOD_GET_STATE, false, 2, 2, &[wr(1, state)]);
+        t.stub_at(EVENT_SET_CALLBACK, false, 3, 3, &[]);
+        t.stub_at(e3::EVENT_START, false, 1, 1, &[]);
+        t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+        t.stub_at(e2::VOICE_VOLUME_DIRECT, true, 2, 2, &[]);
+        t.stub_u64(TIME_US, false, 0, 0);
+        let release = t.stub_code(0x0bad_f108, true, 3, 3, false, &[]);
+        let vtable = t.zeros(0x10);
+        t.w32(vtable + 8, release);
+        let group = t.zeros(4);
+        t.w32(group, vtable);
+        let tags = [
+            fr::FMOD_GET_STATE,
+            EVENT_SET_CALLBACK,
+            e3::EVENT_START,
+            fr::ERRCHECK,
+            e2::VOICE_VOLUME_DIRECT,
+            0x0bad_f108,
+        ];
+        let this = t.zeros(0x90);
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[e3::FULL_VOLUME], &[]);
+            let now = rand_u64(&mut rng);
+            t.ret_u64(TIME_US, now);
+            for k in 0..0x24 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            let ev = rng.next() | 1;
+            t.w32(this + 0x14, rng.pick(&[0, ev, ev, ev]));
+            t.w32(this + 0x58, rng.pick(&[0, 1, 1, 2]));
+            t.w32(
+                this + 0x64,
+                rng.pick(&[0, 4, 5, 6, 0x8000_0000, 0x7fff_ffff]),
+            );
+            t.w32(this + 0x10, rng.pick(&[0, group, group]));
+            t.w32(this + 0x80, rng.pick(&[0, 1, 2]));
+            let flag = rng.pick(&[0, 1, 2]);
+            t.g32(f1::VOICE_NO_PLAY, flag);
+            let st = rng.pick(&[1, 1, 0, 2, 8]);
+            t.w32(state, st);
+            let r = rng.pick(&[0, 0, 1, 0x24]);
+            t.ret(fr::FMOD_GET_STATE, r);
+            let (a, b) = (rng.next(), rng.next());
+            let frame = t.ebp_for(2) - f1::VOICE_FRAME;
+            t.check_framed_conv(
+                &format!("{w} start"),
+                0x0070_b5c0,
+                Conv::Thiscall(this),
+                &[a, b],
+                frame,
+                &[(0, 4)],
+                |g| u(f1::voice_start(g, frame, this)),
+            );
+            let frame = t.ebp_for(0) - f1::VOICE_FRAME;
+            t.check_framed_conv(
+                &format!("{w} restart"),
+                0x0070_b160,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 4)],
+                |g| u(f1::voice_restart(g, frame, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The sound loop.
+#[test]
+fn f1_sound_loop() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f102);
+        t.stub_u64(TIME_US, false, 0, 0);
+        let stubs = [
+            (f1::SYSTEM_UPDATE, false, 1, 1),
+            (fr::ERRCHECK, false, 3, 0),
+            (f1::VOICE_UPDATE_STATE, true, 1, 1),
+            (f1::MUSIC_LOOP_VOLUME, true, 0, 0),
+            (f1::VOICE_LOOP_VOLUME, true, 0, 0),
+            (f1::VOICE_RESTART, true, 0, 0),
+            (f1::MUSIC_RESTART, true, 1, 1),
+            (f1::SFX_UPDATE, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let tags = stubs.map(|s| s.0);
+        let this = t.zeros(0x18);
+        let music = t.zeros(0x20);
+        let last_at = t.rebase(f1::LAST_LOOP);
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let d = rng.double();
+            let us = rng.pick(&[1e6, 1e6, d]);
+            let at = t.rebase(f1::US_PER_S);
+            t.write(at, &us.to_le_bytes());
+            let last = rand_u64(&mut rng);
+            let r = u64::from(rng.next());
+            let big = (u64::from(rng.next()) << 32) | 0x1234;
+            let step = rng.pick(&[
+                0,
+                1,
+                0x80e8,
+                0x80e9,
+                16_667,
+                33_334,
+                1_000_000,
+                r,
+                big,
+                u64::MAX,
+                u64::MAX - 0x80e8,
+                1 << 63,
+                (1 << 63) + 0x801,
+                (1 << 53) + 1,
+            ]);
+            let now = last.wrapping_add(step);
+            t.ret_u64(TIME_US, now);
+            t.w32(last_at, last as u32);
+            t.w32(last_at + 4, (last >> 32) as u32);
+            let sys = rng.next();
+            t.w32(this + 4, rng.pick(&[0, sys]));
+            let (v, s) = (rng.next(), rng.next());
+            t.w32(this + 0xc, music);
+            t.w32(this + 0x10, v);
+            t.w32(this + 0x14, s);
+            let track = rng.next();
+            t.w32(music + 0x18, track);
+            t.check_conv(
+                &format!("{w} step {step:#x}"),
+                0x0070_70d0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(f1::sound_loop(g, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `Phyre_PRedBlackTree_successor`'s stub: logs, returns the node's `+0x1c`.
+fn stub_successor_e(t: &mut Twins) {
+    let sym = c2::TREE_SUCCESSOR;
+    let rest = t.stub_code(sym, true, 1, 1, false, &[]);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x40, 0x1c, 0xa3];
+    c.extend(cell.to_le_bytes()); // mov eax, [esp+4]; mov eax, [eax+0x1c]; mov [cell], eax
+    c.push(0xe9);
+    let at = t.cave_next;
+    c.extend(rest.wrapping_sub(at + 17).to_le_bytes()); // jmp rest
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// A stub at `sym` (thiscall, `n` words) whose result is `[ecx + off]`.
+fn stub_from_this(t: &mut Twins, sym: u32, n: u32, off: u8) {
+    let rest = t.stub_code(sym, true, n, n, false, &[]);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x8b, 0x41, off, 0xa3];
+    c.extend(cell.to_le_bytes()); // mov eax, [ecx+off]; mov [cell], eax
+    c.push(0xe9);
+    let at = t.cave_next;
+    c.extend(rest.wrapping_sub(at + 13).to_le_bytes()); // jmp rest
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// A `PRedBlackTree` at `tree` over `nodes` (in order: `+0x1c` the next
+/// for the successor stub; the leftmost chain from `tree + 0xc`).
+fn tree_of(t: &mut Twins, rng: &mut Rng, tree: u32, nodes: &[u32]) {
+    for (k, &nd) in nodes.iter().enumerate() {
+        t.w32(nd + 0x1c, nodes.get(k + 1).copied().unwrap_or(tree));
+    }
+    if let Some(&first) = nodes.first() {
+        if rng.below(2) == 0 {
+            t.w32(tree + 0xc, first);
+        } else {
+            let top = t.zeros(0x20);
+            t.w32(tree + 0xc, top);
+            t.w32(top, first);
+        }
+        t.w32(first, tree);
+    } else {
+        // a null link would hand the successor stub address 0
+        t.w32(tree + 0xc, tree);
+    }
+}
+
+/// The sound effects' whole volume and project unload.
+#[test]
+fn f1_sfx() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f103);
+        stub_successor_e(&mut t);
+        stub_from_this(&mut t, f1::SFX_ANY_EVENT_FLAG, 0, 0);
+        stub_from_this(&mut t, f1::SFX_BANK_PLAYING, 0, 4);
+        let stubs = [
+            (f1::SFX_EVENT_ENTIRE_VOLUME, true, 1, 1),
+            (f1::SFX_BANK_DTOR, true, 0, 0),
+            (fr::OPERATOR_DELETE, false, 1, 0),
+            (c2::TREE_ORPHAN_ALL, true, 0, 0),
+            (c2::FREE_LIST_RESET, true, 0, 0),
+            (VFX_INT_TREE_INSERT, true, 1, 1),
+            (c2::TREE_POST_INSERT, true, 1, 1),
+            (c2::FREE_LIST_DEALLOCATE, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        // allocateNewBlock: the list head from a cell
+        let refill = t.zeros(4);
+        let rest = t.stub_code(c2::FREE_LIST_ALLOCATE_BLOCK, true, 1, 1, false, &[]);
+        let mut c = vec![0xa1];
+        c.extend(refill.to_le_bytes()); // mov eax, [refill]
+        c.extend([0x89, 0x01, 0xe9]); // mov [ecx], eax; jmp rest
+        let at = t.cave_next;
+        c.extend(rest.wrapping_sub(at + 12).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(c2::FREE_LIST_ALLOCATE_BLOCK, f);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([
+            c2::TREE_SUCCESSOR,
+            f1::SFX_ANY_EVENT_FLAG,
+            f1::SFX_BANK_PLAYING,
+            c2::FREE_LIST_ALLOCATE_BLOCK,
+        ]);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let this = random_block(&mut t, &mut rng, 0x100);
+            // the sound tree at +0x64
+            let n = rng.below(5) as usize;
+            let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+            for &nd in &nodes {
+                let events = t.zeros(0x10);
+                for e in 0..4 {
+                    let flagged = t.zeros(4);
+                    let hi = rng.next() & !0xff;
+                    t.w32(flagged, hi | rng.pick(&[0, 1, 0x80]));
+                    let v = rng.pick(&[0, flagged, flagged]);
+                    t.w32(events + 4 * e, v);
+                }
+                t.w32(nd + 0x10, rng.below(5));
+                t.w32(nd + 0x18, events);
+            }
+            tree_of(&mut t, &mut rng, this + 0x64, &nodes);
+            let flagged = t.zeros(4);
+            t.w8(flagged, rng.pick(&[0, 1]));
+            t.w32(this + 0xc8, rng.pick(&[0, flagged, flagged]));
+            let cur = rng.float();
+            let cur = rng.pick(&[cur, 0, 0x3f00_0000, 0x3f80_0000]);
+            t.w32(this + 0xd0, cur);
+            let v = rng.float();
+            let volume = rng.pick(&[
+                v,
+                cur,
+                0x3f00_0000,
+                0xbf80_0000,
+                0x4000_0000,
+                0,
+                0x8000_0000,
+                0x7fc0_0000,
+                0x3f80_0000,
+            ]);
+            t.check_conv(
+                &format!("{w} entire volume {volume:#x} of {n}"),
+                0x0070_d500,
+                Conv::Thiscall(this),
+                &[volume],
+                |g| {
+                    f1::sfx_set_entire_volume(g, this, volume);
+                    Out::None
+                },
+            );
+            // the bank trees at +4 and +0x34
+            for tree in [this + 4, this + 0x34] {
+                let n = rng.below(6) as usize;
+                let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+                for &nd in &nodes {
+                    let bank = t.zeros(8);
+                    t.w32(bank + 4, rng.pick(&[0, 0, 1, 3]));
+                    // the +0x34 tree's banks are asked for their playing
+                    // events (a null bank faults the original there too)
+                    let none = if tree == this + 4 { 0 } else { bank };
+                    t.w32(nd + 0x10, rng.pick(&[none, bank, bank, bank]));
+                    let key = rng.next();
+                    t.w32(nd + 0xc, key);
+                }
+                tree_of(&mut t, &mut rng, tree, &nodes);
+            }
+            let free = t.zeros(0x20);
+            let next = t.zeros(0x20);
+            t.w32(free, rng.pick(&[0, next]));
+            t.w32(this + 0xac, rng.pick(&[0, free, free]));
+            let more = t.zeros(0x20);
+            t.w32(refill, rng.pick(&[0, more]));
+            let dup = rng.pick(&[0, 0, 1, 0x100]);
+            t.ret(VFX_INT_TREE_INSERT, dup);
+            let all = rng.pick(&[0, 1, 0x100, 0x101]);
+            let b = rng.next();
+            t.check_conv(
+                &format!("{w} unload {all:#x}"),
+                0x0070_dd10,
+                Conv::Thiscall(this),
+                &[all, b],
+                |g| u(f1::sfx_unload_projects(g, this, all)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `vfxIntTree_Insert_0070bb20`.
+const VFX_INT_TREE_INSERT: u32 = 0x0070_bb20;
+
+/// A sound event's volume fade.
+#[test]
+fn f1_set_volume2() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f104);
+        let current = t.zeros(4);
+        t.stub_at(f1::EVENT_GET_VOLUME, false, 2, 2, &[wr(1, current)]);
+        t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+        t.stub_at(f1::SFX_EVENT_SET_VOLUME, true, 1, 1, &[]);
+        t.stub_at(fr::OPERATOR_DELETE, false, 1, 0, &[]);
+        t.stub_at(f1::OPERATOR_NEW, false, 1, 0, &[]);
+        let from = t.stub_code(f1::SFX_VOLUME_FROM_127, true, 1, 1, true, &[]);
+        t.jump(f1::SFX_VOLUME_FROM_127, from);
+        let tags = [
+            f1::EVENT_GET_VOLUME,
+            fr::ERRCHECK,
+            f1::SFX_EVENT_SET_VOLUME,
+            fr::OPERATOR_DELETE,
+            f1::OPERATOR_NEW,
+            f1::SFX_VOLUME_FROM_127,
+        ];
+        let this = t.zeros(0x20);
+        let first = t.zeros(8);
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let fade = t.zeros(0x10);
+            t.ret(f1::OPERATOR_NEW, rng.pick(&[0, fade, fade, fade]));
+            let d = rng.double();
+            t.ret_f64(
+                f1::SFX_VOLUME_FROM_127,
+                rng.pick(&[d, 0.5, 1.0, 0.0, 1.0 / 3.0]),
+            );
+            let d = rng.double();
+            let fps = rng.pick(&[30.0, 30.0, d, 0.0]);
+            let at = t.rebase(f1::FADE_FPS);
+            t.write(at, &fps.to_le_bytes());
+            let cur = rng.float();
+            t.w32(current, rng.pick(&[cur, 0x3f80_0000, 0]));
+            for k in 0..8 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            let old = rng.next();
+            t.w32(this + 0x18, rng.pick(&[0, old]));
+            t.w32(this + 8, first);
+            let ev = rng.next();
+            t.w32(first, ev);
+            let hi = rng.next() & !0xff;
+            t.w32(first + 4, hi | rng.pick(&[0, 1, 0x80]));
+            let r = rng.next();
+            let volume = rng.pick(&[0, 64, 127, 200, r]);
+            let r = rng.next();
+            let frames = rng.pick(&[0, 0, 1, 30, 90, 0xffff_ffff, 0x8000_0000, r]);
+            let frame = t.ebp_for(2) - 0x10;
+            t.check_framed_conv(
+                &format!("{w} {volume} over {frames}"),
+                0x0070_f210,
+                Conv::Thiscall(this),
+                &[volume, frames],
+                frame,
+                &[(0, 4)],
+                |g| match f1::sfx_event_set_volume2(g, frame, this, volume, frames) {
+                    Some(v) => u(v),
+                    None => Out::None,
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The menu manager's instance setup.
+#[test]
+fn f1_menu_instance_setup() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f105);
+        t.stub_at(f1::MENU_GEOMETRY_CTOR, true, 0, 0, &[]);
+        t.stub_at(f1::MENU_GEOMETRY_SET_MATRIX, true, 0, 0, &[]);
+        // the material call also notes the counts the record's vertex
+        // info lends meanwhile (geometry +0x24 -> record +0x94 -> +4, +8)
+        let counts = t.zeros(8);
+        let rest = t.stub_code(0x0bad_f104, true, 2, 2, false, &[]);
+        let mut c = vec![
+            0x8b, 0x41, 0x24, 0x8b, 0x80, 0x94, 0, 0, 0, 0x8b, 0x50, 0x04, 0x89, 0x15,
+        ];
+        c.extend(counts.to_le_bytes()); // mov eax, [ecx+0x24]; mov eax, [eax+0x94]; mov edx, [eax+4]; mov [counts], edx
+        c.extend([0x8b, 0x50, 0x08, 0x89, 0x15]);
+        c.extend((counts + 4).to_le_bytes()); // mov edx, [eax+8]; mov [counts+4], edx
+        c.push(0xe9);
+        let at = t.cave_next;
+        c.extend(rest.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp rest
+        let set = t.code(&c);
+        let tags = [
+            f1::MENU_GEOMETRY_CTOR,
+            f1::MENU_GEOMETRY_SET_MATRIX,
+            0x0bad_f104,
+        ];
+        let vtable = t.zeros(8);
+        t.w32(vtable + 4, set);
+        let scene = t.zeros(0xfaa0);
+        t.g32(f1::PHYRE_SCENE, scene);
+        let names: Vec<u32> = [
+            &b"RealFrameBuffer\0"[..],
+            b"NoTexture\0",
+            b"NoTexturf\0",
+            b"RealFrameBuffe\0",
+            b"\0",
+            b"FrameBuffer\0",
+        ]
+        .iter()
+        .map(|s| t.alloc(s))
+        .collect();
+        let this = t.zeros(0x2ec40);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for off in [0xfa80, 0xfa84, 0xfa88] {
+                let v = rng.next();
+                t.w32(scene + off, v);
+            }
+            t.w8(scene + 0xfa9c, rng.pick(&[0, 0, 1, 2]));
+            t.w8(scene + 0xfa9d, rng.pick(&[0, 0, 1, 2]));
+            let n = rng.pick(&[0, 1, 5, 0x10, 0x31]);
+            t.w32(this + 0x2ec30, n);
+            let geom = t.zeros(0x40);
+            t.w32(geom, vtable);
+            t.ret(f1::MENU_GEOMETRY_CTOR, geom);
+            let rec = random_block(&mut t, &mut rng, 0xc0);
+            let info = random_block(&mut t, &mut rng, 0x30);
+            t.w32(rec + 0x94, info);
+            let real = t.rebase(f1::REAL_FRAME_BUFFER);
+            let none = t.rebase(f1::NO_TEXTURE);
+            let k = rng.below(names.len() as u32) as usize;
+            let nm = rng.pick(&[names[k], names[k], real, none]);
+            let big = rng.pick(&[0, 1, 2, 0x100]);
+            t.check_conv(
+                &format!("{w} setup n {n} name {nm:#x} big {big}"),
+                0x0067_d760,
+                Conv::Thiscall(this),
+                &[rec, nm, big],
+                |g| Out::U64(f1::menu_instance_setup(g, this, rec, nm, big)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The menu manager's setup of every instance and its buffer chain swap.
+#[test]
+fn f1_menu_all_swap() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f106);
+        t.stub_u64(f1::MENU_INSTANCE_SETUP, true, 3, 3);
+        t.stub_at(f1::MENU_GATHER_BUFFERS, true, 1, 1, &[]);
+        t.stub_at(f1::MENU_UPDATE_MATERIAL, true, 2, 2, &[]);
+        let tags = [
+            f1::MENU_INSTANCE_SETUP,
+            f1::MENU_GATHER_BUFFERS,
+            f1::MENU_UPDATE_MATERIAL,
+        ];
+        let this = t.zeros(0x2ec40);
+        let lists = [
+            (0x2bd4, 0x2580),
+            (0x2bdc, 0x3200),
+            (0x582c, 0x2580),
+            (0x5834, 0x3200),
+        ];
+        let blocks: Vec<u32> = lists.iter().map(|&(_, n)| t.zeros(n)).collect();
+        for i in 0..24 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let r = rand_u64(&mut rng);
+            t.ret_u64(f1::MENU_INSTANCE_SETUP, r);
+            for nm in f1::MENU_NAMES {
+                let v = rng.next();
+                t.g32(nm, v);
+            }
+            for (&(off, _), &b) in lists.iter().zip(&blocks) {
+                t.w32(this + off, b);
+            }
+            for off in [0x15e4, 0x15ec] {
+                let recs = t.zeros(4);
+                let v = rng.next();
+                t.w32(recs, v);
+                t.w32(this + off, recs);
+            }
+            let n = rng.next();
+            t.w32(this + 0x2ec30, n);
+            let v = rng.next();
+            t.w32(this + 0x5b9c, v);
+            if i % 3 == 0 {
+                t.check_conv(
+                    &format!("{w} set up all"),
+                    0x0067_e6c0,
+                    Conv::Thiscall(this),
+                    &[],
+                    |g| Out::U64(f1::menu_set_up_all(g, this)),
+                );
+            }
+            for _ in 0..20 {
+                t.fresh(&mut rng, &tags);
+                t.w32(this + 0x5b7c, rng.pick(&[0, 0, 1, 0x100]));
+                let c = rng.pick(&[0, 1, 3, 8]);
+                t.w32(this + 0x2c50, c);
+                let c = rng.pick(&[0, 1, 3, 8]);
+                t.w32(this + 0x5840, c);
+                t.w32(this + 0x5844, rng.pick(&[0, 1]));
+                for base in [0u32, 0x2c58] {
+                    for k in 0..8 {
+                        let rec = t.zeros(0xb4);
+                        t.w32(rec + 0xb0, rng.pick(&[0, 0, 1, 0x100]));
+                        t.w32(this + base + 4 * k, rec);
+                    }
+                }
+                for &(off, _) in &lists {
+                    let v = rng.next();
+                    t.w32(this + off, v);
+                }
+                t.check_conv(
+                    &format!("{w} swap"),
+                    0x0067_e7f0,
+                    Conv::Thiscall(this),
+                    &[],
+                    |g| {
+                        f1::menu_swap_buffer_chain(g, this);
+                        Out::None
+                    },
+                );
+            }
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 4, batch 2 (ffx_glue_other::h4_f2)
+
+/// The render thread's shader-pass switch.
+#[test]
+fn f2_shader_pass() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f201);
+        let stubs = [
+            (f2::PROGRAM_SET, 1),
+            (f2::PASS_APPLY, 1),
+            (f2::RETURN_ZERO3, 3),
+            (f2::UNBIND_ALL, 3),
+            (f2::RETURN_ZERO2, 2),
+            (f2::RETURN_ZERO1, 1),
+            (f2::RELEASE_PASS, 1),
+            (f2::BIND_TABLES, 3),
+            (f2::BIND_TEXTURES, 3),
+            (f2::FORWARD_IF_BOUND, 2),
+            (f2::BIND_ALL, 2),
+        ];
+        for (sym, n) in stubs {
+            t.stub_at(sym, true, n, n, &[]);
+        }
+        let tags = stubs.map(|s| s.0);
+        let this = t.zeros(0x20);
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let (p1, p2) = (rng.next(), rng.next());
+            let prev = random_block(&mut t, &mut rng, 0x30);
+            let pass = random_block(&mut t, &mut rng, 0x30);
+            t.w32(prev + 0x14, p1);
+            t.w32(pass + 0x14, rng.pick(&[p1, p1, p2]));
+            let tables = [rng.next(), rng.next()];
+            for k in 0..4 {
+                t.w32(prev + 0x20 + 4 * k, tables[0]);
+                t.w32(pass + 0x20 + 4 * k, rng.pick(&tables));
+            }
+            for k in 0..8 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            t.w32(this, rng.pick(&[0, prev, prev, prev]));
+            t.check_conv(
+                &format!("{w} switch"),
+                0x0061_c400,
+                Conv::Thiscall(this),
+                &[pass],
+                |g| u(f2::set_shader_pass(g, this, pass)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The menu manager's material update.
+#[test]
+fn f2_menu_material() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f202);
+        t.stub_at(fr::PHYRE_PRINTF, false, 2, 0, &[]);
+        t.stub_at(f2::GEOMETRY_HIDE, true, 0, 0, &[]);
+        t.stub_at(fr::FIOS_UNIFY, false, 3, 0, &[]);
+        t.stub_at(f2::GEOMETRY_SET_MATERIAL, true, 3, 3, &[]);
+        let tags = [
+            fr::PHYRE_PRINTF,
+            f2::GEOMETRY_HIDE,
+            fr::FIOS_UNIFY,
+            f2::GEOMETRY_SET_MATERIAL,
+        ];
+        let scene = t.zeros(0xfaa4);
+        t.g32(f1::PHYRE_SCENE, scene);
+        let mut names: Vec<u32> = [
+            &b"RealFrameBuffer\0"[..],
+            b"NoTexture\0",
+            b"FrameBuffer\0",
+            b"menu/tex.dds\0",
+            b"a\0",
+        ]
+        .iter()
+        .map(|s| t.alloc(s))
+        .collect();
+        let real = t.rebase(f1::REAL_FRAME_BUFFER);
+        let none = t.rebase(f1::NO_TEXTURE);
+        let fb = t.rebase(f2::FRAME_BUFFER);
+        names.extend([real, none, fb]);
+        let mut ran = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for off in [0xfa80, 0xfa84, 0xfa88, 0xfa94] {
+                let v = rng.next();
+                t.w32(scene + off, v);
+            }
+            for off in [0xfa9c, 0xfa9d, 0xfaa0] {
+                t.w8(scene + off, rng.pick(&[0, 0, 1, 2]));
+            }
+            let failed = rng.next();
+            t.g32(f2::FAILED_NAME, failed);
+            t.ret(f2::GEOMETRY_SET_MATERIAL, rng.pick(&[0, 0, 1, 0x100]));
+            let geom = random_block(&mut t, &mut rng, 0x30);
+            let slot = t.zeros(0xc);
+            let g = rng.next();
+            let g0 = rng.pick(&[0, geom, geom, geom]);
+            t.w32(slot, g0);
+            let rec_on = rng.below(6) != 0;
+            // a geometry of 0 with a second word would be written at 0x24
+            t.w32(
+                slot + 4,
+                if g0 == 0 && rec_on {
+                    0
+                } else {
+                    rng.pick(&[0, g])
+                },
+            );
+            let k = rng.below(names.len() as u32) as usize;
+            t.w32(slot + 8, names[k]);
+            let rec = random_block(&mut t, &mut rng, 0xc0);
+            let info = random_block(&mut t, &mut rng, 0x30);
+            t.w32(rec + 0x94, info);
+            let k2 = rng.below(names.len() as u32) as usize;
+            let n2 = rng.pick(&[names[k2], names[k2], names[k]]);
+            t.w32(info + 0x20, n2);
+            t.w32(rec + 0xbc, rng.pick(&[0, 0, 0, 1, 0x100]));
+            let rec = if rec_on { rec } else { 0 };
+            let frame = t.ebp_for(2) - 0x104;
+            let this = rng.next();
+            t.check_framed_conv(
+                &format!("{w} material"),
+                0x0067_d920,
+                Conv::Thiscall(this),
+                &[slot, rec],
+                frame,
+                &[(0, 0x100)],
+                |g| u(f2::menu_update_material(g, frame, slot, rec)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The menu manager's buffer reset.
+#[test]
+fn f2_menu_reset() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f203);
+        let this = t.zeros(0x5ba0);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            for k in 0..0x5ba0 / 0x40 {
+                let v = rng.next();
+                t.w32(this + 0x40 * k, v);
+            }
+            for &(recs, n) in &f2::RESET_LISTS {
+                let count = rng.pick(&[0, 1, 3, 5]);
+                t.w32(this + n, count);
+                let arr = t.zeros(0x20);
+                for k in 0..count {
+                    let rec = random_block(&mut t, &mut rng, 0xc0);
+                    let info = random_block(&mut t, &mut rng, 0x30);
+                    t.w32(rec + 0x94, info);
+                    t.w32(arr + 4 * k, rec);
+                }
+                t.w32(this + recs, arr);
+            }
+            for off in [0x2c50, 0x5840, 0x5b88, 0x5b78, 0x5b74, 0x5844] {
+                let v = rng.next();
+                t.w32(this + off, v);
+            }
+            let state = rng.pick(&[0, 1, 1, 0, 2, 0x100]);
+            t.w32(this + 0x5b7c, state);
+            t.check_conv(
+                &format!("{w} reset {state}"),
+                0x0067_dfc0,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    f2::menu_reset_buffer_chain(g, this);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+/// The button-icon vertex info lookup.
+#[test]
+fn f2_abmap_vertex_info() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f204);
+        t.stub_at(f2::REMAP_INSTANCE, false, 0, 0, &[]);
+        t.stub_at(f2::REMAP_CONTROL_MACHINE, true, 0, 0, &[]);
+        let strstr = t.stub_code(0x0bad_f2a0, false, 2, 0, false, &[]);
+        let tags = [f2::REMAP_INSTANCE, f2::REMAP_CONTROL_MACHINE, 0x0bad_f2a0];
+        let this = t.zeros(0xe4);
+        let mut ran = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(f2::STRSTR_IAT, strstr);
+            t.ret(f2::REMAP_CONTROL_MACHINE, rng.pick(&[0, 1, 1]));
+            t.ret(0x0bad_f2a0, rng.pick(&[0, 1, 0x1234_5678]));
+            for k in 0..0x39 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            t.w32(this + 4, rng.pick(&[0, 1, 0x8000_0000, 5]));
+            t.w32(this + 8, rng.pick(&[0, 1, 0x8000_0000, 5]));
+            let nm = rng.next();
+            let nm = rng.pick(&[0, nm, nm]);
+            let any = rng_kind(&mut rng);
+            let kind = rng.pick(&[any, 6, 11, 0x8000_0006]);
+            t.check_conv(
+                &format!("{w} kind {kind}"),
+                0x0068_4cd0,
+                Conv::Thiscall(this),
+                &[nm, kind],
+                |g| u(f2::abmap_vertex_info(g, this, nm, kind)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+fn rng_kind(rng: &mut Rng) -> u32 {
+    rng.below(17)
+}
+
+/// A sound event's constructor and release.
+#[test]
+fn f2_sfx_event() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f205);
+        // Array8_reserve: capacity and entries from cells
+        let (cap, buf) = (t.zeros(4), t.zeros(4));
+        let rest = t.stub_code(f2::ARRAY8_RESERVE, true, 1, 1, false, &[]);
+        let mut c = vec![0xa1];
+        c.extend(cap.to_le_bytes()); // mov eax, [cap]
+        c.extend([0x89, 0x41, 0x04, 0xa1]); // mov [ecx+4], eax
+        c.extend(buf.to_le_bytes()); // mov eax, [buf]
+        c.extend([0x89, 0x41, 0x08, 0xe9]); // mov [ecx+8], eax; jmp rest
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(f2::ARRAY8_RESERVE, f);
+        // user_malloc: a fresh block per call
+        let heap = random_block(&mut t, &mut rng, 0x10000);
+        let next = t.zeros(4);
+        let rest = t.stub_code(USER_MALLOC, false, 1, 0, false, &[]);
+        let cell = t.cells[&USER_MALLOC];
+        let mut c = vec![0xa1];
+        c.extend(next.to_le_bytes()); // mov eax, [next]
+        c.extend([0xa3]);
+        c.extend(cell.to_le_bytes()); // mov [cell], eax
+        c.extend([0x81, 0x05]);
+        c.extend(next.to_le_bytes());
+        c.extend(0x100u32.to_le_bytes()); // add dword [next], 0x100
+        c.push(0xe9);
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes()); // jmp rest
+        let f = t.code(&c);
+        t.jump(USER_MALLOC, f);
+        let stubs = [
+            (MEMCPY, 3, 0),
+            (c2::USER_FREE_THUNK, 1, 0),
+            (EVENT_SET_CALLBACK, 3, 3),
+            (fr::OPERATOR_DELETE, 1, 0),
+        ];
+        for (sym, n, pops) in stubs {
+            t.stub_at(sym, false, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([f2::ARRAY8_RESERVE, USER_MALLOC]);
+        let this = t.zeros(0x28);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.w32(next, heap);
+            for k in 0..10 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            let src = t.zeros(0xc);
+            let n = rng.pick(&[0, 1, 2, 5, 9, 17, 30]);
+            t.w32(src, n);
+            let events = random_block(&mut t, &mut rng, 4 * 32);
+            t.w32(src + 8, events);
+            let block = random_block(&mut t, &mut rng, 8 * 40);
+            let half = n / 2;
+            let (c, b) = rng.pick(&[(n, block), (0, 0), (half, block), (half + 1, block)]);
+            t.w32(cap, c);
+            t.w32(buf, b);
+            let volume = rng.float();
+            let ebp = t.ebp_for(2);
+            t.write(ebp - 0xc, &[0; 4]);
+            t.check_conv(
+                &format!("{w} ctor of {n} into cap {c}"),
+                0x0070_e710,
+                Conv::Thiscall(this),
+                &[src, volume],
+                |g| u(f2::sfx_event_ctor(g, this, src, volume)),
+            );
+            let n = rng.pick(&[0, 1, 3, 0x8000_0000]);
+            t.w32(this, n);
+            let v = rng.next();
+            t.w32(this + 0x14, v);
+            let data = random_block(&mut t, &mut rng, 8 * 4);
+            // no entries only without instances (the original reads them)
+            let none = if n == 1 || n == 3 { data } else { 0 };
+            t.w32(this + 8, rng.pick(&[none, data, data]));
+            for off in [0x18, 0x1c] {
+                let p = rng.next();
+                t.w32(this + off, rng.pick(&[0, p]));
+            }
+            t.check_conv(
+                &format!("{w} dtor of {n}"),
+                0x0070_e850,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    f2::sfx_event_dtor(g, this);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `user_malloc` (`0x00687020`).
+const USER_MALLOC: u32 = 0x0068_7020;
+/// `memcpy`'s thunk.
+const MEMCPY: u32 = 0x0094_9256;
+
+// ---- continuation round 4, batch 3 (ffx_glue_other::h4_f3)
+
+/// A search tree at `tree` over `nodes` sorted by key (`+0xc`, signed):
+/// children `+0`/`+4` (the tree itself for none), root `tree + 0xc`,
+/// `+0x1c` the next in order for the successor stub.
+fn bst(t: &mut Twins, tree: u32, nodes: &[u32]) {
+    fn build(t: &mut Twins, tree: u32, nodes: &[u32]) -> u32 {
+        if nodes.is_empty() {
+            return tree;
+        }
+        let mid = nodes.len() / 2;
+        let left = build(t, tree, &nodes[..mid]);
+        let right = build(t, tree, &nodes[mid + 1..]);
+        t.w32(nodes[mid], left);
+        t.w32(nodes[mid] + 4, right);
+        nodes[mid]
+    }
+    for (k, &nd) in nodes.iter().enumerate() {
+        t.w32(nd + 0x1c, nodes.get(k + 1).copied().unwrap_or(tree));
+    }
+    let root = build(t, tree, nodes);
+    t.w32(tree + 0xc, root);
+}
+
+/// `n` tree nodes (0x20 bytes) with distinct ascending keys from `rng`.
+fn keyed_nodes(t: &mut Twins, rng: &mut Rng, n: usize) -> Vec<(u32, u32)> {
+    let mut keys: Vec<i32> = (0..n).map(|_| rng.small() as i32).collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys.iter()
+        .map(|&k| {
+            let nd = t.zeros(0x20);
+            t.w32(nd + 0xc, k as u32);
+            (nd, k as u32)
+        })
+        .collect()
+}
+
+/// A stub at `sym` (thiscall, `n` words) that returns `ecx`.
+fn stub_ret_this(t: &mut Twins, sym: u32, n: u32) {
+    let rest = t.stub_code(sym, true, n, n, false, &[]);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x89, 0x0d];
+    c.extend(cell.to_le_bytes()); // mov [cell], ecx
+    c.push(0xe9);
+    let at = t.cave_next + c.len() as u32 + 4;
+    c.extend(rest.wrapping_sub(at).to_le_bytes()); // jmp rest
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// `user_malloc`'s stub: a fresh block from `heap` per call (the bump
+/// pointer in a cell). Returns the cell.
+fn stub_malloc(t: &mut Twins, heap: u32) -> u32 {
+    let next = t.zeros(4);
+    t.w32(next, heap);
+    let rest = t.stub_code(USER_MALLOC, false, 1, 0, false, &[]);
+    let cell = t.cells[&USER_MALLOC];
+    let mut c = vec![0xa1];
+    c.extend(next.to_le_bytes()); // mov eax, [next]
+    c.extend([0xa3]);
+    c.extend(cell.to_le_bytes()); // mov [cell], eax
+    c.extend([0x81, 0x05]);
+    c.extend(next.to_le_bytes());
+    c.extend(0x100u32.to_le_bytes()); // add dword [next], 0x100
+    c.push(0xe9);
+    let at = t.cave_next + c.len() as u32 + 4;
+    c.extend(rest.wrapping_sub(at).to_le_bytes()); // jmp rest
+    let f = t.code(&c);
+    t.jump(USER_MALLOC, f);
+    next
+}
+
+/// The mutex imports' stubs (tags `0x0bad_f3a0`, `0x0bad_f3a1`).
+fn mutex_stubs(t: &mut Twins) -> [u32; 2] {
+    let wait = t.stub_code(0x0bad_f3a0, false, 2, 2, false, &[]);
+    let release = t.stub_code(0x0bad_f3a1, false, 1, 1, false, &[]);
+    [wait, release]
+}
+
+/// The sound effects' per-frame update.
+#[test]
+fn f3_update() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f301);
+        stub_successor_e(&mut t);
+        stub_from_this(&mut t, f1::SFX_ANY_EVENT_FLAG, 0, 0);
+        stub_from_this(&mut t, f1::SFX_BANK_PLAYING, 0, 4);
+        let heap = random_block(&mut t, &mut rng, 0x8000);
+        let next = stub_malloc(&mut t, heap);
+        let [wait, release] = mutex_stubs(&mut t);
+        let stubs = [
+            (f3::SFX_EVENT_UPDATE_FADES, true, 1, 1),
+            (f3::SFX_EVENT_DTOR, true, 0, 0),
+            (fr::OPERATOR_DELETE, false, 1, 0),
+            (f3::TREE_REMOVE, true, 1, 1),
+            (c2::USER_FREE_THUNK, false, 1, 0),
+            (c2::FREE_LIST_DEALLOCATE, true, 1, 1),
+            (MEMCPY, false, 3, 0),
+            (f1::SFX_BANK_DTOR, true, 0, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([
+            c2::TREE_SUCCESSOR,
+            f1::SFX_ANY_EVENT_FLAG,
+            f1::SFX_BANK_PLAYING,
+            USER_MALLOC,
+            0x0bad_f3a0,
+            0x0bad_f3a1,
+        ]);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.w32(next, heap);
+            t.g32(fr::WAIT_FOR_SINGLE_OBJECT, wait);
+            t.g32(fr::RELEASE_MUTEX, release);
+            let this = random_block(&mut t, &mut rng, 0x100);
+            t.w8(this, rng.pick(&[0, 0, 1]));
+            // the id tree: some sounds with every slot empty
+            let n = rng.below(12) as usize;
+            let nodes = keyed_nodes(&mut t, &mut rng, n);
+            for &(nd, _) in &nodes {
+                let count = rng.pick(&[0, 1, 2, 4]);
+                let events = t.zeros(0x10);
+                for e in 0..count {
+                    let ev = t.zeros(4);
+                    let flag = rng.next() & !0xff | rng.pick(&[0, 0, 1]);
+                    t.w32(ev, flag);
+                    let v = rng.pick(&[0, ev, ev]);
+                    t.w32(events + 4 * e, v);
+                }
+                t.w32(nd + 0x10, count);
+                t.w32(nd + 0x18, events);
+            }
+            let list: Vec<u32> = nodes.iter().map(|p| p.0).collect();
+            bst(&mut t, this + 0x64, &list);
+            // the bank tree
+            let n = rng.below(5) as usize;
+            let banks = keyed_nodes(&mut t, &mut rng, n);
+            for &(nd, _) in &banks {
+                let bank = t.zeros(8);
+                t.w32(bank + 4, rng.pick(&[0, 1, 1, 3]));
+                t.w32(nd + 0x10, bank);
+            }
+            let list: Vec<u32> = banks.iter().map(|p| p.0).collect();
+            bst(&mut t, this + 0x94, &list);
+            let stream = t.zeros(4);
+            let flag = rng.next() & !0xff | rng.pick(&[0, 1]);
+            t.w32(stream, flag);
+            t.w32(this + 0xc8, rng.pick(&[0, stream, stream]));
+            let dt = rng.float();
+            t.check_conv(
+                &format!("{w} update"),
+                0x0070_dec0,
+                Conv::Thiscall(this),
+                &[dt],
+                |g| {
+                    f3::sfx_update(g, this, dt);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `SfxBank_appendEventById`'s stub: `[list + 8]` = the word in `fill`,
+/// `al` = the bank's first word.
+fn stub_append(t: &mut Twins, fill: u32) {
+    let sym = f3::BANK_APPEND_EVENT;
+    let rest = t.stub_code(sym, true, 2, 2, false, &[]);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15];
+    c.extend(fill.to_le_bytes()); // mov eax, [esp+8]; mov edx, [fill]
+    c.extend([0x89, 0x50, 0x08, 0x8b, 0x01, 0xa3]); // mov [eax+8], edx; mov eax, [ecx]
+    c.extend(cell.to_le_bytes()); // mov [cell], eax
+    c.push(0xe9);
+    let at = t.cave_next + c.len() as u32 + 4;
+    c.extend(rest.wrapping_sub(at).to_le_bytes()); // jmp rest
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// The sound effects' event creation.
+#[test]
+fn f3_create_event() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f302);
+        stub_successor_e(&mut t);
+        let fill = t.zeros(4);
+        stub_append(&mut t, fill);
+        stub_ret_this(&mut t, f3::SFX_EVENT_CTOR, 2);
+        let heap = random_block(&mut t, &mut rng, 0x8000);
+        let next = stub_malloc(&mut t, heap);
+        let [wait, release] = mutex_stubs(&mut t);
+        let stubs = [
+            (f1::OPERATOR_NEW, false, 1, 0),
+            (fr::PRINT_TO_OUTPUT, false, 3, 0),
+            (MEMCPY, false, 3, 0),
+            (c2::USER_FREE_THUNK, false, 1, 0),
+            (f3::ID_TREE_INSERT, true, 2, 2),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([
+            c2::TREE_SUCCESSOR,
+            f3::BANK_APPEND_EVENT,
+            f3::SFX_EVENT_CTOR,
+            USER_MALLOC,
+            0x0bad_f3a0,
+            0x0bad_f3a1,
+        ]);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let entries = rng.next();
+            t.w32(fill, rng.pick(&[0, entries]));
+            t.w32(next, heap);
+            t.g32(fr::WAIT_FOR_SINGLE_OBJECT, wait);
+            t.g32(fr::RELEASE_MUTEX, release);
+            let this = random_block(&mut t, &mut rng, 0x100);
+            let block = t.zeros(0x28);
+            t.ret(f1::OPERATOR_NEW, rng.pick(&[0, block, block, block]));
+            for tree in [this + 0x34, this + 4] {
+                let n = rng.below(4) as usize;
+                let nodes = keyed_nodes(&mut t, &mut rng, n);
+                for &(nd, _) in &nodes {
+                    let bank = t.zeros(4);
+                    let has = rng.next() & !0xff | rng.pick(&[0, 0, 0, 1]);
+                    t.w32(bank, has);
+                    t.w32(nd + 0x10, bank);
+                }
+                let list: Vec<u32> = nodes.iter().map(|p| p.0).collect();
+                bst(&mut t, tree, &list);
+            }
+            // the id tree's sounds and their event arrays
+            let n = rng.below(8) as usize;
+            let mut nodes = keyed_nodes(&mut t, &mut rng, n);
+            if rng.below(3) == 0 {
+                let nd = t.zeros(0x20);
+                t.w32(nd + 0xc, 0x72);
+                nodes.push((nd, 0x72));
+                nodes.sort_by_key(|p| p.1 as i32);
+                nodes.dedup_by_key(|p| p.1);
+            }
+            for &(nd, key) in &nodes {
+                let count = if key == 0x72 {
+                    rng.pick(&[30, 31, 32])
+                } else {
+                    rng.pick(&[0, 1, 3, 5, 6, 7, 31])
+                };
+                let cap = rng.pick(&[count, count + 2, 0]);
+                let data = random_block(&mut t, &mut rng, 4 * 40);
+                for k in 0..40 {
+                    let v = rng.pick(&[0, 1, 1, 1]);
+                    // sound 0x72: exactly its limit live, then one more
+                    let gone = if key == 0x72 { k == 0 } else { v == 0 };
+                    if gone {
+                        t.w32(data + 4 * k, 0);
+                    }
+                }
+                let data = if count == 0 && cap == 0 {
+                    rng.pick(&[0, data])
+                } else {
+                    data
+                };
+                t.w32(nd + 0x10, count);
+                t.w32(nd + 0x14, cap);
+                t.w32(nd + 0x18, data);
+            }
+            let list: Vec<u32> = nodes.iter().map(|p| p.0).collect();
+            bst(&mut t, this + 0x64, &list);
+            let keys: Vec<u32> = nodes.iter().map(|p| p.1).collect();
+            let fresh = rng.small();
+            let id = if keys.is_empty() {
+                fresh
+            } else {
+                let k = keys[rng.below(keys.len() as u32) as usize];
+                rng.pick(&[k, k, fresh, 0x72])
+            };
+            let frame = t.ebp_for(1) - 0x2c;
+            t.check_framed_conv(
+                &format!("{w} create {id:#x}"),
+                0x0070_c8f0,
+                Conv::Thiscall(this),
+                &[id],
+                frame,
+                &[(0, 0x18), (0x34, 4)],
+                |g| u(f3::sfx_create_event(g, frame, this, id)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The battle stream.
+#[test]
+fn f3_battle_streaming() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f303);
+        let fill = t.zeros(4);
+        stub_append(&mut t, fill);
+        stub_ret_this(&mut t, f3::SFX_EVENT_CTOR, 2);
+        let stubs = [
+            (f1::OPERATOR_NEW, false, 1, 0),
+            (fr::PRINT_TO_OUTPUT, false, 3, 0),
+            (f3::MEMSET, false, 3, 0),
+            (f3::FULL_FILENAME, false, 2, 0),
+            (f3::SFX_BANK_CTOR, true, 2, 2),
+            (f3::SFX_EVENT_STOP, true, 1, 1),
+            (f3::SFX_EVENT_DTOR, true, 0, 0),
+            (fr::OPERATOR_DELETE, false, 1, 0),
+            (f3::SFX_EVENT_START, true, 2, 2),
+            (c2::USER_FREE_THUNK, false, 1, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([f3::BANK_APPEND_EVENT, f3::SFX_EVENT_CTOR]);
+        let mut ran = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let entries = rng.next();
+            t.w32(fill, rng.pick(&[0, entries]));
+            let this = random_block(&mut t, &mut rng, 0x100);
+            t.w8(this, rng.pick(&[0, 0, 0, 1]));
+            t.w8(this + 2, rng.pick(&[0, 1, 0x80]));
+            let bank = t.zeros(4);
+            let has = rng.next() & !0xff | rng.pick(&[0, 1, 1]);
+            t.w32(bank, has);
+            let have = rng.pick(&[0, bank, bank]);
+            t.w32(this + 0xc4, have);
+            t.ret(f3::SFX_BANK_CTOR, bank);
+            let block = t.zeros(0x28);
+            // a failed new for the bank would hand bank 0 to the lookup
+            let none = if have == 0 { block } else { 0 };
+            t.ret(f1::OPERATOR_NEW, rng.pick(&[none, block, block, block]));
+            let stream = rng.next();
+            t.w32(this + 0xc8, rng.pick(&[0, stream]));
+            let args = [rng.next(), rng.small(), rng.next(), rng.next()];
+            let frame = t.ebp_for(4) - 0x11c;
+            t.check_framed_conv(
+                &format!("{w} stream"),
+                0x0070_d190,
+                Conv::Thiscall(this),
+                &args,
+                frame,
+                &[(0, 0x10c)],
+                |g| {
+                    f3::sfx_play_battle_streaming(g, frame, this, args);
+                    Out::None
+                },
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The sound effects' project load.
+#[test]
+fn f3_load_project() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f304);
+        let found = t.zeros(4);
+        // SfxEventTree_Find: the result from a cell; notes the key it reads
+        let rest = t.stub_code(f3::TREE_FIND, true, 1, 1, false, &[]);
+        let cell = t.cells[&f3::TREE_FIND];
+        let keyed = t.zeros(4);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0xa3];
+        c.extend(keyed.to_le_bytes()); // mov eax, [esp+4]; mov eax, [eax]; mov [keyed], eax
+        c.extend([0xa1]);
+        c.extend(found.to_le_bytes()); // mov eax, [found]
+        c.extend([0x8b, 0x00, 0x83, 0x05]); // mov eax, [eax]
+        c.extend(found.to_le_bytes());
+        c.push(4); // add dword [found], 4: the next call's result
+        c.extend([0xa3]);
+        c.extend(cell.to_le_bytes()); // mov [cell], eax
+        c.push(0xe9);
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(f3::TREE_FIND, f);
+        let sprintf = t.stub_code(0x0bad_f3b0, false, 3, 0, false, &[]);
+        let stubs = [
+            (f3::TREE_ADD, true, 2, 2),
+            (f3::TREE_REMOVE, true, 1, 1),
+            (c2::FREE_LIST_DEALLOCATE, true, 1, 1),
+            (f3::MEMSET, false, 3, 0),
+            (f3::FULL_FILENAME, false, 2, 0),
+            (f1::OPERATOR_NEW, false, 1, 0),
+            (f3::SFX_BANK_CTOR, true, 2, 2),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([f3::TREE_FIND, 0x0bad_f3b0]);
+        let mut ran = 0;
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(f3::SPRINTF_IAT, sprintf);
+            let this = random_block(&mut t, &mut rng, 0x100);
+            t.w8(this + 2, rng.pick(&[0, 1, 0x80]));
+            let results = t.zeros(0x10);
+            for k in 0..3 {
+                let node = rng.next();
+                t.w32(results + 4 * k, rng.pick(&[0, 0, node, 0xffff_fff0]));
+            }
+            t.w32(found, results);
+            let block = t.zeros(0xc);
+            t.ret(f1::OPERATOR_NEW, rng.pick(&[0, block, block]));
+            let a = rng.next();
+            let a = rng.pick(&[0, a, a, a]);
+            let id = rng.small();
+            let resident = rng.pick(&[0, 1, 0x100]);
+            let args = [a, id, resident];
+            let frame = t.ebp_for(3) - 0x214;
+            t.check_framed_conv(
+                &format!("{w} load"),
+                0x0070_cf10,
+                Conv::Thiscall(this),
+                &args,
+                frame,
+                &[(0, 0x204), (0x220, 4)],
+                |g| {
+                    f3::sfx_load_project(g, frame, this, args);
+                    Out::None
+                },
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The sound effects' constructor.
+#[test]
+fn f3_sfx_ctor() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f305);
+        t.stub_at(f3::FREE_LIST_CTOR, true, 4, 4, &[]);
+        let create = t.stub_code(0x0bad_f3c0, false, 3, 3, false, &[]);
+        let tags = [f3::FREE_LIST_CTOR, 0x0bad_f3c0];
+        for i in 0..50 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(f3::CREATE_MUTEX_IAT, create);
+            let this = random_block(&mut t, &mut rng, 0xd8);
+            t.check_conv(
+                &format!("{w} ctor"),
+                0x0070_bfc0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(f3::sfx_ctor(g, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 4, batch 4 (ffx_glue_other::h4_f4)
+
+/// The FMOD event system's setup.
+#[test]
+fn f4_init_event_system() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f401);
+        let (system, object) = (t.zeros(4), t.zeros(4));
+        t.stub_at(f4::EVENT_SYSTEM_CREATE, false, 1, 1, &[wr(0, system)]);
+        t.stub_at(f4::GET_SYSTEM_OBJECT, false, 2, 2, &[wr(1, object)]);
+        let stubs = [
+            (f4::MEMORY_INITIALIZE, 6, 6),
+            (f4::SET_STREAM_BUFFER_SIZE, 3, 3),
+            (f4::EVENT_SYSTEM_INIT, 5, 5),
+            (f4::SET_FILE_SYSTEM, 8, 8),
+            (fr::ERRCHECK, 3, 0),
+            (fr::PRINT_TO_OUTPUT, 2, 0),
+            (f4::CLEAR_GLOBAL, 0, 0),
+        ];
+        for (sym, n, pops) in stubs {
+            t.stub_at(sym, false, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([f4::EVENT_SYSTEM_CREATE, f4::GET_SYSTEM_OBJECT]);
+        for i in 0..100 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let this = random_block(&mut t, &mut rng, 0xc);
+            let s = rng.next();
+            t.w32(system, rng.pick(&[0, s, s]));
+            let o = rng.next();
+            t.w32(object, o);
+            t.check_conv(
+                &format!("{w} init"),
+                0x0070_6820,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(f4::init_event_system(g, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// A sound bank's constructor.
+#[test]
+fn f4_sfx_bank_ctor() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f402);
+        let project = t.zeros(4);
+        t.stub_at(f4::EVENT_SYSTEM_LOAD, false, 4, 4, &[wr(3, project)]);
+        let sprintf = t.stub_code(0x0bad_f4a0, false, 3, 0, false, &[]);
+        let stubs = [
+            (fr::PRINT_TO_OUTPUT, false, 3, 0),
+            (f3::MEMSET, false, 3, 0),
+            (MEMCPY, false, 3, 0),
+            (f1::OPERATOR_NEW, false, 1, 0),
+            (f4::EVENT_TREE_CTOR, true, 2, 2),
+            (f4::EVENT_GROUP_CTOR, true, 2, 2),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([f4::EVENT_SYSTEM_LOAD, 0x0bad_f4a0]);
+        let mut ran = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(f3::SPRINTF_IAT, sprintf);
+            let this = random_block(&mut t, &mut rng, 0xc);
+            let p = rng.next();
+            t.w32(project, p);
+            t.ret(f4::EVENT_SYSTEM_LOAD, rng.pick(&[0, 0, 0, 0x24]));
+            let block = t.zeros(0x34);
+            t.ret(f1::OPERATOR_NEW, rng.pick(&[0, block, block]));
+            let len = rng.pick(&[4, 5, 15, 0x40, 0xff, 0x103]) as usize;
+            let mut path: Vec<u8> = (0..len).map(|_| b'a' + rng.below(26) as u8).collect();
+            path.push(0);
+            let path = t.alloc(&path);
+            let s = rng.next();
+            let system = rng.pick(&[0, s, s, s]);
+            let frame = t.ebp_for(2) - 0x210;
+            t.check_framed_conv(
+                &format!("{w} bank of {len}"),
+                0x0070_f760,
+                Conv::Thiscall(this),
+                &[system, path],
+                frame,
+                &[(0, 0x200)],
+                |g| u(f4::sfx_bank_ctor(g, frame, this, system, path)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The event tree's load.
+#[test]
+fn f4_event_tree_load() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f403);
+        // allocateNewBlock: the list head from a cell
+        let refill = t.zeros(4);
+        let rest = t.stub_code(c2::FREE_LIST_ALLOCATE_BLOCK, true, 1, 1, false, &[]);
+        let mut c = vec![0xa1];
+        c.extend(refill.to_le_bytes()); // mov eax, [refill]
+        c.extend([0x89, 0x01, 0xe9]); // mov [ecx], eax; jmp rest
+        let at = t.cave_next;
+        c.extend(rest.wrapping_sub(at + 12).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(c2::FREE_LIST_ALLOCATE_BLOCK, f);
+        let stubs = [
+            (FIOS_EXISTS, false, 1, 0),
+            (FIOS_OPEN, false, 2, 0),
+            (FIOS_SIZE, false, 1, 0),
+            (OPERATOR_NEW_2, false, 1, 0),
+            (FIOS_READ, false, 3, 0),
+            (FIOS_CLOSE, false, 1, 0),
+            (f4::INT_TREE_INSERT, true, 1, 1),
+            (c2::TREE_POST_INSERT, true, 1, 1),
+            (c2::FREE_LIST_DEALLOCATE, true, 1, 1),
+            (e5::OPERATOR_DELETE_ARRAY, false, 1, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(c2::FREE_LIST_ALLOCATE_BLOCK);
+        let mut ran = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let this = random_block(&mut t, &mut rng, 0x28);
+            t.ret(FIOS_EXISTS, rng.pick(&[0, 1, 1, 1]));
+            let file = rng.next() | 1;
+            t.ret(FIOS_OPEN, rng.pick(&[0, file, file, file]));
+            let size = rng.pick(&[0, 7, 8, 16, 40, 41]);
+            t.ret(FIOS_SIZE, size);
+            let buf = random_block(&mut t, &mut rng, 0x40);
+            t.ret(OPERATOR_NEW_2, buf);
+            t.ret(f4::INT_TREE_INSERT, rng.pick(&[0, 0, 1, 0x1234_5678]));
+            // the free list: a chain of nodes
+            let mut head = 0;
+            for _ in 0..rng.below(6) {
+                let nd = random_block(&mut t, &mut rng, 0x14);
+                t.w32(nd, head);
+                head = nd;
+            }
+            t.w32(this + 0x1c, head);
+            let more = t.zeros(0x14);
+            t.w32(refill, rng.pick(&[0, more]));
+            let path = rng.next();
+            t.check_conv(
+                &format!("{w} load {size}"),
+                0x0071_0370,
+                Conv::Thiscall(this),
+                &[path],
+                |g| u(f4::event_tree_load(g, this, path)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `fiosIsFileExist`.
+const FIOS_EXISTS: u32 = 0x0067_96f0;
+/// `fiosOpen`.
+const FIOS_OPEN: u32 = 0x0067_9730;
+/// `fiosFileSize`.
+const FIOS_SIZE: u32 = 0x0067_9570;
+/// `fiosRead`.
+const FIOS_READ: u32 = 0x0067_9800;
+/// `fiosClose`.
+const FIOS_CLOSE: u32 = 0x0067_9510;
+/// `operator_new_006304c0`.
+const OPERATOR_NEW_2: u32 = 0x0063_04c0;
+
+// ---- continuation round 4, batch 5 (ffx_glue_other::h4_f5)
+
+/// The voice's event read.
+#[test]
+fn f5_voice_read() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f501);
+        t.stub_at(c3::VOICE_STOP, true, 0, 0, &[]);
+        t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+        // getInfo: the info's +8 from a cell
+        let info8 = t.zeros(4);
+        let rest = t.stub_code(d1::EVENT_GET_INFO, false, 4, 4, false, &[]);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x10, 0x8b, 0x15];
+        c.extend(info8.to_le_bytes()); // mov eax, [esp+0x10]; mov edx, [info8]
+        c.extend([0x89, 0x50, 0x08, 0xe9]); // mov [eax+8], edx; jmp rest
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(d1::EVENT_GET_INFO, f);
+        // getEvent: logs, writes its event cell through the out pointer
+        let event = t.zeros(4);
+        let get = t.stub_code(0x0bad_f520, true, 4, 4, false, &[wr(3, event)]);
+        let vtable = t.zeros(0x24);
+        t.w32(vtable + 0x20, get);
+        let iob = t.stub_code(0x0bad_f521, false, 0, 0, false, &[]);
+        let fprintf = t.stub_code(0x0bad_f522, false, 3, 0, false, &[]);
+        let tags = [
+            c3::VOICE_STOP,
+            fr::ERRCHECK,
+            d1::EVENT_GET_INFO,
+            0x0bad_f520,
+            0x0bad_f521,
+            0x0bad_f522,
+        ];
+        let ids = [
+            0x0290_d1c1u32,
+            0x0291_01c1,
+            0x0834_1504,
+            0x504,
+            0x3300_0001,
+            0x3300_0000,
+            0x1234,
+            0x0101_0101,
+        ];
+        let mut ran = 0;
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(e5::IOB_FUNC.sym, iob);
+            t.g32(e5::FPRINTF.sym, fprintf);
+            t.ret(0x0bad_f520, rng.pick(&[0, 0, 0x59, 1]));
+            let ev = rng.next();
+            t.w32(event, rng.pick(&[0, ev, ev]));
+            let this = random_block(&mut t, &mut rng, 0x70);
+            t.w32(this + 8, rng.pick(&[0, 1]));
+            t.w32(this + 0x14, rng.pick(&[0, 0, ev]));
+            t.w32(this + 0x60, rng.pick(&[0, 1, 2]));
+            t.w32(this, rng.pick(&[0x10e, 3, 3]));
+            let flag = rng.pick(&[0, 0, 1]);
+            t.g32(f1::VOICE_NO_PLAY, flag);
+            let info = random_block(&mut t, &mut rng, 0x38);
+            let v = rng.next();
+            t.w32(info8, v);
+            t.w32(this + 0x68, info);
+            // the groups
+            let group = t.zeros(4);
+            t.w32(group, vtable);
+            t.w32(this + 0x1c, rng.pick(&[0, group, group]));
+            let groups = t.zeros(4 * 100);
+            for k in 0..100 {
+                t.w32(groups + 4 * k, rng.pick(&[0, group, group]));
+            }
+            t.w32(this + 0xc, groups);
+            // the table: "ML\0\0", count, (id, offset) entries, names
+            let table = t.zeros(0x100);
+            t.write(
+                table,
+                rng.pick(&[&b"ML\0\0"[..], b"ML\0\0", b"MX\0\0", b"ML\0a"]),
+            );
+            let n = rng.pick(&[0, 3, 8]);
+            t.w32(table + 4, n);
+            for k in 0..n {
+                let id = ids[rng.below(ids.len() as u32) as usize];
+                t.w32(table + 8 + 8 * k, id);
+                let off = 0x80 + 8 * k;
+                t.w32(table + 12 + 8 * k, off);
+                let d0 = b'0' + rng.below(10) as u8;
+                let d1_ = b'0' + rng.below(10) as u8;
+                t.write(table + off, &[d0, d1_, b'x', 0]);
+            }
+            t.w32(this + 0x24, table);
+            let id = ids[rng.below(ids.len() as u32) as usize];
+            let flag = rng.pick(&[0, 1, 1, 1]);
+            t.check_conv(
+                &format!("{w} read {id:#x}"),
+                0x0070_add0,
+                Conv::Thiscall(this),
+                &[id, flag],
+                |g| u(f5::voice_read(g, this, id, flag)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The sync manager's setup.
+#[test]
+fn f5_sync_init() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f502);
+        let sprintf = t.stub_code(0x0bad_f530, false, 3, 0, false, &[]);
+        let stubs = [
+            (f3::MEMSET, false, 3, 0),
+            (fr::FIOS_UNIFY, false, 3, 0),
+            (f5::READ_SYNC_FILE, true, 1, 1),
+            (f5::DBG_PRINTF, false, 1, 0),
+            (f5::USER_ALIGNED_FREE, false, 1, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(0x0bad_f530);
+        let mut ran = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(f3::SPRINTF_IAT, sprintf);
+            let this = random_block(&mut t, &mut rng, 0x44);
+            let list = t.zeros(0x100);
+            t.w32(this + 0x40, list);
+            t.w32(this + 0x18, rng.below(8));
+            let data = random_block(&mut t, &mut rng, 0x40);
+            t.write(
+                data,
+                rng.pick(&[&b"SL\0\0"[..], b"SL\0\0", b"SX\0\0", b"SL\x01\0"]),
+            );
+            t.w32(data + 4, rng.pick(&[0, 1, 5, 12]));
+            t.ret(f5::READ_SYNC_FILE, rng.pick(&[0, data, data]));
+            let frame = t.ebp_for(0) - 0x204;
+            t.check_framed_conv(
+                &format!("{w} init"),
+                0x006f_b210,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 0x200)],
+                |g| u(f5::sync_init(g, frame, this)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 4, batch 6 (ffx_glue_other::h4_f6)
+
+/// The menu message file read.
+#[test]
+fn f6_read_menu_message() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f601);
+        // the first sprintf passes 3 words (a fourth would log the
+        // caller's stack): the stub logs 3 and, for the menu file format,
+        // stores the fourth (the name) into the path
+        let rest = t.stub_code(0x0bad_f610, false, 3, 0, false, &[]);
+        let fmt = t.rebase(f6::MENU_FILE_FORMAT);
+        let mut c = vec![0x81, 0x7c, 0x24, 0x08];
+        c.extend(fmt.to_le_bytes()); // cmp dword [esp+8], fmt
+        c.extend([0x75, 0x0a]); // jne +10
+        c.extend([0x8b, 0x44, 0x24, 0x10]); // mov eax, [esp+0x10]
+        c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+        c.extend([0x89, 0x02]); // mov [edx], eax
+        c.push(0xe9);
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes()); // jmp rest
+        let sprintf = t.code(&c);
+        let sprintf_s = t.stub_code(0x0bad_f611, false, 4, 0, false, &[]);
+        let stubs = [
+            (d3::GET_LANG, 0),
+            (fr::FIOS_UNIFY, 3),
+            (FIOS_EXISTS, 1),
+            (f5::DBG_PRINTF, 2),
+            (FIOS_OPEN, 2),
+            (FIOS_SIZE, 1),
+            (FIOS_READ, 3),
+            (FIOS_CLOSE, 1),
+        ];
+        for (sym, n) in stubs {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([0x0bad_f610, 0x0bad_f611]);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(f3::SPRINTF_IAT, sprintf);
+            t.g32(f6::SPRINTF_S_IAT, sprintf_s);
+            let lang = rng.below(13);
+            t.ret(d3::GET_LANG, rng.pick(&[lang, lang, 0xffff_ffff]));
+            t.ret(FIOS_EXISTS, rng.pick(&[0, 1, 1]));
+            let size = rng.pick(&[0, 1, 0x10, 0x11, 0x1234]);
+            t.ret(FIOS_SIZE, size);
+            let out = random_block(&mut t, &mut rng, 8);
+            let nm = rng.next();
+            let frame = t.ebp_for(2) - 0x1c4;
+            t.check_framed(
+                &format!("{w} lang {lang}"),
+                0x0088_ccf0,
+                &[nm, out],
+                frame,
+                &[(0, 0x1c0)],
+                |g| u(f6::read_menu_message(g, frame, nm, out)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 4, batch 7 (ffx_glue_other::h4_f7)
+
+/// The sound event group's list load.
+#[test]
+fn f7_event_group_load() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f701);
+        // Array_Reserve: capacity and entries from cells (a capacity below
+        // n makes the appends grow the array)
+        let (cap_cell, buf_cell) = (t.zeros(4), t.zeros(4));
+        let rest = t.stub_code(f7::ARRAY_RESERVE, true, 1, 1, false, &[]);
+        let mut c = vec![0xa1];
+        c.extend(cap_cell.to_le_bytes());
+        c.extend([0x89, 0x41, 0x04, 0xa1]);
+        c.extend(buf_cell.to_le_bytes()); // mov eax, [cap]; mov [ecx+4], eax; mov eax, [buf]
+        c.extend([0x89, 0x41, 0x08, 0xe9]); // mov [ecx+8], eax; jmp rest
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(f7::ARRAY_RESERVE, f);
+        let heap = random_block(&mut t, &mut rng, 0x8000);
+        let next = stub_malloc(&mut t, heap);
+        let stubs = [
+            (FIOS_EXISTS, false, 1, 0),
+            (FIOS_OPEN, false, 2, 0),
+            (FIOS_SIZE, false, 1, 0),
+            (OPERATOR_NEW_2, false, 1, 0),
+            (FIOS_READ, false, 3, 0),
+            (FIOS_CLOSE, false, 1, 0),
+            (MEMCPY, false, 3, 0),
+            (c2::USER_FREE_THUNK, false, 1, 0),
+            (f7::ID_TREE_INSERT_ARRAY, true, 2, 2),
+            (e5::OPERATOR_DELETE_ARRAY, false, 1, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([f7::ARRAY_RESERVE, USER_MALLOC]);
+        let mut ran = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.w32(next, heap);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            t.ret(FIOS_EXISTS, rng.pick(&[0, 1, 1, 1]));
+            let file = rng.next() | 1;
+            t.ret(FIOS_OPEN, rng.pick(&[0, file, file, file]));
+            // the records: key, count, ids
+            let buf = t.zeros(0x100);
+            let mut words = Vec::new();
+            for _ in 0..rng.below(5) {
+                words.push(rng.next());
+                let n = rng.pick(&[0, 1, 2, 5, 9]);
+                words.push(n);
+                for _ in 0..n {
+                    words.push(rng.next());
+                }
+            }
+            let cut = rng.below(4) as usize;
+            let len = words.len().saturating_sub(cut);
+            for (k, v) in words[..len].iter().enumerate() {
+                t.w32(buf + 4 * k as u32, *v);
+            }
+            let size = 4 * len as u32 + rng.pick(&[0, 0, 1, 3]);
+            t.ret(FIOS_SIZE, size);
+            t.ret(OPERATOR_NEW_2, buf);
+            let block = random_block(&mut t, &mut rng, 0x40);
+            // a reserve always has entries (a null one would write near 0)
+            t.w32(buf_cell, block);
+            t.w32(cap_cell, rng.pick(&[1, 3, 100]));
+            let path = rng.next();
+            let frame = t.ebp_for(1) - 0x34;
+            t.check_framed_conv(
+                &format!("{w} load {size}"),
+                0x0071_0c50,
+                Conv::Thiscall(this),
+                &[path],
+                frame,
+                &[(0, 0xc), (0x10, 4)],
+                |g| u(f7::event_group_load(g, frame, this, path)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
     }
 }

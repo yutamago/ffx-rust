@@ -26,7 +26,7 @@ Two halves:
    otherwise ends the path (the callee may clobber `ecx`).
 2. Which calls in crates/*/src (ffx-oracle and ffx-studio left out) pass
    no `ecx`: `.call(target, Conv::Cdecl|Conv::Stdcall, ..)`,
-   `.call_st0(..)`/`.call_st0_f64(..)`, `.call_sym(SYM, Conv::Cdecl|Conv::Stdcall, ..)`,
+   `.call_st0(..)`/`.call_st0_f64(..)`/`.call_u64(..)`, `.call_sym(SYM, Conv::Cdecl|Conv::Stdcall, ..)`,
    `ffx_bridge` `.call(target, &[..])` (cdecl), and ffx-hook's
    `call_cdecl*`/`call0`. The target is resolved when it is a literal, a
    `const NAME: u32 = 0x..` (the same file first, then the crate, then
@@ -269,7 +269,7 @@ class Resolver:
         return None
 
 
-PRIMITIVE = r"(\.call|\.call_st0(?:_f64)?|\.call_sym|\.call_sym_st0(?:_f64)?|\bcall_cdecl(?:_f64|_f32|_u64|_words)?|\bcall0)"
+PRIMITIVE = r"(\.call|\.call_st0(?:_f64)?|\.call_u64|\.call_sym|\.call_sym_st0(?:_f64)?|\.call_sym_u64|\bcall_cdecl(?:_f64|_f32|_u64|_words)?|\bcall0)"
 
 
 def params_of(code, fn_start):
@@ -309,7 +309,7 @@ def calls(f, code, resolver, forwarders):
                 continue
             at = idx
             how = f"{name} -> {how}"
-        elif name in ("call", "call_st0", "call_st0_f64", "call_sym", "call_sym_st0", "call_sym_st0_f64"):
+        elif name in ("call", "call_st0", "call_st0_f64", "call_u64", "call_sym", "call_sym_st0", "call_sym_st0_f64", "call_sym_u64"):
             if len(a) >= 3 and NO_ECX.search(a[1]):
                 how = f"{name}({a[1]})"
             elif name == "call" and len(a) == 2 and a[1].startswith("&"):

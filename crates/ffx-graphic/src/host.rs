@@ -79,6 +79,23 @@ pub trait Host: Mem {
         f64::NAN
     }
 
+    /// Calls a function at `addr` that returns a 64-bit integer in
+    /// `edx:eax` (`graphicGetTimeInMicroseconds`), as [`Host::call`] with
+    /// at most eight words; returns `edx:eax`.
+    ///
+    /// The default returns `eax` with `edx` read as 0: hosts whose bridges
+    /// never call such a function need not read `edx`; the game's and the
+    /// oracle tests' hosts that do override it.
+    fn call_u64(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u64 {
+        u64::from(self.call(addr, conv, args))
+    }
+
+    /// [`Host::call_u64`] of the original at `sym`.
+    fn call_sym_u64(&mut self, sym: u32, conv: Conv, args: &[u32]) -> u64 {
+        let addr = self.rebase(sym);
+        self.call_u64(addr, conv, args)
+    }
+
     /// [`Host::call_st0_f64`] of the original at `sym`.
     fn call_sym_st0_f64(&mut self, sym: u32, conv: Conv, args: &[u32]) -> f64 {
         let addr = self.rebase(sym);
@@ -168,6 +185,11 @@ impl Host for ffx_bridge::RawMem {
 
     fn call_st0_f64(&mut self, addr: u32, conv: Conv, args: &[u32]) -> f64 {
         float_call_any::<f64>(addr, conv, args)
+    }
+
+    fn call_u64(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u64 {
+        // a `u64` result is `edx:eax` in every 32-bit convention
+        float_call_any::<u64>(addr, conv, args)
     }
 
     #[allow(clippy::many_single_char_names)] // the arguments
@@ -323,7 +345,8 @@ unsafe fn fastcall(f: usize, n: usize, a: [u32; 8]) -> u32 {
 
 /// [`Host::call_st0`] and [`Host::call_st0_f64`] in the game: `ST0` read
 /// as `R` (`f32`: `fstp m32`; `f64`: `fstp m64`) by the float-returning
-/// signature (no inline assembly).
+/// signature (no inline assembly). [`Host::call_u64`] too, with `R` = `u64`:
+/// that signature reads `edx:eax` instead.
 #[cfg(target_arch = "x86")]
 fn float_call_any<R>(addr: u32, conv: Conv, args: &[u32]) -> R {
     let mut a = [0u32; 8];
