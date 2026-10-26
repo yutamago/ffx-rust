@@ -28,6 +28,7 @@ use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
+    h4_h3 as h3,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -5278,6 +5279,417 @@ fn h2_distortion_on_shaders() {
                 frame,
                 &[(0, 0x20)],
                 |g| u(h2::distortion_on_shaders(g, frame, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 6, batch 3 (ffx_glue_other::h4_h3)
+
+/// A recording stub at `sym` (`this`, `n` words, `pops`) that first
+/// ORs each cell's word into `[ecx + off]` (a cell of 0 leaves the word
+/// as the caller set it).
+fn h3_fill_stub(t: &mut Twins, sym: u32, n: u32, pops: u32, fills: &[(u32, u8)]) {
+    let log = t.stub_code(sym, true, n, pops, false, &[]);
+    let mut c = Vec::new();
+    for &(cell, off) in fills {
+        c.push(0xa1);
+        c.extend(cell.to_le_bytes()); // mov eax, [cell]
+        c.extend([0x09, 0x41, off]); // or [ecx+off], eax
+    }
+    let at = t.cave_next;
+    c.push(0xe9);
+    c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp log
+    let code = t.code(&c);
+    t.jump(sym, code);
+}
+
+/// A random C string (0..12 bytes, sometimes empty) of the bytes in
+/// `alphabet`.
+fn h3_text(t: &mut Twins, rng: &mut Rng, alphabet: &[u8]) -> u32 {
+    let len = rng.pick(&[0, 1, 5, 12]) as usize;
+    let mut text: Vec<u8> = (0..len).map(|_| rng.pick(alphabet)).collect();
+    text.push(0);
+    t.alloc(&text)
+}
+
+/// A random tree node for the string-keyed lookups: its key `+0x10` (a
+/// `std::string`, inline or on the heap), its value `+0x28`.
+fn h3_node(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let node = random_block(t, rng, 0x30);
+    let heap = random_block(t, rng, 0x20);
+    let cap = rng.pick(&[0xf, 0x10, 0x1f]);
+    t.w32(node + 0x24, cap);
+    if cap >= 0x10 {
+        t.w32(node + 0x10, heap);
+    }
+    let len = rng.below(0x20);
+    t.w32(node + 0x20, len);
+    node
+}
+
+/// The loaded-character table's lookup and insertion, and the Iggy
+/// callback's name lookup.
+#[test]
+fn h3_string_lookups() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a301);
+        let (cap, size) = (t.zeros(4), t.zeros(4));
+        h3_fill_stub(
+            &mut t,
+            h3::STRING_ASSIGN,
+            2,
+            2,
+            &[(cap, 0x14), (size, 0x10)],
+        );
+        t.stub_at(h3::TABLE_FIND, true, 1, 1, &[]);
+        t.stub_at(h3::NAME_MAP_FIND, true, 1, 1, &[]);
+        t.stub_at(h3::STRING_COMPARE, true, 4, 4, &[]);
+        t.stub(h3::OPERATOR_DELETE, 1, false);
+        t.stub(h3::NAME_FOUND, 2, false);
+        let tags = [
+            h3::STRING_ASSIGN,
+            h3::TABLE_FIND,
+            h3::NAME_MAP_FIND,
+            h3::STRING_COMPARE,
+            h3::OPERATOR_DELETE,
+            h3::NAME_FOUND,
+        ];
+        let map_head = t.rebase(h3::NAME_MAP.sym);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let c = rng.pick(&[0, 0, 0x10, 0x40]);
+            t.w32(cap, c);
+            let s = rng.below(0x40);
+            t.w32(size, s);
+            let r = rng.pick(&[0, 1, 0xffff_ffff, 0x8000_0000, 7]);
+            t.ret(h3::STRING_COMPARE, r);
+            let text = h3_text(&mut t, &mut rng, b"abc/");
+            // the table: its head node at +0
+            let head = random_block(&mut t, &mut rng, 0x30);
+            let this = random_block(&mut t, &mut rng, 8);
+            t.w32(this, head);
+            let node = h3_node(&mut t, &mut rng);
+            let found = rng.pick(&[head, node, node]);
+            t.ret(h3::TABLE_FIND, found);
+            let frame = t.ebp_for(1) - h3::GET_FRAME - 0x10;
+            t.check_framed_conv(
+                &format!("{w} get"),
+                0x006a_2110,
+                Conv::Thiscall(this),
+                &[text],
+                frame,
+                &[(0, h3::GET_FRAME as usize)],
+                |g| u(h3::get_prototype(g, frame, this, text)),
+            );
+            // the Iggy lookup in the global map
+            t.w32(map_head, head);
+            let found = rng.pick(&[head, node, node]);
+            t.ret(h3::NAME_MAP_FIND, found);
+            let args = random_block(&mut t, &mut rng, 0x10);
+            t.w32(args + 8, text);
+            let a = rng.next();
+            let frame = t.ebp_for(2) - h3::LOOKUP_FRAME - 0x10;
+            t.check_framed(
+                &format!("{w} iggy"),
+                0x006e_9590,
+                &[a, args],
+                frame,
+                &[(0, h3::LOOKUP_FRAME as usize)],
+                |g| u(h3::iggy_lookup(g, frame, a, args)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The loaded-character table's insertion (the lookup a stub).
+#[test]
+fn h3_insert_prototype() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a302);
+        let (cap, size) = (t.zeros(4), t.zeros(4));
+        h3_fill_stub(
+            &mut t,
+            h3::STRING_ASSIGN,
+            2,
+            2,
+            &[(cap, 0x14), (size, 0x10)],
+        );
+        t.stub_at(h3::GET_PROTOTYPE, true, 1, 1, &[]);
+        t.stub(h3::MAKE_ENTRY, 3, false);
+        t.stub_at(h3::NEW_NODE, true, 1, 1, &[]);
+        t.stub_at(h3::INSERT_NODE, true, 4, 4, &[]);
+        t.stub(h3::OPERATOR_DELETE, 1, false);
+        let tags = [
+            h3::STRING_ASSIGN,
+            h3::GET_PROTOTYPE,
+            h3::MAKE_ENTRY,
+            h3::NEW_NODE,
+            h3::INSERT_NODE,
+            h3::OPERATOR_DELETE,
+        ];
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let c = rng.pick(&[0, 0, 0x10, 0x40]);
+            t.w32(cap, c);
+            let s = rng.below(0x40);
+            t.w32(size, s);
+            let other = rng.next();
+            let r = rng.pick(&[0, 0, other]);
+            t.ret(h3::GET_PROTOTYPE, r);
+            let text = h3_text(&mut t, &mut rng, b"abc/");
+            let this = random_block(&mut t, &mut rng, 8);
+            let proto = rng.next();
+            let frame = t.ebp_for(2) - h3::INSERT_FRAME - 0x10;
+            // the entry's capacity: junk the stub leaves
+            let junk: Vec<u8> = (0..h3::INSERT_FRAME).map(|_| rng.next() as u8).collect();
+            t.write(frame, &junk);
+            let ec = rng.pick(&[0xf, 0x10, 0x7fff]);
+            t.w32(frame + 0x1c, ec);
+            t.check_framed_conv(
+                &format!("{w} insert"),
+                0x006a_28b0,
+                Conv::Thiscall(this),
+                &[text, proto],
+                frame,
+                &[],
+                |g| u(h3::insert_prototype(g, frame, this, text, proto)),
+            );
+            let (mut x, mut y) = (
+                vec![0; h3::INSERT_FRAME as usize],
+                vec![0; h3::INSERT_FRAME as usize],
+            );
+            t.a.read_bytes(frame, &mut x);
+            t.b.read_bytes(frame, &mut y);
+            assert_eq!(x, y, "{w}: frame");
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// A random cluster path: pieces of the patterns the cache looks for.
+fn h3_path(t: &mut Twins, rng: &mut Rng, costume: &[u8]) -> u32 {
+    let pieces: [&[u8]; 9] = [
+        b".dae",
+        b"chr",
+        b"/chr/",
+        b"PhyreChrLitShader",
+        b"PhyreDefaultLitShader",
+        b"/Shaders/",
+        b"x",
+        b"map/",
+        costume,
+    ];
+    let mut text = Vec::new();
+    for _ in 0..rng.below(5) {
+        text.extend_from_slice(rng.pick(&pieces));
+    }
+    text.push(0);
+    t.alloc(&text)
+}
+
+/// The image's C string at `sym`.
+fn h3_image_string(t: &Twins, sym: u32) -> Vec<u8> {
+    let mut at: u32 = Mem::read(&t.a, t.rebase(sym));
+    let mut out = Vec::new();
+    loop {
+        let b: u8 = Mem::read(&t.a, at);
+        if b == 0 {
+            return out;
+        }
+        out.push(b);
+        at += 1;
+    }
+}
+
+/// `strstr` for the tests: a cdecl routine in the cave.
+fn h3_strstr(t: &mut Twins) -> u32 {
+    // push esi; push edi; mov esi,[esp+0xc]; mov edi,[esp+0x10]
+    // outer: xor ecx,ecx
+    // inner: mov al,[edi+ecx]; test al,al; jz found; cmp al,[esi+ecx]; jne next; inc ecx; jmp inner
+    // next: cmp byte [esi],0; jz none; inc esi; jmp outer
+    // found: mov eax,esi; pop edi; pop esi; ret
+    // none: xor eax,eax; pop edi; pop esi; ret
+    let code: [u8; 46] = [
+        0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x8b, 0x7c, 0x24, 0x10, // 0..10
+        0x31, 0xc9, // 10 outer
+        0x8a, 0x04, 0x0f, // 12 inner: mov al,[edi+ecx]
+        0x84, 0xc0, // 15
+        0x74, 0x10, // 17 jz found (19 + 16 = 35)
+        0x3a, 0x04, 0x0e, // 19 cmp al,[esi+ecx]
+        0x75, 0x03, // 22 jne next (+3 -> 27)
+        0x41, // 24 inc ecx
+        0xeb, 0xf1, // 25 jmp inner (27 - 15 = 12)
+        0x80, 0x3e, 0x00, // 27 next: cmp byte [esi],0
+        0x74, 0x08, // 30 jz none (32 + 8 = 40)
+        0x46, // 32 inc esi
+        0xeb, 0xe7, // 33 jmp outer (35 - 25 = 10)
+        0x89, 0xf0, // 35 found: mov eax,esi
+        0x5f, 0x5e, 0xc3, // 37
+        0x31, 0xc0, 0x5f, 0x5e, 0xc3, // 40 none
+        0x90, // pad
+    ];
+    t.code(&code)
+}
+
+/// A balanced tree of `nodes` (keys in order) under `head` (the nil node);
+/// returns its root.
+fn h3_build(t: &mut Twins, nodes: &[u32], keys: &[u32], head: u32, rng: &mut Rng) -> u32 {
+    if nodes.is_empty() {
+        return head;
+    }
+    let m = nodes.len() / 2;
+    let node = nodes[m];
+    let l = h3_build(t, &nodes[..m], &keys[..m], head, rng);
+    let r = h3_build(t, &nodes[m + 1..], &keys[m + 1..], head, rng);
+    t.w32(node, l);
+    t.w32(node + 8, r);
+    t.w8(node + 0xd, 0);
+    t.w32(node + 0x10, keys[m]);
+    let rec = random_block(t, rng, 8);
+    t.w32(node + 0x14, rec);
+    node
+}
+
+/// The character resource cache's `onLoadPCluster` and the cluster
+/// manager's `loadPCluster`.
+#[test]
+fn h3_cluster_loads() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a303);
+        let strstr = h3_strstr(&mut t);
+        let costume = h3_image_string(&t, h3::COSTUME_PATTERN.sym);
+        let assign_cell = t.zeros(4);
+        h3_fill_stub(&mut t, h3::PSTRING_ASSIGN, 1, 1, &[(assign_cell, 0)]);
+        t.stub(h3::PHYRE_MALLOC, 2, false);
+        t.stub(h3::PHYRE_FREE, 1, false);
+        t.stub_at(h3::APPEND_PAIR, true, 2, 2, &[]);
+        let wait = t.stub_code(0x0bad_a3c0, false, 2, 2, false, &[]);
+        let release = t.stub_code(0x0bad_a3c1, false, 1, 1, false, &[]);
+        let tags = [
+            h3::PSTRING_ASSIGN,
+            h3::PHYRE_MALLOC,
+            h3::PHYRE_FREE,
+            h3::APPEND_PAIR,
+            0x0bad_a3c0,
+            0x0bad_a3c1,
+        ];
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(h3::STRSTR.sym, strstr);
+            let word = rng.next() & !1 | rng.below(2);
+            t.w32(assign_cell, word);
+            let path = h3_path(&mut t, &mut rng, &costume);
+            let path = if rng.below(20) == 0 { 0 } else { path };
+            // the (hash, string) array
+            let n = rng.below(4);
+            let block = random_block(&mut t, &mut rng, 8 * n.max(1));
+            let hash = rng.next();
+            if n > 0 && rng.below(2) == 0 {
+                let k = rng.below(n);
+                t.w32(block + 8 * k, hash);
+            }
+            let this = random_block(&mut t, &mut rng, 0x10);
+            let first = rng.pick(&[0, 0, 5]);
+            t.w32(this, first);
+            t.w32(this + 8, n | rng.pick(&[0, 0x8000_0000]));
+            t.w32(this + 0xc, block);
+            let record = random_block(&mut t, &mut rng, 0x18);
+            let frame = t.ebp_for(3) - 0x18;
+            if path != 0 {
+                t.check_framed_conv(
+                    &format!("{w} on load"),
+                    0x0069_bb80,
+                    Conv::Thiscall(this),
+                    &[path, hash, record],
+                    frame,
+                    &[(0, 8)],
+                    |g| u(h3::on_load_pcluster(g, frame, this, path, hash, record)),
+                );
+            }
+        }
+        // loadPCluster, with onLoadPCluster a stub
+        t.stub(h3::FIOS_UNIFY, 3, false);
+        t.stub(h3::DJB_HASH, 1, false);
+        t.stub_at(h3::TAKE_RECORD, true, 0, 0, &[]);
+        t.stub_at(h3::GIVE_RECORD, true, 1, 1, &[]);
+        // the cache stub changes what the second hash returns
+        let on_load = t.stub_code(h3::ON_LOAD_PCLUSTER, true, 3, 3, false, &[]);
+        let hash2_cell = t.zeros(4);
+        let djb_cell = t.cells[&h3::DJB_HASH];
+        let mut c = vec![0xa1];
+        c.extend(hash2_cell.to_le_bytes()); // mov eax, [hash2]
+        c.push(0xa3);
+        c.extend(djb_cell.to_le_bytes()); // mov [djb], eax
+        let at = t.cave_next;
+        c.push(0xe9);
+        c.extend(on_load.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp on_load
+        let set = t.code(&c);
+        t.jump(h3::ON_LOAD_PCLUSTER, set);
+        t.stub(h3::LOAD_ASSET_FILE, 3, false);
+        t.stub_at(h3::NEW_ENTRY, true, 1, 1, &[]);
+        t.stub_at(h3::INSERT_ENTRY, true, 4, 4, &[]);
+        let tags = [
+            h3::FIOS_UNIFY,
+            h3::DJB_HASH,
+            h3::TAKE_RECORD,
+            h3::GIVE_RECORD,
+            h3::ON_LOAD_PCLUSTER,
+            h3::LOAD_ASSET_FILE,
+            h3::NEW_ENTRY,
+            h3::INSERT_ENTRY,
+            0x0bad_a3c0,
+            0x0bad_a3c1,
+        ];
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(h3::STRSTR.sym, strstr);
+            t.g32(h3::WAIT_FOR_SINGLE_OBJECT.sym, wait);
+            t.g32(h3::RELEASE_MUTEX.sym, release);
+            let hash = rng.below(16) * 0x10;
+            t.ret(h3::DJB_HASH, hash);
+            let hash2 = rng.next();
+            t.w32(hash2_cell, hash2);
+            // a tree of up to 7 nodes keyed 0x00..0xf0 (in order)
+            let head = random_block(&mut t, &mut rng, 0x18);
+            t.w8(head + 0xd, 1);
+            let n = rng.below(8) as usize;
+            let mut keys: Vec<u32> = (0..n).map(|_| rng.below(16) * 0x10).collect();
+            keys.sort_unstable();
+            let nodes: Vec<u32> = (0..n)
+                .map(|_| random_block(&mut t, &mut rng, 0x18))
+                .collect();
+            let root = h3_build(&mut t, &nodes, &keys, head, &mut rng);
+            t.w32(head + 4, root);
+            let mutex_at = random_block(&mut t, &mut rng, 4);
+            let this = random_block(&mut t, &mut rng, 0x20);
+            t.w32(this + 0x10, head);
+            t.w32(this + 0x18, mutex_at);
+            let record = random_block(&mut t, &mut rng, 0x18);
+            t.ret(h3::TAKE_RECORD, record);
+            let r = rng.pick(&[0, 0, 1]);
+            t.ret(h3::LOAD_ASSET_FILE, r);
+            let name_text = h3_text(&mut t, &mut rng, b"ab");
+            let frame = t.ebp_for(1) - 0x10c;
+            // the stub doesn't unify: put a path into both frames
+            let path = h3_path(&mut t, &mut rng, &costume);
+            let mut bytes = vec![0u8; 0x100];
+            t.a.read_bytes(path, &mut bytes[..0x40]);
+            t.write(frame + 8, &bytes);
+            t.check_framed_conv(
+                &format!("{w} load"),
+                0x0069_b940,
+                Conv::Thiscall(this),
+                &[name_text],
+                frame,
+                &[(0, 8)],
+                |g| u(h3::load_pcluster(g, frame, this, name_text)),
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");

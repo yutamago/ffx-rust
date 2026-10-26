@@ -15,7 +15,7 @@ use ffx_glue_other::{
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
-    menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_h3 as h3, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2156,5 +2156,31 @@ ported! {
     Distortion_onShadersLoaded_006c2520 @ 0x006c_2520 => extern "thiscall" fn distortion_on_shaders(this: u32) -> u32 {
         let mut frame = StackFrame::<{ (h2::CURSOR_FRAME / 4) as usize }>::new();
         h2::distortion_on_shaders(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 6, batch 3 (ffx_glue_other::h4_h3)
+    /// `ClassLoadedCharacterTable_getPrototypeByFilename(this; name)`.
+    ClassLoadedCharacterTable_getPrototypeByFilename @ 0x006a_2110 => extern "thiscall" fn get_prototype(this: u32, name: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h3::GET_FRAME / 4) as usize }>::new();
+        h3::get_prototype(&mut mem(), frame.at(), this, name)
+    }
+    /// `ClassLoadedCharacterTable_insertPrototype(this; name, prototype)`.
+    ClassLoadedCharacterTable_insertPrototype @ 0x006a_28b0 => extern "thiscall" fn insert_prototype(this: u32, name: u32, prototype: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h3::INSERT_FRAME / 4) as usize }>::new();
+        h3::insert_prototype(&mut mem(), frame.at(), this, name, prototype)
+    }
+    /// `IggyCallback_lookupName_006e9590(a, args)`.
+    IggyCallback_lookupName_006e9590 @ 0x006e_9590 => extern "C" fn iggy_lookup(a: u32, args: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h3::LOOKUP_FRAME / 4) as usize }>::new();
+        h3::iggy_lookup(&mut mem(), frame.at(), a, args)
+    }
+    /// `ChrResourceCacheManager_onLoadPCluster(this; path, hash, record)`.
+    ChrResourceCacheManager_onLoadPCluster @ 0x0069_bb80 => extern "thiscall" fn on_load_pcluster(this: u32, path: u32, hash: u32, record: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h3::ON_LOAD_FRAME / 4) as usize }>::new();
+        h3::on_load_pcluster(&mut mem(), frame.at(), this, path, hash, record)
+    }
+    /// `ClusterManager_loadPCluster(this; name)`.
+    ClusterManager_loadPCluster @ 0x0069_b940 => extern "thiscall" fn load_pcluster(this: u32, name: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h3::LOAD_FRAME / 4) as usize }>::new();
+        h3::load_pcluster(&mut mem(), frame.at(), this, name)
     }
 }
