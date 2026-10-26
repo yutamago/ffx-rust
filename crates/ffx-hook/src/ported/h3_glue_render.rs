@@ -30,6 +30,7 @@ use ffx_prender::h3_glue21::bridge as g21;
 use ffx_prender::h3_glue22::bridge as g22;
 use ffx_prender::h3_glue23::bridge as g23;
 use ffx_prender::h3_glue24::bridge as g24;
+use ffx_prender::h3_glue25::bridge as g25;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1645,6 +1646,40 @@ ported! {
     PhyreScene_DrawMeshMatrices @ 0x0066_b360 => extern "thiscall" fn scene_draw_mesh_matrices(this: u32, restore: u32) {
         let mut f = StackFrame::<0x21>::new();
         g24::scene_draw_mesh_matrices(&mut mem(), f.at() + 0x84, this, restore);
+    }
+
+    // ---- round 7 (ffx_prender::h3_glue24's port, shim added) ----
+    /// `ClassVFXRenderDataTable_ClearByType(this, mask)`: the erase's
+    /// result goes over `mask`'s slot.
+    ClassVFXRenderDataTable_ClearByType @ 0x0069_f110 => extern "thiscall" fn vfx_table_clear_by_type(this: u32, mask: u32; slots: u32) {
+        let mut f = StackFrame::<0xd>::new();
+        g24::vfx_table_clear_by_type(&mut mem(), f.at() + 0x34, slots, this, mask);
+    }
+
+    // ---- round 7 batch 25 (ffx_prender::h3_glue25) ----
+    /// `0x006b3fe0(this)`: a texture-animation entry's release.
+    TextureAnimationEntry_release_006b3fe0 @ 0x006b_3fe0 => extern "thiscall" fn texture_entry_release(this: u32) {
+        g25::texture_entry_release(&mut mem(), this);
+    }
+    /// `PhyreScene_setMaterialColourScale2(this, r, g, b, unused)` (float
+    /// bits): the walk's state ends in the argument slots.
+    PhyreScene_setMaterialColourScale2 @ 0x0066_d1d0 => extern "thiscall" fn scene_set_material_colour_scale2(this: u32, r: u32, g: u32, b: u32, _unused: u32; slots: u32) {
+        g25::scene_set_material_colour_scale2(&mut mem(), slots, this, r, g, b);
+    }
+    /// `ClassVFXRenderDataTable_UpdateDeletePool(this)`.
+    ClassVFXRenderDataTable_UpdateDeletePool @ 0x0069_fe50 => extern "thiscall" fn vfx_table_update_delete_pool(this: u32) {
+        g25::vfx_table_update_delete_pool(&mut mem(), this);
+    }
+    /// `0x006c9580(this, out)`: a shadow mesh; the instances found go
+    /// over `out`'s slot.
+    ShadowDynamicMesh_create_006c9580 @ 0x006c_9580 => extern "thiscall" fn shadow_mesh_create(this: u32, out: u32; slots: u32) -> u32 {
+        g25::shadow_mesh_create(&mut mem(), slots, this, out)
+    }
+    /// `0x006d3fb0(this, shader, streams, a, cluster, b, c)`: a
+    /// broken-screen pass's set-up; the result and the instances found go
+    /// over the argument slots.
+    BrokenScreenPass_setup_006d3fb0 @ 0x006d_3fb0 => extern "thiscall" fn broken_pass_setup(this: u32, shader: u32, streams: u32, a: u32, cluster: u32, b: u32, c: u32; slots: u32) -> u32 {
+        g25::broken_pass_setup(&mut mem(), slots, this, shader, streams, a, cluster, b, c)
     }
 }
 
