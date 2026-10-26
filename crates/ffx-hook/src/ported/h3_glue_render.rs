@@ -22,6 +22,7 @@ use ffx_prender::h3_glue13::bridge as g13;
 use ffx_prender::h3_glue14::bridge as g14;
 use ffx_prender::h3_glue15::bridge as g15;
 use ffx_prender::h3_glue16::bridge as g16;
+use ffx_prender::h3_glue17::bridge as g17;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1460,6 +1461,30 @@ ported! {
     /// `LayoutDesc_setup_00678bd0(this, a, b)`.
     LayoutDesc_setup_00678bd0 @ 0x0067_8bd0 => extern "thiscall" fn layout_setup(this: u32, a: u32, b: u32) -> u32 {
         g16::layout_setup(&mut mem(), this, a, b)
+    }
+
+    // ---- round 5 batch 17 (ffx_prender::h3_glue17) ----
+    /// `PhyreScene_UpdateTextureVideo(this)`.
+    PhyreScene_UpdateTextureVideo @ 0x0065_4960 => extern "thiscall" fn scene_update_texture_video(this: u32) {
+        g17::scene_update_texture_video(&mut mem(), this);
+    }
+    /// `graphicInitialize()`.
+    graphicInitialize @ 0x0064_19d0 => extern "C" fn graphic_initialize() -> u32 {
+        g17::graphic_initialize(&mut mem())
+    }
+    /// `PostProcessManager_setNon16By9Viewport(renderer, keep)`: it reuses
+    /// `keep`'s argument slot.
+    PostProcessManager_setNon16By9Viewport @ 0x0069_8750 => extern "stdcall" fn post_set_non_16_by_9_viewport(renderer: u32, keep: u32; slots: u32) -> u32 {
+        g17::post_set_non_16_by_9_viewport(&mut mem(), slots, renderer, keep)
+    }
+    /// `PhyreScene_setupCharacterLighting_0066eb20(this, flag)`.
+    PhyreScene_setupCharacterLighting_0066eb20 @ 0x0066_eb20 => extern "thiscall" fn scene_setup_character_lighting(this: u32, flag: u32) {
+        g17::scene_setup_character_lighting(&mut mem(), this, flag);
+    }
+    /// `PhyreScene_loadMagicVFXTexture(this, id)`.
+    PhyreScene_loadMagicVFXTexture @ 0x0066_4d80 => extern "thiscall" fn scene_load_magic_vfx_texture(this: u32, id: u32) -> u32 {
+        let mut f = StackFrame::<0x82>::new();
+        g17::scene_load_magic_vfx_texture(&mut mem(), f.at() + 0x208, this, id)
     }
 }
 

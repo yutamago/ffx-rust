@@ -39,6 +39,7 @@ use ffx_prender::h3_glue13::{self as h13, bridge as gh13};
 use ffx_prender::h3_glue14::{self as h14, bridge as gh14};
 use ffx_prender::h3_glue15::{self as h15, bridge as gh15};
 use ffx_prender::h3_glue16::{self as h16, bridge as gh16};
+use ffx_prender::h3_glue17::{self as h17, bridge as gh17};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -5527,5 +5528,287 @@ fn batch16_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 40 } else { 240 };
         run_cases(t, CASES16, n, &mut Rng(0x1616_b016));
+    });
+}
+
+// ---- round 5 batch 17 (ffx_prender::h3_glue17) ----
+
+/// The frame records (ages around 16, some unused) with buffers (some
+/// null), the video's flags (playing, paused, `+0xdd1`), the pause state
+/// against `g_PauseOn`, the playback running or not, 0..4 effects.
+fn prep_update_video(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0e00);
+    *this = scene;
+    for k in 0..4 {
+        let record = scene + 0xd68 + 0x18 * k;
+        let age = match rng.below(4) {
+            0 => 0,
+            1 => 16,
+            2 => (rng.below(3) as i32 - 2) as u32,
+            _ => rng.below(20),
+        };
+        t.w32(record, age);
+        for b in 1..=5 {
+            t.w32(
+                record + 4 * b,
+                if rng.chance(3) { 0 } else { rng.next() | 1 },
+            );
+        }
+    }
+    for off in [0xdd0, 0xdd1, 0x10c9, 0x10ca] {
+        t.write(scene + off, &[u8::from(!rng.chance(3))]);
+    }
+    let pause = rng.below(2);
+    t.global(h17::PAUSE_ON.sym, pause);
+    t.w32(
+        scene + 0x1_0dc4,
+        if rng.chance(2) { pause } else { pause ^ 1 },
+    );
+    t.w32(
+        scene + 0x10c0,
+        if rng.chance(6) {
+            0xffff_ffff
+        } else {
+            rng.below(5)
+        },
+    );
+    t.w32(scene + 0xd0, rng.next());
+    for off in [0xdd8, 0xddc, 0xde0] {
+        let v = rng.next();
+        t.w32(scene + off, v);
+    }
+    let playing = if rng.chance(4) { 0x100 } else { 0x101 };
+    t.stub_ret(h17::VIDEO_IS_PLAYING, true, 0, 0, playing);
+    t.stub_ret(h17::OPERATOR_NEW, false, 1, 0, obj + 0x100);
+}
+
+/// The singletons there or not (the first, the delegation helper, the
+/// scene) and allocations failing now and then.
+fn prep_initialize(t: &mut Twins, obj: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    for g in [
+        h17::FIRST_SINGLETON.sym,
+        h17::RENDER_DELEGATION_HELPER.sym,
+        h17::SCENE.sym,
+    ] {
+        let v = if rng.chance(2) { 0 } else { rng.next() | 1 };
+        t.global(g, v);
+    }
+    let p = if rng.chance(5) { 0 } else { obj + 0x100 };
+    t.stub_ret(h17::OPERATOR_NEW, false, 1, 0, p);
+    for g in [
+        h17::LOADING_SCREEN.sym,
+        h17::GRAPHICS_UP.sym,
+        h17::CLOTH_BASE.sym,
+        h17::CLOTH_MSPACE.sym,
+    ] {
+        let v = rng.next();
+        t.global(g, v);
+    }
+}
+
+/// The window (16:9, narrower, wider, sizes past 2^31, zero), the target
+/// aspect (16:9 or another) and `keep`.
+fn prep_viewport(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let app = obj + 0x100;
+    t.stub_ret(h17::GET_APPLICATION, false, 0, 0, app);
+    let (w, h) = match rng.below(6) {
+        0 => (1920, 1080),
+        1 => (1280, 720),
+        2 => (1024, 768),
+        3 => (2560, 1080),
+        4 => (rng.next(), rng.next()),
+        _ => (rng.below(4000), rng.below(4000)),
+    };
+    t.w32(app + 0x26c, w);
+    t.w32(app + 0x270, h);
+    let aspect = match rng.below(4) {
+        0 => 16.0 / 9.0,
+        1 => rng.float(),
+        _ => (1 + rng.below(4000)) as f32 / (1 + rng.below(3000)) as f32,
+    };
+    t.global(h17::TARGET_ASPECT.sym, aspect.to_bits());
+    if !t.snapshot {
+        t.global(h17::IGGY_MENU_MANAGER.sym, obj + 0x200);
+    }
+    args[0] = rng.next();
+    args[1] = if rng.chance(5) { rng.next() | 1 } else { 0 };
+}
+
+const UPDATE_VIDEO_STUBS: &[(u32, K)] = &[
+    (h17::OPERATOR_DELETE, K::Cdecl(1)),
+    (h17::VIDEO_TOGGLE_PAUSE, K::This(0)),
+    (h17::QUEUE_CALLBACK, K::This(2)),
+    (h17::VFX_UPDATE, K::Cdecl(2)),
+    (h17::DYNAMIC_GEOMETRY_UPDATE_TEXTURE, K::Cdecl(2)),
+];
+
+/// Every callee of `graphicInitialize`, stubbed.
+fn initialize_stubs() -> Vec<(u32, K)> {
+    let mut s = vec![
+        (h17::TTY_WRITE, K::Cdecl(2)),
+        (h17::INIT_FIRST, K::Cdecl(0)),
+        (h17::FIRST_SINGLETON_CTOR, K::This(0)),
+        (h17::FIRST_SINGLETON_SETUP, K::This(0)),
+        (h17::RENDER_DELEGATION_HELPER_CTOR, K::This(0)),
+        (h17::LOADING_SCREEN_CTOR, K::This(0)),
+        (h17::INIT_AFTER_LOADING_SCREEN, K::Cdecl(0)),
+        (h17::SCENE_CTOR, K::This(0)),
+        (h17::SCENE_INIT_POST_PROCESS, K::This(0)),
+        (h17::READ_MONSTER_NAMES, K::Cdecl(0)),
+        (h17::ALIGNED_MALLOC, K::Cdecl(2)),
+        (h17::CREATE_MSPACE, K::Cdecl(3)),
+    ];
+    s.extend(
+        h17::CREATORS_A
+            .iter()
+            .chain(&h17::CREATORS_B)
+            .map(|&f| (f, K::Cdecl(0))),
+    );
+    s
+}
+
+#[rustfmt::skip]
+const CASES17: &[Case] = &[
+    Case { prep: Some(prep_update_video), ..method("scene_update_texture_video", 0x0065_4960, This::Object, 0, UPDATE_VIDEO_STUBS, |m, this, _| { gh17::scene_update_texture_video(m, this); Out::None }) },
+    framed(Case { prep: Some(prep_viewport), ..method("post_set_non_16_by_9_viewport", 0x0069_8750, This::Stdcall, 2, &[(h17::SET_VIEWPORT, K::This(4)), (h17::IGGY_SET_VIEWPORT_RECT, K::This(6))], |m, _, a| { let slots = slots_at(m, a); let r = gh17::post_set_non_16_by_9_viewport(m, slots, a[0], a[1]); // with `keep` the original leaves the caller's eax
+        if a[1] == 0 { u(r) } else { Out::None } }) }, 0, 8),
+];
+
+#[test]
+fn batch17_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES17, n, &mut Rng(0x1717_b017));
+    });
+}
+
+#[test]
+fn batch17_graphic_initialize_matches_the_original() {
+    let stubs: &'static [(u32, K)] = Box::leak(initialize_stubs().into_boxed_slice());
+    let case = Case {
+        prep: Some(prep_initialize),
+        ..cdecl("graphic_initialize", 0x0064_19d0, 0, stubs, |m, _, _| {
+            u(gh17::graphic_initialize(m))
+        })
+    };
+    Twins::each(|t| {
+        let n = if t.snapshot { 16 } else { 64 };
+        run_cases(t, &[case], n, &mut Rng(0x1717_b117));
+    });
+}
+
+/// The map's camera (or none) with its lighting, the level (0x12ea or
+/// another), the scenario flag, the map name (none, tagged) holding the
+/// balance-skipping text or not, and the flag.
+fn prep_char_light(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfb00);
+    *this = scene;
+    let map = obj + 0x200;
+    t.w32(scene + 0x4f8, if rng.chance(5) { 0 } else { map });
+    for k in 0..12 {
+        let f = rng.float();
+        t.w32(map + 0x120 + 4 * k, f.to_bits());
+    }
+    t.w32(
+        scene + 0xfaf4,
+        [0x12ea, 0x12eb, 0x199][rng.below(3) as usize],
+    );
+    let flag = match rng.below(3) {
+        0 => 0,
+        1 => rng.next() & 0xffff_0000,
+        _ => rng.next() | 1,
+    };
+    t.stub_ret(h17::GET_SCENARIO_FLAG, false, 0, 0, flag);
+    let name = match rng.below(3) {
+        0 => 0,
+        1 => obj + 0x700,
+        _ => obj + 0x701,
+    };
+    t.w32(scene + 0xfaf0, name);
+    let found = if rng.chance(2) { 0 } else { obj + 0x704 };
+    t.stub_import_c(h17::STRSTR_SLOT, 2, found);
+    args[0] = if rng.chance(2) {
+        rng.next() & !0xff
+    } else {
+        rng.next() | 1
+    };
+}
+
+/// The listed ids (some free, `id` among them or not), the count against
+/// the capacity, the magic file name (none, tagged), the language and
+/// the special-magic answer, async loading available or not.
+fn prep_magic_texture(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0000);
+    *this = scene;
+    let id = rng.next() | 1;
+    args[0] = id;
+    let n = rng.below(5);
+    t.w32(scene + 0x28, n);
+    t.w32(scene + 0x2c, n + rng.below(2));
+    t.w32(
+        scene + 0x30,
+        if n == 0 && rng.chance(3) {
+            0
+        } else {
+            obj + 0x100
+        },
+    );
+    t.write(scene + 0x24, &[rng.below(3) as u8]);
+    for k in 0..n {
+        let v = match rng.below(4) {
+            0 => 0,
+            1 if rng.chance(2) => id,
+            _ => id ^ 2,
+        };
+        t.w32(obj + 0x100 + 4 * k, v);
+    }
+    let file = match rng.below(4) {
+        0 => 0,
+        1 => 1,
+        2 => obj + 0x601,
+        _ => obj + 0x600,
+    };
+    t.w32(scene + 0xfafc, file);
+    if !t.snapshot {
+        let language = [0, 9, 10, 1, 3][rng.below(5) as usize];
+        t.w32(obj + 4, language);
+    }
+    let special = if rng.chance(2) { 0x100 } else { 0x101 };
+    t.stub_ret(h17::IS_SPECIAL_MAGIC, false, 1, 1, special);
+    t.stub_ret(h17::MAGIC_ASYNC_AVAILABLE, false, 0, 0, rng.below(2));
+}
+
+const CHAR_LIGHT_STUBS: &[(u32, K)] = &[
+    (h17::LIGHT_INSTANCE, K::Getter),
+    (h17::LIGHT_SET_INTENSITY, K::This(2)),
+    (h17::LIGHT_SET_ROTATION, K::This(3)),
+    (h17::LIGHT_TWEAK_INSTANCE, K::Getter),
+    (h17::LIGHT_SET_COEFFICIENT, K::This(2)),
+    (h17::LIGHT_SET_FLAG, K::This(1)),
+    (h17::LIGHT_SET_MAP_NAME, K::This(1)),
+    (h17::LIGHT_BALANCE_GLOW, K::This(0)),
+];
+
+const MAGIC_TEXTURE_STUBS: &[(u32, K)] = &[
+    (h17::UNIFY_FILENAME, K::Cdecl(3)),
+    (h17::ARRAY_RESERVE_667E00, K::This(1)),
+    (h17::LOCALIZATION_INSTANCE, K::Getter),
+    (h17::LANGUAGE_NAME, K::Cdecl(0)),
+    (h17::SPRINTF_SLOT, K::ImportC(4)),
+    (h17::LOAD_MAGIC_FILE_ASYNC, K::This(2)),
+    (h17::LOAD_VFX_TEXTURE, K::This(3)),
+];
+
+#[rustfmt::skip]
+const CASES17B: &[Case] = &[
+    Case { prep: Some(prep_char_light), ..method("scene_setup_character_lighting", 0x0066_eb20, This::Object, 1, CHAR_LIGHT_STUBS, |m, this, a| { gh17::scene_setup_character_lighting(m, this, a[0]); Out::None }) },
+    framed(with_cookie(Case { prep: Some(prep_magic_texture), ..method("scene_load_magic_vfx_texture", 0x0066_4d80, This::Object, 1, MAGIC_TEXTURE_STUBS, |m, this, a| u(gh17::scene_load_magic_vfx_texture(m, frame_ebp(), this, a[0]))) }), 0x208, 0),
+];
+
+#[test]
+fn batch17b_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES17B, n, &mut Rng(0x1717_b217));
     });
 }
