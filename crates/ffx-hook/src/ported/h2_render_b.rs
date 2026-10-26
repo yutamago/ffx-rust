@@ -33,6 +33,8 @@ use ffx_prender::h2_more8::bridge as h8;
 use ffx_prender::h2_more9::bridge as h9;
 use ffx_prender::h2_more10::bridge as h10;
 use ffx_prender::h2_more11::bridge as h11;
+use ffx_prender::h2_more12::bridge as h12;
+use ffx_prender::h2_more14::bridge as h14;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -1972,6 +1974,32 @@ ported! {
     /// `Phyre_PSprite_PSpriteCollection_Bind`.
     Phyre_PSprite_PSpriteCollection_Bind @ 0x0056_91b0 => extern "C" fn s_005691b0() -> u32 {
         ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0056_91b0) })
+    }
+    // last round, batch 1 (ffx_prender::h2_more12)
+    /// `PSharray<PMeshInstanceSegmentStreamBinding const*>::DeclareClassDescriptor(name)` -> the descriptor.
+    Phyre_PSharray_Phyre_PRendering_PMeshInstanceSegmentStreamBinding_const__DeclareClassDescriptor @ 0x004f_4d60 => extern "C" fn s_004f4d60(name: u32) -> u32 {
+        h12::declare(&mut mem(), name)
+    }
+    /// `0x0058c0d0(renderer; kind, streams, n, extra)` -> 0 or 0xd.
+    PRendererD3D11_placeDynamicStreams_0058c0d0 @ 0x0058_c0d0 => extern "thiscall" fn s_0058c0d0(this: u32, kind: u32, streams: u32, n: u32, extra: u32) -> u32 {
+        h12::place_streams(&mut mem(), this, kind, streams, n, extra)
+    }
+    /// `0x004f98b0(instance; matrices)` -> 0 or the first error.
+    Phyre_PRendering_PMeshInstance_uploadSkinMatrices_004f98b0 @ 0x004f_98b0 => extern "thiscall" fn s_004f98b0(this: u32, matrices: u32) -> u32 {
+        // the original's frame (ebp - 0xc4 up to ebp) and its `_alloca`
+        // block of up to 0x80 matrices
+        let mut fr = super::StackFrame::<0x31>::new();
+        let mut block = super::StackFrame::<{ 0x80 * 16 }>::new();
+        let ebp = fr.at() + 0xc4;
+        h12::upload_skin_matrices(&mut mem(), this, matrices, ebp, block.at())
+    }
+    // last round, batch 2 (ffx_prender::h2_more14)
+    /// `PSceneWideParameters::getBuffer(this; a, camera, c)` -> the buffer.
+    Phyre_PRendering_PSceneWideParameters_getBuffer @ 0x004f_dec0 => extern "thiscall" fn s_004fdec0(this: u32, a: u32, camera: u32, c: u32) -> u32 {
+        // the original's frame (ebp - 0x490 up to ebp + 0x14)
+        let mut fr = super::StackFrame::<{ (0x490 + 0x14) / 4 }>::new();
+        let ebp = fr.at() + h14::FRAME_BELOW;
+        h14::get_buffer(&mut mem(), this, a, camera, c, ebp)
     }
 }
 
