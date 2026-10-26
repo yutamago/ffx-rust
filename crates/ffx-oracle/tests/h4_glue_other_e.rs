@@ -30,6 +30,7 @@ use ffx_glue_other::{
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
+    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -152,6 +153,13 @@ impl Host for G<'_> {
     fn call_u64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> u64 {
         let r = self.ret(addr, c, args, true);
         u64::from(r.edx) << 32 | u64::from(r.eax)
+    }
+    fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
+        ffx_oracle::check_width("Host::call_wide", addr, args.len(), host::WIDE_WORDS);
+        self.0
+            .call(addr, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
+            .eax
     }
     fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
         let b = x.to_bits();
@@ -8748,5 +8756,1245 @@ fn i8_render_distortion() {
             drawn += t.log_entries();
         }
         assert!(drawn > 0, "{name}: drawn");
+    }
+}
+
+// ---- continuation round 8, batch 1 (ffx_glue_other::h4_j1)
+
+/// `op_gs1_init`: both packets from either environment.
+#[test]
+fn j1_op_gs1_init() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c811);
+        t.stub(j1::FOG_PARAM_SET, 0, false);
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &[j1::FOG_PARAM_SET]);
+            let work = t.zeros(0x150);
+            for k in 0..0x150 / 4 {
+                // sign bits both ways
+                let r = rng.next();
+                let v = rng.pick(&[r, r & 0xff, 0xffff_fff0]);
+                t.w32(work + 4 * k, v);
+            }
+            // stale packets: every word the original leaves alone stays
+            let packets = t.rebase(j1::GS1_PACKETS);
+            let junk: Vec<u8> = (0..0x170).map(|_| rng.next() as u8).collect();
+            t.write(packets, &junk);
+            for k in 0..3 {
+                let b = rng.next() & 0xff;
+                let at = t.rebase(j1::FOG_COLOUR + k);
+                t.w8(at, b as u8);
+            }
+            let r = rng.next();
+            let flags = rng.pick(&[0, 1, 2, 3, r]);
+            t.check(&w, 0x007e_b760, &[work, flags], |g| {
+                u(j1::op_gs1_init(g, work, flags))
+            });
+        }
+    }
+}
+
+/// A `graphicGetLocTextWithLength` stand-in that copies the next string
+/// of a list (`seq` holds its address) into its buffer argument, then
+/// logs and returns as the stub tagged `sym`.
+fn j1_text_stub(t: &mut Twins, sym: u32, seq: u32) {
+    let log = t.stub_code(sym, false, 3, 0, false, &[]);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15]; // mov eax, [esp+8]; mov edx, [seq]
+    c.extend(seq.to_le_bytes());
+    // copy: mov cl, [edx]; mov [eax], cl; inc eax; inc edx; test cl, cl; jnz copy
+    c.extend([0x8a, 0x0a, 0x88, 0x08, 0x40, 0x42, 0x84, 0xc9, 0x75, 0xf6]);
+    c.extend([0x89, 0x15]);
+    c.extend(seq.to_le_bytes()); // mov [seq], edx
+    let jmp_at = t.cave_next + c.len() as u32;
+    c.push(0xe9);
+    c.extend(log.wrapping_sub(jmp_at + 5).to_le_bytes());
+    let addr = t.code(&c);
+    t.jump(sym, addr);
+}
+
+/// The settings pages' key-name tables.
+#[test]
+fn j1_key_names() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c812);
+        let seq = t.zeros(4);
+        j1_text_stub(&mut t, j1::GET_LOC_TEXT, seq);
+        t.stub(j1::SET_CONTROLLER_NAME, 2, false);
+        t.stub(j1::SET_KEYBOARD_NAME, 2, false);
+        let tags = [
+            j1::GET_LOC_TEXT,
+            j1::SET_CONTROLLER_NAME,
+            j1::SET_KEYBOARD_NAME,
+        ];
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let max = rng.pick(&[0u32, 3, 12, 40]);
+            let mut text = Vec::new();
+            for _ in 0..91 {
+                for _ in 0..rng.below(max + 1) {
+                    text.push(b' ' + rng.below(95) as u8);
+                }
+                text.push(0);
+            }
+            let src = t.alloc(&text);
+            t.w32(seq, src);
+            // stale bytes in the buffers
+            for sym in [j1::CONTROLLER_NAMES, j1::KEYBOARD_NAMES] {
+                let at = t.rebase(sym);
+                let junk: Vec<u8> = (0..j1::NAMES_LEN).map(|_| rng.next() as u8).collect();
+                t.write(at, &junk);
+            }
+            if i % 2 == 0 {
+                t.check(&w, 0x0070_2250, &[], |g| u(j1::fill_controller_names(g)));
+                assert_eq!(t.log_entries(), 32, "{w}: calls");
+            } else {
+                t.check(&w, 0x006f_fc80, &[], |g| u(j1::fill_keyboard_names(g)));
+                assert_eq!(t.log_entries(), 182, "{w}: calls");
+            }
+        }
+    }
+}
+
+/// `RemapButtonIcon_remapUIButtonData`: keys found or not, pending bits,
+/// wide indices, both input kinds, UV callees writing or not.
+#[test]
+fn j1_remap_ui_button_data() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c813);
+        let (cu, cv) = (t.zeros(4), t.zeros(4));
+        let plain = [
+            (j1::INPUT_INSTANCE, false, 0, 0),
+            (j1::INPUT_VIBRATION, true, 0, 0),
+            (j1::REMAP_ICON_UV, true, 4, 4),
+            (j1::REMAP_UI_BUTTON_POSITION, true, 4, 4),
+        ];
+        for (sym, this, n, pops) in plain {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut uv = Vec::new();
+        for (sym, tag) in [
+            (j1::REMAP_PC_UV, 0x0bad_c813),
+            (j1::REMAP_PAD_UV, 0x0bad_c814),
+        ] {
+            let writing = t.stub_code(sym, true, 3, 3, false, &[wr(1, cu), wr(2, cv)]);
+            let silent = t.stub_code(tag, true, 3, 3, false, &[]);
+            uv.push((sym, writing, silent));
+        }
+        let mut tags: Vec<u32> = plain.iter().map(|s| s.0).collect();
+        tags.extend([j1::REMAP_PC_UV, j1::REMAP_PAD_UV, 0x0bad_c813, 0x0bad_c814]);
+        let mut seen = [0u32; 4];
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[], &[j1::WIDE_W_SCALE, j1::W_SCALE, j1::H_SCALE]);
+            for &(sym, writing, silent) in &uv {
+                let to = if rng.below(4) == 0 { silent } else { writing };
+                t.jump(sym, to);
+            }
+            for c in [cu, cv] {
+                let f = rng.float();
+                t.w32(c, f);
+            }
+            let flag = rng.pick(&[0, 1, 0x100, 0xffff_ff01]);
+            t.ret(j1::INPUT_VIBRATION, flag);
+            let this = random_block(&mut t, &mut rng, 0x170);
+            for k in 0..20 {
+                let key = rng.below(8);
+                let small = rng.below(20);
+                let index = rng.pick(&[u32::MAX, small, 0x8000_0003, 0x8000_0000]);
+                t.w32(this + 0xb0 + 8 * k, key);
+                t.w32(this + 0xb4 + 8 * k, index);
+            }
+            let c = rng.below(24);
+            let pending = rng.pick(&[u32::MAX, u32::MAX, 1 << c, 0, 0x8000_0000, 3]);
+            t.w32(this + 0x15c, pending);
+            for off in [0x160, 0x164] {
+                let f = rng.float();
+                t.w32(this + off, f);
+            }
+            let key = t.zeros(4);
+            let (small, r) = (rng.below(10), rng.next());
+            let k = rng.pick(&[u32::MAX, small, r]);
+            t.w32(key, k);
+            let rec = random_block(&mut t, &mut rng, 0x30);
+            for off in [0, 4] {
+                let f = rng.float();
+                t.w32(rec + off, f);
+            }
+            let path = t.zeros(4);
+            let r = rng.next();
+            let kind = rng.pick(&[1, 4, 6, 0xb, r]);
+            let frame = t.ebp_for(4) - 4;
+            t.check_framed_conv(
+                &w,
+                0x006e_7300,
+                Conv::Thiscall(this),
+                &[key, rec, path, kind],
+                frame,
+                &[(0, 4), (0x14, 4)],
+                |g| {
+                    u(j1::remap_ui_button_data(
+                        g, frame, this, key, rec, path, kind,
+                    ))
+                },
+            );
+            let n = t.log_entries();
+            let kept = Mem::read::<u32>(&t.b, this + 0x15c) != u32::MAX;
+            seen[usize::from(n > 0)] += 1;
+            if n > 0 {
+                seen[2 + usize::from(kept)] += 1;
+            }
+        }
+        assert!(seen.iter().all(|&s| s > 0), "{name}: {seen:?}");
+    }
+}
+
+/// `PhyreSceneCursor_Begin`/`Next` stand-ins: each call copies the next
+/// six-word record (position, link, stride, count, element base, `eax`)
+/// of a list (`seq` holds its address) into the cursor's first five
+/// words and returns the sixth.
+fn j1_cursor_stub(t: &mut Twins, sym: u32, seq: u32) {
+    let mut c = vec![0x8b, 0x15]; // mov edx, [seq]
+    c.extend(seq.to_le_bytes());
+    for k in 0..5u8 {
+        // mov eax, [edx+4k]; mov [ecx+4k], eax
+        c.extend([0x8b, 0x42, 4 * k, 0x89, 0x41, 4 * k]);
+    }
+    c.extend([0x8b, 0x42, 0x14]); // mov eax, [edx+0x14]
+    c.extend([0x83, 0x05]);
+    c.extend(seq.to_le_bytes());
+    c.extend([0x18, 0xc3]); // add dword [seq], 0x18; ret
+    let addr = t.code(&c);
+    t.jump(sym, addr);
+}
+
+/// `operator new[]` as a bump allocator (`bump` holds the next address).
+fn j1_bump_stub(t: &mut Twins, sym: u32, bump: u32) {
+    let mut c = vec![0xa1]; // mov eax, [bump]
+    c.extend(bump.to_le_bytes());
+    // mov edx, [esp+4]; lea edx, [eax+edx+0x10] (blocks never overlap)
+    c.extend([0x8b, 0x54, 0x24, 0x04, 0x8d, 0x54, 0x10, 0x10]);
+    c.extend([0x89, 0x15]);
+    c.extend(bump.to_le_bytes()); // mov [bump], edx
+    c.push(0xc3);
+    let addr = t.code(&c);
+    t.jump(sym, addr);
+}
+
+/// A `PMeshInstance` with `n` names (`+0x18`, top bit random), tagged
+/// name pointers at `+0x24`, some with a `_` prefix.
+fn j1_instance(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let inst = random_block(t, rng, 0x28);
+    let n = rng.pick(&[0, 1, 2, 3, 5]);
+    let top = rng.pick(&[0, 0x8000_0000]);
+    t.w32(inst + 0x18, n | top);
+    let names = t.zeros(4 * n as usize + 4);
+    for j in 0..n {
+        let mut s = Vec::new();
+        for _ in 0..rng.below(10) {
+            s.push(rng.pick(b"a_17x-"));
+        }
+        s.push(0);
+        let p = t.alloc(&s);
+        let tag = rng.below(2);
+        t.w32(names + 4 * j, p | tag);
+    }
+    t.w32(inst + 0x24, names);
+    inst
+}
+
+/// The character mesh instances' name suffixes: nodes with skipped
+/// slots, empty nodes, no instances at all.
+#[test]
+fn j1_instance_suffixes() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c815);
+        let seq = t.zeros(4);
+        let bump = t.zeros(4);
+        j1_cursor_stub(&mut t, j1::CURSOR_BEGIN, seq);
+        j1_cursor_stub(&mut t, j1::CURSOR_NEXT, seq);
+        j1_bump_stub(&mut t, j1::OPERATOR_NEW_ARRAY, bump);
+        let atoi = t.stub_code(0x0bad_c815, false, 1, 0, false, &[]);
+        let iat = t.rebase(j1::ATOI_IAT);
+        t.w32(iat, atoi);
+        let mut skipped = 0;
+        let mut visited = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &[0x0bad_c815]);
+            let heap = t.zeros(0x1000);
+            t.w32(bump, heap);
+            // one walk's records, played twice
+            let mut recs: Vec<[u32; 6]> = Vec::new();
+            for _ in 0..rng.below(4) {
+                let n = rng.below(5);
+                let slots = t.zeros(4 * n as usize + 8);
+                for k in 0..=n {
+                    let inst = j1_instance(&mut t, &mut rng);
+                    t.w32(slots + 4 * k, inst);
+                }
+                let eax = rng.next();
+                if n > 1 && rng.below(2) == 0 {
+                    // absolute positions: the link meets slot m, whose
+                    // word is the next link (a later slot or none)
+                    let m = 1 + rng.below(n - 1);
+                    let next = rng.pick(&[slots + 4 * (m + 1), 1]);
+                    t.w32(slots + 4 * m, next);
+                    recs.push([slots, slots + 4 * m, 4, n, 0, eax]);
+                    skipped += 1;
+                } else {
+                    let link = rng.pick(&[1, 0]);
+                    recs.push([0, link, 4, n, slots, eax]);
+                }
+            }
+            let last = rng.next();
+            recs.push([0, 0, 4, 0, 0, last]);
+            let mut words = Vec::new();
+            for _ in 0..2 {
+                for r in &recs {
+                    for v in r {
+                        words.extend(v.to_le_bytes());
+                    }
+                }
+            }
+            let records = t.alloc(&words);
+            t.w32(seq, records);
+            let cluster = random_block(&mut t, &mut rng, 0x20);
+            let end = cluster + 0x1c;
+            let r = rng.next();
+            let first = rng.pick(&[end, r]);
+            t.w32(end, first);
+            let this = random_block(&mut t, &mut rng, 0x20);
+            t.w32(this + 4, cluster);
+            let frame = t.ebp_for(0) - 0x34;
+            t.check_framed_conv(
+                &w,
+                0x006a_2390,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, j1::SUFFIX_FRAME as usize)],
+                |g| u(j1::build_instance_suffixes(g, frame, this)),
+            );
+            visited += Mem::read::<u32>(&t.b, this + 0x18);
+        }
+        assert!(visited > 0 && skipped > 0, "{name}: {visited} {skipped}");
+    }
+}
+
+// ---- continuation round 8, batch 2 (ffx_glue_other::h4_j2)
+
+/// A thiscall stub at `sym` that copies the four words at `cells`
+/// through its first stack argument, then logs `ecx` and `n` words and
+/// pops `pops`.
+fn j2_out4_this_stub(t: &mut Twins, sym: u32, n: u32, pops: u32, cells: u32) {
+    let log = t.stub_code(sym, true, n, pops, false, &[]);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+    for k in 0..4u32 {
+        c.extend([0x8b, 0x15]);
+        c.extend((cells + 4 * k).to_le_bytes()); // mov edx, [cell k]
+        c.extend([0x89, 0x50, (4 * k) as u8]); // mov [eax+4k], edx
+    }
+    let jmp_at = t.cave_next + c.len() as u32;
+    c.push(0xe9);
+    c.extend(log.wrapping_sub(jmp_at + 5).to_le_bytes());
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// A cdecl stub at `sym` that appends its `n` stack words to a list
+/// (`list` holds the next address) and returns `ret`'s word.
+fn j2_wide_stub(t: &mut Twins, sym: u32, n: u32, list: u32, ret: u32) {
+    let mut c = vec![0x56, 0x57, 0x8d, 0x74, 0x24, 0x0c, 0x8b, 0x3d]; // push esi; push edi; lea esi, [esp+0xc]; mov edi, [list]
+    c.extend(list.to_le_bytes());
+    c.push(0xb9);
+    c.extend(n.to_le_bytes()); // mov ecx, n
+    c.extend([0xf3, 0xa5, 0x89, 0x3d]); // rep movsd; mov [list], edi
+    c.extend(list.to_le_bytes());
+    c.extend([0x5f, 0x5e, 0xa1]); // pop edi; pop esi; mov eax, [ret]
+    c.extend(ret.to_le_bytes());
+    c.push(0xc3);
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// Key-name table `sym` (128 words) filled with fresh strings; with
+/// `holes`, some slots 0.
+fn j2_names(t: &mut Twins, rng: &mut Rng, sym: u32, holes: bool) {
+    let table = t.rebase(sym);
+    for k in 0..128 {
+        let mut s: Vec<u8> = (0..rng.below(12))
+            .map(|_| b'A' + rng.below(26) as u8)
+            .collect();
+        s.push(0);
+        let p = t.alloc(&s);
+        let v = if holes && rng.below(5) == 0 { 0 } else { p };
+        t.w32(table + 4 * k, v);
+    }
+}
+
+/// The escape menu's controller binding page.
+#[test]
+fn j2_controller_page() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c821);
+        let (out, flash) = (t.zeros(16), t.zeros(4));
+        let stubs = [
+            (j1::FFESC_INIT_CONTROLLER_KEY_NAMES, false, 0, 0),
+            (j2::TABLE60_GET, true, 1, 1),
+            (j2::GET_TABLE_C8A538, true, 1, 1),
+            (j2::LOC_LOAD, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        j2_out4_this_stub(&mut t, j2::LOC_TO_VALUE, 1, 1, out);
+        let list = t.zeros(4);
+        j2_wide_stub(&mut t, j2::CALL_FLASH_6, 26, list, flash);
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for k in 0..4 {
+                let v = rng.next();
+                t.w32(out + 4 * k, v);
+            }
+            let v = rng.next();
+            t.w32(flash, v);
+            j2_names(&mut t, &mut rng, 0x00c8_a680, false);
+            for sym in [j2::TABLE60_GET, j2::GET_TABLE_C8A538] {
+                let v = rng.below(0x80);
+                t.ret(sym, v);
+            }
+            let calls = t.zeros(14 * 26 * 4);
+            t.w32(list, calls);
+            let settings = random_block(&mut t, &mut rng, 0x10);
+            t.g32(j2::SETTINGS, settings);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            let frame = t.ebp_for(0) - j2::CONTROLLER_FRAME;
+            let loc = frame + j2::CONTROLLER_FRAME - 0x114;
+            t.ret(j2::LOC_LOAD, loc);
+            let values: Vec<(u32, usize)> = [0x168u32, 0x1b8, 0x188, 0x178, 0x1a8, 0x198]
+                .iter()
+                .map(|&off| (j2::CONTROLLER_FRAME - off, 16))
+                .collect();
+            t.check_framed_conv(
+                &w,
+                0x0070_1fa0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &values,
+                |g| u(j2::controller_page(g, frame, this)),
+            );
+            let end: u32 = Mem::read(&t.b, list);
+            assert_eq!(end - calls, 14 * 26 * 4, "{w}: rows");
+        }
+    }
+}
+
+/// Turns the stub at `sym` (thiscall, one word, popped) into one that
+/// returns `(arg ^ [cells]) & [cells + 4]` before logging.
+fn j2_derived_stub(t: &mut Twins, sym: u32, cells: u32) {
+    let log = t.stub_code(sym, true, 1, 1, false, &[]);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x33, 0x05]; // mov eax, [esp+4]; xor eax, [key]
+    c.extend(cells.to_le_bytes());
+    c.extend([0x23, 0x05]); // and eax, [mask]
+    c.extend((cells + 4).to_le_bytes());
+    c.push(0xa3); // mov [cell], eax
+    c.extend(cell.to_le_bytes());
+    let jmp_at = t.cave_next + c.len() as u32;
+    c.push(0xe9);
+    c.extend(log.wrapping_sub(jmp_at + 5).to_le_bytes());
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// The escape menu's keyboard binding page: missing key names, the
+/// eight-value call's copy where the original's callee puts it.
+#[test]
+fn j2_keyboard_page() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c822);
+        let out = t.zeros(16);
+        let stubs = [
+            (j1::FFESC_INIT_KEYBOARD_KEY_NAMES, false, 0, 0),
+            (j2::TABLE60_GET, true, 1, 1),
+            (j2::GET_TABLE_C8A538, true, 1, 1),
+            (j2::LOC_LOAD, true, 1, 1),
+            (ffx_glue_other::h4_d4::CALL_AS3, true, 5, 5),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        // the binding lookups answer by their argument: (arg ^ key) & mask
+        let derived = t.zeros(16);
+        j2_derived_stub(&mut t, j2::TABLE60_GET, derived);
+        j2_derived_stub(&mut t, j2::GET_TABLE_C8A538, derived + 8);
+        j2_out4_this_stub(&mut t, j2::LOC_TO_VALUE, 1, 1, out);
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let mut missing = 0;
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for k in 0..4 {
+                let v = rng.next();
+                t.w32(out + 4 * k, v);
+            }
+            j2_names(&mut t, &mut rng, 0x00c8_abe0, true);
+            for k in 0..2 {
+                let key = rng.next();
+                let mask = rng.pick(&[0x7f, 0x7f, 0x7f, u32::MAX]);
+                t.w32(derived + 8 * k, key);
+                t.w32(derived + 8 * k + 4, mask);
+            }
+            let settings = random_block(&mut t, &mut rng, 0x10);
+            t.g32(j2::SETTINGS, settings);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            let frame = t.ebp_for(0) - j2::KEYBOARD_FRAME;
+            let ebp = frame + j2::KEYBOARD_FRAME;
+            t.ret(j2::LOC_LOAD, ebp - 0x134);
+            let mut compare: Vec<(u32, usize)> =
+                [0x1b8u32, 0x208, 0x228, 0x1d8, 0x218, 0x1c8, 0x1f8, 0x1e8]
+                    .iter()
+                    .map(|&off| (j2::KEYBOARD_FRAME - off, 16))
+                    .collect();
+            for off in [0x1a4u32, 0x184, 0x1a8, 0x198] {
+                compare.push((j2::KEYBOARD_FRAME - off, 4));
+            }
+            compare.push((j2::KEYBOARD_FRAME - 0x24, 0x20));
+            compare.push((0, 0x80));
+            t.check_framed_conv(
+                &w,
+                0x0070_0da0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &compare,
+                |g| u(j2::keyboard_page(g, frame, this)),
+            );
+            assert_eq!(t.log_entries(), 1 + 23 * 7, "{w}: calls");
+            let none = t.rebase(j2::NO_NAME);
+            for off in [0x1a4u32, 0x184, 0x1a8, 0x198] {
+                missing += u32::from(Mem::read::<u32>(&t.b, ebp - off) == none);
+            }
+        }
+        assert!(missing > 0, "{name}: no missing name");
+    }
+}
+
+/// A `sprintf` stand-in for import slot `iat`: copies the next string
+/// of a list (`seq` holds its address) into its first argument, then
+/// logs three words and returns as the stub tagged `tag`.
+fn j2_sprintf_stub(t: &mut Twins, tag: u32, iat: u32, seq: u32) {
+    let log = t.stub_code(tag, false, 3, 0, false, &[]);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x15]; // mov eax, [esp+4]; mov edx, [seq]
+    c.extend(seq.to_le_bytes());
+    // copy: mov cl, [edx]; mov [eax], cl; inc eax; inc edx; test cl, cl; jnz copy
+    c.extend([0x8a, 0x0a, 0x88, 0x08, 0x40, 0x42, 0x84, 0xc9, 0x75, 0xf6]);
+    c.extend([0x89, 0x15]);
+    c.extend(seq.to_le_bytes()); // mov [seq], edx
+    let jmp_at = t.cave_next + c.len() as u32;
+    c.push(0xe9);
+    c.extend(log.wrapping_sub(jmp_at + 5).to_le_bytes());
+    let addr = t.code(&c);
+    t.w32(iat, addr);
+}
+
+/// The escape menu's audio setting page.
+#[test]
+fn j2_audio_page() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c823);
+        let (out, flash) = (t.zeros(16), t.zeros(4));
+        t.stub_at(j2::LOC_LOAD, true, 1, 1, &[]);
+        j2_out4_this_stub(&mut t, j2::LOC_TO_VALUE, 1, 1, out);
+        let list = t.zeros(4);
+        j2_wide_stub(&mut t, j2::CALL_FLASH_6, 26, list, flash);
+        let seq = t.zeros(4);
+        let iat = t.rebase(j2::SPRINTF_IAT);
+        j2_sprintf_stub(&mut t, 0x0bad_c823, iat, seq);
+        let tags = [j2::LOC_LOAD, 0x0bad_c823];
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for k in 0..4 {
+                let v = rng.next();
+                t.w32(out + 4 * k, v);
+            }
+            let v = rng.next();
+            t.w32(flash, v);
+            let mut text = Vec::new();
+            for _ in 0..4 {
+                let n = rng.below(12);
+                text.extend((0..n).map(|_| b'0' + rng.below(10) as u8));
+                text.push(0);
+            }
+            let src = t.alloc(&text);
+            t.w32(seq, src);
+            let settings = random_block(&mut t, &mut rng, 0x40);
+            t.g32(j2::SETTINGS, settings);
+            let rows = t.rebase(j2::AUDIO_ROWS);
+            if i % 2 == 1 {
+                // the image's rows on even cases, others here
+                for r in 0..4 {
+                    let row = rows + 0x18 * r;
+                    let mut s: Vec<u8> = (0..rng.below(8))
+                        .map(|_| b'a' + rng.below(26) as u8)
+                        .collect();
+                    s.push(0);
+                    let p = t.alloc(&s);
+                    let (msg, range, word) = (rng.next(), rng.next(), rng.below(16));
+                    t.w32(row, msg);
+                    t.w32(row + 4, range);
+                    t.w32(row + 8, word);
+                    t.w32(row + 0xc, p);
+                }
+            }
+            let calls = t.zeros(4 * 26 * 4);
+            t.w32(list, calls);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            let frame = t.ebp_for(0) - j2::AUDIO_FRAME;
+            t.ret(j2::LOC_LOAD, frame + j2::AUDIO_FRAME - 0x134);
+            let mut compare: Vec<(u32, usize)> = [0x188u32, 0x1b8, 0x1d8, 0x1c8, 0x1a8, 0x198]
+                .iter()
+                .map(|&off| (j2::AUDIO_FRAME - off, 16))
+                .collect();
+            compare.push((j2::AUDIO_FRAME - 0x24, 0x20));
+            t.check_framed_conv(
+                &w,
+                0x006f_f770,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &compare,
+                |g| u(j2::audio_page(g, frame, this)),
+            );
+            let end: u32 = Mem::read(&t.b, list);
+            assert_eq!(end - calls, 4 * 26 * 4, "{w}: rows");
+        }
+    }
+}
+
+/// A thiscall stub at `sym` returning its `ecx` (as `LocString_Load`
+/// does), logging `ecx` and `n` words and popping `pops`.
+fn j2_this_stub(t: &mut Twins, sym: u32, n: u32, pops: u32) {
+    let log = t.stub_code(sym, true, n, pops, false, &[]);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x89, 0x0d]; // mov [cell], ecx
+    c.extend(cell.to_le_bytes());
+    let jmp_at = t.cave_next + c.len() as u32;
+    c.push(0xe9);
+    c.extend(log.wrapping_sub(jmp_at + 5).to_le_bytes());
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// The escape menu's parameter-change page.
+#[test]
+fn j2_parameter_page() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c824);
+        let (out, flash) = (t.zeros(16), t.zeros(4));
+        j2_this_stub(&mut t, j2::LOC_LOAD, 1, 1);
+        j2_out4_this_stub(&mut t, j2::LOC_TO_VALUE, 1, 1, out);
+        let list = t.zeros(4);
+        j2_wide_stub(&mut t, j2::CALL_FLASH_4, 18, list, flash);
+        for i in 0..20 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &[j2::LOC_LOAD]);
+            for k in 0..4 {
+                let v = rng.next();
+                t.w32(out + 4 * k, v);
+            }
+            let v = rng.next();
+            t.w32(flash, v);
+            let calls = t.zeros(3 * 18 * 4);
+            t.w32(list, calls);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            let frame = t.ebp_for(0) - j2::PARAMETER_FRAME;
+            let compare: Vec<(u32, usize)> = [0x26cu32, 0x25c, 0x24c, 0x23c]
+                .iter()
+                .map(|&off| (j2::PARAMETER_FRAME - off, 16))
+                .collect();
+            t.check_framed_conv(
+                &w,
+                0x006f_c3f0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &compare,
+                |g| u(j2::parameter_page(g, frame, this)),
+            );
+            assert_eq!(t.log_entries(), 12, "{w}: calls");
+            let end: u32 = Mem::read(&t.b, list);
+            assert_eq!(end - calls, 3 * 18 * 4, "{w}: items");
+        }
+    }
+}
+
+// ---- continuation round 8, batch 3 (ffx_glue_other::h4_j3)
+
+/// A list node `{next, prev, std::string, flag}` named `text` (short
+/// strings inline, long ones through a pointer).
+fn j3_node(t: &mut Twins, text: &[u8], loaded: u32, heap: bool) -> u32 {
+    let node = t.zeros(0x24);
+    let mut s = text.to_vec();
+    s.push(0);
+    if heap && s.len() <= 0x10 {
+        // a short string kept on the heap: capacity exactly 0x10
+        let p = t.alloc(&s);
+        t.w32(node + 8, p);
+        t.w32(node + 0x1c, 0x10);
+    } else if s.len() <= 0x10 {
+        t.write(node + 8, &s);
+        t.w32(node + 0x1c, 0xf);
+    } else {
+        let p = t.alloc(&s);
+        t.w32(node + 8, p);
+        t.w32(node + 0x1c, s.len() as u32 + 3);
+    }
+    t.w32(node + 0x18, text.len() as u32);
+    t.w32(node + 0x20, loaded);
+    node
+}
+
+/// The menu texture clusters' load: every language, names equal to,
+/// prefixes of and longer than `"NoTexture"`, loaded entries.
+#[test]
+fn j3_load_texture_clusters() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c831);
+        let stubs = [
+            (j3::GET_LANG, false, 0, 0),
+            (j3::NAME_LIST_PUSH, false, 1, 0),
+            (j3::CLUSTER_MANAGER, false, 0, 0),
+            (j3::LOAD_PCLUSTER, true, 1, 1),
+            (j3::GET_APPLICATION, false, 0, 0),
+            (j3::FIXUP_CLUSTERS, false, 2, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        // FixupClusters records the cluster word it is handed
+        let seen = t.zeros(4);
+        let log = t.stub_code(j3::FIXUP_CLUSTERS, false, 2, 0, false, &[]);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0xa3]; // mov eax, [esp+4]; mov eax, [eax]; mov [seen], eax
+        c.extend(seen.to_le_bytes());
+        let jmp_at = t.cave_next + c.len() as u32;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(jmp_at + 5).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(j3::FIXUP_CLUSTERS, f);
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let mut loads = 0;
+        for i in 0..120 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let (small, r) = (rng.below(20), rng.next());
+            let lang = if i < 40 {
+                i % 20
+            } else {
+                rng.pick(&[small, 0xb, r])
+            };
+            t.ret(j3::GET_LANG, lang);
+            let head = t.zeros(0x24);
+            let mut prev = head;
+            for _ in 0..rng.below(6) {
+                let text: &[u8] = rng.pick(&[
+                    b"NoTexture".as_slice(),
+                    b"NoTextur",
+                    b"NoTexture1",
+                    b"NoTexturf",
+                    b"",
+                    b"/FFX_Data/GameData/PS3Data/menu/abmap/x.phyre",
+                ]);
+                let loaded = rng.pick(&[0, 0, 1, 2]);
+                let on_heap = rng.below(3) == 0;
+                let node = j3_node(&mut t, text, loaded, on_heap);
+                t.w32(prev, node);
+                prev = node;
+            }
+            t.w32(prev, head);
+            t.g32(j3::NAME_LIST, head);
+            let frame = t.ebp_for(0) - 4;
+            t.check_framed(
+                &w,
+                0x0068_4ef0,
+                &[],
+                frame,
+                // the word holds the pushed ecx until a load writes it
+                &[],
+                |g| u(j3::load_texture_clusters(g, frame)),
+            );
+            loads += t.log_entries();
+        }
+        assert!(loads > 0, "{name}");
+    }
+}
+
+/// `RemapButtonIcon_remapMessgeInputData`: pad keys in and out of
+/// 0x40..0x4e, kept keys, modes, countdowns, the texture names that stop
+/// it, the mode bits.
+#[test]
+fn j3_remap_message_input_data() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c832);
+        let (cu, cv) = (t.zeros(4), t.zeros(4));
+        let plain = [
+            (j1::INPUT_INSTANCE, false, 0, 0),
+            (j1::INPUT_VIBRATION, true, 0, 0),
+            (j1::REMAP_ICON_UV, true, 4, 4),
+            (j3::REMAP_ICON_SIZE, true, 2, 2),
+            (j3::REMAP_ICON_POSITION, true, 3, 3),
+        ];
+        for (sym, this, n, pops) in plain {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        for sym in [j1::REMAP_PC_UV, j1::REMAP_PAD_UV] {
+            t.stub_at(sym, true, 3, 3, &[wr(1, cu), wr(2, cv)]);
+        }
+        let mut tags: Vec<u32> = plain.iter().map(|s| s.0).collect();
+        tags.extend([j1::REMAP_PC_UV, j1::REMAP_PAD_UV]);
+        let real = t.alloc(b"RealFrameBuffer\0");
+        let other = t.alloc(b"RealFrame\0");
+        let mut seen = [0u32; 3];
+        for i in 0..1500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for c in [cu, cv] {
+                let f = rng.float();
+                t.w32(c, f);
+            }
+            let flag = rng.pick(&[0, 1, 0x100]);
+            t.ret(j1::INPUT_VIBRATION, flag);
+            let r = rng.next();
+            let countdown = rng.pick(&[0, 1, 2, 3, 4, 5, r]);
+            t.g32(j3::INPUT_COUNTDOWN, countdown);
+            let this = random_block(&mut t, &mut rng, 0x160);
+            for k in 0..22 {
+                let key = 0x40 + rng.below(16);
+                let (small, r) = (rng.below(16), rng.next());
+                let index = rng.pick(&[small, r]);
+                t.w32(this + 8 * k, key);
+                t.w32(this + 8 * k + 4, index);
+            }
+            let mode = rng.pick(&[0, 1, 2, 3, 4, 5, u32::MAX]);
+            t.w32(this + 0x150, mode);
+            let small = rng.below(40);
+            let remembered = rng.pick(&[0, 1, 2, 3, small]);
+            t.w32(this + 0x154, remembered);
+            let r = rng.next();
+            let kept = rng.pick(&[0x40, 0x41, u32::MAX, r]);
+            t.w32(this + 0x158, kept);
+            let key = t.zeros(4);
+            let (pad, any) = (0x40 + rng.below(16), rng.below(0x60));
+            let k = rng.pick(&[0x40, pad, 0x3f, u32::MAX, any]);
+            t.w32(key, k);
+            let rec = random_block(&mut t, &mut rng, 0x30);
+            let path = t.zeros(4);
+            let text = rng.pick(&[other, other, other, real, 0]);
+            t.w32(path, text);
+            let kind = rng.pick(&[1, 4, 6, 0xb]);
+            let frame = t.ebp_for(4) - 8;
+            let r = t.check_framed_conv(
+                &w,
+                0x006e_7050,
+                Conv::Thiscall(this),
+                &[key, rec, path, kind],
+                frame,
+                &[(0, 4), (0x18, 4)],
+                |g| {
+                    u(j3::remap_message_input_data(
+                        g, frame, this, key, rec, path, kind,
+                    ))
+                },
+            );
+            seen[r as usize & 1] += 1;
+            seen[2] += u32::from(t.log_entries() > 4);
+        }
+        assert!(seen.iter().all(|&s| s > 0), "{name}: {seen:?}");
+    }
+}
+
+/// The escape menu's special-feature page: messages present or not, the
+/// line split found or not.
+#[test]
+fn j3_special_feature_page() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c833);
+        let seq = t.zeros(4);
+        j1_text_stub(&mut t, j3::GET_LOC_TEXT, seq);
+        j1_text_stub(&mut t, j3::REMAP_TEXT, seq);
+        let stubs = [
+            (j3::KEYBOARD_NAME, false, 1, 0),
+            (j3::REPLACE_FIRST, false, 3, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let strstr = t.stub_code(0x0bad_c833, false, 2, 0, false, &[]);
+        let iat = t.rebase(j3::STRSTR_IAT);
+        t.w32(iat, strstr);
+        let (list, flash) = (t.zeros(4), t.zeros(4));
+        j2_wide_stub(&mut t, j3::CALL_FLASH_5, 22, list, flash);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([j3::GET_LOC_TEXT, j3::REMAP_TEXT, 0x0bad_c833]);
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let v = rng.next();
+            t.w32(flash, v);
+            let mut text = Vec::new();
+            for _ in 0..20 {
+                for _ in 0..rng.below(30) {
+                    text.push(b' ' + rng.below(95) as u8);
+                }
+                text.push(0);
+            }
+            let src = t.alloc(&text);
+            t.w32(seq, src);
+            let name_text = t.alloc(b"Key\0");
+            t.ret(j3::KEYBOARD_NAME, name_text);
+            let settings = random_block(&mut t, &mut rng, 0x100);
+            t.g32(j2::SETTINGS, settings);
+            let rows = t.rebase(j3::FEATURE_ROWS);
+            if i % 2 == 1 {
+                for r in 0..5 {
+                    for f in 0..4 {
+                        let v = if f == 0 {
+                            rng.below(0x28)
+                        } else {
+                            rng.pick(&[0, 0x290, 0x291])
+                        };
+                        t.w32(rows + 0x18 * r + 4 * f, v);
+                    }
+                }
+            }
+            let calls = t.zeros(5 * 22 * 4);
+            t.w32(list, calls);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            let frame = t.ebp_for(0) - j3::FEATURE_FRAME;
+            let ebp = frame + j3::FEATURE_FRAME;
+            // strstr finds the split inside the third text, or not
+            let k = rng.below(8);
+            let found = rng.pick(&[0, ebp - 0x104 + k]);
+            t.ret(0x0bad_c833, found);
+            let mut compare: Vec<(u32, usize)> = [0x104u32, 0x204, 0x304, 0x404, 0x504]
+                .iter()
+                .map(|&off| (j3::FEATURE_FRAME - off, 0x100))
+                .collect();
+            for off in [0x598u32, 0x588, 0x578, 0x568, 0x558] {
+                compare.push((j3::FEATURE_FRAME - off, 16));
+            }
+            t.check_framed_conv(
+                &w,
+                0x0070_2660,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &compare,
+                |g| u(j3::special_feature_page(g, frame, this)),
+            );
+            let end: u32 = Mem::read(&t.b, list);
+            assert_eq!(end - calls, 5 * 22 * 4, "{w}: rows");
+        }
+    }
+}
+
+// ---- continuation round 8, batch 4 (ffx_glue_other::h4_j4)
+
+/// The escape menu's main setting page: every Flash call logged whole,
+/// the texts written by the text stubs, the values by the original
+/// setters.
+#[test]
+fn j4_main_setting_page() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c841);
+        let seq = t.zeros(4);
+        j1_text_stub(&mut t, j3::GET_LOC_TEXT, seq);
+        j1_text_stub(&mut t, j3::REMAP_TEXT, seq);
+        let list = t.zeros(4);
+        let rets = t.zeros(4 * 5);
+        let widths = [6u32, 10, 14, 18, 22];
+        for (k, (sym, n)) in [
+            j4::CALL_FLASH_1,
+            j4::CALL_FLASH_2,
+            j4::CALL_FLASH_3,
+            j4::CALL_FLASH_4,
+            j4::CALL_FLASH_5,
+        ]
+        .into_iter()
+        .zip(widths)
+        .enumerate()
+        {
+            j2_wide_stub(&mut t, sym, n, list, rets + 4 * k as u32);
+        }
+        for i in 0..20 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &[j3::GET_LOC_TEXT, j3::REMAP_TEXT]);
+            for k in 0..5 {
+                let v = rng.next();
+                t.w32(rets + 4 * k, v);
+            }
+            let mut text = Vec::new();
+            for _ in 0..2 * 24 {
+                for _ in 0..rng.below(20) {
+                    text.push(b' ' + rng.below(95) as u8);
+                }
+                text.push(0);
+            }
+            let src = t.alloc(&text);
+            t.w32(seq, src);
+            // the calls' words: 1x22, 4x14, 2x6, 2x10, 1x18 and the last 6
+            let total = 22 + 3 * 14 + 2 * 6 + 2 * 10 + 18 + 6;
+            let calls = t.zeros(4 * total);
+            t.w32(list, calls);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            let frame = t.ebp_for(0) - j4::MAIN_FRAME;
+            let mut compare: Vec<(u32, usize)> = [0x114u32, 0x224, 0x334, 0x444, 0x554]
+                .iter()
+                .flat_map(|&off| {
+                    [
+                        (j4::MAIN_FRAME - off, 16),
+                        (j4::MAIN_FRAME - off - 0x100, 0x100),
+                    ]
+                })
+                .collect();
+            compare.push((j4::MAIN_FRAME - 0x104, 0x100));
+            compare.push((0, 16));
+            t.check_framed_conv(
+                &w,
+                0x0068_e6f0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &compare,
+                |g| u(j4::main_setting_page(g, frame, this)),
+            );
+            let end: u32 = Mem::read(&t.b, list);
+            assert_eq!(end - calls, 4 * total as u32, "{w}: calls");
+            assert_eq!(t.log_entries(), 2 * 24, "{w}: texts");
+        }
+    }
+}
+
+// ---- continuation round 8, batch 5 (ffx_glue_other::h4_j5)
+
+/// `TextUtil_doOnAllTextUtilAssetsLoaded`: no font cluster, no font, the
+/// allocations failing, the material's initialisation failing, and the
+/// whole set-up.
+#[test]
+fn j5_text_util_assets_loaded() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c851);
+        let stubs = [
+            (j5::GET_APPLICATION, false, 0, 0),
+            (j5::FIXUP_CLUSTERS, false, 2, 0),
+            (j5::PHYRE_MALLOC, false, 1, 0),
+            (j5::PHYRE_FREE, false, 1, 0),
+            (j5::MATERIAL_CTOR, true, 1, 1),
+            (j5::MATERIAL_DTOR, true, 0, 0),
+            (j5::MATERIAL_INITIALIZE, true, 2, 2),
+            (j5::SET_TEXT_COLOR, true, 1, 1),
+            (j5::FONT_TEXT_CTOR, true, 2, 2),
+            (j5::STRING_ASSIGN, true, 1, 1),
+            (j5::BUILDER_APPEND, true, 1, 1),
+            (j5::SET_TEXT, true, 1, 1),
+            (j5::REGISTER, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        // the cursor's Begin sets the cursor's five words from a record
+        let seq = t.zeros(4);
+        j1_cursor_stub(&mut t, j5::CURSOR_BEGIN, seq);
+        // the builder's append sets its length (+8, the utility's +0x1c)
+        let length = t.zeros(4);
+        let log = t.stub_code(j5::BUILDER_APPEND, true, 1, 1, false, &[]);
+        let mut c = vec![0xa1]; // mov eax, [length]
+        c.extend(length.to_le_bytes());
+        c.extend([0x89, 0x41, 0x08]); // mov [ecx+8], eax
+        let jmp_at = t.cave_next + c.len() as u32;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(jmp_at + 5).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(j5::BUILDER_APPEND, f);
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let mut done = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for sym in [
+                j5::PHYRE_MALLOC,
+                j5::MATERIAL_CTOR,
+                j5::MATERIAL_INITIALIZE,
+                j5::FONT_TEXT_CTOR,
+            ] {
+                let r = rng.next();
+                let v = rng.pick(&[r, r, r, 0]);
+                t.ret(sym, v);
+            }
+            let rec: Vec<u8> = [
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.pick(&[0, 1, 3]),
+                rng.next(),
+                rng.next(),
+            ]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+            let r = t.alloc(&rec);
+            t.w32(seq, r);
+            let this = random_block(&mut t, &mut rng, 0x80);
+            let cluster = random_block(&mut t, &mut rng, 0x20);
+            let end = cluster + 0x1c;
+            let r = rng.next();
+            let first = rng.pick(&[end, r]);
+            t.w32(end, first);
+            t.w32(this + 4, rng.pick(&[cluster, cluster, cluster, 0]));
+            t.w32(this + 0x1c, rng.pick(&[0, 1, 5]));
+            let n = rng.pick(&[0, 1, 5]);
+            t.w32(length, n);
+            let frame = t.ebp_for(0) - 0x30;
+            let r = t.check_framed_conv(
+                &w,
+                0x006f_60a0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, j5::ASSETS_FRAME as usize)],
+                |g| u(j5::on_all_assets_loaded(g, frame, this)),
+            );
+            done += u32::from(r == 0);
+        }
+        assert!(done > 0, "{name}");
+    }
+}
+
+/// `ClassChrShaderRender_VertexInstanceSetup`: both blocks, their
+/// segments and cleared buffers, with the allocators as bump allocators.
+#[test]
+fn j5_vertex_instance_setup() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c852);
+        let bump = t.zeros(4);
+        j1_bump_stub(&mut t, j5::OPERATOR_NEW, bump);
+        j1_bump_stub(&mut t, j5::OPERATOR_NEW_ARRAY, bump);
+        for i in 0..20 {
+            let w = format!("{name} {i}");
+            t.constants(&mut rng, &[j5::BOUNDS_MIN, j5::BOUNDS_MAX], &[]);
+            // stale heap bytes: the clears and every store show
+            let heap = random_block(&mut t, &mut rng, 0x10000);
+            t.w32(bump, heap);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            t.check_conv(&w, 0x006a_0100, Conv::Thiscall(this), &[], |g| {
+                u(j5::vertex_instance_setup(g, this))
+            });
+        }
+    }
+}
+
+// ---- continuation round 8, batch 6 (ffx_glue_other::h4_j6)
+
+/// `GuildMapDynamicGeometry_updateRenderData`: no data, no mesh or
+/// instance or bounds, 2D and 3D scenes, the scene's modes and flag, the
+/// guild maps, parameters found or not, arrays of 0, 1 and more items.
+#[test]
+fn j6_guild_map_update() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c861);
+        let stubs = [
+            (j6::FILL_DRAW_TABLE, true, 1, 1),
+            (j6::SET_WORLD_MATRIX, true, 2, 2),
+            (j6::SET_MIN_AND_MAX, true, 2, 2),
+            (j6::IS_3D_SCENE, true, 0, 0),
+            (j6::FIND_BY_NAME, true, 1, 1),
+            (j6::SET_VALUE, true, 2, 2),
+            (j6::ADD_UNIQUE, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let consts = [
+            j6::X_3D,
+            j6::X_3D_GUILD,
+            j6::Y_3D,
+            j6::X_FLAGGED,
+            j6::Y_FLAGGED,
+            j6::X_2D,
+            j6::Y_2D,
+        ];
+        let mut set = 0;
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &consts, &[]);
+            let r = rng.next();
+            t.ret(j6::IS_3D_SCENE, rng.pick(&[0, 1, 0x100, r]));
+            let r = rng.next();
+            t.ret(j6::FIND_BY_NAME, rng.pick(&[0, r, r]));
+            let scene = random_block(&mut t, &mut rng, 0x80);
+            t.w8(scene, rng.pick(&[0, 0, 1]));
+            t.w32(scene + 0x74, rng.below(6));
+            t.g32(j6::PHYRE_SCENE, scene);
+            let r = rng.below(0x100);
+            t.g32(j6::CURRENT_MAP, rng.pick(&[0x66, 0xdf, r]));
+            let values = t.rebase(j6::OFFSET_VALUES);
+            let junk: Vec<u8> = (0..16).map(|_| rng.next() as u8).collect();
+            t.write(values, &junk);
+            let data = t.zeros(0xb0);
+            for k in 0..6 {
+                let f = rng.float();
+                t.w32(data + 0x98 + 4 * k, f);
+            }
+            let this = random_block(&mut t, &mut rng, 0x30);
+            t.w32(this + 0x24, rng.pick(&[data, data, data, 0]));
+            let mesh = rng.next();
+            t.w32(this + 8, rng.pick(&[mesh, 0]));
+            let instance = random_block(&mut t, &mut rng, 0x20);
+            let bounds = rng.next();
+            t.w32(instance + 0x1c, rng.pick(&[bounds, 0]));
+            t.w32(this + 0xc, rng.pick(&[instance, instance, 0]));
+            // the item array: count (top bit random), one inline item or
+            // a pointer to several
+            let n = rng.pick(&[0, 1, 1, 3]);
+            let array = t.zeros(0x20);
+            let top = rng.pick(&[0, 0x8000_0000]);
+            t.w32(array, n | top);
+            let mut items = Vec::new();
+            for _ in 0..n {
+                items.push(random_block(&mut t, &mut rng, 8));
+            }
+            if n == 1 {
+                t.w32(array + 4, items[0]);
+            } else if n > 1 {
+                let list = t.zeros(16);
+                for (k, &it) in items.iter().enumerate() {
+                    t.w32(list + 4 * k as u32, it);
+                }
+                t.w32(array + 4, list);
+            }
+            t.w32(this + 0x14, rng.pick(&[array, array, 0]));
+            let frame = t.ebp_for(1) - 0x2c;
+            let arg = rng.next();
+            t.check_framed_conv(
+                &w,
+                0x006a_5070,
+                Conv::Thiscall(this),
+                &[arg],
+                frame,
+                &[(0, 0xc), (0x10, 0xc)],
+                |g| u(j6::update_render_data(g, frame, this)),
+            );
+            set += t.log_entries();
+        }
+        assert!(set > 0, "{name}");
     }
 }

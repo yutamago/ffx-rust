@@ -97,7 +97,18 @@
 //!   and the movie player's texture update;
 //! - [`h4_i7`]: its seventh batch: the cluster manager's preallocated data
 //!   list;
-//! - [`h4_i8`]: its eighth batch: the distortion effect's render.
+//! - [`h4_i8`]: its eighth batch: the distortion effect's render;
+//! - [`h4_j1`]: continuation round 8, batch 1: the PS2 GS layer's first
+//!   effect packet, the settings pages' key-name tables, a UI button's
+//!   remap, the character mesh instances' name suffixes;
+//! - [`h4_j2`]: its second batch: the escape menu's controller and
+//!   keyboard binding pages, the audio and parameter-change pages;
+//! - [`h4_j3`]: its third batch: the menu texture clusters' load, the
+//!   message button remap, the special-feature page;
+//! - [`h4_j4`]: its fourth batch: the escape menu's main setting page;
+//! - [`h4_j5`]: its fifth batch: the text utility's asset hook-up and the
+//!   character shader's render data;
+//! - [`h4_j6`]: its sixth batch: the guild map's dynamic geometry update.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -157,6 +168,12 @@ pub mod h4_i5;
 pub mod h4_i6;
 pub mod h4_i7;
 pub mod h4_i8;
+pub mod h4_j1;
+pub mod h4_j2;
+pub mod h4_j3;
+pub mod h4_j4;
+pub mod h4_j5;
+pub mod h4_j6;
 pub mod h4b_a;
 pub mod h4b_b;
 pub mod h4b_c;

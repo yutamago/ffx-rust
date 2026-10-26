@@ -17,7 +17,8 @@ use ffx_glue_other::{
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
-    menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, menu as mn,
+    misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2449,5 +2450,88 @@ ported! {
     Distortion_renderDistortion @ 0x006c_2dc0 => extern "thiscall" fn render_distortion(this: u32) -> u32 {
         let mut frame = StackFrame::<{ (i8::DISTORTION_FRAME / 4) as usize }>::new();
         i8::render_distortion(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 8, batch 1 (ffx_glue_other::h4_j1)
+    /// `op_gs1_init(work, flags)`.
+    op_gs1_init @ 0x007e_b760 => extern "C" fn op_gs1_init(work: u32, flags: u32) -> u32 {
+        j1::op_gs1_init(&mut mem(), work, flags)
+    }
+    /// `FFEscMenu_initControllerKeyNames_00702250()`.
+    FFEscMenu_initControllerKeyNames_00702250 @ 0x0070_2250 => extern "C" fn init_controller_key_names() -> u32 {
+        j1::fill_controller_names(&mut mem())
+    }
+    /// `FFEscMenu_initKeyboardKeyNames_006ffc80()`.
+    FFEscMenu_initKeyboardKeyNames_006ffc80 @ 0x006f_fc80 => extern "C" fn init_keyboard_key_names() -> u32 {
+        j1::fill_keyboard_names(&mut mem())
+    }
+    /// `RemapButtonIcon_remapUIButtonData(this; key, rec, path, kind)`.
+    RemapButtonIcon_remapUIButtonData @ 0x006e_7300 => extern "thiscall" fn remap_ui_button_data(this: u32, key: u32, rec: u32, path: u32, kind: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j1::REMAP_FRAME / 4) as usize }>::new();
+        j1::remap_ui_button_data(&mut mem(), frame.at(), this, key, rec, path, kind)
+    }
+    /// `ChrMeshInstances_buildSuffixes_006a2390(this)`.
+    ChrMeshInstances_buildSuffixes_006a2390 @ 0x006a_2390 => extern "thiscall" fn build_instance_suffixes(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j1::SUFFIX_FRAME / 4) as usize }>::new();
+        j1::build_instance_suffixes(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 8, batch 2 (ffx_glue_other::h4_j2)
+    /// `FFEscMenu_initializeControllerSettingPage(this)`.
+    FFEscMenu_initializeControllerSettingPage @ 0x0070_1fa0 => extern "thiscall" fn controller_setting_page(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j2::CONTROLLER_FRAME / 4) as usize }>::new();
+        j2::controller_page(&mut mem(), frame.at(), this)
+    }
+    /// `FFEscMenu_initializeKeyboardSettingPage(this)`.
+    FFEscMenu_initializeKeyboardSettingPage @ 0x0070_0da0 => extern "thiscall" fn keyboard_setting_page(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j2::KEYBOARD_FRAME / 4) as usize }>::new();
+        j2::keyboard_page(&mut mem(), frame.at(), this)
+    }
+    /// `FFEscMenu_initializeAudioSettingPage(this)`.
+    FFEscMenu_initializeAudioSettingPage @ 0x006f_f770 => extern "thiscall" fn audio_setting_page(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j2::AUDIO_FRAME / 4) as usize }>::new();
+        j2::audio_page(&mut mem(), frame.at(), this)
+    }
+    /// `FFEscMenu_initializeParameterChangePage(this)`.
+    FFEscMenu_initializeParameterChangePage @ 0x006f_c3f0 => extern "thiscall" fn parameter_change_page(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j2::PARAMETER_FRAME / 4) as usize }>::new();
+        j2::parameter_page(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 8, batch 3 (ffx_glue_other::h4_j3)
+    /// `GraphicAbmap_loadTextureClusters_00684ef0()`.
+    GraphicAbmap_loadTextureClusters_00684ef0 @ 0x0068_4ef0 => extern "C" fn load_texture_clusters() -> u32 {
+        let mut frame = StackFrame::<{ (j3::LOAD_FRAME / 4) as usize }>::new();
+        j3::load_texture_clusters(&mut mem(), frame.at())
+    }
+    /// `RemapButtonIcon_remapMessgeInputData(this; key, rec, path, kind)`.
+    RemapButtonIcon_remapMessgeInputData @ 0x006e_7050 => extern "thiscall" fn remap_message_input_data(this: u32, key: u32, rec: u32, path: u32, kind: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j3::MESSAGE_FRAME / 4) as usize }>::new();
+        j3::remap_message_input_data(&mut mem(), frame.at(), this, key, rec, path, kind)
+    }
+    /// `FFEscMenu_updateSpecialFeaturePage(this)`.
+    FFEscMenu_updateSpecialFeaturePage @ 0x0070_2660 => extern "thiscall" fn special_feature_page(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j3::FEATURE_FRAME / 4) as usize }>::new();
+        j3::special_feature_page(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 8, batch 4 (ffx_glue_other::h4_j4)
+    /// `FFEscMenu_initializeMainSettingPage(this)`.
+    FFEscMenu_initializeMainSettingPage @ 0x0068_e6f0 => extern "thiscall" fn main_setting_page(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j4::MAIN_FRAME / 4) as usize }>::new();
+        j4::main_setting_page(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 8, batch 5 (ffx_glue_other::h4_j5)
+    /// `TextUtil_doOnAllTextUtilAssetsLoaded(this)`.
+    TextUtil_doOnAllTextUtilAssetsLoaded @ 0x006f_60a0 => extern "thiscall" fn text_util_assets_loaded(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j5::ASSETS_FRAME / 4) as usize }>::new();
+        j5::on_all_assets_loaded(&mut mem(), frame.at(), this)
+    }
+    /// `ClassChrShaderRender_VertexInstanceSetup(this)`.
+    ClassChrShaderRender_VertexInstanceSetup @ 0x006a_0100 => extern "thiscall" fn vertex_instance_setup(this: u32) -> u32 {
+        j5::vertex_instance_setup(&mut mem(), this)
+    }
+    // ---- continuation round 8, batch 6 (ffx_glue_other::h4_j6)
+    /// `GuildMapDynamicGeometry_updateRenderData(this; unused)` (a vtable
+    /// entry; the word is popped, never read).
+    GuildMapDynamicGeometry_updateRenderData @ 0x006a_5070 => extern "thiscall" fn guild_map_update_render_data(this: u32, _unused: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j6::GUILD_FRAME / 4) as usize }>::new();
+        j6::update_render_data(&mut mem(), frame.at(), this)
     }
 }
