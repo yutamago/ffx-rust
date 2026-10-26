@@ -26,7 +26,7 @@ tools/harness.py quit
 | Job seeds | the `push <job>` of `JobSchedule_Ch_Cloth_PerCharacter` (`0x00a44b51`) and `JobSchedule_Ch_CalcMiddle_Batch` (`0x00a44ba4`) | The cloth's wind (`Sg_ClothStep` `0x00822de0`), the mouths (`Ch_Mouth`) and the texture animations, eyes included (`chr_texanim_main` `0x0077c8d0`, from `Ch_CalcMiddle_Batch` `0x00833530`), draw from the CRT `rand()`, whose seed is per thread (MSVCR110's `_getptd()` `+0x14`), in jobs that run on whichever JobWorker is free, so they differed between runs (the cloth in every draw capture). The harness queues its own jobs, which seed `rand` for the job from its kind, its first character's place in the character array and ctrl work 0's event frame count at the last frame boundary, run the game's job and give the worker its seed back (original code and Rust alike; `harness.rs` `seeded_job`) |
 | Speed | `Phyre_PTimerWin32_GetTime` (`0x0042fd80`), wrapped; the main loop's `call [Sleep]` (`0x0062f3bb`) | The main loop (`Game_Main`, `0x0062ee50`) runs a frame (`0x0062e340`) once `DAT_00c30e88` × 1/59.94 s have passed on `Phyre_PTimerWin32_GetTime`, and sleeps away the rest. With `--fast` that one `Sleep` returns at once and adds its time to the clock: frames run back to back (461 a second instead of 30–60) while the game still sees one frame interval per frame. `ffx-harness` uses it by default. On the virtual clock (`--virtual-clock`) the clock starts at 2^20 s (`VIRTUAL_START`, not the wall clock's FILETIME reading of about 1.34e10 s, whose f64 rounding differed in every run) and the `Sleep` moves it to the next frame's time exactly (`g_AppStartTime` + `g_FrameLimiterLast` + one interval, plus 1e-9 s) instead of the whole ms the limiter chops it to, so every frame is one interval long and time differences repeat (`docs/drawdiff.md`, "Noise in cdsp0000") |
 | Sandbox | `SHGetFolderPathW` | With `--home DIR`, the Documents folder is `DIR`: the game reads and writes `GameSetting.ini` and its saves (autosaves too) there. `ffx-harness` makes `DIR` a fresh copy of the user's `Square Enix/FINAL FANTASY X&X-2 HD Remaster` before each launch, so tests can load the user's saves and never change them, with the sandbox's own `GameSetting.ini` in place of the user's ("Sandbox settings" below) |
-| Loader turn | `Phyre_PMutex_lockInner_00431850` (`0x00431850`) and `AsyncLoadManager_threadMain_00691360` (`0x00691360`), wrapped | In lockstep the asset loader takes the render lock only in a turn at each frame boundary, until its requests are done, instead of in the real-time gaps between the render thread's holds, so a load takes the same number of frames whatever the update's real time ("Load pacing", `loader_turn.rs`) |
+| Loader turn | `AsyncLoadManager_threadMain_00691360` (`0x00691360`), wrapped; `Phyre_PMutex_lockInner_00431850` (`0x00431850`): its port asks the turn first, or a wrapper does around the original when the port is off | In lockstep the asset loader takes the render lock only in a turn at each frame boundary, until its requests are done, instead of in the real-time gaps between the render thread's holds, so a load takes the same number of frames whatever the update's real time ("Load pacing", `loader_turn.rs`) |
 
 ## Frames and threads
 
@@ -591,10 +591,15 @@ until its request lists are empty; then the main thread and the render
 thread go on. While the main thread runs an update the loader waits before
 each top-level take of the render lock, unless the main thread stays in one
 update for 100 ms (it waits for the loader there, as during map loads), in
-which case the loader goes on until that update ends. The hooks are
-trampolines on `Phyre_PMutex_lockInner_00431850` and
-`AsyncLoadManager_threadMain_00691360` (which notes the loader's thread),
-so the original code runs under the same rule. Measured with it: Valefor's
+which case the loader goes on until that update ends. The loader's thread
+is noted by a trampoline on `AsyncLoadManager_threadMain_00691360`. The
+rule itself (`loader_turn::before_take`) runs at the top of the lock,
+`Phyre_PMutex_lockInner_00431850`, which has one hook: p1-load's port
+(`ported/p1_load.rs`) calls it before taking the lock, and when that port
+is left out (`--hook-disable replacements` for the original code,
+`FFX_HOOK_DISABLE`, `FFX_HOOK_ONLY`) `loader_turn::install_fallback`
+puts a wrapper with a trampoline to the original at the same address
+instead, so the original code runs under the same rule. Measured with it: Valefor's
 load ends 2 frames after the magic ID in original, Rust and Rust with no
 slowing alike, and battle-overdrive's entry takes 281 frames and Energy
 Blast 259 in every run.

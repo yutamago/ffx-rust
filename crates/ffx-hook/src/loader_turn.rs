@@ -115,34 +115,93 @@ pub unsafe extern "C" fn loader_thread(arg: usize) -> u32 {
 }
 
 /// Wraps `Phyre_PMutex_lockInner_00431850(this; &owner)`
-/// (`thiscall`, `ret 4`): in lockstep the loader's and the render thread's
-/// top-level takes of the render lock wait for their turn.
+/// when the port (`ported/p1_load.rs`) is left out (`FFX_HOOK_DISABLE`,
+/// `FFX_HOOK_ONLY`, original-code runs): [`before_take`], then the original
+/// through its trampoline ([`install_fallback`]).
 ///
 /// # Safety
 /// Called by the game with a lock and its owner word.
-pub unsafe extern "thiscall" fn lock_take(this: usize, owner: usize) -> u32 {
-    if this == crate::rebase(RENDER_LOCK) && crate::harness::lockstep() {
-        let tid = current_thread();
-        // SAFETY: the lock's owner word; only this thread writes its own
-        // id there.
-        let held = unsafe { std::ptr::read_volatile(owner as *const u32) } == tid;
-        if !held {
-            if tid == LOADER_TID.load(Ordering::Acquire) {
-                loader_wait();
-            } else if tid == RENDER_TID.load(Ordering::Relaxed) && TURN.load(Ordering::Acquire) {
-                RENDER_WAITING.store(true, Ordering::Release);
-                notify();
-                wait_until(PATIENCE, || !TURN.load(Ordering::Acquire));
-                RENDER_WAITING.store(false, Ordering::Release);
-            }
-        }
-    }
+pub unsafe extern "thiscall" fn lock_take(this: u32, owner: u32) -> u32 {
+    before_take(this, owner);
     // SAFETY: the original through its trampoline.
     unsafe {
-        let f: unsafe extern "thiscall" fn(usize, usize) -> u32 =
+        let f: unsafe extern "thiscall" fn(u32, u32) -> u32 =
             std::mem::transmute(LOCK_ORIGINAL.load(Ordering::Acquire));
         f(this, owner)
     }
+}
+
+/// The turn rule at the top of `Phyre_PMutex_lockInner_00431850(this;
+/// &owner)`, before the lock is taken: in lockstep the loader's and the
+/// render thread's top-level takes of the render lock wait for their turn.
+/// Its port calls this first, and so does [`lock_take`] around the
+/// original. Anything else (another lock, outside lockstep, a thread that
+/// already owns it) passes at once.
+pub fn before_take(this: u32, owner: u32) {
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let render_lock = crate::rebase(RENDER_LOCK) as u32;
+    if this != render_lock || !crate::harness::lockstep() {
+        return;
+    }
+    let tid = current_thread();
+    // SAFETY: the lock's owner word; only this thread writes its own id
+    // there.
+    let held = unsafe { std::ptr::read_volatile(owner as usize as *const u32) } == tid;
+    if held {
+        return;
+    }
+    if tid == LOADER_TID.load(Ordering::Acquire) {
+        loader_wait();
+    } else if tid == RENDER_TID.load(Ordering::Relaxed) && TURN.load(Ordering::Acquire) {
+        RENDER_WAITING.store(true, Ordering::Release);
+        notify();
+        wait_until(PATIENCE, || !TURN.load(Ordering::Acquire));
+        RENDER_WAITING.store(false, Ordering::Release);
+    }
+}
+
+/// `push ebp; mov ebp, esp; push ecx; push ebx; push esi; push edi`: whole
+/// instructions without relative operands, copied into the trampoline.
+const LOCK_PROLOGUE: &[u8] = &[0x55, 0x8b, 0xec, 0x51, 0x53, 0x56, 0x57];
+
+/// After the hook table is installed: when the port of
+/// `Phyre_PMutex_lockInner_00431850` was left out, wraps the original with
+/// [`lock_take`] instead, so original-code runs keep the turn rule (one hook
+/// at the address either way: the port's own table entry, with the wrapper
+/// in place of the port). Only with the harness.
+///
+/// # Safety
+/// `base` is the main module; no other thread runs game code yet.
+pub unsafe fn install_fallback(
+    base: usize,
+    hooks: &[crate::Hook],
+    results: &[(&'static str, crate::Outcome)],
+) {
+    const NAME: &str = "Phyre_PMutex_lockInner_00431850";
+    if !crate::harness::ENABLED.load(Ordering::Acquire) {
+        return;
+    }
+    let Some(port) = hooks.iter().find(|h| h.name == NAME) else {
+        return;
+    };
+    let installed = results
+        .iter()
+        .any(|(n, o)| *n == NAME && *o == crate::Outcome::Installed);
+    if installed {
+        return;
+    }
+    let wrapper = crate::Hook {
+        prologue: LOCK_PROLOGUE,
+        replacement: lock_take as *const () as usize,
+        original: Some(&LOCK_ORIGINAL),
+        steal: 0,
+        ..*port
+    };
+    // SAFETY: forwarded from the caller; the port left the site untouched.
+    let r = unsafe { crate::install(base, &[wrapper], &[]) };
+    log(&format!(
+        "  harness: loader turn around the original {NAME} (its port is off): {r:?}"
+    ));
 }
 
 /// The loader before a top-level take: during a turn it goes on; while the

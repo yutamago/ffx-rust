@@ -2509,29 +2509,20 @@ pub unsafe fn install(module: usize) {
     let r = unsafe { crate::install(module, &frame_hooks, &[]) };
     log(&format!("  harness: frame boundary hooks {r:?}"));
     // The asset loader's turn at the render lock in lockstep
-    // (crate::loader_turn; docs/harness.md, "Load pacing"). Trampolines:
-    // the original code runs under the same harness.
-    let loader_hooks = [
-        crate::Hook {
-            name: "Phyre_PMutex_lockInner_00431850",
-            address: 0x0043_1850,
-            // push ebp; mov ebp, esp; push ecx; push ebx; push esi; push edi
-            prologue: &[0x55, 0x8b, 0xec, 0x51, 0x53, 0x56, 0x57],
-            replacement: crate::loader_turn::lock_take as *const () as usize,
-            original: Some(&crate::loader_turn::LOCK_ORIGINAL),
-            steal: 0,
-        },
-        crate::Hook {
-            name: "AsyncLoadManager_threadMain_00691360",
-            address: 0x0069_1360,
-            // push ebp; mov ebp, esp; mov eax, [abs32] (relocated: only its
-            // opcode is checked; 8 bytes are copied)
-            prologue: &[0x55, 0x8b, 0xec, 0xa1],
-            replacement: crate::loader_turn::loader_thread as *const () as usize,
-            original: Some(&crate::loader_turn::LOADER_ORIGINAL),
-            steal: 8,
-        },
-    ];
+    // (crate::loader_turn; docs/harness.md, "Load pacing"). A trampoline:
+    // the original code runs under the same harness. The lock side is the
+    // port of Phyre_PMutex_lockInner_00431850 (ported/p1_load.rs), or
+    // loader_turn::install_fallback's wrapper when that port is left out.
+    let loader_hooks = [crate::Hook {
+        name: "AsyncLoadManager_threadMain_00691360",
+        address: 0x0069_1360,
+        // push ebp; mov ebp, esp; mov eax, [abs32] (relocated: only its
+        // opcode is checked; 8 bytes are copied)
+        prologue: &[0x55, 0x8b, 0xec, 0xa1],
+        replacement: crate::loader_turn::loader_thread as *const () as usize,
+        original: Some(&crate::loader_turn::LOADER_ORIGINAL),
+        steal: 8,
+    }];
     // SAFETY: the game has not started (the loader thread is made later).
     let r = unsafe { crate::install(module, &loader_hooks, &[]) };
     log(&format!("  harness: loader turn hooks {r:?}"));

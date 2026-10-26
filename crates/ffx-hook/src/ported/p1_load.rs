@@ -1079,8 +1079,11 @@ ported! {
     Phyre_PClusterDependencyList_Bind @ 0x0044_b2b0 => extern "C" fn bind_cluster_dependency_list() -> u32 {
         p1_bind::bridge::dependency_list_bind(&mut mem())
     }
-    /// The recursive mutex's inner lock `(&owner)`.
+    /// The recursive mutex's inner lock `(&owner)`. First the harness's
+    /// loader turn (`loader_turn::before_take`: in lockstep only, for the
+    /// render lock; docs/harness.md, "Load pacing").
     Phyre_PMutex_lockInner_00431850 @ 0x0043_1850 => extern "thiscall" fn mutex_lock_inner(this: u32, owner: u32) -> u32 {
+        crate::loader_turn::before_take(this, owner);
         p1_loader::bridge::mutex_lock_inner(&mut mem(), this, owner)
     }
     /// `PCluster::resolveAssetReferences()`; the iterator in this frame.
