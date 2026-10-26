@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2, h4_e3 as e3, h4_e4 as e4,
-    h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3,
+    h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -3606,3 +3606,183 @@ fn f3_sfx_ctor() {
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
     }
 }
+
+// ---- continuation round 4, batch 4 (ffx_glue_other::h4_f4)
+
+/// The FMOD event system's setup.
+#[test]
+fn f4_init_event_system() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f401);
+        let (system, object) = (t.zeros(4), t.zeros(4));
+        t.stub_at(f4::EVENT_SYSTEM_CREATE, false, 1, 1, &[wr(0, system)]);
+        t.stub_at(f4::GET_SYSTEM_OBJECT, false, 2, 2, &[wr(1, object)]);
+        let stubs = [
+            (f4::MEMORY_INITIALIZE, 6, 6),
+            (f4::SET_STREAM_BUFFER_SIZE, 3, 3),
+            (f4::EVENT_SYSTEM_INIT, 5, 5),
+            (f4::SET_FILE_SYSTEM, 8, 8),
+            (fr::ERRCHECK, 3, 0),
+            (fr::PRINT_TO_OUTPUT, 2, 0),
+            (f4::CLEAR_GLOBAL, 0, 0),
+        ];
+        for (sym, n, pops) in stubs {
+            t.stub_at(sym, false, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([f4::EVENT_SYSTEM_CREATE, f4::GET_SYSTEM_OBJECT]);
+        for i in 0..100 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let this = random_block(&mut t, &mut rng, 0xc);
+            let s = rng.next();
+            t.w32(system, rng.pick(&[0, s, s]));
+            let o = rng.next();
+            t.w32(object, o);
+            t.check_conv(
+                &format!("{w} init"),
+                0x0070_6820,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(f4::init_event_system(g, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// A sound bank's constructor.
+#[test]
+fn f4_sfx_bank_ctor() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f402);
+        let project = t.zeros(4);
+        t.stub_at(f4::EVENT_SYSTEM_LOAD, false, 4, 4, &[wr(3, project)]);
+        let sprintf = t.stub_code(0x0bad_f4a0, false, 3, 0, false, &[]);
+        let stubs = [
+            (fr::PRINT_TO_OUTPUT, false, 3, 0),
+            (f3::MEMSET, false, 3, 0),
+            (MEMCPY, false, 3, 0),
+            (f1::OPERATOR_NEW, false, 1, 0),
+            (f4::EVENT_TREE_CTOR, true, 2, 2),
+            (f4::EVENT_GROUP_CTOR, true, 2, 2),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([f4::EVENT_SYSTEM_LOAD, 0x0bad_f4a0]);
+        let mut ran = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(f3::SPRINTF_IAT, sprintf);
+            let this = random_block(&mut t, &mut rng, 0xc);
+            let p = rng.next();
+            t.w32(project, p);
+            t.ret(f4::EVENT_SYSTEM_LOAD, rng.pick(&[0, 0, 0, 0x24]));
+            let block = t.zeros(0x34);
+            t.ret(f1::OPERATOR_NEW, rng.pick(&[0, block, block]));
+            let len = rng.pick(&[4, 5, 15, 0x40, 0xff, 0x103]) as usize;
+            let mut path: Vec<u8> = (0..len).map(|_| b'a' + rng.below(26) as u8).collect();
+            path.push(0);
+            let path = t.alloc(&path);
+            let s = rng.next();
+            let system = rng.pick(&[0, s, s, s]);
+            let frame = t.ebp_for(2) - 0x210;
+            t.check_framed_conv(
+                &format!("{w} bank of {len}"),
+                0x0070_f760,
+                Conv::Thiscall(this),
+                &[system, path],
+                frame,
+                &[(0, 0x200)],
+                |g| u(f4::sfx_bank_ctor(g, frame, this, system, path)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The event tree's load.
+#[test]
+fn f4_event_tree_load() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f403);
+        // allocateNewBlock: the list head from a cell
+        let refill = t.zeros(4);
+        let rest = t.stub_code(c2::FREE_LIST_ALLOCATE_BLOCK, true, 1, 1, false, &[]);
+        let mut c = vec![0xa1];
+        c.extend(refill.to_le_bytes()); // mov eax, [refill]
+        c.extend([0x89, 0x01, 0xe9]); // mov [ecx], eax; jmp rest
+        let at = t.cave_next;
+        c.extend(rest.wrapping_sub(at + 12).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(c2::FREE_LIST_ALLOCATE_BLOCK, f);
+        let stubs = [
+            (FIOS_EXISTS, false, 1, 0),
+            (FIOS_OPEN, false, 2, 0),
+            (FIOS_SIZE, false, 1, 0),
+            (OPERATOR_NEW_2, false, 1, 0),
+            (FIOS_READ, false, 3, 0),
+            (FIOS_CLOSE, false, 1, 0),
+            (f4::INT_TREE_INSERT, true, 1, 1),
+            (c2::TREE_POST_INSERT, true, 1, 1),
+            (c2::FREE_LIST_DEALLOCATE, true, 1, 1),
+            (e5::OPERATOR_DELETE_ARRAY, false, 1, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(c2::FREE_LIST_ALLOCATE_BLOCK);
+        let mut ran = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let this = random_block(&mut t, &mut rng, 0x28);
+            t.ret(FIOS_EXISTS, rng.pick(&[0, 1, 1, 1]));
+            let file = rng.next() | 1;
+            t.ret(FIOS_OPEN, rng.pick(&[0, file, file, file]));
+            let size = rng.pick(&[0, 7, 8, 16, 40, 41]);
+            t.ret(FIOS_SIZE, size);
+            let buf = random_block(&mut t, &mut rng, 0x40);
+            t.ret(OPERATOR_NEW_2, buf);
+            t.ret(f4::INT_TREE_INSERT, rng.pick(&[0, 0, 1, 0x1234_5678]));
+            // the free list: a chain of nodes
+            let mut head = 0;
+            for _ in 0..rng.below(6) {
+                let nd = random_block(&mut t, &mut rng, 0x14);
+                t.w32(nd, head);
+                head = nd;
+            }
+            t.w32(this + 0x1c, head);
+            let more = t.zeros(0x14);
+            t.w32(refill, rng.pick(&[0, more]));
+            let path = rng.next();
+            t.check_conv(
+                &format!("{w} load {size}"),
+                0x0071_0370,
+                Conv::Thiscall(this),
+                &[path],
+                |g| u(f4::event_tree_load(g, this, path)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `fiosIsFileExist`.
+const FIOS_EXISTS: u32 = 0x0067_96f0;
+/// `fiosOpen`.
+const FIOS_OPEN: u32 = 0x0067_9730;
+/// `fiosFileSize`.
+const FIOS_SIZE: u32 = 0x0067_9570;
+/// `fiosRead`.
+const FIOS_READ: u32 = 0x0067_9800;
+/// `fiosClose`.
+const FIOS_CLOSE: u32 = 0x0067_9510;
+/// `operator_new_006304c0`.
+const OPERATOR_NEW_2: u32 = 0x0063_04c0;

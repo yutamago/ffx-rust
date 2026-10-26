@@ -13,8 +13,8 @@
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
-    h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, menu as mn,
-    misc as m, movie as mv, r3, sound as s,
+    h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
+    menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1958,5 +1958,19 @@ ported! {
     /// `FmodSfx_ctor_0070bfc0(this)`.
     FmodSfx_ctor_0070bfc0 @ 0x0070_bfc0 => extern "thiscall" fn sfx_ctor(this: u32) -> u32 {
         f3::sfx_ctor(&mut mem(), this)
+    }
+    // ---- continuation round 4, batch 4 (ffx_glue_other::h4_f4)
+    /// `FfxFmod_initEventSystem(this)`.
+    FfxFmod_initEventSystem @ 0x0070_6820 => extern "thiscall" fn init_event_system(this: u32) -> u32 {
+        f4::init_event_system(&mut mem(), this)
+    }
+    /// `SfxBank_ctor_0070f760(this; system, path)`.
+    SfxBank_ctor_0070f760 @ 0x0070_f760 => extern "thiscall" fn sfx_bank_ctor(this: u32, system: u32, path: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f4::BANK_FRAME / 4) as usize }>::new();
+        f4::sfx_bank_ctor(&mut mem(), frame.at(), this, system, path)
+    }
+    /// `FmodEventTree_load_00710370(this; path)`.
+    FmodEventTree_load_00710370 @ 0x0071_0370 => extern "thiscall" fn event_tree_load(this: u32, path: u32) -> u32 {
+        f4::event_tree_load(&mut mem(), this, path)
     }
 }

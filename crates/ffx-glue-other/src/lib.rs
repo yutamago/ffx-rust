@@ -64,7 +64,9 @@
 //!   the menu manager's material update and buffer reset, the button-icon
 //!   vertex info lookup, a sound event's constructor and release;
 //! - [`h4_f3`]: its third batch: the sound effects' per-frame update,
-//!   event creation, battle stream, project load and constructor.
+//!   event creation, battle stream, project load and constructor;
+//! - [`h4_f4`]: its fourth batch: the FMOD event system's setup, a sound
+//!   bank's constructor and its event tree's load.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -101,6 +103,7 @@ pub mod h4_e5;
 pub mod h4_f1;
 pub mod h4_f2;
 pub mod h4_f3;
+pub mod h4_f4;
 pub mod menu;
 pub mod misc;
 pub mod movie;
