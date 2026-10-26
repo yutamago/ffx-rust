@@ -674,30 +674,34 @@ fn binds_with_class_members_match_the_original() {
                     let v = rng.next();
                     t.w32(at, v);
                 }
-                // class members: an owner with a list (empty, or two
-                // nodes), a name or none, the owner knowing it or not
+                // class members: an owner with its method (+0x4c) and
+                // function (+0x54) lists (each empty, or two nodes), a
+                // name or none, the owner knowing it or not
                 for &m in &classes {
                     let m = t.rebase(m);
                     let owner = t.zeros(0x60);
-                    let head = owner + 0x4c;
-                    let first = t.zeros(8);
-                    let second = t.zeros(8);
-                    if rng.chance(2) {
-                        t.w32(head, head);
-                        t.w32(head + 4, head);
-                    } else {
-                        t.w32(head, first);
-                        t.w32(first, second);
-                        t.w32(second, head);
-                        t.w32(head + 4, second);
-                        t.w32(second + 4, first);
-                        t.w32(first + 4, head);
+                    for list in [h1b::METHODS, h1b::FUNCTIONS] {
+                        let head = owner + list.offset;
+                        let first = t.zeros(8);
+                        let second = t.zeros(8);
+                        if rng.chance(2) {
+                            t.w32(head, head);
+                            t.w32(head + 4, head);
+                        } else {
+                            t.w32(head, first);
+                            t.w32(first, second);
+                            t.w32(second, head);
+                            t.w32(head + 4, second);
+                            t.w32(second + 4, first);
+                            t.w32(first + 4, head);
+                        }
                     }
                     t.w32(m + 8, owner);
                     let named = if rng.chance(3) { 0 } else { owner };
                     t.w32(m + 0xc, named);
                 }
                 t.stub(h1b::FIND_MEMBER, true, 1, 1, rng.next() & 1);
+                t.stub(h1b::FUNCTIONS.find, true, 1, 1, rng.next() & 1);
                 fresh(&mut t);
                 t.check(
                     &format!("{name} {f:#x} case {case}"),
@@ -707,6 +711,7 @@ fn binds_with_class_members_match_the_original() {
                     |g| Out::U32(h1b::bridge::bind(g, k)),
                 );
                 t.unstub(h1b::FIND_MEMBER);
+                t.unstub(h1b::FUNCTIONS.find);
             }
         }
     }

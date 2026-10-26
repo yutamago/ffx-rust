@@ -1887,3 +1887,14 @@ mod tail;
 
 #[path = "p6_render_c/mesh.rs"]
 mod mesh;
+
+// ---- continuation round 5: `ffx_prender::p6_cmd` ----
+
+#[path = "p6_render_c/cmd.rs"]
+mod cmd;
+
+#[path = "p6_render_c/appframe.rs"]
+mod appframe;
+
+#[path = "p6_render_c/appinit.rs"]
+mod appinit;
