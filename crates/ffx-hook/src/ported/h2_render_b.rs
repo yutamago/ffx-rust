@@ -27,6 +27,7 @@ use ffx_prender::h2_more2::bridge as h2;
 use ffx_prender::h2_more3::bridge as h3;
 use ffx_prender::h2_more4::bridge as h4;
 use ffx_prender::h2_more5::bridge as h5;
+use ffx_prender::h2_more6::bridge as h6;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -1715,6 +1716,55 @@ ported! {
     /// `PRenderTargetD3D11_releaseViews_0059c650`.
     PRenderTargetD3D11_releaseViews_0059c650 @ 0x0059_c650 => extern "thiscall" fn s_0059c650(a0: u32) -> u32 {
         h5::release_views2(&mut mem(), a0)
+    }
+    /// `PMeshInstance_ctor_004f27e0`.
+    PMeshInstance_ctor_004f27e0 @ 0x004f_27e0 => extern "thiscall" fn s_004f27e0(a0: u32, a1: u32) -> u32 {
+        h6::mesh_instance_ctor(&mut mem(), a0, a1)
+    }
+    /// `PMeshInstance_sizeArrays_004f8b90`.
+    PMeshInstance_sizeArrays_004f8b90 @ 0x004f_8b90 => extern "thiscall" fn s_004f8b90(a0: u32, a1: u32) -> u32 {
+        h6::size_arrays(&mut mem(), a0, a1)
+    }
+    /// `Phyre_Bind_00502100`.
+    Phyre_Bind_00502100 @ 0x0050_2100 => extern "C" fn s_00502100() -> u32 {
+        hb::bind(&mut mem(), &ffx_prender::h2_bind::B_00502100)
+    }
+    /// `PRendererD3D11_createDynamicBuffers_005954f0`.
+    PRendererD3D11_createDynamicBuffers_005954f0 @ 0x0059_54f0 => extern "thiscall" fn s_005954f0(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        let mut fr = super::StackFrame::<13>::new();
+        h6::create_dynamic_buffers(&mut mem(), a0, a1, a2, a3, fr.at())
+    }
+    /// `PShaderD3D11_ctor_00583f20`.
+    PShaderD3D11_ctor_00583f20 @ 0x0058_3f20 => extern "thiscall" fn s_00583f20(a0: u32) -> u32 {
+        h6::shader_ctor(&mut mem(), a0)
+    }
+    /// `PParameterBlocks_assignSlots_004e4ec0`.
+    PParameterBlocks_assignSlots_004e4ec0 @ 0x004e_4ec0 => extern "C" fn s_004e4ec0(a0: u32) -> u32 {
+        h6::assign_slots(&mut mem(), a0)
+    }
+    /// `Phyre_Destroy_004ea2d0`.
+    Phyre_Destroy_004ea2d0 @ 0x004e_a2d0 => extern "thiscall" fn s_004ea2d0(a0: u32) {
+        h6::destroy_4ea2d0(&mut mem(), a0);
+    }
+    /// `PVertexBufferD3D11_create_00561a20`.
+    PVertexBufferD3D11_create_00561a20 @ 0x0056_1a20 => extern "thiscall" fn s_00561a20(a0: u32) -> u32 {
+        let mut fr = super::StackFrame::<9>::new();
+        h6::create_stream_buffers(&mut mem(), a0, fr.at(), (0x38, 0x18, 1, 0x34, 0x00b2_ec98))
+    }
+    /// `PIndexBufferD3D11_create_00561b70`.
+    PIndexBufferD3D11_create_00561b70 @ 0x0056_1b70 => extern "thiscall" fn s_00561b70(a0: u32) -> u32 {
+        let mut fr = super::StackFrame::<9>::new();
+        h6::create_stream_buffers(&mut mem(), a0, fr.at(), (0x34, 0x14, 2, 0x30, 0x00b2_eb80))
+    }
+    /// `PVertexBufferD3D11_unmap_00564ab0`.
+    PVertexBufferD3D11_unmap_00564ab0 @ 0x0056_4ab0 => extern "thiscall" fn s_00564ab0(a0: u32, a1: u32, _a2: u32) -> u32 {
+        let mut fr = super::StackFrame::<8>::new();
+        h6::unmap_stream(&mut mem(), a0, a1, fr.at())
+    }
+    /// `PTexture2DD3D11_createViews_0058f710`.
+    PTexture2DD3D11_createViews_0058f710 @ 0x0058_f710 => extern "thiscall" fn s_0058f710(a0: u32) -> u32 {
+        let mut fr = super::StackFrame::<9>::new();
+        h6::create_views(&mut mem(), a0, fr.at())
     }
 }
 
