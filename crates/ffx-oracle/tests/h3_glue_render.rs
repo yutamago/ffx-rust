@@ -65,6 +65,7 @@ use ffx_prender::h3_glue39::{self as h39, bridge as gh39};
 use ffx_prender::h3_glue40::{self as h40, bridge as gh40};
 use ffx_prender::h3_glue41::{self as h41, bridge as gh41};
 use ffx_prender::h3_glue42::{self as h42, bridge as gh42};
+use ffx_prender::h3_glue43::{self as h43, bridge as gh43};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -10346,5 +10347,380 @@ fn batch42b_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 100 } else { 300 };
         run_cases(t, CASES42B, n, &mut Rng(0x4242_b043));
+    });
+}
+
+// ---- round 11 batch 43 (ffx_prender::h3_glue43) ----
+
+/// The ebp of a framed case's original with `args` stack words (as
+/// `run_cases` computes it).
+fn case_ebp(t: &Twins, args: u32) -> u32 {
+    t.a.stack_range().end - 0x100 - 4 * args - 8
+}
+
+/// The application getter returns `renderer`, and `renderWorld`'s stub
+/// logs the renderer's technique word (`+0x48`) in place of `ecx`.
+fn stub_render_world43(t: &mut Twins, renderer: u32, rng: &mut Rng) {
+    t.stub_ret(h43::GET_APPLICATION, false, 0, 0, renderer);
+    let at = t.rebase(h43::RENDER_WORLD);
+    let ret = rng.next();
+    t.deref_this = true;
+    t.deref_off = 0x48;
+    t.stub(Some(at), h43::RENDER_WORLD, true, 3, 3, Some(ret));
+    t.deref_this = false;
+    t.deref_off = 0;
+}
+
+/// The scene's camera (or none: page 0) with a random matrix, the next
+/// camera (or none), the renderer, the translation and squeeze inputs,
+/// the two flags, the map (the four plain-transparent ones or others);
+/// the row products returned are random rows, or rows overlapping the
+/// matrix itself (the frame's fill may hold signalling NaNs).
+fn prep_prerender43(t: &mut Twins, _: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    map_page_zero(t);
+    let scene = t.zeros(0x1_0000);
+    *this = scene;
+    let aux = t.zeros(0x1000);
+    for k in 0..0x400 {
+        let f = rng.float().to_bits();
+        t.w32(aux + 4 * k, f);
+    }
+    let cam = if rng.chance(10) { 0 } else { aux + 0x100 };
+    t.w32(scene + 0x7e0, cam);
+    let next = if rng.chance(3) { 0 } else { aux + 0x200 };
+    t.w32(scene + 0xdc, next);
+    t.w32(scene + 0xd0, aux + 0x300);
+    stub_render_world43(t, aux + 0x300, rng);
+    for at in [0xfa34, 0xfa38, 0xf9bc] {
+        let f = rng.float().to_bits();
+        t.w32(scene + at, f);
+    }
+    let flag = u8::from(rng.chance(3));
+    t.write(scene + 0xf9c7, &[flag]);
+    let s3d = u8::from(rng.chance(3));
+    let at = t.rebase(h43::SCENE_3D);
+    t.patch(at, &[s3d]);
+    let any = rng.next();
+    let map = pick(rng, &[0xa0, 0xa1, 0x101, 0x16c, 0x9f, 0x16d, any]);
+    let at = t.rebase(h43::CURRENT_MAP);
+    t.patch(at, &map.to_le_bytes());
+    let ebp = case_ebp(t, 0);
+    let rows: Vec<u32> = (0..8)
+        .map(|_| match rng.below(4) {
+            0 => ebp - 0x44 + 4 * rng.below(12),
+            _ => aux + 0x400 + 4 * rng.below(0x100),
+        })
+        .collect();
+    t.stub_seq(h43::ROW_TIMES, true, 2, 2, &rows);
+}
+
+#[rustfmt::skip]
+const CASES43: &[Case] = &[
+    framed(Case { prep: Some(prep_prerender43), ..method("draw_non_ui_prerender_scene", 0x0065_07d0, This::Object, 0, &[(h43::SET_CAMERA, K::This(1)), (h43::UPDATE_VIEW_MATRICES, K::This(0)), (h43::MATRIX_COPY, K::This(1))], |m, this, _| u(gh43::draw_non_ui_prerender_scene(m, frame_ebp(), this))) }, 0x108, 0),
+];
+
+#[test]
+fn batch43_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 150 } else { 400 };
+        run_cases(t, CASES43, n, &mut Rng(0x4343_b043));
+    });
+}
+
+/// The 3D world pass: the cameras `+0xdc` and `+0x238` (or none: page
+/// 0), the renderer's viewport, the flags (`+0xf9c7`, 3D, `+0xd4`), the
+/// split-screen word, the overlay mode, MSAA, `pre` (its low byte
+/// counts); the view returned is random floats (`PMatrix4_Copy` runs).
+fn prep_world43(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    map_page_zero(t);
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    let post = t.zeros(0x1_2400);
+    let aux = t.zeros(0x1000);
+    for k in 0..0x400 {
+        let f = rng.float().to_bits();
+        t.w32(aux + 4 * k, f);
+    }
+    for (field, cam) in [(0xdc, aux + 0x100), (0x238, aux + 0x200)] {
+        let v = if rng.chance(8) { 0 } else { cam };
+        t.w32(scene + field, v);
+    }
+    let renderer = aux + 0x300;
+    t.w32(scene + 0xd0, renderer);
+    stub_render_world43(t, renderer, rng);
+    for k in 0..4 {
+        let v = rng.next();
+        t.w32(renderer + 8 + 4 * k, v);
+    }
+    t.w32(scene + 0x10cc, post);
+    t.write(post + 0x1_22b4, &[u8::from(rng.chance(2))]);
+    t.write(scene + 0xf9c7, &[u8::from(rng.chance(3))]);
+    t.write(scene + 0xd4, &[u8::from(rng.chance(2))]);
+    let at = t.rebase(h43::SCENE_3D);
+    let s3d = u8::from(rng.chance(3));
+    t.patch(at, &[s3d]);
+    let split = pick(rng, &[1, 1, 0, 2, 0x101]);
+    t.w32(scene + 0x1_0d8c, split);
+    let mode = pick(rng, &[0, 1, 2, 3, 0x101]);
+    t.w32(scene + 0xf9cc, mode);
+    let view = aux + 0x400 + 4 * rng.below(0x100);
+    t.stub_ret(h43::SCREEN_ADJUSTED_VIEW, true, 1, 1, view);
+    args[0] = pick(rng, &[0, 1, 0x100, 0xffff_ff00]);
+}
+
+#[rustfmt::skip]
+const CASES43B: &[Case] = &[
+    framed(Case { prep: Some(prep_world43), ..method("draw_3d_world", 0x0064_fbb0, This::Object, 1, &[(h43::SET_CAMERA, K::This(1)), (h43::UPDATE_VIEW_MATRICES, K::This(0)), (h43::SET_VIEWPORT, K::This(4)), (h43::DRAW_MESH_MATRICES, K::This(1)), (h43::DRAW_Z_PREPASS, K::This(0))], |m, this, a| { m.write(frame_ebp() + 8, a[0]); u(gh43::draw_3d_world(m, frame_ebp(), this, a[0])) }) }, 0x8c, 4),
+];
+
+#[test]
+fn batch43b_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 150 } else { 400 };
+        run_cases(t, CASES43B, n, &mut Rng(0x4343_b044));
+    });
+}
+
+/// The targets' items, the character's meshes and value arrays, the
+/// target slots and their parallel arrays (see [`prep_anim_char43`]).
+fn anim_char_targets43(t: &mut Twins, aux: u32, chr: u32, rng: &mut Rng) {
+    for i in 0..3 {
+        let item = aux + 0x800 + 0x80 * i;
+        t.w32(aux + 0x680 + 4 * i, item);
+        t.w32(item + 0x74, pick(rng, &[0, 1, 0xffff_ffff]));
+        t.w32(item + 0x78, pick(rng, &[0, 1, 0x8000_0000]));
+    }
+    // the character's meshes and their value arrays
+    t.w32(chr + 4, aux + 0xa00);
+    for m in 0..2 {
+        let mesh = aux + 0xa40 + 0x40 * m;
+        t.w32(aux + 0xa00 + 4 * m, mesh);
+        let arr = aux + 0xb00 + 0x20 * m;
+        t.w32(mesh + 0x10, arr);
+        t.w32(arr, pick(rng, &[1, 2, 2, 0x8000_0002]));
+        t.w32(arr + 4, aux + 0xb80);
+        let v = if rng.chance(4) { 0 } else { rng.next() };
+        t.w32(arr + 8, v);
+    }
+    // the target slots: entries (mesh/material pairs) and their arrays
+    for s in 0..2 {
+        let slots = aux + 0x380 + 8 * s;
+        t.w32(slots, pick(rng, &[0, 1, 2, 0x8000_0002]));
+        t.w32(slots + 4, aux + 0xc00);
+    }
+    for e in 0..2 {
+        let entry = aux + 0xc40 + 0x80 * e;
+        t.w32(aux + 0xc00 + 8 * e, entry);
+        t.w32(entry + 0x74, rng.below(2));
+        t.w32(entry + 0x78, rng.below(2));
+        let pa = aux + 0xd40 + 0x20 * e;
+        t.w32(aux + 0xc00 + 8 * e + 4, pa);
+        let begin = aux + 0xe00 + 0x100 * e;
+        t.w32(pa, begin);
+        let used = rng.below(4);
+        t.w32(pa + 8, begin + 4 * used);
+        t.w32(pa + 0xc, aux + 0x1000 + 0x100 * e);
+        t.w32(pa + 0x10, pick(rng, &[used, used + 1, 0, 0xffff_ffff]));
+    }
+}
+
+/// Texture-animation characters: the tweak flag (log or not), the skip
+/// list (0 to 3 entries, negative, the character in it or not), the
+/// records (the character found or not, a high count bit), the
+/// animations (tagged names: the same pointer, an equal or different
+/// string, none), the targets (negative indices, a character mesh
+/// array with 0, 1 or 2 values), `FindMaterial`'s results, the target
+/// slots (matching or not), the frame lists and the parallel arrays
+/// (full or not).
+fn prep_anim_char43(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    map_page_zero(t);
+    let mgr = t.zeros(0x100);
+    *this = mgr;
+    let aux = t.zeros(0x4000);
+    let junk = rng.bytes(0x4000);
+    t.write(aux, &junk);
+    let tweak = aux;
+    t.write(tweak + 0x11, &[pick(rng, &[0, 1, 1, 2]) as u8]);
+    t.stub_ret(h43::TWEAK_UTIL, false, 0, 0, tweak);
+    let chr = aux + 0x100;
+    let skip = t.rebase(h43::TEX_ANIM_SKIP);
+    let n = pick(rng, &[0, 0, 1, 3, 0xffff_ffff]);
+    let mut words = vec![n];
+    for _ in 0..3 {
+        let v = if rng.chance(6) { chr } else { rng.next() };
+        words.push(v);
+    }
+    let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+    t.patch(skip, &bytes);
+    // names: "a12", "a12" (another copy), "b7"
+    let names = [aux + 0x40, aux + 0x48, aux + 0x50];
+    t.write(names[0], b"a12\0");
+    t.write(names[1], b"a12\0");
+    t.write(names[2], b"b7\0");
+    let parts = [aux + 0x58, aux + 0x60, aux + 0x68];
+    t.write(parts[0], b"p\0");
+    t.write(parts[1], b"p\0");
+    t.write(parts[2], b"q\0");
+    t.write(aux + 0x70, b"\0");
+    // records
+    let count = pick(rng, &[0, 1, 2, 3, 0x8000_0002]);
+    t.w32(mgr + 0x6c, count);
+    let list = aux + 0x200;
+    t.w32(mgr + 0x70, list);
+    let set_table = aux + 0x300;
+    t.w32(mgr + 0x68, set_table);
+    for k in 0..3 {
+        let rec = list + 12 * k;
+        t.w32(rec, rng.below(2));
+        let c = if rng.chance(2) { chr } else { rng.next() };
+        t.w32(rec + 4, c);
+        t.w32(rec + 8, aux + 0x380 + 8 * rng.below(2));
+    }
+    for s in 0..2 {
+        let set = set_table + 0x20 * s;
+        t.w32(set + 8, pick(rng, &[0, 1, 2, 3, 0x8000_0003]));
+        t.w32(set + 0xc, aux + 0x400);
+    }
+    for a in 0..3 {
+        let anim = aux + 0x400 + 0x40 * a;
+        let nm = pick(rng, &[names[0], names[1], names[2], 0, names[0] | 1]);
+        t.w32(anim + 0x20, nm);
+        let pt = pick(rng, &[parts[0], parts[1], parts[2], 0, parts[0] | 1]);
+        t.w32(anim + 4, pt);
+        for o in [0x24, 0x28, 0x2c, 0x30] {
+            let f = rng.float().to_bits();
+            t.w32(anim + o, f);
+        }
+        let targets = aux + 0x600 + 0x20 * a;
+        t.w32(anim + 0x38, targets);
+        t.w32(targets, pick(rng, &[0, 1, 2, 3, 0x8000_0001]));
+        t.w32(targets + 4, aux + 0x680);
+        let frames = aux + 0x6c0 + 0x10 * a;
+        t.w32(anim + 0x3c, frames);
+        t.w32(frames, pick(rng, &[0, 1, 2, 0x8000_0001]));
+        t.w32(frames + 4, aux + 0x700);
+    }
+    anim_char_targets43(t, aux, chr, rng);
+    let found: Vec<u32> = (0..20)
+        .map(|_| if rng.chance(4) { 0 } else { rng.next() })
+        .collect();
+    t.stub_seq(h43::FIND_MATERIAL, true, 3, 3, &found);
+    args[0] = pick(rng, &[names[0], names[1], names[2], 0, aux + 0x70]);
+    args[1] = pick(rng, &[parts[0], parts[1], parts[2], 0, aux + 0x70]);
+    args[7] = rng.next();
+    args[8] = chr;
+}
+
+#[rustfmt::skip]
+const CASES43C: &[Case] = &[
+    Case { prep: Some(prep_anim_char43), ..method("set_animated_materials_char", 0x006b_3060, This::Object, 9, &[(h43::PHYRE_PRINTF, K::Cdecl(7)), (h43::ERASE, K::This(1)), (h43::UPDATE_TARGET, K::This(2)), (h43::ATOI_SLOT, K::ImportC(1))], |m, this, a| { gh43::set_animated_materials_char(m, this, a[0], a[1], a[2], a[7], a[8]); Out::None }) },
+];
+
+#[test]
+fn batch43c_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 300 } else { 1000 };
+        run_cases(t, CASES43C, n, &mut Rng(0x4343_b045));
+    });
+}
+
+impl Twins {
+    /// A recording stub at `sym` (thiscall, `n` words popped, returning
+    /// `ret`) that first appends the `words` words its argument `arg`
+    /// points to into the trace at `*cursor` (so what a callee reads
+    /// through a frame pointer at the time of the call is compared).
+    fn stub_trace_arg(&mut self, sym: u32, n: u32, ret: u32, arg: u8, words: u32, cursor: u32) {
+        let log = self.stub(None, sym, true, n, n, Some(ret));
+        // push esi; push edi; push ecx; mov esi, [esp+16+4*arg]
+        let mut c = vec![0x56, 0x57, 0x51, 0x8b, 0x74, 0x24, 16 + 4 * arg];
+        c.extend([0x8b, 0x3d]);
+        c.extend(cursor.to_le_bytes()); // mov edi, [cursor]
+        c.push(0xb9);
+        c.extend(words.to_le_bytes()); // mov ecx, words
+        c.extend([0xf3, 0xa5]); // rep movsd
+        c.extend([0x89, 0x3d]);
+        c.extend(cursor.to_le_bytes()); // mov [cursor], edi
+        c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// The target update: the flags `+0x70` / `+0x71`, the parameters
+/// (each set or 0), the target's frame numbers (0 to 7 bytes' worth,
+/// unaligned, negative) and entries (random floats); the callees trace
+/// the record, the weight and the pairs they are handed.
+fn prep_update_target43(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    map_page_zero(t);
+    *this = t.zeros(0x100);
+    let aux = t.zeros(0x2000);
+    for k in 0..0x800 {
+        let f = rng.float().to_bits();
+        t.w32(aux + 4 * k, f);
+    }
+    let value = aux;
+    t.w32(value + 4, rng.next());
+    let slot = aux + 0x10;
+    let params = aux + 0x100;
+    t.w32(slot, params);
+    for k in 0..0x1a {
+        let v = if rng.chance(4) { 0 } else { rng.next() | 1 };
+        t.w32(params + 4 * k, v);
+    }
+    t.write(
+        params + 0x70,
+        &[u8::from(rng.chance(5)), u8::from(rng.chance(2))],
+    );
+    let target = aux + 0x200;
+    t.w32(slot + 4, target);
+    let begin = aux + 0x300;
+    t.w32(target, begin);
+    let bytes = pick(
+        rng,
+        &[
+            0,
+            4,
+            8,
+            0xc,
+            0x10,
+            0x14,
+            0x18,
+            0x1c,
+            0x20,
+            0x28,
+            0x13,
+            0xffff_fffc,
+        ],
+    );
+    t.w32(target + 8, begin.wrapping_add(bytes));
+    t.w32(target + 0xc, aux + 0x800 + 4 * rng.below(0x40));
+    let trace = t.zeros(0x1000);
+    t.w32(trace, trace + 4);
+    let r = rng.next();
+    t.stub_trace_arg(h43::SET_TEXTURE, 2, r, 1, 4, trace);
+    let r = rng.next();
+    t.stub_trace_arg(h43::SET_VALUE2, 2, r, 1, 1, trace);
+    let r = rng.next();
+    t.stub_trace_arg(h43::COPY_PAIR, 2, r, 1, 2, trace);
+    args[0] = value;
+    args[1] = slot;
+}
+
+#[rustfmt::skip]
+const CASES43E: &[Case] = &[
+    framed(Case { prep: Some(prep_update_target43), ..method("update_target", 0x006b_3660, This::Object, 2, &[], |m, this, a| { let slots = frame_ebp() + 8; for (k, &w) in a.iter().enumerate() { m.write(slots + 4 * k as u32, w); } gh43::update_target(m, frame_ebp(), this, a[0], a[1]); Out::None }) }, 0x28, 8),
+];
+
+#[test]
+fn batch43e_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 300 } else { 1000 };
+        run_cases(t, CASES43E, n, &mut Rng(0x4343_b046));
     });
 }
