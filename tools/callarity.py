@@ -18,6 +18,10 @@ chr_plate.rs's `Plate::run`) are checked as the call each forwards to: a
 wrapper whose body passes a parameter target (or a fixed one) and a
 parameter word slice to a recognised call inherits its convention and word
 capacity; a wrapper around a closure field gets the callee-side checks only.
+A target may go through the file's own rebasing helper (`fn code(mem, sym)
+-> u32 { sym.wrapping_sub(IMAGE_BASE).wrapping_add(mem.image_base()) }`).
+Every resolved call is kept in `check.calls` (tools/check-tailargs.py
+checks those to tail-jump targets, which the callee check here skips).
 
 CRT intrinsics take their operands on the x87 stack: an St0 shape for
 a two-operand intrinsic (or the reverse) is a mismatch too.
@@ -250,12 +254,33 @@ def check(repo, exe_path, sizes):
         i = bisect.bisect_right(starts, at - 4)
         return code[starts[i - 1]:at] if i else code[:at]
 
+    rebaser_memo = {}
+
+    def rebasers(text):
+        """Names of the file's one-line functions that rebase their last
+        parameter (`sym.wrapping_sub(IMAGE_BASE).wrapping_add(mem.image_base())`
+        or `x.rebase(sym)`)."""
+        if text not in rebaser_memo:
+            found = set()
+            for m in re.finditer(r"\bfn (\w+)\s*(?:<[^>{]*>)?\s*\(([^)]*)\)\s*->\s*u32\s*\{([^{}]*)\}", text):
+                ps = [p.split(":")[0].strip() for p in split_top(m.group(2)) if ":" in p]
+                body = m.group(3)
+                if ps and ("image_base()" in body or "rebase(" in body) and re.search(rf"\b{ps[-1]}\b", body):
+                    found.add(m.group(1))
+            rebaser_memo[text] = found
+        return rebaser_memo[text]
+
     def resolve(expr, code, at):
         expr = expr.strip()
         for pat in (r"(?:[\w.]+\.)?rebase\((.*)\)", r"r\(\s*\w+\s*,\s*(.*)\)"):
             m = re.fullmatch(pat, expr, re.S)
             if m:
                 expr = m.group(1).strip()
+        # the file's own rebasing helper (`code(mem, SYM)`, `at(m, SYM)`:
+        # a function whose body rebases its last argument)
+        m = re.fullmatch(r"(\w+)\((.*)\)", expr, re.S)
+        if m and m.group(1) in rebasers(code_file[0]):
+            expr = split_top(m.group(2))[-1] if split_top(m.group(2)) else expr
         expr = expr.split("::")[-1]
         if re.fullmatch(r"0x[0-9a-fA-F_]+", expr):
             return int(expr.replace("_", ""), 16)
@@ -379,7 +404,8 @@ def check(repo, exe_path, sizes):
         excluded), their types, and whether it takes self."""
         sig = balanced(code, code.index("(", at))
         names, types, has_self = [], [], False
-        for p in split_top(sig[1:-1]) if sig else []:
+        # generic arguments count as brackets: `call: Call<'_, M>` is one
+        for p in split_top(sig[1:-1].replace("<", "(").replace(">", ")")) if sig else []:
             if re.fullmatch(r"&?(?:'\w+\s+)?(?:mut\s+)?self", p):
                 has_self = True
                 continue
@@ -455,6 +481,9 @@ def check(repo, exe_path, sizes):
                         mm = re.fullmatch(r"(?:[\w.]+\.)?rebase\((.*)\)", expr, re.S)
                         if mm:
                             expr = mm.group(1).strip()
+                        mm = re.fullmatch(r"(\w+)\((.*)\)", expr, re.S)
+                        if mm and mm.group(1) in rebasers(code) and split_top(mm.group(2)):
+                            expr = split_top(mm.group(2))[-1]
                         if expr in names:
                             got.add((names.index(expr), names.index(parts[k]), conv, cap, closure, arms_of, has_self))
                         else:
@@ -543,7 +572,10 @@ def check(repo, exe_path, sizes):
                 where = f"{f.relative_to(repo)}:{code[:m.start()].count(chr(10)) + 1}"
                 checked += word_call(where, wname, conv, cap, arms_of, count, a)
                 wrapped_sites.append(where)
-    exe.prefetch({d.a for d in problems if isinstance(d, Deferred)})
+    # every resolved word call (where, label, conv, words, target), for
+    # check-tailargs.py
+    check.calls = [d for d in problems if isinstance(d, Deferred)]
+    exe.prefetch({d.a for d in check.calls})
     out = []
     for d in problems:
         if isinstance(d, Deferred):

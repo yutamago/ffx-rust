@@ -165,6 +165,11 @@ def call_target(insn):
 IMM = re.compile(r"0x([0-9a-f]+)")
 
 
+def signed(v):
+    """A 32-bit immediate as objdump prints it, read as signed."""
+    return v - (1 << 32) if v >= 1 << 31 else v
+
+
 class Frame:
     """A function's stack, propagated along its control flow.
 
@@ -215,7 +220,8 @@ class Frame:
                     elif op in ("popad", "popal"):
                         d = (e, n - 32)
                     elif op in ("sub", "add") and ops and ops[0] == "esp":
-                        d = (e, n + (1 if op == "sub" else -1) * int(imm.group(1), 16)) if imm else None
+                        # `add esp, 0xfffffff8` reserves 8 bytes: a signed immediate
+                        d = (e, n + (1 if op == "sub" else -1) * signed(int(imm.group(1), 16))) if imm else None
                     elif op == "and" and ops and ops[0] == "esp":
                         epochs += 1
                         d = (epochs, 0)
