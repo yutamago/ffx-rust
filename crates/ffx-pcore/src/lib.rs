@@ -12,6 +12,7 @@
 //! - [`p5_more`] has the thread pools' and ring buffer's singletons,
 //!   `PShadowCaster`, `PInputAction`'s destructor, `setLightMatrix`, the
 //!   transpose and the registrations' tables (continuation round);
+//! - [`p5_lights`] has the per-instance light selection `0x004d4140` (round 4);
 //! - [`small`] has the class descriptors' little virtual members (construct
 //!   in place, destroy, forward).
 //!
@@ -37,6 +38,7 @@ pub mod array;
 pub mod freelist;
 pub mod matrix;
 pub mod p5_gdraw;
+pub mod p5_lights;
 pub mod p5_math;
 pub mod p5_more;
 pub mod p5_ring;

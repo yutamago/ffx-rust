@@ -1243,3 +1243,132 @@ fn ring_allocate_matches_the_original() {
         t.unstub_all();
     }
 }
+
+// ---- round 4: the per-instance light selection (p5_lights) ----
+
+/// A `PArray` of `words` at a fresh block: one element inline, more at a
+/// block of their own.
+fn p5e_array(t: &mut Twins, words: &[u32], flag: u32) -> u32 {
+    let arr = t.zeros(8);
+    t.w32(arr, words.len() as u32 | flag);
+    if words.len() == 1 {
+        t.w32(arr + 4, words[0]);
+    } else if !words.is_empty() {
+        let mut b = Vec::new();
+        for w in words {
+            b.extend(w.to_le_bytes());
+        }
+        let data = t.alloc(&b);
+        t.w32(arr + 4, data);
+    }
+    arr
+}
+
+#[test]
+fn pack_lights_matches_the_original() {
+    use ffx_pcore::p5_lights::bridge as pl;
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x4d41_4000);
+        let skip = t.r32(t.rebase(0x00c1_60ec));
+        for case in 0..240u32 {
+            let masks = t.zeros(0x40);
+            t.w32(masks, [0xffff_ffffu32, 1, 6, 0][(case % 4) as usize]);
+            t.w32(masks + 4, [0xffff_ffffu32, 2, 0][(case / 4 % 3) as usize]);
+            t.w32(
+                masks + 0x38,
+                [8u32, 3, 1, 0, 0x100][(case / 3 % 5) as usize],
+            );
+            if case % 16 == 15 {
+                // 40 lights, all kept: more than the sort's insertion
+                // threshold (its third word, the depth budget, matters)
+                t.w32(masks, u32::MAX);
+                t.w32(masks + 0x38, [0x100u32, 20][(case / 16 % 2) as usize]);
+            }
+            // the lights
+            let mut lists = [0u32; 2];
+            for l in &mut lists {
+                let n = if case % 16 == 15 { 40 } else { rng.below(14) };
+                let mut lights = Vec::new();
+                for _ in 0..n {
+                    let light = t.zeros(0x20);
+                    let ty = t.zeros(0x20);
+                    t.w32(ty + 0xc, 1 << rng.below(4));
+                    t.w32(ty + 0x10, rng.below(32));
+                    t.w32(light + 0x18, ty);
+                    if !rng.chance(3) {
+                        let holder = t.zeros(8);
+                        if !rng.chance(3) {
+                            let shadow = t.zeros(0x20);
+                            t.w32(shadow + 0xc, 1 << rng.below(3));
+                            t.w32(shadow + 0x10, rng.below(32));
+                            t.w32(holder + 4, shadow);
+                        }
+                        t.w32(light + 0x14, holder);
+                    }
+                    lights.push(light);
+                }
+                let mut b = Vec::new();
+                for w in &lights {
+                    b.extend(w.to_le_bytes());
+                }
+                b.extend([0; 4]);
+                let data = t.alloc(&b);
+                *l = n | if rng.chance(4) { 0x8000_0000 } else { 0 };
+                let at = t.zeros(8);
+                t.w32(at, *l);
+                t.w32(at + 4, data);
+                *l = at;
+            }
+            let instance = t.zeros(0x100);
+            for (k, &l) in lists.iter().enumerate() {
+                let w0 = t.r32(l);
+                let w1 = t.r32(l + 4);
+                t.w32(instance + 0x9c + 8 * k as u32, w0);
+                t.w32(instance + 0xa0 + 8 * k as u32, w1);
+            }
+            let fill: Vec<u8> = (0..0x40).map(|_| rng.next() as u8).collect();
+            t.write(instance + 0xac, &fill);
+            // the switches
+            let mut switches = Vec::new();
+            for _ in 0..rng.below(4) {
+                let sw = t.zeros(0x20);
+                let data = t.zeros(0x60);
+                t.w32(data, [0x40u32, 0x20, 8][rng.below(3) as usize]);
+                t.w32(sw + 4, data);
+                if rng.chance(3) {
+                    t.w32(sw + 0x14, rng.below(0x40));
+                } else {
+                    let block = t.zeros(0x10);
+                    let off = [0u16, 3, 4, 8, 0x1c][rng.below(5) as usize];
+                    let len = [0u16, 4, 0x10, 0x20, 0xe010][rng.below(5) as usize];
+                    t.write(block + 8, &off.to_le_bytes());
+                    t.write(block + 0xa, &len.to_le_bytes());
+                    t.w32(sw + 0x14, block);
+                }
+                switches.push(sw);
+            }
+            let segments = t.zeros(0x20);
+            let arr = p5e_array(&mut t, &switches, 0);
+            t.w32(segments + 0x10, arr);
+            let stream = t.random(&mut rng, 0x40);
+            let words = t.zeros(4);
+            t.w32(words, stream);
+            let out = t.random(&mut rng, 0x60);
+            let mode = if case % 5 == 2 { skip } else { skip ^ 1 };
+            // the pairs and the bit writer's word on the port's stack
+            // (as the original's _alloca and frame word): not compared
+            let cursor = t.b.stack_range().end - 0x400;
+            let pairs = cursor - 0x200;
+            t.b.set_call_top(Some(pairs - 0x100));
+            let args = [masks, segments, instance, words, out, 0x5a5a, mode];
+            t.check_conv(
+                &format!("pack lights {case}"),
+                0x004d_4140,
+                Conv::Stdcall,
+                &args,
+                |g| pl::pack_lights(g, args, pairs, cursor),
+            );
+            t.b.set_call_top(None);
+        }
+    }
+}
