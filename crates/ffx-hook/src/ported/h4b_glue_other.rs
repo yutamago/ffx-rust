@@ -50,9 +50,9 @@ ported! {
         bb::make_texture_begin(&mut mem(), owner, w, h, format, flags, info, stats)
     }
     /// `gdraw_makeVertexBufferEnd_00a3a5f0(info, stats)`: the buffer
-    /// descriptions in a frame (`ebp - 0x4c`).
+    /// descriptions in a frame (`ebp - 0x4c` .. `ebp - 4`, 18 words).
     gdraw_makeVertexBufferEnd_00a3a5f0 @ 0x00a3_a5f0 => extern "stdcall" fn make_vertex_buffer_end(info: u32, _stats: u32) -> u32 {
-        let mut f = StackFrame::<0x11>::new();
+        let mut f = StackFrame::<0x12>::new();
         bb::make_vertex_buffer_end(&mut mem(), f.at(), info)
     }
     /// `gdraw_createRowTexture_00a3a9f0(w, texels)`: the description in a

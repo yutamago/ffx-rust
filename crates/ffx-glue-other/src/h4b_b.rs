@@ -116,7 +116,7 @@ pub fn make_texture_begin(
 /// `+4`; sizes `+8`, `+0xc`) with the device's `CreateBuffer` (vtable
 /// `+0xc`; immutable, bind 1 then 2) into the record's `+0`/`+4`. The
 /// descriptions and initial data live in the caller's frame (`frame`:
-/// the original's `ebp - 0x4c`, 0x44 bytes). On success the record moves
+/// the original's `ebp - 0x4c` up to `ebp - 4`, 0x48 bytes). On success the record moves
 /// to kind 2 (`IggyHeap_moveBlock(record, size, info + 0x14, 2)`);
 /// on a failed call (negative `HRESULT`) both buffers are released, the
 /// record goes back to the front of its heap's free ring (`[record +

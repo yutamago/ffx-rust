@@ -1199,7 +1199,7 @@ fn bb_make_vertex_buffer_end() {
                     }
                 }
             };
-            t.write(ebp - 0x4c, &[0xa5; 0x44]);
+            t.write(ebp - 0x4c, &[0xa5; 0x48]);
             t.b.set_call_top(Some(ebp - 0x200));
             let addr = t.rebase(0x00a3_a5f0);
             let ra =
@@ -1212,8 +1212,8 @@ fn bb_make_vertex_buffer_end() {
             fix(&mut t.a);
             fix(&mut t.b);
             t.diff(&w);
-            let x = Oracle::read(&mut t.a, ebp - 0x4c, 0x44).unwrap();
-            let y = Oracle::read(&mut t.b, ebp - 0x4c, 0x44).unwrap();
+            let x = Oracle::read(&mut t.a, ebp - 0x4c, 0x48).unwrap();
+            let y = Oracle::read(&mut t.b, ebp - 0x4c, 0x48).unwrap();
             assert_eq!(x, y, "{w}: frame");
         }
         assert!(failed > 100, "{name}: {failed}");
