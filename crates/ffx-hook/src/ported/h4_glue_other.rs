@@ -14,7 +14,8 @@ use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
-    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, menu as mn, misc as m, movie as mv, r3,
+    sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1994,5 +1995,56 @@ ported! {
     SfxEventGroup_load_00710c50 @ 0x0071_0c50 => extern "thiscall" fn event_group_load(this: u32, path: u32) -> u32 {
         let mut frame = StackFrame::<{ (f7::GROUP_LOAD_FRAME / 4) as usize }>::new();
         f7::event_group_load(&mut mem(), frame.at(), this, path)
+    }
+    // ---- continuation round 5, batch 1 (ffx_glue_other::h4_g1)
+    /// `TOMakePktBtlDamageNumRGBA(n, x, y, r, g, b, a)`.
+    TOMakePktBtlDamageNumRGBA @ 0x008f_b840 => extern "C" fn damage_num(n: u32, x: u32, y: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        g1::damage_num(&mut mem(), n, x, y, [r, g, b, a])
+    }
+    /// `TOMakePktBtlIconA(kind, x, y, alpha)`.
+    TOMakePktBtlIconA @ 0x008f_bcc0 => extern "C" fn btl_icon(kind: u32, x: u32, y: u32, alpha: u32) -> u32 {
+        g1::btl_icon(&mut mem(), kind, x, y, alpha)
+    }
+    /// `TODrawLimitBG()`.
+    TODrawLimitBG @ 0x008a_1ce0 => extern "C" fn limit_bg() -> u32 {
+        g1::limit_bg(&mut mem())
+    }
+    /// `TOMkpBtlLimitSpecialGauge(x, y, w)`.
+    TOMkpBtlLimitSpecialGauge @ 0x0090_1300 => extern "C" fn limit_special_gauge(x: u32, y: u32, w: u32) -> u32 {
+        g1::limit_special_gauge(&mut mem(), x, y, w)
+    }
+    /// `TOMkpBtlRatioNumber_00901490(ratio, x, y, c)`.
+    TOMkpBtlRatioNumber_00901490 @ 0x0090_1490 => extern "C" fn ratio_number(ratio: u32, x: u32, y: u32, c: u32) -> u32 {
+        g1::ratio_number(&mut mem(), ratio, x, y, c)
+    }
+    /// `TOBtlDrawSimpleHelpMes(i)`: the width word the original keeps in
+    /// its argument slot is a `StackFrame` word.
+    TOBtlDrawSimpleHelpMes @ 0x0089_d9b0 => extern "C" fn simple_help(i: u32) -> u32 {
+        let mut width = StackFrame::<1>::new();
+        g1::simple_help(&mut mem(), width.at(), i).unwrap_or(0)
+    }
+    /// `TODrawWaitBtlWinSub(w)`.
+    TODrawWaitBtlWinSub @ 0x008a_7520 => extern "C" fn wait_win_sub(w: u32) -> u32 {
+        g1::wait_win_sub(&mut mem(), w).unwrap_or(0)
+    }
+    /// `TOMkpShape2ECCCell_008f8d50(n, x, y, w, h, alpha)`.
+    TOMkpShape2ECCCell_008f8d50 @ 0x008f_8d50 => extern "C" fn shape_cell(n: u32, x: u32, y: u32, w: u32, h: u32, alpha: u32) -> u32 {
+        let mut frame = StackFrame::<{ (g1::CELL_FRAME / 4) as usize }>::new();
+        g1::shape_cell(&mut mem(), frame.at(), [n, x, y, w, h, alpha])
+    }
+    /// `TOSeqPrimLayoutImage_008f59c0(x, y, w, h, u, v, c0, c1)`.
+    TOSeqPrimLayoutImage_008f59c0 @ 0x008f_59c0 => extern "C" fn seq_layout_image(x: u32, y: u32, w: u32, h: u32, u: u32, v: u32, c0: u32, c1: u32) -> u32 {
+        let mut frame = StackFrame::<{ (g1::CELL_FRAME / 4) as usize }>::new();
+        g1::seq_layout_image(&mut mem(), frame.at(), [x, y, w, h, u, v, c0, c1])
+    }
+    /// `TOAddPktMenuIconRGBA(ret, x, y, icon, r, g, b, a)`.
+    TOAddPktMenuIconRGBA @ 0x008e_b270 => extern "C" fn menu_icon(ret: u32, x: u32, y: u32, icon: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        let mut frame = StackFrame::<{ (g1::ICON_FRAME / 4) as usize }>::new();
+        g1::menu_icon(&mut mem(), frame.at(), [ret, x, y, icon, r, g, b, a])
+    }
+    /// `movie_disp2(on, m, v0, v1, e)`.
+    movie_disp2 @ 0x0064_2fe0 => extern "C" fn movie_disp2(on: u32, m: u32, v0: u32, v1: u32, e: u32) -> u32 {
+        let mut frame = StackFrame::<{ (g1::DISP2_FRAME / 4) as usize }>::new();
+        g1::movie_disp2(&mut mem(), frame.at(), [on, m, v0, v1, e])
     }
 }

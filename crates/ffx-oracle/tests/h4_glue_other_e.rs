@@ -27,7 +27,7 @@ use ffx_bridge::Mem;
 use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
-    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7,
+    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -4093,5 +4093,421 @@ fn f7_event_group_load() {
             ran += t.log_entries();
         }
         assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 5, batch 1 (ffx_glue_other::h4_g1)
+
+/// The remap and shape stubs of the g1 drawers; their tags.
+fn g1_shape_stubs(t: &mut Twins) -> Vec<u32> {
+    t.stub(e1::REMAP_X2, 1, true);
+    t.stub(e1::REMAP_Y2, 1, true);
+    t.stub(e1::GET_TIME, 0, true);
+    let stubs = [
+        (e1::SHAPE_UV, 9),
+        (e1::SHAPE_UV_C2, 11),
+        (g1::SHAPE_XY_C2, 5),
+        (g1::CTRL_PKT, 0),
+        (g1::MES_FONT_DRAW, 12),
+        (g1::COMMAND_WINDOW, 1),
+        (g1::SET_CUR_POS, 3),
+    ];
+    for (sym, n) in stubs {
+        t.stub(sym, n, false);
+    }
+    let mut tags = stubs.map(|s| s.0).to_vec();
+    tags.extend([e1::REMAP_X2, e1::REMAP_Y2, e1::GET_TIME]);
+    tags
+}
+
+/// Fresh `ST0` results for the float stubs.
+fn g1_floats(t: &mut Twins, rng: &mut Rng) {
+    for tag in [e1::REMAP_X2, e1::REMAP_Y2, e1::GET_TIME] {
+        let v = rng.double();
+        t.ret_f64(tag, v);
+    }
+}
+
+/// The damage digits, the battle icons, the limit plates and gauge.
+#[test]
+fn g1_shapes() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_9101);
+        let tags = g1_shape_stubs(&mut t);
+        let f32s = [
+            0x00b5_ee90,
+            0x00b6_56c4,
+            0x00b5_9830,
+            0x00b4_9988,
+            0x00b6_67e0,
+            0x00b6_6dc0,
+            0x00b6_56e4,
+            0x00b6_6dd8,
+            0x00b3_eb9c,
+            0x00b6_56d8,
+            0x00b6_6df4,
+            0x00b6_6db8,
+            0x00b6_6e1c,
+            0x00b6_6dd0,
+            0x00b6_6d90,
+            0x00b6_6db4,
+            0x00b6_6dbc,
+            0x00b6_6dc8,
+            0x00b6_67e8,
+            0x00b6_6d80,
+            0x00b6_5868,
+            0x00b5_ef64,
+            0x00b4_1d88,
+            0x00b5_f434,
+            0x00b4_3dc0,
+            0x00b5_ef1c,
+            0x00b5_f38c,
+            0x00b5_f3a0,
+            0x00b5_f348,
+            0x00b5_f3c4,
+            0x00b5_f3a8,
+            0x00b5_efa0,
+            0x00b5_f31c,
+            0x00b5_f42c,
+            0x00b5_f3d0,
+            0x00b5_f368,
+            0x00b9_2308,
+            0x00b5_4c78,
+            0x00b5_f430,
+            0x00b5_f374,
+            0x00b5_ee98,
+            0x00b6_56c0,
+            0x00b6_6b70,
+            0x00b6_6b5c,
+            0x00b6_6b7c,
+            0x00b5_f0a8,
+            0x00b6_6ba0,
+            0x00b6_6ba4,
+        ];
+        let f64s = [
+            0x00b6_5ad0,
+            0x00b6_6d28,
+            0x00b5_8b50,
+            0x00b6_6cf8,
+            0x00b6_6c48,
+            0x00b6_6c40,
+        ];
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &f32s, &f64s);
+            g1_floats(&mut t, &mut rng);
+            let n = {
+                let r0_ = rng.small();
+                let r1_ = rng.next();
+                rng.pick(&[r0_ % 30, r0_, r1_, 0x8000_0000, 0xffff_fffb])
+            };
+            let (x, y) = (rng.small(), rng.small());
+            let rgba: [u32; 4] = std::array::from_fn(|_| {
+                let r0_ = rng.below(256);
+                let r1_ = rng.next();
+                rng.pick(&[r0_, r0_, r1_])
+            });
+            let mut args = vec![n, x, y];
+            args.extend(rgba);
+            t.check(&format!("{w} damage"), 0x008f_b840, &args, |g| {
+                u(g1::damage_num(g, n, x, y, rgba))
+            });
+            let kind = rng.pick(&[0, 1, 2, 3, 4, 0xffff_ffff]);
+            let alpha = {
+                let r0_ = rng.next();
+                rng.pick(&[0x80, 0, r0_])
+            };
+            t.check(
+                &format!("{w} icon"),
+                0x008f_bcc0,
+                &[kind, x, y, alpha],
+                |g| u(g1::btl_icon(g, kind, x, y, alpha)),
+            );
+            t.check(&format!("{w} limit bg"), 0x008a_1ce0, &[], |g| {
+                u(g1::limit_bg(g))
+            });
+            let gw = {
+                let r0_ = rng.small();
+                let r1_ = rng.next();
+                rng.pick(&[r0_, r1_])
+            };
+            t.check(&format!("{w} gauge"), 0x0090_1300, &[x, y, gw], |g| {
+                u(g1::limit_special_gauge(g, x, y, gw))
+            });
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The ratio number, the simple help and the wait window's cursor.
+#[test]
+fn g1_numbers_help_cursor() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_9102);
+        let mut tags = g1_shape_stubs(&mut t);
+        let width = t.zeros(4);
+        let f = t.stub_code(g1::MES_FONT_WIDTH, false, 5, 0, false, &[wr(2, width)]);
+        t.jump(g1::MES_FONT_WIDTH, f);
+        tags.push(g1::MES_FONT_WIDTH);
+        let f32s = [
+            0x00b5_eea8,
+            0x00b5_f030,
+            0x00b4_3db8,
+            0x00b5_eef0,
+            0x00b5_efb0,
+            0x00b5_efcc,
+            0x00b5_ee64,
+            0x00b5_eedc,
+            0x00b5_eed0,
+            0x00b5_edf4,
+            0x00b5_ee20,
+            0x00b5_ee0c,
+            0x00b5_ee2c,
+            0x00b5_ee10,
+            0x00b5_eee4,
+        ];
+        let f64s = [0x00b9_22e0, 0x00b4_1d38, 0x00b9_2220];
+        let win = t.zeros(0x100);
+        let mut shown = 0;
+        let mut cursors = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &f32s, &f64s);
+            if rng.below(2) == 0 {
+                let v = rng.pick(&[100.0f64, 10.0, 1000.0]);
+                let at = t.rebase(0x00b9_22e0);
+                t.write(at, &v.to_le_bytes());
+            }
+            g1_floats(&mut t, &mut rng);
+            // the ratio number
+            let ratio = {
+                let a = (rng.below(10_000) as f32 / 100.0).to_bits();
+                let b = rng.float();
+                let c = (rng.below(100_000) as f32 / 3.0 - 20_000.0).to_bits();
+                rng.pick(&[a, a, b, c])
+            };
+            let (x, y, c) = (rng.small(), rng.small(), rng.next());
+            let sse = rng.pick(&[0, 1]);
+            t.g32(ffx_bridge::x87::SSE2_AVAILABLE.sym, sse);
+            t.check(&format!("{w} ratio"), 0x0090_1490, &[ratio, x, y, c], |g| {
+                u(g1::ratio_number(g, ratio, x, y, c))
+            });
+            // the simple help
+            let idx = rng.below(4);
+            for k in 0..4 {
+                let at = t.rebase(g1::SIMPLE_HELP) + 16 * k;
+                let on = rng.pick(&[0, 1, 1]);
+                t.w32(at, on);
+                let (a, b) = (rng.next(), rng.next());
+                t.w32(at + 4, a);
+                t.w32(at + 8, b);
+            }
+            let wv = {
+                let r0_ = rng.float();
+                let r1_ = (rng.below(600) as f32).to_bits();
+                rng.pick(&[r0_, r1_])
+            };
+            t.w32(width, wv);
+            let slot = t.ebp_for(1) + 8;
+            t.check_framed(
+                &format!("{w} help"),
+                0x0089_d9b0,
+                &[idx],
+                slot,
+                &[(0, 4)],
+                |g| match g1::simple_help(g, slot, idx) {
+                    Some(v) => {
+                        shown += 1;
+                        u(v)
+                    }
+                    None => Out::None,
+                },
+            );
+            // the wait window's cursor
+            for k in 0..0x40 {
+                let v = rng.next();
+                t.w32(win + 4 * k, v);
+            }
+            let start = {
+                let r0_ = rng.float();
+                rng.pick(&[
+                    0,
+                    0x8000_0000,
+                    1f32.to_bits(),
+                    0xbf80_0000,
+                    0x7fc0_0000,
+                    r0_,
+                ])
+            };
+            t.w32(win + 0xdc, start);
+            let cols = rng.pick(&[0u16, 1, 2, 3, 5, 0xffff]);
+            let rows = rng.pick(&[0u16, 1, 2, 4, 0xfffe]);
+            let first = rng.pick(&[0u16, 1, 3, 0xffff]);
+            let cursor = (i32::from(first as i16) + rng.below(12) as i32 - 2) as u16;
+            t.w16(win + 0x38, cols);
+            t.w16(win + 0x3a, rows);
+            t.w16(win + 0x40, first);
+            t.w16(win + 0x42, cursor);
+            let step = rng.small() as u16;
+            t.w16(win + 0x62, step);
+            let fx = {
+                let r0_ = rng.float();
+                let r1_ = (rng.below(500) as f32).to_bits();
+                rng.pick(&[r0_, r1_])
+            };
+            let fy = rng.float();
+            t.w32(win + 0x78, fx);
+            t.w32(win + 0x7c, fy);
+            let skip = rng.pick(&[0, 0, 1, 2]);
+            t.g32(g1::WAIT_WIN_SKIP.sym, skip);
+            let before = t.log_entries();
+            t.check(
+                &format!("{w} wait sub"),
+                0x008a_7520,
+                &[win],
+                |g| match g1::wait_win_sub(g, win) {
+                    Some(v) => u(v),
+                    None => Out::None,
+                },
+            );
+            if t.log_entries() > before + 1 {
+                cursors += 1;
+            }
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+        assert!(
+            shown > 50 && cursors > 20,
+            "{name}: {shown} helps, {cursors} cursors"
+        );
+    }
+}
+
+/// The three UI records and `movie_disp2`.
+#[test]
+fn g1_records_movie() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_9103);
+        let (cw, ch) = (t.zeros(4), t.zeros(4));
+        let f = t.stub_code(g1::IMAGE_WH, false, 3, 0, false, &[wr(1, cw), wr(2, ch)]);
+        t.jump(g1::IMAGE_WH, f);
+        let stubs = [
+            (g1::SHAPE_TEXTURE, 1),
+            (e4::DRAW_UI_ELEMENT, 5),
+            (g1::BEGIN_SCISSOR_UV, 8),
+        ];
+        for (sym, n) in stubs {
+            t.stub(sym, n, false);
+        }
+        t.stub_at(g1::MATRIX_COPY, true, 1, 1, &[]);
+        t.stub_at(g1::RENDER_TO_TEXTURE, true, 11, 11, &[]);
+        let mut tags = stubs.map(|s| s.0).to_vec();
+        tags.extend([g1::IMAGE_WH, g1::MATRIX_COPY, g1::RENDER_TO_TEXTURE]);
+        let f64s = [
+            0x00b4_1d38,
+            0x00b4_1d68,
+            0x00b4_1d30,
+            0x00b4_1d58,
+            0x00b9_22b0,
+            0x00b3_13a0,
+        ];
+        let vecs = t.zeros(0x20);
+        let compare = |t: &mut Twins, w: &str, at: u32, len: usize| {
+            let (mut x, mut y) = (vec![0; len], vec![0; len]);
+            t.a.read_bytes(at, &mut x);
+            t.b.read_bytes(at, &mut y);
+            assert_eq!(x, y, "{w}: frame +{at:#x}");
+        };
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[], &f64s);
+            let size = {
+                let r0_ = rng.float();
+                rng.pick(&[512f32.to_bits(), 256f32.to_bits(), r0_])
+            };
+            t.w32(cw, size);
+            let size = {
+                let r0_ = rng.float();
+                rng.pick(&[512f32.to_bits(), 1024f32.to_bits(), r0_])
+            };
+            t.w32(ch, size);
+            let keep = rng.pick(&[0, 1, 1]);
+            t.ret(g1::BEGIN_SCISSOR_UV, keep);
+            // the shape cell
+            let a: [u32; 6] = [
+                {
+                    let r0_ = rng.below(40);
+                    let r1_ = rng.next();
+                    rng.pick(&[r0_, r0_, r1_, 0x8000_0000])
+                },
+                rng.float(),
+                rng.float(),
+                rng.float(),
+                rng.float(),
+                rng.next(),
+            ];
+            let frame = t.ebp_for(6) - 0xa8;
+            t.write(frame, &[0; g1::CELL_FRAME as usize]);
+            t.check_framed(&format!("{w} cell"), 0x008f_8d50, &a, frame, &[], |g| {
+                u(g1::shape_cell(g, frame, a))
+            });
+            compare(&mut t, &format!("{w} cell"), frame, 8);
+            compare(&mut t, &format!("{w} cell"), frame + 0xc, 0x98);
+            // the layout image
+            let a: [u32; 8] = std::array::from_fn(|k| {
+                if k < 6 {
+                    let r0_ = rng.small();
+                    let r1_ = rng.next();
+                    rng.pick(&[r0_, r0_, r1_])
+                } else {
+                    rng.next()
+                }
+            });
+            let frame = t.ebp_for(8) - 0xa8;
+            t.write(frame, &[0; g1::CELL_FRAME as usize]);
+            t.check_framed(&format!("{w} layout"), 0x008f_59c0, &a, frame, &[], |g| {
+                u(g1::seq_layout_image(g, frame, a))
+            });
+            compare(&mut t, &format!("{w} layout"), frame, 8);
+            compare(&mut t, &format!("{w} layout"), frame + 0xc, 0x98);
+            // the menu icon
+            let a: [u32; 8] = std::array::from_fn(|k| match k {
+                1 | 2 => rng.small(),
+                _ => rng.next(),
+            });
+            let frame = t.ebp_for(8) - 0xac;
+            t.write(frame, &[0; g1::ICON_FRAME as usize]);
+            t.check_framed(&format!("{w} icon"), 0x008e_b270, &a, frame, &[], |g| {
+                u(g1::menu_icon(g, frame, a))
+            });
+            compare(&mut t, &format!("{w} icon"), frame, 8);
+            compare(&mut t, &format!("{w} icon"), frame + 0x10, 0x98);
+            // movie_disp2
+            for k in 0..8 {
+                let v = rng.float();
+                t.w32(vecs + 4 * k, v);
+            }
+            let scene = rng.next();
+            t.g32(g1::PHYRE_SCENE.sym, scene);
+            let a = [
+                rng.pick(&[0, 1, 2]),
+                {
+                    let r0_ = rng.next();
+                    rng.pick(&[0, r0_])
+                },
+                rng.pick(&[0, vecs]),
+                rng.pick(&[0, vecs + 0x10]),
+                rng.next(),
+            ];
+            let frame = t.ebp_for(5) - 0x60;
+            t.write(frame, &[0x5a; 0x40]);
+            t.check_framed(&format!("{w} disp2"), 0x0064_2fe0, &a, frame, &[], |g| {
+                u(g1::movie_disp2(g, frame, a))
+            });
+            compare(&mut t, &format!("{w} disp2"), frame, 0x40);
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
     }
 }
