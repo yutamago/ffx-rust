@@ -1372,3 +1372,162 @@ fn pack_lights_matches_the_original() {
         }
     }
 }
+
+/// `GDraw`'s device objects (`0x00a34cc0`): the device a COM object whose
+/// creation methods log their descriptions by contents (the original's
+/// and the port's frames differ) and write a result through their out
+/// pointer; each method's `HRESULT` from its own cell. Per case one
+/// method fails (out of memory or another error; the pixel shaders and
+/// the layouts warn and go on, the states end the set-up), or the blend
+/// maker returns 0, or the index block's allocation fails; some shader
+/// table entries have no bytecode. The state entries' set-up, the blend
+/// maker, the dynamic buffers and the Iggy imports are recorded.
+/// A device method for the test: vtable offset, the words logged, the out
+/// pointer's offset, pops.
+type P5gMethod = (u32, Vec<(u8, Option<u32>)>, u8, u32);
+
+#[test]
+fn p5g_gdraw_device_objects_match_the_original() {
+    use ffx_pcore::p5_gdraw::{self as gd};
+    use ffx_pcore::p5_gdraw_device::{self as gdv, bridge as gdvb};
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x6d4a_4cc0);
+        // (vtable offset, the words logged, the out pointer's offset)
+        let plain = |n: u8| -> Vec<(u8, Option<u32>)> { (1..=n).map(|i| (4 * i, None)).collect() };
+        let desc = |n: u32, then: &[(u8, Option<u32>)]| -> Vec<(u8, Option<u32>)> {
+            let mut v: Vec<(u8, Option<u32>)> = (0..n).map(|k| (8, Some(4 * k))).collect();
+            v.extend_from_slice(then);
+            v
+        };
+        let mut buffer = plain(1);
+        buffer.extend(desc(6, &[]).iter().copied());
+        buffer.extend((0..3u32).map(|k| (12, Some(4 * k))));
+        buffer.push((16, None));
+        let methods: Vec<P5gMethod> = vec![
+            (0x3c, plain(5), 20, 5),
+            (0x30, plain(5), 20, 5),
+            (0x2c, plain(6), 24, 6),
+            (0x58, desc(10, &[(12, None)]), 12, 3),
+            (0x5c, desc(13, &[(12, None)]), 12, 3),
+            (
+                0x50,
+                desc(11, &[(8, Some(0x100)), (8, Some(0x104)), (12, None)]),
+                12,
+                3,
+            ),
+            (0x54, desc(13, &[(12, None)]), 12, 3),
+            (0x0c, buffer, 16, 4),
+        ];
+        let mut hrs = Vec::new();
+        let mut slots = Vec::new();
+        for (k, (off, words, out, pops)) in methods.iter().enumerate() {
+            let hr = t.zeros(4);
+            let result = t.zeros(4);
+            t.w32(result, 0x0b00_0000 + k as u32);
+            let s = deref_stub(
+                &mut t,
+                0x400 + off,
+                words,
+                Some((*out, result)),
+                *pops,
+                Ret::Cell(hr),
+            );
+            hrs.push(hr);
+            slots.push((*off, s));
+        }
+        let dev = com_object(&mut t, &mut rng, &slots, 0x10);
+        let words = [(4, None), (8, None), (12, None), (16, None), (20, None)];
+        let warn4 = deref_stub(&mut t, 0x874, &words[..4], None, 0, Ret::Imm(0x77));
+        let warn5 = deref_stub(&mut t, 0x875, &words, None, 0, Ret::Imm(0x78));
+        let block = t.zeros(0x6000);
+        let block_cell = t.zeros(4);
+        let malloc = deref_stub(&mut t, 0x86c, &plain(3), None, 3, Ret::Cell(block_cell));
+        let free = deref_stub(&mut t, 0x870, &plain(1), None, 1, Ret::Imm(0));
+        let blend_cell = t.zeros(4);
+        // the image's tables, kept to restore them after each case
+        let tables: Vec<(u32, usize)> = [
+            (0x00c7_70b8u32, 13 * 8),
+            (0x00c8_06d8, 32 * 8),
+            (0x00c8_42b8, 10 * 8),
+            (0x00c8_47d8, 8),
+            (0x00c8_4a8c, 8),
+            (0x00c8_5a98, 3 * 8),
+            (0x00b1_7504, 4),
+        ]
+        .iter()
+        .map(|&(a, n)| (t.rebase(a), n))
+        .collect();
+        let saved: Vec<Vec<u8>> = tables
+            .iter()
+            .map(|&(a, n)| Oracle::read(&mut t.a, a, n).unwrap())
+            .collect();
+        for case in 0..40u32 {
+            t.stub(0x00a3_5b40, false, 2, 0, Ret::Imm(0x5b40));
+            t.stub(0x00a3_5670, false, 4, 0, Ret::Cell(blend_cell));
+            t.stub(0x00a3_5a70, false, 2, 0, Ret::Imm(0x5a70 + case));
+            let failing = case % 10;
+            let oom = case % 3 == 0;
+            let bad = if oom {
+                gd::E_OUTOFMEMORY
+            } else {
+                0x8000_0000 | rng.next()
+            };
+            for (k, &hr) in hrs.iter().enumerate() {
+                let v = if failing == k as u32 + 1 {
+                    bad
+                } else {
+                    rng.next() % 2
+                };
+                t.w32(hr, v);
+            }
+            t.w32(
+                blend_cell,
+                if failing == 9 { 0 } else { 0x0b1e_0000 + case },
+            );
+            t.w32(block_cell, if case % 7 == 5 { 0 } else { block });
+            let warn = if oom { warn4 } else { warn5 };
+            for (slot, f) in [
+                (gd::WARN_SLOT, warn),
+                (0x00b0_c86c, malloc),
+                (0x00b0_c870, free),
+            ] {
+                let at = t.rebase(slot);
+                t.w32(at, f);
+            }
+            // some shader pairs without bytecode, another MaxLOD
+            for &(a, n) in &tables[..6] {
+                for k in 0..(n as u32) / 8 {
+                    if rng.chance(4) {
+                        t.w32(a + 8 * k, 0);
+                    }
+                }
+            }
+            let lod = [0x7f7f_ffffu32, 0x3fc0_0000, 0x7fc0_0001][(case % 3) as usize];
+            t.w32(tables[6].0, lod);
+            let state = t.random(&mut rng, 0xb00);
+            t.w32(state, dev);
+            let g = t.rebase(gd::STATE);
+            t.w32(g, state);
+            t.check_masked(
+                &format!("device objects case {case}"),
+                0x00a3_4cc0,
+                Conv::Cdecl,
+                &[],
+                0,
+                |g| {
+                    let frame = g.0.stack_range().start + 0x400;
+                    // junk where the descriptions go: the port must set
+                    // what it hands over
+                    Mem::write_bytes(g, frame, &[0xa5; gdvb::FRAME as usize]);
+                    gdvb::create_device_objects(g, frame);
+                    0
+                },
+            );
+            for (&(a, _), bytes) in tables.iter().zip(&saved) {
+                t.write(a, bytes);
+            }
+            t.unstub_all();
+        }
+        assert_eq!(gdv::quad_indices().len(), 0x6000);
+    }
+}
