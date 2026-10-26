@@ -1444,3 +1444,338 @@ fn misc_ring_next_segment_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn misc_array_set_view_matches_the_original() {
+    use misc::bridge::Release;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8888_b5b5);
+        let cases = [
+            (0x005a_f8d0, Release::Free),
+            (0x005b_33c0, Release::Free),
+            (0x005a_f920, Release::FreeSet),
+            (0x005a_f970, Release::FreeSet),
+            (0x005c_7a10, Release::FreeSet),
+            (0x005c_7a60, Release::FreeSet),
+            (0x005c_79c0, Release::With(0x005c_1ef0)),
+        ];
+        for (f, release) in cases {
+            for i in 0..24 {
+                let arr = object(&mut t, &mut rng, 2, false);
+                let header = rng.below(50) | if i % 2 == 0 { 0x8000_0000 } else { 0 };
+                let old = if i % 3 == 0 { 0 } else { rng.next() };
+                t.w32(arr, header);
+                t.w32(arr + 4, old);
+                let data = if i % 5 == 0 { old } else { rng.next() };
+                let count = if i % 7 == 0 {
+                    0x8000_0000 | rng.next()
+                } else {
+                    rng.below(100)
+                };
+                t.stub(misc::PHYRE_FREE, false, 1, 0, rng.next());
+                t.stub(0x005c_1ef0, false, 2, 0, rng.next());
+                t.check(
+                    &format!("{name} {f:#x} #{i}"),
+                    f,
+                    Conv::Thiscall(arr),
+                    &[data, count],
+                    |g| Out::U32(misc::bridge::array_set_view(g, release, arr, data, count)),
+                );
+                t.unstub(misc::PHYRE_FREE);
+                t.unstub(0x005c_1ef0);
+            }
+        }
+    }
+}
+
+#[test]
+fn misc_free_records_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x9999_b5b5);
+        for i in 0..24 {
+            let n = if i % 4 == 0 { 0 } else { rng.below(6) };
+            let records = if i % 6 == 0 {
+                0
+            } else {
+                object(&mut t, &mut rng, 5 * n.max(1), false)
+            };
+            if records != 0 {
+                for k in 0..n {
+                    let at = records + 20 * k + 0xc;
+                    t.w32(
+                        at,
+                        rng.below(9) | if rng.chance(2) { 0x8000_0000 } else { 0 },
+                    );
+                    t.w32(at + 4, if rng.chance(3) { 0 } else { rng.next() });
+                }
+            }
+            t.stub(misc::PHYRE_FREE, false, 1, 0, rng.next());
+            let addr = t.rebase(0x005c_1ef0);
+            let ra = t.a.call(addr, Conv::Cdecl, &[records, n]).unwrap();
+            let rb = misc::bridge::free_records(&mut G(&mut t.b), records, n);
+            if records != 0 {
+                assert_eq!(ra.eax, rb, "{name} #{i}: eax");
+            }
+            t.diff(&format!("{name} records #{i}"));
+            t.unstub(misc::PHYRE_FREE);
+        }
+    }
+}
+
+#[test]
+fn misc_add_named_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xaaaa_b5b5);
+        let head = t.rebase(misc::NAMED_LIST);
+        let words = ["a", "ab", "position", "normal", "uv0"];
+        for i in 0..24 {
+            let mut first = 0;
+            for _ in 0..rng.below(4) {
+                let s = words[rng.below(words.len() as u32) as usize];
+                let at = t.alloc(&[s.as_bytes(), &[0]].concat());
+                let node = t.zeros(8);
+                t.w32(node, at);
+                t.w32(node + 4, first);
+                first = node;
+            }
+            t.w32(head, first);
+            let node = object(&mut t, &mut rng, 2, false);
+            let s = words[rng.below(words.len() as u32) as usize];
+            let at = if i % 5 == 0 {
+                0
+            } else {
+                t.alloc(&[s.as_bytes(), &[0]].concat())
+            };
+            t.w32(node, at);
+            t.check(
+                &format!("{name} add #{i}"),
+                0x005c_8660,
+                Conv::Cdecl,
+                &[node],
+                |g| Out::U32(misc::bridge::add_named(g, node)),
+            );
+        }
+    }
+}
+
+/// (original, constructor, vtable, word at `+4`, zeroed words).
+type CtorCase = (u32, u32, Option<u32>, Option<u32>, &'static [u32]);
+
+/// The words `+0x90..=+0xa8` the `PGlow` constructors zero.
+const GLOW_ZEROS: [u32; 7] = [0xa8, 0x90, 0x9c, 0x94, 0xa0, 0x98, 0xa4];
+
+#[test]
+fn misc_derived_ctors_zeroed_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xbbbb_b6b6);
+        let cases: [CtorCase; 4] = [
+            (
+                0x009f_c2b0,
+                0x009f_c310,
+                Some(0x00b7_55f0),
+                Some(0x0194_4180),
+                &GLOW_ZEROS,
+            ),
+            (
+                0x009f_c480,
+                0x009f_c310,
+                Some(0x00b7_54f0),
+                None,
+                &GLOW_ZEROS,
+            ),
+            (
+                0x009f_c4e0,
+                0x009f_c310,
+                Some(0x00b7_53e8),
+                None,
+                &GLOW_ZEROS,
+            ),
+            (
+                0x009f_c650,
+                0x009f_c540,
+                None,
+                None,
+                &[0x78, 0x84, 0x7c, 0x88, 0x80, 0x8c],
+            ),
+        ];
+        for (f, base, vt, w4, zeros) in cases {
+            for i in 0..3 {
+                let obj = object(&mut t, &mut rng, 0x30, false);
+                t.stub_at(base, rng.next());
+                t.check(
+                    &format!("{name} {f:#x} #{i}"),
+                    f,
+                    Conv::Thiscall(obj),
+                    &[],
+                    |g| {
+                        Out::U32(misc::bridge::derived_ctor_zeroed(
+                            g, obj, base, vt, w4, zeros,
+                        ))
+                    },
+                );
+                t.unstub(base);
+            }
+        }
+    }
+}
+
+#[test]
+fn descriptor_construct_with_zeroed_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xcccc_b6b6);
+        let dof: &[u32] = &[0xfb0, 0xfb4, 0xfb8, 0xfbc];
+        let cases: [CtorCase; 4] = [
+            (0x00a0_f910, 0x009f_cbb0, Some(0x00b7_4928), None, &[0xd4c]),
+            (
+                0x00a0_f850,
+                0x009f_cbb0,
+                Some(0x00b7_4a30),
+                Some(0x0194_3aa8),
+                &[0xd4c],
+            ),
+            (0x00a0_f220, 0x009f_bd90, Some(0x00b7_4590), None, dof),
+            (
+                0x00a0_f140,
+                0x009f_bd90,
+                Some(0x00b7_4698),
+                Some(0x0194_38e0),
+                dof,
+            ),
+        ];
+        for (f, ctor, vt, w4, zeros) in cases {
+            for i in 0..3 {
+                let obj = object(&mut t, &mut rng, 0x400, i == 0);
+                t.stub_at(ctor, rng.next());
+                t.check(
+                    &format!("{name} {f:#x} #{i}"),
+                    f,
+                    Conv::Thiscall(DESC),
+                    &[obj],
+                    |g| {
+                        Out::U8(descriptor::bridge::construct_with_zeroed(
+                            g, obj, ctor, vt, w4, zeros,
+                        ))
+                    },
+                );
+                t.unstub(ctor);
+            }
+        }
+    }
+}
+
+#[test]
+fn descriptor_construct_ssao_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xdddd_b6b6);
+        let cases = [
+            (0x00a0_f9e0, 0x00b7_4d60, Some(0x0194_3c70)),
+            (0x00a0_fa40, 0x00b7_4b30, None),
+            (0x00a0_faa0, 0x00b7_4c48, None),
+        ];
+        for (f, vt, w4) in cases {
+            for i in 0..3 {
+                let obj = object(&mut t, &mut rng, 12, i == 0);
+                t.check(
+                    &format!("{name} {f:#x} #{i}"),
+                    f,
+                    Conv::Thiscall(DESC),
+                    &[obj],
+                    |g| Out::U32(descriptor::bridge::construct_ssao(g, obj, vt, w4)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn misc_window_and_text_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xeeee_b7b7);
+        let slot = t.rebase(misc::SET_WINDOW_TEXT_SLOT);
+        let set_text = t.stub_code(0x0062_cf60, false, 2, 2, 1);
+        t.w32(slot, set_text);
+        let cache = t.rebase(misc::TEXT_PASS_CACHE);
+        for i in 0..8 {
+            let app = object(&mut t, &mut rng, 0x100, false);
+            let title = rng.next();
+            // the assign leaves a string word with or without its flag bit
+            let s = rng.next();
+            let code = t.stub_code(misc::PSTRING_ASSIGN, true, 1, 1, 0);
+            t.jump(misc::PSTRING_ASSIGN, code);
+            t.w32(app + 0x398, s);
+            t.check(
+                &format!("{name} title #{i}"),
+                0x0062_cf60,
+                Conv::Thiscall(app),
+                &[title],
+                |g| Out::U32(misc::bridge::set_window_title(g, app, title)),
+            );
+            t.unstub(misc::PSTRING_ASSIGN);
+            let k = rng.below(4);
+            t.w32(cache + 4 * k, if i % 2 == 0 { 0 } else { rng.next() });
+            t.stub(misc::FIND_RENDER_PASS, false, 1, 0, rng.next());
+            t.check(
+                &format!("{name} pass #{i}"),
+                0x00a3_e9b0,
+                Conv::Cdecl,
+                &[k],
+                |g| Out::U32(misc::bridge::text_render_pass(g, k)),
+            );
+            t.unstub(misc::FIND_RENDER_PASS);
+        }
+    }
+}
+
+#[test]
+fn misc_frame_queue_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0xffff_b7b7);
+        for i in 0..20 {
+            let thread = object(&mut t, &mut rng, 0x60, false);
+            t.w32(thread + 0x154, [0, 1, 14, 15][i % 4]);
+            t.stub_at(misc::SEMAPHORE_WAIT, 0);
+            t.stub_at(misc::EVENT_SIGNAL, 0);
+            let (a, b, c) = (rng.next(), rng.next(), rng.next());
+            t.check(
+                &format!("{name} queue #{i}"),
+                0x0061_5210,
+                Conv::Thiscall(thread),
+                &[a, b, c],
+                |g| Out::U32(misc::bridge::queue_frame(g, thread, a, b, c)),
+            );
+            // the renderer's submit: the queue stubbed with a result
+            let renderer = object(&mut t, &mut rng, 0x20, false);
+            if i % 3 == 0 {
+                t.w32(renderer + 0x44, 0);
+            } else {
+                let sem = object(&mut t, &mut rng, 2, false);
+                t.w32(renderer + 0x44, sem);
+            }
+            t.stub(misc::RENDER_THREAD_INSTANCE, false, 0, 0, thread);
+            t.stub(
+                misc::QUEUE_FRAME,
+                true,
+                3,
+                3,
+                if i % 4 == 1 { rng.next() } else { 0 },
+            );
+            t.stub_at(misc::RING_NEXT_SEGMENT, 0);
+            t.check(
+                &format!("{name} submit #{i}"),
+                0x005b_6c50,
+                Conv::Thiscall(renderer),
+                &[],
+                |g| Out::U32(misc::bridge::renderer_submit_frame(g, renderer)),
+            );
+            for f in [
+                misc::SEMAPHORE_WAIT,
+                misc::EVENT_SIGNAL,
+                misc::RENDER_THREAD_INSTANCE,
+                misc::QUEUE_FRAME,
+                misc::RING_NEXT_SEGMENT,
+            ] {
+                t.unstub(f);
+            }
+        }
+    }
+}

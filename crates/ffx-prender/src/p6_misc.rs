@@ -52,6 +52,22 @@ pub const DEFAULT_0018: u32 = 0x00ca_34cc;
 /// The head of the named list `0x005c84f0` searches (`{name, next}`
 /// nodes; the modifier types' semantic names).
 pub const NAMED_LIST: u32 = 0x00cb_d348;
+/// `Phyre_PString_Assign(string, text)` (thiscall).
+pub const PSTRING_ASSIGN: u32 = 0x0044_5cf0;
+/// `g_hWnd`.
+pub const HWND: u32 = 0x00cc_9ce8;
+/// `USER32!SetWindowTextA`'s import slot.
+pub const SET_WINDOW_TEXT_SLOT: u32 = 0x00b0_c6d4;
+/// `PUtilityText`'s render pass per technique (cached).
+pub const TEXT_PASS_CACHE: u32 = 0x01a8_58f4;
+/// The technique names `GetRenderPassForTechnique` looks up (8-byte entries).
+pub const TEXT_PASS_NAMES: u32 = 0x00b7_ab00;
+/// The render pass lookup by name `0x004dd860` (cdecl).
+pub const FIND_RENDER_PASS: u32 = 0x004d_d860;
+/// `Phyre_PRendering_PRenderThread_queueFrame_00615210` (thiscall).
+pub const QUEUE_FRAME: u32 = 0x0061_5210;
+/// `Phyre_PRendering_PRenderRingBufferSegmented_nextSegment_00613eb0` (thiscall).
+pub const RING_NEXT_SEGMENT: u32 = 0x0061_3eb0;
 
 pub mod bridge {
     //! The originals over game memory.
@@ -600,5 +616,214 @@ pub mod bridge {
             h.write(ring.wrapping_add(8), start);
             h.write(ring.wrapping_add(0xc), wrap(start.wrapping_add(seg)));
         }
+    }
+
+    /// How a `PArray`'s `setView` callback releases the old buffer.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Release {
+        /// `PhyreFree(old)`, a null one too (65 bytes).
+        Free,
+        /// `PhyreFree(old)` when it is set (69 bytes).
+        FreeSet,
+        /// `free(old, count & 0x7fffffff)` (cdecl; the elements' own
+        /// release, 74 bytes).
+        With(u32),
+    }
+
+    /// A `PArray`'s `setView(arr, data, count)` callback (thiscall, `ret
+    /// 8`; the member's `+0x3c` callback `member_call` runs): for a
+    /// non-negative `count`, an owned old buffer (bit 31 of `arr +0`
+    /// clear) other than `data` is released, then `arr = {count | bit
+    /// 31, data}`, a view the array does not own. Returns 0.
+    pub fn array_set_view(
+        h: &mut impl Host,
+        release: Release,
+        arr: u32,
+        data: u32,
+        count: u32,
+    ) -> u32 {
+        if count & 0x8000_0000 != 0 {
+            return 0;
+        }
+        let old: u32 = h.read(arr.wrapping_add(4));
+        let header: u32 = h.read(arr);
+        if old != data && header & 0x8000_0000 == 0 {
+            match release {
+                Release::Free => {
+                    h.call_sym(PHYRE_FREE, Conv::Cdecl, &[old]);
+                }
+                Release::FreeSet if old != 0 => {
+                    h.call_sym(PHYRE_FREE, Conv::Cdecl, &[old]);
+                }
+                Release::FreeSet => {}
+                Release::With(f) => {
+                    h.call_sym(f, Conv::Cdecl, &[old, header & 0x7fff_ffff]);
+                }
+            }
+        }
+        h.write(arr.wrapping_add(4), data);
+        h.write(arr, count | 0x8000_0000);
+        0
+    }
+
+    /// `0x005c1ef0(records, n)` (cdecl): frees an array of `n` 20-byte
+    /// records, each holding a `PArray` at `+0xc` (its owned, set buffer
+    /// freed, then zeroed), then the records themselves; nothing for null
+    /// `records`. Returns `PhyreFree`'s `eax`, 0 for null `records` (the
+    /// original leaves the caller's `eax` there; its callers, the
+    /// destroy and `setView` callbacks, drop it).
+    pub fn free_records(h: &mut impl Host, records: u32, n: u32) -> u32 {
+        if records == 0 {
+            return 0;
+        }
+        for i in 0..n {
+            let arr = records.wrapping_add(0xc).wrapping_add(i.wrapping_mul(20));
+            let count: u32 = h.read(arr);
+            if count & 0x8000_0000 == 0 {
+                let data: u32 = h.read(arr.wrapping_add(4));
+                if data != 0 {
+                    h.call_sym(PHYRE_FREE, Conv::Cdecl, &[data]);
+                }
+            }
+            h.write(arr.wrapping_add(4), 0u32);
+            h.write(arr, 0u32);
+        }
+        h.call_sym(PHYRE_FREE, Conv::Cdecl, &[records])
+    }
+
+    /// `0x005c8660(node)` (cdecl): adds a `{name, next}` node to the named
+    /// list ([`super::NAMED_LIST`]) at its head: 0x11 for a null name,
+    /// 0x12 when the name is already there ([`find_named`]), else 0.
+    pub fn add_named(h: &mut impl Host, node: u32) -> u32 {
+        let name: u32 = h.read(node);
+        if name == 0 {
+            return 0x11;
+        }
+        if find_named(h, name) != 0 {
+            return 0x12;
+        }
+        let head = h.rebase(super::NAMED_LIST);
+        let first: u32 = h.read(head);
+        h.write(node.wrapping_add(4), first);
+        h.write(head, node);
+        0
+    }
+
+    /// A derived constructor (`0x009fc2b0`, `0x009fc480`, `0x009fc4e0`,
+    /// `0x009fc650`): the base constructor (thiscall), the words at
+    /// `zeros` zeroed, the class's vtable and the word at `+4` where given
+    /// (image addresses). Returns `obj`.
+    pub fn derived_ctor_zeroed(
+        h: &mut impl Host,
+        obj: u32,
+        base: u32,
+        vtable: Option<u32>,
+        word4: Option<u32>,
+        zeros: &[u32],
+    ) -> u32 {
+        h.call_sym(base, Conv::Thiscall(obj), &[]);
+        for &at in zeros {
+            h.write(obj.wrapping_add(at), 0u32);
+        }
+        if let Some(v) = vtable {
+            let v = h.rebase(v);
+            h.write(obj, v);
+        }
+        if let Some(w) = word4 {
+            let w = h.rebase(w);
+            h.write(obj.wrapping_add(4), w);
+        }
+        obj
+    }
+
+    /// `PApplication::setWindowTitle(app, title)`: the title into the
+    /// `PString` at `app +0x398` (`Phyre_PString_Assign`, thiscall), then
+    /// `SetWindowTextA(g_hWnd, text)` with the string's pointer (its
+    /// first word less its low flag bit); `SetWindowTextA`'s result.
+    pub fn set_window_title(h: &mut impl Host, app: u32, title: u32) -> u32 {
+        let s = app.wrapping_add(0x398);
+        h.call_sym(super::PSTRING_ASSIGN, Conv::Thiscall(s), &[title]);
+        let word: u32 = h.read(s);
+        let text = word.wrapping_sub(word & 1);
+        let hwnd: u32 = h.read(h.rebase(super::HWND));
+        let f: u32 = h.read(h.rebase(super::SET_WINDOW_TEXT_SLOT));
+        h.call(f, Conv::Stdcall, &[hwnd, text])
+    }
+
+    /// `PUtilityText::GetRenderPassForTechnique(i)` (cdecl): the cached
+    /// pass of technique `i` (`0x01a858f4[i]`), looked up once by its name
+    /// (`0x00b7ab00[i]`, 8-byte entries) through `0x004dd860` (cdecl).
+    pub fn text_render_pass(h: &mut impl Host, i: u32) -> u32 {
+        let slot = h
+            .rebase(super::TEXT_PASS_CACHE)
+            .wrapping_add(i.wrapping_mul(4));
+        if h.read::<u32>(slot) == 0 {
+            let name: u32 = h.read(
+                h.rebase(super::TEXT_PASS_NAMES)
+                    .wrapping_add(i.wrapping_mul(8)),
+            );
+            let pass = h.call_sym(super::FIND_RENDER_PASS, Conv::Cdecl, &[name]);
+            h.write(slot, pass);
+        }
+        h.read(slot)
+    }
+
+    /// `0x00615210(thread, a, b, c)` (thiscall, `ret 0xc`) -> 0: waits for
+    /// a free slot (the semaphore at `+0x15c`), fills the next of the 16
+    /// 20-byte frame slots (`+0x154` the index; slot `+0x10` a, `+0x14` b,
+    /// `+0x20` c), advances the index and signals the slot's event flag
+    /// (`+0x18`).
+    pub fn queue_frame(h: &mut impl Host, thread: u32, a: u32, b: u32, c: u32) -> u32 {
+        h.call_sym(
+            SEMAPHORE_WAIT,
+            Conv::Thiscall(thread.wrapping_add(0x15c)),
+            &[],
+        );
+        let i: u32 = h.read(thread.wrapping_add(0x154));
+        let slot = thread.wrapping_add(i.wrapping_mul(20));
+        h.write(slot.wrapping_add(0x10), a);
+        h.write(slot.wrapping_add(0x14), b);
+        h.write(slot.wrapping_add(0x20), c);
+        let next = i.wrapping_add(1);
+        h.write(
+            thread.wrapping_add(0x154),
+            if next == 16 { 0 } else { next },
+        );
+        h.call_sym(EVENT_SIGNAL, Conv::Thiscall(slot.wrapping_add(0x18)), &[]);
+        0
+    }
+
+    /// `PRendererBase` vtable slot 2 (`0x005b6c50`, thiscall): hands the
+    /// frame (`+0x4c`, `+0x50`, the semaphore `+0x44`) to the render
+    /// thread ([`queue_frame`] on its instance); on success waits on that
+    /// semaphore when set, clears `+0x4c`/`+0x50` and steps both ring
+    /// buffers (`+0x1c`, `+0x30`, [`ring_next_segment`]). Returns the
+    /// queue's result (0).
+    pub fn renderer_submit_frame(h: &mut impl Host, renderer: u32) -> u32 {
+        let a: u32 = h.read(renderer.wrapping_add(0x4c));
+        let b: u32 = h.read(renderer.wrapping_add(0x50));
+        let c: u32 = h.read(renderer.wrapping_add(0x44));
+        let thread = h.call_sym(RENDER_THREAD_INSTANCE, Conv::Cdecl, &[]);
+        let r = h.call_sym(super::QUEUE_FRAME, Conv::Thiscall(thread), &[a, b, c]);
+        if r != 0 {
+            return r;
+        }
+        let sem: u32 = h.read(renderer.wrapping_add(0x44));
+        if sem != 0 {
+            h.call_sym(SEMAPHORE_WAIT, Conv::Thiscall(sem), &[]);
+        }
+        h.write(renderer.wrapping_add(0x4c), 0u32);
+        h.write(renderer.wrapping_add(0x50), 0u32);
+        h.call_sym(
+            super::RING_NEXT_SEGMENT,
+            Conv::Thiscall(renderer.wrapping_add(0x1c)),
+            &[],
+        );
+        h.call_sym(
+            super::RING_NEXT_SEGMENT,
+            Conv::Thiscall(renderer.wrapping_add(0x30)),
+            &[],
+        );
+        0
     }
 }
