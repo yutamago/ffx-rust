@@ -23,7 +23,25 @@
 //! - [`h4_c3`]: its third batch: `FmodVoice` and `FmodMusic` teardown, the
 //!   sync manager's change, the event groups, Iggy callbacks, `rfind`;
 //! - [`h4_c4`]: its fourth batch: the extended blur's render, the voice's
-//!   event check, a six-value Flash call, menu texture and vertex helpers.
+//!   event check, a six-value Flash call, menu texture and vertex helpers;
+//! - [`h4_d1`]: continuation round 2: the particle fill-buffer jobs, the
+//!   Iggy manager's render and menu insert, `GDraw`'s render-thread setup,
+//!   files, the menu textures' kind dispatch, the distortion target,
+//!   `SfxEvent_isPlaying`, the Atel shape's VFX;
+//! - [`h4_d2`]: its second batch: the escape menu's callbacks and
+//!   language call, the Iggy callback table, the button-remap tables, the
+//!   menu buffers and UI-instance unload, the touch reset, the shader
+//!   texture rebinding walks;
+//! - [`h4_d3`]: its third batch: the menu font, Sa-menu, monster-book and
+//!   language texture loaders, the distortion grid's indices, the loading
+//!   screen's textures, the FMOD command queue's push and synchronous
+//!   command, two constructors, the button icon cells;
+//! - [`h4_d4`]: its fourth batch: an eight-value Flash call, a texture
+//!   animation frame by name, the soft particles' specular maps, and the
+//!   FMOD data loaders (sync buffers, voice lists and projects, music
+//!   projects, the shout stream);
+//! - [`h4_d5`]: its fifth batch: the message windows' draw and an Iggy
+//!   menu's mouse handler.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -47,6 +65,11 @@ pub mod h4_c1;
 pub mod h4_c2;
 pub mod h4_c3;
 pub mod h4_c4;
+pub mod h4_d1;
+pub mod h4_d2;
+pub mod h4_d3;
+pub mod h4_d4;
+pub mod h4_d5;
 pub mod menu;
 pub mod misc;
 pub mod movie;

@@ -25,8 +25,9 @@ use std::path::PathBuf;
 
 use ffx_bridge::Mem;
 use ffx_glue_other::{
-    effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4, menu as mn,
-    misc as m, movie as mv, r3, sound as s,
+    effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4, h4_d1 as d1,
+    h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, menu as mn, misc as m, movie as mv, r3,
+    sound as s,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -7315,6 +7316,2112 @@ fn c4_blur_voice_menu() {
                 Conv::Stdcall,
                 &[from, to],
                 |g| u(c4::vertex_info_move(g, from, to)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 2, batch 1 (ffx_glue_other::h4_d1)
+
+/// Resets the log and sets every listed stub's result to a random word.
+fn fresh_round(t: &mut Twins, rng: &mut Rng, tags: &[u32]) {
+    let log = t.log;
+    t.w32(log, 0);
+    for &tag in tags {
+        let v = rng.next();
+        t.ret(tag, v);
+    }
+}
+
+/// Mostly 0, else a random word: results that let a caller go on.
+fn mostly_zero(rng: &mut Rng) -> u32 {
+    [0, 0, 0, rng.next()][rng.below(4) as usize]
+}
+
+/// The particle fill-buffer jobs, the Iggy manager's render and menu
+/// insert, `GDraw`'s render-thread setup.
+#[test]
+fn d1_jobs_iggy() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d101);
+        let mut stubs: Vec<(u32, bool, u32, u32)> =
+            d1::FILL_PART.iter().map(|&f| (f, false, 1, 0)).collect();
+        stubs.extend([
+            (d1::QUEUE_JOB, true, 5, 5),
+            (d1::SET_COLOR_TARGET, true, 2, 2),
+            (d1::SET_DEPTH_TARGET, true, 1, 1),
+            (d1::BEGIN_SCENE, true, 1, 1),
+            (d1::END_SCENE, true, 1, 1),
+            (d1::MENU_DRAW, true, 0, 0),
+            (d1::END_DRAW, true, 0, 0),
+            (d1::MENU_SET_MANAGER, true, 1, 1),
+            (d1::MENU_SET_VIEWPORT, true, 4, 4),
+            (d1::PHYRE_MALLOC, false, 2, 0),
+            (d1::MENU_ARRAY_APPEND, true, 2, 2),
+            (d1::SYNC_RENDER, true, 0, 0),
+        ]);
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let mp3 = t.stub_code(0x0bad_c864, false, 0, 0);
+        let sound = t.stub_code(0x0bad_c860, false, 0, 0);
+        let flush = t.stub_code(0x0bad_0008, true, 0, 0);
+        t.g32(d1::IGGY_INSTALL_MP3.sym, mp3);
+        t.g32(d1::IGGY_USE_DIRECT_SOUND.sym, sound);
+        let result_cell = t.zeros(4);
+        // the queued callback writes the record's result word, or (a
+        // second stub) leaves the 0 the setup put there
+        let writer = t.stub_at(
+            d1::QUEUE_CALLBACK,
+            true,
+            2,
+            2,
+            &[Write {
+                arg: Some(1),
+                offset: 8,
+                cell: result_cell,
+            }],
+        );
+        let plain = t.stub_code(0x0bad_5880, true, 2, 2);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([0x0bad_c864, 0x0bad_c860, 0x0bad_0008, d1::QUEUE_CALLBACK]);
+        tags.push(0x0bad_5880);
+        // six part arrays of 64 parts, kinds 0..6 and some outside
+        let mut buffers = [0u32; 6];
+        for b in &mut buffers {
+            *b = t.zeros(64 * d1::PART_SIZE as usize);
+        }
+        for (k, &b) in buffers.iter().enumerate() {
+            t.g32(d1::FILL_BUFFERS + 4 * k as u32, b);
+        }
+        let renderer_vtable = t.zeros(0xc);
+        t.w32(renderer_vtable + 8, flush);
+        for i in 0..150 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            for &b in &buffers {
+                for p in 0..64 {
+                    let kind = [0, 1, 2, 3, 4, 5, 6, 7, 0xff, 0x80][rng.below(10) as usize];
+                    t.w8(b + p * d1::PART_SIZE, kind);
+                }
+            }
+            // fillBuffer
+            let start = t.zeros(4);
+            let end = t.zeros(4);
+            let s = [0, 1, 3, u32::MAX][rng.below(4) as usize];
+            let e = [0, 1, 5, 9, 2][rng.below(5) as usize];
+            t.w32(start, s);
+            t.w32(end, e);
+            let parts = buffers[rng.below(6) as usize] + d1::PART_SIZE;
+            t.check(
+                &format!("{w} fill {s} {e}"),
+                d1::FILL_BUFFER,
+                Conv::Cdecl,
+                &[parts, start, end],
+                |g| u(d1::fill_buffer(g, parts, start, end)),
+            );
+            // the kick
+            // totals at the limits: weights 0 / 499 / 500 / negative,
+            // requests 49 / 50 / negative (an empty fill)
+            let request_total = [0, 3, 49, 50, 0x8000_0000][rng.below(5) as usize];
+            let weight_total = [0, 0, 1, 499, 500, 0x8000_0000][rng.below(6) as usize];
+            for k in 0..6u32 {
+                let (r, wt) = if k == 5 {
+                    (request_total, weight_total)
+                } else {
+                    (0, 0)
+                };
+                let (r, wt) = if k == 4 && request_total == 50 {
+                    (20, wt)
+                } else if k == 5 && request_total == 50 {
+                    (30, wt)
+                } else {
+                    (r, wt)
+                };
+                t.g32(d1::FILL_REQUESTS + 4 * k, r);
+                t.g32(d1::FILL_WEIGHTS + 4 * k, wt);
+            }
+            let sched = rng.next();
+            t.g32(d1::JOB_SCHEDULER.sym, sched);
+            let inline = [0, 1, rng.next()][rng.below(3) as usize];
+            let ebp = t.ebp_for(1);
+            // the start word is the original's push-ecx slot: the
+            // caller's ecx on the job path, 0 before the inline fills (a
+            // port that leaves the junk there fills other parts)
+            t.w32(ebp - 4, 0xa5a4_a7a6);
+            t.check_framed(
+                &format!("{w} kick {inline:#x}"),
+                0x0071_edb0,
+                Conv::Cdecl,
+                &[inline],
+                ebp - 4,
+                &[],
+                |g| u(d1::fill_buffer_kick(g, ebp - 4, inline)),
+            );
+            // the Iggy manager's render
+            let this = t.random(&mut rng, 0x40);
+            let on = [0, 1, 0x80, 1][rng.below(4) as usize];
+            t.w8(this + 0x30, on);
+            if rng.below(4) == 0 {
+                t.w32(this + 4, 0);
+            }
+            let n = rng.below(5);
+            let menus = t.zeros(4 * 6);
+            for k in 0..n {
+                if rng.below(4) != 0 {
+                    let menu = t.zeros(0xa0);
+                    t.w32(menu + 0x98, rng.below(4));
+                    t.w32(menus + 4 * k, menu);
+                }
+            }
+            t.w32(this + 8, n | (rng.below(2) << 31));
+            t.w32(this + 0xc, menus);
+            t.check(
+                &format!("{w} render"),
+                0x00a2_67f0,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    let r = d1::iggy_manager_render(g, this);
+                    if on == 0 { Out::None } else { u(r) }
+                },
+            );
+            // the menu insert
+            let menu = [0, rng.next()][rng.below(5).min(1) as usize];
+            let this = t.random(&mut rng, 0x30);
+            let n = rng.below(4);
+            let slots = t.zeros(4 * 5);
+            for k in 0..n {
+                if rng.below(3) != 0 {
+                    let v = rng.next() | 1;
+                    t.w32(slots + 4 * k, v);
+                }
+            }
+            t.w32(this + 8, n | (rng.below(2) << 31));
+            t.w32(this + 0xc, slots);
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} add menu"),
+                0x00a2_65f0,
+                Conv::Thiscall(this),
+                &[menu],
+                ebp + 8,
+                &[(0, 4)],
+                |g| {
+                    let r = d1::iggy_manager_add_menu(g, ebp + 8, this, menu);
+                    if menu == 0 { Out::None } else { u(r) }
+                },
+            );
+            // GDraw's render setup
+            let this = t.random(&mut rng, 8);
+            let renderer = t.zeros(4);
+            t.w32(renderer, renderer_vtable);
+            let audio = t.zeros(4);
+            t.w8(audio, [0, 1, 0x80][rng.below(3) as usize]);
+            for tag in [0x0bad_0008, d1::SYNC_RENDER, d1::QUEUE_CALLBACK] {
+                let v = mostly_zero(&mut rng);
+                t.ret(tag, v);
+            }
+            let v = mostly_zero(&mut rng);
+            t.ret(0x0bad_5880, v);
+            t.jump(d1::QUEUE_CALLBACK, [writer, plain][rng.below(2) as usize]);
+            let v = rng.next();
+            t.w32(result_cell, v);
+            let arg = rng.next();
+            let ebp = t.ebp_for(3);
+            t.check_framed(
+                &format!("{w} gdraw setup"),
+                0x00a3_ba50,
+                Conv::Thiscall(this),
+                &[renderer, audio, arg],
+                ebp - 0xc,
+                &[(0, 0xc)],
+                |g| {
+                    u(d1::gdraw_render_setup(
+                        g,
+                        ebp - 0xc,
+                        this,
+                        renderer,
+                        audio,
+                        arg,
+                    ))
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The sync file read and the data directory.
+#[test]
+fn d1_files() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d102);
+        let stubs: [(u32, bool, u32, u32); 11] = [
+            (d1::DBG_PRINTF, false, 1, 0),
+            (d1::FIOS_EXISTS, false, 1, 0),
+            (d1::FIOS_OPEN, false, 2, 0),
+            (d1::FIOS_SEEK, false, 3, 0),
+            (d1::ALIGNED_MALLOC, false, 2, 0),
+            (d1::FIOS_READ, false, 3, 0),
+            (d1::FIOS_CLOSE, false, 1, 0),
+            (d1::MEMSET, false, 3, 0),
+            (d1::FIOS_UNIFY, false, 3, 0),
+            (d1::STREAM_PREFIX, false, 0, 0),
+            (d1::PHYRE_PRINTF, false, 3, 0),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let sprintf = t.stub_code(0x0bad_c394, false, 4, 0);
+        t.g32(d1::SPRINTF_S.sym, sprintf);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(0x0bad_c394);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // readSyncFile
+            for tag in [d1::FIOS_EXISTS, d1::FIOS_OPEN] {
+                let v = [0, rng.next()][rng.below(4).min(1) as usize];
+                t.ret(tag, v);
+            }
+            let path = [0, rng.next()][rng.below(5).min(1) as usize];
+            t.check(
+                &format!("{w} read sync"),
+                0x006f_acf0,
+                Conv::Stdcall,
+                &[path],
+                |g| u(d1::read_sync_file(g, path)),
+            );
+            // the data directory
+            let names: &[&[u8]] = &[b"\0", b"a\0", b"sound/fmod\0", b"data/x.bin\0"];
+            let nm_text = names[rng.below(4) as usize];
+            let nm = t.alloc(nm_text);
+            let prefixes: &[&[u8]] = &[b"\0", b"C:/game/\0", b"pfx\0"];
+            let prefix_text = prefixes[rng.below(3) as usize];
+            let prefix = t.alloc(prefix_text);
+            t.ret(d1::STREAM_PREFIX, prefix);
+            let out = rng.next();
+            // around the length the warning compares with, and signed
+            let len = (nm_text.len() + prefix_text.len() - 2) as u32;
+            let size = [
+                len.wrapping_sub(1),
+                len,
+                len + 1,
+                0x100,
+                u32::MAX,
+                0x8000_0000,
+            ][rng.below(6) as usize];
+            let ebp = t.ebp_for(3);
+            t.check_framed(
+                &format!("{w} data directory {size:#x}"),
+                0x0067_9a10,
+                Conv::Cdecl,
+                &[nm, out, size],
+                ebp - 0x104,
+                &[(0, 0x100)],
+                |g| u(d1::data_directory(g, ebp - 0x104, nm, out, size)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The menu textures' kind dispatch and the Sa sub-menu preload.
+#[test]
+fn d1_menu_textures() {
+    // (routine, arguments) of both tables
+    const ROUTINES: [(u32, u32); 26] = [
+        (0x0067_f610, 0),
+        (0x0067_f230, 0),
+        (0x0067_f3c0, 0),
+        (0x0067_f9a0, 0),
+        (0x0067_fa20, 0),
+        (0x0067_ecf0, 0),
+        (0x0067_f920, 0),
+        (0x0067_ee70, 0),
+        (0x0067_efa0, 0),
+        (0x0067_f3e0, 0),
+        (0x0067_ebc0, 0),
+        (0x0067_edc0, 1),
+        (0x0067_ee40, 0),
+        (0x0067_d370, 1),
+        (0x0067_ce50, 1),
+        (0x0067_d0b0, 1),
+        (0x0067_d670, 0),
+        (0x0067_d690, 0),
+        (0x0067_c6f0, 0),
+        (0x0067_d650, 0),
+        (0x0067_cb30, 1),
+        (0x0067_cba0, 0),
+        (0x0067_d180, 1),
+        (0x0067_c8c0, 0),
+        (0x0067_c720, 1),
+        (0x0067_c8f0, 0),
+    ];
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d103);
+        let mut tags = Vec::new();
+        for &(sym, n) in &ROUTINES {
+            t.stub(sym, true, n, n);
+            tags.push(sym);
+        }
+        for (sym, this, n, pops) in [
+            (d1::MEMSET, false, 3, 0),
+            (d1::SA_TEXTURE_NAME, false, 2, 0),
+            (d1::LOAD_MENU_TEXTURE, true, 1, 1),
+        ] {
+            t.stub(sym, this, n, pops);
+            tags.push(sym);
+        }
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            let this = rng.next();
+            let kind = rng.below(20).wrapping_sub(2);
+            let [a, b] = [rng.next(), rng.next()];
+            t.check(
+                &format!("{w} unload {kind}"),
+                0x0067_f830,
+                Conv::Thiscall(this),
+                &[kind],
+                |g| u(d1::unload_special_menu_texture(g, this, kind)),
+            );
+            t.check(
+                &format!("{w} load {kind}"),
+                0x0067_d550,
+                Conv::Thiscall(this),
+                &[kind, a, b],
+                |g| u(d1::load_special_menu_texture(g, this, kind, a, b)),
+            );
+            if i % 6 == 0 {
+                let scene = rng.next();
+                t.g32(d1::PHYRE_SCENE.sym, scene);
+                let ebp = t.ebp_for(1);
+                t.check_framed(
+                    &format!("{w} preload"),
+                    0x0067_dd70,
+                    Conv::Stdcall,
+                    &[a],
+                    ebp - 0x134,
+                    &[(0, 0x130)],
+                    |g| u(d1::preload_sa_sub_menu(g, ebp - 0x134)),
+                );
+            }
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The distortion target, the extended blur's parameter, the event's
+/// play test, the Atel shape's VFX.
+#[test]
+fn d1_effects_sound_vfx() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d104);
+        let stubs: [(u32, bool, u32, u32); 17] = [
+            (d1::DISTORTION_RESET, true, 0, 0),
+            (d1::CLUSTER_CREATE, true, 3, 3),
+            (d1::SET_DIMENSIONS, true, 4, 4),
+            (d1::UPDATE_MAX_LEVEL, true, 0, 0),
+            (d1::CREATE_TARGET, true, 1, 1),
+            (d1::FIND_PARAM, true, 1, 1),
+            (d1::SET_TEXTURE, true, 2, 2),
+            (d1::BIND_TEXTURE, true, 1, 1),
+            (d1::MEMCPY, false, 3, 0),
+            (fr::ERRCHECK, false, 3, 0),
+            (d1::EVENT_INFO_INIT, true, 0, 0),
+            (d1::CREATE_ATEL_SHP, false, 4, 0),
+            (d1::VFX_RENDER_DATA, false, 2, 0),
+            (d1::VFX_2D_SETUP, false, 2, 0),
+            (d1::UPDATE_ATEL_SHP, false, 5, 0),
+            (d1::VFX_2D_UPDATE, false, 2, 0),
+            (d1::VFX_DESTROY, false, 2, 0),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let cells: [u32; 5] = std::array::from_fn(|_| t.zeros(4));
+        let [group_cell, n_cell, channel_cell, loops_cell, state_cell] = cells;
+        for (sym, n, arg, offset, cell) in [
+            (d1::EVENT_GET_CHANNEL_GROUP, 2, 1, 0, group_cell),
+            (d1::GROUP_NUM_CHANNELS, 2, 1, 0, n_cell),
+            (d1::GROUP_GET_CHANNEL, 3, 2, 0, channel_cell),
+            (d1::CHANNEL_LOOP_COUNT, 2, 1, 0, loops_cell),
+            (d1::EVENT_GET_INFO, 4, 3, 0x28, state_cell),
+        ] {
+            t.stub_at(
+                sym,
+                false,
+                n,
+                n,
+                &[Write {
+                    arg: Some(arg),
+                    offset,
+                    cell,
+                }],
+            );
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([d1::GROUP_GET_CHANNEL, d1::GROUP_NUM_CHANNELS]);
+        tags.extend([d1::CHANNEL_LOOP_COUNT, d1::EVENT_GET_INFO]);
+        for i in 0..150 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the distortion target
+            let this = t.random(&mut rng, 0x80);
+            let owner = t.random(&mut rng, 8);
+            t.w32(this + 0x30, owner);
+            if rng.below(3) == 0 {
+                t.w32(this + 0x2c, 0);
+            }
+            let tex = t.random(&mut rng, 0x20);
+            let tex = [0, tex][rng.below(5).min(1) as usize];
+            t.ret(d1::CLUSTER_CREATE, tex);
+            let r = mostly_zero(&mut rng);
+            t.ret(d1::SET_DIMENSIONS, r);
+            let target = t.random(&mut rng, 0x10);
+            let target = [0, target][rng.below(5).min(1) as usize];
+            t.ret(d1::CREATE_TARGET, target);
+            let r = [0, rng.next()][rng.below(3).min(1) as usize];
+            t.ret(d1::FIND_PARAM, r);
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} distortion target"),
+                0x006c_2350,
+                Conv::Thiscall(this),
+                &[],
+                ebp - 0x10,
+                &[(0, 0x10)],
+                |g| u(d1::distortion_create_target(g, ebp - 0x10, this)),
+            );
+            // the blur parameter
+            let this = t.random(&mut rng, 0x58);
+            if rng.below(6) == 0 {
+                t.w32(this + 0x54, 0);
+            } else {
+                let record = t.random(&mut rng, 0xc);
+                let kind = [0x42, 0xd9, 0xda, 0xdb, 0xdc, 0x12, 0x43, 0xd8, 0xdd, 0]
+                    [rng.below(10) as usize];
+                t.w8(record + 2, kind);
+                let off = [0, 3, 4, 8, 0x20][rng.below(5) as usize];
+                t.write(record + 8, &(off as u16).to_le_bytes());
+                let len = [4, 0x10, 0x20][rng.below(3) as usize] | (rng.below(8) << 13);
+                t.write(record + 0xa, &(len as u16).to_le_bytes());
+                t.w32(this + 0x54, record);
+            }
+            let holder = t.zeros(8);
+            let block = t.random(&mut rng, 0x40);
+            t.w32(block, [0x10, 0x14, 0x24, 0x40][rng.below(4) as usize]);
+            t.w32(holder + 4, block);
+            t.w32(this + 0x20, holder);
+            let r = [0, rng.next() | 1][rng.below(2) as usize];
+            t.ret(d1::BIND_TEXTURE, r);
+            let sampler = [0, rng.next()][rng.below(4).min(1) as usize];
+            let texture = [0, rng.next()][rng.below(4).min(1) as usize];
+            let ebp = t.ebp_for(2);
+            t.check_framed(
+                &format!("{w} blur param"),
+                0x006c_44e0,
+                Conv::Thiscall(this),
+                &[sampler, texture],
+                ebp - 0x10,
+                &[(0, 0x10)],
+                |g| {
+                    u(d1::blur_set_texture_param(
+                        g,
+                        ebp - 0x10,
+                        this,
+                        sampler,
+                        texture,
+                    ))
+                },
+            );
+            // SfxEvent_isPlaying
+            let this = t.random(&mut rng, 0xc);
+            t.w32(this, [0, 1, 2, u32::MAX, 1, 1][rng.below(6) as usize]);
+            let event = t.random(&mut rng, 8);
+            t.w8(event + 4, [0, 1][rng.below(6).min(1) as usize]);
+            t.w32(this + 8, event);
+            let r = mostly_zero(&mut rng);
+            t.ret(d1::EVENT_GET_CHANNEL_GROUP, r);
+            for (cell, v) in [
+                (group_cell, rng.next()),
+                (
+                    n_cell,
+                    [0, 1, 3, u32::MAX, 2, 0x8000_0001][rng.below(6) as usize],
+                ),
+                (channel_cell, rng.next()),
+                (
+                    loops_cell,
+                    [u32::MAX, 0, 2, u32::MAX][rng.below(4) as usize],
+                ),
+                (state_cell, [0, 1, 2][rng.below(3) as usize]),
+            ] {
+                t.w32(cell, v);
+            }
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} is playing"),
+                0x0070_ec40,
+                Conv::Thiscall(this),
+                &[],
+                ebp - 0x44,
+                &[(0, 0x44)],
+                |g| Out::U8(d1::sfx_event_is_playing(g, ebp - 0x44, this)),
+            );
+            // the Atel shape's VFX
+            let args: [u32; 5] = std::array::from_fn(|k| match k {
+                0 => [rng.next(), 0xffff_ff00, 5][rng.below(3) as usize],
+                _ => rng.next(),
+            });
+            let r = [0, 1, rng.next()][rng.below(3) as usize];
+            t.ret(d1::CREATE_ATEL_SHP, r);
+            let data = t.zeros(0x98);
+            let inner = t.random(&mut rng, 0x28);
+            t.w32(data + 0x94, inner);
+            let data = [0, data, data][rng.below(3) as usize];
+            t.ret(d1::VFX_RENDER_DATA, data);
+            let r = [0, 1, 1, 3][rng.below(4) as usize];
+            t.ret(d1::VFX_2D_SETUP, r);
+            t.check(
+                &format!("{w} atel shp"),
+                0x0071_11e0,
+                Conv::Cdecl,
+                &args,
+                |g| u(d1::init_vfx_render_data_atel_shp(g, args)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 2, batch 2 (ffx_glue_other::h4_d2)
+
+/// A C string in both oracles.
+fn c_string(t: &mut Twins, text: &str) -> u32 {
+    let mut b = text.as_bytes().to_vec();
+    b.push(0);
+    t.alloc(&b)
+}
+
+/// The escape menu's sound kinds, callback table and language call.
+#[test]
+fn d2_esc_menu() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d201);
+        let stubs: [(u32, bool, u32, u32); 5] = [
+            (d2::HANDLERS_ADD, true, 4, 4),
+            (d2::ADD_CALLBACK, true, 2, 2),
+            (d2::REGISTER_AUDIO_PREVIEW, true, 0, 0),
+            (d2::LOCALIZATION, false, 0, 0),
+            (d2::CALL_FLASH_1, false, 6, 0),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let value_cells: [u32; 4] = std::array::from_fn(|_| t.zeros(4));
+        let writes: Vec<Write> = value_cells
+            .iter()
+            .enumerate()
+            .map(|(k, &cell)| Write {
+                arg: Some(0),
+                offset: 4 * k as u32,
+                cell,
+            })
+            .collect();
+        t.stub_at(d2::IGGY_VALUE_SET, false, 2, 0, &writes);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(d2::IGGY_VALUE_SET);
+        let names = [
+            "change", "click", "cancel", "error", "clic", "errors", "", "zzz", "a", "chang",
+        ];
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // playSound
+            let text = names[rng.below(names.len() as u32) as usize];
+            let s = c_string(&mut t, text);
+            let value = t.random(&mut rng, 0x10);
+            t.w32(value + 8, s);
+            let menu = rng.next();
+            t.check(
+                &format!("{w} play sound {text:?}"),
+                0x0068_f9e0,
+                Conv::Cdecl,
+                &[menu, value],
+                |g| u(d2::esc_play_sound(g, menu, value)),
+            );
+            // registerCallbacks
+            t.check(
+                &format!("{w} register"),
+                0x0068_fd40,
+                Conv::Thiscall(menu),
+                &[],
+                |g| u(d2::esc_register_callbacks(g, menu)),
+            );
+            // the language call
+            let loc = t.random(&mut rng, 8);
+            let lang = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, u32::MAX][rng.below(13) as usize];
+            t.w32(loc + 4, lang);
+            t.ret(d2::LOCALIZATION, loc);
+            for &cell in &value_cells {
+                let v = rng.next();
+                t.w32(cell, v);
+            }
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} language {lang}"),
+                0x0068_f400,
+                Conv::Thiscall(menu),
+                &[],
+                ebp - 0x90,
+                &[(0, 0x90)],
+                |g| u(d2::esc_set_language(g, ebp - 0x90, menu)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The Iggy callback table's add, the button-remap tables, the menu
+/// manager's buffer gathering and UI-instance unload, the touch reset.
+#[test]
+fn d2_tables_menus_touch() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d202);
+        let stubs: [(u32, bool, u32, u32); 6] = [
+            (d2::PHYRE_MALLOC, false, 2, 0),
+            (d2::PHYRE_FREE, false, 1, 0),
+            (d2::RESET_MATERIALS, true, 0, 0),
+            (d2::TOUCH_RECORDS_INIT, false, 2, 0),
+            (d2::TOUCH_TRACKS_INIT, false, 2, 0),
+            (d2::TOUCH_INIT_GROUP, true, 0, 0),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let pool = ["Menu", "Menu2", "Men", "", "Status", "Menu "];
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the callback table's add
+            let this = t.random(&mut rng, 0x18);
+            let n = rng.below(4);
+            let records = t.random(&mut rng, 16 * 5);
+            for k in 0..n {
+                let used = [0, 1, 1, 0x80][rng.below(4) as usize];
+                t.w8(records + 16 * k, used);
+            }
+            t.w32(this + 0x10, n | (rng.below(2) << 31));
+            let owned = [records, 0][rng.below(5).min(1) as usize];
+            t.w32(this + 0x14, owned);
+            let fresh = t.random(&mut rng, 16 * 5);
+            let fresh = [fresh, fresh, 0][rng.below(3) as usize];
+            t.ret(d2::PHYRE_MALLOC, fresh);
+            let text = pool[rng.below(pool.len() as u32) as usize];
+            let s = c_string(&mut t, text);
+            let (menu, f) = (rng.next(), rng.next());
+            // the original copies a word of which it wrote only the low
+            // byte: the never-written three are 0 (brief 2026-10-24)
+            let ebp = t.ebp_for(3);
+            t.w32(ebp - 0x18, 0);
+            if owned != 0 || n == 0 {
+                t.check(
+                    &format!("{w} callback add {text:?}"),
+                    0x00a2_66b0,
+                    Conv::Thiscall(this),
+                    &[menu, s, f],
+                    |g| u(d2::callback_table_add(g, this, menu, s, f)),
+                );
+            }
+            // the button-remap tables
+            let remap = t.random(&mut rng, 0x130);
+            t.check(
+                &format!("{w} message map"),
+                0x006e_6730,
+                Conv::Thiscall(remap),
+                &[],
+                |g| {
+                    d2::init_message_input_map(g, remap);
+                    Out::None
+                },
+            );
+            t.check(
+                &format!("{w} button map"),
+                0x006e_6890,
+                Conv::Thiscall(remap),
+                &[],
+                |g| {
+                    d2::init_ui_button_map(g, remap);
+                    Out::None
+                },
+            );
+            // the buffer gathering
+            let mgr = t.zeros(0x5848);
+            let n = rng.below(6);
+            t.w32(mgr + 0x5844, n);
+            for (first, list, out) in [(0x2bfc, 0x15ec, 0x2c50), (0x583c, 0x4244, 0x5840)] {
+                let entries = t.random(&mut rng, 4 * 16);
+                t.w32(mgr + list, entries);
+                let v = n + rng.below(8);
+                t.w32(mgr + first, v);
+                let v = n + 0x100 + rng.below(0x100);
+                t.w32(mgr + out, v);
+            }
+            for k in 0..6 {
+                let flag = [0, 1, 2][rng.below(3) as usize];
+                t.g32(d2::MENU_SLOT_GROUPS + 4 * k, flag);
+            }
+            let which = [0, 1, 2, u32::MAX][rng.below(4) as usize];
+            t.check(
+                &format!("{w} gather {which}"),
+                0x0067_b530,
+                Conv::Thiscall(mgr),
+                &[which],
+                |g| u(d2::gather_menu_buffers(g, mgr, which)),
+            );
+            // the UI-instance unload
+            if i % 4 == 0 {
+                let mgr = t.zeros(0x5838);
+                let names: Vec<u32> = pool.iter().map(|p| c_string(&mut t, p)).collect();
+                for (array, n) in [
+                    (0x2bd4, 0x258),
+                    (0x2bdc, 0x320),
+                    (0x582c, 0x258),
+                    (0x5834, 0x320),
+                ] {
+                    let records = t.zeros(16 * n);
+                    for _ in 0..12 {
+                        let k = rng.below(n as u32);
+                        let geometry = [0, rng.next()][rng.below(3).min(1) as usize];
+                        t.w32(records + 16 * k, geometry);
+                        let nm = names[rng.below(names.len() as u32) as usize];
+                        t.w32(records + 16 * k + 8, nm);
+                    }
+                    if rng.below(2) == 0 {
+                        // the last record decides the eax
+                        let nm = names[rng.below(names.len() as u32) as usize];
+                        t.w32(records + 16 * (n as u32 - 1) + 8, nm);
+                    }
+                    t.w32(mgr + array, records);
+                }
+                for sym in d2::UNLOADED_NAMES {
+                    let v = rng.next();
+                    t.g32(sym, v);
+                }
+                let target = names[rng.below(names.len() as u32) as usize];
+                t.check(
+                    &format!("{w} ui unloaded"),
+                    0x0067_e4f0,
+                    Conv::Thiscall(mgr),
+                    &[target],
+                    |g| u(d2::set_menu_ui_instance_unloaded(g, mgr, target)),
+                );
+            }
+            // the touch reset
+            let touch = t.random(&mut rng, 0x160);
+            let records = t.random(&mut rng, 0xa80);
+            let groups = t.random(&mut rng, 0x390);
+            t.w32(
+                touch + 0x150,
+                [8, 8, 3, 0, 8 | 0x8000_0000][rng.below(5) as usize],
+            );
+            t.w32(touch + 0x154, records);
+            t.w32(
+                touch + 0x158,
+                [2, 2, 0, 1, 0x8000_0002][rng.below(5) as usize],
+            );
+            t.w32(touch + 0x15c, groups);
+            let fresh = t.random(&mut rng, 0xa80);
+            let fresh = [fresh, fresh, 0][rng.below(3) as usize];
+            t.ret(d2::PHYRE_MALLOC, fresh);
+            t.check(
+                &format!("{w} touch reset"),
+                0x0068_a660,
+                Conv::Thiscall(touch),
+                &[],
+                |g| u(d2::touch_reset(g, touch)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The scene walk's engine calls: `Seek4` fills the cursor from cells,
+/// `Next4` hands out a second run once (its count cell is cleared after).
+struct Walk {
+    seek: [u32; 5],
+    next_count: u32,
+    next_cur: u32,
+    next_end: u32,
+}
+
+fn walk_stubs(t: &mut Twins) -> Walk {
+    let seek: [u32; 5] = std::array::from_fn(|_| t.zeros(4));
+    // the base word (+0x10) stays the walk's own 0
+    let writes: Vec<Write> = seek[..4]
+        .iter()
+        .enumerate()
+        .map(|(k, &cell)| Write {
+            arg: None,
+            offset: 4 * k as u32,
+            cell,
+        })
+        .collect();
+    t.stub_at(d2::CURSOR_SEEK, true, 0, 0, &writes);
+    let next_count = t.zeros(4);
+    let next_cur = t.zeros(4);
+    let next_end = t.zeros(4);
+    let writes = [
+        Write {
+            arg: None,
+            offset: 0xc,
+            cell: next_count,
+        },
+        Write {
+            arg: None,
+            offset: 0,
+            cell: next_cur,
+        },
+        Write {
+            arg: None,
+            offset: 4,
+            cell: next_end,
+        },
+    ];
+    let inner = t.stub_out(d2::CURSOR_NEXT, true, 0, 0, &writes);
+    // after the writes, the count cell is cleared: the walk ends
+    let mut c = vec![0xe8];
+    let at = t.cave_next;
+    c.extend(inner.wrapping_sub(at + 5).to_le_bytes()); // call inner
+    c.extend([0xc7, 0x05]);
+    c.extend(next_count.to_le_bytes());
+    c.extend(0u32.to_le_bytes()); // mov dword [count], 0
+    c.push(0xc3);
+    let f = t.code(&c);
+    t.jump(d2::CURSOR_NEXT, f);
+    Walk {
+        seek,
+        next_count,
+        next_cur,
+        next_end,
+    }
+}
+
+/// One walk's data: the owner, `this` (random bytes: the formats a
+/// rebound slot points at), the records and their parameter blocks.
+fn walk_data(t: &mut Twins, rng: &mut Rng, wk: &Walk) -> (u32, u32) {
+    let this = t.random(rng, 0xa80);
+    let owner = t.zeros(4);
+    let list_block = t.random(rng, 0x20);
+    t.w32(owner, list_block);
+    if rng.below(3) == 0 {
+        t.w32(list_block + 0x1c, list_block + 0x1c);
+    }
+    // records of 8 bytes: shader, parameter block; base 0
+    let records = t.zeros(8 * 24);
+    for k in 0..24 {
+        let block = t.random(rng, 0x40);
+        // 0x18: a parameter at 0x10 of 8 bytes ends at the block's end
+        t.w32(block, [0x40, 0x18, 0x20][rng.below(3) as usize]);
+        let old = [0, t.random(rng, 4), this + 0x10][rng.below(3) as usize];
+        for b in 0..2 {
+            if old != 0 && rng.below(2) == 0 {
+                t.w8(old + 2 + b, 2);
+            }
+        }
+        // the slot at offset 8 and 0x10
+        t.w32(block + 8 + 8, old);
+        t.w32(block + 0x10 + 8, old);
+        t.w32(records + 8 * k, rng.next());
+        t.w32(records + 8 * k + 4, block);
+    }
+    let n = 1 + rng.below(5);
+    let stride = [8, 16][rng.below(2) as usize];
+    let m = rng.below(4);
+    let end = [records + 8 * 24, records + stride * m][rng.below(3).min(1) as usize];
+    // a block's end holds the next block's end: two entries further
+    t.w32(records + stride * m, records + stride * (m + 2));
+    for (cell, v) in wk.seek.iter().zip([records, end, stride, n]) {
+        t.w32(*cell, v);
+    }
+    let again = [0, 2][rng.below(3).min(1) as usize];
+    t.w32(wk.next_count, again);
+    t.w32(wk.next_cur, records + 8 * 12);
+    t.w32(wk.next_end, records + 8 * 24);
+    // the parameter: offset 8 or 0x10, 8 bytes (the length word's top
+    // three bits ignored); a slot past the block or below 4 makes the
+    // original read address 8, so the tests leave those out
+    let param = t.zeros(0xc);
+    let off = [8u16, 0x10][rng.below(2) as usize];
+    let len = [8u16, 8 | 0x2000, 8 | 0xe000][rng.below(3) as usize];
+    t.write(param + 8, &off.to_le_bytes());
+    t.write(param + 0xa, &len.to_le_bytes());
+    let param = [param, 0][rng.below(4).min(1) as usize];
+    t.ret(d2::FIND_PARAM, param);
+    (this, owner)
+}
+
+/// `ShaderTexture_rebind_006f6c00`.
+#[test]
+fn d2_rebind_textures() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d203);
+        t.stub(d2::FIND_PARAM, true, 1, 1);
+        t.stub(d2::SURFACE_FORMAT, true, 2, 2);
+        let wk = walk_stubs(&mut t);
+        let tags = [d2::SURFACE_FORMAT, d2::CURSOR_SEEK, d2::CURSOR_NEXT];
+        for i in 0..80 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            let (this, owner) = walk_data(&mut t, &mut rng, &wk);
+            let force = [0, 1, 0x100, 2][rng.below(4) as usize];
+            let ebp = t.ebp_for(2);
+            t.check_framed(
+                &format!("{w} rebind"),
+                d2::REBIND,
+                Conv::Thiscall(this),
+                &[owner, force],
+                ebp - 0x2c,
+                &[(0, 0x2c), (0x34, 8)],
+                |g| {
+                    // the argument area as the call left it
+                    put_args(g, ebp + 8, &[owner, force]);
+                    d2::rebind_textures(g, ebp - 0x2c, ebp + 8, this, owner, force);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `ShaderTexture_rebindAlt_006f6a90` (the plain walk stubbed).
+#[test]
+fn d2_rebind_textures_alt() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d204);
+        t.stub(d2::FIND_PARAM, true, 1, 1);
+        t.stub(d2::SURFACE_FORMAT, true, 2, 2);
+        t.stub(d2::REBIND, true, 2, 2);
+        let wk = walk_stubs(&mut t);
+        let tags = [
+            d2::SURFACE_FORMAT,
+            d2::CURSOR_SEEK,
+            d2::CURSOR_NEXT,
+            d2::REBIND,
+        ];
+        for i in 0..80 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            let (this, owner) = walk_data(&mut t, &mut rng, &wk);
+            let alt = [0, 1, 0x100, 1][rng.below(4) as usize];
+            let force = [0, 1, 0x200, 0x80][rng.below(4) as usize];
+            let ebp = t.ebp_for(3);
+            t.check_framed(
+                &format!("{w} rebind alt {alt:#x}"),
+                0x006f_6a90,
+                Conv::Thiscall(this),
+                &[owner, alt, force],
+                ebp - 0x28,
+                &[(0, 0x28), (0x30, 0xc)],
+                |g| {
+                    put_args(g, ebp + 8, &[owner, alt, force]);
+                    d2::rebind_textures_alt(g, ebp - 0x28, ebp + 8, this, owner, alt, force);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 2, batch 3 (ffx_glue_other::h4_d3)
+
+/// A random C string of up to `max` letters.
+fn random_text(t: &mut Twins, rng: &mut Rng, max: u32) -> u32 {
+    let n = rng.below(max + 1);
+    let mut b: Vec<u8> = (0..n).map(|_| b'a' + rng.below(26) as u8).collect();
+    b.push(0);
+    t.alloc(&b)
+}
+
+/// The font textures' unloads and the battle font's load.
+#[test]
+fn d3_font_textures() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d301);
+        let stubs: [(u32, bool, u32, u32); 3] = [
+            (d3::MEMSET, false, 3, 0),
+            (d3::MENU_UNLOAD_TEXTURE, true, 1, 1),
+            (d3::LOAD_MENU_TEXTURE, true, 1, 1),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            for g in d3::FONT_SUFFIXES {
+                let s = random_text(&mut t, &mut rng, 12);
+                t.g32(g, s);
+            }
+            let scene = rng.next();
+            t.g32(d3::PHYRE_SCENE.sym, scene);
+            for (sym, flag, at) in [(0x0067_f3e0, 5, 0x106), (0x0067_f610, 4, 6)] {
+                let this = t.random(&mut rng, 0x210);
+                t.w8(this + flag, [0, 1, 0x80][rng.below(3) as usize]);
+                // a prefix (junk after its terminator)
+                let n = rng.below(40);
+                let text: Vec<u8> = (0..n).map(|_| b'A' + rng.below(26) as u8).collect();
+                t.write(this + at, &text);
+                t.w8(this + at + n, 0);
+                let ebp = t.ebp_for(0);
+                t.check_framed(
+                    &format!("{w} unload font {sym:#x}"),
+                    sym,
+                    Conv::Thiscall(this),
+                    &[],
+                    ebp - 0x10c,
+                    &[(0, 0x108)],
+                    |g| u(d3::unload_font_texture(g, ebp - 0x10c, this, flag, at)),
+                );
+            }
+            let this = t.random(&mut rng, 0x210);
+            let prefix = random_text(&mut t, &mut rng, 30);
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} load battle font"),
+                0x0067_d180,
+                Conv::Thiscall(this),
+                &[prefix],
+                ebp - 8,
+                &[(0, 8)],
+                |g| u(d3::load_battle_font_texture(g, ebp - 8, this, prefix)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The Sa menu's, the monster book's and the language textures.
+#[test]
+fn d3_language_textures() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d302);
+        let stubs: [(u32, bool, u32, u32); 6] = [
+            (d3::LOAD_MENU_TEXTURE, true, 1, 1),
+            (d3::GET_LANG, false, 0, 0),
+            (d3::GET_LANG_JMP, false, 0, 0),
+            (d3::PRELOAD_SA_SUB_MENU, true, 1, 1),
+            (d3::CLUSTER_MANAGER, false, 0, 0),
+            (d3::LOAD_CLUSTER, true, 1, 1),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let langs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, u32::MAX];
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            let scene = rng.next();
+            t.g32(d3::PHYRE_SCENE.sym, scene);
+            let lang = langs[rng.below(langs.len() as u32) as usize];
+            t.ret(d3::GET_LANG, lang);
+            t.ret(d3::GET_LANG_JMP, lang);
+            t.check(
+                &format!("{w} boku {lang}"),
+                d3::LOAD_MON_BOKU,
+                Conv::Cdecl,
+                &[],
+                |g| u(d3::load_mon_boku_textures(g)),
+            );
+            for cache in [d3::SA_TITLE, d3::SA_CAPTION] {
+                let v = [0, rng.next()][rng.below(3).min(1) as usize];
+                t.g32(cache, v);
+            }
+            let this = t.random(&mut rng, 0x210);
+            let arg = rng.next();
+            t.check(
+                &format!("{w} sa menu {lang}"),
+                0x0067_ce50,
+                Conv::Thiscall(this),
+                &[arg],
+                |g| u(d3::load_sa_menu_texture(g, this, arg)),
+            );
+            t.check(
+                &format!("{w} language {lang}"),
+                0x0067_c920,
+                Conv::Thiscall(this),
+                &[lang],
+                |g| u(d3::load_language_textures(g, this, lang)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The distortion grid's indices and the loading screen's textures.
+#[test]
+fn d3_grid_loading_screen() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d303);
+        let stubs: [(u32, bool, u32, u32); 6] = [
+            (d3::CLUSTER_MANAGER, false, 0, 0),
+            (d3::PHYRE_MALLOC, false, 2, 0),
+            (d3::PUSH_CLUSTER, true, 2, 2),
+            (d3::PUSH_TEXTURE, true, 2, 2),
+            (d3::GET_APPLICATION, false, 0, 0),
+            (d3::FIXUP_CLUSTERS, false, 2, 0),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        // the twenty clusters alternate between two values; the tip (the
+        // 21st call) gets the one the test chooses
+        stub_toggle(&mut t, d3::LOAD_PCLUSTER, true, 1, 1);
+        let count_cell = t.zeros(4);
+        let cur_cell = t.zeros(4);
+        t.stub_at(
+            d3::ITER_SEEK,
+            true,
+            0,
+            0,
+            &[
+                Write {
+                    arg: None,
+                    offset: 0xc,
+                    cell: count_cell,
+                },
+                Write {
+                    arg: None,
+                    offset: 0,
+                    cell: cur_cell,
+                },
+            ],
+        );
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(d3::ITER_SEEK);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the grid
+            let this = t.random(&mut rng, 0x80);
+            let buf = t.random(&mut rng, 0x600);
+            t.w32(this + 0x74, buf);
+            t.check(
+                &format!("{w} grid"),
+                0x006c_2990,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(d3::distortion_grid_indices(g, this)),
+            );
+            // the loading screen
+            let this = t.random(&mut rng, 0x30);
+            let n = rng.below(4);
+            let list = t.zeros(4 * 4);
+            for k in 0..n {
+                let cluster = t.random(&mut rng, 0x40);
+                if rng.below(2) == 0 {
+                    t.w32(cluster + 0x1c, cluster + 0x1c);
+                }
+                t.w32(list + 4 * k, cluster);
+            }
+            t.w32(this + 0x18, n | ((rng.below(4) / 3) << 31));
+            t.w32(this + 0x1c, list);
+            let tip = t.random(&mut rng, 0x40);
+            let tip = [0, tip][rng.below(3).min(1) as usize];
+            // the stub toggles before it answers: 21 calls end on the cell ^ 1
+            t.ret(d3::LOAD_PCLUSTER, tip ^ 1);
+            t.w32(count_cell, rng.below(2));
+            let v = rng.next();
+            t.w32(cur_cell, v);
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} loading screen"),
+                0x006e_4770,
+                Conv::Thiscall(this),
+                &[],
+                ebp - 0x24,
+                &[(0, 0x24)],
+                |g| u(d3::loading_screen_load_textures(g, ebp - 0x24, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// A logging stub (`tag`, `n` words, popping `pops`) that answers the
+/// value `first` holds on its first call and 0 after (it clears `first`).
+fn stub_once(t: &mut Twins, tag: u32, n: u32, pops: u32, first: u32) -> u32 {
+    let rest = t.stub_code(tag, false, n, pops);
+    let cell = t.cells[&tag];
+    let mut c = vec![0xa1];
+    c.extend(first.to_le_bytes()); // mov eax, [first]
+    c.push(0xa3);
+    c.extend(cell.to_le_bytes()); // mov [cell], eax
+    c.extend([0xc7, 0x05]);
+    c.extend(first.to_le_bytes());
+    c.extend(0u32.to_le_bytes()); // mov dword [first], 0
+    c.push(0xe9);
+    let at = t.cave_next;
+    c.extend(rest.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp rest
+    t.code(&c)
+}
+
+/// `Fmod_PushCommand` and `FmodManager_registCommandSync`.
+#[test]
+fn d3_fmod_command_queue() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d304);
+        t.stub(d3::IS_ETERNAL_CALM, false, 1, 0);
+        // printToOutput logs three words, but two for the full ring's last
+        // line (its one two-word call; a third would be stack junk)
+        let three = t.stub_code(d3::PRINT_TO_OUTPUT, false, 3, 0);
+        let two = t.stub_code(0x0bad_7b20, false, 2, 0);
+        let last = t.rebase(d3::RING_FULL_TEXTS[2]);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x3d]; // mov eax, [esp+8]; cmp eax,
+        c.extend(last.to_le_bytes());
+        c.extend([0x74, 0x05, 0xe9]); // je +5; jmp three
+        let at = t.cave_next;
+        c.extend(three.wrapping_sub(at + 16).to_le_bytes());
+        c.push(0xe9); // jmp two
+        c.extend(two.wrapping_sub(at + 21).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(d3::PRINT_TO_OUTPUT, f);
+        let wait = t.stub_code(0x0bad_c0f8, false, 2, 2);
+        let release = t.stub_code(0x0bad_c1c0, false, 1, 1);
+        let set_event = t.stub_code(0x0bad_c0ec, false, 1, 1);
+        // ResetEvent gets the manager as its handle and stores the done
+        // flag (+0x44) the FMOD thread would set
+        let done_cell = t.zeros(4);
+        let reset = t.stub_out(
+            0x0bad_c0f0,
+            false,
+            1,
+            1,
+            &[Write {
+                arg: Some(0),
+                offset: 0x44,
+                cell: done_cell,
+            }],
+        );
+        let first_wait = t.zeros(4);
+        let wait_ex = stub_once(&mut t, 0x0bad_c080, 3, 3, first_wait);
+        for (slot, f) in [
+            (d3::WAIT_FOR_SINGLE_OBJECT, wait),
+            (d3::RELEASE_MUTEX, release),
+            (d3::SET_EVENT, set_event),
+            (d3::RESET_EVENT, reset),
+            (d3::WAIT_FOR_SINGLE_OBJECT_EX, wait_ex),
+        ] {
+            t.g32(slot.sym, f);
+        }
+        let handler = t.stub_code(0x0bad_4a4d, false, 2, 0);
+        for cmd in [0x11, 0x12, 0x13, 0x16, 0x19, 0x41, 0x3f] {
+            t.g32(d3::COMMAND_HANDLERS + 4 * cmd, handler);
+        }
+        let tags = [
+            d3::IS_ETERNAL_CALM,
+            d3::PRINT_TO_OUTPUT,
+            0x0bad_7b20,
+            0x0bad_c0f8,
+            0x0bad_c1c0,
+            0x0bad_c0ec,
+            0x0bad_c0f0,
+            0x0bad_4a4d,
+        ];
+        let commands = [
+            0x3b, 0x3d, 0x31, 0x33, 8, 0x3a, 0x11, 0x41, 0x3f, 0x16, 0x20, 0x40,
+        ];
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the ring: a few commands and arguments
+            for k in 0..d3::RING_LEN {
+                let cmd = commands[rng.below(commands.len() as u32) as usize];
+                t.g32(d3::COMMAND_RING + 20 * k, cmd);
+                t.g32(d3::COMMAND_RING + 20 * k + 4, rng.below(3));
+            }
+            let mgr = t.random(&mut rng, 0x50);
+            let r = rng.below(d3::RING_LEN);
+            let used = [0, 1, 5, d3::RING_LEN - 1, d3::RING_LEN - 2][rng.below(5) as usize];
+            t.w32(mgr + 0x2c, r);
+            t.w32(mgr + 0x28, (r + used) % d3::RING_LEN);
+            t.w32(mgr + 0x1c, mgr);
+            let seps = [0, 1][rng.below(2) as usize];
+            t.g32(d3::BATTLE_SEPS_LOADED.sym, seps);
+            let calm = [0, 1][rng.below(2) as usize];
+            t.ret(d3::IS_ETERNAL_CALM, calm);
+            let cmd = commands[rng.below(commands.len() as u32) as usize];
+            let args = [cmd, rng.below(3), rng.next(), rng.next(), rng.next()];
+            let ebp = t.ebp_for(5);
+            t.check_framed(
+                &format!("{w} push {cmd:#x}"),
+                0x006f_a300,
+                Conv::Thiscall(mgr),
+                &args,
+                ebp + 8,
+                &[(0, 0x14)],
+                |g| {
+                    put_args(g, ebp + 8, &args);
+                    u(d3::push_command(g, ebp + 8, mgr, args))
+                },
+            );
+            // the synchronous command
+            let result = [0, 1, 7][rng.below(3) as usize];
+            t.ret(0x0bad_4a4d, result);
+            let v = [0, 1, 0x100, 2][rng.below(4) as usize];
+            t.w32(done_cell, v);
+            let v = [0, u32::MAX][rng.below(2) as usize];
+            t.w32(first_wait, v);
+            // half the synchronous commands are 0x3f (a handler, then the
+            // queue's 0x33 records)
+            let sync = [0x3f, 0x3f, 0x3f, 0x11, 0x41, 0x20, 0x40, 0x16];
+            let cmd = sync[rng.below(sync.len() as u32) as usize];
+            let args = [cmd, rng.below(3), rng.next(), rng.next(), rng.next()];
+            t.check(
+                &format!("{w} sync {cmd:#x}"),
+                0x006f_a500,
+                Conv::Thiscall(mgr),
+                &args,
+                |g| u(d3::regist_command_sync(g, mgr, args)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The slot table's and the radial line's constructors and the PC
+/// button icon cells.
+#[test]
+fn d3_ctors_button_uv() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d305);
+        t.stub(d3::OPERATOR_NEW, false, 1, 0);
+        let tags = [d3::OPERATOR_NEW];
+        let settings = t.random(&mut rng, 0x60 + 4 * 64);
+        t.g32(d3::SETTINGS.sym, settings);
+        let codes = [
+            0x1c,
+            0x1d,
+            0x27,
+            0x28,
+            0x74,
+            0x75,
+            0x76,
+            0x77,
+            0x78,
+            0x79,
+            0x7a,
+            0x7b,
+            0x8000_0000,
+            0,
+            0x10,
+            u32::MAX,
+            0x7fff_ffff,
+            0x1234_5678,
+        ];
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the slot table: both blocks big enough for 9 entries
+            let n = [0, 1, 2, 5, 9, u32::MAX, 0x8000_0001][rng.below(7) as usize];
+            let block = t.random(&mut rng, 9 * 20);
+            // the stub answers the same block twice: the index words
+            // then the records (the records overwrite the index words)
+            let block = [block, block, 0][rng.below(3) as usize];
+            t.ret(d3::OPERATOR_NEW, block);
+            let this = t.random(&mut rng, 0x14);
+            if block != 0 || n.cast_signed() <= 0 {
+                t.check(
+                    &format!("{w} slot table {n:#x}"),
+                    0x006a_f420,
+                    Conv::Thiscall(this),
+                    &[n],
+                    |g| u(d3::slot_table_ctor(g, this, n)),
+                );
+            }
+            // the radial line
+            let line = t.random(&mut rng, 0x78);
+            t.check(
+                &format!("{w} radial line"),
+                0x006f_7a30,
+                Conv::Thiscall(line),
+                &[],
+                |g| u(d3::radial_line_ctor(g, line)),
+            );
+            // the PC button cell
+            let key = rng.below(64);
+            let code = codes[rng.below(codes.len() as u32) as usize];
+            t.w32(settings + 0x60 + 4 * key, code);
+            let out = t.random(&mut rng, 8);
+            t.check(
+                &format!("{w} pc button {code:#x}"),
+                0x006e_6670,
+                Conv::Stdcall,
+                &[key, out, out + 4],
+                |g| u(d3::pc_button_uv(g, key, out, out + 4)),
+            );
+            // the pad button cell, six times a round: the pad keys and
+            // the special ones by the glyph set, button data and remap
+            let pad_codes = [
+                0xb, 0xe, 0xf, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x1c, 0x74,
+            ];
+            for _ in 0..6 {
+                let remap = t.random(&mut rng, 0x160);
+                let mode = [0, 3, 4, u32::MAX][rng.below(4) as usize];
+                t.w32(remap + 0x150, mode);
+                let bit = [u32::MAX, 1 << rng.below(20), 1 << 25, 5][rng.below(4) as usize];
+                t.w32(remap + 0x15c, bit);
+                for k in 0..20 {
+                    let c = pad_codes[rng.below(pad_codes.len() as u32) as usize];
+                    t.w32(settings + 0x98 + 4 * k, c);
+                }
+                let keys = [
+                    0u32,
+                    1,
+                    2,
+                    3,
+                    4,
+                    0x24,
+                    0x25,
+                    0x26,
+                    0x8000_0000,
+                    0x8000_0000,
+                    0x4000_0000,
+                ];
+                let key = keys[rng.below(keys.len() as u32) as usize];
+                let k = match key.wrapping_add(0xe) {
+                    0x32 => 0x18,
+                    0x33 => 0x19,
+                    0x34 => 0x16,
+                    k => k,
+                };
+                let code = [
+                    codes[rng.below(codes.len() as u32) as usize],
+                    pad_codes[rng.below(pad_codes.len() as u32) as usize],
+                ][rng.below(2) as usize];
+                t.w32(
+                    settings.wrapping_add(0x60).wrapping_add(k.wrapping_mul(4)),
+                    code,
+                );
+                let glyphs =
+                    [u32::MAX, u32::MAX, 0x3c, 0x3f, 0x42, 0x43, 0x44, 0x3b][rng.below(8) as usize];
+                t.g32(d3::BUTTON_DATA[1], glyphs);
+                let data = [u32::MAX, 0][rng.below(2) as usize];
+                t.g32(d3::BUTTON_DATA[0], data);
+                t.check(
+                    &format!("{w} joypad {key:#x} {code:#x}"),
+                    0x006e_6460,
+                    Conv::Thiscall(remap),
+                    &[key, out, out + 4],
+                    |g| u(d3::joypad_uv(g, remap, key, out, out + 4)),
+                );
+            }
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 2, batch 4 (ffx_glue_other::h4_d4)
+
+/// `printToOutput` logging three words, or two for the formats in
+/// `short` (its two-word calls: a third would be stack junk).
+fn stub_print(t: &mut Twins, short: &[u32]) {
+    let three = t.stub_code(d4::PRINT_TO_OUTPUT, false, 3, 0);
+    let two = t.stub_code(0x0bad_7b20, false, 2, 0);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+    let mut patches = Vec::new();
+    for &s in short {
+        c.push(0x3d);
+        c.extend(t.rebase(s).to_le_bytes()); // cmp eax, s
+        c.extend([0x0f, 0x84]); // je two
+        patches.push(c.len());
+        c.extend([0; 4]);
+    }
+    let at = t.cave_next;
+    c.push(0xe9); // jmp three
+    let here = c.len() as u32 + 4;
+    c.extend(three.wrapping_sub(at + here).to_le_bytes());
+    let two_at = c.len() as u32;
+    c.push(0xe9); // two: jmp two
+    let here = c.len() as u32 + 4;
+    c.extend(two.wrapping_sub(at + here).to_le_bytes());
+    for p in patches {
+        let rel = two_at.wrapping_sub(p as u32 + 4);
+        c[p..p + 4].copy_from_slice(&rel.to_le_bytes());
+    }
+    let f = t.code(&c);
+    t.jump(d4::PRINT_TO_OUTPUT, f);
+}
+
+/// The eight-value Flash call, the texture-animation frame, the
+/// specular-map reset.
+#[test]
+fn d4_flash_frame_specular() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d401);
+        let stubs: [(u32, bool, u32, u32); 5] = [
+            (d4::CALL_AS3, true, 5, 5),
+            (d4::SET_FRAME_BY_NAME, false, 2, 0),
+            (d4::ARRAY_DATA, true, 0, 0),
+            (d4::FIND_PARAM, true, 1, 1),
+            (d4::MEMCPY, false, 3, 0),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let sprintf = t.stub_code(0x0bad_c3dc, false, 6, 0);
+        t.g32(d4::SPRINTF.sym, sprintf);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(0x0bad_c3dc);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the Flash call
+            let args: [u32; 34] = std::array::from_fn(|_| rng.next());
+            let values: [u32; 32] = std::array::from_fn(|k| args[k + 2]);
+            let ebp = t.ebp_for(34);
+            t.check_framed(
+                &format!("{w} flash 8"),
+                0x006f_faa0,
+                Conv::Cdecl,
+                &args,
+                ebp - 0x84,
+                &[(0, 0x80)],
+                |g| u(d4::call_flash_8(g, ebp - 0x84, args[0], args[1], &values)),
+            );
+            // the animation frame
+            let rec = t.random(&mut rng, 0x38);
+            let cell = t.zeros(4);
+            t.w32(cell, rec);
+            let (a, b) = (rng.below(4), rng.below(8));
+            let base = cell
+                .wrapping_sub(0x9_d9f0)
+                .wrapping_sub(0x720 * a)
+                .wrapping_sub(0x1c * b);
+            let ebp = t.ebp_for(3);
+            t.check_framed(
+                &format!("{w} anim frame"),
+                0x0090_bdb0,
+                Conv::Cdecl,
+                &[base, a, b],
+                ebp - 0x114,
+                &[(0, 0x110)],
+                |g| u(d4::set_texture_anim_frame(g, ebp - 0x114, base, a, b)),
+            );
+            // the specular maps
+            let this = t.random(&mut rng, 0x5b4);
+            let param = t.random(&mut rng, 0xc);
+            let kind = [0x42, 0xd9, 0xdc, 0x12, 0x43, 0xdd][rng.below(6) as usize];
+            t.w8(param + 2, kind);
+            let off = [0u16, 3, 4, 8, 0x30][rng.below(5) as usize];
+            t.write(param + 8, &off.to_le_bytes());
+            let len = [8u16, 0x10, 8 | 0xe000][rng.below(3) as usize];
+            t.write(param + 0xa, &len.to_le_bytes());
+            let p = [param, param, 0][rng.below(3) as usize];
+            t.ret(d4::FIND_PARAM, p);
+            let materials = t.zeros(4 * 3);
+            for k in 0..3 {
+                let block = t.random(&mut rng, 0x40);
+                t.w32(block, [0x10, 0x18, 0x40][rng.below(3) as usize]);
+                let m = t.zeros(8);
+                t.w32(m, rng.next());
+                t.w32(m + 4, block);
+                t.w32(materials + 4 * k, m);
+            }
+            t.ret(d4::ARRAY_DATA, materials);
+            for slot in 0..4u32 {
+                if rng.below(4) == 0 {
+                    t.w32(this + 4 * slot, 0);
+                    continue;
+                }
+                let n = rng.below(3);
+                let elements = t.zeros(4 * 3);
+                for k in 0..n {
+                    let mesh = t.zeros(0x14);
+                    let mats = t.zeros(4);
+                    t.w32(mats, rng.below(4) | (rng.below(2) << 31));
+                    t.w32(mesh + 0x10, mats);
+                    t.w32(elements + 4 * k, mesh);
+                }
+                let list = t.zeros(8);
+                t.w32(list, n | (rng.below(2) << 31));
+                t.w32(list + 4, elements);
+                t.w32(this + 4 * slot, list);
+            }
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} specular"),
+                0x006c_5850,
+                Conv::Thiscall(this),
+                &[],
+                ebp - 0x28,
+                &[(0, 0x28)],
+                |g| u(d4::reset_specular_maps(g, ebp - 0x28, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The FMOD data loaders' callees: files, FMOD's project and stream
+/// calls (the project's and the stream's handles from cells).
+struct Loaders {
+    project: u32,
+    sound: u32,
+    vtable: u32,
+}
+
+fn loader_stubs(t: &mut Twins) -> Loaders {
+    for (sym, n) in [
+        (d4::USER_MALLOC, 1),
+        (d4::MEMSET, 3),
+        (d4::FULL_FILENAME, 2),
+        (d4::FIOS_OPEN, 2),
+        (d4::FIOS_SIZE, 1),
+        (d4::ALIGNED_MALLOC, 2),
+        (d4::FIOS_READ, 3),
+        (d4::FIOS_CLOSE, 1),
+        (fr::ERRCHECK, 3),
+    ] {
+        t.stub(sym, false, n, 0);
+    }
+    stub_print(t, &[0x00b4_f8d8, 0x00b4_fd08]);
+    let sprintf = t.stub_code(0x0bad_c3dc, false, 2, 0);
+    t.g32(d4::SPRINTF.sym, sprintf);
+    let project = t.zeros(4);
+    let sound = t.zeros(4);
+    t.stub_at(
+        d4::EVENT_SYSTEM_LOAD,
+        false,
+        4,
+        4,
+        &[Write {
+            arg: Some(3),
+            offset: 0,
+            cell: project,
+        }],
+    );
+    t.stub_at(
+        d4::CREATE_STREAM,
+        false,
+        5,
+        5,
+        &[Write {
+            arg: Some(4),
+            offset: 0,
+            cell: sound,
+        }],
+    );
+    t.stub(d4::SOUND_RELEASE, false, 1, 1);
+    t.stub(d4::SUB_SOUNDS, false, 2, 2);
+    let vtable = t.zeros(0x30);
+    for (slot, tag, n) in [
+        (0, 0x0bad_0f00, 1),
+        (8, 0x0bad_0f08, 4),
+        (0x28, 0x0bad_0f28, 1),
+    ] {
+        let f = t.stub_code(tag, false, n, n);
+        t.w32(vtable + slot, f);
+    }
+    Loaders {
+        project,
+        sound,
+        vtable,
+    }
+}
+
+const LOADER_TAGS: [u32; 18] = [
+    d4::USER_MALLOC,
+    d4::MEMSET,
+    d4::FULL_FILENAME,
+    d4::FIOS_OPEN,
+    d4::FIOS_SIZE,
+    d4::ALIGNED_MALLOC,
+    d4::FIOS_READ,
+    d4::FIOS_CLOSE,
+    fr::ERRCHECK,
+    d4::PRINT_TO_OUTPUT,
+    0x0bad_7b20,
+    0x0bad_c3dc,
+    d4::EVENT_SYSTEM_LOAD,
+    d4::CREATE_STREAM,
+    d4::SOUND_RELEASE,
+    d4::SUB_SOUNDS,
+    0x0bad_0f00,
+    0x0bad_0f08,
+];
+
+/// A project object (its vtable) or none, and what the load answers.
+fn project_round(t: &mut Twins, rng: &mut Rng, ld: &Loaders) -> u32 {
+    let old = t.zeros(4);
+    t.w32(old, ld.vtable);
+    let fresh = t.zeros(4);
+    t.w32(fresh, ld.vtable);
+    let v = [0, fresh][rng.below(3).min(1) as usize];
+    t.w32(ld.project, v);
+    [0, old][rng.below(2) as usize]
+}
+
+/// The sync manager's buffers, the voice lists, the music project and
+/// the shout stream.
+#[test]
+fn d4_fmod_loaders() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d402);
+        let ld = loader_stubs(&mut t);
+        let mut tags = LOADER_TAGS.to_vec();
+        tags.push(0x0bad_0f28);
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the sync manager
+            let this = t.random(&mut rng, 0x44);
+            t.check(
+                &format!("{w} sync init"),
+                0x006f_a8d0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(d4::sync_init_data(g, this)),
+            );
+            // the voice lists
+            let v = [0, rng.next()][rng.below(3).min(1) as usize];
+            t.ret(d4::FIOS_OPEN, v);
+            let voice = t.random(&mut rng, 0x90);
+            t.w8(voice + 4, [0, 1, 0x80][rng.below(3) as usize]);
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} voice list"),
+                0x0070_ab90,
+                Conv::Thiscall(voice),
+                &[],
+                ebp - 0x204,
+                &[(0, 0x200)],
+                |g| u(d4::voice_init_list(g, ebp - 0x204, voice)),
+            );
+            // the music project
+            let project = t.zeros(4);
+            let old = project_round(&mut t, &mut rng, &ld);
+            t.w32(project, old);
+            let group = t.random(&mut rng, 4);
+            let (system, file) = (rng.next(), rng.next());
+            let ebp = t.ebp_for(4);
+            t.check_framed(
+                &format!("{w} music project"),
+                0x0070_8d40,
+                Conv::Stdcall,
+                &[system, file, project, group],
+                ebp - 0x108,
+                &[(0, 0x104)],
+                |g| {
+                    u(d4::load_event_project(
+                        g,
+                        ebp - 0x108,
+                        system,
+                        file,
+                        project,
+                        group,
+                    ))
+                },
+            );
+            // the shout stream
+            let shout = t.random(&mut rng, 0x10);
+            if rng.below(3) == 0 {
+                t.w32(shout, 0);
+            }
+            let v = [0, rng.next()][rng.below(3).min(1) as usize];
+            t.w32(ld.sound, v);
+            let system = [0, rng.next()][rng.below(5).min(1) as usize];
+            let flag = [0, 1, 0x100][rng.below(3) as usize];
+            let ebp = t.ebp_for(2);
+            t.check_framed(
+                &format!("{w} shout"),
+                d4::SHOUT_INIT_DATA,
+                Conv::Thiscall(shout),
+                &[system, flag],
+                ebp - 0x104,
+                &[(0, 0x100)],
+                |g| u(d4::shout_init_data(g, ebp - 0x104, shout, system, flag)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `FmodVoice_initData` (the shout's data stubbed).
+#[test]
+fn d4_voice_init_data() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d403);
+        let ld = loader_stubs(&mut t);
+        t.stub(d4::SHOUT_INIT_DATA, true, 2, 2);
+        let mut tags = LOADER_TAGS.to_vec();
+        tags.extend([0x0bad_0f28, d4::SHOUT_INIT_DATA]);
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            let voice = t.random(&mut rng, 0x90);
+            t.w8(voice + 4, [0, 1, 0x80][rng.below(3) as usize]);
+            let old = project_round(&mut t, &mut rng, &ld);
+            t.w32(voice + 0x20, old);
+            let events = [0, rng.next()][rng.below(4).min(1) as usize];
+            let system = rng.next();
+            let ebp = t.ebp_for(2);
+            t.check_framed(
+                &format!("{w} voice data"),
+                0x0070_aa30,
+                Conv::Thiscall(voice),
+                &[events, system],
+                ebp - 0x108,
+                &[(0, 0x104)],
+                |g| u(d4::voice_init_data(g, ebp - 0x108, voice, events, system)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 2, batch 5 (ffx_glue_other::h4_d5)
+
+/// A logging stub at `sym` that logs `n_long` stack words, or `n_short`
+/// (as `short_tag`) when the word at `[esp + offset]` is one of `short`
+/// (calls with fewer arguments: more would be stack junk).
+fn stub_split(
+    t: &mut Twins,
+    sym: u32,
+    short_tag: u32,
+    offset: u8,
+    short: &[u32],
+    (n_long, n_short): (u32, u32),
+) {
+    let long = t.stub_code(sym, false, n_long, 0);
+    let brief = t.stub_code(short_tag, false, n_short, 0);
+    let mut c = vec![0x8b, 0x44, 0x24, offset]; // mov eax, [esp+offset]
+    let mut patches = Vec::new();
+    for &s in short {
+        c.push(0x3d);
+        c.extend(s.to_le_bytes()); // cmp eax, s
+        c.extend([0x0f, 0x84]); // je brief
+        patches.push(c.len());
+        c.extend([0; 4]);
+    }
+    let at = t.cave_next;
+    c.push(0xe9); // jmp long
+    let here = c.len() as u32 + 4;
+    c.extend(long.wrapping_sub(at + here).to_le_bytes());
+    let brief_at = c.len() as u32;
+    c.push(0xe9); // jmp brief
+    let here = c.len() as u32 + 4;
+    c.extend(brief.wrapping_sub(at + here).to_le_bytes());
+    for p in patches {
+        let rel = brief_at.wrapping_sub(p as u32 + 4);
+        c[p..p + 4].copy_from_slice(&rel.to_le_bytes());
+    }
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// The message windows: one window's text and the two window passes.
+#[test]
+fn d5_message_windows() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d501);
+        let stubs: [(u32, u32); 19] = [
+            (d5::DAPS_SET_POS, 2),
+            (d5::WINDOW_STATUS, 1),
+            (d5::DRAW_SELECT_CURSOR, 1),
+            (d5::WINDOW_MODE, 0),
+            (d5::MOVIE_MESSAGE_WAIT, 1),
+            (d5::SAVE_MENU, 0),
+            (d5::SAVE_BUSY, 0),
+            (d5::DRAW_WINDOW, 1),
+            (d5::SORT_WINDOWS, 1),
+            (d5::PKT_SCISSOR, 4),
+            (d5::INIT_ADD_PKT, 0),
+            (d5::TRANS_TEXTURE, 0),
+            (d5::DRAW_ALPHA_BG, 1),
+            (d5::DRAW_BTL_WINDOW, 0),
+            (d5::SET_ADD_PKT, 0),
+            (d5::DAPS_DRAW, 0),
+            (d5::SET_PKT_BUFF, 3),
+            (d5::OPEN_PKT_BUFF, 0),
+            (d5::SET_REG_FONT, 0),
+        ];
+        for &(sym, n) in &stubs {
+            t.stub(sym, false, n, 0);
+        }
+        for (sym, n) in [(d5::CLOSE_PKT_BUFF, 0), (d5::DRAW_KICK, 0)] {
+            t.stub(sym, false, n, 0);
+        }
+        let first_line = t.rebase(d5::DEBUG_LINES[0]);
+        stub_split(
+            &mut t,
+            d5::DAPS_PRINTF,
+            0x0bad_dde0,
+            4,
+            &[first_line],
+            (2, 1),
+        );
+        let draw = t.stub_code(0x0bad_012c, false, 1, 0);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([
+            d5::CLOSE_PKT_BUFF,
+            d5::DRAW_KICK,
+            d5::DAPS_PRINTF,
+            0x0bad_dde0,
+            0x0bad_012c,
+        ]);
+        let menu = t.zeros(4);
+        for i in 0..250 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // eight windows and their slots
+            for k in 0..8u32 {
+                let win = t.random(&mut rng, 0x130);
+                t.write(win, &[0u16, 1, 1, 1][rng.below(4) as usize].to_le_bytes());
+                t.write(
+                    win + 2,
+                    &[0u16, 1, 0, 2][rng.below(4) as usize].to_le_bytes(),
+                );
+                t.write(
+                    win + 0x1c,
+                    &[1u16, 2, 0][rng.below(3) as usize].to_le_bytes(),
+                );
+                t.write(
+                    win + 0x1e,
+                    &[1u16, 1, 0, 2][rng.below(4) as usize].to_le_bytes(),
+                );
+                t.w32(win + 0x12c, draw);
+                t.g32(d5::MSG_WINDOWS + 4 * k, win);
+                let state = t.random(&mut rng, 0x1c);
+                t.w32(state + 8, [2, 2, 1, 3][rng.below(4) as usize]);
+                t.write(
+                    state + 0x1a,
+                    &[1u16, 3, 2][rng.below(3) as usize].to_le_bytes(),
+                );
+                t.write(
+                    state + 0x10,
+                    &[0u16, 0x4000][rng.below(2) as usize].to_le_bytes(),
+                );
+                t.write(
+                    state + 0xc,
+                    &[0u16, 0, 5, 1][rng.below(4) as usize].to_le_bytes(),
+                );
+                let slot = t.random(&mut rng, 0x18);
+                t.w32(slot + 0x14, state);
+                t.g32(d5::WINDOW_SLOTS + 4 * k, slot);
+            }
+            let flag = [0, 1, 0x80][rng.below(3) as usize];
+            t.write(t.rebase(d5::DEBUG_PAD_PRINT.sym), &[flag]);
+            t.ret(d5::WINDOW_STATUS, [2, 2, 0, 1][rng.below(4) as usize]);
+            t.ret(d5::WINDOW_MODE, [1, 0, 2][rng.below(3) as usize]);
+            t.ret(d5::SAVE_BUSY, [0, 0, 1, 2][rng.below(4) as usize]);
+            t.w32(menu, [0, 0x200, 0x1ff, u32::MAX][rng.below(4) as usize]);
+            t.ret(d5::SAVE_MENU, menu);
+            for sym in d5::HIDE_SWITCHES {
+                let v = [0, 1, 2][rng.below(3) as usize];
+                t.g32(sym, v);
+            }
+            let alpha = [0, 1, 0x80, u32::MAX][rng.below(4) as usize];
+            t.g32(d5::ALPHA_BG.sym, alpha);
+            // one window
+            let k = rng.below(8);
+            t.check(
+                &format!("{w} message {k}"),
+                d5::DRAW_MESSAGE,
+                Conv::Cdecl,
+                &[k],
+                |g| u(d5::draw_message(g, k)),
+            );
+            // the passes
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} window pass"),
+                0x008a_bd30,
+                Conv::Cdecl,
+                &[],
+                ebp - 0x14,
+                &[(0, 0x10)],
+                |g| u(d5::draw_message_window(g, ebp - 0x14)),
+            );
+            // the field pass set the pad-control byte: clear it again
+            t.write(t.rebase(d5::PAD_GET_CTRL.sym), &[0]);
+            t.check_framed(
+                &format!("{w} menu window pass"),
+                0x008a_be40,
+                Conv::Cdecl,
+                &[],
+                ebp - 0x14,
+                &[(0, 0x10)],
+                |g| u(d5::draw_message_window_for_menu(g, ebp - 0x14)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// An Iggy menu's mouse handler.
+#[test]
+fn d5_menu_mouse() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d502);
+        let none = t.stub_code(0x0bad_c840, false, 1, 1);
+        let mouse = t.stub_code(0x0bad_c844, false, 3, 3);
+        let dispatch = t.stub_code(0x0bad_c85c, false, 3, 3);
+        for (slot, f) in [
+            (d5::MAKE_EVENT_NONE, none),
+            (d5::MAKE_EVENT_MOUSE_MOVE, mouse),
+            (d5::DISPATCH_EVENT, dispatch),
+        ] {
+            t.g32(slot.sym, f);
+        }
+        let tags = [0x0bad_c840, 0x0bad_c844, 0x0bad_c85c];
+        for i in 0..80 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            let this = t.random(&mut rng, 0x98);
+            let on = [0, 1, 1, 0x80][rng.below(4) as usize];
+            t.w8(this + 0x70, on);
+            let holder = t.random(&mut rng, 4);
+            t.w32(this + 0x6c, holder);
+            let (left, top) = (rng.below(200), rng.below(200));
+            let (width, height) = (rng.below(100), rng.below(100));
+            for (off, v) in [(0x84, left), (0x88, top), (0x8c, width), (0x90, height)] {
+                t.w32(this + off, v);
+            }
+            let event = t.random(&mut rng, 0x10);
+            t.w32(event, [7, 7, 7, 1, 8][rng.below(5) as usize]);
+            let pick = |rng: &mut Rng, lo: u32, size: u32| match rng.below(5) {
+                0 => lo,
+                1 => lo + size,
+                2 => lo + 1,
+                3 => (lo + size).wrapping_sub(1),
+                _ => rng.below(320),
+            };
+            let x = pick(&mut rng, left, width);
+            let y = pick(&mut rng, top, height);
+            t.w32(event + 8, x);
+            t.w32(event + 0xc, y);
+            let result = rng.next();
+            let ebp = t.ebp_for(2);
+            t.check_framed(
+                &format!("{w} mouse"),
+                0x00a2_8c10,
+                Conv::Thiscall(this),
+                &[event, result],
+                ebp - 0x1c,
+                &[(0, 0x18)],
+                |g| {
+                    let r = d5::menu_mouse_event(g, ebp - 0x1c, this, event, result);
+                    if on == 0 { Out::None } else { u(r) }
+                },
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
