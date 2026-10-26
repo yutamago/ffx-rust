@@ -822,9 +822,13 @@ pub mod bridge {
                 let offset = u32::from(h.read::<u16>(entry + 8));
                 let room: u32 = h.read(buffer);
                 if offset + size <= room && offset >= 4 {
-                    let mut bytes = vec![0_u8; size as usize];
-                    h.read_bytes(src, &mut bytes);
-                    h.write_bytes(buffer.wrapping_add(offset), &bytes);
+                    // memcpy (the CRT's, through 0x00949256)
+                    let mut chunk = [0_u8; 0x40];
+                    for at in (0..size).step_by(0x40) {
+                        let part = &mut chunk[..(size - at).min(0x40) as usize];
+                        h.read_bytes(src.wrapping_add(at), part);
+                        h.write_bytes(buffer.wrapping_add(offset + at), part);
+                    }
                 }
             }
             i += 1;

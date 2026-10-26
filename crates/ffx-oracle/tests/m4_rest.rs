@@ -1860,6 +1860,11 @@ fn cc_light(t: &mut Twins, rng: &mut Rng, types: [u32; 2]) -> u32 {
         1 => t.w32(light + 0x2c, near),
         _ => {}
     }
+    // now and then a quiet NaN (the x87's NaN rules; no signalling ones)
+    if rng.below(4) == 0 {
+        let field = [0x1c, 0x20, 0x24, 0x28, 0x2c][rng.below(5) as usize];
+        t.w32(light + field, 0x7fc0_0000 | (rng.next() & 0x803f_ffff));
+    }
     light
 }
 
@@ -1999,10 +2004,14 @@ fn generate_context_parameters_matches_the_original() {
                 let mut offset = 4 + 0x180 * k;
                 if semantic == 0xd7 {
                     size = 0x140;
-                } else if rng.below(8) == 0 {
-                    offset = rng.below(4);
-                } else if rng.below(8) == 0 {
-                    offset = 0x1c00 - 8;
+                } else {
+                    match rng.below(8) {
+                        // below 4, past the end, exactly at the end
+                        0 => offset = rng.below(4),
+                        1 => offset = 0x1c00 - 8,
+                        2 => offset = 0x1c00 - size,
+                        _ => {}
+                    }
                 }
                 let e = entries + 16 * k;
                 t.w32(e, rng.below(6) | (rng.next() & 0xffff_0000));

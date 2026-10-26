@@ -8,7 +8,9 @@
 //! where the renderer binds a dynamic mesh's streams (the render
 //! thread's mesh binding); `renderMeshInstanceList` where a world is
 //! rendered (`graphicRender`, the main thread; 9 KB frame), and
-//! `generateNodeParameterCaptureBuffer` for each node it draws; the
+//! `generateNodeParameterCaptureBuffer` and
+//! `generateContextParameterCaptureBuffer` (`allocateAndFillParameterBuffers`)
+//! for each node it draws (0x3ec-byte frame); the
 //! modifier network's run where `PModifierNetworkDynamicMesh::fillPacket`
 //! fills a packet (its `_alloca` arrays on the heap: no large frames on
 //! a worker's stack); `processRenderCommands` on the render thread (its
@@ -22,6 +24,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_pother_b::m4r_dynblocks::bridge as blocks;
 use ffx_pother_b::m4r_mesh::bridge as mesh;
+use ffx_prender::m4r_ctxcapture as ctxcapture;
 use ffx_prender::m4r_fonttext as fonttext;
 use ffx_prender::m4r_gauss as gauss;
 use ffx_prender::m4r_glow as glow;
@@ -67,6 +70,17 @@ ported! {
         let mut frame = StackFrame::<0x183>::new();
         let ebp = frame.at() + nodecapture::FRAME;
         nodecapture::bridge::generate(&mut mem(), renderer, node, ebp)
+    }
+    /// `PRendererBase::generateContextParameterCaptureBuffer(renderer;
+    /// ctx, lights, extra)` -> the capture buffer, or 0.
+    Phyre_PRendering_PRendererBase_generateContextParameterCaptureBuffer @ 0x005b_6cf0 => extern "thiscall" fn generate_context_parameters(renderer: u32, ctx: u32, lights: u32, extra: u32) -> u32 {
+        // ebp - 0x3ec .. ebp: the value blocks the buffer copies, the
+        // callees' outputs and the temporaries a copy can reach (zeroed:
+        // words a value's size reaches past what this call wrote read 0,
+        // brief 2026-10-24)
+        let mut frame = StackFrame::<0xfb>::new();
+        let ebp = frame.at() + ctxcapture::FRAME;
+        ctxcapture::bridge::generate(&mut mem(), renderer, ctx, lights, extra, ebp)
     }
     /// `PModifierNetwork_runPacket_005c1f90(packet)` -> the packet.
     PModifierNetwork_runPacket_005c1f90 @ 0x005c_1f90 => extern "C" fn modifier_run(packet: u32) -> u32 {
