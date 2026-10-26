@@ -6339,3 +6339,851 @@ fn p1d_load_user_fixups_matches_the_original() {
         }
     }
 }
+
+// ---- round 4: PClassDescriptorDynamic::Bind ----
+
+#[test]
+fn p1e_dynamic_bind_matches_the_original() {
+    use ffx_pload::p1_dynbind as dynb;
+    for (label, mut t) in Twins::all() {
+        // the image's static descriptors and namespaces are not built:
+        // snapshots only (as p1c_binds)
+        if !t.snapshot {
+            continue;
+        }
+        let second = t.rebase(0x00c9_0760);
+        if t.r32(second + 0x18) == 0 {
+            let n = t.alloc(b"p1load_Second\0");
+            t.w32(second + 0x18, n);
+        }
+        let mut rng = Rng(0x0d1b_17d0);
+        // as found, again, then with the guards cleared (all of them, then
+        // random bits: some members built again, the inline array
+        // descriptor built or not)
+        for round in 0..8 {
+            t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+            if round >= 2 {
+                p1c_bind_stubs(&mut t);
+                // the inline array descriptor's constructor and the two
+                // calls before each buffer member: recorded
+                t.stub(0x0044_73f0, true, 0, 0, 0x4473);
+                t.stub(0x0043_7d30, false, 0, 0, 0x437d);
+                t.stub(0x0044_8450, false, 1, 0, 0x4484);
+                // the array member's constructor: its seventh word folded
+                // into the logged `this`
+                t.stub_body(
+                    0x0057_5ef0,
+                    true,
+                    6,
+                    7,
+                    &[0x8b, 0x54, 0x24, 0x1c, 0x31, 0x50, 0x04, 0x31, 0xc0],
+                );
+                for g in [0x0043_7fc0u32, 0x0043_7f10, 0x0043_7e70] {
+                    t.stub(g, false, 0, 0, 0x00c9_7000 | (g & 0xfff));
+                }
+                let desc = t.rebase(dynb::DYNAMIC_BIND.d);
+                let flags = t.r32(desc + 0x90);
+                t.w32(desc + 0x90, flags & !0x4000_0000);
+                let (guard, inner) = match round {
+                    2 => (0, 0),
+                    3 => (0, 1),
+                    4 => (0xffff_f8ff, 0),
+                    _ => (rng.next() & rng.next(), rng.next() & 1),
+                };
+                let at = t.rebase(dynb::GUARD);
+                t.w32(at, guard);
+                let at = t.rebase(dynb::ARRAY_GUARD);
+                t.w32(at, inner);
+                for w in [0x00c9_1658u32, 0x00c0_b480, 0x00c0_b484, 0x00c0_b488] {
+                    let at = t.rebase(w);
+                    let v = rng.next();
+                    t.w32(at, v);
+                }
+            }
+            let what = format!("{label}: dynamic bind {round}");
+            t.check(&what, dynb::ADDR, Conv::Cdecl, &[], |g| {
+                Out::U32(ffx_prender::h1_bind::bridge::bind(g, dynb::DYNAMIC_BIND))
+            });
+            t.reset();
+        }
+    }
+}
+
+// ---- round 4: the namespace mapping (p1_mapping) ----
+
+impl Twins {
+    /// A recording stub at `sym` (as [`Twins::stub`]: `tag`, `ecx` when
+    /// `this`, `n` stack words; pops `pops`) whose result is computed by
+    /// `body` (run after the log entry is written, with the entry in
+    /// `eax`; it must leave the result in `eax`).
+    fn stub_body(&mut self, sym: u32, this: bool, n: u32, pops: u32, body: &[u8]) {
+        assert!(n <= 6);
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(sym.to_le_bytes()); // mov [eax], tag
+        if this {
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        }
+        for i in 0..n {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.extend(body);
+        if pops == 0 {
+            c.push(0xc3);
+        } else {
+            c.push(0xc2);
+            c.extend(((pops * 4) as u16).to_le_bytes());
+        }
+        let code = self.a.alloc_code(&c).unwrap();
+        assert_eq!(self.b.alloc_code(&c).unwrap(), code);
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut self.a, at, 5).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.write(at, &j);
+    }
+
+    /// `PhyrePrintf` replaced by a stub that logs the level (in the
+    /// entry's `this` word), the format, and as many arguments as
+    /// `formats` gives that format (none for one not listed).
+    fn printf_stub(&mut self, formats: &[(u32, u32)]) {
+        let mut table = Vec::new();
+        for &(f, n) in formats {
+            assert!(n <= 5);
+            table.extend(self.rebase(f).to_le_bytes());
+            table.extend(n.to_le_bytes());
+        }
+        table.extend([0u8; 8]);
+        let table = self.alloc(&table);
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(0x0043_52f0u32.to_le_bytes()); // mov [eax], tag
+        c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x04]); // level
+        c.extend([0x8b, 0x54, 0x24, 0x08, 0x89, 0x50, 0x08]); // format
+        c.extend([0x56, 0x57]); // push esi; push edi
+        c.push(0xbe);
+        c.extend(table.to_le_bytes()); // mov esi, table
+        // L: mov ecx,[esi]; test ecx,ecx; je done; cmp ecx,edx; je found;
+        // add esi,8; jmp L
+        c.extend([0x8b, 0x0e, 0x85, 0xc9, 0x74, 0x15, 0x39, 0xd1, 0x74, 0x05]);
+        c.extend([0x83, 0xc6, 0x08, 0xeb, 0xf1]);
+        // found: mov ecx,[esi+4]; lea esi,[esp+0x14]; lea edi,[eax+0xc];
+        // rep movsd
+        c.extend([0x8b, 0x4e, 0x04, 0x8d, 0x74, 0x24, 0x14, 0x8d, 0x78, 0x0c]);
+        c.extend([0xf3, 0xa5]);
+        // done: pop edi; pop esi
+        c.extend([0x5f, 0x5e]);
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.extend([0x31, 0xc0, 0xc3]); // xor eax, eax; ret
+        let code = self.a.alloc_code(&c).unwrap();
+        assert_eq!(self.b.alloc_code(&c).unwrap(), code);
+        let at = self.rebase(0x0043_52f0);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut self.a, at, 5).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.write(at, &j);
+    }
+}
+
+/// The mapping's messages and their argument counts.
+const P1E_FORMATS: &[(u32, u32)] = &[
+    (0x00b1_34e0, 3),
+    (0x00b1_3530, 2),
+    (0x00b1_3580, 3),
+    (0x00b1_35d0, 2),
+    (0x00b1_3628, 2),
+    (0x00b1_3670, 2),
+    (0x00b1_36b8, 4),
+    (0x00b1_3728, 4),
+    (0x00b1_3790, 4),
+    (0x00b1_3838, 3),
+    (0x00b1_3898, 4),
+    (0x00b1_38e8, 4),
+    (0x00b1_3940, 4),
+    (0x00b1_39a8, 2),
+    (0x00b1_39f0, 1),
+    (0x00b1_3a38, 1),
+    (0x00b1_3a88, 2),
+];
+
+/// A runtime data member for the checks: slot 1 returns its `+0x2c` (a
+/// kind object, `+0x30` the kind, or 0).
+struct P1eMember {
+    at: u32,
+}
+
+fn p1e_slot1(t: &mut Twins) -> u32 {
+    // mov eax, [ecx+0x2c]; ret
+    let code = t.a.alloc_code(&[0x8b, 0x41, 0x2c, 0xc3]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0x8b, 0x41, 0x2c, 0xc3]).unwrap(), code);
+    let vt = t.zeros(8);
+    t.w32(vt + 4, code);
+    vt
+}
+
+fn p1e_member(t: &mut Twins, rng: &mut Rng, vt: u32, types: &[u32], kinds: &[u32]) -> P1eMember {
+    let m = t.zeros(0x40);
+    t.w32(m, vt);
+    let name = t.alloc(format!("member{}\0", rng.next() % 100).as_bytes());
+    t.w32(m + 0x10, name);
+    t.w32(
+        m + 0x14,
+        [0u32, 1, 2, 0x40, 0x42, 0x10][(rng.next() % 6) as usize],
+    );
+    t.w32(m + 0x18, types[(rng.next() as usize) % types.len()]);
+    t.w32(m + 0x24, [0u32, 4, 8][(rng.next() % 3) as usize]);
+    t.w32(m + 0x2c, kinds[(rng.next() as usize) % kinds.len()]);
+    P1eMember { at: m }
+}
+
+#[test]
+fn p1e_check_if_matches_matches_the_original() {
+    use ffx_pload::p1_mapping::bridge as pmap;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xc4ec_0001);
+        let vt = p1e_slot1(&mut t);
+        let mut kinds = vec![0u32];
+        for k in 0..4 {
+            let o = t.zeros(0x40);
+            t.w32(o + 0x30, k);
+            kinds.push(o);
+        }
+        let mut types = Vec::new();
+        for i in 0..3u32 {
+            let ty = t.zeros(0x20);
+            let n = t.alloc(format!("type{i}\0").as_bytes());
+            t.w32(ty + 0x18, n);
+            t.w32(ty + 0x1c, [4u32, 8, 12][i as usize]);
+            types.push(ty);
+        }
+        let unnamed = t.zeros(0x20);
+        for case in 0..160u32 {
+            t.printf_stub(P1E_FORMATS);
+            t.stub(0x0057_6050, true, 0, 0, [3u32, 4][(case % 2) as usize]);
+            let start = t.rebase(0x00c9_75e8);
+            t.w32(start, if case % 5 == 4 { 0x100 } else { 0 });
+            let class = t.zeros(0x60);
+            let cname = t.alloc(b"P1eClass\0");
+            t.w32(class + 0x18, cname);
+            t.w32(class + 0x1c, [0x20u32, 0x24][(rng.next() % 2) as usize]);
+            let parent = if rng.next().is_multiple_of(3) {
+                0
+            } else {
+                let p = t.zeros(0x60);
+                let n = t.alloc(b"P1eParent\0");
+                t.w32(p + 0x18, n);
+                p
+            };
+            t.w32(class + 0x40, parent);
+            let record = t.zeros(0x24);
+            t.w32(
+                record + 4,
+                0x1000_0020 | [0u32, 4][(rng.next() % 2) as usize],
+            );
+            let sup = match rng.next() % 4 {
+                0 => 0,
+                k => {
+                    let s = t.zeros(0x20);
+                    let n = t.alloc(b"P1eSuper\0");
+                    t.w32(s + 0xc, n);
+                    t.w32(s + 8, [0, parent, class][k as usize - 1]);
+                    s
+                }
+            };
+            let n = rng.next() % 5;
+            t.w32(record + 0xc, n);
+            let entries = t.junk(0x20 * n as usize + 0x20, case as u8);
+            let mut runtime = Vec::new();
+            for i in 0..n {
+                let e = entries + 0x20 * i;
+                let fm = t.zeros(0x18);
+                t.w32(fm + 8, [0u32, 4, 8][(rng.next() % 3) as usize]);
+                t.w32(fm + 0xc, [4u32, 8, 12][(rng.next() % 3) as usize]);
+                t.w32(fm + 0x10, [0u32, 2, 0x40, 0x42][(rng.next() % 4) as usize]);
+                t.w32(fm + 0x14, [3u32, 4][(rng.next() % 2) as usize]);
+                t.w32(e + 4, fm);
+                let en = t.alloc(b"fileMember\0");
+                t.w32(e + 0xc, en);
+                if rng.next().is_multiple_of(6) {
+                    t.w32(e + 8, 0);
+                } else {
+                    let m = p1e_member(&mut t, &mut rng, vt, &types, &kinds);
+                    t.w32(e + 8, m.at);
+                    runtime.push(m.at);
+                    // the file's type: the runtime's, another, none
+                    let ft = match rng.next() % 4 {
+                        0 | 1 => t.r32(m.at + 0x18),
+                        2 => types[(rng.next() as usize) % types.len()],
+                        _ => {
+                            if rng.next().is_multiple_of(2) {
+                                0
+                            } else {
+                                unnamed
+                            }
+                        }
+                    };
+                    t.w32(e + 0x10, ft);
+                }
+                let ce = match rng.next() % 3 {
+                    0 => 0,
+                    k => {
+                        let c = t.zeros(0x20);
+                        if k == 2 {
+                            let n = t.alloc(b"FileClass\0");
+                            t.w32(c + 0xc, n);
+                        }
+                        c
+                    }
+                };
+                t.w32(e + 0x14, ce);
+            }
+            // the runtime's member list: the entries' members and some
+            // the file lacks, in a random order
+            for _ in 0..rng.next() % 3 {
+                let m = p1e_member(&mut t, &mut rng, vt, &types, &kinds);
+                runtime.push(m.at);
+            }
+            if case % 7 != 6 {
+                for i in (1..runtime.len()).rev() {
+                    let j = (rng.next() as usize) % (i + 1);
+                    runtime.swap(i, j);
+                }
+            }
+            let head = class + 0x44;
+            if runtime.is_empty() && case % 2 == 0 {
+                t.w32(head, 0);
+            } else {
+                let mut prev = head;
+                for &m in &runtime {
+                    t.w32(prev, m + 4);
+                    prev = m + 4;
+                }
+                t.w32(prev, head);
+            }
+            let cm = t.junk(0x20, 0x33);
+            t.w32(cm, sup);
+            t.w32(cm + 4, if case % 23 == 22 { 0 } else { record });
+            t.w32(cm + 8, class);
+            t.w32(cm + 0x10, entries);
+            let verbose = [0u32, 1, 0x100, 0xff01][(case % 4) as usize];
+            let what = format!("{label}: checkIfMatches {case}");
+            t.check(&what, 0x0047_cc80, Conv::Thiscall(cm), &[verbose], |g| {
+                Out::U32(pmap::check_if_matches(g, cm, verbose))
+            });
+            t.reset();
+        }
+    }
+}
+
+/// A file namespace block for `build`: `types` type names, `classes`
+/// class records (super, size, member count, dynamic bit, default data)
+/// and their member records (type index), with every name in a 16-byte
+/// slot whose three words before the name are what the stubs return for
+/// it: the member `findMember` finds, the class `getClassDescriptor`
+/// finds, the type the dispenser finds.
+struct P1eFile {
+    at: u32,
+}
+
+#[test]
+fn p1e_mapping_build_matches_the_original() {
+    use ffx_pload::p1_mapping::bridge as pmap;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xb01d_0001);
+        let vt = p1e_slot1(&mut t);
+        let ns = t.junk(0x40, 0x11);
+        // a type's slot 1 returns its +8 (its class)
+        let tcode = t.a.alloc_code(&[0x8b, 0x41, 0x08, 0xc3]).unwrap();
+        assert_eq!(t.b.alloc_code(&[0x8b, 0x41, 0x08, 0xc3]).unwrap(), tcode);
+        let tvt = t.zeros(8);
+        t.w32(tvt + 4, tcode);
+        let kind0 = t.zeros(0x40);
+        for case in 0..60u32 {
+            t.printf_stub(P1E_FORMATS);
+            let dispenser = t.junk(0x20, 0x21);
+            t.stub(0x0043_9040, false, 0, 0, dispenser);
+            // the dispenser's lookup: logs the key's words, returns the
+            // word before the name
+            t.stub_body(
+                0x0043_75c0,
+                true,
+                1,
+                1,
+                &[
+                    0x8b, 0x54, 0x24, 0x04, // mov edx, [esp+4]
+                    0x8b, 0x0a, 0x89, 0x48, 0x0c, // mov ecx, [edx]; mov [eax+0xc], ecx
+                    0x8b, 0x4a, 0x04, 0x89, 0x48,
+                    0x10, // mov ecx, [edx+4]; mov [eax+0x10], ecx
+                    0x8b, 0x4a, 0x08, 0x89, 0x48,
+                    0x14, // mov ecx, [edx+8]; mov [eax+0x14], ecx
+                    0x8b, 0x42, 0x04, 0x8b, 0x40, 0xfc, // mov eax, [edx+4]; mov eax, [eax-4]
+                ],
+            );
+            // getClassDescriptor(name): the word 8 before the name
+            t.stub_body(
+                0x0043_e950,
+                true,
+                1,
+                1,
+                &[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x40, 0xf8],
+            );
+            // findMember(name): the word 12 before the name
+            t.stub_body(
+                0x0043_5ca0,
+                true,
+                1,
+                1,
+                &[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x40, 0xf4],
+            );
+            let made = t.zeros(0x60);
+            let made_name = t.alloc(b"Made\0");
+            t.w32(made + 0x18, made_name);
+            t.w32(made + 0x44, made + 0x44);
+            t.stub(0x0047_d330, true, 1, 1, made);
+            t.stub(0x0047_e180, true, 1, 1, 0);
+            t.stub(0x0057_6050, true, 0, 0, 3);
+            let start = t.rebase(0x00c9_75e8);
+            t.w32(start, 0);
+
+            let nt = [0u32, 1, 3][(case % 3) as usize];
+            let nc = [0u32, 1, 2, 4][(case / 3 % 4) as usize];
+            let counts: Vec<u32> = (0..nc).map(|_| rng.next() % 3).collect();
+            let nm: u32 = counts.iter().sum();
+            // the strings: one 16-byte slot per name
+            let nslots = nt + nc + nm;
+            let header = 0x20 + 4 * (nt + 9 * nc + 6 * nm);
+            let size = header + 16 * nslots + 0x40;
+            let f = t.zeros(size as usize);
+            let strings = f + 4 * (9 * nc + 6 * nm + 8 + nt);
+            assert_eq!(strings, f + header);
+            t.w32(f + 8, nt);
+            t.w32(f + 0xc, nc);
+            t.w32(f + 0x10, nm);
+            t.w32(f + 0x14, 16 * nslots + 8);
+            let mut slot = 0u32;
+            let mut name = |t: &mut Twins, text: &str, member: u32, class: u32, ty: u32| {
+                let off = 16 * slot + 12;
+                let at = strings + off;
+                t.w32(at - 12, member);
+                t.w32(at - 8, class);
+                t.w32(at - 4, ty);
+                let bytes = format!("{text}\0");
+                t.write(at, &bytes.as_bytes()[..bytes.len().min(4)]);
+                t.write(at + 3, &[0]);
+                slot += 1;
+                off
+            };
+            // runtime classes: of ns or not
+            let runtime_class = |t: &mut Twins, rng: &mut Rng| {
+                let c = t.zeros(0x60);
+                let n = t.alloc(b"RtC\0");
+                t.w32(c + 0x18, n);
+                t.w32(c + 0x1c, [0x20u32, 0x24][(rng.next() % 2) as usize]);
+                t.w32(
+                    c + 0x3c,
+                    if rng.next().is_multiple_of(4) {
+                        ns + 4
+                    } else {
+                        ns
+                    },
+                );
+                t.w32(c + 0x44, c + 0x44);
+                c
+            };
+            let mut type_objs = Vec::new();
+            for i in 0..nt {
+                let ty = match rng.next() % 3 {
+                    0 => 0,
+                    _ => {
+                        let o = t.zeros(0x20);
+                        t.w32(o, tvt);
+                        t.w32(o + 0x1c, 4);
+                        let tn = t.alloc(b"Ty\0");
+                        t.w32(o + 0x18, tn);
+                        o
+                    }
+                };
+                type_objs.push(ty);
+                let off = name(&mut t, &format!("t{i}"), 0, 0, ty);
+                t.w32(f + 0x20 + 4 * i, off);
+            }
+            let mut mrec = f + 0x20 + 4 * (9 * nc + nt);
+            for i in 0..nc {
+                let rec = f + 0x20 + 4 * nt + 36 * i;
+                // found through the dispenser (a type whose slot 1 gives
+                // the class), through ns, or not at all
+                let (by_type, by_ns) = match rng.next() % 4 {
+                    0 => {
+                        let o = t.zeros(0x20);
+                        t.w32(o, tvt);
+                        let c = if rng.next().is_multiple_of(3) {
+                            0
+                        } else {
+                            runtime_class(&mut t, &mut rng)
+                        };
+                        t.w32(o + 8, c);
+                        (o, 0)
+                    }
+                    1 => (0, runtime_class(&mut t, &mut rng)),
+                    2 => (0, 0),
+                    _ => {
+                        let o = t.zeros(0x20);
+                        t.w32(o, tvt);
+                        let c = runtime_class(&mut t, &mut rng);
+                        t.w32(c + 0x3c, ns + 8);
+                        t.w32(o + 8, c);
+                        (o, runtime_class(&mut t, &mut rng))
+                    }
+                };
+                let off = name(&mut t, &format!("c{i}"), 0, by_ns, by_type);
+                t.w32(rec + 8, off);
+                let sup = match rng.next() % 3 {
+                    0 => 0,
+                    1 => 1 + rng.next() % nc,
+                    _ => 0x8000_0001,
+                };
+                t.w32(rec, sup);
+                t.w32(rec + 4, 0x20);
+                t.w32(rec + 0xc, counts[i as usize]);
+                t.w32(rec + 0x1c, rng.next() & 0x103);
+                t.w32(rec + 0x20, [0u32, 1, 5][(rng.next() % 3) as usize]);
+                for j in 0..counts[i as usize] {
+                    let rm = if rng.next().is_multiple_of(3) {
+                        0
+                    } else {
+                        let m = p1e_member(
+                            &mut t,
+                            &mut rng,
+                            vt,
+                            &type_objs
+                                .iter()
+                                .copied()
+                                .filter(|&x| x != 0)
+                                .chain([kind0])
+                                .collect::<Vec<_>>(),
+                            &[0],
+                        );
+                        m.at
+                    };
+                    let off = name(&mut t, &format!("m{j}"), rm, 0, 0);
+                    t.w32(mrec, off);
+                    // a type index, or past the types a 1-based class
+                    // index (index nt reads the 32 bytes before the class
+                    // entries, a record there)
+                    let ti = match rng.next() % 5 {
+                        0 => nt,
+                        k if nt > 0 && k < 3 => rng.next() % nt,
+                        _ => nt + 1 + rng.next() % nc,
+                    };
+                    t.w32(mrec + 4, ti);
+                    t.w32(mrec + 8, 4 * j);
+                    t.w32(mrec + 0xc, 4);
+                    mrec += 0x18;
+                }
+            }
+            let file = P1eFile { at: f };
+            let map = t.zeros(0x20);
+            t.w32(map, file.at);
+            t.w32(map + 4, nt | (case & 1) << 31);
+            let te = t.junk(12 * nt as usize + 4, 1);
+            t.w32(map + 8, te);
+            t.w32(map + 0xc, nc | (case & 2) << 30);
+            let ce = t.junk(0x20 * nc as usize + 0x24, 2) + 0x20;
+            let before = t.zeros(0x24);
+            t.w32(before + 0x1c, case & 1);
+            t.w32(ce - 0x20 + 4, before);
+            t.w32(ce - 0x20 + 8, if case % 3 == 0 { 0 } else { before });
+            t.w32(map + 0x10, ce);
+            let me = t.junk(0x20 * nm as usize + 4, 3);
+            t.w32(map + 0x18, me);
+            t.w32(map + 0x1c, case & 4);
+            let allocator = if case % 5 == 0 { 0 } else { t.junk(8, 4) };
+            let ctx = 0x00c5_0000 + case;
+            let verbose = [1u32, 0, 0x200, 0x101][(case / 2 % 4) as usize];
+            let ebp = t.a.stack_range().end - 0x100 - 16 - 8;
+            let key = ebp - 0x28;
+            t.b.set_call_top(Some(key - 0x100));
+            let what = format!("{label}: build {case}");
+            t.check(
+                &what,
+                0x0047_c8b0,
+                Conv::Thiscall(map),
+                &[ns, allocator, ctx, verbose],
+                |g| Out::U32(pmap::build(g, map, [ns, allocator, ctx, verbose], key)),
+            );
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}
+
+// ---- round 4: the cluster reader's array fixups (p1_pointers) ----
+
+impl Twins {
+    /// A stub at `sym` returning `values` in turn (then 0), logging as
+    /// [`Twins::stub`].
+    fn seq_stub(&mut self, sym: u32, this: bool, n: u32, pops: u32, values: &[u32]) {
+        let mut table: Vec<u8> = Vec::new();
+        for &v in values {
+            table.extend(v.to_le_bytes());
+        }
+        table.extend([0u8; 4]);
+        let table = self.alloc(&table);
+        let at = self.zeros(4);
+        self.w32(at, table);
+        // mov ecx, [at]; mov eax, [ecx]; test eax, eax; je +7;
+        // add dword [at], 4
+        let mut body = vec![0x8b, 0x0d];
+        body.extend(at.to_le_bytes());
+        body.extend([0x8b, 0x01, 0x85, 0xc0, 0x74, 0x07, 0x83, 0x05]);
+        body.extend(at.to_le_bytes());
+        body.push(0x04);
+        self.stub_body(sym, this, n, pops, &body);
+    }
+}
+
+/// The array fixups (`arrays` false) or the pointer-array fixups.
+fn p1e_fixups(arrays: bool) {
+    use ffx_pload::p1_pointers::bridge as ppt;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xf1c5_a320 ^ u32::from(arrays));
+        for case in 0..64u32 {
+            t.printf_stub(&[
+                (0x00b3_1188, 3),
+                (0x00b3_1300, 2),
+                (0x00b3_11d8, 2),
+                (0x00b3_1220, 2),
+            ]);
+            t.stub(0x0094_964c, false, 3, 0, 0);
+            let nrec = [0u32, 1, 3, 6, 9][(case % 5) as usize];
+            let size =
+                [0u32, 0x40, 0x8000_0040][usize::from(case % 7 != 3) + usize::from(case % 9 == 4)];
+            let records = t.zeros(16 * 10);
+            let data = t.junk(0x40, 5);
+            let (rb, db) = match case % 11 {
+                9 => (0, data),
+                10 => (records, 0),
+                _ => (records, data),
+            };
+            let mut seq = vec![];
+            if nrec != 0 && !arrays {
+                seq.push(rb);
+            }
+            if size != 0 {
+                seq.push(db);
+            }
+            if nrec != 0 && arrays {
+                seq.push(rb);
+            }
+            t.seq_stub(0x0042_fb80, false, 2, 0, &seq);
+            t.stub(0x0042_fb20, false, 1, 0, 0);
+            t.stub(0x0057_dd30, true, 2, 2, if case % 13 == 12 { 9 } else { 0 });
+            // the unpacking: sets the count's bit 31 sometimes (the
+            // records then not freed), fails sometimes
+            let unpack_ret: u32 = if case % 17 == 16 { 0x15 } else { 0 };
+            let flag = if case % 4 == 1 { 0x8000_0000u32 } else { 0 };
+            let mut body = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+            body.extend([0x81, 0x08]);
+            body.extend(flag.to_le_bytes()); // or dword [eax], flag
+            body.push(0xb8);
+            body.extend(unpack_ret.to_le_bytes()); // mov eax, ret
+            t.stub_body(0x0060_dac0, false, 4, 0, &body);
+            // the objects: index i at objects + 0x10 i, none for 0x7fff
+            let objects = t.junk(0x10 * 8 + 0x40, 6);
+            let mut body = vec![0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x04, 0x05];
+            body.extend(objects.to_le_bytes());
+            body.extend([
+                0x81, 0x7c, 0x24, 0x04, 0xff, 0x7f, 0, 0, 0x75, 0x02, 0x31, 0xc0,
+            ]);
+            t.stub_body(0x0057_65e0, true, 1, 1, &body);
+            // the members: by (index ^ offset) & 3, one of 4 (or none)
+            let mut found = Vec::new();
+            for k in 0..4u32 {
+                if k == 3 {
+                    found.push(0);
+                    continue;
+                }
+                let f = t.zeros(0x10);
+                let n = t.alloc(b"arr\0");
+                t.w32(f + 0xc, n);
+                if k != 2 {
+                    let ok = t.stub_code(0x7020 + k, true, 3, 3, k);
+                    let vt = t.zeros(0x40);
+                    t.w32(vt + 0x20, ok);
+                    let m = t.zeros(0x30);
+                    t.w32(m, vt);
+                    let owner = t.zeros(0x90);
+                    t.w32(owner + 0x88, 4 * k);
+                    t.w32(m + 0xc, owner);
+                    t.w32(m + 0x24, 8 + 4 * k);
+                    t.w32(f + 8, m);
+                }
+                found.push(f);
+            }
+            let mut table = Vec::new();
+            for f in &found {
+                table.extend(f.to_le_bytes());
+            }
+            let table = t.alloc(&table);
+            // the cache's last word logged; *obj += 8
+            let mut body = vec![
+                0x8b, 0x51, 0x20, 0x89, 0x50, 0x1c, 0x8b, 0x54, 0x24, 0x08, 0x83, 0x02, 0x08,
+            ];
+            body.extend([
+                0x8b, 0x44, 0x24, 0x04, 0x33, 0x44, 0x24, 0x0c, 0x83, 0xe0, 0x03,
+            ]);
+            body.extend([0x8b, 0x04, 0x85]);
+            body.extend(table.to_le_bytes()); // mov eax, [table + eax*4]
+            t.stub_body(0x0057_a280, true, 5, 5, &body);
+            // the dynamic type: slot 1 says whether to swap
+            let swaps = t.stub_code(0x7031, true, 0, 0, u32::from(case % 3 == 0));
+            let vt = t.zeros(8);
+            t.w32(vt + 4, swaps);
+            let dynamic = t.zeros(0x10);
+            t.w32(dynamic, vt);
+            t.stub(0x0057_5690, true, 1, 1, dynamic);
+            t.stub(0x0043_d650, true, 3, 3, 0);
+
+            // the records
+            for i in 0..nrec {
+                let r = records + 16 * i;
+                let w = match rng.next() % 3 {
+                    0 => rng.next() % 4,
+                    1 => 0x8000_0000 | (rng.next() % 4),
+                    _ => rng.next() % 8,
+                };
+                t.w32(r, w);
+                t.w32(
+                    r + 4,
+                    if case % 19 == 18 && i == 1 {
+                        0x7fff
+                    } else {
+                        rng.next() % 8
+                    },
+                );
+                t.w32(r + 8, rng.next() % 5);
+                t.w32(r + 0xc, 16 * (rng.next() % 4));
+            }
+            // the lists: 0..3, records split between them
+            let nl = [0u32, 1, 2, 3][(case / 2 % 4) as usize];
+            let headers = t.junk(0x24 * 4, 7);
+            let entries = t.zeros(16);
+            let mut lists = Vec::new();
+            let mut left = nrec;
+            for l in 0..nl {
+                let cnt = if l + 1 == nl {
+                    left
+                } else {
+                    left.min(rng.next() % 4)
+                };
+                left -= cnt;
+                let hd = headers + 0x24 * l;
+                if arrays {
+                    t.w32(hd + 0x20, cnt);
+                    t.w32(hd + 8, 0x20 * l + 1);
+                    t.w32(hd + 0x10, 0x11 * l + 2);
+                    t.w32(hd + 0x14, rng.next() % 9);
+                } else {
+                    t.w32(hd + 0x18, cnt);
+                    t.w32(hd + 0xc, 0x20 * l);
+                }
+                let list = if rng.next().is_multiple_of(5) {
+                    0
+                } else {
+                    let list = t.junk(0x40, 8);
+                    let class = t.zeros(0x20);
+                    let n = t.alloc(b"Cls\0");
+                    t.w32(class + 0x18, n);
+                    t.w32(class + 0x1c, 0x14);
+                    t.w32(list + 0x2c, class);
+                    t.w32(list + 0x34, 0x100 * (l + 1) + (rng.next() & 0x1f));
+                    t.w32(list + 0x3c, 3);
+                    list
+                };
+                lists.push(list);
+                let entry = t.zeros(0x20);
+                t.w32(entry + 0x1c, rng.next() % 2);
+                t.w32(entries + 4 * l, entry);
+            }
+            let header = t.zeros(0x40);
+            t.w32(header + 0x10, nl);
+            let at = if arrays { 0x24 } else { 0x14 };
+            t.w32(header + at, size);
+            t.w32(header + at + 4, nrec);
+            let mapping = t.zeros(0x20);
+            t.w32(
+                mapping + 0x1c,
+                [0u32, 1, 4, 0x8000_0000, 2][(case % 5) as usize],
+            );
+            let reader = t.junk(0x30, 9);
+            t.w32(reader + 4, mapping);
+            t.w32(reader + 8, header);
+            t.write(reader + 0xc, &[(case % 2) as u8]);
+            t.w32(reader + 0x14, headers);
+            let n_word = nl | if case % 6 == 5 { 0x8000_0000 } else { 0 };
+            t.w32(reader + 0x18, n_word);
+            if nl == 1 {
+                t.w32(reader + 0x1c, lists[0]);
+            } else {
+                let arr = t.zeros(16);
+                for (i, &l) in lists.iter().enumerate() {
+                    t.w32(arr + 4 * i as u32, l);
+                }
+                t.w32(reader + 0x1c, arr);
+            }
+            t.w32(reader + 0x24, entries);
+            let stream = t.junk(0x10, 0xa);
+            let array = if case % 4 == 3 { 0 } else { t.zeros(0x10) };
+            let what = format!("{label}: fixups {arrays} {case}");
+            if arrays {
+                let ebp = t.a.stack_range().end - 0x100 - 8 - 8;
+                let frame = ebp - 0x7c;
+                t.write(frame, &[0x5a; 0x68]);
+                t.b.set_call_top(Some(frame - 0x100));
+                t.check(
+                    &what,
+                    0x0057_acd0,
+                    Conv::Thiscall(reader),
+                    &[stream, array],
+                    |g| Out::U32(ppt::fixup_pointer_arrays(g, reader, stream, array, frame)),
+                );
+            } else {
+                let ebp = t.a.stack_range().end - 0x100 - 4 - 8;
+                let frame = ebp - 0x8c;
+                t.write(frame, &[0x5a; 0x98]);
+                t.b.set_call_top(Some(frame - 0x100));
+                t.check(&what, 0x0057_a320, Conv::Thiscall(reader), &[stream], |g| {
+                    Out::U32(ppt::fixup_data_pointers(g, reader, stream, frame))
+                });
+            }
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1e_fixup_data_pointers_matches_the_original() {
+    p1e_fixups(false);
+}
+
+#[test]
+fn p1e_fixup_pointer_arrays_matches_the_original() {
+    p1e_fixups(true);
+}

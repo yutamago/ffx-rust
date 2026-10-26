@@ -10,8 +10,9 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_pload::{
-    cluster, descriptor, p1_bind, p1_buffers, p1_d3d, p1_declare, p1_fixup, p1_fixups, p1_lists,
-    p1_loader, p1_misc, p1_post, p1_reader, p1_tree, p1_types, stream, types,
+    cluster, descriptor, p1_bind, p1_buffers, p1_d3d, p1_declare, p1_dynbind, p1_fixup, p1_fixups,
+    p1_lists, p1_loader, p1_mapping, p1_misc, p1_pointers, p1_post, p1_reader, p1_tree, p1_types,
+    stream, types,
 };
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
@@ -1270,5 +1271,31 @@ ported! {
     Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_loadUserFixups @ 0x0057_c5d0 => extern "thiscall" fn load_user_fixups(this: u32, stream: u32, ctx: u32, results: u32, names: u32) -> u32 {
         let mut f = StackFrame::<{ p1_fixups::bridge::FIXUPS_FRAME as usize / 4 }>::new();
         p1_fixups::bridge::load_user_fixups(&mut mem(), this, stream, ctx, results, names, f.at())
+    }
+    // ---- round 4 (p1_dynbind) ----
+    /// `PClassDescriptorDynamic::Bind()` -> `addToNamespace`'s `eax` (h1's `Bind` format).
+    Phyre_PClassDescriptorDynamic_Bind @ 0x0044_7da0 => extern "C" fn dynamic_bind() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), p1_dynbind::DYNAMIC_BIND)
+    }
+    // ---- round 4 (p1_mapping) ----
+    /// `PClassDescriptorMapping::checkIfMatches(verbose)` -> the mismatch flags, or 7 without a record.
+    Phyre_PSerialization_PBinary_PInternal_PNamespaceMapping_PClassDescriptorMapping_checkIfMatches @ 0x0047_cc80 => extern "thiscall" fn check_if_matches(this: u32, verbose: u32) -> u32 {
+        p1_mapping::bridge::check_if_matches(&mut mem(), this, verbose)
+    }
+    /// `PNamespaceMapping::build(ns, allocator, ctx, verbose)` -> what the original leaves in `eax`; the lookup key in this frame.
+    Phyre_PSerialization_PBinary_PInternal_PNamespaceMapping_build @ 0x0047_c8b0 => extern "thiscall" fn mapping_build(this: u32, ns: u32, allocator: u32, ctx: u32, verbose: u32) -> u32 {
+        let mut key = StackFrame::<3>::new();
+        p1_mapping::bridge::build(&mut mem(), this, [ns, allocator, ctx, verbose], key.at())
+    }
+    // ---- round 4 (p1_pointers) ----
+    /// `PClusterReaderBinary::fixupDataPointers(stream)` -> 0 or an error; the member lookup's cache and the object word in this frame.
+    Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_fixupDataPointers @ 0x0057_a320 => extern "thiscall" fn fixup_data_pointers(this: u32, stream: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_pointers::bridge::FRAME as usize / 4 }>::new();
+        p1_pointers::bridge::fixup_data_pointers(&mut mem(), this, stream, f.at())
+    }
+    /// `Cluster_ApplyPointerArrayFixups(stream, array)` -> 0 or an error; the member lookup's cache and the object word in this frame.
+    Cluster_ApplyPointerArrayFixups @ 0x0057_acd0 => extern "thiscall" fn fixup_pointer_arrays(this: u32, stream: u32, array: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_pointers::bridge::ARRAYS_FRAME as usize / 4 }>::new();
+        p1_pointers::bridge::fixup_pointer_arrays(&mut mem(), this, stream, array, f.at())
     }
 }
