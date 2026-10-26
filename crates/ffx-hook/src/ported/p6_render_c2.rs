@@ -2,9 +2,10 @@
 //! shims. Ports in `ffx_prender::p6_more` and the shapes other lists
 //! ported (`ffx_prender::declare`, `ffx_prender::h2_more`).
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 use ffx_prender::{
-    declare, h1_bind, h2_bind, h2_more, p6_binds as binds, p6_binds1 as binds1, p6_more as more,
+    declare, h1_bind, h2_bind, h2_more, p6_binds as binds, p6_binds1 as binds1, p6_encode as enc,
+    p6_more as more, p6_thread as th,
 };
 
 ported! {
@@ -273,5 +274,92 @@ ported! {
     /// The class's `Bind()` -> `addToNamespace`'s `eax`.
     Phyre_PFramework_PInputMapper_Bind @ 0x0062_2b60 => extern "C" fn s_00622b60() -> u32 {
         h1_bind::bridge::bind(&mut mem(), const { binds1::bind_of(0x0062_2b60) })
+    }
+    /// A render command encoder (`this`; payload) -> 0 or 0xd.
+    Phyre_PRendering_PRendererBase_setClearColor @ 0x005b_ada0 => extern "thiscall" fn s_005bada0(this: u32, a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        let (op, payload) = const { enc::encoder(0x005b_ada0) };
+        enc::bridge::encode(&mut mem(), this, frame.at(), op, payload, &[a0, a1, a2, a3])
+    }
+    /// A render command encoder (`this`; payload) -> 0 or 0xd.
+    Phyre_PRendering_PRendererBase_setClearDepth @ 0x005b_af10 => extern "thiscall" fn s_005baf10(this: u32, a0: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        let (op, payload) = const { enc::encoder(0x005b_af10) };
+        enc::bridge::encode(&mut mem(), this, frame.at(), op, payload, &[a0])
+    }
+    /// A render command encoder (`this`; payload) -> 0 or 0xd.
+    Phyre_PRendering_PRendererBase_setClearStencil @ 0x005b_afc0 => extern "thiscall" fn s_005bafc0(this: u32, a0: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        let (op, payload) = const { enc::encoder(0x005b_afc0) };
+        enc::bridge::encode(&mut mem(), this, frame.at(), op, payload, &[a0])
+    }
+    /// A render command encoder (`this`; payload) -> 0 or 0xd.
+    Phyre_PRendering_PRendererBase_setScissor @ 0x005b_bdc0 => extern "thiscall" fn s_005bbdc0(this: u32, a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        let (op, payload) = const { enc::encoder(0x005b_bdc0) };
+        enc::bridge::encode(&mut mem(), this, frame.at(), op, payload, &[a0, a1, a2, a3])
+    }
+    /// A render command encoder (`this`; payload) -> 0 or 0xd.
+    Phyre_PRendering_PRendererBase_queueCommand18_005baa40 @ 0x005b_aa40 => extern "thiscall" fn s_005baa40(this: u32, a0: u32, a1: u32, a2: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        let (op, payload) = const { enc::encoder(0x005b_aa40) };
+        enc::bridge::encode(&mut mem(), this, frame.at(), op, payload, &[a0, a1, a2])
+    }
+    /// A render command encoder (`this`; payload) -> 0 or 0xd.
+    Phyre_PRendering_PRendererBase_queueCommand1e_005bb390 @ 0x005b_b390 => extern "thiscall" fn s_005bb390(this: u32, a0: u32, a1: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        let (op, payload) = const { enc::encoder(0x005b_b390) };
+        enc::bridge::encode(&mut mem(), this, frame.at(), op, payload, &[a0, a1])
+    }
+    /// A scene command encoder (`this`; word) -> 0, 0xd or 0x16.
+    Phyre_PRendering_PRenderer_beginScene @ 0x005b_5e30 => extern "thiscall" fn s_005b5e30(this: u32, word: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        let (op, rule) = const { enc::scene(0x005b_5e30) };
+        enc::bridge::encode_scene(&mut mem(), this, frame.at(), op, rule, word)
+    }
+    /// A scene command encoder (`this`; word) -> 0, 0xd or 0x16.
+    Phyre_PRendering_PRenderer_endScene @ 0x005b_6950 => extern "thiscall" fn s_005b6950(this: u32, word: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        let (op, rule) = const { enc::scene(0x005b_6950) };
+        enc::bridge::encode_scene(&mut mem(), this, frame.at(), op, rule, word)
+    }
+    /// A scene command encoder (`this`; word) -> 0, 0xd or 0x16.
+    Phyre_PRendering_PRendererBase_clearScene @ 0x005b_6330 => extern "thiscall" fn s_005b6330(this: u32, word: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        let (op, rule) = const { enc::scene(0x005b_6330) };
+        enc::bridge::encode_scene(&mut mem(), this, frame.at(), op, rule, word)
+    }
+    /// `queueCallback(f, data)` -> 0, 1 or 0xd.
+    PRenderCommandQueue_queueCallback @ 0x005b_5880 => extern "thiscall" fn s_005b5880(this: u32, f: u32, data: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        enc::bridge::queue_callback(&mut mem(), this, frame.at(), f, data)
+    }
+    /// `PRenderThread::GetInstance()` -> the singleton.
+    Phyre_PRendering_PRenderThread_GetInstance @ 0x0061_4410 => extern "C" fn s_00614410() -> u32 {
+        th::bridge::get_instance(&mut mem())
+    }
+    /// `getEventFlag()` -> a pool flag.
+    Phyre_PRendering_PRenderThread_getEventFlag @ 0x0061_4b70 => extern "thiscall" fn s_00614b70(this: u32) -> u32 {
+        th::bridge::get_event_flag(&mut mem(), this)
+    }
+    /// Gives a pool flag back (`this`; flag).
+    Phyre_PRendering_PRenderThread_releaseEventFlag_00615ac0 @ 0x0061_5ac0 => extern "thiscall" fn s_00615ac0(this: u32, flag: u32) {
+        th::bridge::release_event_flag(&mut mem(), this, flag);
+    }
+    /// The blend factor (`this`; r, g, b, a).
+    Phyre_PRendering_PRenderThread_setBlendFactor_00615bc0 @ 0x0061_5bc0 => extern "thiscall" fn s_00615bc0(this: u32, r: u32, g: u32, b: u32, a: u32) {
+        th::bridge::set_blend_factor(&mut mem(), this, [r, g, b, a]);
+    }
+    /// The scissor rectangle (`this`; rect) -> the D3D11 setter's result.
+    Phyre_PRendering_PRenderThread_setScissor_00615d00 @ 0x0061_5d00 => extern "thiscall" fn s_00615d00(this: u32, rect: u32) -> u32 {
+        th::bridge::set_scissor_rect(&mut mem(), this, rect)
+    }
+    /// Viewport `i` (`this`; viewport, i) -> the D3D11 setter's result.
+    Phyre_PRendering_PRenderThread_setViewport_00615c50 @ 0x0061_5c50 => extern "thiscall" fn s_00615c50(this: u32, viewport: u32, i: u32) -> u32 {
+        th::bridge::set_viewport_slot(&mut mem(), this, viewport, i)
+    }
+    /// Applies a state (`this`; a) -> its result, or `al` 0.
+    Phyre_PRendering_PRenderThread_applyState_006147b0 @ 0x0061_47b0 => extern "thiscall" fn s_006147b0(this: u32, a: u32) -> u32 {
+        th::bridge::apply_state(&mut mem(), this, a)
     }
 }
