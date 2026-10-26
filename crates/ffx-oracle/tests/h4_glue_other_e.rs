@@ -24,7 +24,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
-use ffx_glue_other::{frames as fr, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2, h4_e3 as e3};
+use ffx_glue_other::{
+    frames as fr, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2, h4_e3 as e3, h4_e4 as e4,
+};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -1690,5 +1692,286 @@ fn e3_sfx_fades() {
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- batch 4 (ffx_glue_other::h4_e4)
+
+/// The UI records: the active character's cursor, the sequence
+/// rectangle, the mode-2 gradient box. The original's frame is zeroed
+/// first in both oracles (the words it leaves unset are 0 in the port).
+#[test]
+fn e4_ui_records() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e401);
+        let corners = [t.zeros(4), t.zeros(4), t.zeros(4), t.zeros(4)];
+        let writes: Vec<Write> = corners
+            .iter()
+            .enumerate()
+            .map(|(k, &c)| wr(k as u8, c))
+            .collect();
+        let scissor = t.stub_code(e4::BEGIN_SCISSOR, false, 4, 0, false, &writes);
+        let plain = t.stub_code(0x0bad_58e0, false, 4, 0, false, &[]);
+        t.stub_at(e4::DRAW_UI_ELEMENT, false, 5, 0, &[]);
+        t.stub_at(e4::SCENE_STATE, false, 2, 0, &[]);
+        let tags = [
+            e4::BEGIN_SCISSOR,
+            0x0bad_58e0,
+            e4::DRAW_UI_ELEMENT,
+            e4::SCENE_STATE,
+        ];
+        let p = t.zeros(0x14);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            // active character cursor
+            let xy: [u32; 6] = std::array::from_fn(|_| rng.small());
+            let (c1, c0) = (rng.next(), rng.next());
+            let ebp = t.ebp_for(8);
+            let rec = ebp - 0x9c;
+            t.write(rec, &[0; e4::RECORD as usize]);
+            let mut args = xy.to_vec();
+            args.extend([c1, c0]);
+            t.check_framed(
+                &format!("{w} active cursor"),
+                0x0090_1190,
+                &args,
+                rec,
+                &[],
+                |g| u(e4::active_chr_cursor(g, rec, xy, c1, c0)),
+            );
+            let (mut x, mut y) = ([0; 0x98], [0; 0x98]);
+            t.a.read_bytes(rec, &mut x);
+            t.b.read_bytes(rec, &mut y);
+            assert_eq!(x, y, "{w} active cursor record");
+            // sequence rectangle
+            for k in 0..5 {
+                let v = rng.next();
+                t.w32(p + 4 * k, v);
+            }
+            let st = rng.pick(&[3, 3, 0, 2]);
+            t.ret(e4::SCENE_STATE, st);
+            let wh = rng.pick(&[0, 0, 1, 2]);
+            if wh != 0 {
+                t.w16(p + 0xe, 7);
+                t.w16(p + 0x12, if wh == 1 { 0x16 } else { 0x17 });
+            }
+            let ebp = t.ebp_for(1);
+            let rec = ebp - 0x9c;
+            t.write(rec, &[0; e4::RECORD as usize]);
+            t.check_framed(&format!("{w} seq rect"), 0x008f_df20, &[p], rec, &[], |g| {
+                u(e4::seq_draw_rect(g, rec, p))
+            });
+            let (mut x, mut y) = ([0; 0x98], [0; 0x98]);
+            t.a.read_bytes(rec, &mut x);
+            t.b.read_bytes(rec, &mut y);
+            assert_eq!(x, y, "{w} seq rect record");
+            // mode-2 box: the scissor clips (writes the corners) or not
+            let clip = rng.pick(&[true, true, false]);
+            t.jump(e4::BEGIN_SCISSOR, if clip { scissor } else { plain });
+            for c in corners {
+                let v = rng.float();
+                t.w32(c, v);
+            }
+            let keep = rng.pick(&[1, 1, 0]);
+            t.ret(e4::BEGIN_SCISSOR, keep);
+            t.ret(0x0bad_58e0, keep);
+            let a: [u32; 6] = [
+                rng.float(),
+                rng.float(),
+                rng.float(),
+                rng.float(),
+                rng.next(),
+                rng.next(),
+            ];
+            let ebp = t.ebp_for(6);
+            let frame = ebp - 0xac;
+            t.write(frame, &[0; e4::BOX_FRAME as usize]);
+            t.check_framed(&format!("{w} box"), 0x008f_4df0, &a, frame, &[], |g| {
+                u(e4::cross_box_mode2(g, frame, a))
+            });
+            if keep != 0 {
+                let (mut x, mut y) = ([0; 0xa8], [0; 0xa8]);
+                t.a.read_bytes(frame, &mut x);
+                t.b.read_bytes(frame, &mut y);
+                assert_eq!(x, y, "{w} box frame");
+            }
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The distortion grid's weights and the button icons' UV remap.
+#[test]
+fn e4_grid_icon_uv() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e402);
+        let this = t.zeros(0x70);
+        let grid = t.zeros(0x600);
+        let rec = t.zeros(0x98);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            for k in 0..0x1c {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            for k in 0..0x180 {
+                let v = rng.next();
+                t.w32(grid + 4 * k, v);
+            }
+            t.w32(this + 0x6c, grid + 4 * rng.below(4));
+            t.check_conv(
+                &format!("{w} grid"),
+                0x006c_28e0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(e4::distortion_fill_ones(g, this)),
+            );
+            let du = {
+                let r0_ = rng.double();
+                rng.pick(&[1.0 / 12.0, 1.0 / 12.0, r0_])
+            };
+            let at = t.rebase(e4::ICON_U_SIZE);
+            t.write(at, &du.to_le_bytes());
+            let dv = {
+                let r0_ = rng.double();
+                rng.pick(&[0.125, 0.125, r0_])
+            };
+            let at = t.rebase(e4::ICON_V_SIZE);
+            t.write(at, &dv.to_le_bytes());
+            for k in 0..0x26 {
+                let v = rng.float();
+                t.w32(rec + 4 * k, v);
+            }
+            // the left-to-right test: equal v, ordered u, or not
+            let a = rng.float();
+            let shape = rng.below(4);
+            if shape < 3 {
+                let b = {
+                    let r0_ = rng.float();
+                    rng.pick(&[(f32::from_bits(a) + 0.25).to_bits(), a, r0_])
+                };
+                t.w32(rec + 8, a);
+                t.w32(rec + 0x28, b);
+                let c = rng.float();
+                t.w32(rec + 0xc, c);
+                let d = {
+                    let r0_ = rng.float();
+                    rng.pick(&[c, c, r0_])
+                };
+                t.w32(rec + 0x2c, d);
+            }
+            let kind = {
+                let r0_ = rng.next();
+                rng.pick(&[4, 4, 0x8000_0004, 6, 0xb, 0x8000_0006, 0, 5, r0_])
+            };
+            let (iu, iv) = (rng.float(), rng.float());
+            t.check_conv(
+                &format!("{w} uv {kind:#x}"),
+                0x006e_6f20,
+                Conv::Stdcall,
+                &[kind, rec, iu, iv],
+                |g| {
+                    e4::remap_icon_uv(g, kind, rec, iu, iv);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+/// The button icons' size remap.
+#[test]
+fn e4_icon_size() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e403);
+        t.stub_at(e4::INPUT_INSTANCE, false, 0, 0, &[]);
+        t.stub_at(e4::INPUT_VIBRATION, true, 0, 0, &[]);
+        let tags = [e4::INPUT_INSTANCE, e4::INPUT_VIBRATION];
+        let this = t.zeros(0x170);
+        let rec = t.zeros(0x98);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let r = rng.double();
+            let kw = rng.pick(&[9.0, 9.0, r]);
+            let at = t.rebase(e4::ICON_W_SCALE);
+            t.write(at, &kw.to_le_bytes());
+            let r = rng.double();
+            let kh = rng.pick(&[12.0, 12.0, r]);
+            let at = t.rebase(e4::ICON_H_SCALE);
+            t.write(at, &kh.to_le_bytes());
+            for off in [0x160, 0x164] {
+                let v = rng.float();
+                t.w32(this + off, v);
+            }
+            for k in 0..0x26 {
+                let v = rng.float();
+                t.w32(rec + 4 * k, v);
+            }
+            let a = rng.float();
+            if rng.below(4) < 3 {
+                let r = rng.float();
+                let b = rng.pick(&[(f32::from_bits(a) + 0.25).to_bits(), a, r]);
+                t.w32(rec + 8, a);
+                t.w32(rec + 0x28, b);
+                let c = rng.float();
+                t.w32(rec + 0xc, c);
+                let r = rng.float();
+                let d = rng.pick(&[c, c, r]);
+                t.w32(rec + 0x2c, d);
+            }
+            let r = rng.next();
+            let kind = rng.pick(&[4, 4, 0x8000_0004, 6, 0xb, 1, 0x8000_0001, 0, 5, r]);
+            t.check_conv(
+                &format!("{w} size {kind:#x}"),
+                0x006e_6db0,
+                Conv::Thiscall(this),
+                &[kind, rec],
+                |g| {
+                    e4::remap_icon_size(g, this, kind, rec);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The UI buttons' position remap.
+#[test]
+fn e4_button_position() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e404);
+        let rec = t.zeros(0x98);
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            for sym in e4::BUTTON_OFFSETS {
+                let v = rng.double();
+                let at = t.rebase(sym);
+                t.write(at, &v.to_le_bytes());
+            }
+            for sym in e4::BUTTON_OFFSET_GLOBALS {
+                for k in 0..2 {
+                    let v = rng.float();
+                    t.g32(sym + 4 * k, v);
+                }
+            }
+            for k in 0..0x26 {
+                let r = rng.float();
+                let v = rng.pick(&[r, r, 0x8000_0000, 0]);
+                t.w32(rec + 4 * k, v);
+            }
+            let r = rng.next();
+            let kind = rng.pick(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, r]);
+            let (a, b) = (rng.next(), rng.next());
+            t.check_conv(
+                &format!("{w} button {kind:#x}"),
+                0x006e_7470,
+                Conv::Stdcall,
+                &[a, rec, b, kind],
+                |g| u(e4::remap_ui_button_position(g, rec, kind)),
+            );
+        }
     }
 }

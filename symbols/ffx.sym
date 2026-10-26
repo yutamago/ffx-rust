@@ -4995,6 +4995,7 @@
 0x006c26d0 function ReturnConst180_006c26d0      # auto-port shape (return constant, cdecl): return 0x180; callers: ; name ours
 0x006c2700 function ReturnConst51_006c2700       # auto-port shape (return constant, cdecl): return 0x51; callers: ; name ours
 0x006c28b0 function Distortion_onShaderClusterLoaded_006c28b0 # cdecl(cluster, &distortion), a load callback (stored by FUN_006c2710 at 0x006c285d): AsyncLoadManager_sGetInstance() (unused), distortion+0x20 = cluster, GetApplication() (unused), PApplication_FixupClusters(&cluster, its own argument slot, 1), jmp 0x006c2520(distortion); like BlurEffect_onShaderClusterLoaded_006c3950; name ours; ported (ffx_glue_other::frames, m4 h4 r2)
+0x006c28e0 function Distortion_fillGridOnes_006c28e0 # thiscall(this) -> eax its write cursor; h4-glue-other e4: [this+0x6c] gets 9 rows of 36 floats 1.0; caller Distortion_setupDistortionGrid; name ours
 0x006c2990 function Distortion_buildGridIndices_006c2990 # thiscall(this): the index buffer +0x74 (re-read per store) of a 9 x 9 grid: per quad t (row-major, 8 x 8) the triangles (t, t+10, t+1), (t, t+9, t+10); returns 0x600; caller Distortion_setupDistortionGrid; name ours; ported (ffx_glue_other::h4_d3, m4 h4 d)
 0x006c2dc0 function Distortion_renderDistortion  # layout+callees: sorts between Distortion_createRenderTarget and Distortion_resize, and its named callees match the Switch 0x710025e620 Distortion_renderDistortion's (similarity 0.75: Distortion_createRenderTarget, Phyre_PRendering_PRenderSurface_PRenderSurface, Phyre_PRendering_PRenderSurface_dtor_PRenderSurface, Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRendererBase_setClearColor); symbols from Fahrenheit's server export
 0x006c2fd0 function Distortion_resize            # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2748 Distortion::resize, 2 votes, round 4; ported (ffx_glue_other::effect, m4 h4 r1): thiscall(this; w, h) ret 8: 0x00a0e4b0([this+0x28], w, h, 1); 0
@@ -5262,11 +5263,11 @@
 0x006e69e0 function RemapButtonIcon_remapButtonIcon # fh v3:exact 0x006e6b10 RemapButtonIcon::remapButtonIcon; ported (ffx_glue_other::menu, m4 h4 r1): thiscall(this; a, b, c, d, e) ret 0x14: RemapButtonIcon_remapUIButtonData(this; b, c, d, e), then RemapButtonIcon_remapMessgeInputData(this; a, c, d, e)'s eax
 0x006e6a20 function RemapButtonIcon_remapFilePath # layout: alphabetical run between RemapButtonIcon_remapButtonIcon and RemapButtonIcon_remapIconPosition (1 unnamed in the gap); Switch 0x7100230a10 RemapButtonIcon::remapFilePath is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006e6a50 function RemapButtonIcon_remapIconPosition # fh v3:exact 0x006e6b80 RemapButtonIcon::remapIconPosition
-0x006e6db0 function RemapButtonIcon_remapIconSize # fh v3:exact 0x006e6ee0 RemapButtonIcon::remapIconSize
-0x006e6f20 function RemapButtonIcon_remapIconUV # fh v3:exact 0x006e7050 RemapButtonIcon::remapIconUV
+0x006e6db0 function RemapButtonIcon_remapIconSize # fh v3:exact 0x006e6ee0 RemapButtonIcon::remapIconSize; h4-glue-other e4: thiscall(this; kind, rec) ret 8; asks Virtuos_InputManager_getVibrationFlag (unused); far corners at x + this+0x160 * 9.0 (0x00b43d90), y + this+0x164 * 12.0 (0x00b4b468)
+0x006e6f20 function RemapButtonIcon_remapIconUV # fh v3:exact 0x006e7050 RemapButtonIcon::remapIconUV; h4-glue-other e4: stdcall(kind, rec, u, v) ret 0x10; cell 1/12 (0x00b4b448) by 1/8 (0x00b92200); kind 4 keeps a left-to-right record's orientation, kinds 6/0xb turn it
 0x006e7050 function RemapButtonIcon_remapMessgeInputData # fh v3:exact 0x006e7180 RemapButtonIcon::remapMessgeInputData
 0x006e7300 function RemapButtonIcon_remapUIButtonData # fh v3:exact 0x006e7430 RemapButtonIcon::remapUIButtonData
-0x006e7470 function RemapButtonIcon_remapUIButtonPosition # fh v3:exact 0x006e75a0 RemapButtonIcon::remapUIButtonPosition
+0x006e7470 function RemapButtonIcon_remapUIButtonPosition # fh v3:exact 0x006e75a0 RemapButtonIcon::remapUIButtonPosition; h4-glue-other e4: stdcall(a, rec, b, kind) ret 0x10 -> rec (kind for an unknown kind); offsets 5.0/5.5/4.0/1.5/4.5 (f64 at 0x00b41d20, 0x00b3eb80, 0x00b43d80, 0x00b41d00, 0x00b4b458) and the f32 pairs at 0x00ce6df4/0x00ce6dd0/0x00ce6dd8
 0x006e7660 function RemapButtonIcon_remapUIButtonSize # layout: alphabetical run between RemapButtonIcon_remapUIButtonPosition and RemapButtonIcon_resetButtonIconScale (1 unnamed in the gap); Switch 0x7100230ca0 RemapButtonIcon::remapUIButtonSize is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006e76b0 function RemapButtonIcon_resetButtonIconScale # fh v3:exact 0x006e77e0 RemapButtonIcon::resetButtonIconScale
 0x006e76c0 function RemapButtonIcon_sCreatInstance # fh v3:cg2 0x6e77f0 RemapButtonIcon::sCreatInstance; ported (ffx_glue_other::menu, m4 h4 r1): [0x00ce6dc0] unset -> RemapButtonIcon_RemapButtonIcon(operator_new(0x168)) (0 when null)
@@ -14332,6 +14333,7 @@
 0x008f41b0 function TODrawBtlNetWindowXYWHType # fh v3:exact 0x008f41b0
 0x008f4b20 function TODrawCrossBoxXYWHC2      # fh call.cs cdecl; untextured gradient box c0 (top left) to c1, corners x,y..x+w,y+h clipped by BeginScissor_XY, graphicDrawUIElement(rec, 0, 1, 0, 0)
 0x008f4c40 function TODrawCrossBoxXYWHC2FW    # fh v3:exact 0x008f4c40
+0x008f4df0 function TODrawCrossBoxXYWHC2Mode2_008f4df0 # cdecl(x, y, w, h, c0, c1) -> eax; h4-glue-other e4: TODrawCrossBoxXYWHC2 with graphicDrawUIElement(rec, 0, 1, 2, 0); corners y0 [ebp-0xac], x0 [ebp-0xa8], y1 [ebp-0xa4], x1 [ebp-0xa0], record [ebp-0x9c]; callers MenuNameEntry_Draw_008c3d00, TODrawMenuPlateXYWHType; name ours
 0x008f4f10 function TODrawCrossMenuIconAbilityName # fh v3:cg3 0x8f4f10
 0x008f5000 function TODrawCrossMenuIconCommandName # fh v3:cg3 0x8f5000
 0x008f50f0 function TODrawCrossMenuIconImportantName # fh v3:cg3 0x8f50f0
@@ -14407,6 +14409,7 @@
 0x008fdc00 function TOMakePktMovieFont1612Font # fh v3:exact 0x008fdc00
 0x008fde50 function TOMakePktSampleBlueWindowXY2 # fh v3:exact 0x008fde50
 0x008fdee0 function TOMakePktScissor          # (x0, y0, x1, y1): g_TkMenuScissorOn = 1, XYUV 0, box = the four ints as floats; fh v3:bsim1.00+call.cs 0x008fdee0 cdecl
+0x008fdf20 function TOSeqDrawRect_008fdf20 # cdecl(p) -> eax; h4-glue-other e4: i16 x +0xc, y +0xe, w +0x10, h +0x12, colours bytes +4/+8 as graphicDrawUIElement(rec, 0, 1, 0, 0); a 7 x 0x16 rect gets y 0x43 while TOSeqGetSceneState(2, "bwakk") == 3; caller 0x00a7bbc0; name ours
 0x008fe040 function TOMakePktSeqPrimFunc      # fh v3:exact 0x008fe040
 0x008fe080 function TOMakePktSeqPrimMes       # fh v3:exact 0x008fe080
 0x008fe0b0 function TOMakePktSeqPrimLayout_008fe0b0 # cdecl(prim): menu-sequence primitive type 6 (caller 0x00a7bbc0) as a window-layout shape (u16 +0x14): 0x19b/0x19c/0x19f/0x1a3/0x1fb nothing, 0x1a1 the gauge quad (TOMkpShapeXYWHUVC2 -1, 120 x the i16 percent scales +0x10/+0x12), 0xf0 shape 200, below 600 each part of TOCopyWindowLayout_008fa7d0/_008fa450 as a 0x98-byte record for graphicDrawUIElement (0x19e/0x1fc through ShapeDataModify, 0x19d the cursor 0x008f59c0 + shape 400, 0x1f7 shape 400); 600 up reads a stale stack word as the layout; ported (system round 37); name ours (Switch-style sibling of TOMakePktSeqPrimFunc/Mes)
@@ -14426,7 +14429,7 @@
 0x00901100 function TOMenuTransFacePlyTex     # fh switch:bsim1.00 0x7100522020; () -> eax: TOTransImageHL(0x01c80000, 0x3a00, 0x13, 0, 0, 0x200, 0x100); the push of 0x01c80000 has no relocation entry; ported (system round 31)
 0x00901130 function TOMenuTransFaceSmnTex     # fh switch:bsim1.00 0x7100522040; () -> eax: TOTransImageHL(0x01ca0000, 0x3800, 0x13, 0, 0, 0x200, 0x100); the push has no relocation entry; ported (system round 32)
 0x00901160 function TOMenuTransSmallFacePlyTex # fh switch:bsim1.00 0x7100522000
-0x00901190 function TOMkpActiveChrCursor      # fh v3:exact 0x00901190
+0x00901190 function TOMkpActiveChrCursor      # fh v3:exact 0x00901190; h4-glue-other e4: cdecl(x0, y0, x1, y1, x2, y2, c1, c0) -> eax; record [ebp-0x9c], +0x80 0x14, graphicDrawUIElement(rec, 0, 0, 1, 0)
 0x00901280 function TOMkpBtlLimitLuluMidareCounter # fh v3:exact 0x00901280
 0x00901300 function TOMkpBtlLimitSpecialGauge # fh v3:exact 0x00901300
 0x009015e0 function TOMkpCrossEasyMesFontM       # layout+callees: sorts between TOMkpBtlLimitSpecialGauge and TOMkpCrossEasyStrFontSClut, and its named callees match the Switch 0x7100513c10 TOMkpCrossEasyMesFontM's (similarity 1.00: TOAdpCrossFontM_FFX, TOSkipCode); symbols from Fahrenheit's server export

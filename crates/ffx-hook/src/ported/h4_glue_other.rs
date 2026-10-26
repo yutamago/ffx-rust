@@ -13,7 +13,7 @@
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
-    h4_e3 as e3, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_e3 as e3, h4_e4 as e4, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1813,5 +1813,37 @@ ported! {
     /// `SfxEvent_updateFades_0070f5c0(this; dt)`.
     SfxEvent_updateFades_0070f5c0 @ 0x0070_f5c0 => extern "thiscall" fn sfx_event_update_fades(this: u32, dt: u32) {
         e3::sfx_event_update_fades(&mut mem(), this, dt);
+    }
+    // ---- continuation round 3, batch 4 (ffx_glue_other::h4_e4)
+    /// `TOMkpActiveChrCursor(x0, y0, x1, y1, x2, y2, c1, c0)`.
+    TOMkpActiveChrCursor @ 0x0090_1190 => extern "C" fn active_chr_cursor(x0: u32, y0: u32, x1: u32, y1: u32, x2: u32, y2: u32, c1: u32, c0: u32) -> u32 {
+        let mut rec = StackFrame::<{ (e4::RECORD / 4) as usize }>::new();
+        e4::active_chr_cursor(&mut mem(), rec.at(), [x0, y0, x1, y1, x2, y2], c1, c0)
+    }
+    /// `TOSeqDrawRect_008fdf20(p)`.
+    TOSeqDrawRect_008fdf20 @ 0x008f_df20 => extern "C" fn seq_draw_rect(p: u32) -> u32 {
+        let mut rec = StackFrame::<{ (e4::RECORD / 4) as usize }>::new();
+        e4::seq_draw_rect(&mut mem(), rec.at(), p)
+    }
+    /// `TODrawCrossBoxXYWHC2Mode2_008f4df0(x, y, w, h, c0, c1)`.
+    TODrawCrossBoxXYWHC2Mode2_008f4df0 @ 0x008f_4df0 => extern "C" fn cross_box_mode2(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e4::BOX_FRAME / 4) as usize }>::new();
+        e4::cross_box_mode2(&mut mem(), frame.at(), [x, y, w, h, c0, c1])
+    }
+    /// `Distortion_fillGridOnes_006c28e0(this)`.
+    Distortion_fillGridOnes_006c28e0 @ 0x006c_28e0 => extern "thiscall" fn distortion_fill_ones(this: u32) -> u32 {
+        e4::distortion_fill_ones(&mut mem(), this)
+    }
+    /// `RemapButtonIcon_remapIconUV(kind, rec, u, v)`.
+    RemapButtonIcon_remapIconUV @ 0x006e_6f20 => extern "stdcall" fn remap_icon_uv(kind: u32, rec: u32, u: u32, v: u32) {
+        e4::remap_icon_uv(&mut mem(), kind, rec, u, v);
+    }
+    /// `RemapButtonIcon_remapIconSize(this; kind, rec)`.
+    RemapButtonIcon_remapIconSize @ 0x006e_6db0 => extern "thiscall" fn remap_icon_size(this: u32, kind: u32, rec: u32) {
+        e4::remap_icon_size(&mut mem(), this, kind, rec);
+    }
+    /// `RemapButtonIcon_remapUIButtonPosition(a, rec, b, kind)`.
+    RemapButtonIcon_remapUIButtonPosition @ 0x006e_7470 => extern "stdcall" fn remap_ui_button_position(_a: u32, rec: u32, _b: u32, kind: u32) -> u32 {
+        e4::remap_ui_button_position(&mut mem(), rec, kind)
     }
 }

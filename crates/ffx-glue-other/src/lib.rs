@@ -49,7 +49,11 @@
 //!   and whole volume, its fades, the voice's loop fade, the sound
 //!   events' pan and stop, the sync manager's data read);
 //! - [`h4_e3`]: its third batch: the FMOD music's stop, stop-all, restart
-//!   and per-frame fade, the sound events' start and fades.
+//!   and per-frame fade, the sound events' start and fades;
+//! - [`h4_e4`]: its fourth batch: UI records for `graphicDrawUIElement`
+//!   (the active character's cursor, a sequence rectangle, a mode-2
+//!   gradient box), the distortion grid's weights, the button icons' UV,
+//!   size and position remaps.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -81,6 +85,7 @@ pub mod h4_d5;
 pub mod h4_e1;
 pub mod h4_e2;
 pub mod h4_e3;
+pub mod h4_e4;
 pub mod menu;
 pub mod misc;
 pub mod movie;
