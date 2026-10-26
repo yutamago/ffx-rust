@@ -113,6 +113,7 @@ pub mod h3_glue36;
 pub mod h3_glue37;
 pub mod h3_glue38;
 pub mod h3_glue39;
+pub mod h3_glue40;
 pub mod m4r_meshlist;
 pub mod m4r_modnet;
 pub mod m4r_nodecapture;

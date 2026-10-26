@@ -45,6 +45,7 @@ use ffx_prender::h3_glue36::bridge as g36;
 use ffx_prender::h3_glue37::bridge as g37;
 use ffx_prender::h3_glue38::bridge as g38;
 use ffx_prender::h3_glue39::bridge as g39;
+use ffx_prender::h3_glue40::bridge as g40;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1886,6 +1887,24 @@ ported! {
     /// sorted (qsort or buckets) and merged into the draw list.
     PhyreScene_MergeVFXRenderArrays @ 0x0065_4650 => extern "thiscall" fn scene_merge_vfx_render_arrays(this: u32) {
         g39::merge_vfx_render_arrays(&mut mem(), this);
+    }
+
+    // ---- round 10 batch 40 (ffx_prender::h3_glue40) ----
+    /// `0x00650340(this)`: the minimap's stencil pass (fade-list meshes
+    /// by name, kind-1 menus, visible map objects); 0.
+    PhyreScene_RenderMinimapStencil_00650340 @ 0x0065_0340 => extern "thiscall" fn scene_render_minimap_stencil(this: u32) -> u32 {
+        let mut f = StackFrame::<0x32>::new();
+        g40::minimap_stencil(&mut mem(), f.at() + 0xc8, this)
+    }
+    /// `0x008e71d0(style)`: a menu window's divider bars or lines; the
+    /// last draw's `eax`, or `style`.
+    MenuDrawDividerShapes_008e71d0 @ 0x008e_71d0 => extern "C" fn menu_draw_divider_shapes(style: u32) -> u32 {
+        g40::menu_divider_shapes(&mut mem(), style)
+    }
+    /// `DrawCrossButtonIconRGBA(id, x, y, w, h, c0, c1)` (float bits):
+    /// the face buttons' scratch values end in `id`'s and `y`'s slots.
+    DrawCrossButtonIconRGBA @ 0x008e_6070 => extern "C" fn draw_cross_button_icon(id: u32, x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32; slots: u32) -> u32 {
+        g40::draw_cross_button_icon(&mut mem(), slots, id, x, y, w, h, c0, c1)
     }
 }
 

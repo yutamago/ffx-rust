@@ -62,6 +62,7 @@ use ffx_prender::h3_glue36::{self as h36, bridge as gh36};
 use ffx_prender::h3_glue37::{self as h37, bridge as gh37};
 use ffx_prender::h3_glue38::{self as h38, bridge as gh38};
 use ffx_prender::h3_glue39::{self as h39, bridge as gh39};
+use ffx_prender::h3_glue40::{self as h40, bridge as gh40};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -208,6 +209,8 @@ struct Twins {
     snapshot: bool,
     /// [`Twins::stub`] logs the word at `ecx` instead of `ecx`.
     deref_this: bool,
+    /// ... at `ecx + deref_off`.
+    deref_off: u8,
     /// Bytes the stubs replaced, put back by [`Twins::reset`].
     patched: Vec<(u32, Vec<u8>)>,
 }
@@ -233,6 +236,7 @@ impl Twins {
             cave_next: cave,
             snapshot,
             deref_this: false,
+            deref_off: 0,
             patched: Vec::new(),
         };
         t.log = t.zeros(0x1_0000);
@@ -356,7 +360,9 @@ impl Twins {
         c.extend((log + 4).to_le_bytes()); // add eax, log + 4
         c.extend([0xc7, 0x00]);
         c.extend(tag.to_le_bytes()); // mov [eax], tag
-        if this && self.deref_this {
+        if this && self.deref_this && self.deref_off != 0 {
+            c.extend([0x8b, 0x51, self.deref_off, 0x89, 0x50, 0x04]); // mov edx, [ecx+off]; mov [eax+4], edx
+        } else if this && self.deref_this {
             c.extend([0x8b, 0x11, 0x89, 0x50, 0x04]); // mov edx, [ecx]; mov [eax+4], edx
         } else if this {
             c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
@@ -9602,5 +9608,226 @@ fn batch39_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 100 } else { 600 };
         run_cases(t, CASES39, n, &mut Rng(0x3939_b039));
+    });
+}
+
+// ---- round 10 batch 40 (ffx_prender::h3_glue40) ----
+
+/// Page 0 mapped zeroed in both oracles, for paths where the original
+/// reads through a null target or camera.
+fn map_page_zero(t: &mut Twins) {
+    t.a.map_zeroed(0, 0x1000).unwrap();
+    t.b.map_zeroed(0, 0x1000).unwrap();
+}
+
+/// The flags (UI, movie fade), the fade list's meshes and their tagged
+/// names (the same pointer, an equal or different string, none), the
+/// target (or none: page 0), the menus (kinds 1, 0, 2, 0x101; no mesh,
+/// none, a negative count), the stencil flag, the map objects (none,
+/// boxes with or without a matrix), the camera (or none).
+fn prep_minimap40(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    map_page_zero(t);
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    let aux = t.zeros(0x2000);
+    t.write(scene + 0x1_0dcc, &[u8::from(!rng.chance(5))]);
+    let fading = if rng.chance(2) { 0 } else { rng.next() };
+    t.global(h40::MOVIE_FADING.sym, fading);
+    let renderer = obj + 0x800;
+    t.w32(scene + 0xd0, renderer);
+    // names: two copies of one string, a different one, a prefix, ""
+    let strings: [&[u8]; 5] = [b"Minimap\0", b"Minimap\0", b"Minimal\0", b"Mini\0", b"\0"];
+    let names: Vec<u32> = strings
+        .iter()
+        .enumerate()
+        .map(|(k, s)| {
+            let at = aux + 0x1800 + 0x20 * k as u32;
+            t.write(at, s);
+            at
+        })
+        .collect();
+    let (same, copy, other, prefix, empty) = (names[0], names[1], names[2], names[3], names[4]);
+    let global = pick(rng, &[same, same | 1, same, 0, 1, prefix, empty]);
+    t.global(h40::STENCIL_NAME.sym, global);
+    let meshes = pick(rng, &[0, 1, 2, 3, 4, 5]);
+    let list = obj + 0x100;
+    t.w32(scene + 0x3860, meshes);
+    t.w32(scene + 0x3868, list);
+    for k in 0..meshes {
+        let mesh = if rng.chance(6) {
+            0
+        } else {
+            obj + 0x140 + 0x40 * k
+        };
+        t.w32(list + 4 * k, mesh);
+        if mesh != 0 {
+            let name = pick(
+                rng,
+                &[
+                    same,
+                    same | 1,
+                    copy,
+                    copy | 1,
+                    other,
+                    0,
+                    1,
+                    prefix,
+                    empty,
+                    global,
+                ],
+            );
+            t.w32(mesh + 0x2c, name);
+        }
+    }
+    let post = obj + 0xc00;
+    t.w32(scene + 0x10cc, post);
+    let target = obj + 0xd00;
+    t.w32(post + 0x8c, target);
+    t.w32(target, obj + 0xe00);
+    let hidden = pick(rng, &[0, 0, 0, 0, 1, 2, 0x80]);
+    t.write(target + 4, &[hidden as u8]);
+    // the renderer's pass word at each draw
+    t.deref_this = true;
+    t.deref_off = 0x48;
+    let v = rng.next();
+    t.stub_ret(h40::RENDER_MESH_INSTANCE, true, 4, 4, v);
+    t.deref_this = false;
+    t.deref_off = 0;
+    // a null menu's fields (page 0): a kind-1 mesh
+    t.w32(0xc, obj + 0x1f00);
+    t.w32(0x24, obj + 0x1e00);
+    t.write(obj + 0x1e00 + 0xb4, &[1, 0]);
+    // the menus
+    let ui = obj + 0x180;
+    t.global(h40::GRAPHIC_UI.sym, if rng.chance(6) { 0 } else { ui });
+    let count = rng.below(5);
+    let reported = if rng.chance(8) {
+        0x8000_0000 | count
+    } else {
+        count
+    };
+    let counts: Vec<u32> = (0..8).map(|_| reported).collect();
+    t.stub_seq(h40::MENU_COUNT, true, 0, 0, &counts);
+    let mut menus = vec![];
+    for k in 0..count {
+        let menu = obj + 0x1000 + 0x40 * k;
+        let mesh = if rng.chance(5) {
+            0
+        } else {
+            obj + 0x1400 + 0x40 * k
+        };
+        t.w32(menu + 0xc, mesh);
+        let info = obj + 0x1800 + 0x100 * k;
+        t.w32(menu + 0x24, info);
+        let kind = pick(rng, &[1, 1, 1, 0, 2, 0x101]);
+        t.write(info + 0xb4, &(kind as u16).to_le_bytes());
+        menus.push(if rng.chance(6) { 0 } else { menu });
+    }
+    t.stub_seq(h40::MENU_AT, true, 1, 1, &menus);
+    objects40(t, scene, aux, rng);
+}
+
+/// The stencil flag, the map objects (none, boxes with or without a
+/// matrix) and the camera (or none).
+fn objects40(t: &mut Twins, scene: u32, aux: u32, rng: &mut Rng) {
+    // the map objects
+    t.write(scene + 0xf9c6, &[u8::from(rng.chance(2))]);
+    let objects = aux;
+    let count = pick(rng, &[0, 1, 2, 3, 4, 5]);
+    t.w32(scene + 0x386c, count);
+    t.w32(scene + 0x3874, objects);
+    for k in 0..count {
+        let entry = if rng.chance(6) {
+            0
+        } else {
+            aux + 0x100 + 0x40 * k
+        };
+        t.w32(objects + 4 * k, entry);
+        if entry == 0 {
+            continue;
+        }
+        let bounds = aux + 0x400 + 0x40 * k;
+        t.w32(entry + 0x1c, bounds);
+        let v = rng.next();
+        t.w32(entry + 0x10, v);
+        let local = aux + 0x800 + 0x40 * k;
+        t.w32(bounds + 0xc, if rng.chance(2) { 0 } else { local });
+        for j in 0..12 {
+            let f = rng.float().to_bits();
+            t.w32(local + 4 * j, f);
+        }
+    }
+    let camera = if rng.chance(6) { 0 } else { aux + 0x1000 };
+    t.w32(scene + 0x654, camera);
+    for j in 0..16 {
+        let f = rng.float().to_bits();
+        t.w32(aux + 0x1074 + 4 * j, f);
+    }
+}
+
+const MINIMAP_STUBS: &[(u32, K)] = &[
+    (h40::SET_CAMERA, K::This(1)),
+    (h40::UPDATE_VIEW_MATRICES, K::This(0)),
+    (h40::MINIMAP_X, K::This(0)),
+    (h40::MINIMAP_65E4A0, K::This(0)),
+    (h40::MINIMAP_Y, K::This(0)),
+    (h40::MINIMAP_SIZE, K::This(0)),
+    (h40::SET_VIEWPORT, K::This(4)),
+    (h40::SET_SCISSOR, K::This(4)),
+    (h40::BOX_IS_VISIBLE, K::This(1)),
+];
+
+#[rustfmt::skip]
+const CASES40: &[Case] = &[
+    framed(Case { prep: Some(prep_minimap40), ..method("minimap_stencil", 0x0065_0340, This::Object, 0, MINIMAP_STUBS, |m, this, _| u(gh40::minimap_stencil(m, frame_ebp(), this))) }, 0xc8, 0),
+];
+
+#[test]
+fn batch40_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 100 } else { 600 };
+        run_cases(t, CASES40, n, &mut Rng(0x4040_b040));
+    });
+}
+
+#[rustfmt::skip]
+const CASES40B: &[Case] = &[
+    Case { prep: Some(prep_divider40), ..cdecl("menu_divider_shapes", 0x008e_71d0, 1, &[(h40::MKP_SHAPE_XYWHUV, K::Cdecl(9))], |m, _, a| u(gh40::menu_divider_shapes(m, a[0]))) },
+];
+
+/// The style: 0 to 8, or any.
+fn prep_divider40(_: &mut Twins, _: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let any = rng.next();
+    args[0] = pick(rng, &[0, 1, 2, 3, 4, 5, 6, 7, 8, any]);
+}
+
+#[test]
+fn batch40b_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 100 };
+        run_cases(t, CASES40B, n, &mut Rng(0x4040_b041));
+    });
+}
+
+/// The icon: every id 599..=0x26a, or any; floats for the rectangle.
+fn prep_cross_icon40(_: &mut Twins, _: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let any = rng.next();
+    let id = 599 + rng.below(20);
+    args[0] = if rng.chance(10) { any } else { id };
+    for a in &mut args[1..5] {
+        *a = rng.float().to_bits();
+    }
+}
+
+#[rustfmt::skip]
+const CASES40C: &[Case] = &[
+    framed(Case { prep: Some(prep_cross_icon40), ..cdecl("draw_cross_button_icon", 0x008e_6070, 7, &[(h40::MKP_SHAPE_XYWHUV_C2, K::Cdecl(11))], |m, _, a| { let slots = slots_at(m, a); u(gh40::draw_cross_button_icon(m, slots, a[0], a[1], a[2], a[3], a[4], a[5], a[6])) }) }, 0, 0x1c),
+];
+
+#[test]
+fn batch40c_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 200 } else { 1000 };
+        run_cases(t, CASES40C, n, &mut Rng(0x4040_b042));
     });
 }
