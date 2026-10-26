@@ -290,4 +290,96 @@ pub mod bridge {
         let vt = h.rebase(0x00b0_e568);
         h.write(desc, vt);
     }
+
+    /// `PClassDescriptor::SortClassDescriptors()` (`0x0043be70`, cdecl):
+    /// numbers every class descriptor so that a class and all its
+    /// descendants are contiguous (`+0x80`). A table of `n + 1` entries
+    /// of 20 bytes (`n` the serial counter `0x00c90758`; allocated,
+    /// `0x0042fb80(.., 4)`, 0xd when that fails, and initialised by
+    /// `0x0043bcf0`), indexed by serial (`+0x7c`): the descriptor, its
+    /// descendant count, its depth, its parent's serial (`n` for none),
+    /// the next number. The global namespace's descriptors fill it; then
+    /// level by level each descriptor takes its parent's next number and
+    /// reserves room for its descendants. The descriptor count goes to
+    /// `0x00c9075c`; the table is freed. 0.
+    pub fn sort_class_descriptors(h: &mut impl Host) -> u32 {
+        let n: u32 = h.read(h.rebase(DESCRIPTOR_SERIAL));
+        let cap = n.wrapping_add(1);
+        let mut table = 0;
+        let mut owned = 0u32;
+        if cap != 0 {
+            table = h.call_sym(
+                crate::descriptor::ALLOC,
+                Conv::Cdecl,
+                &[cap.wrapping_mul(20), 4],
+            );
+            if table == 0 {
+                return 0xd;
+            }
+            h.call_sym(0x0043_bcf0, Conv::Cdecl, &[table, cap]);
+            owned = cap;
+        }
+        let entry = |i: u32| table.wrapping_add(i.wrapping_mul(20));
+        h.write(entry(n) + 0x10, 0u32);
+        let mut total = 0u32;
+        let ns = h.call_sym(GLOBAL_NAMESPACE, Conv::Cdecl, &[]);
+        let head = ns + 8;
+        let mut link: u32 = h.read(head);
+        while link != head && link != 0 && link != 0x2c {
+            let desc = link - 0x2c;
+            let mut parent: u32 = h.read(desc + 0x40);
+            let serial: u32 = h.read(desc + 0x7c);
+            let e = entry(serial);
+            let up = if parent == 0 {
+                n
+            } else {
+                h.read(parent + 0x7c)
+            };
+            h.write(e + 0xc, up);
+            let mut depth = 0u32;
+            while parent != 0 {
+                depth += 1;
+                let ps: u32 = h.read(parent + 0x7c);
+                let at = entry(ps) + 4;
+                let c: u32 = h.read(at);
+                h.write(at, c.wrapping_add(1));
+                parent = h.read(parent + 0x40);
+            }
+            total = total.wrapping_add(1);
+            h.write(e, desc);
+            h.write(e + 8, depth);
+            link = h.read(desc + 0x2c);
+        }
+        let mut level = 0u32;
+        loop {
+            let mut more = false;
+            for i in 0..n {
+                let e = entry(i);
+                let d: u32 = h.read(e + 8);
+                if d == level {
+                    let up: u32 = h.read(e + 0xc);
+                    let pe = entry(up);
+                    let next: u32 = h.read(pe + 0x10);
+                    let desc: u32 = h.read(e);
+                    h.write(desc + 0x80, next);
+                    let next = next.wrapping_add(1);
+                    h.write(pe + 0x10, next);
+                    h.write(e + 0x10, next);
+                    let below: u32 = h.read(e + 4);
+                    h.write(pe + 0x10, next.wrapping_add(below));
+                } else if (d as i32) > (level as i32) {
+                    more = true;
+                }
+            }
+            level = level.wrapping_add(1);
+            if !more {
+                break;
+            }
+        }
+        h.write(h.rebase(0x00c9_075c), total);
+        if owned >> 31 == 0 && table != 0 {
+            h.call_sym(crate::descriptor::FREE, Conv::Cdecl, &[table]);
+        }
+        0
+    }
 }

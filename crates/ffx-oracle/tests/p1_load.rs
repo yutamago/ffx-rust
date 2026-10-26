@@ -4857,3 +4857,25 @@ fn p1c_fill_default_buffer_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn p1c_sort_class_descriptors_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+        let n = t.r32(t.rebase(0x00c9_0758));
+        for fail in [false, true] {
+            let table = if fail {
+                0
+            } else {
+                t.zeros(20 * (n as usize + 1))
+            };
+            t.stub(descriptor::ALLOC, false, 2, 0, table);
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            let what = format!("{label}: sort class descriptors {n} {fail}");
+            t.check(&what, 0x0043_be70, Conv::Cdecl, &[], |g| {
+                Out::U32(pt::sort_class_descriptors(g))
+            });
+        }
+        t.reset();
+    }
+}

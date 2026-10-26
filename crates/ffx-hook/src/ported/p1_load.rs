@@ -1160,5 +1160,8 @@ ported! {
     /// A class descriptor's default buffer filled from its parent's and its members' types.
     Phyre_PClassDescriptor_fillDefaultBuffer_0043cfd0 @ 0x0043_cfd0 => extern "thiscall" fn fill_default_buffer(this: u32) {
         p1_misc::bridge::fill_default_buffer(&mut mem(), this);
+    }    /// `PClassDescriptor::SortClassDescriptors()`.
+    Phyre_PClassDescriptor_SortClassDescriptors @ 0x0043_be70 => extern "C" fn sort_class_descriptors() -> u32 {
+        p1_types::bridge::sort_class_descriptors(&mut mem())
     }
 }
