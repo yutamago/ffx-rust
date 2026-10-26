@@ -54,7 +54,7 @@ then (harness-main-thread):
   wrapped. There every update before has finished, the next has not
   begun, and the previous frame's flip is queued. The trace samples there,
   and the main thread's jobs (`call`, `wait`, `press`'s release,
-  `waitfor`, `loadsave`, `snapshot`, `fpucw`) run there.
+  `waitfor`, `loadsave`, `snapshot`, `fpucw`, `pin`) run there.
 - **Lockstep** holds the main thread at the boundary until the script
   allows more updates: one update per frame of `wait`, `press` or
   `waitfor`, as before, and now nothing of the next update runs while the
@@ -419,10 +419,11 @@ and sets the flags itself, one more every 60 frames, from the frame the
 magic file is loaded (`g_MagicFile_Handle` `0x00c64cac`). Coverage mode
 (`FFX_COVERAGE`, `0x007ed0c0`) gives no hit up to flag 5 + 90 frames and a
 hit once flag 6 is set: shot 1 is the stage before (flag 5), shots 2 and 3
-the burst flag 6 starts (10 and 30 frames in). The effect looks the same in
-every run; the characters' idle swim pose under it does not (the battle's
-load time moves its phase), so `shot-compare.py` is blind there like on
-battle-attack-1: look at the shots. Traces: the magic ID, the flags and the
+the burst flag 6 starts (10 and 30 frames in). Since load pacing and
+`pin` ("Pinned state", 2026-10-26) the shots are the same to the pixel in
+every run, original and Rust, and `shot-compare.py` compares them exactly;
+before, the idle swim pose, the bubbles and the burst's pattern moved with
+the updates run before lockstep. Traces: the magic ID, the flags and the
 actors' HP (the item heals Rikku at the end). About 17 s.
 
 `tools/replays/battle-overdrive.txt` (2026-10-24) plays an overdrive with
@@ -603,6 +604,49 @@ instead, so the original code runs under the same rule. Measured with it: Valefo
 load ends 2 frames after the magic ID in original, Rust and Rust with no
 slowing alike, and battle-overdrive's entry takes 281 frames and Energy
 Blast 259 in every run.
+
+### Pinned state
+
+`lockstep on` makes the frames after it repeat, but not what the frames
+before it leave behind: boot, title and `load` run free in fast mode and
+take 220 to 430 updates, depending on real time (2026-10-26,
+magic-determinism). Three things carried that count into battle-magic:
+
+- `Sg_FrameSync`'s (`0x00821e80`) carries (`f32` `0x012fb7f8`,
+  `0x012fb7fc`). The virtual clock's frame is two NTSC fields
+  (2 x 0.0166833 s), 0.1% over the 1/30 s logic tick, so the 30 Hz carry
+  grows a little each update and about one update in a thousand runs two
+  logic ticks (`g_VoiceHold` 2: twice the effect draws in one update).
+  Where that double tick fell moved with the update count before
+  lockstep, so the shots fell into a few clusters (battle-magic-1 the
+  same in runs whose lockstep started at update 296 to 323, another
+  picture from 377). The step itself also depended on it: the game time
+  is an `f32` (`FFXApplication` `+0x20`, clock - `g_AppStartTime` -
+  paused time `+0x28`) and the step (`+0x24`) the difference of two, so
+  its last bits came out differently with the clock further on.
+- `g_Vu0_R` (`0x00c0a000`) and its seeded flag (`0x00c8f728`): the
+  effects' generator (`op_random`, the ppp rand programs), drawn by the
+  field's effects before the battle.
+- the main thread's CRT `rand()` seed (`op_loop_ffx_after` draws from it
+  each update; the job threads' are seeded per job, "How it gets in").
+
+The `pin` command (main thread, between two updates; on the virtual
+clock) sets them: the clock to 4096 s past its start, `g_AppStartTime`
+so that the game time is 64 s, the paused time 0, `g_FrameLimiterLast`,
+`+0x20`/`+0x120`, the running update's step and the play-time stamp
+(`0x01325b84`) to match (the next frame is one interval on, every step
+one frame), the emulated vsyncs from the new time, both carries 0,
+`g_Vu0_R` `0x3fb5a5c3` (seeded), the main thread's CRT seed 1. It
+answers what it pinned. The game's own generators need nothing: loading
+a save seeds them. A replay that needs it says `pin` right after
+`lockstep on` (battle-magic does; the others' recordings predate it).
+
+Measured on battle-magic: without `pin`, original runs as well as Rust
+runs landed in four or five pictures for shot 1 and in three for shots 2
+and 3 (Rust always in other ones than the 2026-10-26 references, whose
+two recordings had happened to start lockstep 6 updates apart); with
+`pin`, three original and three Rust runs gave the same three pictures to
+the pixel, whatever the update lockstep started at (269 to 370).
 
 `tools/replays/event-besaid.txt` and `event-cliff.txt` (2026-10-24) play
 scripted events from save slot 3 (`ffx_003`). The harness's five save

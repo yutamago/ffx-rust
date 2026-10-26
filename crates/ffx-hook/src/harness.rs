@@ -528,6 +528,125 @@ const HOLDRAND: usize = 0x14;
 /// Ctrl work 0's event frame count (`0x01325d94`) at the last frame
 /// boundary, for [`seeded_job`].
 static JOB_EVENTS: AtomicU32 = AtomicU32::new(0);
+/// `Sg_FrameSync`'s (`0x00821e80`) carries, `f32`: the 60 Hz remainder
+/// (`(carry + dt) x 60` is the update's due count) and the 30 Hz one
+/// (`(carry + dt) x 30`, whole steps are the update's logic ticks).
+const FRAME_SYNC_CARRY_60: u32 = 0x012f_b7f8;
+const FRAME_SYNC_CARRY_30: u32 = 0x012f_b7fc;
+/// `g_Vu0_R` (the emulated VU0 `R`, `f32` bits) and `g_Vu0_RSeeded`.
+const VU0_R: u32 = 0x00c0_a000;
+const VU0_R_SEEDED: u32 = 0x00c8_f728;
+/// What [`pin_carried_state`] sets `g_Vu0_R` to: 1.0 with a mantissa that
+/// has bits all over (the generator's state is `R`'s 23 mantissa bits).
+const VU0_R_PINNED: u32 = 0x3f80_0000 | 0x0035_a5c3;
+/// `g_AppStartTime` (`f64`), `g_FrameLimiterLast` (`f64`, the last frame's
+/// time less the start) and `g_AtelPlayTimeLast` (`f32`, the game time the
+/// play time was last counted from).
+const APP_START_TIME: u32 = 0x00c9_0278;
+const FRAME_LIMITER_LAST: u32 = 0x00cc_9d00;
+const ATEL_PLAY_TIME_LAST: u32 = 0x0132_5b84;
+/// The virtual clock (past [`VIRTUAL_START`]) and the game time
+/// (`FFXApplication_getAppTime`: clock - start - paused) that
+/// [`pin_carried_state`] sets: whole seconds, so the sums are exact, and
+/// past what boot, title and load take.
+const PINNED_CLOCK: f64 = 4096.0;
+const PINNED_GAME_TIME: f64 = 64.0;
+/// One frame of the limiter at two vsyncs a frame (`g_FrameVsyncs`), for
+/// the step of the update the pin happens in.
+const PINNED_FRAME: f64 = 2.0 * 0.016_683_333_333_333_335;
+/// The application object `FFXApplication_animate` runs on (its `this`),
+/// for [`pin_carried_state`]: `+0x20` the update's game time (`f32`),
+/// `+0x24` its step, `+0x28` the paused time (`f32`), `+0x120` a copy of
+/// `+0x20` (`Phyre_PFramework_PApplication_frame` `0x00627940`).
+static APP: AtomicUsize = AtomicUsize::new(0);
+
+/// The `pin` command, on the main thread between two updates: sets what
+/// the frames run before `lockstep on` leave behind to fixed values, so
+/// that a replay plays the same from there however many frames boot,
+/// title and load took (docs/harness.md, "Pinned state"):
+///
+/// - the time. `Phyre_PFramework_PApplication_frame` keeps the game time
+///   as an `f32` (`app +0x20`: clock - start - paused) and the step as the
+///   difference of two such `f32`s (`+0x24`), so the step's last bits
+///   depended on how far the clock had got, and `Sg_FrameSync` adds the
+///   steps up (below). The virtual clock moves to [`PINNED_CLOCK`],
+///   `g_AppStartTime` so that the game time is [`PINNED_GAME_TIME`], and
+///   the paused time to 0; `g_FrameLimiterLast` (relative to the start),
+///   `app +0x20`/`+0x120`, the running update's step (`+0x24`, one frame)
+///   and the play-time stamp follow, so every later step is one frame
+///   and the limiter's next frame is one interval on;
+/// - `Sg_FrameSync`'s carries. The virtual clock's frame is two NTSC
+///   fields (2 / 59.94 s), a little over the 1/30 s logic tick, so the
+///   30 Hz carry grows by about 0.1% of a tick each update and about one
+///   update in a thousand runs two logic ticks. Where that double tick
+///   fell depended on the frames since start-up: battle-magic's effect
+///   ran a tick ahead in some runs (twice the `g_Vu0_R` draws in one
+///   update), original code and Rust alike;
+/// - `g_Vu0_R` (and its seeded flag): the effects' generator (`op_random`,
+///   the ppp rand programs), which the field's effects draw from before;
+/// - the main thread's CRT `rand()` seed (`op_loop_ffx_after` draws from
+///   it every update): 1, as at start-up.
+///
+/// Returns what was pinned. The game's own generators (`0x00c42200`, the
+/// 68 at `0x01135ee0`) need nothing: loading a save seeds them (`--seed`).
+///
+/// # Safety
+/// On the main thread, between two updates (in `FFXApplication_animate`).
+unsafe fn pin_carried_state() -> String {
+    let mut pinned = vec!["frame sync", "vu0 R"];
+    // SAFETY: words of the image's data and of the application object,
+    // which only the main thread writes; `_getptd` returns this thread's
+    // CRT data.
+    unsafe {
+        *(crate::rebase(FRAME_SYNC_CARRY_60) as *mut f32) = 0.0;
+        *(crate::rebase(FRAME_SYNC_CARRY_30) as *mut f32) = 0.0;
+        *(crate::rebase(VU0_R) as *mut u32) = VU0_R_PINNED;
+        *(crate::rebase(VU0_R_SEEDED) as *mut u32) = 1;
+        let app = APP.load(Ordering::Acquire);
+        if VIRTUAL.load(Ordering::Acquire) && app != 0 {
+            // the paused time (summed while the game held its clock, which
+            // varies with the load) goes into the start, so that the game
+            // time's sums are exact
+            *((app + 0x28) as *mut f32) = 0.0;
+            let paused = 0.0;
+            let now = VIRTUAL_START + PINNED_CLOCK;
+            let start = now - PINNED_GAME_TIME;
+            SKIPPED.store(PINNED_CLOCK.to_bits(), Ordering::Release);
+            // the emulated vsyncs go on from the new time, not the jump
+            VSYNC_TICKS.store(vsync_ticks_now(), Ordering::Release);
+            *(crate::rebase(APP_START_TIME) as *mut f64) = start;
+            // the running update's frame started now: the limiter's next
+            // frame is due one interval on
+            *(crate::rebase(FRAME_LIMITER_LAST) as *mut f64) = now - start;
+            #[allow(clippy::cast_possible_truncation)] // the game's f32s
+            let game_time = (now - start - paused) as f32;
+            *((app + 0x20) as *mut f32) = game_time;
+            *((app + 0x120) as *mut f32) = game_time;
+            // the running update's step was taken from the old clock: one
+            // frame, as the next updates' (two f32 game times apart)
+            #[allow(clippy::cast_possible_truncation)]
+            let next = (now - start + PINNED_FRAME) as f32;
+            *((app + 0x24) as *mut f32) = next - game_time;
+            *(crate::rebase(ATEL_PLAY_TIME_LAST) as *mut f32) = game_time;
+            pinned.push("time");
+        }
+        let getptd = GETPTD.load(Ordering::Acquire);
+        if getptd != 0 {
+            let ptd = std::mem::transmute::<usize, unsafe extern "C" fn() -> usize>(getptd)();
+            ((ptd + HOLDRAND) as *mut u32).write(1);
+            pinned.push("main CRT seed");
+        }
+    }
+    pinned.join(", ")
+}
+
+/// The `pin` job's reply ([`pin_carried_state`]); only [`run_main_jobs`]
+/// calls it, on the main thread between two updates.
+fn pin_reply() -> String {
+    // SAFETY: see above.
+    format!("ok {}", unsafe { pin_carried_state() })
+}
+
 /// Seeded jobs run (cloth, middle calc), for `stats`.
 static SEEDED_JOBS: AtomicU32 = AtomicU32::new(0);
 
@@ -824,6 +943,9 @@ enum Job {
     Shot(String, u32, bool),
     Snapshot(String),
     FpuControl,
+    /// Pin the state the frames before lockstep leave behind (`pin`,
+    /// [`pin_carried_state`]).
+    Pin,
     /// Start the game from a save (`loadsave`, [`crate::loadsave`]).
     LoadSave(String),
     /// Until the bytes at the range equal the value (under the mask), or
@@ -1183,6 +1305,7 @@ unsafe extern "system" fn create_device_and_swap_chain(
 
 /// Runs the main thread's jobs due at the frame boundary `frame` (the
 /// number of updates finished).
+#[allow(clippy::too_many_lines)] // one arm per job kind
 fn run_main_jobs(frame: u32) {
     let due: Vec<(Job, Sender<String>)> = JOBS.lock().map_or_else(
         |_| Vec::new(),
@@ -1196,6 +1319,7 @@ fn run_main_jobs(frame: u32) {
                     | Job::Shot(..)
                     | Job::Snapshot(_)
                     | Job::FpuControl
+                    | Job::Pin
                     | Job::LoadSave(_) => true,
                     Job::WaitFor(ref r, ref value, ref mask, limit) => {
                         frame >= limit || range_matches(r, value, mask)
@@ -1279,6 +1403,7 @@ fn run_main_jobs(frame: u32) {
             Job::FpuControl => {
                 let _ = reply.send(format!("ok {:#06x}", crate::snapshot::fpu_control()));
             }
+            Job::Pin => drop(reply.send(pin_reply())),
             Job::LoadSave(spec) => {
                 let r = crate::loadsave::load(&spec);
                 log(&format!("loadsave {spec} at frame {frame}: {r:?}"));
@@ -1421,6 +1546,7 @@ static VSYNC_LOCK: Mutex<()> = Mutex::new(());
 /// Called by the game, on the main thread.
 pub unsafe extern "thiscall" fn animate(app: *mut c_void) -> u32 {
     let frame = FRAME.load(Ordering::Acquire);
+    APP.store(app as usize, Ordering::Release);
     REACHED.store(frame + 1, Ordering::Release);
     trace_frame(frame);
     run_main_jobs(frame);
@@ -2235,6 +2361,7 @@ fn command(line: &str) -> Result<String, String> {
         "shot" => on_game_thread(Job::Shot(words[1..].join(" "), now(), false)),
         "snapshot" => on_game_thread(Job::Snapshot(words[1..].join(" "))),
         "fpucw" => on_game_thread(Job::FpuControl),
+        "pin" => on_game_thread(Job::Pin),
         "loadsave" => on_game_thread(Job::LoadSave(words[1..].join(" "))),
         "threads" => list_threads(),
         "stacks" => thread_stacks(),
