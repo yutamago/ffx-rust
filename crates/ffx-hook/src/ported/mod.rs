@@ -26,6 +26,7 @@ mod h1_render_a;
 mod h2_render_b;
 mod h3_glue_render;
 mod h4_glue_other;
+mod h4b_glue_other;
 mod kernel;
 mod m4_rest;
 mod main;
@@ -76,6 +77,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(h2_render_b::hooks());
     all.extend(h1_render_a::hooks());
     all.extend(h4_glue_other::hooks());
+    all.extend(h4b_glue_other::hooks());
     all.extend(kernel::hooks());
     all.extend(m4_rest::hooks());
     all.extend(main::hooks());
