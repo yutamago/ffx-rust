@@ -1,0 +1,37 @@
+# Scene gate allow list of bsil0000 (Besaid beach, save ffx_003, ctrl work
+# 0's count 101; tools/replays/draw-gate-besaid.txt, docs/drawdiff.md
+# "Scene gates"). Every entry was seen between two runs of the ORIGINAL
+# code: dg-besaid-o1/o2 (pin right after `lockstep on`) and
+# dg-besaid-p1/p2 (pin at count 64, the replay as committed), 2026-10-26.
+# `[*]`: the file is for this scene only.
+[*]
+
+# 4 f32 ulp (3.4033988 | 3.4033997) in p1/p2, 16 ulp in o1/o2, in every
+# draw's vs and ps `scene` buffer. GlobalTime is not the pinned game time
+# (pin sets that to 64 s; GlobalTime reads 3.40 at count 101, about the
+# time since the event started). It carries the rounding of the f32 time
+# steps of the frames since the map started (Phyre_PFramework_PApplication_frame
+# 0x00627940 takes each step as the difference of two f32 game times, so
+# its last bits depend on how far the clock had got); the frames before
+# `pin` ran on a clock that depends on how long boot and load took. That
+# it sums those steps is inferred, not traced.
+constant var=scene field=*.cb0.scene.GlobalTime cause: f32 time steps taken before pin, whose rounding follows the boot and load length (4-16 ulp between original runs)
+
+# Every pair: Ch_DrawMain (0x0082ed50) passes graphicSgSetSpecular
+# (0x00643cc0) a light vector whose third word, [ebp-0x3c], it never
+# writes (about 5e-30 in the original; stale stack).
+constant var=SgSpec_LightVec field=*.SgSpec_LightVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x3c] (the light vector's third word)
+
+# p1/p2: a 16x8 BC3 texture (5 mips) of this draw (ps srv1) is replaced by
+# the asset loader at a frame that depends on the loader's timing
+# (`reborn` lines in frames.txt; as allow/bsil0000.txt, T2).
+resource vs=f1de6dea8bd5f574 field=ps.srv1 cause: asset loader replaces the texture at a load-timing-dependent frame
+
+# Not seen between original runs (every original passes 0x00000001): an
+# entry by the junk-read policy (~/ffx-work/agents/brief.md, user
+# 2026-10-24), as in draw-field.txt. The ported Ch_DrawMain passes 0. With
+# only-m4 the original Ch_DrawMain reads what the ports left on the stack
+# (bisected on kami0100: Sg_AccSetFrameChr 0x0082be20 alone gives
+# 0x00d90000). The replays' shots of these scenes match the original at 0
+# pixels; whether a shader reads the word is not checked here.
+constant var=SgSpec_CameraVec field=*.SgSpec_CameraVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x2c] (the camera vector's third word); its value depends on what earlier calls left on the stack

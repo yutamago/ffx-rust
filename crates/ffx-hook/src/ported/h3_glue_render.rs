@@ -43,6 +43,11 @@ use ffx_prender::h3_glue34::bridge as g34;
 use ffx_prender::h3_glue35::bridge as g35;
 use ffx_prender::h3_glue36::bridge as g36;
 use ffx_prender::h3_glue37::bridge as g37;
+use ffx_prender::h3_glue38::bridge as g38;
+use ffx_prender::h3_glue39::bridge as g39;
+use ffx_prender::h3_glue40::bridge as g40;
+use ffx_prender::h3_glue41::bridge as g41;
+use ffx_prender::h3_glue42::bridge as g42;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1852,6 +1857,83 @@ ported! {
     PostProcessManager_render @ 0x0069_4f10 => extern "thiscall" fn post_process_render(this: u32, renderer: u32, a: u32, b: u32; slots: u32) -> u32 {
         let mut f = StackFrame::<0xf>::new();
         g37::post_process_render(&mut mem(), f.at() + 0x3c, slots, this, renderer, a, b)
+    }
+
+    // ---- round 9 batch 38 (ffx_prender::h3_glue38) ----
+    /// `PhyreScene_fieldMapLoad(this, path, b)`: the map's flags, camera
+    /// data and asset clusters (19-word `loadCluster` calls); the header's
+    /// error or 0. The slots keep the loop's words.
+    PhyreScene_fieldMapLoad @ 0x0065_cbf0 => extern "thiscall" fn scene_field_map_load(this: u32, path: u32, b: u32; slots: u32) -> u32 {
+        g38::field_map_load(&mut mem(), slots, this, path, b)
+    }
+    /// `PhyreScene_fieldMapUnload(this)`: the map's clusters, assets and
+    /// lists released, the singletons reset; 0.
+    PhyreScene_fieldMapUnload @ 0x0065_d240 => extern "thiscall" fn scene_field_map_unload(this: u32) -> u32 {
+        g38::field_map_unload(&mut mem(), this)
+    }
+    /// `VfxShaderManager_unloadSpecialShaderTable(this)`: the special
+    /// shader table freed, a copy of each entry's map in the frame.
+    VfxShaderManager_unloadSpecialShaderTable @ 0x006c_19b0 => extern "thiscall" fn vfx_shader_unload_special_table(this: u32) -> u32 {
+        let mut f = StackFrame::<0x13>::new();
+        g38::unload_special_shader_table(&mut mem(), f.at() + 0x4c, this, ffx_prender::h3_glue38::SPECIAL_TABLE)
+    }
+    /// `VfxShaderManager_unloadSpecialShaderTable_magic(this)`: the magic
+    /// file's table, as the special one; `+0x64` reset.
+    VfxShaderManager_unloadSpecialShaderTable_magic @ 0x006c_1c50 => extern "thiscall" fn vfx_shader_unload_special_table_magic(this: u32) -> u32 {
+        let mut f = StackFrame::<0x13>::new();
+        g38::unload_special_shader_table(&mut mem(), f.at() + 0x4c, this, ffx_prender::h3_glue38::MAGIC_TABLE)
+    }
+
+    // ---- round 9 batch 39 (ffx_prender::h3_glue39) ----
+    /// `PhyreScene_MergeVFXRenderArrays(this)`: the frame's VFX segments
+    /// sorted (qsort or buckets) and merged into the draw list.
+    PhyreScene_MergeVFXRenderArrays @ 0x0065_4650 => extern "thiscall" fn scene_merge_vfx_render_arrays(this: u32) {
+        g39::merge_vfx_render_arrays(&mut mem(), this);
+    }
+
+    // ---- round 10 batch 40 (ffx_prender::h3_glue40) ----
+    /// `0x00650340(this)`: the minimap's stencil pass (fade-list meshes
+    /// by name, kind-1 menus, visible map objects); 0.
+    PhyreScene_RenderMinimapStencil_00650340 @ 0x0065_0340 => extern "thiscall" fn scene_render_minimap_stencil(this: u32) -> u32 {
+        let mut f = StackFrame::<0x32>::new();
+        g40::minimap_stencil(&mut mem(), f.at() + 0xc8, this)
+    }
+    /// `0x008e71d0(style)`: a menu window's divider bars or lines; the
+    /// last draw's `eax`, or `style`.
+    MenuDrawDividerShapes_008e71d0 @ 0x008e_71d0 => extern "C" fn menu_draw_divider_shapes(style: u32) -> u32 {
+        g40::menu_divider_shapes(&mut mem(), style)
+    }
+    /// `DrawCrossButtonIconRGBA(id, x, y, w, h, c0, c1)` (float bits):
+    /// the face buttons' scratch values end in `id`'s and `y`'s slots.
+    DrawCrossButtonIconRGBA @ 0x008e_6070 => extern "C" fn draw_cross_button_icon(id: u32, x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32; slots: u32) -> u32 {
+        g40::draw_cross_button_icon(&mut mem(), slots, id, x, y, w, h, c0, c1)
+    }
+
+    // ---- round 10 batch 41 (ffx_prender::h3_glue41) ----
+    /// `PhyreScene_DrawZPrePass(this)`: the loaded characters' meshes with
+    /// an additional pre-pass on a fake-transparent material; 0.
+    PhyreScene_DrawZPrePass @ 0x0065_1070 => extern "thiscall" fn scene_draw_z_prepass(this: u32) -> u32 {
+        g41::draw_z_prepass(&mut mem(), this)
+    }
+    /// `PhyreScene_RenderMF152Related(this)`: the MF152 effect's world
+    /// pass and motion blur; the scene's error or 0.
+    PhyreScene_RenderMF152Related @ 0x0065_3230 => extern "thiscall" fn scene_render_mf152(this: u32) -> u32 {
+        let mut f = StackFrame::<0xc>::new();
+        g41::render_mf152(&mut mem(), f.at() + 0x30, this)
+    }
+
+    // ---- round 10 batch 42 (ffx_prender::h3_glue42) ----
+    /// `0x006931a0(this)`: the post-process manager's screen-fade mesh,
+    /// instance and material; 0, 3 or 0x13.
+    PostProcessManager_createScreenFadeMesh_006931a0 @ 0x0069_31a0 => extern "thiscall" fn post_create_screen_fade_mesh(this: u32) -> u32 {
+        let mut f = StackFrame::<0x10>::new();
+        g42::post_screen_fade_mesh(&mut mem(), f.at() + 0x40, this)
+    }
+    /// `0x006c8090(this, kind, out, camera, single)`: the shadow casters'
+    /// two lists; the loop's base word.
+    ShadowManager_collectCasters_006c8090 @ 0x006c_8090 => extern "thiscall" fn shadow_collect_casters(this: u32, kind: u32, out: u32, camera: u32, single: u32) -> u32 {
+        let mut f = StackFrame::<0x3d>::new();
+        g42::collect_casters(&mut mem(), f.at() + 0xf4, this, kind, out, camera, single)
     }
 }
 

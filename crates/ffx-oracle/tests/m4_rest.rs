@@ -24,6 +24,10 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pother_b::{m4r_dynblocks, m4r_mesh};
+use ffx_prender::m4r_ctxcapture as cc;
+use ffx_prender::m4r_fonttext as ft;
+use ffx_prender::m4r_gauss as gs;
+use ffx_prender::m4r_glow as gl;
 use ffx_prender::m4r_meshlist as ml;
 use ffx_prender::m4r_modnet as mn;
 use ffx_prender::m4r_nodecapture as nc;
@@ -33,6 +37,12 @@ use ffx_prender::m4r_rendercmds as rc;
 /// stubs are written over it.
 const CAVE: u32 = 0x0064_0660;
 const CAVE_LEN: u32 = 1768;
+/// `fstp st(0); ret` at the cave's last bytes: pops a callee's `ST0` in
+/// the port's oracle, as the original's `fstp` after the call does.
+const POP: u32 = CAVE + CAVE_LEN - 4;
+/// `fld qword [esp+4]; call [esp+0xc]; ret` before it: a CRT intrinsic
+/// (`_CIcos`) called with its argument in `ST0` (`G::call_intrinsic`).
+const INTRINSIC: u32 = POP - 12;
 
 /// Deterministic xorshift stream.
 struct Rng(u32);
@@ -64,22 +74,55 @@ impl Mem for G<'_> {
     }
 }
 
+fn oracle_conv(conv: host::Conv) -> Conv {
+    match conv {
+        host::Conv::Cdecl => Conv::Cdecl,
+        host::Conv::Stdcall => Conv::Stdcall,
+        host::Conv::Thiscall(t) => Conv::Thiscall(t),
+        host::Conv::Fastcall => Conv::Fastcall,
+    }
+}
+
 impl Host for G<'_> {
     fn call(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> u32 {
         ffx_oracle::check_width("Host::call", addr, args.len(), host::max_words(conv, false));
-        let conv = match conv {
-            host::Conv::Cdecl => Conv::Cdecl,
-            host::Conv::Stdcall => Conv::Stdcall,
-            host::Conv::Thiscall(t) => Conv::Thiscall(t),
-            host::Conv::Fastcall => Conv::Fastcall,
-        };
         self.0
-            .call(addr, conv, args)
+            .call(addr, oracle_conv(conv), args)
             .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
             .eax
     }
+    fn call_st0(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f32 {
+        ffx_oracle::check_width(
+            "Host::call_st0",
+            addr,
+            args.len(),
+            host::max_words(conv, true),
+        );
+        let r = self
+            .0
+            .call(addr, oracle_conv(conv), args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"));
+        let v = r.st0_f32().expect("the callee's ST0");
+        // the caller's fstp pops it
+        let pop = self.0.rebase(POP);
+        self.0.call(pop, Conv::Cdecl, &[]).unwrap();
+        v
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
+    }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        let at = self.0.rebase(INTRINSIC);
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let v = r.st0_f32().expect("the intrinsic's ST0");
+        // the caller's fstp pops it
+        let pop = self.0.rebase(POP);
+        self.0.call(pop, Conv::Cdecl, &[]).unwrap();
+        v
     }
 }
 
@@ -114,6 +157,13 @@ impl Twins {
             cave_next: cave,
         };
         t.log = t.zeros(0x4000);
+        let pop = t.rebase(POP);
+        t.write(pop, &[0xdd, 0xd8, 0xc3]);
+        let intrinsic = t.rebase(INTRINSIC);
+        t.write(
+            intrinsic,
+            &[0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3],
+        );
         t
     }
 
@@ -243,7 +293,10 @@ impl Twins {
             c.extend(((pops * 4) as u16).to_le_bytes());
         }
         let addr = self.cave_next;
-        assert!(addr + c.len() as u32 <= self.cave + CAVE_LEN, "cave full");
+        assert!(
+            addr + c.len() as u32 <= self.cave + (INTRINSIC - CAVE),
+            "cave full"
+        );
         self.write(addr, &c);
         self.cave_next = addr + c.len() as u32;
         // a default list of zeros
@@ -310,6 +363,37 @@ impl Twins {
             "{what}: frame differs at ebp - {:#x}",
             first.map_or(0, |i| low as usize - i)
         );
+    }
+
+    /// [`Twins::check`] with the port's frame at the original's `ebp`, as
+    /// [`Twins::check_framed`], but comparing only the frame's `ranges`
+    /// afterwards (`(ebp offset, bytes)`: what the callees see; the
+    /// original's other locals are its own).
+    #[allow(clippy::too_many_arguments)]
+    fn check_framed_ranges(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        low: u32,
+        ranges: &[(u32, u32)],
+        port: impl FnOnce(&mut G, u32) -> u32,
+    ) {
+        let ebp = self.frame_ebp(args.len());
+        let lo = ebp - low;
+        // stale bytes, so that a record the callees fill must be filled
+        self.write(lo, &vec![0x5a; low as usize]);
+        self.b.set_call_top(Some(lo - 0x100));
+        self.check(what, sym, conv, args, |g| port(g, ebp));
+        self.b.set_call_top(None);
+        for &(off, len) in ranges {
+            let mut x = vec![0; len as usize];
+            let mut y = vec![0; len as usize];
+            Mem::read_bytes(&self.a, ebp - off, &mut x);
+            Mem::read_bytes(&self.b, ebp - off, &mut y);
+            assert_eq!(x, y, "{what}: frame differs at ebp - {off:#x}");
+        }
     }
 
     fn log_entries(&self) -> u32 {
@@ -1249,5 +1333,724 @@ fn process_render_commands_matches_the_original() {
             calls += t.log_entries();
         }
         assert!(calls > 300, "{name}: the stubs ran ({calls} calls)");
+    }
+}
+
+// ---- 0x00a0ff50: the legacy glow's Gaussian tables ----
+
+/// A random word that is not a signalling NaN (the emulator keeps those
+/// signalling where the CPU quiets them).
+fn no_snan(rng: &mut Rng) -> u32 {
+    let w = rng.next();
+    if ffx_bridge::x87::is_snan(w) {
+        w | 0x0040_0000
+    } else {
+        w
+    }
+}
+
+#[test]
+fn gaussian_tables_match_the_original() {
+    const SYM: u32 = 0x00a0_ff50;
+    const GLOW: usize = 0xd00;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x6a05_5150);
+        let spreads: Vec<u32> = [
+            1.0_f32,
+            0.65,
+            0.0,
+            -0.0,
+            2.5,
+            -1.25,
+            0.1,
+            3.0e38,
+            -7.75,
+            1.0e-3,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ]
+        .iter()
+        .map(|f| f.to_bits())
+        .chain([
+            0x7fc0_1234,
+            0xffc0_0000,
+            0x0000_0001,
+            0x8000_0003,
+            0x0012_3456,
+        ])
+        .collect();
+        let sizes: &[(u32, u32)] = &[
+            (1280, 720),
+            (1920, 1080),
+            (0, 0),
+            (1, 1),
+            (2, 3),
+            (641, 359),
+            (0xffff_ffff, 0x8000_0000),
+            (7, 0x1234_5679),
+            (0x0100_0001, 0x7fff_ffff),
+        ];
+        let mut case = 0;
+        for &n in &[7_u32, 5, 3] {
+            for (i, &spread) in spreads.iter().enumerate() {
+                let (w, h) = sizes[(i + n as usize) % sizes.len()];
+                let glow = t.zeros(GLOW);
+                let junk: Vec<u32> = (0..GLOW / 4).map(|_| no_snan(&mut rng)).collect();
+                t.w32s(glow, &junk);
+                t.check(
+                    &format!("{name} case {case}: n {n}, {w}x{h}, spread {spread:#x}"),
+                    SYM,
+                    Conv::Thiscall(glow),
+                    &[w, h, n, spread],
+                    |g| gs::bridge::gaussian_tables(g, glow, w, h, n, spread),
+                );
+                case += 1;
+            }
+        }
+        // random sizes and spreads
+        for _ in 0..12 {
+            let n = [3, 5, 7][rng.below(3) as usize];
+            let (w, h) = (rng.next(), rng.below(4096));
+            let spread = small_float(&mut rng);
+            let glow = t.zeros(GLOW);
+            let what = format!("{name} case {case}: n {n}, {w}x{h}, spread {spread:#x}");
+            t.check(&what, SYM, Conv::Thiscall(glow), &[w, h, n, spread], |g| {
+                gs::bridge::gaussian_tables(g, glow, w, h, n, spread)
+            });
+            case += 1;
+        }
+        // tap counts it refuses: 5, nothing written
+        for n in [
+            0_u32,
+            1,
+            2,
+            4,
+            6,
+            8,
+            9,
+            11,
+            0xffff_fffd,
+            0xffff_ffff,
+            0x8000_0007,
+        ] {
+            let glow = t.zeros(GLOW);
+            let one = 1.0_f32.to_bits();
+            t.check(
+                &format!("{name} taps {n:#x}"),
+                SYM,
+                Conv::Thiscall(glow),
+                &[640, 360, n, one],
+                |g| gs::bridge::gaussian_tables(g, glow, 640, 360, n, one),
+            );
+        }
+    }
+}
+
+// ---- PBitmapFontText::createMeshGeometry (0x00a29770) ----
+
+/// The map stub's body: `[out] =` the result entry's second word.
+const MAP_BODY: [u8; 9] = [
+    0x8b, 0x50, 0x04, // mov edx, [eax+4]
+    0x8b, 0x4c, 0x24, 0x04, // mov ecx, [esp+4] (out)
+    0x89, 0x11, // mov [ecx], edx
+];
+
+/// `c` as UTF-8.
+fn utf8(c: u32) -> Vec<u8> {
+    char::from_u32(c).unwrap().to_string().into_bytes()
+}
+
+#[test]
+fn create_mesh_geometry_matches_the_original() {
+    const SYM: u32 = 0x00a2_9770;
+    const CODES: [u32; 7] = [0x41, 0x42, 0x43, 0x44, 0x45, 0xe9, 0x3042];
+    for (name, mut t) in Twins::all() {
+        let at = t.rebase(ft::MAP);
+        let (addr, map) = t.stub_custom(ft::MAP, true, 1, 1, 8, &MAP_BODY);
+        let mut j = vec![0xe9];
+        j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        let unmap = t.stub(ft::UNMAP, true, 2, 2);
+        t.stub(ft::UNMAP_STEP, true, 1, 1);
+        t.stub(ft::PRINTF, false, 3, 0);
+        let mut rng = Rng(0x0a29_7700);
+        let mut calls = 0;
+        let mut quads = 0;
+        for case in 0..60_u32 {
+            // the font: glyphs for CODES (some missing), kerning pairs
+            let font = t.zeros(0x40);
+            let holder = t.zeros(0x40);
+            t.w32(holder + 0x30, font);
+            let n = 4 + rng.below(4);
+            let glyphs = t.zeros(0x30 * 8);
+            for k in 0..n {
+                let g = glyphs + 0x30 * k;
+                let mut w = vec![
+                    CODES[(k + case) as usize % CODES.len()],
+                    1 + rng.below(6),
+                    rng.below(16),
+                    (rng.below(512) as f32).to_bits(),
+                    (rng.below(512) as f32).to_bits(),
+                ];
+                // sizes, offsets, advances: on the 1/4096 grid, -0, a
+                // quiet NaN now and then, or with every mantissa bit (sums
+                // that round)
+                w.extend((0..6).map(|_| {
+                    match rng.below(6) {
+                        0 => (f32::from_bits(0x3f80_0000 | (rng.next() & 0x007f_ffff))
+                            * [-3.0, 0.001, 37.0][rng.below(3) as usize])
+                            .to_bits(),
+                        1 if rng.below(5) == 0 => 0x7fc0_0000 | rng.below(0x40_0000),
+                        1 => 0x8000_0000,
+                        _ => small_float(&mut rng),
+                    }
+                }));
+                w.push(rng.below(2));
+                t.w32s(g, &w);
+            }
+            let kern = t.zeros(0x300);
+            let pairs: Vec<u32> = (0..64)
+                .flat_map(|_| {
+                    let few = if rng.below(2) == 0 { 3 } else { 7 };
+                    [
+                        CODES[rng.below(few) as usize],
+                        (rng.below(200) as i32 - 100) as u32,
+                        rng.next(),
+                    ]
+                })
+                .collect();
+            t.w32s(kern, &pairs);
+            let texture = t.zeros(0x40);
+            let sizes = [256, 1024, 0, 1, 0x8000_0010, 0xffff_ffff, 300];
+            t.w32(texture + 0x1c, sizes[case as usize % 7]);
+            t.w32(texture + 0x20, sizes[(case as usize + 2) % 7]);
+            let top = if case % 9 == 4 { 0x8000_0000 } else { 0 };
+            t.w32s(
+                font,
+                &[
+                    0,
+                    0,
+                    (1.0 + rng.below(64) as f32 / 8.0).to_bits(),
+                    0,
+                    n | top,
+                ],
+            );
+            t.w32(font + 0x14, glyphs);
+            t.w32(font + 0x1c, kern);
+            t.w32(font + 0x20, texture);
+
+            // the string: glyphs, newlines, characters the font lacks
+            let len = rng.below(24);
+            let mut s = Vec::new();
+            let mut chars = 0;
+            for _ in 0..len {
+                let c = match rng.below(8) {
+                    0 => 0x0a,
+                    1 => 0x7a,
+                    _ => CODES[rng.below(7) as usize],
+                };
+                s.extend(utf8(c));
+                chars += 1;
+            }
+            s.push(0);
+            let string = t.alloc(&s);
+            let count = match case % 5 {
+                0 => chars,
+                1 => chars / 2,
+                2 => chars + 3,
+                3 => 1,
+                _ => {
+                    if case % 2 == 0 {
+                        0
+                    } else {
+                        chars
+                    }
+                }
+            };
+
+            // the text and its mesh
+            let text = t.zeros(0x200);
+            let junk: Vec<u32> = (0..0x80).map(|_| no_snan(&mut rng)).collect();
+            t.w32s(text, &junk);
+            let mesh = t.zeros(0xc0);
+            t.fill(&mut rng, mesh, 0xc0);
+            for s in 0..3 {
+                t.w32(mesh + 0x40 * s + 0x10, rng.below(4));
+                t.w32(mesh + 0x40 * s + 0x18, rng.below(4) | (rng.below(2) << 31));
+            }
+            let colours = case % 3 != 0;
+            t.w32(text + 0x64, mesh);
+            t.w32(text + 0x158, holder);
+            t.w32(text + 0x160, string);
+            t.w32(text + 0x170, small_float(&mut rng));
+            t.write(text + 0x174, &[u8::from(colours)]);
+            let pos = t.zeros(0x20 * 40);
+            let uv = t.zeros(0x20 * 40);
+            let col = t.zeros(0x40 * 40);
+            let maps: &[u32] = match case % 11 {
+                3 => &[0x8000_0013, pos],
+                5 => &[0, pos, 9, uv],
+                7 => &[0, pos, 0, uv, 0xb, col],
+                _ => &[0, pos, 0, uv, 0, col],
+            };
+            t.results(map, maps);
+            let unmaps: &[u32] = match case % 13 {
+                4 => &[0x15],
+                6 => &[0, 0x16],
+                8 => &[0, 0, 0x17],
+                _ => &[],
+            };
+            t.results(unmap, unmaps);
+            let before = t.log_entries();
+            t.check_framed_ranges(
+                &format!("{name} case {case}: {count} of {chars} characters"),
+                SYM,
+                Conv::Thiscall(text),
+                &[count],
+                ft::FRAME,
+                &[
+                    (ft::MAP_POS, 4),
+                    (ft::MAP_UV, 4),
+                    (ft::MAP_COL, 4),
+                    (ft::CURSOR, 4),
+                    (ft::GLYPH, 0x30),
+                    (ft::KEY, 0x30),
+                ],
+                |g, ebp| ft::bridge::create_mesh_geometry(g, text, count, ebp),
+            );
+            calls += t.log_entries() - before;
+            quads += Mem::read::<u32>(&t.b, text + 0x70) / 6;
+        }
+        assert!(calls > 150, "{name}: the stubs ran ({calls} calls)");
+        assert!(quads > 100, "{name}: {quads} quads");
+    }
+}
+
+// ---- PLegacyGlowGPUBase_render (0x00a1de20) ----
+
+/// A stub body that appends `n` words to the stream at `[cur]`: from the
+/// pointer in stack argument `arg` when it is set, else from `addr`.
+fn snap_body(cur: u32, arg: Option<u32>, addr: u32, n: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57]; // push esi; push edi
+    if let Some(k) = arg {
+        c.extend([0x8b, 0x74, 0x24, (12 + 4 * k) as u8]); // mov esi, [esp+12+4k]
+    } else {
+        c.push(0xbe); // mov esi, addr
+        c.extend(addr.to_le_bytes());
+    }
+    c.extend([0x8b, 0x3d]); // mov edi, [cur]
+    c.extend(cur.to_le_bytes());
+    c.push(0xb9); // mov ecx, n
+    c.extend(n.to_le_bytes());
+    c.extend([0xf3, 0xa5]); // rep movsd
+    c.extend([0x89, 0x3d]); // mov [cur], edi
+    c.extend(cur.to_le_bytes());
+    c.extend([0x5f, 0x5e]); // pop edi; pop esi
+    c
+}
+
+impl Twins {
+    /// [`Twins::stub_custom`] installed over the original at `sym`.
+    fn stub_with(&mut self, sym: u32, this: bool, n: u32, pops: u32, body: &[u8]) -> u32 {
+        let at = self.rebase(sym);
+        let (addr, cell) = self.stub_custom(sym, this, n, pops, 4, body);
+        let mut j = vec![0xe9];
+        j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+        self.write(at, &j);
+        cell
+    }
+}
+
+#[test]
+fn legacy_glow_render_matches_the_original() {
+    const SYM: u32 = 0x00a1_de20;
+    for (name, mut t) in Twins::all() {
+        // the parameter buffer and the renderer stay put: the draw stub
+        // snapshots the buffer's 16 words and the pass at every draw, the
+        // texture stub its record, the color-target stub its surface
+        let buffer = t.zeros(0x100);
+        let renderer = t.zeros(0x200);
+        let cur = t.zeros(4);
+        let stream = t.zeros(0x4000);
+        let mut draw_snap = snap_body(cur, None, buffer + 4, 16);
+        draw_snap.extend(snap_body(cur, None, renderer + 0x48, 1));
+        let stubs = [
+            t.stub_with(gl::SET_TEXTURE, true, 2, 2, &snap_body(cur, Some(1), 0, 4)),
+            t.stub(gl::SET_SAMPLER, true, 2, 2),
+            t.stub_with(gl::SET_COLOR, true, 2, 2, &snap_body(cur, Some(0), 0, 4)),
+            t.stub(gl::SET_DEPTH, true, 1, 1),
+            t.stub(gl::BEGIN_SCENE, true, 1, 1),
+            t.stub_with(gl::RENDER_MESH, true, 4, 4, &draw_snap),
+            t.stub(gl::END_SCENE, true, 1, 1),
+        ];
+        t.stub(gl::QUEUE18, true, 3, 3);
+        let mut rng = Rng(0x00a1_de20);
+        let mut draws = 0;
+        let mut errors = 0;
+        for case in 0..80_u32 {
+            t.w32(cur, stream);
+            let log = t.log;
+            t.w32(log, 0); // the log holds 512 calls
+            let glow = t.zeros(0xa0);
+            let junk: Vec<u32> = (0..0x28).map(|_| no_snan(&mut rng)).collect();
+            t.w32s(glow, &junk);
+            let levels = [3, 2, 1, 0, 4, 0xffff_ffff, 3, 3][case as usize % 8];
+            t.w32(glow + 0x50, levels);
+            let spread = if case % 4 == 1 {
+                (f32::from_bits(0x3f80_0000 | (rng.next() & 0x007f_ffff)) * 0.37).to_bits()
+            } else {
+                small_float(&mut rng)
+            };
+            t.w32(glow + 0x58, spread);
+            t.w32(glow + 0x5c, small_float(&mut rng));
+            let mesh = t.zeros(0x20);
+            t.fill(&mut rng, mesh, 0x20);
+            t.w32(glow + 0x48, mesh);
+            let holder = t.zeros(0x10);
+            t.w32(holder + 4, buffer);
+            t.w32(glow + 0x4c, holder);
+            // the buffer: its size, then stale words
+            t.fill(&mut rng, buffer, 0x100);
+            // the size: roomy, too small, or exactly the gain's or the scale's end
+            t.w32(
+                buffer,
+                [0x80, 0x80, 0x80, 0x30, 0x44, 0x24][(case % 6) as usize],
+            );
+            t.fill(&mut rng, renderer, 0x200);
+            // parameters: +0x60 texture, +0x64 sampler, +0x68 gain, +0x6c
+            // scale, +0x70 size (offset, size with stale flag bits)
+            let lens = [16_u16, 16, 16, 12, 8, 4, 16, 0x110];
+            for (k, (field, offset)) in [
+                (0x60, 0x44),
+                (0x64, 4),
+                (0x68, 0x34),
+                (0x6c, 0x14),
+                (0x70, 0x24),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let present = (case >> k) & 3 != 1;
+                let desc = t.zeros(0x10);
+                t.fill(&mut rng, desc, 0x10);
+                let offset: u16 = if case % 23 == 7 + k as u32 { 2 } else { offset };
+                let len = lens[rng.below(if case % 7 == 3 { 8 } else { 7 }) as usize]
+                    | ((rng.below(8) as u16) << 13);
+                t.write(desc + 8, &offset.to_le_bytes());
+                t.write(desc + 0xa, &len.to_le_bytes());
+                t.w32(glow + field, if present { desc } else { 0 });
+            }
+            // render targets {texture, unbound byte}: +0x78[3], +0x84[3]
+            for k in 0..6 {
+                let tex = t.zeros(0x30);
+                t.fill(&mut rng, tex, 0x30);
+                let target = t.zeros(8);
+                t.w32(target, tex);
+                let unbound = k >= 3 && rng.below(4) == 0;
+                t.w32(target + 4, u32::from(unbound) | (rng.next() & 0xffff_ff00));
+                t.w32(glow + 0x78 + 4 * k, target);
+            }
+            let target = if case % 3 == 0 { 0 } else { rng.next() };
+            let source = rng.next();
+            // an error from one callee now and then
+            for &cell in &stubs {
+                t.results(cell, &[]);
+            }
+            if case % 5 == 4 {
+                let which = rng.below(stubs.len() as u32) as usize;
+                // the sampler parameter's call, at its first level
+                let which = if case == 24 || case == 64 { 1 } else { which };
+                let mut list = vec![0; 1 + rng.below(if which == 1 { 3 } else { 8 }) as usize];
+                *list.last_mut().unwrap() = 0x10 + which as u32;
+                t.results(stubs[which], &list);
+            }
+            let mut ranges: Vec<(u32, u32)> = gl::RECORDS
+                .iter()
+                .chain(&gl::SAMPLERS)
+                .chain(&gl::SURFACES)
+                .chain(&[
+                    gl::SCALE_DOWN,
+                    gl::ONES,
+                    gl::SCALE_UP,
+                    gl::SIZE_DOWN,
+                    gl::SIZE_UP,
+                ])
+                .map(|&o| (o, 16))
+                .collect();
+            ranges.push((gl::MASK, 4));
+            t.check_framed_ranges(
+                &format!("{name} case {case}: {levels} levels"),
+                SYM,
+                Conv::Thiscall(glow),
+                &[renderer, target, source, rng.next(), rng.next()],
+                gl::FRAME,
+                &ranges,
+                |g, ebp| gl::bridge::render(g, glow, renderer, target, source, ebp),
+            );
+            let end: u32 = Mem::read(&t.b, cur);
+            draws += (end - stream) / 4;
+            errors += u32::from(case % 5 == 4);
+        }
+        assert!(draws > 3000, "{name}: {draws} words snapshotted");
+        assert!(errors > 10);
+    }
+}
+
+// ---- PRendererBase::generateContextParameterCaptureBuffer (0x005b6cf0) ----
+
+/// `n` floats in [-4, 4) at a new block.
+fn cc_floats(t: &mut Twins, rng: &mut Rng, n: u32) -> u32 {
+    let words: Vec<u32> = (0..n).map(|_| small_float(rng)).collect();
+    let at = t.zeros(4 * n as usize + 16);
+    t.w32s(at, &words);
+    at
+}
+
+/// A shadow caster: up to four 0xe0-byte splits (`+0x80` the matrix,
+/// `+0xc0` the target record `{map, flag byte}`, `+0xc4` the distance).
+fn cc_caster(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let splits = cc_floats(t, rng, 4 * 0xe0 / 4);
+    for k in 0..4 {
+        let target = if rng.below(4) == 0 {
+            0
+        } else {
+            let map = if rng.below(3) == 0 {
+                0
+            } else {
+                let m = t.zeros(0x10);
+                t.w32s(m, &[rng.next(), rng.next(), rng.next(), rng.next()]);
+                m
+            };
+            let rec = t.zeros(8);
+            t.w32(rec, map);
+            t.write(rec + 4, &[u8::from(rng.below(3) == 0)]);
+            rec
+        };
+        t.w32(splits + k * 0xe0 + 0xc0, target);
+    }
+    let caster = t.zeros(0x50);
+    t.w32s(caster + 8, &[rng.below(5) | (rng.below(2) << 31), splits]);
+    caster
+}
+
+/// A light: `+0x10` its transform (or 0), `+0x14` its caster (or 0),
+/// `+0x18` its type, `+0x1c`/`+0x20` the cone, `+0x24` the intensity,
+/// `+0x28`/`+0x2c` the range (sometimes infinite or empty).
+fn cc_light(t: &mut Twins, rng: &mut Rng, types: [u32; 2]) -> u32 {
+    let light = cc_floats(t, rng, 0x18);
+    let transform = if rng.below(3) == 0 {
+        0
+    } else {
+        cc_floats(t, rng, 12)
+    };
+    let caster = if rng.below(4) == 0 {
+        0
+    } else {
+        cc_caster(t, rng)
+    };
+    let ty = match rng.below(3) {
+        0 => types[0],
+        1 => types[1],
+        _ => rng.next() | 1,
+    };
+    t.w32s(light + 0x10, &[transform, caster, ty]);
+    let near: u32 = Mem::read(&t.a, light + 0x28);
+    match rng.below(5) {
+        0 => t.w32(light + 0x2c, f32::MAX.to_bits()),
+        1 => t.w32(light + 0x2c, near),
+        _ => {}
+    }
+    // now and then a quiet NaN (the x87's NaN rules; no signalling ones)
+    if rng.below(4) == 0 {
+        let field = [0x1c, 0x20, 0x24, 0x28, 0x2c][rng.below(5) as usize];
+        t.w32(light + field, 0x7fc0_0000 | (rng.next() & 0x803f_ffff));
+    }
+    light
+}
+
+/// The mesh instance's data blocks (`+0x28` the count, `+0x2c` 0x40-byte
+/// blocks: `+8` the count, `+0xc` 12-byte elements, `+4` the semantic).
+fn cc_instance(t: &mut Twins, rng: &mut Rng, keys: &[u32; 4]) -> u32 {
+    let n = rng.below(4);
+    let blocks = t.zeros(0x40 * n as usize + 0x40);
+    t.fill(rng, blocks, 0x40 * n);
+    for b in 0..n {
+        let m = rng.below(4);
+        let elems = t.zeros(12 * m as usize + 4);
+        for e in 0..m {
+            let key = if rng.below(4) == 0 {
+                rng.next()
+            } else {
+                keys[rng.below(4) as usize]
+            };
+            t.w32(elems + 12 * e + 4, key);
+        }
+        t.w32s(blocks + 0x40 * b + 8, &[m | (rng.below(2) << 31), elems]);
+    }
+    let inst = t.zeros(0x40);
+    t.fill(rng, inst, 0x40);
+    t.w32s(inst + 0x28, &[n | (rng.below(2) << 31), blocks]);
+    inst
+}
+
+/// A `PhyrePrintf` stub body: clears the log entry's last two words when
+/// the text (the second word) is not `keep`'s (a call passing two words
+/// logs the caller's stack there).
+fn printf_body(log: u32, keep: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x54, 0x24, 0x08]; // mov edx, [esp+8]
+    c.extend([0x81, 0xfa]); // cmp edx, keep
+    c.extend(keep.to_le_bytes());
+    c.extend([0x74, 0x1d]); // je done
+    c.extend([0x8b, 0x0d]); // mov ecx, [log]
+    c.extend(log.to_le_bytes());
+    c.extend([0xc1, 0xe1, 0x05]); // shl ecx, 5
+    c.extend([0x81, 0xc1]); // add ecx, log + 4 - 32
+    c.extend((log + 4 - 32).to_le_bytes());
+    c.extend([0xc7, 0x41, 0x10, 0, 0, 0, 0]); // mov dword [ecx+0x10], 0
+    c.extend([0xc7, 0x41, 0x14, 0, 0, 0, 0]); // mov dword [ecx+0x14], 0
+    c
+}
+
+#[test]
+fn generate_context_parameters_matches_the_original() {
+    const SYM: u32 = 0x005b_6cf0;
+    for (name, mut t) in Twins::all() {
+        // the ring and the warnings stay stubs; the vector and matrix
+        // helpers, the light's helpers, _CIcos, the slice, the array and
+        // data-block lookups run as they are
+        let allocate = t.stub(cc::ALLOCATE, true, 1, 1);
+        // the warnings: four words logged, the last two cleared but for
+        // the split warning's (the others pass two)
+        let split_text = t.rebase(cc::SPLIT_WARNING);
+        let log = t.log;
+        t.stub_with(cc::PRINTF, false, 4, 0, &printf_body(log, split_text));
+        let warned = t.rebase(cc::NO_MAP_WARNED);
+        let types = [t.rebase(0x00c1_0850), t.rebase(0x00c1_0814)];
+        let keys = cc::BLOCK_SEMANTICS.map(|k| t.rebase(k));
+        let mut rng = Rng(0x005b_6cf0);
+        // (lit, semantic - 0xc0) reached
+        let mut seen = [[0_u32; 0x24]; 2];
+        let mut copied = 0;
+        for case in 0..400_u32 {
+            t.w32(t.log, 0);
+            t.write(warned, &[u8::from(case % 3 == 0)]);
+            let renderer = cc_floats(&mut t, &mut rng, 0x40);
+            // the lights by slot (0..3), their count at +0x10
+            let lights = t.zeros(0x20);
+            for k in 0..4 {
+                let l = if rng.below(4) == 0 {
+                    0
+                } else {
+                    cc_light(&mut t, &mut rng, types)
+                };
+                t.w32(lights + 4 * k, l);
+            }
+            t.w32(lights + 0x10, rng.below(6));
+            // the context: +0x10's array (semantic 0xe3), the instance,
+            // the node block inline at +0x28
+            let holder = t.zeros(0x30);
+            let elems = 1 + rng.below(3);
+            if rng.below(4) != 0 {
+                let array = t.zeros(0x30);
+                let data = cc_floats(&mut t, &mut rng, 9);
+                if elems == 1 {
+                    t.w32(array + 0x18, small_float(&mut rng));
+                } else {
+                    t.w32(array + 0x18, data);
+                }
+                t.w32(array + 0x14, elems | (rng.below(2) << 31));
+                t.w32(holder + 0x20, array);
+            }
+            let ctx = cc_floats(&mut t, &mut rng, 0x20);
+            let instance = if rng.below(4) == 0 {
+                0
+            } else {
+                cc_instance(&mut t, &mut rng, &keys)
+            };
+            t.w32(ctx + 0xc, rng.below(elems));
+            t.w32(ctx + 0x10, holder);
+            t.w32(ctx + 0x1c, instance);
+            // the layout's entries
+            let n = if case % 17 == 5 { 0 } else { 1 + rng.below(12) };
+            let entries = t.zeros(16 * n as usize + 16);
+            for k in 0..n {
+                let mut semantic = 0xbf + rng.below(0x26);
+                let format = [0x30, 0x30, 0x31, 0x2f][rng.below(4) as usize];
+                let slot = [0, 1, 2, 3, 5, 6, 7][rng.below(7) as usize];
+                let light: u32 = if slot < 4 {
+                    Mem::read(&t.a, lights + 4 * slot)
+                } else {
+                    0
+                };
+                // a light's split matrices read its caster without a check
+                if semantic == 0xd7 && light != 0 && Mem::read::<u32>(&t.a, light + 0x14) == 0 {
+                    semantic = 0xd8;
+                }
+                if (0xc0..=0xe3).contains(&semantic) {
+                    seen[usize::from(light != 0)][(semantic - 0xc0) as usize] += 1;
+                }
+                // the most the value's block allows below ebp - 4
+                let cap = match semantic {
+                    0xcf => 0x20,
+                    0xd1 => 0x30,
+                    0xd2 => 0x10,
+                    _ => 0x40,
+                };
+                let sizes: Vec<u32> = [4, 0x10, 0x30, 0x40]
+                    .into_iter()
+                    .filter(|&s| s <= cap)
+                    .collect();
+                let mut size = sizes[rng.below(sizes.len() as u32) as usize];
+                let mut offset = 4 + 0x180 * k;
+                if semantic == 0xd7 {
+                    size = 0x140;
+                } else {
+                    match rng.below(8) {
+                        // below 4, past the end, exactly at the end
+                        0 => offset = rng.below(4),
+                        1 => offset = 0x1c00 - 8,
+                        2 => offset = 0x1c00 - size,
+                        _ => {}
+                    }
+                }
+                let e = entries + 16 * k;
+                t.w32(e, rng.below(6) | (rng.next() & 0xffff_0000));
+                t.write(e + 2, &[semantic as u8, format]);
+                t.w32(e + 4, rng.next());
+                t.w32(e + 8, offset | ((size | (slot << 13)) << 16));
+                t.w32(e + 0xc, rng.next());
+            }
+            let layout = t.zeros(0x40);
+            t.fill(&mut rng, layout, 0x40);
+            t.w32(layout + 0xc, n | (rng.below(2) << 31));
+            t.w32(layout + 0x10, entries);
+            t.w32(layout + 0x1c, 0x1c00);
+            t.w32(ctx + 0x6c, layout);
+            let buffer = t.zeros(0x2000);
+            t.results(allocate, &[if case % 23 == 9 { 0 } else { buffer }]);
+            let extra = rng.below(0x100);
+            t.check_framed(
+                &format!("{name} case {case} ({n} entries)"),
+                SYM,
+                Conv::Thiscall(renderer),
+                &[ctx, lights, extra],
+                cc::FRAME,
+                4,
+                |g, ebp| cc::bridge::generate(g, renderer, ctx, lights, extra, ebp),
+            );
+            let mut first = [0_u8; 0x1c00];
+            t.a.read_bytes(buffer + 4, &mut first);
+            copied += u32::from(first.iter().any(|&b| b != 0));
+        }
+        for (lit, from) in [(1, 0xc0), (0, 0xcf)] {
+            for s in from..=0xe3_u32 {
+                assert!(
+                    seen[lit][(s - 0xc0) as usize] >= 10,
+                    "{name}: semantic {s:#x} (lit {lit}) reached {} times",
+                    seen[lit][(s - 0xc0) as usize]
+                );
+            }
+        }
+        assert!(copied > 300, "{name}: values written in {copied} cases");
     }
 }

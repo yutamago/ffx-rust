@@ -1,0 +1,72 @@
+# Noise allow list of cdsp0000 (S.S. Winno deck, save slot 1): what differs
+# between two runs of the original code at field-walk-1's frame (ctrl work
+# 0's event count 101), from six captures (fw1..fw3, a and b; 15 pairs).
+# docs/drawdiff.md, "Noise in cdsp0000".
+[cdsp0000]
+
+# Differs in 3 of 5 pairs against fw1-a: 3.436, 3.437, 3.435999.
+# Phyre_PTimerWin32_GetTime (0x0042fd80) returns FILETIME / 1e7, about
+# 1.34e10 s, where one f64 ulp is 1.9e-6 s. The harness's virtual clock
+# starts at the real clock's first reading (ffx-hook harness.rs time_now),
+# so a time difference carries that rounding (the 8-ulp f32 change at 3.436
+# is 1.9e-6 s), and the frame limiter's whole-millisecond sleep, taken from
+# a difference of such values, now and then truncates to one more ms (the
+# 1 ms steps).
+constant var=scene field=*.cb0.scene.GlobalTime cause: the virtual clock starts at the wall clock's FILETIME reading, so GlobalTime carries its f64 rounding and the limiter's ms truncation
+
+# Differs in every pair: the COLOR1 stream (slot 5, a dynamic ring) of the
+# cloth draws of this skinned shader. Sg_ClothStep (0x00822de0) adds wind
+# from the CRT rand(), whose seed is per thread; the cloth job
+# (Ch_Cloth_PerCharacter 0x0082e390) runs on whichever JobWorker thread is
+# free, so each run draws other numbers. Seeding (FFX_HARNESS_SEED) covers
+# the game's generators, not the workers' CRT state.
+resource kind=draw vs=bb9bf1c768e1480f field=vb5 cause: cloth wind from CRT rand() on JobWorker threads (per-thread seed, scheduling-dependent)
+
+# Differs in every pair, about 5e-30: the third word of the light vector
+# Ch_DrawMain (0x0082ed50) passes to graphicSgSetSpecular (0x00643cc0) is
+# [ebp-0x3c], a stack word it never writes (ffx_chara::draw_main; the port
+# passes 0 under the junk-read policy of 2026-10-24).
+constant var=SgSpec_LightVec field=*.SgSpec_LightVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x3c] (the light vector's third word)
+
+# Besaid beach (bsil0000, save slot 3), draw-field.txt's besaid-101 capture
+# (M4 T2, from original runs orig3/orig4; docs/renderer.md "Reference
+# captures"). The same three as on the deck:
+# as the [bsil0000] section's note below
+constant var=SgSpec_CameraVec field=*.SgSpec_CameraVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x2c] (the camera vector's third word); its value depends on what earlier calls left on the stack
+
+[bsil0000]
+constant var=scene field=*.cb0.scene.GlobalTime cause: the virtual clock starts at the wall clock's FILETIME reading, so GlobalTime carries its f64 rounding and the limiter's ms truncation (as cdsp0000)
+resource kind=draw vs=bb9bf1c768e1480f field=vb5 cause: cloth wind from CRT rand() on JobWorker threads (as cdsp0000)
+constant var=SgSpec_LightVec field=*.SgSpec_LightVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x3c] (as cdsp0000)
+# The chocobo icon at the bottom right (viewport 50x50 at 1220,660, scissor
+# 1220-1270 x 660-710: the area event-besaid.txt and shot-compare.py mask
+# because it animates by the wall clock): the chocobo model's draws
+# (vertex shaders 3ed98be438f1788c, db4c42c82f869fe7) into a 50x50 target
+# and the quads (0259336042bd8dbd) that compose it; how many draws a frame
+# makes, and their constants, follow the icon's wall-clock phase (frames of
+# 276, 255 and 251 draws, in another order in every run).
+any vs=3ed98be438f1788c cause: chocobo icon model, animated by the wall clock
+any vs=db4c42c82f869fe7 cause: chocobo icon model, animated by the wall clock
+any vs=0259336042bd8dbd cause: chocobo icon quads, composed with the wall-clock icon
+# A 16x8 BC3 texture (5 mips) of this draw (ps srv1) is replaced by the
+# asset loader while the capture runs: 4 to 6 objects are created at
+# reused addresses in each besaid-101 capture (`reborn` lines in
+# frames.txt), and the frame where this one switches depends on the
+# loader's timing (AsyncLoadManager, docs/rewrite-plan.md "Determinism"):
+# in orig4 from frame 1, in orig3 and rust2 after the capture.
+resource vs=f1de6dea8bd5f574 field=ps.srv1 cause: asset loader replaces the texture at a load-timing-dependent frame
+# Two draws of this shader read a ring (vb1) whose contents alternate
+# between two versions from frame to frame; which version a given frame
+# gets is not pinned to the event count (original runs orig1 and orig3
+# have opposite phases, as do the Rust runs).
+resource vs=0d19616adb13ee23 field=vb1 cause: two-phase ring animation whose phase is not pinned to ctrl work 0's count (differs between original runs)
+
+# The camera vector Ch_DrawMain (0x0082ed50) passes to graphicSgSetSpecular
+# has a third word it never writes ([ebp-0x2c]). In the original it holds
+# whatever an earlier call left on the stack (a stale integer 1, read as
+# 1e-45); ported functions further up the stack leave other words there
+# (h3-glue-render, 2026-10-25: 0x004c0000), and the port of Ch_DrawMain
+# passes 0 (junk-read policy, 2026-10-24). The shader reads the variable;
+# whether the word changes pixels is not checked here (the replays' shots of
+# these frames match the original at 0 pixels).
+constant var=SgSpec_CameraVec field=*.SgSpec_CameraVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x2c] (the camera vector's third word); its value depends on what earlier calls left on the stack
