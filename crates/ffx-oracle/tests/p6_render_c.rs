@@ -1898,3 +1898,6 @@ mod appframe;
 
 #[path = "p6_render_c/appinit.rs"]
 mod appinit;
+
+#[path = "p6_render_c/split.rs"]
+mod split;

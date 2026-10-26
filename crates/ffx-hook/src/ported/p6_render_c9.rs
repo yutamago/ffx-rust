@@ -1,8 +1,8 @@
 //! M4 port, list p6-render-c, continuation round 5: the shims. Ports in
-//! `ffx_prender::p6_cmd`, `p6_appframe` and `p6_appinit`.
+//! `ffx_prender::p6_cmd`, `p6_appframe`, `p6_appinit` and `p6_quads`.
 
 use super::{StackFrame, mem, ported};
-use ffx_prender::{p6_appframe as af, p6_appinit as ai, p6_cmd as cm};
+use ffx_prender::{p6_appframe as af, p6_appinit as ai, p6_cmd as cm, p6_quads as qd};
 
 ported! {
     /// `PRenderThread::handleNonRenderInstanceCommand(this; renderer, cmd,
@@ -24,5 +24,12 @@ ported! {
         let mut frame = StackFrame::<0x4c>::new();
         let ebp = frame.at() + 0x130;
         ai::bridge::on_init(&mut mem(), this, a, b, ebp)
+    }
+    /// The split full-screen mesh in `cluster` at the texture
+    /// coordinates `u`, `v` (floats) -> its mesh instance's constructor's
+    /// `eax`, or 0.
+    FullscreenMesh_createSplit_00a06e60 @ 0x00a0_6e60 => extern "C" fn c_00a06e60(cluster: u32, u: u32, v: u32) -> u32 {
+        let mut frame = StackFrame::<6>::new();
+        qd::bridge::split(&mut mem(), cluster, frame.at(), u, v)
     }
 }

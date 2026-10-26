@@ -28,6 +28,7 @@
 //!    with a list and an instance at its `+0x34`, the instance's
 //!    constructor `0x004f27e0(instance; mesh)` and its `eax`; else 0.
 
+use ffx_bridge::x87;
 use ffx_graphic::host::{Conv, Host};
 
 /// `PCluster::create` and `allocateInstanceList` (thiscall on the
@@ -151,6 +152,103 @@ pub const FULLSCREEN_MESHES: [QuadMesh; 4] = [
     },
 ];
 
+/// `0x00a06e60(cluster, u, v)`'s streams (18 vertices: six triangles,
+/// the screen split at the texture coordinates `u` and `v`): positions
+/// (`0x00c985b4`), texture coordinates (`0x00c98638`), and a third
+/// three-float stream (`0x00c9862c`, semantic 2, ones and zeros). The
+/// data comes from [`split_vertices`].
+pub const SPLIT_STREAMS: [Stream; 3] = [
+    Stream {
+        size: 0xc,
+        count: 0x12,
+        semantic: 2,
+        name: 0x00c9_85b4,
+        data: &[],
+    },
+    Stream {
+        size: 8,
+        count: 0x12,
+        semantic: 1,
+        name: 0x00c9_8638,
+        data: &[],
+    },
+    Stream {
+        size: 0xc,
+        count: 0x12,
+        semantic: 2,
+        name: 0x00c9_862c,
+        data: &[],
+    },
+];
+
+/// `0x00a06e60`'s constants in the image: -1.0 (`f32`, `0x00b92340`) and
+/// 2.0 (`f64`, `0x00b92270`).
+pub const MINUS_ONE: u32 = 0x00b9_2340;
+pub const TWO: u32 = 0x00b9_2270;
+
+/// One word of the split mesh's data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum W {
+    /// -1.0 (the image's).
+    M,
+    /// 1.0, 0.0.
+    One,
+    Zero,
+    /// `2 u - 1`, `2 v - 1` (rounded to `f32`).
+    X,
+    Y,
+    /// `u`, `v` (through `fld`/`fst`).
+    U,
+    V,
+}
+
+use W::{M, One, U, V, X, Y, Zero};
+
+const SPLIT_POSITIONS: [W; 54] = [
+    M, M, One, One, M, One, M, X, One, One, X, One, M, X, One, One, M, One, M, X, One, One, X, One,
+    M, Y, One, One, Y, One, M, Y, One, One, X, One, M, Y, One, One, Y, One, M, One, One, One, One,
+    One, M, One, One, One, Y, One,
+];
+const SPLIT_TEXCOORDS: [W; 36] = [
+    Zero, Zero, One, Zero, Zero, U, One, U, Zero, U, One, Zero, Zero, U, One, U, Zero, V, One, V,
+    Zero, V, One, U, Zero, V, One, V, Zero, One, One, One, Zero, One, One, V,
+];
+/// The third stream: 1.0 but for these words.
+const SPLIT_THIRD_ZEROS: [usize; 6] = [1, 4, 16, 43, 46, 49];
+
+/// The split mesh's three streams (`f32` bits) for `u` and `v` (`f32`
+/// bits), with the image's -1.0 and 2.0: `2 u - 1` is `u * 2.0 - 1.0`,
+/// `2 v - 1` is `2.0 * v - 1.0` (x87, rounded to `f32` once each).
+#[must_use]
+pub fn split_vertices(
+    minus_one: u32,
+    two: f64,
+    u: u32,
+    v: u32,
+) -> ([u32; 54], [u32; 36], [u32; 54]) {
+    let one = 1.0f32.to_bits();
+    let zero = 0u32;
+    let (fu, fv) = (x87::load(u), x87::load(v));
+    let x = x87::store(x87::sub(x87::mul(fu, two), 1.0));
+    let y = x87::store(x87::sub(x87::mul(two, fv), 1.0));
+    let (u, v) = (x87::store(fu), x87::store(fv));
+    let minus_one = x87::store(x87::load(minus_one));
+    let word = |w: W| match w {
+        M => minus_one,
+        One => one,
+        Zero => zero,
+        X => x,
+        Y => y,
+        U => u,
+        V => v,
+    };
+    let mut third = [one; 54];
+    for i in SPLIT_THIRD_ZEROS {
+        third[i] = zero;
+    }
+    (SPLIT_POSITIONS.map(word), SPLIT_TEXCOORDS.map(word), third)
+}
+
 /// The frame the builders hand out: 8 bytes per stream, stream `k`'s at
 /// `ebp - 0x28 - 8 k`. `frame` is the lowest, `ebp - 0x20 - 8 n`.
 #[must_use]
@@ -168,7 +266,24 @@ pub mod bridge {
     /// One of [`super::FULLSCREEN_MESHES`] (`cdecl(cluster) -> eax`):
     /// `frame` holds the map slots (see [`super::slot`]).
     pub fn build(h: &mut impl Host, cluster: u32, frame: u32, q: &QuadMesh) -> u32 {
-        let n = q.streams.len() as u32;
+        build_streams(h, cluster, frame, q.streams, |h, k, p| {
+            for (i, &v) in q.streams[k].data.iter().enumerate() {
+                h.write(p.wrapping_add(4 * i as u32), v);
+            }
+        })
+    }
+
+    /// The body for `streams` (at most 3), `data(h, k, p)` writing stream
+    /// `k`'s vertices at `p` (the pointer its map slot holds; streams in
+    /// order, after every map).
+    pub fn build_streams<H: Host>(
+        h: &mut H,
+        cluster: u32,
+        frame: u32,
+        streams: &[super::Stream],
+        mut data: impl FnMut(&mut H, usize, u32),
+    ) -> u32 {
+        let n = streams.len().min(3) as u32;
         let mesh_type = h.rebase(MESH_TYPE);
         let mesh = h.call_sym(CLUSTER_CREATE, Conv::Thiscall(cluster), &[1, mesh_type, 0]);
         if h.read::<u32>(mesh) != 1 {
@@ -198,8 +313,9 @@ pub mod bridge {
                 h.call_sym(STREAMS_SET, Conv::Thiscall(seg + 0x28), &[block, n]);
             }
         }
+        let specs = streams;
         let mut streams = [0u32; 3];
-        for (k, st) in q.streams.iter().enumerate() {
+        for (k, st) in specs.iter().enumerate().take(n as usize) {
             let s = h.read::<u32>(seg + 0x2c).wrapping_add(0x40 * k as u32);
             h.call_sym(STREAM_FORMAT, Conv::Thiscall(s), &[st.size, st.count, 1]);
             let bytes = h.read::<u32>(s).wrapping_mul(h.read(s + 4));
@@ -223,10 +339,8 @@ pub mod bridge {
         for (k, p) in out.iter_mut().enumerate().take(n as usize) {
             *p = h.read(slot(frame, n, k as u32));
         }
-        for (st, &p) in q.streams.iter().zip(&out) {
-            for (i, &v) in st.data.iter().enumerate() {
-                h.write(p.wrapping_add(4 * i as u32), v);
-            }
+        for (k, &p) in out.iter().enumerate().take(n as usize) {
+            data(h, k, p);
         }
         for (k, &s) in streams.iter().enumerate().take(n as usize) {
             let mut version = h.read::<u32>(s + 0x10).wrapping_add(1);
@@ -256,5 +370,23 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    /// `0x00a06e60(cluster, u, v)` (cdecl, `u` and `v` floats): the
+    /// split mesh ([`super::SPLIT_STREAMS`]); `frame` as [`build`]'s.
+    pub fn split(h: &mut impl Host, cluster: u32, frame: u32, u: u32, v: u32) -> u32 {
+        let minus_one: u32 = h.read(h.rebase(super::MINUS_ONE));
+        let two = f64::from_bits(h.read(h.rebase(super::TWO)));
+        let (pos, tex, third) = super::split_vertices(minus_one, two, u, v);
+        build_streams(h, cluster, frame, &super::SPLIT_STREAMS, |h, k, p| {
+            let words: &[u32] = match k {
+                0 => &pos,
+                1 => &tex,
+                _ => &third,
+            };
+            for (i, &w) in words.iter().enumerate() {
+                h.write(p.wrapping_add(4 * i as u32), w);
+            }
+        })
     }
 }
