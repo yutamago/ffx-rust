@@ -1796,7 +1796,7 @@ fn prep_free_object(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
 
 /// A `Bind()`: every guard word of its table random (each static built
 /// or not), the array descriptors' flag words, the base calls' globals.
-fn prep_bind(e: &mut Env, rng: &mut Rng, b: &ffx_prender::h2_bind::Bind) {
+pub fn prep_bind(e: &mut Env, rng: &mut Rng, b: &ffx_prender::h2_bind::Bind) {
     use ffx_prender::h2_bind::Step;
     for step in b.steps {
         let guards: Vec<u32> = match step {
