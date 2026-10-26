@@ -1,0 +1,35 @@
+# Draw-diff gate captures (M4 item 3, docs/drawdiff.md "Scene gates"):
+# a hash-mode capture of three frames of battle-attack's battle (save
+# ffx_001, cdsp0000, `battle 3 0 0`: cdsp00, underwater), 20 frames after
+# Rikku's first command window opens, which is the update the battle phase
+# byte turns 1. Needs the graphics layer (FFX_GFX=1); not part of
+# run-all.sh. Run it through tools/scene-gate-capture.sh
+# battle, or
+#   FFX_GFX=1 target/release/examples/replay tools/replays/draw-gate-battle.txt \
+#     '<windows folder>\draw.trace' [original]
+# The capture lands beside the trace ($OUT\battle): keep it in
+# ~/ffx-work/m4/captures, never in git. Compare two runs with
+# tools/scene-gate.sh battle <run A> <run B>.
+#
+# `gfxcapture ... now async` at a boundary the script reached in lockstep
+# holds the next three updates exactly (the harness checks the updates the
+# frames show and fails the reply otherwise).
+load direct 1 cdsp0000
+lockstep on
+pin
+wait 10
+battle 3 0 0
+waitfor 0x0112a8e0:1 01 ff 4000
+# The battle's load takes 77 updates from the end of `wait 10` to the
+# phase byte in most runs, original and Rust alike, and 79 in some (one
+# of five original runs); a run with 79 shows the intro camera elsewhere
+# (WorldView 17,584 ulp) and is not comparable. tools/scene-gate.sh checks
+# that both runs took the same count (from the replies of `wait 10` and
+# this waitfor in replay.out) and asks for a rerun otherwise.
+# The first command window (g_BtlWindowOpen 0x023cc08c, Rikku's bit 0x40;
+# TOSetBtlActiveChr) opens on the same update.
+waitfor 0x023cc08c:4 40000000 ffffffff 1200
+wait 20
+gfxcapture $OUT\battle hash frames 3 now async
+wait 3
+gfxcapture result

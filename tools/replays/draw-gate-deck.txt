@@ -1,0 +1,27 @@
+# Draw-diff gate captures (M4 item 3, docs/drawdiff.md "Scene gates"):
+# a hash-mode capture of three frames of the main menu on the salvage ship
+# deck (save ffx_001, cdsp0000), as menu-browse-1 (pinned, 120 frames,
+# triangle, 40 frames), whose shots are the same to the pixel in every
+# run since `pin` and load pacing (docs/harness.md, "Pinned state"). A
+# battle requested after the menu was closed never started (the request
+# byte stayed 1), so the battle has its own replay
+# (draw-gate-battle.txt). Needs the graphics
+# layer (FFX_GFX=1); not part of run-all.sh. Run it through
+# tools/scene-gate-capture.sh deck, or
+#   FFX_GFX=1 target/release/examples/replay tools/replays/draw-gate-deck.txt \
+#     '<windows folder>\draw.trace' [original]
+# Captures land beside the trace ($OUT\menu): keep them in
+# ~/ffx-work/m4/captures, never in git. Compare two runs with
+# tools/scene-gate.sh menu <run A> <run B>.
+#
+# Each capture is `gfxcapture ... now async` at a boundary the script
+# reached in lockstep: it holds the next three updates exactly (the harness
+# checks the updates the frames show and fails the reply otherwise).
+load direct 1 cdsp0000
+lockstep on
+pin
+wait 120
+press triangle 4 40
+gfxcapture $OUT\menu hash frames 3 now async
+wait 3
+gfxcapture result
