@@ -22,7 +22,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_pother_b::m4r_mesh;
+use ffx_pother_b::{m4r_dynblocks, m4r_mesh};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -178,8 +178,19 @@ impl Twins {
     /// words; returns the next word of the list at the returned cell
     /// (`[cell]` points at it; set it with [`Twins::results`]).
     fn stub(&mut self, sym: u32, this: bool, n: u32, pops: u32) -> u32 {
-        assert!(n <= 6);
         let at = self.rebase(sym);
+        let (addr, cell) = self.stub_code(sym, this, n, pops);
+        let mut j = vec![0xe9];
+        j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+        self.write(at, &j);
+        cell
+    }
+
+    /// The stub of [`Twins::stub`] in the cave only (for import slots),
+    /// `tag` its log tag: its address and its result cell.
+    fn stub_code(&mut self, tag: u32, this: bool, n: u32, pops: u32) -> (u32, u32) {
+        assert!(n <= 6);
+        let sym = tag;
         let cell = self.zeros(4);
         let log = self.log;
         let mut c = vec![0xa1];
@@ -214,13 +225,10 @@ impl Twins {
         assert!(addr + c.len() as u32 <= self.cave + CAVE_LEN, "cave full");
         self.write(addr, &c);
         self.cave_next = addr + c.len() as u32;
-        let mut j = vec![0xe9];
-        j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
-        self.write(at, &j);
         // a default list of zeros
         let list = self.zeros(64 * 4);
         self.w32(cell, list);
-        cell
+        (addr, cell)
     }
 
     /// The stub at `cell` returns `words` in order, then zeros.
@@ -430,4 +438,137 @@ fn array_size_saturates() {
     assert_eq!(m4r_mesh::array_size(3, 4), 12);
     assert_eq!(m4r_mesh::array_size(0x4000_0000, 4), u32::MAX);
     assert_eq!(m4r_mesh::array_size(0x3fff_ffff, 4), 0xffff_fffc);
+}
+
+// ---- ClassDynamicMesh_fillDynamicBlocks_00672b80 ----
+
+#[test]
+fn fill_dynamic_blocks_matches_the_original() {
+    const SYM: u32 = 0x0067_2b80;
+    for (name, mut t) in Twins::all() {
+        // the CRT's stderr and fprintf through their import slots
+        let (iob, iob_cell) = t.stub_code(m4r_dynblocks::IOB_FUNC, false, 0, 0);
+        let (fprintf, _) = t.stub_code(m4r_dynblocks::FPRINTF, false, 2, 0);
+        let slot = t.rebase(m4r_dynblocks::IOB_FUNC);
+        t.w32(slot, iob);
+        let slot = t.rebase(m4r_dynblocks::FPRINTF);
+        t.w32(slot, fprintf);
+        let on = t.rebase(m4r_dynblocks::BUFFERS_ON);
+        let mut rng = Rng(0x5eed_0672);
+        let mut ran = 0;
+        for case in 0..160_u32 {
+            t.results(iob_cell, &[0x0077_0000 + case]);
+            let n = 1 + rng.below(4);
+            let src = t.zeros(0x98);
+            let records = t.zeros(0x6c * n as usize);
+            t.w32(src + 0x90, n);
+            t.w32(src + 0x94, records);
+            let inst = t.zeros(0x18);
+            t.fill(&mut rng, inst, 0x18);
+            // ids: 0 and 1 mostly, -1 sometimes (2 and more read the
+            // original's frame, see m4r_dynblocks::Source::of_buffer)
+            let id = match rng.below(8) {
+                0 => u32::MAX,
+                1..=3 => 0,
+                _ => 1,
+            };
+            t.w32(inst + 0x14, id);
+            t.w32(inst + 0x10, if case % 23 == 5 { 0 } else { src });
+            if case % 19 == 7 {
+                t.w32(src + 0x90, 0x8000_0001); // a negative count
+            }
+            t.w32(on, u32::from(case % 17 != 3));
+            let index = match case % 13 {
+                4 => n,
+                9 => u32::MAX,
+                _ => rng.below(n),
+            };
+            // each record: counts, sources (some null), overrides with
+            // data or not
+            for r in 0..n {
+                let rec = records + 0x6c * r;
+                t.fill(&mut rng, rec, 0x6c);
+                for base in [0, 0x2c, 0x48] {
+                    let at = if base == 0 { rec + 4 } else { rec + base };
+                    let verts = rng.below(6);
+                    let indices = rng.below(12);
+                    t.w32(at, verts);
+                    t.w32(at + 4, indices);
+                    for k in 0..5 {
+                        // (the indices, k 4, are always there: the original
+                        // reads them unchecked)
+                        let p = if k < 4 && rng.below(6) == 0 {
+                            0
+                        } else {
+                            let p = t.zeros(0x80);
+                            t.fill(&mut rng, p, 0x80);
+                            p
+                        };
+                        t.w32(at + 8 + 4 * k, p);
+                    }
+                    if base != 0 && rng.below(3) == 0 {
+                        t.w32(at + 8, 0); // no data in this buffer
+                    }
+                }
+            }
+            // the four blocks (some null, some without storage)
+            let streams = t.zeros(16);
+            for k in 0..4 {
+                if rng.below(5) == 0 {
+                    continue;
+                }
+                let block = t.zeros(0x40);
+                t.fill(&mut rng, block, 0x40);
+                let store = if rng.below(6) == 0 { 0 } else { t.zeros(0x60) };
+                t.w32(block + 0x3c, store);
+                t.w32(streams + 4 * k, block);
+            }
+            let index_block = if case % 11 == 6 {
+                0
+            } else {
+                let b = t.zeros(0x40);
+                t.fill(&mut rng, b, 0x40);
+                // the length: enough mostly, too short sometimes
+                let len = if rng.below(5) == 0 {
+                    rng.below(4)
+                } else {
+                    12 + rng.below(4)
+                };
+                t.w32(b + 8, len);
+                let format = if rng.below(2) == 0 {
+                    8
+                } else {
+                    rng.below(16) as u8
+                };
+                t.write(b + 0xc, &[format]);
+                let to = t.zeros(0x40);
+                t.w32(b + 0x38, to);
+                b
+            };
+            // the early path writes the index block's +8: skip a null
+            // one there (both fault)
+            let early = case % 23 == 5
+                || case % 19 == 7
+                || case % 17 == 3
+                || case % 13 == 4
+                || case % 13 == 9
+                || id == u32::MAX;
+            if early && index_block == 0 {
+                continue;
+            }
+            let mesh = rng.next();
+            t.check(
+                &format!("{name} case {case}"),
+                SYM,
+                Conv::Thiscall(mesh),
+                &[index, inst, streams, index_block],
+                |g| {
+                    m4r_dynblocks::bridge::fill_dynamic_blocks(g, index, inst, streams, index_block)
+                },
+            );
+            ran += 1;
+        }
+        assert!(ran > 140, "{name}: {ran} cases ran");
+        assert!(t.log_entries() > 10, "{name}: the warnings ran");
+    }
 }
