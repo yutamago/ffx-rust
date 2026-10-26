@@ -7928,13 +7928,29 @@ fn i4_aligned_ebp(t: &Twins, words: u32) -> u32 {
     i4::aligned_ebp(t.a.stack_range().end - 0x100 - 4 * words - 4)
 }
 
+/// A stub at `sym` that first copies the four words at `cells` through
+/// its first stack argument, then logs `n` words (cdecl).
+fn out4_stub(t: &mut Twins, sym: u32, n: u32, cells: u32) {
+    let log = t.stub_code(sym, false, n, 0, false, &[]);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+    for k in 0..4u32 {
+        c.extend([0x8b, 0x15]);
+        c.extend((cells + 4 * k).to_le_bytes()); // mov edx, [cell k]
+        c.extend([0x89, 0x50, (4 * k) as u8]); // mov [eax+4k], edx
+    }
+    c.push(0xe9);
+    let at = t.cave_next;
+    c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
 /// The frame start, the packet transfer and the texture loads.
 #[test]
 fn i4_gs_layer() {
     for (name, mut t) in Twins::all() {
         let mut rng = Rng(0x5eed_c741);
         let stubs = [
-            (i4::GET_BACK_COLOR, 1),
             (i2::SET_PACKET, 1),
             (i4::GS_START, 0),
             (i4::GS_DIMX, 0),
@@ -7964,9 +7980,12 @@ fn i4_gs_layer() {
         for (sym, n) in stubs {
             t.stub(sym, n, false);
         }
+        // yiGetBackColor writes four words (RGBA)
+        let colour = t.zeros(0x10);
+        out4_stub(&mut t, i4::GET_BACK_COLOR, 1, colour);
         let print1 = t.stub_code(i1::DBG_PRINTF, false, 1, 0, false, &[]);
         let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
-        tags.push(i1::DBG_PRINTF);
+        tags.extend([i1::DBG_PRINTF, i4::GET_BACK_COLOR]);
         let mut strips = 0;
         for i in 0..300 {
             let w = format!("{name} {i}");
@@ -7983,11 +8002,15 @@ fn i4_gs_layer() {
                 let at = t.rebase(sym);
                 t.w8(at, v);
             }
-            let colour = rng.next();
-            t.g32(i4::SECOND_CLEAR + 1, colour);
+            let second = rng.next();
+            t.g32(i4::SECOND_CLEAR + 1, second);
             for sym in [i4::SCREEN_W, i4::SCREEN_H] {
                 let v = rng.small();
                 t.g32(sym, v);
+            }
+            for k in 0..4 {
+                let v = rng.next();
+                t.w32(colour + 4 * k, v);
             }
             let frame = t.ebp_for(0) - 0x14;
             t.check_framed(

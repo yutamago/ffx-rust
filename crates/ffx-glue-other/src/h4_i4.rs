@@ -61,8 +61,10 @@ pub const GS_END: u32 = 0x0084_1770;
 /// `Sg_GsSync()` (cdecl).
 pub const GS_SYNC: u32 = 0x0084_1d60;
 /// Bytes of [`draw_set_environment_init`]'s frame: the background colour
-/// at `ebp - 0x14` (three words).
-pub const ENV_INIT_FRAME: u32 = 0xc;
+/// at `ebp - 0x14`. `yiGetBackColor` writes four words (RGBA) though
+/// only three are drawn with: a three-word frame let it overwrite the
+/// shim's stack (the first draw-field capture faulted).
+pub const ENV_INIT_FRAME: u32 = 0x10;
 
 /// `Sg_DrawSetEnvironmentInit()` (`0x0082c8d0`, cdecl; `frame` its
 /// background colour): the double buffer's bases for this frame (bit 0 of
