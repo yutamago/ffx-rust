@@ -10,7 +10,8 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_pload::{
-    cluster, descriptor, p1_bind, p1_loader, p1_misc, p1_reader, p1_types, stream, types,
+    cluster, descriptor, p1_bind, p1_d3d, p1_loader, p1_misc, p1_reader, p1_tree, p1_types, stream,
+    types,
 };
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
@@ -1166,5 +1167,45 @@ ported! {
     }    /// `PClassDescriptor::SortClassDescriptors()`.
     Phyre_PClassDescriptor_SortClassDescriptors @ 0x0043_be70 => extern "C" fn sort_class_descriptors() -> u32 {
         p1_types::bridge::sort_class_descriptors(&mut mem())
+    }
+    // ---- continuation round 3, batch 1 (p1_tree, p1_d3d) ----
+    /// `PRedBlackTree::postRemoveFixup(x)`; `eax` the last node's colour bit.
+    Phyre_PRedBlackTree_postRemoveFixup @ 0x0057_4be0 => extern "thiscall" fn post_remove_fixup(this: u32, x: u32) -> u32 {
+        p1_tree::bridge::post_remove_fixup(&mut mem(), this, x)
+    }
+    /// The pixel shader program's D3D11 objects; the scope lock in this frame.
+    PShaderFragmentProgramD3D11_create_0058d1c0 @ 0x0058_d1c0 => extern "thiscall" fn create_pixel_shader(this: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        p1_d3d::bridge::create_pixel_shader(&mut mem(), this, f.at())
+    }
+    /// The vertex shader program's D3D11 objects; the scope lock in this frame.
+    PShaderVertexProgramD3D11_create_0058d780 @ 0x0058_d780 => extern "thiscall" fn create_vertex_shader(this: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        p1_d3d::bridge::create_vertex_shader(&mut mem(), this, f.at())
+    }
+    /// The input layout `(program)`; the lock and descriptions in this frame.
+    PStreamInputLayoutD3D11_create_0058d900 @ 0x0058_d900 => extern "thiscall" fn create_input_layout(this: u32, program: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_d3d::bridge::LAYOUT_FRAME as usize / 4 }>::new();
+        p1_d3d::bridge::create_input_layout(&mut mem(), this, program, f.at())
+    }
+    /// The program's constant buffer; the lock and description in this frame.
+    PShaderProgramConstantBuffer_create_0058f490 @ 0x0058_f490 => extern "thiscall" fn create_constant_buffer(this: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_d3d::bridge::BUFFER_FRAME as usize / 4 }>::new();
+        p1_d3d::bridge::create_constant_buffer(&mut mem(), this, f.at())
+    }
+    /// The state block's rasterizer, blend and depth-stencil states; the locks and the copy in this frame.
+    PRenderStateBlockD3D11_create_0058d4e0 @ 0x0058_d4e0 => extern "thiscall" fn create_pass_state(this: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_d3d::bridge::STATE_FRAME as usize / 4 }>::new();
+        p1_d3d::bridge::create_pass_state(&mut mem(), this, f.at())
+    }
+    /// A cube map's shader-resource views; the description and lock in this frame.
+    PTextureCubeMapD3D11_createViews_0058f9f0 @ 0x0058_f9f0 => extern "thiscall" fn create_views(this: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_d3d::bridge::VIEWS_FRAME as usize / 4 }>::new();
+        p1_d3d::bridge::create_views(&mut mem(), this, f.at())
+    }
+    /// The cube map's textures `(data, views, unused, skip)`; the lock, description and subresources in this frame.
+    PTextureCubeMapD3D11_create_00590800 @ 0x0059_0800 => extern "thiscall" fn create_cube_map(this: u32, data: u32, views: u32, _unused: u32, skip: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_d3d::bridge::CUBE_FRAME as usize / 4 }>::new();
+        p1_d3d::bridge::create_cube_map(&mut mem(), this, data, views as u8, skip as u8, f.at())
     }
 }

@@ -4879,3 +4879,535 @@ fn p1c_sort_class_descriptors_matches_the_original() {
         t.reset();
     }
 }
+
+// ---- continuation round 3, batch 1 (ffx_pload::p1_tree, p1_d3d) ----
+
+use ffx_pload::p1_d3d::bridge as pd3;
+use ffx_pload::p1_tree::bridge as ptr;
+
+impl Twins {
+    /// Calls `sym` in both oracles alike (the setup both share).
+    fn call_both(&mut self, sym: u32, conv: Conv, args: &[u32]) -> u32 {
+        let addr = self.rebase(sym);
+        let ra = self.a.call(addr, conv, args).unwrap().eax;
+        let rb = self.b.call(addr, conv, args).unwrap().eax;
+        assert_eq!(ra, rb, "setup call {sym:#x}");
+        ra
+    }
+
+    /// The `i`th log entry's `(tag, this, words)`.
+    fn log_entry(&self, i: u32) -> (u32, u32, [u32; 6]) {
+        let e = self.log + 4 + 32 * i;
+        let mut w = [0; 6];
+        for (k, x) in (0u32..).zip(w.iter_mut()) {
+            *x = self.r32(e + 8 + 4 * k);
+        }
+        (self.r32(e), self.r32(e + 4), w)
+    }
+
+    /// A recording stub (`this` logged, `n` stack words, popping them)
+    /// that writes `value` through its stack word `k` before returning
+    /// `ret`: a COM creation method.
+    fn stub_out_code(&mut self, tag: u32, n: u32, k: u32, value: u32, ret: u32) -> u32 {
+        assert!(n <= 6);
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(tag.to_le_bytes()); // mov [eax], tag
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        for i in 0..n {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0x8b, 0x54, 0x24, (4 + 4 * k) as u8]); // mov edx, [esp+4+4k]
+        c.extend([0xc7, 0x02]);
+        c.extend(value.to_le_bytes()); // mov [edx], value
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0xb8);
+        c.extend(ret.to_le_bytes()); // mov eax, ret
+        c.push(0xc2);
+        c.extend(((n * 4) as u16).to_le_bytes());
+        let at = self.a.alloc_code(&c).unwrap();
+        assert_eq!(self.b.alloc_code(&c).unwrap(), at);
+        at
+    }
+
+    /// The frame bytes `[lo, lo + len)` of both oracles agree.
+    fn same_frame(&mut self, lo: u32, len: u32, what: &str) {
+        let fa = Oracle::read(&mut self.a, lo, len as usize).unwrap();
+        let fb = Oracle::read(&mut self.b, lo, len as usize).unwrap();
+        assert_eq!(fa, fb, "{what}: the frame differs");
+    }
+}
+
+/// The nodes of the tree whose header is `tree + 0xc`, with their left
+/// and right links.
+fn p1d_nodes(t: &Twins, tree: u32) -> Vec<(u32, u32, u32)> {
+    let mut out = Vec::new();
+    let mut stack = vec![t.r32(tree + 0xc)];
+    while let Some(n) = stack.pop() {
+        if n == tree || out.len() > 4096 {
+            continue;
+        }
+        let (l, r) = (t.r32(n), t.r32(n + 4));
+        out.push((n, l, r));
+        stack.push(l);
+        stack.push(r);
+    }
+    out
+}
+
+#[test]
+fn p1d_post_remove_fixup_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x7ee5_0001);
+        let mut fixups = 0;
+        let mut reds = 0;
+        for round in 0..40 {
+            // a red-black tree built by the game's own insert and
+            // post-insert fixup
+            let tree = t.zeros(0x20);
+            t.w32(tree + 0xc, tree);
+            let n = 1 + (rng.next() % 40) as usize;
+            let mut keys = std::collections::HashSet::new();
+            for _ in 0..n {
+                let k = if round % 2 == 0 {
+                    rng.next() % 64
+                } else {
+                    rng.next()
+                };
+                if !keys.insert(k) {
+                    continue;
+                }
+                let node = t.junk(0x10, k as u8);
+                t.w32(node + 0xc, k);
+                t.call_both(0x0058_1750, Conv::Thiscall(tree), &[node]);
+                t.call_both(0x0057_4980, Conv::Thiscall(tree), &[node]);
+            }
+            t.diff("build");
+            // remove nodes with at most one child (the fixup then runs at
+            // the end of the original's remove), the fixup recorded
+            loop {
+                let nodes = p1d_nodes(&t, tree);
+                let cands: Vec<u32> = nodes
+                    .iter()
+                    .filter(|&&(_, l, r)| l == tree || r == tree)
+                    .map(|&(n, _, _)| n)
+                    .collect();
+                if cands.is_empty() {
+                    break;
+                }
+                let z = cands[(rng.next() as usize) % cands.len()];
+                t.stub(0x0057_4be0, true, 1, 1, 0);
+                t.call_both(0x0057_5000, Conv::Thiscall(tree), &[z]);
+                let logged = t.log_entries();
+                let x = (logged > 0).then(|| t.log_entry(0).2[0]);
+                t.reset();
+                if let Some(x) = x {
+                    fixups += 1;
+                    reds += t.r32(x + 8) & 1;
+                    if round % 3 == 2 {
+                        // a red root (not a valid tree): the final node
+                        // is the root read at entry
+                        let root = t.r32(tree + 0xc);
+                        let w = t.r32(root + 8);
+                        t.w32(root + 8, w | 1);
+                    }
+                    let what = format!("{label}: round {round} fixup at {x:#x}");
+                    t.check(&what, 0x0057_4be0, Conv::Thiscall(tree), &[x], |g| {
+                        Out::U32(ptr::post_remove_fixup(g, tree, x))
+                    });
+                }
+            }
+        }
+        // the root itself, red and black
+        for colour in [0u32, 1] {
+            let tree = t.zeros(0x20);
+            let node = t.zeros(0x10);
+            t.w32(tree + 0xc, node);
+            t.w32(node, tree);
+            t.w32(node + 4, tree);
+            t.w32(node + 8, (tree + 0xc) | colour);
+            let what = format!("{label}: root colour {colour}");
+            t.check(&what, 0x0057_4be0, Conv::Thiscall(tree), &[node], |g| {
+                Out::U32(ptr::post_remove_fixup(g, tree, node))
+            });
+        }
+        assert!(
+            fixups > 100 && reds > 10,
+            "{label}: {fixups} fixups, {reds} red"
+        );
+    }
+}
+
+// The D3D11 creations' callees, stubbed alike in both oracles.
+const P1D_ENTER: u32 = 0x0046_3d50;
+const P1D_LEAVE: u32 = 0x0046_3e90;
+const P1D_HOLDER_CTOR: u32 = 0x004f_ee70;
+const P1D_ATEXIT: u32 = 0x0094_9207;
+const P1D_CONTEXT: u32 = 0x0046_49d0;
+const P1D_CACHE: u32 = 0x004f_d8b0;
+const P1D_PRINTF: u32 = 0x0043_52f0;
+const P1D_RESIZE: u32 = 0x0044_a010;
+const P1D_BUFFER: u32 = ffx_pload::p1_d3d::CONSTANT_BUFFER_CREATE;
+const P1D_LAYOUT: u32 = ffx_pload::p1_d3d::INPUT_LAYOUT_CREATE;
+
+/// The device: `CreateX` methods at `slots` (slot, stack words, the out
+/// word's index) writing an object (or null when not `made`) through
+/// their out word and returning `hr`; every other slot null. Its objects
+/// name themselves through slot 5. Also puts it in the holder and stubs
+/// the lock, the holder's constructor, `atexit` and `PhyrePrintf`.
+fn p1d_device(t: &mut Twins, slots: &[(u32, u32, u32)], made: bool, hr: u32) -> u32 {
+    let obj = t.object(&[0, 0, 0, 0, 0, 4]);
+    let mut vt = vec![0u8; 4 * 24];
+    for &(slot, n, k) in slots {
+        let value = if made { obj } else { 0 };
+        let s = t.stub_out_code(0x8000 + slot, n, k, value, hr);
+        vt[4 * slot as usize..4 * slot as usize + 4].copy_from_slice(&s.to_le_bytes());
+    }
+    let vt = t.alloc(&vt);
+    let dev = t.zeros(0x10);
+    t.w32(dev, vt);
+    let holder = t.rebase(0x00c9_4f6c);
+    t.w32(holder, dev);
+    t.stub(P1D_ENTER, true, 0, 0, 0x4d50);
+    t.stub(P1D_LEAVE, true, 0, 0, 0x4e90);
+    t.stub(P1D_HOLDER_CTOR, true, 0, 0, 0);
+    t.stub(P1D_ATEXIT, false, 1, 0, 0);
+    t.stub(P1D_PRINTF, false, 2, 0, 0);
+    dev
+}
+
+/// The holder's guard word with bit 0 as given (other bits random).
+fn p1d_guard(t: &mut Twins, rng: &mut Rng, built: bool) {
+    let g = t.rebase(0x00c9_628c);
+    let v = (rng.next() & !1) | u32::from(built);
+    t.w32(g, v);
+}
+
+/// The original's frame address `ebp - off` for `words` stack arguments.
+fn p1d_frame(t: &Twins, words: u32, off: u32) -> u32 {
+    t.a.stack_range().end - 0x100 - 4 * words - 8 - off
+}
+
+/// Fills `[lo, lo + len)` of both oracles with junk and moves the port's
+/// calls below it.
+fn p1d_prep_frame(t: &mut Twins, lo: u32, len: u32) {
+    let junk: Vec<u8> = (0..len).map(|i| (i * 0x3d + 0x11) as u8).collect();
+    t.write(lo, &junk);
+    t.b.set_call_top(Some(lo - 0x100));
+}
+
+#[test]
+fn p1d_shaders_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0001);
+        for case in 0..96u32 {
+            let vertex = case % 2 == 1;
+            let (sym, out_off, slot, p50, p41) = if vertex {
+                (0x0058_d780, 0x4ec, 12, 0x7673_3530, 0x7673_3431)
+            } else {
+                (0x0058_d1c0, 0x4e0, 15, 0x7073_3530, 0x7073_3431)
+            };
+            let dev = p1d_device(&mut t, &[(slot, 5, 4)], true, 0);
+            if case % 7 == 3 {
+                let holder = t.rebase(0x00c9_4f6c);
+                t.w32(holder, 0);
+            }
+            p1d_guard(&mut t, &mut rng, case % 3 == 0);
+            let ctx = t.junk(0x100, case as u8);
+            t.w32(ctx + 0x6c, dev);
+            let level = [0x9300, 0xa0ff, 0xa100, 0xafff, 0xb000, 0xb100][(case / 2 % 6) as usize];
+            t.w32(ctx + 0xb4, level);
+            t.stub(P1D_CONTEXT, false, 0, 0, ctx);
+            let cache = t.junk(0x1400, 7);
+            t.stub(P1D_CACHE, false, 0, 0, cache);
+            let samplers = t.rebase(0x00c9_6218);
+            t.w32(samplers, rng.next());
+            let rets = [0u32, 0, 5, 0, 9, 0x13];
+            t.stub(P1D_BUFFER, true, 0, 0, rets[(case / 3 % 6) as usize]);
+            t.stub(P1D_LAYOUT, true, 1, 1, rets[(case / 5 % 6) as usize]);
+            let this = t.junk(0x500, case as u8 ^ 0x40);
+            t.w32(this + 0xc, 0x100 | ((case % 3) << 30));
+            let made = if case % 4 == 2 { 0x0bad_0000 } else { 0 };
+            t.w32(this + out_off, made);
+            let profile = [p50, p41, 0x1234_5678, p50 ^ p41][(case / 12 % 4) as usize];
+            t.w32(this + 0x4dc, profile);
+            let lock = p1d_frame(&t, 0, 0x10);
+            p1d_prep_frame(&mut t, lock, 4);
+            let what = format!("{label}: shader case {case}");
+            t.check(&what, sym, Conv::Thiscall(this), &[], |g| {
+                Out::U32(if vertex {
+                    pd3::create_vertex_shader(g, this, lock)
+                } else {
+                    pd3::create_pixel_shader(g, this, lock)
+                })
+            });
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_input_layout_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0002);
+        for case in 0..24u32 {
+            let made = case % 5 != 4;
+            let hr = if case % 6 == 5 { 0x8007_000e } else { 1 };
+            let dev = p1d_device(&mut t, &[(11, 6, 5)], made, hr);
+            if case % 7 == 6 {
+                // a failure that writes nothing
+                let vt = t.r32(dev);
+                let f = t.stub_code(0x800b, true, 6, 6, 0x8000_4005);
+                t.w32(vt + 4 * 11, f);
+            }
+            p1d_guard(&mut t, &mut rng, case % 3 != 0);
+            let n = [0u32, 1, 2, 5, 17, 32][(case % 6) as usize]
+                - u32::from(case >= 12 && case % 6 != 0);
+            let elems = t.junk(0x14 * n as usize + 4, case as u8);
+            for i in 0..n {
+                let e = elems + 0x14 * i;
+                let name = match rng.next() % 4 {
+                    0 => 0,
+                    1 => 1,
+                    _ => rng.next(),
+                };
+                t.w32(e, name);
+                let step = if rng.next().is_multiple_of(3) {
+                    0
+                } else {
+                    let s = t.zeros(0x10);
+                    t.write(s + 8, &[(rng.next() % 2) as u8]);
+                    s
+                };
+                t.w32(e + 4, step);
+            }
+            let this = t.junk(0x10, 3);
+            t.w32(this, n | (rng.next() & 0x8000_0000));
+            t.w32(this + 4, elems);
+            t.w32(this + 8, if case % 8 == 7 { 0x0bad_0000 } else { 0 });
+            let program = t.junk(0x20, 4);
+            let frame = p1d_frame(&t, 1, 0x39c);
+            p1d_prep_frame(&mut t, frame, pd3::LAYOUT_FRAME);
+            let what = format!("{label}: input layout case {case} ({n} elements)");
+            t.check(&what, 0x0058_d900, Conv::Thiscall(this), &[program], |g| {
+                Out::U32(pd3::create_input_layout(g, this, program, frame))
+            });
+            t.b.set_call_top(None);
+            // the layout word and the descriptions
+            t.same_frame(frame + 4, pd3::LAYOUT_FRAME - 4, &what);
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_constant_buffer_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0003);
+        for case in 0..16u32 {
+            let hr = if case % 4 == 3 { 0x8007_000e } else { 0 };
+            p1d_device(&mut t, &[(3, 4, 3)], true, hr);
+            p1d_guard(&mut t, &mut rng, case % 2 == 0);
+            t.stub(P1D_RESIZE, true, 1, 1, 0x0d);
+            let this = t.junk(0x20, case as u8);
+            t.w32(this, if case % 5 == 1 { 0x0bad_0000 } else { 0 });
+            t.w32(
+                this + 0x14,
+                [0, 0x10, 0x100, 0x8000_0010][(case / 2 % 4) as usize],
+            );
+            let frame = p1d_frame(&t, 0, 0x2c);
+            p1d_prep_frame(&mut t, frame, pd3::BUFFER_FRAME);
+            let what = format!("{label}: constant buffer case {case}");
+            t.check(&what, 0x0058_f490, Conv::Thiscall(this), &[], |g| {
+                Out::U32(pd3::create_constant_buffer(g, this, frame))
+            });
+            t.b.set_call_top(None);
+            t.same_frame(frame + 4, 0x18, &what);
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_pass_state_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0004);
+        for case in 0..40u32 {
+            let made = case % 7 != 6;
+            let hr = if case % 9 == 8 { 0x8007_000e } else { 0 };
+            let dev = p1d_device(&mut t, &[(20, 3, 2), (21, 3, 2), (22, 3, 2)], made, hr);
+            p1d_guard(&mut t, &mut rng, case % 3 == 1);
+            let ctx = t.junk(0x100, 9);
+            t.w32(ctx + 0x6c, dev);
+            t.stub(P1D_CONTEXT, false, 0, 0, ctx);
+            let this = t.junk(0x180, case as u8);
+            for (bit, off) in [0x168u32, 0x16c, 0x174, 0x170].into_iter().enumerate() {
+                let v = if (case >> bit) & 1 == 1 && case % 11 != 0 {
+                    0x0bad_0000 + off
+                } else {
+                    0
+                };
+                t.w32(this + off, v);
+            }
+            let frame = p1d_frame(&t, 0, 0x40);
+            p1d_prep_frame(&mut t, frame, pd3::STATE_FRAME);
+            let what = format!("{label}: pass state case {case}");
+            t.check(&what, 0x0058_d4e0, Conv::Thiscall(this), &[], |g| {
+                Out::U32(pd3::create_pass_state(g, this, frame))
+            });
+            t.b.set_call_top(None);
+            t.same_frame(frame + 8, 0x28, &what);
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_views_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0005);
+        for case in 0..24u32 {
+            let dev = p1d_device(&mut t, &[], true, 0);
+            let vt = t.r32(dev);
+            // CreateShaderResourceView: the `fail`th call fails (1..4;
+            // past the count none does)
+            let fail = 1 + case % 4;
+            let ok = t.stub_code(0x8007, true, 4, 4, 0);
+            let hr = if case % 3 == 0 { u32::MAX } else { 0x8000_4005 };
+            let bad = t.stub_code(0x8107, true, 4, 4, hr);
+            let calls = t.zeros(4);
+            let at = t.a.alloc_code(&[0x90; 32]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0x90; 32]).unwrap(), at);
+            let mut c = vec![0xff, 0x05];
+            c.extend(calls.to_le_bytes()); // inc dword [calls]
+            c.extend([0x83, 0x3d]);
+            c.extend(calls.to_le_bytes());
+            c.push(fail as u8); // cmp dword [calls], fail
+            c.extend([0x75, 0x05]); // jne +5
+            c.push(0xe9);
+            let jbad = bad.wrapping_sub(at + c.len() as u32 + 4);
+            c.extend(jbad.to_le_bytes()); // jmp bad
+            c.push(0xe9);
+            let jok = ok.wrapping_sub(at + c.len() as u32 + 4);
+            c.extend(jok.to_le_bytes()); // jmp ok
+            t.write(at, &c);
+            t.w32(vt + 4 * 7, at);
+            p1d_guard(&mut t, &mut rng, case % 2 == 0);
+            let n = [1u32, 2, 3, 5, 0x8000_0002, 0x8000_0001][(case / 4 % 6) as usize];
+            let this = t.junk(0x80, case as u8);
+            let base = t.junk(0x40, 1);
+            t.w32(this, base);
+            let flags = if case % 6 == 5 {
+                0xf7
+            } else {
+                0x08 | (rng.next() & 0xf7)
+            };
+            t.write(this + 0x58, &[flags as u8]);
+            t.w32(this + 0x20, n);
+            if n & 0x7fff_ffff > 1 {
+                let views = t.junk(0x14 * 5, 2);
+                t.w32(this + 0x24, views);
+            }
+            let frame = p1d_frame(&t, 0, 0x30);
+            p1d_prep_frame(&mut t, frame, pd3::VIEWS_FRAME);
+            let what = format!("{label}: views case {case}");
+            t.check(&what, 0x0058_f9f0, Conv::Thiscall(this), &[], |g| {
+                Out::U32(pd3::create_views(g, this, frame))
+            });
+            t.b.set_call_top(None);
+            t.same_frame(frame, 0x18, &what);
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_cube_map_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0006);
+        for case in 0..48u32 {
+            // the texture objects CreateTexture2D makes: GetDesc at slot 10
+            let tex = t.object(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2]);
+            let hr = [0u32, 0, 0, 1, 0x8007_000e][(case % 5) as usize];
+            let dev = p1d_device(&mut t, &[], true, 0);
+            let vt = t.r32(dev);
+            let f = t.stub_out_code(0x8005, 4, 3, tex, hr);
+            t.w32(vt + 4 * 5, f);
+            if case % 11 == 10 {
+                let holder = t.rebase(0x00c9_4f6c);
+                t.w32(holder, 0);
+            }
+            p1d_guard(&mut t, &mut rng, case % 2 == 0);
+            t.stub(
+                ffx_pload::p1_d3d::CUBE_VIEWS,
+                true,
+                0,
+                0,
+                [0, 9, 0][(case % 3) as usize],
+            );
+            let base = t.junk(0x40, case as u8);
+            t.w32(
+                base + 0xc,
+                [4u32, 8, 32, 0x8000_0008][(case / 3 % 4) as usize],
+            );
+            t.w32(base + 0x10, rng.next() & 3);
+            let this = t.junk(0x80, case as u8 ^ 9);
+            t.w32(this, base);
+            let size = [0u32, 1, 6, 64, 0x200][(case / 2 % 5) as usize];
+            t.w32(this + 0x1c, size);
+            t.w32(this + 0xc, [0u32, 1, 3, 9][(case / 4 % 4) as usize]);
+            t.w32(this + 0x10, rng.next() % 2);
+            t.w32(this + 0x14, rng.next());
+            let owner = match case % 6 {
+                0 => 0,
+                1 => {
+                    let o = t.zeros(8);
+                    t.write(o + 5, &[1]);
+                    o
+                }
+                _ => t.zeros(8),
+            };
+            t.w32(this + 0x18, owner);
+            let n = [1u32, 2, 3, 0x8000_0001][(case / 6 % 4) as usize];
+            t.w32(this + 0x20, n);
+            if n & 0x7fff_ffff > 1 {
+                let arr = t.junk(0x14 * 3, 5);
+                t.w32(this + 0x24, arr);
+            }
+            let data = if case % 4 == 1 { 0 } else { 0x0012_0000 };
+            let views = u32::from(case % 8 < 5) * (1 + (rng.next() & 0xfe));
+            let skip = u32::from(case % 13 == 12) | (rng.next() & 0xff00);
+            let frame = p1d_frame(&t, 4, 0x650);
+            p1d_prep_frame(&mut t, frame, pd3::CUBE_FRAME);
+            let what = format!("{label}: cube map case {case}");
+            t.check(
+                &what,
+                0x0059_0800,
+                Conv::Thiscall(this),
+                &[data, views, 0x5555, skip],
+                |g| {
+                    Out::U32(pd3::create_cube_map(
+                        g,
+                        this,
+                        data,
+                        views as u8,
+                        skip as u8,
+                        frame,
+                    ))
+                },
+            );
+            t.b.set_call_top(None);
+            // the description and the subresources
+            t.same_frame(frame + 0x14, pd3::CUBE_FRAME - 0x14, &what);
+            t.reset();
+        }
+    }
+}
