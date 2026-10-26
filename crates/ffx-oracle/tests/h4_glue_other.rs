@@ -25,7 +25,8 @@ use std::path::PathBuf;
 
 use ffx_bridge::Mem;
 use ffx_glue_other::{
-    effect as e, frames as fr, h4_c1 as c1, menu as mn, misc as m, movie as mv, r3, sound as s,
+    effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, menu as mn, misc as m, movie as mv, r3,
+    sound as s,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -6168,6 +6169,404 @@ fn c1_events_cache_strings() {
                         this,
                         [root, names, n],
                     ))
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round, batch 2 (ffx_glue_other::h4_c2)
+
+/// A cluster map of `keys` (sorted) under a fresh head, each node's entry
+/// (`+0x14`) with a random cluster, references, pending flag and lock;
+/// the head and the nodes in order.
+fn cluster_map(t: &mut Twins, rng: &mut Rng, keys: &[u32]) -> (u32, Vec<u32>) {
+    let head = t.zeros(0x20);
+    t.w8(head + 0xd, 1);
+    let nodes: Vec<u32> = keys.iter().map(|_| t.zeros(0x20)).collect();
+    for (&nd, &k) in nodes.iter().zip(keys) {
+        t.w32(nd + 0x10, k);
+        let entry = t.zeros(0x18);
+        let cluster = [0, rng.next(), rng.next()][rng.below(3) as usize];
+        t.w32(entry, cluster);
+        let refs = [0, 1, 2, u32::MAX][rng.below(4) as usize];
+        t.w32(entry + 4, refs);
+        let pending = [0, 0, 1][rng.below(3) as usize];
+        t.w32(entry + 0xc, pending);
+        let locked = [0, 0, 1][rng.below(3) as usize];
+        t.w8(entry + 0x14, locked);
+        t.w32(nd + 0x14, entry);
+    }
+    let root = tree(t, &nodes, head, head);
+    t.w32(head + 4, root);
+    t.w32(head, nodes.first().copied().unwrap_or(head));
+    t.w32(head + 8, nodes.last().copied().unwrap_or(head));
+    (head, nodes)
+}
+
+/// The cluster manager's three releases, its map's range erase, the
+/// named-pair append and the `PArray<PInputAction>` descriptor.
+#[test]
+fn c2_clusters_maps_pairs() {
+    use ffx_prender::registry;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c201);
+        let stubs: [(u32, bool, u32, u32); 15] = [
+            (r3::DJB_HASH, false, 1, 0),
+            (c2::PCLUSTER_DTOR, true, 0, 0),
+            (mn::PHYRE_FREE, false, 1, 0),
+            (c2::CLUSTER_SLOTS_GIVE, true, 1, 1),
+            (c2::CLUSTER_MAP_ERASE, true, 2, 2),
+            (c2::CLUSTER_MAP_CLEAR, true, 0, 0),
+            (c2::COPY_NAMED_PAIRS, false, 3, 0),
+            (c2::NAMED_PAIR_COPY, true, 1, 1),
+            (c2::FREE_OWNED_ARRAY, false, 2, 0),
+            (registry::PBASE_DESCRIPTOR, false, 0, 0),
+            (registry::GLOBAL_NAMESPACE, false, 0, 0),
+            (registry::DESCRIPTOR_BASE_CTOR, true, 6, 6),
+            (registry::SET_DEFAULT_BUFFER, true, 1, 1),
+            (registry::SET_VALIDATION_BUFFER, true, 1, 1),
+            (registry::SET_WRITE_MASK_BUFFER, true, 1, 1),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let wait = t.stub_code(mn::WAIT_FOR_SINGLE_OBJECT.sym, false, 2, 2);
+        t.g32(mn::WAIT_FOR_SINGLE_OBJECT.sym, wait);
+        let release = t.stub_code(mn::RELEASE_MUTEX.sym, false, 1, 1);
+        t.g32(mn::RELEASE_MUTEX.sym, release);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.next();
+                t.ret(sym, v);
+            }
+            for tag in [mn::WAIT_FOR_SINGLE_OBJECT.sym, mn::RELEASE_MUTEX.sym] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            let count = rng.below(7) as usize;
+            let mut keys: Vec<u32> = (0..count).map(|_| rng.below(20)).collect();
+            keys.sort_unstable();
+            let (head, nodes) = cluster_map(&mut t, &mut rng, &keys);
+            let mgr = t.zeros(0x20);
+            t.w32(mgr + 0x10, head);
+            let holder = t.zeros(4);
+            let mutex = rng.next();
+            t.w32(holder, mutex);
+            t.w32(mgr + 0x18, holder);
+            // the two releases by name
+            for (sym, force) in [(0x0069_b310u32, true), (0x0069_be90, false)] {
+                // mostly a key of the map
+                let hash = if keys.is_empty() || rng.below(4) == 0 {
+                    rng.below(22)
+                } else {
+                    keys[rng.below(count as u32) as usize]
+                };
+                t.ret(r3::DJB_HASH, hash);
+                let text = rng.next();
+                let ebp = t.ebp_for(1);
+                t.check_framed(
+                    &format!("{w} release {sym:#x} {hash} of {keys:?}"),
+                    sym,
+                    Conv::Thiscall(mgr),
+                    &[text],
+                    ebp + 8,
+                    &[(0, 4)],
+                    |g| {
+                        put_args(g, ebp + 8, &[text]);
+                        u(if force {
+                            c2::force_release_pcluster(g, mgr, ebp + 8)
+                        } else {
+                            c2::release_pcluster_by_name(g, mgr, ebp + 8)
+                        })
+                    },
+                );
+            }
+            // the release by cluster: one of the map's, or another
+            let cluster = if nodes.is_empty() || rng.below(4) == 0 {
+                rng.next()
+            } else {
+                let nd = nodes[rng.below(count as u32) as usize];
+                let entry: u32 = Mem::read(&t.b, nd + 0x14);
+                Mem::read(&t.b, entry)
+            };
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} release cluster {cluster:#x} of {count}"),
+                0x0069_bdb0,
+                Conv::Thiscall(mgr),
+                &[cluster],
+                ebp + 8,
+                &[(0, 4)],
+                |g| {
+                    put_args(g, ebp + 8, &[cluster]);
+                    u(c2::release_pcluster(g, mgr, ebp + 8))
+                },
+            );
+            // the range erase: all, or an in-order range
+            let map = t.zeros(4);
+            t.w32(map, head);
+            let (first, last) = if nodes.is_empty() || rng.below(4) == 0 {
+                (nodes.first().copied().unwrap_or(head), head)
+            } else {
+                let from = rng.below(count as u32) as usize;
+                let to = from + rng.below((count - from) as u32 + 1) as usize;
+                (nodes[from], nodes.get(to).copied().unwrap_or(head))
+            };
+            let out = t.zeros(4);
+            let ebp = t.ebp_for(3);
+            t.check_framed(
+                &format!("{w} erase range {first:#x}..{last:#x}"),
+                0x0069_af70,
+                Conv::Thiscall(map),
+                &[out, first, last],
+                ebp - 4,
+                &[(0, 4)],
+                |g| {
+                    u(c2::cluster_map_erase_range(
+                        g,
+                        ebp - 4,
+                        map,
+                        [out, first, last],
+                    ))
+                },
+            );
+            // the named-pair append
+            let arr = t.zeros(8);
+            let n = rng.below(4);
+            let word = [n, n | 0x8000_0000][rng.below(2) as usize];
+            t.w32(arr, word);
+            let old = t.random(&mut rng, 0x20);
+            t.w32(arr + 4, old);
+            let dst = match rng.below(4) {
+                0 => 0,
+                1 => old,
+                _ => t.zeros(0x28),
+            };
+            let value = rng.next();
+            t.check(
+                &format!("{w} named pairs {word:#x} dst {dst:#x}"),
+                0x0069_b6e0,
+                Conv::Thiscall(arr),
+                &[dst, value],
+                |g| u(c2::named_pair_append_into(g, arr, dst, value)),
+            );
+            // the descriptor
+            let this = t.random(&mut rng, 0x98);
+            t.check(
+                &format!("{w} input action descriptor"),
+                0x009d_fb30,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    u(registry::bridge::descriptor_ctor(
+                        g,
+                        this,
+                        c2::INPUT_ACTION_ARRAY_DESCRIPTOR,
+                    ))
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// A stub at `sym` (thiscall, one word, ret 4) that answers its node
+/// argument's `+0x1c` word: the sound tree's successor.
+fn stub_successor(t: &mut Twins, sym: u32) {
+    let rest = t.stub_code(sym, true, 1, 1);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x40, 0x1c, 0xa3];
+    c.extend(cell.to_le_bytes()); // mov eax, [esp+4]; mov eax, [eax+0x1c]; mov [cell], eax
+    c.push(0xe9);
+    let at = t.cave_next;
+    c.extend(rest.wrapping_sub(at + 17).to_le_bytes()); // jmp rest
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// The FMOD bank's destructor and its event map's, the two id-array
+/// tree inserts, `FmodSfx`'s stop-all and pause walks.
+#[test]
+fn c2_fmod_banks_walks() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c202);
+        let stubs: [(u32, bool, u32, u32); 21] = [
+            (fr::PRINT_TO_OUTPUT, false, 3, 0),
+            (fr::ERRCHECK, false, 3, 0),
+            (c2::SLEEP_MS, false, 1, 0),
+            (c2::DESTROY_EVENTS, true, 0, 0),
+            (fr::OPERATOR_DELETE, false, 1, 0),
+            (c2::TREE_ORPHAN_ALL, true, 0, 0),
+            (c2::FREE_LIST_RESET, true, 0, 0),
+            (c2::FREE_LIST_DTOR, true, 0, 0),
+            (c2::TREE_CLEAR, true, 0, 0),
+            (c2::FREE_LIST_DEALLOCATE, true, 1, 1),
+            (c2::TREE_POST_INSERT, true, 1, 1),
+            (c2::USER_FREE_THUNK, false, 1, 0),
+            (c2::SFX_ID_TREE[0], true, 1, 1),
+            (c2::SFX_ID_TREE[1], true, 1, 1),
+            (c2::ID_TREE[0], true, 1, 1),
+            (c2::ID_TREE[1], true, 1, 1),
+            (c2::SFX_EVENT_STOP, true, 1, 1),
+            (c2::SFX_EVENT_SET_PAUSED, true, 1, 1),
+            (0x0bad_0028, false, 1, 1),
+            (0x0bad_0000, false, 1, 1),
+            (c2::FREE_LIST_ALLOCATE_BLOCK, true, 1, 1),
+        ];
+        let mut project_methods = [0; 2];
+        for (k, &(sym, this, n, pops)) in stubs.iter().enumerate() {
+            if (18..20).contains(&k) {
+                project_methods[k - 18] = t.stub_code(sym, this, n, pops);
+            } else if k == 20 {
+                // the refill puts a node on the free list
+                let cell = t.zeros(4);
+                t.cells.insert(0x0bad_f00d, cell);
+                t.stub_at(
+                    sym,
+                    this,
+                    n,
+                    pops,
+                    &[Write {
+                        arg: None,
+                        offset: 0,
+                        cell,
+                    }],
+                );
+            } else {
+                t.stub(sym, this, n, pops);
+            }
+        }
+        stub_successor(&mut t, c2::TREE_SUCCESSOR);
+        let vtable = t.zeros(0x30);
+        t.w32(vtable + 0x28, project_methods[0]);
+        t.w32(vtable, project_methods[1]);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.next();
+                t.ret(sym, v);
+            }
+            // the bank and its event map
+            let bank = t.zeros(0xc);
+            let project = t.zeros(4);
+            t.w32(project, vtable);
+            t.w32(bank, [0, project, project][rng.below(3) as usize]);
+            let map = t.random(&mut rng, 0x40);
+            t.w32(bank + 4, [0, map][rng.below(2) as usize]);
+            t.w32(bank + 8, [0, rng.next()][rng.below(2) as usize]);
+            t.check(
+                &format!("{w} bank dtor"),
+                0x0070_f930,
+                Conv::Thiscall(bank),
+                &[],
+                |g| {
+                    c2::sfx_bank_dtor(g, bank);
+                    Out::None
+                },
+            );
+            let map = t.random(&mut rng, 0x40);
+            t.check(
+                &format!("{w} event map dtor"),
+                0x0071_0180,
+                Conv::Thiscall(map),
+                &[],
+                |g| {
+                    c2::sfx_event_map_dtor(g, map);
+                    Out::None
+                },
+            );
+            // the two tree inserts
+            for (sym, callees) in [
+                (0x0070_cde0u32, c2::SFX_ID_TREE),
+                (0x0071_0ba0, c2::ID_TREE),
+            ] {
+                let tree = t.random(&mut rng, 0x24);
+                let node = t.random(&mut rng, 0x20);
+                let free = [0, node, node][rng.below(3) as usize];
+                t.w32(tree + 0x18, free);
+                let refill = [0, t.random(&mut rng, 0x20)][rng.below(2) as usize];
+                let cell = t.cells[&0x0bad_f00d];
+                t.w32(cell, refill);
+                let dup = [0, 1, 0x100][rng.below(3) as usize];
+                t.ret(callees[1], dup);
+                let key = t.random(&mut rng, 4);
+                let array = rng.next();
+                t.check(
+                    &format!("{w} tree insert {sym:#x} free {free:#x} dup {dup}"),
+                    sym,
+                    Conv::Thiscall(tree),
+                    &[key, array],
+                    |g| u(c2::id_tree_insert_array(g, callees, tree, key, array)),
+                );
+            }
+            // the sound walks
+            let this = t.zeros(0xd0);
+            let tree = this + 0x64;
+            let n = rng.below(5) as usize;
+            let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+            for (k, &nd) in nodes.iter().enumerate() {
+                let id = [0x7f, 0x80, 0x100, 5, u32::MAX, 0x81][rng.below(6) as usize];
+                t.w32(nd + 0xc, id);
+                let events = t.zeros(0x10);
+                for e in 0..4 {
+                    let v = [0, rng.next()][rng.below(2) as usize];
+                    t.w32(events + 4 * e, v);
+                }
+                t.w32(nd + 0x10, rng.below(5));
+                t.w32(nd + 0x18, events);
+                t.w32(nd + 0x1c, nodes.get(k + 1).copied().unwrap_or(tree));
+            }
+            match nodes.first() {
+                Some(&first) => {
+                    // the leftmost chain: one node above the first
+                    if rng.below(2) == 0 {
+                        t.w32(tree + 0xc, first);
+                        t.w32(first, tree);
+                    } else {
+                        let top = t.zeros(0x20);
+                        t.w32(tree + 0xc, top);
+                        t.w32(top, first);
+                        t.w32(first, tree);
+                    }
+                }
+                None => t.w32(tree + 0xc, tree),
+            }
+            let keep = t.zeros(0x10);
+            for k in 0..3 {
+                let v = [0x80, 0x100, 0x81, 5][rng.below(4) as usize];
+                t.w32(keep + 4 * k, v);
+            }
+            t.w32(keep + 4 * rng.below(4), u32::MAX);
+            t.w32(keep + 0xc, u32::MAX);
+            let immediate = rng.word();
+            t.check(
+                &format!("{w} stop all of {n}"),
+                0x0070_d930,
+                Conv::Thiscall(this),
+                &[keep, immediate],
+                |g| {
+                    c2::stop_all_non_blocking(g, this, keep, immediate);
+                    Out::None
+                },
+            );
+            let paused = [0, 1, 0x100, 0x101][rng.below(4) as usize];
+            t.w8(this, [0, 1][rng.below(2) as usize]);
+            t.w32(this + 0xc8, [0, rng.next()][rng.below(2) as usize]);
+            t.check(
+                &format!("{w} pause {paused:#x} of {n}"),
+                0x0070_d0c0,
+                Conv::Thiscall(this),
+                &[paused],
+                |g| {
+                    c2::sfx_pause(g, this, paused);
+                    Out::None
                 },
             );
         }

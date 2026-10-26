@@ -17,7 +17,9 @@
 //!   helpers, dlmalloc's `create_mspace_with_base`, menu textures;
 //! - [`h4_c1`]: the continuation round: the accumulation buffer's GS
 //!   quads, menu lookups, FMOD event collectors, texture-animation
-//!   records, the escape menu's string arrays.
+//!   records, the escape menu's string arrays;
+//! - [`h4_c2`]: its second batch: the cluster manager's releases, the FMOD
+//!   bank destructors and walks, the id-array tree inserts.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -38,6 +40,7 @@ pub mod copies;
 pub mod effect;
 pub mod frames;
 pub mod h4_c1;
+pub mod h4_c2;
 pub mod menu;
 pub mod misc;
 pub mod movie;

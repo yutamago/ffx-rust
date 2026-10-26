@@ -11,8 +11,8 @@
 //! through `fld`/`fstp`, which the bridges model.
 
 use ffx_glue_other::{
-    copies as c, effect as e, frames as fr, h4_c1 as c1, menu as mn, misc as m, movie as mv, r3,
-    sound as s,
+    copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, menu as mn, misc as m,
+    movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1297,5 +1297,58 @@ ported! {
     TOAdpMenuIconItemAbmap @ 0x008f_0700 => extern "C" fn adp_menu_icon_item(pkt: u32, item: u32, x: u32, y: u32, colour: u32) -> u32 {
         let mut frame = StackFrame::<1>::new();
         c1::adp_menu_icon_item(&mut mem(), frame.at(), [pkt, item, x, y, colour], &mut |_, f, a| super::call_cdecl_words(f, a))
+    }
+    // ---- continuation round, batch 2 (ffx_glue_other::h4_c2)
+    /// `ClusterManager_forceReleasePCluster(this; name)`: leaves the map
+    /// iterator in its argument slot, as the original does.
+    ClusterManager_forceReleasePCluster @ 0x0069_b310 => extern "thiscall" fn force_release_pcluster(this: u32, _name: u32; args: u32) -> u32 {
+        c2::force_release_pcluster(&mut mem(), this, args)
+    }
+    /// `ClusterManager_releasePCluster_0069be90(this; name)`.
+    ClusterManager_releasePCluster_0069be90 @ 0x0069_be90 => extern "thiscall" fn release_pcluster_by_name(this: u32, _name: u32; args: u32) -> u32 {
+        c2::release_pcluster_by_name(&mut mem(), this, args)
+    }
+    /// `ClusterManager_releasePCluster(this; cluster)`.
+    ClusterManager_releasePCluster @ 0x0069_bdb0 => extern "thiscall" fn release_pcluster(this: u32, _cluster: u32; args: u32) -> u32 {
+        c2::release_pcluster(&mut mem(), this, args)
+    }
+    /// `ClusterMap_eraseRange_0069af70(this; out, first, last)`.
+    ClusterMap_eraseRange_0069af70 @ 0x0069_af70 => extern "thiscall" fn cluster_map_erase_range(this: u32, out: u32, first: u32, last: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        c2::cluster_map_erase_range(&mut mem(), frame.at(), this, [out, first, last])
+    }
+    /// `PArrayNamedPair_appendInto_0069b6e0(this; dst, &value)`.
+    PArrayNamedPair_appendInto_0069b6e0 @ 0x0069_b6e0 => extern "thiscall" fn named_pair_append_into(this: u32, dst: u32, value: u32) -> u32 {
+        c2::named_pair_append_into(&mut mem(), this, dst, value)
+    }
+    /// `SfxBank_dtor_SfxBank(this)`.
+    SfxBank_dtor_SfxBank @ 0x0070_f930 => extern "thiscall" fn sfx_bank_dtor(this: u32) {
+        c2::sfx_bank_dtor(&mut mem(), this);
+    }
+    /// `SfxEventMap_dtor_00710180(this)`.
+    SfxEventMap_dtor_00710180 @ 0x0071_0180 => extern "thiscall" fn sfx_event_map_dtor(this: u32) {
+        c2::sfx_event_map_dtor(&mut mem(), this);
+    }
+    /// `SfxIdTree_insertArray_0070cde0(this; &key, &array)`.
+    SfxIdTree_insertArray_0070cde0 @ 0x0070_cde0 => extern "thiscall" fn sfx_id_tree_insert_array(this: u32, key: u32, array: u32) -> u32 {
+        c2::id_tree_insert_array(&mut mem(), c2::SFX_ID_TREE, this, key, array)
+    }
+    /// `IdTree_insertArray_00710ba0(this; &key, &array)`.
+    IdTree_insertArray_00710ba0 @ 0x0071_0ba0 => extern "thiscall" fn id_tree_insert_array(this: u32, key: u32, array: u32) -> u32 {
+        c2::id_tree_insert_array(&mut mem(), c2::ID_TREE, this, key, array)
+    }
+    /// `FmodSfx_stopAllNonBlockingSound(this; keep, immediate)`.
+    FmodSfx_stopAllNonBlockingSound @ 0x0070_d930 => extern "thiscall" fn stop_all_non_blocking(this: u32, keep: u32, immediate: u32) {
+        c2::stop_all_non_blocking(&mut mem(), this, keep, immediate);
+    }
+    /// `FmodSfx_pause(this; paused)`.
+    FmodSfx_pause @ 0x0070_d0c0 => extern "thiscall" fn sfx_pause(this: u32, paused: u32) {
+        c2::sfx_pause(&mut mem(), this, paused);
+    }
+    /// The `PArray<PInputs::PInputAction>` class descriptor's constructor
+    /// (`this`) -> `this`: `ffx_prender`'s descriptor bridge with its
+    /// constants.
+    Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PInputs_PInputAction_4__PClassDescriptorAbstract @ 0x009d_fb30 => extern "thiscall" fn input_action_array_descriptor(this: u32) -> u32 {
+        ffx_prender::registry::bridge::descriptor_ctor(&mut mem(), this, c2::INPUT_ACTION_ARRAY_DESCRIPTOR)
     }
 }
