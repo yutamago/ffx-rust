@@ -87,7 +87,9 @@
 //!   semaphore queue's start, an escape-menu dialog callback;
 //! - [`h4_i3`]: its third batch: the blur effect's constructor, the motion
 //!   blur's render, the save/load menu's open, the boot text's update,
-//!   `GDraw`'s resource limits and setup.
+//!   `GDraw`'s resource limits and setup;
+//! - [`h4_i4`]: its fourth batch: the PS2 GS layer's frame start, packet
+//!   transfer and texture loads.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -142,6 +144,7 @@ pub mod h4_h8;
 pub mod h4_i1;
 pub mod h4_i2;
 pub mod h4_i3;
+pub mod h4_i4;
 pub mod menu;
 pub mod misc;
 pub mod movie;

@@ -16,7 +16,7 @@ use ffx_glue_other::{
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
-    h4_i2 as i2, h4_i3 as i3, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2368,5 +2368,43 @@ ported! {
     IggyGDraw_setup_00a3baf0 @ 0x00a3_baf0 => extern "thiscall" fn gdraw_setup(this: u32, device: u32, limits: u32) -> u32 {
         let mut stats = StackFrame::<{ (i3::STATS_FRAME / 4) as usize }>::new();
         i3::gdraw_setup(&mut mem(), stats.at(), this, device, limits)
+    }
+    // ---- continuation round 7, batch 4 (ffx_glue_other::h4_i4)
+    /// `Sg_DrawSetEnvironmentInit()`.
+    Sg_DrawSetEnvironmentInit @ 0x0082_c8d0 => extern "C" fn draw_set_environment_init() -> u32 {
+        let mut frame = StackFrame::<{ (i4::ENV_INIT_FRAME / 4) as usize }>::new();
+        i4::draw_set_environment_init(&mut mem(), frame.at())
+    }
+    /// `op_gs1_transfer()`.
+    op_gs1_transfer @ 0x007e_b580 => extern "C" fn gs1_transfer() -> u32 {
+        // laid out and aligned as the original's frame (`ebp - 0xc0` on 16)
+        #[repr(C, align(16))]
+        struct Work([u8; i4::GS1_FRAME as usize]);
+        let mut work = Work([0; i4::GS1_FRAME as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let r = i4::gs1_transfer(&mut mem(), w);
+        std::hint::black_box(&mut work);
+        r
+    }
+    /// `op_oef2_texture_load(texture, flush)`.
+    op_oef2_texture_load @ 0x007e_5030 => extern "C" fn oef2_texture_load(texture: u32, flush: u32) {
+        // laid out and aligned as the original's frame (`ebp - 0x60` on 16)
+        #[repr(C, align(16))]
+        struct Work([u8; i4::LOAD_FRAME as usize]);
+        let mut work = Work([0; i4::LOAD_FRAME as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        i4::oef2_texture_load(&mut mem(), w, texture, flush);
+        std::hint::black_box(&mut work);
+    }
+    /// `SaMenu_loadSbinTextures_00775ed0(sbin)`.
+    SaMenu_loadSbinTextures_00775ed0 @ 0x0077_5ed0 => extern "C" fn sa_load_sbin_textures(sbin: u32) -> u32 {
+        // laid out and aligned as the original's frame (`ebp - 0x60` on 16)
+        #[repr(C, align(16))]
+        struct Work([u8; i4::LOAD_FRAME as usize]);
+        let mut work = Work([0; i4::LOAD_FRAME as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let r = i4::sa_load_sbin_textures(&mut mem(), w, sbin);
+        std::hint::black_box(&mut work);
+        r
     }
 }

@@ -29,7 +29,7 @@ use ffx_glue_other::{
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
-    h4_i2 as i2, h4_i3 as i3,
+    h4_i2 as i2, h4_i3 as i3, h4_i4 as i4,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -7918,5 +7918,187 @@ fn i3_gdraw_setup() {
             done += u32::from(r == 0);
         }
         assert!(done > 0, "{name}: set up");
+    }
+}
+
+// ---- continuation round 7, batch 4 (ffx_glue_other::h4_i4)
+
+/// The aligned `ebp` of an original called with `words` stack words.
+fn i4_aligned_ebp(t: &Twins, words: u32) -> u32 {
+    i4::aligned_ebp(t.a.stack_range().end - 0x100 - 4 * words - 4)
+}
+
+/// The frame start, the packet transfer and the texture loads.
+#[test]
+fn i4_gs_layer() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c741);
+        let stubs = [
+            (i4::GET_BACK_COLOR, 1),
+            (i2::SET_PACKET, 1),
+            (i4::GS_START, 0),
+            (i4::GS_DIMX, 0),
+            (i4::GS_DTHE, 1),
+            (i4::GS_FRAME, 2),
+            (i2::XYOFFSET, 2),
+            (i2::SCISSOR, 4),
+            (i4::GS_ZBUF, 1),
+            (i4::GS_FRAME2, 2),
+            (i2::XYOFFSET2, 2),
+            (i2::SCISSOR2, 4),
+            (i4::GS_ZBUF2, 1),
+            (i2::TEST2, 8),
+            (i2::PRIM, 1),
+            (i4::GS_RGBAQ, 4),
+            (i2::XYZF2, 2),
+            (i4::GS_FRAME2_16, 2),
+            (i4::GS_END, 0),
+            (i4::GS_SYNC, 0),
+            (i1::SYNC_PATH, 2),
+            (i1::FLUSH_CACHE, 1),
+            (i4::DMA_SEND, 2),
+            (i1::SET_DEF_LOAD_IMAGE, 8),
+            (i1::EXEC_LOAD_IMAGE, 2),
+            (i4::TEX_FLUSH, 0),
+        ];
+        for (sym, n) in stubs {
+            t.stub(sym, n, false);
+        }
+        let print1 = t.stub_code(i1::DBG_PRINTF, false, 1, 0, false, &[]);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(i1::DBG_PRINTF);
+        let mut strips = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.jump(i1::DBG_PRINTF, print1);
+            let frame_no = rng.next();
+            t.g32(i4::SG_FRAME, frame_no);
+            for (sym, vals) in [
+                (i4::FORCE_ENV, [0u8, 0, 1, 0x80]),
+                (i4::SKIP_CLEAR, [0u8, 0, 1, 0xff]),
+                (i4::SECOND_CLEAR, [0u8, 1, 2, 3]),
+            ] {
+                let v = rng.pick(&vals);
+                let at = t.rebase(sym);
+                t.w8(at, v);
+            }
+            let colour = rng.next();
+            t.g32(i4::SECOND_CLEAR + 1, colour);
+            for sym in [i4::SCREEN_W, i4::SCREEN_H] {
+                let v = rng.small();
+                t.g32(sym, v);
+            }
+            let frame = t.ebp_for(0) - 0x14;
+            t.check_framed(
+                &format!("{w} env init"),
+                0x0082_c8d0,
+                &[],
+                frame,
+                &[(0, 0x10)],
+                |g| u(i4::draw_set_environment_init(g, frame)),
+            );
+            // op_gs1_transfer
+            for k in 0..40 {
+                let v = rng.next();
+                t.g32(i4::GS1_PACKET + 4 * k, v);
+            }
+            let frame = i4_aligned_ebp(&t, 0) - 0xc0;
+            t.check_framed(
+                &format!("{w} gs1"),
+                0x007e_b580,
+                &[],
+                frame,
+                &[(0x10, 0xa0)],
+                |g| u(i4::gs1_transfer(g, frame)),
+            );
+            // op_oef2_texture_load
+            let texture = random_block(&mut t, &mut rng, 0x1c);
+            let tw = rng.pick(&[0u16, 1, 0x40, 0x100, 0x200, 0xffff]);
+            let th = rng.pick(&[0u16, 1, 0x100, 0x400, 0x401, 0x1000, 0xffff]);
+            t.w16(texture + 0xc, tw);
+            t.w16(texture + 0xe, th);
+            let texture = rng.pick(&[texture, texture, texture, 0]);
+            let flush = rng.pick(&[0, 1]);
+            let frame = i4_aligned_ebp(&t, 2) - i4::LOAD_FRAME;
+            t.check_framed(
+                &format!("{w} oef2"),
+                0x007e_5030,
+                &[texture, flush],
+                frame,
+                &[(0, (i4::LOAD_FRAME - 4) as usize)],
+                |g| {
+                    i4::oef2_texture_load(g, frame, texture, flush);
+                    Out::None
+                },
+            );
+            strips += u32::from(texture != 0 && u32::from(tw) * u32::from(th) >= 0x4_0000);
+        }
+        assert!(strips > 0, "{name}: strips loaded");
+    }
+}
+
+/// The Sa menu's texture load.
+#[test]
+fn i4_sa_textures() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c742);
+        let stubs = [
+            (i1::SYNC_PATH, 2),
+            (i1::FLUSH_CACHE, 1),
+            (i1::SET_DEF_LOAD_IMAGE, 8),
+            (i1::EXEC_LOAD_IMAGE, 2),
+        ];
+        for (sym, n) in stubs {
+            t.stub(sym, n, false);
+        }
+        // dbgPrintf: 2, 4, 2 and 3 words
+        let p2 = t.stub_code(0x0bad_c742, false, 2, 0, false, &[]);
+        let p3 = t.stub_code(0x0bad_c743, false, 3, 0, false, &[]);
+        let p4 = t.stub_code(0x0bad_c744, false, 4, 0, false, &[]);
+        // dispatch on the format: the palette line has 4 words, the size
+        // line 3, the rest 2
+        let (f4, f3) = (
+            t.rebase(i4::PALETTE_FORMAT),
+            t.rebase(i4::IMAGE_SIZE_FORMAT),
+        );
+        let mut c = vec![0x81, 0x7c, 0x24, 0x04];
+        c.extend(f4.to_le_bytes()); // cmp dword [esp+4], f4
+        c.extend([0x0f, 0x84]);
+        let at = t.cave_next;
+        c.extend(p4.wrapping_sub(at + 14).to_le_bytes());
+        c.extend([0x81, 0x7c, 0x24, 0x04]);
+        c.extend(f3.to_le_bytes());
+        c.extend([0x0f, 0x84]);
+        c.extend(p3.wrapping_sub(at + 28).to_le_bytes());
+        c.push(0xe9);
+        c.extend(p2.wrapping_sub(at + 33).to_le_bytes());
+        let print = t.code(&c);
+        t.jump(i1::DBG_PRINTF, print);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([0x0bad_c742, 0x0bad_c743, 0x0bad_c744]);
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let base = rng.next();
+            t.g32(i4::SA_GS_BASE, base);
+            let n = rng.pick(&[0u32, 1, 2, 5, 0xffff_ffff]);
+            let sbin = random_block(&mut t, &mut rng, 0x10 + 0x10 * 5 + 0x10);
+            t.w32(sbin + 4, n);
+            for k in 0..5 {
+                let bits = rng.pick(&[4u8, 8, 0x10, 0x18, 0x20, 0]);
+                t.w8(sbin + 0x14 + 0x10 * k, bits);
+            }
+            let frame = i4_aligned_ebp(&t, 1) - i4::LOAD_FRAME;
+            t.check_framed(
+                &w,
+                0x0077_5ed0,
+                &[sbin],
+                frame,
+                &[(0, (i4::LOAD_FRAME - 4) as usize)],
+                |g| u(i4::sa_load_sbin_textures(g, frame, sbin)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
     }
 }
