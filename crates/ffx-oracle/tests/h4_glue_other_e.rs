@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
-use ffx_glue_other::h4_e1 as e1;
+use ffx_glue_other::{frames as fr, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -190,6 +190,16 @@ fn opt(v: Option<u32>, last: u32) -> Out {
 struct Write {
     arg: u8,
     cell: u32,
+    /// Only the cell's first byte.
+    byte: bool,
+}
+
+fn wr(arg: u8, cell: u32) -> Write {
+    Write {
+        arg,
+        cell,
+        byte: false,
+    }
 }
 
 struct Twins {
@@ -312,6 +322,12 @@ impl Twins {
         self.jump(sym, addr);
     }
 
+    /// [`Twins::stub_code`] jumped to from the original `sym`.
+    fn stub_at(&mut self, sym: u32, this: bool, n: u32, pops: u32, writes: &[Write]) {
+        let addr = self.stub_code(sym, this, n, pops, false, writes);
+        self.jump(sym, addr);
+    }
+
     /// A `jmp` from the original `sym` to `addr`.
     fn jump(&mut self, sym: u32, addr: u32) {
         let at = self.rebase(sym);
@@ -338,9 +354,15 @@ impl Twins {
         let mut c = Vec::new();
         for w in writes {
             c.extend([0x8b, 0x44, 0x24, 4 + 4 * w.arg]); // mov eax, [esp+4+4i]
-            c.extend([0x8b, 0x15]);
-            c.extend(w.cell.to_le_bytes()); // mov edx, [cell]
-            c.extend([0x89, 0x10]); // mov [eax], edx
+            if w.byte {
+                c.extend([0x8a, 0x15]);
+                c.extend(w.cell.to_le_bytes()); // mov dl, [cell]
+                c.extend([0x88, 0x10]); // mov [eax], dl
+            } else {
+                c.extend([0x8b, 0x15]);
+                c.extend(w.cell.to_le_bytes()); // mov edx, [cell]
+                c.extend([0x89, 0x10]); // mov [eax], edx
+            }
         }
         let log = self.log;
         c.push(0xa1);
@@ -438,10 +460,22 @@ impl Twins {
         args: &[u32],
         port: impl FnOnce(&mut G) -> Out,
     ) -> u32 {
+        self.check_conv(what, sym, Conv::Cdecl, args, port)
+    }
+
+    /// [`Twins::check`] with the original's convention.
+    fn check_conv(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        port: impl FnOnce(&mut G) -> Out,
+    ) -> u32 {
         let addr = self.rebase(sym);
         let ra = self
             .a
-            .call(addr, Conv::Cdecl, args)
+            .call(addr, conv, args)
             .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
         let tramp = self.tramp;
         let out = port(&mut G(&mut self.b, tramp));
@@ -477,12 +511,27 @@ impl Twins {
         compare: &[(u32, usize)],
         port: impl FnOnce(&mut G) -> Out,
     ) -> u32 {
+        self.check_framed_conv(what, sym, Conv::Cdecl, args, frame, compare, port)
+    }
+
+    /// [`Twins::check_framed`] with the original's convention.
+    #[allow(clippy::too_many_arguments)]
+    fn check_framed_conv(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        frame: u32,
+        compare: &[(u32, usize)],
+        port: impl FnOnce(&mut G) -> Out,
+    ) -> u32 {
         for &(off, len) in compare {
             let junk: Vec<u8> = (0..len).map(|k| 0xa5 ^ k as u8).collect();
             self.write(frame + off, &junk);
         }
         self.b.set_call_top(Some(frame - 0x100));
-        let eax = self.check(what, sym, args, port);
+        let eax = self.check_conv(what, sym, conv, args, port);
         self.b.set_call_top(None);
         for &(off, len) in compare {
             let mut x = vec![0; len];
@@ -803,7 +852,7 @@ fn e1_battle() {
         let mut rng = Rng(0x5eed_e104);
         let cx = t.zeros(4);
         let cy = t.zeros(4);
-        let pos = [Write { arg: 1, cell: cx }, Write { arg: 2, cell: cy }];
+        let pos = [wr(1, cx), wr(2, cy)];
         let f = t.stub_code(e1::TARGET_POS, false, 3, 0, false, &pos);
         t.jump(e1::TARGET_POS, f);
         let f = t.stub_code(e1::GROUND_POS, false, 3, 0, false, &pos);
@@ -881,6 +930,425 @@ fn e1_battle() {
                     e1::enemy_limit(g, frame);
                     Out::None
                 },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- batch 2 (ffx_glue_other::h4_e2)
+
+/// A volume: in and out of 0..1, signed zeros, NaN.
+fn volume(rng: &mut Rng) -> u32 {
+    let r = rng.float();
+    rng.pick(&[
+        0,
+        0x8000_0000,
+        1f32.to_bits(),
+        0.5f32.to_bits(),
+        (-0.25f32).to_bits(),
+        1.5f32.to_bits(),
+        0x7fc0_0000,
+        r,
+        r,
+    ])
+}
+
+/// Random music tracks (`n` records of 0x3c bytes): mostly unloaded,
+/// playing or not, pending or not.
+fn tracks(t: &mut Twins, rng: &mut Rng, at: u32, n: u32) {
+    for i in 0..n {
+        let e = at + e2::TRACK * i;
+        for k in 0..e2::TRACK / 4 {
+            let v = rng.next();
+            t.w32(e + 4 * k, v);
+        }
+        let r = rng.next() | 1;
+        let ev = rng.pick(&[0, 0, 0, r]);
+        t.w32(e, ev);
+        for off in [8, 0xc, 0x20] {
+            let v = rng.pick(&[0, 1, 1, 2]);
+            t.w32(e + off, v);
+        }
+        for off in [0x34, 0x38] {
+            let v = volume(rng);
+            t.w32(e + off, v);
+        }
+    }
+}
+
+/// The music's direct and whole volume.
+#[test]
+fn e2_music_volume() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e201);
+        t.stub_at(fr::FMOD_SET_VOLUME, false, 2, 2, &[]);
+        t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+        let tags = [fr::FMOD_SET_VOLUME, fr::ERRCHECK];
+        let this = t.zeros(0x40);
+        let arr = t.zeros((e2::TRACK * (e2::TRACKS + 1)) as usize);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let d = rng.double();
+            let k = rng.pick(&[100.0, 127.0, 0.0, d]);
+            let at = t.rebase(e2::VOLUME_DIVISOR);
+            t.write(at, &k.to_le_bytes());
+            for k in 0..0x10 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            t.w32(this + 0x10, arr);
+            let mute = rng.pick(&[0, 1, 2]);
+            t.w32(this + 0x24, mute);
+            let scale = volume(&mut rng);
+            t.w32(this + 0x30, scale);
+            tracks(&mut t, &mut rng, arr, e2::TRACKS + 1);
+            let r = rng.below(0xb6);
+            let idx = rng.pick(&[0, 1, 0x82, 0xb5, 0xb6, r, u32::MAX]);
+            let (v, keep) = (volume(&mut rng), rng.pick(&[0, 1, 2]));
+            t.check_conv(
+                &format!("{w} direct {idx:#x}"),
+                0x0070_9dd0,
+                Conv::Thiscall(this),
+                &[idx, v, keep],
+                |g| u(e2::music_volume_direct(g, this, idx, v, keep)),
+            );
+            let other = volume(&mut rng);
+            let v = rng.pick(&[other, scale]);
+            t.check_conv(
+                &format!("{w} entire"),
+                0x0070_93e0,
+                Conv::Thiscall(this),
+                &[v],
+                |g| {
+                    e2::music_set_entire_volume(g, this, v);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The music's fade setup and the old tracks' fade-out.
+#[test]
+fn e2_music_fades() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e202);
+        let state = t.zeros(4);
+        let vol = t.zeros(4);
+        let paused = t.zeros(4);
+        t.stub_at(fr::FMOD_GET_STATE, false, 2, 2, &[wr(1, state)]);
+        t.stub_at(e2::EVENT_GET_VOLUME, false, 2, 2, &[wr(1, vol)]);
+        let byte = Write {
+            arg: 1,
+            cell: paused,
+            byte: true,
+        };
+        t.stub_at(e2::EVENT_GET_PAUSED, false, 2, 2, &[byte]);
+        t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+        t.stub_at(e2::MUSIC_VOLUME_DIRECT, true, 3, 3, &[]);
+        t.stub_at(e2::MUSIC_FADE_OUT, true, 2, 2, &[]);
+        let tags = [
+            fr::FMOD_GET_STATE,
+            e2::EVENT_GET_VOLUME,
+            e2::EVENT_GET_PAUSED,
+            fr::ERRCHECK,
+            e2::MUSIC_VOLUME_DIRECT,
+            e2::MUSIC_FADE_OUT,
+        ];
+        let this = t.zeros(0x40);
+        let arr = t.zeros((e2::TRACK * (e2::TRACKS + 1)) as usize);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let d = rng.double();
+            let k = rng.pick(&[100.0, 127.0, d]);
+            let at = t.rebase(e2::VOLUME_DIVISOR);
+            t.write(at, &k.to_le_bytes());
+            for k in 0..0x10 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            t.w32(this + 0x10, arr);
+            let mode = rng.pick(&[0x84, 0x84, 0x15d, 0x15d, 0, 0x85]);
+            t.w32(this + 0x28, mode);
+            tracks(&mut t, &mut rng, arr, e2::TRACKS + 1);
+            let flag = rng.pick(&[1, 1, 0, 2]);
+            t.w32(arr + 0x1e80, flag);
+            let st = rng.pick(&[8, 8, 0, 0xff, 0xf7]);
+            t.w32(state, st);
+            let v = volume(&mut rng);
+            t.w32(vol, v);
+            let p = rng.pick(&[0, 0, 1, 0x100]);
+            t.w32(paused, p);
+            let r = rng.below(0xb6);
+            let idx = rng.pick(&[0x82, 0x82, 0, 0xb5, 0xb6, r]);
+            let (r1, r2) = (rng.next() | 1, rng.next() | 1);
+            let ev = rng.pick(&[0, r1, r2]);
+            if idx < e2::TRACKS {
+                t.w32(arr + e2::TRACK * idx, ev);
+            }
+            let r = rng.next();
+            let frames = rng.pick(&[
+                0,
+                1,
+                0x78,
+                0x79,
+                0xb4,
+                0xb5,
+                0x168,
+                0x169,
+                0x169,
+                0x200,
+                0xb5,
+                u32::MAX,
+                0x8000_0000,
+                r,
+            ]);
+            let r = rng.next();
+            let target = rng.pick(&[0, 1, 100, u32::MAX, r]);
+            let frame = t.ebp_for(3) - e2::TRANSLATE_FRAME;
+            t.check_framed_conv(
+                &format!("{w} translate {idx:#x} {frames:#x}"),
+                0x0070_9ff0,
+                Conv::Thiscall(this),
+                &[idx, frames, target],
+                frame,
+                &[(0, 4)],
+                |g| {
+                    u(e2::music_volume_translate(
+                        g, frame, this, idx, frames, target,
+                    ))
+                },
+            );
+            let r = rng.below(0xb6);
+            let keep = rng.pick(&[0, 1, 0xb5, 0xb6, r]);
+            let frame = t.ebp_for(1) - e2::RELEASE_OLD_FRAME;
+            t.check_framed_conv(
+                &format!("{w} release old {keep:#x}"),
+                0x0070_91b0,
+                Conv::Thiscall(this),
+                &[keep],
+                frame,
+                &[(0, 4), (7, 1)],
+                |g| {
+                    e2::release_old_music(g, frame, this, keep);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The voice's loop fade.
+#[test]
+fn e2_voice_loop() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e203);
+        let state = t.zeros(4);
+        t.stub_at(fr::FMOD_GET_STATE, false, 2, 2, &[wr(1, state)]);
+        t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+        t.stub_at(e2::VOICE_VOLUME_DIRECT, true, 2, 2, &[]);
+        let tags = [fr::FMOD_GET_STATE, fr::ERRCHECK, e2::VOICE_VOLUME_DIRECT];
+        let this = t.zeros(0x40);
+        for i in 0..500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let d = rng.double();
+            let k = rng.pick(&[100.0, 127.0, d]);
+            let at = t.rebase(e2::VOLUME_DIVISOR);
+            t.write(at, &k.to_le_bytes());
+            let d = rng.double();
+            let snap = rng.pick(&[0.001, 0.01, 0.5, d]);
+            let at = t.rebase(e2::VOICE_SNAP);
+            t.write(at, &snap.to_le_bytes());
+            for k in 0..0x10 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            let on = rng.pick(&[0, 1, 1, 0x80]);
+            t.w8(this + 0x2c, on);
+            let n = rng.pick(&[0, 1, 5, u32::MAX, 0x8000_0000]);
+            t.w32(this + 0x30, n);
+            let (r1, r2) = (rng.next() | 1, rng.next() | 1);
+            let ch = rng.pick(&[0, r1, r2]);
+            t.w32(this + 0x14, ch);
+            let target = volume(&mut rng);
+            t.w32(this + 0x3c, target);
+            let other = volume(&mut rng);
+            let cur = rng.pick(&[other, target]);
+            t.w32(this + 0x38, cur);
+            let (a, b) = (volume(&mut rng), rng.float());
+            let step = rng.pick(&[0, a, b]);
+            t.w32(this + 0x34, step);
+            let st = rng.pick(&[8, 8, 0, 0xf7]);
+            t.w32(state, st);
+            let frame = t.ebp_for(0) - e2::VOICE_LOOP_FRAME;
+            t.check_framed_conv(
+                &format!("{w} voice loop"),
+                0x0070_acf0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(4, 4)],
+                |g| u(e2::voice_loop_volume(g, frame, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The sound events' pan and stop.
+#[test]
+fn e2_sfx_events() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e204);
+        let (group, count, channel, vol) = (t.zeros(4), t.zeros(4), t.zeros(4), t.zeros(4));
+        t.stub_at(d1::EVENT_GET_CHANNEL_GROUP, false, 2, 2, &[wr(1, group)]);
+        t.stub_at(d1::GROUP_NUM_CHANNELS, false, 2, 2, &[wr(1, count)]);
+        t.stub_at(d1::GROUP_GET_CHANNEL, false, 3, 3, &[wr(2, channel)]);
+        t.stub_at(e2::CHANNEL_SET_PAN, false, 2, 2, &[]);
+        t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+        t.stub_at(e2::EVENT_GET_VOLUME, false, 2, 2, &[wr(1, vol)]);
+        t.stub_at(e2::EVENT_STOP, false, 2, 2, &[]);
+        t.stub_at(fr::OPERATOR_DELETE, false, 1, 0, &[]);
+        let tags = [
+            d1::EVENT_GET_CHANNEL_GROUP,
+            d1::GROUP_NUM_CHANNELS,
+            d1::GROUP_GET_CHANNEL,
+            e2::CHANNEL_SET_PAN,
+            fr::ERRCHECK,
+            e2::EVENT_GET_VOLUME,
+            e2::EVENT_STOP,
+            fr::OPERATOR_DELETE,
+        ];
+        let this = t.zeros(0x20);
+        let events = t.zeros(8 * 8);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for k in 0..8 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            t.w32(this + 8, events);
+            let n = rng.pick(&[0, 1, 3, 8, u32::MAX]);
+            t.w32(this, n);
+            for k in 0..8 {
+                let v = rng.next();
+                t.w32(events + 8 * k, v);
+                let v = rng.next();
+                t.w32(events + 8 * k + 4, v);
+                let live = rng.pick(&[0, 1, 1, 0x80]);
+                t.w8(events + 8 * k + 4, live);
+            }
+            let fail = rng.pick(&[0, 0, 1, 2]);
+            t.ret(d1::EVENT_GET_CHANNEL_GROUP, fail);
+            let g = rng.next();
+            t.w32(group, g);
+            let n = rng.pick(&[0, 1, 3, u32::MAX]);
+            t.w32(count, n);
+            let c = rng.next();
+            t.w32(channel, c);
+            let pan = rng.float();
+            let frame = t.ebp_for(1) - e2::APPLY_PAN_FRAME;
+            t.check_framed_conv(
+                &format!("{w} pan"),
+                0x0070_eeb0,
+                Conv::Thiscall(this),
+                &[pan],
+                frame,
+                &[(4, 0xc)],
+                |g| {
+                    e2::sfx_event_apply_pan(g, frame, this, pan);
+                    Out::None
+                },
+            );
+            let f = rng.float();
+            let v = rng.pick(&[
+                0,
+                0x8000_0000,
+                0.5f32.to_bits(),
+                1f32.to_bits(),
+                3.5f32.to_bits(),
+                (-1.5f32).to_bits(),
+                0x7fc0_0000,
+                f,
+            ]);
+            t.w32(vol, v);
+            for off in [0x18, 0x1c] {
+                let r = rng.next();
+                let p = rng.pick(&[0, r]);
+                t.w32(this + off, p);
+            }
+            let immediate = rng.pick(&[0, 0, 1, 0x100]);
+            let frame = t.ebp_for(1) - e2::STOP_FRAME;
+            t.check_framed_conv(
+                &format!("{w} stop"),
+                0x0070_f490,
+                Conv::Thiscall(this),
+                &[immediate],
+                frame,
+                &[(8, 4)],
+                |g| {
+                    e2::sfx_event_stop(g, frame, this, immediate);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `SleepThreadInMillisecond`.
+const SLEEP_MS: u32 = 0x006f_2d20;
+
+/// The sync manager's data read.
+#[test]
+fn e2_sync_get_data() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e205);
+        let this = t.zeros(0x24);
+        // the sleep sets the loaded flag (another thread does in the game)
+        let rest = t.stub_code(SLEEP_MS, false, 1, 0, false, &[]);
+        let mut c = vec![0xc7, 0x05];
+        c.extend((this + 0x20).to_le_bytes());
+        c.extend(1u32.to_le_bytes()); // mov dword [this+0x20], 1
+        c.push(0xe9);
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes()); // jmp rest
+        let f = t.code(&c);
+        t.jump(SLEEP_MS, f);
+        let data = t.zeros(0x30);
+        let outs = t.zeros(0x10);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &[SLEEP_MS]);
+            for k in 0..9 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            let cursor = rng.pick(&[0, data, data + 4, data]);
+            t.w32(this + 8, cursor);
+            let has = rng.pick(&[0, 1, 1]);
+            t.w32(this + 0x1c, has);
+            let loaded = rng.pick(&[0, 1, 1]);
+            t.w32(this + 0x20, loaded);
+            for k in 0..0xc {
+                let f = rng.float();
+                let v = rng.pick(&[1f32.to_bits(), 1f32.to_bits(), 0x3e7, f, 0x3f80_0001]);
+                t.w32(data + 4 * k, v);
+            }
+            let (x, y, id) = (outs, outs + 4, outs + 8);
+            t.check_conv(
+                &format!("{w} sync"),
+                0x006f_b160,
+                Conv::Thiscall(this),
+                &[x, y, id],
+                |g| u(e2::sync_get_data(g, this, x, y, id)),
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");

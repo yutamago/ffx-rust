@@ -12,8 +12,8 @@
 
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
-    h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, menu as mn,
-    misc as m, movie as mv, r3, sound as s,
+    h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
+    menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1746,5 +1746,43 @@ ported! {
     TOBtlDrawEnemyLimit @ 0x0089_33c0 => extern "C" fn enemy_limit() {
         let mut frame = StackFrame::<{ (e1::ENEMY_LIMIT_FRAME / 4) as usize }>::new();
         e1::enemy_limit(&mut mem(), frame.at());
+    }
+    // ---- continuation round 3, batch 2 (ffx_glue_other::h4_e2)
+    /// `FmodMusic_volumeDirect(this; i, volume, keep)`.
+    FmodMusic_volumeDirect @ 0x0070_9dd0 => extern "thiscall" fn music_volume_direct(this: u32, i: u32, volume: u32, keep: u32) -> u32 {
+        e2::music_volume_direct(&mut mem(), this, i, volume, keep)
+    }
+    /// `FmodMusic_setEntireVolume(this; volume)`.
+    FmodMusic_setEntireVolume @ 0x0070_93e0 => extern "thiscall" fn music_set_entire_volume(this: u32, volume: u32) {
+        e2::music_set_entire_volume(&mut mem(), this, volume);
+    }
+    /// `FmodMusic_volumeTranslate(this; i, frames, target)`.
+    FmodMusic_volumeTranslate @ 0x0070_9ff0 => extern "thiscall" fn music_volume_translate(this: u32, i: u32, frames: u32, target: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e2::TRANSLATE_FRAME / 4) as usize }>::new();
+        e2::music_volume_translate(&mut mem(), frame.at(), this, i, frames, target)
+    }
+    /// `FmodMusic_releaseOldMusic(this; keep)`.
+    FmodMusic_releaseOldMusic @ 0x0070_91b0 => extern "thiscall" fn release_old_music(this: u32, keep: u32) {
+        let mut frame = StackFrame::<{ (e2::RELEASE_OLD_FRAME / 4) as usize }>::new();
+        e2::release_old_music(&mut mem(), frame.at(), this, keep);
+    }
+    /// `FmodVoice_loopVolumeTranslate(this)`.
+    FmodVoice_loopVolumeTranslate @ 0x0070_acf0 => extern "thiscall" fn voice_loop_volume(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e2::VOICE_LOOP_FRAME / 4) as usize }>::new();
+        e2::voice_loop_volume(&mut mem(), frame.at(), this)
+    }
+    /// `SfxEvent_applyPan(this; pan)`.
+    SfxEvent_applyPan @ 0x0070_eeb0 => extern "thiscall" fn sfx_event_apply_pan(this: u32, pan: u32) {
+        let mut frame = StackFrame::<{ (e2::APPLY_PAN_FRAME / 4) as usize }>::new();
+        e2::sfx_event_apply_pan(&mut mem(), frame.at(), this, pan);
+    }
+    /// `SfxEvent_stop(this; immediate)`.
+    SfxEvent_stop @ 0x0070_f490 => extern "thiscall" fn sfx_event_stop(this: u32, immediate: u32) {
+        let mut frame = StackFrame::<{ (e2::STOP_FRAME / 4) as usize }>::new();
+        e2::sfx_event_stop(&mut mem(), frame.at(), this, immediate);
+    }
+    /// `SyncManager_syncGetData(this; &x, &y, &id)`.
+    SyncManager_syncGetData @ 0x006f_b160 => extern "thiscall" fn sync_get_data(this: u32, x: u32, y: u32, id: u32) -> u32 {
+        e2::sync_get_data(&mut mem(), this, x, y, id)
     }
 }
