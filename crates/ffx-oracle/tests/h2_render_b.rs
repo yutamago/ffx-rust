@@ -43,6 +43,10 @@ mod cases4;
 mod cases5;
 #[path = "h2_render_b/cases6.rs"]
 mod cases6;
+#[path = "h2_render_b/cases7.rs"]
+mod cases7;
+#[path = "h2_render_b/cases8.rs"]
+mod cases8;
 
 use ffx_prender::array::bridge as a;
 use ffx_prender::declare as dc;
@@ -1012,6 +1016,8 @@ fn run_cases(rounds: u32) {
             .chain(cases4::CASES)
             .chain(cases5::CASES)
             .chain(cases6::CASES)
+            .chain(cases7::CASES)
+            .chain(cases8::CASES)
             .filter(|c| filter.split('|').any(|f| c.name.contains(f)))
         {
             for &(sym, n, pops, this) in case.callees {
@@ -1048,6 +1054,8 @@ fn h2_render_b_cases_are_unique() {
         .chain(cases4::CASES)
         .chain(cases5::CASES)
         .chain(cases6::CASES)
+        .chain(cases7::CASES)
+        .chain(cases8::CASES)
     {
         assert!(seen.insert(c.addr), "{} twice", c.name);
     }

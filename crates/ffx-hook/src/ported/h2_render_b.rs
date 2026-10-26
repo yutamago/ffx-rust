@@ -29,6 +29,7 @@ use ffx_prender::h2_more4::bridge as h4;
 use ffx_prender::h2_more5::bridge as h5;
 use ffx_prender::h2_more6::bridge as h6;
 use ffx_prender::h2_more7::bridge as h7;
+use ffx_prender::h2_more8::bridge as h8;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -1800,6 +1801,46 @@ ported! {
     PRendererD3D11_clear_0058e3d0 @ 0x0058_e3d0 => extern "thiscall" fn s_0058e3d0(a0: u32, a1: u32) -> u8 {
         let mut fr = super::StackFrame::<4>::new();
         h7::clear(&mut mem(), a0, a1, fr.at())
+    }
+    /// `PRendererD3D11_createDeviceAndSwapChain_00595800`.
+    PRendererD3D11_createDeviceAndSwapChain_00595800 @ 0x0059_5800 => extern "thiscall" fn s_00595800(this: u32, width: u32, height: u32, samples: u32, windowed: u32, flag: u32, hwnd: u32) -> u32 {
+        let mut fr = super::StackFrame::<16>::new();
+        h8::create_device_and_swap_chain(&mut mem(), this, width, height, samples, windowed as u8, flag as u8, hwnd, fr.at())
+    }
+    /// `Phyre_PRenderInterface_setTextureQuality`.
+    Phyre_PRenderInterface_setTextureQuality @ 0x0058_e000 => extern "thiscall" fn s_0058e000(this: u32, q: u32) -> u32 {
+        let mut fr = super::StackFrame::<10>::new();
+        h8::set_texture_quality(&mut mem(), this, q, fr.at())
+    }
+    /// `PRendererD3D11_resizeBuffers_00599210`.
+    PRendererD3D11_resizeBuffers_00599210 @ 0x0059_9210 => extern "thiscall" fn s_00599210(this: u32, width: u32, height: u32) -> u32 {
+        let mut fr = super::StackFrame::<3>::new();
+        h8::resize_buffers(&mut mem(), this, width, height, fr.at())
+    }
+    // continuation round: the six large Binds (h2_binds2 tables on h1_bind's steps)
+    /// `Phyre_PRendering_PEffect_Bind`.
+    Phyre_PRendering_PEffect_Bind @ 0x004e_b2d0 => extern "C" fn s_004eb2d0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x004e_b2d0) })
+    }
+    /// `Phyre_PRendering_PMeshInstance_Bind`.
+    Phyre_PRendering_PMeshInstance_Bind @ 0x004f_38a0 => extern "C" fn s_004f38a0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x004f_38a0) })
+    }
+    /// `Phyre_PGameplay_PCameraControllerComponent_Bind`.
+    Phyre_PGameplay_PCameraControllerComponent_Bind @ 0x0055_76a0 => extern "C" fn s_005576a0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0055_76a0) })
+    }
+    /// `Phyre_PSprite_PSpriteAnimationInfo_Bind`.
+    Phyre_PSprite_PSpriteAnimationInfo_Bind @ 0x0056_86f0 => extern "C" fn s_005686f0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0056_86f0) })
+    }
+    /// `Phyre_PSprite_PSpriteAnimationInfoChar_Bind`.
+    Phyre_PSprite_PSpriteAnimationInfoChar_Bind @ 0x0056_8ab0 => extern "C" fn s_00568ab0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0056_8ab0) })
+    }
+    /// `Phyre_PSprite_PSpriteCollection_Bind`.
+    Phyre_PSprite_PSpriteCollection_Bind @ 0x0056_91b0 => extern "C" fn s_005691b0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0056_91b0) })
     }
 }
 
