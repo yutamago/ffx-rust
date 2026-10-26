@@ -6,7 +6,7 @@
 //! drawers, the GS layer's frame code). Frames the originals hand callees
 //! are `StackFrame`s; nothing is kept between calls.
 
-use ffx_glue_other::{h4b_a as ba, h4b_b as bb};
+use ffx_glue_other::{h4b_a as ba, h4b_b as bb, h4b_c as bc};
 
 use super::{StackFrame, mem, ported};
 
@@ -71,5 +71,64 @@ ported! {
     gdraw_drawTargetQuad_00a3bed0 @ 0x00a3_bed0 => extern "C" fn draw_target_quad(a: u32, depth: u32, sub: u32; slots: u32) -> u32 {
         let mut f = StackFrame::<3>::new();
         bb::draw_target_quad(&mut mem(), f.at(), a, depth, sub, Some(slots))
+    }
+
+    // ---- batch 3 (ffx_glue_other::h4b_c)
+
+    /// `TkMn2DrawCrossCursor(x, y, kind)`: the screen size words in a
+    /// frame; the temporaries in the slots.
+    TkMn2DrawCrossCursor @ 0x008c_0670 => extern "C" fn cross_cursor(x: u32, y: u32, kind: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        bc::cross_cursor(&mut mem(), f.at(), x, y, kind, Some(slots))
+    }
+    /// `TODrawSelectCursor(window)`: the text and sizes in a frame
+    /// (`ebp - 0x38` .. `ebp - 4`).
+    TODrawSelectCursor @ 0x008b_5fb0 => extern "C" fn select_cursor(window: u32) -> u32 {
+        let mut f = StackFrame::<0xd>::new();
+        bc::select_cursor(&mut mem(), f.at(), window)
+    }
+    /// `TOBtlDrawTidusLimitWindow()`: the caption width in a frame word.
+    TOBtlDrawTidusLimitWindow @ 0x0089_7240 => extern "C" fn tidus_limit_window() -> u32 {
+        let mut f = StackFrame::<1>::new();
+        bc::tidus_limit_window(&mut mem(), f.at())
+    }
+    /// `TOBtlDrawLuluLimitWindow()`: the caption width and text buffer in
+    /// a frame (`ebp - 0x110` .. `ebp - 4`).
+    TOBtlDrawLuluLimitWindow @ 0x0089_5660 => extern "C" fn lulu_limit_window() -> u32 {
+        let mut f = StackFrame::<0x43>::new();
+        bc::lulu_limit_window(&mut mem(), f.at())
+    }
+    /// `TOBtlDrawCrossLimitGauge(chr, x, y, w, h)`.
+    TOBtlDrawCrossLimitGauge @ 0x0089_2910 => extern "C" fn cross_limit_gauge(chr: u32, x: u32, y: u32, w: u32, h: u32; slots: u32) {
+        bc::cross_limit_gauge(&mut mem(), chr, x, y, w, h, Some(slots));
+    }
+    /// `TOBtlDrawStatusLimitGauge(gauge, x, y, w, h)`.
+    TOBtlDrawStatusLimitGauge @ 0x0089_60e0 => extern "C" fn status_limit_gauge(gauge: u32, x: u32, y: u32, w: u32, h: u32; slots: u32) {
+        bc::status_limit_gauge(&mut mem(), gauge, x, y, w, h, Some(slots));
+    }
+    /// `TkMn2DrawCrossLimitParam(x, y, w, h, value, max)`.
+    TkMn2DrawCrossLimitParam @ 0x008d_3690 => extern "C" fn cross_limit_param(x: u32, y: u32, w: u32, h: u32, value: u32, max: u32; slots: u32) {
+        bc::cross_limit_param(&mut mem(), x, y, w, h, value, max, Some(slots));
+    }
+    /// `TkBtlEndDrawLegendNotice_008bc100()`: the text size in a frame.
+    TkBtlEndDrawLegendNotice_008bc100 @ 0x008b_c100 => extern "C" fn legend_notice() {
+        let mut f = StackFrame::<2>::new();
+        bc::legend_notice(&mut mem(), f.at());
+    }
+    /// `TkMn2DrawCrossCharFace(face, x, y, w, h)`: the image size and the
+    /// record in a frame (`ebp - 0xb8` .. `ebp - 4`).
+    TkMn2DrawCrossCharFace @ 0x008c_0250 => extern "C" fn cross_char_face(face: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        let mut f = StackFrame::<0x2d>::new();
+        bc::cross_char_face(&mut mem(), f.at(), face, x, y, w, h)
+    }
+    /// `IggyMouseQueue_update_00a25ab0(this)`.
+    IggyMouseQueue_update_00a25ab0 @ 0x00a2_5ab0 => extern "thiscall" fn mouse_queue_update(this: u32) {
+        bc::mouse_queue_update(&mut mem(), this);
+    }
+    /// `IggyMenuManager_dispatchMouse_00a26ce0(this)`: the event and the
+    /// result in a frame (`ebp - 0x28` .. `ebp - 4`).
+    IggyMenuManager_dispatchMouse_00a26ce0 @ 0x00a2_6ce0 => extern "thiscall" fn dispatch_mouse(this: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        bc::dispatch_mouse(&mut mem(), f.at(), this)
     }
 }

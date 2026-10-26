@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
-use ffx_glue_other::{h4b_a as ba, h4b_b as bb};
+use ffx_glue_other::{h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -1458,4 +1458,696 @@ fn run_framed(
         let y = Oracle::read(&mut t.b, s, n).unwrap();
         assert_eq!(x, y, "{w}: argument slots");
     }
+}
+
+// ---- batch 3 (ffx_glue_other::h4b_c)
+
+/// The remap, time and shape stubs of the cursors; their tags.
+fn cursor_stubs(t: &mut Twins) -> Vec<u32> {
+    t.stub(e1::REMAP_X2, 1, true);
+    t.stub(e1::REMAP_Y2, 1, true);
+    t.stub(e1::GET_TIME, 0, true);
+    t.stub(e1::SHAPE_UV, 9, false);
+    vec![e1::REMAP_X2, e1::REMAP_Y2, e1::GET_TIME, e1::SHAPE_UV]
+}
+
+/// Fresh `ST0` results for the float stubs and random float constants.
+fn cursor_floats(t: &mut Twins, rng: &mut Rng, f32s: &[u32], f64s: &[u32]) {
+    for tag in [e1::REMAP_X2, e1::REMAP_Y2, e1::GET_TIME] {
+        let v = rng.double();
+        t.ret_f64(tag, v);
+    }
+    t.constants(rng, f32s, f64s);
+}
+
+/// `TkMn2DrawCrossCursor`: every kind, the argument slots compared;
+/// `graphicFontGetScreenWH` runs as the original.
+#[test]
+fn bc_cross_cursor() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b601);
+        let tags = cursor_stubs(&mut t);
+        let f32s = [
+            0x00b5_eec0,
+            0x00b3_eb98,
+            0x00b5_ee90,
+            0x00b5_1b9c,
+            0x00b6_5854,
+            0x00b6_57fc,
+            0x00b6_585c,
+            0x00b3_04f8,
+            0x00b5_ee64,
+            0x00b5_f0fc,
+            0x00b5_f0ec,
+            0x00b5_f108,
+            0x00b5_f100,
+            0x00b5_f0cc,
+            0x00b5_f0e8,
+        ];
+        let f64s = [
+            0x00b9_22a8,
+            0x00b2_c5c8,
+            0x00b4_1cc0,
+            0x00b4_1d30,
+            0x00b9_22f0,
+            0x00b5_4c70,
+        ];
+        let ebp = t.ebp_for(3);
+        let fix = |_: &mut Oracle| {};
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            cursor_floats(&mut t, &mut rng, &f32s, &f64s);
+            let (x, y) = (rng.float(), rng.float());
+            let kind = rng.pickr(&[0, 4, 5, 0, 4, 5, 1, 6]);
+            run_framed(
+                &mut t,
+                &w,
+                0x008c_0670,
+                &[x, y, kind],
+                ebp - 0x40,
+                0,
+                Some(ebp + 8),
+                &fix,
+                |g| bc::cross_cursor(g, ebp - 0x40, x, y, kind, Some(ebp + 8)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `TODrawSelectCursor`: armed and unarmed selections, number entry and
+/// the cross cursor; `TOGetMessageWH` a hand-written stub storing
+/// alternating widths through its out pointer.
+#[test]
+fn bc_select_cursor() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b602);
+        let digits = t.zeros(4);
+        t.stub_at(bc::INT_TO_MES, false, 4, 0, &[wr(1, digits)]);
+        for (sym, n) in [
+            (bc::CROSS_BOX, 6),
+            (bc::SET_INVOKED, 1),
+            (bc::CROSS_CURSOR, 3),
+        ] {
+            t.stub(sym, n, false);
+        }
+        // TOGetMessageWH: *arg2 = [a]; swap [a] and [b]; then log
+        let (wa, wb) = (t.zeros(4), t.zeros(4));
+        let log = t.stub_code(bc::GET_MESSAGE_WH, false, 6, 0, false, &[]);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x15];
+        c.extend(wa.to_le_bytes());
+        c.extend([0x89, 0x10, 0x87, 0x15]);
+        c.extend(wb.to_le_bytes());
+        c.extend([0x89, 0x15]);
+        c.extend(wa.to_le_bytes());
+        let at = t.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let wh = t.code(&c);
+        t.jump(bc::GET_MESSAGE_WH, wh);
+        let tags = [
+            bc::INT_TO_MES,
+            bc::CROSS_BOX,
+            bc::SET_INVOKED,
+            bc::CROSS_CURSOR,
+            bc::GET_MESSAGE_WH,
+        ];
+        let f32s = [0x00b5_4f84];
+        let f64s = [0x00b9_2270, 0x00b9_22c0, 0x00b4_b468];
+        let ebp = t.ebp_for(1);
+        let frame = ebp - 0x38;
+        let mut armed = 0;
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &f32s, &f64s);
+            for cell in [digits, wa, wb] {
+                let v = rng.float();
+                t.w32(cell, v);
+            }
+            let window = rng.below(8);
+            let win = random_block(&mut t, &mut rng, 0x60);
+            let v = rng.pickr(&[2, 2, 0, 1]);
+            t.w16(win + 0x2c, v as u16);
+            let v = rng.pickr(&[2, 2, 0]);
+            t.w16(win + 0x1c, v as u16);
+            for off in [0x48, 0x4c] {
+                let v = rng.float();
+                t.w32(win + off, v);
+            }
+            let block = random_block(&mut t, &mut rng, 0x100);
+            let sel = block + 0x40;
+            let v = rng.pickr(&[0, 1, 1, 2]);
+            t.w8(sel + 1, v as u8);
+            let ch = rng.below(10) as i32 - 3;
+            t.w8(sel + 2, ch as u8);
+            let v = rng.below(10);
+            t.w8(sel + 5, v as u8);
+            t.g32(bc::MSG_WINDOWS + 4 * window, win);
+            t.g32(bc::SELECTIONS + 4 * window, sel);
+            let mut rec_ = [0u32; 7];
+            for (k, r) in rec_.iter_mut().enumerate() {
+                *r = rng.next();
+                t.g32(bc::SELECT_RECORD + 4 * k as u32, *r);
+            }
+            if t.check_framed(
+                &w,
+                0x008b_5fb0,
+                &[window],
+                frame,
+                &[(0, 4), (4, 4), (8, 4), (0x14, 0x20)],
+                |g| u(bc::select_cursor(g, frame, window)),
+            ) != win
+            {
+                armed += 1;
+            }
+        }
+        assert!(armed > 100, "{name}: {armed}");
+    }
+}
+
+/// The limit windows' words, kind set from `kinds`.
+fn limit_words(t: &mut Twins, rng: &mut Rng, at: u32, kinds: &[u32]) {
+    for k in 0..0x20 {
+        let v = rng.small() as u16;
+        t.w16(t.rebase(at) + 2 * k, v);
+    }
+    let kind = rng.pickr(kinds);
+    t.w16(t.rebase(at), kind as u16);
+}
+
+/// `TOBtlDrawTidusLimitWindow` and `TOBtlDrawLuluLimitWindow`: the
+/// drawers as recording stubs, the caption's width through the frame.
+#[test]
+fn bc_limit_windows() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b603);
+        let mut tags = cursor_stubs(&mut t);
+        let width = t.zeros(4);
+        t.stub_at(bc::EASY_FONT_WIDTH, false, 5, 0, &[wr(1, width)]);
+        let buf = t.zeros(4);
+        t.stub_at(bc::LOC_TEXT, false, 3, 0, &[wr(1, buf)]);
+        for (sym, n) in [
+            (bc::SPECIAL_GAUGE, 3),
+            (bc::CROSS_BOX, 6),
+            (bc::ROM_BTL_TEXT, 2),
+            (bc::EXT_MES_FONT, 7),
+            (bc::LULU_COUNTER, 4),
+            (bc::CROSS_BOX_FW, 7),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        tags.extend([bc::EASY_FONT_WIDTH, bc::LOC_TEXT]);
+        let f32s = [
+            0x00b5_ef98,
+            0x00b5_ee6c,
+            0x00b5_efa8,
+            0x00b5_ede8,
+            0x00b5_ee08,
+            0x00b5_edd8,
+            0x00b5_ee00,
+            0x00b5_4cf8,
+            0x00b5_83d8,
+            0x00b5_ef90,
+            0x00b5_4f90,
+            0x00b5_ee10,
+            0x00b5_ef10,
+            0x00b4_ae10,
+            0x00b9_2318,
+        ];
+        let f64s = [0x00b9_2220, 0x00b4_1d38, 0x00b5_ee50, 0x00b9_21e0];
+        let ebp = t.ebp_for(0);
+        let mut drawn = 0;
+        for i in 0..500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            cursor_floats(&mut t, &mut rng, &f32s, &f64s);
+            for cell in [width, buf] {
+                let v = rng.float();
+                t.w32(cell, v);
+            }
+            // the Lulu block (0x0133d708, 0x40 bytes) overlaps the Tidus
+            // block's start: written first
+            limit_words(&mut t, &mut rng, 0x0133_d708, &[3, 4, 3, 4, 2, 5]);
+            limit_words(&mut t, &mut rng, bc::LIMIT_WORDS, &[3, 4, 3, 4, 2, 5]);
+            let mode = rng.pickr(&[0, 1, 0, 1]);
+            t.g32(bc::CONTROL_MODE, mode);
+            let kind: i16 = Mem::read(&t.b, t.rebase(bc::LIMIT_WORDS));
+            if (3..=4).contains(&kind) {
+                drawn += 1;
+            }
+            t.check_framed(&w, 0x0089_7240, &[], ebp - 0xc, &[(0, 4)], |g| {
+                u(bc::tidus_limit_window(g, ebp - 0xc))
+            });
+            // the never-written width word: the same in both (the shim's
+            // frame gives 0; brief 2026-10-24)
+            let frame = ebp - 0x110;
+            t.check_framed(
+                &format!("{w} lulu"),
+                0x0089_5660,
+                &[],
+                frame,
+                &[(0, 4), (0xc, 0x100)],
+                |g| u(bc::lulu_limit_window(g, frame)),
+            );
+        }
+        assert!(drawn > 100, "{name}: {drawn}");
+    }
+}
+
+/// `TOBtlDrawCrossLimitGauge`: full, partial and empty gauges; `cosf` a
+/// float stub; the last argument slot compared. The original's `eax` is
+/// the last call's or the FPU status word (the shim is void).
+#[test]
+fn bc_cross_limit_gauge() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b604);
+        let mut tags = cursor_stubs(&mut t);
+        t.stub(bc::COSF, 1, true);
+        tags.push(bc::COSF);
+        for (sym, n) in [
+            (bc::CROSS_BOX, 6),
+            (bc::SHAPE_UV_C2, 11),
+            (bc::LIMIT_GAUGE_MAX, 1),
+            (bc::LIMIT_GAUGE, 1),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let f32s = [
+            0x00b9_22f8,
+            0x00b9_2314,
+            0x00b4_7de8,
+            0x00b9_2308,
+            0x00b9_2268,
+            0x00b5_eff8,
+            0x00b5_ef38,
+            0x00b5_f01c,
+            0x00b5_ef3c,
+        ];
+        let f64s = [0x00b2_c5c8, 0x00b4_12f8, 0x00b5_ee40];
+        let ebp = t.ebp_for(5);
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            cursor_floats(&mut t, &mut rng, &f32s, &f64s);
+            let v = rng.double();
+            t.ret_f64(bc::COSF, v);
+            let sp = rng_small_pos(&mut rng);
+            let max = rng.pickr(&[100, 0, 50, 255, sp]);
+            let sp = rng_small_pos(&mut rng);
+            let g = rng.pickr(&[100, 0, 50, 255, 0xffff_ffff, sp]);
+            t.ret(bc::LIMIT_GAUGE_MAX, max);
+            t.ret(bc::LIMIT_GAUGE, g);
+            let a = [
+                rng.next(),
+                rng.float(),
+                rng.float(),
+                rng.float(),
+                rng.float(),
+            ];
+            for (k, v) in a.iter().enumerate() {
+                t.b.write(ebp + 8 + 4 * k as u32, &v.to_le_bytes()).unwrap();
+            }
+            t.b.set_call_top(Some(ebp - 0x100));
+            t.check(&w, 0x0089_2910, &a, |g| {
+                bc::cross_limit_gauge(g, a[0], a[1], a[2], a[3], a[4], Some(ebp + 8));
+                Out::None
+            });
+            t.b.set_call_top(None);
+            let x = Oracle::read(&mut t.a, ebp + 8, 20).unwrap();
+            let y = Oracle::read(&mut t.b, ebp + 8, 20).unwrap();
+            assert_eq!(x, y, "{w}: argument slots");
+        }
+    }
+}
+
+/// `TOBtlDrawStatusLimitGauge`: gauges at, above and below the maximum; `cosf` a
+/// float stub; the last argument slot compared. The original's `eax` is
+/// the last call's or the FPU status word (the shim is void).
+#[test]
+fn bc_status_limit_gauge() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b605);
+        let mut tags = cursor_stubs(&mut t);
+        t.stub(bc::COSF, 1, true);
+        tags.push(bc::COSF);
+        for (sym, n) in [
+            (bc::CROSS_BOX, 6),
+            (bc::SHAPE_UV_C2, 11),
+            (bc::LIMIT_GAUGE_MAX, 1),
+            (bc::LIMIT_GAUGE, 1),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let f32s = [
+            0x00b9_22f8,
+            0x00b9_2314,
+            0x00b4_7de8,
+            0x00b9_2308,
+            0x00b9_2268,
+            0x00b5_eff8,
+            0x00b5_ef38,
+            0x00b5_f01c,
+            0x00b5_ef3c,
+        ];
+        let f64s = [0x00b2_c5c8, 0x00b4_12f8, 0x00b5_ee40];
+        let ebp = t.ebp_for(5);
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            cursor_floats(&mut t, &mut rng, &f32s, &f64s);
+            let v = rng.double();
+            t.ret_f64(bc::COSF, v);
+            let sp = rng_small_pos(&mut rng);
+            let max = rng.pickr(&[100, 0, 50, 255, sp]);
+            let sp = rng_small_pos(&mut rng);
+            let g = rng.pickr(&[100, 0, 50, 255, 0xffff_ffff, sp]);
+            t.w16(t.rebase(bc::STATUS_GAUGE_MAX), max as u16);
+            let a = [g, rng.float(), rng.float(), rng.float(), rng.float()];
+            for (k, v) in a.iter().enumerate() {
+                t.b.write(ebp + 8 + 4 * k as u32, &v.to_le_bytes()).unwrap();
+            }
+            t.b.set_call_top(Some(ebp - 0x100));
+            t.check(&w, 0x0089_60e0, &a, |g| {
+                bc::status_limit_gauge(g, a[0], a[1], a[2], a[3], a[4], Some(ebp + 8));
+                Out::None
+            });
+            t.b.set_call_top(None);
+            let x = Oracle::read(&mut t.a, ebp + 8, 20).unwrap();
+            let y = Oracle::read(&mut t.b, ebp + 8, 20).unwrap();
+            assert_eq!(x, y, "{w}: argument slots");
+        }
+    }
+}
+
+/// `TkBtlEndDrawLegendNotice_008bc100`: the size from a stub through the
+/// frame, the plate, scissors and text as recording stubs.
+#[test]
+fn bc_legend_notice() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b606);
+        let (cw, ch) = (t.zeros(4), t.zeros(4));
+        t.stub_at(bc::MESSAGE_WH_1612, false, 8, 0, &[wr(2, cw), wr(3, ch)]);
+        let mut tags = vec![bc::MESSAGE_WH_1612];
+        for (sym, n) in [
+            (bc::OPEN_PKT_TMP, 0),
+            (bc::DRAW_KICK_TMP, 0),
+            (bc::MENU_PLATE, 5),
+            (bc::SCISSOR_XYWH, 4),
+            (bc::EXT_MES_FONT, 7),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let f32s = [0x00b5_ee10];
+        let f64s = [
+            0x00b6_5648,
+            0x00b9_22b0,
+            0x00b4_1d38,
+            0x00b4_1d30,
+            0x00b9_2220,
+            0x00b5_0190,
+            0x00b5_15c8,
+        ];
+        let ebp = t.ebp_for(0);
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            if i % 2 == 0 {
+                t.constants(&mut rng, &f32s, &f64s);
+            }
+            for cell in [cw, ch] {
+                let v = if rng.below(3) == 0 {
+                    rng.float()
+                } else {
+                    (rng.below(600) as f32).to_bits()
+                };
+                t.w32(cell, v);
+            }
+            let fade = rng.pickr(&[0, 0x1000, 0x800, 0x200]);
+            t.w16(t.rebase(bc::END_FADE), fade as u16);
+            let text = rng.pickr(&[0, 0x1234]);
+            t.g32(bc::END_TEXT, text);
+            let drawn = fade as u16 != 0 && text != 0;
+            t.check_framed(&w, 0x008b_c100, &[], ebp - 0xc, &[(0, 8)], |g| {
+                let v = bc::legend_notice(g, ebp - 0xc);
+                if drawn { u(v) } else { Out::None }
+            });
+        }
+    }
+}
+
+/// `TkMn2DrawCrossLimitParam`: values at, above and below the maximum;
+/// the pulse through `_CIcos`; the fourth argument slot compared.
+#[test]
+fn bc_cross_limit_param() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b607);
+        let mut tags = cursor_stubs(&mut t);
+        for (sym, n) in [(bc::CROSS_BOX, 6), (bc::SHAPE_UV_C2, 11)] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let f32s = [
+            0x00b9_22f8,
+            0x00b9_2314,
+            0x00b4_7de8,
+            0x00b9_2308,
+            0x00b9_2268,
+            0x00b5_eff8,
+            0x00b5_ef38,
+            0x00b5_f01c,
+            0x00b5_ef3c,
+        ];
+        let f64s = [0x00b2_c5c8, 0x00b4_12f8, 0x00b5_ee40];
+        let ebp = t.ebp_for(6);
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            cursor_floats(&mut t, &mut rng, &f32s, &f64s);
+            let sp = rng_small_pos(&mut rng);
+            let max = rng.pickr(&[100, 0, 50, 255, sp]);
+            let sp = rng_small_pos(&mut rng);
+            let v = rng.pickr(&[100, 0, 50, 255, 0xffff_ffff, sp]);
+            let a = [rng.float(), rng.float(), rng.float(), rng.float(), v, max];
+            for (k, x) in a.iter().enumerate() {
+                t.b.write(ebp + 8 + 4 * k as u32, &x.to_le_bytes()).unwrap();
+            }
+            t.b.set_call_top(Some(ebp - 0x100));
+            t.check(&w, 0x008d_3690, &a, |g| {
+                bc::cross_limit_param(g, a[0], a[1], a[2], a[3], a[4], a[5], Some(ebp + 8));
+                Out::None
+            });
+            t.b.set_call_top(None);
+            let x = Oracle::read(&mut t.a, ebp + 8, 24).unwrap();
+            let y = Oracle::read(&mut t.b, ebp + 8, 24).unwrap();
+            assert_eq!(x, y, "{w}: argument slots");
+        }
+    }
+}
+
+/// `TkMn2DrawCrossCharFace`: every face (Rikku's too) and some out of
+/// range; the image size and the record in the frame.
+#[test]
+fn bc_cross_char_face() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b608);
+        let (cw, ch) = (t.zeros(4), t.zeros(4));
+        t.stub_at(bc::IMAGE_WH, false, 3, 0, &[wr(1, cw), wr(2, ch)]);
+        let mut tags = vec![bc::IMAGE_WH];
+        for (sym, n) in [
+            (bc::SHAPE_TEXTURE_NAME, 1),
+            (bc::ALBHED_RIKKU, 0),
+            (bc::DRAW_UI_ELEMENT, 5),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let ebp = t.ebp_for(5);
+        let frame = ebp - 0xb8;
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let r = rng.pickr(&[0, 1, 2]);
+            t.ret(bc::ALBHED_RIKKU, r);
+            for cell in [cw, ch] {
+                let v = if rng.below(4) == 0 {
+                    rng.float()
+                } else {
+                    (rng.below(1000) as f32).to_bits()
+                };
+                t.w32(cell, v);
+            }
+            for k in 0..4 {
+                let v = rng.next();
+                t.g32(bc::FONT_SHADE + 8 * k, v);
+            }
+            let face = if i < 30 {
+                i
+            } else {
+                rng.pickr(&[6, 6, 7, 8, 20, 0x8000_0000])
+            };
+            let a = [face, rng.float(), rng.float(), rng.float(), rng.float()];
+            t.check_framed(&w, 0x008c_0250, &a, frame, &[(0xc, 8), (0x1c, 0x98)], |g| {
+                u(bc::cross_char_face(g, frame, a[0], a[1], a[2], a[3], a[4]))
+            });
+        }
+    }
+}
+
+/// `IggyMouseQueue_update_00a25ab0`: a fake mouse (buttons and axes from
+/// tables), presses, releases, swapped buttons, wheel; the four-event
+/// case that hangs the original is left out.
+#[test]
+fn bc_mouse_queue() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b609);
+        t.stub(bc::GET_DEVICE, 2, false);
+        let buttons = t.zeros(4);
+        let axes = t.zeros(12);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x80];
+        c.extend((buttons.wrapping_sub(0xb)).to_le_bytes());
+        c.extend([0xc2, 0x04, 0x00]);
+        let button = t.code(&c);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xd9, 0x04, 0x85];
+        c.extend((axes - 4).to_le_bytes());
+        c.extend([0xc2, 0x04, 0x00]);
+        let axis_code = t.code(&c);
+        let vt = t.zeros(0x20);
+        t.w32(vt + 0xc, button);
+        t.w32(vt + 0x10, axis_code);
+        let mouse = t.zeros(8);
+        t.w32(mouse, vt);
+        let q = t.zeros(0x80);
+        let mut events = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &[bc::GET_DEVICE]);
+            t.ret(bc::GET_DEVICE, mouse);
+            for k in 0..0x20 {
+                let v = rng.next();
+                t.w32(q + 4 * k, v);
+            }
+            let prev: [u8; 3] = std::array::from_fn(|_| rng.pickr(&[0, 1, 0, 1, 2]) as u8);
+            let now: [u8; 3] = std::array::from_fn(|_| rng.pickr(&[0, 1, 0, 1, 3]) as u8);
+            t.write(q, &prev);
+            t.write(buttons, &now);
+            let swap = rng.pickr(&[0, 1, 0]) as u8;
+            t.w8(q + 0x78, swap);
+            let mut b = now;
+            if swap != 0 {
+                b.swap(0, 2);
+            }
+            let change = |k: usize| matches!((prev[k], b[k]), (0, 1) | (1, 0));
+            for k in 0..3 {
+                let v = if k == 2 && rng.below(2) == 0 {
+                    0
+                } else {
+                    rng.float()
+                };
+                let v = if k == 2 && change(0) && change(2) {
+                    0
+                } else {
+                    v
+                };
+                t.w32(axes + 4 * k, v);
+            }
+            if change(0) || change(2) {
+                events += 1;
+            }
+            t.check_conv(&w, 0x00a2_5ab0, Conv::Thiscall(q), &[], |g| {
+                bc::mouse_queue_update(g, q);
+                Out::None
+            });
+        }
+        assert!(events > 100, "{name}: {events}");
+    }
+}
+
+/// `IggyMenuManager_dispatchMouse_00a26ce0`: queued events of every type
+/// (and unknown ones) to fake menus (some slots empty); the lock and the
+/// event makers through their import slots.
+#[test]
+fn bc_dispatch_mouse() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b60a);
+        let slots = [
+            (bc::ENTER_CS.sym, 1),
+            (bc::LEAVE_CS.sym, 1),
+            (bc::MAKE_EVENT_NONE.sym, 1),
+            (bc::MAKE_EVENT_MOVE.sym, 3),
+            (bc::MAKE_EVENT_BUTTON.sym, 2),
+            (bc::MAKE_EVENT_WHEEL.sym, 2),
+        ];
+        let stubs: Vec<(u32, u32)> = slots
+            .iter()
+            .map(|&(slot, n)| (slot, t.stub_code(slot, false, n, n, false, &[])))
+            .collect();
+        let mut tags: Vec<u32> = slots.iter().map(|s| s.0).collect();
+        let menus: Vec<u32> = (0..3)
+            .map(|k| {
+                let vt = t.zeros(8);
+                let f0 = t.stub_code(0xf000 + k, true, 0, 0, false, &[]);
+                let f4 = t.stub_code(0xf100 + k, true, 2, 2, false, &[]);
+                t.w32(vt, f0);
+                t.w32(vt + 4, f4);
+                let m = t.zeros(4);
+                t.w32(m, vt);
+                m
+            })
+            .collect();
+        tags.extend((0..3).flat_map(|k| [0xf000 + k, 0xf100 + k]));
+        let ebp = t.ebp_for(0);
+        let frame = ebp - 0x28;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for &(slot, code) in &stubs {
+                t.g32(slot, code);
+            }
+            let n = rng.below(5);
+            let mut next = 0;
+            for _ in 0..n {
+                let e = t.zeros(0x14);
+                let kind = rng.pickr(&[0, 1, 2, 3, 4, 5, 6, 7, 6, 7]);
+                t.w32(e, kind);
+                for off in [4, 8, 0xc] {
+                    let v = rng.float();
+                    t.w32(e + off, v);
+                }
+                t.w32(e + 0x10, next);
+                next = e;
+            }
+            let queue = t.zeros(0x80);
+            t.w32(queue + 0xc, next);
+            t.g32(0x0198_4c68, queue);
+            let count = rng.below(4);
+            let arr = t.zeros(16);
+            for k in 0..4 {
+                let m = rng.pick(&[0, menus[0], menus[1], menus[2]]);
+                t.w32(arr + 4 * k, m);
+            }
+            let this = t.zeros(0x10);
+            t.w32(this + 8, count | (rng.below(2) << 31));
+            t.w32(this + 0xc, arr);
+            t.check_framed_conv(
+                &w,
+                0x00a2_6ce0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 0x24)],
+                |g| u(bc::dispatch_mouse(g, frame, this)),
+            );
+        }
+    }
+}
+
+/// A gauge-sized positive integer.
+fn rng_small_pos(rng: &mut Rng) -> u32 {
+    1 + rng.below(300)
 }
