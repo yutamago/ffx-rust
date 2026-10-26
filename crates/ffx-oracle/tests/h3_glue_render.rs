@@ -46,6 +46,7 @@ use ffx_prender::h3_glue20::{self as h20, bridge as gh20};
 use ffx_prender::h3_glue21::{self as h21, bridge as gh21};
 use ffx_prender::h3_glue22::{self as h22, bridge as gh22};
 use ffx_prender::h3_glue23::{self as h23, bridge as gh23};
+use ffx_prender::h3_glue24::{self as h24, bridge as gh24};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -6905,5 +6906,276 @@ fn batch23_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 40 } else { 240 };
         run_cases(t, CASES23, n, &mut Rng(0x2323_b023));
+    });
+}
+
+// ---- round 6 batch 24 (ffx_prender::h3_glue24) ----
+
+impl Twins {
+    /// A recording stub at `sym` (thiscall, `n` words) that first stores
+    /// each (offset, value) at `ecx + offset`.
+    fn stub_set_this(&mut self, sym: u32, n: u32, ret: u32, stores: &[(u8, u32)]) {
+        let log = self.stub(None, sym, true, n, n, Some(ret));
+        let mut code = vec![];
+        for &(off, value) in stores {
+            code.extend([0xc7, 0x41, off]); // mov dword [ecx+off], value
+            code.extend(value.to_le_bytes());
+        }
+        let at = self.cave_next;
+        code.push(0xe9); // jmp log
+        code.extend(log.wrapping_sub(at + code.len() as u32 + 4).to_le_bytes());
+        let cave = self.code(&code);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(cave.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// The map name (none, empty or a word), the strings left inline or on
+/// the heap by the appends, the two lookups (found or not) and their
+/// lists.
+fn prep_color_correction(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let name = obj + 0x200;
+    let len = pick(rng, &[0, 1, 4, 9]) as usize;
+    let mut text: Vec<u8> = (0..len).map(|_| b'a' + rng.below(26) as u8).collect();
+    text.push(0);
+    t.write(name, &text);
+    t.w32(obj + 0xd8, if rng.chance(5) { 0 } else { name });
+    let heap = obj + 0x300;
+    let cap = pick(rng, &[0x10, 0x1f]);
+    let assign = if rng.chance(3) {
+        vec![(0x14, cap), (0, heap)]
+    } else {
+        vec![]
+    };
+    let r = rng.next();
+    t.stub_set_this(h24::STRING_ASSIGN, 2, r, &assign);
+    let cap = pick(rng, &[0x10, 0x2f]);
+    let append = if rng.chance(2) {
+        vec![(0x14, cap), (0, heap + 0x40)]
+    } else {
+        vec![]
+    };
+    let r = rng.next();
+    t.stub_set_this(h24::STRING_APPEND, 2, r, &append);
+    let ids: Vec<u32> = (0..2)
+        .map(|_| pick(rng, &[0xffff_ffff, 0, 2, 0xffff_fffe]))
+        .collect();
+    t.stub_seq(h24::GET_SYMBOL_ID, true, 1, 1, &ids);
+    for (lists, at) in [(0x10e0, 0x400), (0x1134, 0x500)] {
+        t.w32(obj + lists, obj + at + 8);
+        for k in 0..4 {
+            let v = rng.next();
+            t.w32(obj + at + 4 * k, v);
+        }
+    }
+}
+
+#[rustfmt::skip]
+const CASES24: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_color_correction), ..method("scene_setup_color_correction", 0x0066_ed00, This::Object, 0, &[(h24::PHYRE_PRINTF, K::Cdecl(2)), (h24::SET_FIRST_ENTRY, K::This(1)), (h24::OPERATOR_DELETE, K::Cdecl(1))], |m, this, _| u(gh24::scene_setup_color_correction(m, frame_ebp(), this))) }), 0x40, 0),
+];
+
+#[test]
+fn batch24_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES24, n, &mut Rng(0x2424_b024));
+    });
+}
+
+/// An asset path (`+0x17`) of 1..4 segments before `"/bin"` and some after,
+/// `keep2d` set or not (only its low byte counts), the output.
+fn prep_map_path(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let mut path = vec![];
+    // a '/' before "/bin" (without one the original reads address 0)
+    for _ in 0..=rng.below(4) {
+        path.extend(b"/");
+        for _ in 0..=rng.below(8) {
+            path.push(b'a' + rng.below(26) as u8);
+        }
+    }
+    path.extend(b"/bin");
+    if rng.chance(2) {
+        path.extend(b"/x.phyre");
+    }
+    path.push(0);
+    t.write(obj + 0x17, &path);
+    args[0] = obj;
+    args[1] = obj + 0x400;
+    args[2] = pick(rng, &[0, 1, 0x100, 0xffff_ff01]);
+}
+
+#[rustfmt::skip]
+const CASES24B: &[Case] = &[
+    framed(with_cookie(Case { prep: Some(prep_map_path), ..method("scene_convert_map_path", 0x0065_9290, This::Stdcall, 3, &[(h24::FIOS_UNIFY_FILENAME, K::Cdecl(3)), (h24::SPRINTF, K::ImportC(3))], |m, _, a| u(gh24::scene_convert_map_path(m, frame_ebp(), a[0], a[1], a[2]))) }), 0x18c, 0),
+];
+
+#[test]
+fn batch24b_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES24B, n, &mut Rng(0x2424_b124));
+    });
+}
+
+/// The kind, the allocations (a block failing now and then; a failed
+/// list faults in the original's push), the list's state (current block
+/// unset or not, its blocks).
+fn prep_create_pool(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    args[0] = rng.below(4);
+    let list = obj + 0x100;
+    let blocks = [obj + 0x200, obj + 0x240];
+    let news = [
+        list,
+        if rng.chance(5) { 0 } else { blocks[0] },
+        if rng.chance(5) { 0 } else { blocks[1] },
+    ];
+    t.stub_seq(h24::OPERATOR_NEW, false, 1, 0, &news);
+    // the constructor gives the list (the original's `this`)
+    t.stub_ret(h24::POOL_LIST_CTOR, true, 0, 0, list);
+    t.w32(list + 0xc, pick(rng, &[0, 1, 0x8000_0002]));
+    t.w32(list + 4, pick(rng, &[0xffff_ffff, 0, 3]));
+    t.w32(list + 0x10, obj + 0x300);
+    t.w32(obj + 0x300, obj + 0x340);
+    let v = rng.next();
+    t.w32(obj + 0x344, v);
+    let v = rng.next();
+    t.w32(list + 8, v);
+}
+
+#[rustfmt::skip]
+const CASES24C: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_create_pool), ..method("dyn_geo_create_pool", 0x006d_e720, This::Object, 1, &[(h24::POOL_RELEASE, K::This(1)), (h24::CREATE_MUTEX, K::Import(3)), (h24::OPERATOR_NEW_6304C0, K::Cdecl(1)), (h24::PHYRE_MALLOC, K::Cdecl(2)), (h24::ARRAY_PUSH_INTO, K::This(2))], |m, this, a| { let slots = slots_at(m, a); gh24::dyn_geo_create_pool(m, frame_ebp(), slots, this, a[0]); Out::None }) }), 0x14, 4),
+];
+
+#[test]
+fn batch24c_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES24C, n, &mut Rng(0x2424_b224));
+    });
+}
+
+/// The list (0..3 entries, the count's top bit now and then), each
+/// entry's mesh and floats, the world matrices the conversion overwrites,
+/// `restore` (only its low byte counts).
+fn prep_mesh_matrices(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0e00);
+    *this = scene;
+    let n = rng.below(4);
+    let count = count_word(rng, n);
+    t.w32(scene + 0x1_0d84, count);
+    let list = obj + 0x100;
+    t.w32(scene + 0x1_0d88, list);
+    for k in 0..n {
+        let entry = list + 0x44 * k;
+        let mesh = obj + 0x400 + 0x40 * k;
+        t.w32(entry, mesh);
+        for c in 0..16 {
+            let word = rng.float().to_bits();
+            t.w32(entry + 4 + 4 * c, word);
+        }
+        let world = obj + 0x600 + 0x40 * k;
+        t.w32(mesh + 4, world);
+        let v = rng.next();
+        t.w32(mesh + 0x10, v);
+        for c in 0..12 {
+            let value = rng.float().to_bits();
+            t.w32(world + 4 * c, value);
+        }
+    }
+    let renderer = obj + 0x900;
+    t.w32(scene + 0xd0, renderer);
+    let v = rng.next();
+    t.w32(renderer + 0x13c, v);
+    let (head_word, tail_word) = (rng.next(), rng.next());
+    let ret = rng.next();
+    t.stub_set_this(
+        h24::TO_WORLD_MATRIX,
+        1,
+        ret,
+        &[(0, head_word), (0x2c, tail_word)],
+    );
+    args[0] = pick(rng, &[0, 1, 0x100, 0xffff_ff01]);
+}
+
+#[rustfmt::skip]
+const CASES24D: &[Case] = &[
+    framed(Case { prep: Some(prep_mesh_matrices), ..method("scene_draw_mesh_matrices", 0x0066_b360, This::Object, 1, &[(h24::RENDER_MESH_INSTANCE, K::This(4))], |m, this, a| { gh24::scene_draw_mesh_matrices(m, frame_ebp(), this, a[0]); Out::None }) }, 0x84, 0),
+];
+
+#[test]
+fn batch24d_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES24D, n, &mut Rng(0x2424_b324));
+    });
+}
+
+/// A balanced map of effects (keys zero or not, type bytes meeting the
+/// mask or not, each with a stopping vtable), the kept map's head and
+/// lookups, the mask (only its low byte counts).
+fn prep_clear_by_type(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let head = obj + 0x40;
+    t.w32(obj, head);
+    let size = rng.next();
+    t.w32(obj + 4, size);
+    t.write(head + 0xd, &[1]);
+    let n = rng.below(6);
+    let node = |k: u32| obj + 0x100 + 0x20 * k;
+    let root = build_map_tree(t, 0, n, head, head, &node);
+    t.w32(head + 4, root);
+    t.w32(head, if n == 0 { head } else { node(0) });
+    t.w32(head + 8, if n == 0 { head } else { node(n - 1) });
+    let vtable = obj + 0x1e00;
+    let stop = t.stub(None, 0xf110, true, 0, 0, Some(rng.next()));
+    t.w32(vtable + 0x10, stop);
+    for k in 0..n {
+        let (key_a, key_b) = match rng.below(4) {
+            0 => (0, 0),
+            1 => (0, rng.next()),
+            _ => (rng.next(), rng.next()),
+        };
+        t.w32(node(k) + 0x10, key_a);
+        t.w32(node(k) + 0x14, key_b);
+        let effect = obj + 0x800 + 0x80 * k;
+        t.w32(node(k) + 0x18, effect);
+        t.w32(effect, vtable);
+        t.write(effect + 0x51, &[1 << rng.below(4)]);
+    }
+    let kept_head = obj + 0x1c00;
+    t.w32(kept_head, obj + 0x1c40);
+    t.stub_ret(h24::MAP_HEAD, true, 0, 0, kept_head);
+    let found = rng.next();
+    t.stub_ret(h24::KEPT_FIND, true, 1, 1, found);
+    args[0] = pick(rng, &[0, 1, 3, 0xc, 0xff, 0x100]);
+}
+
+const CLEAR_BY_TYPE_STUBS: &[(u32, K)] = &[
+    (h24::MAP_LOCK, K::This(0)),
+    (h24::IOB_FUNC, K::ImportC(0)),
+    (h24::FPRINTF, K::ImportC(3)),
+    (h24::KEPT_INSERT, K::This(4)),
+    (h24::INSERT_TO_DELETE_POOL, K::This(4)),
+    (h24::ERASE_RANGE, K::This(2)),
+    (h24::TREE_ERASE_RANGE, K::This(3)),
+    (h24::OPERATOR_DELETE, K::Cdecl(1)),
+];
+
+#[rustfmt::skip]
+const CASES24E: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_clear_by_type), ..method("vfx_table_clear_by_type", 0x0069_f110, This::Object, 1, CLEAR_BY_TYPE_STUBS, |m, this, a| { let slots = slots_at(m, a); gh24::vfx_table_clear_by_type(m, frame_ebp(), slots, this, a[0]); Out::None }) }), 0x34, 4),
+];
+
+#[test]
+fn batch24e_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES24E, n, &mut Rng(0x2424_b424));
     });
 }

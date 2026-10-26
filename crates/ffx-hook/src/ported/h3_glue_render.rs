@@ -29,6 +29,7 @@ use ffx_prender::h3_glue20::bridge as g20;
 use ffx_prender::h3_glue21::bridge as g21;
 use ffx_prender::h3_glue22::bridge as g22;
 use ffx_prender::h3_glue23::bridge as g23;
+use ffx_prender::h3_glue24::bridge as g24;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1621,6 +1622,29 @@ ported! {
     VfxShaderManager_FindShader @ 0x006c_06e0 => extern "thiscall" fn vfx_find_shader(this: u32, name: u32, flags: u32; slots: u32) -> u32 {
         let mut f = StackFrame::<1>::new();
         g23::vfx_find_shader(&mut mem(), f.at() + 4, slots, this, name, flags)
+    }
+
+    // ---- round 6 batch 24 (ffx_prender::h3_glue24) ----
+    /// `PhyreScene_setupColorCorrection(this)` (`ecx` only).
+    PhyreScene_setupColorCorrection @ 0x0066_ed00 => extern "thiscall" fn scene_setup_color_correction(this: u32) -> u32 {
+        let mut f = StackFrame::<0x10>::new();
+        g24::scene_setup_color_correction(&mut mem(), f.at() + 0x40, this)
+    }
+    /// `PhyreScene_convertMapPath(asset, out, keep2d)` (stdcall).
+    PhyreScene_convertMapPath @ 0x0065_9290 => extern "stdcall" fn scene_convert_map_path(asset: u32, out: u32, keep2d: u32) -> u32 {
+        let mut f = StackFrame::<0x63>::new();
+        g24::scene_convert_map_path(&mut mem(), f.at() + 0x18c, asset, out, keep2d)
+    }
+    /// `DynGeoMemManager_createPool_006de720(this, kind)`: the list and
+    /// then its slot's address go over `kind`'s slot.
+    DynGeoMemManager_createPool_006de720 @ 0x006d_e720 => extern "thiscall" fn dyn_geo_create_pool(this: u32, kind: u32; slots: u32) {
+        let mut f = StackFrame::<5>::new();
+        g24::dyn_geo_create_pool(&mut mem(), f.at() + 0x14, slots, this, kind);
+    }
+    /// `PhyreScene_DrawMeshMatrices(this, restore)`.
+    PhyreScene_DrawMeshMatrices @ 0x0066_b360 => extern "thiscall" fn scene_draw_mesh_matrices(this: u32, restore: u32) {
+        let mut f = StackFrame::<0x21>::new();
+        g24::scene_draw_mesh_matrices(&mut mem(), f.at() + 0x84, this, restore);
     }
 }
 

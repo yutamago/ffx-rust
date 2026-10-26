@@ -94,6 +94,7 @@ pub mod h3_glue20;
 pub mod h3_glue21;
 pub mod h3_glue22;
 pub mod h3_glue23;
+pub mod h3_glue24;
 pub mod mesh;
 pub mod misc;
 pub mod p6_app;
