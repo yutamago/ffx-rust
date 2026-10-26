@@ -246,6 +246,15 @@ const VIRTUAL_START: f64 = 1_048_576.0;
 static LOCKSTEP: AtomicBool = AtomicBool::new(false);
 /// The last frame the game may present in lockstep.
 static ALLOWED: AtomicU32 = AtomicU32::new(0);
+/// `lockstep on` asked for while the game runs free: the main thread turns
+/// it on at the next boundary it enters ([`animate`]) and holds there.
+/// Set from the command thread at once, the hold fell on the boundary the
+/// main thread was in when the command came (if it had not reached the
+/// hold check yet) or on the next one: in about one run in twenty the
+/// first, and what that boundary had run under (a free update, no loader
+/// turn) changed battle-attack's FMOD capture from its first sample (two
+/// of 42 runs, original code alike; docs/harness.md, "Audio capture").
+static LOCKSTEP_REQUEST: AtomicBool = AtomicBool::new(false);
 /// Seconds the frame limiter skipped, as `f64` bits.
 static SKIPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// The PS2 vsync handler `createVsyncEmuThread` (`0x00679e60`) was given,
@@ -1559,6 +1568,12 @@ static VSYNC_LOCK: Mutex<()> = Mutex::new(());
 pub unsafe extern "thiscall" fn animate(app: *mut c_void) -> u32 {
     let frame = FRAME.load(Ordering::Acquire);
     APP.store(app as usize, Ordering::Release);
+    // `lockstep on` takes hold here, at the first boundary entered after
+    // the command, before anything of this boundary has run
+    if LOCKSTEP_REQUEST.swap(false, Ordering::AcqRel) {
+        ALLOWED.store(frame, Ordering::Release);
+        LOCKSTEP.store(true, Ordering::Release);
+    }
     REACHED.store(frame + 1, Ordering::Release);
     trace_frame(frame);
     run_main_jobs(frame);
@@ -2300,6 +2315,23 @@ fn command(line: &str) -> Result<String, String> {
         }
         "lockstep" => {
             let on = arg(1)? == "on";
+            if on && !LOCKSTEP.load(Ordering::Acquire) && REACHED.load(Ordering::Acquire) > 0 {
+                // the main thread takes hold at its next boundary
+                // (LOCKSTEP_REQUEST); a main loop that does not get there
+                // in time (stuck in one update) is held at once, as before
+                LOCKSTEP_REQUEST.store(true, Ordering::Release);
+                let start = std::time::Instant::now();
+                while LOCKSTEP_REQUEST.load(Ordering::Acquire)
+                    && start.elapsed() < std::time::Duration::from_secs(60)
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+                if LOCKSTEP_REQUEST.swap(false, Ordering::AcqRel) {
+                    ALLOWED.store(now(), Ordering::Release);
+                    LOCKSTEP.store(true, Ordering::Release);
+                }
+                return Ok(format!("ok {}", ALLOWED.load(Ordering::Acquire)));
+            }
             ALLOWED.store(now(), Ordering::Release);
             LOCKSTEP.store(on, Ordering::Release);
             format!("ok {}", now())
