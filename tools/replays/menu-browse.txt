@@ -6,6 +6,9 @@
 # $OUT\menu-browse-<n>.bmp (the trace's folder), for tools/shot-compare.py.
 load direct 1 cdsp0000
 lockstep on
+# what the frames before lockstep leave behind: docs/harness.md,
+# "Pinned state"
+pin
 # the field takes input only after its fade-in; 30 frames was too few
 # under parallel load (the menu stayed shut)
 wait 120
