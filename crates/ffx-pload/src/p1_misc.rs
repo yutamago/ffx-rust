@@ -604,12 +604,46 @@ pub mod bridge {
     /// the parent, keeping the colour bit), or the node already there
     /// with the same key (0 for one at address 0).
     pub fn import_insert(h: &mut impl Host, tree: u32, import: u32) -> u32 {
-        let node = import + 4;
-        let color: u32 = h.read(import + 0xc);
-        h.write(import + 0xc, color.wrapping_add(1 - (color & 1)));
-        h.write(node, [tree, tree]);
-        let [hash, name]: [u32; 2] = h.read(import + 0x10);
         let cmp = h.read(h.rebase(STRICMP_IMPORT));
+        insert_named(h, tree, import, |h, key, node| {
+            h.call(cmp, Conv::Cdecl, &[key, node]) as i32
+        })
+    }
+
+    /// `strcmp`'s sign as the originals' inline loops give it: -1 when
+    /// the first differing byte of `a` is below `b`'s, 1 above, 0 for the
+    /// same string.
+    pub(crate) fn c_compare(m: &impl Mem, a: u32, b: u32) -> i32 {
+        let mut i = 0u32;
+        loop {
+            let x: u8 = m.read(a.wrapping_add(i));
+            let y: u8 = m.read(b.wrapping_add(i));
+            if x != y {
+                return if x < y { -1 } else { 1 };
+            }
+            if x == 0 {
+                return 0;
+            }
+            i += 1;
+        }
+    }
+
+    /// The (hash, name) red-black tree insert `0x0045b9d0` and
+    /// `0x00438780` share (thiscall `(item)` on the tree; the item's node
+    /// at `+4`, its colour and parent word `+0xc`, its key at
+    /// `+0x10`/`+0x14`): the hashes ordered unsigned, equal hashes by
+    /// `cmp(key name, node name)`; 0 once linked, else the node already
+    /// there.
+    pub(crate) fn insert_named<H: Host>(
+        h: &mut H,
+        tree: u32,
+        item: u32,
+        mut cmp: impl FnMut(&mut H, u32, u32) -> i32,
+    ) -> u32 {
+        let node = item + 4;
+        let color: u32 = h.read(item + 0xc);
+        h.write(item + 0xc, color.wrapping_add(1 - (color & 1)));
+        h.write(node, [tree, tree]);
         let mut parent = tree + 0xc;
         let mut left = false;
         let link: u32 = h.read(tree + 0xc);
@@ -625,12 +659,14 @@ pub mod bridge {
             parent = at;
             let key_at = if cur == 0 { 0 } else { cur + 0x10 };
             let nh: u32 = h.read(key_at);
+            let hash: u32 = h.read(item + 0x10);
             let order: i32 = match nh.cmp(&hash) {
                 std::cmp::Ordering::Greater => 1,
                 std::cmp::Ordering::Less => -1,
                 std::cmp::Ordering::Equal => {
                     let n: u32 = h.read(key_at + 4);
-                    h.call(cmp, Conv::Cdecl, &[name, n]) as i32
+                    let name: u32 = h.read(item + 0x14);
+                    cmp(h, name, n)
                 }
             };
             if order == 0 {
@@ -640,6 +676,12 @@ pub mod bridge {
             let next: u32 = h.read(cur + 4 + 4 * u32::from(left));
             cur = if next == 0 { 0 } else { next - 4 };
         }
+    }
+
+    /// `0x00438780` (thiscall `(type)` on the type dispenser's tree):
+    /// [`insert_named`] with the names compared by `strcmp`.
+    pub fn dispenser_insert(h: &mut impl Host, tree: u32, ty: u32) -> u32 {
+        insert_named(h, tree, ty, |h, key, node| c_compare(h, key, node))
     }
 
     /// The buffers' computation `0x0043c160` repeats: nothing once

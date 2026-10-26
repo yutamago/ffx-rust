@@ -9,7 +9,7 @@
 //! classes are each their own original, so each gets its own line.
 
 use super::{StackFrame, mem, ported};
-use ffx_pload::{cluster, descriptor, p1_misc, stream, types};
+use ffx_pload::{cluster, descriptor, p1_loader, p1_misc, p1_types, stream, types};
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
 /// constructs one in place).
@@ -974,5 +974,66 @@ ported! {
     /// `PClassDescriptorDynamic`'s buffers refreshed.
     Phyre_PClassDescriptorDynamic_refreshBuffers_00449e40 @ 0x0044_9e40 => extern "thiscall" fn dynamic_refresh(this: u32) {
         p1_misc::bridge::dynamic_refresh(&mut mem(), this);
+    }
+    // ---- continuation round, batch 11 (ffx_pload::p1_types, p1_loader) ----
+    /// `PClassDescriptor::PClassDescriptor(ns, name, size, align, base, c)`.
+    Phyre_PClassDescriptor_PClassDescriptor_0043b0a0 @ 0x0043_b0a0 => extern "thiscall" fn descriptor_ctor6(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> u32 {
+        p1_types::bridge::descriptor_ctor(&mut mem(), this, [a, b, c, d, e, f])
+    }
+    /// `PClassDescriptor::PClassDescriptor(ns, name, size, align)`.
+    Phyre_PClassDescriptor_PClassDescriptor @ 0x0043_afb0 => extern "thiscall" fn descriptor_ctor4(this: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        p1_types::bridge::descriptor_ctor(&mut mem(), this, [a, b, c, d, 0, 0])
+    }
+    /// `PClassDescriptorDynamic::PClassDescriptorDynamic(ns, name, base)`.
+    Phyre_PClassDescriptorDynamic_PClassDescriptorDynamic @ 0x0044_7690 => extern "thiscall" fn dynamic_descriptor_ctor(this: u32, ns: u32, name: u32, base: u32) -> u32 {
+        p1_types::bridge::dynamic_ctor(&mut mem(), this, ns, name, base)
+    }
+    /// The type dispenser's tree insert `(type)`.
+    Phyre_PTypeDispenser_treeInsert_00438780 @ 0x0043_8780 => extern "thiscall" fn dispenser_insert(this: u32, ty: u32) -> u32 {
+        p1_misc::bridge::dispenser_insert(&mut mem(), this, ty)
+    }
+    /// `PTypeDispenser::GetClassDescriptor<Matrix3>()`.
+    Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Matrix3 @ 0x0045_f210 => extern "C" fn wrapper_matrix3() -> u32 {
+        p1_types::bridge::wrapper_descriptor(&mut mem(), &p1_types::WRAPPERS[0])
+    }
+    /// `PTypeDispenser::GetClassDescriptor<Matrix4>()`.
+    Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Matrix4 @ 0x0045_f300 => extern "C" fn wrapper_matrix4() -> u32 {
+        p1_types::bridge::wrapper_descriptor(&mut mem(), &p1_types::WRAPPERS[1])
+    }
+    /// `PTypeDispenser::GetClassDescriptor<PMatrix4>()`.
+    Phyre_PTypeDispenser_GetClassDescriptor_Phyre_PMatrix4 @ 0x0045_f3f0 => extern "C" fn wrapper_pmatrix4() -> u32 {
+        p1_types::bridge::wrapper_descriptor(&mut mem(), &p1_types::WRAPPERS[2])
+    }
+    /// `PNamespaceMapping::PNamespaceMapping(ns, a, b, c)`.
+    Phyre_PNamespaceMapping_PNamespaceMapping_004786a0 @ 0x0047_86a0 => extern "thiscall" fn mapping_ctor(this: u32, ns: u32, a: u32, b: u32, c: u32) -> u32 {
+        p1_loader::bridge::mapping_ctor(&mut mem(), this, [ns, a, b, c])
+    }
+    /// `PCluster::allocateInstanceListForSize(size, n, desc, extra)`.
+    Phyre_PCluster_allocateInstanceListForSize @ 0x0044_0ba0 => extern "thiscall" fn allocate_instance_list_for_size(this: u32, size: u32, n: u32, desc: u32, extra: u32) -> u32 {
+        p1_loader::bridge::allocate_instance_list(&mut mem(), this, size, n, desc, extra)
+    }
+    /// `PCluster::deleteObject(obj)`.
+    Phyre_PCluster_deleteObject @ 0x0044_1240 => extern "thiscall" fn delete_object(this: u32, obj: u32) -> u32 {
+        p1_loader::bridge::delete_object(&mut mem(), this, obj)
+    }
+    /// `PClusterBase::clear()`; the deferred lists' head in this frame.
+    Phyre_PClusterBase_clear @ 0x0044_0eb0 => extern "thiscall" fn cluster_clear(this: u32) {
+        let mut local = StackFrame::<2>::new();
+        p1_loader::bridge::clear(&mut mem(), local.at(), this);
+    }
+    /// `PAssetReferenceImport`'s registration.
+    Phyre_PAssetReferenceImport_register_0045e1a0 @ 0x0045_e1a0 => extern "thiscall" fn import_register(this: u32) -> u32 {
+        let mut local = StackFrame::<1>::new();
+        p1_loader::bridge::import_register(&mut mem(), local.at(), this)
+    }
+    /// `PAssetReferenceImport::resolve()`; the lookup key in this frame.
+    Phyre_PAssetReferenceImport_resolve @ 0x0045_e280 => extern "thiscall" fn import_resolve(this: u32) -> u32 {
+        let mut key = StackFrame::<2>::new();
+        p1_loader::bridge::resolve(&mut mem(), key.at(), this)
+    }
+    /// `PAssetReferenceImport`'s destructor.
+    Phyre_PAssetReferenceImport_dtor_0045c0f0 @ 0x0045_c0f0 => extern "thiscall" fn import_dtor(this: u32) {
+        let mut local = StackFrame::<1>::new();
+        p1_loader::bridge::import_dtor(&mut mem(), local.at(), this);
     }
 }
