@@ -89,6 +89,7 @@ pub mod p6_descriptor;
 pub mod p6_encode;
 pub mod p6_misc;
 pub mod p6_more;
+pub mod p6_small;
 pub mod p6_thread;
 pub mod registry;
 pub mod small;
