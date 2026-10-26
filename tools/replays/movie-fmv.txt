@@ -1,0 +1,50 @@
+# A movie (FMV) playing (M4 coverage 2, docs/harness.md "Movie replay"):
+# movie 2 (IWK_us.webm, Wakka's kick on Besaid beach) through the movie
+# player (PhyFMVPlayerManager, PVideoPlaybackWin32, libwebm, libvpx,
+# libVorbis; docs/formats/platform.md, "Movies").
+#
+# None of the harness's saves reaches an FMV on its own: bsil0000's worker
+# 24 entry 5 plays movie 2 (wait for effect flag 5, then
+# Native_b000_MovieStart(2, 0x500)), but it is requested only from the
+# arrival scene's path that event-arrival.txt does not reach. Here the
+# script requests it itself on Besaid beach (save ffx_003), as a req
+# opcode would: AtelRegistSignalWithoutSameLevel (0x0086eba0; from 0xffff,
+# worker 24, kind 0, level 1, entry 5). MovieStart opens and preloads the
+# movie (graphicInitFMVPlayer, graphicPlayVideo(1)); then the script does
+# what Native_b009_MovieCameraWait's start does (g_WaitFramesByTime
+# 0x0112a008 = 1, graphicPlayVideo(0) 0x006427c0), which starts it, and
+# after the shots what Native_b004_MovieClose and b001's end do
+# (graphicDestroyFmv 0x0063df30, g_WaitFramesByTime 0, the movie number
+# 0x00c40e28 -1). The field's minimap stays on (the arrival scene hides
+# it first).
+#
+# `realtime`: the player needs real time. In fast mode (lockstep or not)
+# the movie never starts: its frame (+0x6d8) stays 0 and the screen black.
+# At the game's rate the frame advances about one per update, by the
+# decoder and the clock (getCurrentTime), so the shots are pinned to the
+# movie's own frame (`shotwhen` on g_FMVPlayerManager +0x6d8, windows 4
+# frames wide): 64, 192 and 320, then the field after closing it.
+# The script starts the movie once the manager is set up (+0x6d0 playing,
+# +0x6d2 initialised) and 60 frames more. Traced: the map words, the movie
+# number and g_WaitFramesByTime, as distinct values.
+realtime
+load direct 3 bsil0000
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x0112ca90:4 0x00c40e28:4 0x0112a008:4
+call 0x0086eba0 0xffff 24 0 1 5
+waitfor 0x00c40e28:4 02000000 ffffffff 600
+waitfor *0x00cded3c+0x6d0:4 01000100 ffffff00 600
+wait 60
+write 0x0112a008 01000000
+call 0x006427c0 0
+shotwhen *0x00cded3c+0x6d8:4 40000000 fcffffff 1200 $OUT\movie-fmv-1.bmp
+shotwhen *0x00cded3c+0x6d8:4 c0000000 fcffffff 1200 $OUT\movie-fmv-2.bmp
+shotwhen *0x00cded3c+0x6d8:4 40010000 fcffffff 1200 $OUT\movie-fmv-3.bmp
+readp 0x00cded3c 0x6d0 0x20
+call 0x0063df30
+write 0x0112a008 00000000
+write 0x00c40e28 ffffffff
+wait 60
+read 0x01325d94 4
+shot $OUT\movie-fmv-4.bmp

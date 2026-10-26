@@ -1,0 +1,22 @@
+# Graphics settings (M4 coverage 2, docs/harness.md "Settings replays"):
+# field-walk's deck (save ffx_001, cdsp0000) with PostAA=PAA_FXAA and
+# UnSharpMask=On (tools/sandbox/fxaa.ini merged over the sandbox's
+# GameSetting.ini, Quality=VQ_CUSTOM so the file's values count). Reaches
+# PostProcessManager_renderFXAA (scene +0x10dd8 = 1) and renderUSM
+# (pp +0x123d3). Same walk, shots and traces as settings-hdao.txt.
+settings fxaa
+load direct 1 cdsp0000
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+readp 0x022fb504 0x30 0x1c
+trace *0x022fb504+0x30:0x1c 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68
+read 0x01325d94 4
+shot $OUT\settings-fxaa-1.bmp
+press up 40 10
+press left 20 10
+press down 20 10
+wait 120
+read 0x01325d94 4
+shot $OUT\settings-fxaa-2.bmp

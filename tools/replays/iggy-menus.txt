@@ -1,0 +1,102 @@
+# Iggy (Flash) screens (M4 coverage 2, docs/harness.md "Iggy screens"):
+# the PC menu (Esc) and its pages, then the title and the load list, read
+# only. From save ffx_001 (the deck, cdsp0000), lockstep, fast mode.
+#
+# The PC menu reads DirectInput keys (01 Esc, 1c Enter, 0e Backspace, c8
+# up, d0 down). Its entries: Resume, System setting, Special features,
+# Change parameters, Quit (never selected: it ends the process). Backspace
+# goes back one page and puts the cursor on the page's first entry again;
+# Esc closes the menu from any page. System setting lists Audio, Video and
+# Key bindings. Enter on the Video page's first row (Resolution) opens its
+# list, so the script never presses Enter there; nothing is changed or
+# applied (each page is left with Backspace, which cancels).
+# The Flash screens animate their transitions, so each shot comes 240
+# frames after the key that opened the page.
+#
+# Then the title as after a game over (menu-save.txt: `call`
+# AtelJumpGameOver 0x0086da10, map 0x17 by way of memochek and the opening,
+# Start), Load (Enter): the save list (state 0xc of the save/load machine,
+# g_SaveMachineState 0x00ce72e8; no shot: its dates are the files' times),
+# and Backspace back to the title (state 0xa, idle). No save is written
+# or loaded.
+#
+# Traced: the map words, the save/load machine's state and cursor
+# (0x00ce72e8:0x18), the generators.
+# Shots (iggy-menus-<n>.bmp): 1 the PC menu, 2 System setting, 3 Audio,
+# 4 Video, 5 Video scrolled to its last row (UnSharp Mask), 6 Key bindings,
+# 7 Keyboard bindings, 8 Special features, 9 Change parameters, 10 the
+# field after Esc, 11 the title, 12 the title after leaving the load list.
+load direct 1 cdsp0000
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x0112ca90:4 0x00ce72e8:0x18 0x00c42200:4 0x01135ee0:0x110
+key 01 4 240
+shot $OUT\iggy-menus-1.bmp
+# System setting, Audio
+key d0 4 60
+key 1c 4 240
+shot $OUT\iggy-menus-2.bmp
+key 1c 4 240
+shot $OUT\iggy-menus-3.bmp
+key 0e 4 240
+# Video, scrolled down row by row
+key d0 4 60
+key 1c 4 240
+shot $OUT\iggy-menus-4.bmp
+key d0 4 30
+key d0 4 30
+key d0 4 30
+key d0 4 30
+key d0 4 30
+key d0 4 30
+key d0 4 30
+key d0 4 30
+key d0 4 30
+key d0 4 240
+shot $OUT\iggy-menus-5.bmp
+key 0e 4 240
+# Key bindings, Keyboard
+key d0 4 60
+key d0 4 60
+key 1c 4 240
+shot $OUT\iggy-menus-6.bmp
+key 1c 4 240
+shot $OUT\iggy-menus-7.bmp
+key 0e 4 240
+key 0e 4 240
+key 0e 4 240
+# Special features
+key d0 4 60
+key d0 4 60
+key 1c 4 240
+shot $OUT\iggy-menus-8.bmp
+key 0e 4 240
+# Change parameters
+key d0 4 60
+key d0 4 60
+key d0 4 60
+key 1c 4 240
+shot $OUT\iggy-menus-9.bmp
+key 0e 4 240
+key 01 4 240
+shot $OUT\iggy-menus-10.bmp
+# the title, as after a game over, and the load list
+call 0x0086da10
+waitfor 0x0112ca90:2 5d01 ffff 1500
+wait 60
+press start 3 20
+waitfor 0x0112ca90:2 1700 ffff 1500
+waitfor 0x01325d94:4 00000000 c0ffffff 600
+waitfor 0x01325d94:4 40000000 c0ffffff 600
+wait 37
+shot $OUT\iggy-menus-11.bmp
+key 1c 3 3
+waitfor 0x00ce72e8:4 0c000000 ffffffff 600
+wait 60
+key d0 3 30
+key 0e 3 3
+waitfor 0x00ce72e8:4 0a000000 ffffffff 600
+wait 240
+shot $OUT\iggy-menus-12.bmp

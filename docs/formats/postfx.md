@@ -358,9 +358,12 @@ difference falls outside the scene.
    called by `PhyreScene_createRWTTTarget`), and which maps have a
    `_ColorCorrection` list.
 3. Captures with HDAO, MSAA, PostAA, UnSharpMask and a fade on, to check
-   the passes listed from the code above against the draw stream (the
-   harness uses `tools/sandbox/GameSetting.ini`; a capture with other
-   settings needs a way to pass another file).
+   the passes listed from the code above against the draw stream. The
+   harness can now start a game with other settings (a replay's
+   `settings NAME` line or `FFX_SETTINGS=NAME`, `tools/sandbox/NAME.ini`
+   merged over the sandbox's file; `docs/harness.md`, "Sandbox
+   settings"), and `tools/replays/settings-*.txt` run the deck with each
+   of these on; no capture has been taken with them yet.
 4. The depth-of-field function `0x00a1ca10` (a `PhyreEngine`
    post-processing class) and the glow constructor `0x009fc540`: names.
 5. `PostProcessManager_copyDepthBuffer` (`0x00692e90`, a cg-match lead)

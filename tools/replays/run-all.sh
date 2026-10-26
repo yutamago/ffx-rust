@@ -20,6 +20,11 @@
 #
 # FFX_REPLAY_SERIAL=1 runs the replays one after the other instead.
 #
+# --extra (the first argument) runs the extra list instead (settings-*,
+# movie-fmv, iggy-menus, battle-ifrit; docs/harness.md, "Coverage
+# replays"), whose recordings live in ~/ffx-work/replay-shots-extra
+# (FFX_REPLAY_SHOTS_EXTRA): `run-all.sh --extra [--record [replay...]]`.
+#
 # The `eye` replays' screenshots are recorded into orig/eye and orig2/eye,
 # out of shot-compare.py's sight: random effects (an overdrive's lightning,
 # fireflies, the idle pose under a menu) differ in a few pixels between any
@@ -52,6 +57,14 @@ temp_win="${temp_win%\\}"
 win="$temp_win\\ffx-snap"
 lin="$(wslpath "$win")"
 shots="${FFX_REPLAY_SHOTS:-$HOME/ffx-work/replay-shots}"  # outlives a WSL restart (/tmp does not)
+# --extra: the extra list instead (below), recorded apart, so that their
+# recordings never show up as missing shots in the main list's comparison
+extra=""
+if [ "${1:-}" = --extra ]; then
+    extra=1
+    shift
+    shots="${FFX_REPLAY_SHOTS_EXTRA:-$HOME/ffx-work/replay-shots-extra}"
+fi
 id="$(date +%Y%m%d-%H%M%S)-$$"
 runs="$lin/runs/$id"
 traces="$shots/traces"
@@ -67,6 +80,15 @@ eye=(battle-overdrive event-cliff)
 # rp-events2 (docs/harness.md): the Thunder Plains agency and the Besaid arrival
 replays+=(event-agency event-arrival)
 eye+=(event-arrival)  # voiced, real time
+# The extra list (m4-coverage2, docs/harness.md "Coverage replays"): the
+# graphics settings, a movie, the Iggy screens, another battle and summon.
+# They reach platform code the main list does not; they stay apart until
+# the Rust replacements pass them (`run-all.sh --extra`, `--extra
+# --record [replay...]`).
+if [ -n "$extra" ]; then
+    replays=(settings-hdao settings-msaa settings-fxaa settings-smaa settings-shadow settings-texhigh movie-fmv iggy-menus battle-ifrit)
+    eye=(iggy-menus)  # Flash fades follow the wall clock: 21,746 px in one of three original runs
+fi
 
 # Build once, not three times side by side.
 tools/build-hook.sh >/dev/null || exit 1
