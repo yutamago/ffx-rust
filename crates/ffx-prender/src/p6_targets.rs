@@ -194,6 +194,17 @@ pub const DATA_BLOCK_COUNT: u32 = 0x0049_8770;
 pub const GROUP_SEGMENT: u32 = 0x0049_8a30;
 pub const BLOCK_RECORD_CTOR: u32 = 0x0055_dd30;
 
+/// `0x006148d0`'s callees: the job processor's start `0x005980c0(a;
+/// id)`, the range object's destructor `0x006141a0(range)` (thiscall), and
+/// the warnings "issued job count overflow..." and "Dynamic geometry job is
+/// too big..." (`PhyrePrintf(1, text)`).
+pub const START_PROCESSOR: u32 = 0x0059_80c0;
+pub const RANGE_DTOR: u32 = 0x0061_41a0;
+pub const OVERFLOW_WARNING: u32 = 0x00b3_f050;
+pub const TOO_BIG_WARNING: u32 = 0x00b3_f090;
+/// `0x006148d0`'s frame from `ebp - 0x34`.
+pub const JOBS_FRAME: u32 = 0x24;
+
 pub mod bridge {
     //! The originals over game memory.
 
@@ -209,6 +220,7 @@ pub mod bridge {
         CommonShaders, GATHER_RECORDS, INSTANCE_STRIDE, INTERLOCKED_ADD, MEMCPY, MeshCommands,
         STATE_ELEMENT, TEXTURE_POINTERS,
     };
+    use super::{OVERFLOW_WARNING, RANGE_DTOR, START_PROCESSOR, TOO_BIG_WARNING};
     use crate::p6_encode::bridge::full;
     use crate::p6_post::bridge::half_target;
 
@@ -1110,5 +1122,125 @@ pub mod bridge {
         let rec: u32 = h.read(record_out);
         h.write(rec.wrapping_add(0xc), if wi > 0 { 8u8 } else { 12 });
         bound
+    }
+
+    /// `0x006148d0(state; a, b, first, end)` (thiscall, `ret 0x10`): the
+    /// render thread issues the dynamic-geometry jobs of the mesh commands
+    /// `[first, end)` (0x48 bytes; opcodes 1 and 2). A command's dynamic
+    /// mesh (`+0xc`) runs its virtual slot 2 `(a, b, &job, &out, segment,
+    /// target, &range, ctx)` when one of its instance's (`+0x10`) data
+    /// blocks is active or its segment context (`+0x3c`, when the segment
+    /// has one) is; else the target's (`+0x14`) `+4` is cleared. Before the
+    /// first job the state's processor is started (`0x005980c0(a; byte
+    /// [state])`, byte `[state + 1]` set); at 0x400 jobs the overflow
+    /// warning stops it. A job goes into the state's list (`+0x2008`
+    /// count, 8-byte entries from `+8`); opcode 2 keeps `out` at the
+    /// command's `+0x44`. A failure stops it, except 0xd (too big) while
+    /// starting, which warns. Returns the command it stopped at, also
+    /// stored at `+4`.
+    ///
+    /// `frame`: the original's `ebp - 0x34` (the range `{count | 1 << 31,
+    /// instance}` at `+0`, `out` at `+0xc`, `job` at `+0x20`), destroyed
+    /// by `0x006141a0` after each call. The second result: the starting
+    /// flag the original leaves in `first`'s top byte, when it set one.
+    pub fn issue_dynamic_jobs(
+        h: &mut impl Host,
+        state: u32,
+        frame: u32,
+        args: [u32; 4],
+    ) -> (u32, Option<u8>) {
+        let [a, b, first, end] = args;
+        let (range, out_at, job_at) = (frame, frame + 0xc, frame + 0x20);
+        let mut starting_slot = None;
+        let mut cmd = first;
+        while cmd != end {
+            let op: u32 = h.read(cmd);
+            let mesh: u32 = h.read(cmd + 0xc);
+            if (op == 1 || op == 2) && mesh != 0 {
+                let segment = u32::from(h.read::<u16>(cmd + 0x24));
+                let instance: u32 = h.read(cmd + 0x10);
+                let segs: u32 = h.read(mesh + 0x14);
+                let ctx = if h.read::<u32>(segs.wrapping_add(segment << 4) + 0xc) == 0 {
+                    0
+                } else {
+                    h.read(cmd + 0x3c)
+                };
+                let n = h.call_sym(DATA_BLOCK_COUNT, Conv::Thiscall(mesh), &[segment]);
+                let mut active = false;
+                if instance != 0 {
+                    for k in 0..n {
+                        let p = instance + 0x14 + 0x40 * k;
+                        if h.read::<u32>(p + 0x24) != 0 && h.read::<u8>(p) != 0 {
+                            active = true;
+                            break;
+                        }
+                    }
+                }
+                if !active {
+                    active =
+                        ctx != 0 && h.read::<u32>(ctx + 0x34) != 0 && h.read::<u8>(ctx + 0xe) != 0;
+                }
+                if active {
+                    let starting = h.read::<u8>(state + 1) == 0;
+                    starting_slot = Some(u8::from(starting));
+                    if starting {
+                        let id: u8 = h.read(state);
+                        h.call_sym(START_PROCESSOR, Conv::Thiscall(a), &[u32::from(id)]);
+                        h.write(state + 1, 1u8);
+                    }
+                    if h.read::<u32>(state + 0x2008) >= 0x400 {
+                        let text = h.rebase(OVERFLOW_WARNING);
+                        h.call_sym(PRINTF, Conv::Cdecl, &[1, text]);
+                        break;
+                    }
+                    let count = if instance == 0 { 0 } else { n };
+                    h.write(job_at, 0u32);
+                    h.write(out_at, 0u32);
+                    h.write(range + 4, instance);
+                    h.write(range, count | 0x8000_0000);
+                    let target: u32 = h.read(cmd + 0x14);
+                    let r = h.call_virtual(
+                        mesh,
+                        2,
+                        &[a, b, job_at, out_at, segment, target, range, ctx],
+                    );
+                    if r != 0 {
+                        if !starting || r != 0xd {
+                            h.call_sym(RANGE_DTOR, Conv::Thiscall(range), &[]);
+                            break;
+                        }
+                        if h.read::<u32>(job_at) == 0 {
+                            let target: u32 = h.read(cmd + 0x14);
+                            if target != 0 {
+                                h.write(target + 4, 0u32);
+                            }
+                        }
+                        let text = h.rebase(TOO_BIG_WARNING);
+                        h.call_sym(PRINTF, Conv::Cdecl, &[1, text]);
+                    }
+                    let job: u32 = h.read(job_at);
+                    if job != 0 {
+                        let i: u32 = h.read(state + 0x2008);
+                        h.write(state + 0x2008, i.wrapping_add(1));
+                        let entry = state.wrapping_add(8 * i);
+                        h.write(entry.wrapping_add(8), mesh);
+                        h.write(entry.wrapping_add(0xc), job);
+                    }
+                    if op == 2 {
+                        let out: u32 = h.read(out_at);
+                        h.write(cmd + 0x44, out);
+                    }
+                    h.call_sym(RANGE_DTOR, Conv::Thiscall(range), &[]);
+                } else {
+                    let target: u32 = h.read(cmd + 0x14);
+                    if target != 0 {
+                        h.write(target + 4, 0u32);
+                    }
+                }
+            }
+            cmd = cmd.wrapping_add(0x48);
+        }
+        h.write(state + 4, cmd);
+        (cmd, starting_slot)
     }
 }

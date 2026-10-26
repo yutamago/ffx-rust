@@ -94,4 +94,16 @@ ported! {
         std::hint::black_box(&mut heap);
         r
     }
+    /// `PApplication::resize(this)` (vtable slot 9; `FFXApplication_resize`
+    /// jumps here) -> 0 or the first error.
+    Phyre_PFramework_PApplication_resize_0062c260 @ 0x0062_c260 => extern "thiscall" fn x_0062c260(this: u32) -> u32 {
+        let mut frame = StackFrame::<8>::new();
+        lt::bridge::resize(&mut mem(), this, frame.at())
+    }
+    /// The render thread's dynamic-geometry jobs (`this` the job state; a,
+    /// b, first, end) -> the command it stopped at.
+    Phyre_PRendering_PRenderThread_issueDynamicJobs_006148d0 @ 0x0061_48d0 => extern "thiscall" fn x_006148d0(this: u32, a: u32, b: u32, first: u32, end: u32) -> u32 {
+        let mut frame = StackFrame::<9>::new();
+        tg::bridge::issue_dynamic_jobs(&mut mem(), this, frame.at(), [a, b, first, end]).0
+    }
 }

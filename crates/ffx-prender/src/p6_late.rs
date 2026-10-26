@@ -88,6 +88,22 @@ pub const GLOW_GPU_TARGETS: [u32; 3] = [0x90, 0x94, 0x98];
 pub const GLOW_GPU_INLINE: [u32; 4] = [0x9c, 0xa0, 0xa4, 0xa8];
 pub const GLOW_BASE_DTOR: u32 = 0x009f_e020;
 
+/// `PApplication::resize`' callees (thiscall): the lock object's
+/// constructor and destructor on the frame, the render state cache
+/// (`GetRenderStateCache`, cdecl), its viewport size `0x00594f40(cache;
+/// &w, &h, &x)`, the back buffer's resize `0x00599210(cache; w, h)`, the
+/// renderer's `setViewport` `0x005bc060(renderer; x, y, w, h)` and a view's
+/// rectangle `0x0062cba0(view; x, y, w, h)`.
+pub const LOCK_CTOR: u32 = 0x0046_3d50;
+pub const UNLOCK: u32 = 0x0046_3e90;
+pub const RENDER_STATE_CACHE: u32 = 0x004f_d8b0;
+pub const VIEWPORT_OF: u32 = 0x0059_4f40;
+pub const RESIZE_BACK_BUFFER: u32 = 0x0059_9210;
+pub const SET_VIEWPORT: u32 = 0x005b_c060;
+pub const SET_RECT: u32 = 0x0062_cba0;
+/// `resize`'s frame from `ebp - 0x2c`.
+pub const RESIZE_FRAME: u32 = 0x20;
+
 pub mod bridge {
     //! The originals over game memory.
 
@@ -97,6 +113,10 @@ pub mod bridge {
         REGISTER_TYPE, SET_WINDOW_LONG, SET_WINDOW_POS, SETTINGS, UTILITY, UTILITY_READY,
     };
     use super::{GLOW_BASE_DTOR, GLOW_GPU_INLINE, GLOW_GPU_TARGETS, GLOW_GPU_VTABLE};
+    use super::{
+        LOCK_CTOR, RENDER_STATE_CACHE, RESIZE_BACK_BUFFER, SET_RECT, SET_VIEWPORT, UNLOCK,
+        VIEWPORT_OF,
+    };
     use crate::p6_post::{TARGET_RELEASE, bridge::post_dtor, post_dtor as post_dtor_of};
     use crate::p6_small::bridge::target_release;
 
@@ -211,5 +231,62 @@ pub mod bridge {
                 0x40,
             ],
         )
+    }
+
+    /// `PApplication::resize(app)` (`0x0062c260`, thiscall; vtable slot 9,
+    /// and `FFXApplication_resize`'s tail): under the lock object in the
+    /// frame (`0x00463d50`/`0x00463e90`), the render state cache's viewport
+    /// size read into the frame (`0x00594f40(cache; &w, &h, &x)`), the
+    /// back buffer resized to the application's size (`+0x26c`, `+0x270`;
+    /// `0x00599210`), the renderer's viewport set (`+0x124`,
+    /// `0x005bc060(0, 0, w, h)`; its error returned); then every view
+    /// (`+0x2bc` count, pointers at `+0x2c0`) has its rectangle (`+0x14..
+    /// +0x20`) scaled from the old size to the new one when they differ
+    /// (`0x0062cba0`) and its virtual slot 4 called, the first error
+    /// returned. 0.
+    ///
+    /// `frame`: the original's `ebp - 0x2c` (x, the lock at `+4`, height
+    /// `+0x18`, width `+0x1c`). The original divides by the old size; a 0
+    /// there is a divide fault in it, and 0 here (shims never panic).
+    pub fn resize(h: &mut impl Host, app: u32, frame: u32) -> u32 {
+        let lock = frame + 4;
+        h.call_sym(LOCK_CTOR, Conv::Thiscall(lock), &[]);
+        let cache = h.call_sym(RENDER_STATE_CACHE, Conv::Cdecl, &[]);
+        let (w_at, h_at) = (frame + 0x1c, frame + 0x18);
+        h.call_sym(VIEWPORT_OF, Conv::Thiscall(cache), &[w_at, h_at, frame]);
+        let cache = h.call_sym(RENDER_STATE_CACHE, Conv::Cdecl, &[]);
+        let (w, ht): (u32, u32) = (h.read(app + 0x26c), h.read(app + 0x270));
+        h.call_sym(RESIZE_BACK_BUFFER, Conv::Thiscall(cache), &[w, ht]);
+        let (w, ht): (u32, u32) = (h.read(app + 0x26c), h.read(app + 0x270));
+        let mut e = h.call_sym(SET_VIEWPORT, Conv::Thiscall(app + 0x124), &[0, 0, w, ht]);
+        if e == 0 {
+            let mut i = 0u32;
+            while i < h.read::<u32>(app + 0x2bc) & 0x7fff_ffff {
+                let w: u32 = h.read(app + 0x26c);
+                let old_w: u32 = h.read(w_at);
+                let old_h: u32 = h.read(h_at);
+                if w != old_w || h.read::<u32>(app + 0x270) != old_h {
+                    let views: u32 = h.read(app + 0x2c0);
+                    let view: u32 = h.read(views + 4 * i);
+                    let div = |a: u32, b: u32| a.checked_div(b).unwrap_or(0);
+                    let x = div(w.wrapping_mul(h.read(view + 0x14)), old_w);
+                    let ht: u32 = h.read(app + 0x270);
+                    let y = div(ht.wrapping_mul(h.read(view + 0x18)), old_h);
+                    let w: u32 = h.read(app + 0x26c);
+                    let vw = div(w.wrapping_mul(h.read(view + 0x1c)), old_w);
+                    let vh = div(ht.wrapping_mul(h.read(view + 0x20)), old_h);
+                    h.call_sym(SET_RECT, Conv::Thiscall(view), &[x, y, vw, vh]);
+                }
+                let views: u32 = h.read(app + 0x2c0);
+                let view: u32 = h.read(views + 4 * i);
+                e = h.call_virtual(view, 4, &[]);
+                if e != 0 {
+                    break;
+                }
+                i += 1;
+            }
+        }
+        h.call_sym(UNLOCK, Conv::Thiscall(lock), &[]);
+        e
     }
 }

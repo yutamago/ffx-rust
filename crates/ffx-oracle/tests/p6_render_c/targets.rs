@@ -856,3 +856,149 @@ fn populate_with_dynamic_streams_matches_the_original() {
         assert!(seen.iter().all(|&n| n > 20), "{name}: {seen:?}");
     }
 }
+
+/// A dynamic mesh's job stand-in (virtual slot 2, thiscall, eight words,
+/// `ret 0x20`): logs `ecx` and its first six words, then for its `k`-th
+/// call (counter at `tab`) stores `tab[1 + 3k]` through its third word
+/// (the job), `tab[2 + 3k]` through its fourth (out) and returns
+/// `tab[3 + 3k]`.
+fn mesh_job_stub(t: &mut Twins, tab: u32) -> u32 {
+    let mut c = Vec::new();
+    let log = t.log;
+    c.push(0xa1);
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(0x6148_d002u32.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    // a, b, then segment, target, range and ctx (the job and out
+    // pointers are checked through what the callee stores)
+    for (i, w) in [0u8, 1, 4, 5, 6, 7].into_iter().enumerate() {
+        c.extend([0x8b, 0x54, 0x24, 4 + 4 * w]); // mov edx, [esp+4+4w]
+        c.extend([0x89, 0x50, 8 + 4 * i as u8]); // mov [eax+8+4i], edx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xa1);
+    c.extend(tab.to_le_bytes()); // mov eax, [tab]
+    c.extend([0xff, 0x05]);
+    c.extend(tab.to_le_bytes()); // inc dword [tab]
+    c.extend([0x8d, 0x04, 0x40]); // lea eax, [eax+eax*2]
+    c.extend([0xc1, 0xe0, 0x02]); // shl eax, 2
+    c.extend([0x8b, 0x90]);
+    c.extend((tab + 4).to_le_bytes()); // mov edx, [eax+tab+4]
+    c.extend([0x8b, 0x4c, 0x24, 0x0c, 0x89, 0x11]); // mov ecx, [esp+0xc]; mov [ecx], edx
+    c.extend([0x8b, 0x90]);
+    c.extend((tab + 8).to_le_bytes()); // mov edx, [eax+tab+8]
+    c.extend([0x8b, 0x4c, 0x24, 0x10, 0x89, 0x11]); // mov ecx, [esp+0x10]; mov [ecx], edx
+    c.extend([0x8b, 0x80]);
+    c.extend((tab + 0xc).to_le_bytes()); // mov eax, [eax+tab+0xc]
+    c.extend([0xc2, 0x20, 0x00]); // ret 0x20
+    t.code(&c)
+}
+
+#[test]
+fn issue_dynamic_jobs_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_0f0a);
+        t.stub(tg::START_PROCESSOR, true, 1, 1, 0x61);
+        t.stub(tg::RANGE_DTOR, true, 0, 0, 0x62);
+        t.stub(tg::PRINTF, false, 2, 0, 0x63);
+        let tab = t.zeros(4 + 12 * 8);
+        let job = mesh_job_stub(&mut t, tab);
+        let vt = t.zeros(0x10);
+        t.w32(vt + 8, job);
+        let mut stops = [0u32; 2];
+        for i in 0..150u32 {
+            t.w32(tab, 0);
+            for k in 0..8u32 {
+                let r = [0, 0, 0, 0xd, 0x21][rng.below(5) as usize];
+                let j = if rng.chance(3) { 0 } else { rng.next() };
+                t.w32(tab + 4 + 12 * k, j);
+                t.w32(tab + 8 + 12 * k, rng.next());
+                t.w32(tab + 0xc + 12 * k, r);
+            }
+            let n = 1 + rng.below(5);
+            let counts: Vec<u32> = (0..n).map(|_| rng.below(4)).collect();
+            t.stub_seq(tg::DATA_BLOCK_COUNT, true, 1, 1, &counts);
+            let first = t.zeros(0x48 * n as usize);
+            for k in 0..n {
+                let c = first + 0x48 * k;
+                t.w32(c, [0, 1, 2, 2, 1, 3][rng.below(6) as usize]);
+                let mesh = if rng.chance(8) {
+                    0
+                } else {
+                    let m = object(&mut t, &mut rng, 8, false);
+                    t.w32(m, vt);
+                    let segs = object(&mut t, &mut rng, 12, false);
+                    for g in 0..3 {
+                        if rng.chance(2) {
+                            t.w32(segs + 16 * g + 0xc, 0);
+                        }
+                    }
+                    t.w32(m + 0x14, segs);
+                    m
+                };
+                t.w32(c + 0xc, mesh);
+                t.write(c + 0x24, &(rng.below(3) as u16).to_le_bytes());
+                let instance = if rng.chance(3) {
+                    0
+                } else {
+                    let inst = t.zeros(0x180);
+                    for b in 0..4 {
+                        let p = inst + 0x14 + 0x40 * b;
+                        t.write(p, &[u8::from(rng.chance(3))]);
+                        t.w32(p + 0x24, u32::from(rng.chance(2)));
+                    }
+                    inst
+                };
+                t.w32(c + 0x10, instance);
+                let no_target = rng.chance(4);
+                let target = object(&mut t, &mut rng, 2, no_target);
+                t.w32(c + 0x14, target);
+                let ctx = if rng.chance(3) {
+                    0
+                } else {
+                    let x = t.zeros(0x40);
+                    t.w32(x + 0x34, u32::from(rng.chance(3)));
+                    t.write(x + 0xe, &[u8::from(rng.chance(3))]);
+                    x
+                };
+                t.w32(c + 0x3c, ctx);
+            }
+            let state = t.zeros(0x2010);
+            t.write(state, &[rng.next() as u8, u8::from(rng.chance(2))]);
+            let jobs = if rng.chance(8) {
+                0x3ff + rng.below(2)
+            } else {
+                rng.below(8)
+            };
+            t.w32(state + 0x2008, jobs);
+            let (a, b) = (rng.next(), rng.next());
+            let end = first + 0x48 * n;
+            let args = [a, b, first, end];
+            run_framed(
+                &mut t,
+                &format!("{name} dynamic jobs #{i}"),
+                0x0061_48d0,
+                Conv::Thiscall(state),
+                &args,
+                0x34,
+                8,
+                |g, ebp| {
+                    let (r, flag) = tg::bridge::issue_dynamic_jobs(g, state, ebp - 0x34, args);
+                    if let Some(f) = flag {
+                        g.write(ebp + 0x13, f);
+                    }
+                    r
+                },
+            );
+            let stopped: u32 = Mem::read(&t.a, state + 4);
+            stops[usize::from(stopped != end)] += 1;
+            t.unstub(tg::DATA_BLOCK_COUNT);
+        }
+        assert!(stops.iter().all(|&n| n > 10), "{name}: {stops:?}");
+    }
+}

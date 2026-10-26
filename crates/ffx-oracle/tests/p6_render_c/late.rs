@@ -154,3 +154,74 @@ fn glow_gpu_dtor_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn resize_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_1004);
+        t.stub(0x004f_ee70, true, 0, 0, 0);
+        t.stub(0x0094_9207, false, 1, 0, 0);
+        t.stub(lt::LOCK_CTOR, true, 0, 0, 0x31);
+        t.stub(lt::UNLOCK, true, 0, 0, 0x32);
+        t.stub(lt::RESIZE_BACK_BUFFER, true, 2, 2, 0x33);
+        t.stub(lt::SET_RECT, true, 4, 4, 0x34);
+        // the viewport size: (w, h) from a cell, x 0x55
+        let size = t.zeros(8);
+        let mut c = vec![0xa1];
+        c.extend(size.to_le_bytes()); // mov eax, [size]
+        c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x02]); // mov edx, [esp+4]; mov [edx], eax
+        c.push(0xa1);
+        c.extend((size + 4).to_le_bytes()); // mov eax, [size+4]
+        c.extend([0x8b, 0x54, 0x24, 0x08, 0x89, 0x02]); // mov edx, [esp+8]; mov [edx], eax
+        c.extend([0x8b, 0x54, 0x24, 0x0c]); // mov edx, [esp+0xc]
+        c.extend([0xc7, 0x02, 0x55, 0, 0, 0]); // mov dword [edx], 0x55
+        c.extend([0xc2, 0x0c, 0x00]); // ret 0xc
+        let viewport = t.code(&c);
+        t.jump(lt::VIEWPORT_OF, viewport);
+        let guard = t.rebase(0x00c9_628c);
+        let mut paths = [0u32; 3];
+        for i in 0..80u32 {
+            t.w32(guard, rng.next() & !1 | u32::from(rng.chance(2)));
+            let e = if rng.chance(6) { 0x21 } else { 0 };
+            t.stub(lt::SET_VIEWPORT, true, 4, 4, e);
+            let app = object(&mut t, &mut rng, 0xc0, false);
+            let (w, h) = (1 + rng.below(2000), 1 + rng.below(1200));
+            t.w32(app + 0x26c, w);
+            t.w32(app + 0x270, h);
+            let (ow, oh) = match rng.below(3) {
+                0 => (w, h),
+                1 => (w, 1 + rng.below(1200)),
+                _ => (1 + rng.below(2000), 1 + rng.below(1200)),
+            };
+            t.w32(size, ow);
+            t.w32(size + 4, oh);
+            let n = rng.below(4);
+            let views = t.zeros(4 * n as usize + 4);
+            for k in 0..n {
+                let r = if rng.chance(5) { 0x40 + k } else { 0 };
+                let vt = t.vtable(6, &[(4, 0, r)]);
+                let v = object(&mut t, &mut rng, 10, false);
+                t.w32(v, vt);
+                for off in [0x14, 0x18, 0x1c, 0x20] {
+                    t.w32(v + off, rng.below(0x10000));
+                }
+                t.w32(views + 4 * k, v);
+            }
+            t.w32(app + 0x2bc, n | (rng.next() & 0x8000_0000));
+            t.w32(app + 0x2c0, views);
+            run_framed(
+                &mut t,
+                &format!("{name} resize #{i}"),
+                0x0062_c260,
+                Conv::Thiscall(app),
+                &[],
+                0x2c,
+                8,
+                |g, ebp| lt::bridge::resize(g, app, ebp - 0x2c),
+            );
+            paths[if e != 0 { 2 } else { usize::from(n > 0) }] += 1;
+            t.unstub(lt::SET_VIEWPORT);
+        }
+        assert!(paths.iter().all(|&n| n > 5), "{name}: {paths:?}");
+    }
+}
