@@ -29,7 +29,7 @@ use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_prender::{
     basic, class_slots as descriptor, h1_array_type, h1_bind, h1_camera, h1_small, h1_small2,
-    h1_small3, registry, texture,
+    h1_small3, h1_small4, registry, texture,
 };
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -3051,6 +3051,8 @@ fn r3_projection_builders_match_the_original() {
     for (name, mut t) in Twins::all() {
         let mut rng = Rng(0x0456_b801);
         for case in 0..400u32 {
+            let log = t.log;
+            t.w32(log, 0);
             let out = pattern(&mut t, &mut rng, 0x40);
             let fov = camera_float(&mut rng, 0.05, 3.1);
             let aspect = camera_float(&mut rng, 0.3, 3.0);
@@ -3123,6 +3125,8 @@ fn r3_camera_updates_match_the_original() {
     for (name, mut t) in Twins::all() {
         let mut rng = Rng(0x0456_d101);
         for case in 0..300u32 {
+            let log = t.log;
+            t.w32(log, 0);
             let cam = pattern(&mut t, &mut rng, 0x160);
             t.w32(
                 cam + camera::NEAR,
@@ -3202,6 +3206,8 @@ fn r3_find_of_class_matches_the_original() {
         // or 0
         let classes: Vec<u32> = (0..6).map(|_| pattern(&mut t, &mut rng, 0x44)).collect();
         for case in 0..300u32 {
+            let log = t.log;
+            t.w32(log, 0);
             for (i, &k) in classes.iter().enumerate() {
                 let link = match rng.next() % 4 {
                     0 => 0,
@@ -3271,6 +3277,8 @@ fn r3_array_types_match_the_original() {
             }
         }
         for case in 0..64u32 {
+            let log = t.log;
+            t.w32(log, 0);
             for &(f, k) in ARRAY_KINDS {
                 assert_eq!(kind_of(f), k);
                 let guard = t.rebase(k.guard);
@@ -3347,6 +3355,8 @@ fn r3_dtors_match_the_original() {
             Ret::ThisAnd(ret),
         );
         for case in 0..200u32 {
+            let log = t.log;
+            t.w32(log, 0);
             t.w32(ret, rng.next());
             for &(f, k) in DTORS {
                 assert_eq!(dtor_of(f), k);
@@ -3397,6 +3407,8 @@ fn r3_entries_match_the_original() {
         t.stub(h1_small3::ELEMENT40_DTOR, true, 0, 0, Ret::Cell(ret));
         t.stub(basic::FREE, false, 1, 0, Ret::Cell(ret));
         for case in 0..120u32 {
+            let log = t.log;
+            t.w32(log, 0);
             t.w32(ret, rng.next());
             let e = pattern(&mut t, &mut rng, 0x6c);
             t.check(
@@ -3471,6 +3483,8 @@ fn r3_view_ctor_and_lock_match_the_original() {
         let import = t.rebase(h1_small3::INTERLOCKED_CAS);
         t.w32(import, cas);
         for case in 0..200u32 {
+            let log = t.log;
+            t.w32(log, 0);
             t.w32(ret, rng.next());
             let this = pattern(&mut t, &mut rng, 0x40);
             let p = match case % 5 {
@@ -3518,6 +3532,8 @@ fn r3_render_scope_matches_the_original() {
         t.stub(s::LOCK_RELEASE, true, 0, 0, Ret::ThisAnd(ret));
         let (lg, ig) = (t.rebase(s::LOCK_GUARD), t.rebase(s::INTERFACE_GUARD));
         for case in 0..100u32 {
+            let log = t.log;
+            t.w32(log, 0);
             t.w32(ret, rng.next());
             t.w32(ret + 4, rng.next() % 3);
             t.w32(lg, rng.next() % 4);
@@ -3562,6 +3578,8 @@ fn r3_resizes_match_the_original() {
             t.stub(k.init, false, 2, 0, Ret::Imm(0x1e));
         }
         for case in 0..200u32 {
+            let log = t.log;
+            t.w32(log, 0);
             for &(f, k) in RESIZES {
                 assert_eq!(resize_of(f), k);
                 let block = if case % 6 == 0 { 0 } else { rng.next() | 0x10 };
@@ -3612,6 +3630,8 @@ fn r3_world_initialize_matches_the_original() {
         t.stub(s::GLOBAL_NAMESPACE, false, 0, 0, Ret::Cell(cells + 4));
         let count_global = t.rebase(s::WORLD_CLASS_COUNT);
         for case in 0..150u32 {
+            let log = t.log;
+            t.w32(log, 0);
             let count = rng.next() % 5;
             t.w32(count_global, count);
             // the new block: entry 0 linked to itself
@@ -3707,6 +3727,8 @@ fn r3_parameter_buffer_and_pass_match_the_original() {
             t.stub(f, true, words, words, Ret::Cell(cells + 4 + 4 * i as u32));
         }
         for case in 0..200u32 {
+            let log = t.log;
+            t.w32(log, 0);
             t.w32(cells, rng.next());
             t.w32(cells + 0x18, rng.next());
             let p = pattern(&mut t, &mut rng, 0x10);
@@ -3763,6 +3785,8 @@ fn r3_visit_nested_matches_the_original() {
         let object = pattern(&mut t, &mut rng, 0x10);
         t.w32(object, vtable);
         for case in 0..400u32 {
+            let log = t.log;
+            t.w32(log, 0);
             let visitor = pattern(&mut t, &mut rng, 0x20);
             t.w32(visitor + 0x18, u32::from(case % 10 == 0));
             t.w32(visitor + 0xc, rng.next() % 64);
@@ -3846,6 +3870,8 @@ fn r3_switch_for_name_matches_the_original() {
         t.stub(s::SWITCH_CTOR, true, 2, 2, Ret::ThisAnd(cells + 4));
         t.w32(cells + 4, 0xffff_fff0);
         for case in 0..200u32 {
+            let log = t.log;
+            t.w32(log, 0);
             let found = if case % 3 == 0 { rng.next() | 1 } else { 0 };
             t.w32(cells, found);
             let n = if case % 10 == 0 {
@@ -3874,6 +3900,302 @@ fn r3_switch_for_name_matches_the_original() {
                 Conv::Cdecl,
                 &[n],
                 |g| Out::U32(s::bridge::switch_for_name(g, n)),
+            );
+        }
+    }
+}
+
+// ---- round 3 batch 3: initialize sequences, rings, more destructors (h1_small4) ----
+
+/// `op_shape_draw`'s body (31 KB): no test of this file runs it, so the
+/// round 3 tests with many stubs take it as a larger cave.
+const BIG_CAVE: u32 = 0x007e_d0c0;
+const BIG_CAVE_LEN: u32 = 31_008;
+
+impl Twins {
+    /// Stubs go into [`BIG_CAVE`] from here on.
+    fn big_cave(&mut self) {
+        self.cave_next = self.rebase(BIG_CAVE);
+        self.cave_end = self.cave_next + BIG_CAVE_LEN;
+    }
+
+    /// A jump from the original `sym` to `code` placed in the cave, which
+    /// ends with a jump to `then` (a recording stub).
+    fn stub_with_prefix(&mut self, sym: u32, prefix: &[u8], then: u32) {
+        let at = self.cave_next;
+        let mut c = prefix.to_vec();
+        c.push(0xe9);
+        c.extend(then.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let target = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(target + 5).to_le_bytes());
+        self.write(target, &j);
+        self.stubs.insert(sym, code);
+    }
+}
+
+/// Recording stubs for the steps' callees: `f()` / `f(arg)`, each
+/// returning a value of its own.
+fn stub_steps(t: &mut Twins, steps: &[h1_small4::Step]) {
+    use h1_small4::Step;
+    t.stub(descriptor::REGISTER_TYPE, false, 1, 0, Ret::Imm(0x0101));
+    for &s in steps {
+        match s {
+            Step::Call(f) | Step::Register(f) => {
+                t.stub(f, false, 0, 0, Ret::Imm(f ^ 0x5a00_0000));
+            }
+            Step::CallWith(f, _) => t.stub(f, false, 1, 0, Ret::Imm(f ^ 0xa500_0000)),
+        }
+    }
+}
+
+#[test]
+fn r3_initialize_sequences_match_the_original() {
+    use h1_small4 as s;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0043_2203);
+        t.big_cave();
+        stub_steps(&mut t, s::GEOMETRY_STEPS);
+        t.check(
+            &format!("{name} geometry initialize"),
+            0x0043_22c0,
+            Conv::Cdecl,
+            &[],
+            |g| Out::U32(s::bridge::geometry_initialize(g, s::GEOMETRY_STEPS)),
+        );
+        let geometry_calls = t.log_entries();
+        assert_eq!(geometry_calls, 43, "{name}: geometry calls");
+        stub_steps(&mut t, s::RENDERING_STEPS);
+        // the start-up objects: method 1 sets the started byte from a cell
+        let cells = t.zeros(0x20);
+        let started = t.rebase(s::STARTED);
+        for (k, obj) in s::STARTUP_OBJECTS.into_iter().enumerate() {
+            let record = t.stub_code(0x0b0 + k as u32, true, 0, 0, Ret::Imm(0));
+            let mut c = vec![0xa0];
+            c.extend((cells + k as u32).to_le_bytes()); // mov al, [cell k]
+            c.push(0xa2);
+            c.extend(started.to_le_bytes()); // mov [started], al
+            c.push(0xe9);
+            let at = t.cave_next;
+            c.extend(record.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let method = t.code(&c);
+            let vtable = t.zeros(8);
+            t.w32(vtable + 4, method);
+            let obj = t.rebase(obj);
+            t.w32(obj, vtable);
+        }
+        for (i, f) in [
+            s::TEXTURE_FORMATS_INIT,
+            s::CONTEXT_INIT,
+            s::DEVICE_INIT,
+            s::LAST_INIT,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let n = u32::from(f == s::CONTEXT_INIT);
+            t.stub(f, false, n, 0, Ret::Cell(cells + 4 + 4 * i as u32));
+        }
+        for case in 0..40u32 {
+            // the log holds 1024 calls: start it over each case
+            let log = t.log;
+            t.w32(log, 0);
+            t.write(started, &[u8::from(case % 5 == 0)]);
+            for k in 0..3 {
+                t.write(cells + k, &[u8::from(rng.next().is_multiple_of(3))]);
+            }
+            for i in 0..4 {
+                let v = if rng.next().is_multiple_of(3) {
+                    rng.next()
+                } else {
+                    0
+                };
+                t.w32(cells + 4 + 4 * i, v);
+            }
+            t.check(
+                &format!("{name} rendering initialize {case}"),
+                0x0043_2820,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(s::bridge::rendering_initialize(g, s::RENDERING_STEPS)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r3_rings_match_the_original() {
+    use h1_small4::{RINGS, ring_of};
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0434_c503);
+        let cells = t.zeros(0x10);
+        // the wait: decrements the busy word whose address is in cells+12
+        let sleep = t.stub_code(h1_small4::SLEEP, false, 1, 0, Ret::Imm(0));
+        let mut c = vec![0xa1];
+        c.extend((cells + 12).to_le_bytes()); // mov eax, [cells+12]
+        c.extend([0xff, 0x08]); // dec dword [eax]
+        t.stub_with_prefix(h1_small4::SLEEP, &c, sleep);
+        for &(_, k) in RINGS {
+            t.stub(k.ready, true, 0, 0, Ret::Cell(cells));
+            t.stub(k.prepare, true, 0, 0, Ret::Cell(cells + 4));
+            t.stub(k.submit, true, 2, 2, Ret::Cell(cells + 8));
+        }
+        for case in 0..300u32 {
+            let log = t.log;
+            t.w32(log, 0);
+            for &(f, k) in RINGS {
+                assert_eq!(ring_of(f), k);
+                t.w32(
+                    cells,
+                    rng.next() & if case % 2 == 0 { 0xff00 } else { 0x1ff },
+                );
+                t.w32(cells + 4, if rng.next().is_multiple_of(4) { 9 } else { 0 });
+                t.w32(cells + 8, if rng.next().is_multiple_of(3) { 0 } else { 5 });
+                let this = pattern(&mut t, &mut rng, 0x20);
+                let n = 1 + rng.next() % 3;
+                let word = n | (rng.next() & 0x8000_0000);
+                t.w32(this + k.count, word);
+                let index = rng.next() % n;
+                t.w32(this + k.index, index);
+                let slots = pattern(&mut t, &mut rng, 20 * 3 + 0x14);
+                if n > 1 {
+                    t.w32(this + k.data, slots);
+                }
+                let base = if n > 1 { slots } else { this + k.data };
+                let slot = if index + 1 == n { 0 } else { index + 1 };
+                let busy = base + 20 * slot + 0x10;
+                let wait = (rng.next() % 4) as i32 - 1;
+                t.w32(busy, wait as u32);
+                t.w32(cells + 12, busy);
+                let x = rng.next();
+                t.check(
+                    &format!("{name} ring {f:#x} {case}"),
+                    f,
+                    Conv::Thiscall(this),
+                    &[x],
+                    |g| Out::U32(h1_small4::bridge::ring_submit(g, &k, this, x)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn r3_segment_dtors_match_the_original() {
+    use h1_small4 as s;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0433_af03);
+        let ret = t.zeros(4);
+        t.stub(basic::FREE, false, 1, 0, Ret::Cell(ret));
+        t.stub(h1_small3::RELEASE_TAGGED_WORDS, false, 2, 0, Ret::Cell(ret));
+        t.stub(s::DESTROY_ENTRIES, false, 2, 0, Ret::Cell(ret));
+        for case in 0..300u32 {
+            let log = t.log;
+            t.w32(log, 0);
+            t.w32(ret, rng.next());
+            let this = pattern(&mut t, &mut rng, 0x40);
+            for k in 0..7 {
+                let w = if case % 3 == 0 && k != 6 {
+                    // the PSharray's counts: 0, 1 and more
+                    (rng.next() % 3) | (rng.next() & 0x8000_0000)
+                } else {
+                    count_word(&mut rng)
+                };
+                t.w32(this + 8 * k, w);
+                if rng.next().is_multiple_of(4) {
+                    t.w32(this + 8 * k + 4, 0);
+                }
+            }
+            t.check(
+                &format!("{name} segment dtor {case}"),
+                0x0043_3af0,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(s::bridge::segment_dtor(g, this)),
+            );
+            let this = pattern(&mut t, &mut rng, 0x40);
+            for at in [0, 8, 0x18, 0x20, 0x28, 0x30] {
+                let w = if rng.next().is_multiple_of(4) {
+                    0
+                } else {
+                    count_word(&mut rng)
+                };
+                t.w32(this + at, w);
+                if rng.next().is_multiple_of(4) {
+                    t.w32(this + at + 4, 0);
+                }
+            }
+            if case % 5 == 0 {
+                t.w32(this + 0x34, this + 0x34);
+            }
+            t.check(
+                &format!("{name} arrays dtor {case}"),
+                0x0049_5a10,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(s::bridge::arrays_dtor(g, this)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r3_format_desc_and_resources_match_the_original() {
+    use h1_small4 as s;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x04c0_c003);
+        for case in 0..400u32 {
+            let log = t.log;
+            t.w32(log, 0);
+            let this = pattern(&mut t, &mut rng, 0x14);
+            let format = if case < 0x34 { case } else { rng.next() % 0x40 };
+            let (a, flags) = (rng.next(), rng.next());
+            t.check(
+                &format!("{name} format {case}"),
+                0x004c_0c00,
+                Conv::Thiscall(this),
+                &[a, format, flags],
+                |g| Out::U32(s::bridge::format_desc(g, this, a, format, flags)),
+            );
+        }
+        let cells = t.zeros(8);
+        t.stub(s::BLOCK_ALLOC, false, 2, 0, Ret::Cell(cells));
+        t.stub(s::LOCK_TAKE, true, 0, 0, Ret::Imm(0));
+        t.stub(s::LOCK_GIVE, true, 0, 0, Ret::Imm(0));
+        t.stub(s::RESOURCE_SET_FIND, true, 1, 1, Ret::Cell(cells + 4));
+        t.stub(s::RESOURCE_SET_INSERT, true, 1, 1, Ret::Imm(0));
+        t.stub(s::ATEXIT, false, 1, 0, Ret::Imm(0));
+        let guard = t.rebase(s::RESOURCE_SET_GUARD);
+        for case in 0..200u32 {
+            let log = t.log;
+            t.w32(log, 0);
+            t.w32(cells, rng.next());
+            t.w32(cells + 4, u32::from(rng.next().is_multiple_of(5)));
+            t.w32(guard, rng.next() % 4);
+            let buffer = pattern(&mut t, &mut rng, 0x40);
+            let layout = pattern(&mut t, &mut rng, 0x20);
+            let stride = [0x28, 0x30, 0x40][(rng.next() % 3) as usize];
+            t.w32(layout + 0x1c, stride);
+            t.w32(buffer + 0x2c, layout);
+            let n = rng.next() % 4;
+            t.w32(buffer + 0x3c, n);
+            let entries = pattern(&mut t, &mut rng, 0x40 * 4);
+            t.w32(buffer + 0x30, entries);
+            for i in 0..n {
+                let units = if rng.next().is_multiple_of(6) {
+                    rng.next() % 2
+                } else {
+                    rng.next() % 64
+                };
+                t.w32(entries + stride * i + 0x18, units);
+            }
+            t.check(
+                &format!("{name} resources {case}"),
+                0x0045_cd60,
+                Conv::Cdecl,
+                &[buffer],
+                |g| Out::U32(s::bridge::register_resources(g, buffer)),
             );
         }
     }

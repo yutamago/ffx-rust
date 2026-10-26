@@ -19,6 +19,9 @@ pub enum Rel {
     Free,
     /// `f(data, count)` (cdecl): destroys the elements and frees the block.
     Elements(u32),
+    /// `PhyreFree(data)` when the count is more than 1 (a `PSharray`'s
+    /// single element lives in the header), `data` not checked.
+    FreeShared,
 }
 
 /// A destructor of up to two arrays: the vtable stored first (0: none),
@@ -235,16 +238,18 @@ pub mod bridge {
         WORLD_CLASS_COUNT,
     };
 
-    /// One array released, then its data and count words cleared; `eax`
+    /// One array of `this` released, then its data and count words cleared; `eax`
     /// as the original leaves it: the callee's, 0 for a null block, or
     /// 0xfe when the block is not owned.
-    fn release(h: &mut impl Host, this: u32, count_at: u32, data_at: u32, how: Rel) -> u32 {
+    pub fn release(h: &mut impl Host, this: u32, count_at: u32, data_at: u32, how: Rel) -> u32 {
         let count: u32 = h.read(this + count_at);
         let eax = if count & EXTERNAL == 0 {
             let data: u32 = h.read(this + data_at);
             match how {
                 Rel::Free if data == 0 => 0,
-                Rel::Free => h.call_sym(FREE, Conv::Cdecl, &[data]),
+                // `not al` of 0 left in `eax` when the element is inline
+                Rel::FreeShared if count & !EXTERNAL <= 1 => 0xff,
+                Rel::Free | Rel::FreeShared => h.call_sym(FREE, Conv::Cdecl, &[data]),
                 Rel::Elements(f) => h.call_sym(f, Conv::Cdecl, &[data, count & !EXTERNAL]),
             }
         } else {
@@ -252,6 +257,16 @@ pub mod bridge {
         };
         h.write(this + data_at, 0u32);
         h.write(this + count_at, 0u32);
+        eax
+    }
+
+    /// The arrays `(count offset, data offset, how)` of `this` released in
+    /// order, as [`release`]; the last one's `eax` (0 for none).
+    pub fn release_all(h: &mut impl Host, this: u32, arrays: &[(u32, u32, Rel)]) -> u32 {
+        let mut eax = 0;
+        for &(count, data, how) in arrays {
+            eax = release(h, this, count, data, how);
+        }
         eax
     }
 
@@ -263,10 +278,7 @@ pub mod bridge {
             let vtable = h.rebase(k.vtable);
             h.write(this, vtable);
         }
-        let mut eax = 0;
-        for (count, data, how) in k.arrays {
-            eax = release(h, this, count, data, how);
-        }
+        let mut eax = release_all(h, this, &k.arrays);
         if k.tail != 0 {
             eax = h.call_sym(k.tail, Conv::Thiscall(this + 4), &[]);
         }

@@ -8,7 +8,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_prender::{
     basic, class_slots as descriptor, h1_array_type, h1_bind, h1_camera, h1_small, h1_small2,
-    h1_small3, registry, texture,
+    h1_small3, h1_small4, registry, texture,
 };
 
 ported! {
@@ -2130,5 +2130,40 @@ ported! {
     /// `0x004d3830(name)` -> the context switch of that name, made when new.
     PContextSwitch_findOrCreate_004d3830 @ 0x004d_3830 => extern "C" fn h1_004d3830(name: u32) -> u32 {
         h1_small3::bridge::switch_for_name(&mut mem(), name)
+    }
+    // round 3 batch 3 (h1_small4)
+    /// `PUtilityGeometry::initialize()` -> 0.
+    Phyre_PGeometry_PUtilityGeometry_initialize @ 0x0043_22c0 => extern "C" fn h1_004322c0() -> u32 {
+        h1_small4::bridge::geometry_initialize(&mut mem(), h1_small4::GEOMETRY_STEPS)
+    }
+    /// `PUtilityRendering::initialize()` -> the first failing set-up's code, or 0.
+    Phyre_PRendering_PUtilityRendering_initialize @ 0x0043_2820 => extern "C" fn h1_00432820() -> u32 {
+        h1_small4::bridge::rendering_initialize(&mut mem(), h1_small4::RENDERING_STEPS)
+    }
+    /// `0x00434c50(this, x)` -> the submit's `eax` (or the preparation's error).
+    PRingBuffer_submit_00434c50 @ 0x0043_4c50 => extern "thiscall" fn h1_00434c50(this: u32, x: u32) -> u32 {
+        let k = const { h1_small4::ring_of(0x0043_4c50) };
+        h1_small4::bridge::ring_submit(&mut mem(), &k, this, x)
+    }
+    /// `0x00434cd0(this, x)` -> the submit's `eax` (or the preparation's error).
+    PRingBuffer_submit_00434cd0 @ 0x0043_4cd0 => extern "thiscall" fn h1_00434cd0(this: u32, x: u32) -> u32 {
+        let k = const { h1_small4::ring_of(0x0043_4cd0) };
+        h1_small4::bridge::ring_submit(&mut mem(), &k, this, x)
+    }
+    /// `0x00433af0(this)`: the mesh's arrays released; the last release's `eax`.
+    Phyre_PGeometry_PMesh_dtor_00433af0 @ 0x0043_3af0 => extern "thiscall" fn h1_00433af0(this: u32) -> u32 {
+        h1_small4::bridge::segment_dtor(&mut mem(), this)
+    }
+    /// `0x00495a10(this)`: the sprite utility's arrays released.
+    PSpriteArrays_release_00495a10 @ 0x0049_5a10 => extern "thiscall" fn h1_00495a10(this: u32) -> u32 {
+        h1_small4::bridge::arrays_dtor(&mut mem(), this)
+    }
+    /// `0x004c0c00(this, a, format, flags)` -> `this`: a texture format description.
+    PTextureFormatDesc_ctor_004c0c00 @ 0x004c_0c00 => extern "thiscall" fn h1_004c0c00(this: u32, a: u32, format: u32, flags: u32) -> u32 {
+        h1_small4::bridge::format_desc(&mut mem(), this, a, format, flags)
+    }
+    /// `0x0045cd60(buffer)` -> 0, 0x12 or 0x15: the buffer's resources registered.
+    PAssetReference_registerResources_0045cd60 @ 0x0045_cd60 => extern "C" fn h1_0045cd60(buffer: u32) -> u32 {
+        h1_small4::bridge::register_resources(&mut mem(), buffer)
     }
 }
