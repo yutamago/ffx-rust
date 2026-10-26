@@ -15,7 +15,8 @@ use ffx_glue_other::{
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
-    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, menu as mn, misc as m, movie as mv, r3,
+    sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2224,5 +2225,19 @@ ported! {
     BrokenScreenEffect_initialize @ 0x006d_51d0 => extern "thiscall" fn broken_screen_initialize(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32, w: u32, h: u32) -> u32 {
         let mut frame = StackFrame::<{ (h5::BROKEN_FRAME / 4) as usize }>::new();
         h5::broken_screen_initialize(&mut mem(), frame.at(), this, [a, b, c, d, e, w, h])
+    }
+    // ---- continuation round 6, batch 6 (ffx_glue_other::h4_h6)
+    /// `PhyFMVPlayerManager_PlayVideo(this; flag)`.
+    PhyFMVPlayerManager_PlayVideo @ 0x006d_7430 => extern "thiscall" fn play_video(this: u32, flag: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h6::PLAY_FRAME / 4) as usize }>::new();
+        h6::play_video(&mut mem(), frame.at(), this, flag)
+    }
+    /// `PhyFMVPlayerManager_DestroyFMVPlayer(this)`.
+    PhyFMVPlayerManager_DestroyFMVPlayer @ 0x006d_71b0 => extern "thiscall" fn destroy_fmv_player(this: u32) -> u32 {
+        h6::destroy_fmv_player(&mut mem(), this)
+    }
+    /// `PhyFMVPlayerManager_handleInput(this; unused)`.
+    PhyFMVPlayerManager_handleInput @ 0x006d_9460 => extern "thiscall" fn handle_input(this: u32, _unused: u32) {
+        h6::handle_input(&mut mem(), this);
     }
 }

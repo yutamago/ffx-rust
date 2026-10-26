@@ -28,7 +28,7 @@ use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
-    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5,
+    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -5715,10 +5715,10 @@ fn h4_set_stub(t: &mut Twins, sym: u32, n: u32, pops: u32, fills: &[(u32, u8)]) 
     t.jump(sym, code);
 }
 
-/// A recording stub at `sym` whose result alternates between its cell
+/// A recording stub at `sym` (`ecx` logged with `this`) whose result alternates between its cell
 /// and a second cell (returned): each call first swaps the two.
-fn h4_swap_stub(t: &mut Twins, sym: u32, n: u32, pops: u32) -> u32 {
-    let log = t.stub_code(sym, true, n, pops, false, &[]);
+fn h4_swap_stub(t: &mut Twins, sym: u32, this: bool, n: u32, pops: u32) -> u32 {
+    let log = t.stub_code(sym, this, n, pops, false, &[]);
     let cell = t.cells[&sym];
     let next = t.zeros(4);
     let mut c = vec![0xa1];
@@ -5901,7 +5901,7 @@ fn h4_blur_effect_on_shaders() {
         let mut rng = Rng(0x5eed_a403);
         let cells = h4_stubs(&mut t);
         // the list first, then the textures alternate with it
-        let next = h4_swap_stub(&mut t, h2::CLUSTER_CREATE, 3, 3);
+        let next = h4_swap_stub(&mut t, h2::CLUSTER_CREATE, true, 3, 3);
         t.stub(h4::GET_APPLICATION, 0, false);
         t.stub(h4::FIXUP_CLUSTERS, 2, false);
         t.stub_at(h2::SET_DIMENSIONS, true, 4, 4, &[]);
@@ -6100,7 +6100,7 @@ fn h5_motion_blur_setup() {
         t.stub_at(h5::SET_VALUE, true, 2, 2, &[]);
         t.stub_at(h2::SET_WORD, true, 2, 2, &[]);
         // the parameter lookups alternate between two results
-        let next_p = h4_swap_stub(&mut t, h4::FIND_PARAMETER, 1, 1);
+        let next_p = h4_swap_stub(&mut t, h4::FIND_PARAMETER, true, 1, 1);
         let mut tags = H4_TAGS[..8].to_vec();
         tags.extend([
             h4::GET_APPLICATION,
@@ -6178,7 +6178,7 @@ fn h5_fmv_on_shaders() {
             h4::FULLSCREEN_MESH,
         ];
         // the find stub's result alternates between its two cells
-        let next = h4_swap_stub(&mut t, h4::FIND_PARAMETER, 1, 1);
+        let next = h4_swap_stub(&mut t, h4::FIND_PARAMETER, true, 1, 1);
         for i in 0..400 {
             let w = format!("{name} {i}");
             t.fresh(&mut rng, &tags);
@@ -6229,9 +6229,9 @@ fn h5_broken_screen_initialize() {
         let mut rng = Rng(0x5eed_a503);
         let cells = h4_stubs(&mut t);
         // the list create alternates: the first list, then the second
-        let next = h4_swap_stub(&mut t, h2::CLUSTER_CREATE, 3, 3);
+        let next = h4_swap_stub(&mut t, h2::CLUSTER_CREATE, true, 3, 3);
         // and so does the material create
-        let next_m = h4_swap_stub(&mut t, h2::CREATE_MATERIAL, 3, 3);
+        let next_m = h4_swap_stub(&mut t, h2::CREATE_MATERIAL, true, 3, 3);
         t.stub(h2::FIOS_UNIFY, 3, false);
         t.stub(h5::LOAD_ASSET_FILE, 3, false);
         t.stub(h4::GET_APPLICATION, 0, false);
@@ -6289,5 +6289,203 @@ fn h5_broken_screen_initialize() {
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 6, batch 6 (ffx_glue_other::h4_h6)
+
+/// A movie player manager: random bytes, its name empty or not, its flag
+/// bytes 0 or 1.
+fn h6_manager(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let this = random_block(t, rng, 0x760);
+    let name = rng.pick(&[b"" as &[u8], b"a", b"ffx_01.bk2"]);
+    let mut bytes = name.to_vec();
+    bytes.push(0);
+    t.write(this + 0x4f0, &bytes);
+    for off in [
+        0x6d0u32, 0x6d1, 0x6d2, 0x6e4, 0x6e5, 0x6fc, 0x6fd, 0x6fe, 0x710, 0x720, 0x74c, 0x74d,
+        0x74e,
+    ] {
+        let v = rng.pick(&[0, 1, 1, 0x80]);
+        t.w8(this + off, v);
+    }
+    this
+}
+
+/// The movie player manager's play request.
+#[test]
+fn h6_play_video() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a601);
+        t.stub_at(h6::RESUME_MOVIE, true, 0, 0, &[]);
+        // the report's third word (the name) only exists on one of its calls
+        t.stub(h6::PHYRE_PRINTF, 2, false);
+        t.stub_at(h6::SET_VOLUME, true, 1, 1, &[]);
+        t.stub(h6::FIOS_UNIFY, 3, false);
+        t.stub_at(h6::FMV_PLAY, true, 3, 3, &[]);
+        let tags = [
+            h6::RESUME_MOVIE,
+            h6::PHYRE_PRINTF,
+            h6::SET_VOLUME,
+            h6::FIOS_UNIFY,
+            h6::FMV_PLAY,
+        ];
+        let mut ran = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            ran += t.log_entries();
+            t.fresh(&mut rng, &tags);
+            let this = h6_manager(&mut t, &mut rng);
+            let other = rng.next();
+            let manager = rng.pick(&[0, this, other]);
+            t.g32(h6::FMV_MANAGER.sym, manager);
+            let v = rng.float();
+            t.g32(h6::MOVIE_VOLUME.sym, v);
+            let other = rng.next();
+            let flag = rng.pick(&[0, 1, 0x100, other]);
+            let frame = t.ebp_for(1) - 0x104;
+            t.check_framed_conv(
+                &format!("{w} play"),
+                0x006d_7430,
+                Conv::Thiscall(this),
+                &[flag],
+                frame,
+                &[],
+                |g| u(h6::play_video(g, frame, this, flag)),
+            );
+        }
+        assert!(ran + t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The movie player manager's tear-down.
+#[test]
+fn h6_destroy_fmv_player() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a602);
+        let iob = t.stub_code(0x0bad_a6c0, false, 1, 0, false, &[]);
+        let fprintf = t.stub_code(0x0bad_a6c1, false, 2, 0, false, &[]);
+        t.stub(h6::IS_ETERNAL_CALM, 1, false);
+        t.stub(h6::SLEEP, 1, false);
+        let next_b = h4_swap_stub(&mut t, h6::IS_BOUND, true, 0, 0);
+        t.stub_at(h6::UNBIND, true, 0, 0, &[]);
+        for sym in [
+            h6::MESH_RELEASE,
+            h6::CLUSTER_CLEAR,
+            h6::FMV_TERMINATE,
+            h6::SAMPLER_RELEASE,
+        ] {
+            t.stub_at(sym, true, 0, 0, &[]);
+        }
+        t.stub(h6::CLUSTER_MANAGER, 0, false);
+        t.stub_at(h6::RELEASE_PCLUSTER, true, 1, 1, &[]);
+        t.stub(h6::PHYRE_FREE, 1, false);
+        let tags = [
+            0x0bad_a6c0,
+            0x0bad_a6c1,
+            h6::IS_ETERNAL_CALM,
+            h6::SLEEP,
+            h6::IS_BOUND,
+            h6::UNBIND,
+            h6::MESH_RELEASE,
+            h6::CLUSTER_CLEAR,
+            h6::FMV_TERMINATE,
+            h6::SAMPLER_RELEASE,
+            h6::CLUSTER_MANAGER,
+            h6::RELEASE_PCLUSTER,
+            h6::PHYRE_FREE,
+        ];
+        let mut ran = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            ran += t.log_entries();
+            t.fresh(&mut rng, &tags);
+            t.g32(h6::IOB_FUNC.sym, iob);
+            t.g32(h6::FPRINTF.sym, fprintf);
+            let calm = rng.pick(&[0, 0, 1]);
+            t.ret(h6::IS_ETERNAL_CALM, calm);
+            let b = rng.pick(&[0, 0x100, 1, 0xff01]);
+            t.ret(h6::IS_BOUND, b);
+            let b = rng.pick(&[0, 0x100, 1]);
+            t.w32(next_b, b);
+            let r = rng.pick(&[0, 0, 0, 5]);
+            t.ret(h6::UNBIND, r);
+            let this = h6_manager(&mut t, &mut rng);
+            let busy = rng.pick(&[0, 0, 1]);
+            t.w32(this + 0x6f0, busy);
+            let gone = rng.pick(&[0, 0, 0, 1, 0x80]);
+            t.w8(this + 0x6d1, gone);
+            let mesh = random_block(&mut t, &mut rng, 8);
+            let mesh = rng.pick(&[0, mesh, mesh]);
+            t.w32(this + 0x388, mesh);
+            let n = rng.pick(&[0, 1, 2, 5]) | rng.pick(&[0, 0, 0x8000_0000]);
+            t.w32(this + 0x4e8, n);
+            t.check_conv(
+                &format!("{w} destroy"),
+                0x006d_71b0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(h6::destroy_fmv_player(g, this)),
+            );
+        }
+        assert!(ran + t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The movie player manager's skip input.
+#[test]
+fn h6_handle_input() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a603);
+        let next_press = h4_swap_stub(&mut t, h6::IS_PRESS_BUTTON, false, 1, 0);
+        t.stub_at(h6::SKIP_PROMPT_SHOW, true, 0, 0, &[]);
+        t.stub_at(h6::SKIP_PROMPT_HIDE, true, 0, 0, &[]);
+        t.stub_u64(h6::GET_END_TIME, true, 0, 0);
+        t.stub_at(h6::SEEK, true, 2, 2, &[]);
+        let tags = [
+            h6::IS_PRESS_BUTTON,
+            h6::SKIP_PROMPT_SHOW,
+            h6::SKIP_PROMPT_HIDE,
+            h6::GET_END_TIME,
+            h6::SEEK,
+        ];
+        let scene = t.zeros(0x1_0e00);
+        let prompt = t.zeros(8);
+        t.w32(scene + 0x1_0de0, prompt);
+        let mut ran = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            ran += t.log_entries();
+            t.fresh(&mut rng, &tags);
+            t.g32(h6::PHYRE_SCENE.sym, scene);
+            let v = rng.next();
+            t.w32(prompt + 4, v);
+            let wait = rng.pick(&[0, 1, 1, 1, 2]);
+            t.g32(h6::WAIT_FRAMES_BY_TIME.sym, wait);
+            let p = rng.pick(&[0, 1, 0x100]);
+            t.ret(h6::IS_PRESS_BUTTON, p);
+            let p = rng.pick(&[0, 1, 0x100]);
+            t.w32(next_press, p);
+            let end = rand_u64(&mut rng);
+            t.ret_u64(h6::GET_END_TIME, end);
+            let this = h6_manager(&mut t, &mut rng);
+            for off in [0x6d2u32, 0x6d0] {
+                let v = rng.pick(&[1, 1, 1, 0]);
+                t.w8(this + off, v);
+            }
+            let v = rng.pick(&[0, 0, 0, 1]);
+            t.w8(this + 0x74e, v);
+            t.check_conv(
+                &format!("{w} input"),
+                0x006d_9460,
+                Conv::Thiscall(this),
+                &[rng.next()],
+                |g| {
+                    h6::handle_input(g, this);
+                    Out::None
+                },
+            );
+        }
+        assert!(ran + t.log_entries() > 0, "{name}: the stubs ran");
     }
 }

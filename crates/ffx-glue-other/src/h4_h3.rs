@@ -238,7 +238,7 @@ fn strstr(h: &mut impl Host, text: u32, pattern: u32) -> u32 {
 
 /// Whether the C strings at `a` and `b` differ (the originals' inline
 /// `strcmp`, two bytes a step).
-fn differs(h: &impl Host, a: u32, b: u32) -> bool {
+pub fn differs(h: &impl Host, a: u32, b: u32) -> bool {
     let mut k = 0u32;
     loop {
         let x: u8 = h.read(a.wrapping_add(k));
