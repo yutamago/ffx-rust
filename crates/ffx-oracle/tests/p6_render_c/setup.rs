@@ -12,7 +12,7 @@ use super::{G, Out, Rng, Twins, object};
 impl Twins {
     /// Page 0 mapped in both oracles (the size asserts store to address
     /// 0; an empty texture array reads its slot there).
-    fn map_page0(&mut self) {
+    pub(super) fn map_page0(&mut self) {
         self.a.map_zeroed(0, 0x1000).unwrap();
         self.b.map_zeroed(0, 0x1000).unwrap();
     }

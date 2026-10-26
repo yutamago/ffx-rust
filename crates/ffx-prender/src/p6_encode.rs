@@ -126,7 +126,7 @@ pub mod bridge {
     /// no room for `size` bytes: the check's new cursor `r` and wrapped
     /// cursor `o` (written to `out`): with the cursor not past the end,
     /// a wrap (`o` below the cursor) or `r` past the end.
-    fn full(h: &mut impl Host, ring: u32, size: u32, out: u32) -> bool {
+    pub fn full(h: &mut impl Host, ring: u32, size: u32, out: u32) -> bool {
         let cur: u32 = h.read(ring + 8);
         let end: u32 = h.read(ring + 0xc);
         let r = h.call_sym(RING_CHECK, Conv::Thiscall(ring), &[cur, size, out]);
