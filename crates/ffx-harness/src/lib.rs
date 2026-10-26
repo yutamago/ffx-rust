@@ -14,6 +14,7 @@
 //! # Ok::<(), ffx_harness::Error>(())
 //! ```
 
+pub mod pacing;
 pub mod replay;
 pub mod screens;
 pub mod slot;

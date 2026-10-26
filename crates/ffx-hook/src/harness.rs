@@ -1349,6 +1349,27 @@ const NO_LABEL: u32 = u32::MAX;
 static REACHED: AtomicU32 = AtomicU32::new(0);
 /// Frame boundaries the main thread has left, as [`REACHED`].
 static PASSED: AtomicU32 = AtomicU32::new(0);
+
+/// Lockstep is on.
+pub(crate) fn lockstep() -> bool {
+    LOCKSTEP.load(Ordering::Acquire)
+}
+
+/// Frame boundaries left, as [`PASSED`].
+pub(crate) fn passed() -> u32 {
+    PASSED.load(Ordering::Acquire)
+}
+
+/// The present holds end as if the main thread had left this many
+/// boundaries: the loader's turn lets the render thread go before the main
+/// thread leaves ([`crate::loader_turn`]).
+static PRESENT_RELEASED: AtomicU32 = AtomicU32::new(0);
+
+/// The main thread stands at a frame boundary (entered, not left).
+pub(crate) fn at_boundary() -> bool {
+    REACHED.load(Ordering::Acquire) > PASSED.load(Ordering::Acquire)
+}
+
 /// Trampoline to the original `FFXApplication_animate`.
 pub static ANIMATE_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 /// Trampoline to the original `Phyre_PRendering_PRenderer_flip`.
@@ -1408,6 +1429,13 @@ pub unsafe extern "thiscall" fn animate(app: *mut c_void) -> u32 {
     while LOCKSTEP.load(Ordering::Acquire) && frame >= ALLOWED.load(Ordering::Acquire) {
         std::thread::sleep(std::time::Duration::from_millis(1));
         run_main_jobs(frame);
+    }
+    // The asset loader's turn at the render lock is decided here, while
+    // the render thread still holds it (crate::loader_turn).
+    if LOCKSTEP.load(Ordering::Acquire) {
+        crate::loader_turn::boundary_turn(frame, || {
+            PRESENT_RELEASED.store(frame + 1, Ordering::Release);
+        });
     }
     PASSED.store(frame + 1, Ordering::Release);
     // SAFETY: a word of the image's data (ctrl work 0's event frame count),
@@ -1487,6 +1515,7 @@ pub unsafe extern "thiscall" fn present_flip(renderer: *mut c_void) -> u32 {
 /// screenshot asked for there shows the update the trace saw.
 unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags: u32) -> i32 {
     PRESENTS.fetch_add(1, Ordering::AcqRel);
+    crate::loader_turn::note_render_thread();
     let label = PRESENT_LABEL.load(Ordering::Acquire);
     let started = REACHED.load(Ordering::Acquire) != 0;
     if label == NO_LABEL && started && !UNLABELLED.swap(true, Ordering::AcqRel) {
@@ -1512,7 +1541,10 @@ unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags:
         let mut waited = 0u32;
         let hold = || LOCKSTEP.load(Ordering::Acquire) || PINNED.load(Ordering::Acquire) > 0;
         while hold()
-            && PASSED.load(Ordering::Acquire) <= label
+            && PASSED
+                .load(Ordering::Acquire)
+                .max(PRESENT_RELEASED.load(Ordering::Acquire))
+                <= label
             && (REACHED.load(Ordering::Acquire) > label || waited < 5000)
         {
             std::thread::sleep(std::time::Duration::from_millis(1));
@@ -1897,6 +1929,114 @@ fn list_threads() -> String {
     }
 }
 
+/// `stacks`: for every thread but this one, its `eip` and the return
+/// addresses into `FFX.exe` found on its stack (words that follow a
+/// `call`), innermost first: `tid:eip:a,b,c ...`. A sampling aid for
+/// finding what a thread waits on. Each thread is suspended only while its
+/// registers and stack are copied (no allocation then: it may hold the
+/// heap's lock).
+#[allow(clippy::cast_possible_truncation)] // 32-bit process
+fn thread_stacks() -> String {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        CONTEXT, GetThreadContext, ReadProcessMemory,
+    };
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+    };
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId, OpenThread, ResumeThread,
+        SuspendThread, THREAD_GET_CONTEXT, THREAD_SUSPEND_RESUME,
+    };
+    const CONTEXT_CONTROL: u32 = 0x0001_0001;
+    const WORDS: usize = 0x1000;
+    let base = crate::GAME_BASE.load(Ordering::Relaxed);
+    let end = base + crate::SIZE_OF_IMAGE as usize;
+    let image = |a: usize| a - base + crate::IMAGE_BASE as usize;
+    let mut ids = Vec::new();
+    // SAFETY: plain Win32 calls on this process's threads.
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        let (pid, me) = (GetCurrentProcessId(), GetCurrentThreadId());
+        let mut te: THREADENTRY32 = std::mem::zeroed();
+        te.dwSize = u32::try_from(size_of::<THREADENTRY32>()).unwrap_or(0);
+        let mut ok = Thread32First(snap, &raw mut te) != 0;
+        while ok {
+            if te.th32OwnerProcessID == pid && te.th32ThreadID != me {
+                ids.push(te.th32ThreadID);
+            }
+            ok = Thread32Next(snap, &raw mut te) != 0;
+        }
+        CloseHandle(snap);
+    }
+    let mut stack = vec![0u32; WORDS];
+    let mut out = Vec::new();
+    for id in ids {
+        let mut eip = 0usize;
+        let mut copied = 0usize;
+        // SAFETY: the thread is suspended while its context and stack are
+        // read; ReadProcessMemory fails instead of faulting.
+        unsafe {
+            let h = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, 0, id);
+            if h.is_null() {
+                continue;
+            }
+            if SuspendThread(h) != u32::MAX {
+                let mut ctx: CONTEXT = std::mem::zeroed();
+                ctx.ContextFlags = CONTEXT_CONTROL;
+                if GetThreadContext(h, &raw mut ctx) != 0 {
+                    eip = ctx.Eip as usize;
+                    let mut n = WORDS * 4;
+                    // read as much as the stack's pages allow
+                    while n >= 0x100 {
+                        let mut got = 0usize;
+                        if ReadProcessMemory(
+                            GetCurrentProcess(),
+                            ctx.Esp as usize as *const c_void,
+                            stack.as_mut_ptr().cast(),
+                            n,
+                            &raw mut got,
+                        ) != 0
+                        {
+                            copied = got / 4;
+                            break;
+                        }
+                        n /= 2;
+                    }
+                }
+                ResumeThread(h);
+            }
+            CloseHandle(h);
+        }
+        let mut frames = Vec::new();
+        for &w in &stack[..copied] {
+            let a = w as usize;
+            if a < base + 6 || a >= end {
+                continue;
+            }
+            // SAFETY: inside the image, which is mapped and readable.
+            let before = unsafe { std::slice::from_raw_parts((a - 6) as *const u8, 6) };
+            let call = before[1] == 0xe8
+                || (before[4] == 0xff && before[5] & 0x38 == 0x10)
+                || (before[3] == 0xff && before[4] & 0x38 == 0x10)
+                || (before[0] == 0xff && before[1] & 0x38 == 0x10);
+            if call {
+                frames.push(format!("{:08x}", image(a)));
+                if frames.len() >= 24 {
+                    break;
+                }
+            }
+        }
+        let at = if eip >= base && eip < end {
+            format!("{:08x}", image(eip))
+        } else {
+            format!("{eip:#x}")
+        };
+        out.push(format!("{id}:{at}:{}", frames.join(",")));
+    }
+    format!("ok {}", out.join(" "))
+}
+
 /// Runs a job on the main thread at a frame boundary, or a screenshot on
 /// the render thread, and waits for its reply.
 fn on_game_thread(job: Job) -> String {
@@ -2097,6 +2237,7 @@ fn command(line: &str) -> Result<String, String> {
         "fpucw" => on_game_thread(Job::FpuControl),
         "loadsave" => on_game_thread(Job::LoadSave(words[1..].join(" "))),
         "threads" => list_threads(),
+        "stacks" => thread_stacks(),
         "calllog" => {
             // calllog off: flush and close
             if let Ok(mut log) = CALL_LOG.lock()
@@ -2367,6 +2508,33 @@ pub unsafe fn install(module: usize) {
     // SAFETY: the game has not started (we are in its start-up).
     let r = unsafe { crate::install(module, &frame_hooks, &[]) };
     log(&format!("  harness: frame boundary hooks {r:?}"));
+    // The asset loader's turn at the render lock in lockstep
+    // (crate::loader_turn; docs/harness.md, "Load pacing"). Trampolines:
+    // the original code runs under the same harness.
+    let loader_hooks = [
+        crate::Hook {
+            name: "Phyre_PMutex_lockInner_00431850",
+            address: 0x0043_1850,
+            // push ebp; mov ebp, esp; push ecx; push ebx; push esi; push edi
+            prologue: &[0x55, 0x8b, 0xec, 0x51, 0x53, 0x56, 0x57],
+            replacement: crate::loader_turn::lock_take as *const () as usize,
+            original: Some(&crate::loader_turn::LOCK_ORIGINAL),
+            steal: 0,
+        },
+        crate::Hook {
+            name: "AsyncLoadManager_threadMain_00691360",
+            address: 0x0069_1360,
+            // push ebp; mov ebp, esp; mov eax, [abs32] (relocated: only its
+            // opcode is checked; 8 bytes are copied)
+            prologue: &[0x55, 0x8b, 0xec, 0xa1],
+            replacement: crate::loader_turn::loader_thread as *const () as usize,
+            original: Some(&crate::loader_turn::LOADER_ORIGINAL),
+            steal: 8,
+        },
+    ];
+    // SAFETY: the game has not started (the loader thread is made later).
+    let r = unsafe { crate::install(module, &loader_hooks, &[]) };
+    log(&format!("  harness: loader turn hooks {r:?}"));
     // SAFETY: forwarded from the caller.
     let seeded = unsafe { patch_seeded_jobs(module) };
     log(&format!(

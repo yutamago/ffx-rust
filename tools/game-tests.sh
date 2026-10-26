@@ -27,7 +27,8 @@ start_up=start_up_input_and_kernel_mod
 first_scene=first_scene_with_script_model_and_motion_mods
 save=save_and_battle_with_monster_and_formation_mods
 seed=random_generators_repeat_with_a_seed
-everything="$start_up $first_scene $save $seed"
+pacing=magic_file_load_paced_like_the_original
+everything="$start_up $first_scene $save $seed $pacing"
 
 tests_for() {
     case "$1" in

@@ -539,3 +539,30 @@ fn random_generators_repeat_with_a_seed() {
     assert_eq!(a, b, "the same seed gives the same generators");
     assert_ne!(a, c, "another seed gives other generators");
 }
+
+/// Valefor's magic file loads in the same number of frames on the original
+/// code and with the Rust replacements, with every frame slowed to 250 ms
+/// (`ffx_harness::pacing`; docs/harness.md, "Load pacing"). Before the
+/// loader's turn (2026-10-26) the original took 21-43 frames and Rust
+/// 9-18: the count followed the update's real time.
+#[test]
+#[ignore = "starts FFX.exe on the Windows desktop twice"]
+fn magic_file_load_paced_like_the_original() {
+    let measure = |original: bool| {
+        let options = Options {
+            virtual_clock: true,
+            hook_disable: original.then(|| "replacements".into()),
+            ..Options::default()
+        };
+        let mut game = Game::launch(&options).unwrap();
+        let pacing = ffx_harness::pacing::Options::default();
+        let m = ffx_harness::pacing::measure(&mut game, &options.repo, &pacing);
+        game.quit().unwrap();
+        m.unwrap()
+    };
+    let (original, rust) = (measure(true), measure(false));
+    assert_eq!(
+        original.frames, rust.frames,
+        "load frames: original {original:?}, Rust {rust:?}"
+    );
+}

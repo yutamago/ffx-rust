@@ -26,6 +26,7 @@ tools/harness.py quit
 | Job seeds | the `push <job>` of `JobSchedule_Ch_Cloth_PerCharacter` (`0x00a44b51`) and `JobSchedule_Ch_CalcMiddle_Batch` (`0x00a44ba4`) | The cloth's wind (`Sg_ClothStep` `0x00822de0`), the mouths (`Ch_Mouth`) and the texture animations, eyes included (`chr_texanim_main` `0x0077c8d0`, from `Ch_CalcMiddle_Batch` `0x00833530`), draw from the CRT `rand()`, whose seed is per thread (MSVCR110's `_getptd()` `+0x14`), in jobs that run on whichever JobWorker is free, so they differed between runs (the cloth in every draw capture). The harness queues its own jobs, which seed `rand` for the job from its kind, its first character's place in the character array and ctrl work 0's event frame count at the last frame boundary, run the game's job and give the worker its seed back (original code and Rust alike; `harness.rs` `seeded_job`) |
 | Speed | `Phyre_PTimerWin32_GetTime` (`0x0042fd80`), wrapped; the main loop's `call [Sleep]` (`0x0062f3bb`) | The main loop (`Game_Main`, `0x0062ee50`) runs a frame (`0x0062e340`) once `DAT_00c30e88` × 1/59.94 s have passed on `Phyre_PTimerWin32_GetTime`, and sleeps away the rest. With `--fast` that one `Sleep` returns at once and adds its time to the clock: frames run back to back (461 a second instead of 30–60) while the game still sees one frame interval per frame. `ffx-harness` uses it by default. On the virtual clock (`--virtual-clock`) the clock starts at 2^20 s (`VIRTUAL_START`, not the wall clock's FILETIME reading of about 1.34e10 s, whose f64 rounding differed in every run) and the `Sleep` moves it to the next frame's time exactly (`g_AppStartTime` + `g_FrameLimiterLast` + one interval, plus 1e-9 s) instead of the whole ms the limiter chops it to, so every frame is one interval long and time differences repeat (`docs/drawdiff.md`, "Noise in cdsp0000") |
 | Sandbox | `SHGetFolderPathW` | With `--home DIR`, the Documents folder is `DIR`: the game reads and writes `GameSetting.ini` and its saves (autosaves too) there. `ffx-harness` makes `DIR` a fresh copy of the user's `Square Enix/FINAL FANTASY X&X-2 HD Remaster` before each launch, so tests can load the user's saves and never change them, with the sandbox's own `GameSetting.ini` in place of the user's ("Sandbox settings" below) |
+| Loader turn | `Phyre_PMutex_lockInner_00431850` (`0x00431850`) and `AsyncLoadManager_threadMain_00691360` (`0x00691360`), wrapped | In lockstep the asset loader takes the render lock only in a turn at each frame boundary, until its requests are done, instead of in the real-time gaps between the render thread's holds, so a load takes the same number of frames whatever the update's real time ("Load pacing", `loader_turn.rs`) |
 
 ## Frames and threads
 
@@ -533,6 +534,70 @@ comparison. The trace ranges cannot show this: they compare each range's
 sequence of distinct values, not their frames, and no traced word counts
 the effect's frames. Valefor's per-frame words do, but the idle pose
 before and after the entry makes them differ between original runs.
+Since the loader's turn below (2026-10-26) the entry takes exactly 281
+frames and Energy Blast 259 in every run, original and Rust, and the
+script checks both to the frame again.
+
+### Load pacing
+
+How many frames a load took in lockstep depended on real time, and the
+Rust replacements changed it (2026-10-26, load-pacing).
+`examples/load_pacing.rs` (`ffx_harness::pacing`) measures it: it plays
+battle-overdrive up to Yuna's summon, then steps one update at a time and
+holds the main thread at each boundary for 250 ms (`load_pacing
+[original] [ms]`), and counts the updates from the magic ID (`0x00c64ca0`
+= `0x253`) to the end of the effect read (`g_BtlEffectReadClear`
+`0x00c421e8` back at -1). Each frame it logs the read, whether the loader's
+request lists are non-empty (`g_AsyncLoadManager` `+0x20`, `+0x2c`) and
+the scene's VFX texture slots and how many are ready (`g_PhyreScene`
+`+0x58`, `+0x60`); `stacks` adds every thread's stack (the harness's
+`stacks` command: `eip` and the return addresses into `FFX.exe`). The game
+test `magic_file_load_paced_like_the_original` runs it on both sides.
+
+What the measurement found:
+
+- `AsyncLoadManager_threadMain_00691360` runs `PhyreScene_loadMagicFileVFXTexture`,
+  which queues one cluster per texture; `Phyre_PBinary_loadClusterTextures`
+  creates each under the render lock (`0x00c94ee4`, a recursive
+  `PCriticalSectionSimple`: `Phyre_PMutex_lockInner_00431850` spins
+  on the owner word `+0x10` with 20 ms event waits). Valefor's file has
+  26 textures, one top-level hold of the lock each.
+- The render thread takes that lock three times a frame and holds the last
+  through `Present`, and in lockstep the harness holds `Present` until the
+  main thread leaves its boundary (sleeping 1 ms at a time). At every
+  sampled boundary the loader waited for the lock and the render thread
+  owned it; the main thread took it in none of the load's frames.
+- So the loader only got the lock between the render thread's holds, after
+  the present hold ended. In the original the main thread's update took
+  about 0.8 ms and the flip was queued about 1.3 ms after the boundary,
+  before the render thread woke (about 1.5 ms): the render thread went
+  straight on and the loader got one texture in about every other frame.
+  The Rust update took about 2.5 ms (flip at 3-3.7 ms), the render thread
+  waited for it without the lock, and the loader loaded two or three
+  textures a frame. Load frames with 250 ms frames: original 21-43, Rust
+  9-18; with every M4 hook off, or the M3 ports alone (`FFX_HOOK_ONLY`),
+  Rust-like; single modules gave in-between counts, because the cause is
+  the update's real time, spread over many ports (in a sampled profile the
+  Rust update spends its time under `Ch_CalcMain`, `Ch_DrawMain`, the
+  battle window and message functions and waiting for the job workers),
+  not one port's logic.
+
+The loader's turn (`crates/ffx-hook/src/loader_turn.rs`) takes the race
+out, in lockstep only. When the main thread is about to leave a boundary
+(the script is done with that update and its screenshots) and the loader
+has work, the harness lets the render thread out of its present hold, its
+next take of the render lock waits, and the loader runs with the lock free
+until its request lists are empty; then the main thread and the render
+thread go on. While the main thread runs an update the loader waits before
+each top-level take of the render lock, unless the main thread stays in one
+update for 100 ms (it waits for the loader there, as during map loads), in
+which case the loader goes on until that update ends. The hooks are
+trampolines on `Phyre_PMutex_lockInner_00431850` and
+`AsyncLoadManager_threadMain_00691360` (which notes the loader's thread),
+so the original code runs under the same rule. Measured with it: Valefor's
+load ends 2 frames after the magic ID in original, Rust and Rust with no
+slowing alike, and battle-overdrive's entry takes 281 frames and Energy
+Blast 259 in every run.
 
 `tools/replays/event-besaid.txt` and `event-cliff.txt` (2026-10-24) play
 scripted events from save slot 3 (`ffx_003`). The harness's five save
@@ -989,7 +1054,7 @@ plus uncommitted and untracked files):
 ```bash
 tools/game-tests.sh --list     # which tests, and the file that selected each
 tools/game-tests.sh            # run them
-tools/game-tests.sh --all      # all four (about 2.7 minutes)
+tools/game-tests.sh --all      # all five
 tools/game-tests.sh HEAD~3     # compare with another commit
 ```
 
@@ -999,9 +1064,10 @@ tools/game-tests.sh HEAD~3     # compare with another commit
 | `first_scene_with_script_model_and_motion_mods` | into `znkd0600` with four mods: the event script grown by `pushimm 0x1234; popv v1` (its byte global at `0xa3c` reads `0x34`), its English dialogue with a changed first line (the game's message table, `*(*0x01326b28 + 0x34)`, holds the mod's bytes), Tidus's model 30 % wider with a segment doubled and a new segment (new skeleton matrix, new material on Yuna's texture, his asset list naming it), his motions turned; all read from the mod, the scene runs 10 s | `ffx-script`, `ffx-text`, `ffx-phyre`, `ffx-motion` |
 | `save_and_battle_with_monster_and_formation_mods` | slot 1 of the sandboxed saves with three mods: the encounter table's salvage ship group (rate 61, weights 3 and 1) is what the game holds once the map is entered (current weights copied into the high nibbles); a battle started directly (field 3, `cdsp00_00`) has the modded formation's monsters (m068, m070, m070), and m068 the mod's 12345 HP; Tidus's and Rikku's worn weapon and armor (kernel equipment layout) give their actors' formula, power and crit bonus; the user's own settings and saves are byte for byte unchanged | `ffx-monster`, `ffx-battle`, `ffx-kernel` |
 | `random_generators_repeat_with_a_seed` | three save loads: seed 1 twice gives identical generators, seed 2 others | — |
+| `magic_file_load_paced_like_the_original` | Valefor's magic file loads in as many frames on the original code as with the Rust replacements, frames slowed to 250 ms ("Load pacing") | — |
 
 Changes to the hook, the harness, `ffx-core`, `ffx-vbf`, the launcher or
-the workspace select all four; other changes (docs, the CLI, symbols)
+the workspace select all five; other changes (docs, the CLI, symbols)
 none.
 
 Screens are recognised by mean colours of fixed rectangles; a failing
