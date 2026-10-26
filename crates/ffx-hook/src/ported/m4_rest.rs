@@ -6,11 +6,14 @@
 //! update (the main thread); the radial lines are set up by
 //! `RadialLine_initialize` on the main thread; `fillDynamicBlocks` runs
 //! where the renderer binds a dynamic mesh's streams (the render
-//! thread's mesh binding). The shims keep no state.
+//! thread's mesh binding); `renderMeshInstanceList` where a world is
+//! rendered (`graphicRender`, the main thread; 9 KB frame). The shims
+//! keep no state; frames are per call.
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 use ffx_pother_b::m4r_dynblocks::bridge as blocks;
 use ffx_pother_b::m4r_mesh::bridge as mesh;
+use ffx_prender::m4r_meshlist as meshlist;
 
 ported! {
     // ---- h1-render-a ----
@@ -30,5 +33,14 @@ ported! {
     /// index_block)` -> 0 (vtable slot 5; `ecx` unused).
     ClassDynamicMesh_fillDynamicBlocks_00672b80 @ 0x0067_2b80 => extern "thiscall" fn fill_dynamic_blocks(_mesh: u32, index: u32, inst: u32, streams: u32, index_block: u32) -> u32 {
         blocks::fill_dynamic_blocks(&mut mem(), index, inst, streams, index_block)
+    }
+    /// `PRendererBase::renderMeshInstanceList(renderer; begin, end,
+    /// contexts)` -> 0, or the single-thread path's last error.
+    Phyre_PRendering_PRendererBase_renderMeshInstanceList @ 0x005b_3df0 => extern "thiscall" fn render_mesh_instance_list(renderer: u32, begin: u32, end: u32, contexts: u32) -> u32 {
+        // ebp - 0x23e0 .. ebp: the job builder, the cursor, the builder's
+        // parameters and counters (the callees get pointers into it)
+        let mut frame = StackFrame::<0x8f8>::new();
+        let ebp = frame.at() + meshlist::FRAME;
+        meshlist::bridge::render_list(&mut mem(), renderer, begin, end, contexts, ebp)
     }
 }

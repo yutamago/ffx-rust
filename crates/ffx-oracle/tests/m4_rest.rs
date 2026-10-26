@@ -23,6 +23,7 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pother_b::{m4r_dynblocks, m4r_mesh};
+use ffx_prender::m4r_meshlist as ml;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -189,6 +190,21 @@ impl Twins {
     /// The stub of [`Twins::stub`] in the cave only (for import slots),
     /// `tag` its log tag: its address and its result cell.
     fn stub_code(&mut self, tag: u32, this: bool, n: u32, pops: u32) -> (u32, u32) {
+        self.stub_custom(tag, this, n, pops, 4, &[])
+    }
+
+    /// [`Twins::stub_code`] whose result list has `stride`-byte entries
+    /// (the result the first word) and which runs `body` with `eax` at the
+    /// entry (`body` may use `ecx` and `edx` and must keep `eax`).
+    fn stub_custom(
+        &mut self,
+        tag: u32,
+        this: bool,
+        n: u32,
+        pops: u32,
+        stride: u8,
+        body: &[u8],
+    ) -> (u32, u32) {
         assert!(n <= 6);
         let sym = tag;
         let cell = self.zeros(4);
@@ -211,10 +227,11 @@ impl Twins {
         c.extend(log.to_le_bytes()); // inc dword [log]
         c.push(0xa1);
         c.extend(cell.to_le_bytes()); // mov eax, [cell]
+        c.extend(body);
         c.extend([0x8b, 0x00]); // mov eax, [eax]
         c.extend([0x83, 0x05]);
         c.extend(cell.to_le_bytes());
-        c.push(0x04); // add dword [cell], 4
+        c.push(stride); // add dword [cell], stride
         if pops == 0 {
             c.push(0xc3);
         } else {
@@ -234,7 +251,7 @@ impl Twins {
     /// The stub at `cell` returns `words` in order, then zeros.
     fn results(&mut self, cell: u32, words: &[u32]) {
         let mut all = words.to_vec();
-        all.resize(64, 0);
+        all.resize(words.len().max(64) + 16, 0);
         let list = self.alloc(&all.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<_>>());
         self.w32(cell, list);
     }
@@ -249,6 +266,46 @@ impl Twins {
         );
         self.a.clear_dirty();
         self.b.clear_dirty();
+    }
+
+    /// Where the original's `ebp` is when it is called with `args` words
+    /// (the call pushes from the stack's end less 0x100).
+    fn frame_ebp(&self, args: usize) -> u32 {
+        self.a.stack_range().end - 0x100 - 4 * args as u32 - 8
+    }
+
+    /// [`Twins::check`] with the port's frame at the original's `ebp` (its
+    /// callees log pointers into it, and read what it keeps there): the
+    /// `low` bytes below `ebp` start zeroed in both and are compared after
+    /// the call, but for the top `skip` bytes (a stack cookie).
+    #[allow(clippy::too_many_arguments)]
+    fn check_framed(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        low: u32,
+        skip: u32,
+        port: impl FnOnce(&mut G, u32) -> u32,
+    ) {
+        let ebp = self.frame_ebp(args.len());
+        let lo = ebp - low;
+        self.write(lo, &vec![0; low as usize]);
+        self.b.set_call_top(Some(lo - 0x100));
+        self.check(what, sym, conv, args, |g| port(g, ebp));
+        self.b.set_call_top(None);
+        let n = (low - skip) as usize;
+        let mut x = vec![0; n];
+        let mut y = vec![0; n];
+        Mem::read_bytes(&self.a, lo, &mut x);
+        Mem::read_bytes(&self.b, lo, &mut y);
+        let first = x.iter().zip(&y).position(|(a, b)| a != b);
+        assert!(
+            first.is_none(),
+            "{what}: frame differs at ebp - {:#x}",
+            first.map_or(0, |i| low as usize - i)
+        );
     }
 
     fn log_entries(&self) -> u32 {
@@ -570,5 +627,166 @@ fn fill_dynamic_blocks_matches_the_original() {
         }
         assert!(ran > 140, "{name}: {ran} cases ran");
         assert!(t.log_entries() > 10, "{name}: the warnings ran");
+    }
+}
+
+// ---- PRendererBase::renderMeshInstanceList (0x005b3df0) ----
+
+/// The job builder's `add`: logs, then adds the entry's words 1..3 to the
+/// builder's instance count, record count and constant bytes (`ebp -
+/// 0x14`, `- 0xc`, `- 8`: `this + 0x2314`, `+ 0x231c`, `+ 0x2320`) and
+/// returns word 0.
+const BUILDER_ADD_BODY: [u8; 27] = [
+    0x8b, 0x50, 0x04, // mov edx, [eax+4]
+    0x01, 0x91, 0x14, 0x23, 0x00, 0x00, // add [ecx+0x2314], edx
+    0x8b, 0x50, 0x08, // mov edx, [eax+8]
+    0x01, 0x91, 0x1c, 0x23, 0x00, 0x00, // add [ecx+0x231c], edx
+    0x8b, 0x50, 0x0c, // mov edx, [eax+0xc]
+    0x01, 0x91, 0x20, 0x23, 0x00, 0x00, // add [ecx+0x2320], edx
+];
+
+/// A ring's `stepForAllocation`: stores the entry's word 1 at its third
+/// argument and returns word 0.
+const STEP_BODY: [u8; 9] = [
+    0x8b, 0x50, 0x04, // mov edx, [eax+4]
+    0x8b, 0x4c, 0x24, 0x0c, // mov ecx, [esp+0xc]
+    0x89, 0x11, // mov [ecx], edx
+];
+
+#[test]
+fn render_mesh_instance_list_matches_the_original() {
+    const SYM: u32 = 0x005b_3df0;
+    for (name, mut t) in Twins::all() {
+        let threads = t.stub(ml::THREAD_COUNT, false, 0, 0);
+        let thread_instance = t.stub(ml::THREAD_INSTANCE, false, 0, 0);
+        let pool_cell = t.stub(ml::THREAD_POOL, false, 0, 0);
+        t.stub(ml::SET_CAMERA, true, 1, 1);
+        t.stub(ml::BUILDER_CTOR, true, 3, 3);
+        let (add, add_cell) = t.stub_custom(ml::BUILDER_ADD, true, 2, 2, 16, &BUILDER_ADD_BODY);
+        let (step, step_cell) = t.stub_custom(ml::STEP_FOR_ALLOCATION, true, 3, 3, 8, &STEP_BODY);
+        for (sym, addr) in [(ml::BUILDER_ADD, add), (ml::STEP_FOR_ALLOCATION, step)] {
+            let at = t.rebase(sym);
+            let mut j = vec![0xe9];
+            j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+            t.write(at, &j);
+        }
+        t.stub(ml::BUILDER_FILL, true, 1, 1);
+        t.stub(ml::SEMAPHORE_WAIT, true, 0, 0);
+        t.stub(ml::NEXT_SEGMENT, true, 0, 0);
+        let allocate = t.stub(ml::SEGMENTED_ALLOCATE, true, 1, 1);
+        let new_job = t.stub(ml::NEW_JOB, false, 0, 0);
+        t.stub(ml::THREAD_REGISTER, true, 1, 1);
+        t.stub(ml::FREE, false, 1, 0);
+        let render_one = t.stub(ml::RENDER_MESH_INSTANCE, true, 4, 4);
+        // the renderer's slot 2 (no arguments); the pool's slots 5 and 7
+        // (one) and 6 (none)
+        let mut words = Vec::new();
+        for slot in 0..8 {
+            let n = u32::from(slot == 5 || slot == 7);
+            let (f, _) = t.stub_code(0x7e00_0000 + slot, true, n, n);
+            words.extend(f.to_le_bytes());
+        }
+        let vtable = t.alloc(&words);
+        let mut rng = Rng(0x05b3_df00);
+        let mut calls = 0;
+        for case in 0..120_u32 {
+            // a fresh call log per case (it holds 511 entries)
+            let log = t.log;
+            t.w32(log, 0);
+            let r = t.zeros(0x140);
+            t.fill(&mut rng, r, 0x140);
+            t.w32(r, vtable);
+            if rng.below(4) == 0 {
+                t.w32(r + 0x5c, 0); // no camera
+            }
+            if rng.below(3) == 0 {
+                t.w32(r + 0x44, 0); // no semaphore
+            }
+            // the rings' write cursors and readers: small, to reach every
+            // branch of the fit test
+            for ring in [r + 0x1c, r + 0x30] {
+                t.w32(ring + 8, rng.below(6));
+                t.w32(ring + 0xc, rng.below(6));
+            }
+            let n_threads = 1 + rng.below(3);
+            let count = match case % 5 {
+                _ if case % 22 == 3 => 0, // no threads, no contexts
+                0 => n_threads + 1,
+                1 => n_threads | 0x8000_0000,
+                _ => n_threads,
+            };
+            t.results(threads, &[if case % 11 == 3 { 0 } else { n_threads }]);
+            let data = t.zeros(0xe4 * 4);
+            t.fill(&mut rng, data, 0xe4 * 4);
+            let contexts = t.zeros(8);
+            t.w32s(contexts, &[count, data]);
+            let thread = rng.next();
+            t.results(thread_instance, &[thread]);
+            let pool = t.zeros(8);
+            t.w32(pool, vtable);
+            t.results(pool_cell, &[pool]);
+            // the instances
+            let k = if case % 13 == 0 { 0 } else { rng.below(26) };
+            let list = t.zeros(4 * k as usize + 4);
+            for i in 0..k {
+                let inst = t.zeros(0x20);
+                t.fill(&mut rng, inst, 0x20);
+                t.w32(list + 4 * i, inst);
+            }
+            // the builder's answers: took (adding records and bytes) or
+            // refused
+            let mut adds = Vec::new();
+            for _ in 0..40 {
+                if rng.below(5) == 0 {
+                    adds.extend([1, 0, 0, 0]);
+                } else {
+                    let bytes = if rng.below(9) == 0 {
+                        0x8000_0000
+                    } else {
+                        rng.below(4) * 0x10
+                    };
+                    adds.extend([0, 1, rng.below(3), bytes]);
+                }
+            }
+            t.results(add_cell, &adds);
+            let steps: Vec<u32> = (0..64).map(|_| rng.below(7)).collect();
+            t.results(step_cell, &steps);
+            let blocks: Vec<u32> = (0..40).map(|_| rng.next()).collect();
+            t.results(allocate, &blocks);
+            let mut jobs = Vec::new();
+            for _ in 0..16 {
+                let job = t.zeros(0x40);
+                t.fill(&mut rng, job, 0x40);
+                if rng.below(2) == 0 {
+                    t.w32(job + 0x1c, rng.below(4)); // owned
+                }
+                if rng.below(2) == 0 {
+                    t.w32(job + 0x24, rng.below(4));
+                }
+                if rng.below(4) == 0 {
+                    t.w32(job + 0x20, 0);
+                }
+                jobs.push(job);
+            }
+            t.results(new_job, &jobs);
+            let errors: Vec<u32> = (0..30)
+                .map(|_| if rng.below(3) == 0 { rng.next() } else { 0 })
+                .collect();
+            t.results(render_one, &errors);
+            let begin = list;
+            let end = list + 4 * k;
+            t.check_framed(
+                &format!("{name} case {case} ({k} instances)"),
+                SYM,
+                Conv::Thiscall(r),
+                &[begin, end, contexts],
+                ml::FRAME,
+                // the cookie, and _chkstk's saved ecx below it
+                8,
+                |g, ebp| ml::bridge::render_list(g, r, begin, end, contexts, ebp),
+            );
+            calls += t.log_entries();
+        }
+        assert!(calls > 2000, "{name}: the stubs ran ({calls} calls)");
     }
 }
