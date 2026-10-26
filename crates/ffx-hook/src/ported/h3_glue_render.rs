@@ -40,6 +40,8 @@ use ffx_prender::h3_glue31::bridge as g31;
 use ffx_prender::h3_glue32::bridge as g32;
 use ffx_prender::h3_glue33::bridge as g33;
 use ffx_prender::h3_glue34::bridge as g34;
+use ffx_prender::h3_glue35::bridge as g35;
+use ffx_prender::h3_glue36::bridge as g36;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1824,6 +1826,22 @@ ported! {
     PhyreScene_readAssetHeader @ 0x0066_7bb0 => extern "thiscall" fn scene_read_asset_header(this: u32, path: u32, b: u32) -> u32 {
         let mut f = StackFrame::<0x5f>::new();
         g34::read_asset_header(&mut mem(), f.at() + 0x17c, this, path, b)
+    }
+
+    // ---- round 8 batch 35 (ffx_prender::h3_glue35) ----
+    /// `TextureAnimationManager_registerCharacterInstance(this, name, id)`:
+    /// the instance's slot list; `name`'s slot keeps the last pointer.
+    TextureAnimationManager_registerCharacterInstance @ 0x006b_29c0 => extern "thiscall" fn texture_animation_register_instance(this: u32, name: u32, id: u32; slots: u32) {
+        let mut f = StackFrame::<0xa>::new();
+        g35::register_character_instance(&mut mem(), f.at() + 0x28, slots, this, name, id);
+    }
+
+    // ---- round 8 batch 36 (ffx_prender::h3_glue36) ----
+    /// `0x00651de0(this)`: the character lighting's object lists from the
+    /// two map worlds; 0.
+    PhyreScene_updateLightingObjects_00651de0 @ 0x0065_1de0 => extern "thiscall" fn scene_update_lighting_objects(this: u32) -> u32 {
+        let mut f = StackFrame::<0xa>::new();
+        g36::lighting_objects(&mut mem(), f.at() + 0x28, this)
     }
 }
 

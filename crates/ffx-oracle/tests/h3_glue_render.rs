@@ -57,6 +57,8 @@ use ffx_prender::h3_glue31::{self as h31, bridge as gh31};
 use ffx_prender::h3_glue32::{self as h32, bridge as gh32};
 use ffx_prender::h3_glue33::{self as h33, bridge as gh33};
 use ffx_prender::h3_glue34::{self as h34, bridge as gh34};
+use ffx_prender::h3_glue35::{self as h35, bridge as gh35};
+use ffx_prender::h3_glue36::{self as h36, bridge as gh36};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -8839,5 +8841,175 @@ fn batch34_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES34, n, &mut Rng(0x3434_b034));
+    });
+}
+
+// ---- round 8 batch 35 (ffx_prender::h3_glue35) ----
+
+/// The instances (none, some, one holding the id, free ones, borrowed
+/// storage), the animated characters (none or some, names tagged or
+/// absent, the name found or not, 0 to 3 materials), the allocations
+/// failing now and then.
+fn prep_register_instance(
+    t: &mut Twins,
+    obj: u32,
+    this: &mut u32,
+    args: &mut [u32],
+    rng: &mut Rng,
+) {
+    *this = obj;
+    let id = if rng.chance(8) { 0 } else { 1 + rng.below(6) };
+    let count = pick(rng, &[0, 1, 3, 4]);
+    let borrowed = if rng.chance(4) { 0x8000_0000 } else { 0 };
+    t.w32(obj + 0x6c, count | borrowed);
+    let records = obj + 0x400;
+    // no storage at all when empty now and then (nothing to free)
+    let storage = if count == 0 && rng.chance(2) {
+        0
+    } else {
+        records
+    };
+    t.w32(obj + 0x70, storage);
+    for k in 0..4 {
+        let held = match rng.below(6) {
+            0 => id,
+            1 | 2 => 0,
+            _ => 7 + rng.below(4),
+        };
+        t.w32(records + 12 * k, rng.next());
+        t.w32(records + 12 * k + 4, held);
+        t.w32(records + 12 * k + 8, rng.next());
+    }
+    let n = pick(rng, &[0, 1, 3, 3, 0x8000_0002]);
+    t.w32(obj + 0x64, n);
+    let entries = obj + 0x600;
+    t.w32(obj + 0x68, entries);
+    for k in 0..3u32 {
+        let at = entries + 32 * k;
+        let name = obj + 0x800 + 0x20 * k;
+        t.write(name, &[b'c', b'0', b'0', b'0' + k as u8, 0]);
+        let tagged = match rng.below(5) {
+            0 => 0,
+            1 => name | 1,
+            _ => name,
+        };
+        t.w32(at + 0x18, tagged);
+        let materials = pick(rng, &[0, 1, 3, 0x8000_0002]);
+        t.w32(at + 0x10, materials);
+        let ids = obj + 0xa00 + 0x20 * k;
+        t.w32(at + 0x14, ids);
+        for j in 0..4 {
+            let v = rng.next();
+            t.w32(ids + 4 * j, v);
+        }
+    }
+    let wanted = obj + 0x900;
+    let pickname = rng.below(4) as u8;
+    t.write(wanted, &[b'c', b'0', b'0', b'0' + pickname, 0]);
+    args[0] = wanted;
+    args[1] = id;
+    t.stub_alloc(h35::PHYRE_MALLOC, obj + 0xc00);
+    // the materials' storage (a null one faults in the original too)
+    let data = obj + 0xe00;
+    let grown = if rng.chance(6) { 0 } else { obj + 0x1000 };
+    t.stub_seq(
+        h35::PHYRE_MALLOC_ALIGNED,
+        false,
+        2,
+        0,
+        &[data, grown, grown],
+    );
+    let news: Vec<u32> = (0..4)
+        .map(|k| {
+            if rng.chance(5) {
+                0
+            } else {
+                obj + 0x1200 + 0x20 * k
+            }
+        })
+        .collect();
+    t.stub_seq(h35::OPERATOR_NEW, false, 1, 0, &news);
+}
+
+const REGISTER_INSTANCE_STUBS: &[(u32, K)] = &[
+    (h35::PHYRE_PRINTF, K::Cdecl(4)),
+    (h35::SLOTS_CTOR, K::This(1)),
+    (h35::PHYRE_FREE, K::Cdecl(1)),
+];
+
+#[rustfmt::skip]
+const CASES35: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_register_instance), ..method("register_character_instance", 0x006b_29c0, This::Object, 2, REGISTER_INSTANCE_STUBS, |m, this, a| { let slots = slots_at(m, a); gh35::register_character_instance(m, frame_ebp(), slots, this, a[0], a[1]); Out::None }) }), 0x28, 8),
+];
+
+#[test]
+fn batch35_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 100 } else { 600 };
+        run_cases(t, CASES35, n, &mut Rng(0x3535_b035));
+    });
+}
+
+// ---- round 8 batch 36 (ffx_prender::h3_glue36) ----
+
+/// The two worlds (each there or not; their object lists), the cursor
+/// runs of the four walks, the record's array (its count matching or
+/// not, borrowed or not), the allocation failing now and then, the
+/// light (or none) and the lighting started or not.
+fn prep_lighting_objects(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1200);
+    *this = scene;
+    let area = t.zeros(0x800);
+    let mut steps = vec![];
+    for (field, world) in [(0x10d4, obj + 0x40), (0x1128, obj + 0x80)] {
+        let present = !rng.chance(4);
+        t.w32(scene + field, if present { world } else { 0 });
+        let list = if rng.chance(3) {
+            world + 0x1c
+        } else {
+            rng.next()
+        };
+        t.w32(world + 0x1c, list);
+        if present {
+            let runs = cursor_steps(t, area, false, rng);
+            steps.extend(runs.iter().copied());
+            steps.extend(runs);
+        }
+    }
+    t.stub_cursor_script(h36::CURSOR_BEGIN, h36::CURSOR_NEXT, &steps);
+    let record = obj + 0x100;
+    t.w32(scene + 0xcc, record);
+    let n = pick(rng, &[0, 1, 2, 4, 0x8000_0002]);
+    t.w32(record + 0x9c, n);
+    t.w32(record + 0xa0, obj + 0x1000);
+    let light = if rng.chance(3) { 0 } else { obj + 0x200 };
+    t.w32(scene + 0x4f8, light);
+    for k in 0..3 {
+        let v = rng.float().to_bits();
+        t.w32(obj + 0x2c0 + 4 * k, v);
+    }
+    // new storage, none, or the old one again (not freed then)
+    let data = pick(rng, &[0, obj + 0x1400, obj + 0x1400, obj + 0x1000]);
+    t.stub_ret(h36::PHYRE_MALLOC_ALIGNED, false, 2, 0, data);
+    let ready = rng.next();
+    t.stub_ret(h36::LIGHTING_READY, true, 0, 0, ready);
+}
+
+const LIGHTING_OBJECTS_STUBS: &[(u32, K)] = &[
+    (h36::ARRAY_RESIZE, K::This(1)),
+    (h36::PHYRE_FREE, K::Cdecl(1)),
+    (h36::LIGHTING_INSTANCE, K::Getter),
+];
+
+#[rustfmt::skip]
+const CASES36: &[Case] = &[
+    framed(Case { prep: Some(prep_lighting_objects), ..method("lighting_objects", 0x0065_1de0, This::Object, 0, LIGHTING_OBJECTS_STUBS, |m, this, _| u(gh36::lighting_objects(m, frame_ebp(), this))) }, 0x28, 0),
+];
+
+#[test]
+fn batch36_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 100 } else { 600 };
+        run_cases(t, CASES36, n, &mut Rng(0x3636_b036));
     });
 }
