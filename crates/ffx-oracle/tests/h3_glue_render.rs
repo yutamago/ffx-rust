@@ -64,6 +64,7 @@ use ffx_prender::h3_glue38::{self as h38, bridge as gh38};
 use ffx_prender::h3_glue39::{self as h39, bridge as gh39};
 use ffx_prender::h3_glue40::{self as h40, bridge as gh40};
 use ffx_prender::h3_glue41::{self as h41, bridge as gh41};
+use ffx_prender::h3_glue42::{self as h42, bridge as gh42};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -10112,5 +10113,238 @@ fn batch41b_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 150 } else { 400 };
         run_cases(t, CASES41B, n, &mut Rng(0x4141_b042));
+    });
+}
+
+// ---- round 10 batch 42 (ffx_prender::h3_glue42) ----
+
+/// The variant (or none), the segment array (one entry, none, several,
+/// borrowed; `PhyreMalloc` failing now and then), the segment's streams,
+/// the vertex buffer (its size known or not, bound or not, the frame
+/// index wrapping), the instance list (none, no instance, the ctor's
+/// instance or 0: page 0), the material (or none) and its array, the
+/// parameter (none, offsets below 4, sizes past the buffer).
+fn prep_fade_mesh42(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    map_page_zero(t);
+    let post = t.zeros(0x1_2400);
+    *this = post;
+    let aux = t.zeros(0x1000);
+    let variant = if rng.chance(8) { 0 } else { obj + 0x100 };
+    t.stub_ret(h42::POST_LOOKUP, true, 1, 1, variant);
+    let segments = aux;
+    let materials = aux + 0xb00;
+    t.stub_seq(h42::CLUSTER_CREATE, true, 3, 3, &[segments, materials]);
+    let word = pick(rng, &[1, 1, 0, 2, 0x8000_0003]);
+    t.w32(segments, word);
+    let old = pick(rng, &[aux + 0x80, aux + 0x200]);
+    t.w32(segments + 4, if word == 1 { aux + 0x300 } else { old });
+    let entry = if rng.chance(6) { 0 } else { aux + 0x200 };
+    let streams = if rng.chance(6) { 0 } else { aux + 0x280 };
+    t.stub_seq(h42::PHYRE_MALLOC, false, 2, 0, &[entry, streams, streams]);
+    for segment in [aux + 0x200, aux + 0x300, aux + 0x80] {
+        let w = pick(rng, &[1, 0, 2]);
+        t.w32(segment + 0x28, w);
+        t.w32(segment + 0x2c, aux + 0x400);
+    }
+    let vb = aux + 0x400;
+    let junk = rng.bytes(0x200);
+    t.write(vb, &junk);
+    let (a, b) = (rng.below(16), rng.below(16));
+    t.w32(vb, a);
+    t.w32(vb + 4, b);
+    t.w32(vb + 0x38, if rng.chance(2) { a * b } else { rng.next() });
+    t.w32(vb + 0xc, aux + 0x500);
+    let index = rng.below(4);
+    t.w32(vb + 0x10, index);
+    let count = pick(rng, &[index + 1, index + 1, 4, 0x8000_0000 | (index + 1)]);
+    t.w32(vb + 0x18, count);
+    let mapped = rng.next();
+    t.stub_out(h42::VB_MAP, 1, 1, mapped, 0, aux + 0x600);
+    let unmapped = u32::from(rng.chance(3));
+    t.stub_ret(h42::VB_UNMAP, true, 2, 2, unmapped);
+    let list = if rng.chance(6) { 0 } else { aux + 0x700 };
+    t.stub_ret(h42::ALLOCATE_INSTANCE_LIST, true, 3, 3, list);
+    t.w32(
+        aux + 0x700 + 0x34,
+        if rng.chance(6) { 0 } else { aux + 0x780 },
+    );
+    let instance = if rng.chance(8) { 0 } else { aux + 0x800 };
+    t.stub_ret(h42::MESH_INSTANCE_CTOR, true, 1, 1, instance);
+    let material = if rng.chance(8) { 0 } else { aux + 0x900 };
+    t.stub_ret(h42::CREATE_MATERIAL, true, 3, 3, material);
+    let shader = rng.next();
+    t.w32(aux + 0x900, shader);
+    t.w32(aux + 0x904, aux + 0xa00);
+    let size = pick(rng, &[0x10, 0x40, 0x100]);
+    t.w32(aux + 0xa00, size);
+    let word = pick(rng, &[1, 1, 0, 2, 0x8000_0002]);
+    t.w32(materials, word);
+    let old = pick(rng, &[aux + 0xb80, materials + 4]);
+    t.w32(materials + 4, old);
+    let parameter = if rng.chance(6) { 0 } else { aux + 0xc00 };
+    t.stub_ret(h42::FIND_PARAMETER, true, 1, 1, parameter);
+    let offset = pick(rng, &[0, 2, 4, 8, 0x30]);
+    t.write(aux + 0xc08, &(offset as u16).to_le_bytes());
+    let bytes = pick(rng, &[0x10, 0x2010, 0xc, 0xe000]);
+    t.write(aux + 0xc0a, &(bytes as u16).to_le_bytes());
+    t.stub_copy(h42::MEMCPY);
+}
+
+const FADE_MESH_STUBS: &[(u32, K)] = &[
+    (h42::ENTRIES_CONSTRUCT, K::Cdecl(2)),
+    (h42::ENTRIES_DESTROY, K::Cdecl(2)),
+    (h42::STREAMS_CTOR, K::This(0)),
+    (h42::SET_BUFFER40, K::This(2)),
+    (h42::VB_SETUP, K::This(3)),
+    (h42::VB_IS_BOUND, K::This(0)),
+    (h42::VB_RELEASE, K::This(0)),
+    (h42::PHYRE_FREE, K::Cdecl(1)),
+];
+
+#[rustfmt::skip]
+const CASES42: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_fade_mesh42), ..method("post_screen_fade_mesh", 0x0069_31a0, This::Object, 0, FADE_MESH_STUBS, |m, this, _| u(gh42::post_screen_fade_mesh(m, frame_ebp(), this))) }), 0x40, 0),
+];
+
+#[test]
+fn batch42_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 150 } else { 400 };
+        run_cases(t, CASES42, n, &mut Rng(0x4242_b042));
+    });
+}
+
+impl Twins {
+    /// A recording stub at `sym` (thiscall, `n` words, popping them,
+    /// returning `ret`) that logs the word argument `arg` points to in
+    /// place of that argument.
+    fn stub_deref_arg(&mut self, sym: u32, n: u32, ret: u32, arg: u8) {
+        let log = self.stub(None, sym, true, n, n, Some(ret));
+        let slot = 4 + 4 * arg;
+        // mov eax, [esp+slot]; mov eax, [eax]; mov [esp+slot], eax; jmp log
+        let mut c = vec![0x8b, 0x44, 0x24, slot, 0x8b, 0x00, 0x89, 0x44, 0x24, slot];
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// The shadow manager's 64 slots (a list or none, in the map or not,
+/// visible or not, sizes around the limit or a NaN, the filter's word),
+/// the filter (on or off, its `al`), six lists of 0 to 3 casters (a
+/// negative count too) with or without a 3x4, the two matrices, the
+/// output arrays (empty, owned or borrowed storage), the kind (4 or
+/// another) and `single` (its low byte counts).
+fn prep_casters42(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let shadows = t.zeros(0x4100);
+    *this = shadows;
+    let aux = t.zeros(0x4000);
+    let limit = t.r32(t.rebase(h42::CASTER_SIZE_LIMIT));
+    let lim = f32::from_bits(limit);
+    for i in 0..64 {
+        let list = if rng.chance(5) {
+            0
+        } else {
+            aux + 0x100 * rng.below(6)
+        };
+        t.w32(shadows + 0xde8 + 4 * i, list);
+        t.w32(shadows + 0xfe8 + 4 * i, pick(rng, &[1, 1, 1, 0, 2]));
+        t.w32(shadows + 0x10e8 + 4 * i, pick(rng, &[1, 1, 1, 0, 0x101]));
+        let v = rng.next();
+        t.w32(shadows + 0x2ea8 + 4 * i, v);
+        for at in [0x6b8, 0x7b8] {
+            let any = rng.float().to_bits();
+            let size = pick(
+                rng,
+                &[
+                    limit,
+                    (lim * 2.0).to_bits(),
+                    (lim * 0.5).to_bits(),
+                    0x7fc0_0000,
+                    any,
+                ],
+            );
+            t.w32(shadows + at + 4 * i, size);
+        }
+    }
+    let high = rng.next() as u8;
+    t.write(shadows + 0x4030, &[u8::from(rng.chance(3)), high, 0, high]);
+    let any = rng.next();
+    let ret = pick(rng, &[0x100, 0xff00, 1, 0, any]);
+    let filter = t.stub(None, 0x4048, false, 1, 0, Some(ret));
+    t.w32(shadows + 0x4048, filter);
+    for l in 0..6 {
+        let list = aux + 0x100 * l;
+        let n = pick(rng, &[0, 1, 2, 3, 3, 0x8000_0002]);
+        t.w32(list, n);
+        let items = aux + 0x800 + 0x20 * l;
+        t.w32(list + 4, items);
+        for j in 0..3 {
+            let item = aux + 0x1000 + 0x40 * (3 * l + j);
+            t.w32(items + 4 * j, item);
+            let bounds = aux + 0x2000 + 0x40 * (3 * l + j);
+            t.w32(item + 0x1c, bounds);
+            let local = aux + 0x3000 + 0x40 * ((l + j) % 8);
+            t.w32(bounds + 0xc, if rng.chance(2) { 0 } else { local });
+        }
+    }
+    for k in 0..(8 * 12) {
+        let f = rng.float().to_bits();
+        t.w32(aux + 0x3000 + 4 * k, f);
+    }
+    let camera = aux + 0x3800;
+    for k in 0..32 {
+        let f = rng.float().to_bits();
+        t.w32(camera + 4 * k, f);
+    }
+    let out = aux + 0x3c00;
+    for array in [out, out + 8] {
+        let word = pick(rng, &[0, 1, 3, 0x8000_0001]);
+        t.w32(array, word);
+        t.w32(array + 4, if rng.chance(4) { 0 } else { aux + 0x3d00 });
+    }
+    let tests: Vec<u32> = (0..400)
+        .map(|_| {
+            if rng.chance(4) {
+                rng.next() & !0xff
+            } else {
+                rng.next() | 1
+            }
+        })
+        .collect();
+    t.stub_seq(h42::BOX_IS_VISIBLE, true, 1, 1, &tests);
+    let tests: Vec<u32> = (0..400)
+        .map(|_| {
+            if rng.chance(4) {
+                rng.next() & !0xff
+            } else {
+                rng.next() | 1
+            }
+        })
+        .collect();
+    t.stub_seq(h42::BOX_IS_INSIDE, true, 1, 1, &tests);
+    let v = rng.next();
+    t.stub_deref_arg(h42::PUSH_INTO, 2, v, 1);
+    args[0] = pick(rng, &[4, 4, 4, 0, 1, 5]);
+    args[1] = out;
+    args[2] = camera;
+    args[3] = pick(rng, &[0, 0, 1, 0x100]);
+}
+
+#[rustfmt::skip]
+const CASES42B: &[Case] = &[
+    framed(Case { prep: Some(prep_casters42), ..method("collect_casters", 0x006c_8090, This::Object, 4, &[(h42::PHYRE_FREE, K::Cdecl(1)), (h42::PHYRE_MALLOC, K::Cdecl(2))], |m, this, a| { slots_at(m, a); u(gh42::collect_casters(m, frame_ebp(), this, a[0], a[1], a[2], a[3])) }) }, 0xf4, 0x10),
+];
+
+#[test]
+fn batch42b_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 100 } else { 300 };
+        run_cases(t, CASES42B, n, &mut Rng(0x4242_b043));
     });
 }

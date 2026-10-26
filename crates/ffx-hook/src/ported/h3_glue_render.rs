@@ -47,6 +47,7 @@ use ffx_prender::h3_glue38::bridge as g38;
 use ffx_prender::h3_glue39::bridge as g39;
 use ffx_prender::h3_glue40::bridge as g40;
 use ffx_prender::h3_glue41::bridge as g41;
+use ffx_prender::h3_glue42::bridge as g42;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1919,6 +1920,20 @@ ported! {
     PhyreScene_RenderMF152Related @ 0x0065_3230 => extern "thiscall" fn scene_render_mf152(this: u32) -> u32 {
         let mut f = StackFrame::<0xc>::new();
         g41::render_mf152(&mut mem(), f.at() + 0x30, this)
+    }
+
+    // ---- round 10 batch 42 (ffx_prender::h3_glue42) ----
+    /// `0x006931a0(this)`: the post-process manager's screen-fade mesh,
+    /// instance and material; 0, 3 or 0x13.
+    PostProcessManager_createScreenFadeMesh_006931a0 @ 0x0069_31a0 => extern "thiscall" fn post_create_screen_fade_mesh(this: u32) -> u32 {
+        let mut f = StackFrame::<0x10>::new();
+        g42::post_screen_fade_mesh(&mut mem(), f.at() + 0x40, this)
+    }
+    /// `0x006c8090(this, kind, out, camera, single)`: the shadow casters'
+    /// two lists; the loop's base word.
+    ShadowManager_collectCasters_006c8090 @ 0x006c_8090 => extern "thiscall" fn shadow_collect_casters(this: u32, kind: u32, out: u32, camera: u32, single: u32) -> u32 {
+        let mut f = StackFrame::<0x3d>::new();
+        g42::collect_casters(&mut mem(), f.at() + 0xf4, this, kind, out, camera, single)
     }
 }
 
