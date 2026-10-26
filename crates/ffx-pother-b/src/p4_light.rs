@@ -611,3 +611,241 @@ pub mod bridge6 {
         h.call_sym(APPLY_ROTATION, Conv::Thiscall(cl), &[i])
     }
 }
+
+/// `0x00576630` (thiscall `(obj)`): the constructor of the three embedded
+/// objects at `+0`, `+0x50`, `+0xa0` (`fh` guesses
+/// `PCluster::operator new`; it is called on `this`).
+pub const EMBEDDED_CTOR: u32 = 0x0057_6630;
+/// `Phyre_PFreeList_PFreeList` (thiscall `(list, size, a, b, name)`, `ret
+/// 0x10`).
+pub const FREE_LIST_CTOR: u32 = 0x0049_c480;
+/// The free lists' name (`.rdata`).
+pub const FREE_LIST_NAME: u32 = 0x00b1_3bc8;
+/// `KERNEL32!CreateSemaphoreW`'s import slot (stdcall).
+pub const CREATE_SEMAPHORE_W: u32 = 0x00b0_c1e0;
+/// `CharacterLighting`'s ambient intensity at construction (1.2f).
+const AMBIENT_START: u32 = 0x3f99_999a;
+
+pub mod bridge7 {
+    //! The originals over game memory.
+
+    use super::{
+        AMBIENT_START, CREATE_SEMAPHORE_W, Conv, EMBEDDED_CTOR, FREE_LIST_CTOR, FREE_LIST_NAME,
+        Host, ONE, OPERATOR_NEW,
+    };
+
+    /// Points the six words at `at` at `at` (two empty lists' heads, in
+    /// the original's order).
+    fn self_links(h: &mut impl Host, at: u32) {
+        for k in [0, 4, 8, 0x14, 0x10, 0xc] {
+            h.write(at + k, at);
+        }
+    }
+
+    /// `CharacterLighting::CharacterLighting(cl)` (`0x006a63f0`, thiscall)
+    /// -> `cl`: three embedded objects (`+0`, `+0x50`, `+0xa0`) each
+    /// followed by an empty list (`+0x48`, `+0x98`, `+0xe8`); the flash
+    /// timer 0 (`+0x154`); no light set (`+0xf0`); two list heads
+    /// (`+0x158`, `+0x1f0`) with free lists behind them (`+0x170`: 0x14
+    /// bytes, `+0x208`: 0x1c bytes; 8 per block, align 4); not
+    /// initialised (`+0x1cc`); `+0x220..0x230`; intensities 1.0, the
+    /// ambient intensity 1.2 (`+0x1a4`), colours and the eight words at
+    /// `+0x1d0` 0; and a semaphore (`CreateSemaphoreW(0, 1, 1, 0)`) in a
+    /// 4-byte block at `+0x188` (0 when `operator_new` fails).
+    pub fn lighting_ctor(h: &mut impl Host, cl: u32) -> u32 {
+        h.call_sym(EMBEDDED_CTOR, Conv::Thiscall(cl), &[]);
+        for (list, next) in [(0x48, 0x50), (0x98, 0xa0)] {
+            let l = cl + list;
+            h.write(l, l);
+            h.write(l + 4, l);
+            h.call_sym(EMBEDDED_CTOR, Conv::Thiscall(cl + next), &[]);
+        }
+        let l = cl + 0xe8;
+        h.write(l, l);
+        h.write(l + 4, l);
+        h.write(cl + 0x154, 0u32);
+        h.write(cl + 0xf0, 0u32);
+        let name = h.rebase(FREE_LIST_NAME);
+        self_links(h, cl + 0x158);
+        h.call_sym(
+            FREE_LIST_CTOR,
+            Conv::Thiscall(cl + 0x170),
+            &[0x14, 8, 4, name],
+        );
+        h.write(cl + 0x1cc, 0u8);
+        self_links(h, cl + 0x1f0);
+        h.call_sym(
+            FREE_LIST_CTOR,
+            Conv::Thiscall(cl + 0x208),
+            &[0x1c, 8, 4, name],
+        );
+        h.write(cl + 0x220, 0u32);
+        h.write(cl + 0x224, 1u32);
+        h.write(cl + 0x228, 1u32);
+        h.write(cl + 0x22c, 0u32);
+        h.write(cl + 0x230, 0u8);
+        for (at, v) in [
+            (0x1a8, ONE),
+            (0x1ac, 0),
+            (0x1b0, 0),
+            (0x1b8, 0),
+            (0x1bc, 0),
+            (0x1c4, 0),
+            (0x1c8, 0),
+            (0x1b4, ONE),
+            (0x1c0, ONE),
+            (0x1a0, ONE),
+            (0x1a4, AMBIENT_START),
+            (0x190, 0),
+            (0x194, 0),
+            (0x198, 0),
+            (0x19c, 0),
+        ] {
+            h.write(cl + at, v);
+        }
+        for k in 0..8 {
+            h.write(cl + 0x1d0 + 4 * k, 0u32);
+        }
+        let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[4]);
+        if p == 0 {
+            h.write(cl + 0x188, 0u32);
+        } else {
+            let f: u32 = h.read(h.rebase(CREATE_SEMAPHORE_W));
+            let sem = h.call(f, Conv::Stdcall, &[0, 1, 1, 0]);
+            h.write(p, sem);
+            h.write(cl + 0x188, p);
+        }
+        cl
+    }
+}
+
+/// The threshold [`bridge8::sync_intensity`] compares with (0.01f).
+pub const SYNC_EPSILON: u32 = 0x00b1_f2b0;
+/// `Phyre_CharacterLightingTweakUtil_getLineText` (thiscall `(tw, line,
+/// buf)`, `ret 8`).
+pub const GET_LINE_TEXT: u32 = 0x006a_8580;
+/// `TextUtil_changeLine` (thiscall `(text, line, s)`, `ret 8`).
+pub const TEXT_CHANGE_LINE: u32 = 0x006f_6070;
+/// `CharacterLightingTweakUtil_applyShadeCoeffs_006ab720` (thiscall
+/// `(tw)`).
+pub const APPLY_SHADE_COEFFS: u32 = 0x006a_b720;
+
+pub mod bridge8 {
+    //! The original over game memory.
+
+    use super::{
+        APPLY_INTENSITY, APPLY_SHADE_COEFFS, Conv, G_LIGHTING, GET_LINE_TEXT, Host, MEMSET,
+        SYNC_EPSILON, TEXT_CHANGE_LINE, x87,
+    };
+    use crate::methods::quiet;
+
+    /// `CharacterLightingTweakUtil::syncIntensity(tw)` (`0x006aa260`,
+    /// fastcall): when the tweak utility is on (`+0`) and syncing
+    /// (`+0xc9`), each of its four intensities (`+0xcc`) that differs from
+    /// the lighting's (3: `+0x1a0`; else `+0x1a8 + 0xc i`) by more than
+    /// 0.01 (`|a - b|` rounded to `f32` at each step; equal, below or NaN
+    /// keeps it) is copied over (light intensities only on an
+    /// initialised manager) and applied (`applyIntensityMultiplier(i, 1)`;
+    /// lights only with a light set `+0xf0`); the selected line's (`+0xc0`)
+    /// text is rebuilt in the frame's buffer (`ebp - 0x84`, 0x80 bytes)
+    /// while the utility is on. Any change ends in `applyShadeCoeffs`.
+    pub fn sync_intensity(h: &mut impl Host, ebp: u32, tw: u32) {
+        if h.read::<u8>(tw) == 0 || h.read::<u8>(tw + 0xc9) == 0 {
+            return;
+        }
+        let eps = x87::load(h.read(h.rebase(SYNC_EPSILON)));
+        let cl: u32 = h.read(h.rebase(G_LIGHTING));
+        let mut changed = false;
+        for i in 0..4u32 {
+            let a = quiet(h.read(tw + 0xcc + 4 * i));
+            let at = if i == 3 {
+                cl + 0x1a0
+            } else {
+                cl + 0x1a8 + 0xc * i
+            };
+            let b = quiet(h.read(at));
+            let d = x87::store(x87::sub(x87::load(a), x87::load(b)));
+            let d = x87::store(x87::load(d).abs());
+            // fcomp, then `test ah, 0x41`: below, equal or unordered keeps it
+            if x87::load(d).partial_cmp(&eps) != Some(std::cmp::Ordering::Greater) {
+                continue;
+            }
+            if i == 3 {
+                h.write(cl + 0x1a0, a);
+                h.call_sym(APPLY_INTENSITY, Conv::Thiscall(cl), &[3, 1]);
+            } else if h.read::<u8>(cl + 0x1cc) != 0 {
+                h.write(at, a);
+                if h.read::<u32>(cl + 0xf0) != 0 {
+                    h.call_sym(APPLY_INTENSITY, Conv::Thiscall(cl), &[i, 1]);
+                }
+            }
+            changed = true;
+            if i == h.read::<u32>(tw + 0xc0) && h.read::<u8>(tw) != 0 {
+                let buf = ebp - 0x84;
+                h.call_sym(MEMSET, Conv::Cdecl, &[buf, 0, 0x80]);
+                h.call_sym(GET_LINE_TEXT, Conv::Thiscall(tw), &[2, buf]);
+                h.call_sym(TEXT_CHANGE_LINE, Conv::Thiscall(tw + 4), &[2, buf]);
+            }
+        }
+        if changed {
+            h.call_sym(APPLY_SHADE_COEFFS, Conv::Thiscall(tw), &[]);
+        }
+    }
+}
+
+/// `MSVCR110!sprintf_s`'s import slot (cdecl).
+pub const SPRINTF_S: u32 = 0x00b0_c394;
+/// `"CharacterLighting: %.2f fps"` (`.rdata`).
+pub const FPS_FORMAT: u32 = 0x00b4_82bc;
+/// `TextUtil_setTitleText` (thiscall `(text, s)`, `ret 4`).
+pub const TEXT_SET_TITLE: u32 = 0x006f_6930;
+/// `0x006a7850` (thiscall `(tw, x)`, `ret 4`): the tweak utility's
+/// per-frame step before its lines are drawn.
+pub const TWEAK_STEP: u32 = 0x006a_7850;
+/// `TextUtil_render` (thiscall `(text, ctx)`, `ret 4`).
+pub const TEXT_RENDER: u32 = 0x006f_65b0;
+
+pub mod bridge9 {
+    //! The original over game memory.
+
+    use super::{
+        Conv, FPS_FORMAT, GET_LINE_TEXT, Host, MEMSET, SPRINTF_S, TEXT_CHANGE_LINE, TEXT_RENDER,
+        TEXT_SET_TITLE, TWEAK_STEP, x87,
+    };
+
+    /// `CharacterLightingTweakUtil::render(tw, ctx, x, fps)` (`0x006a9f00`,
+    /// `ret 0xc`) -> `TextUtil_render`'s `eax`, or 0 when the utility
+    /// isn't shown (`+0xc8`) or there is no context: the title
+    /// `"CharacterLighting: %.2f fps"` (`sprintf_s` into the zeroed
+    /// 0x20-byte buffer at `ebp - 0x24`, `fps` as a double), the step
+    /// `0x006a7850(x)`, lines 6..9 rebuilt (in `ebp - 0xa4`) while the
+    /// utility is on (`+0`), then the text drawn into `ctx`.
+    pub fn render(h: &mut impl Host, ebp: u32, tw: u32, ctx: u32, x: u32, fps: u32) -> u32 {
+        if h.read::<u8>(tw + 0xc8) == 0 || ctx == 0 {
+            return 0;
+        }
+        let title = ebp - 0x24;
+        for k in 0..8 {
+            h.write(title + 4 * k, 0u32);
+        }
+        let fps = x87::load(fps).to_bits();
+        let f: u32 = h.read(h.rebase(SPRINTF_S));
+        let format = h.rebase(FPS_FORMAT);
+        h.call(
+            f,
+            Conv::Cdecl,
+            &[title, 0x20, format, fps as u32, (fps >> 32) as u32],
+        );
+        h.call_sym(TEXT_SET_TITLE, Conv::Thiscall(tw + 4), &[title]);
+        h.call_sym(TWEAK_STEP, Conv::Thiscall(tw), &[x]);
+        let line = ebp - 0xa4;
+        for i in 6..=9 {
+            if h.read::<u8>(tw) != 0 {
+                h.call_sym(MEMSET, Conv::Cdecl, &[line, 0, 0x80]);
+                h.call_sym(GET_LINE_TEXT, Conv::Thiscall(tw), &[i, line]);
+                h.call_sym(TEXT_CHANGE_LINE, Conv::Thiscall(tw + 4), &[i, line]);
+            }
+        }
+        h.call_sym(TEXT_RENDER, Conv::Thiscall(tw + 4), &[ctx])
+    }
+}

@@ -1037,4 +1037,46 @@ ported! {
         ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4), word);
         r
     }
+    // ---- p4-other-b c2 batch 3 ----
+    /// `CreateDocumentsFolders()`: `Documents\Square Enix\<game>\`.
+    CreateDocumentsFolders_0062ac90 @ 0x0062_ac90 => extern "C" fn create_documents_folders() {
+        // ebp - 0x1204 .. ebp: the six path buffers, the cookie
+        let mut frame = super::StackFrame::<0x481>::new();
+        let ebp = frame.at() + 0x1204;
+        p4_frames::bridge3::create_documents_folders(&mut mem(), ebp);
+    }
+    /// `ClothInstancing_attach(ci, src)` -> the new instance; leaves the
+    /// last allocation in its argument's slot, as the original does.
+    ClothInstancing_attach_006e2600 @ 0x006e_2600 => extern "thiscall" fn cloth_attach(ci: u32, src: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, word) = p4_cloth::bridge3::attach(&mut m, ci, src);
+        ffx_bridge::Mem::write(&mut m, slots, word);
+        r
+    }
+    /// `NameList_pushBack(name)`.
+    NameList_pushBack_00681ad0 @ 0x0068_1ad0 => extern "C" fn name_list_push_back(name: u32) {
+        // ebp - 0x44 .. ebp: the two strings, the value, the cookie
+        let mut frame = super::StackFrame::<0x11>::new();
+        let ebp = frame.at() + 0x44;
+        p4_frames::bridge4::push_back(&mut mem(), ebp, name);
+    }
+    /// `CharacterLighting::CharacterLighting(cl)` -> `cl`.
+    CharacterLighting_ctor_006a63f0 @ 0x006a_63f0 => extern "thiscall" fn lighting_ctor(cl: u32) -> u32 {
+        p4_light::bridge7::lighting_ctor(&mut mem(), cl)
+    }
+    /// `CharacterLightingTweakUtil::syncIntensity(tw)`.
+    Phyre_CharacterLightingTweakUtil_syncIntensity_006aa260 @ 0x006a_a260 => extern "fastcall" fn sync_intensity(tw: u32) {
+        // ebp - 0x90 .. ebp: two float temporaries, the changed flag, the
+        // line buffer, the cookie
+        let mut frame = super::StackFrame::<0x24>::new();
+        let ebp = frame.at() + 0x90;
+        p4_light::bridge8::sync_intensity(&mut mem(), ebp, tw);
+    }
+    /// `CharacterLightingTweakUtil::render(tw, ctx, x, fps)` -> `TextUtil_render`'s `eax` or 0.
+    Phyre_CharacterLightingTweakUtil_render @ 0x006a_9f00 => extern "thiscall" fn tweak_render(tw: u32, ctx: u32, x: u32, fps: u32) -> u32 {
+        // ebp - 0xa8 .. ebp: ctx's copy, the line buffer, the title, the cookie
+        let mut frame = super::StackFrame::<0x2a>::new();
+        let ebp = frame.at() + 0xa8;
+        p4_light::bridge9::render(&mut mem(), ebp, tw, ctx, x, fps)
+    }
 }

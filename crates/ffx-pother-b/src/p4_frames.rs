@@ -215,3 +215,164 @@ pub mod bridge2 {
         (if ok { n } else { n.wrapping_neg() }) as u32
     }
 }
+
+/// Import slots `CreateDocumentsFolders` calls through.
+pub mod imports {
+    /// `SHELL32!SHGetFolderPathW` (stdcall).
+    pub const SH_GET_FOLDER_PATH_W: u32 = 0x00b0_c628;
+    /// `MSVCR110!wcstombs` (cdecl).
+    pub const WCSTOMBS: u32 = 0x00b0_c414;
+    /// `MSVCR110!sprintf` (cdecl).
+    pub const SPRINTF: u32 = 0x00b0_c3dc;
+    /// `MSVCR110!mbstowcs` (cdecl).
+    pub const MBSTOWCS: u32 = 0x00b0_c410;
+    /// `KERNEL32!GetFileAttributesW` (stdcall).
+    pub const GET_FILE_ATTRIBUTES_W: u32 = 0x00b0_c18c;
+    /// `KERNEL32!CreateDirectoryW` (stdcall).
+    pub const CREATE_DIRECTORY_W: u32 = 0x00b0_c194;
+}
+/// The `"%s%s"` format both paths are built with (`.rdata`).
+pub const JOIN_FORMAT: u32 = 0x00b4_0eb0;
+/// The pointer to `"\\Square Enix\\"`.
+pub const SQUARE_ENIX: u32 = 0x00c3_0f9c;
+/// The pointer to the game's own folder name.
+pub const GAME_FOLDER: u32 = 0x00c3_0fa0;
+
+pub mod bridge3 {
+    //! The original over game memory.
+
+    use super::{Conv, GAME_FOLDER, Host, JOIN_FORMAT, SQUARE_ENIX, imports};
+
+    fn import(h: &mut impl Host, slot: u32) -> u32 {
+        let at = h.rebase(slot);
+        h.read(at)
+    }
+
+    /// Makes the folder when it is missing or not a directory
+    /// (`GetFileAttributesW` is `INVALID_FILE_ATTRIBUTES` or lacks
+    /// `FILE_ATTRIBUTE_DIRECTORY`); false when `CreateDirectoryW` fails.
+    fn ensure(h: &mut impl Host, path: u32, create: &mut Option<u32>) -> bool {
+        let f = import(h, imports::GET_FILE_ATTRIBUTES_W);
+        let attr = h.call(f, Conv::Stdcall, &[path]);
+        // the original loads CreateDirectoryW's slot once, here
+        let c = *create.get_or_insert_with(|| import(h, imports::CREATE_DIRECTORY_W));
+        if attr != u32::MAX && attr & 0x10 != 0 {
+            return true;
+        }
+        h.call(c, Conv::Stdcall, &[path, 0]) != 0
+    }
+
+    /// `CreateDocumentsFolders()` (`0x0062ac90`, cdecl): `Documents`
+    /// (`SHGetFolderPathW(0, CSIDL_PERSONAL, 0, 0, ebp - 0x1204)`, then
+    /// `wcstombs` into `ebp - 0x604`); on success the folders
+    /// `<Documents>\Square Enix\` (`sprintf` into `ebp - 0x204`, `mbstowcs`
+    /// into `ebp - 0xa04`) and, when that one exists or could be made,
+    /// `<it><game folder>` (`ebp - 0x404`, `ebp - 0xe04`) are created
+    /// where missing. The buffers are the original's locals (0x1204 bytes
+    /// below `ebp`); this code reads none of them itself.
+    pub fn create_documents_folders(h: &mut impl Host, ebp: u32) {
+        let (documents, documents_mb) = (ebp - 0x1204, ebp - 0x604);
+        let (square, square_w) = (ebp - 0x204, ebp - 0xa04);
+        let (game, game_w) = (ebp - 0x404, ebp - 0xe04);
+        let f = import(h, imports::SH_GET_FOLDER_PATH_W);
+        let hr = h.call(f, Conv::Stdcall, &[0, 5, 0, 0, documents]);
+        let f = import(h, imports::WCSTOMBS);
+        h.call(f, Conv::Cdecl, &[documents_mb, documents, 0x200]);
+        if (hr as i32) < 0 {
+            return;
+        }
+        let format = h.rebase(JOIN_FORMAT);
+        let name: u32 = h.read(h.rebase(SQUARE_ENIX));
+        let f = import(h, imports::SPRINTF);
+        h.call(f, Conv::Cdecl, &[square, format, documents_mb, name]);
+        let f = import(h, imports::MBSTOWCS);
+        h.call(f, Conv::Cdecl, &[square_w, square, 0x200]);
+        let mut create = None;
+        if !ensure(h, square_w, &mut create) {
+            return;
+        }
+        let name: u32 = h.read(h.rebase(GAME_FOLDER));
+        let f = import(h, imports::SPRINTF);
+        h.call(f, Conv::Cdecl, &[game, format, square, name]);
+        let f = import(h, imports::MBSTOWCS);
+        h.call(f, Conv::Cdecl, &[game_w, game, 0x200]);
+        ensure(h, game_w, &mut create);
+    }
+}
+
+/// The list `0x00681ad0` appends to: its head node (`+0`) and size
+/// (`+4`).
+pub const NAME_LIST: u32 = 0x00cc_c840;
+/// `0x00404270` (thiscall `(str, p, n)`, `ret 8`): `std::string::assign(p,
+/// n)`.
+pub const STRING_ASSIGN_N: u32 = 0x0040_4270;
+/// `0x00680490` (thiscall `(list, next, prev, &value)`, `ret 0xc`): a new
+/// node holding a copy of the value, linked before `next`.
+pub const LIST_BUY_NODE: u32 = 0x0068_0490;
+/// `MSVCP110!std::_Xlength_error` (cdecl `(message)`, never returns).
+pub const XLENGTH_ERROR: u32 = 0x00b0_c29c;
+/// `"list<T> too long"`.
+pub const LIST_TOO_LONG: u32 = 0x00b4_3ce0;
+/// `std::list`'s `max_size` for these 0x24-byte nodes.
+pub const LIST_MAX: u32 = 0x071c_71c6;
+
+pub mod bridge4 {
+    //! The original over game memory.
+
+    use super::{
+        Conv, Host, LIST_BUY_NODE, LIST_MAX, LIST_TOO_LONG, NAME_LIST, OPERATOR_DELETE,
+        STRING_ASSIGN, STRING_ASSIGN_N, XLENGTH_ERROR,
+    };
+
+    /// An empty `std::string` at `s` (capacity 15, size 0, `""`).
+    fn empty(h: &mut impl Host, s: u32) {
+        h.write(s + 0x14, 0xfu32);
+        h.write(s + 0x10, 0u32);
+        h.write(s, 0u8);
+    }
+
+    /// `NameList_pushBack(name)` (`0x00681ad0`, cdecl): appends `{name,
+    /// 0}` to the list at [`NAME_LIST`]: `name` into a `std::string` at
+    /// `ebp - 0x44`, copied into the pair's string at `ebp - 0x2c` (the
+    /// value 0 at `ebp - 0x14`), a node of that pair linked at the end
+    /// (`std::_Xlength_error` past `max_size`, as the original), then
+    /// both strings released (the copy also reset to empty).
+    pub fn push_back(h: &mut impl Host, ebp: u32, name: u32) {
+        let (s1, s2) = (ebp - 0x44, ebp - 0x2c);
+        h.write(s1 + 0x14, 0xfu32);
+        let mut len = 0u32;
+        while h.read::<u8>(name.wrapping_add(len)) != 0 {
+            len += 1;
+        }
+        h.write(s1 + 0x10, 0u32);
+        h.write(s1, 0u8);
+        h.call_sym(STRING_ASSIGN_N, Conv::Thiscall(s1), &[name, len]);
+        empty(h, s2);
+        h.call_sym(STRING_ASSIGN, Conv::Thiscall(s2), &[s1, 0, u32::MAX]);
+        let list = h.rebase(NAME_LIST);
+        let head: u32 = h.read(list);
+        h.write(ebp - 0x14, 0u32);
+        let prev: u32 = h.read(head + 4);
+        let node = h.call_sym(LIST_BUY_NODE, Conv::Thiscall(list), &[head, prev, s2]);
+        let size: u32 = h.read(list + 4);
+        if LIST_MAX.wrapping_sub(size) < 1 {
+            let f: u32 = h.read(h.rebase(XLENGTH_ERROR));
+            let message = h.rebase(LIST_TOO_LONG);
+            h.call(f, Conv::Cdecl, &[message]);
+        }
+        h.write(list + 4, size.wrapping_add(1));
+        h.write(head + 4, node);
+        let prev: u32 = h.read(node + 4);
+        h.write(prev, node);
+        if h.read::<u32>(s2 + 0x14) >= 0x10 {
+            let buf: u32 = h.read(s2);
+            h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[buf]);
+        }
+        let big = h.read::<u32>(s1 + 0x14) >= 0x10;
+        empty(h, s2);
+        if big {
+            let buf: u32 = h.read(s1);
+            h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[buf]);
+        }
+    }
+}

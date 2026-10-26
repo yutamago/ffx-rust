@@ -245,3 +245,107 @@ pub mod bridge2 {
         h.write(g, n + 1);
     }
 }
+
+/// `Phyre_PhyreMalloc` (cdecl `(size)`).
+pub const PHYRE_MALLOC1: u32 = 0x0042_fb40;
+/// `Phyre_PGeometry_PDynamicMesh_PDynamicMesh` (thiscall `(mesh)`).
+pub const DYNAMIC_MESH_CTOR: u32 = 0x0049_68c0;
+/// `Phyre_ClothInstancingDynamicMesh_vftable`.
+pub const CLOTH_MESH_VTABLE: u32 = 0x00b4_aa10;
+/// `Phyre_DynamicMeshDefaultImplmenetation_vftable` (sic).
+pub const DEFAULT_IMPL_VTABLE: u32 = 0x00b4_a8f0;
+/// The stream semantic a new cloth mesh starts with (`.data`).
+pub const CLOTH_STREAM: u32 = 0x00c9_8650;
+/// `ClothInstancingDynamicMeshInstance_ctor_006e0860` (thiscall `(inst,
+/// mesh)`).
+pub const CLOTH_INSTANCE_CTOR: u32 = 0x006e_0860;
+/// `Phyre_PRendering_PDynamicMeshInstance_PDynamicMeshInstance`
+/// (thiscall `(inst, mesh)`).
+pub const MESH_INSTANCE_CTOR: u32 = 0x004f_a420;
+/// `0x006e17f0` (thiscall `(mesh, src)`, `ret 4`): sets the cloth mesh up
+/// from the source.
+pub const CLOTH_SETUP: u32 = 0x006e_17f0;
+
+pub mod bridge3 {
+    //! The originals over game memory.
+
+    use super::{
+        CLOTH_INSTANCE_CTOR, CLOTH_MESH_VTABLE, CLOTH_SETUP, CLOTH_STREAM, Conv,
+        DEFAULT_IMPL_VTABLE, DYNAMIC_MESH_CTOR, Host, MESH_INSTANCE_CTOR, PHYRE_MALLOC1,
+    };
+
+    /// `ClothInstancing_attach(ci, src)` (`0x006e2600`, thiscall, `ret 4`)
+    /// -> the new instance (`ci + 0x10`): a `ClothInstancingDynamicMesh`
+    /// (0x28 bytes: the `PDynamicMesh` base, its vtable, `+0x1c = 0`,
+    /// `+0x20` its stream, `+0x24 = 3`) into `ci + 0`, its instance
+    /// (0x2010 bytes) into `ci + 0x10`. With the source's own instance
+    /// (`src + 0x18`, kept at `ci + 4`) the cloth mesh takes that
+    /// instance's mesh (`ci + 8`) and the new instance points at it;
+    /// without one, a default implementation mesh (0x1c bytes) and a
+    /// `PDynamicMeshInstance` (0xc bytes) of it. Then `0x006e17f0(mesh,
+    /// src)`, and the source's instance becomes the new one. Also returns
+    /// the word the original leaves in its argument's slot (the last
+    /// allocation of the second path; `src` on the first).
+    pub fn attach(h: &mut impl Host, ci: u32, src: u32) -> (u32, u32) {
+        let mut slot = src;
+        let p = h.call_sym(PHYRE_MALLOC1, Conv::Cdecl, &[0x28]);
+        let mesh = if p == 0 {
+            0
+        } else {
+            h.call_sym(DYNAMIC_MESH_CTOR, Conv::Thiscall(p), &[]);
+            h.write(p, h.rebase(CLOTH_MESH_VTABLE));
+            h.write(p + 0x1c, 0u32);
+            h.write(p + 0x20, h.rebase(CLOTH_STREAM));
+            h.write(p + 0x24, 3u32);
+            p
+        };
+        h.write(ci, mesh);
+        let q = h.call_sym(PHYRE_MALLOC1, Conv::Cdecl, &[0x2010]);
+        let inst = if q == 0 {
+            0
+        } else {
+            let m: u32 = h.read(ci);
+            h.call_sym(CLOTH_INSTANCE_CTOR, Conv::Thiscall(q), &[m])
+        };
+        h.write(ci + 0x10, inst);
+        let own: u32 = h.read(src + 0x18);
+        h.write(ci + 4, own);
+        if own == 0 {
+            // (the original keeps this allocation in its argument's slot
+            // too, until the next one replaces it)
+            let r = h.call_sym(PHYRE_MALLOC1, Conv::Cdecl, &[0x1c]);
+            let imp = if r == 0 {
+                0
+            } else {
+                h.call_sym(DYNAMIC_MESH_CTOR, Conv::Thiscall(r), &[]);
+                h.write(r, h.rebase(DEFAULT_IMPL_VTABLE));
+                r
+            };
+            let m: u32 = h.read(ci);
+            h.write(m + 0x1c, imp);
+            let s = h.call_sym(PHYRE_MALLOC1, Conv::Cdecl, &[0xc]);
+            slot = s;
+            let sub = if s == 0 {
+                0
+            } else {
+                let m: u32 = h.read(ci);
+                let imp: u32 = h.read(m + 0x1c);
+                h.call_sym(MESH_INSTANCE_CTOR, Conv::Thiscall(s), &[imp])
+            };
+            let inst: u32 = h.read(ci + 0x10);
+            h.write(inst + 0xc, sub);
+        } else {
+            let m: u32 = h.read(own + 4);
+            h.write(ci + 8, m);
+            h.write(inst + 0xc, own);
+            let mesh: u32 = h.read(ci);
+            let m: u32 = h.read(ci + 8);
+            h.write(mesh + 0x1c, m);
+        }
+        let mesh: u32 = h.read(ci);
+        h.call_sym(CLOTH_SETUP, Conv::Thiscall(mesh), &[src]);
+        let inst: u32 = h.read(ci + 0x10);
+        h.write(src + 0x18, inst);
+        (inst, slot)
+    }
+}
