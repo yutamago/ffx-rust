@@ -74,7 +74,10 @@
 //! - [`h4_g1`]: continuation round 5, batch 1: the battle and menu UI's
 //!   small x87 drawers (damage digits, battle icons, the limit plates and
 //!   gauge, the ratio number, the simple help, the wait window's cursor),
-//!   three UI records and `movie_disp2`.
+//!   three UI records and `movie_disp2`;
+//! - [`h4_g2`]: its second batch: the distortion grid's positions and
+//!   UVs, the extended blur's, `TextUtil`'s and the tweak tool's
+//!   constructors, an Iggy menu's viewport, a `GDraw` rectangle's UVs.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -116,6 +119,7 @@ pub mod h4_f5;
 pub mod h4_f6;
 pub mod h4_f7;
 pub mod h4_g1;
+pub mod h4_g2;
 pub mod menu;
 pub mod misc;
 pub mod movie;

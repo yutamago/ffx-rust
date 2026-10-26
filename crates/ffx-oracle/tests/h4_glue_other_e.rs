@@ -27,7 +27,7 @@ use ffx_bridge::Mem;
 use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
-    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1,
+    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -4507,6 +4507,203 @@ fn g1_records_movie() {
                 u(g1::movie_disp2(g, frame, a))
             });
             compare(&mut t, &format!("{w} disp2"), frame, 0x40);
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 5, batch 2 (ffx_glue_other::h4_g2)
+
+/// The distortion grid's UVs and positions.
+#[test]
+fn g2_grid() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_9201);
+        let this = t.zeros(0x80);
+        let uv = t.zeros(0x400);
+        let pos = t.zeros(0x400);
+        t.w32(this + 0x70, uv);
+        t.w32(this + 0x68, pos);
+        let f32s = [
+            0x00b4_9368,
+            0x00b9_2180,
+            0x00b4_936c,
+            0x00b9_2194,
+            0x00b4_9370,
+            0x00b4_3d18,
+            0x00b4_9374,
+            0x00b4_7c9c,
+            0x00b9_2338,
+            0x00b4_9378,
+        ];
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.constants(&mut rng, &f32s, &[0x00b9_2200, 0x00b3_4f90]);
+            if rng.below(2) == 0 {
+                for (k, v) in [(0x00b9_2200, 0.125f64), (0x00b3_4f90, 0.25)] {
+                    let at = t.rebase(k);
+                    t.write(at, &v.to_le_bytes());
+                }
+            }
+            t.check_conv(
+                &format!("{w} uv"),
+                0x006c_2bb0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(g2::grid_uv(g, this)),
+            );
+            t.check_conv(
+                &format!("{w} positions"),
+                0x006c_2ca0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(g2::grid_positions(g, this)),
+            );
+        }
+    }
+}
+
+/// The extended blur's two constructors.
+#[test]
+fn g2_blur_ctors() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_9202);
+        t.stub_at(g2::SAMPLER_CTOR, true, 0, 0, &[]);
+        t.stub(g2::OPERATOR_NEW, 1, false);
+        let tags = [g2::SAMPLER_CTOR, g2::OPERATOR_NEW];
+        let params = t.zeros(0x88);
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[0x00b9_2194], &[]);
+            let this = random_block(&mut t, &mut rng, 0x90);
+            t.check_conv(
+                &format!("{w} params"),
+                0x006c_4020,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(g2::blur_params_ctor(g, this)),
+            );
+            for k in 0..0x88 / 4 {
+                let v = rng.next();
+                t.w32(params + 4 * k, v);
+            }
+            let p = rng.pick(&[0, params, params]);
+            t.ret(g2::OPERATOR_NEW, p);
+            t.check_conv(
+                &format!("{w} blur ex"),
+                0x006c_4820,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(g2::blur_ex_ctor(g, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `TextUtil`'s and the post-process tweak tool's constructors.
+#[test]
+fn g2_text_tweak_ctors() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_9203);
+        t.stub_at(g2::MATRIX_COPY, true, 1, 1, &[]);
+        let tags = [g2::MATRIX_COPY];
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[0x00b9_2194, 0x00b3_eb94], &[]);
+            let this = random_block(&mut t, &mut rng, 0x90);
+            let frame = t.ebp_for(0) - g2::IDENTITY_FRAME;
+            t.write(frame, &[0x5a; g2::IDENTITY_FRAME as usize]);
+            t.check_framed_conv(
+                &format!("{w} text util"),
+                0x006f_5b50,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[],
+                |g| u(g2::text_util_ctor(g, frame, this)),
+            );
+            let (mut x, mut y) = ([0; 0x40], [0; 0x40]);
+            t.a.read_bytes(frame, &mut x);
+            t.b.read_bytes(frame, &mut y);
+            assert_eq!(x, y, "{w}: identity");
+        }
+        // the tweak tool, with TextUtil's constructor a stub
+        t.stub_at(g2::TEXT_UTIL_CTOR, true, 0, 0, &[]);
+        let tags = [g2::TEXT_UTIL_CTOR];
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[0x00b1_f2b0], &[]);
+            let this = random_block(&mut t, &mut rng, 0x190);
+            t.check_conv(
+                &format!("{w} tweak"),
+                0x0069_2410,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(g2::tweak_util_ctor(g, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// An Iggy menu's viewport and a `GDraw` rectangle's UVs.
+#[test]
+fn g2_iggy_gdraw() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_9204);
+        t.stub_at(g2::SET_VIEWPORT, true, 4, 4, &[]);
+        let tags = [g2::SET_VIEWPORT];
+        let state = t.zeros(0x700);
+        let out = t.zeros(0x10);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let sse = rng.pick(&[0, 1]);
+            t.g32(ffx_bridge::x87::SSE2_AVAILABLE.sym, sse);
+            // viewport
+            let this = random_block(&mut t, &mut rng, 0xa0);
+            for k in 0..4 {
+                let v = {
+                    let r0_ = rng.float();
+                    let r1_ = (rng.below(300) as f32 / 100.0).to_bits();
+                    rng.pick(&[r0_, r1_, r1_])
+                };
+                t.w32(this + 0x74 + 4 * k, v);
+            }
+            let a: [u32; 4] = std::array::from_fn(|_| {
+                let r0_ = rng.small();
+                let r1_ = rng.next();
+                rng.pick(&[r0_, r0_, r1_])
+            });
+            t.check_conv(
+                &format!("{w} viewport"),
+                0x00a2_8f40,
+                Conv::Thiscall(this),
+                &a,
+                |g| u(g2::iggy_set_viewport(g, this, a)),
+            );
+            // GDraw sub-rectangle
+            t.g32(g2::GDRAW_STATE.sym, state);
+            for k in 0..0x700 / 4 {
+                let v = rng.small();
+                t.w32(state + 4 * k, v);
+            }
+            for off in [0x6c0, 0x6c4] {
+                let v = {
+                    let r0_ = rng.next();
+                    rng.pick(&[0, 1280, 720, 1, r0_, 0xffff_fff0])
+                };
+                t.w32(state + off, v);
+            }
+            t.constants(&mut rng, &[], &[0x00b9_2220]);
+            let slot = state + 0x438 + 0x38 * rng.below(5) + rng.below(0x38);
+            t.check(&format!("{w} gdraw"), 0x00a3_c1b0, &[out, slot], |g| {
+                u(g2::gdraw_sub_rect_uv(g, out, slot))
+            });
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
     }

@@ -14,8 +14,8 @@ use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
-    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, menu as mn, misc as m, movie as mv, r3,
-    sound as s,
+    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, menu as mn, misc as m,
+    movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2046,5 +2046,39 @@ ported! {
     movie_disp2 @ 0x0064_2fe0 => extern "C" fn movie_disp2(on: u32, m: u32, v0: u32, v1: u32, e: u32) -> u32 {
         let mut frame = StackFrame::<{ (g1::DISP2_FRAME / 4) as usize }>::new();
         g1::movie_disp2(&mut mem(), frame.at(), [on, m, v0, v1, e])
+    }
+    // ---- continuation round 5, batch 2 (ffx_glue_other::h4_g2)
+    /// `Distortion_fillGridUV_006c2bb0(this)`.
+    Distortion_fillGridUV_006c2bb0 @ 0x006c_2bb0 => extern "thiscall" fn grid_uv(this: u32) -> u32 {
+        g2::grid_uv(&mut mem(), this)
+    }
+    /// `Distortion_fillGridPositions_006c2ca0(this)`.
+    Distortion_fillGridPositions_006c2ca0 @ 0x006c_2ca0 => extern "thiscall" fn grid_positions(this: u32) -> u32 {
+        g2::grid_positions(&mut mem(), this)
+    }
+    /// `BlurEffectExParams_ctor_006c4020(this)`.
+    BlurEffectExParams_ctor_006c4020 @ 0x006c_4020 => extern "thiscall" fn blur_params_ctor(this: u32) -> u32 {
+        g2::blur_params_ctor(&mut mem(), this)
+    }
+    /// `BlurEffectEx_ctor_006c4820(this)`.
+    BlurEffectEx_ctor_006c4820 @ 0x006c_4820 => extern "thiscall" fn blur_ex_ctor(this: u32) -> u32 {
+        g2::blur_ex_ctor(&mut mem(), this)
+    }
+    /// `TextUtil_TextUtil(this)`.
+    TextUtil_TextUtil @ 0x006f_5b50 => extern "thiscall" fn text_util_ctor(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (g2::IDENTITY_FRAME / 4) as usize }>::new();
+        g2::text_util_ctor(&mut mem(), frame.at(), this)
+    }
+    /// `PostProcessTweakUtil_ctor_00692410(this)`.
+    PostProcessTweakUtil_ctor_00692410 @ 0x0069_2410 => extern "thiscall" fn tweak_util_ctor(this: u32) -> u32 {
+        g2::tweak_util_ctor(&mut mem(), this)
+    }
+    /// `IggyMenu_setViewport_00a28f40(this; x, y, w, h)`.
+    IggyMenu_setViewport_00a28f40 @ 0x00a2_8f40 => extern "thiscall" fn iggy_set_viewport(this: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        g2::iggy_set_viewport(&mut mem(), this, [x, y, w, h])
+    }
+    /// `GDraw_SubRectUV_00a3c1b0(out, slot)`.
+    GDraw_SubRectUV_00a3c1b0 @ 0x00a3_c1b0 => extern "C" fn gdraw_sub_rect_uv(out: u32, slot: u32) -> u32 {
+        g2::gdraw_sub_rect_uv(&mut mem(), out, slot)
     }
 }
