@@ -221,7 +221,445 @@ fn prep_resize(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
     e.w32(this + 0x94, samples);
 }
 
+/// A storage array at `at` (count word, then the inline word or the
+/// storage pointer) with `n` words, the first `first`.
+fn storage_array(e: &mut Env, rng: &mut Rng, at: u32, n: u32, first: u32, data: u32) {
+    e.w32(at, n | if rng.chance(3) { 0x8000_0000 } else { 0 });
+    if n == 1 {
+        e.w32(at + 4, first);
+    } else {
+        e.w32(at + 4, data);
+        e.w32(data, first);
+    }
+}
+
+/// `createViews`: the kind (0 2D, 1 volume, 2 cube, now and then 3), the
+/// texture (none, the placeholder, or one whose device object exists or
+/// not, its format depth or colour), the views present or not, the
+/// face arrays (six already or not, owned or not), the device's two
+/// view creators (results, the views they store) and the getters.
+fn prep_create_views(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let v = e.pool + POOL_PTRS + 0x40;
+    a[0] = v;
+    let t = v + 0xc0;
+    let d = v + 0x1c0;
+    let ctx = v + 0x2c0;
+    let device = v + 0x3c0;
+    let data = v + 0x4c0;
+    let kind = [0u8, 0, 1, 1, 2, 2, 2, 3][rng.below(8) as usize];
+    e.write(v + 4, &[kind]);
+    let tex = match rng.below(12) {
+        0 => 0,
+        1 => {
+            let p = e.rebase(0x00ca_34cc);
+            e.w32(t, p);
+            t
+        }
+        _ => {
+            e.w32(t, d);
+            t
+        }
+    };
+    e.w32(v, tex);
+    let b5 = [0u8, 1, 0x80][rng.below(3) as usize];
+    let b8 = rng.next() as u8;
+    e.write(v + 5, &[b5]);
+    e.write(v + 8, &[b8]);
+    for off in [0x10, 0x14] {
+        let w = if rng.chance(5) { e.ptr(rng) } else { 0 };
+        e.w32(v + off, w);
+    }
+    for (count, ptr) in [(0x18, 0x1c), (0x20, 0x24)] {
+        let n = [6, 0, 3, 0x8000_0006, 0x8000_0002][rng.below(5) as usize];
+        e.w32(v + count, n);
+        let p = e.ptr(rng);
+        e.w32(v + ptr, p);
+    }
+    // the format: bit 1 of `+0x10` depth
+    let flags = rng.next();
+    e.w32(d + 0x10, flags);
+    // the texture's device object made or not; the storage arrays the
+    // kinds read (never empty when the object is still to make)
+    for made in [0x70, 0x64] {
+        let m = if rng.chance(2) { 0 } else { rng.next() | 1 };
+        e.w32(t + made, m);
+    }
+    // (the kinds' arrays overlap: only this kind's)
+    let (at, made) = match kind {
+        0 | 3 => (0x24, 0x70),
+        1 => (0x28, 0x64),
+        _ => (0x20, 0x64),
+    };
+    let lo = u32::from(e.r32(t + made) == 0 || at != 0x24);
+    let n = lo.max(rng.below(4));
+    let first = if rng.chance(3) { 0 } else { e.ptr(rng) };
+    storage_array(e, rng, t + at, n, first, data);
+    let m = [1, 1, 2, 0][rng.below(4) as usize];
+    e.w32(t + 0x4c, m);
+    e.set_ret(0x0046_49d0, ctx);
+    e.w32(ctx + 0x6c, device);
+    e.w32(device, device + 0x20);
+    // the view creators: per call a result and a stored view (a failure
+    // or a null view now and then, at any call)
+    for (k, slot) in [(0u32, 9u32), (1, 10)] {
+        let base = e.pool + 0x800 + 0x400 * k;
+        let f = view_creator(e, 0xf00d_8000 + k, base, 4);
+        e.w32(device + 0x20 + 4 * slot, f);
+        e.w32(base, 0);
+        for i in 0..8 {
+            let r = match rng.below(24) {
+                0 => 0x8007_000e,
+                1 => rng.next() | 0x8000_0000,
+                k => k & 1,
+            };
+            let view = if rng.chance(30) { 0 } else { e.ptr(rng) };
+            e.w32(base + 0x20 + 4 * i, r);
+            e.w32(base + 0x80 + 4 * i, view);
+        }
+    }
+    let r = if rng.chance(2) { 0 } else { e.ptr(rng) };
+    e.set_ret(0x0059_4060, r);
+    let r = if rng.chance(8) { 0 } else { e.ptr(rng) };
+    e.set_ret(0x0042_fb80, r);
+    // the face array's storage the allocation returns, now and then
+    if r != 0 && rng.chance(4) {
+        for ptr in [0x1c, 0x24] {
+            e.w32(v + ptr, r);
+        }
+    }
+}
+
+/// A creator method of `words` words (stdcall, `this` first, its out
+/// pointer last; at most five): logs `ecx` and its words at
+/// `base + 0xe0 + 32 n`, stores word `n` of `base + 0x80` through the out
+/// pointer, returns word `n` of `base + 0x20` (`n` the call count at
+/// `base`, at most 24). Made once per `tag`.
+fn view_creator(e: &mut Env, tag: u32, base: u32, words: u8) -> u32 {
+    if let Some(&(at, _)) = e.writers.get(&tag) {
+        return at;
+    }
+    let n = base;
+    let mut c = vec![0xa1];
+    c.extend(n.to_le_bytes()); // mov eax, [n]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((base + 0xe0).to_le_bytes()); // add eax, log
+    c.extend([0x89, 0x08]); // mov [eax], ecx
+    for i in 0..words {
+        c.extend([0x8b, 0x54, 0x24, 4 + 4 * i]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, 4 + 4 * i]); // mov [eax+4+4i], edx
+    }
+    c.push(0xa1);
+    c.extend(n.to_le_bytes()); // mov eax, [n]
+    c.extend([0x8b, 0x0c, 0x85]);
+    c.extend((base + 0x80).to_le_bytes()); // mov ecx, [views + eax*4]
+    c.extend([0x89, 0x0a]); // mov [edx], ecx (edx = out)
+    c.extend([0x8b, 0x0c, 0x85]);
+    c.extend((base + 0x20).to_le_bytes()); // mov ecx, [results + eax*4]
+    c.extend([0xff, 0x05]);
+    c.extend(n.to_le_bytes()); // inc dword [n]
+    c.extend([0x89, 0xc8, 0xc2, 4 * words, 0x00]); // mov eax, ecx; ret 4 * words
+    let at = e.a.alloc_code(&c).unwrap();
+    assert_eq!(e.b.alloc_code(&c).unwrap(), at);
+    e.writers.insert(tag, (at, 0));
+    at
+}
+
+/// The renderer constructor: the free list's constructor stand-in logs
+/// its words and leaves the list's first node (`+0xc`) a chain of zero
+/// to two nodes (linked by word 0) ending at the list, which the
+/// remove stand-in unlinks one by one.
+fn prep_renderer_ctor(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let this = e.pool + POOL_PTRS;
+    a[0] = this;
+    let p = e.pool;
+    e.custom(0x0049_c480, |_| {
+        let mut c = vec![];
+        for i in 0..4u8 {
+            c.extend([0x8b, 0x44, 0x24, 4 + 4 * i]); // mov eax, [esp+4+4i]
+            c.push(0xa3);
+            c.extend((p + 0x640 + 4 * u32::from(i)).to_le_bytes()); // mov [log+4i], eax
+        }
+        c.extend([0x89, 0x0d]);
+        c.extend((p + 0x650).to_le_bytes()); // mov [log+0x10], ecx
+        c.push(0xa1);
+        c.extend((p + 0x630).to_le_bytes()); // mov eax, [first]
+        c.extend([0x89, 0x41, 0xf4]); // mov [ecx-0xc], eax
+        c.extend([0xc2, 0x10, 0x00]);
+        c
+    });
+    e.custom(0x0057_5000, |_| {
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+        c.extend([0x8b, 0x00]); // mov eax, [eax]
+        c.extend([0x89, 0x41, 0x0c]); // mov [ecx+0xc], eax
+        c.extend([0xff, 0x05]);
+        c.extend((p + 0x654).to_le_bytes()); // inc dword [removed]
+        c.extend([0xc2, 0x04, 0x00]);
+        c
+    });
+    let list = this + 0x1344;
+    let n = rng.below(3);
+    let node = |k: u32| p + 0x700 + 0x20 * k;
+    for k in 0..n {
+        let next = if k + 1 == n { list } else { node(k + 1) };
+        e.w32(node(k), next);
+    }
+    let first = match rng.below(4) {
+        0 => 0,
+        _ if n == 0 => list,
+        _ => node(0),
+    };
+    e.w32(p + 0x630, first);
+}
+
+/// `initWindow`: the window info (null now and then: a pool record with
+/// the window, a size word and the flag byte), `GetClientRect` through
+/// its import word (a stand-in storing the rectangle's first word).
+fn prep_init_window(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    a[0] = e.pool + POOL_PTRS;
+    let r = rng.next();
+    let left = rng.next() & 0xfff;
+    let f = e.writer(7, 2, 1, r, left);
+    let iat = e.rebase(0x00b0_c680);
+    e.w32(iat, f);
+}
+
+/// `findContextVariant`: the variant count (none now and then), the
+/// switch count, the key builder's cursor (a stand-in storing it past
+/// the original's `alloca` buffer), the variant entries' comparison
+/// results (sorted around a target, or random signs) read by the
+/// comparison stand-in from each entry's first word.
+fn prep_find_variant(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let this = e.pool + POOL_PTRS;
+    a[0] = this;
+    let n = if rng.chance(8) { 0 } else { 1 + rng.below(9) };
+    e.w32(this + 0x2c, n | if rng.chance(3) { 0x8000_0000 } else { 0 });
+    let data = this + 0x100;
+    e.w32(this + 0x30, data);
+    let words = rng.below(9);
+    let sc = e.rebase(0x00ca_4e20);
+    e.w32(sc, words);
+    let ebp = e.a.stack_range().end - 0x100 - 4 * 5 - 8;
+    let buf = (ebp - 0x20 - 4 * words) & !0xf;
+    // (now and then before the buffer: the count is a signed shift)
+    let end = if rng.chance(8) {
+        buf - 4 * (1 + rng.below(3))
+    } else {
+        buf + 4 * rng.below(words + 1)
+    };
+    e.set_out(0x004e_f3f0, end);
+    let p = e.pool;
+    e.custom(0x004e_ea10, |_| {
+        let mut c = vec![0x8b, 0x54, 0x24, 0x04]; // mov edx, [esp+4]
+        c.extend([0x89, 0x15]);
+        c.extend((p + 0x65c).to_le_bytes()); // mov [key], edx
+        c.extend([0x8b, 0x54, 0x24, 0x08]); // mov edx, [esp+8]
+        c.extend([0x89, 0x15]);
+        c.extend((p + 0x660).to_le_bytes()); // mov [count], edx
+        c.extend([0x8b, 0x01]); // mov eax, [ecx]
+        c.extend([0xff, 0x05]);
+        c.extend((p + 0x658).to_le_bytes()); // inc dword [calls]
+        c.extend([0xc2, 0x08, 0x00]);
+        c
+    });
+    let target = rng.below(n + 2);
+    let random = rng.chance(4);
+    for k in 0..n {
+        let r: u32 = if random {
+            [0, 1, u32::MAX, 0x8000_0000, 0x7fff_ffff][rng.below(5) as usize]
+        } else if k < target {
+            u32::MAX
+        } else {
+            u32::from(k != target)
+        };
+        e.w32(data + 8 * k, r);
+    }
+}
+
+/// `initA` / `initB`: the renderer's device (`+0x6c`) with the four
+/// creation methods (buffer 3, input layout 11, vertex shader 12, pixel
+/// shader 15: results mostly success), the objects already in `this`'s
+/// out words (null now and then), the constant buffer's `SetPrivateData`.
+fn prep_init_shaders(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
+    let this = e.pool + POOL_PTRS;
+    a[0] = this;
+    let renderer = e.pool + 0x100;
+    a[1] = renderer;
+    let device = e.pool + 0x200;
+    e.w32(renderer + 0x6c, device);
+    e.w32(device, device + 0x20);
+    for (slot, pops) in [(11u32, 6u32), (12, 5)] {
+        let r = match rng.below(16) {
+            0 => 0x8007_0057,
+            1 => rng.next(),
+            k => k & 1,
+        };
+        let f = e.handler(pops, r);
+        e.w32(device + 0x20 + 4 * slot, f);
+    }
+    let buffer = e.pool + 0x300;
+    let b = if rng.chance(8) { 0 } else { buffer };
+    // CreateBuffer (slot 3) and CreatePixelShader (15): one result and
+    // one stored object per call, a failure now and then at any call
+    for (k, slot, words) in [(0u32, 3u32, 4u8), (1, 15, 5)] {
+        let base = e.pool + 0x1000 + 0x400 * k;
+        let f = view_creator(e, 0xf00d_8100 + k, base, words);
+        e.w32(device + 0x20 + 4 * slot, f);
+        e.w32(base, 0);
+        for i in 0..24 {
+            let r = match rng.below(40) {
+                0 => 0x8007_000e,
+                1 => rng.next() | 0x8000_0000,
+                k => k & 1,
+            };
+            let obj = if rng.chance(40) { 0 } else { e.ptr(rng) };
+            e.w32(base + 0x20 + 4 * i, r);
+            e.w32(base + 0x80 + 4 * i, obj);
+        }
+        // the constant buffer: the 17th buffer of initA, the 1st of initB
+        if slot == 3 {
+            e.w32(base + 0x80 + 4 * 16, b);
+            e.w32(base + 0x80, b);
+        }
+    }
+    for k in 0..0x16 {
+        let w = if rng.chance(30) { 0 } else { e.ptr(rng) };
+        e.w32(this + 4 * k, w);
+    }
+    e.w32(buffer, buffer + 0x20);
+    let named = e.handler(4, rng.next());
+    e.w32(buffer + 0x20 + 20, named);
+    let r = if rng.chance(10) { rng.next() | 1 } else { 0 };
+    if e.cells.contains_key(&0x0058_d4e0) {
+        e.set_ret(0x0058_d4e0, r);
+    }
+}
+
 pub static CASES: &[Case] = &[
+    Case {
+        name: "PRendererD3D11_initA_00594f70",
+        addr: 0x0059_4f70,
+        conv: K::T,
+        kinds: "pp",
+        out: O::U32,
+        callees: &[],
+        prep: prep_init_shaders,
+        port: |g, a| {
+            let frame = g.frame();
+            h8::init_a(g, a[0], a[1], frame)
+        },
+        frame: 0x8c,
+        gap: 4,
+        writes: &[],
+    },
+    Case {
+        name: "PRendererD3D11_initB_00595200",
+        addr: 0x0059_5200,
+        conv: K::T,
+        kinds: "pp",
+        out: O::U32,
+        callees: &[(0x0058_d4e0, 0, 0, true)],
+        prep: prep_init_shaders,
+        port: |g, a| {
+            let frame = g.frame();
+            h8::init_b(g, a[0], a[1], frame)
+        },
+        frame: 0x5c,
+        gap: 4,
+        writes: &[],
+    },
+    Case {
+        name: "PRendererD3D11_initWindow_00595750",
+        addr: 0x0059_5750,
+        conv: K::T,
+        kinds: "pn",
+        out: O::U32,
+        callees: &[(0x0059_5800, 6, 6, true)],
+        prep: prep_init_window,
+        port: |g, a| {
+            let frame = g.frame();
+            h8::init_window(g, a[0], a[1], frame)
+        },
+        frame: 0x10,
+        gap: 4,
+        writes: &[],
+    },
+    Case {
+        name: "PEffect_findContextVariant",
+        addr: 0x004e_f440,
+        conv: K::T,
+        kinds: "pvvvvv",
+        out: O::U32,
+        callees: &[(0x004e_f3f0, 6, 6, true)],
+        prep: prep_find_variant,
+        port: |g, a| {
+            let frame = g.frame();
+            let words = h8::variant_key_words(g);
+            let ebp = frame + 0x14;
+            let buf = (ebp - 0x20 - 4 * words) & !0xf;
+            h8::find_context_variant(g, a[0], [a[1], a[2], a[3], a[4], a[5]], buf, frame)
+        },
+        frame: 0x10,
+        gap: 4,
+        writes: &[(0x004e_f3f0, 2)],
+    },
+    Case {
+        name: "PRendererD3D11_ctor_00583580",
+        addr: 0x0058_3580,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[
+            (0x004f_ee80, 0, 0, true),
+            (0x004c_2f90, 0, 0, true),
+            (0x0058_b070, 2, 0, false),
+            (0x0094_964c, 3, 0, false),
+            (0x004c_78a0, 1, 1, true),
+            (0x005b_3580, 0, 0, true),
+            (0x0094_966a, 5, 5, false),
+            (0x005b_35c0, 2, 2, true),
+            (0x0058_3320, 0, 0, true),
+            (0x0058_3e20, 0, 0, true),
+            (0x0058_33b0, 0, 0, true),
+            (0x004b_e870, 0, 0, true),
+            (0x0043_15e0, 0, 0, true),
+            (0x0049_cc10, 0, 0, true),
+            (0x0043_17f0, 0, 0, true),
+        ],
+        prep: prep_renderer_ctor,
+        port: |g, a| h8::renderer_ctor(g, a[0]),
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "PRenderTargetD3D11_createViews_00591460",
+        addr: 0x0059_1460,
+        conv: K::T,
+        kinds: "p",
+        out: O::U32,
+        callees: &[
+            (0x0058_fc20, 4, 4, true),
+            (0x0059_03a0, 4, 4, true),
+            (0x0059_0800, 4, 4, true),
+            (0x0059_4060, 1, 1, true),
+            (0x0059_3eb0, 1, 1, true),
+            (0x0059_3f00, 1, 1, true),
+            (0x0046_3d50, 0, 0, true),
+            (0x0046_3e90, 0, 0, true),
+            (0x0046_49d0, 0, 0, false),
+            (0x0042_fb80, 2, 0, false),
+            (0x0042_fb20, 1, 0, false),
+        ],
+        prep: prep_create_views,
+        port: |g, a| {
+            let frame = g.frame();
+            h8::create_views(g, a[0], frame)
+        },
+        frame: 0x44,
+        gap: 0xc,
+        writes: &[],
+    },
     Case {
         name: "Phyre_PRenderInterface_setTextureQuality",
         addr: 0x0058_e000,

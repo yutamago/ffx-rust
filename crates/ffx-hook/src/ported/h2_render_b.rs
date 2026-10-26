@@ -1817,6 +1817,46 @@ ported! {
         let mut fr = super::StackFrame::<3>::new();
         h8::resize_buffers(&mut mem(), this, width, height, fr.at())
     }
+    /// `PRenderTargetD3D11_createViews_00591460`.
+    PRenderTargetD3D11_createViews_00591460 @ 0x0059_1460 => extern "thiscall" fn s_00591460(this: u32) -> u32 {
+        let mut fr = super::StackFrame::<17>::new();
+        h8::create_views(&mut mem(), this, fr.at())
+    }
+    /// `PRendererD3D11_ctor_00583580`.
+    PRendererD3D11_ctor_00583580 @ 0x0058_3580 => extern "thiscall" fn s_00583580(this: u32) -> u32 {
+        h8::renderer_ctor(&mut mem(), this)
+    }
+    /// `PRendererD3D11_initWindow_00595750`.
+    PRendererD3D11_initWindow_00595750 @ 0x0059_5750 => extern "thiscall" fn s_00595750(this: u32, info: u32) -> u32 {
+        let mut fr = super::StackFrame::<4>::new();
+        h8::init_window(&mut mem(), this, info, fr.at())
+    }
+    /// `PEffect_findContextVariant`: the key buffer (the original's
+    /// `alloca` of the switch count in words) per call on the heap.
+    PEffect_findContextVariant @ 0x004e_f440 => extern "thiscall" fn s_004ef440(this: u32, a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u32 {
+        let mut m = mem();
+        let words = h8::variant_key_words(&mut m) as usize;
+        let mut key: Vec<u32> = Vec::new();
+        if key.try_reserve_exact(words + 1).is_err() {
+            return u32::MAX;
+        }
+        key.resize(words + 1, 0);
+        let buf = u32::try_from(key.as_mut_ptr() as usize).unwrap_or(0);
+        let mut fr = super::StackFrame::<4>::new();
+        let r = h8::find_context_variant(&mut m, this, [a0, a1, a2, a3, a4], buf, fr.at());
+        std::hint::black_box(&mut key);
+        r
+    }
+    /// `PRendererD3D11_initA_00594f70`.
+    PRendererD3D11_initA_00594f70 @ 0x0059_4f70 => extern "thiscall" fn s_00594f70(this: u32, renderer: u32) -> u32 {
+        let mut fr = super::StackFrame::<35>::new();
+        h8::init_a(&mut mem(), this, renderer, fr.at())
+    }
+    /// `PRendererD3D11_initB_00595200`.
+    PRendererD3D11_initB_00595200 @ 0x0059_5200 => extern "thiscall" fn s_00595200(this: u32, renderer: u32) -> u32 {
+        let mut fr = super::StackFrame::<23>::new();
+        h8::init_b(&mut mem(), this, renderer, fr.at())
+    }
     // continuation round: the six large Binds (h2_binds2 tables on h1_bind's steps)
     /// `Phyre_PRendering_PEffect_Bind`.
     Phyre_PRendering_PEffect_Bind @ 0x004e_b2d0 => extern "C" fn s_004eb2d0() -> u32 {
