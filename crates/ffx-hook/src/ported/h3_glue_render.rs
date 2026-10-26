@@ -51,6 +51,7 @@ use ffx_prender::h3_glue42::bridge as g42;
 use ffx_prender::h3_glue43::bridge as g43;
 use ffx_prender::h3_glue44::bridge as g44;
 use ffx_prender::h3_glue45::bridge as g45;
+use ffx_prender::h3_glue46::bridge as g46;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1990,6 +1991,13 @@ ported! {
     /// `std::cin` to the manager's command handlers.
     AutoTestManager_inputThread_006bd1e0 @ 0x006b_d1e0 => extern "C" fn auto_test_input_thread() {
         g45::input_thread(&mut mem())
+    }
+
+    // ---- round 12 batch 47 (ffx_prender::h3_glue46) ----
+    /// `PhyreScene_animate(scene)` -> 0: the scene's per-frame update
+    /// (`this` in `ecx`, no stack words).
+    PhyreScene_animate @ 0x0065_7140 => extern "thiscall" fn scene_animate(this: u32) -> u32 {
+        g46::animate(&mut mem(), this)
     }
 }
 

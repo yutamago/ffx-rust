@@ -68,6 +68,7 @@ use ffx_prender::h3_glue42::{self as h42, bridge as gh42};
 use ffx_prender::h3_glue43::{self as h43, bridge as gh43};
 use ffx_prender::h3_glue44::{self as h44, bridge as gh44};
 use ffx_prender::h3_glue45::{self as h45, bridge as gh45};
+use ffx_prender::h3_glue46::{self as h46, bridge as gh46};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -10924,5 +10925,69 @@ fn batch46_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 100 } else { 400 };
         run_cases(t, CASES45, n, &mut Rng(0x4545_b046));
+    });
+}
+
+// ---- round 12 batch 47 (ffx_prender::h3_glue46) ----
+
+/// The scene's per-frame update: the frame time, `+0x1195`, the
+/// first-run tip byte, a pause request, the map (the three that reset
+/// the cheats or another), the three modes (0, 1, 2, -1, -2 or another),
+/// the key checks, the tips' answers, the two buttons, the debug word
+/// and the free camera's state.
+fn prep_animate46(t: &mut Twins, obj: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let aux = t.zeros(0x1000);
+    let app = aux;
+    let time = rng.float().to_bits();
+    t.w32(app + 0x24, time);
+    t.stub_ret(h46::GET_APPLICATION, false, 0, 0, app);
+    t.write(obj + 0x1195, &[u8::from(rng.chance(2))]);
+    t.write(obj + 0x10dcc, &[pick(rng, &[0, 1, 0x80]) as u8]);
+    let settings = aux + 0x800;
+    t.write(settings + 0x638, &[u8::from(rng.chance(2))]);
+    t.global(h46::SETTINGS, settings);
+    let request = if rng.chance(2) { 0 } else { rng.next() };
+    t.global(h46::PAUSE_REQUEST, request);
+    let any = rng.next();
+    let map = pick(rng, &[0x17, 0x15c, 0x15d, 0x16, 0x41, any]);
+    t.global(h46::CURRENT_MAP, map);
+    for gl in [h46::AUTO_BATTLE, h46::CHEAT_POWERUP, h46::ENCOUNT_MODE] {
+        let v = pick(rng, &[0, 1, 2, 0xffff_ffff, 0xffff_fffe, 0x7fff_ffff, 5]);
+        t.global(gl, v);
+    }
+    for sym in [
+        h46::CHECK_AUTO_BATTLE_KEY,
+        h46::CHECK_INVINCIBLE_KEY,
+        h46::CHECK_ENCOUNTER_KEY,
+        h46::CAN_USE_AUTO_BATTLE,
+        h46::PUSH_TIP_BY_LOC,
+    ] {
+        let v = pick(rng, &[0, 1, 0x100]);
+        t.stub_ret(sym, false, u32::from(sym == h46::PUSH_TIP_BY_LOC), 0, v);
+    }
+    let presses = [pick(rng, &[0, 1]), pick(rng, &[0, 0x200])];
+    t.stub_seq(h46::IS_PRESS_BUTTON, false, 1, 0, &presses);
+    let camera = aux + 0x400;
+    t.write(camera + 0x338, &[u8::from(rng.chance(3))]);
+    t.write(camera + 0x33c, &[u8::from(rng.chance(3))]);
+    t.w32(camera, pick(rng, &[2, 0, 1]));
+    t.stub_ret(h46::FREE_CAMERA, false, 0, 0, camera);
+    t.global(h46::DEBUG_WORD, pick(rng, &[0, 0, 1]));
+    for gl in [h46::DELEGATION_HELPER, h46::LOADING_SCREEN] {
+        let v = rng.next();
+        t.global(gl, v);
+    }
+}
+
+#[rustfmt::skip]
+const CASES46: &[Case] = &[
+    Case { prep: Some(prep_animate46), ..method("animate", 0x0065_7140, This::Object, 0, &[(h46::DELEGATION_UPDATE, K::This(0)), (h46::TEX_ANIM_ANIMATE, K::This(1)), (h46::MORPH_INSTANCE, K::Cdecl(0)), (h46::MORPH_UPDATE, K::This(1)), (h46::TIP_SYSTEM, K::Cdecl(0)), (h46::PUSH_TIP, K::This(1)), (h46::LIGHTING_INSTANCE, K::Cdecl(0)), (h46::LIGHTING_UPDATE_FLASH, K::This(1)), (h46::PAUSE_UPDATE, K::Cdecl(1)), (h46::ICON_PANEL, K::Cdecl(0)), (h46::ICON_UPDATE, K::This(0)), (h46::ICON_SHOW, K::This(1)), (h46::ICON_HIDE, K::This(1)), (h46::ICON_SET_VISIBLE, K::This(1)), (h46::ICON_HIDE_ALL, K::This(0)), (h46::SPD_INIT, K::Cdecl(0)), (h46::SPD_TICK, K::Cdecl(0)), (h46::POWERFUL_OFF, K::Cdecl(0)), (h46::FREE_CAMERA_PAUSE, K::This(0)), (h46::FREE_CAMERA_INPUT, K::This(2)), (h46::FMV_MANAGER, K::Cdecl(0)), (h46::FMV_PROCESS, K::This(0)), (h46::BLUR_INSTANCE, K::Cdecl(0)), (h46::BLUR_UPDATE, K::This(1)), (h46::BLUR_EX_INSTANCE, K::Cdecl(0)), (h46::BLUR_EX_UPDATE, K::This(1)), (h46::FOG_INSTANCE, K::Cdecl(0)), (h46::FOG_UPDATE, K::This(1)), (h46::CLOTH_RELEASE, K::Cdecl(0)), (h46::DELEGATION_RUN, K::This(0)), (h46::LOADING_UPDATE, K::This(1)), (h46::BOOT_TEXT_INSTANCE, K::Cdecl(0)), (h46::BOOT_TEXT_UPDATE, K::This(1)), (h46::TEXT_ANIMATE, K::This(1))], |m, this, _| u(gh46::animate(m, this))) },
+];
+
+#[test]
+fn batch47_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 300 } else { 1000 };
+        run_cases(t, CASES46, n, &mut Rng(0x4646_b047));
     });
 }
