@@ -31,9 +31,12 @@ case "$mode" in
     original) arg=original ;;
     only-m4)
         list="$dst.hooks.txt"
+        # plus renderWorldCulledSorted's port, which is on/off by name
+        # (not a ported! entry: its address holds the capture wrapper)
         mkdir -p "$(dirname "$list")"
         cat crates/ffx-hook/src/ported/{h,p}[0-9]*_*.rs crates/ffx-hook/src/ported/{phyre_render,c2_new,m4_rest}.rs 2>/dev/null \
-            | grep -oE '^\s*[A-Za-z_][A-Za-z_0-9]* @ 0x' | sed -E 's/^\s*//; s/ @ 0x//' | sort -u > "$list"
+            | grep -oE '^\s*[A-Za-z_][A-Za-z_0-9]* @ 0x' | sed -E 's/^\s*//; s/ @ 0x//' \
+            | { cat; echo Phyre_PRendering_PRenderer_renderWorldCulledSorted_port; } | sort -u > "$list"
         export FFX_HOOK_ONLY="@$(wslpath -w "$list")"
         echo "hooks: $(wc -l < "$list")"
         ;;

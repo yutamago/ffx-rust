@@ -127,9 +127,8 @@ pub(crate) fn culled_sorted_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
         let off = std::env::var("FFX_HOOK_DISABLE").unwrap_or_default();
-        let only = std::env::var("FFX_HOOK_ONLY")
-            .ok()
-            .is_none_or(|l| l.split(',').map(str::trim).any(|n| n == CULLED_SORTED_NAME));
+        let only =
+            crate::hook_only().is_none_or(|names| names.iter().any(|n| n == CULLED_SORTED_NAME));
         only && !off
             .split(',')
             .map(str::trim)

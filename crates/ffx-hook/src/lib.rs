@@ -31,6 +31,25 @@ pub fn rebase(address: u32) -> usize {
     GAME_BASE.load(Ordering::Acquire) + (address - IMAGE_BASE) as usize
 }
 
+/// The hook names `FFX_HOOK_ONLY` keeps, `None` when it is unset: a list
+/// separated by commas or lines, or `@<file>` holding one (the M4 port
+/// lists outgrew the 128 KB a single environment string may hold).
+#[must_use]
+pub fn hook_only() -> Option<Vec<String>> {
+    let value = std::env::var("FFX_HOOK_ONLY").ok()?;
+    let list = match value.strip_prefix('@') {
+        Some(path) => std::fs::read_to_string(path.trim()).unwrap_or_default(),
+        None => value,
+    };
+    Some(
+        list.split([',', '\n', '\r'])
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect(),
+    )
+}
+
 /// One function replacement.
 #[derive(Debug, Clone, Copy)]
 pub struct Hook {
