@@ -32,6 +32,7 @@ use ffx_prender::h2_more7::bridge as h7;
 use ffx_prender::h2_more8::bridge as h8;
 use ffx_prender::h2_more9::bridge as h9;
 use ffx_prender::h2_more10::bridge as h10;
+use ffx_prender::h2_more11::bridge as h11;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -1941,6 +1942,11 @@ ported! {
     Phyre_PRendering_PSceneWideParameters_PSceneWideParametersKey_initialize @ 0x004f_e940 => extern "thiscall" fn s_004fe940(this: u32, camera: u32, vector: u32, viewport: u32) -> u32 {
         let mut fr = super::StackFrame::<37>::new();
         h10::scene_key_initialize(&mut mem(), this, camera, vector, viewport, fr.at())
+    }
+    /// `Phyre_PRendering_PSceneWideParameters_initialize`.
+    Phyre_PRendering_PSceneWideParameters_initialize @ 0x004f_d9e0 => extern "C" fn s_004fd9e0(buffers: u32) -> u32 {
+        let mut fr = super::StackFrame::<3>::new();
+        h11::initialize(&mut mem(), buffers, fr.at())
     }
     // continuation round: the six large Binds (h2_binds2 tables on h1_bind's steps)
     /// `Phyre_PRendering_PEffect_Bind`.
