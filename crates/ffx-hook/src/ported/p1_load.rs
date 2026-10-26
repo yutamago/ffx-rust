@@ -1315,4 +1315,9 @@ ported! {
         let mut f = StackFrame::<{ p1_pointers::bridge::POINTERS_FRAME as usize / 4 }>::new();
         p1_pointers::bridge::fixup_pointers(&mut mem(), this, (stream, ctx, fixups), f.at())
     }
+    /// `PNamespaceMapping::allocateMissingClassDescriptors(ns, ctx, verbose)` -> 0, 0x13 or 0xd; the default-data copy's description in this frame.
+    Phyre_PSerialization_PBinary_PInternal_PNamespaceMapping_allocateMissingClassDescriptors @ 0x0047_c190 => extern "thiscall" fn allocate_missing(this: u32, ns: u32, ctx: u32, verbose: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_mapping::bridge::ALLOCATE_FRAME as usize / 4 }>::new();
+        p1_mapping::bridge::allocate_missing(&mut mem(), this, [ns, ctx, verbose], f.at())
+    }
 }

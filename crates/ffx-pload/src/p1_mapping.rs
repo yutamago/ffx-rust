@@ -75,6 +75,33 @@ const NO_TYPE: u32 = 0x00b1_39f0;
 const NO_CLASS: u32 = 0x00b1_3a38;
 const NO_MEMBER_TYPE: u32 = 0x00b1_3a88;
 
+/// `allocateMissingClassDescriptors`' callees: `checkIfMatches` (by
+/// address), `PhyreMalloc(size)` (cdecl), the dynamic descriptor's
+/// constructor `(ns, name, base)`, `addToNamespace`, its member adder
+/// `(name, type, flag, 0)`, `PhyreMalloc(size, align)` and `PhyreFree`,
+/// `getDefaultBuffer()`, `memcpy`, the default-data copy `(&desc, src,
+/// dst)` (thiscall on the class entry), the descriptor's refresh
+/// `(buffer)` and the mapping's mismatch pass `()`.
+const CHECK: u32 = 0x0047_cc80;
+const NEW: u32 = 0x0042_fb40;
+const DYNAMIC_CTOR: u32 = 0x0044_7690;
+const ADD_TO_NAMESPACE: u32 = 0x0043_c140;
+const ADD_MEMBER: u32 = 0x0044_9250;
+const MALLOC: u32 = 0x0042_fb80;
+const FREE: u32 = 0x0042_fb20;
+const DEFAULT_BUFFER: u32 = 0x0043_cb80;
+const MEMCPY: u32 = 0x0094_9256;
+const COPY_DEFAULTS: u32 = 0x0047_c610;
+const REFRESH: u32 = 0x0044_94a0;
+const MISMATCHED: u32 = 0x0047_c080;
+const NO_SUPER: u32 = 0x00b1_3ad8;
+const BAD_SUPER: u32 = 0x00b1_3b20;
+const ALREADY_THERE: u32 = 0x00b1_3b5c;
+const NO_MEMBER_CLASS: u32 = 0x00b1_3b94;
+/// A dynamic class still unmapped after the allocation, and no block.
+const MISSING_CLASS: u32 = 0x13;
+const NO_BLOCK: u32 = 0xd;
+
 /// A class entry without a file record.
 pub const NO_RECORD: u32 = 7;
 
@@ -95,6 +122,11 @@ fn name_hash(h: &impl Host, name: u32) -> u32 {
 
 /// The ports over game memory.
 pub mod bridge {
+    use super::{
+        ADD_MEMBER, ADD_TO_NAMESPACE, ALREADY_THERE, BAD_SUPER, CHECK, COPY_DEFAULTS,
+        DEFAULT_BUFFER, DYNAMIC_CTOR, FREE, MALLOC, MEMCPY, MISMATCHED, MISSING_CLASS, NEW,
+        NO_BLOCK, NO_MEMBER_CLASS, NO_SUPER, REFRESH,
+    };
     use super::{
         ALLOCATE_CLASS, ARRAY_SIZE, Conv, DISPENSER, DISPENSER_FIND, FIND_MEMBER, FIXED_SIZE,
         GET_CLASS, Host, MEMBER_FLAGS, MEMBER_GONE, MEMBER_MOVED, MEMBER_NEW, MEMBER_SIZE,
@@ -579,5 +611,221 @@ pub mod bridge {
             cm = cm.wrapping_add(0x20);
         }
         eax
+    }
+
+    /// The bytes of `allocateMissingClassDescriptors`' frame the port
+    /// keeps at the original's offsets (`ebp - 0x20` to `ebp - 0x10`):
+    /// the default-data copy's description `{1, file size, size, byte
+    /// 1}` whose address `0x0047c610` gets.
+    pub const ALLOCATE_FRAME: u32 = 0x10;
+
+    /// `PNamespaceMapping::allocateMissingClassDescriptors(ns, ctx,
+    /// verbose)` (`0x0047c190`, thiscall on the mapping, `ret 0xc`): makes
+    /// a dynamic class descriptor (`PClassDescriptorDynamic`, `0x00447690`
+    /// on a 0xb8-byte `PhyreMalloc` block, then `addToNamespace`) for each
+    /// unmapped dynamic class whose super class is mapped to a descriptor
+    /// without flags 1 and 3 and whose name `ns` doesn't know yet, pass
+    /// after pass while the last attempt of a pass succeeds. When any was
+    /// made: 0x13 if a dynamic class is still unmapped; else each
+    /// dynamic class's members are added (`0x00449250`), the classes
+    /// checked (`checkIfMatches`, as `build` does), and their default
+    /// buffers filled from the file's default data (`0x0047c610`,
+    /// `0x004494a0`; 0xd without a block). Then, with mismatches,
+    /// `0x0047c080` on the mapping. 0 or the error. `frame` is
+    /// [`ALLOCATE_FRAME`] bytes at the original's `ebp - 0x20`.
+    pub fn allocate_missing(h: &mut impl Host, map: u32, args: [u32; 3], frame: u32) -> u32 {
+        let [ns, ctx, verbose] = args;
+        let n = h.read::<u32>(map + 0xc) & 0x7fff_ffff;
+        let mut any = false;
+        // passes while the last attempt of a pass succeeds
+        let mut made = n != 0;
+        while made {
+            made = false;
+            for i in 0..n {
+                if let Some(ok) = make_one(h, map, ns, i) {
+                    made = ok;
+                    any |= ok;
+                }
+            }
+        }
+        if !any {
+            return finish(h, map);
+        }
+        let classes: u32 = h.read(map + 0x10);
+        for i in 0..n {
+            let e = classes.wrapping_add(i << 5);
+            let record: u32 = h.read(e + 4);
+            if h.read::<u32>(e + 8) == 0 && h.read::<u8>(record + 0x1c) & 1 != 0 {
+                return MISSING_CLASS;
+            }
+        }
+        for i in 0..n {
+            let classes: u32 = h.read(map + 0x10);
+            add_members(h, classes.wrapping_add(i << 5));
+        }
+        for i in 0..n {
+            let classes: u32 = h.read(map + 0x10);
+            let e = classes.wrapping_add(i << 5);
+            let record: u32 = h.read(e + 4);
+            if h.read::<u8>(record + 0x1c) & 1 == 0 {
+                continue;
+            }
+            let sup: u32 = h.read(e);
+            let r = h.call_sym(CHECK, Conv::Thiscall(e), &[verbose]);
+            let inherited = if sup == 0 { 0 } else { h.read(sup + 0x14) };
+            h.write(e + 0x14, inherited | r);
+            if r != 0 {
+                h.call_sym(ON_MISMATCH, Conv::Thiscall(e), &[ctx]);
+            }
+            let old: u32 = h.read(map + 0x1c);
+            h.write(map + 0x1c, old | r);
+        }
+        for i in 0..n {
+            let classes: u32 = h.read(map + 0x10);
+            if !fill_defaults(h, classes.wrapping_add(i << 5), frame) {
+                return NO_BLOCK;
+            }
+        }
+        finish(h, map)
+    }
+
+    /// The end: `0x0047c080` on a mapping with mismatches; 0.
+    fn finish(h: &mut impl Host, map: u32) -> u32 {
+        if h.read::<u32>(map + 0x1c) != 0 {
+            h.call_sym(MISMATCHED, Conv::Thiscall(map), &[]);
+        }
+        0
+    }
+
+    /// One pass's class `i`: `None` when nothing was tried, else whether
+    /// its descriptor was made.
+    fn make_one(h: &mut impl Host, map: u32, ns: u32, i: u32) -> Option<bool> {
+        let classes: u32 = h.read(map + 0x10);
+        let e = classes.wrapping_add(i << 5);
+        if h.read::<u32>(e + 8) != 0 {
+            return None;
+        }
+        let record: u32 = h.read(e + 4);
+        if h.read::<u8>(record + 0x1c) & 1 == 0 {
+            return None;
+        }
+        let sup: u32 = h.read(record);
+        let name: u32 = h.read(e + 0xc);
+        let count = h.read::<u32>(map + 0xc) & 0x7fff_ffff;
+        let si = sup.wrapping_sub(1);
+        let se = classes.wrapping_add(si << 5);
+        if si >= count || se == 0 {
+            print(h, 1, NO_SUPER, &[si, count, name]);
+            return None;
+        }
+        let base: u32 = h.read(se + 8);
+        if base == 0 {
+            return None;
+        }
+        if h.read::<u8>(base + 0x90) & 0xa != 0 {
+            let super_name: u32 = h.read(se + 0xc);
+            print(h, 1, BAD_SUPER, &[super_name, name]);
+            return None;
+        }
+        if h.call_sym(GET_CLASS, Conv::Thiscall(ns), &[name]) != 0 {
+            print(h, 1, ALREADY_THERE, &[name]);
+            return None;
+        }
+        let block = h.call_sym(NEW, Conv::Cdecl, &[0xb8]);
+        let desc = if block == 0 {
+            0
+        } else {
+            h.call_sym(DYNAMIC_CTOR, Conv::Thiscall(block), &[ns, name, base])
+        };
+        if desc != 0 {
+            h.call_sym(ADD_TO_NAMESPACE, Conv::Thiscall(desc), &[]);
+        }
+        h.write(e + 8, desc);
+        h.write(e, se);
+        let start = h.rebase(START_FLAGS);
+        let flags: u32 = h.read(start);
+        h.write(e + 0x14, flags);
+        Some(h.read::<u32>(e + 8) != 0)
+    }
+
+    /// A made dynamic class's members (`0x00449250(name, type, flag bit
+    /// 1, 0)` for each one not mapped yet).
+    fn add_members(h: &mut impl Host, e: u32) {
+        let desc: u32 = h.read(e + 8);
+        if desc == 0 {
+            return;
+        }
+        let record: u32 = h.read(e + 4);
+        if h.read::<u8>(record + 0x1c) & 1 == 0 {
+            return;
+        }
+        let count: u32 = h.read(record + 0xc);
+        for j in 0..count {
+            let members: u32 = h.read(e + 0x10);
+            let me = members.wrapping_add(j << 5);
+            if h.read::<u32>(me + 8) != 0 {
+                continue;
+            }
+            let file: u32 = h.read(me + 4);
+            let class_entry: u32 = h.read(me + 0x14);
+            let flag = h.read::<u32>(file + 0x10) & 2;
+            let mut ty: u32 = h.read(me + 0x10);
+            let name: u32 = h.read(me + 0xc);
+            if ty == 0 && class_entry != 0 {
+                ty = h.read(class_entry + 8);
+                h.write(me + 0x10, ty);
+            }
+            if ty == 0 {
+                let class_name: u32 = h.read(desc + 0x18);
+                print(h, 1, NO_MEMBER_CLASS, &[class_name, name]);
+            } else {
+                let member = h.call_sym(ADD_MEMBER, Conv::Thiscall(desc), &[name, ty, flag, 0]);
+                h.write(me + 8, member);
+            }
+            h.write(me + 0x14, class_entry);
+        }
+    }
+
+    /// A made dynamic class's default buffer: false without a block.
+    fn fill_defaults(h: &mut impl Host, e: u32, frame: u32) -> bool {
+        let desc: u32 = h.read(e + 8);
+        if desc == 0 {
+            return true;
+        }
+        let record: u32 = h.read(e + 4);
+        if h.read::<u8>(record + 0x1c) & 1 == 0 {
+            return true;
+        }
+        let size: u32 = h.read(desc + 0x1c);
+        if size == 0 {
+            return true;
+        }
+        let data: u32 = h.read(e + 0x18);
+        let block = h.call_sym(MALLOC, Conv::Cdecl, &[size, 1]);
+        let owned = if block == 0 { 0 } else { size };
+        if block == 0 {
+            return false;
+        }
+        let record: u32 = h.read(e + 4);
+        h.write(frame, 1u32);
+        let file = h.read::<u32>(record + 4) & 0x0fff_ffff;
+        h.write(frame + 8, size);
+        h.write(frame + 4, file);
+        h.write(frame + 0xc, 1u8);
+        let defaults = h.call_sym(DEFAULT_BUFFER, Conv::Thiscall(desc), &[]);
+        h.call_sym(MEMCPY, Conv::Cdecl, &[block, defaults, size]);
+        let dst = block
+            .wrapping_sub(h.read(desc + 0x88))
+            .wrapping_add(h.read(desc + 0x8c));
+        let src = h
+            .read::<u32>(record + 0x18)
+            .wrapping_sub(h.read(record + 0x14))
+            .wrapping_add(data);
+        h.call_sym(COPY_DEFAULTS, Conv::Thiscall(e), &[frame, src, dst]);
+        h.call_sym(REFRESH, Conv::Thiscall(desc), &[block]);
+        if owned >> 31 == 0 {
+            h.call_sym(FREE, Conv::Cdecl, &[block]);
+        }
+        true
     }
 }

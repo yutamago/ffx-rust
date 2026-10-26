@@ -7896,3 +7896,199 @@ fn p1e_fixup_pointers_matches_the_original() {
         }
     }
 }
+
+// ---- round 4: allocateMissingClassDescriptors (p1_mapping) ----
+
+#[test]
+fn p1e_allocate_missing_matches_the_original() {
+    use ffx_pload::p1_mapping::bridge as pmap;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xa110_c190);
+        for case in 0..600u32 {
+            t.printf_stub(&[
+                (0x00b1_3ad8, 3),
+                (0x00b1_3b20, 2),
+                (0x00b1_3b5c, 1),
+                (0x00b1_3b94, 2),
+            ]);
+            // getClassDescriptor(name): the word 8 before the name
+            t.stub_body(
+                0x0043_e950,
+                true,
+                1,
+                1,
+                &[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x40, 0xf8],
+            );
+            t.stub(
+                0x0042_fb40,
+                false,
+                1,
+                0,
+                if case % 13 == 12 { 0 } else { 0x00c3_3000 },
+            );
+            let mut made = Vec::new();
+            for k in 0..6u32 {
+                let d = if (case % 7 == 6 && k == 1) || (case % 5 == 2 && k == 2) {
+                    0
+                } else {
+                    let d = t.zeros(0x90);
+                    let n = t.alloc(b"Made\0");
+                    t.w32(d + 0x18, n);
+                    t.w32(
+                        d + 0x1c,
+                        [0u32, 0x20, 0x8000_0010, 0x4000_0010][(rng.next() % 4) as usize],
+                    );
+                    t.w32(d + 0x88, 4 * k);
+                    t.w32(d + 0x8c, 8);
+                    d
+                };
+                made.push(d);
+            }
+            t.seq_stub(0x0044_7690, true, 3, 3, &made);
+            t.stub(0x0043_c140, true, 0, 0, 0);
+            t.stub(0x0044_9250, true, 4, 4, 0x00c3_4000 + case);
+            t.stub(0x0047_cc80, true, 1, 1, [0u32, 4, 1][(case % 3) as usize]);
+            t.stub(0x0047_e180, true, 1, 1, 0);
+            let block = t.zeros(0x40);
+            let blocks = if case % 11 == 10 {
+                vec![block, 0]
+            } else {
+                vec![block; 6]
+            };
+            t.seq_stub(0x0042_fb80, false, 2, 0, &blocks);
+            t.stub(0x0042_fb20, false, 1, 0, 0);
+            t.stub(0x0043_cb80, true, 0, 0, 0x00c3_5000);
+            t.stub(0x0094_9256, false, 3, 0, 0);
+            t.stub_body(
+                0x0047_c610,
+                true,
+                3,
+                3,
+                &[
+                    0x8b, 0x54, 0x24, 0x04, 0x8b, 0x4a, 0x04, 0x89, 0x48, 0x14, 0x8b, 0x4a, 0x08,
+                    0x89, 0x48, 0x18, 0x0f, 0xb6, 0x4a, 0x0c, 0xc1, 0xe1, 0x08, 0x33, 0x0a, 0x89,
+                    0x48, 0x1c,
+                ],
+            );
+            t.stub(0x0044_94a0, true, 1, 1, 0);
+            t.stub(0x0047_c080, true, 0, 0, 0);
+            let start = t.rebase(0x00c9_75e8);
+            t.w32(start, if case % 5 == 3 { 0x40 } else { 0 });
+            // the classes
+            let n = [0u32, 1, 3, 5][(case % 4) as usize];
+            let classes = t.junk(32 * n as usize + 32, 1);
+            let ns = t.junk(0x20, 2);
+            for i in 0..n {
+                let e = classes + 32 * i;
+                let record = t.zeros(0x24);
+                let dynamic = i != 0 && !rng.next().is_multiple_of(4);
+                t.w32(record + 0x1c, u32::from(dynamic) | (rng.next() & 0x100));
+                t.w32(
+                    record,
+                    match rng.next() % 8 {
+                        0 => n + 1,
+                        1 | 2 => 1 + rng.next() % n,
+                        _ => 1,
+                    },
+                );
+                t.w32(record + 4, 0x1000_0020);
+                t.w32(record + 0x14, 4);
+                t.w32(record + 0x18, 0x10);
+                t.w32(e + 4, record);
+                let mapped = i == 0
+                    || (!dynamic && !rng.next().is_multiple_of(5))
+                    || rng.next().is_multiple_of(4);
+                let desc = if mapped {
+                    let d = t.zeros(0xa0);
+                    let n = t.alloc(b"Base\0");
+                    t.w32(d + 0x18, n);
+                    t.w32(d + 0x90, [0u32, 0, 2, 8, 1][(rng.next() % 5) as usize]);
+                    t.w32(d + 0x1c, 0x20);
+                    d
+                } else {
+                    0
+                };
+                t.w32(e + 8, desc);
+                // its name, with what getClassDescriptor answers before it
+                let slot = t.zeros(16);
+                t.w32(
+                    slot,
+                    if rng.next().is_multiple_of(6) {
+                        0x00c3_6000
+                    } else {
+                        0
+                    },
+                );
+                t.write(slot + 8, b"Dyn\0");
+                t.w32(e + 0xc, slot + 8);
+                // members
+                let mc = rng.next() % 3;
+                t.w32(record + 0xc, mc);
+                let members = t.junk(32 * mc as usize + 4, 3);
+                for j in 0..mc {
+                    let me = members + 32 * j;
+                    t.w32(
+                        me + 8,
+                        if rng.next().is_multiple_of(4) {
+                            0x00c3_7000
+                        } else {
+                            0
+                        },
+                    );
+                    let fm = t.zeros(0x18);
+                    t.w32(fm + 0x10, rng.next() & 3);
+                    t.w32(me + 4, fm);
+                    let ce = if rng.next().is_multiple_of(2) {
+                        0
+                    } else {
+                        let c = t.zeros(0x10);
+                        t.w32(
+                            c + 8,
+                            if rng.next().is_multiple_of(2) {
+                                0
+                            } else {
+                                0x00c3_8000
+                            },
+                        );
+                        c
+                    };
+                    t.w32(me + 0x14, ce);
+                    t.w32(
+                        me + 0x10,
+                        if rng.next().is_multiple_of(3) {
+                            0x00c3_9000
+                        } else {
+                            0
+                        },
+                    );
+                    let mn = t.alloc(b"mem\0");
+                    t.w32(me + 0xc, mn);
+                }
+                t.w32(e + 0x10, members);
+                t.w32(e + 0x18, 0x00c3_a000 + i);
+                t.w32(e, 0);
+                t.w32(e + 0x14, 0x10 * i);
+            }
+            let map = t.zeros(0x20);
+            t.w32(map + 0xc, n | if case % 9 == 8 { 0x8000_0000 } else { 0 });
+            t.w32(map + 0x10, classes);
+            t.w32(map + 0x1c, if case % 6 == 5 { 2 } else { 0 });
+            let ctx = 0x00c3_b000 + case;
+            let verbose = case & 1;
+            let ebp = t.a.stack_range().end - 0x100 - 12 - 8;
+            let frame = ebp - 0x20;
+            t.write(frame, &[0x5a; 0x10]);
+            t.b.set_call_top(Some(frame - 0x100));
+            let what = format!("{label}: allocate missing {case}");
+            t.check(
+                &what,
+                0x0047_c190,
+                Conv::Thiscall(map),
+                &[ns, ctx, verbose],
+                |g| Out::U32(pmap::allocate_missing(g, map, [ns, ctx, verbose], frame)),
+            );
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}
