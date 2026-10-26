@@ -699,8 +699,11 @@ dependencies = [
  "ffx-motion",
  "ffx-movie",
  "ffx-panim",
+ "ffx-pcore",
  "ffx-pcui",
  "ffx-pload",
+ "ffx-pother-a",
+ "ffx-pother-b",
  "ffx-prender",
  "ffx-ps2",
  "ffx-scene",
@@ -791,9 +794,12 @@ dependencies = [
  "ffx-motion",
  "ffx-movie",
  "ffx-panim",
+ "ffx-pcore",
  "ffx-pcui",
  "ffx-phyre",
  "ffx-pload",
+ "ffx-pother-a",
+ "ffx-pother-b",
  "ffx-prender",
  "ffx-ps2",
  "ffx-script",
@@ -812,6 +818,14 @@ dependencies = [
 
 [[package]]
 name = "ffx-panim"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+ "ffx-graphic",
+]
+
+[[package]]
+name = "ffx-pcore"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
@@ -859,6 +873,22 @@ dependencies = [
  "ffx-dxbc",
  "ffx-phyre",
  "ffx-vbf",
+]
+
+[[package]]
+name = "ffx-pother-a"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+ "ffx-graphic",
+]
+
+[[package]]
+name = "ffx-pother-b"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+ "ffx-graphic",
 ]
 
 [[package]]
