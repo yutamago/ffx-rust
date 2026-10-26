@@ -646,8 +646,10 @@ one frame), the emulated vsyncs from the new time, both carries 0,
 `g_Vu0_R` `0x3fb5a5c3` (seeded), the main thread's CRT seed 1. It
 answers what it pinned. The game's own generators need nothing: loading
 a save seeds them. A replay that needs it says `pin` right after
-`lockstep on`. battle-magic, battle-attack, menu-save and menu-shop do.
-The other replays' recordings predate it.
+`lockstep on`. battle-magic, battle-attack, menu-save and menu-shop do,
+and event-besaid since audio-check (2026-10-26; its FMOD capture differed
+between unpinned original runs, "Audio capture" below). The other replays'
+recordings predate it.
 
 Measured on battle-magic: without `pin`, original runs as well as Rust
 runs landed in four or five pictures for shot 1 and in three for shots 2
@@ -681,7 +683,12 @@ run so far had the same gap from `lockstep on` to the first `waitfor`
 (battle-attack 88 updates, menu-save and menu-shop 66), except one
 recording, made with three games starting at once: 87, 54 and 59. Its
 shots differed everywhere. Check those gaps in the replay output (`.out`)
-before trusting a recording.
+before trusting a recording. (Since 2026-10-26 the main thread itself
+turns a requested lockstep on, at the top of the first boundary it enters
+after the command; before, the hold could also fall on the boundary it was
+already in, which changed battle-attack's audio in two of 42 runs: "Audio
+capture" below. `lockstep on` now answers the frame it holds at, where it
+answered the frame before.)
 
 `tools/replays/event-besaid.txt` and `event-cliff.txt` (2026-10-24) play
 scripted events from save slot 3 (`ffx_003`). The harness's five save
@@ -1083,21 +1090,70 @@ B.wav` compares the two between the marks, sample for sample (or
 `--tolerance`), and prints the first differing sample, its time and FMOD
 tick. `quit` (TerminateProcess) loses FMOD's last file buffer (about 450
 frames); the tool leaves out what was never written and says so.
-`tools/replays/run-all.sh --audio --record` records the original twice into
-`~/ffx-work/replay-shots/audio` (`FFX_REPLAY_AUDIO`) and compares the two;
-`--audio` compares a Rust run with them.
+The gate (M4 "done when" item 4):
 
-Status (2026-10-26, unfinished): the first recording (2 s stall fallback)
-gave original against original captures exactly one block apart on all
-three replays (event-besaid: lag 1600 frames, residue 6e-10). The cause was
-the fallback: a map load holds one update for seconds in `CdReadSync`
-(`0x0076c490`, `MovieCdReadTaskLoop` waiting for the read thread, not for
-FMOD), and the free tick there ran the command queue mid-update, one
-soundLoop earlier than the next turn. The fallback is now 30 s (a deadlock
-guard only, logged with every thread's stack). Still to do: re-record and
-confirm original against original matches, compare Rust against original
-on the three replays, bisect any difference with `FFX_HOOK_DISABLE` /
-`FFX_HOOK_ONLY=@file`.
+```bash
+tools/replays/run-all.sh --audio                  # Rust against the references
+tools/replays/run-all.sh --audio battle-attack    # one replay
+tools/replays/run-all.sh --audio --record [replay...]   # (re-)record the references
+```
+
+The audio list is event-besaid (music, Wakka's voice, footsteps),
+battle-attack (sound effects, the victory fanfare), menu-browse (menu
+sounds) and battle-ifrit (a summon). The references are two original-code
+captures per replay in `~/ffx-work/replay-audio` (`FFX_REPLAY_AUDIO`;
+never in git, about 15 MB a capture). `--record` plays the original code
+twice and stores the pair only when the two agree sample for sample;
+otherwise it keeps the old references and fails. Re-record a replay after
+changing its script, its save, or anything the harness does before its
+`audiomark start`; the Rust run is compared with both references, and any
+difference in a sample fails. A failure prints the first differing sample
+(its time after the start mark and its FMOD tick: one tick is one update
+of the window) and how many frames differ. To find the port behind one,
+capture with `FFX_HOOK_ONLY=@<list>` (the `ported!` names of some
+`crates/ffx-hook/src/ported/*.rs`, as `~/ffx-work/m4/main-capture.sh`
+builds them) and split the list until one function is left; two lists
+that differ apart mean two culprits (or one calling the other's Rust).
+
+Determinism (2026-10-26, audio-check). With the turns above, two
+original runs agree sample for sample on all four replays, given three
+things:
+
+- The fallback tick: the first recording (2 s stall fallback) gave
+  captures exactly one block apart on all three replays (event-besaid: lag
+  1600 frames, residue 6e-10). A map load holds one update for seconds in
+  `CdReadSync` (`0x0076c490`, `MovieCdReadTaskLoop` waiting for the read
+  thread, not for FMOD), and the free tick there ran the command queue
+  mid-update, one soundLoop earlier than the next turn. It is now 30 s (a
+  deadlock guard only, logged with every thread's stack, `free` in the
+  marks and in wav-compare's output); no run since has needed it.
+- `pin` (above, "Pinned state"): event-besaid had none, and two runs
+  differed by about 1e-10 under the beach's sounds for 316 blocks (the
+  `f32` game time's last bits) and by up to 0.0086 in the river walk's
+  footsteps (a double logic tick: the event frame count e9 against e8 at
+  frame 1029, another final player position). It pins now.
+- Where `lockstep on` takes hold: set from the command thread, the hold
+  fell on the boundary the main thread was in when the command came (if it
+  had not reached its hold check yet) or on the next one. In two of 42
+  battle-attack captures it was the first, and the mix differed from the
+  first sample of the window (the same frames, the same waitfor gaps).
+  The main thread now turns a requested lockstep on at the top of
+  `animate`, so the hold is the first boundary entered after the command;
+  18 of 18 runs matched after that.
+
+One thing the harness does not pin: music that began before lockstep keeps
+the phase real time gave it. battle-ifrit's Thunder Plains music differed
+between original runs until it faded out for the battle (60 blocks), so its
+`audiomark start` is after the battle's `waitfor`.
+
+Ports (2026-10-26): with every port on, event-besaid, menu-browse and
+battle-ifrit matched the references sample for sample; battle-attack went
+near-silent from block 768 of 990 (the AP screen). Bisected with
+`FFX_HOOK_ONLY` to `MsMusicReadStart` (`0x0079fff0`) and
+`MsBattleProcess_Status_007917d0` (whose port calls the Rust
+`MsMusicReadStart`): the original tail-jumps to `SndMusicRead` with its own
+argument (`g_BtlEndMusic`, the fanfare 0x8a), and the port passed none, so
+the fanfare never loaded. Fixed; all four now match.
 
 ## Parallel games
 

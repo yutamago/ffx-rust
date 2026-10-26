@@ -48,18 +48,18 @@
 # the supported maps (FFX_RUST_MAP=build, docs/scene-builder.md, "In the game";
 # the others are recorded and re-issued as with --rust-map).
 # Audio mode (docs/harness.md, "Audio capture"):
-#   tools/replays/run-all.sh --audio [--record [replay...]]
-# plays the audio list (event-besaid: voice and music; battle-attack: sound
-# effects; menu-browse: menu sounds) with FFX_AUDIO_WAV, FMOD's mix written
+#   tools/replays/run-all.sh --audio [replay...]
+#   tools/replays/run-all.sh --audio --record [replay...]
+# plays the audio list (event-besaid: voice, music and footsteps;
+# battle-attack: sound effects and the victory fanfare; menu-browse: menu
+# sounds; battle-ifrit: a summon) with FFX_AUDIO_WAV, FMOD's mix written
 # to <run>/<tag>/<replay>-<tag>.wav (no sound reaches the speakers), and
 # compares the captures between the replays' `audiomark start` and
 # `audiomark end` with tools/wav-compare.py, sample for sample. --record
-# runs the original code twice into ~/ffx-work/replay-shots/audio
-# (FFX_REPLAY_AUDIO) and checks the two agree (the determinism gate);
-# without it the Rust replacements run and are compared with both
-# recordings. Traces and screenshots are not compared in this mode (the
-# FMOD thread runs in turns, which moves voiced scenes against the plain
-# recordings).
+# runs the original code twice and, when the two agree (the determinism
+# check), stores them in ~/ffx-work/replay-audio (FFX_REPLAY_AUDIO; never
+# in git); without it the Rust replacements run and are compared with both
+# references. Traces and screenshots are not compared in this mode.
 set -u
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo"
@@ -137,7 +137,7 @@ audio=""
 if [ "${1:-}" = --audio ]; then
     audio=1
     shift
-    replays=(event-besaid battle-attack menu-browse)
+    replays=(event-besaid battle-attack menu-browse battle-ifrit)
     audio_dir="${FFX_REPLAY_AUDIO:-$HOME/ffx-work/replay-audio}"  # never in git
     mkdir -p "$audio_dir"
     wavcmp() { # label, a, b
@@ -155,15 +155,23 @@ if [ "${1:-}" = --audio ]; then
         each orig2 original
         bad=0
         for r in "${replays[@]}"; do
-            for tag in orig orig2; do
-                cp "$runs/$tag/$r-$tag.wav" "$runs/$tag/$r-$tag.wav.marks" "$audio_dir/" 2>/dev/null \
-                    || { echo "== $r $tag: no capture ($runs/$tag/$r.out)"; bad=1; }
-            done
-            wavcmp "$r original against original" "$audio_dir/$r-orig.wav" "$audio_dir/$r-orig2.wav" || bad=1
+            if [ ! -f "$runs/orig/$r-orig.wav" ] || [ ! -f "$runs/orig2/$r-orig2.wav" ]; then
+                echo "== $r: no capture ($runs/orig/$r.out, $runs/orig2/$r.out)"; bad=1; continue
+            fi
+            # only two runs that agree become the references
+            if wavcmp "$r original against original" "$runs/orig/$r-orig.wav" "$runs/orig2/$r-orig2.wav"; then
+                for tag in orig orig2; do
+                    cp "$runs/$tag/$r-$tag.wav" "$runs/$tag/$r-$tag.wav.marks" "$audio_dir/"
+                done
+            else
+                echo "   not stored: the original code did not repeat ($audio_dir keeps the old references)"
+                bad=1
+            fi
         done
         echo "recorded in $((SECONDS - start)) s ($runs)"
         exit $bad
     fi
+    [ $# -gt 0 ] && replays=("$@")
     each rust
     echo "replays took $((SECONDS - start)) s ($runs)"
     bad=0

@@ -13,13 +13,16 @@
 load direct 5 kami0100
 lockstep on
 pin
-# FFX_AUDIO_WAV (run-all.sh --audio): the capture is compared from the
-# `audiomark start` to the `audiomark end` (docs/harness.md, "Audio capture")
-audiomark start
 wait 10
 write 0x011307e8 01000405ff020306
 battle 34 0 0
 waitfor 0x0112a8e0:1 01 ff 4000
+# FFX_AUDIO_WAV (run-all.sh --audio): the capture is compared from the
+# `audiomark start` to the `audiomark end` (docs/harness.md, "Audio
+# capture"). It starts in the battle: the Thunder Plains' field music began
+# before lockstep, in real time, and its phase at lockstep differed between
+# original runs (the first 60 blocks, until it faded out for the battle).
+audiomark start
 writep 0x011334d4 0x13cd4 9f860100
 writep 0x011334d4 0x13d10 9f860100
 writep 0x011334d4 0x14c64 9f860100
