@@ -28,7 +28,7 @@ use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
-    h4_h3 as h3,
+    h4_h3 as h3, h4_h4 as h4,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -5690,6 +5690,395 @@ fn h3_cluster_loads() {
                 frame,
                 &[(0, 8)],
                 |g| u(h3::load_pcluster(g, frame, this, name_text)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 6, batch 4 (ffx_glue_other::h4_h4)
+
+/// [`h3_fill_stub`] storing (`mov`) instead of OR-ing: for a callee that
+/// sets the words whatever they held.
+fn h4_set_stub(t: &mut Twins, sym: u32, n: u32, pops: u32, fills: &[(u32, u8)]) {
+    let log = t.stub_code(sym, true, n, pops, false, &[]);
+    let mut c = Vec::new();
+    for &(cell, off) in fills {
+        c.push(0xa1);
+        c.extend(cell.to_le_bytes()); // mov eax, [cell]
+        c.extend([0x89, 0x41, off]); // mov [ecx+off], eax
+    }
+    let at = t.cave_next;
+    c.push(0xe9);
+    c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp log
+    let code = t.code(&c);
+    t.jump(sym, code);
+}
+
+/// A recording stub at `sym` whose result alternates between its cell
+/// and a second cell (returned): each call first swaps the two.
+fn h4_swap_stub(t: &mut Twins, sym: u32, n: u32, pops: u32) -> u32 {
+    let log = t.stub_code(sym, true, n, pops, false, &[]);
+    let cell = t.cells[&sym];
+    let next = t.zeros(4);
+    let mut c = vec![0xa1];
+    c.extend(next.to_le_bytes()); // mov eax, [next]
+    c.extend([0x87, 0x05]);
+    c.extend(cell.to_le_bytes()); // xchg [cell], eax
+    c.push(0xa3);
+    c.extend(next.to_le_bytes()); // mov [next], eax
+    let at = t.cave_next;
+    c.push(0xe9);
+    c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp log
+    let code = t.code(&c);
+    t.jump(sym, code);
+    next
+}
+
+/// The cursor seek as a stub that fills the cursor's base `+0`, hit
+/// `+0xc` and offset `+0x10` from three cells (returned).
+fn h4_seek_stub(t: &mut Twins) -> [u32; 3] {
+    let cells = [t.zeros(4), t.zeros(4), t.zeros(4)];
+    h3_fill_stub(
+        t,
+        h2::CURSOR_SEEK,
+        0,
+        0,
+        &[(cells[0], 0), (cells[1], 0xc), (cells[2], 0x10)],
+    );
+    cells
+}
+
+/// Random cursor results.
+fn h4_seek_results(t: &mut Twins, rng: &mut Rng, cells: [u32; 3]) {
+    let base = rng.next();
+    let other = rng.next();
+    let off = rng.pick(&[base.wrapping_neg(), 0x40, other]);
+    let hit = rng.pick(&[0, 1, 1, 1]);
+    t.w32(cells[0], base);
+    t.w32(cells[1], hit);
+    t.w32(cells[2], off);
+}
+
+/// A shader cluster whose list (`+0x1c`) is empty or not.
+fn h4_cluster(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let cluster = random_block(t, rng, 0x24);
+    let list = cluster + 0x1c;
+    let other = rng.next();
+    let first = rng.pick(&[list, other]);
+    t.w32(list, first);
+    cluster
+}
+
+/// A material list for the create stub: a count with or without its top
+/// bit, its block word sometimes pointing at the inline slot.
+fn h4_list(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let array = random_block(t, rng, 0x10);
+    let n = rng.pick(&[0, 1, 1, 2, 5]) | rng.pick(&[0, 0, 0x8000_0000]);
+    t.w32(array, n);
+    if rng.below(4) == 0 {
+        t.w32(array + 4, array + 4);
+    }
+    array
+}
+
+const H4_TAGS: [u32; 9] = [
+    h2::CURSOR_SEEK,
+    h2::CREATE_MATERIAL,
+    h2::CLUSTER_CREATE,
+    h2::PHYRE_FREE,
+    h4::FULLSCREEN_MESH,
+    h4::FIND_PARAMETER,
+    h4::SET_PARAM48,
+    h2::TEXTURE_REGISTER,
+    h4::BLUR_PASS_INIT,
+];
+
+fn h4_stubs(t: &mut Twins) -> [u32; 3] {
+    let cells = h4_seek_stub(t);
+    t.stub_at(h2::CREATE_MATERIAL, true, 3, 3, &[]);
+    t.stub_at(h2::CLUSTER_CREATE, true, 3, 3, &[]);
+    t.stub(h2::PHYRE_FREE, 1, false);
+    t.stub(h4::FULLSCREEN_MESH, 1, false);
+    t.stub_at(h4::FIND_PARAMETER, true, 1, 1, &[]);
+    t.stub_at(h4::SET_PARAM48, true, 4, 4, &[]);
+    t.stub_at(h2::TEXTURE_REGISTER, true, 0, 0, &[]);
+    cells
+}
+
+/// The blur pass's setup.
+#[test]
+fn h4_blur_pass_init() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a401);
+        let cells = h4_stubs(&mut t);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &H4_TAGS[..8]);
+            h4_seek_results(&mut t, &mut rng, cells);
+            let mesh = random_block(&mut t, &mut rng, 0x20);
+            t.ret(h4::FULLSCREEN_MESH, mesh);
+            let list = h4_list(&mut t, &mut rng);
+            t.ret(h2::CLUSTER_CREATE, list);
+            let this = random_block(&mut t, &mut rng, 0x60);
+            let cluster = h4_cluster(&mut t, &mut rng);
+            let size = |rng: &mut Rng| {
+                let r = rng.next();
+                rng.pick(&[1280, 720, 0, 0xffff_fff0, r])
+            };
+            let a = [
+                rng.next(),
+                cluster,
+                rng.next(),
+                size(&mut rng),
+                size(&mut rng),
+            ];
+            let frame = t.ebp_for(5) - 0x20;
+            t.check_framed_conv(
+                &format!("{w} pass"),
+                0x006c_40e0,
+                Conv::Thiscall(this),
+                &a,
+                frame,
+                &[(0, 0x20)],
+                |g| u(h4::blur_pass_init(g, frame, this, a)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The extended blur's post-initialisation (the blur pass a stub).
+#[test]
+fn h4_blur_ex_post_initialize() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a402);
+        let cells = h4_stubs(&mut t);
+        t.stub(h4::BLUR_EFFECT, 0, false);
+        t.stub_at(h4::BLUR_PASS_INIT, true, 5, 5, &[]);
+        let mut tags = H4_TAGS.to_vec();
+        tags.push(h4::BLUR_EFFECT);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            h4_seek_results(&mut t, &mut rng, cells);
+            let blur = random_block(&mut t, &mut rng, 0x24);
+            let cluster = h4_cluster(&mut t, &mut rng);
+            // a cluster, unless BlurEffect has none at all (the original
+            // seeks a null cluster then)
+            t.w32(blur + 0x20, cluster);
+            let other = rng.next();
+            let c0 = rng.pick(&[0, other, other]);
+            t.w32(blur, c0);
+            t.ret(h4::BLUR_EFFECT, blur);
+            let mesh = random_block(&mut t, &mut rng, 0x20);
+            t.ret(h4::FULLSCREEN_MESH, mesh);
+            let list = h4_list(&mut t, &mut rng);
+            t.ret(h2::CLUSTER_CREATE, list);
+            let this = random_block(&mut t, &mut rng, 0x38);
+            let done = rng.pick(&[0, 0, 0, 7]);
+            t.w32(this + 0x10, done);
+            let frame = t.ebp_for(0) - 0x24;
+            t.check_framed_conv(
+                &format!("{w} post"),
+                0x006c_4b60,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 0x24)],
+                |g| u(h4::blur_ex_post_initialize(g, frame, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `BlurEffect`'s shader-cluster callback (the radial effects stubs; the
+/// render-target stub returns a fresh target or null).
+#[test]
+fn h4_blur_effect_on_shaders() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a403);
+        let cells = h4_stubs(&mut t);
+        // the list first, then the textures alternate with it
+        let next = h4_swap_stub(&mut t, h2::CLUSTER_CREATE, 3, 3);
+        t.stub(h4::GET_APPLICATION, 0, false);
+        t.stub(h4::FIXUP_CLUSTERS, 2, false);
+        t.stub_at(h2::SET_DIMENSIONS, true, 4, 4, &[]);
+        t.stub_at(h2::UPDATE_MAX_LEVEL, true, 0, 0, &[]);
+        t.stub_at(h4::CREATE_TARGET, true, 1, 1, &[]);
+        t.stub_at(h4::RADIAL_BLUR_INIT, true, 5, 5, &[]);
+        t.stub_at(h4::RADIAL_LINE_INIT, true, 6, 6, &[]);
+        let mut tags = H4_TAGS[..8].to_vec();
+        tags.extend([
+            h4::GET_APPLICATION,
+            h4::FIXUP_CLUSTERS,
+            h2::SET_DIMENSIONS,
+            h2::UPDATE_MAX_LEVEL,
+            h4::CREATE_TARGET,
+            h4::RADIAL_BLUR_INIT,
+            h4::RADIAL_LINE_INIT,
+        ]);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            h4_seek_results(&mut t, &mut rng, cells);
+            let other = rng.next();
+            let m = rng.pick(&[0, other, other, other, other]);
+            t.ret(h2::CREATE_MATERIAL, m);
+            let mesh = random_block(&mut t, &mut rng, 0x20);
+            t.ret(h4::FULLSCREEN_MESH, mesh);
+            // the list (also every second texture), then a texture or null
+            let list = h4_list(&mut t, &mut rng);
+            let list = rng.pick(&[0, list, list, list, list, list]);
+            t.w32(next, list);
+            let texture = random_block(&mut t, &mut rng, 0x18);
+            let texture = rng.pick(&[0, texture, texture, texture]);
+            t.ret(h2::CLUSTER_CREATE, texture);
+            let target = random_block(&mut t, &mut rng, 0x10);
+            let tex = rng.next();
+            t.w32(target, tex);
+            let flag = rng.pick(&[0, 0, 1]);
+            t.w8(target + 4, flag);
+            let target = rng.pick(&[0, target, target, target, target, target, target]);
+            t.ret(h4::CREATE_TARGET, target);
+            let r = rng.pick(&[0, 0, 0x13]);
+            t.ret(h4::RADIAL_BLUR_INIT, r);
+            let this = random_block(&mut t, &mut rng, 0x40);
+            let cluster = h4_cluster(&mut t, &mut rng);
+            t.w32(this + 0x20, cluster);
+            let frame = t.ebp_for(0) - 0x24;
+            t.check_framed_conv(
+                &format!("{w} effect"),
+                0x006c_35d0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 0x24)],
+                |g| u(h4::blur_effect_on_shaders(g, frame, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The radial blur's and radial lines' setup.
+#[test]
+fn h4_radial_init() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a404);
+        let cells = h4_stubs(&mut t);
+        // the radial lines' cursor: a constructor that fills the cursor
+        let line_cells = [t.zeros(4), t.zeros(4), t.zeros(4)];
+        h4_set_stub(
+            &mut t,
+            h4::CURSOR_INIT,
+            1,
+            1,
+            &[
+                (line_cells[0], 0),
+                (line_cells[1], 0xc),
+                (line_cells[2], 0x10),
+            ],
+        );
+        t.stub_at(h2::SET_DIMENSIONS, true, 4, 4, &[]);
+        t.stub_at(h2::UPDATE_MAX_LEVEL, true, 0, 0, &[]);
+        t.stub_at(h4::CREATE_TARGET, true, 1, 1, &[]);
+        t.stub_at(h2::SET_WORD, true, 2, 2, &[]);
+        t.stub_at(h4::RADIAL_SET_PARAM54, true, 4, 4, &[]);
+        t.stub_at(h4::SET_MIN_FILTER, true, 1, 1, &[]);
+        t.stub(h2::POST_PROCESS_MANAGER, 0, false);
+        t.stub_at(h4::SET_TEXTURE, true, 2, 2, &[]);
+        t.stub_at(h4::RADIAL_LINE_SETUP, true, 0, 0, &[]);
+        t.stub_at(h4::CREATE_IN_ROOT, true, 1, 1, &[]);
+        t.stub_at(h4::SET_LINE_STREAMS, true, 3, 3, &[]);
+        t.stub_at(h4::LINE_INSTANCE, true, 1, 1, &[]);
+        t.stub_at(h2::MESH_INSTANCE, true, 1, 1, &[]);
+        let mut tags = H4_TAGS[..8].to_vec();
+        tags.extend([
+            h4::CURSOR_INIT,
+            h2::SET_DIMENSIONS,
+            h2::UPDATE_MAX_LEVEL,
+            h4::CREATE_TARGET,
+            h2::SET_WORD,
+            h4::RADIAL_SET_PARAM54,
+            h4::SET_MIN_FILTER,
+            h2::POST_PROCESS_MANAGER,
+            h4::SET_TEXTURE,
+            h4::RADIAL_LINE_SETUP,
+            h4::CREATE_IN_ROOT,
+            h4::SET_LINE_STREAMS,
+            h4::LINE_INSTANCE,
+            h2::MESH_INSTANCE,
+        ]);
+        let manager = t.zeros(0x1_2400);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            h4_seek_results(&mut t, &mut rng, cells);
+            h4_seek_results(&mut t, &mut rng, line_cells);
+            let other = rng.next();
+            let m = rng.pick(&[0, other, other, other, other]);
+            let material = random_block(&mut t, &mut rng, 8);
+            let m = if m == 0 { 0 } else { material };
+            t.ret(h2::CREATE_MATERIAL, m);
+            let mesh = random_block(&mut t, &mut rng, 0x20);
+            let mesh = rng.pick(&[0, mesh, mesh, mesh, mesh, mesh]);
+            t.ret(h4::FULLSCREEN_MESH, mesh);
+            let list = h4_list(&mut t, &mut rng);
+            let list = rng.pick(&[0, list, list, list, list, list, list]);
+            t.ret(h2::CLUSTER_CREATE, list);
+            let target = random_block(&mut t, &mut rng, 0x10);
+            let target = rng.pick(&[0, target, target, target, target, target]);
+            t.ret(h4::CREATE_TARGET, target);
+            let r = rng.pick(&[0, 0, 0, 0, 0, 7]);
+            t.ret(h2::SET_DIMENSIONS, r);
+            let r = rng.pick(&[0, 0, 0, 0, 0, 9, 1]);
+            t.ret(h4::RADIAL_SET_PARAM54, r);
+            let p = rng.pick(&[0, 0x1234, 0x1234]);
+            t.ret(h4::FIND_PARAMETER, p);
+            let mi = random_block(&mut t, &mut rng, 0x20);
+            t.ret(h2::MESH_INSTANCE, mi);
+            t.ret(h2::POST_PROCESS_MANAGER, manager);
+            let on = rng.pick(&[0, 1, 1, 1]);
+            t.w8(manager + 0x1_23b4, on);
+            let size = |rng: &mut Rng| {
+                let r = rng.next();
+                rng.pick(&[1280, 720, 0, 0xffff_fff0, r])
+            };
+            let cluster = h4_cluster(&mut t, &mut rng);
+            let cluster = rng.pick(&[0, cluster, cluster, cluster, cluster]);
+            let a = [
+                cluster,
+                rng.next(),
+                rng.next(),
+                size(&mut rng),
+                size(&mut rng),
+            ];
+            let this = random_block(&mut t, &mut rng, 0x80);
+            let frame = t.ebp_for(5) - 0x20;
+            t.check_framed_conv(
+                &format!("{w} blur"),
+                0x0070_3230,
+                Conv::Thiscall(this),
+                &a,
+                frame,
+                &[(0, 0x20)],
+                |g| u(h4::radial_blur_init(g, frame, this, a)),
+            );
+            // the radial lines use the material without a null test
+            t.ret(h2::CREATE_MATERIAL, material);
+            let b = [a[0], a[1], a[2], a[3], a[4], rng.next()];
+            let this = random_block(&mut t, &mut rng, 0x80);
+            let frame = t.ebp_for(6) - 0x20;
+            t.check_framed_conv(
+                &format!("{w} line"),
+                0x006f_7c10,
+                Conv::Thiscall(this),
+                &b,
+                frame,
+                &[(0, 0x20)],
+                |g| u(h4::radial_line_init(g, frame, this, b)),
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");

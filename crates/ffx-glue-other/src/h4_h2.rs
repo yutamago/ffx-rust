@@ -376,7 +376,7 @@ pub fn distortion_on_shaders(h: &mut impl Host, frame: u32, this: u32) -> u32 {
 /// unless the count is 1, the entry cleared, the old block freed when it
 /// is not the inline slot and owned (a count of 0 frees null), the count
 /// 1.
-fn resize_to_one(h: &mut impl Host, array: u32) {
+pub fn resize_to_one(h: &mut impl Host, array: u32) {
     let count: u32 = h.read(array);
     if count == 1 {
         return;

@@ -15,7 +15,7 @@ use ffx_glue_other::{
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
-    h4_h3 as h3, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_h3 as h3, h4_h4 as h4, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2182,5 +2182,31 @@ ported! {
     ClusterManager_loadPCluster @ 0x0069_b940 => extern "thiscall" fn load_pcluster(this: u32, name: u32) -> u32 {
         let mut frame = StackFrame::<{ (h3::LOAD_FRAME / 4) as usize }>::new();
         h3::load_pcluster(&mut mem(), frame.at(), this, name)
+    }
+    // ---- continuation round 6, batch 4 (ffx_glue_other::h4_h4)
+    /// `BlurPass_initialize_006c40e0(this; a, cluster, scene, w, h)`.
+    BlurPass_initialize_006c40e0 @ 0x006c_40e0 => extern "thiscall" fn blur_pass_init(this: u32, a: u32, cluster: u32, scene: u32, w: u32, h: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h4::PASS_FRAME / 4) as usize }>::new();
+        h4::blur_pass_init(&mut mem(), frame.at(), this, [a, cluster, scene, w, h])
+    }
+    /// `BlurEffectEx_postInitialize(this)`.
+    BlurEffectEx_postInitialize @ 0x006c_4b60 => extern "thiscall" fn blur_ex_post_initialize(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h4::EFFECT_FRAME / 4) as usize }>::new();
+        h4::blur_ex_post_initialize(&mut mem(), frame.at(), this)
+    }
+    /// `BlurEffect_doOnShaderClusterLoaded(this)`.
+    BlurEffect_doOnShaderClusterLoaded @ 0x006c_35d0 => extern "thiscall" fn blur_effect_on_shaders(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h4::EFFECT_FRAME / 4) as usize }>::new();
+        h4::blur_effect_on_shaders(&mut mem(), frame.at(), this)
+    }
+    /// `RadialBlur_initialize(this; cluster, a, scene, w, h)`.
+    RadialBlur_initialize @ 0x0070_3230 => extern "thiscall" fn radial_blur_init(this: u32, cluster: u32, a: u32, scene: u32, w: u32, h: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h4::PASS_FRAME / 4) as usize }>::new();
+        h4::radial_blur_init(&mut mem(), frame.at(), this, [cluster, a, scene, w, h])
+    }
+    /// `RadialLine_initialize(this; cluster, a, scene, w, h, target)`.
+    RadialLine_initialize @ 0x006f_7c10 => extern "thiscall" fn radial_line_init(this: u32, cluster: u32, a: u32, scene: u32, w: u32, h: u32, target: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h4::PASS_FRAME / 4) as usize }>::new();
+        h4::radial_line_init(&mut mem(), frame.at(), this, [cluster, a, scene, w, h, target])
     }
 }
