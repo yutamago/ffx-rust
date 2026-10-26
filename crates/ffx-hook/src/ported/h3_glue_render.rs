@@ -1451,10 +1451,13 @@ ported! {
     PhyreScene_textureVideoUnload @ 0x0067_0760 => extern "thiscall" fn scene_texture_video_unload(this: u32) -> u32 {
         g16::scene_texture_video_unload(&mut mem(), this)
     }
-    /// `PhyreScene_setupSamplers_0065f290(this)`.
-    PhyreScene_setupSamplers_0065f290 @ 0x0065_f290 => extern "thiscall" fn scene_setup_samplers(this: u32) -> u32 {
-        g16::scene_setup_samplers(&mut mem(), this)
-    }
+    // `PhyreScene_setupSamplers_0065f290` (g16::scene_setup_samplers) is
+    // not hooked: its oracle test passes, but with the hook battle-attack-1
+    // (x 73..74, y 549..561) and menu-shop-2/-7 differ by a few UI pixels
+    // in every run, and not with it disabled (r5, 2026-10-26). The
+    // original keeps 4.0 on the x87 stack across each sampler's register
+    // call (0x0058cf80); a callee that fills the stack would see one slot
+    // less there. Open.
     /// `PhyreScene_setupPostProcessParams(this)`.
     PhyreScene_setupPostProcessParams @ 0x0066_f140 => extern "thiscall" fn scene_setup_post_process_params(this: u32) -> u32 {
         g16::scene_setup_post_process_params(&mut mem(), this)
