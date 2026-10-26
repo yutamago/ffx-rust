@@ -375,4 +375,142 @@ pub mod bridge {
             h.call_sym(FREE, Conv::Cdecl, &[name]);
         }
     }
+
+    /// An import's address (the word in the import table at `slot`).
+    fn import(h: &impl Host, slot: u32) -> u32 {
+        h.read(h.rebase(slot))
+    }
+
+    /// The recursive mutex's inner lock `0x00431850` (thiscall `(&owner)`
+    /// on the mutex; `owner` is the owner thread id, then the recursion
+    /// count): one more waiter (`InterlockedExchangeAdd(+0xc, 1)`), then
+    /// until it owns it (the same thread, or a compare-exchange from 0
+    /// that wins; the count goes up) or a wait on the event at `+4`
+    /// (`0x00430280(20)`) returns non-zero (the count stays), retries;
+    /// then the event's reset (`0x004301e0`) and one waiter less. The
+    /// last `InterlockedExchangeAdd`'s `eax`.
+    pub fn mutex_lock_inner(h: &mut impl Host, mutex: u32, owner: u32) -> u32 {
+        let add = import(h, 0x00b0_c128);
+        h.call(add, Conv::Stdcall, &[mutex + 0xc, 1]);
+        let tid = h.call_sym(0x0042_fd00, Conv::Cdecl, &[]);
+        let cas = import(h, 0x00b0_c12c);
+        loop {
+            let current: u32 = h.read(owner);
+            if current == tid || h.call(cas, Conv::Stdcall, &[owner, tid, 0]) == 0 {
+                let count: u32 = h.read(owner + 4);
+                h.write(owner + 4, count.wrapping_add(1));
+                break;
+            }
+            if h.call_sym(0x0043_0280, Conv::Thiscall(mutex + 4), &[0x14]) != 0 {
+                break;
+            }
+        }
+        h.call_sym(0x0043_01e0, Conv::Thiscall(mutex + 4), &[]);
+        h.call(add, Conv::Stdcall, &[mutex + 0xc, u32::MAX])
+    }
+
+    /// `PCluster::resolveAssetReferences(cluster)` (`0x00441f20`,
+    /// thiscall): once (`+0x44` bit 0), every `PAssetReferenceImport`
+    /// instance (`0x00c94030`) of the cluster's lists resolved
+    /// (`0x0045e280`), walked with the original's iterator (`it`, eight
+    /// words: element, chunk end, stride, count left, data offset, the
+    /// list head, the list, the class; `0x00441bf0` first, `0x00441cc0`
+    /// next). An element that lands on the chunk end is stepped over
+    /// (the end moves to its next). 0.
+    pub fn resolve_asset_references(h: &mut impl Host, it: u32, cluster: u32) -> u32 {
+        let flags: u8 = h.read(cluster + 0x44);
+        if flags & 1 != 0 {
+            return 0;
+        }
+        let head = cluster + 0x1c;
+        let first: u32 = h.read(head);
+        let list = if first == head { 0 } else { first };
+        let class = h.rebase(0x00c9_4030);
+        h.write(it, [0, 0, 0, 0, 0, head, list, class]);
+        h.call_sym(0x0044_1bf0, Conv::Thiscall(it), &[]);
+        let mut left: u32 = h.read(it + 0xc);
+        while left != 0 {
+            let mut cur: u32 = h.read(it);
+            let mut end: u32 = h.read(it + 4);
+            let mut resolve = true;
+            loop {
+                if resolve {
+                    let offset: u32 = h.read(it + 0x10);
+                    h.call_sym(0x0045_e280, Conv::Thiscall(offset.wrapping_add(cur)), &[]);
+                }
+                let stride: u32 = h.read(it + 8);
+                cur = cur.wrapping_add(stride);
+                left = left.wrapping_sub(1);
+                h.write(it, cur);
+                h.write(it + 0xc, left);
+                resolve = end != cur;
+                if !resolve {
+                    end = h.read(end);
+                    h.write(it + 4, end);
+                }
+                if left == 0 {
+                    break;
+                }
+            }
+            h.call_sym(0x0044_1cc0, Conv::Thiscall(it), &[]);
+            left = h.read(it + 0xc);
+        }
+        let flags: u32 = h.read(cluster + 0x44);
+        h.write(cluster + 0x44, flags | 1);
+        0
+    }
+
+    /// `PCluster::LoadAssetFile(&cluster, path, c)` (`0x004406c0`,
+    /// cdecl): 1 without a path; else a `PStreamReaderFile` on `path` in
+    /// `reader` (the original's frame, seven words: `0x005766d0`), 10
+    /// when it is not open (reported on `stderr`); else a new cluster
+    /// (`0x0042fb40(0x50)`, `PCluster`'s constructor inline) in
+    /// `*cluster` (0xd when none), `PBinary::loadCluster(reader,
+    /// cluster, path, c)` (`0x0057bce0`), the reader closed, and on an
+    /// error the cluster deleted (`0x0043fed0(1)`) and cleared; then the
+    /// reader's destructor (`0x005767c0`). Returns the error.
+    pub fn load_asset_file(h: &mut impl Host, reader: u32, out: u32, path: u32, c: u32) -> u32 {
+        if path == 0 {
+            return 1;
+        }
+        h.call_sym(0x0057_66d0, Conv::Thiscall(reader), &[path]);
+        let open = h.call_sym(0x0057_6980, Conv::Thiscall(reader), &[]);
+        let r = if open.trailing_zeros() >= 8 {
+            let iob = import(h, 0x00b0_c350);
+            let streams = h.call(iob, Conv::Cdecl, &[]);
+            let printf = import(h, 0x00b0_c38c);
+            let msg = h.rebase(0x00b0_f164);
+            h.call(
+                printf,
+                Conv::Cdecl,
+                &[streams.wrapping_add(0x40), msg, path],
+            );
+            10
+        } else {
+            let cluster = h.call_sym(0x0042_fb40, Conv::Cdecl, &[0x50]);
+            if cluster != 0 {
+                h.call_sym(0x0057_6630, Conv::Thiscall(cluster), &[]);
+                let list = cluster + 0x48;
+                h.write(list, [list, list]);
+            }
+            h.write(out, cluster);
+            if cluster == 0 {
+                h.call_sym(0x0057_6930, Conv::Thiscall(reader), &[]);
+                0xd
+            } else {
+                let r = h.call_sym(0x0057_bce0, Conv::Cdecl, &[reader, cluster, path, c]);
+                h.call_sym(0x0057_6930, Conv::Thiscall(reader), &[]);
+                if r != 0 {
+                    let cluster: u32 = h.read(out);
+                    if cluster != 0 {
+                        h.call_sym(0x0043_fed0, Conv::Thiscall(cluster), &[1]);
+                    }
+                    h.write(out, 0u32);
+                }
+                r
+            }
+        };
+        h.call_sym(0x0057_67c0, Conv::Thiscall(reader), &[]);
+        r
+    }
 }

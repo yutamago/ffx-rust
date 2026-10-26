@@ -9,7 +9,7 @@
 //! classes are each their own original, so each gets its own line.
 
 use super::{StackFrame, mem, ported};
-use ffx_pload::{cluster, descriptor, p1_loader, p1_misc, p1_types, stream, types};
+use ffx_pload::{cluster, descriptor, p1_bind, p1_loader, p1_misc, p1_types, stream, types};
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
 /// constructs one in place).
@@ -1035,5 +1035,64 @@ ported! {
     Phyre_PAssetReferenceImport_dtor_0045c0f0 @ 0x0045_c0f0 => extern "thiscall" fn import_dtor(this: u32) {
         let mut local = StackFrame::<1>::new();
         p1_loader::bridge::import_dtor(&mut mem(), local.at(), this);
+    }
+    // ---- continuation round, batch 12 (ffx_pload::p1_bind, p1_loader) ----
+    /// `PClassMember::Bind()`.
+    Phyre_PClassMember_Bind @ 0x0043_a1e0 => extern "C" fn bind_class_member() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[0])
+    }
+    /// `PTypedObject::Bind()`.
+    Phyre_PTypedObject_Bind @ 0x0044_43f0 => extern "C" fn bind_typed_object() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[1])
+    }
+    /// `PAssetReferenceImport::Bind()`.
+    Phyre_PAssetReferenceImport_Bind @ 0x0045_c890 => extern "C" fn bind_asset_reference_import() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[2])
+    }
+    /// `PClassDataMemberDynamic::Bind()`.
+    Phyre_PClassDataMemberDynamic_Bind @ 0x0044_6490 => extern "C" fn bind_data_member_dynamic() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[3])
+    }
+    /// `PClusterHeaderNVN::Bind()`.
+    Phyre_PSerialization_PBinary_PClusterHeaderNVN_Bind @ 0x0046_9a70 => extern "C" fn bind_cluster_header_nvn() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[4])
+    }
+    /// `PNamespace::Bind()`.
+    Phyre_PNamespace_Bind @ 0x0043_e000 => extern "C" fn bind_namespace() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[5])
+    }
+    /// `PClassDescriptor::Bind()`.
+    Phyre_PClassDescriptor_Bind @ 0x0043_b8b0 => extern "C" fn bind_class_descriptor() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[6])
+    }
+    /// `PTypeDispenser::GetClassDescriptor<PTimer>()`.
+    Phyre_PTypeDispenser_GetClassDescriptor_Phyre_PTimer @ 0x0043_0340 => extern "C" fn class_descriptor_ptimer() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[7])
+    }
+    /// `PTypeDispenser::GetClassDescriptor<PMatrix4x3>()`.
+    Phyre_PTypeDispenser_GetClassDescriptor_Phyre_PMatrix4x3 @ 0x0046_2aa0 => extern "C" fn class_descriptor_pmatrix4x3() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[8])
+    }
+    /// `PClusterDependencyList::Bind()`.
+    Phyre_PClusterDependencyList_Bind @ 0x0044_b2b0 => extern "C" fn bind_cluster_dependency_list() -> u32 {
+        p1_bind::bridge::dependency_list_bind(&mut mem())
+    }
+    /// The recursive mutex's inner lock `(&owner)`.
+    Phyre_PMutex_lockInner_00431850 @ 0x0043_1850 => extern "thiscall" fn mutex_lock_inner(this: u32, owner: u32) -> u32 {
+        p1_loader::bridge::mutex_lock_inner(&mut mem(), this, owner)
+    }
+    /// `PCluster::resolveAssetReferences()`; the iterator in this frame.
+    Phyre_PCluster_resolveAssetReferences @ 0x0044_1f20 => extern "thiscall" fn resolve_asset_references(this: u32) -> u32 {
+        let mut it = StackFrame::<8>::new();
+        p1_loader::bridge::resolve_asset_references(&mut mem(), it.at(), this)
+    }
+    /// `PCluster::LoadAssetFile(&cluster, path, c)`; the stream reader in this frame.
+    Phyre_PCluster_LoadAssetFile @ 0x0044_06c0 => extern "C" fn load_asset_file(out: u32, path: u32, c: u32) -> u32 {
+        let mut reader = StackFrame::<7>::new();
+        p1_loader::bridge::load_asset_file(&mut mem(), reader.at(), out, path, c)
+    }
+    /// `PCluster::Bind()`.
+    Phyre_PCluster_Bind @ 0x0043_ffe0 => extern "C" fn bind_cluster() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[9])
     }
 }

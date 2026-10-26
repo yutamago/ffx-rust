@@ -3994,3 +3994,265 @@ fn p1c_asset_registry_matches_the_original() {
         }
     }
 }
+
+// ---- continuation round, batch 12 (ffx_pload::p1_bind, p1_loader) ----
+
+use ffx_pload::p1_bind::{self as pbind, bridge as pb};
+
+/// Records the registration callees that walk or relink live statics.
+/// The finders say "not there" (the method is linked).
+fn p1c_bind_stubs(t: &mut Twins) {
+    for (sym, this, n) in [
+        (0x0057_52a0u32, true, 6u32),
+        (0x0057_5f30, true, 6),
+        (0x0043_a080, true, 3),
+        (0x0043_59d0, true, 1),
+        (0x0043_06b0, true, 1),
+        (0x0043_c140, true, 0),
+        (0x0043_e660, true, 1),
+        (0x0043_79b0, true, 2),
+        (0x0043_afb0, true, 4),
+        (0x0044_ac10, true, 0),
+    ] {
+        t.stub(sym, this, n, n, 0);
+    }
+    // cdecl
+    t.stub(0x0043_95b0, false, 1, 0, 0);
+    t.stub(0x0044_b3b0, false, 1, 0, 0);
+    // seven words: logged as six
+    t.stub(0x0057_5ef0, true, 6, 7, 0);
+}
+
+#[test]
+fn p1c_binds_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the second registered type has no name on the image until its
+        // static constructor runs (as in the RegisterType test)
+        let second = t.rebase(0x00c9_0760);
+        if t.r32(second + 0x18) == 0 {
+            let n = t.alloc(b"p1load_Second\0");
+            t.w32(second + 0x18, n);
+        }
+        for b in pbind::STEPS {
+            // the image's static descriptors and namespaces are not built
+            // (its namespace lists loop): snapshots only
+            if !t.snapshot {
+                continue;
+            }
+            // as they find it (built on the snapshots), then once more,
+            // then with the guard cleared (every member built again over
+            // the live one, the same in both)
+            for round in 0..3 {
+                t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+                if round == 2 {
+                    // building again over the live statics: the callees
+                    // that would walk or relink them are recorded instead
+                    p1c_bind_stubs(&mut t);
+                    let desc = t.rebase(b.desc);
+                    let flags = t.r32(desc + 0x90);
+                    t.w32(desc + 0x90, flags & !0x4000_0000);
+                    let guard = t.rebase(b.guard);
+                    t.w32(guard, 0);
+                    if let pbind::End::Getter { bound, .. } = b.end {
+                        let bound = t.rebase(bound);
+                        t.write(bound, &[0]);
+                    }
+                }
+                let what = format!("{label}: bind {:#x} {round}", b.addr);
+                t.check(&what, b.addr, Conv::Cdecl, &[], |g| {
+                    let r = pb::run(g, &b);
+                    Out::U32(r)
+                });
+                t.reset();
+            }
+        }
+        for round in 0..3 {
+            if !t.snapshot {
+                break;
+            }
+            t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+            if round == 2 {
+                p1c_bind_stubs(&mut t);
+                let member = t.rebase(0x00c9_19ec);
+                let flags = t.r32(member + 0x14);
+                t.w32(member + 0x14, flags & !8);
+                let array = t.rebase(0x00c9_1a28);
+                let flags = t.r32(array + 0x90);
+                t.w32(array + 0x90, flags | 2);
+                let guard = t.rebase(0x00c9_1a20);
+                t.w32(guard, 0);
+                let inner = t.rebase(0x00c9_1abc);
+                t.w32(inner, 0);
+            }
+            let what = format!("{label}: dependency list bind {round}");
+            t.check(&what, 0x0044_b2b0, Conv::Cdecl, &[], |g| {
+                Out::U32(pb::dependency_list_bind(g))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_mutex_lock_inner_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // (owner, compare-exchange result, wait result)
+        // wait 2: the wait returns 0 after the owner let go (it writes the
+        // thread id into the owner word: the next round finds it)
+        for (owner, cas, wait) in [
+            (0x77u32, 1u32, 1u32),
+            (0, 0, 0),
+            (5, 5, 1),
+            (5, 0, 1),
+            (5, 5, 2),
+        ] {
+            let add = t.stub_code(0xadd, false, 2, 2, 0x0012_0000);
+            let cx = t.stub_code(0xca5, false, 3, 3, cas);
+            for (slot, code) in [(0x00b0_c128u32, add), (0x00b0_c12c, cx)] {
+                let iat = t.rebase(slot);
+                t.w32(iat, code);
+            }
+            t.stub(0x0042_fd00, false, 0, 0, 0x77);
+            t.stub(0x0043_01e0, true, 0, 0, 0);
+            let mutex = t.junk(0x20, 1);
+            let inner = mutex + 0x10;
+            if wait == 2 {
+                // mov dword [inner], 0x77; xor eax, eax; ret 4
+                let mut code = vec![0xc7, 0x05];
+                code.extend(inner.to_le_bytes());
+                code.extend(0x77u32.to_le_bytes());
+                code.extend([0x31, 0xc0, 0xc2, 0x04, 0x00]);
+                let at = t.a.alloc_code(&code).unwrap();
+                assert_eq!(t.b.alloc_code(&code).unwrap(), at);
+                let sym = t.rebase(0x0043_0280);
+                let old = Oracle::read(&mut t.a, sym, 5).unwrap();
+                t.saved.entry(sym).or_insert(old);
+                let mut j = vec![0xe9];
+                j.extend(at.wrapping_sub(sym + 5).to_le_bytes());
+                t.write(sym, &j);
+            } else {
+                t.stub(0x0043_0280, true, 1, 1, wait);
+            }
+            t.w32(inner, owner);
+            let what = format!("{label}: mutex lock inner {owner:#x} {cas} {wait}");
+            t.check(&what, 0x0043_1850, Conv::Thiscall(mutex), &[inner], |g| {
+                Out::U32(pl::mutex_lock_inner(g, mutex, inner))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_resolve_asset_references_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let class = t.rebase(0x00c9_4030);
+        for (round, done) in [(2u32, true), (0, false), (1, false), (2, false), (3, false)] {
+            t.stub(0x0045_e280, true, 0, 0, 0);
+            let other = t.junk(0xa0, 1);
+            t.w32(other + 0x40, 0);
+            let sub = t.junk(0xa0, 2);
+            t.w32(sub + 0x40, class);
+            let cluster = t.junk(0x50, 3);
+            let head = cluster + 0x1c;
+            t.w32(head, head);
+            t.w32(head + 4, head);
+            t.w32(cluster + 0x44, u32::from(done) | 0x100);
+            for k in 0..round * 2 {
+                let desc = match k % 3 {
+                    0 => class,
+                    1 => sub,
+                    _ => other,
+                };
+                let list = t.junk(0x50, k as u8);
+                t.w32(list + 0x2c, desc);
+                let count = if k == 3 { 4 } else { 1 + k % 4 };
+                let stride = 0x10;
+                let buffer = t.zeros((stride * (count + 2)) as usize);
+                t.w32(list + 0x34, buffer);
+                t.w32(list + 0x3c, count);
+                t.w32(list + 0x40, u32::from(k != 2));
+                // the chunk ends: one inside the run when there are 3+
+                let end = if count >= 3 {
+                    let e = buffer + stride;
+                    t.w32(e, buffer + 3 * stride);
+                    e
+                } else {
+                    buffer + 0x1000
+                };
+                t.w32(list + 8, end);
+                let d = t.r32(list + 0x2c);
+                if d == class {
+                    t.w32(class + 0x1c, stride);
+                    t.w32(class + 0x8c, 4);
+                }
+                let tail = t.r32(head + 4);
+                t.w32(list, head);
+                t.w32(list + 4, tail);
+                t.w32(tail, list);
+                t.w32(head + 4, list);
+            }
+            let what = format!("{label}: resolve asset references {round} {done}");
+            t.check(&what, 0x0044_1f20, Conv::Thiscall(cluster), &[], |g| {
+                let it = g.scratch();
+                Out::U32(pl::resolve_asset_references(g, it, cluster))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_load_asset_file_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the original's frame: three arguments, the return address and
+        // ebp; the reader at ebp - 0x28. The port's oracle gets it there.
+        let reader = t.a.stack_range().end - 0x100 - 20 - 0x28;
+        // (path, open, cluster block, load result)
+        for (i, (path, open, block, load)) in [
+            (0u32, 1u32, 1u32, 0u32),
+            (1, 0, 1, 0),
+            (1, 1, 0, 0),
+            (1, 1, 1, 0),
+            (1, 1, 1, 0x13),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let iob = t.stub_code(0x10b, false, 0, 0, 0x00c5_0000);
+            let fpr = t.stub_code(0xf9f, false, 3, 0, 0);
+            for (slot, code) in [(0x00b0_c350u32, iob), (0x00b0_c38c, fpr)] {
+                let iat = t.rebase(slot);
+                t.w32(iat, code);
+            }
+            let cluster = t.junk(0x50, 2);
+            t.stub(0x0057_66d0, true, 1, 1, 0);
+            t.stub(0x0057_6980, true, 0, 0, 0x0012_3400 | open);
+            t.stub(
+                0x0042_fb40,
+                false,
+                1,
+                0,
+                if block == 0 { 0 } else { cluster },
+            );
+            t.stub(0x0057_6630, true, 0, 0, cluster);
+            t.stub(0x0057_6930, true, 0, 0, 0);
+            t.stub(0x0057_bce0, false, 4, 0, load);
+            t.stub(0x0043_fed0, true, 1, 1, 0);
+            t.stub(0x0057_67c0, true, 0, 0, 0);
+            let out = t.junk(4, 3);
+            let p = if path == 0 {
+                0
+            } else {
+                t.alloc(b"bsil0000.phyre\0")
+            };
+            t.b.set_call_top(Some(reader - 0x100));
+            let what = format!("{label}: load asset file case {i}");
+            t.check(&what, 0x0044_06c0, Conv::Cdecl, &[out, p, 7], |g| {
+                Out::U32(pl::load_asset_file(g, reader, out, p, 7))
+            });
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}
