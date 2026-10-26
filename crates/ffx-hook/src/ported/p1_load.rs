@@ -10,9 +10,9 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_pload::{
-    cluster, descriptor, p1_bind, p1_buffers, p1_d3d, p1_declare, p1_dynbind, p1_fixup, p1_fixups,
-    p1_lists, p1_loader, p1_mapping, p1_misc, p1_pointers, p1_post, p1_reader, p1_tree, p1_types,
-    stream, types,
+    cluster, descriptor, p1_bind, p1_body, p1_buffers, p1_d3d, p1_declare, p1_dynbind, p1_fixup,
+    p1_fixups, p1_header, p1_lists, p1_loader, p1_mapping, p1_misc, p1_pointers, p1_post,
+    p1_reader, p1_tree, p1_types, stream, types,
 };
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
@@ -1297,5 +1297,17 @@ ported! {
     Cluster_ApplyPointerArrayFixups @ 0x0057_acd0 => extern "thiscall" fn fixup_pointer_arrays(this: u32, stream: u32, array: u32) -> u32 {
         let mut f = StackFrame::<{ p1_pointers::bridge::ARRAYS_FRAME as usize / 4 }>::new();
         p1_pointers::bridge::fixup_pointer_arrays(&mut mem(), this, stream, array, f.at())
+    }
+    // ---- round 4 (p1_body) ----
+    /// The cluster reader's body `(stream)` -> 0 or the first error; the steps' outputs in this frame.
+    PClusterReaderBinary_readBody_0057c130 @ 0x0057_c130 => extern "thiscall" fn read_body(this: u32, stream: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_body::bridge::FRAME as usize / 4 }>::new();
+        p1_body::bridge::read_body(&mut mem(), this, stream, f.at())
+    }
+    // ---- round 4 (p1_header) ----
+    /// `PClusterReaderBinary::loadAndFixHeaderClasses(stream)` -> 0 or the first error; the mapping lookups' outputs and the scratch holder in this frame.
+    Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_loadAndFixHeaderClasses @ 0x0057_b6c0 => extern "thiscall" fn load_header_classes(this: u32, stream: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_header::bridge::FRAME as usize / 4 }>::new();
+        p1_header::bridge::load_header_classes(&mut mem(), this, stream, f.at())
     }
 }
