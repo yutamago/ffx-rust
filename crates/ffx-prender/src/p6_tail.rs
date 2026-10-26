@@ -1090,7 +1090,7 @@ pub mod window {
             );
             h.write(g_hwnd, hwnd);
             if hwnd != 0 {
-                h.call_sym(IME_DISASSOCIATE, Conv::Cdecl, &[hwnd, 0]);
+                h.call_sym(IME_DISASSOCIATE, Conv::Stdcall, &[hwnd, 0]);
             }
             h.read(g_hwnd)
         };

@@ -755,7 +755,8 @@ fn create_window_matches_the_original() {
         let notify = seq_import(&mut t, tl::REGISTER_DEVICE_NOTIFICATION, 3);
         t.stub(tl::MEMSET, false, 3, 0, 0x3e3e_0001);
         t.stub(tl::MEMCPY, false, 3, 0, 0x3e3e_0002);
-        t.stub(tl::IME_DISASSOCIATE, false, 2, 0, 0x3e3e_0003);
+        // ImmAssociateContext through its import thunk: stdcall
+        t.stub(tl::IME_DISASSOCIATE, false, 2, 2, 0x3e3e_0003);
         t.stub(tl::WARN, false, 2, 0, 0x3e3e_0004);
         let g_app = t.rebase(tl::G_APPLICATION);
         let hosted = t.rebase(tl::G_HOSTED);
