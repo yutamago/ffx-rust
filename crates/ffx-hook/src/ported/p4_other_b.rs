@@ -8,7 +8,7 @@
 
 use super::{mem, ported};
 use ffx_pother_b::{
-    methods, object, p4_cloth, p4_fog, p4_input, p4_light, p4_morph, physics, small,
+    methods, object, p4_bind, p4_cloth, p4_fog, p4_input, p4_light, p4_morph, physics, small,
 };
 
 ported! {
@@ -816,5 +816,74 @@ ported! {
     /// `BrokenScreenPolygonDynamicMesh_copyBuffers(x, src, outs, mesh)` -> 0.
     BrokenScreenPolygonDynamicMesh_copyBuffers_00677b10 @ 0x0067_7b10 => extern "stdcall" fn broken_copy_buffers(_x: u32, src: u32, outs: u32, mesh: u32) -> u32 {
         p4_cloth::bridge::copy_buffers(&mut mem(), src, outs, mesh)
+    }
+    // ---- p4-other-b c1 batch 3 ----
+    /// `Phyre_PInputs_PInputAction_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PInputs_PInputAction_Bind @ 0x009e_4430 => extern "C" fn input_action_bind() -> u32 {
+        p4_bind::bridge::bind(&mut mem(), &p4_bind::INPUT_ACTION)
+    }
+    /// `Phyre_PInputs_PInputMap_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PInputs_PInputMap_Bind @ 0x009e_46d0 => extern "C" fn input_map_bind() -> u32 {
+        p4_bind::bridge::bind(&mut mem(), &p4_bind::INPUT_MAP)
+    }
+    /// `Phyre_PInputs_PInputSource_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PInputs_PInputSource_Bind @ 0x009e_47c0 => extern "C" fn input_source_bind() -> u32 {
+        p4_bind::bridge::bind(&mut mem(), &p4_bind::INPUT_SOURCE)
+    }
+    /// `Phyre_PInputs_PInputSourceJoypadAxis_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PInputs_PInputSourceJoypadAxis_Bind @ 0x009e_4940 => extern "C" fn joypad_axis_bind() -> u32 {
+        p4_bind::bridge::bind(&mut mem(), &p4_bind::JOYPAD_AXIS)
+    }
+    /// `Phyre_PInputs_PInputSourceJoypadButton_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PInputs_PInputSourceJoypadButton_Bind @ 0x009e_49e0 => extern "C" fn joypad_button_bind() -> u32 {
+        p4_bind::bridge::bind(&mut mem(), &p4_bind::JOYPAD_BUTTON)
+    }
+    /// `Phyre_PInputs_PInputSourceKey_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PInputs_PInputSourceKey_Bind @ 0x009e_4ac0 => extern "C" fn source_key_bind() -> u32 {
+        p4_bind::bridge::bind(&mut mem(), &p4_bind::SOURCE_KEY)
+    }
+    /// `Phyre_PInputs_PInputSourceMouseButton_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PInputs_PInputSourceMouseButton_Bind @ 0x009e_4ce0 => extern "C" fn mouse_button_bind() -> u32 {
+        p4_bind::bridge::bind(&mut mem(), &p4_bind::MOUSE_BUTTON)
+    }
+    /// `Phyre_PInputs_PInputSourceWithModifiers_Bind_009e4d80()` -> `addToNamespace`'s `eax`.
+    Phyre_PInputs_PInputSourceWithModifiers_Bind_009e4d80 @ 0x009e_4d80 => extern "C" fn modifiers_bind() -> u32 {
+        p4_bind::bridge::bind(&mut mem(), &p4_bind::MOUSE_BUTTON_KEY)
+    }
+    /// `Phyre_PInputs_PInputSourceWithModifiers_Bind_009e4e60()` -> `addToNamespace`'s `eax`.
+    Phyre_PInputs_PInputSourceWithModifiers_Bind_009e4e60 @ 0x009e_4e60 => extern "C" fn modifiers_bind_2() -> u32 {
+        p4_bind::bridge::bind(&mut mem(), &p4_bind::MOUSE_BUTTON_KEY_2)
+    }
+    /// `Phyre_PGame_PGameSettings_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGame_PGameSettings_Bind @ 0x00a3_3540 => extern "C" fn game_settings_bind() -> u32 {
+        p4_bind::bridge::bind(&mut mem(), &p4_bind::GAME_SETTINGS)
+    }
+    /// `Phyre_PScripting_PAsyncProcessHeader_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PScripting_PAsyncProcessHeader_Bind @ 0x0061_7960 => extern "C" fn async_process_header_bind() -> u32 {
+        p4_bind::bridge::bind(&mut mem(), &p4_bind::ASYNC_PROCESS_HEADER)
+    }
+    /// `PArray<PInputAction*>`'s declaration `(name)` -> the descriptor.
+    PArray_PInputAction_DeclareClassDescriptor_009e5010 @ 0x009e_5010 => extern "C" fn array_input_action_decl(name: u32) -> u32 {
+        p4_bind::bridge::array_decl(&mut mem(), &p4_bind::ARRAY_INPUT_ACTION, name)
+    }
+    /// `PArray<PInputSource*>`'s declaration `(name)` -> the descriptor.
+    PArray_PInputSource_DeclareClassDescriptor_009e5220 @ 0x009e_5220 => extern "C" fn array_input_source_decl(name: u32) -> u32 {
+        p4_bind::bridge::array_decl(&mut mem(), &p4_bind::ARRAY_INPUT_SOURCE, name)
+    }
+    /// `PClassDescriptorAbstract<PArray<PInputSource*>>(desc)` -> `desc`.
+    PClassDescriptorAbstract_PArray_PInputSource_ctor_009dfbd0 @ 0x009d_fbd0 => extern "thiscall" fn input_source_array_desc_ctor(desc: u32) -> u32 {
+        p4_bind::bridge::descriptor_ctor(&mut mem(), &p4_bind::CTOR_INPUT_SOURCE_ARRAY, desc)
+    }
+    /// `PClassDescriptorAbstract<PArray<PInputMap*>>(desc)` -> `desc`.
+    PClassDescriptorAbstract_PArray_PInputMap_ctor_00a32ef0 @ 0x00a3_2ef0 => extern "thiscall" fn input_map_array_desc_ctor(desc: u32) -> u32 {
+        p4_bind::bridge::descriptor_ctor(&mut mem(), &p4_bind::CTOR_INPUT_MAP_ARRAY, desc)
+    }
+    /// `PUtilityInputs::initialize()` -> 0.
+    Phyre_PInputs_PUtilityInputs_initialize @ 0x009f_4650 => extern "C" fn utility_inputs_initialize() -> u32 {
+        p4_bind::startup::utility_inputs_initialize(&mut mem())
+    }
+    /// `PApplication_Startup(app, argv, argc)` -> 0 or 9.
+    PApplication_Startup_00629a40 @ 0x0062_9a40 => extern "thiscall" fn startup(app: u32, argv: u32, argc: u32) -> u32 {
+        p4_bind::startup::startup(&mut mem(), app, argv, argc)
     }
 }

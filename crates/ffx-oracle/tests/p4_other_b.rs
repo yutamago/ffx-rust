@@ -2562,3 +2562,238 @@ fn p4_iterators_and_latches_match_the_original() {
         }
     }
 }
+
+// ---- continuation round (c1) batch 3: reflection registrations ----
+
+use ffx_pother_b::p4_bind::{self, Bind, Step};
+
+/// Every callee a `Bind` reaches, as recording stubs; returns the
+/// `findMember` result cell.
+fn bind_stubs(t: &mut Twins) -> u32 {
+    t.stub(p4_bind::REGISTER_TYPE, false, 1, 0, 0x0e60_0000);
+    t.stub(p4_bind::ADD_TO_NAMESPACE, true, 0, 0, 0x0a2d_0000);
+    t.stub(p4_bind::DATA_MEMBER_CTOR, true, 6, 6, 0x0da7_0000);
+    // seven words: the stub logs the first six
+    t.stub(p4_bind::ARRAY_MEMBER_CTOR, true, 6, 7, 0x0a77_0000);
+    t.stub(p4_bind::METHOD_MEMBER_CTOR, true, 3, 3, 0x0ae7_0000);
+    t.stub(p4_bind::ATEXIT, false, 1, 0, 0x0a7e_0000);
+    let found = t.stub_cell(p4_bind::FIND_MEMBER, true, 1, 1);
+    for (k, f) in [
+        0x009f_4730u32,
+        0x0043_7fc0,
+        0x0043_8390,
+        0x0043_8060,
+        0x00a2_dce0,
+        0x00a2_e150,
+        0x00a2_e5c0,
+        0x00a2_ea30,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        t.stub(f, false, 0, 0, 0x07e0_0000 + k as u32);
+    }
+    for f in [0x009d_fbd0, 0x009d_fb30, 0x00a3_2ef0] {
+        t.stub(f, true, 0, 0, 0x0c70_0000);
+    }
+    for f in [0x009e_5220, 0x009e_5010, 0x00a3_3680] {
+        t.stub(f, false, 1, 0, 0x0dec_0000);
+    }
+    found
+}
+
+/// Random guard bits and member words for `b`'s globals.
+fn bind_state(t: &mut Twins, rng: &mut Rng, b: &Bind) {
+    let guard = t.rebase(b.guard);
+    let g = rng.next() & 0xf | (rng.next() & 0xffff_0000);
+    t.w32(guard, g);
+    for step in b.steps {
+        let (member, inner) = match *step {
+            Step::Field { member, .. } | Step::Method { member, .. } => (member, None),
+            Step::Array { member, inner, .. } => (member, Some(inner.obj)),
+            Step::Call { arg, .. } => {
+                let a = t.rebase(arg);
+                let v = rng.next();
+                t.w32(a, v);
+                continue;
+            }
+        };
+        let m = t.rebase(member);
+        t.fill(rng, m, 0x2c);
+        if let Some(obj) = inner {
+            let obj = t.rebase(obj);
+            let w = rng.next();
+            t.w32(obj + 0x94, w);
+            let w = rng.next();
+            t.w32(obj + 0x90, w);
+        }
+        if let Step::Method { .. } = *step {
+            // the class (+8) with a member list at +0x4c, a name or none
+            let class = t.zeros(0x58);
+            let last = t.zeros(8);
+            t.w32(class + 0x50, last);
+            t.w32(m + 8, class);
+            let name = if rng.chance(4) { 0 } else { rng.next() | 1 };
+            t.w32(m + 0xc, name);
+        }
+    }
+}
+
+const BINDS: &[(u32, &Bind)] = &[
+    (0x009e_4430, &p4_bind::INPUT_ACTION),
+    (0x009e_46d0, &p4_bind::INPUT_MAP),
+    (0x009e_47c0, &p4_bind::INPUT_SOURCE),
+    (0x009e_4940, &p4_bind::JOYPAD_AXIS),
+    (0x009e_49e0, &p4_bind::JOYPAD_BUTTON),
+    (0x009e_4ac0, &p4_bind::SOURCE_KEY),
+    (0x009e_4ce0, &p4_bind::MOUSE_BUTTON),
+    (0x009e_4d80, &p4_bind::MOUSE_BUTTON_KEY),
+    (0x009e_4e60, &p4_bind::MOUSE_BUTTON_KEY_2),
+    (0x00a3_3540, &p4_bind::GAME_SETTINGS),
+    (0x0061_7960, &p4_bind::ASYNC_PROCESS_HEADER),
+];
+
+#[test]
+fn p4_binds_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x009e_4430);
+        let found = bind_stubs(&mut t);
+        for i in 0..12 {
+            for &(sym, b) in BINDS {
+                bind_state(&mut t, &mut rng, b);
+                t.w32(found, if rng.chance(3) { rng.next() } else { 0 });
+                t.case(
+                    &format!("{name} bind {sym:#x} case {i}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[],
+                    |g| Out::U32(p4_bind::bridge::bind(g, b)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn p4_array_declarations_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x009e_5220);
+        // the callees (not bind_stubs: it stubs these two declarations)
+        t.stub(p4_bind::REGISTER_TYPE, false, 1, 0, 0x0e60_0000);
+        t.stub(p4_bind::ADD_TO_NAMESPACE, true, 0, 0, 0x0a2d_0000);
+        t.stub(p4_bind::DATA_MEMBER_CTOR, true, 6, 6, 0x0da7_0000);
+        t.stub(p4_bind::ARRAY_MEMBER_CTOR, true, 6, 7, 0x0a77_0000);
+        t.stub(p4_bind::ATEXIT, false, 1, 0, 0x0a7e_0000);
+        for f in [0x009d_fbd0, 0x009d_fb30] {
+            t.stub(f, true, 0, 0, 0x0c70_0000);
+        }
+        t.stub(p4_bind::TYPE_UINT, false, 0, 0, 0x07e0_1111);
+        t.stub(p4_bind::ANNOTATION_CTOR, true, 3, 3, 0x0a00_0000);
+        t.stub(p4_bind::ADD_ANNOTATION, true, 1, 1, 0x0add_0000);
+        for i in 0..48 {
+            for (sym, d) in [
+                (0x009e_5010, &p4_bind::ARRAY_INPUT_ACTION),
+                (0x009e_5220, &p4_bind::ARRAY_INPUT_SOURCE),
+            ] {
+                let desc = t.rebase(d.inner.obj);
+                t.fill(&mut rng, desc, 0x130);
+                t.w32(desc + 0x94, rng.next());
+                if rng.chance(2) {
+                    t.w32(desc + 0x18, 0);
+                }
+                // the annotation unlinked (its +4 at itself) or linked
+                if rng.chance(2) {
+                    t.w32(desc + 0xc8, desc + 0xc8);
+                }
+                let g = t.rebase(d.name_global);
+                let v = if rng.chance(2) { 0 } else { rng.next() };
+                t.w32(g, v);
+                let arg = if rng.chance(6) { 0 } else { rng.next() };
+                t.case(
+                    &format!("{name} array decl {sym:#x} case {i}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[arg],
+                    |g| Out::U32(p4_bind::bridge::array_decl(g, d, arg)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn p4_descriptor_ctors_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x009d_fbd0);
+        t.stub(p4_bind::BASE_CLASS_DESCRIPTOR, false, 0, 0, 0x0bcd_0000);
+        t.stub(p4_bind::GLOBAL_NAMESPACE, false, 5, 0, 0x0a5e_0000);
+        t.stub(p4_bind::CLASS_DESCRIPTOR_CTOR, true, 6, 6, 0x0c1d_0000);
+        t.stub(p4_bind::SET_DEFAULT_BUFFER, true, 1, 1, 0x0def_0000);
+        t.stub(p4_bind::SET_VALIDATION_BUFFER, true, 1, 1, 0x0fa1_0000);
+        t.stub(p4_bind::SET_WRITE_MASK_BUFFER, true, 1, 1, 0x0a5c_0000);
+        for i in 0..32 {
+            for (sym, c) in [
+                (0x009d_fbd0, &p4_bind::CTOR_INPUT_SOURCE_ARRAY),
+                (0x00a3_2ef0, &p4_bind::CTOR_INPUT_MAP_ARRAY),
+            ] {
+                let desc = t.zeros(0xa0);
+                t.fill(&mut rng, desc, 0xa0);
+                let g = t.rebase(c.name_global);
+                let v = rng.next();
+                t.w32(g, v);
+                t.case(
+                    &format!("{name} descriptor ctor {sym:#x} case {i}"),
+                    sym,
+                    Conv::Thiscall(desc),
+                    &[],
+                    |g| Out::U32(p4_bind::bridge::descriptor_ctor(g, c, desc)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn p4_startup_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0062_9a40);
+        for &f in &p4_bind::UTILITY_BINDS {
+            t.stub(f, false, 0, 0, 0x0b1d_0000);
+        }
+        for (k, &f) in p4_bind::UTILITY_TYPES.iter().enumerate() {
+            t.stub(f, false, 0, 0, 0x07e0_0000 + k as u32);
+        }
+        t.stub(p4_bind::REGISTER_TYPE, false, 1, 0, 0x0e60_0000);
+        t.case(
+            &format!("{name} utility inputs"),
+            0x009f_4650,
+            Conv::Cdecl,
+            &[],
+            |g| Out::U32(p4_bind::startup::utility_inputs_initialize(g)),
+        );
+        t.stub(p4_bind::STARTUP_FIRST, false, 1, 0, 0x05f1_0000);
+        let init = t.stub_cell(p4_bind::PHYRE_INIT, false, 0, 0);
+        let app_init = t.stub_cell(p4_bind::INIT_WINDOW_AND_APP, true, 2, 2);
+        // the import slot points at a recording stdcall stub
+        let st = t.stub_code(0x5e75_0000, false, 1, 1, 0x0001_0000);
+        let slot = t.rebase(p4_bind::SET_THREAD_EXECUTION_STATE);
+        t.w32(slot, st);
+        for i in 0..16 {
+            t.w32(init, [0, 0, 1, rng.next()][rng.below(4) as usize]);
+            t.w32(app_init, [0, 0, 1, rng.next()][rng.below(4) as usize]);
+            for a in [0x00cc_9cec, 0x00cc_9cf0, 0x00cc_9cd0] {
+                let a = t.rebase(a);
+                let v = rng.next();
+                t.w32(a, v);
+            }
+            let (app, argv, argc) = (rng.next(), rng.next(), rng.below(5));
+            t.case(
+                &format!("{name} startup case {i}"),
+                0x0062_9a40,
+                Conv::Thiscall(app),
+                &[argv, argc],
+                |g| Out::U32(p4_bind::startup::startup(g, app, argv, argc)),
+            );
+        }
+    }
+}
