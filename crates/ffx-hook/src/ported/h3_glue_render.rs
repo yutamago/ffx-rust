@@ -19,6 +19,7 @@ use ffx_prender::glue10::bridge as g10;
 use ffx_prender::glue11::bridge as g11;
 use ffx_prender::h3_glue12::bridge as g12;
 use ffx_prender::h3_glue13::bridge as g13;
+use ffx_prender::h3_glue14::bridge as g14;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1338,6 +1339,64 @@ ported! {
     /// `RenderDelegationHelper_unregisterDelegationOfGivenTaskAndData(this, task, data, size)`.
     RenderDelegationHelper_unregisterDelegationOfGivenTaskAndData @ 0x006a_e340 => extern "thiscall" fn delegation_unregister(this: u32, task: u32, data: u32, size: u32) -> u32 {
         g13::delegation_unregister(&mut mem(), this, task, data, size)
+    }
+
+    // ---- round 5 batch 14 (ffx_prender::h3_glue14) ----
+    /// `PhyreScene_findGlobalMapObject_006518c0(scene)`.
+    PhyreScene_findGlobalMapObject_006518c0 @ 0x0065_18c0 => extern "thiscall" fn scene_find_global_object(this: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        g14::scene_find_global_object(&mut mem(), f.at() + 0x28, this)
+    }
+    /// `PostProcessManager_resizeTargets_00697f20(this, w, h)`.
+    PostProcessManager_resizeTargets_00697f20 @ 0x0069_7f20 => extern "thiscall" fn post_resize_targets(this: u32, w: u32, h: u32) -> u32 {
+        g14::post_resize_targets(&mut mem(), this, w, h)
+    }
+    /// `PhyreScene_newPoolDynamicMesh_006594c0(this, cluster)`.
+    PhyreScene_newPoolDynamicMesh_006594c0 @ 0x0065_94c0 => extern "thiscall" fn scene_new_dynamic_mesh(this: u32, cluster: u32) -> u32 {
+        g14::scene_new_dynamic_mesh(&mut mem(), this, cluster)
+    }
+    /// `PhyreScene_newPoolMeshInstance_006595d0(this, mesh, cluster)`.
+    PhyreScene_newPoolMeshInstance_006595d0 @ 0x0065_95d0 => extern "thiscall" fn scene_new_mesh_instance(this: u32, mesh: u32, cluster: u32) -> u32 {
+        g14::scene_new_mesh_instance(&mut mem(), this, mesh, cluster)
+    }
+    /// `TextureAnimationManager_sceenTextureAnimationClear(this)`.
+    TextureAnimationManager_sceenTextureAnimationClear @ 0x006b_2f50 => extern "thiscall" fn texture_animation_clear(this: u32) {
+        g14::texture_animation_clear(&mut mem(), this);
+    }
+    /// `PhyreScene_removeMeshInstance(this, id)`: the tree search reads `id`
+    /// through its argument slot.
+    PhyreScene_removeMeshInstance @ 0x0066_8680 => extern "thiscall" fn scene_remove_mesh_instance(this: u32, id: u32; slots: u32) -> u32 {
+        let _ = id;
+        g14::scene_remove_mesh_instance(&mut mem(), this, slots)
+    }
+    /// `TextureAnimationManager_unregisterChararcterInstance(this, chr)`.
+    TextureAnimationManager_unregisterChararcterInstance @ 0x006b_4330 => extern "thiscall" fn texture_animation_unregister(this: u32, chr: u32) -> u32 {
+        g14::texture_animation_unregister(&mut mem(), this, chr)
+    }
+    /// `graphicCharacterInstanceDestroy(chr, id)`: the delegation search
+    /// reads `chr` through its argument slot.
+    graphicCharacterInstanceDestroy @ 0x0063_a030 => extern "C" fn character_instance_destroy(chr: u32, id: u32; slots: u32) -> u32 {
+        g14::character_instance_destroy(&mut mem(), slots, chr, id)
+    }
+    /// `PhyreScene_onCharacterAssetLoadedItem_0065ae40(out, reader, array, asset, id)`.
+    PhyreScene_onCharacterAssetLoadedItem_0065ae40 @ 0x0065_ae40 => extern "stdcall" fn scene_on_character_asset(out: u32, reader: u32, array: u32, asset: u32, id: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<8>::new();
+        g14::scene_on_character_asset(&mut mem(), f.at() + 0x20, slots, out, reader, array, asset, id)
+    }
+    /// `ShadowManager_fitShadowSize_006d23d0(w, h, out_w, out_h, n)`: it
+    /// reuses its first two argument slots.
+    ShadowManager_fitShadowSize_006d23d0 @ 0x006d_23d0 => extern "stdcall" fn shadow_fit_size(w: u32, h: u32, out_w: u32, out_h: u32, n: u32; slots: u32) {
+        g14::shadow_fit_size(&mut mem(), slots, w, h, out_w, out_h, n);
+    }
+    /// `graphicCharacterLoad(name, id)`.
+    graphicCharacterLoad @ 0x0063_d140 => extern "C" fn character_load(name: u32, id: u32) -> u32 {
+        let mut f = StackFrame::<0x42>::new();
+        g14::character_load(&mut mem(), f.at() + 0x108, name, id)
+    }
+    /// `VFXDynamicGeometry_SetupWithShader(this, shader, cluster)`.
+    VFXDynamicGeometry_SetupWithShader @ 0x006a_46e0 => extern "thiscall" fn geometry_set_shader(this: u32, shader: u32, cluster: u32) -> u32 {
+        let mut f = StackFrame::<0x79>::new();
+        g14::geometry_set_shader(&mut mem(), f.at() + 0x1e4, this, shader, cluster)
     }
 }
 
