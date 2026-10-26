@@ -19,7 +19,8 @@
 //! - [`p1_post`]: the post-processing constructors (round 3);
 //! - [`p1_declare`]: two `PArray<T>` descriptor declarations (round 3);
 //! - [`p1_buffers`]: the class descriptors' default and validation buffers (round 3);
-//! - [`p1_fixup`]: `PCluster::fixupInstances` (round 3).
+//! - [`p1_fixup`]: `PCluster::fixupInstances` (round 3);
+//! - [`p1_lists`]: the cluster reader's instance-list data (round 3).
 //!
 //! Everything this crate does not port is called at its address through
 //! [`ffx_graphic::host::Host`] (the allocator, the file layer, the
@@ -40,6 +41,7 @@ pub mod p1_buffers;
 pub mod p1_d3d;
 pub mod p1_declare;
 pub mod p1_fixup;
+pub mod p1_lists;
 pub mod p1_loader;
 pub mod p1_misc;
 pub mod p1_post;

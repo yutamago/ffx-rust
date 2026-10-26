@@ -10,8 +10,8 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_pload::{
-    cluster, descriptor, p1_bind, p1_buffers, p1_d3d, p1_declare, p1_fixup, p1_loader, p1_misc,
-    p1_post, p1_reader, p1_tree, p1_types, stream, types,
+    cluster, descriptor, p1_bind, p1_buffers, p1_d3d, p1_declare, p1_fixup, p1_lists, p1_loader,
+    p1_misc, p1_post, p1_reader, p1_tree, p1_types, stream, types,
 };
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
@@ -1256,5 +1256,13 @@ ported! {
     /// `PAssetReference::Bind()` -> `addToNamespace`'s `eax`.
     Phyre_PAssetReference_Bind @ 0x0045_c500 => extern "C" fn asset_reference_bind() -> u32 {
         p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[16])
+    }
+    // ---- continuation round 3, batch 4 (p1_lists) ----
+    /// The cluster reader's instance-list data `(stream, cursor, size)`; `cursor` stays in this frame's word, whose address `placeOverallocation` gets.
+    PClusterReaderBinary_readInstanceLists_0057c940 @ 0x0057_c940 => extern "thiscall" fn read_instance_lists(this: u32, stream: u32, cursor: u32, size: u32) -> u32 {
+        let mut slot = StackFrame::<1>::new();
+        let at = slot.at();
+        ffx_bridge::Mem::write(&mut mem(), at, cursor);
+        p1_lists::bridge::read_instance_lists(&mut mem(), this, stream, at, size)
     }
 }

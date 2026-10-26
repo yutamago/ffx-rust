@@ -6029,3 +6029,128 @@ fn p1d_fixup_instances_matches_the_original() {
         }
     }
 }
+
+// ---- continuation round 3, batch 4 (ffx_pload::p1_lists) ----
+
+#[test]
+fn p1d_read_instance_lists_matches_the_original() {
+    use ffx_pload::p1_lists::bridge as pli;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x115_7001);
+        for case in 0..48u32 {
+            let simple = case % 2 == 0;
+            // the stream's read fails at its `fail`th call (1..5; none
+            // past the calls), readListData at its `lfail`th
+            let fail = 1 + case / 2 % 5;
+            let lfail = 1 + case / 10 % 4;
+            for (sym, n, at, bad) in [
+                (0x0057_dd30u32, 2u32, fail, 9u32),
+                (0x0057_b270, 3, lfail, 0x13),
+            ] {
+                let ok = t.stub_code(sym, true, n, n, 0);
+                let no = t.stub_code(sym | 1, true, n, n, bad);
+                let calls = t.zeros(4);
+                let code = t.a.alloc_code(&[0x90; 32]).unwrap();
+                assert_eq!(t.b.alloc_code(&[0x90; 32]).unwrap(), code);
+                let mut c = vec![0xff, 0x05];
+                c.extend(calls.to_le_bytes()); // inc dword [calls]
+                c.extend([0x83, 0x3d]);
+                c.extend(calls.to_le_bytes());
+                c.push(at as u8); // cmp dword [calls], at
+                c.extend([0x75, 0x05]); // jne +5
+                c.push(0xe9);
+                let j = no.wrapping_sub(code + c.len() as u32 + 4);
+                c.extend(j.to_le_bytes()); // jmp no
+                c.push(0xe9);
+                let j = ok.wrapping_sub(code + c.len() as u32 + 4);
+                c.extend(j.to_le_bytes()); // jmp ok
+                t.write(code, &c);
+                let addr = t.rebase(sym);
+                let mut jmp = vec![0xe9];
+                jmp.extend(code.wrapping_sub(addr + 5).to_le_bytes());
+                let old = Oracle::read(&mut t.a, addr, 5).unwrap();
+                t.saved.entry(addr).or_insert(old);
+                t.write(addr, &jmp);
+            }
+            t.stub(0x0057_e160, true, 1, 1, 0);
+            t.stub(0x0057_8300, false, 2, 0, 0);
+            let block = if case % 7 == 6 { 0 } else { t.zeros(0x40) };
+            t.stub(0x0042_fb80, false, 2, 0, block);
+            t.stub(0x0042_fb20, false, 1, 0, 0);
+            // the mapping's class entries (+0x1c set or not)
+            let map = t.junk(0x20, 1);
+            t.w32(
+                map + 0x1c,
+                if simple {
+                    0
+                } else {
+                    [1, 0x8000_0004, 0x10][(case % 3) as usize]
+                },
+            );
+            let entries = t.zeros(32 * 4);
+            for i in 0..4 {
+                t.w32(entries + 32 * i + 0x1c, (rng.next() & 1) * 7);
+            }
+            t.w32(map + 0xc, 4 | (rng.next() & 0x8000_0000));
+            t.w32(map + 0x10, entries);
+            let n = case % 5;
+            let header = t.junk(0x40, 2);
+            t.w32(header + 0x10, n);
+            t.w32(header + 0x38, 0x80);
+            let cluster = t.junk(0x30, 3);
+            let arena = if case % 9 == 4 { 0 } else { t.junk(8, 4) };
+            t.w32(cluster + 0x24, arena);
+            let hdrs = t.zeros(0x24 * 5);
+            let lists = t.zeros(4 * 5);
+            for i in 0..n {
+                t.w32(hdrs + 0x24 * i, 1 + rng.next() % 4);
+                t.w32(hdrs + 0x24 * i + 8, 0x10 + i);
+                let list = if rng.next().is_multiple_of(4) {
+                    0
+                } else {
+                    t.junk(0x40, i as u8)
+                };
+                t.w32(lists + 4 * i, list);
+            }
+            let reader = t.junk(0x30, 5);
+            t.w32(reader, cluster);
+            t.w32(reader + 4, map);
+            t.w32(reader + 8, header);
+            t.w32(reader + 0x14, hdrs);
+            let kind: usize = match n {
+                0 if case % 3 == 0 => 0,
+                0 => 2,
+                1 => 1,
+                _ => 0,
+            };
+            t.w32(reader + 0x18, [n.max(2), 1, 0][kind]);
+            match kind {
+                0 => t.w32(reader + 0x1c, lists),
+                1 => {
+                    let one = t.r32(lists);
+                    t.w32(reader + 0x1c, one);
+                }
+                _ => {}
+            }
+            let stream = t.junk(0x20, 6);
+            let size = [0x40u32, 0, 0x8000_0040][(case / 3 % 3) as usize];
+            let cursor0 = 0x0012_3450 + case;
+            // the original's argument word `cursor`: three words, the
+            // return address and ebp above its frame
+            let ebp = t.a.stack_range().end - 0x100 - 12 - 8;
+            let slot = ebp + 0xc;
+            t.b.write(slot, &cursor0.to_le_bytes()).unwrap();
+            t.b.set_call_top(Some(ebp - 0x200));
+            let what = format!("{label}: read instance lists {case}");
+            t.check(
+                &what,
+                0x0057_c940,
+                Conv::Thiscall(reader),
+                &[stream, cursor0, size],
+                |g| Out::U32(pli::read_instance_lists(g, reader, stream, slot, size)),
+            );
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}
