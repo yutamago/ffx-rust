@@ -4279,7 +4279,9 @@ const END_CALLEES: [(u32, u8); 16] = {
         (be::OP_OVL_EFFECT_FORCED_FREE, 0),
         (be::OP_OEF2_SEP_FREE_ALL, 1),
         (be::SG_SET_KEEP_FPS, 1),
-        (be::SND_MUSIC_READ, 0),
+        // SndMusicRead(music): the argument is logged (a port that dropped
+        // it passed with 0 here)
+        (be::SND_MUSIC_READ, 1),
         (be::SND_SYNC_MUSIC_STANDBY, 1),
         (be::SND_MUSIC_REPLAY_POINT_CLEAR, 1),
         (be::SND_MUSIC_START, 1),
@@ -4442,9 +4444,17 @@ fn battle_end(
             dm(m, |m| be::ms_sep_battle_clear(m, &mut call));
             0
         }),
-        1 => twin("MsMusicReadStart", a, b, 0x0079_fff0, &[], ALL, |m| {
-            dm(m, |m| be::ms_music_read_start(m, &mut call))
-        }),
+        1 => {
+            // the argument goes on to SndMusicRead (a tail jump): the port
+            // once dropped it, and the victory fanfare never loaded. Drawn
+            // from a side stream: the shared one stays as it was, so the
+            // later cases keep their inputs
+            let mut side = Xorshift(rng.0 ^ 0x9e37_79b9 | 1);
+            let music = [0x8a, 0x8c, side.next()][side.below(3) as usize];
+            twin("MsMusicReadStart", a, b, 0x0079_fff0, &[music], ALL, |m| {
+                dm(m, |m| be::ms_music_read_start(m, &mut call, music))
+            });
+        }
         _ => {
             let music = [0x8a, 0x8c, rng.next()][rng.below(3) as usize];
             twin("MsMusicSync", a, b, 0x007a_0040, &[music], ALL, |m| {

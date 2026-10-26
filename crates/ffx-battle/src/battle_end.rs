@@ -287,11 +287,11 @@ pub mod bridge {
         mem.write(SEP_TRANS_FLAG.ptr(mem).addr, 0u8);
     }
 
-    /// `MsMusicReadStart()` (`0x0079fff0`): the battle's sounds cleared
-    /// ([`ms_sep_battle_clear`], [`ms_effect_sep_clear_all`]), the music
-    /// playing stopped and cleared, the next read (`SndMusicRead`, its
-    /// `eax`).
-    pub fn ms_music_read_start<M: Mem>(mem: &mut M, call: Call<'_, M>) -> u32 {
+    /// `MsMusicReadStart(music)` (`0x0079fff0`): the battle's sounds
+    /// cleared ([`ms_sep_battle_clear`], [`ms_effect_sep_clear_all`]), the
+    /// music playing stopped and cleared, then `SndMusicRead(music)` (a
+    /// tail jump: the original passes its own argument on; its `eax`).
+    pub fn ms_music_read_start<M: Mem>(mem: &mut M, call: Call<'_, M>, music: u32) -> u32 {
         use crate::process::bridge as p;
         ms_sep_battle_clear(mem, &mut *call);
         ms_effect_sep_clear_all(mem, &mut *call);
@@ -303,7 +303,7 @@ pub mod bridge {
         );
         game(mem, &mut *call, p::SND_MUSIC_STOP, &[m]);
         game(mem, &mut *call, p::SND_MUSIC_CLEAR, &[m]);
-        game(mem, call, SND_MUSIC_READ, &[])
+        game(mem, call, SND_MUSIC_READ, &[music])
     }
 
     /// `MsMusicSync(music)` (`0x007a0040`): once the music stands by
@@ -792,7 +792,8 @@ pub mod bridge {
             }
             0x1a => {
                 END_FADE.set(mem, 10);
-                ms_music_read_start(mem, &mut *s.call);
+                let music = u32::from(END_MUSIC.get(mem));
+                ms_music_read_start(mem, &mut *s.call, music);
                 STATUS.set(mem, 0x1b);
             }
             0x1b => {
