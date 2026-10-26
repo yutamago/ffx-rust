@@ -1026,7 +1026,10 @@ pub mod bridge {
         0
     }
 
-    fn half_target(h: &mut impl Host, cluster: u32, w: u32, ht: u32) -> u32 {
+    /// A half-size render target (`0x00a1a190`'s and `0x00a17bd0`'s): a
+    /// `w` x `ht` texture bound to a new render target object; 0 at the
+    /// first failure.
+    pub fn half_target(h: &mut impl Host, cluster: u32, w: u32, ht: u32) -> u32 {
         let ty = h.rebase(TEXTURE_TYPE);
         let tex = h.call_sym(CLUSTER_CREATE, Conv::Thiscall(cluster), &[1, ty, 0]);
         if tex == 0 {

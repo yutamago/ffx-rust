@@ -390,4 +390,32 @@
         Step::Store(0x00cc_a2f8, Val::Addr(0x0062_8750)),
         Step::Store(0x00cc_a2f0, Val::Addr(0x00cc_a2f4)),
     ] }),
+    // Phyre_PDynamicGeometry_PModifierAndInputs_Bind (continuation round 3)
+    (0x005c_0790, Bind { d: 0x00cb_c128, steps: &[
+        Step::Guard(0x00cb_c678, 0x1, &[
+            Step::Member { ctor: 0x0057_52a0, member: 0x00cb_c64c, ty: Ty::Call(0x005c_7fe0), name: 0x00b3_79a4, words: [0x0, 0x12, 0x0] },
+            Step::AtExit(0x00b0_4590),
+        ]),
+        Step::Guard(0x00cb_c678, 0x2, &[
+            Step::Member { ctor: 0x0057_52a0, member: 0x00cb_c67c, ty: Ty::Call(0x0043_7fc0), name: 0x00b3_79b8, words: [0x4, 0x10, 0x0] },
+            Step::AtExit(0x00b0_4620),
+        ]),
+        Step::Guard(0x00cb_c678, 0x4, &[
+            Step::Member { ctor: 0x0057_52a0, member: 0x00cb_c6a8, ty: Ty::Call(0x0043_7fc0), name: 0x00b3_79d0, words: [0x8, 0x10, 0x0] },
+            Step::AtExit(0x00b0_4670),
+        ]),
+        Step::Call(0x005c_1ce0, Some(0x00c2_8c5c)),
+        Step::Guard(0x00cb_c678, 0x8, &[
+            Step::Guard(0x00cb_ccb4, 0x1, &[
+                Step::Descriptor { obj: 0x00cb_cc20, ctor: 0x005b_e850 },
+                Step::And(0x00cb_ccb0, 0xffff_fffd),
+                Step::Store(0x00cb_cc20, Val::Addr(0x00b3_7cb4)),
+                Step::AtExit(0x00b0_4440),
+            ]),
+            Step::Array { member: 0x00cb_c6d4, ty: Ty::Addr(0x00cb_cc20), name: 0x00b3_7a30, words: [0xc, 0x0, 0x3, 0x4] },
+            Step::Store(0x00cb_c6d4, Val::Addr(0x00b3_7a04)),
+            Step::AtExit(0x00b0_4560),
+        ]),
+        Step::Or(0x00cb_c6e8, 0x10),
+    ] }),
 ]

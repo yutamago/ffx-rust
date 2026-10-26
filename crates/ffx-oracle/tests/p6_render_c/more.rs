@@ -567,6 +567,7 @@ const ONE_WORD_CALLS: &[u32] = &[
     0x005b_17c0,
     0x005c_18c0,
     0x005c_1ad0,
+    0x005c_1ce0,
     0x00a0_74c0,
     0x00a2_c6c0,
 ];
