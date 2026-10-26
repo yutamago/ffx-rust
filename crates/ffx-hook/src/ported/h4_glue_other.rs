@@ -12,8 +12,8 @@
 
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
-    h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, menu as mn, misc as m,
-    movie as mv, r3, sound as s,
+    h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, menu as mn,
+    misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1673,5 +1673,78 @@ ported! {
     IggyMenu_handleMouseEvent_00a28c10 @ 0x00a2_8c10 => extern "thiscall" fn menu_mouse_event(this: u32, event: u32, result: u32) -> u32 {
         let mut frame = StackFrame::<{ (d5::MOUSE_FRAME / 4) as usize }>::new();
         d5::menu_mouse_event(&mut mem(), frame.at(), this, event, result)
+    }
+    // ---- continuation round 3, batch 1 (ffx_glue_other::h4_e1)
+    /// `TkMenuEquip_DrawCursor_008cf990()`.
+    TkMenuEquip_DrawCursor_008cf990 @ 0x008c_f990 => extern "C" fn equip_cursor() {
+        e1::equip_cursor(&mut mem());
+    }
+    /// `MenuWeapon_DrawListCursor_008d0100(list, x, y)`.
+    MenuWeapon_DrawListCursor_008d0100 @ 0x008d_0100 => extern "C" fn weapon_list_cursor(list: u32, x: u32, y: u32) {
+        e1::weapon_list_cursor(&mut mem(), list, x, y);
+    }
+    /// `MenuWShop_DrawBuyListCursor_008d8bb0(list, x, y)`.
+    MenuWShop_DrawBuyListCursor_008d8bb0 @ 0x008d_8bb0 => extern "C" fn shop_buy_list_cursor(list: u32, x: u32, y: u32) -> u32 {
+        e1::shop_list_cursor(&mut mem(), list, x, y)
+    }
+    /// `MenuWShop_DrawSellListCursor_008d8e60(list, x, y)`: a copy of the
+    /// buy list's.
+    MenuWShop_DrawSellListCursor_008d8e60 @ 0x008d_8e60 => extern "C" fn shop_sell_list_cursor(list: u32, x: u32, y: u32) -> u32 {
+        e1::shop_list_cursor(&mut mem(), list, x, y)
+    }
+    /// `MenuWShop_BuyListCursor_008dab70(list, x, y)`.
+    MenuWShop_BuyListCursor_008dab70 @ 0x008d_ab70 => extern "C" fn shop_buy_cursor(list: u32, x: u32, y: u32) -> u32 {
+        e1::shop_buy_cursor(&mut mem(), list, x, y)
+    }
+    /// `MenuWShop_SellWindowCursor_008dae00(list, x, y)`.
+    MenuWShop_SellWindowCursor_008dae00 @ 0x008d_ae00 => extern "C" fn shop_sell_cursor(list: u32, x: u32, y: u32) -> u32 {
+        e1::shop_sell_cursor(&mut mem(), list, x, y)
+    }
+    /// `MenuItem_DrawListCursor_008c7af0(list, x, y)`.
+    MenuItem_DrawListCursor_008c7af0 @ 0x008c_7af0 => extern "C" fn item_list_cursor(list: u32, x: u32, y: u32) -> u32 {
+        e1::item_list_cursor(&mut mem(), list, x, y).unwrap_or(0)
+    }
+    /// `TkMn2DrawCrossCmdCursor(x, y, blink)`.
+    TkMn2DrawCrossCmdCursor @ 0x008c_0580 => extern "C" fn cross_cmd_cursor(x: u32, y: u32, blink: u32) -> u32 {
+        e1::cross_cmd_cursor(&mut mem(), x, y, blink).unwrap_or(0)
+    }
+    /// `TkMn2DrawStatiCursor(x, y, hidden)`.
+    TkMn2DrawStatiCursor @ 0x008c_13d0 => extern "C" fn stati_cursor(x: u32, y: u32, hidden: u32) {
+        e1::stati_cursor(&mut mem(), x, y, hidden);
+    }
+    /// `TkMn2DrawBrush(a, x, y)`.
+    TkMn2DrawBrush @ 0x008b_f830 => extern "C" fn draw_brush(_a: u32, x: u32, y: u32) {
+        e1::draw_brush(&mut mem(), x, y);
+    }
+    /// `TOMenuDrawBrush2(i)`.
+    TOMenuDrawBrush2 @ 0x008f_f260 => extern "C" fn draw_brush2(i: u32) {
+        e1::draw_brush2(&mut mem(), i);
+    }
+    /// `TODrawMenuBGC2(a, b)`.
+    TODrawMenuBGC2 @ 0x008f_5c60 => extern "C" fn draw_menu_bg_c2(a: u32, b: u32) {
+        e1::draw_menu_bg_c2(&mut mem(), a, b);
+    }
+    /// `TkMn2DrawStatusBG(colour, kind)`.
+    TkMn2DrawStatusBG @ 0x008d_4170 => extern "C" fn draw_status_bg(colour: u32, kind: u32) {
+        e1::draw_status_bg(&mut mem(), colour, kind);
+    }
+    /// `Menu_DrawWeaponAbilities_008d8aa0(x, y, weapon)`.
+    Menu_DrawWeaponAbilities_008d8aa0 @ 0x008d_8aa0 => extern "C" fn weapon_abilities(x: u32, y: u32, weapon: u32) {
+        e1::weapon_abilities(&mut mem(), x, y, weapon);
+    }
+    /// `MenuEquip_DrawWeaponAbilities_008d02e0()`.
+    MenuEquip_DrawWeaponAbilities_008d02e0 @ 0x008d_02e0 => extern "C" fn equip_weapon_abilities() -> u32 {
+        let mut frame = StackFrame::<{ (e1::EQUIP_ABILITIES_FRAME / 4) as usize }>::new();
+        e1::equip_weapon_abilities(&mut mem(), frame.at()).unwrap_or(0)
+    }
+    /// `TOBtlDrawTargetCursor()`.
+    TOBtlDrawTargetCursor @ 0x0089_c870 => extern "C" fn target_cursor() {
+        let mut frame = StackFrame::<{ (e1::TARGET_FRAME / 4) as usize }>::new();
+        e1::target_cursor(&mut mem(), frame.at());
+    }
+    /// `TOBtlDrawEnemyLimit()`.
+    TOBtlDrawEnemyLimit @ 0x0089_33c0 => extern "C" fn enemy_limit() {
+        let mut frame = StackFrame::<{ (e1::ENEMY_LIMIT_FRAME / 4) as usize }>::new();
+        e1::enemy_limit(&mut mem(), frame.at());
     }
 }
