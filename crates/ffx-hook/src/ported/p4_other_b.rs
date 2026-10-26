@@ -8,8 +8,8 @@
 
 use super::{mem, ported};
 use ffx_pother_b::{
-    methods, object, p4_bind, p4_cloth, p4_fog, p4_frames, p4_input, p4_light, p4_light2, p4_mesh,
-    p4_morph, p4_morph2, p4_ps2light, p4_tree, physics, small,
+    methods, object, p4_bind, p4_cloth, p4_dyngeo, p4_fog, p4_frames, p4_input, p4_light,
+    p4_light2, p4_mesh, p4_morph, p4_morph2, p4_ps2light, p4_tree, p4_tweak, physics, small,
 };
 
 ported! {
@@ -1194,6 +1194,26 @@ ported! {
         let mut frame = super::StackFrame::<0x1d>::new();
         let ebp = frame.at() + 0x74;
         p4_light2::bridge2::instantiate(&mut mem(), ebp, cl, inst)
+    }
+    /// `CharacterLightingTweakUtil::getLineText(tw, line, out)` ->
+    /// `sprintf_s`'s `eax`; lines 2..4 leave their value in the line's
+    /// argument slot, as the original does.
+    Phyre_CharacterLightingTweakUtil_getLineText @ 0x006a_8580 => extern "thiscall" fn get_line_text(tw: u32, line: u32, out: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, word) = p4_tweak::bridge::get_line_text(&mut m, tw, line, out);
+        if let Some(word) = word {
+            ffx_bridge::Mem::write(&mut m, slots, word);
+        }
+        r
+    }
+    /// `ClassDynamicGeometry` vtable slot 3 (`geo`) -> 0, 3, 5 or a
+    /// callee's error: the texture entries' sampler parameters.
+    ClassDynamicGeometry_updateTexture_006a59d0 @ 0x006a_59d0 => extern "fastcall" fn dyngeo_update_texture(geo: u32) -> u32 {
+        // ebp - 0x104 .. ebp: the entry's copy, the texture iterator, the
+        // parameter blocks, the loop's locals
+        let mut frame = super::StackFrame::<0x41>::new();
+        let ebp = frame.at() + 0x104;
+        p4_dyngeo::bridge::update_texture(&mut mem(), ebp, geo)
     }
     /// `MorphManager::update(mm, dt)`; leaves the original's last word in
     /// its argument's slot.

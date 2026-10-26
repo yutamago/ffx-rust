@@ -99,6 +99,20 @@ impl Host for G<'_> {
             .st0_f32()
             .unwrap_or_else(|| panic!("callee {addr:#x} leaves no ST0"))
     }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        // the test's trampoline (`INTRINSIC_TRAMPOLINE`): `fld qword
+        // [esp+4]; call [esp+0xc]; ret`, then at +16 `fstp st(0); ret`
+        let at = INTRINSIC_AT.with(std::cell::Cell::get);
+        assert_ne!(at, 0, "no intrinsic trampoline in this test");
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let v = r.st0_f32().expect("the intrinsic's ST0");
+        self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
+        v
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
@@ -5219,6 +5233,322 @@ fn h2p4_instantiate_unique_matches_the_original() {
                 0x74,
                 &frame,
                 |g, ebp| Out::U32(p4_light2::bridge2::instantiate(g, ebp, cl, inst)),
+            );
+        }
+    }
+}
+
+// ---- h2p4 batch 3: the tweak utility's line texts ----
+
+use ffx_pother_b::p4_tweak;
+
+thread_local! {
+    /// Where this thread's test put [`INTRINSIC_TRAMPOLINE`] (0: none).
+    static INTRINSIC_AT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Calls a CRT intrinsic with its argument in `ST0` (`G::call_intrinsic`).
+const INTRINSIC_TRAMPOLINE: [u8; 19] = [
+    0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+    0xdd, 0xd8, 0xc3,
+];
+
+/// A `sprintf_s` stand-in for the slot: writes the number of stack words
+/// its format takes (the tweak utility's six formats; 6 for others) and
+/// those words into `out`, and returns `0x5f00_0000 + n`.
+fn sprintf_stub(t: &mut Twins) -> u32 {
+    let formats = [
+        (p4_tweak::F_COLOUR, 11u32),
+        (p4_tweak::F_INTS, 10),
+        (p4_tweak::F_FLOAT, 7),
+        (p4_tweak::F_FAILED, 3),
+    ];
+    let mut c = vec![0x8b, 0x4c, 0x24, 0x0c]; // mov ecx, [esp+0xc]
+    let mut patches = Vec::new();
+    for (fmt, n) in formats {
+        c.push(0xba);
+        c.extend(n.to_le_bytes()); // mov edx, n
+        c.extend([0x81, 0xf9]);
+        c.extend(t.rebase(fmt).to_le_bytes()); // cmp ecx, fmt
+        c.extend([0x74, 0x00]); // je done
+        patches.push(c.len() - 1);
+    }
+    c.push(0xba);
+    c.extend(6u32.to_le_bytes()); // mov edx, 6
+    let done = c.len();
+    for p in patches {
+        c[p] = (done - (p + 1)) as u8;
+    }
+    c.extend([0x8b, 0x44, 0x24, 0x04]); // mov eax, [esp+4]
+    c.extend([0x89, 0x10]); // mov [eax], edx
+    c.extend([0x56, 0x31, 0xf6]); // push esi; xor esi, esi
+    let top = c.len();
+    c.extend([0x8b, 0x4c, 0xb4, 0x08]); // mov ecx, [esp+esi*4+8]
+    c.extend([0x89, 0x4c, 0xb0, 0x04]); // mov [eax+esi*4+4], ecx
+    c.extend([0x46, 0x39, 0xd6, 0x72]); // inc esi; cmp esi, edx; jb top
+    c.push((top as i32 - (c.len() as i32 + 1)) as u8);
+    c.push(0x5e); // pop esi
+    c.extend([0x8d, 0x82]);
+    c.extend(0x5f00_0000u32.to_le_bytes()); // lea eax, [edx + 0x5f000000]
+    c.push(0xc3);
+    t.code(&c)
+}
+
+#[test]
+fn h2p4_get_line_text_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_8580);
+        let tramp = t.code(&INTRINSIC_TRAMPOLINE);
+        INTRINSIC_AT.with(|c| c.set(tramp));
+        let pf = sprintf_stub(&mut t);
+        let slot = t.rebase(p4_tweak::SPRINTF_S);
+        t.w32(slot, pf);
+        let has = t.stub_cell(p4_tweak::HAS_INTENSITY, true, 1, 1);
+        let g = t.rebase(p4_tweak::G_LIGHTING);
+        let names: Vec<u32> = (0..11).map(|k| 0x4e00_0000 + k).collect();
+        for i in 0..400 {
+            let what = format!("{name} line text case {i}");
+            let cl = lighting(&mut t, &mut rng);
+            t.w32(g, cl);
+            for at in (0x124..0x154).step_by(4).chain([0x190, 0x194, 0x198]) {
+                let w = light_unit(&mut rng);
+                t.w32(cl + at, w);
+            }
+            for at in (0x1a8..0x1d0).step_by(4) {
+                let w = match rng.below(3) {
+                    0 => float_word(&mut rng),
+                    _ => rotation_angle(&mut rng),
+                };
+                t.w32(cl + at, w);
+            }
+            // light directions: unit vectors, the poles, |x - s| near 0
+            for k in 0..3 {
+                let (x, y, z) = match rng.below(7) {
+                    0 => (0.0f32, 1.0f32, 0.0f32),
+                    // not a unit vector: z / s = 1 with x > 0 (B = 0, A < 0)
+                    6 => (0.5, 0.0, 1.0),
+                    1 => (0.0, -1.0, 0.0),
+                    2 => {
+                        let s = (rng.below(100) as f32 / 100.0).sqrt();
+                        let y = (1.0 - s * s).sqrt();
+                        (s, y, 0.0)
+                    }
+                    3 => (
+                        f32::from_bits(float_word(&mut rng)),
+                        f32::from_bits(light_unit(&mut rng)),
+                        f32::from_bits(float_word(&mut rng)),
+                    ),
+                    _ => {
+                        let a = rng.below(628) as f32 / 100.0;
+                        let b = rng.below(314) as f32 / 100.0 - 1.57;
+                        (a.cos() * b.cos(), b.sin(), a.sin() * b.cos())
+                    }
+                };
+                let d = cl + 0xf4 + 0x10 * k;
+                t.w32(d, x.to_bits());
+                t.w32(d + 4, y.to_bits());
+                t.w32(d + 8, z.to_bits());
+            }
+            if rng.chance(4) {
+                t.w32(cl + 0xf0, 0);
+            }
+            let scene = if rng.chance(4) {
+                0
+            } else {
+                let s = t.zeros(0x10);
+                t.fill(&mut rng, s, 0x10);
+                s
+            };
+            t.w32(cl + 0x18c, scene);
+            t.w32(
+                has,
+                if rng.chance(2) {
+                    0x1234_5600
+                } else {
+                    rng.next()
+                },
+            );
+            let tw = t.zeros(0x100);
+            t.fill(&mut rng, tw, 0x100);
+            t.write(tw, &[u8::from(!rng.chance(8))]);
+            for (k, &n) in names.iter().enumerate() {
+                t.w32(tw + 0x94 + 4 * k as u32, n);
+            }
+            let line = if rng.chance(12) {
+                [11, 12, 0xffff_ffff][rng.below(3) as usize]
+            } else {
+                rng.below(11)
+            };
+            t.w32(tw + 0xc0, [0, 1, 2, 3, 3][rng.below(5) as usize]);
+            t.w32(tw + 0xc4, if rng.chance(2) { line } else { rng.below(11) });
+            let out = t.zeros(0x80);
+            t.frame_case(
+                &what,
+                0x006a_8580,
+                Conv::Thiscall(tw),
+                &[line, out],
+                0x3c,
+                &[8],
+                |g, ebp| {
+                    g.write(ebp + 8, line);
+                    let (r, w) = p4_tweak::bridge::get_line_text(g, tw, line, out);
+                    if let Some(w) = w {
+                        g.write(ebp + 8, w);
+                    }
+                    Out::U32(r)
+                },
+            );
+        }
+    }
+}
+
+// ---- h2p4 batch 3: the dynamic geometries' texture parameters ----
+
+use ffx_pother_b::p4_dyngeo;
+
+/// The parameter names `0x006a59d0` asks for, in the order of the fake
+/// shader's words (`shader + 4 k`).
+const DYNGEO_PARAMS: [u32; 7] = [
+    p4_dyngeo::UV_SCALE_BIAS,
+    p4_dyngeo::SAMPLER_STATE,
+    p4_dyngeo::SAMPLER,
+    p4_dyngeo::SAMPLER_Y,
+    p4_dyngeo::SAMPLER_U,
+    p4_dyngeo::SAMPLER_V,
+    p4_dyngeo::VIDEO_TEXTURE,
+];
+
+/// A parameter (offset, size, type byte) or 0.
+fn dyngeo_param(t: &mut Twins, rng: &mut Rng) -> u32 {
+    if rng.chance(5) {
+        return 0;
+    }
+    let p = t.zeros(0x10);
+    t.fill(rng, p, 0x10);
+    let ty = [0x42u8, 0xd9, 0xdc, 0x12, 0x43, 0][rng.below(6) as usize];
+    t.write(p + 2, &[ty]);
+    let off = [0u16, 2, 4, 8, 0x20, 0x70][rng.below(6) as usize];
+    let size =
+        [0u16, 4, 8, 0x10, 0x10, 0x18][rng.below(6) as usize] | ((rng.below(8) as u16) << 13);
+    t.write(p + 8, &off.to_le_bytes());
+    t.write(p + 0xa, &size.to_le_bytes());
+    p
+}
+
+#[test]
+fn h2p4_dyngeo_update_texture_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_59d0);
+        // the parameter lookup: name k -> [shader + 4k], others 0
+        let mut tail = Vec::new();
+        for (k, &n) in DYNGEO_PARAMS.iter().enumerate() {
+            tail.extend([0x81, 0x7c, 0x24, 0x04]);
+            tail.extend(t.rebase(n).to_le_bytes()); // cmp dword [esp+4], name
+            tail.extend([0x75, 0x06, 0x8b, 0x41, 4 * k as u8, 0xc2, 0x04, 0x00]);
+        }
+        tail.extend([0x31, 0xc0, 0xc2, 0x04, 0x00]); // xor eax, eax; ret 4
+        t.stub_tail(p4_dyngeo::FIND_PARAM, true, 1, &tail);
+        let sampler = t.stub_cell(p4_dyngeo::LINEAR_SAMPLER, true, 1, 1);
+        t.stub(p4_dyngeo::CLUSTER_MANAGER, false, 0, 0, 0x0c1a_0000);
+        let cluster = t.stub_cell(p4_dyngeo::CLUSTER_BY_NAME, true, 1, 1);
+        let first = t.zeros(8);
+        let mut tail = vec![0xa1];
+        tail.extend(first.to_le_bytes()); // mov eax, [first]
+        tail.extend([0x89, 0x01, 0xa1]); // mov [ecx], eax
+        tail.extend((first + 4).to_le_bytes()); // mov eax, [first + 4]
+        tail.extend([0x89, 0x41, 0x10, 0x89, 0xc8, 0xc2, 0x04, 0x00]); // mov [ecx+0x10], eax; mov eax, ecx; ret 4
+        t.stub_tail(p4_dyngeo::TEXTURE_ITERATOR, true, 1, &tail);
+        let set = t.stub_cell(p4_dyngeo::SET_TEXTURE, true, 2, 2);
+        let checked = t.stub_cell(p4_dyngeo::SET_TEXTURE_CHECKED, true, 2, 2);
+        let bind = t.stub_cell(p4_dyngeo::BIND_SAMPLER, true, 1, 1);
+        let planes = [
+            t.stub_cell(p4_dyngeo::VIDEO_Y, true, 0, 0),
+            t.stub_cell(p4_dyngeo::VIDEO_U, true, 0, 0),
+            t.stub_cell(p4_dyngeo::VIDEO_V, true, 0, 0),
+        ];
+        let found = t.zeros(4);
+        let mut tail = vec![0xa1];
+        tail.extend(found.to_le_bytes()); // mov eax, [found]
+        tail.push(0xc3);
+        let f = t.logged(p4_dyngeo::STRSTR_SLOT, false, 2, &tail);
+        let at = t.rebase(p4_dyngeo::STRSTR_SLOT);
+        t.w32(at, f);
+        let scene = t.rebase(p4_dyngeo::G_SCENE);
+        t.w32(scene, 0x5ce0_0000);
+        let names = [t.alloc(b"VideoTexture_01\0"), t.alloc(b"tex_a\0")];
+        let frame: Vec<i32> = (0..0x41).map(|k| -0x104 + 4 * k).collect();
+        for i in 0..300 {
+            let what = format!("{name} dyngeo texture case {i}");
+            let n = [0u32, 1, 2, 3][rng.below(4) as usize];
+            let geo = t.zeros(0x30);
+            t.fill(&mut rng, geo, 0x30);
+            let data = if rng.chance(10) { 0 } else { t.zeros(0xa0) };
+            t.w32(geo + 0x24, data);
+            if data != 0 {
+                let count = if rng.chance(10) { 0xffff_ffff } else { n };
+                t.w32(data + 0x90, count);
+                let entries = t.zeros(0x6c * 4);
+                t.fill(&mut rng, entries, 0x6c * 4);
+                for k in 0..4 {
+                    let nm = if rng.chance(5) {
+                        0
+                    } else {
+                        names[rng.below(2) as usize]
+                    };
+                    t.w32(entries + 0x6c * k + 0x20, nm);
+                }
+                t.w32(data + 0x94, entries);
+            }
+            // the materials: inline for one, else a block (some null)
+            let arr = t.zeros(0x10);
+            let mats = t.zeros(0x10);
+            t.w32(arr, n.max(1) | if rng.chance(4) { 0x8000_0000 } else { 0 });
+            t.w32(arr + 4, if n.max(1) == 1 { 0 } else { mats });
+            let block = if n.max(1) == 1 { arr + 4 } else { mats };
+            for k in 0..n.max(1) {
+                let m = if rng.chance(6) {
+                    0
+                } else {
+                    let m = t.zeros(8);
+                    let buf = t.zeros(0x80);
+                    t.fill(&mut rng, buf, 0x80);
+                    t.w32(buf, [0x80, 0x40, 0x20, 0][rng.below(4) as usize]);
+                    t.w32(m + 4, buf);
+                    m
+                };
+                t.w32(block + 4 * k, m);
+            }
+            t.w32(geo + 0x14, arr);
+            let shader = t.zeros(0x20);
+            for k in 0..7 {
+                // the video path reads "TextureSamplerY"'s type unchecked
+                let mut p = dyngeo_param(&mut t, &mut rng);
+                while k == 3 && p == 0 {
+                    p = dyngeo_param(&mut t, &mut rng);
+                }
+                t.w32(shader + 4 * k, p);
+            }
+            t.w32(geo + 0x28, shader);
+            t.w32(sampler, if rng.chance(4) { 0 } else { rng.next() | 1 });
+            t.w32(cluster, if rng.chance(2) { 0 } else { rng.next() | 1 });
+            let (a, b) = (rng.next(), rng.next());
+            t.w32(first, a);
+            t.w32(first + 4, b);
+            for cell in [set, checked, bind] {
+                t.w32(cell, if rng.chance(6) { rng.next() | 1 } else { 0 });
+            }
+            for p in planes {
+                t.w32(p, if rng.chance(4) { 0 } else { rng.next() | 1 });
+            }
+            t.w32(found, u32::from(!rng.chance(3)));
+            t.frame_case(
+                &what,
+                0x006a_59d0,
+                Conv::Thiscall(geo),
+                &[],
+                0x104,
+                &frame,
+                |g, ebp| Out::U32(p4_dyngeo::bridge::update_texture(g, ebp, geo)),
             );
         }
     }
