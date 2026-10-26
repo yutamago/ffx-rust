@@ -83,6 +83,7 @@ pub mod h3_glue12;
 pub mod h3_glue13;
 pub mod mesh;
 pub mod misc;
+pub mod p6_app;
 pub mod p6_binds;
 pub mod p6_binds1;
 pub mod p6_descriptor;

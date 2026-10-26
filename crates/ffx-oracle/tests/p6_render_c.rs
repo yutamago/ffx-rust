@@ -1833,3 +1833,6 @@ mod setup;
 
 #[path = "p6_render_c/post.rs"]
 mod post;
+
+#[path = "p6_render_c/app.rs"]
+mod app;
