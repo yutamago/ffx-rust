@@ -15,8 +15,8 @@ use ffx_glue_other::{
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
-    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, menu as mn, misc as m, movie as mv, r3,
-    sound as s,
+    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, menu as mn, misc as m,
+    movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2239,5 +2239,18 @@ ported! {
     /// `PhyFMVPlayerManager_handleInput(this; unused)`.
     PhyFMVPlayerManager_handleInput @ 0x006d_9460 => extern "thiscall" fn handle_input(this: u32, _unused: u32) {
         h6::handle_input(&mut mem(), this);
+    }
+    // ---- continuation round 6, batch 7 (ffx_glue_other::h4_h7)
+    /// `PVideoPlaybackWin32_ctor(this)`.
+    PVideoPlaybackWin32_ctor @ 0x00a2_6e70 => extern "thiscall" fn video_playback_ctor(this: u32) -> u32 {
+        h7::video_playback_ctor(&mut mem(), this)
+    }
+    /// `PhyFMVPlayerManager_PhyFMVPlayerManager(this)`.
+    PhyFMVPlayerManager_PhyFMVPlayerManager @ 0x006d_6970 => extern "thiscall" fn fmv_manager_ctor(this: u32) -> u32 {
+        h7::fmv_manager_ctor(&mut mem(), this)
+    }
+    /// `gdraw_allocBuffers_00a3a540(a, unused, n0, n1, out, c)`.
+    gdraw_allocBuffers_00a3a540 @ 0x00a3_a540 => extern "stdcall" fn gdraw_alloc_buffers(a: u32, _unused: u32, n0: u32, n1: u32, out: u32, c: u32) -> u32 {
+        h7::gdraw_alloc_buffers(&mut mem(), a, n0, n1, out, c)
     }
 }

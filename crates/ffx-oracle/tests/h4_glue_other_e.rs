@@ -28,7 +28,7 @@ use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
-    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6,
+    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -6485,6 +6485,131 @@ fn h6_handle_input() {
                     Out::None
                 },
             );
+        }
+        assert!(ran + t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 6, batch 7 (ffx_glue_other::h4_h7)
+
+/// The Win32 video playback's and the movie player manager's
+/// constructors.
+#[test]
+fn h7_ctors() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a701);
+        for sym in [
+            h7::FRAME_QUEUE_CTOR,
+            h7::ZERO_WORD_CTOR,
+            h7::MKV_READER_CTOR,
+            h7::EVENT_FLAG_CTOR,
+        ] {
+            t.stub_at(sym, true, 0, 0, &[]);
+        }
+        let tags = [
+            h7::FRAME_QUEUE_CTOR,
+            h7::ZERO_WORD_CTOR,
+            h7::MKV_READER_CTOR,
+            h7::EVENT_FLAG_CTOR,
+        ];
+        for i in 0..100 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let this = random_block(&mut t, &mut rng, 0x2c0);
+            t.check_conv(
+                &format!("{w} playback"),
+                0x00a2_6e70,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(h7::video_playback_ctor(g, this)),
+            );
+        }
+        // the manager, with the playback's constructor a stub
+        for sym in [
+            h7::VIDEO_PLAYBACK_CTOR,
+            h7::PCLUSTER_CTOR,
+            h7::SAMPLER_STATE_CTOR,
+            h7::TEXTURE_CTOR,
+            h7::CAMERA_CTOR,
+            h7::TREE_HEAD_NEW,
+        ] {
+            t.stub_at(sym, true, 0, 0, &[]);
+        }
+        t.stub_at(h7::TREE_NODE_NEW, true, 2, 2, &[]);
+        let tags = [
+            h7::VIDEO_PLAYBACK_CTOR,
+            h7::PCLUSTER_CTOR,
+            h7::SAMPLER_STATE_CTOR,
+            h7::TEXTURE_CTOR,
+            h7::CAMERA_CTOR,
+            h7::TREE_HEAD_NEW,
+            h7::TREE_NODE_NEW,
+        ];
+        for i in 0..100 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let this = random_block(&mut t, &mut rng, 0x760);
+            t.check_conv(
+                &format!("{w} manager"),
+                0x006d_6970,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(h7::fmv_manager_ctor(g, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `GDraw`'s buffer allocation callback.
+#[test]
+fn h7_gdraw_alloc_buffers() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a702);
+        let malloc_next = t.zeros(4);
+        let malloc = {
+            // a stdcall malloc stub whose results alternate
+            let log = t.stub_code(0x0bad_a7c0, false, 3, 3, false, &[]);
+            let cell = t.cells[&0x0bad_a7c0];
+            let mut c = vec![0xa1];
+            c.extend(malloc_next.to_le_bytes()); // mov eax, [next]
+            c.extend([0x87, 0x05]);
+            c.extend(cell.to_le_bytes()); // xchg [cell], eax
+            c.push(0xa3);
+            c.extend(malloc_next.to_le_bytes()); // mov [next], eax
+            let at = t.cave_next;
+            c.push(0xe9);
+            c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp log
+            t.code(&c)
+        };
+        let free = t.stub_code(0x0bad_a7c1, false, 1, 1, false, &[]);
+        t.stub(h7::CONFIG_MEMORY, 3, false);
+        let tags = [0x0bad_a7c0, 0x0bad_a7c1, h7::CONFIG_MEMORY];
+        let state = t.zeros(0xac0);
+        let mut ran = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            ran += t.log_entries();
+            t.fresh(&mut rng, &tags);
+            t.g32(h7::GDRAW_MALLOC.sym, malloc);
+            t.g32(h7::GDRAW_FREE.sym, free);
+            t.g32(h7::GDRAW_STATE.sym, state);
+            let pool = rng.next();
+            t.w32(state + 0xab4, pool);
+            // first call returns `next`, the second the cell
+            let p0 = rng.pick(&[0, 0x1000, 0x1000, 0x1000]);
+            t.w32(malloc_next, p0);
+            let p1 = rng.pick(&[0, 0x2000, 0x2000, 0x2000]);
+            t.ret(0x0bad_a7c0, p1);
+            let record = random_block(&mut t, &mut rng, 8);
+            let record = rng.pick(&[0, record, record]);
+            t.ret(h7::CONFIG_MEMORY, record);
+            let out = random_block(&mut t, &mut rng, 0x18);
+            let a: [u32; 6] = std::array::from_fn(|_| rng.next());
+            let a = [a[0], a[1], a[2], a[3], out, a[5]];
+            t.check_conv(&format!("{w} alloc"), 0x00a3_a540, Conv::Stdcall, &a, |g| {
+                u(h7::gdraw_alloc_buffers(g, a[0], a[2], a[3], out, a[5]))
+            });
         }
         assert!(ran + t.log_entries() > 0, "{name}: the stubs ran");
     }

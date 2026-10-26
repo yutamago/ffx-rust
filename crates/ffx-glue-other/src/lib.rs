@@ -127,6 +127,7 @@ pub mod h4_h3;
 pub mod h4_h4;
 pub mod h4_h5;
 pub mod h4_h6;
+pub mod h4_h7;
 pub mod menu;
 pub mod misc;
 pub mod movie;
