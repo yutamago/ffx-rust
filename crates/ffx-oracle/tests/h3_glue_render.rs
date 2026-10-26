@@ -42,6 +42,7 @@ use ffx_prender::h3_glue16::{self as h16, bridge as gh16};
 use ffx_prender::h3_glue17::{self as h17, bridge as gh17};
 use ffx_prender::h3_glue18::{self as h18, bridge as gh18};
 use ffx_prender::h3_glue19::{self as h19, bridge as gh19};
+use ffx_prender::h3_glue20::{self as h20, bridge as gh20};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -6104,5 +6105,209 @@ fn batch19_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 40 } else { 240 };
         run_cases(t, CASES19, n, &mut Rng(0x1919_b019));
+    });
+}
+
+// ---- round 6 batch 20 (ffx_prender::h3_glue20) ----
+
+impl Twins {
+    /// [`Twins::stub_f64`] logging `n` cdecl arguments.
+    fn stub_f64_n(&mut self, sym: u32, n: u32, value: f64) {
+        let cell = self.code(&value.to_bits().to_le_bytes());
+        let log = self.stub(None, sym, false, n, 0, Some(0));
+        let mut c = vec![0xdd, 0x05]; // fld qword [cell]
+        c.extend(cell.to_le_bytes());
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// The box (floats), the line counts (fewer, as many or more lines than
+/// shown; past the end or not) and the remapped borders.
+fn prep_scroll_parts(t: &mut Twins, _: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    for a in args.iter_mut().take(4) {
+        *a = if rng.chance(2) {
+            (rng.below(1000) as f32 * 0.75).to_bits()
+        } else {
+            rng.float().to_bits()
+        };
+    }
+    let total = pick(
+        rng,
+        &[0, 1, 5, 12, 100, 0x8000_0000, 0x7fff_ffff, 0x0100_0001],
+    );
+    let shown = pick(rng, &[0, 1, 4, 5, 12, 0xffff_ffff, 0x7fff_fff0]);
+    let first = pick(
+        rng,
+        &[0, 1, 3, 7, 95, 0xffff_fffe, 0x7fff_ffff, 0x00ff_ffff],
+    );
+    args[4] = first;
+    args[5] = shown;
+    args[6] = total;
+    for sym in [h20::UI_REMAP_X2, h20::UI_REMAP_Y2] {
+        let v = match rng.below(4) {
+            0 => 1.0,
+            1 => 1.333_333_333_333_333_3,
+            2 => f64::from(rng.float()),
+            _ => f64::from(rng.next()) / 7.0,
+        };
+        t.stub_f64_n(sym, 1, v);
+    }
+}
+
+/// The instance (or none; its meshes, flag), each mesh's draw elements
+/// and materials (inline or not), the parameter lookups (found or not;
+/// offsets and sizes in and out of the buffer), the alpha.
+fn prep_mesh_alpha(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let chr = obj + 0x100;
+    args[0] = if rng.chance(8) { 0 } else { chr };
+    let n = pick(rng, &[0, 1, 2, 3]);
+    let w = count_word(rng, n);
+    t.w32(chr, w);
+    t.w32(chr + 4, obj + 0x180);
+    let flag = if rng.chance(3) {
+        0
+    } else {
+        1 + rng.below(255) as u8
+    };
+    t.write(chr + 0x14, &[flag]);
+    for i in 0..3 {
+        let mesh = obj + 0x200 + 0x80 * i;
+        t.w32(obj + 0x180 + 4 * i, mesh);
+        let list = obj + 0x400 + 0x40 * i;
+        t.w32(mesh, list);
+        let count = pick(rng, &[0, 1, 2, 3]);
+        let w = count_word(rng, count);
+        t.w32(list, w);
+        let elements = obj + 0x600 + 0x200 * i;
+        t.w32(list + 4, elements);
+        for e in 0..3 {
+            t.w32(elements + 0x6c * e, rng.below(3));
+        }
+        let materials = mesh + 0x20;
+        t.w32(mesh + 0x10, materials);
+        let c = pick(rng, &[1, 2, 3, 0x8000_0001, 0x8000_0003]);
+        t.w32(materials, c);
+        let data = if c & 0x7fff_ffff > 1 {
+            obj + 0xc80
+        } else {
+            materials + 4
+        };
+        if data != materials + 4 {
+            t.w32(materials + 4, data);
+        }
+        for m in 0..3 {
+            t.w32(data + 4 * m, obj + 0xc00 + 0x20 * ((m + i) % 3));
+        }
+    }
+    for m in 0..3 {
+        let material = obj + 0xc00 + 0x20 * m;
+        let v = rng.next();
+        t.w32(material, v);
+        let buffer = obj + 0x1000 + 0x100 * m;
+        t.w32(material + 4, buffer);
+        t.w32(buffer, pick(rng, &[0, 0x10, 0x24, 0x40, 0x80]));
+    }
+    let mut params = vec![];
+    for p in 0..8 {
+        let at = obj + 0x1800 + 0x10 * p;
+        let offset = pick(rng, &[0, 3, 4, 8, 0x20, 0x5c, 0xfff0]);
+        let size = pick(rng, &[0, 4, 16, 0x14, 0x24, 0x400, 0x1010]) | (rng.below(8) << 13);
+        t.write(at + 8, &(offset as u16).to_le_bytes());
+        t.write(at + 0xa, &(size as u16).to_le_bytes());
+        params.push(if rng.chance(4) { 0 } else { at });
+    }
+    t.stub_seq(h20::FIND_PARAMETER, true, 1, 1, &params);
+    let alpha: f32 = match rng.below(8) {
+        0 => 0.0,
+        1 => -0.0,
+        2 => 0.5,
+        3 => 1.0,
+        4 => 2.0,
+        5 => -1.0,
+        6 => f32::from_bits(0x7fc0_0000),
+        _ => rng.float(),
+    };
+    args[1] = rng.next();
+    args[2] = alpha.to_bits();
+}
+
+/// The map (or none), the tree's first chain (empty or 1..3 nodes), the
+/// successors, each node's lists and material arrays, the parameter
+/// lookups.
+fn prep_map_yiq(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1200);
+    *this = scene;
+    t.w32(scene + 0x10d4, if rng.chance(6) { 0 } else { obj });
+    let head = scene + 0x1198;
+    let n = rng.below(4);
+    let nodes: Vec<u32> = (0..n).map(|k| obj + 0x100 + 0x40 * k).collect();
+    // the chain from +0xc: node k's first word the next, the last's the head
+    t.w32(head + 0xc, nodes.first().copied().unwrap_or(head));
+    for (k, &node) in nodes.iter().enumerate() {
+        t.w32(node, nodes.get(k + 1).copied().unwrap_or(head));
+    }
+    let mut order = vec![];
+    for _ in 0..rng.below(4) {
+        order.push(obj + 0x100 + 0x40 * rng.below(3));
+    }
+    order.extend([head; 4]);
+    t.stub_seq(h20::TREE_SUCCESSOR, true, 1, 1, &order);
+    for k in 0..3 {
+        let node = obj + 0x100 + 0x40 * k;
+        let list = obj + 0x300 + 0x40 * k;
+        t.w32(node + 0x10, list);
+        t.w32(list, rng.below(3));
+        t.w32(list + 8, list + 0x10);
+        for i in 0..2 {
+            let item = obj + 0x500 + 0x40 * (2 * k + i);
+            t.w32(list + 0x10 + 4 * i, item);
+            let array = obj + 0x800 + 0x10 * (2 * k + i);
+            t.w32(item + 0x10, array);
+            let c = pick(rng, &[0, 1, 2, 0x8000_0002]);
+            t.w32(array, c);
+        }
+    }
+    let data = obj + 0xa00;
+    for m in 0..3 {
+        let material = obj + 0xb00 + 0x20 * m;
+        t.w32(data + 4 * m, material);
+        let v = rng.next();
+        t.w32(material, v);
+        let buffer = obj + 0x1000 + 0x100 * m;
+        t.w32(material + 4, buffer);
+        t.w32(buffer, pick(rng, &[0, 0x10, 0x40, 0x80]));
+    }
+    t.stub_ret(h20::ARRAY_DATA, true, 0, 0, data);
+    let mut params = vec![];
+    for p in 0..24 {
+        let at = obj + 0x1800 + 0x10 * p;
+        let offset = pick(rng, &[0, 3, 4, 8, 0x20, 0x4c, 0xfff0]);
+        let size = pick(rng, &[0, 4, 12, 16, 0x24, 0x2c, 0x400, 0x1010]) | (rng.below(8) << 13);
+        t.write(at + 8, &(offset as u16).to_le_bytes());
+        t.write(at + 0xa, &(size as u16).to_le_bytes());
+        params.push(if rng.chance(4) { 0 } else { at });
+    }
+    t.stub_seq(h20::FIND_PARAMETER, true, 1, 1, &params);
+}
+
+#[rustfmt::skip]
+const CASES20: &[Case] = &[
+    framed(Case { prep: Some(prep_scroll_parts), ..cdecl("draw_cross_menu_scroll_parts", 0x008e_6cc0, 7, &[(h20::DRAW_CROSS_BOX, K::Cdecl(6))], |m, _, a| { let slots = slots_at(m, a); gh20::draw_cross_menu_scroll_parts(m, slots, a[0], a[1], a[2], a[3], a[4] as i32, a[5] as i32, a[6] as i32); Out::None }) }, 0, 0x1c),
+    framed(Case { prep: Some(prep_mesh_alpha), ..cdecl("character_set_mesh_alpha", 0x0063_b810, 3, &[(h20::SET_MESH_VISIBLE, K::This(2)), (h20::FORCE_TRANSPARENT, K::Cdecl(2))], |m, _, a| { gh20::character_set_mesh_alpha(m, frame_ebp(), a[0], a[2]); Out::None }) }, 0x24, 0),
+    framed(Case { prep: Some(prep_map_yiq), ..method("scene_update_map_yiq", 0x0067_1da0, This::Object, 0, &[(h20::GET_YIQ_PARAM, K::This(6))], |m, this, _| { gh20::scene_update_map_yiq(m, frame_ebp(), this); Out::None }) }, 0x3c, 0),
+];
+
+#[test]
+fn batch20_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES20, n, &mut Rng(0x2020_b020));
     });
 }

@@ -25,6 +25,7 @@ use ffx_prender::h3_glue16::bridge as g16;
 use ffx_prender::h3_glue17::bridge as g17;
 use ffx_prender::h3_glue18::bridge as g18;
 use ffx_prender::h3_glue19::bridge as g19;
+use ffx_prender::h3_glue20::bridge as g20;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1452,13 +1453,12 @@ ported! {
     PhyreScene_textureVideoUnload @ 0x0067_0760 => extern "thiscall" fn scene_texture_video_unload(this: u32) -> u32 {
         g16::scene_texture_video_unload(&mut mem(), this)
     }
-    // `PhyreScene_setupSamplers_0065f290` (g16::scene_setup_samplers) is
-    // not hooked: its oracle test passes, but with the hook battle-attack-1
-    // (x 73..74, y 549..561) and menu-shop-2/-7 differ by a few UI pixels
-    // in every run, and not with it disabled (r5, 2026-10-26). The
-    // original keeps 4.0 on the x87 stack across each sampler's register
-    // call (0x0058cf80); a callee that fills the stack would see one slot
-    // less there. Open.
+    /// `PhyreScene_setupSamplers_0065f290(this)`. Hooked again (r6): the
+    /// few UI pixels r5 saw came from pre-lockstep state, which the
+    /// original shows too (pixel-regress, 2026-10-26).
+    PhyreScene_setupSamplers_0065f290 @ 0x0065_f290 => extern "thiscall" fn scene_setup_samplers(this: u32) -> u32 {
+        g16::scene_setup_samplers(&mut mem(), this)
+    }
     /// `PhyreScene_setupPostProcessParams(this)`.
     PhyreScene_setupPostProcessParams @ 0x0066_f140 => extern "thiscall" fn scene_setup_post_process_params(this: u32) -> u32 {
         g16::scene_setup_post_process_params(&mut mem(), this)
@@ -1538,6 +1538,24 @@ ported! {
     graphicCharacterUnloadTask @ 0x0063_7980 => extern "C" fn character_unload_task(chr: u32) {
         let mut f = StackFrame::<3>::new();
         let _ = g19::character_unload_task(&mut mem(), f.at() + 0xc, chr);
+    }
+
+    // ---- round 6 batch 20 (ffx_prender::h3_glue20) ----
+    /// `DrawCrossMenuScrollParts(x, y, w, h, first, shown, total)`: it
+    /// stores floats over the `y` and `total` slots.
+    DrawCrossMenuScrollParts @ 0x008e_6cc0 => extern "C" fn draw_cross_menu_scroll_parts(x: u32, y: u32, w: u32, ht: u32, first: u32, shown: u32, total: u32; slots: u32) {
+        g20::draw_cross_menu_scroll_parts(&mut mem(), slots, x, y, w, ht, first.cast_signed(), shown.cast_signed(), total.cast_signed());
+    }
+    /// `graphicCharacterInstanceSetMeshAlpha(chr, _, alpha)`.
+    graphicCharacterInstanceSetMeshAlpha @ 0x0063_b810 => extern "C" fn character_set_mesh_alpha(chr: u32, unused: u32, alpha: u32) {
+        let _ = unused;
+        let mut f = StackFrame::<9>::new();
+        g20::character_set_mesh_alpha(&mut mem(), f.at() + 0x24, chr, alpha);
+    }
+    /// `PhyreScene_updateMapYIQ(this)` (`ecx` only).
+    PhyreScene_updateMapYIQ @ 0x0067_1da0 => extern "thiscall" fn scene_update_map_yiq(this: u32) {
+        let mut f = StackFrame::<0xf>::new();
+        g20::scene_update_map_yiq(&mut mem(), f.at() + 0x3c, this);
     }
 }
 
