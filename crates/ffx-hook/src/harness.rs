@@ -72,7 +72,7 @@
 //! | `shotwhen <range> <value hex> <mask hex> <frames> <windows path>` | `ok <w> <h> update <n>`: as `waitfor`, then the image of exactly the update `n` after which the bytes first matched, in real time too (`docs/harness.md`, boot) |
 //! | `loadsave <slot\|windows path>` | `ok <file> map <n> entrance <n> …`: starts the game from that save file without the title menu ([`crate::loadsave`]) |
 //! | `events` | `ok <n>` then `n` lines: files opened since the last call |
-//! | `gfxcapture <windows dir>` | `ok <n> draws`: the next frame's D3D11 calls (`gfx`, needs `FFX_GFX=1`) |
+//! | `gfxcapture <windows dir> [hash] [frames N] [now] [async]` | `ok <n> draws`: the next frame's D3D11 calls (`gfx`, needs `FFX_GFX=1`); `now` in lockstep holds exactly the updates after the boundary the main thread is held at, and fails if a frame shows another (`docs/renderer.md`, "Reference captures") |
 //! | `gfxreplay <capture.ffxgfx> [out dir]` | the capture's scene drawn by `ffx-draw` in place of the game's in the next frame, compared with the capture (`gfx::replay`, `docs/draw.md`) |
 //! | `rustmap [on\|off]` | the Rust map path's statistics (`gfx::scene`, needs `FFX_RUST_MAP=1`), or turns it on or off from the next map pass |
 //! | `gfxstats` | `ok frames <n> draws <n>`: draws in the last frame |

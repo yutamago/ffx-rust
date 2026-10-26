@@ -152,6 +152,13 @@ pub struct Capture {
     backbuffer: usize,
     /// `State::reborn`'s length when the capture started.
     reborn_at: usize,
+    /// `now` in lockstep: the frame boundary the main thread was held at
+    /// when the capture was asked for. The capture starts right after the
+    /// present of that update and its frame `k` must show update
+    /// `armed + 1 + k` ([`on_present`]).
+    armed: Option<u32>,
+    /// Frames that showed another update than `armed` asks for.
+    misses: Vec<String>,
     /// The scene builder's inputs at each map `renderWorld` call
     /// (`crate::world::render_world`), each with its `Wire` block.
     inputs: Vec<(
@@ -164,6 +171,9 @@ static PENDING: Mutex<Option<Capture>> = Mutex::new(None);
 static DRAW_RANGE: Mutex<Option<(u32, u32)>> = Mutex::new(None);
 /// The reply of a detached (`async`) capture.
 static RESULT: Mutex<Option<Receiver<String>>> = Mutex::new(None);
+/// The update the last `Present` showed (`harness::present_label`;
+/// `u32::MAX`: unknown), stored under the state lock by [`on_present`].
+static LAST_PRESENTED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
 /// The swap chain of the last `Present`.
 static SWAP_CHAIN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 /// Whether a capture is running: the `renderWorld` hook then reads the
@@ -310,6 +320,8 @@ impl Capture {
             backbuffer: 0,
             reborn_at: 0,
             inputs: Vec::new(),
+            armed: None,
+            misses: Vec::new(),
         }
     }
 
@@ -416,15 +428,42 @@ pub fn request(args: &str) -> String {
     // Files opened before the capture do not belong to it.
     let _ = crate::world::take_opened();
     if now {
-        // The render thread is held in Present (the caller says so): the
-        // next calls are the next frame's.
+        // In lockstep the main thread is held at boundary `f`, and the
+        // present of update `f` waits for it to leave: the capture is armed
+        // at that present, so it holds updates f + 1, f + 2, ... exactly.
+        // The render thread may not have got there yet (it runs behind the
+        // main thread); then the capture waits for it ([`on_present`]).
+        let boundary = (crate::harness::lockstep() && crate::harness::at_boundary())
+            .then(|| crate::harness::reached().saturating_sub(1));
         c.add_sample(sample(0, When::Held));
-        // SAFETY: the swap chain of the last Present.
-        c.backbuffer = unsafe { back_buffer(SWAP_CHAIN.load(Ordering::Acquire) as Ptr) };
+        c.armed = boundary;
+        if let Some(f) = boundary {
+            c.lines.push(format!("armed at boundary {f}"));
+        }
         let mut s = state();
-        c.reborn_at = s.reborn.len();
-        s.capture = Some(c);
-        INPUTS_WANTED.store(true, Ordering::Release);
+        let last = LAST_PRESENTED.load(Ordering::Acquire);
+        match boundary {
+            Some(f) if last == u32::MAX || last < f => {
+                // not presented yet: start at its present (PENDING is
+                // taken under the state lock, as `on_present` takes it)
+                if let Ok(mut p) = PENDING.lock() {
+                    *p = Some(c);
+                }
+                drop(s);
+            }
+            Some(f) if last > f => {
+                return format!("err the present of update {f} has passed (now {last})");
+            }
+            _ => {
+                // The render thread is held in Present (the caller says
+                // so): the next calls are the next frame's.
+                // SAFETY: the swap chain of the last Present.
+                c.backbuffer = unsafe { back_buffer(SWAP_CHAIN.load(Ordering::Acquire) as Ptr) };
+                c.reborn_at = s.reborn.len();
+                s.capture = Some(c);
+                INPUTS_WANTED.store(true, Ordering::Release);
+            }
+        }
     } else if let Ok(mut p) = PENDING.lock() {
         *p = Some(c);
     }
@@ -1450,6 +1489,18 @@ unsafe fn end_frame(s: &mut State, c: &mut Capture, swap_chain: Ptr) {
         present_thread: c.present_thread,
     }));
     c.add_sample(sample(c.frame, When::Present));
+    if let Some(f) = c.armed {
+        let want = f + 1 + c.frame;
+        let shown = crate::harness::present_label();
+        if shown != Some(want) {
+            let shown =
+                shown.map_or_else(|| "an unknown update".to_owned(), |l| format!("update {l}"));
+            c.misses.push(format!(
+                "frame {} shows {shown}, not update {want}",
+                c.frame
+            ));
+        }
+    }
     // The scene inputs of the update this frame shows.
     if let Some(label) = crate::harness::present_label() {
         let mut n = 0;
@@ -1478,6 +1529,8 @@ unsafe fn end_frame(s: &mut State, c: &mut Capture, swap_chain: Ptr) {
 /// On the render thread, inside Present.
 pub unsafe fn on_present(swap_chain: Ptr) {
     let mut s = state();
+    let label = crate::harness::present_label();
+    LAST_PRESENTED.store(label.unwrap_or(u32::MAX), Ordering::Release);
     if let Some(mut c) = s.capture.take() {
         // SAFETY: forwarded.
         unsafe { end_frame(&mut s, &mut c, swap_chain) };
@@ -1493,11 +1546,15 @@ pub unsafe fn on_present(swap_chain: Ptr) {
         }
         INPUTS_WANTED.store(false, Ordering::Release);
         c.lines.extend(crate::world::watch::report());
-        let reply = if c.opts.hash {
+        let misses = std::mem::take(&mut c.misses);
+        let mut reply = if c.opts.hash {
             finish_hashed(&s, c)
         } else {
             finish(&s, c)
         };
+        if !misses.is_empty() {
+            reply.0 = format!("err {} ({})", misses.join("; "), reply.0);
+        }
         // The copies of dynamic vertex and index buffers were for the
         // capture: kept, they would stand for the buffers from now on
         // (the live link reads a copy before the mapped memory) and
@@ -1515,7 +1572,27 @@ pub unsafe fn on_present(swap_chain: Ptr) {
         return;
     }
     SWAP_CHAIN.store(swap_chain as usize, Ordering::Release);
-    if let Some(mut c) = PENDING.lock().ok().and_then(|mut p| p.take()) {
+    let Ok(mut pending) = PENDING.lock() else {
+        return;
+    };
+    // An armed capture starts after the present of its boundary's update.
+    if let Some(c) = pending.as_mut()
+        && let Some(f) = c.armed
+        && label != Some(f)
+    {
+        if let Some(l) = label.filter(|&l| l > f) {
+            let c = pending.take();
+            drop(pending);
+            if let Some(tx) = c.and_then(|mut c| c.reply.take()) {
+                let _ = tx.send(format!(
+                    "err the present of update {f} was missed (this one shows update {l})"
+                ));
+            }
+        }
+        return;
+    }
+    if let Some(mut c) = pending.take() {
+        drop(pending);
         c.add_sample(sample(0, When::Present));
         // SAFETY: inside its Present.
         c.backbuffer = unsafe { back_buffer(swap_chain) };

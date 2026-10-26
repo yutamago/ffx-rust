@@ -1,0 +1,35 @@
+# Draw-diff gate captures (M4 item 3, docs/drawdiff.md "Scene gates"):
+# hash-mode captures of three frames each of
+#   kami0100  the Thunder Plains travel agency (save ffx_005, indoor), at
+#             ctrl work 0's count 101 (as event-agency-1, menu-grid);
+#   battle    a land battle started from there, `battle 33 0 3` (genk16_03,
+#             the Djose highroad: Ochu and Garm; as battle-overdrive), 60
+#             frames after the battle phase byte turns 1.
+# Needs the graphics layer (FFX_GFX=1); not part of run-all.sh. Run it
+# through tools/scene-gate-capture.sh, or
+#   FFX_GFX=1 target/release/examples/replay tools/replays/draw-gate-kami.txt \
+#     '<windows folder>\draw.trace' [original]
+# Captures land beside the trace ($OUT\kami0100, $OUT\battle):
+# keep them in ~/ffx-work/m4/captures, never in git. Compare two runs with
+# tools/scene-gate.sh kami0100|battle <run A> <run B>.
+#
+# `pin` right after `lockstep on` (docs/harness.md, "Pinned state"). Each
+# capture is `gfxcapture ... now async` at a boundary the script reached
+# in lockstep: it holds the next three updates exactly (the harness checks
+# the updates the frames show and fails the reply otherwise).
+load direct 5 kami0100
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+read 0x01325d94 4
+readp 0x00ccb9d8 0xfaf4 4
+gfxcapture $OUT\kami0100 hash frames 3 now async
+wait 3
+gfxcapture result
+battle 33 0 3
+waitfor 0x0112a8e0:1 01 ff 4000
+wait 60
+gfxcapture $OUT\battle hash frames 3 now async
+wait 3
+gfxcapture result

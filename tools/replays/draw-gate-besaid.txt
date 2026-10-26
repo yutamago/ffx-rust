@@ -1,0 +1,56 @@
+# Draw-diff gate captures (M4 item 3, docs/drawdiff.md "Scene gates"):
+# hash-mode captures of three frames each of Besaid beach (bsil0000, save
+# ffx_003, ctrl work 0's count 101, as event-besaid-1) and of the river
+# below the cliff (bsil0300, map 0x29, count 32, as draw-bsil0300.txt),
+# reached by event-besaid's walk, and of the main menu opened there. Needs the graphics layer (FFX_GFX=1);
+# not part of run-all.sh. Run it through tools/scene-gate-capture.sh, or
+#   FFX_GFX=1 target/release/examples/replay tools/replays/draw-gate-besaid.txt \
+#     '<windows folder>\draw.trace' [original]
+# Captures land beside the trace ($OUT\bsil0000, $OUT\bsil0300, $OUT\menu, 5-10 MB
+# each): keep them in ~/ffx-work/m4/captures, never in git. Compare two
+# runs with tools/scene-gate.sh bsil0000|bsil0300|menu <run A> <run B>.
+#
+# `pin` right after `lockstep on` (docs/harness.md, "Pinned state"). Each
+# capture is `gfxcapture ... now async` at a boundary the script reached
+# in lockstep: it holds the next three updates exactly (the harness checks
+# the updates the frames show and fails the reply otherwise), and the
+# `wait 3` that lets them run shifts the later waits by 3.
+load direct 3 bsil0000
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+read 0x01325d94 4
+readp 0x00ccb9d8 0xfaf4 4
+gfxcapture $OUT\bsil0000 hash frames 3 now async
+wait 3
+gfxcapture result
+# event-besaid's walk: off the beach to map 0x14, Wakka's trigger, right to
+# map 0x29 (as draw-bsil0300.txt; 3 frames less after the capture)
+wait 34
+pad down+left
+waitfor 0x0112ca90:4 14004600 ffffffff 600
+pad
+waitfor 0x01325d94:4 20000000 e0ffffff 1500
+pad up
+waitfor 0x0112d67c:2 7700 ffff 600
+pad
+wait 40
+waitfor 0x01326d84:4 00000000 ffffffff 3000
+wait 120
+pad right
+waitfor 0x0112ca90:4 29001400 ffffffff 900
+pad
+waitfor 0x01325d94:4 20000000 e0ffffff 1500
+read 0x01325d94 4
+readp 0x00ccb9d8 0xfaf4 4
+gfxcapture $OUT\bsil0300 hash frames 3 now async
+wait 3
+gfxcapture result
+# the main menu, opened there once the field takes input (menu-browse.txt
+# waits 120 frames after the load; menu-grid's `press triangle 8 60`)
+wait 117
+press triangle 8 60
+gfxcapture $OUT\menu hash frames 3 now async
+wait 3
+gfxcapture result

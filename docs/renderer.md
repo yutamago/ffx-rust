@@ -411,6 +411,16 @@ gfxcapture result
   while lockstep holds the render thread in `Present` (after a `wait` or
   `waitfor`); the main thread then waits too, and the capture first reads
   the scene inputs as the main thread left them (the *held* sample).
+  In lockstep (2026-10-26, draw-gates) `now` is armed at the boundary
+  the main thread is held at, `f`: the capture starts right after the
+  present of update `f` (at once if the render thread has done it,
+  otherwise when it gets there; it runs behind the main thread), so its
+  frame `k` is update `f + 1 + k` exactly. A frame that shows another
+  update fails the reply (`err frame k shows update n, not update m`),
+  and so does a present of `f` that has already passed. Before, a
+  render thread still drawing update `f` put the end of that frame into
+  frame 0, and captures now and then landed a frame off
+  (`frame.txt` notes `armed at boundary f` and `shows update n`).
 - `async`: answer `ok armed` at once; `gfxcapture result` waits for the
   reply. Lockstep needs it: a blocking `gfxcapture` would wait for frames
   that lockstep does not let run. The script does `gfxcapture … now
