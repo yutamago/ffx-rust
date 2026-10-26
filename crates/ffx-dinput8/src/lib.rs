@@ -115,6 +115,10 @@ unsafe fn install_hooks(base: usize) {
                 .map(|(name, outcome)| format!("  {name}: {outcome:?}"))
                 .collect();
             log(&lines.join("\n"));
+            // The harness's loader turn around the original lock when its
+            // port was left out (docs/harness.md, "Load pacing").
+            // SAFETY: forwarded from the caller.
+            unsafe { ffx_hook::loader_turn::install_fallback(base, &hooks, &results) };
         }
         Err(wrong) => log(&format!("  not patching: {wrong}")),
     }
