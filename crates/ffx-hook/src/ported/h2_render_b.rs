@@ -2001,6 +2001,26 @@ ported! {
         let ebp = fr.at() + h14::FRAME_BELOW;
         h14::get_buffer(&mut mem(), this, a, camera, c, ebp)
     }
+    // ---- h2-render-b rest (h2_more13) ----
+    /// `PRendererD3D11::bindRenderTargets(this, flags)` -> `al`.
+    PRendererD3D11_bindRenderTargets_0058c830 @ 0x0058_c830 => extern "thiscall" fn s_0058c830(this: u32, flags: u32) -> u8 {
+        // ebp - 0x23c .. ebp: the null-view array, locals, the viewport
+        let mut frame = super::StackFrame::<0x8f>::new();
+        let at = frame.at();
+        ffx_prender::h2_more13::bridge::bind_targets(&mut mem(), at, this, flags)
+    }
+    /// `setTextureParameters(this, owner, program, index, entries, unused, count)` -> `al` 1.
+    Phyre_PRendering_PShaderProgramBindingNVN_setTextureParameters @ 0x0059_b3d0 => extern "thiscall" fn s_0059b3d0(this: u32, owner: u32, program: u32, index: u32, entries: u32, _unused: u32, count: u32) -> u8 {
+        ffx_prender::h2_more13::bridge::set_texture_parameters(&mut mem(), this, owner, program, index, entries, count as u16)
+    }
+    /// `PTexture2DD3D11::createDeviceTexture(this, data, bind, unused, map)` -> 0 or an error code.
+    PTexture2DD3D11_CreateDeviceTexture_0058fc20 @ 0x0058_fc20 => extern "thiscall" fn s_0058fc20(this: u32, data: u32, bind: u32, _unused: u32, map: u32) -> u32 {
+        // ebp - 0x230 .. ebp: the view desc, the locks, the texture descs,
+        // the subresource array
+        let mut frame = super::StackFrame::<0x8c>::new();
+        let ebp = frame.at() + 0x230;
+        ffx_prender::h2_more13::bridge2::create_device_texture(&mut mem(), ebp, this, data, bind as u8, map as u8)
+    }
 }
 
 /// The `PNamedSemanticDescriptor` constructor's words in

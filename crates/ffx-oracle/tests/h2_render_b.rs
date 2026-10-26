@@ -41,6 +41,8 @@ mod cases10;
 mod cases11;
 #[path = "h2_render_b/cases12.rs"]
 mod cases12;
+#[path = "h2_render_b/cases13.rs"]
+mod cases13;
 #[path = "h2_render_b/cases14.rs"]
 mod cases14;
 #[path = "h2_render_b/cases3.rs"]
@@ -1033,6 +1035,7 @@ fn run_cases(rounds: u32) {
             .chain(cases11::CASES)
             .chain(cases12::CASES)
             .chain(cases14::CASES)
+            .chain(cases13::CASES)
             .filter(|c| filter.split('|').any(|f| c.name.contains(f)))
         {
             for &(sym, n, pops, this) in case.callees {
@@ -1076,6 +1079,7 @@ fn h2_render_b_cases_are_unique() {
         .chain(cases11::CASES)
         .chain(cases12::CASES)
         .chain(cases14::CASES)
+        .chain(cases13::CASES)
     {
         assert!(seen.insert(c.addr), "{} twice", c.name);
     }

@@ -199,7 +199,9 @@ pub mod bridge {
         let width = unsigned_to_f32(h.read(h.rebase(SCREEN_WIDTH)));
         let height = unsigned_to_f32(h.read(h.rebase(SCREEN_HEIGHT)));
         // `isBound` answers in `al`
-        let bound = h.call_sym(IS_BOUND, Conv::Thiscall(constants), &[]).to_le_bytes()[0];
+        let bound = h
+            .call_sym(IS_BOUND, Conv::Thiscall(constants), &[])
+            .to_le_bytes()[0];
         if bound == 0 {
             h.call_sym(BIND, Conv::Thiscall(constants), &[]);
         }
