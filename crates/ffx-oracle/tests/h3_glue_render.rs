@@ -44,6 +44,7 @@ use ffx_prender::h3_glue18::{self as h18, bridge as gh18};
 use ffx_prender::h3_glue19::{self as h19, bridge as gh19};
 use ffx_prender::h3_glue20::{self as h20, bridge as gh20};
 use ffx_prender::h3_glue21::{self as h21, bridge as gh21};
+use ffx_prender::h3_glue22::{self as h22, bridge as gh22};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -6780,4 +6781,53 @@ fn prep_casters(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: 
         })
         .collect();
     t.stub_seq(h21::CASTER_VISIBLE, true, 1, 1, &tests);
+}
+
+// ---- round 6 batch 22 (ffx_prender::h3_glue22) ----
+
+/// A map path with 0..5 slashes and segments of 0..20 letters, the preset
+/// lookup (found, at -0x10, or not) and its floats.
+fn prep_hdao(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let post = t.zeros(0x1_2400);
+    *this = post;
+    t.write(post + 0x1_23d1, &[rng.next() as u8 | 1]);
+    let mut path = vec![];
+    for _ in 0..rng.below(6) {
+        for _ in 0..rng.below(4) {
+            path.push(b'a' + rng.below(26) as u8);
+        }
+        path.push(b'/');
+    }
+    for _ in 0..rng.below(20) {
+        path.push(b'a' + rng.below(26) as u8);
+    }
+    if rng.chance(2) {
+        path.push(b'/');
+    }
+    path.push(0);
+    let at = obj + 0x100;
+    t.write(at, &path);
+    args[0] = at;
+    let node = obj + 0x400;
+    let preset = obj + 0x500;
+    t.w32(node + 0x10, preset);
+    for k in 0..13 {
+        let v = rng.float().to_bits();
+        t.w32(preset + 4 * k, v);
+    }
+    let found = pick(rng, &[node, node, 0, 0xffff_fff0]);
+    t.stub_ret(h22::MAP_FIND, true, 1, 1, found);
+}
+
+#[rustfmt::skip]
+const CASES22: &[Case] = &[
+    framed(with_cookie(Case { prep: Some(prep_hdao), ..method("post_set_hdao_setting", 0x0069_85d0, This::Object, 1, &[], |m, this, a| { gh22::post_set_hdao_setting(m, frame_ebp(), |len| gh22::hdao_buffer(frame_ebp(), len), this, a[0]); Out::None }) }), 0x10, 0),
+];
+
+#[test]
+fn batch22_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES22, n, &mut Rng(0x2222_b022));
+    });
 }

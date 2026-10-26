@@ -27,6 +27,7 @@ use ffx_prender::h3_glue18::bridge as g18;
 use ffx_prender::h3_glue19::bridge as g19;
 use ffx_prender::h3_glue20::bridge as g20;
 use ffx_prender::h3_glue21::bridge as g21;
+use ffx_prender::h3_glue22::bridge as g22;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1593,6 +1594,19 @@ ported! {
     PhyreScene_rebuildMapObjects_00658ae0 @ 0x0065_8ae0 => extern "thiscall" fn scene_rebuild_map_objects(this: u32) -> u32 {
         let mut f = StackFrame::<0xe>::new();
         g21::scene_rebuild_map_objects(&mut mem(), f.at() + 0x38, this)
+    }
+
+    // ---- round 6 batch 22 (ffx_prender::h3_glue22) ----
+    /// `PostProcessManager_setHDAOSetting(this, path)`: the path segment
+    /// goes to a per-call buffer (the original's `alloca`).
+    PostProcessManager_setHDAOSetting @ 0x0069_85d0 => extern "thiscall" fn post_set_hdao_setting(this: u32, path: u32) {
+        let mut f = StackFrame::<4>::new();
+        let mut segment: Vec<u8> = Vec::new();
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        g22::post_set_hdao_setting(&mut mem(), f.at() + 0x10, |len| {
+            segment.resize(len as usize, 0);
+            segment.as_mut_ptr() as usize as u32
+        }, this, path);
     }
 }
 
