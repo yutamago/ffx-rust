@@ -34,6 +34,8 @@ use ffx_prender::glue8::{self, bridge as g8};
 use ffx_prender::glue9::{self, bridge as g9};
 use ffx_prender::glue10::{self, bridge as g10};
 use ffx_prender::glue11::{self, bridge as g11};
+use ffx_prender::h3_glue12::{self as h12, bridge as gh12};
+use ffx_prender::h3_glue13::{self as h13, bridge as gh13};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -3754,5 +3756,750 @@ fn batch11_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 12 } else { 60 };
         run_cases(t, CASES11, n, &mut Rng(0x1111_b011));
+    });
+}
+
+// ---- round 4 batch 12 (ffx_prender::h3_glue12) ----
+
+/// A float that is often in `0..=1` or just past it (the fade's range).
+fn fade_float(rng: &mut Rng) -> f32 {
+    match rng.below(4) {
+        0 => rng.below(1000) as f32 / 999.0,
+        1 => 1.0 + (rng.below(100) as f32 - 50.0) / 1000.0,
+        2 => -(rng.below(100) as f32) / 100.0,
+        _ => rng.float(),
+    }
+}
+
+/// The fog manager: a fade type (0, 1, or another), its time and `dt`.
+fn prep_fog_fade(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let kind = [0, 1, 0, 1, 2, rng.next()][rng.below(6) as usize];
+    t.w32(obj + 0xb4, kind);
+    // now and then the time lands on 1 exactly (not past it: no change)
+    let (time, dt) = match rng.below(4) {
+        0 => (0.5, 0.5),
+        1 => (fade_float(rng), rng.float()),
+        _ => (fade_float(rng), rng.below(100) as f32 / 1000.0),
+    };
+    t.w32(obj + 0xb0, f32::to_bits(time));
+    args[0] = f32::to_bits(dt);
+}
+
+/// The scene's render-target holder (`+0x10cc` -> `+0x8c`, its byte `+4`
+/// clear: set, the original reads the target at 0x20), the target's
+/// height, the minimap type and blitzball.
+fn prep_minimap_top(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let block = obj + 0x1000;
+    t.w32(obj + 0x10cc, block);
+    let holder = obj + 0x1200;
+    t.w32(block + 0x8c, holder);
+    let target = obj + 0x1300;
+    t.w32(holder, target);
+    t.write(holder + 4, &[0]);
+    let height = match rng.below(4) {
+        0 => [720, 1080, 1440, 2160][rng.below(4) as usize],
+        1 => rng.below(5000),
+        2 => rng.next() | 0x8000_0000,
+        _ => rng.next(),
+    };
+    t.w32(target + 0x20, height);
+    t.w32(
+        obj + 0x74,
+        [0, 1, 2, 3, 4, 5, rng.next()][rng.below(7) as usize],
+    );
+    t.write(obj, &[u8::from(rng.chance(2))]);
+}
+
+/// The default targets (`+0x10cc` -> `+0x8c`, `+0x90`) and a renderer.
+fn prep_restore_targets(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let block = obj + 0x1000;
+    t.w32(obj + 0x10cc, block);
+    let a = rng.next();
+    let b = rng.next();
+    t.w32(block + 0x8c, a);
+    t.w32(block + 0x90, b);
+    let r = rng.next();
+    t.w32(obj + 0xd0, r);
+}
+
+fn prep_auto_test(_: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], _: &mut Rng) {
+    *this = obj + 0x100;
+}
+
+/// A scene big enough for its fade fields (`+0x10dcc`), the movie fade,
+/// a mesh list (some null) and a renderer; `beginScene` mostly 0.
+fn prep_fade_meshes(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    t.write(scene + 0x10dcc, &[u8::from(!rng.chance(3))]);
+    t.global(h12::MOVIE_FADING.sym, u32::from(rng.chance(3)));
+    let n = if rng.chance(5) { 0 } else { rng.below(5) };
+    t.w32(scene + 0x3860, n);
+    let list = obj + 0x100;
+    t.w32(scene + 0x3868, list);
+    for k in 0..n {
+        let mesh = if rng.chance(4) {
+            0
+        } else {
+            obj + 0x400 + 0x40 * k
+        };
+        t.w32(list + 4 * k, mesh);
+        let inst = rng.next();
+        t.w32(obj + 0x410 + 0x40 * k, inst);
+    }
+    let renderer = obj + 0x1000;
+    t.w32(scene + 0xd0, renderer);
+    let pass = rng.next();
+    t.w32(renderer + 0x13c, pass);
+    let name = rng.word();
+    t.global(h12::FADE_SKIP_NAME.sym, name);
+    let begin = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h12::BEGIN_SCENE, true, 1, 1, begin);
+    let same = u32::from(rng.chance(3)) | (rng.next() & 0xffff_ff00);
+    t.stub_ret(h12::NAME_IS, true, 1, 1, same);
+}
+
+#[rustfmt::skip]
+const CASES12: &[Case] = &[
+    Case { prep: Some(prep_fog_fade), ..method("fog_update_chr_fade", 0x006e_3f40, This::Object, 1, &[(h12::SET_CHR_FOG_EFFECT, K::This(1))], |m, this, a| { gh12::fog_update_chr_fade(m, this, a[0]); Out::None }) },
+    Case { prep: Some(prep_minimap_top), ..method("scene_minimap_viewport_top", 0x0065_e4a0, This::Object, 0, &[(h12::MINIMAP_VIEWPORT_SIZE, K::This(0))], |m, this, _| u(gh12::scene_minimap_viewport_top(m, this))) },
+    with_seh(framed(Case { prep: Some(prep_restore_targets), ..method("scene_restore_default_targets", 0x0066_c7f0, This::Object, 0, &[(h12::RENDER_SURFACE_CTOR, K::This(2)), (h12::RENDER_SURFACE_DTOR, K::This(0)), (h12::SET_COLOR_TARGET, K::This(2)), (h12::SET_DEPTH_STENCIL_TARGET, K::This(1))], |m, this, _| u(gh12::scene_restore_default_targets(m, frame_ebp(), this))) }, 0x2c, 0)),
+    framed(Case { prep: Some(prep_auto_test), ..method("auto_test_manager_ctor", 0x006b_ca90, This::Object, 0, &[(h12::CREATE_THREAD_PS2, K::Cdecl(2)), (h12::START_THREAD_PS2, K::Cdecl(2))], |m, this, _| u(gh12::auto_test_manager_ctor(m, frame_ebp(), this))) }, 0x30, 0),
+    Case { prep: Some(prep_fade_meshes), ..method("scene_render_fade_meshes", 0x0065_0ea0, This::Object, 0, &[(h12::SET_CAMERA, K::This(1)), (h12::UPDATE_VIEW_MATRICES, K::This(0)), (h12::RENDER_MESH_INSTANCE, K::This(4)), (h12::END_SCENE, K::This(1))], |m, this, _| u(gh12::scene_render_fade_meshes(m, this))) },
+    Case { prep: Some(prep_add_unique), ..method("scene_add_unique", 0x0065_6a00, This::Object, 1, &[(h12::MEMCPY, K::Cdecl(3)), (h12::USER_FREE, K::Cdecl(1))], |m, this, a| u(gh12::scene_add_unique(m, this, a[0]))) },
+    with_cookie(framed(Case { prep: Some(prep_unload_magic), ..method("scene_unload_magic_vfx_texture", 0x0067_0f00, This::Object, 1, &[(h12::FIOS_UNIFY_FILENAME, K::Cdecl(3)), (h12::SPRINTF_SLOT, K::ImportC(4)), (h12::UNLOAD_VFX_TEXTURE, K::This(2))], |m, this, a| u(gh12::scene_unload_magic_vfx_texture(m, frame_ebp(), this, a[0]))) }, 0x204, 0)),
+    Case { prep: Some(prep_shadow_grid), ..method("shadow_insert_block", 0x006c_e4f0, This::Object, 6, &[(h12::PRINTF_SLOT, K::ImportC(1))], |m, this, a| u(gh12::shadow_insert_block(m, this, a[0], a[1], a[2], a[3], a[4], a[5]))) },
+    Case { prep: Some(prep_shadow_grid), ..method("shadow_insert_cell", 0x006c_e3e0, This::Object, 6, &[(h12::PRINTF_SLOT, K::ImportC(1))], |m, this, a| u(gh12::shadow_insert_cell(m, this, a[0], a[1], a[2], a[3], a[4], a[5]))) },
+    Case { prep: Some(prep_scene_resize), ..method("scene_resize", 0x0066_c580, This::Object, 0, RESIZE_STUBS, |m, this, _| u(gh12::scene_resize(m, this))) },
+    Case { prep: Some(prep_fade_world), ..method("scene_render_fade_world", 0x0065_0f80, This::Object, 0, &[(h12::CLEAR_SCENE, K::This(1)), (h12::SET_CAMERA, K::This(1)), (h12::UPDATE_VIEW_MATRICES, K::This(0)), (h12::RENDER_WORLD, K::This(3)), (h12::GET_APPLICATION, K::Getter), (h12::END_SCENE, K::This(1))], |m, this, _| u(gh12::scene_render_fade_world(m, this))) },
+    framed(Case { prep: Some(prep_vector_parameter), ..method("write_vector_parameter", 0x0066_e4f0, This::Object, 2, &[(h12::WRITE_PARAMETER, K::This(2))], |m, this, a| u(gh12::write_vector_parameter(m, frame_ebp(), this, a[0], a[1]))) }, 0x10, 0),
+    Case { prep: Some(prep_dtt_copy), ..method("scene_copy_previous_frame_for_dtt", 0x0065_93d0, This::Object, 0, &[(h12::MOTION_BLUR_INSTANCE, K::Getter)], |m, this, _| Out::U8(gh12::scene_copy_previous_frame_for_dtt(m, this))) },
+    Case { prep: Some(prep_matrix), ..method("broken_screen_set_matrix", 0x006d_4a90, This::Object, 1, &[], |m, this, a| u(gh12::broken_screen_set_matrix(m, this, a[0]))) },
+    method("vfx_shader_manager_ctor", 0x006b_f4a0, This::Object, 0, &[(h12::FREE_LIST_CTOR, K::This(4))], |m, this, _| u(gh12::vfx_shader_manager_ctor(m, this))),
+    Case { prep: Some(prep_specular), ..cdecl("sg_set_specular", 0x0064_3cc0, 6, &[(h12::FIND_PARAMETER, K::This(1)), (h12::SET_PARAMETER_VALUE, K::This(2))], |m, _, a| { gh12::sg_set_specular(m, a[0], a[1], arr(&a[2..])); Out::None }) },
+    Case { prep: Some(prep_instantiate_loaded), ..cdecl("character_instantiate_loaded", 0x0063_9db0, 0, &[(h12::MAKE_INSTANCE, K::Cdecl(2)), (h12::OPERATOR_DELETE, K::Cdecl(1)), (h12::PHYRE_FREE, K::Cdecl(1))], |m, _, _| { gh12::character_instantiate_loaded(m); Out::None }) },
+    Case { prep: Some(prep_msaa), ..method("post_process_set_msaa", 0x0069_7e10, This::Object, 1, &[(h12::TEXTURE_IS_BOUND, K::This(0)), (h12::TEXTURE_UNBIND, K::This(0))], |m, this, a| u(gh12::post_process_set_msaa(m, this, a[0]))) },
+    Case { prep: Some(prep_unregister_by_name), ..method("texture_animation_unregister_by_name", 0x006b_1a70, This::Object, 1, &[(h12::UNREGISTER_CHARACTER_INSTANCE, K::This(1)), (h12::ANIMATION_RELEASE, K::This(0))], |m, this, a| { gh12::texture_animation_unregister_by_name(m, this, a[0]); Out::None }) },
+    Case { prep: Some(prep_draw_situation), ..method("scene_add_chr_draw_situation", 0x0065_64a0, This::Object, 1, &[(h12::WORLD_REMOVE_CLUSTER, K::This(1)), (h12::WORLD_ADD_CLUSTER, K::This(1)), (h12::ARRAY_RESERVE_16, K::This(1))], |m, this, a| { let r = gh12::scene_add_chr_draw_situation(m, this, a[0]); if a[0] as u8 == 0 { Out::None } else { u(r) } }) },
+    Case { prep: Some(prep_loading_screen), ..method("scene_render_loading_screen", 0x0066_b1e0, This::Object, 0, &[(h12::LOADING_IMPORT_SLOT, K::Import(1)), (h12::SLEEP_MS, K::Cdecl(1)), (h12::APP_UPDATE, K::This(0)), (h12::LOADING_SET_TIME, K::This(1)), (h12::LOADING_RENDER, K::This(1)), (h12::IGGY_RENDER, K::This(0)), (h12::DELETE_MESH_INSTANCES, K::This(0))], |m, this, _| u(gh12::scene_render_loading_screen(m, this))) },
+    Case { prep: Some(prep_delegation_init), ..method("delegation_helper_init", 0x006a_dc90, This::Object, 0, &[(h12::PHYRE_FREE, K::Cdecl(1))], |m, this, _| u(gh12::delegation_helper_init(m, this))) },
+    Case { prep: Some(prep_model_release), ..cdecl("model_buffer_release", 0x0072_c1b0, 1, &[(h12::USER_FREE, K::Cdecl(1))], |m, _, a| { gh12::model_buffer_release(m, a[0]); Out::None }) },
+];
+
+/// The index array (16 or not, owned or not), the allocation (failing
+/// now and then) and the node allocation.
+fn prep_delegation_init(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let count = [0x10, 0x8000_0010, 0, 3, 0x8000_0004, 0x11][rng.below(6) as usize];
+    t.w32(obj, count);
+    let old = if rng.chance(4) {
+        obj + 0x400
+    } else {
+        obj + 0x300
+    };
+    t.w32(obj + 4, old);
+    let p = if rng.chance(5) { 0 } else { obj + 0x400 };
+    t.stub_ret(h12::PHYRE_MALLOC, false, 2, 0, p);
+    t.stub_ret(h12::OPERATOR_NEW, false, 1, 0, obj + 0x600);
+}
+
+/// Model buffers in use or not with references and buffers, the count,
+/// and an index (in range or not; the high half ignored).
+fn prep_model_release(t: &mut Twins, _: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let n = rng.below(7);
+    t.global(h12::MODEL_BUFFER_COUNT.sym, n);
+    let base = t.rebase(h12::MODEL_BUFFERS);
+    for k in 0..8 {
+        let entry = base + 0x18c * k;
+        let mut bytes = vec![0u8; 0x18c];
+        for w in 5..0x18c / 4 {
+            if rng.chance(8) {
+                bytes[4 * w..4 * w + 4].copy_from_slice(&rng.next().to_le_bytes());
+            }
+        }
+        let used = u32::from(!rng.chance(3));
+        bytes[..4].copy_from_slice(&used.to_le_bytes());
+        let refs = [0u32, 1, 1, 2, 0xffff_ffff][rng.below(5) as usize];
+        bytes[4..8].copy_from_slice(&refs.to_le_bytes());
+        t.write(entry, &bytes);
+    }
+    args[0] = rng.below(8) | (rng.next() & 0xffff_0000);
+}
+
+/// The draw-situation stacks: the pending cluster flag, the depth (0..3,
+/// or negative) and its bases, the situation array (grown or not), and
+/// the original's never-written `[ebp-4]` set to 0 (the port's value).
+fn prep_draw_situation(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0000);
+    *this = scene;
+    let ebp = t.a.stack_range().end - 0x100 - 4 - 8;
+    t.w32(ebp - 4, 0);
+    t.write(scene + 0xfb44, &[u8::from(rng.chance(2))]);
+    let depth = [0, 1, 2, 3, 0xffff_ffff][rng.below(5) as usize];
+    t.w32(scene + 0xf954, depth);
+    for k in 0..8 {
+        let w = rng.next();
+        t.w32(scene + 0xf8cc + 4 * k, w);
+        let base = rng.below(100);
+        t.w32(scene + 0xf910 + 4 * k, base);
+    }
+    let n = rng.below(5);
+    t.w32(scene + 0xfb54, n);
+    let cap = [n, n + 1, n + 3, 0, 0x8000_0000][rng.below(5) as usize];
+    t.w32(scene + 0xfb58, cap);
+    t.w32(scene + 0xfb5c, obj + 0x100);
+    let situations = rng.below(9);
+    t.w32(scene + 0xfb60, situations);
+    args[0] = [0, 1, 0x80, 0xff, 0x100, 0x101][rng.below(6) as usize] | (rng.next() & 0xffff_0000);
+}
+
+/// A synthetic application (shown or not, its time, vtable `+0x28`), its
+/// renderer (vtable `+8`) and `flip`, the loading screen, the Iggy
+/// manager (or none) and window messages (a quit now and then).
+fn prep_loading_screen(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let app = obj + 0x1000;
+    t.stub_ret(h12::GET_APPLICATION, false, 0, 0, app);
+    t.write(
+        app + 0x3a0,
+        &[u8::from(rng.chance(3)), u8::from(rng.chance(3))],
+    );
+    let time = rng.float();
+    t.w32(app + 0x24, time.to_bits());
+    let present = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    let present = t.stub(None, 0xa08, true, 0, 0, Some(present));
+    let method = t.stub(None, 0xa28, true, 0, 0, Some(rng.next()));
+    t.w32(obj + 0x1c00 + 8, present);
+    t.w32(obj + 0x1c40 + 0x28, method);
+    t.w32(app + 0x124, obj + 0x1c00);
+    t.w32(app, obj + 0x1c40);
+    let flip = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h12::RENDERER_FLIP, true, 0, 0, flip);
+    let quit = u32::from(rng.chance(3));
+    t.stub_ret(h12::PROCESS_WINDOWS_MESSAGE, false, 0, 0, quit);
+    t.global(h12::LOADING_SCREEN.sym, obj + 0x1800);
+    let iggy = if rng.chance(3) { 0 } else { rng.next() | 1 };
+    t.global(h12::IGGY_MENU_MANAGER.sym, iggy);
+}
+
+/// A post-process manager with four target holders (live or not) and a
+/// sample count (valid or not).
+fn prep_msaa(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let pp = t.zeros(0x1_2300);
+    *this = pp;
+    for (k, off) in [0x8c, 0x90, 0x94, 0x98].into_iter().enumerate() {
+        let holder = obj + 0x100 + 0x10 * k as u32;
+        t.w32(pp + off, holder);
+        let texture = rng.next();
+        t.w32(holder, texture);
+        t.write(holder + 4, &[u8::from(rng.chance(4)), rng.next() as u8]);
+    }
+    args[0] = [0, 2, 4, 8, 16, 1, 3, 32, 0, 4][rng.below(10) as usize];
+}
+
+/// Animation entries with names (some null, some equal to the one
+/// asked), registered instances on them, and the name (null now and
+/// then).
+fn prep_unregister_by_name(
+    t: &mut Twins,
+    obj: u32,
+    this: &mut u32,
+    args: &mut [u32],
+    rng: &mut Rng,
+) {
+    *this = obj;
+    let names: [&[u8]; 4] = [b"ab\0", b"abc\0", b"b\0", b"\0"];
+    for (k, s) in names.iter().enumerate() {
+        t.write(obj + 0x600 + 0x10 * k as u32, s);
+    }
+    let n = rng.below(5);
+    t.w32(obj + 0x64, n | if rng.chance(3) { 0x8000_0000 } else { 0 });
+    t.w32(obj + 0x68, obj + 0x200);
+    for k in 0..n {
+        let entry = obj + 0x200 + 0x20 * k;
+        let name = obj + 0x600 + 0x10 * rng.below(4);
+        let word = match rng.below(4) {
+            0 => 0,
+            1 => 1,
+            2 => name | 1,
+            _ => name,
+        };
+        t.w32(entry + 0x18, word);
+    }
+    let m = rng.below(6);
+    t.w32(obj + 0x6c, m);
+    t.w32(obj + 0x70, obj + 0x400);
+    for j in 0..m {
+        let item = obj + 0x400 + 0xc * j;
+        t.w32(item, rng.below(5));
+        let instance = rng.next();
+        t.w32(item + 4, instance);
+    }
+    args[0] = if rng.chance(6) {
+        0
+    } else {
+        obj + 0x600 + 0x10 * rng.below(4)
+    };
+}
+
+/// 16 floats to copy.
+fn prep_matrix(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let m = obj + 0x400;
+    for k in 0..16 {
+        let f = rng.float();
+        t.w32(m + 4 * k, f.to_bits());
+    }
+    args[0] = m;
+}
+
+/// A model (null now and then) with meshes, the index in range or not,
+/// and a material list (0..3 entries of shader and buffer).
+fn prep_specular(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let model = obj + 0x100;
+    let n = rng.below(4);
+    t.w32(model, n | if rng.chance(2) { 0x8000_0000 } else { 0 });
+    t.w32(model + 4, obj + 0x140);
+    for k in 0..n {
+        let mesh = obj + 0x180 + 0x20 * k;
+        t.w32(obj + 0x140 + 4 * k, mesh);
+        t.w32(mesh + 0x10, obj + 0x300);
+    }
+    let materials = rng.below(4);
+    t.w32(
+        obj + 0x300,
+        materials | if rng.chance(2) { 0x8000_0000 } else { 0 },
+    );
+    let data = obj + 0x340;
+    for k in 0..materials {
+        let entry = obj + 0x400 + 0x10 * k;
+        t.w32(data + 4 * k, entry);
+        let shader = rng.next();
+        let buffer = rng.next();
+        t.w32(entry, shader);
+        t.w32(entry + 4, buffer);
+    }
+    t.stub_ret(h12::ARRAY_DATA, true, 0, 0, data);
+    args[0] = if rng.chance(6) { 0 } else { model };
+    args[1] = rng.below(5);
+}
+
+/// The character loading list: requests (out pointer, character with its
+/// loaded byte and asset, argument, callback or none), the count's owned
+/// bit, cloth loading now and then.
+fn prep_instantiate_loaded(t: &mut Twins, obj: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let n = rng.below(6);
+    let owned = if rng.chance(2) { 0x8000_0000 } else { 0 };
+    t.global(h12::CHARACTER_LOADING.sym, owned | n);
+    let data = obj + 0x100;
+    t.global(h12::CHARACTER_LOADING_DATA.sym, data);
+    let callback = t.stub(None, 0xcb, false, 1, 0, Some(rng.next()));
+    for k in 0..n {
+        let request = obj + 0x200 + 0x20 * k;
+        t.w32(data + 4 * k, request);
+        t.w32(request, obj + 0x600 + 4 * k);
+        let chr = obj + 0x800 + 0x40 * k;
+        t.w32(request + 4, chr);
+        let arg = rng.next();
+        t.w32(request + 8, arg);
+        t.w32(request + 0xc, if rng.chance(3) { 0 } else { callback });
+        t.write(chr + 0x1c, &[u8::from(!rng.chance(3))]);
+        t.w32(chr + 4, if rng.chance(4) { 0 } else { rng.next() });
+    }
+    let cloth = u32::from(rng.chance(4));
+    t.stub_ret(h12::IS_LOADING_CLOTH, false, 1, 0, cloth);
+}
+
+/// A parameter (type byte `+2`: taken or not) and a record (none now and
+/// then; its kind, texture and argument), the texture install mostly 0.
+fn prep_vector_parameter(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj + 0x800;
+    let parameter = obj + 0x100;
+    let kinds = [0x42, 0x43, 0x44, 0x12, 0xd9, 0xdc, 0xdd, 0x41, 0x45, 0];
+    let kind = kinds[rng.below(kinds.len() as u32) as usize];
+    t.write(parameter + 2, &[kind]);
+    let record = obj + 0x200;
+    let words = [
+        [0x42, 0x43, 0x44, 0x41, 0x45, rng.next()][rng.below(6) as usize],
+        rng.next(),
+        if rng.chance(2) { 0 } else { obj + 0x300 },
+        if rng.chance(3) { 0 } else { rng.next() },
+    ];
+    for (k, w) in (0u32..).zip(words) {
+        t.w32(record + 4 * k, w);
+    }
+    args[0] = parameter;
+    args[1] = if rng.chance(6) { 0 } else { record };
+    let err = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h12::TEXTURE_INSTALL, true, 1, 1, err);
+}
+
+/// A scene state `+1` (0..5), `+2`, DTT objects `+0x3854`, the targets'
+/// motion-blur byte, the blur's own `+0x58`, the opus end and a magic ID
+/// (from the list now and then).
+fn prep_dtt_copy(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x4000);
+    *this = scene;
+    let state = [0, 1, 1, 1, 2, 4, 5, 6][rng.below(8) as usize];
+    t.write(scene + 1, &[state, u8::from(rng.chance(2))]);
+    t.w32(scene + 0x3854, rng.below(3));
+    let targets = t.zeros(0x1_2400);
+    t.w32(scene + 0x10cc, targets);
+    t.write(targets + 0x123bb, &[u8::from(rng.chance(3))]);
+    if !t.snapshot {
+        t.write(obj + 0x58, &[u8::from(rng.chance(2))]);
+    }
+    t.global(
+        h12::OPUS_WAVE_OMD_END.sym,
+        if rng.chance(4) { rng.next() } else { 0 },
+    );
+    let id = match rng.below(3) {
+        0 => h12::DTT_MAGIC_IDS[rng.below(16) as usize],
+        1 => [0x46, 0x23a][rng.below(2) as usize],
+        _ => rng.below(0x300),
+    };
+    t.stub_ret(h12::MAGIC_ID, false, 0, 0, id);
+}
+
+/// The resize chain's callees: every getter and resize.
+const RESIZE_STUBS: &[(u32, K)] = &[
+    (h12::SET_RESOLUTION_SCALE, K::This(0)),
+    (h12::RESIZE_PAIRS[0].0, K::Getter),
+    (h12::RESIZE_PAIRS[0].1, K::This(2)),
+    (h12::RESIZE_PAIRS[1].0, K::Getter),
+    (h12::RESIZE_PAIRS[1].1, K::This(2)),
+    (h12::RESIZE_PAIRS[2].0, K::Getter),
+    (h12::RESIZE_PAIRS[2].1, K::This(2)),
+    (h12::RESIZE_PAIRS[3].0, K::Getter),
+    (h12::RESIZE_PAIRS[3].1, K::This(2)),
+    (h12::RESIZE_PAIRS[4].0, K::Getter),
+    (h12::RESIZE_PAIRS[4].1, K::This(2)),
+    (h12::RESIZE_PAIRS[5].0, K::Getter),
+    (h12::RESIZE_PAIRS[5].1, K::This(2)),
+    (h12::GET_APPLICATION, K::Getter),
+    (h12::IGGY_SET_VIEWPORT, K::This(2)),
+];
+
+/// A scene with the array `+0x3874` (count `+0x386c`, capacity `+0x3870`;
+/// null now and then), `v` in it or not, and `user_malloc` giving a
+/// buffer (or 0 where the original then writes nothing).
+fn prep_add_unique(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x4000);
+    *this = scene;
+    let n = rng.below(7);
+    let data = obj + 0x100;
+    let null = n == 0 && rng.chance(2);
+    t.w32(scene + 0x3874, if null { 0 } else { data });
+    t.w32(scene + 0x386c, n);
+    let cap = match rng.below(5) {
+        0 => n,
+        1 => n + 1 + rng.below(3),
+        2 => n.saturating_sub(1),
+        3 => rng.next() | 0x8000_0000,
+        _ => rng.below(4),
+    };
+    t.w32(scene + 0x3870, cap);
+    for k in 0..=n {
+        let w = rng.below(6);
+        t.w32(data + 4 * k, w);
+    }
+    args[0] = rng.below(6);
+    let fail = n == 0 && rng.chance(3);
+    t.stub_ret(
+        h12::USER_MALLOC,
+        false,
+        1,
+        0,
+        if fail { 0 } else { obj + 0x400 },
+    );
+}
+
+/// The magic VFX list `+0x30` (count `+0x28`, `id` in it or not, zeros),
+/// the magic path `+0xfb00` (0, 1, a pointer).
+fn prep_unload_magic(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0000);
+    *this = scene;
+    let n = rng.below(6);
+    t.w32(scene + 0x28, n);
+    let list = obj + 0x100;
+    t.w32(scene + 0x30, list);
+    for k in 0..n {
+        let w = rng.below(4);
+        t.w32(list + 4 * k, w);
+    }
+    args[0] = rng.below(4);
+    let magic = [0, 1, obj + 0x800, obj + 0x801][rng.below(4) as usize];
+    t.w32(scene + 0xfb00, magic);
+}
+
+/// The 8 x 8 grid mostly taken (full now and then), two out-pointers,
+/// a name (the special one now and then; up to 11 characters).
+fn prep_shadow_grid(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let shadow = t.zeros(0x4100);
+    *this = shadow;
+    let full = rng.chance(5);
+    let holes = rng.below(4);
+    let grid: Vec<u8> = (0..64)
+        .map(|_| {
+            if full || !rng.chance(holes + 2) {
+                (rng.below(255) + 1) as u8
+            } else {
+                0
+            }
+        })
+        .collect();
+    t.write(shadow + 0x2ae8, &grid);
+    let name = obj + 0x200;
+    let len = rng.below(12) as usize;
+    let mut s: Vec<u8> = (0..len).map(|_| b'a' + rng.below(3) as u8).collect();
+    if rng.chance(3) {
+        s = b"c001".to_vec();
+    } else if rng.chance(4) {
+        s = b"c00".to_vec();
+    }
+    s.push(0);
+    t.write(name, &s);
+    args[2] = obj + 0x100;
+    args[3] = obj + 0x104;
+    args[4] = name;
+}
+
+/// A scene with its render size and post-process targets; their resize
+/// mostly 0.
+fn prep_scene_resize(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    let w = rng.word();
+    let h = rng.word();
+    t.w32(scene + 0x10dd0, w);
+    t.w32(scene + 0x10dd4, h);
+    let targets = obj + 0x100;
+    t.w32(scene + 0x10cc, targets);
+    let err = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h12::POST_PROCESS_RESIZE, true, 2, 2, err);
+    if !t.snapshot {
+        let iggy = rng.word();
+        t.global(h12::IGGY_MENU_MANAGER.sym, iggy);
+    }
+}
+
+/// A fading scene (or not) with a renderer, the world flag `+0x93c` and
+/// a fade camera (null now and then); `beginScene` mostly 0.
+fn prep_fade_world(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    t.write(scene + 0x10dcc, &[u8::from(!rng.chance(3))]);
+    t.global(h12::MOVIE_FADING.sym, u32::from(rng.chance(3)));
+    t.write(scene + 0x93c, &[u8::from(!rng.chance(3))]);
+    let camera = if rng.chance(4) { 0 } else { obj + 0x300 };
+    t.w32(scene + 0x7e0, camera);
+    t.w32(scene + 0xd0, obj + 0x1000);
+    let begin = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h12::BEGIN_SCENE, true, 1, 1, begin);
+}
+
+#[test]
+fn batch12_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 16 } else { 80 };
+        run_cases(t, CASES12, n, &mut Rng(0x1212_b012));
+    });
+}
+
+// ---- round 4 batch 13 (ffx_prender::h3_glue13) ----
+
+/// The two cluster allocations (failing now and then).
+fn prep_broken_ctor(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let p = if rng.chance(4) { 0 } else { obj + 0x400 };
+    t.stub_ret(h13::PHYRE_MALLOC_SIZE, false, 1, 0, p);
+}
+
+/// A C string of `n` letters at `at`.
+fn letters(t: &mut Twins, at: u32, n: u32, rng: &mut Rng) {
+    let mut s: Vec<u8> = (0..n).map(|_| b'a' + rng.below(26) as u8).collect();
+    s.push(0);
+    t.write(at, &s);
+}
+
+/// The VFX table (its string pool at `+0x40`), the data found or not,
+/// texture slots with names in the pool, outside it (shorter or longer
+/// than the new name) or none, and the new name.
+fn prep_vfx_texture(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let table = obj + 0x100;
+    t.global(h13::VFX_RENDER_DATA_TABLE.sym, table);
+    // the names at obj + 0x1000 lie in the pool, or (the pool's start
+    // moved down) just inside its end or exactly past it
+    let names = obj + 0x1000;
+    let pool = names - [0, 0xf_9fff, 0xf_a000][rng.below(3) as usize];
+    t.w32(table + 0x40, pool);
+    let data = obj + 0x200;
+    let n = rng.below(5);
+    t.w32(data + 0x90, if rng.chance(8) { 0xffff_ffff } else { n });
+    t.w32(data + 0x94, obj + 0x300);
+    let len = rng.below(8);
+    letters(t, obj + 0x700, len, rng);
+    for k in 0..n {
+        let slot = obj + 0x300 + 0x6c * k + 0x20;
+        let name = match rng.below(4) {
+            0 => 0,
+            1 => names + 0x40 * k,
+            _ => obj + 0x500 + 0x20 * k,
+        };
+        let l = rng.below(8);
+        letters(t, names + 0x40 * k, l, rng);
+        letters(t, obj + 0x500 + 0x20 * k, l, rng);
+        t.w32(slot, name);
+    }
+    let found = if rng.chance(5) { 0 } else { data };
+    t.stub_ret(h13::VFX_DATA_BY_INSTANCE, true, 2, 2, found);
+    t.stub_ret(h13::ARRAY_NEW, false, 1, 0, obj + 0x1800);
+    args[0] = if rng.chance(6) { 0 } else { rng.next() };
+    args[1] = if rng.chance(2) { 0 } else { rng.next() };
+    args[2] = obj + 0x700;
+}
+
+/// The map's fog (or none) and the scene's fog record.
+fn prep_map_fog(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let map = obj + 0x400;
+    t.w32(obj + 0x4f8, if rng.chance(3) { 0 } else { map });
+    t.w32(obj + 0xcc, obj + 0x600);
+    for k in 0..8 {
+        let f = rng.float();
+        t.w32(map + 0xd4 + 4 * k, f.to_bits());
+    }
+}
+
+/// Map node `k` of [`prep_table_clear`].
+fn clear_node(obj: u32, k: u32) -> u32 {
+    obj + 0x200 + 0x20 * k
+}
+
+/// A map (head and a right chain of 0..4 effects with keys, some 0), the
+/// global table (this one or another, its cached key matching or not,
+/// the cached geometry with a vtable or null) and what `MapFind` finds.
+fn prep_table_clear(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let head = obj + 0x100;
+    let n = rng.below(5);
+    t.write(head + 0xd, &[1]);
+    t.w32(obj, head);
+    let first = if n == 0 { head } else { clear_node(obj, 0) };
+    let last = if n == 0 { head } else { clear_node(obj, n - 1) };
+    t.w32(head, first);
+    t.w32(head + 4, first);
+    t.w32(head + 8, last);
+    let mut keys = vec![];
+    for k in 0..n {
+        let at = clear_node(obj, k);
+        t.w32(at, head);
+        t.w32(at + 4, if k == 0 { head } else { clear_node(obj, k - 1) });
+        t.w32(
+            at + 8,
+            if k + 1 < n {
+                clear_node(obj, k + 1)
+            } else {
+                head
+            },
+        );
+        t.write(at + 0xd, &[0]);
+        let a = if rng.chance(4) { 0 } else { rng.below(4) };
+        let b = if rng.chance(2) { 0 } else { rng.next() };
+        t.w32(at + 0x10, a);
+        t.w32(at + 0x14, b);
+        keys.push((a, b));
+        let value = rng.next();
+        t.w32(at + 0x18, value);
+    }
+    let table = if rng.chance(2) { obj } else { obj + 0x1000 };
+    t.global(h13::VFX_RENDER_DATA_TABLE.sym, table);
+    if table != obj {
+        t.w32(table, obj + 0x1100);
+    }
+    let (ca, cb) = match keys.first() {
+        Some(&k) if rng.chance(2) => k,
+        _ => (rng.below(2), 0),
+    };
+    t.w32(table + 0x20, ca);
+    t.w32(table + 0x24, cb);
+    let geometry = obj + 0x1400;
+    t.w32(geometry, obj + 0x1500);
+    let vcall = t.stub(None, 0x510, true, 0, 0, Some(rng.next()));
+    t.w32(obj + 0x1500 + 0x10, vcall);
+    t.w32(table + 0x28, if rng.chance(4) { 0 } else { geometry });
+    let found = obj + 0x1600;
+    t.w32(found + 0x18, if rng.chance(4) { 0 } else { geometry });
+    let end: u32 = t.r32(table);
+    let out = if rng.chance(3) { end } else { found };
+    let ret = rng.next();
+    t.stub_out(h13::MAP_FIND, 2, 2, ret, 0, out);
+}
+
+#[rustfmt::skip]
+const CASES13: &[Case] = &[
+    Case { prep: Some(prep_broken_ctor), ..method("broken_screen_ctor", 0x006d_4ba0, This::Object, 0, &[(h13::CLUSTER_CTOR, K::This(0))], |m, this, _| u(gh13::broken_screen_ctor(m, this))) },
+    Case { prep: Some(prep_vfx_texture), ..cdecl("vfx_update_texture", 0x0064_5aa0, 3, &[(h13::ARRAY_DELETE, K::Cdecl(1))], |m, _, a| { gh13::vfx_update_texture(m, a[0], a[1], a[2]); Out::None }) },
+    Case { prep: Some(prep_map_fog), ..method("scene_setup_map_fog", 0x0066_ee70, This::Object, 0, &[(h13::FOG_INSTANCE, K::Getter), (h13::FOG_COPY_PARAMETERS, K::This(0))], |m, this, _| u(gh13::scene_setup_map_fog(m, this))) },
+    framed(Case { prep: Some(prep_table_clear), ..method("vfx_table_clear", 0x0069_f000, This::Object, 0, &[(h13::PRINTF_SLOT, K::ImportC(1)), (h13::INSERT_TO_DELETE_POOL, K::This(4)), (h13::MAP_CLEAR, K::This(0))], |m, this, _| { gh13::vfx_table_clear(m, frame_ebp(), this); Out::None }) }, 0x14, 0),
+];
+
+#[test]
+fn batch13_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES13, n, &mut Rng(0x1313_b013));
+    });
+}
+
+/// Delegations (some null) for tasks 0..2 with data equal to the asked
+/// bytes or not (and buffers or none), the count (with the owned bit;
+/// 0 and 1 too), and the free list refusing now and then.
+fn prep_unregister(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let n = rng.below(6);
+    t.w32(obj, n | if rng.chance(3) { 0x8000_0000 } else { 0 });
+    t.w32(obj + 4, obj + 0x100);
+    let wanted: Vec<u8> = (0..12).map(|_| rng.below(3) as u8).collect();
+    t.write(obj + 0x700, &wanted);
+    for k in 0..n.max(1) {
+        let d = obj + 0x200 + 0x20 * k;
+        t.w32(obj + 0x100 + 4 * k, if rng.chance(6) { 0 } else { d });
+        let own = obj + 0x400 + 0x10 * k;
+        let mut bytes = wanted.clone();
+        if rng.chance(2) {
+            let at = rng.below(12) as usize;
+            bytes[at] ^= 1;
+        }
+        t.write(own, &bytes);
+        t.w32(d, own);
+        t.w32(d + 4, if rng.chance(3) { 0 } else { rng.next() });
+        t.w32(d + 0x10, rng.below(3));
+    }
+    // a null delegation ends the walk (with no count it is the only end)
+    t.w32(obj + 0x100 + 4 * n.max(1), 0);
+    let r = if rng.chance(3) {
+        0x8000_0000 | rng.next()
+    } else {
+        rng.below(3)
+    };
+    t.stub_ret(h13::SET_DATA_TO_FREE_LIST, true, 1, 1, r);
+    args[0] = rng.below(3);
+    args[1] = obj + 0x700;
+    args[2] = rng.below(13);
+}
+
+#[rustfmt::skip]
+const CASES13B: &[Case] = &[
+    Case { prep: Some(prep_unregister), ..method("delegation_unregister", 0x006a_e340, This::Object, 3, &[(h13::WAIT_FOR_SINGLE_OBJECT, K::Import(2)), (h13::RELEASE_MUTEX, K::Import(1)), (h13::DELEGATION_COMPACT, K::This(0)), (h13::OPERATOR_DELETE, K::Cdecl(1))], |m, this, a| u(gh13::delegation_unregister(m, this, a[0], a[1], a[2]))) },
+];
+
+#[test]
+fn batch13b_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 16 } else { 80 };
+        run_cases(t, CASES13B, n, &mut Rng(0x1313_b113));
     });
 }

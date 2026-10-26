@@ -17,6 +17,8 @@ use ffx_prender::glue8::bridge as g8;
 use ffx_prender::glue9::bridge as g9;
 use ffx_prender::glue10::bridge as g10;
 use ffx_prender::glue11::bridge as g11;
+use ffx_prender::h3_glue12::bridge as g12;
+use ffx_prender::h3_glue13::bridge as g13;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1211,6 +1213,126 @@ ported! {
     /// slots, which callers may read.
     CopyNamedPairs_006991f0 @ 0x0069_91f0 => extern "C" fn copy_named_pairs(dst: u32, src: u32, n: u32; slots: u32) {
         g11::copy_named_pairs(&mut mem(), slots, dst, src, n);
+    }
+    // ---- round 4 batch 12 (ffx_prender::h3_glue12) ----
+    /// `FogEffectManager_updateChrFogFade_006e3f40(this, dt)`.
+    FogEffectManager_updateChrFogFade_006e3f40 @ 0x006e_3f40 => extern "thiscall" fn fog_update_chr_fade(this: u32, dt: u32) {
+        g12::fog_update_chr_fade(&mut mem(), this, dt);
+    }
+    /// `PhyreScene_getMinimapViewportTop_0065e4a0(scene)`.
+    PhyreScene_getMinimapViewportTop_0065e4a0 @ 0x0065_e4a0 => extern "thiscall" fn scene_minimap_viewport_top(this: u32) -> u32 {
+        g12::scene_minimap_viewport_top(&mut mem(), this)
+    }
+    /// `PhyreScene_restoreDefaultRenderTargets(scene)`.
+    PhyreScene_restoreDefaultRenderTargets @ 0x0066_c7f0 => extern "thiscall" fn scene_restore_default_targets(this: u32) -> u32 {
+        let mut f = StackFrame::<0xb>::new();
+        g12::scene_restore_default_targets(&mut mem(), f.at() + 0x2c, this)
+    }
+    /// `AutoTestManager_ctor_006bca90(this)`.
+    AutoTestManager_ctor_006bca90 @ 0x006b_ca90 => extern "thiscall" fn auto_test_manager_ctor(this: u32) -> u32 {
+        let mut f = StackFrame::<0xc>::new();
+        g12::auto_test_manager_ctor(&mut mem(), f.at() + 0x30, this)
+    }
+    /// `PhyreScene_DrawUI2DVFX(scene)`.
+    PhyreScene_DrawUI2DVFX @ 0x0065_0ea0 => extern "thiscall" fn scene_render_fade_meshes(this: u32) -> u32 {
+        g12::scene_render_fade_meshes(&mut mem(), this)
+    }
+    /// `PhyreScene_addUniqueToArray386c_00656a00(scene, v)`.
+    PhyreScene_addUniqueToArray386c_00656a00 @ 0x0065_6a00 => extern "thiscall" fn scene_add_unique(this: u32, v: u32) -> u32 {
+        g12::scene_add_unique(&mut mem(), this, v)
+    }
+    /// `PhyreScene_unloadMagicVFXTexture(scene, id)`.
+    PhyreScene_unloadMagicVFXTexture @ 0x0067_0f00 => extern "thiscall" fn scene_unload_magic_vfx_texture(this: u32, id: u32) -> u32 {
+        let mut f = StackFrame::<0x81>::new();
+        g12::scene_unload_magic_vfx_texture(&mut mem(), f.at() + 0x204, this, id)
+    }
+    /// `ShadowManager_InsertIntoShadowMap(this, a, b, &col, &row, name, word)`.
+    ShadowManager_InsertIntoShadowMap @ 0x006c_e4f0 => extern "thiscall" fn shadow_insert_block(this: u32, a: u32, b: u32, col: u32, row: u32, name: u32, word: u32) -> u32 {
+        g12::shadow_insert_block(&mut mem(), this, a, b, col, row, name, word)
+    }
+    /// `ShadowManager_InsertIntoShadowMap_Double(this, a, b, &col, &row, name, word)`.
+    ShadowManager_InsertIntoShadowMap_Double @ 0x006c_e3e0 => extern "thiscall" fn shadow_insert_cell(this: u32, a: u32, b: u32, col: u32, row: u32, name: u32, word: u32) -> u32 {
+        g12::shadow_insert_cell(&mut mem(), this, a, b, col, row, name, word)
+    }
+    /// `PhyreScene_resize(scene)`.
+    PhyreScene_resize @ 0x0066_c580 => extern "thiscall" fn scene_resize(this: u32) -> u32 {
+        g12::scene_resize(&mut mem(), this)
+    }
+    /// `PhyreScene_DrawUIPrerenderScene(scene)`.
+    PhyreScene_DrawUIPrerenderScene @ 0x0065_0f80 => extern "thiscall" fn scene_render_fade_world(this: u32) -> u32 {
+        g12::scene_render_fade_world(&mut mem(), this)
+    }
+    /// `Render_SurfaceFormat_0066e4f0(buffer, parameter, &record)`.
+    Render_SurfaceFormat_0066e4f0 @ 0x0066_e4f0 => extern "thiscall" fn write_vector_parameter(this: u32, parameter: u32, record: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        g12::write_vector_parameter(&mut mem(), f.at() + 0x10, this, parameter, record)
+    }
+    /// `PhyreScene_copyPreviousFrameBufferForDtt(scene)` (`al`).
+    PhyreScene_copyPreviousFrameBufferForDtt @ 0x0065_93d0 => extern "thiscall" fn scene_copy_previous_frame_for_dtt(this: u32) -> u32 {
+        u32::from(g12::scene_copy_previous_frame_for_dtt(&mut mem(), this))
+    }
+    /// `BrokenScreenEffect_setMatrix_006d4a90(this, &m)`.
+    BrokenScreenEffect_setMatrix_006d4a90 @ 0x006d_4a90 => extern "thiscall" fn broken_screen_set_matrix(this: u32, m: u32) -> u32 {
+        g12::broken_screen_set_matrix(&mut mem(), this, m)
+    }
+    /// `VfxShaderManager_ctor_006bf4a0(this)`.
+    VfxShaderManager_ctor_006bf4a0 @ 0x006b_f4a0 => extern "thiscall" fn vfx_shader_manager_ctor(this: u32) -> u32 {
+        g12::vfx_shader_manager_ctor(&mut mem(), this)
+    }
+    /// `graphicSgSetSpecular(model, index, &colour, &light, &camera, &param)`.
+    graphicSgSetSpecular @ 0x0064_3cc0 => extern "C" fn sg_set_specular(model: u32, index: u32, a: u32, b: u32, c: u32, d: u32) {
+        g12::sg_set_specular(&mut mem(), model, index, [a, b, c, d]);
+    }
+    /// `graphicCharacterInstantiateLoaded_00639db0()`.
+    graphicCharacterInstantiateLoaded_00639db0 @ 0x0063_9db0 => extern "C" fn character_instantiate_loaded() {
+        g12::character_instantiate_loaded(&mut mem());
+    }
+    /// `PostProcessManager_setMSAA(pp, samples)`.
+    PostProcessManager_setMSAA @ 0x0069_7e10 => extern "thiscall" fn post_process_set_msaa(this: u32, samples: u32) -> u32 {
+        g12::post_process_set_msaa(&mut mem(), this, samples)
+    }
+    /// `TextureAnimationManager_unregisterByName_006b1a70(this, name)`.
+    TextureAnimationManager_unregisterByName_006b1a70 @ 0x006b_1a70 => extern "thiscall" fn texture_animation_unregister_by_name(this: u32, name: u32) {
+        g12::texture_animation_unregister_by_name(&mut mem(), this, name);
+    }
+    /// `PhyreScene_addChrDrawSituation(scene, on)`.
+    PhyreScene_addChrDrawSituation @ 0x0065_64a0 => extern "thiscall" fn scene_add_chr_draw_situation(this: u32, on: u32) -> u32 {
+        g12::scene_add_chr_draw_situation(&mut mem(), this, on)
+    }
+    /// `PhyreScene_renderLoadingScreen(scene)`.
+    PhyreScene_renderLoadingScreen @ 0x0066_b1e0 => extern "thiscall" fn scene_render_loading_screen(this: u32) -> u32 {
+        g12::scene_render_loading_screen(&mut mem(), this)
+    }
+    /// `RenderDelegationHelper_init_006adc90(this)`.
+    RenderDelegationHelper_init_006adc90 @ 0x006a_dc90 => extern "thiscall" fn delegation_helper_init(this: u32) -> u32 {
+        g12::delegation_helper_init(&mut mem(), this)
+    }
+    /// `ModelBuffer_ReleaseBufferByIndex(index)`.
+    ModelBuffer_ReleaseBufferByIndex @ 0x0072_c1b0 => extern "C" fn model_buffer_release(index: u32) {
+        g12::model_buffer_release(&mut mem(), index);
+    }
+
+    // ---- round 4 batch 13 (ffx_prender::h3_glue13) ----
+    /// `BrokenScreenEffect_ctor_006d4ba0(this)`.
+    BrokenScreenEffect_ctor_006d4ba0 @ 0x006d_4ba0 => extern "thiscall" fn broken_screen_ctor(this: u32) -> u32 {
+        g13::broken_screen_ctor(&mut mem(), this)
+    }
+    /// `graphicVFXUpdateTexture(a, b, name)`.
+    graphicVFXUpdateTexture @ 0x0064_5aa0 => extern "C" fn vfx_update_texture(a: u32, b: u32, name: u32) {
+        g13::vfx_update_texture(&mut mem(), a, b, name);
+    }
+    /// `PhyreScene_setupMapFog_0066ee70(scene)`.
+    PhyreScene_setupMapFog_0066ee70 @ 0x0066_ee70 => extern "thiscall" fn scene_setup_map_fog(this: u32) -> u32 {
+        g13::scene_setup_map_fog(&mut mem(), this)
+    }
+    /// `ClassVFXRenderDataTable_Clear(this)`.
+    ClassVFXRenderDataTable_Clear @ 0x0069_f000 => extern "thiscall" fn vfx_table_clear(this: u32) {
+        let mut f = StackFrame::<5>::new();
+        g13::vfx_table_clear(&mut mem(), f.at() + 0x14, this);
+    }
+    /// `RenderDelegationHelper_unregisterDelegationOfGivenTaskAndData(this, task, data, size)`.
+    RenderDelegationHelper_unregisterDelegationOfGivenTaskAndData @ 0x006a_e340 => extern "thiscall" fn delegation_unregister(this: u32, task: u32, data: u32, size: u32) -> u32 {
+        g13::delegation_unregister(&mut mem(), this, task, data, size)
     }
 }
 
