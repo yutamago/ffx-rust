@@ -8,8 +8,8 @@
 
 use super::{mem, ported};
 use ffx_pother_b::{
-    methods, object, p4_bind, p4_cloth, p4_fog, p4_frames, p4_input, p4_light, p4_mesh, p4_morph,
-    p4_ps2light, p4_tree, physics, small,
+    methods, object, p4_abmap, p4_abmap2, p4_bind, p4_cloth, p4_cloth2, p4_fog, p4_frames,
+    p4_input, p4_input2, p4_light, p4_mesh, p4_morph, p4_ps2light, p4_tree, physics, small,
 };
 
 ported! {
@@ -1142,5 +1142,30 @@ ported! {
         let mut frame = super::StackFrame::<2>::new();
         let ebp = frame.at() + 8;
         p4_light::bridge13::destroy_unique(&mut mem(), ebp, cl, inst);
+    }
+    // ---- p4-other-b rest ----
+    /// `PInputMapper::update(mapper)`.
+    PInputMapper_update @ 0x0062_e040 => extern "thiscall" fn mapper_update(mapper: u32) {
+        p4_input2::bridge::update(&mut mem(), mapper);
+    }
+    /// `ClothInstancingDynamicMesh::buildStreams(mesh, src)`.
+    ClothInstancingDynamicMesh_buildStreams_006e17f0 @ 0x006e_17f0 => extern "thiscall" fn build_streams(mesh: u32, src: u32) {
+        p4_cloth2::bridge::build_streams(&mut mem(), mesh, src);
+    }
+    /// `GraphicAbmap::GraphicAbmap(abmap, owner)` -> abmap; leaves the
+    /// last inline geometry's hidden byte in its argument slot's top
+    /// byte, as the original does.
+    GraphicAbmap_ctor_00680970 @ 0x0068_0970 => extern "thiscall" fn abmap_ctor(abmap: u32, owner: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, word) = p4_abmap::bridge::ctor(&mut m, abmap, owner);
+        ffx_bridge::Mem::write(&mut m, slots, word);
+        r
+    }
+    /// `GraphicAbmap::createRenderData(abmap, kind)` -> the render data.
+    GraphicAbmap_createRenderData_00681c10 @ 0x0068_1c10 => extern "thiscall" fn abmap_render_data(abmap: u32, kind: u32) -> u32 {
+        // ebp - 0x104 .. ebp: the file name buffer fiosUnifyFilename fills
+        let mut frame = super::StackFrame::<0x41>::new();
+        let at = frame.at();
+        p4_abmap2::bridge::create_render_data(&mut mem(), at, abmap, kind)
     }
 }

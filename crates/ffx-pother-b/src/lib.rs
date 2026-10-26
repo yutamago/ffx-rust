@@ -31,11 +31,15 @@
 
 pub mod methods;
 pub mod object;
+pub mod p4_abmap;
+pub mod p4_abmap2;
 pub mod p4_bind;
 pub mod p4_cloth;
+pub mod p4_cloth2;
 pub mod p4_fog;
 pub mod p4_frames;
 pub mod p4_input;
+pub mod p4_input2;
 pub mod p4_light;
 pub mod p4_mesh;
 pub mod p4_morph;
