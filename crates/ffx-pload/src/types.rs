@@ -305,6 +305,10 @@ pub const ENUMS: [EnumType; 9] = [
 pub const DISPENSER: u32 = 0x00c9_05f0;
 /// Its destructor given to `atexit`.
 pub const DISPENSER_DTOR: u32 = 0x00af_9f30;
+/// The global namespace static (`0x0043e2f0`).
+pub const GLOBAL_NAMESPACE: u32 = 0x00c9_0b00;
+/// Its destructor given to `atexit`.
+pub const GLOBAL_NAMESPACE_DTOR: u32 = 0x00af_a150;
 /// The asset tree's registry static (`0x0045d420`), the same shape.
 pub const ASSET_REGISTRY: u32 = 0x00c9_424c;
 /// Its destructor given to `atexit`.
@@ -397,6 +401,19 @@ pub mod bridge {
         if first_time(h, o + 0x18) {
             h.write(o, [o; 6]);
             let dtor = h.rebase(dtor);
+            h.call_sym(ATEXIT, Conv::Cdecl, &[dtor]);
+        }
+        o
+    }
+
+    /// `PNamespace::GetGlobalNamespace()` (`0x0043e2f0`): the global
+    /// namespace static, built the first time ([`crate::cluster::bridge::namespace_ctor`];
+    /// guard at `+0x1c`); returns it.
+    pub fn global_namespace(h: &mut impl Host) -> u32 {
+        let o = h.rebase(super::GLOBAL_NAMESPACE);
+        if first_time(h, o + 0x1c) {
+            crate::cluster::bridge::namespace_ctor(h, o);
+            let dtor = h.rebase(super::GLOBAL_NAMESPACE_DTOR);
             h.call_sym(ATEXIT, Conv::Cdecl, &[dtor]);
         }
         o

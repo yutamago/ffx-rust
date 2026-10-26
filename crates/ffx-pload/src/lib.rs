@@ -43,6 +43,8 @@ pub mod error {
     /// An enum entry whose name is registered already (`0x00507ad0`):
     /// 0x12.
     pub const DUPLICATE: u32 = 0x12;
+    /// An allocation that failed (`0x0044a010`): 0xd.
+    pub const NO_BLOCK: u32 = 0xd;
     /// An asset import whose cluster is not loaded (`0x0045d9b0`): 7.
     pub const MISSING_CLUSTER: u32 = 7;
 }

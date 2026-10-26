@@ -1968,3 +1968,261 @@ fn batch5_helpers_match_the_original() {
         }
     }
 }
+
+// ---- batch 6 ----
+
+#[test]
+fn batch6_arrays_and_strings_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // PArray<u8>::resize: the allocator and free recorded
+        for (block, count, old, n) in [
+            (0x00b1_0000, 4, 0x00aa_0000, 4),
+            (0x00b1_0000, 4, 0x00aa_0000, 0),
+            (0x00b1_0000, 4, 0x00aa_0000, 6),
+            (0, 4, 0x00aa_0000, 6),
+            (0x00b1_0000, 0x8000_0004, 0x00aa_0000, 6),
+            (0x00b1_0000, 4, 0x00b1_0000, 6),
+            (0x00b1_0000, 4, 0, 6),
+        ] {
+            t.stub(descriptor::ALLOC, false, 2, 0, block);
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            let arr = t.zeros(8);
+            t.w32(arr, count);
+            t.w32(arr + 4, old);
+            let what = format!("{label}: resize {block:#x} {count:#x} {old:#x} {n}");
+            t.check(&what, 0x0044_a010, Conv::Thiscall(arr), &[n], |g| {
+                Out::U32(d::array_resize(g, arr, n))
+            });
+            t.reset();
+        }
+        // PString copies (memcpy runs)
+        let text = t.alloc(b"PCluster\0");
+        for (block, ptr) in [(0, 0), (1, text), (1, text + 1), (0, text)] {
+            let buf = if block == 0 { 0 } else { t.zeros(16) };
+            t.stub(descriptor::ALLOC, false, 2, 0, buf);
+            let src = t.zeros(4);
+            t.w32(src, ptr);
+            let dst = t.junk(4, 1);
+            let what = format!("{label}: string copy {buf:#x} {ptr:#x}");
+            t.check(&what, 0x0044_ae10, Conv::Thiscall(dst), &[src], |g| {
+                Out::U32(d::string_copy(g, dst, src))
+            });
+            t.reset();
+        }
+        // PStream's constructor
+        for (block, name) in [(1, text), (0, text), (1, 0)] {
+            let buf = if block == 0 { 0 } else { t.zeros(16) };
+            t.stub(descriptor::ALLOC, false, 2, 0, buf);
+            let st = t.junk(0x10, 2);
+            let what = format!("{label}: PStream {buf:#x} {name:#x}");
+            t.check(&what, 0x0060_f050, Conv::Thiscall(st), &[name], |g| {
+                Out::U32(s::stream_ctor(g, st, name))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn batch6_members_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let marker = t.r32(t.rebase(descriptor::DEFAULT_INSTANCE.sym));
+        for dup in [0, 1] {
+            t.stub(0x0043_5ca0, true, 1, 1, dup);
+            t.stub(0x0044_9c80, true, 0, 0, 0);
+            t.stub(0x0044_9e40, true, 0, 0, 0);
+            for (size, offset, name, default, words) in [
+                (0x100, 0x10, 0x00ab_0000, false, [3u16, 3]),
+                (0x100, 0x10, 0x00ab_0000, false, [3, 4]),
+                (0x10, 0x10, 0x00ab_0000, false, [3, 3]),
+                // need is 0x40 - 0x10 + 0x10 + 8 = 0x48: exactly, one short, room
+                (0x48, 0x10, 0x00ab_0000, false, [3, 3]),
+                (0x47, 0x10, 0x00ab_0000, false, [3, 3]),
+                (0x50, 0x10, 0x00ab_0000, false, [3, 3]),
+                (0x100, 0x10, 0, false, [3, 3]),
+                (0x100, 0x10, 0x00ab_0000, true, [3, 3]),
+                (0xffff_fff0, 0x10, 0x00ab_0000, false, [3, 3]),
+            ] {
+                let desc = t.zeros(0xa0);
+                t.w32(desc + 0x8c, 0x40);
+                t.w32(desc + 0x88, 0x10);
+                t.w32(desc + 0x1c, size);
+                t.write(desc + 0x94, &[words[0] as u8, 0, words[1] as u8, 0]);
+                // an empty member list with one entry already
+                let other = t.zeros(0x30);
+                let head = desc + 0x44;
+                t.w32(head, other + 4);
+                t.w32(head + 4, other + 4);
+                t.w32(other + 4, head);
+                t.w32(other + 8, head);
+                let member = t.junk(0x30, 3);
+                t.w32(member + 0x24, offset);
+                t.w32(member + 0x10, if default { marker } else { name });
+                for sym in [0x0043_c0a0, 0x0044_90a0] {
+                    let what = format!(
+                        "{label}: addMember {sym:#x} {dup} {size:#x} {name:#x} {default} {words:?}"
+                    );
+                    t.check(&what, sym, Conv::Thiscall(desc), &[member, 8], |g| {
+                        Out::U32(if sym == 0x0043_c0a0 {
+                            d::add_member(g, desc, member, 8)
+                        } else {
+                            d::add_dynamic_member(g, desc, member, 8)
+                        })
+                    });
+                }
+            }
+            t.reset();
+        }
+        // updateBaseOffsets: a chain to 0x00435740()'s root, and one to 0
+        let root = t.rebase(0x00c9_02e8);
+        // a size on the root, which the walk must not count
+        t.w32(root + 0x84, 0x1000);
+        for to_root in [true, false] {
+            let a = t.zeros(0xa0);
+            let b = t.zeros(0xa0);
+            let c = t.zeros(0xa0);
+            t.w32(a + 0x84, 0x10);
+            t.w32(b + 0x84, 0x20);
+            t.w32(c + 0x84, 0xffff_fff0);
+            t.w32(b + 0x8c, 0x300);
+            t.w32(a + descriptor::PARENT, b);
+            t.w32(b + descriptor::PARENT, c);
+            t.w32(c + descriptor::PARENT, if to_root { root } else { 0 });
+            for d in [a, c] {
+                let what = format!("{label}: updateBaseOffsets {to_root} {d:#x}");
+                t.check(&what, 0x0043_d6e0, Conv::Thiscall(d), &[], |g| {
+                    Out::U32(d::update_base_offsets(g, d))
+                });
+            }
+        }
+        // deleteAll: slot 0, the assertion import and the free hook recorded
+        let assert = t.stub_code(0xa5, false, 3, 0, 0);
+        let free = t.stub_code(0xf4, false, 1, 0, 0);
+        let (ia, ifr) = (t.rebase(0x00b0_c5c0), t.rebase(0x022f_b514));
+        t.w32(ia, assert);
+        t.w32(ifr, free);
+        let o1 = t.object(&[1]);
+        let o2 = t.object(&[1]);
+        let data = t.zeros(12);
+        t.w32(data, o1);
+        t.w32(data + 8, o2);
+        for (n, dp) in [(3, data), (0, data), (0xffff_ffff, data), (3, 0)] {
+            let table = t.zeros(0x40);
+            t.w32(table + 0x30, dp);
+            t.w32(table + 0x38, n);
+            if dp == 0 {
+                continue;
+            }
+            let what = format!("{label}: deleteAll {n:#x}");
+            t.check(&what, 0x0042_b7c0, Conv::Thiscall(table), &[], |g| {
+                d::delete_all(g, table);
+                Out::None
+            });
+        }
+        assert_eq!(t.log_entries(), 4);
+        t.reset();
+        // the PArray<PTypedObject> constructInstance
+        t.stub(0x0044_d6a0, true, 1, 1, 0);
+        let p = t.junk(0x20, 4);
+        for at in [0, p] {
+            let what = format!("{label}: constructTypedArray {at:#x}");
+            t.check(&what, 0x0045_9600, Conv::Stdcall, &[at], |g| {
+                Out::U8(d::construct_typed_array(g, at))
+            });
+        }
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+    }
+}
+
+#[test]
+fn batch6_clusters_match_the_original() {
+    use ffx_pload::types;
+    for (label, mut t) in Twins::all() {
+        // the second PClusterHeader constructInstance and the base header
+        let p = t.junk(0x60, 1);
+        for at in [0, p] {
+            let what = format!("{label}: construct header b {at:#x}");
+            t.check(&what, 0x0046_9e60, Conv::Stdcall, &[at], |g| {
+                Out::U8(c::construct_header(g, at))
+            });
+        }
+        let hb = t.junk(0x60, 9);
+        let what = format!("{label}: header base ctor");
+        t.check(&what, 0x0046_8670, Conv::Thiscall(hb), &[], |g| {
+            Out::U32(c::header_base_ctor(g, hb))
+        });
+        // setLayout
+        t.stub(0x004c_2430, false, 3, 0, 0x99);
+        for (cur, flags, a, b, shift) in [
+            ([8, 2, 3], 0, 8, 2, 3),
+            ([8, 2, 3], 0, 8, 2, 4),
+            ([32, 2, 3], 0, 32, 2, 4),
+            ([8, 2, 3], 0, 0, 2, 0),
+            ([8, 2, 3], 2, 9, 2, 3),
+            ([8, 2, 3], 0, 4, 2, 3),
+            ([8, 2, 3], 0, 8, 5, 0),
+            ([8, 2, 3], 2, 64, 5, 40),
+            ([8, 2, 0x99], 2, 8, 7, 3),
+        ] {
+            let o = t.zeros(0x20);
+            t.w32(o + 0x1c, cur[0]);
+            t.w32(o, cur[1]);
+            t.w32(o + 0xc, cur[2]);
+            t.w32(o + 0x10, cur[2]);
+            t.w32(o + 0x14, flags);
+            let what = format!("{label}: setLayout {cur:?} {flags} {a} {b} {shift}");
+            t.check(&what, 0x004c_7260, Conv::Thiscall(o), &[a, b, shift], |g| {
+                Out::U32(c::set_layout(g, o, a, b, shift))
+            });
+        }
+        t.reset();
+        // PCluster's destructor
+        t.stub(0x0044_0eb0, true, 0, 0, 0);
+        t.stub(0x0044_3b70, true, 1, 1, 0);
+        t.stub(0x0057_6640, true, 0, 0, 0);
+        for owner in [0, 0x00ab_0000] {
+            let cl = t.junk(0x60, 2);
+            t.w32(cl + 0x40, owner);
+            let what = format!("{label}: PCluster dtor {owner:#x}");
+            t.check(&what, 0x0043_fa30, Conv::Thiscall(cl), &[], |g| {
+                c::cluster_dtor(g, cl);
+                Out::None
+            });
+        }
+        assert_eq!(t.log_entries(), 5);
+        t.reset();
+        // PClusterBase's constructor: the pool's recorded
+        t.stub(0x0049_c480, true, 4, 4, 0);
+        let cl = t.junk(0x60, 3);
+        let what = format!("{label}: PClusterBase");
+        t.check(&what, 0x0043_f820, Conv::Thiscall(cl), &[], |g| {
+            Out::U32(c::cluster_base_ctor(g, cl))
+        });
+        t.reset();
+        // GetGlobalNamespace, built from a cleared guard, then again
+        t.stub(types::ATEXIT, false, 1, 0, 0);
+        let guard = t.rebase(types::GLOBAL_NAMESPACE) + 0x1c;
+        let gv = t.r32(guard);
+        t.w32(guard, gv & !1);
+        for pass in 0..2 {
+            let what = format!("{label}: GetGlobalNamespace {pass}");
+            t.check(&what, 0x0043_e2f0, Conv::Cdecl, &[], |g| {
+                Out::U32(types::bridge::global_namespace(g))
+            });
+        }
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+        // PStreamReaderFile's constructor: open, PStream and size recorded
+        t.stub(stream::OPEN_FILE, true, 5, 5, 0);
+        t.stub(stream::STREAM_CTOR, true, 1, 1, 0);
+        t.stub(0x0060_7dc0, true, 0, 0, 0x1234);
+        let r = t.junk(0x20, 4);
+        let what = format!("{label}: PStreamReaderFile");
+        t.check(&what, 0x0057_66d0, Conv::Thiscall(r), &[0x00ab_c000], |g| {
+            Out::U32(s::reader_file_ctor(g, r, 0x00ab_c000))
+        });
+        assert_eq!(t.log_entries(), 3);
+        t.reset();
+    }
+}

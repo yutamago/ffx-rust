@@ -482,4 +482,73 @@ pub mod bridge {
         h.call_sym(0x0049_c5b0, Conv::Thiscall(cluster + 0x28), &[]);
         crate::descriptor::bridge::release_owned(h, cluster);
     }
+
+    /// `PClusterHeaderBase::PClusterHeaderBase(header)` (`0x00468670`,
+    /// thiscall): `"RYHP"`, 0x54, sixteen zero words; returns it.
+    pub fn header_base_ctor(m: &mut impl Mem, header: u32) -> u32 {
+        m.write(header, [0x5048_5952u32, 0x54]);
+        m.write(header + 8, [0u32; 16]);
+        header
+    }
+
+    /// `PCluster::~PCluster(cluster)` (`0x0043fa30`, thiscall):
+    /// `PClusterBase::clear`, the owner's release of it (`0x00443b70` on
+    /// `+0x40`, then 0), then the base destructor (`0x00576640`).
+    pub fn cluster_dtor(h: &mut impl Host, cluster: u32) {
+        h.call_sym(0x0044_0eb0, Conv::Thiscall(cluster), &[]);
+        let owner: u32 = h.read(cluster + 0x40);
+        if owner != 0 {
+            h.call_sym(0x0044_3b70, Conv::Thiscall(owner), &[cluster]);
+            h.write(cluster + 0x40, 0u32);
+        }
+        h.call_sym(0x0057_6640, Conv::Thiscall(cluster), &[]);
+    }
+
+    /// `PClusterBase::PClusterBase(cluster)` (`0x0043f820`, thiscall): its
+    /// namespace ([`namespace_ctor`]), an empty list at `+0x1c`, `+0x24`
+    /// = 0, the pool at `+0x28` (`0x0049c480(0x4c, 0x14, 4, 0x00b0f11c)`),
+    /// `+0x40` = 0, `+0x44` = 3; returns it.
+    pub fn cluster_base_ctor(h: &mut impl Host, cluster: u32) -> u32 {
+        namespace_ctor(h, cluster);
+        init_list(h, cluster + 0x1c);
+        h.write(cluster + 0x24, 0u32);
+        let name = h.rebase(0x00b0_f11c);
+        h.call_sym(
+            0x0049_c480,
+            Conv::Thiscall(cluster + 0x28),
+            &[0x4c, 0x14, 4, name],
+        );
+        h.write(cluster + 0x40, [0u32, 3]);
+        cluster
+    }
+
+    /// `0x004c7260` (thiscall `(a, b, shift)`): 3 when `1 << shift`
+    /// exceeds `a` (shift not 0); else, unless all three match `+0x1c`,
+    /// `+0`, `+0xc`, stores them and refreshes `+0x10` (`shift`, or
+    /// `0x004c2430(a, 0, 0)` when bit 1 of `+0x14` is set); 0.
+    pub fn set_layout(h: &mut impl Host, this: u32, a: u32, b: u32, shift: u32) -> u32 {
+        if shift != 0 && (1u32 << (shift & 31)) > a {
+            return 3;
+        }
+        let ca: u32 = h.read(this + 0x1c);
+        let cb: u32 = h.read(this);
+        let cs: u32 = h.read(this + 0xc);
+        if a == ca && b == cb && shift == cs {
+            return 0;
+        }
+        h.write(this, b);
+        let flags: u32 = h.read(this + 0x14);
+        h.write(this + 0x1c, a);
+        h.write(this + 0xc, shift);
+        let v = if (flags >> 1) & 1 != 0 {
+            h.call_sym(0x004c_2430, Conv::Cdecl, &[a, 0, 0])
+        } else {
+            shift
+        };
+        let cur: u32 = h.read(this + 0x10);
+        if v != cur {
+            h.write(this + 0x10, v);
+        }
+        0
+    }
 }

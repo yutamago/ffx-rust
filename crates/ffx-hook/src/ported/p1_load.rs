@@ -739,4 +739,64 @@ ported! {
     Phyre_PClassMember_PClassMember @ 0x0043_a080 => extern "thiscall" fn member_ctor(this: u32, a: u32, name: u32, flags: u32) -> u32 {
         descriptor::bridge::member_ctor(&mut mem(), this, a, name, flags)
     }
+    /// `PArray<u8>::resize(n)`.
+    Phyre_PArray_u8_resize_0044a010 @ 0x0044_a010 => extern "thiscall" fn array_resize(this: u32, n: u32) -> u32 {
+        descriptor::bridge::array_resize(&mut mem(), this, n)
+    }
+    /// `PString::PString(&src)`.
+    Phyre_PString_copy_0044ae10 @ 0x0044_ae10 => extern "thiscall" fn string_copy(this: u32, src: u32) -> u32 {
+        descriptor::bridge::string_copy(&mut mem(), this, src)
+    }
+    /// Adds a member `(member, extra)`.
+    Phyre_PClassDescriptor_addMember_0043c0a0 @ 0x0043_c0a0 => extern "thiscall" fn add_member(this: u32, member: u32, extra: u32) -> u32 {
+        descriptor::bridge::add_member(&mut mem(), this, member, extra)
+    }
+    /// Adds a member to a dynamic descriptor `(member, extra)`.
+    Phyre_PClassDescriptorDynamic_addMember_004490a0 @ 0x0044_90a0 => extern "thiscall" fn add_dynamic_member(this: u32, member: u32, extra: u32) -> u32 {
+        descriptor::bridge::add_dynamic_member(&mut mem(), this, member, extra)
+    }
+    /// `PClassDescriptor::updateBaseOffsets()`.
+    Phyre_PClassDescriptor_updateBaseOffsets @ 0x0043_d6e0 => extern "thiscall" fn update_base_offsets(this: u32) -> u32 {
+        descriptor::bridge::update_base_offsets(&mut mem(), this)
+    }
+    /// Deletes every object of a table.
+    Phyre_PObjectTable_deleteAll_0042b7c0 @ 0x0042_b7c0 => extern "thiscall" fn delete_all(this: u32) {
+        descriptor::bridge::delete_all(&mut mem(), this);
+    }
+    /// `PClassDescriptorConcrete<PArray<PTypedObject>>`'s constructInstance `(p)`.
+    Phyre_PClassDescriptorConcrete_constructTypedArray_00459600 @ 0x0045_9600 => extern "stdcall" fn construct_typed_array(p: u32) -> u8 {
+        descriptor::bridge::construct_typed_array(&mut mem(), p)
+    }
+    /// `PClassDescriptorConcrete<PClusterHeader>`'s second constructInstance `(p)`.
+    Phyre_PClassDescriptorConcrete_PClusterHeader_constructInstance_00469e60 @ 0x0046_9e60 => extern "stdcall" fn construct_header_b(p: u32) -> u8 {
+        cluster::bridge::construct_header(&mut mem(), p)
+    }
+    /// `0x004c7260(a, b, shift)`.
+    Phyre_setLayout_004c7260 @ 0x004c_7260 => extern "thiscall" fn set_layout(this: u32, a: u32, b: u32, shift: u32) -> u32 {
+        cluster::bridge::set_layout(&mut mem(), this, a, b, shift)
+    }
+    /// `PCluster::~PCluster()`.
+    Phyre_PCluster_dtor_PCluster @ 0x0043_fa30 => extern "thiscall" fn cluster_dtor(this: u32) {
+        cluster::bridge::cluster_dtor(&mut mem(), this);
+    }
+    /// `PNamespace::GetGlobalNamespace()`.
+    Phyre_PNamespace_GetGlobalNamespace @ 0x0043_e2f0 => extern "C" fn global_namespace() -> u32 {
+        types::bridge::global_namespace(&mut mem())
+    }
+    /// `PClusterBase::PClusterBase()`.
+    Phyre_PClusterBase_PClusterBase @ 0x0043_f820 => extern "thiscall" fn cluster_base_ctor(this: u32) -> u32 {
+        cluster::bridge::cluster_base_ctor(&mut mem(), this)
+    }
+    /// `PStreamReaderFile::PStreamReaderFile(path)`.
+    Phyre_PSerialization_PStreamReaderFile_PStreamReaderFile @ 0x0057_66d0 => extern "thiscall" fn reader_file_ctor(this: u32, path: u32) -> u32 {
+        stream::bridge::reader_file_ctor(&mut mem(), this, path)
+    }
+    /// `PClusterHeaderBase::PClusterHeaderBase()`.
+    Phyre_PSerialization_PBinary_PClusterHeaderBase_PClusterHeaderBase @ 0x0046_8670 => extern "thiscall" fn header_base_ctor(this: u32) -> u32 {
+        cluster::bridge::header_base_ctor(&mut mem(), this)
+    }
+    /// `PStream::PStream(name)`.
+    Phyre_PSerialization_PStream_PStream @ 0x0060_f050 => extern "thiscall" fn stream_ctor(this: u32, name: u32) -> u32 {
+        stream::bridge::stream_ctor(&mut mem(), this, name)
+    }
 }

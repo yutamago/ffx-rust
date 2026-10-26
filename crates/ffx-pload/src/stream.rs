@@ -191,6 +191,36 @@ pub mod bridge {
         h.call_sym(0x0060_7c10, Conv::Thiscall(reader + READER_FILE), &[]);
     }
 
+    /// `PStream::PStream(stream, name)` (`0x0060f050`, thiscall): its
+    /// vtable, 0xb, and a copy of `name` (alignment 2; 0 for none);
+    /// returns `stream`.
+    pub fn stream_ctor(h: &mut impl Host, stream: u32, name: u32) -> u32 {
+        let vt = h.rebase(STREAM_VTABLE);
+        h.write(stream, [vt, 0xb]);
+        let copy = if name == 0 {
+            0
+        } else {
+            crate::descriptor::bridge::copy_string(h, name, 2)
+        };
+        h.write(stream + 8, copy);
+        stream
+    }
+
+    /// `PStreamReaderFile::PStreamReaderFile(reader, path)`
+    /// (`0x005766d0`, thiscall): its file opened for reading
+    /// ([`file_ctor`] with `(path, 1, 0, 0, 1)`), [`reader_ctor`], its
+    /// vtable, and the file's size (`getFileSize`, `0x00607dc0`, low
+    /// word) at `+0x10`; returns `reader`.
+    pub fn reader_file_ctor(h: &mut impl Host, reader: u32, path: u32) -> u32 {
+        file_ctor(h, reader + READER_FILE, [path, 1, 0, 0, 1]);
+        reader_ctor(h, reader, path);
+        let vt = h.rebase(READER_FILE_VTABLE);
+        h.write(reader, vt);
+        let size = h.call_sym(0x0060_7dc0, Conv::Thiscall(reader + READER_FILE), &[]);
+        h.write(reader + 0x10, size);
+        reader
+    }
+
     /// `PStreamReader::PStreamReader(reader, name)` (`0x0057dc40`,
     /// thiscall): `PStream(name)`, then its vtable, count 0 and `-1`;
     /// returns `reader`.
