@@ -92,7 +92,9 @@
 //!   transfer and texture loads;
 //! - [`h4_i5`]: its fifth batch: a particle model's projected positions,
 //!   `GDraw`'s depth-stencil state cache and depth buffer, the distortion
-//!   grid's setup.
+//!   grid's setup;
+//! - [`h4_i6`]: its sixth batch: the broken screen effect's frame capture
+//!   and the movie player's texture update.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -149,6 +151,7 @@ pub mod h4_i2;
 pub mod h4_i3;
 pub mod h4_i4;
 pub mod h4_i5;
+pub mod h4_i6;
 pub mod menu;
 pub mod misc;
 pub mod movie;

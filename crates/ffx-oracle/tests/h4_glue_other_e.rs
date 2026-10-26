@@ -29,7 +29,7 @@ use ffx_glue_other::{
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
-    h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5,
+    h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -8425,5 +8425,171 @@ fn i5_depth_buffer() {
             made += u32::from(r != 0);
         }
         assert!(made > 0, "{name}: buffers made");
+    }
+}
+
+// ---- continuation round 7, batch 6 (ffx_glue_other::h4_i6)
+
+/// The broken screen effect's frame capture.
+#[test]
+fn i6_capture_frame() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c761);
+        let stubs = [
+            (i6::CREATE_RENDER_TARGET, true, 0, 0),
+            (i3::SURFACE_CTOR, true, 2, 2),
+            (i3::SET_COLOR_TARGET, true, 2, 2),
+            (i6::SET_DEPTH_TARGET, true, 1, 1),
+            (i3::SET_VALUE, true, 2, 2),
+            (i6::LINEAR_SAMPLER, true, 1, 1),
+            (i6::SET_TEXTURE, true, 2, 2),
+            (i2::BEGIN_SCENE, true, 1, 1),
+            (i2::RENDER_MESH_INSTANCE, true, 4, 4),
+            (i2::END_SCENE, true, 1, 1),
+            (i3::POST_PROCESS_MANAGER, false, 0, 0),
+            (i6::SET_FIRST_ENTRY, true, 1, 1),
+            (i3::SURFACE_DTOR, true, 0, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        // FindByName: a result per name (by the name's address)
+        let names = [i6::OUTPUT_SCALE, i3::UV_SCALE_BIAS, i6::COLOR_BUFFER];
+        let results = t.zeros(12);
+        let log = t.stub_code(i3::FIND_PARAMETER, true, 1, 1, false, &[]);
+        let mut c = vec![0xff, 0x74, 0x24, 0x04, 0xe8];
+        let at = t.cave_next;
+        c.extend(log.wrapping_sub(at + 9).to_le_bytes());
+        // mov eax, [esp+4]; cmp eax, n0; je; cmp eax, n1; je; else third
+        c.extend([0x8b, 0x44, 0x24, 0x04]);
+        for (k, n) in names.iter().take(2).enumerate() {
+            let n = t.rebase(*n);
+            c.push(0x3d);
+            c.extend(n.to_le_bytes()); // cmp eax, name
+            c.extend([0x75, 0x08, 0xa1]); // jne +8; mov eax, [result k]
+            c.extend((results + 4 * k as u32).to_le_bytes());
+            c.extend([0xc2, 0x04, 0x00]); // ret 4
+        }
+        c.push(0xa1);
+        c.extend((results + 8).to_le_bytes());
+        c.extend([0xc2, 0x04, 0x00]);
+        let f = t.code(&c);
+        t.jump(i3::FIND_PARAMETER, f);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(i3::FIND_PARAMETER);
+        let scene = t.zeros(0x10);
+        let mut drawn = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for k in 0..3 {
+                let r = rng.next();
+                t.w32(results + 4 * k, rng.pick(&[0, r, r]));
+            }
+            t.g32(i6::PHYRE_SCENE, scene);
+            t.g32(i6::FIRST_CAPTURE, rng.pick(&[0, 0, 1]));
+            t.g32(i6::EVENT_ID, rng.pick(&[0x23, 0x22]));
+            t.g32(i6::EVENT_STATE, rng.pick(&[1, 0]));
+            let material = random_block(&mut t, &mut rng, 8);
+            let entries = random_block(&mut t, &mut rng, 8);
+            t.w32(entries, material);
+            let list = random_block(&mut t, &mut rng, 8);
+            let n = rng.pick(&[1u32, 2, 0x8000_0001, 3]);
+            t.w32(list, n);
+            if n & 0x7fff_ffff > 1 {
+                t.w32(list + 4, entries);
+            } else {
+                t.w32(list + 4, material);
+            }
+            let quad = random_block(&mut t, &mut rng, 0x14);
+            t.w32(quad + 0x10, list);
+            let this = random_block(&mut t, &mut rng, 0x78);
+            t.w8(this + 4, rng.pick(&[1, 1, 0]));
+            t.w8(this + 0x74, rng.pick(&[1, 0]));
+            t.w32(this + 0x58, quad);
+            let renderer = random_block(&mut t, &mut rng, 0x140);
+            t.w32(this + 0x2c, renderer);
+            let frame = t.ebp_for(0) - 0x38;
+            t.check_framed_conv(
+                &w,
+                0x006d_4e20,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, i6::CAPTURE_FRAME as usize)],
+                |g| {
+                    i6::capture_frame(g, frame, this);
+                    Out::None
+                },
+            );
+            drawn += t.log_entries();
+        }
+        assert!(drawn > 0, "{name}: captured");
+    }
+}
+
+/// The movie player's texture update.
+#[test]
+fn i6_fmv_update_texture() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c762);
+        let stubs = [
+            (i6::IS_PLAYING, true, 0, 0),
+            (i6::OPERATOR_NEW, false, 1, 0),
+            (i6::OPERATOR_DELETE, false, 1, 0),
+            (i6::GET_APPLICATION, false, 0, 0),
+            (i6::QUEUE_CALLBACK, true, 2, 2),
+            (i6::UPDATE_PLANES, true, 3, 3),
+            (i6::TOGGLE_PAUSE, true, 0, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        t.stub_u64(i6::CURRENT_TIME, true, 0, 0);
+        t.stub_u64(i6::END_TIME, true, 0, 0);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([i6::CURRENT_TIME, i6::END_TIME]);
+        let mut updated = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[], &i6::TIME_SCALE);
+            let now = {
+                let r = rand_u64(&mut rng);
+                rng.pick(&[r, r >> 20, 1_000_000, u64::MAX, 0])
+            };
+            t.ret_u64(i6::CURRENT_TIME, now);
+            let end = {
+                let r = rand_u64(&mut rng);
+                rng.pick(&[r, now, now.wrapping_add(1), u64::MAX])
+            };
+            t.ret_u64(i6::END_TIME, end);
+            for sym in [i6::IS_PLAYING, i6::UPDATE_PLANES] {
+                let v = rng.pick(&[1u32, 1, 0, 0x100]);
+                t.ret(sym, v);
+            }
+            let record = random_block(&mut t, &mut rng, 0x24);
+            t.ret(i6::OPERATOR_NEW, record);
+            let app = random_block(&mut t, &mut rng, 0x130);
+            t.ret(i6::GET_APPLICATION, app);
+            let off = rng.pick(&[0u8, 0, 1]);
+            let at = t.rebase(i2::MOVIES_OFF);
+            t.w8(at, off);
+            t.g32(i6::WAIT_FRAMES_BY_TIME, rng.pick(&[0, 0, 1]));
+            let this = random_block(&mut t, &mut rng, 0x730);
+            for off in [0x6d2u32, 0x6e4, 0x6fc, 0x6fe, 0x6d0, 0x570, 0x6fd, 0x720] {
+                let v = rng.pick(&[0u8, 1, 1]);
+                t.w8(this + off, v);
+            }
+            t.w8(this + 0x6d2, rng.pick(&[1, 1, 1, 0]));
+            t.w8(this + 0x6fc, rng.pick(&[0, 0, 1]));
+            let frame = rng.pick(&[0u32, 5, 0xfffd, 0xfffe, 0x8000_0000]);
+            t.w32(this + 0x6d8, frame);
+            t.check_conv(&w, 0x006d_7680, Conv::Thiscall(this), &[], |g| {
+                u(i6::fmv_update_texture(g, this))
+            });
+            updated += t.log_entries();
+        }
+        assert!(updated > 0, "{name}: updated");
     }
 }

@@ -16,8 +16,8 @@ use ffx_glue_other::{
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
-    h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, menu as mn, misc as m, movie as mv, r3,
-    sound as s,
+    h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, menu as mn, misc as m,
+    movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2427,5 +2427,15 @@ ported! {
     gdraw_createDepthBuffer_00a3b840 @ 0x00a3_b840 => extern "C" fn depth_buffer(stats: u32) -> u32 {
         let mut desc = StackFrame::<{ (i5::TEXTURE_FRAME / 4) as usize }>::new();
         i5::depth_buffer(&mut mem(), desc.at(), stats)
+    }
+    // ---- continuation round 7, batch 6 (ffx_glue_other::h4_i6)
+    /// `BrokenScreenEffect_captureFrame(this)`.
+    BrokenScreenEffect_captureFrame @ 0x006d_4e20 => extern "thiscall" fn capture_frame(this: u32) {
+        let mut frame = StackFrame::<{ (i6::CAPTURE_FRAME / 4) as usize }>::new();
+        i6::capture_frame(&mut mem(), frame.at(), this);
+    }
+    /// `PhyFMVPlayerManager_UpdateTexture(this)`.
+    PhyFMVPlayerManager_UpdateTexture @ 0x006d_7680 => extern "thiscall" fn fmv_update_texture(this: u32) -> u32 {
+        i6::fmv_update_texture(&mut mem(), this)
     }
 }
