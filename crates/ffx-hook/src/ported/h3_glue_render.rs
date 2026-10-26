@@ -49,6 +49,7 @@ use ffx_prender::h3_glue40::bridge as g40;
 use ffx_prender::h3_glue41::bridge as g41;
 use ffx_prender::h3_glue42::bridge as g42;
 use ffx_prender::h3_glue43::bridge as g43;
+use ffx_prender::h3_glue44::bridge as g44;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1960,11 +1961,27 @@ ported! {
     }
 
     // ---- round 11 batch 44 (ffx_prender::h3_glue43) ----
-    // TextureAnimation_updateTarget_006b3660 (g43::update_target) is NOT
-    // hooked: it passes its oracle test and mutants, but with it the
-    // draw-field gate shows an extra texture difference at the blink
-    // draw (fw-101 draw 110 / fw-459 draw 115) in 3 of 3 captures, and
-    // passes without it. Open problem (h3 r11 report).
+    /// `0x006b3660(this, value, slot)`: a texture-animation target's
+    /// layers into its parameter buffer. The frame holds the two
+    /// argument slots too (the weights go through `value`'s). Hooked
+    /// again in r12: in the game its callee calls (buffer, parameter,
+    /// the texture record, the weights and pairs they read) match the
+    /// original's call for call (1,514 calls of draw-field, both run in
+    /// the same game), and the gate passes with it; r11's blink
+    /// differences were the BC1/BC3 blink that follows machine load.
+    TextureAnimation_updateTarget_006b3660 @ 0x006b_3660 => extern "thiscall" fn tex_anim_update_target(this: u32, value: u32, slot: u32) {
+        let mut f = StackFrame::<0xe>::new();
+        g43::update_target(&mut mem(), f.at() + 0x28, this, value, slot);
+    }
+
+    // ---- round 12 batch 45 (ffx_prender::h3_glue44) ----
+    /// `graphicInitScene()` -> `initScene`'s `eax`, 9 or 0: the boot
+    /// scene set-up (opening, loading screen, the initialisation on the
+    /// worker, which writes its status into the frame at `ebp - 4`).
+    graphicInitScene @ 0x0064_16c0 => extern "C" fn graphic_init_scene() -> u32 {
+        let mut f = StackFrame::<3>::new();
+        g44::graphic_init_scene(&mut mem(), f.at() + 0xc)
+    }
 }
 
 /// The scene's shader-bin loaders, with their frame (0x12c bytes below

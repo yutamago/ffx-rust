@@ -66,6 +66,7 @@ use ffx_prender::h3_glue40::{self as h40, bridge as gh40};
 use ffx_prender::h3_glue41::{self as h41, bridge as gh41};
 use ffx_prender::h3_glue42::{self as h42, bridge as gh42};
 use ffx_prender::h3_glue43::{self as h43, bridge as gh43};
+use ffx_prender::h3_glue44::{self as h44, bridge as gh44};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -10722,5 +10723,101 @@ fn batch43e_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 300 } else { 1000 };
         run_cases(t, CASES43E, n, &mut Rng(0x4343_b046));
+    });
+}
+
+// ---- round 12 batch 45 (ffx_prender::h3_glue44) ----
+
+impl Twins {
+    /// A recording stub of the thiscall at `sym` taking (and popping) `n`
+    /// words (as [`Twins::stub`]) that first stores `value` at the
+    /// absolute address `at`.
+    fn stub_store(&mut self, sym: u32, n: u32, ret: u32, at: u32, value: u32) {
+        let log = self.stub(None, sym, true, n, n, Some(ret));
+        let mut c = vec![0xc7, 0x05]; // mov dword [at], value
+        c.extend(at.to_le_bytes());
+        c.extend(value.to_le_bytes());
+        let here = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(here + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// A polling answer: `zeros` times 0 (with random upper bytes), then
+/// non-zero `al` for good.
+fn poll_seq(rng: &mut Rng, zeros: u32) -> Vec<u32> {
+    (0..zeros + 40)
+        .map(|i| {
+            let high = rng.next() & 0xffff_ff00;
+            if i < zeros { high } else { high | 1 }
+        })
+        .collect()
+}
+
+/// The boot set-up: the trophy manager (none, an error, installed or
+/// after a few frames), the requests, the opening (0 to 3 frames), the
+/// command line (no argument, another one, `_ECalm`), the quit flag, the
+/// worker (done at once or later) and the status it reports (1 or not).
+fn prep_init_scene44(t: &mut Twins, _: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let aux = t.zeros(0x1000);
+    let app = aux;
+    t.stub_ret(h44::GET_APPLICATION, false, 0, 0, app);
+    for o in [0x26c, 0x270] {
+        let v = rng.next();
+        t.w32(app + o, v);
+    }
+    t.w32(app + 0x3a8, pick(rng, &[0, 1, 2, 3, 0xffff_ffff]));
+    t.w32(app + 0x3a4, aux + 0x400);
+    t.w32(aux + 0x404, pick(rng, &[aux + 0x500, aux + 0x510]));
+    t.write(aux + 0x500, b"_ECalm\0");
+    t.write(aux + 0x510, b"_ECal\0");
+    let trophy = if rng.chance(3) { 0 } else { aux + 0x600 };
+    t.stub_ret(h44::TROPHY_INSTANCE, false, 0, 0, trophy);
+    let errors: Vec<u32> = (0..200)
+        .map(|_| if rng.chance(8) { rng.next() | 1 } else { 0 })
+        .collect();
+    t.stub_seq(h44::TROPHY_ERROR, false, 0, 0, &errors);
+    let z = rng.below(4);
+    let seq = poll_seq(rng, z);
+    t.stub_seq(h44::TROPHY_INSTALLED, true, 0, 0, &seq);
+    let z = rng.below(5);
+    let seq = poll_seq(rng, z);
+    t.stub_seq(h44::ALL_REQUESTS_DONE, true, 0, 0, &seq);
+    // the opening plays while non-zero
+    let frames = rng.below(4);
+    let playing: Vec<u32> = (0..frames + 40)
+        .map(|i| {
+            let high = rng.next() & 0xffff_ff00;
+            if i < frames { high | 1 } else { high }
+        })
+        .collect();
+    t.stub_seq(h44::OPENING_PLAYING, true, 0, 0, &playing);
+    let z = rng.below(4);
+    let seq = poll_seq(rng, z);
+    t.stub_seq(h44::WORKER_DONE, true, 1, 1, &seq);
+    let quit = t.rebase(h44::QUIT);
+    let q = u8::from(rng.chance(4));
+    t.patch(quit, &[q]);
+    let status = pick(rng, &[1, 1, 0, 2]);
+    let ebp = case_ebp(t, 0);
+    let r = rng.next();
+    t.stub_store(h44::WORKER_RUN, 5, r, ebp - 4, status);
+}
+
+#[rustfmt::skip]
+const CASES44: &[Case] = &[
+    framed(Case { prep: Some(prep_init_scene44), ..cdecl("graphic_init_scene", 0x0064_16c0, 0, &[(h44::TROPHY_CHECK, K::This(0)), (h44::ASYNC_MANAGER, K::Cdecl(0)), (h44::REGIST_ASYNC_TASK, K::Cdecl(3)), (h44::INIT_IGGY_HELPER, K::Cdecl(0)), (h44::IGGY_MENU_CREATE, K::Cdecl(0)), (h44::IGGY_MENU_SET_SIZE, K::This(3)), (h44::SET_LOADING_PARAMETER, K::This(3)), (h44::RENDER_LOADING_SCREEN, K::This(0)), (h44::BEGIN_OPENING, K::This(0)), (h44::RENDER_OPENING, K::This(0)), (h44::DELETE_IGGY_MENU, K::This(0)), (h44::INIT_SCENE, K::This(0)), (h44::INPUT_UPDATE, K::Cdecl(0))], |m, _, _| u(gh44::graphic_init_scene(m, frame_ebp()))) }, 0xc, 0),
+];
+
+#[test]
+fn batch45_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 200 } else { 600 };
+        run_cases(t, CASES44, n, &mut Rng(0x4444_b045));
     });
 }
