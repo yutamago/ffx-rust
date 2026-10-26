@@ -309,15 +309,25 @@ To capture the original code plus only some ports, set `FFX_HOOK_ONLY` to
 the replacements to keep (`ffx-dinput8`; `tools/run-game.sh` passes it on).
 
 Known varying parts, beyond the allow list:
-- In fw-101, character draw 113 (index count 2928) binds a 32x16 texture
-  as BC3 (`f77`) in every original capture so far (5 of 5). In 2 of 8
-  runs of the original code plus the full m4-pilot slice it bound the
-  same texture as BC1 (`f71`). The 6 other runs had BC3, 3 of them on the
-  very build that gave the 2 BC1 runs. Every `selectTechniquePass`, `allocateAndFillParameterBuffers` and
-  `findTechniqueByPass` call of a deck frame matches the original on its
-  harvested state, so the variation comes from load timing, not from a
-  port. docs/draw.md saw the same texture vary between two rust-map runs.
-  A difference there needs a rerun before it counts.
+- In fw-101, character draw 113 (index count 2928, vs `db349612ecc598d8`,
+  ps `87fbd5b2438b7d8a`) binds `ps.srv1` = `fbf8b85b98a2de64` (32x16 BC3,
+  `f77`) on a quiet machine, and sometimes `20f96f7d906ae4dd` (32x16 BC1,
+  `f71`) for 2 or 3 of the capture's frames. Those are two frames of a
+  character texture animation: the run of 2 frames, at a different place
+  in the 3 from run to run (frames 1-2, 0-1, 0-2), is an eye blink
+  (`chr_texanim_main`, blink mode: wait `60 + rand() % 90`). The original
+  code does it too (m4-tex113, 2026-10-26): with no replacements
+  installed (`replay ... original`), 1 of 3 captures run three at a time
+  bound BC1. Captures run one at a time gave BC3 every time: 9 of 9 with
+  every M4 hook (`FFX_HOOK_ONLY`, main 622489ad) and 3 of 3 more with all
+  but p1-load. The BC1 runs on main (main-m4only-f/g) and in the pilot
+  (only3-a/b) were all taken while other games ran. So it follows machine
+  load, not the hooks. Each blink wait is drawn from the harness's
+  per-batch seed (`seeded_job`: the first character of the
+  `Ch_CalcMiddle_Batch` batch and the event frame), so the blinks shift
+  whenever load timing changes a batch or the frame a character starts
+  animating. Gate draw-field one capture at a time. A BC1 at draw 113 on
+  its own is not a port difference; rerun it.
 - The post-processing targets after draws 177-180 (fw-101) and 191-194
   (fw-459), and the back buffer, differ between runs. The hash comparison
   excuses them only when a noisy draw comes before them, so an unlucky
