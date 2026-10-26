@@ -1,8 +1,25 @@
 # Scene gate allow list of battle-attack's battle (save ffx_001, cdsp0000,
 # `battle 3 0 0`; tools/replays/draw-gate-battle.txt, docs/drawdiff.md
-# "Scene gates"). Original runs dg-battle-p3/p4 (2026-10-26) agree on
-# every item of all three frames, so the list is empty.
+# "Scene gates"). Original runs dg-battle-p3..p6 (2026-10-26): p3, p4 and
+# p5 agree on every item of all three frames; p6 differs from them in the
+# entry below.
 # Runs whose battle load took another number of updates (p1: 77, p2: 79)
 # show other moments of the intro and are not compared: tools/scene-gate.sh
 # checks the load length first and asks for a rerun.
 [*]
+
+# p6 against p3: the TEXCOORD0 ring (vb3) of `NoTexture` quads of the
+# battle windows (vs 4b348451d7564b41, no texture bound: not sampled, the
+# pixels are equal), 3 draws. graphicDrawUIElement writes the element
+# block's UV words whatever the texture, and for NoTexture elements those
+# words are stale caller data (docs/formats/ui-draw.md, open question 1;
+# as the menu list).
+resource vs=4b348451d7564b41 field=vb3 cause: NoTexture quads' UVs are stale caller data (not sampled); differs between original runs (p3/p6)
+
+# Not seen between this battle's original runs, but in the original's
+# draw-field runs (docs/drawdiff.md, fw-101's draw 113, m4-tex113): a
+# character's eye-blink texture animation (ps srv1 of vs db349612ecc598d8,
+# the BC3 or the BC1 frame of chr_texanim_main's blink); the blink's wait
+# comes from the harness's per-batch seed, so blinks shift with load
+# timing. Seen here once with a subset of the hooks (dg-uv-a5).
+resource vs=db349612ecc598d8 field=ps.srv1 cause: eye-blink texture animation whose timing follows load timing (BC1/BC3 frame), as fw-101's draw 113 in original runs

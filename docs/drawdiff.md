@@ -392,7 +392,23 @@ What the original runs showed, and so what the lists hold:
 | bsil0300 | o1/o2, p1/p2 | `GlobalTime` (47-76 ulp: the walk waits on a real-time voice line), the minimap's NORMAL0 ring, the chocobo icon (o1/o2: 6 draws missing, 6 extra) |
 | kami0100 | o1/o2, p1/p2 | the cloth ring (`vb5`, 27 draws, in every pair: carried from the free-running frames before lockstep, inferred), `GlobalTime` (o1/o2, 2 ulp), the eye-blink texture (o1/o2), the `SgSpec_LightVec` junk read (not seen in kami0100's own pairs; the same read differs between original runs on bsil0000 and cdsp0000) |
 | menu | p1/p2 | a `NoTexture` quad's UVs (`vb3`; not sampled, stale element words, `docs/formats/ui-draw.md`) |
-| battle | p3/p4 (p1/p2 with an older script) | none: p3 and p4 agree on every item |
+| battle | p3-p6 (p1/p2 with an older script) | `NoTexture` quads' UVs (`vb3`, p6 against p3; stale caller data, not sampled), the eye-blink texture (not in these pairs; as fw-101's draw 113 in original runs, seen once with a hook subset) |
+
+Results on main 1de4a2a0 plus this branch (2026-10-26), against p1
+(bsil0000, bsil0300, kami0100, menu) or p3 (battle):
+
+| Scene | only-m4 (`FFX_HOOK_ONLY`, 3,511 hooks) | all hooks |
+|---|---|---|
+| bsil0000 | FAIL: `SgSpec_CameraVec[0].z` only (1 draw, `0x006c0000`) | FAIL: the same word only (`0.0`) |
+| bsil0300 | PASS | PASS |
+| kami0100 | FAIL: `SgSpec_CameraVec[0].z` only (`0x005d0000`) | FAIL: the same word only (`0.0`) |
+| menu | PASS | PASS |
+| battle | FAIL: `SgSpec_CameraVec[0].z` only (6 draws, `0x00840000`) | FAIL: the same word only (`0.0`; three runs) |
+
+With every hook on, the battle's `NoTexture` UVs differ from p3 in 11
+draws in each of three runs (allowed; p6 differs in 3). A Rust UI that
+writes the same element words would remove that entry (ui-draw.md's open
+question 1).
 
 Two things the original runs do not pin and the replays avoid:
 - a battle requested after the main menu was opened and closed never
