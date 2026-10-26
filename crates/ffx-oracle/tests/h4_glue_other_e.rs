@@ -30,7 +30,7 @@ use ffx_glue_other::{
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
-    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4,
+    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -9778,6 +9778,124 @@ fn j4_main_setting_page() {
             let end: u32 = Mem::read(&t.b, list);
             assert_eq!(end - calls, 4 * total as u32, "{w}: calls");
             assert_eq!(t.log_entries(), 2 * 24, "{w}: texts");
+        }
+    }
+}
+
+// ---- continuation round 8, batch 5 (ffx_glue_other::h4_j5)
+
+/// `TextUtil_doOnAllTextUtilAssetsLoaded`: no font cluster, no font, the
+/// allocations failing, the material's initialisation failing, and the
+/// whole set-up.
+#[test]
+fn j5_text_util_assets_loaded() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c851);
+        let stubs = [
+            (j5::GET_APPLICATION, false, 0, 0),
+            (j5::FIXUP_CLUSTERS, false, 2, 0),
+            (j5::PHYRE_MALLOC, false, 1, 0),
+            (j5::PHYRE_FREE, false, 1, 0),
+            (j5::MATERIAL_CTOR, true, 1, 1),
+            (j5::MATERIAL_DTOR, true, 0, 0),
+            (j5::MATERIAL_INITIALIZE, true, 2, 2),
+            (j5::SET_TEXT_COLOR, true, 1, 1),
+            (j5::FONT_TEXT_CTOR, true, 2, 2),
+            (j5::STRING_ASSIGN, true, 1, 1),
+            (j5::BUILDER_APPEND, true, 1, 1),
+            (j5::SET_TEXT, true, 1, 1),
+            (j5::REGISTER, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        // the cursor's Begin sets the cursor's five words from a record
+        let seq = t.zeros(4);
+        j1_cursor_stub(&mut t, j5::CURSOR_BEGIN, seq);
+        // the builder's append sets its length (+8, the utility's +0x1c)
+        let length = t.zeros(4);
+        let log = t.stub_code(j5::BUILDER_APPEND, true, 1, 1, false, &[]);
+        let mut c = vec![0xa1]; // mov eax, [length]
+        c.extend(length.to_le_bytes());
+        c.extend([0x89, 0x41, 0x08]); // mov [ecx+8], eax
+        let jmp_at = t.cave_next + c.len() as u32;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(jmp_at + 5).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(j5::BUILDER_APPEND, f);
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let mut done = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for sym in [
+                j5::PHYRE_MALLOC,
+                j5::MATERIAL_CTOR,
+                j5::MATERIAL_INITIALIZE,
+                j5::FONT_TEXT_CTOR,
+            ] {
+                let r = rng.next();
+                let v = rng.pick(&[r, r, r, 0]);
+                t.ret(sym, v);
+            }
+            let rec: Vec<u8> = [
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.pick(&[0, 1, 3]),
+                rng.next(),
+                rng.next(),
+            ]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+            let r = t.alloc(&rec);
+            t.w32(seq, r);
+            let this = random_block(&mut t, &mut rng, 0x80);
+            let cluster = random_block(&mut t, &mut rng, 0x20);
+            let end = cluster + 0x1c;
+            let r = rng.next();
+            let first = rng.pick(&[end, r]);
+            t.w32(end, first);
+            t.w32(this + 4, rng.pick(&[cluster, cluster, cluster, 0]));
+            t.w32(this + 0x1c, rng.pick(&[0, 1, 5]));
+            let n = rng.pick(&[0, 1, 5]);
+            t.w32(length, n);
+            let frame = t.ebp_for(0) - 0x30;
+            let r = t.check_framed_conv(
+                &w,
+                0x006f_60a0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, j5::ASSETS_FRAME as usize)],
+                |g| u(j5::on_all_assets_loaded(g, frame, this)),
+            );
+            done += u32::from(r == 0);
+        }
+        assert!(done > 0, "{name}");
+    }
+}
+
+/// `ClassChrShaderRender_VertexInstanceSetup`: both blocks, their
+/// segments and cleared buffers, with the allocators as bump allocators.
+#[test]
+fn j5_vertex_instance_setup() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c852);
+        let bump = t.zeros(4);
+        j1_bump_stub(&mut t, j5::OPERATOR_NEW, bump);
+        j1_bump_stub(&mut t, j5::OPERATOR_NEW_ARRAY, bump);
+        for i in 0..20 {
+            let w = format!("{name} {i}");
+            t.constants(&mut rng, &[j5::BOUNDS_MIN, j5::BOUNDS_MAX], &[]);
+            // stale heap bytes: the clears and every store show
+            let heap = random_block(&mut t, &mut rng, 0x10000);
+            t.w32(bump, heap);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            t.check_conv(&w, 0x006a_0100, Conv::Thiscall(this), &[], |g| {
+                u(j5::vertex_instance_setup(g, this))
+            });
         }
     }
 }

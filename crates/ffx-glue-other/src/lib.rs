@@ -105,7 +105,9 @@
 //!   keyboard binding pages, the audio and parameter-change pages;
 //! - [`h4_j3`]: its third batch: the menu texture clusters' load, the
 //!   message button remap, the special-feature page;
-//! - [`h4_j4`]: its fourth batch: the escape menu's main setting page.
+//! - [`h4_j4`]: its fourth batch: the escape menu's main setting page;
+//! - [`h4_j5`]: its fifth batch: the text utility's asset hook-up and the
+//!   character shader's render data.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -169,6 +171,7 @@ pub mod h4_j1;
 pub mod h4_j2;
 pub mod h4_j3;
 pub mod h4_j4;
+pub mod h4_j5;
 pub mod menu;
 pub mod misc;
 pub mod movie;
