@@ -9,6 +9,9 @@
 //! - [`array`] has `PArray` assignment, comparison and bit fields;
 //! - [`freelist`] has `PFreeList`;
 //! - [`string`] has `PString`, `PStringBuilder` and the aligned allocator;
+//! - [`p5_more`] has the thread pools' and ring buffer's singletons,
+//!   `PShadowCaster`, `PInputAction`'s destructor, `setLightMatrix`, the
+//!   transpose and the registrations' tables (continuation round);
 //! - [`small`] has the class descriptors' little virtual members (construct
 //!   in place, destroy, forward).
 //!
@@ -33,6 +36,10 @@
 pub mod array;
 pub mod freelist;
 pub mod matrix;
+pub mod p5_gdraw;
+pub mod p5_math;
+pub mod p5_more;
+pub mod p5_ring;
 pub mod small;
 pub mod string;
 pub mod sync;

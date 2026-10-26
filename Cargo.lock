@@ -822,6 +822,8 @@ version = "0.1.0"
 dependencies = [
  "ffx-bridge",
  "ffx-graphic",
+ "ffx-pother-a",
+ "ffx-prender",
 ]
 
 [[package]]
@@ -830,6 +832,8 @@ version = "0.1.0"
 dependencies = [
  "ffx-bridge",
  "ffx-graphic",
+ "ffx-panim",
+ "ffx-prender",
 ]
 
 [[package]]

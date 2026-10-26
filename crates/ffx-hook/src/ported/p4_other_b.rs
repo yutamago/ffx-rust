@@ -8,7 +8,8 @@
 
 use super::{mem, ported};
 use ffx_pother_b::{
-    methods, object, p4_bind, p4_cloth, p4_fog, p4_input, p4_light, p4_morph, physics, small,
+    methods, object, p4_bind, p4_cloth, p4_fog, p4_frames, p4_input, p4_light, p4_mesh, p4_morph,
+    p4_ps2light, p4_tree, physics, small,
 };
 
 ported! {
@@ -902,5 +903,244 @@ ported! {
     /// `CharacterLighting::updateFlash(cl, dt)`.
     CharacterLighting_updateFlash_006ab630 @ 0x006a_b630 => extern "thiscall" fn update_flash(cl: u32, dt: u32) {
         p4_light::bridge4::update_flash(&mut mem(), cl, dt);
+    }
+    // ---- p4-other-b c2 batch 1 ----
+    /// `DynamicMesh_setStreams(mesh, a, b, c)` -> the stream table.
+    DynamicMesh_setStreams_00676680 @ 0x0067_6680 => extern "thiscall" fn set_streams_676680(mesh: u32, a: u32, b: u32, c: u32) -> u32 {
+        p4_mesh::bridge::set_streams(&mut mem(), mesh, Some(a), b, c)
+    }
+    /// `DynamicMesh_setStreams(mesh, a, b, c)` -> the stream table.
+    DynamicMesh_setStreams_00677ce0 @ 0x0067_7ce0 => extern "thiscall" fn set_streams_677ce0(mesh: u32, a: u32, b: u32, c: u32) -> u32 {
+        p4_mesh::bridge::set_streams(&mut mem(), mesh, Some(a), b, c)
+    }
+    /// `DistortionGridDynamicMeshInstance_create(cluster, &mesh)` -> the instance or 0.
+    DistortionGridDynamicMeshInstance_create_00673e20 @ 0x0067_3e20 => extern "thiscall" fn distortion_create(cluster: u32, p: u32) -> u32 {
+        p4_mesh::bridge::create_instance(&mut mem(), cluster, p4_mesh::DISTORTION_DESC, p4_mesh::DISTORTION_CTOR, p)
+    }
+    /// `RadialLineDynamicMeshInstance_create(cluster, &mesh)` -> the instance or 0.
+    RadialLineDynamicMeshInstance_create_00675d90 @ 0x0067_5d90 => extern "thiscall" fn radial_create(cluster: u32, p: u32) -> u32 {
+        p4_mesh::bridge::create_instance(&mut mem(), cluster, p4_mesh::RADIAL_DESC, p4_mesh::RADIAL_CTOR, p)
+    }
+    /// `ClassDynamicMesh_fillDrawTable(mesh, src)`; leaves the records'
+    /// running offset in its argument's slot, as the original does.
+    ClassDynamicMesh_fillDrawTable_006732a0 @ 0x0067_32a0 => extern "thiscall" fn fill_draw_table(mesh: u32, src: u32; slots: u32) {
+        let mut m = mem();
+        let word = p4_mesh::bridge::fill_draw_table(&mut m, mesh, src);
+        ffx_bridge::Mem::write(&mut m, slots, word);
+    }
+    /// `ClothInstancingDynamicMeshInstance(inst, mesh)` -> `inst`.
+    ClothInstancingDynamicMeshInstance_ctor_006e0860 @ 0x006e_0860 => extern "thiscall" fn cloth_instance_ctor(inst: u32, mesh: u32) -> u32 {
+        p4_mesh::bridge::cloth_instance_ctor(&mut mem(), inst, mesh)
+    }
+    /// `CharacterShaderManager::loadShaderLower()` -> the found object, the seek's `eax` or 0.
+    Phyre_CharacterShaderManager_loadShaderLower @ 0x006d_f3d0 => extern "C" fn load_shader_lower() -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let ebp = frame.at() + 0x20;
+        p4_frames::bridge::load_shader_cluster(&mut mem(), ebp, &p4_frames::BTM_TO_TOP)
+    }
+    /// `CharacterShaderManager::loadShaderMagic249()` -> the found object, the seek's `eax` or 0.
+    Phyre_CharacterShaderManager_loadShaderMagic249 @ 0x006d_f470 => extern "C" fn load_shader_magic249() -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let ebp = frame.at() + 0x20;
+        p4_frames::bridge::load_shader_cluster(&mut mem(), ebp, &p4_frames::MAGIC_249)
+    }
+    /// `CharacterShaderManager::loadShaderMagic297()` -> the found object, the seek's `eax` or 0.
+    Phyre_CharacterShaderManager_loadShaderMagic297 @ 0x006d_f510 => extern "C" fn load_shader_magic297() -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let ebp = frame.at() + 0x20;
+        p4_frames::bridge::load_shader_cluster(&mut mem(), ebp, &p4_frames::MAGIC_297)
+    }
+    /// `WindowEventHandler_insert(key)` -> the tree insert's `eax`.
+    WindowEventHandler_insert_00625c70 @ 0x0062_5c70 => extern "C" fn window_handler_insert(key: u32) -> u32 {
+        // ebp - 8 .. ebp + 0xc: the out pair, two unused words, the key
+        let mut frame = super::StackFrame::<5>::new();
+        let ebp = frame.at() + 8;
+        p4_frames::bridge::insert_handler(&mut mem(), ebp, key)
+    }
+    /// `NamedValueMap_insert(map, name, &value)` -> `map`.
+    NamedValueMap_insert_0064bde0 @ 0x0064_bde0 => extern "C" fn named_value_insert(map: u32, name: u32, value: u32) -> u32 {
+        let mut frame = super::StackFrame::<9>::new();
+        let ebp = frame.at() + 0x24;
+        p4_frames::bridge::insert_named(&mut mem(), ebp, map, name, value)
+    }
+    /// `CharacterLighting::setPointLightPosition(cl, x, y, z, i)` -> the matrix copy's `eax`.
+    Phyre_CharacterLighting_setPointLightPosition @ 0x006a_ad90 => extern "thiscall" fn set_point_light_position(cl: u32, x: u32, y: u32, z: u32, i: u32) -> u32 {
+        let mut m = super::StackFrame::<16>::new();
+        p4_light::bridge5::set_light_pos(&mut mem(), cl, [x, y, z], i, m.at())
+    }
+    /// `PInputDeviceMouse::PInputDeviceMouse(dev, state)` -> `dev`.
+    PInputDeviceMouse_ctor @ 0x0062_00d0 => extern "thiscall" fn mouse_ctor(dev: u32, state: u32) -> u32 {
+        p4_input::bridge5::mouse_ctor(&mut mem(), dev, state)
+    }
+    // ---- p4-other-b c2 batch 2 ----
+    /// `PClassCallableMethodScript::Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PScripting_PClassCallableMethodScript_Bind @ 0x0061_95a0 => extern "C" fn callable_method_script_bind() -> u32 {
+        p4_bind::bridge::bind(&mut mem(), &p4_bind::CALLABLE_METHOD_SCRIPT)
+    }
+    /// `Str_Utf8ToWide(src, dst, end)` -> units written (negative on a bad code point).
+    Str_Utf8ToWide @ 0x0060_7c40 => extern "C" fn utf8_to_wide(src: u32, dst: u32, end: u32) -> u32 {
+        let mut cursor = super::StackFrame::<1>::new();
+        p4_frames::bridge2::utf8_to_wide(&mut mem(), cursor.at(), src, dst, end)
+    }
+    /// `Keyboard_Update(kb)` (slot 5 of the keyboard's vtable).
+    Keyboard_Update @ 0x0062_d5c0 => extern "thiscall" fn keyboard_update(kb: u32) {
+        // ebp - 0x104 .. ebp: the device state, then the cookie's word
+        let mut frame = super::StackFrame::<0x41>::new();
+        let ebp = frame.at() + 0x104;
+        p4_input::bridge6::keyboard_update(&mut mem(), ebp, kb);
+    }
+    /// `ClothInstancing::terminate(cloth, unused)` (`ret 4`).
+    Phyre_ClothInstancing_terminate @ 0x006e_2e40 => extern "thiscall" fn cloth_terminate(cloth: u32, _unused: u32) {
+        p4_cloth::bridge2::terminate(&mut mem(), cloth);
+    }
+    /// `StringTree_insert(tree, node)` -> 0 or the node with the same key.
+    StringTree_insert_0064c0a0 @ 0x0064_c0a0 => extern "thiscall" fn string_tree_insert(tree: u32, node: u32) -> u32 {
+        p4_tree::bridge::insert(&mut mem(), tree, node)
+    }
+    /// `CharacterLighting::setLightDir(cl, i, x, y, z)` -> `applyRotation`'s `eax`.
+    Phyre_CharacterLighting_setLightDir @ 0x006a_a9f0 => extern "thiscall" fn set_light_dir(cl: u32, i: u32, x: u32, y: u32, z: u32) -> u32 {
+        // ebp - 0xb0 .. ebp: the unused rotation, the look-at matrix, the
+        // direction, the up vector, the origin
+        let mut frame = super::StackFrame::<0x2c>::new();
+        let ebp = frame.at() + 0xb0;
+        p4_light::bridge6::set_light_dir(&mut mem(), ebp, cl, i, [x, y, z])
+    }
+    /// `DynamicMesh_setStreams(mesh, b, c)` (no `+0x1c`) -> the stream table.
+    DynamicMesh_setStreams_00674740 @ 0x0067_4740 => extern "thiscall" fn set_streams_674740(mesh: u32, b: u32, c: u32) -> u32 {
+        p4_mesh::bridge::set_streams(&mut mem(), mesh, None, b, c)
+    }
+    /// `DynamicMesh_setStreams4(mesh, src)` -> the stream table.
+    DynamicMesh_setStreams4_00673030 @ 0x0067_3030 => extern "thiscall" fn set_streams4(mesh: u32, src: u32) -> u32 {
+        p4_mesh::bridge::set_streams4(&mut mem(), mesh, src)
+    }
+    /// `PS2LightingSetup_apply(mesh)` -> 1 or 0; leaves the slot index in
+    /// its argument's slot, as the original does.
+    PS2LightingSetup_apply_006e5a40 @ 0x006e_5a40 => extern "C" fn ps2_lighting_apply(mesh: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, slot) = p4_ps2light::bridge::apply(&mut m, mesh);
+        ffx_bridge::Mem::write(&mut m, slots, slot);
+        r
+    }
+    /// `PS2LightingSetup::registerWithPointLightEffect(mesh, m1, m2, f1, m3, m4, f2, v1, v2, key)`.
+    Phyre_PS2LightingSetup_registerWithPointLightEffect @ 0x006e_5c90 => extern "C" fn ps2_lighting_register(mesh: u32, m1: u32, m2: u32, f1: u32, m3: u32, m4: u32, f2: u32, v1: u32, v2: u32, key: u32) -> u32 {
+        // ebp - 0x14 .. ebp: the draw event (4 words), the cookie
+        let mut frame = super::StackFrame::<5>::new();
+        let ebp = frame.at() + 0x14;
+        let s = p4_ps2light::bridge::Setup { m1, m2, f1, m3, m4, f2, v1, v2 };
+        p4_ps2light::bridge::register(&mut mem(), ebp, mesh, &s, key)
+    }
+    /// `MenuDynamicGeometry_create(owner, kind)` -> the geometry in
+    /// `edx:eax`; leaves `operator_new`'s result in the `kind` slot.
+    MenuDynamicGeometry_create_00681970 @ 0x0068_1970 => extern "stdcall" fn menu_geometry_create(owner: u32, kind: u32; slots: u32) -> u64 {
+        let mut m = mem();
+        let (r, word) = p4_mesh::bridge2::create(&mut m, owner, kind);
+        ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4), word);
+        r
+    }
+    // ---- p4-other-b c2 batch 3 ----
+    /// `CreateDocumentsFolders()`: `Documents\Square Enix\<game>\`.
+    CreateDocumentsFolders_0062ac90 @ 0x0062_ac90 => extern "C" fn create_documents_folders() {
+        // ebp - 0x1204 .. ebp: the six path buffers, the cookie
+        let mut frame = super::StackFrame::<0x481>::new();
+        let ebp = frame.at() + 0x1204;
+        p4_frames::bridge3::create_documents_folders(&mut mem(), ebp);
+    }
+    /// `ClothInstancing_attach(ci, src)` -> the new instance; leaves the
+    /// last allocation in its argument's slot, as the original does.
+    ClothInstancing_attach_006e2600 @ 0x006e_2600 => extern "thiscall" fn cloth_attach(ci: u32, src: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, word) = p4_cloth::bridge3::attach(&mut m, ci, src);
+        ffx_bridge::Mem::write(&mut m, slots, word);
+        r
+    }
+    /// `NameList_pushBack(name)`.
+    NameList_pushBack_00681ad0 @ 0x0068_1ad0 => extern "C" fn name_list_push_back(name: u32) {
+        // ebp - 0x44 .. ebp: the two strings, the value, the cookie
+        let mut frame = super::StackFrame::<0x11>::new();
+        let ebp = frame.at() + 0x44;
+        p4_frames::bridge4::push_back(&mut mem(), ebp, name);
+    }
+    /// `CharacterLighting::CharacterLighting(cl)` -> `cl`.
+    CharacterLighting_ctor_006a63f0 @ 0x006a_63f0 => extern "thiscall" fn lighting_ctor(cl: u32) -> u32 {
+        p4_light::bridge7::lighting_ctor(&mut mem(), cl)
+    }
+    /// `CharacterLightingTweakUtil::syncIntensity(tw)`.
+    Phyre_CharacterLightingTweakUtil_syncIntensity_006aa260 @ 0x006a_a260 => extern "fastcall" fn sync_intensity(tw: u32) {
+        // ebp - 0x90 .. ebp: two float temporaries, the changed flag, the
+        // line buffer, the cookie
+        let mut frame = super::StackFrame::<0x24>::new();
+        let ebp = frame.at() + 0x90;
+        p4_light::bridge8::sync_intensity(&mut mem(), ebp, tw);
+    }
+    /// `CharacterLightingTweakUtil::render(tw, ctx, x, fps)` -> `TextUtil_render`'s `eax` or 0.
+    Phyre_CharacterLightingTweakUtil_render @ 0x006a_9f00 => extern "thiscall" fn tweak_render(tw: u32, ctx: u32, x: u32, fps: u32) -> u32 {
+        // ebp - 0xa8 .. ebp: ctx's copy, the line buffer, the title, the cookie
+        let mut frame = super::StackFrame::<0x2a>::new();
+        let ebp = frame.at() + 0xa8;
+        p4_light::bridge9::render(&mut mem(), ebp, tw, ctx, x, fps)
+    }
+    // ---- p4-other-b c2 batch 4 ----
+    /// `ClothInstancingDynamicMesh_stageStreams(mesh, slot, job, outs)` ->
+    /// the busy word's address (or the draw table); leaves the stream count
+    /// in the `job` slot, as the original does.
+    ClothInstancingDynamicMesh_stageStreams_006e2000 @ 0x006e_2000 => extern "thiscall" fn cloth_stage_streams(mesh: u32, slot: u32, job: u32, outs: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, k) = p4_cloth::bridge4::stage_streams(&mut m, mesh, slot, job, outs);
+        ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4), k);
+        r
+    }
+    /// `MorphManager::registerClusterMorphs(mm, cluster)` -> 0; leaves the
+    /// last instance in its argument's slot, as the original does.
+    MorphManager_registerClusterMorphs @ 0x006a_ca10 => extern "thiscall" fn register_cluster_morphs(mm: u32, cluster: u32; slots: u32) -> u32 {
+        // ebp - 0x40 .. ebp: the cursor (8 words), temporaries
+        let mut frame = super::StackFrame::<0x10>::new();
+        let ebp = frame.at() + 0x40;
+        let mut m = mem();
+        let (r, word) = p4_morph::bridge3::register_cluster_morphs(&mut m, ebp, mm, cluster);
+        ffx_bridge::Mem::write(&mut m, slots, word);
+        r
+    }
+    /// `MorphManager::initialize(mm, x)` -> 0 or 0xd.
+    MorphManager_initialize_006ac1b0 @ 0x006a_c1b0 => extern "thiscall" fn morph_initialize(mm: u32, x: u32) -> u32 {
+        p4_morph::bridge4::initialize(&mut mem(), mm, x)
+    }
+    /// `CharacterLighting::reset(cl)`.
+    Phyre_CharacterLighting_reset @ 0x006a_a010 => extern "fastcall" fn lighting_reset(cl: u32) {
+        p4_light::bridge10::reset(&mut mem(), cl);
+    }
+    /// `MorphManager::reset(mm)`.
+    MorphManager_reset @ 0x006a_c530 => extern "fastcall" fn morph_reset(mm: u32) {
+        p4_morph::bridge4::reset(&mut mem(), mm);
+    }
+    // ---- p4-other-b c2 batch 5 ----
+    /// `CharacterLighting::initialize(cl, scene)` -> 0; leaves the item
+    /// cell's last word in its argument's slot, as the original does.
+    Phyre_CharacterLighting_initialize_006a8f80 @ 0x006a_8f80 => extern "thiscall" fn lighting_initialize(cl: u32, scene: u32; slots: u32) -> u32 {
+        // ebp - 0x28 .. ebp + 0xc: the cursor, temporaries, the saved ebp and
+        // return slots (unused), the item cell at ebp + 8
+        let mut frame = super::StackFrame::<13>::new();
+        let ebp = frame.at() + 0x28;
+        let mut m = mem();
+        let (r, word) = p4_light::bridge11::initialize(&mut m, ebp, cl, scene);
+        ffx_bridge::Mem::write(&mut m, slots, word);
+        r
+    }
+    /// `CharacterLighting::applyAmbient(cl, flag)`; leaves the luminance
+    /// in its argument's slot, as the original does.
+    CharacterLighting_applyAmbient_006aa650 @ 0x006a_a650 => extern "thiscall" fn apply_ambient(cl: u32, flag: u32; slots: u32) {
+        // ebp - 0x4c .. ebp: four vectors, temporaries
+        let mut frame = super::StackFrame::<0x13>::new();
+        let ebp = frame.at() + 0x4c;
+        let mut m = mem();
+        if let Some(word) = p4_light::bridge12::apply_ambient(&mut m, ebp, cl, flag as u8) {
+            ffx_bridge::Mem::write(&mut m, slots, word);
+        }
+    }
+    /// `CharacterLighting::destroyUniqueMaterialParameters(cl, inst)`.
+    Phyre_CharacterLighting_destroyUniqueMaterialParameters @ 0x006a_8210 => extern "thiscall" fn destroy_unique(cl: u32, inst: u32) {
+        // ebp - 8 .. ebp: the search key (then the count) and the manager
+        let mut frame = super::StackFrame::<2>::new();
+        let ebp = frame.at() + 8;
+        p4_light::bridge13::destroy_unique(&mut mem(), ebp, cl, inst);
     }
 }

@@ -10,7 +10,10 @@
 //!   lighting manager, the fog manager, morph weights and material
 //!   parameters, cloth instancing and the dynamic meshes' buffer copies;
 //! - [`p4_bind`]: the input and game-settings classes' reflection
-//!   registrations and start-up.
+//!   registrations and start-up;
+//! - [`p4_mesh`], [`p4_frames`]: the dynamic meshes' instances and
+//!   tables; originals that hand their own locals to callees (the shader
+//!   cluster loads, two tree inserts).
 //!
 //! Everything outside the list (the allocator `Phyre_PhyreFree`, the
 //! physics objects' own destructors, virtual methods) is called at its
@@ -31,9 +34,13 @@ pub mod object;
 pub mod p4_bind;
 pub mod p4_cloth;
 pub mod p4_fog;
+pub mod p4_frames;
 pub mod p4_input;
 pub mod p4_light;
+pub mod p4_mesh;
 pub mod p4_morph;
+pub mod p4_ps2light;
+pub mod p4_tree;
 pub mod physics;
 pub mod small;
 

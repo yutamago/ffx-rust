@@ -10,8 +10,8 @@
 use super::{mem, ported};
 use ffx_pother_a::{
     class::bridge as class, object::bridge as object, p3_bind::bridge as bind,
-    p3_misc::bridge as misc, p3_misc2::bridge as misc2, p3_tree::bridge as tree,
-    physics::bridge as physics,
+    p3_init::bridge as init, p3_misc::bridge as misc, p3_misc2::bridge as misc2,
+    p3_misc3::bridge as misc3, p3_tree::bridge as tree, physics::bridge as physics,
 };
 
 ported! {
@@ -968,5 +968,154 @@ ported! {
     /// `Phyre_PPhysics_PRaycastResult_Bind()` -> `addToNamespace`'s `eax`.
     Phyre_PPhysics_PRaycastResult_Bind @ 0x005e_ad30 => extern "C" fn bind_005ead30() -> u32 {
         bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PRAYCASTRESULT_BIND)
+    }
+    // round 2 (continuation d), batch 1: Binds with calls, the array getters
+    /// `Phyre_PGameplay_PLocator_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_PLocator_Bind @ 0x0054_5480 => extern "C" fn bind_00545480() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_PLOCATOR_BIND)
+    }
+    /// `Phyre_PGameplay_PSpline_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_PSpline_Bind @ 0x0054_7ef0 => extern "C" fn bind_00547ef0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_PSPLINE_BIND)
+    }
+    /// `Phyre_PGameplay_PTrigger_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_PTrigger_Bind @ 0x0054_e7f0 => extern "C" fn bind_0054e7f0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_PTRIGGER_BIND)
+    }
+    /// `Phyre_PGeometry_PDataBlockD3D11_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGeometry_PDataBlockD3D11_Bind @ 0x0055_e960 => extern "C" fn bind_0055e960() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGEOMETRY_PDATABLOCKD3D11_BIND)
+    }
+    /// `Phyre_PGeometry_PIndexDataBlockD3D11_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGeometry_PIndexDataBlockD3D11_Bind @ 0x0055_eb10 => extern "C" fn bind_0055eb10() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGEOMETRY_PINDEXDATABLOCKD3D11_BIND)
+    }
+    /// `Phyre_PRendering_PShaderProgramD3D11_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PRendering_PShaderProgramD3D11_Bind @ 0x0058_7790 => extern "C" fn bind_00587790() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PRENDERING_PSHADERPROGRAMD3D11_BIND)
+    }
+    /// `Phyre_PRendering_PStreamInputLayoutD3D11_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PRendering_PStreamInputLayoutD3D11_Bind @ 0x0058_7bf0 => extern "C" fn bind_00587bf0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PRENDERING_PSTREAMINPUTLAYOUTD3D11_BIND)
+    }
+    /// `Phyre_PLOD_PLODGroup_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PLOD_PLODGroup_Bind @ 0x005a_34b0 => extern "C" fn bind_005a34b0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PLOD_PLODGROUP_BIND)
+    }
+    /// `Phyre_PLOD_PLODLevel_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PLOD_PLODLevel_Bind @ 0x005a_3910 => extern "C" fn bind_005a3910() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PLOD_PLODLEVEL_BIND)
+    }
+    /// `Phyre_PScripting_PScript_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PScripting_PScript_Bind @ 0x005d_49d0 => extern "C" fn bind_005d49d0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PSCRIPTING_PSCRIPT_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsRigidBodyBase_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsRigidBodyBase_Bind @ 0x005e_9490 => extern "C" fn bind_005e9490() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSRIGIDBODYBASE_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsShapeBase_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsShapeBase_Bind @ 0x005e_9f70 => extern "C" fn bind_005e9f70() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSSHAPEBASE_BIND)
+    }
+    /// `Phyre_PArray_Vector3__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PArray_Vector3__DeclareClassDescriptor @ 0x0054_8a90 => extern "C" fn getter_00548a90(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PARRAY_VECTOR3__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PSharray_Phyre_PGeometry_PDataBlockBufferD3D11__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PSharray_Phyre_PGeometry_PDataBlockBufferD3D11__DeclareClassDescriptor @ 0x0055_f000 => extern "C" fn getter_0055f000(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PSHARRAY_PHYRE_PGEOMETRY_PDATABLOCKBUFFERD3D11__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PSharray_Phyre_PGeometry_PIndexDataBlockBufferD3D11__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PSharray_Phyre_PGeometry_PIndexDataBlockBufferD3D11__DeclareClassDescriptor @ 0x0055_f220 => extern "C" fn getter_0055f220(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PSHARRAY_PHYRE_PGEOMETRY_PINDEXDATABLOCKBUFFERD3D11__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PArray_Phyre_PRendering_PStreamInputDescD3D11__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PArray_Phyre_PRendering_PStreamInputDescD3D11__DeclareClassDescriptor @ 0x0058_7f60 => extern "C" fn getter_00587f60(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PARRAY_PHYRE_PRENDERING_PSTREAMINPUTDESCD3D11__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PArray_Phyre_PLOD_PLODLevel__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PArray_Phyre_PLOD_PLODLevel__DeclareClassDescriptor @ 0x005a_4660 => extern "C" fn getter_005a4660(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PARRAY_PHYRE_PLOD_PLODLEVEL__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PSharray_Phyre_PRendering_PMeshInstance__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PSharray_Phyre_PRendering_PMeshInstance__DeclareClassDescriptor @ 0x005a_4870 => extern "C" fn getter_005a4870(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PSHARRAY_PHYRE_PRENDERING_PMESHINSTANCE__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PSharray_Phyre_PPhysics_PPhysicsShape__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PSharray_Phyre_PPhysics_PPhysicsShape__DeclareClassDescriptor @ 0x005e_b130 => extern "C" fn getter_005eb130(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PSHARRAY_PHYRE_PPHYSICS_PPHYSICSSHAPE__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PPhysics_PPhysicsRigidBodyBase_PCollisionGroupBindDescriptor()`.
+    Phyre_PPhysics_PPhysicsRigidBodyBase_PCollisionGroupBindDescriptor @ 0x005f_09a0 => extern "C" fn enum_005f09a0() -> u32 {
+        init::enum_bind(&mut mem(), &ffx_pother_a::p3_init::COLLISION_GROUP)
+    }
+    /// `Phyre_PPhysics_PPhysicsRigidBodyBase_PRigidBodyTypeBindDescriptor()`.
+    Phyre_PPhysics_PPhysicsRigidBodyBase_PRigidBodyTypeBindDescriptor @ 0x005f_0a40 => extern "C" fn enum_005f0a40() -> u32 {
+        init::enum_bind(&mut mem(), &ffx_pother_a::p3_init::RIGID_BODY_TYPE)
+    }
+    /// `Phyre_PAnimation_BindAll_00433020()` -> the failing entry's or the tail call's `eax`.
+    Phyre_PAnimation_BindAll_00433020 @ 0x0043_3020 => extern "C" fn binds_00433020() -> u32 {
+        init::bind_list(&mut mem(), &ffx_pother_a::p3_init::ANIMATION_BINDS)
+    }
+    /// `Phyre_PDynamicGeometry_BindAll_00503ee0()` -> the failing entry's `eax` or 0.
+    Phyre_PDynamicGeometry_BindAll_00503ee0 @ 0x0050_3ee0 => extern "C" fn binds_00503ee0() -> u32 {
+        init::bind_list(&mut mem(), &ffx_pother_a::p3_init::DYNAMIC_GEOMETRY_BINDS)
+    }
+    /// `Phyre_PScripting_initialize_005d6960()` -> 0; the pair in this frame.
+    Phyre_PScripting_initialize_005d6960 @ 0x005d_6960 => extern "C" fn scripting_005d6960() -> u32 {
+        let mut f = super::StackFrame::<{ ffx_pother_a::p3_init::LUA_FRAME as usize / 4 }>::new();
+        init::scripting_initialize(&mut mem(), f.at())
+    }
+    // round 2 (continuation d), batch 2: start-up, PhyrePrintf, destructors
+    /// `Phyre_PTimerWin32_Initialize()` -> 0x17 when neither timer API works, else 0.
+    Phyre_PTimerWin32_Initialize @ 0x0042_fe10 => extern "C" fn timer_initialize() -> u32 {
+        misc3::timer_initialize(&mut mem())
+    }
+    /// `Phyre_PhyreInit()` -> the first failing step's result, else 0.
+    Phyre_PhyreInit @ 0x0043_0dd0 => extern "C" fn phyre_init() -> u32 {
+        misc3::phyre_init(&mut mem())
+    }
+    /// `Phyre_PhyrePrintf(level, format, ...)`: the variable arguments
+    /// forwarded as the original's `va_list` (their address in the
+    /// caller's frame, `slots + 8`); the message in this frame.
+    Phyre_PhyrePrintf @ 0x0043_52f0 => extern "C" fn phyre_printf(level: u32, format: u32; slots: u32) -> u32 {
+        let mut f = super::StackFrame::<{ ffx_pother_a::p3_misc3::PRINTF_BUFFER as usize / 4 }>::new();
+        misc3::phyre_printf(&mut mem(), level, format, slots + 8, f.at())
+    }
+    /// `0x0047ed80(cursor, base, &offset)` -> the nested object or 0.
+    Phyre_PClassView_memberStep_0047ed80 @ 0x0047_ed80 => extern "thiscall" fn member_step(this: u32, base: u32, offset: u32) -> u32 {
+        misc3::member_step(&mut mem(), this, base, offset)
+    }
+    /// `0x005472c0(spline)` -> `this`.
+    Phyre_PGameplay_PSpline_dtor_005472c0 @ 0x0054_72c0 => extern "thiscall" fn spline_dtor_005472c0(this: u32) -> u32 {
+        misc3::spline_dtor(&mut mem(), this)
+    }
+    /// `0x005553e0(component, flags)` -> `this`.
+    Phyre_PGameplay_PTimerComponent_delete_005553e0 @ 0x0055_53e0 => extern "thiscall" fn timer_component_delete(this: u32, flags: u32) -> u32 {
+        misc3::timer_component_delete(&mut mem(), this, flags)
+    }
+    /// `0x00555bc0(p)` (create callback).
+    Phyre_PGameplay_PTimerComponent_create_00555bc0 @ 0x0055_5bc0 => extern "stdcall" fn timer_component_create(p: u32) -> u8 {
+        misc3::timer_component_create(&mut mem(), p)
+    }
+    /// `0x005d18f0(scheduler)`.
+    Phyre_PScripting_PScheduler_clear_005d18f0 @ 0x005d_18f0 => extern "thiscall" fn scheduler_clear(this: u32) {
+        misc3::scheduler_clear(&mut mem(), this);
+    }
+    /// `0x005d4770(script)` -> `eax` as the original leaves it.
+    Phyre_PScripting_releaseScriptArrays_005d4770 @ 0x005d_4770 => extern "thiscall" fn script_release(this: u32) -> u32 {
+        misc3::script_release(&mut mem(), this)
+    }
+    // batch 3
+    /// `PRedBlackTree::postInsertFinalize(tree, node)` -> the root's old colour bit.
+    Phyre_PRedBlackTree_postInsertFinalize @ 0x0057_4980 => extern "thiscall" fn tree_post_insert(this: u32, node: u32) -> u32 {
+        tree::post_insert_finalize(&mut mem(), this, node)
+    }
+    /// `0x0047d3e0(finder, view, &object, offset, class)` -> the member found or 0;
+    /// the nested-class visitor and the offset cell in this frame.
+    Phyre_PClassView_findMember_0047d3e0 @ 0x0047_d3e0 => extern "thiscall" fn find_member_0047d3e0(this: u32, view: u32, object: u32, offset: u32, class: u32) -> u32 {
+        let mut f = super::StackFrame::<{ ffx_pother_a::p3_misc3::bridge::FIND_FRAME as usize / 4 }>::new();
+        misc3::find_member(&mut mem(), this, view, object, offset, class, f.at())
     }
 }
