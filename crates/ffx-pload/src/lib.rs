@@ -13,7 +13,15 @@
 //! - [`p1_types`]: descriptor constructors, wrapper types (batch 11);
 //! - [`p1_loader`]: instance lists, namespace mapping, asset registry, the asset file load (batches 11-12);
 //! - [`p1_bind`]: the classes' static registration as step tables (batches 12-13);
-//! - [`p1_reader`]: the cluster reader's instance-list headers (batch 13).
+//! - [`p1_reader`]: the cluster reader's instance-list headers (batch 13);
+//! - [`p1_tree`]: `PRedBlackTree::postRemoveFixup` (round 3);
+//! - [`p1_d3d`]: the D3D11 shaders, input layout, constant buffer, pass states, cube maps, data blocks (round 3);
+//! - [`p1_post`]: the post-processing constructors (round 3);
+//! - [`p1_declare`]: two `PArray<T>` descriptor declarations (round 3);
+//! - [`p1_buffers`]: the class descriptors' default and validation buffers (round 3);
+//! - [`p1_fixup`]: `PCluster::fixupInstances` (round 3);
+//! - [`p1_lists`]: the cluster reader's instance-list data (round 3);
+//! - [`p1_fixups`]: the cluster reader's user fixups (round 3).
 //!
 //! Everything this crate does not port is called at its address through
 //! [`ffx_graphic::host::Host`] (the allocator, the file layer, the
@@ -30,9 +38,17 @@
 pub mod cluster;
 pub mod descriptor;
 pub mod p1_bind;
+pub mod p1_buffers;
+pub mod p1_d3d;
+pub mod p1_declare;
+pub mod p1_fixup;
+pub mod p1_fixups;
+pub mod p1_lists;
 pub mod p1_loader;
 pub mod p1_misc;
+pub mod p1_post;
 pub mod p1_reader;
+pub mod p1_tree;
 pub mod p1_types;
 pub mod stream;
 pub mod types;

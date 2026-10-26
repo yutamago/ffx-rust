@@ -4013,6 +4013,7 @@ fn p1c_bind_stubs(t: &mut Twins) {
         (0x0043_79b0, true, 2),
         (0x0043_afb0, true, 4),
         (0x0044_ac10, true, 0),
+        (0x0057_5440, true, 1),
     ] {
         t.stub(sym, this, n, n, 0);
     }
@@ -4056,6 +4057,14 @@ fn p1c_binds_match_the_original() {
                     if let pbind::End::Getter { bound, .. } = b.end {
                         let bound = t.rebase(bound);
                         t.write(bound, &[0]);
+                    }
+                    // the dynamic-type handler's words the steps write
+                    for st in b.steps {
+                        if let pbind::Step::DynamicType { at, member, .. } = *st {
+                            let (at, member) = (t.rebase(at), t.rebase(member));
+                            t.w32(member + 0x28, 0x5a5a_0028);
+                            t.w32(at + 0xc, 0x5a5a_000c);
+                        }
                     }
                 }
                 let what = format!("{label}: bind {:#x} {round}", b.addr);
@@ -4877,5 +4886,1456 @@ fn p1c_sort_class_descriptors_matches_the_original() {
             });
         }
         t.reset();
+    }
+}
+
+// ---- continuation round 3, batch 1 (ffx_pload::p1_tree, p1_d3d) ----
+
+use ffx_pload::p1_d3d::bridge as pd3;
+use ffx_pload::p1_tree::bridge as ptr;
+
+impl Twins {
+    /// Calls `sym` in both oracles alike (the setup both share).
+    fn call_both(&mut self, sym: u32, conv: Conv, args: &[u32]) -> u32 {
+        let addr = self.rebase(sym);
+        let ra = self.a.call(addr, conv, args).unwrap().eax;
+        let rb = self.b.call(addr, conv, args).unwrap().eax;
+        assert_eq!(ra, rb, "setup call {sym:#x}");
+        ra
+    }
+
+    /// The `i`th log entry's `(tag, this, words)`.
+    fn log_entry(&self, i: u32) -> (u32, u32, [u32; 6]) {
+        let e = self.log + 4 + 32 * i;
+        let mut w = [0; 6];
+        for (k, x) in (0u32..).zip(w.iter_mut()) {
+            *x = self.r32(e + 8 + 4 * k);
+        }
+        (self.r32(e), self.r32(e + 4), w)
+    }
+
+    /// A recording stub (`this` logged, `n` stack words, popping them)
+    /// that writes `value` through its stack word `k` before returning
+    /// `ret`: a COM creation method.
+    fn stub_out_code(&mut self, tag: u32, n: u32, k: u32, value: u32, ret: u32) -> u32 {
+        assert!(n <= 6);
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(tag.to_le_bytes()); // mov [eax], tag
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        for i in 0..n {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0x8b, 0x54, 0x24, (4 + 4 * k) as u8]); // mov edx, [esp+4+4k]
+        c.extend([0xc7, 0x02]);
+        c.extend(value.to_le_bytes()); // mov [edx], value
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0xb8);
+        c.extend(ret.to_le_bytes()); // mov eax, ret
+        c.push(0xc2);
+        c.extend(((n * 4) as u16).to_le_bytes());
+        let at = self.a.alloc_code(&c).unwrap();
+        assert_eq!(self.b.alloc_code(&c).unwrap(), at);
+        at
+    }
+
+    /// The frame bytes `[lo, lo + len)` of both oracles agree.
+    fn same_frame(&mut self, lo: u32, len: u32, what: &str) {
+        let fa = Oracle::read(&mut self.a, lo, len as usize).unwrap();
+        let fb = Oracle::read(&mut self.b, lo, len as usize).unwrap();
+        assert_eq!(fa, fb, "{what}: the frame differs");
+    }
+}
+
+/// The nodes of the tree whose header is `tree + 0xc`, with their left
+/// and right links.
+fn p1d_nodes(t: &Twins, tree: u32) -> Vec<(u32, u32, u32)> {
+    let mut out = Vec::new();
+    let mut stack = vec![t.r32(tree + 0xc)];
+    while let Some(n) = stack.pop() {
+        if n == tree || out.len() > 4096 {
+            continue;
+        }
+        let (l, r) = (t.r32(n), t.r32(n + 4));
+        out.push((n, l, r));
+        stack.push(l);
+        stack.push(r);
+    }
+    out
+}
+
+#[test]
+fn p1d_post_remove_fixup_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x7ee5_0001);
+        let mut fixups = 0;
+        let mut reds = 0;
+        for round in 0..40 {
+            // a red-black tree built by the game's own insert and
+            // post-insert fixup
+            let tree = t.zeros(0x20);
+            t.w32(tree + 0xc, tree);
+            let n = 1 + (rng.next() % 40) as usize;
+            let mut keys = std::collections::HashSet::new();
+            for _ in 0..n {
+                let k = if round % 2 == 0 {
+                    rng.next() % 64
+                } else {
+                    rng.next()
+                };
+                if !keys.insert(k) {
+                    continue;
+                }
+                let node = t.junk(0x10, k as u8);
+                t.w32(node + 0xc, k);
+                t.call_both(0x0058_1750, Conv::Thiscall(tree), &[node]);
+                t.call_both(0x0057_4980, Conv::Thiscall(tree), &[node]);
+            }
+            t.diff("build");
+            // remove nodes with at most one child (the fixup then runs at
+            // the end of the original's remove), the fixup recorded
+            loop {
+                let nodes = p1d_nodes(&t, tree);
+                let cands: Vec<u32> = nodes
+                    .iter()
+                    .filter(|&&(_, l, r)| l == tree || r == tree)
+                    .map(|&(n, _, _)| n)
+                    .collect();
+                if cands.is_empty() {
+                    break;
+                }
+                let z = cands[(rng.next() as usize) % cands.len()];
+                t.stub(0x0057_4be0, true, 1, 1, 0);
+                t.call_both(0x0057_5000, Conv::Thiscall(tree), &[z]);
+                let logged = t.log_entries();
+                let x = (logged > 0).then(|| t.log_entry(0).2[0]);
+                t.reset();
+                if let Some(x) = x {
+                    fixups += 1;
+                    reds += t.r32(x + 8) & 1;
+                    if round % 3 == 2 {
+                        // a red root (not a valid tree): the final node
+                        // is the root read at entry
+                        let root = t.r32(tree + 0xc);
+                        let w = t.r32(root + 8);
+                        t.w32(root + 8, w | 1);
+                    }
+                    let what = format!("{label}: round {round} fixup at {x:#x}");
+                    t.check(&what, 0x0057_4be0, Conv::Thiscall(tree), &[x], |g| {
+                        Out::U32(ptr::post_remove_fixup(g, tree, x))
+                    });
+                }
+            }
+        }
+        // the root itself, red and black
+        for colour in [0u32, 1] {
+            let tree = t.zeros(0x20);
+            let node = t.zeros(0x10);
+            t.w32(tree + 0xc, node);
+            t.w32(node, tree);
+            t.w32(node + 4, tree);
+            t.w32(node + 8, (tree + 0xc) | colour);
+            let what = format!("{label}: root colour {colour}");
+            t.check(&what, 0x0057_4be0, Conv::Thiscall(tree), &[node], |g| {
+                Out::U32(ptr::post_remove_fixup(g, tree, node))
+            });
+        }
+        assert!(
+            fixups > 100 && reds > 10,
+            "{label}: {fixups} fixups, {reds} red"
+        );
+    }
+}
+
+// The D3D11 creations' callees, stubbed alike in both oracles.
+const P1D_ENTER: u32 = 0x0046_3d50;
+const P1D_LEAVE: u32 = 0x0046_3e90;
+const P1D_HOLDER_CTOR: u32 = 0x004f_ee70;
+const P1D_ATEXIT: u32 = 0x0094_9207;
+const P1D_CONTEXT: u32 = 0x0046_49d0;
+const P1D_CACHE: u32 = 0x004f_d8b0;
+const P1D_PRINTF: u32 = 0x0043_52f0;
+const P1D_RESIZE: u32 = 0x0044_a010;
+const P1D_BUFFER: u32 = ffx_pload::p1_d3d::CONSTANT_BUFFER_CREATE;
+const P1D_LAYOUT: u32 = ffx_pload::p1_d3d::INPUT_LAYOUT_CREATE;
+
+/// The device: `CreateX` methods at `slots` (slot, stack words, the out
+/// word's index) writing an object (or null when not `made`) through
+/// their out word and returning `hr`; every other slot null. Its objects
+/// name themselves through slot 5. Also puts it in the holder and stubs
+/// the lock, the holder's constructor, `atexit` and `PhyrePrintf`.
+fn p1d_device(t: &mut Twins, slots: &[(u32, u32, u32)], made: bool, hr: u32) -> u32 {
+    let obj = t.object(&[0, 0, 0, 0, 0, 4]);
+    let mut vt = vec![0u8; 4 * 24];
+    for &(slot, n, k) in slots {
+        let value = if made { obj } else { 0 };
+        let s = t.stub_out_code(0x8000 + slot, n, k, value, hr);
+        vt[4 * slot as usize..4 * slot as usize + 4].copy_from_slice(&s.to_le_bytes());
+    }
+    let vt = t.alloc(&vt);
+    let dev = t.zeros(0x10);
+    t.w32(dev, vt);
+    let holder = t.rebase(0x00c9_4f6c);
+    t.w32(holder, dev);
+    t.stub(P1D_ENTER, true, 0, 0, 0x4d50);
+    t.stub(P1D_LEAVE, true, 0, 0, 0x4e90);
+    t.stub(P1D_HOLDER_CTOR, true, 0, 0, 0);
+    t.stub(P1D_ATEXIT, false, 1, 0, 0);
+    t.stub(P1D_PRINTF, false, 2, 0, 0);
+    dev
+}
+
+/// The holder's guard word with bit 0 as given (other bits random).
+fn p1d_guard(t: &mut Twins, rng: &mut Rng, built: bool) {
+    let g = t.rebase(0x00c9_628c);
+    let v = (rng.next() & !1) | u32::from(built);
+    t.w32(g, v);
+}
+
+/// The original's frame address `ebp - off` for `words` stack arguments.
+fn p1d_frame(t: &Twins, words: u32, off: u32) -> u32 {
+    t.a.stack_range().end - 0x100 - 4 * words - 8 - off
+}
+
+/// Fills `[lo, lo + len)` of both oracles with junk and moves the port's
+/// calls below it.
+fn p1d_prep_frame(t: &mut Twins, lo: u32, len: u32) {
+    let junk: Vec<u8> = (0..len).map(|i| (i * 0x3d + 0x11) as u8).collect();
+    t.write(lo, &junk);
+    t.b.set_call_top(Some(lo - 0x100));
+}
+
+#[test]
+fn p1d_shaders_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0001);
+        for case in 0..96u32 {
+            let vertex = case % 2 == 1;
+            let (sym, out_off, slot, p50, p41) = if vertex {
+                (0x0058_d780, 0x4ec, 12, 0x7673_3530, 0x7673_3431)
+            } else {
+                (0x0058_d1c0, 0x4e0, 15, 0x7073_3530, 0x7073_3431)
+            };
+            let dev = p1d_device(&mut t, &[(slot, 5, 4)], true, 0);
+            if case % 7 == 3 {
+                let holder = t.rebase(0x00c9_4f6c);
+                t.w32(holder, 0);
+            }
+            p1d_guard(&mut t, &mut rng, case % 3 == 0);
+            let ctx = t.junk(0x100, case as u8);
+            t.w32(ctx + 0x6c, dev);
+            let level = [0x9300, 0xa0ff, 0xa100, 0xafff, 0xb000, 0xb100][(case / 2 % 6) as usize];
+            t.w32(ctx + 0xb4, level);
+            t.stub(P1D_CONTEXT, false, 0, 0, ctx);
+            let cache = t.junk(0x1400, 7);
+            t.stub(P1D_CACHE, false, 0, 0, cache);
+            let samplers = t.rebase(0x00c9_6218);
+            t.w32(samplers, rng.next());
+            let rets = [0u32, 0, 5, 0, 9, 0x13];
+            t.stub(P1D_BUFFER, true, 0, 0, rets[(case / 3 % 6) as usize]);
+            t.stub(P1D_LAYOUT, true, 1, 1, rets[(case / 5 % 6) as usize]);
+            let this = t.junk(0x500, case as u8 ^ 0x40);
+            t.w32(this + 0xc, 0x100 | ((case % 3) << 30));
+            let made = if case % 4 == 2 { 0x0bad_0000 } else { 0 };
+            t.w32(this + out_off, made);
+            let profile = [p50, p41, 0x1234_5678, p50 ^ p41][(case / 12 % 4) as usize];
+            t.w32(this + 0x4dc, profile);
+            let lock = p1d_frame(&t, 0, 0x10);
+            p1d_prep_frame(&mut t, lock, 4);
+            let what = format!("{label}: shader case {case}");
+            t.check(&what, sym, Conv::Thiscall(this), &[], |g| {
+                Out::U32(if vertex {
+                    pd3::create_vertex_shader(g, this, lock)
+                } else {
+                    pd3::create_pixel_shader(g, this, lock)
+                })
+            });
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_input_layout_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0002);
+        for case in 0..24u32 {
+            let made = case % 5 != 4;
+            let hr = if case % 6 == 5 { 0x8007_000e } else { 1 };
+            let dev = p1d_device(&mut t, &[(11, 6, 5)], made, hr);
+            if case % 7 == 6 {
+                // a failure that writes nothing
+                let vt = t.r32(dev);
+                let f = t.stub_code(0x800b, true, 6, 6, 0x8000_4005);
+                t.w32(vt + 4 * 11, f);
+            }
+            p1d_guard(&mut t, &mut rng, case % 3 != 0);
+            let n = [0u32, 1, 2, 5, 17, 32][(case % 6) as usize]
+                - u32::from(case >= 12 && case % 6 != 0);
+            let elems = t.junk(0x14 * n as usize + 4, case as u8);
+            for i in 0..n {
+                let e = elems + 0x14 * i;
+                let name = match rng.next() % 4 {
+                    0 => 0,
+                    1 => 1,
+                    _ => rng.next(),
+                };
+                t.w32(e, name);
+                let step = if rng.next().is_multiple_of(3) {
+                    0
+                } else {
+                    let s = t.zeros(0x10);
+                    t.write(s + 8, &[(rng.next() % 2) as u8]);
+                    s
+                };
+                t.w32(e + 4, step);
+            }
+            let this = t.junk(0x10, 3);
+            t.w32(this, n | (rng.next() & 0x8000_0000));
+            t.w32(this + 4, elems);
+            t.w32(this + 8, if case % 8 == 7 { 0x0bad_0000 } else { 0 });
+            let program = t.junk(0x20, 4);
+            let frame = p1d_frame(&t, 1, 0x39c);
+            p1d_prep_frame(&mut t, frame, pd3::LAYOUT_FRAME);
+            let what = format!("{label}: input layout case {case} ({n} elements)");
+            t.check(&what, 0x0058_d900, Conv::Thiscall(this), &[program], |g| {
+                Out::U32(pd3::create_input_layout(g, this, program, frame))
+            });
+            t.b.set_call_top(None);
+            // the layout word and the descriptions
+            t.same_frame(frame + 4, pd3::LAYOUT_FRAME - 4, &what);
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_constant_buffer_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0003);
+        for case in 0..16u32 {
+            let hr = if case % 4 == 3 { 0x8007_000e } else { 0 };
+            p1d_device(&mut t, &[(3, 4, 3)], true, hr);
+            p1d_guard(&mut t, &mut rng, case % 2 == 0);
+            t.stub(P1D_RESIZE, true, 1, 1, 0x0d);
+            let this = t.junk(0x20, case as u8);
+            t.w32(this, if case % 5 == 1 { 0x0bad_0000 } else { 0 });
+            t.w32(
+                this + 0x14,
+                [0, 0x10, 0x100, 0x8000_0010][(case / 2 % 4) as usize],
+            );
+            let frame = p1d_frame(&t, 0, 0x2c);
+            p1d_prep_frame(&mut t, frame, pd3::BUFFER_FRAME);
+            let what = format!("{label}: constant buffer case {case}");
+            t.check(&what, 0x0058_f490, Conv::Thiscall(this), &[], |g| {
+                Out::U32(pd3::create_constant_buffer(g, this, frame))
+            });
+            t.b.set_call_top(None);
+            t.same_frame(frame + 4, 0x18, &what);
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_pass_state_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0004);
+        for case in 0..40u32 {
+            let made = case % 7 != 6;
+            let hr = if case % 9 == 8 { 0x8007_000e } else { 0 };
+            let dev = p1d_device(&mut t, &[(20, 3, 2), (21, 3, 2), (22, 3, 2)], made, hr);
+            p1d_guard(&mut t, &mut rng, case % 3 == 1);
+            let ctx = t.junk(0x100, 9);
+            t.w32(ctx + 0x6c, dev);
+            t.stub(P1D_CONTEXT, false, 0, 0, ctx);
+            let this = t.junk(0x180, case as u8);
+            for (bit, off) in [0x168u32, 0x16c, 0x174, 0x170].into_iter().enumerate() {
+                let v = if (case >> bit) & 1 == 1 && case % 11 != 0 {
+                    0x0bad_0000 + off
+                } else {
+                    0
+                };
+                t.w32(this + off, v);
+            }
+            let frame = p1d_frame(&t, 0, 0x40);
+            p1d_prep_frame(&mut t, frame, pd3::STATE_FRAME);
+            let what = format!("{label}: pass state case {case}");
+            t.check(&what, 0x0058_d4e0, Conv::Thiscall(this), &[], |g| {
+                Out::U32(pd3::create_pass_state(g, this, frame))
+            });
+            t.b.set_call_top(None);
+            t.same_frame(frame + 8, 0x28, &what);
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_views_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0005);
+        for case in 0..24u32 {
+            let dev = p1d_device(&mut t, &[], true, 0);
+            let vt = t.r32(dev);
+            // CreateShaderResourceView: the `fail`th call fails (1..4;
+            // past the count none does)
+            let fail = 1 + case % 4;
+            let ok = t.stub_code(0x8007, true, 4, 4, 0);
+            let hr = if case % 3 == 0 { u32::MAX } else { 0x8000_4005 };
+            let bad = t.stub_code(0x8107, true, 4, 4, hr);
+            let calls = t.zeros(4);
+            let at = t.a.alloc_code(&[0x90; 32]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0x90; 32]).unwrap(), at);
+            let mut c = vec![0xff, 0x05];
+            c.extend(calls.to_le_bytes()); // inc dword [calls]
+            c.extend([0x83, 0x3d]);
+            c.extend(calls.to_le_bytes());
+            c.push(fail as u8); // cmp dword [calls], fail
+            c.extend([0x75, 0x05]); // jne +5
+            c.push(0xe9);
+            let jbad = bad.wrapping_sub(at + c.len() as u32 + 4);
+            c.extend(jbad.to_le_bytes()); // jmp bad
+            c.push(0xe9);
+            let jok = ok.wrapping_sub(at + c.len() as u32 + 4);
+            c.extend(jok.to_le_bytes()); // jmp ok
+            t.write(at, &c);
+            t.w32(vt + 4 * 7, at);
+            p1d_guard(&mut t, &mut rng, case % 2 == 0);
+            let n = [1u32, 2, 3, 5, 0x8000_0002, 0x8000_0001][(case / 4 % 6) as usize];
+            let this = t.junk(0x80, case as u8);
+            let base = t.junk(0x40, 1);
+            t.w32(this, base);
+            let flags = if case % 6 == 5 {
+                0xf7
+            } else {
+                0x08 | (rng.next() & 0xf7)
+            };
+            t.write(this + 0x58, &[flags as u8]);
+            t.w32(this + 0x20, n);
+            if n & 0x7fff_ffff > 1 {
+                let views = t.junk(0x14 * 5, 2);
+                t.w32(this + 0x24, views);
+            }
+            let frame = p1d_frame(&t, 0, 0x30);
+            p1d_prep_frame(&mut t, frame, pd3::VIEWS_FRAME);
+            let what = format!("{label}: views case {case}");
+            t.check(&what, 0x0058_f9f0, Conv::Thiscall(this), &[], |g| {
+                Out::U32(pd3::create_views(g, this, frame))
+            });
+            t.b.set_call_top(None);
+            t.same_frame(frame, 0x18, &what);
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_cube_map_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0006);
+        for case in 0..48u32 {
+            // the texture objects CreateTexture2D makes: GetDesc at slot 10
+            let tex = t.object(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2]);
+            let hr = [0u32, 0, 0, 1, 0x8007_000e][(case % 5) as usize];
+            let dev = p1d_device(&mut t, &[], true, 0);
+            let vt = t.r32(dev);
+            let f = t.stub_out_code(0x8005, 4, 3, tex, hr);
+            t.w32(vt + 4 * 5, f);
+            if case % 11 == 10 {
+                let holder = t.rebase(0x00c9_4f6c);
+                t.w32(holder, 0);
+            }
+            p1d_guard(&mut t, &mut rng, case % 2 == 0);
+            t.stub(
+                ffx_pload::p1_d3d::CUBE_VIEWS,
+                true,
+                0,
+                0,
+                [0, 9, 0][(case % 3) as usize],
+            );
+            let base = t.junk(0x40, case as u8);
+            t.w32(
+                base + 0xc,
+                [4u32, 8, 32, 0x8000_0008][(case / 3 % 4) as usize],
+            );
+            t.w32(base + 0x10, rng.next() & 3);
+            let this = t.junk(0x80, case as u8 ^ 9);
+            t.w32(this, base);
+            let size = [0u32, 1, 6, 64, 0x200][(case / 2 % 5) as usize];
+            t.w32(this + 0x1c, size);
+            t.w32(this + 0xc, [0u32, 1, 3, 9][(case / 4 % 4) as usize]);
+            t.w32(this + 0x10, rng.next() % 2);
+            t.w32(this + 0x14, rng.next());
+            let owner = match case % 6 {
+                0 => 0,
+                1 => {
+                    let o = t.zeros(8);
+                    t.write(o + 5, &[1]);
+                    o
+                }
+                _ => t.zeros(8),
+            };
+            t.w32(this + 0x18, owner);
+            let n = [1u32, 2, 3, 0x8000_0001][(case / 6 % 4) as usize];
+            t.w32(this + 0x20, n);
+            if n & 0x7fff_ffff > 1 {
+                let arr = t.junk(0x14 * 3, 5);
+                t.w32(this + 0x24, arr);
+            }
+            let data = if case % 4 == 1 { 0 } else { 0x0012_0000 };
+            let views = u32::from(case % 8 < 5) * (1 + (rng.next() & 0xfe));
+            let skip = u32::from(case % 13 == 12) | (rng.next() & 0xff00);
+            let frame = p1d_frame(&t, 4, 0x650);
+            p1d_prep_frame(&mut t, frame, pd3::CUBE_FRAME);
+            let what = format!("{label}: cube map case {case}");
+            t.check(
+                &what,
+                0x0059_0800,
+                Conv::Thiscall(this),
+                &[data, views, 0x5555, skip],
+                |g| {
+                    Out::U32(pd3::create_cube_map(
+                        g,
+                        this,
+                        data,
+                        views as u8,
+                        skip as u8,
+                        frame,
+                    ))
+                },
+            );
+            t.b.set_call_top(None);
+            // the description and the subresources
+            t.same_frame(frame + 0x14, pd3::CUBE_FRAME - 0x14, &what);
+            t.reset();
+        }
+    }
+}
+
+// ---- continuation round 3, batch 2 (ffx_pload::p1_post, p1_d3d data blocks) ----
+
+use ffx_pload::p1_post::bridge as ppo;
+
+#[test]
+fn p1d_post_ctors_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0007);
+        for case in 0..24u32 {
+            // the sampler constructor stubbed in odd cases: the flags'
+            // bits 6 and 7 then stay as written here
+            if case % 2 == 1 {
+                t.stub(0x0058_3b20, true, 0, 0, 0x3b20);
+            }
+            let this = t.junk(0x4100, case as u8);
+            for s in [0x3ee8u32, 0x3f0c, 0x3f30, 0xf40, 0xf64] {
+                let w = (rng.next() & !0xc0) | (((case / 6) & 3) << 6);
+                t.w32(this + s + 0x1c, w);
+            }
+            let (sym, what) = match case % 3 {
+                0 => (0x009f_b830, "deferred lighting base"),
+                1 => (0x009f_bb30, "deferred lighting D3D11"),
+                _ => (0x009f_bd90, "depth of field base"),
+            };
+            let what = format!("{label}: {what} ctor {case}");
+            t.check(&what, sym, Conv::Thiscall(this), &[], |g| {
+                Out::U32(match case % 3 {
+                    0 => ppo::deferred_lighting_base_ctor(g, this),
+                    1 => ppo::deferred_lighting_d3d11_ctor(g, this),
+                    _ => ppo::depth_of_field_base_ctor(g, this),
+                })
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_data_blocks_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0008);
+        for case in 0..48u32 {
+            let index = case % 2 == 0;
+            let (sym, k) = if index {
+                (0x0056_1e90, &pd3::INDEX_BLOCK)
+            } else {
+                (0x0056_20c0, &pd3::DATA_BLOCK)
+            };
+            // CreateBuffer and CreateShaderResourceView: the `fail`th
+            // call of the two fails (1..6; past the calls none does)
+            let buffer = t.object(&[0, 0, 0, 0, 0, 4]);
+            let dev = p1d_device(&mut t, &[], true, 0);
+            let vt = t.r32(dev);
+            let fail = 1 + case / 2 % 6;
+            let calls = t.zeros(4);
+            let bad_hr = if case % 3 == 0 { u32::MAX } else { 0x8000_4005 };
+            for (slot, tag) in [(3u32, 0x8003u32), (7, 0x8007)] {
+                let ok = t.stub_out_code(tag, 4, 3, buffer, 0);
+                let bad = t.stub_code(tag + 0x100, true, 4, 4, bad_hr);
+                let at = t.a.alloc_code(&[0x90; 32]).unwrap();
+                assert_eq!(t.b.alloc_code(&[0x90; 32]).unwrap(), at);
+                let mut c = vec![0xff, 0x05];
+                c.extend(calls.to_le_bytes()); // inc dword [calls]
+                c.extend([0x83, 0x3d]);
+                c.extend(calls.to_le_bytes());
+                c.push(fail as u8); // cmp dword [calls], fail
+                c.extend([0x75, 0x05]); // jne +5
+                c.push(0xe9);
+                let jbad = bad.wrapping_sub(at + c.len() as u32 + 4);
+                c.extend(jbad.to_le_bytes()); // jmp bad
+                c.push(0xe9);
+                let jok = ok.wrapping_sub(at + c.len() as u32 + 4);
+                c.extend(jok.to_le_bytes()); // jmp ok
+                t.write(at, &c);
+                t.w32(vt + 4 * slot, at);
+            }
+            if case % 9 == 8 {
+                let holder = t.rebase(0x00c9_4f6c);
+                t.w32(holder, 0);
+            }
+            p1d_guard(&mut t, &mut rng, case % 4 < 2);
+            let this = t.junk(0x40, case as u8);
+            let size = [0x40u32, 0, 0x1003, 4][(case / 4 % 4) as usize];
+            t.w32(this + k.size, size);
+            let base = [0u32, 0x0040_0000][(case / 3 % 2) as usize];
+            let offset = if case % 5 == 0 { 0 } else { 0x100 };
+            t.w32(this + k.offset, offset);
+            let n = [1u32, 2, 3, 0, 0x8000_0002, 0x0001_0000][(case / 8 % 6) as usize];
+            t.w32(this + k.array, n);
+            if n & 0x7fff_ffff > 1 {
+                let arr = t.junk(0x14 * 3, 5);
+                t.w32(this + k.array + 4, arr);
+            }
+            let frame = p1d_frame(&t, 1, 0x64);
+            p1d_prep_frame(&mut t, frame, pd3::BLOCK_FRAME);
+            let what = format!("{label}: data block case {case} (index {index})");
+            t.check(&what, sym, Conv::Thiscall(this), &[base], |g| {
+                Out::U32(pd3::create_data_block(g, this, base, k, frame))
+            });
+            t.b.set_call_top(None);
+            // the initial data, the view's and the buffer's descriptions
+            t.same_frame(frame, 0x24, &what);
+            t.same_frame(frame + 0x3c, 0x18, &what);
+            t.reset();
+        }
+    }
+}
+
+impl Twins {
+    /// [`Twins::stub_code`] logging `this` and the `n` stack words after
+    /// the first `skip`.
+    fn stub_code_skip(&mut self, tag: u32, skip: u32, n: u32, pops: u32, ret: u32) -> u32 {
+        assert!(n <= 6);
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(tag.to_le_bytes()); // mov [eax], tag
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        for i in 0..n {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * (skip + i)) as u8]); // mov edx, [esp+4+4(skip+i)]
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0xb8);
+        c.extend(ret.to_le_bytes()); // mov eax, ret
+        c.push(0xc2);
+        c.extend(((pops * 4) as u16).to_le_bytes());
+        let at = self.a.alloc_code(&c).unwrap();
+        assert_eq!(self.b.alloc_code(&c).unwrap(), at);
+        at
+    }
+}
+
+#[test]
+fn p1d_declarations_match_the_original() {
+    use ffx_pload::p1_declare::{self as pdc, bridge as pdb};
+    use ffx_prender::declare as dc;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x0dec_1a2f);
+        t.stub(dc::ATEXIT, false, 1, 0, 0x6003);
+        t.stub(dc::REGISTER_TYPE, false, 1, 0, 0x6001);
+        t.stub(dc::ADD_TO_NAMESPACE, true, 0, 0, 0x5a5a_1234);
+        t.stub(dc::TYPE_UINT, false, 0, 0, 0x00c9_0500);
+        t.stub(dc::DATA_MEMBER_CTOR, true, 6, 6, 6);
+        t.stub(dc::ANNOTATION_CTOR, true, 3, 3, 3);
+        t.stub(dc::ADD_ANNOTATION, true, 1, 1, 1);
+        for (f, c, aligned) in [
+            (0x0045_8460u32, pdc::PTYPED_OBJECT_ARRAY, false),
+            (0x0044_8450, pdc::U8_ARRAY, true),
+        ] {
+            t.stub(c.ctor, true, 0, 0, 0x00c9_7000 | (c.ctor & 0xfff));
+            if let dc::Element::Getter(g) = c.element {
+                t.stub(g, false, 0, 0, 0x00c9_7000 | (g & 0xfff));
+            }
+            let d = t.rebase(c.desc);
+            let ng = t.rebase(c.name);
+            let annot = d + 0xc4;
+            for case in 0..24u32 {
+                // the elements member's constructor: logs `this` and its
+                // last six words (the descriptor word is fixed), pops 7
+                let ctor = t.rebase(dc::MEMBER_ARRAY_CTOR);
+                let code = t.stub_code_skip(dc::MEMBER_ARRAY_CTOR, 1, 6, 7, 7);
+                let mut j = vec![0xe9];
+                j.extend(code.wrapping_sub(ctor + 5).to_le_bytes());
+                let old = Oracle::read(&mut t.a, ctor, 5).unwrap();
+                t.saved.entry(ctor).or_insert(old);
+                t.write(ctor, &j);
+                let guard = match case {
+                    0 | 4 => 0,
+                    1 => u32::MAX,
+                    _ => rng.next() & rng.next(),
+                };
+                t.w32(d + 0x94, guard);
+                let flags = rng.next();
+                t.w32(d + 0x90, flags);
+                let name = if case == 3 { 0 } else { rng.next() | 1 };
+                let own = if case % 5 == 2 { rng.next() | 1 } else { 0 };
+                t.w32(d + 0x18, own);
+                let first = if rng.next().is_multiple_of(2) {
+                    0
+                } else {
+                    rng.next() | 1
+                };
+                t.w32(ng, first);
+                let link = if rng.next().is_multiple_of(2) {
+                    annot + 4
+                } else {
+                    rng.next()
+                };
+                t.w32(annot + 4, link);
+                for off in [0, 0x2c, 0x34, 0x38, 0x3c, 0x14] {
+                    let v = rng.next();
+                    t.w32(d + 0x98 + off, v);
+                    let v = rng.next();
+                    t.w32(d + 0xe0 + off, v);
+                }
+                for off in [0x0, 0x18] {
+                    let v = rng.next();
+                    t.w32(annot + off, v);
+                }
+                let v = rng.next();
+                t.w32(d, v);
+                let what = format!("{label}: declare {f:#x} case {case}");
+                t.check(&what, f, Conv::Cdecl, &[name], |g| {
+                    Out::U32(if aligned {
+                        pdb::declare_aligned(g, name, &c, pdc::U8_ALIGNMENT)
+                    } else {
+                        dc::bridge::declare(g, name, &c)
+                    })
+                });
+                // put the elements member's constructor back for the
+                // next case's fresh stub
+                let saved = t.saved.remove(&ctor).unwrap();
+                t.write(ctor, &saved);
+                let log = t.log;
+                t.w32(log, 0);
+            }
+        }
+        t.reset();
+    }
+}
+
+// ---- continuation round 3, batch 3 (ffx_pload::p1_buffers) ----
+
+use ffx_pload::p1_buffers::bridge as pbu;
+
+/// An object whose vtable holds recording stubs: slot `i` takes and pops
+/// `slots[i].0` words and returns `slots[i].1`; the object is `size`
+/// junk bytes after its vtable word.
+fn p1d_vobj(t: &mut Twins, tag: u32, slots: &[(u32, u32)], size: usize) -> u32 {
+    let mut vt = Vec::new();
+    for (i, &(n, ret)) in (0u32..).zip(slots) {
+        let s = t.stub_code(tag + i, true, n, n, ret);
+        vt.extend(s.to_le_bytes());
+    }
+    let vt = t.alloc(&vt);
+    let obj = t.junk(size, tag as u8);
+    t.w32(obj, vt);
+    obj
+}
+
+/// A constructor slot (thiscall `(p)`, `ret 4`) that logs, writes the
+/// address it is given at `p` (a position-dependent constructor when
+/// `moving`, else a constant) and returns `ret`.
+fn p1d_ctor_code(t: &mut Twins, tag: u32, moving: bool, ret: u32) -> u32 {
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tag.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+    c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+    if moving {
+        c.extend([0x89, 0x12]); // mov [edx], edx
+    } else {
+        c.extend([0xc7, 0x02, 0x11, 0x22, 0x33, 0x44]); // mov dword [edx], 0x44332211
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    c.extend([0xc2, 0x04, 0x00]); // ret 4
+    let at = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+    at
+}
+
+/// A descriptor of `size` bytes with stub slots (10 construct, 11
+/// destruct, 12 its preparation), buffers at `+0x64/+0x68/+0x6c`, its
+/// own part at `+0x8c`, `flags`, an empty member ring.
+fn p1d_desc(t: &mut Twins, tag: u32, size: u32, flags: u32, moving: bool, made: u32) -> u32 {
+    let mut slots = vec![(0u32, 0u32); 13];
+    slots[11] = (1, 0x11);
+    slots[12] = (0, 0x12);
+    let d = p1d_vobj(t, tag, &slots, 0xa0);
+    let vt = t.r32(d);
+    let ctor = p1d_ctor_code(t, tag + 10, moving, made);
+    t.w32(vt + 40, ctor);
+    for off in [0x64u32, 0x68, 0x6c] {
+        let b = t.junk(size as usize + 8, off as u8);
+        t.w32(d + off, b);
+    }
+    t.w32(d + 0x1c, size);
+    t.w32(d + 0x18, 0x00c1_0000 | tag);
+    t.w32(d + 0x8c, 4);
+    t.w32(d + 0x88, 0x10);
+    t.w32(d + 0x90, flags);
+    t.w32(d + 0x40, 0);
+    let head = d + 0x44;
+    t.w32(head, head);
+    t.w32(head + 4, head);
+    d
+}
+
+/// A member of `desc` at `offset` (relative to the owner's base
+/// `+0x88`), of kind `kind` (0 none), flags `mflags`, with a type object
+/// of element size `esize` whose class is `ty` (0 none).
+fn p1d_member(
+    t: &mut Twins,
+    desc: u32,
+    kind: u32,
+    mflags: u32,
+    offset: u32,
+    esize: u32,
+    ty: u32,
+) -> u32 {
+    let info = if kind == 0 {
+        0
+    } else {
+        let i = t.zeros(0x40);
+        t.w32(i + 0x30, kind);
+        i
+    };
+    let tyobj = p1d_vobj(t, 0x7200, &[(0, 0), (0, ty)], 0x20);
+    t.w32(tyobj + 0x1c, esize);
+    let m = p1d_vobj(t, 0x7300, &[(0, 0), (0, info)], 0x40);
+    t.w32(m + 0x14, mflags);
+    t.w32(m + 0x18, tyobj);
+    t.w32(m + 0x24, offset + t.r32(desc + 0x88));
+    t.w32(m + 0xc, desc);
+    t.w32(m + 0x10, 0x00c2_0000 | offset);
+    let head = desc + 0x44;
+    let tail = t.r32(head + 4);
+    t.w32(m + 4, head);
+    t.w32(tail, m + 4);
+    t.w32(head + 4, m + 4);
+    m
+}
+
+#[test]
+fn p1d_default_buffer_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xbf00_0001);
+        for case in 0..40u32 {
+            let src = t.junk(0x40, 9);
+            t.stub(0x0043_cb80, true, 0, 0, src);
+            t.stub(0x0043_cfd0, true, 0, 0, 0xcfd0);
+            t.stub(0x0043_52f0, false, 3, 0, 0x0123_4567);
+            let flags = match case % 8 {
+                0 if case & 8 != 0 => u32::MAX,
+                0 => 0x8000_0000,
+                1 => 1,
+                2 => 2,
+                3 => 8,
+                _ => rng.next() & 0x7000_0000,
+            };
+            let made = if case % 7 == 6 { 0x100 } else { 1 };
+            let d = p1d_desc(&mut t, 0x7400, 0x30, flags, case % 3 == 0, made);
+            if case % 11 == 10 {
+                t.w32(d + 0x64, 0);
+            }
+            if case % 13 == 12 {
+                t.w32(d + 0x68, 0);
+            }
+            let ty = p1d_desc(&mut t, 0x7500, 0x8, 0x8000_0000, false, 1);
+            for (kind, mflags, off) in [
+                (4u32, 0u32, 0u32),
+                (0, 0x40, 8),
+                (0, 0, 0x10),
+                (4, 2, 0x14),
+                (2, 0x40, 0x18),
+                (4, 0, 0x20),
+            ] {
+                let typed = if rng.next().is_multiple_of(4) { 0 } else { ty };
+                p1d_member(&mut t, d, kind, mflags, off, 8, typed);
+            }
+            let what = format!("{label}: default buffer {case}");
+            t.check(&what, 0x0043_c420, Conv::Thiscall(d), &[], |g| {
+                pbu::calculate_default_buffer(g, d);
+                Out::None
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_validation_buffer_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xbf00_0002);
+        for case in 0..52u32 {
+            // 48..: one fixed array claiming 0x104 of 0x105 bytes (offset
+            // 0): the last scan's index and bit 28
+            let big = case >= 48;
+            t.stub(0x0043_cb80, true, 0, 0, 0);
+            t.stub(0x0043_cfd0, true, 0, 0, 0xcfd0);
+            t.stub(0x0043_52f0, false, 4, 0, 0x0123_4567);
+            let fixed = if big {
+                0x41
+            } else {
+                [2u32, 3, 0][(case % 3) as usize]
+            };
+            t.stub(0x0057_6050, true, 0, 0, fixed);
+            let value = t.junk(8, 3);
+            let ann = p1d_vobj(&mut t, 0x7600, &[(0, 0), (0, value)], 0x10);
+            t.stub(0x0057_5d40, true, 1, 1, if case % 2 == 0 { ann } else { 0 });
+            let size = if big { 0x105 - (case & 1) } else { 0x80 };
+            let d = p1d_desc(&mut t, 0x7400, size, rng.next() & 0x7fff_ffff, false, 1);
+            if big {
+                t.w32(d + 0x8c, 0);
+            }
+            if case % 11 == 10 {
+                t.w32(d + 0x68, 0);
+            }
+            if case % 13 == 12 {
+                t.w32(d + 0x6c, 0);
+            }
+            // a parent, done or to be worked out (its buffers through the
+            // originals, its slots stubs), with or without buffers
+            if case % 4 != 0 && !big {
+                let pflags = if case % 4 == 1 {
+                    0x8800_0000
+                } else {
+                    0x0800_0003 | ((case / 4 % 2) << 30) | ((case / 8 % 2) << 28)
+                };
+                let p = p1d_desc(&mut t, 0x7700, 0x10, pflags, false, 1);
+                if case % 5 == 0 {
+                    t.w32(p + 0x68, 0);
+                }
+                if case % 7 == 0 {
+                    t.w32(p + 0x6c, 0);
+                }
+                t.w32(d + 0x40, p);
+            }
+            let tyf = if case % 3 == 0 {
+                0x0000_0003
+            } else {
+                0x8000_0000
+            };
+            let ty = p1d_desc(&mut t, 0x7500, 0x8, tyf, false, 1);
+            if case % 5 == 3 {
+                t.w32(ty + 0x68, 0);
+            }
+            if case % 6 == 4 {
+                t.w32(ty + 0x6c, 0);
+            }
+            // the members: kinds, flags, offsets (an overlap in some
+            // cases), element sizes, typed or not
+            let overlap = case % 9 == 8;
+            for (i, (kind, mflags, off)) in [
+                (4u32, 0u32, 0u32),
+                (0, 0x40, 0x10),
+                (2, 0, 0x20),
+                (2, 0x40, 0x28),
+                (0, 2, 0x30),
+                (1, 0, 0x38),
+                (0, 0, if overlap { 2 } else { 0x60 }),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if big && i != 5 {
+                    continue;
+                }
+                let (kind, off) = if big { (1, 0) } else { (kind, off) };
+                let kind = if i == 0 && case % 5 == 0 { 0 } else { kind };
+                let typed = if (rng.next() >> i).is_multiple_of(3) || big {
+                    0
+                } else {
+                    ty
+                };
+                let esize = if big { 4 } else { 8 };
+                p1d_member(&mut t, d, kind, mflags, off, esize, typed);
+            }
+            let what = format!("{label}: validation buffer {case}");
+            t.check(&what, 0x0043_c630, Conv::Thiscall(d), &[], |g| {
+                Out::U32(pbu::calculate_validation_buffer(g, d))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_fixup_instances_matches_the_original() {
+    use ffx_pload::p1_fixup::bridge as pfx;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xf1c5_0001);
+        let import = t.rebase(0x00c9_4030);
+        let named = t.rebase(0x00c9_0760);
+        let dynamic = t.rebase(0x00c9_1330);
+        for case in 0..32u32 {
+            // the asset the lookup finds: a dynamic class object or not
+            let adesc = t.junk(0xa0, 4);
+            t.w32(adesc + 0x40, if case % 4 == 3 { 0 } else { dynamic });
+            let asset = t.junk(0x40, 5);
+            t.w32(asset + 0x20, adesc);
+            let mut slots = vec![(0u32, 0u32); 15];
+            slots[7] = (1, 0x77);
+            slots[14] = (1, 0);
+            let target = p1d_vobj(&mut t, 0x7b00, &slots, 0x60);
+            t.w32(target + 0x40, 0);
+            let found = match case % 5 {
+                0 => 0,
+                1 => 0x18,
+                _ => target + 0x18,
+            };
+            t.w32(asset + 0x1c, found);
+            t.stub(
+                0x0045_d280,
+                false,
+                1,
+                0,
+                if case % 7 == 6 { 0 } else { asset },
+            );
+            let cluster = t.junk(0x50, 3);
+            let iring = cluster + 8;
+            t.w32(iring, iring);
+            t.w32(iring + 4, iring);
+            let lists = cluster + 0x1c;
+            t.w32(lists, lists);
+            t.w32(lists + 4, lists);
+            t.w32(cluster + 0x44, if case == 0 { 2 } else { rng.next() & !2 });
+            // the import nodes: named "tex_a", "tex_b" or unnamed
+            let str_a = t.alloc(b"tex_a\0");
+            let str_b = t.alloc(b"tex_b\0");
+            let mut nodes = Vec::new();
+            for k in 0..=(case % 3) {
+                let n = p1d_vobj(&mut t, 0x7800, &slots, 0x60);
+                t.w32(n + 0x40, 0);
+                let nm = match (k + case) % 3 {
+                    0 => str_a,
+                    1 => str_b,
+                    _ => 0,
+                };
+                t.w32(n + 0x18, nm);
+                let link = n + 0x2c;
+                let tail = t.r32(iring + 4);
+                t.w32(link, iring);
+                t.w32(link + 4, tail);
+                t.w32(tail, link);
+                t.w32(iring + 4, link);
+                nodes.push(n);
+            }
+            if case % 6 == 5 {
+                // a node that is the asset object itself
+                t.w32(asset + 0x1c, nodes[nodes.len() - 1] + 0x18);
+            }
+            // the instance lists: the imports' (elements naming "tex_a"
+            // or "tex_b", a named class or not), lists whose class is an
+            // import node, others with a slot 14 result
+            let push_list = |t: &mut Twins, desc: u32| -> u32 {
+                let list = t.junk(0x50, 7);
+                t.w32(list + 0x2c, desc);
+                let tail = t.r32(lists + 4);
+                t.w32(list, lists);
+                t.w32(list + 4, tail);
+                t.w32(tail, list);
+                t.w32(lists + 4, list);
+                list
+            };
+            let count = 1 + case % 4;
+            let stride = 0x10u32;
+            let buffer = t.zeros((stride * (count + 2)) as usize);
+            for i in 0..count {
+                let e = buffer + stride * i;
+                let d = if (i + case) % 4 == 0 {
+                    let j = t.junk(0xa0, 8);
+                    t.w32(j + 0x40, 0);
+                    j
+                } else {
+                    named
+                };
+                t.w32(e + 4, d);
+                let s = if (i + case) % 2 == 0 { str_a } else { str_b };
+                t.w32(e + 8, s | (rng.next() & 1));
+            }
+            let il = push_list(&mut t, import);
+            t.w32(il + 0x34, buffer);
+            t.w32(il + 0x3c, count);
+            t.w32(il + 0x40, 1);
+            let end = if count >= 3 {
+                let e = buffer + stride;
+                t.w32(e, buffer + 3 * stride);
+                e
+            } else {
+                buffer + 0x1000
+            };
+            t.w32(il + 8, end);
+            t.w32(import + 0x1c, stride);
+            t.w32(import + 0x8c, 4);
+            for &n in &nodes {
+                push_list(&mut t, n);
+            }
+            let mut cslots = vec![(0u32, 0u32); 15];
+            cslots[14] = (1, if case % 8 == 7 { 0x15 } else { 0 });
+            let cls = p1d_vobj(&mut t, 0x7a00, &cslots, 0xa0);
+            t.w32(cls + 0x40, 0);
+            push_list(&mut t, cls);
+            push_list(&mut t, dynamic);
+            let what = format!("{label}: fixup instances {case}");
+            t.check(&what, 0x0044_1620, Conv::Thiscall(cluster), &[], |g| {
+                let it = g.scratch();
+                Out::U32(pfx::fixup_instances(g, it, cluster))
+            });
+            t.reset();
+        }
+    }
+}
+
+// ---- continuation round 3, batch 4 (ffx_pload::p1_lists) ----
+
+#[test]
+fn p1d_read_instance_lists_matches_the_original() {
+    use ffx_pload::p1_lists::bridge as pli;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x115_7001);
+        for case in 0..48u32 {
+            let simple = case % 2 == 0;
+            // the stream's read fails at its `fail`th call (1..5; none
+            // past the calls), readListData at its `lfail`th
+            let fail = 1 + case / 2 % 5;
+            let lfail = 1 + case / 10 % 4;
+            for (sym, n, at, bad) in [
+                (0x0057_dd30u32, 2u32, fail, 9u32),
+                (0x0057_b270, 3, lfail, 0x13),
+            ] {
+                let ok = t.stub_code(sym, true, n, n, 0);
+                let no = t.stub_code(sym | 1, true, n, n, bad);
+                let calls = t.zeros(4);
+                let code = t.a.alloc_code(&[0x90; 32]).unwrap();
+                assert_eq!(t.b.alloc_code(&[0x90; 32]).unwrap(), code);
+                let mut c = vec![0xff, 0x05];
+                c.extend(calls.to_le_bytes()); // inc dword [calls]
+                c.extend([0x83, 0x3d]);
+                c.extend(calls.to_le_bytes());
+                c.push(at as u8); // cmp dword [calls], at
+                c.extend([0x75, 0x05]); // jne +5
+                c.push(0xe9);
+                let j = no.wrapping_sub(code + c.len() as u32 + 4);
+                c.extend(j.to_le_bytes()); // jmp no
+                c.push(0xe9);
+                let j = ok.wrapping_sub(code + c.len() as u32 + 4);
+                c.extend(j.to_le_bytes()); // jmp ok
+                t.write(code, &c);
+                let addr = t.rebase(sym);
+                let mut jmp = vec![0xe9];
+                jmp.extend(code.wrapping_sub(addr + 5).to_le_bytes());
+                let old = Oracle::read(&mut t.a, addr, 5).unwrap();
+                t.saved.entry(addr).or_insert(old);
+                t.write(addr, &jmp);
+            }
+            t.stub(0x0057_e160, true, 1, 1, 0);
+            t.stub(0x0057_8300, false, 2, 0, 0);
+            let block = if case % 7 == 6 { 0 } else { t.zeros(0x40) };
+            t.stub(0x0042_fb80, false, 2, 0, block);
+            t.stub(0x0042_fb20, false, 1, 0, 0);
+            // the mapping's class entries (+0x1c set or not)
+            let map = t.junk(0x20, 1);
+            t.w32(
+                map + 0x1c,
+                if simple {
+                    0
+                } else {
+                    [1, 0x8000_0004, 0x10][(case % 3) as usize]
+                },
+            );
+            let entries = t.zeros(32 * 4);
+            for i in 0..4 {
+                t.w32(entries + 32 * i + 0x1c, (rng.next() & 1) * 7);
+            }
+            t.w32(map + 0xc, 4 | (rng.next() & 0x8000_0000));
+            t.w32(map + 0x10, entries);
+            let n = case % 5;
+            let header = t.junk(0x40, 2);
+            t.w32(header + 0x10, n);
+            t.w32(header + 0x38, 0x80);
+            let cluster = t.junk(0x30, 3);
+            let arena = if case % 9 == 4 { 0 } else { t.junk(8, 4) };
+            t.w32(cluster + 0x24, arena);
+            let hdrs = t.zeros(0x24 * 5);
+            let lists = t.zeros(4 * 5);
+            for i in 0..n {
+                t.w32(hdrs + 0x24 * i, 1 + rng.next() % 4);
+                t.w32(hdrs + 0x24 * i + 8, 0x10 + i);
+                let list = if rng.next().is_multiple_of(4) {
+                    0
+                } else {
+                    t.junk(0x40, i as u8)
+                };
+                t.w32(lists + 4 * i, list);
+            }
+            let reader = t.junk(0x30, 5);
+            t.w32(reader, cluster);
+            t.w32(reader + 4, map);
+            t.w32(reader + 8, header);
+            t.w32(reader + 0x14, hdrs);
+            let kind: usize = match n {
+                0 if case % 3 == 0 => 0,
+                0 => 2,
+                1 => 1,
+                _ => 0,
+            };
+            t.w32(reader + 0x18, [n.max(2), 1, 0][kind]);
+            match kind {
+                0 => t.w32(reader + 0x1c, lists),
+                1 => {
+                    let one = t.r32(lists);
+                    t.w32(reader + 0x1c, one);
+                }
+                _ => {}
+            }
+            let stream = t.junk(0x20, 6);
+            let size = [0x40u32, 0, 0x8000_0040][(case / 3 % 3) as usize];
+            let cursor0 = 0x0012_3450 + case;
+            // the original's argument word `cursor`: three words, the
+            // return address and ebp above its frame
+            let ebp = t.a.stack_range().end - 0x100 - 12 - 8;
+            let slot = ebp + 0xc;
+            t.b.write(slot, &cursor0.to_le_bytes()).unwrap();
+            t.b.set_call_top(Some(ebp - 0x200));
+            let what = format!("{label}: read instance lists {case}");
+            t.check(
+                &what,
+                0x0057_c940,
+                Conv::Thiscall(reader),
+                &[stream, cursor0, size],
+                |g| Out::U32(pli::read_instance_lists(g, reader, stream, slot, size)),
+            );
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}
+
+// ---- continuation round 3, batch 5 (ffx_pload::p1_fixups) ----
+
+#[test]
+fn p1d_load_user_fixups_matches_the_original() {
+    use ffx_pload::p1_fixups::bridge as pfu;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xf1c5_0002);
+        let import = t.rebase(0x00c9_4030);
+        for case in 0..40u32 {
+            let n = [0u32, 1, 2, 3, 5][(case % 5) as usize];
+            let nb = 0x40u32;
+            // the records the stream "reads" into the malloc'd block
+            let records = t.zeros(12 * 6);
+            for i in 0..n {
+                t.w32(records + 12 * i, i + 1);
+                t.w32(
+                    records + 12 * i + 4,
+                    [3u32, 0x1f, 0x20, 8][((i + case) % 4) as usize],
+                );
+                t.w32(records + 12 * i + 8, 4 * i);
+            }
+            let block = if case % 13 == 12 { 0 } else { records };
+            t.stub(0x0042_fb80, false, 2, 0, block);
+            t.stub(0x0042_fb20, false, 1, 0, 0);
+            // the stream's read fails at its `fail`th call (none past 2)
+            let fail = [9u32, 1, 2][(case % 3) as usize] * u32::from(case % 4 == 3);
+            {
+                let ok = t.stub_code(0x0057_dd30, true, 2, 2, 0);
+                let no = t.stub_code(0x0057_dd31, true, 2, 2, 9);
+                let calls = t.zeros(4);
+                let code = t.a.alloc_code(&[0x90; 32]).unwrap();
+                assert_eq!(t.b.alloc_code(&[0x90; 32]).unwrap(), code);
+                let mut c = vec![0xff, 0x05];
+                c.extend(calls.to_le_bytes()); // inc dword [calls]
+                c.extend([0x83, 0x3d]);
+                c.extend(calls.to_le_bytes());
+                c.push(fail as u8); // cmp dword [calls], fail
+                c.extend([0x75, 0x05]); // jne +5
+                c.push(0xe9);
+                let j = no.wrapping_sub(code + c.len() as u32 + 4);
+                c.extend(j.to_le_bytes());
+                c.push(0xe9);
+                let j = ok.wrapping_sub(code + c.len() as u32 + 4);
+                c.extend(j.to_le_bytes());
+                t.write(code, &c);
+                let at = t.rebase(0x0057_dd30);
+                let mut j = vec![0xe9];
+                j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+                let old = Oracle::read(&mut t.a, at, 5).unwrap();
+                t.saved.entry(at).or_insert(old);
+                t.write(at, &j);
+            }
+            t.stub(0x0057_6d20, false, 1, 0, 0);
+            // PhyrePrintf: the format and, for the formats with one,
+            // the argument (the two-word calls leave caller junk there)
+            {
+                let log = t.log;
+                let skip: Vec<u32> = [0x00b3_106c, 0x00b3_1078, 0x00b7_cae0]
+                    .iter()
+                    .map(|&f| t.rebase(f))
+                    .collect();
+                let mut c = vec![0xa1];
+                c.extend(log.to_le_bytes()); // mov eax, [log]
+                c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+                c.push(0x05);
+                c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+                c.extend([0xc7, 0x00, 0xf0, 0x52, 0x43, 0x00]); // mov [eax], tag
+                c.extend([0x8b, 0x54, 0x24, 0x08]); // mov edx, [esp+8]
+                c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+                let mut jumps = Vec::new();
+                for f in skip {
+                    c.extend([0x81, 0xfa]);
+                    c.extend(f.to_le_bytes()); // cmp edx, f
+                    c.extend([0x74, 0x00]); // je skip
+                    jumps.push(c.len() - 1);
+                }
+                c.extend([0x8b, 0x54, 0x24, 0x0c]); // mov edx, [esp+0xc]
+                c.extend([0x89, 0x50, 0x0c]); // mov [eax+0xc], edx
+                let target = c.len();
+                for j in jumps {
+                    c[j] = (target - j - 1) as u8;
+                }
+                c.extend([0xff, 0x05]);
+                c.extend(log.to_le_bytes()); // inc dword [log]
+                c.extend([0x31, 0xc0, 0xc3]); // xor eax, eax; ret
+                let code = t.a.alloc_code(&c).unwrap();
+                assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+                let at = t.rebase(0x0043_52f0);
+                let mut j = vec![0xe9];
+                j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+                let old = Oracle::read(&mut t.a, at, 5).unwrap();
+                t.saved.entry(at).or_insert(old);
+                t.write(at, &j);
+            }
+            // the resolver: writes a value and a last word, or nothing,
+            // or there is none (0x15)
+            let resolver = if case % 3 == 0 {
+                0
+            } else {
+                let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+                if case % 3 == 1 {
+                    c.extend([0xc7, 0x00, 0x34, 0x12, 0, 0]); // mov dword [eax], 0x1234
+                    c.extend([0xc7, 0x40, 0x0c, 0xdd, 0xcc, 0xbb, 0xaa]); // mov dword [eax+0xc], 0xaabbccdd
+                    c.extend([0x8b, 0x4c, 0x24, 0x10]); // mov ecx, [esp+0x10]
+                    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+                }
+                c.push(0xc3);
+                let at = t.a.alloc_code(&c).unwrap();
+                assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+                at
+            };
+            let class = match case / 5 % 4 {
+                0 => import,
+                1 => 0,
+                _ => {
+                    let c = t.junk(0x40, 9);
+                    t.w32(c + 0x28, resolver);
+                    t.w32(c + 0x18, if case % 2 == 0 { 0 } else { 0x00c3_0000 });
+                    c
+                }
+            };
+            // the mapping entry: through a, through b, b null, unknown
+            let holder_a = t.junk(0x10, 7);
+            t.w32(holder_a + 4, class);
+            let holder_b = t.junk(0x10, 8);
+            t.w32(holder_b + 8, class);
+            let (k, v, ret) = match case / 3 % 4 {
+                0 => (1u32, holder_a, 1u32),
+                1 => (2, holder_b, 0x101),
+                2 => (2, 0, 1),
+                _ => (1, holder_a, 0x1200),
+            };
+            let entry = t.stub_out_code(0x0047_e730, 3, k, v, ret);
+            let at = t.rebase(0x0047_e730);
+            let mut j = vec![0xe9];
+            j.extend(entry.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+            let header = t.junk(0x40, 2);
+            t.w32(header + 0x30, n);
+            t.w32(header + 0x34, nb);
+            let reader = t.junk(0x20, 3);
+            t.w32(reader + 8, header);
+            t.write(reader + 0xc, &[(case % 2) as u8]);
+            let names_block = t.junk(nb as usize, 4);
+            let names = t.zeros(8);
+            let sized = case % 7 != 3;
+            let count = match case % 7 {
+                3 => 7 | (case & 0x10) << 27,
+                5 => nb | 0x8000_0000,
+                _ => nb,
+            };
+            t.w32(names, count);
+            let _ = sized;
+            t.w32(names + 4, names_block);
+            let out = t.zeros(0x10 * 6);
+            let results = t.zeros(8);
+            t.w32(results, if case % 6 == 5 { 9 } else { n });
+            t.w32(results + 4, out);
+            let stream = t.junk(0x10, 5);
+            let ctx = 0x00c4_0000 + case;
+            let ebp = t.a.stack_range().end - 0x100 - 16 - 8;
+            let frame = ebp - 0x3c;
+            t.write(frame, &[0; 0x2c]);
+            t.b.set_call_top(Some(frame - 0x100));
+            let what = format!("{label}: load user fixups {case}");
+            t.check(
+                &what,
+                0x0057_c5d0,
+                Conv::Thiscall(reader),
+                &[stream, ctx, results, names],
+                |g| {
+                    Out::U32(pfu::load_user_fixups(
+                        g, reader, stream, ctx, results, names, frame,
+                    ))
+                },
+            );
+            t.b.set_call_top(None);
+            let _ = &mut rng;
+            t.reset();
+        }
     }
 }

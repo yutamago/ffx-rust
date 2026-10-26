@@ -447,6 +447,43 @@ pub const ASYNC_PROCESS_HEADER: Bind = Bind {
     }],
 };
 
+/// `Phyre::PScripting::PClassCallableMethodScript::Bind` (`0x006195a0`):
+/// `m_script` (a `PScript` reference), `m_nameAsString` and
+/// `m_entryPoint` (strings).
+pub const CALLABLE_METHOD_SCRIPT: Bind = Bind {
+    desc: 0x00cc_9a40,
+    guard: 0x00cc_9b00,
+    steps: &[
+        Step::Field {
+            bit: 1,
+            member: 0x00cc_9ad4,
+            ty: TypeOf::Desc(0x00cb_e410),
+            name: 0x00b2_cea8,
+            offset: 0x28,
+            kind: 2,
+            dtor: 0x00b0_6040,
+        },
+        Step::Field {
+            bit: 2,
+            member: 0x00cc_9b04,
+            ty: TypeOf::Desc(0x00c9_1048),
+            name: 0x00b0_f9a0,
+            offset: 0x2c,
+            kind: 0,
+            dtor: 0x00b0_6030,
+        },
+        Step::Field {
+            bit: 4,
+            member: 0x00cc_9b30,
+            ty: TypeOf::Desc(0x00c9_1048),
+            name: 0x00b2_d24c,
+            offset: 0x30,
+            kind: 0,
+            dtor: 0x00b0_6020,
+        },
+    ],
+};
+
 /// A `PArray<T*>` class descriptor's declaration (`0x009e5010`,
 /// `0x009e5220`): the constants that differ; every other word sits at a
 /// fixed offset from `desc`.

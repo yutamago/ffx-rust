@@ -19,6 +19,9 @@ use crate::types::ATEXIT;
 const MEMBER_CTOR: u32 = 0x0043_a080;
 /// `PClassDescriptor::addToNamespace` (thiscall).
 const ADD_TO_NAMESPACE: u32 = 0x0043_c140;
+/// `PIClassDataMemberDynamicType::PIClassDataMemberDynamicType(member)`
+/// (thiscall).
+const DYNAMIC_TYPE_CTOR: u32 = 0x0057_5440;
 /// `PType::setFixupFunctions(a, b)` (thiscall).
 const SET_FIXUPS: u32 = 0x0043_79b0;
 
@@ -82,6 +85,24 @@ pub enum Step {
         /// The function at `+0x20` (with a zero word after it).
         wide: bool,
     },
+    /// A dynamic-type handler at `at` under guard bit `bit`:
+    /// `PIClassDataMemberDynamicType(at; member)` (`0x00575440`), its
+    /// vtable, the handler function at `+8` and a zero `+0xc`,
+    /// `atexit(dtor)`. Then, on every call, the member's `+0x28` = `at`.
+    DynamicType {
+        /// Guard bit.
+        bit: u32,
+        /// The handler's static.
+        at: u32,
+        /// The data member it serves.
+        member: u32,
+        /// Its vtable.
+        vtable: u32,
+        /// Its function.
+        func: u32,
+        /// Its `atexit` destructor.
+        dtor: u32,
+    },
 }
 
 /// A registration.
@@ -131,7 +152,7 @@ const DATA: u32 = 0x0057_52a0;
 const GET_UINT: u32 = 0x0043_7fc0;
 
 /// The registrations.
-pub const STEPS: [Bind; 16] = [
+pub const STEPS: [Bind; 17] = [
     // PClassMember::Bind
     Bind {
         addr: 0x0043_a1e0,
@@ -933,6 +954,84 @@ pub const STEPS: [Bind; 16] = [
         ],
         end: End::Add,
     },
+    // PAssetReference::Bind
+    Bind {
+        addr: 0x0045_c500,
+        desc: 0x00c9_3f98,
+        guard: 0x00c9_4108,
+        steps: &[
+            Step::Register,
+            Step::Member {
+                bit: 1,
+                at: 0x00c9_40dc,
+                ctor: DATA,
+                ty: Ty::Fixed(0x00c9_1048),
+                name: 0x00b1_1c88,
+                rest: [0x18, 0x10, 0],
+                dtor: 0x00af_b080,
+            },
+            Step::Member {
+                bit: 2,
+                at: 0x00c9_410c,
+                ctor: DATA,
+                ty: Ty::Get(0x0043_5740),
+                name: 0x00b1_1c90,
+                rest: [0x1c, 0x12, 0],
+                dtor: 0x00af_b040,
+            },
+            Step::Member {
+                bit: 4,
+                at: 0x00c9_4138,
+                ctor: DATA,
+                ty: Ty::Fixed(0x00c9_0760),
+                name: 0x00b1_1c98,
+                rest: [0x20, 0x12, 0],
+                dtor: 0x00af_b070,
+            },
+            Step::DynamicType {
+                bit: 8,
+                at: 0x00c9_4168,
+                member: 0x00c9_410c,
+                vtable: 0x00b1_1ca8,
+                func: 0x0045_de70,
+                dtor: 0x00af_b050,
+            },
+            Step::Method {
+                bit: 0x10,
+                at: 0x00c9_4178,
+                name: 0x00b1_1cb0,
+                list: 0x4c,
+                finder: 0x0043_59d0,
+                dtor: 0x00af_b000,
+                vtable: 0x00b1_1d54,
+                func: 0x0045_ded0,
+                wide: true,
+            },
+            Step::Method {
+                bit: 0x20,
+                at: 0x00c9_41a0,
+                name: 0x00b1_1cb8,
+                list: 0x4c,
+                finder: 0x0043_59d0,
+                dtor: 0x00af_af80,
+                vtable: 0x00b1_1d6c,
+                func: 0x0045_de80,
+                wide: true,
+            },
+            Step::Method {
+                bit: 0x40,
+                at: 0x00c9_41c8,
+                name: 0x00b1_1cc4,
+                list: 0x4c,
+                finder: 0x0043_59d0,
+                dtor: 0x00af_afc0,
+                vtable: 0x00b1_1d84,
+                func: 0x0044_19d0,
+                wide: true,
+            },
+        ],
+        end: End::Add,
+    },
 ];
 
 /// The registration at `addr`.
@@ -944,8 +1043,8 @@ pub fn bind(addr: u32) -> Option<&'static Bind> {
 /// The ports over game memory.
 pub mod bridge {
     use super::{
-        ADD_TO_NAMESPACE, ATEXIT, Bind, Conv, End, GLOBAL_NAMESPACE, Host, MEMBER_CTOR,
-        REGISTER_TYPE, SET_FIXUPS, Step, Ty,
+        ADD_TO_NAMESPACE, ATEXIT, Bind, Conv, DYNAMIC_TYPE_CTOR, End, GLOBAL_NAMESPACE, Host,
+        MEMBER_CTOR, REGISTER_TYPE, SET_FIXUPS, Step, Ty,
     };
 
     /// Sets `bit` in the guard word and says whether it was clear.
@@ -1029,6 +1128,28 @@ pub mod bridge {
                     h.write(at + 0x1c, func);
                 }
                 h.write(at + 0x14, at + 0x18);
+                0
+            }
+            Step::DynamicType {
+                bit,
+                at,
+                member,
+                vtable,
+                func,
+                dtor,
+            } => {
+                let at = h.rebase(at);
+                let member = h.rebase(member);
+                if first_time(h, guard, bit) {
+                    h.call_sym(DYNAMIC_TYPE_CTOR, Conv::Thiscall(at), &[member]);
+                    let vt = h.rebase(vtable);
+                    let func = h.rebase(func);
+                    h.write(at, vt);
+                    h.write(at + 8, [func, 0]);
+                    let dtor = h.rebase(dtor);
+                    h.call_sym(ATEXIT, Conv::Cdecl, &[dtor]);
+                }
+                h.write(member + 0x28, at);
                 0
             }
         }

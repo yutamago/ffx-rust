@@ -232,3 +232,247 @@ pub mod bridge {
         }
     }
 }
+
+/// `MorphManager_addPair_006ab8c0` (stdcall `(arr, key, value)`).
+pub const ADD_PAIR: u32 = 0x006a_b8c0;
+/// `Material_hasParameter_006ac4a0` (stdcall `(inst, name)` -> `al`).
+pub const HAS_PARAMETER: u32 = 0x006a_c4a0;
+/// `0x006ab950` (stdcall `(arr, inst, a, b, c)`, `ret 0x14`): appends a
+/// 16-byte UV-offset record.
+pub const ADD_UV_OFFSET: u32 = 0x006a_b950;
+/// `PhyreSceneCursor_Begin_00637730` (thiscall `(cursor)`).
+pub const CURSOR_BEGIN: u32 = 0x0063_7730;
+/// `PhyreSceneCursor_Next_006377a0` (thiscall `(cursor)`).
+pub const CURSOR_NEXT: u32 = 0x0063_77a0;
+/// `PMeshInstance`'s class descriptor, what the cursor looks for.
+pub const MESH_INSTANCE_DESC: u32 = 0x00ca_7228;
+/// The material parameter names the morph kinds need (`.rdata`):
+/// vertex colour (kind 4), UV (kind 3), UV offset (flag `0x400`).
+pub const MORPH_PARAMS: [u32; 3] = [0x00b4_8398, 0x00b4_83b0, 0x00b4_83c0];
+
+pub mod bridge3 {
+    //! The original over game memory.
+
+    use super::{
+        ADD_PAIR, ADD_UV_OFFSET, CURSOR_BEGIN, CURSOR_NEXT, Conv, HAS_PARAMETER, Host,
+        MESH_INSTANCE_DESC, MORPH_PARAMS,
+    };
+
+    /// `Material_hasParameter(inst, name)`'s `al`. The original leaves the
+    /// morph manager in `ecx` for the call (the callee only uses `cl`
+    /// after clearing it).
+    fn has(h: &mut impl Host, mm: u32, inst: u32, name: u32) -> bool {
+        let name = h.rebase(name);
+        h.call_sym(HAS_PARAMETER, Conv::Thiscall(mm), &[inst, name]) & 0xff != 0
+    }
+
+    /// One mesh instance: the render-order bump and its morph
+    /// registrations.
+    fn register(h: &mut impl Host, mm: u32, inst: u32) {
+        if h.read::<u32>(inst + 0x4c) == 1 {
+            let bounds: u32 = h.read(inst + 0x1c);
+            let order: u32 = h.read(bounds + 0x20);
+            h.write(bounds + 0x20, order.wrapping_add(100_000_000));
+        }
+        if h.read::<i32>(inst + 0x30) <= 0 {
+            return;
+        }
+        let kind: u32 = h.read(inst + 0x44);
+        let [color, uv, offset] = MORPH_PARAMS;
+        if kind == 1 && h.read::<u32>(inst + 0x18) != 0 {
+            h.call_sym(ADD_PAIR, Conv::Stdcall, &[mm, inst, 0]);
+            return;
+        }
+        if kind == 4 {
+            if has(h, mm, inst, color) {
+                h.call_sym(ADD_PAIR, Conv::Stdcall, &[mm + 8, inst, 0]);
+                return;
+            }
+        } else if kind == 3 && has(h, mm, inst, uv) {
+            h.call_sym(ADD_PAIR, Conv::Stdcall, &[mm + 0x10, inst, 0]);
+            return;
+        }
+        if h.read::<u32>(inst + 0x54) & 0x400 != 0 && has(h, mm, inst, offset) {
+            // a 16-byte record by value: the instance, 0.0, 0.0, 0
+            h.call_sym(ADD_UV_OFFSET, Conv::Stdcall, &[mm + 0x18, inst, 0, 0, 0]);
+        }
+    }
+
+    /// `MorphManager::registerClusterMorphs(mm, cluster)` (`0x006aca10`,
+    /// `ret 4`) -> 0: walks the cluster's `PMeshInstance`s with a scene
+    /// cursor at `ebp - 0x40` (current, node, stride, remaining, offset,
+    /// the instance lists `cluster + 0x1c`, the first list or 0, the
+    /// class); for each: `m_DObjKind` (`+0x4c`) 1 adds 100000000 to its
+    /// bounds' render order (`[+0x1c] + 0x20`); with morphs (`+0x30 >
+    /// 0`) it registers by kind (`+0x44`): 1 with a dynamic mesh
+    /// (`+0x18`) into `mm + 0`, 4 with a vertex-colour parameter into `+8`,
+    /// 3 with a UV parameter into `+0x10` (weight 0.0), else a UV offset
+    /// (`+0x54 & 0x400` with its parameter) into `+0x18`. The cursor steps
+    /// as the original's inline loop does (a node equal to the current
+    /// element is followed, and the element after it taken), with
+    /// `PhyreSceneCursor_Next` when a block runs out. Also returns the
+    /// word the original leaves in its argument's slot (the last instance
+    /// visited, else `cluster`).
+    pub fn register_cluster_morphs(
+        h: &mut impl Host,
+        ebp: u32,
+        mm: u32,
+        cluster: u32,
+    ) -> (u32, u32) {
+        let cur = ebp - 0x40;
+        let lists = cluster.wrapping_add(0x1c);
+        let first: u32 = h.read(lists);
+        let first = if first == lists { 0 } else { first };
+        for at in [0, 4, 8, 0xc, 0x10] {
+            h.write(cur + at, 0u32);
+        }
+        h.write(cur + 0x14, lists);
+        h.write(cur + 0x18, first);
+        h.write(cur + 0x1c, h.rebase(MESH_INSTANCE_DESC));
+        h.call_sym(CURSOR_BEGIN, Conv::Thiscall(cur), &[]);
+        let mut slot = cluster;
+        let mut left: u32 = h.read(cur + 0xc);
+        if left == 0 {
+            return (0, slot);
+        }
+        let mut at: u32 = h.read(cur);
+        let mut node: u32 = h.read(cur + 4);
+        loop {
+            let off: u32 = h.read(cur + 0x10);
+            let inst = off.wrapping_add(at);
+            slot = inst;
+            register(h, mm, inst);
+            // the original's inline step
+            let mut next_block = false;
+            loop {
+                let stride: u32 = h.read(cur + 8);
+                at = at.wrapping_add(stride);
+                left -= 1;
+                h.write(cur, at);
+                h.write(cur + 0xc, left);
+                if node == at {
+                    node = h.read(node);
+                    h.write(cur + 4, node);
+                    if left != 0 {
+                        continue;
+                    }
+                    next_block = true;
+                } else if left == 0 {
+                    next_block = true;
+                }
+                break;
+            }
+            if next_block {
+                h.call_sym(CURSOR_NEXT, Conv::Thiscall(cur), &[]);
+                left = h.read(cur + 0xc);
+                if left == 0 {
+                    return (0, slot);
+                }
+                at = h.read(cur);
+                node = h.read(cur + 4);
+            }
+        }
+    }
+}
+
+pub mod bridge4 {
+    //! The original over game memory.
+
+    use super::{Conv, Host, PHYRE_MALLOC};
+    use crate::PHYRE_FREE;
+
+    /// Puts `p` (16 elements) into the array at `arr` (count, pointer),
+    /// freeing the old owned storage as the originals do.
+    fn replace(h: &mut impl Host, arr: u32, p: u32) {
+        let old: u32 = h.read(arr + 4);
+        let count: u32 = h.read(arr);
+        if old != p && count >> 31 == 0 && old != 0 {
+            h.call_sym(PHYRE_FREE, Conv::Cdecl, &[old]);
+        }
+        h.write(arr + 4, p);
+        h.write(arr, 0x10u32);
+    }
+
+    /// Gives the four arrays 16 fresh elements each where they don't
+    /// have 16 (`Phyre_PhyreMalloc(size, 4)`): the weight arrays (`+0`,
+    /// `+8`, `+0x10`: `{key 0, weight 0.0}`) and the UV-offset array
+    /// (`+0x18`: `{0, 0.0, 0.0, 0}`). A failed allocation stops
+    /// (`initialize`, `Err`) or skips that array (`reset`).
+    fn reallocate(h: &mut impl Host, mm: u32, stop: bool) -> Result<(), ()> {
+        for (k, arr) in [0u32, 8, 0x10].into_iter().enumerate() {
+            if h.read::<u32>(mm + arr) == 0x10 {
+                continue;
+            }
+            let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[0x80, 4]);
+            if p == 0 {
+                if stop {
+                    return Err(());
+                }
+                continue;
+            }
+            for e in 0..0x10 {
+                let at = p + 8 * e;
+                if k == 0 {
+                    // the first array stores the weight first
+                    h.write(at + 4, 0u32);
+                    h.write(at, 0u32);
+                } else {
+                    h.write(at, 0u32);
+                    h.write(at + 4, 0u32);
+                }
+            }
+            replace(h, mm + arr, p);
+        }
+        if h.read::<u32>(mm + 0x18) != 0x10 {
+            let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[0x100, 4]);
+            if p == 0 {
+                return if stop { Err(()) } else { Ok(()) };
+            }
+            for e in 0..0x10 {
+                let at = p + 0x10 * e;
+                for off in [0, 4, 0xc, 8] {
+                    h.write(at + off, 0u32);
+                }
+            }
+            replace(h, mm + 0x18, p);
+        }
+        Ok(())
+    }
+
+    /// `MorphManager::initialize(mm, x)` (`0x006ac1b0`, thiscall, `ret 4`)
+    /// -> 0, or 0xd when an allocation fails (the arrays after it stay as
+    /// they are): `+0x24 = x`, then the arrays as [`reallocate`] makes
+    /// them.
+    pub fn initialize(h: &mut impl Host, mm: u32, x: u32) -> u32 {
+        h.write(mm + 0x24, x);
+        match reallocate(h, mm, true) {
+            Ok(()) => 0,
+            Err(()) => 0xd,
+        }
+    }
+
+    /// `MorphManager::reset(mm)` (`0x006ac530`, fastcall): every element
+    /// of the four arrays cleared in place (counts `& 0x7fffffff`), then
+    /// [`reallocate`], skipping an array whose allocation fails.
+    pub fn reset(h: &mut impl Host, mm: u32) {
+        for arr in [0u32, 8, 0x10] {
+            let n = h.read::<u32>(mm + arr) & 0x7fff_ffff;
+            let data: u32 = h.read(mm + arr + 4);
+            for e in 0..n {
+                let at = data.wrapping_add(8 * e);
+                h.write(at, 0u32);
+                h.write(at + 4, 0u32);
+            }
+        }
+        let n = h.read::<u32>(mm + 0x18) & 0x7fff_ffff;
+        for e in 0..n {
+            // the pointer is reread for each element
+            let data: u32 = h.read(mm + 0x1c);
+            let at = data.wrapping_add(0x10 * e);
+            for off in [0, 4, 8, 0xc] {
+                h.write(at + off, 0u32);
+            }
+        }
+        let _ = reallocate(h, mm, false);
+    }
+}

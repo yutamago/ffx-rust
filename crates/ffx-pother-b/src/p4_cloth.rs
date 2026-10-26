@@ -167,3 +167,277 @@ pub mod bridge {
         0
     }
 }
+
+/// `Phyre_PhyreMalloc_0042fb80` (cdecl `(size, align)`).
+pub const PHYRE_MALLOC: u32 = 0x0042_fb80;
+
+pub mod bridge2 {
+    //! The originals over game memory.
+
+    use super::{COUNT, Conv, G_CLOTH_ENTRIES, Host, PHYRE_MALLOC};
+    use crate::PHYRE_FREE;
+
+    /// `ClothInstancing::terminate(cloth, x)` (`0x006e2e40`, thiscall, `ret
+    /// 4`; `x` unused, Ghidra shows a fastcall of one):
+    /// queues the cloth's objects for release ([`super::bridge::
+    /// release_expired`]): the entry `{[cloth], [cloth + 0x10], [cloth +
+    /// 8], countdown 4}` goes into the first free entry (a negative
+    /// countdown), else at the end of a table one entry longer
+    /// (`Phyre_PhyreMalloc(16 (n + 1), 4)`; the old one copied, and freed
+    /// when owned). Nothing changes when that allocation fails.
+    pub fn terminate(h: &mut impl Host, cloth: u32) {
+        let g = h.rebase(G_CLOTH_ENTRIES);
+        let n = h.read::<u32>(g) & COUNT;
+        let mut free = None;
+        if n != 0 {
+            let base: u32 = h.read(g + 4);
+            for i in 0..n {
+                let e = base.wrapping_add(16 * i);
+                if h.read::<i32>(e + 0xc) < 0 {
+                    free = Some(e);
+                    break;
+                }
+            }
+        }
+        let entry = [
+            h.read::<u32>(cloth),
+            h.read::<u32>(cloth + 0x10),
+            h.read::<u32>(cloth + 8),
+            4,
+        ];
+        if let Some(e) = free {
+            for (k, w) in entry.into_iter().enumerate() {
+                h.write(e + 4 * k as u32, w);
+            }
+            return;
+        }
+        let size = ((h.read::<u32>(g) & COUNT) + 1) << 4;
+        let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[size, 4]);
+        if p == 0 {
+            return;
+        }
+        let n = h.read::<u32>(g) & COUNT;
+        let mut src: u32 = h.read(g + 4);
+        let mut dst = p;
+        for _ in 0..n {
+            let d = dst;
+            dst = dst.wrapping_add(16);
+            // the copy skips (without moving on) a null destination
+            if d != 0 {
+                for k in 0..4 {
+                    let w: u32 = h.read(src + 4 * k);
+                    h.write(d + 4 * k, w);
+                }
+                src = src.wrapping_add(16);
+            }
+        }
+        let last = p.wrapping_add(n << 4);
+        if last != 0 {
+            for (k, w) in entry.into_iter().enumerate() {
+                h.write(last + 4 * k as u32, w);
+            }
+        }
+        let old: u32 = h.read(g + 4);
+        if old != p && h.read::<u32>(g) >> 31 == 0 && old != 0 {
+            h.call_sym(PHYRE_FREE, Conv::Cdecl, &[old]);
+        }
+        h.write(g + 4, p);
+        h.write(g, n + 1);
+    }
+}
+
+/// `Phyre_PhyreMalloc` (cdecl `(size)`).
+pub const PHYRE_MALLOC1: u32 = 0x0042_fb40;
+/// `Phyre_PGeometry_PDynamicMesh_PDynamicMesh` (thiscall `(mesh)`).
+pub const DYNAMIC_MESH_CTOR: u32 = 0x0049_68c0;
+/// `Phyre_ClothInstancingDynamicMesh_vftable`.
+pub const CLOTH_MESH_VTABLE: u32 = 0x00b4_aa10;
+/// `Phyre_DynamicMeshDefaultImplmenetation_vftable` (sic).
+pub const DEFAULT_IMPL_VTABLE: u32 = 0x00b4_a8f0;
+/// The stream semantic a new cloth mesh starts with (`.data`).
+pub const CLOTH_STREAM: u32 = 0x00c9_8650;
+/// `ClothInstancingDynamicMeshInstance_ctor_006e0860` (thiscall `(inst,
+/// mesh)`).
+pub const CLOTH_INSTANCE_CTOR: u32 = 0x006e_0860;
+/// `Phyre_PRendering_PDynamicMeshInstance_PDynamicMeshInstance`
+/// (thiscall `(inst, mesh)`).
+pub const MESH_INSTANCE_CTOR: u32 = 0x004f_a420;
+/// `0x006e17f0` (thiscall `(mesh, src)`, `ret 4`): sets the cloth mesh up
+/// from the source.
+pub const CLOTH_SETUP: u32 = 0x006e_17f0;
+
+pub mod bridge3 {
+    //! The originals over game memory.
+
+    use super::{
+        CLOTH_INSTANCE_CTOR, CLOTH_MESH_VTABLE, CLOTH_SETUP, CLOTH_STREAM, Conv,
+        DEFAULT_IMPL_VTABLE, DYNAMIC_MESH_CTOR, Host, MESH_INSTANCE_CTOR, PHYRE_MALLOC1,
+    };
+
+    /// `ClothInstancing_attach(ci, src)` (`0x006e2600`, thiscall, `ret 4`)
+    /// -> the new instance (`ci + 0x10`): a `ClothInstancingDynamicMesh`
+    /// (0x28 bytes: the `PDynamicMesh` base, its vtable, `+0x1c = 0`,
+    /// `+0x20` its stream, `+0x24 = 3`) into `ci + 0`, its instance
+    /// (0x2010 bytes) into `ci + 0x10`. With the source's own instance
+    /// (`src + 0x18`, kept at `ci + 4`) the cloth mesh takes that
+    /// instance's mesh (`ci + 8`) and the new instance points at it;
+    /// without one, a default implementation mesh (0x1c bytes) and a
+    /// `PDynamicMeshInstance` (0xc bytes) of it. Then `0x006e17f0(mesh,
+    /// src)`, and the source's instance becomes the new one. Also returns
+    /// the word the original leaves in its argument's slot (the last
+    /// allocation of the second path; `src` on the first).
+    pub fn attach(h: &mut impl Host, ci: u32, src: u32) -> (u32, u32) {
+        let mut slot = src;
+        let p = h.call_sym(PHYRE_MALLOC1, Conv::Cdecl, &[0x28]);
+        let mesh = if p == 0 {
+            0
+        } else {
+            h.call_sym(DYNAMIC_MESH_CTOR, Conv::Thiscall(p), &[]);
+            h.write(p, h.rebase(CLOTH_MESH_VTABLE));
+            h.write(p + 0x1c, 0u32);
+            h.write(p + 0x20, h.rebase(CLOTH_STREAM));
+            h.write(p + 0x24, 3u32);
+            p
+        };
+        h.write(ci, mesh);
+        let q = h.call_sym(PHYRE_MALLOC1, Conv::Cdecl, &[0x2010]);
+        let inst = if q == 0 {
+            0
+        } else {
+            let m: u32 = h.read(ci);
+            h.call_sym(CLOTH_INSTANCE_CTOR, Conv::Thiscall(q), &[m])
+        };
+        h.write(ci + 0x10, inst);
+        let own: u32 = h.read(src + 0x18);
+        h.write(ci + 4, own);
+        if own == 0 {
+            // (the original keeps this allocation in its argument's slot
+            // too, until the next one replaces it)
+            let r = h.call_sym(PHYRE_MALLOC1, Conv::Cdecl, &[0x1c]);
+            let imp = if r == 0 {
+                0
+            } else {
+                h.call_sym(DYNAMIC_MESH_CTOR, Conv::Thiscall(r), &[]);
+                h.write(r, h.rebase(DEFAULT_IMPL_VTABLE));
+                r
+            };
+            let m: u32 = h.read(ci);
+            h.write(m + 0x1c, imp);
+            let s = h.call_sym(PHYRE_MALLOC1, Conv::Cdecl, &[0xc]);
+            slot = s;
+            let sub = if s == 0 {
+                0
+            } else {
+                let m: u32 = h.read(ci);
+                let imp: u32 = h.read(m + 0x1c);
+                h.call_sym(MESH_INSTANCE_CTOR, Conv::Thiscall(s), &[imp])
+            };
+            let inst: u32 = h.read(ci + 0x10);
+            h.write(inst + 0xc, sub);
+        } else {
+            let m: u32 = h.read(own + 4);
+            h.write(ci + 8, m);
+            h.write(inst + 0xc, own);
+            let mesh: u32 = h.read(ci);
+            let m: u32 = h.read(ci + 8);
+            h.write(mesh + 0x1c, m);
+        }
+        let mesh: u32 = h.read(ci);
+        h.call_sym(CLOTH_SETUP, Conv::Thiscall(mesh), &[src]);
+        let inst: u32 = h.read(ci + 0x10);
+        h.write(src + 0x18, inst);
+        (inst, slot)
+    }
+}
+
+/// The stream semantics `0x006e2000` tests (`.data`): two that mark the
+/// position flags, one that marks the normal flags and is copied.
+pub const CLOTH_POSITION_STREAMS: [u32; 2] = [0x00c9_8620, 0x00c9_85d8];
+/// See [`CLOTH_POSITION_STREAMS`].
+pub const CLOTH_COPIED_STREAM: u32 = 0x00c9_8650;
+/// `memcpy` (cdecl `(dst, src, n)`), as [`MEMCPY`] but named for the
+/// stream copy.
+pub const STREAM_MEMCPY: u32 = MEMCPY;
+
+pub mod bridge4 {
+    //! The originals over game memory.
+
+    use super::{CLOTH_COPIED_STREAM, CLOTH_POSITION_STREAMS, Conv, Host, STREAM_MEMCPY};
+
+    /// `0x006e2000(mesh, slot, job, outs)` (thiscall, `ret 0xc`): for the
+    /// job's cloth instance (`job + 8 + [job + 8]`: a busy word, then the
+    /// instance), each stream `k` of the mesh's draw entry `slot`
+    /// (`[mesh + 0x14] + 0x10 slot`: first stream, count) whose group
+    /// output is set (`outs[j]`, `j` the nearest stream at or before `k`
+    /// that starts a group (`+0` zero) or 0) marks the slot's position
+    /// flag (`+0x610 + 4 slot`) for the position semantics and its normal
+    /// flag (`+0x810`) for [`CLOTH_COPIED_STREAM`], whose data the staged
+    /// buffer (`+0x210`, `+0x1810` bytes) is copied to (`outs[k] + 0x3c`)
+    /// when there is one. Clears the busy word. Returns the busy word's
+    /// address (the draw table for an empty entry), as the original's
+    /// `eax`, and the stream count it leaves in its `job` argument's slot.
+    pub fn stage_streams(
+        h: &mut impl Host,
+        mesh: u32,
+        slot: u32,
+        job: u32,
+        outs: u32,
+    ) -> (u32, u32) {
+        let off: u32 = h.read(job + 8);
+        let busy = (job + 8).wrapping_add(off);
+        let inst: u32 = h.read(busy + 4);
+        let src: u32 = h.read(inst.wrapping_add(0x210).wrapping_add(4 * slot));
+        let n: u32 = h.read(inst.wrapping_add(0x1810).wrapping_add(4 * slot));
+        let pos_flags = inst.wrapping_add(0x610);
+        let norm_flags = inst.wrapping_add(0x810);
+        let entry = slot.wrapping_mul(0x10);
+        let table: u32 = h.read(mesh + 0x14);
+        if h.read::<u32>(entry.wrapping_add(table) + 4) == 0 {
+            h.write(busy, 0u32);
+            return (table, 0);
+        }
+        let positions = CLOTH_POSITION_STREAMS.map(|a| h.rebase(a));
+        let copied = h.rebase(CLOTH_COPIED_STREAM);
+        let mut k = 0u32;
+        loop {
+            let table: u32 = h.read(mesh + 0x14);
+            let first: u32 = h.read(entry.wrapping_add(table));
+            let streams: u32 = h.read(mesh + 0xc);
+            let semantic: u32 =
+                h.read(streams.wrapping_add(first.wrapping_add(k).wrapping_mul(0xc)) + 4);
+            // back to the group's first stream
+            let mut j = k;
+            while j != 0 {
+                if first.wrapping_add(j) <= first {
+                    break;
+                }
+                let e = streams.wrapping_add(first.wrapping_add(j).wrapping_mul(0xc));
+                if h.read::<u32>(e) == 0 {
+                    break;
+                }
+                j -= 1;
+            }
+            if h.read::<u32>(outs.wrapping_add(4 * j)) != 0 {
+                let position = semantic == positions[0] || semantic == positions[1];
+                let normal = semantic == copied;
+                if src != 0 && n != 0 && normal {
+                    let out: u32 = h.read(outs.wrapping_add(4 * k));
+                    let dst: u32 = h.read(out + 0x3c);
+                    h.call_sym(STREAM_MEMCPY, Conv::Cdecl, &[dst, src, n]);
+                }
+                for (flags, on) in [(pos_flags, position), (norm_flags, normal)] {
+                    let at = flags.wrapping_add(4 * slot);
+                    let v = u32::from(h.read::<u32>(at) != 0 || on);
+                    h.write(at, v);
+                }
+            }
+            k += 1;
+            let table: u32 = h.read(mesh + 0x14);
+            if k >= h.read::<u32>(entry.wrapping_add(table) + 4) {
+                break;
+            }
+        }
+        h.write(busy, 0u32);
+        (busy, k)
+    }
+}
