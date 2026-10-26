@@ -854,7 +854,12 @@ ported! {
     }
     /// `PhyreScene_renderOpeningScreen(this)`.
     PhyreScene_renderOpeningScreen @ 0x0066_b2e0 => extern "thiscall" fn scene_render_opening_screen(this: u32) -> u32 {
-        g6::scene_render_opening_screen(&mut mem(), this)
+        // the harness's fast mode moves the clock instead of sleeping
+        // (the original's patched call at 0x0066b345)
+        match crate::harness::boot_sleep() {
+            Some(sleep) => g6::scene_render_opening_screen_with(&mut mem(), this, sleep),
+            None => g6::scene_render_opening_screen(&mut mem(), this),
+        }
     }
     /// `PSamplerStates_init_006f5470()`.
     PSamplerStates_init_006f5470 @ 0x006f_5470 => extern "C" fn sampler_states_init() -> u32 {

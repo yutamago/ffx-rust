@@ -385,10 +385,24 @@ in fast mode the same event frame (`0x01325d94`) showed another camera
 cut, credit and pose in every run, original code included (three original
 runs at count 1200: three different pictures). The script therefore says
 `realtime` (`replay::realtime`: no fast mode, no virtual clock, no
-lockstep) and pins its four shots to ctrl work 0's count (101 on the logo,
-900 and 1200 in the campfire scene, 101 on the title). At the game's own
+lockstep) and pins its four shots to ctrl work 0's count (108 on the logo,
+908 and 1208 in the campfire scene, 108 on the title). At the game's own
 rate two original runs agree within 9,000-32,000 pixels (a frame of
 jitter) and the Rust run matched both (0 pixels). It has no trace ranges;
+Until 2026-10-26 each shot was `wait N` after the count entered a range,
+then `shot`: without lockstep the game runs on while the replies go back
+and forth, so the image came 3 or 4 updates after the wait's end, and
+boot-2 failed by 67,860 pixels about once in 20 runs (the one measured: 3
+updates, against 4 in the other 20). Now each shot is `shotwhen <range>
+<value> <mask> <frames> <path>`: a `waitfor` whose job, at the first frame
+boundary where the bytes match, queues a shot of exactly that update;
+while one is pending the present of update `n` waits for the main thread
+to leave boundary `n`, as in lockstep, so the image cannot be presented
+before the shot is queued. The windows are 4 counts wide (mask
+`fcffffff`), so a count a slow frame skips still matches (the next
+count's picture). A `shotwhen` that matches at the first boundary it
+checks fails, because that image may already be gone; start it while the
+count is still well below its window.
 `run-all.sh --record boot` records it alone (`--record NAME...` leaves the
 other replays' recordings alone). About 75 s, the longest replay.
 
@@ -483,8 +497,9 @@ wing in others (shot 4: the ground, or the forest path), with the original
 code too (another original run at the same frame matched the Rust run's
 angle to 558 pixels, and both differed from the recordings by 457,000).
 The script also checks the effect's length
-to the frame: the magic ID must still be set 281 frames after state 4 and
--1 one frame later; Energy Blast's must be set 257 frames after its state
+within a frame: the magic ID must still be set 280 frames after state 4
+and -1 one or two frames later (281 and one frame until 2026-10-26, see
+below); Energy Blast's must be set 257 frames after its state
 4 and -1 one or two frames later. Four runs each side gave 282 and 259
 (from the ID to state 4: original 41-55 and 66-80, Rust 37 and 49-59) when
 `waitfor` still sampled on the render thread. Sampled between two updates
@@ -493,7 +508,26 @@ run, but Energy Blast took 258 in two original runs (recorded side by side
 with the other replays) and over 258 in three run alone (259 in the one
 measured to the end): the frame its state 4
 shows up at seems to follow the loader's real time (the effect waits for
-its textures), and the old sampling hid that. A port that ends either effect a frame early or late stops the
+its textures), and the old sampling hid that.
+
+On 2026-10-26 (replay-flakes) the entry check failed in 5 of 6 Rust runs
+beside two other games (0 of 6 alone): the entry took 281 frames from
+state 4, not 282. Which one follows how many frames the magic file's
+textures took to load (`g_BtlEffectReadClear` from the magic ID to -1):
+original runs 24-28 frames (282 in all), Rust runs 13-17 (281, or 282 at
+17), and with the frames slowed by a per-frame probe (400 ms a frame) the
+load ended 8-10 frames in and every run took 281. The textures load on
+`AsyncLoadManager`'s thread in real time. Holding the main thread at the
+boundary until that loader is idle (`+0x20`/`+0x2c` clear, as
+`AsyncLoadManager_waitTasks_00691d40` waits) stalls it: the loader needs
+the main thread's next update to finish, and the replay timed out. Letting
+the FMOD thread catch up at each boundary (its 33 ms sound loop waits in
+real milliseconds) and waiting for the render thread's queued flips made
+Rust runs give 281 in 5 of 5 but original runs still 282 (the load
+length differs), so neither was kept. The script checks 281 or 282 now
+(set 280 frames after state 4, -1 within two frames), as Energy Blast's
+258 or 259; six Rust runs three at a time passed (282, 282, 281, 282,
+281, 281; Energy Blast 259 in all). A port that ends either effect a frame early or late stops the
 replay at that `waitfor` (`timeout at N`), and its cut trace fails the
 comparison. The trace ranges cannot show this: they compare each range's
 sequence of distinct values, not their frames, and no traced word counts
@@ -764,7 +798,10 @@ dates are the files' times.
   Every key waits for the save/load machine's state (`0x00ce72e8`: save 1
   list, 2 its input, 3 Yes/No, 5 writing; load `0xb`, `0xc`, `0xd`;
   `docs/formats/save.md`) and 30 to 60 frames more, the title for the map
-  words. Traced: `g_SaveData` and the save file buffer without the play
+  words and then its event count (101, the menu shown, as boot's shot 4;
+  since 2026-10-26: a fixed 120 frames after the map word left the title
+  black in one Rust run beside two other games, and its Load key was lost,
+  `waitfor 0x00ce72e8:4 0c000000` timing out at frame 2418). Traced: `g_SaveData` and the save file buffer without the play
   time (`g_SaveData +0xbc`, file `+0x10`, `+0xfc`) and the CRCs (file
   `+0x1a`, `+0x64f4`): the play time counts from `graphicGetTime` and
   ticks at another point of the script in every run, original code

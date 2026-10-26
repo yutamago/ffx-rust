@@ -36,11 +36,14 @@
 # shots wait for Valefor's effect state (MsEffectStart, actor 8 +0xdfb) to
 # reach 4: the magic file's textures load in a varying number of frames
 # (fewer with the Rust replacements), and the effect starts at the later of
-# that and the summoner's motion. From state 4 the entry takes 282 frames
-# and Energy Blast 258 or 259 (original runs give both since 2026-10-24,
-# when the harness began to sample between two updates); the script checks
-# the entry to the frame and Energy Blast within that frame (docs/harness.md,
-# "Summon timing").
+# that and the summoner's motion. From state 4 the entry takes 281 or 282
+# frames and Energy Blast 258 or 259; the script checks both within that
+# frame (docs/harness.md, "Summon timing"). Which one follows how many
+# frames the magic file's textures took to load (the asset loader's thread
+# works in real time): loads within about 16 frames of the magic ID give
+# 281 (Rust runs beside other games, or with the frames slowed), later
+# loads 282 (original runs, Rust runs alone); the check allowed only 282
+# until 2026-10-26 and failed 5 of 6 Rust runs beside two other games.
 #
 # Ranges, from Tidus's first menu on (whether it opens on the frame the
 # phase byte turns 1 or the next varies between runs of the original): the
@@ -92,11 +95,11 @@ wait 150
 shot $OUT\battle-overdrive-3.bmp
 wait 100
 shot $OUT\battle-overdrive-4.bmp
-# timing: the entry ends (magic ID -1) 282 frames after state 4, not one
-# frame sooner or later (original and Rust alike, whatever the load took)
-wait 31
+# timing: the entry ends (magic ID -1) 281 or 282 frames after state 4
+# (which follows the load; original and Rust alike)
+wait 30
 waitfor 0x00c64ca0:4 53020000 ffffffff 0
-waitfor 0x00c64ca0:4 ffffffff ffffffff 1
+waitfor 0x00c64ca0:4 ffffffff ffffffff 2
 # Valefor: Overdrive (left), Energy Blast, all enemies
 waitfor 0x023cc08c:4 00010000 ffffffff 3000
 wait 30

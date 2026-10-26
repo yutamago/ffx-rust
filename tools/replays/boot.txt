@@ -11,36 +11,33 @@
 # a different camera cut, credit and pose in every run, original code
 # included, so this replay runs at the game's own frame rate, without
 # lockstep. Each shot is pinned to the event's clock, ctrl work 0's frame
-# count (0x01325d94, as in field-walk.txt), reached by waiting for it to
-# enter a power-of-two range (`waitfor` with a mask) and then a fixed
-# number of frames; the read-backs land in the replay's output. Map words
-# are 0x0112ca90 (current map, previous map).
+# count (0x01325d94, as in field-walk.txt): `shotwhen` takes the image of
+# the update after which the count first lies in a 4-aligned window (the
+# shot's count, or the next if a slow frame skipped it). A `wait` and a
+# `shot` after it, as before 2026-10-26, landed 3 or 4 updates past the
+# wait's end depending on the replies' round trip while the game ran on:
+# boot-2 then differed by 67,860 pixels (docs/harness.md, boot). Map words
+# are 0x0112ca90 (current map, previous map). Each `shotwhen` starts while
+# the count is far below its window: one that matches on the first frame it
+# checks fails (its image may be gone).
 realtime
-# 1: the logo, memochek's count 101
+# 1: the logo, memochek's count 108
 waitfor 0x0112ca90:4 5c011700 ffffffff 3000
 waitfor 0x01325d94:4 40000000 c0ffffff 600
-wait 37
-read 0x01325d94 4
-shot $OUT\boot-1.bmp
+shotwhen 0x01325d94:4 6c000000 fcffffff 600 $OUT\boot-1.bmp
 # the opening's event: wait for its count to start again (0..63)
 waitfor 0x0112ca90:4 5d015c01 ffffffff 3000
 waitfor 0x01325d94:4 00000000 c0ffffff 600
-# 2: Wakka, Rikku and Lulu at the fire (count 900: 512 + 388; the wide
-# shot before it pans, and a frame's jitter there differs everywhere)
+# 2: Wakka, Rikku and Lulu at the fire (count 908; the wide shot before it
+# pans)
 waitfor 0x01325d94:4 00020000 00feffff 1200
-wait 388
-read 0x01325d94 4
-shot $OUT\boot-2.bmp
-# 3: the party from behind Kimahri, Tidus getting up (count 1200: 1024 + 176)
+shotwhen 0x01325d94:4 8c030000 fcffffff 1200 $OUT\boot-2.bmp
+# 3: the party from behind Kimahri, Tidus getting up (count 1208)
 waitfor 0x01325d94:4 00040000 00fcffff 1200
-wait 176
-read 0x01325d94 4
-shot $OUT\boot-3.bmp
-# 4: Start skips to the title; the title event's count 101 (menu shown)
+shotwhen 0x01325d94:4 b8040000 fcffffff 1200 $OUT\boot-3.bmp
+# 4: Start skips to the title; the title event's count 108 (menu shown)
 press start 3 0
 waitfor 0x0112ca90:4 17005d01 ffffffff 600
 waitfor 0x01325d94:4 00000000 c0ffffff 600
 waitfor 0x01325d94:4 40000000 c0ffffff 600
-wait 37
-read 0x01325d94 4
-shot $OUT\boot-4.bmp
+shotwhen 0x01325d94:4 6c000000 fcffffff 600 $OUT\boot-4.bmp

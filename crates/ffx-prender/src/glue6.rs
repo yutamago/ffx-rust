@@ -643,6 +643,16 @@ pub mod bridge {
     /// `WM_QUIT`), a 33 ms sleep and the mesh deletes; 0. Else the
     /// failure.
     pub fn scene_render_opening_screen(h: &mut impl Host, this: u32) -> u32 {
+        let sleep = h.rebase(SLEEP_MS);
+        scene_render_opening_screen_with(h, this, sleep)
+    }
+
+    /// [`scene_render_opening_screen`] with its 33 ms sleep sent to
+    /// `sleep` (a rebased `cdecl(ms)` address) instead of
+    /// `SleepThreadInMillisecond`: the harness's fast mode patches that
+    /// call in the original (`0x0066b345`) to move the game's clock
+    /// instead of sleeping, and the hook passes the same target.
+    pub fn scene_render_opening_screen_with(h: &mut impl Host, this: u32, sleep: u32) -> u32 {
         let app = h.call_sym(GET_APPLICATION, Conv::Cdecl, &[]);
         let renderer = app.wrapping_add(0x124);
         h.call_sym(RENDERER_BEGIN_SCENE, Conv::Thiscall(renderer), &[3]);
@@ -664,7 +674,7 @@ pub mod bridge {
         if h.call_sym(PROCESS_WINDOWS_MESSAGE, Conv::Cdecl, &[]) != 0 {
             import(h, EXIT_PROCESS, Conv::Stdcall, &[0]);
         }
-        h.call_sym(SLEEP_MS, Conv::Cdecl, &[0x21]);
+        h.call(sleep, Conv::Cdecl, &[0x21]);
         h.call_sym(SCENE_DO_DELETE_MESH_INSTANCES, Conv::Thiscall(this), &[]);
         0
     }

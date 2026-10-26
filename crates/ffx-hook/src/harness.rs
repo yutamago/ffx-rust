@@ -69,6 +69,7 @@
 //! | `key <dik[,dik…]> <frames> [gap]` | holds keys, releases, waits `gap` frames |
 //! | `call <addr> [args…]` | `ok <eax>`: a cdecl call on the main thread, between two updates |
 //! | `shot <windows path>` | `ok <w> <h> update <n>`: saves the back buffer as a 32-bit BMP, the image of update `n` (in lockstep the one the main thread is held after; see `docs/harness.md`, "Frames") |
+//! | `shotwhen <range> <value hex> <mask hex> <frames> <windows path>` | `ok <w> <h> update <n>`: as `waitfor`, then the image of exactly the update `n` after which the bytes first matched, in real time too (`docs/harness.md`, boot) |
 //! | `loadsave <slot\|windows path>` | `ok <file> map <n> entrance <n> …`: starts the game from that save file without the title menu ([`crate::loadsave`]) |
 //! | `events` | `ok <n>` then `n` lines: files opened since the last call |
 //! | `gfxcapture <windows dir>` | `ok <n> draws`: the next frame's D3D11 calls (`gfx`, needs `FFX_GFX=1`) |
@@ -443,9 +444,24 @@ unsafe extern "C" fn fast_sleep_cdecl(ms: u32) {
     skip(f64::from(ms) / 1000.0);
 }
 
+/// Set once the start-up loop's sleep is patched ([`patch_boot_limiter`]).
+static BOOT_SLEEP_PATCHED: AtomicBool = AtomicBool::new(false);
+
+/// Where the Rust `PhyreScene_renderOpeningScreen` sends its 33 ms sleep
+/// in fast mode: the same `fast_sleep_cdecl` the original's patched call
+/// (`0x0066b345`) reaches, or `None` (sleep for real) when fast mode is off.
+/// Without this the port slept in real time on the logos and left the
+/// clock where it was (2026-10-26, replay-flakes).
+#[must_use]
+pub fn boot_sleep() -> Option<u32> {
+    BOOT_SLEEP_PATCHED
+        .load(Ordering::Acquire)
+        .then_some(fast_sleep_cdecl as *const () as usize as u32)
+}
+
 /// Points the start-up loop's `call Time_Sleep` (`0x0066b345`, in
-/// `Boot_Step` `0x0066b2e0`: 33 ms a frame during the logos) at
-/// `fast_sleep_cdecl`.
+/// `PhyreScene_renderOpeningScreen` `0x0066b2e0`: 33 ms a frame during the
+/// logos) at `fast_sleep_cdecl`; its Rust port asks [`boot_sleep`].
 ///
 /// # Safety
 /// `module` is the main module; the loop does not run yet.
@@ -470,6 +486,7 @@ unsafe fn patch_boot_limiter(module: usize) -> bool {
         site.add(1).copy_from_nonoverlapping(rel.as_ptr(), 4);
         VirtualProtect(site.cast(), 5, old, &raw mut old);
     }
+    BOOT_SLEEP_PATCHED.store(true, Ordering::Release);
     true
 }
 
@@ -802,8 +819,9 @@ enum Job {
     Release(u32, u32),
     Call(usize, Vec<u32>),
     /// The first presented image of update `.1` or a later one (render
-    /// thread).
-    Shot(String, u32),
+    /// thread); `.2`: pinned (a `shotwhen`'s): exactly update `.1`, counted
+    /// in [`PINNED`].
+    Shot(String, u32, bool),
     Snapshot(String),
     FpuControl,
     /// Start the game from a save (`loadsave`, [`crate::loadsave`]).
@@ -811,7 +829,17 @@ enum Job {
     /// Until the bytes at the range equal the value (under the mask), or
     /// the frame limit passes: `(range, value, mask, limit frame)`.
     WaitFor(TraceRange, Vec<u8>, Vec<u8>, u32),
+    /// As `WaitFor`, then the image of the update the bytes first matched
+    /// after (`shotwhen`): `(range, value, mask, limit frame, path, the
+    /// first boundary it was checked at)`.
+    ShotWhen(TraceRange, Vec<u8>, Vec<u8>, u32, String, Option<u32>),
 }
+
+/// `shotwhen` jobs and their pinned shots not yet taken. While there are
+/// any, the present of update `n` waits until the main thread has left
+/// boundary `n` (as in lockstep), so a shot the main thread asks for there
+/// cannot miss that image.
+static PINNED: AtomicU32 = AtomicU32::new(0);
 
 /// The main thread's jobs, run at frame boundaries.
 static JOBS: Mutex<VecDeque<(Job, Sender<String>)>> = Mutex::new(VecDeque::new());
@@ -1161,7 +1189,7 @@ fn run_main_jobs(frame: u32) {
         |mut jobs| {
             let mut keep = VecDeque::new();
             let mut due = Vec::new();
-            while let Some(job) = jobs.pop_front() {
+            while let Some(mut job) = jobs.pop_front() {
                 let ready = match job.0 {
                     Job::WaitUntil(f) | Job::Release(f, _) => frame >= f,
                     Job::Call(..)
@@ -1170,6 +1198,10 @@ fn run_main_jobs(frame: u32) {
                     | Job::FpuControl
                     | Job::LoadSave(_) => true,
                     Job::WaitFor(ref r, ref value, ref mask, limit) => {
+                        frame >= limit || range_matches(r, value, mask)
+                    }
+                    Job::ShotWhen(ref r, ref value, ref mask, limit, _, ref mut first) => {
+                        first.get_or_insert(frame);
                         frame >= limit || range_matches(r, value, mask)
                     }
                 };
@@ -1220,6 +1252,30 @@ fn run_main_jobs(frame: u32) {
                     format!("err timeout at {frame}")
                 });
             }
+            Job::ShotWhen(r, value, mask, _, path, first) => {
+                let hit = range_matches(&r, &value, &mask);
+                let lockstep = LOCKSTEP.load(Ordering::Acquire);
+                if lockstep {
+                    ALLOWED.store(frame, Ordering::Release);
+                }
+                if !hit {
+                    PINNED.fetch_sub(1, Ordering::AcqRel);
+                    let _ = reply.send(format!("err timeout at {frame}"));
+                } else if !lockstep && first == Some(frame) {
+                    // the present of this update may have run before the
+                    // command came (no hold was asked for then)
+                    PINNED.fetch_sub(1, Ordering::AcqRel);
+                    let _ = reply.send(format!(
+                        "err matched at {frame}, the first frame it was checked: wait for an \
+                         earlier state first"
+                    ));
+                } else if let Ok(mut jobs) = RENDER_JOBS.lock() {
+                    // its present waits for this boundary to end (PINNED)
+                    jobs.push_back((Job::Shot(path, frame, true), reply));
+                } else {
+                    PINNED.fetch_sub(1, Ordering::AcqRel);
+                }
+            }
             Job::FpuControl => {
                 let _ = reply.send(format!("ok {:#06x}", crate::snapshot::fpu_control()));
             }
@@ -1245,7 +1301,7 @@ unsafe fn run_render_jobs(label: u32, swap_chain: *mut c_void) {
         |_| Vec::new(),
         |mut jobs| {
             let (due, keep): (VecDeque<_>, VecDeque<_>) = jobs.drain(..).partition(|j| match j.0 {
-                Job::Shot(_, want) => label == NO_LABEL || label >= want,
+                Job::Shot(_, want, _) => label == NO_LABEL || label >= want,
                 _ => true,
             });
             *jobs = keep;
@@ -1253,7 +1309,21 @@ unsafe fn run_render_jobs(label: u32, swap_chain: *mut c_void) {
         },
     );
     for (job, reply) in due {
-        if let Job::Shot(path, _) = job {
+        if let Job::Shot(path, want, pinned) = job {
+            if pinned {
+                PINNED.fetch_sub(1, Ordering::AcqRel);
+                if label != want {
+                    let shown = if label == NO_LABEL {
+                        "an unknown update".to_owned()
+                    } else {
+                        format!("update {label}")
+                    };
+                    let _ = reply.send(format!(
+                        "err update {want}'s image was missed (this one shows {shown})"
+                    ));
+                    continue;
+                }
+            }
             // SAFETY: the swap chain is live inside its own Present.
             let r = unsafe { screenshot(swap_chain, &path) };
             let _ = reply.send(r.map_or_else(
@@ -1440,12 +1510,19 @@ unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags:
         // this flip. One that does not within seconds would be waiting for
         // this thread (no known path does), so the hold ends then.
         let mut waited = 0u32;
-        while LOCKSTEP.load(Ordering::Acquire)
+        let hold = || LOCKSTEP.load(Ordering::Acquire) || PINNED.load(Ordering::Acquire) > 0;
+        while hold()
             && PASSED.load(Ordering::Acquire) <= label
             && (REACHED.load(Ordering::Acquire) > label || waited < 5000)
         {
             std::thread::sleep(std::time::Duration::from_millis(1));
             waited += 1;
+            // SAFETY: as above.
+            unsafe { run_render_jobs(label, swap_chain) };
+        }
+        if waited > 0 {
+            // a pinned shot the main thread queued just before it left
+            // the boundary
             // SAFETY: as above.
             unsafe { run_render_jobs(label, swap_chain) };
         }
@@ -1910,6 +1987,36 @@ fn command(line: &str) -> Result<String, String> {
             ALLOWED.fetch_max(limit, Ordering::AcqRel);
             on_game_thread(Job::WaitFor(r, value, mask, limit))
         }
+        "shotwhen" => {
+            // shotwhen <range> <value hex> <mask hex> <frames> <path>: as
+            // waitfor, then the image of the update the bytes first matched
+            // after, exactly (in real time too: its present waits for the
+            // boundary)
+            let r = parse_trace_range(arg(1)?)?;
+            let hexbytes = |t: &str| -> Result<Vec<u8>, String> {
+                (0..t.len() / 2)
+                    .map(|i| {
+                        u8::from_str_radix(&t[2 * i..2 * i + 2], 16).map_err(|e| e.to_string())
+                    })
+                    .collect()
+            };
+            let value = hexbytes(arg(2)?)?;
+            let mask = hexbytes(arg(3)?)?;
+            let limit = now() + parse_u32(arg(4)?)?;
+            let path = words.get(5..).map(|w| w.join(" ")).unwrap_or_default();
+            if path.is_empty() {
+                return Err("shotwhen: missing the path".into());
+            }
+            if value.len() != r.len || mask.len() != r.len {
+                return Err("value and mask must be as long as the range".into());
+            }
+            if PRESENT.load(Ordering::Acquire) == 0 {
+                return Err("the game has not presented a frame yet".into());
+            }
+            ALLOWED.fetch_max(limit, Ordering::AcqRel);
+            PINNED.fetch_add(1, Ordering::AcqRel);
+            on_game_thread(Job::ShotWhen(r, value, mask, limit, path, None))
+        }
         "lockstep" => {
             let on = arg(1)? == "on";
             ALLOWED.store(now(), Ordering::Release);
@@ -1985,7 +2092,7 @@ fn command(line: &str) -> Result<String, String> {
         }
         // the image of the update the main thread stands after (in
         // lockstep: the boundary it is held at), or a later one
-        "shot" => on_game_thread(Job::Shot(words[1..].join(" "), now())),
+        "shot" => on_game_thread(Job::Shot(words[1..].join(" "), now(), false)),
         "snapshot" => on_game_thread(Job::Snapshot(words[1..].join(" "))),
         "fpucw" => on_game_thread(Job::FpuControl),
         "loadsave" => on_game_thread(Job::LoadSave(words[1..].join(" "))),

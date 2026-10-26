@@ -78,7 +78,7 @@ pub fn play(game: &mut Game, script: &str, trace: &str) -> Result<Vec<String>> {
             }
             "trace" => game.command(&format!("trace {trace} {}", words[1..].join(" ")))?,
             // a timed-out wait says which line and what the bytes were
-            "waitfor" => game.command(line).map_err(|e| match e {
+            "waitfor" | "shotwhen" => game.command(line).map_err(|e| match e {
                 crate::Error::Harness(why) => {
                     let now = words
                         .get(1)
