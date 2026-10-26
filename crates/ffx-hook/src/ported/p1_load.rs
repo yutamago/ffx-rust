@@ -10,8 +10,8 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_pload::{
-    cluster, descriptor, p1_bind, p1_d3d, p1_declare, p1_loader, p1_misc, p1_post, p1_reader,
-    p1_tree, p1_types, stream, types,
+    cluster, descriptor, p1_bind, p1_buffers, p1_d3d, p1_declare, p1_fixup, p1_loader, p1_misc,
+    p1_post, p1_reader, p1_tree, p1_types, stream, types,
 };
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
@@ -1238,5 +1238,23 @@ ported! {
     /// `PArray<u8, 1>::DeclareClassDescriptor(name)` -> the descriptor.
     Phyre_PArray_u8_1u__DeclareClassDescriptor_00448450 @ 0x0044_8450 => extern "C" fn declare_u8_array(name: u32) -> u32 {
         p1_declare::bridge::declare_aligned(&mut mem(), name, &p1_declare::U8_ARRAY, p1_declare::U8_ALIGNMENT)
+    }
+    // ---- continuation round 3, batch 3 (p1_buffers, p1_fixup, p1_bind) ----
+    /// `PClassDescriptor::calculateDefaultBuffer()`.
+    Phyre_PClassDescriptor_calculateDefaultBuffer @ 0x0043_c420 => extern "thiscall" fn calculate_default_buffer(this: u32) {
+        p1_buffers::bridge::calculate_default_buffer(&mut mem(), this);
+    }
+    /// `PClassDescriptor::calculateValidationBuffer()` -> `al` (1 unless a member overlaps).
+    Phyre_PClassDescriptor_calculateValidationBuffer @ 0x0043_c630 => extern "thiscall" fn calculate_validation_buffer(this: u32) -> u32 {
+        p1_buffers::bridge::calculate_validation_buffer(&mut mem(), this)
+    }
+    /// `PCluster::fixupInstances()` -> 0 or an error; the cursor in this frame.
+    Phyre_PCluster_fixupInstances @ 0x0044_1620 => extern "thiscall" fn fixup_instances(this: u32) -> u32 {
+        let mut it = StackFrame::<8>::new();
+        p1_fixup::bridge::fixup_instances(&mut mem(), it.at(), this)
+    }
+    /// `PAssetReference::Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PAssetReference_Bind @ 0x0045_c500 => extern "C" fn asset_reference_bind() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[16])
     }
 }

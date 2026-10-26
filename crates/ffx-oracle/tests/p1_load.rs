@@ -4013,6 +4013,7 @@ fn p1c_bind_stubs(t: &mut Twins) {
         (0x0043_79b0, true, 2),
         (0x0043_afb0, true, 4),
         (0x0044_ac10, true, 0),
+        (0x0057_5440, true, 1),
     ] {
         t.stub(sym, this, n, n, 0);
     }
@@ -4056,6 +4057,14 @@ fn p1c_binds_match_the_original() {
                     if let pbind::End::Getter { bound, .. } = b.end {
                         let bound = t.rebase(bound);
                         t.write(bound, &[0]);
+                    }
+                    // the dynamic-type handler's words the steps write
+                    for st in b.steps {
+                        if let pbind::Step::DynamicType { at, member, .. } = *st {
+                            let (at, member) = (t.rebase(at), t.rebase(member));
+                            t.w32(member + 0x28, 0x5a5a_0028);
+                            t.w32(at + 0xc, 0x5a5a_000c);
+                        }
                     }
                 }
                 let what = format!("{label}: bind {:#x} {round}", b.addr);
@@ -5636,5 +5645,387 @@ fn p1d_declarations_match_the_original() {
             }
         }
         t.reset();
+    }
+}
+
+// ---- continuation round 3, batch 3 (ffx_pload::p1_buffers) ----
+
+use ffx_pload::p1_buffers::bridge as pbu;
+
+/// An object whose vtable holds recording stubs: slot `i` takes and pops
+/// `slots[i].0` words and returns `slots[i].1`; the object is `size`
+/// junk bytes after its vtable word.
+fn p1d_vobj(t: &mut Twins, tag: u32, slots: &[(u32, u32)], size: usize) -> u32 {
+    let mut vt = Vec::new();
+    for (i, &(n, ret)) in (0u32..).zip(slots) {
+        let s = t.stub_code(tag + i, true, n, n, ret);
+        vt.extend(s.to_le_bytes());
+    }
+    let vt = t.alloc(&vt);
+    let obj = t.junk(size, tag as u8);
+    t.w32(obj, vt);
+    obj
+}
+
+/// A constructor slot (thiscall `(p)`, `ret 4`) that logs, writes the
+/// address it is given at `p` (a position-dependent constructor when
+/// `moving`, else a constant) and returns `ret`.
+fn p1d_ctor_code(t: &mut Twins, tag: u32, moving: bool, ret: u32) -> u32 {
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tag.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+    c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+    if moving {
+        c.extend([0x89, 0x12]); // mov [edx], edx
+    } else {
+        c.extend([0xc7, 0x02, 0x11, 0x22, 0x33, 0x44]); // mov dword [edx], 0x44332211
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    c.extend([0xc2, 0x04, 0x00]); // ret 4
+    let at = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+    at
+}
+
+/// A descriptor of `size` bytes with stub slots (10 construct, 11
+/// destruct, 12 its preparation), buffers at `+0x64/+0x68/+0x6c`, its
+/// own part at `+0x8c`, `flags`, an empty member ring.
+fn p1d_desc(t: &mut Twins, tag: u32, size: u32, flags: u32, moving: bool, made: u32) -> u32 {
+    let mut slots = vec![(0u32, 0u32); 13];
+    slots[11] = (1, 0x11);
+    slots[12] = (0, 0x12);
+    let d = p1d_vobj(t, tag, &slots, 0xa0);
+    let vt = t.r32(d);
+    let ctor = p1d_ctor_code(t, tag + 10, moving, made);
+    t.w32(vt + 40, ctor);
+    for off in [0x64u32, 0x68, 0x6c] {
+        let b = t.junk(size as usize + 8, off as u8);
+        t.w32(d + off, b);
+    }
+    t.w32(d + 0x1c, size);
+    t.w32(d + 0x18, 0x00c1_0000 | tag);
+    t.w32(d + 0x8c, 4);
+    t.w32(d + 0x88, 0x10);
+    t.w32(d + 0x90, flags);
+    t.w32(d + 0x40, 0);
+    let head = d + 0x44;
+    t.w32(head, head);
+    t.w32(head + 4, head);
+    d
+}
+
+/// A member of `desc` at `offset` (relative to the owner's base
+/// `+0x88`), of kind `kind` (0 none), flags `mflags`, with a type object
+/// of element size `esize` whose class is `ty` (0 none).
+fn p1d_member(
+    t: &mut Twins,
+    desc: u32,
+    kind: u32,
+    mflags: u32,
+    offset: u32,
+    esize: u32,
+    ty: u32,
+) -> u32 {
+    let info = if kind == 0 {
+        0
+    } else {
+        let i = t.zeros(0x40);
+        t.w32(i + 0x30, kind);
+        i
+    };
+    let tyobj = p1d_vobj(t, 0x7200, &[(0, 0), (0, ty)], 0x20);
+    t.w32(tyobj + 0x1c, esize);
+    let m = p1d_vobj(t, 0x7300, &[(0, 0), (0, info)], 0x40);
+    t.w32(m + 0x14, mflags);
+    t.w32(m + 0x18, tyobj);
+    t.w32(m + 0x24, offset + t.r32(desc + 0x88));
+    t.w32(m + 0xc, desc);
+    t.w32(m + 0x10, 0x00c2_0000 | offset);
+    let head = desc + 0x44;
+    let tail = t.r32(head + 4);
+    t.w32(m + 4, head);
+    t.w32(tail, m + 4);
+    t.w32(head + 4, m + 4);
+    m
+}
+
+#[test]
+fn p1d_default_buffer_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xbf00_0001);
+        for case in 0..40u32 {
+            let src = t.junk(0x40, 9);
+            t.stub(0x0043_cb80, true, 0, 0, src);
+            t.stub(0x0043_cfd0, true, 0, 0, 0xcfd0);
+            t.stub(0x0043_52f0, false, 3, 0, 0x0123_4567);
+            let flags = match case % 8 {
+                0 if case & 8 != 0 => u32::MAX,
+                0 => 0x8000_0000,
+                1 => 1,
+                2 => 2,
+                3 => 8,
+                _ => rng.next() & 0x7000_0000,
+            };
+            let made = if case % 7 == 6 { 0x100 } else { 1 };
+            let d = p1d_desc(&mut t, 0x7400, 0x30, flags, case % 3 == 0, made);
+            if case % 11 == 10 {
+                t.w32(d + 0x64, 0);
+            }
+            if case % 13 == 12 {
+                t.w32(d + 0x68, 0);
+            }
+            let ty = p1d_desc(&mut t, 0x7500, 0x8, 0x8000_0000, false, 1);
+            for (kind, mflags, off) in [
+                (4u32, 0u32, 0u32),
+                (0, 0x40, 8),
+                (0, 0, 0x10),
+                (4, 2, 0x14),
+                (2, 0x40, 0x18),
+                (4, 0, 0x20),
+            ] {
+                let typed = if rng.next().is_multiple_of(4) { 0 } else { ty };
+                p1d_member(&mut t, d, kind, mflags, off, 8, typed);
+            }
+            let what = format!("{label}: default buffer {case}");
+            t.check(&what, 0x0043_c420, Conv::Thiscall(d), &[], |g| {
+                pbu::calculate_default_buffer(g, d);
+                Out::None
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_validation_buffer_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xbf00_0002);
+        for case in 0..52u32 {
+            // 48..: one fixed array claiming 0x104 of 0x105 bytes (offset
+            // 0): the last scan's index and bit 28
+            let big = case >= 48;
+            t.stub(0x0043_cb80, true, 0, 0, 0);
+            t.stub(0x0043_cfd0, true, 0, 0, 0xcfd0);
+            t.stub(0x0043_52f0, false, 4, 0, 0x0123_4567);
+            let fixed = if big {
+                0x41
+            } else {
+                [2u32, 3, 0][(case % 3) as usize]
+            };
+            t.stub(0x0057_6050, true, 0, 0, fixed);
+            let value = t.junk(8, 3);
+            let ann = p1d_vobj(&mut t, 0x7600, &[(0, 0), (0, value)], 0x10);
+            t.stub(0x0057_5d40, true, 1, 1, if case % 2 == 0 { ann } else { 0 });
+            let size = if big { 0x105 - (case & 1) } else { 0x80 };
+            let d = p1d_desc(&mut t, 0x7400, size, rng.next() & 0x7fff_ffff, false, 1);
+            if big {
+                t.w32(d + 0x8c, 0);
+            }
+            if case % 11 == 10 {
+                t.w32(d + 0x68, 0);
+            }
+            if case % 13 == 12 {
+                t.w32(d + 0x6c, 0);
+            }
+            // a parent, done or to be worked out (its buffers through the
+            // originals, its slots stubs), with or without buffers
+            if case % 4 != 0 && !big {
+                let pflags = if case % 4 == 1 {
+                    0x8800_0000
+                } else {
+                    0x0800_0003 | ((case / 4 % 2) << 30) | ((case / 8 % 2) << 28)
+                };
+                let p = p1d_desc(&mut t, 0x7700, 0x10, pflags, false, 1);
+                if case % 5 == 0 {
+                    t.w32(p + 0x68, 0);
+                }
+                if case % 7 == 0 {
+                    t.w32(p + 0x6c, 0);
+                }
+                t.w32(d + 0x40, p);
+            }
+            let tyf = if case % 3 == 0 {
+                0x0000_0003
+            } else {
+                0x8000_0000
+            };
+            let ty = p1d_desc(&mut t, 0x7500, 0x8, tyf, false, 1);
+            if case % 5 == 3 {
+                t.w32(ty + 0x68, 0);
+            }
+            if case % 6 == 4 {
+                t.w32(ty + 0x6c, 0);
+            }
+            // the members: kinds, flags, offsets (an overlap in some
+            // cases), element sizes, typed or not
+            let overlap = case % 9 == 8;
+            for (i, (kind, mflags, off)) in [
+                (4u32, 0u32, 0u32),
+                (0, 0x40, 0x10),
+                (2, 0, 0x20),
+                (2, 0x40, 0x28),
+                (0, 2, 0x30),
+                (1, 0, 0x38),
+                (0, 0, if overlap { 2 } else { 0x60 }),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if big && i != 5 {
+                    continue;
+                }
+                let (kind, off) = if big { (1, 0) } else { (kind, off) };
+                let kind = if i == 0 && case % 5 == 0 { 0 } else { kind };
+                let typed = if (rng.next() >> i).is_multiple_of(3) || big {
+                    0
+                } else {
+                    ty
+                };
+                let esize = if big { 4 } else { 8 };
+                p1d_member(&mut t, d, kind, mflags, off, esize, typed);
+            }
+            let what = format!("{label}: validation buffer {case}");
+            t.check(&what, 0x0043_c630, Conv::Thiscall(d), &[], |g| {
+                Out::U32(pbu::calculate_validation_buffer(g, d))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1d_fixup_instances_matches_the_original() {
+    use ffx_pload::p1_fixup::bridge as pfx;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xf1c5_0001);
+        let import = t.rebase(0x00c9_4030);
+        let named = t.rebase(0x00c9_0760);
+        let dynamic = t.rebase(0x00c9_1330);
+        for case in 0..32u32 {
+            // the asset the lookup finds: a dynamic class object or not
+            let adesc = t.junk(0xa0, 4);
+            t.w32(adesc + 0x40, if case % 4 == 3 { 0 } else { dynamic });
+            let asset = t.junk(0x40, 5);
+            t.w32(asset + 0x20, adesc);
+            let mut slots = vec![(0u32, 0u32); 15];
+            slots[7] = (1, 0x77);
+            slots[14] = (1, 0);
+            let target = p1d_vobj(&mut t, 0x7b00, &slots, 0x60);
+            t.w32(target + 0x40, 0);
+            let found = match case % 5 {
+                0 => 0,
+                1 => 0x18,
+                _ => target + 0x18,
+            };
+            t.w32(asset + 0x1c, found);
+            t.stub(
+                0x0045_d280,
+                false,
+                1,
+                0,
+                if case % 7 == 6 { 0 } else { asset },
+            );
+            let cluster = t.junk(0x50, 3);
+            let iring = cluster + 8;
+            t.w32(iring, iring);
+            t.w32(iring + 4, iring);
+            let lists = cluster + 0x1c;
+            t.w32(lists, lists);
+            t.w32(lists + 4, lists);
+            t.w32(cluster + 0x44, if case == 0 { 2 } else { rng.next() & !2 });
+            // the import nodes: named "tex_a", "tex_b" or unnamed
+            let str_a = t.alloc(b"tex_a\0");
+            let str_b = t.alloc(b"tex_b\0");
+            let mut nodes = Vec::new();
+            for k in 0..=(case % 3) {
+                let n = p1d_vobj(&mut t, 0x7800, &slots, 0x60);
+                t.w32(n + 0x40, 0);
+                let nm = match (k + case) % 3 {
+                    0 => str_a,
+                    1 => str_b,
+                    _ => 0,
+                };
+                t.w32(n + 0x18, nm);
+                let link = n + 0x2c;
+                let tail = t.r32(iring + 4);
+                t.w32(link, iring);
+                t.w32(link + 4, tail);
+                t.w32(tail, link);
+                t.w32(iring + 4, link);
+                nodes.push(n);
+            }
+            if case % 6 == 5 {
+                // a node that is the asset object itself
+                t.w32(asset + 0x1c, nodes[nodes.len() - 1] + 0x18);
+            }
+            // the instance lists: the imports' (elements naming "tex_a"
+            // or "tex_b", a named class or not), lists whose class is an
+            // import node, others with a slot 14 result
+            let push_list = |t: &mut Twins, desc: u32| -> u32 {
+                let list = t.junk(0x50, 7);
+                t.w32(list + 0x2c, desc);
+                let tail = t.r32(lists + 4);
+                t.w32(list, lists);
+                t.w32(list + 4, tail);
+                t.w32(tail, list);
+                t.w32(lists + 4, list);
+                list
+            };
+            let count = 1 + case % 4;
+            let stride = 0x10u32;
+            let buffer = t.zeros((stride * (count + 2)) as usize);
+            for i in 0..count {
+                let e = buffer + stride * i;
+                let d = if (i + case) % 4 == 0 {
+                    let j = t.junk(0xa0, 8);
+                    t.w32(j + 0x40, 0);
+                    j
+                } else {
+                    named
+                };
+                t.w32(e + 4, d);
+                let s = if (i + case) % 2 == 0 { str_a } else { str_b };
+                t.w32(e + 8, s | (rng.next() & 1));
+            }
+            let il = push_list(&mut t, import);
+            t.w32(il + 0x34, buffer);
+            t.w32(il + 0x3c, count);
+            t.w32(il + 0x40, 1);
+            let end = if count >= 3 {
+                let e = buffer + stride;
+                t.w32(e, buffer + 3 * stride);
+                e
+            } else {
+                buffer + 0x1000
+            };
+            t.w32(il + 8, end);
+            t.w32(import + 0x1c, stride);
+            t.w32(import + 0x8c, 4);
+            for &n in &nodes {
+                push_list(&mut t, n);
+            }
+            let mut cslots = vec![(0u32, 0u32); 15];
+            cslots[14] = (1, if case % 8 == 7 { 0x15 } else { 0 });
+            let cls = p1d_vobj(&mut t, 0x7a00, &cslots, 0xa0);
+            t.w32(cls + 0x40, 0);
+            push_list(&mut t, cls);
+            push_list(&mut t, dynamic);
+            let what = format!("{label}: fixup instances {case}");
+            t.check(&what, 0x0044_1620, Conv::Thiscall(cluster), &[], |g| {
+                let it = g.scratch();
+                Out::U32(pfx::fixup_instances(g, it, cluster))
+            });
+            t.reset();
+        }
     }
 }
