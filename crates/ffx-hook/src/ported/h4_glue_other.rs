@@ -14,7 +14,7 @@ use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
-    menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_f5 as f5, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1972,5 +1972,15 @@ ported! {
     /// `FmodEventTree_load_00710370(this; path)`.
     FmodEventTree_load_00710370 @ 0x0071_0370 => extern "thiscall" fn event_tree_load(this: u32, path: u32) -> u32 {
         f4::event_tree_load(&mut mem(), this, path)
+    }
+    // ---- continuation round 4, batch 5 (ffx_glue_other::h4_f5)
+    /// `FmodVoice_read(this; id, flag)`.
+    FmodVoice_read @ 0x0070_add0 => extern "thiscall" fn voice_read(this: u32, id: u32, flag: u32) -> u32 {
+        f5::voice_read(&mut mem(), this, id, flag)
+    }
+    /// `SyncManager_syncInit(this)`.
+    SyncManager_syncInit @ 0x006f_b210 => extern "thiscall" fn sync_init(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f5::SYNC_INIT_FRAME / 4) as usize }>::new();
+        f5::sync_init(&mut mem(), frame.at(), this)
     }
 }

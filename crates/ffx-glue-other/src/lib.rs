@@ -66,7 +66,9 @@
 //! - [`h4_f3`]: its third batch: the sound effects' per-frame update,
 //!   event creation, battle stream, project load and constructor;
 //! - [`h4_f4`]: its fourth batch: the FMOD event system's setup, a sound
-//!   bank's constructor and its event tree's load.
+//!   bank's constructor and its event tree's load;
+//! - [`h4_f5`]: its fifth batch: the FMOD voice's event read and the sync
+//!   manager's setup.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -104,6 +106,7 @@ pub mod h4_f1;
 pub mod h4_f2;
 pub mod h4_f3;
 pub mod h4_f4;
+pub mod h4_f5;
 pub mod menu;
 pub mod misc;
 pub mod movie;

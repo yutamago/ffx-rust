@@ -25,8 +25,8 @@ use std::path::PathBuf;
 
 use ffx_bridge::Mem;
 use ffx_glue_other::{
-    frames as fr, h4_c2 as c2, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2, h4_e3 as e3, h4_e4 as e4,
-    h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
+    frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2, h4_e3 as e3,
+    h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4, h4_f5 as f5,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -3786,3 +3786,159 @@ const FIOS_READ: u32 = 0x0067_9800;
 const FIOS_CLOSE: u32 = 0x0067_9510;
 /// `operator_new_006304c0`.
 const OPERATOR_NEW_2: u32 = 0x0063_04c0;
+
+// ---- continuation round 4, batch 5 (ffx_glue_other::h4_f5)
+
+/// The voice's event read.
+#[test]
+fn f5_voice_read() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f501);
+        t.stub_at(c3::VOICE_STOP, true, 0, 0, &[]);
+        t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+        // getInfo: the info's +8 from a cell
+        let info8 = t.zeros(4);
+        let rest = t.stub_code(d1::EVENT_GET_INFO, false, 4, 4, false, &[]);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x10, 0x8b, 0x15];
+        c.extend(info8.to_le_bytes()); // mov eax, [esp+0x10]; mov edx, [info8]
+        c.extend([0x89, 0x50, 0x08, 0xe9]); // mov [eax+8], edx; jmp rest
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(d1::EVENT_GET_INFO, f);
+        // getEvent: logs, writes its event cell through the out pointer
+        let event = t.zeros(4);
+        let get = t.stub_code(0x0bad_f520, true, 4, 4, false, &[wr(3, event)]);
+        let vtable = t.zeros(0x24);
+        t.w32(vtable + 0x20, get);
+        let iob = t.stub_code(0x0bad_f521, false, 0, 0, false, &[]);
+        let fprintf = t.stub_code(0x0bad_f522, false, 3, 0, false, &[]);
+        let tags = [
+            c3::VOICE_STOP,
+            fr::ERRCHECK,
+            d1::EVENT_GET_INFO,
+            0x0bad_f520,
+            0x0bad_f521,
+            0x0bad_f522,
+        ];
+        let ids = [
+            0x0290_d1c1u32,
+            0x0291_01c1,
+            0x0834_1504,
+            0x504,
+            0x3300_0001,
+            0x3300_0000,
+            0x1234,
+            0x0101_0101,
+        ];
+        let mut ran = 0;
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(e5::IOB_FUNC.sym, iob);
+            t.g32(e5::FPRINTF.sym, fprintf);
+            t.ret(0x0bad_f520, rng.pick(&[0, 0, 0x59, 1]));
+            let ev = rng.next();
+            t.w32(event, rng.pick(&[0, ev, ev]));
+            let this = random_block(&mut t, &mut rng, 0x70);
+            t.w32(this + 8, rng.pick(&[0, 1]));
+            t.w32(this + 0x14, rng.pick(&[0, 0, ev]));
+            t.w32(this + 0x60, rng.pick(&[0, 1, 2]));
+            t.w32(this, rng.pick(&[0x10e, 3, 3]));
+            let flag = rng.pick(&[0, 0, 1]);
+            t.g32(f1::VOICE_NO_PLAY, flag);
+            let info = random_block(&mut t, &mut rng, 0x38);
+            let v = rng.next();
+            t.w32(info8, v);
+            t.w32(this + 0x68, info);
+            // the groups
+            let group = t.zeros(4);
+            t.w32(group, vtable);
+            t.w32(this + 0x1c, rng.pick(&[0, group, group]));
+            let groups = t.zeros(4 * 100);
+            for k in 0..100 {
+                t.w32(groups + 4 * k, rng.pick(&[0, group, group]));
+            }
+            t.w32(this + 0xc, groups);
+            // the table: "ML\0\0", count, (id, offset) entries, names
+            let table = t.zeros(0x100);
+            t.write(
+                table,
+                rng.pick(&[&b"ML\0\0"[..], b"ML\0\0", b"MX\0\0", b"ML\0a"]),
+            );
+            let n = rng.pick(&[0, 3, 8]);
+            t.w32(table + 4, n);
+            for k in 0..n {
+                let id = ids[rng.below(ids.len() as u32) as usize];
+                t.w32(table + 8 + 8 * k, id);
+                let off = 0x80 + 8 * k;
+                t.w32(table + 12 + 8 * k, off);
+                let d0 = b'0' + rng.below(10) as u8;
+                let d1_ = b'0' + rng.below(10) as u8;
+                t.write(table + off, &[d0, d1_, b'x', 0]);
+            }
+            t.w32(this + 0x24, table);
+            let id = ids[rng.below(ids.len() as u32) as usize];
+            let flag = rng.pick(&[0, 1, 1, 1]);
+            t.check_conv(
+                &format!("{w} read {id:#x}"),
+                0x0070_add0,
+                Conv::Thiscall(this),
+                &[id, flag],
+                |g| u(f5::voice_read(g, this, id, flag)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The sync manager's setup.
+#[test]
+fn f5_sync_init() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f502);
+        let sprintf = t.stub_code(0x0bad_f530, false, 3, 0, false, &[]);
+        let stubs = [
+            (f3::MEMSET, false, 3, 0),
+            (fr::FIOS_UNIFY, false, 3, 0),
+            (f5::READ_SYNC_FILE, true, 1, 1),
+            (f5::DBG_PRINTF, false, 1, 0),
+            (f5::USER_ALIGNED_FREE, false, 1, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(0x0bad_f530);
+        let mut ran = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(f3::SPRINTF_IAT, sprintf);
+            let this = random_block(&mut t, &mut rng, 0x44);
+            let list = t.zeros(0x100);
+            t.w32(this + 0x40, list);
+            t.w32(this + 0x18, rng.below(8));
+            let data = random_block(&mut t, &mut rng, 0x40);
+            t.write(
+                data,
+                rng.pick(&[&b"SL\0\0"[..], b"SL\0\0", b"SX\0\0", b"SL\x01\0"]),
+            );
+            t.w32(data + 4, rng.pick(&[0, 1, 5, 12]));
+            t.ret(f5::READ_SYNC_FILE, rng.pick(&[0, data, data]));
+            let frame = t.ebp_for(0) - 0x204;
+            t.check_framed_conv(
+                &format!("{w} init"),
+                0x006f_b210,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 0x200)],
+                |g| u(f5::sync_init(g, frame, this)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
