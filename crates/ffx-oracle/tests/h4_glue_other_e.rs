@@ -30,7 +30,7 @@ use ffx_glue_other::{
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
-    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3,
+    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -9701,6 +9701,83 @@ fn j3_special_feature_page() {
             );
             let end: u32 = Mem::read(&t.b, list);
             assert_eq!(end - calls, 5 * 22 * 4, "{w}: rows");
+        }
+    }
+}
+
+// ---- continuation round 8, batch 4 (ffx_glue_other::h4_j4)
+
+/// The escape menu's main setting page: every Flash call logged whole,
+/// the texts written by the text stubs, the values by the original
+/// setters.
+#[test]
+fn j4_main_setting_page() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c841);
+        let seq = t.zeros(4);
+        j1_text_stub(&mut t, j3::GET_LOC_TEXT, seq);
+        j1_text_stub(&mut t, j3::REMAP_TEXT, seq);
+        let list = t.zeros(4);
+        let rets = t.zeros(4 * 5);
+        let widths = [6u32, 10, 14, 18, 22];
+        for (k, (sym, n)) in [
+            j4::CALL_FLASH_1,
+            j4::CALL_FLASH_2,
+            j4::CALL_FLASH_3,
+            j4::CALL_FLASH_4,
+            j4::CALL_FLASH_5,
+        ]
+        .into_iter()
+        .zip(widths)
+        .enumerate()
+        {
+            j2_wide_stub(&mut t, sym, n, list, rets + 4 * k as u32);
+        }
+        for i in 0..20 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &[j3::GET_LOC_TEXT, j3::REMAP_TEXT]);
+            for k in 0..5 {
+                let v = rng.next();
+                t.w32(rets + 4 * k, v);
+            }
+            let mut text = Vec::new();
+            for _ in 0..2 * 24 {
+                for _ in 0..rng.below(20) {
+                    text.push(b' ' + rng.below(95) as u8);
+                }
+                text.push(0);
+            }
+            let src = t.alloc(&text);
+            t.w32(seq, src);
+            // the calls' words: 1x22, 4x14, 2x6, 2x10, 1x18 and the last 6
+            let total = 22 + 3 * 14 + 2 * 6 + 2 * 10 + 18 + 6;
+            let calls = t.zeros(4 * total);
+            t.w32(list, calls);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            let frame = t.ebp_for(0) - j4::MAIN_FRAME;
+            let mut compare: Vec<(u32, usize)> = [0x114u32, 0x224, 0x334, 0x444, 0x554]
+                .iter()
+                .flat_map(|&off| {
+                    [
+                        (j4::MAIN_FRAME - off, 16),
+                        (j4::MAIN_FRAME - off - 0x100, 0x100),
+                    ]
+                })
+                .collect();
+            compare.push((j4::MAIN_FRAME - 0x104, 0x100));
+            compare.push((0, 16));
+            t.check_framed_conv(
+                &w,
+                0x0068_e6f0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &compare,
+                |g| u(j4::main_setting_page(g, frame, this)),
+            );
+            let end: u32 = Mem::read(&t.b, list);
+            assert_eq!(end - calls, 4 * total as u32, "{w}: calls");
+            assert_eq!(t.log_entries(), 2 * 24, "{w}: texts");
         }
     }
 }
