@@ -594,3 +594,265 @@ fn mesh_commands_match_the_original() {
         assert!(cmds_seen > 40, "{name}: {cmds_seen}");
     }
 }
+
+#[test]
+fn populate_with_streams_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_0f08);
+        t.stub(tg::PRINTF, false, 4, 0, 0);
+        // three keys (their text, flag byte +8) and three names
+        let keys: Vec<u32> = (0..3)
+            .map(|k| {
+                let d = object(&mut t, &mut rng, 4, false);
+                t.write(d + 8, &[[0u8, 1, 0x80][k]]);
+                d
+            })
+            .collect();
+        // the streams' names and the inputs' own copies (strcmp compares
+        // two strings, not two pointers); "Pos" and "Pose" differ at the
+        // terminator
+        let strings = |t: &mut Twins| -> Vec<u32> {
+            ["Pos", "Normal", "Pose"]
+                .iter()
+                .map(|s| {
+                    let mut b = s.as_bytes().to_vec();
+                    b.push(0);
+                    t.alloc(&b)
+                })
+                .collect()
+        };
+        let names = strings(&mut t);
+        let input_names = strings(&mut t);
+        let mut results = [0u32; 2];
+        for i in 0..200u32 {
+            // the blocks of a source: items keyed by the pool's keys
+            let source = |t: &mut Twins, rng: &mut Rng| {
+                let src = object(t, rng, 0x10, false);
+                let nb = rng.below(3);
+                let blocks = t.zeros(0x40 * nb as usize + 4);
+                for b in 0..nb {
+                    let blk = blocks + 0x40 * b;
+                    t.w32(blk + 4, rng.next());
+                    t.w32(blk + 0x10, rng.next());
+                    let ni = rng.below(4);
+                    let items = t.zeros(12 * ni as usize + 4);
+                    for k in 0..ni {
+                        t.w32(items + 12 * k + 4, keys[rng.below(3) as usize]);
+                        t.write(items + 12 * k + 9, &[rng.below(3) as u8]);
+                    }
+                    t.w32(blk + 8, ni | (rng.next() & 0x8000_0000));
+                    t.w32(blk + 0xc, items);
+                }
+                t.w32(src + 0x28, nb | (rng.next() & 0x8000_0000));
+                t.w32(src + 0x2c, blocks);
+                src
+            };
+            let primary = source(&mut t, &mut rng);
+            let secondary = if rng.chance(2) {
+                0
+            } else {
+                source(&mut t, &mut rng)
+            };
+            // the streams
+            let ns = rng.below(6);
+            let streams = t.zeros(16 * ns as usize + 4);
+            for s in 0..ns {
+                let at = streams + 16 * s;
+                let key = if rng.chance(6) {
+                    0
+                } else {
+                    keys[rng.below(3) as usize]
+                };
+                t.w32(at, key);
+                let nm = if rng.chance(5) {
+                    0
+                } else {
+                    names[rng.below(3) as usize] | u32::from(rng.chance(3))
+                };
+                t.w32(at + 4, nm);
+                t.write(at + 8, &((16 * s) as u16).to_le_bytes());
+                t.write(at + 0xc, &(rng.below(2) as u16).to_le_bytes());
+                t.write(at + 0xf, &[rng.below(2) as u8]);
+            }
+            let table = object(&mut t, &mut rng, 8, false);
+            t.w32(table + 0x14, ns | (rng.next() & 0x8000_0000));
+            t.w32(table + 0x18, streams);
+            // the geometry's named inputs
+            let ni = rng.below(4);
+            let entries: Vec<u32> = (0..ni)
+                .map(|_| {
+                    let e = object(&mut t, &mut rng, 4, false);
+                    t.w32(e, keys[rng.below(3) as usize]);
+                    t.w32(
+                        e + 4,
+                        input_names[rng.below(3) as usize] | u32::from(rng.chance(3)),
+                    );
+                    t.write(e + 8, &(rng.below(2) as u16).to_le_bytes());
+                    t.write(e + 0xa, &[rng.below(2) as u8, rng.below(3) as u8]);
+                    e
+                })
+                .collect();
+            let idx = rng.below(3);
+            let geo = t.zeros(36 * 4);
+            let at = geo + 36 * idx;
+            t.w32(at + 0x1c, ni | (rng.next() & 0x8000_0000));
+            if ni == 1 {
+                t.w32(at + 0x20, entries[0]);
+            } else {
+                let list = t.zeros(4 * ni as usize + 4);
+                for (k, &e) in entries.iter().enumerate() {
+                    t.w32(list + 4 * k as u32, e);
+                }
+                t.w32(at + 0x20, list);
+            }
+            let holder = object(&mut t, &mut rng, 12, false);
+            t.w32(holder + 0x28, geo);
+            let ctx = object(&mut t, &mut rng, 0x20, false);
+            t.w32(ctx + 0x10, holder);
+            t.w32(ctx + 0x18, secondary);
+            t.w32(ctx + 0x1c, primary);
+            t.w32(ctx + 0x20, idx);
+            t.w32(ctx + 0x6c, table);
+            let buf = object(&mut t, &mut rng, 0x40, false);
+            let out = object(&mut t, &mut rng, 1, false);
+            let mask = if rng.chance(3) { rng.next() } else { 0 };
+            let args = [buf, ctx, out, mask];
+            run_framed(
+                &mut t,
+                &format!("{name} populate with streams #{i}"),
+                0x005b_94b0,
+                Conv::Stdcall,
+                &args,
+                0x2c,
+                0,
+                |g, ebp| tg::bridge::populate_with_streams(g, ebp + 8, buf, ctx, out, mask),
+            );
+            let e: u32 = Mem::read(&t.a, t.log);
+            results[usize::from(e != 0)] += 1;
+        }
+        assert!(results.iter().all(|&n| n > 20), "{name}: {results:?}");
+    }
+}
+
+/// `groupSegment`'s stand-in (thiscall, four words, `ret 0x10`): logs
+/// `ecx` and its first three words, then copies `[tab]` words from `tab +
+/// 4` to its fourth word (the caller's `_alloca` array, whose address
+/// differs between the original and the port).
+fn group_segment_stub(t: &mut Twins, tab: u32) -> u32 {
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tg::GROUP_SEGMENT.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    for i in 0..3u8 {
+        c.extend([0x8b, 0x54, 0x24, 4 + 4 * i]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, 8 + 4 * i]); // mov [eax+8+4i], edx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.extend([0x56, 0x57]); // push esi; push edi
+    c.extend([0x8b, 0x7c, 0x24, 0x18]); // mov edi, [esp+0x18]
+    c.push(0xbe);
+    c.extend((tab + 4).to_le_bytes()); // mov esi, tab + 4
+    c.extend([0x8b, 0x0d]);
+    c.extend(tab.to_le_bytes()); // mov ecx, [tab]
+    c.extend([0xf3, 0xa5]); // rep movsd
+    c.extend([0x5f, 0x5e]); // pop edi; pop esi
+    c.extend([0xb8, 7, 0, 0, 0]); // mov eax, 7
+    c.extend([0xc2, 0x10, 0x00]); // ret 0x10
+    t.code(&c)
+}
+
+#[test]
+fn populate_with_dynamic_streams_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_0f09);
+        let tab = t.zeros(0x40);
+        let group = group_segment_stub(&mut t, tab);
+        t.jump(tg::GROUP_SEGMENT, group);
+        t.stub(tg::BLOCK_RECORD_CTOR, true, 0, 0, 0x55);
+        let keys: Vec<u32> = (0..3)
+            .map(|k| {
+                let d = object(&mut t, &mut rng, 4, false);
+                t.write(d + 8, &[[0u8, 1, 0][k]]);
+                d
+            })
+            .collect();
+        let mut seen = [0u32; 2];
+        for i in 0..120u32 {
+            let n = if i % 10 == 9 { 0 } else { 1 + rng.below(5) };
+            t.stub(tg::DATA_BLOCK_COUNT, true, 1, 1, n);
+            // the blocks groupSegment hands back (some none)
+            t.w32(tab, n);
+            for j in 0..n {
+                let b = if rng.chance(4) {
+                    0
+                } else {
+                    let b = object(&mut t, &mut rng, 4, false);
+                    let m = rng.below(4);
+                    let items = t.zeros(12 * m as usize + 4);
+                    for k in 0..m {
+                        t.w32(items + 12 * k + 4, keys[rng.below(3) as usize]);
+                    }
+                    t.w32(b + 8, m | (rng.next() & 0x8000_0000));
+                    t.w32(b + 0xc, items);
+                    b
+                };
+                t.w32(tab + 4 + 4 * j, b);
+            }
+            let ns = rng.below(6);
+            let streams = t.zeros(16 * ns as usize + 4);
+            for s in 0..ns {
+                t.w32(streams + 16 * s, keys[rng.below(3) as usize]);
+                t.write(
+                    streams + 16 * s + 8,
+                    &((0x10 + 12 * s) as u16).to_le_bytes(),
+                );
+            }
+            let table = object(&mut t, &mut rng, 8, false);
+            t.w32(table + 0x14, ns | (rng.next() & 0x8000_0000));
+            t.w32(table + 0x18, streams);
+            let segment = rng.below(3);
+            let segs = object(&mut t, &mut rng, 12, false);
+            if rng.chance(4) {
+                t.w32(segs + 16 * segment + 8, 0);
+            }
+            let w = match rng.below(3) {
+                0 => 0,
+                1 => 1 + rng.below(100),
+                _ => 0u32.wrapping_sub(1 + rng.below(100)),
+            };
+            t.w32(segs + 16 * segment + 0xc, w);
+            let dm = object(&mut t, &mut rng, 8, false);
+            t.w32(dm + 0x14, segs);
+            let mesh = object(&mut t, &mut rng, 2, false);
+            t.w32(mesh + 4, dm);
+            let ctx = object(&mut t, &mut rng, 0x20, false);
+            t.w32(ctx + 0x20, segment);
+            t.w32(ctx + 0x6c, table);
+            let buf = object(&mut t, &mut rng, 0xc0, false);
+            t.w32(buf, 0x40 + 4 * rng.below(4));
+            let outs: Vec<u32> = (0..3).map(|_| object(&mut t, &mut rng, 1, false)).collect();
+            let args = [buf, ctx, outs[0], mesh, outs[1], outs[2]];
+            let scratch = t.b.stack_range().start + 0x200;
+            run_framed(
+                &mut t,
+                &format!("{name} populate with dynamic streams #{i}"),
+                0x005b_9290,
+                Conv::Stdcall,
+                &args,
+                0x48,
+                0,
+                |g, _| tg::bridge::populate_with_dynamic_streams(g, args, |_| scratch),
+            );
+            let calls: u32 = Mem::read(&t.a, t.log);
+            seen[usize::from(calls > 2)] += 1;
+            t.unstub(tg::DATA_BLOCK_COUNT);
+        }
+        assert!(seen.iter().all(|&n| n > 20), "{name}: {seen:?}");
+    }
+}

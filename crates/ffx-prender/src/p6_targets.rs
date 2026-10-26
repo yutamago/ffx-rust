@@ -179,6 +179,21 @@ pub struct MeshCommands {
     pub callback: u32,
 }
 
+/// `populateContextParameterCaptureBufferWithStreams`' warning format
+/// "Failed to find data block/vertex stream to satisfy RDT %s for stream
+/// %d\n" and `PhyrePrintf` (cdecl).
+pub const STREAM_WARNING: u32 = 0x00b3_6800;
+pub const PRINTF: u32 = 0x0043_52f0;
+
+/// `populateContextParameterCaptureBufferWithDynamicStreams`' callees:
+/// `PDynamicMesh::getDataBlockCount(mesh; segment)`,
+/// `PDynamicMesh::groupSegment(mesh; table, segment, base, blocks)` (which
+/// fills the block pointers) and the block record's constructor
+/// `0x0055dd30(this)` (thiscall).
+pub const DATA_BLOCK_COUNT: u32 = 0x0049_8770;
+pub const GROUP_SEGMENT: u32 = 0x0049_8a30;
+pub const BLOCK_RECORD_CTOR: u32 = 0x0055_dd30;
+
 pub mod bridge {
     //! The originals over game memory.
 
@@ -189,6 +204,7 @@ pub mod bridge {
         SET_DEPTH_OPCODE, SET_VALUE, SET_WORD, SPOT_TYPE, STATE_ARRAY_TYPE, VALIDATE,
         VIEWPORT_SIZE, renderer,
     };
+    use super::{BLOCK_RECORD_CTOR, DATA_BLOCK_COUNT, GROUP_SEGMENT, PRINTF, STREAM_WARNING};
     use super::{
         CommonShaders, GATHER_RECORDS, INSTANCE_STRIDE, INTERLOCKED_ADD, MEMCPY, MeshCommands,
         STATE_ELEMENT, TEXTURE_POINTERS,
@@ -831,5 +847,268 @@ pub mod bridge {
             h.write(cmd.wrapping_add(0x40), v);
         }
         (0, instance)
+    }
+
+    /// A stream's binding found in `src`'s blocks (`+0x28` count, 0x40-byte
+    /// blocks at `+0x2c`, each with `+8` count, 12-byte items at `+0xc`):
+    /// the first item whose `+4` is `key` (and whose byte `+9` is `sem`,
+    /// when given). Returns (block, item).
+    fn find_item(h: &impl Host, src: u32, key: u32, sem: Option<u8>) -> Option<(u32, u32)> {
+        let n = h.read::<u32>(src + 0x28) & 0x7fff_ffff;
+        let mut block: u32 = h.read(src + 0x2c);
+        for _ in 0..n {
+            let m = h.read::<u32>(block + 8) & 0x7fff_ffff;
+            let mut item: u32 = h.read(block + 0xc);
+            for _ in 0..m {
+                if h.read::<u32>(item + 4) == key && sem.is_none_or(|s| h.read::<u8>(item + 9) == s)
+                {
+                    return Some((block, item));
+                }
+                item = item.wrapping_add(0xc);
+            }
+            block = block.wrapping_add(0x40);
+        }
+        None
+    }
+
+    /// A binding's three words at `buf + u16 [stream + 8]`: the block, the
+    /// item and the block's `+0x10`.
+    fn bind_stream(h: &mut impl Host, buf: u32, stream: u32, block: u32, item: u32) {
+        let dst = buf.wrapping_add(u32::from(h.read::<u16>(stream + 8)));
+        h.write(dst.wrapping_add(4), item);
+        h.write(dst, block);
+        let w: u32 = h.read(block + 0x10);
+        h.write(dst.wrapping_add(8), w);
+    }
+
+    /// A string pointer with its low tag bit cleared.
+    fn untagged(h: &impl Host, at: u32) -> u32 {
+        let p: u32 = h.read(at);
+        p.wrapping_sub(p & 1)
+    }
+
+    /// The CRT's `strcmp` as the original inlines it: whether the strings
+    /// are equal.
+    fn same_string(h: &impl Host, mut a: u32, mut b: u32) -> bool {
+        loop {
+            let x: u8 = h.read(a);
+            if x != h.read::<u8>(b) {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            a = a.wrapping_add(1);
+            b = b.wrapping_add(1);
+        }
+    }
+
+    /// `PRendererBase::populateContextParameterCaptureBufferWithStreams(buf,
+    /// ctx, &out, mask)` (`0x005b94b0`, stdcall, `ret 0x10`): binds the
+    /// context's vertex streams (16-byte records from `[ctx + 0x6c] +
+    /// 0x18`, one mask bit each; bits already in `mask` are bound) to data
+    /// blocks. First each of the geometry's named inputs (`[ctx + 0x10] +
+    /// 0x28`, entry `[ctx + 0x20]`) takes the stream of its key, index and
+    /// name (else the first of its key and type byte) and the block item
+    /// of its key and semantic byte in `[ctx + 0x1c]`; then every stream
+    /// left takes the first item of its key in `[ctx + 0x18]` (when its
+    /// key's flag byte is set and there is one) or `[ctx + 0x1c]`, a flagged
+    /// one also storing the block's `+4` at `out`. 0, or 0x13 (with a
+    /// warning for a named stream) at the first stream with no item.
+    ///
+    /// `slots`: the caller's argument words, which the original reuses (the
+    /// mask so far in the second, the bit and the flag in the fourth).
+    pub fn populate_with_streams(
+        h: &mut impl Host,
+        slots: u32,
+        buf: u32,
+        ctx: u32,
+        out: u32,
+        mask: u32,
+    ) -> u32 {
+        let table: u32 = h.read(ctx + 0x6c);
+        let streams: u32 = h.read(table + 0x18);
+        let count = h.read::<u32>(table + 0x14) & 0x7fff_ffff;
+        let end = streams.wrapping_add(count << 4);
+        let primary: u32 = h.read(ctx + 0x1c);
+        let secondary: u32 = h.read(ctx + 0x18);
+        let index: u32 = h.read(ctx + 0x20);
+        let geo: u32 = h.read(h.read::<u32>(ctx + 0x10) + 0x28);
+        let at = geo.wrapping_add(index.wrapping_mul(36));
+        let inputs = h.read::<u32>(at + 0x1c) & 0x7fff_ffff;
+        let mut entry = match inputs {
+            0 => 0,
+            1 => at + 0x20,
+            _ => h.read(at + 0x20),
+        };
+        let mut bound = mask;
+        h.write(slots + 4, bound);
+        for _ in 0..inputs {
+            let e: u32 = h.read(entry);
+            let name = untagged(h, e + 4);
+            let key: u32 = h.read(e);
+            let kind: u8 = h.read(e + 0xa);
+            let (mut fallback, mut fallback_bit) = (0u32, 0u32);
+            let mut bit = 1u32;
+            h.write(slots + 0xc, bit);
+            let mut cur = streams;
+            while cur < end {
+                if bound & bit == 0 {
+                    let same_key = h.read::<u32>(cur) == key;
+                    if fallback == 0 && same_key && h.read::<u8>(cur + 0xf) == kind {
+                        fallback = cur;
+                        fallback_bit = bit;
+                    }
+                    let e: u32 = h.read(entry);
+                    let same_index = h.read::<u16>(cur + 0xc) == h.read::<u16>(e + 8);
+                    if same_index && same_key {
+                        let s = untagged(h, cur + 4);
+                        if s != 0 && same_string(h, s, name) {
+                            break;
+                        }
+                    }
+                }
+                cur = cur.wrapping_add(0x10);
+                bit = bit.wrapping_add(bit);
+                h.write(slots + 0xc, bit);
+            }
+            if cur == end {
+                if fallback == 0 {
+                    entry += 4;
+                    continue;
+                }
+                cur = fallback;
+                bit = fallback_bit;
+                h.write(slots + 0xc, bit);
+            }
+            let e: u32 = h.read(entry);
+            let sem: u8 = h.read(e + 0xb);
+            if let Some((block, item)) = find_item(h, primary, key, Some(sem)) {
+                bind_stream(h, buf, cur, block, item);
+                bound |= bit;
+                h.write(slots + 4, bound);
+            }
+            entry += 4;
+        }
+        let mut bit = 1u32;
+        let mut cur = streams;
+        while cur < end {
+            if bound & bit == 0 {
+                let d: u32 = h.read(cur);
+                let flag: u8 = if d == 0 { 0 } else { h.read(d + 8) };
+                h.write(slots + 0xf, flag);
+                let src = if flag & 1 != 0 && secondary != 0 {
+                    secondary
+                } else {
+                    primary
+                };
+                let Some((block, item)) = find_item(h, src, d, None) else {
+                    if d != 0 {
+                        let format = h.rebase(STREAM_WARNING);
+                        let text: u32 = h.read(d);
+                        let n = (cur.wrapping_sub(streams) as i32 >> 4) as u32;
+                        h.call_sym(PRINTF, Conv::Cdecl, &[1, format, text, n]);
+                    }
+                    return 0x13;
+                };
+                if flag != 0 {
+                    let w: u32 = h.read(block + 4);
+                    h.write(out, w);
+                }
+                bind_stream(h, buf, cur, block, item);
+            }
+            cur = cur.wrapping_add(0x10);
+            bit = bit.wrapping_add(bit);
+        }
+        0
+    }
+
+    /// `PRendererBase::populateContextParameterCaptureBufferWithDynamicStreams
+    /// (buf, ctx, &flags, mesh, &base, &record)` (`0x005b9290`, stdcall,
+    /// `ret 0x18`) -> the mask of the streams bound. With the dynamic
+    /// mesh's (`[mesh + 4]`) segment `[ctx + 0x20]` having data blocks and
+    /// a `+8` word: `base = buf + [buf]`, the blocks grouped
+    /// (`groupSegment`, into `alloc(n)`: the original's `_alloca` of `n`
+    /// words), each stream of `[ctx + 0x6c]` bound (block, item, 0) to the
+    /// first block item of its key, a flagged key setting `flags` to -1.
+    /// Then, when the segment's `+0xc` word `w` is set, a block record
+    /// constructed after the blocks (`base + (64 n + 15) & !15`) at `record`:
+    /// `+0x34 = (w > 0 ? 4 : 2) |w|`, `+0x38 = 0`, byte `+0xe = 4`,
+    /// `+8 = |w|`, byte `+0xc = w > 0 ? 8 : 12`.
+    pub fn populate_with_dynamic_streams(
+        h: &mut impl Host,
+        args: [u32; 6],
+        alloc: impl FnOnce(u32) -> u32,
+    ) -> u32 {
+        let [buf, ctx, flags, mesh, base_out, record_out] = args;
+        let segment: u32 = h.read(ctx + 0x20);
+        let table: u32 = h.read(ctx + 0x6c);
+        let dm: u32 = h.read(mesh + 4);
+        let n = h.call_sym(DATA_BLOCK_COUNT, Conv::Thiscall(dm), &[segment]);
+        let mut bound = 0u32;
+        let segs: u32 = h.read(dm + 0x14);
+        let at = segs.wrapping_add(segment << 4);
+        if n != 0 && h.read::<u32>(at + 8) != 0 {
+            let count = h.read::<u32>(table + 0x14) & 0x7fff_ffff;
+            let base = h.read::<u32>(buf).wrapping_add(buf);
+            h.write(base_out, base);
+            let blocks = alloc(n);
+            h.call_sym(
+                GROUP_SEGMENT,
+                Conv::Thiscall(dm),
+                &[table, segment, base, blocks],
+            );
+            let mut bit = 1u32;
+            for k in 0..count {
+                let streams: u32 = h.read(table + 0x18);
+                let stream = streams.wrapping_add(16 * k);
+                let key: u32 = h.read(stream);
+                'blocks: for j in 0..n {
+                    let block: u32 = h.read(blocks.wrapping_add(4 * j));
+                    if block == 0 {
+                        continue;
+                    }
+                    let m = h.read::<u32>(block + 8) & 0x7fff_ffff;
+                    let mut item: u32 = h.read(block + 0xc);
+                    for _ in 0..m {
+                        if h.read::<u32>(item + 4) == key {
+                            let dst = buf.wrapping_add(u32::from(h.read::<u16>(stream + 8)));
+                            h.write(dst.wrapping_add(4), item);
+                            h.write(dst, block);
+                            h.write(dst.wrapping_add(8), 0u32);
+                            if h.read::<u8>(key + 8) != 0 {
+                                h.write(flags, u32::MAX);
+                            }
+                            bound |= bit;
+                            break 'blocks;
+                        }
+                        item = item.wrapping_add(0xc);
+                    }
+                }
+                bit = bit.wrapping_add(bit);
+            }
+        }
+        let segs: u32 = h.read(dm + 0x14);
+        let w: u32 = h.read(segs.wrapping_add(segment << 4) + 0xc);
+        if w == 0 {
+            return bound;
+        }
+        let first = h.read::<u32>(buf).wrapping_add(buf);
+        let record = ((n << 6).wrapping_add(0xf) & !0xf).wrapping_add(first);
+        if record != 0 {
+            h.call_sym(BLOCK_RECORD_CTOR, Conv::Thiscall(record), &[]);
+        }
+        h.write(record_out, record);
+        let wi = w.cast_signed();
+        let abs = wi.unsigned_abs();
+        let unit = if wi > 0 { 4 } else { 2 };
+        h.write(record.wrapping_add(0x34), abs.wrapping_mul(unit));
+        h.write(record.wrapping_add(0x38), 0u32);
+        h.write(record.wrapping_add(0xe), 4u8);
+        let rec: u32 = h.read(record_out);
+        h.write(rec.wrapping_add(8), abs);
+        let rec: u32 = h.read(record_out);
+        h.write(rec.wrapping_add(0xc), if wi > 0 { 8u8 } else { 12 });
+        bound
     }
 }

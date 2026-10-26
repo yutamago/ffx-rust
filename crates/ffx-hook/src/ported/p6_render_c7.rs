@@ -69,4 +69,29 @@ ported! {
         let a = tg::MeshCommands { context, instances, extra, material, tag, refs, out, callback };
         tg::bridge::mesh_commands(&mut mem(), this, &a).0
     }
+    // batch 17
+    /// `PRendererBase::populateContextParameterCaptureBufferWithStreams(buf,
+    /// ctx, &out, mask)`; the argument slots as the original leaves them.
+    Phyre_PRendering_PRendererBase_populateContextParameterCaptureBufferWithStreams @ 0x005b_94b0 => extern "stdcall" fn x_005b94b0(buf: u32, ctx: u32, out: u32, mask: u32; slots: u32) -> u32 {
+        tg::bridge::populate_with_streams(&mut mem(), slots, buf, ctx, out, mask)
+    }
+    /// `PRendererBase::populateContextParameterCaptureBufferWithDynamicStreams(buf,
+    /// ctx, &flags, mesh, &base, &record)` -> the bound mask: the block
+    /// pointer array (the original's `_alloca`) in this frame up to 64
+    /// blocks, else on the heap.
+    Phyre_PRendering_PRendererBase_populateContextParameterCaptureBufferWithDynamicStreams @ 0x005b_9290 => extern "stdcall" fn x_005b9290(buf: u32, ctx: u32, flags: u32, mesh: u32, base: u32, record: u32) -> u32 {
+        let mut frame = StackFrame::<64>::new();
+        let mut heap: Vec<u32> = Vec::new();
+        let small = frame.at();
+        let r = tg::bridge::populate_with_dynamic_streams(&mut mem(), [buf, ctx, flags, mesh, base, record], |n| {
+            if n <= 64 {
+                small
+            } else {
+                heap = vec![0u32; n as usize];
+                u32::try_from(heap.as_mut_ptr().expose_provenance()).unwrap_or(0)
+            }
+        });
+        std::hint::black_box(&mut heap);
+        r
+    }
 }
