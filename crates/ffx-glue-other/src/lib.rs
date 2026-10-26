@@ -41,7 +41,21 @@
 //!   FMOD data loaders (sync buffers, voice lists and projects, music
 //!   projects, the shout stream);
 //! - [`h4_d5`]: its fifth batch: the message windows' draw and an Iggy
-//!   menu's mouse handler.
+//!   menu's mouse handler;
+//! - [`h4_e1`]: continuation round 3: the menus' x87 cursors, brushes and
+//!   backgrounds, the weapon ability lists, the battle target cursors and
+//!   the enemies' limit gauges;
+//! - [`h4_e2`]: its second batch: the FMOD volume code (the music's direct
+//!   and whole volume, its fades, the voice's loop fade, the sound
+//!   events' pan and stop, the sync manager's data read);
+//! - [`h4_e3`]: its third batch: the FMOD music's stop, stop-all, restart
+//!   and per-frame fade, the sound events' start and fades;
+//! - [`h4_e4`]: its fourth batch: UI records for `graphicDrawUIElement`
+//!   (the active character's cursor, a sequence rectangle, a mode-2
+//!   gradient box), the distortion grid's weights, the button icons' UV,
+//!   size and position remaps;
+//! - [`h4_e5`]: its fifth batch: the FMOD music's start, read, cross-play,
+//!   data send and background-music switch.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -70,6 +84,11 @@ pub mod h4_d2;
 pub mod h4_d3;
 pub mod h4_d4;
 pub mod h4_d5;
+pub mod h4_e1;
+pub mod h4_e2;
+pub mod h4_e3;
+pub mod h4_e4;
+pub mod h4_e5;
 pub mod menu;
 pub mod misc;
 pub mod movie;

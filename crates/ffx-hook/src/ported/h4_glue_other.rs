@@ -12,8 +12,8 @@
 
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
-    h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, menu as mn, misc as m,
-    movie as mv, r3, sound as s,
+    h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
+    h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1673,5 +1673,199 @@ ported! {
     IggyMenu_handleMouseEvent_00a28c10 @ 0x00a2_8c10 => extern "thiscall" fn menu_mouse_event(this: u32, event: u32, result: u32) -> u32 {
         let mut frame = StackFrame::<{ (d5::MOUSE_FRAME / 4) as usize }>::new();
         d5::menu_mouse_event(&mut mem(), frame.at(), this, event, result)
+    }
+    // ---- continuation round 3, batch 1 (ffx_glue_other::h4_e1)
+    /// `TkMenuEquip_DrawCursor_008cf990()`.
+    TkMenuEquip_DrawCursor_008cf990 @ 0x008c_f990 => extern "C" fn equip_cursor() {
+        e1::equip_cursor(&mut mem());
+    }
+    /// `MenuWeapon_DrawListCursor_008d0100(list, x, y)`.
+    MenuWeapon_DrawListCursor_008d0100 @ 0x008d_0100 => extern "C" fn weapon_list_cursor(list: u32, x: u32, y: u32) {
+        e1::weapon_list_cursor(&mut mem(), list, x, y);
+    }
+    /// `MenuWShop_DrawBuyListCursor_008d8bb0(list, x, y)`.
+    MenuWShop_DrawBuyListCursor_008d8bb0 @ 0x008d_8bb0 => extern "C" fn shop_buy_list_cursor(list: u32, x: u32, y: u32) -> u32 {
+        e1::shop_list_cursor(&mut mem(), list, x, y)
+    }
+    /// `MenuWShop_DrawSellListCursor_008d8e60(list, x, y)`: a copy of the
+    /// buy list's.
+    MenuWShop_DrawSellListCursor_008d8e60 @ 0x008d_8e60 => extern "C" fn shop_sell_list_cursor(list: u32, x: u32, y: u32) -> u32 {
+        e1::shop_list_cursor(&mut mem(), list, x, y)
+    }
+    /// `MenuWShop_BuyListCursor_008dab70(list, x, y)`.
+    MenuWShop_BuyListCursor_008dab70 @ 0x008d_ab70 => extern "C" fn shop_buy_cursor(list: u32, x: u32, y: u32) -> u32 {
+        e1::shop_buy_cursor(&mut mem(), list, x, y)
+    }
+    /// `MenuWShop_SellWindowCursor_008dae00(list, x, y)`.
+    MenuWShop_SellWindowCursor_008dae00 @ 0x008d_ae00 => extern "C" fn shop_sell_cursor(list: u32, x: u32, y: u32) -> u32 {
+        e1::shop_sell_cursor(&mut mem(), list, x, y)
+    }
+    /// `MenuItem_DrawListCursor_008c7af0(list, x, y)`.
+    MenuItem_DrawListCursor_008c7af0 @ 0x008c_7af0 => extern "C" fn item_list_cursor(list: u32, x: u32, y: u32) -> u32 {
+        e1::item_list_cursor(&mut mem(), list, x, y).unwrap_or(0)
+    }
+    /// `TkMn2DrawCrossCmdCursor(x, y, blink)`.
+    TkMn2DrawCrossCmdCursor @ 0x008c_0580 => extern "C" fn cross_cmd_cursor(x: u32, y: u32, blink: u32) -> u32 {
+        e1::cross_cmd_cursor(&mut mem(), x, y, blink).unwrap_or(0)
+    }
+    /// `TkMn2DrawStatiCursor(x, y, hidden)`.
+    TkMn2DrawStatiCursor @ 0x008c_13d0 => extern "C" fn stati_cursor(x: u32, y: u32, hidden: u32) {
+        e1::stati_cursor(&mut mem(), x, y, hidden);
+    }
+    /// `TkMn2DrawBrush(a, x, y)`.
+    TkMn2DrawBrush @ 0x008b_f830 => extern "C" fn draw_brush(_a: u32, x: u32, y: u32) {
+        e1::draw_brush(&mut mem(), x, y);
+    }
+    /// `TOMenuDrawBrush2(i)`.
+    TOMenuDrawBrush2 @ 0x008f_f260 => extern "C" fn draw_brush2(i: u32) {
+        e1::draw_brush2(&mut mem(), i);
+    }
+    /// `TODrawMenuBGC2(a, b)`.
+    TODrawMenuBGC2 @ 0x008f_5c60 => extern "C" fn draw_menu_bg_c2(a: u32, b: u32) {
+        e1::draw_menu_bg_c2(&mut mem(), a, b);
+    }
+    /// `TkMn2DrawStatusBG(colour, kind)`.
+    TkMn2DrawStatusBG @ 0x008d_4170 => extern "C" fn draw_status_bg(colour: u32, kind: u32) {
+        e1::draw_status_bg(&mut mem(), colour, kind);
+    }
+    /// `Menu_DrawWeaponAbilities_008d8aa0(x, y, weapon)`.
+    Menu_DrawWeaponAbilities_008d8aa0 @ 0x008d_8aa0 => extern "C" fn weapon_abilities(x: u32, y: u32, weapon: u32) {
+        e1::weapon_abilities(&mut mem(), x, y, weapon);
+    }
+    /// `MenuEquip_DrawWeaponAbilities_008d02e0()`.
+    MenuEquip_DrawWeaponAbilities_008d02e0 @ 0x008d_02e0 => extern "C" fn equip_weapon_abilities() -> u32 {
+        let mut frame = StackFrame::<{ (e1::EQUIP_ABILITIES_FRAME / 4) as usize }>::new();
+        e1::equip_weapon_abilities(&mut mem(), frame.at()).unwrap_or(0)
+    }
+    /// `TOBtlDrawTargetCursor()`.
+    TOBtlDrawTargetCursor @ 0x0089_c870 => extern "C" fn target_cursor() {
+        let mut frame = StackFrame::<{ (e1::TARGET_FRAME / 4) as usize }>::new();
+        e1::target_cursor(&mut mem(), frame.at());
+    }
+    /// `TOBtlDrawEnemyLimit()`.
+    TOBtlDrawEnemyLimit @ 0x0089_33c0 => extern "C" fn enemy_limit() {
+        let mut frame = StackFrame::<{ (e1::ENEMY_LIMIT_FRAME / 4) as usize }>::new();
+        e1::enemy_limit(&mut mem(), frame.at());
+    }
+    // ---- continuation round 3, batch 2 (ffx_glue_other::h4_e2)
+    /// `FmodMusic_volumeDirect(this; i, volume, keep)`.
+    FmodMusic_volumeDirect @ 0x0070_9dd0 => extern "thiscall" fn music_volume_direct(this: u32, i: u32, volume: u32, keep: u32) -> u32 {
+        e2::music_volume_direct(&mut mem(), this, i, volume, keep)
+    }
+    /// `FmodMusic_setEntireVolume(this; volume)`.
+    FmodMusic_setEntireVolume @ 0x0070_93e0 => extern "thiscall" fn music_set_entire_volume(this: u32, volume: u32) {
+        e2::music_set_entire_volume(&mut mem(), this, volume);
+    }
+    /// `FmodMusic_volumeTranslate(this; i, frames, target)`.
+    FmodMusic_volumeTranslate @ 0x0070_9ff0 => extern "thiscall" fn music_volume_translate(this: u32, i: u32, frames: u32, target: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e2::TRANSLATE_FRAME / 4) as usize }>::new();
+        e2::music_volume_translate(&mut mem(), frame.at(), this, i, frames, target)
+    }
+    /// `FmodMusic_releaseOldMusic(this; keep)`.
+    FmodMusic_releaseOldMusic @ 0x0070_91b0 => extern "thiscall" fn release_old_music(this: u32, keep: u32) {
+        let mut frame = StackFrame::<{ (e2::RELEASE_OLD_FRAME / 4) as usize }>::new();
+        e2::release_old_music(&mut mem(), frame.at(), this, keep);
+    }
+    /// `FmodVoice_loopVolumeTranslate(this)`.
+    FmodVoice_loopVolumeTranslate @ 0x0070_acf0 => extern "thiscall" fn voice_loop_volume(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e2::VOICE_LOOP_FRAME / 4) as usize }>::new();
+        e2::voice_loop_volume(&mut mem(), frame.at(), this)
+    }
+    /// `SfxEvent_applyPan(this; pan)`.
+    SfxEvent_applyPan @ 0x0070_eeb0 => extern "thiscall" fn sfx_event_apply_pan(this: u32, pan: u32) {
+        let mut frame = StackFrame::<{ (e2::APPLY_PAN_FRAME / 4) as usize }>::new();
+        e2::sfx_event_apply_pan(&mut mem(), frame.at(), this, pan);
+    }
+    /// `SfxEvent_stop(this; immediate)`.
+    SfxEvent_stop @ 0x0070_f490 => extern "thiscall" fn sfx_event_stop(this: u32, immediate: u32) {
+        let mut frame = StackFrame::<{ (e2::STOP_FRAME / 4) as usize }>::new();
+        e2::sfx_event_stop(&mut mem(), frame.at(), this, immediate);
+    }
+    /// `SyncManager_syncGetData(this; &x, &y, &id)`.
+    SyncManager_syncGetData @ 0x006f_b160 => extern "thiscall" fn sync_get_data(this: u32, x: u32, y: u32, id: u32) -> u32 {
+        e2::sync_get_data(&mut mem(), this, x, y, id)
+    }
+    // ---- continuation round 3, batch 3 (ffx_glue_other::h4_e3)
+    /// `FmodMusic_stop(this; i)`.
+    FmodMusic_stop @ 0x0070_99a0 => extern "thiscall" fn music_stop(this: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e3::STOP_FRAME / 4) as usize }>::new();
+        e3::music_stop(&mut mem(), frame.at(), this, i)
+    }
+    /// `FmodMusic_stopAll(this)`.
+    FmodMusic_stopAll @ 0x0070_9b10 => extern "thiscall" fn music_stop_all(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e3::STOP_ALL_FRAME / 4) as usize }>::new();
+        e3::music_stop_all(&mut mem(), frame.at(), this)
+    }
+    /// `FmodMusic_restart(this; i)`.
+    FmodMusic_restart @ 0x0070_9270 => extern "thiscall" fn music_restart(this: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e3::RESTART_FRAME / 4) as usize }>::new();
+        e3::music_restart(&mut mem(), frame.at(), this, i)
+    }
+    /// `FmodMusic_loopVolumeTranslate(this)`.
+    FmodMusic_loopVolumeTranslate @ 0x0070_8e50 => extern "thiscall" fn music_loop_volume(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e3::LOOP_FRAME / 4) as usize }>::new();
+        e3::music_loop_volume(&mut mem(), frame.at(), this)
+    }
+    /// `SfxEvent_start(this; volume, pan)`.
+    SfxEvent_start @ 0x0070_f310 => extern "thiscall" fn sfx_event_start(this: u32, volume: u32, pan: u32) {
+        e3::sfx_event_start(&mut mem(), this, volume, pan);
+    }
+    /// `SfxEvent_updateFades_0070f5c0(this; dt)`.
+    SfxEvent_updateFades_0070f5c0 @ 0x0070_f5c0 => extern "thiscall" fn sfx_event_update_fades(this: u32, dt: u32) {
+        e3::sfx_event_update_fades(&mut mem(), this, dt);
+    }
+    // ---- continuation round 3, batch 4 (ffx_glue_other::h4_e4)
+    /// `TOMkpActiveChrCursor(x0, y0, x1, y1, x2, y2, c1, c0)`.
+    TOMkpActiveChrCursor @ 0x0090_1190 => extern "C" fn active_chr_cursor(x0: u32, y0: u32, x1: u32, y1: u32, x2: u32, y2: u32, c1: u32, c0: u32) -> u32 {
+        let mut rec = StackFrame::<{ (e4::RECORD / 4) as usize }>::new();
+        e4::active_chr_cursor(&mut mem(), rec.at(), [x0, y0, x1, y1, x2, y2], c1, c0)
+    }
+    /// `TOSeqDrawRect_008fdf20(p)`.
+    TOSeqDrawRect_008fdf20 @ 0x008f_df20 => extern "C" fn seq_draw_rect(p: u32) -> u32 {
+        let mut rec = StackFrame::<{ (e4::RECORD / 4) as usize }>::new();
+        e4::seq_draw_rect(&mut mem(), rec.at(), p)
+    }
+    /// `TODrawCrossBoxXYWHC2Mode2_008f4df0(x, y, w, h, c0, c1)`.
+    TODrawCrossBoxXYWHC2Mode2_008f4df0 @ 0x008f_4df0 => extern "C" fn cross_box_mode2(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e4::BOX_FRAME / 4) as usize }>::new();
+        e4::cross_box_mode2(&mut mem(), frame.at(), [x, y, w, h, c0, c1])
+    }
+    /// `Distortion_fillGridOnes_006c28e0(this)`.
+    Distortion_fillGridOnes_006c28e0 @ 0x006c_28e0 => extern "thiscall" fn distortion_fill_ones(this: u32) -> u32 {
+        e4::distortion_fill_ones(&mut mem(), this)
+    }
+    /// `RemapButtonIcon_remapIconUV(kind, rec, u, v)`.
+    RemapButtonIcon_remapIconUV @ 0x006e_6f20 => extern "stdcall" fn remap_icon_uv(kind: u32, rec: u32, u: u32, v: u32) {
+        e4::remap_icon_uv(&mut mem(), kind, rec, u, v);
+    }
+    /// `RemapButtonIcon_remapIconSize(this; kind, rec)`.
+    RemapButtonIcon_remapIconSize @ 0x006e_6db0 => extern "thiscall" fn remap_icon_size(this: u32, kind: u32, rec: u32) {
+        e4::remap_icon_size(&mut mem(), this, kind, rec);
+    }
+    /// `RemapButtonIcon_remapUIButtonPosition(a, rec, b, kind)`.
+    RemapButtonIcon_remapUIButtonPosition @ 0x006e_7470 => extern "stdcall" fn remap_ui_button_position(_a: u32, rec: u32, _b: u32, kind: u32) -> u32 {
+        e4::remap_ui_button_position(&mut mem(), rec, kind)
+    }
+    // ---- continuation round 3, batch 5 (ffx_glue_other::h4_e5)
+    /// `FmodMusic_start(this; i)`.
+    FmodMusic_start @ 0x0070_96f0 => extern "thiscall" fn music_start(this: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e5::START_FRAME / 4) as usize }>::new();
+        e5::music_start(&mut mem(), frame.at(), this, i)
+    }
+    /// `FmodMusic_read(this; i, flag)`.
+    FmodMusic_read @ 0x0070_9080 => extern "thiscall" fn music_read(this: u32, i: u32, flag: u32) -> u32 {
+        e5::music_read(&mut mem(), this, i, flag)
+    }
+    /// `FmodMusic_dataSend(this; a, flag)`.
+    FmodMusic_dataSend @ 0x0070_8a00 => extern "thiscall" fn music_data_send(this: u32, _a: u32, flag: u32) -> u32 {
+        e5::music_data_send(&mut mem(), this, flag)
+    }
+    /// `FmodMusic_crossPlay(this; i, frames, flag)`.
+    FmodMusic_crossPlay @ 0x0070_8900 => extern "thiscall" fn music_cross_play(this: u32, i: u32, frames: u32, flag: u32) -> u32 {
+        e5::music_cross_play(&mut mem(), this, i, frames, flag)
+    }
+    /// `FmodMusic_switchBGM(this; bgm, flag)`.
+    FmodMusic_switchBGM @ 0x0070_9c80 => extern "thiscall" fn music_switch_bgm(this: u32, bgm: u32, flag: u32) {
+        e5::music_switch_bgm(&mut mem(), this, bgm, flag);
     }
 }
