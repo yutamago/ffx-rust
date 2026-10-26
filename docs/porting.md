@@ -89,6 +89,24 @@ shim pops what the original's `ret` pops. Sizes come from
 length measured in FFX.exe (Ghidra sizes some natives as one byte). After a
 new dump, regenerate it with `tools/progress.py --measure-sizes`.
 
+A cdecl `ret` says nothing about the argument count, so count the words
+yourself, including the words the original only passes on. A function that
+ends in `jmp Target` with its own frame popped hands `Target` its caller's
+arguments: `MsMusicReadStart` (`0x0079fff0`) tail-jumps to `SndMusicRead`
+with its music argument, and a port that declared no argument and called
+`SndMusicRead` with none never loaded the victory fanfare (its oracle stub
+logged no arguments, so the test passed). Declare every word the original
+reads, pass the forwarded ones on, and make the test stubs log them.
+`FFX_GAME_DIR=... python3 -I tools/check-tailargs.py` (about 10 s) checks
+this statically and must report "0 problems". It measures the words each
+hooked original reads (through its tail jumps, recursively; a word stored
+just before the jump is the original's own; a pushed word no callee reads
+does not count) and reports a shim declaring fewer, a shim ignoring one
+(`_name` its body never uses), and a port call to a hooked original's
+tail-jump target passing fewer words than that target reads.
+`--explain NAME --code` shows the instruction behind each word; checked
+exceptions go into `ALLOW` in the script with their reason.
+
 The game reaches the shim through a thunk the macro generates, which keeps
 `eax`, `ecx` and `edx` for the caller except where the return type puts
 the result (`eax`, and `edx` for 64 bits). FFX.exe was built with
