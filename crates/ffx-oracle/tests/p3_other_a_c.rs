@@ -1263,3 +1263,107 @@ fn arrays_and_components_match_the_original() {
         t.unstub_all();
     }
 }
+
+#[test]
+fn binds_match_the_original() {
+    use ffx_pother_a::p3_bind::{self as b, Step, Ty};
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0b1d_0003);
+        t.stub(b::REGISTER_TYPE, cdecl(1, 0x6001));
+        t.stub(b::ADD_TO_NAMESPACE, method(0, 0x6002));
+        t.stub(b::ATEXIT, cdecl(1, 0x6003));
+        t.stub(b::DATA, method(6, 0x6004));
+        t.stub(b::DATA_FIXED, method(6, 0x6005));
+        t.stub(b::DATA_ARRAY, method(6, 0x6006));
+        t.stub(b::CLASS_MEMBER, method(3, 0x6007));
+        t.stub(b::DATA_WRAPPED, method(6, 0x6009));
+        t.stub(b::GLOBAL_NAMESPACE, cdecl(0, 0x600a));
+        t.stub(b::CLASS_DESCRIPTOR_INIT, method(4, 0x600b));
+        // every type getter the tables call, each its own tag
+        let mut getters: Vec<u32> = b::BINDS
+            .iter()
+            .flat_map(|(_, s)| s.iter())
+            .filter_map(|s| match s {
+                Step::Member { ty: Ty::Get(f), .. } => Some(*f),
+                _ => None,
+            })
+            .collect();
+        getters.sort_unstable();
+        getters.dedup();
+        // the wrapper getters some tables call are tested themselves: they
+        // run as original code in both oracles
+        getters.retain(|f| !b::BINDS.iter().any(|(a, _)| a == f));
+        for &f in &getters {
+            t.stub(f, cdecl(0, f ^ 0x00ff_0000));
+        }
+        for (k, &(addr, steps)) in b::BINDS.iter().enumerate() {
+            for round in 0..4u32 {
+                // the finders: a namesake found or not
+                let found = u32::from(round % 2 == 1);
+                for f in [b::FIND_FUNCTION.finder, b::FIND_METHOD.finder] {
+                    t.stub(f, method(1, found * 0x6008));
+                }
+                // the guard: all clear, all set, mixed
+                for s in steps {
+                    if let Step::Guard(g) = s {
+                        let w = match round {
+                            0 | 1 => 0,
+                            2 => u32::MAX,
+                            _ => rng.next(),
+                        };
+                        let g = t.rebase(*g);
+                        t.w32(g, w);
+                    }
+                }
+                // what the stores overwrite: random words
+                for s in steps {
+                    if let Step::Zero(a)
+                    | Step::Or(a, _)
+                    | Step::Store(a, _)
+                    | Step::StoreByte(a, _) = s
+                    {
+                        let a = t.rebase(*a);
+                        let v = rng.next();
+                        t.w32(a, v);
+                    }
+                }
+                // the wrappers' done bytes: clear but in round 2
+                for s in steps {
+                    if let Step::IfZeroByte(a) = s {
+                        let a = t.rebase(*a);
+                        t.write(a, &[u8::from(round == 2)]);
+                    }
+                }
+                // method members: an owner with an empty list, a name or none
+                for s in steps {
+                    if let Step::Method { member, find, .. } = s {
+                        let m = t.rebase(*member);
+                        let owner = t.zeros(0x60);
+                        let sink = t.zeros(8);
+                        t.w32(owner + find.list, sink);
+                        t.w32(owner + find.list + 4, sink);
+                        t.w32(m + 8, owner);
+                        let name = if (round + k as u32) % 3 == 2 {
+                            0
+                        } else {
+                            rng.next() | 1
+                        };
+                        t.w32(m + 0xc, name);
+                    }
+                }
+                // a fresh call log (it holds 1024 calls)
+                let log = t.log;
+                t.w32(log, 0);
+                t.check(
+                    &format!("bind {addr:#x} round {round}"),
+                    addr,
+                    Conv::Cdecl,
+                    &[],
+                    ALL,
+                    |g| b::bridge::bind(g, steps),
+                );
+            }
+        }
+        t.unstub_all();
+    }
+}

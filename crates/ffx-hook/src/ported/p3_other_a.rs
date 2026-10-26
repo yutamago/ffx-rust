@@ -9,8 +9,9 @@
 
 use super::{mem, ported};
 use ffx_pother_a::{
-    class::bridge as class, object::bridge as object, p3_misc::bridge as misc,
-    p3_misc2::bridge as misc2, p3_tree::bridge as tree, physics::bridge as physics,
+    class::bridge as class, object::bridge as object, p3_bind::bridge as bind,
+    p3_misc::bridge as misc, p3_misc2::bridge as misc2, p3_tree::bridge as tree,
+    physics::bridge as physics,
 };
 
 ported! {
@@ -810,5 +811,162 @@ ported! {
     /// `0x00559530(this)` -> `this`.
     Phyre_PGameplay_PAttachableComponent_ctor_00559530 @ 0x0055_9530 => extern "thiscall" fn attachable_ctor(this: u32) -> u32 {
         misc2::attachable_ctor(&mut mem(), this)
+    }
+    // round 2 (continuation), batch 3: the Bind tables
+    /// `Phyre_PComponent_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PComponent_Bind @ 0x0044_d880 => extern "C" fn bind_0044d880() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PCOMPONENT_BIND)
+    }
+    /// `Phyre_PEntity_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PEntity_Bind @ 0x0044_f120 => extern "C" fn bind_0044f120() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PENTITY_BIND)
+    }
+    /// `Phyre_PNameComponent_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PNameComponent_Bind @ 0x0045_aa60 => extern "C" fn bind_0045aa60() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PNAMECOMPONENT_BIND)
+    }
+    /// `Phyre_PRandom_PRandomGenerator_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PRandom_PRandomGenerator_Bind @ 0x0045_e950 => extern "C" fn bind_0045e950() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PRANDOM_PRANDOMGENERATOR_BIND)
+    }
+    /// `Phyre_PGameplay_PTriggerReceiverTypeCallbackData_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_PTriggerReceiverTypeCallbackData_Bind @ 0x0055_0d50 => extern "C" fn bind_00550d50() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_PTRIGGERRECEIVERTYPECALLBACKDATA_BIND)
+    }
+    /// `Phyre_PGameplay_PTriggerReceiverComponent_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_PTriggerReceiverComponent_Bind @ 0x0055_1920 => extern "C" fn bind_00551920() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_PTRIGGERRECEIVERCOMPONENT_BIND)
+    }
+    /// `Phyre_PGameplay_Bind_00552410()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_Bind_00552410 @ 0x0055_2410 => extern "C" fn bind_00552410() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_BIND_00552410)
+    }
+    /// `Phyre_PGameplay_Bind_00552db0()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_Bind_00552db0 @ 0x0055_2db0 => extern "C" fn bind_00552db0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_BIND_00552DB0)
+    }
+    /// `Phyre_PGameplay_PScriptedComponent_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_PScriptedComponent_Bind @ 0x0055_3d50 => extern "C" fn bind_00553d50() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_PSCRIPTEDCOMPONENT_BIND)
+    }
+    /// `Phyre_PGameplay_PTimerComponent_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_PTimerComponent_Bind @ 0x0055_5470 => extern "C" fn bind_00555470() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_PTIMERCOMPONENT_BIND)
+    }
+    /// `Phyre_PGameplay_PSplineFollowerComponent_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_PSplineFollowerComponent_Bind @ 0x0055_64a0 => extern "C" fn bind_005564a0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_PSPLINEFOLLOWERCOMPONENT_BIND)
+    }
+    /// `Phyre_PGameplay_PAttachableComponent_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_PAttachableComponent_Bind @ 0x0055_9ad0 => extern "C" fn bind_00559ad0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_PATTACHABLECOMPONENT_BIND)
+    }
+    /// `Phyre_PClassDescriptorWrapper_CD3D11_BLEND_DESC_get_0057e610()` -> `addToNamespace`'s `eax`.
+    Phyre_PClassDescriptorWrapper_CD3D11_BLEND_DESC_get_0057e610 @ 0x0057_e610 => extern "C" fn bind_0057e610() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PCLASSDESCRIPTORWRAPPER_CD3D11_BLEND_DESC_GET_0057E610)
+    }
+    /// `Phyre_PClassDescriptorWrapper_CD3D11_DEPTH_STENCIL_DESC_get_0057e7b0()` -> `addToNamespace`'s `eax`.
+    Phyre_PClassDescriptorWrapper_CD3D11_DEPTH_STENCIL_DESC_get_0057e7b0 @ 0x0057_e7b0 => extern "C" fn bind_0057e7b0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PCLASSDESCRIPTORWRAPPER_CD3D11_DEPTH_STENCIL_DESC_GET_0057E7B0)
+    }
+    /// `Phyre_PClassDescriptorWrapper_CD3D11_RASTERIZER_DESC_get_0057eac0()` -> `addToNamespace`'s `eax`.
+    Phyre_PClassDescriptorWrapper_CD3D11_RASTERIZER_DESC_get_0057eac0 @ 0x0057_eac0 => extern "C" fn bind_0057eac0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PCLASSDESCRIPTORWRAPPER_CD3D11_RASTERIZER_DESC_GET_0057EAC0)
+    }
+    /// `Phyre_PClassDescriptorWrapper_D3D11_DEPTH_STENCILOP_DESC_get_0057ee70()` -> `addToNamespace`'s `eax`.
+    Phyre_PClassDescriptorWrapper_D3D11_DEPTH_STENCILOP_DESC_get_0057ee70 @ 0x0057_ee70 => extern "C" fn bind_0057ee70() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PCLASSDESCRIPTORWRAPPER_D3D11_DEPTH_STENCILOP_DESC_GET_0057EE70)
+    }
+    /// `Phyre_PClassDescriptorWrapper_D3D11_RENDER_TARGET_BLEND_DESC_get_0057f050()` -> `addToNamespace`'s `eax`.
+    Phyre_PClassDescriptorWrapper_D3D11_RENDER_TARGET_BLEND_DESC_get_0057f050 @ 0x0057_f050 => extern "C" fn bind_0057f050() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PCLASSDESCRIPTORWRAPPER_D3D11_RENDER_TARGET_BLEND_DESC_GET_0057F050)
+    }
+    /// `Phyre_PRendering_Bind_00587610()` -> `addToNamespace`'s `eax`.
+    Phyre_PRendering_Bind_00587610 @ 0x0058_7610 => extern "C" fn bind_00587610() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PRENDERING_BIND_00587610)
+    }
+    /// `Phyre_PRendering_Bind_00587980()` -> `addToNamespace`'s `eax`.
+    Phyre_PRendering_Bind_00587980 @ 0x0058_7980 => extern "C" fn bind_00587980() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PRENDERING_BIND_00587980)
+    }
+    /// `Phyre_PRendering_Bind_00587a20()` -> `addToNamespace`'s `eax`.
+    Phyre_PRendering_Bind_00587a20 @ 0x0058_7a20 => extern "C" fn bind_00587a20() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PRENDERING_BIND_00587A20)
+    }
+    /// `Phyre_PScripting_PScheduler_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PScripting_PScheduler_Bind @ 0x005c_f700 => extern "C" fn bind_005cf700() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PSCRIPTING_PSCHEDULER_BIND)
+    }
+    /// `Phyre_PScripting_PScriptCallbackHandler_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PScripting_PScriptCallbackHandler_Bind @ 0x005d_39b0 => extern "C" fn bind_005d39b0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PSCRIPTING_PSCRIPTCALLBACKHANDLER_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsBoxBase_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsBoxBase_Bind @ 0x005e_7750 => extern "C" fn bind_005e7750() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSBOXBASE_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsCallbackData_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsCallbackData_Bind @ 0x005e_7810 => extern "C" fn bind_005e7810() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSCALLBACKDATA_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsCapsuleBase_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsCapsuleBase_Bind @ 0x005e_7960 => extern "C" fn bind_005e7960() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSCAPSULEBASE_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsCharacterCamera_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsCharacterCamera_Bind @ 0x005e_7a70 => extern "C" fn bind_005e7a70() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSCHARACTERCAMERA_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsCharacterControllerBase_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsCharacterControllerBase_Bind @ 0x005e_8020 => extern "C" fn bind_005e8020() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSCHARACTERCONTROLLERBASE_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsCylinderBase_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsCylinderBase_Bind @ 0x005e_8850 => extern "C" fn bind_005e8850() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSCYLINDERBASE_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsMaterial_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsMaterial_Bind @ 0x005e_89c0 => extern "C" fn bind_005e89c0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSMATERIAL_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsMeshBase_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsMeshBase_Bind @ 0x005e_8b10 => extern "C" fn bind_005e8b10() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSMESHBASE_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsModel_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsModel_Bind @ 0x005e_8bd0 => extern "C" fn bind_005e8bd0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSMODEL_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsPlaneBase_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsPlaneBase_Bind @ 0x005e_8d20 => extern "C" fn bind_005e8d20() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSPLANEBASE_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsRigidBody_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsRigidBody_Bind @ 0x005e_8de0 => extern "C" fn bind_005e8de0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSRIGIDBODY_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsSphereBase_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsSphereBase_Bind @ 0x005e_a210 => extern "C" fn bind_005ea210() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSSPHEREBASE_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsTaperedCapsule_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsTaperedCapsule_Bind @ 0x005e_a2d0 => extern "C" fn bind_005ea2d0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSTAPEREDCAPSULE_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsTaperedCylinder_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsTaperedCylinder_Bind @ 0x005e_a410 => extern "C" fn bind_005ea410() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSTAPEREDCYLINDER_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsWorld_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsWorld_Bind @ 0x005e_a550 => extern "C" fn bind_005ea550() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSWORLD_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsWorldBase_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsWorldBase_Bind @ 0x005e_aab0 => extern "C" fn bind_005eaab0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSWORLDBASE_BIND)
+    }
+    /// `Phyre_PPhysics_PRaycastResult_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PRaycastResult_Bind @ 0x005e_ad30 => extern "C" fn bind_005ead30() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PRAYCASTRESULT_BIND)
     }
 }
