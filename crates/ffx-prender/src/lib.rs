@@ -113,6 +113,7 @@ pub mod h3_glue36;
 pub mod h3_glue37;
 pub mod m4r_fonttext;
 pub mod m4r_gauss;
+pub mod m4r_glow;
 pub mod m4r_meshlist;
 pub mod m4r_modnet;
 pub mod m4r_nodecapture;

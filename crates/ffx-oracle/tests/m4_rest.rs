@@ -26,6 +26,7 @@ use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pother_b::{m4r_dynblocks, m4r_mesh};
 use ffx_prender::m4r_fonttext as ft;
 use ffx_prender::m4r_gauss as gs;
+use ffx_prender::m4r_glow as gl;
 use ffx_prender::m4r_meshlist as ml;
 use ffx_prender::m4r_modnet as mn;
 use ffx_prender::m4r_nodecapture as nc;
@@ -1600,5 +1601,175 @@ fn create_mesh_geometry_matches_the_original() {
         }
         assert!(calls > 150, "{name}: the stubs ran ({calls} calls)");
         assert!(quads > 100, "{name}: {quads} quads");
+    }
+}
+
+// ---- PLegacyGlowGPUBase_render (0x00a1de20) ----
+
+/// A stub body that appends `n` words to the stream at `[cur]`: from the
+/// pointer in stack argument `arg` when it is set, else from `addr`.
+fn snap_body(cur: u32, arg: Option<u32>, addr: u32, n: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57]; // push esi; push edi
+    if let Some(k) = arg {
+        c.extend([0x8b, 0x74, 0x24, (12 + 4 * k) as u8]); // mov esi, [esp+12+4k]
+    } else {
+        c.push(0xbe); // mov esi, addr
+        c.extend(addr.to_le_bytes());
+    }
+    c.extend([0x8b, 0x3d]); // mov edi, [cur]
+    c.extend(cur.to_le_bytes());
+    c.push(0xb9); // mov ecx, n
+    c.extend(n.to_le_bytes());
+    c.extend([0xf3, 0xa5]); // rep movsd
+    c.extend([0x89, 0x3d]); // mov [cur], edi
+    c.extend(cur.to_le_bytes());
+    c.extend([0x5f, 0x5e]); // pop edi; pop esi
+    c
+}
+
+impl Twins {
+    /// [`Twins::stub_custom`] installed over the original at `sym`.
+    fn stub_with(&mut self, sym: u32, this: bool, n: u32, pops: u32, body: &[u8]) -> u32 {
+        let at = self.rebase(sym);
+        let (addr, cell) = self.stub_custom(sym, this, n, pops, 4, body);
+        let mut j = vec![0xe9];
+        j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+        self.write(at, &j);
+        cell
+    }
+}
+
+#[test]
+fn legacy_glow_render_matches_the_original() {
+    const SYM: u32 = 0x00a1_de20;
+    for (name, mut t) in Twins::all() {
+        // the parameter buffer and the renderer stay put: the draw stub
+        // snapshots the buffer's 16 words and the pass at every draw, the
+        // texture stub its record, the color-target stub its surface
+        let buffer = t.zeros(0x100);
+        let renderer = t.zeros(0x200);
+        let cur = t.zeros(4);
+        let stream = t.zeros(0x4000);
+        let mut draw_snap = snap_body(cur, None, buffer + 4, 16);
+        draw_snap.extend(snap_body(cur, None, renderer + 0x48, 1));
+        let stubs = [
+            t.stub_with(gl::SET_TEXTURE, true, 2, 2, &snap_body(cur, Some(1), 0, 4)),
+            t.stub(gl::SET_SAMPLER, true, 2, 2),
+            t.stub_with(gl::SET_COLOR, true, 2, 2, &snap_body(cur, Some(0), 0, 4)),
+            t.stub(gl::SET_DEPTH, true, 1, 1),
+            t.stub(gl::BEGIN_SCENE, true, 1, 1),
+            t.stub_with(gl::RENDER_MESH, true, 4, 4, &draw_snap),
+            t.stub(gl::END_SCENE, true, 1, 1),
+        ];
+        t.stub(gl::QUEUE18, true, 3, 3);
+        let mut rng = Rng(0x00a1_de20);
+        let mut draws = 0;
+        let mut errors = 0;
+        for case in 0..80_u32 {
+            t.w32(cur, stream);
+            let log = t.log;
+            t.w32(log, 0); // the log holds 512 calls
+            let glow = t.zeros(0xa0);
+            let junk: Vec<u32> = (0..0x28).map(|_| no_snan(&mut rng)).collect();
+            t.w32s(glow, &junk);
+            let levels = [3, 2, 1, 0, 4, 0xffff_ffff, 3, 3][case as usize % 8];
+            t.w32(glow + 0x50, levels);
+            let spread = if case % 4 == 1 {
+                (f32::from_bits(0x3f80_0000 | (rng.next() & 0x007f_ffff)) * 0.37).to_bits()
+            } else {
+                small_float(&mut rng)
+            };
+            t.w32(glow + 0x58, spread);
+            t.w32(glow + 0x5c, small_float(&mut rng));
+            let mesh = t.zeros(0x20);
+            t.fill(&mut rng, mesh, 0x20);
+            t.w32(glow + 0x48, mesh);
+            let holder = t.zeros(0x10);
+            t.w32(holder + 4, buffer);
+            t.w32(glow + 0x4c, holder);
+            // the buffer: its size, then stale words
+            t.fill(&mut rng, buffer, 0x100);
+            // the size: roomy, too small, or exactly the gain's or the scale's end
+            t.w32(
+                buffer,
+                [0x80, 0x80, 0x80, 0x30, 0x44, 0x24][(case % 6) as usize],
+            );
+            t.fill(&mut rng, renderer, 0x200);
+            // parameters: +0x60 texture, +0x64 sampler, +0x68 gain, +0x6c
+            // scale, +0x70 size (offset, size with stale flag bits)
+            let lens = [16_u16, 16, 16, 12, 8, 4, 16, 0x110];
+            for (k, (field, offset)) in [
+                (0x60, 0x44),
+                (0x64, 4),
+                (0x68, 0x34),
+                (0x6c, 0x14),
+                (0x70, 0x24),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let present = (case >> k) & 3 != 1;
+                let desc = t.zeros(0x10);
+                t.fill(&mut rng, desc, 0x10);
+                let offset: u16 = if case % 23 == 7 + k as u32 { 2 } else { offset };
+                let len = lens[rng.below(if case % 7 == 3 { 8 } else { 7 }) as usize]
+                    | ((rng.below(8) as u16) << 13);
+                t.write(desc + 8, &offset.to_le_bytes());
+                t.write(desc + 0xa, &len.to_le_bytes());
+                t.w32(glow + field, if present { desc } else { 0 });
+            }
+            // render targets {texture, unbound byte}: +0x78[3], +0x84[3]
+            for k in 0..6 {
+                let tex = t.zeros(0x30);
+                t.fill(&mut rng, tex, 0x30);
+                let target = t.zeros(8);
+                t.w32(target, tex);
+                let unbound = k >= 3 && rng.below(4) == 0;
+                t.w32(target + 4, u32::from(unbound) | (rng.next() & 0xffff_ff00));
+                t.w32(glow + 0x78 + 4 * k, target);
+            }
+            let target = if case % 3 == 0 { 0 } else { rng.next() };
+            let source = rng.next();
+            // an error from one callee now and then
+            for &cell in &stubs {
+                t.results(cell, &[]);
+            }
+            if case % 5 == 4 {
+                let which = rng.below(stubs.len() as u32) as usize;
+                // the sampler parameter's call, at its first level
+                let which = if case == 24 || case == 64 { 1 } else { which };
+                let mut list = vec![0; 1 + rng.below(if which == 1 { 3 } else { 8 }) as usize];
+                *list.last_mut().unwrap() = 0x10 + which as u32;
+                t.results(stubs[which], &list);
+            }
+            let mut ranges: Vec<(u32, u32)> = gl::RECORDS
+                .iter()
+                .chain(&gl::SAMPLERS)
+                .chain(&gl::SURFACES)
+                .chain(&[
+                    gl::SCALE_DOWN,
+                    gl::ONES,
+                    gl::SCALE_UP,
+                    gl::SIZE_DOWN,
+                    gl::SIZE_UP,
+                ])
+                .map(|&o| (o, 16))
+                .collect();
+            ranges.push((gl::MASK, 4));
+            t.check_framed_ranges(
+                &format!("{name} case {case}: {levels} levels"),
+                SYM,
+                Conv::Thiscall(glow),
+                &[renderer, target, source, rng.next(), rng.next()],
+                gl::FRAME,
+                &ranges,
+                |g, ebp| gl::bridge::render(g, glow, renderer, target, source, ebp),
+            );
+            let end: u32 = Mem::read(&t.b, cur);
+            draws += (end - stream) / 4;
+            errors += u32::from(case % 5 == 4);
+        }
+        assert!(draws > 3000, "{name}: {draws} words snapshotted");
+        assert!(errors > 10);
     }
 }

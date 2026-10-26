@@ -14,7 +14,9 @@
 //! a worker's stack); `processRenderCommands` on the render thread (its
 //! 16 KB frame as the original's); the legacy glow's Gaussian tables where
 //! `PLegacyGlow_setup` sets the glow up (no frame); a bitmap-font text's
-//! quads where the text is laid out (0xc4-byte frame). The shims keep no
+//! quads where the text is laid out (0xc4-byte frame); the legacy glow's
+//! blur chain in `PostProcessManager_render` (main thread, 0x148-byte
+//! frame). The shims keep no
 //! state; frames are per call.
 
 use super::{StackFrame, mem, ported};
@@ -22,6 +24,7 @@ use ffx_pother_b::m4r_dynblocks::bridge as blocks;
 use ffx_pother_b::m4r_mesh::bridge as mesh;
 use ffx_prender::m4r_fonttext as fonttext;
 use ffx_prender::m4r_gauss as gauss;
+use ffx_prender::m4r_glow as glow;
 use ffx_prender::m4r_meshlist as meshlist;
 use ffx_prender::m4r_modnet as modnet;
 use ffx_prender::m4r_nodecapture as nodecapture;
@@ -102,5 +105,14 @@ ported! {
         let mut frame = StackFrame::<0x31>::new();
         let ebp = frame.at() + fonttext::FRAME;
         fonttext::bridge::create_mesh_geometry(&mut mem(), text, count, ebp)
+    }
+    /// `PLegacyGlowGPUBase_render(glow; renderer, target, source, _, _)`
+    /// -> 0 or the first error (the last two words are never read).
+    Phyre_PPostProcessing_PLegacyGlowGPUBase_render @ 0x00a1_de20 => extern "thiscall" fn legacy_glow_render(glow: u32, renderer: u32, target: u32, source: u32, _unused4: u32, _unused5: u32) -> u32 {
+        // ebp - 0x148 .. ebp: the render surfaces, the texture records and
+        // the parameter blocks (the callees get pointers into it; zeroed)
+        let mut frame = StackFrame::<0x52>::new();
+        let ebp = frame.at() + glow::FRAME;
+        glow::bridge::render(&mut mem(), glow, renderer, target, source, ebp)
     }
 }
