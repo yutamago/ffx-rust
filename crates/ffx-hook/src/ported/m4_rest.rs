@@ -8,13 +8,16 @@
 //! where the renderer binds a dynamic mesh's streams (the render
 //! thread's mesh binding); `renderMeshInstanceList` where a world is
 //! rendered (`graphicRender`, the main thread; 9 KB frame), and
-//! `generateNodeParameterCaptureBuffer` for each node it draws. The shims
-//! keep no state; frames are per call.
+//! `generateNodeParameterCaptureBuffer` for each node it draws; the
+//! modifier network's run where `PModifierNetworkDynamicMesh::fillPacket`
+//! fills a packet (its `_alloca` arrays on the heap: no large frames on
+//! a worker's stack). The shims keep no state; frames are per call.
 
 use super::{StackFrame, mem, ported};
 use ffx_pother_b::m4r_dynblocks::bridge as blocks;
 use ffx_pother_b::m4r_mesh::bridge as mesh;
 use ffx_prender::m4r_meshlist as meshlist;
+use ffx_prender::m4r_modnet as modnet;
 use ffx_prender::m4r_nodecapture as nodecapture;
 
 ported! {
@@ -54,5 +57,20 @@ ported! {
         let mut frame = StackFrame::<0x183>::new();
         let ebp = frame.at() + nodecapture::FRAME;
         nodecapture::bridge::generate(&mut mem(), renderer, node, ebp)
+    }
+    /// `PModifierNetwork_runPacket_005c1f90(packet)` -> the packet.
+    PModifierNetwork_runPacket_005c1f90 @ 0x005c_1f90 => extern "C" fn modifier_run(packet: u32) -> u32 {
+        // the modifiers' context (the original's ebp - 0x58, two words)
+        let mut frame = StackFrame::<2>::new();
+        let ctx = frame.at();
+        let mut heap: Vec<Vec<u32>> = Vec::new();
+        let r = modnet::bridge::run(&mut mem(), packet, ctx, &mut |bytes| {
+            let v = vec![0_u32; (bytes as usize).div_ceil(4) + 4];
+            let at = u32::try_from(v.as_ptr().expose_provenance()).unwrap_or(0);
+            heap.push(v);
+            at
+        });
+        std::hint::black_box(&mut heap);
+        r
     }
 }

@@ -25,6 +25,7 @@ use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pother_b::{m4r_dynblocks, m4r_mesh};
 use ffx_prender::m4r_meshlist as ml;
+use ffx_prender::m4r_modnet as mn;
 use ffx_prender::m4r_nodecapture as nc;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -928,5 +929,174 @@ fn generate_node_parameters_matches_the_original() {
             wrote += u32::from(first != [0; 8]);
         }
         assert!(wrote > 30, "{name}: values written in {wrote} cases");
+    }
+}
+
+// ---- the modifier network's packet run (0x005c1f90) ----
+
+/// A modifier's process function, after the log: when its argument
+/// block (`[esp+4]`: `{inputs, outputs}` counts) has both, writes
+/// `inputs[0]`, the context's two words and the item count to
+/// `outputs[0]`.
+const MODIFIER_BODY: [u8; 61] = [
+    0x50, // push eax
+    0x8b, 0x44, 0x24, 0x08, // mov eax, [esp+8] (the argument block)
+    0x83, 0x38, 0x00, // cmp dword [eax], 0
+    0x74, 0x32, // je skip
+    0x83, 0x78, 0x04, 0x00, // cmp dword [eax+4], 0
+    0x74, 0x2c, // je skip
+    0x8b, 0x44, 0x24, 0x14, // mov eax, [esp+0x14] (outputs)
+    0x8b, 0x10, // mov edx, [eax]
+    0x85, 0xd2, // test edx, edx
+    0x74, 0x22, // je skip
+    0x8b, 0x44, 0x24, 0x10, // mov eax, [esp+0x10] (inputs)
+    0x8b, 0x00, // mov eax, [eax]
+    0x89, 0x02, // mov [edx], eax
+    0x8b, 0x44, 0x24, 0x18, // mov eax, [esp+0x18] (the context)
+    0x8b, 0x00, // mov eax, [eax]
+    0x89, 0x42, 0x04, // mov [edx+4], eax
+    0x8b, 0x44, 0x24, 0x18, // mov eax, [esp+0x18]
+    0x8b, 0x40, 0x04, // mov eax, [eax+4]
+    0x89, 0x42, 0x0c, // mov [edx+0xc], eax
+    0x8b, 0x44, 0x24, 0x0c, // mov eax, [esp+0xc] (the item count)
+    0x89, 0x42, 0x08, // mov [edx+8], eax
+    0x58, // skip: pop eax
+];
+
+#[test]
+fn modifier_network_run_matches_the_original() {
+    const SYM: u32 = 0x005c_1f90;
+    for (name, mut t) in Twins::all() {
+        let malloc = t.stub(mn::MALLOC, false, 2, 0);
+        t.stub(mn::FREE, false, 1, 0);
+        let (process, process_cell) = t.stub_custom(0x7d00_0000, false, 5, 0, 4, &MODIFIER_BODY);
+        let scratch = t.zeros(mn::SCRATCH as usize);
+        let mut rng = Rng(0x05c1_f900);
+        let mut calls = 0;
+        for case in 0..90_u32 {
+            let log = t.log;
+            t.w32(log, 0);
+            t.results(process_cell, &[]);
+            // case 1: no streams, more items than one chunk of the
+            // empty network's 0x40000
+            let items = match case % 6 {
+                _ if case == 1 => 0x3_0000,
+                0 => 0,
+                1 => 1 + rng.below(8),
+                _ => 40 + rng.below(120),
+            };
+            // no scratch buffer only without items (the modifiers would
+            // write near address 0)
+            t.results(malloc, &[if case % 12 == 6 { 0 } else { scratch }]);
+            let k = 1 + rng.below(3);
+            let n_src = if case == 1 { 0 } else { rng.below(4) };
+            let n_out = if case % 9 == 2 || case == 1 {
+                0
+            } else {
+                1 + rng.below(4)
+            };
+            let n_mod = if case % 11 == 3 { 0 } else { 1 + rng.below(4) };
+            // the outputs' destinations; a wide output without one makes
+            // several chunks
+            let mut dests = Vec::new();
+            let mut size_list = Vec::new();
+            for _ in 0..n_src {
+                size_list.push(4 * (1 + rng.below(0x40)));
+            }
+            for _ in 0..n_out {
+                let with_dest = rng.below(3) != 0;
+                let size = if !with_dest && rng.below(2) == 0 {
+                    0x1000
+                } else {
+                    4 * (1 + rng.below(0x40))
+                };
+                let dest = if with_dest {
+                    t.zeros((size * items.max(1)) as usize)
+                } else {
+                    0
+                };
+                dests.push(dest);
+                size_list.push(size);
+            }
+            // the network: k records, n_mod entries, then the sizes
+            let net = t.zeros((32 * (k + 1 + n_mod) + 64) as usize);
+            t.w32s(net, &[0, k, n_mod, n_src | (n_out << 16)]);
+            let mut counts = Vec::new();
+            for r in 0..k {
+                let rec = net + 0x20 + 32 * r;
+                let obj = t.zeros(0x28);
+                t.w32(obj + 0x24, process);
+                let n_in = if n_src + n_out == 0 { 0 } else { rng.below(3) };
+                let n_o = rng.below(3);
+                t.w32s(rec, &[obj, n_in, n_o]);
+                counts.push((n_in, n_o));
+            }
+            let mut records = Vec::new();
+            for m in 0..n_mod {
+                let e = net + 32 * (k + 1 + m);
+                let record = rng.below(k);
+                records.push(record);
+                t.w32(e, rng.below(0x1000));
+                let mut bytes = vec![record as u8];
+                let (n_in, n_o) = counts[record as usize];
+                for _ in 0..n_in {
+                    bytes.push(rng.below(n_src + n_out) as u8);
+                }
+                for _ in 0..n_o {
+                    // outputs are numbered after the sources; some point
+                    // past them, 0xff wraps
+                    let o = n_src + rng.below(n_out + 2);
+                    bytes.push(if rng.below(9) == 0 { 0xff } else { o as u8 });
+                }
+                t.write(e + 8, &bytes);
+            }
+            let sizes = net + 32 * (k + 1 + n_mod);
+            for (i, &s) in size_list.iter().enumerate() {
+                t.write(sizes + 2 * i as u32, &(s as u16).to_le_bytes());
+            }
+            // the packet: the network at +0x10, offsets from there
+            let packet = t.zeros(0x300);
+            let desc = packet + 0x10;
+            let sources = t.zeros(4 * n_src as usize + 4);
+            for i in 0..n_src {
+                let len = size_list[i as usize] * items.max(1);
+                let data = t.zeros(len as usize);
+                t.fill(&mut rng, data, len);
+                t.w32(sources + 4 * i, data);
+            }
+            t.w32s(packet + 0x10, &[net, sources, rng.below(0x100)]);
+            t.write(desc + 0x12, &0x100_u16.to_le_bytes());
+            t.w32(packet + 0x24, items);
+            t.w32s(desc + 0x100, &dests);
+            for (m, &record) in records.iter().enumerate() {
+                let m = m as u32;
+                t.write(desc + 0x24 + 2 * m, &((0x200 + 8 * m) as u16).to_le_bytes());
+                let (n_in, n_o) = counts[record as usize];
+                t.w32s(desc + 0x200 + 8 * m, &[n_in, n_o]);
+            }
+            let out = if rng.below(3) == 0 { 0 } else { t.zeros(4) };
+            t.w32s(packet + 0x28, &[out, rng.next()]);
+            // the frame: the context at ebp - 0x58, the _alloca'd arrays
+            // where the original puts them (16-byte aligned below the
+            // prologue's esp); the port's calls run below them
+            let ebp = t.frame_ebp(1);
+            t.write(ebp - 0x80, &[0; 0x80]);
+            let mut esp = ebp - 0x74;
+            let mut alloca = move |bytes: u32| {
+                esp = esp.wrapping_sub(bytes) & !15;
+                esp
+            };
+            t.b.set_call_top(Some(ebp - 0x2000));
+            t.check(
+                &format!("{name} case {case} ({items} items)"),
+                SYM,
+                Conv::Cdecl,
+                &[packet],
+                |g| mn::bridge::run(g, packet, ebp - 0x58, &mut alloca),
+            );
+            t.b.set_call_top(None);
+            calls += t.log_entries();
+        }
+        assert!(calls > 100, "{name}: the stubs ran ({calls} calls)");
     }
 }
