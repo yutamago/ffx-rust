@@ -2192,4 +2192,8 @@ ported! {
     PTextureFormatDesc_registerAll_004c1050 @ 0x004c_1050 => extern "C" fn h1_004c1050() -> u32 {
         h1_small5::formats::register_all(&mut mem())
     }
+    /// `PParameterBuffer::VisitChildren(buffer, visitor)` -> the offset table or the parameters' bytes.
+    Phyre_PRendering_PParameterBuffer_VisitChildren @ 0x004d_6c00 => extern "C" fn h1_004d6c00(buffer: u32, visitor: u32) -> u32 {
+        h1_small5::visit::visit_children(&mut mem(), buffer, visitor)
+    }
 }

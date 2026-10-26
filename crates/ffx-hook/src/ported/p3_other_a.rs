@@ -1112,4 +1112,10 @@ ported! {
     Phyre_PRedBlackTree_postInsertFinalize @ 0x0057_4980 => extern "thiscall" fn tree_post_insert(this: u32, node: u32) -> u32 {
         tree::post_insert_finalize(&mut mem(), this, node)
     }
+    /// `0x0047d3e0(finder, view, &object, offset, class)` -> the member found or 0;
+    /// the nested-class visitor and the offset cell in this frame.
+    Phyre_PClassView_findMember_0047d3e0 @ 0x0047_d3e0 => extern "thiscall" fn find_member_0047d3e0(this: u32, view: u32, object: u32, offset: u32, class: u32) -> u32 {
+        let mut f = super::StackFrame::<{ ffx_pother_a::p3_misc3::bridge::FIND_FRAME as usize / 4 }>::new();
+        misc3::find_member(&mut mem(), this, view, object, offset, class, f.at())
+    }
 }

@@ -1,7 +1,8 @@
 //! `PhyreEngine` render methods, the list's last ones (M4 port,
 //! h1-render-a, done in the p3-other-a continuation d): the dynamic mesh's
 //! stream binding (its `_alloca`'d pointer array handed to a virtual
-//! method) and the segment grouping of the renderer's dynamic streams.
+//! method), the segment grouping of the renderer's dynamic streams, the
+//! texture format registration and `PParameterBuffer::VisitChildren`.
 
 use ffx_graphic::host::Host;
 
@@ -264,5 +265,172 @@ pub mod formats {
             }
         }
         eax
+    }
+}
+
+/// `PShaderParameterDefinition_findIn_004d5f30` (thiscall `(ctx, data)`,
+/// `ret 4`): the parameter buffer's offset table, or 0.
+pub const PARAMETER_TABLE: u32 = 0x004d_5f30;
+/// `Phyre_PhyrePrintf` and its format `"Unknown parameter type and element
+/// count for %s\n"`.
+pub const PHYRE_PRINTF: u32 = 0x0043_52f0;
+pub const UNKNOWN_PARAMETER: u32 = 0x00b1_fd70;
+/// The parameter kinds (`+2`) visited as one object of a class: kind and
+/// class descriptor.
+pub const OBJECT_KINDS: [(u8, u32); 11] = [
+    (0x42, 0x00c9_bef8),
+    (0x43, 0x00c9_bf90),
+    (0x44, 0x00c9_c028),
+    (0x47, 0x00c9_c0c0),
+    (0x48, 0x00c9_c158),
+    (0x49, 0x00c9_c1f0),
+    (0x4b, 0x00c9_c288),
+    (0x4c, 0x00c9_c320),
+    (0x4a, 0x00c9_be60),
+    (0x4d, 0x00c9_c4e8),
+    (0x4e, 0x00c9_c580),
+];
+/// The element types (`+3`, the original's jump table at `0x004d6fe0`):
+/// the type getter and the element count, or none (reported unknown).
+pub const ELEMENT_TYPES: [Option<(u32, u32)>; 51] = {
+    const F32: u32 = 0x0043_8060;
+    const U16: u32 = 0x0043_7e70;
+    const U32: u32 = 0x0043_7fc0;
+    const U8: u32 = 0x0043_7d30;
+    const I32: u32 = 0x0043_7f10;
+    const I16: u32 = 0x0043_7dd0;
+    const CHAR: u32 = 0x0043_7c90;
+    [
+        Some((F32, 1)),
+        Some((F32, 2)),
+        Some((F32, 3)),
+        Some((F32, 4)),
+        Some((U16, 1)),
+        Some((U16, 2)),
+        Some((U16, 3)),
+        Some((U16, 4)),
+        Some((U32, 1)),
+        Some((U32, 2)),
+        Some((U32, 3)),
+        Some((U32, 4)),
+        Some((U16, 1)),
+        Some((U16, 2)),
+        Some((U16, 3)),
+        Some((U16, 4)),
+        Some((U8, 1)),
+        Some((U8, 2)),
+        Some((U8, 3)),
+        Some((U8, 4)),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some((I32, 1)),
+        Some((I32, 2)),
+        Some((I32, 3)),
+        Some((I32, 4)),
+        Some((I16, 1)),
+        Some((I16, 2)),
+        Some((I16, 3)),
+        Some((I16, 4)),
+        Some((CHAR, 1)),
+        None,
+        None,
+        None,
+        Some((U16, 1)),
+        Some((U16, 2)),
+        Some((U16, 3)),
+        Some((U16, 4)),
+        None,
+        None,
+        None,
+        None,
+        Some((F32, 12)),
+        Some((F32, 16)),
+        Some((U32, 1)),
+    ]
+};
+
+pub mod visit {
+    //! `0x004d6c00`, over game memory.
+
+    use super::{ELEMENT_TYPES, OBJECT_KINDS, PARAMETER_TABLE, PHYRE_PRINTF, UNKNOWN_PARAMETER};
+    use ffx_graphic::host::{Conv, Host};
+
+    /// `Phyre_PRendering_PParameterBuffer_VisitChildren` (cdecl `(buffer,
+    /// visitor)`): unless the visitor's slot 3 says stop (its `al`, its
+    /// `eax` returned), each of the buffer's 16-byte parameters (`+0xc`,
+    /// count at `+8`) is handed to the visitor's slot 2 `(data, count,
+    /// type, 0, data2)`: data at the parameter's offset `+8` (0 when it
+    /// runs past the buffer's size or the offset is under 4; unchecked
+    /// with an offset table, which gives data2), kinds 0x42..0x4e as one
+    /// object of their class, else the element type's getter and count
+    /// (times the array size `+0` when non-zero); an unknown one is
+    /// reported through `PhyrePrintf` with its name. `eax`: the offset
+    /// table when there are no parameters, else the parameters' bytes.
+    pub fn visit_children(h: &mut impl Host, buffer: u32, visitor: u32) -> u32 {
+        let stop = h.call_virtual(visitor, 3, &[]);
+        if stop & 0xff != 0 {
+            return stop;
+        }
+        let ctx: u32 = h.read(visitor + 4);
+        let count = h.read::<u32>(buffer + 8) & 0x7fff_ffff;
+        let data: u32 = h.read(buffer + 0xc);
+        let table = {
+            let f = h.rebase(PARAMETER_TABLE);
+            h.call(f, Conv::Thiscall(ctx), &[data])
+        };
+        if count == 0 {
+            return table;
+        }
+        let mut off = 0u32;
+        for _ in 0..count {
+            let entry = h.read::<u32>(buffer + 0xc).wrapping_add(off);
+            let offset = u32::from(h.read::<u16>(entry + 8));
+            let end = (u32::from(h.read::<u16>(entry + 0xa)) & 0x1fff) + offset;
+            let size: u32 = h.read(buffer);
+            let mut p = if end > size || offset < 4 {
+                0
+            } else {
+                buffer.wrapping_add(offset)
+            };
+            let kind: u8 = h.read(entry + 2);
+            let q = if table == 0 {
+                p
+            } else {
+                let q = u32::from(h.read::<u16>(table.wrapping_add(8).wrapping_add(off)));
+                p = buffer.wrapping_add(offset);
+                q.wrapping_add(buffer)
+            };
+            if let Some(&(_, desc)) = OBJECT_KINDS.iter().find(|&&(k, _)| k == kind) {
+                let desc = h.rebase(desc);
+                h.call_virtual(visitor, 2, &[p, 1, desc, 0, q]);
+            } else {
+                let element: u8 = h.read(entry + 3);
+                let (ty, n) = match ELEMENT_TYPES.get(usize::from(element)).copied().flatten() {
+                    Some((getter, n)) => {
+                        let f = h.rebase(getter);
+                        (h.call(f, Conv::Cdecl, &[]), n)
+                    }
+                    None => (0, 0),
+                };
+                let array = u32::from(h.read::<u16>(entry));
+                let total = if array == 0 { n } else { array.wrapping_mul(n) };
+                if ty == 0 {
+                    let w: u32 = h.read(entry + 4);
+                    let name = w.wrapping_sub(w & 1);
+                    let (f, fmt) = (h.rebase(PHYRE_PRINTF), h.rebase(UNKNOWN_PARAMETER));
+                    h.call(f, Conv::Cdecl, &[1, fmt, name]);
+                } else {
+                    h.call_virtual(visitor, 2, &[p, total, ty, 0, q]);
+                }
+            }
+            off = off.wrapping_add(0x10);
+        }
+        off
     }
 }

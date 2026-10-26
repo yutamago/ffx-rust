@@ -132,6 +132,15 @@ pub const FREE_LIST_DEALLOCATE: u32 = 0x0049_c980;
 pub const FREE_LIST_RESET: u32 = 0x0049_cc10;
 pub const DRAIN_AND_CLEAR: u32 = 0x005d_1880;
 pub const FREE_PAIR_ARRAY: u32 = 0x005c_fa60;
+/// The class view walk's callees: `Phyre_PClassView_findByOffset_0047e4e0`,
+/// the member step, `PClassDescriptor::inheritsFrom`, the walk itself, the
+/// nested visitor's context getter (`0x0059e530`) and its vtable.
+pub const FIND_BY_OFFSET: u32 = 0x0047_e4e0;
+pub const MEMBER_STEP: u32 = 0x0047_ed80;
+pub const INHERITS_FROM: u32 = 0x0043_1420;
+pub const FIND_MEMBER: u32 = 0x0047_d3e0;
+pub const NESTED_CONTEXT: u32 = 0x0059_e530;
+pub const NESTED_VISITOR_VFTABLE: u32 = 0x00b1_3bb8;
 /// `PArray_releaseTaggedWords_00434360` (cdecl `(data, count)`).
 pub const RELEASE_TAGGED_WORDS: u32 = 0x0043_4360;
 
@@ -140,12 +149,13 @@ pub mod bridge {
 
     use super::{
         APP_START_TIME, ATEXIT, Conv, DRAIN_AND_CLEAR, F64_THOUSAND, F64_TWO_POW_32,
-        F64_TWO_POW_M32, FREE_LIST_DEALLOCATE, FREE_LIST_RESET, FREE_PAIR_ARRAY, Host,
-        IAT_GET_MODULE_HANDLE_A, IAT_GET_PROC_ADDRESS, IAT_QUERY_PERFORMANCE_COUNTER,
-        IAT_QUERY_PERFORMANCE_FREQUENCY, IAT_SLEEP, IAT_TIME_BEGIN_PERIOD, IAT_TIME_GET_TIME,
-        IAT_VSNPRINTF_S, INIT_BINDS, INIT_LIST, INIT_TYPES, KERNEL32, MEMORY_ALLOCATOR_INIT,
-        NAMESPACE_INIT_GLOBAL, PBASE_GET_CLASS_DESCRIPTOR, PHYRE_EXIT, PHYRE_INITIALIZED,
-        PRECISE_TIME_NAME, PRINTF_BUFFER, REGISTER_DEFAULT_TYPES, REGISTER_TYPE,
+        F64_TWO_POW_M32, FIND_BY_OFFSET, FIND_MEMBER, FREE_LIST_DEALLOCATE, FREE_LIST_RESET,
+        FREE_PAIR_ARRAY, Host, IAT_GET_MODULE_HANDLE_A, IAT_GET_PROC_ADDRESS,
+        IAT_QUERY_PERFORMANCE_COUNTER, IAT_QUERY_PERFORMANCE_FREQUENCY, IAT_SLEEP,
+        IAT_TIME_BEGIN_PERIOD, IAT_TIME_GET_TIME, IAT_VSNPRINTF_S, INHERITS_FROM, INIT_BINDS,
+        INIT_LIST, INIT_TYPES, KERNEL32, MEMBER_STEP, MEMORY_ALLOCATOR_INIT, NAMESPACE_INIT_GLOBAL,
+        NESTED_CONTEXT, NESTED_VISITOR_VFTABLE, PBASE_GET_CLASS_DESCRIPTOR, PHYRE_EXIT,
+        PHYRE_INITIALIZED, PRECISE_TIME_NAME, PRINTF_BUFFER, REGISTER_DEFAULT_TYPES, REGISTER_TYPE,
         RELEASE_TAGGED_WORDS, SCRIPT_RELEASE_5D5450, SCRIPTABLE_CTOR, SCRIPTABLE_DTOR,
         SHADER_PASS_INIT_ALL, SORT_CLASS_DESCRIPTORS, SPLINE_VFTABLE, STORE_GLOBAL_C0B95C,
         STORE_GLOBAL_C0B958, THREAD_POOL_GET_SINGLETON, THREAD_POOL_SET_STACK_SIZE,
@@ -497,5 +507,139 @@ pub mod bridge {
         let o: u32 = h.read(offset);
         h.write(offset, o.wrapping_add(delta));
         t.wrapping_sub(a88).wrapping_add(extra).wrapping_add(base)
+    }
+
+    /// `0x0047d3e0`'s frame: the `PFindNestedClassVisitor` at `[ebp-0x40]`
+    /// (8 words) and, in the port, the offset cell the member step updates
+    /// (the original's own argument slot `[ebp+0x10]`), at `+0x20`.
+    pub const FIND_FRAME: u32 = 0x24;
+
+    /// `0x0047d3e0` (thiscall `(finder, view, &object, offset, class)`,
+    /// `ret 0x10`): the class member at `offset` of `*object`, through the
+    /// class views from `view` (`{next, class, members}`): the first view
+    /// whose range holds the offset finds the member
+    /// (`Phyre_PClassView_findByOffset_0047e4e0`); a view whose range ends
+    /// before it, with flag 4, asks the members' slot 15 with a
+    /// `PFindNestedClassVisitor` in `frame` instead. A found member with a
+    /// nested view is walked into (`0x0047ed80` steps `*object` and the
+    /// offset), recursing over its array elements unless the nested class
+    /// is `class` at that offset; `*object` is put back after the walk.
+    /// Returns the member, the nested find's result, or 0.
+    pub fn find_member(
+        h: &mut impl Host,
+        this: u32,
+        view: u32,
+        object: u32,
+        offset: u32,
+        class: u32,
+        frame: u32,
+    ) -> u32 {
+        let mut v = view;
+        let (member, range) = loop {
+            if v == 0 {
+                return 0;
+            }
+            let members: u32 = h.read(v + 8);
+            let cls: u32 = h.read(v + 4);
+            if members != 0 && cls != 0 {
+                let start: u32 = h.read(cls + 0x18);
+                let end = h.read::<u32>(cls + 4) & 0x0fff_ffff;
+                if start.wrapping_add(offset) >= end {
+                    return nested(h, this, members, cls, object, offset, class, frame);
+                }
+                let m = thiscall(h, FIND_BY_OFFSET, v, &[offset]);
+                if m != 0 {
+                    break (m, cls);
+                }
+            }
+            v = h.read(v);
+        };
+        let target: u32 = h.read(member + 8);
+        if target == 0 {
+            return 0;
+        }
+        if h.read::<u32>(member + 0x18) != 0
+            && h.read::<u32>(target + 0x18) != h.read::<u32>(member + 0x10)
+        {
+            return 0;
+        }
+        let elements: u32 = h.read(member + 4);
+        let base = h.read::<u32>(range + 0x14).wrapping_add(offset);
+        let sub: u32 = h.read(member + 0x14);
+        let element_base: u32 = h.read(elements + 8);
+        // the member step updates the offset through its address: the
+        // original's own argument slot, a cell of the frame here
+        let cell = frame + 0x20;
+        h.write(cell, offset);
+        let obj: u32 = h.read(object);
+        let nested_obj = thiscall(h, MEMBER_STEP, member, &[obj, cell]);
+        if nested_obj == 0 || sub == 0 {
+            return member;
+        }
+        let sub_class: u32 = h.read(sub + 8);
+        let sub_range: u32 = h.read(sub + 4);
+        let saved: u32 = h.read(object);
+        h.write(object, nested_obj);
+        let is = (thiscall(h, INHERITS_FROM, sub_class, &[class]) & 0xff) != 0;
+        if is && h.read::<u32>(sub_range + 0x18).wrapping_add(element_base) == base {
+            return member;
+        }
+        let size = if sub_class == 0 {
+            0
+        } else {
+            h.read(sub_class + 0x1c)
+        };
+        let span = h.read::<u32>(sub_range + 4) & 0x0fff_ffff;
+        let count = h.read::<u32>(elements + 0x14).max(1);
+        let mut at: u32 = h.read(cell);
+        for _ in 0..count {
+            let r = thiscall(h, FIND_MEMBER, this, &[sub, object, at, class]);
+            if r != 0 {
+                return r;
+            }
+            let o: u32 = h.read(object);
+            h.write(object, o.wrapping_add(size));
+            at = at.wrapping_sub(span);
+        }
+        h.write(object, saved);
+        member
+    }
+
+    /// [`find_member`]'s nested class path: the members' slot 15
+    /// `(*object, &visitor)` with a `PFindNestedClassVisitor` `{vtable,
+    /// context, finder, offset, *object, class, found object, result}`
+    /// built in `frame`; its result, `*object` set to its found object.
+    #[allow(clippy::too_many_arguments)]
+    fn nested(
+        h: &mut impl Host,
+        this: u32,
+        members: u32,
+        cls: u32,
+        object: u32,
+        offset: u32,
+        class: u32,
+        frame: u32,
+    ) -> u32 {
+        if h.read::<u8>(cls + 0x1c) & 4 == 0 {
+            return 0;
+        }
+        let obj: u32 = h.read(object);
+        let context = cdecl(h, NESTED_CONTEXT, &[]);
+        let vt = h.rebase(NESTED_VISITOR_VFTABLE);
+        for (k, w) in [vt, context, this, offset, obj, class, 0, 0]
+            .into_iter()
+            .enumerate()
+        {
+            h.write(frame + 4 * k as u32, w);
+        }
+        let obj: u32 = h.read(object);
+        h.call_virtual(members, 15, &[obj, frame]);
+        let result: u32 = h.read(frame + 0x1c);
+        if result == 0 {
+            return 0;
+        }
+        let found: u32 = h.read(frame + 0x18);
+        h.write(object, found);
+        result
     }
 }

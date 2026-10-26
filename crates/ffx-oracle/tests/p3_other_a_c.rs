@@ -2083,3 +2083,164 @@ fn red_black_insert_fixup_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn find_member_matches_the_original() {
+    use ffx_pother_a::p3_misc3::{self as m};
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0047_d3e0);
+        let log = t.log;
+        t.stub(m::NESTED_CONTEXT, cdecl(0, 0x7801));
+        for case in 0..200u32 {
+            // the members' slot 15: logs the visitor's words, then sets
+            // its found object and result
+            let found_obj = rng.next();
+            let result = if case % 3 == 0 { 0 } else { rng.next() | 1 };
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes()); // mov eax, [log]
+            c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+            c.extend([0xc7, 0x00]);
+            c.extend(0x7802u32.to_le_bytes()); // mov [eax], tag
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+            c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x08]); // object -> [eax+8]
+            c.extend([0x8b, 0x4c, 0x24, 0x08]); // mov ecx, [esp+8]
+            for (k, w) in [0u8, 1, 2, 3, 5].into_iter().enumerate() {
+                c.extend([0x8b, 0x51, 4 * w, 0x89, 0x50, 0x0c + 4 * k as u8]);
+            }
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes()); // inc dword [log]
+            // (no answer at all in some cases: the visitor's words stay)
+            if case % 6 != 3 {
+                c.extend([0xc7, 0x41, 0x18]);
+                c.extend(found_obj.to_le_bytes()); // mov [ecx+0x18], found
+                c.extend([0xc7, 0x41, 0x1c]);
+                c.extend(result.to_le_bytes()); // mov [ecx+0x1c], result
+            }
+            c.extend([0xb8, 0x03, 0x78, 0, 0, 0xc2, 0x08, 0x00]); // mov eax, 0x7803; ret 8
+            let slot15 = t.code(&c);
+            let mut vt = vec![0u8; 0x40];
+            vt[0x3c..].copy_from_slice(&slot15.to_le_bytes());
+            let vt = t.alloc(&vt);
+            let members = t.random(&mut rng, 0x20);
+            t.w32(members, vt);
+            // the views: 1..3, the found one last
+            let offset = rng.next() % 0x100;
+            let nested = case % 5 == 4;
+            let n = 1 + rng.below(3);
+            let mut next = 0;
+            let mut head_cls = 0;
+            for i in 0..n {
+                let v = t.random(&mut rng, 0x10);
+                let cls = t.random(&mut rng, 0x20);
+                let start = rng.next() % 0x40;
+                let end = if i == n - 1 && nested {
+                    start + offset - rng.below(offset.max(1))
+                } else {
+                    start + offset + 1 + rng.below(0x40)
+                };
+                t.w32(cls + 0x18, start);
+                t.w32(cls + 4, end | (rng.next() & 0xf000_0000));
+                t.w32(v, next);
+                // views passed over: no class or no members
+                let skip = i + 1 < n && rng.below(4) == 0;
+                let no_class = rng.below(2) == 0;
+                t.w32(v + 4, if skip && no_class { 0 } else { cls });
+                t.w32(v + 8, if skip && !no_class { 0 } else { members });
+                head_cls = cls;
+                next = v;
+            }
+            let view = next;
+            // the member found (or none) and its nested walk
+            let member = t.random(&mut rng, 0x20);
+            let target = if case % 11 == 7 {
+                0
+            } else {
+                t.random(&mut rng, 0x20)
+            };
+            t.w32(member + 8, target);
+            if rng.below(2) == 0 {
+                t.w32(member + 0x18, 0);
+            } else if target != 0 && rng.below(2) == 0 {
+                let w = t.r32(member + 0x10);
+                t.w32(target + 0x18, w);
+            }
+            let elements = t.random(&mut rng, 0x20);
+            t.w32(elements + 0x14, rng.below(4));
+            t.w32(member + 4, elements);
+            let sub = if case % 7 == 3 {
+                0
+            } else {
+                t.random(&mut rng, 0x10)
+            };
+            t.w32(member + 0x14, sub);
+            if sub != 0 {
+                t.w32(sub, 0);
+                let sub_range = t.random(&mut rng, 0x20);
+                t.w32(sub + 4, sub_range);
+                // the recursion: no members (0) or a nested class view
+                // whose range the offset leaves at once
+                let sub_class = if rng.below(2) == 0 {
+                    0
+                } else {
+                    t.random(&mut rng, 0x20)
+                };
+                t.w32(sub + 8, sub_class);
+                if sub_class != 0 {
+                    t.w32(sub_class, vt);
+                    t.w32(sub_range + 0x18, 0x7000_0000);
+                    t.w32(sub_range + 4, 0x10);
+                }
+                if sub_class == 0 && rng.below(2) == 0 {
+                    // the nested class at the member's own offset
+                    let base = t.r32(head_cls + 0x14).wrapping_add(offset);
+                    let inner = t.r32(sub_range + 0x18);
+                    t.w32(elements + 8, base.wrapping_sub(inner));
+                }
+            }
+            let find = if case % 4 == 0 { 0 } else { member };
+            t.stub(m::FIND_BY_OFFSET, method(1, find));
+            // the member step (thiscall `(member, object, &offset)`, `ret 8`):
+            // logs the offset by value (its address is the original's own
+            // argument slot, the port's frame), moves it by 0x10
+            let step = if case % 6 == 5 { 0 } else { rng.next() | 1 };
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes()); // mov eax, [log]
+            c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+            c.extend([0xc7, 0x00]);
+            c.extend(0x7804u32.to_le_bytes()); // mov [eax], tag
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+            c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x08]); // object -> [eax+8]
+            c.extend([0x8b, 0x4c, 0x24, 0x08]); // mov ecx, [esp+8]
+            c.extend([0x8b, 0x11, 0x89, 0x50, 0x0c]); // [ecx] -> [eax+0xc]
+            c.extend([0x83, 0x01, 0x10]); // add dword [ecx], 0x10
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes()); // inc dword [log]
+            c.push(0xb8);
+            c.extend(step.to_le_bytes()); // mov eax, step
+            c.extend([0xc2, 0x08, 0x00]); // ret 8
+            let s = t.code(&c);
+            t.jump(m::MEMBER_STEP, s);
+            let inherits = [0, rng.next() | 1, 0x100][rng.below(3) as usize];
+            t.stub(m::INHERITS_FROM, method(1, inherits));
+            let object = t.random(&mut rng, 4);
+            let (this, class) = (rng.next(), rng.next());
+            t.w32(log, 0);
+            t.check(
+                &format!("find member {case}"),
+                m::FIND_MEMBER,
+                Conv::Thiscall(this),
+                &[view, object, offset, class],
+                ALL,
+                |g| {
+                    let f = g.scratch();
+                    m::bridge::find_member(g, this, view, object, offset, class, f)
+                },
+            );
+        }
+        t.unstub_all();
+    }
+}

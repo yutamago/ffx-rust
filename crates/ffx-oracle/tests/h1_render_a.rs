@@ -4428,3 +4428,92 @@ fn texture_formats_match_the_original() {
         }
     }
 }
+
+/// 0x004d6c00: a parameter buffer's parameters handed to the visitor.
+#[test]
+fn parameter_buffer_visit_matches_the_original() {
+    use ffx_prender::h1_small5::{self as s, visit};
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x004d_6c00);
+        let cells = t.zeros(0x10);
+        t.stub(s::PARAMETER_TABLE, true, 1, 1, Ret::Cell(cells));
+        t.stub(s::PHYRE_PRINTF, false, 3, 0, Ret::Imm(0x7731));
+        // the element type getters: their descriptors (one of them 0 by
+        // turns, through a cell)
+        let mut getters: Vec<u32> = s::ELEMENT_TYPES.iter().flatten().map(|&(g, _)| g).collect();
+        getters.sort_unstable();
+        getters.dedup();
+        for (i, g) in getters.iter().enumerate() {
+            if i == 0 {
+                t.stub(*g, false, 0, 0, Ret::Cell(cells + 8));
+            } else {
+                t.stub(*g, false, 0, 0, Ret::Imm(0x0070_0000 + i as u32));
+            }
+        }
+        // the visitor: slot 2 (five words) and slot 3 (stop, from a cell)
+        let slot2 = t.stub_code(0x7732, true, 5, 5, Ret::Imm(0x7733));
+        let slot3 = t.stub_code(0x7734, true, 0, 0, Ret::Cell(cells + 4));
+        let mut vt = vec![0u8; 0x10];
+        vt[8..12].copy_from_slice(&slot2.to_le_bytes());
+        vt[12..16].copy_from_slice(&slot3.to_le_bytes());
+        let vt = t.alloc(&vt);
+        let kinds: Vec<u8> = s::OBJECT_KINDS.iter().map(|&(k, _)| k).collect();
+        for case in 0..320u32 {
+            let log = t.log;
+            t.w32(log, 0);
+            let stop = if case % 9 == 4 {
+                rng.next() | 1
+            } else {
+                rng.next() & !0xff
+            };
+            t.w32(cells + 4, stop);
+            let table = if case % 4 == 0 {
+                0
+            } else {
+                pattern(&mut t, &mut rng, 0x80)
+            };
+            t.w32(cells, table);
+            t.w32(cells + 8, if case % 4 == 1 { 0 } else { 0x0071_0000 });
+            let visitor = pattern(&mut t, &mut rng, 0x10);
+            t.w32(visitor, vt);
+            let n = case % 6;
+            let buffer = pattern(&mut t, &mut rng, 0x10);
+            let flag = if case % 5 == 2 { 0x8000_0000 } else { 0 };
+            t.w32(buffer + 8, n | flag);
+            t.w32(buffer, 0x40 + rng.next() % 0x80);
+            let params = pattern(&mut t, &mut rng, 16 * 6);
+            for i in 0..n {
+                let e = params + 16 * i;
+                let array = if rng.next().is_multiple_of(2) {
+                    0
+                } else {
+                    rng.next() % 5
+                };
+                t.write(e, &(array as u16).to_le_bytes());
+                let kind = if rng.next().is_multiple_of(3) {
+                    kinds[(rng.next() % kinds.len() as u32) as usize]
+                } else {
+                    rng.next() as u8
+                };
+                t.write(e + 2, &[kind, (rng.next() % 0x38) as u8]);
+                // offsets at the bounds: 3 and 4, and the end at the size
+                let offset = [3u16, 4, (rng.next() % 0x60) as u16][(rng.next() % 3) as usize];
+                t.write(e + 8, &offset.to_le_bytes());
+                let size = (rng.next() % 0x40) as u16 | (rng.next() as u16 & 0xe000);
+                t.write(e + 0xa, &size.to_le_bytes());
+                if i == 0 && rng.next().is_multiple_of(2) {
+                    let end = u32::from(size & 0x1fff) + u32::from(offset);
+                    t.w32(buffer, end + rng.next() % 2);
+                }
+            }
+            t.w32(buffer + 0xc, params);
+            t.check(
+                &format!("{name} parameter visit {case}"),
+                0x004d_6c00,
+                Conv::Cdecl,
+                &[buffer, visitor],
+                |g| Out::U32(visit::visit_children(g, buffer, visitor)),
+            );
+        }
+    }
+}
