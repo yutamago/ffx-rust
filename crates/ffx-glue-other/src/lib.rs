@@ -35,7 +35,11 @@
 //! - [`h4_d3`]: its third batch: the menu font, Sa-menu, monster-book and
 //!   language texture loaders, the distortion grid's indices, the loading
 //!   screen's textures, the FMOD command queue's push and synchronous
-//!   command, two constructors, the button icon cells.
+//!   command, two constructors, the button icon cells;
+//! - [`h4_d4`]: its fourth batch: an eight-value Flash call, a texture
+//!   animation frame by name, the soft particles' specular maps, and the
+//!   FMOD data loaders (sync buffers, voice lists and projects, music
+//!   projects, the shout stream).
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -62,6 +66,7 @@ pub mod h4_c4;
 pub mod h4_d1;
 pub mod h4_d2;
 pub mod h4_d3;
+pub mod h4_d4;
 pub mod menu;
 pub mod misc;
 pub mod movie;

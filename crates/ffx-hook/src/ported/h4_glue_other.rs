@@ -12,7 +12,8 @@
 
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
-    h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, menu as mn, misc as m, movie as mv, r3,
+    sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1611,5 +1612,46 @@ ported! {
     /// `RemapButtonIcon_getJoypadUV(this; key, &u, &v)`.
     RemapButtonIcon_getJoypadUV @ 0x006e_6460 => extern "thiscall" fn joypad_uv(this: u32, key: u32, u: u32, v: u32) -> u32 {
         d3::joypad_uv(&mut mem(), this, key, u, v)
+    }
+    // ---- continuation round 2, batch 4 (ffx_glue_other::h4_d4)
+    /// `IggyMenu_callFlashFunction_8_006ffaa0(menu, name, eight 16-byte
+    /// values)`: 34 stack words.
+    IggyMenu_callFlashFunction_8_006ffaa0 @ 0x006f_faa0 => extern "C" fn call_flash_8(menu: u32, name: u32, v0: u32, v1: u32, v2: u32, v3: u32, v4: u32, v5: u32, v6: u32, v7: u32, v8: u32, v9: u32, v10: u32, v11: u32, v12: u32, v13: u32, v14: u32, v15: u32, v16: u32, v17: u32, v18: u32, v19: u32, v20: u32, v21: u32, v22: u32, v23: u32, v24: u32, v25: u32, v26: u32, v27: u32, v28: u32, v29: u32, v30: u32, v31: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d4::FLASH_8_FRAME / 4) as usize }>::new();
+        d4::call_flash_8(&mut mem(), frame.at(), menu, name, &[v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v27, v28, v29, v30, v31])
+    }
+    /// `yiRender_setTextureAnimFrame_0090bdb0(base, a, b)`.
+    yiRender_setTextureAnimFrame_0090bdb0 @ 0x0090_bdb0 => extern "C" fn set_texture_anim_frame(base: u32, a: u32, b: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d4::ANIM_FRAME_FRAME / 4) as usize }>::new();
+        d4::set_texture_anim_frame(&mut mem(), frame.at(), base, a, b)
+    }
+    /// `SoftParticle_resetSpecularMaps_006c5850(this)`.
+    SoftParticle_resetSpecularMaps_006c5850 @ 0x006c_5850 => extern "thiscall" fn reset_specular_maps(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d4::SPECULAR_FRAME / 4) as usize }>::new();
+        d4::reset_specular_maps(&mut mem(), frame.at(), this)
+    }
+    /// `SyncManager_initData(this)`.
+    SyncManager_initData @ 0x006f_a8d0 => extern "thiscall" fn sync_init_data(this: u32) -> u32 {
+        d4::sync_init_data(&mut mem(), this)
+    }
+    /// `FmodVoice_initList(this)`.
+    FmodVoice_initList @ 0x0070_ab90 => extern "thiscall" fn voice_init_list(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d4::VOICE_LIST_FRAME / 4) as usize }>::new();
+        d4::voice_init_list(&mut mem(), frame.at(), this)
+    }
+    /// `FmodMusic_loadEventProject(system, name, &project, &group)`.
+    FmodMusic_loadEventProject @ 0x0070_8d40 => extern "stdcall" fn load_event_project(system: u32, name: u32, project: u32, group: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d4::PROJECT_FRAME / 4) as usize }>::new();
+        d4::load_event_project(&mut mem(), frame.at(), system, name, project, group)
+    }
+    /// `FmodShout_initData(this; system, flag)`.
+    FmodShout_initData @ 0x0070_e2d0 => extern "thiscall" fn shout_init_data(this: u32, system: u32, flag: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d4::SHOUT_FRAME / 4) as usize }>::new();
+        d4::shout_init_data(&mut mem(), frame.at(), this, system, flag)
+    }
+    /// `FmodVoice_initData(this; event_system, system)`.
+    FmodVoice_initData @ 0x0070_aa30 => extern "thiscall" fn voice_init_data(this: u32, event_system: u32, system: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d4::PROJECT_FRAME / 4) as usize }>::new();
+        d4::voice_init_data(&mut mem(), frame.at(), this, event_system, system)
     }
 }

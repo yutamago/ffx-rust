@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4, h4_d1 as d1,
-    h4_d2 as d2, h4_d3 as d3, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -8823,6 +8823,365 @@ fn d3_ctors_button_uv() {
                     |g| u(d3::joypad_uv(g, remap, key, out, out + 4)),
                 );
             }
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 2, batch 4 (ffx_glue_other::h4_d4)
+
+/// `printToOutput` logging three words, or two for the formats in
+/// `short` (its two-word calls: a third would be stack junk).
+fn stub_print(t: &mut Twins, short: &[u32]) {
+    let three = t.stub_code(d4::PRINT_TO_OUTPUT, false, 3, 0);
+    let two = t.stub_code(0x0bad_7b20, false, 2, 0);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+    let mut patches = Vec::new();
+    for &s in short {
+        c.push(0x3d);
+        c.extend(t.rebase(s).to_le_bytes()); // cmp eax, s
+        c.extend([0x0f, 0x84]); // je two
+        patches.push(c.len());
+        c.extend([0; 4]);
+    }
+    let at = t.cave_next;
+    c.push(0xe9); // jmp three
+    let here = c.len() as u32 + 4;
+    c.extend(three.wrapping_sub(at + here).to_le_bytes());
+    let two_at = c.len() as u32;
+    c.push(0xe9); // two: jmp two
+    let here = c.len() as u32 + 4;
+    c.extend(two.wrapping_sub(at + here).to_le_bytes());
+    for p in patches {
+        let rel = two_at.wrapping_sub(p as u32 + 4);
+        c[p..p + 4].copy_from_slice(&rel.to_le_bytes());
+    }
+    let f = t.code(&c);
+    t.jump(d4::PRINT_TO_OUTPUT, f);
+}
+
+/// The eight-value Flash call, the texture-animation frame, the
+/// specular-map reset.
+#[test]
+fn d4_flash_frame_specular() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d401);
+        let stubs: [(u32, bool, u32, u32); 5] = [
+            (d4::CALL_AS3, true, 5, 5),
+            (d4::SET_FRAME_BY_NAME, false, 2, 0),
+            (d4::ARRAY_DATA, true, 0, 0),
+            (d4::FIND_PARAM, true, 1, 1),
+            (d4::MEMCPY, false, 3, 0),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let sprintf = t.stub_code(0x0bad_c3dc, false, 6, 0);
+        t.g32(d4::SPRINTF.sym, sprintf);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(0x0bad_c3dc);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the Flash call
+            let args: [u32; 34] = std::array::from_fn(|_| rng.next());
+            let values: [u32; 32] = std::array::from_fn(|k| args[k + 2]);
+            let ebp = t.ebp_for(34);
+            t.check_framed(
+                &format!("{w} flash 8"),
+                0x006f_faa0,
+                Conv::Cdecl,
+                &args,
+                ebp - 0x84,
+                &[(0, 0x80)],
+                |g| u(d4::call_flash_8(g, ebp - 0x84, args[0], args[1], &values)),
+            );
+            // the animation frame
+            let rec = t.random(&mut rng, 0x38);
+            let cell = t.zeros(4);
+            t.w32(cell, rec);
+            let (a, b) = (rng.below(4), rng.below(8));
+            let base = cell
+                .wrapping_sub(0x9_d9f0)
+                .wrapping_sub(0x720 * a)
+                .wrapping_sub(0x1c * b);
+            let ebp = t.ebp_for(3);
+            t.check_framed(
+                &format!("{w} anim frame"),
+                0x0090_bdb0,
+                Conv::Cdecl,
+                &[base, a, b],
+                ebp - 0x114,
+                &[(0, 0x110)],
+                |g| u(d4::set_texture_anim_frame(g, ebp - 0x114, base, a, b)),
+            );
+            // the specular maps
+            let this = t.random(&mut rng, 0x5b4);
+            let param = t.random(&mut rng, 0xc);
+            let kind = [0x42, 0xd9, 0xdc, 0x12, 0x43, 0xdd][rng.below(6) as usize];
+            t.w8(param + 2, kind);
+            let off = [0u16, 3, 4, 8, 0x30][rng.below(5) as usize];
+            t.write(param + 8, &off.to_le_bytes());
+            let len = [8u16, 0x10, 8 | 0xe000][rng.below(3) as usize];
+            t.write(param + 0xa, &len.to_le_bytes());
+            let p = [param, param, 0][rng.below(3) as usize];
+            t.ret(d4::FIND_PARAM, p);
+            let materials = t.zeros(4 * 3);
+            for k in 0..3 {
+                let block = t.random(&mut rng, 0x40);
+                t.w32(block, [0x10, 0x18, 0x40][rng.below(3) as usize]);
+                let m = t.zeros(8);
+                t.w32(m, rng.next());
+                t.w32(m + 4, block);
+                t.w32(materials + 4 * k, m);
+            }
+            t.ret(d4::ARRAY_DATA, materials);
+            for slot in 0..4u32 {
+                if rng.below(4) == 0 {
+                    t.w32(this + 4 * slot, 0);
+                    continue;
+                }
+                let n = rng.below(3);
+                let elements = t.zeros(4 * 3);
+                for k in 0..n {
+                    let mesh = t.zeros(0x14);
+                    let mats = t.zeros(4);
+                    t.w32(mats, rng.below(4) | (rng.below(2) << 31));
+                    t.w32(mesh + 0x10, mats);
+                    t.w32(elements + 4 * k, mesh);
+                }
+                let list = t.zeros(8);
+                t.w32(list, n | (rng.below(2) << 31));
+                t.w32(list + 4, elements);
+                t.w32(this + 4 * slot, list);
+            }
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} specular"),
+                0x006c_5850,
+                Conv::Thiscall(this),
+                &[],
+                ebp - 0x28,
+                &[(0, 0x28)],
+                |g| u(d4::reset_specular_maps(g, ebp - 0x28, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The FMOD data loaders' callees: files, FMOD's project and stream
+/// calls (the project's and the stream's handles from cells).
+struct Loaders {
+    project: u32,
+    sound: u32,
+    vtable: u32,
+}
+
+fn loader_stubs(t: &mut Twins) -> Loaders {
+    for (sym, n) in [
+        (d4::USER_MALLOC, 1),
+        (d4::MEMSET, 3),
+        (d4::FULL_FILENAME, 2),
+        (d4::FIOS_OPEN, 2),
+        (d4::FIOS_SIZE, 1),
+        (d4::ALIGNED_MALLOC, 2),
+        (d4::FIOS_READ, 3),
+        (d4::FIOS_CLOSE, 1),
+        (fr::ERRCHECK, 3),
+    ] {
+        t.stub(sym, false, n, 0);
+    }
+    stub_print(t, &[0x00b4_f8d8, 0x00b4_fd08]);
+    let sprintf = t.stub_code(0x0bad_c3dc, false, 2, 0);
+    t.g32(d4::SPRINTF.sym, sprintf);
+    let project = t.zeros(4);
+    let sound = t.zeros(4);
+    t.stub_at(
+        d4::EVENT_SYSTEM_LOAD,
+        false,
+        4,
+        4,
+        &[Write {
+            arg: Some(3),
+            offset: 0,
+            cell: project,
+        }],
+    );
+    t.stub_at(
+        d4::CREATE_STREAM,
+        false,
+        5,
+        5,
+        &[Write {
+            arg: Some(4),
+            offset: 0,
+            cell: sound,
+        }],
+    );
+    t.stub(d4::SOUND_RELEASE, false, 1, 1);
+    t.stub(d4::SUB_SOUNDS, false, 2, 2);
+    let vtable = t.zeros(0x30);
+    for (slot, tag, n) in [
+        (0, 0x0bad_0f00, 1),
+        (8, 0x0bad_0f08, 4),
+        (0x28, 0x0bad_0f28, 1),
+    ] {
+        let f = t.stub_code(tag, false, n, n);
+        t.w32(vtable + slot, f);
+    }
+    Loaders {
+        project,
+        sound,
+        vtable,
+    }
+}
+
+const LOADER_TAGS: [u32; 18] = [
+    d4::USER_MALLOC,
+    d4::MEMSET,
+    d4::FULL_FILENAME,
+    d4::FIOS_OPEN,
+    d4::FIOS_SIZE,
+    d4::ALIGNED_MALLOC,
+    d4::FIOS_READ,
+    d4::FIOS_CLOSE,
+    fr::ERRCHECK,
+    d4::PRINT_TO_OUTPUT,
+    0x0bad_7b20,
+    0x0bad_c3dc,
+    d4::EVENT_SYSTEM_LOAD,
+    d4::CREATE_STREAM,
+    d4::SOUND_RELEASE,
+    d4::SUB_SOUNDS,
+    0x0bad_0f00,
+    0x0bad_0f08,
+];
+
+/// A project object (its vtable) or none, and what the load answers.
+fn project_round(t: &mut Twins, rng: &mut Rng, ld: &Loaders) -> u32 {
+    let old = t.zeros(4);
+    t.w32(old, ld.vtable);
+    let fresh = t.zeros(4);
+    t.w32(fresh, ld.vtable);
+    let v = [0, fresh][rng.below(3).min(1) as usize];
+    t.w32(ld.project, v);
+    [0, old][rng.below(2) as usize]
+}
+
+/// The sync manager's buffers, the voice lists, the music project and
+/// the shout stream.
+#[test]
+fn d4_fmod_loaders() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d402);
+        let ld = loader_stubs(&mut t);
+        let mut tags = LOADER_TAGS.to_vec();
+        tags.push(0x0bad_0f28);
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the sync manager
+            let this = t.random(&mut rng, 0x44);
+            t.check(
+                &format!("{w} sync init"),
+                0x006f_a8d0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(d4::sync_init_data(g, this)),
+            );
+            // the voice lists
+            let v = [0, rng.next()][rng.below(3).min(1) as usize];
+            t.ret(d4::FIOS_OPEN, v);
+            let voice = t.random(&mut rng, 0x90);
+            t.w8(voice + 4, [0, 1, 0x80][rng.below(3) as usize]);
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} voice list"),
+                0x0070_ab90,
+                Conv::Thiscall(voice),
+                &[],
+                ebp - 0x204,
+                &[(0, 0x200)],
+                |g| u(d4::voice_init_list(g, ebp - 0x204, voice)),
+            );
+            // the music project
+            let project = t.zeros(4);
+            let old = project_round(&mut t, &mut rng, &ld);
+            t.w32(project, old);
+            let group = t.random(&mut rng, 4);
+            let (system, file) = (rng.next(), rng.next());
+            let ebp = t.ebp_for(4);
+            t.check_framed(
+                &format!("{w} music project"),
+                0x0070_8d40,
+                Conv::Stdcall,
+                &[system, file, project, group],
+                ebp - 0x108,
+                &[(0, 0x104)],
+                |g| {
+                    u(d4::load_event_project(
+                        g,
+                        ebp - 0x108,
+                        system,
+                        file,
+                        project,
+                        group,
+                    ))
+                },
+            );
+            // the shout stream
+            let shout = t.random(&mut rng, 0x10);
+            if rng.below(3) == 0 {
+                t.w32(shout, 0);
+            }
+            let v = [0, rng.next()][rng.below(3).min(1) as usize];
+            t.w32(ld.sound, v);
+            let system = [0, rng.next()][rng.below(5).min(1) as usize];
+            let flag = [0, 1, 0x100][rng.below(3) as usize];
+            let ebp = t.ebp_for(2);
+            t.check_framed(
+                &format!("{w} shout"),
+                d4::SHOUT_INIT_DATA,
+                Conv::Thiscall(shout),
+                &[system, flag],
+                ebp - 0x104,
+                &[(0, 0x100)],
+                |g| u(d4::shout_init_data(g, ebp - 0x104, shout, system, flag)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `FmodVoice_initData` (the shout's data stubbed).
+#[test]
+fn d4_voice_init_data() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d403);
+        let ld = loader_stubs(&mut t);
+        t.stub(d4::SHOUT_INIT_DATA, true, 2, 2);
+        let mut tags = LOADER_TAGS.to_vec();
+        tags.extend([0x0bad_0f28, d4::SHOUT_INIT_DATA]);
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            let voice = t.random(&mut rng, 0x90);
+            t.w8(voice + 4, [0, 1, 0x80][rng.below(3) as usize]);
+            let old = project_round(&mut t, &mut rng, &ld);
+            t.w32(voice + 0x20, old);
+            let events = [0, rng.next()][rng.below(4).min(1) as usize];
+            let system = rng.next();
+            let ebp = t.ebp_for(2);
+            t.check_framed(
+                &format!("{w} voice data"),
+                0x0070_aa30,
+                Conv::Thiscall(voice),
+                &[events, system],
+                ebp - 0x108,
+                &[(0, 0x104)],
+                |g| u(d4::voice_init_data(g, ebp - 0x108, voice, events, system)),
+            );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
     }
