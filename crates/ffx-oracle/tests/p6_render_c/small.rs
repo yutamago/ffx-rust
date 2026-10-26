@@ -10,7 +10,15 @@ use super::{G, Out, Rng, Twins, object};
 impl Twins {
     /// A recording stub for `sym` that first runs `pre` (code that keeps
     /// `ecx` and the stack), then logs and returns as [`Twins::stub_code`].
-    fn stub_pre(&mut self, sym: u32, pre: &[u8], this: bool, n: u32, pops: u32, ret: u32) {
+    pub(super) fn stub_pre(
+        &mut self,
+        sym: u32,
+        pre: &[u8],
+        this: bool,
+        n: u32,
+        pops: u32,
+        ret: u32,
+    ) {
         let tail = self.stub_code(sym, this, n, pops, ret);
         let mut c = pre.to_vec();
         let at = self.a.alloc_code(&[0; 64]).unwrap();
@@ -24,7 +32,7 @@ impl Twins {
 
     /// A stub whose `k`-th call returns `seq[k]` (the last one after
     /// that): logs as [`Twins::stub_code`] with `tag`.
-    fn stub_seq(&mut self, sym: u32, this: bool, n: u32, pops: u32, seq: &[u32]) {
+    pub(super) fn stub_seq(&mut self, sym: u32, this: bool, n: u32, pops: u32, seq: &[u32]) {
         let tab = self.zeros(4 + 4 * seq.len());
         for (k, &v) in seq.iter().enumerate() {
             self.w32(tab + 4 + 4 * k as u32, v);
@@ -68,7 +76,7 @@ impl Twins {
     }
 
     /// A stdcall stub (`n` words) put in the import slot `slot`.
-    fn import_stub(&mut self, slot: u32, n: u32, ret: u32) {
+    pub(super) fn import_stub(&mut self, slot: u32, n: u32, ret: u32) {
         let code = self.stub_code(slot, false, n, n, ret);
         let at = self.rebase(slot);
         self.w32(at, code);
@@ -76,7 +84,7 @@ impl Twins {
 
     /// A vtable of `n` slots whose `slot` is a recording stub; returns
     /// the vtable.
-    fn vtable(&mut self, n: u32, slots: &[(u32, u32, u32)]) -> u32 {
+    pub(super) fn vtable(&mut self, n: u32, slots: &[(u32, u32, u32)]) -> u32 {
         let vt = self.zeros(4 * n as usize);
         for &(slot, words, ret) in slots {
             let s = self.stub_code(0x7700_0000 + slot, true, words, words, ret);
@@ -85,14 +93,14 @@ impl Twins {
         vt
     }
 
-    fn reset_log(&mut self) {
+    pub(super) fn reset_log(&mut self) {
         let log = self.log;
         self.w32(log, 0);
     }
 }
 
 /// `fld dword/qword [cell]` (code before a stub's logging).
-fn fld(cell: u32, qword: bool) -> Vec<u8> {
+pub(super) fn fld(cell: u32, qword: bool) -> Vec<u8> {
     let mut c = vec![if qword { 0xdd } else { 0xd9 }, 0x05];
     c.extend(cell.to_le_bytes());
     c
@@ -104,7 +112,7 @@ fn fld(cell: u32, qword: bool) -> Vec<u8> {
 /// argument slots `[ebp + 8, ebp + 8 + 4 * args)`, and every byte
 /// written.
 #[allow(clippy::too_many_arguments)]
-fn run_framed(
+pub(super) fn run_framed(
     t: &mut Twins,
     what: &str,
     f: u32,
@@ -146,7 +154,7 @@ fn run_framed(
 }
 
 /// Bits of a float the originals copy or add: ordinary values mostly.
-fn float_bits(rng: &mut Rng) -> u32 {
+pub(super) fn float_bits(rng: &mut Rng) -> u32 {
     if rng.chance(4) {
         float_word(rng)
     } else {

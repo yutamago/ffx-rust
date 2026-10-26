@@ -1827,3 +1827,6 @@ mod thread;
 
 #[path = "p6_render_c/small.rs"]
 mod small;
+
+#[path = "p6_render_c/setup.rs"]
+mod setup;
