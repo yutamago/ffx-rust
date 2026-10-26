@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Regenerates the status page ($FFX_WORK/status/index.html, tools/status.py)
+# and the hook map (hook-map.html, tools/hook-map.py)
 # in the background and returns at once. Run it after merging into main.
 #
 # Requests while a run is going are folded into one more run after it, so
@@ -23,6 +24,8 @@ run() {
         while [ -e "$pending" ]; do
             rm -f "$pending"
             python3 "$here/status.py" "$@" >>"$log" 2>&1 || echo "$(date +%T) status.py failed" >>"$log"
+            # the hook map next to it (tools/hook-map.py)
+            python3 -I "$here/hook-map.py" --html "$out/hook-map.html" >>"$log" 2>&1 || echo "$(date +%T) hook-map.py failed" >>"$log"
         done
         exec 9>&-
     done

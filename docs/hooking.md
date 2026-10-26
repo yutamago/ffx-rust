@@ -101,6 +101,12 @@ followed by the `ported!` entries of `crates/ffx-hook/src/ported/*.rs`
 (13,905 on 2026-10-26, one file per module or port list). How a port gets
 its `ported!` line: `docs/porting.md`.
 
+To find where a hook's port lives, `tools/hook-map.py` lists every `ported!`
+entry: address, name, convention, the shim (file:line), the Rust function the
+shim calls, and the oracle test files that name the address.
+`--find NAME|ADDR` filters it, and `--html FILE` writes a searchable page;
+`tools/status.sh` keeps one at `~/ffx-work/status/hook-map.html`.
+
 `ported!` takes `extern "C"` (cdecl), `"stdcall"`, `"thiscall"` or
 `"fastcall"`, and makes a thunk per shim. The thunk keeps `eax`, `ecx` and
 `edx` for the caller except where the return type puts the result: `eax`
