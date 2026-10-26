@@ -2504,7 +2504,7 @@ fn bind_callees(steps: &[h1_bind::Step], calls: &mut Vec<(u32, u32)>, classes: &
         match *s {
             Step::Guard(_, _, inner) => bind_callees(inner, calls, classes),
             Step::Member { ty: t, .. } | Step::Array { ty: t, .. } => ty(t, calls),
-            Step::Class { member, .. } => classes.push(member),
+            Step::Class { member, .. } | Step::ClassIn { member, .. } => classes.push(member),
             Step::Call(f, arg) => calls.push((f, u32::from(arg.is_some()))),
             Step::Descriptor { ctor, .. } => calls.push((ctor, 0x100)),
             Step::AtExit(_) | Step::Store(..) | Step::Or(..) | Step::And(..) => {}

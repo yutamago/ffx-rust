@@ -598,7 +598,7 @@ fn h1_bind_parts(
                 h1_bind_parts(inner, guards, flags, calls, classes);
             }
             Step::Member { ty: t, .. } | Step::Array { ty: t, .. } => ty(t, calls),
-            Step::Class { member, .. } => classes.push(member),
+            Step::Class { member, .. } | Step::ClassIn { member, .. } => classes.push(member),
             Step::Call(f, arg) => {
                 // the stub's words come from the machine code, not from
                 // the table under test
