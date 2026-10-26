@@ -4446,8 +4446,11 @@ fn battle_end(
         }),
         1 => {
             // the argument goes on to SndMusicRead (a tail jump): the port
-            // once dropped it, and the victory fanfare never loaded
-            let music = [0x8a, 0x8c, rng.next()][rng.below(3) as usize];
+            // once dropped it, and the victory fanfare never loaded. Drawn
+            // from a side stream: the shared one stays as it was, so the
+            // later cases keep their inputs
+            let mut side = Xorshift(rng.0 ^ 0x9e37_79b9 | 1);
+            let music = [0x8a, 0x8c, side.next()][side.below(3) as usize];
             twin("MsMusicReadStart", a, b, 0x0079_fff0, &[music], ALL, |m| {
                 dm(m, |m| be::ms_music_read_start(m, &mut call, music))
             });
