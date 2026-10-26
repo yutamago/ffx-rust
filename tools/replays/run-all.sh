@@ -138,7 +138,7 @@ if [ "${1:-}" = --audio ]; then
     audio=1
     shift
     replays=(event-besaid battle-attack menu-browse)
-    audio_dir="${FFX_REPLAY_AUDIO:-$shots/audio}"
+    audio_dir="${FFX_REPLAY_AUDIO:-$HOME/ffx-work/replay-audio}"  # never in git
     mkdir -p "$audio_dir"
     wavcmp() { # label, a, b
         local res

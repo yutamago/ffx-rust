@@ -31,6 +31,12 @@
 # 4 and 5 Tidus at the river with Wakka across it (counts 192 and 232).
 load direct 3 bsil0000
 lockstep on
+# what the frames before lockstep leave behind (docs/harness.md, "Pinned
+# state"): without it two original runs' FMOD captures differed (the
+# f32 game time's last bits under the beach's sounds, and a double logic
+# tick that moved the river walk's footsteps; docs/harness.md, "Audio
+# capture")
+pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500
 # FFX_AUDIO_WAV (run-all.sh --audio): the capture is compared from the
 # `audiomark start` to the `audiomark end` (docs/harness.md, "Audio capture")
