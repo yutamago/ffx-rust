@@ -5,9 +5,10 @@
 //! loaded and freed (the main thread and the loader); `Bind` at start-up.
 //! No shim keeps state.
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 use ffx_prender::{
-    basic, class_slots as descriptor, h1_bind, h1_small, h1_small2, registry, texture,
+    basic, class_slots as descriptor, h1_array_type, h1_bind, h1_camera, h1_small, h1_small2,
+    h1_small3, h1_small4, registry, texture,
 };
 
 ported! {
@@ -1970,5 +1971,199 @@ ported! {
     /// `0x004c29b0(this)`: a texture binding released.
     PTextureBinding_release_004c29b0 @ 0x004c_29b0 => extern "thiscall" fn h1_004c29b0(this: u32) -> u32 {
         h1_small2::bridge::release_binding(&mut mem(), this)
+    }
+    // round 3 batch 1 (h1_camera, h1_array_type)
+    /// `0x00456b80(out, fov, aspect, near, far)` -> `out`: the perspective
+    /// matrix. The original's `f32` temporaries live in its float argument
+    /// slots: their last values are written there too.
+    PMatrix4_perspective_00456b80 @ 0x0045_6b80 => extern "C" fn h1_00456b80(out: u32, fov: u32, aspect: u32, near: u32, far: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, last) = h1_camera::bridge::perspective(&mut m, out, fov, aspect, near, far);
+        for (k, word) in (1u32..).zip(last) {
+            ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4 * k), word);
+        }
+        r
+    }
+    /// `0x00455dc0(out, left, right, bottom, top, near, far)` -> `out`: the
+    /// orthographic matrix; its argument slots as the original leaves them.
+    PMatrix4_orthographic_00455dc0 @ 0x0045_5dc0 => extern "C" fn h1_00455dc0(out: u32, left: u32, right: u32, bottom: u32, top: u32, near: u32, far: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, last) = h1_camera::bridge::orthographic(&mut m, out, [left, right, bottom, top, near, far]);
+        for (k, word) in (1u32..).zip(last) {
+            ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4 * k), word);
+        }
+        r
+    }
+    /// `PCameraPerspective::updateProjection(this)` -> the matrix copy's `eax`.
+    Phyre_PCameraPerspective_updateProjection @ 0x0045_6d10 => extern "thiscall" fn h1_00456d10(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ h1_camera::PERSPECTIVE_FRAME as usize / 4 }>::new();
+        h1_camera::bridge::update_perspective(&mut mem(), frame.at(), this)
+    }
+    /// `PCameraOrthographic::updateProjection(this)` -> the matrix copy's `eax`.
+    Phyre_PCameraOrthographic_updateProjection @ 0x0045_5fe0 => extern "thiscall" fn h1_00455fe0(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ h1_camera::ORTHO_FRAME as usize / 4 }>::new();
+        h1_camera::bridge::update_orthographic(&mut mem(), frame.at(), this)
+    }
+    /// `PCameraPerspective::PCameraPerspective(this)` -> `this`.
+    Phyre_PCameraPerspective_PCameraPerspective @ 0x0045_6370 => extern "thiscall" fn h1_00456370(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ h1_camera::PERSPECTIVE_FRAME as usize / 4 }>::new();
+        h1_camera::bridge::construct_perspective(&mut mem(), frame.at(), this)
+    }
+    /// `0x004d5f30(this, x)` -> the object `x` gives when it is a
+    /// `PShaderParameterDefinition`, else 0.
+    PShaderParameterDefinition_findIn_004d5f30 @ 0x004d_5f30 => extern "thiscall" fn h1_004d5f30(this: u32, x: u32) -> u32 {
+        let mut frame = StackFrame::<{ h1_camera::IS_A_FRAME as usize / 4 }>::new();
+        h1_camera::bridge::find_of_class(&mut mem(), frame.at(), this, x)
+    }
+    /// `GetType<PArray<unsigned char, 4>>(name)` -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PArray_unsigned_char_4 @ 0x0049_af10 => extern "C" fn h1_0049af10(name: u32) -> u32 {
+        let k = const { h1_array_type::kind_of(0x0049_af10) };
+        h1_array_type::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<PSharray<PMaterial*>>(name)` -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PSharray_Phyre_PRendering_PMaterial @ 0x0048_acf0 => extern "C" fn h1_0048acf0(name: u32) -> u32 {
+        let k = const { h1_array_type::kind_of(0x0048_acf0) };
+        h1_array_type::bridge::array_type(&mut mem(), &k, name)
+    }
+    /// `GetType<PSharray<unsigned int>>(name)` -> its descriptor.
+    Phyre_PTypeDispenser_GetType_Phyre_PSharray_unsigned_int @ 0x004c_f8c0 => extern "C" fn h1_004cf8c0(name: u32) -> u32 {
+        let k = const { h1_array_type::kind_of(0x004c_f8c0) };
+        h1_array_type::bridge::array_type(&mut mem(), &k, name)
+    }
+    // round 3 batch 2 (h1_small3)
+    /// `PDynamicDataBlock_dtor_00484160(this)`: its arrays released; the last call's `eax`.
+    PDynamicDataBlock_dtor_00484160 @ 0x0048_4160 => extern "thiscall" fn h1_00484160(this: u32) -> u32 {
+        let k = const { h1_small3::dtor_of(0x0048_4160) };
+        h1_small3::bridge::dtor(&mut mem(), &k, this)
+    }
+    /// `Phyre_PGeometry_PDynamicMesh_dtor_004969f0(this)`: its arrays released; the last call's `eax`.
+    Phyre_PGeometry_PDynamicMesh_dtor_004969f0 @ 0x0049_69f0 => extern "thiscall" fn h1_004969f0(this: u32) -> u32 {
+        let k = const { h1_small3::dtor_of(0x0049_69f0) };
+        h1_small3::bridge::dtor(&mut mem(), &k, this)
+    }
+    /// `PArrayPair_dtor_00499dc0(this)`: its arrays released; the last call's `eax`.
+    PArrayPair_dtor_00499dc0 @ 0x0049_9dc0 => extern "thiscall" fn h1_00499dc0(this: u32) -> u32 {
+        let k = const { h1_small3::dtor_of(0x0049_9dc0) };
+        h1_small3::bridge::dtor(&mut mem(), &k, this)
+    }
+    /// `PShaderProgramParamsAndStreams_dtor_004a8860(this)`: its arrays released; the last call's `eax`.
+    PShaderProgramParamsAndStreams_dtor_004a8860 @ 0x004a_8860 => extern "thiscall" fn h1_004a8860(this: u32) -> u32 {
+        let k = const { h1_small3::dtor_of(0x004a_8860) };
+        h1_small3::bridge::dtor(&mut mem(), &k, this)
+    }
+    /// `Phyre_PRendering_PShader_dtor_004bbf50(this)`: its arrays released; the last call's `eax`.
+    Phyre_PRendering_PShader_dtor_004bbf50 @ 0x004b_bf50 => extern "thiscall" fn h1_004bbf50(this: u32) -> u32 {
+        let k = const { h1_small3::dtor_of(0x004b_bf50) };
+        h1_small3::bridge::dtor(&mut mem(), &k, this)
+    }
+    /// `0x004a8910(this)`: the shader source's blocks released.
+    PShaderSource_dtor_004a8910 @ 0x004a_8910 => extern "thiscall" fn h1_004a8910(this: u32) -> u32 {
+        h1_small3::bridge::tagged_dtor(&mut mem(), this)
+    }
+    /// `0x004337d0(this)` -> `this`: a mesh segment entry's defaults.
+    PMeshSegmentEntry_ctor_004337d0 @ 0x0043_37d0 => extern "thiscall" fn h1_004337d0(this: u32) -> u32 {
+        h1_small3::bridge::entry6c_ctor(&mut mem(), this)
+    }
+    /// `0x00434430(data, n)`: `n` entries constructed; the `n` slot ends
+    /// at the last entry, as the original leaves it.
+    PMeshSegmentEntries_construct_00434430 @ 0x0043_4430 => extern "C" fn h1_00434430(data: u32, n: u32; slots: u32) {
+        let mut m = mem();
+        if let Some(last) = h1_small3::bridge::entry6c_construct(&mut m, data, n) {
+            ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4), last);
+        }
+    }
+    /// `0x00434210(data, n)` -> `PhyreFree`'s `eax`: `n` entries destroyed
+    /// and `data` freed; the `n` slot ends at 0.
+    PMeshSegmentEntries_destroy_00434210 @ 0x0043_4210 => extern "C" fn h1_00434210(data: u32, n: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let eax = h1_small3::bridge::entry6c_destroy(&mut m, data, n);
+        if data != 0 && n != 0 {
+            ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4), 0u32);
+        }
+        eax
+    }
+    /// `0x004d6180(this, p)` -> `this`: a view of `p`'s parameter array.
+    PParameterBufferView_ctor_004d6180 @ 0x004d_6180 => extern "thiscall" fn h1_004d6180(this: u32, p: u32) -> u32 {
+        h1_small3::bridge::view_ctor(&mut mem(), this, p)
+    }
+    /// `0x004319d0(lock)`: the recursive lock released; the last call's `eax`.
+    PRecursiveLock_release_004319d0 @ 0x0043_19d0 => extern "thiscall" fn h1_004319d0(this: u32) -> u32 {
+        h1_small3::bridge::lock_release(&mut mem(), this)
+    }
+    /// `0x00463d50(this)` -> `this`: the render lock taken.
+    PRenderScopeLock_enter_00463d50 @ 0x0046_3d50 => extern "thiscall" fn h1_00463d50(this: u32) -> u32 {
+        h1_small3::bridge::render_scope_enter(&mut mem(), this)
+    }
+    /// `0x00463e90(this)`: the render lock released; its `eax`.
+    PRenderScopeLock_leave_00463e90 @ 0x0046_3e90 => extern "thiscall" fn h1_00463e90(this: u32) -> u32 {
+        h1_small3::bridge::render_scope_leave(&mut mem(), this)
+    }
+    /// `0x00443d20(this, n)` -> 0 or 0xd: the 20-byte entry array resized.
+    PArray20_resize_00443d20 @ 0x0044_3d20 => extern "thiscall" fn h1_00443d20(this: u32, n: u32) -> u32 {
+        let k = const { h1_small3::resize_of(0x0044_3d20) };
+        h1_small3::bridge::resize(&mut mem(), &k, this, n).0
+    }
+    /// `0x00483710(this, n)` -> 0 or 0xd: the 12-byte element array resized.
+    PArray12_resize_00483710 @ 0x0048_3710 => extern "thiscall" fn h1_00483710(this: u32, n: u32) -> u32 {
+        let k = const { h1_small3::resize_of(0x0048_3710) };
+        h1_small3::bridge::resize(&mut mem(), &k, this, n).0
+    }
+    /// `PWorld::initialize(this)` -> 0 or the resize's error.
+    Phyre_PWorld_initialize @ 0x0044_3a40 => extern "thiscall" fn h1_00443a40(this: u32) -> u32 {
+        let k = const { h1_small3::resize_of(0x0044_3d20) };
+        h1_small3::bridge::world_initialize(&mut mem(), &k, this)
+    }
+    /// `destroyInstance(descriptor, p)` of `PParameterBuffer`: `al` 1.
+    Phyre_PClassDescriptorHeaderWithoutDefaultConstructor_Phyre_PRendering_PParameterBuffer__destroyInstance @ 0x004d_7190 => extern "thiscall" fn h1_004d7190(descriptor: u32, p: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        h1_small3::bridge::destroy_parameter_buffer(&mut mem(), frame.at(), descriptor, p)
+    }
+    /// `0x004ba540(this, a, b)` -> the first non-zero unbind result.
+    PShaderPass_unbindResources_004ba540 @ 0x004b_a540 => extern "thiscall" fn h1_004ba540(this: u32, a: u32, b: u32) -> u32 {
+        h1_small3::bridge::unbind_pass(&mut mem(), this, a, b)
+    }
+    /// `PFindNestedClassVisitor` slot 1 `(this, base, count, object, flags)`.
+    PFindNestedClassVisitor_visit_0047fa10 @ 0x0047_fa10 => extern "thiscall" fn h1_0047fa10(this: u32, base: u32, count: u32, object: u32, flags: u32) {
+        let mut slot = StackFrame::<1>::new();
+        h1_small3::bridge::visit_nested(&mut mem(), slot.at(), this, base, count, object, flags);
+    }
+    /// `0x004d3830(name)` -> the context switch of that name, made when new.
+    PContextSwitch_findOrCreate_004d3830 @ 0x004d_3830 => extern "C" fn h1_004d3830(name: u32) -> u32 {
+        h1_small3::bridge::switch_for_name(&mut mem(), name)
+    }
+    // round 3 batch 3 (h1_small4)
+    /// `PUtilityGeometry::initialize()` -> 0.
+    Phyre_PGeometry_PUtilityGeometry_initialize @ 0x0043_22c0 => extern "C" fn h1_004322c0() -> u32 {
+        h1_small4::bridge::geometry_initialize(&mut mem(), h1_small4::GEOMETRY_STEPS)
+    }
+    /// `PUtilityRendering::initialize()` -> the first failing set-up's code, or 0.
+    Phyre_PRendering_PUtilityRendering_initialize @ 0x0043_2820 => extern "C" fn h1_00432820() -> u32 {
+        h1_small4::bridge::rendering_initialize(&mut mem(), h1_small4::RENDERING_STEPS)
+    }
+    /// `0x00434c50(this, x)` -> the submit's `eax` (or the preparation's error).
+    PRingBuffer_submit_00434c50 @ 0x0043_4c50 => extern "thiscall" fn h1_00434c50(this: u32, x: u32) -> u32 {
+        let k = const { h1_small4::ring_of(0x0043_4c50) };
+        h1_small4::bridge::ring_submit(&mut mem(), &k, this, x)
+    }
+    /// `0x00434cd0(this, x)` -> the submit's `eax` (or the preparation's error).
+    PRingBuffer_submit_00434cd0 @ 0x0043_4cd0 => extern "thiscall" fn h1_00434cd0(this: u32, x: u32) -> u32 {
+        let k = const { h1_small4::ring_of(0x0043_4cd0) };
+        h1_small4::bridge::ring_submit(&mut mem(), &k, this, x)
+    }
+    /// `0x00433af0(this)`: the mesh's arrays released; the last release's `eax`.
+    Phyre_PGeometry_PMesh_dtor_00433af0 @ 0x0043_3af0 => extern "thiscall" fn h1_00433af0(this: u32) -> u32 {
+        h1_small4::bridge::segment_dtor(&mut mem(), this)
+    }
+    /// `0x00495a10(this)`: the sprite utility's arrays released.
+    PSpriteArrays_release_00495a10 @ 0x0049_5a10 => extern "thiscall" fn h1_00495a10(this: u32) -> u32 {
+        h1_small4::bridge::arrays_dtor(&mut mem(), this)
+    }
+    /// `0x004c0c00(this, a, format, flags)` -> `this`: a texture format description.
+    PTextureFormatDesc_ctor_004c0c00 @ 0x004c_0c00 => extern "thiscall" fn h1_004c0c00(this: u32, a: u32, format: u32, flags: u32) -> u32 {
+        h1_small4::bridge::format_desc(&mut mem(), this, a, format, flags)
+    }
+    /// `0x0045cd60(buffer)` -> 0, 0x12 or 0x15: the buffer's resources registered.
+    PAssetReference_registerResources_0045cd60 @ 0x0045_cd60 => extern "C" fn h1_0045cd60(buffer: u32) -> u32 {
+        h1_small4::bridge::register_resources(&mut mem(), buffer)
     }
 }

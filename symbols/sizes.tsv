@@ -1,4 +1,5 @@
 # address	size	dump size	Ghidra name (tools/progress.py --measure-sizes: functions the dump sizes under five bytes, measured in FFX.exe to the last ret/jmp)
+0x00432820	531	603	Phyre_PRendering_PUtilityRendering_initialize
 0x007a4550	8	1	Native_BtlIsUnderwater
 0x007a4e90	5	1	Native_BtlGetBattleId
 0x007a76e0	8	1	Native_BtlGetTurnActor
