@@ -1,4 +1,4 @@
-//! `PRedBlackTree`: successor, remove, clear.
+//! `PRedBlackTree`: successor, remove, clear, the insert fix-up.
 //!
 //! A node is `{+0 left, +4 right, +8 parent | colour}`: bit 0 of the
 //! parent word is the colour; removal calls `postRemoveFixup` when the
@@ -132,5 +132,90 @@ pub mod bridge {
             }
             unlink(h, tree, root);
         }
+    }
+
+    /// Bit 0 of `n`'s parent word: set when `n` is red.
+    fn red(h: &impl Host, n: u32) -> u32 {
+        u32::from(h.read::<u8>(n + 8) & 1)
+    }
+
+    /// Clears `n`'s colour bit (black).
+    fn set_black(h: &mut impl Host, n: u32) {
+        let w: u32 = h.read(n + 8);
+        h.write(n + 8, w.wrapping_sub(red(h, n)));
+    }
+
+    /// Sets `n`'s colour bit (red).
+    fn set_red(h: &mut impl Host, n: u32) {
+        let w: u32 = h.read(n + 8);
+        h.write(n + 8, w.wrapping_add(1 - red(h, n)));
+    }
+
+    /// The child word of `parent` that points at `old` (its right when
+    /// that is `old`, else its left) set to `new`.
+    fn replace_child(h: &mut impl Host, parent: u32, old: u32, new: u32) {
+        let right: u32 = h.read(parent + 4);
+        let slot = if right == old { 4 } else { 0 };
+        h.write(parent + slot, new);
+    }
+
+    /// Rotates `n` down to the `side` (0: left, 4: right) of its child on
+    /// the other side `c`, as the fixup's rotations store: `n`'s inner
+    /// child word, the moved subtree's parent (unless it is the tree,
+    /// the null child), `c`'s parent, the grandparent's child word, `c`'s
+    /// child word. `n`'s parent is left to the caller.
+    fn rotate(h: &mut impl Host, tree: u32, n: u32, c: u32, side: u32) {
+        let up = parent(h, n);
+        let inner: u32 = h.read(c + side);
+        h.write(n + (4 - side), inner);
+        if inner != tree {
+            set_parent(h, inner, n);
+        }
+        set_parent(h, c, up);
+        replace_child(h, up, n, c);
+        h.write(c + side, n);
+    }
+
+    /// `0x00574980` `PRedBlackTree::postInsertFinalize(tree, node)`
+    /// (`ret 4`): the red-black fix-up after `node` was linked in red:
+    /// while its parent is red, recolour when the uncle is red, else
+    /// rotate (twice when `node` is an inner child); then the root is
+    /// made black. `eax` is the root's colour bit before that.
+    pub fn post_insert_finalize(h: &mut impl Host, tree: u32, node: u32) -> u32 {
+        let mut x = node;
+        while red(h, parent(h, x)) != 0 {
+            let mut p = parent(h, x);
+            let g = parent(h, p);
+            let left_side = h.read::<u32>(g) == p;
+            let uncle: u32 = h.read(g + if left_side { 4 } else { 0 });
+            if red(h, uncle) != 0 {
+                set_black(h, uncle);
+                set_black(h, p);
+                set_red(h, g);
+                x = g;
+                continue;
+            }
+            // the side x hangs on that needs the first rotation (inner)
+            let (inner, outer) = if left_side { (4, 0) } else { (0, 4) };
+            if h.read::<u32>(p + inner) == x {
+                // rotate p down to the outer side of x
+                let c = x;
+                x = p;
+                rotate(h, tree, p, c, outer);
+                set_parent(h, p, c);
+                p = c;
+            }
+            let g = parent(h, p);
+            set_black(h, p);
+            set_red(h, g);
+            // rotate g down to the inner side of its outer child
+            let c: u32 = h.read(g + outer);
+            rotate(h, tree, g, c, inner);
+            set_parent(h, g, c);
+        }
+        let root: u32 = h.read(tree + 0xc);
+        let bit = red(h, root);
+        set_black(h, root);
+        bit
     }
 }

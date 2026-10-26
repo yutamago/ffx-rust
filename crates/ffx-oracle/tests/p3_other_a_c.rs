@@ -91,6 +91,22 @@ impl Host for G<'_> {
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
+    fn call_st0_f64(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f64 {
+        let conv = match conv {
+            host::Conv::Cdecl => Conv::Cdecl,
+            host::Conv::Stdcall => Conv::Stdcall,
+            host::Conv::Thiscall(t) => Conv::Thiscall(t),
+            host::Conv::Fastcall => Conv::Fastcall,
+        };
+        let r = self
+            .0
+            .call(addr, conv, args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"));
+        let v = r.st0_f64().expect("the callee's ST0");
+        // pop it, as the caller's `fstp` does
+        self.0.call(self.1 + 16, Conv::Cdecl, &[]).unwrap();
+        v
+    }
     fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
         // the trampoline: `fld qword [esp+4]; call [esp+0xc]; ret`, then
         // at +16 `fstp st(0); ret`
@@ -1266,7 +1282,14 @@ fn arrays_and_components_match_the_original() {
 
 #[test]
 fn binds_match_the_original() {
-    use ffx_pother_a::p3_bind::{self as b, Step, Ty};
+    use ffx_pother_a::p3_bind::{self as b, Arg, Step, Ty};
+    let tested =
+        |f: u32| b::BINDS.iter().any(|(a, _)| *a == f) || b::GETTERS.iter().any(|(a, _)| *a == f);
+    let all: Vec<(u32, &[Step], bool)> = b::BINDS
+        .iter()
+        .map(|&(a, s)| (a, s, false))
+        .chain(b::GETTERS.iter().map(|&(a, s)| (a, s, true)))
+        .collect();
     for mut t in Twins::all() {
         let mut rng = Rng(0x0b1d_0003);
         t.stub(b::REGISTER_TYPE, cdecl(1, 0x6001));
@@ -1274,30 +1297,53 @@ fn binds_match_the_original() {
         t.stub(b::ATEXIT, cdecl(1, 0x6003));
         t.stub(b::DATA, method(6, 0x6004));
         t.stub(b::DATA_FIXED, method(6, 0x6005));
-        t.stub(b::DATA_ARRAY, method(6, 0x6006));
+        t.stub(b::DATA_ARRAY, method(7, 0x6006));
         t.stub(b::CLASS_MEMBER, method(3, 0x6007));
         t.stub(b::DATA_WRAPPED, method(6, 0x6009));
         t.stub(b::GLOBAL_NAMESPACE, cdecl(0, 0x600a));
         t.stub(b::CLASS_DESCRIPTOR_INIT, method(4, 0x600b));
-        // every type getter the tables call, each its own tag
-        let mut getters: Vec<u32> = b::BINDS
-            .iter()
-            .flat_map(|(_, s)| s.iter())
-            .filter_map(|s| match s {
-                Step::Member { ty: Ty::Get(f), .. } => Some(*f),
-                _ => None,
-            })
-            .collect();
-        getters.sort_unstable();
-        getters.dedup();
-        // the wrapper getters some tables call are tested themselves: they
-        // run as original code in both oracles
-        getters.retain(|f| !b::BINDS.iter().any(|(a, _)| a == f));
-        for &f in &getters {
-            t.stub(f, cdecl(0, f ^ 0x00ff_0000));
+        // every getter and callee the tables call, each its own tag; the
+        // tables' own originals (a Bind calling an array getter, a wrapper
+        // getter) are tested themselves and run as original code in both
+        let mut callees: Vec<(u32, Stub)> = Vec::new();
+        for (_, steps, _) in &all {
+            for s in *steps {
+                match *s {
+                    Step::Member { ty: Ty::Get(f), .. } => {
+                        callees.push((f, cdecl(0, f ^ 0x00ff_0000)));
+                    }
+                    Step::Call { f, this, args } => {
+                        let n = args.len() as u8;
+                        callees.push((
+                            f,
+                            Stub {
+                                n: n.min(6),
+                                pops: if this.is_some() { u32::from(n) } else { 0 },
+                                ret: f ^ 0x00ee_0000,
+                                this: this.is_some(),
+                            },
+                        ));
+                        for a in args {
+                            match *a {
+                                Arg::Get(g) => callees.push((g, cdecl(0, g ^ 0x00ff_0000))),
+                                Arg::Get1(g, _) => callees.push((g, cdecl(1, g ^ 0x00dd_0000))),
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
-        for (k, &(addr, steps)) in b::BINDS.iter().enumerate() {
-            for round in 0..4u32 {
+        callees.sort_unstable_by_key(|c| c.0);
+        callees.dedup_by_key(|c| c.0);
+        for (f, s) in callees {
+            if !tested(f) && f != b::DATA && f != b::DATA_ARRAY {
+                t.stub(f, s);
+            }
+        }
+        for (k, &(addr, steps, getter)) in all.iter().enumerate() {
+            for round in 0..6u32 {
                 // the finders: a namesake found or not
                 let found = u32::from(round % 2 == 1);
                 for f in [b::FIND_FUNCTION.finder, b::FIND_METHOD.finder] {
@@ -1307,7 +1353,7 @@ fn binds_match_the_original() {
                 for s in steps {
                     if let Step::Guard(g) = s {
                         let w = match round {
-                            0 | 1 => 0,
+                            0 | 1 | 4 => 0,
                             2 => u32::MAX,
                             _ => rng.next(),
                         };
@@ -1315,16 +1361,29 @@ fn binds_match_the_original() {
                         t.w32(g, w);
                     }
                 }
-                // what the stores overwrite: random words
+                // what the stores overwrite and the words read: random
                 for s in steps {
-                    if let Step::Zero(a)
-                    | Step::Or(a, _)
-                    | Step::Store(a, _)
-                    | Step::StoreByte(a, _) = s
-                    {
-                        let a = t.rebase(*a);
-                        let v = rng.next();
-                        t.w32(a, v);
+                    match *s {
+                        Step::Zero(a)
+                        | Step::Or(a, _)
+                        | Step::And(a, _)
+                        | Step::Store(a, _)
+                        | Step::StoreImm(a, _)
+                        | Step::StoreByte(a, _) => {
+                            let a = t.rebase(a);
+                            let v = rng.next();
+                            t.w32(a, v);
+                        }
+                        Step::Call { args, .. } => {
+                            for a in args {
+                                if let Arg::Mem(m) = *a {
+                                    let m = t.rebase(m);
+                                    let v = rng.next();
+                                    t.w32(m, v);
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 // the wrappers' done bytes: clear but in round 2
@@ -1332,6 +1391,26 @@ fn binds_match_the_original() {
                     if let Step::IfZeroByte(a) = s {
                         let a = t.rebase(*a);
                         t.write(a, &[u8::from(round == 2)]);
+                    }
+                }
+                // the getters' owner words: free or taken, a cached owner
+                // or none; the annotation lists: empty (pointing at
+                // themselves) or not
+                for s in steps {
+                    match *s {
+                        Step::Owner { slot, cache } => {
+                            let (slot, cache) = (t.rebase(slot), t.rebase(cache));
+                            let taken = if round == 3 { rng.next() | 1 } else { 0 };
+                            let cached = if round % 2 == 0 { 0 } else { rng.next() | 1 };
+                            t.w32(slot, taken);
+                            t.w32(cache, cached);
+                        }
+                        Step::IfSelf(a) => {
+                            let a = t.rebase(a);
+                            let v = if round == 5 { rng.next() } else { a };
+                            t.w32(a, v);
+                        }
+                        _ => {}
                     }
                 }
                 // method members: an owner with an empty list, a name or none
@@ -1354,15 +1433,813 @@ fn binds_match_the_original() {
                 // a fresh call log (it holds 1024 calls)
                 let log = t.log;
                 t.w32(log, 0);
+                if getter {
+                    // the owner: none (round 4) or a word
+                    let owner = if round == 4 { 0 } else { rng.next() | 1 };
+                    t.check(
+                        &format!("getter {addr:#x} round {round}"),
+                        addr,
+                        Conv::Cdecl,
+                        &[owner],
+                        ALL,
+                        |g| b::bridge::getter(g, steps, owner),
+                    );
+                } else {
+                    t.check(
+                        &format!("bind {addr:#x} round {round}"),
+                        addr,
+                        Conv::Cdecl,
+                        &[],
+                        ALL,
+                        |g| b::bridge::bind(g, steps),
+                    );
+                }
+            }
+        }
+        t.unstub_all();
+    }
+}
+
+impl Twins {
+    /// A cdecl `(x)` stub tagged `tag` that logs `x` and returns 0x12 when
+    /// `x == fail`, else 0.
+    fn fail_at(&mut self, tag: u32, fail: u32) -> u32 {
+        let log = self.log;
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+        c.extend([0x8b, 0x0d]);
+        c.extend(log.to_le_bytes()); // mov ecx, [log]
+        c.extend([0xc1, 0xe1, 0x05]); // shl ecx, 5
+        c.extend([0x81, 0xc1]);
+        c.extend((log + 4).to_le_bytes()); // add ecx, log + 4
+        c.extend([0xc7, 0x01]);
+        c.extend(tag.to_le_bytes()); // mov [ecx], tag
+        c.extend([0x89, 0x41, 0x08]); // mov [ecx+8], eax
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0x3d);
+        c.extend(fail.to_le_bytes()); // cmp eax, fail
+        c.extend([0x75, 0x06]); // jne zero
+        c.extend([0xb8, 0x12, 0, 0, 0, 0xc3]); // mov eax, 0x12; ret
+        c.extend([0x31, 0xc0, 0xc3]); // zero: xor eax, eax; ret
+        self.code(&c)
+    }
+}
+
+#[test]
+fn init_functions_match_the_original() {
+    use ffx_pother_a::p3_init::{self as i, Init};
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0001_d0d3);
+        // the enum bind descriptors: guard clear or set, named or not, a
+        // namesake found or not
+        t.stub(i::ENUM_INIT, method(1, 0x7001));
+        t.stub(i::ENUM_SET_TOKENS, method(2, 0x7002));
+        for (addr, e) in [
+            (0x005f_09a0, i::COLLISION_GROUP),
+            (0x005f_0a40, i::RIGID_BODY_TYPE),
+        ] {
+            for round in 0..8u32 {
+                let guard = t.rebase(e.guard);
+                let d = t.rebase(e.descriptor);
+                let list = t.rebase(i::ENUM_LIST);
+                let g = if round & 1 == 0 {
+                    rng.next() & !1
+                } else {
+                    rng.next() | 1
+                };
+                t.w32(guard, g);
+                let name = if round & 2 == 0 { 0 } else { rng.next() | 1 };
+                t.w32(d, name);
+                let next = rng.next();
+                t.w32(d + 4, next);
+                let head = rng.next();
+                t.w32(list, head);
+                let found = if round & 4 == 0 { 0 } else { 0x7003 };
+                t.stub(i::FIND_NAMED, cdecl(1, found));
+                let log = t.log;
+                t.w32(log, 0);
                 t.check(
-                    &format!("bind {addr:#x} round {round}"),
+                    &format!("enum {addr:#x} round {round}"),
                     addr,
                     Conv::Cdecl,
                     &[],
                     ALL,
-                    |g| b::bridge::bind(g, steps),
+                    |g| i::bridge::enum_bind(g, &e),
                 );
             }
+        }
+        // the bind lists: every entry registered, or the k-th failing
+        for (addr, l) in [
+            (0x0043_3020, i::ANIMATION_BINDS),
+            (0x0050_3ee0, i::DYNAMIC_GEOMETRY_BINDS),
+        ] {
+            for c in l.calls {
+                match *c {
+                    Init::Call(f) | Init::RegisterGot(f) => {
+                        t.stub(f, cdecl(0, f ^ 0x00ee_0000));
+                    }
+                }
+            }
+            t.stub(i::REGISTER_TYPE, cdecl(1, 0x7004));
+            if let Some(f) = l.tail {
+                t.stub(f, cdecl(0, 0x7005));
+            }
+            let n = l.entries.len();
+            for k in [0, 1, n / 2, n - 1, n] {
+                let fail = l.entries.get(k).map_or(0, |&e| t.rebase(e));
+                let s = t.fail_at(l.register, fail);
+                t.jump(l.register, s);
+                let log = t.log;
+                t.w32(log, 0);
+                t.check(
+                    &format!("bind list {addr:#x} failing at {k}"),
+                    addr,
+                    Conv::Cdecl,
+                    &[],
+                    ALL,
+                    |g| i::bridge::bind_list(g, &l),
+                );
+            }
+        }
+        // the scripting initialisation: the Lua array owned or not, with
+        // 0..3 elements; PhyreMalloc's block always the same
+        for f in i::SCRIPTING_BINDS {
+            t.stub(f, cdecl(0, f ^ 0x00ee_0000));
+        }
+        t.stub(FREE, cdecl(1, 0x7006));
+        for round in 0..6u32 {
+            let block = t.random(&mut rng, 0x80);
+            t.stub(i::PHYRE_MALLOC, cdecl(2, block));
+            let count = round % 4;
+            let data = t.random(&mut rng, 0x20);
+            let flag = if round >= 4 { 0x8000_0000 } else { 0 };
+            let libs = t.rebase(i::LUA_LIBS);
+            t.w32(libs, count | flag);
+            t.w32(libs + 4, data);
+            let log = t.log;
+            t.w32(log, 0);
+            t.check(
+                &format!("scripting round {round}"),
+                0x005d_6960,
+                Conv::Cdecl,
+                &[],
+                ALL,
+                |g| {
+                    let f = g.scratch();
+                    i::bridge::scripting_initialize(g, f)
+                },
+            );
+        }
+        t.unstub_all();
+    }
+}
+
+impl Twins {
+    /// An object (0x60 zero bytes) whose vtable's slots are recording
+    /// method stubs `(words, eax)`, tagged `tag + slot`.
+    fn vobj(&mut self, tag: u32, slots: &[(u8, u32)]) -> u32 {
+        let code: Vec<u32> = (0u32..)
+            .zip(slots)
+            .map(|(i, &(n, ret))| self.stub_code(tag + i, method(n, ret)))
+            .collect();
+        let vt: Vec<u8> = code.iter().flat_map(|s| s.to_le_bytes()).collect();
+        let vt = self.alloc(&vt);
+        let o = self.zeros(0x60);
+        self.w32(o, vt);
+        o
+    }
+
+    /// A stdcall `(p)` stub tagged `tag` that logs `p`, stores the qword
+    /// `v` at `p` and returns `ret`.
+    fn qword_stub(&mut self, tag: u32, v: u64, ret: u32) -> u32 {
+        let log = self.log;
+        let mut c = vec![0x8b, 0x0d];
+        c.extend(log.to_le_bytes()); // mov ecx, [log]
+        c.extend([0xc1, 0xe1, 0x05]); // shl ecx, 5
+        c.extend([0x81, 0xc1]);
+        c.extend((log + 4).to_le_bytes()); // add ecx, log + 4
+        c.extend([0xc7, 0x01]);
+        c.extend(tag.to_le_bytes()); // mov [ecx], tag
+        c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+        c.extend([0x89, 0x51, 0x08]); // mov [ecx+8], edx
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.extend([0xc7, 0x02]);
+        c.extend((v as u32).to_le_bytes()); // mov [edx], lo
+        c.extend([0xc7, 0x42, 0x04]);
+        c.extend(((v >> 32) as u32).to_le_bytes()); // mov [edx+4], hi
+        c.push(0xb8);
+        c.extend(ret.to_le_bytes()); // mov eax, ret
+        c.extend([0xc2, 0x04, 0x00]); // ret 4
+        self.code(&c)
+    }
+
+    /// Points the IAT slot `iat` at `f` in both oracles.
+    fn import(&mut self, iat: u32, f: u32) {
+        let at = self.rebase(iat);
+        self.w32(at, f);
+    }
+}
+
+#[test]
+fn startup_matches_the_original() {
+    use ffx_pother_a::p3_misc3::{self as m};
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x7173_0002);
+        // the Win32 timer: the APIs working or not, counters near the
+        // 32-bit millisecond wrap and the unsigned fix-ups
+        for round in 0..16u32 {
+            let period = if round & 1 == 0 { 0 } else { 0x61 };
+            let s = t.stub_code(0x7101, stdcall(1, period));
+            t.import(m::IAT_TIME_BEGIN_PERIOD, s);
+            let s = t.stub_code(0x7102, stdcall(1, 0));
+            t.import(m::IAT_SLEEP, s);
+            let ticks = if round & 4 == 0 {
+                rng.next() >> 1
+            } else {
+                rng.next() | 0x8000_0000
+            };
+            let s = t.stub_code(0x7103, stdcall(0, ticks));
+            t.import(m::IAT_TIME_GET_TIME, s);
+            let freq = [10_000_000u64, 3_579_545, 1 + u64::from(rng.next()), 1][round as usize % 4];
+            let ok = [1, 0, 2][round as usize % 3];
+            // a counter that fails without writing (the frequency stays 1)
+            let s = if round % 5 == 4 {
+                t.stub_code(0x7104, stdcall(1, 0))
+            } else {
+                t.qword_stub(0x7104, freq, ok)
+            };
+            t.import(m::IAT_QUERY_PERFORMANCE_FREQUENCY, s);
+            // counters: small, past the 32-bit milliseconds, negative
+            let counter = match round % 4 {
+                0 => u64::from(rng.next()),
+                1 => (u64::from(rng.next()) << 30) | u64::from(rng.next()),
+                2 => (u64::from(rng.next() | 0x8000_0000) << 32) | u64::from(rng.next()),
+                _ => (u64::from(rng.next() & 0x3fff_ffff) << 32) | u64::from(rng.next()),
+            };
+            let s = if round % 7 == 6 {
+                t.stub_code(0x7105, stdcall(1, 0))
+            } else {
+                t.qword_stub(0x7105, counter, 1)
+            };
+            t.import(m::IAT_QUERY_PERFORMANCE_COUNTER, s);
+            // what the timer overwrites: random words
+            for a in [
+                m::TIMER_START_MS,
+                m::TIMER_PRECISE_TIME,
+                m::TIMER_START_COMBINED,
+                m::TIMER_START_SECONDS,
+                m::TIMER_ZERO_A,
+                m::TIMER_COUNTER,
+                m::TIMER_FREQUENCY,
+                m::TIMER_PERIOD,
+                m::TIMER_ZERO_B,
+                m::TIMER_ZERO_C,
+            ] {
+                let a = t.rebase(a);
+                let (x, y) = (rng.next(), rng.next());
+                t.w32(a, x);
+                t.w32(a + 4, y);
+            }
+            let s = t.stub_code(0x7106, stdcall(1, 0x7777_0000));
+            t.import(m::IAT_GET_MODULE_HANDLE_A, s);
+            let s = t.stub_code(0x7107, stdcall(2, rng.next()));
+            t.import(m::IAT_GET_PROC_ADDRESS, s);
+            let log = t.log;
+            t.w32(log, 0);
+            t.check(
+                &format!("timer init round {round}"),
+                m::TIMER_INITIALIZE,
+                Conv::Cdecl,
+                &[],
+                ALL,
+                |g| m::bridge::timer_initialize(g),
+            );
+        }
+        // PhyreInit: done, or failing at each step, or all through
+        for f in m::INIT_BINDS {
+            t.stub(f, cdecl(0, f ^ 0x00ee_0000));
+        }
+        for f in m::INIT_TYPES {
+            t.stub(f, cdecl(0, f ^ 0x00dd_0000));
+        }
+        for f in [
+            m::REGISTER_TYPE,
+            m::THREAD_POOL_SET_STACK_SIZE,
+            m::STORE_GLOBAL_C0B958,
+            m::STORE_GLOBAL_C0B95C,
+            m::ATEXIT,
+        ] {
+            t.stub(f, cdecl(1, f ^ 0x00cc_0000));
+        }
+        for f in [
+            m::REGISTER_DEFAULT_TYPES,
+            m::PBASE_GET_CLASS_DESCRIPTOR,
+            m::NAMESPACE_INIT_GLOBAL,
+        ] {
+            t.stub(f, cdecl(0, f ^ 0x00bb_0000));
+        }
+        // the start time: `fld qword [x]; ret`
+        let x = t.alloc(&1_234.567_891_234_5_f64.to_bits().to_le_bytes());
+        let mut c = vec![0xdd, 0x05];
+        c.extend(x.to_le_bytes());
+        c.push(0xc3);
+        let get_time = t.code(&c);
+        t.jump(m::TIMER_GET_TIME, get_time);
+        for fail in 0..9u32 {
+            let r = |k: u32| if fail == k { 0x7300 + k } else { 0 };
+            let done = t.rebase(m::PHYRE_INITIALIZED);
+            t.write(done, &[u8::from(fail == 7)]);
+            t.stub(m::MEMORY_ALLOCATOR_INIT, cdecl(0, r(0)));
+            let second = t.vobj(0x7310, &[(0, 0), (0, r(2))]);
+            let first = t.vobj(0x7320, &[(0, 0), (0, r(1))]);
+            t.w32(first + 4, second);
+            let list = t.rebase(m::INIT_LIST);
+            t.w32(list, first);
+            t.stub(m::SHADER_PASS_INIT_ALL, cdecl(0, r(3)));
+            t.stub(m::TIMER_INITIALIZE, cdecl(0, r(4)));
+            let pool = t.vobj(0x7330, &[(0, 0), (0, 0), (0, r(5))]);
+            t.stub(m::THREAD_POOL_GET_SINGLETON, cdecl(0, pool));
+            t.stub(m::SORT_CLASS_DESCRIPTORS, cdecl(0, r(6)));
+            let log = t.log;
+            t.w32(log, 0);
+            t.check(
+                &format!("PhyreInit failing at {fail}"),
+                0x0043_0dd0,
+                Conv::Cdecl,
+                &[],
+                ALL,
+                |g| m::bridge::phyre_init(g),
+            );
+        }
+        t.unstub_all();
+    }
+}
+
+#[test]
+fn printf_matches_the_original() {
+    use ffx_pother_a::p3_misc::{TTY_OBJECT, TTY_OBJECT_ONCE, TTY_ONCE, TTY_POINTER, TTY_VFTABLE};
+    use ffx_pother_a::p3_misc3::{self as m};
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0070_0f01);
+        let log = t.log;
+        // `_vsnprintf_s(buf, size, count, format, va)`: writes the
+        // format's first word, the first two variable arguments, size
+        // and count into the buffer; returns 0x55
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+        c.extend([0x8b, 0x4c, 0x24, 0x10]); // mov ecx, [esp+0x10]
+        c.extend([0x8b, 0x11, 0x89, 0x10]); // mov edx, [ecx]; mov [eax], edx
+        c.extend([0x8b, 0x4c, 0x24, 0x14]); // mov ecx, [esp+0x14]
+        c.extend([0x8b, 0x11, 0x89, 0x50, 0x04]); // mov edx, [ecx]; mov [eax+4], edx
+        c.extend([0x8b, 0x51, 0x04, 0x89, 0x50, 0x08]); // mov edx, [ecx+4]; mov [eax+8], edx
+        c.extend([0x8b, 0x54, 0x24, 0x08, 0x89, 0x50, 0x0c]); // size -> [eax+0xc]
+        c.extend([0x8b, 0x54, 0x24, 0x0c, 0x89, 0x50, 0x10]); // count -> [eax+0x10]
+        c.extend([0xb8, 0x55, 0, 0, 0, 0xc3]); // mov eax, 0x55; ret
+        let vsn = t.code(&c);
+        t.import(m::IAT_VSNPRINTF_S, vsn);
+        // the TTY callback's slot 1 (thiscall `(level, message)`, `ret
+        // 8`): logs `ecx`, the level and the message's five words
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(0x7401u32.to_le_bytes()); // mov [eax], tag
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x08]); // level -> [eax+8]
+        c.extend([0x8b, 0x4c, 0x24, 0x08]); // mov ecx, [esp+8]
+        for k in 0..5u8 {
+            c.extend([0x8b, 0x51, 4 * k, 0x89, 0x50, 0x0c + 4 * k]);
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.extend([0xb8, 0x66, 0, 0, 0, 0xc2, 0x08, 0x00]); // mov eax, 0x66; ret 8
+        let tty = t.code(&c);
+        t.jump(0x0043_54f0, tty);
+        t.stub(m::ATEXIT, cdecl(1, 0x7402));
+        for round in 0..6u32 {
+            // the callback made already, made but not pointed at, not made
+            let (once, made) = match round % 3 {
+                0 => (1, 1),
+                1 => (0, 1),
+                _ => (0, 0),
+            };
+            let vt = t.rebase(TTY_VFTABLE);
+            let obj = t.rebase(TTY_OBJECT);
+            t.w32(obj, vt);
+            let p = t.rebase(TTY_POINTER);
+            t.w32(p, obj);
+            let o = t.rebase(TTY_ONCE);
+            let w = rng.next() & !1;
+            t.w32(o, w | once);
+            let o = t.rebase(TTY_OBJECT_ONCE);
+            let w = rng.next() & !1;
+            t.w32(o, w | made);
+            let format = t.random(&mut rng, 8);
+            let (level, v1, v2) = (rng.below(5), rng.next(), rng.next());
+            let args = [level, format, v1, v2];
+            let block: Vec<u8> = args.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let block = t.alloc(&block);
+            t.w32(log, 0);
+            t.check(
+                &format!("PhyrePrintf round {round}"),
+                0x0043_52f0,
+                Conv::Cdecl,
+                &args,
+                ALL,
+                |g| {
+                    let buf = g.scratch();
+                    m::bridge::phyre_printf(g, level, format, block + 8, buf)
+                },
+            );
+        }
+        t.unstub_all();
+    }
+}
+
+#[test]
+fn destructors_match_the_original() {
+    use ffx_pother_a::p3_misc3::{self as m};
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0d70_5003);
+        t.stub(FREE, cdecl(1, 0x7501));
+        t.stub(m::SCRIPT_RELEASE_5D5450, cdecl(1, 0x7502));
+        t.stub(m::SCRIPTABLE_DTOR, method(0, 0x7503));
+        t.stub(m::SCRIPTABLE_CTOR, method(1, 0x7504));
+        t.stub(m::RELEASE_TAGGED_WORDS, cdecl(2, 0x7505));
+        t.stub(m::FREE_LIST_DEALLOCATE, method(1, 0x7506));
+        t.stub(m::FREE_LIST_RESET, method(0, 0x7507));
+        t.stub(m::DRAIN_AND_CLEAR, method(0, 0x7508));
+        t.stub(m::FREE_PAIR_ARRAY, cdecl(2, 0x7509));
+        for round in 0..12u32 {
+            // the timer component: a handle owned or not, deleting or not
+            let p = t.random(&mut rng, 0x40);
+            let handle = if round & 1 == 0 { 0 } else { rng.next() };
+            t.w32(p + 0x1c, handle);
+            t.write(
+                p + 0x28,
+                &[if round & 2 == 0 {
+                    0
+                } else {
+                    1 + rng.below(255) as u8
+                }],
+            );
+            let flags = (rng.next() & !1) | ((round >> 2) & 1);
+            t.check(
+                &format!("timer delete round {round}"),
+                0x0055_53e0,
+                Conv::Thiscall(p),
+                &[flags],
+                ALL,
+                |g| m::bridge::timer_component_delete(g, p, flags),
+            );
+            // the timer component's create callback
+            let p = if round & 1 == 0 {
+                0
+            } else {
+                t.random(&mut rng, 0x40)
+            };
+            t.check(
+                &format!("timer create round {round}"),
+                0x0055_5bc0,
+                Conv::Stdcall,
+                &[p],
+                AL,
+                |g| u32::from(m::bridge::timer_component_create(g, p)),
+            );
+            // the spline's destructor
+            let p = t.random(&mut rng, 0x40);
+            t.check(
+                &format!("spline dtor round {round}"),
+                0x0054_72c0,
+                Conv::Thiscall(p),
+                &[],
+                ALL,
+                |g| m::bridge::spline_dtor(g, p),
+            );
+            // a script's arrays: tagged words, owned or not
+            let p = t.random(&mut rng, 0x40);
+            if round & 1 == 0 {
+                let w = rng.next() & 0x7fff_ffff;
+                t.w32(p, w);
+            }
+            if round & 2 == 0 {
+                let w = rng.next() & 0x7fff_ffff;
+                t.w32(p + 8, w);
+            }
+            if round & 4 == 0 {
+                t.w32(p + 4, 0);
+            }
+            t.check(
+                &format!("script release round {round}"),
+                0x005d_4770,
+                Conv::Thiscall(p),
+                &[],
+                ALL,
+                |g| m::bridge::script_release(g, p),
+            );
+            // the scheduler: two lists of 0..3 nodes, arrays owned or not
+            let s = t.random(&mut rng, 0x60);
+            for head in [0x24, 0x1c] {
+                let mut next = 0;
+                for _ in 0..rng.below(4) {
+                    let n = t.random(&mut rng, 0x20);
+                    t.w32(n, next);
+                    next = n;
+                }
+                t.w32(s + head, next);
+            }
+            for (k, (count, data)) in [(0x34, 0x38), (0x28, 0x2c)].into_iter().enumerate() {
+                let state = (round + 3 * k as u32) % 6;
+                let n = match state % 3 {
+                    0 => 0,
+                    1 => rng.next() | 0x8000_0000,
+                    _ => rng.next() & 0x7fff_ffff,
+                };
+                t.w32(s + count, n);
+                if state >= 3 {
+                    t.w32(s + data, 0);
+                }
+            }
+            let log = t.log;
+            t.w32(log, 0);
+            t.check(
+                &format!("scheduler clear round {round}"),
+                0x005d_18f0,
+                Conv::Thiscall(s),
+                &[],
+                0,
+                |g| {
+                    m::bridge::scheduler_clear(g, s);
+                    0
+                },
+            );
+        }
+        t.unstub_all();
+    }
+}
+
+#[test]
+fn member_step_matches_the_original() {
+    use ffx_pother_a::p3_misc3::{self as m};
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0047_ed80);
+        for round in 0..56u32 {
+            // rounds 48..: no nested view on a member not skipped
+            let late = round >= 48;
+            let skip_bit = if late { 0 } else { (round & 1) << 1 };
+            let flags = (rng.next() & !0x42) | skip_bit | (((round >> 1) & 1) << 6);
+            let kind = if late {
+                3
+            } else if (round >> 2) & 1 == 0 {
+                2
+            } else {
+                rng.below(4)
+            };
+            let answer = if (round >> 3) & 1 == 0 {
+                1
+            } else {
+                rng.below(3)
+            };
+            let obj = if round % 7 == 6 {
+                0
+            } else {
+                let o = t.vobj(0x7600, &[(0, 0), (0, 0), (0, 0), (0, 0), (1, answer)]);
+                t.w32(o + 0x30, kind);
+                o
+            };
+            let view = t.vobj(0x7610, &[(0, 0), (0, obj)]);
+            let extra = rng.next();
+            t.w32(view + 0x24, extra);
+            let dm = t.random(&mut rng, 0x20);
+            let a = t.random(&mut rng, 0x90);
+            let d = t.random(&mut rng, 0x10);
+            t.w32(d + 4, dm);
+            t.w32(d + 8, a);
+            let member = t.random(&mut rng, 0x20);
+            t.w32(member + 0x10, flags);
+            let c = t.random(&mut rng, 0x20);
+            let q = if round % 5 == 4 {
+                0
+            } else {
+                t.random(&mut rng, 0x90)
+            };
+            let nested = if late {
+                0
+            } else {
+                let n = t.random(&mut rng, 0x10);
+                t.w32(n + 4, c);
+                t.w32(n + 8, q);
+                n
+            };
+            let this = t.random(&mut rng, 0x20);
+            t.w32(this, d);
+            t.w32(this + 4, member);
+            t.w32(this + 8, view);
+            t.w32(this + 0x14, nested);
+            let offset = t.random(&mut rng, 4);
+            let base = rng.next();
+            let log = t.log;
+            t.w32(log, 0);
+            t.check(
+                &format!("member step round {round}"),
+                0x0047_ed80,
+                Conv::Thiscall(this),
+                &[base, offset],
+                ALL,
+                |g| m::bridge::member_step(g, this, base, offset),
+            );
+        }
+    }
+}
+
+#[test]
+fn red_black_insert_fixup_matches_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0057_4980);
+        for case in 0..160u32 {
+            let tree = t.zeros(0x20);
+            let n = 1 + (case % 24) as usize;
+            let nodes = build_tree(&mut t, &mut rng, tree, n);
+            // the root black, as in every tree the game builds (its
+            // parent's other child is no node)
+            let root = t.r32(tree + 0xc);
+            let w = t.r32(root + 8);
+            t.w32(root + 8, w & !1);
+            // the new node: red, anywhere (a leaf in most cases)
+            let k = rng.below(n as u32) as usize;
+            let x = nodes[k];
+            let w = t.r32(x + 8);
+            t.w32(x + 8, w | 1);
+            t.check(
+                &format!("insert fixup {case}"),
+                0x0057_4980,
+                Conv::Thiscall(tree),
+                &[x],
+                ALL,
+                |g| tree::bridge::post_insert_finalize(g, tree, x),
+            );
+        }
+    }
+}
+
+#[test]
+fn find_member_matches_the_original() {
+    use ffx_pother_a::p3_misc3::{self as m};
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0047_d3e0);
+        let log = t.log;
+        t.stub(m::NESTED_CONTEXT, cdecl(0, 0x7801));
+        for case in 0..200u32 {
+            // the members' slot 15: logs the visitor's words, then sets
+            // its found object and result
+            let found_obj = rng.next();
+            let result = if case % 3 == 0 { 0 } else { rng.next() | 1 };
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes()); // mov eax, [log]
+            c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+            c.extend([0xc7, 0x00]);
+            c.extend(0x7802u32.to_le_bytes()); // mov [eax], tag
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+            c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x08]); // object -> [eax+8]
+            c.extend([0x8b, 0x4c, 0x24, 0x08]); // mov ecx, [esp+8]
+            for (k, w) in [0u8, 1, 2, 3, 5].into_iter().enumerate() {
+                c.extend([0x8b, 0x51, 4 * w, 0x89, 0x50, 0x0c + 4 * k as u8]);
+            }
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes()); // inc dword [log]
+            // (no answer at all in some cases: the visitor's words stay)
+            if case % 6 != 3 {
+                c.extend([0xc7, 0x41, 0x18]);
+                c.extend(found_obj.to_le_bytes()); // mov [ecx+0x18], found
+                c.extend([0xc7, 0x41, 0x1c]);
+                c.extend(result.to_le_bytes()); // mov [ecx+0x1c], result
+            }
+            c.extend([0xb8, 0x03, 0x78, 0, 0, 0xc2, 0x08, 0x00]); // mov eax, 0x7803; ret 8
+            let slot15 = t.code(&c);
+            let mut vt = vec![0u8; 0x40];
+            vt[0x3c..].copy_from_slice(&slot15.to_le_bytes());
+            let vt = t.alloc(&vt);
+            let members = t.random(&mut rng, 0x20);
+            t.w32(members, vt);
+            // the views: 1..3, the found one last
+            let offset = rng.next() % 0x100;
+            let nested = case % 5 == 4;
+            let n = 1 + rng.below(3);
+            let mut next = 0;
+            let mut head_cls = 0;
+            for i in 0..n {
+                let v = t.random(&mut rng, 0x10);
+                let cls = t.random(&mut rng, 0x20);
+                let start = rng.next() % 0x40;
+                let end = if i == n - 1 && nested {
+                    start + offset - rng.below(offset.max(1))
+                } else {
+                    start + offset + 1 + rng.below(0x40)
+                };
+                t.w32(cls + 0x18, start);
+                t.w32(cls + 4, end | (rng.next() & 0xf000_0000));
+                t.w32(v, next);
+                // views passed over: no class or no members
+                let skip = i + 1 < n && rng.below(4) == 0;
+                let no_class = rng.below(2) == 0;
+                t.w32(v + 4, if skip && no_class { 0 } else { cls });
+                t.w32(v + 8, if skip && !no_class { 0 } else { members });
+                head_cls = cls;
+                next = v;
+            }
+            let view = next;
+            // the member found (or none) and its nested walk
+            let member = t.random(&mut rng, 0x20);
+            let target = if case % 11 == 7 {
+                0
+            } else {
+                t.random(&mut rng, 0x20)
+            };
+            t.w32(member + 8, target);
+            if rng.below(2) == 0 {
+                t.w32(member + 0x18, 0);
+            } else if target != 0 && rng.below(2) == 0 {
+                let w = t.r32(member + 0x10);
+                t.w32(target + 0x18, w);
+            }
+            let elements = t.random(&mut rng, 0x20);
+            t.w32(elements + 0x14, rng.below(4));
+            t.w32(member + 4, elements);
+            let sub = if case % 7 == 3 {
+                0
+            } else {
+                t.random(&mut rng, 0x10)
+            };
+            t.w32(member + 0x14, sub);
+            if sub != 0 {
+                t.w32(sub, 0);
+                let sub_range = t.random(&mut rng, 0x20);
+                t.w32(sub + 4, sub_range);
+                // the recursion: no members (0) or a nested class view
+                // whose range the offset leaves at once
+                let sub_class = if rng.below(2) == 0 {
+                    0
+                } else {
+                    t.random(&mut rng, 0x20)
+                };
+                t.w32(sub + 8, sub_class);
+                if sub_class != 0 {
+                    t.w32(sub_class, vt);
+                    t.w32(sub_range + 0x18, 0x7000_0000);
+                    t.w32(sub_range + 4, 0x10);
+                }
+                if sub_class == 0 && rng.below(2) == 0 {
+                    // the nested class at the member's own offset
+                    let base = t.r32(head_cls + 0x14).wrapping_add(offset);
+                    let inner = t.r32(sub_range + 0x18);
+                    t.w32(elements + 8, base.wrapping_sub(inner));
+                }
+            }
+            let find = if case % 4 == 0 { 0 } else { member };
+            t.stub(m::FIND_BY_OFFSET, method(1, find));
+            // the member step (thiscall `(member, object, &offset)`, `ret 8`):
+            // logs the offset by value (its address is the original's own
+            // argument slot, the port's frame), moves it by 0x10
+            let step = if case % 6 == 5 { 0 } else { rng.next() | 1 };
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes()); // mov eax, [log]
+            c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+            c.extend([0xc7, 0x00]);
+            c.extend(0x7804u32.to_le_bytes()); // mov [eax], tag
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+            c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x08]); // object -> [eax+8]
+            c.extend([0x8b, 0x4c, 0x24, 0x08]); // mov ecx, [esp+8]
+            c.extend([0x8b, 0x11, 0x89, 0x50, 0x0c]); // [ecx] -> [eax+0xc]
+            c.extend([0x83, 0x01, 0x10]); // add dword [ecx], 0x10
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes()); // inc dword [log]
+            c.push(0xb8);
+            c.extend(step.to_le_bytes()); // mov eax, step
+            c.extend([0xc2, 0x08, 0x00]); // ret 8
+            let s = t.code(&c);
+            t.jump(m::MEMBER_STEP, s);
+            let inherits = [0, rng.next() | 1, 0x100][rng.below(3) as usize];
+            t.stub(m::INHERITS_FROM, method(1, inherits));
+            let object = t.random(&mut rng, 4);
+            let (this, class) = (rng.next(), rng.next());
+            t.w32(log, 0);
+            t.check(
+                &format!("find member {case}"),
+                m::FIND_MEMBER,
+                Conv::Thiscall(this),
+                &[view, object, offset, class],
+                ALL,
+                |g| {
+                    let f = g.scratch();
+                    m::bridge::find_member(g, this, view, object, offset, class, f)
+                },
+            );
         }
         t.unstub_all();
     }

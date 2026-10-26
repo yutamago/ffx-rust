@@ -447,3 +447,119 @@ pub mod bridge4 {
         }
     }
 }
+
+/// `PInputDeviceMouse`'s vtable.
+pub const MOUSE_VTABLE: u32 = 0x00b3_fc14;
+/// `__ehvec_ctor` (stdcall `(p, size, n, ctor, dtor)`).
+pub const EHVEC_CTOR: u32 = 0x0094_966a;
+/// The mouse's mapping constructor and destructor `__ehvec_ctor` gets.
+pub const MOUSE_MAPPING_CTOR: u32 = 0x0062_0540;
+/// See [`MOUSE_MAPPING_CTOR`].
+pub const MOUSE_MAPPING_DTOR: u32 = 0x0062_1190;
+
+pub mod bridge5 {
+    //! The originals over game memory.
+
+    use super::{
+        Conv, DEVICE_LIST, DEVICE_VTABLE, EHVEC_CTOR, Host, MOUSE_MAPPING_CTOR, MOUSE_MAPPING_DTOR,
+        MOUSE_VTABLE,
+    };
+
+    /// `PInputDeviceMouse::PInputDeviceMouse(dev, state)` (`0x006200d0`,
+    /// `ret 4`) -> `dev`: the `PInputDevice` base (empty lists at `+4`
+    /// and `+0xc`, the state at `+0x14`, linked at the tail of
+    /// `g_PInputDeviceList`), the mouse vtable, five 0x30-byte mappings
+    /// at `+0x18` (`__ehvec_ctor`), then `+0x108..0x11a` cleared.
+    pub fn mouse_ctor(h: &mut impl Host, dev: u32, state: u32) -> u32 {
+        let link = dev + 4;
+        let maps = dev + 0xc;
+        h.write(link, link);
+        h.write(link + 4, link);
+        h.write(dev, h.rebase(DEVICE_VTABLE));
+        h.write(maps, maps);
+        h.write(maps + 4, maps);
+        h.write(dev + 0x14, state);
+        let head = h.rebase(DEVICE_LIST);
+        let last: u32 = h.read(head + 4);
+        h.write(link, head);
+        h.write(link + 4, last);
+        h.write(last, link);
+        h.write(head + 4, link);
+        h.write(dev, h.rebase(MOUSE_VTABLE));
+        let ctor = h.rebase(MOUSE_MAPPING_CTOR);
+        let dtor = h.rebase(MOUSE_MAPPING_DTOR);
+        h.call_sym(
+            EHVEC_CTOR,
+            Conv::Stdcall,
+            &[dev + 0x18, 0x30, 5, ctor, dtor],
+        );
+        h.write(dev + 0x108, 0u8);
+        h.write(dev + 0x10c, 0u32);
+        h.write(dev + 0x110, 0u32);
+        h.write(dev + 0x114, 0u32);
+        h.write(dev + 0x118, 0u16);
+        h.write(dev + 0x11a, 0u8);
+        dev
+    }
+}
+
+/// `g_PhyreKeyToDik`: the scan code (`DIK_*`) of each Phyre key, 0 for
+/// none (256 bytes read).
+pub const KEY_TO_DIK: u32 = 0x00c3_0e90;
+/// `PInputDevice_updateMappings` (thiscall `(dev)`).
+pub const UPDATE_MAPPINGS: u32 = 0x0062_d550;
+/// What the device's `Acquire` returns while it has to be retried
+/// (`0x8007001e`).
+pub const E_ACCESS_DENIED: u32 = 0x8007_001e;
+
+pub mod bridge6 {
+    //! The originals over game memory.
+
+    use super::{Conv, E_ACCESS_DENIED, G_APPLICATION, Host, KEY_TO_DIK, MEMSET, UPDATE_MAPPINGS};
+
+    /// `Keyboard_Update(kb)` (`0x0062d5c0`, thiscall, slot 5 of
+    /// `PInputDeviceKeyboard`'s vtable): with a device (`+0x14`), its
+    /// state (`IDirectInputDevice8::GetDeviceState(256, buf)`, vtable
+    /// `+0x24`) into the frame's buffer at `ebp - 0x104` (cleared first).
+    /// On success each Phyre key `i`'s byte `+0x218 + i` is 1 when its
+    /// scan code ([`KEY_TO_DIK`]) is non-zero and down (bit 7), then
+    /// `PInputDevice_updateMappings`. On failure the three key arrays are
+    /// cleared (unless the application is suspended, `+0x2c`) and
+    /// `Acquire` (vtable `+0x1c`) is retried while it returns
+    /// [`E_ACCESS_DENIED`].
+    pub fn keyboard_update(h: &mut impl Host, ebp: u32, kb: u32) {
+        let dev: u32 = h.read(kb + 0x14);
+        if dev == 0 {
+            return;
+        }
+        let buf = ebp - 0x104;
+        h.call_sym(MEMSET, Conv::Cdecl, &[buf, 0, 0x100]);
+        let vt: u32 = h.read(dev);
+        let get_state: u32 = h.read(vt + 0x24);
+        let hr = h.call(get_state, Conv::Stdcall, &[dev, 0x100, buf]);
+        if (hr as i32) < 0 {
+            let app: u32 = h.read(h.rebase(G_APPLICATION));
+            if app != 0 && h.read::<u32>(app + 0x2c) == 0 {
+                for at in [0x218, 0x18, 0x118] {
+                    h.call_sym(MEMSET, Conv::Cdecl, &[kb + at, 0, 0x100]);
+                }
+            }
+            loop {
+                let vt: u32 = h.read(dev);
+                let acquire: u32 = h.read(vt + 0x1c);
+                if h.call(acquire, Conv::Stdcall, &[dev]) != E_ACCESS_DENIED {
+                    return;
+                }
+            }
+        }
+        let table = h.rebase(KEY_TO_DIK);
+        for i in 0..0x100 {
+            h.write(kb + 0x218 + i, 0u8);
+            let dik: u8 = h.read(table + i);
+            if dik != 0 && h.read::<u8>(buf + u32::from(dik)) & 0x80 != 0 {
+                h.write(kb + 0x218 + i, 1u8);
+            }
+        }
+        h.call_sym(UPDATE_MAPPINGS, Conv::Thiscall(kb), &[]);
+    }
+}

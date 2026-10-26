@@ -8,7 +8,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_prender::{
     basic, class_slots as descriptor, h1_array_type, h1_bind, h1_camera, h1_small, h1_small2,
-    h1_small3, h1_small4, registry, texture,
+    h1_small3, h1_small4, h1_small5, registry, texture,
 };
 
 ported! {
@@ -2165,5 +2165,35 @@ ported! {
     /// `0x0045cd60(buffer)` -> 0, 0x12 or 0x15: the buffer's resources registered.
     PAssetReference_registerResources_0045cd60 @ 0x0045_cd60 => extern "C" fn h1_0045cd60(buffer: u32) -> u32 {
         h1_small4::bridge::register_resources(&mut mem(), buffer)
+    }
+    // the list's last ones (p3-other-a continuation d)
+    /// `0x00498d20(mesh, ctx, _, &result, &info, segment, a, streams, b)` -> 0 or
+    /// the stream check's result (`PDynamicMesh` slot 2): the stream pointer array
+    /// (the original's `_alloca`) in this frame up to 64 streams, else on the heap.
+    Phyre_PGeometry_PDynamicMesh_bindStreams_00498d20 @ 0x0049_8d20 => extern "thiscall" fn h1_00498d20(this: u32, ctx: u32, _unused: u32, result: u32, info: u32, segment: u32, a: u32, streams: u32, b: u32) -> u32 {
+        let mut m = mem();
+        let n = h1_small5::bridge::stream_count(&m, streams) as usize;
+        if n <= 64 {
+            let mut f = StackFrame::<64>::new();
+            h1_small5::bridge::bind_streams(&mut m, this, ctx, result, info, segment, a, streams, b, f.at())
+        } else {
+            let mut v = vec![0u32; n];
+            let at = u32::try_from(v.as_mut_ptr().expose_provenance()).unwrap_or(0);
+            let r = h1_small5::bridge::bind_streams(&mut m, this, ctx, result, info, segment, a, streams, b, at);
+            std::hint::black_box(&mut v);
+            r
+        }
+    }
+    /// `0x00498a30(mesh, finder, segment, views, out)` -> the number of runs.
+    Phyre_PGeometry_PDynamicMesh_groupSegment_00498a30 @ 0x0049_8a30 => extern "thiscall" fn h1_00498a30(this: u32, finder: u32, segment: u32, views: u32, out: u32) -> u32 {
+        h1_small5::bridge::group_segment(&mut mem(), this, finder, segment, views, out)
+    }
+    /// `0x004c1050()` -> 0, 0x11 or 0x12: the texture formats registered.
+    PTextureFormatDesc_registerAll_004c1050 @ 0x004c_1050 => extern "C" fn h1_004c1050() -> u32 {
+        h1_small5::formats::register_all(&mut mem())
+    }
+    /// `PParameterBuffer::VisitChildren(buffer, visitor)` -> the offset table or the parameters' bytes.
+    Phyre_PRendering_PParameterBuffer_VisitChildren @ 0x004d_6c00 => extern "C" fn h1_004d6c00(buffer: u32, visitor: u32) -> u32 {
+        h1_small5::visit::visit_children(&mut mem(), buffer, visitor)
     }
 }
