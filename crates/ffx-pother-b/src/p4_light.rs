@@ -531,3 +531,83 @@ pub mod bridge5 {
         h.call_sym(TO_WORLD_3X4, Conv::Thiscall(node), &[m])
     }
 }
+
+/// `PMatrix4_Identity_00451bb0` (cdecl `(out)`).
+pub const IDENTITY: u32 = 0x0045_1bb0;
+/// `PMatrix4_lookAt` (thiscall `(m, eye, target, up)`, `ret 0xc`).
+pub const LOOK_AT: u32 = 0x0045_1c30;
+/// `Matrix_RotationX` (cdecl `(out, angle)`).
+pub const ROTATION_X: u32 = 0x0066_c8a0;
+/// `Phyre_CharacterLighting_applyRotation` (thiscall `(cl, i)`, `ret 4`).
+pub const APPLY_ROTATION: u32 = 0x006a_7280;
+
+pub mod bridge6 {
+    //! The originals over game memory.
+
+    use super::{
+        APPLY_ROTATION, COLOR_LIGHT_TYPE, Conv, Host, IDENTITY, LOOK_AT, ONE, ROTATION_X,
+        TO_WORLD_3X4, x87,
+    };
+    use crate::methods::quiet;
+
+    /// `CharacterLighting::setLightDir(cl, i, x, y, z)` (`0x006aa9f0`,
+    /// `ret 0x10`) -> `applyRotation`'s `eax`. On an initialised manager,
+    /// for light `i` other than 3, the direction `(-x, -y, z)` goes to
+    /// `cl + 0xf4 + 0x10 i`. A colour light (type `0x00c10828`) also gets
+    /// its node turned to it: a look-at matrix (`ebp - 0x70`, from the
+    /// identity) from the origin (`ebp - 0x10`) to the direction (`ebp -
+    /// 0x30`) with up `(0, 1, 0)` (`ebp - 0x20`), or `(0, 0, 1)` when the
+    /// direction's y (`x * 0 + y + z * 0` in the x87's order) is not below
+    /// 0.9 (then also a rotation by 1.57 at `ebp - 0xb0`, which nothing
+    /// reads); then `PMatrix4_toWorldMatrix3x4(node, m)` and
+    /// `applyRotation(i)`. Returns 0 where the original's `eax` is
+    /// whatever it was (no caller reads it).
+    pub fn set_light_dir(h: &mut impl Host, ebp: u32, cl: u32, i: u32, xyz: [u32; 3]) -> u32 {
+        if h.read::<u8>(cl + 0x1cc) == 0 || i == 3 {
+            return 0;
+        }
+        let [x, y, z] = xyz;
+        let set: u32 = h.read(cl + 0xf0);
+        let lights: u32 = h.read(set + 4);
+        let ny = x87::store(x87::mul(x87::load(y), -1.0));
+        let l: u32 = h.read(lights.wrapping_add(i.wrapping_mul(4)));
+        let nx = x87::store(x87::mul(-1.0, x87::load(x)));
+        let z = quiet(z);
+        let at = cl.wrapping_add(i.wrapping_mul(0x10));
+        h.write(at.wrapping_add(0xf4), nx);
+        h.write(at.wrapping_add(0xf8), ny);
+        h.write(at.wrapping_add(0xfc), z);
+        if h.read::<u32>(l + 0x18) != h.rebase(COLOR_LIGHT_TYPE) {
+            return 0;
+        }
+        let (m, eye, target, up) = (ebp - 0x70, ebp - 0x10, ebp - 0x30, ebp - 0x20);
+        h.write(up, 0u32);
+        h.write(up + 4, ONE);
+        h.write(up + 8, 0u32);
+        h.write(target, nx);
+        h.write(target + 4, ny);
+        h.write(target + 8, z);
+        h.call_sym(IDENTITY, Conv::Cdecl, &[m]);
+        let t = x87::store(x87::mul(x87::load(nx), 0.0));
+        let t = x87::store(x87::add(x87::load(t), x87::load(ny)));
+        let d = x87::store(x87::add(x87::mul(0.0, x87::load(z)), x87::load(t)));
+        // fcomp: below 0.9f (as a double) keeps the y-up basis; not below
+        // or unordered takes z up
+        let z_up = x87::load(d).partial_cmp(&f64::from(0.9f32)) != Some(std::cmp::Ordering::Less);
+        if z_up {
+            h.write(up, 0u32);
+            h.write(up + 4, 0u32);
+            h.write(up + 8, ONE);
+        }
+        for k in 0..3 {
+            h.write(eye + 4 * k, 0u32);
+        }
+        h.call_sym(LOOK_AT, Conv::Thiscall(m), &[eye, target, up]);
+        if z_up {
+            h.call_sym(ROTATION_X, Conv::Cdecl, &[ebp - 0xb0, 0x3fc8_f5c3]);
+        }
+        let node: u32 = h.read(l + 0x10);
+        h.call_sym(TO_WORLD_3X4, Conv::Thiscall(node), &[m]);
+        h.call_sym(APPLY_ROTATION, Conv::Thiscall(cl), &[i])
+    }
+}

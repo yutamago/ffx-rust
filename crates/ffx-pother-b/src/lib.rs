@@ -39,6 +39,8 @@ pub mod p4_input;
 pub mod p4_light;
 pub mod p4_mesh;
 pub mod p4_morph;
+pub mod p4_ps2light;
+pub mod p4_tree;
 pub mod physics;
 pub mod small;
 

@@ -167,3 +167,81 @@ pub mod bridge {
         0
     }
 }
+
+/// `Phyre_PhyreMalloc_0042fb80` (cdecl `(size, align)`).
+pub const PHYRE_MALLOC: u32 = 0x0042_fb80;
+
+pub mod bridge2 {
+    //! The originals over game memory.
+
+    use super::{COUNT, Conv, G_CLOTH_ENTRIES, Host, PHYRE_MALLOC};
+    use crate::PHYRE_FREE;
+
+    /// `ClothInstancing::terminate(cloth, x)` (`0x006e2e40`, thiscall, `ret
+    /// 4`; `x` unused, Ghidra shows a fastcall of one):
+    /// queues the cloth's objects for release ([`super::bridge::
+    /// release_expired`]): the entry `{[cloth], [cloth + 0x10], [cloth +
+    /// 8], countdown 4}` goes into the first free entry (a negative
+    /// countdown), else at the end of a table one entry longer
+    /// (`Phyre_PhyreMalloc(16 (n + 1), 4)`; the old one copied, and freed
+    /// when owned). Nothing changes when that allocation fails.
+    pub fn terminate(h: &mut impl Host, cloth: u32) {
+        let g = h.rebase(G_CLOTH_ENTRIES);
+        let n = h.read::<u32>(g) & COUNT;
+        let mut free = None;
+        if n != 0 {
+            let base: u32 = h.read(g + 4);
+            for i in 0..n {
+                let e = base.wrapping_add(16 * i);
+                if h.read::<i32>(e + 0xc) < 0 {
+                    free = Some(e);
+                    break;
+                }
+            }
+        }
+        let entry = [
+            h.read::<u32>(cloth),
+            h.read::<u32>(cloth + 0x10),
+            h.read::<u32>(cloth + 8),
+            4,
+        ];
+        if let Some(e) = free {
+            for (k, w) in entry.into_iter().enumerate() {
+                h.write(e + 4 * k as u32, w);
+            }
+            return;
+        }
+        let size = ((h.read::<u32>(g) & COUNT) + 1) << 4;
+        let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[size, 4]);
+        if p == 0 {
+            return;
+        }
+        let n = h.read::<u32>(g) & COUNT;
+        let mut src: u32 = h.read(g + 4);
+        let mut dst = p;
+        for _ in 0..n {
+            let d = dst;
+            dst = dst.wrapping_add(16);
+            // the copy skips (without moving on) a null destination
+            if d != 0 {
+                for k in 0..4 {
+                    let w: u32 = h.read(src + 4 * k);
+                    h.write(d + 4 * k, w);
+                }
+                src = src.wrapping_add(16);
+            }
+        }
+        let last = p.wrapping_add(n << 4);
+        if last != 0 {
+            for (k, w) in entry.into_iter().enumerate() {
+                h.write(last + 4 * k as u32, w);
+            }
+        }
+        let old: u32 = h.read(g + 4);
+        if old != p && h.read::<u32>(g) >> 31 == 0 && old != 0 {
+            h.call_sym(PHYRE_FREE, Conv::Cdecl, &[old]);
+        }
+        h.write(g + 4, p);
+        h.write(g, n + 1);
+    }
+}

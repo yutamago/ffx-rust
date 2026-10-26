@@ -9,7 +9,7 @@
 use super::{mem, ported};
 use ffx_pother_b::{
     methods, object, p4_bind, p4_cloth, p4_fog, p4_frames, p4_input, p4_light, p4_mesh, p4_morph,
-    physics, small,
+    p4_ps2light, p4_tree, physics, small,
 };
 
 ported! {
@@ -907,11 +907,11 @@ ported! {
     // ---- p4-other-b c2 batch 1 ----
     /// `DynamicMesh_setStreams(mesh, a, b, c)` -> the stream table.
     DynamicMesh_setStreams_00676680 @ 0x0067_6680 => extern "thiscall" fn set_streams_676680(mesh: u32, a: u32, b: u32, c: u32) -> u32 {
-        p4_mesh::bridge::set_streams(&mut mem(), mesh, a, b, c)
+        p4_mesh::bridge::set_streams(&mut mem(), mesh, Some(a), b, c)
     }
     /// `DynamicMesh_setStreams(mesh, a, b, c)` -> the stream table.
     DynamicMesh_setStreams_00677ce0 @ 0x0067_7ce0 => extern "thiscall" fn set_streams_677ce0(mesh: u32, a: u32, b: u32, c: u32) -> u32 {
-        p4_mesh::bridge::set_streams(&mut mem(), mesh, a, b, c)
+        p4_mesh::bridge::set_streams(&mut mem(), mesh, Some(a), b, c)
     }
     /// `DistortionGridDynamicMeshInstance_create(cluster, &mesh)` -> the instance or 0.
     DistortionGridDynamicMeshInstance_create_00673e20 @ 0x0067_3e20 => extern "thiscall" fn distortion_create(cluster: u32, p: u32) -> u32 {
@@ -971,5 +971,70 @@ ported! {
     /// `PInputDeviceMouse::PInputDeviceMouse(dev, state)` -> `dev`.
     PInputDeviceMouse_ctor @ 0x0062_00d0 => extern "thiscall" fn mouse_ctor(dev: u32, state: u32) -> u32 {
         p4_input::bridge5::mouse_ctor(&mut mem(), dev, state)
+    }
+    // ---- p4-other-b c2 batch 2 ----
+    /// `PClassCallableMethodScript::Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PScripting_PClassCallableMethodScript_Bind @ 0x0061_95a0 => extern "C" fn callable_method_script_bind() -> u32 {
+        p4_bind::bridge::bind(&mut mem(), &p4_bind::CALLABLE_METHOD_SCRIPT)
+    }
+    /// `Str_Utf8ToWide(src, dst, end)` -> units written (negative on a bad code point).
+    Str_Utf8ToWide @ 0x0060_7c40 => extern "C" fn utf8_to_wide(src: u32, dst: u32, end: u32) -> u32 {
+        let mut cursor = super::StackFrame::<1>::new();
+        p4_frames::bridge2::utf8_to_wide(&mut mem(), cursor.at(), src, dst, end)
+    }
+    /// `Keyboard_Update(kb)` (slot 5 of the keyboard's vtable).
+    Keyboard_Update @ 0x0062_d5c0 => extern "thiscall" fn keyboard_update(kb: u32) {
+        // ebp - 0x104 .. ebp: the device state, then the cookie's word
+        let mut frame = super::StackFrame::<0x41>::new();
+        let ebp = frame.at() + 0x104;
+        p4_input::bridge6::keyboard_update(&mut mem(), ebp, kb);
+    }
+    /// `ClothInstancing::terminate(cloth, unused)` (`ret 4`).
+    Phyre_ClothInstancing_terminate @ 0x006e_2e40 => extern "thiscall" fn cloth_terminate(cloth: u32, _unused: u32) {
+        p4_cloth::bridge2::terminate(&mut mem(), cloth);
+    }
+    /// `StringTree_insert(tree, node)` -> 0 or the node with the same key.
+    StringTree_insert_0064c0a0 @ 0x0064_c0a0 => extern "thiscall" fn string_tree_insert(tree: u32, node: u32) -> u32 {
+        p4_tree::bridge::insert(&mut mem(), tree, node)
+    }
+    /// `CharacterLighting::setLightDir(cl, i, x, y, z)` -> `applyRotation`'s `eax`.
+    Phyre_CharacterLighting_setLightDir @ 0x006a_a9f0 => extern "thiscall" fn set_light_dir(cl: u32, i: u32, x: u32, y: u32, z: u32) -> u32 {
+        // ebp - 0xb0 .. ebp: the unused rotation, the look-at matrix, the
+        // direction, the up vector, the origin
+        let mut frame = super::StackFrame::<0x2c>::new();
+        let ebp = frame.at() + 0xb0;
+        p4_light::bridge6::set_light_dir(&mut mem(), ebp, cl, i, [x, y, z])
+    }
+    /// `DynamicMesh_setStreams(mesh, b, c)` (no `+0x1c`) -> the stream table.
+    DynamicMesh_setStreams_00674740 @ 0x0067_4740 => extern "thiscall" fn set_streams_674740(mesh: u32, b: u32, c: u32) -> u32 {
+        p4_mesh::bridge::set_streams(&mut mem(), mesh, None, b, c)
+    }
+    /// `DynamicMesh_setStreams4(mesh, src)` -> the stream table.
+    DynamicMesh_setStreams4_00673030 @ 0x0067_3030 => extern "thiscall" fn set_streams4(mesh: u32, src: u32) -> u32 {
+        p4_mesh::bridge::set_streams4(&mut mem(), mesh, src)
+    }
+    /// `PS2LightingSetup_apply(mesh)` -> 1 or 0; leaves the slot index in
+    /// its argument's slot, as the original does.
+    PS2LightingSetup_apply_006e5a40 @ 0x006e_5a40 => extern "C" fn ps2_lighting_apply(mesh: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, slot) = p4_ps2light::bridge::apply(&mut m, mesh);
+        ffx_bridge::Mem::write(&mut m, slots, slot);
+        r
+    }
+    /// `PS2LightingSetup::registerWithPointLightEffect(mesh, m1, m2, f1, m3, m4, f2, v1, v2, key)`.
+    Phyre_PS2LightingSetup_registerWithPointLightEffect @ 0x006e_5c90 => extern "C" fn ps2_lighting_register(mesh: u32, m1: u32, m2: u32, f1: u32, m3: u32, m4: u32, f2: u32, v1: u32, v2: u32, key: u32) -> u32 {
+        // ebp - 0x14 .. ebp: the draw event (4 words), the cookie
+        let mut frame = super::StackFrame::<5>::new();
+        let ebp = frame.at() + 0x14;
+        let s = p4_ps2light::bridge::Setup { m1, m2, f1, m3, m4, f2, v1, v2 };
+        p4_ps2light::bridge::register(&mut mem(), ebp, mesh, &s, key)
+    }
+    /// `MenuDynamicGeometry_create(owner, kind)` -> the geometry in
+    /// `edx:eax`; leaves `operator_new`'s result in the `kind` slot.
+    MenuDynamicGeometry_create_00681970 @ 0x0068_1970 => extern "stdcall" fn menu_geometry_create(owner: u32, kind: u32; slots: u32) -> u64 {
+        let mut m = mem();
+        let (r, word) = p4_mesh::bridge2::create(&mut m, owner, kind);
+        ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4), word);
+        r
     }
 }

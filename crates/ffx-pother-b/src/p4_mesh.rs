@@ -35,8 +35,10 @@ pub const MESH_INSTANCE_CTOR: u32 = 0x004f_a420;
 pub const CLOTH_INSTANCE_VTABLE: u32 = 0x00b4_ab28;
 /// `crt_memset_thunk` (cdecl `(p, value, n)`).
 pub const MEMSET: u32 = 0x0094_964c;
-/// The three stream semantics [`set_streams`] names (`.data`).
+/// The three stream semantics [`bridge::set_streams`] names (`.data`).
 pub const STREAM_NAMES: [u32; 3] = [0x00c9_85b4, 0x00c9_8650, 0x00c9_8638];
+/// The four [`bridge::set_streams4`] names.
+pub const STREAMS4: [u32; 4] = [0x00c9_8620, 0x00c9_862c, 0x00c9_8650, 0x00c9_8638];
 
 /// `0x00ff34`: an empty stream entry's type word.
 const EMPTY_STREAM: u16 = 0xff34;
@@ -52,7 +54,8 @@ pub mod bridge {
 
     use super::{
         ALLOCATE_INSTANCE_LIST, CLOTH_INSTANCE_VTABLE, CURRENT_BUFFER_ID, Conv, DYN_GEO_BUFFERS,
-        EMPTY_STREAM, Host, MEMSET, MESH_INSTANCE_CTOR, PHYRE_MALLOC, RESIZE16, STREAM_NAMES, owns,
+        EMPTY_STREAM, Host, MEMSET, MESH_INSTANCE_CTOR, PHYRE_MALLOC, RESIZE16, STREAM_NAMES,
+        STREAMS4, owns,
     };
     use crate::PHYRE_FREE;
 
@@ -68,46 +71,37 @@ pub mod bridge {
         h.write(arr, n);
     }
 
-    /// `0x00676680` / `0x00677ce0` (thiscall `(mesh, a, b, c)`, `ret
-    /// 0xc`): `+0x1c = a`; a one-element draw table at `+0x10` (`{0, 3,
-    /// b, c}`) and three stream entries at `+8` (the semantics
-    /// [`STREAM_NAMES`], component counts 2, 3, 1), each reallocated
-    /// (`Phyre_PhyreMalloc(size, 4)`) unless it already has that count.
-    /// Returns `+0xc` (the stream table), as the original leaves it.
-    pub fn set_streams(h: &mut impl Host, mesh: u32, a: u32, b: u32, c: u32) -> u32 {
-        h.write(mesh + 0x1c, a);
-        if h.read::<u32>(mesh + 0x10) != 1 {
-            let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[0x10, 4]);
-            if p != 0 {
-                for at in [0, 4, 8, 0xc] {
-                    h.write(p + at, 0u32);
-                }
-                replace(h, mesh + 0x10, p, 1);
+    /// The stream table at `+8` (count) / `+0xc`: reallocated
+    /// (`Phyre_PhyreMalloc(0xc n, 4)`, every entry `{0, 0, 0xff34}`)
+    /// unless it already has `n` entries, or when that fails.
+    fn stream_table(h: &mut impl Host, mesh: u32, n: u32) {
+        if h.read::<u32>(mesh + 8) == n {
+            return;
+        }
+        let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[0xc * n, 4]);
+        if p == 0 {
+            return;
+        }
+        for k in 0..n {
+            // the original tests each entry's address for null
+            let e = p.wrapping_add(0xc * k);
+            if e != 0 {
+                h.write(e, 0u32);
+                h.write(e + 4, 0u32);
+                h.write(e + 8, EMPTY_STREAM);
             }
         }
-        if h.read::<u32>(mesh + 8) != 3 {
-            let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[0x24, 4]);
-            if p != 0 {
-                for e in [p, p + 0xc, p + 0x18] {
-                    h.write(e, 0u32);
-                    h.write(e + 4, 0u32);
-                    h.write(e + 8, EMPTY_STREAM);
-                }
-                replace(h, mesh + 8, p, 3);
-            }
-        }
-        let draw: u32 = h.read(mesh + 0x14);
-        h.write(draw, 0u32);
-        let draw: u32 = h.read(mesh + 0x14);
-        h.write(draw + 4, 3u32);
-        let draw: u32 = h.read(mesh + 0x14);
-        h.write(draw + 8, b);
-        let draw: u32 = h.read(mesh + 0x14);
-        h.write(draw + 0xc, c);
-        for (i, components) in [2u8, 3, 1].into_iter().enumerate() {
+        replace(h, mesh + 8, p, n);
+    }
+
+    /// Names the stream entries (`{0, semantic, components}`; the table
+    /// is reread for each entry), and returns the table (`+0xc`), as the
+    /// originals leave it in `eax`.
+    fn name_streams(h: &mut impl Host, mesh: u32, streams: &[(u32, u8)]) -> u32 {
+        for (i, &(name, components)) in streams.iter().enumerate() {
             let s: u32 = h.read(mesh + 0xc);
-            let e = s + 0xc * i as u32;
-            let name = h.rebase(STREAM_NAMES[i]);
+            let e = s.wrapping_add(0xc * i as u32);
+            let name = h.rebase(name);
             if i == 0 {
                 // the first entry's words go in the order zero, count, name
                 h.write(e, 0u32);
@@ -120,6 +114,68 @@ pub mod bridge {
             }
         }
         h.read(mesh + 0xc)
+    }
+
+    /// `0x00676680` / `0x00677ce0` (thiscall `(mesh, a, b, c)`, `ret 0xc`)
+    /// and `0x00674740` (thiscall `(mesh, b, c)`, `ret 8`, `a = None`):
+    /// `+0x1c = a`; a one-element draw table at `+0x10` (`{0, 3, b, c}`,
+    /// reallocated (`Phyre_PhyreMalloc(0x10, 4)`) unless it has one) and
+    /// three stream entries (the semantics [`STREAM_NAMES`], component
+    /// counts 2, 3, 1). Returns the stream table.
+    pub fn set_streams(h: &mut impl Host, mesh: u32, a: Option<u32>, b: u32, c: u32) -> u32 {
+        if let Some(a) = a {
+            h.write(mesh + 0x1c, a);
+        }
+        if h.read::<u32>(mesh + 0x10) != 1 {
+            let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[0x10, 4]);
+            if p != 0 {
+                for at in [0, 4, 8, 0xc] {
+                    h.write(p + at, 0u32);
+                }
+                replace(h, mesh + 0x10, p, 1);
+            }
+        }
+        stream_table(h, mesh, 3);
+        let draw: u32 = h.read(mesh + 0x14);
+        h.write(draw, 0u32);
+        let draw: u32 = h.read(mesh + 0x14);
+        h.write(draw + 4, 3u32);
+        let draw: u32 = h.read(mesh + 0x14);
+        h.write(draw + 8, b);
+        let draw: u32 = h.read(mesh + 0x14);
+        h.write(draw + 0xc, c);
+        let [n0, n1, n2] = STREAM_NAMES;
+        name_streams(h, mesh, &[(n0, 2), (n1, 3), (n2, 1)])
+    }
+
+    /// `0x00673030` (thiscall `(mesh, src)`, `ret 4`): the draw table
+    /// (`+0x10`, sized by `0x00498f30` to the source's count `+0x90`)
+    /// gets `{0, 4, rec +4, rec +8}` from each of the source's 0x6c-byte
+    /// records (`+0x94`); four stream entries ([`STREAMS4`], component
+    /// counts 2, 2, 3, 1). Returns the stream table.
+    pub fn set_streams4(h: &mut impl Host, mesh: u32, src: u32) -> u32 {
+        let n: i32 = h.read(src + 0x90);
+        let records: u32 = h.read(src + 0x94);
+        h.call_sym(RESIZE16, Conv::Thiscall(mesh + 0x10), &[n as u32]);
+        stream_table(h, mesh, 4);
+        let mut k = 0i32;
+        while k < n {
+            let e = (k as u32).wrapping_mul(0x10);
+            let rec = records.wrapping_add((k as u32).wrapping_mul(0x6c));
+            let t: u32 = h.read(mesh + 0x14);
+            h.write(e.wrapping_add(t), 0u32);
+            let t: u32 = h.read(mesh + 0x14);
+            h.write(e.wrapping_add(t) + 4, 4u32);
+            let t: u32 = h.read(mesh + 0x14);
+            let v: u32 = h.read(rec + 4);
+            h.write(e.wrapping_add(t) + 8, v);
+            let t: u32 = h.read(mesh + 0x14);
+            let v: u32 = h.read(rec + 8);
+            h.write(e.wrapping_add(t) + 0xc, v);
+            k += 1;
+        }
+        let [a, b, c, d] = STREAMS4;
+        name_streams(h, mesh, &[(a, 2), (b, 2), (c, 3), (d, 1)])
     }
 
     /// `0x00673e20` / `0x00675d90` (thiscall `(cluster, p)`, `ret 4`; Ghidra
@@ -208,5 +264,69 @@ pub mod bridge {
             h.write(inst + 0x810 + 4 * k, 1u32);
         }
         inst
+    }
+}
+
+/// `operator_new` (cdecl `(size)`).
+pub const OPERATOR_NEW: u32 = 0x0063_0310;
+/// `MenuDynamicGeometry_MenuDynamicGeometry` (thiscall `(geom)` -> geom).
+pub const MENU_GEOMETRY_CTOR: u32 = 0x0069_e320;
+/// `ClassDynamicGeometry_hide` (thiscall `(geom)`).
+pub const GEOMETRY_HIDE: u32 = 0x006a_2370;
+/// `g_PhyreScene`.
+pub const PHYRE_SCENE: u32 = 0x00cc_b9d8;
+
+/// For each menu geometry kind `0x00681970` knows: its scene's hidden
+/// byte and its value word (`g_PhyreScene + offset`).
+const MENU_KINDS: [(i32, u32, u32); 6] = [
+    (1, 0xfa9d, 0xfa84),
+    (-1, 0xfaa0, 0xfa94),
+    (-2, 0xfa9f, 0xfa90),
+    (0, 0xfa9a, 0xfa78),
+    (2, 0xfa98, 0xfa70),
+    (3, 0xfa99, 0xfa74),
+];
+
+pub mod bridge2 {
+    //! The originals over game memory.
+
+    use super::{
+        Conv, GEOMETRY_HIDE, Host, MENU_GEOMETRY_CTOR, MENU_KINDS, OPERATOR_NEW, PHYRE_SCENE,
+    };
+
+    /// `MenuDynamicGeometry_create(owner, kind)` (`0x00681970`, stdcall,
+    /// `ret 8`) -> the new geometry, sign-extended into `edx:eax` (the
+    /// original ends `mov eax, edi; cdq`), and the word it leaves in its
+    /// `kind` argument's slot (`operator_new`'s result). For the kinds of
+    /// [`MENU_KINDS`] the scene says whether that menu part is hidden and,
+    /// if not, the value to show; any other kind is its own value. A new
+    /// `MenuDynamicGeometry` (0x3c bytes) gets `owner` at `+0x24`, then
+    /// either `vtable[1](value, scene + 0x1284)` and `vtable[2](0)`, or
+    /// `ClassDynamicGeometry_hide`.
+    pub fn create(h: &mut impl Host, owner: u32, kind: u32) -> (u64, u32) {
+        let mut hidden = 0u8;
+        let mut value = kind;
+        if let Some(&(_, flag, word)) = MENU_KINDS.iter().find(|k| k.0 as u32 == kind) {
+            let scene: u32 = h.read(h.rebase(PHYRE_SCENE));
+            hidden = h.read(scene + flag);
+            if hidden == 0 {
+                value = h.read(scene + word);
+            }
+        }
+        let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[0x3c]);
+        let geom = if p == 0 {
+            0
+        } else {
+            h.call_sym(MENU_GEOMETRY_CTOR, Conv::Thiscall(p), &[])
+        };
+        let scene: u32 = h.read(h.rebase(PHYRE_SCENE));
+        h.write(geom.wrapping_add(0x24), owner);
+        if hidden == 0 {
+            h.call_virtual(geom, 1, &[value, scene.wrapping_add(0x1284)]);
+            h.call_virtual(geom, 2, &[0]);
+        } else {
+            h.call_sym(GEOMETRY_HIDE, Conv::Thiscall(geom), &[]);
+        }
+        (i64::from(geom as i32) as u64, p)
     }
 }

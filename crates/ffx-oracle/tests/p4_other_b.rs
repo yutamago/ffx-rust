@@ -123,6 +123,8 @@ enum Out {
     U8(u8),
     /// A float in `ST0`.
     F32(f32),
+    /// `edx:eax`.
+    U64(u64),
 }
 
 struct Twins {
@@ -318,6 +320,11 @@ impl Twins {
             Out::None | Out::F32(_) => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
+            Out::U64(v) => assert_eq!(
+                (u64::from(ra.edx) << 32) | u64::from(ra.eax),
+                v,
+                "{what}: edx:eax"
+            ),
         }
         self.diff(what);
     }
@@ -2651,6 +2658,7 @@ const BINDS: &[(u32, &Bind)] = &[
     (0x009e_4e60, &p4_bind::MOUSE_BUTTON_KEY_2),
     (0x00a3_3540, &p4_bind::GAME_SETTINGS),
     (0x0061_7960, &p4_bind::ASYNC_PROCESS_HEADER),
+    (0x0061_95a0, &p4_bind::CALLABLE_METHOD_SCRIPT),
 ];
 
 #[test]
@@ -2989,12 +2997,30 @@ impl Twins {
         offsets: &[i32],
         port: impl FnOnce(&mut G, u32) -> Out,
     ) {
+        self.frame_case_fill(0x5a, what, sym, conv, args, below, offsets, port);
+    }
+
+    /// [`Twins::frame_case`] with both stacks filled with `fill` first: 0
+    /// for originals that read frame words they never write (the port
+    /// uses 0 there, brief 2026-10-24).
+    #[allow(clippy::too_many_arguments)]
+    fn frame_case_fill(
+        &mut self,
+        fill: u8,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        below: u32,
+        offsets: &[i32],
+        port: impl FnOnce(&mut G, u32) -> Out,
+    ) {
         let ebp = self.ebp(args.len() as u32);
         // the same pattern in both frames, so words neither writes agree
         // and a missing store shows
         let end = self.a.stack_range().end;
-        self.a.write(end - 0x1000, &[0x5a; 0x1000]).unwrap();
-        self.b.write(end - 0x1000, &[0x5a; 0x1000]).unwrap();
+        self.a.write(end - 0x1000, &[fill; 0x1000]).unwrap();
+        self.b.write(end - 0x1000, &[fill; 0x1000]).unwrap();
         self.b.set_call_top(Some(ebp - below - 0x100));
         self.case(what, sym, conv, args, |g| port(g, ebp));
         self.b.set_call_top(None);
@@ -3070,7 +3096,7 @@ fn p4c2_dynamic_meshes_match_the_original() {
                     sym,
                     Conv::Thiscall(mesh),
                     &[a, b, c],
-                    |g| Out::U32(p4_mesh::bridge::set_streams(g, mesh, a, b, c)),
+                    |g| Out::U32(p4_mesh::bridge::set_streams(g, mesh, Some(a), b, c)),
                 );
             }
             // one instance: no list, no storage, or both
@@ -3318,6 +3344,500 @@ fn p4c2_point_light_and_mouse_match_the_original() {
                 &[state],
                 |g| Out::U32(p4_input::bridge5::mouse_ctor(g, dev, state)),
             );
+        }
+    }
+}
+
+// ---- c2 batch 2: the scripting bind (in BINDS), UTF-8 to UTF-16, the
+// keyboard, cloth release queueing, the string tree, setLightDir ----
+
+use ffx_pother_b::p4_tree;
+
+impl Twins {
+    /// Recording code (as [`Twins::stub_tail`]) that is not patched over
+    /// an original, for vtables; returns its address.
+    fn logged(&mut self, tag: u32, this: bool, n: u32, tail: &[u8]) -> u32 {
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(tag.to_le_bytes()); // mov [eax], tag
+        if this {
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        }
+        for i in 0..n {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.extend(tail);
+        self.code(&c)
+    }
+}
+
+/// A UTF-8 test string: ASCII, valid 2-4 byte sequences, encoded
+/// surrogates, code points past U+10FFFF, stray continuation bytes.
+fn utf8_text(rng: &mut Rng) -> Vec<u8> {
+    let mut s = Vec::new();
+    for _ in 0..rng.below(12) {
+        match rng.below(12) {
+            0..=2 => s.push(0x20 + rng.below(0x5f) as u8),
+            3 => s.extend("é".as_bytes()),
+            4 => s.extend("語".as_bytes()),
+            5 => s.extend("😀".as_bytes()),
+            6 => s.extend([0xed, 0xa0 + rng.below(0x20) as u8, 0x80]), // a surrogate
+            9 => s.extend([0xee, 0x80, 0x80]),                         // U+E000, just past them
+            10 => s.extend([0xed, 0x9f, 0xbf]),                        // U+D7FF, just before
+            11 => s.extend([0xf4, 0x8f, 0xbf, 0xbf]),                  // U+10FFFF
+            7 => s.extend([0xf4, 0x90, 0x80, 0x80]),                   // past U+10FFFF
+            _ => s.push(0x80 + rng.below(0x80) as u8),
+        }
+    }
+    s.push(0);
+    s
+}
+
+#[test]
+fn p4c2_utf8_to_wide_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0060_7c40);
+        for i in 0..400 {
+            let what = format!("{name} utf8 case {i}");
+            let text = utf8_text(&mut rng);
+            let src = if rng.chance(20) { 0 } else { t.alloc(&text) };
+            let cap = rng.below(2 * text.len() as u32 + 4);
+            let dst = t.zeros(2 * cap as usize + 8);
+            t.fill(&mut rng, dst, 2 * cap + 8);
+            let dst = if rng.chance(25) { 0 } else { dst };
+            let end = match rng.below(12) {
+                0 => 0,
+                1 => dst.wrapping_sub(2),
+                _ => dst + 2 * cap,
+            };
+            t.case(&what, 0x0060_7c40, Conv::Cdecl, &[src, dst, end], |g| {
+                let cursor = g.scratch();
+                Out::U32(p4_frames::bridge2::utf8_to_wide(g, cursor, src, dst, end))
+            });
+        }
+    }
+}
+
+#[test]
+fn p4c2_keyboard_update_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0062_d5c0);
+        t.stub(p4_input::MEMSET, false, 3, 0, 0x0e3e_0000);
+        t.stub(p4_input::UPDATE_MAPPINGS, true, 0, 0, 0x0aa0_0000);
+        // GetDeviceState copies `state` into the buffer and returns [hr]
+        let state = t.zeros(0x100);
+        let hr = t.zeros(4);
+        let mut tail = vec![0x56, 0x57, 0xbe]; // push esi; push edi; mov esi,
+        tail.extend(state.to_le_bytes());
+        tail.extend([0x8b, 0x7c, 0x24, 0x14]); // mov edi, [esp+0x14]
+        tail.extend([0xb9, 0x40, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, 0x40; rep movsd
+        tail.extend([0x5f, 0x5e, 0xa1]); // pop edi; pop esi; mov eax,
+        tail.extend(hr.to_le_bytes());
+        tail.extend([0xc2, 0x0c, 0x00]); // ret 0xc
+        let get_state = t.logged(0x7e00_0009, false, 3, &tail);
+        // Acquire: 0x8007001e while [left] counts down, then [ok]
+        let left = t.zeros(8);
+        let mut tail = vec![0xa1];
+        tail.extend(left.to_le_bytes()); // mov eax, [left]
+        tail.extend([0x85, 0xc0, 0x74, 0x0e]); // test eax, eax; jz done
+        tail.extend([0xff, 0x0d]);
+        tail.extend(left.to_le_bytes()); // dec dword [left]
+        tail.push(0xb8);
+        tail.extend(p4_input::E_ACCESS_DENIED.to_le_bytes()); // mov eax, E
+        tail.extend([0xc2, 0x04, 0x00]); // ret 4
+        tail.push(0xa1);
+        tail.extend((left + 4).to_le_bytes()); // done: mov eax, [ok]
+        tail.extend([0xc2, 0x04, 0x00]); // ret 4
+        let acquire = t.logged(0x7e00_0007, false, 1, &tail);
+        let mut vt = vec![0u8; 0x28];
+        vt[0x1c..0x20].copy_from_slice(&acquire.to_le_bytes());
+        vt[0x24..0x28].copy_from_slice(&get_state.to_le_bytes());
+        let vt = t.alloc(&vt);
+        let app_global = t.rebase(p4_input::G_APPLICATION);
+        let app = t.zeros(0x40);
+        let buf: Vec<i32> = (0..0x40).map(|k| -0x104 + 4 * k).collect();
+        for i in 0..96 {
+            let what = format!("{name} keyboard case {i}");
+            let kb = t.zeros(0x320);
+            t.fill(&mut rng, kb, 0x320);
+            let dev = if rng.chance(8) {
+                0
+            } else {
+                let d = t.zeros(8);
+                t.w32(d, vt);
+                d
+            };
+            t.w32(kb + 0x14, dev);
+            let bytes: Vec<u8> = (0..0x100)
+                .map(|_| if rng.chance(3) { rng.next() as u8 } else { 0 })
+                .collect();
+            t.write(state, &bytes);
+            let r = match rng.below(4) {
+                0 => 0x8000_4005,
+                1 => rng.next(),
+                _ => 0,
+            };
+            t.w32(hr, r);
+            t.w32(left, rng.below(3));
+            t.w32(
+                left + 4,
+                [0, 1, p4_input::E_ACCESS_DENIED + 1][rng.below(3) as usize],
+            );
+            t.w32(app_global, if rng.chance(4) { 0 } else { app });
+            t.w32(app + 0x2c, u32::from(rng.chance(3)));
+            t.frame_case(
+                &what,
+                0x0062_d5c0,
+                Conv::Thiscall(kb),
+                &[],
+                0x104,
+                &buf,
+                |g, ebp| {
+                    p4_input::bridge6::keyboard_update(g, ebp, kb);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn p4c2_cloth_terminate_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006e_2e40);
+        let malloc = t.stub_bump(p4_cloth::PHYRE_MALLOC, 2);
+        t.stub(ffx_pother_b::PHYRE_FREE, false, 1, 0, 0);
+        let g = t.rebase(p4_cloth::G_CLOTH_ENTRIES);
+        for i in 0..200 {
+            let what = format!("{name} cloth terminate case {i}");
+            let n = rng.below(4);
+            let table = t.zeros(16 * n as usize + 16);
+            t.fill(&mut rng, table, 16 * n + 16);
+            for k in 0..n {
+                let left = if rng.chance(3) {
+                    0xffff_ffff
+                } else {
+                    rng.below(5)
+                };
+                t.w32(table + 16 * k + 0xc, left);
+            }
+            let owned = if rng.chance(3) { 0x8000_0000 } else { 0 };
+            t.w32(g, n | owned);
+            t.w32(g + 4, if n == 0 && rng.chance(2) { 0 } else { table });
+            let block = if rng.chance(6) { 0 } else { t.zeros(0x100) };
+            t.w32(malloc, block);
+            let cloth = t.zeros(0x20);
+            t.fill(&mut rng, cloth, 0x20);
+            let x = rng.next();
+            t.case(&what, 0x006e_2e40, Conv::Thiscall(cloth), &[x], |g| {
+                p4_cloth::bridge2::terminate(g, cloth);
+                Out::None
+            });
+        }
+    }
+}
+
+#[test]
+fn p4c2_string_tree_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0064_c0a0);
+        let keys: Vec<u32> = ["", "a", "ab", "abc", "b", "ba", "\u{e9}", "zz"]
+            .iter()
+            .map(|k| {
+                let mut v = k.as_bytes().to_vec();
+                v.push(0);
+                t.alloc(&v)
+            })
+            .collect();
+        for round in 0..48 {
+            let tree = t.zeros(0x10);
+            t.fill(&mut rng, tree, 0x10);
+            t.w32(tree + 0xc, tree);
+            for i in 0..rng.below(10) {
+                let node = t.zeros(0x10);
+                t.fill(&mut rng, node, 0x10);
+                let key = if rng.chance(12) {
+                    0
+                } else {
+                    keys[rng.below(keys.len() as u32) as usize]
+                };
+                t.w32(node + 0xc, key | rng.below(2));
+                let what = format!("{name} tree {round} insert {i}");
+                t.case(&what, 0x0064_c0a0, Conv::Thiscall(tree), &[node], |g| {
+                    Out::U32(p4_tree::bridge::insert(g, tree, node))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn p4c2_set_light_dir_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_a9f0);
+        t.stub(p4_light::LOOK_AT, true, 3, 3, 0x100c_0000);
+        t.stub(p4_light::ROTATION_X, false, 2, 0, 0x0e07_0000);
+        t.stub(p4_light::APPLY_ROTATION, true, 1, 1, 0x0a77_0000);
+        let frame: Vec<i32> = (0..0x1c).map(|k| -0x70 + 4 * k).collect();
+        for i in 0..160 {
+            let what = format!("{name} light dir case {i}");
+            let cl = lighting(&mut t, &mut rng);
+            let li = rng.below(5);
+            let color = t.rebase(p4_light::COLOR_LIGHT_TYPE);
+            if li < 5 && rng.chance(2) {
+                let set: u32 = Mem::read(&t.b, cl + 0xf0);
+                let lights: u32 = Mem::read(&t.b, set + 4);
+                let l: u32 = Mem::read(&t.b, lights + 4 * li);
+                t.w32(l + 0x18, color);
+            }
+            let y = match rng.below(5) {
+                0 => (-0.9f32).to_bits(),
+                1 => 0xbf66_6665, // just above -0.9
+                2 => 0xbf66_6667,
+                _ => float_word(&mut rng),
+            };
+            let xyz = [float_word(&mut rng), y, float_word(&mut rng)];
+            let on = Mem::read::<u8>(&t.b, cl + 0x1cc) != 0;
+            let set: u32 = Mem::read(&t.b, cl + 0xf0);
+            let lights: u32 = Mem::read(&t.b, set + 4);
+            let l: u32 = Mem::read(&t.b, lights + 4 * li);
+            let colored = Mem::read::<u32>(&t.b, l + 0x18) == color;
+            t.frame_case(
+                &what,
+                0x006a_a9f0,
+                Conv::Thiscall(cl),
+                &[li, xyz[0], xyz[1], xyz[2]],
+                0xb0,
+                &frame,
+                |g, ebp| {
+                    let r = p4_light::bridge6::set_light_dir(g, ebp, cl, li, xyz);
+                    if on && li != 3 && colored {
+                        Out::U32(r)
+                    } else {
+                        Out::None
+                    }
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn p4c2_stream_variants_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0067_3030);
+        let malloc = t.stub_bump(p4_mesh::PHYRE_MALLOC, 2);
+        t.stub(ffx_pother_b::PHYRE_FREE, false, 1, 0, 0x0f0f_0f0f);
+        t.stub(p4_mesh::RESIZE16, true, 1, 1, 0);
+        let owned = |rng: &mut Rng| if rng.chance(3) { 0x8000_0000 } else { 0 };
+        for i in 0..128 {
+            let what = |s: &str| format!("{name} {s} case {i}");
+            // no +0x1c, two arguments
+            let mesh = t.zeros(0x20);
+            t.fill(&mut rng, mesh, 0x20);
+            let dn = [1, 0, 2][rng.below(3) as usize] | owned(&mut rng);
+            let sn = [3, 0, 4][rng.below(3) as usize] | owned(&mut rng);
+            let block = if rng.chance(4) { 0 } else { t.zeros(0x100) };
+            let draw = t.zeros(0x10);
+            let streams = t.zeros(0x30);
+            t.w32(mesh + 0x10, dn);
+            t.w32(mesh + 8, sn);
+            t.w32(mesh + 0x14, draw);
+            t.w32(mesh + 0xc, streams);
+            if block != 0 && rng.chance(4) {
+                t.w32(mesh + 0xc, block + if dn == 1 { 0 } else { 0x40 });
+            }
+            t.w32(malloc, block);
+            let [b, c] = [rng.next(), rng.next()];
+            t.case(
+                &what("streams 0x674740"),
+                0x0067_4740,
+                Conv::Thiscall(mesh),
+                &[b, c],
+                |g| Out::U32(p4_mesh::bridge::set_streams(g, mesh, None, b, c)),
+            );
+            // four streams, the draw table from the records
+            let n: u32 = [0, 1, 3, 7, 0xffff_ffff][rng.below(5) as usize];
+            let real = if (n as i32) > 0 { n } else { 0 };
+            let src = t.zeros(0x98);
+            t.fill(&mut rng, src, 0x98);
+            t.w32(src + 0x90, n);
+            let recs = t.zeros((real * 0x6c + 0x10) as usize);
+            t.fill(&mut rng, recs, real * 0x6c + 0x10);
+            t.w32(src + 0x94, recs);
+            let mesh = t.zeros(0x20);
+            t.fill(&mut rng, mesh, 0x20);
+            let sn = [4, 3, 0][rng.below(3) as usize] | owned(&mut rng);
+            t.w32(mesh + 8, sn);
+            let streams = t.zeros(0x30);
+            t.w32(mesh + 0xc, streams);
+            let table = t.zeros((real * 0x10 + 0x10) as usize);
+            t.w32(mesh + 0x14, table);
+            let block = if rng.chance(4) { 0 } else { t.zeros(0x100) };
+            if block != 0 && rng.chance(4) {
+                t.w32(mesh + 0xc, block);
+            }
+            t.w32(malloc, block);
+            t.case(
+                &what("streams4"),
+                0x0067_3030,
+                Conv::Thiscall(mesh),
+                &[src],
+                |g| Out::U32(p4_mesh::bridge::set_streams4(g, mesh, src)),
+            );
+        }
+    }
+}
+
+use ffx_pother_b::p4_ps2light;
+
+#[test]
+fn p4c2_ps2_lighting_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006e_5a40);
+        t.stub(p4_ps2light::SHADER_PARAM_WRITE, false, 3, 0, 0x05a0_0000);
+        let app = t.zeros(0x300);
+        t.fill(&mut rng, app, 0x300);
+        t.stub(p4_ps2light::GET_APPLICATION, false, 0, 0, app);
+        t.stub(p4_ps2light::RENDER_MESH_INSTANCE, true, 4, 4, 0x0e1d_0000);
+        t.stub(p4_ps2light::ADD_VFX_DRAW_EVENT, true, 1, 1, 0x0e7e_0000);
+        t.stub(p4_ps2light::SET_VISIBLE, false, 2, 0, 0x0515_0000);
+        let meshes = t.rebase(p4_ps2light::MESHES);
+        let recs = t.rebase(p4_ps2light::RECORDS);
+        let count = t.rebase(p4_ps2light::COUNT);
+        let event: Vec<i32> = vec![-0x14, -0x10, -0xc, -8];
+        for i in 0..96 {
+            let what = |s: &str| format!("{name} {s} case {i}");
+            // a mesh with 0..3 instances
+            let n = rng.below(4);
+            let mesh = t.zeros(8);
+            let list = t.zeros(4 * n as usize + 4);
+            for k in 0..n {
+                let inst = t.zeros(0x20);
+                t.fill(&mut rng, inst, 0x20);
+                t.w32(list + 4 * k, inst);
+            }
+            t.w32(mesh, n | if rng.chance(3) { 0x8000_0000 } else { 0 });
+            t.w32(mesh + 4, list);
+            let keys = [0, 0, rng.next(), 7];
+            for k in 0..8 {
+                let w = match rng.below(4) {
+                    0 => mesh,
+                    1 => rng.next(),
+                    _ => 0,
+                };
+                t.w32(meshes + 4 * k, w);
+                let key = keys[rng.below(4) as usize];
+                t.w32(recs + p4_ps2light::RECORD * k + 0x128, key);
+            }
+            t.w32(count, rng.below(9));
+            let m = if rng.chance(10) { 0 } else { mesh };
+            let mut slot = 0;
+            t.case(&what("apply"), 0x006e_5a40, Conv::Cdecl, &[m], |g| {
+                let (r, s) = p4_ps2light::bridge::apply(g, m);
+                slot = s;
+                Out::U32(r)
+            });
+            let at = t.a.stack_range().end - 0x100 - 4;
+            assert_eq!(Mem::read::<u32>(&t.a, at), slot, "{}", what("slot"));
+            // register: the matrices and vectors as random blocks
+            let block = |t: &mut Twins, rng: &mut Rng| {
+                let b = t.zeros(0x40);
+                t.fill(rng, b, 0x40);
+                b
+            };
+            let s = p4_ps2light::bridge::Setup {
+                m1: block(&mut t, &mut rng),
+                m2: block(&mut t, &mut rng),
+                f1: float_word(&mut rng),
+                m3: block(&mut t, &mut rng),
+                m4: block(&mut t, &mut rng),
+                f2: float_word(&mut rng),
+                v1: block(&mut t, &mut rng),
+                v2: block(&mut t, &mut rng),
+            };
+            let key = keys[rng.below(4) as usize];
+            if rng.chance(6) {
+                // every slot taken by another mesh
+                for k in 0..8 {
+                    t.w32(meshes + 4 * k, mesh ^ (k + 1));
+                }
+            }
+            let args = [mesh, s.m1, s.m2, s.f1, s.m3, s.m4, s.f2, s.v1, s.v2, key];
+            t.frame_case_fill(
+                0,
+                &what("register"),
+                0x006e_5c90,
+                Conv::Cdecl,
+                &args,
+                0x14,
+                &event,
+                |g, ebp| Out::U32(p4_ps2light::bridge::register(g, ebp, mesh, &s, key)),
+            );
+        }
+    }
+}
+
+#[test]
+fn p4c2_menu_geometry_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0068_1970);
+        let scene = t.zeros(0xfb00);
+        let g = t.rebase(p4_mesh::PHYRE_SCENE);
+        t.w32(g, scene);
+        let block = t.stub_cell(p4_mesh::OPERATOR_NEW, false, 1, 0);
+        // the constructor returns its `this`
+        t.stub_tail(p4_mesh::MENU_GEOMETRY_CTOR, true, 0, &[0x89, 0xc8, 0xc3]);
+        t.stub(p4_mesh::GEOMETRY_HIDE, true, 0, 0, 0x41de_0000);
+        let mut vt = Vec::new();
+        for (slot, n) in [(0u32, 0u32), (1, 2), (2, 1)] {
+            let f = t.stub_code(0x7e00_0000 + slot, true, n, n, 0x5a5a_0000 + slot);
+            vt.extend(f.to_le_bytes());
+        }
+        let vt = t.alloc(&vt);
+        t.a.map_zeroed(0xc000_0000, 0x1000).unwrap();
+        t.b.map_zeroed(0xc000_0000, 0x1000).unwrap();
+        for i in 0..160 {
+            let what = format!("{name} menu geometry case {i}");
+            for (flag, word) in [
+                (0xfa9d, 0xfa84),
+                (0xfaa0, 0xfa94),
+                (0xfa9f, 0xfa90),
+                (0xfa9a, 0xfa78),
+                (0xfa98, 0xfa70),
+                (0xfa99, 0xfa74),
+            ] {
+                t.write(scene + flag, &[u8::from(rng.chance(3))]);
+                let w = rng.next();
+                t.w32(scene + word, w);
+            }
+            // the sign extension: geometry at a "negative" address too
+            let geom = if rng.chance(3) {
+                0xc000_0000 + 0x40 * rng.below(0x40)
+            } else {
+                t.zeros(0x3c)
+            };
+            t.fill(&mut rng, geom, 0x3c);
+            t.w32(geom, vt);
+            t.w32(block, geom);
+            let kind = [1, 0xffff_ffff, 0xffff_fffe, 0, 2, 3, 4, rng.next()][rng.below(8) as usize];
+            let owner = rng.next();
+            let mut word = 0;
+            t.case(&what, 0x0068_1970, Conv::Stdcall, &[owner, kind], |g| {
+                let (r, w) = p4_mesh::bridge2::create(g, owner, kind);
+                word = w;
+                Out::U64(r)
+            });
+            let at = t.a.stack_range().end - 0x100 - 4;
+            assert_eq!(Mem::read::<u32>(&t.a, at), word, "{what}: slot");
         }
     }
 }

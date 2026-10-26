@@ -158,3 +158,60 @@ pub mod bridge {
         map
     }
 }
+
+/// `Phyre_PUtf8_decodeNext_0045d640` (cdecl `(&cursor)` -> code point).
+pub const UTF8_DECODE_NEXT: u32 = 0x0045_d640;
+
+pub mod bridge2 {
+    //! The originals over game memory.
+
+    use super::{Conv, Host, UTF8_DECODE_NEXT};
+
+    /// `Str_Utf8ToWide(src, dst, end)` (`0x00607c40`, cdecl) -> UTF-16
+    /// units written, negated when a code point can't be converted (a
+    /// surrogate, one past U+10FFFF, or a pair without room); 0 for a
+    /// null pointer or `end < dst`. The cursor is the original's own
+    /// argument slot, handed to the decoder: here `cursor` (a word the
+    /// caller provides), which holds the final position after the call.
+    /// Stops before `end` without a terminator; else ends with a 0 unit
+    /// when there is room.
+    pub fn utf8_to_wide(h: &mut impl Host, cursor: u32, src: u32, dst: u32, end: u32) -> u32 {
+        if src == 0 || dst == 0 || end == 0 || end < dst {
+            return 0;
+        }
+        h.write(cursor, src);
+        let mut out = dst;
+        let mut ok = true;
+        loop {
+            let at: u32 = h.read(cursor);
+            if h.read::<u8>(at) != 0 {
+                if out >= end {
+                    // full: no terminator
+                    break;
+                }
+                let cp = h.call_sym(UTF8_DECODE_NEXT, Conv::Cdecl, &[cursor]);
+                if cp <= 0xffff {
+                    if cp.wrapping_sub(0xd800) > 0x7ff {
+                        h.write(out, cp as u16);
+                        out += 2;
+                        continue;
+                    }
+                } else if cp <= 0x10_ffff && out.wrapping_add(2) < end {
+                    let v = cp - 0x1_0000;
+                    h.write(out, ((v >> 10).wrapping_sub(0x2800)) as u16);
+                    h.write(out + 2, ((v & 0x3ff).wrapping_sub(0x2400)) as u16);
+                    out += 4;
+                    continue;
+                }
+                ok = false;
+            }
+            if out < end {
+                h.write(out, 0u16);
+                out += 2;
+            }
+            break;
+        }
+        let n = ((out.wrapping_sub(dst)) as i32) >> 1;
+        (if ok { n } else { n.wrapping_neg() }) as u32
+    }
+}
