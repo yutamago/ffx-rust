@@ -7,7 +7,8 @@ All addresses refer to one build of `FFX.exe`:
 - sha256 `0537b2a1047f3266e73495cd4e35f63f0777f4231d417699f979954686da686d`
 - PE32, x86, image base `0x400000`, built with Visual Studio 2012
   (`msvcr110.dll`)
-- `.text` `0x401000`–`0xb0bc00`; Ghidra finds 56,903 functions
+- `.text` `0x401000`–`0xb0bc00`; the current dump (`functions.tsv`) lists
+  55,871 functions
 
 ## Tools
 
@@ -83,8 +84,13 @@ runs only what the batch can affect: unit tests of the changed crates and of
 every crate depending on them; the `ffx-oracle` tests of the changed crates,
 of the changed test files and of the modules whose hook shims changed, on the
 image alone and on both snapshots side by side (all of them when
-`ffx-oracle/src` or `ffx-bridge` changed); the port checks, the hook build
-and the replays. check-clobber and check-ported share one disassembly cache
+`ffx-oracle/src` or `ffx-bridge` changed). When anything under `crates/`
+changed it then runs the static port checks (check-ported, check-clobber,
+check-callwidth, check-thisarg, check-callconv, check-tailargs; below) and
+`tools/build-hook.sh`, and when `crates/`, `tools/replays/` or the
+comparison scripts changed, `tools/replays/run-all.sh` (`--no-replays`
+skips it). It does not run check-argslots, the scene gates or the audio
+comparison: run those yourself when the batch can affect them. check-clobber and check-ported share one disassembly cache
 (`tools/disasm_cache.py`, `~/ffx-work/cache/clobber-<key>.pickle`, keyed on
 FFX.exe's hash and the objdump version): check-clobber takes about 6 s warm
 and 30 s when FFX.exe or objdump changed, check-ported about 4 s warm and
@@ -96,6 +102,70 @@ Before building, it fails when a function is hooked twice: two `ported!`
 entries for one address (two branches porting the same function, now
 merged), or a `ported!` entry for an address hooked by hand in
 `crates/ffx-hook/src`. Keep one port and drop the other.
+
+### The port checks
+
+Each is a static scan of `FFX.exe` against the shims and bridges, so it
+also covers paths no test reaches. Run them with
+`FFX_GAME_DIR=~/steam-games/FFX-X2-HD python3 -I tools/<check>.py`.
+
+| Check | Finds | Where |
+|---|---|---|
+| `check-ported` | a shim that can panic, a `static` scratch buffer, an `in(reg)` operand after a `call`, an address that is no function start, under five bytes, hooked twice or named otherwise than in `ffx.sym`, a shim that pops other than the original's `ret` | `docs/porting.md`, "Install it" |
+| `check-clobber` | callers that read the `eax` (or `x87` result) the original leaves and a shim drops; void shims of functions called through pointers | `docs/porting.md`, "Install it" |
+| `check-callwidth` | calls wider than the game's host passes | `docs/hooking.md`, "Calling originals from a port" |
+| `check-thisarg` | port calls to originals that read `ecx` before writing it, passing no `ecx` | `docs/porting.md`, "Library code" |
+| `check-callconv` | port calls against the callee's `ret n` or the import's convention; test stubs whose `pops` differ from the original's | `docs/porting.md`, "Library code" |
+| `check-tailargs` | a shim declaring fewer stack words than the original reads (forwarded words and tail jumps included) | `docs/porting.md`, "Install it" |
+| `check-argslots` | unhooked callers that read an argument slot the original stores into and the shim does not | below |
+
+check-ported, check-callwidth, check-thisarg, check-callconv and
+check-tailargs report "0 problems" when clean; check-clobber and
+check-argslots exit 0, and check-clobber reports no "reads the eax the
+original returns".
+
+### Test stubs
+
+An oracle test replaces the callees a port calls through the game with
+stubs. A stub must behave like the callee where the port can tell:
+
+- **It pops like the original** (`pops`, `docs/porting.md`, "Calling
+  convention"), or a port calling a stdcall callee as cdecl passes.
+- **It logs every argument word the original passes**, the forwarded ones
+  too (`MsMusicReadStart`'s victory fanfare id, check-tailargs), and `ecx`
+  for library callees (`this = true`).
+- **It writes what the callee writes.** When a port passes a pointer to its
+  own buffer, the stub writes the full size the original callee writes,
+  and the buffer is sized from the callee's code, not from Ghidra's type.
+  `Sg_DrawSetEnvironmentInit`'s port gave `yiGetBackColor` a 3-word buffer;
+  the callee writes 4 (RGBA), and the game crashed at boot. The stub wrote
+  nothing, so the parity test passed (fixed in `73c9d4de`).
+
+### Gates beyond the tests (M4)
+
+A platform port (M4, `docs/rewrite-plan.md`) passes the oracle test and the
+checks above, and then the gates for what it can change:
+
+- **Draw streams.** `tools/scene-gate-capture.sh <replay> <run>
+  original|only-m4|all` captures a gate replay, `tools/scene-gate.sh
+  <scene> <reference run> <run>` compares it with the original's
+  (`docs/drawdiff.md`, "Scene gates"). Six scenes: draw-field, bsil0000,
+  bsil0300, kami0100, menu and battle. A round that touches rendering
+  gates at least one scene besides draw-field.
+- **Replays.** `tools/replays/run-all.sh`, and `--extra` for the graphics
+  settings, a movie, the Iggy screens and a summon (`docs/harness.md`,
+  "Coverage replays").
+- **Audio.** `tools/replays/run-all.sh --audio` compares FMOD's mix sample
+  for sample on four replays (`docs/harness.md`, "Audio capture").
+
+The M4 port lists live outside the repo, in `~/ffx-work/m4/port/`: one
+address per line in `<list>.list` (`h1-render-a`, `p6-render-c`, ...,
+`coverage2`), cut from the pilot's coverage run; `tools/coverage-new.py`
+finds reached platform functions that no list or `ported!` line holds yet.
+Each list's shims go into `crates/ffx-hook/src/ported/<list>*.rs`, which is
+what `scene-gate-capture.sh only-m4` installs. The functions that can't be
+hooked are in `not-portable.tsv` there (`docs/hooking.md`, "What can't be
+hooked").
 
 ### Argument slots
 
