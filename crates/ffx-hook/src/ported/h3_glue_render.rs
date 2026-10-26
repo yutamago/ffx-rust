@@ -34,6 +34,7 @@ use ffx_prender::h3_glue25::bridge as g25;
 use ffx_prender::h3_glue26::bridge as g26;
 use ffx_prender::h3_glue27::bridge as g27;
 use ffx_prender::h3_glue28::bridge as g28;
+use ffx_prender::h3_glue29::bridge as g29;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1729,6 +1730,22 @@ ported! {
     /// bits): `x`, `y` and the scratch values end in the argument slots.
     DrawScaleButtonIconRGBA @ 0x008e_7a90 => extern "C" fn draw_scale_button_icon(id: u32, x: u32, y: u32, scale: u32, colour: u32, flags: u32; slots: u32) -> u32 {
         g28::draw_scale_button_icon(&mut mem(), slots, id, x, y, scale, colour, flags)
+    }
+
+    // ---- round 7 batch 29 (ffx_prender::h3_glue29) ----
+    /// `graphicVFXCreateDataBuffer(key_a, key_b, n, a, b, names, c)`: the
+    /// pool's segment and buffer in the frame; the pool flag, `a - b` and
+    /// the cursors over the argument slots.
+    graphicVFXCreateDataBuffer @ 0x0064_5040 => extern "C" fn vfx_create_data_buffer(key_a: u32, key_b: u32, n: u32, a: u32, b: u32, names: u32, c: u32; slots: u32) {
+        let mut f = StackFrame::<3>::new();
+        g29::vfx_create_data_buffer(&mut mem(), f.at() + 0xc, slots, key_a, key_b, n, a, b, names, c);
+    }
+    /// `WaterDistortionEffectDelegations_processWaterDistortion(task)`: the
+    /// cursor and records in the frame, the first texture over `task`'s
+    /// slot.
+    WaterDistortionEffectDelegations_processWaterDistortion @ 0x006f_54f0 => extern "C" fn process_water_distortion(task: u32; slots: u32) {
+        let mut f = StackFrame::<0x19>::new();
+        g29::process_water_distortion(&mut mem(), f.at() + 0x64, slots, task);
     }
 }
 

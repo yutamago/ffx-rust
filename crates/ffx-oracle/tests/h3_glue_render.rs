@@ -51,6 +51,7 @@ use ffx_prender::h3_glue25::{self as h25, bridge as gh25};
 use ffx_prender::h3_glue26::{self as h26, bridge as gh26};
 use ffx_prender::h3_glue27::{self as h27, bridge as gh27};
 use ffx_prender::h3_glue28::{self as h28, bridge as gh28};
+use ffx_prender::h3_glue29::{self as h29, bridge as gh29};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -7966,5 +7967,148 @@ fn batch28_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 80 } else { 480 };
         run_cases(t, CASES28, n, &mut Rng(0x2828_b028));
+    });
+}
+
+// ---- round 7 batch 29 (ffx_prender::h3_glue29) ----
+
+impl Twins {
+    /// A recording `thiscall(this; &x, &y)` stub (`ret 8`) that stores
+    /// `x` and `y` through its two pointers and returns `ret`.
+    fn stub_two_outs(&mut self, sym: u32, x: u32, y: u32, ret: u32) {
+        let log = self.stub(None, sym, true, 2, 2, Some(ret));
+        // mov eax, [esp+4]; mov [eax], x; mov eax, [esp+8]; mov [eax], y; jmp log
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00];
+        c.extend(x.to_le_bytes());
+        c.extend([0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00]);
+        c.extend(y.to_le_bytes());
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// The instance key (none now and then), its render data (or none), the
+/// count (1 with or without a pooled segment, more, 0, negative), the
+/// allocations, the arrays and names, `c` or none, the dynamic buffer id.
+fn prep_data_buffer(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let (key_a, key_b) = match rng.below(5) {
+        0 => (0, 0),
+        1 => (0, rng.next()),
+        _ => (rng.next(), rng.next()),
+    };
+    args[0] = key_a;
+    args[1] = key_b;
+    t.global(h29::VFX_TABLE, obj + 0x1f00);
+    let entry = if rng.chance(6) { 0 } else { obj + 0x100 };
+    t.stub_ret(h29::GET_VFX_DATA, true, 2, 2, entry);
+    args[2] = pick(rng, &[1, 1, 1, 2, 3, 0, 0x8000_0000]);
+    let found = pick(rng, &[0, 1, 0x100]);
+    t.stub_two_outs(h29::POOL_SEGMENT, obj + 0x400, obj + 0x600, found);
+    let news = [obj + 0x800, obj + 0xa00, obj + 0xb00, obj + 0xc00];
+    t.stub_seq(h29::OPERATOR_NEW_ARRAY, false, 1, 0, &news);
+    let (a_words, b_words, c_words) = (obj + 0x1000, obj + 0x1040, obj + 0x1080);
+    for k in 0..3 {
+        for array in [a_words, b_words, c_words] {
+            let v = rng.next();
+            t.w32(array + 4 * k, v);
+        }
+    }
+    args[3] = a_words;
+    args[4] = b_words;
+    let names = obj + 0x1100;
+    for k in 0..3 {
+        letters(t, names + 0x100 * k, pick(rng, &[0, 1, 5, 12]), rng);
+    }
+    args[5] = names;
+    args[6] = if rng.chance(3) { 0 } else { c_words };
+    t.global(h29::DYN_GEO_FILL, obj + 0x1e00);
+    let id = pick(rng, &[0, 1]);
+    t.stub_ret(h29::CURRENT_BUFFER_ID, true, 0, 0, id);
+}
+
+const WATER_STUBS: &[(u32, K)] = &[
+    (h29::TEXTURE_CHECK, K::This(1)),
+    (h29::MEMCPY, K::Cdecl(3)),
+    (h29::SET_TEXTURE_CHECKED, K::This(2)),
+    (h29::PHYRE_PRINTF, K::Cdecl(3)),
+    (h29::REGISTER_DELEGATION, K::This(4)),
+    (h29::OPERATOR_DELETE, K::Cdecl(1)),
+];
+
+/// The task (or none): its scene (an empty list now and then), three
+/// words, the two targets (their textures, or flagged); the cursor's runs
+/// over materials (shader, a real buffer); the parameters found in turn
+/// (kinds that copy or not, in or out of the buffer).
+fn prep_water(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let task = obj + 0x40;
+    args[0] = if rng.chance(8) { 0 } else { task };
+    let scene = obj + 0x100;
+    t.w32(task, scene);
+    let list = scene + 0x1c;
+    t.w32(list, if rng.chance(4) { list } else { obj + 0x140 });
+    for k in 0..3 {
+        let v = rng.next();
+        t.w32(task + 4 + 4 * k, v);
+    }
+    let (first, second) = (obj + 0x180, obj + 0x190);
+    t.w32(task + 0xc, first);
+    t.w32(task + 0x10, second);
+    for target in [first, second] {
+        let texture = if rng.chance(4) { 0 } else { rng.next() };
+        t.w32(target, texture);
+        t.write(target + 4, &[u8::from(rng.chance(4))]);
+    }
+    let area = obj + 0x400;
+    let steps = cursor_steps(t, area, false, rng);
+    t.stub_cursor_script(h29::CURSOR_SEEK4, h29::CURSOR_NEXT4, &steps);
+    let buffer = obj + 0x1c00;
+    let size = pick(rng, &[0x38, 0x20, 0x10]);
+    t.w32(buffer, size);
+    for e in 0..12 {
+        let element = area + 0x100 * e;
+        let shader = rng.next();
+        t.w32(element + 4, shader);
+        t.w32(element + 8, buffer);
+    }
+    let found: Vec<u32> = (0..48)
+        .map(|k| {
+            if rng.chance(4) {
+                0
+            } else {
+                obj + 0x1d00 + 0x10 * (k % 16)
+            }
+        })
+        .collect();
+    t.stub_seq(h29::FIND_PARAMETER, true, 1, 1, &found);
+    for k in 0..16 {
+        let at = obj + 0x1d00 + 0x10 * k;
+        let kind = pick(rng, &[0x42, 0xd9, 0xdc, 0x12, 0x10, 0x43]);
+        t.write(at + 2, &[kind as u8]);
+        let offset = pick(rng, &[0, 3, 4, 8, 0x20]);
+        let n = pick(rng, &[0, 4, 0x10, 0x30, 0x2000 | 8]);
+        t.write(at + 8, &(offset as u16).to_le_bytes());
+        t.write(at + 0xa, &(n as u16).to_le_bytes());
+    }
+    t.stub_ret(h29::OPERATOR_NEW, false, 1, 0, obj + 0x1f00);
+    t.global(h29::RENDER_DELEGATION_HELPER, obj + 0x1f80);
+}
+
+#[rustfmt::skip]
+const CASES29: &[Case] = &[
+    framed(Case { prep: Some(prep_data_buffer), ..cdecl("vfx_create_data_buffer", 0x0064_5040, 7, &[(h29::STRNCPY, K::ImportC(3))], |m, _, a| { let slots = slots_at(m, a); gh29::vfx_create_data_buffer(m, frame_ebp(), slots, a[0], a[1], a[2], a[3], a[4], a[5], a[6]); Out::None }) }, 0xc, 0x1c),
+    framed(Case { prep: Some(prep_water), ..cdecl("process_water_distortion", 0x006f_54f0, 1, WATER_STUBS, |m, _, a| { let slots = slots_at(m, a); gh29::process_water_distortion(m, frame_ebp(), slots, a[0]); Out::None }) }, 0x64, 4),
+];
+
+#[test]
+fn batch29_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES29, n, &mut Rng(0x2929_b029));
     });
 }
