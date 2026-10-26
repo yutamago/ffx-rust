@@ -24,6 +24,7 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pother_b::{m4r_dynblocks, m4r_mesh};
+use ffx_prender::m4r_gauss as gs;
 use ffx_prender::m4r_meshlist as ml;
 use ffx_prender::m4r_modnet as mn;
 use ffx_prender::m4r_nodecapture as nc;
@@ -1249,5 +1250,115 @@ fn process_render_commands_matches_the_original() {
             calls += t.log_entries();
         }
         assert!(calls > 300, "{name}: the stubs ran ({calls} calls)");
+    }
+}
+
+// ---- 0x00a0ff50: the legacy glow's Gaussian tables ----
+
+/// A random word that is not a signalling NaN (the emulator keeps those
+/// signalling where the CPU quiets them).
+fn no_snan(rng: &mut Rng) -> u32 {
+    let w = rng.next();
+    if ffx_bridge::x87::is_snan(w) {
+        w | 0x0040_0000
+    } else {
+        w
+    }
+}
+
+#[test]
+fn gaussian_tables_match_the_original() {
+    const SYM: u32 = 0x00a0_ff50;
+    const GLOW: usize = 0xd00;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x6a05_5150);
+        let spreads: Vec<u32> = [
+            1.0_f32,
+            0.65,
+            0.0,
+            -0.0,
+            2.5,
+            -1.25,
+            0.1,
+            3.0e38,
+            -7.75,
+            1.0e-3,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ]
+        .iter()
+        .map(|f| f.to_bits())
+        .chain([
+            0x7fc0_1234,
+            0xffc0_0000,
+            0x0000_0001,
+            0x8000_0003,
+            0x0012_3456,
+        ])
+        .collect();
+        let sizes: &[(u32, u32)] = &[
+            (1280, 720),
+            (1920, 1080),
+            (0, 0),
+            (1, 1),
+            (2, 3),
+            (641, 359),
+            (0xffff_ffff, 0x8000_0000),
+            (7, 0x1234_5679),
+            (0x0100_0001, 0x7fff_ffff),
+        ];
+        let mut case = 0;
+        for &n in &[7_u32, 5, 3] {
+            for (i, &spread) in spreads.iter().enumerate() {
+                let (w, h) = sizes[(i + n as usize) % sizes.len()];
+                let glow = t.zeros(GLOW);
+                let junk: Vec<u32> = (0..GLOW / 4).map(|_| no_snan(&mut rng)).collect();
+                t.w32s(glow, &junk);
+                t.check(
+                    &format!("{name} case {case}: n {n}, {w}x{h}, spread {spread:#x}"),
+                    SYM,
+                    Conv::Thiscall(glow),
+                    &[w, h, n, spread],
+                    |g| gs::bridge::gaussian_tables(g, glow, w, h, n, spread),
+                );
+                case += 1;
+            }
+        }
+        // random sizes and spreads
+        for _ in 0..12 {
+            let n = [3, 5, 7][rng.below(3) as usize];
+            let (w, h) = (rng.next(), rng.below(4096));
+            let spread = small_float(&mut rng);
+            let glow = t.zeros(GLOW);
+            let what = format!("{name} case {case}: n {n}, {w}x{h}, spread {spread:#x}");
+            t.check(&what, SYM, Conv::Thiscall(glow), &[w, h, n, spread], |g| {
+                gs::bridge::gaussian_tables(g, glow, w, h, n, spread)
+            });
+            case += 1;
+        }
+        // tap counts it refuses: 5, nothing written
+        for n in [
+            0_u32,
+            1,
+            2,
+            4,
+            6,
+            8,
+            9,
+            11,
+            0xffff_fffd,
+            0xffff_ffff,
+            0x8000_0007,
+        ] {
+            let glow = t.zeros(GLOW);
+            let one = 1.0_f32.to_bits();
+            t.check(
+                &format!("{name} taps {n:#x}"),
+                SYM,
+                Conv::Thiscall(glow),
+                &[640, 360, n, one],
+                |g| gs::bridge::gaussian_tables(g, glow, 640, 360, n, one),
+            );
+        }
     }
 }

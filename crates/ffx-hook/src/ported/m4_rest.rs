@@ -12,12 +12,14 @@
 //! modifier network's run where `PModifierNetworkDynamicMesh::fillPacket`
 //! fills a packet (its `_alloca` arrays on the heap: no large frames on
 //! a worker's stack); `processRenderCommands` on the render thread (its
-//! 16 KB frame as the original's). The shims keep no state; frames are
-//! per call.
+//! 16 KB frame as the original's); the legacy glow's Gaussian tables where
+//! `PLegacyGlow_setup` sets the glow up (no frame). The shims keep no
+//! state; frames are per call.
 
 use super::{StackFrame, mem, ported};
 use ffx_pother_b::m4r_dynblocks::bridge as blocks;
 use ffx_pother_b::m4r_mesh::bridge as mesh;
+use ffx_prender::m4r_gauss as gauss;
 use ffx_prender::m4r_meshlist as meshlist;
 use ffx_prender::m4r_modnet as modnet;
 use ffx_prender::m4r_nodecapture as nodecapture;
@@ -83,5 +85,11 @@ ported! {
         let mut frame = StackFrame::<0x1021>::new();
         let ebp = frame.at() + rendercmds::FRAME;
         rendercmds::bridge::process(&mut mem(), thread, first, end, ebp)
+    }
+    /// `PLegacyGlow_computeGaussianTables_00a0ff50(glow; width, height,
+    /// taps, spread)` -> 0, or 5 for a bad tap count (`spread` as its
+    /// `f32` bits).
+    Phyre_PPostProcessing_PLegacyGlow_computeGaussianTables_00a0ff50 @ 0x00a0_ff50 => extern "thiscall" fn gaussian_tables(glow: u32, width: u32, height: u32, taps: u32, spread: u32) -> u32 {
+        gauss::bridge::gaussian_tables(&mut mem(), glow, width, height, taps, spread)
     }
 }
