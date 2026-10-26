@@ -86,11 +86,12 @@ of the changed test files and of the modules whose hook shims changed, on the
 image alone and on both snapshots side by side (all of them when
 `ffx-oracle/src` or `ffx-bridge` changed). When anything under `crates/`
 changed it then runs the static port checks (check-ported, check-clobber,
-check-callwidth, check-thisarg, check-callconv, check-tailargs; below) and
+check-callwidth, check-thisarg, check-argslots, check-callconv,
+check-tailargs; below) and
 `tools/build-hook.sh`, and when `crates/`, `tools/replays/` or the
 comparison scripts changed, `tools/replays/run-all.sh` (`--no-replays`
-skips it). It does not run check-argslots, the scene gates or the audio
-comparison: run those yourself when the batch can affect them. check-clobber and check-ported share one disassembly cache
+skips it). It does not run the scene gates or the audio comparison: run
+those yourself when the batch can affect them. check-clobber and check-ported share one disassembly cache
 (`tools/disasm_cache.py`, `~/ffx-work/cache/clobber-<key>.pickle`, keyed on
 FFX.exe's hash and the objdump version): check-clobber takes about 6 s warm
 and 30 s when FFX.exe or objdump changed, check-ported about 4 s warm and
