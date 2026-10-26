@@ -849,3 +849,125 @@ pub mod bridge9 {
         h.call_sym(TEXT_RENDER, Conv::Thiscall(tw + 4), &[ctx])
     }
 }
+
+/// `Phyre_PRedBlackTree_remove` (thiscall `(tree, node)`, `ret 4`).
+pub const TREE_REMOVE: u32 = 0x0057_5000;
+/// `Phyre_PFreeList_reset` (thiscall `(list)`).
+pub const FREE_LIST_RESET: u32 = 0x0049_cc10;
+/// `Phyre_CharacterLighting_setPointLightPosition` (thiscall `(cl, x, y,
+/// z, i)`, `ret 0x10`).
+pub const SET_POINT_LIGHT_POSITION: u32 = 0x006a_ad90;
+/// The `f32` constants `reset` stores: the colour lights' range
+/// (`0x00b9232c`), the point lights' range (`0x00b304f8`), the flash
+/// timer's off value (`0x00b92340`).
+pub const RESET_CONSTANTS: [u32; 3] = [0x00b9_232c, 0x00b3_04f8, 0x00b9_2340];
+
+pub mod bridge10 {
+    //! The original over game memory.
+
+    use super::{
+        APPLY_INTENSITY, COLOR_LIGHT_TYPE, Conv, FREE_LIST_RESET, Host, ONE, POINT_LIGHT_TYPE,
+        RESET_CONSTANTS, SET_POINT_LIGHT_POSITION, TREE_REMOVE,
+    };
+    use crate::methods::quiet;
+
+    fn light(h: &mut impl Host, cl: u32, i: u32) -> u32 {
+        let set: u32 = h.read(cl + 0xf0);
+        let lights: u32 = h.read(set + 4);
+        h.read(lights.wrapping_add(4 * i))
+    }
+
+    /// Light 3 becomes a point light (as `setPointLight` does) unless it
+    /// is one; `range` is the point range's bits.
+    fn make_point(h: &mut impl Host, l: u32, range: u32) {
+        if h.read::<u32>(l + 0x18) == h.rebase(POINT_LIGHT_TYPE) {
+            return;
+        }
+        let node: u32 = h.read(l + 0x10);
+        h.write(l + 0x24, ONE);
+        h.write(l + 0x18, h.rebase(POINT_LIGHT_TYPE));
+        h.write(l + 0x28, 0u32);
+        h.write(l + 0x2c, range);
+        h.write(node + 0x20, 0u32);
+        h.write(node + 0x24, 0u32);
+        h.write(node + 0x28, 0u32);
+    }
+
+    /// `CharacterLighting::reset(cl)` (`0x006aa010`, fastcall): lights 0..2
+    /// become colour lights with the stored colours (`+0x124 + 0x10 i`),
+    /// alpha and intensity 1, range 0..`[0x00b9232c]`, and are applied;
+    /// their three intensity words (`+0x1a8 + 0xc i`) become 1, 0, 0 (and
+    /// apply again on an initialised manager with a light set); the
+    /// global and ambient intensities 1; the shade tree (`+0x1f0`) is
+    /// emptied and its free list (`+0x208`) reset; on an initialised
+    /// manager light 3 becomes a black point light at the origin
+    /// (`setPointLightPosition(0, 0, 0, 3)`) with range 0..100; the
+    /// flash is off (`[0x00b92340]`), `+0x1d0..0x1ec`, `+0x220`, `+0x22c`
+    /// cleared.
+    pub fn reset(h: &mut impl Host, cl: u32) {
+        let [far, point_range, flash_off] = RESET_CONSTANTS.map(|a| h.rebase(a));
+        let far: u32 = h.read(far);
+        h.write(cl + 0x230, 0u8);
+        for i in 0..3u32 {
+            let l = light(h, cl, i);
+            h.write(l + 0x18, h.rebase(COLOR_LIGHT_TYPE));
+            let at = cl + 0x10 * i;
+            for k in 0..3 {
+                // through two fld/fstp pairs
+                let c = quiet(h.read(at + 0x124 + 4 * k));
+                h.write(l + 4 * k, c);
+            }
+            h.write(l + 0xc, ONE);
+            h.write(l + 0x24, ONE);
+            h.write(l + 0x28, 0u32);
+            h.write(l + 0x2c, far);
+            h.call_sym(APPLY_INTENSITY, Conv::Thiscall(cl), &[i, 1]);
+            let w = cl + 0xc * i;
+            h.write(w + 0x1a8, ONE);
+            h.write(w + 0x1b0, 0u32);
+            h.write(w + 0x1ac, 0u32);
+            if h.read::<u8>(cl + 0x1cc) != 0 {
+                h.write(w + 0x1a8, ONE);
+                if h.read::<u32>(cl + 0xf0) != 0 {
+                    h.call_sym(APPLY_INTENSITY, Conv::Thiscall(cl), &[i, 1]);
+                }
+            }
+        }
+        h.write(cl + 0x1a0, ONE);
+        h.write(cl + 0x1a4, ONE);
+        let tree = cl + 0x1f0;
+        loop {
+            let node: u32 = h.read(tree + 0xc);
+            if node == tree || node == 0 {
+                break;
+            }
+            h.call_sym(TREE_REMOVE, Conv::Thiscall(tree), &[node]);
+        }
+        h.call_sym(FREE_LIST_RESET, Conv::Thiscall(tree + 0x18), &[]);
+        let on = h.read::<u8>(cl + 0x1cc) != 0;
+        h.write(cl + 0x22c, 0u32);
+        if on {
+            let range: u32 = h.read(point_range);
+            let l = light(h, cl, 3);
+            make_point(h, l, range);
+            for k in 0..3 {
+                h.write(l + 4 * k, 0u32);
+            }
+            h.write(l + 0xc, ONE);
+            h.call_sym(SET_POINT_LIGHT_POSITION, Conv::Thiscall(cl), &[0, 0, 0, 3]);
+            if h.read::<u8>(cl + 0x1cc) != 0 {
+                let range: u32 = h.read(point_range);
+                let l = light(h, cl, 3);
+                make_point(h, l, range);
+                h.write(l + 0x28, 0u32);
+                h.write(l + 0x2c, range);
+            }
+        }
+        let off: u32 = h.read(flash_off);
+        h.write(cl + 0x154, off);
+        for k in 0..8 {
+            h.write(cl + 0x1d0 + 4 * k, 0u32);
+        }
+        h.write(cl + 0x220, 0u32);
+    }
+}

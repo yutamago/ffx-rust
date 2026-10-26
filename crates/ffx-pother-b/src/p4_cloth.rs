@@ -349,3 +349,95 @@ pub mod bridge3 {
         (inst, slot)
     }
 }
+
+/// The stream semantics `0x006e2000` tests (`.data`): two that mark the
+/// position flags, one that marks the normal flags and is copied.
+pub const CLOTH_POSITION_STREAMS: [u32; 2] = [0x00c9_8620, 0x00c9_85d8];
+/// See [`CLOTH_POSITION_STREAMS`].
+pub const CLOTH_COPIED_STREAM: u32 = 0x00c9_8650;
+/// `memcpy` (cdecl `(dst, src, n)`), as [`MEMCPY`] but named for the
+/// stream copy.
+pub const STREAM_MEMCPY: u32 = MEMCPY;
+
+pub mod bridge4 {
+    //! The originals over game memory.
+
+    use super::{CLOTH_COPIED_STREAM, CLOTH_POSITION_STREAMS, Conv, Host, STREAM_MEMCPY};
+
+    /// `0x006e2000(mesh, slot, job, outs)` (thiscall, `ret 0xc`): for the
+    /// job's cloth instance (`job + 8 + [job + 8]`: a busy word, then the
+    /// instance), each stream `k` of the mesh's draw entry `slot`
+    /// (`[mesh + 0x14] + 0x10 slot`: first stream, count) whose group
+    /// output is set (`outs[j]`, `j` the nearest stream at or before `k`
+    /// that starts a group (`+0` zero) or 0) marks the slot's position
+    /// flag (`+0x610 + 4 slot`) for the position semantics and its normal
+    /// flag (`+0x810`) for [`CLOTH_COPIED_STREAM`], whose data the staged
+    /// buffer (`+0x210`, `+0x1810` bytes) is copied to (`outs[k] + 0x3c`)
+    /// when there is one. Clears the busy word. Returns the busy word's
+    /// address (the draw table for an empty entry), as the original's
+    /// `eax`, and the stream count it leaves in its `job` argument's slot.
+    pub fn stage_streams(
+        h: &mut impl Host,
+        mesh: u32,
+        slot: u32,
+        job: u32,
+        outs: u32,
+    ) -> (u32, u32) {
+        let off: u32 = h.read(job + 8);
+        let busy = (job + 8).wrapping_add(off);
+        let inst: u32 = h.read(busy + 4);
+        let src: u32 = h.read(inst.wrapping_add(0x210).wrapping_add(4 * slot));
+        let n: u32 = h.read(inst.wrapping_add(0x1810).wrapping_add(4 * slot));
+        let pos_flags = inst.wrapping_add(0x610);
+        let norm_flags = inst.wrapping_add(0x810);
+        let entry = slot.wrapping_mul(0x10);
+        let table: u32 = h.read(mesh + 0x14);
+        if h.read::<u32>(entry.wrapping_add(table) + 4) == 0 {
+            h.write(busy, 0u32);
+            return (table, 0);
+        }
+        let positions = CLOTH_POSITION_STREAMS.map(|a| h.rebase(a));
+        let copied = h.rebase(CLOTH_COPIED_STREAM);
+        let mut k = 0u32;
+        loop {
+            let table: u32 = h.read(mesh + 0x14);
+            let first: u32 = h.read(entry.wrapping_add(table));
+            let streams: u32 = h.read(mesh + 0xc);
+            let semantic: u32 =
+                h.read(streams.wrapping_add(first.wrapping_add(k).wrapping_mul(0xc)) + 4);
+            // back to the group's first stream
+            let mut j = k;
+            while j != 0 {
+                if first.wrapping_add(j) <= first {
+                    break;
+                }
+                let e = streams.wrapping_add(first.wrapping_add(j).wrapping_mul(0xc));
+                if h.read::<u32>(e) == 0 {
+                    break;
+                }
+                j -= 1;
+            }
+            if h.read::<u32>(outs.wrapping_add(4 * j)) != 0 {
+                let position = semantic == positions[0] || semantic == positions[1];
+                let normal = semantic == copied;
+                if src != 0 && n != 0 && normal {
+                    let out: u32 = h.read(outs.wrapping_add(4 * k));
+                    let dst: u32 = h.read(out + 0x3c);
+                    h.call_sym(STREAM_MEMCPY, Conv::Cdecl, &[dst, src, n]);
+                }
+                for (flags, on) in [(pos_flags, position), (norm_flags, normal)] {
+                    let at = flags.wrapping_add(4 * slot);
+                    let v = u32::from(h.read::<u32>(at) != 0 || on);
+                    h.write(at, v);
+                }
+            }
+            k += 1;
+            let table: u32 = h.read(mesh + 0x14);
+            if k >= h.read::<u32>(entry.wrapping_add(table) + 4) {
+                break;
+            }
+        }
+        h.write(busy, 0u32);
+        (busy, k)
+    }
+}

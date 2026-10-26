@@ -1079,4 +1079,37 @@ ported! {
         let ebp = frame.at() + 0xa8;
         p4_light::bridge9::render(&mut mem(), ebp, tw, ctx, x, fps)
     }
+    // ---- p4-other-b c2 batch 4 ----
+    /// `ClothInstancingDynamicMesh_stageStreams(mesh, slot, job, outs)` ->
+    /// the busy word's address (or the draw table); leaves the stream count
+    /// in the `job` slot, as the original does.
+    ClothInstancingDynamicMesh_stageStreams_006e2000 @ 0x006e_2000 => extern "thiscall" fn cloth_stage_streams(mesh: u32, slot: u32, job: u32, outs: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, k) = p4_cloth::bridge4::stage_streams(&mut m, mesh, slot, job, outs);
+        ffx_bridge::Mem::write(&mut m, slots.wrapping_add(4), k);
+        r
+    }
+    /// `MorphManager::registerClusterMorphs(mm, cluster)` -> 0; leaves the
+    /// last instance in its argument's slot, as the original does.
+    MorphManager_registerClusterMorphs @ 0x006a_ca10 => extern "thiscall" fn register_cluster_morphs(mm: u32, cluster: u32; slots: u32) -> u32 {
+        // ebp - 0x40 .. ebp: the cursor (8 words), temporaries
+        let mut frame = super::StackFrame::<0x10>::new();
+        let ebp = frame.at() + 0x40;
+        let mut m = mem();
+        let (r, word) = p4_morph::bridge3::register_cluster_morphs(&mut m, ebp, mm, cluster);
+        ffx_bridge::Mem::write(&mut m, slots, word);
+        r
+    }
+    /// `MorphManager::initialize(mm, x)` -> 0 or 0xd.
+    MorphManager_initialize_006ac1b0 @ 0x006a_c1b0 => extern "thiscall" fn morph_initialize(mm: u32, x: u32) -> u32 {
+        p4_morph::bridge4::initialize(&mut mem(), mm, x)
+    }
+    /// `CharacterLighting::reset(cl)`.
+    Phyre_CharacterLighting_reset @ 0x006a_a010 => extern "fastcall" fn lighting_reset(cl: u32) {
+        p4_light::bridge10::reset(&mut mem(), cl);
+    }
+    /// `MorphManager::reset(mm)`.
+    MorphManager_reset @ 0x006a_c530 => extern "fastcall" fn morph_reset(mm: u32) {
+        p4_morph::bridge4::reset(&mut mem(), mm);
+    }
 }

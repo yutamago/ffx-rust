@@ -4152,3 +4152,288 @@ fn p4c2_tweak_render_matches_the_original() {
         }
     }
 }
+
+// ---- c2 batch 4 ----
+
+#[test]
+fn p4c2_cloth_stage_streams_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006e_2000);
+        t.stub(p4_cloth::MEMCPY, false, 3, 0, 0x0c0b_0000);
+        let semantics = [
+            t.rebase(0x00c9_8620),
+            t.rebase(0x00c9_85d8),
+            t.rebase(0x00c9_8650),
+            t.rebase(0x00c9_8638),
+            0,
+        ];
+        for i in 0..160 {
+            let what = format!("{name} cloth stage case {i}");
+            let slot = rng.below(4);
+            let count = [0, 1, 2, 4, 6][rng.below(5) as usize];
+            let first = rng.below(3);
+            let streams = t.zeros(0xc * (first + count + 1) as usize);
+            for s in 0..first + count {
+                let e = streams + 0xc * s;
+                t.w32(e, u32::from(!rng.chance(3)));
+                t.w32(e + 4, semantics[rng.below(5) as usize]);
+            }
+            let table = t.zeros(0x50);
+            t.fill(&mut rng, table, 0x50);
+            t.w32(table + 0x10 * slot, first);
+            t.w32(table + 0x10 * slot + 4, count);
+            let mesh = t.zeros(0x20);
+            t.fill(&mut rng, mesh, 0x20);
+            t.w32(mesh + 0xc, streams);
+            t.w32(mesh + 0x14, table);
+            let inst = t.zeros(0x1820);
+            t.fill(&mut rng, inst, 0x1820);
+            for at in [0x610, 0x810] {
+                let v = u32::from(rng.chance(3));
+                t.w32(inst + at + 4 * slot, v);
+            }
+            if rng.chance(4) {
+                t.w32(inst + 0x210 + 4 * slot, 0);
+            }
+            if rng.chance(4) {
+                t.w32(inst + 0x1810 + 4 * slot, 0);
+            }
+            let job = t.zeros(0x20);
+            t.fill(&mut rng, job, 0x20);
+            t.w32(job + 8, 8);
+            t.w32(job + 0x14, inst);
+            let outs = t.zeros(4 * (count + 1) as usize);
+            for k in 0..count {
+                let o = if rng.chance(4) {
+                    0
+                } else {
+                    let o = t.zeros(0x40);
+                    t.fill(&mut rng, o, 0x40);
+                    o
+                };
+                t.w32(outs + 4 * k, o);
+                if o == 0 {
+                    // a null output is never the copy's target
+                    t.w32(streams + 0xc * (first + k) + 4, semantics[0]);
+                }
+            }
+            let mut word = 0;
+            t.case(
+                &what,
+                0x006e_2000,
+                Conv::Thiscall(mesh),
+                &[slot, job, outs],
+                |g| {
+                    let (r, k) = p4_cloth::bridge4::stage_streams(g, mesh, slot, job, outs);
+                    word = k;
+                    Out::U32(r)
+                },
+            );
+            let at = t.a.stack_range().end - 0x100 - 12 + 4;
+            assert_eq!(Mem::read::<u32>(&t.a, at), word, "{what}: slot");
+        }
+    }
+}
+
+#[test]
+fn p4c2_register_cluster_morphs_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_ca10);
+        // Begin copies cells b[0..5] into the cursor; Next copies n[0..5]
+        // once, then reports an empty block
+        let b = t.zeros(20);
+        let n = t.zeros(20);
+        for (sym, cells, once) in [
+            (p4_morph::CURSOR_BEGIN, b, false),
+            (p4_morph::CURSOR_NEXT, n, true),
+        ] {
+            let mut tail = Vec::new();
+            for k in 0..5u32 {
+                tail.push(0xa1);
+                tail.extend((cells + 4 * k).to_le_bytes()); // mov eax, [cell k]
+                tail.extend([0x89, 0x41, (4 * k) as u8]); // mov [ecx+4k], eax
+            }
+            if once {
+                tail.extend([0xc7, 0x05]);
+                tail.extend((cells + 0xc).to_le_bytes());
+                tail.extend(0u32.to_le_bytes()); // mov dword [remaining], 0
+            }
+            tail.push(0xc3);
+            t.stub_tail(sym, true, 0, &tail);
+        }
+        let has = t.stub_cell(p4_morph::HAS_PARAMETER, true, 2, 2);
+        t.stub(p4_morph::ADD_PAIR, false, 3, 3, 0x0add_0000);
+        t.stub(p4_morph::ADD_UV_OFFSET, false, 5, 5, 0x0a0f_0000);
+        let cursor: Vec<i32> = (0..8).map(|k| -0x40 + 4 * k).collect();
+        for i in 0..96 {
+            let what = format!("{name} cluster morphs case {i}");
+            let stride = [0x60, 0x64][rng.below(2) as usize];
+            let off = [0, 8][rng.below(2) as usize];
+            let count = 12u32;
+            let items = t.zeros((stride * (count + 2)) as usize);
+            for k in 0..=count {
+                let it = items + stride * k + off;
+                t.fill(&mut rng, it, 0x58);
+                let bounds = t.zeros(0x24);
+                t.fill(&mut rng, bounds, 0x24);
+                t.w32(it + 0x1c, bounds);
+                t.w32(it + 0x4c, [1, 0, 2][rng.below(3) as usize]);
+                t.w32(it + 0x30, [0, 1, 3, 0xffff_ffff][rng.below(4) as usize]);
+                t.w32(it + 0x44, [1, 3, 4, 0, 2][rng.below(5) as usize]);
+                t.w32(it + 0x18, if rng.chance(3) { 0 } else { rng.next() });
+                t.w32(
+                    it + 0x54,
+                    if rng.chance(2) {
+                        0x400
+                    } else {
+                        rng.next() & !0x400
+                    },
+                );
+                // an element's first word: where a node pointing at it goes next
+                let next = items + stride * rng.below(count + 1);
+                t.w32(items + stride * k, next);
+            }
+            // a node at one of the elements (or past them)
+            let node = items + stride * (1 + rng.below(count + 2));
+            let first = rng.below(5);
+            let second = if rng.chance(2) { 0 } else { 1 + rng.below(4) };
+            for (cells, start, left) in [(b, 0, first), (n, first + 2, second)] {
+                t.w32(cells, items + stride * start);
+                t.w32(cells + 4, node);
+                t.w32(cells + 8, stride);
+                t.w32(cells + 0xc, left);
+                t.w32(cells + 0x10, off);
+            }
+            t.w32(has, u32::from(rng.chance(2)) | (rng.next() & 0xffff_ff00));
+            let cluster = t.zeros(0x40);
+            t.fill(&mut rng, cluster, 0x40);
+            if rng.chance(3) {
+                t.w32(cluster + 0x1c, cluster + 0x1c);
+            }
+            let mm = rng.next() & !0xf;
+            let mut word = 0;
+            t.frame_case(
+                &what,
+                0x006a_ca10,
+                Conv::Thiscall(mm),
+                &[cluster],
+                0x40,
+                &cursor,
+                |g, ebp| {
+                    let (r, w) = p4_morph::bridge3::register_cluster_morphs(g, ebp, mm, cluster);
+                    word = w;
+                    Out::U32(r)
+                },
+            );
+            let at = t.a.stack_range().end - 0x100 - 4;
+            assert_eq!(Mem::read::<u32>(&t.a, at), word, "{what}: slot");
+        }
+    }
+}
+
+#[test]
+fn p4c2_morph_initialize_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_c1b0);
+        let block = t.stub_cell(p4_morph::PHYRE_MALLOC, false, 2, 0);
+        t.stub(ffx_pother_b::PHYRE_FREE, false, 1, 0, 0);
+        for i in 0..96 {
+            let what = format!("{name} morph initialize case {i}");
+            let mm = t.zeros(0x28);
+            t.fill(&mut rng, mm, 0x28);
+            // sometimes only the UV-offset array needs memory
+            let only_uv = rng.chance(4);
+            for arr in [0, 8, 0x10, 0x18] {
+                let n = if only_uv && arr != 0x18 {
+                    0x10
+                } else {
+                    [0x10, 0, 3, 0x8000_0010, 0x8000_0003][rng.below(5) as usize]
+                };
+                t.w32(mm + arr, n);
+                if rng.chance(5) {
+                    t.w32(mm + arr + 4, 0);
+                }
+            }
+            // every allocation hands out the same block; sometimes none
+            let p = if rng.chance(6) {
+                0
+            } else {
+                let p = t.zeros(0x100);
+                t.fill(&mut rng, p, 0x100);
+                p
+            };
+            t.w32(block, p);
+            let x = rng.next();
+            t.case(&what, 0x006a_c1b0, Conv::Thiscall(mm), &[x], |g| {
+                Out::U32(p4_morph::bridge4::initialize(g, mm, x))
+            });
+        }
+    }
+}
+
+#[test]
+fn p4c2_lighting_reset_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_a010);
+        t.stub(p4_light::APPLY_INTENSITY, true, 2, 2, 0x0a11_0000);
+        // remove: the root becomes [next], and next time the tree itself
+        let next = t.zeros(4);
+        let mut tail = vec![0xa1];
+        tail.extend(next.to_le_bytes()); // mov eax, [next]
+        tail.extend([0x89, 0x41, 0x0c]); // mov [ecx+0xc], eax
+        tail.extend([0x89, 0x0d]);
+        tail.extend(next.to_le_bytes()); // mov [next], ecx
+        tail.extend([0xc2, 0x04, 0x00]); // ret 4
+        t.stub_tail(p4_light::TREE_REMOVE, true, 1, &tail);
+        t.stub(p4_light::FREE_LIST_RESET, true, 0, 0, 0x0f1e_0000);
+        t.stub(p4_light::SET_POINT_LIGHT_POSITION, true, 4, 4, 0x0905_0000);
+        for i in 0..128 {
+            let what = format!("{name} lighting reset case {i}");
+            let cl = lighting(&mut t, &mut rng);
+            // the stored colours, without signalling NaNs (the emulator
+            // keeps them where the CPU quiets them)
+            for k in 0..12 {
+                let w = float_word(&mut rng);
+                t.w32(cl + 0x124 + 4 * k, w);
+            }
+            let tree = cl + 0x1f0;
+            let root = [tree, 0, rng.next() | 1][rng.below(3) as usize];
+            t.w32(tree + 0xc, root);
+            t.w32(next, [tree, 0, rng.next() | 1][rng.below(3) as usize]);
+            t.case(&what, 0x006a_a010, Conv::Thiscall(cl), &[], |g| {
+                p4_light::bridge10::reset(g, cl);
+                Out::None
+            });
+        }
+    }
+}
+
+#[test]
+fn p4c2_morph_reset_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_c530);
+        let block = t.stub_bump(p4_morph::PHYRE_MALLOC, 2);
+        t.stub(ffx_pother_b::PHYRE_FREE, false, 1, 0, 0);
+        for i in 0..96 {
+            let what = format!("{name} morph reset case {i}");
+            let mm = t.zeros(0x28);
+            t.fill(&mut rng, mm, 0x28);
+            for (arr, size) in [(0, 8), (8, 8), (0x10, 8), (0x18, 0x10)] {
+                let n = [0x10, 0, 3, 0x8000_0010, 0x8000_0003, 0x8000_0101][rng.below(6) as usize];
+                t.w32(mm + arr, n);
+                let len = size * (n & 0xfff);
+                let data = t.zeros(len as usize + 4);
+                t.fill(&mut rng, data, len);
+                t.w32(mm + arr + 4, data);
+            }
+            // blocks 0x40 apart in one pool (they overlap, alike on both
+            // sides), or no memory at all
+            let pool = if rng.chance(6) { 0 } else { t.zeros(0x400) };
+            t.w32(block, pool);
+            t.case(&what, 0x006a_c530, Conv::Thiscall(mm), &[], |g| {
+                p4_morph::bridge4::reset(g, mm);
+                Out::None
+            });
+        }
+    }
+}
