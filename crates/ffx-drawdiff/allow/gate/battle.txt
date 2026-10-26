@@ -23,3 +23,12 @@ resource vs=4b348451d7564b41 field=vb3 cause: NoTexture quads' UVs are stale cal
 # comes from the harness's per-batch seed, so blinks shift with load
 # timing. Seen here once with a subset of the hooks (dg-uv-a5).
 resource vs=db349612ecc598d8 field=ps.srv1 cause: eye-blink texture animation whose timing follows load timing (BC1/BC3 frame), as fw-101's draw 113 in original runs
+
+# Not seen between original runs (every original passes 0x00000001): an
+# entry by the junk-read policy (~/ffx-work/agents/brief.md, user
+# 2026-10-24), as in draw-field.txt. The ported Ch_DrawMain passes 0. With
+# only-m4 the original Ch_DrawMain reads what the ports left on the stack
+# (bisected on kami0100: Sg_AccSetFrameChr 0x0082be20 alone gives
+# 0x00d90000). The replays' shots of these scenes match the original at 0
+# pixels; whether a shader reads the word is not checked here.
+constant var=SgSpec_CameraVec field=*.SgSpec_CameraVec[0].z cause: junk read, Ch_DrawMain never writes [ebp-0x2c] (the camera vector's third word); its value depends on what earlier calls left on the stack
