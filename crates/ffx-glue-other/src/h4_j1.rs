@@ -117,6 +117,11 @@ pub const KEYBOARD_NAMES: u32 = 0x00ce_9038;
 /// Bytes of each name buffer.
 pub const NAMES_LEN: u32 = 0x1000;
 
+/// `FFEscMenu_initControllerKeyNames_00702250()` ([`fill_controller_names`]).
+pub const FFESC_INIT_CONTROLLER_KEY_NAMES: u32 = 0x0070_2250;
+/// `FFEscMenu_initKeyboardKeyNames_006ffc80()` ([`fill_keyboard_names`]).
+pub const FFESC_INIT_KEYBOARD_KEY_NAMES: u32 = 0x006f_fc80;
+
 /// The controller page's (message, slot) pairs, in call order.
 pub const CONTROLLER_PAIRS: [(u16, u8); 16] = [
     (0x367, 0xb),

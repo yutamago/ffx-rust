@@ -17,7 +17,7 @@ use ffx_glue_other::{
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
-    h4_j1 as j1, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_j1 as j1, h4_j2 as j2, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2472,5 +2472,26 @@ ported! {
     ChrMeshInstances_buildSuffixes_006a2390 @ 0x006a_2390 => extern "thiscall" fn build_instance_suffixes(this: u32) -> u32 {
         let mut frame = StackFrame::<{ (j1::SUFFIX_FRAME / 4) as usize }>::new();
         j1::build_instance_suffixes(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 8, batch 2 (ffx_glue_other::h4_j2)
+    /// `FFEscMenu_initializeControllerSettingPage(this)`.
+    FFEscMenu_initializeControllerSettingPage @ 0x0070_1fa0 => extern "thiscall" fn controller_setting_page(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j2::CONTROLLER_FRAME / 4) as usize }>::new();
+        j2::controller_page(&mut mem(), frame.at(), this)
+    }
+    /// `FFEscMenu_initializeKeyboardSettingPage(this)`.
+    FFEscMenu_initializeKeyboardSettingPage @ 0x0070_0da0 => extern "thiscall" fn keyboard_setting_page(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j2::KEYBOARD_FRAME / 4) as usize }>::new();
+        j2::keyboard_page(&mut mem(), frame.at(), this)
+    }
+    /// `FFEscMenu_initializeAudioSettingPage(this)`.
+    FFEscMenu_initializeAudioSettingPage @ 0x006f_f770 => extern "thiscall" fn audio_setting_page(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j2::AUDIO_FRAME / 4) as usize }>::new();
+        j2::audio_page(&mut mem(), frame.at(), this)
+    }
+    /// `FFEscMenu_initializeParameterChangePage(this)`.
+    FFEscMenu_initializeParameterChangePage @ 0x006f_c3f0 => extern "thiscall" fn parameter_change_page(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j2::PARAMETER_FRAME / 4) as usize }>::new();
+        j2::parameter_page(&mut mem(), frame.at(), this)
     }
 }

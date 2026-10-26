@@ -100,7 +100,9 @@
 //! - [`h4_i8`]: its eighth batch: the distortion effect's render;
 //! - [`h4_j1`]: continuation round 8, batch 1: the PS2 GS layer's first
 //!   effect packet, the settings pages' key-name tables, a UI button's
-//!   remap, the character mesh instances' name suffixes.
+//!   remap, the character mesh instances' name suffixes;
+//! - [`h4_j2`]: its second batch: the escape menu's controller and
+//!   keyboard binding pages.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -161,6 +163,7 @@ pub mod h4_i6;
 pub mod h4_i7;
 pub mod h4_i8;
 pub mod h4_j1;
+pub mod h4_j2;
 pub mod menu;
 pub mod misc;
 pub mod movie;
