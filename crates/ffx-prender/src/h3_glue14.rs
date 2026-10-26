@@ -170,7 +170,7 @@ pub mod bridge {
     }
 
     /// Sets up a cursor over `owner`'s list (`+0x1c`) for `class`.
-    fn cursor_over(h: &mut impl Host, cursor: u32, owner: u32, class: u32) {
+    pub(crate) fn cursor_over(h: &mut impl Host, cursor: u32, owner: u32, class: u32) {
         let list = owner.wrapping_add(0x1c);
         let first: u32 = h.read(list);
         let first = if first == list { 0 } else { first };

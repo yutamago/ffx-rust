@@ -28,6 +28,7 @@ use ffx_prender::h3_glue19::bridge as g19;
 use ffx_prender::h3_glue20::bridge as g20;
 use ffx_prender::h3_glue21::bridge as g21;
 use ffx_prender::h3_glue22::bridge as g22;
+use ffx_prender::h3_glue23::bridge as g23;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1607,6 +1608,19 @@ ported! {
             segment.resize(len as usize, 0);
             segment.as_mut_ptr() as usize as u32
         }, this, path);
+    }
+
+    // ---- round 6 batch 23 (ffx_prender::h3_glue23) ----
+    /// `ShadowManager_loadShadowShaderBinFiles(this)` (`ecx` only).
+    ShadowManager_loadShadowShaderBinFiles @ 0x006d_2c10 => extern "thiscall" fn shadow_load_shader_bins(this: u32) -> u32 {
+        let mut f = StackFrame::<0x49>::new();
+        g23::shadow_load_shader_bins(&mut mem(), f.at() + 0x124, this)
+    }
+    /// `VfxShaderManager_FindShader(this, name, flags)`: a `PString` goes
+    /// over `name`'s slot and `*flags` over `flags`'.
+    VfxShaderManager_FindShader @ 0x006c_06e0 => extern "thiscall" fn vfx_find_shader(this: u32, name: u32, flags: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        g23::vfx_find_shader(&mut mem(), f.at() + 4, slots, this, name, flags)
     }
 }
 

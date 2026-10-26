@@ -45,6 +45,7 @@ use ffx_prender::h3_glue19::{self as h19, bridge as gh19};
 use ffx_prender::h3_glue20::{self as h20, bridge as gh20};
 use ffx_prender::h3_glue21::{self as h21, bridge as gh21};
 use ffx_prender::h3_glue22::{self as h22, bridge as gh22};
+use ffx_prender::h3_glue23::{self as h23, bridge as gh23};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -6829,5 +6830,80 @@ fn batch22_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 40 } else { 240 };
         run_cases(t, CASES22, n, &mut Rng(0x2222_b022));
+    });
+}
+
+// ---- round 6 batch 23 (ffx_prender::h3_glue23) ----
+
+/// The loads failing now and then, the cluster (or none, its list empty
+/// or not) and what the seek finds (nothing, an object at 0, an object).
+fn prep_shadow_bins(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let error = if rng.chance(5) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h23::LOAD_ASSET_FILE, false, 3, 0, error);
+    let error = if rng.chance(5) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h23::FIXUP_CLUSTERS, false, 2, 0, error);
+    let cluster = obj + 0x400;
+    t.w32(obj, if rng.chance(5) { 0 } else { cluster });
+    t.w32(
+        cluster + 0x1c,
+        if rng.chance(2) {
+            cluster + 0x1c
+        } else {
+            obj + 0x500
+        },
+    );
+    let base = rng.next();
+    let (count, offset) = match rng.below(3) {
+        0 => (0, 4),
+        1 => (1, base.wrapping_neg()),
+        _ => (pick(rng, &[1, 2]), 4),
+    };
+    let steps = [[base, rng.next(), 0x40, count, offset], [KEEP; 5]];
+    t.stub_cursor_script(h23::CURSOR_SEEK3, h14::CURSOR_NEXT1, &steps);
+}
+
+/// The tables on or off, the name (or none), the copy (or none, or a
+/// borrowed text), the lookups (found, at -0x10, or not), the flags word.
+fn prep_find_shader(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    t.write(obj + 0x60, &[u8::from(rng.chance(2))]);
+    t.write(obj + 0x98, &[u8::from(rng.chance(2))]);
+    let name = obj + 0x200;
+    let len = rng.below(12) as usize;
+    let mut text: Vec<u8> = (0..len).map(|_| b'a' + rng.below(26) as u8).collect();
+    text.push(0);
+    t.write(name, &text);
+    args[0] = pick(rng, &[name, name, name, 0, name + 1]);
+    let flags = obj + 0x300;
+    let v = rng.next();
+    t.w32(flags, v);
+    args[1] = flags;
+    let copy = pick(rng, &[obj + 0x600, obj + 0x601, 0]);
+    t.stub_ret(h23::PHYRE_MALLOC, false, 2, 0, copy);
+    let key = rng.next();
+    t.stub_ret(h23::PSTRING_CTOR, true, 1, 1, key);
+    let node = obj + 0x700;
+    let shader = obj + 0x800;
+    t.w32(node + 0x10, shader);
+    let v = rng.next();
+    t.w32(shader, v);
+    let finds: Vec<u32> = (0..4).map(|_| pick(rng, &[0, node, 0xffff_fff0])).collect();
+    t.stub_seq(h23::PSTRING_TREE_FIND, true, 1, 1, &finds);
+    let number = pick(rng, &[0, node, 0xffff_fff0]);
+    t.stub_ret(h23::UINT_TREE_FIND, true, 1, 1, number);
+}
+
+#[rustfmt::skip]
+const CASES23: &[Case] = &[
+    framed(with_cookie(Case { prep: Some(prep_shadow_bins), ..method("shadow_load_shader_bins", 0x006d_2c10, This::Object, 0, &[(h23::FIOS_UNIFY_FILENAME, K::Cdecl(3)), (h23::GET_APPLICATION, K::Getter)], |m, this, _| u(gh23::shadow_load_shader_bins(m, frame_ebp(), this))) }), 0x124, 0),
+    framed(Case { prep: Some(prep_find_shader), ..method("vfx_find_shader", 0x006c_06e0, This::Object, 2, &[(h23::PHYRE_FREE, K::Cdecl(1))], |m, this, a| { let slots = slots_at(m, a); u(gh23::vfx_find_shader(m, frame_ebp(), slots, this, a[0], a[1])) }) }, 4, 8),
+];
+
+#[test]
+fn batch23_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES23, n, &mut Rng(0x2323_b023));
     });
 }
