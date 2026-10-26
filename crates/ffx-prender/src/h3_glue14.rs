@@ -125,7 +125,12 @@ pub mod bridge {
     /// the cursor advanced as the originals do it in registers (an
     /// element equal to the block pointer moves to the next block and is
     /// skipped), `next` called when a run ends, until the count is 0.
-    fn walk<H: Host>(h: &mut H, cursor: u32, next: u32, mut body: impl FnMut(&mut H, u32)) {
+    pub(crate) fn walk<H: Host>(
+        h: &mut H,
+        cursor: u32,
+        next: u32,
+        mut body: impl FnMut(&mut H, u32),
+    ) {
         if h.read::<u32>(cursor + 0xc) == 0 {
             return;
         }

@@ -43,6 +43,7 @@ use ffx_prender::h3_glue17::{self as h17, bridge as gh17};
 use ffx_prender::h3_glue18::{self as h18, bridge as gh18};
 use ffx_prender::h3_glue19::{self as h19, bridge as gh19};
 use ffx_prender::h3_glue20::{self as h20, bridge as gh20};
+use ffx_prender::h3_glue21::{self as h21, bridge as gh21};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -6310,4 +6311,473 @@ fn batch20_glue_matches_the_original() {
         let n = if t.snapshot { 40 } else { 240 };
         run_cases(t, CASES20, n, &mut Rng(0x2020_b020));
     });
+}
+
+// ---- round 6 batch 21 (ffx_prender::h3_glue21) ----
+
+/// A renderer error now and then.
+fn render_error(rng: &mut Rng) -> u32 {
+    if rng.chance(6) { rng.next() | 1 } else { 0 }
+}
+
+/// The full-screen mesh and its first material (inline or not), the
+/// parameter (or none), the binder and the renderer failing now and then,
+/// the target (or the back buffer) and its texture.
+fn prep_full_screen(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let post = t.zeros(0x1_2400);
+    *this = post;
+    let mesh = obj + 0x100;
+    t.w32(post + 0x1208, mesh);
+    let materials = obj + 0x200;
+    t.w32(mesh + 0x10, materials);
+    let count = pick(rng, &[1, 2, 0x8000_0001, 0x8000_0002]);
+    t.w32(materials, count);
+    let material = obj + 0x300;
+    if count & 0x7fff_ffff > 1 {
+        t.w32(materials + 4, obj + 0x280);
+        t.w32(obj + 0x280, material);
+    } else {
+        t.w32(materials + 4, material);
+    }
+    let shader = rng.next();
+    t.w32(material, shader);
+    let buffer = rng.next();
+    t.w32(material + 4, buffer);
+    let parameter = if rng.chance(4) { 0 } else { obj + 0x380 };
+    t.stub_ret(h21::FIND_PARAMETER, true, 1, 1, parameter);
+    let error = render_error(rng);
+    t.stub_ret(h21::BIND_TEXTURE, true, 2, 2, error);
+    for (sym, n) in [
+        (h21::SET_COLOR_TARGET, 2),
+        (h21::SET_DEPTH_STENCIL_TARGET, 1),
+        (h21::BEGIN_SCENE, 1),
+    ] {
+        let error = render_error(rng);
+        t.stub_ret(sym, true, n, n, error);
+    }
+    let renderer = obj + 0x800;
+    let v = rng.next();
+    t.w32(renderer + 0x13c, v);
+    let target = obj + 0x900;
+    let texture = obj + 0xa00;
+    t.w32(target, texture);
+    t.write(target + 4, &[0]);
+    let w = rng.next();
+    t.w32(texture + 0x1c, w);
+    let ht = rng.next();
+    t.w32(texture + 0x20, ht);
+    args[0] = renderer;
+    args[1] = rng.next();
+    args[2] = if rng.chance(2) { 0 } else { target };
+}
+
+/// The alpha (zero, NaN or not), the fade mesh (or none) and its colour
+/// parameter (or none; in or out of its buffer), the colour, the blend
+/// mode, the target or the surface, the renderer failing now and then.
+fn prep_screen_fade(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let post = t.zeros(0x1_2400);
+    *this = post;
+    let alpha = pick(
+        rng,
+        &[
+            0,
+            0x8000_0000,
+            0x3f00_0000,
+            0x3f80_0000,
+            0x7fc0_0000,
+            0xffc0_0001,
+            0x7f80_0000,
+        ],
+    );
+    t.w32(post + 0x1_2398, alpha);
+    for k in 0..3 {
+        let v = rng.float().to_bits();
+        t.w32(post + 0x1_238c + 4 * k, v);
+    }
+    let v = rng.next();
+    t.w32(post + 0x8c, v);
+    let mesh = obj + 0x100;
+    t.w32(post + 0x1_2388, if rng.chance(6) { 0 } else { mesh });
+    let shader = rng.next();
+    t.w32(mesh, shader);
+    let buffer = obj + 0x400;
+    t.w32(mesh + 4, buffer);
+    t.w32(buffer, pick(rng, &[0, 0x10, 0x14, 0x20, 0x80]));
+    let parameter = obj + 0x380;
+    let offset = pick(rng, &[0, 3, 4, 8, 0x10, 0x70, 0xfff0]);
+    let size = pick(rng, &[0, 4, 12, 16, 0x1010]) | (rng.below(8) << 13);
+    t.write(parameter + 8, &(offset as u16).to_le_bytes());
+    t.write(parameter + 0xa, &(size as u16).to_le_bytes());
+    t.stub_ret(
+        h21::FIND_PARAMETER,
+        true,
+        1,
+        1,
+        if rng.chance(6) { 0 } else { parameter },
+    );
+    t.w32(post + 0x1_239c, pick(rng, &[0, 2, 0x10, 1, 0x12]));
+    let mesh2 = obj + 0x600;
+    t.w32(post + 0x1_2384, mesh2);
+    let v = rng.next();
+    t.w32(mesh2 + 0x10, v);
+    for (sym, n) in [(h21::SET_COLOR_TARGET, 2), (h21::BEGIN_SCENE, 1)] {
+        let e = render_error(rng);
+        t.stub_ret(sym, true, n, n, e);
+    }
+    let renderer = obj + 0x800;
+    let v = rng.next();
+    t.w32(renderer + 0x13c, v);
+    args[0] = renderer;
+    args[1] = rng.next();
+    args[2] = if rng.chance(2) { 0 } else { rng.next() };
+    args[3] = if rng.chance(2) {
+        rng.next() & !0xff
+    } else {
+        rng.next()
+    };
+}
+
+/// The flags (UI, movie fade, pause), the UI and its viewer, the menus
+/// (none, no mesh, kinds 0, 2 and another), the fades, the target.
+fn prep_normal_ui(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    t.write(scene + 0x1_0dcc, &[u8::from(!rng.chance(4))]);
+    t.global(
+        h21::MOVIE_FADING.sym,
+        if rng.chance(2) { 0 } else { rng.next() },
+    );
+    t.global(h21::PAUSE_ON.sym, u32::from(!rng.chance(2)));
+    let ui = obj + 0x100;
+    t.global(h21::GRAPHIC_UI.sym, if rng.chance(6) { 0 } else { ui });
+    t.write(obj + 0x50, &[u8::from(!rng.chance(5))]);
+    let renderer = obj + 0x800;
+    t.w32(scene + 0xd0, renderer);
+    let v = rng.next();
+    t.w32(renderer + 0x13c, v);
+    let n = rng.below(5);
+    // a negative count draws nothing
+    let reported = if rng.chance(8) { 0x8000_0000 | n } else { n };
+    let counts: Vec<u32> = (0..8).map(|_| reported).collect();
+    t.stub_seq(h21::MENU_COUNT, true, 0, 0, &counts);
+    let mut menus = vec![];
+    for k in 0..n {
+        let menu = obj + 0x200 + 0x40 * k;
+        let mesh = if rng.chance(5) {
+            0
+        } else {
+            obj + 0x400 + 0x40 * k
+        };
+        t.w32(menu + 0xc, mesh);
+        let info = obj + 0x600 + 0x100 * k;
+        t.w32(menu + 0x24, info);
+        let kind = pick(rng, &[0, 0, 2, 2, 1, 0x102, 0x200]);
+        t.write(info + 0xb4, &(kind as u16).to_le_bytes());
+        if mesh != 0 {
+            let v = rng.next();
+            t.w32(mesh + 0x10, v);
+        }
+        menus.push(if rng.chance(6) { 0 } else { menu });
+    }
+    t.stub_seq(h21::MENU_AT, true, 1, 1, &menus);
+    let fades: Vec<u32> = (0..8)
+        .map(|_| {
+            if rng.chance(2) {
+                rng.next() & !0xff
+            } else {
+                rng.next() | 1
+            }
+        })
+        .collect();
+    t.stub_seq(h21::IS_FADING, true, 0, 0, &fades);
+    let post = obj + 0xc00;
+    t.w32(scene + 0x10cc, post);
+    let target = obj + 0xd00;
+    t.w32(post + 0x8c, target);
+    let texture = obj + 0xe00;
+    t.w32(target, texture);
+    t.write(target + 4, &[0]);
+    let w = rng.next();
+    t.w32(texture + 0x1c, w);
+    let ht = rng.next();
+    t.w32(texture + 0x20, ht);
+}
+
+impl Twins {
+    /// A recording stub at `sym` (thiscall, `n` words) that first stores
+    /// three words through each of its first two arguments.
+    fn stub_two_vec3(&mut self, sym: u32, n: u32, ret: u32, first: [u32; 3], second: [u32; 3]) {
+        let log = self.stub(None, sym, true, n, n, Some(ret));
+        let mut code = vec![];
+        for (arg, vals) in [(4u8, first), (8u8, second)] {
+            code.extend([0x8b, 0x44, 0x24, arg]); // mov eax, [esp+arg]
+            for (k, v) in (0u8..).zip(vals) {
+                code.extend([0xc7, 0x40, 4 * k]); // mov dword [eax+4k], v
+                code.extend(v.to_le_bytes());
+            }
+        }
+        let at = self.cave_next;
+        code.push(0xe9); // jmp log
+        code.extend(log.wrapping_sub(at + code.len() as u32 + 4).to_le_bytes());
+        let cave = self.code(&code);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(cave.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// The casters (none, one or several), the camera, the bounds the
+/// forwarder writes, the min and max results, the outputs (apart, or the
+/// same word).
+fn prep_extent(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let list = obj + 0x100;
+    args[0] = if rng.chance(8) { 0 } else { list };
+    let n = pick(rng, &[1, 2, 3, 0x8000_0002]);
+    t.w32(list, n);
+    t.w32(list + 4, obj + 0x140);
+    for k in 0..3 {
+        let node = obj + 0x200 + 0x40 * k;
+        t.w32(obj + 0x140 + 4 * k, node);
+        let m = obj + 0x400 + 0x40 * k;
+        t.w32(node + 0x1c, m);
+        let v = rng.next();
+        t.w32(m + 0xc, v);
+    }
+    let camera = obj + 0x600;
+    let b = rng.bytes(0x40);
+    t.write(camera, &b);
+    let product = rng.next();
+    t.stub_ret(h21::MATRIX_MUL_THIS, true, 2, 2, product);
+    let vec3 = |rng: &mut Rng| {
+        [
+            rng.float().to_bits(),
+            rng.float().to_bits(),
+            rng.float().to_bits(),
+        ]
+    };
+    let (lo, hi) = (vec3(rng), vec3(rng));
+    t.stub_two_vec3(h21::BOUNDS_FORWARD, 3, rng.next(), lo, hi);
+    for (sym, at) in [(h21::VEC3_MIN, obj + 0x900), (h21::VEC3_MAX, obj + 0x980)] {
+        for k in 0..3 {
+            let v = rng.float().to_bits();
+            t.w32(at + 4 * k, v);
+        }
+        t.stub_ret(sym, false, 3, 0, at);
+    }
+    let out = obj + 0xa00;
+    if rng.chance(4) {
+        args[1] = out;
+        args[2] = out;
+        args[3] = out;
+    } else {
+        args[1] = out;
+        args[2] = out + 4;
+        args[3] = out + 8;
+    }
+    args[4] = camera;
+}
+
+impl Twins {
+    /// [`Twins::stub_cursor_script`] whose first stub takes `first_args`
+    /// words (a constructor with the world).
+    fn stub_cursor_script_args(
+        &mut self,
+        first: u32,
+        first_args: u32,
+        next: u32,
+        steps: &[[u32; 5]],
+    ) {
+        let mut words = vec![];
+        for s in steps {
+            for w in s {
+                words.extend(w.to_le_bytes());
+            }
+        }
+        let table = self.alloc(&words);
+        let ptr = self.alloc(&table.to_le_bytes());
+        for (sym, n) in [(first, first_args), (next, 0)] {
+            let log = self.stub(None, sym, true, n, n, Some(sym));
+            let mut c = vec![0xa1];
+            c.extend(ptr.to_le_bytes()); // mov eax, [ptr]
+            for i in 0..5u8 {
+                c.extend([0x8b, 0x50, 4 * i]); // mov edx, [eax+4i]
+                c.extend([0x81, 0xfa]);
+                c.extend(KEEP.to_le_bytes()); // cmp edx, KEEP
+                c.extend([0x74, 0x03]); // je +3
+                c.extend([0x89, 0x51, 4 * i]); // mov [ecx+4i], edx
+            }
+            c.extend([0x83, 0xc0, 0x14]); // add eax, 20
+            c.push(0xa3);
+            c.extend(ptr.to_le_bytes()); // mov [ptr], eax
+            let at = self.cave_next;
+            c.push(0xe9);
+            c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = self.code(&c);
+            let site = self.rebase(sym);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+            self.patch(site, &j);
+        }
+    }
+}
+
+/// An array header (count, capacity, data): empty, or part full with room
+/// or without (the reserve stub keeps the data; a new array's null data
+/// takes the first append's null slot).
+fn array_header(t: &mut Twins, at: u32, data: u32, rng: &mut Rng) {
+    let (count, cap, d) = match rng.below(4) {
+        0 => (0, 0, data),
+        1 => (2, 2, data),
+        2 => (1, 8, data),
+        _ => (0, 0xffff_ffff, data),
+    };
+    t.w32(at, count);
+    t.w32(at + 4, cap);
+    t.w32(at + 8, d);
+}
+
+/// The flags (rebuild, field map, map), the map's objects through cursor
+/// runs (keys, kinds), the tree's arrays (found, a node at -0x10, or
+/// new), the second array.
+fn prep_map_objects(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1200);
+    *this = scene;
+    t.write(
+        scene + 0x1194,
+        &[u8::from(!rng.chance(5)), rng.next() as u8],
+    );
+    t.write(scene + 0x10d1, &[u8::from(!rng.chance(5))]);
+    t.w32(scene + 0x10d4, if rng.chance(6) { 0 } else { obj });
+    let area = t.zeros(0x800);
+    for k in 0..8 {
+        let object = area + 0x100 * k + 4;
+        t.w32(object + 0x58, rng.below(4));
+        t.w32(object + 0x4c, pick(rng, &[1, 1, 0, 2, 0x101]));
+    }
+    let steps = cursor_steps(t, area, false, rng);
+    t.stub_cursor_script_args(h21::CURSOR_CTOR, 1, h21::CURSOR_NEXT, &steps);
+    let data = t.zeros(0x400);
+    let mut found = vec![];
+    for k in 0..40 {
+        let node = obj + 0x1000 + 0x20 * (k % 8);
+        let array = obj + 0x1200 + 0x10 * (k % 8);
+        t.w32(node + 0x10, array);
+        array_header(t, array, data + 0x40 * (k % 8), rng);
+        found.push(match rng.below(4) {
+            0 => 0,
+            1 => 0xffff_fff0,
+            _ => node,
+        });
+    }
+    t.stub_seq(h21::TREE_FIND, true, 1, 1, &found);
+    let mut fresh = vec![];
+    for k in 0..40 {
+        // a failed allocation faults in the original's append
+        fresh.push(obj + 0x1400 + 0x10 * (k % 16));
+    }
+    t.stub_seq(h21::OPERATOR_NEW, false, 1, 0, &fresh);
+    array_header(t, scene + 0x11c8, data + 0x200, rng);
+}
+
+const FULL_SCREEN_STUBS: &[(u32, K)] = &[
+    (h21::SURFACE_CTOR, K::This(2)),
+    (h21::SURFACE_DTOR, K::This(0)),
+    (h21::SET_VIEWPORT, K::This(4)),
+    (h21::SET_NON_16_BY_9_VIEWPORT, K::This(2)),
+    (h21::RENDER_MESH_INSTANCE, K::This(4)),
+    (h21::END_SCENE, K::This(1)),
+    (h21::GET_APPLICATION, K::Getter),
+];
+
+const SCREEN_FADE_STUBS: &[(u32, K)] = &[
+    (h21::SURFACE_CTOR, K::This(2)),
+    (h21::SURFACE_DTOR, K::This(0)),
+    (h21::RENDER_MESH_INSTANCE, K::This(4)),
+    (h21::END_SCENE, K::This(1)),
+];
+
+const NORMAL_UI_STUBS: &[(u32, K)] = &[
+    (h21::CLEAR_SCENE, K::This(1)),
+    (h21::SET_CAMERA, K::This(1)),
+    (h21::UPDATE_VIEW_MATRICES, K::This(0)),
+    (h21::VIEWER_MANAGER, K::Getter),
+    (h21::MINIMAP_SIZE, K::This(0)),
+    (h21::MINIMAP_Y, K::This(0)),
+    (h21::MINIMAP_65E4A0, K::This(0)),
+    (h21::MINIMAP_X, K::This(0)),
+    (h21::SET_SCISSOR, K::This(4)),
+    (h21::RENDER_MESH, K::This(1)),
+    (h21::RENDER_MESH_INSTANCE, K::This(4)),
+];
+
+#[rustfmt::skip]
+const CASES21: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_full_screen), ..method("post_render_full_screen_texture", 0x0069_59d0, This::Object, 3, FULL_SCREEN_STUBS, |m, this, a| u(gh21::post_render_full_screen_texture(m, frame_ebp(), this, a[0], a[1], a[2]))) }), 0x30, 0),
+    framed(with_seh(Case { prep: Some(prep_screen_fade), ..method("post_render_screen_fade", 0x0069_7490, This::Object, 4, SCREEN_FADE_STUBS, |m, this, a| { let slots = slots_at(m, a); u(gh21::post_render_screen_fade(m, frame_ebp(), slots, this, a[0], a[2], a[3])) }) }), 0x30, 0x10),
+    framed(Case { prep: Some(prep_casters), ..method("shadow_update_caster_visibility", 0x006c_e6f0, This::Object, 1, &[(h21::MATRIX_FROM_3X4, K::This(1))], |m, this, a| { let slots = slots_at(m, a); u(gh21::shadow_update_caster_visibility(m, frame_ebp(), slots, this, a[0])) }) }, 0xdc, 4),
+    framed(Case { prep: Some(prep_extent), ..cdecl("shadow_casters_extent", 0x006d_2530, 5, &[(h21::MATRIX_FROM_3X4, K::This(1))], |m, _, a| { let slots = slots_at(m, a); gh21::shadow_casters_extent(m, frame_ebp(), slots, a[0], [a[1], a[2], a[3]], a[4]); Out::None }) }, 0x128, 0x14),
+    framed(Case { prep: Some(prep_map_objects), ..method("scene_rebuild_map_objects", 0x0065_8ae0, This::Object, 0, &[(h21::DETACH_CHR_CLUSTER, K::This(0)), (h21::TREE_INSERT, K::This(2)), (h21::ARRAY_RESERVE, K::This(1)), (h21::FIELD_MAP_INITIALIZE, K::This(1))], |m, this, _| u(gh21::scene_rebuild_map_objects(m, frame_ebp(), this))) }, 0x38, 0),
+    Case { prep: Some(prep_normal_ui), ..method("scene_draw_normal_ui", 0x0065_0cb0, This::Object, 0, NORMAL_UI_STUBS, |m, this, _| u(gh21::scene_draw_normal_ui(m, this))) },
+];
+
+#[test]
+fn batch21_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES21, n, &mut Rng(0x2121_b021));
+    });
+}
+
+/// The shadows on or off, the 64 casters' lists (none, empty or 1..3
+/// nodes with or without a matrix), kinds ('c' or not), the previous
+/// flags, the caster tests.
+fn prep_casters(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let shadows = t.zeros(0x4100);
+    *this = shadows;
+    t.write(shadows + 0x4044, &[u8::from(!rng.chance(6))]);
+    for i in 0..64 {
+        let list = if rng.chance(4) {
+            0
+        } else {
+            obj + 0x100 + 0x10 * (i % 8)
+        };
+        t.w32(shadows + 0xde8 + 4 * i, list);
+        t.w32(shadows + 0xfe8 + 4 * i, pick(rng, &[1, 1, 0, 2]));
+        let v = rng.next();
+        t.w32(shadows + 0x10e8 + 4 * i, v);
+        t.write(
+            shadows + 0x2ba8 + 0xc * i,
+            &[if rng.chance(4) { b'd' } else { b'c' }],
+        );
+    }
+    for l in 0..8 {
+        let list = obj + 0x100 + 0x10 * l;
+        let n = pick(rng, &[0, 1, 2, 3, 0x8000_0002]);
+        t.w32(list, n);
+        t.w32(list + 4, obj + 0x200 + 0x10 * l);
+        for j in 0..3 {
+            let holder = obj + 0x300 + 0x40 * ((l + j) % 8);
+            t.w32(obj + 0x200 + 0x10 * l + 4 * j, holder);
+            let node = obj + 0x600 + 0x20 * ((l + 2 * j) % 8);
+            t.w32(holder + 0x1c, node);
+            t.w32(node + 0xc, if rng.chance(2) { 0 } else { obj + 0x800 });
+        }
+    }
+    let view = obj + 0x1800;
+    let b = rng.bytes(0x40);
+    t.write(view + 0x70, &b);
+    args[0] = view;
+    let product = rng.next();
+    t.stub_ret(h21::MATRIX_MULTIPLY, false, 3, 0, product);
+    let tests: Vec<u32> = (0..200)
+        .map(|_| {
+            if rng.chance(3) {
+                rng.next() | 1
+            } else {
+                rng.next() & !0xff
+            }
+        })
+        .collect();
+    t.stub_seq(h21::CASTER_VISIBLE, true, 1, 1, &tests);
 }

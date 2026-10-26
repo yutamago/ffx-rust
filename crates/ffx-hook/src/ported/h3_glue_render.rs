@@ -26,6 +26,7 @@ use ffx_prender::h3_glue17::bridge as g17;
 use ffx_prender::h3_glue18::bridge as g18;
 use ffx_prender::h3_glue19::bridge as g19;
 use ffx_prender::h3_glue20::bridge as g20;
+use ffx_prender::h3_glue21::bridge as g21;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1556,6 +1557,42 @@ ported! {
     PhyreScene_updateMapYIQ @ 0x0067_1da0 => extern "thiscall" fn scene_update_map_yiq(this: u32) {
         let mut f = StackFrame::<0xf>::new();
         g20::scene_update_map_yiq(&mut mem(), f.at() + 0x3c, this);
+    }
+
+    // ---- round 6 batch 21 (ffx_prender::h3_glue21) ----
+    /// `PostProcessManager_renderFullScreenTexture(this, renderer, texture,
+    /// target)`.
+    PostProcessManager_renderFullScreenTexture @ 0x0069_59d0 => extern "thiscall" fn post_render_full_screen_texture(this: u32, renderer: u32, texture: u32, target: u32) -> u32 {
+        let mut f = StackFrame::<0xc>::new();
+        g21::post_render_full_screen_texture(&mut mem(), f.at() + 0x30, this, renderer, texture, target)
+    }
+    /// `PostProcessManager_renderScreenFade(this, renderer, _, target,
+    /// keep)`: the colour buffer goes over `keep`'s slot.
+    PostProcessManager_renderScreenFade @ 0x0069_7490 => extern "thiscall" fn post_render_screen_fade(this: u32, renderer: u32, unused: u32, target: u32, keep: u32; slots: u32) -> u32 {
+        let _ = unused;
+        let mut f = StackFrame::<0xc>::new();
+        g21::post_render_screen_fade(&mut mem(), f.at() + 0x30, slots, this, renderer, target, keep)
+    }
+    /// `PhyreScene_DrawNormalUI(this)` (`ecx` only).
+    PhyreScene_DrawNormalUI @ 0x0065_0cb0 => extern "thiscall" fn scene_draw_normal_ui(this: u32) -> u32 {
+        g21::scene_draw_normal_ui(&mut mem(), this)
+    }
+    /// `ShadowManager_updateCasterVisibility_006ce6f0(this, camera)`: the
+    /// kind cursor goes over `camera`'s slot.
+    ShadowManager_updateCasterVisibility_006ce6f0 @ 0x006c_e6f0 => extern "thiscall" fn shadow_update_caster_visibility(this: u32, camera: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x37>::new();
+        g21::shadow_update_caster_visibility(&mut mem(), f.at() + 0xdc, slots, this, camera)
+    }
+    /// `ShadowManager_castersExtent_006d2530(list, dx, dy, dz, camera)`: the
+    /// differences are formed through `list`'s slot.
+    ShadowManager_castersExtent_006d2530 @ 0x006d_2530 => extern "C" fn shadow_casters_extent(list: u32, dx: u32, dy: u32, dz: u32, camera: u32; slots: u32) {
+        let mut f = StackFrame::<0x4a>::new();
+        g21::shadow_casters_extent(&mut mem(), f.at() + 0x128, slots, list, [dx, dy, dz], camera);
+    }
+    /// `PhyreScene_rebuildMapObjects_00658ae0(this)` (`ecx` only).
+    PhyreScene_rebuildMapObjects_00658ae0 @ 0x0065_8ae0 => extern "thiscall" fn scene_rebuild_map_objects(this: u32) -> u32 {
+        let mut f = StackFrame::<0xe>::new();
+        g21::scene_rebuild_map_objects(&mut mem(), f.at() + 0x38, this)
     }
 }
 
