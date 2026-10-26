@@ -33,6 +33,8 @@ use ffx_prender::h2_more8::bridge as h8;
 use ffx_prender::h2_more9::bridge as h9;
 use ffx_prender::h2_more10::bridge as h10;
 use ffx_prender::h2_more11::bridge as h11;
+use ffx_prender::h2_more12::bridge as h12;
+use ffx_prender::h2_more14::bridge as h14;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -1972,6 +1974,52 @@ ported! {
     /// `Phyre_PSprite_PSpriteCollection_Bind`.
     Phyre_PSprite_PSpriteCollection_Bind @ 0x0056_91b0 => extern "C" fn s_005691b0() -> u32 {
         ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0056_91b0) })
+    }
+    // last round, batch 1 (ffx_prender::h2_more12)
+    /// `PSharray<PMeshInstanceSegmentStreamBinding const*>::DeclareClassDescriptor(name)` -> the descriptor.
+    Phyre_PSharray_Phyre_PRendering_PMeshInstanceSegmentStreamBinding_const__DeclareClassDescriptor @ 0x004f_4d60 => extern "C" fn s_004f4d60(name: u32) -> u32 {
+        h12::declare(&mut mem(), name)
+    }
+    /// `0x0058c0d0(renderer; kind, streams, n, extra)` -> 0 or 0xd.
+    PRendererD3D11_placeDynamicStreams_0058c0d0 @ 0x0058_c0d0 => extern "thiscall" fn s_0058c0d0(this: u32, kind: u32, streams: u32, n: u32, extra: u32) -> u32 {
+        h12::place_streams(&mut mem(), this, kind, streams, n, extra)
+    }
+    /// `0x004f98b0(instance; matrices)` -> 0 or the first error.
+    Phyre_PRendering_PMeshInstance_uploadSkinMatrices_004f98b0 @ 0x004f_98b0 => extern "thiscall" fn s_004f98b0(this: u32, matrices: u32) -> u32 {
+        // the original's frame (ebp - 0xc4 up to ebp) and its `_alloca`
+        // block of up to 0x80 matrices
+        let mut fr = super::StackFrame::<0x31>::new();
+        let mut block = super::StackFrame::<{ 0x80 * 16 }>::new();
+        let ebp = fr.at() + 0xc4;
+        h12::upload_skin_matrices(&mut mem(), this, matrices, ebp, block.at())
+    }
+    // last round, batch 2 (ffx_prender::h2_more14)
+    /// `PSceneWideParameters::getBuffer(this; a, camera, c)` -> the buffer.
+    Phyre_PRendering_PSceneWideParameters_getBuffer @ 0x004f_dec0 => extern "thiscall" fn s_004fdec0(this: u32, a: u32, camera: u32, c: u32) -> u32 {
+        // the original's frame (ebp - 0x490 up to ebp + 0x14)
+        let mut fr = super::StackFrame::<{ (0x490 + 0x14) / 4 }>::new();
+        let ebp = fr.at() + h14::FRAME_BELOW;
+        h14::get_buffer(&mut mem(), this, a, camera, c, ebp)
+    }
+    // ---- h2-render-b rest (h2_more13) ----
+    /// `PRendererD3D11::bindRenderTargets(this, flags)` -> `al`.
+    PRendererD3D11_bindRenderTargets_0058c830 @ 0x0058_c830 => extern "thiscall" fn s_0058c830(this: u32, flags: u32) -> u8 {
+        // ebp - 0x23c .. ebp: the null-view array, locals, the viewport
+        let mut frame = super::StackFrame::<0x8f>::new();
+        let at = frame.at();
+        ffx_prender::h2_more13::bridge::bind_targets(&mut mem(), at, this, flags)
+    }
+    /// `setTextureParameters(this, owner, program, index, entries, unused, count)` -> `al` 1.
+    Phyre_PRendering_PShaderProgramBindingNVN_setTextureParameters @ 0x0059_b3d0 => extern "thiscall" fn s_0059b3d0(this: u32, owner: u32, program: u32, index: u32, entries: u32, _unused: u32, count: u32) -> u8 {
+        ffx_prender::h2_more13::bridge::set_texture_parameters(&mut mem(), this, owner, program, index, entries, count as u16)
+    }
+    /// `PTexture2DD3D11::createDeviceTexture(this, data, bind, unused, map)` -> 0 or an error code.
+    PTexture2DD3D11_CreateDeviceTexture_0058fc20 @ 0x0058_fc20 => extern "thiscall" fn s_0058fc20(this: u32, data: u32, bind: u32, _unused: u32, map: u32) -> u32 {
+        // ebp - 0x230 .. ebp: the view desc, the locks, the texture descs,
+        // the subresource array
+        let mut frame = super::StackFrame::<0x8c>::new();
+        let ebp = frame.at() + 0x230;
+        ffx_prender::h2_more13::bridge2::create_device_texture(&mut mem(), ebp, this, data, bind as u8, map as u8)
     }
 }
 

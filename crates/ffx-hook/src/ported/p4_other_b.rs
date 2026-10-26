@@ -8,8 +8,9 @@
 
 use super::{mem, ported};
 use ffx_pother_b::{
-    methods, object, p4_bind, p4_cloth, p4_fog, p4_frames, p4_input, p4_light, p4_mesh, p4_morph,
-    p4_ps2light, p4_tree, physics, small,
+    methods, object, p4_abmap, p4_abmap2, p4_bind, p4_cloth, p4_cloth2, p4_dyngeo, p4_fog,
+    p4_frames, p4_input, p4_input2, p4_light, p4_light2, p4_mesh, p4_morph, p4_morph2, p4_ps2light,
+    p4_tree, p4_tweak, physics, small,
 };
 
 ported! {
@@ -1142,5 +1143,113 @@ ported! {
         let mut frame = super::StackFrame::<2>::new();
         let ebp = frame.at() + 8;
         p4_light::bridge13::destroy_unique(&mut mem(), ebp, cl, inst);
+    }
+    // ---- h2p4 round (the p4-other-b rest) ----
+    /// `CharacterLighting::applyIntensityMultiplier(cl, i, flag)` -> the
+    /// light (the scene for light 3); leaves the grey or the luminance in
+    /// its argument's slot, as the original does.
+    Phyre_CharacterLighting_applyIntensityMultiplier @ 0x006a_6e90 => extern "thiscall" fn apply_intensity(cl: u32, i: u32, _flag: u32; slots: u32) -> u32 {
+        // ebp - 0x48 .. ebp: the lerp's output, the grey, two colours, the
+        // light, the factor
+        let mut frame = super::StackFrame::<0x12>::new();
+        let ebp = frame.at() + 0x48;
+        let mut m = mem();
+        let (r, word) = p4_light2::bridge::apply_intensity(&mut m, ebp, cl, i);
+        if let Some(word) = word {
+            ffx_bridge::Mem::write(&mut m, slots, word);
+        }
+        r
+    }
+    /// `CharacterLighting::applyRotation(cl, i)` ->
+    /// `PMatrix4_toWorldMatrix3x4`'s `eax` (0 where the original's is
+    /// junk); leaves the yaw in its argument's slot, as the original does.
+    Phyre_CharacterLighting_applyRotation @ 0x006a_7280 => extern "thiscall" fn apply_rotation(cl: u32, i: u32; slots: u32) -> u32 {
+        // ebp - 0x128 .. ebp: three matrices, the copy, up and eye, the
+        // light matrix, the pitch
+        let mut frame = super::StackFrame::<0x4a>::new();
+        let ebp = frame.at() + 0x128;
+        let mut m = mem();
+        let (r, word) = p4_light2::bridge::apply_rotation(&mut m, ebp, cl, i);
+        if let Some(word) = word {
+            ffx_bridge::Mem::write(&mut m, slots, word);
+        }
+        r.unwrap_or(0)
+    }
+    /// `CharacterLighting::balanceLumWithGlow(cl)` -> the last
+    /// `applyIntensityMultiplier`'s `eax` (0 where the original's is junk).
+    Phyre_CharacterLighting_balanceLumWithGlow @ 0x006a_7550 => extern "fastcall" fn balance_lum_with_glow(cl: u32) -> u32 {
+        p4_light2::bridge::balance_lum_with_glow(&mut mem(), cl).unwrap_or(0)
+    }
+    /// `CharacterLightingTweakUtil::initialize(tw)` ->
+    /// `TextUtil_setEnabled`'s `eax`.
+    Phyre_CharacterLightingTweakUtil_initialize @ 0x006a_91e0 => extern "fastcall" fn tweak_initialize(tw: u32) -> u32 {
+        // ebp - 0x84 .. ebp - 4: the line buffer (the cookie above it)
+        let mut frame = super::StackFrame::<0x21>::new();
+        let ebp = frame.at() + 0x84;
+        p4_light2::bridge::tweak_initialize(&mut mem(), ebp, tw)
+    }
+    /// `CharacterLighting::instantiateUniqueMaterialParameters(cl, inst)` ->
+    /// 0, 0xe or 0x12.
+    Phyre_CharacterLighting_instantiateUniqueMaterialParameters @ 0x006a_96b0 => extern "thiscall" fn instantiate_unique(cl: u32, inst: u32) -> u32 {
+        // ebp - 0x74 .. ebp: the zero matrix, the loop's locals
+        let mut frame = super::StackFrame::<0x1d>::new();
+        let ebp = frame.at() + 0x74;
+        p4_light2::bridge2::instantiate(&mut mem(), ebp, cl, inst)
+    }
+    /// `CharacterLightingTweakUtil::getLineText(tw, line, out)` ->
+    /// `sprintf_s`'s `eax`; lines 2..4 leave their value in the line's
+    /// argument slot, as the original does.
+    Phyre_CharacterLightingTweakUtil_getLineText @ 0x006a_8580 => extern "thiscall" fn get_line_text(tw: u32, line: u32, out: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, word) = p4_tweak::bridge::get_line_text(&mut m, tw, line, out);
+        if let Some(word) = word {
+            ffx_bridge::Mem::write(&mut m, slots, word);
+        }
+        r
+    }
+    /// `ClassDynamicGeometry` vtable slot 3 (`geo`) -> 0, 3, 5 or a
+    /// callee's error: the texture entries' sampler parameters.
+    ClassDynamicGeometry_updateTexture_006a59d0 @ 0x006a_59d0 => extern "fastcall" fn dyngeo_update_texture(geo: u32) -> u32 {
+        // ebp - 0x104 .. ebp: the entry's copy, the texture iterator, the
+        // parameter blocks, the loop's locals
+        let mut frame = super::StackFrame::<0x41>::new();
+        let ebp = frame.at() + 0x104;
+        p4_dyngeo::bridge::update_texture(&mut mem(), ebp, geo)
+    }
+    /// `MorphManager::update(mm, dt)`; leaves the original's last word in
+    /// its argument's slot.
+    MorphManager_update @ 0x006a_cd20 => extern "thiscall" fn morph_update(mm: u32, dt: u32; slots: u32) {
+        // ebp - 0x24 .. ebp: the values the parameters are copied from,
+        // counters, the manager
+        let mut frame = super::StackFrame::<9>::new();
+        let ebp = frame.at() + 0x24;
+        let mut m = mem();
+        let word = p4_morph2::bridge::update(&mut m, ebp, mm, dt);
+        ffx_bridge::Mem::write(&mut m, slots, word);
+    }
+    // ---- p4-other-b rest ----
+    /// `PInputMapper::update(mapper)`.
+    PInputMapper_update @ 0x0062_e040 => extern "thiscall" fn mapper_update(mapper: u32) {
+        p4_input2::bridge::update(&mut mem(), mapper);
+    }
+    /// `ClothInstancingDynamicMesh::buildStreams(mesh, src)`.
+    ClothInstancingDynamicMesh_buildStreams_006e17f0 @ 0x006e_17f0 => extern "thiscall" fn build_streams(mesh: u32, src: u32) {
+        p4_cloth2::bridge::build_streams(&mut mem(), mesh, src);
+    }
+    /// `GraphicAbmap::GraphicAbmap(abmap, owner)` -> abmap; leaves the
+    /// last inline geometry's hidden byte in its argument slot's top
+    /// byte, as the original does.
+    GraphicAbmap_ctor_00680970 @ 0x0068_0970 => extern "thiscall" fn abmap_ctor(abmap: u32, owner: u32; slots: u32) -> u32 {
+        let mut m = mem();
+        let (r, word) = p4_abmap::bridge::ctor(&mut m, abmap, owner);
+        ffx_bridge::Mem::write(&mut m, slots, word);
+        r
+    }
+    /// `GraphicAbmap::createRenderData(abmap, kind)` -> the render data.
+    GraphicAbmap_createRenderData_00681c10 @ 0x0068_1c10 => extern "thiscall" fn abmap_render_data(abmap: u32, kind: u32) -> u32 {
+        // ebp - 0x104 .. ebp: the file name buffer fiosUnifyFilename fills
+        let mut frame = super::StackFrame::<0x41>::new();
+        let at = frame.at();
+        p4_abmap2::bridge::create_render_data(&mut mem(), at, abmap, kind)
     }
 }
