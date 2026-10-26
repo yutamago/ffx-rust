@@ -1011,6 +1011,90 @@ pub mod bridge {
         }
         0
     }
+
+    /// The type dispenser's lookup by key (`0x004375c0`, `0x00438680`;
+    /// thiscall `(&key)` on its tree, the dispenser itself the nil link):
+    /// nodes (`link - 4`) ordered by hash (`+0x10`, unsigned), then name
+    /// (`+0x14`, `strcmp`); the node matching the key `(hash, name)`, or 0.
+    pub fn dispenser_find(m: &impl Mem, tree: u32, key: u32) -> u32 {
+        let [hash, name]: [u32; 2] = m.read(key);
+        let mut link: u32 = m.read(tree + 0xc);
+        while link != tree {
+            let node = link.wrapping_sub(4);
+            let [h, n]: [u32; 2] = m.read(node + 0x10);
+            let order = match h.cmp(&hash) {
+                std::cmp::Ordering::Greater => 1,
+                std::cmp::Ordering::Less => -1,
+                std::cmp::Ordering::Equal => compare_names(m, name, n),
+            };
+            if order == 0 {
+                return node;
+            }
+            link = m.read(node + 4 + 4 * u32::from(order < 0));
+        }
+        0
+    }
+
+    /// The inline `strcmp`'s sign: -1, 0 or 1 by the first differing
+    /// unsigned byte.
+    fn compare_names(m: &impl Mem, a: u32, b: u32) -> i32 {
+        let mut i = 0;
+        loop {
+            let x: u8 = m.read(a + i);
+            let y: u8 = m.read(b + i);
+            if x != y {
+                return if x < y { -1 } else { 1 };
+            }
+            if x == 0 {
+                return 0;
+            }
+            i += 1;
+        }
+    }
+
+    /// `PTypeDispenser::RegisterType(type)` (`0x004395b0`, cdecl): `al` =
+    /// 0 for a type without a name (`+0x18`) or one the dispenser has
+    /// already ([`find_by_name`] with the key in `key`, two words); else
+    /// its hash (`+0x10`) and name (`+0x14`) set, then the dispenser's
+    /// `0x00438780(type)` and, when that returns 0, its insert
+    /// `0x00574980(&type->link)` (`+4`); 1 then, else 0.
+    pub fn register_type(h: &mut impl Host, key: u32, ty: u32) -> u8 {
+        let name: u32 = h.read(ty + 0x18);
+        if name == 0 {
+            return 0;
+        }
+        let dispenser = crate::types::bridge::dispenser(h);
+        if find_by_name(h, 0x0043_8680, key, dispenser, name) != 0 {
+            return 0;
+        }
+        let hash = name_hash(h, name);
+        h.write(ty + 0x14, name);
+        h.write(ty + 0x10, hash);
+        if h.call_sym(0x0043_8780, Conv::Thiscall(dispenser), &[ty]) != 0 {
+            return 0;
+        }
+        h.call_sym(0x0057_4980, Conv::Thiscall(dispenser), &[ty + 4]);
+        1
+    }
+
+    /// `PTypeDispenser::RegisterDefaultTypes()` (`0x00439510`): registers
+    /// `PType`, the type at `0x00c90760` and the primitive types in the
+    /// original's order ([`register_type`]); the last result.
+    pub fn register_default_types(h: &mut impl Host, key: u32) -> u8 {
+        use crate::types::{PRIMITIVES, bridge::primitive};
+        let ty = primitive(h, &PRIMITIVES[0]);
+        register_type(h, key, ty);
+        let extra = h.rebase(0x00c9_0760);
+        register_type(h, key, extra);
+        let mut r = 0;
+        // bool, PChar, PUInt8, PInt16, PUInt16, PInt32, PUInt32, PUInt64,
+        // PInt64, float, double, PUInt128
+        for i in [12, 1, 2, 3, 4, 5, 6, 11, 10, 7, 8, 9] {
+            let ty = primitive(h, &PRIMITIVES[i]);
+            r = register_type(h, key, ty);
+        }
+        r
+    }
 }
 
 /// `PNamespace::GetGlobalNamespace()` (cdecl).

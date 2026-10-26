@@ -156,10 +156,16 @@ pub mod bridge {
         h.call_sym(READ, Conv::Thiscall(reader + READER_FILE), &[buffer, size])
     }
 
-    /// `PStreamWriterFile::close(writer)` (`0x00431840`, thiscall):
-    /// `0x00431850(writer, &writer->file)`; its `eax`.
-    pub fn writer_close(h: &mut impl Host, writer: u32) -> u32 {
-        h.call_sym(0x0043_1850, Conv::Thiscall(writer), &[writer + 0x10])
+    /// A recursive mutex's lock (`0x00431840`, thiscall; Ghidra's dump
+    /// calls it `PStreamWriterFile::close`): `0x00431850(mutex; &mutex->inner)`
+    /// (`+0x10`); its `eax`. `0x004319d0` is the unlock.
+    pub fn mutex_lock(h: &mut impl Host, mutex: u32) -> u32 {
+        h.call_sym(0x0043_1850, Conv::Thiscall(mutex), &[mutex + 0x10])
+    }
+
+    /// The unlock of [`mutex_lock`] (`0x004319d0`, original).
+    pub fn mutex_unlock(h: &mut impl Host, mutex: u32) {
+        h.call_sym(0x0043_19d0, Conv::Thiscall(mutex), &[]);
     }
 
     /// `PStream::~PStream(stream)` (`0x0060f0c0`, thiscall): its vtable

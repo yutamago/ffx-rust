@@ -799,7 +799,7 @@ fn stream_wrappers_match_the_original() {
         t.stub(0x0043_1850, true, 1, 1, 0x444);
         let what = format!("{label}: writer close");
         t.check(&what, 0x0043_1840, Conv::Thiscall(reader), &[], |g| {
-            Out::U32(s::writer_close(g, reader))
+            Out::U32(s::mutex_lock(g, reader))
         });
         assert_eq!(t.log_entries(), 1);
         t.reset();
@@ -2489,5 +2489,170 @@ fn batch7_descriptors_match_the_original() {
             Out::None
         });
         t.reset();
+    }
+}
+
+// ---- batch 8 ----
+
+#[test]
+fn batch8_dispenser_matches_the_original() {
+    use ffx_pload::types;
+    for (label, mut t) in Twins::all() {
+        // the lookup on a synthetic tree: (hash, name) nodes, nil = tree
+        let tree = t.zeros(0x20);
+        let names: Vec<u32> = [&b"float\0"[..], b"bool\0", b"PType\0", b"PChar\0"]
+            .iter()
+            .map(|n| t.alloc(n))
+            .collect();
+        let node = |t: &mut Twins, hash: u32, name: u32| {
+            let n = t.zeros(0x20);
+            t.w32(n + 4, tree);
+            t.w32(n + 8, tree);
+            t.w32(n + 0x10, hash);
+            t.w32(n + 0x14, name);
+            n
+        };
+        let root = node(&mut t, 100, names[0]);
+        let left = node(&mut t, 50, names[1]);
+        let right = node(&mut t, 100, names[2]);
+        t.w32(root + 4, left + 4);
+        t.w32(root + 8, right + 4);
+        let key = t.zeros(8);
+        for (hash, name) in [
+            (100, names[0]),
+            (50, names[1]),
+            (100, names[2]),
+            (100, names[3]),
+            (7, names[0]),
+            (200, names[2]),
+        ] {
+            t.w32(key, hash);
+            t.w32(key + 4, name);
+            for root_link in [root + 4, tree] {
+                t.w32(tree + 0xc, root_link);
+                for sym in [0x0043_75c0, 0x0043_8680] {
+                    let what =
+                        format!("{label}: dispenser find {sym:#x} {hash} {name:#x} {root_link:#x}");
+                    t.check(&what, sym, Conv::Thiscall(tree), &[key], |g| {
+                        Out::U32(d::dispenser_find(g, tree, key))
+                    });
+                }
+            }
+        }
+        // RegisterType and RegisterDefaultTypes over the real dispenser
+        // (built here on the image; the snapshots' own)
+        t.stub(types::ATEXIT, false, 1, 0, 0);
+        // the second type registered (0x00c90760) has no name on the image
+        // until its static constructor runs: give it one there
+        let second = t.rebase(0x00c9_0760);
+        if t.r32(second + 0x18) == 0 {
+            let n = t.alloc(b"p1load_Second\0");
+            t.w32(second + 0x18, n);
+        }
+        let what = format!("{label}: RegisterDefaultTypes");
+        t.check(&what, 0x0043_9510, Conv::Cdecl, &[], |g| {
+            let key = g.scratch();
+            Out::U8(d::register_default_types(g, key))
+        });
+        // a new type, then the same again, then one without a name
+        let fresh = t.zeros(0x30);
+        let fname = t.alloc(b"p1load_FreshType\0");
+        t.w32(fresh + 0x18, fname);
+        let nameless = t.zeros(0x30);
+        for ty in [fresh, fresh, nameless] {
+            let what = format!("{label}: RegisterType {ty:#x}");
+            t.check(&what, 0x0043_95b0, Conv::Cdecl, &[ty], |g| {
+                let key = g.scratch();
+                Out::U8(d::register_type(g, key, ty))
+            });
+        }
+        // the real dispenser's lookups by name, through the ported hash
+        let dispenser = t.rebase(types::DISPENSER);
+        for n in [
+            &b"float\0"[..],
+            b"PUInt128\0",
+            b"p1load_FreshType\0",
+            b"nothing\0",
+        ] {
+            let name = t.alloc(n);
+            let what = format!("{label}: real findByName {}", String::from_utf8_lossy(n));
+            t.check(
+                &what,
+                0x0043_8630,
+                Conv::Thiscall(dispenser),
+                &[name],
+                |g| {
+                    let key = g.scratch();
+                    Out::U32(d::find_by_name(g, 0x0043_8680, key, dispenser, name))
+                },
+            );
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn batch8_clusters_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // placeTables: the arena growth recorded, memset runs
+        for (grow, extra, align, head) in [
+            (0, 0, 0, 0x13),
+            (0, 0x20, 16, 0x10),
+            (0x55, 0x20, 0, 0x10),
+            (0, 0, 8, 0),
+        ] {
+            t.stub(0x0044_2010, true, 3, 3, grow);
+            let base = t.junk(0x200, 1);
+            let arena = t.zeros(0x10);
+            t.w32(arena + 4, base);
+            let cluster = t.zeros(0x30);
+            t.w32(cluster + 0x24, arena);
+            let r = t.zeros(0x40);
+            t.w32(r + 0x38, head);
+            t.w32(r + 0x2c, if head == 0 { 0 } else { 5 });
+            t.w32(r + 0x10, 0x77);
+            let this = t.zeros(0x10);
+            t.w32(this, cluster);
+            t.w32(this + 8, r);
+            let out = t.junk(8, 2);
+            let what = format!("{label}: placeTables {grow} {extra} {align} {head}");
+            t.check(
+                &what,
+                0x0057_9090,
+                Conv::Thiscall(this),
+                &[out, out + 4, extra, align],
+                |g| Out::U32(c::place_tables(g, this, out, out + 4, extra, align)),
+            );
+            t.reset();
+        }
+        // the registry's forget: the mutex, the tree removal and the pool recorded
+        for present in [true, false] {
+            t.stub(0x0043_1850, true, 1, 1, 0);
+            t.stub(0x0043_19d0, true, 0, 0, 0);
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            t.stub(0x0057_5000, true, 1, 1, 0);
+            t.stub(0x0049_c980, true, 1, 1, 0);
+            let registry = t.zeros(0x1400);
+            let tree = registry + 0x1344;
+            let cluster = 0x00c1_0000;
+            t.w32(tree + 0xc, tree);
+            if present {
+                let n = t.junk(0x40, 3);
+                t.w32(n, tree);
+                t.w32(n + 4, tree);
+                t.w32(n + 0xc, cluster);
+                t.w32(tree + 0xc, n);
+            }
+            let what = format!("{label}: registry forget {present}");
+            t.check(
+                &what,
+                0x0059_8c50,
+                Conv::Thiscall(registry),
+                &[cluster],
+                |g| Out::U32(c::registry_forget(g, registry, cluster)),
+            );
+            assert_eq!(t.log_entries(), if present { 2 + 4 + 2 } else { 2 });
+            t.reset();
+        }
     }
 }

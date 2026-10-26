@@ -157,7 +157,7 @@
 0x004316f0 function Phyre_PThreadInitializationBase_PThreadInitializationBase # fh v3:exact 0x004317f0 Phyre::PThreadInitializationBase::PThreadInitializationBase
 0x004317a0 function Phyre_PThreadInitializationBase_GetDefaultThreadName # fh v3:bsim1.00 0x004318a0 Phyre::PThreadInitializationBase::GetDefaultThreadName
 0x004317f0 function Phyre_PCriticalSectionBase_initialize # fh v3:exact 0x004318f0 Phyre::PCriticalSectionBase::initialize
-0x00431840 function Phyre_PSerialization_PStreamWriterFile_close # thiscall: 0x00431850(this; this + 0x10), its eax; ported (ffx-pload); Ghidra dump name
+0x00431840 function Phyre_PMutex_lock_00431840 # thiscall: 0x00431850(this; this + 0x10), its eax: the lock of a recursive mutex (0x00598c50 takes it on its +0x1374 around the registry change and releases it with 0x004319d0, which compares the owner thread 0x0042fd00, decrements the count and releases through InterlockedCompareExchange); was Phyre_PSerialization_PStreamWriterFile_close (Ghidra dump name, wrong); ported (ffx-pload); Ghidra dump name
 0x00431920 function Phyre_PCriticalSectionSimple_lock # fh v3:bsim1.00 0x00431a20 Phyre::PCriticalSectionSimple::lock
 0x00431a80 function Phyre_PCriticalSectionSimple_unlock # fh v3:exact 0x00431b80 Phyre::PCriticalSectionSimple::unlock
 0x00432020 function Phyre_PSerialization_PUtilitySerialization_IsInitialized # al = byte 0x00c90280 (set by initialize); ported (ffx-pload); Ghidra dump name
@@ -182,6 +182,7 @@
 0x00437260 function Phyre_PScripting_UnregisterTypes # fh switch:bsim1.00 0x7100076000 Phyre::PScripting::UnregisterTypes
 0x004374d0 function Phyre_PTypeDispenser_GetType_Phyre_PType # fh v3:bsim1.00 0x004375d0 Phyre::PTypeDispenser::GetType<Phyre::PType>
 0x00437570 function Phyre_PTypeDispenser_findByName_00437570 # thiscall(name): key {hash (0x7b5, h = 33 h + (b & 0x1f)), name} in its frame, then 0x004375c0(this; &key); called by findByName 0x0043be30; ported (ffx-pload); name ours
+0x004375c0 function Phyre_PTypeDispenser_find_004375c0 # thiscall(&key {hash, name}): tree from +0xc (nil = this, nodes at link - 4, children at node + 4/+8), hash +0x10 unsigned then strcmp name +0x14 (left when greater); node or 0; ported (ffx-pload); name ours
 0x00437740 function Phyre_PType_GetFixupForPTypePointer # fh v3:exact 0x00437840 Phyre::PType::GetFixupForPTypePointer
 0x00437830 function Phyre_PType_ResolveFixupForPTypePointer # fh v3:cg2 0x437930 Phyre::PType::ResolveFixupForPTypePointer
 0x00437870 function Phyre_PType_asClassDescriptor # layout: alphabetical run between Phyre_PType_ResolveFixupForPTypePointer and Phyre_PType_getPointerFromScriptContext (4 unnamed in the gap); Switch 0x71000a9110 Phyre::PType::asClassDescriptor is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -207,6 +208,7 @@
 0x004382f0 function Phyre_PTypeDispenser_GetType_PUInt64 # GetType<PUInt64>: function-local static (PType built inline), guard bit 0, atexit dtor; ported (ffx-pload, types::PRIMITIVES[11]); name ours, from the type name string
 0x00438390 function Phyre_PTypeDispenser_GetType_bool # GetType<bool>: function-local static (PType built inline), guard bit 0, atexit dtor; ported (ffx-pload, types::PRIMITIVES[12]); name ours, from the type name string
 0x00438630 function Phyre_PTypeDispenser_findByName_00438630 # as 0x00437570 with 0x00438680; ported (ffx-pload); name ours
+0x00438680 function Phyre_PTypeDispenser_find_00438680 # identical copy of 0x004375c0 (used by RegisterType through 0x00438630); ported (ffx-pload); name ours
 0x00439040 function Phyre_PTypeDispenser_Instance_00439040 # cdecl: PTypeDispenser's function-local static 0x00c905f0 (six list words = itself; guard 0x00c90608 bit 0; atexit 0x00af9f30); returns it; called by findByName 0x0043be30; ported (ffx-pload); name ours
 0x00439510 function Phyre_PTypeDispenser_RegisterDefaultTypes # fh v3:exact 0x00439600 Phyre::PTypeDispenser::RegisterDefaultTypes
 0x004395b0 function Phyre_PTypeDispenser_RegisterType # fh v3:exact 0x004396a0 Phyre::PTypeDispenser::RegisterType
@@ -1155,6 +1157,7 @@
 0x00577760 function Phyre_PSerialization_recordInit_00577760 # thiscall(a, b, c, flag): [0..8] = a, b, c, byte +0xc = flag, +0x10..+0x24 zero; returns this; ported (ffx-pload); name ours
 0x00578300 function Phyre_PInstanceList_placeOverallocation_00578300 # cdecl(&cursor, list): over = class(+0x2c) +0x74 * list +0x3c, aligned to class +0x78: at *cursor (aligned, then advanced) or past the instances (class size * count + +0x44 + +0x34 - over); into list +0x38; nothing without over; ported (ffx-pload); name ours
 0x005787d0 function Phyre_PTypeEnum_find_005787d0 # cdecl(name): entry of the list 0x00cc969c (name +0, next +4) named name, 0 for none or no name; ported (ffx-pload); name ours
+0x00579090 function Phyre_PClusterReaderBinary_placeTables_00579090 # thiscall(&table, &data, extra, align): r = +8; start = (r +0x38 + 3) & ~3, end = start + 4 r +0x2c aligned; arena grown by 0x00442010(cluster; extra + end, r +0x38, r +0x10) unless 0 (its error returned); *table = base + start, memset 0, *data = base + end; 0; ported (ffx-pload); name ours
 0x00579310 function PCluster_Analyze          # prints "Analyzing cluster '%s'" and every table size; names the header words (array/pointer/pointer-array fixup sizes and counts, header class counts and fixups)
 0x0057a280 function Fixup_FindMember          # thiscall(cache; member index or -1, &object, byte offset, ...): member index < namespace member count -> member table entry, else Class_FindMemberByOffset (cached)
 0x0057a320 function Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_fixupDataPointers # str-match switch: only user of 1 string(s) held once by both builds, e.g. "Array fixup refers to array '%s::%s' not in current runtime\\"; Switch 0x71000fbdb0 Phyre::PSerialization::PBinary::PInternal::PClusterReaderBinary::fixupDataPointers (symbols from Fahrenheit's server export)
@@ -1237,6 +1240,7 @@
 0x00595fb0 function Phyre_hasWord64_00595fb0 # copy of 0x00595fa0 (15 refs, 0x00464910..); ported (ffx-pload); name ours
 0x005989b0 function Phyre_releaseBlocks_005989b0 # thiscall: free +0, +0x10, +0x18, +0x20 (each read before the clears), +0..+0x24 cleared; ported (ffx-pload); name ours
 0x00598a30 function Phyre_PRendering_PShaderPassNVN_releaseShaderPass # fh switch:bsim1.00 0x710002db80 Phyre::PRendering::PShaderPassNVN::releaseShaderPass
+0x00598c50 function Phyre_PClusterRegistry_forget_00598c50 # thiscall(cluster) on the registry 0x00c94f00: mutex +0x1374 (0x00431840/0x004319d0); the tree +0x1344 node keyed by cluster (0x00581620, key = the argument's own stack slot): releaseBlocks on node + 0x10, found again, 0x00575000(tree; node), 0x0049c980(tree + 0x18; node); 0; ported (ffx-pload); name ours
 0x0059a650 function PRenderThread_copyConstantBuffer # m4-chars: render-thread constant-buffer copy; transposes every float4x4/float4x3 location entry, stops at a 0xffffffff first word (docs/formats/scene-chars.md)
 0x0059b3d0 function Phyre_PRendering_PShaderProgramBindingNVN_setTextureParameters # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Invalid constant buffer location : %d'; Switch 0x7100032bc0 Phyre::PRendering::PShaderProgramBindingNVN::setTextureParameters (symbols from Fahrenheit's server export)
 0x0059cc40 function Phyre_PRendering_PTexture2DD3D11_unbind # fh v3:exact 0x0059cdd0 Phyre::PRendering::PTexture2DD3D11::unbind

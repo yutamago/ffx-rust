@@ -243,9 +243,9 @@ ported! {
     Phyre_PSerialization_PStreamReaderFile_read @ 0x0057_6950 => extern "thiscall" fn reader_file_read(this: u32, buffer: u32, size: u32) -> u32 {
         stream::bridge::reader_read(&mut mem(), this, buffer, size)
     }
-    /// `PStreamWriterFile::close()`.
-    Phyre_PSerialization_PStreamWriterFile_close @ 0x0043_1840 => extern "thiscall" fn writer_close(this: u32) -> u32 {
-        stream::bridge::writer_close(&mut mem(), this)
+    /// A recursive mutex's lock (Ghidra: `PStreamWriterFile::close`).
+    Phyre_PMutex_lock_00431840 @ 0x0043_1840 => extern "thiscall" fn mutex_lock(this: u32) -> u32 {
+        stream::bridge::mutex_lock(&mut mem(), this)
     }
     /// `PStream::~PStream()`.
     Phyre_PSerialization_PStream_dtor @ 0x0060_f0c0 => extern "thiscall" fn stream_dtor(this: u32) {
@@ -842,5 +842,31 @@ ported! {
     /// An entry of the list at `+0x54` by name `(name)`.
     Phyre_findNamed_004306b0 @ 0x0043_06b0 => extern "thiscall" fn find_named(this: u32, name: u32) -> u32 {
         descriptor::bridge::find_named(&mem(), this, name)
+    }
+    /// The cluster registry's forget `(cluster)`.
+    Phyre_PClusterRegistry_forget_00598c50 @ 0x0059_8c50 => extern "thiscall" fn registry_forget(this: u32, cluster: u32) -> u32 {
+        cluster::bridge::registry_forget(&mut mem(), this, cluster)
+    }
+    /// A cluster reader's tables `(&table, &data, extra, align)`.
+    Phyre_PClusterReaderBinary_placeTables_00579090 @ 0x0057_9090 => extern "thiscall" fn place_tables(this: u32, table: u32, data: u32, extra: u32, align: u32) -> u32 {
+        cluster::bridge::place_tables(&mut mem(), this, table, data, extra, align)
+    }
+    /// The type dispenser's lookup by key, copy 1 `(&key)`.
+    Phyre_PTypeDispenser_find_004375c0 @ 0x0043_75c0 => extern "thiscall" fn dispenser_find_a(this: u32, key: u32) -> u32 {
+        descriptor::bridge::dispenser_find(&mem(), this, key)
+    }
+    /// The type dispenser's lookup by key, copy 2 `(&key)`.
+    Phyre_PTypeDispenser_find_00438680 @ 0x0043_8680 => extern "thiscall" fn dispenser_find_b(this: u32, key: u32) -> u32 {
+        descriptor::bridge::dispenser_find(&mem(), this, key)
+    }
+    /// `PTypeDispenser::RegisterType(type)`.
+    Phyre_PTypeDispenser_RegisterType @ 0x0043_95b0 => extern "C" fn register_type(ty: u32) -> u8 {
+        let mut key = StackFrame::<2>::new();
+        descriptor::bridge::register_type(&mut mem(), key.at(), ty)
+    }
+    /// `PTypeDispenser::RegisterDefaultTypes()`.
+    Phyre_PTypeDispenser_RegisterDefaultTypes @ 0x0043_9510 => extern "C" fn register_default_types() -> u8 {
+        let mut key = StackFrame::<2>::new();
+        descriptor::bridge::register_default_types(&mut mem(), key.at())
     }
 }

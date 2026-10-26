@@ -222,7 +222,11 @@ pub mod bridge {
     /// (thiscall `(&key)` on the tree, whose header is the nil node): the
     /// node whose key (`+0xc`, unsigned) is `*key`, or 0.
     pub fn tree_find(m: &impl Mem, tree: u32, key: u32) -> u32 {
-        let k: u32 = m.read(key);
+        tree_find_key(m, tree, m.read(key))
+    }
+
+    /// [`tree_find`] for the key value `k`.
+    pub fn tree_find_key(m: &impl Mem, tree: u32, k: u32) -> u32 {
         let mut node: u32 = m.read(tree + 0xc);
         while node != tree {
             let nk: u32 = m.read(node + 0xc);
@@ -691,5 +695,70 @@ pub mod bridge {
         }
         h.call_sym(0x0059_8c50, Conv::Thiscall(registry), &[cluster]);
         cluster_teardown(h, cluster);
+    }
+
+    /// The cluster registry's forget (`0x00598c50`, thiscall `(cluster)`
+    /// on the registry `0x00c94f00`): under its mutex (`+0x1374`), the
+    /// cluster's entry in the tree at `+0x1344` (keyed by the cluster)
+    /// releases its blocks ([`release_blocks`] on `+0x10`), then leaves the
+    /// tree (`0x00575000`) and the node pool (`0x0049c980` on `+0x18`); 0.
+    pub fn registry_forget(h: &mut impl Host, registry: u32, cluster: u32) -> u32 {
+        let mutex = registry + 0x1374;
+        crate::stream::bridge::mutex_lock(h, mutex);
+        let tree = registry + 0x1344;
+        let node = tree_find_key(h, tree, cluster);
+        if node != 0 && node + 0x10 != 0 {
+            release_blocks(h, node + 0x10);
+            let node = tree_find_key(h, tree, cluster);
+            if node != 0 {
+                h.call_sym(0x0057_5000, Conv::Thiscall(tree), &[node]);
+                h.call_sym(0x0049_c980, Conv::Thiscall(tree + 0x18), &[node]);
+            }
+        }
+        crate::stream::bridge::mutex_unlock(h, mutex);
+        0
+    }
+
+    /// `0x00579090` (thiscall `(&table, &data, extra, align)` on a cluster
+    /// reader): sizes the reader's pointer table (`r = +8`: `r->+0x2c`
+    /// words after `r->+0x38` bytes rounded to 4) plus `extra`, aligned;
+    /// grows the cluster's arena when that is not 0
+    /// (`0x00442010(cluster; size, r->+0x38, r->+0x10)`, its error
+    /// returned); then the table at the arena's base plus the rounded
+    /// size, zeroed (`memset`), and the data past the table; 0.
+    pub fn place_tables(
+        h: &mut impl Host,
+        this: u32,
+        table: u32,
+        data: u32,
+        extra: u32,
+        align: u32,
+    ) -> u32 {
+        let r: u32 = h.read(this + 8);
+        let head: u32 = h.read(r + 0x38);
+        let words: u32 = h.read(r + 0x2c);
+        let start = head.wrapping_add(3) & !3;
+        let bytes = words.wrapping_mul(4);
+        let mut end = bytes.wrapping_add(start);
+        if align != 0 {
+            end = end.wrapping_sub(1).wrapping_add(align) & !align.wrapping_sub(1);
+        }
+        let size = extra.wrapping_add(end);
+        if size != 0 {
+            let cluster: u32 = h.read(this);
+            let flags: u32 = h.read(r + 0x10);
+            let e = h.call_sym(0x0044_2010, Conv::Thiscall(cluster), &[size, head, flags]);
+            if e != 0 {
+                return e;
+            }
+        }
+        let cluster: u32 = h.read(this);
+        let arena: u32 = h.read(cluster + 0x24);
+        let base: u32 = if arena == 0 { 0 } else { h.read(arena + 4) };
+        let at = base.wrapping_add(start);
+        h.write(table, at);
+        h.call_sym(0x0094_964c, Conv::Cdecl, &[at, 0, bytes]);
+        h.write(data, base.wrapping_add(end));
+        0
     }
 }
