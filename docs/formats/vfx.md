@@ -21,7 +21,7 @@ path, where a renderer can take them over.
 ### `pppKeTkFadeDraw`
 
 The work area `[pos, speed, accel]` (at `obj + 0xa0 + [[prog + 0xc]]`)
-steps each frame unless `g_pppStop` (`0x0230fd34`) is set:
+steps each frame unless `g_pppStopStatus` (`0x0230fd34`) is set:
 `speed += accel`, `pos += speed`, and on the key's frame the key's
 `+8..+0x10` are added. Unless the key's texture (`+4`) is `0xffff`, the
 CLUT is filled with `n = ftol(pos)`:

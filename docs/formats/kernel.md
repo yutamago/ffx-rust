@@ -66,7 +66,7 @@ record:
 |---|---|---|---|
 | `0x00` | 4 × ref | name, ?, description, ? | names and help texts |
 | `0x1c` | `u32` | flags | bit `0x2` puts an item in the usable list, bit `0x400` in the second list (`0x007906a0`); bit `0x40000`: formula and power come from the user's weapon (`0x007898d0`, `0x0078e630`) |
-| `0x20` | `u8` | crit_flags | bit `0x4` can be critical; bit `0x8` takes the crit bonus from the equipment (actor `+0x5d8`) instead of `crit_bonus` (`0x00789690`) |
+| `0x20` | `u8` | crit_flags | bit `0x4` can be critical; bit `0x8` takes the crit bonus from the equipment (actor `+0x5d8`) instead of `crit_bonus` (`DmgCalc_Crit`, `0x00789690`) |
 | `0x27` | `u8` | crit_bonus | added to the critical chance |
 | `0x28` | `u8` | formula | `Cmd_HealAmount` (`0x008c6920`): 6 = power × 50, 7 = (stat + power) / 2 × power, 8 = max HP × power / 16 |
 | `0x2a` | `u8` | power | Potion 4 (200 HP), Hi-Potion 20 (1000 HP), X-Potion formula 8, power 16 (full) |

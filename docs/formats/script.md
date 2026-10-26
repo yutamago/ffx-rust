@@ -11,7 +11,7 @@ Disassembler/assembler: [`crates/ffx-script`](../../crates/ffx-script).
 
 ## Instructions
 
-`Script_Fetch` (`0x00869d60`): a byte below `0x80` is an opcode alone; a
+`AtelFetchCommand` (`0x00869d60`): a byte below `0x80` is an opcode alone; a
 byte with the high bit set is opcode `byte & 0x7f` followed by a `u16`
 operand. The program counter advances by `((byte | 0x40) >> 6)`, 1 or 3.
 Opcodes reach their cases through the byte table at `0x0086536c`; Ghidra
@@ -3403,10 +3403,11 @@ oracle, so the interpreter is checked without a snapshot too. Two oracle stubs m
 the run lock and the CRT and Win32 imports natives reach are short x86
 stubs written into `int3` padding of `.text` (the test asserts every one
 found room), and two natives read stack words nothing wrote, which both
-oracles zero: `0x007bb6a0` (`Native_CamSetPos`) hands `Cam_SetPos` a
+oracles zero: `0x007bb6a0` (`setCameraMatrixToPhyreScene`) hands `MsCameraSetRect` a
 vector whose `w` is uninitialised, as does `Light_Set` (`0x00836520`) to
 `Sg_LightSetColor`/`Sg_LightSetDir`, and `0x007bab90`
-(`Native_CamRefSetTarget`) to `0x007beeb0`. `printf` is stubbed (it
+(`MsAtelCameraFocus_007bab90`) to `0x007beeb0`
+(`MsCameraSetAtelFocus_007beeb0`). `printf` is stubbed (it
 returns 0) for the debug lines. Before each native call the natives tests
 zero the top 64 KiB of both stacks: the test calls a native, the Rust
 version calls that native's helper one frame higher, so a word the
