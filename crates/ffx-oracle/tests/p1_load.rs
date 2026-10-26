@@ -4793,3 +4793,67 @@ fn p1c_descriptor_destruct_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn p1c_fill_default_buffer_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        for (k, (parent_on, def)) in [(true, true), (false, true), (true, false)]
+            .into_iter()
+            .enumerate()
+        {
+            let src = t.junk(0x40, 9);
+            t.stub(0x0043_cb80, true, 0, 0, if def { src } else { 0 });
+            let ty = p1c_vobj(&mut t, &[(1, 0); 2], 0xa0);
+            t.w32(ty + 0x88, 4);
+            t.w32(ty + 0x8c, 2);
+            let desc = p1c_vobj(&mut t, &[(0, 0); 2], 0xa0);
+            t.w32(desc + 0x8c, 4);
+            t.w32(desc + 0x88, 0);
+            let buf = t.junk(0x100, 1);
+            t.w32(desc + 0x64, buf);
+            let parent = t.junk(0xa0, 2);
+            t.w32(parent + 0x1c, 0x10);
+            t.w32(parent + 0x8c, 2);
+            t.w32(desc + 0x40, if parent_on { parent } else { 0 });
+            let head = desc + 0x44;
+            t.w32(head, head);
+            t.w32(head + 4, head);
+            // (kind, typed, flags, offset, type object size)
+            for &(kind, typed, mflags, offset, tsize) in &[
+                (0u32, true, 0u32, 0x10u32, 6u32),
+                (1, true, 0, 0x18, 3),
+                (2, true, 0, 0x30, 5),
+                (2, true, 0x40, 0x38, 5),
+                (0, false, 0, 0x40, 4),
+                (0, true, 2, 0x48, 4),
+                (0, true, 0x80, 0x50, 7),
+            ] {
+                let info = if kind == 0 {
+                    0
+                } else {
+                    let i = t.zeros(0x40);
+                    t.w32(i + 0x30, kind);
+                    i
+                };
+                let tyobj = p1c_vobj(&mut t, &[(0, 0), (0, if typed { ty } else { 0 })], 0x20);
+                t.w32(tyobj + 0x1c, tsize);
+                let m = p1c_vobj(&mut t, &[(0, 0), (0, info)], 0x40);
+                t.w32(m + 0x14, mflags);
+                t.w32(m + 0x18, tyobj);
+                t.w32(m + 0x24, offset);
+                t.w32(m + 0xc, desc);
+                t.w32(m + 0x34, 2);
+                let tail = t.r32(head + 4);
+                t.w32(m + 4, head);
+                t.w32(tail, m + 4);
+                t.w32(head + 4, m + 4);
+            }
+            let what = format!("{label}: fill default buffer {k}");
+            t.check(&what, 0x0043_cfd0, Conv::Thiscall(desc), &[], |g| {
+                pm::fill_default_buffer(g, desc);
+                Out::None
+            });
+            t.reset();
+        }
+    }
+}

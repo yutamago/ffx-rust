@@ -938,4 +938,76 @@ pub mod bridge {
         }
         p
     }
+
+    /// `0x0043cfd0` (thiscall on a class descriptor): fills its default
+    /// buffer (`+0x64`, at `+0x8c`) from its parent's (`0x0043cb80`, the
+    /// parent's size) and, for every member (list `+0x44`, the member at
+    /// link `- 4`) that is not a pointer (flags bit 1) and not of kind 2
+    /// (unless flags bit 6), from its class type's default buffer: one
+    /// element, or for kind 1 `0x00576050`'s count (called on the
+    /// member), each the type object's size (`+0x18`'s `+0x1c`; 4 for a
+    /// pointer-like member, as the constructors decide), at the member's
+    /// offset rebased to the type.
+    pub fn fill_default_buffer(h: &mut impl Host, desc: u32) {
+        let offset: u32 = h.read(desc + 0x8c);
+        let default: u32 = h.read(desc + 0x64);
+        let buf = offset.wrapping_add(default);
+        let parent: u32 = h.read(desc + 0x40);
+        if parent != 0 {
+            let d = h.call_sym(0x0043_cb80, Conv::Thiscall(parent), &[]);
+            if d != 0 {
+                let size: u32 = h.read(parent + 0x1c);
+                let poff: u32 = h.read(parent + 0x8c);
+                h.call_sym(
+                    crate::descriptor::MEMCPY,
+                    Conv::Cdecl,
+                    &[buf.wrapping_sub(poff), d, size],
+                );
+            }
+        }
+        let head = desc + 0x44;
+        let mut link: u32 = h.read(head);
+        while link != head && link != 0 && link != 4 {
+            let member = link - 4;
+            let flags: u32 = h.read(member + 0x14);
+            let info = h.call_virtual(member, 1, &[]);
+            let kind = if info == 0 { 0 } else { h.read(info + 0x30) };
+            let ty_obj: u32 = h.read(member + 0x18);
+            let ty = h.call_virtual(ty_obj, 1, &[]);
+            if flags & 2 == 0 && (kind != 2 || flags & 0x40 != 0) {
+                let count = if kind == 1 {
+                    h.call_sym(0x0057_6050, Conv::Thiscall(member), &[])
+                } else {
+                    1
+                };
+                if ty != 0 {
+                    let moff: u32 = h.read(member + 0x24);
+                    let owner: u32 = h.read(member + 0xc);
+                    let obase: u32 = h.read(owner + 0x88);
+                    let [tbase, toff]: [u32; 2] = h.read(ty + 0x88);
+                    let mut at = moff
+                        .wrapping_sub(obase)
+                        .wrapping_sub(toff)
+                        .wrapping_add(tbase)
+                        .wrapping_add(buf);
+                    let d = h.call_sym(0x0043_cb80, Conv::Thiscall(ty), &[]);
+                    let ty_obj: u32 = h.read(member + 0x18);
+                    let mut size: u32 = h.read(ty_obj + 0x1c);
+                    let info = h.call_virtual(member, 1, &[]);
+                    let kind2 = info != 0 && h.read::<u32>(info + 0x30) == 2;
+                    let flags: u32 = h.read(member + 0x14);
+                    if ((flags >> 6) & 1 == 0 && kind2) || (flags >> 1) & 1 != 0 {
+                        size = 4;
+                    }
+                    if d != 0 {
+                        for _ in 0..count {
+                            h.call_sym(crate::descriptor::MEMCPY, Conv::Cdecl, &[at, d, size]);
+                            at = at.wrapping_add(size);
+                        }
+                    }
+                }
+            }
+            link = h.read(member + 4);
+        }
+    }
 }

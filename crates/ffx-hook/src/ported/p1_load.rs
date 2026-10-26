@@ -1156,4 +1156,9 @@ ported! {
     Phyre_PClassDescriptor_Destruct @ 0x0043_b3e0 => extern "thiscall" fn descriptor_destruct(this: u32) {
         p1_types::bridge::destruct(&mut mem(), this);
     }
+    // ---- continuation round, batch 16 ----
+    /// A class descriptor's default buffer filled from its parent's and its members' types.
+    Phyre_PClassDescriptor_fillDefaultBuffer_0043cfd0 @ 0x0043_cfd0 => extern "thiscall" fn fill_default_buffer(this: u32) {
+        p1_misc::bridge::fill_default_buffer(&mut mem(), this);
+    }
 }
