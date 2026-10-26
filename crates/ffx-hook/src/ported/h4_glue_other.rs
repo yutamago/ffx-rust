@@ -14,8 +14,8 @@ use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
-    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, menu as mn,
-    misc as m, movie as mv, r3, sound as s,
+    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
+    menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2133,5 +2133,28 @@ ported! {
     /// `FFEscMenu_create_0068e400(a, f0, f1, f2, f3)`.
     FFEscMenu_create_0068e400 @ 0x0068_e400 => extern "C" fn esc_menu_create(a: u32, f0: u32, f1: u32, f2: u32, f3: u32) -> u32 {
         h1::esc_menu_create(&mut mem(), a, [f0, f1, f2, f3]).unwrap_or(0)
+    }
+    // ---- continuation round 6, batch 2 (ffx_glue_other::h4_h2)
+    /// `LoadingScreen_LoadingScreen(this)`.
+    LoadingScreen_LoadingScreen @ 0x006e_45e0 => extern "thiscall" fn loading_screen_ctor(this: u32) -> u32 {
+        h2::loading_screen_ctor(&mut mem(), this)
+    }
+    /// `BrokenScreenEffect_createRenderTarget(this)`.
+    BrokenScreenEffect_createRenderTarget @ 0x006d_5050 => extern "thiscall" fn broken_screen_create_render_target(this: u32) -> u32 {
+        h2::broken_screen_create_render_target(&mut mem(), this)
+    }
+    /// `BootText_create_006ddc80(this)`.
+    BootText_create_006ddc80 @ 0x006d_dc80 => extern "thiscall" fn boot_text_create(this: u32) -> u32 {
+        h2::boot_text_create(&mut mem(), this)
+    }
+    /// `Distortion_initialize_006c2710(this; a, b, c, d, e)`.
+    Distortion_initialize_006c2710 @ 0x006c_2710 => extern "thiscall" fn distortion_initialize(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h2::DISTORTION_FRAME / 4) as usize }>::new();
+        h2::distortion_initialize(&mut mem(), frame.at(), this, [a, b, c, d, e])
+    }
+    /// `Distortion_onShadersLoaded_006c2520(this)`.
+    Distortion_onShadersLoaded_006c2520 @ 0x006c_2520 => extern "thiscall" fn distortion_on_shaders(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h2::CURSOR_FRAME / 4) as usize }>::new();
+        h2::distortion_on_shaders(&mut mem(), frame.at(), this)
     }
 }

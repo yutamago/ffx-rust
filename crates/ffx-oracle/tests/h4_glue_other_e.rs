@@ -27,7 +27,7 @@ use ffx_bridge::Mem;
 use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
-    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1,
+    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -5020,6 +5020,264 @@ fn h1_ctors() {
                     Some(v) => u(v),
                     None => Out::None,
                 },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 6, batch 2 (ffx_glue_other::h4_h2)
+
+/// The loading screen's constructor and the broken-screen render target.
+#[test]
+fn h2_loading_broken_screen() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a201);
+        t.stub(h2::PHYRE_MALLOC1, 1, false);
+        t.stub_at(h2::PCLUSTER_CTOR, true, 0, 0, &[]);
+        for sym in [h2::SYNC_RENDER, h2::CLUSTER_CLEAR, h2::UPDATE_MAX_LEVEL] {
+            t.stub_at(sym, true, 0, 0, &[]);
+        }
+        t.stub_at(h2::CLUSTER_CREATE, true, 3, 3, &[]);
+        t.stub_at(h2::ALLOCATE_INSTANCE_LIST, true, 3, 3, &[]);
+        t.stub_at(h2::SET_DIMENSIONS, true, 4, 4, &[]);
+        t.stub_at(h2::RENDER_TARGET_CTOR, true, 1, 1, &[]);
+        let tags = [
+            h2::PHYRE_MALLOC1,
+            h2::PCLUSTER_CTOR,
+            h2::SYNC_RENDER,
+            h2::CLUSTER_CLEAR,
+            h2::UPDATE_MAX_LEVEL,
+            h2::CLUSTER_CREATE,
+            h2::ALLOCATE_INSTANCE_LIST,
+            h2::SET_DIMENSIONS,
+            h2::RENDER_TARGET_CTOR,
+        ];
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            h1_block(&mut t, &mut rng, h2::PHYRE_MALLOC1, 0x50);
+            let this = random_block(&mut t, &mut rng, 0x48);
+            t.check_conv(
+                &format!("{w} loading"),
+                0x006e_45e0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(h2::loading_screen_ctor(g, this)),
+            );
+            // the render target
+            let this = random_block(&mut t, &mut rng, 0x78);
+            let flag = rng.pick(&[0, 1, 0x80]);
+            t.w8(this + 0x74, flag);
+            h1_block(&mut t, &mut rng, h2::CLUSTER_CREATE, 0x20);
+            let list = random_block(&mut t, &mut rng, 0x38);
+            let target = random_block(&mut t, &mut rng, 0x10);
+            let target = rng.pick(&[0, target, target]);
+            t.w32(list + 0x34, target);
+            let list = rng.pick(&[0, list, list, list]);
+            t.ret(h2::ALLOCATE_INSTANCE_LIST, list);
+            t.check_conv(
+                &format!("{w} broken"),
+                0x006d_5050,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(h2::broken_screen_create_render_target(g, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The boot text's creation.
+#[test]
+fn h2_boot_text() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a202);
+        t.stub(h1::OPERATOR_NEW, 1, false);
+        t.stub_at(h2::TEXT_UTIL_CTOR, true, 0, 0, &[]);
+        t.stub_at(h2::TEXT_UTIL_INIT, true, 0, 0, &[]);
+        t.stub_at(h2::SET_TITLE_TEXT, true, 1, 1, &[]);
+        t.stub_at(h2::SET_POSITION, true, 2, 2, &[]);
+        t.stub_at(h2::SET_ENABLED, true, 1, 1, &[]);
+        let sprintf = t.stub_code(0x0bad_a2c0, false, 8, 0, false, &[]);
+        let tags = [
+            h1::OPERATOR_NEW,
+            h2::TEXT_UTIL_CTOR,
+            h2::TEXT_UTIL_INIT,
+            h2::SET_TITLE_TEXT,
+            h2::SET_POSITION,
+            h2::SET_ENABLED,
+            0x0bad_a2c0,
+        ];
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(h2::SPRINTF_S.sym, sprintf);
+            t.constants(&mut rng, &h2::POSITION, &[]);
+            let b = random_block(&mut t, &mut rng, 8);
+            let v = rng.pick(&[0, b, b, b]);
+            t.ret(h1::OPERATOR_NEW, v);
+            let other = rng.next();
+            let v = rng.pick(&[0, other, other, other]);
+            t.ret(h2::TEXT_UTIL_CTOR, v);
+            let other = rng.next();
+            let v = rng.pick(&[0, 0, other]);
+            t.ret(h2::TEXT_UTIL_INIT, v);
+            let this = random_block(&mut t, &mut rng, 0x160);
+            t.check_conv(
+                &format!("{w} boot text"),
+                0x006d_dc80,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(h2::boot_text_create(g, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The distortion effect's setup.
+#[test]
+fn h2_distortion_initialize() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a203);
+        t.stub(h2::PHYRE_MALLOC1, 1, false);
+        t.stub_at(h2::PCLUSTER_CTOR, true, 0, 0, &[]);
+        t.stub_at(h2::TEXTURE_REGISTER, true, 0, 0, &[]);
+        t.stub(h2::POST_PROCESS_MANAGER, 0, false);
+        t.stub(h2::FIOS_UNIFY, 3, false);
+        t.stub(h2::ASYNC_LOADER, 0, false);
+        t.stub(h2::LOAD_CLUSTER, 7, false);
+        let tags = [
+            h2::PHYRE_MALLOC1,
+            h2::PCLUSTER_CTOR,
+            h2::TEXTURE_REGISTER,
+            h2::POST_PROCESS_MANAGER,
+            h2::FIOS_UNIFY,
+            h2::ASYNC_LOADER,
+            h2::LOAD_CLUSTER,
+        ];
+        let manager = t.zeros(0x1_2400);
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            h1_block(&mut t, &mut rng, h2::PHYRE_MALLOC1, 0x50);
+            t.ret(h2::POST_PROCESS_MANAGER, manager);
+            let on = rng.pick(&[0, 1, 0x40]);
+            t.w8(manager + 0x1_23b4, on);
+            let this = random_block(&mut t, &mut rng, 0x70);
+            let a: [u32; 5] = std::array::from_fn(|_| rng.next());
+            let frame = t.ebp_for(5) - 0x110;
+            t.check_framed_conv(
+                &format!("{w} init"),
+                0x006c_2710,
+                Conv::Thiscall(this),
+                &a,
+                frame,
+                &[],
+                |g| u(h2::distortion_initialize(g, frame, this, a)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The distortion effect's shader callback (the cursor seek a stub that
+/// fills the cursor's result words).
+#[test]
+fn h2_distortion_on_shaders() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a204);
+        let seek = t.stub_code(h2::CURSOR_SEEK, true, 0, 0, false, &[]);
+        let cells = [t.zeros(4), t.zeros(4), t.zeros(4)];
+        let mut c = Vec::new();
+        for (cell, off) in cells.iter().zip([0u8, 0xc, 0x10]) {
+            c.push(0xa1);
+            c.extend(cell.to_le_bytes()); // mov eax, [cell]
+            c.extend([0x89, 0x41, off]); // mov [ecx+off], eax
+        }
+        let at = t.cave_next;
+        c.push(0xe9);
+        c.extend(seek.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp seek
+        let fill = t.code(&c);
+        t.jump(h2::CURSOR_SEEK, fill);
+        t.stub_at(h2::DISTORTION_CREATE_RT, true, 0, 0, &[]);
+        t.stub_at(h2::CREATE_MATERIAL, true, 3, 3, &[]);
+        t.stub_at(h2::CLUSTER_CREATE, true, 3, 3, &[]);
+        // the grid stub sets the third create's result
+        let grid = t.stub_code(h2::SETUP_GRID, true, 0, 0, false, &[]);
+        let third_cell = t.zeros(4);
+        let create_cell = t.cells[&h2::CLUSTER_CREATE];
+        let mut c = vec![0xa1];
+        c.extend(third_cell.to_le_bytes()); // mov eax, [third]
+        c.push(0xa3);
+        c.extend(create_cell.to_le_bytes()); // mov [create], eax
+        let at = t.cave_next;
+        c.push(0xe9);
+        c.extend(grid.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp grid
+        let set = t.code(&c);
+        t.jump(h2::SETUP_GRID, set);
+        t.stub_at(h2::SET_WORD, true, 2, 2, &[]);
+        t.stub_at(h2::SET_STREAMS, true, 2, 2, &[]);
+        t.stub_at(h2::GRID_INSTANCE, true, 1, 1, &[]);
+        t.stub_at(h2::MESH_INSTANCE, true, 1, 1, &[]);
+        t.stub(h2::PHYRE_FREE, 1, false);
+        let tags = [
+            h2::CURSOR_SEEK,
+            h2::DISTORTION_CREATE_RT,
+            h2::SETUP_GRID,
+            h2::CREATE_MATERIAL,
+            h2::CLUSTER_CREATE,
+            h2::SET_WORD,
+            h2::SET_STREAMS,
+            h2::GRID_INSTANCE,
+            h2::MESH_INSTANCE,
+            h2::PHYRE_FREE,
+        ];
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            // the cursor's results: base, hit, offset
+            let hit = rng.pick(&[0, 1, 1, 1]);
+            let base = rng.next();
+            let other = rng.next();
+            let off = rng.pick(&[base.wrapping_neg(), 0x40, other]);
+            t.w32(cells[0], base);
+            t.w32(cells[1], hit);
+            t.w32(cells[2], off);
+            // the shader cluster, its list empty or not
+            let cluster = random_block(&mut t, &mut rng, 0x24);
+            let list = cluster + 0x1c;
+            let other = rng.next();
+            let first = rng.pick(&[list, other]);
+            t.w32(list, first);
+            let this = random_block(&mut t, &mut rng, 0x44);
+            t.w32(this + 0x20, cluster);
+            // the material list: a count with or without its top bit
+            let array = random_block(&mut t, &mut rng, 0x10);
+            let n = rng.pick(&[0, 1, 1, 2, 5]) | rng.pick(&[0, 0, 0x8000_0000]);
+            t.w32(array, n);
+            if rng.below(4) == 0 {
+                // a block word pointing at the inline slot itself
+                t.w32(array + 4, array + 4);
+            }
+            let array = rng.pick(&[0, array, array, array]);
+            t.ret(h2::CLUSTER_CREATE, array);
+            // what the third create returns (the grid stub sets it)
+            let other = rng.next();
+            let third = rng.pick(&[0, other, other]);
+            t.w32(third_cell, third);
+            let mi = random_block(&mut t, &mut rng, 0x20);
+            t.ret(h2::MESH_INSTANCE, mi);
+            let frame = t.ebp_for(0) - 0x20;
+            t.check_framed_conv(
+                &format!("{w} shaders"),
+                0x006c_2520,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 0x20)],
+                |g| u(h2::distortion_on_shaders(g, frame, this)),
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
