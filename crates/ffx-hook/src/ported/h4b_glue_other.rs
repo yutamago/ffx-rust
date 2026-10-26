@@ -6,7 +6,7 @@
 //! drawers, the GS layer's frame code). Frames the originals hand callees
 //! are `StackFrame`s; nothing is kept between calls.
 
-use ffx_glue_other::{h4b_a as ba, h4b_b as bb, h4b_c as bc};
+use ffx_glue_other::{h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd};
 
 use super::{StackFrame, mem, ported};
 
@@ -130,5 +130,39 @@ ported! {
     IggyMenuManager_dispatchMouse_00a26ce0 @ 0x00a2_6ce0 => extern "thiscall" fn dispatch_mouse(this: u32) -> u32 {
         let mut f = StackFrame::<9>::new();
         bc::dispatch_mouse(&mut mem(), f.at(), this)
+    }
+
+    // ---- batch 4 (ffx_glue_other::h4b_d)
+
+    /// `gdraw_allocRenderTarget_00a3b610(stats)`: the texture description
+    /// in a frame (`ebp - 0x30` .. `ebp - 4`, 11 words).
+    gdraw_allocRenderTarget_00a3b610 @ 0x00a3_b610 => extern "C" fn alloc_render_target(stats: u32) -> u32 {
+        let mut f = StackFrame::<0xb>::new();
+        bd::alloc_render_target(&mut mem(), f.at(), stats)
+    }
+    /// `IggyMenuManager_init_00a262e0(this; device, w, h)`: the `GDraw`
+    /// configuration in a frame (`ebp - 0x24` .. `ebp - 1`, 9 words).
+    IggyMenuManager_init_00a262e0 @ 0x00a2_62e0 => extern "thiscall" fn menu_manager_init(this: u32, device: u32, w: u32, h: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        bd::menu_manager_init(&mut mem(), f.at(), this, device, w, h)
+    }
+    /// `TODrawBtlCtbParts(chr, count, x, y)`: the icon x and the count's
+    /// temporaries in the slots.
+    TODrawBtlCtbParts @ 0x008a_16d0 => extern "C" fn btl_ctb_parts(chr: u32, count: u32, x: u32, y: u32; slots: u32) {
+        bd::btl_ctb_parts(&mut mem(), chr, count, x, y, Some(slots));
+    }
+    /// `TODrawChrFaceCell_008efd90(pos, face, x, y, c0, c1, c2, c3, mode)`:
+    /// the image size and the record in a frame (`ebp - 0xb4` .. `ebp - 4`,
+    /// 44 words); the column in the face slot.
+    TODrawChrFaceCell_008efd90 @ 0x008e_fd90 => extern "C" fn chr_face_cell(pos: u32, face: u32, x: u32, y: u32, c0: u32, c1: u32, c2: u32, c3: u32, mode: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x2c>::new();
+        bd::chr_face_cell(&mut mem(), f.at(), pos, face, x, y, [c0, c1, c2, c3], mode, Some(slots))
+    }
+    /// `gdraw_makeTextureEnd_00a3a200(info, stats)`: the description and
+    /// the mip levels' data in a frame (`ebp - 0x150` .. `ebp - 4`, 83
+    /// words).
+    gdraw_makeTextureEnd_00a3a200 @ 0x00a3_a200 => extern "stdcall" fn make_texture_end(info: u32, stats: u32) -> u32 {
+        let mut f = StackFrame::<0x53>::new();
+        bd::make_texture_end(&mut mem(), f.at(), info, stats)
     }
 }

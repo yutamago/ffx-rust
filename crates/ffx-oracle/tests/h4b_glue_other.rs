@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
-use ffx_glue_other::{h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc};
+use ffx_glue_other::{h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -2150,4 +2150,418 @@ fn bc_dispatch_mouse() {
 /// A gauge-sized positive integer.
 fn rng_small_pos(rng: &mut Rng) -> u32 {
     1 + rng.below(300)
+}
+
+// ---- batch 4 (ffx_glue_other::h4b_d)
+
+/// `gdraw_allocRenderTarget_00a3b610`: a cached target, the budget, the
+/// heap and each device call failing in turn.
+#[test]
+fn bd_alloc_render_target() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b701);
+        let warn = t.stub_code(0x0bad_b702, false, 3, 0, false, &[]);
+        let made = t.zeros(4);
+        let device = com(
+            &mut t,
+            0xd100,
+            &[
+                (0x14, 4, &[wr(3, made)]),
+                (0x1c, 4, &[wr(3, made)]),
+                (0x24, 4, &[wr(3, made)]),
+            ],
+        );
+        let objs: Vec<u32> = (0..3)
+            .map(|k| com(&mut t, 0xe400 + 0x100 * k, &[(8, 1, &[])]))
+            .collect();
+        let mut tags = vec![0x0bad_b702, 0xd114, 0xd11c, 0xd124, 0xe408, 0xe508, 0xe608];
+        for (sym, n) in [
+            (bd::REQUEUE, 2),
+            (bd::TAKE_FREE, 1),
+            (bd::MOVE_BLOCK, 4),
+            (bd::FREE_BLOCK, 1),
+            (bd::REPORT_HR, 3),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let state = t.zeros(0x800);
+        let ebp = t.ebp_for(1);
+        let desc = ebp - 0x30;
+        let log = t.log;
+        let mut made_ok = 0;
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(bb::GDRAW_WARNING.sym, warn);
+            t.g32(bb::GDRAW_STATE.sym, state);
+            t.w32(state, device);
+            let cache_ring = state + 0x2d8;
+            let cached = random_block(&mut t, &mut rng, 0x40);
+            let c = rng.pick(&[cache_ring, 0, 0, 0, cached]);
+            t.w32(cache_ring + 0x1c, c);
+            let kind = rng.pick(&[1u32, 1, 5, 2]) << 28 | rng.below(0x1000);
+            t.w32(cached + 0x30, kind);
+            let owner = rng.pick(&[1, 1, 0]);
+            t.w32(cached + 0x14, owner);
+            let (sw, sh) = (rng.below(64), rng.below(64));
+            t.w32(state + 0x6c0, sw);
+            t.w32(state + 0x6c4, sh);
+            let budget = rng.pick(&[0x10_0000, 0, sw * sh * 4, (sw * sh * 4).wrapping_sub(1)]);
+            t.w32(state + 0x290, budget);
+            let limit = rng.next();
+            t.w32(state + 0x294, limit);
+            let block = random_block(&mut t, &mut rng, 0x40);
+            let b = rng.pick(&[block, block, block, 0]);
+            t.ret(bd::TAKE_FREE, b);
+            let hrs = [0, 0, 1, 0x8007_000e, 0x8000_4005];
+            for tag in [0xd114, 0xd11c, 0xd124] {
+                let v = rng.pick(&hrs);
+                t.ret(tag, v);
+            }
+            let m = rng.pick(&[0, objs[0], objs[1], objs[2]]);
+            t.w32(made, m);
+            let stat_block = random_block(&mut t, &mut rng, 0x20);
+            t.write(desc, &[0xa5; 0x2c]);
+            t.b.set_call_top(Some(desc - 0x100));
+            let addr = t.rebase(0x00a3_b610);
+            let ra =
+                t.a.call(addr, Conv::Cdecl, &[stat_block])
+                    .unwrap_or_else(|e| panic!("{w}: {e}"));
+            let tramp = t.tramp;
+            let port = bd::alloc_render_target(&mut G(&mut t.b, tramp), desc, stat_block);
+            t.b.set_call_top(None);
+            assert_eq!(ra.eax, port, "{w}: eax");
+            if port == block {
+                made_ok += 1;
+            }
+            // the two-word warning's third logged word is stack junk
+            let fix = |o: &mut Oracle| {
+                let n: u32 = Mem::read(o, log);
+                for e in 0..n {
+                    let at = log + 4 + 64 * e;
+                    let tag: u32 = Mem::read(o, at);
+                    let fmt: u32 = Mem::read(o, at + 12);
+                    if tag == 0x0bad_b702 && fmt == o.rebase(0x00b7_a73c) {
+                        o.write(at + 16, &[0; 4]).unwrap();
+                    }
+                }
+            };
+            fix(&mut t.a);
+            fix(&mut t.b);
+            t.diff(&w);
+            let x = Oracle::read(&mut t.a, desc, 0x2c).unwrap();
+            let y = Oracle::read(&mut t.b, desc, 0x2c).unwrap();
+            assert_eq!(x, y, "{w}: frame");
+        }
+        assert!(made_ok > 30, "{name}: {made_ok}");
+    }
+}
+
+/// `IggyMenuManager_init_00a262e0`: arrays of the right and other sizes,
+/// owned or not, allocations failing; `Config_InitDefaults` runs as the
+/// original.
+#[test]
+fn bd_menu_manager_init() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b702);
+        let (malloc, next) = alternating_stub(&mut t, 0x0bad_b710, false, 2, 0, &[]);
+        t.jump(bd::PHYRE_MALLOC, malloc);
+        t.stub(bd::PHYRE_FREE, 1, false);
+        t.stub(bd::GDRAW_INIT, 3, false);
+        t.stub_at(bd::SET_VIEWPORT, true, 2, 2, &[]);
+        let cb = t.stub_code(0x0bad_b711, false, 2, 2, false, &[]);
+        let tags = [
+            0x0bad_b710,
+            0x0bad_b711,
+            bd::PHYRE_FREE,
+            bd::GDRAW_INIT,
+            bd::SET_VIEWPORT,
+        ];
+        let ebp = t.ebp_for(3);
+        let frame = ebp - 0x24;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(bd::SET_AS3_CALLBACK.sym, cb);
+            let b0 = random_block(&mut t, &mut rng, 0x20);
+            let b1 = random_block(&mut t, &mut rng, 0xb0);
+            let first = rng.pick(&[b0, b0, 0]);
+            t.w32(next, first);
+            let second = rng.pick(&[b1, b1, 0]);
+            t.ret(0x0bad_b710, second);
+            let this = random_block(&mut t, &mut rng, 0x20);
+            let old0 = random_block(&mut t, &mut rng, 0x40);
+            let old1 = random_block(&mut t, &mut rng, 0x100);
+            let n0 = rng.pick(&[5, 5, 3, 0, 0x8000_0003, 0x8000_0005]);
+            t.w32(this + 8, n0);
+            // a null old block only where the new one comes (the clearing
+            // loop would write through it)
+            let p0 = if first == 0 || n0 == 5 {
+                rng.pick(&[old0, b0])
+            } else {
+                rng.pick(&[old0, old0, b0, 0])
+            };
+            t.w32(this + 0xc, p0);
+            let n1 = rng.pick(&[10, 10, 4, 0, 0x8000_0002, 0x8000_000a]);
+            t.w32(this + 0x10, n1);
+            let p1 = rng.pick(&[old1, old1, b1]);
+            t.w32(this + 0x14, p1);
+            let v = rng.next();
+            t.g32(0x01a8_58c4, v);
+            let a = [rng.next(), rng.next(), rng.next()];
+            t.check_framed_conv(
+                &w,
+                0x00a2_62e0,
+                Conv::Thiscall(this),
+                &a,
+                frame,
+                &[(0, 0x20), (0x23, 1)],
+                |g| u(bd::menu_manager_init(g, frame, this, a[0], a[1], a[2])),
+            );
+        }
+    }
+}
+
+/// `TODrawBtlCtbParts`: counts across every band edge, party members
+/// (Rikku before and after the scenario mark), 8..17 and monsters of
+/// every icon type; the argument slots compared.
+#[test]
+fn bd_btl_ctb_parts() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b703);
+        let mut tags = cursor_stubs(&mut t);
+        for (sym, n) in [
+            (bd::CROSS_BOX, 6),
+            (bd::CTB_ICON, 5),
+            (bd::SCENARIO_FLAG, 0),
+            (bd::CHR_ICON_TYPE, 1),
+            (bd::CHR_ICON_NUMBER, 1),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let f32s = [
+            0x00b5_ee90,
+            0x00b9_2268,
+            0x00b5_f304,
+            0x00b5_f314,
+            0x00b5_67a8,
+        ];
+        let f64s = [0x00b5_af28];
+        let ebp = t.ebp_for(4);
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            cursor_floats(&mut t, &mut rng, &f32s, &f64s);
+            let flag = rng.pick(&[0x433, 0x434, 0, 0x1000]);
+            t.ret(bd::SCENARIO_FLAG, flag);
+            let kind = rng.pickr(&[0x14, 0x15, 0x16, 0x17, 0x13]);
+            t.ret(bd::CHR_ICON_TYPE, kind);
+            let count = if i < 80 {
+                i
+            } else {
+                rng.pickr(&[0, 19, 20, 39, 40, 55, 56, 59, 60, 100])
+            };
+            let chr = rng.pickr(&[0, 1, 6, 6, 7, 8, 17, 18, 19, 20, 30]);
+            let a = [chr, count, rng.float(), rng.float()];
+            for (k, v) in a.iter().enumerate() {
+                t.b.write(ebp + 8 + 4 * k as u32, &v.to_le_bytes()).unwrap();
+            }
+            t.b.set_call_top(Some(ebp - 0x100));
+            t.check(&w, 0x008a_16d0, &a, |g| {
+                bd::btl_ctb_parts(g, a[0], a[1], a[2], a[3], Some(ebp + 8));
+                Out::None
+            });
+            t.b.set_call_top(None);
+            let x = Oracle::read(&mut t.a, ebp + 8, 16).unwrap();
+            let y = Oracle::read(&mut t.b, ebp + 8, 16).unwrap();
+            assert_eq!(x, y, "{w}: argument slots");
+        }
+    }
+}
+
+/// `TODrawChrFaceCell_008efd90`: every face and mode, Rikku, faces out
+/// of range; the image size and the record in the frame, the face slot.
+#[test]
+fn bd_chr_face_cell() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b704);
+        let (cw, ch) = (t.zeros(4), t.zeros(4));
+        t.stub_at(bd::IMAGE_WH, false, 3, 0, &[wr(1, cw), wr(2, ch)]);
+        let mut tags = vec![bd::IMAGE_WH];
+        for (sym, n) in [
+            (bd::SHAPE_TEXTURE_NAME, 1),
+            (bd::ALBHED_RIKKU, 0),
+            (bd::DRAW_UI_ELEMENT, 5),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let f64s = [0x00b6_6ca8, 0x00b6_6cb8, 0x00b9_22d8];
+        let ebp = t.ebp_for(9);
+        let frame = ebp - 0xb4;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[], &f64s);
+            let r = rng.pickr(&[0, 1, 2]);
+            t.ret(bd::ALBHED_RIKKU, r);
+            for cell in [cw, ch] {
+                let v = if rng.below(4) == 0 {
+                    rng.float()
+                } else {
+                    (rng.below(1000) as f32).to_bits()
+                };
+                t.w32(cell, v);
+            }
+            let face = if i < 40 {
+                i % 20
+            } else {
+                rng.pickr(&[6, 6, 7, 8, 17, 18, 0x8000_0000])
+            };
+            let mode = rng.pickr(&[6, 6, 0, 1]);
+            let a = [
+                rng.next(),
+                face,
+                rng.small(),
+                rng.small(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                mode,
+            ];
+            t.check_framed(&w, 0x008e_fd90, &a, frame, &[(0, 8), (0x18, 0x98)], |g| {
+                for (k, v) in a.iter().enumerate() {
+                    g.0.write(ebp + 8 + 4 * k as u32, &v.to_le_bytes()).unwrap();
+                }
+                let shades = [a[4], a[5], a[6], a[7]];
+                u(bd::chr_face_cell(
+                    g,
+                    frame,
+                    a[0],
+                    a[1],
+                    a[2],
+                    a[3],
+                    shades,
+                    a[8],
+                    Some(ebp + 8),
+                ))
+            });
+            let x = Oracle::read(&mut t.a, ebp + 8, 36).unwrap();
+            let y = Oracle::read(&mut t.b, ebp + 8, 36).unwrap();
+            assert_eq!(x, y, "{w}: argument slots");
+        }
+    }
+}
+
+/// `gdraw_makeTextureEnd_00a3a200`: mip chains of several sizes and
+/// formats, each device call failing in turn; the description and the
+/// level array in the frame, the record's ring moves.
+#[test]
+fn bd_make_texture_end() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b705);
+        let warn = t.stub_code(0x0bad_b720, false, 5, 0, false, &[]);
+        let free = t.stub_code(0x0bad_b721, false, 1, 1, false, &[]);
+        let made = t.zeros(4);
+        let device = com(
+            &mut t,
+            0xd200,
+            &[(0x14, 4, &[wr(3, made)]), (0x1c, 4, &[wr(3, made)])],
+        );
+        let objs: Vec<u32> = (0..2)
+            .map(|k| com(&mut t, 0xe700 + 0x100 * k, &[(8, 1, &[])]))
+            .collect();
+        t.stub(bd::TEXELS_MIP, 7, false);
+        let tags = [
+            0x0bad_b720,
+            0x0bad_b721,
+            0xd214,
+            0xd21c,
+            0xe708,
+            0xe808,
+            bd::TEXELS_MIP,
+        ];
+        let state = t.zeros(0x10);
+        let ebp = t.ebp_for(2);
+        let frame = ebp - 0x150;
+        let log = t.log;
+        let mut ok = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(bb::GDRAW_WARNING.sym, warn);
+            t.g32(bb::GDRAW_FREE.sym, free);
+            t.g32(bb::GDRAW_STATE.sym, state);
+            t.w32(state, device);
+            let hrs = [0, 0, 1, 0x8007_000e, 0x8000_4005];
+            for tag in [0xd214, 0xd21c] {
+                let v = rng.pick(&hrs);
+                t.ret(tag, v);
+            }
+            let m = rng.pick(&[0, objs[0], objs[1]]);
+            t.w32(made, m);
+            let record = random_block(&mut t, &mut rng, 0x40);
+            let heap = random_block(&mut t, &mut rng, 0x180);
+            let (prev, next) = (
+                random_block(&mut t, &mut rng, 0x40),
+                random_block(&mut t, &mut rng, 0x40),
+            );
+            t.w32(record + 0x18, heap);
+            t.w32(record + 0x1c, next);
+            t.w32(record + 0x20, prev);
+            for k in 0..6 {
+                let last = random_block(&mut t, &mut rng, 0x40);
+                // ring heads at heap + 0x10 and + 8 * (7 kind + 2)
+                t.w32(heap + 0x10 + 0x38 * k + 0x20, last);
+            }
+            let r0 = rng.pick(&[0, objs[0]]);
+            t.w32(record, r0);
+            let r1 = rng.pick(&[0, objs[1]]);
+            t.w32(record + 4, r1);
+            let info = random_block(&mut t, &mut rng, 0x58);
+            t.w32(info + 0x18, record);
+            let levels = rng.pick(&[0, 1, 2, 5, 9]);
+            t.w32(info + 0x4c, levels);
+            let (tw, th) = (rng.below(600), rng.below(600));
+            t.w32(info + 0x38, tw);
+            t.w32(info + 0x3c, th);
+            let texel = rng.pick(&[1, 4]);
+            t.w32(info + 0x50, texel);
+            let stat_block = random_block(&mut t, &mut rng, 0x20);
+            t.write(frame, &[0xa5; 0x14c]);
+            t.b.set_call_top(Some(frame - 0x100));
+            let addr = t.rebase(0x00a3_a200);
+            let ra =
+                t.a.call(addr, Conv::Stdcall, &[info, stat_block])
+                    .unwrap_or_else(|e| panic!("{w}: {e}"));
+            let tramp = t.tramp;
+            let port = bd::make_texture_end(&mut G(&mut t.b, tramp), frame, info, stat_block);
+            t.b.set_call_top(None);
+            assert_eq!(ra.eax, port, "{w}: eax");
+            if port != 0 {
+                ok += 1;
+            }
+            let fix = |o: &mut Oracle| {
+                let n: u32 = Mem::read(o, log);
+                for e in 0..n {
+                    let at = log + 4 + 64 * e;
+                    let tag: u32 = Mem::read(o, at);
+                    let fmt: u32 = Mem::read(o, at + 12);
+                    if tag == 0x0bad_b720 && fmt == o.rebase(0x00b7_a4ec) {
+                        o.write(at + 8 + 16, &[0; 4]).unwrap();
+                    }
+                }
+            };
+            fix(&mut t.a);
+            fix(&mut t.b);
+            t.diff(&w);
+            let x = Oracle::read(&mut t.a, frame, 0x14c).unwrap();
+            let y = Oracle::read(&mut t.b, frame, 0x14c).unwrap();
+            assert_eq!(x, y, "{w}: frame");
+        }
+        assert!(ok > 50, "{name}: {ok}");
+    }
 }
