@@ -52,6 +52,7 @@ use ffx_prender::h3_glue26::{self as h26, bridge as gh26};
 use ffx_prender::h3_glue27::{self as h27, bridge as gh27};
 use ffx_prender::h3_glue28::{self as h28, bridge as gh28};
 use ffx_prender::h3_glue29::{self as h29, bridge as gh29};
+use ffx_prender::h3_glue30::{self as h30, bridge as gh30};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -8110,5 +8111,94 @@ fn batch29_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES29, n, &mut Rng(0x2929_b029));
+    });
+}
+
+// ---- round 7 batch 30 (ffx_prender::h3_glue30) ----
+
+const INSTANTIATE_STUBS: &[(u32, K)] = &[
+    (h30::SET_MIN_AND_SIZE, K::This(2)),
+    (h30::TREE_INSERT_ARRAY, K::This(2)),
+    (h30::USER_FREE, K::Cdecl(1)),
+];
+
+/// The model (its object or none, its bounds or none), the cluster
+/// choice, the bounds list and instance (or none), the key's array found
+/// (with room or full) or missing, the reserve giving new data or none.
+fn prep_instantiate(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0000);
+    *this = scene;
+    let model = obj + 0x40;
+    args[0] = model;
+    let mesh = rng.next();
+    t.w32(model, mesh);
+    let object = obj + 0x80;
+    t.w32(model + 0x18, if rng.chance(3) { 0 } else { object });
+    t.w32(object + 4, obj + 0xa0);
+    t.w32(obj + 0xa0, obj + 0x1e00);
+    let ret = rng.next();
+    let slot1 = t.stub(None, 0xf7d0, true, 2, 2, Some(ret));
+    t.w32(obj + 0x1e04, slot1);
+    let source = obj + 0xc0;
+    t.w32(model + 0x1c, if rng.chance(3) { 0 } else { source });
+    for k in 0..7 {
+        let v = rng.float().to_bits();
+        t.w32(source + 4 * k, v);
+    }
+    args[1] = rng.next();
+    args[2] = pick(rng, &[0, 1, 0x100, 0xffff_ff01]);
+    t.stub_ret(h30::OPERATOR_NEW, false, 1, 0, obj + 0x300);
+    let second = if rng.chance(4) { 0 } else { obj + 0x480 };
+    t.stub_seq(
+        h30::ALLOCATE_INSTANCE_LIST,
+        true,
+        3,
+        3,
+        &[obj + 0x400, second],
+    );
+    t.w32(obj + 0x434, obj + 0x500);
+    t.w32(obj + 0x4b4, if rng.chance(4) { 0 } else { obj + 0x580 });
+    t.stub_ret(h30::INSTANCE_CTOR, true, 1, 1, obj + 0x600);
+    t.stub_ret(h30::BOUNDS_LINK, true, 1, 1, obj + 0x700);
+    let matrix = rng.next();
+    t.stub_ret(h30::CLUSTER_CREATE, true, 3, 3, matrix);
+    let node = match rng.below(4) {
+        0 => 0,
+        1 => 0xffff_fff0,
+        _ => obj + 0x800,
+    };
+    t.stub_ret(h30::TREE_FIND, true, 1, 1, node);
+    // counts and capacities compared signed (negative ones too)
+    let count = pick(rng, &[0, 1, 3, 7, 0xffff_ffff, 0xffff_ffe9]);
+    t.w32(obj + 0x810, count);
+    let capacity = pick(rng, &[0, 1, 4, 8, 0xffff_ffff, 0x8000_0000]);
+    t.w32(obj + 0x814, capacity);
+    // no data in a one-entry array with room: its slot address is 0
+    let kept = if count == 0 && capacity == 4 && rng.chance(2) {
+        0
+    } else {
+        obj + 0x900
+    };
+    t.w32(obj + 0x818, kept);
+    // no new data only for the new array (a found one's store would fault)
+    let data = if node != obj + 0x800 && rng.chance(3) {
+        0
+    } else {
+        obj + 0x980
+    };
+    let ret = rng.next();
+    t.stub_set_this(h30::ARRAY_RESERVE, 1, ret, &[(8, data)]);
+}
+
+#[rustfmt::skip]
+const CASES30: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_instantiate), ..method("scene_instantiate_mesh", 0x0066_f7d0, This::Object, 3, INSTANTIATE_STUBS, |m, this, a| { let slots = slots_at(m, a); u(gh30::scene_instantiate_mesh(m, frame_ebp(), slots, this, a[0], a[2])) }) }), 0x3c, 0xc),
+];
+
+#[test]
+fn batch30_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES30, n, &mut Rng(0x3030_b030));
     });
 }

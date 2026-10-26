@@ -35,6 +35,7 @@ use ffx_prender::h3_glue26::bridge as g26;
 use ffx_prender::h3_glue27::bridge as g27;
 use ffx_prender::h3_glue28::bridge as g28;
 use ffx_prender::h3_glue29::bridge as g29;
+use ffx_prender::h3_glue30::bridge as g30;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1746,6 +1747,14 @@ ported! {
     WaterDistortionEffectDelegations_processWaterDistortion @ 0x006f_54f0 => extern "C" fn process_water_distortion(task: u32; slots: u32) {
         let mut f = StackFrame::<0x19>::new();
         g29::process_water_distortion(&mut mem(), f.at() + 0x64, slots, task);
+    }
+
+    // ---- round 7 batch 30 (ffx_prender::h3_glue30) ----
+    /// `0x0066f7d0(this, model, key, shared)`: a mesh instance registered
+    /// under `key`; the cluster goes over `shared`'s slot.
+    PhyreScene_instantiateMesh_0066f7d0 @ 0x0066_f7d0 => extern "thiscall" fn scene_instantiate_mesh(this: u32, model: u32, _key: u32, shared: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0xf>::new();
+        g30::scene_instantiate_mesh(&mut mem(), f.at() + 0x3c, slots, this, model, shared)
     }
 }
 
