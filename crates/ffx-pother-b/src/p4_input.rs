@@ -447,3 +447,58 @@ pub mod bridge4 {
         }
     }
 }
+
+/// `PInputDeviceMouse`'s vtable.
+pub const MOUSE_VTABLE: u32 = 0x00b3_fc14;
+/// `__ehvec_ctor` (stdcall `(p, size, n, ctor, dtor)`).
+pub const EHVEC_CTOR: u32 = 0x0094_966a;
+/// The mouse's mapping constructor and destructor `__ehvec_ctor` gets.
+pub const MOUSE_MAPPING_CTOR: u32 = 0x0062_0540;
+/// See [`MOUSE_MAPPING_CTOR`].
+pub const MOUSE_MAPPING_DTOR: u32 = 0x0062_1190;
+
+pub mod bridge5 {
+    //! The originals over game memory.
+
+    use super::{
+        Conv, DEVICE_LIST, DEVICE_VTABLE, EHVEC_CTOR, Host, MOUSE_MAPPING_CTOR, MOUSE_MAPPING_DTOR,
+        MOUSE_VTABLE,
+    };
+
+    /// `PInputDeviceMouse::PInputDeviceMouse(dev, state)` (`0x006200d0`,
+    /// `ret 4`) -> `dev`: the `PInputDevice` base (empty lists at `+4`
+    /// and `+0xc`, the state at `+0x14`, linked at the tail of
+    /// `g_PInputDeviceList`), the mouse vtable, five 0x30-byte mappings
+    /// at `+0x18` (`__ehvec_ctor`), then `+0x108..0x11a` cleared.
+    pub fn mouse_ctor(h: &mut impl Host, dev: u32, state: u32) -> u32 {
+        let link = dev + 4;
+        let maps = dev + 0xc;
+        h.write(link, link);
+        h.write(link + 4, link);
+        h.write(dev, h.rebase(DEVICE_VTABLE));
+        h.write(maps, maps);
+        h.write(maps + 4, maps);
+        h.write(dev + 0x14, state);
+        let head = h.rebase(DEVICE_LIST);
+        let last: u32 = h.read(head + 4);
+        h.write(link, head);
+        h.write(link + 4, last);
+        h.write(last, link);
+        h.write(head + 4, link);
+        h.write(dev, h.rebase(MOUSE_VTABLE));
+        let ctor = h.rebase(MOUSE_MAPPING_CTOR);
+        let dtor = h.rebase(MOUSE_MAPPING_DTOR);
+        h.call_sym(
+            EHVEC_CTOR,
+            Conv::Stdcall,
+            &[dev + 0x18, 0x30, 5, ctor, dtor],
+        );
+        h.write(dev + 0x108, 0u8);
+        h.write(dev + 0x10c, 0u32);
+        h.write(dev + 0x110, 0u32);
+        h.write(dev + 0x114, 0u32);
+        h.write(dev + 0x118, 0u16);
+        h.write(dev + 0x11a, 0u8);
+        dev
+    }
+}

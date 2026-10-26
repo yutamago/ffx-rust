@@ -8,7 +8,8 @@
 
 use super::{mem, ported};
 use ffx_pother_b::{
-    methods, object, p4_bind, p4_cloth, p4_fog, p4_input, p4_light, p4_morph, physics, small,
+    methods, object, p4_bind, p4_cloth, p4_fog, p4_frames, p4_input, p4_light, p4_mesh, p4_morph,
+    physics, small,
 };
 
 ported! {
@@ -902,5 +903,73 @@ ported! {
     /// `CharacterLighting::updateFlash(cl, dt)`.
     CharacterLighting_updateFlash_006ab630 @ 0x006a_b630 => extern "thiscall" fn update_flash(cl: u32, dt: u32) {
         p4_light::bridge4::update_flash(&mut mem(), cl, dt);
+    }
+    // ---- p4-other-b c2 batch 1 ----
+    /// `DynamicMesh_setStreams(mesh, a, b, c)` -> the stream table.
+    DynamicMesh_setStreams_00676680 @ 0x0067_6680 => extern "thiscall" fn set_streams_676680(mesh: u32, a: u32, b: u32, c: u32) -> u32 {
+        p4_mesh::bridge::set_streams(&mut mem(), mesh, a, b, c)
+    }
+    /// `DynamicMesh_setStreams(mesh, a, b, c)` -> the stream table.
+    DynamicMesh_setStreams_00677ce0 @ 0x0067_7ce0 => extern "thiscall" fn set_streams_677ce0(mesh: u32, a: u32, b: u32, c: u32) -> u32 {
+        p4_mesh::bridge::set_streams(&mut mem(), mesh, a, b, c)
+    }
+    /// `DistortionGridDynamicMeshInstance_create(cluster, &mesh)` -> the instance or 0.
+    DistortionGridDynamicMeshInstance_create_00673e20 @ 0x0067_3e20 => extern "thiscall" fn distortion_create(cluster: u32, p: u32) -> u32 {
+        p4_mesh::bridge::create_instance(&mut mem(), cluster, p4_mesh::DISTORTION_DESC, p4_mesh::DISTORTION_CTOR, p)
+    }
+    /// `RadialLineDynamicMeshInstance_create(cluster, &mesh)` -> the instance or 0.
+    RadialLineDynamicMeshInstance_create_00675d90 @ 0x0067_5d90 => extern "thiscall" fn radial_create(cluster: u32, p: u32) -> u32 {
+        p4_mesh::bridge::create_instance(&mut mem(), cluster, p4_mesh::RADIAL_DESC, p4_mesh::RADIAL_CTOR, p)
+    }
+    /// `ClassDynamicMesh_fillDrawTable(mesh, src)`; leaves the records'
+    /// running offset in its argument's slot, as the original does.
+    ClassDynamicMesh_fillDrawTable_006732a0 @ 0x0067_32a0 => extern "thiscall" fn fill_draw_table(mesh: u32, src: u32; slots: u32) {
+        let mut m = mem();
+        let word = p4_mesh::bridge::fill_draw_table(&mut m, mesh, src);
+        ffx_bridge::Mem::write(&mut m, slots, word);
+    }
+    /// `ClothInstancingDynamicMeshInstance(inst, mesh)` -> `inst`.
+    ClothInstancingDynamicMeshInstance_ctor_006e0860 @ 0x006e_0860 => extern "thiscall" fn cloth_instance_ctor(inst: u32, mesh: u32) -> u32 {
+        p4_mesh::bridge::cloth_instance_ctor(&mut mem(), inst, mesh)
+    }
+    /// `CharacterShaderManager::loadShaderLower()` -> the found object, the seek's `eax` or 0.
+    Phyre_CharacterShaderManager_loadShaderLower @ 0x006d_f3d0 => extern "C" fn load_shader_lower() -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let ebp = frame.at() + 0x20;
+        p4_frames::bridge::load_shader_cluster(&mut mem(), ebp, &p4_frames::BTM_TO_TOP)
+    }
+    /// `CharacterShaderManager::loadShaderMagic249()` -> the found object, the seek's `eax` or 0.
+    Phyre_CharacterShaderManager_loadShaderMagic249 @ 0x006d_f470 => extern "C" fn load_shader_magic249() -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let ebp = frame.at() + 0x20;
+        p4_frames::bridge::load_shader_cluster(&mut mem(), ebp, &p4_frames::MAGIC_249)
+    }
+    /// `CharacterShaderManager::loadShaderMagic297()` -> the found object, the seek's `eax` or 0.
+    Phyre_CharacterShaderManager_loadShaderMagic297 @ 0x006d_f510 => extern "C" fn load_shader_magic297() -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let ebp = frame.at() + 0x20;
+        p4_frames::bridge::load_shader_cluster(&mut mem(), ebp, &p4_frames::MAGIC_297)
+    }
+    /// `WindowEventHandler_insert(key)` -> the tree insert's `eax`.
+    WindowEventHandler_insert_00625c70 @ 0x0062_5c70 => extern "C" fn window_handler_insert(key: u32) -> u32 {
+        // ebp - 8 .. ebp + 0xc: the out pair, two unused words, the key
+        let mut frame = super::StackFrame::<5>::new();
+        let ebp = frame.at() + 8;
+        p4_frames::bridge::insert_handler(&mut mem(), ebp, key)
+    }
+    /// `NamedValueMap_insert(map, name, &value)` -> `map`.
+    NamedValueMap_insert_0064bde0 @ 0x0064_bde0 => extern "C" fn named_value_insert(map: u32, name: u32, value: u32) -> u32 {
+        let mut frame = super::StackFrame::<9>::new();
+        let ebp = frame.at() + 0x24;
+        p4_frames::bridge::insert_named(&mut mem(), ebp, map, name, value)
+    }
+    /// `CharacterLighting::setPointLightPosition(cl, x, y, z, i)` -> the matrix copy's `eax`.
+    Phyre_CharacterLighting_setPointLightPosition @ 0x006a_ad90 => extern "thiscall" fn set_point_light_position(cl: u32, x: u32, y: u32, z: u32, i: u32) -> u32 {
+        let mut m = super::StackFrame::<16>::new();
+        p4_light::bridge5::set_light_pos(&mut mem(), cl, [x, y, z], i, m.at())
+    }
+    /// `PInputDeviceMouse::PInputDeviceMouse(dev, state)` -> `dev`.
+    PInputDeviceMouse_ctor @ 0x0062_00d0 => extern "thiscall" fn mouse_ctor(dev: u32, state: u32) -> u32 {
+        p4_input::bridge5::mouse_ctor(&mut mem(), dev, state)
     }
 }

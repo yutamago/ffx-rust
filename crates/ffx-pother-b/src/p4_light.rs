@@ -485,3 +485,49 @@ pub mod bridge4 {
         h.call(f, Conv::Cdecl, &[0, c, c, c]);
     }
 }
+
+/// `PMatrix4_toWorldMatrix3x4` (thiscall `(dst, m)`, `ret 4`).
+pub const TO_WORLD_3X4: u32 = 0x0045_1190;
+
+pub mod bridge5 {
+    //! The originals over game memory.
+
+    use super::{Conv, Host, ONE, POINT_LIGHT_TYPE, TO_WORLD_3X4};
+    use crate::methods::quiet;
+
+    /// `CharacterLighting::setLightPos(cl, x, y, z, i)` (`0x006aad90`,
+    /// `ret 0x10`): on an initialised manager, light `i` becomes a point
+    /// light (type, intensity 1, range 0..100, its node's `+0x20..0x28`
+    /// cleared) when it isn't one, and its node gets the translation
+    /// `(x, y, z)` (an identity 4x4 with that last row, at `m`, 16 words,
+    /// through `PMatrix4_toWorldMatrix3x4`), whose `eax` it returns.
+    pub fn set_light_pos(h: &mut impl Host, cl: u32, xyz: [u32; 3], i: u32, m: u32) -> u32 {
+        if h.read::<u8>(cl + 0x1cc) == 0 {
+            return 0;
+        }
+        let set: u32 = h.read(cl + 0xf0);
+        let lights: u32 = h.read(set + 4);
+        let l: u32 = h.read(lights.wrapping_add(i.wrapping_mul(4)));
+        let point = h.rebase(POINT_LIGHT_TYPE);
+        if h.read::<u32>(l + 0x18) != point {
+            let node: u32 = h.read(l + 0x10);
+            h.write(l + 0x24, ONE);
+            h.write(l + 0x18, point);
+            h.write(l + 0x28, 0u32);
+            h.write(l + 0x2c, 0x42c8_0000u32);
+            h.write(node + 0x20, 0u32);
+            h.write(node + 0x24, 0u32);
+            h.write(node + 0x28, 0u32);
+        }
+        let node: u32 = h.read(l + 0x10);
+        for k in 0..12 {
+            let v = if k % 5 == 0 { ONE } else { 0 };
+            h.write(m + 4 * k, v);
+        }
+        for (k, v) in xyz.into_iter().enumerate() {
+            h.write(m + 0x30 + 4 * k as u32, quiet(v));
+        }
+        h.write(m + 0x3c, ONE);
+        h.call_sym(TO_WORLD_3X4, Conv::Thiscall(node), &[m])
+    }
+}
