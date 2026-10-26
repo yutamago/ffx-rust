@@ -274,18 +274,31 @@ def check(repo, exe_path, sizes):
                 return resolve(lets[-1].group(1), body, lets[-1].start())
         return None
 
+    def array_len(body):
+        # `[x; N]` (a repeat expression) has N elements, not one
+        parts = split_top(body)
+        if len(parts) == 1:
+            depth = 0
+            for j, c in enumerate(parts[0]):
+                depth += c in "([{"
+                depth -= c in ")]}"
+                if c == ";" and depth == 0:
+                    n = parts[0][j + 1:].strip()
+                    return int(n) if n.isdigit() else None
+        return len(parts)
+
     def slice_words(arg, code, at):
         arg = arg.strip()
         m = re.fullmatch(r"&\[(.*)\]", arg, re.S)
         if m:
-            return len(split_top(m.group(1)))
+            return array_len(m.group(1))
         m = re.fullmatch(r"&(\w+)", arg)
         if m:
             text = scope(code, at)
             lets = list(re.finditer(rf"let {m.group(1)}\s*=\s*\[", text))
             if lets:
                 body = balanced(text, lets[-1].end() - 1)
-                return len(split_top(body[1:-1])) if body else None
+                return array_len(body[1:-1]) if body else None
         return None
 
     sites = re.compile(r"(?<![\w.])((?:[\w]+\.)*(?:\(?c\.)?(call\w*|\w+_call\w*|callf|fcall|ci)\)?)\(")
