@@ -25,7 +25,8 @@ use std::path::PathBuf;
 
 use ffx_bridge::Mem;
 use ffx_glue_other::{
-    effect as e, frames as fr, menu as mn, misc as m, movie as mv, r3, sound as s,
+    effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4, menu as mn,
+    misc as m, movie as mv, r3, sound as s,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -5605,5 +5606,1717 @@ fn r3_cluster_map_file_records() {
                 |g| u(r3::set_mesh_world_matrix(g, ebp - 0x28, geometry)),
             );
         }
+    }
+}
+
+// ---- continuation round, batch 1 (ffx_glue_other::h4_c1)
+
+/// A stub at `sym` that flips bit 0 of its result cell before each call
+/// (so two calls in a row answer differently), else as [`Twins::stub`].
+fn stub_toggle(t: &mut Twins, sym: u32, this: bool, n: u32, pops: u32) {
+    let rest = t.stub_code(sym, this, n, pops);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x83, 0x35];
+    c.extend(cell.to_le_bytes());
+    c.push(0x01); // xor dword [cell], 1
+    c.push(0xe9);
+    let at = t.cave_next;
+    c.extend(rest.wrapping_sub(at + 12).to_le_bytes()); // jmp rest
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// The accumulation quads, the single-record take, the name lookup, the
+/// two array helpers, the mip dispatcher, the texture-animation records,
+/// the icon packet, the escape menu's page state.
+#[test]
+fn c1_gs_menu_arrays_records() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c101);
+        let stubs: [(u32, bool, u32, u32); 32] = [
+            (c1::GS_TEXFLUSH, false, 0, 0),
+            (c1::GS_GET, false, 0, 0),
+            (c1::GS_INC, false, 0, 0),
+            (c1::GS_TEX_HOKAN, false, 1, 0),
+            (c1::GS_ALPHA, false, 5, 0),
+            (c1::GS_PRIM, false, 1, 0),
+            (c1::GS_UV, false, 2, 0),
+            (c1::GS_XYZF2, false, 2, 0),
+            (c1::GS_UV2, false, 2, 0),
+            (c1::GS_RGBAQ, false, 4, 0),
+            (c1::GS_XYZF2V, false, 3, 0),
+            (c1::GS_SET_PACKET, false, 1, 0),
+            (c1::GS_START, false, 0, 0),
+            (c1::GS_FRAME_16, false, 2, 0),
+            (c1::GS_FRAME, false, 2, 0),
+            (c1::GS_END, false, 0, 0),
+            (mn::PHYRE_FREE, false, 1, 0),
+            (r3::ALIGNED_ALLOC, false, 2, 0),
+            (c1::TEXELS_HALVE, false, 4, 0),
+            (c1::TEXELS_HALVE_V, false, 6, 0),
+            (c1::TEXELS_BOX, false, 5, 0),
+            (fr::OPERATOR_DELETE, false, 1, 0),
+            (c1::SAMPLER_STATE_CTOR, true, 0, 0),
+            (c1::DESTROY_OBJECTS, true, 0, 0),
+            (c1::COPY_NEW_A, false, 2, 0),
+            (c1::COPY_NEW_B, false, 2, 0),
+            (c1::PARRAY40_ASSIGN, true, 1, 1),
+            (c1::PSTRING_ASSIGN, true, 1, 1),
+            (c1::ADD_PKT_MENU_ICON, false, 4, 0),
+            (c1::ADD_PKT_BASE_MES_FONT, false, 12, 0),
+            (c1::GET_SCENARIO_FLAG, false, 0, 0),
+            (c1::SET_ENABLE_PARA_AND_SPECIAL, true, 1, 1),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let strings_cell = t.zeros(4);
+        t.stub_at(
+            c1::MS_GET_ROM_ITEM,
+            false,
+            2,
+            0,
+            &[Write {
+                arg: Some(1),
+                offset: 0,
+                cell: strings_cell,
+            }],
+        );
+        stub_toggle(&mut t, c1::IS_ETERNAL_CALM_SCENE, false, 1, 0);
+        t.stub(r3::CALL_FLASH_1, false, 6, 0);
+        let wide = |h: &mut G, f: u32, a: &[u32]| h.0.call(f, Conv::Cdecl, a).unwrap().eax;
+        let table = t.rebase(c1::MENU_NAMES);
+        let texts: Vec<u32> = ["", "a", "ab", "menu", "menv", "aenu", "menu2"]
+            .iter()
+            .map(|s| {
+                let mut b = s.as_bytes().to_vec();
+                b.push(0);
+                t.alloc(&b)
+            })
+            .collect();
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.next();
+                t.ret(sym, v);
+            }
+            let v = rng.next();
+            t.ret(c1::MS_GET_ROM_ITEM, v);
+            let v = rng.next();
+            t.ret(r3::CALL_FLASH_1, v);
+            // the GS quads
+            let packet = t.random(&mut rng, 0x20);
+            t.ret(c1::GS_GET, packet);
+            let fbp = rng.next();
+            t.g32(c1::DRAW_FBP.sym, fbp);
+            let fix = rng.word();
+            t.check(
+                &format!("{w} alpha quad"),
+                0x0082_baf0,
+                Conv::Cdecl,
+                &[fix],
+                |g| u(c1::acc_draw_alpha_quad(g, fix)),
+            );
+            let z = rng.word();
+            t.check(
+                &format!("{w} filter quad"),
+                0x0082_bb90,
+                Conv::Cdecl,
+                &[z],
+                |g| u(c1::draw_filter_quad(g, z)),
+            );
+            let request = [0, 1, rng.next()][rng.below(3) as usize];
+            t.g32(c1::ACC_CURRENT_REQUEST.sym, request);
+            t.check(
+                &format!("{w} set current {request:#x}"),
+                0x0082_ce90,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    c1::acc_set_current(g);
+                    Out::None
+                },
+            );
+            // MenuManager_TakeSingleRecord
+            let mm = t.zeros(0x5b80);
+            for (cap, pool, used, count) in [
+                (0x15e0, 0x15e4, 0x2bf8, 0x2c50),
+                (0x4238, 0x423c, 0x5838, 0x5840),
+            ] {
+                let records = t.random(&mut rng, 0x14);
+                t.w32(mm + pool, records);
+                let c = [0, 3, 0x8000_0004, 4][rng.below(4) as usize];
+                t.w32(mm + cap, c);
+                let taken = [3, 4, rng.below(5)][rng.below(3) as usize];
+                t.w32(mm + used, taken);
+                t.w32(mm + count, rng.below(8));
+            }
+            let mut chain = rng.below(3);
+            if rng.below(4) == 0 {
+                // the list store lands on the used word: the record is read
+                // again through the stored value (small, to stay in the pool)
+                chain = 0;
+                let records = t.zeros(0x14);
+                for k in 0..5 {
+                    let v = rng.below(5);
+                    t.w32(records + 4 * k, v);
+                }
+                t.w32(mm + 0x15e4, records);
+                t.w32(mm + 0x15e0, 4);
+                t.w32(mm + 0x2bf8, rng.below(4));
+                t.w32(mm + 0x2c50, 0x2bf8 / 4);
+            }
+            t.check(
+                &format!("{w} TakeSingleRecord {chain}"),
+                0x0067_c210,
+                Conv::Thiscall(mm),
+                &[chain],
+                |g| u(c1::take_single_record(g, mm, chain)),
+            );
+            // MenuManager_findNameIndex
+            let n = rng.below(7);
+            for k in 0..n {
+                let s = texts[rng.below(texts.len() as u32) as usize];
+                t.w32(table + 4 * k, s);
+            }
+            let this = t.zeros(0x5848);
+            t.w32(this + 0x5844, n);
+            let wanted = texts[rng.below(texts.len() as u32) as usize];
+            t.check(
+                &format!("{w} findNameIndex of {n}"),
+                0x0067_e310,
+                Conv::Thiscall(this),
+                &[wanted],
+                |g| u(c1::find_name_index(g, this, wanted)),
+            );
+            // PArray_reset16
+            let arr = t.zeros(8);
+            let count = [0x10, 0, 3, 0x8000_0003, 0x8000_0010, 17][rng.below(6) as usize];
+            t.w32(arr, count);
+            let old = t.random(&mut rng, 0x60);
+            t.w32(arr + 4, old);
+            let block = match rng.below(4) {
+                0 => 0,
+                1 => old,
+                _ => t.random(&mut rng, 0x40),
+            };
+            t.ret(r3::ALIGNED_ALLOC, block);
+            t.check(
+                &format!("{w} reset16 {count:#x} block {block:#x}"),
+                0x0068_bc60,
+                Conv::Thiscall(arr),
+                &[],
+                |g| {
+                    c1::parray_reset16(g, arr);
+                    Out::None
+                },
+            );
+            // PArray8_appendInto
+            let arr = t.zeros(8);
+            let n = rng.below(4);
+            let word = [n, n | 0x8000_0000][rng.below(2) as usize];
+            t.w32(arr, word);
+            let block = t.random(&mut rng, 0x20);
+            let old = if n == 0 && rng.below(2) == 0 {
+                0
+            } else {
+                block
+            };
+            t.w32(arr + 4, old);
+            let dst = match rng.below(4) {
+                0 => 0,
+                1 => old,
+                _ => t.zeros(0x28),
+            };
+            let value = t.random(&mut rng, 8);
+            t.check(
+                &format!("{w} append8 {word:#x} old {old:#x} dst {dst:#x}"),
+                0x006a_2790,
+                Conv::Thiscall(arr),
+                &[dst, value],
+                |g| u(c1::parray8_append_into(g, arr, dst, value)),
+            );
+            // op_texels_mip
+            let mut a: [u32; 7] = std::array::from_fn(|_| rng.next());
+            a[2] = [0, 1, 2, rng.next()][rng.below(4) as usize];
+            a[3] = [0, 1, 2, 3][rng.below(4) as usize];
+            t.check(
+                &format!("{w} texels mip {}x{}", a[2], a[3]),
+                0x00a3_84d0,
+                Conv::Cdecl,
+                &a,
+                |g| {
+                    c1::texels_mip(g, a);
+                    Out::None
+                },
+            );
+            // the texture-animation records
+            let info = t.random(&mut rng, 0x24);
+            if rng.below(3) == 0 {
+                t.w32(info + 0xc, 0);
+            }
+            let flags = rng.word();
+            t.check(
+                &format!("{w} info dtor {flags:#x}"),
+                0x006a_fd60,
+                Conv::Thiscall(info),
+                &[flags],
+                |g| u(c1::texture_animation_info_dtor(g, info, flags)),
+            );
+            let info = t.random(&mut rng, 0x24);
+            if rng.below(3) == 0 {
+                t.w32(info + 0xc, 0);
+            }
+            t.check(
+                &format!("{w} info char dtor"),
+                0x006a_f7f0,
+                Conv::Thiscall(info),
+                &[],
+                |g| {
+                    c1::texture_animation_info_char_dtor(g, info);
+                    Out::None
+                },
+            );
+            let manager = t.random(&mut rng, 0x84);
+            t.check(
+                &format!("{w} manager ctor"),
+                0x006a_f370,
+                Conv::Thiscall(manager),
+                &[],
+                |g| u(c1::texture_animation_manager_ctor(g, manager)),
+            );
+            let material = t.random(&mut rng, 0x20);
+            t.check(
+                &format!("{w} material dtor"),
+                0x006a_f690,
+                Conv::Thiscall(material),
+                &[],
+                |g| {
+                    c1::texture_animation_material_dtor(g, material);
+                    Out::None
+                },
+            );
+            let material = t.random(&mut rng, 0x20);
+            let src = if rng.below(4) == 0 {
+                material
+            } else {
+                t.random(&mut rng, 0x20)
+            };
+            let copy = [0, rng.next(), rng.next()][rng.below(3) as usize];
+            t.ret(c1::COPY_NEW_A, copy);
+            if rng.below(3) == 0 {
+                let old: u32 = Mem::read(&t.b, material + 0x14);
+                t.ret(c1::COPY_NEW_B, old);
+            }
+            t.check(
+                &format!("{w} material assign"),
+                0x006a_faf0,
+                Conv::Thiscall(material),
+                &[src],
+                |g| u(c1::texture_animation_material_assign(g, material, src)),
+            );
+            // TOAdpMenuIconItemAbmap
+            let record = t.random(&mut rng, 0x18);
+            t.ret(c1::MS_GET_ROM_ITEM, record);
+            let strings = rng.next();
+            t.w32(strings_cell, strings);
+            let args: [u32; 5] = std::array::from_fn(|_| rng.word());
+            let ebp = t.ebp_for(5);
+            t.check_framed(
+                &format!("{w} icon item"),
+                0x008f_0700,
+                Conv::Cdecl,
+                &args,
+                ebp - 4,
+                &[(0, 4)],
+                |g| u(c1::adp_menu_icon_item(g, ebp - 4, args, &mut { wide })),
+            );
+            // FFEscMenu_refreshParameterAndSpecialPageEnableState
+            let menu = rng.next();
+            let fading = [0, 1, rng.next()][rng.below(3) as usize];
+            t.g32(c1::MOVIE_FADING.sym, fading);
+            let map = rng.word();
+            t.g32(c1::CURRENT_MAP_NO.sym, map);
+            let flag = [0, 1, 0x1_0000, rng.next()][rng.below(4) as usize];
+            t.ret(c1::GET_SCENARIO_FLAG, flag);
+            let calm = [0, 1, 2][rng.below(3) as usize];
+            t.ret(c1::IS_ETERNAL_CALM_SCENE, calm);
+            let ebp = t.ebp_for(0);
+            let frame = ebp - 0x10;
+            t.w32(frame + 4, 0);
+            t.w32(frame + 0xc, 0);
+            t.check_framed(
+                &format!("{w} esc refresh {fading:#x} {flag:#x} {calm}"),
+                0x006f_c9b0,
+                Conv::Thiscall(menu),
+                &[],
+                frame,
+                &[(0, 4), (8, 4)],
+                |g| u(c1::esc_refresh_page_state(g, frame, menu)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// A word array (`+0` count, `+4` capacity, `+8` storage of 16 words)
+/// with a small count and capacity (-1 too); `null` allows an empty one
+/// without storage.
+fn word_array(t: &mut Twins, rng: &mut Rng, null: bool) -> u32 {
+    let out = t.zeros(0xc);
+    let empty = null && rng.below(3) == 0;
+    let n = if empty { 0 } else { rng.below(4) };
+    t.w32(out, n);
+    t.w32(out + 4, [0, 1, 3, 8, u32::MAX][rng.below(5) as usize]);
+    let data = if empty { 0 } else { t.zeros(0x40) };
+    t.w32(out + 8, data);
+    out
+}
+
+/// The FMOD event collectors, the character cache's delayed-release
+/// flags and the escape menu's Iggy string arrays.
+#[test]
+fn c1_events_cache_strings() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c102);
+        let stubs: [(u32, bool, u32, u32); 2] = [
+            (c1::WORD_ARRAY_RESERVE, true, 1, 1),
+            (c1::EVENT_TREE_GET_EVENT, true, 1, 1),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        // the tree find and the project's event getter: logging their
+        // pointers for the framed test of the group, quiet for the bank
+        // (whose group call runs in a frame of its own)
+        let find_log = t.stub_code(c1::SFX_EVENT_TREE_FIND, true, 1, 1);
+        let find_quiet = t.stub_code(c1::SFX_EVENT_TREE_FIND + 1, true, 0, 1);
+        let event_cell = t.zeros(4);
+        let write = [Write {
+            arg: Some(3),
+            offset: 0,
+            cell: event_cell,
+        }];
+        let get_log = t.stub_out(0x0bad_0024, false, 4, 4, &write);
+        let get_quiet = t.stub_out(0x0bad_0025, false, 3, 4, &write);
+        let vtable = t.zeros(0x30);
+        let wait = t.stub_code(fr::WAIT_FOR_SINGLE_OBJECT, false, 2, 2);
+        t.g32(fr::WAIT_FOR_SINGLE_OBJECT, wait);
+        let release = t.stub_code(fr::RELEASE_MUTEX, false, 1, 1);
+        t.g32(fr::RELEASE_MUTEX, release);
+        let iggy: [(u32, u32); 5] = [
+            (c1::IGGY_REF_CREATE_ARRAY, 2),
+            (c1::IGGY_PATH_FROM_REF, 3),
+            (c1::IGGY_PATH_MAKE_ARRAY_REF, 3),
+            (c1::IGGY_PATH_SET_ARRAY_INDEX, 2),
+            (c1::IGGY_SET_STRING_UTF8, 5),
+        ];
+        for &(slot, n) in &iggy {
+            let f = t.stub_code(slot, false, n, n);
+            t.g32(slot, f);
+        }
+        let texts: Vec<u32> = ["", "x", "Video", "Brightness"]
+            .iter()
+            .map(|s| {
+                let mut b = s.as_bytes().to_vec();
+                b.push(0);
+                t.alloc(&b)
+            })
+            .collect();
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.word();
+                t.ret(sym, v);
+            }
+            for tag in [
+                c1::SFX_EVENT_TREE_FIND,
+                c1::SFX_EVENT_TREE_FIND + 1,
+                0x0bad_0024,
+                0x0bad_0025,
+                fr::WAIT_FOR_SINGLE_OBJECT,
+                fr::RELEASE_MUTEX,
+            ] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            for &(slot, _) in &iggy {
+                let v = rng.next();
+                t.ret(slot, v);
+            }
+            let ev = rng.next();
+            t.w32(event_cell, ev);
+            // a group: a project, its node of ids, an out array
+            let project = t.zeros(4);
+            t.w32(project, vtable);
+            let group = t.zeros(0x10);
+            t.w32(group, [0, project, project, project][rng.below(4) as usize]);
+            let node = t.zeros(0x20);
+            let count = [0, 1, 2, 4][rng.below(4) as usize];
+            t.w32(node + 0x10, count);
+            let ids = t.random(&mut rng, 0x10);
+            t.w32(node + 0x18, ids);
+            let found = [0, node, node, 0xffff_fff0][rng.below(4) as usize];
+            // no storage only where at most one word lands in slot 0
+            let out = word_array(&mut t, &mut rng, count <= 1);
+            // SfxEventGroup_appendEvents, framed
+            t.jump(c1::SFX_EVENT_TREE_FIND, find_log);
+            t.w32(vtable + 0x24, get_log);
+            t.ret(c1::SFX_EVENT_TREE_FIND, found);
+            let key = rng.word();
+            let ebp = t.ebp_for(2);
+            t.check_framed(
+                &format!("{w} group events {count} found {found:#x}"),
+                0x0071_0ae0,
+                Conv::Thiscall(group),
+                &[key, out],
+                ebp + 8,
+                &[(0, 8)],
+                |g| {
+                    put_args(g, ebp + 8, &[key, out]);
+                    Out::U8(c1::append_group_events(g, group, ebp + 8))
+                },
+            );
+            // SfxBank_appendEventById: its own event, else the group's
+            t.jump(c1::SFX_EVENT_TREE_FIND, find_quiet);
+            t.w32(vtable + 0x24, get_quiet);
+            t.ret(c1::SFX_EVENT_TREE_FIND + 1, found);
+            let bank = t.zeros(0xc);
+            let tree_word = [0, rng.next()][rng.below(2) as usize];
+            t.w32(bank + 4, tree_word);
+            let fallback = [0, group][rng.below(2) as usize];
+            t.w32(bank + 8, fallback);
+            let out = word_array(&mut t, &mut rng, fallback == 0);
+            let event = [0, rng.next()][rng.below(2) as usize];
+            t.ret(c1::EVENT_TREE_GET_EVENT, event);
+            let id = rng.word();
+            t.check(
+                &format!("{w} bank event {tree_word:#x} {event:#x}"),
+                0x0070_fa80,
+                Conv::Thiscall(bank),
+                &[id, out],
+                |g| Out::U8(c1::append_event_by_id(g, bank, id, out)),
+            );
+            // ChrResourceCacheManager_enableChrDelayRelease
+            let head = t.zeros(0x20);
+            t.w8(head + 0xd, 1);
+            let n = rng.below(6) as usize;
+            let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+            for &nd in &nodes {
+                let entry = t.zeros(0x14);
+                let v = rng.below(2);
+                t.w32(entry + 8, v);
+                let v = rng.next();
+                t.w32(entry + 0xc, v);
+                let v = rng.below(2);
+                t.w32(entry + 0x10, v);
+                t.w32(nd + 0x14, entry);
+            }
+            let root = tree(&mut t, &nodes, head, head);
+            t.w32(head + 4, root);
+            t.w32(head, nodes.first().copied().unwrap_or(head));
+            t.w32(head + 8, nodes.last().copied().unwrap_or(head));
+            let mgr = t.zeros(0x20);
+            t.w32(mgr + 0x10, head);
+            let holder = t.zeros(4);
+            let mutex = rng.next();
+            t.w32(holder, mutex);
+            t.w32(mgr + 0x18, holder);
+            t.g32(c1::CLUSTER_MANAGER.sym, mgr);
+            let cache = t.zeros(4);
+            let state = [2, 2, 0, 1][rng.below(4) as usize];
+            t.w32(cache, state);
+            t.check(
+                &format!("{w} delay release {state} of {n}"),
+                0x0069_ae80,
+                Conv::Thiscall(cache),
+                &[],
+                // in another state the original leaves the caller's eax
+                // (its one caller's is `this`, which the port returns)
+                |g| match c1::enable_chr_delay_release(g, cache) {
+                    r if state == 2 => u(r),
+                    r => {
+                        assert_eq!(r, cache);
+                        Out::None
+                    }
+                },
+            );
+            // IggyStringArray_ctor
+            let n = [0, 1, 2, 3, u32::MAX][rng.below(5) as usize];
+            let names = t.zeros(0x10);
+            for k in 0..4 {
+                let s = texts[rng.below(texts.len() as u32) as usize];
+                t.w32(names + 4 * k, s);
+            }
+            let this = t.random(&mut rng, 8);
+            let root = rng.next();
+            let ebp = t.ebp_for(3);
+            t.check_framed(
+                &format!("{w} string array {n:#x}"),
+                0x006f_cbc0,
+                Conv::Thiscall(this),
+                &[root, names, n],
+                ebp - 0x34,
+                &[(0x30, 4)],
+                |g| {
+                    u(c1::iggy_string_array_ctor(
+                        g,
+                        ebp - 0x34,
+                        this,
+                        [root, names, n],
+                    ))
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round, batch 2 (ffx_glue_other::h4_c2)
+
+/// A cluster map of `keys` (sorted) under a fresh head, each node's entry
+/// (`+0x14`) with a random cluster, references, pending flag and lock;
+/// the head and the nodes in order.
+fn cluster_map(t: &mut Twins, rng: &mut Rng, keys: &[u32]) -> (u32, Vec<u32>) {
+    let head = t.zeros(0x20);
+    t.w8(head + 0xd, 1);
+    let nodes: Vec<u32> = keys.iter().map(|_| t.zeros(0x20)).collect();
+    for (&nd, &k) in nodes.iter().zip(keys) {
+        t.w32(nd + 0x10, k);
+        let entry = t.zeros(0x18);
+        let cluster = [0, rng.next(), rng.next()][rng.below(3) as usize];
+        t.w32(entry, cluster);
+        let refs = [0, 1, 2, u32::MAX][rng.below(4) as usize];
+        t.w32(entry + 4, refs);
+        let pending = [0, 0, 1][rng.below(3) as usize];
+        t.w32(entry + 0xc, pending);
+        let locked = [0, 0, 1][rng.below(3) as usize];
+        t.w8(entry + 0x14, locked);
+        t.w32(nd + 0x14, entry);
+    }
+    let root = tree(t, &nodes, head, head);
+    t.w32(head + 4, root);
+    t.w32(head, nodes.first().copied().unwrap_or(head));
+    t.w32(head + 8, nodes.last().copied().unwrap_or(head));
+    (head, nodes)
+}
+
+/// The cluster manager's three releases, its map's range erase, the
+/// named-pair append and the `PArray<PInputAction>` descriptor.
+#[test]
+fn c2_clusters_maps_pairs() {
+    use ffx_prender::registry;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c201);
+        let stubs: [(u32, bool, u32, u32); 15] = [
+            (r3::DJB_HASH, false, 1, 0),
+            (c2::PCLUSTER_DTOR, true, 0, 0),
+            (mn::PHYRE_FREE, false, 1, 0),
+            (c2::CLUSTER_SLOTS_GIVE, true, 1, 1),
+            (c2::CLUSTER_MAP_ERASE, true, 2, 2),
+            (c2::CLUSTER_MAP_CLEAR, true, 0, 0),
+            (c2::COPY_NAMED_PAIRS, false, 3, 0),
+            (c2::NAMED_PAIR_COPY, true, 1, 1),
+            (c2::FREE_OWNED_ARRAY, false, 2, 0),
+            (registry::PBASE_DESCRIPTOR, false, 0, 0),
+            (registry::GLOBAL_NAMESPACE, false, 0, 0),
+            (registry::DESCRIPTOR_BASE_CTOR, true, 6, 6),
+            (registry::SET_DEFAULT_BUFFER, true, 1, 1),
+            (registry::SET_VALIDATION_BUFFER, true, 1, 1),
+            (registry::SET_WRITE_MASK_BUFFER, true, 1, 1),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let wait = t.stub_code(mn::WAIT_FOR_SINGLE_OBJECT.sym, false, 2, 2);
+        t.g32(mn::WAIT_FOR_SINGLE_OBJECT.sym, wait);
+        let release = t.stub_code(mn::RELEASE_MUTEX.sym, false, 1, 1);
+        t.g32(mn::RELEASE_MUTEX.sym, release);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.next();
+                t.ret(sym, v);
+            }
+            for tag in [mn::WAIT_FOR_SINGLE_OBJECT.sym, mn::RELEASE_MUTEX.sym] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            let count = rng.below(7) as usize;
+            let mut keys: Vec<u32> = (0..count).map(|_| rng.below(20)).collect();
+            keys.sort_unstable();
+            let (head, nodes) = cluster_map(&mut t, &mut rng, &keys);
+            let mgr = t.zeros(0x20);
+            t.w32(mgr + 0x10, head);
+            let holder = t.zeros(4);
+            let mutex = rng.next();
+            t.w32(holder, mutex);
+            t.w32(mgr + 0x18, holder);
+            // the two releases by name
+            for (sym, force) in [(0x0069_b310u32, true), (0x0069_be90, false)] {
+                // mostly a key of the map
+                let hash = if keys.is_empty() || rng.below(4) == 0 {
+                    rng.below(22)
+                } else {
+                    keys[rng.below(count as u32) as usize]
+                };
+                t.ret(r3::DJB_HASH, hash);
+                let text = rng.next();
+                let ebp = t.ebp_for(1);
+                t.check_framed(
+                    &format!("{w} release {sym:#x} {hash} of {keys:?}"),
+                    sym,
+                    Conv::Thiscall(mgr),
+                    &[text],
+                    ebp + 8,
+                    &[(0, 4)],
+                    |g| {
+                        put_args(g, ebp + 8, &[text]);
+                        u(if force {
+                            c2::force_release_pcluster(g, mgr, ebp + 8)
+                        } else {
+                            c2::release_pcluster_by_name(g, mgr, ebp + 8)
+                        })
+                    },
+                );
+            }
+            // the release by cluster: one of the map's, or another
+            let cluster = if nodes.is_empty() || rng.below(4) == 0 {
+                rng.next()
+            } else {
+                let nd = nodes[rng.below(count as u32) as usize];
+                let entry: u32 = Mem::read(&t.b, nd + 0x14);
+                Mem::read(&t.b, entry)
+            };
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} release cluster {cluster:#x} of {count}"),
+                0x0069_bdb0,
+                Conv::Thiscall(mgr),
+                &[cluster],
+                ebp + 8,
+                &[(0, 4)],
+                |g| {
+                    put_args(g, ebp + 8, &[cluster]);
+                    u(c2::release_pcluster(g, mgr, ebp + 8))
+                },
+            );
+            // the range erase: all, or an in-order range
+            let map = t.zeros(4);
+            t.w32(map, head);
+            let (first, last) = if nodes.is_empty() || rng.below(4) == 0 {
+                (nodes.first().copied().unwrap_or(head), head)
+            } else {
+                let from = rng.below(count as u32) as usize;
+                let to = from + rng.below((count - from) as u32 + 1) as usize;
+                (nodes[from], nodes.get(to).copied().unwrap_or(head))
+            };
+            let out = t.zeros(4);
+            let ebp = t.ebp_for(3);
+            t.check_framed(
+                &format!("{w} erase range {first:#x}..{last:#x}"),
+                0x0069_af70,
+                Conv::Thiscall(map),
+                &[out, first, last],
+                ebp - 4,
+                &[(0, 4)],
+                |g| {
+                    u(c2::cluster_map_erase_range(
+                        g,
+                        ebp - 4,
+                        map,
+                        [out, first, last],
+                    ))
+                },
+            );
+            // the named-pair append
+            let arr = t.zeros(8);
+            let n = rng.below(4);
+            let word = [n, n | 0x8000_0000][rng.below(2) as usize];
+            t.w32(arr, word);
+            let old = t.random(&mut rng, 0x20);
+            t.w32(arr + 4, old);
+            let dst = match rng.below(4) {
+                0 => 0,
+                1 => old,
+                _ => t.zeros(0x28),
+            };
+            let value = rng.next();
+            t.check(
+                &format!("{w} named pairs {word:#x} dst {dst:#x}"),
+                0x0069_b6e0,
+                Conv::Thiscall(arr),
+                &[dst, value],
+                |g| u(c2::named_pair_append_into(g, arr, dst, value)),
+            );
+            // the descriptor
+            let this = t.random(&mut rng, 0x98);
+            t.check(
+                &format!("{w} input action descriptor"),
+                0x009d_fb30,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    u(registry::bridge::descriptor_ctor(
+                        g,
+                        this,
+                        c2::INPUT_ACTION_ARRAY_DESCRIPTOR,
+                    ))
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// A stub at `sym` (thiscall, one word, ret 4) that answers its node
+/// argument's `+0x1c` word: the sound tree's successor.
+fn stub_successor(t: &mut Twins, sym: u32) {
+    let rest = t.stub_code(sym, true, 1, 1);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x40, 0x1c, 0xa3];
+    c.extend(cell.to_le_bytes()); // mov eax, [esp+4]; mov eax, [eax+0x1c]; mov [cell], eax
+    c.push(0xe9);
+    let at = t.cave_next;
+    c.extend(rest.wrapping_sub(at + 17).to_le_bytes()); // jmp rest
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// The FMOD bank's destructor and its event map's, the two id-array
+/// tree inserts, `FmodSfx`'s stop-all and pause walks.
+#[test]
+fn c2_fmod_banks_walks() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c202);
+        let stubs: [(u32, bool, u32, u32); 21] = [
+            (fr::PRINT_TO_OUTPUT, false, 3, 0),
+            (fr::ERRCHECK, false, 3, 0),
+            (c2::SLEEP_MS, false, 1, 0),
+            (c2::DESTROY_EVENTS, true, 0, 0),
+            (fr::OPERATOR_DELETE, false, 1, 0),
+            (c2::TREE_ORPHAN_ALL, true, 0, 0),
+            (c2::FREE_LIST_RESET, true, 0, 0),
+            (c2::FREE_LIST_DTOR, true, 0, 0),
+            (c2::TREE_CLEAR, true, 0, 0),
+            (c2::FREE_LIST_DEALLOCATE, true, 1, 1),
+            (c2::TREE_POST_INSERT, true, 1, 1),
+            (c2::USER_FREE_THUNK, false, 1, 0),
+            (c2::SFX_ID_TREE[0], true, 1, 1),
+            (c2::SFX_ID_TREE[1], true, 1, 1),
+            (c2::ID_TREE[0], true, 1, 1),
+            (c2::ID_TREE[1], true, 1, 1),
+            (c2::SFX_EVENT_STOP, true, 1, 1),
+            (c2::SFX_EVENT_SET_PAUSED, true, 1, 1),
+            (0x0bad_0028, false, 1, 1),
+            (0x0bad_0000, false, 1, 1),
+            (c2::FREE_LIST_ALLOCATE_BLOCK, true, 1, 1),
+        ];
+        let mut project_methods = [0; 2];
+        for (k, &(sym, this, n, pops)) in stubs.iter().enumerate() {
+            if (18..20).contains(&k) {
+                project_methods[k - 18] = t.stub_code(sym, this, n, pops);
+            } else if k == 20 {
+                // the refill puts a node on the free list
+                let cell = t.zeros(4);
+                t.cells.insert(0x0bad_f00d, cell);
+                t.stub_at(
+                    sym,
+                    this,
+                    n,
+                    pops,
+                    &[Write {
+                        arg: None,
+                        offset: 0,
+                        cell,
+                    }],
+                );
+            } else {
+                t.stub(sym, this, n, pops);
+            }
+        }
+        stub_successor(&mut t, c2::TREE_SUCCESSOR);
+        let vtable = t.zeros(0x30);
+        t.w32(vtable + 0x28, project_methods[0]);
+        t.w32(vtable, project_methods[1]);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.next();
+                t.ret(sym, v);
+            }
+            // the bank and its event map
+            let bank = t.zeros(0xc);
+            let project = t.zeros(4);
+            t.w32(project, vtable);
+            t.w32(bank, [0, project, project][rng.below(3) as usize]);
+            let map = t.random(&mut rng, 0x40);
+            t.w32(bank + 4, [0, map][rng.below(2) as usize]);
+            t.w32(bank + 8, [0, rng.next()][rng.below(2) as usize]);
+            t.check(
+                &format!("{w} bank dtor"),
+                0x0070_f930,
+                Conv::Thiscall(bank),
+                &[],
+                |g| {
+                    c2::sfx_bank_dtor(g, bank);
+                    Out::None
+                },
+            );
+            let map = t.random(&mut rng, 0x40);
+            t.check(
+                &format!("{w} event map dtor"),
+                0x0071_0180,
+                Conv::Thiscall(map),
+                &[],
+                |g| {
+                    c2::sfx_event_map_dtor(g, map);
+                    Out::None
+                },
+            );
+            // the two tree inserts
+            for (sym, callees) in [
+                (0x0070_cde0u32, c2::SFX_ID_TREE),
+                (0x0071_0ba0, c2::ID_TREE),
+            ] {
+                let tree = t.random(&mut rng, 0x24);
+                let node = t.random(&mut rng, 0x20);
+                let free = [0, node, node][rng.below(3) as usize];
+                t.w32(tree + 0x18, free);
+                let refill = [0, t.random(&mut rng, 0x20)][rng.below(2) as usize];
+                let cell = t.cells[&0x0bad_f00d];
+                t.w32(cell, refill);
+                let dup = [0, 1, 0x100][rng.below(3) as usize];
+                t.ret(callees[1], dup);
+                let key = t.random(&mut rng, 4);
+                let array = rng.next();
+                t.check(
+                    &format!("{w} tree insert {sym:#x} free {free:#x} dup {dup}"),
+                    sym,
+                    Conv::Thiscall(tree),
+                    &[key, array],
+                    |g| u(c2::id_tree_insert_array(g, callees, tree, key, array)),
+                );
+            }
+            // the sound walks
+            let this = t.zeros(0xd0);
+            let tree = this + 0x64;
+            let n = rng.below(5) as usize;
+            let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+            for (k, &nd) in nodes.iter().enumerate() {
+                let id = [0x7f, 0x80, 0x100, 5, u32::MAX, 0x81][rng.below(6) as usize];
+                t.w32(nd + 0xc, id);
+                let events = t.zeros(0x10);
+                for e in 0..4 {
+                    let v = [0, rng.next()][rng.below(2) as usize];
+                    t.w32(events + 4 * e, v);
+                }
+                t.w32(nd + 0x10, rng.below(5));
+                t.w32(nd + 0x18, events);
+                t.w32(nd + 0x1c, nodes.get(k + 1).copied().unwrap_or(tree));
+            }
+            match nodes.first() {
+                Some(&first) => {
+                    // the leftmost chain: one node above the first
+                    if rng.below(2) == 0 {
+                        t.w32(tree + 0xc, first);
+                        t.w32(first, tree);
+                    } else {
+                        let top = t.zeros(0x20);
+                        t.w32(tree + 0xc, top);
+                        t.w32(top, first);
+                        t.w32(first, tree);
+                    }
+                }
+                None => t.w32(tree + 0xc, tree),
+            }
+            let keep = t.zeros(0x10);
+            for k in 0..3 {
+                let v = [0x80, 0x100, 0x81, 5][rng.below(4) as usize];
+                t.w32(keep + 4 * k, v);
+            }
+            t.w32(keep + 4 * rng.below(4), u32::MAX);
+            t.w32(keep + 0xc, u32::MAX);
+            let immediate = rng.word();
+            t.check(
+                &format!("{w} stop all of {n}"),
+                0x0070_d930,
+                Conv::Thiscall(this),
+                &[keep, immediate],
+                |g| {
+                    c2::stop_all_non_blocking(g, this, keep, immediate);
+                    Out::None
+                },
+            );
+            let paused = [0, 1, 0x100, 0x101][rng.below(4) as usize];
+            t.w8(this, [0, 1][rng.below(2) as usize]);
+            t.w32(this + 0xc8, [0, rng.next()][rng.below(2) as usize]);
+            t.check(
+                &format!("{w} pause {paused:#x} of {n}"),
+                0x0070_d0c0,
+                Conv::Thiscall(this),
+                &[paused],
+                |g| {
+                    c2::sfx_pause(g, this, paused);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round, batch 3 (ffx_glue_other::h4_c3)
+
+/// `FmodVoice`'s stop, data release and state update, the sync manager's
+/// asynchronous change, the shape-field effect's initialisation, the menu
+/// geometry's texture-unload flag.
+#[test]
+fn c3_voice_sync_effects_menu() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c301);
+        let stubs: [(u32, bool, u32, u32); 15] = [
+            (c3::EVENT_SET_CALLBACK, false, 3, 3),
+            (c3::EVENT_STOP, false, 2, 2),
+            (fr::ERRCHECK, false, 3, 0),
+            (c3::VOICE_CLEAR, true, 0, 0),
+            (c3::VOICE_UPDATE_PLAY, true, 1, 1),
+            (c3::SYNC_RELEASE_DATA, true, 0, 0),
+            (r3::ASYNC_LOAD_GET, false, 0, 0),
+            (c3::REGIST_ASYNC_TASK, false, 7, 0),
+            (c3::CREATE_SHAPE_FIELD, false, 5, 0),
+            (c3::VFX_SETUP, false, 2, 0),
+            (c3::VFX_RENDER_DATA, false, 2, 0),
+            (c3::VFX_DESTROY, false, 2, 0),
+            (r3::DJB_HASH, false, 1, 0),
+            (0x0bad_0128, false, 1, 1),
+            (0x0bad_0100, false, 1, 1),
+        ];
+        let mut methods = [0; 2];
+        for (k, &(sym, this, n, pops)) in stubs.iter().enumerate() {
+            if k >= 13 {
+                methods[k - 13] = t.stub_code(sym, this, n, pops);
+            } else {
+                t.stub(sym, this, n, pops);
+            }
+        }
+        // the event's state: logged with its pointer for the framed stop,
+        // without it inside the release (its frame is the original's own)
+        let state_cell = t.zeros(4);
+        let write = [Write {
+            arg: Some(1),
+            offset: 0,
+            cell: state_cell,
+        }];
+        let state_log = t.stub_out(fr::FMOD_GET_STATE, false, 2, 2, &write);
+        let state_quiet = t.stub_out(fr::FMOD_GET_STATE + 1, false, 1, 2, &write);
+        // the clock: moves 0x5000 us (20 ms) on each call, edx:eax
+        let clock = t.stub_code(c3::TIME_US, false, 0, 0);
+        let lo = t.cells[&c3::TIME_US];
+        let hi = t.zeros(4);
+        let mut c = vec![0x81, 0x05];
+        c.extend(lo.to_le_bytes());
+        c.extend(0x5000u32.to_le_bytes()); // add dword [lo], 0x5000
+        c.extend([0x83, 0x15]);
+        c.extend(hi.to_le_bytes());
+        c.push(0); // adc dword [hi], 0
+        c.extend([0x8b, 0x15]);
+        c.extend(hi.to_le_bytes()); // mov edx, [hi]
+        c.push(0xe9);
+        let at = t.cave_next;
+        c.extend(clock.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(c3::TIME_US, f);
+        let time = |g: &mut G, f: u32| {
+            let r = g.0.call(f, Conv::Cdecl, &[]).unwrap();
+            u64::from(r.edx) << 32 | u64::from(r.eax)
+        };
+        // the sync manager at a fixed place, so the sleep can set its flag
+        let sync = t.zeros(0x48);
+        let sleep = t.stub_code(c3::SLEEP_MS, false, 1, 0);
+        let mut c = vec![0xc7, 0x05];
+        c.extend((sync + 0x20).to_le_bytes());
+        c.extend(1u32.to_le_bytes()); // mov dword [sync+0x20], 1
+        c.push(0xe9);
+        let at = t.cave_next;
+        c.extend(sleep.wrapping_sub(at + 15).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(c3::SLEEP_MS, f);
+        stub_successor(&mut t, c3::TREE_SUCCESSOR);
+        // a manager above 2^31 (FFX.exe is large-address-aware): its
+        // address goes to the loader sign-extended
+        let high = 0x9000_0000u32;
+        t.a.map_zeroed(high, 0x1000).unwrap();
+        t.b.map_zeroed(high, 0x1000).unwrap();
+        let vtable = t.zeros(0x30);
+        t.w32(vtable + 0x28, methods[0]);
+        t.w32(vtable, methods[1]);
+        let tree = t.rebase(c3::MENU_TEXTURE_TREE);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.next();
+                t.ret(sym, v);
+            }
+            for tag in [fr::FMOD_GET_STATE, fr::FMOD_GET_STATE + 1, c3::SLEEP_MS] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            let state = [0, 8, 0xff, 7, 0x108][rng.below(5) as usize];
+            t.w32(state_cell, state);
+            let now = rng.next();
+            t.w32(lo, now);
+            let now_hi = rng.below(3);
+            t.w32(hi, now_hi);
+            // FmodVoice_stop, framed
+            let voice = t.random(&mut rng, 0x90);
+            if rng.below(4) == 0 {
+                t.w32(voice + 0x14, 0);
+            }
+            t.jump(fr::FMOD_GET_STATE, state_log);
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} voice stop {state:#x}"),
+                0x0070_b6b0,
+                Conv::Thiscall(voice),
+                &[],
+                ebp - 4,
+                &[(0, 4)],
+                |g| u(c3::voice_stop(g, ebp - 4, voice)),
+            );
+            // FmodVoice_releaseData (the original FmodVoice_stop inside)
+            t.jump(fr::FMOD_GET_STATE, state_quiet);
+            let voice = t.random(&mut rng, 0x90);
+            if rng.below(3) == 0 {
+                t.w32(voice + 0x14, 0);
+            }
+            let projects = t.zeros(4 * 21);
+            for k in 0..21 {
+                if rng.below(2) == 0 {
+                    let p = t.zeros(4);
+                    t.w32(p, vtable);
+                    t.w32(projects + 4 * k, p);
+                }
+            }
+            t.w32(voice + 0x18, projects);
+            let words = t.random(&mut rng, 4 * 21);
+            t.w32(voice + 0xc, words);
+            t.check(
+                &format!("{w} voice release"),
+                0x0070_b0b0,
+                Conv::Thiscall(voice),
+                &[],
+                |g| u(c3::voice_release_data(g, voice)),
+            );
+            // FmodVoice_updateState, several cases
+            for _ in 0..6 {
+                let voice = t.random(&mut rng, 0x90);
+                if rng.below(5) == 0 {
+                    t.w32(voice + 0x14, 0);
+                }
+                let v = [0, 1, 1, 2][rng.below(4) as usize];
+                t.w32(voice + 0x40, v);
+                let v = [0, 1, 0][rng.below(3) as usize];
+                t.w32(voice + 0x48, v);
+                let v = [0, 1, 1, 2][rng.below(4) as usize];
+                t.w32(voice + 0x54, v);
+                let v = [0, rng.below(300), rng.below(300), u32::MAX][rng.below(4) as usize];
+                t.w32(voice + 0x6c, v);
+                if rng.below(3) == 0 {
+                    t.w32(voice + 0x70, 0);
+                    t.w32(voice + 0x74, [0, 0, 1][rng.below(3) as usize]);
+                } else {
+                    // a start shortly before now
+                    let back = rng.below(0x3_0000);
+                    t.w32(voice + 0x70, now.wrapping_sub(back));
+                    t.w32(voice + 0x74, now_hi);
+                }
+                if rng.below(4) == 0 {
+                    // a playing voice with no start yet and a negative
+                    // limit: an elapsed time of 0 is not past it
+                    t.w32(voice + 0x40, 1);
+                    t.w32(voice + 0x54, 0);
+                    t.w32(voice + 0x6c, u32::MAX);
+                    t.w32(voice + 0x70, 0);
+                    t.w32(voice + 0x74, 0);
+                }
+                let arg = rng.word();
+                t.check(
+                    &format!("{w} voice update"),
+                    0x0070_b750,
+                    Conv::Thiscall(voice),
+                    &[arg],
+                    |g| u(c3::voice_update_state(g, voice, arg, &mut { time })),
+                );
+            }
+            // SyncManager_syncDataChangeAsync
+            let sync = if rng.below(3) == 0 {
+                t.w32(high + 0x20, 1);
+                high
+            } else {
+                sync
+            };
+            let id = [0, 1, 7, 500, 501, u32::MAX, 3][rng.below(7) as usize];
+            let current = [0, id, 3][rng.below(3) as usize];
+            t.w32(sync + 0xc, current);
+            let n = [0, 1, 3, u32::MAX][rng.below(4) as usize];
+            t.w32(sync + 0x18, n);
+            let list = t.zeros(0x10);
+            for k in 0..3 {
+                let v = [7, 3, 1, 9][rng.below(4) as usize];
+                t.w32(list + 4 * k, v);
+            }
+            t.w32(sync + 0x40, list);
+            let (id, n) = if rng.below(2) == 0 {
+                // a listed id: the change goes through
+                let id = [1, 7, 500][rng.below(3) as usize];
+                t.w32(list, id);
+                // a negative count lists nothing
+                let n = [1, u32::MAX][rng.below(2) as usize];
+                t.w32(sync + 0x18, n);
+                t.w32(sync + 0xc, 0);
+                (id, n)
+            } else {
+                (id, n)
+            };
+            // the sleep sets the low manager's flag; the high one never waits
+            let v = if sync == high { 1 } else { rng.below(2) };
+            t.w32(sync + 0x20, v);
+            let v = rng.next();
+            t.w32(sync + 8, v);
+            t.check(
+                &format!("{w} sync change {id} of {n:#x}"),
+                0x006f_b080,
+                Conv::Thiscall(sync),
+                &[id],
+                |g| u(c3::sync_data_change_async(g, sync, id)),
+            );
+            // InitVFXRenderDataShapeField
+            let data = t.zeros(0x98);
+            let n = [0, 1, 2, 3, u32::MAX][rng.below(5) as usize];
+            t.w32(data + 0x90, n);
+            let records = t.random(&mut rng, 3 * 0x6c);
+            t.w32(data + 0x94, records);
+            let rd = [0, data, data][rng.below(3) as usize];
+            t.ret(c3::VFX_RENDER_DATA, rd);
+            let ok = [0, 1, 1][rng.below(3) as usize];
+            t.ret(c3::VFX_SETUP, ok);
+            let made = [0, 1, 1, 1][rng.below(4) as usize];
+            t.ret(c3::CREATE_SHAPE_FIELD, made);
+            let args: [u32; 5] = std::array::from_fn(|_| rng.word());
+            t.check(
+                &format!("{w} shape field {made} {ok} {rd:#x} {n}"),
+                0x0071_13d0,
+                Conv::Cdecl,
+                &args,
+                |g| u(c3::init_vfx_render_data_shape_field(g, args)),
+            );
+            // MenuDynamicGeometry_setTextureInMaterialUnloaded
+            let n = rng.below(5) as usize;
+            let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+            for (k, &nd) in nodes.iter().enumerate() {
+                let record = t.zeros(8);
+                let v = rng.below(6);
+                t.w32(record, v);
+                t.w32(record + 4, 1);
+                t.w32(nd + 0xc, record);
+                t.w32(nd + 0x1c, nodes.get(k + 1).copied().unwrap_or(tree));
+            }
+            match nodes.first() {
+                Some(&first) => {
+                    let top = t.zeros(0x20);
+                    t.w32(tree + 0xc, [first, top][rng.below(2) as usize]);
+                    t.w32(top, first);
+                    t.w32(first, tree);
+                }
+                None => t.w32(tree + 0xc, tree),
+            }
+            let hash = rng.below(6);
+            t.ret(r3::DJB_HASH, hash);
+            let text = rng.next();
+            t.check(
+                &format!("{w} texture unloaded {hash} of {n}"),
+                0x006a_3740,
+                Conv::Stdcall,
+                &[text],
+                |g| u(c3::set_texture_in_material_unloaded(g, text)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// A `std::string` holding `text` (inline below 16 bytes of capacity,
+/// else in a block); its address.
+fn std_string(t: &mut Twins, text: &[u8], heap: bool) -> u32 {
+    let s = t.zeros(0x18);
+    let mut bytes = text.to_vec();
+    bytes.push(0);
+    if heap {
+        let p = t.alloc(&bytes);
+        t.w32(s, p);
+        t.w32(s + 0x14, 0x1f);
+    } else {
+        t.write(s, &bytes);
+        t.w32(s + 0x14, 0xf);
+    }
+    t.w32(s + 0x10, text.len() as u32);
+    s
+}
+
+/// The FMOD bank's two event-group constructors, the Iggy callback
+/// dispatch and `std::string::rfind`.
+#[test]
+fn c3_groups_callbacks_strings() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c302);
+        let stubs: [(u32, bool, u32, u32); 7] = [
+            (c3::FREE_LIST_CTOR, true, 4, 4),
+            (c3::GROUP_LOAD, true, 1, 1),
+            (c3::TREE_LOAD, true, 1, 1),
+            (c3::TREE_ORPHAN_ALL, true, 0, 0),
+            (c3::FREE_LIST_RESET, true, 0, 0),
+            (c3::GET_DEREF_U32, true, 0, 0),
+            (0x0bad_0300, false, 2, 0),
+        ];
+        let mut handler = 0;
+        for &(sym, this, n, pops) in &stubs {
+            if sym == 0x0bad_0300 {
+                handler = t.stub_code(sym, this, n, pops);
+            } else {
+                t.stub(sym, this, n, pops);
+            }
+        }
+        // std_string_begin and memcmp, computed and logged
+        let begin = t.stub_code(c3::STRING_BEGIN, true, 0, 0);
+        let cell = t.cells[&c3::STRING_BEGIN];
+        let mut c = vec![
+            0x83, 0x79, 0x14, 0x10, 0x89, 0xc8, 0x72, 0x02, 0x8b, 0x01, 0xa3,
+        ];
+        c.extend(cell.to_le_bytes()); // cmp [ecx+0x14], 16; mov eax, ecx; jb; mov eax, [ecx]; mov [cell], eax
+        c.push(0xe9);
+        let at = t.cave_next;
+        c.extend(begin.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(c3::STRING_BEGIN, f);
+        let cmp = t.stub_code(c3::MEMCMP, false, 3, 0);
+        let cell = t.cells[&c3::MEMCMP];
+        let mut c = vec![
+            0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x8b, 0x7c, 0x24, 0x10, 0x8b, 0x4c, 0x24, 0x14,
+            0x31, 0xc0, 0xe3, 0x05, 0xf3, 0xa6, 0x0f, 0x95, 0xc0, 0xa3,
+        ];
+        c.extend(cell.to_le_bytes()); // repe cmpsb; setne al; mov [cell], eax
+        c.extend([0x5f, 0x5e, 0xe9]);
+        let at = t.cave_next;
+        c.extend(cmp.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(c3::MEMCMP, f);
+        let group_cell = t.zeros(4);
+        let get_group = t.stub_out(
+            0x0bad_0308,
+            false,
+            4,
+            4,
+            &[Write {
+                arg: Some(3),
+                offset: 0,
+                cell: group_cell,
+            }],
+        );
+        let vtable = t.zeros(0x10);
+        t.w32(vtable + 8, get_group);
+        let names: Vec<u32> = [&b""[..], b"a", b"onPress", b"onRelease", b"\xe9t\xe9"]
+            .iter()
+            .map(|s| {
+                let mut b = s.to_vec();
+                b.push(0);
+                t.alloc(&b)
+            })
+            .collect();
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.next();
+                t.ret(sym, v);
+            }
+            let r = [0, 0, 1, 0x80][rng.below(4) as usize];
+            t.ret(0x0bad_0308, r);
+            let group = rng.next();
+            t.w32(group_cell, group);
+            // the two group constructors
+            for (sym, loop_group) in [(0x0071_0780u32, true), (0x0070_ff50, false)] {
+                let this = t.random(&mut rng, 0x30);
+                let project = if rng.below(4) == 0 {
+                    0
+                } else {
+                    let p = t.zeros(4);
+                    t.w32(p, vtable);
+                    p
+                };
+                let arg = rng.word();
+                t.check(
+                    &format!("{w} group ctor {sym:#x} {project:#x} {r:#x}"),
+                    sym,
+                    Conv::Thiscall(this),
+                    &[project, arg],
+                    |g| {
+                        u(if loop_group {
+                            c3::sfx_event_group_ctor(g, this, project, arg)
+                        } else {
+                            c3::fmod_event_tree_ctor(g, this, project, arg)
+                        })
+                    },
+                );
+            }
+            // the Iggy callback dispatch, several cases
+            for _ in 0..6 {
+                let player = rng.below(3);
+                t.ret(c3::GET_DEREF_U32, [player, 9][rng.below(2) as usize]);
+                let text = names[rng.below(names.len() as u32) as usize];
+                let record = t.zeros(0x20);
+                t.w32(record, text);
+                let n = rng.below(4);
+                let handlers = t.zeros(0x40);
+                for k in 0..4 {
+                    let at = handlers + 0x10 * k;
+                    let v = [0, 1, 1][rng.below(3) as usize];
+                    t.w8(at, v);
+                    // the hash of one of the names, or another
+                    let hashes = [
+                        0x1505u32,
+                        0x0002_b606,
+                        0x6abf_52af,
+                        0x13f6_e4a3,
+                        0x0b86_5feb,
+                        rng.next(),
+                    ];
+                    let v = hashes[rng.below(6) as usize];
+                    t.w32(at + 4, v);
+                    t.w32(at + 8, handler);
+                    let v = rng.next();
+                    t.w32(at + 0xc, v);
+                }
+                let manager = t.zeros(0x18);
+                t.w32(manager + 0x10, [n, n | 0x8000_0000][rng.below(2) as usize]);
+                t.w32(manager + 0x14, handlers);
+                let a = rng.next();
+                t.check(
+                    &format!("{w} dispatch {n}"),
+                    0x00a2_6100,
+                    Conv::Thiscall(manager),
+                    &[a, player, record],
+                    |g| u(c3::dispatch_callback(g, manager, player, record)),
+                );
+            }
+            // std::string::rfind
+            let hay: &[&[u8]] = &[
+                b"",
+                b"a",
+                b"abcab",
+                b"chr_c001_ab_c001",
+                b"xxxxxxxxxxxxxxxxxxxxab",
+            ];
+            let text = hay[rng.below(hay.len() as u32) as usize];
+            let heap = text.len() >= 16 || rng.below(2) == 0;
+            let s = std_string(&mut t, text, heap);
+            let needles: &[&[u8]] = &[b"", b"a", b"ab", b"c001", b"zz", b"abcab"];
+            let needle = needles[rng.below(needles.len() as u32) as usize];
+            let mut nb = needle.to_vec();
+            nb.push(0);
+            let np = t.alloc(&nb);
+            let pos = [0, 1, 3, 8, 30, u32::MAX][rng.below(6) as usize];
+            let n = needle.len() as u32;
+            t.check(
+                &format!("{w} rfind {needle:?} in {text:?} at {pos:#x}"),
+                0x0063_8340,
+                Conv::Thiscall(s),
+                &[np, pos, n],
+                |g| u(c3::string_rfind(g, s, [np, pos, n])),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `FmodMusic`'s three slot clears.
+#[test]
+fn c3_music_clears() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c303);
+        t.stub(fr::ERRCHECK, false, 3, 0);
+        let free = t.stub_code(0x0bad_0388, false, 3, 3);
+        let vtable = t.zeros(0x10);
+        t.w32(vtable + 8, free);
+        for i in 0..24 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for tag in [fr::ERRCHECK, 0x0bad_0388] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            let music = t.random(&mut rng, 0x30);
+            let which = rng.below(3);
+            t.w32(music + 0x2c, which);
+            for off in [0, 4] {
+                let project = if rng.below(5) == 0 {
+                    0
+                } else {
+                    let p = t.zeros(4);
+                    t.w32(p, vtable);
+                    p
+                };
+                t.w32(music + off, project);
+            }
+            // one slot past the end too, which slot 0xb6 must not touch
+            let slots = t.random(&mut rng, ((c3::MUSIC_SLOTS + 1) * 0x3c) as usize);
+            for k in 0..=c3::MUSIC_SLOTS {
+                let at = slots + 0x3c * k;
+                let v = [0, rng.next(), rng.next()][rng.below(3) as usize];
+                t.w32(at, v);
+                let v = [0, 0, 1][rng.below(3) as usize];
+                t.w32(at + 4, v);
+                let v = [0, 1, 2][rng.below(3) as usize];
+                t.w32(at + 8, v);
+            }
+            t.w32(music + 0x10, slots);
+            let slot = [0, 1, 0xb5, 0xb6, rng.below(0xb6), u32::MAX][rng.below(6) as usize];
+            t.check(
+                &format!("{w} music clear {slot:#x}"),
+                0x0070_8720,
+                Conv::Thiscall(music),
+                &[slot],
+                |g| u(c3::music_clear(g, music, slot)),
+            );
+            t.check(
+                &format!("{w} music clear all"),
+                0x0070_8810,
+                Conv::Thiscall(music),
+                &[],
+                |g| u(c3::music_clear_all(g, music)),
+            );
+            for k in 0..c3::MUSIC_SLOTS {
+                let v = [0, rng.next()][rng.below(2) as usize];
+                t.w32(slots + 0x3c * k, v);
+            }
+            t.check(
+                &format!("{w} music force clear all"),
+                0x0070_8af0,
+                Conv::Thiscall(music),
+                &[],
+                |g| {
+                    c3::music_force_clear_all(g, music);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round, batch 4 (ffx_glue_other::h4_c4)
+
+/// The extended blur's render, the voice's event check, the six-value
+/// Flash call, the string replace, the wave-texture unload and the
+/// vertex-info move.
+#[test]
+fn c4_blur_voice_menu() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c401);
+        let stubs: [(u32, bool, u32, u32); 14] = [
+            (m::POST_PROCESS_INSTANCE, false, 0, 0),
+            (c4::COPY_BUFFER, true, 6, 6),
+            (c4::BLUR_PASS, true, 2, 2),
+            (fr::ERRCHECK, false, 3, 0),
+            (c4::VOICE_READ, true, 2, 2),
+            (c4::CALL_AS3, true, 5, 5),
+            (fr::MEMCPY, false, 3, 0),
+            (fr::MEMSET, false, 3, 0),
+            (c4::SET_UI_UNLOADED, true, 1, 1),
+            (c4::UNIFY_FILENAME, false, 3, 0),
+            (c4::SET_MATERIAL_UNLOADED, false, 1, 1),
+            (c4::FORCE_UNLOAD_MENU_TEXTURE, true, 1, 1),
+            (0x0bad_0408, false, 3, 3),
+            (0x0bad_0478, false, 2, 0),
+        ];
+        let mut codes = [0; 2];
+        for (k, &(sym, this, n, pops)) in stubs.iter().enumerate() {
+            match k {
+                12 | 13 => codes[k - 12] = t.stub_code(sym, this, n, pops),
+                _ => t.stub(sym, this, n, pops),
+            }
+        }
+        let [free_event, strstr] = codes;
+        t.g32(c4::STRSTR.sym, strstr);
+        let group_vtable = t.zeros(0x10);
+        t.w32(group_vtable + 8, free_event);
+        let state_cell = t.zeros(4);
+        t.stub_at(
+            fr::FMOD_GET_STATE,
+            false,
+            2,
+            2,
+            &[Write {
+                arg: Some(1),
+                offset: 0,
+                cell: state_cell,
+            }],
+        );
+        let table = t.rebase(c4::WAVE_TEXTURES);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.next();
+                t.ret(sym, v);
+            }
+            // BlurEffectEx_render
+            let blur = t.random(&mut rng, 0x40);
+            t.w8(blur + 0x28, [0, 1, 1, 1][rng.below(4) as usize]);
+            t.w32(blur + 0x2c, [0, 1, 2][rng.below(3) as usize]);
+            t.w32(blur + 0x3c, [0, 1, 2][rng.below(3) as usize]);
+            for off in [0xc, 0x18] {
+                let rt = t.random(&mut rng, 8);
+                t.w8(rt + 4, [0, 1][rng.below(2) as usize]);
+                t.w32(blur + off, rt);
+            }
+            t.check(
+                &format!("{w} blur render"),
+                0x006c_4cf0,
+                Conv::Thiscall(blur),
+                &[],
+                |g| u(c4::blur_ex_render(g, blur)),
+            );
+            // FmodVoice_checkEvent
+            let voice = t.random(&mut rng, 0x80);
+            if rng.below(4) == 0 {
+                t.w32(voice + 0x14, 0);
+            }
+            if rng.below(3) != 0 {
+                let group = t.zeros(4);
+                t.w32(group, group_vtable);
+                t.w32(voice + 0x10, group);
+            } else {
+                t.w32(voice + 0x10, 0);
+            }
+            t.w32(voice + 0x60, [0, 1, 1, 2][rng.below(4) as usize]);
+            t.w32(voice + 0x5c, [0, rng.next()][rng.below(2) as usize]);
+            let r = [0, 0x1e][rng.below(2) as usize];
+            t.ret(fr::FMOD_GET_STATE, r);
+            let v = rng.next();
+            t.w32(state_cell, v);
+            let system = rng.next();
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} voice check {r:#x}"),
+                0x0070_a4a0,
+                Conv::Thiscall(voice),
+                &[system],
+                ebp - 4,
+                &[(0, 4)],
+                |g| {
+                    c4::voice_check_event(g, ebp - 4, voice, system);
+                    Out::None
+                },
+            );
+            // the six-value Flash call
+            let args: [u32; 26] = std::array::from_fn(|_| rng.next());
+            let values: [u32; 24] = std::array::from_fn(|k| args[k + 2]);
+            let ebp = t.ebp_for(26);
+            t.check_framed(
+                &format!("{w} flash 6"),
+                0x006f_caf0,
+                Conv::Cdecl,
+                &args,
+                ebp - 0x64,
+                &[(0, 0x60)],
+                |g| u(c4::call_flash_6(g, ebp - 0x64, args[0], args[1], &values)),
+            );
+            // the string replace
+            let texts: &[&[u8]] = &[b"Video %s here", b"%s", b"none", b"a%sb%s", b"yes"];
+            let text = texts[rng.below(texts.len() as u32) as usize];
+            // junk after the terminator: a moved terminator must be written
+            let mut buf = text.to_vec();
+            buf.push(0);
+            buf.resize(0x40, 0xaa);
+            let tp = t.alloc(&buf);
+            let froms: &[&[u8]] = &[b"%s", b"s", b"e"];
+            let pattern = froms[rng.below(froms.len() as u32) as usize];
+            let mut fb = pattern.to_vec();
+            fb.push(0);
+            let from = t.alloc(&fb);
+            let tos: &[&[u8]] = &[b"\0", b"x\0", b"ab\0", b"long text\0"];
+            let to = t.alloc(tos[rng.below(tos.len() as u32) as usize]);
+            let found = text.windows(pattern.len()).position(|x| x == pattern);
+            t.ret(0x0bad_0478, found.map_or(0, |k| tp + k as u32));
+            t.check(
+                &format!("{w} replace in {text:?}"),
+                0x0070_2590,
+                Conv::Cdecl,
+                &[tp, from, to],
+                |g| Out::U8(c4::string_replace_first(g, tp, from, to)),
+            );
+            // the wave-texture unload
+            for k in 0..70u32 {
+                let v = [0, rng.next()][rng.below(4).min(1) as usize];
+                t.w32(table + 4 * k, v);
+            }
+            // the original reads **(ui + 0x2bd4) for the geometry's ecx
+            let ui = t.zeros(0x2bd8);
+            let geometry = t.random(&mut rng, 4);
+            t.w32(ui + 0x2bd4, geometry);
+            t.g32(c4::GRAPHIC_UI.sym, ui);
+            let scene = rng.next();
+            t.g32(c4::PHYRE_SCENE.sym, scene);
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} wave unload"),
+                0x0067_efa0,
+                Conv::Cdecl,
+                &[],
+                ebp - 0x104,
+                &[(0, 0x100)],
+                |g| {
+                    c4::unload_main_menu_wave_texture(g, ebp - 0x104);
+                    Out::None
+                },
+            );
+            // the vertex-info move
+            let record = |t: &mut Twins, rng: &mut Rng| {
+                let r = t.zeros(0x98);
+                let info = t.random(rng, 0x24);
+                for (off, n) in [(0x14, 16), (0x1c, 3), (0x10, 12), (0x18, 8), (0xc, 12)] {
+                    let a = t.random(rng, 4 * n);
+                    t.w32(info + off, a);
+                }
+                t.w32(r + 0x94, info);
+                r
+            };
+            let from = record(&mut t, &mut rng);
+            let to = record(&mut t, &mut rng);
+            let v = rng.next();
+            t.g32(c4::VERTEX_INFO_DEFAULT.sym, v);
+            t.check(
+                &format!("{w} vertex move"),
+                0x0067_dc70,
+                Conv::Stdcall,
+                &[from, to],
+                |g| u(c4::vertex_info_move(g, from, to)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
     }
 }

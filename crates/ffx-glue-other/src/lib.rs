@@ -14,7 +14,16 @@
 //! - [`misc`]: forwarders, PS2 packet/DMA/GS helpers;
 //! - [`copies`]: exact copies of other modules' ports (`tools/dupes.py`);
 //! - [`r3`]: round 3: the wide cluster/font calls, singletons, array
-//!   helpers, dlmalloc's `create_mspace_with_base`, menu textures.
+//!   helpers, dlmalloc's `create_mspace_with_base`, menu textures;
+//! - [`h4_c1`]: the continuation round: the accumulation buffer's GS
+//!   quads, menu lookups, FMOD event collectors, texture-animation
+//!   records, the escape menu's string arrays;
+//! - [`h4_c2`]: its second batch: the cluster manager's releases, the FMOD
+//!   bank destructors and walks, the id-array tree inserts;
+//! - [`h4_c3`]: its third batch: `FmodVoice` and `FmodMusic` teardown, the
+//!   sync manager's change, the event groups, Iggy callbacks, `rfind`;
+//! - [`h4_c4`]: its fourth batch: the extended blur's render, the voice's
+//!   event check, a six-value Flash call, menu texture and vertex helpers.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -34,6 +43,10 @@
 pub mod copies;
 pub mod effect;
 pub mod frames;
+pub mod h4_c1;
+pub mod h4_c2;
+pub mod h4_c3;
+pub mod h4_c4;
 pub mod menu;
 pub mod misc;
 pub mod movie;
