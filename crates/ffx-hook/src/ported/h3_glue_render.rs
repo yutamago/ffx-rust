@@ -20,6 +20,7 @@ use ffx_prender::glue11::bridge as g11;
 use ffx_prender::h3_glue12::bridge as g12;
 use ffx_prender::h3_glue13::bridge as g13;
 use ffx_prender::h3_glue14::bridge as g14;
+use ffx_prender::h3_glue15::bridge as g15;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1397,6 +1398,41 @@ ported! {
     VFXDynamicGeometry_SetupWithShader @ 0x006a_46e0 => extern "thiscall" fn geometry_set_shader(this: u32, shader: u32, cluster: u32) -> u32 {
         let mut f = StackFrame::<0x79>::new();
         g14::geometry_set_shader(&mut mem(), f.at() + 0x1e4, this, shader, cluster)
+    }
+
+    // ---- round 5 batch 15 (ffx_prender::h3_glue15) ----
+    /// `RenderDelegationHelper_registerDelegation(this, data, size, task, arg)`.
+    RenderDelegationHelper_registerDelegation @ 0x006a_de20 => extern "thiscall" fn delegation_register(this: u32, data: u32, size: u32, task: u32, arg: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        g15::delegation_register(&mut mem(), f.at() + 4, this, data, size, task, arg)
+    }
+    /// `graphicGuildmapCreate(a, b, arg)`.
+    graphicGuildmapCreate @ 0x0064_1510 => extern "C" fn guildmap_create(a: u32, b: u32, arg: u32) -> u32 {
+        g15::guildmap_create(&mut mem(), a, b, arg)
+    }
+    /// `graphicCharacterInstanceDestroyClothVertexBuffers(cloth)`: its loop
+    /// counter lives in the argument's slot.
+    graphicCharacterInstanceDestroyClothVertexBuffers @ 0x0063_a160 => extern "C" fn cloth_vertex_buffers_destroy(cloth: u32; slots: u32) -> u32 {
+        g15::cloth_vertex_buffers_destroy(&mut mem(), slots, cloth)
+    }
+    /// `PhyreScene_createMaterial_00659710(this, variant, cluster, a, b)`.
+    PhyreScene_createMaterial_00659710 @ 0x0065_9710 => extern "thiscall" fn scene_create_material(this: u32, variant: u32, cluster: u32, a: u32, b: u32) -> u32 {
+        g15::scene_create_material(&mut mem(), this, variant, cluster, a, b)
+    }
+    /// `PhyreScene_setEnableRenderWorldToTexture(this, on, m, f0..f7, n)`.
+    PhyreScene_setEnableRenderWorldToTexture @ 0x0066_d000 => extern "thiscall" fn scene_set_render_world_to_texture(this: u32, on: u32, m: u32, f0: u32, f1: u32, f2: u32, f3: u32, f4: u32, f5: u32, f6: u32, f7: u32, n: u32) -> u32 {
+        let mut f = StackFrame::<16>::new();
+        let floats = [f0, f1, f2, f3, f4, f5, f6, f7];
+        g15::scene_set_render_world_to_texture(&mut mem(), f.at() + 0x40, this, on, m, floats, n)
+    }
+    /// `graphicFieldMapLoad(path, flag)`.
+    graphicFieldMapLoad @ 0x0064_0210 => extern "C" fn field_map_load(path: u32, flag: u32) -> u32 {
+        g15::field_map_load(&mut mem(), path, flag)
+    }
+    /// `PhyreScene_drawMainMenuWaveEffect()`.
+    PhyreScene_drawMainMenuWaveEffect @ 0x0065_b5b0 => extern "C" fn scene_draw_main_menu_wave() -> u32 {
+        let mut f = StackFrame::<0xa7>::new();
+        g15::scene_draw_main_menu_wave(&mut mem(), f.at() + 0x29c)
     }
 }
 
