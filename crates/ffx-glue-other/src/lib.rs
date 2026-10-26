@@ -96,7 +96,8 @@
 //! - [`h4_i6`]: its sixth batch: the broken screen effect's frame capture
 //!   and the movie player's texture update;
 //! - [`h4_i7`]: its seventh batch: the cluster manager's preallocated data
-//!   list.
+//!   list;
+//! - [`h4_i8`]: its eighth batch: the distortion effect's render.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -155,6 +156,7 @@ pub mod h4_i4;
 pub mod h4_i5;
 pub mod h4_i6;
 pub mod h4_i7;
+pub mod h4_i8;
 pub mod menu;
 pub mod misc;
 pub mod movie;

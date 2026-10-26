@@ -29,7 +29,7 @@ use ffx_glue_other::{
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
-    h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7,
+    h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -8660,5 +8660,93 @@ fn i7_preallocate_data_list() {
             read += u32::from(r != 0);
         }
         assert!(read > 0, "{name}: data read");
+    }
+}
+
+// ---- continuation round 7, batch 8 (ffx_glue_other::h4_i8)
+
+/// The distortion effect's render.
+#[test]
+fn i8_render_distortion() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c781);
+        let stubs = [
+            (i8::CREATE_RENDER_TARGET, true, 0, 0),
+            (i3::POST_PROCESS_MANAGER, false, 0, 0),
+            (i3::COPY_BUFFER, true, 6, 6),
+            (i8::COPY_DEPTH_BUFFER, true, 9, 9),
+            (i3::SET_COLOR_TARGET, true, 2, 2),
+            (i3::SURFACE_CTOR, true, 2, 2),
+            (i8::SET_VIEWPORT, true, 4, 4),
+            (i8::DEGRADE_RESOLUTION, true, 1, 1),
+            (i3::FIND_PARAMETER, true, 1, 1),
+            (i3::SET_VALUE, true, 2, 2),
+            (i3::SURFACE_DTOR, true, 0, 0),
+            (i2::SET_CLEAR_COLOR, true, 4, 4),
+            (i2::BEGIN_SCENE, true, 1, 1),
+            (i2::RENDER_MESH_INSTANCE, true, 4, 4),
+            (i2::END_SCENE, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let mut drawn = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[i8::LIMIT32], &[i8::LIMIT64]);
+            for sym in [i2::SET_CLEAR_COLOR, i2::BEGIN_SCENE, i3::FIND_PARAMETER] {
+                let r = rng.next();
+                t.ret(sym, rng.pick(&[0, 0, 0, r]));
+            }
+            let pm = random_block(&mut t, &mut rng, 0x90);
+            let current = random_block(&mut t, &mut rng, 8);
+            t.w8(current + 4, rng.pick(&[0, 0, 1]));
+            t.w32(pm + 0x8c, current);
+            t.ret(i3::POST_PROCESS_MANAGER, pm);
+            let this = random_block(&mut t, &mut rng, 0x80);
+            for off in [0x7cu32, 0x7d, 0x7e, 0x7f] {
+                let v = rng.pick(&[0u8, 1, 1]);
+                t.w8(this + off, v);
+            }
+            t.w8(this + 0x7c, rng.pick(&[1, 1, 1, 0]));
+            t.w8(this + 0x7d, rng.pick(&[0, 0, 0, 1]));
+            let f = {
+                let r = rng.float();
+                rng.pick(&[r, 0x3f4c_cccd, 0x3f00_0000, 0x3f80_0000])
+            };
+            t.w32(this + 0x78, f);
+            if rng.below(4) == 0 {
+                // the strength exactly at the limit
+                let at = t.rebase(i8::LIMIT64);
+                let v = f64::from(f32::from_bits(f));
+                t.write(at, &v.to_le_bytes());
+            }
+            let renderer = random_block(&mut t, &mut rng, 0x140);
+            t.w32(this, renderer);
+            let target = random_block(&mut t, &mut rng, 8);
+            let tex = random_block(&mut t, &mut rng, 0x24);
+            t.w32(target, tex);
+            // an unset texture (+4) would read address 0x1c, in both
+            t.w8(target + 4, 0);
+            t.w32(this + 8, rng.pick(&[0, target, target]));
+            let shader = random_block(&mut t, &mut rng, 8);
+            t.w32(this + 0x30, shader);
+            let grid = random_block(&mut t, &mut rng, 0x14);
+            t.w32(this + 0x38, grid);
+            let frame = t.ebp_for(0) - 0x30;
+            t.check_framed_conv(
+                &w,
+                0x006c_2dc0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, i8::DISTORTION_FRAME as usize)],
+                |g| u(i8::render_distortion(g, frame, this)),
+            );
+            drawn += t.log_entries();
+        }
+        assert!(drawn > 0, "{name}: drawn");
     }
 }
