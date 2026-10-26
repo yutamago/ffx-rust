@@ -32,6 +32,7 @@ mod menu;
 mod movie;
 mod p1_load;
 mod p2_anim;
+mod p2_anim_c;
 mod p3_other_a;
 mod p4_other_b;
 mod p5_core;
@@ -76,6 +77,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(pc_ui::hooks());
     all.extend(h3_glue_render::hooks());
     all.extend(p2_anim::hooks());
+    all.extend(p2_anim_c::hooks());
     all.extend(phyre_render::hooks());
     all.extend(p6_render_c::hooks());
     all.extend(p6_render_c2::hooks());
