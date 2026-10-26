@@ -50,6 +50,7 @@ use ffx_prender::h3_glue24::{self as h24, bridge as gh24};
 use ffx_prender::h3_glue25::{self as h25, bridge as gh25};
 use ffx_prender::h3_glue26::{self as h26, bridge as gh26};
 use ffx_prender::h3_glue27::{self as h27, bridge as gh27};
+use ffx_prender::h3_glue28::{self as h28, bridge as gh28};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -7926,5 +7927,44 @@ fn batch27b_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 400 };
         run_cases(t, CASES27B, n, &mut Rng(0x2727_b127));
+    });
+}
+
+// ---- round 7 batch 28 (ffx_prender::h3_glue28) ----
+
+/// The icon id (each range, its edges, 0x261, others), the position and
+/// scale floats, the map (0xb8 or not), the language (0xb or not).
+fn prep_scale_icon(t: &mut Twins, _: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    args[0] = pick(
+        rng,
+        &[
+            600, 605, 611, 0x261, 0x261, 0x257, 0x264, 0x267, 0x268, 0x268, 0x269, 0x269, 0x26a, 0,
+        ],
+    );
+    args[1] = rng.float().to_bits();
+    args[2] = rng.float().to_bits();
+    let scale = match rng.below(4) {
+        0 => 1.0,
+        1 => 0.75,
+        2 => 1.25,
+        _ => rng.float(),
+    };
+    args[3] = f32::to_bits(scale);
+    let map = pick(rng, &[0xb8, 0xb8, 0xb9]);
+    t.global(h28::CURRENT_MAP_NO, map);
+    let lang = pick(rng, &[0xb, 1, 0x10b]);
+    t.stub_ret(h28::GET_LANG, false, 0, 0, lang);
+}
+
+#[rustfmt::skip]
+const CASES28: &[Case] = &[
+    framed(Case { prep: Some(prep_scale_icon), ..cdecl("draw_scale_button_icon", 0x008e_7a90, 6, &[(h28::DRAW_CROSS_BUTTON_ICON, K::Cdecl(7))], |m, _, a| { let slots = slots_at(m, a); u(gh28::draw_scale_button_icon(m, slots, a[0], a[1], a[2], a[3], a[4], a[5])) }) }, 0, 0x18),
+];
+
+#[test]
+fn batch28_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 80 } else { 480 };
+        run_cases(t, CASES28, n, &mut Rng(0x2828_b028));
     });
 }

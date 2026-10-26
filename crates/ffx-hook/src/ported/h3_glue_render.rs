@@ -33,6 +33,7 @@ use ffx_prender::h3_glue24::bridge as g24;
 use ffx_prender::h3_glue25::bridge as g25;
 use ffx_prender::h3_glue26::bridge as g26;
 use ffx_prender::h3_glue27::bridge as g27;
+use ffx_prender::h3_glue28::bridge as g28;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1721,6 +1722,13 @@ ported! {
     PhyreScene_getChaPos @ 0x0065_d860 => extern "thiscall" fn scene_get_cha_pos(this: u32, p: u32; slots: u32) {
         let mut f = StackFrame::<2>::new();
         g27::scene_get_cha_pos(&mut mem(), f.at() + 8, slots, this, p);
+    }
+
+    // ---- round 7 batch 28 (ffx_prender::h3_glue28) ----
+    /// `DrawScaleButtonIconRGBA(id, x, y, scale, colour, flags)` (float
+    /// bits): `x`, `y` and the scratch values end in the argument slots.
+    DrawScaleButtonIconRGBA @ 0x008e_7a90 => extern "C" fn draw_scale_button_icon(id: u32, x: u32, y: u32, scale: u32, colour: u32, flags: u32; slots: u32) -> u32 {
+        g28::draw_scale_button_icon(&mut mem(), slots, id, x, y, scale, colour, flags)
     }
 }
 
