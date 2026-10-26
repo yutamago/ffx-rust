@@ -84,7 +84,10 @@
 //!   handle and free-all;
 //! - [`h4_i2`]: its second batch: the movie player's play and render, the
 //!   draw environment, the split image load, `IggyMenu`'s constructor, the
-//!   semaphore queue's start, an escape-menu dialog callback.
+//!   semaphore queue's start, an escape-menu dialog callback;
+//! - [`h4_i3`]: its third batch: the blur effect's constructor, the motion
+//!   blur's render, the save/load menu's open, the boot text's update,
+//!   `GDraw`'s resource limits and setup.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -138,6 +141,7 @@ pub mod h4_h7;
 pub mod h4_h8;
 pub mod h4_i1;
 pub mod h4_i2;
+pub mod h4_i3;
 pub mod menu;
 pub mod misc;
 pub mod movie;

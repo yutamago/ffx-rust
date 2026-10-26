@@ -16,7 +16,7 @@ use ffx_glue_other::{
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
-    h4_i2 as i2, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_i2 as i2, h4_i3 as i3, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2339,5 +2339,34 @@ ported! {
     FFEscMenu_onDialog_0068e5b0 @ 0x0068_e5b0 => extern "C" fn esc_dialog(menu: u32, args: u32) -> u32 {
         let mut frame = StackFrame::<{ (i2::DIALOG_FRAME / 4) as usize }>::new();
         i2::esc_dialog(&mut mem(), frame.at(), menu, args)
+    }
+    // ---- continuation round 7, batch 3 (ffx_glue_other::h4_i3)
+    /// `BlurEffect_ctor_006c32d0(this)`.
+    BlurEffect_ctor_006c32d0 @ 0x006c_32d0 => extern "thiscall" fn blur_effect_ctor(this: u32) -> u32 {
+        i3::blur_effect_ctor(&mut mem(), this)
+    }
+    /// `MotionBlur_renderMotionBlur(this; renderer, target)`.
+    MotionBlur_renderMotionBlur @ 0x006c_5410 => extern "thiscall" fn motion_blur_render(this: u32, renderer: u32, target: u32) -> u32 {
+        let mut frame = StackFrame::<{ (i3::MOTION_FRAME / 4) as usize }>::new();
+        i3::motion_blur_render(&mut mem(), frame.at(), this, renderer, target)
+    }
+    /// `SaveLoadMenu_open_00702a80()`.
+    SaveLoadMenu_open_00702a80 @ 0x0070_2a80 => extern "C" fn save_load_open() {
+        let mut frame = StackFrame::<{ (i3::SAVE_LOAD_FRAME / 4) as usize }>::new();
+        i3::save_load_open(&mut mem(), frame.at());
+    }
+    /// `BootText_update_006de010(this; dt)`.
+    BootText_update_006de010 @ 0x006d_e010 => extern "thiscall" fn boot_text_update(this: u32, dt: u32) {
+        i3::boot_text_update(&mut mem(), this, dt);
+    }
+    /// `gdraw_D3D11_SetResourceLimits_00a38180(kind, handles, bytes)`.
+    gdraw_D3D11_SetResourceLimits_00a38180 @ 0x00a3_8180 => extern "C" fn set_resource_limits(kind: u32, handles: u32, bytes: u32) -> u32 {
+        let mut stats = StackFrame::<{ (i3::STATS_FRAME / 4) as usize }>::new();
+        i3::set_resource_limits(&mut mem(), stats.at(), kind, handles, bytes)
+    }
+    /// `IggyGDraw_setup_00a3baf0(this; device, limits)`.
+    IggyGDraw_setup_00a3baf0 @ 0x00a3_baf0 => extern "thiscall" fn gdraw_setup(this: u32, device: u32, limits: u32) -> u32 {
+        let mut stats = StackFrame::<{ (i3::STATS_FRAME / 4) as usize }>::new();
+        i3::gdraw_setup(&mut mem(), stats.at(), this, device, limits)
     }
 }

@@ -29,7 +29,7 @@ use ffx_glue_other::{
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
-    h4_i2 as i2,
+    h4_i2 as i2, h4_i3 as i3,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -7596,5 +7596,327 @@ fn i2_esc_dialog() {
             calls += u32::from(busy == 0);
         }
         assert!(calls > 0, "{name}: dialogs handled");
+    }
+}
+
+// ---- continuation round 7, batch 3 (ffx_glue_other::h4_i3)
+
+/// The blur effect's constructor and the motion blur's render.
+#[test]
+fn i3_blur() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c731);
+        let stubs = [
+            (i3::PHYRE_MALLOC, false, 1, 0),
+            (i3::CLUSTER_CTOR, true, 0, 0),
+            (i2::OPERATOR_NEW, false, 1, 0),
+            (i3::POST_EFFECT_PARAMS_CTOR, true, 0, 0),
+            (i3::RADIAL_LINE_CTOR, true, 0, 0),
+            (i3::POST_PROCESS_MANAGER, false, 0, 0),
+            (i3::COPY_BUFFER, true, 6, 6),
+            (i3::SET_COLOR_TARGET, true, 2, 2),
+            (i3::SURFACE_CTOR, true, 2, 2),
+            (i3::SURFACE_DTOR, true, 0, 0),
+            (i3::FIND_PARAMETER, true, 1, 1),
+            (i3::SET_VALUE, true, 2, 2),
+            (i2::BEGIN_SCENE, true, 1, 1),
+            (i2::RENDER_MESH_INSTANCE, true, 4, 4),
+            (i2::END_SCENE, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let mut drawn = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[i3::HALF], &[]);
+            let cluster = random_block(&mut t, &mut rng, 0x50);
+            t.ret(i3::PHYRE_MALLOC, rng.pick(&[cluster, cluster, 0]));
+            let block = random_block(&mut t, &mut rng, 0x10);
+            t.ret(i2::OPERATOR_NEW, rng.pick(&[block, block, 0]));
+            let this = random_block(&mut t, &mut rng, 0x90);
+            t.check_conv(
+                &format!("{w} ctor"),
+                0x006c_32d0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(i3::blur_effect_ctor(g, this)),
+            );
+            // the motion blur
+            for sym in [i2::BEGIN_SCENE, i3::FIND_PARAMETER] {
+                let r = rng.next();
+                t.ret(sym, rng.pick(&[0, 0, r]));
+            }
+            let manager = random_block(&mut t, &mut rng, 0xb0);
+            let current = random_block(&mut t, &mut rng, 8);
+            t.w8(current + 4, rng.pick(&[0, 0, 1]));
+            t.w32(manager + 0x8c, current);
+            t.ret(i3::POST_PROCESS_MANAGER, manager);
+            let this = random_block(&mut t, &mut rng, 0x68);
+            for off in [0x58u32, 0x59] {
+                let v = rng.pick(&[0u8, 1, 1, 0x80]);
+                t.w8(this + off, v);
+            }
+            let flag = rng.pick(&[1u8, 0, 0]);
+            t.w8(this + 0x59, flag);
+            let params = rng.next();
+            t.w32(this + 0x64, rng.pick(&[0, params, params]));
+            let shader = random_block(&mut t, &mut rng, 8);
+            t.w32(this + 0x60, shader);
+            let quad = random_block(&mut t, &mut rng, 0x14);
+            t.w32(this + 0x54, quad);
+            let renderer = random_block(&mut t, &mut rng, 0x140);
+            let target = {
+                let r = rng.next();
+                rng.pick(&[0, r])
+            };
+            let frame = t.ebp_for(2) - 0x2c;
+            t.check_framed_conv(
+                &format!("{w} motion"),
+                0x006c_5410,
+                Conv::Thiscall(this),
+                &[renderer, target],
+                frame,
+                &[(0, i3::MOTION_FRAME as usize)],
+                |g| u(i3::motion_blur_render(g, frame, this, renderer, target)),
+            );
+            drawn += 1;
+        }
+        assert!(drawn > 0 && t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The save/load menu's open and the boot text's update.
+#[test]
+fn i3_menus() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c732);
+        let stubs = [
+            (i3::GET_LANG, false, 0, 0),
+            (i3::UNIFY_FILENAME, false, 3, 0),
+            (i2::OPERATOR_NEW, false, 1, 0),
+            (i3::IGGY_MENU_CTOR, true, 6, 6),
+            (i3::SET_ENABLE, true, 1, 1),
+            (i3::VALUE_BOOL, false, 2, 0),
+            (i3::VALUE_STRING, false, 2, 0),
+            (i3::CALL_AS3, true, 5, 5),
+            (i1::MEMSET, false, 3, 0),
+            (i3::SET_TITLE_TEXT, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        // sprintf_s: 6 words for the numbers (size 0x10), 8 for the title
+        let s6 = t.stub_code(0x0bad_c736, false, 6, 0, false, &[]);
+        let s8 = t.stub_code(0x0bad_c738, false, 8, 0, false, &[]);
+        let mut c = vec![0x81, 0x7c, 0x24, 0x08, 0x80, 0, 0, 0, 0x0f, 0x84];
+        let at = t.cave_next;
+        c.extend(s8.wrapping_sub(at + 14).to_le_bytes());
+        c.push(0xe9);
+        c.extend(s6.wrapping_sub(at + 19).to_le_bytes());
+        let sprintf_s = t.code(&c);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([0x0bad_c736, 0x0bad_c738]);
+        let mut titles = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(i3::SPRINTF_S_IAT, sprintf_s);
+            let lang = rng.pick(&[9, 10, 0, 1, 8, 11]);
+            t.ret(i3::GET_LANG, lang);
+            let block = random_block(&mut t, &mut rng, 0x10);
+            t.ret(i2::OPERATOR_NEW, rng.pick(&[block, block, 0]));
+            let open = rng.next();
+            t.g32(i3::SAVE_LOAD_MENU, rng.pick(&[0, 0, open]));
+            let frame = t.ebp_for(0) - 0x30;
+            t.check_framed(
+                &format!("{w} save/load"),
+                0x0070_2a80,
+                &[],
+                frame,
+                &[(0, i3::SAVE_LOAD_FRAME as usize)],
+                |g| {
+                    i3::save_load_open(g, frame);
+                    Out::None
+                },
+            );
+            // the boot text
+            t.constants(&mut rng, &[i3::CYCLE, i3::FADE_LIMIT], &[]);
+            let this = random_block(&mut t, &mut rng, 0x180);
+            for off in [4u32, 5] {
+                let v = rng.pick(&[1u8, 1, 0, 0x80]);
+                t.w8(this + off, v);
+            }
+            let slot = rng.pick(&[0u32, 1, 2, 3, 4, 0xffff_fffe, 7]);
+            t.w32(this + 0x17c, slot);
+            for off in [0x160u32, 0x164] {
+                let v = {
+                    let f = rng.float();
+                    rng.pick(&[f, 0x3ea8_f5c3, 0x3e99_999a, 0x3f00_0000, 0])
+                };
+                t.w32(this + off, v);
+            }
+            let dt = rng.float();
+            t.check_conv(
+                &format!("{w} boot text"),
+                0x006d_e010,
+                Conv::Thiscall(this),
+                &[dt],
+                |g| {
+                    i3::boot_text_update(g, this, dt);
+                    Out::None
+                },
+            );
+            titles += u32::from(t.log_entries() > 6);
+        }
+        assert!(titles > 0, "{name}: titles set");
+    }
+}
+
+/// The `GDraw` stubs both `GDraw` tests share; returns their tags.
+fn i3_gdraw_stubs(t: &mut Twins) -> Vec<u32> {
+    let stubs = [
+        (i1::MEMSET, 3),
+        (i3::FREE_VERTEX_BUFFERS, 1),
+        (i3::NODE_POOL_INIT, 3),
+        (i3::POOL_FREE_ALL, 2),
+        (i3::NEW_POOL, 1),
+        (i3::CLEAR_BINDINGS, 0),
+        (i3::RELEASE_SLOT, 1),
+        (i3::INIT_BUFFERS, 1),
+        (i3::CREATE_CONTEXT, 4),
+    ];
+    for (sym, n) in stubs {
+        t.stub(sym, n, false);
+    }
+    let free = t.stub_code(0x0bad_c739, false, 1, 1, false, &[]);
+    t.g32(i3::GDRAW_FREE_IAT, free);
+    let set = t.stub_code(0x0bad_c73a, false, 1, 1, false, &[]);
+    t.g32(i3::SET_GDRAW_IAT, set);
+    let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+    tags.extend([0x0bad_c739, 0x0bad_c73a]);
+    tags
+}
+
+/// `GDraw`'s state with random pools, or none.
+fn i3_gdraw_state(t: &mut Twins, rng: &mut Rng) {
+    let gdraw = random_block(t, rng, 0xac0);
+    for off in [0xab0u32, 0xab4] {
+        let p = rng.next();
+        t.w32(gdraw + off, rng.pick(&[0, p]));
+    }
+    t.g32(i3::GDRAW, rng.pick(&[gdraw, gdraw, gdraw, 0]));
+    for sym in [i3::NEW_POOL, i3::INIT_BUFFERS] {
+        let r = rng.next();
+        t.ret(sym, rng.pick(&[0, r, r, 0x100]));
+    }
+}
+
+/// `gdraw_D3D11_SetResourceLimits`.
+#[test]
+fn i3_gdraw_limits() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c733);
+        let tags = i3_gdraw_stubs(&mut t);
+        let table = t.rebase(i3::LIMITS);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            i3_gdraw_state(&mut t, &mut rng);
+            let kind = rng.pick(&[0u32, 1, 2, 3, 3, 4]);
+            let (handles, bytes) = (rng.next(), rng.next());
+            let same = rng.below(4) == 0;
+            let (old_h, old_b) = if same {
+                (if kind == 0 { 9 } else { handles }, bytes)
+            } else {
+                (
+                    {
+                        let r = rng.next();
+                        rng.pick(&[handles, 9, r])
+                    },
+                    {
+                        let r = rng.next();
+                        rng.pick(&[bytes, r])
+                    },
+                )
+            };
+            t.w32(table + 8 * kind, old_h);
+            t.w32(table + 8 * kind + 4, old_b);
+            let stats = t.ebp_for(3) - 0x30;
+            t.check_framed(
+                &w,
+                0x00a3_8180,
+                &[kind, handles, bytes],
+                stats,
+                &[(0, 0x30)],
+                |g| u(i3::set_resource_limits(g, stats, kind, handles, bytes)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `GDraw`'s setup.
+#[test]
+fn i3_gdraw_setup() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c734);
+        let mut tags = i3_gdraw_stubs(&mut t);
+        // SetResourceLimits(kind, ..) logs, then returns results[kind]
+        let results = t.zeros(8);
+        let log = t.stub_code(i3::SET_RESOURCE_LIMITS, false, 3, 0, false, &[]);
+        let mut c = vec![
+            0xff, 0x74, 0x24, 0x0c, 0xff, 0x74, 0x24, 0x0c, 0xff, 0x74, 0x24, 0x0c, 0xe8,
+        ];
+        let at = t.cave_next;
+        c.extend(log.wrapping_sub(at + 17).to_le_bytes());
+        c.extend([0x83, 0xc4, 0x0c, 0x8b, 0x44, 0x24, 0x04, 0x8b, 0x04, 0x85]);
+        c.extend(results.to_le_bytes());
+        c.push(0xc3);
+        let f = t.code(&c);
+        t.jump(i3::SET_RESOURCE_LIMITS, f);
+        tags.push(i3::SET_RESOURCE_LIMITS);
+        let table = t.rebase(i3::LIMITS);
+        let mut done = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            i3_gdraw_state(&mut t, &mut rng);
+            let r = rng.next();
+            t.ret(i3::CREATE_CONTEXT, rng.pick(&[0, r, r, r]));
+            for k in 0..2 {
+                let r = rng.next();
+                t.w32(results + 4 * k, rng.pick(&[0, r, r, 1]));
+            }
+            let device = random_block(&mut t, &mut rng, 0x210);
+            for off in [0x6cu32, 0x70] {
+                let v = rng.next();
+                t.w32(device + off, rng.pick(&[0, v, v, v, v]));
+            }
+            let limits = random_block(&mut t, &mut rng, 0x20);
+            for k in 0..8 {
+                let v = rng.below(3);
+                t.w32(limits + 4 * k, v);
+            }
+            for k in 0..8 {
+                let v = rng.below(3);
+                t.w32(table + 0x10 + 4 * k, v);
+            }
+            let this = random_block(&mut t, &mut rng, 4);
+            let stats = t.ebp_for(2) - 0x34;
+            let r = t.check_framed_conv(
+                &w,
+                0x00a3_baf0,
+                Conv::Thiscall(this),
+                &[device, limits],
+                stats,
+                &[(0, 0x30)],
+                |g| u(i3::gdraw_setup(g, stats, this, device, limits)),
+            );
+            done += u32::from(r == 0);
+        }
+        assert!(done > 0, "{name}: set up");
     }
 }
