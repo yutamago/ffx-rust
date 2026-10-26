@@ -24,6 +24,12 @@ use ffx_prender::h3_glue15::bridge as g15;
 use ffx_prender::h3_glue16::bridge as g16;
 use ffx_prender::h3_glue17::bridge as g17;
 use ffx_prender::h3_glue18::bridge as g18;
+use ffx_prender::h3_glue19::bridge as g19;
+use ffx_prender::h3_glue20::bridge as g20;
+use ffx_prender::h3_glue21::bridge as g21;
+use ffx_prender::h3_glue22::bridge as g22;
+use ffx_prender::h3_glue23::bridge as g23;
+use ffx_prender::h3_glue24::bridge as g24;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1451,13 +1457,12 @@ ported! {
     PhyreScene_textureVideoUnload @ 0x0067_0760 => extern "thiscall" fn scene_texture_video_unload(this: u32) -> u32 {
         g16::scene_texture_video_unload(&mut mem(), this)
     }
-    // `PhyreScene_setupSamplers_0065f290` (g16::scene_setup_samplers) is
-    // not hooked: its oracle test passes, but with the hook battle-attack-1
-    // (x 73..74, y 549..561) and menu-shop-2/-7 differ by a few UI pixels
-    // in every run, and not with it disabled (r5, 2026-10-26). The
-    // original keeps 4.0 on the x87 stack across each sampler's register
-    // call (0x0058cf80); a callee that fills the stack would see one slot
-    // less there. Open.
+    /// `PhyreScene_setupSamplers_0065f290(this)`. Hooked again (r6): the
+    /// few UI pixels r5 saw came from pre-lockstep state, which the
+    /// original shows too (pixel-regress, 2026-10-26).
+    PhyreScene_setupSamplers_0065f290 @ 0x0065_f290 => extern "thiscall" fn scene_setup_samplers(this: u32) -> u32 {
+        g16::scene_setup_samplers(&mut mem(), this)
+    }
     /// `PhyreScene_setupPostProcessParams(this)`.
     PhyreScene_setupPostProcessParams @ 0x0066_f140 => extern "thiscall" fn scene_setup_post_process_params(this: u32) -> u32 {
         g16::scene_setup_post_process_params(&mut mem(), this)
@@ -1502,6 +1507,144 @@ ported! {
     ShadowManager_createshadowbuffer @ 0x006d_18b0 => extern "thiscall" fn shadow_create_buffers(this: u32, a: u32, b: u32) -> u32 {
         let _ = (a, b);
         g18::shadow_create_buffers(&mut mem(), this)
+    }
+
+    // ---- round 6 batch 19 (ffx_prender::h3_glue19) ----
+    /// `BrokenScreenEffect_fillIndices_006d41b0(this)` (`ecx` only).
+    BrokenScreenEffect_fillIndices_006d41b0 @ 0x006d_41b0 => extern "thiscall" fn broken_fill_indices(this: u32) -> u32 {
+        g19::broken_fill_indices(&mut mem(), this)
+    }
+    /// `BrokenScreenEffect_setColorBuffer_006d4540(this, texture, sampler)`.
+    BrokenScreenEffect_setColorBuffer_006d4540 @ 0x006d_4540 => extern "thiscall" fn broken_set_color_buffer(this: u32, texture: u32, sampler: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        g19::broken_set_color_buffer(&mut mem(), f.at() + 0x10, this, texture, sampler)
+    }
+    /// `ShadowManager_updateCascades_006ce860(this, flag, a, b, map)`: the
+    /// battle byte goes over `map`'s slot.
+    ShadowManager_updateCascades_006ce860 @ 0x006c_e860 => extern "thiscall" fn shadow_update_cascades(this: u32, flag: u32, a: u32, b: u32, map: u32; slots: u32) -> u32 {
+        g19::shadow_update_cascades(&mut mem(), slots, this, flag, a, b, map)
+    }
+    /// `ClassVFXRenderDataTable_ClassVFXRenderDataTable(this)`.
+    ClassVFXRenderDataTable_ClassVFXRenderDataTable @ 0x0069_e140 => extern "thiscall" fn vfx_table_ctor(this: u32) -> u32 {
+        g19::vfx_table_ctor(&mut mem(), this)
+    }
+    /// `PhyreScene_DrawMostVFX(this)` (`ecx` only).
+    PhyreScene_DrawMostVFX @ 0x0065_0670 => extern "thiscall" fn scene_draw_most_vfx(this: u32) -> u32 {
+        g19::scene_draw_most_vfx(&mut mem(), this)
+    }
+    /// `PhyreScene_findGlobalCamera(this)` (`ecx` only).
+    PhyreScene_findGlobalCamera @ 0x0065_19f0 => extern "thiscall" fn scene_find_global_camera(this: u32) -> u32 {
+        let mut f = StackFrame::<0xa>::new();
+        g19::scene_find_global_camera(&mut mem(), f.at() + 0x28, this)
+    }
+    /// `graphicCharacterUnloadTask(chr)`: without a character the original
+    /// leaves the caller's `eax`, which the thunk keeps.
+    graphicCharacterUnloadTask @ 0x0063_7980 => extern "C" fn character_unload_task(chr: u32) {
+        let mut f = StackFrame::<3>::new();
+        let _ = g19::character_unload_task(&mut mem(), f.at() + 0xc, chr);
+    }
+
+    // ---- round 6 batch 20 (ffx_prender::h3_glue20) ----
+    /// `DrawCrossMenuScrollParts(x, y, w, h, first, shown, total)`: it
+    /// stores floats over the `y` and `total` slots.
+    DrawCrossMenuScrollParts @ 0x008e_6cc0 => extern "C" fn draw_cross_menu_scroll_parts(x: u32, y: u32, w: u32, ht: u32, first: u32, shown: u32, total: u32; slots: u32) {
+        g20::draw_cross_menu_scroll_parts(&mut mem(), slots, x, y, w, ht, first.cast_signed(), shown.cast_signed(), total.cast_signed());
+    }
+    /// `graphicCharacterInstanceSetMeshAlpha(chr, _, alpha)`.
+    graphicCharacterInstanceSetMeshAlpha @ 0x0063_b810 => extern "C" fn character_set_mesh_alpha(chr: u32, unused: u32, alpha: u32) {
+        let _ = unused;
+        let mut f = StackFrame::<9>::new();
+        g20::character_set_mesh_alpha(&mut mem(), f.at() + 0x24, chr, alpha);
+    }
+    /// `PhyreScene_updateMapYIQ(this)` (`ecx` only).
+    PhyreScene_updateMapYIQ @ 0x0067_1da0 => extern "thiscall" fn scene_update_map_yiq(this: u32) {
+        let mut f = StackFrame::<0xf>::new();
+        g20::scene_update_map_yiq(&mut mem(), f.at() + 0x3c, this);
+    }
+
+    // ---- round 6 batch 21 (ffx_prender::h3_glue21) ----
+    /// `PostProcessManager_renderFullScreenTexture(this, renderer, texture,
+    /// target)`.
+    PostProcessManager_renderFullScreenTexture @ 0x0069_59d0 => extern "thiscall" fn post_render_full_screen_texture(this: u32, renderer: u32, texture: u32, target: u32) -> u32 {
+        let mut f = StackFrame::<0xc>::new();
+        g21::post_render_full_screen_texture(&mut mem(), f.at() + 0x30, this, renderer, texture, target)
+    }
+    /// `PostProcessManager_renderScreenFade(this, renderer, _, target,
+    /// keep)`: the colour buffer goes over `keep`'s slot.
+    PostProcessManager_renderScreenFade @ 0x0069_7490 => extern "thiscall" fn post_render_screen_fade(this: u32, renderer: u32, unused: u32, target: u32, keep: u32; slots: u32) -> u32 {
+        let _ = unused;
+        let mut f = StackFrame::<0xc>::new();
+        g21::post_render_screen_fade(&mut mem(), f.at() + 0x30, slots, this, renderer, target, keep)
+    }
+    /// `PhyreScene_DrawNormalUI(this)` (`ecx` only).
+    PhyreScene_DrawNormalUI @ 0x0065_0cb0 => extern "thiscall" fn scene_draw_normal_ui(this: u32) -> u32 {
+        g21::scene_draw_normal_ui(&mut mem(), this)
+    }
+    /// `ShadowManager_updateCasterVisibility_006ce6f0(this, camera)`: the
+    /// kind cursor goes over `camera`'s slot.
+    ShadowManager_updateCasterVisibility_006ce6f0 @ 0x006c_e6f0 => extern "thiscall" fn shadow_update_caster_visibility(this: u32, camera: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x37>::new();
+        g21::shadow_update_caster_visibility(&mut mem(), f.at() + 0xdc, slots, this, camera)
+    }
+    /// `ShadowManager_castersExtent_006d2530(list, dx, dy, dz, camera)`: the
+    /// differences are formed through `list`'s slot.
+    ShadowManager_castersExtent_006d2530 @ 0x006d_2530 => extern "C" fn shadow_casters_extent(list: u32, dx: u32, dy: u32, dz: u32, camera: u32; slots: u32) {
+        let mut f = StackFrame::<0x4a>::new();
+        g21::shadow_casters_extent(&mut mem(), f.at() + 0x128, slots, list, [dx, dy, dz], camera);
+    }
+    /// `PhyreScene_rebuildMapObjects_00658ae0(this)` (`ecx` only).
+    PhyreScene_rebuildMapObjects_00658ae0 @ 0x0065_8ae0 => extern "thiscall" fn scene_rebuild_map_objects(this: u32) -> u32 {
+        let mut f = StackFrame::<0xe>::new();
+        g21::scene_rebuild_map_objects(&mut mem(), f.at() + 0x38, this)
+    }
+
+    // ---- round 6 batch 22 (ffx_prender::h3_glue22) ----
+    /// `PostProcessManager_setHDAOSetting(this, path)`: the path segment
+    /// goes to a per-call buffer (the original's `alloca`).
+    PostProcessManager_setHDAOSetting @ 0x0069_85d0 => extern "thiscall" fn post_set_hdao_setting(this: u32, path: u32) {
+        let mut f = StackFrame::<4>::new();
+        let mut segment: Vec<u8> = Vec::new();
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        g22::post_set_hdao_setting(&mut mem(), f.at() + 0x10, |len| {
+            segment.resize(len as usize, 0);
+            segment.as_mut_ptr() as usize as u32
+        }, this, path);
+    }
+
+    // ---- round 6 batch 23 (ffx_prender::h3_glue23) ----
+    /// `ShadowManager_loadShadowShaderBinFiles(this)` (`ecx` only).
+    ShadowManager_loadShadowShaderBinFiles @ 0x006d_2c10 => extern "thiscall" fn shadow_load_shader_bins(this: u32) -> u32 {
+        let mut f = StackFrame::<0x49>::new();
+        g23::shadow_load_shader_bins(&mut mem(), f.at() + 0x124, this)
+    }
+    /// `VfxShaderManager_FindShader(this, name, flags)`: a `PString` goes
+    /// over `name`'s slot and `*flags` over `flags`'.
+    VfxShaderManager_FindShader @ 0x006c_06e0 => extern "thiscall" fn vfx_find_shader(this: u32, name: u32, flags: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        g23::vfx_find_shader(&mut mem(), f.at() + 4, slots, this, name, flags)
+    }
+
+    // ---- round 6 batch 24 (ffx_prender::h3_glue24) ----
+    /// `PhyreScene_setupColorCorrection(this)` (`ecx` only).
+    PhyreScene_setupColorCorrection @ 0x0066_ed00 => extern "thiscall" fn scene_setup_color_correction(this: u32) -> u32 {
+        let mut f = StackFrame::<0x10>::new();
+        g24::scene_setup_color_correction(&mut mem(), f.at() + 0x40, this)
+    }
+    /// `PhyreScene_convertMapPath(asset, out, keep2d)` (stdcall).
+    PhyreScene_convertMapPath @ 0x0065_9290 => extern "stdcall" fn scene_convert_map_path(asset: u32, out: u32, keep2d: u32) -> u32 {
+        let mut f = StackFrame::<0x63>::new();
+        g24::scene_convert_map_path(&mut mem(), f.at() + 0x18c, asset, out, keep2d)
+    }
+    /// `DynGeoMemManager_createPool_006de720(this, kind)`: the list and
+    /// then its slot's address go over `kind`'s slot.
+    DynGeoMemManager_createPool_006de720 @ 0x006d_e720 => extern "thiscall" fn dyn_geo_create_pool(this: u32, kind: u32; slots: u32) {
+        let mut f = StackFrame::<5>::new();
+        g24::dyn_geo_create_pool(&mut mem(), f.at() + 0x14, slots, this, kind);
+    }
+    /// `PhyreScene_DrawMeshMatrices(this, restore)`.
+    PhyreScene_DrawMeshMatrices @ 0x0066_b360 => extern "thiscall" fn scene_draw_mesh_matrices(this: u32, restore: u32) {
+        let mut f = StackFrame::<0x21>::new();
+        g24::scene_draw_mesh_matrices(&mut mem(), f.at() + 0x84, this, restore);
     }
 }
 
