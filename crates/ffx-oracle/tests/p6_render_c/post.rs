@@ -533,7 +533,8 @@ fn post_effect_ctors_and_dtors_match_the_original() {
         t.stub(po::SAMPLER_CTOR, true, 0, 0, 0);
         for &(f, c) in po::POST_CTORS {
             for i in 0..6u32 {
-                let this = object(&mut t, &mut rng, 0x28, false);
+                // (PMotionBlurBase's reaches +0xd4c)
+                let this = object(&mut t, &mut rng, 0x360, false);
                 // the samplers' flags (bit 7) set or not
                 for (k, s) in c.samplers.into_iter().enumerate() {
                     let fl = rng.next() & !0x80 | if (i >> k) & 1 == 1 { 0x80 } else { 0 };

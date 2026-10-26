@@ -1,0 +1,304 @@
+//! Continuation round 3: the post-processing module's `Bind`, the
+//! window's focus change and other late functions (`ffx_prender::p6_late`)
+//! against their originals.
+
+use ffx_bridge::Mem;
+use ffx_oracle::Conv;
+use ffx_prender::p6_late as lt;
+
+use super::small::run_framed;
+use super::{Out, Rng, Twins, object};
+
+#[test]
+fn post_bind_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_1001);
+        for &step in lt::POST_BIND {
+            if let lt::BindStep::Call(f) = step {
+                t.stub(f, false, 0, 0, rng.next());
+            }
+        }
+        t.stub(lt::REGISTER_TYPE, false, 1, 0, rng.next());
+        t.stub(lt::ADD_TO_NAMESPACE, true, 0, 0, rng.next());
+        let vt = t.vtable(4, &[(1, 0, 0x55)]);
+        let utility = t.rebase(lt::UTILITY);
+        t.w32(utility, vt);
+        let ready = t.rebase(lt::UTILITY_READY);
+        for i in 0..4u8 {
+            t.write(ready, &[[0, 1, 0, 0x80][i as usize]]);
+            t.reset_log();
+            t.check(
+                &format!("{name} post bind #{i}"),
+                0x00a1_8020,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(lt::bridge::post_bind(g)),
+            );
+            let n = t.log_entries();
+            assert_eq!(n, 47 + u32::from(i % 2 == 0), "{name} #{i}: the calls");
+        }
+    }
+}
+
+#[test]
+fn set_focus_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_1002);
+        t.stub(lt::PRINTF, false, 3, 0, rng.next());
+        for (slot, n) in [
+            (lt::CHANGE_DISPLAY_SETTINGS, 2),
+            (lt::GET_WINDOW_LONG, 2),
+            (lt::SET_WINDOW_LONG, 3),
+            (lt::GET_CLIENT_RECT, 2),
+        ] {
+            t.import_stub(slot, n, rng.next());
+        }
+        // AdjustWindowRect grows the rectangle by a frame and a title bar
+        let adjust = t.code(&[
+            0x8b, 0x44, 0x24, 0x04, // mov eax, [esp+4]
+            0x83, 0x28, 0x08, // sub dword [eax], 8
+            0x83, 0x68, 0x04, 0x1f, // sub dword [eax+4], 31
+            0x83, 0x40, 0x08, 0x08, // add dword [eax+8], 8
+            0x83, 0x40, 0x0c, 0x08, // add dword [eax+0xc], 8
+            0xb8, 0x01, 0x00, 0x00, 0x00, // mov eax, 1
+            0xc2, 0x0c, 0x00, // ret 0xc
+        ]);
+        let at = t.rebase(lt::ADJUST_WINDOW_RECT);
+        t.w32(at, adjust);
+        // SetWindowPos takes 7 words; the stub logs the first six (the
+        // seventh is the constant flags)
+        let pos = t.stub_code(lt::SET_WINDOW_POS, false, 6, 7, 0x0bad_f00d);
+        let at = t.rebase(lt::SET_WINDOW_POS);
+        t.w32(at, pos);
+        let hwnd = t.rebase(lt::HWND);
+        let settings_at = t.rebase(lt::SETTINGS);
+        for i in 0..24u32 {
+            let settings = object(&mut t, &mut rng, 4, false);
+            t.w32(settings + 8, if i % 4 == 3 { rng.below(3) } else { 1 });
+            t.w32(hwnd, rng.next());
+            t.w32(settings_at, settings);
+            let focus = if i % 2 == 0 {
+                rng.next() & !0xff
+            } else {
+                rng.next() | 1
+            };
+            run_framed(
+                &mut t,
+                &format!("{name} setFocus #{i}"),
+                0x0062_a460,
+                Conv::Thiscall(rng.next()),
+                &[focus],
+                0xb0,
+                lt::FOCUS_FRAME as usize,
+                |g, ebp| lt::bridge::set_focus(g, ebp - 0xb0, focus),
+            );
+        }
+    }
+}
+
+#[test]
+fn glow_gpu_dtor_matches_the_original() {
+    use ffx_prender::p6_post as po;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_1003);
+        t.stub(po::TARGET_RELEASE, false, 1, 0, 0x88);
+        t.stub(po::SAMPLER_RELEASE, true, 0, 0, 0x89);
+        t.stub(po::EFFECT_RELEASE, true, 0, 0, 0x8a);
+        t.stub(po::MEMBER_DTOR, true, 0, 0, 0x8b);
+        for i in 0..24u32 {
+            // the bound tests: bound or not
+            for k in 0..3 {
+                let r = if (i + k) % 3 == 0 {
+                    0x1200
+                } else {
+                    0x0101 * (k + 1)
+                };
+                t.stub(0x0059_5f90 + 0x10 * k, true, 0, 0, r);
+            }
+            for (k, f) in [0x0059_cc40, 0x0059_cf00, 0x0059_d0f0]
+                .into_iter()
+                .enumerate()
+            {
+                t.stub(f, true, 0, 0, 0x70 + k as u32);
+            }
+            let this = object(&mut t, &mut rng, 0x30, false);
+            for (k, s) in [0x14u32, 0x38].into_iter().enumerate() {
+                let fl = rng.next() & !0x80 | if (i >> k) & 1 == 1 { 0x80 } else { 0 };
+                t.w32(this + s + 0x1c, fl);
+            }
+            let eff = object(&mut t, &mut rng, 1, i % 3 == 2);
+            t.w32(this + 0x5c, eff);
+            for off in lt::GLOW_GPU_INLINE {
+                let (no_tex, no_target) = (rng.chance(4), rng.chance(5));
+                let tex = object(&mut t, &mut rng, 2, no_tex);
+                let target = object(&mut t, &mut rng, 2, no_target);
+                if target != 0 {
+                    t.w32(target, tex);
+                    t.write(target + 4, &[rng.below(4) as u8]);
+                }
+                t.w32(this + off, target);
+            }
+            t.reset_log();
+            t.check(
+                &format!("{name} glow GPU dtor #{i}"),
+                0x009f_e0d0,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(lt::bridge::glow_gpu_dtor(g, this)),
+            );
+            for k in 0..3 {
+                t.unstub(0x0059_5f90 + 0x10 * k);
+            }
+            for f in [0x0059_cc40, 0x0059_cf00, 0x0059_d0f0] {
+                t.unstub(f);
+            }
+        }
+    }
+}
+
+#[test]
+fn resize_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_1004);
+        t.stub(0x004f_ee70, true, 0, 0, 0);
+        t.stub(0x0094_9207, false, 1, 0, 0);
+        t.stub(lt::LOCK_CTOR, true, 0, 0, 0x31);
+        t.stub(lt::UNLOCK, true, 0, 0, 0x32);
+        t.stub(lt::RESIZE_BACK_BUFFER, true, 2, 2, 0x33);
+        t.stub(lt::SET_RECT, true, 4, 4, 0x34);
+        // the viewport size: (w, h) from a cell, x 0x55
+        let size = t.zeros(8);
+        let mut c = vec![0xa1];
+        c.extend(size.to_le_bytes()); // mov eax, [size]
+        c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x02]); // mov edx, [esp+4]; mov [edx], eax
+        c.push(0xa1);
+        c.extend((size + 4).to_le_bytes()); // mov eax, [size+4]
+        c.extend([0x8b, 0x54, 0x24, 0x08, 0x89, 0x02]); // mov edx, [esp+8]; mov [edx], eax
+        c.extend([0x8b, 0x54, 0x24, 0x0c]); // mov edx, [esp+0xc]
+        c.extend([0xc7, 0x02, 0x55, 0, 0, 0]); // mov dword [edx], 0x55
+        c.extend([0xc2, 0x0c, 0x00]); // ret 0xc
+        let viewport = t.code(&c);
+        t.jump(lt::VIEWPORT_OF, viewport);
+        let guard = t.rebase(0x00c9_628c);
+        let mut paths = [0u32; 3];
+        for i in 0..80u32 {
+            t.w32(guard, rng.next() & !1 | u32::from(rng.chance(2)));
+            let e = if rng.chance(6) { 0x21 } else { 0 };
+            t.stub(lt::SET_VIEWPORT, true, 4, 4, e);
+            let app = object(&mut t, &mut rng, 0xc0, false);
+            let (w, h) = (1 + rng.below(2000), 1 + rng.below(1200));
+            t.w32(app + 0x26c, w);
+            t.w32(app + 0x270, h);
+            let (ow, oh) = match rng.below(3) {
+                0 => (w, h),
+                1 => (w, 1 + rng.below(1200)),
+                _ => (1 + rng.below(2000), 1 + rng.below(1200)),
+            };
+            t.w32(size, ow);
+            t.w32(size + 4, oh);
+            let n = rng.below(4);
+            let views = t.zeros(4 * n as usize + 4);
+            for k in 0..n {
+                let r = if rng.chance(5) { 0x40 + k } else { 0 };
+                let vt = t.vtable(6, &[(4, 0, r)]);
+                let v = object(&mut t, &mut rng, 10, false);
+                t.w32(v, vt);
+                for off in [0x14, 0x18, 0x1c, 0x20] {
+                    t.w32(v + off, rng.below(0x10000));
+                }
+                t.w32(views + 4 * k, v);
+            }
+            t.w32(app + 0x2bc, n | (rng.next() & 0x8000_0000));
+            t.w32(app + 0x2c0, views);
+            run_framed(
+                &mut t,
+                &format!("{name} resize #{i}"),
+                0x0062_c260,
+                Conv::Thiscall(app),
+                &[],
+                0x2c,
+                8,
+                |g, ebp| lt::bridge::resize(g, app, ebp - 0x2c),
+            );
+            paths[if e != 0 { 2 } else { usize::from(n > 0) }] += 1;
+            t.unstub(lt::SET_VIEWPORT);
+        }
+        assert!(paths.iter().all(|&n| n > 5), "{name}: {paths:?}");
+    }
+}
+
+#[test]
+fn bitmap_text_ctor_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_1005);
+        for f in [
+            lt::TEXT_BASE_CTOR,
+            lt::STREAM_ARRAY_CTOR,
+            lt::SET_MATRIX,
+            lt::STREAM_CTOR,
+            lt::INSTANCE_FINISH,
+        ] {
+            t.stub(
+                f,
+                true,
+                u32::from(f == lt::SET_MATRIX || f == lt::INSTANCE_FINISH),
+                u32::from(f == lt::SET_MATRIX || f == lt::INSTANCE_FINISH),
+                0x44,
+            );
+        }
+        t.stub(lt::INSTANCE_CTOR, true, 1, 1, 0x45);
+        t.stub(lt::ARRAY_FREE, false, 2, 0, 0);
+        t.stub(lt::STREAMS_SET, true, 2, 2, 0);
+        let mut paths = [0u32; 3];
+        for i in 0..60u32 {
+            let block = if i % 7 == 6 { 0 } else { t.zeros(0xc0) };
+            t.stub(lt::MALLOC_ALIGNED, false, 2, 0, block);
+            let this = object(&mut t, &mut rng, 0x68, false);
+            let header = match rng.below(3) {
+                0 => rng.next() | 0x8000_0000,
+                _ => rng.next() & 0x7fff_ffff,
+            };
+            t.w32(this, header);
+            if rng.chance(3) {
+                t.w32(this + 4, this + 0x38);
+            }
+            let flag = rng.next();
+            let n = if flag & 0xff != 0 { 3 } else { 2 };
+            if rng.chance(3) {
+                t.w32(this + 0x60, n);
+            }
+            let font = if rng.chance(6) {
+                0xffff_fffc
+            } else {
+                rng.next()
+            };
+            let flag = if rng.chance(2) { flag & !0xff } else { flag };
+            run_framed(
+                &mut t,
+                &format!("{name} bitmap text ctor #{i}"),
+                0x00a2_9360,
+                Conv::Thiscall(this),
+                &[font, flag],
+                0x58,
+                0x40,
+                |g, ebp| {
+                    let (r, slot) = lt::bridge::bitmap_text_ctor(g, this, ebp - 0x58, font, flag);
+                    if let Some(v) = slot {
+                        g.write(ebp + 0xc, v);
+                    }
+                    r
+                },
+            );
+            let calls: u32 = Mem::read(&t.a, t.log);
+            paths[match calls {
+                0..=6 => 0,
+                _ => 2,
+            }] += 1;
+            if block == 0 && calls >= 6 {
+                paths[1] += 1;
+            }
+            t.unstub(lt::MALLOC_ALIGNED);
+        }
+        assert!(paths.iter().all(|&n| n > 0), "{name}: {paths:?}");
+    }
+}
