@@ -49,6 +49,7 @@ use ffx_prender::h3_glue23::{self as h23, bridge as gh23};
 use ffx_prender::h3_glue24::{self as h24, bridge as gh24};
 use ffx_prender::h3_glue25::{self as h25, bridge as gh25};
 use ffx_prender::h3_glue26::{self as h26, bridge as gh26};
+use ffx_prender::h3_glue27::{self as h27, bridge as gh27};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -7712,5 +7713,218 @@ fn batch26_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 40 } else { 240 };
         run_cases(t, CASES26, n, &mut Rng(0x2626_b026));
+    });
+}
+
+// ---- round 7 batch 27 (ffx_prender::h3_glue27) ----
+
+const GLOW_STUBS: &[(u32, K)] = &[
+    (h27::SURFACE_CTOR, K::This(2)),
+    (h27::SURFACE_DTOR, K::This(0)),
+    (h27::RENDER_MESH_INSTANCE, K::This(4)),
+];
+
+/// The glow mesh's material (inline or not; a real buffer of 0x30 bytes
+/// or less), the four parameters (or none; in or out of the buffer,
+/// copies that stay inside the frame's records), the thresholds' base (a
+/// null source now and then), each renderer call failing now and then.
+fn prep_glow_map(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let post = t.zeros(0x1_2400);
+    *this = post;
+    let mesh = obj + 0x100;
+    t.w32(post + 0x1210, mesh);
+    let materials = obj + 0x200;
+    t.w32(mesh + 0x10, materials);
+    let count = pick(rng, &[1, 2, 0x8000_0001, 0x8000_0002]);
+    t.w32(materials, count);
+    let material = obj + 0x300;
+    if count & 0x7fff_ffff > 1 {
+        t.w32(materials + 4, obj + 0x280);
+        t.w32(obj + 0x280, material);
+    } else {
+        t.w32(materials + 4, material);
+    }
+    let shader = rng.next();
+    t.w32(material, shader);
+    let buffer = obj + 0xb00;
+    t.w32(material + 4, buffer);
+    let size = pick(rng, &[0x30, 0x20, 0x10]);
+    t.w32(buffer, size);
+    let found: Vec<u32> = (0..4)
+        .map(|k| {
+            if rng.chance(4) {
+                0
+            } else {
+                obj + 0x380 + 0x10 * k
+            }
+        })
+        .collect();
+    t.stub_seq(h27::FIND_PARAMETER, true, 1, 1, &found);
+    for k in 0..4 {
+        let at = obj + 0x380 + 0x10 * k;
+        let offset = pick(rng, &[0, 3, 4, 8, 0x10, 0x1c]);
+        let n = pick(rng, &[0, 4, 0x10, 0x14, 0x2000 | 8]);
+        t.write(at + 8, &(offset as u16).to_le_bytes());
+        t.write(at + 0xa, &(n as u16).to_le_bytes());
+    }
+    // a null source for either threshold (the other one's would fault)
+    let base = if found[2] == 0 {
+        pick(rng, &[obj + 0xc00, 0xffff_ff7c])
+    } else {
+        pick(rng, &[obj + 0xc00, obj + 0xc00, 0xffff_ff80])
+    };
+    t.w32(post, base);
+    t.stub_copy(h27::MEMCPY);
+    let error = render_error(rng);
+    t.stub_ret(h27::BIND_TEXTURE, true, 2, 2, error);
+    for (sym, n) in [
+        (h27::SET_COLOR_TARGET, 2),
+        (h27::SET_DEPTH_STENCIL_TARGET, 1),
+        (h27::BEGIN_SCENE, 1),
+        (h27::END_SCENE, 1),
+    ] {
+        let error = render_error(rng);
+        t.stub_ret(sym, true, n, n, error);
+    }
+    let renderer = obj + 0x800;
+    let v = rng.next();
+    t.w32(renderer + 0x13c, v);
+    args[0] = renderer;
+    args[1] = rng.next();
+    args[2] = rng.next();
+}
+
+const LAYOUT_STUBS: &[(u32, K)] = &[
+    (h27::SEGMENTS_CONSTRUCT, K::Cdecl(2)),
+    (h27::SEGMENTS_DESTROY, K::Cdecl(2)),
+    (h27::STREAM_CTOR, K::This(0)),
+    (h27::STREAMS_SET, K::This(2)),
+    (h27::INDEX_IS_BOUND, K::This(0)),
+    (h27::INDEX_RELEASE, K::This(0)),
+    (h27::FILL_COLOURS, K::This(0)),
+    (h27::FILL_INDICES, K::This(0)),
+];
+
+/// The vertex count (6, 8 or another), the mesh's segment array and its
+/// replacement (as [`prep_shadow_mesh`]), the stream count, the index
+/// size (the format size times the kind's count or not), the buffer.
+fn prep_broken_layout(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let mesh = obj + 0x200;
+    t.w32(obj + 0x20, mesh);
+    let primitive = rng.next();
+    t.w32(obj + 4, primitive);
+    let block = obj + 0x400;
+    let count = pick(rng, &[1, 0, 2, 0x8000_0001, 0x8000_0003, 0x8000_0000]);
+    t.w32(mesh, count);
+    t.w32(mesh + 4, if rng.chance(5) { block } else { obj + 0x300 });
+    let first = if rng.chance(4) { 0 } else { block };
+    let second = if rng.chance(4) { 0 } else { obj + 0x800 };
+    let allocations = if count == 1 {
+        [second, 0]
+    } else {
+        [first, second]
+    };
+    t.stub_seq(h27::MALLOC_ALIGNED, false, 2, 0, &allocations);
+    for segment in [obj + 0x300, block] {
+        let streams = pick(rng, &[3, 0, 4, 0x8000_0003]);
+        t.w32(segment + 0x28, streams);
+        let size = pick(rng, &[0x60, 0x90, 0]);
+        t.w32(segment + 0x64, size);
+    }
+    let format = pick(rng, &[4, 2, 0]);
+    t.stub_ret(h27::FORMAT_SIZE, false, 1, 0, format);
+    args[0] = pick(rng, &[6, 8, 6, 8, 0, 1, 3]);
+    args[1] = obj + 0x1000;
+}
+
+#[rustfmt::skip]
+const CASES27: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_glow_map), ..method("post_prepare_glow_map", 0x0069_4c60, This::Object, 3, GLOW_STUBS, |m, this, a| { let slots = slots_at(m, a); u(gh27::post_prepare_glow_map(m, frame_ebp(), slots, this, a[0], a[1], a[2])) }) }), 0x4c, 0xc),
+    framed(Case { prep: Some(prep_broken_layout), ..method("broken_pass_layout", 0x006d_4780, This::Object, 2, LAYOUT_STUBS, |m, this, a| { let slots = slots_at(m, a); u(gh27::broken_pass_layout(m, slots, this, a[0], a[1])) }) }, 0, 8),
+];
+
+#[test]
+fn batch27_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES27, n, &mut Rng(0x2727_b027));
+    });
+}
+
+impl Twins {
+    /// A recording `Project3DPointOntoScreen(this; out, p, mode)` stub
+    /// (`ret 0xc`) that writes the point `{x, y}` and leaves 1 in `ST0`.
+    fn stub_project(&mut self, sym: u32, x: u32, y: u32) {
+        let log = self.stub(None, sym, true, 3, 3, Some(0));
+        // mov eax, [esp+4]; mov [eax], x; mov [eax+4], y; fld1; jmp log
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00];
+        c.extend(x.to_le_bytes());
+        c.extend([0xc7, 0x40, 0x04]);
+        c.extend(y.to_le_bytes());
+        c.extend([0xd9, 0xe8]);
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// The level (the event ones, the offset ones, another), the scenario
+/// flags in turn, the gates and the map, the 3D flags, the projected point,
+/// the window height (on the image), the battle scene, the offset.
+fn prep_cha_pos(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0000);
+    *this = scene;
+    let level = pick(
+        rng,
+        &[
+            0x220, 0x11ee, 0x11ee, 0x1e63, 0x226d, 0x159c, 0x5c8, 0x2ed, 0x1234,
+        ],
+    );
+    t.w32(scene + 0xfaf4, level);
+    let flags: Vec<u32> = (0..4)
+        .map(|_| pick(rng, &[0x1c7, 0x1e8, 0x1ea, 0x194, 0x7e4, 0x101c7, 3]))
+        .collect();
+    t.stub_seq(h27::SCENARIO_FLAG, false, 0, 0, &flags);
+    for gate in [h27::SCENARIO_GATE, h27::LOW_GATE] {
+        let v = pick(rng, &[0, 1, 0x100]);
+        t.global(gate, v);
+    }
+    let map = pick(rng, &[0x133, 0x134, 0x10133]);
+    t.global(h27::CURRENT_MAP_NO, map);
+    // the flag byte, and now and then set bytes after it (a byte read)
+    let at = t.rebase(h27::SCENE_3D);
+    let after = if rng.chance(3) { [1, 1, 1] } else { [0, 0, 0] };
+    t.patch(at, &[u8::from(rng.chance(6)), after[0], after[1], after[2]]);
+    t.write(scene + 0xf9c4, &[u8::from(!rng.chance(6))]);
+    let (x, y) = (
+        rng.next(),
+        pick(rng, &[0, 100, 360, 0xffff_ff9c, 0x7fff_ffff, 0x0100_0001]),
+    );
+    t.stub_project(h27::PROJECT_POINT, x, y);
+    let height = pick(rng, &[720, 1080, 0, 0x8000_0000, 0xffff_fff8, 0x0100_0001]);
+    t.w32(obj + 0x270, height);
+    let battle = pick(rng, &[0, 0x0205_0000, 0x0205_0001]);
+    t.stub_ret(h27::BATTLE_SCENE, false, 0, 0, battle);
+    let offset = rng.float();
+    t.w32(scene + 0xfa38, offset.to_bits());
+    args[0] = rng.next();
+}
+
+#[rustfmt::skip]
+const CASES27B: &[Case] = &[
+    framed(Case { prep: Some(prep_cha_pos), ..method("scene_get_cha_pos", 0x0065_d860, This::Object, 1, &[(h27::GET_APPLICATION, K::Getter)], |m, this, a| { let slots = slots_at(m, a); gh27::scene_get_cha_pos(m, frame_ebp(), slots, this, a[0]); Out::None }) }, 8, 4),
+];
+
+#[test]
+fn batch27b_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 400 };
+        run_cases(t, CASES27B, n, &mut Rng(0x2727_b127));
     });
 }

@@ -421,6 +421,48 @@ pub mod bridge {
         h.call_sym(f, Conv::Thiscall(cluster), &[1, ty, 0])
     }
 
+    /// A mesh's segment array (`+0` count, bit 31 not owned; `+4` data)
+    /// made to hold exactly one segment: unless it does, a `PhyreMalloc(0x6c,
+    /// 4)` block constructed as one segment replaces it (old owned data
+    /// destroyed); a failed allocation leaves it.
+    pub fn one_segment(h: &mut impl Host, mesh: u32) {
+        if h.read::<u32>(mesh) == 1 {
+            return;
+        }
+        let data = h.call_sym(MALLOC_ALIGNED, Conv::Cdecl, &[0x6c, 4]);
+        if data == 0 {
+            return;
+        }
+        h.call_sym(SEGMENTS_CONSTRUCT, Conv::Cdecl, &[data, 1]);
+        let count: u32 = h.read(mesh);
+        let old: u32 = h.read(mesh + 4);
+        if old != data && count & UNOWNED == 0 {
+            h.call_sym(SEGMENTS_DESTROY, Conv::Cdecl, &[old, count & COUNT_MASK]);
+        }
+        h.write(mesh + 4, data);
+        h.write(mesh, 1u32);
+    }
+
+    /// A segment's stream array (`+0x28`) given `n` new streams unless its
+    /// count word is `n` (a failed allocation leaves it).
+    pub fn ensure_streams(h: &mut impl Host, segment: u32, n: u32) {
+        let streams = segment.wrapping_add(0x28);
+        if h.read::<u32>(streams) == n {
+            return;
+        }
+        let data = h.call_sym(MALLOC_ALIGNED, Conv::Cdecl, &[0x40 * n, 4]);
+        if data == 0 {
+            return;
+        }
+        for k in 0..n {
+            let stream = data.wrapping_add(0x40 * k);
+            if stream != 0 {
+                h.call_sym(STREAM_CTOR, Conv::Thiscall(stream), &[]);
+            }
+        }
+        h.call_sym(STREAMS_SET, Conv::Thiscall(streams), &[data, n]);
+    }
+
     /// `0x006c9580(this, out; slots)` (thiscall, `ret 4`): a shadow mesh
     /// on the cluster at `this + 4`. The mesh (`PCluster::create`) gets
     /// one segment (a constructed `PhyreMalloc(0x6c, 4)` block replacing
@@ -434,35 +476,11 @@ pub mod bridge {
     pub fn shadow_mesh_create(h: &mut impl Host, slots: u32, this: u32, out: u32) -> u32 {
         let cluster = this + 4;
         let mesh = cluster_call(h, CLUSTER_CREATE, cluster, MESH_TYPE);
-        if h.read::<u32>(mesh) != 1 {
-            let data = h.call_sym(MALLOC_ALIGNED, Conv::Cdecl, &[0x6c, 4]);
-            if data != 0 {
-                h.call_sym(SEGMENTS_CONSTRUCT, Conv::Cdecl, &[data, 1]);
-                let count: u32 = h.read(mesh);
-                let old: u32 = h.read(mesh + 4);
-                if old != data && count & UNOWNED == 0 {
-                    h.call_sym(SEGMENTS_DESTROY, Conv::Cdecl, &[old, count & COUNT_MASK]);
-                }
-                h.write(mesh + 4, data);
-                h.write(mesh, 1u32);
-            }
-        }
+        one_segment(h, mesh);
         let segment: u32 = h.read(mesh + 4);
         h.write(segment, 0u32);
         h.write(segment.wrapping_add(0x10), 2u32);
-        let streams = segment.wrapping_add(0x28);
-        if h.read::<u32>(streams) != 4 {
-            let data = h.call_sym(MALLOC_ALIGNED, Conv::Cdecl, &[0x100, 4]);
-            if data != 0 {
-                for k in 0..4 {
-                    let stream = data.wrapping_add(0x40 * k);
-                    if stream != 0 {
-                        h.call_sym(STREAM_CTOR, Conv::Thiscall(stream), &[]);
-                    }
-                }
-                h.call_sym(STREAMS_SET, Conv::Thiscall(streams), &[data, 4]);
-            }
-        }
+        ensure_streams(h, segment, 4);
         h.write(segment.wrapping_add(0x38), 0xcu32);
         h.write(segment.wrapping_add(0x3c), 8u8);
         h.write(segment.wrapping_add(0x30), 0u32);

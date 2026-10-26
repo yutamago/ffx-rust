@@ -32,6 +32,7 @@ use ffx_prender::h3_glue23::bridge as g23;
 use ffx_prender::h3_glue24::bridge as g24;
 use ffx_prender::h3_glue25::bridge as g25;
 use ffx_prender::h3_glue26::bridge as g26;
+use ffx_prender::h3_glue27::bridge as g27;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1701,6 +1702,25 @@ ported! {
     PostProcessManager_renderBright @ 0x0069_5440 => extern "thiscall" fn post_render_bright(this: u32, renderer: u32, target: u32) {
         let mut f = StackFrame::<0xd>::new();
         g26::post_render_bright(&mut mem(), f.at() + 0x34, this, renderer, target);
+    }
+
+    // ---- round 7 batch 27 (ffx_prender::h3_glue27) ----
+    /// `PostProcessManager_prepareGlowMap(this, renderer, target, texture)`:
+    /// the copies' offsets and sizes go over `texture`'s slot.
+    PostProcessManager_prepareGlowMap @ 0x0069_4c60 => extern "thiscall" fn post_prepare_glow_map(this: u32, renderer: u32, target: u32, texture: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x13>::new();
+        g27::post_prepare_glow_map(&mut mem(), f.at() + 0x4c, slots, this, renderer, target, texture)
+    }
+    /// `0x006d4780(this, n, buffer)`: the broken-screen pass's vertex
+    /// layout; the segment, then the end, go over `n`'s slot.
+    BrokenScreenPass_layout_006d4780 @ 0x006d_4780 => extern "thiscall" fn broken_pass_layout(this: u32, n: u32, buffer: u32; slots: u32) -> u32 {
+        g27::broken_pass_layout(&mut mem(), slots, this, n, buffer)
+    }
+    /// `PhyreScene_getChaPos(this, p)`: the screen point in the frame, the
+    /// rounded terms over `p`'s slot.
+    PhyreScene_getChaPos @ 0x0065_d860 => extern "thiscall" fn scene_get_cha_pos(this: u32, p: u32; slots: u32) {
+        let mut f = StackFrame::<2>::new();
+        g27::scene_get_cha_pos(&mut mem(), f.at() + 8, slots, this, p);
     }
 }
 
