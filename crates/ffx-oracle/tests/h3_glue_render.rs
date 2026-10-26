@@ -38,6 +38,7 @@ use ffx_prender::h3_glue12::{self as h12, bridge as gh12};
 use ffx_prender::h3_glue13::{self as h13, bridge as gh13};
 use ffx_prender::h3_glue14::{self as h14, bridge as gh14};
 use ffx_prender::h3_glue15::{self as h15, bridge as gh15};
+use ffx_prender::h3_glue16::{self as h16, bridge as gh16};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -5319,5 +5320,212 @@ fn batch15_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 40 } else { 240 };
         run_cases(t, CASES15, n, &mut Rng(0x1515_b015));
+    });
+}
+
+// ---- round 5 batch 16 (ffx_prender::h3_glue16) ----
+
+/// The six arrays (counts 0..4, negative now and then; the masked one
+/// with its owned bit), `mesh` in one of them (or none, or twice).
+fn prep_remove_vfx(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfc00);
+    *this = scene;
+    let mesh = rng.next() | 1;
+    args[0] = mesh;
+    let count = |rng: &mut Rng| -> u32 {
+        if rng.chance(6) {
+            (rng.below(3) as i32 - 3) as u32
+        } else {
+            rng.below(5)
+        }
+    };
+    let hit = |rng: &mut Rng| -> u32 { if rng.chance(4) { mesh } else { rng.next() } };
+    let n = count(rng);
+    t.w32(scene + 0xf8cc, n);
+    for k in 0..4 {
+        let v = hit(rng);
+        t.w32(scene + 0x38cc + 4 * k, v);
+    }
+    let n = count(rng);
+    t.w32(scene + 0xf8d0, n);
+    for k in 0..4 {
+        let instance = obj + 0x100 + 0x20 * k;
+        t.w32(
+            scene + 0x68cc + 4 * k,
+            if rng.chance(4) { 0 } else { instance },
+        );
+        let v = hit(rng);
+        t.w32(instance + 0xc, v);
+    }
+    for (c, d, at) in [
+        (0x3878, 0x3880, 0x300),
+        (0x3854, 0x385c, 0x340),
+        (0x3860, 0x3868, 0x380),
+    ] {
+        let n = count(rng);
+        t.w32(scene + c, n);
+        t.w32(scene + d, obj + at);
+        for k in 0..4 {
+            let v = hit(rng);
+            t.w32(obj + at + 4 * k, v);
+        }
+    }
+    let n = rng.below(5);
+    let w = count_word(rng, n);
+    t.w32(scene + 0x3884, w);
+    t.w32(scene + 0x3888, obj + 0x3c0);
+    for k in 0..4 {
+        let v = hit(rng);
+        t.w32(obj + 0x3c0 + 4 * k, v);
+    }
+}
+
+/// The map's two clusters (or none), the fog record's array (none,
+/// owned or not, its data null).
+fn prep_map_shutdown(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0000);
+    *this = scene;
+    for off in [0x10d4, 0x1128] {
+        t.w32(scene + off, if rng.chance(3) { 0 } else { rng.next() | 1 });
+    }
+    let fog = obj + 0x100;
+    t.w32(scene + 0xcc, fog);
+    let n = rng.below(3);
+    let w = count_word(rng, n);
+    t.w32(fog + 0x9c, w);
+    t.w32(fog + 0xa0, if rng.chance(3) { 0 } else { rng.next() | 1 });
+    t.w32(scene + 0x10cc, rng.next());
+}
+
+/// A texture video (or none) with its decoder busy or not, 0..4 effects
+/// (or a negative count) and its three textures (some null).
+fn prep_video_unload(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1100);
+    *this = scene;
+    t.write(scene + 0xdd0, &[u8::from(!rng.chance(4))]);
+    t.w32(scene + 0xdcc, u32::from(!rng.chance(2)));
+    let n = if rng.chance(6) {
+        0xffff_ffff
+    } else {
+        rng.below(5)
+    };
+    t.w32(scene + 0x10c0, n);
+    for (k, off) in [0xdd8, 0xddc, 0xde0].into_iter().enumerate() {
+        let v = if rng.chance(4) {
+            0
+        } else {
+            obj + 0x400 + 0x40 * k as u32
+        };
+        t.w32(scene + off, v);
+    }
+    t.global(h16::PPP_SPECIAL_PART.sym, rng.next());
+    for off in [0xdc8, 0x10c8] {
+        let v = rng.next();
+        t.w32(scene + off, v);
+    }
+}
+
+/// Eight samplers, some locked (bit 7 of `+0x1c`).
+fn prep_scene_samplers(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    for k in 0..8 {
+        let flags = rng.next() & !0x80 | if rng.chance(3) { 0x80 } else { 0 };
+        t.w32(obj + 0x964 + 0x24 * k + 0x1c, flags);
+    }
+}
+
+/// The map's camera (or none) with its values (`+0x108` below 0.35 or
+/// not, NaN), the level (each special one) and the scenario flag.
+fn prep_post_params(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfb00);
+    *this = scene;
+    let camera = obj + 0x200;
+    t.w32(scene + 0x4f8, if rng.chance(4) { 0 } else { camera });
+    t.w32(scene + 0xcc, obj + 0x400);
+    for k in 0..7 {
+        let f = rng.float();
+        t.w32(camera + 0x104 + 4 * k, f.to_bits());
+    }
+    let low = [f32::from_bits(0x3eb3_3332), 0.35, 0.1, 0.5, f32::NAN, -1.0][rng.below(6) as usize];
+    t.w32(camera + 0x108, low.to_bits());
+    let level = [0x199, 0x12ea, 0x1733, 0x19a, rng.below(0x2000)][rng.below(5) as usize];
+    t.w32(scene + 0xfaf4, level);
+    let flag = if rng.chance(2) { 0 } else { rng.next() };
+    let flag = flag & if rng.chance(2) { 0xffff_0000 } else { u32::MAX };
+    t.stub_ret(h16::GET_SCENARIO_FLAG, false, 0, 0, flag);
+}
+
+/// The layout's arrays (sizes right or not, owned or not, null) and an
+/// allocator that fails now and then (only where an array is left).
+fn prep_layout(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let words = [(0x10, 0x14, 1, 0x300), (8, 0xc, 4, 0x400)];
+    // a null array only where a new one replaces it (the original writes
+    // through what it ends with)
+    let fail = rng.chance(5);
+    for (count, data, n, at) in words {
+        let c = if rng.chance(3) { n } else { rng.below(6) };
+        let w = count_word(rng, c);
+        t.w32(obj + count, w);
+        // null, the old array, or (with the allocator below) the very
+        // block the new one gets
+        let p = if !fail && c != n && rng.chance(4) {
+            0
+        } else if !fail && rng.chance(4) {
+            obj + 0x800 + [0x10, 0x30][usize::from(n == 4)]
+        } else {
+            obj + at
+        };
+        t.w32(obj + data, p);
+    }
+    if fail {
+        t.stub_ret(h16::PHYRE_MALLOC_ALIGNED, false, 2, 0, 0);
+    } else {
+        t.stub_alloc(h16::PHYRE_MALLOC_ALIGNED, obj + 0x800);
+    }
+    args[0] = rng.next();
+    args[1] = rng.next();
+}
+
+const MAP_SHUTDOWN_STUBS: &[(u32, K)] = &[
+    (h16::WORLD_REMOVE_CLUSTER, K::This(1)),
+    (h16::PHYRE_FREE, K::Cdecl(1)),
+    (h16::TEXTURE_ANIMATION_INSTANCE, K::Getter),
+    (h16::TEXTURE_ANIMATION_CLEAR, K::This(0)),
+    (h16::MORPH_INSTANCE, K::Getter),
+    (h16::MORPH_RESET, K::This(0)),
+    (h16::POST_SET_FIRST_ENTRY, K::This(1)),
+    (h16::GET_APPLICATION, K::Getter),
+];
+
+const VIDEO_UNLOAD_STUBS: &[(u32, K)] = &[
+    (h16::SLEEP, K::Cdecl(1)),
+    (h16::VFX_DESTROY, K::Cdecl(2)),
+    (h16::VIDEO_TERMINATE, K::This(0)),
+    (h16::FMV_INSTANCE, K::Getter),
+    (h16::FMV_ON_TEXTURE_VIDEO_STOP, K::This(0)),
+    (h16::TEXTURE_IS_BOUND, K::This(0)),
+    (h16::TEXTURE_UNBIND, K::This(0)),
+    (h16::TEXTURE_RELEASE, K::This(0)),
+    (h16::PHYRE_FREE, K::Cdecl(1)),
+    (h16::SET_TEXTURE_VIDEO_INFO, K::Cdecl(2)),
+];
+
+#[rustfmt::skip]
+const CASES16: &[Case] = &[
+    Case { prep: Some(prep_remove_vfx), ..method("scene_remove_vfx_from_render_array", 0x0066_87a0, This::Object, 1, &[], |m, this, a| u(gh16::scene_remove_vfx_from_render_array(m, this, a[0]))) },
+    Case { prep: Some(prep_map_shutdown), ..method("scene_field_map_shutdown", 0x0065_d0c0, This::Object, 0, MAP_SHUTDOWN_STUBS, |m, this, _| u(gh16::scene_field_map_shutdown(m, this))) },
+    Case { prep: Some(prep_video_unload), ..method("scene_texture_video_unload", 0x0067_0760, This::Object, 0, VIDEO_UNLOAD_STUBS, |m, this, _| { let video = m.read::<u8>(this + 0xdd0) != 0; let r = gh16::scene_texture_video_unload(m, this); // without a video the original leaves the caller's eax
+        if video { u(r) } else { Out::None } }) },
+    Case { prep: Some(prep_scene_samplers), ..method("scene_setup_samplers", 0x0065_f290, This::Object, 0, &[(h16::SAMPLER_REGISTER, K::This(0))], |m, this, _| u(gh16::scene_setup_samplers(m, this))) },
+    Case { prep: Some(prep_post_params), ..method("scene_setup_post_process_params", 0x0066_f140, This::Object, 0, &[(h16::PHYRE_PRINTF, K::Cdecl(2))], |m, this, _| u(gh16::scene_setup_post_process_params(m, this))) },
+    Case { prep: Some(prep_layout), ..method("layout_setup", 0x0067_8bd0, This::Object, 2, &[(h16::MEMSET, K::Cdecl(3)), (h16::PHYRE_FREE, K::Cdecl(1))], |m, this, a| u(gh16::layout_setup(m, this, a[0], a[1]))) },
+];
+
+#[test]
+fn batch16_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES16, n, &mut Rng(0x1616_b016));
     });
 }

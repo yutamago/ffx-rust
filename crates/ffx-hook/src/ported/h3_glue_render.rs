@@ -21,6 +21,7 @@ use ffx_prender::h3_glue12::bridge as g12;
 use ffx_prender::h3_glue13::bridge as g13;
 use ffx_prender::h3_glue14::bridge as g14;
 use ffx_prender::h3_glue15::bridge as g15;
+use ffx_prender::h3_glue16::bridge as g16;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1433,6 +1434,32 @@ ported! {
     PhyreScene_drawMainMenuWaveEffect @ 0x0065_b5b0 => extern "C" fn scene_draw_main_menu_wave() -> u32 {
         let mut f = StackFrame::<0xa7>::new();
         g15::scene_draw_main_menu_wave(&mut mem(), f.at() + 0x29c)
+    }
+
+    // ---- round 5 batch 16 (ffx_prender::h3_glue16) ----
+    /// `PhyreScene_removeVFXFromRenderArray(this, mesh)`.
+    PhyreScene_removeVFXFromRenderArray @ 0x0066_87a0 => extern "thiscall" fn scene_remove_vfx_from_render_array(this: u32, mesh: u32) -> u32 {
+        g16::scene_remove_vfx_from_render_array(&mut mem(), this, mesh)
+    }
+    /// `PhyreScene_fieldMapShutdown(this)`.
+    PhyreScene_fieldMapShutdown @ 0x0065_d0c0 => extern "thiscall" fn scene_field_map_shutdown(this: u32) -> u32 {
+        g16::scene_field_map_shutdown(&mut mem(), this)
+    }
+    /// `PhyreScene_textureVideoUnload(this)`.
+    PhyreScene_textureVideoUnload @ 0x0067_0760 => extern "thiscall" fn scene_texture_video_unload(this: u32) -> u32 {
+        g16::scene_texture_video_unload(&mut mem(), this)
+    }
+    /// `PhyreScene_setupSamplers_0065f290(this)`.
+    PhyreScene_setupSamplers_0065f290 @ 0x0065_f290 => extern "thiscall" fn scene_setup_samplers(this: u32) -> u32 {
+        g16::scene_setup_samplers(&mut mem(), this)
+    }
+    /// `PhyreScene_setupPostProcessParams(this)`.
+    PhyreScene_setupPostProcessParams @ 0x0066_f140 => extern "thiscall" fn scene_setup_post_process_params(this: u32) -> u32 {
+        g16::scene_setup_post_process_params(&mut mem(), this)
+    }
+    /// `LayoutDesc_setup_00678bd0(this, a, b)`.
+    LayoutDesc_setup_00678bd0 @ 0x0067_8bd0 => extern "thiscall" fn layout_setup(this: u32, a: u32, b: u32) -> u32 {
+        g16::layout_setup(&mut mem(), this, a, b)
     }
 }
 

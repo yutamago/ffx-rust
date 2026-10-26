@@ -82,6 +82,7 @@ pub mod h3_glue12;
 pub mod h3_glue13;
 pub mod h3_glue14;
 pub mod h3_glue15;
+pub mod h3_glue16;
 pub mod mesh;
 pub mod misc;
 pub mod p6_binds;
