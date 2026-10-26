@@ -1779,3 +1779,14 @@ fn misc_frame_queue_matches_the_original() {
         }
     }
 }
+
+// ---- continuation round (batch 8 on): `ffx_prender::p6_more` ----
+
+#[path = "p6_render_c/more.rs"]
+mod more;
+
+#[path = "p6_render_c/encode.rs"]
+mod encode;
+
+#[path = "p6_render_c/thread.rs"]
+mod thread;
