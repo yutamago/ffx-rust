@@ -30,6 +30,7 @@ use ffx_prender::h2_more5::bridge as h5;
 use ffx_prender::h2_more6::bridge as h6;
 use ffx_prender::h2_more7::bridge as h7;
 use ffx_prender::h2_more8::bridge as h8;
+use ffx_prender::h2_more9::bridge as h9;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -1856,6 +1857,69 @@ ported! {
     PRendererD3D11_initB_00595200 @ 0x0059_5200 => extern "thiscall" fn s_00595200(this: u32, renderer: u32) -> u32 {
         let mut fr = super::StackFrame::<23>::new();
         h8::init_b(&mut mem(), this, renderer, fr.at())
+    }
+    /// `Phyre_PSprite_PSubTextureInfo_Bind`.
+    Phyre_PSprite_PSubTextureInfo_Bind @ 0x0056_a1c0 => extern "C" fn s_0056a1c0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0056_a1c0) })
+    }
+    /// `PNode_RegisterClass`.
+    PNode_RegisterClass @ 0x0050_5450 => extern "C" fn s_00505450() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0050_5450) })
+    }
+    /// `PShaderPassD3D11_ctor_00583c00`.
+    PShaderPassD3D11_ctor_00583c00 @ 0x0058_3c00 => extern "thiscall" fn s_00583c00(this: u32) -> u32 {
+        h9::shader_pass_ctor(&mut mem(), this)
+    }
+    /// `PShaderPassD3D11_dtor_005853c0`.
+    PShaderPassD3D11_dtor_005853c0 @ 0x0058_53c0 => extern "thiscall" fn s_005853c0(this: u32) {
+        h9::shader_pass_dtor(&mut mem(), this);
+    }
+    /// `PSpriteCollection_dtor_005676c0`.
+    PSpriteCollection_dtor_005676c0 @ 0x0056_76c0 => extern "thiscall" fn s_005676c0(this: u32) {
+        h9::sprite_collection_dtor(&mut mem(), this);
+    }
+    /// `PSamplerStateD3D11_create_00595bf0`.
+    PSamplerStateD3D11_create_00595bf0 @ 0x0059_5bf0 => extern "thiscall" fn s_00595bf0(this: u32) -> u32 {
+        let mut fr = super::StackFrame::<17>::new();
+        h9::create_sampler_state(&mut mem(), this, fr.at())
+    }
+    /// `PDynamicBufferD3D11_mapForWrite_00563290`.
+    PDynamicBufferD3D11_mapForWrite_00563290 @ 0x0056_3290 => extern "thiscall" fn s_00563290(this: u32, i: u32, out: u32) -> u32 {
+        let mut fr = super::StackFrame::<11>::new();
+        h9::map_for_write(&mut mem(), this, i, out, fr.at())
+    }
+    /// `PDynamicBufferD3D11_mapForRead_00562e00`.
+    PDynamicBufferD3D11_mapForRead_00562e00 @ 0x0056_2e00 => extern "thiscall" fn s_00562e00(this: u32, i: u32, out: u32) -> u32 {
+        let mut fr = super::StackFrame::<14>::new();
+        h9::map_for_read(&mut mem(), this, i, out, fr.at())
+    }
+    /// `PRendererD3D11_setUnorderedAccessViews_0058dbe0`.
+    PRendererD3D11_setUnorderedAccessViews_0058dbe0 @ 0x0058_dbe0 => extern "thiscall" fn s_0058dbe0(this: u32, views: u32, count: u32, initial: u32) -> u32 {
+        h9::set_unordered_access_views(&mut mem(), this, views, count, initial)
+    }
+    /// `PConstantBufferD3D11_create_0058ee20`.
+    PConstantBufferD3D11_create_0058ee20 @ 0x0058_ee20 => extern "thiscall" fn s_0058ee20(this: u32, size: u32, data: u32) -> u32 {
+        let mut fr = super::StackFrame::<14>::new();
+        h9::create_constant_buffers(&mut mem(), this, size, data, fr.at())
+    }
+    /// `PShaderPassStateD3D11_apply_0059ad20`.
+    PShaderPassStateD3D11_apply_0059ad20 @ 0x0059_ad20 => extern "thiscall" fn s_0059ad20(this: u32, key: u32) -> u32 {
+        let mut fr = super::StackFrame::<12>::new();
+        h9::apply_pass_state(&mut mem(), this, key, fr.at())
+    }
+    /// `PSceneWideParametersKey_assign_004fd2a0`.
+    PSceneWideParametersKey_assign_004fd2a0 @ 0x004f_d2a0 => extern "thiscall" fn s_004fd2a0(this: u32, src: u32) -> u32 {
+        h9::scene_key_assign(&mut mem(), this, src)
+    }
+    /// `PRenderThread_copyConstantBuffer`.
+    PRenderThread_copyConstantBuffer @ 0x0059_a650 => extern "thiscall" fn s_0059a650(this: u32, buf: u32, slot: u32, entries: u32, _a3: u32, count: u32) -> u8 {
+        let mut fr = super::StackFrame::<17>::new();
+        h9::copy_constant_buffer(&mut mem(), this, buf, slot, entries, count, fr.at())
+    }
+    /// `PMeshInstance_computeJointMatrix`.
+    PMeshInstance_computeJointMatrix @ 0x004f_6fc0 => extern "thiscall" fn s_004f6fc0(this: u32, out: u32) {
+        let mut fr = super::StackFrame::<67>::new();
+        h9::compute_joint_matrix(&mut mem(), this, out, fr.at());
     }
     // continuation round: the six large Binds (h2_binds2 tables on h1_bind's steps)
     /// `Phyre_PRendering_PEffect_Bind`.

@@ -60,7 +60,9 @@ pub fn prep_h1_bind(e: &mut Env, rng: &mut Rng, b: &h1_bind::Bind) {
     let mut k = 0;
     walk(e, rng, b.steps, &mut k);
     let found = if rng.chance(2) { 0 } else { e.ptr(rng) };
-    e.set_ret(h1_bind::FIND_MEMBER, found);
+    if e.cells.contains_key(&h1_bind::FIND_MEMBER) {
+        e.set_ret(h1_bind::FIND_MEMBER, found);
+    }
 }
 
 /// Random words at `at` (the image words a `Bind` stores constants into,
@@ -242,6 +244,65 @@ const STORES_4EB2D0: &[u32] = &[
     0x00ca_6bd0,
     0x00ca_6cf0,
     0x00ca_6e10,
+];
+
+/// `Phyre_PSprite_PSubTextureInfo_Bind`'s constant stores (from the machine code).
+const STORES_56A1C0: &[u32] = &[];
+
+/// `PNode_RegisterClass`'s constant stores (from the machine code).
+const STORES_505450: &[u32] = &[
+    0x00ca_92a0,
+    0x00ca_92a4,
+    0x00ca_92ac,
+    0x00ca_92b0,
+    0x00ca_92cc,
+    0x00ca_92d0,
+    0x00ca_92d8,
+    0x00ca_92dc,
+    0x00ca_92f4,
+    0x00ca_92f8,
+    0x00ca_9300,
+    0x00ca_9304,
+    0x00ca_931c,
+    0x00ca_9320,
+    0x00ca_9328,
+    0x00ca_932c,
+    0x00ca_9344,
+    0x00ca_9348,
+    0x00ca_9350,
+    0x00ca_9354,
+    0x00ca_936c,
+    0x00ca_9370,
+    0x00ca_9378,
+    0x00ca_937c,
+    0x00ca_9394,
+    0x00ca_9398,
+    0x00ca_93a0,
+    0x00ca_93a4,
+    0x00ca_93bc,
+    0x00ca_93c0,
+    0x00ca_93c8,
+    0x00ca_93cc,
+    0x00ca_93e4,
+    0x00ca_93e8,
+    0x00ca_93f0,
+    0x00ca_93f4,
+    0x00ca_940c,
+    0x00ca_9410,
+    0x00ca_9418,
+    0x00ca_941c,
+    0x00ca_9434,
+    0x00ca_9438,
+    0x00ca_9440,
+    0x00ca_9444,
+    0x00ca_945c,
+    0x00ca_9460,
+    0x00ca_9468,
+    0x00ca_946c,
+    0x00ca_9484,
+    0x00ca_9488,
+    0x00ca_9490,
+    0x00ca_9494,
 ];
 
 pub static CASES: &[Case] = &[
@@ -448,6 +509,64 @@ pub static CASES: &[Case] = &[
         },
         port: |g, _| {
             h1_bind::bridge::bind(g, const { ffx_prender::h2_binds2::bind_of(0x004e_b2d0) })
+        },
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "Phyre_PSprite_PSubTextureInfo_Bind",
+        addr: 0x0056_a1c0,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_8060, 0, 0, false),
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_c140, 0, 0, true),
+            (0x0057_52a0, 6, 6, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| {
+            prep_words(e, r, STORES_56A1C0);
+            prep_h1_bind(
+                e,
+                r,
+                &const { ffx_prender::h2_binds2::bind_of(0x0056_a1c0) },
+            );
+        },
+        port: |g, _| {
+            h1_bind::bridge::bind(g, const { ffx_prender::h2_binds2::bind_of(0x0056_a1c0) })
+        },
+        frame: 0,
+        gap: 0,
+        writes: &[],
+    },
+    Case {
+        name: "PNode_RegisterClass",
+        addr: 0x0050_5450,
+        conv: K::C,
+        kinds: "",
+        out: O::U32,
+        callees: &[
+            (0x0043_59d0, 1, 1, true),
+            (0x0043_95b0, 1, 0, false),
+            (0x0043_a080, 3, 3, true),
+            (0x0043_c140, 0, 0, true),
+            (0x0045_f3f0, 0, 0, false),
+            (0x0057_52a0, 6, 6, true),
+            (0x0094_9207, 1, 0, false),
+        ],
+        prep: |e, r, _| {
+            prep_words(e, r, STORES_505450);
+            prep_h1_bind(
+                e,
+                r,
+                &const { ffx_prender::h2_binds2::bind_of(0x0050_5450) },
+            );
+        },
+        port: |g, _| {
+            h1_bind::bridge::bind(g, const { ffx_prender::h2_binds2::bind_of(0x0050_5450) })
         },
         frame: 0,
         gap: 0,

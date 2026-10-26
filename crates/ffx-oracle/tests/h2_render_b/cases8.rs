@@ -302,8 +302,7 @@ fn prep_create_views(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
     // the view creators: per call a result and a stored view (a failure
     // or a null view now and then, at any call)
     for (k, slot) in [(0u32, 9u32), (1, 10)] {
-        let base = e.pool + 0x800 + 0x400 * k;
-        let f = view_creator(e, 0xf00d_8000 + k, base, 4);
+        let (f, base) = view_creator(e, 0xf00d_8000 + k, 4);
         e.w32(device + 0x20 + 4 * slot, f);
         e.w32(base, 0);
         for i in 0..8 {
@@ -333,11 +332,14 @@ fn prep_create_views(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
 /// pointer last; at most five): logs `ecx` and its words at
 /// `base + 0xe0 + 32 n`, stores word `n` of `base + 0x80` through the out
 /// pointer, returns word `n` of `base + 0x20` (`n` the call count at
-/// `base`, at most 24). Made once per `tag`.
-fn view_creator(e: &mut Env, tag: u32, base: u32, words: u8) -> u32 {
-    if let Some(&(at, _)) = e.writers.get(&tag) {
-        return at;
+/// `base`, at most 24). Made once per `tag`, its state (`base`) in a
+/// block of its own: a pool word the port writes through a random
+/// pointer must not be one of its counters. Returns (code, base).
+fn view_creator(e: &mut Env, tag: u32, words: u8) -> (u32, u32) {
+    if let Some(&w) = e.writers.get(&tag) {
+        return w;
     }
+    let base = e.zeros(0x400);
     let n = base;
     let mut c = vec![0xa1];
     c.extend(n.to_le_bytes()); // mov eax, [n]
@@ -361,8 +363,8 @@ fn view_creator(e: &mut Env, tag: u32, base: u32, words: u8) -> u32 {
     c.extend([0x89, 0xc8, 0xc2, 4 * words, 0x00]); // mov eax, ecx; ret 4 * words
     let at = e.a.alloc_code(&c).unwrap();
     assert_eq!(e.b.alloc_code(&c).unwrap(), at);
-    e.writers.insert(tag, (at, 0));
-    at
+    e.writers.insert(tag, (at, base));
+    (at, base)
 }
 
 /// The renderer constructor: the free list's constructor stand-in logs
@@ -502,8 +504,7 @@ fn prep_init_shaders(e: &mut Env, rng: &mut Rng, a: &mut [u32]) {
     // CreateBuffer (slot 3) and CreatePixelShader (15): one result and
     // one stored object per call, a failure now and then at any call
     for (k, slot, words) in [(0u32, 3u32, 4u8), (1, 15, 5)] {
-        let base = e.pool + 0x1000 + 0x400 * k;
-        let f = view_creator(e, 0xf00d_8100 + k, base, words);
+        let (f, base) = view_creator(e, 0xf00d_8100 + k, words);
         e.w32(device + 0x20 + 4 * slot, f);
         e.w32(base, 0);
         for i in 0..24 {
