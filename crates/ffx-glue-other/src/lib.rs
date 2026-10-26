@@ -47,7 +47,9 @@
 //!   the enemies' limit gauges;
 //! - [`h4_e2`]: its second batch: the FMOD volume code (the music's direct
 //!   and whole volume, its fades, the voice's loop fade, the sound
-//!   events' pan and stop, the sync manager's data read).
+//!   events' pan and stop, the sync manager's data read);
+//! - [`h4_e3`]: its third batch: the FMOD music's stop, stop-all, restart
+//!   and per-frame fade, the sound events' start and fades.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -78,6 +80,7 @@ pub mod h4_d4;
 pub mod h4_d5;
 pub mod h4_e1;
 pub mod h4_e2;
+pub mod h4_e3;
 pub mod menu;
 pub mod misc;
 pub mod movie;

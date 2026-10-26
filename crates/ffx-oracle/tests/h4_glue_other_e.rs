@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
-use ffx_glue_other::{frames as fr, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2};
+use ffx_glue_other::{frames as fr, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2, h4_e3 as e3};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -1349,6 +1349,344 @@ fn e2_sync_get_data() {
                 Conv::Thiscall(this),
                 &[x, y, id],
                 |g| u(e2::sync_get_data(g, this, x, y, id)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- batch 3 (ffx_glue_other::h4_e3)
+
+/// The FMOD stubs the music's stop, restart and fade call: state and
+/// paused queries that write their cells, the setters, `ERRCHECK`, the
+/// music's own methods (thiscall). Returns the tags and the state,
+/// paused cells.
+fn music_stubs(t: &mut Twins) -> (Vec<u32>, u32, u32) {
+    let state = t.zeros(4);
+    let paused = t.zeros(4);
+    t.stub_at(fr::FMOD_GET_STATE, false, 2, 2, &[wr(1, state)]);
+    let byte = Write {
+        arg: 1,
+        cell: paused,
+        byte: true,
+    };
+    t.stub_at(e2::EVENT_GET_PAUSED, false, 2, 2, &[byte]);
+    let plain = [
+        (EVENT_SET_PAUSED, 2),
+        (EVENT_SET_CALLBACK, 3),
+        (e2::EVENT_STOP, 2),
+        (e3::EVENT_START, 1),
+    ];
+    for (sym, n) in plain {
+        t.stub_at(sym, false, n, n, &[]);
+    }
+    t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+    let methods = [
+        (e2::MUSIC_VOLUME_DIRECT, 3),
+        (e3::MUSIC_VOLUME_TRANSLATE, 3),
+        (e3::MUSIC_VOLUME_RESET, 3),
+        (e3::MUSIC_STOP, 1),
+        (e3::MUSIC_CLEAR, 1),
+    ];
+    for (sym, n) in methods {
+        t.stub_at(sym, true, n, n, &[]);
+    }
+    let mut tags = vec![fr::FMOD_GET_STATE, e2::EVENT_GET_PAUSED, fr::ERRCHECK];
+    tags.extend(plain.map(|p| p.0));
+    tags.extend(methods.map(|m| m.0));
+    (tags, state, paused)
+}
+
+/// `FMOD::Event::setPaused`'s thunk.
+const EVENT_SET_PAUSED: u32 = 0x0094_8cbe;
+/// `FMOD::Event::setCallback`'s thunk.
+const EVENT_SET_CALLBACK: u32 = 0x0094_8cac;
+
+/// The music's stop and stop-all (each in its own oracles: the stop-all
+/// test keeps `FmodMusic_stop` original).
+#[test]
+fn e3_music_stop() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e301);
+        let (stubs, state, paused) = music_stubs_without_stop(&mut t);
+        let this = t.zeros(0x40);
+        let arr = t.zeros((e2::TRACK * (e2::TRACKS + 1)) as usize);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &stubs);
+            for k in 0..0x10 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            t.w32(this + 0x10, arr);
+            tracks(&mut t, &mut rng, arr, e2::TRACKS + 1);
+            for k in 0..=e2::TRACKS {
+                let e = arr + e2::TRACK * k;
+                let fade = rng.pick(&[0, 1, 1, 2]);
+                t.w32(e + 0x24, fade);
+                let held = rng.pick(&[0, 1, 1, 2]);
+                t.w32(e + 4, held);
+            }
+            let st = rng.pick(&[8, 8, 0, 0xf7, 0x108, 0x100]);
+            t.w32(state, st);
+            let p = rng.pick(&[0, 0, 1, 0x100]);
+            t.w32(paused, p);
+            let r = rng.below(0xb6);
+            let idx = rng.pick(&[0, 0x82, 0xb5, 0xb6, r, r, 0x0100_0005]);
+            if idx <= e2::TRACKS {
+                let (r1, r2) = (rng.next() | 1, rng.next() | 1);
+                let ev = rng.pick(&[0, r1, r2]);
+                t.w32(arr + e2::TRACK * idx, ev);
+            }
+            let frame = t.ebp_for(1) - 4;
+            t.check_framed_conv(
+                &format!("{w} stop {idx:#x}"),
+                0x0070_99a0,
+                Conv::Thiscall(this),
+                &[idx],
+                frame,
+                &[(0, 4), (0xc, 4)],
+                |g| u(e3::music_stop(g, frame, this, idx)),
+            );
+            let frame = t.ebp_for(0) - e3::STOP_ALL_FRAME;
+            t.check_framed_conv(
+                &format!("{w} stop all"),
+                0x0070_9b10,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 4), (7, 1)],
+                |g| u(e3::music_stop_all(g, frame, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// [`music_stubs`] without stubbing `FmodMusic_stop` (tested here).
+fn music_stubs_without_stop(t: &mut Twins) -> (Vec<u32>, u32, u32) {
+    let state = t.zeros(4);
+    let paused = t.zeros(4);
+    t.stub_at(fr::FMOD_GET_STATE, false, 2, 2, &[wr(1, state)]);
+    let byte = Write {
+        arg: 1,
+        cell: paused,
+        byte: true,
+    };
+    t.stub_at(e2::EVENT_GET_PAUSED, false, 2, 2, &[byte]);
+    let plain = [
+        (EVENT_SET_PAUSED, 2),
+        (EVENT_SET_CALLBACK, 3),
+        (e2::EVENT_STOP, 2),
+    ];
+    for (sym, n) in plain {
+        t.stub_at(sym, false, n, n, &[]);
+    }
+    t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+    let mut tags = vec![fr::FMOD_GET_STATE, e2::EVENT_GET_PAUSED, fr::ERRCHECK];
+    tags.extend(plain.map(|p| p.0));
+    (tags, state, paused)
+}
+
+/// The music's restart and per-frame fade.
+#[test]
+fn e3_music_restart_loop() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e302);
+        let (tags, state, _) = music_stubs(&mut t);
+        let this = t.zeros(0x40);
+        let arr = t.zeros((e2::TRACK * (e2::TRACKS + 1)) as usize);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let d = rng.double();
+            let k = rng.pick(&[100.0, 127.0, -1.0, d]);
+            let at = t.rebase(e2::VOLUME_DIVISOR);
+            t.write(at, &k.to_le_bytes());
+            let full = rng.float();
+            t.g32(e3::FULL_VOLUME, full);
+            for k in 0..0x10 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            t.w32(this + 0x10, arr);
+            let flag = rng.pick(&[0, 1, 1, 2]);
+            t.w32(this + 0x1c, flag);
+            let mute = rng.pick(&[0, 1, 2]);
+            t.w32(this + 0x24, mute);
+            tracks(&mut t, &mut rng, arr, e2::TRACKS + 1);
+            for k in 0..=e2::TRACKS {
+                let e = arr + e2::TRACK * k;
+                for off in [0xc, 0x18, 0x24] {
+                    let v = rng.pick(&[0, 0, 1, 2]);
+                    t.w32(e + off, v);
+                }
+                let n = rng.pick(&[0, 1, 5, u32::MAX, 0x8000_0000]);
+                t.w32(e + 0x28, n);
+                let f = rng.pick(&[0, 0x10, 0x7f]);
+                t.w32(e + 0x1c, f);
+                // floats the originals copy through fld/fstp: no
+                // signalling NaNs (the emulator keeps them)
+                for off in [0x10, 0x2c, 0x30] {
+                    let s = rng.float();
+                    t.w32(e + off, s);
+                }
+                // events mostly present: a fading track without one ends
+                // the walk
+                let ev = rng.next() | 1;
+                let ev = rng.pick(&[ev, ev, ev, ev, ev, ev, 0]);
+                t.w32(e, ev);
+            }
+            let st = rng.pick(&[1, 1, 8, 9, 0, 0x101]);
+            t.w32(state, st);
+            let r = rng.below(0xb6);
+            let idx = rng.pick(&[0, 1, 0x82, 0xb5, 0xb6, r, r]);
+            // the argument word itself
+            let frame = t.ebp_for(1) + 8;
+            t.check_framed_conv(
+                &format!("{w} restart {idx:#x}"),
+                0x0070_9270,
+                Conv::Thiscall(this),
+                &[idx],
+                frame,
+                &[(0, 4)],
+                |g| u(e3::music_restart(g, frame, this, idx)),
+            );
+            let st = rng.pick(&[8, 8, 0, 0xf7]);
+            t.w32(state, st);
+            let frame = t.ebp_for(0) - e3::LOOP_FRAME;
+            t.check_framed_conv(
+                &format!("{w} loop"),
+                0x0070_8e50,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 8)],
+                |g| u(e3::music_loop_volume(g, frame, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// A sound event (`+0` count, `+8` events of 8 bytes) with its fades.
+fn sfx_event(t: &mut Twins, rng: &mut Rng, this: u32, events: u32, fades: [u32; 2]) {
+    for k in 0..8 {
+        let v = rng.next();
+        t.w32(this + 4 * k, v);
+    }
+    let n = rng.pick(&[0, 1, 3, 8, u32::MAX]);
+    t.w32(this, n);
+    t.w32(this + 8, events);
+    for k in 0..16 {
+        let v = rng.next();
+        t.w32(events + 4 * k, v);
+    }
+    let f = rng.float();
+    let delay = rng.pick(&[0, 0.5f32.to_bits(), 0.01f32.to_bits(), 0x7fc0_0000, f]);
+    t.w32(this + 0xc, delay);
+    for (k, f) in fades.into_iter().enumerate() {
+        for w in 0..4 {
+            let v = rng.float();
+            t.w32(f + 4 * w, v);
+        }
+        let r = rng.float();
+        let left = rng.pick(&[0, 0.01f32.to_bits(), 1f32.to_bits(), (-0.5f32).to_bits(), r]);
+        t.w32(f + 8, left);
+        let p = rng.pick(&[0, f, f]);
+        t.w32(this + 0x18 + 4 * k as u32, p);
+    }
+}
+
+/// The sound events' start.
+#[test]
+fn e3_sfx_start() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e303);
+        let stubs = [
+            (EVENT_SET_CALLBACK, false, 3),
+            (e3::EVENT_START, false, 1),
+            (e3::SFX_APPLY_VOLUME, true, 1),
+            (e3::SFX_APPLY_PAN, true, 1),
+        ];
+        for (sym, this, n) in stubs {
+            t.stub_at(sym, this, n, n, &[]);
+        }
+        t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+        t.stub_at(fr::OPERATOR_DELETE, false, 1, 0, &[]);
+        let mut tags = stubs.map(|s| s.0).to_vec();
+        tags.extend([fr::ERRCHECK, fr::OPERATOR_DELETE]);
+        let this = t.zeros(0x20);
+        let events = t.zeros(0x40);
+        let fades = [t.zeros(0x10), t.zeros(0x10)];
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let d = rng.double();
+            let k = rng.pick(&[127.0, 127.0, 128.0, 100.0, -127.0, d]);
+            let at = t.rebase(e2::VOLUME_DIVISOR);
+            t.write(at, &k.to_le_bytes());
+            let d = rng.double();
+            let one = rng.pick(&[1.0, 1.0, 0.5, d]);
+            let at = t.rebase(e3::PAN_OFFSET);
+            t.write(at, &one.to_le_bytes());
+            let f = rng.float();
+            let min = rng.pick(&[(-1f32).to_bits(), (-1f32).to_bits(), 0x8000_0000, f]);
+            t.g32(e3::PAN_MIN, min);
+            sfx_event(&mut t, &mut rng, this, events, fades);
+            let r = rng.next();
+            let volume = rng.pick(&[0, 1, 63, 127, 128, 200, u32::MAX, r]);
+            let r = rng.next();
+            let pan = rng.pick(&[0, 1, 63, 64, 127, 128, 200, u32::MAX, r]);
+            t.check_conv(
+                &format!("{w} start {volume} {pan}"),
+                e3::SFX_START,
+                Conv::Thiscall(this),
+                &[volume, pan],
+                |g| {
+                    e3::sfx_event_start(g, this, volume, pan);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The sound events' delayed start and fades.
+#[test]
+fn e3_sfx_fades() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e304);
+        let stubs = [
+            (e3::SFX_START, true, 2),
+            (e3::SFX_APPLY_VOLUME, true, 1),
+            (e3::SFX_APPLY_PAN, true, 1),
+        ];
+        for (sym, this, n) in stubs {
+            t.stub_at(sym, this, n, n, &[]);
+        }
+        t.stub_at(fr::OPERATOR_DELETE, false, 1, 0, &[]);
+        let mut tags = stubs.map(|s| s.0).to_vec();
+        tags.push(fr::OPERATOR_DELETE);
+        let this = t.zeros(0x20);
+        let events = t.zeros(0x40);
+        let fades = [t.zeros(0x10), t.zeros(0x10)];
+        for i in 0..500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            sfx_event(&mut t, &mut rng, this, events, fades);
+            let f = rng.float();
+            let dt = rng.pick(&[0.5f32.to_bits(), 0.016f32.to_bits(), 0, f]);
+            t.check_conv(
+                &format!("{w} fades"),
+                0x0070_f5c0,
+                Conv::Thiscall(this),
+                &[dt],
+                |g| {
+                    e3::sfx_event_update_fades(g, this, dt);
+                    Out::None
+                },
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");

@@ -13,7 +13,7 @@
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
-    menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_e3 as e3, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1784,5 +1784,34 @@ ported! {
     /// `SyncManager_syncGetData(this; &x, &y, &id)`.
     SyncManager_syncGetData @ 0x006f_b160 => extern "thiscall" fn sync_get_data(this: u32, x: u32, y: u32, id: u32) -> u32 {
         e2::sync_get_data(&mut mem(), this, x, y, id)
+    }
+    // ---- continuation round 3, batch 3 (ffx_glue_other::h4_e3)
+    /// `FmodMusic_stop(this; i)`.
+    FmodMusic_stop @ 0x0070_99a0 => extern "thiscall" fn music_stop(this: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e3::STOP_FRAME / 4) as usize }>::new();
+        e3::music_stop(&mut mem(), frame.at(), this, i)
+    }
+    /// `FmodMusic_stopAll(this)`.
+    FmodMusic_stopAll @ 0x0070_9b10 => extern "thiscall" fn music_stop_all(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e3::STOP_ALL_FRAME / 4) as usize }>::new();
+        e3::music_stop_all(&mut mem(), frame.at(), this)
+    }
+    /// `FmodMusic_restart(this; i)`.
+    FmodMusic_restart @ 0x0070_9270 => extern "thiscall" fn music_restart(this: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e3::RESTART_FRAME / 4) as usize }>::new();
+        e3::music_restart(&mut mem(), frame.at(), this, i)
+    }
+    /// `FmodMusic_loopVolumeTranslate(this)`.
+    FmodMusic_loopVolumeTranslate @ 0x0070_8e50 => extern "thiscall" fn music_loop_volume(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e3::LOOP_FRAME / 4) as usize }>::new();
+        e3::music_loop_volume(&mut mem(), frame.at(), this)
+    }
+    /// `SfxEvent_start(this; volume, pan)`.
+    SfxEvent_start @ 0x0070_f310 => extern "thiscall" fn sfx_event_start(this: u32, volume: u32, pan: u32) {
+        e3::sfx_event_start(&mut mem(), this, volume, pan);
+    }
+    /// `SfxEvent_updateFades_0070f5c0(this; dt)`.
+    SfxEvent_updateFades_0070f5c0 @ 0x0070_f5c0 => extern "thiscall" fn sfx_event_update_fades(this: u32, dt: u32) {
+        e3::sfx_event_update_fades(&mut mem(), this, dt);
     }
 }
