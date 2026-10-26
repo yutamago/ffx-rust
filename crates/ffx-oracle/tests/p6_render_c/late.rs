@@ -2,6 +2,7 @@
 //! window's focus change and other late functions (`ffx_prender::p6_late`)
 //! against their originals.
 
+use ffx_bridge::Mem;
 use ffx_oracle::Conv;
 use ffx_prender::p6_late as lt;
 
@@ -223,5 +224,81 @@ fn resize_matches_the_original() {
             t.unstub(lt::SET_VIEWPORT);
         }
         assert!(paths.iter().all(|&n| n > 5), "{name}: {paths:?}");
+    }
+}
+
+#[test]
+fn bitmap_text_ctor_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_1005);
+        for f in [
+            lt::TEXT_BASE_CTOR,
+            lt::STREAM_ARRAY_CTOR,
+            lt::SET_MATRIX,
+            lt::STREAM_CTOR,
+            lt::INSTANCE_FINISH,
+        ] {
+            t.stub(
+                f,
+                true,
+                u32::from(f == lt::SET_MATRIX || f == lt::INSTANCE_FINISH),
+                u32::from(f == lt::SET_MATRIX || f == lt::INSTANCE_FINISH),
+                0x44,
+            );
+        }
+        t.stub(lt::INSTANCE_CTOR, true, 1, 1, 0x45);
+        t.stub(lt::ARRAY_FREE, false, 2, 0, 0);
+        t.stub(lt::STREAMS_SET, true, 2, 2, 0);
+        let mut paths = [0u32; 3];
+        for i in 0..60u32 {
+            let block = if i % 7 == 6 { 0 } else { t.zeros(0xc0) };
+            t.stub(lt::MALLOC_ALIGNED, false, 2, 0, block);
+            let this = object(&mut t, &mut rng, 0x68, false);
+            let header = match rng.below(3) {
+                0 => rng.next() | 0x8000_0000,
+                _ => rng.next() & 0x7fff_ffff,
+            };
+            t.w32(this, header);
+            if rng.chance(3) {
+                t.w32(this + 4, this + 0x38);
+            }
+            let flag = rng.next();
+            let n = if flag & 0xff != 0 { 3 } else { 2 };
+            if rng.chance(3) {
+                t.w32(this + 0x60, n);
+            }
+            let font = if rng.chance(6) {
+                0xffff_fffc
+            } else {
+                rng.next()
+            };
+            let flag = if rng.chance(2) { flag & !0xff } else { flag };
+            run_framed(
+                &mut t,
+                &format!("{name} bitmap text ctor #{i}"),
+                0x00a2_9360,
+                Conv::Thiscall(this),
+                &[font, flag],
+                0x58,
+                0x40,
+                |g, ebp| {
+                    let (r, slot) = lt::bridge::bitmap_text_ctor(g, this, ebp - 0x58, font, flag);
+                    if let Some(v) = slot {
+                        g.write(ebp + 0xc, v);
+                    }
+                    r
+                },
+            );
+            let calls: u32 = Mem::read(&t.a, t.log);
+            paths[match calls {
+                0..=6 => 0,
+                _ => 2,
+            }] += 1;
+            if block == 0 && calls >= 6 {
+                paths[1] += 1;
+            }
+            t.unstub(lt::MALLOC_ALIGNED);
+        }
+        assert!(paths.iter().all(|&n| n > 0), "{name}: {paths:?}");
     }
 }

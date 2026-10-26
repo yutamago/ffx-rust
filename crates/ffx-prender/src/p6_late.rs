@@ -104,6 +104,23 @@ pub const SET_RECT: u32 = 0x0062_cba0;
 /// `resize`'s frame from `ebp - 0x2c`.
 pub const RESIZE_FRAME: u32 = 0x20;
 
+/// `0x00a29360`'s callees (thiscall unless noted): the base `0x00433700`,
+/// the stream array `0x004337d0`, the mesh instance `0x004f27e0(inst;
+/// text)` and `0x004f8b90(inst; text)`, the matrix `0x00451190(m; src)`,
+/// the array block free `0x00434210(data, n)` (cdecl), `PhyreMalloc(n,
+/// align)` (cdecl), a vertex stream's constructor `0x0055dc40`, the stream
+/// list's `0x00434e40(list; block, n)`; the scale float `0x00b5edf0`.
+pub const TEXT_BASE_CTOR: u32 = 0x0043_3700;
+pub const STREAM_ARRAY_CTOR: u32 = 0x0043_37d0;
+pub const INSTANCE_CTOR: u32 = 0x004f_27e0;
+pub const INSTANCE_FINISH: u32 = 0x004f_8b90;
+pub const SET_MATRIX: u32 = 0x0045_1190;
+pub const ARRAY_FREE: u32 = 0x0043_4210;
+pub const MALLOC_ALIGNED: u32 = 0x0042_fb80;
+pub const STREAM_CTOR: u32 = 0x0055_dc40;
+pub const STREAMS_SET: u32 = 0x0043_4e40;
+pub const TEXT_SCALE: u32 = 0x00b5_edf0;
+
 pub mod bridge {
     //! The originals over game memory.
 
@@ -111,6 +128,10 @@ pub mod bridge {
         ADD_TO_NAMESPACE, ADJUST_WINDOW_RECT, BindStep, CHANGE_DISPLAY_SETTINGS, Conv,
         FOCUS_FORMAT, GET_CLIENT_RECT, GET_WINDOW_LONG, HWND, Host, MEMSET, POST_BIND, PRINTF,
         REGISTER_TYPE, SET_WINDOW_LONG, SET_WINDOW_POS, SETTINGS, UTILITY, UTILITY_READY,
+    };
+    use super::{
+        ARRAY_FREE, INSTANCE_CTOR, INSTANCE_FINISH, MALLOC_ALIGNED, SET_MATRIX, STREAM_ARRAY_CTOR,
+        STREAM_CTOR, STREAMS_SET, TEXT_BASE_CTOR, TEXT_SCALE,
     };
     use super::{GLOW_BASE_DTOR, GLOW_GPU_INLINE, GLOW_GPU_TARGETS, GLOW_GPU_VTABLE};
     use super::{
@@ -288,5 +309,86 @@ pub mod bridge {
         }
         h.call_sym(UNLOCK, Conv::Thiscall(lock), &[]);
         e
+    }
+
+    /// `0x00a29360(text; font, flag)` (thiscall, `ret 8`) -> `text`: a
+    /// bitmap-font text's constructor. Its parts (`0x00433700`, the
+    /// stream array at `+0x38` `0x004337d0`, the mesh instance at `+0xa4`
+    /// `0x004f27e0(text)`), an identity matrix (in the frame, `frame` the
+    /// original's `ebp - 0x58`) set at `+0x128` (`0x00451190`), the font
+    /// (`+0x158`) and defaults (`+0x15c..+0x16c` 0, `+0x170` the float at
+    /// `0x00b5edf0`, byte `+0x174` the flag, `+0x178..+0x194` 1.0), its
+    /// array header made one inline word (an owned block freed through
+    /// `0x00434210(data, n)`), `+0x48 = 2`, then 3 (flag) or 2 vertex
+    /// streams (`0x0055dc40` each, in a `PhyreMalloc(64 n, 4)` block) handed
+    /// to `+0x60` (`0x00434e40(array; block, n)`) unless it holds that many
+    /// already, the mesh instance finished (`0x004f8b90(text)`) and its
+    /// `+0x10` set to `font + 4` (or the instance's own `+0x30`), `+0xa8 =
+    /// text + 0x128`.
+    ///
+    /// The second result: the flag argument slot's last value when the
+    /// original reuses it as its loop counter.
+    pub fn bitmap_text_ctor(
+        h: &mut impl Host,
+        this: u32,
+        frame: u32,
+        font: u32,
+        flag: u32,
+    ) -> (u32, Option<u32>) {
+        h.call_sym(TEXT_BASE_CTOR, Conv::Thiscall(this), &[]);
+        let streams = this + 0x38;
+        h.call_sym(STREAM_ARRAY_CTOR, Conv::Thiscall(streams), &[]);
+        let instance = this + 0xa4;
+        h.call_sym(INSTANCE_CTOR, Conv::Thiscall(instance), &[this]);
+        for k in 0..16u32 {
+            let v = if k % 5 == 0 { 1.0f32 } else { 0.0 };
+            h.write(frame + 4 * k, v);
+        }
+        h.call_sym(SET_MATRIX, Conv::Thiscall(this + 0x128), &[frame]);
+        h.write(this + 0x158, font);
+        for off in [0x15c, 0x160, 0x168, 0x16c, 0x164] {
+            h.write(this + off, 0u32);
+        }
+        let scale: f32 = h.read(h.rebase(TEXT_SCALE));
+        h.write(this + 0x174, flag as u8);
+        h.write(this + 0x170, ffx_bridge::x87::round_trip(scale));
+        for k in 0..8u32 {
+            h.write(this + 0x178 + 4 * k, 1.0f32);
+        }
+        let header: u32 = h.read(this);
+        let data: u32 = h.read(this + 4);
+        if data != streams && header >> 31 == 0 {
+            h.call_sym(ARRAY_FREE, Conv::Cdecl, &[data, header & 0x7fff_ffff]);
+        }
+        h.write(this + 4, streams);
+        h.write(this, 0x8000_0001u32);
+        h.write(this + 0x48, 2u32);
+        let n = if h.read::<u8>(this + 0x174) != 0 {
+            3
+        } else {
+            2
+        };
+        let mut slot = None;
+        if h.read::<u32>(this + 0x60) != n {
+            let block = h.call_sym(MALLOC_ALIGNED, Conv::Cdecl, &[0x40 * n, 4]);
+            if block != 0 {
+                for k in 0..n {
+                    let s = block.wrapping_add(0x40 * k);
+                    if s != 0 {
+                        h.call_sym(STREAM_CTOR, Conv::Thiscall(s), &[]);
+                    }
+                }
+                slot = Some(n);
+                h.call_sym(STREAMS_SET, Conv::Thiscall(this + 0x60), &[block, n]);
+            }
+        }
+        h.call_sym(INSTANCE_FINISH, Conv::Thiscall(instance), &[this]);
+        let mut v = font.wrapping_add(4);
+        if v == 0 {
+            v = h.read::<u32>(instance).wrapping_add(0x30);
+        }
+        h.write(instance + 0x10, v);
+        h.write(this + 0xa8, this + 0x128);
+        (this, slot)
     }
 }

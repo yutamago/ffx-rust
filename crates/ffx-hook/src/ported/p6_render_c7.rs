@@ -106,4 +106,10 @@ ported! {
         let mut frame = StackFrame::<9>::new();
         tg::bridge::issue_dynamic_jobs(&mut mem(), this, frame.at(), [a, b, first, end]).0
     }
+    // batch 19
+    /// A bitmap-font text's constructor (`this`; font, flag) -> `this`.
+    Phyre_PText_PBitmapFontText_PBitmapFontText_00a29360 @ 0x00a2_9360 => extern "thiscall" fn x_00a29360(this: u32, font: u32, flag: u32) -> u32 {
+        let mut frame = StackFrame::<16>::new();
+        lt::bridge::bitmap_text_ctor(&mut mem(), this, frame.at(), font, flag).0
+    }
 }
