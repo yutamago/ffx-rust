@@ -637,4 +637,123 @@ pub mod bridge {
         }
         0
     }
+
+    /// The bytes of a data block's frame below its cookie (`ebp - 0x64`
+    /// up to `ebp - 0x10`).
+    pub const BLOCK_FRAME: u32 = 0x54;
+
+    /// A data block kind: its words and what it makes.
+    pub struct Block {
+        /// The byte size word.
+        pub size: u32,
+        /// The data offset word (added to the caller's base).
+        pub offset: u32,
+        /// The `PSharray` of (buffer, view) pairs.
+        pub array: u32,
+        /// The flags word that gets bit 0 when every pair is made.
+        pub flags: u32,
+        /// The buffer's bind flags.
+        pub bind: u32,
+        /// The view's format.
+        pub format: u32,
+        /// The debug name and its length.
+        pub name: u32,
+        pub name_len: u32,
+    }
+
+    /// `PIndexDataBlock`'s (`0x00561e90`).
+    pub const INDEX_BLOCK: Block = Block {
+        size: 0x34,
+        offset: 0x2c,
+        array: 0x14,
+        flags: 0x30,
+        bind: 0xa,
+        format: 0x2a,
+        name: 0x00b1_48ec,
+        name_len: 0xf,
+    };
+    /// `PDataBlock`'s (`0x005620c0`).
+    pub const DATA_BLOCK: Block = Block {
+        size: 0x38,
+        offset: 0x30,
+        array: 0x18,
+        flags: 0x34,
+        bind: 9,
+        format: 0x29,
+        name: 0x00b1_414c,
+        name_len: 0xa,
+    };
+
+    /// `PIndexDataBlockD3D11` / `PDataBlockD3D11` create (`0x00561e90`,
+    /// `0x005620c0`; thiscall `(block; base)`, `ret 4`): under the lock
+    /// (`ebp - 0x38`), when the device exists and the block has a size:
+    /// for each (buffer, view) pair of its array, an immutable buffer
+    /// (`CreateBuffer`, device slot 3; the description at `ebp - 0x28`:
+    /// the size, usage 1, the kind's bind flags; the data at `base` plus
+    /// the block's offset as its initial data at `ebp - 0x64`, none when
+    /// that sum is 0), named, and a raw buffer view of it
+    /// (`CreateShaderResourceView`, slot 7; the description at `ebp -
+    /// 0x58`: the kind's format, dimension 0xb, size / 4 elements); then
+    /// the flags' bit 0. 0, or 9 when the device fails. `frame` is the
+    /// original's `ebp - 0x64`.
+    pub fn create_data_block(
+        h: &mut impl Host,
+        this: u32,
+        base: u32,
+        k: &Block,
+        frame: u32,
+    ) -> u32 {
+        let local = |off: u32| frame + 0x64 - off;
+        let lock = local(0x38);
+        enter(h, lock);
+        holder(h);
+        let dev = device(h);
+        let size: u32 = h.read(this.wrapping_add(k.size));
+        if dev == 0 || size == 0 {
+            leave(h, lock);
+            return 0;
+        }
+        let data = base.wrapping_add(h.read(this.wrapping_add(k.offset)));
+        let desc = local(0x28);
+        for (i, v) in (0u32..).zip([size, 1, k.bind, 0, 0, 0]) {
+            h.write(desc + 4 * i, v);
+        }
+        let sub = local(0x64);
+        for (i, v) in (0u32..).zip([data, 0, 0]) {
+            h.write(sub + 4 * i, v);
+        }
+        let count = h.read::<u32>(this.wrapping_add(k.array)) & 0x7fff_ffff;
+        let init = if data != 0 { sub } else { 0 };
+        let view = local(0x58);
+        let array = this.wrapping_add(k.array);
+        let mut off = 0u32;
+        for _ in 0..count {
+            let pairs = storage(h, array);
+            let vt: u32 = h.read(dev);
+            if (com(h, vt, dev, 3, &[desc, init, pairs.wrapping_add(off)]) as i32) < 0 {
+                leave(h, lock);
+                return error::CREATE;
+            }
+            let pairs = storage(h, array);
+            let buffer: u32 = h.read(pairs.wrapping_add(off));
+            let bvt: u32 = h.read(buffer);
+            set_name(h, bvt, buffer, k.name_len, k.name);
+            for (i, v) in (0u32..).zip([k.format, 0xb, 0, size >> 2, 0, 0]) {
+                h.write(view + 4 * i, v);
+            }
+            let pairs = storage(h, array);
+            let buffer: u32 = h.read(pairs.wrapping_add(off));
+            let vt: u32 = h.read(dev);
+            let out = pairs.wrapping_add(off + 4);
+            if (com(h, vt, dev, 7, &[buffer, view, out]) as i32) < 0 {
+                leave(h, lock);
+                return error::CREATE;
+            }
+            off = off.wrapping_add(0x14);
+        }
+        let f: u32 = h.read(this.wrapping_add(k.flags));
+        h.write(this.wrapping_add(k.flags), f | 1);
+        leave(h, lock);
+        0
+    }
 }

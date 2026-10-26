@@ -10,8 +10,8 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_pload::{
-    cluster, descriptor, p1_bind, p1_d3d, p1_loader, p1_misc, p1_reader, p1_tree, p1_types, stream,
-    types,
+    cluster, descriptor, p1_bind, p1_d3d, p1_declare, p1_loader, p1_misc, p1_post, p1_reader,
+    p1_tree, p1_types, stream, types,
 };
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
@@ -1207,5 +1207,36 @@ ported! {
     PTextureCubeMapD3D11_create_00590800 @ 0x0059_0800 => extern "thiscall" fn create_cube_map(this: u32, data: u32, views: u32, _unused: u32, skip: u32) -> u32 {
         let mut f = StackFrame::<{ p1_d3d::bridge::CUBE_FRAME as usize / 4 }>::new();
         p1_d3d::bridge::create_cube_map(&mut mem(), this, data, views as u8, skip as u8, f.at())
+    }
+    // ---- continuation round 3, batch 2 (p1_post, p1_d3d) ----
+    /// `PDeferredLightingBase::PDeferredLightingBase()` -> `this`.
+    Phyre_PPostProcessing_PDeferredLightingBase_ctor_009fb830 @ 0x009f_b830 => extern "thiscall" fn deferred_lighting_base_ctor(this: u32) -> u32 {
+        p1_post::bridge::deferred_lighting_base_ctor(&mut mem(), this)
+    }
+    /// `PDeferredLightingD3D11::PDeferredLightingD3D11()` -> `this`.
+    Phyre_PPostProcessing_PDeferredLightingD3D11_ctor_009fbb30 @ 0x009f_bb30 => extern "thiscall" fn deferred_lighting_d3d11_ctor(this: u32) -> u32 {
+        p1_post::bridge::deferred_lighting_d3d11_ctor(&mut mem(), this)
+    }
+    /// `PDepthOfFieldBase::PDepthOfFieldBase()` -> `this`.
+    Phyre_PPostProcessing_PDepthOfFieldBase_ctor_009fbd90 @ 0x009f_bd90 => extern "thiscall" fn depth_of_field_base_ctor(this: u32) -> u32 {
+        p1_post::bridge::depth_of_field_base_ctor(&mut mem(), this)
+    }
+    /// The index data block's buffers and views `(base)`; the lock and descriptions in this frame.
+    PIndexDataBlockD3D11_create_00561e90 @ 0x0056_1e90 => extern "thiscall" fn create_index_block(this: u32, base: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_d3d::bridge::BLOCK_FRAME as usize / 4 }>::new();
+        p1_d3d::bridge::create_data_block(&mut mem(), this, base, &p1_d3d::bridge::INDEX_BLOCK, f.at())
+    }
+    /// The data block's buffers and views `(base)`; the lock and descriptions in this frame.
+    PDataBlockD3D11_create_005620c0 @ 0x0056_20c0 => extern "thiscall" fn create_data_block(this: u32, base: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_d3d::bridge::BLOCK_FRAME as usize / 4 }>::new();
+        p1_d3d::bridge::create_data_block(&mut mem(), this, base, &p1_d3d::bridge::DATA_BLOCK, f.at())
+    }
+    /// `PArray<PTypedObject, 8>::DeclareClassDescriptor(name)` -> the descriptor.
+    Phyre_PArray_Phyre_PTypedObject_8u__DeclareClassDescriptor @ 0x0045_8460 => extern "C" fn declare_typed_object_array(name: u32) -> u32 {
+        ffx_prender::declare::bridge::declare(&mut mem(), name, &p1_declare::PTYPED_OBJECT_ARRAY)
+    }
+    /// `PArray<u8, 1>::DeclareClassDescriptor(name)` -> the descriptor.
+    Phyre_PArray_u8_1u__DeclareClassDescriptor_00448450 @ 0x0044_8450 => extern "C" fn declare_u8_array(name: u32) -> u32 {
+        p1_declare::bridge::declare_aligned(&mut mem(), name, &p1_declare::U8_ARRAY, p1_declare::U8_ALIGNMENT)
     }
 }
