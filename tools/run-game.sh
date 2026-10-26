@@ -153,20 +153,27 @@ fi
 # folder (same DINPUT8.dll and log) or on the same port (the game slots
 # handle that). Without the harness, any game outside the instances holds
 # the real mutex, and so does one stuck while exiting (no path then).
-games="$(powershell.exe -NoProfile -Command \
-    'Get-Process FFX -ErrorAction SilentlyContinue | ForEach-Object { "path=" + $_.Path }; exit 0' | tr -d '\r')"
-here="$(wslpath -w "$game/FFX.exe")"
-instances="$(wslpath -w "${FFX_INSTANCES_DIR:-$HOME/ffx-work/instances}")"
-clash=""
-while IFS= read -r line; do
-    [[ "$line" == path=* ]] || continue
-    path="${line#path=}"
-    if [[ "${path,,}" == "${here,,}" ]]; then
-        clash="a game from this folder is running"
-    elif [[ -z "${FFX_HARNESS:-}" && ( -z "$path" || "${path,,}" != "${instances,,}"\\* ) ]]; then
-        clash="FFX.exe is already running (or stuck exiting)"
-    fi
-done <<< "$games"
+# A slot holder's game from this folder may still be exiting when the slot
+# passes on (its replay returned before FFX.exe was gone): with the slot
+# held, wait up to a minute for it before calling it a clash.
+for _ in $(seq 30); do
+    games="$(powershell.exe -NoProfile -Command \
+        'Get-Process FFX -ErrorAction SilentlyContinue | ForEach-Object { "path=" + $_.Path }; exit 0' | tr -d '\r')"
+    here="$(wslpath -w "$game/FFX.exe")"
+    instances="$(wslpath -w "${FFX_INSTANCES_DIR:-$HOME/ffx-work/instances}")"
+    clash=""
+    while IFS= read -r line; do
+        [[ "$line" == path=* ]] || continue
+        path="${line#path=}"
+        if [[ "${path,,}" == "${here,,}" ]]; then
+            clash="a game from this folder is running"
+        elif [[ -z "${FFX_HARNESS:-}" && ( -z "$path" || "${path,,}" != "${instances,,}"\\* ) ]]; then
+            clash="FFX.exe is already running (or stuck exiting)"
+        fi
+    done <<< "$games"
+    [[ "$clash" == "a game from this folder is running" && "${FFX_GAME_SLOT_HELD:-}" == 1 ]] || break
+    sleep 2
+done
 if [[ -n "$clash" ]]; then
     echo "$clash; not starting another" >&2
     exit 1
