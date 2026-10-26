@@ -102,7 +102,9 @@
 //!   effect packet, the settings pages' key-name tables, a UI button's
 //!   remap, the character mesh instances' name suffixes;
 //! - [`h4_j2`]: its second batch: the escape menu's controller and
-//!   keyboard binding pages.
+//!   keyboard binding pages, the audio and parameter-change pages;
+//! - [`h4_j3`]: its third batch: the menu texture clusters' load, the
+//!   message button remap, the special-feature page.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -164,6 +166,7 @@ pub mod h4_i7;
 pub mod h4_i8;
 pub mod h4_j1;
 pub mod h4_j2;
+pub mod h4_j3;
 pub mod menu;
 pub mod misc;
 pub mod movie;

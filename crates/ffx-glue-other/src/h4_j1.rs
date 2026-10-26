@@ -321,7 +321,7 @@ pub fn remap_ui_button_data(
 }
 
 /// The input manager's vibration flag (`al`).
-fn vibration(h: &mut impl Host) -> bool {
+pub(crate) fn vibration(h: &mut impl Host) -> bool {
     let manager = h.call_sym(INPUT_INSTANCE, Conv::Cdecl, &[]);
     h.call_sym(INPUT_VIBRATION, Conv::Thiscall(manager), &[]) & 0xff != 0
 }

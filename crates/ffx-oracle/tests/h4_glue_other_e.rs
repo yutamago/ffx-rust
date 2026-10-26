@@ -30,7 +30,7 @@ use ffx_glue_other::{
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
-    h4_j1 as j1, h4_j2 as j2,
+    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -9432,6 +9432,275 @@ fn j2_parameter_page() {
             assert_eq!(t.log_entries(), 12, "{w}: calls");
             let end: u32 = Mem::read(&t.b, list);
             assert_eq!(end - calls, 3 * 18 * 4, "{w}: items");
+        }
+    }
+}
+
+// ---- continuation round 8, batch 3 (ffx_glue_other::h4_j3)
+
+/// A list node `{next, prev, std::string, flag}` named `text` (short
+/// strings inline, long ones through a pointer).
+fn j3_node(t: &mut Twins, text: &[u8], loaded: u32, heap: bool) -> u32 {
+    let node = t.zeros(0x24);
+    let mut s = text.to_vec();
+    s.push(0);
+    if heap && s.len() <= 0x10 {
+        // a short string kept on the heap: capacity exactly 0x10
+        let p = t.alloc(&s);
+        t.w32(node + 8, p);
+        t.w32(node + 0x1c, 0x10);
+    } else if s.len() <= 0x10 {
+        t.write(node + 8, &s);
+        t.w32(node + 0x1c, 0xf);
+    } else {
+        let p = t.alloc(&s);
+        t.w32(node + 8, p);
+        t.w32(node + 0x1c, s.len() as u32 + 3);
+    }
+    t.w32(node + 0x18, text.len() as u32);
+    t.w32(node + 0x20, loaded);
+    node
+}
+
+/// The menu texture clusters' load: every language, names equal to,
+/// prefixes of and longer than `"NoTexture"`, loaded entries.
+#[test]
+fn j3_load_texture_clusters() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c831);
+        let stubs = [
+            (j3::GET_LANG, false, 0, 0),
+            (j3::NAME_LIST_PUSH, false, 1, 0),
+            (j3::CLUSTER_MANAGER, false, 0, 0),
+            (j3::LOAD_PCLUSTER, true, 1, 1),
+            (j3::GET_APPLICATION, false, 0, 0),
+            (j3::FIXUP_CLUSTERS, false, 2, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        // FixupClusters records the cluster word it is handed
+        let seen = t.zeros(4);
+        let log = t.stub_code(j3::FIXUP_CLUSTERS, false, 2, 0, false, &[]);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0xa3]; // mov eax, [esp+4]; mov eax, [eax]; mov [seen], eax
+        c.extend(seen.to_le_bytes());
+        let jmp_at = t.cave_next + c.len() as u32;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(jmp_at + 5).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(j3::FIXUP_CLUSTERS, f);
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let mut loads = 0;
+        for i in 0..120 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let (small, r) = (rng.below(20), rng.next());
+            let lang = if i < 40 {
+                i % 20
+            } else {
+                rng.pick(&[small, 0xb, r])
+            };
+            t.ret(j3::GET_LANG, lang);
+            let head = t.zeros(0x24);
+            let mut prev = head;
+            for _ in 0..rng.below(6) {
+                let text: &[u8] = rng.pick(&[
+                    b"NoTexture".as_slice(),
+                    b"NoTextur",
+                    b"NoTexture1",
+                    b"NoTexturf",
+                    b"",
+                    b"/FFX_Data/GameData/PS3Data/menu/abmap/x.phyre",
+                ]);
+                let loaded = rng.pick(&[0, 0, 1, 2]);
+                let on_heap = rng.below(3) == 0;
+                let node = j3_node(&mut t, text, loaded, on_heap);
+                t.w32(prev, node);
+                prev = node;
+            }
+            t.w32(prev, head);
+            t.g32(j3::NAME_LIST, head);
+            let frame = t.ebp_for(0) - 4;
+            t.check_framed(
+                &w,
+                0x0068_4ef0,
+                &[],
+                frame,
+                // the word holds the pushed ecx until a load writes it
+                &[],
+                |g| u(j3::load_texture_clusters(g, frame)),
+            );
+            loads += t.log_entries();
+        }
+        assert!(loads > 0, "{name}");
+    }
+}
+
+/// `RemapButtonIcon_remapMessgeInputData`: pad keys in and out of
+/// 0x40..0x4e, kept keys, modes, countdowns, the texture names that stop
+/// it, the mode bits.
+#[test]
+fn j3_remap_message_input_data() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c832);
+        let (cu, cv) = (t.zeros(4), t.zeros(4));
+        let plain = [
+            (j1::INPUT_INSTANCE, false, 0, 0),
+            (j1::INPUT_VIBRATION, true, 0, 0),
+            (j1::REMAP_ICON_UV, true, 4, 4),
+            (j3::REMAP_ICON_SIZE, true, 2, 2),
+            (j3::REMAP_ICON_POSITION, true, 3, 3),
+        ];
+        for (sym, this, n, pops) in plain {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        for sym in [j1::REMAP_PC_UV, j1::REMAP_PAD_UV] {
+            t.stub_at(sym, true, 3, 3, &[wr(1, cu), wr(2, cv)]);
+        }
+        let mut tags: Vec<u32> = plain.iter().map(|s| s.0).collect();
+        tags.extend([j1::REMAP_PC_UV, j1::REMAP_PAD_UV]);
+        let real = t.alloc(b"RealFrameBuffer\0");
+        let other = t.alloc(b"RealFrame\0");
+        let mut seen = [0u32; 3];
+        for i in 0..1500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for c in [cu, cv] {
+                let f = rng.float();
+                t.w32(c, f);
+            }
+            let flag = rng.pick(&[0, 1, 0x100]);
+            t.ret(j1::INPUT_VIBRATION, flag);
+            let r = rng.next();
+            let countdown = rng.pick(&[0, 1, 2, 3, 4, 5, r]);
+            t.g32(j3::INPUT_COUNTDOWN, countdown);
+            let this = random_block(&mut t, &mut rng, 0x160);
+            for k in 0..22 {
+                let key = 0x40 + rng.below(16);
+                let (small, r) = (rng.below(16), rng.next());
+                let index = rng.pick(&[small, r]);
+                t.w32(this + 8 * k, key);
+                t.w32(this + 8 * k + 4, index);
+            }
+            let mode = rng.pick(&[0, 1, 2, 3, 4, 5, u32::MAX]);
+            t.w32(this + 0x150, mode);
+            let small = rng.below(40);
+            let remembered = rng.pick(&[0, 1, 2, 3, small]);
+            t.w32(this + 0x154, remembered);
+            let r = rng.next();
+            let kept = rng.pick(&[0x40, 0x41, u32::MAX, r]);
+            t.w32(this + 0x158, kept);
+            let key = t.zeros(4);
+            let (pad, any) = (0x40 + rng.below(16), rng.below(0x60));
+            let k = rng.pick(&[0x40, pad, 0x3f, u32::MAX, any]);
+            t.w32(key, k);
+            let rec = random_block(&mut t, &mut rng, 0x30);
+            let path = t.zeros(4);
+            let text = rng.pick(&[other, other, other, real, 0]);
+            t.w32(path, text);
+            let kind = rng.pick(&[1, 4, 6, 0xb]);
+            let frame = t.ebp_for(4) - 8;
+            let r = t.check_framed_conv(
+                &w,
+                0x006e_7050,
+                Conv::Thiscall(this),
+                &[key, rec, path, kind],
+                frame,
+                &[(0, 4), (0x18, 4)],
+                |g| {
+                    u(j3::remap_message_input_data(
+                        g, frame, this, key, rec, path, kind,
+                    ))
+                },
+            );
+            seen[r as usize & 1] += 1;
+            seen[2] += u32::from(t.log_entries() > 4);
+        }
+        assert!(seen.iter().all(|&s| s > 0), "{name}: {seen:?}");
+    }
+}
+
+/// The escape menu's special-feature page: messages present or not, the
+/// line split found or not.
+#[test]
+fn j3_special_feature_page() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c833);
+        let seq = t.zeros(4);
+        j1_text_stub(&mut t, j3::GET_LOC_TEXT, seq);
+        j1_text_stub(&mut t, j3::REMAP_TEXT, seq);
+        let stubs = [
+            (j3::KEYBOARD_NAME, false, 1, 0),
+            (j3::REPLACE_FIRST, false, 3, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let strstr = t.stub_code(0x0bad_c833, false, 2, 0, false, &[]);
+        let iat = t.rebase(j3::STRSTR_IAT);
+        t.w32(iat, strstr);
+        let (list, flash) = (t.zeros(4), t.zeros(4));
+        j2_wide_stub(&mut t, j3::CALL_FLASH_5, 22, list, flash);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([j3::GET_LOC_TEXT, j3::REMAP_TEXT, 0x0bad_c833]);
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let v = rng.next();
+            t.w32(flash, v);
+            let mut text = Vec::new();
+            for _ in 0..20 {
+                for _ in 0..rng.below(30) {
+                    text.push(b' ' + rng.below(95) as u8);
+                }
+                text.push(0);
+            }
+            let src = t.alloc(&text);
+            t.w32(seq, src);
+            let name_text = t.alloc(b"Key\0");
+            t.ret(j3::KEYBOARD_NAME, name_text);
+            let settings = random_block(&mut t, &mut rng, 0x100);
+            t.g32(j2::SETTINGS, settings);
+            let rows = t.rebase(j3::FEATURE_ROWS);
+            if i % 2 == 1 {
+                for r in 0..5 {
+                    for f in 0..4 {
+                        let v = if f == 0 {
+                            rng.below(0x28)
+                        } else {
+                            rng.pick(&[0, 0x290, 0x291])
+                        };
+                        t.w32(rows + 0x18 * r + 4 * f, v);
+                    }
+                }
+            }
+            let calls = t.zeros(5 * 22 * 4);
+            t.w32(list, calls);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            let frame = t.ebp_for(0) - j3::FEATURE_FRAME;
+            let ebp = frame + j3::FEATURE_FRAME;
+            // strstr finds the split inside the third text, or not
+            let k = rng.below(8);
+            let found = rng.pick(&[0, ebp - 0x104 + k]);
+            t.ret(0x0bad_c833, found);
+            let mut compare: Vec<(u32, usize)> = [0x104u32, 0x204, 0x304, 0x404, 0x504]
+                .iter()
+                .map(|&off| (j3::FEATURE_FRAME - off, 0x100))
+                .collect();
+            for off in [0x598u32, 0x588, 0x578, 0x568, 0x558] {
+                compare.push((j3::FEATURE_FRAME - off, 16));
+            }
+            t.check_framed_conv(
+                &w,
+                0x0070_2660,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &compare,
+                |g| u(j3::special_feature_page(g, frame, this)),
+            );
+            let end: u32 = Mem::read(&t.b, list);
+            assert_eq!(end - calls, 5 * 22 * 4, "{w}: rows");
         }
     }
 }

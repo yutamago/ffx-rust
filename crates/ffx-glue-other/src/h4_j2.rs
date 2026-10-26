@@ -76,7 +76,7 @@ pub const KEYBOARD_FRAME: u32 = 0x348;
 /// The four words of the value at `at`. Word 1 is never written by the
 /// value setters: junk read, `[ebp - off + 4]` never written; 0 (brief
 /// 2026-10-24) — the frame holds 0 in the game.
-fn value(h: &impl Host, at: u32) -> [u32; 4] {
+pub(crate) fn value(h: &impl Host, at: u32) -> [u32; 4] {
     [h.read(at), h.read(at + 4), h.read(at + 8), h.read(at + 0xc)]
 }
 
@@ -204,7 +204,7 @@ pub fn keyboard_page(h: &mut impl Host, frame: u32, this: u32) -> u32 {
 }
 
 /// A Flash call's words: the menu, the function name, the values.
-fn flash_args<const N: usize>(menu: u32, name: u32, values: &[[u32; 4]]) -> [u32; N] {
+pub(crate) fn flash_args<const N: usize>(menu: u32, name: u32, values: &[[u32; 4]]) -> [u32; N] {
     let mut args = [0u32; N];
     args[0] = menu;
     args[1] = name;
@@ -215,7 +215,7 @@ fn flash_args<const N: usize>(menu: u32, name: u32, values: &[[u32; 4]]) -> [u32
 }
 
 /// `iggyDataValueSet_00a28d70(out, text)`, then the value's words.
-fn h_value_string(h: &mut impl Host, out: u32, text: u32) -> [u32; 4] {
+pub(crate) fn h_value_string(h: &mut impl Host, out: u32, text: u32) -> [u32; 4] {
     h.call_sym(VALUE_STRING, Conv::Cdecl, &[out, text]);
     value(h, out)
 }

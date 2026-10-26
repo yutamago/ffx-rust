@@ -17,7 +17,7 @@ use ffx_glue_other::{
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
-    h4_j1 as j1, h4_j2 as j2, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2493,5 +2493,21 @@ ported! {
     FFEscMenu_initializeParameterChangePage @ 0x006f_c3f0 => extern "thiscall" fn parameter_change_page(this: u32) -> u32 {
         let mut frame = StackFrame::<{ (j2::PARAMETER_FRAME / 4) as usize }>::new();
         j2::parameter_page(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 8, batch 3 (ffx_glue_other::h4_j3)
+    /// `GraphicAbmap_loadTextureClusters_00684ef0()`.
+    GraphicAbmap_loadTextureClusters_00684ef0 @ 0x0068_4ef0 => extern "C" fn load_texture_clusters() -> u32 {
+        let mut frame = StackFrame::<{ (j3::LOAD_FRAME / 4) as usize }>::new();
+        j3::load_texture_clusters(&mut mem(), frame.at())
+    }
+    /// `RemapButtonIcon_remapMessgeInputData(this; key, rec, path, kind)`.
+    RemapButtonIcon_remapMessgeInputData @ 0x006e_7050 => extern "thiscall" fn remap_message_input_data(this: u32, key: u32, rec: u32, path: u32, kind: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j3::MESSAGE_FRAME / 4) as usize }>::new();
+        j3::remap_message_input_data(&mut mem(), frame.at(), this, key, rec, path, kind)
+    }
+    /// `FFEscMenu_updateSpecialFeaturePage(this)`.
+    FFEscMenu_updateSpecialFeaturePage @ 0x0070_2660 => extern "thiscall" fn special_feature_page(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j3::FEATURE_FRAME / 4) as usize }>::new();
+        j3::special_feature_page(&mut mem(), frame.at(), this)
     }
 }
