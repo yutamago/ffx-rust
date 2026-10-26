@@ -36,6 +36,7 @@ use ffx_prender::h3_glue27::bridge as g27;
 use ffx_prender::h3_glue28::bridge as g28;
 use ffx_prender::h3_glue29::bridge as g29;
 use ffx_prender::h3_glue30::bridge as g30;
+use ffx_prender::h3_glue31::bridge as g31;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1755,6 +1756,30 @@ ported! {
     PhyreScene_instantiateMesh_0066f7d0 @ 0x0066_f7d0 => extern "thiscall" fn scene_instantiate_mesh(this: u32, model: u32, _key: u32, shared: u32; slots: u32) -> u32 {
         let mut f = StackFrame::<0xf>::new();
         g30::scene_instantiate_mesh(&mut mem(), f.at() + 0x3c, slots, this, model, shared)
+    }
+
+    // ---- round 8 batch 31 (ffx_prender::h3_glue31) ----
+    /// `0x006ce130(this, renderer)`: the shadow targets cleared; the first
+    /// error.
+    ShadowManager_clearTargets_006ce130 @ 0x006c_e130 => extern "thiscall" fn shadow_clear_targets(this: u32, renderer: u32) -> u32 {
+        let mut f = StackFrame::<0x17>::new();
+        g31::shadow_clear_targets(&mut mem(), f.at() + 0x5c, this, renderer)
+    }
+    /// `0x006599c0(this, mesh, cluster)`: a mesh instance from the scene's
+    /// pool or from `cluster`.
+    PhyreScene_newMeshInstance_006599c0 @ 0x0065_99c0 => extern "thiscall" fn scene_new_mesh_instance_pooled(this: u32, mesh: u32, cluster: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x14>::new();
+        g31::scene_new_mesh_instance(&mut mem(), f.at() + 0x50, slots, this, mesh, cluster)
+    }
+    /// `0x00653600(this)`: the scene's shadow update; 0.
+    PhyreScene_RenderShadow @ 0x0065_3600 => extern "thiscall" fn scene_update_shadows(this: u32) -> u32 {
+        let mut f = StackFrame::<0x19>::new();
+        g31::scene_update_shadows(&mut mem(), f.at() + 0x64, this)
+    }
+    /// `0x006542b0(this)`: the map objects' shadow-map scale and bias.
+    PhyreScene_setShadowScaleBias_006542b0 @ 0x0065_42b0 => extern "thiscall" fn scene_set_shadow_scale_bias(this: u32) {
+        let mut f = StackFrame::<0x1e>::new();
+        g31::scene_set_shadow_scale_bias(&mut mem(), f.at() + 0x78, this);
     }
 }
 
