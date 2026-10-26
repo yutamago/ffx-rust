@@ -35,6 +35,10 @@ use ffx_oracle::{Conv, Oracle, Pages};
 
 #[path = "h2_render_b/cases.rs"]
 mod cases;
+#[path = "h2_render_b/cases10.rs"]
+mod cases10;
+#[path = "h2_render_b/cases11.rs"]
+mod cases11;
 #[path = "h2_render_b/cases3.rs"]
 mod cases3;
 #[path = "h2_render_b/cases4.rs"]
@@ -43,6 +47,12 @@ mod cases4;
 mod cases5;
 #[path = "h2_render_b/cases6.rs"]
 mod cases6;
+#[path = "h2_render_b/cases7.rs"]
+mod cases7;
+#[path = "h2_render_b/cases8.rs"]
+mod cases8;
+#[path = "h2_render_b/cases9.rs"]
+mod cases9;
 
 use ffx_prender::array::bridge as a;
 use ffx_prender::declare as dc;
@@ -971,7 +981,7 @@ fn run(case: &Case, e: &mut Env, rng: &mut Rng, what: &str) {
     }
     let ra =
         e.a.call(addr, conv, stack)
-            .unwrap_or_else(|err| panic!("{what}: the original: {err}"));
+            .unwrap_or_else(|err| panic!("{what}: the original: {err} ({args:x?})"));
     assert!(
         ra.st0_raw.is_none(),
         "{what}: the original leaves ST0 set ({:?})",
@@ -1012,6 +1022,11 @@ fn run_cases(rounds: u32) {
             .chain(cases4::CASES)
             .chain(cases5::CASES)
             .chain(cases6::CASES)
+            .chain(cases7::CASES)
+            .chain(cases8::CASES)
+            .chain(cases9::CASES)
+            .chain(cases10::CASES)
+            .chain(cases11::CASES)
             .filter(|c| filter.split('|').any(|f| c.name.contains(f)))
         {
             for &(sym, n, pops, this) in case.callees {
@@ -1048,6 +1063,11 @@ fn h2_render_b_cases_are_unique() {
         .chain(cases4::CASES)
         .chain(cases5::CASES)
         .chain(cases6::CASES)
+        .chain(cases7::CASES)
+        .chain(cases8::CASES)
+        .chain(cases9::CASES)
+        .chain(cases10::CASES)
+        .chain(cases11::CASES)
     {
         assert!(seen.insert(c.addr), "{} twice", c.name);
     }

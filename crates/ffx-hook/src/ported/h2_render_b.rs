@@ -29,6 +29,10 @@ use ffx_prender::h2_more4::bridge as h4;
 use ffx_prender::h2_more5::bridge as h5;
 use ffx_prender::h2_more6::bridge as h6;
 use ffx_prender::h2_more7::bridge as h7;
+use ffx_prender::h2_more8::bridge as h8;
+use ffx_prender::h2_more9::bridge as h9;
+use ffx_prender::h2_more10::bridge as h10;
+use ffx_prender::h2_more11::bridge as h11;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -1800,6 +1804,174 @@ ported! {
     PRendererD3D11_clear_0058e3d0 @ 0x0058_e3d0 => extern "thiscall" fn s_0058e3d0(a0: u32, a1: u32) -> u8 {
         let mut fr = super::StackFrame::<4>::new();
         h7::clear(&mut mem(), a0, a1, fr.at())
+    }
+    /// `PRendererD3D11_createDeviceAndSwapChain_00595800`.
+    PRendererD3D11_createDeviceAndSwapChain_00595800 @ 0x0059_5800 => extern "thiscall" fn s_00595800(this: u32, width: u32, height: u32, samples: u32, windowed: u32, flag: u32, hwnd: u32) -> u32 {
+        let mut fr = super::StackFrame::<16>::new();
+        h8::create_device_and_swap_chain(&mut mem(), this, width, height, samples, windowed as u8, flag as u8, hwnd, fr.at())
+    }
+    /// `Phyre_PRenderInterface_setTextureQuality`.
+    Phyre_PRenderInterface_setTextureQuality @ 0x0058_e000 => extern "thiscall" fn s_0058e000(this: u32, q: u32) -> u32 {
+        let mut fr = super::StackFrame::<10>::new();
+        h8::set_texture_quality(&mut mem(), this, q, fr.at())
+    }
+    /// `PRendererD3D11_resizeBuffers_00599210`.
+    PRendererD3D11_resizeBuffers_00599210 @ 0x0059_9210 => extern "thiscall" fn s_00599210(this: u32, width: u32, height: u32) -> u32 {
+        let mut fr = super::StackFrame::<3>::new();
+        h8::resize_buffers(&mut mem(), this, width, height, fr.at())
+    }
+    /// `PRenderTargetD3D11_createViews_00591460`.
+    PRenderTargetD3D11_createViews_00591460 @ 0x0059_1460 => extern "thiscall" fn s_00591460(this: u32) -> u32 {
+        let mut fr = super::StackFrame::<17>::new();
+        h8::create_views(&mut mem(), this, fr.at())
+    }
+    /// `PRendererD3D11_ctor_00583580`.
+    PRendererD3D11_ctor_00583580 @ 0x0058_3580 => extern "thiscall" fn s_00583580(this: u32) -> u32 {
+        h8::renderer_ctor(&mut mem(), this)
+    }
+    /// `PRendererD3D11_initWindow_00595750`.
+    PRendererD3D11_initWindow_00595750 @ 0x0059_5750 => extern "thiscall" fn s_00595750(this: u32, info: u32) -> u32 {
+        let mut fr = super::StackFrame::<4>::new();
+        h8::init_window(&mut mem(), this, info, fr.at())
+    }
+    /// `PEffect_findContextVariant`: the key buffer (the original's
+    /// `alloca` of the switch count in words) per call on the heap.
+    PEffect_findContextVariant @ 0x004e_f440 => extern "thiscall" fn s_004ef440(this: u32, a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u32 {
+        let mut m = mem();
+        let words = h8::variant_key_words(&mut m) as usize;
+        let mut key: Vec<u32> = Vec::new();
+        if key.try_reserve_exact(words + 1).is_err() {
+            return u32::MAX;
+        }
+        key.resize(words + 1, 0);
+        let buf = u32::try_from(key.as_mut_ptr() as usize).unwrap_or(0);
+        let mut fr = super::StackFrame::<4>::new();
+        let r = h8::find_context_variant(&mut m, this, [a0, a1, a2, a3, a4], buf, fr.at());
+        std::hint::black_box(&mut key);
+        r
+    }
+    /// `PRendererD3D11_initA_00594f70`.
+    PRendererD3D11_initA_00594f70 @ 0x0059_4f70 => extern "thiscall" fn s_00594f70(this: u32, renderer: u32) -> u32 {
+        let mut fr = super::StackFrame::<35>::new();
+        h8::init_a(&mut mem(), this, renderer, fr.at())
+    }
+    /// `PRendererD3D11_initB_00595200`.
+    PRendererD3D11_initB_00595200 @ 0x0059_5200 => extern "thiscall" fn s_00595200(this: u32, renderer: u32) -> u32 {
+        let mut fr = super::StackFrame::<23>::new();
+        h8::init_b(&mut mem(), this, renderer, fr.at())
+    }
+    /// `Phyre_PSprite_PSubTextureInfo_Bind`.
+    Phyre_PSprite_PSubTextureInfo_Bind @ 0x0056_a1c0 => extern "C" fn s_0056a1c0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0056_a1c0) })
+    }
+    /// `PNode_RegisterClass`.
+    PNode_RegisterClass @ 0x0050_5450 => extern "C" fn s_00505450() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0050_5450) })
+    }
+    /// `PShaderPassD3D11_ctor_00583c00`.
+    PShaderPassD3D11_ctor_00583c00 @ 0x0058_3c00 => extern "thiscall" fn s_00583c00(this: u32) -> u32 {
+        h9::shader_pass_ctor(&mut mem(), this)
+    }
+    /// `PShaderPassD3D11_dtor_005853c0`.
+    PShaderPassD3D11_dtor_005853c0 @ 0x0058_53c0 => extern "thiscall" fn s_005853c0(this: u32) {
+        h9::shader_pass_dtor(&mut mem(), this);
+    }
+    /// `PSpriteCollection_dtor_005676c0`.
+    PSpriteCollection_dtor_005676c0 @ 0x0056_76c0 => extern "thiscall" fn s_005676c0(this: u32) {
+        h9::sprite_collection_dtor(&mut mem(), this);
+    }
+    /// `PSamplerStateD3D11_create_00595bf0`.
+    PSamplerStateD3D11_create_00595bf0 @ 0x0059_5bf0 => extern "thiscall" fn s_00595bf0(this: u32) -> u32 {
+        let mut fr = super::StackFrame::<17>::new();
+        h9::create_sampler_state(&mut mem(), this, fr.at())
+    }
+    /// `PDynamicBufferD3D11_mapForWrite_00563290`.
+    PDynamicBufferD3D11_mapForWrite_00563290 @ 0x0056_3290 => extern "thiscall" fn s_00563290(this: u32, i: u32, out: u32) -> u32 {
+        let mut fr = super::StackFrame::<11>::new();
+        h9::map_for_write(&mut mem(), this, i, out, fr.at())
+    }
+    /// `PDynamicBufferD3D11_mapForRead_00562e00`.
+    PDynamicBufferD3D11_mapForRead_00562e00 @ 0x0056_2e00 => extern "thiscall" fn s_00562e00(this: u32, i: u32, out: u32) -> u32 {
+        let mut fr = super::StackFrame::<14>::new();
+        h9::map_for_read(&mut mem(), this, i, out, fr.at())
+    }
+    /// `PRendererD3D11_setUnorderedAccessViews_0058dbe0`.
+    PRendererD3D11_setUnorderedAccessViews_0058dbe0 @ 0x0058_dbe0 => extern "thiscall" fn s_0058dbe0(this: u32, views: u32, count: u32, initial: u32) -> u32 {
+        h9::set_unordered_access_views(&mut mem(), this, views, count, initial)
+    }
+    /// `PConstantBufferD3D11_create_0058ee20`.
+    PConstantBufferD3D11_create_0058ee20 @ 0x0058_ee20 => extern "thiscall" fn s_0058ee20(this: u32, size: u32, data: u32) -> u32 {
+        let mut fr = super::StackFrame::<14>::new();
+        h9::create_constant_buffers(&mut mem(), this, size, data, fr.at())
+    }
+    /// `PShaderPassStateD3D11_apply_0059ad20`.
+    PShaderPassStateD3D11_apply_0059ad20 @ 0x0059_ad20 => extern "thiscall" fn s_0059ad20(this: u32, key: u32) -> u32 {
+        let mut fr = super::StackFrame::<12>::new();
+        h9::apply_pass_state(&mut mem(), this, key, fr.at())
+    }
+    /// `PSceneWideParametersKey_assign_004fd2a0`.
+    PSceneWideParametersKey_assign_004fd2a0 @ 0x004f_d2a0 => extern "thiscall" fn s_004fd2a0(this: u32, src: u32) -> u32 {
+        h9::scene_key_assign(&mut mem(), this, src)
+    }
+    /// `PRenderThread_copyConstantBuffer`.
+    PRenderThread_copyConstantBuffer @ 0x0059_a650 => extern "thiscall" fn s_0059a650(this: u32, buf: u32, slot: u32, entries: u32, _a3: u32, count: u32) -> u8 {
+        let mut fr = super::StackFrame::<17>::new();
+        h9::copy_constant_buffer(&mut mem(), this, buf, slot, entries, count, fr.at())
+    }
+    /// `PMeshInstance_computeJointMatrix`.
+    PMeshInstance_computeJointMatrix @ 0x004f_6fc0 => extern "thiscall" fn s_004f6fc0(this: u32, out: u32) {
+        let mut fr = super::StackFrame::<67>::new();
+        h9::compute_joint_matrix(&mut mem(), this, out, fr.at());
+    }
+    /// `Phyre_PRendering_PMeshInstance_updateBoundsFromSkeleton`.
+    Phyre_PRendering_PMeshInstance_updateBoundsFromSkeleton @ 0x004f_96a0 => extern "thiscall" fn s_004f96a0(this: u32) -> u32 {
+        let mut fr = super::StackFrame::<40>::new();
+        h10::update_bounds_from_skeleton(&mut mem(), this, fr.at())
+    }
+    /// `PBounds_transformBox_004f63d0`.
+    PBounds_transformBox_004f63d0 @ 0x004f_63d0 => extern "C" fn s_004f63d0(lo: u32, hi: u32, out_lo: u32, out_hi: u32, m: u32) {
+        let mut fr = super::StackFrame::<76>::new();
+        h10::transform_box(&mut mem(), lo, hi, out_lo, out_hi, m, fr.at());
+    }
+    /// `PBounds_transformBox_004ffe40` (an exact copy of `0x004f63d0`).
+    PBounds_transformBox_004ffe40 @ 0x004f_fe40 => extern "C" fn s_004ffe40(lo: u32, hi: u32, out_lo: u32, out_hi: u32, m: u32) {
+        let mut fr = super::StackFrame::<76>::new();
+        h10::transform_box(&mut mem(), lo, hi, out_lo, out_hi, m, fr.at());
+    }
+    /// `Phyre_PRendering_PSceneWideParameters_PSceneWideParametersKey_initialize`.
+    Phyre_PRendering_PSceneWideParameters_PSceneWideParametersKey_initialize @ 0x004f_e940 => extern "thiscall" fn s_004fe940(this: u32, camera: u32, vector: u32, viewport: u32) -> u32 {
+        let mut fr = super::StackFrame::<37>::new();
+        h10::scene_key_initialize(&mut mem(), this, camera, vector, viewport, fr.at())
+    }
+    /// `Phyre_PRendering_PSceneWideParameters_initialize`.
+    Phyre_PRendering_PSceneWideParameters_initialize @ 0x004f_d9e0 => extern "C" fn s_004fd9e0(buffers: u32) -> u32 {
+        let mut fr = super::StackFrame::<3>::new();
+        h11::initialize(&mut mem(), buffers, fr.at())
+    }
+    // continuation round: the six large Binds (h2_binds2 tables on h1_bind's steps)
+    /// `Phyre_PRendering_PEffect_Bind`.
+    Phyre_PRendering_PEffect_Bind @ 0x004e_b2d0 => extern "C" fn s_004eb2d0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x004e_b2d0) })
+    }
+    /// `Phyre_PRendering_PMeshInstance_Bind`.
+    Phyre_PRendering_PMeshInstance_Bind @ 0x004f_38a0 => extern "C" fn s_004f38a0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x004f_38a0) })
+    }
+    /// `Phyre_PGameplay_PCameraControllerComponent_Bind`.
+    Phyre_PGameplay_PCameraControllerComponent_Bind @ 0x0055_76a0 => extern "C" fn s_005576a0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0055_76a0) })
+    }
+    /// `Phyre_PSprite_PSpriteAnimationInfo_Bind`.
+    Phyre_PSprite_PSpriteAnimationInfo_Bind @ 0x0056_86f0 => extern "C" fn s_005686f0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0056_86f0) })
+    }
+    /// `Phyre_PSprite_PSpriteAnimationInfoChar_Bind`.
+    Phyre_PSprite_PSpriteAnimationInfoChar_Bind @ 0x0056_8ab0 => extern "C" fn s_00568ab0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0056_8ab0) })
+    }
+    /// `Phyre_PSprite_PSpriteCollection_Bind`.
+    Phyre_PSprite_PSpriteCollection_Bind @ 0x0056_91b0 => extern "C" fn s_005691b0() -> u32 {
+        ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0056_91b0) })
     }
 }
 
