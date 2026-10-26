@@ -10,7 +10,7 @@
 use super::{mem, ported};
 use ffx_pother_a::{
     class::bridge as class, object::bridge as object, p3_misc::bridge as misc,
-    p3_tree::bridge as tree, physics::bridge as physics,
+    p3_misc2::bridge as misc2, p3_tree::bridge as tree, physics::bridge as physics,
 };
 
 ported! {
@@ -717,5 +717,98 @@ ported! {
     /// `PRedBlackTree::clear(tree)`.
     Phyre_PRedBlackTree_clear @ 0x0057_4760 => extern "thiscall" fn tree_clear(this: u32) {
         tree::clear(&mut mem(), this);
+    }
+    // round 2 (continuation), batch 2
+    /// `0x005a2520(this)` -> `this`.
+    Phyre_Defaults_005a2520 @ 0x005a_2520 => extern "thiscall" fn defaults_5a2520(this: u32) -> u32 {
+        misc2::light_defaults(&mut mem(), this)
+    }
+    /// `0x005a2630(this)` -> `this`.
+    Phyre_Defaults_005a2630 @ 0x005a_2630 => extern "thiscall" fn defaults_5a2630(this: u32) -> u32 {
+        misc2::lod_level_defaults(&mut mem(), this)
+    }
+    /// `0x005e6d50(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_PPhysicsPlaneBullet_scalarDelete_005e6d50 @ 0x005e_6d50 => extern "thiscall" fn plane_delete_5e6d50(this: u32, flags: u32) -> u32 {
+        misc2::plane_bullet_delete(&mut mem(), this, flags)
+    }
+    /// `0x005e6e00(this, flags)` (scalar deleting destructor) -> `this`.
+    Phyre_PPhysics_PPhysicsPlaneBullet_scalarDelete_005e6e00 @ 0x005e_6e00 => extern "thiscall" fn plane_delete_5e6e00(this: u32, flags: u32) -> u32 {
+        misc2::plane_bullet_delete(&mut mem(), this, flags)
+    }
+    /// `0x00551da0(p)` (create callback).
+    Phyre_PGameplay_CallbackData_create_00551da0 @ 0x0055_1da0 => extern "stdcall" fn create_callback_data(p: u32) -> u8 {
+        misc2::create_receiver_data(&mut mem(), p)
+    }
+    /// `0x00551e20(p)` (destroy callback).
+    Phyre_PGameplay_CallbackData_destroy_00551e20 @ 0x0055_1e20 => extern "stdcall" fn destroy_callback_data(p: u32) -> u8 {
+        misc2::destroy_receiver_data(&mut mem(), p)
+    }
+    /// `0x00544d70()` -> the locator shape type's semantic descriptor.
+    Phyre_PGameplay_LocatorShapeTypeSemantic_00544d70 @ 0x0054_4d70 => extern "C" fn semantic_544d70() -> u32 {
+        misc2::semantic_getter(&mut mem(), &ffx_pother_a::p3_misc2::LOCATOR_SHAPE_SEMANTIC)
+    }
+    /// `0x00544e00()` (the same code) -> the locator shape type's.
+    Phyre_PGameplay_LocatorShapeTypeSemantic_00544e00 @ 0x0054_4e00 => extern "C" fn semantic_544e00() -> u32 {
+        misc2::semantic_getter(&mut mem(), &ffx_pother_a::p3_misc2::LOCATOR_SHAPE_SEMANTIC)
+    }
+    /// `0x0054ce90()` -> the trigger type's semantic descriptor.
+    Phyre_PGameplay_TriggerTypeSemantic_0054ce90 @ 0x0054_ce90 => extern "C" fn semantic_54ce90() -> u32 {
+        misc2::semantic_getter(&mut mem(), &ffx_pother_a::p3_misc2::TRIGGER_SEMANTIC)
+    }
+    /// `0x0054bc40(array, buffer, &value)` -> 0 or 0xd.
+    Phyre_PArray_pushInto4_0054bc40 @ 0x0054_bc40 => extern "thiscall" fn push_into4(this: u32, buffer: u32, value: u32) -> u32 {
+        misc2::push_into(&mut mem(), this, buffer, value, 1)
+    }
+    /// `0x005d6a60(array, buffer, &value)` -> 0 or 0xd.
+    Phyre_PArray_pushInto8_005d6a60 @ 0x005d_6a60 => extern "thiscall" fn push_into8(this: u32, buffer: u32, value: u32) -> u32 {
+        misc2::push_into(&mut mem(), this, buffer, value, 2)
+    }
+    /// `0x005a6e30(p)` (destroy callback).
+    Phyre_PLOD_destroy_005a6e30 @ 0x005a_6e30 => extern "stdcall" fn destroy_lod_group(p: u32) -> u8 {
+        misc2::destroy_lod_group(&mut mem(), p)
+    }
+    /// `0x005a29d0(element)`.
+    Phyre_PLOD_element_dtor_005a29d0 @ 0x005a_29d0 => extern "thiscall" fn lod_element_dtor(this: u32) {
+        misc2::lod_element_dtor(&mut mem(), this);
+    }
+    /// `0x00554600(p)` (create callback).
+    Phyre_PGameplay_PScriptedComponent_create_00554600 @ 0x0055_4600 => extern "stdcall" fn create_scripted(p: u32) -> u8 {
+        misc2::create_scripted(&mut mem(), p)
+    }
+    /// `0x005cefd0(d)` -> `d`.
+    Phyre_PScripting_PScheduler_DescriptorInit_005cefd0 @ 0x005c_efd0 => extern "thiscall" fn scheduler_descriptor_init(this: u32) -> u32 {
+        misc2::scheduler_descriptor_init(&mut mem(), this)
+    }
+    /// `0x005cf1e0(scheduler)` -> `scheduler`.
+    Phyre_PScripting_PScheduler_ctor @ 0x005c_f1e0 => extern "thiscall" fn scheduler_ctor(this: u32) -> u32 {
+        misc2::scheduler_ctor(&mut mem(), this)
+    }
+    /// `0x005cfa60(data, count)`.
+    Phyre_PScripting_freePairArray_005cfa60 @ 0x005c_fa60 => extern "C" fn free_pair_array(data: u32, count: u32) {
+        misc2::free_pair_array(&mut mem(), data, count);
+    }
+    /// `0x005cf420(scheduler)`.
+    Phyre_PScripting_PScheduler_dtor @ 0x005c_f420 => extern "thiscall" fn scheduler_dtor(this: u32) -> u32 {
+        misc2::scheduler_dtor(&mut mem(), this)
+    }
+    /// `0x00547580(spline)`.
+    Phyre_PGameplay_PSpline_dtor @ 0x0054_7580 => extern "thiscall" fn spline_dtor(this: u32) {
+        misc2::spline_dtor(&mut mem(), this);
+    }
+    /// `0x00553a70(component)`.
+    Phyre_PGameplay_PScriptedComponent_dtor @ 0x0055_3a70 => extern "thiscall" fn scripted_dtor(this: u32) -> u32 {
+        misc2::scripted_dtor(&mut mem(), this)
+    }
+    /// `0x0048c3b0(array, n)` -> 0 or 0xd.
+    Phyre_PArray_resizeInline_0048c3b0 @ 0x0048_c3b0 => extern "thiscall" fn resize_inline(this: u32, n: u32) -> u32 {
+        misc2::resize_inline(&mut mem(), this, n)
+    }
+    /// `0x005d6b00(array, buffer, &string)` -> 0 or 0xd.
+    Phyre_PArray_PString_pushInto_005d6b00 @ 0x005d_6b00 => extern "thiscall" fn push_string(this: u32, buffer: u32, string: u32) -> u32 {
+        misc2::push_string(&mut mem(), this, buffer, string)
+    }
+    /// `0x00559530(this)` -> `this`.
+    Phyre_PGameplay_PAttachableComponent_ctor_00559530 @ 0x0055_9530 => extern "thiscall" fn attachable_ctor(this: u32) -> u32 {
+        misc2::attachable_ctor(&mut mem(), this)
     }
 }

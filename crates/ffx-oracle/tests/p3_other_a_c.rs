@@ -926,3 +926,340 @@ fn float_functions_match_the_original() {
         }
     }
 }
+
+#[test]
+fn arrays_and_components_match_the_original() {
+    use ffx_pother_a::p3_misc2 as m2;
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0b47_c402);
+        t.stub(FREE, cdecl(1, 0x5001));
+        t.stub(m2::REF_RELEASE, method(0, 0x5002));
+        t.stub(m2::NAMED_SEMANTIC_CTOR, method(5, 0x5003));
+        t.stub(m2::ATEXIT, cdecl(1, 0x5004));
+        t.stub(m2::ARRAY24_RELEASE, method(0, 0x5005));
+        t.stub(m2::SCRIPTABLE_DTOR, method(0, 0x5006));
+        t.stub(m2::RELEASE_HANDLE, cdecl(1, 0x5007));
+        t.stub(m2::GLOBAL_NAMESPACE, cdecl(0, 0x5008));
+        t.stub(m2::CLASS_DESCRIPTOR_INIT6, method(6, 0x5009));
+        t.stub(m2::SET_DEFAULT_BUFFER, method(1, 0x500a));
+        t.stub(m2::SET_VALIDATION_BUFFER, method(1, 0x500b));
+        t.stub(m2::SET_WRITE_MASK_BUFFER, method(1, 0x500c));
+        t.stub(m2::FREE_LIST_INIT, method(4, 0x500d));
+        t.stub(m2::FREE_LIST_DTOR, method(0, 0x500e));
+        t.stub(m2::ASYNC_BUFFER_CTOR, method(0, 0x500f));
+        t.stub(m2::ASYNC_BUFFER_DTOR, method(0, 0x5010));
+        t.stub(m2::SCHEDULER_SHUTDOWN, method(0, 0x5011));
+        t.stub(m2::MOVE_STRINGS, cdecl(3, 0x5012));
+        t.stub(m2::STRING_COPY, method(1, 0x5013));
+        t.stub(m2::RELEASE_TAGGED_WORDS, cdecl(2, 0x5014));
+
+        // constructors with float defaults
+        for _ in 0..2 {
+            let p = t.random(&mut rng, 0x80);
+            t.check(
+                "light defaults",
+                0x005a_2520,
+                Conv::Thiscall(p),
+                &[],
+                ALL,
+                |g| m2::bridge::light_defaults(g, p),
+            );
+            let p = t.random(&mut rng, 0x80);
+            t.check(
+                "lod level defaults",
+                0x005a_2630,
+                Conv::Thiscall(p),
+                &[],
+                ALL,
+                |g| m2::bridge::lod_level_defaults(g, p),
+            );
+            let p = t.random(&mut rng, 0x80);
+            t.check(
+                "attachable ctor",
+                0x0055_9530,
+                Conv::Thiscall(p),
+                &[],
+                ALL,
+                |g| m2::bridge::attachable_ctor(g, p),
+            );
+            let p = t.random(&mut rng, 0xa0);
+            t.check(
+                "scheduler descriptor",
+                0x005c_efd0,
+                Conv::Thiscall(p),
+                &[],
+                ALL,
+                |g| m2::bridge::scheduler_descriptor_init(g, p),
+            );
+            let p = t.random(&mut rng, 0x290);
+            t.check(
+                "scheduler ctor",
+                0x005c_f1e0,
+                Conv::Thiscall(p),
+                &[],
+                ALL,
+                |g| m2::bridge::scheduler_ctor(g, p),
+            );
+        }
+        // plane bullet scalar deleting destructors: with and without the
+        // Bullet object, both flags
+        for (obj, flags) in [(true, 0), (true, 1), (false, 1), (false, 0)] {
+            for sym in [0x005e_6d50, 0x005e_6e00] {
+                let p = t.random(&mut rng, 0x70);
+                let o = if obj { t.object(0x5100, &[1]) } else { 0 };
+                t.w32(p + 0x6c, o);
+                t.check("plane delete", sym, Conv::Thiscall(p), &[flags], ALL, |g| {
+                    m2::bridge::plane_bullet_delete(g, p, flags)
+                });
+            }
+        }
+        // callbacks: null and blocks, tagged words or not
+        let blocks = [
+            0,
+            t.random(&mut rng, 0x40),
+            t.random(&mut rng, 0x40),
+            t.random(&mut rng, 0x40),
+        ];
+        for (k, p) in blocks.into_iter().enumerate() {
+            t.check(
+                "create callback data",
+                0x0055_1da0,
+                Conv::Stdcall,
+                &[p],
+                AL,
+                |g| u32::from(m2::bridge::create_receiver_data(g, p)),
+            );
+            let p = if p == 0 { 0 } else { t.random(&mut rng, 0x40) };
+            t.check(
+                "create scripted",
+                0x0055_4600,
+                Conv::Stdcall,
+                &[p],
+                AL,
+                |g| u32::from(m2::bridge::create_scripted(g, p)),
+            );
+            if p != 0 {
+                let q = t.random(&mut rng, 0x40);
+                let w = t.r32(q + 0x20);
+                t.w32(q + 0x20, if k == 1 { w | 1 } else { w & !1 });
+                let w = t.r32(q + 0x14);
+                t.w32(q + 0x14, if k == 2 { w | 1 } else { w & !1 });
+                t.check(
+                    "destroy callback data",
+                    0x0055_1e20,
+                    Conv::Stdcall,
+                    &[q],
+                    AL,
+                    |g| u32::from(m2::bridge::destroy_receiver_data(g, q)),
+                );
+            }
+        }
+        // the semantic getters: first call and later ones
+        for sym in [0x0054_4d70, 0x0054_4e00, 0x0054_ce90] {
+            let s = if sym == 0x0054_ce90 {
+                m2::TRIGGER_SEMANTIC
+            } else {
+                m2::LOCATOR_SHAPE_SEMANTIC
+            };
+            for flags in [0, 0x10, 1, 3] {
+                let at = t.rebase(s.once);
+                t.w32(at, flags);
+                t.check("semantic getter", sym, Conv::Cdecl, &[], ALL, |g| {
+                    m2::bridge::semantic_getter(g, &s)
+                });
+            }
+        }
+        // push into a new buffer: 4- and 8-byte elements, and strings
+        for round in 0..24u32 {
+            let words = 1 + round % 2;
+            let sym = if words == 1 { 0x0054_bc40 } else { 0x005d_6a60 };
+            let data = if rng.below(4) == 0 {
+                0
+            } else {
+                t.random(&mut rng, 0x40)
+            };
+            // a null block only with no elements to copy
+            let n = if data == 0 { 0 } else { rng.below(5) };
+            let flag = if rng.below(3) == 0 { 0x8000_0000 } else { 0 };
+            let buffer = match round % 6 {
+                0 => 0,
+                1 => data,
+                _ => t.random(&mut rng, 0x40),
+            };
+            let arr = t.zeros(8);
+            t.w32(arr, n | flag);
+            t.w32(arr + 4, data);
+            let value = t.random(&mut rng, 8);
+            t.check(
+                "push into",
+                sym,
+                Conv::Thiscall(arr),
+                &[buffer, value],
+                ALL,
+                |g| m2::bridge::push_into(g, arr, buffer, value, words),
+            );
+            let arr = t.zeros(8);
+            t.w32(arr, n | flag);
+            t.w32(arr + 4, data);
+            let s = t.random(&mut rng, 8);
+            t.check(
+                "push string",
+                0x005d_6b00,
+                Conv::Thiscall(arr),
+                &[buffer, s],
+                ALL,
+                |g| m2::bridge::push_string(g, arr, buffer, s),
+            );
+        }
+        // resize with inline storage: same word, shrink/grow, failed malloc
+        for round in 0..30u32 {
+            let arr = t.random(&mut rng, 0x10);
+            let c = rng.below(4);
+            let flag = if rng.below(3) == 0 { 0x8000_0000 } else { 0 };
+            t.w32(arr, c | flag);
+            let n = match round % 5 {
+                0 => c | flag,
+                1 => 0,
+                2 => 1,
+                _ => rng.below(5),
+            };
+            let block = if round % 7 == 3 {
+                0
+            } else {
+                t.random(&mut rng, 0x20)
+            };
+            let m = t.stub_code(m2::MALLOC, cdecl(2, block));
+            t.jump(m2::MALLOC, m);
+            t.check(
+                "resize inline",
+                0x0048_c3b0,
+                Conv::Thiscall(arr),
+                &[n],
+                ALL,
+                |g| m2::bridge::resize_inline(g, arr, n),
+            );
+        }
+        // array releases
+        let arrays = |t: &mut Twins, rng: &mut Rng, at: u32| {
+            let count = match rng.below(6) {
+                0 => 0,
+                1 => 1,
+                2 => 0x8000_0003,
+                3 => 0x4000_0002,
+                _ => 2 + rng.below(3),
+            };
+            t.w32(at, count);
+            let data = if rng.below(4) == 0 { 0 } else { rng.next() };
+            t.w32(at + 4, data);
+        };
+        for _ in 0..12 {
+            let p = t.random(&mut rng, 0x60);
+            arrays(&mut t, &mut rng, p + 0x20);
+            t.check(
+                "destroy lod group",
+                0x005a_6e30,
+                Conv::Stdcall,
+                &[p],
+                AL,
+                |g| u32::from(m2::bridge::destroy_lod_group(g, p)),
+            );
+            let p = t.random(&mut rng, 0x24);
+            arrays(&mut t, &mut rng, p + 0x14);
+            arrays(&mut t, &mut rng, p + 4);
+            t.check(
+                "lod element dtor",
+                0x005a_29d0,
+                Conv::Thiscall(p),
+                &[],
+                0,
+                |g| {
+                    m2::bridge::lod_element_dtor(g, p);
+                    0
+                },
+            );
+            let p = t.random(&mut rng, 0x30);
+            for off in [0x24, 0xc, 4] {
+                arrays(&mut t, &mut rng, p + off);
+            }
+            t.check("spline dtor", 0x0054_7580, Conv::Thiscall(p), &[], 0, |g| {
+                m2::bridge::spline_dtor(g, p);
+                0
+            });
+            let n = rng.below(4);
+            let data = if rng.below(4) == 0 {
+                0
+            } else {
+                t.random(&mut rng, 0x14 * 4)
+            };
+            if data != 0 {
+                for i in 0..n {
+                    arrays(&mut t, &mut rng, data + 0x14 * i);
+                    arrays(&mut t, &mut rng, data + 0x14 * i + 8);
+                }
+            }
+            t.check(
+                "free pair array",
+                0x005c_fa60,
+                Conv::Cdecl,
+                &[data, n],
+                0,
+                |g| {
+                    m2::bridge::free_pair_array(g, data, n);
+                    0
+                },
+            );
+            let p = t.random(&mut rng, 0x40);
+            arrays(&mut t, &mut rng, p + 0x34);
+            let pairs = t.random(&mut rng, 0x14 * 3);
+            for i in 0..3 {
+                arrays(&mut t, &mut rng, pairs + 0x14 * i);
+                arrays(&mut t, &mut rng, pairs + 0x14 * i + 8);
+            }
+            let w = rng.below(4) | if rng.below(3) == 0 { 0x8000_0000 } else { 0 };
+            t.w32(p + 0x28, w);
+            t.w32(p + 0x2c, pairs);
+            t.check(
+                "scheduler dtor",
+                0x005c_f420,
+                Conv::Thiscall(p),
+                &[],
+                ALL,
+                |g| m2::bridge::scheduler_dtor(g, p),
+            );
+        }
+        for (b, handle) in [(0u8, true), (1, true), (0x80, false), (0, false)] {
+            let p = t.random(&mut rng, 0x30);
+            t.write(p + 0x2d, &[b]);
+            if !handle {
+                t.w32(p + 0x1c, 0);
+            }
+            t.check(
+                "scripted dtor",
+                0x0055_3a70,
+                Conv::Thiscall(p),
+                &[],
+                ALL,
+                |g| m2::bridge::scripted_dtor(g, p),
+            );
+        }
+        // resize: one inline element grown into a block, owned and not
+        for flag in [0, 0x8000_0000] {
+            for n in [2, 3] {
+                let arr = t.random(&mut rng, 0x10);
+                t.w32(arr, 1 | flag);
+                let block = t.random(&mut rng, 0x20);
+                let m = t.stub_code(m2::MALLOC, cdecl(2, block));
+                t.jump(m2::MALLOC, m);
+                t.check(
+                    "resize inline 1",
+                    0x0048_c3b0,
+                    Conv::Thiscall(arr),
+                    &[n],
+                    ALL,
+                    |g| m2::bridge::resize_inline(g, arr, n),
+                );
+            }
+        }
+        t.unstub_all();
+    }
+}
