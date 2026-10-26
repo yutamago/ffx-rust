@@ -1112,4 +1112,35 @@ ported! {
     MorphManager_reset @ 0x006a_c530 => extern "fastcall" fn morph_reset(mm: u32) {
         p4_morph::bridge4::reset(&mut mem(), mm);
     }
+    // ---- p4-other-b c2 batch 5 ----
+    /// `CharacterLighting::initialize(cl, scene)` -> 0; leaves the item
+    /// cell's last word in its argument's slot, as the original does.
+    Phyre_CharacterLighting_initialize_006a8f80 @ 0x006a_8f80 => extern "thiscall" fn lighting_initialize(cl: u32, scene: u32; slots: u32) -> u32 {
+        // ebp - 0x28 .. ebp + 0xc: the cursor, temporaries, the saved ebp and
+        // return slots (unused), the item cell at ebp + 8
+        let mut frame = super::StackFrame::<13>::new();
+        let ebp = frame.at() + 0x28;
+        let mut m = mem();
+        let (r, word) = p4_light::bridge11::initialize(&mut m, ebp, cl, scene);
+        ffx_bridge::Mem::write(&mut m, slots, word);
+        r
+    }
+    /// `CharacterLighting::applyAmbient(cl, flag)`; leaves the luminance
+    /// in its argument's slot, as the original does.
+    CharacterLighting_applyAmbient_006aa650 @ 0x006a_a650 => extern "thiscall" fn apply_ambient(cl: u32, flag: u32; slots: u32) {
+        // ebp - 0x4c .. ebp: four vectors, temporaries
+        let mut frame = super::StackFrame::<0x13>::new();
+        let ebp = frame.at() + 0x4c;
+        let mut m = mem();
+        if let Some(word) = p4_light::bridge12::apply_ambient(&mut m, ebp, cl, flag as u8) {
+            ffx_bridge::Mem::write(&mut m, slots, word);
+        }
+    }
+    /// `CharacterLighting::destroyUniqueMaterialParameters(cl, inst)`.
+    Phyre_CharacterLighting_destroyUniqueMaterialParameters @ 0x006a_8210 => extern "thiscall" fn destroy_unique(cl: u32, inst: u32) {
+        // ebp - 8 .. ebp: the search key (then the count) and the manager
+        let mut frame = super::StackFrame::<2>::new();
+        let ebp = frame.at() + 8;
+        p4_light::bridge13::destroy_unique(&mut mem(), ebp, cl, inst);
+    }
 }

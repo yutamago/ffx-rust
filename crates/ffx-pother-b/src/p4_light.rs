@@ -971,3 +971,445 @@ pub mod bridge10 {
         h.write(cl + 0x220, 0u32);
     }
 }
+
+/// `Phyre_PhyreMalloc_0042fb80` (cdecl `(size, align)`).
+pub const PHYRE_MALLOC: u32 = 0x0042_fb80;
+/// `Phyre_PCluster_create` (`(cluster; count, desc, flags)` -> objects,
+/// `ret 0xc`; the callers leave the cluster in `ecx`).
+pub const CLUSTER_CREATE: u32 = 0x0044_1010;
+/// `PLight`'s class descriptor.
+pub const PLIGHT_DESC: u32 = 0x00c9_af80;
+/// The scene node class `initialize` creates one of per light.
+pub const NODE_DESC: u32 = 0x00c9_2090;
+/// `CharacterLighting_iteratorSkipInvalid_006a8d30` (thiscall `(it)`).
+pub const ITERATOR_BEGIN: u32 = 0x006a_8d30;
+/// `CharacterLighting_iteratorNext_006a8da0` (thiscall `(it)`).
+pub const ITERATOR_NEXT: u32 = 0x006a_8da0;
+/// `PArray_pushWord_006a94b0` (thiscall `(arr, buffer, &item)`, `ret 8`).
+pub const ARRAY_PUSH_WORD: u32 = 0x006a_94b0;
+/// The `double` -1.0 the first lights' direction is scaled by
+/// (`0x00b92350`).
+const MINUS_ONE: f64 = -1.0;
+
+pub mod bridge11 {
+    //! The original over game memory.
+
+    use super::{
+        APPLY_INTENSITY, APPLY_ROTATION, ARRAY_PUSH_WORD, CLUSTER_CREATE, COLOR_LIGHT_TYPE, Conv,
+        Host, ITERATOR_BEGIN, ITERATOR_NEXT, MINUS_ONE, NODE_DESC, ONE, PHYRE_MALLOC, PLIGHT_DESC,
+        POINT_LIGHT_TYPE, RESET_CONSTANTS, x87,
+    };
+
+    const COUNT: u32 = 0x7fff_ffff;
+
+    /// Appends the light in the frame's item cell to the light set,
+    /// through a buffer one word longer (`Phyre_PhyreMalloc(4 n + 4, 4)`).
+    fn push(h: &mut impl Host, set: u32, item_cell: u32) {
+        let n = h.read::<u32>(set) & COUNT;
+        let buf = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[4 * n + 4, 4]);
+        h.call_sym(ARRAY_PUSH_WORD, Conv::Thiscall(set), &[buf, item_cell]);
+    }
+
+    /// One `PLight`, already in the frame's item cell.
+    fn add_light(h: &mut impl Host, cl: u32, item_cell: u32) {
+        let set: u32 = h.read(cl + 0xf0);
+        let [_, point_range, flash_off] = RESET_CONSTANTS.map(|a| h.rebase(a));
+        if h.read::<u32>(set) & COUNT < 3 {
+            // one of the three directional colour lights
+            push(h, set, item_cell);
+            let light: u32 = h.read(item_cell);
+            h.write(light + 0x18, h.rebase(COLOR_LIGHT_TYPE));
+            let set: u32 = h.read(cl + 0xf0);
+            let i = (h.read::<u32>(set) & COUNT).wrapping_sub(1);
+            h.call_sym(APPLY_INTENSITY, Conv::Thiscall(cl), &[i, 0]);
+            let node_desc = h.rebase(NODE_DESC);
+            let node = h.call_sym(
+                CLUSTER_CREATE,
+                Conv::Thiscall(cl + 0x50),
+                &[1, node_desc, 0],
+            );
+            let light: u32 = h.read(item_cell);
+            h.write(light + 0x10, node);
+            // -0.0 through the item cell (the original's argument slot)
+            let z = x87::store(x87::mul(0.0, MINUS_ONE));
+            h.write(item_cell, z);
+            let set: u32 = h.read(cl + 0xf0);
+            let n = h.read::<u32>(set) & COUNT;
+            let at = cl.wrapping_add(n.wrapping_mul(0x10));
+            h.write(at.wrapping_add(0xe4), z);
+            h.write(at.wrapping_add(0xe8), z);
+            let off: u32 = h.read(flash_off);
+            h.write(at.wrapping_add(0xec), off);
+            let set: u32 = h.read(cl + 0xf0);
+            let n = h.read::<u32>(set) & COUNT;
+            let at = cl.wrapping_add(n.wrapping_mul(0x10));
+            for k in [0x114, 0x118, 0x11c] {
+                h.write(at.wrapping_add(k), ONE);
+            }
+            let set: u32 = h.read(cl + 0xf0);
+            let i = (h.read::<u32>(set) & COUNT).wrapping_sub(1);
+            h.call_sym(APPLY_ROTATION, Conv::Thiscall(cl), &[i]);
+        } else {
+            // a point light
+            push(h, set, item_cell);
+            let light: u32 = h.read(item_cell);
+            h.write(light + 0x18, h.rebase(POINT_LIGHT_TYPE));
+            let node_desc = h.rebase(NODE_DESC);
+            let node = h.call_sym(
+                CLUSTER_CREATE,
+                Conv::Thiscall(cl + 0x50),
+                &[1, node_desc, 0],
+            );
+            let light: u32 = h.read(item_cell);
+            h.write(light, 0u32);
+            h.write(light + 0x10, node);
+            h.write(light + 4, 0u32);
+            h.write(light + 8, 0u32);
+            h.write(light + 0xc, ONE);
+            h.write(light + 0x24, ONE);
+            h.write(light + 0x28, 0u32);
+            let range: u32 = h.read(point_range);
+            h.write(light + 0x2c, range);
+        }
+    }
+
+    /// `CharacterLighting::initialize(cl, scene)` (`0x006a8f80`, `ret 4`)
+    /// -> 0: the light set is the scene's `+0xa4` (`cl + 0xf0`), the scene
+    /// at `+0x18c`; `PCluster::create(4, PLight)` on the manager's own
+    /// cluster; then each `PLight` of it (a cursor at `ebp - 0x28`, the
+    /// original's inline step as in `registerClusterMorphs`) is pushed
+    /// onto the set (the light passes through the frame's item cell at
+    /// `ebp + 8`, the original's argument slot): the first three become
+    /// colour lights facing `(-0, -0, -1)` with white colours, intensity
+    /// applied and rotation set; the rest point lights (black, range
+    /// 0..100). Each gets a scene node (`PCluster::create(1, ...)` on
+    /// `cl + 0x50`). Initialised (`+0x1cc`) when the set holds four.
+    /// Also returns the word left in the item cell.
+    pub fn initialize(h: &mut impl Host, ebp: u32, cl: u32, scene: u32) -> (u32, u32) {
+        let item_cell = ebp + 8;
+        h.write(item_cell, scene);
+        h.write(cl + 0xf0, scene.wrapping_add(0xa4));
+        h.write(cl + 0x18c, scene);
+        let desc = h.rebase(PLIGHT_DESC);
+        h.call_sym(CLUSTER_CREATE, Conv::Thiscall(cl), &[4, desc, 0]);
+        let cur = ebp - 0x28;
+        let lists = cl + 0x1c;
+        let first: u32 = h.read(lists);
+        let first = if first == lists { 0 } else { first };
+        for at in [0, 4, 8, 0xc, 0x10] {
+            h.write(cur + at, 0u32);
+        }
+        h.write(cur + 0x14, lists);
+        h.write(cur + 0x18, first);
+        h.write(cur + 0x1c, desc);
+        h.call_sym(ITERATOR_BEGIN, Conv::Thiscall(cur), &[]);
+        let mut left: u32 = h.read(cur + 0xc);
+        if left != 0 {
+            let mut at: u32 = h.read(cur);
+            let mut node: u32 = h.read(cur + 4);
+            loop {
+                let off: u32 = h.read(cur + 0x10);
+                let light = off.wrapping_add(at);
+                h.write(item_cell, light);
+                if light != 0 {
+                    add_light(h, cl, item_cell);
+                }
+                let mut next_block = false;
+                loop {
+                    let stride: u32 = h.read(cur + 8);
+                    at = at.wrapping_add(stride);
+                    left -= 1;
+                    h.write(cur, at);
+                    h.write(cur + 0xc, left);
+                    if node == at {
+                        node = h.read(node);
+                        h.write(cur + 4, node);
+                        if left != 0 {
+                            continue;
+                        }
+                        next_block = true;
+                    } else if left == 0 {
+                        next_block = true;
+                    }
+                    break;
+                }
+                if next_block {
+                    h.call_sym(ITERATOR_NEXT, Conv::Thiscall(cur), &[]);
+                    left = h.read(cur + 0xc);
+                    if left == 0 {
+                        break;
+                    }
+                    at = h.read(cur);
+                    node = h.read(cur + 4);
+                }
+            }
+        }
+        let set: u32 = h.read(cl + 0xf0);
+        let four = h.read::<u32>(set) & COUNT == 4;
+        h.write(cl + 0x1cc, u8::from(four));
+        let word: u32 = h.read(item_cell);
+        (0, word)
+    }
+}
+
+/// `MSVCR110!strstr`'s import slot.
+pub const STRSTR_SLOT: u32 = 0x00b0_c378;
+/// The three map names whose ambient colour is boosted (`"znkd14"`,
+/// `"znkd08"`, `"znkd09"`).
+pub const BOOSTED_MAPS: [u32; 3] = [0x00b4_80e8, 0x00b4_80f0, 0x00b4_80f8];
+/// `Phyre_Vec3Max_004f84f0` (cdecl `(out, a, b)` -> out).
+pub const VEC3_MAX: u32 = 0x004f_84f0;
+/// `Phyre_Vec3Min_004f8580` (cdecl `(out, a, b)` -> out).
+pub const VEC3_MIN: u32 = 0x004f_8580;
+/// The `f32` ambient factor without the flag (1.16, `0x00b482e8`).
+pub const AMBIENT_DIM: u32 = 0x00b4_82e8;
+/// The `double` constants, by address: the average's 0.333, the boost's
+/// 2.6, the intensity's 1.2 and 1.05, the luminance weights 0.3, 0.5, 0.2.
+pub const AMBIENT_DOUBLES: [u32; 7] = [
+    0x00b4_8310,
+    0x00b4_8350,
+    0x00b4_8340,
+    0x00b4_8338,
+    0x00b4_8308,
+    0x00b9_2220,
+    0x00b3_eb60,
+];
+
+pub mod bridge12 {
+    //! The original over game memory.
+
+    use super::{
+        AMBIENT_DIM, AMBIENT_DOUBLES, APPLY_INTENSITY, BOOSTED_MAPS, Conv, Host, ONE, STRSTR_SLOT,
+        VEC3_MAX, VEC3_MIN, x87,
+    };
+    use crate::methods::quiet;
+
+    fn f(bits: u32) -> f64 {
+        x87::load(bits)
+    }
+
+    fn double(h: &mut impl Host, at: u32) -> f64 {
+        let at = h.rebase(at);
+        let lo: u32 = h.read(at);
+        let hi: u32 = h.read(at + 4);
+        f64::from_bits(u64::from(hi) << 32 | u64::from(lo))
+    }
+
+    /// `CharacterLighting::applyAmbient(cl, flag)` (`0x006aa650`, `ret 4`):
+    /// `+0x230 = flag`; on an initialised manager lights 0..2 are applied
+    /// again and the ambient intensity becomes `(1 - [+0x1ec]) * 1.2 *
+    /// [+0x1a0] * (flag ? 1 : 1.16) * 1.05` (`+0x1a4`), the scene's
+    /// ambient colour (`scene +0xac`) the ambient colour (`+0x190`) times
+    /// it, and `+0x1dc` its luminance (0.3, 0.5, 0.2) times it. On the
+    /// maps of [`BOOSTED_MAPS`] the colour's distance from its grey is
+    /// first scaled by 2.6 and the result clamped to `[0, 1]`
+    /// (`Phyre_Vec3Max`/`Vec3Min` on the frame's vectors: `ebp - 0x4c`,
+    /// `-0x3c` (zeros, then the result), `-0x2c` (ones), `-0x1c` the
+    /// colour). Every step rounds to `f32` where the original stores.
+    /// Returns the word the original leaves in its argument slot (the
+    /// luminance), `None` on an uninitialised manager.
+    pub fn apply_ambient(h: &mut impl Host, ebp: u32, cl: u32, flag: u8) -> Option<u32> {
+        h.write(cl + 0x230, flag);
+        if h.read::<u8>(cl + 0x1cc) == 0 {
+            return None;
+        }
+        for i in 0..3 {
+            h.call_sym(APPLY_INTENSITY, Conv::Thiscall(cl), &[i, 1]);
+        }
+        let m = if h.read::<u8>(cl + 0x230) == 0 {
+            h.read(h.rebase(AMBIENT_DIM))
+        } else {
+            ONE
+        };
+        let [k333, k26, k12, k105, w0, w1, w2] = AMBIENT_DOUBLES.map(|a| double(h, a));
+        let (c, v) = (ebp - 0x2c, ebp - 0x1c);
+        let col: [u32; 3] = [0x190, 0x194, 0x198].map(|o| quiet(h.read(cl + o)));
+        for (k, w) in col.into_iter().enumerate() {
+            h.write(c + 4 * k as u32, w);
+            h.write(v + 4 * k as u32, w);
+        }
+        // junk read: [ebp-0x20] never written; 0 (brief 2026-10-24): it
+        // goes to the colour's unused fourth word, which nothing reads
+        h.write(v + 0xc, 0u32);
+        let mut col = col;
+        let name: u32 = h.read(cl + 0x220);
+        if name != 0 {
+            let strstr: u32 = h.read(h.rebase(STRSTR_SLOT));
+            let mut boosted = false;
+            for s in BOOSTED_MAPS {
+                let name: u32 = h.read(cl + 0x220);
+                let s = h.rebase(s);
+                if h.call(strstr, Conv::Cdecl, &[name, s]) != 0 {
+                    boosted = true;
+                    break;
+                }
+            }
+            if boosted {
+                let [x, y, z] = col;
+                let s1 = x87::store(x87::add(f(y), f(x)));
+                let s2 = x87::store(x87::add(f(s1), f(z)));
+                let avg = x87::store(x87::mul(f(s2), k333));
+                let d = col.map(|e| x87::store(x87::sub(f(e), f(avg))));
+                for (k, w) in d.into_iter().enumerate() {
+                    h.write(c + 4 * k as u32, w);
+                }
+                let a = x87::store(x87::mul(f(d[0]), k26));
+                let b = x87::store(x87::mul(f(d[1]), k26));
+                let e = x87::store(x87::mul(k26, f(d[2])));
+                let a = x87::store(x87::add(f(a), f(avg)));
+                let b = x87::store(x87::add(f(b), f(avg)));
+                let e = x87::store(x87::add(f(avg), f(e)));
+                for (k, w) in [a, b, e].into_iter().enumerate() {
+                    h.write(v + 4 * k as u32, w);
+                    h.write(c + 4 * k as u32, ONE);
+                    h.write(ebp - 0x3c + 4 * k as u32, 0u32);
+                }
+                let r = h.call_sym(VEC3_MAX, Conv::Cdecl, &[ebp - 0x4c, ebp - 0x3c, v]);
+                h.call_sym(VEC3_MIN, Conv::Cdecl, &[ebp - 0x3c, r, c]);
+                col = [0, 4, 8].map(|o| quiet(h.read(ebp - 0x3c + o)));
+                for (k, w) in col.into_iter().enumerate() {
+                    h.write(v + 4 * k as u32, w);
+                }
+            }
+        }
+        let t = x87::sub(1.0, f(h.read(cl + 0x1ec)));
+        let t = x87::mul(t, k12);
+        let t = x87::mul(t, f(h.read(cl + 0x1a0)));
+        let t = x87::mul(t, f(m));
+        let level = x87::store(x87::mul(t, k105));
+        h.write(cl + 0x1a4, level);
+        let [x, y, z] = col;
+        let scene: u32 = h.read(cl + 0x18c);
+        if scene != 0 {
+            let p = [
+                x87::store(x87::mul(f(x), f(level))),
+                x87::store(x87::mul(f(y), f(level))),
+                x87::store(x87::mul(f(level), f(z))),
+            ];
+            for (k, w) in p.into_iter().enumerate() {
+                h.write(c + 4 * k as u32, w);
+            }
+            for (k, w) in p.into_iter().enumerate() {
+                h.write(scene + 0xac + 4 * k as u32, w);
+            }
+        }
+        let a = x87::store(x87::mul(f(x), w0));
+        let s = x87::store(x87::add(f(a), x87::mul(f(y), w1)));
+        let lum = x87::store(x87::add(f(s), x87::mul(f(z), w2)));
+        let level: u32 = h.read(cl + 0x1a4);
+        h.write(cl + 0x1dc, x87::store(x87::mul(f(lum), f(level))));
+        Some(lum)
+    }
+}
+
+/// `SearchTree_findUnsigned_006a5ec0` (thiscall `(tree, &key)` -> node).
+pub const TREE_FIND_UNSIGNED: u32 = 0x006a_5ec0;
+/// `PArray_Data_004d45a0` (thiscall `(array)` -> its elements).
+pub const ARRAY_DATA: u32 = 0x004d_45a0;
+/// `Phyre_PCluster_deleteObject` (thiscall `(cluster, obj)`, `ret 4`).
+pub const DELETE_OBJECT: u32 = 0x0044_1240;
+/// `Phyre_PFreeList_deallocate` (thiscall `(list, p)`, `ret 4`).
+pub const FREE_LIST_DEALLOCATE: u32 = 0x0049_c980;
+
+pub mod bridge13 {
+    //! The original over game memory.
+
+    use super::{
+        ARRAY_DATA, Conv, DELETE_OBJECT, FREE_LIST_DEALLOCATE, G_TWEAK, Host, TREE_FIND_UNSIGNED,
+        TREE_REMOVE,
+    };
+    use crate::PHYRE_FREE;
+
+    const COUNT: u32 = 0x7fff_ffff;
+
+    /// A `PArray`'s elements as the original's inline code finds them:
+    /// more than one at `[arr + 4]`, one inline at `arr + 4`, none 0.
+    fn elements(h: &mut impl Host, arr: u32) -> u32 {
+        let n = h.read::<u32>(arr) & COUNT;
+        match n {
+            0 => 0,
+            1 => arr + 4,
+            _ => h.read(arr + 4),
+        }
+    }
+
+    /// `CharacterLighting::destroyUniqueMaterialParameters(cl, inst)`
+    /// (`0x006a8210`, `ret 4`): undoes `instantiateUniqueMaterialParameters`
+    /// for the instance's material list (`inst + 0x10`, the key at `ebp -
+    /// 8` for the shade tree's `findUnsigned`): when the tree has it the
+    /// instance gets back the node's saved list (`+0x10`; `[inst] + 0x30`
+    /// when that is 0);
+    /// then each element's two objects are deleted from the manager's
+    /// cluster (`+0xa0`) and the element cleared, the list's storage freed
+    /// (when owned) and its count zeroed, the tree node removed and freed
+    /// (`+0x170` free list), and the list itself deleted. In any case the
+    /// tweak utility forgets the instance (its 100 shade entries at `[tw +
+    /// 0xf8]`: `{0, 0.0, 2}`).
+    pub fn destroy_unique(h: &mut impl Host, ebp: u32, cl: u32, inst: u32) {
+        let list: u32 = h.read(inst + 0x10);
+        let key = ebp - 8;
+        h.write(ebp - 4, cl);
+        h.write(key, list);
+        let node = h.call_sym(TREE_FIND_UNSIGNED, Conv::Thiscall(cl + 0x158), &[key]);
+        if node != 0 && node.wrapping_add(0x10) != 0 {
+            // the saved list, else the instance's default one
+            let saved: u32 = h.read(node.wrapping_add(0x10));
+            let back = if saved == 0 {
+                h.read::<u32>(inst).wrapping_add(0x30)
+            } else {
+                saved
+            };
+            h.write(inst + 0x10, back);
+            let n = h.read::<u32>(list) & COUNT;
+            h.write(key, n);
+            for k in 0..n {
+                let data = h.call_sym(ARRAY_DATA, Conv::Thiscall(list), &[]);
+                let e: u32 = h.read(data.wrapping_add(4 * k));
+                let other: u32 = h.read(e + 4);
+                h.call_sym(DELETE_OBJECT, Conv::Thiscall(cl + 0xa0), &[e]);
+                h.call_sym(DELETE_OBJECT, Conv::Thiscall(cl + 0xa0), &[other]);
+                if k < h.read::<u32>(list) & COUNT {
+                    let at = elements(h, list);
+                    h.write(at.wrapping_add(4 * k), 0u32);
+                }
+            }
+            let count: u32 = h.read(list);
+            if count != 0 {
+                let data = elements(h, list);
+                if data != list + 4 && count >> 31 == 0 {
+                    h.call_sym(PHYRE_FREE, Conv::Cdecl, &[data]);
+                }
+                h.write(list, 0u32);
+            }
+            let tree = cl + 0x158;
+            let mut at: u32 = h.read(cl + 0x164);
+            while at != tree {
+                let k: u32 = h.read(at + 0xc);
+                if k == list {
+                    h.call_sym(TREE_REMOVE, Conv::Thiscall(tree), &[at]);
+                    h.call_sym(FREE_LIST_DEALLOCATE, Conv::Thiscall(tree + 0x18), &[at]);
+                    break;
+                }
+                // larger keys to the left
+                let side = u32::from(k < list);
+                at = h.read(at + 4 * side);
+            }
+            h.call_sym(DELETE_OBJECT, Conv::Thiscall(cl + 0xa0), &[list]);
+        }
+        let tw: u32 = h.read(h.rebase(G_TWEAK));
+        if h.read::<u8>(tw) == 0 {
+            return;
+        }
+        let entries: u32 = h.read(tw + 0xf8);
+        for i in 0..100u32 {
+            if h.read::<u32>(entries + 0xc * i) == inst {
+                h.write(entries + 0xc * i, 0u32);
+                let entries: u32 = h.read(tw + 0xf8);
+                h.write(entries + 0xc * i + 4, 0u32);
+                let entries: u32 = h.read(tw + 0xf8);
+                h.write(entries + 0xc * i + 8, 2u32);
+                return;
+            }
+        }
+    }
+}

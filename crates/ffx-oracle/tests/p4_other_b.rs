@@ -4437,3 +4437,265 @@ fn p4c2_morph_reset_matches_the_original() {
         }
     }
 }
+
+// ---- c2 batch 5 ----
+
+#[test]
+fn p4c2_lighting_initialize_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_8f80);
+        let b = t.zeros(20);
+        let n = t.zeros(20);
+        for (sym, cells, once) in [
+            (p4_light::ITERATOR_BEGIN, b, false),
+            (p4_light::ITERATOR_NEXT, n, true),
+        ] {
+            let mut tail = Vec::new();
+            for k in 0..5u32 {
+                tail.push(0xa1);
+                tail.extend((cells + 4 * k).to_le_bytes()); // mov eax, [cell k]
+                tail.extend([0x89, 0x41, (4 * k) as u8]); // mov [ecx+4k], eax
+            }
+            if once {
+                tail.extend([0xc7, 0x05]);
+                tail.extend((cells + 0xc).to_le_bytes());
+                tail.extend(0u32.to_le_bytes()); // mov dword [remaining], 0
+            }
+            tail.push(0xc3);
+            t.stub_tail(sym, true, 0, &tail);
+        }
+        let node = t.stub_cell(p4_light::CLUSTER_CREATE, true, 3, 3);
+        t.stub(p4_light::PHYRE_MALLOC, false, 2, 0, 0x0b0f_0000);
+        // the push counts the element: inc dword [ecx]; xor eax, eax; ret 8
+        t.stub_tail(
+            p4_light::ARRAY_PUSH_WORD,
+            true,
+            2,
+            &[0xff, 0x01, 0x31, 0xc0, 0xc2, 0x08, 0x00],
+        );
+        t.stub(p4_light::APPLY_INTENSITY, true, 2, 2, 0x0a11_0000);
+        t.stub(p4_light::APPLY_ROTATION, true, 1, 1, 0x0a70_0000);
+        let mut frame: Vec<i32> = (0..8).map(|k| -0x28 + 4 * k).collect();
+        frame.push(8);
+        for i in 0..96 {
+            let what = format!("{name} lighting initialize case {i}");
+            let cl = t.zeros(0x240);
+            t.fill(&mut rng, cl, 0x240);
+            let scene = t.zeros(0xb0);
+            t.fill(&mut rng, scene, 0xb0);
+            t.w32(
+                scene + 0xa4,
+                rng.below(5) | if rng.chance(4) { 0x8000_0000 } else { 0 },
+            );
+            if rng.chance(3) {
+                t.w32(cl + 0x1c, cl + 0x1c);
+            }
+            let stride = 0x30;
+            let count = 8u32;
+            let lights = t.zeros((stride * (count + 2)) as usize);
+            t.fill(&mut rng, lights, stride * (count + 2));
+            for k in 0..=count {
+                let next = lights + stride * rng.below(count + 1);
+                t.w32(lights + stride * k, next);
+            }
+            let at_node = lights + stride * (1 + rng.below(count + 2));
+            let mut first = rng.below(6);
+            let mut second = if rng.chance(2) { 0 } else { 1 + rng.below(3) };
+            // a null light: one element at offset -lights
+            let off = if rng.chance(8) {
+                first = 1;
+                second = 0;
+                0u32.wrapping_sub(lights)
+            } else {
+                0
+            };
+            for (cells, start, left) in [(b, 0, first), (n, first + 1, second)] {
+                t.w32(cells, lights + stride * start);
+                t.w32(cells + 4, at_node);
+                t.w32(cells + 8, stride);
+                t.w32(cells + 0xc, left);
+                t.w32(cells + 0x10, off);
+            }
+            t.w32(node, rng.next());
+            t.frame_case(
+                &what,
+                0x006a_8f80,
+                Conv::Thiscall(cl),
+                &[scene],
+                0x28,
+                &frame,
+                |g, ebp| Out::U32(p4_light::bridge11::initialize(g, ebp, cl, scene).0),
+            );
+        }
+    }
+}
+
+#[test]
+fn p4c2_apply_ambient_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_a650);
+        t.stub(p4_light::APPLY_INTENSITY, true, 2, 2, 0x0a11_0000);
+        let found = t.zeros(4);
+        let mut tail = vec![0xa1];
+        tail.extend(found.to_le_bytes()); // mov eax, [found]
+        tail.push(0xc3);
+        let f = t.logged(p4_light::STRSTR_SLOT, false, 2, &tail);
+        let at = t.rebase(p4_light::STRSTR_SLOT);
+        t.w32(at, f);
+        let map = t.alloc(b"znkd14_00\0");
+        let frame: Vec<i32> = [
+            -0x4c, -0x48, -0x44, -0x3c, -0x38, -0x34, -0x2c, -0x28, -0x24, -0x1c, -0x18, -0x14,
+            -0x10, 8,
+        ]
+        .to_vec();
+        let unit = |rng: &mut Rng| (rng.below(140) as f32 / 100.0 - 0.2).to_bits();
+        for i in 0..160 {
+            let what = format!("{name} apply ambient case {i}");
+            let cl = lighting(&mut t, &mut rng);
+            for at in [0x190, 0x194, 0x198] {
+                let w = if rng.chance(8) {
+                    float_word(&mut rng)
+                } else {
+                    unit(&mut rng)
+                };
+                t.w32(cl + at, w);
+            }
+            let w = unit(&mut rng);
+            t.w32(cl + 0x1ec, w);
+            let w = float_word(&mut rng);
+            t.w32(cl + 0x1a0, w);
+            t.w32(cl + 0x220, if rng.chance(4) { 0 } else { map });
+            t.w32(found, if rng.chance(2) { 0 } else { map });
+            let scene = if rng.chance(4) {
+                0
+            } else {
+                let s = t.zeros(0xc0);
+                t.fill(&mut rng, s, 0xc0);
+                s
+            };
+            t.w32(cl + 0x18c, scene);
+            let flag = if rng.chance(2) {
+                0x100
+            } else {
+                rng.next() & 0x1ff
+            };
+            t.frame_case_fill(
+                0,
+                &what,
+                0x006a_a650,
+                Conv::Thiscall(cl),
+                &[flag],
+                0x4c,
+                &frame,
+                |g, ebp| {
+                    // the caller's argument word, then what the original leaves
+                    g.write(ebp + 8, flag);
+                    if let Some(w) = p4_light::bridge12::apply_ambient(g, ebp, cl, flag as u8) {
+                        g.write(ebp + 8, w);
+                    }
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn p4c2_destroy_unique_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_8210);
+        let found = t.stub_cell(p4_light::TREE_FIND_UNSIGNED, true, 1, 1);
+        t.stub(p4_light::DELETE_OBJECT, true, 1, 1, 0x0de1_0000);
+        t.stub(p4_light::TREE_REMOVE, true, 1, 1, 0x0e3e_0000);
+        t.stub(p4_light::FREE_LIST_DEALLOCATE, true, 1, 1, 0x0f1d_0000);
+        t.stub(ffx_pother_b::PHYRE_FREE, false, 1, 0, 0);
+        let g = t.rebase(p4_light::G_TWEAK);
+        for i in 0..128 {
+            let what = format!("{name} destroy unique case {i}");
+            let cl = t.zeros(0x240);
+            t.fill(&mut rng, cl, 0x240);
+            // the material list: 0, 1 (inline) or more elements
+            let n = [0, 1, 2, 3][rng.below(4) as usize];
+            let list = t.zeros(0x10);
+            let elems = t.zeros(4 * n as usize + 4);
+            for k in 0..n {
+                let e = t.zeros(8);
+                t.fill(&mut rng, e, 8);
+                t.w32(elems + 4 * k, e);
+            }
+            let owned = if rng.chance(3) { 0x8000_0000 } else { 0 };
+            t.w32(list, n | owned);
+            if n == 1 {
+                let e: u32 = Mem::read(&t.b, elems);
+                t.w32(list + 4, e);
+            } else {
+                t.w32(list + 4, elems);
+            }
+            let inst = t.zeros(0x20);
+            t.fill(&mut rng, inst, 0x20);
+            t.w32(inst + 0x10, list);
+            let node = match rng.below(4) {
+                0 => 0,
+                _ => {
+                    let nd = t.zeros(0x20);
+                    t.fill(&mut rng, nd, 0x20);
+                    if rng.chance(2) {
+                        t.w32(nd + 0x10, 0);
+                    }
+                    nd
+                }
+            };
+            t.w32(found, node);
+            // the shade tree: empty, the list's node at the root, or one
+            // other key above or below it
+            let tree = cl + 0x158;
+            let root = match rng.below(3) {
+                0 => tree,
+                k => {
+                    let r = t.zeros(0x10);
+                    t.w32(r, tree);
+                    t.w32(r + 4, tree);
+                    let key = if k == 1 {
+                        list
+                    } else {
+                        list ^ (0x100 << rng.below(4))
+                    };
+                    t.w32(r + 0xc, key);
+                    if k == 2 && rng.chance(2) {
+                        // the list's node below, on the side its key is
+                        // (left for a larger root key)
+                        let c = t.zeros(0x10);
+                        t.w32(c, tree);
+                        t.w32(c + 4, tree);
+                        t.w32(c + 0xc, list);
+                        t.w32(r + if key > list { 0 } else { 4 }, c);
+                    }
+                    r
+                }
+            };
+            t.w32(cl + 0x164, root);
+            // the tweak utility's shade entries
+            let tw = t.zeros(0x100);
+            t.write(tw, &[u8::from(!rng.chance(4))]);
+            let entries = t.zeros(0xc * 100);
+            t.fill(&mut rng, entries, 0xc * 100);
+            if rng.chance(2) {
+                t.w32(entries + 0xc * rng.below(100), inst);
+            }
+            t.w32(tw + 0xf8, entries);
+            t.w32(g, tw);
+            t.frame_case(
+                &what,
+                0x006a_8210,
+                Conv::Thiscall(cl),
+                &[inst],
+                8,
+                &[-8, -4],
+                |g, ebp| {
+                    p4_light::bridge13::destroy_unique(g, ebp, cl, inst);
+                    Out::None
+                },
+            );
+        }
+    }
+}
