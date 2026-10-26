@@ -375,3 +375,222 @@ fn packet_layout_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn common_shaders_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_0f06);
+        t.stub(tg::FREE, false, 1, 0, 0);
+        let mut paths = [0u32; 3];
+        for (f, c) in [
+            (0x00a1_8870, tg::FXAA_COMMON),
+            (0x00a1_85a0, tg::DOF_COMMON),
+        ] {
+            for i in 0..60u32 {
+                let this = object(&mut t, &mut rng, 0x3f0, false);
+                let fx = object(&mut t, &mut rng, 8, i % 15 == 14);
+                t.w32(this + c.effect, fx);
+                // the material's parameter buffer: its size word, a layout
+                // word at +8
+                let buffer = object(&mut t, &mut rng, 0x20, false);
+                let room = 0x20 + rng.below(0x60);
+                t.w32(buffer, room);
+                let layout = rng.next();
+                t.w32(buffer + 8, layout);
+                let material = object(&mut t, &mut rng, 4, false);
+                t.w32(material + 4, buffer);
+                t.stub(tg::CREATE_MATERIAL, true, 3, 3, material);
+                // the parent's buffer, of the same layout or not
+                if rng.chance(3) {
+                    t.w32(this + 8, 0);
+                } else {
+                    let src = object(&mut t, &mut rng, 8, false);
+                    t.w32(src, 12 + rng.below(16));
+                    let l = if rng.chance(2) {
+                        layout ^ 0x8000_0000
+                    } else {
+                        rng.next()
+                    };
+                    t.w32(src + 8, l);
+                    let parent = object(&mut t, &mut rng, 2, false);
+                    t.w32(parent + 4, src);
+                    t.w32(this + 8, parent);
+                }
+                let mut seq: Vec<u32> = c.params.iter().map(|_| rng.next()).collect();
+                for _ in 0..2 {
+                    if rng.chance(4) {
+                        seq.push(0);
+                    } else {
+                        let p = t.zeros(0x10);
+                        let size = rng.below(0x10) | (rng.next() & 0xe000);
+                        // in the header, inside, past the end, or ending
+                        // right at the end (or one byte past it)
+                        let edge = room - (size & 0x1fff) + rng.below(2);
+                        let off = [
+                            rng.below(4),
+                            4 + rng.below(0x40),
+                            0x60 + rng.below(0x40),
+                            edge,
+                        ][rng.below(4) as usize];
+                        t.write(p + 8, &(off as u16).to_le_bytes());
+                        t.write(p + 0xa, &(size as u16).to_le_bytes());
+                        seq.push(p);
+                    }
+                }
+                t.stub_seq(tg::FIND_PARAMETER, true, 1, 1, &seq);
+                let array = t.zeros(0x10);
+                let count = match rng.below(4) {
+                    0 => 1,
+                    1 => 0x8000_0001,
+                    _ => (2 + rng.below(4)) | (rng.next() & 0x8000_0000),
+                };
+                t.w32(array, count);
+                let data = t.zeros(0x10);
+                t.w32(array + 4, data);
+                t.stub(tg::CLUSTER_CREATE, true, 3, 3, array);
+                let regs: Vec<u32> = (0..2).map(|_| u32::from(rng.chance(6)) * 0x42).collect();
+                t.stub_seq(tg::REGISTER, true, 0, 0, &regs);
+                let (cluster, effect) = (rng.next(), rng.next());
+                run_framed(
+                    &mut t,
+                    &format!("{name} common shaders {f:#x} #{i}"),
+                    f,
+                    Conv::Thiscall(this),
+                    &[cluster, effect],
+                    0x20,
+                    0x20,
+                    |g, ebp| {
+                        let (r, slot) =
+                            tg::bridge::common_shaders(g, this, ebp - 0x20, cluster, effect, &c);
+                        if let Some(v) = slot {
+                            g.write(ebp + 0xc, v);
+                        }
+                        r
+                    },
+                );
+                let calls: u32 = Mem::read(&t.a, t.log);
+                paths[match calls {
+                    0 => 0,
+                    1..=12 => 1,
+                    _ => 2,
+                }] += 1;
+                for s in [
+                    tg::CREATE_MATERIAL,
+                    tg::FIND_PARAMETER,
+                    tg::CLUSTER_CREATE,
+                    tg::REGISTER,
+                ] {
+                    t.unstub(s);
+                }
+            }
+        }
+        assert!(paths.iter().all(|&n| n > 3), "{name}: {paths:?}");
+    }
+}
+
+#[test]
+fn mesh_commands_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_0f07);
+        t.import_stub(tg::INTERLOCKED_ADD, 2, 0x11);
+        let mut cmds_seen = 0;
+        for i in 0..60u32 {
+            let out = object(&mut t, &mut rng, 0x40, false);
+            t.stub(
+                tg::GATHER_RECORDS,
+                false,
+                3,
+                0,
+                out + 4 + 4 * (2 + rng.below(4)),
+            );
+            t.stub(
+                tg::TEXTURE_POINTERS,
+                false,
+                3,
+                0,
+                out + 4 + 4 * (6 + rng.below(4)),
+            );
+            t.stub(tg::STATE_ELEMENT, true, 1, 1, rng.next());
+            let n = rng.below(4);
+            let blocks: Vec<u32> = (0..n.max(1))
+                .map(|_| object(&mut t, &mut rng, 0x12, false))
+                .collect();
+            t.stub_seq(tg::RING_ALLOCATE, true, 1, 1, &blocks);
+            let r = object(&mut t, &mut rng, 0x18, false);
+            if rng.chance(2) {
+                t.w32(r + 0x4c, 0);
+            }
+            let instances = object(&mut t, &mut rng, 8, false);
+            t.w32(instances + 4, n | (rng.next() & 0x8000_0000));
+            let refs = object(&mut t, &mut rng, 8, false);
+            for k in [0u32, 1, 3] {
+                if rng.chance(3) {
+                    t.w32(refs + 4 * k, 0);
+                }
+            }
+            // the state object (read at +8), or none
+            let no_state = rng.chance(2);
+            let state = object(&mut t, &mut rng, 4, no_state);
+            t.w32(refs + 0x18, state);
+            let material = object(&mut t, &mut rng, 0x10, false);
+            if rng.chance(2) {
+                t.w32(material + 0x38, 0);
+            }
+            if rng.chance(2) {
+                t.w32(material + 0x28, rng.next() & 0x8000_0000);
+            } else {
+                let p = object(&mut t, &mut rng, 2, false);
+                t.w32(material + 0x2c, p);
+            }
+            let no_extra = rng.chance(3);
+            let extra = object(&mut t, &mut rng, 4, no_extra);
+            if extra != 0 && rng.chance(3) {
+                t.w32(extra + 4, 0);
+            }
+            let a = tg::MeshCommands {
+                context: rng.next(),
+                instances,
+                extra,
+                material,
+                tag: rng.next(),
+                refs,
+                out,
+                callback: if rng.chance(2) { 0 } else { rng.next() },
+            };
+            let args = [
+                a.context,
+                a.instances,
+                a.extra,
+                a.material,
+                a.tag,
+                a.refs,
+                a.out,
+                a.callback,
+            ];
+            run_framed(
+                &mut t,
+                &format!("{name} mesh commands #{i}"),
+                0x005b_a380,
+                Conv::Thiscall(r),
+                &args,
+                0x14,
+                0,
+                |g, ebp| {
+                    let (eax, slot) = tg::bridge::mesh_commands(g, r, &a);
+                    g.write(ebp + 0xc, slot);
+                    eax
+                },
+            );
+            cmds_seen += n;
+            for s in [
+                tg::GATHER_RECORDS,
+                tg::TEXTURE_POINTERS,
+                tg::STATE_ELEMENT,
+                tg::RING_ALLOCATE,
+            ] {
+                t.unstub(s);
+            }
+        }
+        assert!(cmds_seen > 40, "{name}: {cmds_seen}");
+    }
+}

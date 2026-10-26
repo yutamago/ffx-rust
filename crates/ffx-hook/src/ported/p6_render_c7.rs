@@ -49,4 +49,24 @@ ported! {
     Phyre_PPostProcessing_PGlowGPUBase_dtor_009fe0d0 @ 0x009f_e0d0 => extern "thiscall" fn x_009fe0d0(this: u32) -> u32 {
         lt::bridge::glow_gpu_dtor(&mut mem(), this)
     }
+    // batch 16
+    /// `PFXAABase::initializeCommonShaders(this; cluster, effect)`.
+    Phyre_PPostProcessing_PFXAABase_initializeCommonShaders @ 0x00a1_8870 => extern "thiscall" fn x_00a18870(this: u32, cluster: u32, effect: u32) -> u32 {
+        let mut frame = StackFrame::<8>::new();
+        tg::bridge::common_shaders(&mut mem(), this, frame.at(), cluster, effect, &tg::FXAA_COMMON).0
+    }
+    /// `PDepthOfFieldBase::initializeCommonShaders(this; cluster, effect)`.
+    Phyre_PPostProcessing_PDepthOfFieldBase_initializeCommonShaders @ 0x00a1_85a0 => extern "thiscall" fn x_00a185a0(this: u32, cluster: u32, effect: u32) -> u32 {
+        let mut frame = StackFrame::<8>::new();
+        tg::bridge::common_shaders(&mut mem(), this, frame.at(), cluster, effect, &tg::DOF_COMMON).0
+    }
+    /// `PMotionBlurBase`'s constructor (`this`) -> `this`.
+    Phyre_PPostProcessing_PMotionBlurBase_PMotionBlurBase_009fcbb0 @ 0x009f_cbb0 => extern "thiscall" fn x_009fcbb0(this: u32) -> u32 {
+        ffx_prender::p6_post::bridge::post_ctor(&mut mem(), this, &const { ffx_prender::p6_post::post_ctor(0x009f_cbb0) })
+    }
+    /// A mesh instance's draw commands (`this` the renderer; 8 words).
+    Phyre_PRendering_PRendererBase_queueMeshCommands_005ba380 @ 0x005b_a380 => extern "thiscall" fn x_005ba380(this: u32, context: u32, instances: u32, extra: u32, material: u32, tag: u32, refs: u32, out: u32, callback: u32) -> u32 {
+        let a = tg::MeshCommands { context, instances, extra, material, tag, refs, out, callback };
+        tg::bridge::mesh_commands(&mut mem(), this, &a).0
+    }
 }

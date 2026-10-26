@@ -94,6 +94,91 @@ pub const SHADERS_FRAME: u32 = 0x10;
 /// command ring's at `ebp - 0x1c`, the data ring's at `ebp - 0x18`.
 pub const DEPTH_FRAME: u32 = 8;
 
+/// A post effect's `initializeCommonShaders(this; cluster, effect)`
+/// (thiscall, `ret 8`): the fields and names it uses.
+#[derive(Debug, Clone, Copy)]
+pub struct CommonShaders {
+    /// The effect object (0x15 without it) and the material's field.
+    pub effect: u32,
+    pub material: u32,
+    /// The parameters looked up, in order: (name, field).
+    pub params: &'static [(u32, u32)],
+    /// The two textures registered (`0x0058cf80`), in order.
+    pub register: [u32; 2],
+    /// The two samplers: (name, sampler field). The first's block is at
+    /// the frame's `+0x10` (`ebp - 0x10`), the second's at `+0` (`ebp -
+    /// 0x20`).
+    pub samplers: [(u32, u32); 2],
+    /// Whether both samplers are looked up before either is written
+    /// (else each right before its write).
+    pub lookups_first: bool,
+}
+
+/// `PFXAABase::initializeCommonShaders` (`0x00a18870`).
+pub const FXAA_COMMON: CommonShaders = CommonShaders {
+    effect: 0x60,
+    material: 0x64,
+    params: &[(0x00b4_25d8, 0x68), (0x00b7_6b58, 0x6c)],
+    register: [0x14, 0x38],
+    samplers: [(LINEAR_CLAMP, 0x38), (POINT_CLAMP, 0x14)],
+    lookups_first: false,
+};
+
+/// `PDepthOfFieldBase::initializeCommonShaders` (`0x00a185a0`).
+pub const DOF_COMMON: CommonShaders = CommonShaders {
+    effect: 0xf38,
+    material: 0xf3c,
+    params: &[
+        (0x00b4_25d8, 0xf88),
+        (0x00b7_6674, 0xf8c),
+        (0x00b7_668c, 0xf90),
+        (0x00b7_61b8, 0xf94),
+        (0x00b7_66a0, 0xf98),
+        (0x00b7_66ac, 0xf9c),
+        (0x00b7_66c0, 0xfa0),
+        (0x00b7_66d4, 0xfa4),
+        (0x00b7_66e4, 0xfa8),
+        (0x00b7_66fc, 0xfac),
+    ],
+    register: [0xf40, 0xf64],
+    samplers: [(POINT_CLAMP, 0xf40), (LINEAR_CLAMP, 0xf64)],
+    lookups_first: true,
+};
+
+/// The sampler parameters' names, `LinearClampSampler` and
+/// `PointClampSampler`; the CRT's `memcpy` (cdecl).
+pub const LINEAR_CLAMP: u32 = 0x00b3_018c;
+pub const POINT_CLAMP: u32 = 0x00b7_62d0;
+pub const MEMCPY: u32 = 0x0094_9256;
+/// `initializeCommonShaders`' frame: the two sampler blocks
+/// (`ebp - 0x20`).
+pub const COMMON_FRAME: u32 = 0x20;
+
+/// `0x005ba380`'s callees: the records gatherer `0x005b5370(base, list,
+/// out)` and the texture pointers `0x005b53f0(base, params, out)` (cdecl,
+/// each returning the cursor past what it wrote), the material's state
+/// element `0x004348c0(array; i)` (thiscall), `InterlockedExchangeAdd`'s
+/// import slot (stdcall) and the command ring's `allocate`.
+pub const GATHER_RECORDS: u32 = 0x005b_5370;
+pub const TEXTURE_POINTERS: u32 = 0x005b_53f0;
+pub const STATE_ELEMENT: u32 = 0x0043_48c0;
+pub const INTERLOCKED_ADD: u32 = 0x00b0_c128;
+/// The stride `0x005ba380` adds to its instance pointer per command.
+pub const INSTANCE_STRIDE: u32 = 0x254;
+
+/// `0x005ba380`'s arguments after `this` (the renderer).
+#[derive(Debug, Clone, Copy)]
+pub struct MeshCommands {
+    pub context: u32,
+    pub instances: u32,
+    pub extra: u32,
+    pub material: u32,
+    pub tag: u32,
+    pub refs: u32,
+    pub out: u32,
+    pub callback: u32,
+}
+
 pub mod bridge {
     //! The originals over game memory.
 
@@ -103,6 +188,10 @@ pub mod bridge {
         POINT_TYPE, REGISTER, RENDER_STATE_CACHE, RING_ALLOCATE, Reg, SET_COLOR_OPCODE,
         SET_DEPTH_OPCODE, SET_VALUE, SET_WORD, SPOT_TYPE, STATE_ARRAY_TYPE, VALIDATE,
         VIEWPORT_SIZE, renderer,
+    };
+    use super::{
+        CommonShaders, GATHER_RECORDS, INSTANCE_STRIDE, INTERLOCKED_ADD, MEMCPY, MeshCommands,
+        STATE_ELEMENT, TEXTURE_POINTERS,
     };
     use crate::p6_encode::bridge::full;
     use crate::p6_post::bridge::half_target;
@@ -499,5 +588,248 @@ pub mod bridge {
             h.write(tail.wrapping_add(4 * k), 0u32);
         }
         0
+    }
+
+    /// A state array (`PCluster::create(cluster; 1, 0x00c998e8, 0)`)
+    /// reset to one word (an owned block freed), as the shader set-ups
+    /// do. Returns it.
+    fn one_word_array(h: &mut impl Host, cluster: u32) -> u32 {
+        let ty = h.rebase(STATE_ARRAY_TYPE);
+        let array = h.call_sym(CLUSTER_CREATE, Conv::Thiscall(cluster), &[1, ty, 0]);
+        let count: u32 = h.read(array);
+        if count != 1 {
+            let data = array_data(h, array, count);
+            h.write(array + 4, 0u32);
+            let count: u32 = h.read(array);
+            if data != array + 4 && count >> 31 == 0 {
+                h.call_sym(FREE, Conv::Cdecl, &[data]);
+            }
+            h.write(array, 1u32);
+        }
+        array
+    }
+
+    /// A `PSharray`'s data: inline for one element, 0 for none.
+    fn array_data(h: &impl Host, array: u32, count: u32) -> u32 {
+        match count & 0x7fff_ffff {
+            0 => 0,
+            1 => array + 4,
+            _ => h.read(array + 4),
+        }
+    }
+
+    /// `PFXAABase`/`PDepthOfFieldBase::initializeCommonShaders(this;
+    /// cluster, effect)` ([`CommonShaders`]): 0x15 without the effect
+    /// object; the material (its parameter buffer copied from the parent's
+    /// `[this + 8] + 4` when their layouts match), the parameters, a
+    /// one-word state array holding the material, the two textures'
+    /// registration (its error returned), then each sampler's block
+    /// `{0x47, 0, sampler, 0}` copied into the material's buffer at the
+    /// parameter's offset (3 when it does not fit or lies in the header).
+    /// 0.
+    ///
+    /// `frame`: the original's `ebp - 0x20`. The second result: the
+    /// effect argument slot's last value when the original reuses it.
+    pub fn common_shaders(
+        h: &mut impl Host,
+        this: u32,
+        frame: u32,
+        cluster: u32,
+        effect: u32,
+        c: &CommonShaders,
+    ) -> (u32, Option<u32>) {
+        if h.read::<u32>(this + c.effect) == 0 {
+            return (0x15, None);
+        }
+        let material = h.call_sym(CREATE_MATERIAL, Conv::Thiscall(effect), &[cluster, 0, 0]);
+        h.write(this + c.material, material);
+        let parent: u32 = h.read(this + 8);
+        if parent != 0 {
+            let dst: u32 = h.read(material + 4);
+            let src: u32 = h.read(parent + 4);
+            let a: u32 = h.read(dst + 8);
+            let b: u32 = h.read(src + 8);
+            if (a ^ b).trailing_zeros() >= 31 {
+                let n: u32 = h.read(src);
+                h.call_sym(MEMCPY, Conv::Cdecl, &[dst, src, n]);
+            }
+        }
+        for &(name, field) in c.params {
+            let at = h.rebase(name);
+            let p = h.call_sym(FIND_PARAMETER, Conv::Thiscall(effect), &[at]);
+            h.write(this + field, p);
+        }
+        let array = one_word_array(h, cluster);
+        let count: u32 = h.read(array);
+        if count & 0x7fff_ffff != 0 {
+            let data = array_data(h, array, count);
+            let material: u32 = h.read(this + c.material);
+            h.write(data, material);
+        }
+        let fx: u32 = h.read(this + c.effect);
+        h.write(fx + 0x10, array);
+        for off in c.register {
+            let e = h.call_sym(REGISTER, Conv::Thiscall(this + off), &[]);
+            if e != 0 {
+                return (e, None);
+            }
+        }
+        let mut slot = None;
+        let mut found = [0u32; 2];
+        if c.lookups_first {
+            for (k, &(name, _)) in c.samplers.iter().enumerate() {
+                let at = h.rebase(name);
+                found[k] = h.call_sym(FIND_PARAMETER, Conv::Thiscall(effect), &[at]);
+            }
+            slot = Some(found[0]);
+        }
+        for (k, &(name, sampler)) in c.samplers.iter().enumerate() {
+            if !c.lookups_first {
+                let at = h.rebase(name);
+                found[k] = h.call_sym(FIND_PARAMETER, Conv::Thiscall(effect), &[at]);
+            }
+            let p = found[k];
+            if p == 0 {
+                continue;
+            }
+            let material: u32 = h.read(this + c.material);
+            let buffer: u32 = h.read(material + 4);
+            let offset = u32::from(h.read::<u16>(p + 8));
+            let size = u32::from(h.read::<u16>(p + 0xa) & 0x1fff);
+            let block = if k == 0 { frame + 0x10 } else { frame };
+            for (i, v) in [0x47, 0, this + sampler, 0].into_iter().enumerate() {
+                h.write(block + 4 * i as u32, v);
+            }
+            if k == 0 {
+                slot = Some(offset);
+            }
+            let room: u32 = h.read(buffer);
+            if offset + size > room || offset < 4 {
+                return (3, slot);
+            }
+            h.call_sym(MEMCPY, Conv::Cdecl, &[buffer + offset, block, size]);
+        }
+        (0, slot)
+    }
+
+    /// `0x005ba380(renderer; context, instances, extra, material, tag,
+    /// refs, out, callback)` (thiscall, `ret 0x20`): the resources the
+    /// commands use, gathered at `out + 4` (`refs`' first block, its
+    /// records and textures, the material's state element unless `refs`
+    /// has one, `extra`'s two blocks) with their count at `out`, each
+    /// reference count raised by the instance count (`InterlockedExchangeAdd`);
+    /// then one 0x48-byte command per instance (opcode 1, or 2 with the
+    /// callback at `+0x44`), the instance pointer stepping by 0x254. 0.
+    ///
+    /// The second result: the `instances` argument slot's last value (the
+    /// original keeps its instance pointer there).
+    #[allow(clippy::too_many_lines)]
+    pub fn mesh_commands(h: &mut impl Host, r: u32, a: &MeshCommands) -> (u32, u32) {
+        let extra_data: u32 = if a.extra == 0 { 0 } else { h.read(a.extra + 4) };
+        let mut instance: u32 = h.read(a.instances + 8);
+        let n = h.read::<u32>(a.instances + 4) & 0x7fff_ffff;
+        let list = a.out + 4;
+        let mut cur = list;
+        let first: u32 = h.read(a.refs);
+        if first != 0 {
+            h.write(list, first + 4);
+            cur = list + 4;
+        }
+        let records: u32 = h.read(a.refs + 0xc);
+        if records != 0 {
+            cur = h.call_sym(
+                GATHER_RECORDS,
+                Conv::Cdecl,
+                &[records, a.instances + 0x14, cur],
+            );
+        }
+        let textures: u32 = h.read(a.refs + 4);
+        if textures != 0 {
+            cur = h.call_sym(
+                TEXTURE_POINTERS,
+                Conv::Cdecl,
+                &[textures, textures + 8, cur],
+            );
+        }
+        let records: u32 = h.read(a.refs + 0xc);
+        if records != 0 {
+            cur = h.call_sym(
+                TEXTURE_POINTERS,
+                Conv::Cdecl,
+                &[records, a.instances + 0xc, cur],
+            );
+        }
+        let mut state: u32 = h.read(a.refs + 0x18);
+        let mut key = 0u32;
+        if state == 0 {
+            let states = a.material + 0x30;
+            if h.read::<u32>(states + 8) != 0 {
+                key = h.read(states + 0x10);
+                state = states;
+                let e = h.call_sym(STATE_ELEMENT, Conv::Thiscall(states), &[key]);
+                h.write(cur, e);
+                cur += 4;
+            }
+        }
+        if extra_data != 0 {
+            h.write(cur, a.extra + 8);
+            h.write(cur + 4, extra_data + 0x18);
+            cur += 8;
+        }
+        let count = (cur.wrapping_sub(list) as i32 >> 2) as u32;
+        h.write(a.out, count);
+        let add: u32 = h.read(h.rebase(INTERLOCKED_ADD));
+        let mut i = 0u32;
+        while i < h.read::<u32>(a.out) {
+            let target: u32 = h.read(list + 4 * i);
+            h.call(add, Conv::Stdcall, &[target, n]);
+            i += 1;
+        }
+        for _ in 0..n {
+            let cmd = h.call_sym(RING_ALLOCATE, Conv::Thiscall(r + 0x30), &[0x48]);
+            if cmd != 0 {
+                if h.read::<u32>(r + 0x4c) == 0 {
+                    h.write(r + 0x4c, cmd);
+                }
+                h.write(r + 0x50, cmd.wrapping_add(0x48));
+            }
+            if a.callback == 0 {
+                h.write(cmd, 1u32);
+            } else {
+                h.write(cmd, 2u32);
+                h.write(cmd.wrapping_add(0x44), a.callback);
+            }
+            let words = [
+                (0x8, a.extra),
+                (0xc, extra_data),
+                (0x10, h.read(a.refs + 0x14)),
+                (0x14, h.read(a.refs + 0x10)),
+                (0x18, a.context),
+                (0x1c, instance),
+            ];
+            for (off, v) in words {
+                h.write(cmd.wrapping_add(off), v);
+            }
+            h.write(cmd.wrapping_add(0x24), a.tag as u16);
+            h.write(cmd.wrapping_add(0x20), a.material);
+            for k in 0..4 {
+                let v: u32 = h.read(a.refs + 4 * k);
+                h.write(cmd.wrapping_add(0x28 + 4 * k), v);
+            }
+            h.write(cmd.wrapping_add(0x38), a.out);
+            let v = if state != 0 {
+                h.read(state + 8)
+            } else if h.read::<u32>(a.material + 0x28) & 0x7fff_ffff != 0 {
+                let p: u32 = h.read(a.material + 0x2c);
+                h.read(p + 4)
+            } else {
+                0
+            };
+            instance = instance.wrapping_add(INSTANCE_STRIDE);
+            h.write(cmd.wrapping_add(0x3c), state);
+            h.write(cmd.wrapping_add(0x26), key as u16);
+            h.write(cmd.wrapping_add(0x40), v);
+        }
+        (0, instance)
     }
 }
