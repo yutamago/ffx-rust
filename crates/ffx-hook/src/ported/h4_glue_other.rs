@@ -11,8 +11,8 @@
 //! through `fld`/`fstp`, which the bridges model.
 
 use ffx_glue_other::{
-    copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, menu as mn, misc as m,
-    movie as mv, r3, sound as s,
+    copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, menu as mn,
+    misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1350,5 +1350,60 @@ ported! {
     /// constants.
     Phyre_PClassDescriptorAbstract_Phyre_PArray_Phyre_PInputs_PInputAction_4__PClassDescriptorAbstract @ 0x009d_fb30 => extern "thiscall" fn input_action_array_descriptor(this: u32) -> u32 {
         ffx_prender::registry::bridge::descriptor_ctor(&mut mem(), this, c2::INPUT_ACTION_ARRAY_DESCRIPTOR)
+    }
+    // ---- continuation round, batch 3 (ffx_glue_other::h4_c3)
+    /// `FmodVoice_stop(this)`.
+    FmodVoice_stop @ 0x0070_b6b0 => extern "thiscall" fn voice_stop(this: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        c3::voice_stop(&mut mem(), frame.at(), this)
+    }
+    /// `FmodVoice_releaseData(this)`.
+    FmodVoice_releaseData @ 0x0070_b0b0 => extern "thiscall" fn voice_release_data(this: u32) -> u32 {
+        c3::voice_release_data(&mut mem(), this)
+    }
+    /// `FmodVoice_updateState(this; arg)`: the microsecond clock's
+    /// `edx:eax` through `call_cdecl_u64`.
+    FmodVoice_updateState @ 0x0070_b750 => extern "thiscall" fn voice_update_state(this: u32, arg: u32) -> u32 {
+        c3::voice_update_state(&mut mem(), this, arg, &mut |_, f| super::call_cdecl_u64(f, &[]))
+    }
+    /// `SyncManager_syncDataChangeAsync(this; id)`.
+    SyncManager_syncDataChangeAsync @ 0x006f_b080 => extern "thiscall" fn sync_data_change_async(this: u32, id: u32) -> u32 {
+        c3::sync_data_change_async(&mut mem(), this, id)
+    }
+    /// `InitVFXRenderDataShapeField(a, b, c, d, e)`.
+    InitVFXRenderDataShapeField @ 0x0071_13d0 => extern "C" fn init_vfx_render_data_shape_field(a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        c3::init_vfx_render_data_shape_field(&mut mem(), [a, b, c, d, e])
+    }
+    /// `MenuDynamicGeometry_setTextureInMaterialUnloaded(name)`.
+    MenuDynamicGeometry_setTextureInMaterialUnloaded @ 0x006a_3740 => extern "stdcall" fn set_texture_in_material_unloaded(name: u32) -> u32 {
+        c3::set_texture_in_material_unloaded(&mut mem(), name)
+    }
+    /// `SfxEventGroup_ctor_00710780(this; project, arg)`.
+    SfxEventGroup_ctor_00710780 @ 0x0071_0780 => extern "thiscall" fn sfx_event_group_ctor(this: u32, project: u32, arg: u32) -> u32 {
+        c3::sfx_event_group_ctor(&mut mem(), this, project, arg)
+    }
+    /// `FmodEventTree_ctor_0070ff50(this; project, arg)`.
+    FmodEventTree_ctor_0070ff50 @ 0x0070_ff50 => extern "thiscall" fn fmod_event_tree_ctor(this: u32, project: u32, arg: u32) -> u32 {
+        c3::fmod_event_tree_ctor(&mut mem(), this, project, arg)
+    }
+    /// `IggyMenuManager_dispatchCallback_00a26100(this; a, player, call)`.
+    IggyMenuManager_dispatchCallback_00a26100 @ 0x00a2_6100 => extern "thiscall" fn dispatch_callback(this: u32, _a: u32, player: u32, call: u32) -> u32 {
+        c3::dispatch_callback(&mut mem(), this, player, call)
+    }
+    /// `std_string_rfind_00638340(this; s, pos, n)`.
+    std_string_rfind_00638340 @ 0x0063_8340 => extern "thiscall" fn string_rfind(this: u32, s: u32, pos: u32, n: u32) -> u32 {
+        c3::string_rfind(&mut mem(), this, [s, pos, n])
+    }
+    /// `FmodMusic_clear(this; i)`.
+    FmodMusic_clear @ 0x0070_8720 => extern "thiscall" fn music_clear(this: u32, i: u32) -> u32 {
+        c3::music_clear(&mut mem(), this, i)
+    }
+    /// `FmodMusic_clearAll(this)`.
+    FmodMusic_clearAll @ 0x0070_8810 => extern "thiscall" fn music_clear_all(this: u32) -> u32 {
+        c3::music_clear_all(&mut mem(), this)
+    }
+    /// `FmodMusic_forceClearAll(this)`.
+    FmodMusic_forceClearAll @ 0x0070_8af0 => extern "thiscall" fn music_force_clear_all(this: u32) {
+        c3::music_force_clear_all(&mut mem(), this);
     }
 }
