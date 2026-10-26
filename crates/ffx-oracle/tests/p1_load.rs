@@ -799,7 +799,7 @@ fn stream_wrappers_match_the_original() {
         t.stub(0x0043_1850, true, 1, 1, 0x444);
         let what = format!("{label}: writer close");
         t.check(&what, 0x0043_1840, Conv::Thiscall(reader), &[], |g| {
-            Out::U32(s::writer_close(g, reader))
+            Out::U32(s::mutex_lock(g, reader))
         });
         assert_eq!(t.log_entries(), 1);
         t.reset();
@@ -1795,7 +1795,10 @@ fn enum_lookups_match_the_original() {
         let tables = descriptor::ENUM_TABLES
             .iter()
             .map(|&(f, head)| (f, head, 4, 8))
-            .chain([(0x0050_7a30, 0x00ca_9734, 0, 4)]);
+            .chain([
+                (0x0050_7a30, 0x00ca_9734, 0, 4),
+                (0x0057_87d0, 0x00cc_969c, 0, 4),
+            ]);
         for (f, head, name_at, next_at) in tables {
             // three entries, last first in the list
             let mut first = 0;
@@ -1814,6 +1817,939 @@ fn enum_lookups_match_the_original() {
                         Out::U32(d::enum_find(g, head, name_at, next_at, probe))
                     });
                 }
+            }
+        }
+    }
+}
+
+// ---- batch 5: the GetType<T> statics ----
+
+#[test]
+fn type_statics_match_the_original() {
+    use ffx_pload::types;
+    for (label, mut t) in Twins::all() {
+        t.stub(types::ATEXIT, false, 1, 0, 0);
+        // each getter the first time (guard cleared), then again
+        for (i, row) in types::PRIMITIVES.iter().enumerate() {
+            let guard = t.rebase(row.object) + 0x2c;
+            let g = t.r32(guard);
+            t.w32(guard, g & !1);
+            for pass in 0..2 {
+                let what = format!("{label}: primitive {i} ({:#x}) pass {pass}", row.getter);
+                t.check(&what, row.getter, Conv::Cdecl, &[], |g| {
+                    Out::U32(types::bridge::primitive(g, row))
+                });
+            }
+        }
+        for (i, row) in types::ENUMS.iter().enumerate() {
+            let guard = t.rebase(row.object) + 0x34;
+            let g = t.r32(guard);
+            t.w32(guard, g & !1);
+            for pass in 0..2 {
+                let what = format!("{label}: enum {i} ({:#x}) pass {pass}", row.getter);
+                t.check(&what, row.getter, Conv::Cdecl, &[], |g| {
+                    Out::U32(types::bridge::enum_type(g, row))
+                });
+            }
+        }
+        let guard = t.rebase(types::DISPENSER) + 0x18;
+        let g = t.r32(guard);
+        t.w32(guard, g & !1);
+        for pass in 0..2 {
+            let what = format!("{label}: dispenser pass {pass}");
+            t.check(&what, 0x0043_9040, Conv::Cdecl, &[], |g| {
+                Out::U32(types::bridge::dispenser(g))
+            });
+        }
+        // one atexit per first pass
+        assert_eq!(t.log_entries(), 13 + 9 + 1);
+        t.reset();
+    }
+}
+
+#[test]
+fn batch5_helpers_match_the_original() {
+    use ffx_pload::types;
+    for (label, mut t) in Twins::all() {
+        // the asset registry's static
+        t.stub(types::ATEXIT, false, 1, 0, 0);
+        let guard = t.rebase(types::ASSET_REGISTRY) + 0x18;
+        let g = t.r32(guard);
+        t.w32(guard, g & !1);
+        for pass in 0..2 {
+            let what = format!("{label}: asset registry pass {pass}");
+            t.check(&what, 0x0045_d420, Conv::Cdecl, &[], |g| {
+                Out::U32(types::bridge::list_static(
+                    g,
+                    types::ASSET_REGISTRY,
+                    types::ASSET_REGISTRY_DTOR,
+                ))
+            });
+        }
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+        // the reader file's destructor and the string release: frees recorded
+        t.stub(descriptor::FREE, false, 1, 0, 0);
+        t.stub(0x0043_4360, false, 2, 0, 0);
+        for name in [0x00ab_0000, 0x00ab_0001] {
+            let r = t.junk(0x20, 1);
+            t.w32(r + 8, name);
+            let what = format!("{label}: reader file dtor {name:#x}");
+            t.check(&what, 0x0057_67c0, Conv::Thiscall(r), &[], |g| {
+                s::reader_file_dtor(g, r);
+                Out::None
+            });
+        }
+        for (word, text) in [
+            (0, 0x00ab_0000),
+            (1, 0x00ab_0000),
+            (1, 0x00ab_0001),
+            (2, 0x00ab_0000),
+            (3, 0x00ab_0000),
+            (0x4000_0003, 0x00ab_0000),
+            (0x8000_0003, 0x00ab_0000),
+        ] {
+            let st = t.zeros(8);
+            t.w32(st, word);
+            t.w32(st + 4, text);
+            let what = format!("{label}: string release {word:#x} {text:#x}");
+            t.check(&what, 0x0044_af00, Conv::Thiscall(st), &[], |g| {
+                d::string_release(g, st);
+                Out::None
+            });
+        }
+        assert_eq!(t.log_entries(), 1 + 4);
+        t.reset();
+        // constructInGlobal: the namespace and 0x00447690 recorded
+        t.stub(descriptor::GLOBAL_NAMESPACE, false, 0, 0, 0x00ee_0000);
+        t.stub(0x0044_7690, true, 3, 3, 0x12);
+        for p in [0, 0x00ab_c000] {
+            let what = format!("{label}: constructInGlobal {p:#x}");
+            t.check(&what, 0x0044_9420, Conv::Stdcall, &[p], |g| {
+                Out::U8(d::construct_in_global(g, p))
+            });
+        }
+        assert_eq!(t.log_entries(), 2);
+        t.reset();
+        // the cluster teardown: clear and 0x0049c5b0 recorded, the
+        // namespace's release run (one owned descriptor)
+        t.stub(0x0044_0eb0, true, 0, 0, 0);
+        t.stub(0x0049_c5b0, true, 0, 0, 0);
+        let cl = t.zeros(0x60);
+        let o = t.object(&[0, 0, 0, 0, 0, 0, 0, 1]);
+        let desc = t.zeros(0xa0);
+        let vt = t.r32(o);
+        t.w32(desc, vt);
+        t.w32(desc + descriptor::FLAGS, 1);
+        t.w32(cl + 8, desc + 0x2c);
+        t.w32(desc + 0x2c, cl + 8);
+        let what = format!("{label}: cluster teardown");
+        t.check(&what, 0x0043_faa0, Conv::Thiscall(cl), &[], |g| {
+            c::cluster_teardown(g, cl);
+            Out::None
+        });
+        assert_eq!(t.log_entries(), 3);
+        t.reset();
+        // PClassMember: the allocator recorded (memcpy runs)
+        let name = t.alloc(b"m_value\0");
+        for (flags, block) in [(0, 0), (2, 0), (1, 0), (0x8000_0001, 1)] {
+            let buf = if block == 0 { 0 } else { t.zeros(16) };
+            t.stub(0x0042_fb80, false, 2, 0, buf);
+            let m = t.junk(0x20, 2);
+            let what = format!("{label}: PClassMember {flags:#x} {buf:#x}");
+            t.check(
+                &what,
+                0x0043_a080,
+                Conv::Thiscall(m),
+                &[0x77, name, flags],
+                |g| Out::U32(d::member_ctor(g, m, 0x77, name, flags)),
+            );
+            t.reset();
+        }
+    }
+}
+
+// ---- batch 6 ----
+
+#[test]
+fn batch6_arrays_and_strings_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // PArray<u8>::resize: the allocator and free recorded
+        for (block, count, old, n) in [
+            (0x00b1_0000, 4, 0x00aa_0000, 4),
+            (0x00b1_0000, 4, 0x00aa_0000, 0),
+            (0x00b1_0000, 4, 0x00aa_0000, 6),
+            (0, 4, 0x00aa_0000, 6),
+            (0x00b1_0000, 0x8000_0004, 0x00aa_0000, 6),
+            (0x00b1_0000, 4, 0x00b1_0000, 6),
+            (0x00b1_0000, 4, 0, 6),
+        ] {
+            t.stub(descriptor::ALLOC, false, 2, 0, block);
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            let arr = t.zeros(8);
+            t.w32(arr, count);
+            t.w32(arr + 4, old);
+            let what = format!("{label}: resize {block:#x} {count:#x} {old:#x} {n}");
+            t.check(&what, 0x0044_a010, Conv::Thiscall(arr), &[n], |g| {
+                Out::U32(d::array_resize(g, arr, n))
+            });
+            t.reset();
+        }
+        // PString copies (memcpy runs)
+        let text = t.alloc(b"PCluster\0");
+        for (block, ptr) in [(0, 0), (1, text), (1, text + 1), (0, text)] {
+            let buf = if block == 0 { 0 } else { t.zeros(16) };
+            t.stub(descriptor::ALLOC, false, 2, 0, buf);
+            let src = t.zeros(4);
+            t.w32(src, ptr);
+            let dst = t.junk(4, 1);
+            let what = format!("{label}: string copy {buf:#x} {ptr:#x}");
+            t.check(&what, 0x0044_ae10, Conv::Thiscall(dst), &[src], |g| {
+                Out::U32(d::string_copy(g, dst, src))
+            });
+            t.reset();
+        }
+        // PStream's constructor
+        for (block, name) in [(1, text), (0, text), (1, 0)] {
+            let buf = if block == 0 { 0 } else { t.zeros(16) };
+            t.stub(descriptor::ALLOC, false, 2, 0, buf);
+            let st = t.junk(0x10, 2);
+            let what = format!("{label}: PStream {buf:#x} {name:#x}");
+            t.check(&what, 0x0060_f050, Conv::Thiscall(st), &[name], |g| {
+                Out::U32(s::stream_ctor(g, st, name))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn batch6_members_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let marker = t.r32(t.rebase(descriptor::DEFAULT_INSTANCE.sym));
+        for dup in [0, 1] {
+            t.stub(0x0043_5ca0, true, 1, 1, dup);
+            t.stub(0x0044_9c80, true, 0, 0, 0);
+            t.stub(0x0044_9e40, true, 0, 0, 0);
+            for (size, offset, name, default, words) in [
+                (0x100, 0x10, 0x00ab_0000, false, [3u16, 3]),
+                (0x100, 0x10, 0x00ab_0000, false, [3, 4]),
+                (0x10, 0x10, 0x00ab_0000, false, [3, 3]),
+                // need is 0x40 - 0x10 + 0x10 + 8 = 0x48: exactly, one short, room
+                (0x48, 0x10, 0x00ab_0000, false, [3, 3]),
+                (0x47, 0x10, 0x00ab_0000, false, [3, 3]),
+                (0x50, 0x10, 0x00ab_0000, false, [3, 3]),
+                (0x100, 0x10, 0, false, [3, 3]),
+                (0x100, 0x10, 0x00ab_0000, true, [3, 3]),
+                (0xffff_fff0, 0x10, 0x00ab_0000, false, [3, 3]),
+            ] {
+                let desc = t.zeros(0xa0);
+                t.w32(desc + 0x8c, 0x40);
+                t.w32(desc + 0x88, 0x10);
+                t.w32(desc + 0x1c, size);
+                t.write(desc + 0x94, &[words[0] as u8, 0, words[1] as u8, 0]);
+                // an empty member list with one entry already
+                let other = t.zeros(0x30);
+                let head = desc + 0x44;
+                t.w32(head, other + 4);
+                t.w32(head + 4, other + 4);
+                t.w32(other + 4, head);
+                t.w32(other + 8, head);
+                let member = t.junk(0x30, 3);
+                t.w32(member + 0x24, offset);
+                t.w32(member + 0x10, if default { marker } else { name });
+                for sym in [0x0043_c0a0, 0x0044_90a0] {
+                    let what = format!(
+                        "{label}: addMember {sym:#x} {dup} {size:#x} {name:#x} {default} {words:?}"
+                    );
+                    t.check(&what, sym, Conv::Thiscall(desc), &[member, 8], |g| {
+                        Out::U32(if sym == 0x0043_c0a0 {
+                            d::add_member(g, desc, member, 8)
+                        } else {
+                            d::add_dynamic_member(g, desc, member, 8)
+                        })
+                    });
+                }
+            }
+            t.reset();
+        }
+        // updateBaseOffsets: a chain to 0x00435740()'s root, and one to 0
+        let root = t.rebase(0x00c9_02e8);
+        // a size on the root, which the walk must not count
+        t.w32(root + 0x84, 0x1000);
+        for to_root in [true, false] {
+            let a = t.zeros(0xa0);
+            let b = t.zeros(0xa0);
+            let c = t.zeros(0xa0);
+            t.w32(a + 0x84, 0x10);
+            t.w32(b + 0x84, 0x20);
+            t.w32(c + 0x84, 0xffff_fff0);
+            t.w32(b + 0x8c, 0x300);
+            t.w32(a + descriptor::PARENT, b);
+            t.w32(b + descriptor::PARENT, c);
+            t.w32(c + descriptor::PARENT, if to_root { root } else { 0 });
+            for d in [a, c] {
+                let what = format!("{label}: updateBaseOffsets {to_root} {d:#x}");
+                t.check(&what, 0x0043_d6e0, Conv::Thiscall(d), &[], |g| {
+                    Out::U32(d::update_base_offsets(g, d))
+                });
+            }
+        }
+        // deleteAll: slot 0, the assertion import and the free hook recorded
+        let assert = t.stub_code(0xa5, false, 3, 0, 0);
+        let free = t.stub_code(0xf4, false, 1, 0, 0);
+        let (ia, ifr) = (t.rebase(0x00b0_c5c0), t.rebase(0x022f_b514));
+        t.w32(ia, assert);
+        t.w32(ifr, free);
+        let o1 = t.object(&[1]);
+        let o2 = t.object(&[1]);
+        let data = t.zeros(12);
+        t.w32(data, o1);
+        t.w32(data + 8, o2);
+        for (n, dp) in [(3, data), (0, data), (0xffff_ffff, data), (3, 0)] {
+            let table = t.zeros(0x40);
+            t.w32(table + 0x30, dp);
+            t.w32(table + 0x38, n);
+            if dp == 0 {
+                continue;
+            }
+            let what = format!("{label}: deleteAll {n:#x}");
+            t.check(&what, 0x0042_b7c0, Conv::Thiscall(table), &[], |g| {
+                d::delete_all(g, table);
+                Out::None
+            });
+        }
+        assert_eq!(t.log_entries(), 4);
+        t.reset();
+        // the PArray<PTypedObject> constructInstance
+        t.stub(0x0044_d6a0, true, 1, 1, 0);
+        let p = t.junk(0x20, 4);
+        for at in [0, p] {
+            let what = format!("{label}: constructTypedArray {at:#x}");
+            t.check(&what, 0x0045_9600, Conv::Stdcall, &[at], |g| {
+                Out::U8(d::construct_typed_array(g, at))
+            });
+        }
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+    }
+}
+
+#[test]
+fn batch6_clusters_match_the_original() {
+    use ffx_pload::types;
+    for (label, mut t) in Twins::all() {
+        // the second PClusterHeader constructInstance and the base header
+        let p = t.junk(0x60, 1);
+        for at in [0, p] {
+            let what = format!("{label}: construct header b {at:#x}");
+            t.check(&what, 0x0046_9e60, Conv::Stdcall, &[at], |g| {
+                Out::U8(c::construct_header(g, at))
+            });
+        }
+        let hb = t.junk(0x60, 9);
+        let what = format!("{label}: header base ctor");
+        t.check(&what, 0x0046_8670, Conv::Thiscall(hb), &[], |g| {
+            Out::U32(c::header_base_ctor(g, hb))
+        });
+        // setLayout
+        t.stub(0x004c_2430, false, 3, 0, 0x99);
+        for (cur, flags, a, b, shift) in [
+            ([8, 2, 3], 0, 8, 2, 3),
+            ([8, 2, 3], 0, 8, 2, 4),
+            ([32, 2, 3], 0, 32, 2, 4),
+            ([8, 2, 3], 0, 0, 2, 0),
+            ([8, 2, 3], 2, 9, 2, 3),
+            ([8, 2, 3], 0, 4, 2, 3),
+            ([8, 2, 3], 0, 8, 5, 0),
+            ([8, 2, 3], 2, 64, 5, 40),
+            ([8, 2, 0x99], 2, 8, 7, 3),
+        ] {
+            let o = t.zeros(0x20);
+            t.w32(o + 0x1c, cur[0]);
+            t.w32(o, cur[1]);
+            t.w32(o + 0xc, cur[2]);
+            t.w32(o + 0x10, cur[2]);
+            t.w32(o + 0x14, flags);
+            let what = format!("{label}: setLayout {cur:?} {flags} {a} {b} {shift}");
+            t.check(&what, 0x004c_7260, Conv::Thiscall(o), &[a, b, shift], |g| {
+                Out::U32(c::set_layout(g, o, a, b, shift))
+            });
+        }
+        t.reset();
+        // PCluster's destructor
+        t.stub(0x0044_0eb0, true, 0, 0, 0);
+        t.stub(0x0044_3b70, true, 1, 1, 0);
+        t.stub(0x0057_6640, true, 0, 0, 0);
+        for owner in [0, 0x00ab_0000] {
+            let cl = t.junk(0x60, 2);
+            t.w32(cl + 0x40, owner);
+            let what = format!("{label}: PCluster dtor {owner:#x}");
+            t.check(&what, 0x0043_fa30, Conv::Thiscall(cl), &[], |g| {
+                c::cluster_dtor(g, cl);
+                Out::None
+            });
+        }
+        assert_eq!(t.log_entries(), 5);
+        t.reset();
+        // PClusterBase's constructor: the pool's recorded
+        t.stub(0x0049_c480, true, 4, 4, 0);
+        let cl = t.junk(0x60, 3);
+        let what = format!("{label}: PClusterBase");
+        t.check(&what, 0x0043_f820, Conv::Thiscall(cl), &[], |g| {
+            Out::U32(c::cluster_base_ctor(g, cl))
+        });
+        t.reset();
+        // GetGlobalNamespace, built from a cleared guard, then again
+        t.stub(types::ATEXIT, false, 1, 0, 0);
+        let guard = t.rebase(types::GLOBAL_NAMESPACE) + 0x1c;
+        let gv = t.r32(guard);
+        t.w32(guard, gv & !1);
+        for pass in 0..2 {
+            let what = format!("{label}: GetGlobalNamespace {pass}");
+            t.check(&what, 0x0043_e2f0, Conv::Cdecl, &[], |g| {
+                Out::U32(types::bridge::global_namespace(g))
+            });
+        }
+        assert_eq!(t.log_entries(), 1);
+        t.reset();
+        // PStreamReaderFile's constructor: open, PStream and size recorded
+        t.stub(stream::OPEN_FILE, true, 5, 5, 0);
+        t.stub(stream::STREAM_CTOR, true, 1, 1, 0);
+        t.stub(0x0060_7dc0, true, 0, 0, 0x1234);
+        let r = t.junk(0x20, 4);
+        let what = format!("{label}: PStreamReaderFile");
+        t.check(&what, 0x0057_66d0, Conv::Thiscall(r), &[0x00ab_c000], |g| {
+            Out::U32(s::reader_file_ctor(g, r, 0x00ab_c000))
+        });
+        assert_eq!(t.log_entries(), 3);
+        t.reset();
+    }
+}
+
+// ---- batch 7 ----
+
+#[test]
+fn batch7_clusters_match_the_original() {
+    use ffx_pload::types;
+    for (label, mut t) in Twins::all() {
+        // releaseBlocks: frees recorded
+        t.stub(descriptor::FREE, false, 1, 0, 0);
+        let rec = t.junk(0x28, 1);
+        let what = format!("{label}: releaseBlocks");
+        t.check(&what, 0x0059_89b0, Conv::Thiscall(rec), &[], |g| {
+            c::release_blocks(g, rec);
+            Out::None
+        });
+        assert_eq!(t.log_entries(), 4);
+        t.reset();
+        // placeOverallocation
+        for (over, align, cur) in [
+            (0, 4, 0x100),
+            (3, 0, 0x101),
+            (3, 8, 0x101),
+            (3, 8, 0),
+            (3, 0, 0),
+            (5, 16, 0x1003),
+        ] {
+            let class = t.zeros(0x80);
+            t.w32(class + 0x74, over);
+            t.w32(class + 0x78, align);
+            t.w32(class + 0x1c, 0x18);
+            let list = t.junk(0x48, 2);
+            t.w32(list + 0x2c, class);
+            t.w32(list + 0x3c, 4);
+            t.w32(list + 0x44, 0x13);
+            t.w32(list + 0x34, 0x0010_0001);
+            let cursor = t.zeros(4);
+            t.w32(cursor, cur);
+            let what = format!("{label}: placeOverallocation {over} {align} {cur:#x}");
+            t.check(&what, 0x0057_8300, Conv::Cdecl, &[cursor, list], |g| {
+                c::place_overallocation(g, cursor, list);
+                Out::None
+            });
+        }
+        // the tree insert, then lookups through the ported find
+        let tree = t.zeros(0x20);
+        t.w32(tree + 0xc, tree);
+        for (i, key) in [10u32, 5, 20, 7, 10, 30, 1].into_iter().enumerate() {
+            let node = t.junk(0x20, i as u8);
+            t.w32(node + 0xc, key);
+            let what = format!("{label}: tree insert {key}");
+            t.check(&what, 0x0058_1750, Conv::Thiscall(tree), &[node], |g| {
+                Out::U32(c::tree_insert(g, tree, node))
+            });
+        }
+        // PCluster::create: the list allocation and initializeInstance recorded
+        let list = t.zeros(0x40);
+        t.w32(list + 0x30, 0x0020_0000);
+        for (flags, n, got) in [(8, 3, list), (0, 0, list), (0, 3, 0), (0, 3, list)] {
+            t.stub(0x0043_52f0, false, 3, 0, 0);
+            t.stub(0x0044_0ba0, true, 4, 4, got);
+            t.stub(0x0043_ce00, true, 1, 1, 0);
+            let desc = t.zeros(0xa0);
+            t.w32(desc + 0x90, flags);
+            t.w32(desc + 0x1c, 0x24);
+            t.w32(desc + 0x18, 0x00ab_0000);
+            let cl = t.zeros(0x48);
+            let what = format!("{label}: create {flags} {n} {got:#x}");
+            t.check(&what, 0x0044_1010, Conv::Thiscall(cl), &[n, desc, 7], |g| {
+                Out::U32(c::create(g, cl, n, desc, 7))
+            });
+            t.reset();
+        }
+        // PClusterBase's destructor: the registry and the teardown's callees recorded
+        t.stub(0x004f_ee70, true, 0, 0, 0);
+        t.stub(types::ATEXIT, false, 1, 0, 0);
+        t.stub(0x0059_8c50, true, 1, 1, 0);
+        t.stub(0x0044_0eb0, true, 0, 0, 0);
+        t.stub(0x0049_c5b0, true, 0, 0, 0);
+        let guard = t.rebase(0x00c9_628c);
+        let gv = t.r32(guard);
+        t.w32(guard, gv & !1);
+        for pass in 0..2 {
+            let cl = t.zeros(0x60);
+            t.w32(cl + 8, cl + 8);
+            let what = format!("{label}: PClusterBase dtor {pass}");
+            t.check(&what, 0x0057_6640, Conv::Thiscall(cl), &[], |g| {
+                c::cluster_base_dtor(g, cl);
+                Out::None
+            });
+        }
+        assert_eq!(t.log_entries(), 2 + 3 * 2);
+        t.reset();
+    }
+}
+
+#[test]
+fn batch7_descriptors_match_the_original() {
+    use ffx_pload::types;
+    for (label, mut t) in Twins::all() {
+        // findMember over a descriptor and its parent
+        let names: Vec<u32> = [&b"a\0"[..], b"bb\0", b"ccc\0"]
+            .iter()
+            .map(|n| t.alloc(n))
+            .collect();
+        let child = t.zeros(0xa0);
+        let parent = t.zeros(0xa0);
+        t.w32(child + descriptor::PARENT, parent);
+        for (d, ns) in [(child, &names[..2]), (parent, &names[2..])] {
+            let head = d + 0x44;
+            let mut prev = head;
+            t.w32(head, head);
+            t.w32(head + 4, head);
+            for &n in ns {
+                let m = t.zeros(0x30);
+                t.w32(m + 0x10, n);
+                let link = m + 4;
+                t.w32(prev, link);
+                t.w32(link + 4, prev);
+                t.w32(link, head);
+                t.w32(head + 4, link);
+                prev = link;
+            }
+            // a member without a name
+            let m = t.zeros(0x30);
+            let link = m + 4;
+            t.w32(prev, link);
+            t.w32(link + 4, prev);
+            t.w32(link, head);
+            t.w32(head + 4, link);
+        }
+        let probes: Vec<u32> = [&b"a\0"[..], b"ccc\0", b"cc\0", b"\0"]
+            .iter()
+            .map(|n| t.alloc(n))
+            .collect();
+        for d in [child, parent, 0] {
+            for &p in probes.iter().chain([0u32].iter()) {
+                let what = format!("{label}: findMember {d:#x} {p:#x}");
+                t.check(&what, 0x0043_5ca0, Conv::Thiscall(d), &[p], |g| {
+                    Out::U32(d::find_member(g, d, p))
+                });
+            }
+        }
+        // findNamed over a list at +0x54
+        let owner = t.zeros(0x60);
+        let head = owner + 0x54;
+        let e1 = t.zeros(0x10);
+        let e2 = t.zeros(0x10);
+        let e3 = t.zeros(0x10);
+        t.w32(head, e1);
+        t.w32(e1, e2);
+        t.w32(e2, e3);
+        t.w32(e3, head);
+        t.w32(e1 + 0xc, names[0]);
+        t.w32(e3 + 0xc, names[2]);
+        // an empty list whose head looks like a named entry: the head is
+        // never an entry
+        let empty = t.zeros(0x70);
+        t.w32(empty + 0x54, empty + 0x54);
+        t.w32(empty + 0x54 + 0xc, names[0]);
+        for o in [owner, empty] {
+            for &p in probes.iter().chain([0u32].iter()) {
+                let what = format!("{label}: findNamed {o:#x} {p:#x}");
+                t.check(&what, 0x0043_06b0, Conv::Thiscall(o), &[p], |g| {
+                    Out::U32(d::find_named(g, o, p))
+                });
+            }
+        }
+        // the dynamic member's scalar deleting destructor
+        t.stub(descriptor::FREE, false, 1, 0, 0);
+        t.stub(0x0057_5470, true, 0, 0, 0);
+        for (name, flags) in [(0x00ab_0000, 0), (0x00ab_0001, 1), (0x00ab_0000, 3)] {
+            let m = t.junk(0x30, 3);
+            t.w32(m + 0x2c, name);
+            let what = format!("{label}: member dynamic delete {name:#x} {flags}");
+            t.check(&what, 0x0044_6400, Conv::Thiscall(m), &[flags], |g| {
+                Out::U32(d::delete_member_dynamic(g, m, flags))
+            });
+        }
+        assert_eq!(t.log_entries(), 2 + 3 + 2);
+        t.reset();
+        // PArray<T*>::resize
+        for (block, count, old, n) in [
+            (1, 4, 0x00aa_0000, 4),
+            (1, 4, 0x00aa_0000, 3),
+            (0, 4, 0x00aa_0000, 3),
+            (1, 4, 0, 3),
+            (1, 0x8000_0004, 0x00aa_0000, 3),
+            (1, 4, 0x00aa_0000, 0),
+        ] {
+            let buf = if block == 0 { 0 } else { t.junk(16, 4) };
+            t.stub(descriptor::ALLOC, false, 2, 0, buf);
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            let arr = t.zeros(8);
+            t.w32(arr, count);
+            t.w32(arr + 4, old);
+            let what = format!("{label}: ptr resize {buf:#x} {count:#x} {old:#x} {n}");
+            t.check(&what, 0x0047_efc0, Conv::Thiscall(arr), &[n], |g| {
+                Out::U32(d::pointer_array_resize(g, arr, n))
+            });
+            t.reset();
+        }
+        // the PArray<PTypedObject> destructInstance
+        t.stub(descriptor::FREE, false, 1, 0, 0);
+        t.stub(0x0044_d730, true, 0, 0, 0);
+        for (word, data) in [(3, 0x00aa_0000), (0x8000_0003, 0x00aa_0000), (3, 0)] {
+            let p = t.junk(0x20, 5);
+            t.w32(p + 0xc, word);
+            t.w32(p + 0x10, data);
+            let what = format!("{label}: destroyTypedArray {word:#x} {data:#x}");
+            t.check(&what, 0x0045_96b0, Conv::Stdcall, &[p], |g| {
+                Out::U8(d::destroy_typed_array(g, p))
+            });
+        }
+        assert_eq!(t.log_entries(), 1 + 3);
+        t.reset();
+        // InitializeGlobalClassDescriptors: on the image with a built
+        // namespace of fake descriptors, on the snapshots over the real one
+        if !t.snapshot {
+            t.stub(types::ATEXIT, false, 1, 0, 0);
+            t.stub(descriptor::CALCULATE_VALIDATION, true, 0, 0, 0);
+            let ns = t.rebase(types::GLOBAL_NAMESPACE);
+            // calculateDefaultBuffer copies the descriptor's +0x8c (set by
+            // the first pass) and the namespace's state to `seen`
+            let seen = t.zeros(8);
+            let mut code = vec![0x8b, 0x81, 0x8c, 0, 0, 0, 0xa3]; // mov eax, [ecx+0x8c]; mov [seen], eax
+            code.extend(seen.to_le_bytes());
+            code.push(0xa1); // mov eax, [ns+0x10]
+            code.extend((ns + 0x10).to_le_bytes());
+            code.push(0xa3); // mov [seen+4], eax
+            code.extend((seen + 4).to_le_bytes());
+            code.push(0xc3);
+            let at = t.a.alloc_code(&code).unwrap();
+            assert_eq!(t.b.alloc_code(&code).unwrap(), at);
+            let calc = t.rebase(descriptor::CALCULATE_DEFAULT);
+            let mut j = vec![0xe9];
+            j.extend(at.wrapping_sub(calc + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, calc, 5).unwrap();
+            t.saved.entry(calc).or_insert(old);
+            t.write(calc, &j);
+            let head = ns + 8;
+            let o = t.object(&[0; 13]);
+            let vt = t.r32(o);
+            let mut prev = head;
+            t.w32(ns + 0x1c, 1);
+            for (i, flags) in [0u32, 0x8000_0000, 0x4000_0000].into_iter().enumerate() {
+                let dsc = t.zeros(0xa0);
+                t.w32(dsc, vt);
+                t.w32(dsc + descriptor::FLAGS, flags);
+                t.w32(dsc + 0x84, 0x10 * (i as u32 + 1));
+                let link = dsc + 0x2c;
+                t.w32(prev, link);
+                t.w32(link + 4, prev);
+                t.w32(link, head);
+                t.w32(head + 4, link);
+                prev = link;
+            }
+        }
+        let what = format!("{label}: InitializeGlobalClassDescriptors");
+        t.check(&what, 0x0043_e440, Conv::Cdecl, &[], |g| {
+            d::init_global_descriptors(g);
+            Out::None
+        });
+        t.reset();
+    }
+}
+
+// ---- batch 8 ----
+
+#[test]
+fn batch8_dispenser_matches_the_original() {
+    use ffx_pload::types;
+    for (label, mut t) in Twins::all() {
+        // the lookup on a synthetic tree: (hash, name) nodes, nil = tree
+        let tree = t.zeros(0x20);
+        let names: Vec<u32> = [&b"float\0"[..], b"bool\0", b"PType\0", b"PChar\0"]
+            .iter()
+            .map(|n| t.alloc(n))
+            .collect();
+        let node = |t: &mut Twins, hash: u32, name: u32| {
+            let n = t.zeros(0x20);
+            t.w32(n + 4, tree);
+            t.w32(n + 8, tree);
+            t.w32(n + 0x10, hash);
+            t.w32(n + 0x14, name);
+            n
+        };
+        let root = node(&mut t, 100, names[0]);
+        let left = node(&mut t, 50, names[1]);
+        let right = node(&mut t, 100, names[2]);
+        t.w32(root + 4, left + 4);
+        t.w32(root + 8, right + 4);
+        let key = t.zeros(8);
+        for (hash, name) in [
+            (100, names[0]),
+            (50, names[1]),
+            (100, names[2]),
+            (100, names[3]),
+            (7, names[0]),
+            (200, names[2]),
+        ] {
+            t.w32(key, hash);
+            t.w32(key + 4, name);
+            for root_link in [root + 4, tree] {
+                t.w32(tree + 0xc, root_link);
+                for sym in [0x0043_75c0, 0x0043_8680] {
+                    let what =
+                        format!("{label}: dispenser find {sym:#x} {hash} {name:#x} {root_link:#x}");
+                    t.check(&what, sym, Conv::Thiscall(tree), &[key], |g| {
+                        Out::U32(d::dispenser_find(g, tree, key))
+                    });
+                }
+            }
+        }
+        // RegisterType and RegisterDefaultTypes over the real dispenser
+        // (built here on the image; the snapshots' own)
+        t.stub(types::ATEXIT, false, 1, 0, 0);
+        // the second type registered (0x00c90760) has no name on the image
+        // until its static constructor runs: give it one there
+        let second = t.rebase(0x00c9_0760);
+        if t.r32(second + 0x18) == 0 {
+            let n = t.alloc(b"p1load_Second\0");
+            t.w32(second + 0x18, n);
+        }
+        let what = format!("{label}: RegisterDefaultTypes");
+        t.check(&what, 0x0043_9510, Conv::Cdecl, &[], |g| {
+            let key = g.scratch();
+            Out::U8(d::register_default_types(g, key))
+        });
+        // a new type, then the same again, then one without a name
+        let fresh = t.zeros(0x30);
+        let fname = t.alloc(b"p1load_FreshType\0");
+        t.w32(fresh + 0x18, fname);
+        let nameless = t.zeros(0x30);
+        for ty in [fresh, fresh, nameless] {
+            let what = format!("{label}: RegisterType {ty:#x}");
+            t.check(&what, 0x0043_95b0, Conv::Cdecl, &[ty], |g| {
+                let key = g.scratch();
+                Out::U8(d::register_type(g, key, ty))
+            });
+        }
+        // the real dispenser's lookups by name, through the ported hash
+        let dispenser = t.rebase(types::DISPENSER);
+        for n in [
+            &b"float\0"[..],
+            b"PUInt128\0",
+            b"p1load_FreshType\0",
+            b"nothing\0",
+        ] {
+            let name = t.alloc(n);
+            let what = format!("{label}: real findByName {}", String::from_utf8_lossy(n));
+            t.check(
+                &what,
+                0x0043_8630,
+                Conv::Thiscall(dispenser),
+                &[name],
+                |g| {
+                    let key = g.scratch();
+                    Out::U32(d::find_by_name(g, 0x0043_8680, key, dispenser, name))
+                },
+            );
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn batch8_clusters_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // placeTables: the arena growth recorded, memset runs
+        for (grow, extra, align, head) in [
+            (0, 0, 0, 0x13),
+            (0, 0x20, 16, 0x10),
+            (0x55, 0x20, 0, 0x10),
+            (0, 0, 8, 0),
+        ] {
+            t.stub(0x0044_2010, true, 3, 3, grow);
+            let base = t.junk(0x200, 1);
+            let arena = t.zeros(0x10);
+            t.w32(arena + 4, base);
+            let cluster = t.zeros(0x30);
+            t.w32(cluster + 0x24, arena);
+            let r = t.zeros(0x40);
+            t.w32(r + 0x38, head);
+            t.w32(r + 0x2c, if head == 0 { 0 } else { 5 });
+            t.w32(r + 0x10, 0x77);
+            let this = t.zeros(0x10);
+            t.w32(this, cluster);
+            t.w32(this + 8, r);
+            let out = t.junk(8, 2);
+            let what = format!("{label}: placeTables {grow} {extra} {align} {head}");
+            t.check(
+                &what,
+                0x0057_9090,
+                Conv::Thiscall(this),
+                &[out, out + 4, extra, align],
+                |g| Out::U32(c::place_tables(g, this, out, out + 4, extra, align)),
+            );
+            t.reset();
+        }
+        // the registry's forget: the mutex, the tree removal and the pool recorded
+        for present in [true, false] {
+            t.stub(0x0043_1850, true, 1, 1, 0);
+            t.stub(0x0043_19d0, true, 0, 0, 0);
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            t.stub(0x0057_5000, true, 1, 1, 0);
+            t.stub(0x0049_c980, true, 1, 1, 0);
+            let registry = t.zeros(0x1400);
+            let tree = registry + 0x1344;
+            let cluster = 0x00c1_0000;
+            t.w32(tree + 0xc, tree);
+            if present {
+                let n = t.junk(0x40, 3);
+                t.w32(n, tree);
+                t.w32(n + 4, tree);
+                t.w32(n + 0xc, cluster);
+                t.w32(tree + 0xc, n);
+            }
+            let what = format!("{label}: registry forget {present}");
+            t.check(
+                &what,
+                0x0059_8c50,
+                Conv::Thiscall(registry),
+                &[cluster],
+                |g| Out::U32(c::registry_forget(g, registry, cluster)),
+            );
+            assert_eq!(t.log_entries(), if present { 2 + 4 + 2 } else { 2 });
+            t.reset();
+        }
+    }
+}
+
+// ---- batch 9 ----
+
+#[test]
+fn batch9_arenas_and_registry_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // createArena: the block allocation and the pool's hand-over recorded
+        for (size, used, existing, block) in [
+            (0, 0, 0, 1),
+            (0x40, 0x41, 0, 1),
+            (0x40, 0x40, 0, 1),
+            (0x40, 8, 0x00ee_0000, 1),
+            (0x41, 8, 0, 0),
+            (0x41, 8, 0, 1),
+        ] {
+            let b = if block == 0 { 0 } else { t.junk(0x200, 1) };
+            t.stub(descriptor::ALLOC, false, 2, 0, b);
+            t.stub(0x0049_c7c0, true, 2, 2, 0);
+            let cl = t.junk(0x40, 2);
+            t.w32(cl + 0x24, existing);
+            let what = format!("{label}: createArena {size:#x} {used:#x} {existing:#x} {b:#x}");
+            t.check(
+                &what,
+                0x0044_2010,
+                Conv::Thiscall(cl),
+                &[size, used, 3],
+                |g| Out::U32(c::create_arena(g, cl, size, used, 3)),
+            );
+            t.reset();
+        }
+        // the registry's add
+        for (pooled, dup) in [(false, false), (true, false), (true, true)] {
+            t.stub(0x0049_c8d0, true, 1, 1, 0);
+            t.stub(0x0049_c980, true, 1, 1, 0);
+            t.stub(0x0057_4980, true, 1, 1, 0);
+            let reg = t.zeros(0x40);
+            t.w32(reg + 0xc, reg);
+            t.w32(reg + 0x20, 8);
+            if pooled {
+                let n1 = t.junk(0x40, 3);
+                let n2 = t.junk(0x40, 4);
+                t.w32(n1, n2);
+                t.w32(n2, 0);
+                t.w32(reg + 0x18, n1);
+            }
+            if dup {
+                let old = t.zeros(0x40);
+                t.w32(old, reg);
+                t.w32(old + 4, reg);
+                t.w32(old + 0xc, 0x00c1_0000);
+                t.w32(reg + 0xc, old);
+            }
+            let key = t.zeros(4);
+            t.w32(key, 0x00c1_0000);
+            let record = t.junk(0x28, 5);
+            let what = format!("{label}: registry add {pooled} {dup}");
+            t.check(
+                &what,
+                0x0059_5e50,
+                Conv::Thiscall(reg),
+                &[key, record],
+                |g| Out::U32(c::registry_add(g, reg, key, record)),
+            );
+            t.reset();
+        }
+        // the import-compared lookup: the CRT compare recorded, its result set
+        for cmp in [0u32, 1, u32::MAX] {
+            let stub = t.stub_code(0xc3, false, 2, 0, cmp);
+            let iat = t.rebase(0x00b0_c398);
+            t.w32(iat, stub);
+            let tree = t.zeros(0x20);
+            let node = t.zeros(0x20);
+            t.w32(node + 4, tree);
+            t.w32(node + 8, tree);
+            t.w32(node + 0x10, 100);
+            t.w32(node + 0x14, 0x00ab_0000);
+            t.w32(tree + 0xc, node + 4);
+            // children: hash 50 on the left, 150 on the right
+            for (side, hash) in [(4, 50), (8, 150)] {
+                let child = t.zeros(0x20);
+                t.w32(child + 4, tree);
+                t.w32(child + 8, tree);
+                t.w32(child + 0x10, hash);
+                t.w32(child + 0x14, 0x00ab_0010);
+                t.w32(node + side, child + 4);
+            }
+            let key = t.zeros(8);
+            for hash in [100, 50, 150, 70] {
+                t.w32(key, hash);
+                t.w32(key + 4, 0x00cd_0000);
+                let what = format!("{label}: import find {cmp:#x} {hash}");
+                t.check(&what, 0x0045_b8f0, Conv::Thiscall(tree), &[key], |g| {
+                    Out::U32(d::import_find(g, tree, key))
+                });
             }
         }
     }

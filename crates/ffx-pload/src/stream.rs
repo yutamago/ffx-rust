@@ -16,6 +16,8 @@ use ffx_graphic::host::{Conv, Host};
 
 /// `PStreamReader`'s vtable.
 pub const READER_VTABLE: u32 = 0x00b3_1430;
+/// `PStreamReaderFile`'s vtable.
+pub const READER_FILE_VTABLE: u32 = 0x00b3_0ac0;
 /// `PStream`'s vtable.
 pub const STREAM_VTABLE: u32 = 0x00b3_eccc;
 /// Where a `PStreamReaderFile` keeps its `PStreamFile`.
@@ -63,7 +65,8 @@ pub mod core {
 pub mod bridge {
     use super::{
         ASSET_TREE, CLOSE_FILE, Conv, FREE, Host, IS_OPEN, Mem, OPEN_FILE, READ, READER_FILE,
-        READER_VTABLE, SERIALIZATION_READY, STREAM_CTOR, STREAM_PREFIX, STREAM_VTABLE, core,
+        READER_FILE_VTABLE, READER_VTABLE, SERIALIZATION_READY, STREAM_CTOR, STREAM_PREFIX,
+        STREAM_VTABLE, core,
     };
 
     /// An import's address (the word in the import table at `slot`).
@@ -153,10 +156,16 @@ pub mod bridge {
         h.call_sym(READ, Conv::Thiscall(reader + READER_FILE), &[buffer, size])
     }
 
-    /// `PStreamWriterFile::close(writer)` (`0x00431840`, thiscall):
-    /// `0x00431850(writer, &writer->file)`; its `eax`.
-    pub fn writer_close(h: &mut impl Host, writer: u32) -> u32 {
-        h.call_sym(0x0043_1850, Conv::Thiscall(writer), &[writer + 0x10])
+    /// A recursive mutex's lock (`0x00431840`, thiscall; Ghidra's dump
+    /// calls it `PStreamWriterFile::close`): `0x00431850(mutex; &mutex->inner)`
+    /// (`+0x10`); its `eax`. `0x004319d0` is the unlock.
+    pub fn mutex_lock(h: &mut impl Host, mutex: u32) -> u32 {
+        h.call_sym(0x0043_1850, Conv::Thiscall(mutex), &[mutex + 0x10])
+    }
+
+    /// The unlock of [`mutex_lock`] (`0x004319d0`, original).
+    pub fn mutex_unlock(h: &mut impl Host, mutex: u32) {
+        h.call_sym(0x0043_19d0, Conv::Thiscall(mutex), &[]);
     }
 
     /// `PStream::~PStream(stream)` (`0x0060f0c0`, thiscall): its vtable
@@ -176,6 +185,46 @@ pub mod bridge {
         let vt = h.rebase(READER_VTABLE);
         h.write(reader, vt);
         stream_dtor(h, reader);
+    }
+
+    /// `PStreamReaderFile::~PStreamReaderFile(reader)` (`0x005767c0`,
+    /// thiscall): its vtable, [`reader_dtor`], then its file's destructor
+    /// (`0x00607c10`, an empty body).
+    pub fn reader_file_dtor(h: &mut impl Host, reader: u32) {
+        let vt = h.rebase(READER_FILE_VTABLE);
+        h.write(reader, vt);
+        reader_dtor(h, reader);
+        h.call_sym(0x0060_7c10, Conv::Thiscall(reader + READER_FILE), &[]);
+    }
+
+    /// `PStream::PStream(stream, name)` (`0x0060f050`, thiscall): its
+    /// vtable, 0xb, and a copy of `name` (alignment 2; 0 for none);
+    /// returns `stream`.
+    pub fn stream_ctor(h: &mut impl Host, stream: u32, name: u32) -> u32 {
+        let vt = h.rebase(STREAM_VTABLE);
+        h.write(stream, [vt, 0xb]);
+        let copy = if name == 0 {
+            0
+        } else {
+            crate::descriptor::bridge::copy_string(h, name, 2)
+        };
+        h.write(stream + 8, copy);
+        stream
+    }
+
+    /// `PStreamReaderFile::PStreamReaderFile(reader, path)`
+    /// (`0x005766d0`, thiscall): its file opened for reading
+    /// ([`file_ctor`] with `(path, 1, 0, 0, 1)`), [`reader_ctor`], its
+    /// vtable, and the file's size (`getFileSize`, `0x00607dc0`, low
+    /// word) at `+0x10`; returns `reader`.
+    pub fn reader_file_ctor(h: &mut impl Host, reader: u32, path: u32) -> u32 {
+        file_ctor(h, reader + READER_FILE, [path, 1, 0, 0, 1]);
+        reader_ctor(h, reader, path);
+        let vt = h.rebase(READER_FILE_VTABLE);
+        h.write(reader, vt);
+        let size = h.call_sym(0x0060_7dc0, Conv::Thiscall(reader + READER_FILE), &[]);
+        h.write(reader + 0x10, size);
+        reader
     }
 
     /// `PStreamReader::PStreamReader(reader, name)` (`0x0057dc40`,

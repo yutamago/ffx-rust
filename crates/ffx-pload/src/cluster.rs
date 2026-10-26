@@ -222,7 +222,11 @@ pub mod bridge {
     /// (thiscall `(&key)` on the tree, whose header is the nil node): the
     /// node whose key (`+0xc`, unsigned) is `*key`, or 0.
     pub fn tree_find(m: &impl Mem, tree: u32, key: u32) -> u32 {
-        let k: u32 = m.read(key);
+        tree_find_key(m, tree, m.read(key))
+    }
+
+    /// [`tree_find`] for the key value `k`.
+    pub fn tree_find_key(m: &impl Mem, tree: u32, k: u32) -> u32 {
         let mut node: u32 = m.read(tree + 0xc);
         while node != tree {
             let nk: u32 = m.read(node + 0xc);
@@ -472,5 +476,359 @@ pub mod bridge {
         m.write(this + 0xc, flag as u8);
         m.write(this + 0x10, [0u32; 6]);
         this
+    }
+
+    /// `PCluster`'s teardown (`0x0043faa0`, thiscall): `PClusterBase::clear`
+    /// (`0x00440eb0`), `0x0049c5b0` on `+0x28`, then its namespace's owned
+    /// descriptors (`0x0043dde0`).
+    pub fn cluster_teardown(h: &mut impl Host, cluster: u32) {
+        h.call_sym(0x0044_0eb0, Conv::Thiscall(cluster), &[]);
+        h.call_sym(0x0049_c5b0, Conv::Thiscall(cluster + 0x28), &[]);
+        crate::descriptor::bridge::release_owned(h, cluster);
+    }
+
+    /// `PClusterHeaderBase::PClusterHeaderBase(header)` (`0x00468670`,
+    /// thiscall): `"RYHP"`, 0x54, sixteen zero words; returns it.
+    pub fn header_base_ctor(m: &mut impl Mem, header: u32) -> u32 {
+        m.write(header, [0x5048_5952u32, 0x54]);
+        m.write(header + 8, [0u32; 16]);
+        header
+    }
+
+    /// `PCluster::~PCluster(cluster)` (`0x0043fa30`, thiscall):
+    /// `PClusterBase::clear`, the owner's release of it (`0x00443b70` on
+    /// `+0x40`, then 0), then the base destructor (`0x00576640`).
+    pub fn cluster_dtor(h: &mut impl Host, cluster: u32) {
+        h.call_sym(0x0044_0eb0, Conv::Thiscall(cluster), &[]);
+        let owner: u32 = h.read(cluster + 0x40);
+        if owner != 0 {
+            h.call_sym(0x0044_3b70, Conv::Thiscall(owner), &[cluster]);
+            h.write(cluster + 0x40, 0u32);
+        }
+        h.call_sym(0x0057_6640, Conv::Thiscall(cluster), &[]);
+    }
+
+    /// `PClusterBase::PClusterBase(cluster)` (`0x0043f820`, thiscall): its
+    /// namespace ([`namespace_ctor`]), an empty list at `+0x1c`, `+0x24`
+    /// = 0, the pool at `+0x28` (`0x0049c480(0x4c, 0x14, 4, 0x00b0f11c)`),
+    /// `+0x40` = 0, `+0x44` = 3; returns it.
+    pub fn cluster_base_ctor(h: &mut impl Host, cluster: u32) -> u32 {
+        namespace_ctor(h, cluster);
+        init_list(h, cluster + 0x1c);
+        h.write(cluster + 0x24, 0u32);
+        let name = h.rebase(0x00b0_f11c);
+        h.call_sym(
+            0x0049_c480,
+            Conv::Thiscall(cluster + 0x28),
+            &[0x4c, 0x14, 4, name],
+        );
+        h.write(cluster + 0x40, [0u32, 3]);
+        cluster
+    }
+
+    /// `0x004c7260` (thiscall `(a, b, shift)`): 3 when `1 << shift`
+    /// exceeds `a` (shift not 0); else, unless all three match `+0x1c`,
+    /// `+0`, `+0xc`, stores them and refreshes `+0x10` (`shift`, or
+    /// `0x004c2430(a, 0, 0)` when bit 1 of `+0x14` is set); 0.
+    pub fn set_layout(h: &mut impl Host, this: u32, a: u32, b: u32, shift: u32) -> u32 {
+        if shift != 0 && (1u32 << (shift & 31)) > a {
+            return 3;
+        }
+        let ca: u32 = h.read(this + 0x1c);
+        let cb: u32 = h.read(this);
+        let cs: u32 = h.read(this + 0xc);
+        if a == ca && b == cb && shift == cs {
+            return 0;
+        }
+        h.write(this, b);
+        let flags: u32 = h.read(this + 0x14);
+        h.write(this + 0x1c, a);
+        h.write(this + 0xc, shift);
+        let v = if (flags >> 1) & 1 != 0 {
+            h.call_sym(0x004c_2430, Conv::Cdecl, &[a, 0, 0])
+        } else {
+            shift
+        };
+        let cur: u32 = h.read(this + 0x10);
+        if v != cur {
+            h.write(this + 0x10, v);
+        }
+        0
+    }
+
+    /// `0x005989b0` (thiscall): frees the four blocks at `+0`, `+0x10`,
+    /// `+0x18`, `+0x20` and clears the record's words.
+    pub fn release_blocks(h: &mut impl Host, this: u32) {
+        let a: u32 = h.read(this);
+        h.call_sym(FREE, Conv::Cdecl, &[a]);
+        let b: u32 = h.read(this + 0x10);
+        h.write(this, [0u32; 4]);
+        h.write(this + 0x14, 0u32);
+        h.write(this + 0x1c, 0u32);
+        h.call_sym(FREE, Conv::Cdecl, &[b]);
+        let c: u32 = h.read(this + 0x18);
+        h.write(this + 0x10, 0u32);
+        h.call_sym(FREE, Conv::Cdecl, &[c]);
+        let d: u32 = h.read(this + 0x20);
+        h.write(this + 0x18, 0u32);
+        h.call_sym(FREE, Conv::Cdecl, &[d]);
+        h.write(this + 0x20, [0u32; 2]);
+    }
+
+    /// Rounds `x` up to `align` (a power of two; 0 leaves it).
+    fn align_up(x: u32, align: u32) -> u32 {
+        if align == 0 {
+            x
+        } else {
+            x.wrapping_add(align.wrapping_sub(1) & x.wrapping_neg())
+        }
+    }
+
+    /// `0x00578300` (cdecl `(&cursor, list)`): places an instance list's
+    /// over-allocation (the class's count `+0x74` times the list's count
+    /// `+0x3c`, aligned to `+0x78`): at the cursor when it is set
+    /// (advancing it), else just past the instances; the address goes to
+    /// `+0x38`. Nothing without over-allocation.
+    pub fn place_overallocation(m: &mut impl Mem, cursor: u32, list: u32) {
+        let class: u32 = m.read(list + 0x2c);
+        let count: u32 = m.read(list + 0x3c);
+        let over: u32 = m.read(class + 0x74);
+        let align: u32 = m.read(class + 0x78);
+        if over == 0 {
+            return;
+        }
+        let total = over.wrapping_mul(count);
+        let at: u32 = m.read(cursor);
+        if at != 0 {
+            let at = align_up(at, align);
+            m.write(cursor, at);
+            m.write(list + 0x38, at);
+            m.write(cursor, at.wrapping_add(total));
+        } else {
+            let size: u32 = m.read(class + 0x1c);
+            let extra: u32 = m.read(list + 0x44);
+            let base: u32 = m.read(list + 0x34);
+            let end = size
+                .wrapping_mul(count)
+                .wrapping_add(extra)
+                .wrapping_add(base)
+                .wrapping_sub(total);
+            m.write(list + 0x38, align_up(end, align));
+        }
+    }
+
+    /// The red-black tree insert `0x00581750` (thiscall `(node)`): the
+    /// node red with nil children, then placed under its parent by
+    /// unsigned key (`+0xc`); the node already holding the key instead
+    /// (nothing linked), else 0. The parent pointer shares `+8` with the
+    /// colour bit.
+    pub fn tree_insert(m: &mut impl Mem, tree: u32, node: u32) -> u32 {
+        let pc: u32 = m.read(node + 8);
+        m.write(node + 8, pc.wrapping_add(1 - (pc & 1)));
+        m.write(node, [tree, tree]);
+        let key: u32 = m.read(node + 0xc);
+        let mut parent = tree + 0xc;
+        let mut side = 0;
+        let mut cur: u32 = m.read(parent);
+        while cur != tree {
+            let k: u32 = m.read(cur + 0xc);
+            parent = cur;
+            if k == key {
+                return cur;
+            }
+            side = u32::from(k < key);
+            cur = m.read(cur + 4 * side);
+        }
+        let pc: u32 = m.read(node + 8);
+        m.write(node + 8, (pc & 1).wrapping_add(parent));
+        m.write(parent + 4 * side, node);
+        0
+    }
+
+    /// `PCluster::create(cluster, n, desc, c)` (`0x00441010`, thiscall):
+    /// for an abstract class (flags bit 3) an error report
+    /// (`0x004352f0(1, msg, name)`) and 0; else `n` instances in a new
+    /// instance list (`0x00440ba0`), each initialised
+    /// (`initializeInstance`, `0x0043ce00`); their data, or 0.
+    pub fn create(h: &mut impl Host, cluster: u32, n: u32, desc: u32, c: u32) -> u32 {
+        let flags: u32 = h.read(desc + 0x90);
+        if flags & 8 != 0 {
+            let name: u32 = h.read(desc + 0x18);
+            let msg = h.rebase(0x00b0_f248);
+            h.call_sym(0x0043_52f0, Conv::Cdecl, &[1, msg, name]);
+            return 0;
+        }
+        if n == 0 {
+            return 0;
+        }
+        let size: u32 = h.read(desc + 0x1c);
+        let list = h.call_sym(
+            0x0044_0ba0,
+            Conv::Thiscall(cluster),
+            &[size.wrapping_mul(n), n, desc, c],
+        );
+        if list == 0 {
+            return 0;
+        }
+        let data: u32 = h.read(list + 0x30);
+        let mut p = data;
+        for _ in 0..n {
+            h.call_sym(0x0043_ce00, Conv::Thiscall(desc), &[p]);
+            p = p.wrapping_add(size);
+        }
+        data
+    }
+
+    /// `PClusterBase::~PClusterBase(cluster)` (`0x00576640`, thiscall):
+    /// the cluster registry static (`0x00c94f00`, built the first time:
+    /// `0x004fee70`, `atexit(0x00afb710)`; guard `0x00c9628c`) forgets
+    /// it (`0x00598c50`), then [`cluster_teardown`].
+    pub fn cluster_base_dtor(h: &mut impl Host, cluster: u32) {
+        let guard = h.rebase(0x00c9_628c);
+        let registry = h.rebase(0x00c9_4f00);
+        let g: u32 = h.read(guard);
+        if g & 1 == 0 {
+            h.write(guard, g | 1);
+            h.call_sym(0x004f_ee70, Conv::Thiscall(registry), &[]);
+            let dtor = h.rebase(0x00af_b710);
+            h.call_sym(crate::types::ATEXIT, Conv::Cdecl, &[dtor]);
+        }
+        h.call_sym(0x0059_8c50, Conv::Thiscall(registry), &[cluster]);
+        cluster_teardown(h, cluster);
+    }
+
+    /// The cluster registry's forget (`0x00598c50`, thiscall `(cluster)`
+    /// on the registry `0x00c94f00`): under its mutex (`+0x1374`), the
+    /// cluster's entry in the tree at `+0x1344` (keyed by the cluster)
+    /// releases its blocks ([`release_blocks`] on `+0x10`), then leaves the
+    /// tree (`0x00575000`) and the node pool (`0x0049c980` on `+0x18`); 0.
+    pub fn registry_forget(h: &mut impl Host, registry: u32, cluster: u32) -> u32 {
+        let mutex = registry + 0x1374;
+        crate::stream::bridge::mutex_lock(h, mutex);
+        let tree = registry + 0x1344;
+        let node = tree_find_key(h, tree, cluster);
+        if node != 0 && node + 0x10 != 0 {
+            release_blocks(h, node + 0x10);
+            let node = tree_find_key(h, tree, cluster);
+            if node != 0 {
+                h.call_sym(0x0057_5000, Conv::Thiscall(tree), &[node]);
+                h.call_sym(0x0049_c980, Conv::Thiscall(tree + 0x18), &[node]);
+            }
+        }
+        crate::stream::bridge::mutex_unlock(h, mutex);
+        0
+    }
+
+    /// `0x00579090` (thiscall `(&table, &data, extra, align)` on a cluster
+    /// reader): sizes the reader's pointer table (`r = +8`: `r->+0x2c`
+    /// words after `r->+0x38` bytes rounded to 4) plus `extra`, aligned;
+    /// grows the cluster's arena when that is not 0
+    /// (`0x00442010(cluster; size, r->+0x38, r->+0x10)`, its error
+    /// returned); then the table at the arena's base plus the rounded
+    /// size, zeroed (`memset`), and the data past the table; 0.
+    pub fn place_tables(
+        h: &mut impl Host,
+        this: u32,
+        table: u32,
+        data: u32,
+        extra: u32,
+        align: u32,
+    ) -> u32 {
+        let r: u32 = h.read(this + 8);
+        let head: u32 = h.read(r + 0x38);
+        let words: u32 = h.read(r + 0x2c);
+        let start = head.wrapping_add(3) & !3;
+        let bytes = words.wrapping_mul(4);
+        let mut end = bytes.wrapping_add(start);
+        if align != 0 {
+            end = end.wrapping_sub(1).wrapping_add(align) & !align.wrapping_sub(1);
+        }
+        let size = extra.wrapping_add(end);
+        if size != 0 {
+            let cluster: u32 = h.read(this);
+            let flags: u32 = h.read(r + 0x10);
+            let e = h.call_sym(0x0044_2010, Conv::Thiscall(cluster), &[size, head, flags]);
+            if e != 0 {
+                return e;
+            }
+        }
+        let cluster: u32 = h.read(this);
+        let arena: u32 = h.read(cluster + 0x24);
+        let base: u32 = if arena == 0 { 0 } else { h.read(arena + 4) };
+        let at = base.wrapping_add(start);
+        h.write(table, at);
+        h.call_sym(0x0094_964c, Conv::Cdecl, &[at, 0, bytes]);
+        h.write(data, base.wrapping_add(end));
+        0
+    }
+
+    /// `0x00442010` (thiscall `(size, used, count)` on a cluster): its
+    /// arena, once: 5 for a size of 0 or `used` past it,
+    /// [`crate::error::ALREADY`] when it has one; else one block
+    /// (`0x0042fb80(0x20 + size rounded to 4 + count * 0x4c, 0x20)`,
+    /// [`crate::error::NO_BLOCK`] when that fails) holding the arena's
+    /// header (next, base, used, 0; linked at `+0x24`), its bytes, then
+    /// `count` pool entries handed to the pool at `+0x28`
+    /// (`0x0049c7c0`); 0.
+    pub fn create_arena(h: &mut impl Host, cluster: u32, size: u32, used: u32, count: u32) -> u32 {
+        if size == 0 || used > size {
+            return 5;
+        }
+        let old: u32 = h.read(cluster + 0x24);
+        if old != 0 {
+            return crate::error::ALREADY;
+        }
+        let rounded = size.wrapping_add(3) & !3;
+        let total = count
+            .wrapping_mul(0x4c)
+            .wrapping_add(0x20)
+            .wrapping_add(rounded);
+        let block = h.call_sym(crate::descriptor::ALLOC, Conv::Cdecl, &[total, 0x20]);
+        if block == 0 {
+            return crate::error::NO_BLOCK;
+        }
+        let base = block + 0x20;
+        h.write(block + 4, [base, used, 0]);
+        let next: u32 = h.read(cluster + 0x24);
+        h.write(block, next);
+        h.write(cluster + 0x24, block);
+        h.call_sym(
+            0x0049_c7c0,
+            Conv::Thiscall(cluster + 0x28),
+            &[base.wrapping_add(rounded), count],
+        );
+        0
+    }
+
+    /// The cluster registry's add (`0x00595e50`, thiscall `(&cluster,
+    /// &record)` on the registry): a node from the pool at `+0x18` (grown
+    /// by `0x0049c8d0(pool; +0x20)` when empty; 0xe when still empty),
+    /// keyed by the cluster, holding a copy of the ten-word record, put in
+    /// the tree ([`tree_insert`]); a duplicate goes back to the pool
+    /// (`0x0049c980`) with [`crate::error::DUPLICATE`], else the tree's
+    /// fix-up (`0x00574980`) and 0.
+    pub fn registry_add(h: &mut impl Host, registry: u32, key: u32, record: u32) -> u32 {
+        let pool = registry + 0x18;
+        let mut node: u32 = h.read(pool);
+        if node == 0 {
+            let grow: u32 = h.read(pool + 8);
+            h.call_sym(0x0049_c8d0, Conv::Thiscall(pool), &[grow]);
+            node = h.read(pool);
+            if node == 0 {
+                return 0xe;
+            }
+        }
+        let next: u32 = h.read(node);
+        h.write(pool, next);
+        let k: u32 = h.read(key);
+        h.write(node, [node, node, node, k]);
+        let words: [u32; 10] = h.read(record);
+        h.write(node + 0x10, words);
+        if tree_insert(h, registry, node) != 0 {
+            h.call_sym(0x0049_c980, Conv::Thiscall(pool), &[node]);
+            return crate::error::DUPLICATE;
+        }
+        h.call_sym(0x0057_4980, Conv::Thiscall(registry), &[node]);
+        0
     }
 }

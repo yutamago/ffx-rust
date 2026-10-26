@@ -7,7 +7,8 @@
 //!   descriptors' virtual methods;
 //! - [`stream`]: `PStream`, `PStreamReader`, `PStreamReaderFile`,
 //!   the serialization start-up;
-//! - [`cluster`]: `PCluster`, `PNamespace` and the cluster headers.
+//! - [`cluster`]: `PCluster`, `PNamespace` and the cluster headers;
+//! - [`types`]: the `GetType<T>` statics of the primitive and enum types.
 //!
 //! Everything this crate does not port is called at its address through
 //! [`ffx_graphic::host::Host`] (the allocator, the file layer, the
@@ -24,6 +25,7 @@
 pub mod cluster;
 pub mod descriptor;
 pub mod stream;
+pub mod types;
 
 /// `PhyreEngine`'s error codes, as its functions return them in `eax`.
 pub mod error {
@@ -41,6 +43,8 @@ pub mod error {
     /// An enum entry whose name is registered already (`0x00507ad0`):
     /// 0x12.
     pub const DUPLICATE: u32 = 0x12;
+    /// An allocation that failed (`0x0044a010`): 0xd.
+    pub const NO_BLOCK: u32 = 0xd;
     /// An asset import whose cluster is not loaded (`0x0045d9b0`): 7.
     pub const MISSING_CLUSTER: u32 = 7;
 }
