@@ -10,7 +10,8 @@
 //! - [`PUINT128`] (`PArray<PUInt128>`, `0x00537400`): the same code with
 //!   16-byte elements: the elements member's last word and its stride
 //!   (`+0x10c`) are 0x10. [`bridge::declare_sized`].
-//! - [`CLIP_SHARRAY`] (`PSharray<PAnimationClip *>`, `0x0051a650`): the
+//! - [`CLIP_SHARRAY`] (`PSharray<PAnimationClip *>`, `0x0051a650`; also
+//!   p5-core's `PSharray<PString>` and `PSharray<PTriggerReceiverComponent>`): the
 //!   shared array's own layout: an `m_u` array member at `+0x98` first,
 //!   its flag and handler words, then the count member (`+0xd8`) and its
 //!   annotation (`+0x104`). [`bridge::declare_sharray`].
@@ -69,6 +70,9 @@ pub struct Sharray {
     pub name: u32,
     /// The `m_u` member's element type (a descriptor).
     pub element: u32,
+    /// The `m_u` member's flag word (its constructor's fifth word: 2 for
+    /// pointer elements).
+    pub flag: u32,
     /// The `m_u` member's vtable and its `+0x3c` and `+0x38` handlers.
     pub member_vtable: u32,
     pub member_3c: u32,
@@ -85,6 +89,7 @@ pub const CLIP_SHARRAY: Sharray = Sharray {
     vtable: 0x00b2_76ec,
     name: 0x00ca_b440,
     element: 0x00ca_a7e8,
+    flag: 2,
     member_vtable: 0x00b2_7730,
     member_3c: 0x0051_dbf0,
     member_38: 0x0051_d220,
@@ -233,7 +238,7 @@ pub mod bridge {
             h.call_sym(
                 MEMBER_ARRAY_CTOR,
                 Conv::Thiscall(u),
-                &[d, elem, m, 4, 2, 2, 4],
+                &[d, elem, m, 4, c.flag, 2, 4],
             );
             let vt = h.rebase(c.member_vtable);
             h.write(u, vt);
