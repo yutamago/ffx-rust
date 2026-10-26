@@ -14,7 +14,7 @@ use super::{G, Rng, Twins, object};
 /// The ring check's stand-in (thiscall, three words, `ret 0xc`): logs
 /// `ecx` and its words, then for its `k`-th call (counter at `tab`)
 /// stores `tab[1 + 2k]` through its third word and returns `tab[2 + 2k]`.
-fn ring_check_stub(t: &mut Twins, tab: u32) -> u32 {
+pub(super) fn ring_check_stub(t: &mut Twins, tab: u32) -> u32 {
     let log = t.log;
     let mut c = vec![0xa1];
     c.extend(log.to_le_bytes()); // mov eax, [log]
@@ -46,7 +46,7 @@ fn ring_check_stub(t: &mut Twins, tab: u32) -> u32 {
 
 /// A renderer: vtable slot 2 (`submitFrame`) a logged stand-in; its
 /// rings' cursors and ends, `+0x4c` empty or not, the scene bit random.
-fn renderer(t: &mut Twins, rng: &mut Rng, submit: u32) -> u32 {
+pub(super) fn renderer(t: &mut Twins, rng: &mut Rng, submit: u32) -> u32 {
     let r = object(t, rng, 0x18, false);
     let vtable = t.zeros(0x10);
     t.w32(vtable + 8, submit);
@@ -70,7 +70,7 @@ fn renderer(t: &mut Twins, rng: &mut Rng, submit: u32) -> u32 {
 
 /// The ring check's answers for one call: (wrapped cursor, new cursor)
 /// around the ring's cursor and end, so that every branch is taken.
-fn answers(t: &mut Twins, rng: &mut Rng, r: u32, tab: u32) {
+pub(super) fn answers(t: &mut Twins, rng: &mut Rng, r: u32, tab: u32) {
     t.w32(tab, 0);
     for (k, (cur, end)) in [(0x24, 0x28), (0x38, 0x3c)].into_iter().enumerate() {
         let c: u32 = super::Mem::read(&t.b, r + cur);
@@ -127,7 +127,7 @@ fn run(
 
 /// A float argument: ordinary, zero, negative, infinite, a quiet NaN or
 /// a denormal (signalling NaNs stay out: the emulator keeps them).
-fn float_word(rng: &mut Rng) -> u32 {
+pub(super) fn float_word(rng: &mut Rng) -> u32 {
     match rng.below(6) {
         0 => 0,
         1 => 0x8000_0000,

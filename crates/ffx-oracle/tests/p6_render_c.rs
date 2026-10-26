@@ -73,8 +73,40 @@ impl Host for G<'_> {
             .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
             .eax
     }
+    fn call_st0(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f32 {
+        let r = self.call_ret(addr, conv, args, true);
+        r.st0_f32()
+            .unwrap_or_else(|| panic!("callee {addr:#x}: no float in ST0"))
+    }
+    fn call_st0_f64(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f64 {
+        let r = self.call_ret(addr, conv, args, true);
+        r.st0_f64()
+            .unwrap_or_else(|| panic!("callee {addr:#x}: no float in ST0"))
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
+    }
+}
+
+impl G<'_> {
+    /// A call through the oracle, checked for the game's call width.
+    fn call_ret(
+        &mut self,
+        addr: u32,
+        conv: host::Conv,
+        args: &[u32],
+        st0: bool,
+    ) -> ffx_oracle::Ret {
+        ffx_oracle::check_width("Host::call", addr, args.len(), host::max_words(conv, st0));
+        let conv = match conv {
+            host::Conv::Cdecl => Conv::Cdecl,
+            host::Conv::Stdcall => Conv::Stdcall,
+            host::Conv::Thiscall(t) => Conv::Thiscall(t),
+            host::Conv::Fastcall => Conv::Fastcall,
+        };
+        self.0
+            .call(addr, conv, args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
     }
 }
 
@@ -1790,3 +1822,17 @@ mod encode;
 
 #[path = "p6_render_c/thread.rs"]
 mod thread;
+
+// ---- continuation round 2 (batch 11 on): `ffx_prender::p6_small` ----
+
+#[path = "p6_render_c/small.rs"]
+mod small;
+
+#[path = "p6_render_c/setup.rs"]
+mod setup;
+
+#[path = "p6_render_c/post.rs"]
+mod post;
+
+#[path = "p6_render_c/app.rs"]
+mod app;
