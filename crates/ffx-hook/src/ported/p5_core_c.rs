@@ -4,10 +4,12 @@
 //! `PString` / `PSharray<T>` / `PArray<T *>` registrations (tables run by
 //! h1's, p2's and h2's bridges), two `PClassDescriptorAbstract<T>`
 //! constructors, `PShadowCaster`'s constructor and descriptor callbacks,
-//! `PInputAction`'s destructor and the 4x4 transpose. Nothing keeps state
-//! of its own.
+//! `PInputAction`'s destructor and the 4x4 transpose; `PMatrix4_lookAt`
+//! and the affine inverses (`ffx_pcore::p5_math`). Nothing keeps state of
+//! its own; the locals callees see are per-call `StackFrame`s.
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
+use ffx_pcore::p5_math::bridge as math;
 use ffx_pcore::p5_more::{self as p5m, bridge as p5b};
 use ffx_prender::{declare, h1_bind};
 
@@ -71,5 +73,30 @@ ported! {
     /// `Phyre_CharacterLighting_setLightMatrix(this; node, a, b)`.
     Phyre_CharacterLighting_setLightMatrix @ 0x006a_abf0 => extern "thiscall" fn light_006aabf0(this: u32, node: u32, a: u32, b: u32) {
         p5b::set_light_matrix(&mut mem(), this, node, a, b);
+    }
+    // batch 2: the matrix math (ffx_pcore::p5_math)
+    /// `PMatrix4_lookAt(this; p, q, u)` -> `this`; its locals in a per-call frame.
+    PMatrix4_lookAt @ 0x0045_1c30 => extern "thiscall" fn look_at_00451c30(this: u32, p: u32, q: u32, u: u32) -> u32 {
+        let mut frame = StackFrame::<0x25>::new();
+        math::look_at(&mut mem(), this, p, q, u, frame.at())
+    }
+    /// `Vectormath_Transform3_inverse(out, m)` -> `out`.
+    Vectormath_Transform3_inverse @ 0x004c_c890 => extern "C" fn inverse3_004cc890(out: u32, m: u32) -> u32 {
+        math::transform3_inverse(&mut mem(), out, m)
+    }
+    /// `GDraw_releaseTextureViews_00a34bc0(texture)`; its locals in a per-call frame.
+    GDraw_releaseTextureViews_00a34bc0 @ 0x00a3_4bc0 => extern "C" fn gdraw_00a34bc0(texture: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        ffx_pcore::p5_gdraw::bridge::unbind(&mut mem(), texture, frame.at())
+    }
+    /// `GDraw_createBlendState_00a35670(device, a, b, c)` -> the state or 0; its locals in a per-call frame.
+    GDraw_createBlendState_00a35670 @ 0x00a3_5670 => extern "C" fn gdraw_00a35670(dev: u32, a: u32, b: u32, c: u32) -> u32 {
+        let mut frame = StackFrame::<0x44>::new();
+        ffx_pcore::p5_gdraw::bridge::create_blend_state(&mut mem(), dev, a, b, c, frame.at())
+    }
+    /// `PMatrix4_Inverse_004cc0c0(out, m)` -> `out`; its locals in a per-call frame.
+    PMatrix4_Inverse_004cc0c0 @ 0x004c_c0c0 => extern "C" fn inverse_004cc0c0(out: u32, m: u32) -> u32 {
+        let mut frame = StackFrame::<0x24>::new();
+        math::inverse(&mut mem(), out, m, frame.at())
     }
 }

@@ -861,3 +861,279 @@ fn set_light_matrix_matches_the_original() {
         t.unstub_all();
     }
 }
+
+/// A float near `scale` (both signs), or any float now and then.
+fn sane(rng: &mut Rng, scale: f32) -> u32 {
+    if rng.chance(12) {
+        return float(rng);
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let x = (rng.below(20001) as f32 - 10000.0) / 10000.0 * scale;
+    x.to_bits()
+}
+
+/// `n` words: mostly sane floats, all `float()` for `wild`.
+fn floats(rng: &mut Rng, n: usize, wild: bool) -> Vec<u8> {
+    (0..n)
+        .flat_map(|_| if wild { float(rng) } else { sane(rng, 4.0) }.to_le_bytes())
+        .collect()
+}
+
+/// The affine inverse, `PMatrix4_Inverse` around it (the originals of
+/// `Vectormath_Transform3_inverse` and `PMatrix4_SetAffine` run in both
+/// oracles: their locals are on the stack) and `PMatrix4_lookAt` (the
+/// original `PMatrix4_FromAxes` in both).
+#[test]
+fn matrix_math_matches_the_original() {
+    use ffx_pcore::p5_math::bridge as math;
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0a7f_1e55);
+        for case in 0..48u32 {
+            let m = t.alloc(&floats(&mut rng, 20, case % 6 == 5));
+            let out = match case % 4 {
+                0 => m,
+                _ => t.random(&mut rng, 0x48),
+            };
+            t.check(
+                &format!("transform3 inverse case {case}"),
+                0x004c_c890,
+                &[out, m],
+                |g| math::transform3_inverse(g, out, m),
+            );
+        }
+        for case in 0..32u32 {
+            let m = t.alloc(&floats(&mut rng, 16, case % 6 == 5));
+            let out = if case % 4 == 0 {
+                m
+            } else {
+                t.random(&mut rng, 0x40)
+            };
+            t.check(
+                &format!("inverse case {case}"),
+                0x004c_c0c0,
+                &[out, m],
+                |g| {
+                    let frame = g.0.stack_range().start + 0x400;
+                    math::inverse(g, out, m, frame)
+                },
+            );
+        }
+        for case in 0..48u32 {
+            let wild = case % 8 == 7;
+            let p = t.alloc(&floats(&mut rng, 4, wild));
+            let q = if case == 3 {
+                p
+            } else {
+                t.alloc(&floats(&mut rng, 4, wild))
+            };
+            let u = t.alloc(&floats(&mut rng, 4, wild));
+            let this = match case % 5 {
+                0 => p,
+                _ => t.random(&mut rng, 0x40),
+            };
+            t.check_conv(
+                &format!("lookAt case {case} this {this:#x} p {p:#x} q {q:#x} u {u:#x}"),
+                0x0045_1c30,
+                Conv::Thiscall(this),
+                &[p, q, u],
+                |g| {
+                    let frame = g.0.stack_range().start + 0x400;
+                    math::look_at(g, this, p, q, u, frame)
+                },
+            );
+        }
+    }
+}
+
+/// A recording stub for methods handed pointers to the caller's locals:
+/// logs, per entry of `words`, the stack word at that offset or
+/// (`Some(k)`) the word at `k` bytes into what it points to; optionally
+/// stores the word of `out.1` (a cell) through the pointer at stack
+/// offset `out.0`; pops `pops` words and returns `ret`.
+fn deref_stub(
+    t: &mut Twins,
+    tag: u32,
+    words: &[(u8, Option<u32>)],
+    out: Option<(u8, u32)>,
+    pops: u32,
+    ret: Ret,
+) -> u32 {
+    assert!(words.len() <= 14);
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tag.to_le_bytes()); // mov [eax], tag
+    // no `ecx`: COM methods and the cdecl warning take everything on the
+    // stack, and the callers leave `ecx` as it happens to be
+    for (i, &(off, deref)) in (0u8..).zip(words) {
+        c.extend([0x8b, 0x54, 0x24, off]); // mov edx, [esp+off]
+        if let Some(k) = deref {
+            c.extend([0x8b, 0x92]);
+            c.extend(k.to_le_bytes()); // mov edx, [edx+k]
+        }
+        c.extend([0x89, 0x50, 8 + 4 * i]); // mov [eax+8+4i], edx
+    }
+    if let Some((off, cell)) = out {
+        c.extend([0x8b, 0x54, 0x24, off]); // mov edx, [esp+off]
+        c.extend([0x8b, 0x0d]);
+        c.extend(cell.to_le_bytes()); // mov ecx, [cell]
+        c.extend([0x89, 0x0a]); // mov [edx], ecx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    match ret {
+        Ret::Imm(v) => {
+            c.push(0xb8);
+            c.extend(v.to_le_bytes());
+        }
+        Ret::Cell(at) => {
+            c.push(0xa1);
+            c.extend(at.to_le_bytes());
+        }
+    }
+    c.push(0xc2);
+    c.extend(((pops * 4) as u16).to_le_bytes());
+    t.code(&c)
+}
+
+/// A COM object: its vtable's slots `slots[i]` (offset, stub address),
+/// every other slot 0; `size` random bytes after the vtable word.
+fn com_object(t: &mut Twins, rng: &mut Rng, slots: &[(u32, u32)], size: u32) -> u32 {
+    let mut vt = [0u32; 0x20];
+    for &(off, stub) in slots {
+        vt[(off / 4) as usize] = stub;
+    }
+    let bytes: Vec<u8> = vt.iter().flat_map(|w| w.to_le_bytes()).collect();
+    let vt = t.alloc(&bytes);
+    let o = t.random(rng, size as usize);
+    t.w32(o, vt);
+    o
+}
+
+/// `GDraw`'s helpers: the immediate context and the texture's views as COM
+/// objects with recording methods (the vertex-buffer call's pointers to
+/// the caller's locals logged by contents), the blend-state call's
+/// description logged by contents and its result written through.
+#[test]
+fn gdraw_helpers_match_the_original() {
+    use ffx_pcore::p5_gdraw::{self as gd, bridge as gdb};
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x6d4a_3d11);
+        // the context: slots 0x20 (4 words), 0x48 (6; three pointers to
+        // the caller's locals), 0x4c (4)
+        let plain = [(4, None), (8, None), (12, None), (16, None)];
+        let s20 = deref_stub(&mut t, 0x20, &plain, None, 4, Ret::Imm(0));
+        let s48 = deref_stub(
+            &mut t,
+            0x48,
+            &[
+                (4, None),
+                (8, None),
+                (12, None),
+                (16, Some(0)),
+                (20, Some(0)),
+                (24, Some(0)),
+            ],
+            None,
+            6,
+            Ret::Imm(0),
+        );
+        let s4c = deref_stub(&mut t, 0x4c, &plain, None, 4, Ret::Imm(0));
+        let ctx = com_object(
+            &mut t,
+            &mut rng,
+            &[(0x20, s20), (0x48, s48), (0x4c, s4c)],
+            0x10,
+        );
+        let state = t.random(&mut rng, 0x20);
+        t.w32(state + 4, ctx);
+        let g = t.rebase(gd::STATE);
+        t.w32(g, state);
+        for case in 0..24u32 {
+            let texture = t.random(&mut rng, 0x40);
+            for (k, off) in [0u32, 4, 8].into_iter().enumerate() {
+                let o = if case == 4 || rng.chance(3) {
+                    0
+                } else {
+                    let r = rng.next();
+                    let rel =
+                        deref_stub(&mut t, 0x100 + k as u32, &[(4, None)], None, 1, Ret::Imm(r));
+                    com_object(&mut t, &mut rng, &[(8, rel)], 8)
+                };
+                t.w32(texture + off, o);
+            }
+            let kind = if case % 6 == 5 {
+                0x5000_0000
+            } else {
+                rng.next() & 0xf000_0000
+            };
+            t.w32(texture + 0x30, kind | (rng.next() & 0x0fff_ffff));
+            let info = t.random(&mut rng, 0x10);
+            t.write(
+                info + 0xc,
+                &[(rng.next() as u8 & !1) | u8::from(case % 2 == 1)],
+            );
+            t.w32(texture + 0x18, info);
+            t.check(
+                &format!("unbind case {case}"),
+                0x00a3_4bc0,
+                &[texture],
+                |g| {
+                    let frame = g.0.stack_range().start + 0x400;
+                    // junk where the locals go: the port must set what it uses
+                    Mem::write_bytes(g, frame, &[0xa5; 8]);
+                    gdb::unbind(g, texture, frame)
+                },
+            );
+        }
+        // the blend state: the device's slot 0x50 logs the description's
+        // words (and two past the ones set) and writes the result through
+        // its third word; the warning (an import slot, cdecl) logs its five
+        let hr = t.zeros(4);
+        let result = t.zeros(4);
+        // the twelve words set and the last two memset clears
+        let desc: Vec<(u8, Option<u32>)> = (0..12u32)
+            .chain([0x40, 0x41])
+            .map(|k| (8, Some(4 * k)))
+            .collect();
+        let s50 = deref_stub(&mut t, 0x50, &desc, Some((12, result)), 3, Ret::Cell(hr));
+        let dev = com_object(&mut t, &mut rng, &[(0x50, s50)], 0x10);
+        // the warning takes four words when out of memory, five (the
+        // code last) otherwise: a stub for each, so none logs the
+        // caller's leftovers
+        let words = [(4, None), (8, None), (12, None), (16, None), (20, None)];
+        let warn4 = deref_stub(&mut t, 0x874, &words[..4], None, 0, Ret::Imm(0x77));
+        let warn5 = deref_stub(&mut t, 0x875, &words, None, 0, Ret::Imm(0x78));
+        let slot = t.rebase(gd::WARN_SLOT);
+        for case in 0..16u32 {
+            let h = match case % 4 {
+                0 => 0,
+                1 => [1, 0x7fff_ffff][rng.below(2) as usize],
+                2 => gd::E_OUTOFMEMORY,
+                _ => 0x8000_0000 | rng.next(),
+            };
+            t.w32(slot, if h == gd::E_OUTOFMEMORY { warn4 } else { warn5 });
+            t.w32(hr, h);
+            let r = rng.next();
+            t.w32(result, r);
+            let a = rng.below(20);
+            let b = if case % 3 == 0 { 9 } else { rng.below(20) };
+            let c = rng.below(20);
+            t.check(
+                &format!("blend state case {case}"),
+                0x00a3_5670,
+                &[dev, a, b, c],
+                |g| {
+                    let frame = g.0.stack_range().start + 0x400;
+                    Mem::write_bytes(g, frame, &[0xa5; 0x110]);
+                    gdb::create_blend_state(g, dev, a, b, c, frame)
+                },
+            );
+        }
+        t.unstub_all();
+    }
+}
