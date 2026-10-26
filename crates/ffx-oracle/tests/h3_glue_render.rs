@@ -10623,3 +10623,104 @@ fn batch43c_glue_matches_the_original() {
         run_cases(t, CASES43C, n, &mut Rng(0x4343_b045));
     });
 }
+
+impl Twins {
+    /// A recording stub at `sym` (thiscall, `n` words popped, returning
+    /// `ret`) that first appends the `words` words its argument `arg`
+    /// points to into the trace at `*cursor` (so what a callee reads
+    /// through a frame pointer at the time of the call is compared).
+    fn stub_trace_arg(&mut self, sym: u32, n: u32, ret: u32, arg: u8, words: u32, cursor: u32) {
+        let log = self.stub(None, sym, true, n, n, Some(ret));
+        // push esi; push edi; push ecx; mov esi, [esp+16+4*arg]
+        let mut c = vec![0x56, 0x57, 0x51, 0x8b, 0x74, 0x24, 16 + 4 * arg];
+        c.extend([0x8b, 0x3d]);
+        c.extend(cursor.to_le_bytes()); // mov edi, [cursor]
+        c.push(0xb9);
+        c.extend(words.to_le_bytes()); // mov ecx, words
+        c.extend([0xf3, 0xa5]); // rep movsd
+        c.extend([0x89, 0x3d]);
+        c.extend(cursor.to_le_bytes()); // mov [cursor], edi
+        c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// The target update: the flags `+0x70` / `+0x71`, the parameters
+/// (each set or 0), the target's frame numbers (0 to 7 bytes' worth,
+/// unaligned, negative) and entries (random floats); the callees trace
+/// the record, the weight and the pairs they are handed.
+fn prep_update_target43(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    map_page_zero(t);
+    *this = t.zeros(0x100);
+    let aux = t.zeros(0x2000);
+    for k in 0..0x800 {
+        let f = rng.float().to_bits();
+        t.w32(aux + 4 * k, f);
+    }
+    let value = aux;
+    t.w32(value + 4, rng.next());
+    let slot = aux + 0x10;
+    let params = aux + 0x100;
+    t.w32(slot, params);
+    for k in 0..0x1a {
+        let v = if rng.chance(4) { 0 } else { rng.next() | 1 };
+        t.w32(params + 4 * k, v);
+    }
+    t.write(
+        params + 0x70,
+        &[u8::from(rng.chance(5)), u8::from(rng.chance(2))],
+    );
+    let target = aux + 0x200;
+    t.w32(slot + 4, target);
+    let begin = aux + 0x300;
+    t.w32(target, begin);
+    let bytes = pick(
+        rng,
+        &[
+            0,
+            4,
+            8,
+            0xc,
+            0x10,
+            0x14,
+            0x18,
+            0x1c,
+            0x20,
+            0x28,
+            0x13,
+            0xffff_fffc,
+        ],
+    );
+    t.w32(target + 8, begin.wrapping_add(bytes));
+    t.w32(target + 0xc, aux + 0x800 + 4 * rng.below(0x40));
+    let trace = t.zeros(0x1000);
+    t.w32(trace, trace + 4);
+    let r = rng.next();
+    t.stub_trace_arg(h43::SET_TEXTURE, 2, r, 1, 4, trace);
+    let r = rng.next();
+    t.stub_trace_arg(h43::SET_VALUE2, 2, r, 1, 1, trace);
+    let r = rng.next();
+    t.stub_trace_arg(h43::COPY_PAIR, 2, r, 1, 2, trace);
+    args[0] = value;
+    args[1] = slot;
+}
+
+#[rustfmt::skip]
+const CASES43E: &[Case] = &[
+    framed(Case { prep: Some(prep_update_target43), ..method("update_target", 0x006b_3660, This::Object, 2, &[], |m, this, a| { let slots = frame_ebp() + 8; for (k, &w) in a.iter().enumerate() { m.write(slots + 4 * k as u32, w); } gh43::update_target(m, frame_ebp(), this, a[0], a[1]); Out::None }) }, 0x28, 8),
+];
+
+#[test]
+fn batch43e_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 300 } else { 1000 };
+        run_cases(t, CASES43E, n, &mut Rng(0x4343_b046));
+    });
+}

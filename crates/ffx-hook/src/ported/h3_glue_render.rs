@@ -1958,6 +1958,15 @@ ported! {
     TextureAnimationManager_setAnimatedMaterialsChar @ 0x006b_3060 => extern "thiscall" fn tex_anim_set_materials_char(this: u32, name: u32, part: u32, index: u32, _w4: u32, _w5: u32, _w6: u32, _w7: u32, material: u32, chr: u32) {
         g43::set_animated_materials_char(&mut mem(), this, name, part, index, material, chr);
     }
+
+    // ---- round 11 batch 44 (ffx_prender::h3_glue43) ----
+    /// `0x006b3660(this, value, slot)`: a texture-animation target's
+    /// layers into its parameter buffer. The frame holds the two
+    /// argument slots too (the weights go through `value`'s).
+    TextureAnimation_updateTarget_006b3660 @ 0x006b_3660 => extern "thiscall" fn tex_anim_update_target(this: u32, value: u32, slot: u32) {
+        let mut f = StackFrame::<0xe>::new();
+        g43::update_target(&mut mem(), f.at() + 0x28, this, value, slot);
+    }
 }
 
 /// The scene's shader-bin loaders, with their frame (0x12c bytes below

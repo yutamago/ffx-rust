@@ -59,6 +59,15 @@ pub const ERASE: u32 = 0x006b_2ca0;
 pub const ATOI_SLOT: u32 = crate::h3_glue33::ATOI;
 pub const UPDATE_TARGET: u32 = 0x006b_3660;
 
+/// The texture-animation target update: the texture set-up
+/// `Render_SurfaceFormat_0066e4f0(buffer; parameter, &record)`,
+/// `ShaderParamBuffer_SetValue2(buffer; parameter, &value)` and
+/// `ShaderParam_CopyToBuffer_00698960(buffer; parameter, &pair)` (all
+/// `ret 8`).
+pub const SET_TEXTURE: u32 = 0x0066_e4f0;
+pub const SET_VALUE2: u32 = 0x0063_86c0;
+pub const COPY_PAIR: u32 = 0x0069_8960;
+
 pub mod bridge {
     //! The originals over game memory.
 
@@ -570,5 +579,120 @@ pub mod bridge {
             Conv::Thiscall(this),
             &[value, entries + 8 * s],
         );
+    }
+
+    /// The target's parameter buffer (`value + 4`) gets `parameter` set
+    /// from the frame's word at `at`.
+    fn set_param(h: &mut impl Host, sym: u32, value: u32, parameter: u32, at: u32) {
+        let buffer: u32 = h.read(value + 4);
+        h.call_sym(sym, Conv::Thiscall(buffer), &[parameter, at]);
+    }
+
+    /// The weight parameter `+0x20 + 4 l` (if any) set to `w` through
+    /// the value's slot (`ebp + 8`).
+    fn weight(h: &mut impl Host, ebp: u32, value: u32, slot: u32, l: u32, w: f32) {
+        let parameter: u32 = h.read(h.read::<u32>(slot) + 0x20 + 4 * l);
+        if parameter != 0 {
+            h.write(ebp + 8, w.to_bits());
+            set_param(h, SET_VALUE2, value, parameter, ebp + 8);
+        }
+    }
+
+    /// The texture parameter `+4 + 4 l` (if any) set from the record at
+    /// `ebp - 0x14` (0xff, 0, `this + 0x38`, the entry's frame `id`).
+    fn texture(h: &mut impl Host, ebp: u32, value: u32, slot: u32, l: u32, id: u32) {
+        let parameter: u32 = h.read(h.read::<u32>(slot) + 4 + 4 * l);
+        if parameter != 0 {
+            let this: u32 = h.read(ebp - 4);
+            h.write(ebp - 0xc, this + 0x38);
+            h.write(ebp - 0x14, 0xffu32);
+            h.write(ebp - 8, id);
+            h.write(ebp - 0x10, 0u32);
+            set_param(h, SET_TEXTURE, value, parameter, ebp - 0x14);
+        }
+    }
+
+    /// Layer `l` (0..6) from the entry at `entry` (`id`, then the four
+    /// words kept at `ebp - 0x24`): texture, weight 1, then the pairs
+    /// `+0x50 + 4 l` (words 3, 4) and `+0x38 + 4 l` (words 1, 2) copied
+    /// through `ebp - 0xc`.
+    fn layer(h: &mut impl Host, ebp: u32, value: u32, slot: u32, l: u32, entry: u32) {
+        for i in 0..4 {
+            let w: u32 = h.read(entry + 4 + 4 * i);
+            h.write(ebp - 0x24 + 4 * i, w);
+        }
+        let id: u32 = h.read(entry);
+        texture(h, ebp, value, slot, l, id);
+        weight(h, ebp, value, slot, l, 1.0);
+        for (off, from) in [(0x50, ebp - 0x1c), (0x38, ebp - 0x24)] {
+            let parameter: u32 = h.read(h.read::<u32>(slot) + off + 4 * l);
+            if parameter != 0 {
+                copy(h, ebp - 0xc, from);
+                copy(h, ebp - 8, from + 4);
+                set_param(h, COPY_PAIR, value, parameter, ebp - 0xc);
+            }
+        }
+    }
+
+    /// `TextureAnimation_updateTarget_006b3660(this, value, slot)` (`ret
+    /// 8`; frame: `this` at `ebp - 4`, the texture record at `- 0x14`,
+    /// the pair at `- 0xc`, the entry's words at `- 0x24`; the weights go
+    /// through `value`'s slot `ebp + 8`, and `slot`'s byte `+3` keeps the
+    /// parameters' `+0x71`).
+    ///
+    /// `slot`: the parameters (`+0`: the texture `+4..`, weight
+    /// `+0x20..`, pair `+0x38..` and `+0x50..` parameters, flags `+0x70`
+    /// and `+0x71`) and the target (`+4`: its frame numbers `+0` to
+    /// `+8`, 0x14-byte entries ending at `+0xc`). Flag `+0x70`: only the
+    /// newest entry's texture, weight 0 at 1 and 0 at the others. Else
+    /// up to six layers (four only with `+0x71`) from the newest
+    /// entries, layer `L` skipping `min(n - L, cap)` back (caps 2, 1, 0
+    /// plus 3 with `+0x71`, then 2, 1, 0); a layer without its entry gets
+    /// weight 0.
+    pub fn update_target(h: &mut impl Host, ebp: u32, this: u32, value: u32, slot: u32) {
+        let params: u32 = h.read(slot);
+        let wide: u8 = h.read(params + 0x71);
+        h.write(ebp - 4, this);
+        h.write(ebp + 0xf, wide);
+        let target: u32 = h.read(slot + 4);
+        if h.read::<u8>(params + 0x70) != 0 {
+            let last: u32 = h.read(target + 0xc);
+            for i in 0..4 {
+                let w: u32 = h.read(last.wrapping_sub(0x10) + 4 * i);
+                h.write(ebp - 0x24 + 4 * i, w);
+            }
+            let tex: u32 = h.read(params + 4);
+            if tex != 0 {
+                let id: u32 = h.read(last.wrapping_sub(0x14));
+                h.write(ebp - 8, id);
+                h.write(ebp - 0xc, this + 0x38);
+                h.write(ebp - 0x14, 0xffu32);
+                h.write(ebp - 0x10, 0u32);
+                set_param(h, SET_TEXTURE, value, tex, ebp - 0x14);
+            }
+            weight(h, ebp, value, slot, 0, 1.0);
+            for l in 1..6 {
+                weight(h, ebp, value, slot, l, 0.0);
+            }
+            return;
+        }
+        let flag: i32 = if wide == 0 { 0 } else { 3 };
+        let caps = [flag + 2, flag + 1, flag, 2, 1, 0];
+        for (l, cap) in (0u32..).zip(caps) {
+            if l == 3 && h.read::<u8>(ebp + 0xf) == 0 {
+                return;
+            }
+            let target: u32 = h.read(slot + 4);
+            let bytes = h.read::<u32>(target + 8).wrapping_sub(h.read(target)) as i32;
+            if (bytes & !3) < 4 * (l as i32 + 1) {
+                weight(h, ebp, value, slot, l, 0.0);
+                continue;
+            }
+            let back = (bytes >> 2) - (l as i32 + 1);
+            let idx = back.min(cap);
+            let end: u32 = h.read(target + 0xc);
+            let entry = end.wrapping_sub((idx as u32 + 1).wrapping_mul(0x14));
+            layer(h, ebp, value, slot, l, entry);
+        }
     }
 }
