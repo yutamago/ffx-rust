@@ -86,7 +86,27 @@ impl Host for G<'_> {
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        // the trampoline `Twins::trampoline` wrote at `CAVE`
+        let at = self.0.rebase(CAVE);
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let Some(v) = r.st0_f32() else {
+            panic!("intrinsic {addr:#x}: no float in ST0");
+        };
+        self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
+        v
+    }
 }
+
+/// `graphicFontDraw`'s body, which no test here calls: `Twins::trampoline`
+/// writes `fld qword [esp+4]; call [esp+0xc]; ret` there, and at `+16`
+/// `fstp st0; ret`, for `Host::call_intrinsic` (a CRT intrinsic with its
+/// argument in `ST0`).
+const CAVE: u32 = 0x0064_0660;
 
 impl G<'_> {
     /// A call through the oracle, checked for the game's call width.
@@ -200,6 +220,20 @@ impl Twins {
     fn write(&mut self, at: u32, bytes: &[u8]) {
         self.a.write(at, bytes).unwrap();
         self.b.write(at, bytes).unwrap();
+    }
+
+    /// Writes `Host::call_intrinsic`'s trampoline at [`CAVE`] in both.
+    fn trampoline(&mut self) {
+        let at = self.rebase(CAVE);
+        self.write(
+            at,
+            &[
+                0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90,
+                0x90, 0x90, 0xdd, 0xd8, 0xc3,
+            ],
+        );
+        self.a.clear_dirty();
+        self.b.clear_dirty();
     }
 
     fn w32(&mut self, at: u32, v: u32) {
@@ -1836,3 +1870,9 @@ mod post;
 
 #[path = "p6_render_c/app.rs"]
 mod app;
+
+#[path = "p6_render_c/targets.rs"]
+mod targets;
+
+#[path = "p6_render_c/late.rs"]
+mod late;

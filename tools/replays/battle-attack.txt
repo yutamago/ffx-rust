@@ -7,6 +7,9 @@
 # the start and the end (battle-attack-<n>.bmp).
 load direct 1 cdsp0000
 lockstep on
+# what the frames before lockstep leave behind: docs/harness.md,
+# "Pinned state"
+pin
 wait 10
 battle 3 0 0
 waitfor 0x0112a8e0:1 01 ff 4000

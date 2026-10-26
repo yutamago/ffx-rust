@@ -275,6 +275,10 @@ ported! {
     Phyre_PFramework_PInputMapper_Bind @ 0x0062_2b60 => extern "C" fn s_00622b60() -> u32 {
         h1_bind::bridge::bind(&mut mem(), const { binds1::bind_of(0x0062_2b60) })
     }
+    /// The class's `Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PDynamicGeometry_PModifierAndInputs_Bind @ 0x005c_0790 => extern "C" fn s_005c0790() -> u32 {
+        h1_bind::bridge::bind(&mut mem(), const { binds1::bind_of(0x005c_0790) })
+    }
     /// A render command encoder (`this`; payload) -> 0 or 0xd.
     Phyre_PRendering_PRendererBase_setClearColor @ 0x005b_ada0 => extern "thiscall" fn s_005bada0(this: u32, a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
         let mut frame = StackFrame::<2>::new();

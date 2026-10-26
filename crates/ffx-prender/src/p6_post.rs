@@ -313,7 +313,49 @@ pub const POST_CTORS: &[(u32, PostCtor)] = &[
             ],
         },
     ),
+    (
+        0x009f_cbb0,
+        PostCtor {
+            header: true,
+            pre: &[
+                Init::Float(0xcd4, 0x00b9_2318),
+                Init::Image(0, 0x00b7_4820),
+                Init::Word(0xcd8, 0),
+                Init::Word(0xcdc, 0),
+            ],
+            samplers: [0xce0, 0xd04],
+            mid: MOTION_BLUR_MID,
+        },
+    ),
 ];
+
+/// `PMotionBlurBase`'s constructor (`0x009fcbb0`) after its sampler
+/// states: nine words zeroed at `+0xd28`, then identity matrices (`fld1`/
+/// `fldz` stores) at `+0x14`, `+0x54` and 32 more from `+0xd4`.
+pub const MOTION_BLUR_MID: &[Init] = &{
+    let mut t = [Init::Word(0, 0); 9 + 34 * 16];
+    let mut i = 0;
+    while i < 9 {
+        t[i] = Init::Word(0xd28 + 4 * i as u32, 0);
+        i += 1;
+    }
+    let mut m = 0;
+    while m < 34 {
+        let base = if m < 2 {
+            0x14 + 0x40 * m as u32
+        } else {
+            0xd4 + 0x40 * (m as u32 - 2)
+        };
+        let mut k = 0;
+        while k < 16 {
+            let v = if k % 5 == 0 { 0x3f80_0000 } else { 0 };
+            t[9 + 16 * m + k] = Init::Word(base + 4 * k as u32, v);
+            k += 1;
+        }
+        m += 1;
+    }
+    t
+};
 
 /// The constructor at `addr` ([`POST_CTORS`]).
 #[must_use]
@@ -1026,7 +1068,10 @@ pub mod bridge {
         0
     }
 
-    fn half_target(h: &mut impl Host, cluster: u32, w: u32, ht: u32) -> u32 {
+    /// A half-size render target (`0x00a1a190`'s and `0x00a17bd0`'s): a
+    /// `w` x `ht` texture bound to a new render target object; 0 at the
+    /// first failure.
+    pub fn half_target(h: &mut impl Host, cluster: u32, w: u32, ht: u32) -> u32 {
         let ty = h.rebase(TEXTURE_TYPE);
         let tex = h.call_sym(CLUSTER_CREATE, Conv::Thiscall(cluster), &[1, ty, 0]);
         if tex == 0 {

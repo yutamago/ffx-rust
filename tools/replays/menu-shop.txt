@@ -27,6 +27,9 @@
 # sell list after the sale, 8 the field after the shop.
 load direct 5 kami0100
 lockstep on
+# what the frames before lockstep leave behind: docs/harness.md,
+# "Pinned state"
+pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500
 wait 37
 trace 0x011307d8:4 0x0113095c:0xe0 0x01130b5c:0x70 0x01130f2c:0x1130 0x0113205c:0xa68 0x018408ec:4 0x01326d84:12
