@@ -2797,3 +2797,166 @@ fn p4_startup_matches_the_original() {
         }
     }
 }
+
+// ---- continuation round (c1) batch 4: sticks, pads, the lighting's flash ----
+
+#[test]
+fn p4_sticks_and_pads_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0062_8470);
+        for i in 0..240 {
+            let mapper = t.zeros(0x90);
+            t.fill(&mut rng, mapper, 0x90);
+            let pad = rng.below(18);
+            let dev = if rng.chance(8) {
+                0
+            } else {
+                let d = t.zeros(0x50);
+                t.fill(&mut rng, d, 0x50);
+                for k in 0..4 {
+                    let m = t.zeros(0x20);
+                    let v = match rng.below(3) {
+                        0 => float_word(&mut rng),
+                        _ => (rng.below(200) as f32 / 100.0 - 1.0).to_bits(),
+                    };
+                    let th =
+                        [0x3e4c_cccd, 0, 0x3f00_0000, float_word(&mut rng)][rng.below(4) as usize];
+                    // sometimes exactly at the threshold (either sign)
+                    let v = if rng.chance(4) {
+                        th ^ (rng.below(2) << 31)
+                    } else {
+                        v
+                    };
+                    t.w32(m + 0x1c, v);
+                    t.w32(m + 0x18, th);
+                    t.w32(d + 0x38 + 4 * k, m);
+                }
+                // the words after the four mappings: 0 or a mapping
+                let m = t.zeros(0x20);
+                t.w32(m + 0x1c, float_word(&mut rng));
+                t.w32(d + 0x48, if rng.chance(2) { 0 } else { m });
+                t.w32(d + 0x4c, if rng.chance(2) { 0 } else { m });
+                d
+            };
+            t.w32(mapper + 0x38 + 4 * pad, dev);
+            let axis = rng.below(6);
+            t.case(
+                &format!("{name} stick case {i}"),
+                0x0062_8470,
+                Conv::Thiscall(mapper),
+                &[axis, pad],
+                |g| Out::F32(p4_input::bridge4::get_stick_axis(g, mapper, axis, pad)),
+            );
+        }
+        // attachPads: a device list with pads (kind 2) and others
+        let head = t.rebase(p4_input::DEVICE_LIST);
+        let kind = t.code(&[0x8b, 0x41, 0x40, 0xc3]); // mov eax, [ecx+0x40]; ret
+        let bind = t.stub_code(0x0b1d_0000, true, 2, 2, 0);
+        let vt = t.zeros(0x10);
+        t.w32(vt + 4, kind);
+        t.w32(vt + 8, bind);
+        for i in 0..48 {
+            let mapper = t.zeros(0x90);
+            t.fill(&mut rng, mapper, 0x90);
+            for p in 0..18 {
+                if rng.chance(2) {
+                    t.w32(mapper + 0x38 + 4 * p, 0);
+                }
+            }
+            let n = rng.below(24);
+            let mut prev = head;
+            for _ in 0..n {
+                let d = t.zeros(0x130);
+                t.w32(d, vt);
+                t.w32(d + 0x40, if rng.chance(3) { 1 } else { 2 });
+                t.w32(prev, d + 4);
+                prev = d + 4;
+            }
+            // the list ends at the head, at 0, or at a link of 4
+            t.w32(prev, [head, head, 0, 4][rng.below(4) as usize]);
+            t.case(
+                &format!("{name} attach pads case {i}"),
+                0x0062_6aa0,
+                Conv::Thiscall(mapper),
+                &[],
+                |g| {
+                    p4_input::bridge4::attach_pads(g, mapper);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn p4_lighting_flash_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_b630);
+        let found = t.zeros(4);
+        // the import slot: a stub returning [found]
+        let mut code = vec![0xa1];
+        code.extend(found.to_le_bytes()); // mov eax, [found]
+        code.push(0xc3);
+        let ret_found = t.code(&code);
+        let slot = t.rebase(p4_light::STRSTR);
+        t.w32(slot, ret_found);
+        t.stub(p4_light::PLIGHT_ALLOCATE, false, 1, 0, 0x0a11_0000);
+        t.stub(p4_light::PLIGHT_DEFINE, false, 6, 0, 0x0def_0000);
+        t.stub(p4_light::PLIGHT_SET_COLOR, false, 4, 0, 0x5c01_0000);
+        t.stub(p4_light::SET_POINT_LIGHT, true, 4, 4, 0x0901_0000);
+        // the level (cdecl, three words) returns [level] in ST0
+        let level = t.zeros(4);
+        let mut tail = vec![0xd9, 0x05];
+        tail.extend(level.to_le_bytes()); // fld dword [level]
+        tail.push(0xc3);
+        t.stub_tail(p4_light::FLASH_LEVEL, false, 3, &tail);
+        for i in 0..160 {
+            let cl = t.zeros(0x240);
+            t.fill(&mut rng, cl, 0x240);
+            t.write(cl + 0x1cc, &[u8::from(!rng.chance(4))]);
+            let flash = match rng.below(4) {
+                0 => float_word(&mut rng),
+                1 => (rng.below(2000) as f32 / 1.9).to_bits(),
+                2 => [0, 0x8000_0000, 0x3c23_d70a, 0x447a_0000, 0xbf80_0000][rng.below(5) as usize],
+                _ => (rng.below(100) as f32 / 7.0).to_bits(),
+            };
+            t.w32(cl + 0x154, flash);
+            let lv = match rng.below(3) {
+                0 => float_word(&mut rng),
+                _ => (rng.below(1000) as f32 / 999.0).to_bits(),
+            };
+            t.w32(level, lv);
+            // a flash that lands exactly on 1000
+            if rng.chance(6) {
+                t.w32(cl + 0x154, 0x447a_0000);
+            }
+            let dt = match rng.below(4) {
+                0 => float_word(&mut rng),
+                1 => 0,
+                _ => (rng.below(100) as f32 / 60.0).to_bits(),
+            };
+            t.case(
+                &format!("{name} flash case {i}"),
+                0x006a_b630,
+                Conv::Thiscall(cl),
+                &[dt],
+                |g| {
+                    p4_light::bridge4::update_flash(g, cl, dt);
+                    Out::None
+                },
+            );
+            let map = if rng.chance(5) { 0 } else { rng.next() | 1 };
+            t.w32(found, if rng.chance(2) { 0 } else { rng.next() | 1 });
+            t.case(
+                &format!("{name} map name case {i}"),
+                0x006a_b0d0,
+                Conv::Thiscall(cl),
+                &[map],
+                |g| {
+                    p4_light::bridge4::set_map_name(g, cl, map);
+                    Out::None
+                },
+            );
+        }
+    }
+}

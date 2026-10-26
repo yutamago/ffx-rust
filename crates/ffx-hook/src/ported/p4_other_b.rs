@@ -886,4 +886,21 @@ ported! {
     PApplication_Startup_00629a40 @ 0x0062_9a40 => extern "thiscall" fn startup(app: u32, argv: u32, argc: u32) -> u32 {
         p4_bind::startup::startup(&mut mem(), app, argv, argc)
     }
+    // ---- p4-other-b c1 batch 4 ----
+    /// `PInputMapper::getStickAxis(mapper, axis, pad)` -> `ST0`.
+    PInputMapper_getStickAxis @ 0x0062_8470 => extern "thiscall" fn get_stick_axis(mapper: u32, axis: u32, pad: u32) -> f32 {
+        p4_input::bridge4::get_stick_axis(&mut mem(), mapper, axis, pad)
+    }
+    /// `PInputMapper::attachPads(mapper)`.
+    PInputMapper_attachPads @ 0x0062_6aa0 => extern "thiscall" fn attach_pads(mapper: u32) {
+        p4_input::bridge4::attach_pads(&mut mem(), mapper);
+    }
+    /// `CharacterLighting::setMapName(cl, name)`.
+    CharacterLighting_setMapName_006ab0d0 @ 0x006a_b0d0 => extern "thiscall" fn set_map_name(cl: u32, name: u32) {
+        p4_light::bridge4::set_map_name(&mut mem(), cl, name);
+    }
+    /// `CharacterLighting::updateFlash(cl, dt)`.
+    CharacterLighting_updateFlash_006ab630 @ 0x006a_b630 => extern "thiscall" fn update_flash(cl: u32, dt: u32) {
+        p4_light::bridge4::update_flash(&mut mem(), cl, dt);
+    }
 }

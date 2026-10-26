@@ -377,3 +377,111 @@ pub mod bridge {
         h.call(f, Conv::Thiscall(it), &[node])
     }
 }
+
+/// `strstr`'s import slot (cdecl `(s, sub)`).
+pub const STRSTR: u32 = 0x00b0_c378;
+/// `"znkd06"`.
+pub const ZNKD06: u32 = 0x00b4_2670;
+/// `Sg_PLightAllocate` (cdecl `(n)`).
+pub const PLIGHT_ALLOCATE: u32 = 0x0083_1950;
+/// `Sg_PLightDefine` (cdecl, nine words).
+pub const PLIGHT_DEFINE: u32 = 0x0083_19b0;
+/// `Sg_PLightSetColor` (cdecl `(i, r, g, b)`).
+pub const PLIGHT_SET_COLOR: u32 = 0x0083_1c10;
+/// `CharacterLighting_setPointLight_006aad20` (thiscall `(cl, r, g, b, i)`).
+pub const SET_POINT_LIGHT: u32 = 0x006a_ad20;
+/// `0x005f0ce0` (cdecl `(n, lo, hi)` -> `ST0`): the flash's random level.
+pub const FLASH_LEVEL: u32 = 0x005f_0ce0;
+
+/// The flash's brightness from `0x005f0ce0`'s level `r` (as stored, an
+/// `f32`): `f32(r * 0.06f + 0.6f) * 255`, truncated (`_ftol2`'s x87 path
+/// gives the same as SSE2's `cvttsd2si` in range).
+#[must_use]
+pub fn flash_color(mem: &impl ffx_bridge::Mem, r: u32) -> u32 {
+    let v = x87::add(
+        x87::mul(x87::load(r), f64::from(0.06f32)),
+        f64::from(0.6f32),
+    );
+    let v = x87::load(x87::store(v));
+    x87::ftol(mem, x87::mul(v, 255.0))
+}
+
+pub mod bridge4 {
+    //! The originals over game memory.
+
+    use super::{
+        Conv, FLASH_LEVEL, Host, PLIGHT_ALLOCATE, PLIGHT_DEFINE, PLIGHT_SET_COLOR, SET_POINT_LIGHT,
+        STRSTR, ZNKD06, flash_color, x87,
+    };
+
+    /// `CharacterLighting::setMapName(cl, name)` (`0x006ab0d0`, `ret 4`):
+    /// on an initialised manager, the name at `+0x220`; a name holding
+    /// `"znkd06"` starts the flash (`+0x154` = 0.01) and defines one
+    /// scene light (`Sg_PLightAllocate(1)`, `Sg_PLightDefine(0, -17, -1.5,
+    /// 30, 30, 3, 3, 3, 0)`); any other name (or none) stops it (-1) and
+    /// makes light 3 a black point light.
+    pub fn set_map_name(h: &mut impl Host, cl: u32, name: u32) {
+        if h.read::<u8>(cl + 0x1cc) == 0 {
+            return;
+        }
+        h.write(cl + 0x220, name);
+        if name != 0 {
+            let f: u32 = h.read(h.rebase(STRSTR));
+            let sub = h.rebase(ZNKD06);
+            if h.call(f, Conv::Cdecl, &[name, sub]) != 0 {
+                h.write(cl + 0x154, 0x3c23_d70au32);
+                let f = h.rebase(PLIGHT_ALLOCATE);
+                h.call(f, Conv::Cdecl, &[1]);
+                let f = h.rebase(PLIGHT_DEFINE);
+                h.call(
+                    f,
+                    Conv::Cdecl,
+                    &[
+                        0,
+                        0xc188_0000,
+                        0xbfc0_0000,
+                        0x41f0_0000,
+                        0x41f0_0000,
+                        3,
+                        3,
+                        3,
+                        0,
+                    ],
+                );
+                return;
+            }
+        }
+        h.write(cl + 0x154, 0xbf80_0000u32);
+        let f = h.rebase(SET_POINT_LIGHT);
+        h.call(f, Conv::Thiscall(cl), &[0, 0, 0, 3]);
+    }
+
+    /// `CharacterLighting::updateFlash(cl, dt)` (`0x006ab630`, `ret 4`): on
+    /// an initialised manager, `+0x228` and `+0x224` = 1; while the flash
+    /// (`+0x154`) is positive: a level `r = 0x005f0ce0(trunc(flash * 7),
+    /// 0.0, 1.0)`, the flash advances by `dt` (back to 0.01 past 1000),
+    /// and scene light 0's colour becomes [`flash_color`]`(r)` grey.
+    pub fn update_flash(h: &mut impl Host, cl: u32, dt: u32) {
+        if h.read::<u8>(cl + 0x1cc) == 0 {
+            return;
+        }
+        h.write(cl + 0x228, 1u32);
+        h.write(cl + 0x224, 1u32);
+        let flash = x87::load(h.read(cl + 0x154));
+        // a NaN flash is not positive
+        if flash.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+            return;
+        }
+        let n = x87::ftol2(x87::mul(flash, 7.0));
+        let f = h.rebase(FLASH_LEVEL);
+        let r = h.call_st0(f, Conv::Cdecl, &[n, 0, 0x3f80_0000]).to_bits();
+        let next = x87::store(x87::add(x87::load(dt), x87::load(h.read(cl + 0x154))));
+        h.write(cl + 0x154, next);
+        if x87::load(next) > 1000.0 {
+            h.write(cl + 0x154, 0x3c23_d70au32);
+        }
+        let c = flash_color(h, r);
+        let f = h.rebase(PLIGHT_SET_COLOR);
+        h.call(f, Conv::Cdecl, &[0, c, c, c]);
+    }
+}

@@ -350,3 +350,100 @@ pub mod bridge {
         }
     }
 }
+
+/// `PInputMapper::getStickAxis` (`0x00628470`)'s value from its deadzone
+/// word `dz` and the axis mapping's value word (`None`: no mapping): the
+/// value (through `fld`/`fstp`) unless its magnitude is under the
+/// deadzone, then 0.
+#[must_use]
+pub fn stick_axis(dz: u32, own: Option<u32>) -> f32 {
+    let x = own.map_or(0, crate::methods::quiet);
+    if x87::load(dz) > x87::load(x).abs() {
+        0.0
+    } else {
+        f32::from_bits(x)
+    }
+}
+
+/// The pad deadzone `PInputMapper::attachPads` sets (`0.2f`, `0x00b412c4`).
+pub const PAD_THRESHOLD: u32 = 0x3e4c_cccd;
+
+pub mod bridge4 {
+    //! The originals over game memory.
+
+    use super::{DEVICE_LIST, Host, PAD_THRESHOLD, stick_axis};
+
+    /// `PInputMapper::getStickAxis(mapper, axis, pad)` (`0x00628470`, `ret
+    /// 8`) -> `ST0`. The pad (`[mapper + 0x38 + 4 pad]`; none gives 0)
+    /// has its stick mappings at `+0x38..0x44` (left x, left y, right x,
+    /// right y; value `+0x1c`, threshold `+0x18`). The cross deadzone:
+    /// axis 0 takes its own threshold while axis 1's magnitude is under
+    /// axis 1's threshold (a NaN is not under), else 0; 1 against 0, 2
+    /// against 3, 3 against 2; other axes 0. The axis's mapping (`+0x38 +
+    /// 4 axis`, read for any axis) gives the value.
+    pub fn get_stick_axis(h: &mut impl Host, mapper: u32, axis: u32, pad: u32) -> f32 {
+        let dev: u32 = h.read(mapper.wrapping_add(pad.wrapping_mul(4)).wrapping_add(0x38));
+        if dev == 0 {
+            return 0.0;
+        }
+        let dz = if axis <= 3 {
+            let other: u32 = h.read(dev + 0x38 + 4 * (axis ^ 1));
+            let v: u32 = h.read(other + 0x1c);
+            let t: u32 = h.read(other + 0x18);
+            if ffx_bridge::x87::load(t) > ffx_bridge::x87::load(v).abs() {
+                let own: u32 = h.read(dev + 0x38 + 4 * axis);
+                h.read(own + 0x18)
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+        let m: u32 = h.read(dev.wrapping_add(axis.wrapping_mul(4)).wrapping_add(0x38));
+        let own = if m == 0 { None } else { Some(h.read(m + 0x1c)) };
+        stick_axis(dz, own)
+    }
+
+    /// `PInputMapper::attachPads(mapper)` (`0x00626aa0`, thiscall): for
+    /// pads 0..17, the pad-th device of kind 2 (`vtable[1]()`) in
+    /// `g_PInputDeviceList` (the walk ends the whole call when it runs
+    /// out); an empty slot `+0x38 + 4 pad` takes it, with its four stick
+    /// mappings at `+0x6c + 0x30 k` (`+0x38..0x44`) bound (`vtable[2](m,
+    /// id)`, ids 1, 2, 4, 5) and their thresholds 0.2.
+    pub fn attach_pads(h: &mut impl Host, mapper: u32) {
+        let head = h.rebase(DEVICE_LIST);
+        for pad in 0..18u32 {
+            let mut link: u32 = h.read(head);
+            let mut seen = 0u32;
+            let dev = loop {
+                if link == head || link == 0 || link == 4 {
+                    return;
+                }
+                let dev = link - 4;
+                if h.call_virtual(dev, 1, &[]) == 2 {
+                    if seen == pad {
+                        break dev;
+                    }
+                    seen += 1;
+                }
+                link = h.read(dev + 4);
+            };
+            let slot = mapper + 0x38 + 4 * pad;
+            if h.read::<u32>(slot) != 0 {
+                continue;
+            }
+            h.write(slot, dev);
+            for k in 0..4 {
+                h.write(dev + 0x38 + 4 * k, dev + 0x6c + 0x30 * k);
+            }
+            for (k, id) in [1u32, 2, 4, 5].into_iter().enumerate() {
+                let m: u32 = h.read(dev + 0x38 + 4 * k as u32);
+                h.call_virtual(dev, 2, &[m, id]);
+            }
+            for k in 0..4 {
+                let m: u32 = h.read(dev + 0x38 + 4 * k);
+                h.write(m + 0x18, PAD_THRESHOLD);
+            }
+        }
+    }
+}
