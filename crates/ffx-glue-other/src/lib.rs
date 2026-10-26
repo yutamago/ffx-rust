@@ -81,7 +81,10 @@
 //! - [`h4_i1`]: continuation round 7, batch 1: the Win32 video playback's
 //!   close, the VRAM resource save, the debug file read, the window setup,
 //!   the VFX line buffer, a particle model's vertex copy, `GDraw`'s pool
-//!   handle and free-all.
+//!   handle and free-all;
+//! - [`h4_i2`]: its second batch: the movie player's play and render, the
+//!   draw environment, the split image load, `IggyMenu`'s constructor, the
+//!   semaphore queue's start, an escape-menu dialog callback.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -134,6 +137,7 @@ pub mod h4_h6;
 pub mod h4_h7;
 pub mod h4_h8;
 pub mod h4_i1;
+pub mod h4_i2;
 pub mod menu;
 pub mod misc;
 pub mod movie;

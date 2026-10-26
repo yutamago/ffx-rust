@@ -29,6 +29,7 @@ use ffx_glue_other::{
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
+    h4_i2 as i2,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -7172,5 +7173,428 @@ fn i1_gdraw_pool() {
             });
         }
         assert!(ran + t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 7, batch 2 (ffx_glue_other::h4_i2)
+
+/// A stub at `sym` that first stores `[cell]` into `[ecx]` when it is not
+/// 0, then logs like [`Twins::stub_at`] (`this`, `n` words, pops `pops`).
+fn i2_store_ecx_stub(t: &mut Twins, sym: u32, n: u32, pops: u32, cell: u32) {
+    let log = t.stub_code(sym, true, n, pops, false, &[]);
+    let mut c = vec![0x8b, 0x15];
+    c.extend(cell.to_le_bytes()); // mov edx, [cell]
+    c.extend([0x85, 0xd2, 0x74, 0x02, 0x89, 0x11, 0xe9]); // test edx, edx; jz +2; mov [ecx], edx; jmp
+    let at = t.cave_next;
+    c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// A fake object whose vtable's `slot` is a logging stub tagged `tag`
+/// (`this`, `n` words, pops `n`). Returns the object.
+fn i2_object(t: &mut Twins, tag: u32, slot: u32, n: u32) -> u32 {
+    let f = t.stub_code(tag, true, n, n, false, &[]);
+    let vtable = t.zeros(0x20);
+    t.w32(vtable + 4 * slot, f);
+    let obj = t.zeros(0x10);
+    t.w32(obj, vtable);
+    obj
+}
+
+/// The movie player's play.
+#[test]
+fn i2_fmv_play() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c721);
+        let conv_cell = t.zeros(4);
+        // the "not created yet" print creates it: [cell] into the global
+        let created = t.zeros(4);
+        {
+            let log = t.stub_code(i2::PHYRE_PRINTF, false, 2, 0, false, &[]);
+            let global = t.rebase(i2::FMV_MANAGER);
+            let mut c = vec![0x8b, 0x15];
+            c.extend(created.to_le_bytes()); // mov edx, [created]
+            c.extend([0x89, 0x15]);
+            c.extend(global.to_le_bytes()); // mov [global], edx
+            c.push(0xe9);
+            let at = t.cave_next;
+            c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let f = t.code(&c);
+            t.jump(i2::PHYRE_PRINTF, f);
+        }
+        let stubs = [
+            (i2::VIDEO_OPEN, true, 2, 2),
+            (i2::SET_VOLUME, true, 1, 1),
+            (i2::FIND_RESOURCE, false, 2, 0),
+            (i2::LOAD_STRING, true, 2, 2),
+            (i2::STRING_REPLACE, true, 2, 2),
+            (i2::RESET_TO_LAUNCHER, false, 0, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        i2_store_ecx_stub(&mut t, i2::A2W, 2, 2, conv_cell);
+        let free = i1_iat_stub(&mut t, 0x0bad_c711, 1, 0);
+        let show = i1_iat_stub(&mut t, 0x0bad_c712, 1, 1);
+        let message = i1_iat_stub(&mut t, 0x0bad_c713, 4, 4);
+        // the string manager: GetNilString (+0xc) and the data's Free (+4)
+        let strings = {
+            let f = t.stub_code(0x0bad_c714, true, 0, 0, false, &[]);
+            let vtable = t.zeros(0x20);
+            t.w32(vtable + 0xc, f);
+            vtable
+        };
+        let owner = i2_object(&mut t, 0x0bad_c715, 1, 1);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([
+            i2::PHYRE_PRINTF,
+            i2::A2W,
+            0x0bad_c711,
+            0x0bad_c712,
+            0x0bad_c713,
+            0x0bad_c714,
+            0x0bad_c715,
+        ]);
+        let mut errors = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(i2::FREE_IAT, free);
+            t.g32(i2::SHOW_CURSOR_IAT, show);
+            t.g32(i2::MESSAGE_BOX_IAT, message);
+            t.g32(i2::STRING_MANAGER, strings);
+            let manager = random_block(&mut t, &mut rng, 0x800);
+            let none = rng.below(5) == 0;
+            t.g32(i2::FMV_MANAGER, if none { 0 } else { manager });
+            t.w32(created, manager);
+            let open = {
+                let r = rng.next();
+                rng.pick(&[0xffff_fffd, 0xffff_fffd, 0, 1, r])
+            };
+            t.ret(i2::VIDEO_OPEN, open);
+            let done = rng.pick(&[0u32, 0, 1, 0x100, 0xffff_ff00]);
+            t.ret(i2::SET_VOLUME, done);
+            let module = {
+                let r = rng.next();
+                rng.pick(&[0, r])
+            };
+            t.ret(i2::FIND_RESOURCE, module);
+            let header = random_block(&mut t, &mut rng, 0x20);
+            t.w32(header, owner);
+            let count = rng.pick(&[0u32, 1, 2, 5]);
+            t.w32(header + 0xc, count);
+            t.ret(0x0bad_c714, header);
+            let other = random_block(&mut t, &mut rng, 0x10);
+            t.w32(conv_cell, rng.pick(&[0, other]));
+            let (path, b) = (rng.next(), rng.next());
+            let wait = rng.pick(&[0u32, 1, 0x100, 0xffff_ff01]);
+            let frame = t.ebp_for(3) - 0x118;
+            t.check_framed_conv(
+                &w,
+                0x006d_8fc0,
+                Conv::Stdcall,
+                &[path, b, wait],
+                frame,
+                &[(0, i2::PLAY_FRAME as usize)],
+                |g| {
+                    i2::fmv_play(g, frame, path, b, wait);
+                    Out::None
+                },
+            );
+            errors += u32::from(open == 0xffff_fffd && !none);
+        }
+        assert!(errors > 0, "{name}: the error path ran");
+    }
+}
+
+/// The movie player's render.
+#[test]
+fn i2_fmv_render() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c722);
+        let stubs = [
+            (i2::IS_PLAYING, true, 0, 0),
+            (i2::UPDATE_VIEW, true, 0, 0),
+            (i2::SET_CAMERA, true, 1, 1),
+            (i2::SET_CLEAR_COLOR, true, 4, 4),
+            (i2::BEGIN_SCENE, true, 1, 1),
+            (i2::RENDER_MESH_INSTANCE, true, 4, 4),
+            (i2::END_SCENE, true, 1, 1),
+            (i2::PROMPT_VISIBLE, true, 0, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let camera_vtable = {
+            let f = t.stub_code(0x0bad_c721, true, 0, 0, false, &[]);
+            let v = t.zeros(0x10);
+            t.w32(v + 4, f);
+            v
+        };
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(0x0bad_c721);
+        let scene = t.zeros(0x1_0e00);
+        let mut drawn = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for sym in [
+                i2::SET_CLEAR_COLOR,
+                i2::BEGIN_SCENE,
+                i2::RENDER_MESH_INSTANCE,
+                i2::END_SCENE,
+            ] {
+                let r = rng.next();
+                let v = rng.pick(&[0, 0, 0, 0, 0, r]);
+                t.ret(sym, v);
+            }
+            for sym in [i2::IS_PLAYING, i2::PROMPT_VISIBLE] {
+                let v = rng.pick(&[1u32, 1, 0, 0x100, 0xffff_ff01]);
+                t.ret(sym, v);
+            }
+            let this = random_block(&mut t, &mut rng, 0x760);
+            for off in [0x6d2u32, 0x6e4, 0x74c] {
+                let v = rng.pick(&[1u8, 1, 1, 0, 0x80]);
+                t.w8(this + off, v);
+            }
+            t.w32(this + 0x574, camera_vtable);
+            let quad = random_block(&mut t, &mut rng, 0x20);
+            let quad = rng.pick(&[quad, quad, quad, 0]);
+            t.w32(this + 0x388, quad);
+            let f = rng.float();
+            t.w32(this + 0x6cc, f);
+            let off = rng.pick(&[0u8, 0, 0, 1]);
+            let at = t.rebase(i2::MOVIES_OFF);
+            t.w8(at, off);
+            let prompt = random_block(&mut t, &mut rng, 0x20);
+            t.w32(scene + 0x1_0de0, prompt);
+            t.g32(i2::PHYRE_SCENE, scene);
+            let renderer = random_block(&mut t, &mut rng, 0x140);
+            let r = t.check_conv(&w, 0x006d_7570, Conv::Thiscall(this), &[renderer], |g| {
+                u(i2::fmv_render(g, this, renderer))
+            });
+            drawn += u32::from(r == 0);
+        }
+        assert!(drawn > 0, "{name}: drawn");
+    }
+}
+
+/// The draw environment and the split image load.
+#[test]
+fn i2_gs_environment() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c723);
+        let cells = [t.zeros(4), t.zeros(4), t.zeros(4), t.zeros(4)];
+        let writes: Vec<Write> = (0..4).map(|k| wr(k as u8, cells[k])).collect();
+        t.stub_at(i2::SCREEN_DATA, false, 5, 0, &writes);
+        let stubs = [
+            (i2::GET_SPAD, 0),
+            (i2::SET_PACKET, 1),
+            (i2::START_VIF, 0),
+            (i2::SET_FRAME, 0),
+            (i2::XYOFFSET2, 2),
+            (i2::SCISSOR2, 4),
+            (i2::TEST2, 8),
+            (i2::PRIM, 1),
+            (i2::XYZF2, 2),
+            (i2::XYOFFSET, 2),
+            (i2::SCISSOR, 4),
+            (i2::GS_END2, 0),
+            (i2::SEND_SPAD, 1),
+            (i1::SET_DEF_LOAD_IMAGE, 8),
+            (i1::FLUSH_CACHE, 1),
+            (i1::SYNC_PATH, 2),
+            (i1::EXEC_LOAD_IMAGE, 2),
+        ];
+        for (sym, n) in stubs {
+            t.stub(sym, n, false);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(i2::SCREEN_DATA);
+        let mut strips = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for c in cells {
+                let v = rng.small();
+                t.w32(c, v);
+            }
+            let (m, last) = (rng.pick(&[0u8, 1, 2]), rng.pick(&[0u8, 1, 2]));
+            let at = t.rebase(i2::LAST_SCREEN_MODE);
+            t.w8(at, last);
+            t.ret(i2::SCREEN_DATA, u32::from(m) | 0x1234_5600);
+            let frame = t.ebp_for(0) - 0x10;
+            t.check_framed(
+                &format!("{w} env"),
+                0x0082_c7b0,
+                &[],
+                frame,
+                &[(0, 0x10)],
+                |g| u(i2::draw_set_environment(g, frame)),
+            );
+            let image = random_block(&mut t, &mut rng, 0x10);
+            let wd = rng.pick(&[0u16, 1, 0x40, 0x100, 0x200, 0x8000, 0xfff0, 0x7fff]);
+            let ht = rng.pick(&[0u16, 1, 0x100, 0x400, 0x401, 0x1000, 0x8000, 0xffff]);
+            t.w16(image + 0xa, wd);
+            t.w16(image + 0xc, ht);
+            let data = rng.next();
+            t.check(&format!("{w} load"), 0x007e_4420, &[image, data], |g| {
+                i2::load_image_split(g, image, data);
+                Out::None
+            });
+            strips += u32::from(i32::from(wd as i16) * i32::from(ht as i16) >= 0x4_0000);
+        }
+        assert!(strips > 0, "{name}: strips loaded");
+    }
+}
+
+/// `IggyMenu`'s constructor and the semaphore queue's start.
+#[test]
+fn i2_ctors() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c724);
+        let stubs = [
+            (i2::OPERATOR_NEW, false, 1, 0),
+            (i2::STREAM_CTOR, true, 5, 5),
+            (i2::STREAM_SIZE, true, 0, 0),
+            (i2::OPERATOR_NEW_ARRAY, false, 1, 0),
+            (i2::STREAM_READ, true, 2, 2),
+            (i2::CREATE_PLAYER, false, 7, 0),
+            (i2::ADD_MENU, true, 1, 1),
+            (i2::OPERATOR_DELETE_ARRAY, false, 1, 0),
+            (i2::STREAM_CLOSE, true, 0, 0),
+            (i2::STREAM_DTOR, true, 0, 0),
+            (i2::OPERATOR_DELETE, false, 1, 0),
+            (i1::MEMSET, false, 3, 0),
+            (i2::THREAD_START, true, 2, 2),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let create = i1_iat_stub(&mut t, 0x0bad_c741, 4, 4);
+        let wait = i1_iat_stub(&mut t, 0x0bad_c742, 2, 2);
+        let release = i1_iat_stub(&mut t, 0x0bad_c743, 3, 3);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([0x0bad_c741, 0x0bad_c742, 0x0bad_c743]);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(i2::CREATE_SEMAPHORE_IAT, create);
+            t.g32(i2::WAIT_IAT, wait);
+            t.g32(i2::RELEASE_SEMAPHORE_IAT, release);
+            let block = random_block(&mut t, &mut rng, 0x10);
+            t.ret(i2::OPERATOR_NEW, block);
+            let stream = random_block(&mut t, &mut rng, 0x10);
+            t.ret(i2::STREAM_CTOR, rng.pick(&[stream, stream, 0]));
+            let manager = rng.next();
+            t.g32(i2::MENU_MANAGER, manager);
+            let this = random_block(&mut t, &mut rng, 0xa0);
+            let path = rng.next();
+            let rect = [rng.float(), rng.float(), rng.float(), rng.float()];
+            let flags = rng.next();
+            let args = [path, rect[0], rect[1], rect[2], rect[3], flags];
+            t.check_conv(
+                &format!("{w} menu"),
+                0x00a2_88f0,
+                Conv::Thiscall(this),
+                &args,
+                |g| u(i2::iggy_menu_ctor(g, this, path, rect, flags)),
+            );
+            // a failed allocation: the original reads address 0 then
+            // (only the menu, whose null stream is skipped)
+            t.ret(i2::OPERATOR_NEW, 0);
+            t.check_conv(
+                &format!("{w} menu no stream"),
+                0x00a2_88f0,
+                Conv::Thiscall(this),
+                &args,
+                |g| u(i2::iggy_menu_ctor(g, this, path, rect, flags)),
+            );
+            t.ret(i2::OPERATOR_NEW, block);
+            let queue = random_block(&mut t, &mut rng, 0x240);
+            let index = rng.pick(&[0u32, 1, 7, 8, 0xffff_ffff, 0xffff_fff9, 0x8000_0000]);
+            t.w32(queue + 0x1f4, index);
+            t.check_conv(
+                &format!("{w} queue"),
+                0x006d_ba20,
+                Conv::Thiscall(queue),
+                &[],
+                |g| {
+                    i2::semaphore_queue_start(g, queue);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The escape menu's dialog callback.
+#[test]
+fn i2_esc_dialog() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c725);
+        let stubs = [
+            (i2::DYNAMIC_CAST, false, 5, 0),
+            (i2::DEREF_PLAYER, true, 0, 0),
+            (i2::VALUE_REF_CREATE, true, 2, 2),
+            (i2::ADD_HANDLER, true, 1, 1),
+            (i2::ADD_CALL, true, 2, 2),
+            (i2::VALUE_REF_FREE, true, 0, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        // getArrayS32(i) logs, then returns values[i]
+        let values = t.zeros(8);
+        let log = t.stub_code(i2::GET_ARRAY_S32, true, 1, 1, false, &[]);
+        let mut c = vec![0xff, 0x74, 0x24, 0x04, 0xe8];
+        let at = t.cave_next;
+        c.extend(log.wrapping_sub(at + 9).to_le_bytes());
+        c.extend([0x8b, 0x44, 0x24, 0x04, 0x8b, 0x04, 0x85]);
+        c.extend(values.to_le_bytes());
+        c.extend([0xc2, 0x04, 0x00]);
+        let f = t.code(&c);
+        t.jump(i2::GET_ARRAY_S32, f);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(i2::GET_ARRAY_S32);
+        let table = t.rebase(i2::DIALOG_TABLE);
+        let mut calls = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let esc = random_block(&mut t, &mut rng, 0x100);
+            let busy = rng.pick(&[0u8, 0, 0, 0, 1]);
+            t.w8(esc + 0xfc, busy);
+            t.ret(i2::DYNAMIC_CAST, esc);
+            let k = rng.below(0x23);
+            let key0: u16 = Mem::read(&t.a, table + 8 * k + 4);
+            let key1: u16 = Mem::read(&t.a, table + 8 * k + 6);
+            let first = {
+                let r = rng.next() as u16;
+                rng.pick(&[0xc, 0x6e, 0x460, 0x461, key0, key0, r])
+            };
+            let second = {
+                let r = rng.next() as u16;
+                rng.pick(&[100, 101, 102, 0x66, 99, 0xffff, key1, key1, r])
+            };
+            let hi = rng.next() & 0xffff_0000;
+            t.w32(values, u32::from(first) | hi);
+            t.w32(values + 4, u32::from(second) | hi);
+            let args = random_block(&mut t, &mut rng, 8);
+            let menu = random_block(&mut t, &mut rng, 0x80);
+            let frame = t.ebp_for(2) - 0x48;
+            t.check_framed(
+                &w,
+                0x0068_e5b0,
+                &[menu, args],
+                frame,
+                &[(0, i2::DIALOG_FRAME as usize)],
+                |g| u(i2::esc_dialog(g, frame, menu, args)),
+            );
+            calls += u32::from(busy == 0);
+        }
+        assert!(calls > 0, "{name}: dialogs handled");
     }
 }

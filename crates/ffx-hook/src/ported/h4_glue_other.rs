@@ -16,7 +16,7 @@ use ffx_glue_other::{
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
-    menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_i2 as i2, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2307,5 +2307,37 @@ ported! {
     /// `GDraw_pool_freeAll_00a3b380(pool, stats)`.
     GDraw_pool_freeAll_00a3b380 @ 0x00a3_b380 => extern "C" fn free_all(pool: u32, stats: u32) {
         i1::free_all(&mut mem(), pool, stats);
+    }
+    // ---- continuation round 7, batch 2 (ffx_glue_other::h4_i2)
+    /// `PhyFMVPlayerManager_fmvPlayer_play(path, b, wait)`.
+    PhyFMVPlayerManager_fmvPlayer_play @ 0x006d_8fc0 => extern "stdcall" fn fmv_play(path: u32, b: u32, wait: u32) {
+        let mut frame = StackFrame::<{ (i2::PLAY_FRAME / 4) as usize }>::new();
+        i2::fmv_play(&mut mem(), frame.at(), path, b, wait);
+    }
+    /// `PhyFMVPlayerManager_Render(this; renderer)`.
+    PhyFMVPlayerManager_Render @ 0x006d_7570 => extern "thiscall" fn fmv_render(this: u32, renderer: u32) -> u32 {
+        i2::fmv_render(&mut mem(), this, renderer)
+    }
+    /// `Sg_DrawSetEnvironment()`.
+    Sg_DrawSetEnvironment @ 0x0082_c7b0 => extern "C" fn draw_set_environment() -> u32 {
+        let mut frame = StackFrame::<{ (i2::ENV_FRAME / 4) as usize }>::new();
+        i2::draw_set_environment(&mut mem(), frame.at())
+    }
+    /// `op_gs_loadImage_007e4420(image, data)`.
+    op_gs_loadImage_007e4420 @ 0x007e_4420 => extern "C" fn load_image_split(image: u32, data: u32) {
+        i2::load_image_split(&mut mem(), image, data);
+    }
+    /// `IggyMenu_ctor_00a288f0(this; path, x, y, w, h, flags)`.
+    IggyMenu_ctor_00a288f0 @ 0x00a2_88f0 => extern "thiscall" fn iggy_menu_ctor(this: u32, path: u32, x: u32, y: u32, w: u32, h: u32, flags: u32) -> u32 {
+        i2::iggy_menu_ctor(&mut mem(), this, path, [x, y, w, h], flags)
+    }
+    /// `SemaphoreQueue_start_006dba20(this)`.
+    SemaphoreQueue_start_006dba20 @ 0x006d_ba20 => extern "thiscall" fn semaphore_queue_start(this: u32) {
+        i2::semaphore_queue_start(&mut mem(), this);
+    }
+    /// `FFEscMenu_onDialog_0068e5b0(menu, args)`.
+    FFEscMenu_onDialog_0068e5b0 @ 0x0068_e5b0 => extern "C" fn esc_dialog(menu: u32, args: u32) -> u32 {
+        let mut frame = StackFrame::<{ (i2::DIALOG_FRAME / 4) as usize }>::new();
+        i2::esc_dialog(&mut mem(), frame.at(), menu, args)
     }
 }
