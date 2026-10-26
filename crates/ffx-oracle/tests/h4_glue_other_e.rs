@@ -30,6 +30,7 @@ use ffx_glue_other::{
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
+    h4_j1 as j1,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -8748,5 +8749,330 @@ fn i8_render_distortion() {
             drawn += t.log_entries();
         }
         assert!(drawn > 0, "{name}: drawn");
+    }
+}
+
+// ---- continuation round 8, batch 1 (ffx_glue_other::h4_j1)
+
+/// `op_gs1_init`: both packets from either environment.
+#[test]
+fn j1_op_gs1_init() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c811);
+        t.stub(j1::FOG_PARAM_SET, 0, false);
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &[j1::FOG_PARAM_SET]);
+            let work = t.zeros(0x150);
+            for k in 0..0x150 / 4 {
+                // sign bits both ways
+                let r = rng.next();
+                let v = rng.pick(&[r, r & 0xff, 0xffff_fff0]);
+                t.w32(work + 4 * k, v);
+            }
+            // stale packets: every word the original leaves alone stays
+            let packets = t.rebase(j1::GS1_PACKETS);
+            let junk: Vec<u8> = (0..0x170).map(|_| rng.next() as u8).collect();
+            t.write(packets, &junk);
+            for k in 0..3 {
+                let b = rng.next() & 0xff;
+                let at = t.rebase(j1::FOG_COLOUR + k);
+                t.w8(at, b as u8);
+            }
+            let r = rng.next();
+            let flags = rng.pick(&[0, 1, 2, 3, r]);
+            t.check(&w, 0x007e_b760, &[work, flags], |g| {
+                u(j1::op_gs1_init(g, work, flags))
+            });
+        }
+    }
+}
+
+/// A `graphicGetLocTextWithLength` stand-in that copies the next string
+/// of a list (`seq` holds its address) into its buffer argument, then
+/// logs and returns as the stub tagged `sym`.
+fn j1_text_stub(t: &mut Twins, sym: u32, seq: u32) {
+    let log = t.stub_code(sym, false, 3, 0, false, &[]);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15]; // mov eax, [esp+8]; mov edx, [seq]
+    c.extend(seq.to_le_bytes());
+    // copy: mov cl, [edx]; mov [eax], cl; inc eax; inc edx; test cl, cl; jnz copy
+    c.extend([0x8a, 0x0a, 0x88, 0x08, 0x40, 0x42, 0x84, 0xc9, 0x75, 0xf6]);
+    c.extend([0x89, 0x15]);
+    c.extend(seq.to_le_bytes()); // mov [seq], edx
+    let jmp_at = t.cave_next + c.len() as u32;
+    c.push(0xe9);
+    c.extend(log.wrapping_sub(jmp_at + 5).to_le_bytes());
+    let addr = t.code(&c);
+    t.jump(sym, addr);
+}
+
+/// The settings pages' key-name tables.
+#[test]
+fn j1_key_names() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c812);
+        let seq = t.zeros(4);
+        j1_text_stub(&mut t, j1::GET_LOC_TEXT, seq);
+        t.stub(j1::SET_CONTROLLER_NAME, 2, false);
+        t.stub(j1::SET_KEYBOARD_NAME, 2, false);
+        let tags = [
+            j1::GET_LOC_TEXT,
+            j1::SET_CONTROLLER_NAME,
+            j1::SET_KEYBOARD_NAME,
+        ];
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let max = rng.pick(&[0u32, 3, 12, 40]);
+            let mut text = Vec::new();
+            for _ in 0..91 {
+                for _ in 0..rng.below(max + 1) {
+                    text.push(b' ' + rng.below(95) as u8);
+                }
+                text.push(0);
+            }
+            let src = t.alloc(&text);
+            t.w32(seq, src);
+            // stale bytes in the buffers
+            for sym in [j1::CONTROLLER_NAMES, j1::KEYBOARD_NAMES] {
+                let at = t.rebase(sym);
+                let junk: Vec<u8> = (0..j1::NAMES_LEN).map(|_| rng.next() as u8).collect();
+                t.write(at, &junk);
+            }
+            if i % 2 == 0 {
+                t.check(&w, 0x0070_2250, &[], |g| u(j1::fill_controller_names(g)));
+                assert_eq!(t.log_entries(), 32, "{w}: calls");
+            } else {
+                t.check(&w, 0x006f_fc80, &[], |g| u(j1::fill_keyboard_names(g)));
+                assert_eq!(t.log_entries(), 182, "{w}: calls");
+            }
+        }
+    }
+}
+
+/// `RemapButtonIcon_remapUIButtonData`: keys found or not, pending bits,
+/// wide indices, both input kinds, UV callees writing or not.
+#[test]
+fn j1_remap_ui_button_data() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c813);
+        let (cu, cv) = (t.zeros(4), t.zeros(4));
+        let plain = [
+            (j1::INPUT_INSTANCE, false, 0, 0),
+            (j1::INPUT_VIBRATION, true, 0, 0),
+            (j1::REMAP_ICON_UV, true, 4, 4),
+            (j1::REMAP_UI_BUTTON_POSITION, true, 4, 4),
+        ];
+        for (sym, this, n, pops) in plain {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut uv = Vec::new();
+        for (sym, tag) in [
+            (j1::REMAP_PC_UV, 0x0bad_c813),
+            (j1::REMAP_PAD_UV, 0x0bad_c814),
+        ] {
+            let writing = t.stub_code(sym, true, 3, 3, false, &[wr(1, cu), wr(2, cv)]);
+            let silent = t.stub_code(tag, true, 3, 3, false, &[]);
+            uv.push((sym, writing, silent));
+        }
+        let mut tags: Vec<u32> = plain.iter().map(|s| s.0).collect();
+        tags.extend([j1::REMAP_PC_UV, j1::REMAP_PAD_UV, 0x0bad_c813, 0x0bad_c814]);
+        let mut seen = [0u32; 4];
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[], &[j1::WIDE_W_SCALE, j1::W_SCALE, j1::H_SCALE]);
+            for &(sym, writing, silent) in &uv {
+                let to = if rng.below(4) == 0 { silent } else { writing };
+                t.jump(sym, to);
+            }
+            for c in [cu, cv] {
+                let f = rng.float();
+                t.w32(c, f);
+            }
+            let flag = rng.pick(&[0, 1, 0x100, 0xffff_ff01]);
+            t.ret(j1::INPUT_VIBRATION, flag);
+            let this = random_block(&mut t, &mut rng, 0x170);
+            for k in 0..20 {
+                let key = rng.below(8);
+                let small = rng.below(20);
+                let index = rng.pick(&[u32::MAX, small, 0x8000_0003, 0x8000_0000]);
+                t.w32(this + 0xb0 + 8 * k, key);
+                t.w32(this + 0xb4 + 8 * k, index);
+            }
+            let c = rng.below(24);
+            let pending = rng.pick(&[u32::MAX, u32::MAX, 1 << c, 0, 0x8000_0000, 3]);
+            t.w32(this + 0x15c, pending);
+            for off in [0x160, 0x164] {
+                let f = rng.float();
+                t.w32(this + off, f);
+            }
+            let key = t.zeros(4);
+            let (small, r) = (rng.below(10), rng.next());
+            let k = rng.pick(&[u32::MAX, small, r]);
+            t.w32(key, k);
+            let rec = random_block(&mut t, &mut rng, 0x30);
+            for off in [0, 4] {
+                let f = rng.float();
+                t.w32(rec + off, f);
+            }
+            let path = t.zeros(4);
+            let r = rng.next();
+            let kind = rng.pick(&[1, 4, 6, 0xb, r]);
+            let frame = t.ebp_for(4) - 4;
+            t.check_framed_conv(
+                &w,
+                0x006e_7300,
+                Conv::Thiscall(this),
+                &[key, rec, path, kind],
+                frame,
+                &[(0, 4), (0x14, 4)],
+                |g| {
+                    u(j1::remap_ui_button_data(
+                        g, frame, this, key, rec, path, kind,
+                    ))
+                },
+            );
+            let n = t.log_entries();
+            let kept = Mem::read::<u32>(&t.b, this + 0x15c) != u32::MAX;
+            seen[usize::from(n > 0)] += 1;
+            if n > 0 {
+                seen[2 + usize::from(kept)] += 1;
+            }
+        }
+        assert!(seen.iter().all(|&s| s > 0), "{name}: {seen:?}");
+    }
+}
+
+/// `PhyreSceneCursor_Begin`/`Next` stand-ins: each call copies the next
+/// six-word record (position, link, stride, count, element base, `eax`)
+/// of a list (`seq` holds its address) into the cursor's first five
+/// words and returns the sixth.
+fn j1_cursor_stub(t: &mut Twins, sym: u32, seq: u32) {
+    let mut c = vec![0x8b, 0x15]; // mov edx, [seq]
+    c.extend(seq.to_le_bytes());
+    for k in 0..5u8 {
+        // mov eax, [edx+4k]; mov [ecx+4k], eax
+        c.extend([0x8b, 0x42, 4 * k, 0x89, 0x41, 4 * k]);
+    }
+    c.extend([0x8b, 0x42, 0x14]); // mov eax, [edx+0x14]
+    c.extend([0x83, 0x05]);
+    c.extend(seq.to_le_bytes());
+    c.extend([0x18, 0xc3]); // add dword [seq], 0x18; ret
+    let addr = t.code(&c);
+    t.jump(sym, addr);
+}
+
+/// `operator new[]` as a bump allocator (`bump` holds the next address).
+fn j1_bump_stub(t: &mut Twins, sym: u32, bump: u32) {
+    let mut c = vec![0xa1]; // mov eax, [bump]
+    c.extend(bump.to_le_bytes());
+    // mov edx, [esp+4]; lea edx, [eax+edx+0x10] (blocks never overlap)
+    c.extend([0x8b, 0x54, 0x24, 0x04, 0x8d, 0x54, 0x10, 0x10]);
+    c.extend([0x89, 0x15]);
+    c.extend(bump.to_le_bytes()); // mov [bump], edx
+    c.push(0xc3);
+    let addr = t.code(&c);
+    t.jump(sym, addr);
+}
+
+/// A `PMeshInstance` with `n` names (`+0x18`, top bit random), tagged
+/// name pointers at `+0x24`, some with a `_` prefix.
+fn j1_instance(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let inst = random_block(t, rng, 0x28);
+    let n = rng.pick(&[0, 1, 2, 3, 5]);
+    let top = rng.pick(&[0, 0x8000_0000]);
+    t.w32(inst + 0x18, n | top);
+    let names = t.zeros(4 * n as usize + 4);
+    for j in 0..n {
+        let mut s = Vec::new();
+        for _ in 0..rng.below(10) {
+            s.push(rng.pick(b"a_17x-"));
+        }
+        s.push(0);
+        let p = t.alloc(&s);
+        let tag = rng.below(2);
+        t.w32(names + 4 * j, p | tag);
+    }
+    t.w32(inst + 0x24, names);
+    inst
+}
+
+/// The character mesh instances' name suffixes: nodes with skipped
+/// slots, empty nodes, no instances at all.
+#[test]
+fn j1_instance_suffixes() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c815);
+        let seq = t.zeros(4);
+        let bump = t.zeros(4);
+        j1_cursor_stub(&mut t, j1::CURSOR_BEGIN, seq);
+        j1_cursor_stub(&mut t, j1::CURSOR_NEXT, seq);
+        j1_bump_stub(&mut t, j1::OPERATOR_NEW_ARRAY, bump);
+        let atoi = t.stub_code(0x0bad_c815, false, 1, 0, false, &[]);
+        let iat = t.rebase(j1::ATOI_IAT);
+        t.w32(iat, atoi);
+        let mut skipped = 0;
+        let mut visited = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &[0x0bad_c815]);
+            let heap = t.zeros(0x1000);
+            t.w32(bump, heap);
+            // one walk's records, played twice
+            let mut recs: Vec<[u32; 6]> = Vec::new();
+            for _ in 0..rng.below(4) {
+                let n = rng.below(5);
+                let slots = t.zeros(4 * n as usize + 8);
+                for k in 0..=n {
+                    let inst = j1_instance(&mut t, &mut rng);
+                    t.w32(slots + 4 * k, inst);
+                }
+                let eax = rng.next();
+                if n > 1 && rng.below(2) == 0 {
+                    // absolute positions: the link meets slot m, whose
+                    // word is the next link (a later slot or none)
+                    let m = 1 + rng.below(n - 1);
+                    let next = rng.pick(&[slots + 4 * (m + 1), 1]);
+                    t.w32(slots + 4 * m, next);
+                    recs.push([slots, slots + 4 * m, 4, n, 0, eax]);
+                    skipped += 1;
+                } else {
+                    let link = rng.pick(&[1, 0]);
+                    recs.push([0, link, 4, n, slots, eax]);
+                }
+            }
+            let last = rng.next();
+            recs.push([0, 0, 4, 0, 0, last]);
+            let mut words = Vec::new();
+            for _ in 0..2 {
+                for r in &recs {
+                    for v in r {
+                        words.extend(v.to_le_bytes());
+                    }
+                }
+            }
+            let records = t.alloc(&words);
+            t.w32(seq, records);
+            let cluster = random_block(&mut t, &mut rng, 0x20);
+            let end = cluster + 0x1c;
+            let r = rng.next();
+            let first = rng.pick(&[end, r]);
+            t.w32(end, first);
+            let this = random_block(&mut t, &mut rng, 0x20);
+            t.w32(this + 4, cluster);
+            let frame = t.ebp_for(0) - 0x34;
+            t.check_framed_conv(
+                &w,
+                0x006a_2390,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, j1::SUFFIX_FRAME as usize)],
+                |g| u(j1::build_instance_suffixes(g, frame, this)),
+            );
+            visited += Mem::read::<u32>(&t.b, this + 0x18);
+        }
+        assert!(visited > 0 && skipped > 0, "{name}: {visited} {skipped}");
     }
 }
