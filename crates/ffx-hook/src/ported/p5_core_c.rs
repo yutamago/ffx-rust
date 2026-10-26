@@ -94,6 +94,10 @@ ported! {
         let mut frame = StackFrame::<0x44>::new();
         ffx_pcore::p5_gdraw::bridge::create_blend_state(&mut mem(), dev, a, b, c, frame.at())
     }
+    /// `PRingBuffer<PPreprocessRingBufferBlock>::allocateBlock(this; size)` -> the block or 0.
+    Phyre_PRingBuffer_Phyre_PPreprocessRingBufferBlock__allocateBlock @ 0x005c_d110 => extern "thiscall" fn ring_005cd110(this: u32, size: u32) -> u32 {
+        ffx_pcore::p5_ring::bridge::allocate_block(&mut mem(), this, size)
+    }
     /// `PMatrix4_Inverse_004cc0c0(out, m)` -> `out`; its locals in a per-call frame.
     PMatrix4_Inverse_004cc0c0 @ 0x004c_c0c0 => extern "C" fn inverse_004cc0c0(out: u32, m: u32) -> u32 {
         let mut frame = StackFrame::<0x24>::new();

@@ -39,6 +39,7 @@ pub mod matrix;
 pub mod p5_gdraw;
 pub mod p5_math;
 pub mod p5_more;
+pub mod p5_ring;
 pub mod small;
 pub mod string;
 pub mod sync;

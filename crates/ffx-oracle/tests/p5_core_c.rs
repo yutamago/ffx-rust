@@ -92,7 +92,7 @@ enum Ret {
 
 /// Log entries: 16 words (tag, `ecx`, 14 stack words).
 const ENTRY: u32 = 64;
-const ENTRIES: u32 = 0x400;
+const ENTRIES: u32 = 0x800;
 
 struct Twins {
     label: &'static str,
@@ -1132,6 +1132,112 @@ fn gdraw_helpers_match_the_original() {
                     Mem::write_bytes(g, frame, &[0xa5; 0x110]);
                     gdb::create_blend_state(g, dev, a, b, c, frame)
                 },
+            );
+        }
+        t.unstub_all();
+    }
+}
+
+/// The ring buffer's allocator: `fits` stubbed (its answers from a table,
+/// call by call), the lock, sleep and printf stubbed; rings whose write
+/// position is near the end or not, with chains of busy and free blocks
+/// to retire.
+#[test]
+fn ring_allocate_matches_the_original() {
+    use ffx_pcore::p5_ring::{self as ring, bridge as rb};
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0819_b10c);
+        // fits: logs `this` and n, returns answers[call index]
+        let answers = t.zeros(4 * 0x800);
+        let log = t.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.push(0x52); // push edx
+        c.extend([0x8b, 0x14, 0x85]);
+        c.extend(answers.to_le_bytes()); // mov edx, [answers + eax*4]
+        c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(ring::FITS.to_le_bytes()); // mov [eax], tag
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        c.extend([0x8b, 0x4c, 0x24, 0x08]); // mov ecx, [esp+8]
+        c.extend([0x89, 0x48, 0x08]); // mov [eax+8], ecx
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.extend([0x89, 0xd0]); // mov eax, edx
+        c.push(0x5a); // pop edx
+        c.extend([0xc2, 0x04, 0x00]); // ret 4
+        let fits = t.code(&c);
+        let at = t.rebase(ring::FITS);
+        let mut j = vec![0xe9];
+        j.extend(fits.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        t.stub(ring::LOCK, true, 0, 0, Ret::Imm(0x1920));
+        t.stub(ring::UNLOCK, true, 0, 0, Ret::Imm(0x1a80));
+        // sleep: a bare `ret` (a long wait would fill the log)
+        let ret = t.code(&[0xc3]);
+        let at = t.rebase(ring::SLEEP);
+        let mut j = vec![0xe9];
+        j.extend(ret.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        t.stub(ring::PRINTF, false, 3, 0, Ret::Imm(0));
+        for case in 0..40u32 {
+            let size = 0x400;
+            let buf = t.random(&mut rng, size as usize + 0x40);
+            let r = t.random(&mut rng, 0x40);
+            t.w32(r + 0x18, buf);
+            t.w32(r + 0x1c, buf + size);
+            t.w32(r + 0x20, size);
+            // the write position: near the end (a filler block first) or
+            // not, 16-aligned; 0 now and then
+            let used = match case % 5 {
+                0 => buf + size - 0x20,
+                1 => buf + size - 0x40,
+                4 if case % 10 == 4 => 0,
+                _ => buf + 0x10 * rng.below(0x30),
+            };
+            t.w32(r + 0x24, used);
+            // blocks to retire from +0x28: a chain ending at the write
+            // position, some busy
+            let n = rng.below(4);
+            let mut next = used;
+            for k in 0..n {
+                let b = buf + 0x300 + 0x20 * (3 - k);
+                t.w32(b, next);
+                t.w32(b + 4, u32::from(rng.chance(3)));
+                next = b;
+            }
+            t.w32(r + 0x28, next);
+            // the write position's block not busy, its next the (busy) start:
+            // retiring must stop at the write position, not run past it
+            if used != 0 {
+                t.w32(used, buf + 0x10);
+                t.w32(used + 4, 0);
+                t.w32(buf + 0x14, 1);
+            }
+            // fits' answers (index 0 is the lock): the first random, then
+            // "busy" for a while, sometimes a wait of a few
+            // rounds, once past a multiple of 1000
+            // (log entries: the lock, fits and printf calls; sleep is not logged)
+            let waits = if case == 7 { 1010 } else { rng.below(5) };
+            for k in 0..0x800u32 {
+                let v = if k == 1 {
+                    u32::from(case == 7 || !rng.chance(3))
+                } else {
+                    u32::from(k <= waits + 2)
+                };
+                let v = v | (rng.next() & 0xffff_ff00);
+                t.w32(answers + 4 * k, v);
+            }
+            let want =
+                [0, 1, 0x10, 0x11, 0x3e0, 0x3f0, 0x400, rng.below(0x200)][(case % 8) as usize];
+            t.check_conv(
+                &format!("allocate case {case}"),
+                0x005c_d110,
+                Conv::Thiscall(r),
+                &[want],
+                |g| rb::allocate_block(g, r, want),
             );
         }
         t.unstub_all();
