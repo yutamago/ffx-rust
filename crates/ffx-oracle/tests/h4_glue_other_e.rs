@@ -27,7 +27,7 @@ use ffx_bridge::Mem;
 use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
-    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2,
+    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -4704,6 +4704,323 @@ fn g2_iggy_gdraw() {
             t.check(&format!("{w} gdraw"), 0x00a3_c1b0, &[out, slot], |g| {
                 u(g2::gdraw_sub_rect_uv(g, out, slot))
             });
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 6, batch 1 (ffx_glue_other::h4_h1)
+
+/// A random `PString` word: 0, a text (non-zero bytes, 0..24 of them), or
+/// a static one (bit 0 set).
+fn h1_string(t: &mut Twins, rng: &mut Rng) -> u32 {
+    if rng.below(5) == 0 {
+        return 0;
+    }
+    let len = rng.below(24) as usize;
+    let mut text: Vec<u8> = (0..len).map(|_| 1 + rng.below(255) as u8).collect();
+    text.push(0);
+    let at = t.alloc(&text);
+    assert_eq!(at & 1, 0);
+    at | rng.below(2)
+}
+
+/// A random word array `(count, block)` at `at`: a count of 0..5 with or
+/// without the top bit, a block of random words.
+fn h1_words(t: &mut Twins, rng: &mut Rng, at: u32) {
+    let n = rng.below(6);
+    let top = rng.pick(&[0, 0, 0x8000_0000]);
+    let data = random_block(t, rng, 4 * 8);
+    t.w32(at, n | top);
+    t.w32(at + 4, data);
+}
+
+/// A random source of `n` records of `size` bytes: random words, floats
+/// at `floats`, `PString`s at `strings`, word arrays at `arrays`.
+fn h1_records(
+    t: &mut Twins,
+    rng: &mut Rng,
+    n: u32,
+    size: u32,
+    floats: &[u32],
+    strings: &[u32],
+    arrays: &[u32],
+) -> u32 {
+    let src = random_block(t, rng, n.max(1) * size);
+    for k in 0..n {
+        let r = src + k * size;
+        for &off in floats {
+            let v = rng.float();
+            t.w32(r + off, v);
+        }
+        for &off in strings {
+            let s = h1_string(t, rng);
+            t.w32(r + off, s);
+        }
+        for &off in arrays {
+            h1_words(t, rng, r + off);
+        }
+    }
+    src
+}
+
+/// The allocation stub's next block: null sometimes, else a fresh block.
+fn h1_block(t: &mut Twins, rng: &mut Rng, tag: u32, bytes: u32) {
+    let b = random_block(t, rng, bytes);
+    let v = rng.pick(&[0, b, b, b]);
+    t.ret(tag, v);
+}
+
+/// A destination of `n` records of `size` bytes: null sometimes for one
+/// record (skipped), else random bytes.
+fn h1_dst(t: &mut Twins, rng: &mut Rng, n: u32, size: u32) -> u32 {
+    if n == 1 && rng.below(4) == 0 {
+        0
+    } else {
+        random_block(t, rng, n.max(1) * size)
+    }
+}
+
+/// `TextureAnimationInfo`'s and `TextureAnimationMaterial`'s copies, one
+/// and as arrays (the `Char` array copy and the copy helpers stubs).
+#[test]
+fn h1_info_material_copies() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a101);
+        t.stub(h1::PHYRE_MALLOC, 2, false);
+        t.stub(h1::MEMCPY, 3, false);
+        t.stub(h1::COPY_WORDS, 2, false);
+        t.stub(h1::COPY_NEW_A, 2, false);
+        t.stub(h1::COPY_NEW_B, 2, false);
+        t.stub(h1::CHAR_COPY_ARRAY, 3, false);
+        let tags = [
+            h1::PHYRE_MALLOC,
+            h1::MEMCPY,
+            h1::COPY_WORDS,
+            h1::COPY_NEW_A,
+            h1::COPY_NEW_B,
+            h1::CHAR_COPY_ARRAY,
+        ];
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for tag in [
+                h1::PHYRE_MALLOC,
+                h1::COPY_WORDS,
+                h1::COPY_NEW_A,
+                h1::COPY_NEW_B,
+            ] {
+                h1_block(&mut t, &mut rng, tag, 0x100);
+            }
+            // one Info
+            let src = h1_records(&mut t, &mut rng, 1, 0x20, &[0x10, 0x14], &[4], &[8]);
+            let this = random_block(&mut t, &mut rng, 0x20);
+            t.check_conv(
+                &format!("{w} info"),
+                0x006a_f0d0,
+                Conv::Thiscall(this),
+                &[src],
+                |g| u(h1::info_copy(g, this, src)),
+            );
+            // Info array
+            let n = rng.below(4);
+            let src = h1_records(&mut t, &mut rng, n, 0x20, &[0x10, 0x14], &[4], &[8]);
+            let dst = h1_dst(&mut t, &mut rng, n, 0x20);
+            t.check(
+                &format!("{w} info array"),
+                0x006a_e9c0,
+                &[dst, src, n],
+                |g| {
+                    let r = h1::info_copy_array(g, dst, src, n);
+                    if n == 0 { Out::None } else { u(r) }
+                },
+            );
+            // one Material
+            let src = h1_records(&mut t, &mut rng, 1, 0x20, &[], &[0x18, 0x1c], &[0, 8, 0x10]);
+            let this = random_block(&mut t, &mut rng, 0x20);
+            t.check_conv(
+                &format!("{w} material"),
+                0x006a_eee0,
+                Conv::Thiscall(this),
+                &[src],
+                |g| u(h1::material_copy(g, this, src)),
+            );
+            // Material array
+            let n = rng.below(4);
+            let src = h1_records(&mut t, &mut rng, n, 0x20, &[], &[0x18, 0x1c], &[0, 8, 0x10]);
+            let dst = h1_dst(&mut t, &mut rng, n, 0x20);
+            t.check(
+                &format!("{w} material array"),
+                0x006a_e730,
+                &[dst, src, n],
+                |g| {
+                    let r = h1::material_copy_array(g, dst, src, n);
+                    if n == 0 { Out::None } else { u(r) }
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `TextureAnimationInfoChar`'s copies, one and as an array (the base
+/// copy a stub).
+#[test]
+fn h1_info_char_copies() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a102);
+        t.stub(h1::PHYRE_MALLOC, 2, false);
+        t.stub(h1::MEMCPY, 3, false);
+        t.stub_at(h1::INFO_COPY, true, 1, 1, &[]);
+        let tags = [h1::PHYRE_MALLOC, h1::MEMCPY, h1::INFO_COPY];
+        let floats = [0x24, 0x28, 0x2c, 0x30];
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            h1_block(&mut t, &mut rng, h1::PHYRE_MALLOC, 0x40);
+            let src = h1_records(&mut t, &mut rng, 1, 0x40, &floats, &[0x20], &[]);
+            let this = random_block(&mut t, &mut rng, 0x40);
+            t.check_conv(
+                &format!("{w} char"),
+                0x006a_f270,
+                Conv::Thiscall(this),
+                &[src],
+                |g| u(h1::info_char_copy(g, this, src)),
+            );
+            let n = rng.below(4);
+            let src = h1_records(&mut t, &mut rng, n, 0x40, &floats, &[0x20], &[]);
+            let dst = h1_dst(&mut t, &mut rng, n, 0x40);
+            t.check(
+                &format!("{w} char array"),
+                0x006a_eb20,
+                &[dst, src, n],
+                |g| {
+                    let r = h1::info_char_copy_array(g, dst, src, n);
+                    if n == 0 { Out::None } else { u(r) }
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The small constructors: the semaphore queues, the post-process state,
+/// the dynamic-geometry pool, the shadow manager, the shader-source
+/// reader and the escape menu's creation.
+#[test]
+fn h1_ctors() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a103);
+        t.stub_at(h1::EH_VECTOR_CTOR, false, 5, 5, &[]);
+        t.stub(h1::OPERATOR_NEW, 1, false);
+        t.stub(h1::PHYRE_MALLOC, 2, false);
+        t.stub(h1::PHYRE_FREE, 1, false);
+        t.stub(h1::MEMSET, 3, false);
+        t.stub(h1::NEW_TREE_HEAD, 0, false);
+        for sym in [
+            h1::PAIR_INIT,
+            h1::PCLUSTER_CTOR,
+            h1::SAMPLER_STATE_CTOR,
+            h1::ASSET_LIST_CLEAR,
+        ] {
+            t.stub_at(sym, true, 0, 0, &[]);
+        }
+        t.stub_at(h1::STRING_ASSIGN, true, 2, 2, &[]);
+        t.stub_at(h1::ESC_MENU_CTOR, true, 5, 5, &[]);
+        let semaphore = t.stub_code(0x0bad_a1c0, false, 4, 4, false, &[]);
+        let mutex = t.stub_code(0x0bad_a1c1, false, 3, 3, false, &[]);
+        let tags = [
+            h1::EH_VECTOR_CTOR,
+            h1::OPERATOR_NEW,
+            h1::PHYRE_MALLOC,
+            h1::PHYRE_FREE,
+            h1::MEMSET,
+            h1::NEW_TREE_HEAD,
+            h1::PAIR_INIT,
+            h1::PCLUSTER_CTOR,
+            h1::SAMPLER_STATE_CTOR,
+            h1::ASSET_LIST_CLEAR,
+            h1::STRING_ASSIGN,
+            h1::ESC_MENU_CTOR,
+            0x0bad_a1c0,
+            0x0bad_a1c1,
+        ];
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(h1::CREATE_SEMAPHORE_IAT, semaphore);
+            t.g32(h1::CREATE_MUTEX_IAT, mutex);
+            // the queue's boxes are never null here: the original reads
+            // address 0 then, as the port does
+            let b = random_block(&mut t, &mut rng, 8);
+            t.ret(h1::OPERATOR_NEW, b);
+            let this = random_block(&mut t, &mut rng, 0x1f0);
+            t.check_conv(
+                &format!("{w} queue"),
+                0x006d_b560,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(h1::semaphore_queue_ctor(g, this)),
+            );
+            let this = random_block(&mut t, &mut rng, 0x240);
+            t.check_conv(
+                &format!("{w} queues"),
+                0x006d_b670,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(h1::semaphore_queues_ctor(g, this)),
+            );
+            h1_block(&mut t, &mut rng, h1::PHYRE_MALLOC, 8);
+            let this = random_block(&mut t, &mut rng, 0x110);
+            t.check_conv(
+                &format!("{w} post"),
+                0x006d_dbf0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(h1::post_process_state_init(g, this)),
+            );
+            let this = random_block(&mut t, &mut rng, 0x18);
+            t.check_conv(
+                &format!("{w} pool"),
+                0x006d_e2c0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(h1::dyn_geo_pool_ctor(g, this)),
+            );
+            let this = random_block(&mut t, &mut rng, 0x4068);
+            t.check_conv(
+                &format!("{w} shadow"),
+                0x006c_7d80,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(h1::shadow_manager_ctor(g, this)),
+            );
+            let this = random_block(&mut t, &mut rng, 0x44);
+            t.check_conv(
+                &format!("{w} reader"),
+                0x0069_04c0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(h1::shader_source_reader_ctor(g, this)),
+            );
+            // the escape menu
+            let other = rng.next();
+            let menu = rng.pick(&[0, 0, other]);
+            t.g32(h1::ESC_MENU.sym, menu);
+            let b = random_block(&mut t, &mut rng, 8);
+            let v = rng.pick(&[0, b, b]);
+            t.ret(h1::OPERATOR_NEW, v);
+            let a = rng.next();
+            let f: [u32; 4] = std::array::from_fn(|_| rng.float());
+            t.check(
+                &format!("{w} esc menu"),
+                0x0068_e400,
+                &[a, f[0], f[1], f[2], f[3]],
+                |g| match h1::esc_menu_create(g, a, f) {
+                    Some(v) => u(v),
+                    None => Out::None,
+                },
+            );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
     }

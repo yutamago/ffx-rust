@@ -14,8 +14,8 @@ use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
-    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, menu as mn, misc as m,
-    movie as mv, r3, sound as s,
+    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, menu as mn,
+    misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2080,5 +2080,58 @@ ported! {
     /// `GDraw_SubRectUV_00a3c1b0(out, slot)`.
     GDraw_SubRectUV_00a3c1b0 @ 0x00a3_c1b0 => extern "C" fn gdraw_sub_rect_uv(out: u32, slot: u32) -> u32 {
         g2::gdraw_sub_rect_uv(&mut mem(), out, slot)
+    }
+    // ---- continuation round 6, batch 1 (ffx_glue_other::h4_h1)
+    /// `TextureAnimationInfo_copy_006af0d0(this; src)`.
+    TextureAnimationInfo_copy_006af0d0 @ 0x006a_f0d0 => extern "thiscall" fn tex_anim_info_copy(this: u32, src: u32) -> u32 {
+        h1::info_copy(&mut mem(), this, src)
+    }
+    /// `TextureAnimationInfoChar_copy_006af270(this; src)`.
+    TextureAnimationInfoChar_copy_006af270 @ 0x006a_f270 => extern "thiscall" fn tex_anim_info_char_copy(this: u32, src: u32) -> u32 {
+        h1::info_char_copy(&mut mem(), this, src)
+    }
+    /// `TextureAnimationInfo_copyArray_006ae9c0(dst, src, n)`.
+    TextureAnimationInfo_copyArray_006ae9c0 @ 0x006a_e9c0 => extern "C" fn tex_anim_info_copy_array(dst: u32, src: u32, n: u32) -> u32 {
+        h1::info_copy_array(&mut mem(), dst, src, n)
+    }
+    /// `TextureAnimationInfoChar_copyArray_006aeb20(dst, src, n)`.
+    TextureAnimationInfoChar_copyArray_006aeb20 @ 0x006a_eb20 => extern "C" fn tex_anim_info_char_copy_array(dst: u32, src: u32, n: u32) -> u32 {
+        h1::info_char_copy_array(&mut mem(), dst, src, n)
+    }
+    /// `TextureAnimationMaterial_copy_006aeee0(this; src)`.
+    TextureAnimationMaterial_copy_006aeee0 @ 0x006a_eee0 => extern "thiscall" fn tex_anim_material_copy(this: u32, src: u32) -> u32 {
+        h1::material_copy(&mut mem(), this, src)
+    }
+    /// `TextureAnimationMaterial_copyArray_006ae730(dst, src, n)`.
+    TextureAnimationMaterial_copyArray_006ae730 @ 0x006a_e730 => extern "C" fn tex_anim_material_copy_array(dst: u32, src: u32, n: u32) -> u32 {
+        h1::material_copy_array(&mut mem(), dst, src, n)
+    }
+    /// `SemaphoreQueue_ctor_006db560(this)`.
+    SemaphoreQueue_ctor_006db560 @ 0x006d_b560 => extern "thiscall" fn semaphore_queue_ctor(this: u32) -> u32 {
+        h1::semaphore_queue_ctor(&mut mem(), this)
+    }
+    /// `SemaphoreQueues_ctor_006db670(this)`.
+    SemaphoreQueues_ctor_006db670 @ 0x006d_b670 => extern "thiscall" fn semaphore_queues_ctor(this: u32) -> u32 {
+        h1::semaphore_queues_ctor(&mut mem(), this)
+    }
+    /// `PostProcessState_init_006ddbf0(this)`.
+    PostProcessState_init_006ddbf0 @ 0x006d_dbf0 => extern "thiscall" fn post_process_state_init(this: u32) -> u32 {
+        h1::post_process_state_init(&mut mem(), this)
+    }
+    /// `DynGeoMemPool_ctor_006de2c0(this)`.
+    DynGeoMemPool_ctor_006de2c0 @ 0x006d_e2c0 => extern "thiscall" fn dyn_geo_pool_ctor(this: u32) -> u32 {
+        h1::dyn_geo_pool_ctor(&mut mem(), this)
+    }
+    /// `ShadowManager_ctor_006c7d80(this)`.
+    ShadowManager_ctor_006c7d80 @ 0x006c_7d80 => extern "thiscall" fn shadow_manager_ctor(this: u32) -> u32 {
+        h1::shadow_manager_ctor(&mut mem(), this)
+    }
+    /// `ShaderSourceReader_ctor_006904c0(this)`.
+    ShaderSourceReader_ctor_006904c0 @ 0x0069_04c0 => extern "thiscall" fn shader_source_reader_ctor(this: u32) -> u32 {
+        h1::shader_source_reader_ctor(&mut mem(), this)
+    }
+    /// `FFEscMenu_create_0068e400(a, f0, f1, f2, f3)`.
+    FFEscMenu_create_0068e400 @ 0x0068_e400 => extern "C" fn esc_menu_create(a: u32, f0: u32, f1: u32, f2: u32, f3: u32) -> u32 {
+        h1::esc_menu_create(&mut mem(), a, [f0, f1, f2, f3]).unwrap_or(0)
     }
 }
