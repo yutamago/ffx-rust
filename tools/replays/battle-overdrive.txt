@@ -34,16 +34,17 @@
 # entry 0x253, Energy Blast 0x25c. Spiral Cut (0x186) is loaded while the
 # bar runs and plays when the bar's state is back at 0. The summon effects'
 # shots wait for Valefor's effect state (MsEffectStart, actor 8 +0xdfb) to
-# reach 4: the magic file's textures load in a varying number of frames
-# (fewer with the Rust replacements), and the effect starts at the later of
-# that and the summoner's motion. From state 4 the entry takes 281 or 282
-# frames and Energy Blast 258 or 259; the script checks both within that
-# frame (docs/harness.md, "Summon timing"). Which one follows how many
-# frames the magic file's textures took to load (the asset loader's thread
-# works in real time): loads within about 16 frames of the magic ID give
-# 281 (Rust runs beside other games, or with the frames slowed), later
-# loads 282 (original runs, Rust runs alone); the check allowed only 282
-# until 2026-10-26 and failed 5 of 6 Rust runs beside two other games.
+# reach 4: the effect starts at the later of the magic file's texture load
+# and the summoner's motion. From state 4 the entry takes exactly 281
+# frames and Energy Blast 259, original and Rust alike; the script checks
+# both to the frame (docs/harness.md, "Summon timing" and "Load pacing").
+# Until 2026-10-26 (load-pacing) the textures loaded in a number of frames
+# that followed the main thread's real update time (original 21-43 frames,
+# Rust 9-18 with frames slowed), the entry took 281 or 282 frames and
+# Energy Blast 258 or 259. In lockstep the harness now gives the asset
+# loader the render lock at each frame boundary until it is done, so the
+# load ends 2 frames after the magic ID, state 4 comes at ID + 37 (the
+# summoner's motion) and Energy Blast's at ID + 36, in every run.
 #
 # Ranges, from Tidus's first menu on (whether it opens on the frame the
 # phase byte turns 1 or the next varies between runs of the original): the
@@ -95,11 +96,11 @@ wait 150
 shot $OUT\battle-overdrive-3.bmp
 wait 100
 shot $OUT\battle-overdrive-4.bmp
-# timing: the entry ends (magic ID -1) 281 or 282 frames after state 4
-# (which follows the load; original and Rust alike)
+# timing: the entry ends (magic ID -1) 281 frames after state 4, not one
+# frame sooner or later (original and Rust alike)
 wait 30
 waitfor 0x00c64ca0:4 53020000 ffffffff 0
-waitfor 0x00c64ca0:4 ffffffff ffffffff 2
+waitfor 0x00c64ca0:4 ffffffff ffffffff 1
 # Valefor: Overdrive (left), Energy Blast, all enemies
 waitfor 0x023cc08c:4 00010000 ffffffff 3000
 wait 30
@@ -114,10 +115,10 @@ wait 150
 shot $OUT\battle-overdrive-6.bmp
 wait 70
 shot $OUT\battle-overdrive-7.bmp
-# timing: Energy Blast ends 258 or 259 frames after its state 4
-wait 37
+# timing: Energy Blast ends 259 frames after its state 4, to the frame
+wait 38
 waitfor 0x00c64ca0:4 5c020000 ffffffff 0
-waitfor 0x00c64ca0:4 ffffffff ffffffff 2
+waitfor 0x00c64ca0:4 ffffffff ffffffff 1
 # Valefor again: Dismiss (right, down twice), on itself
 waitfor 0x023cc08c:4 00010000 ffffffff 3000
 wait 30
