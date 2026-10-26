@@ -40,6 +40,7 @@ use ffx_prender::h3_glue14::{self as h14, bridge as gh14};
 use ffx_prender::h3_glue15::{self as h15, bridge as gh15};
 use ffx_prender::h3_glue16::{self as h16, bridge as gh16};
 use ffx_prender::h3_glue17::{self as h17, bridge as gh17};
+use ffx_prender::h3_glue18::{self as h18, bridge as gh18};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -5810,5 +5811,55 @@ fn batch17b_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 40 } else { 240 };
         run_cases(t, CASES17B, n, &mut Rng(0x1717_b217));
+    });
+}
+
+// ---- round 5 batch 18 (ffx_prender::h3_glue18) ----
+
+/// The post-process manager's targets and the renderer's calls failing
+/// now and then.
+fn prep_pre_render(t: &mut Twins, _: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1100);
+    *this = scene;
+    let post = t.zeros(0x1_2400);
+    t.w32(scene + 0x10cc, post);
+    t.w32(scene + 0xd0, rng.next());
+    for (target, _) in h18::PRE_RENDER_TARGETS {
+        let v = rng.next();
+        t.w32(post + target, v);
+    }
+    for sym in [h18::SET_COLOR_TARGET, h18::BEGIN_SCENE, h18::END_SCENE] {
+        let n = if sym == h18::SET_COLOR_TARGET { 2 } else { 1 };
+        let r = if rng.chance(5) { rng.next() | 1 } else { 0 };
+        t.stub_ret(sym, true, n, n, r);
+    }
+}
+
+/// The textures (made or not), their sizing failing now and then, the
+/// targets (made or not).
+fn prep_shadow_buffers(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    t.global(h18::SHADOW_SIZE.sym, 512 << rng.below(4));
+    let texture = if rng.chance(8) { 0 } else { obj + 0x400 };
+    t.stub_ret(h18::CLUSTER_CREATE, true, 3, 3, texture);
+    let error = if rng.chance(6) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h18::SET_DIMENSIONS, true, 4, 4, error);
+    let target = if rng.chance(8) { 0 } else { obj + 0x500 };
+    t.stub_ret(h18::MAKE_TARGET, true, 1, 1, target);
+    args[0] = rng.next();
+    args[1] = rng.next();
+}
+
+#[rustfmt::skip]
+const CASES18: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_pre_render), ..method("scene_pre_render", 0x0065_1be0, This::Object, 0, &[(h18::SURFACE_CTOR, K::This(2)), (h18::SURFACE_DTOR, K::This(0)), (h18::SHADOW_INSTANCE, K::Getter), (h18::SHADOW_PRE_RENDER, K::This(1))], |m, this, _| u(gh18::scene_pre_render(m, frame_ebp(), this))) }), 0x4c, 0),
+    Case { prep: Some(prep_shadow_buffers), ..method("shadow_create_buffers", 0x006d_18b0, This::Object, 2, &[(h18::UPDATE_MAX_LEVEL, K::This(0))], |m, this, _| u(gh18::shadow_create_buffers(m, this))) },
+];
+
+#[test]
+fn batch18_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES18, n, &mut Rng(0x1818_b018));
     });
 }

@@ -23,6 +23,7 @@ use ffx_prender::h3_glue14::bridge as g14;
 use ffx_prender::h3_glue15::bridge as g15;
 use ffx_prender::h3_glue16::bridge as g16;
 use ffx_prender::h3_glue17::bridge as g17;
+use ffx_prender::h3_glue18::bridge as g18;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1485,6 +1486,19 @@ ported! {
     PhyreScene_loadMagicVFXTexture @ 0x0066_4d80 => extern "thiscall" fn scene_load_magic_vfx_texture(this: u32, id: u32) -> u32 {
         let mut f = StackFrame::<0x82>::new();
         g17::scene_load_magic_vfx_texture(&mut mem(), f.at() + 0x208, this, id)
+    }
+
+    // ---- round 5 batch 18 (ffx_prender::h3_glue18) ----
+    /// `PhyreScene_preRender(this)`.
+    PhyreScene_preRender @ 0x0065_1be0 => extern "thiscall" fn scene_pre_render(this: u32) -> u32 {
+        let mut f = StackFrame::<0x13>::new();
+        g18::scene_pre_render(&mut mem(), f.at() + 0x4c, this)
+    }
+    /// `ShadowManager_createshadowbuffer(this, a, b)`: the two words are
+    /// unused.
+    ShadowManager_createshadowbuffer @ 0x006d_18b0 => extern "thiscall" fn shadow_create_buffers(this: u32, a: u32, b: u32) -> u32 {
+        let _ = (a, b);
+        g18::shadow_create_buffers(&mut mem(), this)
     }
 }
 
