@@ -9,6 +9,9 @@ lockstep on
 # what the frames before lockstep leave behind: docs/harness.md,
 # "Pinned state"
 pin
+# FFX_AUDIO_WAV (run-all.sh --audio): the capture is compared from the
+# `audiomark start` to the `audiomark end` (docs/harness.md, "Audio capture")
+audiomark start
 # the field takes input only after its fade-in; 30 frames was too few
 # under parallel load (the menu stayed shut)
 wait 120
@@ -36,3 +39,4 @@ press cross 4 30
 press triangle 4 30
 wait 60
 shot $OUT\menu-browse-5.bmp
+audiomark end

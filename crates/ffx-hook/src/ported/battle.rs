@@ -4431,9 +4431,9 @@ ported! {
     MsSEPbattleClear @ 0x007a_0370 => extern "C" fn ms_sep_battle_clear() {
         bend::ms_sep_battle_clear(&mut mem(), &mut call_ptr);
     }
-    /// `MsMusicReadStart()`: `SndMusicRead`'s result.
-    MsMusicReadStart @ 0x0079_fff0 => extern "C" fn ms_music_read_start() -> u32 {
-        bend::ms_music_read_start(&mut mem(), &mut call_ptr)
+    /// `MsMusicReadStart(music)`: `SndMusicRead(music)`'s result.
+    MsMusicReadStart @ 0x0079_fff0 => extern "C" fn ms_music_read_start(music: u32) -> u32 {
+        bend::ms_music_read_start(&mut mem(), &mut call_ptr, music)
     }
     /// `MsMusicSync(music)`.
     MsMusicSync @ 0x007a_0040 => extern "C" fn ms_music_sync(music: u32) -> i32 {

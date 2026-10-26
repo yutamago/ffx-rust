@@ -87,6 +87,12 @@ fi
 if [[ -n "${FFX_FMOD_LOG:-}" ]]; then
     export WSLENV="${WSLENV:+$WSLENV:}FFX_FMOD_LOG/p"
 fi
+# FMOD's mixed output to a WAV file (crates/ffx-hook/src/audio_wav.rs,
+# docs/harness.md "Audio capture"): FFX_AUDIO_WAV names it (a WSL path, best
+# on /mnt/c); <file>.marks beside it says where the harness's audiomarks are.
+if [[ -n "${FFX_AUDIO_WAV:-}" ]]; then
+    export WSLENV="${WSLENV:+$WSLENV:}FFX_AUDIO_WAV/p"
+fi
 case "$lang" in jp|en|fr|de|it|es|kr|ch) ;; *) echo "unknown language $lang" >&2; exit 2 ;; esac
 if [[ -n "$instance" ]]; then
     game="$("$repo/tools/instance.sh" "$instance" ${mods[@]+"${mods[@]}"})"

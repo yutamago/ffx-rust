@@ -36,6 +36,13 @@ use ffx_prender::h3_glue27::bridge as g27;
 use ffx_prender::h3_glue28::bridge as g28;
 use ffx_prender::h3_glue29::bridge as g29;
 use ffx_prender::h3_glue30::bridge as g30;
+use ffx_prender::h3_glue31::bridge as g31;
+use ffx_prender::h3_glue32::bridge as g32;
+use ffx_prender::h3_glue33::bridge as g33;
+use ffx_prender::h3_glue34::bridge as g34;
+use ffx_prender::h3_glue35::bridge as g35;
+use ffx_prender::h3_glue36::bridge as g36;
+use ffx_prender::h3_glue37::bridge as g37;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1755,6 +1762,96 @@ ported! {
     PhyreScene_instantiateMesh_0066f7d0 @ 0x0066_f7d0 => extern "thiscall" fn scene_instantiate_mesh(this: u32, model: u32, _key: u32, shared: u32; slots: u32) -> u32 {
         let mut f = StackFrame::<0xf>::new();
         g30::scene_instantiate_mesh(&mut mem(), f.at() + 0x3c, slots, this, model, shared)
+    }
+
+    // ---- round 8 batch 31 (ffx_prender::h3_glue31) ----
+    /// `0x006ce130(this, renderer)`: the shadow targets cleared; the first
+    /// error.
+    ShadowManager_clearTargets_006ce130 @ 0x006c_e130 => extern "thiscall" fn shadow_clear_targets(this: u32, renderer: u32) -> u32 {
+        let mut f = StackFrame::<0x17>::new();
+        g31::shadow_clear_targets(&mut mem(), f.at() + 0x5c, this, renderer)
+    }
+    /// `0x006599c0(this, mesh, cluster)`: a mesh instance from the scene's
+    /// pool or from `cluster`.
+    PhyreScene_newMeshInstance_006599c0 @ 0x0065_99c0 => extern "thiscall" fn scene_new_mesh_instance_pooled(this: u32, mesh: u32, cluster: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x14>::new();
+        g31::scene_new_mesh_instance(&mut mem(), f.at() + 0x50, slots, this, mesh, cluster)
+    }
+    /// `0x00653600(this)`: the scene's shadow update; 0.
+    PhyreScene_RenderShadow @ 0x0065_3600 => extern "thiscall" fn scene_update_shadows(this: u32) -> u32 {
+        let mut f = StackFrame::<0x19>::new();
+        g31::scene_update_shadows(&mut mem(), f.at() + 0x64, this)
+    }
+    /// `0x006542b0(this)`: the map objects' shadow-map scale and bias.
+    PhyreScene_setShadowScaleBias_006542b0 @ 0x0065_42b0 => extern "thiscall" fn scene_set_shadow_scale_bias(this: u32) {
+        let mut f = StackFrame::<0x1e>::new();
+        g31::scene_set_shadow_scale_bias(&mut mem(), f.at() + 0x78, this);
+    }
+
+    // ---- round 8 batch 32 (ffx_prender::h3_glue32) ----
+    /// `graphicVFXCreate(a, b, arg)`: a VFX's render data and geometry
+    /// registered under (`a`, `b`); `b`'s slot takes the data.
+    graphicVFXCreate @ 0x0064_4de0 => extern "C" fn vfx_create(a: u32, b: u32, arg: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        g32::vfx_create(&mut mem(), f.at() + 4, slots, a, b, arg)
+    }
+    /// `0x006b9e20(this)`: the debug map list's text; `setEnabled`'s eax.
+    DebugMapList_init_006b9e20 @ 0x006b_9e20 => extern "thiscall" fn debug_map_list_init(this: u32) -> u32 {
+        let mut f = StackFrame::<7>::new();
+        g32::map_list_init(&mut mem(), f.at() + 0x1c, this)
+    }
+
+    // ---- round 8 batch 33 (ffx_prender::h3_glue33) ----
+    /// `PhyreScene_onCharacterAssetLoaded(task, request)`: a character
+    /// asset's arrival; the last call's eax.
+    PhyreScene_onCharacterAssetLoaded @ 0x0066_63d0 => extern "C" fn scene_character_asset_loaded(task: u32, request: u32) -> u32 {
+        let mut f = StackFrame::<0x16>::new();
+        g33::character_asset_loaded(&mut mem(), f.at() + 0x58, task, request)
+    }
+    /// `0x006c9270(camera, matrix)`: whether the caster may show (`al`);
+    /// the matrix slot keeps the last float.
+    ShadowCamera_isCasterVisible_006c9270 @ 0x006c_9270 => extern "thiscall" fn shadow_caster_visible(this: u32, m: u32; slots: u32) -> u8 {
+        let mut f = StackFrame::<0x18>::new();
+        g33::caster_visible(&mut mem(), f.at() + 0x60, slots, this, m)
+    }
+
+    // ---- round 8 batch 34 (ffx_prender::h3_glue34) ----
+    /// `PhyreScene_fieldMapLoadAsync(this, path, b)`: the field map's load
+    /// request; 0, or 0x13 without the file.
+    PhyreScene_fieldMapLoadAsync @ 0x0065_ce90 => extern "thiscall" fn scene_field_map_load_async(this: u32, path: u32, b: u32) -> u32 {
+        let mut f = StackFrame::<0x59>::new();
+        g34::field_map_load_async(&mut mem(), f.at() + 0x164, this, path, b)
+    }
+    /// `PhyreScene_readAssetHeader(this, path, b)`: the map's asset
+    /// header into the scene's asset list; 0, or 5 without the file.
+    PhyreScene_readAssetHeader @ 0x0066_7bb0 => extern "thiscall" fn scene_read_asset_header(this: u32, path: u32, b: u32) -> u32 {
+        let mut f = StackFrame::<0x5f>::new();
+        g34::read_asset_header(&mut mem(), f.at() + 0x17c, this, path, b)
+    }
+
+    // ---- round 8 batch 35 (ffx_prender::h3_glue35) ----
+    /// `TextureAnimationManager_registerCharacterInstance(this, name, id)`:
+    /// the instance's slot list; `name`'s slot keeps the last pointer.
+    TextureAnimationManager_registerCharacterInstance @ 0x006b_29c0 => extern "thiscall" fn texture_animation_register_instance(this: u32, name: u32, id: u32; slots: u32) {
+        let mut f = StackFrame::<0xa>::new();
+        g35::register_character_instance(&mut mem(), f.at() + 0x28, slots, this, name, id);
+    }
+
+    // ---- round 8 batch 36 (ffx_prender::h3_glue36) ----
+    /// `0x00651de0(this)`: the character lighting's object lists from the
+    /// two map worlds; 0.
+    PhyreScene_updateLightingObjects_00651de0 @ 0x0065_1de0 => extern "thiscall" fn scene_update_lighting_objects(this: u32) -> u32 {
+        let mut f = StackFrame::<0xa>::new();
+        g36::lighting_objects(&mut mem(), f.at() + 0x28, this)
+    }
+
+    // ---- round 8 batch 37 (ffx_prender::h3_glue37) ----
+    /// `PostProcessManager_render(this, renderer, a, b)`: the post-process
+    /// frame; the first error. The renderer's slot takes the shader, the
+    /// slots the clear colour.
+    PostProcessManager_render @ 0x0069_4f10 => extern "thiscall" fn post_process_render(this: u32, renderer: u32, a: u32, b: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0xf>::new();
+        g37::post_process_render(&mut mem(), f.at() + 0x3c, slots, this, renderer, a, b)
     }
 }
 
