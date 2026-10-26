@@ -25,8 +25,8 @@ use std::path::PathBuf;
 
 use ffx_bridge::Mem;
 use ffx_glue_other::{
-    effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4, menu as mn,
-    misc as m, movie as mv, r3, sound as s,
+    effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4, h4_d1 as d1,
+    menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -7315,6 +7315,581 @@ fn c4_blur_voice_menu() {
                 Conv::Stdcall,
                 &[from, to],
                 |g| u(c4::vertex_info_move(g, from, to)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 2, batch 1 (ffx_glue_other::h4_d1)
+
+/// Resets the log and sets every listed stub's result to a random word.
+fn fresh_round(t: &mut Twins, rng: &mut Rng, tags: &[u32]) {
+    let log = t.log;
+    t.w32(log, 0);
+    for &tag in tags {
+        let v = rng.next();
+        t.ret(tag, v);
+    }
+}
+
+/// Mostly 0, else a random word: results that let a caller go on.
+fn mostly_zero(rng: &mut Rng) -> u32 {
+    [0, 0, 0, rng.next()][rng.below(4) as usize]
+}
+
+/// The particle fill-buffer jobs, the Iggy manager's render and menu
+/// insert, `GDraw`'s render-thread setup.
+#[test]
+fn d1_jobs_iggy() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d101);
+        let mut stubs: Vec<(u32, bool, u32, u32)> =
+            d1::FILL_PART.iter().map(|&f| (f, false, 1, 0)).collect();
+        stubs.extend([
+            (d1::QUEUE_JOB, true, 5, 5),
+            (d1::SET_COLOR_TARGET, true, 2, 2),
+            (d1::SET_DEPTH_TARGET, true, 1, 1),
+            (d1::BEGIN_SCENE, true, 1, 1),
+            (d1::END_SCENE, true, 1, 1),
+            (d1::MENU_DRAW, true, 0, 0),
+            (d1::END_DRAW, true, 0, 0),
+            (d1::MENU_SET_MANAGER, true, 1, 1),
+            (d1::MENU_SET_VIEWPORT, true, 4, 4),
+            (d1::PHYRE_MALLOC, false, 2, 0),
+            (d1::MENU_ARRAY_APPEND, true, 2, 2),
+            (d1::SYNC_RENDER, true, 0, 0),
+        ]);
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let mp3 = t.stub_code(0x0bad_c864, false, 0, 0);
+        let sound = t.stub_code(0x0bad_c860, false, 0, 0);
+        let flush = t.stub_code(0x0bad_0008, true, 0, 0);
+        t.g32(d1::IGGY_INSTALL_MP3.sym, mp3);
+        t.g32(d1::IGGY_USE_DIRECT_SOUND.sym, sound);
+        let result_cell = t.zeros(4);
+        // the queued callback writes the record's result word, or (a
+        // second stub) leaves the 0 the setup put there
+        let writer = t.stub_at(
+            d1::QUEUE_CALLBACK,
+            true,
+            2,
+            2,
+            &[Write {
+                arg: Some(1),
+                offset: 8,
+                cell: result_cell,
+            }],
+        );
+        let plain = t.stub_code(0x0bad_5880, true, 2, 2);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([0x0bad_c864, 0x0bad_c860, 0x0bad_0008, d1::QUEUE_CALLBACK]);
+        tags.push(0x0bad_5880);
+        // six part arrays of 64 parts, kinds 0..6 and some outside
+        let mut buffers = [0u32; 6];
+        for b in &mut buffers {
+            *b = t.zeros(64 * d1::PART_SIZE as usize);
+        }
+        for (k, &b) in buffers.iter().enumerate() {
+            t.g32(d1::FILL_BUFFERS + 4 * k as u32, b);
+        }
+        let renderer_vtable = t.zeros(0xc);
+        t.w32(renderer_vtable + 8, flush);
+        for i in 0..150 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            for &b in &buffers {
+                for p in 0..64 {
+                    let kind = [0, 1, 2, 3, 4, 5, 6, 7, 0xff, 0x80][rng.below(10) as usize];
+                    t.w8(b + p * d1::PART_SIZE, kind);
+                }
+            }
+            // fillBuffer
+            let start = t.zeros(4);
+            let end = t.zeros(4);
+            let s = [0, 1, 3, u32::MAX][rng.below(4) as usize];
+            let e = [0, 1, 5, 9, 2][rng.below(5) as usize];
+            t.w32(start, s);
+            t.w32(end, e);
+            let parts = buffers[rng.below(6) as usize] + d1::PART_SIZE;
+            t.check(
+                &format!("{w} fill {s} {e}"),
+                d1::FILL_BUFFER,
+                Conv::Cdecl,
+                &[parts, start, end],
+                |g| u(d1::fill_buffer(g, parts, start, end)),
+            );
+            // the kick
+            // totals at the limits: weights 0 / 499 / 500 / negative,
+            // requests 49 / 50 / negative (an empty fill)
+            let request_total = [0, 3, 49, 50, 0x8000_0000][rng.below(5) as usize];
+            let weight_total = [0, 0, 1, 499, 500, 0x8000_0000][rng.below(6) as usize];
+            for k in 0..6u32 {
+                let (r, wt) = if k == 5 {
+                    (request_total, weight_total)
+                } else {
+                    (0, 0)
+                };
+                let (r, wt) = if k == 4 && request_total == 50 {
+                    (20, wt)
+                } else if k == 5 && request_total == 50 {
+                    (30, wt)
+                } else {
+                    (r, wt)
+                };
+                t.g32(d1::FILL_REQUESTS + 4 * k, r);
+                t.g32(d1::FILL_WEIGHTS + 4 * k, wt);
+            }
+            let sched = rng.next();
+            t.g32(d1::JOB_SCHEDULER.sym, sched);
+            let inline = [0, 1, rng.next()][rng.below(3) as usize];
+            let ebp = t.ebp_for(1);
+            // the start word is the original's push-ecx slot: the
+            // caller's ecx on the job path, 0 before the inline fills (a
+            // port that leaves the junk there fills other parts)
+            t.w32(ebp - 4, 0xa5a4_a7a6);
+            t.check_framed(
+                &format!("{w} kick {inline:#x}"),
+                0x0071_edb0,
+                Conv::Cdecl,
+                &[inline],
+                ebp - 4,
+                &[],
+                |g| u(d1::fill_buffer_kick(g, ebp - 4, inline)),
+            );
+            // the Iggy manager's render
+            let this = t.random(&mut rng, 0x40);
+            let on = [0, 1, 0x80, 1][rng.below(4) as usize];
+            t.w8(this + 0x30, on);
+            if rng.below(4) == 0 {
+                t.w32(this + 4, 0);
+            }
+            let n = rng.below(5);
+            let menus = t.zeros(4 * 6);
+            for k in 0..n {
+                if rng.below(4) != 0 {
+                    let menu = t.zeros(0xa0);
+                    t.w32(menu + 0x98, rng.below(4));
+                    t.w32(menus + 4 * k, menu);
+                }
+            }
+            t.w32(this + 8, n | (rng.below(2) << 31));
+            t.w32(this + 0xc, menus);
+            t.check(
+                &format!("{w} render"),
+                0x00a2_67f0,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    let r = d1::iggy_manager_render(g, this);
+                    if on == 0 { Out::None } else { u(r) }
+                },
+            );
+            // the menu insert
+            let menu = [0, rng.next()][rng.below(5).min(1) as usize];
+            let this = t.random(&mut rng, 0x30);
+            let n = rng.below(4);
+            let slots = t.zeros(4 * 5);
+            for k in 0..n {
+                if rng.below(3) != 0 {
+                    let v = rng.next() | 1;
+                    t.w32(slots + 4 * k, v);
+                }
+            }
+            t.w32(this + 8, n | (rng.below(2) << 31));
+            t.w32(this + 0xc, slots);
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} add menu"),
+                0x00a2_65f0,
+                Conv::Thiscall(this),
+                &[menu],
+                ebp + 8,
+                &[(0, 4)],
+                |g| {
+                    let r = d1::iggy_manager_add_menu(g, ebp + 8, this, menu);
+                    if menu == 0 { Out::None } else { u(r) }
+                },
+            );
+            // GDraw's render setup
+            let this = t.random(&mut rng, 8);
+            let renderer = t.zeros(4);
+            t.w32(renderer, renderer_vtable);
+            let audio = t.zeros(4);
+            t.w8(audio, [0, 1, 0x80][rng.below(3) as usize]);
+            for tag in [0x0bad_0008, d1::SYNC_RENDER, d1::QUEUE_CALLBACK] {
+                let v = mostly_zero(&mut rng);
+                t.ret(tag, v);
+            }
+            let v = mostly_zero(&mut rng);
+            t.ret(0x0bad_5880, v);
+            t.jump(d1::QUEUE_CALLBACK, [writer, plain][rng.below(2) as usize]);
+            let v = rng.next();
+            t.w32(result_cell, v);
+            let arg = rng.next();
+            let ebp = t.ebp_for(3);
+            t.check_framed(
+                &format!("{w} gdraw setup"),
+                0x00a3_ba50,
+                Conv::Thiscall(this),
+                &[renderer, audio, arg],
+                ebp - 0xc,
+                &[(0, 0xc)],
+                |g| {
+                    u(d1::gdraw_render_setup(
+                        g,
+                        ebp - 0xc,
+                        this,
+                        renderer,
+                        audio,
+                        arg,
+                    ))
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The sync file read and the data directory.
+#[test]
+fn d1_files() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d102);
+        let stubs: [(u32, bool, u32, u32); 11] = [
+            (d1::DBG_PRINTF, false, 1, 0),
+            (d1::FIOS_EXISTS, false, 1, 0),
+            (d1::FIOS_OPEN, false, 2, 0),
+            (d1::FIOS_SEEK, false, 3, 0),
+            (d1::ALIGNED_MALLOC, false, 2, 0),
+            (d1::FIOS_READ, false, 3, 0),
+            (d1::FIOS_CLOSE, false, 1, 0),
+            (d1::MEMSET, false, 3, 0),
+            (d1::FIOS_UNIFY, false, 3, 0),
+            (d1::STREAM_PREFIX, false, 0, 0),
+            (d1::PHYRE_PRINTF, false, 3, 0),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let sprintf = t.stub_code(0x0bad_c394, false, 4, 0);
+        t.g32(d1::SPRINTF_S.sym, sprintf);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(0x0bad_c394);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // readSyncFile
+            for tag in [d1::FIOS_EXISTS, d1::FIOS_OPEN] {
+                let v = [0, rng.next()][rng.below(4).min(1) as usize];
+                t.ret(tag, v);
+            }
+            let path = [0, rng.next()][rng.below(5).min(1) as usize];
+            t.check(
+                &format!("{w} read sync"),
+                0x006f_acf0,
+                Conv::Stdcall,
+                &[path],
+                |g| u(d1::read_sync_file(g, path)),
+            );
+            // the data directory
+            let names: &[&[u8]] = &[b"\0", b"a\0", b"sound/fmod\0", b"data/x.bin\0"];
+            let nm_text = names[rng.below(4) as usize];
+            let nm = t.alloc(nm_text);
+            let prefixes: &[&[u8]] = &[b"\0", b"C:/game/\0", b"pfx\0"];
+            let prefix_text = prefixes[rng.below(3) as usize];
+            let prefix = t.alloc(prefix_text);
+            t.ret(d1::STREAM_PREFIX, prefix);
+            let out = rng.next();
+            // around the length the warning compares with, and signed
+            let len = (nm_text.len() + prefix_text.len() - 2) as u32;
+            let size = [
+                len.wrapping_sub(1),
+                len,
+                len + 1,
+                0x100,
+                u32::MAX,
+                0x8000_0000,
+            ][rng.below(6) as usize];
+            let ebp = t.ebp_for(3);
+            t.check_framed(
+                &format!("{w} data directory {size:#x}"),
+                0x0067_9a10,
+                Conv::Cdecl,
+                &[nm, out, size],
+                ebp - 0x104,
+                &[(0, 0x100)],
+                |g| u(d1::data_directory(g, ebp - 0x104, nm, out, size)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The menu textures' kind dispatch and the Sa sub-menu preload.
+#[test]
+fn d1_menu_textures() {
+    // (routine, arguments) of both tables
+    const ROUTINES: [(u32, u32); 26] = [
+        (0x0067_f610, 0),
+        (0x0067_f230, 0),
+        (0x0067_f3c0, 0),
+        (0x0067_f9a0, 0),
+        (0x0067_fa20, 0),
+        (0x0067_ecf0, 0),
+        (0x0067_f920, 0),
+        (0x0067_ee70, 0),
+        (0x0067_efa0, 0),
+        (0x0067_f3e0, 0),
+        (0x0067_ebc0, 0),
+        (0x0067_edc0, 1),
+        (0x0067_ee40, 0),
+        (0x0067_d370, 1),
+        (0x0067_ce50, 1),
+        (0x0067_d0b0, 1),
+        (0x0067_d670, 0),
+        (0x0067_d690, 0),
+        (0x0067_c6f0, 0),
+        (0x0067_d650, 0),
+        (0x0067_cb30, 1),
+        (0x0067_cba0, 0),
+        (0x0067_d180, 1),
+        (0x0067_c8c0, 0),
+        (0x0067_c720, 1),
+        (0x0067_c8f0, 0),
+    ];
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d103);
+        let mut tags = Vec::new();
+        for &(sym, n) in &ROUTINES {
+            t.stub(sym, true, n, n);
+            tags.push(sym);
+        }
+        for (sym, this, n, pops) in [
+            (d1::MEMSET, false, 3, 0),
+            (d1::SA_TEXTURE_NAME, false, 2, 0),
+            (d1::LOAD_MENU_TEXTURE, true, 1, 1),
+        ] {
+            t.stub(sym, this, n, pops);
+            tags.push(sym);
+        }
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            let this = rng.next();
+            let kind = rng.below(20).wrapping_sub(2);
+            let [a, b] = [rng.next(), rng.next()];
+            t.check(
+                &format!("{w} unload {kind}"),
+                0x0067_f830,
+                Conv::Thiscall(this),
+                &[kind],
+                |g| u(d1::unload_special_menu_texture(g, this, kind)),
+            );
+            t.check(
+                &format!("{w} load {kind}"),
+                0x0067_d550,
+                Conv::Thiscall(this),
+                &[kind, a, b],
+                |g| u(d1::load_special_menu_texture(g, this, kind, a, b)),
+            );
+            if i % 6 == 0 {
+                let scene = rng.next();
+                t.g32(d1::PHYRE_SCENE.sym, scene);
+                let ebp = t.ebp_for(1);
+                t.check_framed(
+                    &format!("{w} preload"),
+                    0x0067_dd70,
+                    Conv::Stdcall,
+                    &[a],
+                    ebp - 0x134,
+                    &[(0, 0x130)],
+                    |g| u(d1::preload_sa_sub_menu(g, ebp - 0x134)),
+                );
+            }
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The distortion target, the extended blur's parameter, the event's
+/// play test, the Atel shape's VFX.
+#[test]
+fn d1_effects_sound_vfx() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d104);
+        let stubs: [(u32, bool, u32, u32); 17] = [
+            (d1::DISTORTION_RESET, true, 0, 0),
+            (d1::CLUSTER_CREATE, true, 3, 3),
+            (d1::SET_DIMENSIONS, true, 4, 4),
+            (d1::UPDATE_MAX_LEVEL, true, 0, 0),
+            (d1::CREATE_TARGET, true, 1, 1),
+            (d1::FIND_PARAM, true, 1, 1),
+            (d1::SET_TEXTURE, true, 2, 2),
+            (d1::BIND_TEXTURE, true, 1, 1),
+            (d1::MEMCPY, false, 3, 0),
+            (fr::ERRCHECK, false, 3, 0),
+            (d1::EVENT_INFO_INIT, true, 0, 0),
+            (d1::CREATE_ATEL_SHP, false, 4, 0),
+            (d1::VFX_RENDER_DATA, false, 2, 0),
+            (d1::VFX_2D_SETUP, false, 2, 0),
+            (d1::UPDATE_ATEL_SHP, false, 5, 0),
+            (d1::VFX_2D_UPDATE, false, 2, 0),
+            (d1::VFX_DESTROY, false, 2, 0),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let cells: [u32; 5] = std::array::from_fn(|_| t.zeros(4));
+        let [group_cell, n_cell, channel_cell, loops_cell, state_cell] = cells;
+        for (sym, n, arg, offset, cell) in [
+            (d1::EVENT_GET_CHANNEL_GROUP, 2, 1, 0, group_cell),
+            (d1::GROUP_NUM_CHANNELS, 2, 1, 0, n_cell),
+            (d1::GROUP_GET_CHANNEL, 3, 2, 0, channel_cell),
+            (d1::CHANNEL_LOOP_COUNT, 2, 1, 0, loops_cell),
+            (d1::EVENT_GET_INFO, 4, 3, 0x28, state_cell),
+        ] {
+            t.stub_at(
+                sym,
+                false,
+                n,
+                n,
+                &[Write {
+                    arg: Some(arg),
+                    offset,
+                    cell,
+                }],
+            );
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([d1::GROUP_GET_CHANNEL, d1::GROUP_NUM_CHANNELS]);
+        tags.extend([d1::CHANNEL_LOOP_COUNT, d1::EVENT_GET_INFO]);
+        for i in 0..150 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the distortion target
+            let this = t.random(&mut rng, 0x80);
+            let owner = t.random(&mut rng, 8);
+            t.w32(this + 0x30, owner);
+            if rng.below(3) == 0 {
+                t.w32(this + 0x2c, 0);
+            }
+            let tex = t.random(&mut rng, 0x20);
+            let tex = [0, tex][rng.below(5).min(1) as usize];
+            t.ret(d1::CLUSTER_CREATE, tex);
+            let r = mostly_zero(&mut rng);
+            t.ret(d1::SET_DIMENSIONS, r);
+            let target = t.random(&mut rng, 0x10);
+            let target = [0, target][rng.below(5).min(1) as usize];
+            t.ret(d1::CREATE_TARGET, target);
+            let r = [0, rng.next()][rng.below(3).min(1) as usize];
+            t.ret(d1::FIND_PARAM, r);
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} distortion target"),
+                0x006c_2350,
+                Conv::Thiscall(this),
+                &[],
+                ebp - 0x10,
+                &[(0, 0x10)],
+                |g| u(d1::distortion_create_target(g, ebp - 0x10, this)),
+            );
+            // the blur parameter
+            let this = t.random(&mut rng, 0x58);
+            if rng.below(6) == 0 {
+                t.w32(this + 0x54, 0);
+            } else {
+                let record = t.random(&mut rng, 0xc);
+                let kind = [0x42, 0xd9, 0xda, 0xdb, 0xdc, 0x12, 0x43, 0xd8, 0xdd, 0]
+                    [rng.below(10) as usize];
+                t.w8(record + 2, kind);
+                let off = [0, 3, 4, 8, 0x20][rng.below(5) as usize];
+                t.write(record + 8, &(off as u16).to_le_bytes());
+                let len = [4, 0x10, 0x20][rng.below(3) as usize] | (rng.below(8) << 13);
+                t.write(record + 0xa, &(len as u16).to_le_bytes());
+                t.w32(this + 0x54, record);
+            }
+            let holder = t.zeros(8);
+            let block = t.random(&mut rng, 0x40);
+            t.w32(block, [0x10, 0x14, 0x24, 0x40][rng.below(4) as usize]);
+            t.w32(holder + 4, block);
+            t.w32(this + 0x20, holder);
+            let r = [0, rng.next() | 1][rng.below(2) as usize];
+            t.ret(d1::BIND_TEXTURE, r);
+            let sampler = [0, rng.next()][rng.below(4).min(1) as usize];
+            let texture = [0, rng.next()][rng.below(4).min(1) as usize];
+            let ebp = t.ebp_for(2);
+            t.check_framed(
+                &format!("{w} blur param"),
+                0x006c_44e0,
+                Conv::Thiscall(this),
+                &[sampler, texture],
+                ebp - 0x10,
+                &[(0, 0x10)],
+                |g| {
+                    u(d1::blur_set_texture_param(
+                        g,
+                        ebp - 0x10,
+                        this,
+                        sampler,
+                        texture,
+                    ))
+                },
+            );
+            // SfxEvent_isPlaying
+            let this = t.random(&mut rng, 0xc);
+            t.w32(this, [0, 1, 2, u32::MAX, 1, 1][rng.below(6) as usize]);
+            let event = t.random(&mut rng, 8);
+            t.w8(event + 4, [0, 1][rng.below(6).min(1) as usize]);
+            t.w32(this + 8, event);
+            let r = mostly_zero(&mut rng);
+            t.ret(d1::EVENT_GET_CHANNEL_GROUP, r);
+            for (cell, v) in [
+                (group_cell, rng.next()),
+                (
+                    n_cell,
+                    [0, 1, 3, u32::MAX, 2, 0x8000_0001][rng.below(6) as usize],
+                ),
+                (channel_cell, rng.next()),
+                (
+                    loops_cell,
+                    [u32::MAX, 0, 2, u32::MAX][rng.below(4) as usize],
+                ),
+                (state_cell, [0, 1, 2][rng.below(3) as usize]),
+            ] {
+                t.w32(cell, v);
+            }
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} is playing"),
+                0x0070_ec40,
+                Conv::Thiscall(this),
+                &[],
+                ebp - 0x44,
+                &[(0, 0x44)],
+                |g| Out::U8(d1::sfx_event_is_playing(g, ebp - 0x44, this)),
+            );
+            // the Atel shape's VFX
+            let args: [u32; 5] = std::array::from_fn(|k| match k {
+                0 => [rng.next(), 0xffff_ff00, 5][rng.below(3) as usize],
+                _ => rng.next(),
+            });
+            let r = [0, 1, rng.next()][rng.below(3) as usize];
+            t.ret(d1::CREATE_ATEL_SHP, r);
+            let data = t.zeros(0x98);
+            let inner = t.random(&mut rng, 0x28);
+            t.w32(data + 0x94, inner);
+            let data = [0, data, data][rng.below(3) as usize];
+            t.ret(d1::VFX_RENDER_DATA, data);
+            let r = [0, 1, 1, 3][rng.below(4) as usize];
+            t.ret(d1::VFX_2D_SETUP, r);
+            t.check(
+                &format!("{w} atel shp"),
+                0x0071_11e0,
+                Conv::Cdecl,
+                &args,
+                |g| u(d1::init_vfx_render_data_atel_shp(g, args)),
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");

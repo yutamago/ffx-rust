@@ -23,7 +23,11 @@
 //! - [`h4_c3`]: its third batch: `FmodVoice` and `FmodMusic` teardown, the
 //!   sync manager's change, the event groups, Iggy callbacks, `rfind`;
 //! - [`h4_c4`]: its fourth batch: the extended blur's render, the voice's
-//!   event check, a six-value Flash call, menu texture and vertex helpers.
+//!   event check, a six-value Flash call, menu texture and vertex helpers;
+//! - [`h4_d1`]: continuation round 2: the particle fill-buffer jobs, the
+//!   Iggy manager's render and menu insert, `GDraw`'s render-thread setup,
+//!   files, the menu textures' kind dispatch, the distortion target,
+//!   `SfxEvent_isPlaying`, the Atel shape's VFX.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -47,6 +51,7 @@ pub mod h4_c1;
 pub mod h4_c2;
 pub mod h4_c3;
 pub mod h4_c4;
+pub mod h4_d1;
 pub mod menu;
 pub mod misc;
 pub mod movie;

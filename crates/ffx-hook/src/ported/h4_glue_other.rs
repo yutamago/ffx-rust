@@ -12,7 +12,7 @@
 
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
-    menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_d1 as d1, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1434,5 +1434,72 @@ ported! {
     /// `MenuVertexInfo_move_0067dc70(from, to)`.
     MenuVertexInfo_move_0067dc70 @ 0x0067_dc70 => extern "stdcall" fn vertex_info_move(from: u32, to: u32) -> u32 {
         c4::vertex_info_move(&mut mem(), from, to)
+    }
+    // ---- continuation round 2, batch 1 (ffx_glue_other::h4_d1)
+    /// `JobSchedule_pppPart_fillBuffer(parts, &start, &end)`: job-worker
+    /// threads too.
+    JobSchedule_pppPart_fillBuffer @ 0x0071_ed10 => extern "C" fn fill_buffer(parts: u32, start: u32, end: u32) -> u32 {
+        d1::fill_buffer(&mut mem(), parts, start, end)
+    }
+    /// `JobSchedule_pppPart_fillBuffer_Kick(inline)`.
+    JobSchedule_pppPart_fillBuffer_Kick @ 0x0071_edb0 => extern "C" fn fill_buffer_kick(inline: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d1::KICK_FRAME / 4) as usize }>::new();
+        d1::fill_buffer_kick(&mut mem(), frame.at(), inline)
+    }
+    /// `IggyMenuManager_Render_00a267f0(this)`.
+    IggyMenuManager_Render_00a267f0 @ 0x00a2_67f0 => extern "thiscall" fn iggy_manager_render(this: u32) -> u32 {
+        d1::iggy_manager_render(&mut mem(), this)
+    }
+    /// `IggyMenuManager_addMenu_00a265f0(this; menu)`: its argument slot
+    /// is a `StackFrame` word.
+    IggyMenuManager_addMenu_00a265f0 @ 0x00a2_65f0 => extern "thiscall" fn iggy_manager_add_menu(this: u32, menu: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        d1::iggy_manager_add_menu(&mut mem(), frame.at(), this, menu)
+    }
+    /// `IggyGDraw_renderSetup_00a3ba50(this; renderer, &audio, arg)`.
+    IggyGDraw_renderSetup_00a3ba50 @ 0x00a3_ba50 => extern "thiscall" fn gdraw_render_setup(this: u32, renderer: u32, audio: u32, arg: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d1::GDRAW_SETUP_FRAME / 4) as usize }>::new();
+        d1::gdraw_render_setup(&mut mem(), frame.at(), this, renderer, audio, arg)
+    }
+    /// `SyncManager_readSyncFile(path)`.
+    SyncManager_readSyncFile @ 0x006f_acf0 => extern "stdcall" fn read_sync_file(path: u32) -> u32 {
+        d1::read_sync_file(&mut mem(), path)
+    }
+    /// `FmodFile_getDataDirectory_00679a10(name, out, size)`.
+    FmodFile_getDataDirectory_00679a10 @ 0x0067_9a10 => extern "C" fn data_directory(name: u32, out: u32, size: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d1::DATA_DIRECTORY_FRAME / 4) as usize }>::new();
+        d1::data_directory(&mut mem(), frame.at(), name, out, size)
+    }
+    /// `MenuTextureManager_UnloadSpecialMenuTexture(this; kind)`.
+    MenuTextureManager_UnloadSpecialMenuTexture @ 0x0067_f830 => extern "thiscall" fn unload_special_menu_texture(this: u32, kind: u32) -> u32 {
+        d1::unload_special_menu_texture(&mut mem(), this, kind)
+    }
+    /// `MenuTextureManager_LoadSpecialMenuTexture(this; kind, a, b)`.
+    MenuTextureManager_LoadSpecialMenuTexture @ 0x0067_d550 => extern "thiscall" fn load_special_menu_texture(this: u32, kind: u32, a: u32, b: u32) -> u32 {
+        d1::load_special_menu_texture(&mut mem(), this, kind, a, b)
+    }
+    /// `MenuTextureManager_PreLoadSaSubMenu(unused)`.
+    MenuTextureManager_PreLoadSaSubMenu @ 0x0067_dd70 => extern "stdcall" fn preload_sa_sub_menu(_unused: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d1::PRELOAD_FRAME / 4) as usize }>::new();
+        d1::preload_sa_sub_menu(&mut mem(), frame.at())
+    }
+    /// `Distortion_createRenderTarget(this)`.
+    Distortion_createRenderTarget @ 0x006c_2350 => extern "thiscall" fn distortion_create_target(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d1::DISTORTION_CREATE_FRAME / 4) as usize }>::new();
+        d1::distortion_create_target(&mut mem(), frame.at(), this)
+    }
+    /// `BlurEffectEx_setTextureParam_006c44e0(this; sampler, texture)`.
+    BlurEffectEx_setTextureParam_006c44e0 @ 0x006c_44e0 => extern "thiscall" fn blur_set_texture_param(this: u32, sampler: u32, texture: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d1::BLUR_PARAM_FRAME / 4) as usize }>::new();
+        d1::blur_set_texture_param(&mut mem(), frame.at(), this, sampler, texture)
+    }
+    /// `SfxEvent_isPlaying(this)` -> `al`.
+    SfxEvent_isPlaying @ 0x0070_ec40 => extern "thiscall" fn sfx_event_is_playing(this: u32) -> u8 {
+        let mut frame = StackFrame::<{ (d1::IS_PLAYING_FRAME / 4) as usize }>::new();
+        d1::sfx_event_is_playing(&mut mem(), frame.at(), this)
+    }
+    /// `InitVFXRenderDataAtelShp(lo, hi, c, d, e)`.
+    InitVFXRenderDataAtelShp @ 0x0071_11e0 => extern "C" fn init_vfx_render_data_atel_shp(lo: u32, hi: u32, c: u32, d: u32, e: u32) -> u32 {
+        d1::init_vfx_render_data_atel_shp(&mut mem(), [lo, hi, c, d, e])
     }
 }
