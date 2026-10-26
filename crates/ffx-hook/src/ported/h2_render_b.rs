@@ -28,6 +28,7 @@ use ffx_prender::h2_more3::bridge as h3;
 use ffx_prender::h2_more4::bridge as h4;
 use ffx_prender::h2_more5::bridge as h5;
 use ffx_prender::h2_more6::bridge as h6;
+use ffx_prender::h2_more7::bridge as h7;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -1765,6 +1766,40 @@ ported! {
     PTexture2DD3D11_createViews_0058f710 @ 0x0058_f710 => extern "thiscall" fn s_0058f710(a0: u32) -> u32 {
         let mut fr = super::StackFrame::<9>::new();
         h6::create_views(&mut mem(), a0, fr.at())
+    }
+    /// `Phyre_PRendering_PMeshInstance_dtor_PMeshInstance`.
+    Phyre_PRendering_PMeshInstance_dtor_PMeshInstance @ 0x004f_2c50 => extern "thiscall" fn s_004f2c50(a0: u32) {
+        h7::mesh_instance_dtor(&mut mem(), a0);
+    }
+    /// `PVertexBufferD3D11_release_005646d0`.
+    PVertexBufferD3D11_release_005646d0 @ 0x0056_46d0 => extern "thiscall" fn s_005646d0(a0: u32) -> u32 {
+        let mut fr = super::StackFrame::<1>::new();
+        h7::release_streams(&mut mem(), a0, fr.at(), (0x0056_4630, 0x18, 0x34, 0x00b2_ece8))
+    }
+    /// `PIndexBufferD3D11_release_005648c0`.
+    PIndexBufferD3D11_release_005648c0 @ 0x0056_48c0 => extern "thiscall" fn s_005648c0(a0: u32) -> u32 {
+        let mut fr = super::StackFrame::<1>::new();
+        h7::release_streams(&mut mem(), a0, fr.at(), (0x0056_4680, 0x14, 0x30, 0x00b2_ebd0))
+    }
+    /// `PIndexBufferD3D11_unmapCopy_00564cb0`.
+    PIndexBufferD3D11_unmapCopy_00564cb0 @ 0x0056_4cb0 => extern "thiscall" fn s_00564cb0(a0: u32, a1: u32, _a2: u32) -> u32 {
+        let mut fr = super::StackFrame::<9>::new();
+        h7::unmap_copy(&mut mem(), a0, a1, fr.at())
+    }
+    /// `PRendererD3D11_bindVertexStreams_0059b140`.
+    PRendererD3D11_bindVertexStreams_0059b140 @ 0x0059_b140 => extern "thiscall" fn s_0059b140(a0: u32, a1: u32, a2: u32) -> u8 {
+        let mut fr = super::StackFrame::<100>::new();
+        h7::bind_vertex_streams(&mut mem(), a0, a1, a2, fr.at())
+    }
+    /// `PRendererD3D11_clearByDraw_0058e200`.
+    PRendererD3D11_clearByDraw_0058e200 @ 0x0058_e200 => extern "thiscall" fn s_0058e200(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) -> u32 {
+        let mut fr = super::StackFrame::<12>::new();
+        h7::clear_by_draw(&mut mem(), a0, a1, a2, a3, a4, a5, a6, fr.at())
+    }
+    /// `PRendererD3D11_clear_0058e3d0`.
+    PRendererD3D11_clear_0058e3d0 @ 0x0058_e3d0 => extern "thiscall" fn s_0058e3d0(a0: u32, a1: u32) -> u8 {
+        let mut fr = super::StackFrame::<4>::new();
+        h7::clear(&mut mem(), a0, a1, fr.at())
     }
 }
 
