@@ -4256,3 +4256,175 @@ fn p1c_load_asset_file_matches_the_original() {
         }
     }
 }
+
+// ---- continuation round, batch 13 (ffx_pload::p1_reader) ----
+
+use ffx_pload::p1_reader::bridge as prd;
+
+/// A cluster reader with `classes` mapping entries (each: a descriptor
+/// with its flags, size, over-allocation and alignment, or none; the
+/// packed class's flags) and `headers` instance-list headers.
+fn p1c_reader(
+    t: &mut Twins,
+    classes: &[(bool, u8, u32, u32, u32, u8)],
+    headers: &[[u32; 6]],
+    map_flags: u32,
+    made: u32,
+) -> u32 {
+    let reader = t.junk(0x40, 1);
+    t.w32(reader, 0x00c1_c000);
+    let map = t.junk(0x20, 2);
+    t.w32(reader + 4, map);
+    t.w32(map + 0xc, classes.len() as u32 | 0x8000_0000);
+    t.w32(map + 0x1c, map_flags);
+    let table = t.zeros(32 * classes.len().max(1));
+    t.w32(map + 0x10, table);
+    for (i, &(has, flags, size, per, align, pflags)) in classes.iter().enumerate() {
+        let e = table + 32 * i as u32;
+        let packed = t.zeros(0x20);
+        t.w32(packed + 4, (i as u32 % 4) << 28);
+        t.write(packed + 0x1c, &[pflags]);
+        t.w32(e + 4, packed);
+        t.w32(e + 0x1c, i as u32 % 2);
+        if has {
+            let d = t.junk(0xa0, i as u8);
+            t.write(d + 0x90, &[flags]);
+            t.w32(d + 0x1c, size);
+            t.w32(d + 0x74, per);
+            t.w32(d + 0x78, align);
+            t.w32(e + 8, d);
+        }
+    }
+    let header = t.zeros(0x20);
+    t.w32(header + 0x10, headers.len() as u32);
+    t.w32(reader + 8, header);
+    let hdrs = t.zeros(0x24 * headers.len().max(1));
+    for (i, h) in headers.iter().enumerate() {
+        for (k, &w) in h.iter().enumerate() {
+            t.w32(hdrs + 0x24 * i as u32 + 4 * k as u32, w);
+        }
+    }
+    t.w32(reader + 0x14, hdrs);
+    let slots = t.junk(4 * headers.len().max(2), 3);
+    t.w32(reader + 0x18, made);
+    t.w32(
+        reader + 0x1c,
+        if made & 0x7fff_ffff > 1 {
+            slots
+        } else {
+            0x5151
+        },
+    );
+    let out = t.junk(4 * headers.len().max(1), 4);
+    t.w32(reader + 0x24, out);
+    t.write(reader + 0xc, &[0]);
+    reader
+}
+
+const P1C_CLASSES: [(bool, u8, u32, u32, u32, u8); 5] = [
+    (true, 0, 0x10, 0, 0, 0),
+    (true, 4, 0x10, 0, 0, 0),
+    (false, 0, 0, 0, 0, 0),
+    (true, 0, 0x20, 8, 0x10, 0),
+    (false, 0, 0, 0, 0, 4),
+];
+
+#[test]
+fn p1c_init_instance_lists_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let hdrs = [
+            [1u32, 3, 8, 0x40, 4, 2],
+            [2, 2, 16, 0x30, 0, 1],
+            [3, 0, 0x20, 0, 0, 0],
+            [4, 5, 4, 0xa0, 6, 3],
+        ];
+        // (headers, mapping flags, list made, list result)
+        for (k, (n, map_flags, made, list)) in [
+            (4usize, 0u32, 4u32, 1u32),
+            (4, 1, 4, 1),
+            (4, 4, 4, 1),
+            (4, 0x8000_0000, 0x8000_0004, 1),
+            (1, 0, 1, 1),
+            (2, 0, 2, 0),
+            (0, 0, 0, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for bad in [false, true] {
+                let mut h: Vec<[u32; 6]> = hdrs[..n].to_vec();
+                if bad {
+                    h.push([5, 1, 4, 4, 0, 0]);
+                }
+                let made = if bad { made + 1 } else { made };
+                let result = if list == 0 { 0 } else { t.junk(0x50, 5) };
+                t.stub(0x0044_0cf0, true, 2, 2, 0x00c6_0000);
+                t.stub(0x0044_0ba0, true, 4, 4, result);
+                t.stub(0x0044_0b70, true, 3, 3, result);
+                let reader = p1c_reader(&mut t, &P1C_CLASSES, &h, map_flags, made);
+                let what = format!("{label}: init instance lists {k} {bad}");
+                t.check(&what, 0x0057_b3a0, Conv::Thiscall(reader), &[], |g| {
+                    Out::U32(prd::init_instance_lists(g, reader))
+                });
+                t.reset();
+            }
+        }
+    }
+}
+
+#[test]
+fn p1c_read_list_headers_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let hdrs = [
+            [1u32, 3, 8, 0x40, 4, 2],
+            [4, 5, 0x40, 0xa0, 6, 3],
+            [2, 2, 16, 0x30, 0, 1],
+            [4, 1, 2, 0xa0, 6, 3],
+        ];
+        for (k, (n, err, swap, bad)) in [
+            (4usize, 0u32, false, false),
+            (4, 9, false, false),
+            (4, 0, true, false),
+            (0, 0, true, false),
+            (2, 0, false, true),
+            (3, 0, false, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut h: Vec<[u32; 6]> = hdrs[..n].to_vec();
+            if bad {
+                // one past the mapping's count, or far past it
+                h.push([if n == 3 { 6 } else { 9 }, 1, 4, 4, 0, 0]);
+            }
+            t.stub(0x0057_dd30, true, 2, 2, err);
+            // the swapper: an object whose slot 0 records (p, 0)
+            let swapper = t.rebase(0x00c9_7338);
+            let obj = t.object(&[2]);
+            let vt = t.r32(obj);
+            let old_vt = t.r32(swapper);
+            t.w32(swapper, vt);
+            let stride_at = t.rebase(0x00c9_7354);
+            let old_stride = t.r32(stride_at);
+            t.w32(stride_at, 0x24);
+            let reader = p1c_reader(&mut t, &P1C_CLASSES, &h, 0, 0);
+            t.write(reader + 0xc, &[u8::from(swap)]);
+            let words = t.zeros(12);
+            t.w32(words, 4);
+            t.w32(words + 4, 0x13);
+            t.w32(words + 8, if k == 0 { 0x40 } else { 8 });
+            let (a, s, m) = (words, words + 4, words + 8);
+            let what = format!("{label}: read list headers {k}");
+            t.check(
+                &what,
+                0x0057_c4a0,
+                Conv::Thiscall(reader),
+                &[0x00c1_5000, a, s, m],
+                |g| Out::U32(prd::read_list_headers(g, reader, 0x00c1_5000, a, s, m)),
+            );
+            t.w32(swapper, old_vt);
+            t.w32(stride_at, old_stride);
+            t.reset();
+        }
+    }
+}

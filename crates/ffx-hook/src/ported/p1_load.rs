@@ -9,7 +9,9 @@
 //! classes are each their own original, so each gets its own line.
 
 use super::{StackFrame, mem, ported};
-use ffx_pload::{cluster, descriptor, p1_bind, p1_loader, p1_misc, p1_types, stream, types};
+use ffx_pload::{
+    cluster, descriptor, p1_bind, p1_loader, p1_misc, p1_reader, p1_types, stream, types,
+};
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
 /// constructs one in place).
@@ -1094,5 +1096,38 @@ ported! {
     /// `PCluster::Bind()`.
     Phyre_PCluster_Bind @ 0x0043_ffe0 => extern "C" fn bind_cluster() -> u32 {
         p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[9])
+    }
+    // ---- continuation round, batch 13 (ffx_pload::p1_bind, p1_reader) ----
+    /// `PTypeDispenser::GetClassDescriptor<Vector2>()`.
+    Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Vector2 @ 0x0045_fb40 => extern "C" fn class_descriptor_vector2() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[10])
+    }
+    /// `PTypeDispenser::GetClassDescriptor<Point3>()`.
+    Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Point3 @ 0x0045_f4e0 => extern "C" fn class_descriptor_point3() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[11])
+    }
+    /// `PTypeDispenser::GetClassDescriptor<Vector3>()`.
+    Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Vector3 @ 0x0045_fd90 => extern "C" fn class_descriptor_vector3() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[12])
+    }
+    /// `PTypeDispenser::GetClassDescriptor<Quat>()`.
+    Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Quat @ 0x0045_f7c0 => extern "C" fn class_descriptor_quat() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[13])
+    }
+    /// `PTypeDispenser::GetClassDescriptor<Vector4>()`.
+    Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Vector4 @ 0x0046_0070 => extern "C" fn class_descriptor_vector4() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[14])
+    }
+    /// `PClusterHeaderBase::Bind()`.
+    Phyre_PSerialization_PBinary_PClusterHeaderBase_Bind @ 0x0046_8890 => extern "C" fn bind_cluster_header_base() -> u32 {
+        p1_bind::bridge::run(&mut mem(), &p1_bind::STEPS[15])
+    }
+    /// `PClusterReaderBinary::initializeInstanceLists()`.
+    Phyre_PSerialization_PBinary_PInternal_PClusterReaderBinary_initializeInstanceLists @ 0x0057_b3a0 => extern "thiscall" fn init_instance_lists(this: u32) -> u32 {
+        p1_reader::bridge::init_instance_lists(&mut mem(), this)
+    }
+    /// The cluster reader's instance-list headers `(stream, &align, &size, &max_align)`.
+    Phyre_PClusterReaderBinary_readListHeaders_0057c4a0 @ 0x0057_c4a0 => extern "thiscall" fn read_list_headers(this: u32, stream: u32, align: u32, size: u32, max_align: u32) -> u32 {
+        p1_reader::bridge::read_list_headers(&mut mem(), this, stream, align, size, max_align)
     }
 }
