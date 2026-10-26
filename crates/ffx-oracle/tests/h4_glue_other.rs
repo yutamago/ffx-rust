@@ -5353,3 +5353,257 @@ fn r3_motion_blur_ctor() {
         }
     }
 }
+
+/// Round 3, batch 2: `ClusterManager_getPClusterByName` (its iterator in
+/// the argument slot), `FmodFile_open`, `SfxBank_destroyEvents`, the map
+/// range erase, `PArray_appendInto`, `MenuManager_TakeMultiRecord`,
+/// `MenuDynamicGeometry_setMeshWorldMatrix`.
+#[test]
+fn r3_cluster_map_file_records() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_3b04);
+        let stubs: [(u32, bool, u32, u32); 14] = [
+            (r3::DJB_HASH, false, 1, 0),
+            (m::OPERATOR_NEW, false, 1, 0),
+            (r3::PSTREAM_FILE_CTOR, true, 5, 5),
+            (r3::PSTREAM_FILE_IS_OPEN, true, 0, 0),
+            (r3::PSTREAM_FILE_SIZE, true, 0, 0),
+            (r3::PSTREAM_FILE_DTOR, true, 0, 0),
+            (s::OPERATOR_DELETE, false, 1, 0),
+            (s::USER_FREE, false, 1, 0),
+            (r3::POOL_RELEASE, true, 0, 0),
+            (r3::LIST_TEARDOWN, true, 0, 0),
+            (r3::TREE_NODE_NEW, true, 1, 1),
+            (r3::ALIGNED_FREE, false, 1, 0),
+            (r3::SET_MESH_WORLD, true, 2, 2),
+            (r3::SET_MIN_AND_MAX, true, 2, 2),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let wait = t.stub_code(mn::WAIT_FOR_SINGLE_OBJECT.sym, false, 2, 2);
+        t.g32(mn::WAIT_FOR_SINGLE_OBJECT.sym, wait);
+        let release = t.stub_code(mn::RELEASE_MUTEX.sym, false, 1, 1);
+        t.g32(mn::RELEASE_MUTEX.sym, release);
+        let erase_cell = t.zeros(4);
+        t.stub_at(
+            r3::MAP_ERASE_KEY,
+            true,
+            4,
+            4,
+            &[Write {
+                arg: Some(0),
+                offset: 0,
+                cell: erase_cell,
+            }],
+        );
+        // the unlink makes the node's next the list's first
+        let log_unlink = t.stub_code(r3::LIST_UNLINK, true, 1, 1);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x10, 0x89, 0x51, 0x0c, 0xe9];
+        let at = t.cave_next;
+        c.extend(log_unlink.wrapping_sub(at + 14).to_le_bytes());
+        let unlink = t.code(&c);
+        t.jump(r3::LIST_UNLINK, unlink);
+        for i in 0..32 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.word();
+                t.ret(sym, v);
+            }
+            for tag in [
+                mn::WAIT_FOR_SINGLE_OBJECT.sym,
+                mn::RELEASE_MUTEX.sym,
+                r3::MAP_ERASE_KEY,
+                r3::LIST_UNLINK,
+            ] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            let v = rng.next();
+            t.w32(erase_cell, v);
+            // a map of 0..7 sorted keys
+            let head = t.zeros(0x20);
+            t.w8(head + 0xd, 1);
+            let count = rng.below(8) as usize;
+            let nodes: Vec<u32> = (0..count).map(|_| t.zeros(0x20)).collect();
+            let mut keys: Vec<u32> = (0..count).map(|_| rng.below(20)).collect();
+            keys.sort_unstable();
+            for (&nd, &k) in nodes.iter().zip(&keys) {
+                t.w32(nd + 0x10, k);
+                let entry = t.zeros(8);
+                let first = rng.next();
+                t.w32(entry, first);
+                let n = [0, 1, 2, u32::MAX][rng.below(4) as usize];
+                t.w32(entry + 4, n);
+                t.w32(nd + 0x14, entry);
+            }
+            let root = tree(&mut t, &nodes, head, head);
+            t.w32(head + 4, root);
+            t.w32(head, nodes.first().copied().unwrap_or(head));
+            t.w32(head + 8, nodes.last().copied().unwrap_or(head));
+            // getPClusterByName
+            let mgr = t.zeros(0x20);
+            t.w32(mgr + 0x10, head);
+            let holder = t.zeros(4);
+            let mutex = rng.next();
+            t.w32(holder, mutex);
+            t.w32(mgr + 0x18, holder);
+            let hash = rng.below(22);
+            t.ret(r3::DJB_HASH, hash);
+            let text = rng.next();
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} getPClusterByName {hash} of {keys:?}"),
+                0x0069_b4b0,
+                Conv::Thiscall(mgr),
+                &[text],
+                ebp + 8,
+                &[(0, 4)],
+                |g| {
+                    put_args(g, ebp + 8, &[text]);
+                    u(r3::get_pcluster_by_name(g, mgr, ebp + 8))
+                },
+            );
+            // the range erase, from an in-order node to a later one or the end
+            if !nodes.is_empty() {
+                let from = rng.below(count as u32) as usize;
+                let to = from + rng.below((count - from) as u32 + 1) as usize;
+                let first = nodes[from];
+                let last = nodes.get(to).copied().unwrap_or(head);
+                let node = t.random(&mut rng, 0x20);
+                t.ret(r3::TREE_NODE_NEW, node);
+                let map = t.zeros(4);
+                t.w32(map, head);
+                let ebp = t.ebp_for(2);
+                t.check_framed(
+                    &format!("{w} erase range {from}..{to} of {count}"),
+                    0x0069_d990,
+                    Conv::Thiscall(map),
+                    &[first, last],
+                    ebp - 4,
+                    &[(0, 4), (0xc, 8)],
+                    |g| {
+                        put_args(g, ebp + 8, &[first, last]);
+                        u(r3::vfx_map_erase_range(g, ebp - 4, map, ebp + 8))
+                    },
+                );
+            }
+            // FmodFile_open
+            let prefix = rng.next();
+            t.g32(r3::FMOD_FILE_PREFIX, prefix);
+            if rng.below(3) == 0 {
+                t.ret(m::OPERATOR_NEW, 0);
+            }
+            let open = [0, 1, 0x100, 0x1_0001][rng.below(4) as usize];
+            t.ret(r3::PSTREAM_FILE_IS_OPEN, open);
+            let (size, handle) = (t.zeros(4), t.zeros(4));
+            let file = if rng.below(5) == 0 { 0 } else { rng.next() };
+            let (unicode, user) = (rng.next(), rng.next());
+            t.check(
+                &format!("{w} FmodFile_open {open:#x}"),
+                0x0070_8510,
+                Conv::Stdcall,
+                &[file, unicode, size, handle, user],
+                |g| u(r3::fmod_file_open(g, file, size, handle)),
+            );
+            // SfxBank_destroyEvents
+            let bank = t.zeros(0x30);
+            let list = bank + 4;
+            let n = rng.below(4);
+            let events: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+            let end = if rng.below(2) == 0 { 0 } else { list };
+            for (k, &e) in events.iter().enumerate() {
+                let next = events.get(k + 1).copied().unwrap_or(end);
+                t.w32(e, next);
+                let data = if rng.below(3) == 0 { 0 } else { rng.next() };
+                t.w32(e + 0x18, data);
+            }
+            t.w32(list + 0xc, events.first().copied().unwrap_or(end));
+            t.check(
+                &format!("{w} SfxBank destroy events {n}"),
+                0x0071_0960,
+                Conv::Thiscall(bank),
+                &[],
+                |g| u(r3::sfx_bank_destroy_events(g, bank)),
+            );
+            // PArray_appendInto
+            let arr = t.zeros(8);
+            let n = rng.below(4);
+            let word = [n, n | 0x8000_0000][rng.below(2) as usize];
+            t.w32(arr, word);
+            let block = t.random(&mut rng, 0x10);
+            // no storage only for an empty array (the copy reads it)
+            let old = if n == 0 && rng.below(2) == 0 {
+                0
+            } else {
+                block
+            };
+            t.w32(arr + 4, old);
+            let dst = match rng.below(4) {
+                0 => 0,
+                1 => old,
+                _ => t.zeros(0x14),
+            };
+            let value = t.random(&mut rng, 4);
+            t.check(
+                &format!("{w} appendInto {word:#x} old {old:#x} dst {dst:#x}"),
+                0x006a_25e0,
+                Conv::Thiscall(arr),
+                &[dst, value],
+                |g| u(r3::parray_append_into(g, arr, dst, value)),
+            );
+            // MenuManager_TakeMultiRecord
+            let mm = t.zeros(0x5b80);
+            for (cap, pool, used, count) in [
+                (0x15e8, 0x15ec, 0x2bfc, 0x2c50),
+                (0x4240, 0x4244, 0x583c, 0x5840),
+            ] {
+                let records = t.random(&mut rng, 0x10);
+                t.w32(mm + pool, records);
+                let c = [0, 3, 0x8000_0004, 4][rng.below(4) as usize];
+                t.w32(mm + cap, c);
+                let taken = [3, 4, rng.below(5)][rng.below(3) as usize];
+                t.w32(mm + used, taken);
+                t.w32(mm + count, rng.below(8));
+            }
+            t.w8(mm + 0x5b74, 1);
+            let chain = rng.below(3);
+            t.check(
+                &format!("{w} TakeMultiRecord {chain}"),
+                0x0067_c170,
+                Conv::Thiscall(mm),
+                &[chain],
+                |g| u(r3::take_multi_record(g, mm, chain)),
+            );
+            // MenuDynamicGeometry_setMeshWorldMatrix
+            let geometry = t.zeros(0x28);
+            let instance = t.zeros(0xb0);
+            for k in 0..6 {
+                let v = rng.float();
+                t.w32(instance + 0x98 + 4 * k, v);
+            }
+            let mesh = t.zeros(0x20);
+            let bounds = if rng.below(4) == 0 { 0 } else { rng.next() };
+            t.w32(mesh + 0x1c, bounds);
+            t.w32(
+                geometry + 0x24,
+                [0, instance, instance][rng.below(3) as usize],
+            );
+            t.w32(geometry + 0xc, [0, mesh, mesh][rng.below(3) as usize]);
+            let scene = rng.next();
+            t.g32(r3::PHYRE_SCENE.sym, scene);
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} setMeshWorldMatrix"),
+                0x006a_2e60,
+                Conv::Thiscall(geometry),
+                &[],
+                ebp - 0x28,
+                &[(0, 12), (0x10, 12), (0x20, 8)],
+                |g| u(r3::set_mesh_world_matrix(g, ebp - 0x28, geometry)),
+            );
+        }
+    }
+}

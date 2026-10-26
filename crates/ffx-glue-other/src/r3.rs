@@ -694,3 +694,317 @@ pub fn button_icon_set_uvs(h: &mut impl Host, frame: u32, this: u32, id: u32) ->
     let quad = [this + 0x48, 8, 0xc, f(u), f(v)];
     h.call_sym(SET_QUAD_UV, Conv::Thiscall(this), &quad)
 }
+
+/// `DJB_hash(s)` (cdecl).
+pub const DJB_HASH: u32 = 0x0067_b7d0;
+
+/// `ClusterManager_getPClusterByName(this; name)` (`0x0069b4b0`,
+/// thiscall, ret 4; `args` the address of its argument word): under the
+/// manager's mutex (`**(this + 0x18)`), the cluster map at `+0x10` (key
+/// `+0x10`, value `+0x14`) searched for the name's `DJB_hash` (lower
+/// bound, then an exact match); the iterator is left in the argument slot.
+/// Returns the entry's first word when its count (`+4`, signed) is at
+/// least 1, else 0.
+pub fn get_pcluster_by_name(h: &mut impl Host, this: u32, args: u32) -> u32 {
+    let name: u32 = h.read(args);
+    let hash = h.call_sym(DJB_HASH, Conv::Cdecl, &[name]);
+    let holder: u32 = h.read(this + 0x18);
+    let mutex: u32 = h.read(holder);
+    let wait = crate::menu::WAIT_FOR_SINGLE_OBJECT.get(h);
+    h.call(wait, Conv::Stdcall, &[mutex, u32::MAX]);
+    let head: u32 = h.read(this + 0x10);
+    let mut bound = head;
+    let mut node: u32 = h.read(head + 4);
+    while h.read::<u8>(node + 0xd) == 0 {
+        if h.read::<u32>(node + 0x10) < hash {
+            node = h.read(node + 8);
+        } else {
+            bound = node;
+            node = h.read(node);
+        }
+    }
+    let it = if bound == head || hash < h.read::<u32>(bound + 0x10) {
+        head
+    } else {
+        bound
+    };
+    h.write(args, it);
+    let it: u32 = h.read(args);
+    let mut r = 0;
+    if it != head {
+        let entry: u32 = h.read(it + 0x14);
+        if h.read::<u32>(entry + 4).cast_signed() >= 1 {
+            r = h.read(entry);
+        }
+    }
+    let holder: u32 = h.read(this + 0x18);
+    let mutex: u32 = h.read(holder);
+    let release = crate::menu::RELEASE_MUTEX.get(h);
+    h.call(release, Conv::Stdcall, &[mutex]);
+    r
+}
+
+/// The data directory prefix `FmodFile_open` adds to names
+/// (`0x00c3a480`, a pointer-sized offset).
+pub const FMOD_FILE_PREFIX: u32 = 0x00c3_a480;
+/// `Phyre_PSerialization_PStreamFile_ctor(file; name, a, b, c, d)`.
+pub const PSTREAM_FILE_CTOR: u32 = 0x0060_7bc0;
+/// `Phyre_PSerialization_PStreamFileWin32_isOpen(file)` (`al`).
+pub const PSTREAM_FILE_IS_OPEN: u32 = 0x0060_7f20;
+/// `PhyreFIOSStreamFile_getFileSize(file)` (thiscall).
+pub const PSTREAM_FILE_SIZE: u32 = 0x006f_9d50;
+/// The stream file's destructor `0x00607c10(file)` (a bare `ret`).
+pub const PSTREAM_FILE_DTOR: u32 = 0x0060_7c10;
+
+/// `FmodFile_open(name, unicode, filesize, handle, userdata)`
+/// (`0x00708510`, stdcall, FMOD's open callback): no name gives 0x17
+/// (`FMOD_ERR_FILE_NOTFOUND`); else a stream file (`operator_new(8)`, 0
+/// when that fails) on the prefixed name (`*0x00c3a480 + name`, mode 1, 0,
+/// 0, 1); open, it goes to `*handle` and its size to `*filesize` (0
+/// returned); not open, it is destroyed and freed (when there is one) and
+/// 0x17 returned.
+pub fn fmod_file_open(h: &mut impl Host, name: u32, filesize: u32, handle: u32) -> u32 {
+    if name == 0 {
+        return 0x17;
+    }
+    let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[8]);
+    let file = if p == 0 {
+        0
+    } else {
+        let prefix: u32 = h.read(h.rebase(FMOD_FILE_PREFIX));
+        let path = prefix.wrapping_add(name);
+        h.call_sym(PSTREAM_FILE_CTOR, Conv::Thiscall(p), &[path, 1, 0, 0, 1]);
+        p
+    };
+    if h.call_sym(PSTREAM_FILE_IS_OPEN, Conv::Thiscall(file), &[]) as u8 != 0 {
+        h.write(handle, file);
+        let size = h.call_sym(PSTREAM_FILE_SIZE, Conv::Thiscall(file), &[]);
+        h.write(filesize, size);
+        return 0;
+    }
+    if file != 0 {
+        h.call_sym(PSTREAM_FILE_DTOR, Conv::Thiscall(file), &[]);
+        h.call_sym(crate::sound::OPERATOR_DELETE, Conv::Cdecl, &[file]);
+    }
+    0x17
+}
+
+/// The intrusive list's unlink `0x00575000(list; node)` (thiscall).
+pub const LIST_UNLINK: u32 = 0x0057_5000;
+/// The node pool's release `0x0049cc10(pool)` (thiscall).
+pub const POOL_RELEASE: u32 = 0x0049_cc10;
+/// The list's own teardown `0x007108b0(list)` (thiscall).
+pub const LIST_TEARDOWN: u32 = 0x0071_08b0;
+
+/// `SfxBank_destroyEvents_00710960(this)` (thiscall, `SfxBank`'s
+/// destructor's helper): each node of the list at `+4` (its first at
+/// `+4 + 0xc`, until the list itself or 0) unlinked and its data
+/// (`+0x18`) freed with `user_free`; then the list's pool (`+0x1c`) and the
+/// list torn down. The SEH frame is not kept. Returns the last call's
+/// `eax`.
+pub fn sfx_bank_destroy_events(h: &mut impl Host, this: u32) -> u32 {
+    let list = this + 4;
+    loop {
+        let node: u32 = h.read(list + 0xc);
+        if node == list || node == 0 {
+            break;
+        }
+        h.call_sym(LIST_UNLINK, Conv::Thiscall(list), &[node]);
+        let data: u32 = h.read(node + 0x18);
+        if data != 0 {
+            h.call_sym(USER_FREE, Conv::Cdecl, &[data]);
+        }
+    }
+    h.call_sym(POOL_RELEASE, Conv::Thiscall(list + 0x18), &[]);
+    h.call_sym(LIST_TEARDOWN, Conv::Thiscall(list), &[])
+}
+
+/// `TreeNode_newWithKey_0069c580(this; key)` (thiscall).
+pub const TREE_NODE_NEW: u32 = 0x0069_c580;
+/// `0x0069caf0(this; &out, head, key, node)` (thiscall): the map's
+/// erase-by-key into `out`.
+pub const MAP_ERASE_KEY: u32 = 0x0069_caf0;
+
+/// The in-order successor of `node` in an MSVC tree (`+0` left, `+4`
+/// parent, `+8` right, `+0xd` nil).
+fn successor(h: &impl Host, node: u32) -> u32 {
+    let nil = |n: u32| h.read::<u8>(n + 0xd) != 0;
+    let right: u32 = h.read(node + 8);
+    if nil(right) {
+        let mut child = node;
+        let mut parent: u32 = h.read(node + 4);
+        while !nil(parent) && child == h.read::<u32>(parent + 8) {
+            child = parent;
+            parent = h.read(parent + 4);
+        }
+        parent
+    } else {
+        let mut n = right;
+        loop {
+            let left: u32 = h.read(n);
+            if nil(left) {
+                return n;
+            }
+            n = left;
+        }
+    }
+}
+
+/// `VfxRenderDataMap_eraseRange_0069d990(this; first, last)` (thiscall,
+/// ret 8; `args` the address of its two argument words, `frame` the word
+/// at `ebp - 4`): from `first` to `last`, each node's key (`+0x10`) gets a
+/// new node (`0x0069c580`) whose key and itself go to
+/// `0x0069caf0(this; frame, *this, node + 0x10, node)`; the iterator in
+/// the `first` slot then steps to its successor (a nil node stays). Returns
+/// the iterator (`last` at the end).
+pub fn vfx_map_erase_range(h: &mut impl Host, frame: u32, this: u32, args: u32) -> u32 {
+    // `push ecx` makes the word: `this` until the erase writes it
+    h.write(frame, this);
+    let mut it: u32 = h.read(args);
+    while it != h.read::<u32>(args + 4) {
+        let head: u32 = h.read(this);
+        let node = h.call_sym(TREE_NODE_NEW, Conv::Thiscall(this), &[it + 0x10]);
+        h.call_sym(
+            MAP_ERASE_KEY,
+            Conv::Thiscall(this),
+            &[frame, head, node + 0x10, node],
+        );
+        it = h.read(args);
+        if h.read::<u8>(it + 0xd) == 0 {
+            it = successor(h, it);
+            h.write(args, it);
+        }
+    }
+    it
+}
+
+/// The aligned allocator's free `0x0042fb20(p)` (cdecl).
+pub const ALIGNED_FREE: u32 = 0x0042_fb20;
+
+/// `PArray_appendInto_006a25e0(this; dst, &value)` (thiscall, ret 8):
+/// the array's (`+0` count, top bit "not owned"; `+4` storage) words
+/// copied into `dst` (a destination word at address 0 is skipped and the
+/// source does not advance), `*value` appended, the old storage freed
+/// (`0x0042fb20`) unless it is `dst`, not owned or null; then `dst` and
+/// the count plus one (the top bit dropped). Returns 0, or 0xd for a null
+/// `dst`.
+pub fn parray_append_into(h: &mut impl Host, this: u32, dst: u32, value: u32) -> u32 {
+    if dst == 0 {
+        return 0xd;
+    }
+    let n = h.read::<u32>(this) & 0x7fff_ffff;
+    let mut src: u32 = h.read(this + 4);
+    let mut at = dst;
+    for _ in 0..n {
+        let d = at;
+        at = at.wrapping_add(4);
+        if d != 0 {
+            let v: u32 = h.read(src);
+            h.write(d, v);
+            src = src.wrapping_add(4);
+        }
+    }
+    let end = dst.wrapping_add(n.wrapping_mul(4));
+    if end != 0 {
+        let v: u32 = h.read(value);
+        h.write(end, v);
+    }
+    let old: u32 = h.read(this + 4);
+    if old != dst && h.read::<u32>(this) >> 31 == 0 && old != 0 {
+        h.call_sym(ALIGNED_FREE, Conv::Cdecl, &[old]);
+    }
+    h.write(this + 4, dst);
+    h.write(this, n + 1);
+    0
+}
+
+/// `MenuManager_TakeMultiRecord_0067c170(this; chain)` (thiscall, ret
+/// 4): the busy byte `+0x5b74` cleared; chain 0 takes the next record of
+/// the pool at `+0x15e8`/`+0x15ec` (used `+0x2bfc`) into the list at `+0`
+/// (count `+0x2c50`), chain 1 the pool at `+0x4240`/`+0x4244` (used
+/// `+0x583c`) into the list at `+0x2c58` (count `+0x5840`). Returns the
+/// record, 0 when the pool is used up or the chain is another.
+pub fn take_multi_record(h: &mut impl Host, this: u32, chain: u32) -> u32 {
+    h.write(this + 0x5b74, 0u8);
+    let (cap, pool, used, list, count) = match chain {
+        0 => (0x15e8, 0x15ec, 0x2bfc, 0, 0x2c50),
+        1 => (0x4240, 0x4244, 0x583c, 0x2c58, 0x5840),
+        _ => return 0,
+    };
+    let taken: u32 = h.read(this + used);
+    if taken >= h.read::<u32>(this + cap) & 0x7fff_ffff {
+        return 0;
+    }
+    let records: u32 = h.read(this + pool);
+    let record: u32 = h.read(records.wrapping_add(taken.wrapping_mul(4)));
+    let k: u32 = h.read(this + count);
+    h.write(
+        this.wrapping_add(list).wrapping_add(k.wrapping_mul(4)),
+        record,
+    );
+    let v: u32 = h.read(this + used);
+    h.write(this + used, v.wrapping_add(1));
+    let v: u32 = h.read(this + count);
+    h.write(this + count, v.wrapping_add(1));
+    record
+}
+
+/// `PhyreScene_setMeshInstanceWorldMatrix(scene; mesh, instance)`.
+pub const SET_MESH_WORLD: u32 = 0x0066_d810;
+/// `Phyre_PRendering_PMeshInstanceBounds_setMinAndMax(bounds; &min,
+/// &max)`.
+pub const SET_MIN_AND_MAX: u32 = 0x0050_0bd0;
+/// The bytes of `MenuDynamicGeometry_setMeshWorldMatrix`'s frame.
+pub const MESH_WORLD_FRAME: u32 = 0x28;
+
+/// `MenuDynamicGeometry_setMeshWorldMatrix(this)` (`0x006a2e60`,
+/// thiscall; `frame` its locals at `ebp - 0x28`): with an instance
+/// (`+0x24`) and a mesh (`+0xc`), `g_PhyreScene`'s
+/// `setMeshInstanceWorldMatrix(mesh, instance)`; then, when the mesh has
+/// bounds (`+0x1c`), the instance's minimum (`+0x98..`) and maximum
+/// (`+0xa4..`) copied as floats (`fld`/`fstp`) into the frame (through
+/// the original's scratch words at `ebp - 8`/`ebp - 4`) and handed to
+/// `setMinAndMax(bounds; &min, &max)`. Returns what the original leaves
+/// in `eax`: 0, the instance or the mesh where it stops, else that call's.
+pub fn set_mesh_world_matrix(h: &mut impl Host, frame: u32, this: u32) -> u32 {
+    let instance: u32 = h.read(this + 0x24);
+    if instance == 0 {
+        return 0;
+    }
+    let mesh: u32 = h.read(this + 0xc);
+    if mesh == 0 {
+        return instance;
+    }
+    let scene = PHYRE_SCENE.get(h);
+    h.call_sym(SET_MESH_WORLD, Conv::Thiscall(scene), &[mesh, instance]);
+    let mesh: u32 = h.read(this + 0xc);
+    let bounds: u32 = h.read(mesh + 0x1c);
+    if bounds == 0 {
+        return mesh;
+    }
+    let instance: u32 = h.read(this + 0x24);
+    // each store is an `fld`/`fstp` pair, in the original's order: (frame
+    // offset, source)
+    let steps: [(u32, u32); 10] = [
+        (0x24, instance + 0xa8),
+        (0x20, instance + 0xac),
+        (0x10, instance + 0xa4),
+        (0x14, frame + 0x24),
+        (0x18, frame + 0x20),
+        (0x20, instance + 0x9c),
+        (0x24, instance + 0xa0),
+        (0, instance + 0x98),
+        (4, frame + 0x20),
+        (8, frame + 0x24),
+    ];
+    for (to, from) in steps {
+        let bits: u32 = h.read(from);
+        let v = ffx_bridge::x87::round_trip(f32::from_bits(bits)).to_bits();
+        h.write(frame + to, v);
+    }
+    h.call_sym(
+        SET_MIN_AND_MAX,
+        Conv::Thiscall(bounds),
+        &[frame, frame + 0x10],
+    )
+}

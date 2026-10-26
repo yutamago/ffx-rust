@@ -1183,4 +1183,36 @@ ported! {
         let mut frame = StackFrame::<2>::new();
         r3::button_icon_set_uvs(&mut mem(), frame.at(), this, id)
     }
+    /// `ClusterManager_getPClusterByName(this; name)`: leaves the map
+    /// iterator in its argument slot, as the original does.
+    ClusterManager_getPClusterByName @ 0x0069_b4b0 => extern "thiscall" fn get_pcluster_by_name(this: u32, _name: u32; args: u32) -> u32 {
+        r3::get_pcluster_by_name(&mut mem(), this, args)
+    }
+    /// `FmodFile_open(name, unicode, filesize, handle, userdata)`.
+    FmodFile_open @ 0x0070_8510 => extern "stdcall" fn fmod_file_open(name: u32, _unicode: u32, filesize: u32, handle: u32, _userdata: u32) -> u32 {
+        r3::fmod_file_open(&mut mem(), name, filesize, handle)
+    }
+    /// `SfxBank_destroyEvents_00710960(this)`.
+    SfxBank_destroyEvents_00710960 @ 0x0071_0960 => extern "thiscall" fn sfx_bank_destroy_events(this: u32) -> u32 {
+        r3::sfx_bank_destroy_events(&mut mem(), this)
+    }
+    /// `VfxRenderDataMap_eraseRange_0069d990(this; first, last)`: steps
+    /// the iterator in its argument slot.
+    VfxRenderDataMap_eraseRange_0069d990 @ 0x0069_d990 => extern "thiscall" fn vfx_map_erase_range(this: u32, _first: u32, _last: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        r3::vfx_map_erase_range(&mut mem(), frame.at(), this, args)
+    }
+    /// `PArray_appendInto_006a25e0(this; dst, &value)`.
+    PArray_appendInto_006a25e0 @ 0x006a_25e0 => extern "thiscall" fn parray_append_into(this: u32, dst: u32, value: u32) -> u32 {
+        r3::parray_append_into(&mut mem(), this, dst, value)
+    }
+    /// `MenuManager_TakeMultiRecord_0067c170(this; chain)`.
+    MenuManager_TakeMultiRecord_0067c170 @ 0x0067_c170 => extern "thiscall" fn take_multi_record(this: u32, chain: u32) -> u32 {
+        r3::take_multi_record(&mut mem(), this, chain)
+    }
+    /// `MenuDynamicGeometry_setMeshWorldMatrix(this)`.
+    MenuDynamicGeometry_setMeshWorldMatrix @ 0x006a_2e60 => extern "thiscall" fn set_mesh_world_matrix(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (r3::MESH_WORLD_FRAME / 4) as usize }>::new();
+        r3::set_mesh_world_matrix(&mut mem(), frame.at(), this)
+    }
 }
