@@ -11,7 +11,9 @@
 //! `generateNodeParameterCaptureBuffer` for each node it draws; the
 //! modifier network's run where `PModifierNetworkDynamicMesh::fillPacket`
 //! fills a packet (its `_alloca` arrays on the heap: no large frames on
-//! a worker's stack). The shims keep no state; frames are per call.
+//! a worker's stack); `processRenderCommands` on the render thread (its
+//! 16 KB frame as the original's). The shims keep no state; frames are
+//! per call.
 
 use super::{StackFrame, mem, ported};
 use ffx_pother_b::m4r_dynblocks::bridge as blocks;
@@ -19,6 +21,7 @@ use ffx_pother_b::m4r_mesh::bridge as mesh;
 use ffx_prender::m4r_meshlist as meshlist;
 use ffx_prender::m4r_modnet as modnet;
 use ffx_prender::m4r_nodecapture as nodecapture;
+use ffx_prender::m4r_rendercmds as rendercmds;
 
 ported! {
     // ---- h1-render-a ----
@@ -72,5 +75,13 @@ ported! {
         });
         std::hint::black_box(&mut heap);
         r
+    }
+    /// `PRenderThread::processRenderCommands(thread; first, end)` -> 0.
+    Phyre_PRendering_PRenderThread_processRenderCommands @ 0x0061_5550 => extern "thiscall" fn process_render_commands(thread: u32, first: u32, end: u32) -> u32 {
+        // ebp - 0x4084 .. ebp: the two job lists, the pass handle, the
+        // scope lock (the callees get pointers into it)
+        let mut frame = StackFrame::<0x1021>::new();
+        let ebp = frame.at() + rendercmds::FRAME;
+        rendercmds::bridge::process(&mut mem(), thread, first, end, ebp)
     }
 }

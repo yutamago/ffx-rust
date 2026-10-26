@@ -27,6 +27,7 @@ use ffx_pother_b::{m4r_dynblocks, m4r_mesh};
 use ffx_prender::m4r_meshlist as ml;
 use ffx_prender::m4r_modnet as mn;
 use ffx_prender::m4r_nodecapture as nc;
+use ffx_prender::m4r_rendercmds as rc;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -1098,5 +1099,155 @@ fn modifier_network_run_matches_the_original() {
             calls += t.log_entries();
         }
         assert!(calls > 100, "{name}: the stubs ran ({calls} calls)");
+    }
+}
+
+// ---- PRenderThread::processRenderCommands (0x00615550) ----
+
+/// The job issuer, after the log: sets byte `+1` of its list (`ecx`) to
+/// the entry's word 1 ("jobs issued").
+const ISSUE_BODY: [u8; 6] = [
+    0x8b, 0x50, 0x04, // mov edx, [eax+4]
+    0x88, 0x51, 0x01, // mov [ecx+1], dl
+];
+
+#[test]
+fn process_render_commands_matches_the_original() {
+    const SYM: u32 = 0x0061_5550;
+    for (name, mut t) in Twins::all() {
+        for (sym, this, n, pops) in [
+            (rc::LOCK_ENTER, true, 0, 0),
+            (rc::LOCK_LEAVE, true, 0, 0),
+            (rc::CONTEXT_CTOR, true, 0, 0),
+            (rc::ATEXIT, false, 1, 0),
+            (rc::PASS_CTOR, true, 1, 1),
+            (rc::PASS_DTOR, true, 0, 0),
+            (rc::VECTOR_CTOR, false, 5, 5),
+            (rc::VECTOR_DTOR, false, 4, 4),
+            (rc::SET_PASS, true, 1, 1),
+            (rc::RUN_MESH, false, 2, 0),
+            (rc::RUN_MESH2, false, 2, 0),
+            (rc::SET_TARGETS, true, 3, 3),
+            (rc::RELEASE, true, 0, 0),
+            (rc::OTHER_COMMAND, true, 3, 3),
+        ] {
+            t.stub(sym, this, n, pops);
+        }
+        let flush = t.stub(rc::FLUSH, true, 1, 1);
+        let blocks_n = t.stub(rc::BLOCK_COUNT, true, 1, 1);
+        let (issue, issue_cell) = t.stub_custom(rc::ISSUE_JOBS, true, 4, 4, 8, &ISSUE_BODY);
+        let at = t.rebase(rc::ISSUE_JOBS);
+        let mut j = vec![0xe9];
+        j.extend(issue.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        let (add, _) = t.stub_code(0x7c00_0000, false, 2, 2);
+        let slot = t.rebase(rc::INTERLOCKED_ADD);
+        t.w32(slot, add);
+        let (callback, _) = t.stub_code(0x7c00_0001, false, 1, 0);
+        let guard = t.rebase(rc::CONTEXT_GUARD);
+        let mut rng = Rng(0x0061_5550);
+        let mut calls = 0;
+        for case in 0..60_u32 {
+            let log = t.log;
+            t.w32(log, 0);
+            t.w32(guard, u32::from(case % 4 != 0));
+            let thread = t.zeros(0x300);
+            t.fill(&mut rng, thread, 0x300);
+            t.w32(thread + 0x158, rng.below(2));
+            t.w32(thread + 0x208, rng.below(2));
+            // the commands
+            let n = if case % 10 == 0 { 0 } else { 1 + rng.below(12) };
+            let first = t.zeros((rc::COMMAND * n) as usize + 8);
+            t.fill(&mut rng, first, rc::COMMAND * n);
+            let mut counts = Vec::new();
+            for c in 0..n {
+                let cmd = first + rc::COMMAND * c;
+                let kind = [0, 1, 1, 2, 2, 3, 0x2c, 5, 0x2b, 0x2d][rng.below(10) as usize];
+                t.w32(cmd, kind);
+                match kind {
+                    1 | 2 => {
+                        let mesh = if rng.below(5) == 0 {
+                            0
+                        } else {
+                            let segments = t.zeros(0x40);
+                            for s in 0..4 {
+                                t.w32(segments + 16 * s + 0xc, rng.below(2));
+                            }
+                            let mesh = t.zeros(0x20);
+                            t.w32(mesh + 0x14, segments);
+                            mesh
+                        };
+                        t.w32(cmd + 0xc, mesh);
+                        t.write(cmd + 0x24, &(rng.below(4) as u16).to_le_bytes());
+                        let cnt = rng.below(4);
+                        if mesh != 0 {
+                            counts.push(cnt);
+                        }
+                        let blocks = if rng.below(3) == 0 {
+                            0
+                        } else {
+                            let b = t.zeros(0x100);
+                            for i in 0..4 {
+                                t.w32(b + 0x40 * i + 0x38, rng.below(2));
+                                t.write(b + 0x40 * i + 0x14, &[rng.below(2) as u8]);
+                            }
+                            b
+                        };
+                        t.w32(cmd + 0x10, blocks);
+                        let index = t.zeros(0x40);
+                        t.w32(index + 0x34, rng.below(2));
+                        t.write(index + 0xe, &[rng.below(2) as u8]);
+                        t.w32(cmd + 0x3c, index);
+                    }
+                    0x2c => t.w32(cmd + 8, callback),
+                    _ => {}
+                }
+                // the reference counts to release (types 1 and 2 at
+                // +0x38, 3 at +0x1c)
+                let list = if rng.below(3) == 0 {
+                    0
+                } else {
+                    let k = rng.below(4);
+                    let l = t.zeros(4 + 4 * k as usize);
+                    t.w32(l, k);
+                    for i in 0..k {
+                        let counter = t.zeros(4);
+                        t.w32(l + 4 + 4 * i, counter);
+                    }
+                    l
+                };
+                t.w32(cmd + if kind == 3 { 0x1c } else { 0x38 }, list);
+            }
+            let end = first + rc::COMMAND * n;
+            t.results(blocks_n, &counts);
+            // the issuer: flags and returns; the flushes: increasing
+            // stops up to the end
+            let issues: Vec<u32> = (0..32)
+                .flat_map(|_| [rng.next(), u32::from(rng.below(3) != 0)])
+                .collect();
+            t.results(issue_cell, &issues);
+            let mut stops = Vec::new();
+            let mut at = 0;
+            for _ in 0..24 {
+                at = (at + rng.below(4)).min(n);
+                stops.push(first + rc::COMMAND * at);
+            }
+            // past the list, the flushes return the end
+            let mut tail = stops.clone();
+            tail.resize(64, end);
+            t.results(flush, &tail);
+            t.check_framed(
+                &format!("{name} case {case} ({n} commands)"),
+                SYM,
+                Conv::Thiscall(thread),
+                &[first, end],
+                rc::FRAME,
+                // the SEH record and the cookie
+                0x10,
+                |g, ebp| rc::bridge::process(g, thread, first, end, ebp),
+            );
+            calls += t.log_entries();
+        }
+        assert!(calls > 300, "{name}: the stubs ran ({calls} calls)");
     }
 }

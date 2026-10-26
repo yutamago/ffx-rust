@@ -107,6 +107,7 @@ pub mod h3_glue30;
 pub mod m4r_meshlist;
 pub mod m4r_modnet;
 pub mod m4r_nodecapture;
+pub mod m4r_rendercmds;
 pub mod mesh;
 pub mod misc;
 pub mod p6_app;
