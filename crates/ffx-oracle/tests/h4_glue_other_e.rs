@@ -28,7 +28,7 @@ use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
-    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7,
+    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -6610,6 +6610,119 @@ fn h7_gdraw_alloc_buffers() {
             t.check_conv(&format!("{w} alloc"), 0x00a3_a540, Conv::Stdcall, &a, |g| {
                 u(h7::gdraw_alloc_buffers(g, a[0], a[2], a[3], out, a[5]))
             });
+        }
+        assert!(ran + t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 6, batch 8 (ffx_glue_other::h4_h8)
+
+/// The movie skip prompt's and the loading screen's draws.
+#[test]
+fn h8_renders() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a801);
+        t.stub_at(h8::BEGIN_SCENE, true, 1, 1, &[]);
+        t.stub_at(h8::END_SCENE, true, 1, 1, &[]);
+        t.stub_at(h8::ARRAY_DATA, true, 0, 0, &[]);
+        t.stub_at(h4::FIND_PARAMETER, true, 1, 1, &[]);
+        t.stub_at(h5::SET_VALUE, true, 2, 2, &[]);
+        t.stub_at(h8::RENDER_FOR_PASS, true, 1, 1, &[]);
+        t.stub_at(h8::RENDER_MESH_INSTANCE, true, 4, 4, &[]);
+        t.stub_at(h8::SET_COLOR_TARGET, true, 2, 2, &[]);
+        t.stub_at(h8::SET_DEPTH_TARGET, true, 1, 1, &[]);
+        t.stub(h8::POST_PROCESS_MANAGER, 0, false);
+        t.stub_at(h8::SET_VIEWPORT, true, 2, 2, &[]);
+        t.stub_at(h8::SET_CLEAR_COLOR, true, 4, 4, &[]);
+        let tags = [
+            h8::BEGIN_SCENE,
+            h8::END_SCENE,
+            h8::ARRAY_DATA,
+            h4::FIND_PARAMETER,
+            h5::SET_VALUE,
+            h8::RENDER_FOR_PASS,
+            h8::RENDER_MESH_INSTANCE,
+            h8::SET_COLOR_TARGET,
+            h8::SET_DEPTH_TARGET,
+            h8::POST_PROCESS_MANAGER,
+            h8::SET_VIEWPORT,
+            h8::SET_CLEAR_COLOR,
+        ];
+        let manager = t.zeros(0x1_2400);
+        let mut ran = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            ran += t.log_entries();
+            t.fresh(&mut rng, &tags);
+            // the material list's entries: one material with its buffer
+            let material = random_block(&mut t, &mut rng, 8);
+            let entries = random_block(&mut t, &mut rng, 4);
+            t.w32(entries, material);
+            t.ret(h8::ARRAY_DATA, entries);
+            let renderer = random_block(&mut t, &mut rng, 0x140);
+            // the prompt
+            let this = random_block(&mut t, &mut rng, 0x70);
+            let shown = rng.pick(&[0, 1, 1, 0x80]);
+            t.w8(this + 0x14, shown);
+            for off in [0x30u32, 0x4c, 0x68] {
+                let inst = random_block(&mut t, &mut rng, 0x14);
+                let inst = rng.pick(&[0, inst, inst, inst, inst, inst]);
+                t.w32(this + off, inst);
+            }
+            let alpha = rng.float();
+            t.w32(this + 0x10, alpha);
+            let r = rng.pick(&[0, renderer, renderer, renderer]);
+            let mode = rng.pick(&[0, 1, 2, 0xffff_ffff]);
+            let frame = t.ebp_for(2) - 0x10;
+            t.check_framed_conv(
+                &format!("{w} prompt"),
+                0x006e_7f00,
+                Conv::Thiscall(this),
+                &[r, mode],
+                frame,
+                &[(0, 0x10)],
+                |g| {
+                    h8::skip_prompt_render(g, frame, this, r, mode);
+                    Out::None
+                },
+            );
+            // the loading screen
+            t.ret(h8::POST_PROCESS_MANAGER, manager);
+            for k in 0..3 {
+                let v = {
+                    let f = rng.float();
+                    rng.pick(&[f, 0x3f00_0000, 0x3f80_0000, 0, 0x7fc0_0000])
+                };
+                t.w32(manager + 0x1_238c + 4 * k, v);
+            }
+            let this = random_block(&mut t, &mut rng, 0x44);
+            for off in [0u32, 1] {
+                let v = rng.pick(&[0, 0, 1]);
+                t.w8(this + off, v);
+            }
+            let mode = rng.pick(&[0, 1, 2, 3, 0xffff_ffff, 0x8000_0000]);
+            t.w32(this + 0x10, mode);
+            let n = rng.pick(&[0, 1, 0x8000_0000, 3]);
+            t.w32(this + 0x20, n);
+            for off in [0x2cu32, 0x30] {
+                let v = rng.pick(&[0, 1, 1, 1, 1]);
+                t.w32(this + off, v);
+            }
+            let inst = random_block(&mut t, &mut rng, 0x14);
+            t.w32(this + 0x40, inst);
+            let frame = t.ebp_for(1) - 0x10;
+            t.check_framed_conv(
+                &format!("{w} loading"),
+                0x006e_4ea0,
+                Conv::Thiscall(this),
+                &[renderer],
+                frame,
+                &[(0, 0xc)],
+                |g| {
+                    h8::loading_screen_render(g, frame, this, renderer);
+                    Out::None
+                },
+            );
         }
         assert!(ran + t.log_entries() > 0, "{name}: the stubs ran");
     }
