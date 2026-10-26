@@ -16,6 +16,7 @@ use ffx_prender::glue7::bridge as g7;
 use ffx_prender::glue8::bridge as g8;
 use ffx_prender::glue9::bridge as g9;
 use ffx_prender::glue10::bridge as g10;
+use ffx_prender::glue11::bridge as g11;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1173,6 +1174,43 @@ ported! {
     /// `ClassVFXRenderDataTable_ClearVFXDrawData(this)`.
     ClassVFXRenderDataTable_ClearVFXDrawData @ 0x0069_f2b0 => extern "thiscall" fn vfx_clear_draw_data(this: u32) {
         g10::vfx_clear_draw_data(&mut mem(), this);
+    }
+
+    // ---- round 3 batch 11 (ffx_prender::glue11) ----
+    /// `PRedBlackTree_insertPair_0065fdd0(this, a, b)`.
+    PRedBlackTree_insertPair_0065fdd0 @ 0x0065_fdd0 => extern "thiscall" fn tree_insert_pair(this: u32, a: u32, b: u32) -> u32 {
+        g11::tree_insert_pair(&mut mem(), this, a, b)
+    }
+    /// `RenderTextureInfo_set_006b2400(this, &array, name, path, f0, .., f4)`.
+    RenderTextureInfo_set_006b2400 @ 0x006b_2400 => extern "thiscall" fn render_texture_info_set(this: u32, array: u32, name: u32, path: u32, f0: u32, f1: u32, f2: u32, f3: u32, f4: u32) -> u32 {
+        g11::render_texture_info_set(&mut mem(), this, array, name, path, [f0, f1, f2, f3, f4])
+    }
+    /// `PhyreScene_loadCutbufferShader(this)`.
+    PhyreScene_loadCutbufferShader @ 0x0066_4440 => extern "thiscall" fn scene_load_cutbuffer_shader(this: u32) -> u32 {
+        let mut f = StackFrame::<0x4b>::new();
+        g11::scene_load_cutbuffer_shader(&mut mem(), f.at() + 0x12c, this)
+    }
+    /// `PhyreScene_setMeshInstanceGroupIdVisible(this, mask)`.
+    PhyreScene_setMeshInstanceGroupIdVisible @ 0x0066_d610 => extern "thiscall" fn scene_set_group_visible(this: u32, mask: u32) {
+        let mut f = StackFrame::<4>::new();
+        g11::scene_set_group_visible(&mut mem(), f.at() + 0x10, this, mask);
+    }
+    /// `graphicDynGeoMemManagerSwapBuffer(keep)`.
+    graphicDynGeoMemManagerSwapBuffer @ 0x0063_ff70 => extern "C" fn dyn_geo_swap_buffer(keep: u32) -> u32 {
+        g11::dyn_geo_swap_buffer(&mut mem(), keep)
+    }
+    /// `PhyreScene_createRWTTTarget(this)`.
+    PhyreScene_createRWTTTarget @ 0x0065_9c30 => extern "thiscall" fn scene_create_rwtt_target(this: u32) -> u32 {
+        g11::scene_create_rwtt_target(&mut mem(), this)
+    }
+    /// `PhyreScene_deleteMaterialInCluster(this, material, cluster, a, b)`.
+    PhyreScene_deleteMaterialInCluster @ 0x0065_a2c0 => extern "thiscall" fn scene_delete_material(this: u32, material: u32, cluster: u32, a: u32, b: u32) {
+        g11::scene_delete_material(&mut mem(), this, material, cluster, a, b);
+    }
+    /// `CopyNamedPairs_006991f0(dst, src, n)`: it counts in its argument
+    /// slots, which callers may read.
+    CopyNamedPairs_006991f0 @ 0x0069_91f0 => extern "C" fn copy_named_pairs(dst: u32, src: u32, n: u32; slots: u32) {
+        g11::copy_named_pairs(&mut mem(), slots, dst, src, n);
     }
 }
 
