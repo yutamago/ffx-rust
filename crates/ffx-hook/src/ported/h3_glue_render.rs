@@ -24,6 +24,7 @@ use ffx_prender::h3_glue15::bridge as g15;
 use ffx_prender::h3_glue16::bridge as g16;
 use ffx_prender::h3_glue17::bridge as g17;
 use ffx_prender::h3_glue18::bridge as g18;
+use ffx_prender::h3_glue19::bridge as g19;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1502,6 +1503,41 @@ ported! {
     ShadowManager_createshadowbuffer @ 0x006d_18b0 => extern "thiscall" fn shadow_create_buffers(this: u32, a: u32, b: u32) -> u32 {
         let _ = (a, b);
         g18::shadow_create_buffers(&mut mem(), this)
+    }
+
+    // ---- round 6 batch 19 (ffx_prender::h3_glue19) ----
+    /// `BrokenScreenEffect_fillIndices_006d41b0(this)` (`ecx` only).
+    BrokenScreenEffect_fillIndices_006d41b0 @ 0x006d_41b0 => extern "thiscall" fn broken_fill_indices(this: u32) -> u32 {
+        g19::broken_fill_indices(&mut mem(), this)
+    }
+    /// `BrokenScreenEffect_setColorBuffer_006d4540(this, texture, sampler)`.
+    BrokenScreenEffect_setColorBuffer_006d4540 @ 0x006d_4540 => extern "thiscall" fn broken_set_color_buffer(this: u32, texture: u32, sampler: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        g19::broken_set_color_buffer(&mut mem(), f.at() + 0x10, this, texture, sampler)
+    }
+    /// `ShadowManager_updateCascades_006ce860(this, flag, a, b, map)`: the
+    /// battle byte goes over `map`'s slot.
+    ShadowManager_updateCascades_006ce860 @ 0x006c_e860 => extern "thiscall" fn shadow_update_cascades(this: u32, flag: u32, a: u32, b: u32, map: u32; slots: u32) -> u32 {
+        g19::shadow_update_cascades(&mut mem(), slots, this, flag, a, b, map)
+    }
+    /// `ClassVFXRenderDataTable_ClassVFXRenderDataTable(this)`.
+    ClassVFXRenderDataTable_ClassVFXRenderDataTable @ 0x0069_e140 => extern "thiscall" fn vfx_table_ctor(this: u32) -> u32 {
+        g19::vfx_table_ctor(&mut mem(), this)
+    }
+    /// `PhyreScene_DrawMostVFX(this)` (`ecx` only).
+    PhyreScene_DrawMostVFX @ 0x0065_0670 => extern "thiscall" fn scene_draw_most_vfx(this: u32) -> u32 {
+        g19::scene_draw_most_vfx(&mut mem(), this)
+    }
+    /// `PhyreScene_findGlobalCamera(this)` (`ecx` only).
+    PhyreScene_findGlobalCamera @ 0x0065_19f0 => extern "thiscall" fn scene_find_global_camera(this: u32) -> u32 {
+        let mut f = StackFrame::<0xa>::new();
+        g19::scene_find_global_camera(&mut mem(), f.at() + 0x28, this)
+    }
+    /// `graphicCharacterUnloadTask(chr)`: without a character the original
+    /// leaves the caller's `eax`, which the thunk keeps.
+    graphicCharacterUnloadTask @ 0x0063_7980 => extern "C" fn character_unload_task(chr: u32) {
+        let mut f = StackFrame::<3>::new();
+        let _ = g19::character_unload_task(&mut mem(), f.at() + 0xc, chr);
     }
 }
 

@@ -205,8 +205,25 @@ pub mod bridge {
         if map == 0 || h.read::<u8>(scene + 0x93c) == 0 {
             return 0;
         }
+        find_named(h, ebp, 4, 8, map);
+        0
+    }
+
+    /// The walk of [`scene_find_global_object`] and
+    /// `PhyreScene_findGlobalCamera` (`crate::h3_glue19`): `owner`'s
+    /// objects of class `0x00c93608` (cursor at `ebp - 0x28`); each object
+    /// goes to `ebp - object_at`, and the one named `GLOBAL_NAME` (its name
+    /// pointer `+0xd0`, low bit a tag; the same pointer, or equal text)
+    /// becomes `+0x4f8` of the scene at `ebp - scene_at`.
+    pub(crate) fn find_named(
+        h: &mut impl Host,
+        ebp: u32,
+        object_at: u32,
+        scene_at: u32,
+        owner: u32,
+    ) {
         let cursor = ebp - 0x28;
-        cursor_over(h, cursor, map, SEEK1_CLASS);
+        cursor_over(h, cursor, owner, SEEK1_CLASS);
         h.call_sym(CURSOR_SEEK1, Conv::Thiscall(cursor), &[]);
         let name = h.rebase(GLOBAL_NAME);
         walk(h, cursor, CURSOR_NEXT1, |h, base| {
@@ -216,19 +233,18 @@ pub mod bridge {
                 return;
             }
             let object = at.wrapping_sub(4);
-            h.write(ebp - 4, object);
+            h.write(ebp - object_at, object);
             if object == 0 {
                 return;
             }
             let tag = u32::from(h.read::<u8>(object.wrapping_add(0xd0)) & 1);
             let s = h.read::<u32>(object.wrapping_add(0xd0)).wrapping_sub(tag);
             if s == name || (s != 0 && str_eq(h, s, name)) {
-                let scene: u32 = h.read(ebp - 8);
-                let object: u32 = h.read(ebp - 4);
+                let scene: u32 = h.read(ebp - scene_at);
+                let object: u32 = h.read(ebp - object_at);
                 h.write(scene + 0x4f8, object);
             }
         });
-        0
     }
 
     /// `FUN_00697f20(this, w, h)` (`ret 8`): with any of the four flags
