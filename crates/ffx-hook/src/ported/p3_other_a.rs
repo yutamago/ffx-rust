@@ -8,7 +8,10 @@
 //! original code's.
 
 use super::{mem, ported};
-use ffx_pother_a::{class::bridge as class, object::bridge as object, physics::bridge as physics};
+use ffx_pother_a::{
+    class::bridge as class, object::bridge as object, p3_misc::bridge as misc,
+    p3_tree::bridge as tree, physics::bridge as physics,
+};
 
 ported! {
     /// `Phyre_PBase_GetClassDescriptor()` -> `PBase`'s descriptor.
@@ -578,5 +581,141 @@ ported! {
     /// `0x0054d130(name)` -> the entry or 0.
     Phyre_FindNamed_0054d130 @ 0x0054_d130 => extern "C" fn find_named3(name: u32) -> u32 {
         class::find_named3(&mut mem(), name)
+    }
+    // round 2 (continuation), batch 1
+    /// `0x005d6d10(controller)`: the fly controller's destructor.
+    Phyre_PWorldMatrixFlyController_dtor @ 0x005d_6d10 => extern "thiscall" fn fly_dtor(this: u32) -> u32 {
+        misc::fly_controller_dtor(&mut mem(), this)
+    }
+    /// `cosf(x)` -> `ST0`.
+    cosf @ 0x004c_eac0 => extern "C" fn cosf(x: u32) -> f32 {
+        misc::cosf(&mut mem(), x)
+    }
+    /// `sinf(x)` -> `ST0`.
+    sinf @ 0x004c_eae0 => extern "C" fn sinf(x: u32) -> f32 {
+        misc::sinf(&mut mem(), x)
+    }
+    /// `0x005d3dd0(p)` (destroy callback).
+    Phyre_DestroyFreeWord_005d3dd0 @ 0x005d_3dd0 => extern "stdcall" fn destroy_free_word(p: u32) -> u8 {
+        misc::destroy_free_word(&mut mem(), p)
+    }
+    /// `0x005d0640(p)` (destroy callback).
+    Phyre_DestroyVirtual2_005d0640 @ 0x005d_0640 => extern "stdcall" fn destroy_virtual2(p: u32) -> u8 {
+        misc::destroy_virtual2(&mut mem(), p)
+    }
+    /// `0x004354f0(level, message)` (`PTTYCallback` slot 1, `this` unused).
+    Phyre_PTTYCallback_print @ 0x0043_54f0 => extern "stdcall" fn tty_print(level: u32, message: u32) -> u32 {
+        misc::tty_print(&mut mem(), level, message)
+    }
+    /// `0x00435390(level, message)`.
+    Phyre_PTTYCallback_dispatch_00435390 @ 0x0043_5390 => extern "C" fn tty_dispatch(level: u32, message: u32) -> u32 {
+        misc::tty_dispatch(&mut mem(), level, message)
+    }
+    /// `0x005a0820(&a, &b)` -> -1, 0 or 1.
+    Phyre_SortCompare_005a0820 @ 0x005a_0820 => extern "C" fn sort_compare(a: u32, b: u32) -> u32 {
+        misc::compare(&mut mem(), a, b)
+    }
+    /// `0x005ce630(end, &cursor)` -> 0 or 0xd.
+    Phyre_PScripting_drainExpired_005ce630 @ 0x005c_e630 => extern "C" fn drain(end: u32, cursor: u32) -> u32 {
+        misc::drain(&mut mem(), end, cursor)
+    }
+    /// `Class_FindMemberByOffset(this, class, &object, offset, &element)`
+    /// -> the member or 0.
+    Class_FindMemberByOffset @ 0x0047_d5f0 => extern "thiscall" fn find_member_by_offset(this: u32, class: u32, object: u32, offset: u32, element: u32) -> u32 {
+        misc::find_member_by_offset(&mut mem(), this, class, object, offset, element)
+    }
+    /// `0x005d6cc0(controller)` -> `controller`.
+    Phyre_PWorldMatrixFlyController_ctor @ 0x005d_6cc0 => extern "thiscall" fn fly_ctor(this: u32) -> u32 {
+        misc::fly_controller_ctor(&mut mem(), this)
+    }
+    /// `0x00553980(this, descriptor)` -> `this`.
+    Phyre_PGameplay_PScriptedComponent_ctor @ 0x0055_3980 => extern "thiscall" fn scripted_ctor(this: u32, d: u32) -> u32 {
+        misc::scripted_ctor(&mut mem(), this, d)
+    }
+    /// `0x005d5000(p)` (create callback).
+    Phyre_CreateZeroed_005d5000 @ 0x005d_5000 => extern "stdcall" fn create_zeroed(p: u32) -> u32 {
+        misc::create_zeroed(&mut mem(), p)
+    }
+    /// `0x005d3860(this)` -> `this`.
+    Phyre_PBaseRef_ctor_005d3860 @ 0x005d_3860 => extern "thiscall" fn base_ref_ctor(this: u32) -> u32 {
+        misc::base_ref_ctor(&mut mem(), this)
+    }
+    /// `0x005d3d60(p)` (create callback).
+    Phyre_PBaseRef_create_005d3d60 @ 0x005d_3d60 => extern "stdcall" fn create_base_ref(p: u32) -> u8 {
+        misc::create_base_ref(&mut mem(), p)
+    }
+    /// `PUtilityGameplay::initialize()` -> 0.
+    Phyre_PGameplay_PUtilityGameplay_initialize @ 0x0043_35b0 => extern "C" fn gameplay_initialize() -> u32 {
+        misc::gameplay_initialize(&mut mem())
+    }
+    /// `0x005a2700(array)`.
+    Phyre_PArray24_release_005a2700 @ 0x005a_2700 => extern "thiscall" fn array24_release(this: u32) -> u32 {
+        misc::array_release(&mut mem(), this)
+    }
+    /// `0x005746b0(out, &v)` -> `out`.
+    Phyre_Matrix4_translation_005746b0 @ 0x0057_46b0 => extern "C" fn translation(out: u32, v: u32) -> u32 {
+        misc::translation(&mut mem(), out, v)
+    }
+    /// `0x005ce550(buffer)`.
+    Phyre_PScripting_PAsyncProcessBuffer_dtor @ 0x005c_e550 => extern "thiscall" fn async_buffer_dtor(this: u32) {
+        misc::async_buffer_dtor(&mut mem(), this);
+    }
+    /// `0x005ce4b0(buffer)` -> `buffer`.
+    Phyre_PScripting_PAsyncProcessBuffer_ctor @ 0x005c_e4b0 => extern "thiscall" fn async_buffer_ctor(this: u32) -> u32 {
+        misc::async_buffer_ctor(&mut mem(), this)
+    }
+    /// `0x005f0ce0(seed, lo, hi)` -> `ST0`.
+    Phyre_HashedFloat_005f0ce0 @ 0x005f_0ce0 => extern "C" fn hashed_float(seed: u32, lo: u32, hi: u32) -> f32 {
+        misc::hashed_float(&mut mem(), seed, lo, hi)
+    }
+    /// `0x005d1880(this)` -> 0.
+    Phyre_PScripting_drainAndClear_005d1880 @ 0x005d_1880 => extern "thiscall" fn drain_and_clear(this: u32) -> u32 {
+        misc::drain_and_clear(&mut mem(), this)
+    }
+    /// `0x0055af50(p)` (destroy callback).
+    Phyre_DestroyRefFree54_0055af50 @ 0x0055_af50 => extern "stdcall" fn destroy_ref_free54(p: u32) -> u8 {
+        misc::destroy_ref_free54(&mut mem(), p)
+    }
+    /// `0x00575470(member)`: `PClassDataMember`'s destructor.
+    Phyre_PClassDataMember_dtor @ 0x0057_5470 => extern "thiscall" fn data_member_dtor(this: u32) -> u32 {
+        misc::data_member_dtor(&mut mem(), this)
+    }
+    /// `0x005744a0(out, &v)` -> `out`.
+    Phyre_Vector4_normalize_005744a0 @ 0x0057_44a0 => extern "C" fn normalize4(out: u32, v: u32) -> u32 {
+        misc::normalize4(&mut mem(), out, v)
+    }
+    /// `PNamedSemanticDescriptor(this, a, b, c, d, e)` -> `this`.
+    Phyre_PNamedSemanticDescriptor_PNamedSemanticDescriptor @ 0x005a_0200 => extern "thiscall" fn named_semantic_ctor(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        misc::named_semantic_ctor(&mut mem(), this, [a, b, c, d, e])
+    }
+    /// `0x00552c60(component)`: `PScriptableComponent`'s destructor.
+    Phyre_PGameplay_PScriptableComponent_dtor @ 0x0055_2c60 => extern "thiscall" fn scriptable_dtor(this: u32) -> u32 {
+        misc::scriptable_dtor(&mut mem(), this)
+    }
+    /// `0x00556910(p)` (create callback).
+    Phyre_PGameplay_PTimer_create_00556910 @ 0x0055_6910 => extern "stdcall" fn create_timer(p: u32) -> u8 {
+        misc::create_timer(&mut mem(), p)
+    }
+    /// `0x0054e0f0(this)` -> `this`; the identity matrix in this frame.
+    Phyre_PGameplay_PLocator_ctor_0054e0f0 @ 0x0054_e0f0 => extern "thiscall" fn locator_ctor(this: u32) -> u32 {
+        let mut f = super::StackFrame::<{ ffx_pother_a::p3_misc::MATRIX_FRAME as usize / 4 }>::new();
+        misc::locator_ctor(&mut mem(), this, f.at())
+    }
+    /// `0x00552200(this)` -> `this`; the identity matrix in this frame.
+    Phyre_PGameplay_PTriggerReceiver_ctor_00552200 @ 0x0055_2200 => extern "thiscall" fn receiver_ctor(this: u32) -> u32 {
+        let mut f = super::StackFrame::<{ ffx_pother_a::p3_misc::MATRIX_FRAME as usize / 4 }>::new();
+        misc::receiver_ctor(&mut mem(), this, f.at())
+    }
+    /// `PRedBlackTree::successor(tree, node)`.
+    Phyre_PRedBlackTree_successor @ 0x0057_5160 => extern "thiscall" fn tree_successor(this: u32, node: u32) -> u32 {
+        tree::successor(&mut mem(), this, node)
+    }
+    /// `PRedBlackTree::remove(tree, node)`.
+    Phyre_PRedBlackTree_remove @ 0x0057_5000 => extern "thiscall" fn tree_remove(this: u32, node: u32) -> u32 {
+        tree::remove(&mut mem(), this, node)
+    }
+    /// `PRedBlackTree::clear(tree)`.
+    Phyre_PRedBlackTree_clear @ 0x0057_4760 => extern "thiscall" fn tree_clear(this: u32) {
+        tree::clear(&mut mem(), this);
     }
 }

@@ -26,6 +26,8 @@ use ffx_graphic::host::{Conv, Host};
 
 pub mod class;
 pub mod object;
+pub mod p3_misc;
+pub mod p3_tree;
 pub mod physics;
 
 /// `Phyre_PhyreFree` (cdecl `(p)`).
