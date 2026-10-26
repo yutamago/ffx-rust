@@ -582,7 +582,7 @@ pub mod bridge {
 
     /// The next node in order of an MSVC `std::map` (`+0` left, `+4`
     /// parent, `+8` right, `+0xd` the head flag); the head stays put.
-    fn successor(h: &mut impl Host, node: u32) -> u32 {
+    pub(crate) fn successor(h: &mut impl Host, node: u32) -> u32 {
         if is_nil(h, node) {
             return node;
         }

@@ -1294,3 +1294,43 @@ pub const B_004FFA30: Bind = Bind {
         }),
     ],
 };
+
+/// `Phyre_Bind_00502100`: three `unsigned int` members (offsets 0, 4, 8).
+pub const B_00502100: Bind = Bind {
+    class: 0x00ca_8d30,
+    steps: &[
+        Step::Member(Member {
+            ctor: 0x0057_52a0,
+            guard: (0x00ca_8e88, 0x1),
+            member: 0x00ca_8e5c,
+            ty: Ty::Get(0x0043_7fc0),
+            name: 0x00b1_4304,
+            off: 0x0,
+            a: 0x10,
+            b: 0x0,
+            atexit: 0x00af_fa70,
+        }),
+        Step::Member(Member {
+            ctor: 0x0057_52a0,
+            guard: (0x00ca_8e88, 0x2),
+            member: 0x00ca_8e8c,
+            ty: Ty::Get(0x0043_7fc0),
+            name: 0x00b2_48b8,
+            off: 0x4,
+            a: 0x10,
+            b: 0x0,
+            atexit: 0x00af_fa80,
+        }),
+        Step::Member(Member {
+            ctor: 0x0057_52a0,
+            guard: (0x00ca_8e88, 0x4),
+            member: 0x00ca_8eb8,
+            ty: Ty::Get(0x0043_7fc0),
+            name: 0x00b0_ea78,
+            off: 0x8,
+            a: 0x10,
+            b: 0x0,
+            atexit: 0x00af_fa90,
+        }),
+    ],
+};

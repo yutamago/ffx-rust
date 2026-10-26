@@ -84,10 +84,21 @@ unsafe fn install_hooks(base: usize) {
     let hooks = ffx_hook::hooks();
     // `FFX_HOOK_ONLY`: every replacement not named there stays original,
     // so a run can hold the original code plus a few ports (the M4
-    // pilot's gate against the original captures)
-    let only = std::env::var("FFX_HOOK_ONLY").ok();
+    // pilot's gate against the original captures). `@<file>` reads the
+    // names from a file (comma- or line-separated): the M4 port lists
+    // outgrew the 128 KB a single environment string may hold.
+    let only = std::env::var("FFX_HOOK_ONLY")
+        .ok()
+        .map(|v| match v.strip_prefix('@') {
+            Some(path) => std::fs::read_to_string(path.trim()).unwrap_or_default(),
+            None => v,
+        });
     if let Some(only) = &only {
-        let keep: Vec<&str> = only.split(',').map(str::trim).collect();
+        let keep: Vec<&str> = only
+            .split([',', '\n', '\r'])
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
         for h in &hooks {
             if h.original.is_none() && !keep.contains(&h.name) {
                 disabled.push(h.name);
