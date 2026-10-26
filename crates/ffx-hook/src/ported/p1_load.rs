@@ -9,7 +9,7 @@
 //! classes are each their own original, so each gets its own line.
 
 use super::{StackFrame, mem, ported};
-use ffx_pload::{cluster, descriptor, stream, types};
+use ffx_pload::{cluster, descriptor, p1_misc, stream, types};
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
 /// constructs one in place).
@@ -880,5 +880,99 @@ ported! {
     /// A `(hash, name)` tree lookup through the CRT's compare `(&key)`.
     Phyre_PHashTree_find_0045b8f0 @ 0x0045_b8f0 => extern "thiscall" fn import_find(this: u32, key: u32) -> u32 {
         descriptor::bridge::import_find(&mut mem(), this, key)
+    }
+    // ---- continuation round, batch 10 (ffx_pload::p1_misc) ----
+    /// `PClassDescriptorAbstract<PArray<u8>>`'s constructor.
+    Phyre_PClassDescriptorAbstract_PArray_u8_PClassDescriptorAbstract @ 0x0044_73f0 => extern "thiscall" fn abstract_ctor_73f0(this: u32) -> u32 {
+        p1_misc::bridge::abstract_descriptor_ctor(&mut mem(), this, 0x00c9_1928, 0x00b0_fcac, 0x00c9_1930)
+    }
+    /// `PClassDescriptorConcrete<PSharray<PString>>`'s constructor (an abstract descriptor's body).
+    Phyre_PClassDescriptorConcrete_Phyre_PSharray_Phyre_PString__PClassDescriptorConcrete @ 0x0044_ac10 => extern "thiscall" fn abstract_ctor_ac10(this: u32) -> u32 {
+        p1_misc::bridge::abstract_descriptor_ctor(&mut mem(), this, 0x00c9_1b78, 0x00b1_00b4, 0x00c9_1b80)
+    }
+    /// An instance list's buffer `(n, size, buffer)`.
+    Phyre_PInstanceList_setBuffer_005763b0 @ 0x0057_63b0 => extern "thiscall" fn instance_list_set_buffer(this: u32, n: u32, size: u32, buffer: u32) -> u32 {
+        p1_misc::bridge::instance_list_set_buffer(&mut mem(), this, n, size, buffer)
+    }
+    /// `PAssetReferenceImport`'s construction in place `(p)`.
+    Phyre_PAssetReferenceImport_PAssetReferenceImport @ 0x0045_c9e0 => extern "C" fn construct_asset_import(p: u32) -> u32 {
+        p1_misc::bridge::construct_asset_import(&mut mem(), p)
+    }
+    /// The UTF-8 decoder `(&cursor)`.
+    Phyre_PUtf8_decodeNext_0045d640 @ 0x0045_d640 => extern "C" fn utf8_next(cursor: u32) -> u32 {
+        p1_misc::bridge::utf8_next(&mut mem(), cursor)
+    }
+    /// The UTF-8 name hash `(name, seed)`.
+    Phyre_PUtf8_hashName_0045d520 @ 0x0045_d520 => extern "C" fn utf8_hash(name: u32, seed: u32) -> u32 {
+        p1_misc::bridge::utf8_hash(&mem(), name, seed)
+    }
+    /// Three objects deleted, two arrays released.
+    Phyre_releaseParts_00605660 @ 0x0060_5660 => extern "thiscall" fn release_parts(this: u32) -> u32 {
+        p1_misc::bridge::release_parts(&mut mem(), this)
+    }
+    /// A pointer array with one inline slot, resized `(n)`.
+    Phyre_PArrayInline_resize_0057ccf0 @ 0x0057_ccf0 => extern "thiscall" fn inline_array_resize(this: u32, n: u32) -> u32 {
+        p1_misc::bridge::inline_array_resize(&mut mem(), this, n)
+    }
+    /// `n` `PString` copies `(dst, src, n)`.
+    Phyre_PString_copyArray_0044a470 @ 0x0044_a470 => extern "C" fn copy_strings(dst: u32, src: u32, n: u32) {
+        p1_misc::bridge::copy_strings(&mut mem(), dst, src, n);
+    }
+    /// A destructor releasing three arrays.
+    Phyre_releaseThreeArrays_00479930 @ 0x0047_9930 => extern "thiscall" fn release_three(this: u32) {
+        p1_misc::bridge::release_three(&mut mem(), this);
+    }
+    /// A destructor releasing three arrays, one with an inline slot.
+    Phyre_releaseThreeArraysInline_00577f60 @ 0x0057_7f60 => extern "thiscall" fn release_three_inline(this: u32) {
+        p1_misc::bridge::release_three_inline(&mut mem(), this);
+    }
+    /// `PClassDataMember::PClassDataMember(desc, type, name, offset, flags, kind)`.
+    Phyre_PClassDataMember_PClassDataMember @ 0x0057_52a0 => extern "thiscall" fn data_member_ctor(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> u32 {
+        p1_misc::bridge::data_member_ctor(&mut mem(), this, [a, b, c, d, e, f])
+    }
+    /// `PClassDataMemberEnum::PClassDataMemberEnum(desc, type, name, offset, flags, values)`.
+    Phyre_PClassDataMemberEnum_PClassDataMemberEnum @ 0x0057_5370 => extern "thiscall" fn enum_member_ctor(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> u32 {
+        p1_misc::bridge::enum_member_ctor(&mut mem(), this, [a, b, c, d, e, f])
+    }
+    /// `PClassDataMemberDynamic::PClassDataMemberDynamic(desc, type, name, offset, flags, kind)`.
+    Phyre_PClassDataMemberDynamic_PClassDataMemberDynamic @ 0x0044_61e0 => extern "thiscall" fn dynamic_member_ctor(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> u32 {
+        p1_misc::bridge::dynamic_member_ctor(&mut mem(), this, [a, b, c, d, e, f])
+    }
+    /// `PClassDataMemberDynamic`'s construction in place `(p)`.
+    Phyre_PClassDataMemberDynamic_constructInPlace_004465c0 @ 0x0044_65c0 => extern "C" fn construct_dynamic_member(p: u32) -> u32 {
+        p1_misc::bridge::construct_dynamic_member(&mut mem(), p)
+    }
+    /// `PNamespace::getClassDescriptor(name)`.
+    Phyre_PNamespace_getClassDescriptor @ 0x0043_e950 => extern "thiscall" fn namespace_find(this: u32, name: u32) -> u32 {
+        p1_misc::bridge::namespace_find(&mut mem(), this, name)
+    }
+    /// `PNamespace::add(desc)`.
+    Phyre_PNamespace_add @ 0x0043_e660 => extern "thiscall" fn namespace_add(this: u32, desc: u32) {
+        p1_misc::bridge::namespace_add(&mut mem(), this, desc);
+    }
+    /// The asset tree's insert `(import)`.
+    Phyre_PAssetReferenceImport_treeInsert_0045b9d0 @ 0x0045_b9d0 => extern "thiscall" fn import_insert(this: u32, import: u32) -> u32 {
+        p1_misc::bridge::import_insert(&mut mem(), this, import)
+    }
+    /// `PClassDescriptor::applyDefaultBufferWithValidation(p, n)`.
+    Phyre_PClassDescriptor_applyDefaultBufferWithValidation @ 0x0043_c160 => extern "thiscall" fn apply_default_buffer(this: u32, p: u32, n: u32) -> u32 {
+        p1_misc::bridge::apply_default_buffer(&mut mem(), this, p, n)
+    }
+    /// Two float arrays blended `(&w, n, &arrays, &out)`.
+    Phyre_blend2Floats_005cb870 @ 0x005c_b870 => extern "C" fn blend2(w: u32, n: u32, arrays: u32, out: u32) {
+        p1_misc::bridge::blend2(&mut mem(), w, n, arrays, out);
+    }
+    /// The groups' resources handed back to the renderer.
+    Phyre_releaseGroupResources_006019b0 @ 0x0060_19b0 => extern "thiscall" fn release_group_resources(this: u32) -> u32 {
+        p1_misc::bridge::release_group_resources(&mut mem(), this)
+    }
+    /// The cluster registry's add under its lock (ten words); the key and record in this frame.
+    Phyre_PClusterRegistry_addLocked_0058c010 @ 0x0058_c010 => extern "thiscall" fn registry_add_locked(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32, h: u32, i: u32, j: u32) -> u32 {
+        let mut frame = StackFrame::<11>::new();
+        p1_misc::bridge::registry_add_locked(&mut mem(), frame.at(), this, [a, b, c, d, e, f, g, h, i, j])
+    }
+    /// `PClassDescriptorDynamic`'s buffers refreshed.
+    Phyre_PClassDescriptorDynamic_refreshBuffers_00449e40 @ 0x0044_9e40 => extern "thiscall" fn dynamic_refresh(this: u32) {
+        p1_misc::bridge::dynamic_refresh(&mut mem(), this);
     }
 }

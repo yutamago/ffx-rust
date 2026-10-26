@@ -671,6 +671,8 @@ pub mod bridge {
             return 0;
         }
         let data: u32 = h.read(list + 0x30);
+        // read again after the call, as the original (0x0044105f)
+        let size: u32 = h.read(desc + 0x1c);
         let mut p = data;
         for _ in 0..n {
             h.call_sym(0x0043_ce00, Conv::Thiscall(desc), &[p]);
