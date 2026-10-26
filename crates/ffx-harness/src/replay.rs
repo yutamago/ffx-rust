@@ -12,6 +12,7 @@
 //! | `battle FIELD GROUP FORMATION` | starts a battle (`screens::start_battle`) |
 //! | `trace RANGE...` | starts tracing these ranges (`addr:len`, `*addr+off:len`; see the `trace` harness command) |
 //! | `realtime` | read before launch ([`realtime`]): the game runs at its own frame rate, not in fast mode; skipped here |
+//! | `settings NAME` | read before launch ([`settings`]): `tools/sandbox/NAME.ini` merged over the sandbox's `GameSetting.ini`; skipped here |
 //! | anything else | sent to the harness as it is (`press circle 4`, `wait 60`, ...) |
 //!
 //! `$OUT` in a line is the trace's folder (a Windows path), so a run's
@@ -40,7 +41,7 @@ pub fn play(game: &mut Game, script: &str, trace: &str) -> Result<Vec<String>> {
         }
         let words: Vec<&str> = line.split_whitespace().collect();
         let reply = match words[0] {
-            "realtime" => continue,
+            "realtime" | "settings" => continue,
             "load" => {
                 // `load <entry> [script]` or `load direct <save> [script]`:
                 // fails when another scene starts (a lost key press loads a
@@ -111,6 +112,25 @@ pub fn realtime(script: &str) -> bool {
         .any(|l| l.split('#').next().unwrap_or("").trim() == "realtime")
 }
 
+/// The settings file a script asks for (a `settings NAME` line): the game
+/// starts with `tools/sandbox/NAME.ini` merged over the sandbox's
+/// `GameSetting.ini` ([`crate::Options::settings`]). The last such line
+/// wins.
+#[must_use]
+pub fn settings(script: &str) -> Option<String> {
+    script
+        .lines()
+        .filter_map(|l| {
+            let mut words = l.split('#').next().unwrap_or("").split_whitespace();
+            if words.next() == Some("settings") {
+                words.next().map(str::to_owned)
+            } else {
+                None
+            }
+        })
+        .next_back()
+}
+
 /// The first frame where two traces differ: `(frame, range index)`, or
 /// `None` when they agree on every frame both have.
 #[must_use]
@@ -134,6 +154,15 @@ pub fn first_difference(a: &str, b: &str) -> Option<(u32, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_line() {
+        assert_eq!(settings("load direct 1\nwait 3\n"), None);
+        assert_eq!(
+            settings("# settings x\nsettings hdao # HDAO on\nwait 3\n").as_deref(),
+            Some("hdao")
+        );
+    }
 
     #[test]
     fn differences() {

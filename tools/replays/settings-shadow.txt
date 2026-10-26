@@ -1,0 +1,44 @@
+# Graphics settings (M4 coverage 2, docs/harness.md "Settings replays"):
+# Shadow=3 (tools/sandbox/shadow.ini merged over the sandbox's
+# GameSetting.ini, Quality=VQ_CUSTOM so the file's value counts), on three
+# maps with three shadow solutions (docs/formats/scene-maps.md, Q7): the
+# deck (save ffx_001, cdsp0000, solution 2: one cascade), Besaid beach
+# (save ffx_003, bsil0000, solution 4: two cascades) and the Thunder Plains
+# agency (save ffx_005, kami0100, solution 0: the per-character atlas).
+# With Shadow=0 ShadowManager +0x4060 is 0 and the cascade pass 0x006c9e50
+# and 0x006caee0 return at once; here they draw. Shots at ctrl work 0's
+# count 101 on each map (and the deck's after field-walk's short walk).
+# Traced: the settings words (g_Settings +0x30..+0x4b), the map words, the
+# generators and the party records.
+settings shadow
+load direct 1 cdsp0000
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+readp 0x022fb504 0x30 0x1c
+trace *0x022fb504+0x30:0x1c 0x0112ca90:4 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68
+read 0x01325d94 4
+shot $OUT\settings-shadow-1.bmp
+press up 40 10
+press left 20 10
+press down 20 10
+wait 120
+read 0x01325d94 4
+shot $OUT\settings-shadow-2.bmp
+# Besaid beach, as draw-field.txt's third capture
+loadsave 3
+waitfor 0x0112ca90:2 4600 ffff 1500
+waitfor 0x01325d94:4 00000000 c0ffffff 1500
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+read 0x01325d94 4
+shot $OUT\settings-shadow-3.bmp
+# the agency
+loadsave 5
+waitfor 0x0112ca90:2 0701 ffff 1500
+waitfor 0x01325d94:4 00000000 c0ffffff 1500
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+read 0x01325d94 4
+shot $OUT\settings-shadow-4.bmp

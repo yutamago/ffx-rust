@@ -92,6 +92,12 @@ pub struct Options {
     /// `FFX_RUST_MAP=build` (passed on to the game) has the scene builder
     /// draw the supported maps (`gfx::map_build`).
     pub rust_map: bool,
+    /// Settings merged over [`SANDBOX_SETTINGS`] (`docs/harness.md`,
+    /// "Sandbox settings"): a name, `tools/sandbox/<name>.ini`, or a path
+    /// (relative to the repository). Its `key=value` lines replace the
+    /// default file's and add keys it lacks. `None` (the default unless
+    /// `FFX_SETTINGS` names one) keeps the default file alone.
+    pub settings: Option<String>,
 }
 
 impl Default for Options {
@@ -114,6 +120,7 @@ impl Default for Options {
                 .ok()
                 .filter(|v| !v.is_empty()),
             rust_map: std::env::var("FFX_RUST_MAP").is_ok_and(|v| v == "1" || v == "build"),
+            settings: std::env::var("FFX_SETTINGS").ok().filter(|v| !v.is_empty()),
         }
     }
 }
@@ -346,6 +353,55 @@ const SAVE_FOLDER: &str = "FINAL FANTASY X";
 /// user's.
 pub const SANDBOX_SETTINGS: &str = "tools/sandbox/GameSetting.ini";
 
+/// The file a settings name stands for: `tools/sandbox/<name>.ini`, or
+/// `name` itself (relative to `repo`) when it has a `/` or ends in `.ini`.
+#[must_use]
+pub fn settings_path(repo: &Path, name: &str) -> PathBuf {
+    if name.contains(['/', '\\']) || name.ends_with(".ini") {
+        repo.join(name)
+    } else {
+        repo.join("tools/sandbox").join(format!("{name}.ini"))
+    }
+}
+
+/// The `key=value` lines of a settings file, without `#` comments and blank
+/// lines.
+fn settings_lines(path: &Path) -> Result<Vec<String>> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| Error::Launch(format!("sandbox settings {}: {e}", path.display())))?;
+    Ok(text
+        .lines()
+        .map(str::trim_end)
+        .filter(|l| !l.trim_start().starts_with('#') && !l.trim().is_empty())
+        .map(str::to_owned)
+        .collect())
+}
+
+/// `base`'s lines with each key `extra` sets replaced in place, and
+/// `extra`'s other keys appended in its order.
+fn merge_settings(base: &[String], extra: &[String]) -> Vec<String> {
+    let key = |l: &str| l.split_once('=').map_or(l, |(k, _)| k).trim().to_owned();
+    let mut out: Vec<String> = base
+        .iter()
+        .map(|l| {
+            let k = key(l);
+            extra
+                .iter()
+                .rev()
+                .find(|e| key(e) == k)
+                .unwrap_or(l)
+                .clone()
+        })
+        .collect();
+    for e in extra {
+        let k = key(e);
+        if !out.iter().any(|l| key(l) == k) {
+            out.push(e.clone());
+        }
+    }
+    out
+}
+
 /// The settings file's name in the game's Documents folder.
 const SETTINGS_FILE: &str = "GameSetting.ini";
 
@@ -356,6 +412,7 @@ const SETTINGS_FILE: &str = "GameSetting.ini";
 fn prepare_home(
     home: &Path,
     settings: &Path,
+    overlay: Option<&Path>,
     copy: bool,
     saves: &[(String, PathBuf)],
 ) -> Result<()> {
@@ -383,11 +440,13 @@ fn prepare_home(
     std::fs::create_dir_all(home.join(GAME_DOCUMENTS))?;
     // Without the file's `#` comment lines: the game's own parser
     // (`Settings_Load` `0x00401cb0`) knows only `key=value` lines.
-    let text = std::fs::read_to_string(settings)
-        .map_err(|e| Error::Launch(format!("sandbox settings {}: {e}", settings.display())))?;
+    let mut merged = settings_lines(settings)?;
+    if let Some(overlay) = overlay {
+        merged = merge_settings(&merged, &settings_lines(overlay)?);
+    }
     let mut lines = String::new();
-    for l in text.lines().filter(|l| !l.trim_start().starts_with('#')) {
-        lines.push_str(l);
+    for l in merged {
+        lines.push_str(&l);
         lines.push('\n');
     }
     std::fs::write(&target, lines)?;
@@ -490,9 +549,14 @@ impl Game {
             Home::Real => None,
         };
         if let Some(home) = home {
+            let overlay = options
+                .settings
+                .as_deref()
+                .map(|name| settings_path(&options.repo, name));
             prepare_home(
                 &home,
                 &options.repo.join(SANDBOX_SETTINGS),
+                overlay.as_deref(),
                 options.copy_user_data,
                 &options.saves,
             )?;
@@ -943,6 +1007,7 @@ mod tests {
         prepare_home(
             &home,
             &sandbox,
+            None,
             false,
             &[("ffx_007".into(), source.clone())],
         )
@@ -962,7 +1027,42 @@ mod tests {
             1,
             "{settings}"
         );
-        assert!(prepare_home(&home, &sandbox, false, &[("../x".into(), source)]).is_err());
+        assert!(prepare_home(&home, &sandbox, None, false, &[("../x".into(), source)]).is_err());
+        // an overlay replaces keys in place and appends new ones
+        let overlay = dir.join("over.ini");
+        std::fs::write(
+            &overlay,
+            "# comment\nHDAO=High\nQuality=VQ_CUSTOM\nNewKey=1\n",
+        )
+        .unwrap();
+        prepare_home(&home, &sandbox, Some(&overlay), false, &[]).unwrap();
+        let settings = std::fs::read_to_string(game.join(SETTINGS_FILE)).unwrap();
+        let keys: Vec<&str> = settings
+            .lines()
+            .filter_map(|l| l.split_once('=').map(|(k, _)| k))
+            .collect();
+        assert!(
+            settings.contains("HDAO=High\n") && !settings.contains("HDAO=Off"),
+            "{settings}"
+        );
+        assert!(settings.contains("Quality=VQ_CUSTOM\n"), "{settings}");
+        assert!(!settings.contains('#'), "{settings}");
+        assert_eq!(keys.iter().filter(|k| **k == "HDAO").count(), 1);
+        assert!(
+            keys.iter().position(|k| *k == "Quality") < keys.iter().position(|k| *k == "HDAO"),
+            "in place: {settings}"
+        );
+        assert_eq!(keys.iter().filter(|k| **k == "NewKey").count(), 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn settings_names() {
+        let repo = Path::new("/r");
+        assert_eq!(
+            settings_path(repo, "hdao"),
+            Path::new("/r/tools/sandbox/hdao.ini")
+        );
+        assert_eq!(settings_path(repo, "x/y.ini"), Path::new("/r/x/y.ini"));
     }
 }

@@ -1,0 +1,27 @@
+# Graphics settings (M4 coverage 2, docs/harness.md "Settings replays"):
+# field-walk's deck (save ffx_001, cdsp0000, shadow solution 2) with
+# HDAO=High (tools/sandbox/hdao.ini merged over the sandbox's
+# GameSetting.ini, Quality=VQ_CUSTOM so the file's value counts). Reaches
+# PostProcessManager_renderHDAOPass and its ring setup (g_Settings +0x48 ->
+# pp +0x1264). Shots pinned to ctrl work 0's count as in field-walk.txt
+# (101 and, after a short walk of a fixed 230 frames in lockstep, 331).
+# Traced: the settings words (g_Settings 0x022fb504 -> +0x30..+0x4b:
+# Shadow, TextureQuality, MSAA, ColorCorrection, PostAA, UnSharpMask, HDAO)
+# so a settings file the game did not take shows up as a difference, the
+# generators and the party records.
+settings hdao
+load direct 1 cdsp0000
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+readp 0x022fb504 0x30 0x1c
+trace *0x022fb504+0x30:0x1c 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68
+read 0x01325d94 4
+shot $OUT\settings-hdao-1.bmp
+press up 40 10
+press left 20 10
+press down 20 10
+wait 120
+read 0x01325d94 4
+shot $OUT\settings-hdao-2.bmp

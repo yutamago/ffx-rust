@@ -3,7 +3,9 @@
 //! Rust replacements are not installed, so the trace is the original
 //! code's. `$OUT` in the script is the trace's folder (screenshots). Compare
 //! two traces with `replay_diff`. Faults and panics the hook logged during
-//! the run are printed to stderr (`hook log: ...`).
+//! the run are printed to stderr (`hook log: ...`). A `settings NAME` line
+//! in the script (or `FFX_SETTINGS=NAME`) starts the game with
+//! `tools/sandbox/NAME.ini` merged over the sandbox's settings.
 fn main() -> ffx_harness::Result<()> {
     let mut args = std::env::args().skip(1);
     let script = std::fs::read_to_string(
@@ -18,6 +20,9 @@ fn main() -> ffx_harness::Result<()> {
     if ffx_harness::replay::realtime(&script) {
         options.fast = false;
         options.virtual_clock = false;
+    }
+    if let Some(name) = ffx_harness::replay::settings(&script) {
+        options.settings = Some(name);
     }
     if args.next().as_deref() == Some("original") {
         options.hook_disable = Some("replacements".into());

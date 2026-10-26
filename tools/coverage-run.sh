@@ -11,6 +11,7 @@
 # COVERAGE_ALL=1 arms every function of the dump (PhyreEngine and the CRT
 # included, tools/coverage.py candidates --all) and does not merge into
 # symbols/coverage.txt: the hits stay in $COVERAGE_DIR/cand.txt.hits.
+# Each run's own hits land in $COVERAGE_DIR/<tag>.hits as well.
 # COVERAGE_REPLAYS="a b ..." picks the replays (default field-walk
 # battle-attack menu-browse); COVERAGE_DIR the Windows-drive folder.
 set -u
@@ -26,11 +27,16 @@ rm -f "$lin/cand.txt.hits"
 export FFX_COVERAGE="$lin/cand.txt"
 log="$FFX_GAME_DIR/ffx-hook.log"
 run() { # script, tag
-    local n
+    local n h
     n=$(wc -l < "$log")
+    # every launch arms all candidates again and appends its own first hits:
+    # the lines this run adds are its hits ($lin/<tag>.hits)
+    h=$(cat "$lin/cand.txt.hits" 2>/dev/null | wc -l)
     timeout 1800 cargo run -q --release -p ffx-harness --example replay -- \
         "$1" "$win\\$2.trace" original > "$lin/$2.out" 2>&1
-    echo "== $2: exit $?, $(sort -u "$lin/cand.txt.hits" 2>/dev/null | wc -l) distinct hits so far"
+    local status=$?
+    tail -n +"$((h + 1))" "$lin/cand.txt.hits" 2>/dev/null > "$lin/$2.hits"
+    echo "== $2: exit $status, $(wc -l < "$lin/$2.hits") hits, $(sort -u "$lin/cand.txt.hits" 2>/dev/null | wc -l) distinct hits so far"
     tail -n +"$n" "$log" | grep -E 'coverage:|FAULT|PANIC' | head -4
 }
 replays=1
