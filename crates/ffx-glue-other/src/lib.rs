@@ -27,7 +27,11 @@
 //! - [`h4_d1`]: continuation round 2: the particle fill-buffer jobs, the
 //!   Iggy manager's render and menu insert, `GDraw`'s render-thread setup,
 //!   files, the menu textures' kind dispatch, the distortion target,
-//!   `SfxEvent_isPlaying`, the Atel shape's VFX.
+//!   `SfxEvent_isPlaying`, the Atel shape's VFX;
+//! - [`h4_d2`]: its second batch: the escape menu's callbacks and
+//!   language call, the Iggy callback table, the button-remap tables, the
+//!   menu buffers and UI-instance unload, the touch reset, the shader
+//!   texture rebinding walks.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -52,6 +56,7 @@ pub mod h4_c2;
 pub mod h4_c3;
 pub mod h4_c4;
 pub mod h4_d1;
+pub mod h4_d2;
 pub mod menu;
 pub mod misc;
 pub mod movie;

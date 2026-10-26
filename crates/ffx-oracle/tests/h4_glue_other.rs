@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4, h4_d1 as d1,
-    menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_d2 as d2, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -7890,6 +7890,448 @@ fn d1_effects_sound_vfx() {
                 Conv::Cdecl,
                 &args,
                 |g| u(d1::init_vfx_render_data_atel_shp(g, args)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 2, batch 2 (ffx_glue_other::h4_d2)
+
+/// A C string in both oracles.
+fn c_string(t: &mut Twins, text: &str) -> u32 {
+    let mut b = text.as_bytes().to_vec();
+    b.push(0);
+    t.alloc(&b)
+}
+
+/// The escape menu's sound kinds, callback table and language call.
+#[test]
+fn d2_esc_menu() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d201);
+        let stubs: [(u32, bool, u32, u32); 5] = [
+            (d2::HANDLERS_ADD, true, 4, 4),
+            (d2::ADD_CALLBACK, true, 2, 2),
+            (d2::REGISTER_AUDIO_PREVIEW, true, 0, 0),
+            (d2::LOCALIZATION, false, 0, 0),
+            (d2::CALL_FLASH_1, false, 6, 0),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let value_cells: [u32; 4] = std::array::from_fn(|_| t.zeros(4));
+        let writes: Vec<Write> = value_cells
+            .iter()
+            .enumerate()
+            .map(|(k, &cell)| Write {
+                arg: Some(0),
+                offset: 4 * k as u32,
+                cell,
+            })
+            .collect();
+        t.stub_at(d2::IGGY_VALUE_SET, false, 2, 0, &writes);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(d2::IGGY_VALUE_SET);
+        let names = [
+            "change", "click", "cancel", "error", "clic", "errors", "", "zzz", "a", "chang",
+        ];
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // playSound
+            let text = names[rng.below(names.len() as u32) as usize];
+            let s = c_string(&mut t, text);
+            let value = t.random(&mut rng, 0x10);
+            t.w32(value + 8, s);
+            let menu = rng.next();
+            t.check(
+                &format!("{w} play sound {text:?}"),
+                0x0068_f9e0,
+                Conv::Cdecl,
+                &[menu, value],
+                |g| u(d2::esc_play_sound(g, menu, value)),
+            );
+            // registerCallbacks
+            t.check(
+                &format!("{w} register"),
+                0x0068_fd40,
+                Conv::Thiscall(menu),
+                &[],
+                |g| u(d2::esc_register_callbacks(g, menu)),
+            );
+            // the language call
+            let loc = t.random(&mut rng, 8);
+            let lang = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, u32::MAX][rng.below(13) as usize];
+            t.w32(loc + 4, lang);
+            t.ret(d2::LOCALIZATION, loc);
+            for &cell in &value_cells {
+                let v = rng.next();
+                t.w32(cell, v);
+            }
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} language {lang}"),
+                0x0068_f400,
+                Conv::Thiscall(menu),
+                &[],
+                ebp - 0x90,
+                &[(0, 0x90)],
+                |g| u(d2::esc_set_language(g, ebp - 0x90, menu)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The Iggy callback table's add, the button-remap tables, the menu
+/// manager's buffer gathering and UI-instance unload, the touch reset.
+#[test]
+fn d2_tables_menus_touch() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d202);
+        let stubs: [(u32, bool, u32, u32); 6] = [
+            (d2::PHYRE_MALLOC, false, 2, 0),
+            (d2::PHYRE_FREE, false, 1, 0),
+            (d2::RESET_MATERIALS, true, 0, 0),
+            (d2::TOUCH_RECORDS_INIT, false, 2, 0),
+            (d2::TOUCH_TRACKS_INIT, false, 2, 0),
+            (d2::TOUCH_INIT_GROUP, true, 0, 0),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let pool = ["Menu", "Menu2", "Men", "", "Status", "Menu "];
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the callback table's add
+            let this = t.random(&mut rng, 0x18);
+            let n = rng.below(4);
+            let records = t.random(&mut rng, 16 * 5);
+            for k in 0..n {
+                let used = [0, 1, 1, 0x80][rng.below(4) as usize];
+                t.w8(records + 16 * k, used);
+            }
+            t.w32(this + 0x10, n | (rng.below(2) << 31));
+            let owned = [records, 0][rng.below(5).min(1) as usize];
+            t.w32(this + 0x14, owned);
+            let fresh = t.random(&mut rng, 16 * 5);
+            let fresh = [fresh, fresh, 0][rng.below(3) as usize];
+            t.ret(d2::PHYRE_MALLOC, fresh);
+            let text = pool[rng.below(pool.len() as u32) as usize];
+            let s = c_string(&mut t, text);
+            let (menu, f) = (rng.next(), rng.next());
+            // the original copies a word of which it wrote only the low
+            // byte: the never-written three are 0 (brief 2026-10-24)
+            let ebp = t.ebp_for(3);
+            t.w32(ebp - 0x18, 0);
+            if owned != 0 || n == 0 {
+                t.check(
+                    &format!("{w} callback add {text:?}"),
+                    0x00a2_66b0,
+                    Conv::Thiscall(this),
+                    &[menu, s, f],
+                    |g| u(d2::callback_table_add(g, this, menu, s, f)),
+                );
+            }
+            // the button-remap tables
+            let remap = t.random(&mut rng, 0x130);
+            t.check(
+                &format!("{w} message map"),
+                0x006e_6730,
+                Conv::Thiscall(remap),
+                &[],
+                |g| {
+                    d2::init_message_input_map(g, remap);
+                    Out::None
+                },
+            );
+            t.check(
+                &format!("{w} button map"),
+                0x006e_6890,
+                Conv::Thiscall(remap),
+                &[],
+                |g| {
+                    d2::init_ui_button_map(g, remap);
+                    Out::None
+                },
+            );
+            // the buffer gathering
+            let mgr = t.zeros(0x5848);
+            let n = rng.below(6);
+            t.w32(mgr + 0x5844, n);
+            for (first, list, out) in [(0x2bfc, 0x15ec, 0x2c50), (0x583c, 0x4244, 0x5840)] {
+                let entries = t.random(&mut rng, 4 * 16);
+                t.w32(mgr + list, entries);
+                let v = n + rng.below(8);
+                t.w32(mgr + first, v);
+                let v = n + 0x100 + rng.below(0x100);
+                t.w32(mgr + out, v);
+            }
+            for k in 0..6 {
+                let flag = [0, 1, 2][rng.below(3) as usize];
+                t.g32(d2::MENU_SLOT_GROUPS + 4 * k, flag);
+            }
+            let which = [0, 1, 2, u32::MAX][rng.below(4) as usize];
+            t.check(
+                &format!("{w} gather {which}"),
+                0x0067_b530,
+                Conv::Thiscall(mgr),
+                &[which],
+                |g| u(d2::gather_menu_buffers(g, mgr, which)),
+            );
+            // the UI-instance unload
+            if i % 4 == 0 {
+                let mgr = t.zeros(0x5838);
+                let names: Vec<u32> = pool.iter().map(|p| c_string(&mut t, p)).collect();
+                for (array, n) in [
+                    (0x2bd4, 0x258),
+                    (0x2bdc, 0x320),
+                    (0x582c, 0x258),
+                    (0x5834, 0x320),
+                ] {
+                    let records = t.zeros(16 * n);
+                    for _ in 0..12 {
+                        let k = rng.below(n as u32);
+                        let geometry = [0, rng.next()][rng.below(3).min(1) as usize];
+                        t.w32(records + 16 * k, geometry);
+                        let nm = names[rng.below(names.len() as u32) as usize];
+                        t.w32(records + 16 * k + 8, nm);
+                    }
+                    if rng.below(2) == 0 {
+                        // the last record decides the eax
+                        let nm = names[rng.below(names.len() as u32) as usize];
+                        t.w32(records + 16 * (n as u32 - 1) + 8, nm);
+                    }
+                    t.w32(mgr + array, records);
+                }
+                for sym in d2::UNLOADED_NAMES {
+                    let v = rng.next();
+                    t.g32(sym, v);
+                }
+                let target = names[rng.below(names.len() as u32) as usize];
+                t.check(
+                    &format!("{w} ui unloaded"),
+                    0x0067_e4f0,
+                    Conv::Thiscall(mgr),
+                    &[target],
+                    |g| u(d2::set_menu_ui_instance_unloaded(g, mgr, target)),
+                );
+            }
+            // the touch reset
+            let touch = t.random(&mut rng, 0x160);
+            let records = t.random(&mut rng, 0xa80);
+            let groups = t.random(&mut rng, 0x390);
+            t.w32(
+                touch + 0x150,
+                [8, 8, 3, 0, 8 | 0x8000_0000][rng.below(5) as usize],
+            );
+            t.w32(touch + 0x154, records);
+            t.w32(
+                touch + 0x158,
+                [2, 2, 0, 1, 0x8000_0002][rng.below(5) as usize],
+            );
+            t.w32(touch + 0x15c, groups);
+            let fresh = t.random(&mut rng, 0xa80);
+            let fresh = [fresh, fresh, 0][rng.below(3) as usize];
+            t.ret(d2::PHYRE_MALLOC, fresh);
+            t.check(
+                &format!("{w} touch reset"),
+                0x0068_a660,
+                Conv::Thiscall(touch),
+                &[],
+                |g| u(d2::touch_reset(g, touch)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The scene walk's engine calls: `Seek4` fills the cursor from cells,
+/// `Next4` hands out a second run once (its count cell is cleared after).
+struct Walk {
+    seek: [u32; 5],
+    next_count: u32,
+    next_cur: u32,
+    next_end: u32,
+}
+
+fn walk_stubs(t: &mut Twins) -> Walk {
+    let seek: [u32; 5] = std::array::from_fn(|_| t.zeros(4));
+    // the base word (+0x10) stays the walk's own 0
+    let writes: Vec<Write> = seek[..4]
+        .iter()
+        .enumerate()
+        .map(|(k, &cell)| Write {
+            arg: None,
+            offset: 4 * k as u32,
+            cell,
+        })
+        .collect();
+    t.stub_at(d2::CURSOR_SEEK, true, 0, 0, &writes);
+    let next_count = t.zeros(4);
+    let next_cur = t.zeros(4);
+    let next_end = t.zeros(4);
+    let writes = [
+        Write {
+            arg: None,
+            offset: 0xc,
+            cell: next_count,
+        },
+        Write {
+            arg: None,
+            offset: 0,
+            cell: next_cur,
+        },
+        Write {
+            arg: None,
+            offset: 4,
+            cell: next_end,
+        },
+    ];
+    let inner = t.stub_out(d2::CURSOR_NEXT, true, 0, 0, &writes);
+    // after the writes, the count cell is cleared: the walk ends
+    let mut c = vec![0xe8];
+    let at = t.cave_next;
+    c.extend(inner.wrapping_sub(at + 5).to_le_bytes()); // call inner
+    c.extend([0xc7, 0x05]);
+    c.extend(next_count.to_le_bytes());
+    c.extend(0u32.to_le_bytes()); // mov dword [count], 0
+    c.push(0xc3);
+    let f = t.code(&c);
+    t.jump(d2::CURSOR_NEXT, f);
+    Walk {
+        seek,
+        next_count,
+        next_cur,
+        next_end,
+    }
+}
+
+/// One walk's data: the owner, `this` (random bytes: the formats a
+/// rebound slot points at), the records and their parameter blocks.
+fn walk_data(t: &mut Twins, rng: &mut Rng, wk: &Walk) -> (u32, u32) {
+    let this = t.random(rng, 0xa80);
+    let owner = t.zeros(4);
+    let list_block = t.random(rng, 0x20);
+    t.w32(owner, list_block);
+    if rng.below(3) == 0 {
+        t.w32(list_block + 0x1c, list_block + 0x1c);
+    }
+    // records of 8 bytes: shader, parameter block; base 0
+    let records = t.zeros(8 * 24);
+    for k in 0..24 {
+        let block = t.random(rng, 0x40);
+        // 0x18: a parameter at 0x10 of 8 bytes ends at the block's end
+        t.w32(block, [0x40, 0x18, 0x20][rng.below(3) as usize]);
+        let old = [0, t.random(rng, 4), this + 0x10][rng.below(3) as usize];
+        for b in 0..2 {
+            if old != 0 && rng.below(2) == 0 {
+                t.w8(old + 2 + b, 2);
+            }
+        }
+        // the slot at offset 8 and 0x10
+        t.w32(block + 8 + 8, old);
+        t.w32(block + 0x10 + 8, old);
+        t.w32(records + 8 * k, rng.next());
+        t.w32(records + 8 * k + 4, block);
+    }
+    let n = 1 + rng.below(5);
+    let stride = [8, 16][rng.below(2) as usize];
+    let m = rng.below(4);
+    let end = [records + 8 * 24, records + stride * m][rng.below(3).min(1) as usize];
+    // a block's end holds the next block's end: two entries further
+    t.w32(records + stride * m, records + stride * (m + 2));
+    for (cell, v) in wk.seek.iter().zip([records, end, stride, n]) {
+        t.w32(*cell, v);
+    }
+    let again = [0, 2][rng.below(3).min(1) as usize];
+    t.w32(wk.next_count, again);
+    t.w32(wk.next_cur, records + 8 * 12);
+    t.w32(wk.next_end, records + 8 * 24);
+    // the parameter: offset 8 or 0x10, 8 bytes (the length word's top
+    // three bits ignored); a slot past the block or below 4 makes the
+    // original read address 8, so the tests leave those out
+    let param = t.zeros(0xc);
+    let off = [8u16, 0x10][rng.below(2) as usize];
+    let len = [8u16, 8 | 0x2000, 8 | 0xe000][rng.below(3) as usize];
+    t.write(param + 8, &off.to_le_bytes());
+    t.write(param + 0xa, &len.to_le_bytes());
+    let param = [param, 0][rng.below(4).min(1) as usize];
+    t.ret(d2::FIND_PARAM, param);
+    (this, owner)
+}
+
+/// `ShaderTexture_rebind_006f6c00`.
+#[test]
+fn d2_rebind_textures() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d203);
+        t.stub(d2::FIND_PARAM, true, 1, 1);
+        t.stub(d2::SURFACE_FORMAT, true, 2, 2);
+        let wk = walk_stubs(&mut t);
+        let tags = [d2::SURFACE_FORMAT, d2::CURSOR_SEEK, d2::CURSOR_NEXT];
+        for i in 0..80 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            let (this, owner) = walk_data(&mut t, &mut rng, &wk);
+            let force = [0, 1, 0x100, 2][rng.below(4) as usize];
+            let ebp = t.ebp_for(2);
+            t.check_framed(
+                &format!("{w} rebind"),
+                d2::REBIND,
+                Conv::Thiscall(this),
+                &[owner, force],
+                ebp - 0x2c,
+                &[(0, 0x2c), (0x34, 8)],
+                |g| {
+                    // the argument area as the call left it
+                    put_args(g, ebp + 8, &[owner, force]);
+                    d2::rebind_textures(g, ebp - 0x2c, ebp + 8, this, owner, force);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `ShaderTexture_rebindAlt_006f6a90` (the plain walk stubbed).
+#[test]
+fn d2_rebind_textures_alt() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d204);
+        t.stub(d2::FIND_PARAM, true, 1, 1);
+        t.stub(d2::SURFACE_FORMAT, true, 2, 2);
+        t.stub(d2::REBIND, true, 2, 2);
+        let wk = walk_stubs(&mut t);
+        let tags = [
+            d2::SURFACE_FORMAT,
+            d2::CURSOR_SEEK,
+            d2::CURSOR_NEXT,
+            d2::REBIND,
+        ];
+        for i in 0..80 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            let (this, owner) = walk_data(&mut t, &mut rng, &wk);
+            let alt = [0, 1, 0x100, 1][rng.below(4) as usize];
+            let force = [0, 1, 0x200, 0x80][rng.below(4) as usize];
+            let ebp = t.ebp_for(3);
+            t.check_framed(
+                &format!("{w} rebind alt {alt:#x}"),
+                0x006f_6a90,
+                Conv::Thiscall(this),
+                &[owner, alt, force],
+                ebp - 0x28,
+                &[(0, 0x28), (0x30, 0xc)],
+                |g| {
+                    put_args(g, ebp + 8, &[owner, alt, force]);
+                    d2::rebind_textures_alt(g, ebp - 0x28, ebp + 8, this, owner, alt, force);
+                    Out::None
+                },
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");

@@ -12,7 +12,7 @@
 
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
-    h4_d1 as d1, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_d1 as d1, h4_d2 as d2, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1501,5 +1501,53 @@ ported! {
     /// `InitVFXRenderDataAtelShp(lo, hi, c, d, e)`.
     InitVFXRenderDataAtelShp @ 0x0071_11e0 => extern "C" fn init_vfx_render_data_atel_shp(lo: u32, hi: u32, c: u32, d: u32, e: u32) -> u32 {
         d1::init_vfx_render_data_atel_shp(&mut mem(), [lo, hi, c, d, e])
+    }
+    // ---- continuation round 2, batch 2 (ffx_glue_other::h4_d2)
+    /// `FFEscMenu_playSound(menu, value)`: an Iggy callback.
+    FFEscMenu_playSound @ 0x0068_f9e0 => extern "C" fn esc_play_sound(menu: u32, value: u32) -> u32 {
+        d2::esc_play_sound(&mut mem(), menu, value)
+    }
+    /// `FFEscMenu_registerCallbacks(menu)`.
+    FFEscMenu_registerCallbacks @ 0x0068_fd40 => extern "thiscall" fn esc_register_callbacks(menu: u32) -> u32 {
+        d2::esc_register_callbacks(&mut mem(), menu)
+    }
+    /// `FFEscMenu_setLanguage_0068f400(menu)`.
+    FFEscMenu_setLanguage_0068f400 @ 0x0068_f400 => extern "thiscall" fn esc_set_language(menu: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d2::SET_LANGUAGE_FRAME / 4) as usize }>::new();
+        d2::esc_set_language(&mut mem(), frame.at(), menu)
+    }
+    /// `IggyCallbackTable_add_00a266b0(table; menu, name, fn)`.
+    IggyCallbackTable_add_00a266b0 @ 0x00a2_66b0 => extern "thiscall" fn callback_table_add(this: u32, menu: u32, name: u32, f: u32) -> u32 {
+        d2::callback_table_add(&mut mem(), this, menu, name, f)
+    }
+    /// `RemapButtonIcon_initPs2MessageInputPcMap(this)`.
+    RemapButtonIcon_initPs2MessageInputPcMap @ 0x006e_6730 => extern "thiscall" fn init_message_input_map(this: u32) {
+        d2::init_message_input_map(&mut mem(), this);
+    }
+    /// `RemapButtonIcon_initPs2UIButtonPcMap(this)`.
+    RemapButtonIcon_initPs2UIButtonPcMap @ 0x006e_6890 => extern "thiscall" fn init_ui_button_map(this: u32) {
+        d2::init_ui_button_map(&mut mem(), this);
+    }
+    /// `MenuManager_gatherMenuBuffers_0067b530(this; which)`.
+    MenuManager_gatherMenuBuffers_0067b530 @ 0x0067_b530 => extern "thiscall" fn gather_menu_buffers(this: u32, which: u32) -> u32 {
+        d2::gather_menu_buffers(&mut mem(), this, which)
+    }
+    /// `MenuManager_SetMenuUiInstanceUnloaded(this; name)`.
+    MenuManager_SetMenuUiInstanceUnloaded @ 0x0067_e4f0 => extern "thiscall" fn set_menu_ui_instance_unloaded(this: u32, name: u32) -> u32 {
+        d2::set_menu_ui_instance_unloaded(&mut mem(), this, name)
+    }
+    /// `GuiTouch_reset_0068a660(this)`.
+    GuiTouch_reset_0068a660 @ 0x0068_a660 => extern "thiscall" fn touch_reset(this: u32) -> u32 {
+        d2::touch_reset(&mut mem(), this)
+    }
+    /// `ShaderTexture_rebind_006f6c00(this; owner, force)`.
+    ShaderTexture_rebind_006f6c00 @ 0x006f_6c00 => extern "thiscall" fn rebind_textures(this: u32, owner: u32, force: u32; slots: u32) {
+        let mut frame = StackFrame::<{ (d2::REBIND_FRAME / 4) as usize }>::new();
+        d2::rebind_textures(&mut mem(), frame.at(), slots, this, owner, force);
+    }
+    /// `ShaderTexture_rebindAlt_006f6a90(this; owner, alt, force)`.
+    ShaderTexture_rebindAlt_006f6a90 @ 0x006f_6a90 => extern "thiscall" fn rebind_textures_alt(this: u32, owner: u32, alt: u32, force: u32; slots: u32) {
+        let mut frame = StackFrame::<{ (d2::REBIND_ALT_FRAME / 4) as usize }>::new();
+        d2::rebind_textures_alt(&mut mem(), frame.at(), slots, this, owner, alt, force);
     }
 }
