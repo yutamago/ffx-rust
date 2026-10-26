@@ -14,7 +14,7 @@ use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
-    h4_f5 as f5, h4_f6 as f6, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1988,5 +1988,11 @@ ported! {
     TKMallocAndReadMenuMessage @ 0x0088_ccf0 => extern "C" fn read_menu_message(name: u32, out: u32) -> u32 {
         let mut frame = StackFrame::<{ (f6::MESSAGE_FRAME / 4) as usize }>::new();
         f6::read_menu_message(&mut mem(), frame.at(), name, out)
+    }
+    // ---- continuation round 4, batch 7 (ffx_glue_other::h4_f7)
+    /// `SfxEventGroup_load_00710c50(this; path)`.
+    SfxEventGroup_load_00710c50 @ 0x0071_0c50 => extern "thiscall" fn event_group_load(this: u32, path: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f7::GROUP_LOAD_FRAME / 4) as usize }>::new();
+        f7::event_group_load(&mut mem(), frame.at(), this, path)
     }
 }

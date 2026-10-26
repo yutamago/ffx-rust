@@ -69,7 +69,8 @@
 //!   bank's constructor and its event tree's load;
 //! - [`h4_f5`]: its fifth batch: the FMOD voice's event read and the sync
 //!   manager's setup;
-//! - [`h4_f6`]: its sixth batch: the menu message file read.
+//! - [`h4_f6`]: its sixth batch: the menu message file read;
+//! - [`h4_f7`]: its seventh batch: the sound event group's list load.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -109,6 +110,7 @@ pub mod h4_f3;
 pub mod h4_f4;
 pub mod h4_f5;
 pub mod h4_f6;
+pub mod h4_f7;
 pub mod menu;
 pub mod misc;
 pub mod movie;

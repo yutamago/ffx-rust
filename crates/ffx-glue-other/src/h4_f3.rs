@@ -69,14 +69,14 @@ fn grown(count: u32) -> u32 {
 /// A growable array of words (count, capacity, entries), as the
 /// engine's `PArray` lays it out.
 #[derive(Debug, Clone, Copy, Default)]
-struct Words {
-    count: u32,
-    cap: u32,
-    data: u32,
+pub(crate) struct Words {
+    pub(crate) count: u32,
+    pub(crate) cap: u32,
+    pub(crate) data: u32,
 }
 
 impl Words {
-    fn load(h: &impl Host, at: u32) -> Self {
+    pub(crate) fn load(h: &impl Host, at: u32) -> Self {
         Self {
             count: h.read(at),
             cap: h.read(at.wrapping_add(4)),
@@ -88,7 +88,7 @@ impl Words {
     /// entries copied with `memcpy` of the new count's bytes, the old
     /// freed); returns the new entry's slot (0 when the entries are
     /// missing).
-    fn grow(&mut self, h: &mut impl Host) -> u32 {
+    pub(crate) fn grow(&mut self, h: &mut impl Host) -> u32 {
         self.count = self.count.wrapping_add(1);
         if self.count.cast_signed() > self.cap.cast_signed() {
             let cap = grown(self.count);

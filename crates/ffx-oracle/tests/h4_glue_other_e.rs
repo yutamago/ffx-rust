@@ -27,7 +27,7 @@ use ffx_bridge::Mem;
 use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
-    h4_f5 as f5, h4_f6 as f6,
+    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -4005,5 +4005,93 @@ fn f6_read_menu_message() {
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 4, batch 7 (ffx_glue_other::h4_f7)
+
+/// The sound event group's list load.
+#[test]
+fn f7_event_group_load() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f701);
+        // Array_Reserve: capacity and entries from cells (a capacity below
+        // n makes the appends grow the array)
+        let (cap_cell, buf_cell) = (t.zeros(4), t.zeros(4));
+        let rest = t.stub_code(f7::ARRAY_RESERVE, true, 1, 1, false, &[]);
+        let mut c = vec![0xa1];
+        c.extend(cap_cell.to_le_bytes());
+        c.extend([0x89, 0x41, 0x04, 0xa1]);
+        c.extend(buf_cell.to_le_bytes()); // mov eax, [cap]; mov [ecx+4], eax; mov eax, [buf]
+        c.extend([0x89, 0x41, 0x08, 0xe9]); // mov [ecx+8], eax; jmp rest
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(f7::ARRAY_RESERVE, f);
+        let heap = random_block(&mut t, &mut rng, 0x8000);
+        let next = stub_malloc(&mut t, heap);
+        let stubs = [
+            (FIOS_EXISTS, false, 1, 0),
+            (FIOS_OPEN, false, 2, 0),
+            (FIOS_SIZE, false, 1, 0),
+            (OPERATOR_NEW_2, false, 1, 0),
+            (FIOS_READ, false, 3, 0),
+            (FIOS_CLOSE, false, 1, 0),
+            (MEMCPY, false, 3, 0),
+            (c2::USER_FREE_THUNK, false, 1, 0),
+            (f7::ID_TREE_INSERT_ARRAY, true, 2, 2),
+            (e5::OPERATOR_DELETE_ARRAY, false, 1, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([f7::ARRAY_RESERVE, USER_MALLOC]);
+        let mut ran = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.w32(next, heap);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            t.ret(FIOS_EXISTS, rng.pick(&[0, 1, 1, 1]));
+            let file = rng.next() | 1;
+            t.ret(FIOS_OPEN, rng.pick(&[0, file, file, file]));
+            // the records: key, count, ids
+            let buf = t.zeros(0x100);
+            let mut words = Vec::new();
+            for _ in 0..rng.below(5) {
+                words.push(rng.next());
+                let n = rng.pick(&[0, 1, 2, 5, 9]);
+                words.push(n);
+                for _ in 0..n {
+                    words.push(rng.next());
+                }
+            }
+            let cut = rng.below(4) as usize;
+            let len = words.len().saturating_sub(cut);
+            for (k, v) in words[..len].iter().enumerate() {
+                t.w32(buf + 4 * k as u32, *v);
+            }
+            let size = 4 * len as u32 + rng.pick(&[0, 0, 1, 3]);
+            t.ret(FIOS_SIZE, size);
+            t.ret(OPERATOR_NEW_2, buf);
+            let block = random_block(&mut t, &mut rng, 0x40);
+            // a reserve always has entries (a null one would write near 0)
+            t.w32(buf_cell, block);
+            t.w32(cap_cell, rng.pick(&[1, 3, 100]));
+            let path = rng.next();
+            let frame = t.ebp_for(1) - 0x34;
+            t.check_framed_conv(
+                &format!("{w} load {size}"),
+                0x0071_0c50,
+                Conv::Thiscall(this),
+                &[path],
+                frame,
+                &[(0, 0xc), (0x10, 4)],
+                |g| u(f7::event_group_load(g, frame, this, path)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
     }
 }
