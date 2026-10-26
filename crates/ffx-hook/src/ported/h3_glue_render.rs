@@ -31,6 +31,7 @@ use ffx_prender::h3_glue22::bridge as g22;
 use ffx_prender::h3_glue23::bridge as g23;
 use ffx_prender::h3_glue24::bridge as g24;
 use ffx_prender::h3_glue25::bridge as g25;
+use ffx_prender::h3_glue26::bridge as g26;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1680,6 +1681,26 @@ ported! {
     /// over the argument slots.
     BrokenScreenPass_setup_006d3fb0 @ 0x006d_3fb0 => extern "thiscall" fn broken_pass_setup(this: u32, shader: u32, streams: u32, a: u32, cluster: u32, b: u32, c: u32; slots: u32) -> u32 {
         g25::broken_pass_setup(&mut mem(), slots, this, shader, streams, a, cluster, b, c)
+    }
+
+    // ---- round 7 batch 26 (ffx_prender::h3_glue26) ----
+    /// `PostProcessManager_copyBuffer(this, renderer, texture, target,
+    /// wide, _, mode2)`.
+    PostProcessManager_copyBuffer @ 0x0069_2c40 => extern "thiscall" fn post_copy_buffer(this: u32, renderer: u32, texture: u32, target: u32, wide: u32, _unused: u32, mode2: u32) -> u32 {
+        let mut f = StackFrame::<0xc>::new();
+        g26::post_copy_buffer(&mut mem(), f.at() + 0x30, this, renderer, texture, target, wide, mode2)
+    }
+    /// `PostProcessManager_copyDepthBuffer(this, renderer, texture, target,
+    /// pass, colour, wide, _, clear_a, clear_b)`: the colour scale's offset
+    /// goes over `texture`'s slot.
+    PostProcessManager_copyDepthBuffer @ 0x0069_2e90 => extern "thiscall" fn post_copy_depth_buffer(this: u32, renderer: u32, texture: u32, target: u32, pass: u32, colour: u32, wide: u32, _unused: u32, clear_a: u32, clear_b: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0xc>::new();
+        g26::post_copy_depth_buffer(&mut mem(), f.at() + 0x30, slots, this, renderer, texture, target, pass, colour, wide, clear_a, clear_b)
+    }
+    /// `PostProcessManager_renderBright(this, renderer, target)`.
+    PostProcessManager_renderBright @ 0x0069_5440 => extern "thiscall" fn post_render_bright(this: u32, renderer: u32, target: u32) {
+        let mut f = StackFrame::<0xd>::new();
+        g26::post_render_bright(&mut mem(), f.at() + 0x34, this, renderer, target);
     }
 }
 

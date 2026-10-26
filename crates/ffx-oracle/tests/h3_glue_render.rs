@@ -48,6 +48,7 @@ use ffx_prender::h3_glue22::{self as h22, bridge as gh22};
 use ffx_prender::h3_glue23::{self as h23, bridge as gh23};
 use ffx_prender::h3_glue24::{self as h24, bridge as gh24};
 use ffx_prender::h3_glue25::{self as h25, bridge as gh25};
+use ffx_prender::h3_glue26::{self as h26, bridge as gh26};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -7524,5 +7525,192 @@ fn batch25b_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 40 } else { 240 };
         run_cases(t, CASES25B, n, &mut Rng(0x2525_b125));
+    });
+}
+
+// ---- round 7 batch 26 (ffx_prender::h3_glue26) ----
+
+impl Twins {
+    /// A recording `memcpy` (cdecl, 3 words) that copies too.
+    fn stub_copy(&mut self, sym: u32) {
+        let log = self.stub(None, sym, false, 3, 0, Some(0));
+        // push esi; push edi; push ecx; mov edi, [esp+0x10]; mov esi, [esp+0x14];
+        // mov ecx, [esp+0x18]; rep movsb; pop ecx; pop edi; pop esi; jmp log
+        let mut c = vec![
+            0x56, 0x57, 0x51, 0x8b, 0x7c, 0x24, 0x10, 0x8b, 0x74, 0x24, 0x14, 0x8b, 0x4c, 0x24,
+            0x18, 0xf3, 0xa4, 0x59, 0x5f, 0x5e,
+        ];
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+const COPY_STUBS: &[(u32, K)] = &[
+    (h26::SURFACE_CTOR, K::This(2)),
+    (h26::SURFACE_DTOR, K::This(0)),
+    (h26::SET_VIEWPORT, K::This(4)),
+    (h26::SET_NON_16_BY_9_VIEWPORT, K::This(2)),
+    (h26::RENDER_MESH_INSTANCE, K::This(4)),
+    (h26::END_SCENE, K::This(1)),
+    (h26::GET_APPLICATION, K::Getter),
+    (h26::SET_VALUE, K::This(2)),
+];
+
+/// [`prep_full_screen`]'s set-up, with the parameters found in turn
+/// (`"ColorBuffer"`, then the others), the two colour-target calls failing
+/// apart, the wide flag (its low byte) and the manager's wide byte.
+fn prep_copy(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    prep_full_screen(t, obj, this, args, rng);
+    let found: Vec<u32> = (0..3)
+        .map(|k| {
+            if rng.chance(4) {
+                0
+            } else {
+                obj + 0x380 + 0x10 * k
+            }
+        })
+        .collect();
+    t.stub_seq(h26::FIND_PARAMETER, true, 1, 1, &found);
+    let errors = [render_error(rng), render_error(rng)];
+    t.stub_seq(h26::SET_COLOR_TARGET, true, 2, 2, &errors);
+    t.write(*this + 0x1_23d9, &[u8::from(rng.chance(2))]);
+    args[3] = pick(rng, &[0, 1, 0x100, 0xffff_ff01]);
+    args[4] = rng.next();
+    args[5] = pick(rng, &[0, 1, 0x100, 0xffff_ff01]);
+}
+
+/// [`prep_copy`] with the colour-scale parameter (in or out of the
+/// buffer, which is real now), the colour (or none), the pass and the
+/// two clear flags.
+fn prep_copy_depth(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    prep_copy(t, obj, this, &mut args[..6], rng);
+    let buffer = obj + 0xb00;
+    t.w32(obj + 0x304, buffer);
+    let size = pick(rng, &[0x40, 0x10, 0]);
+    t.w32(buffer, size);
+    let scale = obj + 0x390;
+    let offset = pick(rng, &[0, 3, 4, 8, 0x30, 0xfff0]);
+    let n = pick(rng, &[0, 4, 0x10, 0x14, 0x2000 | 8]);
+    t.write(scale + 8, &(offset as u16).to_le_bytes());
+    t.write(scale + 0xa, &(n as u16).to_le_bytes());
+    let wide = args[3];
+    let unused = args[4];
+    let mode = args[5];
+    args[3] = rng.next();
+    args[4] = if rng.chance(5) { 0 } else { obj + 0xc00 };
+    args[5] = wide;
+    args[6] = unused;
+    args[7] = mode;
+    args[8] = pick(rng, &[0, 1, 0x100, 0xffff_ff01]);
+}
+
+const BRIGHT_STUBS: &[(u32, K)] = &[
+    (h26::SURFACE_CTOR, K::This(2)),
+    (h26::SURFACE_DTOR, K::This(0)),
+    (h26::SET_VIEWPORT, K::This(4)),
+    (h26::COPY_BUFFER, K::This(6)),
+];
+
+/// The enable bytes, the bright mesh's material (inline or not; a real
+/// buffer), the parameters (or none; in or out of the buffer, copying 4
+/// bytes or fewer), the brightness, the target and the own target
+/// (textures or not), each renderer call failing now and then.
+fn prep_bright(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let post = t.zeros(0x1_2400);
+    *this = post;
+    t.write(
+        post + 0x1_23d6,
+        &[u8::from(!rng.chance(6)), u8::from(!rng.chance(6))],
+    );
+    let mesh = obj + 0x100;
+    t.w32(post + 0x1_2320, mesh);
+    let materials = obj + 0x200;
+    t.w32(mesh + 0x10, materials);
+    let count = pick(rng, &[1, 2, 0x8000_0001, 0x8000_0002]);
+    t.w32(materials, count);
+    let material = obj + 0x300;
+    if count & 0x7fff_ffff > 1 {
+        t.w32(materials + 4, obj + 0x280);
+        t.w32(obj + 0x280, material);
+    } else {
+        t.w32(materials + 4, material);
+    }
+    let shader = rng.next();
+    t.w32(material, shader);
+    let buffer = obj + 0xb00;
+    t.w32(material + 4, buffer);
+    t.w32(buffer, 0x20);
+    let found: Vec<u32> = (0..2)
+        .map(|k| {
+            if rng.chance(4) {
+                0
+            } else {
+                obj + 0x380 + 0x10 * k
+            }
+        })
+        .collect();
+    t.stub_seq(h26::FIND_PARAMETER, true, 1, 1, &found);
+    let offset = pick(rng, &[0, 3, 4, 8, 0x1c, 0x1e]);
+    let n = pick(rng, &[0, 2, 4, 0x2000 | 4, 0x30]);
+    t.write(obj + 0x388, &(offset as u16).to_le_bytes());
+    t.write(obj + 0x38a, &(n as u16).to_le_bytes());
+    let level = match rng.below(4) {
+        0 => 50.0,
+        1 => 75.5,
+        2 => -3.25,
+        _ => rng.float(),
+    };
+    t.w32(post + 0x1_2328, level.to_bits());
+    t.stub_copy(h26::MEMCPY);
+    let error = render_error(rng);
+    t.stub_ret(h26::BIND_TEXTURE, true, 2, 2, error);
+    for (sym, n) in [
+        (h26::SET_COLOR_TARGET, 2),
+        (h26::SET_DEPTH_STENCIL_TARGET, 1),
+        (h26::SET_CLEAR_COLOR, 4),
+        (h26::BEGIN_SCENE, 1),
+        (h26::RENDER_MESH_INSTANCE, 4),
+        (h26::END_SCENE, 1),
+    ] {
+        let error = render_error(rng);
+        t.stub_ret(sym, true, n, n, error);
+    }
+    let renderer = obj + 0x800;
+    let v = rng.next();
+    t.w32(renderer + 0x13c, v);
+    for (target, texture) in [(obj + 0x900, obj + 0xa00), (obj + 0x940, obj + 0xa40)] {
+        t.w32(target, texture);
+        // the own target (+0xa4) always has its texture: the viewport
+        // reads through it
+        let flag = target == obj + 0x900 && rng.chance(4);
+        t.write(target + 4, &[u8::from(flag)]);
+        let w = rng.next();
+        t.w32(texture + 0x1c, w);
+        let ht = rng.next();
+        t.w32(texture + 0x20, ht);
+    }
+    t.w32(post + 0xa4, obj + 0x940);
+    args[0] = renderer;
+    args[1] = obj + 0x900;
+}
+
+#[rustfmt::skip]
+const CASES26: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_copy), ..method("post_copy_buffer", 0x0069_2c40, This::Object, 6, COPY_STUBS, |m, this, a| u(gh26::post_copy_buffer(m, frame_ebp(), this, a[0], a[1], a[2], a[3], a[5]))) }), 0x30, 0),
+    framed(with_seh(Case { prep: Some(prep_copy_depth), ..method("post_copy_depth_buffer", 0x0069_2e90, This::Object, 9, COPY_STUBS, |m, this, a| { let slots = slots_at(m, a); u(gh26::post_copy_depth_buffer(m, frame_ebp(), slots, this, a[0], a[1], a[2], a[3], a[4], a[5], a[7], a[8])) }) }), 0x30, 0x24),
+    framed(with_seh(Case { prep: Some(prep_bright), ..method("post_render_bright", 0x0069_5440, This::Object, 2, BRIGHT_STUBS, |m, this, a| { gh26::post_render_bright(m, frame_ebp(), this, a[0], a[1]); Out::None }) }), 0x34, 0),
+];
+
+#[test]
+fn batch26_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES26, n, &mut Rng(0x2626_b026));
     });
 }
