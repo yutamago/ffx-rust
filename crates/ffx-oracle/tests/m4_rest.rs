@@ -24,6 +24,7 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pother_b::{m4r_dynblocks, m4r_mesh};
+use ffx_prender::m4r_ctxcapture as cc;
 use ffx_prender::m4r_fonttext as ft;
 use ffx_prender::m4r_gauss as gs;
 use ffx_prender::m4r_glow as gl;
@@ -39,6 +40,9 @@ const CAVE_LEN: u32 = 1768;
 /// `fstp st(0); ret` at the cave's last bytes: pops a callee's `ST0` in
 /// the port's oracle, as the original's `fstp` after the call does.
 const POP: u32 = CAVE + CAVE_LEN - 4;
+/// `fld qword [esp+4]; call [esp+0xc]; ret` before it: a CRT intrinsic
+/// (`_CIcos`) called with its argument in `ST0` (`G::call_intrinsic`).
+const INTRINSIC: u32 = POP - 12;
 
 /// Deterministic xorshift stream.
 struct Rng(u32);
@@ -107,6 +111,19 @@ impl Host for G<'_> {
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        let at = self.0.rebase(INTRINSIC);
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let v = r.st0_f32().expect("the intrinsic's ST0");
+        // the caller's fstp pops it
+        let pop = self.0.rebase(POP);
+        self.0.call(pop, Conv::Cdecl, &[]).unwrap();
+        v
+    }
 }
 
 fn game_dir() -> Option<PathBuf> {
@@ -142,6 +159,11 @@ impl Twins {
         t.log = t.zeros(0x4000);
         let pop = t.rebase(POP);
         t.write(pop, &[0xdd, 0xd8, 0xc3]);
+        let intrinsic = t.rebase(INTRINSIC);
+        t.write(
+            intrinsic,
+            &[0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3],
+        );
         t
     }
 
@@ -272,7 +294,7 @@ impl Twins {
         }
         let addr = self.cave_next;
         assert!(
-            addr + c.len() as u32 <= self.cave + CAVE_LEN - 4,
+            addr + c.len() as u32 <= self.cave + (INTRINSIC - CAVE),
             "cave full"
         );
         self.write(addr, &c);
@@ -1771,5 +1793,264 @@ fn legacy_glow_render_matches_the_original() {
         }
         assert!(draws > 3000, "{name}: {draws} words snapshotted");
         assert!(errors > 10);
+    }
+}
+
+// ---- PRendererBase::generateContextParameterCaptureBuffer (0x005b6cf0) ----
+
+/// `n` floats in [-4, 4) at a new block.
+fn cc_floats(t: &mut Twins, rng: &mut Rng, n: u32) -> u32 {
+    let words: Vec<u32> = (0..n).map(|_| small_float(rng)).collect();
+    let at = t.zeros(4 * n as usize + 16);
+    t.w32s(at, &words);
+    at
+}
+
+/// A shadow caster: up to four 0xe0-byte splits (`+0x80` the matrix,
+/// `+0xc0` the target record `{map, flag byte}`, `+0xc4` the distance).
+fn cc_caster(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let splits = cc_floats(t, rng, 4 * 0xe0 / 4);
+    for k in 0..4 {
+        let target = if rng.below(4) == 0 {
+            0
+        } else {
+            let map = if rng.below(3) == 0 {
+                0
+            } else {
+                let m = t.zeros(0x10);
+                t.w32s(m, &[rng.next(), rng.next(), rng.next(), rng.next()]);
+                m
+            };
+            let rec = t.zeros(8);
+            t.w32(rec, map);
+            t.write(rec + 4, &[u8::from(rng.below(3) == 0)]);
+            rec
+        };
+        t.w32(splits + k * 0xe0 + 0xc0, target);
+    }
+    let caster = t.zeros(0x50);
+    t.w32s(caster + 8, &[rng.below(5) | (rng.below(2) << 31), splits]);
+    caster
+}
+
+/// A light: `+0x10` its transform (or 0), `+0x14` its caster (or 0),
+/// `+0x18` its type, `+0x1c`/`+0x20` the cone, `+0x24` the intensity,
+/// `+0x28`/`+0x2c` the range (sometimes infinite or empty).
+fn cc_light(t: &mut Twins, rng: &mut Rng, types: [u32; 2]) -> u32 {
+    let light = cc_floats(t, rng, 0x18);
+    let transform = if rng.below(3) == 0 {
+        0
+    } else {
+        cc_floats(t, rng, 12)
+    };
+    let caster = if rng.below(4) == 0 {
+        0
+    } else {
+        cc_caster(t, rng)
+    };
+    let ty = match rng.below(3) {
+        0 => types[0],
+        1 => types[1],
+        _ => rng.next() | 1,
+    };
+    t.w32s(light + 0x10, &[transform, caster, ty]);
+    let near: u32 = Mem::read(&t.a, light + 0x28);
+    match rng.below(5) {
+        0 => t.w32(light + 0x2c, f32::MAX.to_bits()),
+        1 => t.w32(light + 0x2c, near),
+        _ => {}
+    }
+    // now and then a quiet NaN (the x87's NaN rules; no signalling ones)
+    if rng.below(4) == 0 {
+        let field = [0x1c, 0x20, 0x24, 0x28, 0x2c][rng.below(5) as usize];
+        t.w32(light + field, 0x7fc0_0000 | (rng.next() & 0x803f_ffff));
+    }
+    light
+}
+
+/// The mesh instance's data blocks (`+0x28` the count, `+0x2c` 0x40-byte
+/// blocks: `+8` the count, `+0xc` 12-byte elements, `+4` the semantic).
+fn cc_instance(t: &mut Twins, rng: &mut Rng, keys: &[u32; 4]) -> u32 {
+    let n = rng.below(4);
+    let blocks = t.zeros(0x40 * n as usize + 0x40);
+    t.fill(rng, blocks, 0x40 * n);
+    for b in 0..n {
+        let m = rng.below(4);
+        let elems = t.zeros(12 * m as usize + 4);
+        for e in 0..m {
+            let key = if rng.below(4) == 0 {
+                rng.next()
+            } else {
+                keys[rng.below(4) as usize]
+            };
+            t.w32(elems + 12 * e + 4, key);
+        }
+        t.w32s(blocks + 0x40 * b + 8, &[m | (rng.below(2) << 31), elems]);
+    }
+    let inst = t.zeros(0x40);
+    t.fill(rng, inst, 0x40);
+    t.w32s(inst + 0x28, &[n | (rng.below(2) << 31), blocks]);
+    inst
+}
+
+/// A `PhyrePrintf` stub body: clears the log entry's last two words when
+/// the text (the second word) is not `keep`'s (a call passing two words
+/// logs the caller's stack there).
+fn printf_body(log: u32, keep: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x54, 0x24, 0x08]; // mov edx, [esp+8]
+    c.extend([0x81, 0xfa]); // cmp edx, keep
+    c.extend(keep.to_le_bytes());
+    c.extend([0x74, 0x1d]); // je done
+    c.extend([0x8b, 0x0d]); // mov ecx, [log]
+    c.extend(log.to_le_bytes());
+    c.extend([0xc1, 0xe1, 0x05]); // shl ecx, 5
+    c.extend([0x81, 0xc1]); // add ecx, log + 4 - 32
+    c.extend((log + 4 - 32).to_le_bytes());
+    c.extend([0xc7, 0x41, 0x10, 0, 0, 0, 0]); // mov dword [ecx+0x10], 0
+    c.extend([0xc7, 0x41, 0x14, 0, 0, 0, 0]); // mov dword [ecx+0x14], 0
+    c
+}
+
+#[test]
+fn generate_context_parameters_matches_the_original() {
+    const SYM: u32 = 0x005b_6cf0;
+    for (name, mut t) in Twins::all() {
+        // the ring and the warnings stay stubs; the vector and matrix
+        // helpers, the light's helpers, _CIcos, the slice, the array and
+        // data-block lookups run as they are
+        let allocate = t.stub(cc::ALLOCATE, true, 1, 1);
+        // the warnings: four words logged, the last two cleared but for
+        // the split warning's (the others pass two)
+        let split_text = t.rebase(cc::SPLIT_WARNING);
+        let log = t.log;
+        t.stub_with(cc::PRINTF, false, 4, 0, &printf_body(log, split_text));
+        let warned = t.rebase(cc::NO_MAP_WARNED);
+        let types = [t.rebase(0x00c1_0850), t.rebase(0x00c1_0814)];
+        let keys = cc::BLOCK_SEMANTICS.map(|k| t.rebase(k));
+        let mut rng = Rng(0x005b_6cf0);
+        // (lit, semantic - 0xc0) reached
+        let mut seen = [[0_u32; 0x24]; 2];
+        let mut copied = 0;
+        for case in 0..400_u32 {
+            t.w32(t.log, 0);
+            t.write(warned, &[u8::from(case % 3 == 0)]);
+            let renderer = cc_floats(&mut t, &mut rng, 0x40);
+            // the lights by slot (0..3), their count at +0x10
+            let lights = t.zeros(0x20);
+            for k in 0..4 {
+                let l = if rng.below(4) == 0 {
+                    0
+                } else {
+                    cc_light(&mut t, &mut rng, types)
+                };
+                t.w32(lights + 4 * k, l);
+            }
+            t.w32(lights + 0x10, rng.below(6));
+            // the context: +0x10's array (semantic 0xe3), the instance,
+            // the node block inline at +0x28
+            let holder = t.zeros(0x30);
+            let elems = 1 + rng.below(3);
+            if rng.below(4) != 0 {
+                let array = t.zeros(0x30);
+                let data = cc_floats(&mut t, &mut rng, 9);
+                if elems == 1 {
+                    t.w32(array + 0x18, small_float(&mut rng));
+                } else {
+                    t.w32(array + 0x18, data);
+                }
+                t.w32(array + 0x14, elems | (rng.below(2) << 31));
+                t.w32(holder + 0x20, array);
+            }
+            let ctx = cc_floats(&mut t, &mut rng, 0x20);
+            let instance = if rng.below(4) == 0 {
+                0
+            } else {
+                cc_instance(&mut t, &mut rng, &keys)
+            };
+            t.w32(ctx + 0xc, rng.below(elems));
+            t.w32(ctx + 0x10, holder);
+            t.w32(ctx + 0x1c, instance);
+            // the layout's entries
+            let n = if case % 17 == 5 { 0 } else { 1 + rng.below(12) };
+            let entries = t.zeros(16 * n as usize + 16);
+            for k in 0..n {
+                let mut semantic = 0xbf + rng.below(0x26);
+                let format = [0x30, 0x30, 0x31, 0x2f][rng.below(4) as usize];
+                let slot = [0, 1, 2, 3, 5, 6, 7][rng.below(7) as usize];
+                let light: u32 = if slot < 4 {
+                    Mem::read(&t.a, lights + 4 * slot)
+                } else {
+                    0
+                };
+                // a light's split matrices read its caster without a check
+                if semantic == 0xd7 && light != 0 && Mem::read::<u32>(&t.a, light + 0x14) == 0 {
+                    semantic = 0xd8;
+                }
+                if (0xc0..=0xe3).contains(&semantic) {
+                    seen[usize::from(light != 0)][(semantic - 0xc0) as usize] += 1;
+                }
+                // the most the value's block allows below ebp - 4
+                let cap = match semantic {
+                    0xcf => 0x20,
+                    0xd1 => 0x30,
+                    0xd2 => 0x10,
+                    _ => 0x40,
+                };
+                let sizes: Vec<u32> = [4, 0x10, 0x30, 0x40]
+                    .into_iter()
+                    .filter(|&s| s <= cap)
+                    .collect();
+                let mut size = sizes[rng.below(sizes.len() as u32) as usize];
+                let mut offset = 4 + 0x180 * k;
+                if semantic == 0xd7 {
+                    size = 0x140;
+                } else {
+                    match rng.below(8) {
+                        // below 4, past the end, exactly at the end
+                        0 => offset = rng.below(4),
+                        1 => offset = 0x1c00 - 8,
+                        2 => offset = 0x1c00 - size,
+                        _ => {}
+                    }
+                }
+                let e = entries + 16 * k;
+                t.w32(e, rng.below(6) | (rng.next() & 0xffff_0000));
+                t.write(e + 2, &[semantic as u8, format]);
+                t.w32(e + 4, rng.next());
+                t.w32(e + 8, offset | ((size | (slot << 13)) << 16));
+                t.w32(e + 0xc, rng.next());
+            }
+            let layout = t.zeros(0x40);
+            t.fill(&mut rng, layout, 0x40);
+            t.w32(layout + 0xc, n | (rng.below(2) << 31));
+            t.w32(layout + 0x10, entries);
+            t.w32(layout + 0x1c, 0x1c00);
+            t.w32(ctx + 0x6c, layout);
+            let buffer = t.zeros(0x2000);
+            t.results(allocate, &[if case % 23 == 9 { 0 } else { buffer }]);
+            let extra = rng.below(0x100);
+            t.check_framed(
+                &format!("{name} case {case} ({n} entries)"),
+                SYM,
+                Conv::Thiscall(renderer),
+                &[ctx, lights, extra],
+                cc::FRAME,
+                4,
+                |g, ebp| cc::bridge::generate(g, renderer, ctx, lights, extra, ebp),
+            );
+            let mut first = [0_u8; 0x1c00];
+            t.a.read_bytes(buffer + 4, &mut first);
+            copied += u32::from(first.iter().any(|&b| b != 0));
+        }
+        for (lit, from) in [(1, 0xc0), (0, 0xcf)] {
+            for s in from..=0xe3_u32 {
+                assert!(
+                    seen[lit][(s - 0xc0) as usize] >= 10,
+                    "{name}: semantic {s:#x} (lit {lit}) reached {} times",
+                    seen[lit][(s - 0xc0) as usize]
+                );
+            }
+        }
+        assert!(copied > 300, "{name}: values written in {copied} cases");
     }
 }
