@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
-use ffx_glue_other::h4b_a as ba;
+use ffx_glue_other::{h4b_a as ba, h4b_b as bb};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -82,6 +82,12 @@ impl Rng {
             0 => [0.0, -0.0, f64::INFINITY, f64::NAN, 1e300][self.below(5) as usize],
             _ => f64::from(self.below(100_000) as f32 / 37.0 - 1000.0) * 1.000_000_1,
         }
+    }
+    /// One of `v`, or a random word.
+    fn pickr(&mut self, v: &[u32]) -> u32 {
+        let r = self.next();
+        let k = self.below(v.len() as u32 + 1) as usize;
+        if k == v.len() { r } else { v[k] }
     }
     /// A small signed word.
     fn small(&mut self) -> u32 {
@@ -1020,5 +1026,436 @@ fn ba_print_gs() {
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- batch 2 (ffx_glue_other::h4b_b)
+
+fn random_block(t: &mut Twins, rng: &mut Rng, n: u32) -> u32 {
+    let at = t.zeros(n as usize);
+    for k in 0..n / 4 {
+        let v = rng.next();
+        t.w32(at + 4 * k, v);
+    }
+    at
+}
+
+/// A stub at `sym`'s tag whose results alternate between a second cell
+/// (`next`, the first call) and its own cell: (code address, `next`).
+fn alternating_stub(
+    t: &mut Twins,
+    tag: u32,
+    this: bool,
+    n: u32,
+    pops: u32,
+    writes: &[Write],
+) -> (u32, u32) {
+    let next = t.zeros(4);
+    let log = t.stub_code(tag, this, n, pops, false, writes);
+    let cell = t.cells[&tag];
+    let mut c = vec![0xa1];
+    c.extend(next.to_le_bytes()); // mov eax, [next]
+    c.extend([0x87, 0x05]);
+    c.extend(cell.to_le_bytes()); // xchg [cell], eax
+    c.push(0xa3);
+    c.extend(next.to_le_bytes()); // mov [next], eax
+    let at = t.cave_next;
+    c.push(0xe9);
+    c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp log
+    (t.code(&c), next)
+}
+
+/// `gdraw_makeTextureBegin_00a3a070`: sizes at and past the limit, RGBA
+/// and single-channel, with and without mips, every allocation failing.
+#[test]
+fn bb_make_texture_begin() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b501);
+        let malloc = t.stub_code(0x0bad_b500, false, 3, 3, false, &[]);
+        let free = t.stub_code(0x0bad_b501, false, 1, 1, false, &[]);
+        let warn = t.stub_code(0x0bad_b502, false, 4, 0, false, &[]);
+        t.stub(bb::CONFIG_MEMORY, 3, false);
+        let tags = [0x0bad_b500, 0x0bad_b501, 0x0bad_b502, bb::CONFIG_MEMORY];
+        let state = t.zeros(0xac0);
+        let mut ok = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(bb::GDRAW_MALLOC.sym, malloc);
+            t.g32(bb::GDRAW_FREE.sym, free);
+            t.g32(bb::GDRAW_WARNING.sym, warn);
+            t.g32(bb::GDRAW_STATE.sym, state);
+            let pool = rng.next();
+            t.w32(state + 0xab0, pool);
+            let p = rng.pick(&[0, 0x1000, 0x1000, 0x1000]);
+            t.ret(0x0bad_b500, p);
+            let record = random_block(&mut t, &mut rng, 0x14);
+            let record = rng.pick(&[0, record, record, record]);
+            t.ret(bb::CONFIG_MEMORY, record);
+            let info = random_block(&mut t, &mut rng, 0x58);
+            let flags = rng.next();
+            let dim = |rng: &mut Rng| {
+                let (a, b, c) = (rng.below(0x4100), rng.below(64), rng.next());
+                // a negative size with mips would never end (as in the game)
+                let c = if flags & 1 != 0 { c & 0x7fff_ffff } else { c };
+                rng.pick(&[a, b, b, 0x3fff, 0x4000, 1, 0, c])
+            };
+            let (dw, dh) = (dim(&mut rng), dim(&mut rng));
+            let format = rng.pick(&[0, 0, 1, 0x1c]);
+            let a = [rng.next(), dw, dh, format, flags, info, rng.next()];
+            let r = t.check_conv(&w, 0x00a3_a070, Conv::Stdcall, &a, |g| {
+                u(bb::make_texture_begin(
+                    g, a[0], a[1], a[2], a[3], a[4], a[5], a[6],
+                ))
+            });
+            ok += r;
+        }
+        assert!(ok > 100, "{name}: {ok}");
+    }
+}
+
+/// `gdraw_makeVertexBufferEnd_00a3a5f0`: the device's `CreateBuffer`
+/// (recording, results alternating between the two calls, the buffer
+/// stored through the out pointer), the buffers' `Release`, the heap
+/// ring relink on failure.
+#[test]
+fn bb_make_vertex_buffer_end() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b502);
+        let free = t.stub_code(0x0bad_b511, false, 1, 1, false, &[]);
+        let warn = t.stub_code(0x0bad_b512, false, 5, 0, false, &[]);
+        let buffer_cell = t.zeros(4);
+        let (create, next) =
+            alternating_stub(&mut t, 0x0bad_b513, false, 4, 4, &[wr(3, buffer_cell)]);
+        let release = t.stub_code(0x0bad_b514, false, 1, 1, false, &[]);
+        t.stub(bb::MOVE_BLOCK, 4, false);
+        let tags = [
+            0x0bad_b511,
+            0x0bad_b512,
+            0x0bad_b513,
+            0x0bad_b514,
+            bb::MOVE_BLOCK,
+        ];
+        let device_vt = t.zeros(0x40);
+        t.w32(device_vt + 0xc, create);
+        let device = t.zeros(4);
+        t.w32(device, device_vt);
+        let buffer_vt = t.zeros(0x10);
+        t.w32(buffer_vt + 8, release);
+        let state = t.zeros(0x10);
+        let ebp = t.ebp_for(2);
+        let log = t.log;
+        let mut failed = 0;
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(bb::GDRAW_FREE.sym, free);
+            t.g32(bb::GDRAW_WARNING.sym, warn);
+            t.g32(bb::GDRAW_STATE.sym, state);
+            t.w32(state, device);
+            let hrs = [0, 1, 0x8007_000e, 0x8000_4005, 0x7fff_ffff];
+            let (h0, h1) = (rng.pick(&hrs), rng.pick(&hrs));
+            t.w32(next, h0);
+            t.ret(0x0bad_b513, h1);
+            let buffers: Vec<u32> = (0..2)
+                .map(|_| {
+                    let b = t.zeros(4);
+                    t.w32(b, buffer_vt);
+                    b
+                })
+                .collect();
+            let made = rng.pick(&[0, buffers[0]]);
+            t.w32(buffer_cell, made);
+            // the heap ring: the block between two neighbours, a heap
+            let record = random_block(&mut t, &mut rng, 0x40);
+            let prev = random_block(&mut t, &mut rng, 0x40);
+            let after = random_block(&mut t, &mut rng, 0x40);
+            let heap = random_block(&mut t, &mut rng, 0x40);
+            let last = random_block(&mut t, &mut rng, 0x40);
+            t.w32(record + 0x1c, after);
+            t.w32(record + 0x20, prev);
+            t.w32(record + 0x18, heap);
+            t.w32(heap + 0x30, last);
+            for off in [0, 4] {
+                let v = rng.pick(&[0, buffers[1]]);
+                t.w32(record + off, v);
+            }
+            let info = random_block(&mut t, &mut rng, 0x18);
+            t.w32(info + 0x10, record);
+            let a = [info, rng.next()];
+            if (h0 as i32) < 0 || (h1 as i32) < 0 {
+                failed += 1;
+            }
+            let fix = move |o: &mut Oracle| {
+                // the out-of-memory warning pushes four words: the fifth
+                // logged one is stack junk
+                let n: u32 = Mem::read(o, log);
+                for e in 0..n {
+                    let at = log + 4 + 64 * e;
+                    let tag: u32 = Mem::read(o, at);
+                    let fmt: u32 = Mem::read(o, at + 12);
+                    if tag == 0x0bad_b512 && fmt == o.rebase(0x00b7_a4ec) {
+                        o.write(at + 8 + 16, &[0; 4]).unwrap();
+                    }
+                }
+            };
+            t.write(ebp - 0x4c, &[0xa5; 0x44]);
+            t.b.set_call_top(Some(ebp - 0x200));
+            let addr = t.rebase(0x00a3_a5f0);
+            let ra =
+                t.a.call(addr, Conv::Stdcall, &a)
+                    .unwrap_or_else(|e| panic!("{w}: {e}"));
+            let tramp = t.tramp;
+            let port = bb::make_vertex_buffer_end(&mut G(&mut t.b, tramp), ebp - 0x4c, info);
+            t.b.set_call_top(None);
+            assert_eq!(ra.eax, port, "{w}: eax");
+            fix(&mut t.a);
+            fix(&mut t.b);
+            t.diff(&w);
+            let x = Oracle::read(&mut t.a, ebp - 0x4c, 0x44).unwrap();
+            let y = Oracle::read(&mut t.b, ebp - 0x4c, 0x44).unwrap();
+            assert_eq!(x, y, "{w}: frame");
+        }
+        assert!(failed > 100, "{name}: {failed}");
+    }
+}
+
+/// A fake COM object whose vtable slots (`(offset, words, writes)`) are
+/// recording stdcall stubs tagged `tag + offset`; the object's address.
+fn com(t: &mut Twins, tag: u32, slots: &[(u32, u32, &[Write])]) -> u32 {
+    let vt = t.zeros(0x100);
+    for &(off, n, writes) in slots {
+        let f = t.stub_code(tag + off, false, n, n, false, writes);
+        t.w32(vt + off, f);
+    }
+    let obj = t.zeros(8);
+    t.w32(obj, vt);
+    obj
+}
+
+/// `gdraw_createRowTexture_00a3a9f0`: the device's texture and view
+/// calls failing in turn, old objects released.
+#[test]
+fn bb_create_row_texture() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b503);
+        let warn = t.stub_code(0x0bad_b522, false, 5, 0, false, &[]);
+        let made = t.zeros(4);
+        let device = com(
+            &mut t,
+            0xd000,
+            &[(0x14, 4, &[wr(3, made)]), (0x1c, 4, &[wr(3, made)])],
+        );
+        let objs: Vec<u32> = (0..3)
+            .map(|k| com(&mut t, 0xe000 + 0x100 * k, &[(8, 1, &[])]))
+            .collect();
+        let tags = [0x0bad_b522, 0xd014, 0xd01c, 0xe008, 0xe108, 0xe208];
+        let state = t.zeros(0x800);
+        let ebp = t.ebp_for(2);
+        let log = t.log;
+        for i in 0..500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(bb::GDRAW_WARNING.sym, warn);
+            t.g32(bb::GDRAW_STATE.sym, state);
+            t.w32(state, device);
+            let hrs = [0, 1, 0x8007_000e, 0x8000_4005];
+            let h = rng.pick(&hrs);
+            t.ret(0xd014, h);
+            let h = rng.pick(&hrs);
+            t.ret(0xd01c, h);
+            for off in [0x798, 0x79c] {
+                let v = rng.pick(&[0, objs[0], objs[1]]);
+                t.w32(state + off, v);
+            }
+            let m = rng.pick(&[0, objs[2]]);
+            t.w32(made, m);
+            let a = [rng.pickr(&[1, 64, 256]), rng.next()];
+            let fix = move |o: &mut Oracle| {
+                let n: u32 = Mem::read(o, log);
+                for e in 0..n {
+                    let at = log + 4 + 64 * e;
+                    let tag: u32 = Mem::read(o, at);
+                    let fmt: u32 = Mem::read(o, at + 12);
+                    if tag == 0x0bad_b522 && fmt == o.rebase(0x00b7_a4ec) {
+                        o.write(at + 8 + 16, &[0; 4]).unwrap();
+                    }
+                }
+            };
+            let frame = ebp - 0x3c;
+            t.write(frame, &[0xa5; 0x38]);
+            t.b.set_call_top(Some(frame - 0x100));
+            let addr = t.rebase(0x00a3_a9f0);
+            let ra =
+                t.a.call(addr, Conv::Stdcall, &a)
+                    .unwrap_or_else(|e| panic!("{w}: {e}"));
+            let tramp = t.tramp;
+            let port = bb::create_row_texture(&mut G(&mut t.b, tramp), frame, a[0], a[1]);
+            t.b.set_call_top(None);
+            assert_eq!(ra.eax, port, "{w}: eax");
+            fix(&mut t.a);
+            fix(&mut t.b);
+            t.diff(&w);
+            let x = Oracle::read(&mut t.a, frame, 0x38).unwrap();
+            let y = Oracle::read(&mut t.b, frame, 0x38).unwrap();
+            assert_eq!(x, y, "{w}: frame");
+        }
+    }
+}
+
+/// The two quad draws: the context's state, shader, map (the data
+/// pointer stored through the out pointer, 0 or a block), unmap and
+/// constant-buffer calls; viewport, projection, memset and the quad as
+/// recording stubs.
+#[test]
+fn bb_quads() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_b504);
+        let warn = t.stub_code(0x0bad_b532, false, 5, 0, false, &[]);
+        let data = t.zeros(4);
+        let ctx = com(
+            &mut t,
+            0xc000,
+            &[
+                (0x8c, 4, &[]),
+                (0x90, 3, &[]),
+                (0x24, 4, &[]),
+                (0x38, 6, &[wr(5, data)]),
+                (0x3c, 3, &[]),
+                (0x40, 4, &[]),
+            ],
+        );
+        for (sym, n) in [
+            (bb::SET_VIEWPORT, 4),
+            (bb::SET_PROJECTION, 4),
+            (bb::DRAW_QUAD, 6),
+            (bb::MEMSET, 3),
+        ] {
+            t.stub(sym, n, false);
+        }
+        let tags = [
+            0x0bad_b532,
+            0xc08c,
+            0xc090,
+            0xc024,
+            0xc038,
+            0xc03c,
+            0xc040,
+            bb::SET_VIEWPORT,
+            bb::SET_PROJECTION,
+            bb::DRAW_QUAD,
+            bb::MEMSET,
+        ];
+        let state = t.zeros(0xa00);
+        let log = t.log;
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(bb::GDRAW_WARNING.sym, warn);
+            t.g32(bb::GDRAW_STATE.sym, state);
+            for k in 0..0x280 {
+                let v = rng.next();
+                t.w32(state + 4 * k, v);
+            }
+            t.w32(state + 4, ctx);
+            for off in [0x6c0, 0x6c4, 0x6c8, 0x6cc, 0x6d8, 0x6dc, 0x6e0, 0x6e4] {
+                let v = rng.small();
+                t.w32(state + off, v);
+            }
+            let h = rng.pick(&[0, 1, 0x8007_000e, 0x8000_4005]);
+            t.ret(0xc038, h);
+            let d = rng.pick(&[0, 0x1234, 0x5678]);
+            t.w32(data, d);
+            let fix = move |o: &mut Oracle| {
+                let n: u32 = Mem::read(o, log);
+                for e in 0..n {
+                    let at = log + 4 + 64 * e;
+                    let tag: u32 = Mem::read(o, at);
+                    let fmt: u32 = Mem::read(o, at + 12);
+                    if tag == 0x0bad_b532 && fmt == o.rebase(0x00b7_a4ec) {
+                        o.write(at + 8 + 16, &[0; 4]).unwrap();
+                    }
+                }
+            };
+            let rect = t.zeros(16);
+            for k in 0..4 {
+                let (sm, nx) = (rng.small(), rng.next());
+                let v = rng.pick(&[sm, nx]);
+                t.w32(rect + 4 * k, v);
+            }
+            let a = rng.next();
+            let ebp = t.ebp_for(2);
+            run_framed(
+                &mut t,
+                &w,
+                0x00a3_bd40,
+                &[rect, a],
+                ebp - 0x10,
+                12,
+                None,
+                &fix,
+                |g| bb::draw_rect_quad(g, ebp - 0x10, rect, a),
+            );
+            let depth = rng.next();
+            let sub = rng.pickr(&[0, 1]);
+            let ebp = t.ebp_for(3);
+            run_framed(
+                &mut t,
+                &format!("{w} target"),
+                0x00a3_bed0,
+                &[a, depth, sub],
+                ebp - 0xc,
+                12,
+                Some(ebp + 8),
+                &fix,
+                |g| bb::draw_target_quad(g, ebp - 0xc, a, depth, sub, Some(ebp + 8)),
+            );
+        }
+    }
+}
+
+/// Runs a cdecl original and its port with a frame block (`frame`, `len`
+/// bytes) at the same address, the port's calls below it; `slots` (the
+/// first argument word) gets the arguments in the port's oracle and is
+/// compared too (12 words). `fix` runs on both before the diff.
+#[allow(clippy::too_many_arguments)]
+fn run_framed(
+    t: &mut Twins,
+    w: &str,
+    sym: u32,
+    args: &[u32],
+    frame: u32,
+    len: usize,
+    slots: Option<u32>,
+    fix: &dyn Fn(&mut Oracle),
+    port: impl FnOnce(&mut G) -> u32,
+) {
+    t.write(frame, &vec![0xa5; len]);
+    if let Some(s) = slots {
+        for (k, a) in args.iter().enumerate() {
+            t.b.write(s + 4 * k as u32, &a.to_le_bytes()).unwrap();
+        }
+    }
+    t.b.set_call_top(Some(frame - 0x100));
+    let addr = t.rebase(sym);
+    let ra =
+        t.a.call(addr, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{w}: {e}"));
+    let tramp = t.tramp;
+    let v = port(&mut G(&mut t.b, tramp));
+    t.b.set_call_top(None);
+    assert!(ra.st0_raw.is_none(), "{w}: ST0 left set");
+    assert_eq!(ra.eax, v, "{w}: eax");
+    fix(&mut t.a);
+    fix(&mut t.b);
+    t.diff(w);
+    let x = Oracle::read(&mut t.a, frame, len).unwrap();
+    let y = Oracle::read(&mut t.b, frame, len).unwrap();
+    assert_eq!(x, y, "{w}: frame");
+    if let Some(s) = slots {
+        let n = 4 * args.len();
+        let x = Oracle::read(&mut t.a, s, n).unwrap();
+        let y = Oracle::read(&mut t.b, s, n).unwrap();
+        assert_eq!(x, y, "{w}: argument slots");
     }
 }

@@ -285,8 +285,12 @@ const MFIFO_FORMATS: [u32; 18] = [
 
 /// `Sg_MFIFOSync()` (cdecl): waits for the GS path's DMA: while bit 8 of
 /// `g_GsRegisterSink` is set, up to 0x1234 rounds of a 0x4d3-step delay,
-/// re-reading it each round. On a timeout it prints the VIF1 register
-/// report (`dbgPrintf`, the registers read from the PS2 addresses),
+/// re-reading it each round (the sink is the PS2 register writes' dummy
+/// target, so bit 8 is whatever the last such write left). On a timeout
+/// it prints the VIF1 register report (`dbgPrintf`, the registers read
+/// from the PS2 addresses `0x10003c00`.., outside the image and not
+/// relocated: the port reads and writes the same addresses, so it faults
+/// exactly where the original would when nothing maps them),
 /// writes 9 to `VIF1_FBRST`, clears bit 8 and prints the frame
 /// (`scePrintf`). Bits 2 and 3 are cleared at the end.
 ///
@@ -300,8 +304,11 @@ pub fn mfifo_sync(h: &mut impl Host) -> u32 {
         if rounds == 0 {
             break;
         }
-        for _ in 0..0x4d3 {
-            core::hint::spin_loop();
+        // the original's delay: a counter in memory counted down from
+        // 0x4d2 to -1 (kept, so the wait lasts about as long)
+        let mut delay = 0x4d2_i32;
+        while core::hint::black_box(delay) >= 0 {
+            delay -= 1;
         }
         rounds -= 1;
         eax = h.read(sink);
