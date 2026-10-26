@@ -2754,3 +2754,2128 @@ fn batch9_arenas_and_registry_match_the_original() {
         }
     }
 }
+
+// ---- continuation round, batch 10 (ffx_pload::p1_misc) ----
+
+use ffx_pload::p1_misc::bridge as pm;
+
+#[test]
+fn p1c_abstract_descriptor_ctors_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+        for (sym, name, vtable, buffers) in [
+            (0x0044_73f0, 0x00c9_1928, 0x00b0_fcac, 0x00c9_1930),
+            (0x0044_ac10, 0x00c9_1b78, 0x00b1_00b4, 0x00c9_1b80),
+        ] {
+            let this = t.junk(0xc0, sym as u8);
+            let what = format!("{label}: abstract descriptor ctor {sym:#x}");
+            t.check(&what, sym, Conv::Thiscall(this), &[], |g| {
+                Out::U32(pm::abstract_descriptor_ctor(g, this, name, vtable, buffers))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn p1c_instance_list_set_buffer_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // (elem size, flags, n, size, buffer, alloc result)
+        let cases: [(u32, u8, u32, u32, u32, u32); 10] = [
+            (1, 0, 0x101, 0x200, 0, 0x00c5_0000),
+            (0x10, 0, 4, 0x3f, 0, 0x00c5_0000),
+            (0x10, 0, 4, 0x40, 0, 0x00c5_0000),
+            (0x10, 0, 4, 0x48, 0x00c6_0000, 0x00c5_0000),
+            (0x10, 4, 2, 0x40, 0, 0x00c5_0000),
+            (0x10, 4, 1, 0x40, 0, 0x00c5_0000),
+            (0x10, 0, 0, 0, 0, 0x00c5_0000),
+            (0x10, 0, 3, 0x40, 0, 0),
+            (0, 4, 0x300, 0x10, 0x00c6_0000, 0),
+            (0x10, 0xfb, 1, 0x10, 0, 0x00c5_0100),
+        ];
+        for (i, (elem, flags, n, size, buffer, block)) in cases.into_iter().enumerate() {
+            t.stub(0x0057_64a0, true, 0, 0, 0x33);
+            t.stub(descriptor::ALLOC, false, 2, 0, block);
+            let desc = t.junk(0xa0, 7);
+            t.w32(desc + 0x1c, elem);
+            t.write(desc + 0x90, &[flags]);
+            t.w32(desc + 0x20, 0x10);
+            t.w32(desc + 0x8c, 0x0c);
+            let list = t.junk(0x50, 8);
+            t.w32(list + 0x2c, desc);
+            let what = format!("{label}: set buffer case {i}");
+            t.check(
+                &what,
+                0x0057_63b0,
+                Conv::Thiscall(list),
+                &[n, size, buffer],
+                |g| Out::U32(pm::instance_list_set_buffer(g, list, n, size, buffer)),
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_construct_asset_import_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        for def in [None, Some(0), Some(0x00c4_4400)] {
+            // PBase's descriptor is set up only in a running game
+            if def.is_none() && !t.snapshot {
+                continue;
+            }
+            if let Some(d) = def {
+                t.stub(0x0043_cbb0, true, 0, 0, d);
+            }
+            t.stub(0x0045_e1a0, true, 0, 0, 0x0012_3412);
+            let p = t.junk(0x40, 9);
+            for at in [0, p] {
+                let what = format!("{label}: construct import {def:x?} {at:#x}");
+                t.check(&what, 0x0045_c9e0, Conv::Cdecl, &[at], |g| {
+                    Out::U32(pm::construct_asset_import(g, at))
+                });
+            }
+            t.reset();
+        }
+    }
+}
+
+/// UTF-8 samples, valid and not (bare continuation bytes, 5- and 6-byte
+/// leads, a lead before the terminator).
+const P1C_NAMES: [&[u8]; 9] = [
+    b"PNode\0",
+    b"\0",
+    b"m_elements\0",
+    "\u{e9}t\u{e9} \u{65e5}\u{672c} \u{1f600}\0".as_bytes(),
+    b"\x80\xbf\xc0\x80\0",
+    b"\xf8\x88\x80\x80\x80x\0",
+    b"\xfc\x84\x80\x80\x80\x80y\0",
+    b"\xffabcdefg\0",
+    b"ab\xe0\0\0\0\0",
+];
+
+#[test]
+fn p1c_utf8_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let cursor = t.zeros(4);
+        for name in P1C_NAMES {
+            let s = t.alloc(name);
+            for at in 0..name.len().min(4) as u32 {
+                t.w32(cursor, s + at);
+                let what = format!("{label}: utf8 next {name:x?} +{at}");
+                t.check(&what, 0x0045_d640, Conv::Cdecl, &[cursor], |g| {
+                    Out::U32(pm::utf8_next(g, cursor))
+                });
+            }
+            for seed in [0, 0x7b5, u32::MAX] {
+                let what = format!("{label}: utf8 hash {name:x?} {seed:#x}");
+                t.check(&what, 0x0045_d520, Conv::Cdecl, &[s, seed], |g| {
+                    Out::U32(pm::utf8_hash(g, s, seed))
+                });
+            }
+        }
+        let what = format!("{label}: utf8 hash, no name");
+        t.check(&what, 0x0045_d520, Conv::Cdecl, &[0, 77], |g| {
+            Out::U32(pm::utf8_hash(g, 0, 77))
+        });
+    }
+}
+
+#[test]
+fn p1c_releases_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // 0x00605660: objects, then the two arrays in all their states
+        let states = [
+            (0, 0x00c7_0000),
+            (3, 0),
+            (3, 0x00c7_0000),
+            (0x8000_0003, 0x00c7_0000),
+        ];
+        for round in 0..4u32 {
+            t.stub(descriptor::FREE, false, 1, 0, 0x44);
+            let this = t.junk(0x100, round as u8);
+            for (k, at) in [0x54u32, 0x58, 0x5c].into_iter().enumerate() {
+                let obj = if (round + k as u32).is_multiple_of(2) {
+                    t.object(&[1])
+                } else {
+                    0
+                };
+                t.w32(this + at, obj);
+            }
+            let (c1, d1) = states[round as usize];
+            let (c2, d2) = states[3 - round as usize];
+            t.w32(this + 0x80, c1);
+            t.w32(this + 0x84, d1);
+            t.w32(this + 0x88, c2);
+            t.w32(this + 0x8c, d2);
+            let what = format!("{label}: release parts {round}");
+            t.check(&what, 0x0060_5660, Conv::Thiscall(this), &[], |g| {
+                Out::U32(pm::release_parts(g, this))
+            });
+            t.reset();
+        }
+        // 0x00479930 and 0x00577f60
+        let states = [
+            (0, 0),
+            (0, 0x00c7_0000),
+            (1, 0x00c7_0000),
+            (2, 0x00c7_0000),
+            (0x8000_0002, 0x00c7_0000),
+            (0x8000_0000, 0),
+        ];
+        for (i, &(count, data)) in states.iter().enumerate() {
+            t.stub(descriptor::FREE, false, 1, 0, 0x44);
+            let this = t.junk(0x40, i as u8);
+            for at in [4, 0xc, 0x14] {
+                t.w32(this + at, count);
+                t.w32(this + at + 4, data);
+            }
+            let what = format!("{label}: release three {i}");
+            t.check(&what, 0x0047_9930, Conv::Thiscall(this), &[], |g| {
+                pm::release_three(g, this);
+                Out::None
+            });
+            let this = t.junk(0x40, i as u8);
+            for (k, at) in [0x10, 0x18, 0x20].into_iter().enumerate() {
+                let (c, d) = states[(i + k) % states.len()];
+                t.w32(this + at, c);
+                t.w32(this + at + 4, d);
+            }
+            let what = format!("{label}: release three inline {i}");
+            t.check(&what, 0x0057_7f60, Conv::Thiscall(this), &[], |g| {
+                pm::release_three_inline(g, this);
+                Out::None
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_inline_array_resize_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        for count in [0u32, 1, 3, 0x8000_0001, 0x8000_0003] {
+            for n in [0u32, 1, 2, 3, 5] {
+                for block in [0u32, 1] {
+                    let target = if block == 0 { 0 } else { t.junk(0x20, 3) };
+                    t.stub(descriptor::ALLOC, false, 2, 0, target);
+                    t.stub(descriptor::FREE, false, 1, 0, 0x44);
+                    let array = t.junk(8, 1);
+                    t.w32(array, count);
+                    t.w32(array + 4, 0x00c8_0000);
+                    let what = format!("{label}: inline resize {count:#x} -> {n} {block}");
+                    t.check(&what, 0x0057_ccf0, Conv::Thiscall(array), &[n], |g| {
+                        Out::U32(pm::inline_array_resize(g, array, n))
+                    });
+                    t.reset();
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn p1c_copy_strings_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let a = t.alloc(b"first\0");
+        let b = t.alloc(b"\0");
+        let src = t.zeros(16);
+        t.w32(src, a);
+        t.w32(src + 4, 0);
+        t.w32(src + 8, b | 1);
+        t.w32(src + 12, a + 1);
+        for alloc in [0u32, 1] {
+            let block = if alloc == 0 { 0 } else { t.zeros(0x20) };
+            t.stub(descriptor::ALLOC, false, 2, 0, block);
+            for dst in [0u32, 1] {
+                let dst = if dst == 0 { 0 } else { t.junk(16, 4) };
+                // a dst of 0 moves on to address 4: one element at most
+                for n in if dst == 0 { &[0u32, 1][..] } else { &[0, 1, 4] } {
+                    let n = *n;
+                    let what = format!("{label}: copy strings {alloc} {dst:#x} {n}");
+                    t.check(&what, 0x0044_a470, Conv::Cdecl, &[dst, src, n], |g| {
+                        pm::copy_strings(g, dst, src, n);
+                        Out::None
+                    });
+                }
+            }
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_data_member_ctors_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // slot 1 as the constructors call it: the original (0), or a
+        // stand-in returning a type of kind 2 or 3
+        let slot1_word = t.rebase(0x00b3_09dc);
+        let slot1 = t.r32(slot1_word);
+        for kind_of in [None, Some(2u32), Some(3)] {
+            let r = if let Some(k) = kind_of {
+                let ty = t.zeros(0x40);
+                t.w32(ty + 0x30, k);
+                let s = t.stub_code(0x51, true, 0, 0, ty);
+                t.w32(slot1_word, s);
+                ty
+            } else {
+                t.w32(slot1_word, slot1);
+                0
+            };
+            for flags in [0u32, 2, 0x40, 0x42, 0x80, 0x3c] {
+                for kind in [0u32, 2] {
+                    let desc = t.object(&[0, 0, 0, 0, 0, 0, 0, 0, 2]);
+                    let ty = t.junk(0x40, 5);
+                    t.w32(ty + 0x1c, 0x24);
+                    let name = t.alloc(b"m_value\0");
+                    let args = [desc, ty, name, 0x18, flags, kind];
+                    let this = t.junk(0x40, 6);
+                    let what = format!("{label}: data member {r:#x} {flags:#x} {kind}");
+                    t.check(&what, 0x0057_52a0, Conv::Thiscall(this), &args, |g| {
+                        Out::U32(pm::data_member_ctor(g, this, args))
+                    });
+                    let this = t.junk(0x40, 7);
+                    let args = [desc, ty, name, 0x18, flags, 0x00c9_9990 + kind];
+                    let what = format!("{label}: enum member {r:#x} {flags:#x} {kind}");
+                    t.check(&what, 0x0057_5370, Conv::Thiscall(this), &args, |g| {
+                        Out::U32(pm::enum_member_ctor(g, this, args))
+                    });
+                    t.reset();
+                }
+            }
+        }
+        t.w32(slot1_word, slot1);
+        // the dynamic member: names copied (allocator recorded) or not
+        let marker = t.r32(t.rebase(0x00c0_b238));
+        let named = t.alloc(b"m_dynamic\0");
+        for name in [named, marker, 0] {
+            for flags in [0u32, 1, 3] {
+                let block = t.zeros(0x20);
+                t.stub(descriptor::ALLOC, false, 2, 0, block | (flags & 1));
+                let desc = t.object(&[0, 0, 0, 0, 0, 0, 0, 0, 2]);
+                let ty = t.junk(0x40, 5);
+                let args = [desc, ty, name, 0x1c, flags, 1];
+                let this = t.junk(0x40, 8);
+                let what = format!("{label}: dynamic member {name:#x} {flags}");
+                t.check(&what, 0x0044_61e0, Conv::Thiscall(this), &args, |g| {
+                    Out::U32(pm::dynamic_member_ctor(g, this, args))
+                });
+                t.reset();
+            }
+        }
+        // its construction in place
+        for def in [None, Some(0), Some(0x18), Some(0x00c4_5518)] {
+            if def.is_none() && !t.snapshot {
+                continue;
+            }
+            if let Some(d) = def {
+                t.stub(0x0043_cbb0, true, 0, 0, d);
+            }
+            t.stub(0x0044_61e0, true, 6, 6, 0x0055_6601);
+            for p in [0, 0x00c4_7700] {
+                let what = format!("{label}: construct dynamic member {def:x?} {p:#x}");
+                t.check(&what, 0x0044_65c0, Conv::Cdecl, &[p], |g| {
+                    Out::U32(pm::construct_dynamic_member(g, p))
+                });
+            }
+            t.reset();
+        }
+    }
+}
+
+/// A namespace for the lookups: its descriptors (by name) and children.
+fn p1c_namespace(t: &mut Twins, names: &[&[u8]], children: &[u32]) -> (u32, Vec<u32>) {
+    let ns = t.zeros(0x20);
+    for head in [ns, ns + 8, ns + 0x14] {
+        t.w32(head, head);
+        t.w32(head + 4, head);
+    }
+    let mut descs = Vec::new();
+    let mut prev = ns + 8;
+    for n in names {
+        let d = t.junk(0xa0, 3);
+        let name = if n.is_empty() { 0 } else { t.alloc(n) };
+        t.w32(d + 0x18, name);
+        t.w32(prev, d + 0x2c);
+        t.w32(d + 0x30, prev);
+        t.w32(d + 0x2c, ns + 8);
+        t.w32(ns + 8 + 4, d + 0x2c);
+        prev = d + 0x2c;
+        descs.push(d);
+    }
+    let mut prev = ns + 0x14;
+    for &c in children {
+        t.w32(prev, c);
+        t.w32(c + 4, prev);
+        t.w32(c, ns + 0x14);
+        t.w32(ns + 0x18, c);
+        prev = c;
+    }
+    (ns, descs)
+}
+
+#[test]
+fn p1c_namespace_lookups_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let (leaf, _) = p1c_namespace(&mut t, &[b"Deep\0", b"PNode\0"], &[]);
+        let (mid, _) = p1c_namespace(&mut t, &[b"Mid\0"], &[leaf]);
+        let (other, _) = p1c_namespace(&mut t, &[], &[]);
+        let (ns, _) = p1c_namespace(&mut t, &[b"Alpha\0", b"", b"Beta\0"], &[other, mid]);
+        // a list whose last link is 0x2c (a descriptor at address 0)
+        let (stub_ns, stub_descs) = p1c_namespace(&mut t, &[b"Alpha\0"], &[]);
+        t.w32(stub_descs[0] + 0x2c, 0x2c);
+        for q in [
+            &b"Alpha\0"[..],
+            b"Beta\0",
+            b"Mid\0",
+            b"Deep\0",
+            b"PNode\0",
+            b"Gamma\0",
+            b"\0",
+        ] {
+            let name = t.alloc(q);
+            for space in [ns, mid, other, stub_ns] {
+                let what = format!("{label}: find {} in {space:#x}", String::from_utf8_lossy(q));
+                t.check(&what, 0x0043_e950, Conv::Thiscall(space), &[name], |g| {
+                    Out::U32(pm::namespace_find(g, space, name))
+                });
+            }
+        }
+        let what = format!("{label}: find, no name");
+        t.check(&what, 0x0043_e950, Conv::Thiscall(ns), &[0], |g| {
+            Out::U32(pm::namespace_find(g, ns, 0))
+        });
+        if t.snapshot {
+            // the running game's global namespace
+            let gn = t.rebase(descriptor::GLOBAL_NAMESPACE);
+            let global = t.a.call(gn, Conv::Cdecl, &[]).unwrap().eax;
+            assert_eq!(t.b.call(gn, Conv::Cdecl, &[]).unwrap().eax, global);
+            t.diff("global namespace");
+            for q in [
+                &b"PNode\0"[..],
+                b"PMatrix4\0",
+                b"PTexture2D\0",
+                b"nothing\0",
+            ] {
+                let name = t.alloc(q);
+                let what = format!("{label}: real find {}", String::from_utf8_lossy(q));
+                t.check(&what, 0x0043_e950, Conv::Thiscall(global), &[name], |g| {
+                    Out::U32(pm::namespace_find(g, global, name))
+                });
+            }
+        }
+        // add: duplicates, states, parents in and out of the namespace,
+        // first descriptors (joining the global namespace's children)
+        t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+        let gn = t.rebase(descriptor::GLOBAL_NAMESPACE);
+        let global = t.a.call(gn, Conv::Cdecl, &[]).unwrap().eax;
+        assert_eq!(t.b.call(gn, Conv::Cdecl, &[]).unwrap().eax, global);
+        t.diff("global namespace");
+        for state in [0u32, 1, 2] {
+            for case in 0..7u32 {
+                let global_first = t.r32(global + 8);
+                if case == 6 && global_first != global + 8 && global_first != 0 {
+                    // the snapshots' global namespace has descriptors
+                    continue;
+                }
+                t.stub(ffx_pload::p1_misc::PRINTF, false, 3, 0, 0);
+                t.stub(0x0043_d6e0, true, 0, 0, 0);
+                let names: &[&[u8]] = if case == 4 {
+                    &[]
+                } else {
+                    &[b"Alpha\0", b"Beta\0"]
+                };
+                let (mut space, descs) = p1c_namespace(&mut t, names, &[]);
+                if case == 6 {
+                    space = global;
+                    if global_first == 0 {
+                        t.w32(global + 8, global + 8);
+                        t.w32(global + 0xc, global + 8);
+                    }
+                }
+                t.w32(space + 0x10, state);
+                let desc = if case == 0 {
+                    descs[1]
+                } else {
+                    let d = t.junk(0xa0, 4);
+                    let n = t.alloc(match case {
+                        1 => b"Alpha\0",
+                        6 => b"Globe\0",
+                        _ => b"Fresh\0",
+                    });
+                    t.w32(d + 0x18, n);
+                    t.w32(d + 0x2c, d + 0x2c);
+                    t.w32(d + 0x30, d + 0x2c);
+                    let parent = match case {
+                        2 | 5 => {
+                            t.w32(descs[0] + 0x3c, space);
+                            descs[0]
+                        }
+                        3 => descs[0],
+                        _ => 0,
+                    };
+                    t.w32(d + 0x40, parent);
+                    if case == 5 {
+                        // the namespace's head reads 0: "empty"
+                        t.w32(space + 8, 0);
+                    }
+                    d
+                };
+                let what = format!("{label}: add {state} {case}");
+                t.check(&what, 0x0043_e660, Conv::Thiscall(space), &[desc], |g| {
+                    pm::namespace_add(g, space, desc);
+                    Out::None
+                });
+                t.reset();
+            }
+        }
+    }
+}
+
+#[test]
+fn p1c_import_insert_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        for cmp in [0u32, 1, u32::MAX] {
+            let stub = t.stub_code(0xc3, false, 2, 0, cmp);
+            let iat = t.rebase(0x00b0_c398);
+            t.w32(iat, stub);
+            for empty in [true, false] {
+                for (hash, color) in [(100u32, 0u32), (50, 1), (150, 0), (70, 1), (170, 0)] {
+                    let tree = t.zeros(0x20);
+                    t.w32(tree + 0xc, tree);
+                    if !empty {
+                        let node = t.zeros(0x20);
+                        t.w32(node + 4, tree);
+                        t.w32(node + 8, tree);
+                        t.w32(node + 0xc, tree | 1);
+                        t.w32(node + 0x10, 100);
+                        t.w32(node + 0x14, 0x00ab_0000);
+                        t.w32(tree + 0xc, node + 4);
+                        for (side, h) in [(4, 50), (8, 150)] {
+                            let child = t.zeros(0x20);
+                            t.w32(child + 4, tree);
+                            t.w32(child + 8, tree);
+                            t.w32(child + 0x10, h);
+                            t.w32(child + 0x14, 0x00ab_0010);
+                            t.w32(node + side, child + 4);
+                        }
+                    }
+                    let import = t.junk(0x30, 2);
+                    t.w32(import + 0xc, color | 0x00c1_2340);
+                    t.w32(import + 0x10, hash);
+                    t.w32(import + 0x14, 0x00cd_0000);
+                    let what = format!("{label}: import insert {cmp:#x} {empty} {hash}");
+                    t.check(&what, 0x0045_b9d0, Conv::Thiscall(tree), &[import], |g| {
+                        Out::U32(pm::import_insert(g, tree, import))
+                    });
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn p1c_apply_default_buffer_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        for flags in [0x1000_0000u32, 0, 0x4000_0000, 0x8000_0000, 0xc000_0002] {
+            for (p, n, bufs, masked) in [
+                (0u32, 2u32, true, true),
+                (1, 0, true, true),
+                (1, 3, true, true),
+                (1, 2, false, true),
+                (1, 2, true, false),
+            ] {
+                t.stub(0x0043_c420, true, 0, 0, 0x0042_0420);
+                t.stub(0x0043_c630, true, 0, 0, 0x0063_0630);
+                let obj = t.object(&[0; 13]);
+                let desc = t.zeros(0xa0);
+                let vt = t.r32(obj);
+                t.w32(desc, vt);
+                t.w32(desc + 0x90, flags);
+                t.w32(desc + 0x1c, 6);
+                t.w32(desc + 0x8c, 2);
+                let default = t.junk(8, 1);
+                let mask = t.junk(8, 2);
+                t.w32(desc + 0x64, if bufs { default } else { 0 });
+                t.w32(desc + 0x68, if masked { mask } else { 0 });
+                let inst = t.junk(0x40, 3);
+                let at = if p == 0 { 0 } else { inst + 2 };
+                let what = format!("{label}: apply default {flags:#x} {p} {n} {bufs} {masked}");
+                t.check(&what, 0x0043_c160, Conv::Thiscall(desc), &[at, n], |g| {
+                    Out::U32(pm::apply_default_buffer(g, desc, at, n))
+                });
+                t.reset();
+            }
+        }
+    }
+}
+
+#[test]
+fn p1c_blend2_matches_the_original() {
+    let mut rng = Rng(0x0b1e_0d02);
+    let specials = [
+        0.0f32,
+        -0.0,
+        1.0,
+        -2.5,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NAN,
+        -f32::NAN,
+        1e-40,
+        3.4e38,
+    ];
+    for (label, mut t) in Twins::all() {
+        for round in 0..32u32 {
+            let mut f = || -> f32 {
+                let r = rng.next();
+                if r.trailing_zeros() >= 3 {
+                    specials[(r >> 3) as usize % specials.len()]
+                } else {
+                    f32::from_bits((r & 0xbfff_ffff) | 0x3000_0000)
+                }
+            };
+            let n = 1 + round % 9;
+            let nans = [
+                f32::NAN,
+                -f32::NAN,
+                f32::from_bits(0x7fc0_0001),
+                f32::from_bits(0xffc0_1000),
+            ];
+            let w = t.zeros(8);
+            let (w0, w1) = if round >= 24 { (1.5, -0.5) } else { (f(), f()) };
+            t.write(w, &w0.to_le_bytes());
+            t.write(w + 4, &w1.to_le_bytes());
+            let a = t.zeros(4 * n as usize);
+            let b = t.zeros(4 * n as usize);
+            for i in 0..n {
+                let (mut x, mut y) = (f(), f());
+                if round >= 24 {
+                    x = nans[(round + i) as usize % 4];
+                    y = nans[(round + 2 * i + 1) as usize % 4];
+                }
+                t.write(a + 4 * i, &x.to_le_bytes());
+                t.write(b + 4 * i, &y.to_le_bytes());
+            }
+            let arrays = t.zeros(8);
+            t.w32(arrays, a);
+            t.w32(arrays + 4, b);
+            let dst = t.junk(4 * n as usize + 4, 1);
+            let out = t.zeros(4);
+            t.w32(out, dst);
+            let what = format!("{label}: blend2 {round}");
+            t.check(&what, 0x005c_b870, Conv::Cdecl, &[w, n, arrays, out], |g| {
+                pm::blend2(g, w, n, arrays, out);
+                Out::None
+            });
+        }
+    }
+}
+
+#[test]
+fn p1c_release_group_resources_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut slots = vec![0u32; 20];
+        slots.push(1);
+        let renderer = t.object(&slots);
+        let stranger = t.zeros(0x60);
+        for owner in [0, renderer] {
+            let this = t.junk(0x60, 1);
+            t.w32(this + 0x54, owner);
+            let mut prev_group = 0u32;
+            let mut first = 0u32;
+            for g in 0..3u32 {
+                let group = t.junk(0x10, g as u8);
+                t.w32(group, 0);
+                if prev_group == 0 {
+                    first = group;
+                } else {
+                    t.w32(prev_group, group);
+                }
+                prev_group = group;
+                let mut head = 0u32;
+                for e in 0..(g * 3) {
+                    let entry = t.junk(0x100, e as u8);
+                    t.w32(entry, head);
+                    head = entry;
+                    let obj = if e % 4 == 0 {
+                        0
+                    } else {
+                        let o = t.zeros(0x10);
+                        let o8 = match e % 4 {
+                            1 => 0,
+                            2 => stranger,
+                            _ => {
+                                let x = t.zeros(0x60);
+                                t.w32(x + 0x54, renderer);
+                                x
+                            }
+                        };
+                        t.w32(o + 8, o8);
+                        o
+                    };
+                    t.w32(entry + 0xb0, obj);
+                    t.w32(entry + 0xdc, if e == 3 { 0 } else { 0x00d0_0000 + e });
+                }
+                t.w32(group + 4, head);
+            }
+            t.w32(this + 0x48, first);
+            let what = format!("{label}: release group resources {owner:#x}");
+            t.check(&what, 0x0060_19b0, Conv::Thiscall(this), &[], |g| {
+                Out::U32(pm::release_group_resources(g, this))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_registry_add_locked_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        for dup in [false, true] {
+            t.stub(0x0043_1840, true, 0, 0, 0x40);
+            t.stub(0x0043_19d0, true, 0, 0, 0x9d);
+            t.stub(0x0049_c8d0, true, 1, 1, 0);
+            t.stub(0x0049_c980, true, 1, 1, 0);
+            t.stub(0x0057_4980, true, 1, 1, 0);
+            let owner = t.junk(0x1400, 2);
+            let reg = owner + 0x1344;
+            t.write(reg, &[0; 0x30]);
+            t.w32(reg + 0xc, reg);
+            t.w32(reg + 0x20, 8);
+            let n1 = t.junk(0x40, 3);
+            t.w32(n1, 0);
+            t.w32(reg + 0x18, n1);
+            if dup {
+                let old = t.zeros(0x40);
+                t.w32(old, reg);
+                t.w32(old + 4, reg);
+                t.w32(old + 0xc, 0x00c1_0001);
+                t.w32(reg + 0xc, old);
+            }
+            let args: [u32; 10] = std::array::from_fn(|i| 0x00c1_0000 + i as u32);
+            let what = format!("{label}: registry add locked {dup}");
+            t.check(&what, 0x0058_c010, Conv::Thiscall(owner), &args, |g| {
+                let frame = g.scratch();
+                Out::U32(pm::registry_add_locked(g, frame, owner, args))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_dynamic_refresh_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        for (size, had, parent) in [
+            (0u32, 4u32, 0u8),
+            (4, 4, 0),
+            (10, 4, 1),
+            (10, 0x8000_0004, 2),
+            (8, 0, 1),
+        ] {
+            for default in [0u32, 1] {
+                if default == 0 && size > had & 0x7fff_ffff {
+                    // the tails' memset would write at address 4
+                    continue;
+                }
+                t.stub(0x0044_a080, true, 1, 1, 0x0a08_0000);
+                t.stub(0x0043_cb80, true, 0, 0, 0x0cb8_0000);
+                let desc = t.junk(0xc0, 2);
+                t.w32(desc + 0x1c, size);
+                t.w32(desc + 0x9c, had);
+                for at in [0xa0, 0xa8, 0xb0] {
+                    let arr = t.junk(0x20, at as u8);
+                    t.w32(desc + at, arr);
+                }
+                if default == 0 {
+                    t.w32(desc + 0xa0, 0);
+                }
+                t.w32(desc + 0x8c, 4);
+                t.w32(desc + 0x90, 0x8000_0123);
+                let target = t.rebase(0x00c9_1c18);
+                let p = match parent {
+                    0 => 0,
+                    1 => target,
+                    _ => {
+                        let mid = t.zeros(0x60);
+                        t.w32(mid + 0x40, target);
+                        mid
+                    }
+                };
+                t.w32(desc + 0x40, p);
+                let what = format!("{label}: dynamic refresh {size} {had:#x} {parent} {default}");
+                t.check(&what, 0x0044_9e40, Conv::Thiscall(desc), &[], |g| {
+                    pm::dynamic_refresh(g, desc);
+                    Out::None
+                });
+                t.reset();
+            }
+        }
+    }
+}
+
+// ---- continuation round, batch 11 (ffx_pload::p1_types, p1_loader) ----
+
+use ffx_pload::p1_loader::bridge as pl;
+use ffx_pload::p1_types::{self as pty, bridge as pt};
+
+#[test]
+fn p1c_descriptor_ctors_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for round in 0..3u32 {
+            let args = [
+                0x00c1_0000 + round,
+                0x00c2_0000,
+                0x40 + round,
+                8,
+                0x00c3_0000,
+                7,
+            ];
+            let this = t.junk(0xb0, round as u8);
+            let what = format!("{label}: descriptor ctor 6 {round}");
+            t.check(&what, 0x0043_b0a0, Conv::Thiscall(this), &args, |g| {
+                Out::U32(pt::descriptor_ctor(g, this, args))
+            });
+            let this = t.junk(0xb0, round as u8 + 1);
+            let what = format!("{label}: descriptor ctor 4 {round}");
+            t.check(&what, 0x0043_afb0, Conv::Thiscall(this), &args[..4], |g| {
+                Out::U32(pt::descriptor_ctor(
+                    g,
+                    this,
+                    [args[0], args[1], args[2], args[3], 0, 0],
+                ))
+            });
+        }
+        // the dynamic descriptor: named or not, allocation recorded
+        for name in [0u32, 1] {
+            let block = t.zeros(0x20);
+            t.stub(descriptor::ALLOC, false, 2, 0, block | 1);
+            t.stub(0x0043_d6e0, true, 0, 0, 0);
+            t.stub(0x0044_9e40, true, 0, 0, 0);
+            let base = t.junk(0xa0, 4);
+            t.w32(base + 0x1c, 0x24);
+            t.w32(base + 0x20, 0x10);
+            let name = if name == 0 {
+                0
+            } else {
+                t.alloc(b"PDynamicThing\0")
+            };
+            let this = t.junk(0xc0, 5);
+            let what = format!("{label}: dynamic descriptor ctor {name:#x}");
+            t.check(
+                &what,
+                0x0044_7690,
+                Conv::Thiscall(this),
+                &[0x00c1_0000, name, base],
+                |g| Out::U32(pt::dynamic_ctor(g, this, 0x00c1_0000, name, base)),
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_dispenser_insert_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let names: Vec<u32> = [
+            &b"Mid\0"[..],
+            b"Alpha\0",
+            b"Zulu\0",
+            b"Mid\0",
+            b"Mie\0",
+            b"Mi\0",
+        ]
+        .iter()
+        .map(|n| t.alloc(n))
+        .collect();
+        for empty in [true, false] {
+            for (k, hash) in [
+                (0usize, 100u32),
+                (3, 100),
+                (4, 100),
+                (5, 100),
+                (1, 50),
+                (2, 150),
+                (1, 70),
+            ] {
+                let tree = t.zeros(0x20);
+                t.w32(tree + 0xc, tree);
+                if !empty {
+                    let node = t.zeros(0x20);
+                    t.w32(node + 4, tree);
+                    t.w32(node + 8, tree);
+                    t.w32(node + 0xc, tree | 1);
+                    t.w32(node + 0x10, 100);
+                    t.w32(node + 0x14, names[0]);
+                    t.w32(tree + 0xc, node + 4);
+                    for (side, h, n) in [(4, 50, names[1]), (8, 150, names[2])] {
+                        let child = t.zeros(0x20);
+                        t.w32(child + 4, tree);
+                        t.w32(child + 8, tree);
+                        t.w32(child + 0x10, h);
+                        t.w32(child + 0x14, n);
+                        t.w32(node + side, child + 4);
+                    }
+                }
+                let ty = t.junk(0x30, 2);
+                t.w32(ty + 0xc, 0x00c1_2341);
+                t.w32(ty + 0x10, hash);
+                t.w32(ty + 0x14, names[k]);
+                let what = format!("{label}: dispenser insert {empty} {k} {hash}");
+                t.check(&what, 0x0043_8780, Conv::Thiscall(tree), &[ty], |g| {
+                    Out::U32(pm::dispenser_insert(g, tree, ty))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn p1c_wrapper_descriptors_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+        for w in pty::WRAPPERS {
+            // the first call (on the image), then a bound one
+            for round in 0..2 {
+                let what = format!("{label}: wrapper {:#x} {round}", w.getter);
+                t.check(&what, w.getter, Conv::Cdecl, &[], |g| {
+                    Out::U32(pt::wrapper_descriptor(g, &w))
+                });
+            }
+            // not bound again (guard bits kept): addToNamespace once more
+            let desc = t.rebase(w.desc);
+            t.write(desc + 0x98, &[0]);
+            let what = format!("{label}: wrapper {:#x} rebound", w.getter);
+            t.check(&what, w.getter, Conv::Cdecl, &[], |g| {
+                Out::U32(pt::wrapper_descriptor(g, &w))
+            });
+        }
+        t.reset();
+    }
+}
+
+/// A cluster for the instance-list tests: its list head, arenas and
+/// pool; `lists` instance lists of `desc` linked in.
+fn p1c_cluster(t: &mut Twins, lists: &[(u32, u32, u32)]) -> (u32, Vec<u32>) {
+    let cluster = t.junk(0x50, 1);
+    let head = cluster + 0x1c;
+    t.w32(head, head);
+    t.w32(head + 4, head);
+    t.w32(cluster + 0x24, 0);
+    t.w32(cluster + 0x40, 0);
+    let mut out = Vec::new();
+    for &(desc, buffer, count) in lists {
+        let list = t.junk(0x50, 2);
+        t.w32(list + 0x2c, desc);
+        t.w32(list + 0x34, buffer);
+        t.w32(list + 0x3c, count);
+        t.w32(list + 0x40, 0);
+        let tail = t.r32(head + 4);
+        t.w32(list, head);
+        t.w32(list + 4, tail);
+        t.w32(tail, list);
+        t.w32(head + 4, list);
+        out.push(list);
+    }
+    (cluster, out)
+}
+
+#[test]
+fn p1c_allocate_instance_list_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // (size, n, flags, pool state, buffer ok, world)
+        let cases: [(u32, u32, u8, u32, u32, bool); 9] = [
+            (0, 4, 0, 1, 1, false),
+            (0x40, 0, 0, 1, 1, false),
+            (0x40, 4, 2, 1, 1, false),
+            (0x3f, 4, 0, 1, 1, false),
+            (0x40, 4, 0, 1, 1, false),
+            (0x40, 4, 0, 1, 1, true),
+            (0x40, 4, 0, 0, 1, false),
+            (0x40, 4, 0, 2, 1, false),
+            (0x48, 4, 0, 1, 0, true),
+        ];
+        for (i, (size, n, flags, pool, ok, world)) in cases.into_iter().enumerate() {
+            let list = t.junk(0x50, 5);
+            // the reports push 3 and 6 words
+            t.stub(
+                ffx_pload::p1_misc::PRINTF,
+                false,
+                if i == 3 { 6 } else { 3 },
+                0,
+                0,
+            );
+            t.stub(0x0049_c8d0, true, 1, 1, 0);
+            t.stub(0x0057_6270, true, 2, 2, list);
+            t.stub(0x0044_0cf0, true, 2, 2, 0x00c6_6000);
+            t.stub(0x0057_63b0, true, 3, 3, 0x0012_3400 | ok);
+            t.stub(0x0043_f3c0, true, 1, 1, 0);
+            t.stub(0x0044_3320, true, 1, 1, 0);
+            let desc = t.junk(0xa0, 3);
+            t.write(desc + 0x90, &[flags]);
+            t.w32(desc + 0x1c, 0x10);
+            let (cluster, _) = p1c_cluster(&mut t, &[(desc, 0x00c7_0000, 1)]);
+            let block = t.junk(0x10, 4);
+            t.w32(cluster + 0x28, if pool == 1 { block } else { 0 });
+            t.w32(cluster + 0x30, 0x20);
+            if pool == 2 {
+                // the pool grows: a stand-in that puts the block in it
+                // (mov dword [ecx], block; ret 4)
+                let mut code = vec![0xc7, 0x01];
+                code.extend(block.to_le_bytes());
+                code.extend([0xc2, 0x04, 0x00]);
+                let at = t.a.alloc_code(&code).unwrap();
+                assert_eq!(t.b.alloc_code(&code).unwrap(), at);
+                let sym = t.rebase(0x0049_c8d0);
+                let mut j = vec![0xe9];
+                j.extend(at.wrapping_sub(sym + 5).to_le_bytes());
+                t.write(sym, &j);
+            }
+            t.w32(cluster + 0x40, if world { 0x00c8_0000 } else { 0 });
+            let args = [size, n, desc, 8];
+            let what = format!("{label}: allocate instance list case {i}");
+            t.check(&what, 0x0044_0ba0, Conv::Thiscall(cluster), &args, |g| {
+                Out::U32(pl::allocate_instance_list(g, cluster, size, n, desc, 8))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_delete_object_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // arena: 0 none, 1 two arenas holding the buffer, 2 one starting
+        // at the buffer, 3 one ending at it
+        for (obj, err, stays, flag, arena) in [
+            (0x00c0_0000u32, 0u32, 0u32, 0u8, 0u8),
+            (0x00c7_0010, 0, 0, 0, 0),
+            (0x00c7_0000, 0, 0, 0, 0),
+            (0x00c7_0010, 9, 0, 0, 0),
+            (0x00c7_0010, 0, 1, 0, 0),
+            (0x00c7_0010, 0, 0, 0, 1),
+            (0x00c7_0010, 0, 0, 1, 1),
+            (0x00c9_0020, 0, 0, 0, 0),
+            (0x00c7_0040, 0, 0, 0, 0),
+            (0x00c7_003f, 0, 0, 0, 1),
+            (0x00c7_0010, 0, 0, 0, 2),
+            (0x00c7_0010, 0, 0, 0, 3),
+        ] {
+            t.stub(0x0057_6530, true, 1, 1, err);
+            t.stub(0x0044_3c20, true, 1, 1, 0);
+            t.stub(0x0057_64a0, true, 0, 0, 0);
+            t.stub(0x0049_c5b0, true, 0, 0, 0);
+            t.stub(0x0049_c980, true, 1, 1, 0);
+            let d1 = t.junk(0xa0, 3);
+            t.w32(d1 + 0x1c, 0x10);
+            t.write(d1 + 0x90, &[flag]);
+            let d2 = t.junk(0xa0, 4);
+            t.w32(d2 + 0x1c, 0x8);
+            let (cluster, lists) = p1c_cluster(
+                &mut t,
+                &[
+                    (d2, 0x00c6_0000, 2),
+                    (d1, 0x00c7_0000, 4),
+                    (d2, 0x00c9_0000, 8),
+                ],
+            );
+            t.w32(lists[1] + 0x40, stays);
+            t.w32(cluster + 0x40, 0x00c8_0000);
+            if arena != 0 {
+                let a1 = t.zeros(0x10);
+                let a2 = t.zeros(0x10);
+                t.w32(a1, a2);
+                t.w32(a1 + 4, 0x00c5_0000);
+                t.w32(a1 + 0xc, 0x100);
+                let (base, size) = match arena {
+                    1 => (0x00c6_ff00, 0x200),
+                    2 => (0x00c7_0000, 0x10),
+                    _ => (0x00c6_fff0, 0x10),
+                };
+                t.w32(a2 + 4, base);
+                t.w32(a2 + 0xc, size);
+                t.w32(cluster + 0x24, a1);
+            }
+            let what = format!("{label}: delete object {obj:#x} {err} {stays} {flag} {arena}");
+            t.check(&what, 0x0044_1240, Conv::Thiscall(cluster), &[obj], |g| {
+                Out::U32(pl::delete_object(g, cluster, obj))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_cluster_clear_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let late = [t.rebase(0x00c9_1180), t.rebase(0x00c9_1330)];
+        for (round, world) in [(0u32, false), (1, true), (2, true), (3, false)] {
+            t.stub(0x0044_3c20, true, 1, 1, 0);
+            t.stub(0x0057_64a0, true, 0, 0, 0);
+            t.stub(0x0049_c5b0, true, 0, 0, 0);
+            t.stub(0x0049_c980, true, 1, 1, 0);
+            t.stub(0x0049_cc10, true, 0, 0, 0);
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            let d = t.junk(0xa0, 3);
+            let specs: Vec<(u32, u32, u32)> = (0..round * 3)
+                .map(|i| match i % 3 {
+                    0 => (d, i, 1),
+                    1 => (late[0], i, 1),
+                    _ => (late[(i as usize / 3) % 2], i, 1),
+                })
+                .collect();
+            let (cluster, _) = p1c_cluster(&mut t, &specs);
+            t.w32(cluster + 0x40, if world { 0x00c8_0000 } else { 0 });
+            let mut prev = 0u32;
+            for _ in 0..round {
+                let a = t.zeros(0x10);
+                t.w32(a, prev);
+                prev = a;
+            }
+            t.w32(cluster + 0x24, prev);
+            let what = format!("{label}: cluster clear {round} {world}");
+            t.check(&what, 0x0044_0eb0, Conv::Thiscall(cluster), &[], |g| {
+                let local = g.scratch();
+                pl::clear(g, local, cluster);
+                Out::None
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_mapping_ctor_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        for (counts, alloc) in [
+            ([0u32, 0, 0], 1u32),
+            ([3, 2, 1], 1),
+            ([3, 2, 1], 0),
+            ([0, 5, 0], 1),
+        ] {
+            let block = if alloc == 0 { 0 } else { t.zeros(0x10) };
+            t.stub(descriptor::ALLOC, false, 2, 0, block);
+            t.stub(0x0047_bb00, false, 2, 0, 0);
+            t.stub(0x0047_baa0, false, 2, 0, 0);
+            t.stub(0x0047_c8b0, true, 4, 4, 0);
+            let ns = t.junk(0x20, 1);
+            t.w32(ns + 8, counts[0]);
+            t.w32(ns + 0xc, counts[1]);
+            t.w32(ns + 0x10, counts[2]);
+            let map = t.junk(0x20, 2);
+            let args = [ns, 0x00c1_0001, 0x00c1_0002, 0x00c1_0003];
+            let what = format!("{label}: mapping ctor {counts:?} {alloc}");
+            t.check(&what, 0x0047_86a0, Conv::Thiscall(map), &args, |g| {
+                Out::U32(pl::mapping_ctor(g, map, args))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_asset_registry_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+        // registration: no name, a duplicate, a new one
+        for (named, dup) in [(false, false), (true, true), (true, false)] {
+            t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+            t.stub(ffx_pload::p1_loader::LOCK, true, 0, 0, 0);
+            t.stub(ffx_pload::p1_loader::UNLOCK, true, 0, 0, 0);
+            t.stub(0x0045_b9d0, true, 1, 1, u32::from(dup) * 0x00c1_0000);
+            t.stub(0x0057_4980, true, 1, 1, 0);
+            let import = t.junk(0x30, 1);
+            let name = if named { t.alloc(b"bsil0000\0") | 1 } else { 1 };
+            t.w32(import + 0x18, name);
+            let what = format!("{label}: import register {named} {dup}");
+            t.check(&what, 0x0045_e1a0, Conv::Thiscall(import), &[], |g| {
+                let local = g.scratch();
+                Out::U32(pl::import_register(g, local, import))
+            });
+            t.reset();
+        }
+        // the destructor: in the tree or not, its name owned or not
+        for (key, linked, owned) in [
+            (0u32, true, true),
+            (1, false, false),
+            (1, true, true),
+            (1, true, false),
+        ] {
+            t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+            t.stub(ffx_pload::p1_loader::LOCK, true, 0, 0, 0);
+            t.stub(ffx_pload::p1_loader::UNLOCK, true, 0, 0, 0);
+            t.stub(0x0057_5000, true, 1, 1, 0);
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            let import = t.junk(0x30, 2);
+            t.w32(import + 0x14, key);
+            t.w32(
+                import + 0xc,
+                if linked {
+                    0x00c1_0001
+                } else {
+                    (import + 4) | 1
+                },
+            );
+            t.w32(import + 0x18, if owned { 0x00c2_0000 } else { 0x00c2_0001 });
+            let what = format!("{label}: import dtor {key} {linked} {owned}");
+            t.check(&what, 0x0045_c0f0, Conv::Thiscall(import), &[], |g| {
+                let local = g.scratch();
+                pl::import_dtor(g, local, import);
+                Out::None
+            });
+            t.reset();
+        }
+        // resolve: no chain; none found; found of the class, of a parent
+        // class, of another class. The lookup's key is in the frame,
+        // which the port's oracle gets at the original's address.
+        let key = t.a.stack_range().end - 0x100 - 8 - 0x10;
+        for case in 0..5u32 {
+            t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+            t.stub(ffx_pload::p1_loader::LOCK, true, 0, 0, 0);
+            t.stub(ffx_pload::p1_loader::UNLOCK, true, 0, 0, 0);
+            // the warnings push 4 and 5 words
+            t.stub(
+                ffx_pload::p1_misc::PRINTF,
+                false,
+                if case == 1 { 4 } else { 5 },
+                0,
+                0,
+            );
+            t.stub(0x0043_cbb0, true, 0, 0, 0x00d0_0000);
+            let class = t.junk(0xa0, 3);
+            t.w32(class + 0x88, 0x10);
+            let parent = t.junk(0xa0, 4);
+            t.w32(parent + 0x40, 0);
+            t.w32(class + 0x40, parent);
+            let other = t.junk(0xa0, 5);
+            t.w32(other + 0x40, 0);
+            let found = match case {
+                0 | 1 => 0,
+                _ => {
+                    let f = t.junk(0x30, 6);
+                    t.w32(f + 0x1c, 0x00d1_0000);
+                    let got = match case {
+                        2 => class,
+                        3 => {
+                            // a class whose parent is the wanted one
+                            let sub = t.junk(0xa0, 7);
+                            t.w32(sub + 0x40, class);
+                            sub
+                        }
+                        _ => other,
+                    };
+                    t.w32(f + 0x20, got);
+                    f
+                }
+            };
+            t.stub(0x0045_b8f0, true, 1, 1, found);
+            let reference = t.junk(0x10, 8);
+            t.w32(reference, class);
+            let name = t.alloc(b"kami0100\0");
+            t.w32(reference + 4, name | 1);
+            let chain = if case == 0 {
+                0
+            } else {
+                let w = t.zeros(12);
+                t.w32(w, w + 4);
+                t.w32(w + 4, w + 8);
+                t.w32(w + 8, 0);
+                w
+            };
+            t.w32(reference + 8, chain);
+            t.b.set_call_top(Some(key - 0x100));
+            let what = format!("{label}: resolve {case}");
+            t.check(&what, 0x0045_e280, Conv::Thiscall(reference), &[], |g| {
+                Out::U32(pl::resolve(g, key, reference))
+            });
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}
+
+// ---- continuation round, batch 12 (ffx_pload::p1_bind, p1_loader) ----
+
+use ffx_pload::p1_bind::{self as pbind, bridge as pb};
+
+/// Records the registration callees that walk or relink live statics.
+/// The finders say "not there" (the method is linked).
+fn p1c_bind_stubs(t: &mut Twins) {
+    for (sym, this, n) in [
+        (0x0057_52a0u32, true, 6u32),
+        (0x0057_5f30, true, 6),
+        (0x0043_a080, true, 3),
+        (0x0043_59d0, true, 1),
+        (0x0043_06b0, true, 1),
+        (0x0043_c140, true, 0),
+        (0x0043_e660, true, 1),
+        (0x0043_79b0, true, 2),
+        (0x0043_afb0, true, 4),
+        (0x0044_ac10, true, 0),
+    ] {
+        t.stub(sym, this, n, n, 0);
+    }
+    // cdecl
+    t.stub(0x0043_95b0, false, 1, 0, 0);
+    t.stub(0x0044_b3b0, false, 1, 0, 0);
+    // seven words: logged as six
+    t.stub(0x0057_5ef0, true, 6, 7, 0);
+}
+
+#[test]
+fn p1c_binds_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the second registered type has no name on the image until its
+        // static constructor runs (as in the RegisterType test)
+        let second = t.rebase(0x00c9_0760);
+        if t.r32(second + 0x18) == 0 {
+            let n = t.alloc(b"p1load_Second\0");
+            t.w32(second + 0x18, n);
+        }
+        for b in pbind::STEPS {
+            // the image's static descriptors and namespaces are not built
+            // (its namespace lists loop): snapshots only
+            if !t.snapshot {
+                continue;
+            }
+            // as they find it (built on the snapshots), then once more,
+            // then with the guard cleared (every member built again over
+            // the live one, the same in both)
+            for round in 0..3 {
+                t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+                if round == 2 {
+                    // building again over the live statics: the callees
+                    // that would walk or relink them are recorded instead
+                    p1c_bind_stubs(&mut t);
+                    let desc = t.rebase(b.desc);
+                    let flags = t.r32(desc + 0x90);
+                    t.w32(desc + 0x90, flags & !0x4000_0000);
+                    let guard = t.rebase(b.guard);
+                    t.w32(guard, 0);
+                    if let pbind::End::Getter { bound, .. } = b.end {
+                        let bound = t.rebase(bound);
+                        t.write(bound, &[0]);
+                    }
+                }
+                let what = format!("{label}: bind {:#x} {round}", b.addr);
+                t.check(&what, b.addr, Conv::Cdecl, &[], |g| {
+                    let r = pb::run(g, &b);
+                    Out::U32(r)
+                });
+                t.reset();
+            }
+        }
+        for round in 0..3 {
+            if !t.snapshot {
+                break;
+            }
+            t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+            if round == 2 {
+                p1c_bind_stubs(&mut t);
+                let member = t.rebase(0x00c9_19ec);
+                let flags = t.r32(member + 0x14);
+                t.w32(member + 0x14, flags & !8);
+                let array = t.rebase(0x00c9_1a28);
+                let flags = t.r32(array + 0x90);
+                t.w32(array + 0x90, flags | 2);
+                let guard = t.rebase(0x00c9_1a20);
+                t.w32(guard, 0);
+                let inner = t.rebase(0x00c9_1abc);
+                t.w32(inner, 0);
+            }
+            let what = format!("{label}: dependency list bind {round}");
+            t.check(&what, 0x0044_b2b0, Conv::Cdecl, &[], |g| {
+                Out::U32(pb::dependency_list_bind(g))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_mutex_lock_inner_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // (owner, compare-exchange result, wait result)
+        // wait 2: the wait returns 0 after the owner let go (it writes the
+        // thread id into the owner word: the next round finds it)
+        for (owner, cas, wait) in [
+            (0x77u32, 1u32, 1u32),
+            (0, 0, 0),
+            (5, 5, 1),
+            (5, 0, 1),
+            (5, 5, 2),
+        ] {
+            let add = t.stub_code(0xadd, false, 2, 2, 0x0012_0000);
+            let cx = t.stub_code(0xca5, false, 3, 3, cas);
+            for (slot, code) in [(0x00b0_c128u32, add), (0x00b0_c12c, cx)] {
+                let iat = t.rebase(slot);
+                t.w32(iat, code);
+            }
+            t.stub(0x0042_fd00, false, 0, 0, 0x77);
+            t.stub(0x0043_01e0, true, 0, 0, 0);
+            let mutex = t.junk(0x20, 1);
+            let inner = mutex + 0x10;
+            if wait == 2 {
+                // mov dword [inner], 0x77; xor eax, eax; ret 4
+                let mut code = vec![0xc7, 0x05];
+                code.extend(inner.to_le_bytes());
+                code.extend(0x77u32.to_le_bytes());
+                code.extend([0x31, 0xc0, 0xc2, 0x04, 0x00]);
+                let at = t.a.alloc_code(&code).unwrap();
+                assert_eq!(t.b.alloc_code(&code).unwrap(), at);
+                let sym = t.rebase(0x0043_0280);
+                let old = Oracle::read(&mut t.a, sym, 5).unwrap();
+                t.saved.entry(sym).or_insert(old);
+                let mut j = vec![0xe9];
+                j.extend(at.wrapping_sub(sym + 5).to_le_bytes());
+                t.write(sym, &j);
+            } else {
+                t.stub(0x0043_0280, true, 1, 1, wait);
+            }
+            t.w32(inner, owner);
+            let what = format!("{label}: mutex lock inner {owner:#x} {cas} {wait}");
+            t.check(&what, 0x0043_1850, Conv::Thiscall(mutex), &[inner], |g| {
+                Out::U32(pl::mutex_lock_inner(g, mutex, inner))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_resolve_asset_references_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let class = t.rebase(0x00c9_4030);
+        for (round, done) in [(2u32, true), (0, false), (1, false), (2, false), (3, false)] {
+            t.stub(0x0045_e280, true, 0, 0, 0);
+            let other = t.junk(0xa0, 1);
+            t.w32(other + 0x40, 0);
+            let sub = t.junk(0xa0, 2);
+            t.w32(sub + 0x40, class);
+            let cluster = t.junk(0x50, 3);
+            let head = cluster + 0x1c;
+            t.w32(head, head);
+            t.w32(head + 4, head);
+            t.w32(cluster + 0x44, u32::from(done) | 0x100);
+            for k in 0..round * 2 {
+                let desc = match k % 3 {
+                    0 => class,
+                    1 => sub,
+                    _ => other,
+                };
+                let list = t.junk(0x50, k as u8);
+                t.w32(list + 0x2c, desc);
+                let count = if k == 3 { 4 } else { 1 + k % 4 };
+                let stride = 0x10;
+                let buffer = t.zeros((stride * (count + 2)) as usize);
+                t.w32(list + 0x34, buffer);
+                t.w32(list + 0x3c, count);
+                t.w32(list + 0x40, u32::from(k != 2));
+                // the chunk ends: one inside the run when there are 3+
+                let end = if count >= 3 {
+                    let e = buffer + stride;
+                    t.w32(e, buffer + 3 * stride);
+                    e
+                } else {
+                    buffer + 0x1000
+                };
+                t.w32(list + 8, end);
+                let d = t.r32(list + 0x2c);
+                if d == class {
+                    t.w32(class + 0x1c, stride);
+                    t.w32(class + 0x8c, 4);
+                }
+                let tail = t.r32(head + 4);
+                t.w32(list, head);
+                t.w32(list + 4, tail);
+                t.w32(tail, list);
+                t.w32(head + 4, list);
+            }
+            let what = format!("{label}: resolve asset references {round} {done}");
+            t.check(&what, 0x0044_1f20, Conv::Thiscall(cluster), &[], |g| {
+                let it = g.scratch();
+                Out::U32(pl::resolve_asset_references(g, it, cluster))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_load_asset_file_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the original's frame: three arguments, the return address and
+        // ebp; the reader at ebp - 0x28. The port's oracle gets it there.
+        let reader = t.a.stack_range().end - 0x100 - 20 - 0x28;
+        // (path, open, cluster block, load result)
+        for (i, (path, open, block, load)) in [
+            (0u32, 1u32, 1u32, 0u32),
+            (1, 0, 1, 0),
+            (1, 1, 0, 0),
+            (1, 1, 1, 0),
+            (1, 1, 1, 0x13),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let iob = t.stub_code(0x10b, false, 0, 0, 0x00c5_0000);
+            let fpr = t.stub_code(0xf9f, false, 3, 0, 0);
+            for (slot, code) in [(0x00b0_c350u32, iob), (0x00b0_c38c, fpr)] {
+                let iat = t.rebase(slot);
+                t.w32(iat, code);
+            }
+            let cluster = t.junk(0x50, 2);
+            t.stub(0x0057_66d0, true, 1, 1, 0);
+            t.stub(0x0057_6980, true, 0, 0, 0x0012_3400 | open);
+            t.stub(
+                0x0042_fb40,
+                false,
+                1,
+                0,
+                if block == 0 { 0 } else { cluster },
+            );
+            t.stub(0x0057_6630, true, 0, 0, cluster);
+            t.stub(0x0057_6930, true, 0, 0, 0);
+            t.stub(0x0057_bce0, false, 4, 0, load);
+            t.stub(0x0043_fed0, true, 1, 1, 0);
+            t.stub(0x0057_67c0, true, 0, 0, 0);
+            let out = t.junk(4, 3);
+            let p = if path == 0 {
+                0
+            } else {
+                t.alloc(b"bsil0000.phyre\0")
+            };
+            t.b.set_call_top(Some(reader - 0x100));
+            let what = format!("{label}: load asset file case {i}");
+            t.check(&what, 0x0044_06c0, Conv::Cdecl, &[out, p, 7], |g| {
+                Out::U32(pl::load_asset_file(g, reader, out, p, 7))
+            });
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}
+
+// ---- continuation round, batch 13 (ffx_pload::p1_reader) ----
+
+use ffx_pload::p1_reader::bridge as prd;
+
+/// A cluster reader with `classes` mapping entries (each: a descriptor
+/// with its flags, size, over-allocation and alignment, or none; the
+/// packed class's flags) and `headers` instance-list headers.
+fn p1c_reader(
+    t: &mut Twins,
+    classes: &[(bool, u8, u32, u32, u32, u8)],
+    headers: &[[u32; 6]],
+    map_flags: u32,
+    made: u32,
+) -> u32 {
+    let reader = t.junk(0x40, 1);
+    t.w32(reader, 0x00c1_c000);
+    let map = t.junk(0x20, 2);
+    t.w32(reader + 4, map);
+    t.w32(map + 0xc, classes.len() as u32 | 0x8000_0000);
+    t.w32(map + 0x1c, map_flags);
+    let table = t.zeros(32 * classes.len().max(1));
+    t.w32(map + 0x10, table);
+    for (i, &(has, flags, size, per, align, pflags)) in classes.iter().enumerate() {
+        let e = table + 32 * i as u32;
+        let packed = t.zeros(0x20);
+        t.w32(packed + 4, (i as u32 % 4) << 28);
+        t.write(packed + 0x1c, &[pflags]);
+        t.w32(e + 4, packed);
+        t.w32(e + 0x1c, i as u32 % 2);
+        if has {
+            let d = t.junk(0xa0, i as u8);
+            t.write(d + 0x90, &[flags]);
+            t.w32(d + 0x1c, size);
+            t.w32(d + 0x74, per);
+            t.w32(d + 0x78, align);
+            t.w32(e + 8, d);
+        }
+    }
+    let header = t.zeros(0x20);
+    t.w32(header + 0x10, headers.len() as u32);
+    t.w32(reader + 8, header);
+    let hdrs = t.zeros(0x24 * headers.len().max(1));
+    for (i, h) in headers.iter().enumerate() {
+        for (k, &w) in h.iter().enumerate() {
+            t.w32(hdrs + 0x24 * i as u32 + 4 * k as u32, w);
+        }
+    }
+    t.w32(reader + 0x14, hdrs);
+    let slots = t.junk(4 * headers.len().max(2), 3);
+    t.w32(reader + 0x18, made);
+    t.w32(
+        reader + 0x1c,
+        if made & 0x7fff_ffff > 1 {
+            slots
+        } else {
+            0x5151
+        },
+    );
+    let out = t.junk(4 * headers.len().max(1), 4);
+    t.w32(reader + 0x24, out);
+    t.write(reader + 0xc, &[0]);
+    reader
+}
+
+const P1C_CLASSES: [(bool, u8, u32, u32, u32, u8); 5] = [
+    (true, 0, 0x10, 0, 0, 0),
+    (true, 4, 0x10, 0, 0, 0),
+    (false, 0, 0, 0, 0, 0),
+    (true, 0, 0x20, 8, 0x10, 0),
+    (false, 0, 0, 0, 0, 4),
+];
+
+#[test]
+fn p1c_init_instance_lists_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let hdrs = [
+            [1u32, 3, 8, 0x40, 4, 2],
+            [2, 2, 16, 0x30, 0, 1],
+            [3, 0, 0x20, 0, 0, 0],
+            [4, 5, 4, 0xa0, 6, 3],
+        ];
+        // (headers, mapping flags, list made, list result)
+        for (k, (n, map_flags, made, list)) in [
+            (4usize, 0u32, 4u32, 1u32),
+            (4, 1, 4, 1),
+            (4, 4, 4, 1),
+            (4, 0x8000_0000, 0x8000_0004, 1),
+            (1, 0, 1, 1),
+            (2, 0, 2, 0),
+            (0, 0, 0, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for bad in [false, true] {
+                let mut h: Vec<[u32; 6]> = hdrs[..n].to_vec();
+                if bad {
+                    h.push([5, 1, 4, 4, 0, 0]);
+                }
+                let made = if bad { made + 1 } else { made };
+                let result = if list == 0 { 0 } else { t.junk(0x50, 5) };
+                t.stub(0x0044_0cf0, true, 2, 2, 0x00c6_0000);
+                t.stub(0x0044_0ba0, true, 4, 4, result);
+                t.stub(0x0044_0b70, true, 3, 3, result);
+                let reader = p1c_reader(&mut t, &P1C_CLASSES, &h, map_flags, made);
+                let what = format!("{label}: init instance lists {k} {bad}");
+                t.check(&what, 0x0057_b3a0, Conv::Thiscall(reader), &[], |g| {
+                    Out::U32(prd::init_instance_lists(g, reader))
+                });
+                t.reset();
+            }
+        }
+    }
+}
+
+#[test]
+fn p1c_read_list_headers_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let hdrs = [
+            [1u32, 3, 8, 0x40, 4, 2],
+            [4, 5, 0x40, 0xa0, 6, 3],
+            [2, 2, 16, 0x30, 0, 1],
+            [4, 1, 2, 0xa0, 6, 3],
+        ];
+        for (k, (n, err, swap, bad)) in [
+            (4usize, 0u32, false, false),
+            (4, 9, false, false),
+            (4, 0, true, false),
+            (0, 0, true, false),
+            (2, 0, false, true),
+            (3, 0, false, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut h: Vec<[u32; 6]> = hdrs[..n].to_vec();
+            if bad {
+                // one past the mapping's count, or far past it
+                h.push([if n == 3 { 6 } else { 9 }, 1, 4, 4, 0, 0]);
+            }
+            t.stub(0x0057_dd30, true, 2, 2, err);
+            // the swapper: an object whose slot 0 records (p, 0)
+            let swapper = t.rebase(0x00c9_7338);
+            let obj = t.object(&[2]);
+            let vt = t.r32(obj);
+            let old_vt = t.r32(swapper);
+            t.w32(swapper, vt);
+            let stride_at = t.rebase(0x00c9_7354);
+            let old_stride = t.r32(stride_at);
+            t.w32(stride_at, 0x24);
+            let reader = p1c_reader(&mut t, &P1C_CLASSES, &h, 0, 0);
+            t.write(reader + 0xc, &[u8::from(swap)]);
+            let words = t.zeros(12);
+            t.w32(words, 4);
+            t.w32(words + 4, 0x13);
+            t.w32(words + 8, if k == 0 { 0x40 } else { 8 });
+            let (a, s, m) = (words, words + 4, words + 8);
+            let what = format!("{label}: read list headers {k}");
+            t.check(
+                &what,
+                0x0057_c4a0,
+                Conv::Thiscall(reader),
+                &[0x00c1_5000, a, s, m],
+                |g| Out::U32(prd::read_list_headers(g, reader, 0x00c1_5000, a, s, m)),
+            );
+            t.w32(swapper, old_vt);
+            t.w32(stride_at, old_stride);
+            t.reset();
+        }
+    }
+}
+
+// ---- continuation round, batch 14 (p1_reader, p1_misc) ----
+
+/// An object of `size` bytes whose vtable's slot `i` is a recording stub
+/// taking `slots[i].0` words and returning `slots[i].1`.
+fn p1c_vobj(t: &mut Twins, slots: &[(u32, u32)], size: usize) -> u32 {
+    let mut vt = Vec::new();
+    for (i, &(n, ret)) in slots.iter().enumerate() {
+        let s = t.stub_code(0x7100 + i as u32, true, n, n, ret);
+        vt.extend(s.to_le_bytes());
+    }
+    let vt = t.alloc(&vt);
+    let obj = t.junk(size, 0x31);
+    t.w32(obj, vt);
+    obj
+}
+
+#[test]
+fn p1c_read_list_data_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // (class index, list data set, in place, packed offset, swap)
+        for (k, (index, data, in_place, off, swap)) in [
+            (9u32, true, false, 0u32, false),
+            (3, true, false, 0, false),
+            (1, false, false, 0, false),
+            (1, true, true, 0, false),
+            (1, true, false, 0, true),
+            (2, true, false, 0x10, false),
+            (2, true, false, 0x80, true),
+            (4, true, false, 0, false),
+            (2, true, false, 0x40, false),
+            (1, true, false, 0xffff, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.stub(0x0043_c160, true, 2, 2, 0);
+            t.stub(0x0057_88f0, false, 4, 0, 0);
+            t.stub(0x0043_d650, true, 3, 3, 0);
+            let reader = p1c_reader(&mut t, &P1C_CLASSES, &[], 0, 0);
+            t.write(reader + 0xc, &[u8::from(swap)]);
+            if off == 0xffff {
+                // a class with a descriptor and no packed class
+                let map = t.r32(reader + 4);
+                let table = t.r32(map + 0x10);
+                t.w32(table + 4, 0);
+            } else if off != 0 {
+                let map = t.r32(reader + 4);
+                let table = t.r32(map + 0x10);
+                let packed = t.r32(table + 32 + 4);
+                t.w32(packed + 4, 0x3000_0000 | off);
+            }
+            let buffer = t.junk(0x100, 5) + 4;
+            let src = if in_place { buffer } else { t.junk(0x100, 6) };
+            let list = t.junk(0x50, 7);
+            t.w32(list + 0x30, if data { buffer + 4 } else { 0 });
+            t.w32(list + 0x34, buffer);
+            t.w32(list + 0x3c, 3);
+            let hdr = t.zeros(0x24);
+            t.w32(hdr, index);
+            t.w32(hdr + 0xc, 0x40);
+            t.w32(hdr + 0x10, 0x14);
+            let what = format!("{label}: read list data {k}");
+            t.check(
+                &what,
+                0x0057_b270,
+                Conv::Thiscall(reader),
+                &[list, src, hdr],
+                |g| Out::U32(prd::read_list_data(g, reader, list, src, hdr)),
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_read_cluster_header_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the original's frame: five arguments, the return address and
+        // ebp; its header copy at ebp - 0x54
+        let local = t.a.stack_range().end - 0x100 - 28 - 0x54;
+        let class = t.rebase(0x00c9_6b40);
+        let tag = 0x4458_3131;
+        // (has the class, packed, size, swap, tag ok)
+        for (k, (has, packed, size, swap, ok)) in [
+            (false, true, 0x54u32, 0u8, true),
+            (true, false, 0x54, 0, true),
+            (true, true, 0x54, 0, true),
+            (true, true, 0x54, 1, false),
+            (true, true, 0x60, 1, true),
+            (true, true, 0x40, 1, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.stub(0x0043_d6a0, true, 2, 2, 0);
+            t.stub(0x0057_88f0, false, 4, 0, 0);
+            let map = t.zeros(0x20);
+            let table = t.zeros(0x80);
+            t.w32(map + 0xc, 3);
+            t.w32(table + 32 * 3 + 8, class);
+            t.w32(map + 0x10, table);
+            for i in 0..3 {
+                t.w32(table + 32 * i + 8, 0x00c1_0000 + i);
+            }
+            if has {
+                t.w32(table + 32 * 2 + 8, class);
+                t.w32(table + 32 * 2 + 0x14, u32::from(packed));
+            }
+            let header = t.junk(0x60, 2);
+            t.w32(header + 0xc, if ok { tag } else { tag + 1 });
+            let file = t.zeros(8);
+            t.w32(file + 4, 0x00c2_0000);
+            t.b.set_call_top(Some(local - 0x100));
+            let what = format!("{label}: read cluster header {k}");
+            t.check(
+                &what,
+                0x0057_8830,
+                Conv::Cdecl,
+                &[header, size, file, map, u32::from(swap)],
+                |g| {
+                    Out::U32(prd::read_cluster_header(
+                        g, local, header, size, file, map, swap,
+                    ))
+                },
+            );
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_initialize_instance_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // (default buffer, construct result, member kinds, class flags)
+        for (k, (default, built, flags)) in [
+            (true, 1u32, 0x8000_0000u32),
+            (true, 1, 0),
+            (false, 0x0012_3400, 0x8000_0000),
+            (false, 0x0012_3401, 0x8000_0000),
+            (false, 1, 0x8000_0001),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.stub(0x0043_c420, true, 0, 0, 0);
+            t.stub(0x0043_c630, true, 0, 0, 0);
+            // the member type: a class of 8 bytes with its default buffer
+            let tdef = t.junk(8, 1);
+            let ty = p1c_vobj(&mut t, &[(1, 0); 12], 0xa0);
+            t.w32(ty + 0x1c, 8);
+            t.w32(ty + 0x8c, 4);
+            t.w32(ty + 0x88, 4);
+            t.w32(ty + 0x90, 0x8000_0000);
+            t.w32(ty + 0x64, tdef);
+            let mut slots = [(0u32, 0u32); 13];
+            slots[10] = (1, built);
+            let desc = p1c_vobj(&mut t, &slots, 0xa0);
+            t.w32(desc + 0x90, flags);
+            t.w32(desc + 0x8c, 2);
+            t.w32(desc + 0x1c, 0x40);
+            t.w32(desc + 0x88, 0);
+            t.w32(desc + 0x64, 0);
+            if default {
+                let d = t.junk(0x40, 2);
+                t.w32(desc + 0x64, d);
+            }
+            let parent = p1c_vobj(&mut t, &[(1, 0); 2], 0xa0);
+            t.w32(parent + 0x90, 0);
+            t.w32(parent + 0x40, 0);
+            t.w32(parent + 0x88, 0);
+            t.w32(desc + 0x40, if k == 4 { 0 } else { parent });
+            // the members: (kind info, type, flags, offset)
+            for (owner, specs) in [
+                (
+                    desc,
+                    &[
+                        (0u32, true, 0u8, 0x10u32),
+                        (1, true, 0, 0x18),
+                        (2, true, 0, 0x20),
+                        (0, false, 0, 0x28),
+                        (0, true, 2, 0x30),
+                    ][..],
+                ),
+                (parent, &[(0, true, 0, 0x8)][..]),
+            ] {
+                let head = owner + 0x44;
+                t.w32(head, head);
+                t.w32(head + 4, head);
+                for &(kind, typed, mflags, offset) in specs {
+                    let info = if kind == 0 {
+                        0
+                    } else {
+                        let i = t.zeros(0x40);
+                        t.w32(i + 0x30, kind);
+                        t.w32(i + 0x34, 2);
+                        i
+                    };
+                    let tyobj = p1c_vobj(&mut t, &[(0, 0), (0, if typed { ty } else { 0 })], 0x10);
+                    let m = p1c_vobj(&mut t, &[(0, 0), (0, info)], 0x30);
+                    t.write(m + 0x14, &[mflags]);
+                    t.w32(m + 0x18, tyobj);
+                    t.w32(m + 0x24, offset);
+                    t.w32(m + 0xc, owner);
+                    let tail = t.r32(head + 4);
+                    t.w32(m + 4, head);
+                    t.w32(tail, m + 4);
+                    t.w32(head + 4, m + 4);
+                }
+            }
+            let inst = t.junk(0x80, 3);
+            let p = inst + 2;
+            let what = format!("{label}: initialize instance {k}");
+            t.check(&what, 0x0043_ce00, Conv::Thiscall(desc), &[p], |g| {
+                Out::U32(pm::initialize_instance(g, desc, p))
+            });
+            t.reset();
+        }
+    }
+}
+
+// ---- continuation round, batch 15 ----
+
+#[test]
+fn p1c_delete_object_in_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // (obj, which list: 0 none, 1-3 the lists, err, stays)
+        for (obj, which, err, stays) in [
+            (0x00c7_0010u32, 0usize, 0u32, 0u32),
+            (0x00c7_0010, 2, 0, 0),
+            (0x00c7_0010, 1, 0, 0),
+            (0x00c7_0000, 2, 0, 0),
+            (0x00c7_0040, 2, 0, 0),
+            (0x00c6_ffff, 2, 0, 0),
+            (0x00c7_0010, 2, 9, 0),
+            (0x00c7_0010, 2, 0, 1),
+            (0x00c0_0000, 0, 0, 0),
+        ] {
+            t.stub(0x0057_6530, true, 1, 1, err);
+            t.stub(0x0044_3c20, true, 1, 1, 0);
+            t.stub(0x0057_64a0, true, 0, 0, 0);
+            t.stub(0x0049_c5b0, true, 0, 0, 0);
+            t.stub(0x0049_c980, true, 1, 1, 0);
+            let d1 = t.junk(0xa0, 3);
+            t.w32(d1 + 0x1c, 0x10);
+            t.write(d1 + 0x90, &[0]);
+            let d2 = t.junk(0xa0, 4);
+            t.w32(d2 + 0x1c, 0x8);
+            let (cluster, lists) = p1c_cluster(
+                &mut t,
+                &[
+                    (d2, 0x00c6_0000, 2),
+                    (d1, 0x00c7_0000, 4),
+                    (d2, 0x00c9_0000, 8),
+                ],
+            );
+            t.w32(lists[1] + 0x40, stays);
+            t.w32(cluster + 0x40, 0x00c8_0000);
+            let a1 = t.zeros(0x10);
+            t.w32(a1 + 4, 0x00c6_ff00);
+            t.w32(a1 + 0xc, 0x200);
+            t.w32(cluster + 0x24, if obj == 0x00c7_0000 { a1 } else { 0 });
+            let list = if which == 0 { 0 } else { lists[which - 1] };
+            let what = format!("{label}: delete object in {obj:#x} {which} {err} {stays}");
+            t.check(
+                &what,
+                0x0044_13a0,
+                Conv::Thiscall(cluster),
+                &[obj, list],
+                |g| Out::U32(pl::delete_object_in(g, cluster, obj, list)),
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_dynamic_descriptor_dtor_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        for (n, name_owned, owned) in [
+            (0usize, true, true),
+            (3, false, true),
+            (4, true, false),
+            (1, true, true),
+        ] {
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            t.stub(0x0043_b3e0, true, 0, 0, 0);
+            let desc = t.junk(0xc0, 1);
+            let head = desc + 0x44;
+            t.w32(head, head);
+            t.w32(head + 4, head);
+            for i in 0..n {
+                let m = p1c_vobj(&mut t, &[(1, 0)], 0x30);
+                t.write(m + 0x14, &[u8::from(i % 2 == 0)]);
+                let tail = t.r32(head + 4);
+                t.w32(m + 4, head);
+                t.w32(tail, m + 4);
+                t.w32(head + 4, m + 4);
+            }
+            t.w32(
+                desc + 0xb4,
+                if name_owned { 0x00c2_0000 } else { 0x00c2_0001 },
+            );
+            for (k, at) in [0xacu32, 0xa4, 0x9c].into_iter().enumerate() {
+                let count = if owned { 3 } else { 0x8000_0003 };
+                t.w32(desc + at, count);
+                t.w32(desc + at + 4, if k == 1 { 0 } else { 0x00c3_0000 + at });
+            }
+            let what = format!("{label}: dynamic descriptor dtor {n} {name_owned} {owned}");
+            t.check(&what, 0x0044_7880, Conv::Thiscall(desc), &[], |g| {
+                pt::dynamic_dtor(g, desc);
+                Out::None
+            });
+            t.reset();
+        }
+    }
+}
+
+/// Links `n` fresh nodes (0x20 bytes, flags at `+0x10` alternating) into
+/// the list head at `head`.
+fn p1c_fill_list(t: &mut Twins, head: u32, n: u32, owned_first: bool) {
+    t.w32(head, head);
+    t.w32(head + 4, head);
+    for i in 0..n {
+        let node = t.junk(0x20, i as u8);
+        t.w32(node + 0x10, u32::from((i % 2 == 0) == owned_first));
+        t.w32(node + 0xc, 0x00c4_0000 + i);
+        let tail = t.r32(head + 4);
+        t.w32(node, head);
+        t.w32(node + 4, tail);
+        t.w32(tail, node);
+        t.w32(head + 4, node);
+    }
+}
+
+#[test]
+fn p1c_descriptor_destruct_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let serial_at = t.rebase(0x00c9_0758);
+        for (k, (n, last)) in [(0u32, false), (3, true), (4, false), (1, true)]
+            .into_iter()
+            .enumerate()
+        {
+            t.stub(0x0043_ec40, true, 1, 1, 0);
+            t.stub(0x0057_58e0, true, 0, 0, 0);
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            let desc = t.junk(0xa0, 1);
+            for (i, at) in [0x44u32, 0x4c, 0x54, 0x5c].into_iter().enumerate() {
+                p1c_fill_list(&mut t, desc + at, n + i as u32 % 2, k % 2 == 0);
+            }
+            let serial = t.r32(serial_at);
+            t.w32(
+                desc + 0x7c,
+                if last { serial.wrapping_sub(1) } else { serial },
+            );
+            let what = format!("{label}: descriptor destruct {k}");
+            t.check(&what, 0x0043_b3e0, Conv::Thiscall(desc), &[], |g| {
+                pt::destruct(g, desc);
+                Out::None
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_fill_default_buffer_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        for (k, (parent_on, def)) in [(true, true), (false, true), (true, false)]
+            .into_iter()
+            .enumerate()
+        {
+            let src = t.junk(0x40, 9);
+            t.stub(0x0043_cb80, true, 0, 0, if def { src } else { 0 });
+            let ty = p1c_vobj(&mut t, &[(1, 0); 2], 0xa0);
+            t.w32(ty + 0x88, 4);
+            t.w32(ty + 0x8c, 2);
+            let desc = p1c_vobj(&mut t, &[(0, 0); 2], 0xa0);
+            t.w32(desc + 0x8c, 4);
+            t.w32(desc + 0x88, 0);
+            let buf = t.junk(0x100, 1);
+            t.w32(desc + 0x64, buf);
+            let parent = t.junk(0xa0, 2);
+            t.w32(parent + 0x1c, 0x10);
+            t.w32(parent + 0x8c, 2);
+            t.w32(desc + 0x40, if parent_on { parent } else { 0 });
+            let head = desc + 0x44;
+            t.w32(head, head);
+            t.w32(head + 4, head);
+            // (kind, typed, flags, offset, type object size)
+            for &(kind, typed, mflags, offset, tsize) in &[
+                (0u32, true, 0u32, 0x10u32, 6u32),
+                (1, true, 0, 0x18, 3),
+                (2, true, 0, 0x30, 5),
+                (2, true, 0x40, 0x38, 5),
+                (0, false, 0, 0x40, 4),
+                (0, true, 2, 0x48, 4),
+                (0, true, 0x80, 0x50, 7),
+            ] {
+                let info = if kind == 0 {
+                    0
+                } else {
+                    let i = t.zeros(0x40);
+                    t.w32(i + 0x30, kind);
+                    i
+                };
+                let tyobj = p1c_vobj(&mut t, &[(0, 0), (0, if typed { ty } else { 0 })], 0x20);
+                t.w32(tyobj + 0x1c, tsize);
+                let m = p1c_vobj(&mut t, &[(0, 0), (0, info)], 0x40);
+                t.w32(m + 0x14, mflags);
+                t.w32(m + 0x18, tyobj);
+                t.w32(m + 0x24, offset);
+                t.w32(m + 0xc, desc);
+                t.w32(m + 0x34, 2);
+                let tail = t.r32(head + 4);
+                t.w32(m + 4, head);
+                t.w32(tail, m + 4);
+                t.w32(head + 4, m + 4);
+            }
+            let what = format!("{label}: fill default buffer {k}");
+            t.check(&what, 0x0043_cfd0, Conv::Thiscall(desc), &[], |g| {
+                pm::fill_default_buffer(g, desc);
+                Out::None
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_sort_class_descriptors_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ffx_pload::types::ATEXIT, false, 1, 0, 0);
+        let n = t.r32(t.rebase(0x00c9_0758));
+        for fail in [false, true] {
+            let table = if fail {
+                0
+            } else {
+                t.zeros(20 * (n as usize + 1))
+            };
+            t.stub(descriptor::ALLOC, false, 2, 0, table);
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            let what = format!("{label}: sort class descriptors {n} {fail}");
+            t.check(&what, 0x0043_be70, Conv::Cdecl, &[], |g| {
+                Out::U32(pt::sort_class_descriptors(g))
+            });
+        }
+        t.reset();
+    }
+}

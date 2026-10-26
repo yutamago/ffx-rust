@@ -8,7 +8,12 @@
 //! - [`stream`]: `PStream`, `PStreamReader`, `PStreamReaderFile`,
 //!   the serialization start-up;
 //! - [`cluster`]: `PCluster`, `PNamespace` and the cluster headers;
-//! - [`types`]: the `GetType<T>` statics of the primitive and enum types.
+//! - [`types`]: the `GetType<T>` statics of the primitive and enum types;
+//! - [`p1_misc`]: data members, namespace lookups, name hashes (batch 10);
+//! - [`p1_types`]: descriptor constructors, wrapper types (batch 11);
+//! - [`p1_loader`]: instance lists, namespace mapping, asset registry, the asset file load (batches 11-12);
+//! - [`p1_bind`]: the classes' static registration as step tables (batches 12-13);
+//! - [`p1_reader`]: the cluster reader's instance-list headers (batch 13).
 //!
 //! Everything this crate does not port is called at its address through
 //! [`ffx_graphic::host::Host`] (the allocator, the file layer, the
@@ -24,6 +29,11 @@
 
 pub mod cluster;
 pub mod descriptor;
+pub mod p1_bind;
+pub mod p1_loader;
+pub mod p1_misc;
+pub mod p1_reader;
+pub mod p1_types;
 pub mod stream;
 pub mod types;
 
