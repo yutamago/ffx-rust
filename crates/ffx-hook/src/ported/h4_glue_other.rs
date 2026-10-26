@@ -12,7 +12,7 @@
 
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
-    h4_d1 as d1, h4_d2 as d2, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1549,5 +1549,67 @@ ported! {
     ShaderTexture_rebindAlt_006f6a90 @ 0x006f_6a90 => extern "thiscall" fn rebind_textures_alt(this: u32, owner: u32, alt: u32, force: u32; slots: u32) {
         let mut frame = StackFrame::<{ (d2::REBIND_ALT_FRAME / 4) as usize }>::new();
         d2::rebind_textures_alt(&mut mem(), frame.at(), slots, this, owner, alt, force);
+    }
+    // ---- continuation round 2, batch 3 (ffx_glue_other::h4_d3)
+    /// `MenuTextureManager_UnloadSceneBattleFontTexture(this)`.
+    MenuTextureManager_UnloadSceneBattleFontTexture @ 0x0067_f3e0 => extern "thiscall" fn unload_battle_font(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d3::UNLOAD_FONT_FRAME / 4) as usize }>::new();
+        d3::unload_font_texture(&mut mem(), frame.at(), this, 5, 0x106)
+    }
+    /// `MenuTextureManager_UnloadSceneEventFontTexture(this)`.
+    MenuTextureManager_UnloadSceneEventFontTexture @ 0x0067_f610 => extern "thiscall" fn unload_event_font(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d3::UNLOAD_FONT_FRAME / 4) as usize }>::new();
+        d3::unload_font_texture(&mut mem(), frame.at(), this, 4, 6)
+    }
+    /// `MenuTextureManager_LoadSceneBattleFontTexture(this; prefix)`.
+    MenuTextureManager_LoadSceneBattleFontTexture @ 0x0067_d180 => extern "thiscall" fn load_battle_font(this: u32, prefix: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d3::LOAD_FONT_FRAME / 4) as usize }>::new();
+        d3::load_battle_font_texture(&mut mem(), frame.at(), this, prefix)
+    }
+    /// `MenuTextureManager_LoadSaMenuTexture(this; arg)`.
+    MenuTextureManager_LoadSaMenuTexture @ 0x0067_ce50 => extern "thiscall" fn load_sa_menu_texture(this: u32, arg: u32) -> u32 {
+        d3::load_sa_menu_texture(&mut mem(), this, arg)
+    }
+    /// `MenuTextureManager_LoadMon_BokuTextures()`: reads no `ecx`.
+    MenuTextureManager_LoadMon_BokuTextures @ 0x0067_cbd0 => extern "C" fn load_mon_boku_textures() -> u32 {
+        d3::load_mon_boku_textures(&mut mem())
+    }
+    /// `MenuTextureManager_LoadLanguageTextures_0067c920(this; lang)`.
+    MenuTextureManager_LoadLanguageTextures_0067c920 @ 0x0067_c920 => extern "thiscall" fn load_language_textures(this: u32, lang: u32) -> u32 {
+        d3::load_language_textures(&mut mem(), this, lang)
+    }
+    /// `Distortion_buildGridIndices_006c2990(this)`.
+    Distortion_buildGridIndices_006c2990 @ 0x006c_2990 => extern "thiscall" fn distortion_grid_indices(this: u32) -> u32 {
+        d3::distortion_grid_indices(&mut mem(), this)
+    }
+    /// `LoadingScreen_loadTextures(this)`.
+    LoadingScreen_loadTextures @ 0x006e_4770 => extern "thiscall" fn loading_screen_load_textures(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (d3::LOADING_FRAME / 4) as usize }>::new();
+        d3::loading_screen_load_textures(&mut mem(), frame.at(), this)
+    }
+    /// `Fmod_PushCommand(manager; cmd, a, b, c, d)`: game and loader
+    /// threads; the new write index also goes into `a`'s slot.
+    Fmod_PushCommand @ 0x006f_a300 => extern "thiscall" fn push_command(this: u32, cmd: u32, a: u32, b: u32, c: u32, d: u32; slots: u32) -> u32 {
+        d3::push_command(&mut mem(), slots, this, [cmd, a, b, c, d])
+    }
+    /// `FmodManager_registCommandSync(manager; cmd, a, b, c, d)`.
+    FmodManager_registCommandSync @ 0x006f_a500 => extern "thiscall" fn regist_command_sync(this: u32, cmd: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        d3::regist_command_sync(&mut mem(), this, [cmd, a, b, c, d])
+    }
+    /// `TextureAnimationSlots_ctor_006af420(this; n)`.
+    TextureAnimationSlots_ctor_006af420 @ 0x006a_f420 => extern "thiscall" fn slot_table_ctor(this: u32, n: u32) -> u32 {
+        d3::slot_table_ctor(&mut mem(), this, n)
+    }
+    /// `RadialLine_ctor_006f7a30(this)`.
+    RadialLine_ctor_006f7a30 @ 0x006f_7a30 => extern "thiscall" fn radial_line_ctor(this: u32) -> u32 {
+        d3::radial_line_ctor(&mut mem(), this)
+    }
+    /// `RemapButtonIcon_getPcButtonUv(key, &u, &v)`.
+    RemapButtonIcon_getPcButtonUv @ 0x006e_6670 => extern "stdcall" fn pc_button_uv(key: u32, u: u32, v: u32) -> u32 {
+        d3::pc_button_uv(&mut mem(), key, u, v)
+    }
+    /// `RemapButtonIcon_getJoypadUV(this; key, &u, &v)`.
+    RemapButtonIcon_getJoypadUV @ 0x006e_6460 => extern "thiscall" fn joypad_uv(this: u32, key: u32, u: u32, v: u32) -> u32 {
+        d3::joypad_uv(&mut mem(), this, key, u, v)
     }
 }

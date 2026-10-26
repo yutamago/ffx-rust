@@ -31,7 +31,11 @@
 //! - [`h4_d2`]: its second batch: the escape menu's callbacks and
 //!   language call, the Iggy callback table, the button-remap tables, the
 //!   menu buffers and UI-instance unload, the touch reset, the shader
-//!   texture rebinding walks.
+//!   texture rebinding walks;
+//! - [`h4_d3`]: its third batch: the menu font, Sa-menu, monster-book and
+//!   language texture loaders, the distortion grid's indices, the loading
+//!   screen's textures, the FMOD command queue's push and synchronous
+//!   command, two constructors, the button icon cells.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -57,6 +61,7 @@ pub mod h4_c3;
 pub mod h4_c4;
 pub mod h4_d1;
 pub mod h4_d2;
+pub mod h4_d3;
 pub mod menu;
 pub mod misc;
 pub mod movie;

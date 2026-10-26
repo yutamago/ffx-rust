@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4, h4_d1 as d1,
-    h4_d2 as d2, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_d2 as d2, h4_d3 as d3, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -8333,6 +8333,496 @@ fn d2_rebind_textures_alt() {
                     Out::None
                 },
             );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 2, batch 3 (ffx_glue_other::h4_d3)
+
+/// A random C string of up to `max` letters.
+fn random_text(t: &mut Twins, rng: &mut Rng, max: u32) -> u32 {
+    let n = rng.below(max + 1);
+    let mut b: Vec<u8> = (0..n).map(|_| b'a' + rng.below(26) as u8).collect();
+    b.push(0);
+    t.alloc(&b)
+}
+
+/// The font textures' unloads and the battle font's load.
+#[test]
+fn d3_font_textures() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d301);
+        let stubs: [(u32, bool, u32, u32); 3] = [
+            (d3::MEMSET, false, 3, 0),
+            (d3::MENU_UNLOAD_TEXTURE, true, 1, 1),
+            (d3::LOAD_MENU_TEXTURE, true, 1, 1),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            for g in d3::FONT_SUFFIXES {
+                let s = random_text(&mut t, &mut rng, 12);
+                t.g32(g, s);
+            }
+            let scene = rng.next();
+            t.g32(d3::PHYRE_SCENE.sym, scene);
+            for (sym, flag, at) in [(0x0067_f3e0, 5, 0x106), (0x0067_f610, 4, 6)] {
+                let this = t.random(&mut rng, 0x210);
+                t.w8(this + flag, [0, 1, 0x80][rng.below(3) as usize]);
+                // a prefix (junk after its terminator)
+                let n = rng.below(40);
+                let text: Vec<u8> = (0..n).map(|_| b'A' + rng.below(26) as u8).collect();
+                t.write(this + at, &text);
+                t.w8(this + at + n, 0);
+                let ebp = t.ebp_for(0);
+                t.check_framed(
+                    &format!("{w} unload font {sym:#x}"),
+                    sym,
+                    Conv::Thiscall(this),
+                    &[],
+                    ebp - 0x10c,
+                    &[(0, 0x108)],
+                    |g| u(d3::unload_font_texture(g, ebp - 0x10c, this, flag, at)),
+                );
+            }
+            let this = t.random(&mut rng, 0x210);
+            let prefix = random_text(&mut t, &mut rng, 30);
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} load battle font"),
+                0x0067_d180,
+                Conv::Thiscall(this),
+                &[prefix],
+                ebp - 8,
+                &[(0, 8)],
+                |g| u(d3::load_battle_font_texture(g, ebp - 8, this, prefix)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The Sa menu's, the monster book's and the language textures.
+#[test]
+fn d3_language_textures() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d302);
+        let stubs: [(u32, bool, u32, u32); 6] = [
+            (d3::LOAD_MENU_TEXTURE, true, 1, 1),
+            (d3::GET_LANG, false, 0, 0),
+            (d3::GET_LANG_JMP, false, 0, 0),
+            (d3::PRELOAD_SA_SUB_MENU, true, 1, 1),
+            (d3::CLUSTER_MANAGER, false, 0, 0),
+            (d3::LOAD_CLUSTER, true, 1, 1),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let langs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, u32::MAX];
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            let scene = rng.next();
+            t.g32(d3::PHYRE_SCENE.sym, scene);
+            let lang = langs[rng.below(langs.len() as u32) as usize];
+            t.ret(d3::GET_LANG, lang);
+            t.ret(d3::GET_LANG_JMP, lang);
+            t.check(
+                &format!("{w} boku {lang}"),
+                d3::LOAD_MON_BOKU,
+                Conv::Cdecl,
+                &[],
+                |g| u(d3::load_mon_boku_textures(g)),
+            );
+            for cache in [d3::SA_TITLE, d3::SA_CAPTION] {
+                let v = [0, rng.next()][rng.below(3).min(1) as usize];
+                t.g32(cache, v);
+            }
+            let this = t.random(&mut rng, 0x210);
+            let arg = rng.next();
+            t.check(
+                &format!("{w} sa menu {lang}"),
+                0x0067_ce50,
+                Conv::Thiscall(this),
+                &[arg],
+                |g| u(d3::load_sa_menu_texture(g, this, arg)),
+            );
+            t.check(
+                &format!("{w} language {lang}"),
+                0x0067_c920,
+                Conv::Thiscall(this),
+                &[lang],
+                |g| u(d3::load_language_textures(g, this, lang)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The distortion grid's indices and the loading screen's textures.
+#[test]
+fn d3_grid_loading_screen() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d303);
+        let stubs: [(u32, bool, u32, u32); 6] = [
+            (d3::CLUSTER_MANAGER, false, 0, 0),
+            (d3::PHYRE_MALLOC, false, 2, 0),
+            (d3::PUSH_CLUSTER, true, 2, 2),
+            (d3::PUSH_TEXTURE, true, 2, 2),
+            (d3::GET_APPLICATION, false, 0, 0),
+            (d3::FIXUP_CLUSTERS, false, 2, 0),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        // the twenty clusters alternate between two values; the tip (the
+        // 21st call) gets the one the test chooses
+        stub_toggle(&mut t, d3::LOAD_PCLUSTER, true, 1, 1);
+        let count_cell = t.zeros(4);
+        let cur_cell = t.zeros(4);
+        t.stub_at(
+            d3::ITER_SEEK,
+            true,
+            0,
+            0,
+            &[
+                Write {
+                    arg: None,
+                    offset: 0xc,
+                    cell: count_cell,
+                },
+                Write {
+                    arg: None,
+                    offset: 0,
+                    cell: cur_cell,
+                },
+            ],
+        );
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(d3::ITER_SEEK);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the grid
+            let this = t.random(&mut rng, 0x80);
+            let buf = t.random(&mut rng, 0x600);
+            t.w32(this + 0x74, buf);
+            t.check(
+                &format!("{w} grid"),
+                0x006c_2990,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(d3::distortion_grid_indices(g, this)),
+            );
+            // the loading screen
+            let this = t.random(&mut rng, 0x30);
+            let n = rng.below(4);
+            let list = t.zeros(4 * 4);
+            for k in 0..n {
+                let cluster = t.random(&mut rng, 0x40);
+                if rng.below(2) == 0 {
+                    t.w32(cluster + 0x1c, cluster + 0x1c);
+                }
+                t.w32(list + 4 * k, cluster);
+            }
+            t.w32(this + 0x18, n | ((rng.below(4) / 3) << 31));
+            t.w32(this + 0x1c, list);
+            let tip = t.random(&mut rng, 0x40);
+            let tip = [0, tip][rng.below(3).min(1) as usize];
+            // the stub toggles before it answers: 21 calls end on the cell ^ 1
+            t.ret(d3::LOAD_PCLUSTER, tip ^ 1);
+            t.w32(count_cell, rng.below(2));
+            let v = rng.next();
+            t.w32(cur_cell, v);
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} loading screen"),
+                0x006e_4770,
+                Conv::Thiscall(this),
+                &[],
+                ebp - 0x24,
+                &[(0, 0x24)],
+                |g| u(d3::loading_screen_load_textures(g, ebp - 0x24, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// A logging stub (`tag`, `n` words, popping `pops`) that answers the
+/// value `first` holds on its first call and 0 after (it clears `first`).
+fn stub_once(t: &mut Twins, tag: u32, n: u32, pops: u32, first: u32) -> u32 {
+    let rest = t.stub_code(tag, false, n, pops);
+    let cell = t.cells[&tag];
+    let mut c = vec![0xa1];
+    c.extend(first.to_le_bytes()); // mov eax, [first]
+    c.push(0xa3);
+    c.extend(cell.to_le_bytes()); // mov [cell], eax
+    c.extend([0xc7, 0x05]);
+    c.extend(first.to_le_bytes());
+    c.extend(0u32.to_le_bytes()); // mov dword [first], 0
+    c.push(0xe9);
+    let at = t.cave_next;
+    c.extend(rest.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp rest
+    t.code(&c)
+}
+
+/// `Fmod_PushCommand` and `FmodManager_registCommandSync`.
+#[test]
+fn d3_fmod_command_queue() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d304);
+        t.stub(d3::IS_ETERNAL_CALM, false, 1, 0);
+        // printToOutput logs three words, but two for the full ring's last
+        // line (its one two-word call; a third would be stack junk)
+        let three = t.stub_code(d3::PRINT_TO_OUTPUT, false, 3, 0);
+        let two = t.stub_code(0x0bad_7b20, false, 2, 0);
+        let last = t.rebase(d3::RING_FULL_TEXTS[2]);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x3d]; // mov eax, [esp+8]; cmp eax,
+        c.extend(last.to_le_bytes());
+        c.extend([0x74, 0x05, 0xe9]); // je +5; jmp three
+        let at = t.cave_next;
+        c.extend(three.wrapping_sub(at + 16).to_le_bytes());
+        c.push(0xe9); // jmp two
+        c.extend(two.wrapping_sub(at + 21).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(d3::PRINT_TO_OUTPUT, f);
+        let wait = t.stub_code(0x0bad_c0f8, false, 2, 2);
+        let release = t.stub_code(0x0bad_c1c0, false, 1, 1);
+        let set_event = t.stub_code(0x0bad_c0ec, false, 1, 1);
+        // ResetEvent gets the manager as its handle and stores the done
+        // flag (+0x44) the FMOD thread would set
+        let done_cell = t.zeros(4);
+        let reset = t.stub_out(
+            0x0bad_c0f0,
+            false,
+            1,
+            1,
+            &[Write {
+                arg: Some(0),
+                offset: 0x44,
+                cell: done_cell,
+            }],
+        );
+        let first_wait = t.zeros(4);
+        let wait_ex = stub_once(&mut t, 0x0bad_c080, 3, 3, first_wait);
+        for (slot, f) in [
+            (d3::WAIT_FOR_SINGLE_OBJECT, wait),
+            (d3::RELEASE_MUTEX, release),
+            (d3::SET_EVENT, set_event),
+            (d3::RESET_EVENT, reset),
+            (d3::WAIT_FOR_SINGLE_OBJECT_EX, wait_ex),
+        ] {
+            t.g32(slot.sym, f);
+        }
+        let handler = t.stub_code(0x0bad_4a4d, false, 2, 0);
+        for cmd in [0x11, 0x12, 0x13, 0x16, 0x19, 0x41, 0x3f] {
+            t.g32(d3::COMMAND_HANDLERS + 4 * cmd, handler);
+        }
+        let tags = [
+            d3::IS_ETERNAL_CALM,
+            d3::PRINT_TO_OUTPUT,
+            0x0bad_7b20,
+            0x0bad_c0f8,
+            0x0bad_c1c0,
+            0x0bad_c0ec,
+            0x0bad_c0f0,
+            0x0bad_4a4d,
+        ];
+        let commands = [
+            0x3b, 0x3d, 0x31, 0x33, 8, 0x3a, 0x11, 0x41, 0x3f, 0x16, 0x20, 0x40,
+        ];
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the ring: a few commands and arguments
+            for k in 0..d3::RING_LEN {
+                let cmd = commands[rng.below(commands.len() as u32) as usize];
+                t.g32(d3::COMMAND_RING + 20 * k, cmd);
+                t.g32(d3::COMMAND_RING + 20 * k + 4, rng.below(3));
+            }
+            let mgr = t.random(&mut rng, 0x50);
+            let r = rng.below(d3::RING_LEN);
+            let used = [0, 1, 5, d3::RING_LEN - 1, d3::RING_LEN - 2][rng.below(5) as usize];
+            t.w32(mgr + 0x2c, r);
+            t.w32(mgr + 0x28, (r + used) % d3::RING_LEN);
+            t.w32(mgr + 0x1c, mgr);
+            let seps = [0, 1][rng.below(2) as usize];
+            t.g32(d3::BATTLE_SEPS_LOADED.sym, seps);
+            let calm = [0, 1][rng.below(2) as usize];
+            t.ret(d3::IS_ETERNAL_CALM, calm);
+            let cmd = commands[rng.below(commands.len() as u32) as usize];
+            let args = [cmd, rng.below(3), rng.next(), rng.next(), rng.next()];
+            let ebp = t.ebp_for(5);
+            t.check_framed(
+                &format!("{w} push {cmd:#x}"),
+                0x006f_a300,
+                Conv::Thiscall(mgr),
+                &args,
+                ebp + 8,
+                &[(0, 0x14)],
+                |g| {
+                    put_args(g, ebp + 8, &args);
+                    u(d3::push_command(g, ebp + 8, mgr, args))
+                },
+            );
+            // the synchronous command
+            let result = [0, 1, 7][rng.below(3) as usize];
+            t.ret(0x0bad_4a4d, result);
+            let v = [0, 1, 0x100, 2][rng.below(4) as usize];
+            t.w32(done_cell, v);
+            let v = [0, u32::MAX][rng.below(2) as usize];
+            t.w32(first_wait, v);
+            // half the synchronous commands are 0x3f (a handler, then the
+            // queue's 0x33 records)
+            let sync = [0x3f, 0x3f, 0x3f, 0x11, 0x41, 0x20, 0x40, 0x16];
+            let cmd = sync[rng.below(sync.len() as u32) as usize];
+            let args = [cmd, rng.below(3), rng.next(), rng.next(), rng.next()];
+            t.check(
+                &format!("{w} sync {cmd:#x}"),
+                0x006f_a500,
+                Conv::Thiscall(mgr),
+                &args,
+                |g| u(d3::regist_command_sync(g, mgr, args)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The slot table's and the radial line's constructors and the PC
+/// button icon cells.
+#[test]
+fn d3_ctors_button_uv() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d305);
+        t.stub(d3::OPERATOR_NEW, false, 1, 0);
+        let tags = [d3::OPERATOR_NEW];
+        let settings = t.random(&mut rng, 0x60 + 4 * 64);
+        t.g32(d3::SETTINGS.sym, settings);
+        let codes = [
+            0x1c,
+            0x1d,
+            0x27,
+            0x28,
+            0x74,
+            0x75,
+            0x76,
+            0x77,
+            0x78,
+            0x79,
+            0x7a,
+            0x7b,
+            0x8000_0000,
+            0,
+            0x10,
+            u32::MAX,
+            0x7fff_ffff,
+            0x1234_5678,
+        ];
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // the slot table: both blocks big enough for 9 entries
+            let n = [0, 1, 2, 5, 9, u32::MAX, 0x8000_0001][rng.below(7) as usize];
+            let block = t.random(&mut rng, 9 * 20);
+            // the stub answers the same block twice: the index words
+            // then the records (the records overwrite the index words)
+            let block = [block, block, 0][rng.below(3) as usize];
+            t.ret(d3::OPERATOR_NEW, block);
+            let this = t.random(&mut rng, 0x14);
+            if block != 0 || n.cast_signed() <= 0 {
+                t.check(
+                    &format!("{w} slot table {n:#x}"),
+                    0x006a_f420,
+                    Conv::Thiscall(this),
+                    &[n],
+                    |g| u(d3::slot_table_ctor(g, this, n)),
+                );
+            }
+            // the radial line
+            let line = t.random(&mut rng, 0x78);
+            t.check(
+                &format!("{w} radial line"),
+                0x006f_7a30,
+                Conv::Thiscall(line),
+                &[],
+                |g| u(d3::radial_line_ctor(g, line)),
+            );
+            // the PC button cell
+            let key = rng.below(64);
+            let code = codes[rng.below(codes.len() as u32) as usize];
+            t.w32(settings + 0x60 + 4 * key, code);
+            let out = t.random(&mut rng, 8);
+            t.check(
+                &format!("{w} pc button {code:#x}"),
+                0x006e_6670,
+                Conv::Stdcall,
+                &[key, out, out + 4],
+                |g| u(d3::pc_button_uv(g, key, out, out + 4)),
+            );
+            // the pad button cell, six times a round: the pad keys and
+            // the special ones by the glyph set, button data and remap
+            let pad_codes = [
+                0xb, 0xe, 0xf, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x1c, 0x74,
+            ];
+            for _ in 0..6 {
+                let remap = t.random(&mut rng, 0x160);
+                let mode = [0, 3, 4, u32::MAX][rng.below(4) as usize];
+                t.w32(remap + 0x150, mode);
+                let bit = [u32::MAX, 1 << rng.below(20), 1 << 25, 5][rng.below(4) as usize];
+                t.w32(remap + 0x15c, bit);
+                for k in 0..20 {
+                    let c = pad_codes[rng.below(pad_codes.len() as u32) as usize];
+                    t.w32(settings + 0x98 + 4 * k, c);
+                }
+                let keys = [
+                    0u32,
+                    1,
+                    2,
+                    3,
+                    4,
+                    0x24,
+                    0x25,
+                    0x26,
+                    0x8000_0000,
+                    0x8000_0000,
+                    0x4000_0000,
+                ];
+                let key = keys[rng.below(keys.len() as u32) as usize];
+                let k = match key.wrapping_add(0xe) {
+                    0x32 => 0x18,
+                    0x33 => 0x19,
+                    0x34 => 0x16,
+                    k => k,
+                };
+                let code = [
+                    codes[rng.below(codes.len() as u32) as usize],
+                    pad_codes[rng.below(pad_codes.len() as u32) as usize],
+                ][rng.below(2) as usize];
+                t.w32(
+                    settings.wrapping_add(0x60).wrapping_add(k.wrapping_mul(4)),
+                    code,
+                );
+                let glyphs =
+                    [u32::MAX, u32::MAX, 0x3c, 0x3f, 0x42, 0x43, 0x44, 0x3b][rng.below(8) as usize];
+                t.g32(d3::BUTTON_DATA[1], glyphs);
+                let data = [u32::MAX, 0][rng.below(2) as usize];
+                t.g32(d3::BUTTON_DATA[0], data);
+                t.check(
+                    &format!("{w} joypad {key:#x} {code:#x}"),
+                    0x006e_6460,
+                    Conv::Thiscall(remap),
+                    &[key, out, out + 4],
+                    |g| u(d3::joypad_uv(g, remap, key, out, out + 4)),
+                );
+            }
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
     }
