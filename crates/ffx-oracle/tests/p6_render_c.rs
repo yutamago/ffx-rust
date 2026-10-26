@@ -1876,3 +1876,11 @@ mod targets;
 
 #[path = "p6_render_c/late.rs"]
 mod late;
+
+// ---- continuation round 4: `ffx_prender::p6_quads` ----
+
+#[path = "p6_render_c/quads.rs"]
+mod quads;
+
+#[path = "p6_render_c/tail.rs"]
+mod tail;
