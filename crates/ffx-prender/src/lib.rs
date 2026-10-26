@@ -116,6 +116,7 @@ pub mod h3_glue39;
 pub mod h3_glue40;
 pub mod h3_glue41;
 pub mod h3_glue42;
+pub mod h3_glue43;
 pub mod m4r_fonttext;
 pub mod m4r_gauss;
 pub mod m4r_glow;

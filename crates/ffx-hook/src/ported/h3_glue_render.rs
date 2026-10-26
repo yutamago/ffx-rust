@@ -48,6 +48,7 @@ use ffx_prender::h3_glue39::bridge as g39;
 use ffx_prender::h3_glue40::bridge as g40;
 use ffx_prender::h3_glue41::bridge as g41;
 use ffx_prender::h3_glue42::bridge as g42;
+use ffx_prender::h3_glue43::bridge as g43;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1934,6 +1935,28 @@ ported! {
     ShadowManager_collectCasters_006c8090 @ 0x006c_8090 => extern "thiscall" fn shadow_collect_casters(this: u32, kind: u32, out: u32, camera: u32, single: u32) -> u32 {
         let mut f = StackFrame::<0x3d>::new();
         g42::collect_casters(&mut mem(), f.at() + 0xf4, this, kind, out, camera, single)
+    }
+
+    // ---- round 11 batch 43 (ffx_prender::h3_glue43) ----
+    /// `PhyreScene_DrawNonUIPrerenderScene(this)`: the pre-render worlds
+    /// through the translated (and squeezed) camera; 0.
+    PhyreScene_DrawNonUIPrerenderScene @ 0x0065_07d0 => extern "thiscall" fn scene_draw_non_ui_prerender(this: u32) -> u32 {
+        let mut f = StackFrame::<0x42>::new();
+        g43::draw_non_ui_prerender_scene(&mut mem(), f.at() + 0x108, this)
+    }
+    /// `PhyreScene_Draw3DWorld(this, pre)`: the 3D worlds, split screen
+    /// or with the mesh matrices and the depth pre-pass; 0. The frame
+    /// holds `pre`'s slot too (the split path stores the viewport's
+    /// height there).
+    PhyreScene_Draw3DWorld @ 0x0064_fbb0 => extern "thiscall" fn scene_draw_3d_world(this: u32, pre: u32) -> u32 {
+        let mut f = StackFrame::<0x26>::new();
+        g43::draw_3d_world(&mut mem(), f.at() + 0x8c, this, pre)
+    }
+    /// `TextureAnimationManager_setAnimatedMaterialsChar(this, name, part,
+    /// index, _, _, _, _, material, chr)`: a character's animated
+    /// materials (the four middle words are never read).
+    TextureAnimationManager_setAnimatedMaterialsChar @ 0x006b_3060 => extern "thiscall" fn tex_anim_set_materials_char(this: u32, name: u32, part: u32, index: u32, _w4: u32, _w5: u32, _w6: u32, _w7: u32, material: u32, chr: u32) {
+        g43::set_animated_materials_char(&mut mem(), this, name, part, index, material, chr);
     }
 }
 
