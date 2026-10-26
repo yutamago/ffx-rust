@@ -23,10 +23,14 @@ pub enum Conv {
     Fastcall,
 }
 
-/// The most words [`Host::call`] (`st0` false) or [`Host::call_st0`]
-/// (`st0` true) passes in the game ([`ffx_bridge::RawMem`]) with `conv`:
-/// eight (a fastcall's two register words included), twelve stack words
-/// after `this` for a plain `thiscall`.
+/// The most words [`Host::call`] (`st0` false) or [`Host::call_st0`] /
+/// [`Host::call_st0_f64`] (`st0` true) passes in the game
+/// ([`ffx_bridge::RawMem`]) with `conv`: twelve for a plain `cdecl` call
+/// and twelve stack words after `this` for a plain `thiscall`; eight
+/// otherwise (a fastcall's two register words included). The twelve cdecl
+/// words cover the glue's widest calls: `registAsyncLoadTask`'s nine
+/// (`PhyreScene_loadCharacterAsync`), the point-light setup's ten
+/// (`graphicPS2LightingSetupEffect`).
 ///
 /// The game's host does not refuse a longer list: a cdecl call drops the
 /// words past the limit (the callee reads the caller's stack there), and
@@ -36,7 +40,7 @@ pub enum Conv {
 #[must_use]
 pub const fn max_words(conv: Conv, st0: bool) -> usize {
     match (conv, st0) {
-        (Conv::Thiscall(_), false) => 12,
+        (Conv::Thiscall(_) | Conv::Cdecl, false) => 12,
         _ => 8,
     }
 }
@@ -47,8 +51,9 @@ pub const fn max_words(conv: Conv, st0: bool) -> usize {
 /// Call width: see [`max_words`] and `ffx_bridge::Host`.
 pub trait Host: Mem {
     /// Calls the function at `addr` (an address in this process, already
-    /// rebased) with up to [`max_words`] 32-bit arguments (eight, twelve
-    /// stack words for a `thiscall`); returns `eax`.
+    /// rebased) with up to [`max_words`] 32-bit arguments (twelve for
+    /// `cdecl`, twelve stack words for a `thiscall`, else eight); returns
+    /// `eax`.
     fn call(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u32;
 
     /// Calls a function at `addr` that returns a float in `ST0`, as
@@ -61,6 +66,23 @@ pub trait Host: Mem {
     fn call_st0(&mut self, addr: u32, conv: Conv, args: &[u32]) -> f32 {
         self.call(addr, conv, args);
         f32::NAN
+    }
+
+    /// Calls a function at `addr` that returns a `double` in `ST0`, as
+    /// [`Host::call`]; returns it as the caller's `fstp m64` stores it
+    /// (`Phyre_PTimerWin32_GetTime`, whose callers subtract and scale it
+    /// before rounding). Callers read nothing else of its registers.
+    ///
+    /// The default calls it and returns NaN, as [`Host::call_st0`]'s does.
+    fn call_st0_f64(&mut self, addr: u32, conv: Conv, args: &[u32]) -> f64 {
+        self.call(addr, conv, args);
+        f64::NAN
+    }
+
+    /// [`Host::call_st0_f64`] of the original at `sym`.
+    fn call_sym_st0_f64(&mut self, sym: u32, conv: Conv, args: &[u32]) -> f64 {
+        let addr = self.rebase(sym);
+        self.call_st0_f64(addr, conv, args)
     }
 
     /// Calls a CRT intrinsic (`_CIsin`, `_CIcos` through the game's import
@@ -141,43 +163,36 @@ impl Host for ffx_bridge::RawMem {
     }
 
     fn call_st0(&mut self, addr: u32, conv: Conv, args: &[u32]) -> f32 {
-        let mut a = [0u32; 8];
-        for (w, &v) in a.iter_mut().zip(args) {
-            *w = v;
-        }
-        let n = args.len().min(8);
-        let f = addr as usize;
-        // SAFETY: as for `call`; the callee leaves its result in ST0,
-        // which the float-returning signature reads (no inline assembly).
-        unsafe {
-            match conv {
-                Conv::Cdecl => float_cdecl(f, a),
-                Conv::Thiscall(this) => float_thiscall(f, this, n, a),
-                Conv::Stdcall => float_stdcall(f, n, a),
-                Conv::Fastcall => float_fastcall(f, n, a),
-            }
-        }
+        float_call_any::<f32>(addr, conv, args)
+    }
+
+    fn call_st0_f64(&mut self, addr: u32, conv: Conv, args: &[u32]) -> f64 {
+        float_call_any::<f64>(addr, conv, args)
     }
 
     #[allow(clippy::many_single_char_names)] // the arguments
     fn call(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u32 {
-        type C8 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
-        // the bridges pass at most eight, twelve to a thiscall (no panics
-        // in what the game calls)
+        type C12 =
+            unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
+        // the bridges pass at most twelve to a cdecl or thiscall, eight to
+        // the others (no panics in what the game calls)
         let mut a12 = [0u32; 12];
         for (w, &v) in a12.iter_mut().zip(args) {
             *w = v;
         }
-        let [p, q, r, s, t, u, v, w, ..] = a12;
+        let [p, q, r, s, t, u, v, w, x, y, z, b] = a12;
         let a = [p, q, r, s, t, u, v, w];
         let f = addr as usize;
         // SAFETY: `addr` is a function of this process with this
         // convention and these arguments (the bridges call what the
         // original calls). cdecl lets the caller pass more than the callee
-        // reads; the callee-pops conventions need the exact count.
+        // reads (the zero words past `args` sit on the caller's side of
+        // the stack); the callee-pops conventions need the exact count.
         unsafe {
             match (conv, args.len()) {
-                (Conv::Cdecl, _) => std::mem::transmute::<usize, C8>(f)(p, q, r, s, t, u, v, w),
+                (Conv::Cdecl, _) => {
+                    std::mem::transmute::<usize, C12>(f)(p, q, r, s, t, u, v, w, x, y, z, b)
+                }
                 (Conv::Thiscall(this), n) => thiscall(f, this, n, a12),
                 (Conv::Stdcall, n) => stdcall(f, n, a),
                 (Conv::Fastcall, n) => fastcall(f, n, a),
@@ -306,23 +321,47 @@ unsafe fn fastcall(f: usize, n: usize, a: [u32; 8]) -> u32 {
     }
 }
 
+/// [`Host::call_st0`] and [`Host::call_st0_f64`] in the game: `ST0` read
+/// as `R` (`f32`: `fstp m32`; `f64`: `fstp m64`) by the float-returning
+/// signature (no inline assembly).
+#[cfg(target_arch = "x86")]
+fn float_call_any<R>(addr: u32, conv: Conv, args: &[u32]) -> R {
+    let mut a = [0u32; 8];
+    for (w, &v) in a.iter_mut().zip(args) {
+        *w = v;
+    }
+    let n = args.len().min(8);
+    let f = addr as usize;
+    // SAFETY: as for `Host::call`; the callee leaves its result in ST0,
+    // which the float-returning signature reads.
+    unsafe {
+        match conv {
+            Conv::Cdecl => float_cdecl::<R>(f, a),
+            Conv::Thiscall(this) => float_thiscall::<R>(f, this, n, a),
+            Conv::Stdcall => float_stdcall::<R>(f, n, a),
+            Conv::Fastcall => float_fastcall::<R>(f, n, a),
+        }
+    }
+}
+
 /// The float-returning calls: one arm per stack-argument count, from the
-/// signature's ABI and the `this`/register words it takes first.
+/// signature's ABI and the `this`/register words it takes first; `ST0`
+/// read as `$r`.
 #[cfg(target_arch = "x86")]
 macro_rules! float_call {
-    ($f:ident, $abi:literal, $n:expr, ($($pre:expr),*), $a:ident) => {{
+    ($f:ident, $abi:literal, $r:ty, $n:expr, ($($pre:expr),*), $a:ident) => {{
         use std::mem::transmute as t;
         let [p, q, r, s, u, v, w, x] = $a;
         match $n {
-            0 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre)),*) -> f32>($f)($($pre),*),
-            1 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32) -> f32>($f)($($pre,)* p),
-            2 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32) -> f32>($f)($($pre,)* p, q),
-            3 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32, u32) -> f32>($f)($($pre,)* p, q, r),
-            4 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32, u32, u32) -> f32>($f)($($pre,)* p, q, r, s),
-            5 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32, u32, u32, u32) -> f32>($f)($($pre,)* p, q, r, s, u),
-            6 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32, u32, u32, u32, u32) -> f32>($f)($($pre,)* p, q, r, s, u, v),
-            7 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32, u32, u32, u32, u32, u32) -> f32>($f)($($pre,)* p, q, r, s, u, v, w),
-            _ => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32, u32, u32, u32, u32, u32, u32) -> f32>($f)($($pre,)* p, q, r, s, u, v, w, x),
+            0 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre)),*) -> $r>($f)($($pre),*),
+            1 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32) -> $r>($f)($($pre,)* p),
+            2 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32) -> $r>($f)($($pre,)* p, q),
+            3 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32, u32) -> $r>($f)($($pre,)* p, q, r),
+            4 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32, u32, u32) -> $r>($f)($($pre,)* p, q, r, s),
+            5 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32, u32, u32, u32) -> $r>($f)($($pre,)* p, q, r, s, u),
+            6 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32, u32, u32, u32, u32) -> $r>($f)($($pre,)* p, q, r, s, u, v),
+            7 => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32, u32, u32, u32, u32, u32) -> $r>($f)($($pre,)* p, q, r, s, u, v, w),
+            _ => t::<usize, unsafe extern $abi fn($(float_call!(@ty $pre),)* u32, u32, u32, u32, u32, u32, u32, u32) -> $r>($f)($($pre,)* p, q, r, s, u, v, w, x),
         }
     }};
     (@ty $e:expr) => { u32 };
@@ -331,16 +370,17 @@ macro_rules! float_call {
 /// A cdecl call returning `ST0` (the callee reads the words it takes).
 ///
 /// # Safety
-/// `f` is a cdecl function of at most 8 word arguments returning a float.
+/// `f` is a cdecl function of at most 8 word arguments returning a float
+/// (`R` is `f32` or `f64`).
 #[cfg(target_arch = "x86")]
 #[allow(clippy::many_single_char_names)] // the arguments
-unsafe fn float_cdecl(f: usize, a: [u32; 8]) -> f32 {
+unsafe fn float_cdecl<R>(f: usize, a: [u32; 8]) -> R {
     let [p, q, r, s, u, v, w, x] = a;
     // SAFETY: as the caller promises.
     unsafe {
         std::mem::transmute::<
             usize,
-            unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> f32,
+            unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> R,
         >(f)(p, q, r, s, u, v, w, x)
     }
 }
@@ -351,9 +391,9 @@ unsafe fn float_cdecl(f: usize, a: [u32; 8]) -> f32 {
 /// `f` takes `this` and exactly `n` 32-bit arguments and returns a float.
 #[cfg(target_arch = "x86")]
 #[allow(clippy::many_single_char_names)] // the arguments
-unsafe fn float_thiscall(f: usize, this: u32, n: usize, a: [u32; 8]) -> f32 {
+unsafe fn float_thiscall<R>(f: usize, this: u32, n: usize, a: [u32; 8]) -> R {
     // SAFETY: as the caller promises.
-    unsafe { float_call!(f, "thiscall", n, (this), a) }
+    unsafe { float_call!(f, "thiscall", R, n, (this), a) }
 }
 
 /// A `stdcall` with `n` arguments returning `ST0`.
@@ -362,9 +402,9 @@ unsafe fn float_thiscall(f: usize, this: u32, n: usize, a: [u32; 8]) -> f32 {
 /// `f` takes exactly `n` 32-bit arguments and returns a float.
 #[cfg(target_arch = "x86")]
 #[allow(clippy::many_single_char_names)] // the arguments
-unsafe fn float_stdcall(f: usize, n: usize, a: [u32; 8]) -> f32 {
+unsafe fn float_stdcall<R>(f: usize, n: usize, a: [u32; 8]) -> R {
     // SAFETY: as the caller promises.
-    unsafe { float_call!(f, "stdcall", n, (), a) }
+    unsafe { float_call!(f, "stdcall", R, n, (), a) }
 }
 
 /// A `fastcall` with `n` arguments returning `ST0` (the first two in
@@ -374,9 +414,9 @@ unsafe fn float_stdcall(f: usize, n: usize, a: [u32; 8]) -> f32 {
 /// `f` takes exactly `n` 32-bit arguments and returns a float.
 #[cfg(target_arch = "x86")]
 #[allow(clippy::many_single_char_names)] // the arguments
-unsafe fn float_fastcall(f: usize, n: usize, a: [u32; 8]) -> f32 {
+unsafe fn float_fastcall<R>(f: usize, n: usize, a: [u32; 8]) -> R {
     let [p, q, rest @ ..] = a;
     let b = [rest[0], rest[1], rest[2], rest[3], rest[4], rest[5], 0, 0];
     // SAFETY: as the caller promises.
-    unsafe { float_call!(f, "fastcall", n.saturating_sub(2), (p, q), b) }
+    unsafe { float_call!(f, "fastcall", R, n.saturating_sub(2), (p, q), b) }
 }

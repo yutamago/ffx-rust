@@ -29,6 +29,11 @@ use ffx_prender::glue3::{self, bridge as g3};
 use ffx_prender::glue4::{self, bridge as g4};
 use ffx_prender::glue5::{self, bridge as g5};
 use ffx_prender::glue6::{self, bridge as g6};
+use ffx_prender::glue7::{self, bridge as g7};
+use ffx_prender::glue8::{self, bridge as g8};
+use ffx_prender::glue9::{self, bridge as g9};
+use ffx_prender::glue10::{self, bridge as g10};
+use ffx_prender::glue11::{self, bridge as g11};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -128,6 +133,17 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         self.0.call(addr, conv(c), args).unwrap().eax
     }
+    fn call_st0_f64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> f64 {
+        ffx_oracle::check_width(
+            "Host::call_st0_f64",
+            addr,
+            args.len(),
+            host::max_words(c, true),
+        );
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        r.st0.unwrap_or_else(|| panic!("{addr:#x}: no ST0"))
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
@@ -142,6 +158,10 @@ enum Out {
     U32(u32),
     /// `al` (the rest of `eax` is the caller's or garbage).
     U8(u8),
+    /// `edx:eax`.
+    U64(u64),
+    /// `ST0`, compared bit for bit as `fst qword` stores it.
+    F64(f64),
 }
 
 struct Twins {
@@ -182,7 +202,7 @@ impl Twins {
             deref_this: false,
             patched: Vec::new(),
         };
-        t.log = t.zeros(0x8000);
+        t.log = t.zeros(0x1_0000);
         let at = t.rebase(POISON_AT);
         let mut code = vec![0xb8];
         code.extend(POISON.to_le_bytes());
@@ -360,13 +380,27 @@ impl Twins {
             .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
         let poison = self.rebase(POISON_AT);
         let out = bridge(&mut G(&mut self.b, poison));
-        assert!(
-            ra.st0_raw.is_none(),
-            "{what}: the original leaves ST0 set ({:?}); the port returns {out:?}",
-            ra.st0
-        );
+        if let Out::F64(v) = out {
+            assert!(
+                ra.st0_is(v),
+                "{what}: ST0 {:?}, the port {v:?} ({:#x})",
+                ra.st0,
+                v.to_bits()
+            );
+        } else {
+            assert!(
+                ra.st0_raw.is_none(),
+                "{what}: the original leaves ST0 set ({:?}); the port returns {out:?}",
+                ra.st0
+            );
+        }
         match out {
-            Out::None => {}
+            Out::None | Out::F64(_) => {}
+            Out::U64(v) => assert_eq!(
+                (u64::from(ra.edx) << 32) | u64::from(ra.eax),
+                v,
+                "{what}: edx:eax"
+            ),
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
         }
@@ -422,6 +456,7 @@ enum This {
 type Port = fn(&mut G, u32, &[u32]) -> Out;
 
 #[derive(Clone, Copy)]
+#[allow(clippy::struct_excessive_bools)] // a case's switches
 struct Case {
     name: &'static str,
     sym: u32,
@@ -442,6 +477,13 @@ struct Case {
     /// `ebp` it uses and the bytes of stack arguments (see
     /// [`FRAME_EBP`]).
     frame: Option<(u32, u32)>,
+    /// The frame's word at `ebp - 4` is the original's security cookie
+    /// (the port leaves it out): not compared.
+    cookie: bool,
+    /// The frame's top 16 bytes are the original's security cookie and
+    /// C++ exception registration (`fs:[0]`), which the port leaves out:
+    /// not compared.
+    seh: bool,
 }
 
 /// A case's extra set-up: the twins, the synthetic object, `this`, the
@@ -466,6 +508,8 @@ const fn cdecl(
         prep: None,
         null_instance: false,
         frame: None,
+        cookie: false,
+        seh: false,
     }
 }
 
@@ -488,6 +532,8 @@ const fn method(
         prep: None,
         null_instance: false,
         frame: None,
+        cookie: false,
+        seh: false,
     }
 }
 
@@ -718,6 +764,15 @@ fn run_cases(t: &mut Twins, cases: &[Case], n: u32, rng: &mut Rng) {
                         let mut y = vec![0; n as usize];
                         Mem::read_bytes(&t.a, from, &mut x);
                         Mem::read_bytes(&t.b, from, &mut y);
+                        let top = if case.seh {
+                            16
+                        } else {
+                            4 * u32::from(case.cookie)
+                        };
+                        if from == lo && n >= top {
+                            let cookie = (n - top) as usize;
+                            x[cookie..].copy_from_slice(&y[cookie..]);
+                        }
                         assert_eq!(x, y, "{what}: frame at {from:#x}");
                     }
                 }
@@ -2109,5 +2164,1595 @@ fn batch6_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 8 } else { 40 };
         run_cases(t, CASES6, n, &mut Rng(0x6006_b006));
+    });
+}
+
+// ---- batch 7 (ffx_prender::glue7, round 3) ----
+
+impl Twins {
+    /// A recording stub at `sym` (cdecl, no arguments) that leaves the
+    /// `double` `value` in `ST0`.
+    fn stub_f64(&mut self, sym: u32, value: f64) {
+        let cell = self.code(&value.to_bits().to_le_bytes());
+        let log = self.stub(None, sym, false, 0, 0, Some(0));
+        let mut c = vec![0xdd, 0x05]; // fld qword [cell]
+        c.extend(cell.to_le_bytes());
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// A clock reading: seconds since start-up, 0, negative, huge, or any
+/// double that is not a signalling NaN.
+fn clock(rng: &mut Rng) -> f64 {
+    loop {
+        let v = match rng.below(6) {
+            0 => f64::from(rng.below(1 << 20)) + f64::from(rng.next()) / 4_294_967_296.0,
+            1 => 0.0,
+            2 => -f64::from(rng.next()) / 1000.0,
+            3 => [
+                1e13,
+                9.3e12,
+                9.2233e12,
+                -9.2233e12,
+                1e300,
+                f64::INFINITY,
+                f64::NAN,
+            ][rng.below(7) as usize],
+            4 => f64::from(rng.below(100)) + 0.5,
+            _ => f64::from_bits((u64::from(rng.next()) << 32) | u64::from(rng.next())),
+        };
+        let b = v.to_bits();
+        let snan = b & 0x7ff0_0000_0000_0000 == 0x7ff0_0000_0000_0000
+            && b & 0x000f_ffff_ffff_ffff != 0
+            && b & 0x0008_0000_0000_0000 == 0;
+        if !snan {
+            return v;
+        }
+    }
+}
+
+/// The timer stubbed with a clock reading, a random start time; the
+/// application object `obj` (its `+0x28` paused time, a float).
+fn prep_clock(t: &mut Twins, obj: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let now = clock(rng);
+    t.stub_f64(glue7::TIMER_GET_TIME, now);
+    let start = if rng.chance(3) {
+        clock(rng)
+    } else {
+        now - f64::from(rng.below(5000))
+    };
+    let at = t.rebase(glue7::APP_START_TIME.sym);
+    t.write(at, &start.to_bits().to_le_bytes());
+    t.stub_ret(glue7::GET_APPLICATION, false, 0, 0, obj);
+    let paused = rng.float();
+    t.w32(obj + 0x28, paused.to_bits());
+}
+
+/// Floats in the two float slots, the effect 0 now and then, the frame
+/// skipped now and then (on the snapshot too).
+fn prep_ps2_lighting(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    args[4] = rng.float().to_bits();
+    args[7] = rng.float().to_bits();
+    args[0] = if rng.chance(5) { 0 } else { obj };
+    let skip = if rng.chance(4) { rng.word() } else { 0 };
+    t.global(glue7::GRAPHIC_SKIP_FRAME.sym, skip);
+}
+
+/// The manager `this` (high addresses too, for the sign words).
+fn prep_shader_bins(_: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = if rng.chance(3) {
+        0x8000_0000 | rng.next()
+    } else {
+        obj
+    };
+}
+
+/// A name of 0 to 40 bytes at `obj + 0x600`, the new buffer at
+/// `obj + 0x1000` (prefilled), `this` and the value any word.
+fn prep_async(
+    t: &mut Twins,
+    obj: u32,
+    this: &mut u32,
+    args: &mut [u32],
+    rng: &mut Rng,
+    name_arg: usize,
+) {
+    let len = rng.below(41) as usize;
+    let mut name: Vec<u8> = (0..len).map(|_| (rng.next() % 255 + 1) as u8).collect();
+    name.push(0);
+    t.write(obj + 0x600, &name);
+    args[name_arg] = obj + 0x600;
+    let fill = rng.bytes(64);
+    t.write(obj + 0x1000, &fill);
+    t.stub_ret(glue7::OPERATOR_NEW_6304C0, false, 1, 0, obj + 0x1000);
+    *this = if rng.chance(3) {
+        0x8000_0000 | rng.next()
+    } else {
+        obj
+    };
+    args[1 - name_arg] = rng.word();
+}
+
+fn prep_async_name0(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    prep_async(t, obj, this, args, rng, 0);
+}
+
+fn prep_async_name1(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    prep_async(t, obj, this, args, rng, 1);
+}
+
+#[rustfmt::skip]
+const CASES7: &[Case] = &[
+    Case { prep: Some(prep_clock), ..cdecl("get_time", 0x0064_1410, 0, &[], |m, _, _| Out::F64(g7::get_time(m))) },
+    Case { prep: Some(prep_clock), ..cdecl("get_time_in_microseconds", 0x0064_1420, 0, &[], |m, _, _| Out::U64(g7::get_time_in_microseconds(m))) },
+    Case { prep: Some(prep_ps2_lighting), ..cdecl("ps2_lighting_setup_effect", 0x0064_2750, 11, &[(glue7::REGISTER_POINT_LIGHT, K::Cdecl(10))], |m, _, a| u(g7::ps2_lighting_setup_effect(m, arr(a)))) },
+    Case { prep: Some(prep_shader_bins), ..method("post_load_shader_bin_files", 0x0069_3d20, This::Object, 0, &[(glue7::ASYNC_LOAD_INSTANCE, K::Getter), (glue7::LOAD_CLUSTER, K::Cdecl(9)), (glue7::WAIT_TASKS, K::This(0))], |m, this, _| u(g7::post_load_shader_bin_files(m, this))) },
+    Case { prep: Some(prep_async_name0), ..method("scene_load_character_async", 0x0066_42f0, This::Object, 2, &[(glue7::ASYNC_LOAD_INSTANCE, K::Getter), (glue7::REGIST_ASYNC_LOAD_TASK, K::Cdecl(9)), (glue7::ASYNC_LOAD_NEW_CHARACTER, K::Cdecl(0))], |m, this, a| u(g7::scene_load_character_async(m, this, a[0], a[1]))) },
+    Case { prep: Some(prep_async_name1), ..method("scene_load_magic_file_vfx_texture_async", 0x0066_4d10, This::Object, 2, &[(glue7::ASYNC_LOAD_INSTANCE, K::Getter), (glue7::REGIST_ASYNC_LOAD_TASK, K::Cdecl(9))], |m, this, a| u(g7::scene_load_magic_file_vfx_texture_async(m, this, a[0], a[1]))) },
+    Case { prep: Some(prep_async_name1), ..method("scene_load_vfx_texture_async", 0x0066_5f60, This::Object, 2, &[(glue7::ASYNC_LOAD_INSTANCE, K::Getter), (glue7::REGIST_ASYNC_LOAD_TASK, K::Cdecl(9))], |m, this, a| u(g7::scene_load_vfx_texture_async(m, this, a[0], a[1]))) },
+];
+
+#[test]
+fn batch7_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 12 } else { 60 };
+        run_cases(t, CASES7, n, &mut Rng(0x7007_b007));
+    });
+}
+
+#[test]
+fn batch7_ftol2_64_matches_the_original() {
+    // _ftol2 (0x00949816) on the x87 values the clock gives it
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x0f70_1264);
+    let ftol2 = t.rebase(0x0094_9816);
+    // fld qword [esp+4]; call f; ret
+    let cell = t.zeros(8);
+    let mut c = vec![0xdd, 0x05];
+    c.extend(cell.to_le_bytes());
+    let at = t.cave_next;
+    c.push(0xe8);
+    c.extend(ftol2.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+    c.push(0xc3);
+    let code = t.code(&c);
+    for i in 0..4000 {
+        let x = match i {
+            0..=20 => [
+                0.0,
+                -0.0,
+                0.4,
+                0.5,
+                0.6,
+                -0.4,
+                -0.5,
+                -0.6,
+                1.5,
+                -1.5,
+                2.5,
+                -2.5,
+                4_294_967_296.0,
+                -4_294_967_296.0,
+                4_294_967_295.5,
+                -4_294_967_296.5,
+                9.2e18,
+                -9_223_372_036_854_775_808.0,
+                9_223_372_036_854_775_808.0,
+                1e300,
+                f64::NAN,
+            ][i],
+            _ => clock(&mut rng) * if rng.chance(2) { 1e6 } else { 1.0 },
+        };
+        t.write(cell, &x.to_bits().to_le_bytes());
+        let r = t.a.call(code, Conv::Cdecl, &[]).unwrap();
+        let got = (u64::from(r.edx) << 32) | u64::from(r.eax);
+        assert_eq!(got, glue7::ftol2_64(x), "{x:e}");
+    }
+}
+
+// ---- batch 8 (ffx_prender::glue8, round 3) ----
+
+const fn with_cookie(case: Case) -> Case {
+    Case {
+        cookie: true,
+        ..case
+    }
+}
+
+/// A scene with its release slots: counts, objects and clusters.
+fn prep_release_objects(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfb40);
+    *this = scene;
+    let n = rng.below(7);
+    t.w32(scene + 0xfb24, n);
+    t.w32(scene + 0xfb20, obj + 0x100);
+    t.w32(scene + 0xfb2c, obj + 0x200);
+    t.w32(scene + 0xfb38, obj + 0x300);
+    for k in 0..n {
+        let count = rng.below(4) as i32 - 1;
+        t.w32(obj + 0x100 + 4 * k, count as u32);
+        let object = if rng.chance(3) {
+            0
+        } else {
+            obj + 0x800 + 0x10 * k
+        };
+        t.w32(obj + 0x200 + 4 * k, object);
+        let cluster = rng.next();
+        t.w32(obj + 0x300 + 4 * k, cluster);
+    }
+}
+
+fn prep_special_id(_: &mut Twins, _: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let listed = glue8::LISTED_65EFD0[rng.below(8) as usize];
+    match rng.below(4) {
+        0 | 1 => args[0] = listed,
+        2 => args[0] = listed ^ (1 << rng.below(32)),
+        _ => {}
+    }
+}
+
+/// A pool array: the scene's own cluster or another, a slot in and out
+/// of range, owned or borrowed storage.
+fn prep_pool_array(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfb90);
+    *this = scene;
+    let array = if rng.chance(8) { 0 } else { obj + 0x600 };
+    let slot = match rng.below(4) {
+        0 => rng.below(3000),
+        1 => 2998 + rng.below(4),
+        2 => (rng.below(4) as i32 - 2) as u32,
+        _ => rng.next() >> 3,
+    };
+    let skew = if rng.chance(4) { rng.below(8) } else { 0 };
+    t.w32(
+        scene + 0xfb7c,
+        array.wrapping_sub(slot.wrapping_mul(8)).wrapping_sub(skew),
+    );
+    t.w32(scene + 0xfb88, (obj + 0x1000).wrapping_sub(slot));
+    let low = rng.below(3005) as i32 - 2;
+    t.w32(scene + 0xfb8c, low as u32);
+    if array != 0 {
+        let flag = [0, 0x8000_0000][rng.below(2) as usize];
+        let n = rng.below(4);
+        t.w32(array, flag | n);
+        let data = rng.next();
+        t.w32(array + 4, data);
+    }
+    args[0] = array;
+    // a null array of the scene's own pool would be read: never passed
+    args[1] = if array == 0 || rng.chance(4) {
+        rng.next() | 1
+    } else {
+        scene + 0x12d4
+    };
+}
+
+/// The pool table: next free slot near the end or anywhere, segments and
+/// blocks placed so the chosen slot lands in the object, a run of used
+/// bytes after it.
+fn prep_segment_pool(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let next = match rng.below(4) {
+        0 => 3990 + rng.below(12),
+        1 => rng.below(64),
+        2 => (rng.below(3) as i32 - 3) as u32,
+        _ => rng.below(4000),
+    };
+    t.w32(obj + 0x48, next);
+    t.w32(
+        obj + 0x3c,
+        (obj + 0x400).wrapping_sub(next.wrapping_mul(0x6c)),
+    );
+    t.w32(obj + 0x40, (obj + 0x600).wrapping_sub(next << 8));
+    t.w32(obj + 0x44, (obj + 0x800).wrapping_sub(next));
+    let run = rng.below(12) as usize;
+    let mut used = vec![1u8; run];
+    used.push(0);
+    t.write(obj + 0x801, &used);
+    args[0] = if rng.chance(8) { 0 } else { obj + 0x20 };
+    args[1] = if rng.chance(8) { 0 } else { obj + 0x28 };
+}
+
+fn prep_clear_arrays(t: &mut Twins, _: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfb80);
+    *this = scene;
+    for k in 0..14 {
+        let w = if rng.chance(2) {
+            0x8000_0000 | rng.next()
+        } else {
+            rng.word()
+        };
+        t.w32(scene + 0xfb48 + 4 * k, w);
+    }
+}
+
+fn prep_cameras(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0da0);
+    *this = scene;
+    for (k, off) in [0xdc, 0x654, 0x238].into_iter().enumerate() {
+        let c = if rng.chance(4) {
+            0
+        } else {
+            obj + 0x100 + 0x100 * k as u32
+        };
+        t.w32(scene + off, c);
+    }
+    let mode = if rng.chance(2) { 1 } else { rng.word() };
+    t.w32(scene + 0x1_0d8c, mode);
+}
+
+/// A binary search tree under the head `obj` (leaves point at the head),
+/// the node to insert at `obj + 0x1000` with a key that is there or not.
+fn prep_tree_link(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let head = obj;
+    *this = head;
+    t.w32(head + 0xc, head);
+    let n = rng.below(12);
+    let mut keys = vec![];
+    for k in 0..n {
+        let node = obj + 0x100 + 0x20 * k;
+        let key = if rng.chance(3) {
+            rng.next()
+        } else {
+            rng.below(40)
+        };
+        if keys.contains(&key) {
+            continue;
+        }
+        keys.push(key);
+        t.w32(node, head);
+        t.w32(node + 4, head);
+        let colour = rng.next();
+        t.w32(node + 8, colour);
+        t.w32(node + 0xc, key);
+        // linked at its search-tree position
+        let mut slot = head + 0xc;
+        let mut at = t.r32(slot);
+        while at != head {
+            let here = t.r32(at + 0xc);
+            slot = if here > key { at } else { at + 4 };
+            at = t.r32(slot);
+        }
+        t.w32(slot, node);
+    }
+    let node = obj + 0x1000;
+    let key = if !keys.is_empty() && rng.chance(3) {
+        keys[rng.below(keys.len() as u32) as usize]
+    } else {
+        rng.below(40)
+    };
+    let colour = rng.next();
+    t.w32(node + 8, colour);
+    t.w32(node + 0xc, key);
+    args[0] = node;
+}
+
+fn prep_broken_render(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    for k in 0..4 {
+        let f = rng.float().to_bits();
+        t.w32(obj + 0x30 + 4 * k, f);
+    }
+    t.w32(obj + 0xc, obj + 0x400);
+    t.w32(obj + 0x24, obj + 0x600);
+}
+
+fn prep_sampler_pair(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    for off in [0x30, 0x54] {
+        let w = rng.next();
+        t.w32(obj + off, w);
+    }
+}
+
+/// A character (cloth flag at `+0x1c`), the allocations (or 0), the
+/// pending array.
+fn prep_regist_instantiate(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    args[1] = if rng.chance(6) { 0 } else { obj + 0x100 };
+    let flag = if rng.chance(2) {
+        0
+    } else {
+        rng.below(255) as u8 + 1
+    };
+    t.write(obj + 0x11c, &[flag]);
+    let loading = if rng.chance(2) { 0 } else { rng.next() | 1 };
+    t.stub_ret(glue8::CH_IS_LOADING_CLOTH, false, 1, 0, loading);
+    let p = if rng.chance(6) { 0 } else { obj + 0x500 };
+    t.stub_ret(glue8::OPERATOR_NEW, false, 1, 0, p);
+    let buffer = if rng.chance(6) { 0 } else { obj + 0x700 };
+    t.stub_ret(glue8::PHYRE_MALLOC, false, 2, 0, buffer);
+    let array = t.rebase(glue8::CHARACTER_LOADING);
+    let flag = [0, 0x8000_0000][rng.below(2) as usize];
+    t.w32(array, flag | rng.below(5));
+    t.w32(array + 4, obj + 0x900);
+}
+
+impl Twins {
+    /// A cdecl import stub for `strstr` (two words, logged) returning
+    /// `first`, then `first + step` on the next call.
+    fn stub_strstr(&mut self, slot: u32, first: u32, step: u32) {
+        let cell = self.code(&first.to_le_bytes());
+        let log = self.stub(None, slot, false, 2, 0, Some(0));
+        // push a1; push a0
+        let mut c = vec![0xff, 0x74, 0x24, 0x08, 0xff, 0x74, 0x24, 0x08];
+        let at = self.cave_next;
+        c.push(0xe8); // call log
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        c.extend([0x83, 0xc4, 0x08]); // add esp, 8
+        c.push(0xa1); // mov eax, [cell]
+        c.extend(cell.to_le_bytes());
+        c.extend([0x81, 0x05]); // add dword [cell], step
+        c.extend(cell.to_le_bytes());
+        c.extend(step.to_le_bytes());
+        c.push(0xc3);
+        let code = self.code(&c);
+        let at = self.rebase(slot);
+        self.patch(at, &code.to_le_bytes());
+    }
+}
+
+/// The path (or 0), the marker hits: none, the first only, or both with a
+/// name of 0 to 29 bytes between them (30 or more ends the process: not
+/// run).
+fn prep_level_analysis(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    args[0] = if rng.chance(6) { 0 } else { obj + 0x100 };
+    let start = obj + 0x140 + rng.below(16);
+    let (first, step) = match rng.below(4) {
+        0 => (0, 0),
+        1 => (start, start.wrapping_neg()),
+        _ => (start, 4 + rng.below(30)),
+    };
+    t.stub_strstr(glue8::STRSTR, first, step);
+}
+
+fn prep_init_post(t: &mut Twins, _: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0de0);
+    *this = scene;
+    for off in [0xcc, 0x10cc, 0x1_0dd0, 0x1_0dd4] {
+        let w = rng.next();
+        t.w32(scene + off, w);
+    }
+    let screen = rng.next();
+    t.global(glue8::LOADING_SCREEN.sym, screen);
+    let r = if rng.chance(2) { 0 } else { rng.next() };
+    t.stub_ret(glue8::POST_SET_FIELDS_12400, true, 4, 4, r);
+}
+
+/// An effect's geometry (or none), its render data's part count, a
+/// vtable whose `+0x10` logs.
+fn prep_vfx_destroy(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    if rng.chance(6) {
+        args[0] = 0;
+        args[1] = 0;
+    }
+    if rng.chance(3) {
+        args[0] = 0u32.wrapping_sub(rng.below(20000));
+    }
+    t.global(glue8::VFX_RENDER_DATA_TABLE.sym, obj + 0x1800);
+    let geo = if rng.chance(5) { 0 } else { obj + 0x400 };
+    t.stub_ret(glue8::VFX_GET_DYN_GEO, true, 2, 2, geo);
+    let ret = rng.next();
+    let virt = t.stub(None, 0x0010_0010, true, 0, 0, Some(ret));
+    t.w32(obj + 0x400, obj + 0x500);
+    t.w32(obj + 0x510, virt);
+    let data = if rng.chance(4) { 0 } else { obj + 0x600 };
+    t.w32(obj + 0x424, data);
+    let on = if rng.chance(3) {
+        0
+    } else {
+        rng.below(255) as u8 + 1
+    };
+    t.write(obj + 0x6c0, &[on]);
+    let parts = match rng.below(6) {
+        0 => 0,
+        1 => 0x100 + rng.below(2),
+        _ => rng.below(6),
+    } as u16;
+    t.write(obj + 0x6c4, &parts.to_le_bytes());
+}
+
+/// Shader bin `i`'s cluster (or 0) and the cursor's verdict.
+fn prep_check_bin(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let i = rng.below(14);
+    args[0] = i;
+    let cluster = if rng.chance(5) { 0 } else { obj + 0x100 };
+    t.w32(obj + 4 + 4 * i, cluster);
+    let list = obj + 0x11c;
+    let first = if rng.chance(2) { list } else { obj + 0x400 };
+    t.w32(list, first);
+    let found = if rng.chance(3) { 0 } else { rng.next() | 1 };
+    let object = if rng.chance(4) { 0 } else { rng.next() };
+    let base = if object == 0 && rng.chance(2) {
+        0
+    } else {
+        rng.next()
+    };
+    let writes: &[(u8, u32)] = if found == 0 {
+        &[(0xc, 0)]
+    } else {
+        &[(0xc, found), (0x10, object), (0, base)]
+    };
+    t.stub_this_out(glue8::CURSOR_SEEK3, 0, 0, None, writes);
+}
+
+fn prep_persistent(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let r = if rng.chance(2) { 0 } else { rng.word() };
+    t.stub_ret(glue8::SCENE_LOAD_VFX_TEXTURE, true, 3, 3, r);
+}
+
+/// The cloth table: a few characters, ready or not; batches of 1 to 3.
+fn prep_cloth(t: &mut Twins, obj: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let n = rng.below(7);
+    t.global(glue8::CLOTH_COUNT.sym, n);
+    let table = t.rebase(glue8::CLOTH_TABLE);
+    for k in 0..n {
+        let c = obj + 0x100 + 0x20 * k;
+        let entry = if rng.chance(6) { 0 } else { c };
+        t.w32(table + 4 * k, entry);
+        let set = u32::from(!rng.chance(5));
+        t.w32(c, set);
+        let busy = u32::from(rng.chance(5));
+        t.w32(c + 8, busy);
+        let state = [2, 2, 2, 1, 0, 3][rng.below(6) as usize];
+        t.w32(c + 0xc, state);
+    }
+    let batch = 1 + rng.below(3);
+    t.stub_ret(glue8::EIGHTH_AT_LEAST_ONE, false, 2, 2, batch);
+    // the batch call may change the count (the loop rereads it)
+    if rng.chance(2) {
+        let count = t.rebase(glue8::CLOTH_COUNT.sym);
+        let fewer = rng.below(n + 1);
+        let log = t.stub(
+            None,
+            glue8::BATCH_SET_CLOTH_VERTEX_BUFFERS,
+            false,
+            3,
+            0,
+            Some(0),
+        );
+        let mut c = vec![0xc7, 0x05]; // mov dword [count], fewer
+        c.extend(count.to_le_bytes());
+        c.extend(fewer.to_le_bytes());
+        let at = t.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = t.code(&c);
+        let site = t.rebase(glue8::BATCH_SET_CLOTH_VERTEX_BUFFERS);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        t.patch(site, &j);
+    }
+}
+
+#[rustfmt::skip]
+const CASES8: &[Case] = &[
+    Case { prep: Some(prep_release_objects), ..method("scene_release_cluster_objects", 0x0065_8f40, This::Object, 0, &[(glue8::CLUSTER_DELETE_OBJECT, K::This(1))], |m, this, _| { g8::scene_release_cluster_objects(m, this); Out::None }) },
+    Case { prep: Some(prep_special_id), ..method("is_special_magic_id", 0x0065_efd0, This::Stdcall, 1, &[], |_, _, a| u(g8::is_listed_65efd0(a[0]))) },
+    Case { prep: Some(prep_pool_array), ..method("scene_release_pool_array", 0x0065_a3a0, This::Object, 2, &[(glue8::PHYRE_FREE, K::Cdecl(1)), (glue8::CLUSTER_DELETE_OBJECT, K::This(1))], |m, this, a| { g8::scene_release_pool_array(m, this, a[0], a[1]); Out::None }) },
+    Case { prep: Some(prep_segment_pool), ..method("vfx_segment_from_pool", 0x0069_f7f0, This::Object, 2, &[], |m, this, a| u(g8::vfx_segment_from_pool(m, this, a[0], a[1]))) },
+    Case { prep: Some(prep_clear_arrays), ..method("scene_clear_arrays", 0x0065_9000, This::Object, 0, &[(glue8::ARRAY_RESERVE_667F80, K::This(1)), (glue8::ARRAY_RESERVE_668280, K::This(1))], |m, this, _| u(g8::scene_clear_arrays(m, this))) },
+    Case { prep: Some(prep_cameras), ..method("scene_update_cameras", 0x0067_1be0, This::Object, 0, &[(glue8::CAMERA_UPDATE_VIEW, K::This(0))], |m, this, _| { g8::scene_update_cameras(m, this); Out::None }) },
+    Case { prep: Some(prep_tree_link), ..method("tree_insert_6be960", 0x006b_e960, This::Object, 1, &[], |m, this, a| u(g8::tree_find_or_link(m, this, a[0]))) },
+    Case { prep: Some(prep_broken_render), ..method("broken_render", 0x006d_44c0, This::Object, 0, &[(glue8::BROKEN_SET_CONSTANT_A0, K::This(4)), (glue8::BROKEN_SET_CONSTANT_A4, K::This(4)), (glue8::RENDER_MESH_INSTANCE, K::This(4))], |m, this, _| u(g8::broken_render(m, this))) },
+    Case { prep: Some(prep_sampler_pair), ..method("sampler_pair_init", 0x006b_3f40, This::Object, 0, &[(glue8::SAMPLER_CREATE, K::This(0))], |m, this, _| u(g8::sampler_pair_init(m, this))) },
+    framed(Case { prep: Some(prep_regist_instantiate), ..cdecl("character_regist_to_instantiate", 0x0063_d370, 4, &[(glue8::CHR_REGIST_HELPER, K::Cdecl(4)), (glue8::PHYRE_FREE, K::Cdecl(1))], |m, _, a| { let slots = frame_ebp() + 8; for (k, &w) in a.iter().enumerate() { m.write(slots + 4 * k as u32, w); } g8::character_regist_to_instantiate(m, slots, a[0], a[1], a[2], a[3]).map_or(Out::None, u) }) }, 0, 16),
+    with_cookie(framed(Case { prep: Some(prep_level_analysis), ..cdecl("level_analysis_name", 0x0064_1d00, 1, &[(glue8::STRNCPY, K::ImportC(3)), (glue8::LEVEL_SET_NAME, K::Cdecl(1))], |m, _, a| { g8::level_analysis_name(m, frame_ebp(), a[0]); Out::None }) }, 0x24, 0)),
+    Case { prep: Some(prep_init_post), ..method("scene_init_post_process", 0x0066_56e0, This::Object, 0, &[(glue8::SCENE_652910, K::This(0)), (glue8::INSTANCE_6DC800, K::Getter), (glue8::INSTANCE_6DDBF0, K::This(0)), (glue8::GET_APPLICATION, K::Cdecl(0)), (glue8::POST_PROCESS_INSTANCE, K::Getter), (glue8::POST_SET_BYTE_123B3, K::This(1)), (glue8::POST_SET_BYTE_123B0, K::This(1)), (glue8::TWEAK_INSTANCE, K::Getter), (glue8::TWEAK_INIT, K::This(1)), (glue8::SCENE_LOAD_CUTBUFFER_SHADER, K::This(0)), (glue8::LOADING_SCREEN_INITIALIZE, K::This(0))], |m, this, _| u(g8::scene_init_post_process(m, this))) },
+    Case { prep: Some(prep_vfx_destroy), ..cdecl("vfx_destroy", 0x0064_5280, 2, &[(glue8::VFX_REMOVE, K::This(2))], |m, _, a| { g8::vfx_destroy(m, a[0], a[1]); Out::None }) },
+    framed(Case { prep: Some(prep_check_bin), ..method("post_check_shader_bin", 0x0069_3540, This::Object, 1, &[(glue8::GET_APPLICATION, K::Cdecl(0)), (glue8::FIXUP_CLUSTERS, K::Cdecl(2))], |m, this, a| u(g8::post_check_shader_bin(m, frame_ebp(), this, a[0]))) }, 0x20, 0),
+    with_cookie(framed(Case { prep: Some(prep_persistent), ..method("scene_load_persistent_vfx_texture", 0x0066_5660, This::Object, 0, &[(glue8::FIOS_UNIFY_FILENAME, K::Cdecl(3))], |m, this, _| u(g8::scene_load_persistent_vfx_texture(m, frame_ebp(), this))) }, 0x204, 0)),
+    framed(Case { prep: Some(prep_cloth), ..cdecl("character_set_cloth_vertex_buffers", 0x0063_b740, 0, &[(glue8::BATCH_SET_CLOTH_VERTEX_BUFFERS, K::Cdecl(3))], |m, _, _| { g8::character_set_cloth_vertex_buffers(m, frame_ebp()); Out::None }) }, 8, 0),
+];
+
+#[test]
+fn batch8_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 12 } else { 60 };
+        run_cases(t, CASES8, n, &mut Rng(0x8008_b008));
+    });
+}
+
+/// The `PArray_PushInto` copies.
+const PUSH_INTO_COPIES: [u32; 8] = [
+    0x0063_7e30,
+    0x0063_7ec0,
+    0x0065_fac0,
+    0x0065_fb50,
+    0x006b_24e0,
+    0x006b_2570,
+    0x006d_26d0,
+    0x006d_ea60,
+];
+
+#[test]
+fn batch8_push_into_copies_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x9008_b008);
+        for i in 0..24 {
+            for sym in PUSH_INTO_COPIES {
+                t.reset();
+                let at = t.rebase(glue8::PHYRE_FREE);
+                let ret = rng.next();
+                t.stub(Some(at), glue8::PHYRE_FREE, false, 1, 0, Some(ret));
+                let arr = t.zeros(8);
+                let n = rng.below(6);
+                let old = t.zeros(0x20);
+                let fill = rng.bytes(0x20);
+                t.write(old, &fill);
+                let flag = [0, 0x8000_0000][rng.below(2) as usize];
+                t.w32(arr, n | flag);
+                t.w32(arr + 4, old);
+                let fresh = t.zeros(0x20);
+                let dst = [0, fresh, old][rng.below(3) as usize];
+                let value = t.zeros(4);
+                let v = rng.next();
+                t.w32(value, v);
+                t.check(
+                    &format!("push {sym:#x} #{i}"),
+                    sym,
+                    Conv::Thiscall(arr),
+                    &[dst, value],
+                    |g| {
+                        u(ffx_system::container::bridge::parray_push_into(
+                            g,
+                            arr,
+                            dst,
+                            value,
+                            ffx_glue_other::copies::phyre_free,
+                        ))
+                    },
+                );
+            }
+        }
+    });
+}
+
+// ---- batch 9 (ffx_prender::glue9, round 3) ----
+
+/// A mesh instance of the scene's pool (slot in or out of range, the
+/// division's remainder and sign) or of another cluster, with or without
+/// its two parts.
+fn prep_delete_pmesh(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfbe8);
+    *this = scene;
+    let mesh = obj + 0x600;
+    let (slot, negative) = match rng.below(5) {
+        0 => (rng.below(3000) as i32, false),
+        1 => (2998 + rng.below(4) as i32, false),
+        2 => (-(rng.below(3) as i32) - 1, true),
+        // slot 0 from a negative difference: the division truncates toward 0
+        3 => (0, true),
+        _ => (rng.next() as i32 >> 8, false),
+    };
+    let negative = negative || slot < 0;
+    let rest = (1 + rng.below(131)) as i32 * if negative { -1 } else { 1 };
+    let diff = slot.wrapping_mul(132).wrapping_add(rest);
+    t.w32(scene + 0xfbcc, mesh.wrapping_sub(diff as u32));
+    let s = diff / 132;
+    t.w32(scene + 0xfbe0, (obj + 0x1000).wrapping_sub(s as u32));
+    let low = rng.below(3005) as i32 - 2;
+    t.w32(scene + 0xfbe4, low as u32);
+    for off in [4, 0x1c] {
+        let p = if rng.chance(3) { 0 } else { rng.next() };
+        t.w32(mesh + off, p);
+    }
+    args[0] = mesh;
+    args[1] = if rng.chance(4) {
+        rng.next() | 1
+    } else {
+        scene + 0x12d4
+    };
+}
+
+fn prep_delete_meshes(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x38a4);
+    *this = scene;
+    let n = rng.below(7) as i32 - 1;
+    t.w32(scene + 0x38a0, n as u32);
+    t.w32(scene + 0x3894, obj + 0x100);
+    t.w32(scene + 0x389c, obj + 0x200);
+    for k in 0..8 {
+        let mesh = if rng.chance(3) { 0 } else { rng.next() };
+        t.w32(obj + 0x100 + 4 * k, mesh);
+    }
+    for off in [0x3890, 0x3898] {
+        let flag = [0, 0x8000_0000][rng.below(2) as usize];
+        t.w32(scene + off, flag | rng.below(9));
+    }
+}
+
+fn prep_all_assets(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1198);
+    *this = scene;
+    let d8 = rng.next();
+    t.w32(scene + 0xd8, d8);
+    t.write(
+        scene + 0x10d0,
+        &[u8::from(rng.chance(2)), u8::from(rng.chance(2))],
+    );
+    for off in [0x10d8, 0x112c] {
+        let w = if rng.chance(2) { 0 } else { rng.next() };
+        t.w32(scene + off, w);
+    }
+    args[2] = obj + 0x100;
+    let clusters = rng.next();
+    t.w32(obj + 0x108, clusters);
+    let r = if rng.chance(2) { 0 } else { rng.word() };
+    t.stub_ret(glue9::FIXUP_CLUSTERS, false, 2, 0, r);
+}
+
+fn prep_geometry_pool(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let next = match rng.below(4) {
+        0 => 2990 + rng.below(12),
+        1 => rng.below(64),
+        2 => (rng.below(3) as i32 - 3) as u32,
+        _ => rng.below(3000),
+    };
+    t.w32(obj + 0x38, next);
+    t.w32(
+        obj + 0x2c,
+        (obj + 0x400).wrapping_sub(next.wrapping_mul(0xd0)),
+    );
+    let geo = if rng.chance(4) { 0 } else { obj + 0x500 };
+    t.w32(obj + 0x30, geo.wrapping_sub(next.wrapping_mul(0xf8)));
+    t.w32(obj + 0x34, (obj + 0x900).wrapping_sub(next));
+    let run = rng.below(12) as usize;
+    let mut used = vec![1u8; run];
+    used.push(0);
+    t.write(obj + 0x901, &used);
+    args[0] = if rng.chance(8) { 0 } else { obj + 0x20 };
+    args[1] = if rng.chance(8) { 0 } else { obj + 0x28 };
+}
+
+/// Two parallel arrays (words, 20-byte partners) with a capacity; the
+/// value present or not.
+fn prep_parallel(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let n = rng.below(7);
+    let begin = obj + 0x100;
+    let begin2 = obj + 0x300;
+    t.w32(obj, begin);
+    t.w32(obj + 4, begin2);
+    t.w32(obj + 8, begin + 4 * n);
+    let extra = if rng.chance(4) {
+        0x14 * rng.below(2)
+    } else {
+        0
+    };
+    t.w32(obj + 0xc, begin2 + 0x14 * n + extra);
+    let cap = (n as i32 + rng.below(3) as i32 - 1) as u32;
+    t.w32(obj + 0x10, cap);
+    let mut words = vec![];
+    for k in 0..=n {
+        let w = rng.below(10);
+        words.push(w);
+        t.w32(begin + 4 * k, w);
+    }
+    let fill = rng.bytes(0x14 * 8);
+    t.write(begin2, &fill);
+    args[0] = if n > 0 && rng.chance(2) {
+        words[rng.below(n) as usize]
+    } else {
+        rng.below(12)
+    };
+}
+
+fn prep_set_vertex(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    t.w32(obj + 0x40, obj + 0x400);
+    t.w32(obj + 0x44, obj + 0x500);
+    t.w32(obj + 0x4c, obj + 0x600);
+    args[0] = rng.below(5);
+    for k in 0..8 {
+        let at = obj + 0x100 + 4 * k as u32;
+        let f = rng.float().to_bits();
+        t.w32(at, f);
+        args[1 + k] = if rng.chance(4) { 0 } else { at };
+    }
+}
+
+fn prep_insert_array(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let node = obj + 0x400;
+    let next = rng.next();
+    t.w32(node, next);
+    if rng.chance(3) {
+        t.w32(obj + 0x18, 0);
+        let made = if rng.chance(3) { 0 } else { node };
+        t.stub_this_out(glue9::FREE_LIST_ALLOCATE_BLOCK, 1, 1, None, &[(0, made)]);
+    } else {
+        t.w32(obj + 0x18, node);
+    }
+    args[0] = obj + 0x40;
+    args[1] = obj + 0x50;
+    let data = if rng.chance(3) { 0 } else { rng.next() };
+    t.stub_this_out(glue9::PARRAY_ASSIGN, 1, 1, None, &[(8, data)]);
+    let dup = if rng.chance(2) { 0 } else { rng.next() | 1 };
+    t.stub_ret(glue9::TREE_INSERT_64BFA0, true, 1, 1, dup);
+}
+
+/// A scene pool's counter (near the end, past it, small), the slot's
+/// address in the object or 0, a run of used bytes after it.
+fn prep_pool_claim(
+    t: &mut Twins,
+    obj: u32,
+    this: &mut u32,
+    args: &mut [u32],
+    rng: &mut Rng,
+    offsets: (u32, u32, u32),
+    stride: u32,
+) {
+    let (counter, base, used) = offsets;
+    let scene = t.zeros(0xfba4);
+    *this = scene;
+    let s = match rng.below(4) {
+        0 => 2990 + rng.below(12),
+        1 => rng.below(64),
+        2 => (rng.below(3) as i32 - 3) as u32,
+        _ => rng.below(3000),
+    };
+    t.w32(scene + counter, s);
+    let p = if rng.chance(5) { 0 } else { obj + 0x600 };
+    t.w32(scene + base, p.wrapping_sub(s.wrapping_mul(stride)));
+    t.w32(scene + used, (obj + 0x1000).wrapping_sub(s));
+    let run = rng.below(12) as usize;
+    let mut bytes = vec![1u8; run];
+    bytes.push(0);
+    t.write(obj + 0x1001, &bytes);
+    args[0] = if rng.chance(4) {
+        rng.next() | 1
+    } else {
+        scene + 0x12d4
+    };
+}
+
+fn prep_claim8(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    prep_pool_claim(t, obj, this, args, rng, (0xfb8c, 0xfb7c, 0xfb88), 8);
+}
+
+fn prep_claim56(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    prep_pool_claim(t, obj, this, args, rng, (0xfba0, 0xfb90, 0xfb9c), 56);
+}
+
+fn prep_capture(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x10d0);
+    *this = scene;
+    let r = rng.next();
+    t.w32(scene + 0xd0, r);
+    t.w32(scene + 0x10cc, obj + 0x200);
+    t.w32(obj + 0x2ac, obj + 0x300);
+    let flag = u8::from(rng.chance(3));
+    t.write(obj + 0x304, &[flag]);
+    t.stub_ret(glue9::GET_APPLICATION, false, 0, 0, obj);
+}
+
+fn prep_chr_relation(t: &mut Twins, obj: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let handle = if rng.chance(5) {
+        u32::MAX
+    } else {
+        rng.below(4)
+    };
+    t.stub_ret(glue9::MAGIC_FILE_HANDLE, false, 0, 0, handle);
+    let id = [0x9a, 0x1a6, 0x9b, rng.next()][rng.below(4) as usize];
+    t.stub_ret(glue9::MAGIC_FILE_ID, false, 0, 0, id);
+    let scene = t.zeros(0xfb48);
+    t.global(SCENE, scene);
+    t.write(scene + 0xfb45, &[u8::from(rng.chance(4))]);
+    for g in glue9::CHR_RELATION_BUFFERS {
+        let p = if rng.chance(3) { 0 } else { rng.next() };
+        t.global(g.sym, p);
+    }
+    let w = rng.next();
+    t.global(glue9::CHR_RELATION_WORD.sym, w);
+    let _ = obj;
+}
+
+fn prep_map_vfx(t: &mut Twins, _: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfaf4);
+    *this = scene;
+    t.write(scene + 0x25, &[u8::from(rng.chance(4))]);
+    let map = [0, 1, rng.below(400), rng.next()][rng.below(4) as usize];
+    t.w32(scene + 0xfaf0, map);
+}
+
+fn prep_texture_layout(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x50);
+    t.global(SCENE, scene);
+    t.w32(scene + 0x48, obj + 0x400);
+    args[0] = rng.below(8);
+    args[1] = (rng.below(6) as i32 - 1) as u32;
+    args[2] = obj + 0x100;
+}
+
+impl Twins {
+    /// A recording successor stub (thiscall, `ret 4`) returning the
+    /// node's `+0x18` word.
+    fn stub_successor(&mut self, sym: u32) {
+        let log = self.stub(None, sym, true, 1, 0, Some(0));
+        // push [esp+4]; call log; add esp, 4; mov eax, [esp+4]; mov eax, [eax+0x18]; ret 4
+        let mut c = vec![0xff, 0x74, 0x24, 0x04];
+        let at = self.cave_next;
+        c.push(0xe8);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        c.extend([
+            0x83, 0xc4, 0x04, 0x8b, 0x44, 0x24, 0x04, 0x8b, 0x40, 0x18, 0xc2, 0x04, 0x00,
+        ]);
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// A tree of named entries: a left chain to the leftmost node, in-order
+/// links in `+0x18`, keys (strings, colour bit set now and then) and
+/// values; the name one of the keys (another copy) or not.
+fn prep_find_named(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0d64);
+    *this = scene;
+    let head = scene + 0x1_0d54;
+    let n = rng.below(6);
+    let names: Vec<Vec<u8>> = (0..n)
+        .map(|_| {
+            let len = rng.below(5) as usize;
+            let mut s: Vec<u8> = (0..len).map(|_| b'a' + rng.below(3) as u8).collect();
+            s.push(0);
+            s
+        })
+        .collect();
+    let node = |k: u32| obj + 0x100 + 0x20 * k;
+    if n == 0 {
+        t.w32(head + 0xc, head);
+    } else {
+        t.w32(head + 0xc, node(n - 1));
+    }
+    for k in 0..n {
+        let left = if k == 0 { head } else { node(k - 1) };
+        t.w32(node(k), left);
+        let text = obj + 0x800 + 0x10 * k;
+        t.write(text, &names[k as usize]);
+        let bit = u32::from(rng.chance(3));
+        // the key word's low bit is the colour: the string sits at an even
+        // address so clearing it gives the string back
+        t.w32(node(k) + 0xc, text | bit);
+        let value = rng.next();
+        t.w32(node(k) + 0x10, value);
+        let next = if k + 1 == n { head } else { node(k + 1) };
+        t.w32(node(k) + 0x18, next);
+    }
+    t.stub_successor(glue9::TREE_SUCCESSOR);
+    let name = obj + 0xc00;
+    if n > 0 && rng.chance(2) {
+        t.write(name, &names[rng.below(n) as usize]);
+    } else {
+        let len = rng.below(4) as usize;
+        let mut s: Vec<u8> = (0..len).map(|_| b'a' + rng.below(3) as u8).collect();
+        s.push(0);
+        t.write(name, &s);
+    }
+    args[0] = name;
+}
+
+fn prep_resolution(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0dd8);
+    *this = scene;
+    let (w, h) = match rng.below(7) {
+        // a ratio just above 16:9 that rounds to it as a float
+        6 => (17_777_778, 10_000_000),
+        0 => (1280, 720),
+        1 => (1920, 1080),
+        2 => (800, 600),
+        3 => (0, 0),
+        4 => (rng.below(5000), rng.below(5000)),
+        _ => (rng.next(), rng.next()),
+    };
+    t.w32(obj + 0x26c, w);
+    t.w32(obj + 0x270, h);
+    t.stub_ret(glue9::GET_APPLICATION, false, 0, 0, obj);
+}
+
+fn prep_render_pass(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    t.write(obj + 0x74, &[u8::from(rng.chance(2))]);
+    t.w32(obj + 0x38, obj + 0x100);
+    let i = rng.below(4);
+    args[0] = i;
+    t.w32(obj + 0x100 + 4 * i, obj + 0x200);
+    t.w32(obj, obj + 0x300);
+    t.write(obj + 0x304, &[u8::from(rng.chance(3))]);
+}
+
+fn prep_shadow_map(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    args[0] = obj + 0x40;
+    for k in [4, 8, 9] {
+        args[k] = rng.float().to_bits();
+    }
+    t.stub_ret(glue9::SHADOW_UPDATE_MAP, true, 12, 12, obj + 0x500);
+}
+
+#[rustfmt::skip]
+const CASES9: &[Case] = &[
+    Case { prep: Some(prep_delete_pmesh), ..method("scene_delete_pmesh_instance", 0x0065_a4c0, This::Object, 2, &[(glue9::MESH_INSTANCE_DTOR, K::This(0)), (glue9::CLUSTER_DELETE_OBJECT, K::This(1))], |m, this, a| { g9::scene_delete_pmesh_instance(m, this, a[0], a[1]); Out::None }) },
+    Case { prep: Some(prep_delete_meshes), ..method("scene_do_delete_mesh_instances", 0x0065_a620, This::Object, 0, &[(glue9::VFX_REMOVE_DELETED_POOL_MESH_INSTANCES, K::Cdecl(0)), (glue9::SCENE_DELETE_PMESH_INSTANCE, K::This(2)), (glue9::SCENE_REMOVE_VFX_FROM_RENDER_ARRAY, K::This(1))], |m, this, _| { g9::scene_do_delete_mesh_instances(m, this); Out::None }) },
+    Case { prep: Some(prep_all_assets), ..method("scene_do_on_all_field_map_assets_loaded", 0x0065_a6c0, This::Object, 4, &[(glue9::GET_APPLICATION, K::Cdecl(0)), (glue9::ASSET_LIST_COUNT, K::This(0)), (glue9::SCENE_REGIST_CLUSTERS_TO_ADD, K::This(2)), (glue9::FINISH_READ_BATTLE_MAP, K::Cdecl(0))], |m, this, a| u(g9::scene_do_on_all_field_map_assets_loaded(m, this, a[0], a[2], a[3]))) },
+    Case { prep: Some(prep_geometry_pool), ..method("vfx_geometry_from_pool", 0x0069_f750, This::Object, 2, &[(glue9::VFX_DYN_GEO_CTOR, K::This(0))], |m, this, a| u(g9::vfx_geometry_from_pool(m, this, a[0], a[1]))) },
+    Case { prep: Some(prep_parallel), ..method("parallel_erase", 0x006b_2ca0, This::Object, 1, &[], |m, this, a| u(g9::parallel_erase(m, this, a[0]))) },
+    Case { prep: Some(prep_set_vertex), ..method("broken_set_vertex", 0x006d_49f0, This::Object, 9, &[], |m, this, a| { g9::broken_set_vertex(m, this, a[0], arr(&a[1..])); Out::None }) },
+    Case { prep: Some(prep_insert_array), ..method("tree_insert_array", 0x0065_fca0, This::Object, 2, &[(glue9::USER_FREE, K::Cdecl(1)), (glue9::FREE_LIST_DEALLOCATE, K::This(1)), (glue9::TREE_POST_INSERT, K::This(1))], |m, this, a| u(g9::tree_insert_array(m, this, a[0], a[1]))) },
+    Case { prep: Some(prep_claim8), ..method("scene_new_pool_array", 0x0065_9860, This::Object, 1, &[(glue9::CLUSTER_CREATE, K::This(3))], |m, this, a| u(g9::scene_new_pool_array(m, this, a[0]))) },
+    Case { prep: Some(prep_claim56), ..method("scene_new_pool_object56", 0x0065_9910, This::Object, 1, &[(glue9::CLUSTER_CREATE, K::This(3)), (glue9::CTOR_ZERO56, K::This(0))], |m, this, a| u(g9::scene_new_pool_object56(m, this, a[0]))) },
+    method("distortion_ctor", 0x006c_2010, This::Object, 0, &[(glue9::SAMPLER_STATE_CTOR, K::This(0))], |m, this, _| u(g9::distortion_ctor(m, this))),
+    Case { prep: Some(prep_capture), ..method("scene_render_capture_texture", 0x0066_b130, This::Object, 0, &[(glue9::RENDERER_SET_COLOR_TARGET, K::This(2)), (glue9::RENDERER_SET_VIEWPORT, K::This(4)), (glue9::RENDERER_SET_CLEAR_COLOR, K::This(4)), (glue9::RENDERER_BEGIN_SCENE, K::This(1)), (glue9::RENDERER_END_SCENE, K::This(1)), (glue9::POST_RENDER_FULL_SCREEN_TEXTURE, K::This(3))], |m, this, _| u(g9::scene_render_capture_texture(m, this))) },
+    Case { prep: Some(prep_chr_relation), ..cdecl("check_chr_cluster_relationship", 0x0063_d9c0, 0, &[(glue9::VFX_DESTROY, K::Cdecl(2)), (glue9::SCENE_ATTACH_CHR_CLUSTER, K::This(0)), (glue9::FREE_686FE0, K::Cdecl(1))], |m, _, _| u(g9::check_chr_cluster_relationship(m))) },
+    with_cookie(framed(Case { prep: Some(prep_map_vfx), ..method("scene_load_map_vfx_texture", 0x0066_4f60, This::Object, 0, &[(glue9::FIOS_UNIFY_FILENAME, K::Cdecl(3)), (glue9::SPRINTF, K::ImportC(4)), (glue9::SCENE_LOAD_VFX_TEXTURE_ASYNC, K::This(2))], |m, this, _| u(g9::scene_load_map_vfx_texture(m, frame_ebp(), this))) }, 0x204, 0)),
+    framed(Case { prep: Some(prep_texture_layout), ..method("scene_set_vfx_texture_layout", 0x0065_6ae0, This::Stdcall, 3, &[(glue9::STRSTR, K::ImportC(2)), (glue9::SSCANF, K::ImportC(8))], |m, _, a| { let slots = frame_ebp() + 8; for (k, &w) in a.iter().enumerate() { m.write(slots + 4 * k as u32, w); } g9::scene_set_vfx_texture_layout(m, slots, frame_ebp() - 0x10, a[0], a[1], a[2]); Out::None }) }, 0x10, 12),
+    Case { prep: Some(prep_find_named), ..method("scene_find_named", 0x0066_0420, This::Object, 1, &[], |m, this, a| u(g9::scene_find_named(m, this, a[0]))) },
+    Case { prep: Some(prep_resolution), ..method("scene_set_resolution_scale", 0x0065_2910, This::Object, 0, &[], |m, this, _| u(g9::scene_set_resolution_scale(m, this))) },
+    framed(Case { prep: Some(prep_render_pass), ..method("broken_render_pass", 0x006d_55b0, This::Object, 3, &[(glue9::BROKEN_CREATE_RENDER_TARGET, K::This(0)), (glue9::BROKEN_PASS_6D3FB0, K::This(6)), (glue9::BROKEN_SET_COLOUR, K::This(1)), (glue9::BROKEN_SET_TEXTURE_6D4540, K::This(2))], |m, this, a| u(g9::broken_render_pass(m, frame_ebp(), this, a[0], a[1], a[2]))) }, 0x10, 0),
+    with_cookie(framed(Case { prep: Some(prep_shadow_map), ..cdecl("update_shadow_map", 0x0064_4a00, 12, &[(glue9::SHADOW_MANAGER_INSTANCE, K::Getter)], |m, _, a| u(g9::update_shadow_map(m, frame_ebp(), a[0], arr(&a[1..])))) }, 0x14, 0)),
+];
+
+#[test]
+fn batch9_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 12 } else { 60 };
+        run_cases(t, CASES9, n, &mut Rng(0x9009_b009));
+    });
+}
+
+// ---- batch 10 (ffx_prender::glue10, round 3) ----
+
+/// The shader loaders: the reader opens or not (`al` alone decides),
+/// the cluster load and the fix-up's result.
+fn prep_shader_bin_load(t: &mut Twins, _: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfa98);
+    *this = scene;
+    let open = [0, 1, 0x100, 0xffff_ff01][rng.below(4) as usize];
+    t.stub_ret(glue10::READER_IS_OPEN, true, 0, 0, open);
+}
+
+macro_rules! shader_case {
+    ($name:literal, $addr:literal, $bin:expr) => {
+        with_seh(framed(
+            Case {
+                prep: Some(prep_shader_bin_load),
+                ..method(
+                    $name,
+                    $addr,
+                    This::Object,
+                    0,
+                    &[
+                        (glue10::FIOS_UNIFY_FILENAME, K::Cdecl(3)),
+                        (glue10::READER_CTOR, K::This(1)),
+                        (glue10::READER_CLOSE, K::This(0)),
+                        (glue10::CLUSTER_MANAGER_INSTANCE, K::Getter),
+                        (glue10::CLUSTER_MANAGER_LOAD, K::This(1)),
+                        (glue10::GET_APPLICATION, K::Cdecl(0)),
+                        (glue10::FIXUP_CLUSTERS, K::Cdecl(2)),
+                        (glue10::READER_DTOR, K::This(0)),
+                    ],
+                    |m, this, _| u(g10::scene_load_shader(m, frame_ebp(), this, $bin)),
+                )
+            },
+            0x12c,
+            0,
+        ))
+    };
+}
+
+const fn with_seh(case: Case) -> Case {
+    Case { seh: true, ..case }
+}
+
+/// The pending instantiation requests, some for `chr`.
+fn prep_unregist(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let chr = rng.below(3);
+    args[0] = chr;
+    let n = rng.below(6);
+    let flag = [0, 0x8000_0000][rng.below(2) as usize];
+    t.global(glue10::CHARACTER_LOADING.sym, flag | n);
+    t.global(glue10::CHARACTER_LOADING_DATA.sym, obj + 0x100);
+    for k in 0..n {
+        let request = obj + 0x200 + 0x20 * k;
+        t.w32(obj + 0x100 + 4 * k, request);
+        let who = rng.below(3);
+        t.w32(request + 8, who);
+    }
+}
+
+/// An effect's geometry (or none) and render data (parts), a vtable
+/// whose `+4` logs and fails now and then.
+fn prep_vfx_setup(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    if rng.chance(6) {
+        args[0] = 0;
+        args[1] = 0;
+    }
+    if rng.chance(3) {
+        args[0] = 0u32.wrapping_sub(rng.below(20000));
+    }
+    t.global(glue10::VFX_RENDER_DATA_TABLE.sym, obj + 0x1800);
+    let geo = if rng.chance(6) { 0 } else { obj + 0x400 };
+    t.stub_ret(glue10::VFX_GET_DYN_GEO, true, 2, 2, geo);
+    let ret = if rng.chance(3) { rng.next() | 1 } else { 0 };
+    let virt = t.stub(None, 0x0010_0004, true, 2, 2, Some(ret));
+    t.w32(obj + 0x400, obj + 0x500);
+    t.w32(obj + 0x504, virt);
+    let data = if rng.chance(5) { 0 } else { obj + 0x600 };
+    t.w32(obj + 0x424, data);
+    t.write(obj + 0x6c0, &[u8::from(rng.chance(2))]);
+    let parts = rng.below(5) as u16;
+    t.write(obj + 0x6c4, &parts.to_le_bytes());
+}
+
+/// The scene's queue of (world, list) pairs, lists with missing clusters.
+fn prep_detach(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0000);
+    *this = scene;
+    let m = rng.next();
+    t.w32(scene + 0xfb3c, m);
+    // a negative count (which the release after the loop checks for)
+    // would make the loop walk 2^31 pairs: the original can't get there
+    // with a valid queue
+    let n = rng.below(4);
+    t.w32(scene + 0x1188, n);
+    let cap = if rng.chance(2) {
+        0x8000_0000 | rng.next()
+    } else {
+        rng.below(8)
+    };
+    t.w32(scene + 0x118c, cap);
+    t.w32(scene + 0x1190, obj + 0x100);
+    {
+        for i in 0..n {
+            let world = rng.next();
+            t.w32(obj + 0x100 + 8 * i, world);
+            let list = obj + 0x200 + 0x40 * i;
+            t.w32(obj + 0x104 + 8 * i, list);
+            let count = rng.below(4);
+            t.w32(list, count);
+            t.w32(list + 8, obj + 0x400 + 0x40 * i);
+            for j in 0..count {
+                let c = if rng.chance(3) { 0 } else { rng.next() };
+                t.w32(obj + 0x400 + 0x40 * i + 4 * j, c);
+            }
+        }
+    }
+}
+
+/// The delegated entries: flagged to run or not, one-shot or not, a
+/// logging callback; the free list taking them back or not.
+fn prep_delegation(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let n = rng.below(6);
+    let flag = [0, 0x8000_0000][rng.below(2) as usize];
+    t.w32(obj, flag | n);
+    t.w32(obj + 4, obj + 0x100);
+    let callback = t.stub(None, 0x0020_0001, false, 1, 0, Some(rng.next()));
+    for k in 0..n {
+        let e = if rng.chance(5) {
+            0
+        } else {
+            obj + 0x200 + 0x20 * k
+        };
+        t.w32(obj + 0x100 + 4 * k, e);
+        if e != 0 {
+            let arg = rng.next();
+            t.w32(e, arg);
+            let buffer = if rng.chance(3) { 0 } else { rng.next() };
+            t.w32(e + 4, buffer);
+            let flags =
+                [0x2000, 0x2001, 0x2001, 1, 0][rng.below(5) as usize] | (rng.next() & 0xdffe);
+            t.w32(e + 0xc, flags);
+            t.w32(e + 0x10, callback);
+        }
+    }
+    let mutex = rng.next();
+    t.global(glue10::DELEGATION_MUTEX.sym, mutex);
+    let r = if rng.chance(2) {
+        0x8000_0000 | rng.next()
+    } else {
+        rng.below(4)
+    };
+    t.stub_ret(glue10::DELEGATION_SET_TO_FREE_LIST, true, 1, 1, r);
+}
+
+fn prep_shadow_resize(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    for off in [0x74, 0x78, 0x80, 0x7c] {
+        let tex = if rng.chance(8) { 0 } else { rng.next() | 1 };
+        t.w32(obj + off, tex);
+    }
+    let r = if rng.chance(2) { 0 } else { rng.word() };
+    t.stub_ret(glue10::TEXTURE_SET_DIMENSIONS, true, 4, 4, r);
+}
+
+fn prep_map_unload(t: &mut Twins, _: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfaf4);
+    *this = scene;
+    t.write(scene + 0x25, &[u8::from(!rng.chance(4))]);
+    let map = [0, 1, rng.below(400), rng.next()][rng.below(4) as usize];
+    t.w32(scene + 0xfaf0, map);
+}
+
+/// The delete pool: a free slot (id 0) or none.
+fn prep_vfx_delete_pool(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let n = rng.below(5);
+    let flag = [0, 0x8000_0000][rng.below(2) as usize];
+    t.w32(obj + 8, flag | n);
+    t.w32(obj + 0xc, obj + 0x100);
+    t.w32(obj + 0x14, obj + 0x200);
+    t.w32(obj + 0x1c, obj + 0x300);
+    for (off, w) in [(0x10, rng.below(5) | flag), (0x18, rng.below(5))] {
+        t.w32(obj + off, w);
+    }
+    for k in 0..n {
+        let (lo, hi) = match rng.below(4) {
+            0 => (0, 0),
+            1 => (0, rng.next()),
+            2 => (rng.next(), 0),
+            _ => (rng.next(), rng.next()),
+        };
+        t.w32(obj + 0x100 + 8 * k, lo);
+        t.w32(obj + 0x104 + 8 * k, hi);
+    }
+    t.stub_ret(glue10::PHYRE_MALLOC, false, 2, 0, obj + 0x400);
+}
+
+fn prep_push_elements(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let n = rng.below(6);
+    let flag = [0, 0x8000_0000][rng.below(2) as usize];
+    t.w32(obj, flag | n);
+    let old = obj + 0x100;
+    t.w32(obj + 4, old);
+    args[0] = [0, obj + 0x400, old][rng.below(3) as usize];
+    args[1] = obj + 0x40;
+}
+
+/// Nodes `lo..hi` (in order) as a balanced tree under `parent`; its root
+/// (`head` when empty).
+fn build_map_tree(
+    t: &mut Twins,
+    lo: u32,
+    hi: u32,
+    parent: u32,
+    head: u32,
+    node: &dyn Fn(u32) -> u32,
+) -> u32 {
+    if lo >= hi {
+        return head;
+    }
+    let mid = u32::midpoint(lo, hi);
+    let n = node(mid);
+    t.w32(n + 4, parent);
+    t.write(n + 0xd, &[0]);
+    let left = build_map_tree(t, lo, mid, n, head, node);
+    let right = build_map_tree(t, mid + 1, hi, n, head, node);
+    t.w32(n, left);
+    t.w32(n + 8, right);
+    n
+}
+
+/// A balanced MSVC map of effects under a head (`+0xd` set), each with
+/// render data whose segments carry per-buffer draw words; the buffer id
+/// (negative now and then).
+fn prep_clear_draw(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let head = obj + 0x40;
+    t.w32(obj, head);
+    t.write(head + 0xd, &[1]);
+    let n = rng.below(6);
+    let node = |k: u32| obj + 0x100 + 0x20 * k;
+    let root = build_map_tree(t, 0, n, head, head, &node);
+    t.w32(head + 4, root);
+    t.w32(head, if n == 0 { head } else { node(0) });
+    t.w32(head + 8, if n == 0 { head } else { node(n - 1) });
+    for k in 0..n {
+        let value = obj + 0x800 + 0x40 * k;
+        t.w32(node(k) + 0x18, value);
+        let data = obj + 0xa00 + 0x100 * k;
+        t.w32(value + 0x24, data);
+        let segments = rng.below(5) as i32 - 1;
+        t.w32(data + 0x90, segments as u32);
+        t.w32(data + 0x94, obj + 0x1000 + 0x1c0 * (k % 5));
+    }
+    let fill = rng.bytes(0xa00);
+    t.write(obj + 0x1000, &fill[..0x8c0]);
+    let id = (rng.below(4) as i32 - 1) as u32;
+    t.stub_ret(glue10::DYN_GEO_CURRENT_BUFFER_ID, false, 0, 0, id);
+}
+
+#[rustfmt::skip]
+const CASES10: &[Case] = &[
+    shader_case!("load_ab_cone_shader", 0x0066_3d40, glue10::AB_CONE),
+    shader_case!("load_ab_wave_shader", 0x0066_3e20, glue10::AB_WAVE),
+    shader_case!("load_chr_sha_shader", 0x0066_4360, glue10::CHR_SHA),
+    shader_case!("load_menu_no_texture_shader", 0x0066_5010, glue10::MENU_NO_TEXTURE),
+    shader_case!("load_menu_shader", 0x0066_50f0, glue10::MENU),
+    shader_case!("load_na_menu_shader", 0x0066_5200, glue10::NA_MENU),
+    shader_case!("load_nb_menu_shader", 0x0066_52e0, glue10::NB_MENU),
+    shader_case!("load_nt_menu_ztest_shader", 0x0066_53c0, glue10::NT_MENU_ZTEST),
+    shader_case!("load_ntnb_menu_shader", 0x0066_54a0, glue10::NTNB_MENU),
+    shader_case!("load_optimized_font_shader", 0x0066_5580, glue10::OPTIMIZED_FONT),
+    Case { prep: Some(prep_unregist), ..cdecl("character_unregist_loading", 0x0063_7b30, 1, &[(glue10::OPERATOR_DELETE, K::Cdecl(1)), (glue10::PHYRE_FREE, K::Cdecl(1))], |m, _, a| { g10::character_unregist_loading(m, a[0]); Out::None }) },
+    Case { prep: Some(prep_vfx_setup), ..cdecl("vfx_setup", 0x0064_5780, 2, &[(glue10::PHYRE_PRINTF, K::Cdecl(2))], |m, _, a| u(g10::vfx_setup(m, a[0], a[1]))) },
+    Case { prep: Some(prep_detach), ..method("scene_detach_chr_cluster", 0x0065_66c0, This::Object, 0, &[(glue10::WAIT_FOR_SINGLE_OBJECT, K::Import(2)), (glue10::RELEASE_MUTEX, K::Import(1)), (glue10::IOB_FUNC, K::ImportC(0)), (glue10::FPRINTF, K::ImportC(2)), (glue10::WORLD_ADD_CLUSTER, K::This(1)), (glue10::ARRAY_RESERVE_668300, K::This(1))], |m, this, _| { g10::scene_detach_chr_cluster(m, this); Out::None }) },
+    Case { prep: Some(prep_delegation), ..method("delegation_before_vfx", 0x006a_db80, This::Object, 0, &[(glue10::WAIT_FOR_SINGLE_OBJECT, K::Import(2)), (glue10::RELEASE_MUTEX, K::Import(1)), (glue10::OPERATOR_DELETE, K::Cdecl(1))], |m, this, _| { g10::delegation_before_vfx(m, this); Out::None }) },
+    Case { prep: Some(prep_shadow_resize), ..method("shadow_resize_textures", 0x006d_2df0, This::Object, 0, &[(glue10::SHADOW_TEXTURE_PREPARE, K::This(0))], |m, this, _| u(g10::shadow_resize_textures(m, this))) },
+    method("vfx_dyn_geo_ctor", 0x0069_e3e0, This::Object, 0, &[], |m, this, _| u(g10::vfx_dyn_geo_ctor(m, this))),
+    with_cookie(framed(Case { prep: Some(prep_map_unload), ..method("scene_unload_map_vfx_texture", 0x0067_0fe0, This::Object, 0, &[(glue10::FIOS_UNIFY_FILENAME, K::Cdecl(3)), (glue10::SPRINTF, K::ImportC(4)), (glue10::SCENE_UNLOAD_VFX_TEXTURE, K::This(2))], |m, this, _| u(g10::scene_unload_map_vfx_texture(m, frame_ebp(), this))) }, 0x204, 0)),
+    framed(Case { prep: Some(prep_vfx_delete_pool), ..method("vfx_insert_to_delete_pool", 0x0069_f900, This::Object, 4, &[(glue10::PUSH_INTO_6A2790, K::This(2)), (glue10::PUSH_INTO_6A25E0, K::This(2)), (glue10::PUSH_INTO_6A2670, K::This(2))], |m, this, a| { let args = frame_ebp() + 8; for (k, &w) in a.iter().enumerate() { m.write(args + 4 * k as u32, w); } u(g10::vfx_insert_to_delete_pool(m, args, this, a[0], a[1], a[2], a[3])) }) }, 0, 16),
+    Case { prep: Some(prep_push_elements), ..method("parray_push_into32", 0x006b_2730, This::Object, 2, &[(glue10::ELEMENTS_32.copy, K::Cdecl(3)), (glue10::ELEMENTS_32.construct, K::This(1)), (glue10::ELEMENTS_32.destroy, K::Cdecl(2))], |m, this, a| u(g10::parray_push_into_elements(m, this, a[0], a[1], glue10::ELEMENTS_32))) },
+    Case { prep: Some(prep_push_elements), ..method("parray_push_into64", 0x006b_2800, This::Object, 2, &[(glue10::ELEMENTS_64.copy, K::Cdecl(3)), (glue10::ELEMENTS_64.construct, K::This(1)), (glue10::ELEMENTS_64.destroy, K::Cdecl(2))], |m, this, a| u(g10::parray_push_into_elements(m, this, a[0], a[1], glue10::ELEMENTS_64))) },
+    Case { prep: Some(prep_clear_draw), ..method("vfx_clear_draw_data", 0x0069_f2b0, This::Object, 0, &[], |m, this, _| { g10::vfx_clear_draw_data(m, this); Out::None }) },
+];
+
+#[test]
+fn batch10_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 12 } else { 60 };
+        run_cases(t, CASES10, n, &mut Rng(0x1010_b010));
+    });
+}
+
+// ---- batch 11 (ffx_prender::glue11, round 3) ----
+
+fn prep_insert_pair(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let node = obj + 0x400;
+    let next = rng.next();
+    t.w32(node, next);
+    if rng.chance(3) {
+        t.w32(obj + 0x18, 0);
+        let made = if rng.chance(3) { 0 } else { node };
+        t.stub_this_out(glue11::FREE_LIST_ALLOCATE_BLOCK, 1, 1, None, &[(0, made)]);
+    } else {
+        t.w32(obj + 0x18, node);
+    }
+    args[0] = rng.next();
+    args[1] = rng.next();
+    let built = if rng.chance(2) { node } else { obj + 0x500 };
+    t.stub_ret(glue11::NODE_CTOR_64CB00, true, 2, 2, built);
+    let dup = if rng.chance(2) { 0 } else { rng.next() | 1 };
+    t.stub_ret(glue11::TREE_INSERT_64C0A0, true, 1, 1, dup);
+}
+
+fn prep_texture_info(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let array = obj + 0x40;
+    let flag = [0, 0x8000_0000][rng.below(2) as usize];
+    t.w32(array, flag | rng.below(9));
+    let data = rng.next();
+    t.w32(array + 4, data);
+    args[0] = array;
+    for a in &mut args[3..8] {
+        *a = rng.float().to_bits();
+    }
+    let copy = obj + 0x600;
+    let old = [0, copy, rng.next() | 1][rng.below(3) as usize];
+    t.w32(obj + 0xc, old);
+    let own = [0, 0x8000_0000][rng.below(2) as usize];
+    t.w32(obj + 8, own | rng.below(9));
+    t.stub_ret(glue11::ARRAY_COPY_5281E0, false, 2, 0, copy);
+    let holder = if rng.chance(4) { 0 } else { obj + 0x700 };
+    t.stub_ret(glue11::PHYRE_MALLOC_SIZE, false, 1, 0, holder);
+}
+
+fn prep_cutbuffer_load(t: &mut Twins, _: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = if rng.chance(3) {
+        0x8000_0000 | rng.next()
+    } else {
+        rng.next() & 0x7fff_ffff
+    };
+    let open = [0, 1, 0x100, 0xffff_ff01][rng.below(4) as usize];
+    t.stub_ret(glue11::READER_IS_OPEN, true, 0, 0, open);
+}
+
+/// Groups of mesh instances in tree order (the iterator's end, current
+/// and next; successors from `+0x18`), each instance with a group bit and
+/// a draw link or none; the mask changed or not, the tree empty or not.
+fn prep_group_visible(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfb18);
+    *this = scene;
+    let head = scene + 0x1198;
+    let root = match rng.below(6) {
+        0 => head,
+        1 => 0,
+        _ => rng.next() | 1,
+    };
+    t.w32(scene + 0x11a4, root);
+    let old = rng.next() & 0xffff;
+    t.w32(scene + 0xfb14, old);
+    args[0] = if rng.chance(6) {
+        old
+    } else {
+        old ^ (rng.next() & 0xffff)
+    };
+    let end = obj + 0x40;
+    let n = rng.below(4);
+    let node = |k: u32| obj + 0x100 + 0x20 * k;
+    for k in 0..n {
+        let group = obj + 0x400 + 0x40 * k;
+        t.w32(node(k) + 0x10, group);
+        let next = if k + 1 == n { end } else { node(k + 1) };
+        t.w32(node(k) + 0x18, next);
+        let count = rng.below(4);
+        t.w32(group, count);
+        t.w32(group + 8, group + 0x10);
+        for m in 0..count {
+            let mesh = obj + 0xc00 + 0x100 * k + 0x40 * m;
+            t.w32(group + 0x10 + 4 * m, mesh);
+            let bit = rng.below(34);
+            t.w32(mesh + 0x48, bit);
+            let link = if rng.chance(4) {
+                0
+            } else {
+                obj + 0x1800 + 0x40 * (4 * k + m)
+            };
+            t.w32(mesh + 0x1c, link);
+            let w = rng.next();
+            if link != 0 {
+                t.w32(link + 0x1c, w);
+            }
+        }
+    }
+    let (cur, next) = match n {
+        0 => (end, end),
+        1 => (node(0), end),
+        _ => (node(0), node(1)),
+    };
+    t.stub_this_out(
+        glue11::TREE_ITERATOR_BEGIN,
+        1,
+        1,
+        None,
+        &[(0, end), (4, cur), (8, next)],
+    );
+    t.stub_successor(glue11::TREE_SUCCESSOR);
+}
+
+/// The swap's state: screen, pause, the field map's flags, loads, the
+/// post-process flag and the free camera.
+fn prep_swap_buffer(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    args[0] = u32::from(rng.chance(2));
+    let screen = u32::from(rng.chance(4));
+    t.global(glue11::SCREEN_STATE.sym, screen);
+    let pause = u32::from(rng.chance(4));
+    t.global(glue11::PAUSE_ON.sym, pause);
+    let scene = t.zeros(0x1198);
+    t.global(SCENE, scene);
+    let flags = [
+        u8::from(rng.chance(3)),
+        u8::from(rng.chance(3)),
+        u8::from(rng.chance(3)),
+    ];
+    t.write(scene + 0x1195, &flags);
+    let loading = if rng.chance(2) {
+        0
+    } else {
+        rng.below(3) | (rng.next() & 0x8000_0000)
+    };
+    t.global(glue11::CHARACTER_LOADING.sym, loading);
+    let listed = u32::from(rng.chance(2));
+    t.stub_ret(glue11::IS_MAP_IN_LIST, false, 0, 0, listed);
+    let done = [0, 1, 0x100][rng.below(3) as usize];
+    t.stub_ret(glue11::ALL_REQUESTS_DONE, true, 0, 0, done);
+    let post = t.zeros(0x1_23a4);
+    t.write(post + 0x1_23a0, &[u8::from(rng.chance(2))]);
+    t.stub_ret(glue11::POST_PROCESS_INSTANCE, false, 0, 0, post);
+    let camera = obj + 0x100;
+    t.write(camera + 0x338, &[u8::from(rng.chance(4))]);
+    t.write(camera + 0x33c, &[u8::from(rng.chance(4))]);
+    let mode = [0, 1, 2][rng.below(3) as usize];
+    t.w32(camera, mode);
+    t.stub_ret(glue11::FREE_CAMERA_INSTANCE, false, 0, 0, camera);
+    t.global(glue11::VFX_RENDER_DATA_TABLE.sym, obj + 0x1800);
+}
+
+fn prep_rwtt(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfc74);
+    *this = scene;
+    let texture = if rng.chance(5) { 0 } else { obj + 0x100 };
+    t.stub_ret(glue11::CLUSTER_CREATE, true, 3, 3, texture);
+    let list = if rng.chance(5) { 0 } else { obj + 0x200 };
+    t.stub_ret(glue11::CLUSTER_ALLOCATE_INSTANCE_LIST, true, 3, 3, list);
+    let target = if rng.chance(4) { 0 } else { obj + 0x300 };
+    t.w32(obj + 0x234, target);
+}
+
+/// A material of the scene's pool (slot in or out of range, remainder
+/// sign), its kind, or another cluster's.
+fn prep_delete_material(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfc00);
+    *this = scene;
+    let material = obj + 0x600;
+    let (slot, negative) = match rng.below(5) {
+        0 => (rng.below(4000) as i32, false),
+        1 => (3998 + rng.below(4) as i32, false),
+        2 => (-(rng.below(3) as i32) - 1, true),
+        3 => (0, true),
+        _ => (rng.next() as i32 >> 8, false),
+    };
+    let negative = negative || slot < 0;
+    let rest = (1 + rng.below(23)) as i32 * if negative { -1 } else { 1 };
+    let diff = slot.wrapping_mul(24).wrapping_add(rest);
+    t.w32(scene + 0xfbec, material.wrapping_sub(diff as u32));
+    let s = diff / 24;
+    t.w32(scene + 0xfbf8, (obj + 0x1000).wrapping_sub(s as u32));
+    let low = rng.below(4005) as i32 - 2;
+    t.w32(scene + 0xfbfc, low as u32);
+    let storage = rng.next();
+    t.w32(material + 0x10, storage);
+    let kind = [rng.below(64), 63, 64, rng.next()][rng.below(4) as usize];
+    t.w32(material + 0x14, kind);
+    let part = rng.next();
+    t.w32(material + 4, part);
+    args[0] = material;
+    args[1] = if rng.chance(4) {
+        rng.next() | 1
+    } else {
+        scene + 0x12d4
+    };
+}
+
+/// Pairs (word, name or none) to copy; a null destination for a single
+/// pair.
+fn prep_copy_pairs(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let n = rng.below(5);
+    args[2] = n;
+    args[0] = if n <= 1 && rng.chance(3) {
+        0
+    } else {
+        obj + 0x100
+    };
+    args[1] = obj + 0x400;
+    for k in 0..n.max(1) {
+        let word = rng.next();
+        t.w32(obj + 0x400 + 8 * k, word);
+        let text = obj + 0x800 + 0x20 * k;
+        let len = rng.below(10) as usize;
+        let mut s: Vec<u8> = (0..len).map(|_| b'a' + rng.below(26) as u8).collect();
+        s.push(0);
+        t.write(text, &s);
+        let name = match rng.below(4) {
+            0 => 0,
+            1 => 1,
+            2 => text | 1,
+            _ => text,
+        };
+        t.w32(obj + 0x404 + 8 * k, name);
+    }
+    let p = if rng.chance(4) { 0 } else { obj + 0xc00 };
+    t.stub_ret(glue11::PHYRE_MALLOC, false, 2, 0, p);
+}
+
+#[rustfmt::skip]
+const CASES11: &[Case] = &[
+    Case { prep: Some(prep_insert_pair), ..method("tree_insert_pair", 0x0065_fdd0, This::Object, 2, &[(glue11::NODE_RELEASE_64B8C0, K::This(1)), (glue11::TREE_POST_INSERT, K::This(1))], |m, this, a| u(g11::tree_insert_pair(m, this, a[0], a[1]))) },
+    Case { prep: Some(prep_texture_info), ..method("render_texture_info_set", 0x006b_2400, This::Object, 8, &[(glue11::PHYRE_FREE, K::Cdecl(1)), (glue11::PSTRING_ASSIGN, K::This(1))], |m, this, a| u(g11::render_texture_info_set(m, this, a[0], a[1], a[2], arr(&a[3..])))) },
+    with_seh(framed(Case { prep: Some(prep_cutbuffer_load), ..method("scene_load_cutbuffer_shader", 0x0066_4440, This::Object, 0, &[(glue11::FIOS_UNIFY_FILENAME, K::Cdecl(3)), (glue11::READER_CTOR, K::This(1)), (glue11::READER_CLOSE, K::This(0)), (glue11::ASYNC_LOAD_INSTANCE, K::Getter), (glue11::LOAD_CLUSTER, K::Cdecl(7)), (glue11::READER_DTOR, K::This(0))], |m, this, _| u(g11::scene_load_cutbuffer_shader(m, frame_ebp(), this))) }, 0x12c, 0)),
+    framed(Case { prep: Some(prep_group_visible), ..method("scene_set_group_visible", 0x0066_d610, This::Object, 1, &[], |m, this, a| { g11::scene_set_group_visible(m, frame_ebp(), this, a[0]); Out::None }) }, 0x10, 0),
+    Case { prep: Some(prep_swap_buffer), ..cdecl("dyn_geo_swap_buffer", 0x0063_ff70, 1, &[(glue11::ASYNC_LOAD_INSTANCE, K::Getter), (glue11::DYN_GEO_SWAP, K::This(0)), (glue11::VFX_CLEAR_DRAW_DATA, K::This(0))], |m, _, a| u(g11::dyn_geo_swap_buffer(m, a[0]))) },
+    Case { prep: Some(prep_rwtt), ..method("scene_create_rwtt_target", 0x0065_9c30, This::Object, 0, &[(glue11::TEXTURE_SET_DIMENSIONS, K::This(4)), (glue11::TEXTURE_UPDATE_MAX_LEVEL, K::This(0)), (glue11::TARGET_CTOR, K::This(1))], |m, this, _| u(g11::scene_create_rwtt_target(m, this))) },
+    Case { prep: Some(prep_delete_material), ..method("scene_delete_material", 0x0065_a2c0, This::Object, 4, &[(glue11::PHYRE_FREE, K::Cdecl(1)), (glue11::CLUSTER_DELETE_WITH_LIST, K::This(2))], |m, this, a| { g11::scene_delete_material(m, this, a[0], a[1], a[2], a[3]); Out::None }) },
+    framed(Case { prep: Some(prep_copy_pairs), ..cdecl("copy_named_pairs", 0x0069_91f0, 3, &[(glue11::MEMCPY, K::Cdecl(3))], |m, _, a| { let slots = frame_ebp() + 8; for (k, &w) in a.iter().enumerate() { m.write(slots + 4 * k as u32, w); } g11::copy_named_pairs(m, slots, a[0], a[1], a[2]); Out::None }) }, 0, 12),
+];
+
+#[test]
+fn batch11_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 12 } else { 60 };
+        run_cases(t, CASES11, n, &mut Rng(0x1111_b011));
     });
 }

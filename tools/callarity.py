@@ -39,8 +39,9 @@ HELPERS = {
     "bridge_call": (6, "crates/ffx-bridge/src/lib.rs", r"impl Host for RawMem \{\s*fn call\(&mut self, addr: u32, args: &\[u32\]\) -> u32 \{\s*type F6"),
     "native_call_float": (6, "crates/ffx-script/src/vm/bridge/run.rs", r"fn call_float\(&mut self, addr: u32, args: &\[u32\]\) -> f64 \{\s*type F6"),
     "native_call_n": (12, "crates/ffx-script/src/vm/bridge/run.rs", r"pub const CALL_N_WORDS: usize = 12;[\s\S]*?fn call_n\(&mut self[\s\S]*?args\.len\(\) > CALL_N_WORDS"),
-    "graphic_call": (8, "crates/ffx-graphic/src/host.rs", r"fn call\(&mut self, addr: u32, conv: Conv, args: &\[u32\]\) -> u32 \{\s*type C8"),
-    "graphic_call_st0": (8, "crates/ffx-graphic/src/host.rs", r"fn call_st0\(&mut self, addr: u32, conv: Conv, args: &\[u32\]\) -> f32 \{\s*let mut a = \[0u32; 8\]"),
+    # cdecl and thiscall: 12; stdcall and fastcall: 8 (`classify`)
+    "graphic_call": (12, "crates/ffx-graphic/src/host.rs", r"fn call\(&mut self, addr: u32, conv: Conv, args: &\[u32\]\) -> u32 \{\s*type C12"),
+    "graphic_call_st0": (8, "crates/ffx-graphic/src/host.rs", r"fn float_call_any<R>\(addr: u32, conv: Conv, args: &\[u32\]\) -> R \{\s*let mut a = \[0u32; 8\]"),
 }
 # helpers whose word counts are match arms: (file, function) -> parsed set
 ARM_HELPERS = {
@@ -302,7 +303,11 @@ def check(repo, exe_path, sizes):
         closure = full.endswith(")") and "(c." not in full
         if closure:
             pass
-        elif method and name in ("call", "call_sym", "call_st0", "call_sym_st0"):
+        elif method and name in ("call", "call_sym"):
+            # ffx_graphic's Host (with a Conv): 12 for cdecl and thiscall,
+            # else 8; ffx_bridge's (no Conv): 6
+            cap = (12 if conv in ("cdecl", "thiscall") else 8) if has_conv else 6
+        elif method and name in ("call_st0", "call_sym_st0", "call_st0_f64", "call_sym_st0_f64"):
             cap = 8 if has_conv else 6
         elif name in ("call_cdecl", "call_ptr", "call"):
             cap = 8 if f.name == "loadsave.rs" else 12

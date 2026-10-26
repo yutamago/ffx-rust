@@ -17,8 +17,10 @@ Limits (what each in-game host passes):
   ffx_bridge::Host::call(f, args)                  6  (refused: 0)
   NativeHost::call_float(f, args)                  6  (refused: NaN)
   NativeHost::call_n(f, args)                     12  (refused: 0)
-  ffx_graphic Host::call/call_sym(f, conv, args)   8; 12 for Conv::Thiscall
+  ffx_graphic Host::call/call_sym(f, conv, args)  12 for Conv::Cdecl and
+                                                   Conv::Thiscall; 8 else
   ffx_graphic Host::call_st0/call_sym_st0          8
+  ffx_graphic Host::call_st0_f64/call_sym_st0_f64  8
   ffx_graphic Host::call_virtual(obj, slot, args) 12
   ffx-hook call_cdecl / _f64 / _f32 / _u64        12  (logged, cut short)
   ffx-hook call_cdecl_words                       32  (refused: 0)
@@ -66,6 +68,8 @@ METHODS = {
     'call_sym': (2, 'conv', 'graphic Host::call_sym'),
     'call_st0': (2, 8, 'graphic Host::call_st0'),
     'call_sym_st0': (2, 8, 'graphic Host::call_sym_st0'),
+    'call_st0_f64': (2, 8, 'graphic Host::call_st0_f64'),
+    'call_sym_st0_f64': (2, 8, 'graphic Host::call_sym_st0_f64'),
     'call_virtual': (2, 12, 'graphic Host::call_virtual'),
     'call_float': (1, 6, 'NativeHost::call_float'),
     'call_n': (1, 12, 'NativeHost::call_n'),
@@ -698,7 +702,9 @@ def graphic_limit(conv):
     c = conv.replace(' ', '')
     if re.search(r'Conv::Thiscall', c):
         return 12, 'thiscall'
-    if re.search(r'Conv::(Cdecl|Stdcall|Fastcall)$', c):
+    if re.search(r'Conv::Cdecl$', c):
+        return 12, 'cdecl'
+    if re.search(r'Conv::(Stdcall|Fastcall)$', c):
         return 8, c.split('::')[-1].lower()
     return 12, f'conv `{conv}`'
 
