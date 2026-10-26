@@ -38,6 +38,7 @@ use ffx_prender::h3_glue29::bridge as g29;
 use ffx_prender::h3_glue30::bridge as g30;
 use ffx_prender::h3_glue31::bridge as g31;
 use ffx_prender::h3_glue32::bridge as g32;
+use ffx_prender::h3_glue33::bridge as g33;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1794,6 +1795,20 @@ ported! {
     DebugMapList_init_006b9e20 @ 0x006b_9e20 => extern "thiscall" fn debug_map_list_init(this: u32) -> u32 {
         let mut f = StackFrame::<7>::new();
         g32::map_list_init(&mut mem(), f.at() + 0x1c, this)
+    }
+
+    // ---- round 8 batch 33 (ffx_prender::h3_glue33) ----
+    /// `PhyreScene_onCharacterAssetLoaded(task, request)`: a character
+    /// asset's arrival; the last call's eax.
+    PhyreScene_onCharacterAssetLoaded @ 0x0066_63d0 => extern "C" fn scene_character_asset_loaded(task: u32, request: u32) -> u32 {
+        let mut f = StackFrame::<0x16>::new();
+        g33::character_asset_loaded(&mut mem(), f.at() + 0x58, task, request)
+    }
+    /// `0x006c9270(camera, matrix)`: whether the caster may show (`al`);
+    /// the matrix slot keeps the last float.
+    ShadowCamera_isCasterVisible_006c9270 @ 0x006c_9270 => extern "thiscall" fn shadow_caster_visible(this: u32, m: u32; slots: u32) -> u8 {
+        let mut f = StackFrame::<0x18>::new();
+        g33::caster_visible(&mut mem(), f.at() + 0x60, slots, this, m)
     }
 }
 

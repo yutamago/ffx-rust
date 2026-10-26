@@ -55,6 +55,7 @@ use ffx_prender::h3_glue29::{self as h29, bridge as gh29};
 use ffx_prender::h3_glue30::{self as h30, bridge as gh30};
 use ffx_prender::h3_glue31::{self as h31, bridge as gh31};
 use ffx_prender::h3_glue32::{self as h32, bridge as gh32};
+use ffx_prender::h3_glue33::{self as h33, bridge as gh33};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -8546,5 +8547,162 @@ fn batch32_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES32, n, &mut Rng(0x3232_b032));
+    });
+}
+
+// ---- round 8 batch 33 (ffx_prender::h3_glue33) ----
+
+/// A float for the frustum test: small values, now and then 0, a large
+/// one or any (no signalling NaN).
+fn frustum_float(rng: &mut Rng) -> u32 {
+    match rng.below(8) {
+        0 => 0,
+        1 => rng.float().to_bits(),
+        2 => (rng.below(2000) as f32 * 0.5 - 500.0).to_bits(),
+        _ => ((rng.below(4000) as f32 - 2000.0) / 1000.0).to_bits(),
+    }
+}
+
+/// The camera box and the caster matrix: random, or an identity with a
+/// translation and a projection-like last column.
+fn prep_caster_visible(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    for k in 0..7 {
+        let v = frustum_float(rng);
+        t.w32(obj + 4 * k, v);
+    }
+    let m = obj + 0x100;
+    args[0] = m;
+    let identity = rng.chance(2);
+    for k in 0..16 {
+        let v = if identity && k < 12 {
+            if k % 5 == 0 {
+                1f32.to_bits()
+            } else if rng.chance(2) {
+                0
+            } else {
+                frustum_float(rng)
+            }
+        } else {
+            frustum_float(rng)
+        };
+        t.w32(m + 4 * k, v);
+    }
+    // y / w = -3.3f / 3 lies just above -1.1, but rounds to the f32
+    // below it: the stored ratio decides
+    if rng.chance(8) {
+        for k in 0..7 {
+            let v = if k == 5 { (-3.3f32).to_bits() } else { 0 };
+            t.w32(obj + 4 * k, v);
+        }
+        for k in 0..16 {
+            let v = match k {
+                0 | 5 | 10 => 1f32.to_bits(),
+                15 => 3f32.to_bits(),
+                _ => 0,
+            };
+            t.w32(m + 4 * k, v);
+        }
+    }
+}
+
+/// The request (its name empty, short or long), the scene's eight
+/// slots (used or not, one holding the id now and then; their number
+/// words taken or not), the path (under `/fp/` or not), the string
+/// staying inline or not, the asset last or not.
+fn prep_asset_loaded33(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_1000);
+    let request = obj + 0x40;
+    let name = obj + 0x200;
+    let len = pick(rng, &[0, 3, 20]) as usize;
+    let mut text: Vec<u8> = (0..len).map(|_| b'a' + rng.below(26) as u8).collect();
+    text.push(0);
+    t.write(name, &text);
+    let id = rng.below(4);
+    let index = pick(rng, &[0, 1, 5]);
+    let words = [
+        scene,
+        rng.next(),
+        rng.next(),
+        rng.next(),
+        id,
+        name,
+        index,
+        rng.next(),
+    ];
+    for (k, w) in words.into_iter().enumerate() {
+        t.w32(request + 4 * k as u32, w);
+    }
+    args[0] = rng.next();
+    args[1] = request;
+    for k in 0..8 {
+        let at = scene + 0xfccc + 0x20c * k;
+        let used = if rng.chance(3) { 0 } else { 1 + rng.below(3) };
+        t.w32(at, used);
+        let held = if rng.chance(3) { id } else { rng.below(8) };
+        t.w32(at + 4, held);
+        for j in 0..2 {
+            let v = if rng.chance(2) { 0 } else { rng.next() as u16 };
+            t.write(at + 8 + 2 * j, &v.to_le_bytes());
+        }
+    }
+    let path = obj + 0x300;
+    let mut bytes = b"chr/fp/".to_vec();
+    for _ in 0..rng.below(8) {
+        bytes.push(b'0' + rng.below(10) as u8);
+    }
+    bytes.push(0);
+    t.write(path, &bytes);
+    t.stub_ret(h33::ASSET_PATH, true, 1, 1, path);
+    let fp = u32::from(!rng.chance(3)) * (path + 3);
+    t.stub_import_c(h33::STRSTR, 2, fp);
+    let number = rng.next();
+    t.stub_import_c(h33::ATOI, 1, number);
+    // the string kept inline (the capacity as the original set it), or
+    // grown to 16 and more
+    let data = rng.next();
+    let ret = rng.next();
+    match rng.below(3) {
+        0 => t.stub_set_this(h33::STRING_ASSIGN, 2, ret, &[(0, data)]),
+        k => {
+            let cap = [0x10, 0x1f][k as usize - 1];
+            t.stub_set_this(h33::STRING_ASSIGN, 2, ret, &[(0x14, cap), (0, data)]);
+        }
+    }
+    let count = if rng.chance(2) {
+        index + 1
+    } else {
+        rng.below(8)
+    };
+    t.stub_ret(h33::ASSET_COUNT, true, 0, 0, count);
+}
+
+const ASSET_LOADED33_STUBS: &[(u32, K)] = &[
+    (h33::ASYNC_LOAD_INSTANCE, K::Cdecl(0)),
+    (h33::STRNCPY, K::ImportC(3)),
+    (h33::UNIFY_FILENAME, K::Cdecl(3)),
+    (h33::ASSET_ITEM, K::This(5)),
+    (h33::ALL_ASSETS_LOADED, K::This(6)),
+    (h33::OPERATOR_DELETE, K::Cdecl(1)),
+];
+
+#[rustfmt::skip]
+const CASES33: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_asset_loaded33), ..cdecl("character_asset_loaded", 0x0066_63d0, 2, ASSET_LOADED33_STUBS, |m, _, a| u(gh33::character_asset_loaded(m, frame_ebp(), a[0], a[1]))) }), 0x58, 0),
+];
+
+/// The float test, with many more cases (no allocation per case).
+#[rustfmt::skip]
+const CASES33_FLOAT: &[Case] = &[
+    framed(Case { prep: Some(prep_caster_visible), ..method("caster_visible", 0x006c_9270, This::Object, 1, &[], |m, this, a| { let slots = slots_at(m, a); Out::U8(gh33::caster_visible(m, frame_ebp(), slots, this, a[0])) }) }, 0x60, 4),
+];
+
+#[test]
+fn batch33_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES33, n, &mut Rng(0x3333_b033));
+        let n = if t.snapshot { 300 } else { 3000 };
+        run_cases(t, CASES33_FLOAT, n, &mut Rng(0x3333_f033));
     });
 }
