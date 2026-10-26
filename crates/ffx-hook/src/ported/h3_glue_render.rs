@@ -37,6 +37,7 @@ use ffx_prender::h3_glue28::bridge as g28;
 use ffx_prender::h3_glue29::bridge as g29;
 use ffx_prender::h3_glue30::bridge as g30;
 use ffx_prender::h3_glue31::bridge as g31;
+use ffx_prender::h3_glue32::bridge as g32;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1780,6 +1781,19 @@ ported! {
     PhyreScene_setShadowScaleBias_006542b0 @ 0x0065_42b0 => extern "thiscall" fn scene_set_shadow_scale_bias(this: u32) {
         let mut f = StackFrame::<0x1e>::new();
         g31::scene_set_shadow_scale_bias(&mut mem(), f.at() + 0x78, this);
+    }
+
+    // ---- round 8 batch 32 (ffx_prender::h3_glue32) ----
+    /// `graphicVFXCreate(a, b, arg)`: a VFX's render data and geometry
+    /// registered under (`a`, `b`); `b`'s slot takes the data.
+    graphicVFXCreate @ 0x0064_4de0 => extern "C" fn vfx_create(a: u32, b: u32, arg: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        g32::vfx_create(&mut mem(), f.at() + 4, slots, a, b, arg)
+    }
+    /// `0x006b9e20(this)`: the debug map list's text; `setEnabled`'s eax.
+    DebugMapList_init_006b9e20 @ 0x006b_9e20 => extern "thiscall" fn debug_map_list_init(this: u32) -> u32 {
+        let mut f = StackFrame::<7>::new();
+        g32::map_list_init(&mut mem(), f.at() + 0x1c, this)
     }
 }
 

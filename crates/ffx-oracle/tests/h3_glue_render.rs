@@ -54,6 +54,7 @@ use ffx_prender::h3_glue28::{self as h28, bridge as gh28};
 use ffx_prender::h3_glue29::{self as h29, bridge as gh29};
 use ffx_prender::h3_glue30::{self as h30, bridge as gh30};
 use ffx_prender::h3_glue31::{self as h31, bridge as gh31};
+use ffx_prender::h3_glue32::{self as h32, bridge as gh32};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -8494,5 +8495,56 @@ fn batch31_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES31, n, &mut Rng(0x3131_b031));
+    });
+}
+
+// ---- round 8 batch 32 (ffx_prender::h3_glue32) ----
+
+/// The key (none, half or whole), a geometry found or not, the pool
+/// giving data and geometry or not (then the allocations), the current
+/// VFX type.
+fn prep_vfx_create(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    if !t.snapshot {
+        t.global(h32::VFX_RENDER_DATA_TABLE.sym, obj + 0x40);
+        let kind = rng.next() & 0xff;
+        let at = t.rebase(h32::VFX_CURRENT_TYPE.sym);
+        t.write(at, &[kind as u8]);
+    }
+    args[0] = if rng.chance(3) { 0 } else { rng.below(4) };
+    args[1] = if rng.chance(3) { 0 } else { rng.next() };
+    args[2] = rng.next();
+    let found = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h32::GET_DYNAMIC_GEOMETRY, true, 2, 2, found);
+    let pooled = u32::from(rng.chance(2));
+    t.stub_two_outs(h32::GEOMETRY_FROM_POOL, obj + 0x600, obj + 0x800, pooled);
+    t.stub_alloc(h32::OPERATOR_NEW, obj + 0x400);
+    t.stub_ret(h32::GEOMETRY_CTOR, true, 0, 0, obj + 0x900);
+}
+
+/// The text failing to start or not, the first row (before, inside,
+/// at and past the 10 shown).
+fn prep_map_list(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    // the on flag set before, so that clearing it shows
+    let on = rng.next() as u8 | 1;
+    t.write(obj, &[on]);
+    let failed = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h32::TEXT_INIT, true, 0, 0, failed);
+    let first = pick(rng, &[0, 1, 5, 9, 10, 11, 0xffff_ffff, 0xffff_fffd]);
+    t.w32(obj + 0x1ec, first);
+}
+
+#[rustfmt::skip]
+const CASES32: &[Case] = &[
+    // the word at ebp - 4 is the push ecx reservation: the caller's ecx
+    framed(with_cookie(Case { prep: Some(prep_vfx_create), ..cdecl("vfx_create", 0x0064_4de0, 3, &[(h32::VFX_TABLE_INSERT, K::This(3))], |m, _, a| { let slots = slots_at(m, a); u(gh32::vfx_create(m, frame_ebp(), slots, a[0], a[1], a[2])) }) }), 4, 12),
+    framed(with_cookie(Case { prep: Some(prep_map_list), ..method("map_list_init", 0x006b_9e20, This::Object, 0, &[(h32::TEXT_SET_ENABLED, K::This(1)), (h32::TEXT_APPEND_LINE, K::This(1)), (h32::SPRINTF_S, K::ImportC(6))], |m, this, _| u(gh32::map_list_init(m, frame_ebp(), this))) }), 0x1c, 0),
+];
+
+#[test]
+fn batch32_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES32, n, &mut Rng(0x3232_b032));
     });
 }
