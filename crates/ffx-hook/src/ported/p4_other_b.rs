@@ -7,7 +7,7 @@
 //! their objects live. No shim keeps state.
 
 use super::{mem, ported};
-use ffx_pother_b::{methods, object, physics, small};
+use ffx_pother_b::{methods, object, p4_fog, p4_input, p4_light, physics, small};
 
 ported! {
     /// `constructInstance(desc, obj)` -> 1: `[+0] = 0, [+4] = Phyre_PBase_GetClassDescriptor(), [+8] = 0, [+0xc] = the same, [+0x10] = 0.0f when obj is non-null`.
@@ -641,5 +641,114 @@ ported! {
     /// `FogEffectManager_create()`.
     FogEffectManager_create_006e3240 @ 0x006e_3240 => extern "C" fn fog_create() {
         methods::bridge::fog_create(&mut mem());
+    }
+    // ---- continuation round (p4-other-b c1) ----
+    /// `PApplicationViewport::PApplicationViewport(vp, app)` -> `vp`.
+    PApplicationViewport_ctor_0061fdd0 @ 0x0061_fdd0 => extern "thiscall" fn viewport_ctor(vp: u32, app: u32) -> u32 {
+        p4_input::bridge::viewport_ctor(&mut mem(), vp, app)
+    }
+    /// `PInputDeviceKeyboard::PInputDeviceKeyboard(dev, state)` -> `dev`.
+    PInputDeviceKeyboard_ctor @ 0x0061_fff0 => extern "thiscall" fn keyboard_ctor(dev: u32, state: u32) -> u32 {
+        p4_input::bridge::keyboard_ctor(&mut mem(), dev, state)
+    }
+    /// `PInputDeviceMouse::getAxis(dev, id)` -> `ST0`.
+    PInputDeviceMouse_getAxis @ 0x0062_8a40 => extern "thiscall" fn mouse_get_axis(dev: u32, id: u32) -> f32 {
+        p4_input::bridge::mouse_get_axis(&mut mem(), dev, id)
+    }
+    /// `PInputDeviceMouse::bind(dev, mapping, id)` -> 0, 0x12 or 5.
+    PInputDeviceMouse_bind @ 0x0062_5d10 => extern "thiscall" fn mouse_bind(dev: u32, mapping: u32, id: u32) -> u32 {
+        p4_input::bridge::mouse_bind(&mut mem(), dev, mapping, id)
+    }
+    /// `PInputMapping_update(mapping, raw)`.
+    PInputMapping_update_006263e0 @ 0x0062_63e0 => extern "thiscall" fn mapping_update(mapping: u32, raw: u32) {
+        p4_input::bridge::mapping_update(&mut mem(), mapping, raw);
+    }
+    /// `PInputDevice::updateMappings(dev)`.
+    PInputDevice_updateMappings @ 0x0062_d550 => extern "thiscall" fn update_mappings(dev: u32) {
+        p4_input::bridge::update_mappings(&mut mem(), dev);
+    }
+    /// `App_Frame()` -> 0 or 9.
+    App_Frame @ 0x0062_e340 => extern "C" fn app_frame() -> u32 {
+        p4_input::bridge::app_frame(&mut mem())
+    }
+    /// `SearchTree_insertSigned(tree, node)` -> the equal node or 0.
+    SearchTree_insertSigned_0064bfa0 @ 0x0064_bfa0 => extern "thiscall" fn tree_insert_signed(tree: u32, node: u32) -> u32 {
+        p4_input::bridge::tree_insert(&mut mem(), tree, node, true)
+    }
+    /// `SearchTree_insertUnsigned(tree, node)` -> the equal node or 0.
+    SearchTree_insertUnsigned_0064c020 @ 0x0064_c020 => extern "thiscall" fn tree_insert_unsigned(tree: u32, node: u32) -> u32 {
+        p4_input::bridge::tree_insert(&mut mem(), tree, node, false)
+    }
+    /// `SearchTree_insertUnsigned(tree, node)` (the lighting's copy).
+    SearchTree_insertUnsigned_006a5fc0 @ 0x006a_5fc0 => extern "thiscall" fn tree_insert_unsigned_2(tree: u32, node: u32) -> u32 {
+        p4_input::bridge::tree_insert(&mut mem(), tree, node, false)
+    }
+    /// `DistortionGridDynamicMesh_getParams(params, x)` -> 0.
+    DistortionGridDynamicMesh_getParams_00675120 @ 0x0067_5120 => extern "stdcall" fn distortion_params(params: u32, _x: u32) -> u32 {
+        p4_input::bridge::distortion_params(&mut mem(), params)
+    }
+    /// `CharacterLighting_create()`.
+    CharacterLighting_create_006a6cd0 @ 0x006a_6cd0 => extern "C" fn lighting_create() {
+        p4_light::bridge::lighting_create(&mut mem());
+    }
+    /// `CharacterLightingTweakUtil_create()`.
+    CharacterLightingTweakUtil_create_006a6d50 @ 0x006a_6d50 => extern "C" fn tweak_create() {
+        p4_light::bridge::tweak_create(&mut mem());
+    }
+    /// `MorphManager_create()`.
+    MorphManager_create_006abe40 @ 0x006a_be40 => extern "C" fn morph_create() {
+        p4_light::bridge::morph_create(&mut mem());
+    }
+    /// `CharacterLightingTweakUtil::CharacterLightingTweakUtil(tw)` -> `tw`.
+    CharacterLightingTweakUtil_ctor_006a6610 @ 0x006a_6610 => extern "thiscall" fn tweak_ctor(tw: u32) -> u32 {
+        p4_light::bridge::tweak_ctor(&mut mem(), tw)
+    }
+    /// `CharacterLighting::hasIntensity(cl, i)` -> 0 or 1.
+    CharacterLighting_hasIntensity_006a9ae0 @ 0x006a_9ae0 => extern "thiscall" fn has_intensity(cl: u32, i: u32) -> u32 {
+        p4_light::bridge::has_intensity(&mut mem(), cl, i)
+    }
+    /// `CharacterLighting::setPointLight(cl, r, g, b, i)`.
+    CharacterLighting_setPointLight_006aad20 @ 0x006a_ad20 => extern "thiscall" fn set_point_light(cl: u32, r: u32, g: u32, b: u32, i: u32) {
+        p4_light::bridge::set_point_light(&mut mem(), cl, r, g, b, i);
+    }
+    /// `CharacterLighting::setLightColor(cl, kind, r, g, b)`.
+    Phyre_CharacterLighting_setLightColor_006aa940 @ 0x006a_a940 => extern "thiscall" fn set_light_color(cl: u32, kind: u32, r: u32, g: u32, b: u32) {
+        p4_light::bridge::set_light_color(&mut mem(), cl, kind, r, g, b);
+    }
+    /// `CharacterLighting::defaultShadeCoeff(cl)` -> `ST0`.
+    CharacterLighting_defaultShadeCoeff_006a8c40 @ 0x006a_8c40 => extern "thiscall" fn shade_coeff_default(cl: u32) -> f32 {
+        p4_light::bridge::shade_coeff_default(&mut mem(), cl)
+    }
+    /// `CharacterLighting::resetShadeCoeff(cl, inst)`.
+    Phyre_CharacterLighting_resetShadeCoeff @ 0x006a_afa0 => extern "thiscall" fn reset_shade_coeff(cl: u32, inst: u32) -> u32 {
+        p4_light::bridge::reset_shade_coeff(&mut mem(), cl, inst)
+    }
+    /// `CharacterLightingTweakUtil::applyShadeCoeffs(tw)`.
+    CharacterLightingTweakUtil_applyShadeCoeffs_006ab720 @ 0x006a_b720 => extern "thiscall" fn tweak_apply_shade_coeffs(tw: u32) {
+        p4_light::bridge::tweak_apply_shade_coeffs(&mut mem(), tw);
+    }
+    /// `PArray<u32>::push(arr, buffer, &item)` -> 0 or 0xd.
+    PArray_pushWord_006a94b0 @ 0x006a_94b0 => extern "thiscall" fn array_push_word(arr: u32, buffer: u32, item: u32) -> u32 {
+        p4_light::bridge::array_push(&mut mem(), arr, buffer, item, 1, false)
+    }
+    /// `PArray<pair>::push(arr, buffer, &item)` -> 0 or 0xd.
+    PArray_pushPair_006ac380 @ 0x006a_c380 => extern "thiscall" fn array_push_pair(arr: u32, buffer: u32, item: u32) -> u32 {
+        p4_light::bridge::array_push(&mut mem(), arr, buffer, item, 2, true)
+    }
+    /// `FogEffectManager::reset(fog)`.
+    Phyre_FogEffectManager_reset @ 0x006e_34f0 => extern "thiscall" fn fog_reset(fog: u32) {
+        p4_fog::bridge::reset(&mut mem(), fog);
+    }
+    /// `FogEffectManager::initialize(fog, src, a, b)`.
+    FogEffectManager_initialize_006e3400 @ 0x006e_3400 => extern "thiscall" fn fog_initialize(fog: u32, src: u32, a: u32, b: u32) {
+        p4_fog::bridge::initialize(&mut mem(), fog, src, a, b);
+    }
+    /// `FogEffectManager::distance(fog, other)` -> `ST0`.
+    FogEffectManager_distance_006e3320 @ 0x006e_3320 => extern "thiscall" fn fog_distance(fog: u32, other: u32) -> f32 {
+        p4_fog::bridge::distance_to(&mut mem(), fog, other)
+    }
+    /// `FogEffectManager::isMoving(fog)` -> `al`.
+    FogEffectManager_isMoving_006e3480 @ 0x006e_3480 => extern "thiscall" fn fog_is_moving(fog: u32) -> u8 {
+        p4_fog::bridge::is_moving(&mut mem(), fog)
     }
 }
