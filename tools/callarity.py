@@ -360,6 +360,8 @@ def check(repo, exe_path, sizes):
             arms_of = "system_fcall"
         elif name == "call_n":
             cap = 12
+        elif method and name in ("call_wide", "call_sym_wide"):
+            cap = 32
         elif name == "call_float" and "ffx-script" in f.parts:
             cap = 6
         return conv, cap, closure, arms_of

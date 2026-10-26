@@ -114,6 +114,29 @@ pub trait Host: Mem {
         f32::NAN
     }
 
+    /// Calls the `cdecl` function at `addr` with up to [`WIDE_WORDS`]
+    /// stack words, returning `eax`: for callees that take more than
+    /// [`max_words`]' twelve, such as `AsyncLoadManager_loadCluster`'s
+    /// nineteen (its callback's seven 64-bit arguments by value, from
+    /// `PhyreScene_fieldMapLoad`). `args` is the stack as the original
+    /// pushes it, lowest address first.
+    ///
+    /// The game's host passes 32 words (the zero words past `args` sit on
+    /// the caller's side of the stack, which the caller pops) and refuses
+    /// a longer list: nothing is called and it returns 0. The default
+    /// forwards to [`Host::call`], so a test host whose bridges pass more
+    /// than twelve words must override it (`ffx_oracle::check_width`
+    /// against [`WIDE_WORDS`]).
+    fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
+        self.call(addr, Conv::Cdecl, args)
+    }
+
+    /// [`Host::call_wide`] of the original at `sym`.
+    fn call_sym_wide(&mut self, sym: u32, args: &[u32]) -> u32 {
+        let addr = self.rebase(sym);
+        self.call_wide(addr, args)
+    }
+
     /// [`Host::call_st0`] of the original at `sym`.
     fn call_sym_st0(&mut self, sym: u32, conv: Conv, args: &[u32]) -> f32 {
         let addr = self.rebase(sym);
@@ -143,6 +166,9 @@ pub trait Host: Mem {
 
 /// The size of [`Host::scratch`].
 pub const SCRATCH_LEN: u32 = 0x200;
+
+/// The most stack words [`Host::call_wide`] passes.
+pub const WIDE_WORDS: usize = 32;
 
 #[cfg(target_arch = "x86")]
 thread_local! {
@@ -192,6 +218,32 @@ impl Host for ffx_bridge::RawMem {
     fn call_u64(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u64 {
         // a `u64` result is `edx:eax` in every 32-bit convention
         float_call_any::<u64>(addr, conv, args)
+    }
+
+    fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
+        #[rustfmt::skip]
+        type Wide = unsafe extern "C" fn(
+            u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32,
+            u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32,
+        ) -> u32;
+        // no panics in what the game calls: a longer list is refused
+        if args.len() > WIDE_WORDS {
+            return 0;
+        }
+        let mut w = [0u32; WIDE_WORDS];
+        w[..args.len()].copy_from_slice(args);
+        // SAFETY: `addr` is a cdecl function of this process taking at
+        // most these stack words (the bridges call what the original
+        // calls); the zero words it doesn't read sit on the caller's side
+        // of the stack, which the caller pops.
+        unsafe {
+            let g = std::mem::transmute::<usize, Wide>(addr as usize);
+            g(
+                w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11], w[12],
+                w[13], w[14], w[15], w[16], w[17], w[18], w[19], w[20], w[21], w[22], w[23], w[24],
+                w[25], w[26], w[27], w[28], w[29], w[30], w[31],
+            )
+        }
     }
 
     #[allow(clippy::many_single_char_names)] // the arguments
