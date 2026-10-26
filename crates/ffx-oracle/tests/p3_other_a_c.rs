@@ -2053,3 +2053,33 @@ fn member_step_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn red_black_insert_fixup_matches_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0057_4980);
+        for case in 0..160u32 {
+            let tree = t.zeros(0x20);
+            let n = 1 + (case % 24) as usize;
+            let nodes = build_tree(&mut t, &mut rng, tree, n);
+            // the root black, as in every tree the game builds (its
+            // parent's other child is no node)
+            let root = t.r32(tree + 0xc);
+            let w = t.r32(root + 8);
+            t.w32(root + 8, w & !1);
+            // the new node: red, anywhere (a leaf in most cases)
+            let k = rng.below(n as u32) as usize;
+            let x = nodes[k];
+            let w = t.r32(x + 8);
+            t.w32(x + 8, w | 1);
+            t.check(
+                &format!("insert fixup {case}"),
+                0x0057_4980,
+                Conv::Thiscall(tree),
+                &[x],
+                ALL,
+                |g| tree::bridge::post_insert_finalize(g, tree, x),
+            );
+        }
+    }
+}

@@ -4200,3 +4200,231 @@ fn r3_format_desc_and_resources_match_the_original() {
         }
     }
 }
+
+// ---- the list's last ones (done in the p3-other-a continuation d) ----
+
+impl Twins {
+    /// Machine code in the stub cave; returns its address.
+    fn cave(&mut self, c: &[u8]) -> u32 {
+        let addr = self.cave_next;
+        assert!(addr + c.len() as u32 <= self.cave_end, "cave full");
+        self.write(addr, c);
+        self.cave_next = addr + c.len() as u32;
+        addr
+    }
+
+    /// The log entry prologue of a hand-written stub: `eax` = the entry,
+    /// its tag and `ecx` stored.
+    fn log_head(&self, tag: u32) -> Vec<u8> {
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(tag.to_le_bytes()); // mov [eax], tag
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        c
+    }
+}
+
+/// `PDynamicMesh`'s slot 2 (0x00498d20): the streams checked, the pointer
+/// array built and handed to slot 5 (logged by content: the array is the
+/// original's `_alloca` block, the port's scratch).
+#[test]
+fn dynamic_mesh_streams_match_the_original() {
+    use ffx_prender::h1_small5::{self as s, bridge};
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0049_8d20);
+        let cells = t.zeros(8);
+        t.stub(s::STREAM_CHECK, true, 4, 4, Ret::Cell(cells));
+        // slot 5 stubs: n = 0 logs (segment, a, b); n = 1..3 also the
+        // array's n words
+        let mut slot5 = Vec::new();
+        for n in 0..4u32 {
+            let mut c = t.log_head(0x7701 + n);
+            c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x08]); // segment
+            c.extend([0x8b, 0x54, 0x24, 0x08, 0x89, 0x50, 0x0c]); // a
+            c.extend([0x8b, 0x54, 0x24, 0x10, 0x89, 0x50, 0x10]); // b
+            c.extend([0x8b, 0x4c, 0x24, 0x0c]); // mov ecx, [esp+0xc]
+            for i in 0..n as u8 {
+                c.extend([0x8b, 0x51, 4 * i, 0x89, 0x50, 0x14 + 4 * i]);
+            }
+            c.extend([0xff, 0x05]);
+            c.extend(t.log.to_le_bytes()); // inc dword [log]
+            c.extend([0xa1]);
+            c.extend((cells + 4).to_le_bytes()); // mov eax, [cells + 4]
+            c.extend([0xc2, 0x10, 0x00]); // ret 0x10
+            let code = t.cave(&c);
+            let mut vt = vec![0u8; 0x18];
+            vt[0x14..].copy_from_slice(&code.to_le_bytes());
+            slot5.push(t.alloc(&vt));
+        }
+        for case in 0..120u32 {
+            let log = t.log;
+            t.w32(log, 0);
+            let check = if case % 7 == 3 { rng.next() | 1 } else { 0 };
+            t.w32(cells, check);
+            t.w32(cells + 4, rng.next());
+            let n = case % 4;
+            let streams = pattern(&mut t, &mut rng, 8);
+            let flag = if rng.next().is_multiple_of(3) {
+                0x8000_0000
+            } else {
+                0
+            };
+            t.w32(streams, n | flag);
+            let data = pattern(&mut t, &mut rng, 0x40 * 4);
+            for i in 0..n {
+                let used = if rng.next().is_multiple_of(3) {
+                    0
+                } else {
+                    rng.next() | 1
+                };
+                t.w32(data + 0x40 * i + 0x38, used);
+            }
+            t.w32(streams + 4, data);
+            let segment = rng.next() % 3;
+            let this = pattern(&mut t, &mut rng, 0x20);
+            t.w32(this, slot5[n as usize]);
+            let firsts = pattern(&mut t, &mut rng, 0x40);
+            let first = rng.next() % 4;
+            t.w32(firsts + 16 * segment, first);
+            t.w32(this + 0x14, firsts);
+            let records = pattern(&mut t, &mut rng, 12 * 8);
+            for k in 0..8 {
+                let rec = pattern(&mut t, &mut rng, 0x10);
+                t.write(rec + 8, &[u8::from(rng.next().is_multiple_of(3))]);
+                t.w32(records + 12 * k + 4, rec);
+            }
+            t.w32(this + 0xc, records);
+            let result = pattern(&mut t, &mut rng, 4);
+            let info = pattern(&mut t, &mut rng, 4);
+            let (ctx, unused, a, b) = (rng.next(), rng.next(), rng.next(), rng.next());
+            t.check(
+                &format!("{name} dynamic mesh streams {case}"),
+                0x0049_8d20,
+                Conv::Thiscall(this),
+                &[ctx, unused, result, info, segment, a, streams, b],
+                |g| {
+                    let buffer = g.scratch();
+                    Out::U32(bridge::bind_streams(
+                        g, this, ctx, result, info, segment, a, streams, b, buffer,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+/// 0x00498a30: a segment's records split into runs, a data block view
+/// per run.
+#[test]
+fn segment_groups_match_the_original() {
+    use ffx_prender::h1_small5::{self as s, bridge};
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0049_8a30);
+        let cells = t.zeros(8);
+        t.w32(cells + 4, u32::MAX);
+        t.stub(s::FIND_ENTRY16, true, 1, 1, Ret::Cell(cells));
+        t.stub(s::BLOCK_VIEW_CTOR, true, 0, 0, Ret::ThisAnd(cells + 4));
+        t.stub(s::SET_TO_EXTERNAL_BUFFER, true, 2, 2, Ret::Imm(0x7711));
+        t.stub(s::FORMAT_SIZE, false, 1, 0, Ret::Imm(0x10));
+        for case in 0..120u32 {
+            let log = t.log;
+            t.w32(log, 0);
+            let found = if case % 3 == 0 { 0 } else { rng.next() | 1 };
+            t.w32(cells, found);
+            let n = case % 7;
+            let total = 8 + rng.next() % 8;
+            let this = pattern(&mut t, &mut rng, 0x20);
+            let flag = if rng.next().is_multiple_of(2) {
+                0x8000_0000
+            } else {
+                0
+            };
+            t.w32(this + 8, total | flag);
+            let records = pattern(&mut t, &mut rng, 12 * 24);
+            for k in 0..16 {
+                let w = if rng.next().is_multiple_of(3) {
+                    0
+                } else {
+                    rng.next()
+                };
+                t.w32(records + 12 * k, w);
+            }
+            t.w32(this + 0xc, records);
+            let segment = rng.next() % 3;
+            let segs = pattern(&mut t, &mut rng, 0x40);
+            let first = rng.next() % (total - n.min(total - 1));
+            t.w32(segs + 16 * segment, first);
+            t.w32(segs + 16 * segment + 4, n);
+            t.w32(this + 0x14, segs);
+            let views = pattern(&mut t, &mut rng, 0x40 * 8);
+            let out = pattern(&mut t, &mut rng, 4 * 8);
+            let finder = rng.next();
+            t.check(
+                &format!("{name} segment groups {case}"),
+                0x0049_8a30,
+                Conv::Thiscall(this),
+                &[finder, segment, views, out],
+                |g| Out::U32(bridge::group_segment(g, this, finder, segment, views, out)),
+            );
+        }
+    }
+}
+
+/// 0x004c1050: the texture format entries registered, failing at an
+/// entry without a name or with a listed one.
+#[test]
+fn texture_formats_match_the_original() {
+    use ffx_prender::h1_small5::{self as s, formats};
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x004c_1050);
+        // the lookup: 1 for the name in `cell`, else 0
+        let cell = t.zeros(4);
+        let mut c = t.log_head(0x7721);
+        c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x08]); // the name
+        c.extend([0xff, 0x05]);
+        c.extend(t.log.to_le_bytes()); // inc dword [log]
+        c.extend([0x8b, 0x44, 0x24, 0x04]); // mov eax, [esp+4]
+        c.extend([0x3b, 0x05]);
+        c.extend(cell.to_le_bytes()); // cmp eax, [cell]
+        c.extend([0x75, 0x06, 0xb8, 0x01, 0, 0, 0, 0xc3]); // jne zero; mov eax, 1; ret
+        c.extend([0x31, 0xc0, 0xc3]); // zero: xor eax, eax; ret
+        let find = t.cave(&c);
+        let at = t.rebase(s::FORMAT_FIND);
+        let mut j = vec![0xe9];
+        j.extend(find.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        let first = t.rebase(s::FORMAT_FIRST);
+        for case in 0..40u32 {
+            let log = t.log;
+            t.w32(log, 0);
+            let list = t.rebase(s::FORMAT_LIST);
+            let head = rng.next();
+            t.w32(list, head);
+            let null_at = if case % 4 == 1 { rng.next() % 34 } else { 99 };
+            let listed_at = if case % 4 == 2 { rng.next() % 34 } else { 99 };
+            t.w32(cell, 0);
+            for k in 0..s::FORMAT_COUNT {
+                let e = first + k * s::FORMAT_ENTRY;
+                let nm = if k == null_at { 0 } else { rng.next() | 1 };
+                t.w32(e, nm);
+                if k == listed_at {
+                    t.w32(cell, nm);
+                }
+                t.w32(e + 4, rng.next());
+                t.w32(e + 8, rng.next() % 48);
+            }
+            t.check(
+                &format!("{name} texture formats {case}"),
+                0x004c_1050,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(formats::register_all(g)),
+            );
+        }
+    }
+}

@@ -64,6 +64,7 @@ pub mod h1_small;
 pub mod h1_small2;
 pub mod h1_small3;
 pub mod h1_small4;
+pub mod h1_small5;
 pub mod h2_bind;
 pub mod h2_more;
 pub mod h2_more2;

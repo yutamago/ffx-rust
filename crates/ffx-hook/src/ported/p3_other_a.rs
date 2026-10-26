@@ -1107,4 +1107,9 @@ ported! {
     Phyre_PScripting_releaseScriptArrays_005d4770 @ 0x005d_4770 => extern "thiscall" fn script_release(this: u32) -> u32 {
         misc3::script_release(&mut mem(), this)
     }
+    // batch 3
+    /// `PRedBlackTree::postInsertFinalize(tree, node)` -> the root's old colour bit.
+    Phyre_PRedBlackTree_postInsertFinalize @ 0x0057_4980 => extern "thiscall" fn tree_post_insert(this: u32, node: u32) -> u32 {
+        tree::post_insert_finalize(&mut mem(), this, node)
+    }
 }
