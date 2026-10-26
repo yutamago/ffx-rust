@@ -15,8 +15,9 @@ use ffx_glue_other::{
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
-    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, menu as mn,
-    misc as m, movie as mv, r3, sound as s,
+    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
+    h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
+    menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2263,5 +2264,190 @@ ported! {
     LoadingScreen_render @ 0x006e_4ea0 => extern "thiscall" fn loading_screen_render(this: u32, renderer: u32) {
         let mut frame = StackFrame::<{ (h8::LOADING_FRAME / 4) as usize }>::new();
         h8::loading_screen_render(&mut mem(), frame.at(), this, renderer);
+    }
+    // ---- continuation round 7, batch 1 (ffx_glue_other::h4_i1)
+    /// `PVideoPlaybackWin32_close(this)`: `al = 1` over the last callee's
+    /// `eax`, as the original leaves it.
+    PVideoPlaybackWin32_close @ 0x00a2_8350 => extern "thiscall" fn video_close(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (i1::CLOSE_FRAME / 4) as usize }>::new();
+        i1::video_close(&mut mem(), frame.at(), this)
+    }
+    /// `Sg_SaveVramResource()`.
+    Sg_SaveVramResource @ 0x0083_fd60 => extern "C" fn save_vram_resource() -> u32 {
+        // laid out and aligned as the original's frame (`ebp - 0x60` on 16)
+        #[repr(C, align(16))]
+        struct Work([u8; i1::SAVE_VRAM_FRAME as usize]);
+        let mut work = Work([0; i1::SAVE_VRAM_FRAME as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let r = i1::save_vram_resource(&mut mem(), w);
+        std::hint::black_box(&mut work);
+        r
+    }
+    /// `ReadDebug_loadFile_00a42ab0(path, size_out)`.
+    ReadDebug_loadFile_00a42ab0 @ 0x00a4_2ab0 => extern "C" fn read_debug_file(path: u32, size_out: u32) -> u32 {
+        i1::read_debug_file(&mut mem(), path, size_out)
+    }
+    /// `PApplication_InitWindowAndApp_00629ab0(this; a, b)`.
+    PApplication_InitWindowAndApp_00629ab0 @ 0x0062_9ab0 => extern "thiscall" fn init_window_and_app(this: u32, a: u32, b: u32) -> u32 {
+        i1::init_window_and_app(&mut mem(), this, a, b)
+    }
+    /// `createVFXRenderDataBufferLine(a, b, n, arg)`.
+    createVFXRenderDataBufferLine @ 0x0071_4b60 => extern "C" fn create_line_buffer(a: u32, b: u32, n: u32, arg: u32) -> u32 {
+        let mut frame = StackFrame::<{ (i1::LINE_FRAME / 4) as usize }>::new();
+        i1::create_line_buffer(&mut mem(), frame.at(), a, b, n, arg)
+    }
+    /// `pppMdl_copyPositions_007163e0(part, job)`.
+    pppMdl_copyPositions_007163e0 @ 0x0071_63e0 => extern "C" fn copy_positions(part: u32, job: u32) -> u32 {
+        let mut matrix = StackFrame::<16>::new();
+        i1::copy_positions(&mut mem(), matrix.at(), part, job)
+    }
+    /// `opd_config_memory(pool, size, arg)`.
+    opd_config_memory @ 0x00a3_b210 => extern "C" fn config_memory(pool: u32, size: u32, arg: u32) -> u32 {
+        i1::config_memory(&mut mem(), pool, size, arg)
+    }
+    /// `GDraw_pool_freeAll_00a3b380(pool, stats)`.
+    GDraw_pool_freeAll_00a3b380 @ 0x00a3_b380 => extern "C" fn free_all(pool: u32, stats: u32) {
+        i1::free_all(&mut mem(), pool, stats);
+    }
+    // ---- continuation round 7, batch 2 (ffx_glue_other::h4_i2)
+    /// `PhyFMVPlayerManager_fmvPlayer_play(path, b, wait)`.
+    PhyFMVPlayerManager_fmvPlayer_play @ 0x006d_8fc0 => extern "stdcall" fn fmv_play(path: u32, b: u32, wait: u32) {
+        let mut frame = StackFrame::<{ (i2::PLAY_FRAME / 4) as usize }>::new();
+        i2::fmv_play(&mut mem(), frame.at(), path, b, wait);
+    }
+    /// `PhyFMVPlayerManager_Render(this; renderer)`.
+    PhyFMVPlayerManager_Render @ 0x006d_7570 => extern "thiscall" fn fmv_render(this: u32, renderer: u32) -> u32 {
+        i2::fmv_render(&mut mem(), this, renderer)
+    }
+    /// `Sg_DrawSetEnvironment()`.
+    Sg_DrawSetEnvironment @ 0x0082_c7b0 => extern "C" fn draw_set_environment() -> u32 {
+        let mut frame = StackFrame::<{ (i2::ENV_FRAME / 4) as usize }>::new();
+        i2::draw_set_environment(&mut mem(), frame.at())
+    }
+    /// `op_gs_loadImage_007e4420(image, data)`.
+    op_gs_loadImage_007e4420 @ 0x007e_4420 => extern "C" fn load_image_split(image: u32, data: u32) {
+        i2::load_image_split(&mut mem(), image, data);
+    }
+    /// `IggyMenu_ctor_00a288f0(this; path, x, y, w, h, flags)`.
+    IggyMenu_ctor_00a288f0 @ 0x00a2_88f0 => extern "thiscall" fn iggy_menu_ctor(this: u32, path: u32, x: u32, y: u32, w: u32, h: u32, flags: u32) -> u32 {
+        i2::iggy_menu_ctor(&mut mem(), this, path, [x, y, w, h], flags)
+    }
+    /// `SemaphoreQueue_start_006dba20(this)`.
+    SemaphoreQueue_start_006dba20 @ 0x006d_ba20 => extern "thiscall" fn semaphore_queue_start(this: u32) {
+        i2::semaphore_queue_start(&mut mem(), this);
+    }
+    /// `FFEscMenu_onDialog_0068e5b0(menu, args)`.
+    FFEscMenu_onDialog_0068e5b0 @ 0x0068_e5b0 => extern "C" fn esc_dialog(menu: u32, args: u32) -> u32 {
+        let mut frame = StackFrame::<{ (i2::DIALOG_FRAME / 4) as usize }>::new();
+        i2::esc_dialog(&mut mem(), frame.at(), menu, args)
+    }
+    // ---- continuation round 7, batch 3 (ffx_glue_other::h4_i3)
+    /// `BlurEffect_ctor_006c32d0(this)`.
+    BlurEffect_ctor_006c32d0 @ 0x006c_32d0 => extern "thiscall" fn blur_effect_ctor(this: u32) -> u32 {
+        i3::blur_effect_ctor(&mut mem(), this)
+    }
+    /// `MotionBlur_renderMotionBlur(this; renderer, target)`.
+    MotionBlur_renderMotionBlur @ 0x006c_5410 => extern "thiscall" fn motion_blur_render(this: u32, renderer: u32, target: u32) -> u32 {
+        let mut frame = StackFrame::<{ (i3::MOTION_FRAME / 4) as usize }>::new();
+        i3::motion_blur_render(&mut mem(), frame.at(), this, renderer, target)
+    }
+    /// `SaveLoadMenu_open_00702a80()`.
+    SaveLoadMenu_open_00702a80 @ 0x0070_2a80 => extern "C" fn save_load_open() {
+        let mut frame = StackFrame::<{ (i3::SAVE_LOAD_FRAME / 4) as usize }>::new();
+        i3::save_load_open(&mut mem(), frame.at());
+    }
+    /// `BootText_update_006de010(this; dt)`.
+    BootText_update_006de010 @ 0x006d_e010 => extern "thiscall" fn boot_text_update(this: u32, dt: u32) {
+        i3::boot_text_update(&mut mem(), this, dt);
+    }
+    /// `gdraw_D3D11_SetResourceLimits_00a38180(kind, handles, bytes)`.
+    gdraw_D3D11_SetResourceLimits_00a38180 @ 0x00a3_8180 => extern "C" fn set_resource_limits(kind: u32, handles: u32, bytes: u32) -> u32 {
+        let mut stats = StackFrame::<{ (i3::STATS_FRAME / 4) as usize }>::new();
+        i3::set_resource_limits(&mut mem(), stats.at(), kind, handles, bytes)
+    }
+    /// `IggyGDraw_setup_00a3baf0(this; device, limits)`.
+    IggyGDraw_setup_00a3baf0 @ 0x00a3_baf0 => extern "thiscall" fn gdraw_setup(this: u32, device: u32, limits: u32) -> u32 {
+        let mut stats = StackFrame::<{ (i3::STATS_FRAME / 4) as usize }>::new();
+        i3::gdraw_setup(&mut mem(), stats.at(), this, device, limits)
+    }
+    // ---- continuation round 7, batch 4 (ffx_glue_other::h4_i4)
+    /// `Sg_DrawSetEnvironmentInit()`.
+    Sg_DrawSetEnvironmentInit @ 0x0082_c8d0 => extern "C" fn draw_set_environment_init() -> u32 {
+        let mut frame = StackFrame::<{ (i4::ENV_INIT_FRAME / 4) as usize }>::new();
+        i4::draw_set_environment_init(&mut mem(), frame.at())
+    }
+    /// `op_gs1_transfer()`.
+    op_gs1_transfer @ 0x007e_b580 => extern "C" fn gs1_transfer() -> u32 {
+        // laid out and aligned as the original's frame (`ebp - 0xc0` on 16)
+        #[repr(C, align(16))]
+        struct Work([u8; i4::GS1_FRAME as usize]);
+        let mut work = Work([0; i4::GS1_FRAME as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let r = i4::gs1_transfer(&mut mem(), w);
+        std::hint::black_box(&mut work);
+        r
+    }
+    /// `op_oef2_texture_load(texture, flush)`.
+    op_oef2_texture_load @ 0x007e_5030 => extern "C" fn oef2_texture_load(texture: u32, flush: u32) {
+        // laid out and aligned as the original's frame (`ebp - 0x60` on 16)
+        #[repr(C, align(16))]
+        struct Work([u8; i4::LOAD_FRAME as usize]);
+        let mut work = Work([0; i4::LOAD_FRAME as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        i4::oef2_texture_load(&mut mem(), w, texture, flush);
+        std::hint::black_box(&mut work);
+    }
+    /// `SaMenu_loadSbinTextures_00775ed0(sbin)`.
+    SaMenu_loadSbinTextures_00775ed0 @ 0x0077_5ed0 => extern "C" fn sa_load_sbin_textures(sbin: u32) -> u32 {
+        // laid out and aligned as the original's frame (`ebp - 0x60` on 16)
+        #[repr(C, align(16))]
+        struct Work([u8; i4::LOAD_FRAME as usize]);
+        let mut work = Work([0; i4::LOAD_FRAME as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let r = i4::sa_load_sbin_textures(&mut mem(), w, sbin);
+        std::hint::black_box(&mut work);
+        r
+    }
+    // ---- continuation round 7, batch 5 (ffx_glue_other::h4_i5)
+    /// `pppMdl_projectPositions_007161f0(part, job)`.
+    pppMdl_projectPositions_007161f0 @ 0x0071_61f0 => extern "C" fn project_positions(part: u32, job: u32) -> u32 {
+        let mut frame = StackFrame::<{ (i5::PROJECT_FRAME / 4) as usize }>::new();
+        i5::project_positions(&mut mem(), frame.at(), part, job)
+    }
+    /// `gdraw_getDepthStencilState_00a3d020(depth, write, read_mask, write_mask)`.
+    gdraw_getDepthStencilState_00a3d020 @ 0x00a3_d020 => extern "C" fn depth_stencil_state(depth: u32, write: u32, read_mask: u32, write_mask: u32) -> u32 {
+        let mut desc = StackFrame::<{ (i5::DEPTH_FRAME / 4) as usize }>::new();
+        i5::depth_stencil_state(&mut mem(), desc.at(), depth, write, read_mask, write_mask)
+    }
+    /// `Distortion_setupDistortionGrid(this)`.
+    Distortion_setupDistortionGrid @ 0x006c_2ff0 => extern "thiscall" fn setup_distortion_grid(this: u32) {
+        i5::setup_distortion_grid(&mut mem(), this);
+    }
+    /// `gdraw_createDepthBuffer_00a3b840(stats)`.
+    gdraw_createDepthBuffer_00a3b840 @ 0x00a3_b840 => extern "C" fn depth_buffer(stats: u32) -> u32 {
+        let mut desc = StackFrame::<{ (i5::TEXTURE_FRAME / 4) as usize }>::new();
+        i5::depth_buffer(&mut mem(), desc.at(), stats)
+    }
+    // ---- continuation round 7, batch 6 (ffx_glue_other::h4_i6)
+    /// `BrokenScreenEffect_captureFrame(this)`.
+    BrokenScreenEffect_captureFrame @ 0x006d_4e20 => extern "thiscall" fn capture_frame(this: u32) {
+        let mut frame = StackFrame::<{ (i6::CAPTURE_FRAME / 4) as usize }>::new();
+        i6::capture_frame(&mut mem(), frame.at(), this);
+    }
+    /// `PhyFMVPlayerManager_UpdateTexture(this)`.
+    PhyFMVPlayerManager_UpdateTexture @ 0x006d_7680 => extern "thiscall" fn fmv_update_texture(this: u32) -> u32 {
+        i6::fmv_update_texture(&mut mem(), this)
+    }
+    // ---- continuation round 7, batch 7 (ffx_glue_other::h4_i7)
+    /// `ClusterManager_createPreallocateDataList(name)`.
+    ClusterManager_createPreallocateDataList @ 0x0063_d260 => extern "C" fn create_preallocate_data_list(name: u32) -> u32 {
+        let mut frame = StackFrame::<{ (i7::PREALLOCATE_FRAME / 4) as usize }>::new();
+        i7::create_preallocate_data_list(&mut mem(), frame.at(), name)
+    }
+    // ---- continuation round 7, batch 8 (ffx_glue_other::h4_i8)
+    /// `Distortion_renderDistortion(this)`.
+    Distortion_renderDistortion @ 0x006c_2dc0 => extern "thiscall" fn render_distortion(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (i8::DISTORTION_FRAME / 4) as usize }>::new();
+        i8::render_distortion(&mut mem(), frame.at(), this)
     }
 }

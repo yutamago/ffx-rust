@@ -77,7 +77,27 @@
 //!   three UI records and `movie_disp2`;
 //! - [`h4_g2`]: its second batch: the distortion grid's positions and
 //!   UVs, the extended blur's, `TextUtil`'s and the tweak tool's
-//!   constructors, an Iggy menu's viewport, a `GDraw` rectangle's UVs.
+//!   constructors, an Iggy menu's viewport, a `GDraw` rectangle's UVs;
+//! - [`h4_i1`]: continuation round 7, batch 1: the Win32 video playback's
+//!   close, the VRAM resource save, the debug file read, the window setup,
+//!   the VFX line buffer, a particle model's vertex copy, `GDraw`'s pool
+//!   handle and free-all;
+//! - [`h4_i2`]: its second batch: the movie player's play and render, the
+//!   draw environment, the split image load, `IggyMenu`'s constructor, the
+//!   semaphore queue's start, an escape-menu dialog callback;
+//! - [`h4_i3`]: its third batch: the blur effect's constructor, the motion
+//!   blur's render, the save/load menu's open, the boot text's update,
+//!   `GDraw`'s resource limits and setup;
+//! - [`h4_i4`]: its fourth batch: the PS2 GS layer's frame start, packet
+//!   transfer and texture loads;
+//! - [`h4_i5`]: its fifth batch: a particle model's projected positions,
+//!   `GDraw`'s depth-stencil state cache and depth buffer, the distortion
+//!   grid's setup;
+//! - [`h4_i6`]: its sixth batch: the broken screen effect's frame capture
+//!   and the movie player's texture update;
+//! - [`h4_i7`]: its seventh batch: the cluster manager's preallocated data
+//!   list;
+//! - [`h4_i8`]: its eighth batch: the distortion effect's render.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -129,6 +149,14 @@ pub mod h4_h5;
 pub mod h4_h6;
 pub mod h4_h7;
 pub mod h4_h8;
+pub mod h4_i1;
+pub mod h4_i2;
+pub mod h4_i3;
+pub mod h4_i4;
+pub mod h4_i5;
+pub mod h4_i6;
+pub mod h4_i7;
+pub mod h4_i8;
 pub mod menu;
 pub mod misc;
 pub mod movie;
