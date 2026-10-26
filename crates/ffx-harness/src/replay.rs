@@ -8,7 +8,7 @@
 //! | Line | Does |
 //! |---|---|
 //! | `load N [script]` | boots and loads save entry `N` of the title's list (`screens::load_save`) |
-//! | `load direct SAVE [script]` | boots into save slot `SAVE` (`ffx_<SAVE>`) or a Windows path, without the title menu (`screens::load_save_direct`) |
+//! | `load direct SAVE [script] [lockstep]` | boots into save slot `SAVE` (`ffx_<SAVE>`) or a Windows path, without the title menu (`screens::load_save_direct`); with `lockstep`, lockstep from the load's boundary on (`screens::load_save_direct_lockstep`) |
 //! | `battle FIELD GROUP FORMATION` | starts a battle (`screens::start_battle`) |
 //! | `trace RANGE...` | starts tracing these ranges (`addr:len`, `*addr+off:len`; see the `trace` harness command) |
 //! | `realtime` | read before launch ([`realtime`]): the game runs at its own frame rate, not in fast mode; skipped here |
@@ -48,7 +48,16 @@ pub fn play(game: &mut Game, script: &str, trace: &str) -> Result<Vec<String>> {
                 // different save).
                 let (opened, want) = if words.get(1) == Some(&"direct") {
                     let save = words.get(2).copied().unwrap_or("1");
-                    (screens::load_save_direct(game, save)?, words.get(3))
+                    // `load direct SAVE [script] lockstep`: lockstep from
+                    // the load on (screens::load_save_direct_lockstep)
+                    let lockstep = words.len() > 3 && words.last() == Some(&"lockstep");
+                    let want = words.get(3).filter(|w| **w != "lockstep");
+                    let opened = if lockstep {
+                        screens::load_save_direct_lockstep(game, save)?
+                    } else {
+                        screens::load_save_direct(game, save)?
+                    };
+                    (opened, want)
                 } else {
                     (
                         screens::load_save(

@@ -29,7 +29,7 @@
 # Screenshots (event-besaid-<n>.bmp): 1 the beach (count 101), 2 the
 # subtitle and Wakka waving (map 0x14, count 94), 3 map 0x29 (count 32),
 # 4 and 5 Tidus at the river with Wakka across it (counts 192 and 232).
-load direct 3 bsil0000
+load direct 3 bsil0000 lockstep
 lockstep on
 # what the frames before lockstep leave behind (docs/harness.md, "Pinned
 # state"): without it two original runs' FMOD captures differed (the

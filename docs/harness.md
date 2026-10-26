@@ -648,8 +648,9 @@ answers what it pinned. The game's own generators need nothing: loading
 a save seeds them. A replay that needs it says `pin` right after
 `lockstep on`. battle-magic, battle-attack, menu-save and menu-shop do,
 and event-besaid since audio-check (2026-10-26; its FMOD capture differed
-between unpinned original runs, "Audio capture" below). The other replays'
-recordings predate it.
+between unpinned original runs, "Audio capture" below). Since replay-flakes
+(2026-10-26) every lockstep replay of the main list does ("Lockstep from
+the load").
 
 Measured on battle-magic: without `pin`, original runs as well as Rust
 runs landed in four or five pictures for shot 1 and in three for shots 2
@@ -689,6 +690,49 @@ after the command; before, the hold could also fall on the boundary it was
 already in, which changed battle-attack's audio in two of 42 runs: "Audio
 capture" below. `lockstep on` now answers the frame it holds at, where it
 answered the frame before.)
+
+### Lockstep from the load
+
+The late hold above was the menu swirl flake (2026-10-26, replay-flakes).
+menu-grid-7 and -8 differed by 1,098 and 1,564 pixels in one Rust run of
+18 kept, only in the animated lightning texture behind the name banner
+(Valefor's status and abilities, x 187..438, y 151..192); menu-shop-1..7
+once the same way. That run's `lockstep on` held 56 updates before the
+first `waitfor` (count 64), where every other run held 65: the reply to
+`load direct` had come back 9 updates later, at 461 updates a second in
+fast mode, while three other games ran. The `pin` after it then fell 9
+updates later in the map's start-up, so the menu opened at another game
+time and the banner's animation, which follows it, was at another phase.
+The text, the traces and everything else matched.
+
+So the main list's replays now say `load direct SAVE SCRIPT lockstep`
+(`screens::load_save_direct_lockstep`): the harness's `loadsave <save>
+lockstep` makes the load and holds the main thread in lockstep at that
+same boundary (the job sets `ALLOWED` to the boundary it runs at), and
+the replay steps one frame at a time until the save's event script opens.
+The whole map load then runs in lockstep, and the script's `lockstep on`
+(still there, a no-op now) and `pin` come at the same update of the load
+in every run. The frames before it (boot, title, the taps of Start) still
+run free, and `pin` takes care of what they leave. The draw and extra
+replays (`draw-*`, `settings-*`, `iggy-menus`, `battle-ifrit`) still use
+the old form: their references (draw captures, the extra recordings) would
+have to be taken again.
+
+Measured: menu-grid, three original runs side by side, gave identical
+traces frame for frame (aligned at their first line) and identical shots,
+lockstep 65 updates before the first `waitfor` in each.
+
+The other two lockstep flakes under load were `Sg_FrameSync`'s double tick
+("Pinned state"), in replays without `pin`. event-agency's ctrl work 0
+range (`0x01325ba0`) went from the reward state straight to the control in
+one Rust run (40 events, against 41), skipping the one-update state the
+originals show after "Obtained Venus Sigil!": the double tick, at about
+update 1,000 since start-up, fell on that update in a run whose lockstep
+had started at 308 (others 263 to 422). The player position's skipped value
+(`--sampled 2`) is the same thing. battle-overdrive (8 of 14 ranges once)
+runs past updates 1,000 and 2,000 with its monsters' choices following the
+frames between events. event-agency, battle-overdrive and field-walk say
+`pin` now too.
 
 `tools/replays/event-besaid.txt` and `event-cliff.txt` (2026-10-24) play
 scripted events from save slot 3 (`ffx_003`). The harness's five save

@@ -3,8 +3,12 @@
 # the 68 generators at 0x01135ee0, the party records (0x0113205c, 18 x
 # 0x94), the pad word (0x00ccb170). Screenshots before and after the
 # walk (field-walk-<n>.bmp; models must be drawn).
-load direct 1 cdsp0000
+load direct 1 cdsp0000 lockstep
 lockstep on
+# what the frames before lockstep leave behind (Sg_FrameSync's carries:
+# about one update in a thousand runs two logic ticks; docs/harness.md,
+# "Pinned state")
+pin
 # The map fades in over about a second after the direct load. The shot is
 # pinned to the event's clock, not to a frame count: the asset loader takes
 # a varying number of frames, and the map's animations (the searchlight
