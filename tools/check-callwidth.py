@@ -17,7 +17,7 @@ Limits (what each in-game host passes):
   ffx_bridge::Host::call(f, args)                  6  (refused: 0)
   NativeHost::call_float(f, args)                  6  (refused: NaN)
   NativeHost::call_n(f, args)                     12  (refused: 0)
-  ffx_graphic Host::call/call_sym(f, conv, args)  12 for Conv::Cdecl and
+  ffx_graphic Host::call/call_sym(f, conv, args)  12 for Conv::Cdecl, 16 for
                                                    Conv::Thiscall; 8 else
   ffx_graphic Host::call_st0/call_sym_st0          8
   ffx_graphic Host::call_st0_f64/call_sym_st0_f64  8
@@ -701,7 +701,7 @@ def call_sites(f, name, method):
 def graphic_limit(conv):
     c = conv.replace(' ', '')
     if re.search(r'Conv::Thiscall', c):
-        return 12, 'thiscall'
+        return 16, 'thiscall'
     if re.search(r'Conv::Cdecl$', c):
         return 12, 'cdecl'
     if re.search(r'Conv::(Stdcall|Fastcall)$', c):
