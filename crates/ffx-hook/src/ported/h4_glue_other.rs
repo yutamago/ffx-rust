@@ -15,7 +15,7 @@ use ffx_glue_other::{
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
-    h4_h3 as h3, h4_h4 as h4, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2208,5 +2208,21 @@ ported! {
     RadialLine_initialize @ 0x006f_7c10 => extern "thiscall" fn radial_line_init(this: u32, cluster: u32, a: u32, scene: u32, w: u32, h: u32, target: u32) -> u32 {
         let mut frame = StackFrame::<{ (h4::PASS_FRAME / 4) as usize }>::new();
         h4::radial_line_init(&mut mem(), frame.at(), this, [cluster, a, scene, w, h, target])
+    }
+    // ---- continuation round 6, batch 5 (ffx_glue_other::h4_h5)
+    /// `MotionBlur_setupShaders_006c5150(this; base, target)`.
+    MotionBlur_setupShaders_006c5150 @ 0x006c_5150 => extern "thiscall" fn motion_blur_setup(this: u32, base: u32, target: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h5::MOTION_FRAME / 4) as usize }>::new();
+        h5::motion_blur_setup(&mut mem(), frame.at(), this, base, target)
+    }
+    /// `PhyFMVPlayerManager_doOnShaderBinFilesLoaded(this)`.
+    PhyFMVPlayerManager_doOnShaderBinFilesLoaded @ 0x006d_86e0 => extern "thiscall" fn fmv_on_shaders(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h5::FMV_FRAME / 4) as usize }>::new();
+        h5::fmv_on_shaders(&mut mem(), frame.at(), this)
+    }
+    /// `BrokenScreenEffect_initialize(this; a, b, c, d, e, w, h)`.
+    BrokenScreenEffect_initialize @ 0x006d_51d0 => extern "thiscall" fn broken_screen_initialize(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32, w: u32, h: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h5::BROKEN_FRAME / 4) as usize }>::new();
+        h5::broken_screen_initialize(&mut mem(), frame.at(), this, [a, b, c, d, e, w, h])
     }
 }

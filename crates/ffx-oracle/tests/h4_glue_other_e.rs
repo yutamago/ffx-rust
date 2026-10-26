@@ -28,7 +28,7 @@ use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
-    h4_h3 as h3, h4_h4 as h4,
+    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -6079,6 +6079,213 @@ fn h4_radial_init() {
                 frame,
                 &[(0, 0x20)],
                 |g| u(h4::radial_line_init(g, frame, this, b)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 6, batch 5 (ffx_glue_other::h4_h5)
+
+/// The motion blur's shader setup.
+#[test]
+fn h5_motion_blur_setup() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a501);
+        let cells = h4_stubs(&mut t);
+        t.stub(h4::GET_APPLICATION, 0, false);
+        t.stub(h4::FIXUP_CLUSTERS, 2, false);
+        t.stub_at(h4::SET_TEXTURE, true, 2, 2, &[]);
+        t.stub_at(h5::SET_VALUE2, true, 2, 2, &[]);
+        t.stub_at(h5::SET_VALUE, true, 2, 2, &[]);
+        t.stub_at(h2::SET_WORD, true, 2, 2, &[]);
+        // the parameter lookups alternate between two results
+        let next_p = h4_swap_stub(&mut t, h4::FIND_PARAMETER, 1, 1);
+        let mut tags = H4_TAGS[..8].to_vec();
+        tags.extend([
+            h4::GET_APPLICATION,
+            h4::FIXUP_CLUSTERS,
+            h4::SET_TEXTURE,
+            h5::SET_VALUE2,
+            h5::SET_VALUE,
+            h2::SET_WORD,
+        ]);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            h4_seek_results(&mut t, &mut rng, cells);
+            let material = random_block(&mut t, &mut rng, 8);
+            t.ret(h2::CREATE_MATERIAL, material);
+            let p = rng.pick(&[0, 0x77, 0x77]);
+            t.ret(h4::FIND_PARAMETER, p);
+            let p = rng.pick(&[0, 0x88, 0x88]);
+            t.w32(next_p, p);
+            let mesh = random_block(&mut t, &mut rng, 0x20);
+            t.ret(h4::FULLSCREEN_MESH, mesh);
+            let list = h4_list(&mut t, &mut rng);
+            let list = rng.pick(&[0, list, list, list]);
+            t.ret(h2::CLUSTER_CREATE, list);
+            let this = random_block(&mut t, &mut rng, 0x90);
+            let cluster = h4_cluster(&mut t, &mut rng);
+            t.w32(this + 0x50, cluster);
+            let (a, b) = (rng.next(), rng.next());
+            let frame = t.ebp_for(2) - 0x20;
+            t.check_framed_conv(
+                &format!("{w} motion"),
+                0x006c_5150,
+                Conv::Thiscall(this),
+                &[a, b],
+                frame,
+                &[(0, 0x20)],
+                |g| u(h5::motion_blur_setup(g, frame, this, a, b)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The movie player's shader setup.
+#[test]
+fn h5_fmv_on_shaders() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a502);
+        let cells = [t.zeros(4), t.zeros(4), t.zeros(4)];
+        h3_fill_stub(
+            &mut t,
+            h5::CURSOR_SEEK4,
+            0,
+            0,
+            &[(cells[0], 0), (cells[1], 0xc), (cells[2], 0x10)],
+        );
+        t.stub(h4::GET_APPLICATION, 0, false);
+        t.stub(h4::FIXUP_CLUSTERS, 2, false);
+        t.stub_at(h5::BIND_PLANE, true, 2, 2, &[]);
+        t.stub_at(h5::SET_VALUE2, true, 2, 2, &[]);
+        t.stub_at(h2::CLUSTER_CREATE, true, 3, 3, &[]);
+        t.stub(h2::PHYRE_FREE, 1, false);
+        t.stub_at(h2::SET_WORD, true, 2, 2, &[]);
+        t.stub(h4::FULLSCREEN_MESH, 1, false);
+        let tags = [
+            h5::CURSOR_SEEK4,
+            h4::GET_APPLICATION,
+            h4::FIXUP_CLUSTERS,
+            h4::FIND_PARAMETER,
+            h5::BIND_PLANE,
+            h5::SET_VALUE2,
+            h2::CLUSTER_CREATE,
+            h2::PHYRE_FREE,
+            h2::SET_WORD,
+            h4::FULLSCREEN_MESH,
+        ];
+        // the find stub's result alternates between its two cells
+        let next = h4_swap_stub(&mut t, h4::FIND_PARAMETER, 1, 1);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let r = rng.pick(&[0, 0, 0, 0, 0, 3]);
+            t.ret(h4::FIXUP_CLUSTERS, r);
+            // the material: base + offset, a block with its params and buffer
+            let material = random_block(&mut t, &mut rng, 8);
+            let base = rng.next();
+            t.w32(cells[0], base);
+            t.w32(cells[2], material.wrapping_sub(base));
+            let hit = rng.pick(&[0, 1, 1, 1]);
+            t.w32(cells[1], hit);
+            let p0 = rng.pick(&[0, 0x55, 0x55]);
+            let p1 = rng.pick(&[0, 0x66, 0x66]);
+            t.ret(h4::FIND_PARAMETER, p0);
+            t.w32(next, p1);
+            let r = rng.pick(&[0, 0, 0, 0, 0, 2]);
+            t.ret(h5::BIND_PLANE, r);
+            let r = rng.pick(&[0, 0, 0, 0, 0, 4]);
+            t.ret(h2::SET_WORD, r);
+            let mesh = random_block(&mut t, &mut rng, 0x20);
+            t.ret(h4::FULLSCREEN_MESH, mesh);
+            let list = h4_list(&mut t, &mut rng);
+            let list = rng.pick(&[0, list, list, list]);
+            t.ret(h2::CLUSTER_CREATE, list);
+            let this = random_block(&mut t, &mut rng, 0x700);
+            let cluster = h4_cluster(&mut t, &mut rng);
+            t.w32(this + 0x360, cluster);
+            let frame = t.ebp_for(0) - 0x28;
+            t.check_framed_conv(
+                &format!("{w} fmv"),
+                0x006d_86e0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 0x28)],
+                |g| u(h5::fmv_on_shaders(g, frame, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The broken-screen effect's setup (the render target a stub).
+#[test]
+fn h5_broken_screen_initialize() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a503);
+        let cells = h4_stubs(&mut t);
+        // the list create alternates: the first list, then the second
+        let next = h4_swap_stub(&mut t, h2::CLUSTER_CREATE, 3, 3);
+        // and so does the material create
+        let next_m = h4_swap_stub(&mut t, h2::CREATE_MATERIAL, 3, 3);
+        t.stub(h2::FIOS_UNIFY, 3, false);
+        t.stub(h5::LOAD_ASSET_FILE, 3, false);
+        t.stub(h4::GET_APPLICATION, 0, false);
+        t.stub(h4::FIXUP_CLUSTERS, 2, false);
+        t.stub_at(h4::SET_TEXTURE, true, 2, 2, &[]);
+        t.stub_at(h2::SET_WORD, true, 2, 2, &[]);
+        t.stub_at(h5::BROKEN_CREATE_RT, true, 0, 0, &[]);
+        let mut tags = H4_TAGS[..8].to_vec();
+        tags.extend([
+            h2::FIOS_UNIFY,
+            h5::LOAD_ASSET_FILE,
+            h4::GET_APPLICATION,
+            h4::FIXUP_CLUSTERS,
+            h4::SET_TEXTURE,
+            h2::SET_WORD,
+            h5::BROKEN_CREATE_RT,
+        ]);
+        let shader = random_block(&mut t, &mut rng, 0x10);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(h5::BROKEN_SCREEN_SHADER.sym, shader);
+            h4_seek_results(&mut t, &mut rng, cells);
+            let r = rng.pick(&[0, 0, 0, 0, 0, 1]);
+            t.ret(h5::LOAD_ASSET_FILE, r);
+            let material = random_block(&mut t, &mut rng, 8);
+            let material = rng.pick(&[0, material, material, material, material]);
+            t.w32(next_m, material);
+            let second = random_block(&mut t, &mut rng, 8);
+            t.ret(h2::CREATE_MATERIAL, second);
+            let p = rng.pick(&[0, 0x77, 0x77]);
+            t.ret(h4::FIND_PARAMETER, p);
+            let mesh = random_block(&mut t, &mut rng, 0x20);
+            let mesh = rng.pick(&[0, mesh, mesh, mesh, mesh, mesh]);
+            t.ret(h4::FULLSCREEN_MESH, mesh);
+            // first create: `next`; second: the cell
+            let first = h4_list(&mut t, &mut rng);
+            let first = rng.pick(&[0, first, first, first, first]);
+            t.w32(next, first);
+            let second = h4_list(&mut t, &mut rng);
+            t.ret(h2::CLUSTER_CREATE, second);
+            let this = random_block(&mut t, &mut rng, 0x78);
+            let cluster = h4_cluster(&mut t, &mut rng);
+            t.w32(this + 0x3c, cluster);
+            let a: [u32; 7] = std::array::from_fn(|_| rng.next());
+            let frame = t.ebp_for(7) - 0x12c;
+            t.check_framed_conv(
+                &format!("{w} broken"),
+                0x006d_51d0,
+                Conv::Thiscall(this),
+                &a,
+                frame,
+                &[(0, 0x28)],
+                |g| u(h5::broken_screen_initialize(g, frame, this, a)),
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
