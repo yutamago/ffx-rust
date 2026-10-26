@@ -639,7 +639,8 @@ one frame), the emulated vsyncs from the new time, both carries 0,
 `g_Vu0_R` `0x3fb5a5c3` (seeded), the main thread's CRT seed 1. It
 answers what it pinned. The game's own generators need nothing: loading
 a save seeds them. A replay that needs it says `pin` right after
-`lockstep on` (battle-magic does; the others' recordings predate it).
+`lockstep on`. battle-magic, battle-attack, menu-save and menu-shop do.
+The other replays' recordings predate it.
 
 Measured on battle-magic: without `pin`, original runs as well as Rust
 runs landed in four or five pictures for shot 1 and in three for shots 2
@@ -647,6 +648,33 @@ and 3 (Rust always in other ones than the 2026-10-26 references, whose
 two recordings had happened to start lockstep 6 updates apart); with
 `pin`, three original and three Rust runs gave the same three pictures to
 the pixel, whatever the update lockstep started at (269 to 370).
+
+The same pre-lockstep state moved the small differences in battle-attack,
+menu-save and menu-shop (pixel-regress, 2026-10-26). They had been blamed
+on the p1 and p6 ports and on h3's `PhyreScene_setupSamplers`:
+- the cursor glow's left edge, a 1-2 px column: battle-attack-1 x 73..74,
+  y 549..561, menu-save-6 x 545..546, y 251..261, and menu-shop-2/-6/-7.
+  It passed as a streak.
+- battle-attack-1's idle pose (fish, Tidus, Rikku): 100 to 960 px on
+  model edges, which failed the compare.
+Unpinned, six original-code runs on main c28c3607 gave all of them: the
+glow in 5 of 6 runs, a 165 px pose difference in 1. 25 Rust runs gave
+them at about the same rates, with or without other games in the slots.
+No port caused them. With `pin` in those three replays, three original and
+three Rust runs gave every shot of the three replays the same to the
+pixel, except battle-attack-2 (x 141..472, y 185..287) and menu-save-4
+(the title, which loads in real time). Those two differ between original
+runs either way. The three replays' references need re-recording with
+`pin`, from main at merge: `tools/replays/run-all.sh --record
+battle-attack menu-save menu-shop`.
+
+`pin` cannot fix one more source of drift. `lockstep on` can take hold a
+few updates late after `load direct`, with the map already running. Every
+run so far had the same gap from `lockstep on` to the first `waitfor`
+(battle-attack 88 updates, menu-save and menu-shop 66), except one
+recording, made with three games starting at once: 87, 54 and 59. Its
+shots differed everywhere. Check those gaps in the replay output (`.out`)
+before trusting a recording.
 
 `tools/replays/event-besaid.txt` and `event-cliff.txt` (2026-10-24) play
 scripted events from save slot 3 (`ffx_003`). The harness's five save
@@ -1087,6 +1115,15 @@ on screenshots that follow the wall clock: the field's searchlight block
 at y 120 (38 levels, as a serial run in the game folder once measured) and
 5 pixels of the menu cursor. Games side by side run slower in real time,
 so wall-clock animations drift a little further.
+
+The cursor glow and battle-attack-1's idle pose in the lockstep replays
+came from the frames before `lockstep on`, not from the wall clock
+("Pinned state"). boot runs in real time, so `pin` doesn't apply there.
+boot-3 (the opening) had 39 px, single pixels on model edges, in 1 of 25
+Rust runs. The two original runs differ there by 35,000 px. Rerun such a
+boot-3 failure rather than bisect it. Measured with
+`~/ffx-work/pixel-regress/measure.sh` (`ORIGINAL=1` for the original
+code).
 
 ## Tests
 
