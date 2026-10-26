@@ -904,3 +904,436 @@ pub mod app {
         app
     }
 }
+
+/// `PWindowWin32Base::createWindow`'s imports (stdcall through their
+/// slots), its window procedure, class name, the globals it sets and
+/// reads, the device-interface class GUID and the warning print.
+pub const GET_MODULE_HANDLE: u32 = 0x00b0_c114;
+pub const LOAD_ICON: u32 = 0x00b0_c65c;
+pub const LOAD_CURSOR: u32 = 0x00b0_c660;
+pub const REGISTER_CLASS: u32 = 0x00b0_c6b8;
+pub const CHANGE_DISPLAY_SETTINGS: u32 = 0x00b0_c658;
+pub const ADJUST_WINDOW_RECT: u32 = 0x00b0_c6cc;
+pub const CREATE_WINDOW_EX: u32 = 0x00b0_c6ec;
+pub const SET_WINDOW_LONG: u32 = 0x00b0_c6bc;
+pub const REGISTER_DEVICE_NOTIFICATION: u32 = 0x00b0_c6a8;
+pub const WND_PROC: u32 = 0x0062_5130;
+pub const CLASS_NAME: u32 = 0x00b4_0d3c;
+pub const G_ICON: u32 = 0x00cc_9cec;
+pub const G_HOSTED: u32 = 0x00cc_9cd2;
+pub const G_HOST_HWND: u32 = 0x00cc_9ce0;
+pub const G_BORDERLESS: u32 = 0x00cc_9cd1;
+pub const DEVICE_GUID: u32 = 0x00b6_950c;
+pub const IME_DISASSOCIATE: u32 = 0x009d_a254;
+pub const NOTIFY_FAILED: u32 = 0x00b4_0d50;
+pub const WARN: u32 = 0x0043_52f0;
+
+pub mod window {
+    use super::{
+        ADJUST_WINDOW_RECT, CHANGE_DISPLAY_SETTINGS, CLASS_NAME, CREATE_WINDOW_EX, Conv,
+        DEVICE_GUID, G_APPLICATION, G_BORDERLESS, G_HOST_HWND, G_HOSTED, G_ICON, GET_CLIENT_RECT,
+        GET_MODULE_HANDLE, HWND, Host, IME_DISASSOCIATE, LOAD_CURSOR, LOAD_ICON, MEMCPY, MEMSET,
+        NOTIFY_FAILED, REGISTER_CLASS, REGISTER_DEVICE_NOTIFICATION, SET_WINDOW_LONG, WARN,
+        WND_PROC,
+    };
+
+    fn import(h: &mut impl Host, slot: u32, args: &[u32]) -> u32 {
+        let f: u32 = h.read(h.rebase(slot));
+        h.call(f, Conv::Stdcall, args)
+    }
+
+    /// The original's frame from `ebp - 0x110` (`FRAME` bytes).
+    pub const FRAME: u32 = 0x110;
+
+    fn strlen(h: &impl Host, p: u32) -> u32 {
+        let mut n = 0u32;
+        while h.read::<u8>(p.wrapping_add(n)) != 0 {
+            n = n.wrapping_add(1);
+        }
+        n
+    }
+
+    /// `PWindowWin32Base::createWindow(window; suffix)` (thiscall, `ret
+    /// 4`) -> 0: the class `"PhyreFrameworkClass"` registered (the
+    /// application's icon `+0x39c` into `0x00cc9cec`, the arrow cursor,
+    /// background brush 6), fullscreen (byte `+0x2c` of the settings at
+    /// `[window]`) switches the display mode (32 bits, `CDS_FULLSCREEN`);
+    /// the style is `WS_POPUP` when hosted (`0x00cc9cd2` with a client
+    /// rectangle), borderless (`0x00cc9cd1`) or fullscreen, else
+    /// `WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX` sized by
+    /// `AdjustWindowRect`; the title (the application's `+0x398`, plus
+    /// `suffix`, concatenated in `alloca(len)`'s buffer); the window is
+    /// the settings' `+0x28` when set, else created (`CreateWindowExA`,
+    /// 12 words: called as a thiscall with an unused `ecx`, which pops
+    /// the same) and the IME detached; `GWL_USERDATA` the window object;
+    /// device-interface notifications registered (a warning when that
+    /// fails). `frame` is the original's `ebp - 0x110`.
+    #[allow(clippy::too_many_lines)]
+    pub fn create(
+        h: &mut impl Host,
+        window: u32,
+        frame: u32,
+        suffix: u32,
+        alloca: &mut impl FnMut(u32) -> u32,
+    ) -> u32 {
+        let l = |off: i32| frame.wrapping_add((0x110 + off) as u32);
+        h.write(l(-0xdc), suffix);
+        let app: u32 = h.read(h.rebase(G_APPLICATION));
+        let icon: u32 = h.read(app.wrapping_add(0x39c));
+        h.write(l(-0xe8), window);
+        h.write(l(-0x110), 0u32);
+        let proc_ = h.rebase(WND_PROC);
+        h.write(l(-0x10c), proc_);
+        h.write(l(-0x108), 0u32);
+        h.write(l(-0x104), 0u32);
+        let module = import(h, GET_MODULE_HANDLE, &[0]);
+        h.write(l(-0x100), module);
+        let hicon = import(h, LOAD_ICON, &[module, icon & 0xffff]);
+        let g_icon = h.rebase(G_ICON);
+        h.write(g_icon, hicon);
+        h.write(l(-0xfc), hicon);
+        let cursor = import(h, LOAD_CURSOR, &[0, 0x7f00]);
+        h.write(l(-0xf8), cursor);
+        h.write(l(-0xf4), 6u32);
+        h.write(l(-0xf0), 0u32);
+        let class = h.rebase(CLASS_NAME);
+        h.write(l(-0xec), class);
+        import(h, REGISTER_CLASS, &[l(-0x110)]);
+        let settings: u32 = h.read(window);
+        let fullscreen = h.read::<u8>(settings.wrapping_add(0x2c)) != 0;
+        let w: u32 = h.read(settings);
+        let ht: u32 = h.read(settings.wrapping_add(4));
+        h.write(l(-0xd8), w);
+        h.write(l(-0xe0), ht);
+        if fullscreen {
+            h.call_sym(MEMSET, Conv::Cdecl, &[l(-0xd0), 0, 0x9c]);
+            h.write(l(-0xac), 0x9cu16);
+            h.write(l(-0x64), w);
+            h.write(l(-0x60), ht);
+            h.write(l(-0x68), 0x20u32);
+            h.write(l(-0xa8), 0x001c_0000u32);
+            import(h, CHANGE_DISPLAY_SETTINGS, &[l(-0xd0), 4]);
+        }
+        let hosted = h.rebase(G_HOSTED);
+        let mut adjust = true;
+        let mut style = 0;
+        if h.read::<u8>(hosted) != 0 {
+            let host: u32 = h.read(h.rebase(G_HOST_HWND));
+            if import(h, GET_CLIENT_RECT, &[host, l(-0x14)]) == 0 {
+                h.write(hosted, 0u8);
+            } else if h.read::<u8>(hosted) != 0 {
+                style = 0x8000_0000;
+                h.write(l(-0xd4), style);
+                adjust = false;
+            }
+        }
+        if adjust {
+            style = if h.read::<u8>(h.rebase(G_BORDERLESS)) != 0 || fullscreen {
+                0x8000_0000
+            } else {
+                0x00ca_0000
+            };
+            h.write(l(-0xd4), style);
+            h.write(l(-0x14), 0u32);
+            h.write(l(-0x10), 0u32);
+            h.write(l(-0xc), w);
+            h.write(l(-8), ht);
+            import(h, ADJUST_WINDOW_RECT, &[l(-0x14), style, 0]);
+            let w = h.read::<u32>(l(-0xc)).wrapping_sub(h.read(l(-0x14)));
+            let ht = h.read::<u32>(l(-8)).wrapping_sub(h.read(l(-0x10)));
+            h.write(l(-0xd8), w);
+            h.write(l(-0xe0), ht);
+        }
+        let app: u32 = h.read(h.rebase(G_APPLICATION));
+        let raw: u32 = h.read(app.wrapping_add(0x398));
+        let mut title = raw.wrapping_sub(raw & 1);
+        h.write(l(-0xe4), title);
+        if title != 0 && suffix != 0 {
+            let a = strlen(h, title);
+            let b = strlen(h, suffix);
+            let buf = alloca(a.wrapping_add(1).wrapping_add(b));
+            h.call_sym(MEMCPY, Conv::Cdecl, &[buf, title, a]);
+            h.call_sym(
+                MEMCPY,
+                Conv::Cdecl,
+                &[buf.wrapping_add(a), suffix, b.wrapping_add(1)],
+            );
+            title = buf;
+        }
+        let g_hwnd = h.rebase(HWND);
+        let given: u32 = h.read(settings_of(h, window).wrapping_add(0x28));
+        let hwnd = if given != 0 {
+            h.write(g_hwnd, given);
+            given
+        } else {
+            let module = import(h, GET_MODULE_HANDLE, &[0]);
+            let w: u32 = h.read(l(-0xd8));
+            let ht: u32 = h.read(l(-0xe0));
+            let f: u32 = h.read(h.rebase(CREATE_WINDOW_EX));
+            let hwnd = h.call(
+                f,
+                Conv::Thiscall(0),
+                &[
+                    0,
+                    class,
+                    title,
+                    style | 0x0600_0000,
+                    0x8000_0000,
+                    0x8000_0000,
+                    w,
+                    ht,
+                    0,
+                    0,
+                    module,
+                    window,
+                ],
+            );
+            h.write(g_hwnd, hwnd);
+            if hwnd != 0 {
+                h.call_sym(IME_DISASSOCIATE, Conv::Cdecl, &[hwnd, 0]);
+            }
+            h.read(g_hwnd)
+        };
+        import(h, SET_WINDOW_LONG, &[hwnd, 0xffff_ffeb, window]);
+        for off in [-0x34, -0x30, -0x28, -0x24, -0x20, -0x1c, -0x2c, -0x18] {
+            h.write(l(off), 0u32);
+        }
+        let guid = h.rebase(DEVICE_GUID);
+        for k in 0..4u32 {
+            let v: u32 = h.read(guid + 4 * k);
+            h.write(l(-0x28) + 4 * k, v);
+        }
+        h.write(l(-0x34), 0x20u32);
+        h.write(l(-0x30), 5u32);
+        let hwnd: u32 = h.read(g_hwnd);
+        if import(h, REGISTER_DEVICE_NOTIFICATION, &[hwnd, l(-0x34), 4]) == 0 {
+            let text = h.rebase(NOTIFY_FAILED);
+            h.call_sym(WARN, Conv::Cdecl, &[3, text]);
+        }
+        0
+    }
+
+    fn settings_of(h: &impl Host, window: u32) -> u32 {
+        h.read(window)
+    }
+}
+
+/// The window procedure's imports (user32/shell32/kernel32, stdcall
+/// through their slots), globals and callees.
+pub const REGISTER_WINDOW_MESSAGE: u32 = 0x00b0_c68c;
+pub const GET_WINDOW_LONG: u32 = 0x00b0_c6c0;
+pub const SHOW_WINDOW: u32 = 0x00b0_c6e4;
+pub const DESTROY_WINDOW: u32 = 0x00b0_c6e8;
+pub const GET_MODULE_FILE_NAME: u32 = 0x00b0_c1a4;
+pub const PATH_REMOVE_FILE_SPEC: u32 = 0x00b0_c638;
+pub const PATH_COMBINE: u32 = 0x00b0_c63c;
+pub const SHELL_EXECUTE: u32 = 0x00b0_c630;
+pub const POST_QUIT_MESSAGE: u32 = 0x00b0_c6b4;
+pub const DEF_WINDOW_PROC: u32 = 0x00b0_c6b0;
+pub const GET_CURRENT_THREAD_ID: u32 = 0x00b0_c108;
+pub const SET_WINDOWS_HOOK: u32 = 0x00b0_c698;
+pub const UNHOOK_WINDOWS_HOOK: u32 = 0x00b0_c668;
+pub const SHOW_CURSOR: u32 = 0x00b0_c688;
+pub const MESSAGE_BOX: u32 = 0x00b0_c684;
+pub const LOCAL_FREE: u32 = 0x00b0_c61c;
+/// `"PHYREMSG_HOSTHWND"`'s message id (registered once), the launcher's
+/// file name, the Alt+F4 box's caption, the mouse hook procedure.
+pub const G_HOST_MESSAGE: u32 = 0x00cc_a308;
+pub const HOST_MESSAGE_NAME: u32 = 0x00b4_0d78;
+pub const LAUNCHER_NAME: u32 = 0x00b4_0d8c;
+pub const QUIT_CAPTION: u32 = 0x00b4_0db8;
+pub const MOUSE_HOOK_PROC: u32 = 0x0062_50e0;
+pub const G_HOST_LPARAM: u32 = 0x00cc_9ce4;
+pub const G_DEVICE_ARRIVED: u32 = 0x00cc_9cd0;
+pub const G_DRAGGING: u32 = 0x00cc_9cd3;
+pub const G_MOUSE_HOOK: u32 = 0x00cc_9cf0;
+/// The host message's handler `0x00623d50(hwnd host, hwnd)` (cdecl), the
+/// window's close `0x006270a0(window)` and `setFocus(window; bool)`
+/// (thiscall), the cursor-release pair `0x00627850`/`0x006278b0`, the
+/// resource string `0x0061b330(&text; id)` (thiscall).
+pub const ON_HOST_MESSAGE: u32 = 0x0062_3d50;
+pub const ON_CLOSE: u32 = 0x0062_70a0;
+pub const SET_FOCUS: u32 = 0x0062_a460;
+pub const CURSOR_ENTER: u32 = 0x0062_7850;
+pub const CURSOR_LEAVE: u32 = 0x0062_78b0;
+pub const LOAD_STRING: u32 = 0x0061_b330;
+
+pub mod wndproc {
+    use super::{
+        CURSOR_ENTER, CURSOR_LEAVE, Conv, DEF_WINDOW_PROC, DESTROY_WINDOW, G_APPLICATION,
+        G_DEVICE_ARRIVED, G_DRAGGING, G_HOST_HWND, G_HOST_LPARAM, G_HOST_MESSAGE, G_HOSTED,
+        G_MOUSE_HOOK, GET_CLIENT_RECT, GET_CURRENT_THREAD_ID, GET_MODULE_FILE_NAME,
+        GET_WINDOW_LONG, HOST_MESSAGE_NAME, HWND, Host, LAUNCHER_NAME, LOAD_STRING, LOCAL_FREE,
+        MESSAGE_BOX, MOUSE_HOOK_PROC, ON_CLOSE, ON_HOST_MESSAGE, PATH_COMBINE,
+        PATH_REMOVE_FILE_SPEC, POST_QUIT_MESSAGE, QUIT_CAPTION, REGISTER_WINDOW_MESSAGE, SET_FOCUS,
+        SET_WINDOWS_HOOK, SHELL_EXECUTE, SHOW_CURSOR, SHOW_WINDOW, UNHOOK_WINDOWS_HOOK,
+    };
+
+    /// The original's frame from `ebp - 0x43c` (`FRAME` bytes).
+    pub const FRAME: u32 = 0x42c;
+
+    fn import(h: &mut impl Host, slot: u32, args: &[u32]) -> u32 {
+        let f: u32 = h.read(h.rebase(slot));
+        h.call(f, Conv::Stdcall, args)
+    }
+
+    fn default(h: &mut impl Host, args: [u32; 4]) -> u32 {
+        import(h, DEF_WINDOW_PROC, &args)
+    }
+
+    /// `PWindowWin32Base`'s window procedure `(hwnd, msg, wparam, lparam)`
+    /// (stdcall) -> the message's result. The window object is the
+    /// creation parameter (`WM_CREATE`) or `GWL_USERDATA`; without it,
+    /// `DefWindowProcA`. The registered `PHYREMSG_HOSTHWND` makes the
+    /// window hosted (once). Handled: `WM_CREATE` (`g_hWnd`, shown),
+    /// `WM_DESTROY` (quit), `WM_SIZE` (the client size into the
+    /// application unless minimised), `WM_ACTIVATE` (focus),
+    /// `WM_CLOSE` (closes, destroys, starts the launcher next to the
+    /// exe), `WM_ERASEBKGND`, `WM_GETMINMAXINFO` (max track 64K),
+    /// non-client button down/up (a mouse hook while dragging), Alt+F4
+    /// (a confirmation box), F10 and Alt swallowed, `WM_DEVICECHANGE`
+    /// arrivals flagged. `frame` is the original's `ebp - 0x43c`.
+    #[allow(clippy::too_many_lines)]
+    pub fn wnd_proc(h: &mut impl Host, frame: u32, args: [u32; 4]) -> u32 {
+        let [hwnd, msg, wparam, lparam] = args;
+        let l = |off: i32| frame.wrapping_add((0x43c + off) as u32);
+        let g_message = h.rebase(G_HOST_MESSAGE);
+        h.write(l(-0x43c), hwnd);
+        h.write(l(-0x434), lparam);
+        if h.read::<u32>(g_message) == 0 {
+            let name = h.rebase(HOST_MESSAGE_NAME);
+            let id = import(h, REGISTER_WINDOW_MESSAGE, &[name]);
+            h.write(g_message, id);
+        }
+        if hwnd == 0 {
+            return 1;
+        }
+        let window = if msg == 1 {
+            h.read(lparam)
+        } else {
+            import(h, GET_WINDOW_LONG, &[hwnd, 0xffff_ffeb])
+        };
+        let host_message: u32 = h.read(g_message);
+        h.write(l(-0x438), window);
+        if window == 0 {
+            return default(h, args);
+        }
+        let hosted = h.rebase(G_HOSTED);
+        if msg == host_message && h.read::<u8>(hosted) == 0 {
+            h.write(hosted, 1u8);
+            let host = h.rebase(G_HOST_HWND);
+            h.write(host, wparam);
+            let lp = h.rebase(G_HOST_LPARAM);
+            h.write(lp, lparam);
+            h.call_sym(ON_HOST_MESSAGE, Conv::Cdecl, &[wparam, hwnd]);
+        }
+        match msg {
+            1 => {
+                let g = h.rebase(HWND);
+                h.write(g, hwnd);
+                import(h, SHOW_WINDOW, &[hwnd, 1]);
+                1
+            }
+            2 => {
+                import(h, POST_QUIT_MESSAGE, &[0]);
+                1
+            }
+            5 => {
+                if wparam != 1 {
+                    import(h, GET_CLIENT_RECT, &[hwnd, l(-0x430)]);
+                    let app: u32 = h.read(h.rebase(G_APPLICATION));
+                    let bottom: u32 = h.read(l(-0x424));
+                    let right: u32 = h.read(l(-0x428));
+                    h.write(app.wrapping_add(0x26c), right);
+                    h.write(app.wrapping_add(0x270), bottom);
+                    h.write(app.wrapping_add(0x14), 1u8);
+                }
+                1
+            }
+            6 => {
+                let state = wparam as u16;
+                let active = u32::from(state == 1 || state == 2);
+                h.call_sym(SET_FOCUS, Conv::Thiscall(window), &[active]);
+                1
+            }
+            0x10 => {
+                h.call_sym(ON_CLOSE, Conv::Thiscall(window), &[]);
+                import(h, DESTROY_WINDOW, &[hwnd]);
+                import(h, GET_MODULE_FILE_NAME, &[0, l(-0x218), 0x104]);
+                import(h, PATH_REMOVE_FILE_SPEC, &[l(-0x218)]);
+                let name = h.rebase(LAUNCHER_NAME);
+                import(h, PATH_COMBINE, &[l(-0x420), l(-0x218), name]);
+                import(h, SHELL_EXECUTE, &[0, 0, l(-0x420), 0, 0, 1]);
+                1
+            }
+            0x14 => {
+                if h.read::<u8>(hosted) == 0 && wparam == 0x8000 {
+                    let g = h.rebase(G_DEVICE_ARRIVED);
+                    h.write(g, 1u8);
+                }
+                1
+            }
+            0x24 => {
+                let r = default(h, args);
+                h.write(l(-0x438), r);
+                h.write(lparam.wrapping_add(0x20), 0x1_0000u32);
+                h.write(lparam.wrapping_add(0x24), 0x1_0000u32);
+                r
+            }
+            0xa1 | 0xa4 => {
+                let dragging = h.rebase(G_DRAGGING);
+                if h.read::<u8>(dragging) == 0 {
+                    h.write(dragging, 1u8);
+                    h.call_sym(CURSOR_ENTER, Conv::Cdecl, &[]);
+                    let thread = import(h, GET_CURRENT_THREAD_ID, &[]);
+                    let proc_ = h.rebase(MOUSE_HOOK_PROC);
+                    let hook = import(h, SET_WINDOWS_HOOK, &[7, proc_, 0, thread]);
+                    let g = h.rebase(G_MOUSE_HOOK);
+                    h.write(g, hook);
+                }
+                default(h, args)
+            }
+            0xa2 | 0xa5 => {
+                let dragging = h.rebase(G_DRAGGING);
+                if h.read::<u8>(dragging) != 0 {
+                    let g = h.rebase(G_MOUSE_HOOK);
+                    let hook: u32 = h.read(g);
+                    h.write(dragging, 0u8);
+                    import(h, UNHOOK_WINDOWS_HOOK, &[hook]);
+                    h.write(g, 0u32);
+                    h.call_sym(CURSOR_LEAVE, Conv::Cdecl, &[]);
+                }
+                default(h, args)
+            }
+            0x104 | 0x105 => match wparam {
+                0x73 if lparam & 0x2000_0000 != 0 => {
+                    h.write(l(-0x438), 0u32);
+                    h.call_sym(LOAD_STRING, Conv::Thiscall(l(-0x438)), &[0x78ac]);
+                    let text: u32 = h.read(l(-0x438));
+                    let mut confirmed = false;
+                    if msg == 0x104 {
+                        h.call_sym(CURSOR_ENTER, Conv::Cdecl, &[]);
+                        import(h, SHOW_CURSOR, &[1]);
+                        let caption = h.rebase(QUIT_CAPTION);
+                        let r = import(h, MESSAGE_BOX, &[hwnd, text, caption, 0x31]);
+                        h.call_sym(CURSOR_LEAVE, Conv::Cdecl, &[]);
+                        import(h, SHOW_CURSOR, &[0]);
+                        confirmed = r == 1;
+                    }
+                    import(h, LOCAL_FREE, &[text]);
+                    if confirmed { default(h, args) } else { 1 }
+                }
+                0x79 | 0x12 => 1,
+                _ => default(h, args),
+            },
+            0x219 => {
+                if wparam == 0x8000 {
+                    let g = h.rebase(G_DEVICE_ARRIVED);
+                    h.write(g, 1u8);
+                }
+                1
+            }
+            _ => default(h, args),
+        }
+    }
+}

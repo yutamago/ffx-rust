@@ -707,3 +707,214 @@ fn application_ctor_matches_the_original() {
         }
     }
 }
+
+/// [`Twins::seq_code`] in the import slot `slot` (stdcall, `n` words).
+fn seq_import(t: &mut Twins, slot: u32, n: u32) -> u32 {
+    let (f, cursor) = t.seq_code(slot, false, n, n);
+    let at = t.rebase(slot);
+    t.w32(at, f);
+    cursor
+}
+
+/// A NUL-terminated string in both oracles.
+fn text(t: &mut Twins, rng: &mut Rng, n: u32) -> u32 {
+    let mut s: Vec<u8> = (0..n).map(|_| b'a' + rng.below(26) as u8).collect();
+    s.push(0);
+    t.alloc(&s)
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn create_window_matches_the_original() {
+    use super::mesh::gen_stub;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_1401);
+        let module = seq_import(&mut t, tl::GET_MODULE_HANDLE, 1);
+        let icon = seq_import(&mut t, tl::LOAD_ICON, 2);
+        let cursor = seq_import(&mut t, tl::LOAD_CURSOR, 2);
+        t.import_stub(tl::REGISTER_CLASS, 1, 0x00c1_a550);
+        t.import_stub(tl::CHANGE_DISPLAY_SETTINGS, 2, 0);
+        let client = fill_import(&mut t, tl::GET_CLIENT_RECT, 2, 1, 4);
+        // AdjustWindowRect: grows the rectangle, or (flag 0) leaves it
+        let (f, adjust) = gen_stub(
+            &mut t,
+            tl::ADJUST_WINDOW_RECT,
+            false,
+            (0, 3),
+            3,
+            &[(0, 4, true)],
+        );
+        let at = t.rebase(tl::ADJUST_WINDOW_RECT);
+        t.w32(at, f);
+        // CreateWindowExA: 12 words, its ecx not logged (the original's
+        // is whatever the caller left; the port passes 0)
+        let (create, created) = gen_stub(&mut t, tl::CREATE_WINDOW_EX, false, (0, 12), 12, &[]);
+        let at = t.rebase(tl::CREATE_WINDOW_EX);
+        t.w32(at, create);
+        t.import_stub(tl::SET_WINDOW_LONG, 3, 0);
+        let notify = seq_import(&mut t, tl::REGISTER_DEVICE_NOTIFICATION, 3);
+        t.stub(tl::MEMSET, false, 3, 0, 0x3e3e_0001);
+        t.stub(tl::MEMCPY, false, 3, 0, 0x3e3e_0002);
+        t.stub(tl::IME_DISASSOCIATE, false, 2, 0, 0x3e3e_0003);
+        t.stub(tl::WARN, false, 2, 0, 0x3e3e_0004);
+        let g_app = t.rebase(tl::G_APPLICATION);
+        let hosted = t.rebase(tl::G_HOSTED);
+        let borderless = t.rebase(tl::G_BORDERLESS);
+        let host = t.rebase(tl::G_HOST_HWND);
+        for i in 0..48u32 {
+            let app = object(&mut t, &mut rng, 0xe8, false);
+            t.w32(g_app, app);
+            let title = match i % 4 {
+                0 => 0,
+                1 => text(&mut t, &mut rng, 5) | 1,
+                _ => {
+                    let n = 1 + rng.below(12);
+                    text(&mut t, &mut rng, n)
+                }
+            };
+            t.w32(app + 0x398, title);
+            let suffix = if rng.chance(3) {
+                0
+            } else {
+                let n = rng.below(10);
+                text(&mut t, &mut rng, n)
+            };
+            let settings = object(&mut t, &mut rng, 12, false);
+            t.w32(settings, 320 + rng.below(1600));
+            t.w32(settings + 4, 200 + rng.below(900));
+            let given = if i % 5 == 2 { rng.next() | 1 } else { 0 };
+            t.w32(settings + 0x28, given);
+            t.write(settings + 0x2c, &[u8::from(rng.chance(3))]);
+            let window = object(&mut t, &mut rng, 4, false);
+            t.w32(window, settings);
+            t.write(hosted, &[u8::from(i % 6 == 1)]);
+            t.write(borderless, &[u8::from(i % 7 == 3)]);
+            t.w32(host, rng.next());
+            t.seq_set(module, &[0x0040_0000, 0x0040_0000]);
+            t.seq_set(icon, &[rng.next()]);
+            t.seq_set(cursor, &[rng.next()]);
+            let r = u32::from(!rng.chance(2));
+            t.seq_set(client, &[r, 0, 0, rng.below(2000), rng.below(1200)]);
+            let (dx, dy) = (rng.below(8), rng.below(32));
+            t.seq_set(
+                adjust,
+                &[
+                    1,
+                    u32::from(rng.chance(2)),
+                    0u32.wrapping_sub(dx),
+                    0u32.wrapping_sub(dy),
+                    1000,
+                    700,
+                ],
+            );
+            let hwnd = if i % 9 == 4 { 0 } else { rng.next() | 1 };
+            t.seq_set(created, &[hwnd]);
+            t.seq_set(notify, &[u32::from(!rng.chance(4))]);
+            run_framed(
+                &mut t,
+                &format!("{name} create window #{i}"),
+                0x0062_6cb0,
+                Conv::Thiscall(window),
+                &[suffix],
+                0x110,
+                0x10c,
+                |g, ebp| {
+                    let mut alloca = |n: u32| (ebp - 0x11c - n) & !0xf;
+                    tl::window::create(g, window, ebp - 0x110, suffix, &mut alloca)
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn window_procedure_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_1402);
+        let register = seq_import(&mut t, tl::REGISTER_WINDOW_MESSAGE, 1);
+        let get_long = seq_import(&mut t, tl::GET_WINDOW_LONG, 2);
+        t.import_stub(tl::SHOW_WINDOW, 2, 1);
+        t.import_stub(tl::DESTROY_WINDOW, 1, 1);
+        t.import_stub(tl::GET_MODULE_FILE_NAME, 3, 9);
+        t.import_stub(tl::PATH_REMOVE_FILE_SPEC, 1, 1);
+        t.import_stub(tl::PATH_COMBINE, 3, 1);
+        t.import_stub(tl::SHELL_EXECUTE, 6, 42);
+        t.import_stub(tl::POST_QUIT_MESSAGE, 1, 0);
+        let rect = fill_import(&mut t, tl::GET_CLIENT_RECT, 2, 1, 4);
+        let def = seq_import(&mut t, tl::DEF_WINDOW_PROC, 4);
+        t.import_stub(tl::GET_CURRENT_THREAD_ID, 0, 0x1234);
+        let hook = seq_import(&mut t, tl::SET_WINDOWS_HOOK, 4);
+        t.import_stub(tl::UNHOOK_WINDOWS_HOOK, 1, 1);
+        t.import_stub(tl::SHOW_CURSOR, 1, 0);
+        let boxed = seq_import(&mut t, tl::MESSAGE_BOX, 4);
+        t.import_stub(tl::LOCAL_FREE, 1, 0);
+        t.stub(tl::ON_HOST_MESSAGE, false, 2, 0, 0x3e3f_0001);
+        t.stub(tl::ON_CLOSE, true, 0, 0, 0x3e3f_0002);
+        t.stub(tl::SET_FOCUS, true, 1, 1, 0x3e3f_0003);
+        t.stub(tl::CURSOR_ENTER, false, 0, 0, 0x3e3f_0004);
+        t.stub(tl::CURSOR_LEAVE, false, 0, 0, 0x3e3f_0005);
+        // the resource string: [ecx] = a text pointer
+        let mut c = t.log_code(tl::LOAD_STRING, true, 1);
+        c.extend([0xc7, 0x01, 0x78, 0x56, 0x34, 0x12]); // mov dword [ecx], 0x12345678
+        c.extend([0xc2, 0x04, 0x00]);
+        let load = t.code(&c);
+        t.jump(tl::LOAD_STRING, load);
+        let g_msg = t.rebase(tl::G_HOST_MESSAGE);
+        let hosted = t.rebase(tl::G_HOSTED);
+        let dragging = t.rebase(tl::G_DRAGGING);
+        let g_app = t.rebase(tl::G_APPLICATION);
+        let g_hook = t.rebase(tl::G_MOUSE_HOOK);
+        let host_id = 0xc0de;
+        let msgs: [u32; 22] = [
+            1, 2, 5, 6, 0x10, 0x14, 0x24, 0xa1, 0xa4, 0xa2, 0xa5, 0x104, 0x105, 0x219, 0, 3, 0x20,
+            0xa6, 0x106, 0x200, host_id, 0x7fff,
+        ];
+        let arrived = t.rebase(tl::G_DEVICE_ARRIVED);
+        for i in 0..352u32 {
+            t.write(arrived, &[0]);
+            let msg = msgs[(i % 22) as usize];
+            t.w32(g_msg, if i % 13 == 0 { 0 } else { host_id });
+            t.seq_set(register, &[host_id]);
+            let window = if i % 17 == 9 {
+                0
+            } else {
+                object(&mut t, &mut rng, 4, false)
+            };
+            t.seq_set(get_long, &[window]);
+            t.write(hosted, &[u8::from(rng.chance(3))]);
+            t.write(dragging, &[u8::from(rng.chance(2))]);
+            t.w32(g_hook, rng.next());
+            let app = object(&mut t, &mut rng, 0xa0, false);
+            t.w32(g_app, app);
+            let hwnd = if i % 29 == 7 { 0 } else { rng.next() | 1 };
+            let wparam = match msg {
+                5 => rng.below(3),
+                6 => rng.below(3) | (rng.next() & 0xffff_0000),
+                0x14 | 0x219 => [0x8000, 0x8004, 0][rng.below(3) as usize],
+                0x104 | 0x105 => [0x73, 0x73, 0x79, 0x12, 0x41][rng.below(5) as usize],
+                _ => rng.next(),
+            };
+            let lp_obj = object(&mut t, &mut rng, 12, false);
+            t.w32(lp_obj, window);
+            let lparam = match msg {
+                0x104 | 0x105 => (rng.next() & 0xdfff_ffff) | (rng.next() & 0x2000_0000),
+                _ => lp_obj,
+            };
+            t.seq_set(rect, &[1, 0, 0, rng.below(2000), rng.below(1200)]);
+            t.seq_set(def, &[rng.next()]);
+            t.seq_set(hook, &[rng.next()]);
+            t.seq_set(boxed, &[1 + rng.below(2)]);
+            run_framed(
+                &mut t,
+                &format!("{name} window procedure #{i} msg {msg:#x}"),
+                0x0062_5130,
+                Conv::Stdcall,
+                &[hwnd, msg, wparam, lparam],
+                0x43c,
+                0x42c,
+                |g, ebp| tl::wndproc::wnd_proc(g, ebp - 0x43c, [hwnd, msg, wparam, lparam]),
+            );
+        }
+    }
+}

@@ -91,4 +91,21 @@ ported! {
         let mut alloca = |_n: u32| base;
         ffx_prender::p6_mesh::bridge::render_mesh_instance(&mut mem(), renderer, frame.at(), [instance, contexts, x, y], &mut alloca)
     }
+    /// `PWindowWin32Base::createWindow(window; suffix)` -> 0: the title's
+    /// concatenation (the original's `_alloca`) on the heap.
+    Phyre_PFramework_PWindowWin32Base_createWindow @ 0x0062_6cb0 => extern "thiscall" fn x_00626cb0(window: u32, suffix: u32) -> u32 {
+        let mut frame = StackFrame::<{ tl::window::FRAME as usize / 4 }>::new();
+        let mut title: Vec<u8> = Vec::new();
+        let r = tl::window::create(&mut mem(), window, frame.at(), suffix, &mut |n| {
+            title = vec![0u8; n as usize];
+            u32::try_from(title.as_mut_ptr().expose_provenance()).unwrap_or(0)
+        });
+        std::hint::black_box(&mut title);
+        r
+    }
+    /// The window procedure `(hwnd, msg, wparam, lparam)`.
+    Phyre_PFramework_PWindowWin32Base_WndProc @ 0x0062_5130 => extern "stdcall" fn x_00625130(hwnd: u32, msg: u32, wparam: u32, lparam: u32) -> u32 {
+        let mut frame = StackFrame::<{ tl::wndproc::FRAME as usize / 4 }>::new();
+        tl::wndproc::wnd_proc(&mut mem(), frame.at(), [hwnd, msg, wparam, lparam])
+    }
 }
