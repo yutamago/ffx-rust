@@ -53,6 +53,11 @@ ARM_HELPERS = {
     "system_fcall": ("crates/ffx-hook/src/ported/system.rs", "fcall"),
 }
 TWO_OPERAND = {"_CIatan2", "_CIfmod", "_CIpow"}
+# Callees whose dump size stops before their epilogue: the `ret` the scan
+# sees belongs to an SEH filter. Address -> the real epilogue's pop bytes.
+POPS_OVERRIDE = {
+    0x004300B0: 4,  # PThreadWin32 start: filter `ret` at 0x0043015f, `ret 4` at 0x0043019e
+}
 # The crt_trig helpers' slots (one-operand intrinsics), checked by name.
 TRIG_SLOTS = {
     "crates/ffx-hook/src/ported/battle.rs": [("Cos", 0xc3b4), ("Sin", 0xc3b8), ("Atan", 0xc450)],
@@ -198,7 +203,7 @@ class Exe:
                 target = int(l.split("0x")[1], 16)
                 if not a <= target < a + size:
                     forwards = True
-        self.cache[a] = (reads + 1, pops, forwards)
+        self.cache[a] = (reads + 1, POPS_OVERRIDE.get(a, pops), forwards)
         return self.cache[a]
 
 
