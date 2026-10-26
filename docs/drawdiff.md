@@ -392,24 +392,33 @@ What the original runs showed, and so what the lists hold:
 | bsil0300 | o1/o2, p1/p2 | `GlobalTime` (47-76 ulp: the walk waits on a real-time voice line), the minimap's NORMAL0 ring, the chocobo icon (o1/o2: 6 draws missing, 6 extra) |
 | kami0100 | o1/o2, p1/p2 | the cloth ring (`vb5`, 27 draws, in every pair: carried from the free-running frames before lockstep, inferred), `GlobalTime` (o1/o2, 2 ulp), the eye-blink texture (o1/o2), the `SgSpec_LightVec` junk read (not seen in kami0100's own pairs; the same read differs between original runs on bsil0000 and cdsp0000) |
 | menu | p1/p2 | a `NoTexture` quad's UVs (`vb3`; not sampled, stale element words, `docs/formats/ui-draw.md`) |
-| battle | BATTLE_PAIRS | BATTLE_ENTRIES |
+| battle | p3/p4 (p1/p2 with an older script) | none: p3 and p4 agree on every item |
 
 Two things the original runs do not pin and the replays avoid:
 - a battle requested after the main menu was opened and closed never
   started (the request byte `0x0112a8e2` stayed 1), on the deck and in
   the agency, so the menu and the battle have replays of their own;
 - `battle 33 0 3` from the agency loaded in 127 or 128 updates, and the
-  later run drew 31 more items; battle-attack's battle loaded in 77 or 79,
-  and 60 frames after the phase byte the intro camera stood elsewhere
-  (17,584 ulp in `WorldView`). The battle capture therefore waits for the
-  first command window.
+  later run drew 31 more items; battle-attack's battle loaded in 77
+  updates (from the end of `wait 10` to the phase byte) in four original
+  runs and in 79 in one, whose intro camera stood elsewhere (17,584 ulp in
+  `WorldView`). The first command window opens on the phase byte's update,
+  so waiting for it does not help. `scene-gate.sh battle` compares the two
+  runs' load lengths (from `replay.out`) first and answers NOT COMPARABLE
+  (exit 3) when they differ: rerun one.
 
 `SgSpec_CameraVec[0].z` is not in any list: `Ch_DrawMain` never writes the
 word (`[ebp-0x2c]`), and every original run passes 1 (`0x00000001`, a
 stale integer). The port passes 0 (junk-read policy), and with only the
 M4 hooks the original `Ch_DrawMain` reads what ported functions further up
 left there (`0x006c0000` on bsil0000, `0x005d0000` on kami0100). The
-draw-field list allows it; the scene gates report it (PORT_RESULTS).
+draw-field list allows it; the scene gates report it. Bisected on
+kami0100 with only the M4 hooks (`FFX_HOOK_ONLY` halves of the 1,756
+hooks of the second half, 11 steps): `Sg_AccSetFrameChr` (`0x0082be20`,
+h4-glue-other) hooked alone makes it `0x00d90000`; other subsets gave
+other values (`0x00490000`, `0x000a0000`, `0x005e0000`), so several
+ports' frames reach that stack word. Not a port bug: the junk read is
+`Ch_DrawMain`'s.
 
 ## Noise in cdsp0000
 
