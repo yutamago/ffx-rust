@@ -76,6 +76,7 @@ pub mod mesh;
 pub mod misc;
 pub mod p6_descriptor;
 pub mod p6_misc;
+pub mod p6_more;
 pub mod registry;
 pub mod small;
 pub mod sort;
