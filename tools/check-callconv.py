@@ -624,6 +624,8 @@ METHODS = {
     "call_sym_st0": (0, 1, 2),
     "call_sym_st0_f64": (0, 1, 2),
     "call_n": (0, "cdecl", 1),
+    "call_wide": (0, "cdecl", 1),
+    "call_sym_wide": (0, "cdecl", 1),
     "call_float": (0, "cdecl", 1),
 }
 FREE = {

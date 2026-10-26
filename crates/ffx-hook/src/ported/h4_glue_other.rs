@@ -14,8 +14,9 @@ use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
-    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, menu as mn, misc as m,
-    movie as mv, r3, sound as s,
+    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
+    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, menu as mn,
+    misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2080,5 +2081,187 @@ ported! {
     /// `GDraw_SubRectUV_00a3c1b0(out, slot)`.
     GDraw_SubRectUV_00a3c1b0 @ 0x00a3_c1b0 => extern "C" fn gdraw_sub_rect_uv(out: u32, slot: u32) -> u32 {
         g2::gdraw_sub_rect_uv(&mut mem(), out, slot)
+    }
+    // ---- continuation round 6, batch 1 (ffx_glue_other::h4_h1)
+    /// `TextureAnimationInfo_copy_006af0d0(this; src)`.
+    TextureAnimationInfo_copy_006af0d0 @ 0x006a_f0d0 => extern "thiscall" fn tex_anim_info_copy(this: u32, src: u32) -> u32 {
+        h1::info_copy(&mut mem(), this, src)
+    }
+    /// `TextureAnimationInfoChar_copy_006af270(this; src)`.
+    TextureAnimationInfoChar_copy_006af270 @ 0x006a_f270 => extern "thiscall" fn tex_anim_info_char_copy(this: u32, src: u32) -> u32 {
+        h1::info_char_copy(&mut mem(), this, src)
+    }
+    /// `TextureAnimationInfo_copyArray_006ae9c0(dst, src, n)`.
+    TextureAnimationInfo_copyArray_006ae9c0 @ 0x006a_e9c0 => extern "C" fn tex_anim_info_copy_array(dst: u32, src: u32, n: u32) -> u32 {
+        h1::info_copy_array(&mut mem(), dst, src, n)
+    }
+    /// `TextureAnimationInfoChar_copyArray_006aeb20(dst, src, n)`.
+    TextureAnimationInfoChar_copyArray_006aeb20 @ 0x006a_eb20 => extern "C" fn tex_anim_info_char_copy_array(dst: u32, src: u32, n: u32) -> u32 {
+        h1::info_char_copy_array(&mut mem(), dst, src, n)
+    }
+    /// `TextureAnimationMaterial_copy_006aeee0(this; src)`.
+    TextureAnimationMaterial_copy_006aeee0 @ 0x006a_eee0 => extern "thiscall" fn tex_anim_material_copy(this: u32, src: u32) -> u32 {
+        h1::material_copy(&mut mem(), this, src)
+    }
+    /// `TextureAnimationMaterial_copyArray_006ae730(dst, src, n)`.
+    TextureAnimationMaterial_copyArray_006ae730 @ 0x006a_e730 => extern "C" fn tex_anim_material_copy_array(dst: u32, src: u32, n: u32) -> u32 {
+        h1::material_copy_array(&mut mem(), dst, src, n)
+    }
+    /// `SemaphoreQueue_ctor_006db560(this)`.
+    SemaphoreQueue_ctor_006db560 @ 0x006d_b560 => extern "thiscall" fn semaphore_queue_ctor(this: u32) -> u32 {
+        h1::semaphore_queue_ctor(&mut mem(), this)
+    }
+    /// `SemaphoreQueues_ctor_006db670(this)`.
+    SemaphoreQueues_ctor_006db670 @ 0x006d_b670 => extern "thiscall" fn semaphore_queues_ctor(this: u32) -> u32 {
+        h1::semaphore_queues_ctor(&mut mem(), this)
+    }
+    /// `PostProcessState_init_006ddbf0(this)`.
+    PostProcessState_init_006ddbf0 @ 0x006d_dbf0 => extern "thiscall" fn post_process_state_init(this: u32) -> u32 {
+        h1::post_process_state_init(&mut mem(), this)
+    }
+    /// `DynGeoMemPool_ctor_006de2c0(this)`.
+    DynGeoMemPool_ctor_006de2c0 @ 0x006d_e2c0 => extern "thiscall" fn dyn_geo_pool_ctor(this: u32) -> u32 {
+        h1::dyn_geo_pool_ctor(&mut mem(), this)
+    }
+    /// `ShadowManager_ctor_006c7d80(this)`.
+    ShadowManager_ctor_006c7d80 @ 0x006c_7d80 => extern "thiscall" fn shadow_manager_ctor(this: u32) -> u32 {
+        h1::shadow_manager_ctor(&mut mem(), this)
+    }
+    /// `ShaderSourceReader_ctor_006904c0(this)`.
+    ShaderSourceReader_ctor_006904c0 @ 0x0069_04c0 => extern "thiscall" fn shader_source_reader_ctor(this: u32) -> u32 {
+        h1::shader_source_reader_ctor(&mut mem(), this)
+    }
+    /// `FFEscMenu_create_0068e400(a, f0, f1, f2, f3)`.
+    FFEscMenu_create_0068e400 @ 0x0068_e400 => extern "C" fn esc_menu_create(a: u32, f0: u32, f1: u32, f2: u32, f3: u32) -> u32 {
+        h1::esc_menu_create(&mut mem(), a, [f0, f1, f2, f3]).unwrap_or(0)
+    }
+    // ---- continuation round 6, batch 2 (ffx_glue_other::h4_h2)
+    /// `LoadingScreen_LoadingScreen(this)`.
+    LoadingScreen_LoadingScreen @ 0x006e_45e0 => extern "thiscall" fn loading_screen_ctor(this: u32) -> u32 {
+        h2::loading_screen_ctor(&mut mem(), this)
+    }
+    /// `BrokenScreenEffect_createRenderTarget(this)`.
+    BrokenScreenEffect_createRenderTarget @ 0x006d_5050 => extern "thiscall" fn broken_screen_create_render_target(this: u32) -> u32 {
+        h2::broken_screen_create_render_target(&mut mem(), this)
+    }
+    /// `BootText_create_006ddc80(this)`.
+    BootText_create_006ddc80 @ 0x006d_dc80 => extern "thiscall" fn boot_text_create(this: u32) -> u32 {
+        h2::boot_text_create(&mut mem(), this)
+    }
+    /// `Distortion_initialize_006c2710(this; a, b, c, d, e)`.
+    Distortion_initialize_006c2710 @ 0x006c_2710 => extern "thiscall" fn distortion_initialize(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h2::DISTORTION_FRAME / 4) as usize }>::new();
+        h2::distortion_initialize(&mut mem(), frame.at(), this, [a, b, c, d, e])
+    }
+    /// `Distortion_onShadersLoaded_006c2520(this)`.
+    Distortion_onShadersLoaded_006c2520 @ 0x006c_2520 => extern "thiscall" fn distortion_on_shaders(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h2::CURSOR_FRAME / 4) as usize }>::new();
+        h2::distortion_on_shaders(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 6, batch 3 (ffx_glue_other::h4_h3)
+    /// `ClassLoadedCharacterTable_getPrototypeByFilename(this; name)`.
+    ClassLoadedCharacterTable_getPrototypeByFilename @ 0x006a_2110 => extern "thiscall" fn get_prototype(this: u32, name: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h3::GET_FRAME / 4) as usize }>::new();
+        h3::get_prototype(&mut mem(), frame.at(), this, name)
+    }
+    /// `ClassLoadedCharacterTable_insertPrototype(this; name, prototype)`.
+    ClassLoadedCharacterTable_insertPrototype @ 0x006a_28b0 => extern "thiscall" fn insert_prototype(this: u32, name: u32, prototype: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h3::INSERT_FRAME / 4) as usize }>::new();
+        h3::insert_prototype(&mut mem(), frame.at(), this, name, prototype)
+    }
+    /// `IggyCallback_lookupName_006e9590(a, args)`.
+    IggyCallback_lookupName_006e9590 @ 0x006e_9590 => extern "C" fn iggy_lookup(a: u32, args: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h3::LOOKUP_FRAME / 4) as usize }>::new();
+        h3::iggy_lookup(&mut mem(), frame.at(), a, args)
+    }
+    /// `ChrResourceCacheManager_onLoadPCluster(this; path, hash, record)`.
+    ChrResourceCacheManager_onLoadPCluster @ 0x0069_bb80 => extern "thiscall" fn on_load_pcluster(this: u32, path: u32, hash: u32, record: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h3::ON_LOAD_FRAME / 4) as usize }>::new();
+        h3::on_load_pcluster(&mut mem(), frame.at(), this, path, hash, record)
+    }
+    /// `ClusterManager_loadPCluster(this; name)`.
+    ClusterManager_loadPCluster @ 0x0069_b940 => extern "thiscall" fn load_pcluster(this: u32, name: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h3::LOAD_FRAME / 4) as usize }>::new();
+        h3::load_pcluster(&mut mem(), frame.at(), this, name)
+    }
+    // ---- continuation round 6, batch 4 (ffx_glue_other::h4_h4)
+    /// `BlurPass_initialize_006c40e0(this; a, cluster, scene, w, h)`.
+    BlurPass_initialize_006c40e0 @ 0x006c_40e0 => extern "thiscall" fn blur_pass_init(this: u32, a: u32, cluster: u32, scene: u32, w: u32, h: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h4::PASS_FRAME / 4) as usize }>::new();
+        h4::blur_pass_init(&mut mem(), frame.at(), this, [a, cluster, scene, w, h])
+    }
+    /// `BlurEffectEx_postInitialize(this)`.
+    BlurEffectEx_postInitialize @ 0x006c_4b60 => extern "thiscall" fn blur_ex_post_initialize(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h4::EFFECT_FRAME / 4) as usize }>::new();
+        h4::blur_ex_post_initialize(&mut mem(), frame.at(), this)
+    }
+    /// `BlurEffect_doOnShaderClusterLoaded(this)`.
+    BlurEffect_doOnShaderClusterLoaded @ 0x006c_35d0 => extern "thiscall" fn blur_effect_on_shaders(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h4::EFFECT_FRAME / 4) as usize }>::new();
+        h4::blur_effect_on_shaders(&mut mem(), frame.at(), this)
+    }
+    /// `RadialBlur_initialize(this; cluster, a, scene, w, h)`.
+    RadialBlur_initialize @ 0x0070_3230 => extern "thiscall" fn radial_blur_init(this: u32, cluster: u32, a: u32, scene: u32, w: u32, h: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h4::PASS_FRAME / 4) as usize }>::new();
+        h4::radial_blur_init(&mut mem(), frame.at(), this, [cluster, a, scene, w, h])
+    }
+    /// `RadialLine_initialize(this; cluster, a, scene, w, h, target)`.
+    RadialLine_initialize @ 0x006f_7c10 => extern "thiscall" fn radial_line_init(this: u32, cluster: u32, a: u32, scene: u32, w: u32, h: u32, target: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h4::PASS_FRAME / 4) as usize }>::new();
+        h4::radial_line_init(&mut mem(), frame.at(), this, [cluster, a, scene, w, h, target])
+    }
+    // ---- continuation round 6, batch 5 (ffx_glue_other::h4_h5)
+    /// `MotionBlur_setupShaders_006c5150(this; base, target)`.
+    MotionBlur_setupShaders_006c5150 @ 0x006c_5150 => extern "thiscall" fn motion_blur_setup(this: u32, base: u32, target: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h5::MOTION_FRAME / 4) as usize }>::new();
+        h5::motion_blur_setup(&mut mem(), frame.at(), this, base, target)
+    }
+    /// `PhyFMVPlayerManager_doOnShaderBinFilesLoaded(this)`.
+    PhyFMVPlayerManager_doOnShaderBinFilesLoaded @ 0x006d_86e0 => extern "thiscall" fn fmv_on_shaders(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h5::FMV_FRAME / 4) as usize }>::new();
+        h5::fmv_on_shaders(&mut mem(), frame.at(), this)
+    }
+    /// `BrokenScreenEffect_initialize(this; a, b, c, d, e, w, h)`.
+    BrokenScreenEffect_initialize @ 0x006d_51d0 => extern "thiscall" fn broken_screen_initialize(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32, w: u32, h: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h5::BROKEN_FRAME / 4) as usize }>::new();
+        h5::broken_screen_initialize(&mut mem(), frame.at(), this, [a, b, c, d, e, w, h])
+    }
+    // ---- continuation round 6, batch 6 (ffx_glue_other::h4_h6)
+    /// `PhyFMVPlayerManager_PlayVideo(this; flag)`.
+    PhyFMVPlayerManager_PlayVideo @ 0x006d_7430 => extern "thiscall" fn play_video(this: u32, flag: u32) -> u32 {
+        let mut frame = StackFrame::<{ (h6::PLAY_FRAME / 4) as usize }>::new();
+        h6::play_video(&mut mem(), frame.at(), this, flag)
+    }
+    /// `PhyFMVPlayerManager_DestroyFMVPlayer(this)`.
+    PhyFMVPlayerManager_DestroyFMVPlayer @ 0x006d_71b0 => extern "thiscall" fn destroy_fmv_player(this: u32) -> u32 {
+        h6::destroy_fmv_player(&mut mem(), this)
+    }
+    /// `PhyFMVPlayerManager_handleInput(this; unused)`.
+    PhyFMVPlayerManager_handleInput @ 0x006d_9460 => extern "thiscall" fn handle_input(this: u32, _unused: u32) {
+        h6::handle_input(&mut mem(), this);
+    }
+    // ---- continuation round 6, batch 7 (ffx_glue_other::h4_h7)
+    /// `PVideoPlaybackWin32_ctor(this)`.
+    PVideoPlaybackWin32_ctor @ 0x00a2_6e70 => extern "thiscall" fn video_playback_ctor(this: u32) -> u32 {
+        h7::video_playback_ctor(&mut mem(), this)
+    }
+    /// `PhyFMVPlayerManager_PhyFMVPlayerManager(this)`.
+    PhyFMVPlayerManager_PhyFMVPlayerManager @ 0x006d_6970 => extern "thiscall" fn fmv_manager_ctor(this: u32) -> u32 {
+        h7::fmv_manager_ctor(&mut mem(), this)
+    }
+    /// `gdraw_allocBuffers_00a3a540(a, unused, n0, n1, out, c)`.
+    gdraw_allocBuffers_00a3a540 @ 0x00a3_a540 => extern "stdcall" fn gdraw_alloc_buffers(a: u32, _unused: u32, n0: u32, n1: u32, out: u32, c: u32) -> u32 {
+        h7::gdraw_alloc_buffers(&mut mem(), a, n0, n1, out, c)
+    }
+    // ---- continuation round 6, batch 8 (ffx_glue_other::h4_h8)
+    /// `SkipPrompt_render_006e7f00(this; renderer, mode)`.
+    SkipPrompt_render_006e7f00 @ 0x006e_7f00 => extern "thiscall" fn skip_prompt_render(this: u32, renderer: u32, mode: u32) {
+        let mut frame = StackFrame::<{ (h8::PROMPT_FRAME / 4) as usize }>::new();
+        h8::skip_prompt_render(&mut mem(), frame.at(), this, renderer, mode);
+    }
+    /// `LoadingScreen_render(this; renderer)`.
+    LoadingScreen_render @ 0x006e_4ea0 => extern "thiscall" fn loading_screen_render(this: u32, renderer: u32) {
+        let mut frame = StackFrame::<{ (h8::LOADING_FRAME / 4) as usize }>::new();
+        h8::loading_screen_render(&mut mem(), frame.at(), this, renderer);
     }
 }

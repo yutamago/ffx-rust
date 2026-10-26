@@ -43,6 +43,8 @@ use ffx_prender::h3_glue34::bridge as g34;
 use ffx_prender::h3_glue35::bridge as g35;
 use ffx_prender::h3_glue36::bridge as g36;
 use ffx_prender::h3_glue37::bridge as g37;
+use ffx_prender::h3_glue38::bridge as g38;
+use ffx_prender::h3_glue39::bridge as g39;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1852,6 +1854,38 @@ ported! {
     PostProcessManager_render @ 0x0069_4f10 => extern "thiscall" fn post_process_render(this: u32, renderer: u32, a: u32, b: u32; slots: u32) -> u32 {
         let mut f = StackFrame::<0xf>::new();
         g37::post_process_render(&mut mem(), f.at() + 0x3c, slots, this, renderer, a, b)
+    }
+
+    // ---- round 9 batch 38 (ffx_prender::h3_glue38) ----
+    /// `PhyreScene_fieldMapLoad(this, path, b)`: the map's flags, camera
+    /// data and asset clusters (19-word `loadCluster` calls); the header's
+    /// error or 0. The slots keep the loop's words.
+    PhyreScene_fieldMapLoad @ 0x0065_cbf0 => extern "thiscall" fn scene_field_map_load(this: u32, path: u32, b: u32; slots: u32) -> u32 {
+        g38::field_map_load(&mut mem(), slots, this, path, b)
+    }
+    /// `PhyreScene_fieldMapUnload(this)`: the map's clusters, assets and
+    /// lists released, the singletons reset; 0.
+    PhyreScene_fieldMapUnload @ 0x0065_d240 => extern "thiscall" fn scene_field_map_unload(this: u32) -> u32 {
+        g38::field_map_unload(&mut mem(), this)
+    }
+    /// `VfxShaderManager_unloadSpecialShaderTable(this)`: the special
+    /// shader table freed, a copy of each entry's map in the frame.
+    VfxShaderManager_unloadSpecialShaderTable @ 0x006c_19b0 => extern "thiscall" fn vfx_shader_unload_special_table(this: u32) -> u32 {
+        let mut f = StackFrame::<0x13>::new();
+        g38::unload_special_shader_table(&mut mem(), f.at() + 0x4c, this, ffx_prender::h3_glue38::SPECIAL_TABLE)
+    }
+    /// `VfxShaderManager_unloadSpecialShaderTable_magic(this)`: the magic
+    /// file's table, as the special one; `+0x64` reset.
+    VfxShaderManager_unloadSpecialShaderTable_magic @ 0x006c_1c50 => extern "thiscall" fn vfx_shader_unload_special_table_magic(this: u32) -> u32 {
+        let mut f = StackFrame::<0x13>::new();
+        g38::unload_special_shader_table(&mut mem(), f.at() + 0x4c, this, ffx_prender::h3_glue38::MAGIC_TABLE)
+    }
+
+    // ---- round 9 batch 39 (ffx_prender::h3_glue39) ----
+    /// `PhyreScene_MergeVFXRenderArrays(this)`: the frame's VFX segments
+    /// sorted (qsort or buckets) and merged into the draw list.
+    PhyreScene_MergeVFXRenderArrays @ 0x0065_4650 => extern "thiscall" fn scene_merge_vfx_render_arrays(this: u32) {
+        g39::merge_vfx_render_arrays(&mut mem(), this);
     }
 }
 

@@ -60,6 +60,8 @@ use ffx_prender::h3_glue34::{self as h34, bridge as gh34};
 use ffx_prender::h3_glue35::{self as h35, bridge as gh35};
 use ffx_prender::h3_glue36::{self as h36, bridge as gh36};
 use ffx_prender::h3_glue37::{self as h37, bridge as gh37};
+use ffx_prender::h3_glue38::{self as h38, bridge as gh38};
+use ffx_prender::h3_glue39::{self as h39, bridge as gh39};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -169,6 +171,11 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         let r = self.0.call(addr, conv(c), args).unwrap();
         r.st0.unwrap_or_else(|| panic!("{addr:#x}: no ST0"))
+    }
+    fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
+        ffx_oracle::check_width("Host::call_wide", addr, args.len(), host::WIDE_WORDS);
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        self.0.call(addr, Conv::Cdecl, args).unwrap().eax
     }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
@@ -9116,5 +9123,484 @@ fn batch37_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 100 } else { 600 };
         run_cases(t, CASES37, n, &mut Rng(0x3737_b037));
+    });
+}
+
+// ---- round 9 batch 38 (ffx_prender::h3_glue38) ----
+
+impl Twins {
+    /// A cdecl import stub through `slot` (as [`Twins::stub`], logging
+    /// `n` words) whose calls return `values` in turn.
+    fn stub_import_seq(&mut self, slot: u32, n: u32, values: &[u32]) {
+        let words: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let table = self.alloc(&words);
+        let ptr = self.alloc(&table.to_le_bytes());
+        let log = self.stub(None, slot, false, n, 0, None);
+        let mut c = vec![0x8b, 0x15];
+        c.extend(ptr.to_le_bytes()); // mov edx, [ptr]
+        c.extend([0x8b, 0x02]); // mov eax, [edx]
+        c.extend([0x83, 0xc2, 0x04]); // add edx, 4
+        c.extend([0x89, 0x15]);
+        c.extend(ptr.to_le_bytes()); // mov [ptr], edx
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let at = self.rebase(slot);
+        self.patch(at, &code.to_le_bytes());
+    }
+
+    /// A cdecl stub at `sym` logging 14 + `more` stack words (two log
+    /// entries: `sym + 1` with the words past the fourteenth, then `sym`
+    /// with the first fourteen); returns `ret`.
+    fn stub_wide(&mut self, sym: u32, more: u32, ret: u32) {
+        let first = self.stub(None, sym, false, 14, 0, Some(ret));
+        let tail = self.stub(None, sym + 1, false, more, 0, Some(0));
+        let mut c = vec![];
+        for _ in 0..more {
+            // push the last of them first: each push moves the rest down
+            c.extend([0xff, 0x74, 0x24, (4 + 4 * (14 + more - 1)) as u8]); // push dword [esp+..]
+        }
+        let at = self.cave_next;
+        c.push(0xe8); // call tail
+        c.extend(tail.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        c.extend([0x83, 0xc4, (4 * more) as u8]); // add esp, 4 * more
+        let at = self.cave_next;
+        c.push(0xe9); // jmp first
+        c.extend(first.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// The scene (random, with its map: a camera map, 0x220, a 2D-table map
+/// or any), `b` (low byte 1 or not), the map number (0x163, 0x164 or
+/// any), the names found or not, the header's error now and then, and 0
+/// to 3 assets (or a negative count).
+fn prep_map_load38(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    let bytes = rng.bytes(0x1_1000);
+    t.write(scene, &bytes);
+    let table = t.rebase(h38::MAPS_2D);
+    // the first and last entries now and then (the bounds)
+    let any_k = rng.below(30);
+    let k = pick(rng, &[0, 29, any_k]);
+    let listed = t.r32(table + 4 * k);
+    let any = rng.below(0x2000);
+    let map = pick(
+        rng,
+        &[0x1f20, 0x220, 0xc04, 0xa6c, listed, listed, any, any],
+    );
+    t.w32(scene + 0xfaf4, map);
+    for at in [0x10d8, 0x112c] {
+        let v = if rng.chance(2) { 0 } else { rng.next() };
+        t.w32(scene + at, v);
+    }
+    args[0] = rng.next();
+    args[1] = rng.word() & !0xff | pick(rng, &[0, 1, 1, 2, 0x81]);
+    let current = pick(rng, &[0x163, 0x164, any]);
+    t.global(h38::CURRENT_MAP_NO.sym, current);
+    let v = rng.next();
+    t.global(h38::MAP_163_164.sym, v);
+    let v = rng.next() as u8;
+    let at = t.rebase(h38::PHYRE_SCENE_3D.sym);
+    t.write(at, &[v]);
+    let found: Vec<u32> = (0..4)
+        .map(|_| if rng.chance(2) { 0 } else { rng.next() | 1 })
+        .collect();
+    t.stub_import_seq(h38::STRSTR, 2, &found);
+    let error = if rng.chance(3) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h38::READ_ASSET_HEADER, true, 2, 2, error);
+    let count = pick(rng, &[0, 1, 2, 3, 3, 0x8000_0001]);
+    let first = rng.word();
+    // the loop's later counts: the same, or negative (a signed compare)
+    let mut counts = vec![first, count];
+    for _ in 0..5 {
+        let later = if rng.chance(4) {
+            0x8000_0000 | rng.next()
+        } else {
+            count
+        };
+        counts.push(later);
+    }
+    t.stub_seq(h38::ASSET_COUNT, true, 0, 0, &counts);
+    let ret = rng.next();
+    t.stub_wide(h38::LOAD_CLUSTER, 5, ret);
+}
+
+const FIELD_MAP_LOAD_STUBS: &[(u32, K)] = &[
+    (h38::LOAD_CAMERA_DATA, K::Cdecl(1)),
+    (h38::UNLOAD_CAMERA_DATA, K::Cdecl(0)),
+    (h38::ASYNC_LOAD_INSTANCE, K::Getter),
+    (h38::CHILDREN_REQUEST_LIST, K::This(1)),
+    (h38::ASSET_PATH, K::This(1)),
+];
+
+#[rustfmt::skip]
+const CASES38: &[Case] = &[
+    framed(Case { prep: Some(prep_map_load38), ..method("field_map_load", 0x0065_cbf0, This::Object, 2, FIELD_MAP_LOAD_STUBS, |m, this, a| { let slots = slots_at(m, a); u(gh38::field_map_load(m, slots, this, a[0], a[1])) }) }, 0, 8),
+];
+
+#[test]
+fn batch38_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 100 } else { 600 };
+        run_cases(t, CASES38, n, &mut Rng(0x3838_b038));
+    });
+}
+
+/// The free camera (there or not; `operator new` failing now and then),
+/// the renderer (or none), 0 to 4 clusters per kind (some slots empty),
+/// the arrays' counts and capacities (borrowed storage, with or without
+/// data; the cluster arrays' counts stay small, a negative one would walk
+/// 2^31 slots), and the tree: empty, or 1 to 4 nodes down the root's
+/// chain and 0 to 4 successors, their values absent, with or without a
+/// block.
+fn prep_map_unload38(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_2000);
+    *this = scene;
+    let bytes = rng.bytes(0x1_2000);
+    t.write(scene, &bytes);
+    let camera = if rng.chance(2) { 0 } else { rng.next() | 1 };
+    t.global(h38::FREE_CAMERA.sym, camera);
+    let p = if rng.chance(4) { 0 } else { obj + 0x1f00 };
+    t.stub_ret(h38::OPERATOR_NEW, false, 1, 0, p);
+    let renderer = if rng.chance(3) { 0 } else { rng.next() | 1 };
+    t.w32(scene + 0xd0, renderer);
+    for (count, data) in [(0x10d8, obj + 0x100), (0x112c, obj + 0x140)] {
+        let n = rng.below(5);
+        t.w32(scene + count, n);
+        t.w32(scene + count + 8, data);
+        for k in 0..4 {
+            let v = if rng.chance(3) { 0 } else { rng.next() };
+            t.w32(data + 4 * k, v);
+        }
+    }
+    for a in [0x1138, 0x11c8] {
+        let neg = rng.chance(2);
+        let n = if neg {
+            rng.next() | 0x8000_0000
+        } else {
+            rng.word()
+        };
+        t.w32(scene + a, n);
+        let cap = if rng.chance(2) {
+            rng.next() | 0x8000_0000
+        } else {
+            rng.word() & 0x7fff_ffff
+        };
+        t.w32(scene + a + 4, cap);
+        let data = if rng.chance(2) { 0 } else { rng.next() };
+        t.w32(scene + a + 8, data);
+    }
+    let header = scene + 0x1198;
+    let nodes: Vec<u32> = (0..8).map(|k| obj + 0x400 + 0x40 * k).collect();
+    for &n in &nodes {
+        let value = match rng.below(3) {
+            0 => 0,
+            _ => n + 0x20,
+        };
+        t.w32(n + 0x10, value);
+        let block = if rng.chance(2) { 0 } else { rng.next() };
+        t.w32(n + 0x28, block);
+    }
+    if rng.chance(4) {
+        t.w32(scene + 0x11a4, header);
+    } else {
+        let chain = 1 + rng.below(4) as usize;
+        t.w32(scene + 0x11a4, nodes[0]);
+        for k in 0..chain {
+            let next = if k + 1 == chain { header } else { nodes[k + 1] };
+            t.w32(nodes[k], next);
+        }
+    }
+    let m = rng.below(5) as usize;
+    let mut seq: Vec<u32> = (0..m).map(|k| nodes[4 + k % 4]).collect();
+    seq.extend([header; 4]);
+    t.stub_seq(h38::TREE_SUCCESSOR, true, 1, 1, &seq);
+}
+
+const MAP_UNLOAD_STUBS: &[(u32, K)] = &[
+    (h38::FREE_CAMERA_CTOR, K::This(0)),
+    (h38::FREE_CAMERA_SET_TYPE, K::This(1)),
+    (h38::SYNC_RENDER, K::This(0)),
+    (h38::CLUSTER_MANAGER_INSTANCE, K::Getter),
+    (h38::RELEASE_CLUSTER, K::This(1)),
+    (h38::ASSET_LIST_CLEAR, K::This(0)),
+    (h38::CLUSTER_BASE_CLEAR, K::This(0)),
+    (h38::USER_MALLOC, K::Cdecl(1)),
+    (h38::USER_FREE, K::Cdecl(1)),
+    (h38::OPERATOR_DELETE, K::Cdecl(1)),
+    (h38::TREE_ORPHAN_ALL, K::This(0)),
+    (h38::FREE_LIST_RESET, K::This(0)),
+    (h38::CHARACTER_LIGHTING_INSTANCE, K::Getter),
+    (h38::CHARACTER_LIGHTING_RESET, K::This(0)),
+    (h38::FOG_INSTANCE, K::Getter),
+    (h38::FOG_RESET, K::This(0)),
+    (h38::INSTANCE_6DC800, K::Getter),
+    (h38::RESET_6DC800, K::This(0)),
+];
+
+#[rustfmt::skip]
+const CASES38B: &[Case] = &[
+    Case { prep: Some(prep_map_unload38), ..method("field_map_unload", 0x0065_d240, This::Object, 0, MAP_UNLOAD_STUBS, |m, this, _| u(gh38::field_map_unload(m, this))) },
+];
+
+#[test]
+fn batch38b_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 100 } else { 600 };
+        run_cases(t, CASES38B, n, &mut Rng(0x3838_b0b8));
+    });
+}
+
+impl Twins {
+    /// A red-black tree `successor(this; node)` stub (logged, `ret 4`)
+    /// returning the node's `+0x18` (the test's own link).
+    fn stub_successor38(&mut self, sym: u32) {
+        let log = self.stub(None, sym, true, 1, 1, None);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+        c.extend([0x8b, 0x40, 0x18]); // mov eax, [eax+0x18]
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+
+    /// A red-black tree `remove(this; node)` stub (logged, `ret 4`) that
+    /// makes the node's `+0x14` (the test's own link) the tree's root.
+    fn stub_remove38(&mut self, sym: u32) {
+        let log = self.stub(None, sym, true, 1, 1, Some(0));
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+        c.extend([0x8b, 0x40, 0x14]); // mov eax, [eax+0x14]
+        c.extend([0x89, 0x41, 0x0c]); // mov [ecx+0xc], eax
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// A test tree of `nodes` under `header`: the root is one of them, its
+/// `+0` links lead down to the first node and the header, the `+0x18`
+/// successors run through all of them to the header, and the `+0x14`
+/// removal links from the root down to the header or 0. Each node's
+/// `+0xc` block has its low bit set or not. Returns the root (the header
+/// when empty).
+fn tree38(t: &mut Twins, rng: &mut Rng, header: u32, nodes: &[u32]) -> u32 {
+    if nodes.is_empty() {
+        return header;
+    }
+    let c = 1 + rng.below(nodes.len() as u32) as usize;
+    for (i, &n) in nodes.iter().enumerate() {
+        let left = if i == 0 { header } else { nodes[i - 1] };
+        t.w32(n, left);
+        let next = nodes.get(i + 1).copied().unwrap_or(header);
+        t.w32(n + 0x18, next);
+        let removed = if i > 0 {
+            nodes[i - 1]
+        } else if rng.chance(2) {
+            0
+        } else {
+            header
+        };
+        t.w32(n + 0x14, removed);
+        let block = rng.next() & !1 | rng.below(2);
+        t.w32(n + 0xc, block);
+    }
+    nodes[c - 1]
+}
+
+/// The table's entries (none to 3; their values absent, or with their
+/// own map of 0 to 3 nodes), the copies' map (0 to 3 nodes, their name
+/// pairs absent or with blocks whose low bits are set or not), `+0x64`.
+fn prep_shader_table(
+    t: &mut Twins,
+    obj: u32,
+    this: &mut u32,
+    table: h38::ShaderTable,
+    rng: &mut Rng,
+) {
+    *this = obj;
+    let mut next = obj + 0x200;
+    let mut take = |n: u32| {
+        let at = next;
+        next += n;
+        at
+    };
+    let header = obj + table.map;
+    let m = rng.below(4) as usize;
+    let entries: Vec<u32> = (0..m).map(|_| take(0x20)).collect();
+    for &e in &entries {
+        let value = if rng.chance(5) { 0 } else { take(0x40) };
+        t.w32(e + 0x10, value);
+        if value != 0 {
+            let map = value + 4;
+            let k = rng.below(4) as usize;
+            let nodes: Vec<u32> = (0..k).map(|_| take(0x20)).collect();
+            let root = tree38(t, rng, map, &nodes);
+            t.w32(map + 0xc, root);
+        }
+    }
+    let root = tree38(t, rng, header, &entries);
+    t.w32(header + 0xc, root);
+    // the copies live in the original's frame (no stack arguments)
+    let copy = t.a.stack_range().end - 0x108 - 0x4c;
+    let k = rng.below(4) as usize;
+    let nodes: Vec<u32> = (0..k).map(|_| take(0x20)).collect();
+    for &n in &nodes {
+        let pair = if rng.chance(4) { 0 } else { take(0x10) };
+        t.w32(n + 0x10, pair);
+        if pair != 0 {
+            for at in [pair, pair + 4] {
+                let v = rng.next() & !1 | rng.below(2);
+                t.w32(at, v);
+            }
+        }
+    }
+    let root = tree38(t, rng, copy, &nodes);
+    let ret = rng.next();
+    t.stub_set_this(h38::SHADER_MAP_COPY, 1, ret, &[(0xc, root)]);
+    t.stub_successor38(h38::TREE_SUCCESSOR);
+    t.stub_remove38(h38::TREE_REMOVE);
+    let v = rng.word();
+    t.w32(obj + 0x64, v);
+}
+
+fn prep_special_table(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    prep_shader_table(t, obj, this, h38::SPECIAL_TABLE, rng);
+}
+
+fn prep_magic_table(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    prep_shader_table(t, obj, this, h38::MAGIC_TABLE, rng);
+}
+
+const SHADER_TABLE_STUBS: &[(u32, K)] = &[
+    (h38::FREE_LIST_RESET, K::This(0)),
+    (h38::FREE_LIST_DTOR, K::This(0)),
+    (h38::TREE_CLEAR, K::This(0)),
+    (h38::PHYRE_FREE, K::Cdecl(1)),
+    (h38::OPERATOR_DELETE, K::Cdecl(1)),
+];
+
+#[rustfmt::skip]
+const CASES38C: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_special_table), ..method("unload_special_shader_table", 0x006c_19b0, This::Object, 0, SHADER_TABLE_STUBS, |m, this, _| u(gh38::unload_special_shader_table(m, frame_ebp(), this, h38::SPECIAL_TABLE))) }), 0x4c, 0),
+    framed(with_seh(Case { prep: Some(prep_magic_table), ..method("unload_special_shader_table_magic", 0x006c_1c50, This::Object, 0, SHADER_TABLE_STUBS, |m, this, _| u(gh38::unload_special_shader_table(m, frame_ebp(), this, h38::MAGIC_TABLE))) }), 0x4c, 0),
+];
+
+#[test]
+fn batch38c_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 100 } else { 600 };
+        run_cases(t, CASES38C, n, &mut Rng(0x3838_b0c8));
+    });
+}
+
+// ---- round 9 batch 39 (ffx_prender::h3_glue39) ----
+
+/// Ends of `n` earlier segments of a list of `count`: rising mostly, a
+/// step back now and then (an empty segment).
+fn segment_ends39(rng: &mut Rng, n: u32, count: u32) -> Vec<u32> {
+    let mut ends: Vec<u32> = (0..n).map(|_| rng.below(count + 1)).collect();
+    if !rng.chance(4) {
+        ends.sort_unstable();
+    }
+    ends
+}
+
+/// The sort mode (0, 1, 2 or another), the "sort" byte, 0 to 3 earlier
+/// segments, the draw count (small, or at the list's room or just
+/// below), the geometries (pointers into a pool or none, depths across
+/// the buckets, negative, huge or NaN).
+fn prep_merge39(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0d40);
+    *this = scene;
+    let bytes = rng.bytes(0x1_0d40);
+    t.write(scene, &bytes);
+    let mode = pick(rng, &[0, 1, 1, 2, 2, 3]);
+    t.stub_ret(h39::SORT_MODE, true, 0, 0, mode);
+    let ret = rng.next();
+    t.stub_import_c(h39::QSORT, 4, ret);
+    t.write(scene + h39::SORT, &[u8::from(!rng.chance(3))]);
+    let n = rng.below(4);
+    t.w32(scene + h39::SEGMENTS, n);
+    let small = rng.below(24);
+    let draws = pick(rng, &[small, small, small, 0xbf8, 0xc00]);
+    let geometries = if draws == 0xc00 && rng.chance(2) {
+        rng.below(6)
+    } else {
+        rng.below(24)
+    };
+    t.w32(scene + h39::DRAW_COUNT, draws);
+    t.w32(scene + h39::GEOMETRY_COUNT, geometries);
+    for (k, e) in segment_ends39(rng, n, draws).into_iter().enumerate() {
+        t.w32(scene + h39::DRAW_ENDS + 4 * k as u32, e);
+    }
+    // just below the room: a first segment of 8 draws reaches it exactly
+    if draws == 0xbf8 && n > 0 && rng.chance(2) {
+        t.w32(scene + h39::DRAW_ENDS, 8);
+    }
+    for (k, e) in segment_ends39(rng, n, geometries).into_iter().enumerate() {
+        t.w32(scene + h39::GEOMETRY_ENDS + 4 * k as u32, e);
+    }
+    let pool: Vec<u32> = (0..16).map(|k| obj + 0x400 + 0x100 * k).collect();
+    for &g in &pool {
+        let depth = match rng.below(5) {
+            0 => rng.float().to_bits(),
+            1 => (rng.below(0x1000 * 768) as f32).to_bits(),
+            2 => (-(rng.below(1000) as f32)).to_bits(),
+            // NaN, infinity, huge; the last two buckets
+            3 => pick(
+                rng,
+                &[
+                    0x7fc0_0000,
+                    0x7f80_0000,
+                    0x4f00_0000,
+                    0xcf00_0001,
+                    0x4a3f_ecd0,
+                    0x4a3f_ecd0,
+                    0x4a3f_f4a0,
+                    0x4a40_0440,
+                ],
+            ),
+            _ => (rng.below(40 * 768) as f32 / 7.0).to_bits(),
+        };
+        t.w32(g + 0xdc, depth);
+        let draw = rng.next();
+        t.w32(g + 0xc, draw);
+    }
+    for k in 0..geometries {
+        let g = if rng.chance(6) {
+            0
+        } else {
+            pool[rng.below(16) as usize]
+        };
+        t.w32(scene + h39::GEOMETRIES + 4 * k, g);
+    }
+}
+
+#[rustfmt::skip]
+const CASES39: &[Case] = &[
+    Case { prep: Some(prep_merge39), ..method("merge_vfx_render_arrays", 0x0065_4650, This::Object, 0, &[], |m, this, _| { gh39::merge_vfx_render_arrays(m, this); Out::None }) },
+];
+
+#[test]
+fn batch39_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 100 } else { 600 };
+        run_cases(t, CASES39, n, &mut Rng(0x3939_b039));
     });
 }
