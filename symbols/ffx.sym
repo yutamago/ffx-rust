@@ -3626,7 +3626,7 @@
 0x0063cf70 function graphicCharacterLightingSetShadeCoeffUnused # fh switch:cg3 0x71001d2530
 0x0063d050 function graphicCharacterLightingSetShadeColor # fh v3:exact 0x0063d200
 0x0063d140 function graphicCharacterLoad      # (path, chr id): loads the files of an asset list (.ahwin32) through 0x006642f0; "VIRTUOS Error!!!!! Can't find character data: %s."; was Chr_LoadAssetList
-0x0063d260 function ClusterManager_createPreallocateDataList # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001c6ea0 ClusterManager::createPreallocateDataList, 3 votes, round 1
+0x0063d260 function ClusterManager_createPreallocateDataList # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001c6ea0 ClusterManager::createPreallocateDataList, 3 votes, round 1; cdecl(name) -> user_malloc block or 0 (Ghidra: void): std::string(name) built in the outgoing argument area and passed by value (6 words) to AssetListReader_getPlatformSpecificPath(&path at ebp-0x1c), fiosIsFileExist, PStreamReaderFile at ebp-0x3c, size = end - start (-1 unknown) read whole; from Ch_LoadClothFileTask; ported (ffx_glue_other::h4_i7, m4 h4 i)
 0x0063d370 function graphicCharacterRegistToInstantiate # fh v3:exact 0x0063d520
 0x0063d400 function graphicCharacterReplaceSummonTexture # layout+callees: sorts between graphicCharacterRegistToInstantiate and graphicCharacterRestoreSummonTexture, and its named callees match the Switch 0x71001dd2d0 graphicCharacterReplaceSummonTexture's (similarity 0.67: Ch_GetChrRenderInstance, Ch_GetName, ClusterManager_GetInstance, ClusterManager_getPClusterByName, MagicFile_GetMagicId); symbols from Fahrenheit's server export
 0x0063d550 function graphicCharacterRestoreSummonTexture # fh v3:exact 0x0063d700

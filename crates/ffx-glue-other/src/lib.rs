@@ -94,7 +94,9 @@
 //!   `GDraw`'s depth-stencil state cache and depth buffer, the distortion
 //!   grid's setup;
 //! - [`h4_i6`]: its sixth batch: the broken screen effect's frame capture
-//!   and the movie player's texture update.
+//!   and the movie player's texture update;
+//! - [`h4_i7`]: its seventh batch: the cluster manager's preallocated data
+//!   list.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -152,6 +154,7 @@ pub mod h4_i3;
 pub mod h4_i4;
 pub mod h4_i5;
 pub mod h4_i6;
+pub mod h4_i7;
 pub mod menu;
 pub mod misc;
 pub mod movie;

@@ -29,7 +29,7 @@ use ffx_glue_other::{
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
-    h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6,
+    h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -8591,5 +8591,74 @@ fn i6_fmv_update_texture() {
             updated += t.log_entries();
         }
         assert!(updated > 0, "{name}: updated");
+    }
+}
+
+// ---- continuation round 7, batch 7 (ffx_glue_other::h4_i7)
+
+/// The cluster manager's preallocated data list.
+#[test]
+fn i7_preallocate_data_list() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c771);
+        let stubs = [
+            (i7::STRING_ASSIGN, true, 2, 2),
+            (i7::PLATFORM_PATH, false, 7, 0),
+            (i7::FILE_EXISTS, false, 1, 0),
+            (i7::READER_CTOR, true, 1, 1),
+            (i7::READER_IS_OPEN, true, 0, 0),
+            (i1::USER_MALLOC, false, 1, 0),
+            (i2::STREAM_READ, true, 2, 2),
+            (i7::READER_CLOSE, true, 0, 0),
+            (i7::READER_DTOR, true, 0, 0),
+            (i2::OPERATOR_DELETE, false, 1, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let mut read = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for sym in [i7::FILE_EXISTS, i7::READER_IS_OPEN] {
+                let v = rng.pick(&[1u32, 1, 0, 0x100]);
+                t.ret(sym, v);
+            }
+            let text = t.zeros(0x20);
+            let len = rng.below(0x1c);
+            for k in 0..len {
+                let c = b'a' + rng.below(26) as u8;
+                t.w8(text + k, c);
+            }
+            let name_arg = rng.pick(&[text, text, text, 0]);
+            let frame = t.ebp_for(1) - 0x5c;
+            // what the callees would have filled: the path's text pointer
+            // and capacity, the reader's data range (not compared)
+            // the argument string's unwritten bytes (the stubbed assign
+            // writes nothing): the same stale words in both stacks
+            for k in 0..6 {
+                let v = rng.next();
+                t.w32(frame + 4 * k, v);
+            }
+            let (p, cap) = (rng.next(), rng.pick(&[0xf, 0x10, 0x1f]));
+            t.w32(frame + 0x40, p);
+            t.w32(frame + 0x54, cap);
+            let (start, end) = (rng.below(0x100), rng.pick(&[0x200, u32::MAX, 0x80]));
+            t.w32(frame + 0x2c, start);
+            t.w32(frame + 0x30, end);
+            let r = t.check_framed(
+                &w,
+                0x0063_d260,
+                &[name_arg],
+                frame,
+                // the argument area (+0) is the original's outgoing stack, which
+                // later calls reuse: its words are compared through the log
+                &[(0x20, 0xc), (0x34, 0xc), (0x44, 0x10)],
+                |g| u(i7::create_preallocate_data_list(g, frame, name_arg)),
+            );
+            read += u32::from(r != 0);
+        }
+        assert!(read > 0, "{name}: data read");
     }
 }
