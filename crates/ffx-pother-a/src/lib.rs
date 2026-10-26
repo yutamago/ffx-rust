@@ -30,6 +30,7 @@ pub mod p3_bind;
 pub mod p3_init;
 pub mod p3_misc;
 pub mod p3_misc2;
+pub mod p3_misc3;
 pub mod p3_tree;
 pub mod physics;
 

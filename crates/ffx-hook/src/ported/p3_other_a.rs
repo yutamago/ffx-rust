@@ -11,7 +11,7 @@ use super::{mem, ported};
 use ffx_pother_a::{
     class::bridge as class, object::bridge as object, p3_bind::bridge as bind,
     p3_init::bridge as init, p3_misc::bridge as misc, p3_misc2::bridge as misc2,
-    p3_tree::bridge as tree, physics::bridge as physics,
+    p3_misc3::bridge as misc3, p3_tree::bridge as tree, physics::bridge as physics,
 };
 
 ported! {
@@ -1066,5 +1066,45 @@ ported! {
     Phyre_PScripting_initialize_005d6960 @ 0x005d_6960 => extern "C" fn scripting_005d6960() -> u32 {
         let mut f = super::StackFrame::<{ ffx_pother_a::p3_init::LUA_FRAME as usize / 4 }>::new();
         init::scripting_initialize(&mut mem(), f.at())
+    }
+    // round 2 (continuation d), batch 2: start-up, PhyrePrintf, destructors
+    /// `Phyre_PTimerWin32_Initialize()` -> 0x17 when neither timer API works, else 0.
+    Phyre_PTimerWin32_Initialize @ 0x0042_fe10 => extern "C" fn timer_initialize() -> u32 {
+        misc3::timer_initialize(&mut mem())
+    }
+    /// `Phyre_PhyreInit()` -> the first failing step's result, else 0.
+    Phyre_PhyreInit @ 0x0043_0dd0 => extern "C" fn phyre_init() -> u32 {
+        misc3::phyre_init(&mut mem())
+    }
+    /// `Phyre_PhyrePrintf(level, format, ...)`: the variable arguments
+    /// forwarded as the original's `va_list` (their address in the
+    /// caller's frame, `slots + 8`); the message in this frame.
+    Phyre_PhyrePrintf @ 0x0043_52f0 => extern "C" fn phyre_printf(level: u32, format: u32; slots: u32) -> u32 {
+        let mut f = super::StackFrame::<{ ffx_pother_a::p3_misc3::PRINTF_BUFFER as usize / 4 }>::new();
+        misc3::phyre_printf(&mut mem(), level, format, slots + 8, f.at())
+    }
+    /// `0x0047ed80(cursor, base, &offset)` -> the nested object or 0.
+    Phyre_PClassView_memberStep_0047ed80 @ 0x0047_ed80 => extern "thiscall" fn member_step(this: u32, base: u32, offset: u32) -> u32 {
+        misc3::member_step(&mut mem(), this, base, offset)
+    }
+    /// `0x005472c0(spline)` -> `this`.
+    Phyre_PGameplay_PSpline_dtor_005472c0 @ 0x0054_72c0 => extern "thiscall" fn spline_dtor_005472c0(this: u32) -> u32 {
+        misc3::spline_dtor(&mut mem(), this)
+    }
+    /// `0x005553e0(component, flags)` -> `this`.
+    Phyre_PGameplay_PTimerComponent_delete_005553e0 @ 0x0055_53e0 => extern "thiscall" fn timer_component_delete(this: u32, flags: u32) -> u32 {
+        misc3::timer_component_delete(&mut mem(), this, flags)
+    }
+    /// `0x00555bc0(p)` (create callback).
+    Phyre_PGameplay_PTimerComponent_create_00555bc0 @ 0x0055_5bc0 => extern "stdcall" fn timer_component_create(p: u32) -> u8 {
+        misc3::timer_component_create(&mut mem(), p)
+    }
+    /// `0x005d18f0(scheduler)`.
+    Phyre_PScripting_PScheduler_clear_005d18f0 @ 0x005d_18f0 => extern "thiscall" fn scheduler_clear(this: u32) {
+        misc3::scheduler_clear(&mut mem(), this);
+    }
+    /// `0x005d4770(script)` -> `eax` as the original leaves it.
+    Phyre_PScripting_releaseScriptArrays_005d4770 @ 0x005d_4770 => extern "thiscall" fn script_release(this: u32) -> u32 {
+        misc3::script_release(&mut mem(), this)
     }
 }
