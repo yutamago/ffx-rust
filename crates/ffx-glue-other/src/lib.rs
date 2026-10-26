@@ -55,7 +55,22 @@
 //!   gradient box), the distortion grid's weights, the button icons' UV,
 //!   size and position remaps;
 //! - [`h4_e5`]: its fifth batch: the FMOD music's start, read, cross-play,
-//!   data send and background-music switch.
+//!   data send and background-music switch;
+//! - [`h4_f1`]: continuation round 4, batch 1: the FMOD voice's start and
+//!   restart, the sound loop, the sound effects' whole volume and project
+//!   unload, a sound event's volume fade, the menu manager's instance
+//!   setups and buffer chain swap;
+//! - [`h4_f2`]: its second batch: the render thread's shader-pass switch,
+//!   the menu manager's material update and buffer reset, the button-icon
+//!   vertex info lookup, a sound event's constructor and release;
+//! - [`h4_f3`]: its third batch: the sound effects' per-frame update,
+//!   event creation, battle stream, project load and constructor;
+//! - [`h4_f4`]: its fourth batch: the FMOD event system's setup, a sound
+//!   bank's constructor and its event tree's load;
+//! - [`h4_f5`]: its fifth batch: the FMOD voice's event read and the sync
+//!   manager's setup;
+//! - [`h4_f6`]: its sixth batch: the menu message file read;
+//! - [`h4_f7`]: its seventh batch: the sound event group's list load.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -89,6 +104,13 @@ pub mod h4_e2;
 pub mod h4_e3;
 pub mod h4_e4;
 pub mod h4_e5;
+pub mod h4_f1;
+pub mod h4_f2;
+pub mod h4_f3;
+pub mod h4_f4;
+pub mod h4_f5;
+pub mod h4_f6;
+pub mod h4_f7;
 pub mod menu;
 pub mod misc;
 pub mod movie;

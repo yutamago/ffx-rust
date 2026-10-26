@@ -12,7 +12,7 @@ use super::{StackFrame, mem, ported};
 use ffx_pload::{
     cluster, descriptor, p1_bind, p1_body, p1_buffers, p1_cluster, p1_d3d, p1_declare, p1_dynbind,
     p1_fixup, p1_fixups, p1_header, p1_lists, p1_loader, p1_mapping, p1_misc, p1_pointers, p1_post,
-    p1_reader, p1_tree, p1_types, stream, types,
+    p1_reader, p1_textures, p1_tree, p1_types, stream, types,
 };
 
 /// `PClusterHeaderBase::PClusterHeaderBase` (slot 10 of its descriptor
@@ -1325,5 +1325,11 @@ ported! {
     Phyre_PSerialization_PBinary_loadCluster @ 0x0057_bce0 => extern "C" fn load_cluster(stream: u32, cluster: u32, ctx: u32, key: u32) -> u32 {
         let mut f = StackFrame::<{ p1_cluster::bridge::FRAME as usize / 4 }>::new();
         p1_cluster::bridge::load_cluster(&mut mem(), [stream, cluster, ctx, key], f.at())
+    }
+    // ---- round 5 (p1_textures) ----
+    /// `PBinary::loadClusterTextures(loader; stream, cluster, name)` -> 0 or an error; the scope lock and the instance iterator in this frame.
+    Phyre_PBinary_loadClusterTextures @ 0x0046_5ab0 => extern "thiscall" fn load_cluster_textures_465ab0(this: u32, stream: u32, cluster: u32, name: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_textures::bridge::FRAME as usize / 4 }>::new();
+        p1_textures::bridge::load_cluster_textures(&mut mem(), this, [stream, cluster, name], f.at())
     }
 }

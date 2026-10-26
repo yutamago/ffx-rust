@@ -13,7 +13,8 @@
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
-    h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
+    h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1867,5 +1868,131 @@ ported! {
     /// `FmodMusic_switchBGM(this; bgm, flag)`.
     FmodMusic_switchBGM @ 0x0070_9c80 => extern "thiscall" fn music_switch_bgm(this: u32, bgm: u32, flag: u32) {
         e5::music_switch_bgm(&mut mem(), this, bgm, flag);
+    }
+    // ---- continuation round 4, batch 1 (ffx_glue_other::h4_f1)
+    /// `FmodVoice_start(this; pan, volume)`.
+    FmodVoice_start @ 0x0070_b5c0 => extern "thiscall" fn voice_start(this: u32, _pan: u32, _volume: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f1::VOICE_FRAME / 4) as usize }>::new();
+        f1::voice_start(&mut mem(), frame.at(), this)
+    }
+    /// `FmodVoice_restart(this)`.
+    FmodVoice_restart @ 0x0070_b160 => extern "thiscall" fn voice_restart(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f1::VOICE_FRAME / 4) as usize }>::new();
+        f1::voice_restart(&mut mem(), frame.at(), this)
+    }
+    /// `FfxFmod_soundLoop(this)`.
+    FfxFmod_soundLoop @ 0x0070_70d0 => extern "thiscall" fn sound_loop(this: u32) -> u32 {
+        f1::sound_loop(&mut mem(), this)
+    }
+    /// `FmodSfx_setEntireVolume(this; volume)`.
+    FmodSfx_setEntireVolume @ 0x0070_d500 => extern "thiscall" fn sfx_set_entire_volume(this: u32, volume: u32) {
+        f1::sfx_set_entire_volume(&mut mem(), this, volume);
+    }
+    /// `FmodSfx_unloadProjects(this; all, _)`.
+    FmodSfx_unloadProjects @ 0x0070_dd10 => extern "thiscall" fn sfx_unload_projects(this: u32, all: u32, _b: u32) -> u32 {
+        f1::sfx_unload_projects(&mut mem(), this, all)
+    }
+    /// `SfxEvent_setVolume2(this; volume, frames)`.
+    SfxEvent_setVolume2 @ 0x0070_f210 => extern "thiscall" fn sfx_event_set_volume2(this: u32, volume: u32, frames: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f1::SET_VOLUME2_FRAME / 4) as usize }>::new();
+        f1::sfx_event_set_volume2(&mut mem(), frame.at(), this, volume, frames).unwrap_or(0)
+    }
+    /// `MenuManager_MenuInstanceSetup(this; rec, name, big)`: 64 bits in `edx:eax`.
+    MenuManager_MenuInstanceSetup @ 0x0067_d760 => extern "thiscall" fn menu_instance_setup(this: u32, rec: u32, name: u32, big: u32) -> u64 {
+        f1::menu_instance_setup(&mut mem(), this, rec, name, big)
+    }
+    /// `MenuManager_SetUpAllMenuInstance(this)`: the last setup's `edx:eax`.
+    MenuManager_SetUpAllMenuInstance @ 0x0067_e6c0 => extern "thiscall" fn menu_set_up_all(this: u32) -> u64 {
+        f1::menu_set_up_all(&mut mem(), this)
+    }
+    /// `MenuManager_SwapMenuBufferChain(this)`.
+    MenuManager_SwapMenuBufferChain @ 0x0067_e7f0 => extern "thiscall" fn menu_swap_buffer_chain(this: u32) {
+        f1::menu_swap_buffer_chain(&mut mem(), this);
+    }
+    // ---- continuation round 4, batch 2 (ffx_glue_other::h4_f2)
+    /// `PRenderThread_setShaderPass_0061c400(this; pass)`.
+    PRenderThread_setShaderPass_0061c400 @ 0x0061_c400 => extern "thiscall" fn set_shader_pass(this: u32, pass: u32) -> u32 {
+        f2::set_shader_pass(&mut mem(), this, pass)
+    }
+    /// `MenuManager_MenuInstanceUpdateMaterialShader(this; slot, rec)`.
+    MenuManager_MenuInstanceUpdateMaterialShader @ 0x0067_d920 => extern "thiscall" fn menu_update_material(_this: u32, slot: u32, rec: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f2::UPDATE_MATERIAL_FRAME / 4) as usize }>::new();
+        f2::menu_update_material(&mut mem(), frame.at(), slot, rec)
+    }
+    /// `MenuManager_resetMenuBufferChain_0067dfc0(this)`.
+    MenuManager_resetMenuBufferChain_0067dfc0 @ 0x0067_dfc0 => extern "thiscall" fn menu_reset_buffer_chain(this: u32) {
+        f2::menu_reset_buffer_chain(&mut mem(), this);
+    }
+    /// `AbmapManager_GetVertexInfo(this; name, kind)`.
+    AbmapManager_GetVertexInfo @ 0x0068_4cd0 => extern "thiscall" fn abmap_vertex_info(this: u32, name: u32, kind: u32) -> u32 {
+        f2::abmap_vertex_info(&mut mem(), this, name, kind)
+    }
+    /// `SfxEvent_ctor_0070e710(this; src, volume)`.
+    SfxEvent_ctor_0070e710 @ 0x0070_e710 => extern "thiscall" fn sfx_event_ctor(this: u32, src: u32, volume: u32) -> u32 {
+        f2::sfx_event_ctor(&mut mem(), this, src, volume)
+    }
+    /// `SfxEvent_dtor_0070e850(this)`.
+    SfxEvent_dtor_0070e850 @ 0x0070_e850 => extern "thiscall" fn sfx_event_dtor(this: u32) {
+        f2::sfx_event_dtor(&mut mem(), this);
+    }
+    // ---- continuation round 4, batch 3 (ffx_glue_other::h4_f3)
+    /// `FmodSfx_update(this; dt)`.
+    FmodSfx_update @ 0x0070_dec0 => extern "thiscall" fn sfx_update(this: u32, dt: u32) {
+        f3::sfx_update(&mut mem(), this, dt);
+    }
+    /// `FmodSfx_createSfxEvent(this; id)`.
+    FmodSfx_createSfxEvent @ 0x0070_c8f0 => extern "thiscall" fn sfx_create_event(this: u32, id: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f3::CREATE_FRAME / 4) as usize }>::new();
+        f3::sfx_create_event(&mut mem(), frame.at(), this, id)
+    }
+    /// `FmodSfx_playBattleStreaming(this; a, id, volume, pan)`.
+    FmodSfx_playBattleStreaming @ 0x0070_d190 => extern "thiscall" fn sfx_play_battle_streaming(this: u32, a: u32, id: u32, volume: u32, pan: u32) {
+        let mut frame = StackFrame::<{ (f3::STREAM_FRAME / 4) as usize }>::new();
+        f3::sfx_play_battle_streaming(&mut mem(), frame.at(), this, [a, id, volume, pan]);
+    }
+    /// `FmodSfx_loadProject(this; a, id, resident)`.
+    FmodSfx_loadProject @ 0x0070_cf10 => extern "thiscall" fn sfx_load_project(this: u32, a: u32, id: u32, resident: u32) {
+        let mut frame = StackFrame::<{ (f3::LOAD_FRAME / 4) as usize }>::new();
+        f3::sfx_load_project(&mut mem(), frame.at(), this, [a, id, resident]);
+    }
+    /// `FmodSfx_ctor_0070bfc0(this)`.
+    FmodSfx_ctor_0070bfc0 @ 0x0070_bfc0 => extern "thiscall" fn sfx_ctor(this: u32) -> u32 {
+        f3::sfx_ctor(&mut mem(), this)
+    }
+    // ---- continuation round 4, batch 4 (ffx_glue_other::h4_f4)
+    /// `FfxFmod_initEventSystem(this)`.
+    FfxFmod_initEventSystem @ 0x0070_6820 => extern "thiscall" fn init_event_system(this: u32) -> u32 {
+        f4::init_event_system(&mut mem(), this)
+    }
+    /// `SfxBank_ctor_0070f760(this; system, path)`.
+    SfxBank_ctor_0070f760 @ 0x0070_f760 => extern "thiscall" fn sfx_bank_ctor(this: u32, system: u32, path: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f4::BANK_FRAME / 4) as usize }>::new();
+        f4::sfx_bank_ctor(&mut mem(), frame.at(), this, system, path)
+    }
+    /// `FmodEventTree_load_00710370(this; path)`.
+    FmodEventTree_load_00710370 @ 0x0071_0370 => extern "thiscall" fn event_tree_load(this: u32, path: u32) -> u32 {
+        f4::event_tree_load(&mut mem(), this, path)
+    }
+    // ---- continuation round 4, batch 5 (ffx_glue_other::h4_f5)
+    /// `FmodVoice_read(this; id, flag)`.
+    FmodVoice_read @ 0x0070_add0 => extern "thiscall" fn voice_read(this: u32, id: u32, flag: u32) -> u32 {
+        f5::voice_read(&mut mem(), this, id, flag)
+    }
+    /// `SyncManager_syncInit(this)`.
+    SyncManager_syncInit @ 0x006f_b210 => extern "thiscall" fn sync_init(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f5::SYNC_INIT_FRAME / 4) as usize }>::new();
+        f5::sync_init(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 4, batch 6 (ffx_glue_other::h4_f6)
+    /// `TKMallocAndReadMenuMessage(name, out)`.
+    TKMallocAndReadMenuMessage @ 0x0088_ccf0 => extern "C" fn read_menu_message(name: u32, out: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f6::MESSAGE_FRAME / 4) as usize }>::new();
+        f6::read_menu_message(&mut mem(), frame.at(), name, out)
+    }
+    // ---- continuation round 4, batch 7 (ffx_glue_other::h4_f7)
+    /// `SfxEventGroup_load_00710c50(this; path)`.
+    SfxEventGroup_load_00710c50 @ 0x0071_0c50 => extern "thiscall" fn event_group_load(this: u32, path: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f7::GROUP_LOAD_FRAME / 4) as usize }>::new();
+        f7::event_group_load(&mut mem(), frame.at(), this, path)
     }
 }

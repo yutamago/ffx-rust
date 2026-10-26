@@ -75,6 +75,11 @@ MASKS = {
     "event-agency-5.bmp": [(1200, 640, 1280, 720)],
     "event-agency-6.bmp": [(1200, 640, 1280, 720)],
     "event-agency-7.bmp": [(1200, 640, 1280, 720)],
+    # and on Besaid beach (903 pixels, its other running frame, in a Rust
+    # run; the two recordings agreed) and in the agency (49 pixels between
+    # the recordings) of settings-shadow (2026-10-26)
+    "settings-shadow-3.bmp": [(1200, 640, 1280, 720)],
+    "settings-shadow-4.bmp": [(1200, 640, 1280, 720)],
 }
 BLOCK = 20
 SKY = 240  # coarse shots: rows above this are left out (the beams reach the y 160 blocks; characters stand lower)

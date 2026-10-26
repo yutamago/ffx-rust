@@ -183,7 +183,14 @@ statically linked `PhyreEngine` and CRT included; `coverage.py candidates
 --all`) and leaves `symbols/coverage.txt` alone; `COVERAGE_REPLAYS` picks
 the replays, `COVERAGE_DIR` the folder. `tools/coverage-phyre.py <hits>`
 groups such a run's hits by module and `PhyreEngine` subsystem (the M4
-pilot's measurement, `~/ffx-work/m4/pilot-report.md`). Each hit is one
+pilot's measurement, `~/ffx-work/m4/pilot-report.md`). Every launch arms
+all candidates again, so each run's own hits are the lines it appends:
+`coverage-run.sh` keeps them as `<tag>.hits` in the folder too.
+`tools/coverage-new.py DIR TAG... [--pilot HITS] [--out FILE]` lists the
+platform functions (the `phyre` module, and the `glue` and `platform`
+classes) those runs reached that no `ported!` line hooks and no M4 list
+(`~/ffx-work/m4/port/*.list`) holds, by module, with the first run (in the
+order given) that reached each. Each hit is one
 write since 2026-10-25 (before, `writeln!` could split a line and other
 threads' lines landed inside it).
 
@@ -965,6 +972,85 @@ dates are the files' times.
   every range, and nothing is left out. The waits on the map words still
   check the maps.
 
+### Coverage replays
+
+The extra list (2026-10-26, m4-coverage2; `tools/replays/run-all.sh
+--extra`, recordings in `~/ffx-work/replay-shots-extra`) reaches platform
+code the main list does not (`~/ffx-work/m4/port/plan.md`, "M4 is done
+when", item 2). All are pinned (`pin` after `lockstep on`) except the
+real-time movie.
+
+- `settings-hdao`, `-msaa`, `-fxaa`, `-smaa`, `-texhigh` (about 15 s
+  each): field-walk's deck (save 1, `cdsp0000`) with one settings file
+  each ("Sandbox settings"), shots at event count 101 and after a short
+  walk of a fixed 230 frames. `settings-shadow` the same with `Shadow=3`,
+  then Besaid beach (save 3, shadow solution 4) and the agency (save 5,
+  solution 0) through `loadsave`, so the three shadow solutions the saves
+  reach all draw their shadow maps.
+- `movie-fmv` (`realtime`, about 40 s): movie 2 (`IWK_us.webm`, Wakka's
+  kick). No save reaches an FMV by itself; the script requests
+  `bsil0000`'s worker 24 entry 5, which waits for effect flag 5 and calls
+  `Native_b000_MovieStart(2, 0x500)`, with a `call` of
+  `AtelRegistSignalWithoutSameLevel` (`0x0086eba0`: from `0xffff`, worker
+  24, kind 0, level 1, entry 5) on Besaid beach (save 3), then does what
+  `Native_b009_MovieCameraWait`'s start does (`g_WaitFramesByTime`
+  `0x0112a008` = 1, `graphicPlayVideo(0)` `0x006427c0`) and, after the
+  shots, what `Native_b004`/`b001` do (`graphicDestroyFmv` `0x0063df30`,
+  `g_WaitFramesByTime` 0, the movie number `0x00c40e28` -1). The player
+  needs real time: in fast mode, lockstep or not, the movie never started
+  (`g_FMVPlayerManager` `+0x6d8`, the frame, stayed 0 and the screen
+  black), and calling `graphicInitFMVPlayer` with `call` while lockstep
+  held the main thread hung the game. At the game's rate the frame
+  advances about one per update; the shots are pinned to it (`shotwhen`
+  on `*0x00cded3c+0x6d8`, windows 4 frames wide: 64, 192, 320): the
+  three were the same to the pixel in three original and two Rust runs
+  (updates 392, 520, 648 in each); the field after it differs between
+  original runs (real time). event-arrival already runs the same movie
+  code (coverage mode: libvpx, mkvparser, libVorbis, `PVideoPlaybackWin32`
+  reached in event-arrival and the session on save 2, not on the other
+  saves), although nothing of it shows there; movie-fmv reached no
+  function those had not.
+- `iggy-menus` (about 40 s): the PC menu (Esc) and every page it opens
+  without changing anything (System setting: Audio, Video scrolled to its
+  last row, Key bindings, Keyboard; Special features; Change parameters),
+  then the title as after a game over (as menu-save) and the load list,
+  left with Backspace (save/load state `0xc`, then `0xa`). The PC menu
+  reads DirectInput keys; Backspace goes back one page and puts the cursor
+  on its first entry; Esc closes the menu from any page; Enter on the
+  Video page's first row opens the resolution list, so the script never
+  presses it there. The Flash pages animate their transitions: each shot
+  comes 240 frames after the key that opened the page. Those fades follow
+  the wall clock: the pages with sliders (3-5) and the title (11, 12)
+  differ between any two original runs, and a third original run differed
+  from both recordings on page 6 (the background's fade, 21,746 pixels),
+  so iggy-menus is on the extra list's `eye` list (traces compared). No
+  shot of the load list (its dates are the files' times).
+- `battle-ifrit` (about 20 s): the Thunder Plains (`battle 34 0 0`,
+  `kami00_00`, battle map `0x412`) from save 5, set up as battle-overdrive
+  (party, the monsters' HP 99999); Tidus attacks, Yuna summons Ifrit
+  (magic ID `0x254`, actor 9). Ifrit's effect state (`+0xdfb`) goes from 1
+  to 5 within a frame (never 4 at a boundary, unlike Valefor's), so the
+  shots count from 5. Its shots were the same in every run but for a few
+  cursor-glow pixels.
+
+Measured on 2026-10-26: two recordings and a third original run gave the
+same traces; the settings shots were the same to a few pixels (the
+chocobo icon on Besaid beach and in the agency, which animates by the
+wall clock, is masked in `settings-shadow-3`/`-4`). Two Rust runs with
+every replacement passed every trace and shot. They stay on the extra list
+because their recordings would show up as missing shots in every other
+branch's main-list comparison until they are merged.
+
+Coverage (`COVERAGE_ALL=1`, original code, the main list, the extra list
+and the five sessions; per-run hits in `~/ffx-work/m4/coverage2/hits`):
+10,596 functions. Beyond the main list and the sessions the extra list
+reached 39: 20 game-logic functions in battle-ifrit (all ported), and 19
+render glue and `PhyreEngine` functions of the settings replays (shadow
+maps 11, FXAA 3, SMAA 3, MSAA 1) and iggy-menus (1). HDAO, `TQ_HIGH` and
+the movie reached nothing new: their code also runs with the settings off
+(HDAO's pass returns early) or in event-arrival (the movie). The open
+ones are in `~/ffx-work/m4/port/coverage2.list` (`tools/coverage-new.py`).
+
 `fpucw` answers the game thread's x87 control word: `0x027f` (53-bit
 precision, round to nearest, all exceptions masked).
 
@@ -1032,6 +1118,33 @@ the replays again. `ffx-harness` drops the file's `#` comment lines when
 it writes the sandbox's copy (the game's parser, `Settings_Load`
 `0x00401cb0`, knows only `key=value` lines), and sets `Resolution`,
 `ScreenMode`, `Mute` and `MasterVolume` (`FFX_TEST_VOLUME`, default 5).
+
+Other settings for one game (2026-10-26, m4-coverage2): a replay line
+`settings NAME` (read before the launch, like `realtime`), or
+`FFX_SETTINGS=NAME` for any harness game (`Options::settings`), merges
+`tools/sandbox/NAME.ini` over that file: each of its `key=value` lines
+replaces the default's line in place, keys the default lacks are appended,
+and its `#` lines are dropped too (a value with a `/` or ending in `.ini`
+is a path from the repository instead). Keys 11-18 of the settings table
+(`Anisotropic` to `HDAO`, `docs/formats/platform.md`) take the `Quality`
+preset whatever the file says, so every such file says
+`Quality=VQ_CUSTOM`; the default file's values of those keys are the
+`VQ_LOW` preset, so only the keys the file names change. The files:
+`hdao.ini` (`HDAO=High`), `msaa4.ini` (`MSAA=4`), `fxaa.ini`
+(`PostAA=PAA_FXAA`, `UnSharpMask=On`), `smaa.ini` (`PAA_SMAA4`,
+`UnSharpMask=On`), `shadow.ini` (`Shadow=3`), `texhigh.ini`
+(`TextureQuality=TQ_HIGH`). The `settings-*` replays read the values back
+(`readp 0x022fb504 0x30 0x1c`, `g_Settings` `+0x30..+0x4b`) and trace
+them. Read back in the recordings: `Shadow` 3, `TextureQuality` 0 (high;
+2 elsewhere), `MSAA` 4, `PostAA` 1 (FXAA) and 5 (SMAA4) with
+`UnSharpMask` 1, `HDAO` 3, each as its file says. The harness writes the
+file with LF line ends (the repository's file has none either; CRLF, the
+platform census's open question 1, is untested). Editing
+`TextureQuality` alone in `GameSetting.ini` changes nothing while
+`Quality=VQ_LOW`: the preset gives index 2 (`TQ_LOW`) whatever the line
+says, which is why draw-field captures with `TQ_MEDIUM` and `TQ_HIGH`
+written there gave the same textures (2026-10-26); the references were
+`TQ_LOW` as recorded.
 
 `Game::launch` takes a ticket, waits until a slot is free (saying so on
 stderr), holds that slot's lock while the game runs and frees it when the

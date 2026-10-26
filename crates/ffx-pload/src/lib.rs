@@ -27,7 +27,8 @@
 //! - [`p1_pointers`]: the cluster reader's array and pointer-array fixups (round 4);
 //! - [`p1_body`]: the cluster reader's body, its steps after the header (round 4);
 //! - [`p1_header`]: the cluster reader's header classes (round 4);
-//! - [`p1_cluster`]: `PBinary::loadCluster` (round 4).
+//! - [`p1_cluster`]: `PBinary::loadCluster` (round 4);
+//! - [`p1_textures`]: `PBinary::loadClusterTextures` (round 5).
 //!
 //! Everything this crate does not port is called at its address through
 //! [`ffx_graphic::host::Host`] (the allocator, the file layer, the
@@ -60,6 +61,7 @@ pub mod p1_misc;
 pub mod p1_pointers;
 pub mod p1_post;
 pub mod p1_reader;
+pub mod p1_textures;
 pub mod p1_tree;
 pub mod p1_types;
 pub mod stream;

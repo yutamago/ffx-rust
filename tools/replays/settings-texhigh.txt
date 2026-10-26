@@ -1,0 +1,22 @@
+# Graphics settings (M4 coverage 2, docs/harness.md "Settings replays"):
+# field-walk's deck (save ffx_001, cdsp0000) with TextureQuality=TQ_HIGH
+# (tools/sandbox/texhigh.ini merged over the sandbox's GameSetting.ini,
+# Quality=VQ_CUSTOM so the file's value counts): every texture loads with
+# all its mip levels (Phyre_PBinary_loadClusterTextures drops none,
+# g_Settings +0x34 = 0). Same walk, shots and traces as settings-hdao.txt.
+settings texhigh
+load direct 1 cdsp0000
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+readp 0x022fb504 0x30 0x1c
+trace *0x022fb504+0x30:0x1c 0x00c42200:4 0x01135ee0:0x110 0x0113205c:0xa68
+read 0x01325d94 4
+shot $OUT\settings-texhigh-1.bmp
+press up 40 10
+press left 20 10
+press down 20 10
+wait 120
+read 0x01325d94 4
+shot $OUT\settings-texhigh-2.bmp

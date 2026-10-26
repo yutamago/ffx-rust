@@ -312,7 +312,7 @@ def check(repo, exe_path, sizes):
             # ffx_graphic's Host (with a Conv): 12 for cdecl and thiscall,
             # else 8; ffx_bridge's (no Conv): 6
             cap = (12 if conv in ("cdecl", "thiscall") else 8) if has_conv else 6
-        elif method and name in ("call_st0", "call_sym_st0", "call_st0_f64", "call_sym_st0_f64"):
+        elif method and name in ("call_st0", "call_sym_st0", "call_st0_f64", "call_sym_st0_f64", "call_u64", "call_sym_u64"):
             cap = 8 if has_conv else 6
         elif name in ("call_cdecl", "call_ptr", "call"):
             cap = 8 if f.name == "loadsave.rs" else 12

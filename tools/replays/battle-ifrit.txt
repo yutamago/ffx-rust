@@ -1,0 +1,42 @@
+# Another battle and summon (M4 coverage 2): the Thunder Plains (battle
+# field 34, kami00, battle map 0x412 with its rain and lightning; formation
+# kami00_00: Larva and Gold Element) from save ffx_005, as
+# battle-overdrive.txt starts (party Yuna, Tidus, Wakka; the monsters' HP
+# and max HP set to 99999 so the battle runs on). Tidus attacks, then Yuna
+# summons Ifrit (Summon, the second aeon): its entry (Ifrit is actor 9;
+# magic ID 0x254; Ifrit's effect state, actor +0xdfb, goes from 1 to 5 within a
+# few frames, never 4 at a frame boundary, so the shots count from 5).
+# Lockstep, fast mode, pinned. Traced: the magic ID and file handle's low
+# half, the window bits, the summoner, the party's and the monsters' HP,
+# the battle phase. Shots (battle-ifrit-<n>.bmp): 1 Tidus's menu, 2 Yuna's
+# summon list, 3 and 4 Ifrit's entry.
+load direct 5 kami0100
+lockstep on
+pin
+wait 10
+write 0x011307e8 01000405ff020306
+battle 34 0 0
+waitfor 0x0112a8e0:1 01 ff 4000
+writep 0x011334d4 0x13cd4 9f860100
+writep 0x011334d4 0x13d10 9f860100
+writep 0x011334d4 0x14c64 9f860100
+writep 0x011334d4 0x14ca0 9f860100
+waitfor 0x023cc08c:4 01000000 ffffffff 600
+trace 0x00c64ca0:4 0x00c64cac:2 0x023cc08c:4 0x0112c9e8:1 *0x011334d4+0x5d0:4 *0x011334d4+0x1560:4 *0x011334d4+0x4410:4 *0x011334d4+0x13d10:4 *0x011334d4+0x14ca0:4 0x0112a8e0:1
+wait 30
+shot $OUT\battle-ifrit-1.bmp
+press circle 4 30
+press circle 4 30
+waitfor 0x023cc08c:4 02000000 ffffffff 3000
+wait 30
+press down 4 30
+press circle 4 30
+press down 4 30
+shot $OUT\battle-ifrit-2.bmp
+press circle 4 0
+waitfor 0x00c64ca0:4 54020000 ffffffff 600
+waitfor *0x011334d4+0x9a0b:1 05 ff 1500
+wait 150
+shot $OUT\battle-ifrit-3.bmp
+wait 100
+shot $OUT\battle-ifrit-4.bmp
