@@ -39,7 +39,9 @@
 //! - [`h4_d4`]: its fourth batch: an eight-value Flash call, a texture
 //!   animation frame by name, the soft particles' specular maps, and the
 //!   FMOD data loaders (sync buffers, voice lists and projects, music
-//!   projects, the shout stream).
+//!   projects, the shout stream);
+//! - [`h4_d5`]: its fifth batch: the message windows' draw and an Iggy
+//!   menu's mouse handler.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -67,6 +69,7 @@ pub mod h4_d1;
 pub mod h4_d2;
 pub mod h4_d3;
 pub mod h4_d4;
+pub mod h4_d5;
 pub mod menu;
 pub mod misc;
 pub mod movie;

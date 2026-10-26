@@ -13213,8 +13213,8 @@
 0x008abab0 function TODVDFileStartRead # cdecl(file, name, buf): CdLib kept in 0x01865f04; +0x10(file); +0x14(name) non-zero: +0(name, buf, 0, 0); name ours
 0x008abd00 function TODebugAddPadPrintFlag    # fh switch:cg2 0x71008bb6d8
 0x008abd20 function TODebugGetPadPrintFlag    # fh v3:bsim1.00 0x008abcd0
-0x008abd30 function TODrawMessageWindow       # fh v3:exact+call.cs 0x008abce0 stdcall
-0x008abe40 function TODrawMessageWindowForMenu # fh v3:exact 0x008abdf0
+0x008abd30 function TODrawMessageWindow       # fh v3:exact+call.cs 0x008abce0 stdcall; ported (ffx_glue_other::h4_d5, m4 h4 d): TOInitAddPkt, TOTransTexture, TOSortMessageWindowPriority(frame), TODrawAlphaBG(*0x00c59f38 when > 0), scissor 512x416, TODrawBtlWindow, 8 windows (hidden: save menu without bit 0x200, slot state 2, kind 1/3, not 0x4000, no text, *0x00c59558 != 1, *0x01841e0c == 0; skipped while SaveDataIsBusy) TODrawWindow + TODrawMessage, scissor, g_TOPadGetCtrl = 1, TOSetAddPkt, TODapsDraw's eax
+0x008abe40 function TODrawMessageWindowForMenu # fh v3:exact 0x008abdf0; ported (ffx_glue_other::h4_d5, m4 h4 d): TOSetPktBuffAdrs(0x1f00000, 0x100000, 0xf0000), TOOpenPktbuff, sort, scissor, TOSetRegFont1612, the 8 windows as TODrawMessageWindow without the busy check, scissor, TOClosePktbuff, TODrawKick's eax, g_TOPadGetCtrl = 1
 0x008abf30 function TODrawMovieMessage        # fh switch:cg3 0x71004fc2d0
 0x008ac130 function TOFTCTransfer             # fh v3:exact 0x008ac0e0; (file): version u16 +4 >= 0xc8, slot u16 +8: 0x01841da0[slot] = image (+0x20/+0x24), size (+0x28/+0x2a); slots 0/4 copy the image to 0x0184b610/0x0185b610; slots 0..5 copy the CLUT (+0x30/+0x10); 0, or 1
 0x008ac2c0 function TOGetBtlMenuTexAdrs       # () -> [0x01841e04]; fh switch:bsim1.00 0x71004fa310
@@ -13352,7 +13352,7 @@
 0x008b5960 function TODrawChangeMacro2        # fh v3:exact 0x008b5910
 0x008b5ab0 function TODrawEasyChangeMacro        # layout+callees: sorts between TODrawChangeMacro2 and TODrawExtMessage, and its named callees match the Switch 0x71004f3750 TODrawEasyChangeMacro's (similarity 1.00: TOGetChangeMacroAddress, TOGetFontInfo, TOGetGroup, TOMakePktFont1612, TOSkipCode); symbols from Fahrenheit's server export
 0x008b5c70 function TODrawExtMessage          # fh switch:cg2 0x71004f35e0
-0x008b5dc0 function TODrawMessage             # fh v3:exact 0x008b5d70
+0x008b5dc0 function TODrawMessage             # fh v3:exact 0x008b5d70; ported (ffx_glue_other::h4_d5, m4 h4 d): cdecl(i): g_MsgWindows[i] open (u16 +0): a debug window (u16 +2 == 1) TODapsSetPos(0x69, 0x172) + two TODapsPrintf lines when g_DebugPadPrintFlag; else the select cursor of kind 2 (cursor mode u16 +0x1e == 1, TOGetWindowStatus == 2, u16 +0x1c), the text (TODrawMovieMessageWaitNamesp in window mode 1, else the routine +0x12c(window)), the cursor of kind 1; eax the window, the status or the last call's
 0x008b5ea0 function TODrawMovieChangeMacro2   # fh v3:exact 0x008b5e50
 0x008b5fb0 function TODrawSelectCursor        # fh v3:cg8 0x8b5f60
 0x008b6200 function TOFFXToSJIS               # fh v3:exact 0x008b61b0
@@ -16281,6 +16281,7 @@
 0x00a28b20 function IggyMenu_getArrayS32_00a28b20 # thiscall(this; i) ret 4: _IggyValuePathMakeArrayRef@12(&path [ebp-0x18], this+8, i), _IggyValueGetS32RS@16(&path, 0, 0, &i): the value lands in its own argument slot, which it returns; callers FUN_0068e5b0 (2), FUN_0068f610 (+2 more); name ours; ported (ffx_glue_other::frames, m4 h4 r2)
 0x00a28ba0 function IggyMenu_callIggyAS3External # fh v3:exact 0x00a28ba0 IggyMenu::callIggyAS3External; ported (ffx_glue_other::menu, m4 h4 r1): thiscall(this; target, name, n, values, unused) ret 0x14: player = [[this+0x6c]]; fast = _IggyPlayerCreateFastNameUTF8@12(player, name, strlen(name)), retried after Sleep(5) (import read once) while 0; _IggyPlayerCallFunctionRS@20(player, target, fast, n, values)'s eax
 0x00a28c00 function IggyMenuHandlers_callCdecl_00a28c00 # cdecl(ctx, f, arg): f(arg) cdecl, its eax; stored by IggyMenuHandlers_addCall; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
+0x00a28c10 function IggyMenu_handleMouseEvent_00a28c10 # thiscall(menu; event, result) ret 8 (vtable +4 of IggyMenu and FFIggyPauseMenu): active menus (byte +0x70) turn a mouse move (*event == 7) into IggyMakeEventNone + IggyMakeEventMouseMove(x - +0x84, y - +0x88) in the frame, dispatch it (IggyPlayerDispatchEventRS(*(+0x6c), &ev, result)) and set the hover byte +0x94 (x, y strictly inside +0x84/+0x88 + size +0x8c/+0x90, signed; returned); other events dispatched as they are; inactive menus leave the cookie word in eax; name ours; ported (ffx_glue_other::h4_d5, m4 h4 d)
 0x00a28d10 function GetDerefU32_00a28d10         # auto-port shape (return deref u32 (pointer chain), thiscall): t0 = u32[(a0 + 0x6c)]; t1 = u32[t0]; return t1; callers:  and 7 more; name ours
 0x00a28d30 function iggyDataValueSet          # fh v3:exact 0x00a28d30
 0x00a28d70 function iggyDataValueSet_00a28d70 # fh v3:exact 0x00a28d70

@@ -26,7 +26,8 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4, h4_d1 as d1,
-    h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, menu as mn, misc as m, movie as mv, r3,
+    sound as s,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -9181,6 +9182,246 @@ fn d4_voice_init_data() {
                 ebp - 0x108,
                 &[(0, 0x104)],
                 |g| u(d4::voice_init_data(g, ebp - 0x108, voice, events, system)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 2, batch 5 (ffx_glue_other::h4_d5)
+
+/// A logging stub at `sym` that logs `n_long` stack words, or `n_short`
+/// (as `short_tag`) when the word at `[esp + offset]` is one of `short`
+/// (calls with fewer arguments: more would be stack junk).
+fn stub_split(
+    t: &mut Twins,
+    sym: u32,
+    short_tag: u32,
+    offset: u8,
+    short: &[u32],
+    (n_long, n_short): (u32, u32),
+) {
+    let long = t.stub_code(sym, false, n_long, 0);
+    let brief = t.stub_code(short_tag, false, n_short, 0);
+    let mut c = vec![0x8b, 0x44, 0x24, offset]; // mov eax, [esp+offset]
+    let mut patches = Vec::new();
+    for &s in short {
+        c.push(0x3d);
+        c.extend(s.to_le_bytes()); // cmp eax, s
+        c.extend([0x0f, 0x84]); // je brief
+        patches.push(c.len());
+        c.extend([0; 4]);
+    }
+    let at = t.cave_next;
+    c.push(0xe9); // jmp long
+    let here = c.len() as u32 + 4;
+    c.extend(long.wrapping_sub(at + here).to_le_bytes());
+    let brief_at = c.len() as u32;
+    c.push(0xe9); // jmp brief
+    let here = c.len() as u32 + 4;
+    c.extend(brief.wrapping_sub(at + here).to_le_bytes());
+    for p in patches {
+        let rel = brief_at.wrapping_sub(p as u32 + 4);
+        c[p..p + 4].copy_from_slice(&rel.to_le_bytes());
+    }
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// The message windows: one window's text and the two window passes.
+#[test]
+fn d5_message_windows() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d501);
+        let stubs: [(u32, u32); 19] = [
+            (d5::DAPS_SET_POS, 2),
+            (d5::WINDOW_STATUS, 1),
+            (d5::DRAW_SELECT_CURSOR, 1),
+            (d5::WINDOW_MODE, 0),
+            (d5::MOVIE_MESSAGE_WAIT, 1),
+            (d5::SAVE_MENU, 0),
+            (d5::SAVE_BUSY, 0),
+            (d5::DRAW_WINDOW, 1),
+            (d5::SORT_WINDOWS, 1),
+            (d5::PKT_SCISSOR, 4),
+            (d5::INIT_ADD_PKT, 0),
+            (d5::TRANS_TEXTURE, 0),
+            (d5::DRAW_ALPHA_BG, 1),
+            (d5::DRAW_BTL_WINDOW, 0),
+            (d5::SET_ADD_PKT, 0),
+            (d5::DAPS_DRAW, 0),
+            (d5::SET_PKT_BUFF, 3),
+            (d5::OPEN_PKT_BUFF, 0),
+            (d5::SET_REG_FONT, 0),
+        ];
+        for &(sym, n) in &stubs {
+            t.stub(sym, false, n, 0);
+        }
+        for (sym, n) in [(d5::CLOSE_PKT_BUFF, 0), (d5::DRAW_KICK, 0)] {
+            t.stub(sym, false, n, 0);
+        }
+        let first_line = t.rebase(d5::DEBUG_LINES[0]);
+        stub_split(
+            &mut t,
+            d5::DAPS_PRINTF,
+            0x0bad_dde0,
+            4,
+            &[first_line],
+            (2, 1),
+        );
+        let draw = t.stub_code(0x0bad_012c, false, 1, 0);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([
+            d5::CLOSE_PKT_BUFF,
+            d5::DRAW_KICK,
+            d5::DAPS_PRINTF,
+            0x0bad_dde0,
+            0x0bad_012c,
+        ]);
+        let menu = t.zeros(4);
+        for i in 0..250 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            // eight windows and their slots
+            for k in 0..8u32 {
+                let win = t.random(&mut rng, 0x130);
+                t.write(win, &[0u16, 1, 1, 1][rng.below(4) as usize].to_le_bytes());
+                t.write(
+                    win + 2,
+                    &[0u16, 1, 0, 2][rng.below(4) as usize].to_le_bytes(),
+                );
+                t.write(
+                    win + 0x1c,
+                    &[1u16, 2, 0][rng.below(3) as usize].to_le_bytes(),
+                );
+                t.write(
+                    win + 0x1e,
+                    &[1u16, 1, 0, 2][rng.below(4) as usize].to_le_bytes(),
+                );
+                t.w32(win + 0x12c, draw);
+                t.g32(d5::MSG_WINDOWS + 4 * k, win);
+                let state = t.random(&mut rng, 0x1c);
+                t.w32(state + 8, [2, 2, 1, 3][rng.below(4) as usize]);
+                t.write(
+                    state + 0x1a,
+                    &[1u16, 3, 2][rng.below(3) as usize].to_le_bytes(),
+                );
+                t.write(
+                    state + 0x10,
+                    &[0u16, 0x4000][rng.below(2) as usize].to_le_bytes(),
+                );
+                t.write(
+                    state + 0xc,
+                    &[0u16, 0, 5, 1][rng.below(4) as usize].to_le_bytes(),
+                );
+                let slot = t.random(&mut rng, 0x18);
+                t.w32(slot + 0x14, state);
+                t.g32(d5::WINDOW_SLOTS + 4 * k, slot);
+            }
+            let flag = [0, 1, 0x80][rng.below(3) as usize];
+            t.write(t.rebase(d5::DEBUG_PAD_PRINT.sym), &[flag]);
+            t.ret(d5::WINDOW_STATUS, [2, 2, 0, 1][rng.below(4) as usize]);
+            t.ret(d5::WINDOW_MODE, [1, 0, 2][rng.below(3) as usize]);
+            t.ret(d5::SAVE_BUSY, [0, 0, 1, 2][rng.below(4) as usize]);
+            t.w32(menu, [0, 0x200, 0x1ff, u32::MAX][rng.below(4) as usize]);
+            t.ret(d5::SAVE_MENU, menu);
+            for sym in d5::HIDE_SWITCHES {
+                let v = [0, 1, 2][rng.below(3) as usize];
+                t.g32(sym, v);
+            }
+            let alpha = [0, 1, 0x80, u32::MAX][rng.below(4) as usize];
+            t.g32(d5::ALPHA_BG.sym, alpha);
+            // one window
+            let k = rng.below(8);
+            t.check(
+                &format!("{w} message {k}"),
+                d5::DRAW_MESSAGE,
+                Conv::Cdecl,
+                &[k],
+                |g| u(d5::draw_message(g, k)),
+            );
+            // the passes
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} window pass"),
+                0x008a_bd30,
+                Conv::Cdecl,
+                &[],
+                ebp - 0x14,
+                &[(0, 0x10)],
+                |g| u(d5::draw_message_window(g, ebp - 0x14)),
+            );
+            // the field pass set the pad-control byte: clear it again
+            t.write(t.rebase(d5::PAD_GET_CTRL.sym), &[0]);
+            t.check_framed(
+                &format!("{w} menu window pass"),
+                0x008a_be40,
+                Conv::Cdecl,
+                &[],
+                ebp - 0x14,
+                &[(0, 0x10)],
+                |g| u(d5::draw_message_window_for_menu(g, ebp - 0x14)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// An Iggy menu's mouse handler.
+#[test]
+fn d5_menu_mouse() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_d502);
+        let none = t.stub_code(0x0bad_c840, false, 1, 1);
+        let mouse = t.stub_code(0x0bad_c844, false, 3, 3);
+        let dispatch = t.stub_code(0x0bad_c85c, false, 3, 3);
+        for (slot, f) in [
+            (d5::MAKE_EVENT_NONE, none),
+            (d5::MAKE_EVENT_MOUSE_MOVE, mouse),
+            (d5::DISPATCH_EVENT, dispatch),
+        ] {
+            t.g32(slot.sym, f);
+        }
+        let tags = [0x0bad_c840, 0x0bad_c844, 0x0bad_c85c];
+        for i in 0..80 {
+            let w = format!("{name} {i}");
+            fresh_round(&mut t, &mut rng, &tags);
+            let this = t.random(&mut rng, 0x98);
+            let on = [0, 1, 1, 0x80][rng.below(4) as usize];
+            t.w8(this + 0x70, on);
+            let holder = t.random(&mut rng, 4);
+            t.w32(this + 0x6c, holder);
+            let (left, top) = (rng.below(200), rng.below(200));
+            let (width, height) = (rng.below(100), rng.below(100));
+            for (off, v) in [(0x84, left), (0x88, top), (0x8c, width), (0x90, height)] {
+                t.w32(this + off, v);
+            }
+            let event = t.random(&mut rng, 0x10);
+            t.w32(event, [7, 7, 7, 1, 8][rng.below(5) as usize]);
+            let pick = |rng: &mut Rng, lo: u32, size: u32| match rng.below(5) {
+                0 => lo,
+                1 => lo + size,
+                2 => lo + 1,
+                3 => (lo + size).wrapping_sub(1),
+                _ => rng.below(320),
+            };
+            let x = pick(&mut rng, left, width);
+            let y = pick(&mut rng, top, height);
+            t.w32(event + 8, x);
+            t.w32(event + 0xc, y);
+            let result = rng.next();
+            let ebp = t.ebp_for(2);
+            t.check_framed(
+                &format!("{w} mouse"),
+                0x00a2_8c10,
+                Conv::Thiscall(this),
+                &[event, result],
+                ebp - 0x1c,
+                &[(0, 0x18)],
+                |g| {
+                    let r = d5::menu_mouse_event(g, ebp - 0x1c, this, event, result);
+                    if on == 0 { Out::None } else { u(r) }
+                },
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
