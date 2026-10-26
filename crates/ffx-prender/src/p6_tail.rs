@@ -633,3 +633,274 @@ pub mod mouse {
         }
     }
 }
+
+/// `PBitmapFontText`'s capacity callees: the vertex streams' format,
+/// `isBound` and release (as the full-screen meshes'), the index block's
+/// `isBound` `0x00562db0` and release `0x005648c0`, its map
+/// (`PRingBuffer_submit_00434cd0`) and unmap `0x00565000` (thiscall),
+/// `memset` (cdecl) and the index format's size `0x0055bc40(0xc)`.
+pub const INDEX_IS_BOUND: u32 = 0x0056_2db0;
+pub const INDEX_RELEASE: u32 = 0x0056_48c0;
+pub const INDEX_MAP: u32 = 0x0043_4cd0;
+pub const INDEX_UNMAP: u32 = 0x0056_5000;
+pub const MEMSET: u32 = 0x0094_964c;
+
+pub mod text {
+    use super::{
+        Conv, FORMAT_SIZE, FREE, Host, INDEX_IS_BOUND, INDEX_MAP, INDEX_RELEASE, INDEX_UNMAP,
+        MALLOC, MEMSET,
+    };
+    use crate::p6_quads::{
+        IS_BOUND, NAME_COLOR, NAME_POSITION, NAME_TEXCOORD, RELEASE, STREAM_FORMAT,
+    };
+
+    /// A vertex stream's format and semantic: `0x004835d0(s; stride,
+    /// count, 1)`, the block size `[s] * [s+4]` into `+0x38` (a bound
+    /// buffer released first); a failing format returns its `eax` before
+    /// the semantic record (`[s+0xc]`: byte `+8`, name `+4`, `+0` 0).
+    fn stream(h: &mut impl Host, s: u32, stride: u32, count: u32, semantic: u8, name: u32) -> u32 {
+        let r = h.call_sym(STREAM_FORMAT, Conv::Thiscall(s), &[stride, count, 1]);
+        let bytes = h.read::<u32>(s + 4).wrapping_mul(h.read(s));
+        if h.read::<u32>(s + 0x38) != bytes {
+            if h.call_sym(IS_BOUND, Conv::Thiscall(s), &[]) & 0xff != 0 {
+                h.call_sym(RELEASE, Conv::Thiscall(s), &[]);
+            }
+            h.write(s + 0x38, bytes);
+        }
+        if r != 0 {
+            return r;
+        }
+        let record: u32 = h.read(s + 0xc);
+        h.write(record + 8, semantic);
+        let name = h.rebase(name);
+        h.write(record + 4, name);
+        h.write(record, 0u32);
+        0
+    }
+
+    /// `0x00a2a110(text; n)` (thiscall, `ret 4`) -> 0 or an error: the
+    /// text's character buffer (`+0x15c` count, bit 31 not owned; `+0x160`
+    /// data) made `n + 1` bytes (a `PhyreMalloc(n + 1, 1)` copy of what
+    /// fits, 0xd without memory; the old owned data freed) unless it is
+    /// that size, the text ended at `n` (or zeroed from the old size
+    /// up), `4 n` vertices in the streams at `[+0x64]` (position and
+    /// texture coordinates, semantic 1 both, and a colour stream when
+    /// byte `+0x174`), the index block at `+0x68` set to `6 n` 16-bit
+    /// indices of vertices `0..4n - 1` and filled with two triangles per
+    /// character (`v, v+1, v+2, v, v+2, v+3`) through the pointer its map
+    /// leaves in `frame` (the original's `ebp - 0x10`), then unmapped at
+    /// the next version.
+    ///
+    /// The second result: the `n` argument slot's last value (`4 n`) once
+    /// the original reuses it.
+    pub fn set_capacity(h: &mut impl Host, text: u32, frame: u32, n: u32) -> (u32, Option<u32>) {
+        let need = n.wrapping_add(1);
+        let head: u32 = h.read(text + 0x15c);
+        let cap = head & 0x7fff_ffff;
+        if need != head {
+            let keep = need.min(cap);
+            let mut src: u32 = h.read(text + 0x160);
+            let mut block = 0;
+            if need != 0 {
+                block = h.call_sym(MALLOC, Conv::Cdecl, &[need, 1]);
+                if block == 0 {
+                    return (0xd, None);
+                }
+                for k in 0..keep {
+                    let dst = block.wrapping_add(k);
+                    if dst != 0 {
+                        let b: u8 = h.read(src);
+                        h.write(dst, b);
+                        src = src.wrapping_add(1);
+                    }
+                }
+            }
+            let old: u32 = h.read(text + 0x160);
+            if old != block && h.read::<u32>(text + 0x15c) >> 31 == 0 && old != 0 {
+                h.call_sym(FREE, Conv::Cdecl, &[old]);
+            }
+            h.write(text + 0x160, block);
+            h.write(text + 0x15c, need);
+        }
+        let chars: u32 = h.read(text + 0x160);
+        if n < cap {
+            h.write(chars.wrapping_add(n), 0u8);
+        } else {
+            h.call_sym(MEMSET, Conv::Cdecl, &[chars.wrapping_add(cap), 0, n - cap]);
+        }
+        let vertices = n.wrapping_mul(4);
+        let indices = n.wrapping_mul(6);
+        let slot = Some(vertices);
+        let streams: u32 = h.read(text + 0x64);
+        let r = stream(h, streams, 8, vertices, 1, NAME_POSITION);
+        if r != 0 {
+            return (r, slot);
+        }
+        let streams: u32 = h.read(text + 0x64);
+        let r = stream(h, streams.wrapping_add(0x40), 8, vertices, 1, NAME_TEXCOORD);
+        if r != 0 {
+            return (r, slot);
+        }
+        if h.read::<u8>(text + 0x174) != 0 {
+            let streams: u32 = h.read(text + 0x64);
+            let r = stream(h, streams.wrapping_add(0x80), 0x10, vertices, 3, NAME_COLOR);
+            if r != 0 {
+                return (r, slot);
+            }
+        }
+        let ib = text + 0x68;
+        h.write(ib + 8, indices);
+        h.write(ib + 0xc, 0xcu8);
+        h.write(ib, 0u32);
+        h.write(ib + 4, vertices.wrapping_sub(1));
+        let size = h.call_sym(FORMAT_SIZE, Conv::Cdecl, &[0xc]);
+        let bytes = size.wrapping_mul(indices);
+        if h.read::<u32>(ib + 0x34) != bytes {
+            if h.call_sym(INDEX_IS_BOUND, Conv::Thiscall(ib), &[]) & 0xff != 0 {
+                h.call_sym(INDEX_RELEASE, Conv::Thiscall(ib), &[]);
+            }
+            h.write(ib + 0x34, bytes);
+        }
+        let r = h.call_sym(INDEX_MAP, Conv::Thiscall(ib), &[frame]);
+        if r != 0 {
+            return (r, slot);
+        }
+        let p: u32 = h.read(frame);
+        if p != 0 && indices != 0 {
+            let quads = (indices - 1) / 6 + 1;
+            for q in 0..quads {
+                let v = q.wrapping_mul(4) as u16;
+                let at = p.wrapping_add(12 * q);
+                let tri = [
+                    v,
+                    v.wrapping_add(1),
+                    v.wrapping_add(2),
+                    v,
+                    v.wrapping_add(2),
+                    v.wrapping_add(3),
+                ];
+                for (k, &i) in tri.iter().enumerate() {
+                    h.write(at.wrapping_add(2 * k as u32), i);
+                }
+            }
+        }
+        let mut version = h.read::<u32>(ib + 0x10).wrapping_add(1);
+        if version == h.read::<u32>(ib + 0x14) & 0x7fff_ffff {
+            version = 0;
+        }
+        let r = h.call_sym(INDEX_UNMAP, Conv::Thiscall(ib), &[version, frame]);
+        if r == 0 {
+            h.write(ib + 0x10, version);
+            h.write(ib + 0xe, 0u8);
+        }
+        (r, slot)
+    }
+}
+
+/// `PApplication`'s constructor: its vtable and the thread-base word
+/// (`0x00b31404`), the members' constructors (the defaults `+0x50`
+/// `0x00620780`, the renderer `+0x124` `PRenderer::PRenderer(r; defaults)`,
+/// the dynamic process buffer allocation `+0x2a0`, the world `+0x2c4`,
+/// the input mapper `+0x2dc`, all thiscall), the title `PString::Assign
+/// (+0x398; "...")`, `g_PhyreApplication`, and the module objects whose
+/// virtual slot 1 runs unless the "initialised" byte is set.
+pub const APP_VTABLE: u32 = 0x00b3_fe38;
+pub const APP_THREAD_WORD: u32 = 0x00b3_1404;
+pub const APP_DEFAULTS_CTOR: u32 = 0x0062_0780;
+pub const RENDERER_CTOR: u32 = 0x005b_45b0;
+pub const DYNAMIC_ALLOCATION_CTOR: u32 = 0x004f_ee50;
+pub const WORLD_CTOR: u32 = 0x0044_29e0;
+pub const INPUT_MAPPER_CTOR: u32 = 0x0062_0590;
+pub const STRING_ASSIGN: u32 = 0x0044_5cf0;
+pub const APP_TITLE: u32 = 0x00b2_0b30;
+pub const G_APPLICATION: u32 = 0x00cc_9cd8;
+pub const MODULES_READY: u32 = 0x00c0_a09c;
+pub const APP_MODULES: [u32; 7] = [
+    0x00c0_a33c,
+    0x00c0_a37c,
+    0x00c0_a2d0,
+    0x00c6_81ec,
+    0x00c6_845c,
+    0x00c6_13f0,
+    0x00c6_8494,
+];
+
+pub mod app {
+    use super::{
+        APP_DEFAULTS_CTOR, APP_MODULES, APP_THREAD_WORD, APP_TITLE, APP_VTABLE, Conv,
+        DYNAMIC_ALLOCATION_CTOR, G_APPLICATION, Host, INPUT_MAPPER_CTOR, MODULES_READY,
+        RENDERER_CTOR, STRING_ASSIGN, WORLD_CTOR,
+    };
+
+    /// `PApplication::PApplication(app)` (thiscall) -> `app`.
+    pub fn ctor(h: &mut impl Host, app: u32) -> u32 {
+        let vt = h.rebase(APP_VTABLE);
+        h.write(app, vt);
+        let w = h.rebase(APP_THREAD_WORD);
+        h.write(app + 0xc, w);
+        for off in [0x20, 0x24, 0x28, 0x30, 0x3c] {
+            h.write(app + off, 0.0f32);
+        }
+        h.write(app + 0x10, u32::MAX);
+        for off in [0x14, 0x18, 0x2c, 0x34, 0x40, 0x44, 0x48, 0x4c] {
+            h.write(app + off, 0u32);
+        }
+        h.write(app + 0x1c, 0u16);
+        h.write(app + 0x38, 0u16);
+        h.call_sym(APP_DEFAULTS_CTOR, Conv::Thiscall(app + 0x50), &[]);
+        h.call_sym(RENDERER_CTOR, Conv::Thiscall(app + 0x124), &[app + 0x50]);
+        let words: [(u32, u32); 10] = [
+            (0x264, 0),
+            (0x268, 0),
+            (0x26c, 0x500),
+            (0x270, 0x2d0),
+            (0x274, 0x18),
+            (0x278, 8),
+            (0x27c, 0x18),
+            (0x280, 8),
+            (0x284, 0),
+            (0x28c, 2),
+        ];
+        for (off, v) in words {
+            h.write(app + off, v);
+        }
+        h.write(app + 0x288, 1u8);
+        h.write(app + 0x290, 0u8);
+        h.write(app + 0x294, 0u32);
+        h.write(app + 0x298, 0u8);
+        h.write(app + 0x29c, 0u32);
+        h.call_sym(DYNAMIC_ALLOCATION_CTOR, Conv::Thiscall(app + 0x2a0), &[]);
+        h.write(app + 0x2bc, 0u32);
+        h.write(app + 0x2c0, 0u32);
+        h.call_sym(WORLD_CTOR, Conv::Thiscall(app + 0x2c4), &[]);
+        h.write(app + 0x2d4, 0u32);
+        h.write(app + 0x2d8, 0u32);
+        h.call_sym(INPUT_MAPPER_CTOR, Conv::Thiscall(app + 0x2dc), &[]);
+        h.write(app + 0x398, 0u32);
+        let g = h.rebase(G_APPLICATION);
+        h.write(g, app);
+        h.write(app + 0x2b8, app + 0x2dc);
+        h.write(app + 8, 5u32);
+        h.write(app + 4, 4u32);
+        let title = h.rebase(APP_TITLE);
+        h.call_sym(STRING_ASSIGN, Conv::Thiscall(app + 0x398), &[title]);
+        h.write(app + 0x39c, 0x7f00u32);
+        for (off, v) in [
+            (0x2a0, 0xc0_0000u32),
+            (0x2a4, 0x18_0000),
+            (0x2a8, 0xc0_0000),
+            (0x2ac, 0x18_0000),
+        ] {
+            h.write(app + off, v);
+        }
+        let ready = h.rebase(MODULES_READY);
+        for m in APP_MODULES {
+            if h.read::<u8>(ready) != 0 {
+                break;
+            }
+            let m = h.rebase(m);
+            h.call_virtual(m, 1, &[]);
+        }
+        app
+    }
+}

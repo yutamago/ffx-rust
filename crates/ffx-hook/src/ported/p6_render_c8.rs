@@ -72,4 +72,23 @@ ported! {
         let mut frame = StackFrame::<33>::new();
         tl::mouse::update(&mut mem(), mouse, frame.at())
     }
+    /// A bitmap-font text's capacity `(text; n)` -> 0 or an error.
+    PBitmapFontText_setCapacity_00a2a110 @ 0x00a2_a110 => extern "thiscall" fn x_00a2a110(text: u32, n: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        tl::text::set_capacity(&mut mem(), text, frame.at(), n).0
+    }
+    /// `PApplication::PApplication(app)` -> `app`.
+    Phyre_PFramework_PApplication_PApplication @ 0x0061_f810 => extern "thiscall" fn x_0061f810(app: u32) -> u32 {
+        tl::app::ctor(&mut mem(), app)
+    }
+    /// `PRendererBase::renderMeshInstance(renderer; instance, contexts, x,
+    /// y)` -> 0 or an error: the matrices (the original's `_alloca`, at
+    /// most 0x80 of 64 bytes, 16-byte aligned) in this frame.
+    Phyre_PRendering_PRendererBase_renderMeshInstance @ 0x005b_9a90 => extern "thiscall" fn x_005b9a90(renderer: u32, instance: u32, contexts: u32, x: u32, y: u32) -> u32 {
+        let mut frame = StackFrame::<{ ffx_prender::p6_mesh::FRAME as usize / 4 }>::new();
+        let mut matrices = StackFrame::<{ 0x2000 / 4 + 4 }>::new();
+        let base = (matrices.at() + 0xf) & !0xf;
+        let mut alloca = |_n: u32| base;
+        ffx_prender::p6_mesh::bridge::render_mesh_instance(&mut mem(), renderer, frame.at(), [instance, contexts, x, y], &mut alloca)
+    }
 }

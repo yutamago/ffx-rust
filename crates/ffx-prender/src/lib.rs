@@ -97,6 +97,7 @@ pub mod p6_binds1;
 pub mod p6_descriptor;
 pub mod p6_encode;
 pub mod p6_late;
+pub mod p6_mesh;
 pub mod p6_misc;
 pub mod p6_more;
 pub mod p6_post;

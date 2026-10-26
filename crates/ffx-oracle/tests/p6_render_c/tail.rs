@@ -394,8 +394,13 @@ fn layout_matches_the_original() {
 /// before them (each call takes `1 + words` words of the table). Returns
 /// its address and the table cursor.
 fn fill_code(t: &mut Twins, tag: u32, n: u32, arg: u32, words: u32) -> (u32, u32) {
+    fill_code_with(t, tag, false, n, arg, words)
+}
+
+/// [`fill_code`], logging `ecx` when `this` (a thiscall callee).
+fn fill_code_with(t: &mut Twins, tag: u32, this: bool, n: u32, arg: u32, words: u32) -> (u32, u32) {
     let cursor = t.zeros(4);
-    let mut c = t.log_code(tag, false, n);
+    let mut c = t.log_code(tag, this, n);
     c.extend([0x8b, 0x15]);
     c.extend(cursor.to_le_bytes()); // mov edx, [cursor]
     c.extend([0x8b, 0x4c, 0x24, (4 + 4 * arg) as u8]); // mov ecx, [esp+4+4arg]
@@ -519,6 +524,185 @@ fn mouse_update_matches_the_original() {
                         r
                     }
                 },
+            );
+        }
+    }
+}
+
+#[test]
+fn bitmap_text_capacity_matches_the_original() {
+    use ffx_prender::p6_quads as qd;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_1207);
+        let malloc = t.seq_stub(tl::MALLOC, false, 2, 0);
+        t.stub(tl::FREE, false, 1, 0, 0x7e47_0001);
+        t.stub(tl::MEMSET, false, 3, 0, 0x7e47_0002);
+        let format = t.seq_stub(qd::STREAM_FORMAT, true, 3, 3);
+        let bound = t.seq_stub(qd::IS_BOUND, true, 0, 0);
+        t.stub(qd::RELEASE, true, 0, 0, 0x7e47_0003);
+        let size = t.seq_stub(tl::FORMAT_SIZE, false, 1, 0);
+        let ibound = t.seq_stub(tl::INDEX_IS_BOUND, true, 0, 0);
+        t.stub(tl::INDEX_RELEASE, true, 0, 0, 0x7e47_0004);
+        let (map_fn, map) = fill_code_with(&mut t, tl::INDEX_MAP, true, 1, 0, 1);
+        t.jump(tl::INDEX_MAP, map_fn);
+        let unmap = t.seq_stub(tl::INDEX_UNMAP, true, 2, 2);
+        let mut results = std::collections::BTreeSet::new();
+        for i in 0..96u32 {
+            let n = match i % 6 {
+                0 => 0,
+                1 => rng.below(4),
+                _ => rng.below(24),
+            };
+            let text = object(&mut t, &mut rng, 0x60, false);
+            let cap = rng.below(32);
+            let head = match rng.below(4) {
+                0 => n + 1,
+                1 => cap | 0x8000_0000,
+                _ => cap,
+            };
+            let mut chars = object(&mut t, &mut rng, 10, false);
+            let mut head = head;
+            if i % 7 == 3 {
+                // a view of exactly n + 1 bytes
+                head = (n + 1) | 0x8000_0000;
+            } else if i % 11 == 6 {
+                // no buffer yet
+                chars = 0;
+                head = rng.next() & 0x8000_0000;
+            }
+            t.w32(text + 0x15c, head);
+            t.w32(text + 0x160, chars);
+            let streams = t.zeros(0xc0);
+            for k in 0..3 {
+                let s = streams + 0x40 * k;
+                for w in 0..16 {
+                    t.w32(s + 4 * w, rng.next());
+                }
+                let record = object(&mut t, &mut rng, 3, false);
+                t.w32(s + 0xc, record);
+                let (a, b) = (rng.below(0x20), rng.below(8));
+                t.w32(s, a);
+                t.w32(s + 4, b);
+                if rng.chance(2) {
+                    t.w32(s + 0x38, a * b);
+                }
+            }
+            t.w32(text + 0x64, streams);
+            t.write(text + 0x174, &[u8::from(rng.chance(2))]);
+            let v = rng.below(4);
+            t.w32(text + 0x78, v);
+            let wrap = if rng.chance(2) { v + 1 } else { rng.below(6) };
+            t.w32(text + 0x7c, wrap | (rng.next() & 0x8000_0000));
+            if rng.chance(2) {
+                t.w32(text + 0x9c, 2 * 6 * n);
+            }
+            let block = if rng.chance(8) {
+                0
+            } else {
+                t.zeros(n as usize + 1 + 16)
+            };
+            // the allocator may hand back the current buffer
+            let block = if i % 13 == 9 && chars != 0 {
+                chars
+            } else {
+                block
+            };
+            t.seq_set(malloc, &[block]);
+            let f: Vec<u32> = (0..3).map(|_| mostly_zero(&mut rng, 10)).collect();
+            t.seq_set(format, &f);
+            let b: Vec<u32> = (0..4)
+                .map(|_| (rng.next() & !0xff) | u32::from(rng.chance(2)))
+                .collect();
+            t.seq_set(bound, &b);
+            let sz = [2, 2, 4, rng.next()][rng.below(4) as usize];
+            t.seq_set(size, &[sz]);
+            let ib = (rng.next() & !0xff) | u32::from(rng.chance(2));
+            t.seq_set(ibound, &[ib]);
+            let indices = if rng.chance(6) {
+                0
+            } else {
+                t.zeros(12 * n as usize + 12)
+            };
+            let r = mostly_zero(&mut rng, 8);
+            t.seq_set(map, &[r, indices]);
+            let r = mostly_zero(&mut rng, 4);
+            t.seq_set(unmap, &[r]);
+            let mut got = 0;
+            run_framed(
+                &mut t,
+                &format!("{name} text capacity #{i}"),
+                0x00a2_a110,
+                Conv::Thiscall(text),
+                &[n],
+                0x10,
+                4,
+                |g, ebp| {
+                    let (r, slot) = tl::text::set_capacity(g, text, ebp - 0x10, n);
+                    if let Some(v) = slot {
+                        Mem::write(g, ebp + 8, v);
+                    }
+                    got = r;
+                    r
+                },
+            );
+            results.insert(got);
+        }
+        assert!(
+            results.contains(&0) && results.contains(&0xd),
+            "{name}: {results:x?}"
+        );
+    }
+}
+
+#[test]
+fn application_ctor_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x8a8a_1208);
+        for f in [
+            tl::APP_DEFAULTS_CTOR,
+            tl::DYNAMIC_ALLOCATION_CTOR,
+            tl::WORLD_CTOR,
+            tl::INPUT_MAPPER_CTOR,
+        ] {
+            t.stub(f, true, 0, 0, 0x0a99_0000 | (f & 0xffff));
+        }
+        t.stub(tl::RENDERER_CTOR, true, 1, 1, 0x0a99_0001);
+        t.stub(tl::STRING_ASSIGN, true, 1, 1, 0x0a99_0002);
+        let ready = t.rebase(tl::MODULES_READY);
+        // slot 1: a plain recording stub, or one that sets the ready byte
+        let plain = t.stub_code(0x7700_0001, true, 0, 0, 0x11);
+        let mut c = t.log_code(0x7700_0101, true, 0);
+        c.extend([0xc6, 0x05]);
+        c.extend(ready.to_le_bytes());
+        c.push(1); // mov byte [ready], 1
+        c.push(0xc3);
+        let setter = t.code(&c);
+        let vt_plain = t.zeros(8);
+        t.w32(vt_plain + 4, plain);
+        let vt_setter = t.zeros(8);
+        t.w32(vt_setter + 4, setter);
+        for i in 0..10u32 {
+            let stop = rng.below(9);
+            for (k, &m) in tl::APP_MODULES.iter().enumerate() {
+                let at = t.rebase(m);
+                t.w32(
+                    at,
+                    if k as u32 == stop {
+                        vt_setter
+                    } else {
+                        vt_plain
+                    },
+                );
+            }
+            t.write(ready, &[u8::from(i == 3)]);
+            let app = object(&mut t, &mut rng, 0xe8, false);
+            t.reset_log();
+            t.check(
+                &format!("{name} application ctor #{i}"),
+                0x0061_f810,
+                Conv::Thiscall(app),
+                &[],
+                |g| Out::U32(tl::app::ctor(g, app)),
             );
         }
     }

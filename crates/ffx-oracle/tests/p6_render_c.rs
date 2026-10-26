@@ -1884,3 +1884,6 @@ mod quads;
 
 #[path = "p6_render_c/tail.rs"]
 mod tail;
+
+#[path = "p6_render_c/mesh.rs"]
+mod mesh;
