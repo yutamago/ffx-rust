@@ -9,7 +9,7 @@
 use super::{mem, ported};
 use ffx_pother_b::{
     methods, object, p4_bind, p4_cloth, p4_fog, p4_frames, p4_input, p4_light, p4_light2, p4_mesh,
-    p4_morph, p4_ps2light, p4_tree, physics, small,
+    p4_morph, p4_morph2, p4_ps2light, p4_tree, physics, small,
 };
 
 ported! {
@@ -1186,5 +1186,24 @@ ported! {
         let mut frame = super::StackFrame::<0x21>::new();
         let ebp = frame.at() + 0x84;
         p4_light2::bridge::tweak_initialize(&mut mem(), ebp, tw)
+    }
+    /// `CharacterLighting::instantiateUniqueMaterialParameters(cl, inst)` ->
+    /// 0, 0xe or 0x12.
+    Phyre_CharacterLighting_instantiateUniqueMaterialParameters @ 0x006a_96b0 => extern "thiscall" fn instantiate_unique(cl: u32, inst: u32) -> u32 {
+        // ebp - 0x74 .. ebp: the zero matrix, the loop's locals
+        let mut frame = super::StackFrame::<0x1d>::new();
+        let ebp = frame.at() + 0x74;
+        p4_light2::bridge2::instantiate(&mut mem(), ebp, cl, inst)
+    }
+    /// `MorphManager::update(mm, dt)`; leaves the original's last word in
+    /// its argument's slot.
+    MorphManager_update @ 0x006a_cd20 => extern "thiscall" fn morph_update(mm: u32, dt: u32; slots: u32) {
+        // ebp - 0x24 .. ebp: the values the parameters are copied from,
+        // counters, the manager
+        let mut frame = super::StackFrame::<9>::new();
+        let ebp = frame.at() + 0x24;
+        let mut m = mem();
+        let word = p4_morph2::bridge::update(&mut m, ebp, mm, dt);
+        ffx_bridge::Mem::write(&mut m, slots, word);
     }
 }

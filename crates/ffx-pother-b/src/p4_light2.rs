@@ -528,3 +528,280 @@ pub mod bridge {
         h.call_sym(TEXT_SET_ENABLED, Conv::Thiscall(text), &[0])
     }
 }
+
+/// `Phyre_PCluster_create` (thiscall `(cluster, count, desc, flags)`, `ret
+/// 0xc`).
+pub const CLUSTER_CREATE: u32 = 0x0044_1010;
+/// The material-list class (`0x00c998e8`) the instance's copy is made of.
+pub const MATERIAL_LIST_DESC: u32 = 0x00c9_98e8;
+/// `Phyre_PArray_resizeInline_0048c3b0` (thiscall `(array, n)`, `ret 4`).
+pub const ARRAY_RESIZE: u32 = 0x0048_c3b0;
+/// `Phyre_PFreeList_allocateNewBlock` (thiscall `(list, n)`, `ret 4`).
+pub const FREE_LIST_GROW: u32 = 0x0049_c8d0;
+/// `Phyre_PFreeList_deallocate` (thiscall `(list, p)`, `ret 4`).
+pub const FREE_LIST_DEALLOCATE: u32 = 0x0049_c980;
+/// `SearchTree_insertUnsigned_006a5fc0` (thiscall `(tree, node)` -> 0 or
+/// not, `ret 4`).
+pub const TREE_INSERT_UNSIGNED: u32 = 0x006a_5fc0;
+/// `Phyre_PRedBlackTree_postInsertFinalize` (thiscall `(tree, node)`,
+/// `ret 4`).
+pub const TREE_FINALIZE: u32 = 0x0057_4980;
+/// `PArray_Data_004d45a0` (thiscall `(array)` -> its elements).
+pub const ARRAY_DATA: u32 = 0x004d_45a0;
+/// `Phyre_PRendering_PEffectVariant_createMaterial` (thiscall `(variant,
+/// cluster, a, b)` -> material, `ret 0xc`).
+pub const CREATE_MATERIAL: u32 = 0x004e_6a40;
+/// `Phyre_PhyreMalloc_0042fb80` (cdecl `(size, align)`).
+pub const PHYRE_MALLOC: u32 = 0x0042_fb80;
+/// `Phyre_PhyreFree` (cdecl `(p)`).
+pub const PHYRE_FREE: u32 = 0x0042_fb20;
+/// `Phyre_PRendering_PMaterial_setEffectVariant` (thiscall `(material,
+/// variant, params)`, `ret 8`).
+pub const SET_EFFECT_VARIANT: u32 = 0x004d_8940;
+/// `ShaderParams_FindByName` (thiscall `(shader, name)` -> parameter).
+pub const FIND_PARAM: u32 = 0x0056_cbf0;
+/// `memcpy` (cdecl `(dst, src, n)`).
+pub const MEMCPY: u32 = 0x0094_9256;
+/// `Phyre_CharacterLighting_setLightMatrix` (thiscall `(cl, inst, a, b)`,
+/// `ret 0xc`).
+pub const SET_LIGHT_MATRIX: u32 = 0x006a_abf0;
+/// `g_CharacterLightingTweakUtil`.
+pub const G_TWEAK: u32 = 0x00cc_ca88;
+/// `"USE_CHARACTER_LIGHTING"`, the empty string, `"CharacterAmbientLight"`.
+pub const USE_LIGHTING: u32 = 0x00b4_8160;
+pub const EMPTY: u32 = 0x00b8_fbeb;
+pub const AMBIENT_PARAM: u32 = 0x00b4_8178;
+
+pub mod bridge2 {
+    //! The original over game memory.
+
+    use super::{
+        AMBIENT_PARAM, ARRAY_DATA, ARRAY_RESIZE, CLUSTER_CREATE, CREATE_MATERIAL, Conv, EMPTY,
+        FIND_PARAM, FREE_LIST_DEALLOCATE, FREE_LIST_GROW, G_TWEAK, Host, MATERIAL_LIST_DESC,
+        MEMCPY, PHYRE_FREE, PHYRE_MALLOC, SET_EFFECT_VARIANT, SET_LIGHT_MATRIX, TREE_FINALIZE,
+        TREE_INSERT_UNSIGNED, USE_LIGHTING,
+    };
+
+    const COUNT: u32 = 0x7fff_ffff;
+
+    /// A tagged string pointer (bit 0 set: a pointer + 1).
+    fn untag(h: &impl Host, at: u32) -> u32 {
+        let w: u32 = h.read(at);
+        w.wrapping_sub(w & 1)
+    }
+
+    /// Whether the C strings at `a` and `b` are equal (the inline compare,
+    /// two bytes a step).
+    fn same(h: &impl Host, a: u32, b: u32) -> bool {
+        let mut k = 0u32;
+        loop {
+            let x: u8 = h.read(a.wrapping_add(k));
+            let y: u8 = h.read(b.wrapping_add(k));
+            if x != y {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            k += 1;
+        }
+    }
+
+    /// Whether the effect variant's switch at `at` (`{name, value}`, both
+    /// tagged) turns the character lighting on: `"USE_CHARACTER_LIGHTING"`
+    /// (the string itself or a copy) with a value that is null or not
+    /// empty. `None`: not that switch.
+    fn lighting_switch(h: &impl Host, at: u32) -> Option<bool> {
+        let key = untag(h, at);
+        let use_lighting = h.rebase(USE_LIGHTING);
+        if key != use_lighting && (key == 0 || !same(h, key, use_lighting)) {
+            return None;
+        }
+        let v = untag(h, at + 4);
+        let empty = h.rebase(EMPTY);
+        if v == empty {
+            return Some(false);
+        }
+        Some(v == 0 || !same(h, v, empty))
+    }
+
+    /// The `PArray` element block (more than one at `[arr + 4]`, one inline
+    /// at `arr + 4`, none 0).
+    fn elements(h: &impl Host, arr: u32) -> u32 {
+        match h.read::<u32>(arr) & COUNT {
+            0 => 0,
+            1 => arr + 4,
+            _ => h.read(arr + 4),
+        }
+    }
+
+    /// `CharacterLighting::instantiateUniqueMaterialParameters(cl, inst)`
+    /// (`0x006a96b0`, `ret 4`) -> 0, 0xe (no free tree node) or 0x12 (the
+    /// insert failed). On an initialised manager the instance gets its own
+    /// material list: a new list (`PCluster_create(cl + 0xa0; 1,
+    /// 0x00c998e8, 0)`) sized as the instance's (`inst + 0x10`),
+    /// remembered in the shade tree (`cl + 0x158`: a node from its free
+    /// list `+0x170`, key the old list `+0x10`, the new one `+0xc`). For
+    /// each old element `{variant, params}` a material of the variant
+    /// (`createMaterial(cl + 0xa0, 0, 0)`) gets the parameters that fit
+    /// both buffers copied, a copy of the element's name (`+0x10`, tagged;
+    /// `PhyreMalloc(n, 2)`, the old untagged one freed; a failed copy
+    /// keeps the old name), the variant (`setEffectVariant`), and `+0x14`
+    /// the variant's `"CharacterAmbientLight"` parameter when a
+    /// `"USE_CHARACTER_LIGHTING"` switch is on (searched from the end); it
+    /// goes into the new list. Then `inst + 0x10` is the new list (or
+    /// `[inst] + 0x30` when there is none), `setLightMatrix(inst, zero,
+    /// zero)` with a zero matrix at `ebp - 0x74`, and the tweak utility
+    /// (when on) records the instance in its first free shade entry
+    /// (`{inst, 0.0, 2}`).
+    ///
+    /// The switch test against the empty string's own address
+    /// (`0x00b8fbeb`) never holds: the value is untagged (even), the
+    /// string's address odd.
+    #[allow(clippy::too_many_lines)]
+    pub fn instantiate(h: &mut impl Host, ebp: u32, cl: u32, inst: u32) -> u32 {
+        h.write(ebp - 0x28, cl);
+        if h.read::<u8>(cl + 0x1cc) == 0 {
+            return 0;
+        }
+        let cluster = cl + 0xa0;
+        h.write(ebp - 0x2c, cluster);
+        let desc = h.rebase(MATERIAL_LIST_DESC);
+        let new_list = h.call_sym(CLUSTER_CREATE, Conv::Thiscall(cluster), &[1, desc, 0]);
+        h.write(ebp - 0x10, new_list);
+        let list: u32 = h.read(inst + 0x10);
+        h.write(ebp - 0x14, list);
+        let n = h.read::<u32>(list) & COUNT;
+        h.write(ebp - 0x24, n);
+        h.call_sym(ARRAY_RESIZE, Conv::Thiscall(new_list), &[n]);
+        let free = cl + 0x170;
+        let mut node: u32 = h.read(free);
+        if node == 0 {
+            let k: u32 = h.read(cl + 0x178);
+            h.call_sym(FREE_LIST_GROW, Conv::Thiscall(free), &[k]);
+            node = h.read(free);
+            if node == 0 {
+                return 0xe;
+            }
+        }
+        let next: u32 = h.read(node);
+        h.write(free, next);
+        h.write(node + 0xc, new_list);
+        h.write(node, node);
+        h.write(node + 4, node);
+        h.write(node + 8, node);
+        h.write(node + 0x10, list);
+        let tree = cl + 0x158;
+        if h.call_sym(TREE_INSERT_UNSIGNED, Conv::Thiscall(tree), &[node]) != 0 {
+            h.call_sym(FREE_LIST_DEALLOCATE, Conv::Thiscall(free), &[node]);
+            return 0x12;
+        }
+        h.call_sym(TREE_FINALIZE, Conv::Thiscall(tree), &[node]);
+        h.write(ebp - 0x20, 0u32);
+        for k in 0..n {
+            let data = h.call_sym(ARRAY_DATA, Conv::Thiscall(list), &[]);
+            let el: u32 = h.read(data.wrapping_add(4 * k));
+            let variant: u32 = h.read(el);
+            h.write(ebp - 0x1c, el);
+            h.write(ebp - 0x34, variant);
+            let mat = h.call_sym(CREATE_MATERIAL, Conv::Thiscall(variant), &[cluster, 0, 0]);
+            let src: u32 = h.read(el + 4);
+            h.write(ebp - 0xc, mat);
+            let dst: u32 = h.read(mat.wrapping_add(4));
+            let count = h.read::<u32>(src.wrapping_add(8)) & COUNT;
+            h.write(ebp - 8, dst);
+            h.write(ebp - 4, src);
+            h.write(ebp - 0x18, count);
+            for j in 0..count {
+                let params: u32 = h.read(src.wrapping_add(0xc));
+                let p = params.wrapping_add(0x10 * j);
+                let off = u32::from(h.read::<u16>(p.wrapping_add(8)));
+                let size = u32::from(h.read::<u16>(p.wrapping_add(0xa)) & 0x1fff);
+                if off + size <= h.read::<u32>(src) && off >= 4 {
+                    h.write(ebp - 0x30, off);
+                    if off + size <= h.read::<u32>(dst) {
+                        h.call_sym(
+                            MEMCPY,
+                            Conv::Cdecl,
+                            &[dst.wrapping_add(off), off.wrapping_add(src), size],
+                        );
+                    }
+                }
+                h.write(ebp - 0x18, count - j - 1);
+            }
+            // the name: a copy of the element's, or none
+            let name = untag(h, el + 0x10);
+            let copy = if name == 0 {
+                Some(0)
+            } else {
+                let mut len = 0u32;
+                while h.read::<u8>(name.wrapping_add(len)) != 0 {
+                    len += 1;
+                }
+                let q = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[len + 1, 2]);
+                if q == 0 {
+                    None
+                } else {
+                    h.call_sym(MEMCPY, Conv::Cdecl, &[q, name, len + 1]);
+                    Some(q)
+                }
+            };
+            if let Some(q) = copy {
+                let old: u32 = h.read(mat + 0x10);
+                if old & 1 == 0 {
+                    h.call_sym(PHYRE_FREE, Conv::Cdecl, &[old]);
+                }
+                h.write(mat + 0x10, q);
+            }
+            let variant: u32 = h.read(el);
+            let dst: u32 = h.read(ebp - 8);
+            h.call_sym(SET_EFFECT_VARIANT, Conv::Thiscall(mat), &[variant, dst]);
+            let variant: u32 = h.read(el);
+            let switches = h.read::<u32>(variant + 4) & COUNT;
+            if switches != 0 {
+                let base: u32 = h.read(variant + 8);
+                for s in (0..switches).rev() {
+                    if lighting_switch(h, base.wrapping_add(8 * s)) == Some(true) {
+                        let shader: u32 = h.read(ebp - 0x34);
+                        let name = h.rebase(AMBIENT_PARAM);
+                        let p = h.call_sym(FIND_PARAM, Conv::Thiscall(shader), &[name]);
+                        h.write(mat + 0x14, p);
+                        break;
+                    }
+                }
+            }
+            if k < h.read::<u32>(new_list) & COUNT {
+                let at = elements(h, new_list);
+                h.write(at.wrapping_add(4 * k), mat);
+            }
+            h.write(ebp - 0x20, k + 1);
+        }
+        let own = if new_list == 0 {
+            h.read::<u32>(inst).wrapping_add(0x30)
+        } else {
+            new_list
+        };
+        h.write(inst + 0x10, own);
+        let m = ebp - 0x74;
+        for k in 0..16 {
+            h.write(m + 4 * k, 0u32);
+        }
+        h.call_sym(SET_LIGHT_MATRIX, Conv::Thiscall(cl), &[inst, m, m]);
+        let tw: u32 = h.read(h.rebase(G_TWEAK));
+        if h.read::<u8>(tw) == 0 {
+            return 0;
+        }
+        let entries: u32 = h.read(tw + 0xf8);
+        for i in 0..100u32 {
+            if h.read::<u32>(entries + 0xc * i) == 0 {
+                h.write(entries + 0xc * i, inst);
+                let e: u32 = h.read(tw + 0xf8);
+                h.write(e + 0xc * i + 4, 0u32);
+                let e: u32 = h.read(tw + 0xf8);
+                h.write(e + 0xc * i + 8, 2u32);
+                return 0;
+            }
+        }
+        0
+    }
+}

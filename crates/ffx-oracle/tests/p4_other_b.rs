@@ -4964,3 +4964,262 @@ fn h2p4_tweak_initialize_matches_the_original() {
         }
     }
 }
+
+// ---- h2p4 batch 2: the morph manager's update ----
+
+use ffx_pother_b::p4_morph2;
+
+/// A morph instance (or 0): its material list at `+0x10` (0..3 elements,
+/// one inline, owned or not; elements `{shader, buffer}`, or null with
+/// `nulls`), each
+/// shader's `+0x40` a parameter (offset, size up to 0xc) or 0, `+0x18` a
+/// position-morph target or 0.
+fn morph_instance(t: &mut Twins, rng: &mut Rng, nulls: bool) -> u32 {
+    if rng.chance(6) {
+        return 0;
+    }
+    let inst = t.zeros(0x20);
+    t.fill(rng, inst, 0x20);
+    t.w32(inst + 0x18, if rng.chance(3) { 0 } else { rng.next() | 1 });
+    let n = rng.below(4);
+    let list = t.zeros(0x10);
+    let flag = if rng.chance(4) { 0x8000_0000 } else { 0 };
+    t.w32(list, n | flag);
+    let data = if n == 1 { list + 4 } else { t.zeros(0x10) };
+    if n > 1 {
+        t.w32(list + 4, data);
+    }
+    for k in 0..n {
+        let el = if nulls && rng.chance(6) {
+            0
+        } else {
+            let el = t.zeros(8);
+            let shader = t.zeros(0x44);
+            let buf = t.zeros(0x40);
+            t.fill(rng, buf, 0x40);
+            t.w32(buf, [0x40, 0x20, 0x10, 0][rng.below(4) as usize]);
+            // +0x40 the parameter found by every name but "UvOffsetY",
+            // +0x3c that one's
+            for at in [0x3c, 0x40] {
+                let p = if rng.chance(5) {
+                    0
+                } else {
+                    let p = t.zeros(0x10);
+                    let off = [0u16, 2, 4, 8, 0x14, 0x30, 0x3c][rng.below(7) as usize];
+                    let size = [0u16, 1, 2, 4, 4, 4, 8, 0xc][rng.below(8) as usize]
+                        | ((rng.below(8) as u16) << 13);
+                    t.write(p + 8, &off.to_le_bytes());
+                    t.write(p + 0xa, &size.to_le_bytes());
+                    p
+                };
+                t.w32(shader + at, p);
+            }
+            t.w32(el, shader);
+            t.w32(el + 4, buf);
+            el
+        };
+        t.w32(data + 4 * k, el);
+    }
+    t.w32(inst + 0x10, list);
+    inst
+}
+
+#[test]
+fn h2p4_morph_update_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_cd20);
+        let y = t.rebase(p4_morph2::UV_OFFSET_Y);
+        let mut tail = vec![0x8b, 0x44, 0x24, 0x04, 0x3d]; // mov eax, [esp+4]; cmp eax, y
+        tail.extend(y.to_le_bytes());
+        tail.extend([0x75, 0x06]); // jne +6
+        tail.extend([0x8b, 0x41, 0x3c, 0xc2, 0x04, 0x00]); // mov eax, [ecx+0x3c]; ret 4
+        tail.extend([0x8b, 0x41, 0x40, 0xc2, 0x04, 0x00]); // mov eax, [ecx+0x40]; ret 4
+        t.stub_tail(p4_morph2::FIND_PARAM, true, 1, &tail);
+        t.stub(p4_morph2::SET_MORPH_WEIGHT, false, 2, 2, 0x5e70_0000);
+        let frame: Vec<i32> = (0..9).map(|k| -0x24 + 4 * k).chain([8]).collect();
+        for i in 0..200 {
+            let what = format!("{name} morph update case {i}");
+            let mm = t.zeros(0x28);
+            for (at, stride) in [(0, 8), (8, 8), (0x10, 8), (0x18, 0x10)] {
+                let n = [0, 1, 2, 3, 5][rng.below(5) as usize];
+                let flag = if rng.chance(4) { 0x8000_0000 } else { 0 };
+                t.w32(mm + at, n | flag);
+                let table = t.zeros((stride * 6) as usize);
+                for k in 0..n {
+                    // the vertex-colour morphs never check for null elements
+                    let e = morph_instance(&mut t, &mut rng, at != 8);
+                    t.w32(table + stride * k, e);
+                    for w in 1..stride / 4 {
+                        let v = float_word(&mut rng);
+                        t.w32(table + stride * k + 4 * w, v);
+                    }
+                }
+                t.w32(mm + at + 4, table);
+            }
+            let time = float_word(&mut rng);
+            t.w32(mm + 0x20, time);
+            let dt = float_word(&mut rng);
+            t.frame_case(
+                &what,
+                0x006a_cd20,
+                Conv::Thiscall(mm),
+                &[dt],
+                0x24,
+                &frame,
+                |g, ebp| {
+                    let w = p4_morph2::bridge::update(g, ebp, mm, dt);
+                    g.write(ebp + 8, w);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn h2p4_instantiate_unique_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_96b0);
+        let new_list = t.stub_cell(p4_light2::CLUSTER_CREATE, true, 3, 3);
+        t.stub(p4_light2::ARRAY_RESIZE, true, 1, 1, 0x4e51_0000);
+        // the free list grows by storing [grown] as its head
+        let grown = t.zeros(4);
+        let mut tail = vec![0xa1];
+        tail.extend(grown.to_le_bytes()); // mov eax, [grown]
+        tail.extend([0x89, 0x01, 0xc2, 0x04, 0x00]); // mov [ecx], eax; ret 4
+        t.stub_tail(p4_light2::FREE_LIST_GROW, true, 1, &tail);
+        let inserted = t.stub_cell(p4_light2::TREE_INSERT_UNSIGNED, true, 1, 1);
+        t.stub(p4_light2::FREE_LIST_DEALLOCATE, true, 1, 1, 0xdea1_0000);
+        t.stub(p4_light2::TREE_FINALIZE, true, 1, 1, 0xf1a1_0000);
+        let mat = t.stub_cell(p4_light2::CREATE_MATERIAL, true, 3, 3);
+        let malloc = t.stub_cell(p4_light2::PHYRE_MALLOC, false, 2, 0);
+        t.stub(p4_light2::PHYRE_FREE, false, 1, 0, 0xf4ee_0000);
+        t.stub(p4_light2::SET_EFFECT_VARIANT, true, 2, 2, 0x5e7e_0000);
+        t.stub(p4_light2::FIND_PARAM, true, 1, 1, 0xa3b1_0000);
+        t.stub(p4_light2::SET_LIGHT_MATRIX, true, 3, 3, 0x11a7_0000);
+        let use_lighting = t.rebase(p4_light2::USE_LIGHTING);
+        let empty = t.rebase(p4_light2::EMPTY);
+        let keys = [
+            use_lighting,
+            t.alloc(b"USE_CHARACTER_LIGHTING\0"),
+            t.alloc(b"USE_CHARACTER_LIGHTINGS\0"),
+            t.alloc(b"USE_FOG\0"),
+            0,
+        ];
+        let values = [empty, 0, t.alloc(b"\0"), t.alloc(b"1\0"), t.alloc(b"0\0")];
+        let names = [
+            t.alloc(b"mat_a\0"),
+            t.alloc(b"\0"),
+            t.alloc(b"chr_body_01\0"),
+        ];
+        let frame: Vec<i32> = (0..0x1d).map(|k| -0x74 + 4 * k).collect();
+        for i in 0..400 {
+            let what = format!("{name} instantiate case {i}");
+            let cl = lighting(&mut t, &mut rng);
+            // the free list's head (or none) and its block size
+            let node = if rng.chance(4) { 0 } else { t.zeros(0x14) };
+            t.w32(cl + 0x170, node);
+            if node != 0 {
+                let next = rng.next();
+                t.w32(node, next);
+            }
+            let g = if rng.chance(2) { 0 } else { t.zeros(0x14) };
+            t.w32(grown, g);
+            t.w32(inserted, if rng.chance(6) { rng.next() | 1 } else { 0 });
+            // the old list: n elements {variant, params, _, _, name}
+            let n = [0, 1, 1, 2, 3][rng.below(5) as usize];
+            let list = t.zeros(0x20);
+            t.w32(list, n | if rng.chance(4) { 0x8000_0000 } else { 0 });
+            let data = if n == 1 { list + 4 } else { t.zeros(0x10) };
+            if n != 1 {
+                t.w32(list + 4, data);
+            }
+            for k in 0..n {
+                let el = t.zeros(0x14);
+                let variant = t.zeros(0x10);
+                let sw = rng.below(4);
+                let switches = t.zeros(0x20);
+                for s in 0..sw {
+                    let key = keys[rng.below(5) as usize] + u32::from(rng.chance(3));
+                    let value = values[rng.below(5) as usize] + u32::from(rng.chance(3));
+                    t.w32(switches + 8 * s, key);
+                    t.w32(switches + 8 * s + 4, value);
+                }
+                t.w32(
+                    variant + 4,
+                    sw | if rng.chance(4) { 0x8000_0000 } else { 0 },
+                );
+                t.w32(variant + 8, switches);
+                let src = t.zeros(0x40);
+                t.fill(&mut rng, src, 0x40);
+                t.w32(src, [0x40, 0x20, 0x10][rng.below(3) as usize]);
+                let pc = rng.below(4);
+                let params = t.zeros(0x40);
+                for j in 0..pc {
+                    let off = [0u16, 2, 4, 8, 0x10, 0x1c, 0x30][rng.below(7) as usize];
+                    let size = [0u16, 1, 4, 8, 0xc, 0x20][rng.below(6) as usize]
+                        | ((rng.below(16) as u16) << 12);
+                    t.write(params + 0x10 * j + 8, &off.to_le_bytes());
+                    t.write(params + 0x10 * j + 0xa, &size.to_le_bytes());
+                }
+                t.w32(src + 8, pc | if rng.chance(4) { 0x8000_0000 } else { 0 });
+                t.w32(src + 0xc, params);
+                let nm = if rng.chance(4) {
+                    0
+                } else {
+                    names[rng.below(3) as usize] + u32::from(rng.chance(3))
+                };
+                t.w32(el, variant);
+                t.w32(el + 4, src);
+                t.w32(el + 0x10, nm);
+                t.w32(data + 4 * k, el);
+            }
+            let inst = t.zeros(0x20);
+            t.fill(&mut rng, inst, 0x20);
+            t.w32(inst + 0x10, list);
+            // the new list (or none: the original reads its count for every
+            // element, so only without elements) and the material made for
+            // each element
+            let nl = if n == 0 && rng.chance(2) {
+                0
+            } else {
+                let nl = t.zeros(0x20);
+                let c = [0, 1, n, n, n + 1][rng.below(5) as usize];
+                t.w32(nl, c);
+                let d = t.zeros(0x10);
+                t.w32(nl + 4, d);
+                nl
+            };
+            t.w32(new_list, nl);
+            let m = t.zeros(0x20);
+            t.fill(&mut rng, m, 0x20);
+            let dst = t.zeros(0x40);
+            t.fill(&mut rng, dst, 0x40);
+            t.w32(dst, [0x40, 0x20, 0x10][rng.below(3) as usize]);
+            t.w32(m + 4, dst);
+            t.w32(mat, m);
+            let copy = if rng.chance(4) { 0 } else { t.zeros(0x20) };
+            t.w32(malloc, copy);
+            // the tweak utility (on or off) and its shade entries
+            let tw = t.zeros(0x100);
+            t.write(tw, &[u8::from(!rng.chance(4))]);
+            let entries = t.zeros(0xc * 100);
+            for e in 0..100 {
+                let w = if rng.chance(8) { 0 } else { rng.next() | 1 };
+                t.w32(entries + 0xc * e, w);
+            }
+            t.w32(tw + 0xf8, entries);
+            let gt = t.rebase(p4_light2::G_TWEAK);
+            t.w32(gt, tw);
+            t.frame_case(
+                &what,
+                0x006a_96b0,
+                Conv::Thiscall(cl),
+                &[inst],
+                0x74,
+                &frame,
+                |g, ebp| Out::U32(p4_light2::bridge2::instantiate(g, ebp, cl, inst)),
+            );
+        }
+    }
+}
