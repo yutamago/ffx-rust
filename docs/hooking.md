@@ -26,7 +26,8 @@ any game code runs. Its `DllMain`:
 2. rebases each hook address onto the module's real base (ASLR is on);
 3. checks that each hand-written hook's site still holds the original
    prologue (the `ported!` entries carry none; `tools/check-ported.py`
-   checks their sizes against `FFX.exe` instead);
+   checks instead that each is a function start of at least five bytes,
+   by the dump's sizes and `symbols/sizes.tsv`);
 4. overwrites the first five bytes with `jmp rel32` to the Rust shim.
 
 A replacement never calls its original again. A wrapper that does
