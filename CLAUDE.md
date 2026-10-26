@@ -33,7 +33,7 @@ Rust reimplementation of Final Fantasy X (Steam HD Remaster), recovered from
 - Decompilation dump: `~/ffx-work/decomp` (`tools/ghidra/dump.sh`). Grep it
   before asking REA; use REA for focused questions.
 - Windows tools run from WSL with `.exe`. x64dbg is in
-  `C:\Users\USER\x64dbg`; frida-server listens on
+  `%USERPROFILE%\x64dbg`; frida-server listens on
   `127.0.0.1:27042` when started.
 
 ## Commands

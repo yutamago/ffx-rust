@@ -19,7 +19,11 @@ source "$(dirname "$0")/in-game-slot.sh"
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo"
 export FFX_GAME_DIR="${FFX_GAME_DIR:-$HOME/steam-games/FFX-X2-HD}"
-lin="${COVERAGE_DIR:-/mnt/c/Users/USER/AppData/Local/Temp/ffx-coverage}"
+if [ -z "${COVERAGE_DIR:-}" ]; then
+    temp_win="$(powershell.exe -NoProfile -Command '[IO.Path]::GetTempPath()' | tr -d '\r')"
+    COVERAGE_DIR="$(wslpath -u "${temp_win%\\}")/ffx-coverage"
+fi
+lin="$COVERAGE_DIR"
 mkdir -p "$lin"
 win="$(wslpath -w "$lin")"
 python3 -I tools/coverage.py candidates ${COVERAGE_ALL:+--all} "$lin/cand.txt"
