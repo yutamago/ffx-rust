@@ -265,8 +265,9 @@ clock, with lockstep, in background mode, through the game-slot queue. As
 count (`0x01325d94`) to enter 64..127, then 37 frames, which pins the
 count at 101.
 
-`gfxcapture` waits for two Presents, which lockstep holds back. So the
-example sends `lockstep off` and `gfxcapture` in one write. The harness
+A plain `gfxcapture` waits for two Presents, which lockstep holds back. So
+the example sends `lockstep off` and `gfxcapture` in one write (the
+replays capture in lockstep with `now async`, "Scene gates"). The harness
 reads both lines and sets the capture up while the main thread is still
 in lockstep's 1 ms hold. All six runs captured at count 101 with 197
 draws, and they differ only by the noise below.
@@ -306,7 +307,8 @@ DRAWDIFF=target/release/drawdiff ~/ffx-work/m4/draw-field-gate.sh ref-b <run>
 ```
 
 To capture the original code plus only some ports, set `FFX_HOOK_ONLY` to
-the replacements to keep (`ffx-dinput8`; `tools/run-game.sh` passes it on).
+the replacements to keep, or to `@<file>` for a long list (`ffx-dinput8`;
+`tools/run-game.sh` passes it on; `docs/hooking.md`).
 
 Known varying parts, beyond the allow list:
 - In fw-101, character draw 113 (index count 2928, vs `db349612ecc598d8`,
@@ -373,8 +375,11 @@ skips that slot), so each allowance and its cause are written once.
 does the same with the repository's copy of its list
 (`allow/gate/draw-field.txt`).
 
-Every entry in a gate list was seen between two runs of the original code
-and has its cause in the file. Ports never add entries.
+Every entry in a gate list has its cause in the file, and every one but
+one was seen between two runs of the original code. Ports never add
+entries. The exception is `SgSpec_CameraVec[0].z`, a junk read the policy
+of 2026-10-24 sets to 0 (below): it is allowed on bsil0000, kami0100 and
+battle as on draw-field (`71320fb2`).
 
 Captures are armed exactly: `gfxcapture ... now` in lockstep starts after
 the present of the update the main thread is held after and checks that
@@ -394,8 +399,11 @@ What the original runs showed, and so what the lists hold:
 | menu | p1/p2 | a `NoTexture` quad's UVs (`vb3`; not sampled, stale element words, `docs/formats/ui-draw.md`) |
 | battle | p3-p6 (p1/p2 with an older script) | `NoTexture` quads' UVs (`vb3`, p6 against p3; stale caller data, not sampled), the eye-blink texture (not in these pairs; as fw-101's draw 113 in original runs, seen once with a hook subset) |
 
-Results on main 1de4a2a0 plus this branch (2026-10-26), against p1
-(bsil0000, bsil0300, kami0100, menu) or p3 (battle):
+Results on main 1de4a2a0 plus the draw-gates branch (2026-10-26), against
+p1 (bsil0000, bsil0300, kami0100, menu) or p3 (battle), before the
+`SgSpec_CameraVec` entry. With it, the three FAILs below pass: their only
+difference is that word (`docs/rewrite-plan.md`, M4 status: every scene
+passes with only the M4 ports and with every hook on):
 
 | Scene | only-m4 (`FFX_HOOK_ONLY`, 3,511 hooks) | all hooks |
 |---|---|---|
@@ -423,12 +431,13 @@ Two things the original runs do not pin and the replays avoid:
   runs' load lengths (from `replay.out`) first and answers NOT COMPARABLE
   (exit 3) when they differ: rerun one.
 
-`SgSpec_CameraVec[0].z` is not in any list: `Ch_DrawMain` never writes the
-word (`[ebp-0x2c]`), and every original run passes 1 (`0x00000001`, a
-stale integer). The port passes 0 (junk-read policy), and with only the
-M4 hooks the original `Ch_DrawMain` reads what ported functions further up
+`SgSpec_CameraVec[0].z`: `Ch_DrawMain` never writes the word
+(`[ebp-0x2c]`), and every original run passes 1 (`0x00000001`, a stale
+integer). The port passes 0 (junk-read policy), and with only the M4
+hooks the original `Ch_DrawMain` reads what ported functions further up
 left there (`0x006c0000` on bsil0000, `0x005d0000` on kami0100). The
-draw-field list allows it; the scene gates report it. Bisected on
+draw-field list allowed it first; since `71320fb2` the bsil0000, kami0100
+and battle lists do too, by the same policy. Bisected on
 kami0100 with only the M4 hooks (`FFX_HOOK_ONLY` halves of the 1,756
 hooks of the second half, 11 steps): `Sg_AccSetFrameChr` (`0x0082be20`,
 h4-glue-other) hooked alone makes it `0x00d90000`; other subsets gave
@@ -464,10 +473,12 @@ above and in `vs.cb0.SgSpec_CameraVec[0].z` of one draw (`A#0116`, vs
   (1.5 MB) gives each of its 57 draws an offset of its own, so the final
   contents still hold every draw's indices. A ring that wraps within a
   frame would key its earlier draws by later indices (capture.rs, T2).
-- **Lockstep capture.** `gfxcapture` blocks the harness connection and
-  needs two Presents, so it cannot run in lockstep. The pipelined
-  `lockstep off` works, but a lockstep-aware capture would not rely on the
-  game thread's sleep (T2's N-frame runs).
+- **Lockstep capture** (solved). A plain `gfxcapture` blocks the harness
+  connection and needs two Presents, so it cannot run in lockstep;
+  `field_capture` still sends `lockstep off` with it. The replays use
+  `gfxcapture <dir> ... now async` and `gfxcapture result` instead, which
+  capture in lockstep, armed at the held boundary's update ("Scene
+  gates"; `docs/renderer.md`, "Reference captures").
 - **Stale textures.** The layer's tables can describe a dead texture at a
   reused address (fw3-b, at the back buffer). Target keys avoid it, but a
   sampled texture declared at a stale address would key wrongly.

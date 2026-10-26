@@ -9,9 +9,10 @@ running game in place of the original. Once enough of the game is replaced,
 
 | Crate | Role |
 |---|---|
-| `ffx-core` | The reimplementations, as safe, platform-independent Rust |
-| `ffx-oracle` | Runs the original functions from `FFX.exe` in a Unicorn x86 emulator, so tests can compare them with `ffx-core` on Linux |
-| `ffx-hook` | The hook table, the patcher, and `extern "C"` shims with the originals' exact signatures |
+| module crates (`ffx-battle`, `ffx-script`, `ffx-prender`, ...) | The ports: a core on the module's own types and a `bridge` over game memory (`docs/porting.md`) |
+| `ffx-bridge` | Game memory as a port sees it (`Mem`), and calls into code that is still original (`Host`) |
+| `ffx-oracle` | Runs the original functions from `FFX.exe` in a Unicorn x86 emulator, so tests can compare them with the ports on Linux |
+| `ffx-hook` | The hook table, the patcher, and the shims with the originals' exact signatures (`src/ported/<module>.rs`) |
 | `ffx-dinput8` | `dinput8.dll` proxy that loads `ffx-hook` into the game |
 
 ## How a hook works
@@ -23,15 +24,37 @@ any game code runs. Its `DllMain`:
 1. checks the main module's PE `TimeDateStamp` and `SizeOfImage` against the
    supported build, and patches nothing if they differ;
 2. rebases each hook address onto the module's real base (ASLR is on);
-3. checks that each site still holds the original first five bytes;
-4. overwrites them with `jmp rel32` to the Rust shim.
+3. checks that each hand-written hook's site still holds the original
+   prologue (the `ported!` entries carry none; `tools/check-ported.py`
+   checks instead that each is a function start of at least five bytes,
+   by the dump's sizes and `symbols/sizes.tsv`);
+4. overwrites the first five bytes with `jmp rel32` to the Rust shim.
 
-The original is never called again, so no trampoline is needed.
-`DirectInput8Create` itself forwards to the system `dinput8.dll`.
+A replacement never calls its original again. A wrapper that does
+(`Hook::original`) gets a trampoline: the stolen prologue instructions,
+then a jump back past them. `DirectInput8Create` itself forwards to the
+system `dinput8.dll`.
 
-Results go to `ffx-hook.log` next to `FFX.exe`. Set
-`FFX_HOOK_DISABLE=zlib_uncompress,Path_ToLowerAscii` (any subset) to keep
-those originals, which is useful for A/B comparisons.
+Results go to `ffx-hook.log` next to `FFX.exe`. Two environment variables
+choose the hooks, for A/B comparisons and gates:
+
+- `FFX_HOOK_DISABLE=<names>` (comma-separated, the full `ffx.sym` names)
+  keeps those originals. `replacements` stands for every hook without a
+  trampoline, so a replay can run the original code.
+- `FFX_HOOK_ONLY=<names>` installs only the named replacements; the
+  wrappers stay. `FFX_HOOK_ONLY=@<file>` reads the names from a file,
+  comma- or line-separated, because the M4 port lists outgrew the 128 KB
+  one environment string may hold. The path is a Windows path
+  (`tools/scene-gate-capture.sh` passes `wslpath -w`).
+  `tools/run-game.sh` passes both on.
+
+One port has a fallback. In lockstep the harness gives the asset loader
+its turn at the render lock (`docs/harness.md`, "Load pacing"), and the
+port of `Phyre_PMutex_lockInner_00431850` (`ported/p1_load.rs`) asks for
+that turn first. When the port is left out (`FFX_HOOK_DISABLE`,
+`FFX_HOOK_ONLY`, original-code runs), `loader_turn::install_fallback`
+installs a wrapper at the same address instead: the turn rule, then the
+original through a trampoline. One hook sits at the address either way.
 
 ## Mods
 
@@ -71,46 +94,100 @@ writes a table straight into a mod. Verified in the game: with the
 `tools/frida/peek.py 0x0112a940 0x4100 --deref`) has item 0 named
 "Mega Potion" with power 20.
 
-## Replaced so far
+## The hook table
 
-| Function | Address | Checked by |
+`ffx_hook::hooks()` is the hand-written hooks in `crates/ffx-hook/src/lib.rs`
+followed by the `ported!` entries of `crates/ffx-hook/src/ported/*.rs`
+(13,905 on 2026-10-26, one file per module or port list). How a port gets
+its `ported!` line: `docs/porting.md`.
+
+`ported!` takes `extern "C"` (cdecl), `"stdcall"`, `"thiscall"` or
+`"fastcall"`, and makes a thunk per shim. The thunk keeps `eax`, `ecx` and
+`edx` for the caller except where the return type puts the result: `eax`
+for the integer types, `edx:eax` for `u64`/`i64`, `ST0` for `f32`/`f64`.
+`fn shim(args; slots: u32)` also hands the shim the address of the
+caller's argument words, for originals that store into their own argument
+slots (`docs/workflow.md`, "Argument slots"; not for fastcall).
+
+The hand-written hooks:
+
+| Function | Address | What |
 |---|---|---|
-| `zlib_uncompress` | `0x00405e20` | 1,500 synthetic streams (fit, spare room, too small, truncated, flipped bit; all result codes) and every compressed block in `metamenu.vbf` |
-| `Path_ToLowerAscii` | `0x00607d50` | NULL, empty, all 255 byte values, 2,000 random strings; output bytes and return value |
-| `Phyre_PSerialization_PStreamFileWin32_openFile` | `0x00607f40` | Wrapped, not replaced: mod lookup, then the original through a trampoline; trampoline checked by the smoke test, mod loading in the game |
+| `zlib_uncompress` | `0x00405e20` | Replaced (`ffx-core`): 1,500 synthetic streams (fit, spare room, too small, truncated, flipped bit; all result codes) and every compressed block in `metamenu.vbf` |
+| `Path_ToLowerAscii` | `0x00607d50` | Replaced (`ffx-core`): NULL, empty, all 255 byte values, 2,000 random strings; output bytes and return value |
+| `Phyre_PSerialization_PStreamFileWin32_openFile` | `0x00607f40` | Wrapped: mod lookup, then the original through a trampoline; trampoline checked by the smoke test, mod loading in the game |
 | `CDfileSize_CD`, `CDfileSize_PC` | `0x0076c320`, `0x00a428a0` | Wrapped: mod files report their own size; in the game by `an_edited_motion_group_loads_in_the_game` |
 | `Input_KeyHeld` | `0x00629d50` | Wrapped for the test harness (`docs/harness.md`) |
-
-## Adding a replacement
-
-1. Understand the original: decompile it, then read its assembly for the
-   calling convention, return value and side effects. Record the name in
-   `symbols/ffx.sym`.
-2. Write it in `ffx-core`, with unit tests.
-3. Add a parity test in `crates/ffx-oracle/tests/parity.rs` that runs both on
-   many inputs, including edge cases and invalid ones, and asserts that
-   every interesting outcome actually occurred.
-4. Add a shim to `crates/ffx-hook/src/replacements.rs` with the original's
-   exact signature, and an entry to `hooks()` with the first five bytes of
-   the original.
-5. Build and run the Windows smoke test, then try it in the game.
+| `Phyre_PTimerWin32_GetTime` | `0x0042fd80` | Wrapped for the harness: adds the skipped time |
+| `Rng_ClockSeed` | `0x00798950` | Wrapped for the harness: `FFX_HARNESS_SEED` instead of the clock |
+| `MsScreenProcess` | `0x007bc110` | Its port (`ffx_battle::screen`), wrapped for the external renderer's free camera (`gfx::live::cam_update`) |
+| `rcbgGuideUpdateEx` | `0x0091da80` | Its port (`ffx_field::guide_update`), wrapped for the renderer's minimap (`minimap.rs`) |
+| `Phyre_PRendering_PRenderer_renderWorldCulledSorted` | `0x009f3c30` | Wrapped for captures (`world.rs`). The wrapper calls the port (`ported/phyre_render.rs` `culled_sorted`) instead of its trampoline, since two hooks can't share an address. Its name for `FFX_HOOK_DISABLE` and `FFX_HOOK_ONLY` is `Phyre_PRendering_PRenderer_renderWorldCulledSorted_port`; `replacements` turns it off too. It reads only a comma list from `FFX_HOOK_ONLY`, not `@<file>`, so with a file the port is off |
 
 Only functions whose callers can be satisfied through their signature are
-safe to replace this way. A function that the game expects to touch global
-state must touch the same state in Rust.
+safe to replace. A function that the game expects to touch global state
+must touch the same state in Rust.
 
-### Calling originals from a shim
+## What can't be hooked
 
-A bridge calls a function that is still the game's through a callback;
-the shim hands it one of the helpers in `crates/ffx-hook/src/ported/mod.rs`
-and the oracle test `Oracle::call` / `call_cdecl` (any number of words):
+The hook is a 5-byte `jmp`, so some functions keep their original bytes:
+
+- **Under five bytes.** A bare `ret`, `ret 4`, `xor eax, eax; ret`,
+  `mov eax, ecx; ret`, a `lea`/`mov` field return: the jump would overwrite
+  the padding or the next function. `tools/classify.py` puts the game's
+  ones in the `stub` category (`symbols/classes.tsv`); callers' ports
+  reproduce them or call them.
+- **A tail-jump forwarder** (`0x00a34b00`): it jumps to `[arg0 + 4]` on its
+  caller's stack and return address, passing on however many words the
+  target takes. A port would have to call the target and can't know how
+  many words to copy or who pops them.
+- **The SetThreadName idiom** (`0x004300b0`): it raises the exception
+  `0x406d1388` inside its own SEH scope, which a Rust port can't install.
+
+The M4 lists of these, with the evidence, are in
+`~/ffx-work/m4/port/not-portable.tsv` until M4 is marked done
+(`docs/rewrite-plan.md`).
+
+### Calling originals from a port
+
+A port calls a function that is still the game's through its host or a
+callback the shim hands it. Each path passes a fixed number of words. In
+the game a longer list is refused or cut, without a panic (a panic in a
+function the game calls ends the process); the oracle's test hosts fail
+such a call (`ffx_oracle::check_width`), and `python3 -I
+tools/check-callwidth.py` finds the wide calls no test reaches. It must
+report "0 problems".
+
+The bridge hosts:
+
+| Call | Words | Result |
+|---|---|---|
+| `ffx_bridge::Host::call` (cdecl) | 0-6 (`CALL_WORDS`); more is not called (0) | `eax` |
+| `ffx_script` `NativeHost::call_n` | 0-12 (`CALL_N_WORDS`) | `eax` |
+| `ffx_script` `NativeHost::call_float` | 0-6 | `ST0` as `f64` |
+| `ffx_graphic::host::Host::call` (`Conv`) | 12 for cdecl, 16 stack words after `this` for thiscall, 8 otherwise (`max_words`) | `eax` |
+| `ffx_graphic` `call_st0` / `call_st0_f64` | 8 | `ST0` as `f32` / `f64` |
+| `ffx_graphic` `call_u64` / `call_sym_u64` | 8 | `edx:eax` |
+| `ffx_graphic` `call_wide` / `call_sym_wide` (cdecl) | 0-32 (`WIDE_WORDS`); more is not called (0) | `eax` |
+
+The `call_sym*` forms take the `ffx.sym` address and rebase it.
+`call_wide` is for callees past twelve words, such as
+`AsyncLoadManager_loadCluster`'s nineteen from `PhyreScene_fieldMapLoad`.
+In the game `ffx_graphic`'s `call` does not refuse a longer list: a cdecl
+call drops the words past the limit and the callee-pops conventions pop
+more than were pushed. Stay under the limit.
+
+The shim-side helpers in `crates/ffx-hook/src/ported/mod.rs`:
 
 | Helper | Arguments | Result |
 |---|---|---|
-| `call_cdecl(f, &[u32])` | 0-12 stack words (the rest zero) | `eax` |
+| `call_cdecl(f, &[u32])` | 0-12 stack words (the rest zero; more are logged and cut) | `eax` |
 | `call_cdecl_f64` / `_f32` / `_u64` | as `call_cdecl` | `ST0` / `edx:eax` |
 | `call_cdecl_words(f, &[u32])` | 0-32 stack words; more is logged and not called (0) | `eax` |
-| `call_thiscall(f, this, &[u32])` | `ecx` + exactly the callee's 0-8 words | `eax` |
+| `call_thiscall(f, this, &[u32])` | `ecx` + exactly the callee's 0-8 words; more is logged and not called (0) | `eax` |
+
+The `ST0` forms are only for callees that always leave `ST0` set: popping
+an empty x87 stack gives a NaN and unbalances it.
 
 `call_cdecl_words` is for callees that take a struct by value: the slice
 is the stack as the original pushes it, lowest address first, so a struct

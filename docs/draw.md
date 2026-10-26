@@ -1,16 +1,35 @@
 # ffx-draw: the in-process renderer core
 
-M4 rebuilds the platform inside the game's process (`docs/rewrite-plan.md`,
-"M4" and "One process, then 64-bit"). The scene renderer draws on the
-game's own Direct3D 11 device with the game's own DXBC shaders, so its
-output can be identical to PhyreEngine's, bit for bit. `crates/ffx-draw`
-is the layer it draws through. It is portable (it builds for i686 and
-x86_64, Windows or not) and has one backend, Direct3D 11.
+**Status (2026-10-26).** M4 now ports the platform function by function
+instead of rebuilding it ("Ported, not rebuilt", user's decision of
+2026-10-25, `docs/rewrite-plan.md`, "M4"): `PhyreEngine`'s render code and
+the game's glue over it run as Rust ports, with oracle tests and the draw
+gates (`docs/drawdiff.md`, "Scene gates"). The rebuild below came first
+(M4 rounds 1 and 2). What still holds:
+- `ffx-draw` and the map path stay in the tree and in the hook, off unless
+  asked for (`FFX_RUST_MAP`, `--rust-map`, `--rust-map=build`).
+- The rebuild gives the same draws as the original on the captured maps,
+  so it stays as a second check of the ports and as the seam for M6's
+  backends (`docs/rewrite-plan.md`).
+- The D3D11 facts below (what the capture lacks, binding order, where the
+  map is drawn) hold for the ports too.
+
+The plan of the sections below ("later rounds replace ... with the Rust
+scene builder") is history: the M4 scene is the ported `PhyreEngine`, not
+the builder.
+
+M4's first plan rebuilt the platform inside the game's process
+(`docs/rewrite-plan.md`, "One process, then 64-bit"). The scene renderer
+draws on the game's own Direct3D 11 device with the game's own DXBC
+shaders, so its output can be identical to PhyreEngine's, bit for bit.
+`crates/ffx-draw` is the layer it draws through. It is portable (it builds
+for i686 and x86_64, Windows or not) and has one backend, Direct3D 11.
 
 Round 1 proves the layer: a captured frame's scene is drawn through it in
 place of PhyreEngine's calls (the replay mode, below). It must give the
-same render targets and the same call stream. Later rounds replace "replay
-a capture" with the Rust scene builder.
+same render targets and the same call stream. Round 2 replaced "replay a
+capture" with the Rust scene builder (the map path, below, and
+`docs/scene-builder.md`).
 
 ## Layers
 
@@ -161,7 +180,7 @@ recording backend on a synthetic capture. With
 `FFX_DRAW_CAPTURE=<capture.ffxgfx>` it also runs a real capture and checks
 that every state description survives the decoding.
 
-## Results (2026-10-24, cdsp0000)
+## Results (2026-10-24, cdsp0000; history)
 
 Run `t3-d`, field-walk-1 frame:
 
@@ -237,7 +256,8 @@ pass.
 1. **Tag (main thread).** All 32 `call renderWorld` sites of
    `Draw3DWorld` and `PhyreScene_render` go to `render_map` (call sites:
    R2a's hook on `renderWorldCulledSorted` `0x009f3c30` and any hook on
-   `renderWorld`'s entry stay free). Other worlds pass straight on. For the
+   `renderWorld`'s entry stay free; the ports of both now sit there,
+   `docs/hooking.md`). Other worlds pass straight on. For the
    map world it makes a tag for the pass, asks the builder (if one is set)
    for the pass's job, and runs the original; every 72-byte command
    allocated meanwhile gets the tag (an entry hook on the allocator with a
@@ -310,7 +330,7 @@ plugging in is a builder that builds on the main thread and a job that
 uploads (once) and maps each draw with `up.state(&d.state)` into a
 `PassDraw`.
 
-### Results (2026-10-25)
+### Results (2026-10-25; history)
 
 `drawdiff` against the original code, both sides `--hook-disable
 replacements` (the map path is the only difference):
@@ -330,6 +350,7 @@ render thread as fast as the original) the capture equals the original; the
 same with a 2 ms sleep at each map pass gives exactly the rust-map
 captures' cloth (ring hashes `ad478a9d…`). Gate on lockstep captures.
 
+These results are of 2026-10-25, with the hooks of that day.
 `run-all.sh --rust-map`: all 12 traces the same events; every compared
 shot 0 pixels or block difference 0.0 from the original in two runs (field-walk,
 event-besaid, event-cliff, event-arrival, menu-browse and the rest; one run had event-agency-1's 5-pixel cursor-glow streak, which shot-compare passes); the eye

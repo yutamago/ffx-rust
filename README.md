@@ -25,35 +25,70 @@ platforms, and mods that can change anything. How we get there:
 | Motions (`ffx-motion`) | PS2 skeletons and all 3,156 motion groups (21,165 clips): decoded, rebuilt byte for byte, editable as JSON; exported as glTF animations on the remastered models (857 `chr/` models validate) |
 | Text (`ffx-text`) | Encoding fully decoded for all 8 languages; all 92,224 kernel strings round-trip |
 | Desktop app (FFX Studio, `app/`) | Windows launcher and editors in one window (Tauri + Svelte): Play with or without mods, mods on/off, and editors for items, abilities, equipment, treasure, monsters, encounters, dialogue, models and textures; advanced mode adds scripts, game files and every raw field. Logic in `crates/ffx-studio` with a game-data test of every editor |
-| `ffx` CLI | `vbf list/cat/extract/pack`, `kernel tables/export/import`, `monster list/export/import`, `battle list/export/import`, `text export/import`, `script list/disasm/asm`, `texture export/import`, `model export/import`, `motion export/import`, `phyre dump` |
-| Function replacement | `dinput8.dll` proxy patches 2 functions (`zlib_uncompress`, `Path_ToLowerAscii`) with parity-tested Rust; runs in the game |
+| `ffx` CLI | `vbf list/cat/extract/pack`, `kernel tables/export/import`, `monster list/export/import`, `battle list/export/import`, `text export/import`, `script list/disasm/natives/asm`, `texture export/import`, `model export/import`, `motion export/import`, `sound list/wav`, `phyre dump` |
+| Function replacement | The `dinput8.dll` proxy hooks 13,905 functions with Rust ports, each with a parity test against the original machine code. The game logic is done (M3, 2026-10-24: walking, events, menus and battles run on Rust logic); the platform code the game reaches (PhyreEngine and the remaster's glue) is being ported (M4: 3,998 of 4,201). Status: [docs/rewrite-plan.md](docs/rewrite-plan.md) |
 | Mods | `mods/<mod>/<archive path>` replaces archive files in the running game, also files that grew (the PS2 file layer's sizes are hooked) |
-| In-game tests (`ffx-harness`) | The game runs in the background under a TCP harness (buttons, keys, memory, screenshots, file events); tests play into the first scene with an edited event script (grown and relocated; its write read back from memory), a resized model and edited motions, start a battle to check monster, formation and encounter-table mods, and check a kernel mod in memory; saves and settings are sandboxed, randomness seeded, frames run back to back |
-| Symbol map (`symbols/ffx.sym`) | file system, archive, zlib, text, kernel, settings, PhyreEngine fixups and motion code; plus about 6,400 names from the [Fahrenheit](https://github.com/fahrenheit-crew/fahrenheit) team (used with permission, `tools/fh-import.py`) |
+| In-game tests (`ffx-harness`) | The game runs in the background under a TCP harness (buttons, keys, memory, screenshots, file events); tests play into the first scene with an edited event script (grown and relocated; its write read back from memory), a resized model and edited motions, start a battle to check monster, formation and encounter-table mods, and check a kernel mod in memory; saves and settings are sandboxed, randomness seeded, frames run back to back. Recorded replays (walking, events, menus, battles, the boot) compare the ports' run with the original's: events, screenshots, and for some FMOD's mixed audio; draw-stream gates compare the D3D11 calls of a frame |
+| Symbol map (`symbols/ffx.sym`) | About 20,900 names with their evidence, about 6,200 of them from the [Fahrenheit](https://github.com/fahrenheit-crew/fahrenheit) team (used with permission, `tools/fh-import.py`) |
 
 ## Layout
 
 ```text
-crates/ffx-core     Rust reimplementations of FFX.exe functions
-crates/ffx-oracle   runs original FFX.exe functions in an emulator, for parity tests
-crates/ffx-hook     patches FFX.exe functions to jump into ffx-core; test harness
-crates/ffx-harness  launches and drives the game from tests
-crates/ffx-dinput8  dinput8.dll proxy that loads ffx-hook into the game
-crates/ffx-vbf      VBF archive reader
-crates/ffx-kernel   battle kernel tables: reader, writer, TOML export/import
-crates/ffx-monster  monster files: stats and rewards
-crates/ffx-battle   encounter table and battle formations
-crates/ffx-script   script disassembler and assembler
-crates/ffx-phyre    PhyreEngine clusters: textures to and from DDS, models to glTF
-crates/ffx-motion   PS2 skeletons and motion groups: reader, writer, JSON
-crates/ffx-text     in-game text encoding
-crates/ffx-cli      the `ffx` command-line tool
-crates/ffx-studio   the desktop app's logic: game, mods, editors, launcher
-app/                the desktop app: Svelte UI and Tauri window (tools/build-app.sh)
-symbols/ffx.sym     recovered names for FFX.exe, the source of truth
-docs/formats        file format descriptions, with the evidence behind them
-tools/ghidra        headless Ghidra scripts (apply symbols, dump decompiled code)
-tools/build-hook.sh builds the 32-bit dinput8.dll
+crates/ffx-core       zlib and path helpers, the first replacements
+crates/ffx-bridge     game memory as ports see it (Mem, Host): raw pointers in the game, the emulator in tests
+crates/ffx-oracle     runs original FFX.exe functions in an emulator, for parity tests
+crates/ffx-hook       the hook table, the patcher, the shims (src/ported), mods, the test harness
+crates/ffx-dinput8    dinput8.dll proxy that loads ffx-hook into the game
+crates/ffx-harness    launches and drives the game from tests; replays; game-slot
+crates/ffx-launch     starts FFX.exe with bottom-up ASLR off, for repeatable addresses
+crates/ffx-auto       trivial functions ported by tools/autoport.py
+                      game modules (ports, each with its bridge):
+crates/ffx-battle     battle (Ms); also the encounter table and formations
+crates/ffx-chara      characters (Ch)
+crates/ffx-field      field maps, walk meshes, guide map, map effects
+crates/ffx-menu       menus, windows and text drawing (Tk, Gu_)
+crates/ffx-script     the script VM and natives; disassembler and assembler
+crates/ffx-sg         the main loop, fades, scene changes (Sg, FFXApplication)
+crates/ffx-sound      music, sound effects and voice (Snd, the FMOD layer)
+crates/ffx-system     archives, the PS2 file and CD layers, saves, language, settings
+crates/ffx-ps2        the R5900 and VU0 registers the PC port keeps in globals
+crates/ffx-vfx        particle effects (ppp, op*)
+crates/ffx-movie      movies
+crates/ffx-pcui       the PC user interface (title, config, save list, Esc menu)
+crates/ffx-graphic    the remaster renderer over PhyreEngine (graphic*, PhyreScene)
+                      PhyreEngine and glue ports (M4):
+crates/ffx-prender    the render chain and the render-side glue
+crates/ffx-pload      serialization and cluster loading
+crates/ffx-panim      animation
+crates/ffx-pcore      core: matrices, threads, containers, strings
+crates/ffx-pother-a   other engine code (class registration, gameplay bindings)
+crates/ffx-pother-b   other engine subsystems (physics, input, lighting, morph)
+crates/ffx-glue-other the remaster's glue outside rendering (FMOD queue, Iggy, movie)
+                      data formats and tools:
+crates/ffx-vbf        VBF archive reader and writer
+crates/ffx-kernel     battle kernel tables: reader, writer, TOML export/import
+crates/ffx-monster    monster files: stats and rewards
+crates/ffx-phyre      PhyreEngine clusters: textures to and from DDS, models to glTF
+crates/ffx-motion     PS2 skeletons and motion groups: reader, writer, JSON
+crates/ffx-text       in-game text encoding
+crates/ffx-dxbc       Direct3D shader bytecode and its reflection
+crates/ffx-cli        the `ffx` command-line tool
+crates/ffx-studio     the desktop app's logic: game, mods, editors, launcher
+                      drawing, and the M4 checks:
+crates/ffx-drawdiff   compares two captured D3D11 call streams, draw by draw
+crates/ffx-draw       the in-process renderer core (pipeline state, D3D11 backend)
+crates/ffx-scene      the field scene: what PhyreEngine draws, and a builder for it
+crates/ffx-gfx        the scene stream from the game's D3D11 device
+crates/ffx-render     the external 64-bit renderer (wgpu; parked)
+crates/ffx-audio-census, ffx-platform, ffx-postfx, ffx-uidraw, ffx-fxdraw
+                      censuses of the platform boundary (FMOD, window/input, post-processing, UI and effect draws)
+app/                  the desktop app: Svelte UI and Tauri window (tools/build-app.sh)
+symbols/ffx.sym       recovered names for FFX.exe, the source of truth
+symbols/classes.tsv   each game function's category (logic, glue, platform, ...; tools/classify.py)
+docs/formats          file format descriptions, with the evidence behind them
+tools/ghidra          headless Ghidra scripts (apply symbols, dump decompiled code)
+tools/replays         replay scripts and run-all.sh
+tools/build-hook.sh   builds the 32-bit dinput8.dll
 ```
 
 ## Usage
@@ -74,7 +109,13 @@ cargo run --release -p ffx-cli -- kernel export item -o item.toml   # items as e
 cargo test                                    # synthetic archives; metamenu.vbf if FFX_GAME_DIR is set
 cargo test --release -p ffx-vbf --test game_data -- --ignored   # all of FFX_Data.vbf (~20 GB)
 cargo test --release -p ffx-oracle            # Rust vs. original machine code (needs FFX_GAME_DIR)
+tools/verify-batch.py                         # what a change can affect: tests, port checks, hook build, replays
+tools/replays/run-all.sh                      # replays of the ports against the original's recorded runs
 ```
+
+The replays, the draw-stream gates and the audio comparison are described
+in [docs/harness.md](docs/harness.md) and [docs/drawdiff.md](docs/drawdiff.md);
+the porting recipe and its checks in [docs/porting.md](docs/porting.md).
 
 ## Playing and modding
 

@@ -729,7 +729,7 @@ and the limit, all set by `TOSetPktBuffAdrs`; the write cursor is
 ## 16×12-font texts with the cross-menu pen
 
 `TOAddPktBaseMesFontLAbmap` (`0x008e8fb0`) lays a text out with the same
-pen as `TOMkpCrossExtMesFontLClutTypeRGBA` (`0x025d09a0`: colour bytes,
+pen as `TOMkpCrossExtMesFontLClutTypeRGBA`, `g_TOFontPen` (`0x025d09a0`: colour bytes,
 x, y, then the kind byte at `+0x1a` and the mode byte at `+0x1b`). It
 starts the packet cursor at its first argument and returns the cursor.
 The position is given as integers and stored as floats.

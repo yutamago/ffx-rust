@@ -291,9 +291,11 @@ game state (`docs/rewrite-plan.md`):
   cargo run --release -p ffx-harness --example replay_diff -- /mnt/c/…/orig.trace /mnt/c/…/rust.trace
   ```
 
-Loading takes a varying number of frames (the asset loader runs on its own
-thread; see "Determinism" in `docs/rewrite-plan.md`), so scripts wait for
-game state where it matters (`waitfor <range> <hex> [mask] [frames]`:
+Loading took a varying number of frames (the asset loader runs on its own
+thread; see "Determinism" in `docs/rewrite-plan.md`). Since 2026-10-26 the
+loader's turn makes a load take the same frames in lockstep ("Load
+pacing" below), but outside lockstep it still varies, and scripts still
+wait for game state where it matters (`waitfor <range> <hex> [mask] [frames]`:
 advances frame by frame until the bytes match; a battle is under way when
 `0x0112a8e0` is 1), and `tools/replay-compare.py` compares two runs by
 their events: each trace range as its sequence of distinct values, and the
@@ -308,10 +310,12 @@ tools/replay-compare.py /mnt/c/…/orig.trace /mnt/c/…/rust.trace
 ```
 
 The field replay's screenshots are compared coarsely (`shot-compare.py
---coarse field-walk`, `compare_coarse`). The deck's sway, light and
-searchlight beams are not pinned down by the replay: the asset loader
-takes a varying number of frames ("Determinism" in `docs/rewrite-plan.md`),
-so the map's animations are at another phase when the shot is taken. The
+--coarse field-walk`, `compare_coarse`). Until 2026-10-24 the deck's sway,
+light and searchlight beams were not pinned down by the replay: the asset
+loader took a varying number of frames ("Determinism" in
+`docs/rewrite-plan.md`), so the map's animations were at another phase
+when the shot was taken. The shots are now pinned to the event's clock
+(below); the coarse comparison stays. The
 sway is not a sub-pixel shift: over 47 runs (2026-10-17 to 2026-10-20) the
 scene sat 0 pixels across and -9 to +6 down from the recording, in a few
 discrete steps, with the near railing moving further (parallax, roll).
@@ -533,7 +537,7 @@ the main thread's next update to finish, and the replay timed out. Letting
 the FMOD thread catch up at each boundary (its 33 ms sound loop waits in
 real milliseconds) and waiting for the render thread's queued flips made
 Rust runs give 281 in 5 of 5 but original runs still 282 (the load
-length differs), so neither was kept. The script checks 281 or 282 now
+length differs), so neither was kept. The script then checked 281 or 282
 (set 280 frames after state 4, -1 within two frames), as Energy Blast's
 258 or 259; six Rust runs three at a time passed (282, 282, 281, 282,
 281, 281; Energy Blast 259 in all). A port that ends either effect a frame early or late stops the
@@ -646,10 +650,12 @@ one frame), the emulated vsyncs from the new time, both carries 0,
 `g_Vu0_R` `0x3fb5a5c3` (seeded), the main thread's CRT seed 1. It
 answers what it pinned. The game's own generators need nothing: loading
 a save seeds them. A replay that needs it says `pin` right after
-`lockstep on`. battle-magic, battle-attack, menu-save and menu-shop do,
-and event-besaid since audio-check (2026-10-26; its FMOD capture differed
-between unpinned original runs, "Audio capture" below). The other replays'
-recordings predate it.
+`lockstep on`. battle-magic, battle-attack, menu-save, menu-shop,
+menu-browse and menu-grid do, event-besaid since audio-check (2026-10-26;
+its FMOD capture differed between unpinned original runs, "Audio capture"
+below), and the extra list and the draw-gate replays. The others
+(field-walk, the realtime ones, battle-overdrive, event-agency,
+event-arrival) don't.
 
 Measured on battle-magic: without `pin`, original runs as well as Rust
 runs landed in four or five pictures for shot 1 and in three for shots 2
@@ -673,9 +679,8 @@ No port caused them. With `pin` in those three replays, three original and
 three Rust runs gave every shot of the three replays the same to the
 pixel, except battle-attack-2 (x 141..472, y 185..287) and menu-save-4
 (the title, which loads in real time). Those two differ between original
-runs either way. The three replays' references need re-recording with
-`pin`, from main at merge: `tools/replays/run-all.sh --record
-battle-attack menu-save menu-shop`.
+runs either way. The three replays, with menu-browse and menu-grid,
+were recorded again with `pin` on 2026-10-26.
 
 `pin` cannot fix one more source of drift. `lockstep on` can take hold a
 few updates late after `load direct`, with the map already running. Every
@@ -764,7 +769,8 @@ and `Atel_MoveUpdate` made their 8-word `Math_YawPitchTo` call through
 `Host::call`, which in the game passes at most 6 words and refuses longer
 calls (the oracle hosts accepted any width, so the parity tests passed).
 Bisected with `FFX_HOOK_DISABLE` lists (at most about 30 KB of names
-per run: the variable goes through the Windows environment). A replay that
+per run: the variable goes through the Windows environment; for longer
+lists use `FFX_HOOK_ONLY=@<file>`, `docs/hooking.md`). A replay that
 stops early like this leaves its later shots missing and its trace's last
 line cut: `shot-compare.py` reports a missing shot as a failure and goes on
 with the other replays' shots, and `replay-compare.py` drops a cut line.
@@ -895,14 +901,15 @@ directories of the screenshots: the original twice, then the Rust run)
 counts only the pixels the original draws the same both times, a few
 pixels around each animated one left out.
 
-`tools/replays/run-all.sh --record` records the original runs (the menu's
-twice), `tools/replays/run-all.sh` replays everything with the Rust
+`tools/replays/run-all.sh --record` records the original runs (twice),
+`tools/replays/run-all.sh` replays everything with the Rust
 replacements and compares. A recorded original run can itself be off (one
 field-walk recording had other party records from the first frame on,
 which no later run reproduced): when a comparison fails, record the
-original again before suspecting a replacement. All three replays give the
-original's events and screenshots with every replacement in (1593
-functions, 2026-10-16); the menu screenshots keep a few dozen pixels on the
+original again before suspecting a replacement. On 2026-10-16 the three
+replays of the time gave the original's events and screenshots with every
+replacement in (1593 functions; M3's 13 replays: `docs/rewrite-plan.md`);
+the menu screenshots keep a few dozen pixels on the
 animated cursor that the two original runs happen to agree on, so
 `tools/shot-compare.py` leaves out 12 pixels around every animated one
 (the cursor icon is about 25 pixels wide); with that, 0 pixels differ.

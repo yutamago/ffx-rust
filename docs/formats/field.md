@@ -1933,7 +1933,7 @@ block at `template + i16 template[+0x10]`): `AbmapMakeNodeMatrix` times the
 view `g_Abmap + 0x113e0`; the block's four corners (`i16` pairs at `+0x20`,
 in 16ths) through it, the node skipped when a `w <= 0`; projected with
 `Q = 1 / w`; checked against the box (1528, 1600)..(2576, 2304) with
-`Vec2SubScalarsFlags` (`0x0075e870`), which only stops the checks early.
+`Vec2SubScalarsFlags_0075e870` (`0x0075e870`), which only stops the checks early.
 The packet holds the texture quad from the block's `+0x30` (origin) and
 `+0x34` (size) pairs in 4096ths times each corner's `q`, the positions in
 16ths of a pixel. The element's texture window depends on the block's

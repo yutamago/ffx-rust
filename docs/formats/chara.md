@@ -142,7 +142,7 @@ These fields describe the ground under the character. Each one has its own `Ch_I
 | 11-12 | dictionary | `Ch_IdGetDictionary` |
 | 13-14 | water | `Ch_IdGetWater` |
 | 15-16 | sound | `Ch_IdGetSound` |
-| 17-31 | shade: three 5-bit fields (`Ch_IdShadeCalc`, `0x0083e980`; not ported, its callee is in another module) | `Ch_IdGetShade0`-`2` |
+| 17-31 | shade: three 5-bit fields (`Ch_IdShadeCalc`, `0x00834110`, through `Sg_IdGetShade`, `0x0083e980`; both ported) | `Ch_IdGetShade0`-`2` |
 
 `Ch_IdSetDefPid` sets the word to `0xfffe0000`. `Ch_IdGetEffectTable` returns 8 or 9 (bit 29 of `+0x194`) for motion type 2.
 

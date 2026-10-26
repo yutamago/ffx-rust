@@ -54,6 +54,9 @@ written) must agree.
       cargo test --release -p ffx-oracle --test <module>
   ```
 - `Oracle::stub_return(addr, value)` fixes a callee (a clock) for the test.
+  A stub pops like the original, logs every word the original passes, and
+  writes what the callee writes through any pointer the port hands it
+  (`docs/workflow.md`, "Test stubs").
 - Floats: the game thread runs x87 at 53-bit precision (`0x027f`); the
   snapshot oracle sets that control word. Results compare exactly unless
   a tolerance is stated and justified. `Ret::st0` is `ST0` as `fst qword`
@@ -139,8 +142,13 @@ in the script, with the dispatcher addresses as the reason.
 
 - `tools/build-hook.sh` (and clippy for the 32-bit target:
   `PATH=tools/shims:$PATH XWIN_ARCH=x86,x86_64 cargo xwin clippy --release --target i686-pc-windows-msvc -p ffx-hook`).
+- The static checks (`docs/workflow.md`, "The port checks"; `tools/verify-batch.py`
+  runs all but check-argslots).
 - A replay that exercises it (`docs/harness.md`): the trace with
-  replacements must equal the trace with `--hook-disable replacements`.
+  replacements must equal the original's recorded run
+  (`tools/replays/run-all.sh`). Platform ports also pass the draw gates and
+  the audio comparison where they can change them (`docs/workflow.md`,
+  "Gates beyond the tests").
 - `tools/progress.py` counts it as replaced.
 
 ## Library code: PhyreEngine and Direct3D 11 (M4 pilot)
@@ -207,8 +215,9 @@ chain with this recipe. What it adds:
   (`renderWorldCulledSorted`'s capture wrapper in `world.rs`), the wrapper
   calls the port instead of its trampoline, behind its own
   `FFX_HOOK_DISABLE` name.
-- **Gate on the original code.** `FFX_HOOK_ONLY=<names>` (`ffx-dinput8`,
-  passed on by `tools/run-game.sh`) installs only the named replacements,
+- **Gate on the original code.** `FFX_HOOK_ONLY=<names>` or
+  `FFX_HOOK_ONLY=@<file>` (`ffx-dinput8`, passed on by
+  `tools/run-game.sh`; `docs/hooking.md`) installs only the named replacements,
   so a capture holds the original code plus the slice. Compare it with
   captures of the same build run `original`, not older ones: the harness
   changes what a capture sees (`orig3`/`orig4` of 2026-10-24 no longer

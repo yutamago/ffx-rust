@@ -1,5 +1,15 @@
 # The external renderer
 
+**Status (2026-10-26): parked.** Since 2026-10-24 the platform is
+rewritten inside the game's process, and M4 ports it function by function
+with identical output only (`docs/rewrite-plan.md`, "One process, then
+64-bit" and "M4"). `ffx-render` and its enhanced mode stay as they are, as
+a starting point for the enhancement project after the rewrite; they get
+no M4 work. The sections before "Reference captures (M4)" describe it as it was
+left. "Reference captures (M4)" and what follows are not about this
+renderer: the capture format and the frame facts there are what the M4
+gates use (`docs/drawdiff.md`).
+
 The game keeps running as it is: its logic, menus (Iggy Flash), movies
 and sound are untouched. What changes is who draws the 3D scene. The hook
 streams every scene draw the game makes to a separate 64-bit process,
@@ -408,9 +418,9 @@ gfxcapture result
 - `draws A B`: render target 0 after each draw A..B (full mode; the old
   form `<dir> A B` still works).
 - `now`: start with the next call, not at the next `Present`. Use it only
-  while lockstep holds the render thread in `Present` (after a `wait` or
-  `waitfor`); the main thread then waits too, and the capture first reads
-  the scene inputs as the main thread left them (the *held* sample).
+  in lockstep, after a `wait` or `waitfor`, while the main thread is held
+  at a boundary; the capture first reads the scene inputs as the main
+  thread left them (the *held* sample).
   In lockstep (2026-10-26, draw-gates) `now` is armed at the boundary
   the main thread is held at, `f`: the capture starts right after the
   present of update `f` (at once if the render thread has done it,
@@ -484,6 +494,12 @@ a fault); pointers are left out.
 
 ### Threads and the frame relation (measured 2026-10-24)
 
+Measured before harness-main-thread (2026-10-24), when lockstep held the
+render thread in `Present` and `shot` took the image presented there.
+The frame relation still holds; what the harness does about it changed:
+lockstep now holds the main thread at the update's entry, and a shot at
+frame `n` shows update `n` (`docs/harness.md`, "Frames and threads").
+
 Every Direct3D 11 call the layer records (draws, clears, copies, target
 changes, the noted calls) and `Present` run on one thread whose start
 address is `Phyre_PRendering_PRenderThread_StaticThreadEntry`
@@ -526,8 +542,12 @@ FFX_GFX=1 target/release/examples/replay tools/replays/draw-field.txt '<win dir>
 `drawdiff` (`docs/drawdiff.md`) compares the streams with
 `~/ffx-work/m4/allow-draw-field.txt` (T1's `cdsp0000` rules plus a
 `bsil0000` section); `~/ffx-work/m4/compare-captures.py` compares
-`hashes.txt`. Two original runs (orig3, orig4, 2026-10-24) gave 0
-differences in both outside this list:
+`hashes.txt`. (Both are in the repository now: `tools/compare-captures.py`
+and `crates/ffx-drawdiff/allow/gate/draw-field.txt`, run by
+`tools/scene-gate.sh draw-field`; the references are ref-a, ref-b and
+ref-c, since orig3 and orig4 no longer match a fresh original capture:
+`docs/drawdiff.md`, "draw-field references".) Two original runs (orig3,
+orig4, 2026-10-24) gave 0 differences in both outside this list:
 - `scene.GlobalTime` (8 ulp) and `SgSpec_LightVec[0].z` (junk read), and
   the cloth's COLOR1 ring (vertex shader `bb9bf1c768e1480f`, slot 5), as
   T1 found on the deck; target and back-buffer hashes after a noisy draw
