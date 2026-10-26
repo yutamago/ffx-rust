@@ -1,5 +1,20 @@
 # The scene builder: the map world in Rust (M4 round 2)
 
+**Status (2026-10-26).** M4 now ports `PhyreEngine` and the game's glue
+function by function instead of rebuilding the scene ("Ported, not
+rebuilt", user's decision of 2026-10-25, `docs/rewrite-plan.md`, "M4"). The
+builder is not the M4 renderer any more. What still holds:
+- It gives the same draws as the original on the captured maps
+  (cdsp0000, bsil0000, bsil0300; "Results"), so it stays as a second check
+  of the ported render chain and as the seam for M6's backends.
+- `FFX_RUST_MAP=build` and its gate tests stay in the tree.
+- The facts it found (inputs, culling, constant buffers, the allowed
+  sampler difference) describe the original and hold for the ports.
+
+The open items at the end are the builder's own; nothing in M4 waits on
+them. Where an item names an original function, its port and oracle test
+now exist in the hook (the context variant search, the affine inverse).
+
 `ffx_scene::build::build(clusters, inputs)` makes the draws of the map
 world (scene `+0xac`) for one frame: the opaque pass, then the transparent
 pass, as `ffx-draw` `DrawState`s and `DrawCall`s, with every object they
@@ -348,15 +363,19 @@ the builder's gate has no entry for it.
    cluster in world `+0xac` (cdsp0000, bsil0000 and bsil0300 have one),
    so this path has not met a capture.
 2. **Morphing meshes' vertices** come from the host ("Morphing meshes").
-3. **The context variant search** (`0x004ef440`) is not ported: the first
-   shader of the render pass is taken.
+3. **The context variant search** (`0x004ef440`) is not in the map
+   builder: the first shader of the render pass is taken. (The character
+   builder has it, and the hook has its port, `PEffect_findContextVariant`
+   in `ported/h2_render_b.rs`.)
 4. **Per-node semantics** other than `World`, `WorldView` and
    `WorldViewProjection` are left 0 (noted per build).
 5. **The x87 arithmetic of the culling matrix product and the point
    transform** is taken as 53-bit sums rounded once per element; it only
    matters for boxes on a clip plane. A parity test against the original
    (`ffx-oracle`) would settle it, as it would for `live::affine_inverse`
-   (exact on every captured frame).
+   (exact on every captured frame). The original of the latter,
+   `Vectormath_Transform3_inverse` (`0x004cc890`), is now ported
+   (`ported/p5_core_c.rs`); the builder still uses its own.
 6. **Capture formats.** `ffx_scene::capture` reads `capture.ffxgfx` with
    its objects inline; captures whose objects are in a `capture.ffxref`
    (e.g. `orig1/fw-459`) are not read.
