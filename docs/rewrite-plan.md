@@ -7,6 +7,10 @@ nothing of the game.
 
 ## Where we stand (2026-10-16)
 
+This is the baseline the plan started from. Since then M0 to M3 are done
+and M4 is under way (its status is under "M4" below). Tracked numbers per
+module are in `tools/progress.py` and the status page (`tools/status.sh`).
+
 Ghidra finds 55,707 functions in 6.27 MB of code in `FFX.exe`. Sorting them
 by name, and the unnamed ones by their named neighbours, gives the split
 below. The neighbour guess is crude, so read the module sizes as ±30%.
@@ -400,6 +404,22 @@ Each part replaces the original only when it passes:
 - for audio, FMOD's mixed output written with its WAV writer, compared
   sample for sample (sound may be on, on the main machine only).
 
+**Status (2026-10-26).**
+- **Ports.** The pilot's coverage run split the reached code into 10 lists of 4,183 functions. A second coverage round added 18 more, with replays for the graphics settings, a movie, the Iggy screens and a summon battle.
+  - 3,998 of the 4,201 are ported and hooked: 13,905 hooks in all with M1 to M3.
+  - 55 can't be hooked. Most are under the hook's 5 bytes. A few are special cases: a tail jump forwarding an unknown argument count, the SetThreadName exception, the console thread that never returns. They are listed with their evidence in `~/ffx-work/m4/port/not-portable.tsv`, which moves into the repo when M4 is marked done.
+  - 148 are left: 45 render-side glue functions (`PhyreScene_render`, `fieldMapInitialize`, `bootInit`, ...) and 103 other glue functions (the TO/Tk battle and menu drawers, the FFEscMenu pages, `Game_Main`, ...).
+- **Draw streams.** `tools/scene-gate.sh` gates six scenes with an allow file each (`crates/ffx-drawdiff/allow/gate/`): draw-field, bsil0000, bsil0300, kami0100, a menu and a battle. Each passes with only the M4 ports and with every hook on.
+  - Every allow entry has a cause seen between two runs of the original, except one: `SgSpec_CameraVec[0].z`, a never-written stack read in `Ch_DrawMain`, which the junk-read policy sets to 0.
+- **Audio.** `run-all.sh --audio` compares FMOD's mix sample for sample on event-besaid, battle-attack, menu-browse and battle-ifrit; all four are identical with every port on. It found one port bug: `MsMusicReadStart` dropped the victory fanfare's id.
+- **Static checks.** Besides check-ported, check-clobber and check-callwidth:
+  - check-thisarg: callees that read ecx;
+  - check-argslots: argument slots an unhooked caller reads back;
+  - check-callconv: `ret n` against the port's convention;
+  - check-tailargs: stack words an original only forwards.
+  `tools/verify-batch.py` runs them all.
+- **Left besides the ports.** Three replay flakes show up only when several games run at once (event-agency, battle-overdrive, a menu banner's animation phase). Then this section marks M4 done, with what stays for M5.
+
 ### M5: inversion
 
 The main loop (`Sg`, `FFXApplication`) and the system module (archives,
@@ -433,12 +453,23 @@ Replays need the same inputs to reach the same state. Found so far:
 - Heap addresses change between runs (Windows' bottom-up ASLR, and other
   threads allocating); `ffx-launch` turns ASLR off for the game, but
   allocation order still varies, so traces compare values, not pointers.
-- The asset loader (`AsyncLoadManager`, its own thread) takes a varying
-  number of frames. It cannot be awaited at frame boundaries: some of its
-  tasks need frames to pass. Logic is not affected (a battle makes the same
-  random calls in the same order either way), only timing, so replays
-  wait for game state (`waitfor`) instead of counting frames, and battle
-  logic is compared by its call sequence (the call log).
+- The asset loader (`AsyncLoadManager`, its own thread) took a varying
+  number of frames: it raced the render thread for the render lock in real
+  time, and the Rust update's different speed changed the count. In
+  lockstep the harness now gives the loader its turn at each frame boundary
+  (`loader_turn.rs`, `docs/harness.md` "Load pacing"), so a load takes the
+  same frames on the original and the ports. Replays still wait for game
+  state (`waitfor`) rather than counting frames, and battle logic is also
+  compared by its call sequence (the call log).
+- State from before lockstep (frame sync counters, game time, the VU0
+  registers, the CRT seed) varies with how long boot and loading took; the
+  replay command `pin` sets it to fixed values. `lockstep on` takes hold at
+  the first boundary after the command, not at whichever one the main
+  thread happens to be at.
+- FMOD mixes on its own threads; with audio capture on, the harness runs
+  `FmodManager`'s tick in a turn at each boundary, so the mix is the same
+  from run to run (`docs/harness.md`, "Audio capture"). Music that starts
+  before lockstep can't be pinned, only left out of the compared window.
 - Threads of the game: the render thread (`PRenderThread`), the asset
   loader, an input task manager, two FMOD threads, the movie decoder's
   (libvpx, only with a movie), a Virtuos test-command thread.
