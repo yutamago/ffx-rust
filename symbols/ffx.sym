@@ -295,6 +295,7 @@
 0x00441e10 function PhyreCursor_IsValid_00441e10 # structure: thiscall(cursor) -> al: the cursor check template of PhyreCursor_IsValid_00660240 etc. (list +0x18 null, or its node +0x1c still linked from +0x2c via +0x40 and the list's +0x40 set); name in the existing family's style
 0x00441e40 function PhyreCursor_IsValid_00441e40 # structure: the same code as PhyreCursor_IsValid_00441e10
 0x00441f20 function Phyre_PCluster_resolveAssetReferences # fh v3:exact 0x00441ff0 Phyre::PCluster::resolveAssetReferences
+0x00442010 function Phyre_PCluster_createArena_00442010 # thiscall(size, used, count): 5 for size 0 or used > size; 0x16 when +0x24 is set; block 0x0042fb80(0x20 + (size + 3 & ~3) + 0x4c count, 0x20) (0xd when it fails): header {next = old +0x24, base = block + 0x20, used, 0} linked at +0x24, then 0x0049c7c0(+0x28; base + rounded size, count); 0; called by 0x00579090; ported (ffx-pload); name ours
 0x004429e0 function Phyre_PWorld_PWorld       # fh v3:exact 0x00442ab0 Phyre::PWorld::PWorld
 0x00442e30 function Phyre_PWorld_Bind         # fh v3:cg4 0x442f00 Phyre::PWorld::Bind
 0x00442f70 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PWorld__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PWorld *>::Get" (its own __FUNCTION__ in an error print)
@@ -404,6 +405,7 @@
 0x00459a60 function Phyre_PClassDescriptorForType_Phyre_PInstancesComponent__getPointerFromScriptContext # fh switch:bsim1.00 0x71000b6f50 Phyre::PClassDescriptorForType<Phyre::PInstancesComponent>::getPointerFromScriptContext
 0x0045aa60 function Phyre_PNameComponent_Bind # fh v3:exact 0x0045ab30 Phyre::PNameComponent::Bind
 0x0045ad60 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PNameComponent__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PNameComponent *>::Get" (its own __FUNCTION__ in an error print)
+0x0045b8f0 function Phyre_PHashTree_find_0045b8f0 # thiscall(&key {hash, name}): as 0x004375c0 but names compared by the CRT import 0x00b0c398 (cdecl, sign); node or 0; ported (ffx-pload); name ours
 0x0045c500 function Phyre_PAssetReference_Bind # fh v3:exact 0x0045c5c0 Phyre::PAssetReference::Bind
 0x0045c890 function Phyre_PAssetReferenceImport_Bind # fh v3:exact 0x0045c950 Phyre::PAssetReferenceImport::Bind
 0x0045c9e0 function Phyre_PAssetReferenceImport_PAssetReferenceImport # layout+callees: sorts between Phyre_PAssetReferenceImport_Bind and Phyre_PAssetReference_CreateAssetReference, and its named callees match the Switch 0x71000ae6c0 Phyre_PAssetReferenceImport_PAssetReferenceImport's (similarity 1.00: Phyre_PBase_GetClassDescriptor); symbols from Fahrenheit's server export
@@ -1235,6 +1237,7 @@
 0x00594f40 function Phyre_PRendering_PRenderInterfaceNVN_getViewportSize # fh switch:bsim1.00 0x710003b4d0 Phyre::PRendering::PRenderInterfaceNVN::getViewportSize
 0x00595750 function PRendererD3D11_initWindow_00595750 # thiscall(renderer, &g_WindowDisplayInfo): GetClientRect of info.hwnd, then 0x00595800; callers PApplication onInit 0x0062a9ca; name guess (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00595800 function PRendererD3D11_createDeviceAndSwapChain_00595800 # D3D11CreateDevice probe (>= FL10.0), D3D11CreateDeviceAndSwapChain(HARDWARE, {11_0,10_1,10_0}, windowed swap chain R8G8B8A8, 1 buffer, DISCARD, ALLOW_MODE_SWITCH), MakeWindowAssociation(NO_ALT_ENTER); name guess; guess: D3D11CreateDevice; FL 10.0 with MSAA+HDAO -> MSAA 0 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam, window)
+0x00595e50 function Phyre_PClusterRegistry_add_00595e50 # thiscall(&cluster, &record): node from the pool +0x18 (0x0049c8d0(pool; +0x20) when empty; 0xe if still none), links self, key, ten record words at +0x10; tree insert 0x00581750: duplicate -> 0x0049c980 and 0x12, else 0x00574980(node) and 0; ported (ffx-pload); name ours
 0x00595f90 function Phyre_PRendering_PTexture2DD3D11_isBound # fh v3:bsim1.00 0x00596120 Phyre::PRendering::PTexture2DD3D11::isBound
 0x00595fa0 function Phyre_hasWord64_00595fa0 # thiscall: eax = (+0x64 != 0); callers 0x004648e0.. (15 refs); ported (ffx-pload); name ours
 0x00595fb0 function Phyre_hasWord64_00595fb0 # copy of 0x00595fa0 (15 refs, 0x00464910..); ported (ffx-pload); name ours

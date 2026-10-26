@@ -2656,3 +2656,101 @@ fn batch8_clusters_match_the_original() {
         }
     }
 }
+
+// ---- batch 9 ----
+
+#[test]
+fn batch9_arenas_and_registry_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // createArena: the block allocation and the pool's hand-over recorded
+        for (size, used, existing, block) in [
+            (0, 0, 0, 1),
+            (0x40, 0x41, 0, 1),
+            (0x40, 0x40, 0, 1),
+            (0x40, 8, 0x00ee_0000, 1),
+            (0x41, 8, 0, 0),
+            (0x41, 8, 0, 1),
+        ] {
+            let b = if block == 0 { 0 } else { t.junk(0x200, 1) };
+            t.stub(descriptor::ALLOC, false, 2, 0, b);
+            t.stub(0x0049_c7c0, true, 2, 2, 0);
+            let cl = t.junk(0x40, 2);
+            t.w32(cl + 0x24, existing);
+            let what = format!("{label}: createArena {size:#x} {used:#x} {existing:#x} {b:#x}");
+            t.check(
+                &what,
+                0x0044_2010,
+                Conv::Thiscall(cl),
+                &[size, used, 3],
+                |g| Out::U32(c::create_arena(g, cl, size, used, 3)),
+            );
+            t.reset();
+        }
+        // the registry's add
+        for (pooled, dup) in [(false, false), (true, false), (true, true)] {
+            t.stub(0x0049_c8d0, true, 1, 1, 0);
+            t.stub(0x0049_c980, true, 1, 1, 0);
+            t.stub(0x0057_4980, true, 1, 1, 0);
+            let reg = t.zeros(0x40);
+            t.w32(reg + 0xc, reg);
+            t.w32(reg + 0x20, 8);
+            if pooled {
+                let n1 = t.junk(0x40, 3);
+                let n2 = t.junk(0x40, 4);
+                t.w32(n1, n2);
+                t.w32(n2, 0);
+                t.w32(reg + 0x18, n1);
+            }
+            if dup {
+                let old = t.zeros(0x40);
+                t.w32(old, reg);
+                t.w32(old + 4, reg);
+                t.w32(old + 0xc, 0x00c1_0000);
+                t.w32(reg + 0xc, old);
+            }
+            let key = t.zeros(4);
+            t.w32(key, 0x00c1_0000);
+            let record = t.junk(0x28, 5);
+            let what = format!("{label}: registry add {pooled} {dup}");
+            t.check(
+                &what,
+                0x0059_5e50,
+                Conv::Thiscall(reg),
+                &[key, record],
+                |g| Out::U32(c::registry_add(g, reg, key, record)),
+            );
+            t.reset();
+        }
+        // the import-compared lookup: the CRT compare recorded, its result set
+        for cmp in [0u32, 1, u32::MAX] {
+            let stub = t.stub_code(0xc3, false, 2, 0, cmp);
+            let iat = t.rebase(0x00b0_c398);
+            t.w32(iat, stub);
+            let tree = t.zeros(0x20);
+            let node = t.zeros(0x20);
+            t.w32(node + 4, tree);
+            t.w32(node + 8, tree);
+            t.w32(node + 0x10, 100);
+            t.w32(node + 0x14, 0x00ab_0000);
+            t.w32(tree + 0xc, node + 4);
+            // children: hash 50 on the left, 150 on the right
+            for (side, hash) in [(4, 50), (8, 150)] {
+                let child = t.zeros(0x20);
+                t.w32(child + 4, tree);
+                t.w32(child + 8, tree);
+                t.w32(child + 0x10, hash);
+                t.w32(child + 0x14, 0x00ab_0010);
+                t.w32(node + side, child + 4);
+            }
+            let key = t.zeros(8);
+            for hash in [100, 50, 150, 70] {
+                t.w32(key, hash);
+                t.w32(key + 4, 0x00cd_0000);
+                let what = format!("{label}: import find {cmp:#x} {hash}");
+                t.check(&what, 0x0045_b8f0, Conv::Thiscall(tree), &[key], |g| {
+                    Out::U32(d::import_find(g, tree, key))
+                });
+            }
+        }
+    }
+}

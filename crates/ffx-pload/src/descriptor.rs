@@ -1095,6 +1095,29 @@ pub mod bridge {
         }
         r
     }
+
+    /// `0x0045b8f0` (thiscall `(&key)`): as [`dispenser_find`], but the
+    /// names compared by the CRT import at `0x00b0c398` (cdecl `(key
+    /// name, node name)`, its sign).
+    pub fn import_find(h: &mut impl Host, tree: u32, key: u32) -> u32 {
+        let [hash, name]: [u32; 2] = h.read(key);
+        let cmp = h.read(h.rebase(0x00b0_c398));
+        let mut link: u32 = h.read(tree + 0xc);
+        while link != tree {
+            let node = link.wrapping_sub(4);
+            let [nh, n]: [u32; 2] = h.read(node + 0x10);
+            let order: i32 = match nh.cmp(&hash) {
+                std::cmp::Ordering::Greater => 1,
+                std::cmp::Ordering::Less => -1,
+                std::cmp::Ordering::Equal => h.call(cmp, Conv::Cdecl, &[name, n]) as i32,
+            };
+            if order == 0 {
+                return node;
+            }
+            link = h.read(node + 4 + 4 * u32::from(order < 0));
+        }
+        0
+    }
 }
 
 /// `PNamespace::GetGlobalNamespace()` (cdecl).

@@ -761,4 +761,74 @@ pub mod bridge {
         h.write(data, base.wrapping_add(end));
         0
     }
+
+    /// `0x00442010` (thiscall `(size, used, count)` on a cluster): its
+    /// arena, once: 5 for a size of 0 or `used` past it,
+    /// [`crate::error::ALREADY`] when it has one; else one block
+    /// (`0x0042fb80(0x20 + size rounded to 4 + count * 0x4c, 0x20)`,
+    /// [`crate::error::NO_BLOCK`] when that fails) holding the arena's
+    /// header (next, base, used, 0; linked at `+0x24`), its bytes, then
+    /// `count` pool entries handed to the pool at `+0x28`
+    /// (`0x0049c7c0`); 0.
+    pub fn create_arena(h: &mut impl Host, cluster: u32, size: u32, used: u32, count: u32) -> u32 {
+        if size == 0 || used > size {
+            return 5;
+        }
+        let old: u32 = h.read(cluster + 0x24);
+        if old != 0 {
+            return crate::error::ALREADY;
+        }
+        let rounded = size.wrapping_add(3) & !3;
+        let total = count
+            .wrapping_mul(0x4c)
+            .wrapping_add(0x20)
+            .wrapping_add(rounded);
+        let block = h.call_sym(crate::descriptor::ALLOC, Conv::Cdecl, &[total, 0x20]);
+        if block == 0 {
+            return crate::error::NO_BLOCK;
+        }
+        let base = block + 0x20;
+        h.write(block + 4, [base, used, 0]);
+        let next: u32 = h.read(cluster + 0x24);
+        h.write(block, next);
+        h.write(cluster + 0x24, block);
+        h.call_sym(
+            0x0049_c7c0,
+            Conv::Thiscall(cluster + 0x28),
+            &[base.wrapping_add(rounded), count],
+        );
+        0
+    }
+
+    /// The cluster registry's add (`0x00595e50`, thiscall `(&cluster,
+    /// &record)` on the registry): a node from the pool at `+0x18` (grown
+    /// by `0x0049c8d0(pool; +0x20)` when empty; 0xe when still empty),
+    /// keyed by the cluster, holding a copy of the ten-word record, put in
+    /// the tree ([`tree_insert`]); a duplicate goes back to the pool
+    /// (`0x0049c980`) with [`crate::error::DUPLICATE`], else the tree's
+    /// fix-up (`0x00574980`) and 0.
+    pub fn registry_add(h: &mut impl Host, registry: u32, key: u32, record: u32) -> u32 {
+        let pool = registry + 0x18;
+        let mut node: u32 = h.read(pool);
+        if node == 0 {
+            let grow: u32 = h.read(pool + 8);
+            h.call_sym(0x0049_c8d0, Conv::Thiscall(pool), &[grow]);
+            node = h.read(pool);
+            if node == 0 {
+                return 0xe;
+            }
+        }
+        let next: u32 = h.read(node);
+        h.write(pool, next);
+        let k: u32 = h.read(key);
+        h.write(node, [node, node, node, k]);
+        let words: [u32; 10] = h.read(record);
+        h.write(node + 0x10, words);
+        if tree_insert(h, registry, node) != 0 {
+            h.call_sym(0x0049_c980, Conv::Thiscall(pool), &[node]);
+            return crate::error::DUPLICATE;
+        }
+        h.call_sym(0x0057_4980, Conv::Thiscall(registry), &[node]);
+        0
+    }
 }

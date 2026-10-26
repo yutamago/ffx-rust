@@ -869,4 +869,16 @@ ported! {
         let mut key = StackFrame::<2>::new();
         descriptor::bridge::register_default_types(&mut mem(), key.at())
     }
+    /// A cluster's arena `(size, used, count)`.
+    Phyre_PCluster_createArena_00442010 @ 0x0044_2010 => extern "thiscall" fn create_arena(this: u32, size: u32, used: u32, count: u32) -> u32 {
+        cluster::bridge::create_arena(&mut mem(), this, size, used, count)
+    }
+    /// The cluster registry's add `(&cluster, &record)`.
+    Phyre_PClusterRegistry_add_00595e50 @ 0x0059_5e50 => extern "thiscall" fn registry_add(this: u32, key: u32, record: u32) -> u32 {
+        cluster::bridge::registry_add(&mut mem(), this, key, record)
+    }
+    /// A `(hash, name)` tree lookup through the CRT's compare `(&key)`.
+    Phyre_PHashTree_find_0045b8f0 @ 0x0045_b8f0 => extern "thiscall" fn import_find(this: u32, key: u32) -> u32 {
+        descriptor::bridge::import_find(&mut mem(), this, key)
+    }
 }
