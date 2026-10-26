@@ -8248,3 +8248,294 @@ fn p1e_load_cluster_matches_the_original() {
         }
     }
 }
+
+// ---- round 5: PBinary::loadClusterTextures (p1_textures) ----
+
+impl Twins {
+    /// A stub at `sym` (logging as [`Twins::stub`]) that returns 0 but
+    /// `err` on its `nth` call (from 1; 0: never).
+    fn nth_stub(&mut self, sym: u32, this: bool, n: u32, pops: u32, nth: u32, err: u32) {
+        assert!(nth < 0x80);
+        let count = self.zeros(4);
+        let mut body = vec![0xff, 0x05];
+        body.extend(count.to_le_bytes()); // inc dword [count]
+        body.extend([0x83, 0x3d]);
+        body.extend(count.to_le_bytes());
+        body.push(nth as u8); // cmp dword [count], nth
+        body.push(0xb8);
+        body.extend(0u32.to_le_bytes()); // mov eax, 0
+        body.extend([0x75, 0x05]); // jne +5
+        body.push(0xb8);
+        body.extend(err.to_le_bytes()); // mov eax, err
+        self.stub_body(sym, this, n, pops, &body);
+    }
+}
+
+/// The texture loader's instance lists: (the class it walks, the kind of
+/// object: 0 plain, 1 2D texture, 2 3D, 3 cube).
+const P1T_CLASSES: [(u32, u8); 12] = [
+    (0x00cb_1120, 0),
+    (0x00cb_0ff0, 0),
+    (0x00cb_1250, 0),
+    (0x00ca_37d0, 1),
+    (0x00ca_3b60, 2),
+    (0x00ca_3ef0, 3),
+    (0x00ca_2930, 0),
+    (0x00cb_34e0, 0),
+    (0x00cb_3740, 0),
+    (0x00cb_37d8, 0),
+    (0x00cb_3870, 0),
+    (0x00cb_3908, 0),
+];
+
+/// One instance list of up to 3 elements for the class `base` (a fresh
+/// descriptor deriving from it directly or through a middle class, or
+/// none; sometimes no class at all, or no instances), linked at the
+/// ring's tail. Texture objects get a format, levels, sizes and the bound
+/// words. A chunk end may cut the elements (the cursor skips the element
+/// there; its first word is the next end).
+fn p1t_list(
+    t: &mut Twins,
+    rng: &mut Rng,
+    head: u32,
+    (base, kind): (u32, u8),
+    formats: &[u32],
+    (big, exact): (bool, Option<u32>),
+) {
+    let n = rng.next() % 4;
+    let stride = [0x80u32, 0x90, 0xa0][(rng.next() % 3) as usize];
+    let offset = [0u32, 8][(rng.next() % 2) as usize];
+    let desc = t.zeros(0x90);
+    let parent = match rng.next() % 12 {
+        0 => 0,
+        1 => {
+            let mid = t.zeros(0x90);
+            let b = t.rebase(base);
+            t.w32(mid + 0x40, b);
+            mid
+        }
+        _ => t.rebase(base),
+    };
+    t.w32(desc + 0x40, parent);
+    t.w32(desc + 0x1c, stride);
+    t.w32(desc + 0x8c, offset);
+    let arr = t.junk((stride * 4 + 0x40) as usize, rng.next() as u8);
+    for i in 0..4 {
+        let obj = arr + i * stride + offset;
+        if kind != 0 {
+            let fmt = formats[(rng.next() as usize) % formats.len()];
+            t.w32(obj, fmt);
+            let mips = if big { 0x22 } else { rng.next() % 4 };
+            t.w32(obj + 0xc, mips);
+            let dims = [0u32, 1, 2, 3, 4, 5, 7, 8, 16, 64, 256, 1000];
+            for off in [0x1c, 0x20, 0x24] {
+                t.w32(obj + off, dims[(rng.next() as usize) % dims.len()]);
+            }
+            // the top level exactly 4 wide (or high) after the drop
+            if let Some(w) = exact {
+                let other = if rng.next().is_multiple_of(2) {
+                    w
+                } else {
+                    4 * w
+                };
+                let (a, b) = if rng.next().is_multiple_of(2) {
+                    (w, other)
+                } else {
+                    (other, w)
+                };
+                t.w32(obj + 0x1c, a);
+                t.w32(obj + 0x20, b);
+                t.w32(obj + 0xc, 3);
+            }
+            t.w32(obj + 0x64, rng.next() % 2);
+            t.w32(obj + 0x70, rng.next() % 2);
+        }
+    }
+    let chunk = if rng.next().is_multiple_of(2) {
+        0
+    } else {
+        let k = rng.next() % 4;
+        let at = arr + k * stride;
+        let next = if rng.next().is_multiple_of(2) {
+            0
+        } else {
+            arr + (k + 1 + rng.next() % 2) * stride
+        };
+        t.w32(at, next);
+        if next != 0 {
+            t.w32(next, 0);
+        }
+        at
+    };
+    let list = t.junk(0x50, rng.next() as u8);
+    let class = if rng.next().is_multiple_of(16) {
+        0
+    } else {
+        desc
+    };
+    t.w32(list + 0x2c, class);
+    t.w32(list + 8, chunk);
+    t.w32(list + 0x34, arr);
+    t.w32(list + 0x3c, n);
+    let instances = if rng.next().is_multiple_of(8) {
+        0
+    } else {
+        n.max(1)
+    };
+    t.w32(list + 0x40, instances);
+    let tail = t.r32(head + 4);
+    t.w32(list, head);
+    t.w32(list + 4, tail);
+    t.w32(tail, list);
+    t.w32(head + 4, list);
+}
+
+/// `loadClusterTextures` on clusters with lists of every class it walks
+/// (and others) in random order: the iterators' seeks and nexts and the
+/// bound checks run as they are; the lock, the allocator (fresh blocks, 0
+/// for the name's copy in some cases), the reads, the creates, the binds,
+/// the resizes and the reload registry are recorded, one of them failing
+/// on its nth call. Texture quality 0..3 and 0x20 (the shift count's
+/// five bits), and once in a while one texture with 0x23 levels at 0x21.
+/// The scope lock and the iterator are in a frame at the original's
+/// address, so the logs agree on their pointers.
+#[test]
+fn p1f_load_cluster_textures_matches_the_original() {
+    use ffx_pload::p1_textures::bridge as ptx;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x7e47_0123);
+        for case in 0..300u32 {
+            let fail = rng.next() % 16;
+            let nth = 1 + rng.next() % 4;
+            let at = |k: u32| if fail == k { nth } else { 0 };
+            t.stub(0x0046_3d50, true, 0, 0, 0x5c0);
+            t.stub(0x0046_3e90, true, 0, 0, 0x5c1);
+            t.stub(0x0042_fb20, false, 1, 0, 0);
+            // PhyreMalloc: fresh blocks, 0 for the name's size when asked
+            let name_len = [0u32, 1, 5, 0x1e][(case % 4) as usize];
+            let null_size = if case % 9 == 4 { name_len + 1 } else { 0xffff };
+            let bump = t.zeros(4);
+            let arena = t.zeros(0x8000);
+            t.w32(bump, arena);
+            let mut body = vec![0x8b, 0x44, 0x24, 0x04, 0x3d];
+            body.extend(null_size.to_le_bytes()); // mov eax, [esp+4]; cmp eax, size
+            body.extend([0x75, 0x03, 0x31, 0xc0, 0xc3]); // jne +3; xor eax, eax; ret
+            body.push(0xa1);
+            body.extend(bump.to_le_bytes()); // mov eax, [bump]
+            body.extend([0x81, 0x05]);
+            body.extend(bump.to_le_bytes());
+            body.extend(0x1000u32.to_le_bytes()); // add dword [bump], 0x1000
+            t.stub_body(0x0042_fb80, false, 2, 0, &body);
+            t.nth_stub(0x0057_dd30, true, 2, 2, at(1), 9);
+            t.stub(0x0056_1e90, true, 1, 1, 9);
+            t.stub(0x0056_20c0, true, 1, 1, 9);
+            t.nth_stub(0x0058_fc20, true, 4, 4, at(2), 0x21);
+            t.nth_stub(0x0059_03a0, true, 4, 4, at(3), 0x22);
+            t.nth_stub(0x0059_0800, true, 4, 4, at(4), 0x23);
+            t.stub(0x004c_40c0, true, 4, 4, 3);
+            t.stub(0x004c_5980, true, 5, 5, 3);
+            t.stub(0x004c_7260, true, 3, 3, 3);
+            t.nth_stub(0x0058_db00, true, 0, 0, at(5), 0x25);
+            t.nth_stub(0x0058_db50, true, 0, 0, at(6), 0x26);
+            t.nth_stub(0x0058_dba0, true, 0, 0, at(7), 0x27);
+            t.stub(0x004f_ee70, true, 0, 0, 0);
+            t.stub(0x0094_9207, false, 1, 0, 0);
+            for (k, sym) in (0u32..).zip([
+                0x0058_cf80u32,
+                0x0058_d4e0,
+                0x0058_d780,
+                0x0058_d1c0,
+                0x0058_d350,
+                0x0058_d030,
+            ]) {
+                t.nth_stub(sym, true, 0, 0, at(8 + k), 0x30 + k);
+            }
+            // the reload registry: ten words, the last four into `extra`
+            let extra = t.zeros(16);
+            let mut body = Vec::new();
+            for i in 6..10u32 {
+                body.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+                body.extend([0x89, 0x15]);
+                body.extend((extra + 4 * (i - 6)).to_le_bytes()); // mov [extra+..], edx
+            }
+            body.push(0xb8);
+            body.extend(0u32.to_le_bytes());
+            t.stub_body(0x0058_c010, true, 6, 10, &body);
+            // the render interface's guard and texture quality
+            let guard = t.rebase(0x00c9_628c);
+            t.w32(guard, (rng.next() & !1) | u32::from(case % 3 == 0));
+            let big = case % 50 == 7;
+            let q = if big {
+                0x21
+            } else {
+                [0u32, 1, 2, 2, 3, 0x20][(rng.next() % 6) as usize]
+            };
+            // 2D textures whose top level is 4 after the drop, or (once)
+            // a cluster without lists
+            let exact = (case % 6 == 2 && (1..=3).contains(&q)).then(|| 4 << q);
+            let empty = case % 37 == 11;
+            let ri = t.rebase(0x00c9_4f00);
+            t.w32(ri + 0x1340, q);
+            // 32 bits, a 4-bit block format, an 8-bit block format with
+            // other flag bits, and in some cases the bad one
+            let mut formats = Vec::new();
+            for (bits, flags) in [(32u32, 0u8), (4, 1), (8, 0x11)] {
+                let f = t.junk(0x20, bits as u8);
+                t.w32(f + 0xc, bits);
+                t.write(f + 0x10, &[flags]);
+                formats.push(f);
+            }
+            if case % 5 == 3 {
+                formats.push(t.rebase(0x00ca_34cc));
+            }
+            let cluster = t.junk(0x60, 7);
+            let head = cluster + 0x1c;
+            t.w32(head, head);
+            t.w32(head + 4, head);
+            let mut specs: Vec<(u32, u8)> = Vec::new();
+            if big {
+                specs.push(P1T_CLASSES[3]);
+            } else if !empty {
+                for &c in &P1T_CLASSES {
+                    for _ in 0..rng.next() % 3 {
+                        specs.push(c);
+                    }
+                }
+                // an unrelated class
+                specs.push((0x00c9_1180, 0));
+            }
+            for i in (1..specs.len()).rev() {
+                let j = (rng.next() as usize) % (i + 1);
+                specs.swap(i, j);
+            }
+            for s in specs {
+                p1t_list(&mut t, &mut rng, head, s, &formats, (big, exact));
+            }
+            // the loader's byte counts (data, index, textures)
+            let loader = t.junk(0x20, 3);
+            for off in [0x14, 0x18, 0x1c] {
+                let v = if case % 13 == 0 || rng.next().is_multiple_of(4) {
+                    0
+                } else {
+                    0x100 + rng.next() % 0x1000
+                };
+                t.w32(loader + off, v);
+            }
+            let stream = t.junk(0x20, 5);
+            let mut s: Vec<u8> = (0..name_len).map(|i| b'a' + (i % 26) as u8).collect();
+            s.push(0);
+            let name = t.alloc(&s);
+            let args = [stream, cluster, name];
+            let ebp = t.a.stack_range().end - 0x100 - 12 - 8;
+            let frame = ebp - 0x60;
+            t.b.set_call_top(Some(frame - 0x100));
+            let what = format!("{label}: loadClusterTextures {case}");
+            t.check(&what, 0x0046_5ab0, Conv::Thiscall(loader), &args, |g| {
+                Out::U32(ptx::load_cluster_textures(g, loader, args, frame))
+            });
+            assert!(t.log_entries() < 500, "{what}: the log is full");
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}

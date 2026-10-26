@@ -94,6 +94,11 @@ ported! {
         let mut frame = StackFrame::<0x44>::new();
         ffx_pcore::p5_gdraw::bridge::create_blend_state(&mut mem(), dev, a, b, c, frame.at())
     }
+    /// `GDraw_createDeviceObjects_00a34cc0()`: `GDraw`'s shaders, layouts, states and quad index buffer; the descriptions in a per-call frame.
+    GDraw_createDeviceObjects_00a34cc0 @ 0x00a3_4cc0 => extern "C" fn gdraw_00a34cc0() {
+        let mut frame = StackFrame::<{ ffx_pcore::p5_gdraw_device::bridge::FRAME as usize / 4 }>::new();
+        ffx_pcore::p5_gdraw_device::bridge::create_device_objects(&mut mem(), frame.at());
+    }
     /// `PRingBuffer<PPreprocessRingBufferBlock>::allocateBlock(this; size)` -> the block or 0.
     Phyre_PRingBuffer_Phyre_PPreprocessRingBufferBlock__allocateBlock @ 0x005c_d110 => extern "thiscall" fn ring_005cd110(this: u32, size: u32) -> u32 {
         ffx_pcore::p5_ring::bridge::allocate_block(&mut mem(), this, size)
