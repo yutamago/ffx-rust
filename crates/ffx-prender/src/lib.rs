@@ -110,6 +110,7 @@ pub mod h3_glue33;
 pub mod h3_glue34;
 pub mod h3_glue35;
 pub mod h3_glue36;
+pub mod h3_glue37;
 pub mod mesh;
 pub mod misc;
 pub mod p6_app;

@@ -59,6 +59,7 @@ use ffx_prender::h3_glue33::{self as h33, bridge as gh33};
 use ffx_prender::h3_glue34::{self as h34, bridge as gh34};
 use ffx_prender::h3_glue35::{self as h35, bridge as gh35};
 use ffx_prender::h3_glue36::{self as h36, bridge as gh36};
+use ffx_prender::h3_glue37::{self as h37, bridge as gh37};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -9011,5 +9012,109 @@ fn batch36_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 100 } else { 600 };
         run_cases(t, CASES36, n, &mut Rng(0x3636_b036));
+    });
+}
+
+// ---- round 8 batch 37 (ffx_prender::h3_glue37) ----
+
+/// A render target record at `at`: its texture (with a size) or none.
+fn target37(t: &mut Twins, at: u32, texture: u32, rng: &mut Rng) {
+    t.w32(at, texture);
+    t.write(at + 4, &[u8::from(rng.chance(4))]);
+    let w = rng.next();
+    t.w32(texture + 0x1c, w);
+    let hgt = rng.next();
+    t.w32(texture + 0x20, hgt);
+}
+
+/// The manager (no settings, not ready), its switches, targets and
+/// tables, the colour correction's mesh and shader, the settings'
+/// floats, and every renderer call failing at one point now and then.
+fn prep_post_render(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let pm = t.zeros(0x1_2400);
+    *this = pm;
+    let settings = if rng.chance(10) { 0 } else { obj + 0x40 };
+    t.w32(pm, settings);
+    // the settings' floats up to +0xa0 (no signalling NaNs: the emulator keeps them)
+    for k in 0..0x28 {
+        let v = rng.float().to_bits();
+        t.w32(obj + 0x40 + 4 * k, v);
+    }
+    t.write(pm + 0x123b4, &[u8::from(!rng.chance(10))]);
+    for at in [
+        0x123b5, 0x123b0, 0x123b8, 0x123b3, 0x123b7, 0x123b2, 0x123d1, 0x123d9, 0x1260,
+    ] {
+        let v = if rng.chance(3) {
+            0
+        } else {
+            rng.next() as u8 | 1
+        };
+        t.write(pm + at, &[v]);
+    }
+    for (k, at) in [0x8c, 0x90, 0x9c, 0xa4].into_iter().enumerate() {
+        let record = obj + 0x100 + 0x10 * k as u32;
+        t.w32(pm + at, record);
+        target37(t, record, obj + 0x140 + 0x40 * k as u32, rng);
+        if at == 0x9c {
+            // the corrected target always has its texture (the viewport reads it)
+            t.write(record + 4, &[0]);
+        }
+    }
+    let table = if rng.chance(4) { 0 } else { rng.next() };
+    t.w32(pm + 0x1200, table);
+    let mesh = obj + 0x300;
+    t.w32(pm + 0x1204, mesh);
+    let materials = rng.next();
+    t.w32(mesh + 0x10, materials);
+    t.w32(obj + 0x3c0, obj + 0x380);
+    let shader = rng.next();
+    t.w32(obj + 0x380, shader);
+    let buffer = rng.next();
+    t.w32(obj + 0x384, buffer);
+    t.stub_ret(h37::ARRAY_DATA, true, 0, 0, obj + 0x3c0);
+    let found: Vec<u32> = (0..3)
+        .map(|_| if rng.chance(4) { 0 } else { rng.next() })
+        .collect();
+    t.stub_seq(h37::FIND_PARAMETER, true, 1, 1, &found);
+    let v = errors(rng);
+    t.stub_seq(h37::SET_TEXTURE, true, 2, 2, &v);
+    let e = if rng.chance(8) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h37::SET_VALUE, true, 2, 2, e);
+    for (sym, n) in [
+        (h37::SET_COLOR_TARGET, 2),
+        (h37::SET_DEPTH_STENCIL_TARGET, 1),
+        (h37::BEGIN_SCENE, 1),
+        (h37::END_SCENE, 1),
+        (h37::RENDER_MESH_INSTANCE, 1),
+        (h37::SET_CLEAR_COLOR, 4),
+    ] {
+        let v = errors(rng);
+        t.stub_seq(sym, true, n, n, &v);
+    }
+    args[0] = obj + 0x600;
+    args[1] = rng.next();
+    args[2] = rng.next();
+}
+
+const POST_RENDER_STUBS: &[(u32, K)] = &[
+    (h37::SURFACE_CTOR, K::This(2)),
+    (h37::SURFACE_DTOR, K::This(0)),
+    (h37::SET_VIEWPORT, K::This(4)),
+    (h37::PREPARE_GLOW_MAP, K::This(3)),
+    (h37::TONE_PASS, K::This(5)),
+    (h37::COPY_BUFFER, K::This(6)),
+    (h37::GLOW_RENDER, K::This(5)),
+];
+
+#[rustfmt::skip]
+const CASES37: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_post_render), ..method("post_process_render", 0x0069_4f10, This::Object, 3, POST_RENDER_STUBS, |m, this, a| { let slots = slots_at(m, a); u(gh37::post_process_render(m, frame_ebp(), slots, this, a[0], a[1], a[2])) }) }), 0x3c, 12),
+];
+
+#[test]
+fn batch37_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 100 } else { 600 };
+        run_cases(t, CASES37, n, &mut Rng(0x3737_b037));
     });
 }

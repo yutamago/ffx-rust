@@ -42,6 +42,7 @@ use ffx_prender::h3_glue33::bridge as g33;
 use ffx_prender::h3_glue34::bridge as g34;
 use ffx_prender::h3_glue35::bridge as g35;
 use ffx_prender::h3_glue36::bridge as g36;
+use ffx_prender::h3_glue37::bridge as g37;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1842,6 +1843,15 @@ ported! {
     PhyreScene_updateLightingObjects_00651de0 @ 0x0065_1de0 => extern "thiscall" fn scene_update_lighting_objects(this: u32) -> u32 {
         let mut f = StackFrame::<0xa>::new();
         g36::lighting_objects(&mut mem(), f.at() + 0x28, this)
+    }
+
+    // ---- round 8 batch 37 (ffx_prender::h3_glue37) ----
+    /// `PostProcessManager_render(this, renderer, a, b)`: the post-process
+    /// frame; the first error. The renderer's slot takes the shader, the
+    /// slots the clear colour.
+    PostProcessManager_render @ 0x0069_4f10 => extern "thiscall" fn post_process_render(this: u32, renderer: u32, a: u32, b: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0xf>::new();
+        g37::post_process_render(&mut mem(), f.at() + 0x3c, slots, this, renderer, a, b)
     }
 }
 
