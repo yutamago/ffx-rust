@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2, h4_e3 as e3, h4_e4 as e4,
-    h4_e5 as e5, h4_f1 as f1,
+    h4_e5 as e5, h4_f1 as f1, h4_f2 as f2,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -2801,3 +2801,339 @@ fn f1_menu_all_swap() {
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
     }
 }
+
+// ---- continuation round 4, batch 2 (ffx_glue_other::h4_f2)
+
+/// The render thread's shader-pass switch.
+#[test]
+fn f2_shader_pass() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f201);
+        let stubs = [
+            (f2::PROGRAM_SET, 1),
+            (f2::PASS_APPLY, 1),
+            (f2::RETURN_ZERO3, 3),
+            (f2::UNBIND_ALL, 3),
+            (f2::RETURN_ZERO2, 2),
+            (f2::RETURN_ZERO1, 1),
+            (f2::RELEASE_PASS, 1),
+            (f2::BIND_TABLES, 3),
+            (f2::BIND_TEXTURES, 3),
+            (f2::FORWARD_IF_BOUND, 2),
+            (f2::BIND_ALL, 2),
+        ];
+        for (sym, n) in stubs {
+            t.stub_at(sym, true, n, n, &[]);
+        }
+        let tags = stubs.map(|s| s.0);
+        let this = t.zeros(0x20);
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let (p1, p2) = (rng.next(), rng.next());
+            let prev = random_block(&mut t, &mut rng, 0x30);
+            let pass = random_block(&mut t, &mut rng, 0x30);
+            t.w32(prev + 0x14, p1);
+            t.w32(pass + 0x14, rng.pick(&[p1, p1, p2]));
+            let tables = [rng.next(), rng.next()];
+            for k in 0..4 {
+                t.w32(prev + 0x20 + 4 * k, tables[0]);
+                t.w32(pass + 0x20 + 4 * k, rng.pick(&tables));
+            }
+            for k in 0..8 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            t.w32(this, rng.pick(&[0, prev, prev, prev]));
+            t.check_conv(
+                &format!("{w} switch"),
+                0x0061_c400,
+                Conv::Thiscall(this),
+                &[pass],
+                |g| u(f2::set_shader_pass(g, this, pass)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The menu manager's material update.
+#[test]
+fn f2_menu_material() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f202);
+        t.stub_at(fr::PHYRE_PRINTF, false, 2, 0, &[]);
+        t.stub_at(f2::GEOMETRY_HIDE, true, 0, 0, &[]);
+        t.stub_at(fr::FIOS_UNIFY, false, 3, 0, &[]);
+        t.stub_at(f2::GEOMETRY_SET_MATERIAL, true, 3, 3, &[]);
+        let tags = [
+            fr::PHYRE_PRINTF,
+            f2::GEOMETRY_HIDE,
+            fr::FIOS_UNIFY,
+            f2::GEOMETRY_SET_MATERIAL,
+        ];
+        let scene = t.zeros(0xfaa4);
+        t.g32(f1::PHYRE_SCENE, scene);
+        let mut names: Vec<u32> = [
+            &b"RealFrameBuffer\0"[..],
+            b"NoTexture\0",
+            b"FrameBuffer\0",
+            b"menu/tex.dds\0",
+            b"a\0",
+        ]
+        .iter()
+        .map(|s| t.alloc(s))
+        .collect();
+        let real = t.rebase(f1::REAL_FRAME_BUFFER);
+        let none = t.rebase(f1::NO_TEXTURE);
+        let fb = t.rebase(f2::FRAME_BUFFER);
+        names.extend([real, none, fb]);
+        let mut ran = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for off in [0xfa80, 0xfa84, 0xfa88, 0xfa94] {
+                let v = rng.next();
+                t.w32(scene + off, v);
+            }
+            for off in [0xfa9c, 0xfa9d, 0xfaa0] {
+                t.w8(scene + off, rng.pick(&[0, 0, 1, 2]));
+            }
+            let failed = rng.next();
+            t.g32(f2::FAILED_NAME, failed);
+            t.ret(f2::GEOMETRY_SET_MATERIAL, rng.pick(&[0, 0, 1, 0x100]));
+            let geom = random_block(&mut t, &mut rng, 0x30);
+            let slot = t.zeros(0xc);
+            let g = rng.next();
+            let g0 = rng.pick(&[0, geom, geom, geom]);
+            t.w32(slot, g0);
+            let rec_on = rng.below(6) != 0;
+            // a geometry of 0 with a second word would be written at 0x24
+            t.w32(
+                slot + 4,
+                if g0 == 0 && rec_on {
+                    0
+                } else {
+                    rng.pick(&[0, g])
+                },
+            );
+            let k = rng.below(names.len() as u32) as usize;
+            t.w32(slot + 8, names[k]);
+            let rec = random_block(&mut t, &mut rng, 0xc0);
+            let info = random_block(&mut t, &mut rng, 0x30);
+            t.w32(rec + 0x94, info);
+            let k2 = rng.below(names.len() as u32) as usize;
+            let n2 = rng.pick(&[names[k2], names[k2], names[k]]);
+            t.w32(info + 0x20, n2);
+            t.w32(rec + 0xbc, rng.pick(&[0, 0, 0, 1, 0x100]));
+            let rec = if rec_on { rec } else { 0 };
+            let frame = t.ebp_for(2) - 0x104;
+            let this = rng.next();
+            t.check_framed_conv(
+                &format!("{w} material"),
+                0x0067_d920,
+                Conv::Thiscall(this),
+                &[slot, rec],
+                frame,
+                &[(0, 0x100)],
+                |g| u(f2::menu_update_material(g, frame, slot, rec)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The menu manager's buffer reset.
+#[test]
+fn f2_menu_reset() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f203);
+        let this = t.zeros(0x5ba0);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            for k in 0..0x5ba0 / 0x40 {
+                let v = rng.next();
+                t.w32(this + 0x40 * k, v);
+            }
+            for &(recs, n) in &f2::RESET_LISTS {
+                let count = rng.pick(&[0, 1, 3, 5]);
+                t.w32(this + n, count);
+                let arr = t.zeros(0x20);
+                for k in 0..count {
+                    let rec = random_block(&mut t, &mut rng, 0xc0);
+                    let info = random_block(&mut t, &mut rng, 0x30);
+                    t.w32(rec + 0x94, info);
+                    t.w32(arr + 4 * k, rec);
+                }
+                t.w32(this + recs, arr);
+            }
+            for off in [0x2c50, 0x5840, 0x5b88, 0x5b78, 0x5b74, 0x5844] {
+                let v = rng.next();
+                t.w32(this + off, v);
+            }
+            let state = rng.pick(&[0, 1, 1, 0, 2, 0x100]);
+            t.w32(this + 0x5b7c, state);
+            t.check_conv(
+                &format!("{w} reset {state}"),
+                0x0067_dfc0,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    f2::menu_reset_buffer_chain(g, this);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+/// The button-icon vertex info lookup.
+#[test]
+fn f2_abmap_vertex_info() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f204);
+        t.stub_at(f2::REMAP_INSTANCE, false, 0, 0, &[]);
+        t.stub_at(f2::REMAP_CONTROL_MACHINE, true, 0, 0, &[]);
+        let strstr = t.stub_code(0x0bad_f2a0, false, 2, 0, false, &[]);
+        let tags = [f2::REMAP_INSTANCE, f2::REMAP_CONTROL_MACHINE, 0x0bad_f2a0];
+        let this = t.zeros(0xe4);
+        let mut ran = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(f2::STRSTR_IAT, strstr);
+            t.ret(f2::REMAP_CONTROL_MACHINE, rng.pick(&[0, 1, 1]));
+            t.ret(0x0bad_f2a0, rng.pick(&[0, 1, 0x1234_5678]));
+            for k in 0..0x39 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            t.w32(this + 4, rng.pick(&[0, 1, 0x8000_0000, 5]));
+            t.w32(this + 8, rng.pick(&[0, 1, 0x8000_0000, 5]));
+            let nm = rng.next();
+            let nm = rng.pick(&[0, nm, nm]);
+            let any = rng_kind(&mut rng);
+            let kind = rng.pick(&[any, 6, 11, 0x8000_0006]);
+            t.check_conv(
+                &format!("{w} kind {kind}"),
+                0x0068_4cd0,
+                Conv::Thiscall(this),
+                &[nm, kind],
+                |g| u(f2::abmap_vertex_info(g, this, nm, kind)),
+            );
+            ran += t.log_entries();
+        }
+        assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+fn rng_kind(rng: &mut Rng) -> u32 {
+    rng.below(17)
+}
+
+/// A sound event's constructor and release.
+#[test]
+fn f2_sfx_event() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f205);
+        // Array8_reserve: capacity and entries from cells
+        let (cap, buf) = (t.zeros(4), t.zeros(4));
+        let rest = t.stub_code(f2::ARRAY8_RESERVE, true, 1, 1, false, &[]);
+        let mut c = vec![0xa1];
+        c.extend(cap.to_le_bytes()); // mov eax, [cap]
+        c.extend([0x89, 0x41, 0x04, 0xa1]); // mov [ecx+4], eax
+        c.extend(buf.to_le_bytes()); // mov eax, [buf]
+        c.extend([0x89, 0x41, 0x08, 0xe9]); // mov [ecx+8], eax; jmp rest
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(f2::ARRAY8_RESERVE, f);
+        // user_malloc: a fresh block per call
+        let heap = random_block(&mut t, &mut rng, 0x10000);
+        let next = t.zeros(4);
+        let rest = t.stub_code(USER_MALLOC, false, 1, 0, false, &[]);
+        let cell = t.cells[&USER_MALLOC];
+        let mut c = vec![0xa1];
+        c.extend(next.to_le_bytes()); // mov eax, [next]
+        c.extend([0xa3]);
+        c.extend(cell.to_le_bytes()); // mov [cell], eax
+        c.extend([0x81, 0x05]);
+        c.extend(next.to_le_bytes());
+        c.extend(0x100u32.to_le_bytes()); // add dword [next], 0x100
+        c.push(0xe9);
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes()); // jmp rest
+        let f = t.code(&c);
+        t.jump(USER_MALLOC, f);
+        let stubs = [
+            (MEMCPY, 3, 0),
+            (c2::USER_FREE_THUNK, 1, 0),
+            (EVENT_SET_CALLBACK, 3, 3),
+            (fr::OPERATOR_DELETE, 1, 0),
+        ];
+        for (sym, n, pops) in stubs {
+            t.stub_at(sym, false, n, pops, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([f2::ARRAY8_RESERVE, USER_MALLOC]);
+        let this = t.zeros(0x28);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.w32(next, heap);
+            for k in 0..10 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            let src = t.zeros(0xc);
+            let n = rng.pick(&[0, 1, 2, 5, 9, 17, 30]);
+            t.w32(src, n);
+            let events = random_block(&mut t, &mut rng, 4 * 32);
+            t.w32(src + 8, events);
+            let block = random_block(&mut t, &mut rng, 8 * 40);
+            let half = n / 2;
+            let (c, b) = rng.pick(&[(n, block), (0, 0), (half, block), (half + 1, block)]);
+            t.w32(cap, c);
+            t.w32(buf, b);
+            let volume = rng.float();
+            let ebp = t.ebp_for(2);
+            t.write(ebp - 0xc, &[0; 4]);
+            t.check_conv(
+                &format!("{w} ctor of {n} into cap {c}"),
+                0x0070_e710,
+                Conv::Thiscall(this),
+                &[src, volume],
+                |g| u(f2::sfx_event_ctor(g, this, src, volume)),
+            );
+            let n = rng.pick(&[0, 1, 3, 0x8000_0000]);
+            t.w32(this, n);
+            let v = rng.next();
+            t.w32(this + 0x14, v);
+            let data = random_block(&mut t, &mut rng, 8 * 4);
+            // no entries only without instances (the original reads them)
+            let none = if n == 1 || n == 3 { data } else { 0 };
+            t.w32(this + 8, rng.pick(&[none, data, data]));
+            for off in [0x18, 0x1c] {
+                let p = rng.next();
+                t.w32(this + off, rng.pick(&[0, p]));
+            }
+            t.check_conv(
+                &format!("{w} dtor of {n}"),
+                0x0070_e850,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    f2::sfx_event_dtor(g, this);
+                    Out::None
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `user_malloc` (`0x00687020`).
+const USER_MALLOC: u32 = 0x0068_7020;
+/// `memcpy`'s thunk.
+const MEMCPY: u32 = 0x0094_9256;

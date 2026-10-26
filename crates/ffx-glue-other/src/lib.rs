@@ -59,7 +59,10 @@
 //! - [`h4_f1`]: continuation round 4, batch 1: the FMOD voice's start and
 //!   restart, the sound loop, the sound effects' whole volume and project
 //!   unload, a sound event's volume fade, the menu manager's instance
-//!   setups and buffer chain swap.
+//!   setups and buffer chain swap;
+//! - [`h4_f2`]: its second batch: the render thread's shader-pass switch,
+//!   the menu manager's material update and buffer reset, the button-icon
+//!   vertex info lookup, a sound event's constructor and release.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -94,6 +97,7 @@ pub mod h4_e3;
 pub mod h4_e4;
 pub mod h4_e5;
 pub mod h4_f1;
+pub mod h4_f2;
 pub mod menu;
 pub mod misc;
 pub mod movie;
