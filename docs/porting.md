@@ -159,6 +159,27 @@ chain with this recipe. What it adds:
   forwarding helpers). It must report "0 problems", like
   check-callwidth. Targets it can't resolve (pointers from memory) are
   counted, not checked.
+- **Calling convention.** Call each original and import the way it
+  returns: `ret n` means the callee pops `n` bytes (stdcall, thiscall,
+  fastcall), so pass exactly `n`/4 stack words with that `Conv`; a plain
+  `ret` means cdecl. An import thunk (`jmp [IAT]`) takes the DLL
+  export's convention: Win32 APIs are stdcall (`ImmAssociateContext`
+  at `0x009da254` pops 8), the CRT and steam_api are cdecl, and so are
+  varargs exports (`IggyGDrawSendWarning`: the originals `add esp`
+  after it). p6's createWindow called that thunk as cdecl; the argument
+  words were popped twice and every replay died at startup.
+  **Test stubs pop like the original**: give a stub the `pops` (words)
+  the original's `ret n` pops, or for an import the API's argument
+  bytes / 4 (`Conv::Stdcall` in render.rs `stub_sym`). The oracle checks
+  `esp` after every call against the convention the port asked for, but
+  a stub that pops nothing hides a port that calls a stdcall callee as
+  cdecl. `python3 -I tools/check-callconv.py` (needs `FFX_GAME_DIR`,
+  about 15 s) checks both statically: every port call it can resolve
+  (directly, through forwarding helpers and through closures the shims
+  hand the bridges) against the callee's `ret n` or the import's
+  convention, and every test helper call with `sym` and `pops` (or
+  `conv` and `n`) arguments against the original. It must report
+  "0 problems"; `--self-test` checks its fixtures.
 - **Real states.** `tools/harvest-render.sh` harvests the render chain's
   calls by running `graphicRender` (`0x00642bb0`) on the snapshots: every
   world of the frame, with the culling jobs run by the waiting thread.
