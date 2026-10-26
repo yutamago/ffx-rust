@@ -1,0 +1,169 @@
+//! The cloth instancing meshes (`ClothInstancing*`) and the dynamic
+//! meshes' buffer copies.
+
+use ffx_graphic::host::{Conv, Host};
+
+/// `InterlockedCompareExchange`'s import slot (stdcall `(p, new, cmp)`).
+pub const INTERLOCKED_COMPARE_EXCHANGE: u32 = 0x00b0_c12c;
+/// `memcpy` (cdecl `(dst, src, n)`).
+pub const MEMCPY: u32 = 0x0094_9256;
+/// `operator_delete` (cdecl `(p)`).
+pub const OPERATOR_DELETE: u32 = 0x0063_0390;
+/// `Phyre_PRendering_PDynamicMeshInstance_dtor` (thiscall `(inst)`).
+pub const MESH_INSTANCE_DTOR: u32 = 0x004f_a470;
+/// `ClothInstancingDynamicMeshInstance`'s vtable.
+pub const CLOTH_INSTANCE_VTABLE: u32 = 0x00b4_ab28;
+/// The cloth instancing entries: count (`& 0x7fffffff`) and pointer.
+pub const G_CLOTH_ENTRIES: u32 = 0x00cd_efa4;
+
+const COUNT: u32 = 0x7fff_ffff;
+
+pub mod bridge {
+    //! The originals over game memory.
+
+    use super::{
+        CLOTH_INSTANCE_VTABLE, COUNT, Conv, G_CLOTH_ENTRIES, Host, INTERLOCKED_COMPARE_EXCHANGE,
+        MEMCPY, MESH_INSTANCE_DTOR, OPERATOR_DELETE,
+    };
+
+    /// `ClothInstancingDynamicMesh_submit(mesh, inst, job)` (`0x006e28f0`,
+    /// `ret 8`): marks the instance's job word (`inst + 8 + [inst + 8]`)
+    /// busy; when the job's slot (`+0x20`) flag `+0x810 + 4 slot` was set
+    /// (cleared with `InterlockedCompareExchange`), copies the slot's
+    /// staged buffer (`+0xc10`, `+0x1810` bytes) into `+0x210`; stores the
+    /// mesh after the busy word and runs the inner mesh's (`+0xc`)
+    /// `vtable[2](inst, job)`, whose `eax` it returns.
+    pub fn submit(h: &mut impl Host, mesh: u32, inst: u32, job: u32) -> u32 {
+        let off: u32 = h.read(inst + 8);
+        let busy = off.wrapping_add(8).wrapping_add(inst);
+        h.write(busy, 1u32);
+        let slot: u32 = h.read(job + 0x20);
+        let at = mesh.wrapping_add(slot.wrapping_mul(4));
+        let cas: u32 = h.read(h.rebase(INTERLOCKED_COMPARE_EXCHANGE));
+        if h.call(cas, Conv::Stdcall, &[at.wrapping_add(0x810), 0, 1]) == 1 {
+            let n: u32 = h.read(at.wrapping_add(0x1810));
+            let src: u32 = h.read(at.wrapping_add(0xc10));
+            let dst: u32 = h.read(at.wrapping_add(0x210));
+            let f = h.rebase(MEMCPY);
+            h.call(f, Conv::Cdecl, &[dst, src, n]);
+        }
+        h.write(busy + 4, mesh);
+        let inner: u32 = h.read(mesh + 0xc);
+        h.call_virtual(inner, 2, &[inst, job])
+    }
+
+    /// `ClothInstancing_releaseExpired()` (`0x006e2f70`): each entry
+    /// (16 bytes: object, second object, shared flag, countdown) with a
+    /// non-negative countdown: at 0 its objects are deleted (their
+    /// `vtable[0](1)`; unless shared (`+8`), first the object's own
+    /// child, `+0x1c` resp. `+0xc`) and cleared; then the countdown drops
+    /// by one. The table pointer is reread after every call.
+    pub fn release_expired(h: &mut impl Host) {
+        let g = h.rebase(G_CLOTH_ENTRIES);
+        let mut count: u32 = h.read(g);
+        let mut i = 0u32;
+        while i < count & COUNT {
+            let e = 16 * i;
+            let left: u32 = h.read(entry(h, g, e) + 0xc);
+            if (left as i32) >= 0 {
+                if left == 0 {
+                    for (field, child) in [(0u32, 0x1cu32), (4, 0xc)] {
+                        let obj: u32 = h.read(entry(h, g, e) + field);
+                        if obj == 0 {
+                            continue;
+                        }
+                        if h.read::<u32>(entry(h, g, e) + 8) == 0 {
+                            let c: u32 = h.read(obj + child);
+                            if c != 0 {
+                                h.call_virtual(c, 0, &[1]);
+                            }
+                            let obj: u32 = h.read(entry(h, g, e) + field);
+                            h.write(obj + child, 0u32);
+                        }
+                        let obj: u32 = h.read(entry(h, g, e) + field);
+                        if obj != 0 {
+                            h.call_virtual(obj, 0, &[1]);
+                        }
+                        let p = entry(h, g, e) + field;
+                        h.write(p, 0u32);
+                    }
+                }
+                let p = entry(h, g, e) + 0xc;
+                let v: u32 = h.read(p);
+                h.write(p, v.wrapping_sub(1));
+                count = h.read(g);
+            }
+            i += 1;
+        }
+    }
+
+    /// Entry `e` (a byte offset) of the table, its pointer reread.
+    fn entry(h: &impl Host, g: u32, e: u32) -> u32 {
+        h.read::<u32>(g + 4).wrapping_add(e)
+    }
+
+    /// `ClothInstancingDynamicMeshInstance::~ClothInstancingDynamicMeshInstance`
+    /// (`0x006e0ab0`, thiscall): its vtable, then for each of the 128
+    /// slots the buffers `+0x1c10`, `+0x10`, `+0x210`, `+0x410` (`+ 4 i`)
+    /// deleted and cleared, then the `PDynamicMeshInstance` dtor.
+    pub fn instance_dtor(h: &mut impl Host, inst: u32) {
+        let vt = h.rebase(CLOTH_INSTANCE_VTABLE);
+        h.write(inst, vt);
+        let del = h.rebase(OPERATOR_DELETE);
+        for i in 0..0x80u32 {
+            let base = inst + 0x10 + 4 * i;
+            for at in [0x1c00, 0, 0x200, 0x400] {
+                let p: u32 = h.read(base + at);
+                if p != 0 {
+                    h.call(del, Conv::Cdecl, &[p]);
+                }
+                h.write(base + at, 0u32);
+            }
+        }
+        let f = h.rebase(MESH_INSTANCE_DTOR);
+        h.call(f, Conv::Thiscall(inst), &[]);
+    }
+
+    /// The dynamic meshes' `copyBuffers(x, src, outs, mesh)` (`ret 0x10`)
+    /// -> 0 (`0x00674570` distortion grid, `0x00677b10` broken screen):
+    /// the source's `+0x20` vertices' positions (12 bytes each, `+0x10`),
+    /// colours (16, `+0x14`) and coordinates (8, `+0x18`) into the three
+    /// outputs' (`outs[0..3]`, null skipped as a null destination)
+    /// buffers `+0x3c`, which get the count at `+4`; the `+0x24` index
+    /// words (`+0x1c`) into the mesh's `+0x38`, the count at its `+8`;
+    /// the source's `+4` cleared.
+    pub fn copy_buffers(h: &mut impl Host, src: u32, outs: u32, mesh: u32) -> u32 {
+        let mut d = [0u32; 3];
+        for (k, slot) in d.iter_mut().enumerate() {
+            let o: u32 = h.read(outs + 4 * k as u32);
+            if o != 0 {
+                *slot = h.read(o + 0x3c);
+            }
+        }
+        let [d0, d1, d2] = d;
+        let n: u32 = h.read(src + 0x20);
+        let indices: u32 = h.read(src + 0x24);
+        let f = h.rebase(MEMCPY);
+        for (d, at, size) in [(d0, 0x10, 12u32), (d1, 0x14, 16), (d2, 0x18, 8)] {
+            let s: u32 = h.read(src + at);
+            h.call(f, Conv::Cdecl, &[d, s, n.wrapping_mul(size)]);
+        }
+        for k in 0..3 {
+            let o: u32 = h.read(outs + 4 * k);
+            if o != 0 {
+                h.write(o + 4, n);
+            }
+        }
+        let out: u32 = h.read(mesh + 0x38);
+        for i in 0..indices {
+            let from: u32 = h.read(src + 0x1c);
+            let v: u32 = h.read(from.wrapping_add(4 * i));
+            h.write(out.wrapping_add(4 * i), v);
+        }
+        h.write(mesh + 8, indices);
+        if src != 0 {
+            h.write(src + 4, 0u32);
+        }
+        0
+    }
+}
