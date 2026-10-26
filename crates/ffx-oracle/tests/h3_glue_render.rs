@@ -66,6 +66,9 @@ use ffx_prender::h3_glue40::{self as h40, bridge as gh40};
 use ffx_prender::h3_glue41::{self as h41, bridge as gh41};
 use ffx_prender::h3_glue42::{self as h42, bridge as gh42};
 use ffx_prender::h3_glue43::{self as h43, bridge as gh43};
+use ffx_prender::h3_glue44::{self as h44, bridge as gh44};
+use ffx_prender::h3_glue45::{self as h45, bridge as gh45};
+use ffx_prender::h3_glue46::{self as h46, bridge as gh46};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -10722,5 +10725,269 @@ fn batch43e_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 300 } else { 1000 };
         run_cases(t, CASES43E, n, &mut Rng(0x4343_b046));
+    });
+}
+
+// ---- round 12 batch 45 (ffx_prender::h3_glue44) ----
+
+impl Twins {
+    /// A recording stub of the thiscall at `sym` taking (and popping) `n`
+    /// words (as [`Twins::stub`]) that first stores `value` at the
+    /// absolute address `at`.
+    fn stub_store(&mut self, sym: u32, n: u32, ret: u32, at: u32, value: u32) {
+        let log = self.stub(None, sym, true, n, n, Some(ret));
+        let mut c = vec![0xc7, 0x05]; // mov dword [at], value
+        c.extend(at.to_le_bytes());
+        c.extend(value.to_le_bytes());
+        let here = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(here + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// A polling answer: `zeros` times 0 (with random upper bytes), then
+/// non-zero `al` for good.
+fn poll_seq(rng: &mut Rng, zeros: u32) -> Vec<u32> {
+    (0..zeros + 40)
+        .map(|i| {
+            let high = rng.next() & 0xffff_ff00;
+            if i < zeros { high } else { high | 1 }
+        })
+        .collect()
+}
+
+/// The boot set-up: the trophy manager (none, an error, installed or
+/// after a few frames), the requests, the opening (0 to 3 frames), the
+/// command line (no argument, another one, `_ECalm`), the quit flag, the
+/// worker (done at once or later) and the status it reports (1 or not).
+fn prep_init_scene44(t: &mut Twins, _: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let aux = t.zeros(0x1000);
+    let app = aux;
+    t.stub_ret(h44::GET_APPLICATION, false, 0, 0, app);
+    for o in [0x26c, 0x270] {
+        let v = rng.next();
+        t.w32(app + o, v);
+    }
+    t.w32(app + 0x3a8, pick(rng, &[0, 1, 2, 3, 0xffff_ffff]));
+    t.w32(app + 0x3a4, aux + 0x400);
+    t.w32(aux + 0x404, pick(rng, &[aux + 0x500, aux + 0x510]));
+    t.write(aux + 0x500, b"_ECalm\0");
+    t.write(aux + 0x510, b"_ECal\0");
+    let trophy = if rng.chance(3) { 0 } else { aux + 0x600 };
+    t.stub_ret(h44::TROPHY_INSTANCE, false, 0, 0, trophy);
+    let errors: Vec<u32> = (0..200)
+        .map(|_| if rng.chance(8) { rng.next() | 1 } else { 0 })
+        .collect();
+    t.stub_seq(h44::TROPHY_ERROR, false, 0, 0, &errors);
+    let z = rng.below(4);
+    let seq = poll_seq(rng, z);
+    t.stub_seq(h44::TROPHY_INSTALLED, true, 0, 0, &seq);
+    let z = rng.below(5);
+    let seq = poll_seq(rng, z);
+    t.stub_seq(h44::ALL_REQUESTS_DONE, true, 0, 0, &seq);
+    // the opening plays while non-zero
+    let frames = rng.below(4);
+    let playing: Vec<u32> = (0..frames + 40)
+        .map(|i| {
+            let high = rng.next() & 0xffff_ff00;
+            if i < frames { high | 1 } else { high }
+        })
+        .collect();
+    t.stub_seq(h44::OPENING_PLAYING, true, 0, 0, &playing);
+    let z = rng.below(4);
+    let seq = poll_seq(rng, z);
+    t.stub_seq(h44::WORKER_DONE, true, 1, 1, &seq);
+    let quit = t.rebase(h44::QUIT);
+    let q = u8::from(rng.chance(4));
+    t.patch(quit, &[q]);
+    let status = pick(rng, &[1, 1, 0, 2]);
+    let ebp = case_ebp(t, 0);
+    let r = rng.next();
+    t.stub_store(h44::WORKER_RUN, 5, r, ebp - 4, status);
+}
+
+#[rustfmt::skip]
+const CASES44: &[Case] = &[
+    framed(Case { prep: Some(prep_init_scene44), ..cdecl("graphic_init_scene", 0x0064_16c0, 0, &[(h44::TROPHY_CHECK, K::This(0)), (h44::ASYNC_MANAGER, K::Cdecl(0)), (h44::REGIST_ASYNC_TASK, K::Cdecl(3)), (h44::INIT_IGGY_HELPER, K::Cdecl(0)), (h44::IGGY_MENU_CREATE, K::Cdecl(0)), (h44::IGGY_MENU_SET_SIZE, K::This(3)), (h44::SET_LOADING_PARAMETER, K::This(3)), (h44::RENDER_LOADING_SCREEN, K::This(0)), (h44::BEGIN_OPENING, K::This(0)), (h44::RENDER_OPENING, K::This(0)), (h44::DELETE_IGGY_MENU, K::This(0)), (h44::INIT_SCENE, K::This(0)), (h44::INPUT_UPDATE, K::Cdecl(0))], |m, _, _| u(gh44::graphic_init_scene(m, frame_ebp()))) }, 0xc, 0),
+];
+
+#[test]
+fn batch45_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 200 } else { 600 };
+        run_cases(t, CASES44, n, &mut Rng(0x4444_b045));
+    });
+}
+
+// ---- round 12 batch 46 (ffx_prender::h3_glue45) ----
+
+impl Twins {
+    /// A recording stub only in the cave (tagged `tag`, as [`Twins::stub`],
+    /// `eax` kept) whose calls return `values` in turn; its address.
+    fn seq_code(&mut self, tag: u32, this: bool, n: u32, pops: u32, values: &[u32]) -> u32 {
+        let words: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let table = self.alloc(&words);
+        let ptr = self.alloc(&table.to_le_bytes());
+        let log = self.stub(None, tag, this, n, pops, None);
+        let mut c = vec![0x8b, 0x15];
+        c.extend(ptr.to_le_bytes()); // mov edx, [ptr]
+        c.extend([0x8b, 0x02]); // mov eax, [edx]
+        c.extend([0x83, 0xc2, 0x04]); // add edx, 4
+        c.extend([0x89, 0x15]);
+        c.extend(ptr.to_le_bytes()); // mov [ptr], edx
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        self.code(&c)
+    }
+}
+
+/// The console thread `0x006bd1e0` (an endless loop), N passes: its
+/// argument (never read by the original) is the pass counter. The
+/// `SleepThreadInMillisecond` stand-in counts an argument other than 5
+/// in the counter's next word, counts the passes down and, once spent,
+/// leaves the original's frame (`add esp, 8; pop edi; pop esi; mov
+/// esp, ebp; pop ebp; ret`) when called from one of the loop's two
+/// sleeps (their return addresses); the port side runs passes until the
+/// count is spent. The line is empty, the prefix or another word;
+/// `strstr` answers the buffer, another address or 0; the instance's
+/// `+0x129` is set or not.
+fn prep_input_thread45(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let count = t.zeros(8);
+    t.w32(count, 1 + rng.below(4));
+    args[0] = count;
+    let buffer = t.rebase(h45::BUFFER);
+    let lines: [&[u8]; 4] = [b"\0", b"EnableAutoTest 1\0", b"Go\0", b"x\0"];
+    let line = lines[rng.below(4) as usize];
+    t.write(buffer, line);
+    let instance = t.rebase(h45::INSTANCE);
+    t.w32(instance, obj);
+    t.write(obj + 0x129, &[u8::from(rng.chance(2))]);
+    let cin_slot = t.rebase(h45::CIN_SLOT);
+    t.w32(cin_slot, obj + 0x400);
+    let r = rng.next();
+    let getline = t.stub(None, h45::GETLINE_SLOT, true, 3, 3, Some(r));
+    let slot = t.rebase(h45::GETLINE_SLOT);
+    t.w32(slot, getline);
+    let r = rng.next();
+    let printf = t.stub(None, h45::PRINTF_SLOT, false, 2, 0, Some(r));
+    let slot = t.rebase(h45::PRINTF_SLOT);
+    t.w32(slot, printf);
+    let found: Vec<u32> = (0..8)
+        .map(|_| pick(rng, &[buffer, buffer, buffer + 1, 0]))
+        .collect();
+    let strstr = t.seq_code(h45::STRSTR_SLOT, false, 2, 0, &found);
+    let slot = t.rebase(h45::STRSTR_SLOT);
+    t.w32(slot, strstr);
+    let returns = [t.rebase(0x006b_d264), t.rebase(0x006b_d283)];
+    let mut c = vec![0x83, 0x7c, 0x24, 0x04, 0x05]; // cmp dword [esp + 4], 5
+    c.extend([0x74, 0x06, 0xff, 0x05]); // je +6; inc dword [count + 4]
+    c.extend((count + 4).to_le_bytes());
+    c.extend([0xff, 0x0d]); // dec dword [count]
+    c.extend(count.to_le_bytes());
+    c.extend([0x7f, 0x12]); // jg ret
+    for (k, ra) in returns.into_iter().enumerate() {
+        c.extend([0x81, 0x3c, 0x24]); // cmp dword [esp], ra
+        c.extend(ra.to_le_bytes());
+        c.extend([0x74, if k == 0 { 0x0c } else { 0x03 }]); // je escape
+    }
+    c.extend([0x31, 0xc0, 0xc3]); // ret: xor eax, eax; ret
+    c.extend([0x83, 0xc4, 0x08, 0x5f, 0x5e, 0x8b, 0xe5, 0x5d, 0xc3]); // escape
+    let code = t.code(&c);
+    let site = t.rebase(h45::SLEEP);
+    let mut j = vec![0xe9];
+    j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+    t.patch(site, &j);
+}
+
+#[rustfmt::skip]
+const CASES45: &[Case] = &[
+    Case { prep: Some(prep_input_thread45), ..cdecl("input_thread", 0x006b_d1e0, 1, &[(h45::MEMSET, K::Cdecl(3)), (h45::ENABLE_COMMAND, K::This(1)), (h45::OTHER_COMMAND, K::This(1))], |m, _, a| {
+        let printf: u32 = m.read(m.rebase(h45::PRINTF_SLOT));
+        let strstr: u32 = m.read(m.rebase(h45::STRSTR_SLOT));
+        loop {
+            gh45::input_pass(m, printf, strstr);
+            if m.read::<i32>(a[0]) <= 0 {
+                break;
+            }
+        }
+        Out::None
+    }) },
+];
+
+#[test]
+fn batch46_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 100 } else { 400 };
+        run_cases(t, CASES45, n, &mut Rng(0x4545_b046));
+    });
+}
+
+// ---- round 12 batch 47 (ffx_prender::h3_glue46) ----
+
+/// The scene's per-frame update: the frame time, `+0x1195`, the
+/// first-run tip byte, a pause request, the map (the three that reset
+/// the cheats or another), the three modes (0, 1, 2, -1, -2 or another),
+/// the key checks, the tips' answers, the two buttons, the debug word
+/// and the free camera's state.
+fn prep_animate46(t: &mut Twins, obj: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let aux = t.zeros(0x1000);
+    let app = aux;
+    let time = rng.float().to_bits();
+    t.w32(app + 0x24, time);
+    t.stub_ret(h46::GET_APPLICATION, false, 0, 0, app);
+    t.write(obj + 0x1195, &[u8::from(rng.chance(2))]);
+    t.write(obj + 0x10dcc, &[pick(rng, &[0, 1, 0x80]) as u8]);
+    let settings = aux + 0x800;
+    t.write(settings + 0x638, &[u8::from(rng.chance(2))]);
+    t.global(h46::SETTINGS, settings);
+    let request = if rng.chance(2) { 0 } else { rng.next() };
+    t.global(h46::PAUSE_REQUEST, request);
+    let any = rng.next();
+    let map = pick(rng, &[0x17, 0x15c, 0x15d, 0x16, 0x41, any]);
+    t.global(h46::CURRENT_MAP, map);
+    for gl in [h46::AUTO_BATTLE, h46::CHEAT_POWERUP, h46::ENCOUNT_MODE] {
+        let v = pick(rng, &[0, 1, 2, 0xffff_ffff, 0xffff_fffe, 0x7fff_ffff, 5]);
+        t.global(gl, v);
+    }
+    for sym in [
+        h46::CHECK_AUTO_BATTLE_KEY,
+        h46::CHECK_INVINCIBLE_KEY,
+        h46::CHECK_ENCOUNTER_KEY,
+        h46::CAN_USE_AUTO_BATTLE,
+        h46::PUSH_TIP_BY_LOC,
+    ] {
+        let v = pick(rng, &[0, 1, 0x100]);
+        t.stub_ret(sym, false, u32::from(sym == h46::PUSH_TIP_BY_LOC), 0, v);
+    }
+    let presses = [pick(rng, &[0, 1]), pick(rng, &[0, 0x200])];
+    t.stub_seq(h46::IS_PRESS_BUTTON, false, 1, 0, &presses);
+    let camera = aux + 0x400;
+    t.write(camera + 0x338, &[u8::from(rng.chance(3))]);
+    t.write(camera + 0x33c, &[u8::from(rng.chance(3))]);
+    t.w32(camera, pick(rng, &[2, 0, 1]));
+    t.stub_ret(h46::FREE_CAMERA, false, 0, 0, camera);
+    t.global(h46::DEBUG_WORD, pick(rng, &[0, 0, 1]));
+    for gl in [h46::DELEGATION_HELPER, h46::LOADING_SCREEN] {
+        let v = rng.next();
+        t.global(gl, v);
+    }
+}
+
+#[rustfmt::skip]
+const CASES46: &[Case] = &[
+    Case { prep: Some(prep_animate46), ..method("animate", 0x0065_7140, This::Object, 0, &[(h46::DELEGATION_UPDATE, K::This(0)), (h46::TEX_ANIM_ANIMATE, K::This(1)), (h46::MORPH_INSTANCE, K::Cdecl(0)), (h46::MORPH_UPDATE, K::This(1)), (h46::TIP_SYSTEM, K::Cdecl(0)), (h46::PUSH_TIP, K::This(1)), (h46::LIGHTING_INSTANCE, K::Cdecl(0)), (h46::LIGHTING_UPDATE_FLASH, K::This(1)), (h46::PAUSE_UPDATE, K::Cdecl(1)), (h46::ICON_PANEL, K::Cdecl(0)), (h46::ICON_UPDATE, K::This(0)), (h46::ICON_SHOW, K::This(1)), (h46::ICON_HIDE, K::This(1)), (h46::ICON_SET_VISIBLE, K::This(1)), (h46::ICON_HIDE_ALL, K::This(0)), (h46::SPD_INIT, K::Cdecl(0)), (h46::SPD_TICK, K::Cdecl(0)), (h46::POWERFUL_OFF, K::Cdecl(0)), (h46::FREE_CAMERA_PAUSE, K::This(0)), (h46::FREE_CAMERA_INPUT, K::This(2)), (h46::FMV_MANAGER, K::Cdecl(0)), (h46::FMV_PROCESS, K::This(0)), (h46::BLUR_INSTANCE, K::Cdecl(0)), (h46::BLUR_UPDATE, K::This(1)), (h46::BLUR_EX_INSTANCE, K::Cdecl(0)), (h46::BLUR_EX_UPDATE, K::This(1)), (h46::FOG_INSTANCE, K::Cdecl(0)), (h46::FOG_UPDATE, K::This(1)), (h46::CLOTH_RELEASE, K::Cdecl(0)), (h46::DELEGATION_RUN, K::This(0)), (h46::LOADING_UPDATE, K::This(1)), (h46::BOOT_TEXT_INSTANCE, K::Cdecl(0)), (h46::BOOT_TEXT_UPDATE, K::This(1)), (h46::TEXT_ANIMATE, K::This(1))], |m, this, _| u(gh46::animate(m, this))) },
+];
+
+#[test]
+fn batch47_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 300 } else { 1000 };
+        run_cases(t, CASES46, n, &mut Rng(0x4646_b047));
     });
 }

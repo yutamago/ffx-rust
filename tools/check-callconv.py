@@ -187,6 +187,10 @@ STDCALL_BYTES = {
 def demangled_conv(name):
     """The convention of a C++-decorated name, or None."""
     i = name.find("@@")
+    # a template argument list closes with `@@@` (`?getline@?$basic_istream
+    # @DU?$char_traits@D@std@@@std@@QAE...`): the name ends at the next `@@`
+    while 0 <= i and name[i + 2:i + 3] == "@":
+        i = name.find("@@", i + 3)
     if i < 0 or i + 2 >= len(name):
         return None
     s = name[i + 2:]
