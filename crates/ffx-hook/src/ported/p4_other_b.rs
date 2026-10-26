@@ -7,7 +7,9 @@
 //! their objects live. No shim keeps state.
 
 use super::{mem, ported};
-use ffx_pother_b::{methods, object, p4_fog, p4_input, p4_light, physics, small};
+use ffx_pother_b::{
+    methods, object, p4_cloth, p4_fog, p4_input, p4_light, p4_morph, physics, small,
+};
 
 ported! {
     /// `constructInstance(desc, obj)` -> 1: `[+0] = 0, [+4] = Phyre_PBase_GetClassDescriptor(), [+8] = 0, [+0xc] = the same, [+0x10] = 0.0f when obj is non-null`.
@@ -750,5 +752,69 @@ ported! {
     /// `FogEffectManager::isMoving(fog)` -> `al`.
     FogEffectManager_isMoving_006e3480 @ 0x006e_3480 => extern "thiscall" fn fog_is_moving(fog: u32) -> u8 {
         p4_fog::bridge::is_moving(&mut mem(), fog)
+    }
+    // ---- p4-other-b c1 batch 2 ----
+    /// `CharacterLighting_iteratorSkipInvalid(it)` -> `SetNode`'s `eax` or 0.
+    CharacterLighting_iteratorSkipInvalid_006a8d30 @ 0x006a_8d30 => extern "thiscall" fn iterator_skip_invalid(it: u32) -> u32 {
+        p4_light::bridge::iterator_advance(&mut mem(), it, true)
+    }
+    /// `CharacterLighting_iteratorNext(it)` -> `SetNode`'s `eax` or 0.
+    CharacterLighting_iteratorNext_006a8da0 @ 0x006a_8da0 => extern "thiscall" fn iterator_next(it: u32) -> u32 {
+        p4_light::bridge::iterator_advance(&mut mem(), it, false)
+    }
+    /// `PInputMapper::latchButtons(mapper)`.
+    PInputMapper_latchButtons @ 0x0062_8320 => extern "thiscall" fn latch_buttons(mapper: u32) {
+        p4_input::bridge::latch_buttons(&mut mem(), mapper);
+    }
+    /// `Material_setParameter(inst, name, src)`.
+    Material_setParameter_006e60d0 @ 0x006e_60d0 => extern "C" fn set_parameter(inst: u32, name: u32, src: u32) {
+        p4_morph::bridge::set_parameter(&mut mem(), inst, name, src);
+    }
+    /// `CharacterLighting::setShadeCoeff(cl, inst, coeff)` (`coeff` unused).
+    Phyre_CharacterLighting_setShadeCoeff @ 0x006a_aef0 => extern "thiscall" fn set_shade_coeff(cl: u32, inst: u32, _coeff: u32) {
+        let mut frame = super::StackFrame::<64>::new();
+        p4_morph::bridge::set_shade_coeff(&mut mem(), cl, inst, frame.at());
+    }
+    /// `CharacterLighting::setShadeColor(cl, inst, r, g, b)`.
+    Phyre_CharacterLighting_setShadeColor @ 0x006a_b010 => extern "thiscall" fn set_shade_color(cl: u32, inst: u32, r: u32, g: u32, b: u32) {
+        let mut frame = super::StackFrame::<64>::new();
+        p4_morph::bridge::set_shade_color(&mut mem(), cl, inst, [r, g, b], frame.at());
+    }
+    /// `Material_hasParameter(inst, name)` -> `al`.
+    Material_hasParameter_006ac4a0 @ 0x006a_c4a0 => extern "stdcall" fn has_parameter(inst: u32, name: u32) -> u8 {
+        p4_morph::bridge::has_parameter(&mut mem(), inst, name)
+    }
+    /// `MorphManager_setMorphWeight(inst, w)`.
+    MorphManager_setMorphWeight_006ac900 @ 0x006a_c900 => extern "stdcall" fn set_morph_weight(inst: u32, w: u32) {
+        p4_morph::bridge::set_morph_weight(&mut mem(), inst, w);
+    }
+    /// `MorphManager_addPair(arr, key, value)` -> 0 or the push's result.
+    MorphManager_addPair_006ab8c0 @ 0x006a_b8c0 => extern "stdcall" fn add_pair(arr: u32, key: u32, value: u32) -> u32 {
+        let mut item = super::StackFrame::<2>::new();
+        p4_morph::bridge::add_pair(&mut mem(), arr, key, value, item.at())
+    }
+    /// `MorphManager_setWeights(mm, id, &a, &b)`.
+    MorphManager_setWeights_006abfc0 @ 0x006a_bfc0 => extern "thiscall" fn set_weights(mm: u32, id: u32, a: u32, b: u32) {
+        p4_morph::bridge::set_weights(&mut mem(), mm, id, a, b);
+    }
+    /// `ClothInstancingDynamicMesh_submit(mesh, inst, job)` -> the inner mesh's `eax`.
+    ClothInstancingDynamicMesh_submit_006e28f0 @ 0x006e_28f0 => extern "thiscall" fn cloth_submit(mesh: u32, inst: u32, job: u32) -> u32 {
+        p4_cloth::bridge::submit(&mut mem(), mesh, inst, job)
+    }
+    /// `ClothInstancing_releaseExpired()`.
+    ClothInstancing_releaseExpired_006e2f70 @ 0x006e_2f70 => extern "C" fn cloth_release_expired() {
+        p4_cloth::bridge::release_expired(&mut mem());
+    }
+    /// `ClothInstancingDynamicMeshInstance::~ClothInstancingDynamicMeshInstance(inst)`.
+    ClothInstancingDynamicMeshInstance_dtor_006e0ab0 @ 0x006e_0ab0 => extern "thiscall" fn cloth_instance_dtor(inst: u32) {
+        p4_cloth::bridge::instance_dtor(&mut mem(), inst);
+    }
+    /// `DistortionGridDynamicMesh_copyBuffers(x, src, outs, mesh)` -> 0.
+    DistortionGridDynamicMesh_copyBuffers_00674570 @ 0x0067_4570 => extern "stdcall" fn distortion_copy_buffers(_x: u32, src: u32, outs: u32, mesh: u32) -> u32 {
+        p4_cloth::bridge::copy_buffers(&mut mem(), src, outs, mesh)
+    }
+    /// `BrokenScreenPolygonDynamicMesh_copyBuffers(x, src, outs, mesh)` -> 0.
+    BrokenScreenPolygonDynamicMesh_copyBuffers_00677b10 @ 0x0067_7b10 => extern "stdcall" fn broken_copy_buffers(_x: u32, src: u32, outs: u32, mesh: u32) -> u32 {
+        p4_cloth::bridge::copy_buffers(&mut mem(), src, outs, mesh)
     }
 }

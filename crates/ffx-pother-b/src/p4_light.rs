@@ -42,6 +42,10 @@ pub const SHADE_COEFF_ALT: u32 = 0x006a_8bc0;
 pub const PHYRE_FREE: u32 = 0x0042_fb20;
 /// The point-light type's vtable (`PLightType`, `0x00c10814`).
 pub const POINT_LIGHT_TYPE: u32 = 0x00c1_0814;
+/// `CharacterLighting_iteratorValid_006a9a80` (thiscall `(it)` -> `al`).
+pub const ITERATOR_VALID: u32 = 0x006a_9a80;
+/// `PhyreSceneCursor_SetNode` (thiscall `(cursor, node)`).
+pub const CURSOR_SET_NODE: u32 = 0x0044_1dc0;
 /// The light type `setLightColor` updates the light of (`0x00c10828`).
 pub const COLOR_LIGHT_TYPE: u32 = 0x00c1_0828;
 
@@ -76,9 +80,9 @@ pub mod bridge {
     //! The originals over game memory.
 
     use super::{
-        APPLY_INTENSITY, COLOR_LIGHT_TYPE, Conv, G_LIGHTING, G_MORPH, G_TWEAK, Host, LIGHTING_CTOR,
-        MEMSET, ONE, OPERATOR_NEW, PHYRE_FREE, POINT_LIGHT_TYPE, SET_SHADE_COEFF, SHADE_COEFF_ALT,
-        TEXT_CTOR, default_shade_coeff, x87,
+        APPLY_INTENSITY, COLOR_LIGHT_TYPE, CURSOR_SET_NODE, Conv, G_LIGHTING, G_MORPH, G_TWEAK,
+        Host, ITERATOR_VALID, LIGHTING_CTOR, MEMSET, ONE, OPERATOR_NEW, PHYRE_FREE,
+        POINT_LIGHT_TYPE, SET_SHADE_COEFF, SHADE_COEFF_ALT, TEXT_CTOR, default_shade_coeff, x87,
     };
     use crate::methods::quiet;
 
@@ -338,5 +342,38 @@ pub mod bridge {
         h.write(arr + 4, buffer);
         h.write(arr, count + 1);
         0
+    }
+
+    /// The lighting iterator's advance: from its node (`+0x18`), follows
+    /// the links (`[node]`, the end `+0x14` giving 0) until
+    /// `ITERATOR_VALID` holds, checking first when `check_first`
+    /// (`0x006a8d30`) or only after a step (`0x006a8da0`). With a node,
+    /// `PhyreSceneCursor_SetNode(it, node)`'s `eax`; without, the cursor
+    /// words `+0..0x10` cleared and 0.
+    pub fn iterator_advance(h: &mut impl Host, it: u32, check_first: bool) -> u32 {
+        let valid = h.rebase(ITERATOR_VALID);
+        if !check_first || h.call(valid, Conv::Thiscall(it), &[]) as u8 == 0 {
+            let mut node: u32 = h.read(it + 0x18);
+            loop {
+                if node != 0 {
+                    let next: u32 = h.read(node);
+                    let end: u32 = h.read(it + 0x14);
+                    node = if next == end { 0 } else { next };
+                    h.write(it + 0x18, node);
+                }
+                if h.call(valid, Conv::Thiscall(it), &[]) as u8 != 0 {
+                    break;
+                }
+            }
+        }
+        let node: u32 = h.read(it + 0x18);
+        if node == 0 {
+            for at in (0..0x14).step_by(4) {
+                h.write(it + at, 0u32);
+            }
+            return 0;
+        }
+        let f = h.rebase(CURSOR_SET_NODE);
+        h.call(f, Conv::Thiscall(it), &[node])
     }
 }

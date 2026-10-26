@@ -5,8 +5,10 @@
 //! - [`physics`]: the `PPhysics` class descriptors' instance callbacks;
 //! - [`object`]: scalar deleting destructors, dynamic-mesh instance
 //!   constructors, class registrations;
-//! - [`p4_input`], [`p4_light`], [`p4_fog`] (continuation rounds): input
-//!   devices and mappings, the character lighting manager, the fog manager.
+//! - [`p4_input`], [`p4_light`], [`p4_fog`], [`p4_morph`], [`p4_cloth`]
+//!   (continuation rounds): input devices and mappings, the character
+//!   lighting manager, the fog manager, morph weights and material
+//!   parameters, cloth instancing and the dynamic meshes' buffer copies.
 //!
 //! Everything outside the list (the allocator `Phyre_PhyreFree`, the
 //! physics objects' own destructors, virtual methods) is called at its
@@ -24,9 +26,11 @@
 
 pub mod methods;
 pub mod object;
+pub mod p4_cloth;
 pub mod p4_fog;
 pub mod p4_input;
 pub mod p4_light;
+pub mod p4_morph;
 pub mod physics;
 pub mod small;
 

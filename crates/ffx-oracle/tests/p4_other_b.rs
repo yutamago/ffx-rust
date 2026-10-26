@@ -2052,3 +2052,513 @@ fn p4_fog_matches_the_original() {
         }
     }
 }
+
+// ---- continuation round (c1) batch 2: morphs, material parameters,
+// cloth, iterators, button latches ----
+
+use ffx_pother_b::{p4_cloth, p4_morph};
+
+impl Twins {
+    /// Zeros the top of the original's stack, so words its frame never
+    /// writes read 0 as the port's work blocks do.
+    fn zero_stack_top(&mut self) {
+        let end = self.a.stack_range().end;
+        self.a.write(end - 0x1000, &[0; 0x1000]).unwrap();
+    }
+}
+
+/// `ShaderParams_FindByName` as a stub: logs, returns the shader's
+/// `+0x40` word.
+fn find_param_stub(t: &mut Twins) {
+    t.stub_tail(
+        p4_morph::FIND_PARAM,
+        true,
+        1,
+        &[0x8b, 0x41, 0x40, 0xc2, 0x04, 0x00], // mov eax, [ecx+0x40]; ret 4
+    );
+}
+
+/// An instance whose material list (`+0x10`) has `n` elements (shader,
+/// buffer); each shader's `+0x40` is a parameter (offset, size) or 0.
+/// Null elements only with `nulls` (only `hasParameter` checks for them).
+/// Returns the instance and the list.
+fn material(t: &mut Twins, rng: &mut Rng, n: u32, max_size: u32, nulls: bool) -> (u32, u32) {
+    let inst = t.zeros(0x20);
+    t.fill(rng, inst, 0x20);
+    let list = t.zeros(8);
+    let flag = if rng.chance(4) { 0x8000_0000 } else { 0 };
+    t.w32(list, n | flag);
+    let data = t.zeros(4 * n.max(1) as usize);
+    t.w32(list + 4, data);
+    t.w32(inst + 0x10, list);
+    for i in 0..n {
+        let e = if nulls && rng.chance(6) {
+            0
+        } else {
+            let e = t.zeros(8);
+            let shader = t.zeros(0x44);
+            let buf = t.zeros(0x80);
+            t.fill(rng, buf, 0x80);
+            t.w32(buf, [0x80, 0x40, 0x10, 0][rng.below(4) as usize]);
+            let p = if rng.chance(4) {
+                0
+            } else {
+                let p = t.zeros(0x10);
+                t.fill(rng, p, 0x10);
+                let off = [0, 2, 4, 8, 0x20, 0x3c, 0x7c][rng.below(7) as usize];
+                let size = (rng.below(max_size + 1)) | (rng.below(8) << 13);
+                t.write(p + 8, &(off as u16).to_le_bytes());
+                t.write(p + 0xa, &(size as u16).to_le_bytes());
+                p
+            };
+            t.w32(shader + 0x40, p);
+            t.w32(e, shader);
+            t.w32(e + 4, buf);
+            e
+        };
+        t.w32(data + 4 * i, e);
+    }
+    (inst, list)
+}
+
+#[test]
+fn p4_material_parameters_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006e_60d0);
+        find_param_stub(&mut t);
+        // PArray_Data: the pointer at +4 (the test's lists are never inline)
+        t.stub_tail(
+            p4_morph::ARRAY_DATA,
+            true,
+            0,
+            &[0x8b, 0x41, 0x04, 0xc3], // mov eax, [ecx+4]; ret
+        );
+        for i in 0..96 {
+            let what = |s: &str| format!("{name} {s} case {i}");
+            let n = rng.below(5);
+            let (inst, _) = material(&mut t, &mut rng, n, 0x40, false);
+            let pname = rng.next();
+            let src = if rng.chance(5) {
+                0
+            } else {
+                let s = t.zeros(0x80);
+                t.fill(&mut rng, s, 0x80);
+                s
+            };
+            t.case(
+                &what("set param"),
+                0x006e_60d0,
+                Conv::Cdecl,
+                &[inst, pname, src],
+                |g| {
+                    p4_morph::bridge::set_parameter(g, inst, pname, src);
+                    Out::None
+                },
+            );
+            // the lighting's shade coefficient (4 bytes) and colour (up to
+            // the five frame words)
+            let cl = lighting(&mut t, &mut rng);
+            let (inst, _) = material(&mut t, &mut rng, n, 4, false);
+            let coeff = rng.next();
+            t.zero_stack_top();
+            t.case(
+                &what("shade coeff"),
+                0x006a_aef0,
+                Conv::Thiscall(cl),
+                &[inst, coeff],
+                |g| {
+                    let s = g.scratch();
+                    p4_morph::bridge::set_shade_coeff(g, cl, inst, s);
+                    Out::None
+                },
+            );
+            let (inst, _) = material(&mut t, &mut rng, n, 0x14, false);
+            let rgb = [
+                float_word(&mut rng),
+                float_word(&mut rng),
+                float_word(&mut rng),
+            ];
+            t.zero_stack_top();
+            t.case(
+                &what("shade color"),
+                0x006a_b010,
+                Conv::Thiscall(cl),
+                &[inst, rgb[0], rgb[1], rgb[2]],
+                |g| {
+                    let s = g.scratch();
+                    p4_morph::bridge::set_shade_color(g, cl, inst, rgb, s);
+                    Out::None
+                },
+            );
+            // hasParameter: inline (count 1) and pointer lists, null inst
+            let (inst, list) = material(&mut t, &mut rng, n, 0x10, true);
+            if n == 1 {
+                // one element is inline at +4
+                let data: u32 = Mem::read(&t.b, list + 4);
+                let e: u32 = Mem::read(&t.b, data);
+                t.w32(list + 4, e);
+            }
+            let inst = if rng.chance(8) { 0 } else { inst };
+            t.case(
+                &what("has param"),
+                0x006a_c4a0,
+                Conv::Stdcall,
+                &[inst, pname],
+                |g| Out::U8(p4_morph::bridge::has_parameter(g, inst, pname)),
+            );
+        }
+    }
+}
+
+#[test]
+fn p4_morph_weights_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_c900);
+        let morphs = t.stub_cell(p4_morph::MORPH_ARRAY, true, 0, 0);
+        t.stub_tail(
+            p4_morph::ARRAY_GET_AT,
+            true,
+            1,
+            &[0x8b, 0x41, 0x40, 0xc2, 0x04, 0x00], // mov eax, [ecx+0x40]; ret 4
+        );
+        let malloc = t.stub_cell(p4_morph::PHYRE_MALLOC, false, 2, 0);
+        t.stub(p4_light::PHYRE_FREE, false, 1, 0, 0x0f0f_0000);
+        for i in 0..96 {
+            let what = |s: &str| format!("{name} {s} case {i}");
+            // setMorphWeight
+            let n = rng.below(5);
+            let arr = t.zeros(8);
+            t.w32(arr, n | if rng.chance(4) { 0x8000_0000 } else { 0 });
+            let elems = t.zeros(4 * n.max(1) as usize);
+            t.w32(arr + 4, elems);
+            for k in 0..n {
+                let e = if rng.chance(5) {
+                    0
+                } else {
+                    let e = t.zeros(0x44);
+                    let w = if rng.chance(5) {
+                        0
+                    } else {
+                        let w = t.zeros(8);
+                        let vals = t.zeros(8);
+                        t.fill(&mut rng, vals, 8);
+                        t.w32(
+                            w,
+                            rng.below(4) | if rng.chance(4) { 0x8000_0000 } else { 0 },
+                        );
+                        t.w32(w + 4, vals);
+                        w
+                    };
+                    t.w32(e + 0x40, w);
+                    e
+                };
+                t.w32(elems + 4 * k, e);
+            }
+            t.w32(morphs, arr);
+            let inst = if rng.chance(8) { 0 } else { rng.next() | 1 };
+            let w = float_word(&mut rng);
+            t.case(
+                &what("morph weight"),
+                0x006a_c900,
+                Conv::Stdcall,
+                &[inst, w],
+                |g| {
+                    p4_morph::bridge::set_morph_weight(g, inst, w);
+                    Out::None
+                },
+            );
+            // addPair: present, an empty slot, or grown
+            let count = rng.below(5);
+            let pairs = t.zeros(8);
+            let data = t.zeros(8 * count.max(1) as usize);
+            t.fill(&mut rng, data, 8 * count.max(1));
+            let keys: Vec<u32> = (0..count).map(|_| rng.below(6)).collect();
+            for (k, key) in keys.iter().enumerate() {
+                t.w32(data + 8 * k as u32, *key);
+            }
+            t.w32(pairs, count | if rng.chance(4) { 0x8000_0000 } else { 0 });
+            t.w32(pairs + 4, data);
+            let key = rng.below(6) + 1;
+            let value = rng.next();
+            let fresh = t.zeros(0x40);
+            t.w32(malloc, if rng.chance(5) { 0 } else { fresh });
+            t.case(
+                &what("add pair"),
+                0x006a_b8c0,
+                Conv::Stdcall,
+                &[pairs, key, value],
+                |g| {
+                    let item = g.scratch();
+                    Out::U32(p4_morph::bridge::add_pair(g, pairs, key, value, item))
+                },
+            );
+            // setWeights over the four tables
+            let mm = t.zeros(0x20);
+            let id = rng.below(3);
+            for (table, stride) in [(0u32, 8u32), (8, 8), (0x10, 8), (0x18, 16)] {
+                let n = rng.below(4);
+                let d = t.zeros((stride * n.max(1)) as usize);
+                t.fill(&mut rng, d, stride * n.max(1));
+                for k in 0..n {
+                    let obj = if rng.chance(5) {
+                        0
+                    } else {
+                        let o = t.zeros(0x5c);
+                        t.w32(o + 0x58, rng.below(3));
+                        o
+                    };
+                    t.w32(d + stride * k, obj);
+                }
+                t.w32(mm + table, n | if rng.chance(4) { 0x8000_0000 } else { 0 });
+                t.w32(mm + table + 4, d);
+            }
+            let a = t.zeros(4);
+            let b = t.zeros(4);
+            let (fa, fb) = (float_word(&mut rng), float_word(&mut rng));
+            t.w32(a, fa);
+            t.w32(b, fb);
+            t.case(
+                &what("weights"),
+                0x006a_bfc0,
+                Conv::Thiscall(mm),
+                &[id, a, b],
+                |g| {
+                    p4_morph::bridge::set_weights(g, mm, id, a, b);
+                    Out::None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn p4_cloth_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006e_2f70);
+        t.stub(p4_cloth::OPERATOR_DELETE, false, 1, 0, 0x0de1_0000);
+        t.stub(p4_cloth::MESH_INSTANCE_DTOR, true, 0, 0, 0x0d70_0000);
+        let vt = t.vtable(4, 1);
+        let vt2 = t.vtable(4, 2);
+        let g = t.rebase(p4_cloth::G_CLOTH_ENTRIES);
+        // a deleting destructor that shrinks the table (the loop rereads
+        // the count after each entry it counts down)
+        let mut code = vec![0xa1];
+        code.extend(g.to_le_bytes()); // mov eax, [g]
+        code.extend([0x84, 0xc0, 0x74, 0x06, 0x48, 0xa3]); // test al, al; jz +6; dec eax; mov [g], eax
+        code.extend(g.to_le_bytes());
+        code.extend([0xc2, 0x04, 0x00]); // ret 4
+        let shrink = t.code(&code);
+        let vt_shrink = t.zeros(0x10);
+        t.w32(vt_shrink, shrink);
+        for i in 0..64 {
+            let what = |s: &str| format!("{name} {s} case {i}");
+            // submit
+            let mesh = t.zeros(0x1a00);
+            t.fill(&mut rng, mesh, 0x1a00);
+            let inner = t.zeros(8);
+            t.w32(inner, vt2);
+            t.w32(mesh + 0xc, inner);
+            let slot = rng.below(4);
+            let src = t.zeros(0x40);
+            t.fill(&mut rng, src, 0x40);
+            let dst = t.zeros(0x40);
+            t.w32(mesh + 0x810 + 4 * slot, rng.below(3));
+            t.w32(mesh + 0xc10 + 4 * slot, src);
+            t.w32(mesh + 0x210 + 4 * slot, dst);
+            t.w32(mesh + 0x1810 + 4 * slot, rng.below(0x41));
+            let inst = t.zeros(0x40);
+            t.fill(&mut rng, inst, 0x40);
+            t.w32(inst + 8, 4 * rng.below(8));
+            let job = t.zeros(0x24);
+            t.fill(&mut rng, job, 0x24);
+            t.w32(job + 0x20, slot);
+            t.case(
+                &what("submit"),
+                0x006e_28f0,
+                Conv::Thiscall(mesh),
+                &[inst, job],
+                |g| Out::U32(p4_cloth::bridge::submit(g, mesh, inst, job)),
+            );
+            // releaseExpired
+            let n = rng.below(6);
+            let table = t.zeros(16 * n.max(1) as usize);
+            for k in 0..n {
+                let e = table + 16 * k;
+                for (field, child) in [(0u32, 0x1cu32), (4, 0xc)] {
+                    let obj = if rng.chance(4) {
+                        0
+                    } else {
+                        let o = t.zeros(0x20);
+                        t.w32(o, if rng.chance(4) { vt_shrink } else { vt });
+                        let c = if rng.chance(3) {
+                            0
+                        } else {
+                            let c = t.zeros(4);
+                            t.w32(c, vt);
+                            c
+                        };
+                        t.w32(o + child, c);
+                        o
+                    };
+                    t.w32(e + field, obj);
+                }
+                t.w32(e + 8, u32::from(rng.chance(3)));
+                t.w32(
+                    e + 0xc,
+                    [0, 0, 1, 5, 0xffff_ffff, 0x8000_0000][rng.below(6) as usize],
+                );
+            }
+            t.w32(g, n | if rng.chance(4) { 0x8000_0000 } else { 0 });
+            t.w32(g + 4, table);
+            t.case(&what("release"), 0x006e_2f70, Conv::Cdecl, &[], |g| {
+                p4_cloth::bridge::release_expired(g);
+                Out::None
+            });
+            // the instance dtor: some buffers set
+            let inst = t.zeros(0x1e10);
+            for k in 0..rng.below(24) {
+                let at = [0x1c10, 0x10, 0x210, 0x410][(k % 4) as usize] + 4 * rng.below(0x80);
+                let v = rng.next() | 1;
+                t.w32(inst + at, v);
+            }
+            t.case(&what("dtor"), 0x006e_0ab0, Conv::Thiscall(inst), &[], |g| {
+                p4_cloth::bridge::instance_dtor(g, inst);
+                Out::None
+            });
+            // the dynamic meshes' buffer copies
+            let n = rng.below(5);
+            let srcm = t.zeros(0x28);
+            t.fill(&mut rng, srcm, 0x28);
+            t.w32(srcm + 0x20, n);
+            let idx = rng.below(6);
+            t.w32(srcm + 0x24, idx);
+            for at in [0x10, 0x14, 0x18, 0x1c] {
+                let b = t.zeros(0x50);
+                t.fill(&mut rng, b, 0x50);
+                t.w32(srcm + at, b);
+            }
+            let outs = t.zeros(12);
+            for k in 0..3 {
+                let o = if rng.chance(4) && n == 0 {
+                    0
+                } else {
+                    let o = t.zeros(0x40);
+                    let b = t.zeros(0x50);
+                    t.w32(o + 0x3c, b);
+                    o
+                };
+                t.w32(outs + 4 * k, o);
+            }
+            let meshb = t.zeros(0x3c);
+            let ib = t.zeros(0x20);
+            t.w32(meshb + 0x38, ib);
+            let sym = if i % 2 == 0 { 0x0067_4570 } else { 0x0067_7b10 };
+            let x = rng.next();
+            t.case(
+                &what("copy"),
+                sym,
+                Conv::Stdcall,
+                &[x, srcm, outs, meshb],
+                |g| Out::U32(p4_cloth::bridge::copy_buffers(g, srcm, outs, meshb)),
+            );
+        }
+    }
+}
+
+#[test]
+fn p4_iterators_and_latches_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_8d30);
+        // valid(it): 1 without a node, else the node's byte +0x20
+        t.stub_tail(
+            p4_light::ITERATOR_VALID,
+            true,
+            0,
+            &[
+                0x8b, 0x41, 0x18, // mov eax, [ecx+0x18]
+                0x85, 0xc0, // test eax, eax
+                0x74, 0x04, // jz one
+                0x8a, 0x40, 0x20, // mov al, [eax+0x20]
+                0xc3, // ret
+                0xb0, 0x01, // one: mov al, 1
+                0xc3,
+            ],
+        );
+        t.stub(p4_light::CURSOR_SET_NODE, true, 1, 1, 0x05e7_0000);
+        for i in 0..96 {
+            // a chain of nodes ending at the end marker or 0
+            let it = t.zeros(0x20);
+            t.fill(&mut rng, it, 0x20);
+            let end = t.zeros(0x24);
+            t.w32(it + 0x14, end);
+            let n = rng.below(5);
+            let mut next = if rng.chance(2) { end } else { 0 };
+            for _ in 0..n {
+                let node = t.zeros(0x24);
+                t.w32(node, next);
+                t.write(node + 0x20, &[u8::from(rng.chance(3))]);
+                next = node;
+            }
+            t.w32(it + 0x18, next);
+            let (sym, first) = if i % 2 == 0 {
+                (0x006a_8d30, true)
+            } else {
+                (0x006a_8da0, false)
+            };
+            t.case(
+                &format!("{name} iterator case {i}"),
+                sym,
+                Conv::Thiscall(it),
+                &[],
+                |g| Out::U32(p4_light::bridge::iterator_advance(g, it, first)),
+            );
+        }
+        // devices whose vtable[3](id) gives a mixed value of id and the
+        // device (0..3)
+        let get = t.code(&[
+            0x8b, 0x44, 0x24, 0x04, // mov eax, [esp+4]
+            0x31, 0xc8, // xor eax, ecx
+            0x69, 0xc0, 0xb1, 0x79, 0x37, 0x9e, // imul eax, eax, 0x9e3779b1
+            0xc1, 0xe8, 0x1e, // shr eax, 30
+            0xc2, 0x04, 0x00, // ret 4
+        ]);
+        let vt = t.zeros(0x10);
+        t.w32(vt + 0xc, get);
+        for i in 0..24 {
+            let mapper = t.zeros(0xa0);
+            t.fill(&mut rng, mapper, 0xa0);
+            for k in 0..25 {
+                let at = if k < 7 {
+                    0x80 + 4 * k
+                } else {
+                    0x38 + 4 * (k - 7)
+                };
+                let dev = if rng.chance(4) {
+                    0
+                } else {
+                    let d = t.zeros(0x220);
+                    t.fill(&mut rng, d, 0x220);
+                    for b in 0..0x100 {
+                        t.write(d + 0x118 + b, &[rng.below(4) as u8]);
+                    }
+                    for b in 0..0x10 {
+                        t.write(d + 0x28 + b, &[rng.below(4) as u8]);
+                    }
+                    t.w32(d, vt);
+                    d
+                };
+                t.w32(mapper + at, dev);
+            }
+            t.case(
+                &format!("{name} latch case {i}"),
+                0x0062_8320,
+                Conv::Thiscall(mapper),
+                &[],
+                |g| {
+                    p4_input::bridge::latch_buttons(g, mapper);
+                    Out::None
+                },
+            );
+        }
+    }
+}

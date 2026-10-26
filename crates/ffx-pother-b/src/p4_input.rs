@@ -323,4 +323,30 @@ pub mod bridge {
         }
         0
     }
+
+    /// `PInputMapper::latchButtons(mapper)` (`0x00628320`, thiscall): for
+    /// the 7 keyboards (`+0x80`) keys `0x1c..0x11c` and the 18 pads
+    /// (`+0x38`) buttons `0xb..0x1b`, each device's `vtable[3](id)`; a
+    /// value that differs from the cached one (keyboard `+0x118 + i`, pad
+    /// `+0x28 + i`) is latched at `+0x18 + i`, then cached.
+    pub fn latch_buttons(h: &mut impl Host, mapper: u32) {
+        for (list, devices, first, cache, keys) in [
+            (0x80u32, 7u32, 0x1cu32, 0x118u32, 0x100u32),
+            (0x38, 18, 0xb, 0x28, 0x10),
+        ] {
+            for k in 0..devices {
+                let dev: u32 = h.read(mapper + list + 4 * k);
+                if dev == 0 {
+                    continue;
+                }
+                for i in 0..keys {
+                    let v = h.call_virtual(dev, 3, &[first + i]) as u8;
+                    if v != h.read::<u8>(dev + cache + i) {
+                        h.write(dev + 0x18 + i, v);
+                    }
+                    h.write(dev + cache + i, v);
+                }
+            }
+        }
+    }
 }
