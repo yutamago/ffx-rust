@@ -351,7 +351,7 @@ fn h1_parts(steps: &[h1b::Step], p: &mut Parts) {
                 h1_parts(inner, p);
             }
             Step::Member { ty: t, .. } | Step::Array { ty: t, .. } => ty(t, p),
-            Step::Class { member, .. } => p.classes.push(member),
+            Step::Class { member, .. } | Step::ClassIn { member, .. } => p.classes.push(member),
             Step::Call(f, arg) => {
                 p.calls.push((f, u32::from(arg.is_some())));
                 if let Some(g) = arg {

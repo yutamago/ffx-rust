@@ -26,11 +26,12 @@ pub enum Conv {
 /// The most words [`Host::call`] (`st0` false) or [`Host::call_st0`] /
 /// [`Host::call_st0_f64`] (`st0` true) passes in the game
 /// ([`ffx_bridge::RawMem`]) with `conv`: twelve for a plain `cdecl` call
-/// and twelve stack words after `this` for a plain `thiscall`; eight
+/// and sixteen stack words after `this` for a plain `thiscall`; eight
 /// otherwise (a fastcall's two register words included). The twelve cdecl
 /// words cover the glue's widest calls: `registAsyncLoadTask`'s nine
 /// (`PhyreScene_loadCharacterAsync`), the point-light setup's ten
-/// (`graphicPS2LightingSetupEffect`).
+/// (`graphicPS2LightingSetupEffect`). The sixteen thiscall words cover
+/// `PRenderThread::handleNonRenderInstanceCommand`'s fifteen (`0x0059bac0`).
 ///
 /// The game's host does not refuse a longer list: a cdecl call drops the
 /// words past the limit (the callee reads the caller's stack there), and
@@ -40,7 +41,8 @@ pub enum Conv {
 #[must_use]
 pub const fn max_words(conv: Conv, st0: bool) -> usize {
     match (conv, st0) {
-        (Conv::Thiscall(_) | Conv::Cdecl, false) => 12,
+        (Conv::Thiscall(_), false) => 16,
+        (Conv::Cdecl, false) => 12,
         _ => 8,
     }
 }
@@ -52,7 +54,7 @@ pub const fn max_words(conv: Conv, st0: bool) -> usize {
 pub trait Host: Mem {
     /// Calls the function at `addr` (an address in this process, already
     /// rebased) with up to [`max_words`] 32-bit arguments (twelve for
-    /// `cdecl`, twelve stack words for a `thiscall`, else eight); returns
+    /// `cdecl`, sixteen stack words for a `thiscall`, else eight); returns
     /// `eax`.
     fn call(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u32;
 
@@ -196,13 +198,13 @@ impl Host for ffx_bridge::RawMem {
     fn call(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u32 {
         type C12 =
             unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
-        // the bridges pass at most twelve to a cdecl or thiscall, eight to
-        // the others (no panics in what the game calls)
-        let mut a12 = [0u32; 12];
-        for (w, &v) in a12.iter_mut().zip(args) {
+        // the bridges pass at most sixteen to a thiscall, twelve to a
+        // cdecl, eight to the others (no panics in what the game calls)
+        let mut a16 = [0u32; 16];
+        for (w, &v) in a16.iter_mut().zip(args) {
             *w = v;
         }
-        let [p, q, r, s, t, u, v, w, x, y, z, b] = a12;
+        let [p, q, r, s, t, u, v, w, x, y, z, b, ..] = a16;
         let a = [p, q, r, s, t, u, v, w];
         let f = addr as usize;
         // SAFETY: `addr` is a function of this process with this
@@ -215,7 +217,7 @@ impl Host for ffx_bridge::RawMem {
                 (Conv::Cdecl, _) => {
                     std::mem::transmute::<usize, C12>(f)(p, q, r, s, t, u, v, w, x, y, z, b)
                 }
-                (Conv::Thiscall(this), n) => thiscall(f, this, n, a12),
+                (Conv::Thiscall(this), n) => thiscall(f, this, n, a16),
                 (Conv::Stdcall, n) => stdcall(f, n, a),
                 (Conv::Fastcall, n) => fastcall(f, n, a),
             }
@@ -223,16 +225,16 @@ impl Host for ffx_bridge::RawMem {
     }
 }
 
-/// A `thiscall` with `n` stack arguments (at most 12).
+/// A `thiscall` with `n` stack arguments (at most 16).
 ///
 /// # Safety
 /// `f` takes `this` and exactly `n` 32-bit arguments.
 #[cfg(target_arch = "x86")]
 #[allow(clippy::many_single_char_names, clippy::too_many_lines)] // the arguments
-unsafe fn thiscall(f: usize, this: u32, n: usize, a: [u32; 12]) -> u32 {
+unsafe fn thiscall(f: usize, this: u32, n: usize, a: [u32; 16]) -> u32 {
     use std::mem::transmute as t;
     type U = u32;
-    let [p, q, r, s, u, v, w, x, y, z, b, c] = a;
+    let [p, q, r, s, u, v, w, x, y, z, b, c, d, e, g, h] = a;
     // SAFETY: as the caller promises.
     unsafe {
         match n {
@@ -267,11 +269,27 @@ unsafe fn thiscall(f: usize, this: u32, n: usize, a: [u32; 12]) -> u32 {
             11 => t::<usize, unsafe extern "thiscall" fn(U, U, U, U, U, U, U, U, U, U, U, U) -> U>(
                 f,
             )(this, p, q, r, s, u, v, w, x, y, z, b),
-            _ => {
+            12 => {
                 t::<usize, unsafe extern "thiscall" fn(U, U, U, U, U, U, U, U, U, U, U, U, U) -> U>(
                     f,
                 )(this, p, q, r, s, u, v, w, x, y, z, b, c)
             }
+            13 => t::<
+                usize,
+                unsafe extern "thiscall" fn(U, U, U, U, U, U, U, U, U, U, U, U, U, U) -> U,
+            >(f)(this, p, q, r, s, u, v, w, x, y, z, b, c, d),
+            14 => t::<
+                usize,
+                unsafe extern "thiscall" fn(U, U, U, U, U, U, U, U, U, U, U, U, U, U, U) -> U,
+            >(f)(this, p, q, r, s, u, v, w, x, y, z, b, c, d, e),
+            15 => t::<
+                usize,
+                unsafe extern "thiscall" fn(U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U) -> U,
+            >(f)(this, p, q, r, s, u, v, w, x, y, z, b, c, d, e, g),
+            _ => t::<
+                usize,
+                unsafe extern "thiscall" fn(U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U) -> U,
+            >(f)(this, p, q, r, s, u, v, w, x, y, z, b, c, d, e, g, h),
         }
     }
 }
