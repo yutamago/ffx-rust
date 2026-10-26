@@ -20,6 +20,7 @@ use crate::Hook;
 
 mod auto;
 mod battle;
+mod c2_new;
 mod chara;
 mod h1_render_a;
 mod h2_render_b;
@@ -68,6 +69,7 @@ pub fn hooks() -> Vec<Hook> {
     let mut all = Vec::new();
     all.extend(auto::hooks());
     all.extend(battle::hooks());
+    all.extend(c2_new::hooks());
     all.extend(chara::hooks());
     all.extend(h2_render_b::hooks());
     all.extend(h1_render_a::hooks());
