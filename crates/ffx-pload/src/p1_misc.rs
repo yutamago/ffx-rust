@@ -688,7 +688,7 @@ pub mod bridge {
     /// computed (flags bit 31); else slot 12 unless in a namespace (bit
     /// 30), `calculateDefaultBuffer`, `calculateValidationBuffer`. The
     /// `eax` it leaves: the flags, or the last call's.
-    fn compute_buffers(h: &mut impl Host, desc: u32) -> u32 {
+    pub(crate) fn compute_buffers(h: &mut impl Host, desc: u32) -> u32 {
         let flags: u32 = h.read(desc + 0x90);
         if flags >> 31 != 0 {
             return flags;
@@ -858,5 +858,84 @@ pub mod bridge {
         }
         let offset: u32 = h.read(desc + 0x8c);
         h.write(offset.wrapping_add(default).wrapping_add(8), desc);
+    }
+
+    /// `PClassDescriptor::initializeInstance(desc, p)` (`0x0043ce00`,
+    /// thiscall): the instance at `p` (its base `p - +0x8c`) set up. With
+    /// a default buffer (after [`compute_buffers`]) it is copied over the
+    /// instance; else the class's slot 10 constructs it (0 when that
+    /// refuses), then for the class and each parent, every member (list
+    /// `+0x44`, the member at link `- 4`) whose type (`+0x18`, its
+    /// slot 1) is a class, that is not a pointer (flags bit 1) and not of
+    /// kind 2 (slot 1's `+0x30`; kind 1 is a fixed array of
+    /// `0x00576050` elements, else one) gets each element, at the
+    /// member's offset rebased to the type's base, destroyed first (the
+    /// type's slot 11, unless the class has flags bit 0) and filled from
+    /// the type's default buffer. Returns `p`.
+    pub fn initialize_instance(h: &mut impl Host, desc: u32, p: u32) -> u32 {
+        let offset: u32 = h.read(desc + 0x8c);
+        let base = p.wrapping_sub(offset);
+        compute_buffers(h, desc);
+        let default: u32 = h.read(desc + 0x64);
+        if default != 0 {
+            let size: u32 = h.read(desc + 0x1c);
+            h.call_sym(
+                crate::descriptor::MEMCPY,
+                Conv::Cdecl,
+                &[base, default, size],
+            );
+            return p;
+        }
+        if h.call_virtual(desc, 10, &[base]).trailing_zeros() >= 8 {
+            return 0;
+        }
+        let mut class = desc;
+        while class != 0 {
+            let flags: u8 = h.read(class + 0x90);
+            let destroy = flags & 1 == 0;
+            let head = class + 0x44;
+            let mut link: u32 = h.read(head);
+            while link != head && link != 0 && link != 4 {
+                let member = link - 4;
+                let info = h.call_virtual(member, 1, &[]);
+                let kind = if info == 0 { 0 } else { h.read(info + 0x30) };
+                let ty_obj: u32 = h.read(member + 0x18);
+                let ty = h.call_virtual(ty_obj, 1, &[]);
+                let mflags: u8 = h.read(member + 0x14);
+                if ty != 0 && mflags & 2 == 0 && kind != 2 {
+                    let count = if kind == 1 {
+                        h.call_sym(0x0057_6050, Conv::Thiscall(info), &[])
+                    } else {
+                        1
+                    };
+                    let moff: u32 = h.read(member + 0x24);
+                    let owner: u32 = h.read(member + 0xc);
+                    let obase: u32 = h.read(owner + 0x88);
+                    let tbase: u32 = h.read(ty + 0x88);
+                    let mut at = moff.wrapping_sub(obase).wrapping_add(tbase).wrapping_add(p);
+                    let mut left = count;
+                    while left != 0 {
+                        if destroy {
+                            h.call_virtual(ty, 11, &[at]);
+                        }
+                        let size: u32 = h.read(ty + 0x1c);
+                        let toff: u32 = h.read(ty + 0x8c);
+                        compute_buffers(h, ty);
+                        let def: u32 = h.read(ty + 0x64);
+                        h.call_sym(
+                            crate::descriptor::MEMCPY,
+                            Conv::Cdecl,
+                            &[at.wrapping_sub(toff), def, size],
+                        );
+                        let size: u32 = h.read(ty + 0x1c);
+                        at = at.wrapping_add(size);
+                        left -= 1;
+                    }
+                }
+                link = h.read(member + 4);
+            }
+            class = h.read(class + 0x40);
+        }
+        p
     }
 }

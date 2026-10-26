@@ -203,4 +203,136 @@ pub mod bridge {
         }
         0
     }
+
+    /// The CRT's `memcpy` (cdecl `(dst, src, n)`).
+    const MEMCPY: u32 = 0x0094_9256;
+
+    /// `0x0057b270` (thiscall `(list, src, &header)` on the reader): the
+    /// instance list's data from the file. 0x13 without the header's
+    /// class entry, descriptor or packed class; 0x11 for a list without
+    /// data (`+0x30`). In place (`src` is the list's buffer) the default
+    /// buffer is applied (`0x0043c160`); else the instances are converted
+    /// (`0x005788f0(entry, src, buffer, n)`), for a class with flags bit 2
+    /// the bytes past the packed size (`+4`, low 28 bits) up to the
+    /// header's size copied as they are, and the extra bytes (`+0x10`)
+    /// copied after the data, aligned to 16. When the file needs
+    /// swapping, `0x0043d650(data, n, 1)`. 0.
+    pub fn read_list_data(h: &mut impl Host, reader: u32, list: u32, src: u32, hdr: u32) -> u32 {
+        let index: u32 = h.read(hdr);
+        let Some(entry) = class_entry(h, reader, index).filter(|&e| e != 0) else {
+            return 0x13;
+        };
+        let desc: u32 = h.read(entry + 8);
+        let packed: u32 = h.read(entry + 4);
+        if desc == 0 || packed == 0 {
+            return 0x13;
+        }
+        let data: u32 = h.read(list + 0x30);
+        if data == 0 {
+            return 0x11;
+        }
+        let n: u32 = h.read(list + 0x3c);
+        let buffer: u32 = h.read(list + 0x34);
+        if src == buffer {
+            let offset: u32 = h.read(desc + 0x8c);
+            h.call_sym(
+                0x0043_c160,
+                Conv::Thiscall(desc),
+                &[offset.wrapping_add(src), n],
+            );
+        } else {
+            h.call_sym(0x0057_88f0, Conv::Cdecl, &[entry, src, buffer, n]);
+            let flags: u32 = h.read(desc + 0x90);
+            let len = if (flags >> 2) & 1 != 0 {
+                let word: u32 = h.read(packed + 4);
+                let off = word & 0x0fff_ffff;
+                let size: u32 = h.read(hdr + 0xc);
+                if off < size {
+                    h.call_sym(
+                        MEMCPY,
+                        Conv::Cdecl,
+                        &[off.wrapping_add(buffer), src.wrapping_add(off), size - off],
+                    );
+                }
+                h.read(hdr + 0xc)
+            } else {
+                let elem: u32 = h.read(desc + 0x1c);
+                elem.wrapping_mul(n)
+            };
+            let end = len.wrapping_add(buffer);
+            let [size, extra]: [u32; 2] = h.read(hdr + 0xc);
+            h.call_sym(
+                MEMCPY,
+                Conv::Cdecl,
+                &[
+                    (end.wrapping_neg() & 0xf).wrapping_add(end),
+                    size.wrapping_add(src),
+                    extra,
+                ],
+            );
+        }
+        if h.read::<u8>(reader + 0xc) != 0 {
+            let [base, offset]: [u32; 2] = h.read(desc + 0x88);
+            h.call_sym(
+                0x0043_d650,
+                Conv::Thiscall(desc),
+                &[offset.wrapping_sub(base).wrapping_add(buffer), n, 1],
+            );
+        }
+        0
+    }
+
+    /// `0x00578830` (cdecl `(header, size, &file, map, swap)`): the cluster
+    /// header read from the file. 0x13 unless the mapping (`+0xc` count,
+    /// `+0x10` 32-byte entries) has the `PClusterHeader` class
+    /// (`0x00c96b40`); for one with a packed class (`+0x14`): swapped
+    /// first when `swap` and `size` is 0x54 (`0x0043d6a0(header, 1)` on
+    /// the class), converted (`0x005788f0(entry, from, header, 1)`) from a
+    /// copy of the header's 0x54 bytes in `local` (21 words, after a
+    /// `PClusterHeader` constructed there, `0x00469980`) or, for a larger
+    /// header, from the file's `+4`, then swapped again when `swap`. 6
+    /// when the header's tag (`+0xc`) is not `0x00464710()`'s, else 0.
+    pub fn read_cluster_header(
+        h: &mut impl Host,
+        local: u32,
+        header: u32,
+        size: u32,
+        file: u32,
+        map: u32,
+        swap: u8,
+    ) -> u32 {
+        let count: u32 = h.read(map + 0xc);
+        let mut e: u32 = h.read(map + 0x10);
+        let end = ((count & 0x7fff_ffff) << 5).wrapping_add(e);
+        let class = h.rebase(0x00c9_6b40);
+        loop {
+            if e >= end {
+                return 0x13;
+            }
+            if h.read::<u32>(e + 8) == class {
+                break;
+            }
+            e = e.wrapping_add(0x20);
+        }
+        if h.read::<u32>(e + 0x14) != 0 {
+            if size == 0x54 && swap != 0 {
+                h.call_sym(0x0043_d6a0, Conv::Thiscall(class), &[header, 1]);
+            }
+            h.call_sym(0x0046_9980, Conv::Thiscall(local), &[]);
+            let from = if size > 0x54 {
+                h.read(file + 4)
+            } else {
+                let words: [u32; 21] = h.read(header);
+                h.write(local, words);
+                local
+            };
+            h.call_sym(0x0057_88f0, Conv::Cdecl, &[e, from, header, 1]);
+            if swap != 0 {
+                h.call_sym(0x0043_d6a0, Conv::Thiscall(class), &[header, 1]);
+            }
+        }
+        let tag: u32 = h.read(header + 0xc);
+        let want = h.call_sym(0x0046_4710, Conv::Cdecl, &[]);
+        if tag == want { 0 } else { 6 }
+    }
 }

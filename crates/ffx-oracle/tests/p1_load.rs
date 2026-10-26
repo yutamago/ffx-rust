@@ -4428,3 +4428,224 @@ fn p1c_read_list_headers_matches_the_original() {
         }
     }
 }
+
+// ---- continuation round, batch 14 (p1_reader, p1_misc) ----
+
+/// An object of `size` bytes whose vtable's slot `i` is a recording stub
+/// taking `slots[i].0` words and returning `slots[i].1`.
+fn p1c_vobj(t: &mut Twins, slots: &[(u32, u32)], size: usize) -> u32 {
+    let mut vt = Vec::new();
+    for (i, &(n, ret)) in slots.iter().enumerate() {
+        let s = t.stub_code(0x7100 + i as u32, true, n, n, ret);
+        vt.extend(s.to_le_bytes());
+    }
+    let vt = t.alloc(&vt);
+    let obj = t.junk(size, 0x31);
+    t.w32(obj, vt);
+    obj
+}
+
+#[test]
+fn p1c_read_list_data_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // (class index, list data set, in place, packed offset, swap)
+        for (k, (index, data, in_place, off, swap)) in [
+            (9u32, true, false, 0u32, false),
+            (3, true, false, 0, false),
+            (1, false, false, 0, false),
+            (1, true, true, 0, false),
+            (1, true, false, 0, true),
+            (2, true, false, 0x10, false),
+            (2, true, false, 0x80, true),
+            (4, true, false, 0, false),
+            (2, true, false, 0x40, false),
+            (1, true, false, 0xffff, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.stub(0x0043_c160, true, 2, 2, 0);
+            t.stub(0x0057_88f0, false, 4, 0, 0);
+            t.stub(0x0043_d650, true, 3, 3, 0);
+            let reader = p1c_reader(&mut t, &P1C_CLASSES, &[], 0, 0);
+            t.write(reader + 0xc, &[u8::from(swap)]);
+            if off == 0xffff {
+                // a class with a descriptor and no packed class
+                let map = t.r32(reader + 4);
+                let table = t.r32(map + 0x10);
+                t.w32(table + 4, 0);
+            } else if off != 0 {
+                let map = t.r32(reader + 4);
+                let table = t.r32(map + 0x10);
+                let packed = t.r32(table + 32 + 4);
+                t.w32(packed + 4, 0x3000_0000 | off);
+            }
+            let buffer = t.junk(0x100, 5) + 4;
+            let src = if in_place { buffer } else { t.junk(0x100, 6) };
+            let list = t.junk(0x50, 7);
+            t.w32(list + 0x30, if data { buffer + 4 } else { 0 });
+            t.w32(list + 0x34, buffer);
+            t.w32(list + 0x3c, 3);
+            let hdr = t.zeros(0x24);
+            t.w32(hdr, index);
+            t.w32(hdr + 0xc, 0x40);
+            t.w32(hdr + 0x10, 0x14);
+            let what = format!("{label}: read list data {k}");
+            t.check(
+                &what,
+                0x0057_b270,
+                Conv::Thiscall(reader),
+                &[list, src, hdr],
+                |g| Out::U32(prd::read_list_data(g, reader, list, src, hdr)),
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_read_cluster_header_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the original's frame: five arguments, the return address and
+        // ebp; its header copy at ebp - 0x54
+        let local = t.a.stack_range().end - 0x100 - 28 - 0x54;
+        let class = t.rebase(0x00c9_6b40);
+        let tag = 0x4458_3131;
+        // (has the class, packed, size, swap, tag ok)
+        for (k, (has, packed, size, swap, ok)) in [
+            (false, true, 0x54u32, 0u8, true),
+            (true, false, 0x54, 0, true),
+            (true, true, 0x54, 0, true),
+            (true, true, 0x54, 1, false),
+            (true, true, 0x60, 1, true),
+            (true, true, 0x40, 1, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.stub(0x0043_d6a0, true, 2, 2, 0);
+            t.stub(0x0057_88f0, false, 4, 0, 0);
+            let map = t.zeros(0x20);
+            let table = t.zeros(0x80);
+            t.w32(map + 0xc, 3);
+            t.w32(table + 32 * 3 + 8, class);
+            t.w32(map + 0x10, table);
+            for i in 0..3 {
+                t.w32(table + 32 * i + 8, 0x00c1_0000 + i);
+            }
+            if has {
+                t.w32(table + 32 * 2 + 8, class);
+                t.w32(table + 32 * 2 + 0x14, u32::from(packed));
+            }
+            let header = t.junk(0x60, 2);
+            t.w32(header + 0xc, if ok { tag } else { tag + 1 });
+            let file = t.zeros(8);
+            t.w32(file + 4, 0x00c2_0000);
+            t.b.set_call_top(Some(local - 0x100));
+            let what = format!("{label}: read cluster header {k}");
+            t.check(
+                &what,
+                0x0057_8830,
+                Conv::Cdecl,
+                &[header, size, file, map, u32::from(swap)],
+                |g| {
+                    Out::U32(prd::read_cluster_header(
+                        g, local, header, size, file, map, swap,
+                    ))
+                },
+            );
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_initialize_instance_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // (default buffer, construct result, member kinds, class flags)
+        for (k, (default, built, flags)) in [
+            (true, 1u32, 0x8000_0000u32),
+            (true, 1, 0),
+            (false, 0x0012_3400, 0x8000_0000),
+            (false, 0x0012_3401, 0x8000_0000),
+            (false, 1, 0x8000_0001),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.stub(0x0043_c420, true, 0, 0, 0);
+            t.stub(0x0043_c630, true, 0, 0, 0);
+            // the member type: a class of 8 bytes with its default buffer
+            let tdef = t.junk(8, 1);
+            let ty = p1c_vobj(&mut t, &[(1, 0); 12], 0xa0);
+            t.w32(ty + 0x1c, 8);
+            t.w32(ty + 0x8c, 4);
+            t.w32(ty + 0x88, 4);
+            t.w32(ty + 0x90, 0x8000_0000);
+            t.w32(ty + 0x64, tdef);
+            let mut slots = [(0u32, 0u32); 13];
+            slots[10] = (1, built);
+            let desc = p1c_vobj(&mut t, &slots, 0xa0);
+            t.w32(desc + 0x90, flags);
+            t.w32(desc + 0x8c, 2);
+            t.w32(desc + 0x1c, 0x40);
+            t.w32(desc + 0x88, 0);
+            t.w32(desc + 0x64, 0);
+            if default {
+                let d = t.junk(0x40, 2);
+                t.w32(desc + 0x64, d);
+            }
+            let parent = p1c_vobj(&mut t, &[(1, 0); 2], 0xa0);
+            t.w32(parent + 0x90, 0);
+            t.w32(parent + 0x40, 0);
+            t.w32(parent + 0x88, 0);
+            t.w32(desc + 0x40, if k == 4 { 0 } else { parent });
+            // the members: (kind info, type, flags, offset)
+            for (owner, specs) in [
+                (
+                    desc,
+                    &[
+                        (0u32, true, 0u8, 0x10u32),
+                        (1, true, 0, 0x18),
+                        (2, true, 0, 0x20),
+                        (0, false, 0, 0x28),
+                        (0, true, 2, 0x30),
+                    ][..],
+                ),
+                (parent, &[(0, true, 0, 0x8)][..]),
+            ] {
+                let head = owner + 0x44;
+                t.w32(head, head);
+                t.w32(head + 4, head);
+                for &(kind, typed, mflags, offset) in specs {
+                    let info = if kind == 0 {
+                        0
+                    } else {
+                        let i = t.zeros(0x40);
+                        t.w32(i + 0x30, kind);
+                        t.w32(i + 0x34, 2);
+                        i
+                    };
+                    let tyobj = p1c_vobj(&mut t, &[(0, 0), (0, if typed { ty } else { 0 })], 0x10);
+                    let m = p1c_vobj(&mut t, &[(0, 0), (0, info)], 0x30);
+                    t.write(m + 0x14, &[mflags]);
+                    t.w32(m + 0x18, tyobj);
+                    t.w32(m + 0x24, offset);
+                    t.w32(m + 0xc, owner);
+                    let tail = t.r32(head + 4);
+                    t.w32(m + 4, head);
+                    t.w32(tail, m + 4);
+                    t.w32(head + 4, m + 4);
+                }
+            }
+            let inst = t.junk(0x80, 3);
+            let p = inst + 2;
+            let what = format!("{label}: initialize instance {k}");
+            t.check(&what, 0x0043_ce00, Conv::Thiscall(desc), &[p], |g| {
+                Out::U32(pm::initialize_instance(g, desc, p))
+            });
+            t.reset();
+        }
+    }
+}

@@ -1130,4 +1130,18 @@ ported! {
     Phyre_PClusterReaderBinary_readListHeaders_0057c4a0 @ 0x0057_c4a0 => extern "thiscall" fn read_list_headers(this: u32, stream: u32, align: u32, size: u32, max_align: u32) -> u32 {
         p1_reader::bridge::read_list_headers(&mut mem(), this, stream, align, size, max_align)
     }
+    // ---- continuation round, batch 14 (p1_reader, p1_misc) ----
+    /// The cluster reader's instance-list data `(list, src, &header)`.
+    Phyre_PClusterReaderBinary_readListData_0057b270 @ 0x0057_b270 => extern "thiscall" fn read_list_data(this: u32, list: u32, src: u32, hdr: u32) -> u32 {
+        p1_reader::bridge::read_list_data(&mut mem(), this, list, src, hdr)
+    }
+    /// The cluster header read from the file `(header, size, &file, map, swap)`; its copy in this frame.
+    Phyre_PClusterReaderBinary_readClusterHeader_00578830 @ 0x0057_8830 => extern "C" fn read_cluster_header(header: u32, size: u32, file: u32, map: u32, swap: u32) -> u32 {
+        let mut local = StackFrame::<21>::new();
+        p1_reader::bridge::read_cluster_header(&mut mem(), local.at(), header, size, file, map, u8::try_from(swap & 0xff).unwrap_or(0))
+    }
+    /// `PClassDescriptor::initializeInstance(p)`.
+    Phyre_PClassDescriptor_initializeInstance @ 0x0043_ce00 => extern "thiscall" fn initialize_instance(this: u32, p: u32) -> u32 {
+        p1_misc::bridge::initialize_instance(&mut mem(), this, p)
+    }
 }
