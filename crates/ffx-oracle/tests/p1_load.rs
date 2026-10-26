@@ -8092,3 +8092,159 @@ fn p1e_allocate_missing_matches_the_original() {
         }
     }
 }
+
+// ---- round 4: loadCluster (p1_cluster) ----
+
+#[test]
+fn p1e_load_cluster_matches_the_original() {
+    use ffx_pload::p1_cluster::bridge as pcl;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x10ad_c1a5);
+        for case in 0..400u32 {
+            let fail = if case % 8 == 1 {
+                1
+            } else if case % 2 == 0 {
+                rng.next() % 16
+            } else {
+                99
+            };
+            let err = |k: u32| if fail == k { 0x40 + k } else { 0 };
+            let ok = |k: u32| u32::from(fail != k);
+            t.stub(0x0043_2020, false, 0, 0, 0x5500 | ok(0));
+            // the stream: slot 2 says whether it is open; +8 its name
+            let open = t.stub_code(0x7002, true, 0, 0, 0x6600 | ok(1));
+            let vt = t.zeros(0x20);
+            t.w32(vt + 8, open);
+            let stream = t.zeros(0x20);
+            t.w32(stream, vt);
+            let name = t.alloc(b"file.phyre\0");
+            t.w32(
+                stream + 8,
+                [0u32, 1, name, name | 1][(case / 8 % 4) as usize],
+            );
+            let iob = t.stub_code(0x00b0_c350, false, 0, 0, 0x00c2_0000);
+            let fprintf = t.stub_code(0x00b0_c38c, false, 3, 0, 0);
+            for (slot, f) in [(0x00b0_c350u32, iob), (0x00b0_c38c, fprintf)] {
+                let at = t.rebase(slot);
+                t.w32(at, f);
+            }
+            t.stub(0x0046_9980, true, 0, 0, 0);
+            // the file: the header, then what the reads take after it
+            let version: u32 = 0x0000_0123;
+            let platform: u32 = 0x0000_0007;
+            let hsize = [0x54u32, 0x54, 0x60, 0x40, 0x50, 0x14][(case / 5 % 6) as usize];
+            // a size with bit 31 (the block then not freed) only where
+            // the stubs, not the stream, take the bytes
+            let size = match [0x40u32, 0x20, 0x8000_0020, 0][(case / 3 % 4) as usize] {
+                0x8000_0020 if hsize == 0x54 => 0x20,
+                s => s,
+            };
+            let mut file = vec![0u8; 0x54 + 0x80];
+            let magic: u32 = if case % 7 == 3 {
+                0x5259_4850
+            } else {
+                0x5048_5952
+            };
+            file[0..4].copy_from_slice(&magic.to_le_bytes());
+            file[4..8].copy_from_slice(&hsize.to_le_bytes());
+            file[8..12].copy_from_slice(&size.to_le_bytes());
+            let v = if case % 23 == 5 { version + 1 } else { version };
+            file[0xc..0x10].copy_from_slice(&v.to_le_bytes());
+            let p = [platform, 0, platform + 1][(case / 11 % 3) as usize];
+            file[0x44..0x48].copy_from_slice(&p.to_le_bytes());
+            for (i, b) in file.iter_mut().enumerate().skip(0x48) {
+                *b = (i as u8).wrapping_mul(13) ^ 0x3c;
+            }
+            let src = t.alloc(&file);
+            let cursor = t.zeros(4);
+            t.w32(cursor, src);
+            let read_ret: u32 = if fail == 2 { 9 } else { 0 };
+            let mut body = vec![
+                0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0x8b, 0x4c, 0x24, 0x10, 0x8b, 0x35,
+            ];
+            body.extend(cursor.to_le_bytes());
+            body.extend([0xf3, 0xa4, 0x89, 0x35]);
+            body.extend(cursor.to_le_bytes());
+            body.extend([0x5f, 0x5e, 0xb8]);
+            body.extend(read_ret.to_le_bytes());
+            t.stub_body(0x0057_dd30, true, 2, 2, &body);
+            // the swapper fixes the magic (or not)
+            let mut body = vec![0x8b, 0x54, 0x24, 0x04];
+            if fail != 3 {
+                body.extend([0xc7, 0x02]);
+                body.extend(0x5048_5952u32.to_le_bytes());
+            }
+            t.stub_body(0x0043_d6a0, true, 2, 2, &body);
+            t.stub(0x0046_4710, false, 0, 0, version);
+            t.stub(0x005f_0490, false, 0, 0, platform);
+            let data = t.zeros(0x40);
+            let loader_block = t.zeros(0x20);
+            let seq = if fail == 4 {
+                vec![0]
+            } else {
+                vec![data, loader_block]
+            };
+            t.seq_stub(0x0042_fb80, false, 2, 0, &seq);
+            t.stub(0x0042_fb20, false, 1, 0, 0);
+            t.stub(0x0047_d680, true, 0, 0, 0);
+            let extra = t.zeros(0x80);
+            // the count, with bit 31 sometimes (the block then not owned)
+            let mut body = vec![0x8b, 0x54, 0x24, 0x04, 0x81, 0xca];
+            body.extend((if case % 4 == 2 { 0x8000_0000u32 } else { 0 }).to_le_bytes());
+            body.extend([0x89, 0x11, 0xc7, 0x41, 0x04]);
+            body.extend(extra.to_le_bytes());
+            body.push(0xb8);
+            body.extend(err(5).to_le_bytes());
+            t.stub_body(0x0044_a010, true, 1, 1, &body);
+            t.stub(0x0057_9010, false, 4, 0, err(6));
+            t.stub(0x0094_9256, false, 3, 0, 0);
+            t.stub(0x0047_f9d0, true, 0, 0, 0x7700 | ok(7));
+            let ids = t.zeros(4);
+            t.w32(ids, if case % 3 == 0 { version } else { version + 2 });
+            let generic = t.zeros(0x10);
+            t.w32(generic + 0xc, ids);
+            t.stub(
+                0x0057_87d0,
+                false,
+                1,
+                0,
+                if case % 5 == 1 { 0 } else { generic },
+            );
+            t.stub(0x0043_e2f0, false, 0, 0, 0x00c2_1000);
+            t.stub(0x0047_87e0, true, 3, 3, 0);
+            t.stub(0x0057_8830, false, 5, 0, err(8));
+            t.stub(0x0047_c190, true, 3, 3, err(9));
+            t.stub(0x0057_7760, true, 4, 4, 0);
+            t.stub(0x0057_c130, true, 1, 1, err(10));
+            let entry = t.zeros(0x20);
+            let registered = t.zeros(0x10);
+            t.w32(entry + 0x10, registered);
+            let found = if case % 3 == 1 { entry } else { 0 };
+            let mut body = vec![0x8b, 0x54, 0x24, 0x04, 0xff, 0x02, 0xb8];
+            body.extend(found.to_le_bytes());
+            t.stub_body(0x0057_6ef0, true, 1, 1, &body);
+            t.stub(0x0057_cb70, true, 1, 1, 0);
+            t.stub(0x0046_3d10, true, 0, 0, 0x99);
+            t.stub(0x0046_47a0, true, 4, 4, err(11));
+            t.stub(0x0046_5aa0, true, 3, 3, err(12));
+            t.stub(0x0057_7f60, true, 0, 0, 0);
+            t.stub(0x0047_9930, true, 0, 0, 0);
+            let cluster = t.junk(0x20, 1);
+            let ctx = 0x00c2_2000 + case;
+            let key = 0x00c2_3000 + case;
+            let ebp = t.a.stack_range().end - 0x100 - 16 - 8;
+            let frame = ebp - 0xdc;
+            // the frame zeroed: the two partly written flag words read 0
+            // in their other bytes (junk reads, brief 2026-10-24)
+            t.write(frame, &[0; 0xdc]);
+            t.b.set_call_top(Some(frame - 0x100));
+            let args = [stream, cluster, ctx, key];
+            let what = format!("{label}: load cluster {case}");
+            t.check(&what, 0x0057_bce0, Conv::Cdecl, &args, |g| {
+                Out::U32(pcl::load_cluster(g, args, frame))
+            });
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}

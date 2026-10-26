@@ -26,7 +26,8 @@
 //! - [`p1_mapping`]: the namespace mapping's build and class checks (round 4);
 //! - [`p1_pointers`]: the cluster reader's array and pointer-array fixups (round 4);
 //! - [`p1_body`]: the cluster reader's body, its steps after the header (round 4);
-//! - [`p1_header`]: the cluster reader's header classes (round 4).
+//! - [`p1_header`]: the cluster reader's header classes (round 4);
+//! - [`p1_cluster`]: `PBinary::loadCluster` (round 4).
 //!
 //! Everything this crate does not port is called at its address through
 //! [`ffx_graphic::host::Host`] (the allocator, the file layer, the
@@ -45,6 +46,7 @@ pub mod descriptor;
 pub mod p1_bind;
 pub mod p1_body;
 pub mod p1_buffers;
+pub mod p1_cluster;
 pub mod p1_d3d;
 pub mod p1_declare;
 pub mod p1_dynbind;

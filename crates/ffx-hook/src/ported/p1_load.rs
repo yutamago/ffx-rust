@@ -10,8 +10,8 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_pload::{
-    cluster, descriptor, p1_bind, p1_body, p1_buffers, p1_d3d, p1_declare, p1_dynbind, p1_fixup,
-    p1_fixups, p1_header, p1_lists, p1_loader, p1_mapping, p1_misc, p1_pointers, p1_post,
+    cluster, descriptor, p1_bind, p1_body, p1_buffers, p1_cluster, p1_d3d, p1_declare, p1_dynbind,
+    p1_fixup, p1_fixups, p1_header, p1_lists, p1_loader, p1_mapping, p1_misc, p1_pointers, p1_post,
     p1_reader, p1_tree, p1_types, stream, types,
 };
 
@@ -1319,5 +1319,11 @@ ported! {
     Phyre_PSerialization_PBinary_PInternal_PNamespaceMapping_allocateMissingClassDescriptors @ 0x0047_c190 => extern "thiscall" fn allocate_missing(this: u32, ns: u32, ctx: u32, verbose: u32) -> u32 {
         let mut f = StackFrame::<{ p1_mapping::bridge::ALLOCATE_FRAME as usize / 4 }>::new();
         p1_mapping::bridge::allocate_missing(&mut mem(), this, [ns, ctx, verbose], f.at())
+    }
+    // ---- round 4 (p1_cluster) ----
+    /// `PSerialization::PBinary::loadCluster(stream, cluster, ctx, key)` -> 0 or an error; the header, mapping and reader (and the key word) in this frame.
+    Phyre_PSerialization_PBinary_loadCluster @ 0x0057_bce0 => extern "C" fn load_cluster(stream: u32, cluster: u32, ctx: u32, key: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_cluster::bridge::FRAME as usize / 4 }>::new();
+        p1_cluster::bridge::load_cluster(&mut mem(), [stream, cluster, ctx, key], f.at())
     }
 }
