@@ -21,6 +21,10 @@
 # drawn, so each key comes 30-60 frames after its state. The map words
 # (g_SaveData +0) are waited on through the title, and each field's shots
 # on ctrl work 0's count (0x01325d94; count 101, as in field-walk.txt).
+# The title's too (count 101, its menu shown, as boot.txt's shot 4): a
+# fixed 120 frames after its map word left it black in one Rust run beside
+# two other games (2026-10-26; the title's assets load in real time), and
+# its Load key went unseen (waitfor 0xc timed out at frame 2418).
 # No shots of the save or load lists: their dates are the files' times
 # (the sandbox copy's and the save's, by the wall clock).
 #
@@ -94,7 +98,9 @@ waitfor 0x0112ca90:2 5d01 ffff 1500
 wait 60
 press start 3 20
 waitfor 0x0112ca90:2 1700 ffff 1500
-wait 120
+waitfor 0x01325d94:4 00000000 c0ffffff 600
+waitfor 0x01325d94:4 40000000 c0ffffff 600
+wait 37
 shot $OUT\menu-save-4.bmp
 # Load, entry 1, Yes
 key 1c 3 3
