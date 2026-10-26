@@ -18,6 +18,7 @@ use ffx_prender::glue9::bridge as g9;
 use ffx_prender::glue10::bridge as g10;
 use ffx_prender::glue11::bridge as g11;
 use ffx_prender::h3_glue12::bridge as g12;
+use ffx_prender::h3_glue13::bridge as g13;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1309,6 +1310,29 @@ ported! {
     /// `ModelBuffer_ReleaseBufferByIndex(index)`.
     ModelBuffer_ReleaseBufferByIndex @ 0x0072_c1b0 => extern "C" fn model_buffer_release(index: u32) {
         g12::model_buffer_release(&mut mem(), index);
+    }
+
+    // ---- round 4 batch 13 (ffx_prender::h3_glue13) ----
+    /// `BrokenScreenEffect_ctor_006d4ba0(this)`.
+    BrokenScreenEffect_ctor_006d4ba0 @ 0x006d_4ba0 => extern "thiscall" fn broken_screen_ctor(this: u32) -> u32 {
+        g13::broken_screen_ctor(&mut mem(), this)
+    }
+    /// `graphicVFXUpdateTexture(a, b, name)`.
+    graphicVFXUpdateTexture @ 0x0064_5aa0 => extern "C" fn vfx_update_texture(a: u32, b: u32, name: u32) {
+        g13::vfx_update_texture(&mut mem(), a, b, name);
+    }
+    /// `PhyreScene_setupMapFog_0066ee70(scene)`.
+    PhyreScene_setupMapFog_0066ee70 @ 0x0066_ee70 => extern "thiscall" fn scene_setup_map_fog(this: u32) -> u32 {
+        g13::scene_setup_map_fog(&mut mem(), this)
+    }
+    /// `ClassVFXRenderDataTable_Clear(this)`.
+    ClassVFXRenderDataTable_Clear @ 0x0069_f000 => extern "thiscall" fn vfx_table_clear(this: u32) {
+        let mut f = StackFrame::<5>::new();
+        g13::vfx_table_clear(&mut mem(), f.at() + 0x14, this);
+    }
+    /// `RenderDelegationHelper_unregisterDelegationOfGivenTaskAndData(this, task, data, size)`.
+    RenderDelegationHelper_unregisterDelegationOfGivenTaskAndData @ 0x006a_e340 => extern "thiscall" fn delegation_unregister(this: u32, task: u32, data: u32, size: u32) -> u32 {
+        g13::delegation_unregister(&mut mem(), this, task, data, size)
     }
 }
 

@@ -455,7 +455,7 @@ pub mod bridge {
     }
 
     /// Copies the C string at `src` to `dst`, its 0 included.
-    fn copy_str(h: &mut impl Host, dst: u32, src: u32) {
+    pub(crate) fn copy_str(h: &mut impl Host, dst: u32, src: u32) {
         let mut i = 0u32;
         loop {
             let c: u8 = h.read(src.wrapping_add(i));
@@ -468,7 +468,7 @@ pub mod bridge {
     }
 
     /// Whether the C strings at `a` and `b` are equal.
-    fn str_eq(h: &impl Host, a: u32, b: u32) -> bool {
+    pub(crate) fn str_eq(h: &impl Host, a: u32, b: u32) -> bool {
         let mut i = 0u32;
         loop {
             let x: u8 = h.read(a.wrapping_add(i));
@@ -754,7 +754,7 @@ pub mod bridge {
     }
 
     /// An empty list head at `at`: its six words point at itself.
-    fn empty_head(h: &mut impl Host, at: u32) {
+    pub(crate) fn empty_head(h: &mut impl Host, at: u32) {
         for k in 0..6 {
             h.write(at + 4 * k, at);
         }
@@ -878,7 +878,7 @@ pub mod bridge {
 
     /// The live object of a holder: `*holder` unless its byte `+4` is
     /// set (then 0).
-    fn live(h: &impl Host, holder: u32) -> u32 {
+    pub(crate) fn live(h: &impl Host, holder: u32) -> u32 {
         if h.read::<u8>(holder + 4) == 0 {
             h.read(holder)
         } else {
@@ -1163,7 +1163,7 @@ pub mod bridge {
     }
 
     /// Frees (`user_free_thunk`) the pointer at `at` unless it is null.
-    fn free_word(h: &mut impl Host, at: u32) {
+    pub(crate) fn free_word(h: &mut impl Host, at: u32) {
         let p: u32 = h.read(at);
         if p != 0 {
             h.call_sym(USER_FREE, Conv::Cdecl, &[p]);
