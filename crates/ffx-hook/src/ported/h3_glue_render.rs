@@ -46,6 +46,7 @@ use ffx_prender::h3_glue37::bridge as g37;
 use ffx_prender::h3_glue38::bridge as g38;
 use ffx_prender::h3_glue39::bridge as g39;
 use ffx_prender::h3_glue40::bridge as g40;
+use ffx_prender::h3_glue41::bridge as g41;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1905,6 +1906,19 @@ ported! {
     /// the face buttons' scratch values end in `id`'s and `y`'s slots.
     DrawCrossButtonIconRGBA @ 0x008e_6070 => extern "C" fn draw_cross_button_icon(id: u32, x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32; slots: u32) -> u32 {
         g40::draw_cross_button_icon(&mut mem(), slots, id, x, y, w, h, c0, c1)
+    }
+
+    // ---- round 10 batch 41 (ffx_prender::h3_glue41) ----
+    /// `PhyreScene_DrawZPrePass(this)`: the loaded characters' meshes with
+    /// an additional pre-pass on a fake-transparent material; 0.
+    PhyreScene_DrawZPrePass @ 0x0065_1070 => extern "thiscall" fn scene_draw_z_prepass(this: u32) -> u32 {
+        g41::draw_z_prepass(&mut mem(), this)
+    }
+    /// `PhyreScene_RenderMF152Related(this)`: the MF152 effect's world
+    /// pass and motion blur; the scene's error or 0.
+    PhyreScene_RenderMF152Related @ 0x0065_3230 => extern "thiscall" fn scene_render_mf152(this: u32) -> u32 {
+        let mut f = StackFrame::<0xc>::new();
+        g41::render_mf152(&mut mem(), f.at() + 0x30, this)
     }
 }
 
