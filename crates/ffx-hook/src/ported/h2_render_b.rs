@@ -1973,6 +1973,18 @@ ported! {
     Phyre_PSprite_PSpriteCollection_Bind @ 0x0056_91b0 => extern "C" fn s_005691b0() -> u32 {
         ffx_prender::h1_bind::bridge::bind(&mut mem(), const { ffx_prender::h2_binds2::bind_of(0x0056_91b0) })
     }
+    // ---- h2-render-b rest (h2_more13) ----
+    /// `PRendererD3D11::bindRenderTargets(this, flags)` -> `al`.
+    PRendererD3D11_bindRenderTargets_0058c830 @ 0x0058_c830 => extern "thiscall" fn s_0058c830(this: u32, flags: u32) -> u8 {
+        // ebp - 0x23c .. ebp: the null-view array, locals, the viewport
+        let mut frame = super::StackFrame::<0x8f>::new();
+        let at = frame.at();
+        ffx_prender::h2_more13::bridge::bind_targets(&mut mem(), at, this, flags)
+    }
+    /// `setTextureParameters(this, owner, program, index, entries, unused, count)` -> `al` 1.
+    Phyre_PRendering_PShaderProgramBindingNVN_setTextureParameters @ 0x0059_b3d0 => extern "thiscall" fn s_0059b3d0(this: u32, owner: u32, program: u32, index: u32, entries: u32, _unused: u32, count: u32) -> u8 {
+        ffx_prender::h2_more13::bridge::set_texture_parameters(&mut mem(), this, owner, program, index, entries, count as u16)
+    }
 }
 
 /// The `PNamedSemanticDescriptor` constructor's words in
