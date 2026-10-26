@@ -12,7 +12,9 @@
 //! - [`menu`]: the escape and save menus, `IggyMenu`/`IggyMenuManager`,
 //!   `IconPanel`, `TextUtil`, scene cursors, the Iggy heap;
 //! - [`misc`]: forwarders, PS2 packet/DMA/GS helpers;
-//! - [`copies`]: exact copies of other modules' ports (`tools/dupes.py`).
+//! - [`copies`]: exact copies of other modules' ports (`tools/dupes.py`);
+//! - [`r3`]: round 3: the wide cluster/font calls, singletons, array
+//!   helpers, dlmalloc's `create_mspace_with_base`, menu textures.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -35,4 +37,5 @@ pub mod frames;
 pub mod menu;
 pub mod misc;
 pub mod movie;
+pub mod r3;
 pub mod sound;

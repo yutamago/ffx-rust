@@ -24,7 +24,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
-use ffx_glue_other::{effect as e, frames as fr, menu as mn, misc as m, movie as mv, sound as s};
+use ffx_glue_other::{
+    effect as e, frames as fr, menu as mn, misc as m, movie as mv, r3, sound as s,
+};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -4649,6 +4651,958 @@ fn frames_loading_focus_slots_callback() {
                 Conv::Stdcall,
                 &[a, b, c],
                 |g| u(m::iggy_manager_handle_callback(g, a, b, c)),
+            );
+        }
+    }
+}
+
+/// A search tree over `nodes` in order (the middle one the root, parents
+/// linked, leaves pointing at `head`); its root.
+fn tree(t: &mut Twins, nodes: &[u32], head: u32, parent: u32) -> u32 {
+    if nodes.is_empty() {
+        return head;
+    }
+    let mid = nodes.len() / 2;
+    let nd = nodes[mid];
+    t.w8(nd + 0xd, 0);
+    t.w32(nd + 4, parent);
+    let l = tree(t, &nodes[..mid], head, nd);
+    let r = tree(t, &nodes[mid + 1..], head, nd);
+    t.w32(nd, l);
+    t.w32(nd + 8, r);
+    nd
+}
+
+/// Round 3, batch 1: the wide calls (`TextUtil_init`,
+/// `TOMkpCrossEasyStrFontSClut`), four singletons, two reserves, the
+/// 0x40-element assign, the tree erase, `create_mspace_with_base`, the
+/// escape menu's cancel input, the wave textures, the opus size sum,
+/// `rcbgRestoreReg`, `MenuUnloadTexture`.
+#[test]
+fn r3_wide_singletons_arrays_frames() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_3b01);
+        let stubs: [(u32, bool, u32, u32); 30] = [
+            (r3::ASYNC_LOAD_GET, false, 0, 0),
+            (r3::ASYNC_LOAD_CLUSTER, false, 9, 0),
+            (r3::CROSS_EASY_RGBA, false, 10, 0),
+            (m::OPERATOR_NEW, false, 1, 0),
+            (r3::ASYNC_LOAD_MANAGER.2, true, 0, 0),
+            (r3::POST_PROCESS_MANAGER.2, true, 0, 0),
+            (r3::POST_PROCESS_TWEAK.2, true, 0, 0),
+            (r3::TEXTURE_ANIMATION_CTOR, true, 0, 0),
+            (r3::TEXTURE_ANIMATION_SETUP, true, 0, 0),
+            (s::USER_MALLOC, false, 1, 0),
+            (s::USER_FREE, false, 1, 0),
+            (fr::MEMCPY, false, 3, 0),
+            (r3::ALIGNED_ALLOC, false, 2, 0),
+            (r3::COPY_ELEMENTS40, false, 3, 0),
+            (r3::DESTROY_ELEMENTS40, false, 2, 0),
+            (r3::INIT_MPARAMS, false, 0, 0),
+            (r3::INIT_USER_MSTATE, false, 2, 0),
+            (mn::CALL_AS3, true, 5, 5),
+            (r3::LOAD_MENU_TEXTURE, true, 1, 1),
+            (r3::ACC_HEADER_SIZE, false, 1, 0),
+            (r3::OPUS_ENTRY, false, 3, 0),
+            (r3::ACC_ENTRY_SIZE, false, 1, 0),
+            (r3::RC_PACKET_SET_BUFFER, false, 2, 0),
+            (r3::RC_IDENTITY, false, 1, 0),
+            (r3::RC_PACKET_STEP, false, 1, 0),
+            (r3::RC_PACKET_SEND, false, 1, 0),
+            (r3::UI_RELEASE_TEXTURE, true, 1, 1),
+            (r3::SET_TEXTURE_UNLOADED, true, 1, 1),
+            (r3::SCENE_UNLOAD_TEXTURE, true, 1, 1),
+            (r3::MAKE_EVENT, false, 4, 0),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        // callees that write through the pointers they get
+        let erase_cell = t.zeros(4);
+        t.stub_at(
+            r3::TREE_ERASE,
+            true,
+            2,
+            2,
+            &[Write {
+                arg: Some(0),
+                offset: 0,
+                cell: erase_cell,
+            }],
+        );
+        let packet_cell = t.zeros(4);
+        t.stub_at(
+            r3::RC_PACKET_INIT,
+            false,
+            1,
+            0,
+            &[Write {
+                arg: Some(0),
+                offset: 4,
+                cell: packet_cell,
+            }],
+        );
+        let name_cells = [t.zeros(4), t.zeros(4)];
+        t.stub_at(
+            r3::TEXTURE_NAME,
+            false,
+            3,
+            0,
+            &[
+                Write {
+                    arg: Some(1),
+                    offset: 0,
+                    cell: name_cells[0],
+                },
+                Write {
+                    arg: Some(1),
+                    offset: 0xfc,
+                    cell: name_cells[1],
+                },
+            ],
+        );
+        let wide = |h: &mut G, f: u32, a: &[u32]| h.0.call(f, Conv::Cdecl, a).unwrap().eax;
+        for i in 0..32 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.word();
+                t.ret(sym, v);
+            }
+            for c in [erase_cell, packet_cell, name_cells[0], name_cells[1]] {
+                let v = rng.next();
+                t.w32(c, v);
+            }
+            for tag in [r3::TREE_ERASE, r3::RC_PACKET_INIT, r3::TEXTURE_NAME] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            // TextUtil_init, the font call
+            let table = t.rebase(r3::TEXT_CLUSTERS);
+            let (x, y) = (rng.next(), rng.next());
+            t.w32(table, x);
+            t.w32(table + 4, y);
+            let n = rng.word();
+            t.check(
+                &format!("{w} TextUtil_init {n:#x}"),
+                0x006f_6370,
+                Conv::Thiscall(n),
+                &[],
+                |g| u(r3::text_util_init(g, n, &mut { wide })),
+            );
+            let args = [
+                rng.word(),
+                rng.float(),
+                rng.float(),
+                rng.word(),
+                rng.float(),
+                rng.float(),
+            ];
+            t.check(
+                &format!("{w} TOMkpCrossEasyStrFontSClut"),
+                0x0090_1660,
+                Conv::Cdecl,
+                &args,
+                |g| u(r3::mkp_cross_easy(g, args, &mut { wide })),
+            );
+            // the singletons
+            for (sym, inst) in [
+                (0x0069_1a80, r3::ASYNC_LOAD_MANAGER),
+                (0x0069_2a90, r3::POST_PROCESS_MANAGER),
+                (0x0069_2b10, r3::POST_PROCESS_TWEAK),
+            ] {
+                let gv = if rng.below(2) == 0 { 0 } else { rng.next() };
+                t.g32(inst.0.sym, gv);
+                if rng.below(3) == 0 {
+                    t.ret(m::OPERATOR_NEW, 0);
+                }
+                t.check(
+                    &format!("{w} createInstance {sym:#x}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[],
+                    |g| {
+                        mn::create_instance(g, inst);
+                        Out::None
+                    },
+                );
+            }
+            let gv = if rng.below(2) == 0 { 0 } else { rng.next() };
+            t.g32(r3::TEXTURE_ANIMATION_MANAGER.sym, gv);
+            if rng.below(3) == 0 {
+                t.ret(m::OPERATOR_NEW, 0);
+            }
+            t.check(
+                &format!("{w} TextureAnimationManager create"),
+                0x006b_00a0,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    r3::texture_animation_create(g);
+                    Out::None
+                },
+            );
+            // the reserves
+            for (sym, scale) in [(0x0070_edb0u32, 8u32), (0x0070_fbf0, 4)] {
+                let arr = t.zeros(0xc);
+                let count = rng.below(5);
+                t.w32(arr, count);
+                let cap = rng.next();
+                t.w32(arr + 4, cap);
+                let storage = if rng.below(3) == 0 { 0 } else { rng.next() };
+                t.w32(arr + 8, storage);
+                let n = [0, 1, 7, 0x8000_0000, u32::MAX, rng.next()][rng.below(6) as usize];
+                if rng.below(3) == 0 {
+                    t.ret(s::USER_MALLOC, 0);
+                }
+                t.check(
+                    &format!("{w} reserve {sym:#x} storage {storage:#x} n {n:#x}"),
+                    sym,
+                    Conv::Thiscall(arr),
+                    &[n],
+                    |g| {
+                        u(if scale == 8 {
+                            r3::array8_reserve(g, arr, n)
+                        } else {
+                            s::sfx_id_array_reserve(g, arr, n)
+                        })
+                    },
+                );
+            }
+            // the 0x40-element assign
+            let this = t.zeros(8);
+            let old = [0, rng.next()][rng.below(2) as usize];
+            let word = [rng.below(4), 0x8000_0003, 0x4000_0002, rng.next()][rng.below(4) as usize];
+            t.w32(this, word);
+            t.w32(this + 4, old);
+            let src = t.zeros(8);
+            let count = [0, 0x8000_0000, 2, 0x8000_0002, rng.next()][rng.below(5) as usize];
+            t.w32(src, count);
+            let data = rng.next();
+            t.w32(src + 4, data);
+            match rng.below(3) {
+                0 => t.ret(r3::ALIGNED_ALLOC, 0),
+                1 => t.ret(r3::ALIGNED_ALLOC, old),
+                _ => {}
+            }
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} PArray40 assign"),
+                0x006a_fa70,
+                Conv::Thiscall(this),
+                &[src],
+                ebp + 8,
+                &[(0, 4)],
+                |g| {
+                    put_args(g, ebp + 8, &[src]);
+                    u(r3::parray40_assign(g, this, ebp + 8))
+                },
+            );
+            // the tree erase: 0..7 nodes, the value one of theirs or not
+            let head = t.zeros(0x30);
+            t.w8(head + 0xd, 1);
+            let count = rng.below(8) as usize;
+            let nodes: Vec<u32> = (0..count).map(|_| t.zeros(0x30)).collect();
+            let values: Vec<u32> = (0..count).map(|_| rng.below(6)).collect();
+            for (&nd, &v) in nodes.iter().zip(&values) {
+                t.w32(nd + 0x28, v);
+            }
+            let root = tree(&mut t, &nodes, head, head);
+            t.w32(head + 4, root);
+            t.w32(head, nodes.first().copied().unwrap_or(head));
+            t.w32(head + 8, nodes.last().copied().unwrap_or(head));
+            let map = t.zeros(4);
+            t.w32(map, head);
+            let value = rng.below(7);
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} tree erase {value} of {values:?}"),
+                0x006a_1d10,
+                Conv::Thiscall(map),
+                &[value],
+                ebp + 8,
+                &[(0, 4)],
+                |g| {
+                    put_args(g, ebp + 8, &[value]);
+                    u(r3::tree_erase_value(g, map, ebp + 8))
+                },
+            );
+            // create_mspace_with_base
+            let magic = rng.below(2);
+            t.g32(r3::MPARAMS_MAGIC, magic);
+            let page = [0x1000, 0, rng.next()][rng.below(3) as usize];
+            t.g32(r3::MPARAMS_PAGE_SIZE, page);
+            let m_state = t.random(&mut rng, 0x200);
+            t.ret(r3::INIT_USER_MSTATE, m_state);
+            let capacity = [
+                0x210,
+                0x211,
+                0xffff_fdf0u32.wrapping_sub(page),
+                0xffff_fdefu32.wrapping_sub(page),
+                rng.next(),
+                0x10_0000,
+            ][rng.below(6) as usize];
+            let (base, locked) = (rng.next(), rng.word());
+            t.check(
+                &format!("{w} create_mspace_with_base {capacity:#x} page {page:#x}"),
+                0x006e_bd30,
+                Conv::Cdecl,
+                &[base, capacity, locked],
+                |g| u(r3::create_mspace_with_base(g, base, capacity, locked)),
+            );
+            // the escape menu's cancel input
+            let menu = t.random(&mut rng, 0x100);
+            let flag = [0, 1, 0x80][rng.below(3) as usize];
+            t.w8(menu + 0xfc, flag);
+            let input = t.zeros(4);
+            let kind = rng.below(10);
+            t.w32(input, kind);
+            let b = rng.next();
+            let ebp = t.ebp_for(2);
+            t.check_framed(
+                &format!("{w} esc cancel input {flag} {kind}"),
+                0x0070_18a0,
+                Conv::Thiscall(menu),
+                &[input, b],
+                ebp - 0xc,
+                &[],
+                |g| Out::U8(r3::esc_on_cancel_input(g, ebp - 0xc, menu, input)),
+            );
+            // the wave textures
+            let scene = rng.next();
+            t.g32(r3::PHYRE_SCENE.sym, scene);
+            t.check(
+                &format!("{w} wave textures"),
+                0x0067_cba0,
+                Conv::Cdecl,
+                &[],
+                |g| u(r3::load_main_menu_wave_texture(g)),
+            );
+            // the opus size sum
+            let rec = t.random(&mut rng, 8);
+            let n = rng.below(5) as u16;
+            t.write(rec + 6, &n.to_le_bytes());
+            let entry = t.random(&mut rng, 0x20);
+            t.ret(r3::OPUS_ENTRY, entry);
+            let out = t.random(&mut rng, 4);
+            let base = rng.next();
+            t.check(
+                &format!("{w} opus_0706_acc_draw {n}"),
+                0x007f_7360,
+                Conv::Cdecl,
+                &[rec, base, out],
+                |g| u(r3::opus_0706_acc_draw(g, rec, base, out)),
+            );
+            // rcbgRestoreReg
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} rcbgRestoreReg"),
+                0x0092_0250,
+                Conv::Cdecl,
+                &[],
+                ebp - 8,
+                &[(0, 8)],
+                |g| u(r3::rcbg_restore_reg(g, ebp - 8)),
+            );
+            // MenuUnloadTexture
+            let ui = t.zeros(0x2c00);
+            let holder = t.zeros(4);
+            let geometry = rng.next();
+            t.w32(holder, geometry);
+            t.w32(ui + 0x2bd4, holder);
+            t.g32(r3::GRAPHIC_UI.sym, ui);
+            let id = if rng.below(4) == 0 { 0 } else { rng.next() };
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} MenuUnloadTexture {id:#x}"),
+                0x0067_dbf0,
+                Conv::Stdcall,
+                &[id],
+                ebp - 0x104,
+                &[(0, 0x100)],
+                |g| {
+                    let r = r3::menu_unload_texture(g, ebp - 0x104, id);
+                    // for id 0 the original's eax is its cookie arithmetic
+                    if id == 0 { Out::None } else { u(r) }
+                },
+            );
+        }
+    }
+}
+
+/// Round 3, batch 2: three more singletons, `InitVFXRenderDataLine`, the
+/// two tree adds, `MotionBlur_initialize` (eleven words), the escape
+/// menu's enable flags (junk words), the `GDraw` dynamic buffer lock, the
+/// button icon UVs.
+#[test]
+fn r3_singletons_trees_frames() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_3b02);
+        let mut stubs: Vec<(u32, bool, u32, u32)> = vec![
+            (m::OPERATOR_NEW, false, 1, 0),
+            (r3::BLUR_EFFECT_NEW.2, true, 0, 0),
+            (r3::MOTION_BLUR_NEW.2, true, 0, 0),
+            (r3::ABMAP_CTOR, true, 1, 1),
+            (r3::TAGGED_TREE_INSERT, true, 1, 1),
+            (r3::VFX_INT_TREE_INSERT, true, 1, 1),
+            (r3::POOL_GIVE, true, 1, 1),
+            (r3::TREE_FIXUP, true, 1, 1),
+            (r3::ASYNC_LOAD_GET, false, 0, 0),
+            (r3::ASYNC_LOAD_CLUSTER, false, 11, 0),
+            (r3::CALL_FLASH_1, false, 6, 0),
+            (r3::GDRAW_MAP_RESOURCE, false, 3, 0),
+            (r3::REMAP_GET, false, 0, 0),
+            (r3::SET_QUAD_UV, true, 5, 5),
+        ];
+        for (k, &sym) in r3::VFX_LINE_CALLS.iter().enumerate() {
+            stubs.push((sym, false, [4, 2, 2, 3, 2, 2][k], 0));
+        }
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let warn = t.stub_code(fr::GDRAW_SEND_WARNING, false, 4, 0);
+        t.g32(fr::GDRAW_SEND_WARNING, warn);
+        let mut cells = vec![];
+        let mut cell = |t: &mut Twins| {
+            let c = t.zeros(4);
+            cells.push(c);
+            c
+        };
+        let refill = cell(&mut t);
+        t.stub_at(
+            r3::POOL_REFILL,
+            true,
+            1,
+            1,
+            &[Write {
+                arg: None,
+                offset: 0,
+                cell: refill,
+            }],
+        );
+        let path = cell(&mut t);
+        t.stub_at(
+            r3::TEXTURE_NAME,
+            false,
+            3,
+            0,
+            &[Write {
+                arg: Some(1),
+                offset: 0,
+                cell: path,
+            }],
+        );
+        let (kind, flag) = (cell(&mut t), cell(&mut t));
+        t.stub_at(
+            r3::DATA_VALUE_SET_BOOL,
+            false,
+            2,
+            0,
+            &[
+                Write {
+                    arg: Some(0),
+                    offset: 0,
+                    cell: kind,
+                },
+                Write {
+                    arg: Some(0),
+                    offset: 8,
+                    cell: flag,
+                },
+            ],
+        );
+        let uv = [cell(&mut t), cell(&mut t), cell(&mut t), cell(&mut t)];
+        for (k, sym) in [r3::REMAP_PC_UV, r3::REMAP_PAD_UV].into_iter().enumerate() {
+            t.stub_at(
+                sym,
+                true,
+                3,
+                3,
+                &[
+                    Write {
+                        arg: Some(1),
+                        offset: 0,
+                        cell: uv[2 * k],
+                    },
+                    Write {
+                        arg: Some(2),
+                        offset: 0,
+                        cell: uv[2 * k + 1],
+                    },
+                ],
+            );
+        }
+        let wide = |h: &mut G, f: u32, a: &[u32]| h.0.call(f, Conv::Cdecl, a).unwrap().eax;
+        let state = t.zeros(0xa00);
+        t.g32(r3::GDRAW_STATE, state);
+        for i in 0..32 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.word();
+                t.ret(sym, v);
+            }
+            for tag in [
+                r3::POOL_REFILL,
+                r3::TEXTURE_NAME,
+                r3::DATA_VALUE_SET_BOOL,
+                r3::REMAP_PC_UV,
+                r3::REMAP_PAD_UV,
+                fr::GDRAW_SEND_WARNING,
+            ] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            for &c in &cells {
+                let v = rng.float();
+                t.w32(c, v);
+            }
+            // the singletons
+            for (sym, inst) in [
+                (0x006c_34d0, r3::BLUR_EFFECT_NEW),
+                (0x006c_5030, r3::MOTION_BLUR_NEW),
+            ] {
+                let gv = if rng.below(2) == 0 { 0 } else { rng.next() };
+                t.g32(inst.0.sym, gv);
+                if rng.below(3) == 0 {
+                    t.ret(m::OPERATOR_NEW, 0);
+                }
+                t.check(
+                    &format!("{w} createInstance {sym:#x}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[],
+                    |g| {
+                        mn::create_instance(g, inst);
+                        Out::None
+                    },
+                );
+            }
+            let gv = if rng.below(2) == 0 { 0 } else { rng.next() };
+            t.g32(r3::GRAPHIC_ABMAP.sym, gv);
+            if rng.below(3) == 0 {
+                t.ret(m::OPERATOR_NEW, 0);
+            }
+            let arg = rng.next();
+            t.check(
+                &format!("{w} abmap create"),
+                0x0068_4a60,
+                Conv::Cdecl,
+                &[arg],
+                |g| {
+                    r3::abmap_create(g, arg);
+                    Out::None
+                },
+            );
+            // InitVFXRenderDataLine
+            for &sym in &[r3::VFX_LINE_CALLS[0], r3::VFX_LINE_CALLS[2]] {
+                if rng.below(3) == 0 {
+                    t.ret(sym, 0);
+                }
+            }
+            if rng.below(3) == 0 {
+                t.ret(r3::VFX_LINE_CALLS[1], 0);
+            } else {
+                let data = t.random(&mut rng, 0xc0);
+                t.ret(r3::VFX_LINE_CALLS[1], data);
+            }
+            let args = [rng.next(), rng.next(), rng.next(), rng.next()];
+            t.check(
+                &format!("{w} InitVFXRenderDataLine"),
+                0x0071_12d0,
+                Conv::Cdecl,
+                &args,
+                |g| {
+                    u(r3::init_vfx_render_data_line(
+                        g, args[0], args[1], args[2], args[3],
+                    ))
+                },
+            );
+            // the tree adds
+            for (sym, insert) in [
+                (0x006a_2830, r3::TAGGED_TREE_INSERT),
+                (0x0070_cd60, r3::VFX_INT_TREE_INSERT),
+            ] {
+                let this = t.random(&mut rng, 0x24);
+                let node = t.random(&mut rng, 0x14);
+                match rng.below(3) {
+                    0 => t.w32(this + 0x18, node),
+                    1 => {
+                        t.w32(this + 0x18, 0);
+                        t.w32(refill, node);
+                    }
+                    _ => {
+                        t.w32(this + 0x18, 0);
+                        t.w32(refill, 0);
+                    }
+                }
+                if rng.below(2) == 0 {
+                    t.ret(insert, 0);
+                }
+                let (key, value) = (t.random(&mut rng, 4), t.random(&mut rng, 4));
+                t.check(
+                    &format!("{w} tree add {sym:#x}"),
+                    sym,
+                    Conv::Thiscall(this),
+                    &[key, value],
+                    |g| u(r3::tree_add(g, insert, this, key, value)),
+                );
+            }
+            // MotionBlur_initialize
+            let this = rng.word();
+            let abc = [rng.next(), rng.word(), rng.word()];
+            let ebp = t.ebp_for(3);
+            t.check_framed(
+                &format!("{w} MotionBlur_initialize"),
+                0x006c_5360,
+                Conv::Thiscall(this),
+                &abc,
+                ebp - 0x104,
+                &[(0, 0x100)],
+                |g| {
+                    u(r3::motion_blur_initialize(
+                        g,
+                        ebp - 0x104,
+                        this,
+                        [abc[1], abc[2]],
+                        &mut { wide },
+                    ))
+                },
+            );
+            // the escape menu's enable flags: the value's never-written
+            // words are 0 on both sides
+            let menu = rng.next();
+            let on = rng.word();
+            let ebp = t.ebp_for(1);
+            let frame = ebp - 0x10;
+            t.w32(frame + 4, 0);
+            t.w32(frame + 0xc, 0);
+            t.check_framed(
+                &format!("{w} esc enable flags"),
+                0x006f_ca50,
+                Conv::Thiscall(menu),
+                &[on],
+                frame,
+                &[(0, 4), (8, 4)],
+                |g| u(r3::esc_set_enable_para_and_special(g, frame, menu, on)),
+            );
+            // the GDraw dynamic buffer lock
+            let buffer = t.zeros(0x10);
+            let size = [0, 0x100, rng.next()][rng.below(3) as usize];
+            let cursor = [0, 0x80, size, rng.next()][rng.below(4) as usize];
+            let n = [0, 0x80, 0x81, size, size.wrapping_add(1), rng.next()][rng.below(6) as usize];
+            let words = [rng.next(), size, rng.next(), cursor];
+            for (k, &v) in words.iter().enumerate() {
+                t.w32(buffer + 4 * k as u32, v);
+            }
+            let peak = [0, n, rng.next()][rng.below(3) as usize];
+            t.w32(state + 0x9b8, peak);
+            let ctx = rng.next();
+            t.w32(state + 4, ctx);
+            if rng.below(3) == 0 {
+                t.ret(r3::GDRAW_MAP_RESOURCE, 0);
+            }
+            t.check(
+                &format!("{w} gdraw lock {n:#x} size {size:#x} cursor {cursor:#x}"),
+                0x00a3_cf40,
+                Conv::Cdecl,
+                &[buffer, n],
+                |g| u(r3::gdraw_lock_dynamic(g, buffer, n)),
+            );
+            // the button icon UVs
+            let this = t.zeros(0x60);
+            let id = rng.word();
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} button icon uvs"),
+                0x006e_8020,
+                Conv::Thiscall(this),
+                &[id],
+                ebp - 8,
+                &[(0, 8)],
+                |g| u(r3::button_icon_set_uvs(g, ebp - 8, this, id)),
+            );
+        }
+    }
+}
+
+/// `MotionBlur_ctor_006c4ec0` (its own oracles: the singleton test stubs
+/// it).
+#[test]
+fn r3_motion_blur_ctor() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_3b03);
+        t.stub(r3::POST_EFFECT_BASE_CTOR, true, 0, 0);
+        t.stub(r3::MEMBER68_CTOR, true, 0, 0);
+        for i in 0..16 {
+            let w = format!("{name} {i}");
+            for tag in [r3::POST_EFFECT_BASE_CTOR, r3::MEMBER68_CTOR] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            let this = t.random(&mut rng, 0x90);
+            t.check(
+                &format!("{w} MotionBlur ctor"),
+                0x006c_4ec0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(r3::motion_blur_ctor(g, this)),
+            );
+        }
+    }
+}
+
+/// Round 3, batch 2: `ClusterManager_getPClusterByName` (its iterator in
+/// the argument slot), `FmodFile_open`, `SfxBank_destroyEvents`, the map
+/// range erase, `PArray_appendInto`, `MenuManager_TakeMultiRecord`,
+/// `MenuDynamicGeometry_setMeshWorldMatrix`.
+#[test]
+fn r3_cluster_map_file_records() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_3b04);
+        let stubs: [(u32, bool, u32, u32); 14] = [
+            (r3::DJB_HASH, false, 1, 0),
+            (m::OPERATOR_NEW, false, 1, 0),
+            (r3::PSTREAM_FILE_CTOR, true, 5, 5),
+            (r3::PSTREAM_FILE_IS_OPEN, true, 0, 0),
+            (r3::PSTREAM_FILE_SIZE, true, 0, 0),
+            (r3::PSTREAM_FILE_DTOR, true, 0, 0),
+            (s::OPERATOR_DELETE, false, 1, 0),
+            (s::USER_FREE, false, 1, 0),
+            (r3::POOL_RELEASE, true, 0, 0),
+            (r3::LIST_TEARDOWN, true, 0, 0),
+            (r3::TREE_NODE_NEW, true, 1, 1),
+            (r3::ALIGNED_FREE, false, 1, 0),
+            (r3::SET_MESH_WORLD, true, 2, 2),
+            (r3::SET_MIN_AND_MAX, true, 2, 2),
+        ];
+        for &(sym, this, n, pops) in &stubs {
+            t.stub(sym, this, n, pops);
+        }
+        let wait = t.stub_code(mn::WAIT_FOR_SINGLE_OBJECT.sym, false, 2, 2);
+        t.g32(mn::WAIT_FOR_SINGLE_OBJECT.sym, wait);
+        let release = t.stub_code(mn::RELEASE_MUTEX.sym, false, 1, 1);
+        t.g32(mn::RELEASE_MUTEX.sym, release);
+        let erase_cell = t.zeros(4);
+        t.stub_at(
+            r3::MAP_ERASE_KEY,
+            true,
+            4,
+            4,
+            &[Write {
+                arg: Some(0),
+                offset: 0,
+                cell: erase_cell,
+            }],
+        );
+        // the unlink makes the node's next the list's first
+        let log_unlink = t.stub_code(r3::LIST_UNLINK, true, 1, 1);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x10, 0x89, 0x51, 0x0c, 0xe9];
+        let at = t.cave_next;
+        c.extend(log_unlink.wrapping_sub(at + 14).to_le_bytes());
+        let unlink = t.code(&c);
+        t.jump(r3::LIST_UNLINK, unlink);
+        for i in 0..32 {
+            let w = format!("{name} {i}");
+            let log = t.log;
+            t.w32(log, 0);
+            for &(sym, ..) in &stubs {
+                let v = rng.word();
+                t.ret(sym, v);
+            }
+            for tag in [
+                mn::WAIT_FOR_SINGLE_OBJECT.sym,
+                mn::RELEASE_MUTEX.sym,
+                r3::MAP_ERASE_KEY,
+                r3::LIST_UNLINK,
+            ] {
+                let v = rng.next();
+                t.ret(tag, v);
+            }
+            let v = rng.next();
+            t.w32(erase_cell, v);
+            // a map of 0..7 sorted keys
+            let head = t.zeros(0x20);
+            t.w8(head + 0xd, 1);
+            let count = rng.below(8) as usize;
+            let nodes: Vec<u32> = (0..count).map(|_| t.zeros(0x20)).collect();
+            let mut keys: Vec<u32> = (0..count).map(|_| rng.below(20)).collect();
+            keys.sort_unstable();
+            for (&nd, &k) in nodes.iter().zip(&keys) {
+                t.w32(nd + 0x10, k);
+                let entry = t.zeros(8);
+                let first = rng.next();
+                t.w32(entry, first);
+                let n = [0, 1, 2, u32::MAX][rng.below(4) as usize];
+                t.w32(entry + 4, n);
+                t.w32(nd + 0x14, entry);
+            }
+            let root = tree(&mut t, &nodes, head, head);
+            t.w32(head + 4, root);
+            t.w32(head, nodes.first().copied().unwrap_or(head));
+            t.w32(head + 8, nodes.last().copied().unwrap_or(head));
+            // getPClusterByName
+            let mgr = t.zeros(0x20);
+            t.w32(mgr + 0x10, head);
+            let holder = t.zeros(4);
+            let mutex = rng.next();
+            t.w32(holder, mutex);
+            t.w32(mgr + 0x18, holder);
+            let hash = rng.below(22);
+            t.ret(r3::DJB_HASH, hash);
+            let text = rng.next();
+            let ebp = t.ebp_for(1);
+            t.check_framed(
+                &format!("{w} getPClusterByName {hash} of {keys:?}"),
+                0x0069_b4b0,
+                Conv::Thiscall(mgr),
+                &[text],
+                ebp + 8,
+                &[(0, 4)],
+                |g| {
+                    put_args(g, ebp + 8, &[text]);
+                    u(r3::get_pcluster_by_name(g, mgr, ebp + 8))
+                },
+            );
+            // the range erase, from an in-order node to a later one or the end
+            if !nodes.is_empty() {
+                let from = rng.below(count as u32) as usize;
+                let to = from + rng.below((count - from) as u32 + 1) as usize;
+                let first = nodes[from];
+                let last = nodes.get(to).copied().unwrap_or(head);
+                let node = t.random(&mut rng, 0x20);
+                t.ret(r3::TREE_NODE_NEW, node);
+                let map = t.zeros(4);
+                t.w32(map, head);
+                let ebp = t.ebp_for(2);
+                t.check_framed(
+                    &format!("{w} erase range {from}..{to} of {count}"),
+                    0x0069_d990,
+                    Conv::Thiscall(map),
+                    &[first, last],
+                    ebp - 4,
+                    &[(0, 4), (0xc, 8)],
+                    |g| {
+                        put_args(g, ebp + 8, &[first, last]);
+                        u(r3::vfx_map_erase_range(g, ebp - 4, map, ebp + 8))
+                    },
+                );
+            }
+            // FmodFile_open
+            let prefix = rng.next();
+            t.g32(r3::FMOD_FILE_PREFIX, prefix);
+            if rng.below(3) == 0 {
+                t.ret(m::OPERATOR_NEW, 0);
+            }
+            let open = [0, 1, 0x100, 0x1_0001][rng.below(4) as usize];
+            t.ret(r3::PSTREAM_FILE_IS_OPEN, open);
+            let (size, handle) = (t.zeros(4), t.zeros(4));
+            let file = if rng.below(5) == 0 { 0 } else { rng.next() };
+            let (unicode, user) = (rng.next(), rng.next());
+            t.check(
+                &format!("{w} FmodFile_open {open:#x}"),
+                0x0070_8510,
+                Conv::Stdcall,
+                &[file, unicode, size, handle, user],
+                |g| u(r3::fmod_file_open(g, file, size, handle)),
+            );
+            // SfxBank_destroyEvents
+            let bank = t.zeros(0x30);
+            let list = bank + 4;
+            let n = rng.below(4);
+            let events: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+            let end = if rng.below(2) == 0 { 0 } else { list };
+            for (k, &e) in events.iter().enumerate() {
+                let next = events.get(k + 1).copied().unwrap_or(end);
+                t.w32(e, next);
+                let data = if rng.below(3) == 0 { 0 } else { rng.next() };
+                t.w32(e + 0x18, data);
+            }
+            t.w32(list + 0xc, events.first().copied().unwrap_or(end));
+            t.check(
+                &format!("{w} SfxBank destroy events {n}"),
+                0x0071_0960,
+                Conv::Thiscall(bank),
+                &[],
+                |g| u(r3::sfx_bank_destroy_events(g, bank)),
+            );
+            // PArray_appendInto
+            let arr = t.zeros(8);
+            let n = rng.below(4);
+            let word = [n, n | 0x8000_0000][rng.below(2) as usize];
+            t.w32(arr, word);
+            let block = t.random(&mut rng, 0x10);
+            // no storage only for an empty array (the copy reads it)
+            let old = if n == 0 && rng.below(2) == 0 {
+                0
+            } else {
+                block
+            };
+            t.w32(arr + 4, old);
+            let dst = match rng.below(4) {
+                0 => 0,
+                1 => old,
+                _ => t.zeros(0x14),
+            };
+            let value = t.random(&mut rng, 4);
+            t.check(
+                &format!("{w} appendInto {word:#x} old {old:#x} dst {dst:#x}"),
+                0x006a_25e0,
+                Conv::Thiscall(arr),
+                &[dst, value],
+                |g| u(r3::parray_append_into(g, arr, dst, value)),
+            );
+            // MenuManager_TakeMultiRecord
+            let mm = t.zeros(0x5b80);
+            for (cap, pool, used, count) in [
+                (0x15e8, 0x15ec, 0x2bfc, 0x2c50),
+                (0x4240, 0x4244, 0x583c, 0x5840),
+            ] {
+                let records = t.random(&mut rng, 0x10);
+                t.w32(mm + pool, records);
+                let c = [0, 3, 0x8000_0004, 4][rng.below(4) as usize];
+                t.w32(mm + cap, c);
+                let taken = [3, 4, rng.below(5)][rng.below(3) as usize];
+                t.w32(mm + used, taken);
+                t.w32(mm + count, rng.below(8));
+            }
+            t.w8(mm + 0x5b74, 1);
+            let chain = rng.below(3);
+            t.check(
+                &format!("{w} TakeMultiRecord {chain}"),
+                0x0067_c170,
+                Conv::Thiscall(mm),
+                &[chain],
+                |g| u(r3::take_multi_record(g, mm, chain)),
+            );
+            // MenuDynamicGeometry_setMeshWorldMatrix
+            let geometry = t.zeros(0x28);
+            let instance = t.zeros(0xb0);
+            for k in 0..6 {
+                let v = rng.float();
+                t.w32(instance + 0x98 + 4 * k, v);
+            }
+            let mesh = t.zeros(0x20);
+            let bounds = if rng.below(4) == 0 { 0 } else { rng.next() };
+            t.w32(mesh + 0x1c, bounds);
+            t.w32(
+                geometry + 0x24,
+                [0, instance, instance][rng.below(3) as usize],
+            );
+            t.w32(geometry + 0xc, [0, mesh, mesh][rng.below(3) as usize]);
+            let scene = rng.next();
+            t.g32(r3::PHYRE_SCENE.sym, scene);
+            let ebp = t.ebp_for(0);
+            t.check_framed(
+                &format!("{w} setMeshWorldMatrix"),
+                0x006a_2e60,
+                Conv::Thiscall(geometry),
+                &[],
+                ebp - 0x28,
+                &[(0, 12), (0x10, 12), (0x20, 8)],
+                |g| u(r3::set_mesh_world_matrix(g, ebp - 0x28, geometry)),
             );
         }
     }

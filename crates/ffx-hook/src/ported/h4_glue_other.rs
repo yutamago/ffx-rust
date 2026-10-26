@@ -11,7 +11,7 @@
 //! through `fld`/`fstp`, which the bridges model.
 
 use ffx_glue_other::{
-    copies as c, effect as e, frames as fr, menu as mn, misc as m, movie as mv, sound as s,
+    copies as c, effect as e, frames as fr, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1045,5 +1045,174 @@ ported! {
     /// `IggyMenuManager_callback_00a260f0(a, b, c)`.
     IggyMenuManager_callback_00a260f0 @ 0x00a2_60f0 => extern "stdcall" fn iggy_manager_callback(a: u32, b: u32, c: u32) -> u32 {
         m::iggy_manager_handle_callback(&mut mem(), a, b, c)
+    }
+    /// `BlurEffectEx_setParam48_006c45c0(this; x, y, z, w)`: copies from
+    /// its own argument words (the caller's, through `args`).
+    BlurEffectEx_setParam48_006c45c0 @ 0x006c_45c0 => extern "thiscall" fn blur_set_param48(this: u32, _x: u32, _y: u32, _z: u32, _w: u32; args: u32) -> u32 {
+        fr::post_set_param(&mut mem(), fr::PARAM_48, this, args)
+    }
+    /// `BlurEffectEx_setParam4c_006c4680(this; x, y, z, w)`.
+    BlurEffectEx_setParam4c_006c4680 @ 0x006c_4680 => extern "thiscall" fn blur_set_param4c(this: u32, _x: u32, _y: u32, _z: u32, _w: u32; args: u32) -> u32 {
+        fr::post_set_param(&mut mem(), fr::PARAM_4C, this, args)
+    }
+    /// `BlurEffectEx_setParam50_006c4730(this; x, y, z, w)`.
+    BlurEffectEx_setParam50_006c4730 @ 0x006c_4730 => extern "thiscall" fn blur_set_param50(this: u32, _x: u32, _y: u32, _z: u32, _w: u32; args: u32) -> u32 {
+        fr::post_set_param(&mut mem(), fr::PARAM_50, this, args)
+    }
+    /// `RadialBlur_setParam54_007036f0(this; x, y, z, w)`.
+    RadialBlur_setParam54_007036f0 @ 0x0070_36f0 => extern "thiscall" fn radial_set_param54(this: u32, _x: u32, _y: u32, _z: u32, _w: u32; args: u32) -> u32 {
+        fr::post_set_param(&mut mem(), fr::PARAM_54, this, args)
+    }
+    /// `TextUtil_init(n)` (`n` in `ecx`): the nine-word cluster loads go
+    /// through `call_cdecl_words`.
+    TextUtil_init @ 0x006f_6370 => extern "thiscall" fn text_util_init(n: u32) -> u32 {
+        r3::text_util_init(&mut mem(), n, &mut |_, f, a| super::call_cdecl_words(f, a))
+    }
+    /// `TOMkpCrossEasyStrFontSClut(s, x, y, w, sx, sy)`: the ten-word call
+    /// through `call_cdecl_words`.
+    TOMkpCrossEasyStrFontSClut @ 0x0090_1660 => extern "C" fn mkp_cross_easy(s: u32, x: u32, y: u32, w: u32, sx: u32, sy: u32) -> u32 {
+        r3::mkp_cross_easy(&mut mem(), [s, x, y, w, sx, sy], &mut |_, f, a| super::call_cdecl_words(f, a))
+    }
+    /// `AsyncLoadManager_createInstance_00691a80()`.
+    AsyncLoadManager_createInstance_00691a80 @ 0x0069_1a80 => extern "C" fn async_load_manager_create() {
+        mn::create_instance(&mut mem(), r3::ASYNC_LOAD_MANAGER);
+    }
+    /// `PostProcessManager_createInstance_00692a90()`.
+    PostProcessManager_createInstance_00692a90 @ 0x0069_2a90 => extern "C" fn post_process_manager_create() {
+        mn::create_instance(&mut mem(), r3::POST_PROCESS_MANAGER);
+    }
+    /// `PostProcessTweakUtil_createInstance_00692b10()`.
+    PostProcessTweakUtil_createInstance_00692b10 @ 0x0069_2b10 => extern "C" fn post_process_tweak_create() {
+        mn::create_instance(&mut mem(), r3::POST_PROCESS_TWEAK);
+    }
+    /// `TextureAnimationManager_createInstance_006b00a0()`.
+    TextureAnimationManager_createInstance_006b00a0 @ 0x006b_00a0 => extern "C" fn texture_animation_create() {
+        r3::texture_animation_create(&mut mem());
+    }
+    /// `Array8_reserve_0070edb0(this; n)`.
+    Array8_reserve_0070edb0 @ 0x0070_edb0 => extern "thiscall" fn array8_reserve(this: u32, n: u32) -> u32 {
+        r3::array8_reserve(&mut mem(), this, n)
+    }
+    /// `WordArray_reserve_0070fbf0(this; n)`: the body of
+    /// `SfxIdArray_reserve_0070d3a0`.
+    WordArray_reserve_0070fbf0 @ 0x0070_fbf0 => extern "thiscall" fn word_array_reserve(this: u32, n: u32) -> u32 {
+        s::sfx_id_array_reserve(&mut mem(), this, n)
+    }
+    /// `PArray40_assign_006afa70(this; src)`: keeps `src`'s storage in its
+    /// argument slot, as the original does.
+    PArray40_assign_006afa70 @ 0x006a_fa70 => extern "thiscall" fn parray40_assign(this: u32, _src: u32; args: u32) -> u32 {
+        r3::parray40_assign(&mut mem(), this, args)
+    }
+    /// `Tree_eraseValue_006a1d10(this; value)`: the erase writes its
+    /// iterator into the argument slot.
+    Tree_eraseValue_006a1d10 @ 0x006a_1d10 => extern "thiscall" fn tree_erase_value(this: u32, _value: u32; args: u32) -> u32 {
+        r3::tree_erase_value(&mut mem(), this, args)
+    }
+    /// `create_mspace_with_base(base, capacity, locked)`.
+    create_mspace_with_base @ 0x006e_bd30 => extern "C" fn create_mspace_with_base(base: u32, capacity: u32, locked: u32) -> u32 {
+        r3::create_mspace_with_base(&mut mem(), base, capacity, locked)
+    }
+    /// `FFEscMenu_onCancelInput_007018a0(this; input, b)`.
+    FFEscMenu_onCancelInput_007018a0 @ 0x0070_18a0 => extern "thiscall" fn esc_on_cancel_input(this: u32, input: u32, _b: u32) -> u8 {
+        let mut frame = StackFrame::<3>::new();
+        r3::esc_on_cancel_input(&mut mem(), frame.at(), this, input)
+    }
+    /// `MenuTextureManager_LoadMainMenuWaveTexture()`.
+    MenuTextureManager_LoadMainMenuWaveTexture @ 0x0067_cba0 => extern "C" fn load_main_menu_wave_texture() -> u32 {
+        r3::load_main_menu_wave_texture(&mut mem())
+    }
+    /// `opus_0706_acc_draw(rec, base, out)`.
+    opus_0706_acc_draw @ 0x007f_7360 => extern "C" fn opus_0706_acc_draw(rec: u32, base: u32, out: u32) -> u32 {
+        r3::opus_0706_acc_draw(&mut mem(), rec, base, out)
+    }
+    /// `rcbgRestoreReg()`.
+    rcbgRestoreReg @ 0x0092_0250 => extern "C" fn rcbg_restore_reg() -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        r3::rcbg_restore_reg(&mut mem(), frame.at())
+    }
+    /// `MenuTextureManager_MenuUnloadTexture(id)`.
+    MenuTextureManager_MenuUnloadTexture @ 0x0067_dbf0 => extern "stdcall" fn menu_unload_texture(id: u32) -> u32 {
+        let mut frame = StackFrame::<{ (r3::UNLOAD_TEXTURE_FRAME / 4) as usize }>::new();
+        r3::menu_unload_texture(&mut mem(), frame.at(), id)
+    }
+    /// `BlurEffect_createInstance_006c34d0()`.
+    BlurEffect_createInstance_006c34d0 @ 0x006c_34d0 => extern "C" fn blur_effect_create() {
+        mn::create_instance(&mut mem(), r3::BLUR_EFFECT_NEW);
+    }
+    /// `MotionBlur_createInstance_006c5030()`.
+    MotionBlur_createInstance_006c5030 @ 0x006c_5030 => extern "C" fn motion_blur_create() {
+        mn::create_instance(&mut mem(), r3::MOTION_BLUR_NEW);
+    }
+    /// `GraphicAbmap_createInstance_00684a60(arg)`.
+    GraphicAbmap_createInstance_00684a60 @ 0x0068_4a60 => extern "C" fn abmap_create(arg: u32) {
+        r3::abmap_create(&mut mem(), arg);
+    }
+    /// `MotionBlur_ctor_006c4ec0(this)`.
+    MotionBlur_ctor_006c4ec0 @ 0x006c_4ec0 => extern "thiscall" fn motion_blur_ctor(this: u32) -> u32 {
+        r3::motion_blur_ctor(&mut mem(), this)
+    }
+    /// `InitVFXRenderDataLine(a, b, c, d)`.
+    InitVFXRenderDataLine @ 0x0071_12d0 => extern "C" fn init_vfx_render_data_line(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        r3::init_vfx_render_data_line(&mut mem(), a, b, c, d)
+    }
+    /// `TaggedTree_add_006a2830(this; &key, &value)`.
+    TaggedTree_add_006a2830 @ 0x006a_2830 => extern "thiscall" fn tagged_tree_add(this: u32, key: u32, value: u32) -> u32 {
+        r3::tree_add(&mut mem(), r3::TAGGED_TREE_INSERT, this, key, value)
+    }
+    /// `vfxIntTree_add_0070cd60(this; &key, &value)`.
+    vfxIntTree_add_0070cd60 @ 0x0070_cd60 => extern "thiscall" fn vfx_int_tree_add(this: u32, key: u32, value: u32) -> u32 {
+        r3::tree_add(&mut mem(), r3::VFX_INT_TREE_INSERT, this, key, value)
+    }
+    /// `MotionBlur_initialize(this; a, b, c)`: the eleven-word cluster
+    /// load through `call_cdecl_words`.
+    MotionBlur_initialize @ 0x006c_5360 => extern "thiscall" fn motion_blur_initialize(this: u32, _a: u32, b: u32, c: u32) -> u32 {
+        let mut frame = StackFrame::<{ (r3::MOTION_BLUR_FRAME / 4) as usize }>::new();
+        r3::motion_blur_initialize(&mut mem(), frame.at(), this, [b, c], &mut |_, f, a| super::call_cdecl_words(f, a))
+    }
+    /// `FFEscMenu_setEnableParaAndSpecial_006fca50(this; on)`.
+    FFEscMenu_setEnableParaAndSpecial_006fca50 @ 0x006f_ca50 => extern "thiscall" fn esc_set_enable_para_and_special(this: u32, on: u32) -> u32 {
+        let mut frame = StackFrame::<4>::new();
+        r3::esc_set_enable_para_and_special(&mut mem(), frame.at(), this, on)
+    }
+    /// `gdraw_lockDynamicBuffer_00a3cf40(buffer, n)`.
+    gdraw_lockDynamicBuffer_00a3cf40 @ 0x00a3_cf40 => extern "C" fn gdraw_lock_dynamic(buffer: u32, n: u32) -> u32 {
+        r3::gdraw_lock_dynamic(&mut mem(), buffer, n)
+    }
+    /// `ButtonIcon_setUvs_006e8020(this; id)`.
+    ButtonIcon_setUvs_006e8020 @ 0x006e_8020 => extern "thiscall" fn button_icon_set_uvs(this: u32, id: u32) -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        r3::button_icon_set_uvs(&mut mem(), frame.at(), this, id)
+    }
+    /// `ClusterManager_getPClusterByName(this; name)`: leaves the map
+    /// iterator in its argument slot, as the original does.
+    ClusterManager_getPClusterByName @ 0x0069_b4b0 => extern "thiscall" fn get_pcluster_by_name(this: u32, _name: u32; args: u32) -> u32 {
+        r3::get_pcluster_by_name(&mut mem(), this, args)
+    }
+    /// `FmodFile_open(name, unicode, filesize, handle, userdata)`.
+    FmodFile_open @ 0x0070_8510 => extern "stdcall" fn fmod_file_open(name: u32, _unicode: u32, filesize: u32, handle: u32, _userdata: u32) -> u32 {
+        r3::fmod_file_open(&mut mem(), name, filesize, handle)
+    }
+    /// `SfxBank_destroyEvents_00710960(this)`.
+    SfxBank_destroyEvents_00710960 @ 0x0071_0960 => extern "thiscall" fn sfx_bank_destroy_events(this: u32) -> u32 {
+        r3::sfx_bank_destroy_events(&mut mem(), this)
+    }
+    /// `VfxRenderDataMap_eraseRange_0069d990(this; first, last)`: steps
+    /// the iterator in its argument slot.
+    VfxRenderDataMap_eraseRange_0069d990 @ 0x0069_d990 => extern "thiscall" fn vfx_map_erase_range(this: u32, _first: u32, _last: u32; args: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        r3::vfx_map_erase_range(&mut mem(), frame.at(), this, args)
+    }
+    /// `PArray_appendInto_006a25e0(this; dst, &value)`.
+    PArray_appendInto_006a25e0 @ 0x006a_25e0 => extern "thiscall" fn parray_append_into(this: u32, dst: u32, value: u32) -> u32 {
+        r3::parray_append_into(&mut mem(), this, dst, value)
+    }
+    /// `MenuManager_TakeMultiRecord_0067c170(this; chain)`.
+    MenuManager_TakeMultiRecord_0067c170 @ 0x0067_c170 => extern "thiscall" fn take_multi_record(this: u32, chain: u32) -> u32 {
+        r3::take_multi_record(&mut mem(), this, chain)
+    }
+    /// `MenuDynamicGeometry_setMeshWorldMatrix(this)`.
+    MenuDynamicGeometry_setMeshWorldMatrix @ 0x006a_2e60 => extern "thiscall" fn set_mesh_world_matrix(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (r3::MESH_WORLD_FRAME / 4) as usize }>::new();
+        r3::set_mesh_world_matrix(&mut mem(), frame.at(), this)
     }
 }
