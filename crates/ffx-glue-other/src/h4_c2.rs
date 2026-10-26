@@ -433,8 +433,13 @@ fn tree_begin(h: &impl Host, tree: u32) -> u32 {
 
 /// Walks the sound tree at `this + 0x64` in order (`successor` taken one
 /// node ahead, as the originals do), calling `visit` on each node.
-fn walk_sounds<H: Host>(h: &mut H, this: u32, mut visit: impl FnMut(&mut H, u32)) {
-    let tree = this + 0x64;
+fn walk_sounds<H: Host>(h: &mut H, this: u32, visit: impl FnMut(&mut H, u32)) {
+    walk_tree(h, this + 0x64, visit);
+}
+
+/// Walks the `PRedBlackTree` at `tree` in order (`successor` taken one
+/// node ahead, as the originals do), calling `visit` on each node.
+pub(crate) fn walk_tree<H: Host>(h: &mut H, tree: u32, mut visit: impl FnMut(&mut H, u32)) {
     let mut node = tree_begin(h, tree);
     if node == tree {
         return;

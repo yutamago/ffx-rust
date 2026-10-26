@@ -55,7 +55,11 @@
 //!   gradient box), the distortion grid's weights, the button icons' UV,
 //!   size and position remaps;
 //! - [`h4_e5`]: its fifth batch: the FMOD music's start, read, cross-play,
-//!   data send and background-music switch.
+//!   data send and background-music switch;
+//! - [`h4_f1`]: continuation round 4, batch 1: the FMOD voice's start and
+//!   restart, the sound loop, the sound effects' whole volume and project
+//!   unload, a sound event's volume fade, the menu manager's instance
+//!   setups and buffer chain swap.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -89,6 +93,7 @@ pub mod h4_e2;
 pub mod h4_e3;
 pub mod h4_e4;
 pub mod h4_e5;
+pub mod h4_f1;
 pub mod menu;
 pub mod misc;
 pub mod movie;

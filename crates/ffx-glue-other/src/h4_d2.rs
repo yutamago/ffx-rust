@@ -30,7 +30,7 @@ pub const SOUND_NAMES: [(u32, u32); 4] = [
 ];
 
 /// `strcmp`'s sign (-1, 0, 1) of two C strings, unsigned bytes.
-fn strcmp(h: &impl Host, a: u32, b: u32) -> u32 {
+pub(crate) fn strcmp(h: &impl Host, a: u32, b: u32) -> u32 {
     let mut k = 0u32;
     loop {
         let x: u8 = h.read(a.wrapping_add(k));

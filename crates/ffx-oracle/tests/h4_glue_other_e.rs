@@ -25,7 +25,8 @@ use std::path::PathBuf;
 
 use ffx_bridge::Mem;
 use ffx_glue_other::{
-    frames as fr, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2, h4_e3 as e3, h4_e4 as e4, h4_e5 as e5,
+    frames as fr, h4_c2 as c2, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2, h4_e3 as e3, h4_e4 as e4,
+    h4_e5 as e5, h4_f1 as f1,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -179,6 +180,8 @@ enum Out {
     None,
     /// `eax`.
     U32(u32),
+    /// `edx:eax`.
+    U64(u64),
 }
 
 fn u(v: u32) -> Out {
@@ -221,6 +224,8 @@ struct Twins {
     cells: HashMap<u32, u32>,
     /// The `ST0` cell (`f64`) of each float stub, by tag.
     fcells: HashMap<u32, u32>,
+    /// The `edx` cell of each 64-bit stub, by tag.
+    hi_cells: HashMap<u32, u32>,
 }
 
 impl Twins {
@@ -237,6 +242,7 @@ impl Twins {
             cave_next: cave,
             cells: HashMap::new(),
             fcells: HashMap::new(),
+            hi_cells: HashMap::new(),
         };
         t.log = t.zeros(0x4_0000);
         t.tramp = t.code(&TRAMPOLINE);
@@ -354,6 +360,37 @@ impl Twins {
         float: bool,
         writes: &[Write],
     ) -> u32 {
+        self.stub_code_edx(tag, this, n, pops, float, writes, None)
+    }
+
+    /// A 64-bit stub at the original `sym`: [`Twins::stub_at`] that also
+    /// returns `edx` from a second cell ([`Twins::ret_u64`]).
+    fn stub_u64(&mut self, sym: u32, this: bool, n: u32, pops: u32) {
+        let hi = self.zeros(4);
+        self.hi_cells.insert(sym, hi);
+        let addr = self.stub_code_edx(sym, this, n, pops, false, &[], Some(hi));
+        self.jump(sym, addr);
+    }
+
+    /// Sets the `edx:eax` result of the stub tagged `tag`.
+    fn ret_u64(&mut self, tag: u32, v: u64) {
+        self.ret(tag, v as u32);
+        let hi = self.hi_cells[&tag];
+        self.w32(hi, (v >> 32) as u32);
+    }
+
+    /// [`Twins::stub_code`], with `edx` loaded from `edx` at the end.
+    #[allow(clippy::too_many_arguments)]
+    fn stub_code_edx(
+        &mut self,
+        tag: u32,
+        this: bool,
+        n: u32,
+        pops: u32,
+        float: bool,
+        writes: &[Write],
+        edx: Option<u32>,
+    ) -> u32 {
         assert!(n <= 14);
         let cell = self.zeros(4);
         self.cells.insert(tag, cell);
@@ -394,6 +431,10 @@ impl Twins {
             self.fcells.insert(tag, f);
             c.extend([0xdd, 0x05]);
             c.extend(f.to_le_bytes()); // fld qword [f]
+        }
+        if let Some(hi) = edx {
+            c.extend([0x8b, 0x15]);
+            c.extend(hi.to_le_bytes()); // mov edx, [hi]
         }
         if pops == 0 {
             c.push(0xc3);
@@ -490,8 +531,13 @@ impl Twins {
             "{what}: the original leaves ST0 set ({:?})",
             ra.st0
         );
-        if let Out::U32(v) = out {
-            assert_eq!(ra.eax, v, "{what}: eax");
+        match out {
+            Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
+            Out::U64(v) => {
+                assert_eq!(ra.eax, v as u32, "{what}: eax");
+                assert_eq!(ra.edx, (v >> 32) as u32, "{what}: edx");
+            }
+            Out::None => {}
         }
         self.diff(what);
         ra.eax
@@ -2172,6 +2218,585 @@ fn e5_music(cross: bool) {
                 &[a, flag],
                 |g| u(e5::music_data_send(g, this, flag)),
             );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 4, batch 1 (ffx_glue_other::h4_f1)
+
+/// `graphicGetTimeInMicroseconds`.
+const TIME_US: u32 = 0x0064_1420;
+
+/// Random words over `n` bytes at a fresh block; its address.
+fn random_block(t: &mut Twins, rng: &mut Rng, n: u32) -> u32 {
+    let at = t.zeros(n as usize);
+    for k in 0..n / 4 {
+        let v = rng.next();
+        t.w32(at + 4 * k, v);
+    }
+    at
+}
+
+fn rand_u64(rng: &mut Rng) -> u64 {
+    (u64::from(rng.next()) << 32) | u64::from(rng.next())
+}
+
+/// The voice's start and restart.
+#[test]
+fn f1_voice() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f101);
+        let state = t.zeros(4);
+        t.stub_at(fr::FMOD_GET_STATE, false, 2, 2, &[wr(1, state)]);
+        t.stub_at(EVENT_SET_CALLBACK, false, 3, 3, &[]);
+        t.stub_at(e3::EVENT_START, false, 1, 1, &[]);
+        t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+        t.stub_at(e2::VOICE_VOLUME_DIRECT, true, 2, 2, &[]);
+        t.stub_u64(TIME_US, false, 0, 0);
+        let release = t.stub_code(0x0bad_f108, true, 3, 3, false, &[]);
+        let vtable = t.zeros(0x10);
+        t.w32(vtable + 8, release);
+        let group = t.zeros(4);
+        t.w32(group, vtable);
+        let tags = [
+            fr::FMOD_GET_STATE,
+            EVENT_SET_CALLBACK,
+            e3::EVENT_START,
+            fr::ERRCHECK,
+            e2::VOICE_VOLUME_DIRECT,
+            0x0bad_f108,
+        ];
+        let this = t.zeros(0x90);
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[e3::FULL_VOLUME], &[]);
+            let now = rand_u64(&mut rng);
+            t.ret_u64(TIME_US, now);
+            for k in 0..0x24 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            let ev = rng.next() | 1;
+            t.w32(this + 0x14, rng.pick(&[0, ev, ev, ev]));
+            t.w32(this + 0x58, rng.pick(&[0, 1, 1, 2]));
+            t.w32(
+                this + 0x64,
+                rng.pick(&[0, 4, 5, 6, 0x8000_0000, 0x7fff_ffff]),
+            );
+            t.w32(this + 0x10, rng.pick(&[0, group, group]));
+            t.w32(this + 0x80, rng.pick(&[0, 1, 2]));
+            let flag = rng.pick(&[0, 1, 2]);
+            t.g32(f1::VOICE_NO_PLAY, flag);
+            let st = rng.pick(&[1, 1, 0, 2, 8]);
+            t.w32(state, st);
+            let r = rng.pick(&[0, 0, 1, 0x24]);
+            t.ret(fr::FMOD_GET_STATE, r);
+            let (a, b) = (rng.next(), rng.next());
+            let frame = t.ebp_for(2) - f1::VOICE_FRAME;
+            t.check_framed_conv(
+                &format!("{w} start"),
+                0x0070_b5c0,
+                Conv::Thiscall(this),
+                &[a, b],
+                frame,
+                &[(0, 4)],
+                |g| u(f1::voice_start(g, frame, this)),
+            );
+            let frame = t.ebp_for(0) - f1::VOICE_FRAME;
+            t.check_framed_conv(
+                &format!("{w} restart"),
+                0x0070_b160,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 4)],
+                |g| u(f1::voice_restart(g, frame, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The sound loop.
+#[test]
+fn f1_sound_loop() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f102);
+        t.stub_u64(TIME_US, false, 0, 0);
+        let stubs = [
+            (f1::SYSTEM_UPDATE, false, 1, 1),
+            (fr::ERRCHECK, false, 3, 0),
+            (f1::VOICE_UPDATE_STATE, true, 1, 1),
+            (f1::MUSIC_LOOP_VOLUME, true, 0, 0),
+            (f1::VOICE_LOOP_VOLUME, true, 0, 0),
+            (f1::VOICE_RESTART, true, 0, 0),
+            (f1::MUSIC_RESTART, true, 1, 1),
+            (f1::SFX_UPDATE, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let tags = stubs.map(|s| s.0);
+        let this = t.zeros(0x18);
+        let music = t.zeros(0x20);
+        let last_at = t.rebase(f1::LAST_LOOP);
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let d = rng.double();
+            let us = rng.pick(&[1e6, 1e6, d]);
+            let at = t.rebase(f1::US_PER_S);
+            t.write(at, &us.to_le_bytes());
+            let last = rand_u64(&mut rng);
+            let r = u64::from(rng.next());
+            let big = (u64::from(rng.next()) << 32) | 0x1234;
+            let step = rng.pick(&[
+                0,
+                1,
+                0x80e8,
+                0x80e9,
+                16_667,
+                33_334,
+                1_000_000,
+                r,
+                big,
+                u64::MAX,
+                u64::MAX - 0x80e8,
+                1 << 63,
+                (1 << 63) + 0x801,
+                (1 << 53) + 1,
+            ]);
+            let now = last.wrapping_add(step);
+            t.ret_u64(TIME_US, now);
+            t.w32(last_at, last as u32);
+            t.w32(last_at + 4, (last >> 32) as u32);
+            let sys = rng.next();
+            t.w32(this + 4, rng.pick(&[0, sys]));
+            let (v, s) = (rng.next(), rng.next());
+            t.w32(this + 0xc, music);
+            t.w32(this + 0x10, v);
+            t.w32(this + 0x14, s);
+            let track = rng.next();
+            t.w32(music + 0x18, track);
+            t.check_conv(
+                &format!("{w} step {step:#x}"),
+                0x0070_70d0,
+                Conv::Thiscall(this),
+                &[],
+                |g| u(f1::sound_loop(g, this)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `Phyre_PRedBlackTree_successor`'s stub: logs, returns the node's `+0x1c`.
+fn stub_successor_e(t: &mut Twins) {
+    let sym = c2::TREE_SUCCESSOR;
+    let rest = t.stub_code(sym, true, 1, 1, false, &[]);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x40, 0x1c, 0xa3];
+    c.extend(cell.to_le_bytes()); // mov eax, [esp+4]; mov eax, [eax+0x1c]; mov [cell], eax
+    c.push(0xe9);
+    let at = t.cave_next;
+    c.extend(rest.wrapping_sub(at + 17).to_le_bytes()); // jmp rest
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// A stub at `sym` (thiscall, `n` words) whose result is `[ecx + off]`.
+fn stub_from_this(t: &mut Twins, sym: u32, n: u32, off: u8) {
+    let rest = t.stub_code(sym, true, n, n, false, &[]);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x8b, 0x41, off, 0xa3];
+    c.extend(cell.to_le_bytes()); // mov eax, [ecx+off]; mov [cell], eax
+    c.push(0xe9);
+    let at = t.cave_next;
+    c.extend(rest.wrapping_sub(at + 13).to_le_bytes()); // jmp rest
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// A `PRedBlackTree` at `tree` over `nodes` (in order: `+0x1c` the next
+/// for the successor stub; the leftmost chain from `tree + 0xc`).
+fn tree_of(t: &mut Twins, rng: &mut Rng, tree: u32, nodes: &[u32]) {
+    for (k, &nd) in nodes.iter().enumerate() {
+        t.w32(nd + 0x1c, nodes.get(k + 1).copied().unwrap_or(tree));
+    }
+    if let Some(&first) = nodes.first() {
+        if rng.below(2) == 0 {
+            t.w32(tree + 0xc, first);
+        } else {
+            let top = t.zeros(0x20);
+            t.w32(tree + 0xc, top);
+            t.w32(top, first);
+        }
+        t.w32(first, tree);
+    } else {
+        // a null link would hand the successor stub address 0
+        t.w32(tree + 0xc, tree);
+    }
+}
+
+/// The sound effects' whole volume and project unload.
+#[test]
+fn f1_sfx() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f103);
+        stub_successor_e(&mut t);
+        stub_from_this(&mut t, f1::SFX_ANY_EVENT_FLAG, 0, 0);
+        stub_from_this(&mut t, f1::SFX_BANK_PLAYING, 0, 4);
+        let stubs = [
+            (f1::SFX_EVENT_ENTIRE_VOLUME, true, 1, 1),
+            (f1::SFX_BANK_DTOR, true, 0, 0),
+            (fr::OPERATOR_DELETE, false, 1, 0),
+            (c2::TREE_ORPHAN_ALL, true, 0, 0),
+            (c2::FREE_LIST_RESET, true, 0, 0),
+            (VFX_INT_TREE_INSERT, true, 1, 1),
+            (c2::TREE_POST_INSERT, true, 1, 1),
+            (c2::FREE_LIST_DEALLOCATE, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        // allocateNewBlock: the list head from a cell
+        let refill = t.zeros(4);
+        let rest = t.stub_code(c2::FREE_LIST_ALLOCATE_BLOCK, true, 1, 1, false, &[]);
+        let mut c = vec![0xa1];
+        c.extend(refill.to_le_bytes()); // mov eax, [refill]
+        c.extend([0x89, 0x01, 0xe9]); // mov [ecx], eax; jmp rest
+        let at = t.cave_next;
+        c.extend(rest.wrapping_sub(at + 12).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(c2::FREE_LIST_ALLOCATE_BLOCK, f);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([
+            c2::TREE_SUCCESSOR,
+            f1::SFX_ANY_EVENT_FLAG,
+            f1::SFX_BANK_PLAYING,
+            c2::FREE_LIST_ALLOCATE_BLOCK,
+        ]);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let this = random_block(&mut t, &mut rng, 0x100);
+            // the sound tree at +0x64
+            let n = rng.below(5) as usize;
+            let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+            for &nd in &nodes {
+                let events = t.zeros(0x10);
+                for e in 0..4 {
+                    let flagged = t.zeros(4);
+                    let hi = rng.next() & !0xff;
+                    t.w32(flagged, hi | rng.pick(&[0, 1, 0x80]));
+                    let v = rng.pick(&[0, flagged, flagged]);
+                    t.w32(events + 4 * e, v);
+                }
+                t.w32(nd + 0x10, rng.below(5));
+                t.w32(nd + 0x18, events);
+            }
+            tree_of(&mut t, &mut rng, this + 0x64, &nodes);
+            let flagged = t.zeros(4);
+            t.w8(flagged, rng.pick(&[0, 1]));
+            t.w32(this + 0xc8, rng.pick(&[0, flagged, flagged]));
+            let cur = rng.float();
+            let cur = rng.pick(&[cur, 0, 0x3f00_0000, 0x3f80_0000]);
+            t.w32(this + 0xd0, cur);
+            let v = rng.float();
+            let volume = rng.pick(&[
+                v,
+                cur,
+                0x3f00_0000,
+                0xbf80_0000,
+                0x4000_0000,
+                0,
+                0x8000_0000,
+                0x7fc0_0000,
+                0x3f80_0000,
+            ]);
+            t.check_conv(
+                &format!("{w} entire volume {volume:#x} of {n}"),
+                0x0070_d500,
+                Conv::Thiscall(this),
+                &[volume],
+                |g| {
+                    f1::sfx_set_entire_volume(g, this, volume);
+                    Out::None
+                },
+            );
+            // the bank trees at +4 and +0x34
+            for tree in [this + 4, this + 0x34] {
+                let n = rng.below(6) as usize;
+                let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+                for &nd in &nodes {
+                    let bank = t.zeros(8);
+                    t.w32(bank + 4, rng.pick(&[0, 0, 1, 3]));
+                    // the +0x34 tree's banks are asked for their playing
+                    // events (a null bank faults the original there too)
+                    let none = if tree == this + 4 { 0 } else { bank };
+                    t.w32(nd + 0x10, rng.pick(&[none, bank, bank, bank]));
+                    let key = rng.next();
+                    t.w32(nd + 0xc, key);
+                }
+                tree_of(&mut t, &mut rng, tree, &nodes);
+            }
+            let free = t.zeros(0x20);
+            let next = t.zeros(0x20);
+            t.w32(free, rng.pick(&[0, next]));
+            t.w32(this + 0xac, rng.pick(&[0, free, free]));
+            let more = t.zeros(0x20);
+            t.w32(refill, rng.pick(&[0, more]));
+            let dup = rng.pick(&[0, 0, 1, 0x100]);
+            t.ret(VFX_INT_TREE_INSERT, dup);
+            let all = rng.pick(&[0, 1, 0x100, 0x101]);
+            let b = rng.next();
+            t.check_conv(
+                &format!("{w} unload {all:#x}"),
+                0x0070_dd10,
+                Conv::Thiscall(this),
+                &[all, b],
+                |g| u(f1::sfx_unload_projects(g, this, all)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `vfxIntTree_Insert_0070bb20`.
+const VFX_INT_TREE_INSERT: u32 = 0x0070_bb20;
+
+/// A sound event's volume fade.
+#[test]
+fn f1_set_volume2() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f104);
+        let current = t.zeros(4);
+        t.stub_at(f1::EVENT_GET_VOLUME, false, 2, 2, &[wr(1, current)]);
+        t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+        t.stub_at(f1::SFX_EVENT_SET_VOLUME, true, 1, 1, &[]);
+        t.stub_at(fr::OPERATOR_DELETE, false, 1, 0, &[]);
+        t.stub_at(f1::OPERATOR_NEW, false, 1, 0, &[]);
+        let from = t.stub_code(f1::SFX_VOLUME_FROM_127, true, 1, 1, true, &[]);
+        t.jump(f1::SFX_VOLUME_FROM_127, from);
+        let tags = [
+            f1::EVENT_GET_VOLUME,
+            fr::ERRCHECK,
+            f1::SFX_EVENT_SET_VOLUME,
+            fr::OPERATOR_DELETE,
+            f1::OPERATOR_NEW,
+            f1::SFX_VOLUME_FROM_127,
+        ];
+        let this = t.zeros(0x20);
+        let first = t.zeros(8);
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let fade = t.zeros(0x10);
+            t.ret(f1::OPERATOR_NEW, rng.pick(&[0, fade, fade, fade]));
+            let d = rng.double();
+            t.ret_f64(
+                f1::SFX_VOLUME_FROM_127,
+                rng.pick(&[d, 0.5, 1.0, 0.0, 1.0 / 3.0]),
+            );
+            let d = rng.double();
+            let fps = rng.pick(&[30.0, 30.0, d, 0.0]);
+            let at = t.rebase(f1::FADE_FPS);
+            t.write(at, &fps.to_le_bytes());
+            let cur = rng.float();
+            t.w32(current, rng.pick(&[cur, 0x3f80_0000, 0]));
+            for k in 0..8 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            let old = rng.next();
+            t.w32(this + 0x18, rng.pick(&[0, old]));
+            t.w32(this + 8, first);
+            let ev = rng.next();
+            t.w32(first, ev);
+            let hi = rng.next() & !0xff;
+            t.w32(first + 4, hi | rng.pick(&[0, 1, 0x80]));
+            let r = rng.next();
+            let volume = rng.pick(&[0, 64, 127, 200, r]);
+            let r = rng.next();
+            let frames = rng.pick(&[0, 0, 1, 30, 90, 0xffff_ffff, 0x8000_0000, r]);
+            let frame = t.ebp_for(2) - 0x10;
+            t.check_framed_conv(
+                &format!("{w} {volume} over {frames}"),
+                0x0070_f210,
+                Conv::Thiscall(this),
+                &[volume, frames],
+                frame,
+                &[(0, 4)],
+                |g| match f1::sfx_event_set_volume2(g, frame, this, volume, frames) {
+                    Some(v) => u(v),
+                    None => Out::None,
+                },
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The menu manager's instance setup.
+#[test]
+fn f1_menu_instance_setup() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f105);
+        t.stub_at(f1::MENU_GEOMETRY_CTOR, true, 0, 0, &[]);
+        t.stub_at(f1::MENU_GEOMETRY_SET_MATRIX, true, 0, 0, &[]);
+        // the material call also notes the counts the record's vertex
+        // info lends meanwhile (geometry +0x24 -> record +0x94 -> +4, +8)
+        let counts = t.zeros(8);
+        let rest = t.stub_code(0x0bad_f104, true, 2, 2, false, &[]);
+        let mut c = vec![
+            0x8b, 0x41, 0x24, 0x8b, 0x80, 0x94, 0, 0, 0, 0x8b, 0x50, 0x04, 0x89, 0x15,
+        ];
+        c.extend(counts.to_le_bytes()); // mov eax, [ecx+0x24]; mov eax, [eax+0x94]; mov edx, [eax+4]; mov [counts], edx
+        c.extend([0x8b, 0x50, 0x08, 0x89, 0x15]);
+        c.extend((counts + 4).to_le_bytes()); // mov edx, [eax+8]; mov [counts+4], edx
+        c.push(0xe9);
+        let at = t.cave_next;
+        c.extend(rest.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp rest
+        let set = t.code(&c);
+        let tags = [
+            f1::MENU_GEOMETRY_CTOR,
+            f1::MENU_GEOMETRY_SET_MATRIX,
+            0x0bad_f104,
+        ];
+        let vtable = t.zeros(8);
+        t.w32(vtable + 4, set);
+        let scene = t.zeros(0xfaa0);
+        t.g32(f1::PHYRE_SCENE, scene);
+        let names: Vec<u32> = [
+            &b"RealFrameBuffer\0"[..],
+            b"NoTexture\0",
+            b"NoTexturf\0",
+            b"RealFrameBuffe\0",
+            b"\0",
+            b"FrameBuffer\0",
+        ]
+        .iter()
+        .map(|s| t.alloc(s))
+        .collect();
+        let this = t.zeros(0x2ec40);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for off in [0xfa80, 0xfa84, 0xfa88] {
+                let v = rng.next();
+                t.w32(scene + off, v);
+            }
+            t.w8(scene + 0xfa9c, rng.pick(&[0, 0, 1, 2]));
+            t.w8(scene + 0xfa9d, rng.pick(&[0, 0, 1, 2]));
+            let n = rng.pick(&[0, 1, 5, 0x10, 0x31]);
+            t.w32(this + 0x2ec30, n);
+            let geom = t.zeros(0x40);
+            t.w32(geom, vtable);
+            t.ret(f1::MENU_GEOMETRY_CTOR, geom);
+            let rec = random_block(&mut t, &mut rng, 0xc0);
+            let info = random_block(&mut t, &mut rng, 0x30);
+            t.w32(rec + 0x94, info);
+            let real = t.rebase(f1::REAL_FRAME_BUFFER);
+            let none = t.rebase(f1::NO_TEXTURE);
+            let k = rng.below(names.len() as u32) as usize;
+            let nm = rng.pick(&[names[k], names[k], real, none]);
+            let big = rng.pick(&[0, 1, 2, 0x100]);
+            t.check_conv(
+                &format!("{w} setup n {n} name {nm:#x} big {big}"),
+                0x0067_d760,
+                Conv::Thiscall(this),
+                &[rec, nm, big],
+                |g| Out::U64(f1::menu_instance_setup(g, this, rec, nm, big)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The menu manager's setup of every instance and its buffer chain swap.
+#[test]
+fn f1_menu_all_swap() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f106);
+        t.stub_u64(f1::MENU_INSTANCE_SETUP, true, 3, 3);
+        t.stub_at(f1::MENU_GATHER_BUFFERS, true, 1, 1, &[]);
+        t.stub_at(f1::MENU_UPDATE_MATERIAL, true, 2, 2, &[]);
+        let tags = [
+            f1::MENU_INSTANCE_SETUP,
+            f1::MENU_GATHER_BUFFERS,
+            f1::MENU_UPDATE_MATERIAL,
+        ];
+        let this = t.zeros(0x2ec40);
+        let lists = [
+            (0x2bd4, 0x2580),
+            (0x2bdc, 0x3200),
+            (0x582c, 0x2580),
+            (0x5834, 0x3200),
+        ];
+        let blocks: Vec<u32> = lists.iter().map(|&(_, n)| t.zeros(n)).collect();
+        for i in 0..24 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let r = rand_u64(&mut rng);
+            t.ret_u64(f1::MENU_INSTANCE_SETUP, r);
+            for nm in f1::MENU_NAMES {
+                let v = rng.next();
+                t.g32(nm, v);
+            }
+            for (&(off, _), &b) in lists.iter().zip(&blocks) {
+                t.w32(this + off, b);
+            }
+            for off in [0x15e4, 0x15ec] {
+                let recs = t.zeros(4);
+                let v = rng.next();
+                t.w32(recs, v);
+                t.w32(this + off, recs);
+            }
+            let n = rng.next();
+            t.w32(this + 0x2ec30, n);
+            let v = rng.next();
+            t.w32(this + 0x5b9c, v);
+            if i % 3 == 0 {
+                t.check_conv(
+                    &format!("{w} set up all"),
+                    0x0067_e6c0,
+                    Conv::Thiscall(this),
+                    &[],
+                    |g| Out::U64(f1::menu_set_up_all(g, this)),
+                );
+            }
+            for _ in 0..20 {
+                t.fresh(&mut rng, &tags);
+                t.w32(this + 0x5b7c, rng.pick(&[0, 0, 1, 0x100]));
+                let c = rng.pick(&[0, 1, 3, 8]);
+                t.w32(this + 0x2c50, c);
+                let c = rng.pick(&[0, 1, 3, 8]);
+                t.w32(this + 0x5840, c);
+                t.w32(this + 0x5844, rng.pick(&[0, 1]));
+                for base in [0u32, 0x2c58] {
+                    for k in 0..8 {
+                        let rec = t.zeros(0xb4);
+                        t.w32(rec + 0xb0, rng.pick(&[0, 0, 1, 0x100]));
+                        t.w32(this + base + 4 * k, rec);
+                    }
+                }
+                for &(off, _) in &lists {
+                    let v = rng.next();
+                    t.w32(this + off, v);
+                }
+                t.check_conv(
+                    &format!("{w} swap"),
+                    0x0067_e7f0,
+                    Conv::Thiscall(this),
+                    &[],
+                    |g| {
+                        f1::menu_swap_buffer_chain(g, this);
+                        Out::None
+                    },
+                );
+            }
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
     }

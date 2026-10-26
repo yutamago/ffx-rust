@@ -13,7 +13,8 @@
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
-    h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, menu as mn, misc as m, movie as mv, r3,
+    sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1867,5 +1868,45 @@ ported! {
     /// `FmodMusic_switchBGM(this; bgm, flag)`.
     FmodMusic_switchBGM @ 0x0070_9c80 => extern "thiscall" fn music_switch_bgm(this: u32, bgm: u32, flag: u32) {
         e5::music_switch_bgm(&mut mem(), this, bgm, flag);
+    }
+    // ---- continuation round 4, batch 1 (ffx_glue_other::h4_f1)
+    /// `FmodVoice_start(this; pan, volume)`.
+    FmodVoice_start @ 0x0070_b5c0 => extern "thiscall" fn voice_start(this: u32, _pan: u32, _volume: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f1::VOICE_FRAME / 4) as usize }>::new();
+        f1::voice_start(&mut mem(), frame.at(), this)
+    }
+    /// `FmodVoice_restart(this)`.
+    FmodVoice_restart @ 0x0070_b160 => extern "thiscall" fn voice_restart(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f1::VOICE_FRAME / 4) as usize }>::new();
+        f1::voice_restart(&mut mem(), frame.at(), this)
+    }
+    /// `FfxFmod_soundLoop(this)`.
+    FfxFmod_soundLoop @ 0x0070_70d0 => extern "thiscall" fn sound_loop(this: u32) -> u32 {
+        f1::sound_loop(&mut mem(), this)
+    }
+    /// `FmodSfx_setEntireVolume(this; volume)`.
+    FmodSfx_setEntireVolume @ 0x0070_d500 => extern "thiscall" fn sfx_set_entire_volume(this: u32, volume: u32) {
+        f1::sfx_set_entire_volume(&mut mem(), this, volume);
+    }
+    /// `FmodSfx_unloadProjects(this; all, _)`.
+    FmodSfx_unloadProjects @ 0x0070_dd10 => extern "thiscall" fn sfx_unload_projects(this: u32, all: u32, _b: u32) -> u32 {
+        f1::sfx_unload_projects(&mut mem(), this, all)
+    }
+    /// `SfxEvent_setVolume2(this; volume, frames)`.
+    SfxEvent_setVolume2 @ 0x0070_f210 => extern "thiscall" fn sfx_event_set_volume2(this: u32, volume: u32, frames: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f1::SET_VOLUME2_FRAME / 4) as usize }>::new();
+        f1::sfx_event_set_volume2(&mut mem(), frame.at(), this, volume, frames).unwrap_or(0)
+    }
+    /// `MenuManager_MenuInstanceSetup(this; rec, name, big)`: 64 bits in `edx:eax`.
+    MenuManager_MenuInstanceSetup @ 0x0067_d760 => extern "thiscall" fn menu_instance_setup(this: u32, rec: u32, name: u32, big: u32) -> u64 {
+        f1::menu_instance_setup(&mut mem(), this, rec, name, big)
+    }
+    /// `MenuManager_SetUpAllMenuInstance(this)`: the last setup's `edx:eax`.
+    MenuManager_SetUpAllMenuInstance @ 0x0067_e6c0 => extern "thiscall" fn menu_set_up_all(this: u32) -> u64 {
+        f1::menu_set_up_all(&mut mem(), this)
+    }
+    /// `MenuManager_SwapMenuBufferChain(this)`.
+    MenuManager_SwapMenuBufferChain @ 0x0067_e7f0 => extern "thiscall" fn menu_swap_buffer_chain(this: u32) {
+        f1::menu_swap_buffer_chain(&mut mem(), this);
     }
 }
