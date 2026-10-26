@@ -334,6 +334,83 @@ Known varying parts, beyond the allow list:
   pairing reports them as beyond the noise. If the drawdiff part of the
   same pair is 0, rerun against the other reference.
 
+## Scene gates
+
+One gate per scene (M4 item 3, 2026-10-26, draw-gates): original against
+original first, then the ports against the original, each at 0 within the
+scene's allow list.
+
+```bash
+tools/scene-gate-capture.sh <replay> <run> [original|only-m4|all]
+tools/scene-gate.sh <scene> <run A> <run B>
+```
+
+| Scene | Replay (`tools/replays/`) | Capture point |
+|---|---|---|
+| `bsil0000` | `draw-gate-besaid.txt` | Besaid beach (save `ffx_003`), ctrl work 0's count 101 |
+| `bsil0300` | `draw-gate-besaid.txt` | the river below the cliff, reached by event-besaid's walk, count 32 |
+| `kami0100` | `draw-gate-kami.txt` | the Thunder Plains agency (save `ffx_005`), count 101 |
+| `menu` | `draw-gate-deck.txt` | the main menu on the deck (save `ffx_001`), as menu-browse-1 |
+| `battle` | `draw-gate-battle.txt` | battle-attack's battle, 20 frames after Rikku's first command window |
+| `draw-field` | `draw-field.txt` | fw-101, fw-459, besaid-101 (the draw-field gate above) |
+
+`scene-gate-capture.sh` runs the replay with the graphics layer through
+the game slot and copies its captures to
+`${FFX_CAPTURES:-~/ffx-work/m4/captures}/<run>/<capture>`. `only-m4` sets
+`FFX_HOOK_ONLY` to the M4 port hooks (`ported/{h,p}<n>_*.rs`, `c2_new.rs`,
+`m4_rest.rs`, `phyre_render.rs`; the list is kept as `<run>.hooks.txt`);
+`all` keeps every hook, and passes a caller's `FFX_HOOK_ONLY` or
+`FFX_HOOK_DISABLE` on (bisecting). Each capture is three frames in hash
+mode, 3-10 MB.
+
+`scene-gate.sh` runs drawdiff and `tools/compare-captures.py` (the
+`hashes.txt` records: target and back buffer contents, held scene inputs)
+against `crates/ffx-drawdiff/allow/gate/<scene>.txt`. compare-captures
+takes its noise from the same file (`any vs=` drops a shader's draws and
+the target hashes after them, `resource vs= field=vb<n>` or `ps.srv<n>`
+skips that slot), so each allowance and its cause are written once.
+`draw-field-gate.sh` keeps working as before; `scene-gate.sh draw-field`
+does the same with the repository's copy of its list
+(`allow/gate/draw-field.txt`).
+
+Every entry in a gate list was seen between two runs of the original code
+and has its cause in the file. Ports never add entries.
+
+Captures are armed exactly: `gfxcapture ... now` in lockstep starts after
+the present of the update the main thread is held after and checks that
+frame `k` shows update `f + 1 + k` (`docs/renderer.md`, "Reference
+captures"). The replays `pin` once the map's event runs (count 64), not
+right after `lockstep on`: pinned before the load, the original's
+`GlobalTime` differed by 16 ulp on bsil0000 and 2 on kami0100; pinned
+after it, by 4 and 0.
+
+What the original runs showed, and so what the lists hold:
+
+| Scene | Original pairs | Entries |
+|---|---|---|
+| bsil0000 | o1/o2 (pin before the load), p1/p2 | `GlobalTime` (4-16 ulp), the `SgSpec_LightVec` junk read, the loader's 16x8 texture (`f1de6dea8bd5f574` srv1) |
+| bsil0300 | o1/o2, p1/p2 | `GlobalTime` (47-76 ulp: the walk waits on a real-time voice line), the minimap's NORMAL0 ring, the chocobo icon (o1/o2: 6 draws missing, 6 extra) |
+| kami0100 | o1/o2, p1/p2 | the cloth ring (`vb5`, 27 draws, in every pair: carried from the free-running frames before lockstep, inferred), `GlobalTime` (o1/o2, 2 ulp), the eye-blink texture (o1/o2), the `SgSpec_LightVec` junk read (not seen in kami0100's own pairs; the same read differs between original runs on bsil0000 and cdsp0000) |
+| menu | p1/p2 | a `NoTexture` quad's UVs (`vb3`; not sampled, stale element words, `docs/formats/ui-draw.md`) |
+| battle | BATTLE_PAIRS | BATTLE_ENTRIES |
+
+Two things the original runs do not pin and the replays avoid:
+- a battle requested after the main menu was opened and closed never
+  started (the request byte `0x0112a8e2` stayed 1), on the deck and in
+  the agency, so the menu and the battle have replays of their own;
+- `battle 33 0 3` from the agency loaded in 127 or 128 updates, and the
+  later run drew 31 more items; battle-attack's battle loaded in 77 or 79,
+  and 60 frames after the phase byte the intro camera stood elsewhere
+  (17,584 ulp in `WorldView`). The battle capture therefore waits for the
+  first command window.
+
+`SgSpec_CameraVec[0].z` is not in any list: `Ch_DrawMain` never writes the
+word (`[ebp-0x2c]`), and every original run passes 1 (`0x00000001`, a
+stale integer). The port passes 0 (junk-read policy), and with only the
+M4 hooks the original `Ch_DrawMain` reads what ported functions further up
+left there (`0x006c0000` on bsil0000, `0x005d0000` on kami0100). The
+draw-field list allows it; the scene gates report it (PORT_RESULTS).
+
 ## Noise in cdsp0000
 
 Six original captures (fw1..fw3, a and b) gave 15 pairs, each with 0

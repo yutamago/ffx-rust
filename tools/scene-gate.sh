@@ -9,8 +9,8 @@
 #   bytes, texture and buffer keys);
 # - tools/compare-captures.py: the hashes.txt records (target and back
 #   buffer contents, held scene inputs), with the allow file's noise.
-# Scenes: bsil0000, bsil0300, menu (replay besaid), kami0100, battle
-# (replay kami), draw-field (fw-101, fw-459, besaid-101; as
+# Scenes: bsil0000, bsil0300 (replay besaid), kami0100 (replay kami),
+# menu (replay deck), battle (replay battle), draw-field (fw-101, fw-459, besaid-101; as
 # ~/ffx-work/m4/draw-field-gate.sh). Exit 0 when both pass.
 set -u
 repo="$(cd "$(dirname "$0")/.." && pwd)"

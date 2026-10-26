@@ -1,0 +1,32 @@
+# Draw-diff gate captures (M4 item 3, docs/drawdiff.md "Scene gates"):
+# a hash-mode capture of three frames of battle-attack's battle (save
+# ffx_001, cdsp0000, `battle 3 0 0`: cdsp00, underwater), 20 frames after
+# Rikku's first command window opens (battle-attack-1 is 60 frames after
+# the battle phase byte turns 1; see below). Needs the graphics layer (FFX_GFX=1);
+# not part of run-all.sh. Run it through tools/scene-gate-capture.sh
+# battle, or
+#   FFX_GFX=1 target/release/examples/replay tools/replays/draw-gate-battle.txt \
+#     '<windows folder>\draw.trace' [original]
+# The capture lands beside the trace ($OUT\battle): keep it in
+# ~/ffx-work/m4/captures, never in git. Compare two runs with
+# tools/scene-gate.sh battle <run A> <run B>.
+#
+# `gfxcapture ... now async` at a boundary the script reached in lockstep
+# holds the next three updates exactly (the harness checks the updates the
+# frames show and fails the reply otherwise).
+load direct 1 cdsp0000
+lockstep on
+pin
+wait 10
+battle 3 0 0
+waitfor 0x0112a8e0:1 01 ff 4000
+# not a fixed wait after the phase byte: in original runs the battle's
+# load took 77 or 79 updates from the request, and 60 frames after the
+# phase byte the intro camera stood elsewhere (WorldView 17,584 ulp). The
+# first command window (g_BtlWindowOpen 0x023cc08c, Rikku's bit 0x40;
+# TOSetBtlActiveChr) opens at a fixed point after the intro.
+waitfor 0x023cc08c:4 40000000 ffffffff 1200
+wait 20
+gfxcapture $OUT\battle hash frames 3 now async
+wait 3
+gfxcapture result

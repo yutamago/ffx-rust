@@ -1,0 +1,29 @@
+# Scene gate allow list of bsil0300 (the Besaid river below the cliff,
+# map 0x29, ctrl work 0's count 32, reached by event-besaid's walk;
+# tools/replays/draw-gate-besaid.txt, docs/drawdiff.md "Scene gates").
+# Every entry was seen between two runs of the ORIGINAL code:
+# dg-besaid-o1/o2 (pin right after `lockstep on`) and dg-besaid-p1/p2 (pin
+# at count 64 on the beach and again on arrival here), 2026-10-26.
+[*]
+
+# 76 f32 ulp (1.1344677 | 1.1344587) in p1/p2, 47 in o1/o2: as bsil0000's
+# entry, and the walk waits on a voiced line that plays in real time, so
+# the frames run before this map vary too. The second `pin` on arrival
+# does not reset it.
+constant var=scene field=*.cb0.scene.GlobalTime cause: f32 time steps taken before pin and during the walk's real-time voice line (47-76 ulp between original runs)
+
+# Every pair: the minimap's NORMAL0 ring (vb1, CPU-built mesh, 567
+# indices) holds an animated per-vertex value whose phase is not pinned to
+# ctrl work 0's count (as allow/bsil0300.txt; the minimap's pixels are
+# equal in the shots).
+resource vs=af2fbdc4f5970aca field=vb1 cause: minimap mesh: an animated per-vertex value in its NORMAL0 ring whose phase is not pinned to ctrl work 0's count
+
+# o1/o2 (not p1/p2): the chocobo icon at the bottom right (viewport 50x50
+# at 1220,660): the model (3ed98be438f1788c, db4c42c82f869fe7) and the
+# quads (0259336042bd8dbd) that compose it. Their number, viewports,
+# scissors, targets and constants follow the icon's animation phase, which
+# the walk's real-time voice line moves (6 draws missing and 6 extra; as
+# allow/bsil0300.txt).
+any vs=3ed98be438f1788c cause: chocobo icon model, its animation phase moved by the walk's real-time voice line
+any vs=db4c42c82f869fe7 cause: chocobo icon model, its animation phase moved by the walk's real-time voice line
+any vs=0259336042bd8dbd cause: chocobo icon quads, composed with the icon model

@@ -2,23 +2,27 @@
 # hash-mode captures of three frames each of Besaid beach (bsil0000, save
 # ffx_003, ctrl work 0's count 101, as event-besaid-1) and of the river
 # below the cliff (bsil0300, map 0x29, count 32, as draw-bsil0300.txt),
-# reached by event-besaid's walk, and of the main menu opened there. Needs the graphics layer (FFX_GFX=1);
+# reached by event-besaid's walk. Needs the graphics layer (FFX_GFX=1);
 # not part of run-all.sh. Run it through tools/scene-gate-capture.sh, or
 #   FFX_GFX=1 target/release/examples/replay tools/replays/draw-gate-besaid.txt \
 #     '<windows folder>\draw.trace' [original]
-# Captures land beside the trace ($OUT\bsil0000, $OUT\bsil0300, $OUT\menu, 5-10 MB
+# Captures land beside the trace ($OUT\bsil0000, $OUT\bsil0300, 5-10 MB
 # each): keep them in ~/ffx-work/m4/captures, never in git. Compare two
-# runs with tools/scene-gate.sh bsil0000|bsil0300|menu <run A> <run B>.
+# runs with tools/scene-gate.sh bsil0000|bsil0300 <run A> <run B>.
 #
-# `pin` right after `lockstep on` (docs/harness.md, "Pinned state"). Each
+# `pin` (docs/harness.md, "Pinned state") once the map's event runs (count
+# 64), not right after `lockstep on`: the load takes a varying number of
+# frames, and the game time the shaders get (`scene.GlobalTime`) carries
+# their f32 rounding (2-47 ulp between original runs pinned before the
+# load; docs/drawdiff.md, "Scene gates"). Each
 # capture is `gfxcapture ... now async` at a boundary the script reached
 # in lockstep: it holds the next three updates exactly (the harness checks
 # the updates the frames show and fails the reply otherwise), and the
 # `wait 3` that lets them run shifts the later waits by 3.
 load direct 3 bsil0000
 lockstep on
-pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500
+pin
 wait 37
 read 0x01325d94 4
 readp 0x00ccb9d8 0xfaf4 4
@@ -42,15 +46,11 @@ pad right
 waitfor 0x0112ca90:4 29001400 ffffffff 900
 pad
 waitfor 0x01325d94:4 20000000 e0ffffff 1500
+# again: the walk waits on a real-time voice line, so the frames run before
+# this map vary
+pin
 read 0x01325d94 4
 readp 0x00ccb9d8 0xfaf4 4
 gfxcapture $OUT\bsil0300 hash frames 3 now async
-wait 3
-gfxcapture result
-# the main menu, opened there once the field takes input (menu-browse.txt
-# waits 120 frames after the load; menu-grid's `press triangle 8 60`)
-wait 117
-press triangle 8 60
-gfxcapture $OUT\menu hash frames 3 now async
 wait 3
 gfxcapture result

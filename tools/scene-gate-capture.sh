@@ -17,8 +17,10 @@ script="$repo/tools/replays/draw-gate-$replay_name.txt"
 [ "$replay_name" = draw-field ] && script="$repo/tools/replays/draw-field.txt"
 [ -f "$script" ] || { echo "no replay $script" >&2; exit 2; }
 case "$replay_name" in
-    besaid) caps=(bsil0000 bsil0300 menu) ;;
-    kami) caps=(kami0100 battle) ;;
+    besaid) caps=(bsil0000 bsil0300) ;;
+    kami) caps=(kami0100) ;;
+    deck) caps=(menu) ;;
+    battle) caps=(battle) ;;
     draw-field) caps=(fw-101 fw-459 besaid-101) ;;
     *) caps=() ;;
 esac

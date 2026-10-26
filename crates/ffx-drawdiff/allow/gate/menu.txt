@@ -1,0 +1,14 @@
+# Scene gate allow list of the main menu on the salvage ship deck (save
+# ffx_001, cdsp0000, menu-browse-1's frame; tools/replays/draw-gate-deck.txt,
+# docs/drawdiff.md "Scene gates"). Every entry was seen between two runs of
+# the ORIGINAL code: dg-deck-p1/p2, 2026-10-26.
+[*]
+
+# p1/p2, every frame: the TEXCOORD0 ring (vb3, 4 vertices) of a
+# `NoTexture` quad (vs 4b348451d7564b41, no texture bound: the shader does
+# not sample, so the pixels are equal). graphicDrawUIElement writes the
+# element block's UV words whatever the texture, and for NoTexture
+# elements those words are what the caller left there (stale), as in the
+# UI census (docs/formats/ui-draw.md, menu-main: "the UVs of two
+# NoTexture bars").
+resource vs=4b348451d7564b41 field=vb3 cause: NoTexture quad's UVs are stale element words (not sampled)
