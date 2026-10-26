@@ -51,7 +51,6 @@ use ffx_prender::h3_glue42::bridge as g42;
 use ffx_prender::h3_glue43::bridge as g43;
 use ffx_prender::h3_glue44::bridge as g44;
 use ffx_prender::h3_glue45::bridge as g45;
-use ffx_prender::h3_glue46::bridge as g46;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1994,11 +1993,14 @@ ported! {
     }
 
     // ---- round 12 batch 47 (ffx_prender::h3_glue46) ----
-    /// `PhyreScene_animate(scene)` -> 0: the scene's per-frame update
-    /// (`this` in `ecx`, no stack words).
-    PhyreScene_animate @ 0x0065_7140 => extern "thiscall" fn scene_animate(this: u32) -> u32 {
-        g46::animate(&mut mem(), this)
-    }
+    // PhyreScene_animate 0x00657140 (g46::animate) is NOT hooked: it
+    // passes its oracle test and mutants, but with it and
+    // TextureAnimation_updateTarget both hooked (h3 hooks only) the
+    // kami0100 scene gate binds another 16x8 texture-animation frame at
+    // the draw with vs f1de6dea8bd5f574 (ps.srv1, 2 of 2 runs), and
+    // event-agency's shots 2, 5, 6 and 7 differ; with either one alone,
+    // or with the diagnostic build that runs both the original and the
+    // port of updateTarget, the gate passes. Open problem (h3 r12).
 }
 
 /// The scene's shader-bin loaders, with their frame (0x12c bytes below
