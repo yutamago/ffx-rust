@@ -11,7 +11,8 @@
 #   buffer contents, held scene inputs), with the allow file's noise.
 # Scenes: bsil0000, bsil0300 (replay besaid), kami0100 (replay kami),
 # menu (replay deck), battle (replay battle), draw-field (fw-101, fw-459, besaid-101; as
-# ~/ffx-work/m4/draw-field-gate.sh). Exit 0 when both pass.
+# ~/ffx-work/m4/draw-field-gate.sh). Exit 0 when both pass, 3 when two
+# battle runs loaded in other update counts (rerun).
 set -u
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 [ $# -ge 3 ] || { sed -n '2,15p' "$0"; exit 2; }
@@ -26,6 +27,19 @@ allow="${ALLOW:-$repo/crates/ffx-drawdiff/allow/gate/$scene.txt}"
 [ -f "$allow" ] || { echo "no allow file $allow" >&2; exit 2; }
 [ -x "${DRAWDIFF:-}" ] || DRAWDIFF="$repo/target/release/drawdiff"
 [ -x "$DRAWDIFF" ] || (cd "$repo" && cargo build -q --release -p ffx-drawdiff) || exit 2
+# battle: the load's length (updates from `wait 10` to the phase byte)
+# must match, or the runs show other moments of the intro
+if [ "$scene" = battle ]; then
+    load() {
+        awk '/^wait 10 -> /{w=$NF} /^waitfor 0x0112a8e0:1 01 /{print $NF - w; exit}' "$c/$1/replay.out" 2>/dev/null
+    }
+    la="$(load "$a")"; lb="$(load "$b")"
+    echo "battle load: $a ${la:-?} updates, $b ${lb:-?}"
+    if [ -z "$la" ] || [ "$la" != "$lb" ]; then
+        echo "gate $scene $a $b: NOT COMPARABLE (the battle loads took other update counts: rerun one)"
+        exit 3
+    fi
+fi
 out="$(mktemp -d)"
 bad=0
 for cap in "${caps[@]}"; do

@@ -1,2 +1,8 @@
-# empty
+# Scene gate allow list of battle-attack's battle (save ffx_001, cdsp0000,
+# `battle 3 0 0`; tools/replays/draw-gate-battle.txt, docs/drawdiff.md
+# "Scene gates"). Original runs dg-battle-p3/p4 (2026-10-26) agree on
+# every item of all three frames, so the list is empty.
+# Runs whose battle load took another number of updates (p1: 77, p2: 79)
+# show other moments of the intro and are not compared: tools/scene-gate.sh
+# checks the load length first and asks for a rerun.
 [*]
