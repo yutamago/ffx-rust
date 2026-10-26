@@ -24,6 +24,7 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pother_b::{m4r_dynblocks, m4r_mesh};
+use ffx_prender::m4r_fonttext as ft;
 use ffx_prender::m4r_gauss as gs;
 use ffx_prender::m4r_meshlist as ml;
 use ffx_prender::m4r_modnet as mn;
@@ -34,6 +35,9 @@ use ffx_prender::m4r_rendercmds as rc;
 /// stubs are written over it.
 const CAVE: u32 = 0x0064_0660;
 const CAVE_LEN: u32 = 1768;
+/// `fstp st(0); ret` at the cave's last bytes: pops a callee's `ST0` in
+/// the port's oracle, as the original's `fstp` after the call does.
+const POP: u32 = CAVE + CAVE_LEN - 4;
 
 /// Deterministic xorshift stream.
 struct Rng(u32);
@@ -65,19 +69,39 @@ impl Mem for G<'_> {
     }
 }
 
+fn oracle_conv(conv: host::Conv) -> Conv {
+    match conv {
+        host::Conv::Cdecl => Conv::Cdecl,
+        host::Conv::Stdcall => Conv::Stdcall,
+        host::Conv::Thiscall(t) => Conv::Thiscall(t),
+        host::Conv::Fastcall => Conv::Fastcall,
+    }
+}
+
 impl Host for G<'_> {
     fn call(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> u32 {
         ffx_oracle::check_width("Host::call", addr, args.len(), host::max_words(conv, false));
-        let conv = match conv {
-            host::Conv::Cdecl => Conv::Cdecl,
-            host::Conv::Stdcall => Conv::Stdcall,
-            host::Conv::Thiscall(t) => Conv::Thiscall(t),
-            host::Conv::Fastcall => Conv::Fastcall,
-        };
         self.0
-            .call(addr, conv, args)
+            .call(addr, oracle_conv(conv), args)
             .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
             .eax
+    }
+    fn call_st0(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f32 {
+        ffx_oracle::check_width(
+            "Host::call_st0",
+            addr,
+            args.len(),
+            host::max_words(conv, true),
+        );
+        let r = self
+            .0
+            .call(addr, oracle_conv(conv), args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"));
+        let v = r.st0_f32().expect("the callee's ST0");
+        // the caller's fstp pops it
+        let pop = self.0.rebase(POP);
+        self.0.call(pop, Conv::Cdecl, &[]).unwrap();
+        v
     }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
@@ -115,6 +139,8 @@ impl Twins {
             cave_next: cave,
         };
         t.log = t.zeros(0x4000);
+        let pop = t.rebase(POP);
+        t.write(pop, &[0xdd, 0xd8, 0xc3]);
         t
     }
 
@@ -244,7 +270,10 @@ impl Twins {
             c.extend(((pops * 4) as u16).to_le_bytes());
         }
         let addr = self.cave_next;
-        assert!(addr + c.len() as u32 <= self.cave + CAVE_LEN, "cave full");
+        assert!(
+            addr + c.len() as u32 <= self.cave + CAVE_LEN - 4,
+            "cave full"
+        );
         self.write(addr, &c);
         self.cave_next = addr + c.len() as u32;
         // a default list of zeros
@@ -311,6 +340,37 @@ impl Twins {
             "{what}: frame differs at ebp - {:#x}",
             first.map_or(0, |i| low as usize - i)
         );
+    }
+
+    /// [`Twins::check`] with the port's frame at the original's `ebp`, as
+    /// [`Twins::check_framed`], but comparing only the frame's `ranges`
+    /// afterwards (`(ebp offset, bytes)`: what the callees see; the
+    /// original's other locals are its own).
+    #[allow(clippy::too_many_arguments)]
+    fn check_framed_ranges(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        low: u32,
+        ranges: &[(u32, u32)],
+        port: impl FnOnce(&mut G, u32) -> u32,
+    ) {
+        let ebp = self.frame_ebp(args.len());
+        let lo = ebp - low;
+        // stale bytes, so that a record the callees fill must be filled
+        self.write(lo, &vec![0x5a; low as usize]);
+        self.b.set_call_top(Some(lo - 0x100));
+        self.check(what, sym, conv, args, |g| port(g, ebp));
+        self.b.set_call_top(None);
+        for &(off, len) in ranges {
+            let mut x = vec![0; len as usize];
+            let mut y = vec![0; len as usize];
+            Mem::read_bytes(&self.a, ebp - off, &mut x);
+            Mem::read_bytes(&self.b, ebp - off, &mut y);
+            assert_eq!(x, y, "{what}: frame differs at ebp - {off:#x}");
+        }
     }
 
     fn log_entries(&self) -> u32 {
@@ -1360,5 +1420,185 @@ fn gaussian_tables_match_the_original() {
                 |g| gs::bridge::gaussian_tables(g, glow, 640, 360, n, one),
             );
         }
+    }
+}
+
+// ---- PBitmapFontText::createMeshGeometry (0x00a29770) ----
+
+/// The map stub's body: `[out] =` the result entry's second word.
+const MAP_BODY: [u8; 9] = [
+    0x8b, 0x50, 0x04, // mov edx, [eax+4]
+    0x8b, 0x4c, 0x24, 0x04, // mov ecx, [esp+4] (out)
+    0x89, 0x11, // mov [ecx], edx
+];
+
+/// `c` as UTF-8.
+fn utf8(c: u32) -> Vec<u8> {
+    char::from_u32(c).unwrap().to_string().into_bytes()
+}
+
+#[test]
+fn create_mesh_geometry_matches_the_original() {
+    const SYM: u32 = 0x00a2_9770;
+    const CODES: [u32; 7] = [0x41, 0x42, 0x43, 0x44, 0x45, 0xe9, 0x3042];
+    for (name, mut t) in Twins::all() {
+        let at = t.rebase(ft::MAP);
+        let (addr, map) = t.stub_custom(ft::MAP, true, 1, 1, 8, &MAP_BODY);
+        let mut j = vec![0xe9];
+        j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        let unmap = t.stub(ft::UNMAP, true, 2, 2);
+        t.stub(ft::UNMAP_STEP, true, 1, 1);
+        t.stub(ft::PRINTF, false, 3, 0);
+        let mut rng = Rng(0x0a29_7700);
+        let mut calls = 0;
+        let mut quads = 0;
+        for case in 0..60_u32 {
+            // the font: glyphs for CODES (some missing), kerning pairs
+            let font = t.zeros(0x40);
+            let holder = t.zeros(0x40);
+            t.w32(holder + 0x30, font);
+            let n = 4 + rng.below(4);
+            let glyphs = t.zeros(0x30 * 8);
+            for k in 0..n {
+                let g = glyphs + 0x30 * k;
+                let mut w = vec![
+                    CODES[(k + case) as usize % CODES.len()],
+                    1 + rng.below(6),
+                    rng.below(16),
+                    (rng.below(512) as f32).to_bits(),
+                    (rng.below(512) as f32).to_bits(),
+                ];
+                // sizes, offsets, advances: on the 1/4096 grid, -0, a
+                // quiet NaN now and then, or with every mantissa bit (sums
+                // that round)
+                w.extend((0..6).map(|_| {
+                    match rng.below(6) {
+                        0 => (f32::from_bits(0x3f80_0000 | (rng.next() & 0x007f_ffff))
+                            * [-3.0, 0.001, 37.0][rng.below(3) as usize])
+                            .to_bits(),
+                        1 if rng.below(5) == 0 => 0x7fc0_0000 | rng.below(0x40_0000),
+                        1 => 0x8000_0000,
+                        _ => small_float(&mut rng),
+                    }
+                }));
+                w.push(rng.below(2));
+                t.w32s(g, &w);
+            }
+            let kern = t.zeros(0x300);
+            let pairs: Vec<u32> = (0..64)
+                .flat_map(|_| {
+                    let few = if rng.below(2) == 0 { 3 } else { 7 };
+                    [
+                        CODES[rng.below(few) as usize],
+                        (rng.below(200) as i32 - 100) as u32,
+                        rng.next(),
+                    ]
+                })
+                .collect();
+            t.w32s(kern, &pairs);
+            let texture = t.zeros(0x40);
+            let sizes = [256, 1024, 0, 1, 0x8000_0010, 0xffff_ffff, 300];
+            t.w32(texture + 0x1c, sizes[case as usize % 7]);
+            t.w32(texture + 0x20, sizes[(case as usize + 2) % 7]);
+            let top = if case % 9 == 4 { 0x8000_0000 } else { 0 };
+            t.w32s(
+                font,
+                &[
+                    0,
+                    0,
+                    (1.0 + rng.below(64) as f32 / 8.0).to_bits(),
+                    0,
+                    n | top,
+                ],
+            );
+            t.w32(font + 0x14, glyphs);
+            t.w32(font + 0x1c, kern);
+            t.w32(font + 0x20, texture);
+
+            // the string: glyphs, newlines, characters the font lacks
+            let len = rng.below(24);
+            let mut s = Vec::new();
+            let mut chars = 0;
+            for _ in 0..len {
+                let c = match rng.below(8) {
+                    0 => 0x0a,
+                    1 => 0x7a,
+                    _ => CODES[rng.below(7) as usize],
+                };
+                s.extend(utf8(c));
+                chars += 1;
+            }
+            s.push(0);
+            let string = t.alloc(&s);
+            let count = match case % 5 {
+                0 => chars,
+                1 => chars / 2,
+                2 => chars + 3,
+                3 => 1,
+                _ => {
+                    if case % 2 == 0 {
+                        0
+                    } else {
+                        chars
+                    }
+                }
+            };
+
+            // the text and its mesh
+            let text = t.zeros(0x200);
+            let junk: Vec<u32> = (0..0x80).map(|_| no_snan(&mut rng)).collect();
+            t.w32s(text, &junk);
+            let mesh = t.zeros(0xc0);
+            t.fill(&mut rng, mesh, 0xc0);
+            for s in 0..3 {
+                t.w32(mesh + 0x40 * s + 0x10, rng.below(4));
+                t.w32(mesh + 0x40 * s + 0x18, rng.below(4) | (rng.below(2) << 31));
+            }
+            let colours = case % 3 != 0;
+            t.w32(text + 0x64, mesh);
+            t.w32(text + 0x158, holder);
+            t.w32(text + 0x160, string);
+            t.w32(text + 0x170, small_float(&mut rng));
+            t.write(text + 0x174, &[u8::from(colours)]);
+            let pos = t.zeros(0x20 * 40);
+            let uv = t.zeros(0x20 * 40);
+            let col = t.zeros(0x40 * 40);
+            let maps: &[u32] = match case % 11 {
+                3 => &[0x8000_0013, pos],
+                5 => &[0, pos, 9, uv],
+                7 => &[0, pos, 0, uv, 0xb, col],
+                _ => &[0, pos, 0, uv, 0, col],
+            };
+            t.results(map, maps);
+            let unmaps: &[u32] = match case % 13 {
+                4 => &[0x15],
+                6 => &[0, 0x16],
+                8 => &[0, 0, 0x17],
+                _ => &[],
+            };
+            t.results(unmap, unmaps);
+            let before = t.log_entries();
+            t.check_framed_ranges(
+                &format!("{name} case {case}: {count} of {chars} characters"),
+                SYM,
+                Conv::Thiscall(text),
+                &[count],
+                ft::FRAME,
+                &[
+                    (ft::MAP_POS, 4),
+                    (ft::MAP_UV, 4),
+                    (ft::MAP_COL, 4),
+                    (ft::CURSOR, 4),
+                    (ft::GLYPH, 0x30),
+                    (ft::KEY, 0x30),
+                ],
+                |g, ebp| ft::bridge::create_mesh_geometry(g, text, count, ebp),
+            );
+            calls += t.log_entries() - before;
+            quads += Mem::read::<u32>(&t.b, text + 0x70) / 6;
+        }
+        assert!(calls > 150, "{name}: the stubs ran ({calls} calls)");
+        assert!(quads > 100, "{name}: {quads} quads");
     }
 }

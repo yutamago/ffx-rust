@@ -13,12 +13,14 @@
 //! fills a packet (its `_alloca` arrays on the heap: no large frames on
 //! a worker's stack); `processRenderCommands` on the render thread (its
 //! 16 KB frame as the original's); the legacy glow's Gaussian tables where
-//! `PLegacyGlow_setup` sets the glow up (no frame). The shims keep no
+//! `PLegacyGlow_setup` sets the glow up (no frame); a bitmap-font text's
+//! quads where the text is laid out (0xc4-byte frame). The shims keep no
 //! state; frames are per call.
 
 use super::{StackFrame, mem, ported};
 use ffx_pother_b::m4r_dynblocks::bridge as blocks;
 use ffx_pother_b::m4r_mesh::bridge as mesh;
+use ffx_prender::m4r_fonttext as fonttext;
 use ffx_prender::m4r_gauss as gauss;
 use ffx_prender::m4r_meshlist as meshlist;
 use ffx_prender::m4r_modnet as modnet;
@@ -91,5 +93,14 @@ ported! {
     /// `f32` bits).
     Phyre_PPostProcessing_PLegacyGlow_computeGaussianTables_00a0ff50 @ 0x00a0_ff50 => extern "thiscall" fn gaussian_tables(glow: u32, width: u32, height: u32, taps: u32, spread: u32) -> u32 {
         gauss::bridge::gaussian_tables(&mut mem(), glow, width, height, taps, spread)
+    }
+    /// `PBitmapFontText::createMeshGeometry(text; count)` -> 0, or a
+    /// stream's map or unmap error.
+    Phyre_PText_PBitmapFontText_createMeshGeometry @ 0x00a2_9770 => extern "thiscall" fn create_mesh_geometry(text: u32, count: u32) -> u32 {
+        // ebp - 0xc4 .. ebp: the streams' mapped pointers, the string
+        // cursor, the two glyph records (the callees get pointers into it)
+        let mut frame = StackFrame::<0x31>::new();
+        let ebp = frame.at() + fonttext::FRAME;
+        fonttext::bridge::create_mesh_geometry(&mut mem(), text, count, ebp)
     }
 }
