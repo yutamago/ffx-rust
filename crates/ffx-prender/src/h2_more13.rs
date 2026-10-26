@@ -447,3 +447,281 @@ pub mod bridge {
         1
     }
 }
+
+/// `PRenderScopeLock_enter_00463d50` / `_leave_00463e90` (thiscall on a
+/// lock object in the caller's frame).
+const LOCK_ENTER: u32 = 0x0046_3d50;
+const LOCK_LEAVE: u32 = 0x0046_3e90;
+/// The renderer singleton's guard bits, the singleton, its constructor
+/// and its `atexit` destructor; the device pointer in it.
+const RENDERER_GUARD: u32 = 0x00c9_628c;
+const RENDERER: u32 = 0x00c9_4f00;
+const RENDERER_CTOR: u32 = 0x004f_ee70;
+const RENDERER_DTOR: u32 = 0x00af_b710;
+const ATEXIT: u32 = 0x0094_9207;
+const DEVICE: u32 = 0x00c9_4f6c;
+/// `Phyre_PRendering_CountOrOne24_00593bb0` (thiscall `(texture)`).
+const SURFACE_COUNT: u32 = 0x0059_3bb0;
+/// `PTexture2DD3D11_createViews_0058f710` (thiscall `(texture)`).
+const CREATE_TEXTURE_VIEWS: u32 = 0x0058_f710;
+/// `WKPDID_D3DDebugObjectName` and the two debug names (`.rdata`).
+const DEBUG_NAME_GUID: u32 = 0x00b6_ae3c;
+const NAME_TEXTURE: u32 = 0x00b3_3aa0;
+const NAME_TEXTURE_MSAA: u32 = 0x00b3_3aac;
+
+pub mod bridge2 {
+    //! The originals over game memory.
+
+    use super::{
+        ATEXIT, CREATE_TEXTURE_VIEWS, Conv, DEBUG_NAME_GUID, DEVICE, Host, LOCK_ENTER, LOCK_LEAVE,
+        MEMSET, NAME_TEXTURE, NAME_TEXTURE_MSAA, RENDERER, RENDERER_CTOR, RENDERER_DTOR,
+        RENDERER_GUARD, SURFACE_COUNT, com,
+    };
+
+    /// The bytes of `create_device_texture`'s frame below `ebp`.
+    pub const FRAME: u32 = 0x230;
+
+    /// The renderer singleton made once (guard bit 0), then its device.
+    fn device(h: &mut impl Host) -> u32 {
+        let guard = h.rebase(RENDERER_GUARD);
+        let g: u32 = h.read(guard);
+        if g & 1 == 0 {
+            h.write(guard, g | 1);
+            let renderer = h.rebase(RENDERER);
+            h.call_sym(RENDERER_CTOR, Conv::Thiscall(renderer), &[]);
+            let dtor = h.rebase(RENDERER_DTOR);
+            h.call_sym(ATEXIT, Conv::Cdecl, &[dtor]);
+        }
+        h.read(h.rebase(DEVICE))
+    }
+
+    /// The surfaces' array (`PSharray` at `+0x24`, 0x1c-byte entries:
+    /// texture, its MSAA texture, its view, ...): inline for one, none
+    /// for zero.
+    fn surfaces(h: &impl Host, this: u32) -> u32 {
+        let c = h.read::<u32>(this + 0x24) & 0x7fff_ffff;
+        if c > 1 {
+            h.read(this + 0x28)
+        } else if c != 0 {
+            this + 0x28
+        } else {
+            0
+        }
+    }
+
+    /// `PTexture2DD3D11::createDeviceTexture(this, data, bind, unused,
+    /// map)` (`0x0058fc20`, thiscall, `ret 0x10`) -> 0, 5 (a map of a
+    /// texture whose `+0x15` bit 0 is set), 0x17 (no device) or 9 (a
+    /// failed creation), or `createViews`' result. Under the render
+    /// scope lock (`ebp - 0x1f8`): the `D3D11_TEXTURE2D_DESC` at `ebp -
+    /// 0x1bc` (size `+0x1c`/`+0x20`, levels `+0xc + 1`, or 1 without
+    /// `+0x10` and `+0x14` bit 1; format `[[this] + 0x18]`; the sample
+    /// count from `[this + 0x18] + 5` with the device's feature level
+    /// (`vtable[0x25]`, at least 0xa100) deciding a resolvable MSAA
+    /// texture; usage, bind and CPU flags), per level the
+    /// `D3D11_SUBRESOURCE_DATA` at `ebp - 0x190` from `data` (level k
+    /// at the sum of the earlier levels' `bpp * w * h / 8`, halving w
+    /// and h without a floor, 0 taken as the top level's, both rounded
+    /// up to 4 for block formats; the pitch from the same width), then
+    /// for each surface `CreateTexture2D` (`vtable[5]`), its private
+    /// data (`+0x28` with `this + 0x44`), its debug name, and with
+    /// `[this + 0x18] + 8` bit 0 an MSAA twin from the copy at `ebp -
+    /// 0x1e8`. Afterwards either the MSAA views (`+0x64` bit 3, the
+    /// shader-resource desc at `ebp - 0x230`, `vtable[7]`, under a
+    /// second lock at `ebp - 0x1f0`) or, when bound as a resource,
+    /// `createViews`. `ebp` is the original's frame base.
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+    pub fn create_device_texture(
+        h: &mut impl Host,
+        ebp: u32,
+        this: u32,
+        data: u32,
+        bind: u8,
+        map: u8,
+    ) -> u32 {
+        let local = |off: u32| ebp.wrapping_sub(off);
+        let target = (h.read::<u32>(this + 0x14) >> 8) & 1 != 0;
+        let mut dynamic = if map == 0 {
+            data == 0 && !target
+        } else {
+            if target {
+                return 5;
+            }
+            true
+        };
+        let tex: u32 = h.read(this);
+        let lock = local(0x1f8);
+        h.call_sym(LOCK_ENTER, Conv::Thiscall(lock), &[]);
+        let dev = device(h);
+        if dev == 0 {
+            h.call_sym(LOCK_LEAVE, Conv::Thiscall(lock), &[]);
+            return 0x17;
+        }
+        let desc = local(0x1bc);
+        h.call_sym(MEMSET, Conv::Cdecl, &[desc, 0, 0x2c]);
+        let width: u32 = h.read(this + 0x1c);
+        let height: u32 = h.read(this + 0x20);
+        h.write(desc, width);
+        h.write(desc + 4, height);
+        let mut levels = h.read::<u32>(this + 0xc).wrapping_add(1);
+        if h.read::<u32>(this + 0x10) == 0 && (h.read::<u32>(this + 0x14) >> 1) & 1 == 0 {
+            levels = 1;
+        }
+        h.write(desc + 8, levels);
+        let format: u32 = h.read(tex + 0x18);
+        h.write(desc + 0x10, format);
+        if dynamic && levels > 1 {
+            dynamic = false;
+        }
+        h.write(desc + 0xc, 1u32);
+        h.write(desc + 0x14, 1u32);
+        h.write(desc + 0x18, 0u32);
+        let mut msaa = false;
+        let mut resolvable = false;
+        let mut bind = bind;
+        let ms: u32 = h.read(this + 0x18);
+        let samples = if ms == 0 {
+            0
+        } else {
+            u32::from(h.read::<u8>(ms + 5))
+        };
+        if samples != 0 {
+            h.write(desc + 0x14, samples);
+        }
+        if samples > 1 {
+            if (h.read::<u32>(tex + 0x10) >> 1) & 1 != 0 {
+                // `ecx` is the sample count at this call
+                let level = com(h, samples, dev, 0x94 / 4, &[]);
+                if (level as i32) < 0xa100 {
+                    bind = 0;
+                } else {
+                    resolvable = true;
+                }
+            }
+            if h.read::<u8>(h.read::<u32>(this + 0x18) + 8) & 1 != 0 {
+                msaa = true;
+            }
+        }
+        let mut flags = if bind == 0 { 0 } else { 8 };
+        if target {
+            flags |= if (h.read::<u32>(tex + 0x10) >> 1) & 1 == 0 {
+                0x20
+            } else {
+                0x40
+            };
+        }
+        h.write(desc + 0x20, flags);
+        h.write(desc + 0x1c, if dynamic { 2u32 } else { 0 });
+        h.write(desc + 0x24, if dynamic { 0x1_0000u32 } else { 0 });
+        if levels != 0 {
+            let tex: u32 = h.read(this);
+            let mut at = data;
+            let (mut w, mut ht) = (width, height);
+            for k in 0..levels {
+                let block = h.read::<u8>(tex + 0x10) & 1 != 0;
+                let bpp: u32 = h.read(tex + 0xc);
+                let mut cw = if w == 0 { width } else { w };
+                let mut ch = if ht == 0 { height } else { ht };
+                if block {
+                    cw = (cw + 3) & !3;
+                    ch = (ch + 3) & !3;
+                }
+                let size = bpp.wrapping_mul(cw).wrapping_mul(ch) >> 3;
+                let mut pw = if w == 0 { width } else { w };
+                let mut mul = 1;
+                if block {
+                    pw = (pw + 3) & !3;
+                    mul = 4;
+                }
+                let pitch = bpp.wrapping_mul(pw).wrapping_mul(mul) >> 3;
+                let entry = local(0x190).wrapping_add(k.wrapping_mul(12));
+                h.write(entry, at);
+                h.write(entry + 4, pitch);
+                h.write(entry + 8, 0u32);
+                at = at.wrapping_add(size);
+                ht >>= 1;
+                w >>= 1;
+            }
+        }
+        let copy = local(0x1e8);
+        for k in 0..11 {
+            let v: u32 = h.read(desc + 4 * k);
+            h.write(copy + 4 * k, v);
+        }
+        if msaa {
+            h.write(desc + 0x14, 1u32);
+        }
+        let init = if data == 0 { 0 } else { local(0x190) };
+        let mut i = 0u32;
+        while i < h.call_sym(SURFACE_COUNT, Conv::Thiscall(this), &[]) {
+            let off = i.wrapping_mul(0x1c);
+            let slot = surfaces(h, this).wrapping_add(off);
+            let vt: u32 = h.read(dev);
+            if com(h, vt, dev, 5, &[desc, init, slot]) != 0 {
+                h.call_sym(LOCK_LEAVE, Conv::Thiscall(lock), &[]);
+                return 9;
+            }
+            let obj: u32 = h.read(surfaces(h, this).wrapping_add(off));
+            com(h, obj, obj, 0x28 / 4, &[this + 0x44]);
+            let obj: u32 = h.read(surfaces(h, this).wrapping_add(off));
+            let vt: u32 = h.read(obj);
+            let guid = h.rebase(DEBUG_NAME_GUID);
+            let name = h.rebase(NAME_TEXTURE);
+            com(h, vt, obj, 5, &[guid, 8, name]);
+            if msaa {
+                let slot = surfaces(h, this).wrapping_add(off).wrapping_add(4);
+                let vt: u32 = h.read(dev);
+                if com(h, vt, dev, 5, &[copy, 0, slot]) != 0 {
+                    h.call_sym(LOCK_LEAVE, Conv::Thiscall(lock), &[]);
+                    return 9;
+                }
+                let obj: u32 = h.read(surfaces(h, this).wrapping_add(off).wrapping_add(4));
+                let vt: u32 = h.read(obj);
+                let name = h.rebase(NAME_TEXTURE_MSAA);
+                com(h, vt, obj, 5, &[guid, 0xd, name]);
+            }
+            i += 1;
+        }
+        h.call_sym(LOCK_LEAVE, Conv::Thiscall(lock), &[]);
+        if !resolvable {
+            if bind != 0 {
+                return h.call_sym(CREATE_TEXTURE_VIEWS, Conv::Thiscall(this), &[]);
+            }
+            return 0;
+        }
+        if h.read::<u8>(this + 0x64) & 8 == 0 {
+            return 0;
+        }
+        let lock2 = local(0x1f0);
+        h.call_sym(LOCK_ENTER, Conv::Thiscall(lock2), &[]);
+        let dev = device(h);
+        h.write(local(0x1f8), dev);
+        let view = local(0x230);
+        let format: u32 = h.read(h.read::<u32>(this) + 0x20);
+        let first: u32 = h.read(this + 0x4c);
+        for (k, w) in (0u32..).zip([format, 6, 0, first, 0, 0]) {
+            h.write(view + 4 * k, w);
+        }
+        let mut i = 0u32;
+        while i < h.call_sym(SURFACE_COUNT, Conv::Thiscall(this), &[]) {
+            let off = i.wrapping_mul(0x1c);
+            let base = surfaces(h, this);
+            let res: u32 = h.read(base.wrapping_add(off).wrapping_add(4));
+            let vt: u32 = h.read(dev);
+            let r = com(
+                h,
+                vt,
+                dev,
+                7,
+                &[res, view, base.wrapping_add(off).wrapping_add(8)],
+            );
+            if (r as i32) < 0 {
+                h.call_sym(LOCK_LEAVE, Conv::Thiscall(lock2), &[]);
+                return 9;
+            }
+            i += 1;
+        }
+        h.call_sym(LOCK_LEAVE, Conv::Thiscall(lock2), &[]);
+        0
+    }
+}

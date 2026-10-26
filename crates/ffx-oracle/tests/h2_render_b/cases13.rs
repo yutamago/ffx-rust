@@ -313,3 +313,132 @@ pub static CASES: &[Case] = &[
         writes: &[],
     },
 ];
+
+/// `PTexture2DD3D11::createDeviceTexture` (`0x0058fc20`): its own runner
+/// on the shared [`Env`], because the frame words its callees see (the
+/// shader-resource desc at `ebp-0x230`, the lock / device word at
+/// `ebp-0x1f8`, the two texture descs and the subresource array from
+/// `ebp-0x1e8` to the cookie) sit among scratch words the port does not
+/// keep.
+#[test]
+fn h2_render_b_create_device_texture_matches_the_original() {
+    use ffx_prender::h2_more13::bridge2 as c;
+    const ADDR: u32 = 0x0058_fc20;
+    for (snap, mut e) in Env::all() {
+        for &(sym, n, pops, this) in &[
+            (0x0046_3d50u32, 0u32, 0u32, true),
+            (0x0046_3e90, 0, 0, true),
+            (0x004f_ee70, 0, 0, true),
+            (0x0094_9207, 1, 0, false),
+            (0x0094_964c, 3, 0, false),
+            (0x0058_f710, 0, 0, true),
+        ] {
+            e.stub(sym, n, pops, this, None);
+        }
+        let mut rng = Rng(0x1234_5678 ^ ADDR);
+        for i in 0..400 {
+            let what = format!("{snap} createDeviceTexture #{i}");
+            e.fill(&mut rng);
+            let views = e.ret_word(&mut rng);
+            e.set_ret(0x0058_f710, views);
+            // the renderer singleton's guard and device
+            let guard = e.rebase(0x00c9_628c);
+            let g = [0, 1, rng.next() & !1 | u32::from(rng.chance(2))][rng.below(3) as usize];
+            e.w32(guard, g);
+            let dev = e.pool + POOL_PTRS + 0x1000;
+            e.w32(e.rebase(0x00c9_4f6c), if rng.chance(12) { 0 } else { dev });
+            let dvt = dev + 0x40;
+            e.w32(dev, dvt);
+            // the created textures: objects with their own vtables
+            let made = e.pool + POOL_PTRS + 0x1200;
+            e.w32(made, made + 0x40);
+            let f = e.handler(2, 0);
+            e.w32(made + 0x40 + 0x28, f);
+            let f = e.handler(4, 0);
+            e.w32(made + 0x40 + 0x14, f);
+            let hr = if rng.chance(10) { 0x8007_0057 } else { 0 };
+            let f = e.writer(1, 4, 3, hr, made);
+            e.w32(dvt + 0x14, f);
+            let level = [0xa000, 0xa100, 0xb000][rng.below(3) as usize];
+            let f = e.handler(1, level);
+            e.w32(dvt + 0x94, f);
+            let hr = if rng.chance(8) {
+                0x8007_0057
+            } else {
+                rng.below(2)
+            };
+            let f = e.handler(4, hr);
+            e.w32(dvt + 0x1c, f);
+            // the texture
+            let this = e.pool + POOL_PTRS;
+            let tex = e.ptr(&mut rng);
+            e.w32(this, tex);
+            e.w32(tex + 0xc, [4, 8, 16, 32, rng.next()][rng.below(5) as usize]);
+            e.w32(tex + 0x10, rng.below(4));
+            e.w32(this + 0xc, rng.below(12));
+            e.w32(this + 0x10, rng.below(2));
+            e.w32(this + 0x14, rng.next() & 0x302);
+            let ms = if rng.chance(3) {
+                0
+            } else {
+                let ms = e.ptr(&mut rng);
+                e.write(ms + 5, &[rng.below(5) as u8]);
+                e.write(ms + 8, &[rng.below(4) as u8]);
+                ms
+            };
+            e.w32(this + 0x18, ms);
+            for off in [0x1c, 0x20] {
+                let v = [0, 1, 3, 16, 256, 0x1000, rng.next()][rng.below(7) as usize];
+                e.w32(this + off, v);
+            }
+            let surfaces = e.pool + POOL_PTRS + 0x800;
+            // at least one: with none the count says 1 and the array is null
+            let n = 1 + rng.below(3);
+            e.w32(this + 0x24, n | if rng.chance(3) { 0x8000_0000 } else { 0 });
+            if n > 1 {
+                e.w32(this + 0x28, surfaces);
+            }
+            e.write(this + 0x64, &[rng.below(16) as u8]);
+            let data = if rng.chance(3) { 0 } else { e.ptr(&mut rng) };
+            let bind = rng.below(3) | (rng.next() & 0xffff_ff00);
+            let map = rng.below(3) | (rng.next() & 0xffff_ff00);
+            let args = [data, bind, rng.next(), map];
+            // the frame: the same junk in both, the port's calls below it
+            let ebp = e.a.stack_range().end - 0x100 - 4 * 4 - 8;
+            let lo = ebp - c::FRAME;
+            let junk: Vec<u8> = (0..c::FRAME).map(|k| (k * 0x3d + 0x11) as u8).collect();
+            e.write(lo, &junk);
+            e.b.set_call_top(Some(lo - 0x100));
+            let addr = e.rebase(ADDR);
+            let ra =
+                e.a.call(addr, Conv::Thiscall(this), &args)
+                    .unwrap_or_else(|err| panic!("{what}: the original: {err}"));
+            assert!(ra.st0_raw.is_none(), "{what}: the original leaves ST0 set");
+            let rb = c::create_device_texture(
+                &mut G(&mut e.b, lo),
+                ebp,
+                this,
+                data,
+                bind as u8,
+                map as u8,
+            );
+            e.b.set_call_top(None);
+            assert_eq!(ra.eax, rb, "{what}: eax");
+            for (from, to) in [(0x230, 0x218), (0x1f8, 0x1f4), (0x1e8, 0x10)] {
+                let fa = Oracle::read(&mut e.a, ebp - from, (from - to) as usize).unwrap();
+                let fb = Oracle::read(&mut e.b, ebp - from, (from - to) as usize).unwrap();
+                assert_eq!(fa, fb, "{what}: frame ebp-{from:#x}..ebp-{to:#x}");
+            }
+            let diff = e.a.diff(&mut e.b).unwrap();
+            assert!(
+                diff.is_empty(),
+                "{what}: memory differs at {} bytes, first {:x?}",
+                diff.len(),
+                &diff[..diff.len().min(8)]
+            );
+            e.a.clear_dirty();
+            e.b.clear_dirty();
+        }
+        e.unstub_all();
+    }
+}
