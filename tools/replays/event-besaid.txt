@@ -32,6 +32,9 @@
 load direct 3 bsil0000
 lockstep on
 waitfor 0x01325d94:4 40000000 c0ffffff 1500
+# FFX_AUDIO_WAV (run-all.sh --audio): the capture is compared from the
+# `audiomark start` to the `audiomark end` (docs/harness.md, "Audio capture")
+audiomark start
 wait 37
 read 0x01325d94 4
 shot $OUT\event-besaid-1.bmp
@@ -82,4 +85,5 @@ press circle 3 3
 press up+right 30 4
 press circle 3 3
 read 0x00ccb9a8 12
+audiomark end
 wait 30

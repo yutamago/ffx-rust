@@ -1054,6 +1054,51 @@ ones are in `~/ffx-work/m4/port/coverage2.list` (`tools/coverage-new.py`).
 `fpucw` answers the game thread's x87 control word: `0x027f` (53-bit
 precision, round to nearest, all exceptions masked).
 
+### Audio capture
+
+`FFX_AUDIO_WAV=<file>` (a WSL path, best on `/mnt/c`; `tools/run-game.sh`
+passes it with `/p`) writes FMOD's mix to a WAV file, original code and Rust
+alike (`crates/ffx-hook/src/audio_wav.rs`). FMOD Ex is 4.44.32. The hook
+wraps `FFX.exe`'s import of `EventSystem::init`, which
+`FfxFmod_initEventSystem` (`0x00706820`, original or h4's port) calls, and
+before the real `init` it sets on the `System`:
+`FMOD_OUTPUTTYPE_WAVWRITER_NRT` (5: no audio device, so nothing reaches
+the speakers), the software format with `PCMFLOAT` (the WAV holds the
+mixer's 32-bit floats), DSP blocks of `rate / 30` (1600 at 48 kHz: one block
+per FMOD tick), `FMOD_INIT_STREAM_FROM_UPDATE` (no stream thread), and the
+file name as `extradriverdata`. Measured: 48 kHz stereo float, 1600 x 4
+buffers, one block per `EventSystem::update`; at `FFX_TEST_VOLUME` 5 the
+battle-attack capture peaks at 0.039 (not silent).
+
+Lockstep for FMOD: with the virtual clock, once the main thread has reached
+its first frame boundary, `FmodManager_tick` (`0x006fa700`, a trampoline)
+runs only in the turn the main thread gives it at each boundary, just
+before the update, and the main thread waits for it. Between turns the
+FMOD thread only serves a `registCommandSync` the main thread waits on (it
+runs that one handler, as the queue run does first). `audiomark <name>`
+writes `mark <name> frame <n> sample <dsp clock> updates <n>` to
+`<file>.marks`; event-besaid, battle-attack, menu-browse and battle-ifrit
+have `audiomark start` and `audiomark end`. `tools/wav-compare.py A.wav
+B.wav` compares the two between the marks, sample for sample (or
+`--tolerance`), and prints the first differing sample, its time and FMOD
+tick. `quit` (TerminateProcess) loses FMOD's last file buffer (about 450
+frames); the tool leaves out what was never written and says so.
+`tools/replays/run-all.sh --audio --record` records the original twice into
+`~/ffx-work/replay-shots/audio` (`FFX_REPLAY_AUDIO`) and compares the two;
+`--audio` compares a Rust run with them.
+
+Status (2026-10-26, unfinished): the first recording (2 s stall fallback)
+gave original against original captures exactly one block apart on all
+three replays (event-besaid: lag 1600 frames, residue 6e-10). The cause was
+the fallback: a map load holds one update for seconds in `CdReadSync`
+(`0x0076c490`, `MovieCdReadTaskLoop` waiting for the read thread, not for
+FMOD), and the free tick there ran the command queue mid-update, one
+soundLoop earlier than the next turn. The fallback is now 30 s (a deadlock
+guard only, logged with every thread's stack). Still to do: re-record and
+confirm original against original matches, compare Rust against original
+on the three replays, bisect any difference with `FFX_HOOK_DISABLE` /
+`FFX_HOOK_ONLY=@file`.
+
 ## Parallel games
 
 `Game_Main` (`0x0062ee50`) takes the named mutex

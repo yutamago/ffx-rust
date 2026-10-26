@@ -13,6 +13,9 @@
 load direct 5 kami0100
 lockstep on
 pin
+# FFX_AUDIO_WAV (run-all.sh --audio): the capture is compared from the
+# `audiomark start` to the `audiomark end` (docs/harness.md, "Audio capture")
+audiomark start
 wait 10
 write 0x011307e8 01000405ff020306
 battle 34 0 0
@@ -40,3 +43,4 @@ wait 150
 shot $OUT\battle-ifrit-3.bmp
 wait 100
 shot $OUT\battle-ifrit-4.bmp
+audiomark end

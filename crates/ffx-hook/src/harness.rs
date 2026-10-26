@@ -81,6 +81,7 @@
 //! | `overlaymouse <x> <y> [down\|up]` | moves the overlay's pointer there, pressing or releasing the left button |
 //! | `overlaykey <vk hex> down\|up` | a key for the overlay (Windows virtual-key code) |
 //! | `editor` | opens or closes the renderer's editor (as F11; shows the overlay) |
+//! | `audiomark <name>` | `ok frame <n> sample <n> updates <n> free <n> late <n>`: notes where the `FFX_AUDIO_WAV` capture stands in its marks file ([`crate::audio_wav`]; `ok off` without it) |
 //! | `quit` | ends the process |
 
 use std::collections::VecDeque;
@@ -1485,6 +1486,17 @@ pub(crate) fn passed() -> u32 {
     PASSED.load(Ordering::Acquire)
 }
 
+/// Frame boundaries entered, as [`REACHED`] (0: the main loop has not run
+/// an update yet).
+pub(crate) fn reached() -> u32 {
+    REACHED.load(Ordering::Acquire)
+}
+
+/// The virtual clock is on.
+pub(crate) fn virtual_clock() -> bool {
+    VIRTUAL.load(Ordering::Acquire)
+}
+
 /// The present holds end as if the main thread had left this many
 /// boundaries: the loader's turn lets the render thread go before the main
 /// thread leaves ([`crate::loader_turn`]).
@@ -1575,6 +1587,9 @@ pub unsafe extern "thiscall" fn animate(app: *mut c_void) -> u32 {
     {
         run_vsync();
     }
+    // FFX_AUDIO_WAV: the FmodManager thread's tick for this boundary, at
+    // this frame's game time (crate::audio_wav).
+    crate::audio_wav::boundary_turn();
     // SAFETY: the trampoline runs the original with the same `this`.
     let r = unsafe {
         let original: unsafe extern "thiscall" fn(*mut c_void) -> u32 =
@@ -2062,7 +2077,7 @@ fn list_threads() -> String {
 /// registers and stack are copied (no allocation then: it may hold the
 /// heap's lock).
 #[allow(clippy::cast_possible_truncation)] // 32-bit process
-fn thread_stacks() -> String {
+pub(crate) fn thread_stacks() -> String {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Diagnostics::Debug::{
         CONTEXT, GetThreadContext, ReadProcessMemory,
@@ -2362,6 +2377,8 @@ fn command(line: &str) -> Result<String, String> {
         "snapshot" => on_game_thread(Job::Snapshot(words[1..].join(" "))),
         "fpucw" => on_game_thread(Job::FpuControl),
         "pin" => on_game_thread(Job::Pin),
+        // where the FFX_AUDIO_WAV capture stands (crate::audio_wav)
+        "audiomark" => crate::audio_wav::mark(arg(1)?),
         "loadsave" => on_game_thread(Job::LoadSave(words[1..].join(" "))),
         "threads" => list_threads(),
         "stacks" => thread_stacks(),

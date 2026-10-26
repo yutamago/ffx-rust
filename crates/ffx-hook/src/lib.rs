@@ -86,6 +86,8 @@ pub enum Outcome {
 }
 
 #[cfg(all(windows, target_arch = "x86"))]
+pub mod audio_wav;
+#[cfg(all(windows, target_arch = "x86"))]
 pub mod coverage;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod fmod_log;
