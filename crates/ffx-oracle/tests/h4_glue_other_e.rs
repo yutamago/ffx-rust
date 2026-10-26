@@ -29,7 +29,7 @@ use ffx_glue_other::{
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
-    h4_i2 as i2, h4_i3 as i3, h4_i4 as i4,
+    h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -8123,5 +8123,307 @@ fn i4_sa_textures() {
             );
         }
         assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 7, batch 5 (ffx_glue_other::h4_i5)
+
+/// A particle model's projected positions.
+#[test]
+fn i5_project_positions() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c751);
+        let stubs = [(i1::GET_PTR32, 1), (i1::MUL_MATRIX, 3)];
+        for (sym, n) in stubs {
+            t.stub(sym, n, false);
+        }
+        let out = t.zeros(0x10);
+        out4_stub(&mut t, i5::APPLY_MATRIX, 3, out);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(i5::APPLY_MATRIX);
+        let mut done = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for k in 0..3 {
+                let v = rng.float();
+                t.w32(out + 4 * k, v);
+            }
+            let wv = {
+                let f = rng.float();
+                rng.pick(&[f, f, 0, 0x8000_0000, 0x7fc0_0000, 0x3f80_0000])
+            };
+            t.w32(out + 0xc, wv);
+            let model = random_block(&mut t, &mut rng, 0x20);
+            let count = rng.pick(&[0u16, 1, 2, 3, 0xffff, 0x8000]);
+            t.w16(model + 0x12, count);
+            t.ret(i1::GET_PTR32, model);
+            let src = t.zeros(0x40);
+            for k in 0..0x10 {
+                let v = if rng.below(2) == 0 {
+                    rng.float()
+                } else {
+                    rng.next()
+                };
+                let v = if ffx_bridge::x87::is_snan(v) { 0 } else { v };
+                t.w32(src + 4 * k, v);
+            }
+            let dst = random_block(&mut t, &mut rng, 0x40);
+            let job = random_block(&mut t, &mut rng, 0x48);
+            let flags = rng.next();
+            t.w32(job, rng.pick(&[flags | 0x400, flags & !0x400]));
+            t.w32(job + 4, dst);
+            t.w32(job + 0x38, src);
+            let m = rng.next();
+            t.w32(job + 0x44, rng.pick(&[0, m]));
+            let part = random_block(&mut t, &mut rng, 0x20);
+            let frame = t.ebp_for(2) - 0x64;
+            t.check_framed(
+                &w,
+                0x0071_61f0,
+                &[part, job],
+                frame,
+                &[(0, i5::PROJECT_FRAME as usize)],
+                |g| u(i5::project_positions(g, frame, part, job)),
+            );
+            done += u32::from(count > 0 && count < 0x8000);
+        }
+        assert!(done > 0, "{name}: projected");
+    }
+}
+
+/// `GDraw`'s depth-stencil state cache.
+#[test]
+fn i5_depth_stencil() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c752);
+        let created = t.zeros(4);
+        let device = {
+            let f = t.stub_code(0x0bad_c751, false, 3, 3, false, &[wr(2, created)]);
+            let vtable = t.zeros(0x60);
+            t.w32(vtable + 0x54, f);
+            let obj = t.zeros(4);
+            t.w32(obj, vtable);
+            obj
+        };
+        let base_vtable = {
+            let f = t.stub_code(0x0bad_c752, false, 2, 2, false, &[]);
+            let vtable = t.zeros(0x20);
+            t.w32(vtable + 0x1c, f);
+            vtable
+        };
+        let old_vtable = {
+            let f = t.stub_code(0x0bad_c753, false, 1, 1, false, &[]);
+            let vtable = t.zeros(0x10);
+            t.w32(vtable + 8, f);
+            vtable
+        };
+        // the warning: 4 words for "out of memory", 5 otherwise
+        let w4 = t.stub_code(0x0bad_c754, false, 4, 0, false, &[]);
+        let w5 = t.stub_code(0x0bad_c755, false, 5, 0, false, &[]);
+        let oom = t.rebase(i5::D3D_OUT_OF_MEMORY);
+        let mut c = vec![0x81, 0x7c, 0x24, 0x08];
+        c.extend(oom.to_le_bytes());
+        c.extend([0x0f, 0x84]);
+        let at = t.cave_next;
+        c.extend(w4.wrapping_sub(at + 14).to_le_bytes());
+        c.push(0xe9);
+        c.extend(w5.wrapping_sub(at + 19).to_le_bytes());
+        let warn = t.code(&c);
+        let tags = [
+            0x0bad_c751,
+            0x0bad_c752,
+            0x0bad_c753,
+            0x0bad_c754,
+            0x0bad_c755,
+        ];
+        let mut made = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(i1::SEND_WARNING_IAT, warn);
+            let hr = {
+                let r = rng.next();
+                rng.pick(&[0, 0, 0x8007_000e, r, 1])
+            };
+            t.ret(0x0bad_c751, hr);
+            let state = rng.next();
+            t.w32(created, state);
+            let gd = random_block(&mut t, &mut rng, 0x990);
+            t.w32(gd, device);
+            for k in 0..4 {
+                let base = t.zeros(4);
+                t.w32(base, base_vtable);
+                t.w32(gd + 0x7f0 + 4 * k, base);
+            }
+            let (depth, write) = (rng.below(2), rng.below(2));
+            let (rm, wm) = (rng.next(), rng.next());
+            let key = ((((((wm & 0xff) << 8) | (rm & 0xff)) << 7) | depth) * 2) | write;
+            // half the time no entry is empty: the oldest is replaced
+            let full = rng.below(2) == 0;
+            let spread = rng.pick(&[4, 100]);
+            for k in 0..0x20 {
+                let s = {
+                    let old = t.zeros(4);
+                    t.w32(old, old_vtable);
+                    if full {
+                        old
+                    } else {
+                        rng.pick(&[0, old, old, old])
+                    }
+                };
+                t.w32(gd + 0x880 + 4 * k, s);
+                let stamp = rng.below(spread);
+                t.w32(gd + 0x900 + 4 * k, stamp);
+                let other = rng.next();
+                t.w32(gd + 0x800 + 4 * k, other);
+            }
+            if rng.below(3) == 0 {
+                let k = rng.below(0x20);
+                t.w32(gd + 0x800 + 4 * k, key);
+            }
+            let clock = rng.pick(&[50, 200, 0xffff_ffff]);
+            t.w32(gd + 0x980, clock);
+            t.g32(i3::GDRAW, gd);
+            let desc = t.ebp_for(4) - 0x38;
+            t.check_framed(
+                &w,
+                0x00a3_d020,
+                &[depth, write, rm, wm],
+                desc,
+                &[(0, i5::DEPTH_FRAME as usize)],
+                |g| u(i5::depth_stencil_state(g, desc, depth, write, rm, wm)),
+            );
+            made += 1;
+        }
+        assert!(made > 0 && t.log_entries() > 0, "{name}: states made");
+    }
+}
+
+/// The distortion grid's setup.
+#[test]
+fn i5_distortion_grid() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c753);
+        let mut stubs = vec![
+            (i5::PHYRE_MALLOC_ALIGNED, false, 2, 0),
+            (i5::SEGMENTS_CTOR, false, 2, 0),
+            (i5::SEGMENTS_FREE, false, 2, 0),
+            (i5::STREAM_CTOR, true, 0, 0),
+            (i5::STREAMS_ADOPT, true, 2, 2),
+            (i5::OPERATOR_NEW_ARRAY, false, 1, 0),
+            (i5::INDEX_SIZE, false, 1, 0),
+            (i5::INDEX_IS_BOUND, true, 0, 0),
+            (i5::INDEX_UNBIND, true, 0, 0),
+        ];
+        for f in i5::GRID_SETUPS {
+            stubs.push((f, true, 0, 0));
+        }
+        for &(sym, this, n, pops) in &stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let block = random_block(&mut t, &mut rng, 0x70);
+            t.ret(i5::PHYRE_MALLOC_ALIGNED, rng.pick(&[block, block, 0]));
+            let size = rng.pick(&[1u32, 2, 4]);
+            t.ret(i5::INDEX_SIZE, size);
+            let bound = rng.pick(&[0u32, 1, 0x100]);
+            t.ret(i5::INDEX_IS_BOUND, bound);
+            let segment = random_block(&mut t, &mut rng, 0x70);
+            t.w32(segment + 0x28, rng.pick(&[3, 0, 1]));
+            t.w32(segment + 0x64, rng.pick(&[0x180 * size, 0, 0x300]));
+            let mesh = random_block(&mut t, &mut rng, 8);
+            let count = rng.pick(&[1u32, 0, 2, 0x8000_0002]);
+            t.w32(mesh, count);
+            let old = rng.pick(&[segment, block]);
+            t.w32(mesh + 4, old);
+            let this = random_block(&mut t, &mut rng, 0x78);
+            t.w32(this + 0x34, mesh);
+            t.check_conv(&w, 0x006c_2ff0, Conv::Thiscall(this), &[], |g| {
+                i5::setup_distortion_grid(g, this);
+                Out::None
+            });
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// `GDraw`'s depth buffer.
+#[test]
+fn i5_depth_buffer() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c754);
+        let (texture_cell, view_cell) = (t.zeros(4), t.zeros(4));
+        let device_vtable = t.zeros(0x40);
+        let f = t.stub_code(0x0bad_c761, false, 4, 4, false, &[wr(3, texture_cell)]);
+        t.w32(device_vtable + 0x14, f);
+        let f = t.stub_code(0x0bad_c762, false, 4, 4, false, &[wr(3, view_cell)]);
+        t.w32(device_vtable + 0x28, f);
+        let context_vtable = t.zeros(0xe0);
+        let f = t.stub_code(0x0bad_c763, false, 5, 5, false, &[]);
+        t.w32(context_vtable + 0xd4, f);
+        let release_vtable = t.zeros(0x10);
+        let f = t.stub_code(0x0bad_c764, false, 1, 1, false, &[]);
+        t.w32(release_vtable + 8, f);
+        let w4 = t.stub_code(0x0bad_c765, false, 4, 0, false, &[]);
+        let w5 = t.stub_code(0x0bad_c766, false, 5, 0, false, &[]);
+        let oom = t.rebase(i5::D3D_OUT_OF_MEMORY);
+        let mut c = vec![0x81, 0x7c, 0x24, 0x08];
+        c.extend(oom.to_le_bytes());
+        c.extend([0x0f, 0x84]);
+        let at = t.cave_next;
+        c.extend(w4.wrapping_sub(at + 14).to_le_bytes());
+        c.push(0xe9);
+        c.extend(w5.wrapping_sub(at + 19).to_le_bytes());
+        let warn = t.code(&c);
+        let tags = [
+            0x0bad_c761,
+            0x0bad_c762,
+            0x0bad_c763,
+            0x0bad_c764,
+            0x0bad_c765,
+            0x0bad_c766,
+        ];
+        let mut made = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(i1::SEND_WARNING_IAT, warn);
+            for tag in [0x0bad_c761, 0x0bad_c762] {
+                let r = rng.next();
+                t.ret(tag, rng.pick(&[0, 0, 0x8007_000e, r]));
+            }
+            for cell in [texture_cell, view_cell] {
+                let obj = t.zeros(4);
+                t.w32(obj, release_vtable);
+                t.w32(cell, rng.pick(&[obj, obj, 0]));
+            }
+            let gd = random_block(&mut t, &mut rng, 0x7a0);
+            let device = t.zeros(4);
+            t.w32(device, device_vtable);
+            t.w32(gd, device);
+            let context = t.zeros(4);
+            t.w32(context, context_vtable);
+            t.w32(gd + 4, context);
+            let view = rng.next();
+            t.w32(gd + 0x788, rng.pick(&[0, 0, 0, view]));
+            t.w32(gd + 0x794, 0);
+            t.g32(i3::GDRAW, gd);
+            let stats = random_block(&mut t, &mut rng, 0x20);
+            let desc = t.ebp_for(1) - 0x30;
+            let r = t.check_framed(
+                &w,
+                0x00a3_b840,
+                &[stats],
+                desc,
+                &[(0, i5::TEXTURE_FRAME as usize)],
+                |g| u(i5::depth_buffer(g, desc, stats)),
+            );
+            made += u32::from(r != 0);
+        }
+        assert!(made > 0, "{name}: buffers made");
     }
 }

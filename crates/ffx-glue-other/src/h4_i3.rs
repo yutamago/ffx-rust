@@ -2,7 +2,7 @@
 //! effect's constructor, the motion blur's render, the save/load menu's
 //! open, the boot text's update and `GDraw`'s resource limits and setup.
 
-use ffx_bridge::x87::{load, store};
+use ffx_bridge::x87::{add, load, store};
 use ffx_graphic::host::{Conv, Host};
 
 use crate::h4_e1::pass;
@@ -357,12 +357,13 @@ pub fn boot_text_update(h: &mut impl Host, this: u32, dt: u32) {
     let limit = load(h.read(h.rebase(FADE_LIMIT)));
     let dt = load(dt);
     let fade = load(h.read(at(0x164)));
-    // `fcomp` + `test ah, 1; jne`: skipped when 0.3 < fade or unordered
+    // `fcomp` + `test ah, 1; jne`: skipped when 0.3 < fade or unordered;
+    // the adds follow the x87's NaN rules (`x87::add`)
     if fade <= limit {
-        h.write(at(0x164), store(fade + dt));
+        h.write(at(0x164), store(add(fade, dt)));
     }
     let timer = load(h.read(at(0x160)));
-    h.write(at(0x160), store(dt + timer));
+    h.write(at(0x160), store(add(dt, timer)));
 }
 
 // ---- GDraw's resource limits and setup
