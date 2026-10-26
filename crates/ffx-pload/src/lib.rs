@@ -21,7 +21,13 @@
 //! - [`p1_buffers`]: the class descriptors' default and validation buffers (round 3);
 //! - [`p1_fixup`]: `PCluster::fixupInstances` (round 3);
 //! - [`p1_lists`]: the cluster reader's instance-list data (round 3);
-//! - [`p1_fixups`]: the cluster reader's user fixups (round 3).
+//! - [`p1_fixups`]: the cluster reader's user fixups (round 3);
+//! - [`p1_dynbind`]: `PClassDescriptorDynamic::Bind` (round 4);
+//! - [`p1_mapping`]: the namespace mapping's build and class checks (round 4);
+//! - [`p1_pointers`]: the cluster reader's array and pointer-array fixups (round 4);
+//! - [`p1_body`]: the cluster reader's body, its steps after the header (round 4);
+//! - [`p1_header`]: the cluster reader's header classes (round 4);
+//! - [`p1_cluster`]: `PBinary::loadCluster` (round 4).
 //!
 //! Everything this crate does not port is called at its address through
 //! [`ffx_graphic::host::Host`] (the allocator, the file layer, the
@@ -38,14 +44,20 @@
 pub mod cluster;
 pub mod descriptor;
 pub mod p1_bind;
+pub mod p1_body;
 pub mod p1_buffers;
+pub mod p1_cluster;
 pub mod p1_d3d;
 pub mod p1_declare;
+pub mod p1_dynbind;
 pub mod p1_fixup;
 pub mod p1_fixups;
+pub mod p1_header;
 pub mod p1_lists;
 pub mod p1_loader;
+pub mod p1_mapping;
 pub mod p1_misc;
+pub mod p1_pointers;
 pub mod p1_post;
 pub mod p1_reader;
 pub mod p1_tree;
