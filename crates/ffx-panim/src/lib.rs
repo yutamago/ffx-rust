@@ -10,7 +10,11 @@
 //!   forwarding callbacks;
 //! - [`controller`]: the animation controllers' constructors and
 //!   destructors;
-//! - [`network`]: `PAnimationNetworkInstance`'s parts.
+//! - [`network`]: `PAnimationNetworkInstance`'s parts;
+//! - [`p2_bind`]: the classes' `Bind()` tables (run by h1's and p3's
+//!   interpreters);
+//! - [`p2_declare`]: the `PArray<T>` / `PSharray<T>` descriptors'
+//!   declarations.
 //!
 //! Everything this list does not hold (`Phyre::PhyreFree`, the type
 //! registry, other classes' methods) is called at its address through
@@ -20,6 +24,9 @@ pub mod array;
 pub mod controller;
 pub mod descriptor;
 pub mod network;
+pub mod p2_bind;
+pub mod p2_declare;
+pub mod p2_more;
 
 /// `mov al, 1` over an `eax` that held `eax`: what the callbacks that end
 /// that way leave for their caller.
