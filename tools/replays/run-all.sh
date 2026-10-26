@@ -47,6 +47,19 @@
 # draws what PhyreEngine draws. `--rust-map=build` has the scene builder draw
 # the supported maps (FFX_RUST_MAP=build, docs/scene-builder.md, "In the game";
 # the others are recorded and re-issued as with --rust-map).
+# Audio mode (docs/harness.md, "Audio capture"):
+#   tools/replays/run-all.sh --audio [replay...]
+#   tools/replays/run-all.sh --audio --record [replay...]
+# plays the audio list (event-besaid: voice, music and footsteps;
+# battle-attack: sound effects and the victory fanfare; menu-browse: menu
+# sounds; battle-ifrit: a summon) with FFX_AUDIO_WAV, FMOD's mix written
+# to <run>/<tag>/<replay>-<tag>.wav (no sound reaches the speakers), and
+# compares the captures between the replays' `audiomark start` and
+# `audiomark end` with tools/wav-compare.py, sample for sample. --record
+# runs the original code twice and, when the two agree (the determinism
+# check), stores them in ~/ffx-work/replay-audio (FFX_REPLAY_AUDIO; never
+# in git); without it the Rust replacements run and are compared with both
+# references. Traces and screenshots are not compared in this mode.
 set -u
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo"
@@ -98,6 +111,7 @@ replay="$repo/target/release/examples/replay"
 run() { # replay, tag, [original]
     local dir="$runs/$2"
     mkdir -p "$dir"
+    ${audio:+env FFX_AUDIO_WAV="$dir/$1-$2.wav"} \
     ${hits:+env FFX_HOOK_HITS="$hits/$1-$2.hits"} \
         timeout 900 "$replay" "tools/replays/$1.txt" "$win\\runs\\$id\\$2\\$1-$2.trace" ${3:-} \
         > "$dir/$1.out" 2>&1
@@ -119,6 +133,58 @@ each() {
 start=$SECONDS
 hits=""
 rust_map=""
+audio=""
+if [ "${1:-}" = --audio ]; then
+    audio=1
+    shift
+    replays=(event-besaid battle-attack menu-browse battle-ifrit)
+    audio_dir="${FFX_REPLAY_AUDIO:-$HOME/ffx-work/replay-audio}"  # never in git
+    mkdir -p "$audio_dir"
+    wavcmp() { # label, a, b
+        local res
+        res="$(python3 -I tools/wav-compare.py "$2" "$3" 2>&1)"
+        local rc=$?
+        echo "== $1: $(echo "$res" | tail -1)"
+        echo "$res" | sed -n '1,/^level/p' | sed 's/^/   /'
+        return $rc
+    }
+    if [ "${1:-}" = --record ]; then
+        shift
+        [ $# -gt 0 ] && replays=("$@")
+        each orig original
+        each orig2 original
+        bad=0
+        for r in "${replays[@]}"; do
+            if [ ! -f "$runs/orig/$r-orig.wav" ] || [ ! -f "$runs/orig2/$r-orig2.wav" ]; then
+                echo "== $r: no capture ($runs/orig/$r.out, $runs/orig2/$r.out)"; bad=1; continue
+            fi
+            # only two runs that agree become the references
+            if wavcmp "$r original against original" "$runs/orig/$r-orig.wav" "$runs/orig2/$r-orig2.wav"; then
+                for tag in orig orig2; do
+                    cp "$runs/$tag/$r-$tag.wav" "$runs/$tag/$r-$tag.wav.marks" "$audio_dir/"
+                done
+            else
+                echo "   not stored: the original code did not repeat ($audio_dir keeps the old references)"
+                bad=1
+            fi
+        done
+        echo "recorded in $((SECONDS - start)) s ($runs)"
+        exit $bad
+    fi
+    [ $# -gt 0 ] && replays=("$@")
+    each rust
+    echo "replays took $((SECONDS - start)) s ($runs)"
+    bad=0
+    for r in "${replays[@]}"; do
+        if [ ! -f "$audio_dir/$r-orig.wav" ]; then
+            echo "== $r: no recorded capture (tools/replays/run-all.sh --audio --record $r)"; bad=1; continue
+        fi
+        [ -f "$runs/rust/$r-rust.wav" ] || { echo "== $r: no capture ($runs/rust/$r.out)"; bad=1; continue; }
+        wavcmp "$r Rust against original" "$audio_dir/$r-orig.wav" "$runs/rust/$r-rust.wav" || bad=1
+        [ -f "$audio_dir/$r-orig2.wav" ] && { wavcmp "$r Rust against original 2" "$audio_dir/$r-orig2.wav" "$runs/rust/$r-rust.wav" || bad=1; }
+    done
+    exit $bad
+fi
 while [ "${1:-}" = --hits ] || [ "${1:-}" = --rust-map ] || [ "${1:-}" = --rust-map=build ]; do
     case $1 in
         --hits) hits="$runs/hits"; mkdir -p "$hits" ;;

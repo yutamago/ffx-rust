@@ -10,6 +10,9 @@ lockstep on
 # what the frames before lockstep leave behind: docs/harness.md,
 # "Pinned state"
 pin
+# FFX_AUDIO_WAV (run-all.sh --audio): the capture is compared from the
+# `audiomark start` to the `audiomark end` (docs/harness.md, "Audio capture")
+audiomark start
 wait 10
 battle 3 0 0
 waitfor 0x0112a8e0:1 01 ff 4000
@@ -22,3 +25,4 @@ press circle 4 30
 press circle 4 400
 wait 100
 shot $OUT\battle-attack-2.bmp
+audiomark end

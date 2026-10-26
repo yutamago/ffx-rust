@@ -81,6 +81,7 @@
 //! | `overlaymouse <x> <y> [down\|up]` | moves the overlay's pointer there, pressing or releasing the left button |
 //! | `overlaykey <vk hex> down\|up` | a key for the overlay (Windows virtual-key code) |
 //! | `editor` | opens or closes the renderer's editor (as F11; shows the overlay) |
+//! | `audiomark <name>` | `ok frame <n> sample <n> updates <n> free <n> late <n>`: notes where the `FFX_AUDIO_WAV` capture stands in its marks file ([`crate::audio_wav`]; `ok off` without it) |
 //! | `quit` | ends the process |
 
 use std::collections::VecDeque;
@@ -245,6 +246,15 @@ const VIRTUAL_START: f64 = 1_048_576.0;
 static LOCKSTEP: AtomicBool = AtomicBool::new(false);
 /// The last frame the game may present in lockstep.
 static ALLOWED: AtomicU32 = AtomicU32::new(0);
+/// `lockstep on` asked for while the game runs free: the main thread turns
+/// it on at the next boundary it enters ([`animate`]) and holds there.
+/// Set from the command thread at once, the hold fell on the boundary the
+/// main thread was in when the command came (if it had not reached the
+/// hold check yet) or on the next one: in about one run in twenty the
+/// first, and what that boundary had run under (a free update, no loader
+/// turn) changed battle-attack's FMOD capture from its first sample (two
+/// of 42 runs, original code alike; docs/harness.md, "Audio capture").
+static LOCKSTEP_REQUEST: AtomicBool = AtomicBool::new(false);
 /// Seconds the frame limiter skipped, as `f64` bits.
 static SKIPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// The PS2 vsync handler `createVsyncEmuThread` (`0x00679e60`) was given,
@@ -1485,6 +1495,17 @@ pub(crate) fn passed() -> u32 {
     PASSED.load(Ordering::Acquire)
 }
 
+/// Frame boundaries entered, as [`REACHED`] (0: the main loop has not run
+/// an update yet).
+pub(crate) fn reached() -> u32 {
+    REACHED.load(Ordering::Acquire)
+}
+
+/// The virtual clock is on.
+pub(crate) fn virtual_clock() -> bool {
+    VIRTUAL.load(Ordering::Acquire)
+}
+
 /// The present holds end as if the main thread had left this many
 /// boundaries: the loader's turn lets the render thread go before the main
 /// thread leaves ([`crate::loader_turn`]).
@@ -1547,6 +1568,12 @@ static VSYNC_LOCK: Mutex<()> = Mutex::new(());
 pub unsafe extern "thiscall" fn animate(app: *mut c_void) -> u32 {
     let frame = FRAME.load(Ordering::Acquire);
     APP.store(app as usize, Ordering::Release);
+    // `lockstep on` takes hold here, at the first boundary entered after
+    // the command, before anything of this boundary has run
+    if LOCKSTEP_REQUEST.swap(false, Ordering::AcqRel) {
+        ALLOWED.store(frame, Ordering::Release);
+        LOCKSTEP.store(true, Ordering::Release);
+    }
     REACHED.store(frame + 1, Ordering::Release);
     trace_frame(frame);
     run_main_jobs(frame);
@@ -1575,6 +1602,9 @@ pub unsafe extern "thiscall" fn animate(app: *mut c_void) -> u32 {
     {
         run_vsync();
     }
+    // FFX_AUDIO_WAV: the FmodManager thread's tick for this boundary, at
+    // this frame's game time (crate::audio_wav).
+    crate::audio_wav::boundary_turn();
     // SAFETY: the trampoline runs the original with the same `this`.
     let r = unsafe {
         let original: unsafe extern "thiscall" fn(*mut c_void) -> u32 =
@@ -2062,7 +2092,7 @@ fn list_threads() -> String {
 /// registers and stack are copied (no allocation then: it may hold the
 /// heap's lock).
 #[allow(clippy::cast_possible_truncation)] // 32-bit process
-fn thread_stacks() -> String {
+pub(crate) fn thread_stacks() -> String {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Diagnostics::Debug::{
         CONTEXT, GetThreadContext, ReadProcessMemory,
@@ -2285,6 +2315,23 @@ fn command(line: &str) -> Result<String, String> {
         }
         "lockstep" => {
             let on = arg(1)? == "on";
+            if on && !LOCKSTEP.load(Ordering::Acquire) && REACHED.load(Ordering::Acquire) > 0 {
+                // the main thread takes hold at its next boundary
+                // (LOCKSTEP_REQUEST); a main loop that does not get there
+                // in time (stuck in one update) is held at once, as before
+                LOCKSTEP_REQUEST.store(true, Ordering::Release);
+                let start = std::time::Instant::now();
+                while LOCKSTEP_REQUEST.load(Ordering::Acquire)
+                    && start.elapsed() < std::time::Duration::from_secs(60)
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+                if LOCKSTEP_REQUEST.swap(false, Ordering::AcqRel) {
+                    ALLOWED.store(now(), Ordering::Release);
+                    LOCKSTEP.store(true, Ordering::Release);
+                }
+                return Ok(format!("ok {}", ALLOWED.load(Ordering::Acquire)));
+            }
             ALLOWED.store(now(), Ordering::Release);
             LOCKSTEP.store(on, Ordering::Release);
             format!("ok {}", now())
@@ -2362,6 +2409,8 @@ fn command(line: &str) -> Result<String, String> {
         "snapshot" => on_game_thread(Job::Snapshot(words[1..].join(" "))),
         "fpucw" => on_game_thread(Job::FpuControl),
         "pin" => on_game_thread(Job::Pin),
+        // where the FFX_AUDIO_WAV capture stands (crate::audio_wav)
+        "audiomark" => crate::audio_wav::mark(arg(1)?),
         "loadsave" => on_game_thread(Job::LoadSave(words[1..].join(" "))),
         "threads" => list_threads(),
         "stacks" => thread_stacks(),

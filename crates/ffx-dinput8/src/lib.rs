@@ -125,6 +125,10 @@ unsafe fn install_hooks(base: usize) {
     // FMOD call log (FFX_FMOD_LOG): import and vtable slots only.
     // SAFETY: forwarded from the caller.
     unsafe { ffx_hook::fmod_log::install(base) };
+    // FMOD's output to a WAV file (FFX_AUDIO_WAV), after the call log's
+    // import patches: its wrappers call through them.
+    // SAFETY: forwarded from the caller.
+    unsafe { ffx_hook::audio_wav::install(base) };
     // Last, so it only arms bytes no hook or patch owns.
     // SAFETY: forwarded from the caller.
     unsafe { ffx_hook::coverage::install(base) };
