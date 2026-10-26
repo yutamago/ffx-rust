@@ -29,6 +29,7 @@
     clippy::similar_names
 )]
 
+pub mod m4r_mesh;
 pub mod methods;
 pub mod object;
 pub mod p4_abmap;
