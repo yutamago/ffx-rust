@@ -7623,3 +7623,276 @@ fn p1e_load_header_classes_matches_the_original() {
         }
     }
 }
+
+// ---- round 4: the cluster reader's pointer fixups (p1_pointers) ----
+
+#[test]
+fn p1e_fixup_pointers_matches_the_original() {
+    use ffx_pload::p1_pointers::bridge as ppt;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x0a6b_0001);
+        // slot 1 of members and types: their +0x2c and +8
+        let m_slot1 = t.a.alloc_code(&[0x8b, 0x41, 0x2c, 0xc3]).unwrap();
+        assert_eq!(t.b.alloc_code(&[0x8b, 0x41, 0x2c, 0xc3]).unwrap(), m_slot1);
+        let t_slot1 = t.a.alloc_code(&[0x8b, 0x41, 0x08, 0xc3]).unwrap();
+        assert_eq!(t.b.alloc_code(&[0x8b, 0x41, 0x08, 0xc3]).unwrap(), t_slot1);
+        let tvt = t.zeros(8);
+        t.w32(tvt + 4, t_slot1);
+        for case in 0..1200u32 {
+            t.printf_stub(&[(0x00b3_1268, 3), (0x00b3_12c0, 2)]);
+            t.stub(0x0042_fb20, false, 1, 0, 0);
+            t.stub(0x0057_dd30, true, 2, 2, if case % 29 == 28 { 9 } else { 0 });
+            let unpack_ret: u32 = if case % 31 == 30 { 0x15 } else { 0 };
+            let flag: u32 = if case % 4 == 1 { 0x8000_0000 } else { 0 };
+            let mut body = vec![0x8b, 0x44, 0x24, 0x04, 0x81, 0x08];
+            body.extend(flag.to_le_bytes());
+            body.push(0xb8);
+            body.extend(unpack_ret.to_le_bytes());
+            t.stub_body(0x0060_db20, false, 3, 0, &body);
+            let objects = t.junk(0x10 * 8 + 0x40, 6);
+            let mut body = vec![0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x04, 0x05];
+            body.extend(objects.to_le_bytes());
+            body.extend([
+                0x81, 0x7c, 0x24, 0x04, 0xff, 0x7f, 0, 0, 0x75, 0x02, 0x31, 0xc0,
+            ]);
+            t.stub_body(0x0057_65e0, true, 1, 1, &body);
+            let ptype = t.zeros(0x10);
+            t.w32(ptype, tvt);
+            t.stub(0x0043_74d0, false, 0, 0, ptype);
+            t.stub(0x0043_1420, true, 1, 1, case % 3);
+            // the target lookup: logs its cache's first and last words, writes
+            // the target, returns found or not
+            let mut body = vec![
+                0x8b, 0x51, 0x20, 0x89, 0x50, 0x1c, 0x8b, 0x11, 0x89, 0x50, 0x18,
+            ];
+            body.extend([0x8b, 0x54, 0x24, 0x04, 0xc7, 0x02]);
+            body.extend((0x00c5_5000 + case).to_le_bytes());
+            body.push(0xb8);
+            body.extend(((case / 3) % 2).to_le_bytes());
+            t.stub_body(0x0057_a200, true, 4, 4, &body);
+            t.stub(0x0043_7980, true, 4, 4, 0);
+            // classes the members point at
+            let mut classes = vec![0u32];
+            for k in 0..2u32 {
+                let c = t.zeros(0x90);
+                t.w32(c + 0x88, 4 * k);
+                classes.push(c);
+            }
+            // the members: kind, flags, type, slot 6 and slot 8
+            let mut found = Vec::new();
+            for k in 0..4u32 {
+                if k == 3 || (k == 1 && case % 2 == 1) {
+                    found.push(0);
+                    continue;
+                }
+                let f = t.zeros(0x10);
+                let n = t.alloc(b"ptr\0");
+                t.w32(f + 0xc, n);
+                if k != 2 || rng.next().is_multiple_of(2) {
+                    let m = t.zeros(0x30);
+                    let vt = t.zeros(0x40);
+                    t.w32(vt + 4, m_slot1);
+                    let arr = if rng.next().is_multiple_of(4) {
+                        0
+                    } else {
+                        t.zeros(0x20)
+                    };
+                    let s6 = t.stub_code(0x7016, true, 1, 1, arr);
+                    t.w32(vt + 0x18, s6);
+                    let s8 = t.stub_code(0x7020, true, 3, 3, 0);
+                    t.w32(vt + 0x20, s8);
+                    t.w32(m, vt);
+                    let owner = t.zeros(0x90);
+                    t.w32(owner + 0x88, 4 * (rng.next() % 2));
+                    t.w32(m + 0xc, owner);
+                    t.w32(m + 0x14, [0u32, 2, 0x40, 0x42][(rng.next() % 4) as usize]);
+                    t.w32(m + 0x24, 4 * (rng.next() % 3));
+                    let kind = match rng.next() % 4 {
+                        0 => 0,
+                        k => {
+                            let o = t.zeros(0x40);
+                            t.w32(o + 0x30, [2u32, 3, 1][(k - 1) as usize]);
+                            o
+                        }
+                    };
+                    t.w32(m + 0x2c, kind);
+                    let ty = match rng.next() % 4 {
+                        0 => 0,
+                        1 => ptype,
+                        _ => {
+                            let o = t.zeros(0x10);
+                            t.w32(o, tvt);
+                            o
+                        }
+                    };
+                    if ty != 0 {
+                        t.w32(ty + 8, classes[(rng.next() % 3) as usize]);
+                    }
+                    t.w32(m + 0x18, ty);
+                    t.w32(f + 8, m);
+                }
+                found.push(f);
+            }
+            let mut table = Vec::new();
+            for f in &found {
+                table.extend(f.to_le_bytes());
+            }
+            let table = t.alloc(&table);
+            let mut body = vec![
+                0x8b, 0x51, 0x20, 0x89, 0x50, 0x1c, 0x8b, 0x54, 0x24, 0x08, 0x83, 0x02, 0x08,
+            ];
+            body.extend([
+                0x8b, 0x44, 0x24, 0x04, 0x33, 0x44, 0x24, 0x0c, 0x83, 0xe0, 0x03,
+            ]);
+            body.extend([0x8b, 0x04, 0x85]);
+            body.extend(table.to_le_bytes());
+            t.stub_body(0x0057_a280, true, 5, 5, &body);
+            // the user fixups
+            let users = [0u32, 2, 4][(case % 3) as usize];
+            let results = t.zeros(16 * 4);
+            for u in 0..4u32 {
+                let r = results + 16 * u;
+                t.w32(r, 0x00c4_4000 + u);
+                t.w32(r + 4, 0x00c4_5000 + u);
+                t.w32(r + 8, u);
+                t.write(r + 0xc, &[u8::from(rng.next().is_multiple_of(2))]);
+            }
+            let fixups = t.zeros(8);
+            t.w32(fixups, users);
+            t.w32(fixups + 4, results);
+            // the lists
+            let nl = [0u32, 1, 2, 3][(case / 2 % 4) as usize];
+            let headers = t.junk(0x24 * 4, 7);
+            let entries = t.zeros(16);
+            let mut lists = Vec::new();
+            let count = [0u32, 1, 3, 6, 9][(case % 5) as usize];
+            let mut left = count;
+            for l in 0..nl {
+                let cnt = if l + 1 == nl {
+                    left
+                } else {
+                    left.min(rng.next() % 4)
+                };
+                left -= cnt;
+                let hd = headers + 0x24 * l;
+                t.w32(hd + 0x1c, cnt);
+                t.w32(hd + 0xc, 0x20 * l + 4);
+                let list = if rng.next().is_multiple_of(5) {
+                    0
+                } else {
+                    let list = t.junk(0x40, 8);
+                    let class = t.zeros(0xa0);
+                    let n = t.alloc(b"Cls\0");
+                    t.w32(class + 0x18, n);
+                    t.w32(class + 0x1c, 0x14);
+                    t.w32(class + 0x90, [0u32, 4][(rng.next() % 2) as usize]);
+                    t.w32(list + 0x2c, class);
+                    t.w32(list + 0x34, 0x100 * (l + 1) + (rng.next() & 0x1f));
+                    t.w32(list + 0x3c, 3);
+                    list
+                };
+                lists.push(list);
+                let entry = t.zeros(0x20);
+                t.w32(
+                    entry + 0x1c,
+                    if case % 5 == 0 || case % 5 == 4 {
+                        1
+                    } else {
+                        rng.next() % 2
+                    },
+                );
+                t.w32(entries + 4 * l, entry);
+            }
+            let records = t.zeros(28 * 10);
+            for i in 0..count {
+                let r = records + 28 * i;
+                let w = match rng.next() % 3 {
+                    0 => rng.next() % 4,
+                    1 => 0x8000_0000 | (rng.next() % 4),
+                    _ => rng.next() % 8,
+                };
+                t.w32(r, w);
+                t.w32(
+                    r + 4,
+                    if case % 19 == 18 && i == 1 {
+                        0x7fff
+                    } else {
+                        rng.next() % 8
+                    },
+                );
+                t.w32(
+                    r + 8,
+                    if case % 17 == 16 {
+                        0x7fff
+                    } else {
+                        rng.next() % 8
+                    },
+                );
+                t.w32(r + 0xc, rng.next() % (nl + 1));
+                t.w32(r + 0x10, [0u32, 4, 8][(rng.next() % 3) as usize]);
+                t.w32(r + 0x14, rng.next() % 4);
+                t.w32(r + 0x18, rng.next() % (users + 3));
+            }
+            let size =
+                [0u32, 0x40, 0x8000_0040][usize::from(case % 7 != 3) + usize::from(case % 9 == 4)];
+            let data = t.junk(0x40, 5);
+            let (rb, db) = match case % 11 {
+                9 => (0, data),
+                10 => (records, 0),
+                _ => (records, data),
+            };
+            let mut seq = vec![];
+            if count != 0 {
+                seq.push(rb);
+            }
+            if size != 0 {
+                seq.push(db);
+            }
+            t.seq_stub(0x0042_fb80, false, 2, 0, &seq);
+            let header = t.zeros(0x40);
+            t.w32(header + 0x10, nl);
+            t.w32(header + 0x1c, size);
+            t.w32(header + 0x20, count);
+            t.w32(header + 0x30, users);
+            let mapping = t.zeros(0x20);
+            t.w32(
+                mapping + 0x1c,
+                [0u32, 1, 4, 0x8000_0000, 2][(case % 5) as usize],
+            );
+            let reader = t.junk(0x30, 9);
+            t.w32(reader + 4, mapping);
+            t.w32(reader + 8, header);
+            t.w32(reader + 0x14, headers);
+            t.w32(
+                reader + 0x18,
+                nl | if case % 6 == 5 { 0x8000_0000 } else { 0 },
+            );
+            if nl == 1 {
+                t.w32(reader + 0x1c, lists[0]);
+            } else {
+                let arr = t.zeros(20);
+                for (i, &l) in lists.iter().enumerate() {
+                    t.w32(arr + 4 * i as u32, l);
+                }
+                t.w32(reader + 0x1c, arr);
+            }
+            t.w32(reader + 0x24, entries);
+            let stream = t.junk(0x10, 0xa);
+            let ctx = t.zeros(8);
+            let ebp = t.a.stack_range().end - 0x100 - 12 - 8;
+            let frame = ebp - 0xc8;
+            t.write(frame, &[0x5a; 0xac]);
+            t.b.set_call_top(Some(frame - 0x100));
+            let what = format!("{label}: pointer fixups {case}");
+            t.check(
+                &what,
+                0x0057_a6b0,
+                Conv::Thiscall(reader),
+                &[stream, ctx, fixups],
+                |g| Out::U32(ppt::fixup_pointers(g, reader, (stream, ctx, fixups), frame)),
+            );
+            t.b.set_call_top(None);
+            t.reset();
+        }
+    }
+}

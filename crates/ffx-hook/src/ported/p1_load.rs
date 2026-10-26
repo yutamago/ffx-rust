@@ -1310,4 +1310,9 @@ ported! {
         let mut f = StackFrame::<{ p1_header::bridge::FRAME as usize / 4 }>::new();
         p1_header::bridge::load_header_classes(&mut mem(), this, stream, f.at())
     }
+    /// `Cluster_ApplyPointerFixups(stream, ctx, &fixups)` -> 0 or an error; the lookup caches, outputs and the object word in this frame.
+    Cluster_ApplyPointerFixups @ 0x0057_a6b0 => extern "thiscall" fn fixup_pointers(this: u32, stream: u32, ctx: u32, fixups: u32) -> u32 {
+        let mut f = StackFrame::<{ p1_pointers::bridge::POINTERS_FRAME as usize / 4 }>::new();
+        p1_pointers::bridge::fixup_pointers(&mut mem(), this, (stream, ctx, fixups), f.at())
+    }
 }
