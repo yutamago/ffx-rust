@@ -36,6 +36,11 @@ use ffx_prender::glue10::{self, bridge as g10};
 use ffx_prender::glue11::{self, bridge as g11};
 use ffx_prender::h3_glue12::{self as h12, bridge as gh12};
 use ffx_prender::h3_glue13::{self as h13, bridge as gh13};
+use ffx_prender::h3_glue14::{self as h14, bridge as gh14};
+use ffx_prender::h3_glue15::{self as h15, bridge as gh15};
+use ffx_prender::h3_glue16::{self as h16, bridge as gh16};
+use ffx_prender::h3_glue17::{self as h17, bridge as gh17};
+use ffx_prender::h3_glue18::{self as h18, bridge as gh18};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -2994,7 +2999,7 @@ fn prep_pool_claim(
     stride: u32,
 ) {
     let (counter, base, used) = offsets;
-    let scene = t.zeros(0xfba4);
+    let scene = t.zeros(0xfc00);
     *this = scene;
     let s = match rng.below(4) {
         0 => 2990 + rng.below(12),
@@ -3676,7 +3681,7 @@ fn prep_rwtt(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut R
 /// A material of the scene's pool (slot in or out of range, remainder
 /// sign), its kind, or another cluster's.
 fn prep_delete_material(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
-    let scene = t.zeros(0xfc00);
+    let scene = t.zeros(0xfba4);
     *this = scene;
     let material = obj + 0x600;
     let (slot, negative) = match rng.below(5) {
@@ -4501,5 +4506,1360 @@ fn batch13b_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 16 } else { 80 };
         run_cases(t, CASES13B, n, &mut Rng(0x1313_b113));
+    });
+}
+
+// ---- round 5 batch 14 (ffx_prender::h3_glue14) ----
+
+/// A cursor script word the stub leaves alone.
+const KEEP: u32 = 0x5e5e_5e5e;
+
+impl Twins {
+    /// Stubs for a cursor's first step and its next: each call copies the
+    /// next five words of `steps` (base, block, stride, count, offset)
+    /// into the cursor (`ecx`), but for [`KEEP`] words (left as the port
+    /// wrote them), then logs as [`Twins::stub`].
+    fn stub_cursor_script(&mut self, first: u32, next: u32, steps: &[[u32; 5]]) {
+        let mut words = vec![];
+        for s in steps {
+            for w in s {
+                words.extend(w.to_le_bytes());
+            }
+        }
+        let table = self.alloc(&words);
+        let ptr = self.alloc(&table.to_le_bytes());
+        for sym in [first, next] {
+            let log = self.stub(None, sym, true, 0, 0, Some(sym));
+            let mut c = vec![0xa1];
+            c.extend(ptr.to_le_bytes()); // mov eax, [ptr]
+            for i in 0..5u8 {
+                c.extend([0x8b, 0x50, 4 * i]); // mov edx, [eax+4i]
+                c.extend([0x81, 0xfa]);
+                c.extend(KEEP.to_le_bytes()); // cmp edx, KEEP
+                c.extend([0x74, 0x03]); // je +3
+                c.extend([0x89, 0x51, 4 * i]); // mov [ecx+4i], edx
+            }
+            c.extend([0x83, 0xc0, 0x14]); // add eax, 20
+            c.push(0xa3);
+            c.extend(ptr.to_le_bytes()); // mov [ptr], eax
+            let at = self.cave_next;
+            c.push(0xe9);
+            c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            let code = self.code(&c);
+            let site = self.rebase(sym);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+            self.patch(site, &j);
+        }
+    }
+}
+
+/// Cursor runs over the elements at `area + 0x100 k`: one to three runs
+/// of 0..4 elements, each with a block word that may equal one of its
+/// elements (`[block]` the next block), then a run with no count. The
+/// offset is 4 (the object at the element), or one making the address 0
+/// or the object 0.
+fn cursor_steps(t: &mut Twins, area: u32, odd: bool, rng: &mut Rng) -> Vec<[u32; 5]> {
+    let mut steps = vec![];
+    for _ in 0..=rng.below(3) {
+        let base = area + 0x100 * rng.below(4);
+        let count = rng.below(5);
+        let block = if rng.chance(2) {
+            base + 0x100 * (1 + rng.below(3))
+        } else {
+            rng.next() | 3
+        };
+        let next_block = if rng.chance(2) { block } else { rng.next() | 3 };
+        if block % 4 == 0 {
+            t.w32(block, next_block);
+        }
+        // an odd offset only for a lone element (the next would fault)
+        let (offset, count) = match if odd { rng.below(6) } else { 5 } {
+            0 => (0u32.wrapping_sub(base), 1),
+            1 => (4u32.wrapping_sub(base), 1),
+            _ => (4, count),
+        };
+        steps.push([base, block, 0x100, count, offset]);
+    }
+    // the end: nothing written, so the walk stops on the count it stored
+    // and the frame shows its stores
+    steps.push([KEEP; 5]);
+    steps
+}
+
+/// The field map (or none, or its flag clear) and objects named the
+/// global name (the same pointer, tagged, a copy), another name or none.
+fn prep_find_global(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1200);
+    *this = scene;
+    let map = obj + 0x40;
+    t.w32(scene + 0x1128, if rng.chance(5) { 0 } else { map });
+    t.write(scene + 0x93c, &[u8::from(!rng.chance(5))]);
+    t.w32(
+        map + 0x1c,
+        if rng.chance(2) {
+            map + 0x1c
+        } else {
+            obj + 0x80
+        },
+    );
+    let name = t.rebase(h14::GLOBAL_NAME);
+    let mut text = vec![0u8; 16];
+    Mem::read_bytes(&t.a, name, &mut text);
+    let len = text.iter().position(|&b| b == 0).unwrap_or(15);
+    let copy = obj + 0x1c00;
+    t.write(copy, &text[..=len]);
+    let mut other = text[..=len].to_vec();
+    other[rng.below(len as u32 + 1) as usize] ^= 1;
+    t.write(copy + 0x20, &other);
+    // a prefix of the name, and the name with one more letter
+    let mut short = text[..len].to_vec();
+    short[len - 1] = 0;
+    t.write(copy + 0x40, &short);
+    let mut long = text[..len].to_vec();
+    long.extend([b'x', 0]);
+    t.write(copy + 0x60, &long);
+    let area = t.zeros(0x800);
+    for k in 0..8 {
+        let s = match rng.below(8) {
+            0 => name,
+            1 => name | 1,
+            2 => copy,
+            3 => copy + 0x20,
+            4 => 0,
+            5 => copy + 0x40,
+            6 => copy + 0x60,
+            _ => 1,
+        };
+        t.w32(area + 0x100 * k + 0xd0, s);
+    }
+    let steps = cursor_steps(t, area, true, rng);
+    t.stub_cursor_script(h14::CURSOR_SEEK1, h14::CURSOR_NEXT1, &steps);
+}
+
+/// The flags, the first target (or none; its texture live or not, the
+/// size equal to the arguments or not) and the arguments.
+fn prep_resize_targets(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let post = t.zeros(0x1_2400);
+    *this = post;
+    let flags: Vec<u8> = (0..4).map(|_| u8::from(rng.chance(3))).collect();
+    t.write(post + 0x1_23b0, &flags);
+    let target = post + 0x200;
+    let texture = post + 0x300;
+    t.w32(post + 0x8c, if rng.chance(5) { 0 } else { target });
+    t.w32(target, texture);
+    // a set byte +4 means no texture, which the original reads at 0
+    t.write(target + 4, &[0]);
+    for off in [
+        0x90, 0x94, 0x98, 0x9c, 0xa4, 0xa8, 0x1_232c, 0x1_2330, 0x1_22c0,
+    ] {
+        let v = rng.next();
+        t.w32(post + off, v);
+    }
+    let (w, h) = (rng.below(3) * 640, rng.below(3) * 360);
+    args[0] = w;
+    args[1] = h;
+    t.w32(texture + 0x1c, if rng.chance(2) { w } else { w + 1 });
+    t.w32(texture + 0x20, if rng.chance(2) { h } else { h + 1 });
+}
+
+fn prep_claim28(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    prep_pool_claim(t, obj, this, args, rng, (0xfbb4, 0xfba4, 0xfbb0), 0x1c);
+    let r = if rng.chance(4) { 0 } else { rng.next() };
+    t.stub_ret(h14::CLUSTER_CREATE, true, 3, 3, r);
+}
+
+fn prep_claim16(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    prep_pool_claim(
+        t,
+        obj,
+        this,
+        &mut args[1..],
+        rng,
+        (0xfbc8, 0xfbb8, 0xfbc4),
+        0x10,
+    );
+    args[0] = if rng.chance(6) { 0 } else { obj + 0x1f00 };
+    let list = obj + 0x1e00;
+    t.w32(list + 0x34, if rng.chance(4) { 0 } else { obj + 0x1d00 });
+    let r = if rng.chance(4) { 0 } else { list };
+    t.stub_ret(h14::CLUSTER_ALLOCATE_INSTANCE_LIST, true, 3, 3, r);
+}
+
+/// An owned/borrowed count word (`n` elements).
+fn count_word(rng: &mut Rng, n: u32) -> u32 {
+    n | if rng.chance(3) { 0x8000_0000 } else { 0 }
+}
+
+/// The three arrays: words, words and 32-byte objects with a destroying
+/// virtual.
+fn prep_animation_clear(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    for (count, data, at) in [(0x5c, 0x60, 0x400), (0x74, 0x78, 0x500)] {
+        let n = rng.below(5);
+        let w = count_word(rng, n);
+        t.w32(obj + count, w);
+        t.w32(obj + data, obj + at);
+    }
+    let n = rng.below(5);
+    let w = count_word(rng, n);
+    t.w32(obj + 0x7c, w);
+    t.w32(obj + 0x80, obj + 0x600);
+    let vtable = obj + 0x900;
+    let vcall = t.stub(None, 0x7c0, true, 1, 1, Some(rng.next()));
+    t.w32(vtable, vcall);
+    for k in 0..n {
+        t.w32(obj + 0x600 + 0x20 * k, vtable);
+    }
+}
+
+/// The scene's instance tree: the entry found (or none, or one whose
+/// meshes sit at address 0), its 0..4 mesh records, and a binary tree of
+/// 0..5 nodes (signed keys) that holds `id` or not.
+fn prep_remove_mesh(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfa00);
+    *this = scene;
+    let tree = scene + 0xf9d4;
+    let found = match rng.below(6) {
+        0 => 0,
+        1 => 0xffff_fff0,
+        _ => obj + 0x100,
+    };
+    t.stub_ret(h14::TREE_FIND_SIGNED, true, 1, 1, found);
+    let n = rng.below(5);
+    t.w32(obj + 0x110, n);
+    t.w32(obj + 0x118, obj + 0x180);
+    for k in 0..n {
+        let record = obj + 0x200 + 0x10 * k;
+        t.w32(obj + 0x180 + 4 * k, record);
+        for w in 0..3 {
+            let v = rng.next();
+            t.w32(record + 4 * w, v);
+        }
+    }
+    // keys k * 10 - 20 in a chain of nodes, each either side of its parent
+    let nodes = rng.below(6);
+    let mut keys = vec![];
+    let mut root = tree;
+    for k in 0..nodes {
+        let node = obj + 0x400 + 0x20 * k;
+        let key = (rng.below(8) as i32 * 10 - 20) as u32;
+        t.w32(node, tree);
+        t.w32(node + 4, tree);
+        t.w32(node + 0xc, key);
+        t.w32(node + 0x18, if rng.chance(3) { 0 } else { rng.next() });
+        keys.push(key);
+        if k == 0 {
+            root = node;
+        } else {
+            // hang it below the previous node on the side its key says
+            let parent = obj + 0x400 + 0x20 * (k - 1);
+            let side = u32::from((keys[k as usize - 1] as i32) < key as i32);
+            t.w32(parent + 4 * side, node);
+        }
+    }
+    t.w32(tree + 0xc, root);
+    args[0] = match keys.last() {
+        Some(&k) if rng.chance(2) => k,
+        _ => (rng.below(8) as i32 * 10 - 25) as u32,
+    };
+}
+
+/// The registrations (one for `chr` or none), its texture list (or
+/// none) with 0..4 pairs whose objects (or none) hold 0..2 buffers.
+fn prep_animation_unregister(
+    t: &mut Twins,
+    obj: u32,
+    this: &mut u32,
+    args: &mut [u32],
+    rng: &mut Rng,
+) {
+    *this = obj;
+    let chr = rng.next() | 1;
+    args[0] = chr;
+    let n = rng.below(5);
+    let w = count_word(rng, n);
+    t.w32(obj + 0x6c, w);
+    t.w32(obj + 0x70, obj + 0x100);
+    let hit = if rng.chance(4) {
+        n
+    } else {
+        rng.below(n.max(1))
+    };
+    for k in 0..n {
+        let r = obj + 0x100 + 12 * k;
+        t.w32(r, rng.next());
+        t.w32(r + 4, if k == hit { chr } else { chr ^ 2 });
+        t.w32(r + 8, if rng.chance(5) { 0 } else { obj + 0x400 });
+    }
+    let pairs = rng.below(5);
+    let w = count_word(rng, pairs);
+    t.w32(obj + 0x400, w);
+    t.w32(
+        obj + 0x404,
+        if pairs == 0 && rng.chance(2) {
+            0
+        } else {
+            obj + 0x500
+        },
+    );
+    for k in 0..pairs {
+        let object = if rng.chance(4) {
+            0
+        } else {
+            obj + 0x600 + 0x10 * k
+        };
+        t.w32(obj + 0x500 + 8 * k + 4, object);
+        for b in 0..2 {
+            let v = if rng.chance(3) { 0 } else { rng.next() };
+            t.w32(obj + 0x600 + 0x10 * k + 4 * b, v);
+        }
+    }
+}
+
+/// An instance (or none) with 0..3 lighting materials and its two owned
+/// or borrowed arrays.
+fn prep_instance_destroy(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let chr = obj + 0x200;
+    args[0] = if rng.chance(5) { 0 } else { chr };
+    // 0x100 now and then: the count is the low 31 bits, not a byte
+    let count = if rng.chance(8) { 0x100 } else { rng.below(4) };
+    let w = count_word(rng, count);
+    t.w32(chr, w);
+    t.w32(chr + 4, obj + 0x300);
+    for k in 0..count {
+        let v = rng.next();
+        t.w32(obj + 0x300 + 4 * k, v);
+    }
+    let owned = rng.below(3);
+    let w = count_word(rng, owned);
+    t.w32(chr + 8, w);
+    for off in [0xc, 0x10, 0x18] {
+        let v = rng.next();
+        t.w32(chr + off, v);
+    }
+}
+
+/// The array (full or not, its data at 0 once), the asset (or none),
+/// whether it is a model, and cursor runs over its objects.
+fn prep_asset_item(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let array = obj + 0x100;
+    let n = match rng.below(4) {
+        0 => [0xffff_ffff, 0xffff_fff0, 0xffff_ffe9][rng.below(3) as usize],
+        1 => 0,
+        _ => rng.below(20),
+    };
+    t.w32(array, n);
+    t.w32(array + 4, n.wrapping_add(rng.below(3)).wrapping_sub(1));
+    let data = if n == 0 && rng.chance(3) {
+        0
+    } else {
+        obj + 0x180
+    };
+    t.w32(array + 8, data);
+    let asset = obj + 0x800;
+    t.w32(
+        asset + 0x1c,
+        if rng.chance(2) {
+            asset + 0x1c
+        } else {
+            obj + 0x880
+        },
+    );
+    let area = t.zeros(0x800);
+    let objects = t.zeros(0x400);
+    for k in 0..8 {
+        t.w32(area + 0x100 * k + 0x20, objects + 0x40 * k);
+    }
+    let steps = cursor_steps(t, area, false, rng);
+    t.stub_cursor_script(h14::CURSOR_BEGIN, h14::CURSOR_NEXT, &steps);
+    let model = if rng.chance(2) { 0x100 } else { 0x101 };
+    t.stub_ret(h14::IS_MODEL, true, 1, 1, model);
+    args[0] = obj + 0x600;
+    args[1] = rng.next();
+    args[2] = array;
+    args[3] = if rng.chance(5) { 0 } else { asset };
+    args[4] = rng.below(8);
+}
+
+/// A shadow size: sides from 0 up, equal, NaN or infinite; `n` around
+/// them.
+fn prep_fit_size(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let side = |rng: &mut Rng| -> f32 {
+        match rng.below(8) {
+            0 => 0.0,
+            1 => f32::NAN,
+            2 => f32::INFINITY,
+            3 => -(rng.below(100) as f32),
+            4 => rng.float(),
+            _ => (1 + rng.below(4096)) as f32 / [1.0, 3.0, 7.0][rng.below(3) as usize],
+        }
+    };
+    let w = side(rng);
+    let h = if rng.chance(5) { w } else { side(rng) };
+    args[0] = w.to_bits();
+    args[1] = h.to_bits();
+    args[2] = obj + 0x10;
+    args[3] = obj + 0x14;
+    args[4] = match rng.below(4) {
+        0 => rng.next(),
+        1 => w as i32 as u32,
+        _ => rng.below(4097),
+    };
+    t.w32(obj + 0x10, rng.next());
+    t.w32(obj + 0x14, rng.next());
+}
+
+/// A name (or none), a cancelled load, a prototype found, the allocation
+/// failing, the load failing, and ids near the shadow ranges.
+fn prep_character_load(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    letters(t, obj + 0x700, 1 + rng.below(12), rng);
+    args[0] = if rng.chance(6) { 0 } else { obj + 0x700 };
+    args[1] = *[
+        0x10fb,
+        0x10fc,
+        0x10fd,
+        0x10fe,
+        0x1100,
+        800,
+        801,
+        899,
+        900,
+        0,
+        0xffff_ffff,
+    ]
+    .get(rng.below(14) as usize)
+    .unwrap_or(&rng.below(0x2000));
+    let cancel = if rng.chance(5) { 0x301 } else { 0x300 };
+    t.stub_ret(h14::IS_CANCEL_LOAD, false, 1, 0, cancel);
+    let prototype = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h14::PROTOTYPE_BY_FILENAME, true, 1, 1, prototype);
+    let p = if rng.chance(5) { 0 } else { obj + 0x300 };
+    t.stub_ret(h14::OPERATOR_NEW, false, 1, 0, p);
+    let character = obj + 0x400;
+    t.stub_ret(h14::CHARACTER_CTOR, true, 1, 1, character);
+    let vtable = obj + 0x480;
+    let vcall = t.stub(None, 0x7d0, true, 1, 1, Some(rng.next()));
+    t.w32(character, vtable);
+    t.w32(vtable, vcall);
+    let failed = if rng.chance(2) { 0 } else { rng.next() | 1 };
+    t.stub_ret(h14::SCENE_LOAD_CHARACTER_ASYNC, true, 2, 2, failed);
+}
+
+/// The geometry's vtable (its set-up `0x18` failing or not), the shader
+/// with up to 30 slots (or a negative count).
+fn prep_set_shader(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let vtable = obj + 0x1f00;
+    t.w32(obj, vtable);
+    for off in [0x14, 0x1c, 0x20, 0x24] {
+        let s = t.stub(
+            None,
+            0x7e0 + off,
+            true,
+            if off == 0x14 { 3 } else { 0 },
+            if off == 0x14 { 3 } else { 0 },
+            Some(rng.next()),
+        );
+        t.w32(vtable + off, s);
+    }
+    let r = if rng.chance(2) { 0 } else { rng.next() };
+    let s = t.stub(None, 0x7f8, true, 3, 3, Some(r));
+    t.w32(vtable + 0x18, s);
+    let shader = obj + 0x40;
+    t.w32(obj + 0x24, shader);
+    let n = match rng.below(5) {
+        0 => 0,
+        1 => 30,
+        2 => 0xffff_fffe,
+        _ => rng.below(31),
+    };
+    t.w32(shader + 0x90, n);
+    t.w32(shader + 0x94, obj + 0x800);
+    args[0] = rng.next();
+    args[1] = rng.next();
+}
+
+/// Writes the case's arguments into the frame's argument slots (the
+/// original's call pushed them there); their address.
+fn slots_at(m: &mut G, a: &[u32]) -> u32 {
+    let at = frame_ebp() + 8;
+    for (k, &w) in a.iter().enumerate() {
+        m.write(at + 4 * k as u32, w);
+    }
+    at
+}
+
+const DESTROY_STUBS: &[(u32, K)] = &[
+    (h14::CHARACTER_UNREGIST_LOADING, K::Cdecl(1)),
+    (h14::SCENE_REMOVE_MESH_INSTANCE, K::This(1)),
+    (h14::CHARACTER_LIGHTING_INSTANCE, K::Getter),
+    (h14::DESTROY_UNIQUE_MATERIAL_PARAMETERS, K::This(1)),
+    (h14::TEXTURE_ANIMATION_INSTANCE, K::Getter),
+    (h14::UNREGISTER_CHARACTER_INSTANCE, K::This(1)),
+    (h14::SHADOW_INSTANCE, K::Getter),
+    (h14::SHADOW_REMOVE, K::This(1)),
+    (h14::UNREGISTER_DELEGATION, K::This(3)),
+    (h14::SCENE_REMOVE_CHR_FROM_PIPELINE, K::This(1)),
+    (h14::DESTROY_CLOTH_INSTANCES, K::This(0)),
+    (h14::CHARACTER_REMOVE_INSTANCE, K::This(1)),
+    (h14::DESTROY_MESHES, K::This(0)),
+    (h14::PHYRE_FREE, K::Cdecl(1)),
+    (h14::OPERATOR_DELETE, K::Cdecl(1)),
+];
+
+const SET_SHADER_STUBS: &[(u32, K)] = &[
+    (h14::NEW_POOL_ARRAY, K::This(1)),
+    (h14::NEW_POOL_OBJECT56, K::This(1)),
+    (h14::NEW_POOL_OBJECT28, K::This(1)),
+    (h14::NEW_POOL_OBJECT16, K::This(2)),
+    (h14::NEW_POOL_6599C0, K::This(2)),
+];
+
+#[rustfmt::skip]
+const CASES14: &[Case] = &[
+    framed(Case { prep: Some(prep_find_global), ..method("scene_find_global_object", 0x0065_18c0, This::Object, 0, &[], |m, this, _| u(gh14::scene_find_global_object(m, frame_ebp(), this))) }, 0x28, 0),
+    Case { prep: Some(prep_resize_targets), ..method("post_resize_targets", 0x0069_7f20, This::Object, 2, &[(h14::RESIZE_A233F0, K::This(2)), (h14::RESIZE_A23200, K::This(2)), (h14::RESIZE_TARGET, K::Cdecl(4))], |m, this, a| u(gh14::post_resize_targets(m, this, a[0], a[1]))) },
+    Case { prep: Some(prep_claim28), ..method("scene_new_dynamic_mesh", 0x0065_94c0, This::Object, 1, &[(h14::DYNAMIC_MESH_CTOR, K::This(0))], |m, this, a| u(gh14::scene_new_dynamic_mesh(m, this, a[0]))) },
+    Case { prep: Some(prep_claim16), ..method("scene_new_mesh_instance", 0x0065_95d0, This::Object, 2, &[(h14::DYNAMIC_MESH_INSTANCE_CTOR, K::This(1))], |m, this, a| u(gh14::scene_new_mesh_instance(m, this, a[0], a[1]))) },
+    Case { prep: Some(prep_animation_clear), ..method("texture_animation_clear", 0x006b_2f50, This::Object, 0, &[(h14::PHYRE_FREE, K::Cdecl(1))], |m, this, _| { gh14::texture_animation_clear(m, this); Out::None }) },
+    framed(Case { prep: Some(prep_remove_mesh), ..method("scene_remove_mesh_instance", 0x0066_8680, This::Object, 1, &[(h14::CLUSTER_DELETE_OBJECT, K::This(1)), (h14::OPERATOR_DELETE, K::Cdecl(1)), (h14::TREE_REMOVE, K::This(1)), (h14::USER_FREE, K::Cdecl(1)), (h14::FREE_LIST_DEALLOCATE, K::This(1))], |m, this, a| { let slots = slots_at(m, a); u(gh14::scene_remove_mesh_instance(m, this, slots)) }) }, 0, 4),
+    Case { prep: Some(prep_animation_unregister), ..method("texture_animation_unregister", 0x006b_4330, This::Object, 1, &[(h14::PHYRE_PRINTF, K::Cdecl(3)), (h14::ARRAY_DELETE, K::Cdecl(1)), (h14::OPERATOR_DELETE, K::Cdecl(1)), (h14::PHYRE_FREE, K::Cdecl(1))], |m, this, a| u(gh14::texture_animation_unregister(m, this, a[0]))) },
+    framed(Case { prep: Some(prep_instance_destroy), ..cdecl("character_instance_destroy", 0x0063_a030, 2, DESTROY_STUBS, |m, _, a| { let slots = slots_at(m, a); u(gh14::character_instance_destroy(m, slots, a[0], a[1])) }) }, 0, 8),
+    framed(Case { prep: Some(prep_asset_item), ..method("scene_on_character_asset", 0x0065_ae40, This::Stdcall, 5, &[(h14::ARRAY_RESERVE, K::This(1)), (h14::PUSH_ASSET, K::This(1))], |m, _, a| { let slots = slots_at(m, a); u(gh14::scene_on_character_asset(m, frame_ebp(), slots, a[0], a[1], a[2], a[3], a[4])) }) }, 0x20, 20),
+    framed(Case { prep: Some(prep_fit_size), ..method("shadow_fit_size", 0x006d_23d0, This::Stdcall, 5, &[], |m, _, a| { let slots = slots_at(m, a); gh14::shadow_fit_size(m, slots, a[0], a[1], a[2], a[3], a[4]); Out::None }) }, 0, 20),
+    framed(with_cookie(Case { prep: Some(prep_character_load), ..cdecl("character_load", 0x0063_d140, 2, &[(h14::LOADED_CHARACTER_TABLE, K::Getter), (h14::SPRINTF_SLOT, K::ImportC(3)), (h14::PHYRE_PRINTF, K::Cdecl(2))], |m, _, a| u(gh14::character_load(m, frame_ebp(), a[0], a[1]))) }), 0x108, 0),
+    framed(with_cookie(Case { prep: Some(prep_set_shader), ..method("geometry_set_shader", 0x006a_46e0, This::Object, 2, SET_SHADER_STUBS, |m, this, a| u(gh14::geometry_set_shader(m, frame_ebp(), this, a[0], a[1]))) }), 0x1e4, 0),
+];
+
+#[test]
+fn batch14_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES14, n, &mut Rng(0x1414_b014));
+    });
+}
+
+// ---- round 5 batch 15 (ffx_prender::h3_glue15) ----
+
+impl Twins {
+    /// `InterlockedCompareExchange(dest, exchange, comparand)` through
+    /// the import slot `slot`: a real exchange, then logged (stdcall).
+    fn stub_cas(&mut self, slot: u32) {
+        let log = self.stub(None, slot, false, 3, 3, None);
+        let mut c = vec![0x8b, 0x4c, 0x24, 0x04]; // mov ecx, [esp+4]
+        c.extend([0x8b, 0x01]); // mov eax, [ecx]
+        c.extend([0x3b, 0x44, 0x24, 0x0c]); // cmp eax, [esp+0xc]
+        c.extend([0x75, 0x06]); // jne +6
+        c.extend([0x8b, 0x54, 0x24, 0x08]); // mov edx, [esp+8]
+        c.extend([0x89, 0x11]); // mov [ecx], edx
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let at = self.rebase(slot);
+        self.patch(at, &code.to_le_bytes());
+    }
+
+    /// A cdecl allocator stub at `sym` returning `base + size`, logged.
+    fn stub_alloc(&mut self, sym: u32, base: u32) {
+        let log = self.stub(None, sym, false, 1, 0, None);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+        c.push(0x05);
+        c.extend(base.to_le_bytes()); // add eax, base
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+
+    /// A cdecl import through the slot `slot` returning `ret`.
+    fn stub_import_c(&mut self, slot: u32, n: u32, ret: u32) {
+        let s = self.stub(None, slot, false, n, 0, Some(ret));
+        let at = self.rebase(slot);
+        self.patch(at, &s.to_le_bytes());
+    }
+}
+
+/// The 64 free-list flags (one free now and then), their entries, the
+/// delegation's buffer (none, too small or large enough), the data (or
+/// none) and the list (a null slot or full).
+fn prep_register(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    t.stub_cas(h15::INTERLOCKED_CAS);
+    let free = if rng.chance(3) { 64 } else { rng.below(64) };
+    let d = obj + 0x400;
+    for i in 0..64 {
+        t.w32(
+            obj + 0xc + 8 * i,
+            if i == free { 0 } else { 1 + rng.below(3) },
+        );
+        t.w32(obj + 8 + 8 * i, if rng.chance(4) { 0 } else { d });
+    }
+    t.stub_ret(h15::OPERATOR_NEW, false, 1, 0, obj + 0x500);
+    for at in [d, obj + 0x500] {
+        t.w32(at + 4, if rng.chance(3) { 0 } else { obj + 0x600 });
+        t.w32(at + 8, rng.below(0x30));
+    }
+    let size = rng.below(0x40);
+    args[0] = if rng.chance(4) { 0 } else { obj + 0x700 };
+    args[1] = size;
+    let n = rng.below(5);
+    let w = count_word(rng, n);
+    for k in 0..n {
+        t.w32(
+            obj + 0x800 + 4 * k,
+            if rng.chance(4) { 0 } else { rng.next() | 1 },
+        );
+    }
+    t.w32(obj, w);
+    t.w32(obj + 4, obj + 0x800);
+}
+
+/// An instance (or the null one), a geometry already there or not, and
+/// allocations at distinct places.
+fn prep_guildmap(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    if !t.snapshot {
+        t.global(h15::VFX_RENDER_DATA_TABLE.sym, obj + 0x40);
+    }
+    args[0] = if rng.chance(3) { 0 } else { rng.below(4) };
+    args[1] = if rng.chance(2) { 0 } else { rng.next() };
+    let found = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h15::GET_DYNAMIC_GEOMETRY, true, 2, 2, found);
+    t.stub_alloc(h15::OPERATOR_NEW, obj + 0x400);
+    t.stub_ret(h15::GUILD_MAP_GEOMETRY_CTOR, true, 0, 0, obj + 0x800);
+}
+
+/// The cloth (or none) with 0..4 vertex-buffer lists (some null) of
+/// 0..3 buffers (some null) whose storage lies in the cloth heap or not,
+/// and the instance table holding it 0..2 times.
+fn prep_cloth_destroy(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let base = obj + 0x1000;
+    t.global(h15::CLOTH_BASE.sym, base);
+    t.global(h15::CLOTH_MSPACE.sym, rng.next());
+    let pick = |rng: &mut Rng| match rng.below(5) {
+        0 => base,
+        1 => base + 0xf_ffff,
+        2 => base + 0x10_0000,
+        3 => base - 1,
+        _ => base + rng.below(0x10_0000),
+    };
+    let cloth_at = obj + 0x100;
+    let cloth = if rng.chance(6) { 0 } else { cloth_at };
+    args[0] = cloth;
+    let lists = rng.below(5);
+    t.w32(cloth_at + 0x14, lists);
+    for i in 0..lists {
+        let list = obj + 0x400 + 0x40 * i;
+        t.w32(
+            cloth_at + 0x30 + 4 * i,
+            if rng.chance(4) { 0 } else { list },
+        );
+        let n = rng.below(4);
+        t.w32(list, n);
+        for j in 0..n {
+            let buffer = obj + 0x800 + 0x100 * i + 0x50 * j;
+            t.w32(list + 4 + 4 * j, if rng.chance(4) { 0 } else { buffer });
+            let storage = pick(rng);
+            t.w32(buffer + 0x4c, storage);
+        }
+    }
+    let n = rng.below(5);
+    t.global(h15::CLOTH_INSTANCE_COUNT.sym, n);
+    let table = t.rebase(h15::CLOTH_INSTANCES);
+    for k in 0..4 {
+        let v = if rng.chance(3) { cloth } else { rng.next() };
+        t.w32(table + 4 * k, v);
+    }
+    // the base itself now and then, so the cloth is in its heap
+    if cloth != 0 && rng.chance(4) {
+        t.global(h15::CLOTH_BASE.sym, cloth_at);
+    }
+}
+
+/// The scene's pool (its counter near the end, small, negative or
+/// anywhere), the variant's buffer size, the clusters' use counts and
+/// the outputs (or none).
+fn prep_create_material(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfc00);
+    *this = scene;
+    let s = match rng.below(4) {
+        0 => 3990 + rng.below(12),
+        1 => rng.below(64),
+        2 => (rng.below(3) as i32 - 3) as u32,
+        _ => rng.below(4000),
+    };
+    t.w32(scene + 0xfbfc, s);
+    t.w32(
+        scene + 0xfbe8,
+        (obj + 0x200).wrapping_sub(s.wrapping_mul(0xe0)),
+    );
+    t.w32(
+        scene + 0xfbec,
+        (obj + 0x300).wrapping_sub(s.wrapping_mul(0x18)),
+    );
+    t.w32(scene + 0xfbf8, (obj + 0x1000).wrapping_sub(s));
+    let run = rng.below(12) as usize;
+    let mut bytes = vec![1u8; run];
+    bytes.push(0);
+    t.write(obj + 0x1001, &bytes);
+    for k in 0..64 {
+        let v = match rng.below(4) {
+            0 => rng.below(3),
+            1 => (rng.below(3) as i32 - 2) as u32,
+            _ => 3 + rng.below(1000),
+        };
+        t.w32(scene + 0x2774 + 4 * k, v);
+    }
+    let variant = obj + 0x100;
+    // the buffer size: around 0xe0, now and then over 0xff
+    let low = [0xdfu8, 0xe0, 0xe1, 0x00, 0xff][rng.below(5) as usize];
+    let high = u8::from(rng.chance(6));
+    t.write(variant + 0x30, &[low, high]);
+    args[0] = variant;
+    args[1] = if rng.chance(4) {
+        rng.next() | 1
+    } else {
+        scene + 0x12d4
+    };
+    args[2] = if rng.chance(3) { 0 } else { obj + 0x600 };
+    args[3] = if rng.chance(3) { 0 } else { obj + 0x604 };
+    t.stub_ret(h15::CREATE_MATERIAL, true, 3, 3, obj + 0x700);
+}
+
+/// The matrix, the eight floats, the count and the flag (equal to the
+/// scene's or not).
+fn prep_render_texture(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfd00);
+    *this = scene;
+    let m = obj + 0x100;
+    for k in 0..16 {
+        let f = rng.float();
+        t.w32(m + 4 * k, f.to_bits());
+    }
+    let on = rng.below(3);
+    t.write(
+        scene + 0xfc00,
+        &[if rng.chance(2) {
+            on as u8
+        } else {
+            rng.below(3) as u8
+        }],
+    );
+    args[0] = on | if rng.chance(2) { rng.next() & !0xff } else { 0 };
+    args[1] = m;
+    args[10] = rng.word();
+}
+
+/// A path with "hiku21" (where the stubbed `strstr` points) or not, the
+/// language (each case and out of range), and the flag.
+fn prep_field_map_load(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let path = obj + 0x700;
+    letters(t, path, 20, rng);
+    let found = if rng.chance(4) { 0 } else { path + 4 };
+    t.stub_import_c(h15::STRSTR_SLOT, 2, found);
+    let language = rng.below(21);
+    t.stub_ret(h15::GET_LANGUAGE, false, 0, 0, language);
+    let hides = rng.below(5);
+    t.global(h15::CHR_F117_HIDE_COUNT.sym, hides);
+    args[0] = path;
+    args[1] = rng.word();
+}
+
+/// The water frame (in range, at the wrap, past it) and the counter.
+fn prep_wave(t: &mut Twins, _: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let frame = match rng.below(4) {
+        0 => 0x45,
+        1 => 0x46 + rng.below(4),
+        _ => rng.below(0x46),
+    };
+    let at = t.rebase(h15::WATER_FRAME.sym);
+    t.write(at, &[frame as u8]);
+    let counter = rng.next() as u8;
+    let at = t.rebase(h15::WATER_COUNTER.sym);
+    t.write(at, &[counter]);
+}
+
+const REGISTER_STUBS: &[(u32, K)] = &[
+    (h15::OPERATOR_DELETE, K::Cdecl(1)),
+    (h15::ARRAY_NEW, K::Cdecl(1)),
+    (h15::MEMSET, K::Cdecl(3)),
+    (h15::MEMCPY, K::Cdecl(3)),
+    (h15::WAIT_FOR_SINGLE_OBJECT, K::Import(2)),
+    (h15::RELEASE_MUTEX, K::Import(1)),
+    (h15::PHYRE_MALLOC_ALIGNED, K::Cdecl(2)),
+    (h15::DELEGATION_GROW_PUSH, K::This(2)),
+];
+
+const FIELD_MAP_STUBS: &[(u32, K)] = &[
+    (h15::LEVEL_ANALYSIS_NAME, K::Cdecl(1)),
+    (h15::CURRENT_LEVEL_NAME, K::This(0)),
+    (h15::VIEWER_MANAGER_INSTANCE, K::Getter),
+    (h15::SPRINTF_SLOT, K::ImportC(3)),
+    (h15::PRINTF_SLOT, K::ImportC(2)),
+    (h15::TEXTURE_VIDEO_LOAD, K::This(1)),
+    (h15::FIELD_MAP_LOAD_ASYNC, K::This(2)),
+];
+
+#[rustfmt::skip]
+const CASES15: &[Case] = &[
+    framed(Case { prep: Some(prep_register), ..method("delegation_register", 0x006a_de20, This::Object, 4, REGISTER_STUBS, |m, this, a| u(gh15::delegation_register(m, frame_ebp(), this, a[0], a[1], a[2], a[3]))) }, 4, 0),
+    Case { prep: Some(prep_guildmap), ..cdecl("guildmap_create", 0x0064_1510, 3, &[(h15::VFX_TABLE_INSERT, K::This(3))], |m, _, a| u(gh15::guildmap_create(m, a[0], a[1], a[2]))) },
+    framed(Case { prep: Some(prep_cloth_destroy), ..cdecl("cloth_vertex_buffers_destroy", 0x0063_a160, 1, &[(h15::MSPACE_FREE, K::Cdecl(2)), (h15::USER_FREE, K::Cdecl(1))], |m, _, a| { let slots = slots_at(m, a); let r = gh15::cloth_vertex_buffers_destroy(m, slots, a[0]); // without a cloth the original leaves the caller's eax
+        if a[0] == 0 { Out::None } else { u(r) } }) }, 0, 4),
+    Case { prep: Some(prep_create_material), ..method("scene_create_material", 0x0065_9710, This::Object, 4, &[(h15::CREATE_MATERIAL_PREALLOCATED, K::This(2))], |m, this, a| u(gh15::scene_create_material(m, this, a[0], a[1], a[2], a[3]))) },
+    framed(Case { prep: Some(prep_render_texture), float_args: true, ..method("scene_set_render_world_to_texture", 0x0066_d000, This::Object, 11, &[(h15::SPRINTF_SLOT, K::ImportC(3))], |m, this, a| { slots_at(m, a); u(gh15::scene_set_render_world_to_texture(m, frame_ebp(), this, a[0], a[1], arr(&a[2..10]), a[10])) }) }, 0x40, 44),
+    Case { prep: Some(prep_field_map_load), ..cdecl("field_map_load", 0x0064_0210, 2, FIELD_MAP_STUBS, |m, _, a| u(gh15::field_map_load(m, a[0], a[1]))) },
+    framed(with_cookie(Case { prep: Some(prep_wave), ..cdecl("scene_draw_main_menu_wave", 0x0065_b5b0, 0, &[(h15::UNIFY_FILENAME, K::Cdecl(3)), (h15::SPRINTF_SLOT, K::ImportC(4)), (h15::DRAW_UI_ELEMENT, K::Cdecl(5))], |m, _, _| u(gh15::scene_draw_main_menu_wave(m, frame_ebp()))) }), 0x29c, 0),
+];
+
+#[test]
+fn batch15_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES15, n, &mut Rng(0x1515_b015));
+    });
+}
+
+// ---- round 5 batch 16 (ffx_prender::h3_glue16) ----
+
+/// The six arrays (counts 0..4, negative now and then; the masked one
+/// with its owned bit), `mesh` in one of them (or none, or twice).
+fn prep_remove_vfx(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfc00);
+    *this = scene;
+    let mesh = rng.next() | 1;
+    args[0] = mesh;
+    let count = |rng: &mut Rng| -> u32 {
+        if rng.chance(6) {
+            (rng.below(3) as i32 - 3) as u32
+        } else {
+            rng.below(5)
+        }
+    };
+    let hit = |rng: &mut Rng| -> u32 { if rng.chance(4) { mesh } else { rng.next() } };
+    let n = count(rng);
+    t.w32(scene + 0xf8cc, n);
+    for k in 0..4 {
+        let v = hit(rng);
+        t.w32(scene + 0x38cc + 4 * k, v);
+    }
+    let n = count(rng);
+    t.w32(scene + 0xf8d0, n);
+    for k in 0..4 {
+        let instance = obj + 0x100 + 0x20 * k;
+        t.w32(
+            scene + 0x68cc + 4 * k,
+            if rng.chance(4) { 0 } else { instance },
+        );
+        let v = hit(rng);
+        t.w32(instance + 0xc, v);
+    }
+    for (c, d, at) in [
+        (0x3878, 0x3880, 0x300),
+        (0x3854, 0x385c, 0x340),
+        (0x3860, 0x3868, 0x380),
+    ] {
+        let n = count(rng);
+        t.w32(scene + c, n);
+        t.w32(scene + d, obj + at);
+        for k in 0..4 {
+            let v = hit(rng);
+            t.w32(obj + at + 4 * k, v);
+        }
+    }
+    let n = rng.below(5);
+    let w = count_word(rng, n);
+    t.w32(scene + 0x3884, w);
+    t.w32(scene + 0x3888, obj + 0x3c0);
+    for k in 0..4 {
+        let v = hit(rng);
+        t.w32(obj + 0x3c0 + 4 * k, v);
+    }
+}
+
+/// The map's two clusters (or none), the fog record's array (none,
+/// owned or not, its data null).
+fn prep_map_shutdown(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0000);
+    *this = scene;
+    for off in [0x10d4, 0x1128] {
+        t.w32(scene + off, if rng.chance(3) { 0 } else { rng.next() | 1 });
+    }
+    let fog = obj + 0x100;
+    t.w32(scene + 0xcc, fog);
+    let n = rng.below(3);
+    let w = count_word(rng, n);
+    t.w32(fog + 0x9c, w);
+    t.w32(fog + 0xa0, if rng.chance(3) { 0 } else { rng.next() | 1 });
+    t.w32(scene + 0x10cc, rng.next());
+}
+
+/// A texture video (or none) with its decoder busy or not, 0..4 effects
+/// (or a negative count) and its three textures (some null).
+fn prep_video_unload(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1100);
+    *this = scene;
+    t.write(scene + 0xdd0, &[u8::from(!rng.chance(4))]);
+    t.w32(scene + 0xdcc, u32::from(!rng.chance(2)));
+    let n = if rng.chance(6) {
+        0xffff_ffff
+    } else {
+        rng.below(5)
+    };
+    t.w32(scene + 0x10c0, n);
+    for (k, off) in [0xdd8, 0xddc, 0xde0].into_iter().enumerate() {
+        let v = if rng.chance(4) {
+            0
+        } else {
+            obj + 0x400 + 0x40 * k as u32
+        };
+        t.w32(scene + off, v);
+    }
+    t.global(h16::PPP_SPECIAL_PART.sym, rng.next());
+    for off in [0xdc8, 0x10c8] {
+        let v = rng.next();
+        t.w32(scene + off, v);
+    }
+}
+
+/// Eight samplers, some locked (bit 7 of `+0x1c`).
+fn prep_scene_samplers(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    for k in 0..8 {
+        let flags = rng.next() & !0x80 | if rng.chance(3) { 0x80 } else { 0 };
+        t.w32(obj + 0x964 + 0x24 * k + 0x1c, flags);
+    }
+}
+
+/// The map's camera (or none) with its values (`+0x108` below 0.35 or
+/// not, NaN), the level (each special one) and the scenario flag.
+fn prep_post_params(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfb00);
+    *this = scene;
+    let camera = obj + 0x200;
+    t.w32(scene + 0x4f8, if rng.chance(4) { 0 } else { camera });
+    t.w32(scene + 0xcc, obj + 0x400);
+    for k in 0..7 {
+        let f = rng.float();
+        t.w32(camera + 0x104 + 4 * k, f.to_bits());
+    }
+    let low = [f32::from_bits(0x3eb3_3332), 0.35, 0.1, 0.5, f32::NAN, -1.0][rng.below(6) as usize];
+    t.w32(camera + 0x108, low.to_bits());
+    let level = [0x199, 0x12ea, 0x1733, 0x19a, rng.below(0x2000)][rng.below(5) as usize];
+    t.w32(scene + 0xfaf4, level);
+    let flag = if rng.chance(2) { 0 } else { rng.next() };
+    let flag = flag & if rng.chance(2) { 0xffff_0000 } else { u32::MAX };
+    t.stub_ret(h16::GET_SCENARIO_FLAG, false, 0, 0, flag);
+}
+
+/// The layout's arrays (sizes right or not, owned or not, null) and an
+/// allocator that fails now and then (only where an array is left).
+fn prep_layout(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    let words = [(0x10, 0x14, 1, 0x300), (8, 0xc, 4, 0x400)];
+    // a null array only where a new one replaces it (the original writes
+    // through what it ends with)
+    let fail = rng.chance(5);
+    for (count, data, n, at) in words {
+        let c = if rng.chance(3) { n } else { rng.below(6) };
+        let w = count_word(rng, c);
+        t.w32(obj + count, w);
+        // null, the old array, or (with the allocator below) the very
+        // block the new one gets
+        let p = if !fail && c != n && rng.chance(4) {
+            0
+        } else if !fail && rng.chance(4) {
+            obj + 0x800 + [0x10, 0x30][usize::from(n == 4)]
+        } else {
+            obj + at
+        };
+        t.w32(obj + data, p);
+    }
+    if fail {
+        t.stub_ret(h16::PHYRE_MALLOC_ALIGNED, false, 2, 0, 0);
+    } else {
+        t.stub_alloc(h16::PHYRE_MALLOC_ALIGNED, obj + 0x800);
+    }
+    args[0] = rng.next();
+    args[1] = rng.next();
+}
+
+const MAP_SHUTDOWN_STUBS: &[(u32, K)] = &[
+    (h16::WORLD_REMOVE_CLUSTER, K::This(1)),
+    (h16::PHYRE_FREE, K::Cdecl(1)),
+    (h16::TEXTURE_ANIMATION_INSTANCE, K::Getter),
+    (h16::TEXTURE_ANIMATION_CLEAR, K::This(0)),
+    (h16::MORPH_INSTANCE, K::Getter),
+    (h16::MORPH_RESET, K::This(0)),
+    (h16::POST_SET_FIRST_ENTRY, K::This(1)),
+    (h16::GET_APPLICATION, K::Getter),
+];
+
+const VIDEO_UNLOAD_STUBS: &[(u32, K)] = &[
+    (h16::SLEEP, K::Cdecl(1)),
+    (h16::VFX_DESTROY, K::Cdecl(2)),
+    (h16::VIDEO_TERMINATE, K::This(0)),
+    (h16::FMV_INSTANCE, K::Getter),
+    (h16::FMV_ON_TEXTURE_VIDEO_STOP, K::This(0)),
+    (h16::TEXTURE_IS_BOUND, K::This(0)),
+    (h16::TEXTURE_UNBIND, K::This(0)),
+    (h16::TEXTURE_RELEASE, K::This(0)),
+    (h16::PHYRE_FREE, K::Cdecl(1)),
+    (h16::SET_TEXTURE_VIDEO_INFO, K::Cdecl(2)),
+];
+
+#[rustfmt::skip]
+const CASES16: &[Case] = &[
+    Case { prep: Some(prep_remove_vfx), ..method("scene_remove_vfx_from_render_array", 0x0066_87a0, This::Object, 1, &[], |m, this, a| u(gh16::scene_remove_vfx_from_render_array(m, this, a[0]))) },
+    Case { prep: Some(prep_map_shutdown), ..method("scene_field_map_shutdown", 0x0065_d0c0, This::Object, 0, MAP_SHUTDOWN_STUBS, |m, this, _| u(gh16::scene_field_map_shutdown(m, this))) },
+    Case { prep: Some(prep_video_unload), ..method("scene_texture_video_unload", 0x0067_0760, This::Object, 0, VIDEO_UNLOAD_STUBS, |m, this, _| { let video = m.read::<u8>(this + 0xdd0) != 0; let r = gh16::scene_texture_video_unload(m, this); // without a video the original leaves the caller's eax
+        if video { u(r) } else { Out::None } }) },
+    Case { prep: Some(prep_scene_samplers), ..method("scene_setup_samplers", 0x0065_f290, This::Object, 0, &[(h16::SAMPLER_REGISTER, K::This(0))], |m, this, _| u(gh16::scene_setup_samplers(m, this))) },
+    Case { prep: Some(prep_post_params), ..method("scene_setup_post_process_params", 0x0066_f140, This::Object, 0, &[(h16::PHYRE_PRINTF, K::Cdecl(2))], |m, this, _| u(gh16::scene_setup_post_process_params(m, this))) },
+    Case { prep: Some(prep_layout), ..method("layout_setup", 0x0067_8bd0, This::Object, 2, &[(h16::MEMSET, K::Cdecl(3)), (h16::PHYRE_FREE, K::Cdecl(1))], |m, this, a| u(gh16::layout_setup(m, this, a[0], a[1]))) },
+];
+
+#[test]
+fn batch16_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES16, n, &mut Rng(0x1616_b016));
+    });
+}
+
+// ---- round 5 batch 17 (ffx_prender::h3_glue17) ----
+
+/// The frame records (ages around 16, some unused) with buffers (some
+/// null), the video's flags (playing, paused, `+0xdd1`), the pause state
+/// against `g_PauseOn`, the playback running or not, 0..4 effects.
+fn prep_update_video(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0e00);
+    *this = scene;
+    for k in 0..4 {
+        let record = scene + 0xd68 + 0x18 * k;
+        let age = match rng.below(4) {
+            0 => 0,
+            1 => 16,
+            2 => (rng.below(3) as i32 - 2) as u32,
+            _ => rng.below(20),
+        };
+        t.w32(record, age);
+        for b in 1..=5 {
+            t.w32(
+                record + 4 * b,
+                if rng.chance(3) { 0 } else { rng.next() | 1 },
+            );
+        }
+    }
+    for off in [0xdd0, 0xdd1, 0x10c9, 0x10ca] {
+        t.write(scene + off, &[u8::from(!rng.chance(3))]);
+    }
+    let pause = rng.below(2);
+    t.global(h17::PAUSE_ON.sym, pause);
+    t.w32(
+        scene + 0x1_0dc4,
+        if rng.chance(2) { pause } else { pause ^ 1 },
+    );
+    t.w32(
+        scene + 0x10c0,
+        if rng.chance(6) {
+            0xffff_ffff
+        } else {
+            rng.below(5)
+        },
+    );
+    t.w32(scene + 0xd0, rng.next());
+    for off in [0xdd8, 0xddc, 0xde0] {
+        let v = rng.next();
+        t.w32(scene + off, v);
+    }
+    let playing = if rng.chance(4) { 0x100 } else { 0x101 };
+    t.stub_ret(h17::VIDEO_IS_PLAYING, true, 0, 0, playing);
+    t.stub_ret(h17::OPERATOR_NEW, false, 1, 0, obj + 0x100);
+}
+
+/// The singletons there or not (the first, the delegation helper, the
+/// scene) and allocations failing now and then.
+fn prep_initialize(t: &mut Twins, obj: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    for g in [
+        h17::FIRST_SINGLETON.sym,
+        h17::RENDER_DELEGATION_HELPER.sym,
+        h17::SCENE.sym,
+    ] {
+        let v = if rng.chance(2) { 0 } else { rng.next() | 1 };
+        t.global(g, v);
+    }
+    let p = if rng.chance(5) { 0 } else { obj + 0x100 };
+    t.stub_ret(h17::OPERATOR_NEW, false, 1, 0, p);
+    for g in [
+        h17::LOADING_SCREEN.sym,
+        h17::GRAPHICS_UP.sym,
+        h17::CLOTH_BASE.sym,
+        h17::CLOTH_MSPACE.sym,
+    ] {
+        let v = rng.next();
+        t.global(g, v);
+    }
+}
+
+/// The window (16:9, narrower, wider, sizes past 2^31, zero), the target
+/// aspect (16:9 or another) and `keep`.
+fn prep_viewport(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let app = obj + 0x100;
+    t.stub_ret(h17::GET_APPLICATION, false, 0, 0, app);
+    let (w, h) = match rng.below(6) {
+        0 => (1920, 1080),
+        1 => (1280, 720),
+        2 => (1024, 768),
+        3 => (2560, 1080),
+        4 => (rng.next(), rng.next()),
+        _ => (rng.below(4000), rng.below(4000)),
+    };
+    t.w32(app + 0x26c, w);
+    t.w32(app + 0x270, h);
+    let aspect = match rng.below(4) {
+        0 => 16.0 / 9.0,
+        1 => rng.float(),
+        _ => (1 + rng.below(4000)) as f32 / (1 + rng.below(3000)) as f32,
+    };
+    t.global(h17::TARGET_ASPECT.sym, aspect.to_bits());
+    if !t.snapshot {
+        t.global(h17::IGGY_MENU_MANAGER.sym, obj + 0x200);
+    }
+    args[0] = rng.next();
+    args[1] = if rng.chance(5) { rng.next() | 1 } else { 0 };
+}
+
+const UPDATE_VIDEO_STUBS: &[(u32, K)] = &[
+    (h17::OPERATOR_DELETE, K::Cdecl(1)),
+    (h17::VIDEO_TOGGLE_PAUSE, K::This(0)),
+    (h17::QUEUE_CALLBACK, K::This(2)),
+    (h17::VFX_UPDATE, K::Cdecl(2)),
+    (h17::DYNAMIC_GEOMETRY_UPDATE_TEXTURE, K::Cdecl(2)),
+];
+
+/// Every callee of `graphicInitialize`, stubbed.
+fn initialize_stubs() -> Vec<(u32, K)> {
+    let mut s = vec![
+        (h17::TTY_WRITE, K::Cdecl(2)),
+        (h17::INIT_FIRST, K::Cdecl(0)),
+        (h17::FIRST_SINGLETON_CTOR, K::This(0)),
+        (h17::FIRST_SINGLETON_SETUP, K::This(0)),
+        (h17::RENDER_DELEGATION_HELPER_CTOR, K::This(0)),
+        (h17::LOADING_SCREEN_CTOR, K::This(0)),
+        (h17::INIT_AFTER_LOADING_SCREEN, K::Cdecl(0)),
+        (h17::SCENE_CTOR, K::This(0)),
+        (h17::SCENE_INIT_POST_PROCESS, K::This(0)),
+        (h17::READ_MONSTER_NAMES, K::Cdecl(0)),
+        (h17::ALIGNED_MALLOC, K::Cdecl(2)),
+        (h17::CREATE_MSPACE, K::Cdecl(3)),
+    ];
+    s.extend(
+        h17::CREATORS_A
+            .iter()
+            .chain(&h17::CREATORS_B)
+            .map(|&f| (f, K::Cdecl(0))),
+    );
+    s
+}
+
+#[rustfmt::skip]
+const CASES17: &[Case] = &[
+    Case { prep: Some(prep_update_video), ..method("scene_update_texture_video", 0x0065_4960, This::Object, 0, UPDATE_VIDEO_STUBS, |m, this, _| { gh17::scene_update_texture_video(m, this); Out::None }) },
+    framed(Case { prep: Some(prep_viewport), ..method("post_set_non_16_by_9_viewport", 0x0069_8750, This::Stdcall, 2, &[(h17::SET_VIEWPORT, K::This(4)), (h17::IGGY_SET_VIEWPORT_RECT, K::This(6))], |m, _, a| { let slots = slots_at(m, a); let r = gh17::post_set_non_16_by_9_viewport(m, slots, a[0], a[1]); // with `keep` the original leaves the caller's eax
+        if a[1] == 0 { u(r) } else { Out::None } }) }, 0, 8),
+];
+
+#[test]
+fn batch17_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES17, n, &mut Rng(0x1717_b017));
+    });
+}
+
+#[test]
+fn batch17_graphic_initialize_matches_the_original() {
+    let stubs: &'static [(u32, K)] = Box::leak(initialize_stubs().into_boxed_slice());
+    let case = Case {
+        prep: Some(prep_initialize),
+        ..cdecl("graphic_initialize", 0x0064_19d0, 0, stubs, |m, _, _| {
+            u(gh17::graphic_initialize(m))
+        })
+    };
+    Twins::each(|t| {
+        let n = if t.snapshot { 16 } else { 64 };
+        run_cases(t, &[case], n, &mut Rng(0x1717_b117));
+    });
+}
+
+/// The map's camera (or none) with its lighting, the level (0x12ea or
+/// another), the scenario flag, the map name (none, tagged) holding the
+/// balance-skipping text or not, and the flag.
+fn prep_char_light(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0xfb00);
+    *this = scene;
+    let map = obj + 0x200;
+    t.w32(scene + 0x4f8, if rng.chance(5) { 0 } else { map });
+    for k in 0..12 {
+        let f = rng.float();
+        t.w32(map + 0x120 + 4 * k, f.to_bits());
+    }
+    t.w32(
+        scene + 0xfaf4,
+        [0x12ea, 0x12eb, 0x199][rng.below(3) as usize],
+    );
+    let flag = match rng.below(3) {
+        0 => 0,
+        1 => rng.next() & 0xffff_0000,
+        _ => rng.next() | 1,
+    };
+    t.stub_ret(h17::GET_SCENARIO_FLAG, false, 0, 0, flag);
+    let name = match rng.below(3) {
+        0 => 0,
+        1 => obj + 0x700,
+        _ => obj + 0x701,
+    };
+    t.w32(scene + 0xfaf0, name);
+    let found = if rng.chance(2) { 0 } else { obj + 0x704 };
+    t.stub_import_c(h17::STRSTR_SLOT, 2, found);
+    args[0] = if rng.chance(2) {
+        rng.next() & !0xff
+    } else {
+        rng.next() | 1
+    };
+}
+
+/// The listed ids (some free, `id` among them or not), the count against
+/// the capacity, the magic file name (none, tagged), the language and
+/// the special-magic answer, async loading available or not.
+fn prep_magic_texture(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0000);
+    *this = scene;
+    let id = rng.next() | 1;
+    args[0] = id;
+    let n = rng.below(5);
+    t.w32(scene + 0x28, n);
+    t.w32(scene + 0x2c, n + rng.below(2));
+    t.w32(
+        scene + 0x30,
+        if n == 0 && rng.chance(3) {
+            0
+        } else {
+            obj + 0x100
+        },
+    );
+    t.write(scene + 0x24, &[rng.below(3) as u8]);
+    for k in 0..n {
+        let v = match rng.below(4) {
+            0 => 0,
+            1 if rng.chance(2) => id,
+            _ => id ^ 2,
+        };
+        t.w32(obj + 0x100 + 4 * k, v);
+    }
+    let file = match rng.below(4) {
+        0 => 0,
+        1 => 1,
+        2 => obj + 0x601,
+        _ => obj + 0x600,
+    };
+    t.w32(scene + 0xfafc, file);
+    if !t.snapshot {
+        let language = [0, 9, 10, 1, 3][rng.below(5) as usize];
+        t.w32(obj + 4, language);
+    }
+    let special = if rng.chance(2) { 0x100 } else { 0x101 };
+    t.stub_ret(h17::IS_SPECIAL_MAGIC, false, 1, 1, special);
+    t.stub_ret(h17::MAGIC_ASYNC_AVAILABLE, false, 0, 0, rng.below(2));
+}
+
+const CHAR_LIGHT_STUBS: &[(u32, K)] = &[
+    (h17::LIGHT_INSTANCE, K::Getter),
+    (h17::LIGHT_SET_INTENSITY, K::This(2)),
+    (h17::LIGHT_SET_ROTATION, K::This(3)),
+    (h17::LIGHT_TWEAK_INSTANCE, K::Getter),
+    (h17::LIGHT_SET_COEFFICIENT, K::This(2)),
+    (h17::LIGHT_SET_FLAG, K::This(1)),
+    (h17::LIGHT_SET_MAP_NAME, K::This(1)),
+    (h17::LIGHT_BALANCE_GLOW, K::This(0)),
+];
+
+const MAGIC_TEXTURE_STUBS: &[(u32, K)] = &[
+    (h17::UNIFY_FILENAME, K::Cdecl(3)),
+    (h17::ARRAY_RESERVE_667E00, K::This(1)),
+    (h17::LOCALIZATION_INSTANCE, K::Getter),
+    (h17::LANGUAGE_NAME, K::Cdecl(0)),
+    (h17::SPRINTF_SLOT, K::ImportC(4)),
+    (h17::LOAD_MAGIC_FILE_ASYNC, K::This(2)),
+    (h17::LOAD_VFX_TEXTURE, K::This(3)),
+];
+
+#[rustfmt::skip]
+const CASES17B: &[Case] = &[
+    Case { prep: Some(prep_char_light), ..method("scene_setup_character_lighting", 0x0066_eb20, This::Object, 1, CHAR_LIGHT_STUBS, |m, this, a| { gh17::scene_setup_character_lighting(m, this, a[0]); Out::None }) },
+    framed(with_cookie(Case { prep: Some(prep_magic_texture), ..method("scene_load_magic_vfx_texture", 0x0066_4d80, This::Object, 1, MAGIC_TEXTURE_STUBS, |m, this, a| u(gh17::scene_load_magic_vfx_texture(m, frame_ebp(), this, a[0]))) }), 0x208, 0),
+];
+
+#[test]
+fn batch17b_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES17B, n, &mut Rng(0x1717_b217));
+    });
+}
+
+// ---- round 5 batch 18 (ffx_prender::h3_glue18) ----
+
+/// The post-process manager's targets and the renderer's calls failing
+/// now and then.
+fn prep_pre_render(t: &mut Twins, _: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1100);
+    *this = scene;
+    let post = t.zeros(0x1_2400);
+    t.w32(scene + 0x10cc, post);
+    t.w32(scene + 0xd0, rng.next());
+    for (target, _) in h18::PRE_RENDER_TARGETS {
+        let v = rng.next();
+        t.w32(post + target, v);
+    }
+    for sym in [h18::SET_COLOR_TARGET, h18::BEGIN_SCENE, h18::END_SCENE] {
+        let n = if sym == h18::SET_COLOR_TARGET { 2 } else { 1 };
+        let r = if rng.chance(5) { rng.next() | 1 } else { 0 };
+        t.stub_ret(sym, true, n, n, r);
+    }
+}
+
+/// The textures (made or not), their sizing failing now and then, the
+/// targets (made or not).
+fn prep_shadow_buffers(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    *this = obj;
+    t.global(h18::SHADOW_SIZE.sym, 512 << rng.below(4));
+    let texture = if rng.chance(8) { 0 } else { obj + 0x400 };
+    t.stub_ret(h18::CLUSTER_CREATE, true, 3, 3, texture);
+    let error = if rng.chance(6) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h18::SET_DIMENSIONS, true, 4, 4, error);
+    let target = if rng.chance(8) { 0 } else { obj + 0x500 };
+    t.stub_ret(h18::MAKE_TARGET, true, 1, 1, target);
+    args[0] = rng.next();
+    args[1] = rng.next();
+}
+
+#[rustfmt::skip]
+const CASES18: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_pre_render), ..method("scene_pre_render", 0x0065_1be0, This::Object, 0, &[(h18::SURFACE_CTOR, K::This(2)), (h18::SURFACE_DTOR, K::This(0)), (h18::SHADOW_INSTANCE, K::Getter), (h18::SHADOW_PRE_RENDER, K::This(1))], |m, this, _| u(gh18::scene_pre_render(m, frame_ebp(), this))) }), 0x4c, 0),
+    Case { prep: Some(prep_shadow_buffers), ..method("shadow_create_buffers", 0x006d_18b0, This::Object, 2, &[(h18::UPDATE_MAX_LEVEL, K::This(0))], |m, this, _| u(gh18::shadow_create_buffers(m, this))) },
+];
+
+#[test]
+fn batch18_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 240 };
+        run_cases(t, CASES18, n, &mut Rng(0x1818_b018));
     });
 }

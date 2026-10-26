@@ -401,7 +401,7 @@ pub mod bridge {
     /// scene's own cluster with a free slot (counter below 3000), the
     /// slot's address, its use byte set, and the counter moved to the next
     /// unused slot (3000 when none).
-    fn claim_slot(
+    pub(crate) fn claim_slot(
         h: &mut impl Host,
         this: u32,
         counter: u32,

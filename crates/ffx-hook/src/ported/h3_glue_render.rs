@@ -19,6 +19,11 @@ use ffx_prender::glue10::bridge as g10;
 use ffx_prender::glue11::bridge as g11;
 use ffx_prender::h3_glue12::bridge as g12;
 use ffx_prender::h3_glue13::bridge as g13;
+use ffx_prender::h3_glue14::bridge as g14;
+use ffx_prender::h3_glue15::bridge as g15;
+use ffx_prender::h3_glue16::bridge as g16;
+use ffx_prender::h3_glue17::bridge as g17;
+use ffx_prender::h3_glue18::bridge as g18;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1338,6 +1343,165 @@ ported! {
     /// `RenderDelegationHelper_unregisterDelegationOfGivenTaskAndData(this, task, data, size)`.
     RenderDelegationHelper_unregisterDelegationOfGivenTaskAndData @ 0x006a_e340 => extern "thiscall" fn delegation_unregister(this: u32, task: u32, data: u32, size: u32) -> u32 {
         g13::delegation_unregister(&mut mem(), this, task, data, size)
+    }
+
+    // ---- round 5 batch 14 (ffx_prender::h3_glue14) ----
+    /// `PhyreScene_findGlobalMapObject_006518c0(scene)`.
+    PhyreScene_findGlobalMapObject_006518c0 @ 0x0065_18c0 => extern "thiscall" fn scene_find_global_object(this: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        g14::scene_find_global_object(&mut mem(), f.at() + 0x28, this)
+    }
+    /// `PostProcessManager_resizeTargets_00697f20(this, w, h)`.
+    PostProcessManager_resizeTargets_00697f20 @ 0x0069_7f20 => extern "thiscall" fn post_resize_targets(this: u32, w: u32, h: u32) -> u32 {
+        g14::post_resize_targets(&mut mem(), this, w, h)
+    }
+    /// `PhyreScene_newPoolDynamicMesh_006594c0(this, cluster)`.
+    PhyreScene_newPoolDynamicMesh_006594c0 @ 0x0065_94c0 => extern "thiscall" fn scene_new_dynamic_mesh(this: u32, cluster: u32) -> u32 {
+        g14::scene_new_dynamic_mesh(&mut mem(), this, cluster)
+    }
+    /// `PhyreScene_newPoolMeshInstance_006595d0(this, mesh, cluster)`.
+    PhyreScene_newPoolMeshInstance_006595d0 @ 0x0065_95d0 => extern "thiscall" fn scene_new_mesh_instance(this: u32, mesh: u32, cluster: u32) -> u32 {
+        g14::scene_new_mesh_instance(&mut mem(), this, mesh, cluster)
+    }
+    /// `TextureAnimationManager_sceenTextureAnimationClear(this)`.
+    TextureAnimationManager_sceenTextureAnimationClear @ 0x006b_2f50 => extern "thiscall" fn texture_animation_clear(this: u32) {
+        g14::texture_animation_clear(&mut mem(), this);
+    }
+    /// `PhyreScene_removeMeshInstance(this, id)`: the tree search reads `id`
+    /// through its argument slot.
+    PhyreScene_removeMeshInstance @ 0x0066_8680 => extern "thiscall" fn scene_remove_mesh_instance(this: u32, id: u32; slots: u32) -> u32 {
+        let _ = id;
+        g14::scene_remove_mesh_instance(&mut mem(), this, slots)
+    }
+    /// `TextureAnimationManager_unregisterChararcterInstance(this, chr)`.
+    TextureAnimationManager_unregisterChararcterInstance @ 0x006b_4330 => extern "thiscall" fn texture_animation_unregister(this: u32, chr: u32) -> u32 {
+        g14::texture_animation_unregister(&mut mem(), this, chr)
+    }
+    /// `graphicCharacterInstanceDestroy(chr, id)`: the delegation search
+    /// reads `chr` through its argument slot.
+    graphicCharacterInstanceDestroy @ 0x0063_a030 => extern "C" fn character_instance_destroy(chr: u32, id: u32; slots: u32) -> u32 {
+        g14::character_instance_destroy(&mut mem(), slots, chr, id)
+    }
+    /// `PhyreScene_onCharacterAssetLoadedItem_0065ae40(out, reader, array, asset, id)`.
+    PhyreScene_onCharacterAssetLoadedItem_0065ae40 @ 0x0065_ae40 => extern "stdcall" fn scene_on_character_asset(out: u32, reader: u32, array: u32, asset: u32, id: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<8>::new();
+        g14::scene_on_character_asset(&mut mem(), f.at() + 0x20, slots, out, reader, array, asset, id)
+    }
+    /// `ShadowManager_fitShadowSize_006d23d0(w, h, out_w, out_h, n)`: it
+    /// reuses its first two argument slots.
+    ShadowManager_fitShadowSize_006d23d0 @ 0x006d_23d0 => extern "stdcall" fn shadow_fit_size(w: u32, h: u32, out_w: u32, out_h: u32, n: u32; slots: u32) {
+        g14::shadow_fit_size(&mut mem(), slots, w, h, out_w, out_h, n);
+    }
+    /// `graphicCharacterLoad(name, id)`.
+    graphicCharacterLoad @ 0x0063_d140 => extern "C" fn character_load(name: u32, id: u32) -> u32 {
+        let mut f = StackFrame::<0x42>::new();
+        g14::character_load(&mut mem(), f.at() + 0x108, name, id)
+    }
+    /// `VFXDynamicGeometry_SetupWithShader(this, shader, cluster)`.
+    VFXDynamicGeometry_SetupWithShader @ 0x006a_46e0 => extern "thiscall" fn geometry_set_shader(this: u32, shader: u32, cluster: u32) -> u32 {
+        let mut f = StackFrame::<0x79>::new();
+        g14::geometry_set_shader(&mut mem(), f.at() + 0x1e4, this, shader, cluster)
+    }
+
+    // ---- round 5 batch 15 (ffx_prender::h3_glue15) ----
+    /// `RenderDelegationHelper_registerDelegation(this, data, size, task, arg)`.
+    RenderDelegationHelper_registerDelegation @ 0x006a_de20 => extern "thiscall" fn delegation_register(this: u32, data: u32, size: u32, task: u32, arg: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        g15::delegation_register(&mut mem(), f.at() + 4, this, data, size, task, arg)
+    }
+    /// `graphicGuildmapCreate(a, b, arg)`.
+    graphicGuildmapCreate @ 0x0064_1510 => extern "C" fn guildmap_create(a: u32, b: u32, arg: u32) -> u32 {
+        g15::guildmap_create(&mut mem(), a, b, arg)
+    }
+    /// `graphicCharacterInstanceDestroyClothVertexBuffers(cloth)`: its loop
+    /// counter lives in the argument's slot.
+    graphicCharacterInstanceDestroyClothVertexBuffers @ 0x0063_a160 => extern "C" fn cloth_vertex_buffers_destroy(cloth: u32; slots: u32) -> u32 {
+        g15::cloth_vertex_buffers_destroy(&mut mem(), slots, cloth)
+    }
+    /// `PhyreScene_createMaterial_00659710(this, variant, cluster, a, b)`.
+    PhyreScene_createMaterial_00659710 @ 0x0065_9710 => extern "thiscall" fn scene_create_material(this: u32, variant: u32, cluster: u32, a: u32, b: u32) -> u32 {
+        g15::scene_create_material(&mut mem(), this, variant, cluster, a, b)
+    }
+    /// `PhyreScene_setEnableRenderWorldToTexture(this, on, m, f0..f7, n)`.
+    PhyreScene_setEnableRenderWorldToTexture @ 0x0066_d000 => extern "thiscall" fn scene_set_render_world_to_texture(this: u32, on: u32, m: u32, f0: u32, f1: u32, f2: u32, f3: u32, f4: u32, f5: u32, f6: u32, f7: u32, n: u32) -> u32 {
+        let mut f = StackFrame::<16>::new();
+        let floats = [f0, f1, f2, f3, f4, f5, f6, f7];
+        g15::scene_set_render_world_to_texture(&mut mem(), f.at() + 0x40, this, on, m, floats, n)
+    }
+    /// `graphicFieldMapLoad(path, flag)`.
+    graphicFieldMapLoad @ 0x0064_0210 => extern "C" fn field_map_load(path: u32, flag: u32) -> u32 {
+        g15::field_map_load(&mut mem(), path, flag)
+    }
+    /// `PhyreScene_drawMainMenuWaveEffect()`.
+    PhyreScene_drawMainMenuWaveEffect @ 0x0065_b5b0 => extern "C" fn scene_draw_main_menu_wave() -> u32 {
+        let mut f = StackFrame::<0xa7>::new();
+        g15::scene_draw_main_menu_wave(&mut mem(), f.at() + 0x29c)
+    }
+
+    // ---- round 5 batch 16 (ffx_prender::h3_glue16) ----
+    /// `PhyreScene_removeVFXFromRenderArray(this, mesh)`.
+    PhyreScene_removeVFXFromRenderArray @ 0x0066_87a0 => extern "thiscall" fn scene_remove_vfx_from_render_array(this: u32, mesh: u32) -> u32 {
+        g16::scene_remove_vfx_from_render_array(&mut mem(), this, mesh)
+    }
+    /// `PhyreScene_fieldMapShutdown(this)`.
+    PhyreScene_fieldMapShutdown @ 0x0065_d0c0 => extern "thiscall" fn scene_field_map_shutdown(this: u32) -> u32 {
+        g16::scene_field_map_shutdown(&mut mem(), this)
+    }
+    /// `PhyreScene_textureVideoUnload(this)`.
+    PhyreScene_textureVideoUnload @ 0x0067_0760 => extern "thiscall" fn scene_texture_video_unload(this: u32) -> u32 {
+        g16::scene_texture_video_unload(&mut mem(), this)
+    }
+    // `PhyreScene_setupSamplers_0065f290` (g16::scene_setup_samplers) is
+    // not hooked: its oracle test passes, but with the hook battle-attack-1
+    // (x 73..74, y 549..561) and menu-shop-2/-7 differ by a few UI pixels
+    // in every run, and not with it disabled (r5, 2026-10-26). The
+    // original keeps 4.0 on the x87 stack across each sampler's register
+    // call (0x0058cf80); a callee that fills the stack would see one slot
+    // less there. Open.
+    /// `PhyreScene_setupPostProcessParams(this)`.
+    PhyreScene_setupPostProcessParams @ 0x0066_f140 => extern "thiscall" fn scene_setup_post_process_params(this: u32) -> u32 {
+        g16::scene_setup_post_process_params(&mut mem(), this)
+    }
+    /// `LayoutDesc_setup_00678bd0(this, a, b)`.
+    LayoutDesc_setup_00678bd0 @ 0x0067_8bd0 => extern "thiscall" fn layout_setup(this: u32, a: u32, b: u32) -> u32 {
+        g16::layout_setup(&mut mem(), this, a, b)
+    }
+
+    // ---- round 5 batch 17 (ffx_prender::h3_glue17) ----
+    /// `PhyreScene_UpdateTextureVideo(this)`.
+    PhyreScene_UpdateTextureVideo @ 0x0065_4960 => extern "thiscall" fn scene_update_texture_video(this: u32) {
+        g17::scene_update_texture_video(&mut mem(), this);
+    }
+    /// `graphicInitialize()`.
+    graphicInitialize @ 0x0064_19d0 => extern "C" fn graphic_initialize() -> u32 {
+        g17::graphic_initialize(&mut mem())
+    }
+    /// `PostProcessManager_setNon16By9Viewport(renderer, keep)`: it reuses
+    /// `keep`'s argument slot.
+    PostProcessManager_setNon16By9Viewport @ 0x0069_8750 => extern "stdcall" fn post_set_non_16_by_9_viewport(renderer: u32, keep: u32; slots: u32) -> u32 {
+        g17::post_set_non_16_by_9_viewport(&mut mem(), slots, renderer, keep)
+    }
+    /// `PhyreScene_setupCharacterLighting_0066eb20(this, flag)`.
+    PhyreScene_setupCharacterLighting_0066eb20 @ 0x0066_eb20 => extern "thiscall" fn scene_setup_character_lighting(this: u32, flag: u32) {
+        g17::scene_setup_character_lighting(&mut mem(), this, flag);
+    }
+    /// `PhyreScene_loadMagicVFXTexture(this, id)`.
+    PhyreScene_loadMagicVFXTexture @ 0x0066_4d80 => extern "thiscall" fn scene_load_magic_vfx_texture(this: u32, id: u32) -> u32 {
+        let mut f = StackFrame::<0x82>::new();
+        g17::scene_load_magic_vfx_texture(&mut mem(), f.at() + 0x208, this, id)
+    }
+
+    // ---- round 5 batch 18 (ffx_prender::h3_glue18) ----
+    /// `PhyreScene_preRender(this)`.
+    PhyreScene_preRender @ 0x0065_1be0 => extern "thiscall" fn scene_pre_render(this: u32) -> u32 {
+        let mut f = StackFrame::<0x13>::new();
+        g18::scene_pre_render(&mut mem(), f.at() + 0x4c, this)
+    }
+    /// `ShadowManager_createshadowbuffer(this, a, b)`: the two words are
+    /// unused.
+    ShadowManager_createshadowbuffer @ 0x006d_18b0 => extern "thiscall" fn shadow_create_buffers(this: u32, a: u32, b: u32) -> u32 {
+        let _ = (a, b);
+        g18::shadow_create_buffers(&mut mem(), this)
     }
 }
 
