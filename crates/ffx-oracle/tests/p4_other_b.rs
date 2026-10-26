@@ -4699,3 +4699,268 @@ fn p4c2_destroy_unique_matches_the_original() {
         }
     }
 }
+
+// ---- h2p4 round (the p4-other-b rest) batch 1: the intensity multiplier,
+// the light rotation, the luminance balance, the tweak set-up ----
+
+use ffx_pother_b::p4_light2;
+
+/// A float near the lighting's range (`[-0.2, 1.2]`), now and then any
+/// float word.
+fn light_unit(rng: &mut Rng) -> u32 {
+    if rng.chance(8) {
+        float_word(rng)
+    } else {
+        (rng.below(140) as f32 / 100.0 - 0.2).to_bits()
+    }
+}
+
+/// The `strstr` import slot pointed at a logged stub returning `[found]`;
+/// returns `found`.
+fn strstr_stub(t: &mut Twins) -> u32 {
+    let found = t.zeros(4);
+    let mut tail = vec![0xa1];
+    tail.extend(found.to_le_bytes()); // mov eax, [found]
+    tail.push(0xc3);
+    let f = t.logged(p4_light2::STRSTR_SLOT, false, 2, &tail);
+    let at = t.rebase(p4_light2::STRSTR_SLOT);
+    t.w32(at, f);
+    found
+}
+
+#[test]
+fn h2p4_apply_intensity_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_6e90);
+        let found = strstr_stub(&mut t);
+        let maps = [t.alloc(b"znkd10_01\0"), t.alloc(b"znkd09_00\0")];
+        let frame: Vec<i32> = (0..0x12).map(|k| -0x48 + 4 * k).chain([8]).collect();
+        for i in 0..240 {
+            let what = format!("{name} apply intensity case {i}");
+            let cl = lighting(&mut t, &mut rng);
+            for at in (0x124..0x164).step_by(4).chain([0x190, 0x194, 0x198]) {
+                let w = light_unit(&mut rng);
+                t.w32(cl + at, w);
+            }
+            for at in (0x1a8..0x1d0).step_by(4).chain((0x1e0..0x1f0).step_by(4)) {
+                let w = light_unit(&mut rng);
+                t.w32(cl + at, w);
+            }
+            let w = float_word(&mut rng);
+            t.w32(cl + 0x1a0, w);
+            t.write(cl + 0x230, &[u8::from(rng.chance(2))]);
+            let map = if rng.chance(4) {
+                0
+            } else {
+                maps[rng.below(2) as usize]
+            };
+            t.w32(cl + 0x220, map);
+            t.w32(found, if rng.chance(2) { 0 } else { map | 1 });
+            let scene = if rng.chance(4) {
+                0
+            } else {
+                let s = t.zeros(0xc0);
+                t.fill(&mut rng, s, 0xc0);
+                s
+            };
+            t.w32(cl + 0x18c, scene);
+            let li = [0, 1, 2, 3, 3, 4][rng.below(6) as usize];
+            let flag = rng.next();
+            t.frame_case_fill(
+                0,
+                &what,
+                0x006a_6e90,
+                Conv::Thiscall(cl),
+                &[li, flag],
+                0x48,
+                &frame,
+                |g, ebp| {
+                    g.write(ebp + 8, li);
+                    let (r, w) = p4_light2::bridge::apply_intensity(g, ebp, cl, li);
+                    if let Some(w) = w {
+                        g.write(ebp + 8, w);
+                    }
+                    Out::U32(r)
+                },
+            );
+        }
+    }
+}
+
+/// An angle in degrees for `applyRotation`: 0, below and above the 0.001
+/// radian threshold, ordinary, any float word.
+fn rotation_angle(rng: &mut Rng) -> u32 {
+    match rng.below(7) {
+        0 => [0, 0x8000_0000][rng.below(2) as usize],
+        1 => (rng.below(100) as f32 / 1000.0 - 0.05).to_bits(),
+        2 => [0x3d65_e354u32, 0x3d6a_0000, 0x3d60_0000, 0xbd6a_0000][rng.below(4) as usize],
+        3 => float_word(rng),
+        4 => [0x7fc0_0000, 0xffc0_0000, 0x7f80_0000][rng.below(3) as usize],
+        _ => (rng.below(7200) as f32 / 10.0 - 360.0).to_bits(),
+    }
+}
+
+#[test]
+fn h2p4_apply_rotation_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_7280);
+        t.stub(p4_light2::LOOK_AT, true, 3, 3, 0x100c_0000);
+        // the rotations return random matrices of their own (the product
+        // and the copies run as they are)
+        let rx = t.zeros(0x40);
+        let ry = t.zeros(0x40);
+        t.stub(p4_light2::ROTATION_X, false, 2, 0, rx);
+        t.stub(p4_light2::ROTATION_Y, false, 2, 0, ry);
+        t.stub(p4_light2::TO_WORLD_3X4, true, 1, 1, 0x7031_0000);
+        let frame: Vec<i32> = (0..0x4a).map(|k| -0x128 + 4 * k).chain([8]).collect();
+        for i in 0..240 {
+            let what = format!("{name} apply rotation case {i}");
+            let cl = lighting(&mut t, &mut rng);
+            for m in [rx, ry] {
+                for k in 0..16 {
+                    let w = light_unit(&mut rng);
+                    t.w32(m + 4 * k, w);
+                }
+            }
+            for k in 0..5 {
+                let w = rotation_angle(&mut rng);
+                t.w32(cl + 0x1ac + 0xc * k, w);
+                let w = rotation_angle(&mut rng);
+                t.w32(cl + 0x1b0 + 0xc * k, w);
+                let y = match rng.below(4) {
+                    0 => 0x3f66_6666, // 0.9f, above the double 0.9
+                    1 => 0x3f66_6665,
+                    2 => float_word(&mut rng),
+                    _ => light_unit(&mut rng),
+                };
+                let x = light_unit(&mut rng);
+                // an infinite or NaN z makes the y test's sum NaN
+                let z = match rng.below(8) {
+                    0 => [0x7f80_0000, 0xff80_0000, 0x7fc0_0000][rng.below(3) as usize],
+                    _ => light_unit(&mut rng),
+                };
+                t.w32(cl + 0xf4 + 0x10 * k, x);
+                t.w32(cl + 0xf8 + 0x10 * k, y);
+                t.w32(cl + 0xfc + 0x10 * k, z);
+            }
+            let li = [0, 1, 2, 3, 4][rng.below(5) as usize];
+            t.frame_case(
+                &what,
+                0x006a_7280,
+                Conv::Thiscall(cl),
+                &[li],
+                0x128,
+                &frame,
+                |g, ebp| {
+                    g.write(ebp + 8, li);
+                    let (r, w) = p4_light2::bridge::apply_rotation(g, ebp, cl, li);
+                    if let Some(w) = w {
+                        g.write(ebp + 8, w);
+                    }
+                    r.map_or(Out::None, Out::U32)
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn h2p4_balance_lum_with_glow_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_7550);
+        t.stub(p4_light2::APPLY_INTENSITY, true, 2, 2, 0x0a11_0000);
+        for i in 0..240 {
+            let what = format!("{name} balance lum case {i}");
+            let cl = lighting(&mut t, &mut rng);
+            for at in (0x1d0..0x1f0).step_by(4) {
+                let w = match rng.below(5) {
+                    0 => float_word(&mut rng),
+                    1 => [0, 0x3c23_d70a, 0x3c23_d70b, 0x3c23_d709][rng.below(4) as usize],
+                    _ => (rng.below(300) as f32 / 200.0).to_bits(),
+                };
+                t.w32(cl + at, w);
+            }
+            let scene = t.zeros(0xc0);
+            t.fill(&mut rng, scene, 0xc0);
+            for at in [0x80, 0x84, 0x88, 0x8c] {
+                let w = match rng.below(6) {
+                    0 => float_word(&mut rng),
+                    1 => [
+                        0x3f7d_70a4,
+                        0x3f7d_70a5,
+                        0x3c23_d70a,
+                        0x3c23_d709,
+                        0x3f8c_cccd,
+                    ][rng.below(5) as usize],
+                    _ => (rng.below(300) as f32 / 150.0 - 0.3).to_bits(),
+                };
+                t.w32(scene + at, w);
+            }
+            // a range that lands on the clamps
+            if rng.chance(5) {
+                let lo = (rng.below(50) as f32 / 100.0).to_bits();
+                t.w32(scene + 0x84, lo);
+                let hi = f32::from_bits(lo) + [1.1f32, 0.01, 2.0, 0.005][rng.below(4) as usize];
+                t.w32(scene + 0x80, hi.to_bits());
+            }
+            match rng.below(4) {
+                // all luminances at most 0.01
+                0 => {
+                    for at in (0x1d0..0x1e0).step_by(4) {
+                        let w = [0, 0x3c23_d70a, 0x3c23_d709, 0x3a00_0000][rng.below(4) as usize];
+                        t.w32(cl + at, w);
+                    }
+                }
+                // a range of 2 (clamped to 1.1) and full factors: glow
+                // factors around the 0.99 clamp
+                1 => {
+                    t.w32(scene + 0x80, 1.0f32.to_bits());
+                    t.w32(scene + 0x84, (-1.0f32).to_bits());
+                    t.w32(scene + 0x88, 0x3f7d_70a4);
+                    t.w32(scene + 0x8c, 0x3f7d_70a4);
+                }
+                _ => {}
+            }
+            t.w32(cl + 0x18c, scene);
+            let on = Mem::read::<u8>(&t.b, cl + 0x1cc) != 0;
+            t.case(&what, 0x006a_7550, Conv::Thiscall(cl), &[], |g| {
+                let r = p4_light2::bridge::balance_lum_with_glow(g, cl);
+                match r {
+                    Some(v) if on => Out::U32(v),
+                    _ => Out::None,
+                }
+            });
+        }
+    }
+}
+
+#[test]
+fn h2p4_tweak_initialize_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x006a_91e0);
+        let entries = t.zeros(0x4b0);
+        t.stub(p4_light2::OPERATOR_NEW_ARRAY, false, 1, 0, entries);
+        let init = t.stub_cell(p4_light2::TEXT_INIT, true, 0, 0);
+        t.stub(p4_light2::MEMSET, false, 3, 0, 0x0e3e_0000);
+        t.stub(p4_light2::GET_LINE_TEXT, true, 2, 2, 0x6e7e_0000);
+        t.stub(p4_light2::TEXT_APPEND_LINE, true, 1, 1, 0x0a9d_0000);
+        t.stub(p4_light2::TEXT_SET_ENABLED, true, 1, 1, 0x5e7e_0000);
+        let frame: Vec<i32> = (0..0x20).map(|k| -0x84 + 4 * k).collect();
+        for i in 0..40 {
+            let what = format!("{name} tweak initialize case {i}");
+            let tw = t.zeros(0x100);
+            t.fill(&mut rng, tw, 0x100);
+            t.fill(&mut rng, entries, 0x4b0);
+            t.w32(init, if rng.chance(3) { rng.next() | 1 } else { 0 });
+            t.frame_case(
+                &what,
+                0x006a_91e0,
+                Conv::Thiscall(tw),
+                &[],
+                0x84,
+                &frame,
+                |g, ebp| Out::U32(p4_light2::bridge::tweak_initialize(g, ebp, tw)),
+            );
+        }
+    }
+}

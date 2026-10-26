@@ -37,6 +37,7 @@ pub mod p4_fog;
 pub mod p4_frames;
 pub mod p4_input;
 pub mod p4_light;
+pub mod p4_light2;
 pub mod p4_mesh;
 pub mod p4_morph;
 pub mod p4_ps2light;

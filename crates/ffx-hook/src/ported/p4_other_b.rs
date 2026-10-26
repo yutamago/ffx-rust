@@ -8,8 +8,8 @@
 
 use super::{mem, ported};
 use ffx_pother_b::{
-    methods, object, p4_bind, p4_cloth, p4_fog, p4_frames, p4_input, p4_light, p4_mesh, p4_morph,
-    p4_ps2light, p4_tree, physics, small,
+    methods, object, p4_bind, p4_cloth, p4_fog, p4_frames, p4_input, p4_light, p4_light2, p4_mesh,
+    p4_morph, p4_ps2light, p4_tree, physics, small,
 };
 
 ported! {
@@ -1142,5 +1142,49 @@ ported! {
         let mut frame = super::StackFrame::<2>::new();
         let ebp = frame.at() + 8;
         p4_light::bridge13::destroy_unique(&mut mem(), ebp, cl, inst);
+    }
+    // ---- h2p4 round (the p4-other-b rest) ----
+    /// `CharacterLighting::applyIntensityMultiplier(cl, i, flag)` -> the
+    /// light (the scene for light 3); leaves the grey or the luminance in
+    /// its argument's slot, as the original does.
+    Phyre_CharacterLighting_applyIntensityMultiplier @ 0x006a_6e90 => extern "thiscall" fn apply_intensity(cl: u32, i: u32, _flag: u32; slots: u32) -> u32 {
+        // ebp - 0x48 .. ebp: the lerp's output, the grey, two colours, the
+        // light, the factor
+        let mut frame = super::StackFrame::<0x12>::new();
+        let ebp = frame.at() + 0x48;
+        let mut m = mem();
+        let (r, word) = p4_light2::bridge::apply_intensity(&mut m, ebp, cl, i);
+        if let Some(word) = word {
+            ffx_bridge::Mem::write(&mut m, slots, word);
+        }
+        r
+    }
+    /// `CharacterLighting::applyRotation(cl, i)` ->
+    /// `PMatrix4_toWorldMatrix3x4`'s `eax` (0 where the original's is
+    /// junk); leaves the yaw in its argument's slot, as the original does.
+    Phyre_CharacterLighting_applyRotation @ 0x006a_7280 => extern "thiscall" fn apply_rotation(cl: u32, i: u32; slots: u32) -> u32 {
+        // ebp - 0x128 .. ebp: three matrices, the copy, up and eye, the
+        // light matrix, the pitch
+        let mut frame = super::StackFrame::<0x4a>::new();
+        let ebp = frame.at() + 0x128;
+        let mut m = mem();
+        let (r, word) = p4_light2::bridge::apply_rotation(&mut m, ebp, cl, i);
+        if let Some(word) = word {
+            ffx_bridge::Mem::write(&mut m, slots, word);
+        }
+        r.unwrap_or(0)
+    }
+    /// `CharacterLighting::balanceLumWithGlow(cl)` -> the last
+    /// `applyIntensityMultiplier`'s `eax` (0 where the original's is junk).
+    Phyre_CharacterLighting_balanceLumWithGlow @ 0x006a_7550 => extern "fastcall" fn balance_lum_with_glow(cl: u32) -> u32 {
+        p4_light2::bridge::balance_lum_with_glow(&mut mem(), cl).unwrap_or(0)
+    }
+    /// `CharacterLightingTweakUtil::initialize(tw)` ->
+    /// `TextUtil_setEnabled`'s `eax`.
+    Phyre_CharacterLightingTweakUtil_initialize @ 0x006a_91e0 => extern "fastcall" fn tweak_initialize(tw: u32) -> u32 {
+        // ebp - 0x84 .. ebp - 4: the line buffer (the cookie above it)
+        let mut frame = super::StackFrame::<0x21>::new();
+        let ebp = frame.at() + 0x84;
+        p4_light2::bridge::tweak_initialize(&mut mem(), ebp, tw)
     }
 }
