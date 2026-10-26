@@ -158,6 +158,25 @@ pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
 /// # Errors
 /// Fails when the save does not load or its event does not open.
 pub fn load_save_direct(game: &mut Game, save: &str) -> Result<String> {
+    load_direct(game, save, false)
+}
+
+/// As [`load_save_direct`], but lockstep takes hold at the boundary the
+/// load is made at (`loadsave <save> lockstep`), and the frames up to the
+/// save's event script opening are stepped one at a time, so the whole map
+/// load runs in lockstep and the game stands at the same update of it
+/// whatever the machine's load (replay line `load direct SAVE [script]
+/// lockstep`; `docs/harness.md`, "Lockstep from the load"). A `lockstep on`
+/// sent after [`load_save_direct`] took hold 0 to 9 updates into the load,
+/// as fast as its reply came back.
+///
+/// # Errors
+/// Fails when the save does not load or its event does not open.
+pub fn load_save_direct_lockstep(game: &mut Game, save: &str) -> Result<String> {
+    load_direct(game, save, true)
+}
+
+fn load_direct(game: &mut Game, save: &str, lockstep: bool) -> Result<String> {
     if !game.opened().iter().any(|e| e.contains("memochek.ebp")) {
         game.wait_for_open("memochek.ebp", 2, 3000)?;
     }
@@ -173,8 +192,13 @@ pub fn load_save_direct(game: &mut Game, save: &str) -> Result<String> {
     // The title's own files (test20.ebp again) must not count as the save's.
     game.events()?;
     let mut tries = 0;
+    let command = if lockstep {
+        format!("loadsave {save} lockstep")
+    } else {
+        format!("loadsave {save}")
+    };
     let reply = loop {
-        match game.command(&format!("loadsave {save}")) {
+        match game.command(&command) {
             Ok(r) => break r,
             // The save data manager is made a little after the first event.
             Err(Error::Harness(e)) if e.contains("no save data manager") && tries < 100 => {
@@ -184,7 +208,9 @@ pub fn load_save_direct(game: &mut Game, save: &str) -> Result<String> {
             Err(e) => return Err(e),
         }
     };
-    let opened = game.wait_for_open(".ebp", 5, 1200)?;
+    // in lockstep one frame at a time, so the wait ends at the boundary
+    // after the open, not up to 4 later
+    let opened = game.wait_for_open(".ebp", if lockstep { 1 } else { 5 }, 1200)?;
     if opened.contains("test20.ebp") {
         return Err(Error::Harness(format!(
             "loadsave {save} ({reply}): the title event opened again"

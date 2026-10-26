@@ -5,7 +5,7 @@
 # of the first 8 actors (*0x011334d4, 0xf90 bytes each); the generators are
 # compared through the call log (tools/replay-compare.py). Screenshots at
 # the start and the end (battle-attack-<n>.bmp).
-load direct 1 cdsp0000
+load direct 1 cdsp0000 lockstep
 lockstep on
 # what the frames before lockstep leave behind: docs/harness.md,
 # "Pinned state"

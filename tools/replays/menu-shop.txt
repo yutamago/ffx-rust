@@ -25,7 +25,7 @@
 # purchase, 3 "Sell Stunning Steel." (Yes/No), 4 the sell list after the
 # sale, 5 the item quantity window, 6 the item sell quantity window, 7 the
 # sell list after the sale, 8 the field after the shop.
-load direct 5 kami0100
+load direct 5 kami0100 lockstep
 lockstep on
 # what the frames before lockstep leave behind: docs/harness.md,
 # "Pinned state"

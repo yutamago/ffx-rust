@@ -4,7 +4,7 @@
 # records (0x0113205c, 18 x 0x94); the window tables hold heap pointers,
 # which differ between any two runs. Screenshots at fixed frames go to
 # $OUT\menu-browse-<n>.bmp (the trace's folder), for tools/shot-compare.py.
-load direct 1 cdsp0000
+load direct 1 cdsp0000 lockstep
 lockstep on
 # what the frames before lockstep leave behind: docs/harness.md,
 # "Pinned state"

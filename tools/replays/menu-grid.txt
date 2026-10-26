@@ -25,7 +25,7 @@
 # picked, 3 "Strength increased", 4 "Move to this location?", 5 Tidus on
 # the Defense node, 6 "Return to Main Menu?", 7 Valefor's status, 8 the
 # Abilities page, 9 the field.
-load direct 5 kami0100
+load direct 5 kami0100 lockstep
 lockstep on
 # what the frames before lockstep leave behind: docs/harness.md,
 # "Pinned state"

@@ -37,8 +37,12 @@
 # 3 its first page, 4 the plains by the door, 5 the chest's first message,
 # 6 "Obtained Venus Sigil!", 7 the counter's choice (Rest, Buy weapons,
 # Buy items, Leave).
-load direct 5 kami0100
+load direct 5 kami0100 lockstep
 lockstep on
+# what the frames before lockstep leave behind (Sg_FrameSync's carries:
+# about one update in a thousand runs two logic ticks; docs/harness.md,
+# "Pinned state")
+pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500
 wait 37
 read 0x01325d94 4

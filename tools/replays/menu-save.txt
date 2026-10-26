@@ -54,7 +54,7 @@
 # and the file buffer still check the maps, the list and the save. Screenshots (menu-save-<n>.bmp): 1 Brotherhood equipped, 2 the
 # save sphere's choice, 3 the field after saving, 4 the title, 5 the field
 # after loading, 6 the Equip screen after loading.
-load direct 5 kami0100
+load direct 5 kami0100 lockstep
 lockstep on
 # what the frames before lockstep leave behind: docs/harness.md,
 # "Pinned state"

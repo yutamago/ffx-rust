@@ -21,7 +21,7 @@
 # effect flags, the HP (+0x5d0) of the first 8 actors (as battle-attack).
 # Screenshots (battle-magic-<n>.bmp): 1 the stage before (flag 5),
 # 2 and 3 the shape burst (flag 6, 10 and 30 frames in).
-load direct 1 cdsp0000
+load direct 1 cdsp0000 lockstep
 lockstep on
 # what the frames before lockstep leave behind (frame-sync carries, the
 # effects' generator, the main thread's CRT seed): docs/harness.md,

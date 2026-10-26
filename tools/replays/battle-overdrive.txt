@@ -35,9 +35,11 @@
 # bar runs and plays when the bar's state is back at 0. The summon effects'
 # shots wait for Valefor's effect state (MsEffectStart, actor 8 +0xdfb) to
 # reach 4: the effect starts at the later of the magic file's texture load
-# and the summoner's motion. From state 4 the entry takes exactly 281
-# frames and Energy Blast 259, original and Rust alike; the script checks
-# both to the frame (docs/harness.md, "Summon timing" and "Load pacing").
+# and the summoner's motion. From state 4 the entry takes exactly 282
+# frames and Energy Blast 258 since `pin` (281 and 259 before it, where the
+# update count since start-up put Sg_FrameSync's double ticks), original
+# and Rust alike; the script checks both to the frame (docs/harness.md,
+# "Summon timing", "Load pacing", "Lockstep from the load").
 # Until 2026-10-26 (load-pacing) the textures loaded in a number of frames
 # that followed the main thread's real update time (original 21-43 frames,
 # Rust 9-18 with frames slowed), the entry took 281 or 282 frames and
@@ -57,8 +59,12 @@
 # Screenshots (battle-overdrive-<n>.bmp): 1 the timing bar, 2 Spiral Cut,
 # 3 and 4 Valefor's entry, 5 Valefor's menu, 6 and 7 Energy Blast, 8 the
 # dismissal, 9 the party back (Wakka's menu).
-load direct 5 kami0100
+load direct 5 kami0100 lockstep
 lockstep on
+# what the frames before lockstep leave behind (Sg_FrameSync's carries:
+# about one update in a thousand runs two logic ticks; docs/harness.md,
+# "Pinned state")
+pin
 wait 10
 write 0x011307e8 01000405ff020306
 battle 33 0 3
@@ -96,9 +102,9 @@ wait 150
 shot $OUT\battle-overdrive-3.bmp
 wait 100
 shot $OUT\battle-overdrive-4.bmp
-# timing: the entry ends (magic ID -1) 281 frames after state 4, not one
+# timing: the entry ends (magic ID -1) 282 frames after state 4, not one
 # frame sooner or later (original and Rust alike)
-wait 30
+wait 31
 waitfor 0x00c64ca0:4 53020000 ffffffff 0
 waitfor 0x00c64ca0:4 ffffffff ffffffff 1
 # Valefor: Overdrive (left), Energy Blast, all enemies
@@ -115,8 +121,8 @@ wait 150
 shot $OUT\battle-overdrive-6.bmp
 wait 70
 shot $OUT\battle-overdrive-7.bmp
-# timing: Energy Blast ends 259 frames after its state 4, to the frame
-wait 38
+# timing: Energy Blast ends 258 frames after its state 4, to the frame
+wait 37
 waitfor 0x00c64ca0:4 5c020000 ffffffff 0
 waitfor 0x00c64ca0:4 ffffffff ffffffff 1
 # Valefor again: Dismiss (right, down twice), on itself

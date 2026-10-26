@@ -70,7 +70,7 @@
 //! | `call <addr> [args…]` | `ok <eax>`: a cdecl call on the main thread, between two updates |
 //! | `shot <windows path>` | `ok <w> <h> update <n>`: saves the back buffer as a 32-bit BMP, the image of update `n` (in lockstep the one the main thread is held after; see `docs/harness.md`, "Frames") |
 //! | `shotwhen <range> <value hex> <mask hex> <frames> <windows path>` | `ok <w> <h> update <n>`: as `waitfor`, then the image of exactly the update `n` after which the bytes first matched, in real time too (`docs/harness.md`, boot) |
-//! | `loadsave <slot\|windows path>` | `ok <file> map <n> entrance <n> …`: starts the game from that save file without the title menu ([`crate::loadsave`]) |
+//! | `loadsave <slot\|windows path> [lockstep]` | `ok <file> map <n> entrance <n> …`: starts the game from that save file without the title menu ([`crate::loadsave`]); with `lockstep`, lockstep holds the main thread at the boundary the load was made at, so the map's load runs in lockstep from its first update (`docs/harness.md`, "Lockstep from the load") |
 //! | `events` | `ok <n>` then `n` lines: files opened since the last call |
 //! | `gfxcapture <windows dir> [hash] [frames N] [now] [async]` | `ok <n> draws`: the next frame's D3D11 calls (`gfx`, needs `FFX_GFX=1`); `now` in lockstep holds exactly the updates after the boundary the main thread is held at, and fails if a frame shows another (`docs/renderer.md`, "Reference captures") |
 //! | `gfxreplay <capture.ffxgfx> [out dir]` | the capture's scene drawn by `ffx-draw` in place of the game's in the next frame, compared with the capture (`gfx::replay`, `docs/draw.md`) |
@@ -956,8 +956,10 @@ enum Job {
     /// Pin the state the frames before lockstep leave behind (`pin`,
     /// [`pin_carried_state`]).
     Pin,
-    /// Start the game from a save (`loadsave`, [`crate::loadsave`]).
-    LoadSave(String),
+    /// Start the game from a save (`loadsave`, [`crate::loadsave`]); `.1`:
+    /// hold the main thread in lockstep at this boundary once the load is
+    /// made (`loadsave <save> lockstep`).
+    LoadSave(String, bool),
     /// Until the bytes at the range equal the value (under the mask), or
     /// the frame limit passes: `(range, value, mask, limit frame)`.
     WaitFor(TraceRange, Vec<u8>, Vec<u8>, u32),
@@ -1330,7 +1332,7 @@ fn run_main_jobs(frame: u32) {
                     | Job::Snapshot(_)
                     | Job::FpuControl
                     | Job::Pin
-                    | Job::LoadSave(_) => true,
+                    | Job::LoadSave(..) => true,
                     Job::WaitFor(ref r, ref value, ref mask, limit) => {
                         frame >= limit || range_matches(r, value, mask)
                     }
@@ -1414,9 +1416,21 @@ fn run_main_jobs(frame: u32) {
                 let _ = reply.send(format!("ok {:#06x}", crate::snapshot::fpu_control()));
             }
             Job::Pin => drop(reply.send(pin_reply())),
-            Job::LoadSave(spec) => {
+            Job::LoadSave(spec, lockstep) => {
                 let r = crate::loadsave::load(&spec);
                 log(&format!("loadsave {spec} at frame {frame}: {r:?}"));
+                // `loadsave <save> lockstep`: hold here, at the boundary the
+                // load was made at, so the map's load runs in lockstep from
+                // its first update. A `lockstep on` sent after the event
+                // opened took hold 0 to 9 updates into the load, as fast as
+                // the reply came back, and what the map's start-up ran free
+                // moved later state (docs/harness.md, "Lockstep from the
+                // load").
+                if lockstep && r.is_ok() {
+                    LOCKSTEP_REQUEST.store(false, Ordering::Release);
+                    ALLOWED.store(frame, Ordering::Release);
+                    LOCKSTEP.store(true, Ordering::Release);
+                }
                 let _ = reply.send(r.map_or_else(|e| format!("err {e}"), |s| format!("ok {s}")));
             }
             Job::Shot(..) => {
@@ -2411,7 +2425,11 @@ fn command(line: &str) -> Result<String, String> {
         "pin" => on_game_thread(Job::Pin),
         // where the FFX_AUDIO_WAV capture stands (crate::audio_wav)
         "audiomark" => crate::audio_wav::mark(arg(1)?),
-        "loadsave" => on_game_thread(Job::LoadSave(words[1..].join(" "))),
+        "loadsave" => {
+            let lockstep = words.len() > 2 && words.last() == Some(&"lockstep");
+            let spec = &words[1..words.len() - usize::from(lockstep)];
+            on_game_thread(Job::LoadSave(spec.join(" "), lockstep))
+        }
         "threads" => list_threads(),
         "stacks" => thread_stacks(),
         "calllog" => {
