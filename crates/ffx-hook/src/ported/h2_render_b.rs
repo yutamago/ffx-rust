@@ -26,6 +26,7 @@ use ffx_prender::h2_more::bridge as hm;
 use ffx_prender::h2_more2::bridge as h2;
 use ffx_prender::h2_more3::bridge as h3;
 use ffx_prender::h2_more4::bridge as h4;
+use ffx_prender::h2_more5::bridge as h5;
 use ffx_prender::misc::bridge as x;
 use ffx_prender::small::bridge as sm;
 
@@ -1579,6 +1580,142 @@ ported! {
     PConstantBufferD3D11_resizeSlots_00599a80 @ 0x0059_9a80 => extern "thiscall" fn s_00599a80(a0: u32, a1: u32) -> u32 {
         h4::resize_slots(&mut mem(), a0, a1)
     }
+    /// `Phyre_DeleteArray4c_00540b80`.
+    Phyre_DeleteArray4c_00540b80 @ 0x0054_0b80 => extern "C" fn s_00540b80(a0: u32, a1: u32) {
+        h5::delete_array(&mut mem(), a0, a1, 0x4c, &[(0x38, 0x0052_52c0), (0x24, 0x0052_3240), (0xc, 0x0052_2600)]);
+    }
+    /// `Phyre_DeleteStrings4_004dd770`.
+    Phyre_DeleteStrings4_004dd770 @ 0x004d_d770 => extern "C" fn s_004dd770(a0: u32, a1: u32) {
+        h5::delete_strings4(&mut mem(), a0, a1);
+    }
+    /// `Phyre_DestructArrayName_0056cab0`.
+    Phyre_DestructArrayName_0056cab0 @ 0x0056_cab0 => extern "thiscall" fn s_0056cab0(_a0: u32, a1: u32) -> u8 {
+        h5::destruct_array_name(&mut mem(), a1)
+    }
+    /// `Phyre_DestructInstance_00562410`.
+    Phyre_DestructInstance_00562410 @ 0x0056_2410 => extern "thiscall" fn s_00562410(_a0: u32, a1: u32) -> u8 {
+        h5::destruct_562410(&mut mem(), a1)
+    }
+    /// `PTexture2DD3D11_setTexture_0058fb90`.
+    PTexture2DD3D11_setTexture_0058fb90 @ 0x0058_fb90 => extern "thiscall" fn s_0058fb90(a0: u32, a1: u32, a2: u32, a3: u32, _a4: u32) -> u32 {
+        h5::set_texture(&mut mem(), a0, a1, a2, a3)
+    }
+    /// `PMeshInstanceBounds_link_004ff800`.
+    PMeshInstanceBounds_link_004ff800 @ 0x004f_f800 => extern "thiscall" fn s_004ff800(a0: u32, a1: u32) -> u32 {
+        h5::link_bounds(&mut mem(), a0, a1)
+    }
+    /// `PConstantBufferRing_next_004f8460`.
+    PConstantBufferRing_next_004f8460 @ 0x004f_8460 => extern "thiscall" fn s_004f8460(a0: u32, a1: u32) -> u32 {
+        h5::next_ring_slot(&mut mem(), a0, a1)
+    }
+    /// `PConstantBufferRing_entry_00596020`.
+    PConstantBufferRing_entry_00596020 @ 0x0059_6020 => extern "thiscall" fn s_00596020(a0: u32, a1: u32, a2: u32) -> u32 {
+        h5::ring_entry(&mut mem(), a0, a1, a2)
+    }
+    /// `Phyre_PRendering_PEffectVariant_createMaterialWithPreallocatedBuffer`.
+    Phyre_PRendering_PEffectVariant_createMaterialWithPreallocatedBuffer @ 0x004e_6b40 => extern "thiscall" fn s_004e6b40(a0: u32, a1: u32, a2: u32) -> u32 {
+        h5::create_material_prealloc(&mut mem(), a0, a1, a2)
+    }
+    /// `Phyre_PRendering_PEffectVariant_createMaterial`.
+    Phyre_PRendering_PEffectVariant_createMaterial @ 0x004e_6a40 => extern "thiscall" fn s_004e6a40(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        h5::create_material(&mut mem(), a0, a1, a2, a3)
+    }
+    /// `PConstantBufferD3D11_upload_00593930`.
+    PConstantBufferD3D11_upload_00593930 @ 0x0059_3930 => extern "thiscall" fn s_00593930(a0: u32, a1: u32, a2: u32) -> u32 {
+        let mut fr = super::StackFrame::<3>::new();
+        h5::upload_constants(&mut mem(), a0, a1, a2, fr.at())
+    }
+    /// `PRenderPassType_findOrAdd_004dd910`.
+    PRenderPassType_findOrAdd_004dd910 @ 0x004d_d910 => extern "C" fn s_004dd910(a0: u32) -> u32 {
+        h5::find_or_add_pass_type(&mut mem(), a0)
+    }
+    /// `PSamplerStateD3D11_release_0059c770`.
+    PSamplerStateD3D11_release_0059c770 @ 0x0059_c770 => extern "thiscall" fn s_0059c770(a0: u32) -> u32 {
+        let mut fr = super::StackFrame::<2>::new();
+        h5::release_sampler(&mut mem(), a0, fr.at())
+    }
+    /// `ShaderParams_FindByName`.
+    ShaderParams_FindByName @ 0x0056_cbf0 => extern "thiscall" fn s_0056cbf0(a0: u32, a1: u32) -> u32 {
+        h5::find_param(&mut mem(), a0, a1)
+    }
+    /// `PRendererD3D11_resolveTargets_00593010`.
+    PRendererD3D11_resolveTargets_00593010 @ 0x0059_3010 => extern "thiscall" fn s_00593010(a0: u32) -> u8 {
+        h5::resolve_targets(&mut mem(), a0)
+    }
+    /// `PShaderD3D11_bindPixel_005932b0`.
+    PShaderD3D11_bindPixel_005932b0 @ 0x0059_32b0 => extern "thiscall" fn s_005932b0(a0: u32, a1: u32, _a2: u32) -> u8 {
+        h5::bind_pixel_shader(&mut mem(), a0, a1)
+    }
+    /// `PShaderD3D11_bindVertex_00593510`.
+    PShaderD3D11_bindVertex_00593510 @ 0x0059_3510 => extern "thiscall" fn s_00593510(a0: u32, a1: u32, _a2: u32) -> u8 {
+        let mut fr = super::StackFrame::<8>::new();
+        h5::bind_vertex_shader(&mut mem(), a0, a1, fr.at())
+    }
+    /// `PRenderStateBlock_defaults_00582f50`.
+    PRenderStateBlock_defaults_00582f50 @ 0x0058_2f50 => extern "thiscall" fn s_00582f50(a0: u32, _a1: u32) -> u32 {
+        let mut fr = super::StackFrame::<8>::new();
+        h5::default_blocks(&mut mem(), a0, fr.at())
+    }
+    /// `Renderer_SetAnisotropy`.
+    Renderer_SetAnisotropy @ 0x0058_de30 => extern "C" fn s_0058de30(a0: u32) -> u32 {
+        h5::set_anisotropy(&mut mem(), a0)
+    }
+    /// `PSharray16_resize_00599460`.
+    PSharray16_resize_00599460 @ 0x0059_9460 => extern "thiscall" fn s_00599460(a0: u32, a1: u32) -> u32 {
+        h5::resize16(&mut mem(), a0, a1)
+    }
+    /// `Phyre_Destroy_004db9d0`.
+    Phyre_Destroy_004db9d0 @ 0x004d_b9d0 => extern "thiscall" fn s_004db9d0(a0: u32) -> u32 {
+        h5::destroy_4db9d0(&mut mem(), a0)
+    }
+    /// `PConstantBufferD3D11_unmapEntry_00565000`.
+    PConstantBufferD3D11_unmapEntry_00565000 @ 0x0056_5000 => extern "thiscall" fn s_00565000(a0: u32, a1: u32, _a2: u32) -> u32 {
+        let mut fr = super::StackFrame::<1>::new();
+        h5::unmap_entry(&mut mem(), a0, a1, fr.at())
+    }
+    /// `PRenderThread_mapResource_00560e90`.
+    PRenderThread_mapResource_00560e90 @ 0x0056_0e90 => extern "C" fn s_00560e90(a0: u32, a1: u32, a2: u32) -> u32 {
+        let mut fr = super::StackFrame::<10>::new();
+        h5::map_resource(&mut mem(), a0, a1, a2, fr.at())
+    }
+    /// `PRenderThread_mapResource_00560f90`.
+    PRenderThread_mapResource_00560f90 @ 0x0056_0f90 => extern "C" fn s_00560f90(a0: u32, a1: u32, a2: u32) -> u32 {
+        let mut fr = super::StackFrame::<10>::new();
+        h5::map_resource(&mut mem(), a0, a1, a2, fr.at())
+    }
+    /// `PShaderProgramD3D11_set_0059ac40`.
+    PShaderProgramD3D11_set_0059ac40 @ 0x0059_ac40 => extern "thiscall" fn s_0059ac40(a0: u32, a1: u32) -> u32 {
+        h5::set_program(&mut mem(), a0, a1)
+    }
+    /// `PShaderProgramD3D11_bindTables_0059ab50`.
+    PShaderProgramD3D11_bindTables_0059ab50 @ 0x0059_ab50 => extern "stdcall" fn s_0059ab50(a0: u32, a1: u32, a2: u32) -> u32 {
+        h5::bind_tables(&mut mem(), a0, a1, a2, 0x0059_a650, false, &H5_TABLES_A)
+    }
+    /// `PShaderProgramD3D11_bindTextures_0059b010`.
+    PShaderProgramD3D11_bindTextures_0059b010 @ 0x0059_b010 => extern "stdcall" fn s_0059b010(a0: u32, a1: u32, a2: u32) -> u32 {
+        h5::bind_tables(&mut mem(), a0, a1, a2, 0x0059_b3d0, true, &H5_TABLES_B)
+    }
+    /// `Phyre_Ctor_00567110`.
+    Phyre_Ctor_00567110 @ 0x0056_7110 => extern "thiscall" fn s_00567110(a0: u32) -> u32 {
+        h5::ctor_567110(&mut mem(), a0)
+    }
+    /// `PConstantBufferD3D11_releaseEntries_0059c540`.
+    PConstantBufferD3D11_releaseEntries_0059c540 @ 0x0059_c540 => extern "thiscall" fn s_0059c540(a0: u32) -> u32 {
+        h5::release_entries(&mut mem(), a0)
+    }
+    /// `Phyre_Destroy_004e39b0`.
+    Phyre_Destroy_004e39b0 @ 0x004e_39b0 => extern "thiscall" fn s_004e39b0(a0: u32) {
+        h5::destroy_4e39b0(&mut mem(), a0);
+    }
+    /// `PRendererD3D11_createBuffers_00595620`.
+    PRendererD3D11_createBuffers_00595620 @ 0x0059_5620 => extern "thiscall" fn s_00595620(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) -> u32 {
+        let mut fr = super::StackFrame::<12>::new();
+        h5::create_buffers(&mut mem(), a0, a1, a2, a3, a4, a5, a6, fr.at())
+    }
+    /// `PRenderTargetD3D11_releaseViews_0059c650`.
+    PRenderTargetD3D11_releaseViews_0059c650 @ 0x0059_c650 => extern "thiscall" fn s_0059c650(a0: u32) -> u32 {
+        h5::release_views2(&mut mem(), a0)
+    }
 }
 
 /// The `PNamedSemanticDescriptor` constructor's words in
@@ -1589,4 +1726,19 @@ const NAMED_SEMANTIC_ARGS: [(u32, bool); 5] = [
     (4, false),
     (0x004d_ec30, true),
     (0x004d_f9c0, true),
+];
+
+/// The constant-table layouts of `0x0059ab50` (first, count, base).
+const H5_TABLES_A: [(u32, u32, u32); 4] = [
+    (0x194, 0x19c, 0x1a8),
+    (0x1ac, 0x1b4, 0x1c0),
+    (0x1c4, 0x1cc, 0x1d8),
+    (0x1dc, 0x1e4, 0x1f0),
+];
+/// The same of `0x0059b010`.
+const H5_TABLES_B: [(u32, u32, u32); 4] = [
+    (0x1f4, 0x1fc, 0x208),
+    (0x20c, 0x214, 0x220),
+    (0x224, 0x22c, 0x238),
+    (0x23c, 0x244, 0x250),
 ];

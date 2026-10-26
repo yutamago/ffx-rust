@@ -37,6 +37,8 @@ use ffx_oracle::{Conv, Oracle, Pages};
 mod cases;
 #[path = "h2_render_b/cases3.rs"]
 mod cases3;
+#[path = "h2_render_b/cases4.rs"]
+mod cases4;
 
 use ffx_prender::array::bridge as a;
 use ffx_prender::declare as dc;
@@ -1003,6 +1005,7 @@ fn run_cases(rounds: u32) {
         for case in cases::CASES
             .iter()
             .chain(cases3::CASES)
+            .chain(cases4::CASES)
             .filter(|c| filter.split('|').any(|f| c.name.contains(f)))
         {
             for &(sym, n, pops, this) in case.callees {
@@ -1033,7 +1036,11 @@ fn h2_render_b_ports_match_the_original() {
 #[test]
 fn h2_render_b_cases_are_unique() {
     let mut seen = std::collections::HashSet::new();
-    for c in cases::CASES.iter().chain(cases3::CASES) {
+    for c in cases::CASES
+        .iter()
+        .chain(cases3::CASES)
+        .chain(cases4::CASES)
+    {
         assert!(seen.insert(c.addr), "{} twice", c.name);
     }
     let _ = (Init::Word(0, 0), x::map_mode(0));
