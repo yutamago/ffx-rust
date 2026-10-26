@@ -1960,13 +1960,11 @@ ported! {
     }
 
     // ---- round 11 batch 44 (ffx_prender::h3_glue43) ----
-    /// `0x006b3660(this, value, slot)`: a texture-animation target's
-    /// layers into its parameter buffer. The frame holds the two
-    /// argument slots too (the weights go through `value`'s).
-    TextureAnimation_updateTarget_006b3660 @ 0x006b_3660 => extern "thiscall" fn tex_anim_update_target(this: u32, value: u32, slot: u32) {
-        let mut f = StackFrame::<0xe>::new();
-        g43::update_target(&mut mem(), f.at() + 0x28, this, value, slot);
-    }
+    // TextureAnimation_updateTarget_006b3660 (g43::update_target) is NOT
+    // hooked: it passes its oracle test and mutants, but with it the
+    // draw-field gate shows an extra texture difference at the blink
+    // draw (fw-101 draw 110 / fw-459 draw 115) in 3 of 3 captures, and
+    // passes without it. Open problem (h3 r11 report).
 }
 
 /// The scene's shader-bin loaders, with their frame (0x12c bytes below
