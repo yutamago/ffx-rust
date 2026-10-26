@@ -4649,3 +4649,147 @@ fn p1c_initialize_instance_matches_the_original() {
         }
     }
 }
+
+// ---- continuation round, batch 15 ----
+
+#[test]
+fn p1c_delete_object_in_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // (obj, which list: 0 none, 1-3 the lists, err, stays)
+        for (obj, which, err, stays) in [
+            (0x00c7_0010u32, 0usize, 0u32, 0u32),
+            (0x00c7_0010, 2, 0, 0),
+            (0x00c7_0010, 1, 0, 0),
+            (0x00c7_0000, 2, 0, 0),
+            (0x00c7_0040, 2, 0, 0),
+            (0x00c6_ffff, 2, 0, 0),
+            (0x00c7_0010, 2, 9, 0),
+            (0x00c7_0010, 2, 0, 1),
+            (0x00c0_0000, 0, 0, 0),
+        ] {
+            t.stub(0x0057_6530, true, 1, 1, err);
+            t.stub(0x0044_3c20, true, 1, 1, 0);
+            t.stub(0x0057_64a0, true, 0, 0, 0);
+            t.stub(0x0049_c5b0, true, 0, 0, 0);
+            t.stub(0x0049_c980, true, 1, 1, 0);
+            let d1 = t.junk(0xa0, 3);
+            t.w32(d1 + 0x1c, 0x10);
+            t.write(d1 + 0x90, &[0]);
+            let d2 = t.junk(0xa0, 4);
+            t.w32(d2 + 0x1c, 0x8);
+            let (cluster, lists) = p1c_cluster(
+                &mut t,
+                &[
+                    (d2, 0x00c6_0000, 2),
+                    (d1, 0x00c7_0000, 4),
+                    (d2, 0x00c9_0000, 8),
+                ],
+            );
+            t.w32(lists[1] + 0x40, stays);
+            t.w32(cluster + 0x40, 0x00c8_0000);
+            let a1 = t.zeros(0x10);
+            t.w32(a1 + 4, 0x00c6_ff00);
+            t.w32(a1 + 0xc, 0x200);
+            t.w32(cluster + 0x24, if obj == 0x00c7_0000 { a1 } else { 0 });
+            let list = if which == 0 { 0 } else { lists[which - 1] };
+            let what = format!("{label}: delete object in {obj:#x} {which} {err} {stays}");
+            t.check(
+                &what,
+                0x0044_13a0,
+                Conv::Thiscall(cluster),
+                &[obj, list],
+                |g| Out::U32(pl::delete_object_in(g, cluster, obj, list)),
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn p1c_dynamic_descriptor_dtor_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        for (n, name_owned, owned) in [
+            (0usize, true, true),
+            (3, false, true),
+            (4, true, false),
+            (1, true, true),
+        ] {
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            t.stub(0x0043_b3e0, true, 0, 0, 0);
+            let desc = t.junk(0xc0, 1);
+            let head = desc + 0x44;
+            t.w32(head, head);
+            t.w32(head + 4, head);
+            for i in 0..n {
+                let m = p1c_vobj(&mut t, &[(1, 0)], 0x30);
+                t.write(m + 0x14, &[u8::from(i % 2 == 0)]);
+                let tail = t.r32(head + 4);
+                t.w32(m + 4, head);
+                t.w32(tail, m + 4);
+                t.w32(head + 4, m + 4);
+            }
+            t.w32(
+                desc + 0xb4,
+                if name_owned { 0x00c2_0000 } else { 0x00c2_0001 },
+            );
+            for (k, at) in [0xacu32, 0xa4, 0x9c].into_iter().enumerate() {
+                let count = if owned { 3 } else { 0x8000_0003 };
+                t.w32(desc + at, count);
+                t.w32(desc + at + 4, if k == 1 { 0 } else { 0x00c3_0000 + at });
+            }
+            let what = format!("{label}: dynamic descriptor dtor {n} {name_owned} {owned}");
+            t.check(&what, 0x0044_7880, Conv::Thiscall(desc), &[], |g| {
+                pt::dynamic_dtor(g, desc);
+                Out::None
+            });
+            t.reset();
+        }
+    }
+}
+
+/// Links `n` fresh nodes (0x20 bytes, flags at `+0x10` alternating) into
+/// the list head at `head`.
+fn p1c_fill_list(t: &mut Twins, head: u32, n: u32, owned_first: bool) {
+    t.w32(head, head);
+    t.w32(head + 4, head);
+    for i in 0..n {
+        let node = t.junk(0x20, i as u8);
+        t.w32(node + 0x10, u32::from((i % 2 == 0) == owned_first));
+        t.w32(node + 0xc, 0x00c4_0000 + i);
+        let tail = t.r32(head + 4);
+        t.w32(node, head);
+        t.w32(node + 4, tail);
+        t.w32(tail, node);
+        t.w32(head + 4, node);
+    }
+}
+
+#[test]
+fn p1c_descriptor_destruct_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let serial_at = t.rebase(0x00c9_0758);
+        for (k, (n, last)) in [(0u32, false), (3, true), (4, false), (1, true)]
+            .into_iter()
+            .enumerate()
+        {
+            t.stub(0x0043_ec40, true, 1, 1, 0);
+            t.stub(0x0057_58e0, true, 0, 0, 0);
+            t.stub(descriptor::FREE, false, 1, 0, 0);
+            let desc = t.junk(0xa0, 1);
+            for (i, at) in [0x44u32, 0x4c, 0x54, 0x5c].into_iter().enumerate() {
+                p1c_fill_list(&mut t, desc + at, n + i as u32 % 2, k % 2 == 0);
+            }
+            let serial = t.r32(serial_at);
+            t.w32(
+                desc + 0x7c,
+                if last { serial.wrapping_sub(1) } else { serial },
+            );
+            let what = format!("{label}: descriptor destruct {k}");
+            t.check(&what, 0x0043_b3e0, Conv::Thiscall(desc), &[], |g| {
+                pt::destruct(g, desc);
+                Out::None
+            });
+            t.reset();
+        }
+    }
+}

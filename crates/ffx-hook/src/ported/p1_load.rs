@@ -1144,4 +1144,16 @@ ported! {
     Phyre_PClassDescriptor_initializeInstance @ 0x0043_ce00 => extern "thiscall" fn initialize_instance(this: u32, p: u32) -> u32 {
         p1_misc::bridge::initialize_instance(&mut mem(), this, p)
     }
+    // ---- continuation round, batch 15 ----
+    /// `PCluster::deleteObjectWithInstanceList(obj, list)`.
+    Phyre_PCluster_deleteObjectWithInstanceList_004413a0 @ 0x0044_13a0 => extern "thiscall" fn delete_object_in(this: u32, obj: u32, list: u32) -> u32 {
+        p1_loader::bridge::delete_object_in(&mut mem(), this, obj, list)
+    }
+    /// `PClassDescriptorDynamic::~PClassDescriptorDynamic()`.
+    Phyre_PClassDescriptorDynamic_dtor_00447880 @ 0x0044_7880 => extern "thiscall" fn dynamic_descriptor_dtor(this: u32) {
+        p1_types::bridge::dynamic_dtor(&mut mem(), this);
+    }    /// `PClassDescriptor::Destruct()`.
+    Phyre_PClassDescriptor_Destruct @ 0x0043_b3e0 => extern "thiscall" fn descriptor_destruct(this: u32) {
+        p1_types::bridge::destruct(&mut mem(), this);
+    }
 }

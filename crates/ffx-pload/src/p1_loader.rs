@@ -155,6 +155,22 @@ pub mod bridge {
             let next: u32 = h.read(list);
             list = if next == head { 0 } else { next };
         };
+        delete_found(h, cluster, obj, list, buffer, desc)
+    }
+
+    /// The part of `deleteObject` after the list holding `obj` is found:
+    /// its `freeObject` (`0x00576530`), whose error is returned; then a
+    /// list that does not stay (`+0x40`) and is not in one of the
+    /// cluster's arenas (or whose class has flags bit 0) is unlinked and
+    /// released. 0.
+    fn delete_found(
+        h: &mut impl Host,
+        cluster: u32,
+        obj: u32,
+        list: u32,
+        buffer: u32,
+        desc: u32,
+    ) -> u32 {
         let r = h.call_sym(0x0057_6530, Conv::Thiscall(list), &[obj]);
         if r != 0 {
             return r;
@@ -512,5 +528,25 @@ pub mod bridge {
         };
         h.call_sym(0x0057_67c0, Conv::Thiscall(reader), &[]);
         r
+    }
+
+    /// `PCluster::deleteObjectWithInstanceList(cluster, obj, list)`
+    /// (`0x004413a0`, thiscall): as [`delete_object`], but with a `list`
+    /// only that list is tried (0x13 when it does not hold `obj`).
+    pub fn delete_object_in(h: &mut impl Host, cluster: u32, obj: u32, list: u32) -> u32 {
+        if list == 0 {
+            return delete_object(h, cluster, obj);
+        }
+        let buffer: u32 = h.read(list + 0x34);
+        let desc: u32 = h.read(list + 0x2c);
+        if obj < buffer {
+            return 0x13;
+        }
+        let elem: u32 = h.read(desc + 0x1c);
+        let count: u32 = h.read(list + 0x3c);
+        if obj >= elem.wrapping_mul(count).wrapping_add(buffer) {
+            return 0x13;
+        }
+        delete_found(h, cluster, obj, list, buffer, desc)
     }
 }

@@ -191,4 +191,103 @@ pub mod bridge {
         }
         desc
     }
+
+    /// `PClassDescriptorDynamic::~PClassDescriptorDynamic(desc)`
+    /// (`0x00447880`, thiscall): its vtable back; every member it owns
+    /// (list `+0x44`, the member at link `- 4`, flags bit 0) deleted (slot
+    /// 0 with 1; the next one taken first); its name copy (`+0xb4`) freed
+    /// unless bit 0; the byte arrays `+0xac`, `+0xa4`, `+0x9c` freed when
+    /// owned and set, and cleared; then `PClassDescriptor::Destruct`
+    /// (`0x0043b3e0`).
+    pub fn dynamic_dtor(h: &mut impl Host, desc: u32) {
+        let vt = h.rebase(DYNAMIC_VTABLE);
+        h.write(desc, vt);
+        let head = desc + 0x44;
+        let member_of = |link: u32| {
+            if link == head || link == 0 {
+                0
+            } else {
+                link.wrapping_sub(4)
+            }
+        };
+        let mut member = member_of(h.read(head));
+        while member != 0 {
+            let next = member_of(h.read(member + 4));
+            let flags: u8 = h.read(member + 0x14);
+            if flags & 1 != 0 {
+                h.call_virtual(member, 0, &[1]);
+            }
+            member = next;
+        }
+        let name: u32 = h.read(desc + 0xb4);
+        if name & 1 == 0 {
+            h.call_sym(crate::descriptor::FREE, Conv::Cdecl, &[name]);
+        }
+        for at in [0xac, 0xa4, 0x9c] {
+            let [count, data]: [u32; 2] = h.read(desc + at);
+            if count >> 31 == 0 && data != 0 {
+                h.call_sym(crate::descriptor::FREE, Conv::Cdecl, &[data]);
+            }
+            h.write(desc + at, [0u32, 0]);
+        }
+        h.call_sym(0x0043_b3e0, Conv::Thiscall(desc), &[]);
+    }
+
+    /// Unlinks `node` from its list and leaves it pointing at itself.
+    fn unlink(h: &mut impl Host, node: u32) {
+        let [next, prev]: [u32; 2] = h.read(node);
+        h.write(next + 4, prev);
+        h.write(prev, next);
+        h.write(node, [node, node]);
+    }
+
+    /// `PClassDescriptor::Destruct(desc)` (`0x0043b3e0`, thiscall; the
+    /// destructor every class descriptor ends in): its vtable back; the
+    /// serial counter (`0x00c90758`) handed back when this one was the
+    /// last; out of its namespace (`0x0043ec40` on `+0x3c`); the entries
+    /// of the lists `+0x4c` and `+0x54` it owns (flags `+0x10` bit 0)
+    /// unlinked and freed, their names (`+0xc`) first; the lists `+0x44`,
+    /// `+0x4c`, `+0x54`, `+0x5c` emptied; `0x005758e0` on `+0x34`; then
+    /// `PType`'s vtable (`0x00b0e568`).
+    pub fn destruct(h: &mut impl Host, desc: u32) {
+        let vt = h.rebase(DESCRIPTOR_VTABLE);
+        h.write(desc, vt);
+        let serial_at = h.rebase(DESCRIPTOR_SERIAL);
+        let serial: u32 = h.read(serial_at);
+        let own: u32 = h.read(desc + 0x7c);
+        if own.wrapping_add(1) == serial {
+            h.write(serial_at, serial.wrapping_sub(1));
+        }
+        let ns: u32 = h.read(desc + 0x3c);
+        h.call_sym(0x0043_ec40, Conv::Thiscall(ns), &[desc]);
+        for head in [desc + 0x4c, desc + 0x54] {
+            let first: u32 = h.read(head);
+            let mut e = if first == head { 0 } else { first };
+            while e != 0 {
+                let next: u32 = h.read(e);
+                let after = if next == head { 0 } else { next };
+                if h.read::<u8>(e + 0x10) & 1 != 0 {
+                    unlink(h, e);
+                    if h.read::<u8>(e + 0x10) & 1 != 0 {
+                        let name: u32 = h.read(e + 0xc);
+                        h.call_sym(crate::descriptor::FREE, Conv::Cdecl, &[name]);
+                    }
+                    h.call_sym(crate::descriptor::FREE, Conv::Cdecl, &[e]);
+                }
+                e = after;
+            }
+        }
+        for head in [desc + 0x44, desc + 0x4c, desc + 0x54, desc + 0x5c] {
+            loop {
+                let first: u32 = h.read(head);
+                if first == head || first == 0 {
+                    break;
+                }
+                unlink(h, first);
+            }
+        }
+        h.call_sym(0x0057_58e0, Conv::Thiscall(desc + 0x34), &[]);
+        let vt = h.rebase(0x00b0_e568);
+        h.write(desc, vt);
+    }
 }
