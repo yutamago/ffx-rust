@@ -145,6 +145,10 @@ impl Host for G<'_> {
         self.pop();
         v
     }
+    fn call_u64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> u64 {
+        let r = self.ret(addr, c, args, true);
+        u64::from(r.edx) << 32 | u64::from(r.eax)
+    }
     fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
         let b = x.to_bits();
         let r = self
