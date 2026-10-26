@@ -30,6 +30,12 @@ use ffx_prender::h3_glue21::bridge as g21;
 use ffx_prender::h3_glue22::bridge as g22;
 use ffx_prender::h3_glue23::bridge as g23;
 use ffx_prender::h3_glue24::bridge as g24;
+use ffx_prender::h3_glue25::bridge as g25;
+use ffx_prender::h3_glue26::bridge as g26;
+use ffx_prender::h3_glue27::bridge as g27;
+use ffx_prender::h3_glue28::bridge as g28;
+use ffx_prender::h3_glue29::bridge as g29;
+use ffx_prender::h3_glue30::bridge as g30;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1645,6 +1651,110 @@ ported! {
     PhyreScene_DrawMeshMatrices @ 0x0066_b360 => extern "thiscall" fn scene_draw_mesh_matrices(this: u32, restore: u32) {
         let mut f = StackFrame::<0x21>::new();
         g24::scene_draw_mesh_matrices(&mut mem(), f.at() + 0x84, this, restore);
+    }
+
+    // ---- round 7 (ffx_prender::h3_glue24's port, shim added) ----
+    /// `ClassVFXRenderDataTable_ClearByType(this, mask)`: the erase's
+    /// result goes over `mask`'s slot.
+    ClassVFXRenderDataTable_ClearByType @ 0x0069_f110 => extern "thiscall" fn vfx_table_clear_by_type(this: u32, mask: u32; slots: u32) {
+        let mut f = StackFrame::<0xd>::new();
+        g24::vfx_table_clear_by_type(&mut mem(), f.at() + 0x34, slots, this, mask);
+    }
+
+    // ---- round 7 batch 25 (ffx_prender::h3_glue25) ----
+    /// `0x006b3fe0(this)`: a texture-animation entry's release.
+    TextureAnimationEntry_release_006b3fe0 @ 0x006b_3fe0 => extern "thiscall" fn texture_entry_release(this: u32) {
+        g25::texture_entry_release(&mut mem(), this);
+    }
+    /// `PhyreScene_setMaterialColourScale2(this, r, g, b, unused)` (float
+    /// bits): the walk's state ends in the argument slots.
+    PhyreScene_setMaterialColourScale2 @ 0x0066_d1d0 => extern "thiscall" fn scene_set_material_colour_scale2(this: u32, r: u32, g: u32, b: u32, _unused: u32; slots: u32) {
+        g25::scene_set_material_colour_scale2(&mut mem(), slots, this, r, g, b);
+    }
+    /// `ClassVFXRenderDataTable_UpdateDeletePool(this)`.
+    ClassVFXRenderDataTable_UpdateDeletePool @ 0x0069_fe50 => extern "thiscall" fn vfx_table_update_delete_pool(this: u32) {
+        g25::vfx_table_update_delete_pool(&mut mem(), this);
+    }
+    /// `0x006c9580(this, out)`: a shadow mesh; the instances found go
+    /// over `out`'s slot.
+    ShadowDynamicMesh_create_006c9580 @ 0x006c_9580 => extern "thiscall" fn shadow_mesh_create(this: u32, out: u32; slots: u32) -> u32 {
+        g25::shadow_mesh_create(&mut mem(), slots, this, out)
+    }
+    /// `0x006d3fb0(this, shader, streams, a, cluster, b, c)`: a
+    /// broken-screen pass's set-up; the result and the instances found go
+    /// over the argument slots.
+    BrokenScreenPass_setup_006d3fb0 @ 0x006d_3fb0 => extern "thiscall" fn broken_pass_setup(this: u32, shader: u32, streams: u32, a: u32, cluster: u32, b: u32, c: u32; slots: u32) -> u32 {
+        g25::broken_pass_setup(&mut mem(), slots, this, shader, streams, a, cluster, b, c)
+    }
+
+    // ---- round 7 batch 26 (ffx_prender::h3_glue26) ----
+    /// `PostProcessManager_copyBuffer(this, renderer, texture, target,
+    /// wide, _, mode2)`.
+    PostProcessManager_copyBuffer @ 0x0069_2c40 => extern "thiscall" fn post_copy_buffer(this: u32, renderer: u32, texture: u32, target: u32, wide: u32, _unused: u32, mode2: u32) -> u32 {
+        let mut f = StackFrame::<0xc>::new();
+        g26::post_copy_buffer(&mut mem(), f.at() + 0x30, this, renderer, texture, target, wide, mode2)
+    }
+    /// `PostProcessManager_copyDepthBuffer(this, renderer, texture, target,
+    /// pass, colour, wide, _, clear_a, clear_b)`: the colour scale's offset
+    /// goes over `texture`'s slot.
+    PostProcessManager_copyDepthBuffer @ 0x0069_2e90 => extern "thiscall" fn post_copy_depth_buffer(this: u32, renderer: u32, texture: u32, target: u32, pass: u32, colour: u32, wide: u32, _unused: u32, clear_a: u32, clear_b: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0xc>::new();
+        g26::post_copy_depth_buffer(&mut mem(), f.at() + 0x30, slots, this, renderer, texture, target, pass, colour, wide, clear_a, clear_b)
+    }
+    /// `PostProcessManager_renderBright(this, renderer, target)`.
+    PostProcessManager_renderBright @ 0x0069_5440 => extern "thiscall" fn post_render_bright(this: u32, renderer: u32, target: u32) {
+        let mut f = StackFrame::<0xd>::new();
+        g26::post_render_bright(&mut mem(), f.at() + 0x34, this, renderer, target);
+    }
+
+    // ---- round 7 batch 27 (ffx_prender::h3_glue27) ----
+    /// `PostProcessManager_prepareGlowMap(this, renderer, target, texture)`:
+    /// the copies' offsets and sizes go over `texture`'s slot.
+    PostProcessManager_prepareGlowMap @ 0x0069_4c60 => extern "thiscall" fn post_prepare_glow_map(this: u32, renderer: u32, target: u32, texture: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x13>::new();
+        g27::post_prepare_glow_map(&mut mem(), f.at() + 0x4c, slots, this, renderer, target, texture)
+    }
+    /// `0x006d4780(this, n, buffer)`: the broken-screen pass's vertex
+    /// layout; the segment, then the end, go over `n`'s slot.
+    BrokenScreenPass_layout_006d4780 @ 0x006d_4780 => extern "thiscall" fn broken_pass_layout(this: u32, n: u32, buffer: u32; slots: u32) -> u32 {
+        g27::broken_pass_layout(&mut mem(), slots, this, n, buffer)
+    }
+    /// `PhyreScene_getChaPos(this, p)`: the screen point in the frame, the
+    /// rounded terms over `p`'s slot.
+    PhyreScene_getChaPos @ 0x0065_d860 => extern "thiscall" fn scene_get_cha_pos(this: u32, p: u32; slots: u32) {
+        let mut f = StackFrame::<2>::new();
+        g27::scene_get_cha_pos(&mut mem(), f.at() + 8, slots, this, p);
+    }
+
+    // ---- round 7 batch 28 (ffx_prender::h3_glue28) ----
+    /// `DrawScaleButtonIconRGBA(id, x, y, scale, colour, flags)` (float
+    /// bits): `x`, `y` and the scratch values end in the argument slots.
+    DrawScaleButtonIconRGBA @ 0x008e_7a90 => extern "C" fn draw_scale_button_icon(id: u32, x: u32, y: u32, scale: u32, colour: u32, flags: u32; slots: u32) -> u32 {
+        g28::draw_scale_button_icon(&mut mem(), slots, id, x, y, scale, colour, flags)
+    }
+
+    // ---- round 7 batch 29 (ffx_prender::h3_glue29) ----
+    /// `graphicVFXCreateDataBuffer(key_a, key_b, n, a, b, names, c)`: the
+    /// pool's segment and buffer in the frame; the pool flag, `a - b` and
+    /// the cursors over the argument slots.
+    graphicVFXCreateDataBuffer @ 0x0064_5040 => extern "C" fn vfx_create_data_buffer(key_a: u32, key_b: u32, n: u32, a: u32, b: u32, names: u32, c: u32; slots: u32) {
+        let mut f = StackFrame::<3>::new();
+        g29::vfx_create_data_buffer(&mut mem(), f.at() + 0xc, slots, key_a, key_b, n, a, b, names, c);
+    }
+    /// `WaterDistortionEffectDelegations_processWaterDistortion(task)`: the
+    /// cursor and records in the frame, the first texture over `task`'s
+    /// slot.
+    WaterDistortionEffectDelegations_processWaterDistortion @ 0x006f_54f0 => extern "C" fn process_water_distortion(task: u32; slots: u32) {
+        let mut f = StackFrame::<0x19>::new();
+        g29::process_water_distortion(&mut mem(), f.at() + 0x64, slots, task);
+    }
+
+    // ---- round 7 batch 30 (ffx_prender::h3_glue30) ----
+    /// `0x0066f7d0(this, model, key, shared)`: a mesh instance registered
+    /// under `key`; the cluster goes over `shared`'s slot.
+    PhyreScene_instantiateMesh_0066f7d0 @ 0x0066_f7d0 => extern "thiscall" fn scene_instantiate_mesh(this: u32, model: u32, _key: u32, shared: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0xf>::new();
+        g30::scene_instantiate_mesh(&mut mem(), f.at() + 0x3c, slots, this, model, shared)
     }
 }
 
