@@ -13,7 +13,7 @@
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
-    h4_e3 as e3, h4_e4 as e4, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1845,5 +1845,27 @@ ported! {
     /// `RemapButtonIcon_remapUIButtonPosition(a, rec, b, kind)`.
     RemapButtonIcon_remapUIButtonPosition @ 0x006e_7470 => extern "stdcall" fn remap_ui_button_position(_a: u32, rec: u32, _b: u32, kind: u32) -> u32 {
         e4::remap_ui_button_position(&mut mem(), rec, kind)
+    }
+    // ---- continuation round 3, batch 5 (ffx_glue_other::h4_e5)
+    /// `FmodMusic_start(this; i)`.
+    FmodMusic_start @ 0x0070_96f0 => extern "thiscall" fn music_start(this: u32, i: u32) -> u32 {
+        let mut frame = StackFrame::<{ (e5::START_FRAME / 4) as usize }>::new();
+        e5::music_start(&mut mem(), frame.at(), this, i)
+    }
+    /// `FmodMusic_read(this; i, flag)`.
+    FmodMusic_read @ 0x0070_9080 => extern "thiscall" fn music_read(this: u32, i: u32, flag: u32) -> u32 {
+        e5::music_read(&mut mem(), this, i, flag)
+    }
+    /// `FmodMusic_dataSend(this; a, flag)`.
+    FmodMusic_dataSend @ 0x0070_8a00 => extern "thiscall" fn music_data_send(this: u32, _a: u32, flag: u32) -> u32 {
+        e5::music_data_send(&mut mem(), this, flag)
+    }
+    /// `FmodMusic_crossPlay(this; i, frames, flag)`.
+    FmodMusic_crossPlay @ 0x0070_8900 => extern "thiscall" fn music_cross_play(this: u32, i: u32, frames: u32, flag: u32) -> u32 {
+        e5::music_cross_play(&mut mem(), this, i, frames, flag)
+    }
+    /// `FmodMusic_switchBGM(this; bgm, flag)`.
+    FmodMusic_switchBGM @ 0x0070_9c80 => extern "thiscall" fn music_switch_bgm(this: u32, bgm: u32, flag: u32) {
+        e5::music_switch_bgm(&mut mem(), this, bgm, flag);
     }
 }

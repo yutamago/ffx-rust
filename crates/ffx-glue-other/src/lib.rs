@@ -53,7 +53,9 @@
 //! - [`h4_e4`]: its fourth batch: UI records for `graphicDrawUIElement`
 //!   (the active character's cursor, a sequence rectangle, a mode-2
 //!   gradient box), the distortion grid's weights, the button icons' UV,
-//!   size and position remaps.
+//!   size and position remaps;
+//! - [`h4_e5`]: its fifth batch: the FMOD music's start, read, cross-play,
+//!   data send and background-music switch.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -86,6 +88,7 @@ pub mod h4_e1;
 pub mod h4_e2;
 pub mod h4_e3;
 pub mod h4_e4;
+pub mod h4_e5;
 pub mod menu;
 pub mod misc;
 pub mod movie;

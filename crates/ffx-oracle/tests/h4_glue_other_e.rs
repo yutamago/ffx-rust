@@ -25,7 +25,7 @@ use std::path::PathBuf;
 
 use ffx_bridge::Mem;
 use ffx_glue_other::{
-    frames as fr, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2, h4_e3 as e3, h4_e4 as e4,
+    frames as fr, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2, h4_e3 as e3, h4_e4 as e4, h4_e5 as e5,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -1973,5 +1973,202 @@ fn e4_button_position() {
                 |g| u(e4::remap_ui_button_position(g, rec, kind)),
             );
         }
+    }
+}
+
+// ---- batch 5 (ffx_glue_other::h4_e5)
+
+/// Random music tracks for batch 5: [`tracks`] plus the held, queued and
+/// fade words, no signalling NaNs where the originals copy floats.
+fn tracks5(t: &mut Twins, rng: &mut Rng, arr: u32) {
+    tracks(t, rng, arr, e2::TRACKS + 1);
+    for k in 0..=e2::TRACKS {
+        let e = arr + e2::TRACK * k;
+        for off in [4, 0x18, 0x24] {
+            let v = rng.pick(&[0, 0, 1, 2]);
+            t.w32(e + off, v);
+        }
+        let f = rng.pick(&[0, 0x10, 0x7f]);
+        t.w32(e + 0x1c, f);
+        for off in [0x10, 0x2c, 0x30] {
+            let s = rng.float();
+            t.w32(e + off, s);
+        }
+    }
+}
+
+/// The music's start, read and data send.
+#[test]
+fn e5_music_start_read() {
+    e5_music(false);
+}
+
+/// The music's cross-play and set switch (`FmodMusic_read` and
+/// `FmodMusic_start` stubbed: the originals hand FMOD their own argument
+/// words, whose addresses differ under a port's frame).
+#[test]
+fn e5_music_cross_switch() {
+    e5_music(true);
+}
+
+fn e5_music(cross: bool) {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(if cross { 0x5eed_e502 } else { 0x5eed_e501 });
+        let state = t.zeros(4);
+        t.stub_at(fr::FMOD_GET_STATE, false, 2, 2, &[wr(1, state)]);
+        let plain = [
+            (EVENT_SET_PAUSED, 2),
+            (EVENT_SET_CALLBACK, 3),
+            (e3::EVENT_START, 1),
+        ];
+        for (sym, n) in plain {
+            t.stub_at(sym, false, n, n, &[]);
+        }
+        t.stub_at(fr::ERRCHECK, false, 3, 0, &[]);
+        let methods = [
+            (e2::MUSIC_VOLUME_DIRECT, 3),
+            (e3::MUSIC_VOLUME_TRANSLATE, 3),
+            (e3::MUSIC_STOP, 1),
+            (e3::MUSIC_CLEAR, 1),
+            (e5::RELEASE_OLD, 1),
+            (e2::MUSIC_FADE_OUT, 2),
+            (e5::MUSIC_STOP_ALL, 0),
+            (e5::MUSIC_FORCE_CLEAR_ALL, 0),
+        ];
+        for (sym, n) in methods {
+            t.stub_at(sym, true, n, n, &[]);
+        }
+        t.stub_at(e5::MUSIC_GROUP, false, 1, 0, &[]);
+        if cross {
+            t.stub_at(e5::MUSIC_READ, true, 2, 2, &[]);
+            t.stub_at(e5::MUSIC_START, true, 1, 1, &[]);
+        }
+        t.stub_at(e5::OPERATOR_DELETE_ARRAY, false, 1, 0, &[]);
+        // operator new: a fresh block per call
+        let heap = t.zeros(0x1000);
+        let next = t.zeros(4);
+        let rest = t.stub_code(e5::OPERATOR_NEW, false, 1, 0, false, &[]);
+        let cell = t.cells[&e5::OPERATOR_NEW];
+        let mut c = vec![0xa1];
+        c.extend(next.to_le_bytes()); // mov eax, [next]
+        c.extend([0xa3]);
+        c.extend(cell.to_le_bytes()); // mov [cell], eax
+        c.extend([0x81, 0x05]);
+        c.extend(next.to_le_bytes());
+        c.extend(0x400u32.to_le_bytes()); // add dword [next], 0x400
+        c.push(0xe9);
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes()); // jmp rest
+        let f = t.code(&c);
+        t.jump(e5::OPERATOR_NEW, f);
+        // the event project's getEvent, __iob_func, fprintf
+        let get_event = t.stub_code(0x0bad_0024, false, 4, 4, false, &[]);
+        let vtable = t.zeros(0x40);
+        t.w32(vtable + 0x24, get_event);
+        let iob = t.stub_code(0x0bad_c350, false, 0, 0, false, &[]);
+        t.g32(e5::IOB_FUNC.sym, iob);
+        let fprintf = t.stub_code(0x0bad_c38c, false, 4, 0, false, &[]);
+        t.g32(e5::FPRINTF.sym, fprintf);
+        let mut tags = vec![fr::FMOD_GET_STATE, fr::ERRCHECK, e5::MUSIC_GROUP];
+        tags.extend(plain.map(|p| p.0));
+        tags.extend(methods.map(|m| m.0));
+        tags.extend([
+            e5::OPERATOR_DELETE_ARRAY,
+            0x0bad_0024,
+            0x0bad_c350,
+            0x0bad_c38c,
+        ]);
+        let this = t.zeros(0x40);
+        let arr = t.zeros((e2::TRACK * (e2::TRACKS + 1)) as usize);
+        let projects = [t.zeros(8), t.zeros(8)];
+        for p in projects {
+            t.w32(p, vtable);
+        }
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.w32(next, heap);
+            let full = rng.float();
+            t.g32(e3::FULL_VOLUME, full);
+            for k in 0..0x10 {
+                let v = rng.next();
+                t.w32(this + 4 * k, v);
+            }
+            t.w32(this + 0x10, arr);
+            let p0 = rng.pick(&[projects[0], projects[0], 0]);
+            t.w32(this, p0);
+            let p1 = rng.pick(&[projects[1], projects[1], 0]);
+            t.w32(this + 4, p1);
+            for (off, vals) in [
+                (0x18, [0, 1, 0x10, 0x82]),
+                (0x24, [0, 1, 1, 2]),
+                (0x28, [0x79, 0xd0, 0, 0x79]),
+                (0x2c, [0, 1, 1, 2]),
+            ] {
+                let v = rng.pick(&vals);
+                t.w32(this + off, v);
+            }
+            tracks5(&mut t, &mut rng, arr);
+            let st = rng.pick(&[1, 1, 8, 9, 0, 0x108]);
+            t.w32(state, st);
+            let nl = rng.pick(&[0, 0, 1, 2]);
+            t.g32(e5::NO_LOAD.sym, nl);
+            let g = rng.pick(&[0, 5, 0xb5, 0xb6]);
+            t.ret(e5::MUSIC_GROUP, g);
+            let r = rng.pick(&[0, 0x59, 0x59, 1]);
+            t.ret(0x0bad_0024, r);
+            let r = rng.below(0xb6);
+            let idx = rng.pick(&[0, 0xc, 0xc, 0x10, 0x82, 0xb5, 0xb6, r, r]);
+            let flag = rng.pick(&[0, 1, 1]);
+            let a = rng.next();
+            let frames = rng.next();
+            let r = rng.next();
+            let bgm = rng.pick(&[0, 1, 2, r]);
+            if cross {
+                t.check_conv(
+                    &format!("{w} cross {idx:#x}"),
+                    0x0070_8900,
+                    Conv::Thiscall(this),
+                    &[idx, frames, flag],
+                    |g| u(e5::music_cross_play(g, this, idx, frames, flag)),
+                );
+                t.check_conv(
+                    &format!("{w} switch {bgm:#x}"),
+                    0x0070_9c80,
+                    Conv::Thiscall(this),
+                    &[bgm, flag],
+                    |g| {
+                        e5::music_switch_bgm(g, this, bgm, flag);
+                        Out::None
+                    },
+                );
+                continue;
+            }
+            let frame = t.ebp_for(1) + 8;
+            t.check_framed_conv(
+                &format!("{w} start {idx:#x}"),
+                0x0070_96f0,
+                Conv::Thiscall(this),
+                &[idx],
+                frame,
+                &[(0, 4)],
+                |g| u(e5::music_start(g, frame, this, idx)),
+            );
+            t.check_conv(
+                &format!("{w} read {idx:#x}"),
+                0x0070_9080,
+                Conv::Thiscall(this),
+                &[idx, flag],
+                |g| u(e5::music_read(g, this, idx, flag)),
+            );
+            t.check_conv(
+                &format!("{w} data send"),
+                0x0070_8a00,
+                Conv::Thiscall(this),
+                &[a, flag],
+                |g| u(e5::music_data_send(g, this, flag)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
     }
 }
