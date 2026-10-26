@@ -77,7 +77,11 @@
 //!   three UI records and `movie_disp2`;
 //! - [`h4_g2`]: its second batch: the distortion grid's positions and
 //!   UVs, the extended blur's, `TextUtil`'s and the tweak tool's
-//!   constructors, an Iggy menu's viewport, a `GDraw` rectangle's UVs.
+//!   constructors, an Iggy menu's viewport, a `GDraw` rectangle's UVs;
+//! - [`h4_i1`]: continuation round 7, batch 1: the Win32 video playback's
+//!   close, the VRAM resource save, the debug file read, the window setup,
+//!   the VFX line buffer, a particle model's vertex copy, `GDraw`'s pool
+//!   handle and free-all.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -129,6 +133,7 @@ pub mod h4_h5;
 pub mod h4_h6;
 pub mod h4_h7;
 pub mod h4_h8;
+pub mod h4_i1;
 pub mod menu;
 pub mod misc;
 pub mod movie;

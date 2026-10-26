@@ -15,8 +15,8 @@ use ffx_glue_other::{
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
-    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, menu as mn,
-    misc as m, movie as mv, r3, sound as s,
+    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
+    menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2263,5 +2263,49 @@ ported! {
     LoadingScreen_render @ 0x006e_4ea0 => extern "thiscall" fn loading_screen_render(this: u32, renderer: u32) {
         let mut frame = StackFrame::<{ (h8::LOADING_FRAME / 4) as usize }>::new();
         h8::loading_screen_render(&mut mem(), frame.at(), this, renderer);
+    }
+    // ---- continuation round 7, batch 1 (ffx_glue_other::h4_i1)
+    /// `PVideoPlaybackWin32_close(this)`: `al = 1` over the last callee's
+    /// `eax`, as the original leaves it.
+    PVideoPlaybackWin32_close @ 0x00a2_8350 => extern "thiscall" fn video_close(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (i1::CLOSE_FRAME / 4) as usize }>::new();
+        i1::video_close(&mut mem(), frame.at(), this)
+    }
+    /// `Sg_SaveVramResource()`.
+    Sg_SaveVramResource @ 0x0083_fd60 => extern "C" fn save_vram_resource() -> u32 {
+        // laid out and aligned as the original's frame (`ebp - 0x60` on 16)
+        #[repr(C, align(16))]
+        struct Work([u8; i1::SAVE_VRAM_FRAME as usize]);
+        let mut work = Work([0; i1::SAVE_VRAM_FRAME as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let r = i1::save_vram_resource(&mut mem(), w);
+        std::hint::black_box(&mut work);
+        r
+    }
+    /// `ReadDebug_loadFile_00a42ab0(path, size_out)`.
+    ReadDebug_loadFile_00a42ab0 @ 0x00a4_2ab0 => extern "C" fn read_debug_file(path: u32, size_out: u32) -> u32 {
+        i1::read_debug_file(&mut mem(), path, size_out)
+    }
+    /// `PApplication_InitWindowAndApp_00629ab0(this; a, b)`.
+    PApplication_InitWindowAndApp_00629ab0 @ 0x0062_9ab0 => extern "thiscall" fn init_window_and_app(this: u32, a: u32, b: u32) -> u32 {
+        i1::init_window_and_app(&mut mem(), this, a, b)
+    }
+    /// `createVFXRenderDataBufferLine(a, b, n, arg)`.
+    createVFXRenderDataBufferLine @ 0x0071_4b60 => extern "C" fn create_line_buffer(a: u32, b: u32, n: u32, arg: u32) -> u32 {
+        let mut frame = StackFrame::<{ (i1::LINE_FRAME / 4) as usize }>::new();
+        i1::create_line_buffer(&mut mem(), frame.at(), a, b, n, arg)
+    }
+    /// `pppMdl_copyPositions_007163e0(part, job)`.
+    pppMdl_copyPositions_007163e0 @ 0x0071_63e0 => extern "C" fn copy_positions(part: u32, job: u32) -> u32 {
+        let mut matrix = StackFrame::<16>::new();
+        i1::copy_positions(&mut mem(), matrix.at(), part, job)
+    }
+    /// `opd_config_memory(pool, size, arg)`.
+    opd_config_memory @ 0x00a3_b210 => extern "C" fn config_memory(pool: u32, size: u32, arg: u32) -> u32 {
+        i1::config_memory(&mut mem(), pool, size, arg)
+    }
+    /// `GDraw_pool_freeAll_00a3b380(pool, stats)`.
+    GDraw_pool_freeAll_00a3b380 @ 0x00a3_b380 => extern "C" fn free_all(pool: u32, stats: u32) {
+        i1::free_all(&mut mem(), pool, stats);
     }
 }

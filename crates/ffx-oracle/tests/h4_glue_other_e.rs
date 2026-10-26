@@ -28,7 +28,7 @@ use ffx_glue_other::{
     frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
     h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
-    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8,
+    h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -6723,6 +6723,453 @@ fn h8_renders() {
                     Out::None
                 },
             );
+        }
+        assert!(ran + t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 7, batch 1 (ffx_glue_other::h4_i1)
+
+/// A cave stub tagged `tag` (logs `n` words, pops `pops`), for an import
+/// slot.
+fn i1_iat_stub(t: &mut Twins, tag: u32, n: u32, pops: u32) -> u32 {
+    t.stub_code(tag, false, n, pops, false, &[])
+}
+
+/// The Win32 video playback's close.
+#[test]
+fn i1_video_close() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c701);
+        let code = t.zeros(4);
+        let stubs = [
+            (i1::QUEUE_CLOSE, true, 0, 0),
+            (i1::EVENT_WAIT, true, 0, 0),
+            (i1::EVENT_RESET, true, 0, 0),
+            (i1::SEGMENT_DELETE, false, 1, 0),
+            (i1::RESET_ALLOCATOR, false, 0, 0),
+            (i1::READER_CLOSE, true, 0, 0),
+            (i1::THREAD_CLOSE, true, 0, 0),
+            (i1::VPX_DESTROY, false, 1, 0),
+            (i1::VPX_UNSET, false, 0, 0),
+            (i1::AUDIO_SHUTDOWN, true, 0, 0),
+            (i1::QUEUE_DESTROY, true, 0, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        t.stub_at(i1::THREAD_JOIN, true, 1, 1, &[wr(0, code)]);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(i1::THREAD_JOIN);
+        let mut ran = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            ran += t.log_entries();
+            t.fresh(&mut rng, &tags);
+            let c = rng.next();
+            t.w32(code, c);
+            let this = random_block(&mut t, &mut rng, 0x300);
+            let state = {
+                let r = rng.next();
+                rng.pick(&[0, 3, 1, 2, 4, r])
+            };
+            t.w32(this + 0xe4, state);
+            let audio = {
+                let r = rng.next();
+                rng.pick(&[0, r])
+            };
+            t.w32(this + 0x294, audio);
+            let frame = t.ebp_for(0) - 4;
+            t.check_framed_conv(
+                &w,
+                0x00a2_8350,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 4)],
+                |g| u(i1::video_close(g, frame, this)),
+            );
+        }
+        assert!(ran + t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The VRAM resource save and the debug file read.
+#[test]
+fn i1_ps2_layer() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c702);
+        let stubs = [
+            (i1::DBG_PRINTF, 3),
+            (i1::MEMCLEAR, 2),
+            (i1::SET_DEF_LOAD_IMAGE, 8),
+            (i1::FLUSH_CACHE, 1),
+            (i1::EXEC_LOAD_IMAGE, 2),
+            (i1::SYNC_PATH, 2),
+            (i1::SCE_OPEN, 2),
+            (i1::SCE_LSEEK, 3),
+            (i1::SCE_READ, 3),
+            (i1::SCE_CLOSE, 1),
+            (i1::SET_DEF_DRAW_ENV2, 0),
+            (i1::USER_MALLOC, 1),
+            (i1::MOVIE_ERR, 3),
+        ];
+        for (sym, n) in stubs {
+            t.stub(sym, n, false);
+        }
+        // dbgPrintf logs the words each call passes (stack junk past them
+        // differs): 3 for the save, 1 or 2 for the read's messages
+        let print3 = t.stub_code(i1::DBG_PRINTF, false, 3, 0, false, &[]);
+        let print1 = t.stub_code(0x0bad_c721, false, 1, 0, false, &[]);
+        let print2 = t.stub_code(0x0bad_c722, false, 2, 0, false, &[]);
+        let mut tags = stubs.map(|s| s.0).to_vec();
+        tags.extend([0x0bad_c721, 0x0bad_c722]);
+        // the original aligns its ebp: (esp at entry - 4 - 8) & ~0xf
+        let end = t.a.stack_range().end;
+        let save_frame = ((end - 0x110) & !0xf) - 0x60;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let lo = rng.pick(&[0x29u8, 0x29, 0, 0xff, 0x28]);
+            let hi = rng.pick(&[0xffu8, 0xff, 0, 0x29, 0xfe]);
+            t.jump(i1::DBG_PRINTF, print3);
+            t.g32(
+                i1::VRAM_RESOURCE,
+                u32::from(lo) | u32::from(hi) << 8 | 0x1234_0000,
+            );
+            t.check_framed(
+                &format!("{w} save"),
+                0x0083_fd60,
+                &[],
+                save_frame,
+                // the record; the cookie at its end
+                &[(0, 0x5c)],
+                |g| u(i1::save_vram_resource(g, save_frame)),
+            );
+            let path = random_block(&mut t, &mut rng, 0x10);
+            let first = rng.pick(&[0u8, b'a']);
+            t.w8(path, first);
+            t.jump(i1::DBG_PRINTF, if first == 0 { print1 } else { print2 });
+            let fd = {
+                let r = rng.next();
+                rng.pick(&[0, r, 3])
+            };
+            t.ret(i1::SCE_OPEN, fd);
+            let n = {
+                let r = rng.next();
+                rng.pick(&[
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    0x1001,
+                    0xffff_fffd,
+                    0xffff_fffc,
+                    0x8000_0000,
+                    r,
+                ])
+            };
+            t.ret(i1::SCE_LSEEK, n);
+            let out = t.zeros(4);
+            let out = rng.pick(&[0, out]);
+            t.check(&format!("{w} read"), 0x00a4_2ab0, &[path, out], |g| {
+                u(i1::read_debug_file(g, path, out))
+            });
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The application's window setup.
+#[test]
+fn i1_init_window() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c703);
+        let stubs = [
+            (i1::CREATE_WINDOW, true, 1, 1),
+            (i1::ON_INIT, true, 2, 2),
+            (i1::ON_EXIT, true, 0, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let set_parent = i1_iat_stub(&mut t, 0x0bad_c731, 2, 2);
+        let register = i1_iat_stub(&mut t, 0x0bad_c732, 1, 1);
+        let send = i1_iat_stub(&mut t, 0x0bad_c733, 4, 4);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([0x0bad_c731, 0x0bad_c732, 0x0bad_c733]);
+        let app = t.zeros(0x300);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(i1::SET_PARENT_IAT, set_parent);
+            t.g32(i1::REGISTER_MESSAGE_IAT, register);
+            t.g32(i1::SEND_MESSAGE_IAT, send);
+            let created = {
+                let r = rng.next();
+                rng.pick(&[0, 1, 0xffff_ffff, 0x8000_0000, r])
+            };
+            t.ret(i1::CREATE_WINDOW, created);
+            let init = {
+                let r = rng.next();
+                rng.pick(&[0, 0, r])
+            };
+            t.ret(i1::ON_INIT, init);
+            let guard = rng.next();
+            t.g32(i1::WINDOW_RECORD_GUARD, guard);
+            for k in 0..3 {
+                let v = rng.next();
+                t.g32(i1::WINDOW_RECORD + 4 * k, v);
+            }
+            let (hwnd, parent) = (rng.next(), rng.next());
+            t.g32(i1::HWND, hwnd);
+            let parent = rng.pick(&[0, parent]);
+            t.g32(i1::PARENT_HWND, parent);
+            let embedded = rng.pick(&[0u8, 1, 0x80]);
+            let at = t.rebase(i1::EMBEDDED);
+            t.w8(at, embedded);
+            t.g32(i1::APPLICATION, app);
+            let window = random_block(&mut t, &mut rng, 0x40);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            t.w32(this, window);
+            let (a, b) = (rng.next(), rng.next());
+            t.check_conv(&w, 0x0062_9ab0, Conv::Thiscall(this), &[a, b], |g| {
+                u(i1::init_window_and_app(g, this, a, b))
+            });
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// The VFX line buffer.
+#[test]
+fn i1_line_buffer() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c704);
+        let stubs = [
+            (i1::MEMSET, 3),
+            (i1::VFX_CREATE, 3),
+            (i1::VFX_CREATE_DATA_BUFFER, 7),
+        ];
+        for (sym, n) in stubs {
+            t.stub(sym, n, false);
+        }
+        let sprintf = i1_iat_stub(&mut t, 0x0bad_c741, 3, 0);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(0x0bad_c741);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(i1::SPRINTF_IAT, sprintf);
+            let (a, b, n, arg) = (rng.next(), rng.next(), rng.next(), rng.next());
+            let n = rng.pick(&[0, 1, 7, n, 0x8000_0000]);
+            let frame = t.ebp_for(4) - i1::LINE_FRAME;
+            t.check_framed(
+                &w,
+                0x0071_4b60,
+                &[a, b, n, arg],
+                frame,
+                // up to the names' last word, which `_alloca_probe`'s
+                // saved ecx overwrites (never read), and the cookie
+                &[(0, (i1::LINE_FRAME - 8) as usize)],
+                |g| u(i1::create_line_buffer(g, frame, a, b, n, arg)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
+    }
+}
+
+/// A particle model's vertex copy.
+#[test]
+fn i1_copy_positions() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c705);
+        let stubs = [(i1::GET_PTR32, 1), (i1::MUL_MATRIX, 3)];
+        for (sym, n) in stubs {
+            t.stub(sym, n, false);
+        }
+        let tags = stubs.map(|s| s.0);
+        let mut copied = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let model = random_block(&mut t, &mut rng, 0x20);
+            let count = rng.pick(&[0u16, 1, 2, 3, 6, 0xffff, 0x8000]);
+            t.w16(model + 0x12, count);
+            t.ret(i1::GET_PTR32, model);
+            let src = t.zeros(0x80);
+            for k in 0..0x20 {
+                let v = if rng.below(2) == 0 {
+                    rng.float()
+                } else {
+                    rng.next()
+                };
+                let v = if ffx_bridge::x87::is_snan(v) { 0 } else { v };
+                t.w32(src + 4 * k, v);
+            }
+            let dst = random_block(&mut t, &mut rng, 0x80);
+            // sometimes the first float lands on the count (a denormal
+            // whose top half is 2): the count is read again each vertex
+            let alias = rng.below(6) == 0;
+            let dst = if alias {
+                t.w32(src, 0x0002_1234);
+                t.w16(model + 0x12, 6);
+                model + 0x10
+            } else {
+                dst
+            };
+            let job = random_block(&mut t, &mut rng, 0x48);
+            let flags = rng.next();
+            let flags = if alias {
+                flags | 0x400
+            } else {
+                rng.pick(&[flags | 0x400, flags & !0x400])
+            };
+            t.w32(job, flags);
+            t.w32(job + 4, dst);
+            t.w32(job + 0x38, src);
+            let m = rng.next();
+            t.w32(job + 0x44, rng.pick(&[0, m]));
+            let part = random_block(&mut t, &mut rng, 0x20);
+            let matrix = t.ebp_for(2) - 0x44;
+            let r = t.check_framed(&w, 0x0071_63e0, &[part, job], matrix, &[(0, 0x40)], |g| {
+                u(i1::copy_positions(g, matrix, part, job))
+            });
+            copied += r.min(1);
+        }
+        assert!(copied > 0, "{name}: positions copied");
+    }
+}
+
+/// A ring: `head` and `nodes` linked (`+0x1c` previous, `+0x20` next).
+fn i1_ring(t: &mut Twins, head: u32, nodes: &[u32]) {
+    let all: Vec<u32> = std::iter::once(head).chain(nodes.iter().copied()).collect();
+    for (k, &n) in all.iter().enumerate() {
+        let prev = all[(k + all.len() - 1) % all.len()];
+        let next = all[(k + 1) % all.len()];
+        t.w32(n + 0x1c, prev);
+        t.w32(n + 0x20, next);
+    }
+}
+
+/// `GDraw`'s pool handle and free-all.
+#[test]
+fn i1_gdraw_pool() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c706);
+        let free_cell = t.zeros(4);
+        t.stub_at(i1::POOL_RECLAIM, false, 2, 0, &[wr(0, free_cell)]);
+        let stubs = [
+            (i1::TAKE_FREE, 1),
+            (i1::REQUEUE_ALL, 1),
+            (i1::RELEASE_VIEWS, 1),
+        ];
+        for (sym, n) in stubs {
+            t.stub(sym, n, false);
+        }
+        // the requeue may clear the pool's mark (`+0xc &= [mask]`), so the
+        // thrashing warning can run
+        let mask = t.zeros(4);
+        let log = t.stub_code(i1::REQUEUE_ALL, false, 1, 0, false, &[]);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x15];
+        c.extend(mask.to_le_bytes());
+        c.extend([0x21, 0x50, 0x0c, 0xe9]);
+        let at = t.cave_next;
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let requeue = t.code(&c);
+        t.jump(i1::REQUEUE_ALL, requeue);
+        let warn = i1_iat_stub(&mut t, 0x0bad_c761, 3, 0);
+        // the thrashing warning passes two words
+        let warn2 = i1_iat_stub(&mut t, 0x0bad_c763, 2, 0);
+        let discard = i1_iat_stub(&mut t, 0x0bad_c762, 2, 2);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([i1::POOL_RECLAIM, 0x0bad_c761, 0x0bad_c762, 0x0bad_c763]);
+        let mut ran = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            ran += t.log_entries();
+            t.fresh(&mut rng, &tags);
+            t.g32(i1::SEND_WARNING_IAT, warn);
+            t.g32(i1::DISCARD_VERTEX_BUFFER_IAT, discard);
+            let pool = random_block(&mut t, &mut rng, 0x1b0);
+            let flags = rng.next();
+            t.w32(pool + 0xc, flags);
+            // config_memory
+            let mask_v = rng.pick(&[0xffff_ffff, !2, !2]);
+            t.w32(mask, mask_v);
+            let size = rng.small();
+            let total = {
+                let r = rng.small();
+                rng.pick(&[r, size])
+            };
+            t.w32(pool + 4, total);
+            let free = rng.small();
+            t.w32(pool, free);
+            let reclaims = rng.pick(&[0, 1, 1]);
+            t.ret(i1::POOL_RECLAIM, reclaims);
+            // a successful reclaim frees enough: the loop ends
+            let after = if reclaims != 0 {
+                size.wrapping_add(rng.below(3))
+            } else {
+                rng.small()
+            };
+            t.w32(free_cell, after);
+            let owner = random_block(&mut t, &mut rng, 0x200);
+            let handle = random_block(&mut t, &mut rng, 0x40);
+            t.w32(handle + 0x18, owner);
+            let (p, n) = (
+                random_block(&mut t, &mut rng, 0x40),
+                random_block(&mut t, &mut rng, 0x40),
+            );
+            t.w32(p + 0x18, owner);
+            t.w32(n + 0x18, owner);
+            i1_ring(&mut t, pool + 0x10, &[p, handle, n]);
+            i1_ring(&mut t, owner + 0x160, &[]);
+            if rng.below(3) == 0 {
+                i1_ring(&mut t, pool + 0x10, &[]);
+            }
+            let taken = {
+                let r = random_block(&mut t, &mut rng, 0x40);
+                rng.pick(&[0, r])
+            };
+            t.ret(i1::TAKE_FREE, taken);
+            let arg = rng.next();
+            t.check(
+                &format!("{w} config"),
+                0x00a3_b210,
+                &[pool, size, arg],
+                |g| u(i1::config_memory(g, pool, size, arg)),
+            );
+            // free_all
+            let k = rng.below(4) as usize;
+            let mut nodes = Vec::new();
+            for _ in 0..k {
+                let r = random_block(&mut t, &mut rng, 0x40);
+                let owner = random_block(&mut t, &mut rng, 0x40);
+                i1_ring(&mut t, owner + 0x10, &[]);
+                t.w32(r + 0x18, owner);
+                let buffer = rng.next();
+                t.w32(r + 0x14, rng.pick(&[0, buffer]));
+                let hi = rng.below(3);
+                t.w32(r + 0x2c, hi);
+                let lo = rng.below(3);
+                t.w32(r + 0x28, lo);
+                nodes.push(r);
+            }
+            i1_ring(&mut t, pool + 0x48, &nodes);
+            let (hi, lo) = (rng.below(3), rng.below(3));
+            t.w32(pool + 0x1a4, hi);
+            t.w32(pool + 0x1a0, lo);
+            if rng.below(8) == 0 {
+                t.w32(pool + 0x64, 0);
+            }
+            let stats = random_block(&mut t, &mut rng, 0x24);
+            t.g32(i1::SEND_WARNING_IAT, warn2);
+            t.check(&format!("{w} free all"), 0x00a3_b380, &[pool, stats], |g| {
+                i1::free_all(g, pool, stats);
+                Out::None
+            });
         }
         assert!(ran + t.log_entries() > 0, "{name}: the stubs ran");
     }
