@@ -25,8 +25,9 @@ use std::path::PathBuf;
 
 use ffx_bridge::Mem;
 use ffx_glue_other::{
-    frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_e1 as e1, h4_e2 as e2, h4_e3 as e3,
-    h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4, h4_f5 as f5,
+    frames as fr, h4_c2 as c2, h4_c3 as c3, h4_d1 as d1, h4_d3 as d3, h4_e1 as e1, h4_e2 as e2,
+    h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, h4_f4 as f4,
+    h4_f5 as f5, h4_f6 as f6,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -3940,5 +3941,69 @@ fn f5_sync_init() {
             ran += t.log_entries();
         }
         assert!(ran > 0, "{name}: the stubs ran");
+    }
+}
+
+// ---- continuation round 4, batch 6 (ffx_glue_other::h4_f6)
+
+/// The menu message file read.
+#[test]
+fn f6_read_menu_message() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f601);
+        // the first sprintf passes 3 words (a fourth would log the
+        // caller's stack): the stub logs 3 and, for the menu file format,
+        // stores the fourth (the name) into the path
+        let rest = t.stub_code(0x0bad_f610, false, 3, 0, false, &[]);
+        let fmt = t.rebase(f6::MENU_FILE_FORMAT);
+        let mut c = vec![0x81, 0x7c, 0x24, 0x08];
+        c.extend(fmt.to_le_bytes()); // cmp dword [esp+8], fmt
+        c.extend([0x75, 0x0a]); // jne +10
+        c.extend([0x8b, 0x44, 0x24, 0x10]); // mov eax, [esp+0x10]
+        c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+        c.extend([0x89, 0x02]); // mov [edx], eax
+        c.push(0xe9);
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes()); // jmp rest
+        let sprintf = t.code(&c);
+        let sprintf_s = t.stub_code(0x0bad_f611, false, 4, 0, false, &[]);
+        let stubs = [
+            (d3::GET_LANG, 0),
+            (fr::FIOS_UNIFY, 3),
+            (FIOS_EXISTS, 1),
+            (f5::DBG_PRINTF, 2),
+            (FIOS_OPEN, 2),
+            (FIOS_SIZE, 1),
+            (FIOS_READ, 3),
+            (FIOS_CLOSE, 1),
+        ];
+        for (sym, n) in stubs {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([0x0bad_f610, 0x0bad_f611]);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(f3::SPRINTF_IAT, sprintf);
+            t.g32(f6::SPRINTF_S_IAT, sprintf_s);
+            let lang = rng.below(13);
+            t.ret(d3::GET_LANG, rng.pick(&[lang, lang, 0xffff_ffff]));
+            t.ret(FIOS_EXISTS, rng.pick(&[0, 1, 1]));
+            let size = rng.pick(&[0, 1, 0x10, 0x11, 0x1234]);
+            t.ret(FIOS_SIZE, size);
+            let out = random_block(&mut t, &mut rng, 8);
+            let nm = rng.next();
+            let frame = t.ebp_for(2) - 0x1c4;
+            t.check_framed(
+                &format!("{w} lang {lang}"),
+                0x0088_ccf0,
+                &[nm, out],
+                frame,
+                &[(0, 0x1c0)],
+                |g| u(f6::read_menu_message(g, frame, nm, out)),
+            );
+        }
+        assert!(t.log_entries() > 0, "{name}: the stubs ran");
     }
 }
