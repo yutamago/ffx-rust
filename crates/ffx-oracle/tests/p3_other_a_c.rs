@@ -1266,7 +1266,14 @@ fn arrays_and_components_match_the_original() {
 
 #[test]
 fn binds_match_the_original() {
-    use ffx_pother_a::p3_bind::{self as b, Step, Ty};
+    use ffx_pother_a::p3_bind::{self as b, Arg, Step, Ty};
+    let tested =
+        |f: u32| b::BINDS.iter().any(|(a, _)| *a == f) || b::GETTERS.iter().any(|(a, _)| *a == f);
+    let all: Vec<(u32, &[Step], bool)> = b::BINDS
+        .iter()
+        .map(|&(a, s)| (a, s, false))
+        .chain(b::GETTERS.iter().map(|&(a, s)| (a, s, true)))
+        .collect();
     for mut t in Twins::all() {
         let mut rng = Rng(0x0b1d_0003);
         t.stub(b::REGISTER_TYPE, cdecl(1, 0x6001));
@@ -1274,30 +1281,53 @@ fn binds_match_the_original() {
         t.stub(b::ATEXIT, cdecl(1, 0x6003));
         t.stub(b::DATA, method(6, 0x6004));
         t.stub(b::DATA_FIXED, method(6, 0x6005));
-        t.stub(b::DATA_ARRAY, method(6, 0x6006));
+        t.stub(b::DATA_ARRAY, method(7, 0x6006));
         t.stub(b::CLASS_MEMBER, method(3, 0x6007));
         t.stub(b::DATA_WRAPPED, method(6, 0x6009));
         t.stub(b::GLOBAL_NAMESPACE, cdecl(0, 0x600a));
         t.stub(b::CLASS_DESCRIPTOR_INIT, method(4, 0x600b));
-        // every type getter the tables call, each its own tag
-        let mut getters: Vec<u32> = b::BINDS
-            .iter()
-            .flat_map(|(_, s)| s.iter())
-            .filter_map(|s| match s {
-                Step::Member { ty: Ty::Get(f), .. } => Some(*f),
-                _ => None,
-            })
-            .collect();
-        getters.sort_unstable();
-        getters.dedup();
-        // the wrapper getters some tables call are tested themselves: they
-        // run as original code in both oracles
-        getters.retain(|f| !b::BINDS.iter().any(|(a, _)| a == f));
-        for &f in &getters {
-            t.stub(f, cdecl(0, f ^ 0x00ff_0000));
+        // every getter and callee the tables call, each its own tag; the
+        // tables' own originals (a Bind calling an array getter, a wrapper
+        // getter) are tested themselves and run as original code in both
+        let mut callees: Vec<(u32, Stub)> = Vec::new();
+        for (_, steps, _) in &all {
+            for s in *steps {
+                match *s {
+                    Step::Member { ty: Ty::Get(f), .. } => {
+                        callees.push((f, cdecl(0, f ^ 0x00ff_0000)));
+                    }
+                    Step::Call { f, this, args } => {
+                        let n = args.len() as u8;
+                        callees.push((
+                            f,
+                            Stub {
+                                n: n.min(6),
+                                pops: if this.is_some() { u32::from(n) } else { 0 },
+                                ret: f ^ 0x00ee_0000,
+                                this: this.is_some(),
+                            },
+                        ));
+                        for a in args {
+                            match *a {
+                                Arg::Get(g) => callees.push((g, cdecl(0, g ^ 0x00ff_0000))),
+                                Arg::Get1(g, _) => callees.push((g, cdecl(1, g ^ 0x00dd_0000))),
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
-        for (k, &(addr, steps)) in b::BINDS.iter().enumerate() {
-            for round in 0..4u32 {
+        callees.sort_unstable_by_key(|c| c.0);
+        callees.dedup_by_key(|c| c.0);
+        for (f, s) in callees {
+            if !tested(f) && f != b::DATA && f != b::DATA_ARRAY {
+                t.stub(f, s);
+            }
+        }
+        for (k, &(addr, steps, getter)) in all.iter().enumerate() {
+            for round in 0..6u32 {
                 // the finders: a namesake found or not
                 let found = u32::from(round % 2 == 1);
                 for f in [b::FIND_FUNCTION.finder, b::FIND_METHOD.finder] {
@@ -1307,7 +1337,7 @@ fn binds_match_the_original() {
                 for s in steps {
                     if let Step::Guard(g) = s {
                         let w = match round {
-                            0 | 1 => 0,
+                            0 | 1 | 4 => 0,
                             2 => u32::MAX,
                             _ => rng.next(),
                         };
@@ -1315,16 +1345,29 @@ fn binds_match_the_original() {
                         t.w32(g, w);
                     }
                 }
-                // what the stores overwrite: random words
+                // what the stores overwrite and the words read: random
                 for s in steps {
-                    if let Step::Zero(a)
-                    | Step::Or(a, _)
-                    | Step::Store(a, _)
-                    | Step::StoreByte(a, _) = s
-                    {
-                        let a = t.rebase(*a);
-                        let v = rng.next();
-                        t.w32(a, v);
+                    match *s {
+                        Step::Zero(a)
+                        | Step::Or(a, _)
+                        | Step::And(a, _)
+                        | Step::Store(a, _)
+                        | Step::StoreImm(a, _)
+                        | Step::StoreByte(a, _) => {
+                            let a = t.rebase(a);
+                            let v = rng.next();
+                            t.w32(a, v);
+                        }
+                        Step::Call { args, .. } => {
+                            for a in args {
+                                if let Arg::Mem(m) = *a {
+                                    let m = t.rebase(m);
+                                    let v = rng.next();
+                                    t.w32(m, v);
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 // the wrappers' done bytes: clear but in round 2
@@ -1332,6 +1375,26 @@ fn binds_match_the_original() {
                     if let Step::IfZeroByte(a) = s {
                         let a = t.rebase(*a);
                         t.write(a, &[u8::from(round == 2)]);
+                    }
+                }
+                // the getters' owner words: free or taken, a cached owner
+                // or none; the annotation lists: empty (pointing at
+                // themselves) or not
+                for s in steps {
+                    match *s {
+                        Step::Owner { slot, cache } => {
+                            let (slot, cache) = (t.rebase(slot), t.rebase(cache));
+                            let taken = if round == 3 { rng.next() | 1 } else { 0 };
+                            let cached = if round % 2 == 0 { 0 } else { rng.next() | 1 };
+                            t.w32(slot, taken);
+                            t.w32(cache, cached);
+                        }
+                        Step::IfSelf(a) => {
+                            let a = t.rebase(a);
+                            let v = if round == 5 { rng.next() } else { a };
+                            t.w32(a, v);
+                        }
+                        _ => {}
                     }
                 }
                 // method members: an owner with an empty list, a name or none
@@ -1354,15 +1417,162 @@ fn binds_match_the_original() {
                 // a fresh call log (it holds 1024 calls)
                 let log = t.log;
                 t.w32(log, 0);
+                if getter {
+                    // the owner: none (round 4) or a word
+                    let owner = if round == 4 { 0 } else { rng.next() | 1 };
+                    t.check(
+                        &format!("getter {addr:#x} round {round}"),
+                        addr,
+                        Conv::Cdecl,
+                        &[owner],
+                        ALL,
+                        |g| b::bridge::getter(g, steps, owner),
+                    );
+                } else {
+                    t.check(
+                        &format!("bind {addr:#x} round {round}"),
+                        addr,
+                        Conv::Cdecl,
+                        &[],
+                        ALL,
+                        |g| b::bridge::bind(g, steps),
+                    );
+                }
+            }
+        }
+        t.unstub_all();
+    }
+}
+
+impl Twins {
+    /// A cdecl `(x)` stub tagged `tag` that logs `x` and returns 0x12 when
+    /// `x == fail`, else 0.
+    fn fail_at(&mut self, tag: u32, fail: u32) -> u32 {
+        let log = self.log;
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+        c.extend([0x8b, 0x0d]);
+        c.extend(log.to_le_bytes()); // mov ecx, [log]
+        c.extend([0xc1, 0xe1, 0x05]); // shl ecx, 5
+        c.extend([0x81, 0xc1]);
+        c.extend((log + 4).to_le_bytes()); // add ecx, log + 4
+        c.extend([0xc7, 0x01]);
+        c.extend(tag.to_le_bytes()); // mov [ecx], tag
+        c.extend([0x89, 0x41, 0x08]); // mov [ecx+8], eax
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0x3d);
+        c.extend(fail.to_le_bytes()); // cmp eax, fail
+        c.extend([0x75, 0x06]); // jne zero
+        c.extend([0xb8, 0x12, 0, 0, 0, 0xc3]); // mov eax, 0x12; ret
+        c.extend([0x31, 0xc0, 0xc3]); // zero: xor eax, eax; ret
+        self.code(&c)
+    }
+}
+
+#[test]
+fn init_functions_match_the_original() {
+    use ffx_pother_a::p3_init::{self as i, Init};
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x0001_d0d3);
+        // the enum bind descriptors: guard clear or set, named or not, a
+        // namesake found or not
+        t.stub(i::ENUM_INIT, method(1, 0x7001));
+        t.stub(i::ENUM_SET_TOKENS, method(2, 0x7002));
+        for (addr, e) in [
+            (0x005f_09a0, i::COLLISION_GROUP),
+            (0x005f_0a40, i::RIGID_BODY_TYPE),
+        ] {
+            for round in 0..8u32 {
+                let guard = t.rebase(e.guard);
+                let d = t.rebase(e.descriptor);
+                let list = t.rebase(i::ENUM_LIST);
+                let g = if round & 1 == 0 {
+                    rng.next() & !1
+                } else {
+                    rng.next() | 1
+                };
+                t.w32(guard, g);
+                let name = if round & 2 == 0 { 0 } else { rng.next() | 1 };
+                t.w32(d, name);
+                let next = rng.next();
+                t.w32(d + 4, next);
+                let head = rng.next();
+                t.w32(list, head);
+                let found = if round & 4 == 0 { 0 } else { 0x7003 };
+                t.stub(i::FIND_NAMED, cdecl(1, found));
+                let log = t.log;
+                t.w32(log, 0);
                 t.check(
-                    &format!("bind {addr:#x} round {round}"),
+                    &format!("enum {addr:#x} round {round}"),
                     addr,
                     Conv::Cdecl,
                     &[],
                     ALL,
-                    |g| b::bridge::bind(g, steps),
+                    |g| i::bridge::enum_bind(g, &e),
                 );
             }
+        }
+        // the bind lists: every entry registered, or the k-th failing
+        for (addr, l) in [
+            (0x0043_3020, i::ANIMATION_BINDS),
+            (0x0050_3ee0, i::DYNAMIC_GEOMETRY_BINDS),
+        ] {
+            for c in l.calls {
+                match *c {
+                    Init::Call(f) | Init::RegisterGot(f) => {
+                        t.stub(f, cdecl(0, f ^ 0x00ee_0000));
+                    }
+                }
+            }
+            t.stub(i::REGISTER_TYPE, cdecl(1, 0x7004));
+            if let Some(f) = l.tail {
+                t.stub(f, cdecl(0, 0x7005));
+            }
+            let n = l.entries.len();
+            for k in [0, 1, n / 2, n - 1, n] {
+                let fail = l.entries.get(k).map_or(0, |&e| t.rebase(e));
+                let s = t.fail_at(l.register, fail);
+                t.jump(l.register, s);
+                let log = t.log;
+                t.w32(log, 0);
+                t.check(
+                    &format!("bind list {addr:#x} failing at {k}"),
+                    addr,
+                    Conv::Cdecl,
+                    &[],
+                    ALL,
+                    |g| i::bridge::bind_list(g, &l),
+                );
+            }
+        }
+        // the scripting initialisation: the Lua array owned or not, with
+        // 0..3 elements; PhyreMalloc's block always the same
+        for f in i::SCRIPTING_BINDS {
+            t.stub(f, cdecl(0, f ^ 0x00ee_0000));
+        }
+        t.stub(FREE, cdecl(1, 0x7006));
+        for round in 0..6u32 {
+            let block = t.random(&mut rng, 0x80);
+            t.stub(i::PHYRE_MALLOC, cdecl(2, block));
+            let count = round % 4;
+            let data = t.random(&mut rng, 0x20);
+            let flag = if round >= 4 { 0x8000_0000 } else { 0 };
+            let libs = t.rebase(i::LUA_LIBS);
+            t.w32(libs, count | flag);
+            t.w32(libs + 4, data);
+            let log = t.log;
+            t.w32(log, 0);
+            t.check(
+                &format!("scripting round {round}"),
+                0x005d_6960,
+                Conv::Cdecl,
+                &[],
+                ALL,
+                |g| {
+                    let f = g.scratch();
+                    i::bridge::scripting_initialize(g, f)
+                },
+            );
         }
         t.unstub_all();
     }

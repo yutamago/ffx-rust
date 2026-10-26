@@ -10,8 +10,8 @@
 use super::{mem, ported};
 use ffx_pother_a::{
     class::bridge as class, object::bridge as object, p3_bind::bridge as bind,
-    p3_misc::bridge as misc, p3_misc2::bridge as misc2, p3_tree::bridge as tree,
-    physics::bridge as physics,
+    p3_init::bridge as init, p3_misc::bridge as misc, p3_misc2::bridge as misc2,
+    p3_tree::bridge as tree, physics::bridge as physics,
 };
 
 ported! {
@@ -968,5 +968,103 @@ ported! {
     /// `Phyre_PPhysics_PRaycastResult_Bind()` -> `addToNamespace`'s `eax`.
     Phyre_PPhysics_PRaycastResult_Bind @ 0x005e_ad30 => extern "C" fn bind_005ead30() -> u32 {
         bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PRAYCASTRESULT_BIND)
+    }
+    // round 2 (continuation d), batch 1: Binds with calls, the array getters
+    /// `Phyre_PGameplay_PLocator_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_PLocator_Bind @ 0x0054_5480 => extern "C" fn bind_00545480() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_PLOCATOR_BIND)
+    }
+    /// `Phyre_PGameplay_PSpline_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_PSpline_Bind @ 0x0054_7ef0 => extern "C" fn bind_00547ef0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_PSPLINE_BIND)
+    }
+    /// `Phyre_PGameplay_PTrigger_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGameplay_PTrigger_Bind @ 0x0054_e7f0 => extern "C" fn bind_0054e7f0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGAMEPLAY_PTRIGGER_BIND)
+    }
+    /// `Phyre_PGeometry_PDataBlockD3D11_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGeometry_PDataBlockD3D11_Bind @ 0x0055_e960 => extern "C" fn bind_0055e960() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGEOMETRY_PDATABLOCKD3D11_BIND)
+    }
+    /// `Phyre_PGeometry_PIndexDataBlockD3D11_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PGeometry_PIndexDataBlockD3D11_Bind @ 0x0055_eb10 => extern "C" fn bind_0055eb10() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PGEOMETRY_PINDEXDATABLOCKD3D11_BIND)
+    }
+    /// `Phyre_PRendering_PShaderProgramD3D11_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PRendering_PShaderProgramD3D11_Bind @ 0x0058_7790 => extern "C" fn bind_00587790() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PRENDERING_PSHADERPROGRAMD3D11_BIND)
+    }
+    /// `Phyre_PRendering_PStreamInputLayoutD3D11_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PRendering_PStreamInputLayoutD3D11_Bind @ 0x0058_7bf0 => extern "C" fn bind_00587bf0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PRENDERING_PSTREAMINPUTLAYOUTD3D11_BIND)
+    }
+    /// `Phyre_PLOD_PLODGroup_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PLOD_PLODGroup_Bind @ 0x005a_34b0 => extern "C" fn bind_005a34b0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PLOD_PLODGROUP_BIND)
+    }
+    /// `Phyre_PLOD_PLODLevel_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PLOD_PLODLevel_Bind @ 0x005a_3910 => extern "C" fn bind_005a3910() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PLOD_PLODLEVEL_BIND)
+    }
+    /// `Phyre_PScripting_PScript_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PScripting_PScript_Bind @ 0x005d_49d0 => extern "C" fn bind_005d49d0() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PSCRIPTING_PSCRIPT_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsRigidBodyBase_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsRigidBodyBase_Bind @ 0x005e_9490 => extern "C" fn bind_005e9490() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSRIGIDBODYBASE_BIND)
+    }
+    /// `Phyre_PPhysics_PPhysicsShapeBase_Bind()` -> `addToNamespace`'s `eax`.
+    Phyre_PPhysics_PPhysicsShapeBase_Bind @ 0x005e_9f70 => extern "C" fn bind_005e9f70() -> u32 {
+        bind::bind(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PPHYSICS_PPHYSICSSHAPEBASE_BIND)
+    }
+    /// `Phyre_PArray_Vector3__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PArray_Vector3__DeclareClassDescriptor @ 0x0054_8a90 => extern "C" fn getter_00548a90(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PARRAY_VECTOR3__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PSharray_Phyre_PGeometry_PDataBlockBufferD3D11__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PSharray_Phyre_PGeometry_PDataBlockBufferD3D11__DeclareClassDescriptor @ 0x0055_f000 => extern "C" fn getter_0055f000(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PSHARRAY_PHYRE_PGEOMETRY_PDATABLOCKBUFFERD3D11__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PSharray_Phyre_PGeometry_PIndexDataBlockBufferD3D11__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PSharray_Phyre_PGeometry_PIndexDataBlockBufferD3D11__DeclareClassDescriptor @ 0x0055_f220 => extern "C" fn getter_0055f220(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PSHARRAY_PHYRE_PGEOMETRY_PINDEXDATABLOCKBUFFERD3D11__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PArray_Phyre_PRendering_PStreamInputDescD3D11__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PArray_Phyre_PRendering_PStreamInputDescD3D11__DeclareClassDescriptor @ 0x0058_7f60 => extern "C" fn getter_00587f60(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PARRAY_PHYRE_PRENDERING_PSTREAMINPUTDESCD3D11__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PArray_Phyre_PLOD_PLODLevel__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PArray_Phyre_PLOD_PLODLevel__DeclareClassDescriptor @ 0x005a_4660 => extern "C" fn getter_005a4660(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PARRAY_PHYRE_PLOD_PLODLEVEL__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PSharray_Phyre_PRendering_PMeshInstance__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PSharray_Phyre_PRendering_PMeshInstance__DeclareClassDescriptor @ 0x005a_4870 => extern "C" fn getter_005a4870(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PSHARRAY_PHYRE_PRENDERING_PMESHINSTANCE__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PSharray_Phyre_PPhysics_PPhysicsShape__DeclareClassDescriptor(owner)` -> the descriptor.
+    Phyre_PSharray_Phyre_PPhysics_PPhysicsShape__DeclareClassDescriptor @ 0x005e_b130 => extern "C" fn getter_005eb130(owner: u32) -> u32 {
+        bind::getter(&mut mem(), ffx_pother_a::p3_bind::PHYRE_PSHARRAY_PHYRE_PPHYSICS_PPHYSICSSHAPE__DECLARECLASSDESCRIPTOR, owner)
+    }
+    /// `Phyre_PPhysics_PPhysicsRigidBodyBase_PCollisionGroupBindDescriptor()`.
+    Phyre_PPhysics_PPhysicsRigidBodyBase_PCollisionGroupBindDescriptor @ 0x005f_09a0 => extern "C" fn enum_005f09a0() -> u32 {
+        init::enum_bind(&mut mem(), &ffx_pother_a::p3_init::COLLISION_GROUP)
+    }
+    /// `Phyre_PPhysics_PPhysicsRigidBodyBase_PRigidBodyTypeBindDescriptor()`.
+    Phyre_PPhysics_PPhysicsRigidBodyBase_PRigidBodyTypeBindDescriptor @ 0x005f_0a40 => extern "C" fn enum_005f0a40() -> u32 {
+        init::enum_bind(&mut mem(), &ffx_pother_a::p3_init::RIGID_BODY_TYPE)
+    }
+    /// `Phyre_PAnimation_BindAll_00433020()` -> the failing entry's or the tail call's `eax`.
+    Phyre_PAnimation_BindAll_00433020 @ 0x0043_3020 => extern "C" fn binds_00433020() -> u32 {
+        init::bind_list(&mut mem(), &ffx_pother_a::p3_init::ANIMATION_BINDS)
+    }
+    /// `Phyre_PDynamicGeometry_BindAll_00503ee0()` -> the failing entry's `eax` or 0.
+    Phyre_PDynamicGeometry_BindAll_00503ee0 @ 0x0050_3ee0 => extern "C" fn binds_00503ee0() -> u32 {
+        init::bind_list(&mut mem(), &ffx_pother_a::p3_init::DYNAMIC_GEOMETRY_BINDS)
+    }
+    /// `Phyre_PScripting_initialize_005d6960()` -> 0; the pair in this frame.
+    Phyre_PScripting_initialize_005d6960 @ 0x005d_6960 => extern "C" fn scripting_005d6960() -> u32 {
+        let mut f = super::StackFrame::<{ ffx_pother_a::p3_init::LUA_FRAME as usize / 4 }>::new();
+        init::scripting_initialize(&mut mem(), f.at())
     }
 }
