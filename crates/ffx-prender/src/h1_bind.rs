@@ -23,7 +23,9 @@
 //!     and when it has a name that its owner `[member+8]` does not know
 //!     yet (`0x004359d0`, thiscall on the owner, the name), the member goes
 //!     to the end of the owner's member list at `owner + 0x4c` (a circular
-//!     list: `+0` next, `+4` previous);
+//!     list: `+0` next, `+4` previous). [`Step::ClassIn`] names the list
+//!     and its finder: `PApplication::Bind`'s first member goes to the
+//!     function list at `+0x54` (finder `0x004306b0`);
 //!   - an array member (`PClassDataMemberArray`, `0x00575ef0`, thiscall,
 //!     seven words: `d`, the array's class descriptor, name, offset, two
 //!     words and the element size). Its array descriptor is built inline
@@ -51,6 +53,28 @@ pub const CLASS_MEMBER_CTOR: u32 = 0x0043_a080;
 pub const FIND_MEMBER: u32 = 0x0043_59d0;
 /// `PClassDataMemberArray::PClassDataMemberArray` (thiscall, seven words).
 pub const ARRAY_MEMBER_CTOR: u32 = 0x0057_5ef0;
+
+/// A class descriptor's member list a class member joins: its offset in
+/// the owner and the finder (thiscall on the owner, the name) that says
+/// whether a member of that name is in it already.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct List {
+    /// The list head's offset in the owner.
+    pub offset: u32,
+    /// The finder.
+    pub find: u32,
+}
+
+/// The method list, `+0x4c` ([`FIND_MEMBER`]): [`Step::Class`]'s.
+pub const METHODS: List = List {
+    offset: 0x4c,
+    find: FIND_MEMBER,
+};
+/// The function list, `+0x54` (`Phyre_findNamed_004306b0`).
+pub const FUNCTIONS: List = List {
+    offset: 0x54,
+    find: 0x0043_06b0,
+};
 
 /// A word of the image: an address (rebased) or a constant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,8 +112,16 @@ pub enum Step {
         words: [u32; 3],
     },
     /// A class member on `member` (`(d, name, flags)`), linked to its
-    /// owner's list when the owner doesn't know its name.
+    /// owner's method list ([`METHODS`]) when the owner doesn't know its
+    /// name.
     Class { member: u32, name: u32, flags: u32 },
+    /// A class member as [`Step::Class`], linked to the owner's `list`.
+    ClassIn {
+        member: u32,
+        name: u32,
+        flags: u32,
+        list: List,
+    },
     /// An array member on `member`: `(d, descriptor, name, words)`.
     Array {
         member: u32,
@@ -142,8 +174,8 @@ pub mod bridge {
     //! The originals over game memory.
 
     use super::{
-        ADD_TO_NAMESPACE, ARRAY_MEMBER_CTOR, ATEXIT, Bind, CLASS_MEMBER_CTOR, Conv, FIND_MEMBER,
-        Host, REGISTER_TYPE, Step, Ty, Val,
+        ADD_TO_NAMESPACE, ARRAY_MEMBER_CTOR, ATEXIT, Bind, CLASS_MEMBER_CTOR, Conv, Host, List,
+        METHODS, REGISTER_TYPE, Step, Ty, Val,
     };
 
     fn value(h: &mut impl Host, v: Val) -> u32 {
@@ -164,15 +196,16 @@ pub mod bridge {
         }
     }
 
-    /// A class member's construction on `member` for `d`.
-    fn class_member(h: &mut impl Host, d: u32, member: u32, name: u32, flags: u32) {
+    /// A class member's construction on `member` for `d`, linked to the
+    /// owner's `list`.
+    fn class_member(h: &mut impl Host, d: u32, member: u32, name: u32, flags: u32, list: List) {
         let name = h.rebase(name);
         h.call_sym(CLASS_MEMBER_CTOR, Conv::Thiscall(member), &[d, name, flags]);
         let owner: u32 = h.read(member + 8);
         let own_name: u32 = h.read(member + 0xc);
         h.write(member + 0x14, 0u32);
-        let head = owner.wrapping_add(0x4c);
-        if own_name == 0 || h.call_sym(FIND_MEMBER, Conv::Thiscall(owner), &[own_name]) != 0 {
+        let head = owner.wrapping_add(list.offset);
+        if own_name == 0 || h.call_sym(list.find, Conv::Thiscall(owner), &[own_name]) != 0 {
             return;
         }
         let last: u32 = h.read(head + 4);
@@ -211,7 +244,16 @@ pub mod bridge {
                     flags,
                 } => {
                     let member = h.rebase(member);
-                    class_member(h, d, member, name, flags);
+                    class_member(h, d, member, name, flags, METHODS);
+                }
+                Step::ClassIn {
+                    member,
+                    name,
+                    flags,
+                    list,
+                } => {
+                    let member = h.rebase(member);
+                    class_member(h, d, member, name, flags, list);
                 }
                 Step::Array {
                     member,

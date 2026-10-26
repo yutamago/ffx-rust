@@ -20,6 +20,7 @@ use crate::Hook;
 
 mod auto;
 mod battle;
+mod c2_new;
 mod chara;
 mod h1_render_a;
 mod h2_render_b;
@@ -45,6 +46,7 @@ mod p6_render_c5;
 mod p6_render_c6;
 mod p6_render_c7;
 mod p6_render_c8;
+mod p6_render_c9;
 mod pc_ui;
 mod phyre_render;
 mod ps2_emu;
@@ -68,6 +70,7 @@ pub fn hooks() -> Vec<Hook> {
     let mut all = Vec::new();
     all.extend(auto::hooks());
     all.extend(battle::hooks());
+    all.extend(c2_new::hooks());
     all.extend(chara::hooks());
     all.extend(h2_render_b::hooks());
     all.extend(h1_render_a::hooks());
@@ -95,6 +98,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(p6_render_c6::hooks());
     all.extend(p6_render_c7::hooks());
     all.extend(p6_render_c8::hooks());
+    all.extend(p6_render_c9::hooks());
     all.extend(ps2_emu::hooks());
     all.extend(render::hooks());
     all.extend(script::hooks());
