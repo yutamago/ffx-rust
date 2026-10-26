@@ -17,8 +17,8 @@ use ffx_glue_other::{
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
-    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, menu as mn, misc as m,
-    movie as mv, r3, sound as s,
+    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, menu as mn,
+    misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2526,5 +2526,12 @@ ported! {
     /// `ClassChrShaderRender_VertexInstanceSetup(this)`.
     ClassChrShaderRender_VertexInstanceSetup @ 0x006a_0100 => extern "thiscall" fn vertex_instance_setup(this: u32) -> u32 {
         j5::vertex_instance_setup(&mut mem(), this)
+    }
+    // ---- continuation round 8, batch 6 (ffx_glue_other::h4_j6)
+    /// `GuildMapDynamicGeometry_updateRenderData(this; unused)` (a vtable
+    /// entry; the word is popped, never read).
+    GuildMapDynamicGeometry_updateRenderData @ 0x006a_5070 => extern "thiscall" fn guild_map_update_render_data(this: u32, _unused: u32) -> u32 {
+        let mut frame = StackFrame::<{ (j6::GUILD_FRAME / 4) as usize }>::new();
+        j6::update_render_data(&mut mem(), frame.at(), this)
     }
 }

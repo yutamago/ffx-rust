@@ -30,7 +30,7 @@ use ffx_glue_other::{
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
-    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5,
+    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -9897,5 +9897,104 @@ fn j5_vertex_instance_setup() {
                 u(j5::vertex_instance_setup(g, this))
             });
         }
+    }
+}
+
+// ---- continuation round 8, batch 6 (ffx_glue_other::h4_j6)
+
+/// `GuildMapDynamicGeometry_updateRenderData`: no data, no mesh or
+/// instance or bounds, 2D and 3D scenes, the scene's modes and flag, the
+/// guild maps, parameters found or not, arrays of 0, 1 and more items.
+#[test]
+fn j6_guild_map_update() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_c861);
+        let stubs = [
+            (j6::FILL_DRAW_TABLE, true, 1, 1),
+            (j6::SET_WORLD_MATRIX, true, 2, 2),
+            (j6::SET_MIN_AND_MAX, true, 2, 2),
+            (j6::IS_3D_SCENE, true, 0, 0),
+            (j6::FIND_BY_NAME, true, 1, 1),
+            (j6::SET_VALUE, true, 2, 2),
+            (j6::ADD_UNIQUE, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let consts = [
+            j6::X_3D,
+            j6::X_3D_GUILD,
+            j6::Y_3D,
+            j6::X_FLAGGED,
+            j6::Y_FLAGGED,
+            j6::X_2D,
+            j6::Y_2D,
+        ];
+        let mut set = 0;
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &consts, &[]);
+            let r = rng.next();
+            t.ret(j6::IS_3D_SCENE, rng.pick(&[0, 1, 0x100, r]));
+            let r = rng.next();
+            t.ret(j6::FIND_BY_NAME, rng.pick(&[0, r, r]));
+            let scene = random_block(&mut t, &mut rng, 0x80);
+            t.w8(scene, rng.pick(&[0, 0, 1]));
+            t.w32(scene + 0x74, rng.below(6));
+            t.g32(j6::PHYRE_SCENE, scene);
+            let r = rng.below(0x100);
+            t.g32(j6::CURRENT_MAP, rng.pick(&[0x66, 0xdf, r]));
+            let values = t.rebase(j6::OFFSET_VALUES);
+            let junk: Vec<u8> = (0..16).map(|_| rng.next() as u8).collect();
+            t.write(values, &junk);
+            let data = t.zeros(0xb0);
+            for k in 0..6 {
+                let f = rng.float();
+                t.w32(data + 0x98 + 4 * k, f);
+            }
+            let this = random_block(&mut t, &mut rng, 0x30);
+            t.w32(this + 0x24, rng.pick(&[data, data, data, 0]));
+            let mesh = rng.next();
+            t.w32(this + 8, rng.pick(&[mesh, 0]));
+            let instance = random_block(&mut t, &mut rng, 0x20);
+            let bounds = rng.next();
+            t.w32(instance + 0x1c, rng.pick(&[bounds, 0]));
+            t.w32(this + 0xc, rng.pick(&[instance, instance, 0]));
+            // the item array: count (top bit random), one inline item or
+            // a pointer to several
+            let n = rng.pick(&[0, 1, 1, 3]);
+            let array = t.zeros(0x20);
+            let top = rng.pick(&[0, 0x8000_0000]);
+            t.w32(array, n | top);
+            let mut items = Vec::new();
+            for _ in 0..n {
+                items.push(random_block(&mut t, &mut rng, 8));
+            }
+            if n == 1 {
+                t.w32(array + 4, items[0]);
+            } else if n > 1 {
+                let list = t.zeros(16);
+                for (k, &it) in items.iter().enumerate() {
+                    t.w32(list + 4 * k as u32, it);
+                }
+                t.w32(array + 4, list);
+            }
+            t.w32(this + 0x14, rng.pick(&[array, array, 0]));
+            let frame = t.ebp_for(1) - 0x2c;
+            let arg = rng.next();
+            t.check_framed_conv(
+                &w,
+                0x006a_5070,
+                Conv::Thiscall(this),
+                &[arg],
+                frame,
+                &[(0, 0xc), (0x10, 0xc)],
+                |g| u(j6::update_render_data(g, frame, this)),
+            );
+            set += t.log_entries();
+        }
+        assert!(set > 0, "{name}");
     }
 }
