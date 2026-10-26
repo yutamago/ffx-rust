@@ -43,6 +43,9 @@
 
 pub mod array;
 pub mod basic;
+pub mod c2_post;
+pub mod c2_shadow;
+pub mod c2_smaa;
 pub mod class_slots;
 pub mod declare;
 pub mod descriptor;

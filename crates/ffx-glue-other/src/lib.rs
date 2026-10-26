@@ -94,6 +94,7 @@
     clippy::similar_names
 )]
 
+pub mod c2_iggy;
 pub mod copies;
 pub mod effect;
 pub mod frames;
