@@ -7,13 +7,15 @@
 //! `RadialLine_initialize` on the main thread; `fillDynamicBlocks` runs
 //! where the renderer binds a dynamic mesh's streams (the render
 //! thread's mesh binding); `renderMeshInstanceList` where a world is
-//! rendered (`graphicRender`, the main thread; 9 KB frame). The shims
+//! rendered (`graphicRender`, the main thread; 9 KB frame), and
+//! `generateNodeParameterCaptureBuffer` for each node it draws. The shims
 //! keep no state; frames are per call.
 
 use super::{StackFrame, mem, ported};
 use ffx_pother_b::m4r_dynblocks::bridge as blocks;
 use ffx_pother_b::m4r_mesh::bridge as mesh;
 use ffx_prender::m4r_meshlist as meshlist;
+use ffx_prender::m4r_nodecapture as nodecapture;
 
 ported! {
     // ---- h1-render-a ----
@@ -42,5 +44,15 @@ ported! {
         let mut frame = StackFrame::<0x8f8>::new();
         let ebp = frame.at() + meshlist::FRAME;
         meshlist::bridge::render_list(&mut mem(), renderer, begin, end, contexts, ebp)
+    }
+    /// `PRendererBase::generateNodeParameterCaptureBuffer(renderer;
+    /// node)` -> the capture buffer, or 0.
+    Phyre_PRendering_PRendererBase_generateNodeParameterCaptureBuffer @ 0x005b_7fe0 => extern "thiscall" fn generate_node_parameters(renderer: u32, node: u32) -> u32 {
+        // ebp - 0x60c .. ebp: the matrices the helpers fill, the values
+        // the buffer copies (zeroed: words a value's size reaches past
+        // what this call wrote read 0, brief 2026-10-24)
+        let mut frame = StackFrame::<0x183>::new();
+        let ebp = frame.at() + nodecapture::FRAME;
+        nodecapture::bridge::generate(&mut mem(), renderer, node, ebp)
     }
 }

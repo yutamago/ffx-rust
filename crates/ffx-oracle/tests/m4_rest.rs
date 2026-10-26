@@ -12,6 +12,7 @@
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
     clippy::cast_sign_loss,
     clippy::too_many_lines,
     clippy::unreadable_literal
@@ -24,6 +25,7 @@ use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pother_b::{m4r_dynblocks, m4r_mesh};
 use ffx_prender::m4r_meshlist as ml;
+use ffx_prender::m4r_nodecapture as nc;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -788,5 +790,143 @@ fn render_mesh_instance_list_matches_the_original() {
             calls += t.log_entries();
         }
         assert!(calls > 2000, "{name}: the stubs ran ({calls} calls)");
+    }
+}
+
+// ---- PRendererBase::generateNodeParameterCaptureBuffer (0x005b7fe0) ----
+
+/// A float in [-4, 4) (no NaNs: the emulator keeps signalling ones).
+fn small_float(rng: &mut Rng) -> u32 {
+    ((rng.below(0x8000) as f32 - 16384.0) / 4096.0).to_bits()
+}
+
+#[test]
+fn generate_node_parameters_matches_the_original() {
+    const SYM: u32 = 0x005b_7fe0;
+    for (name, mut t) in Twins::all() {
+        // the ring, the texture lookup and the warning stay stubs; the
+        // matrix helpers, the slice and the buffer writes run as they are
+        let allocate = t.stub(nc::ALLOCATE, true, 1, 1);
+        let texture = t.stub(nc::TEXTURE, true, 1, 1);
+        t.stub(nc::PRINTF, false, 3, 0);
+        let warned = t.rebase(nc::WARNED);
+        let mut rng = Rng(0x05b7_fe00);
+        let floats = |t: &mut Twins, rng: &mut Rng, n: u32| -> u32 {
+            let words: Vec<u32> = (0..n).map(|_| small_float(rng)).collect();
+            let at = t.zeros(4 * n as usize);
+            t.w32s(at, &words);
+            at
+        };
+        let mut wrote = 0;
+        for case in 0..90_u32 {
+            t.w32(t.log, 0);
+            t.write(warned, &[u8::from(case % 3 == 0)]);
+            let r = floats(&mut t, &mut rng, 0x50);
+            let camera = if case % 29 == 7 {
+                0
+            } else {
+                floats(&mut t, &mut rng, 0x30)
+            };
+            t.w32(r + 0x5c, camera);
+            // the instance, its mesh, joints and textures
+            let joints = floats(&mut t, &mut rng, 16 * 8);
+            let mesh = t.zeros(0x10);
+            t.w32s(mesh, &[0, 0, rng.below(300) | (rng.below(2) << 31), joints]);
+            let textures = t.zeros(16);
+            for k in 0..4 {
+                let tex = if rng.below(4) == 0 {
+                    0
+                } else {
+                    let x = t.zeros(8);
+                    t.w32s(x, &[rng.next(), rng.next()]);
+                    x
+                };
+                t.w32(textures + 4 * k, tex);
+            }
+            let instance = t.zeros(0x80);
+            t.w32(instance, mesh);
+            t.w32(instance + 0x7c, textures);
+            let tex = t.zeros(8);
+            t.w32s(tex, &[rng.next(), rng.next()]);
+            t.results(texture, &[if rng.below(3) == 0 { 0 } else { tex }; 32]);
+            // the skin: bind matrices and (bind, joint) pairs
+            let binds = floats(&mut t, &mut rng, 16 * 8);
+            let bones = rng.below(10);
+            let pairs = t.zeros(4 * 10);
+            for i in 0..10 {
+                let pair = rng.below(8) | (rng.below(8) << 16);
+                t.w32(pairs + 4 * i, pair);
+            }
+            let skin = t.zeros(0x10);
+            t.w32s(skin, &[0, 0, bones | (rng.below(2) << 31), pairs]);
+            // the node: its matrix block inline at +0x28
+            let node = t.zeros(0x70);
+            let block: Vec<u32> = (0..16).map(|_| small_float(&mut rng)).collect();
+            t.w32s(node + 0x28, &block);
+            let world = if case % 7 == 2 {
+                0
+            } else {
+                floats(&mut t, &mut rng, 16)
+            };
+            t.w32s(
+                node + 0x10,
+                &[instance, binds, 0, skin, rng.below(4), world],
+            );
+            // the layout: entries at 4 + 0x80 k, semantics around 0x80..0x91
+            let n = if case % 17 == 5 { 0 } else { 1 + rng.below(12) };
+            let entries = t.zeros(16 * n as usize + 16);
+            for k in 0..n {
+                let mut semantic = 0x7f + rng.below(0x15);
+                // without a world matrix only the semantics that test it
+                // or don't use it (the others read through 0)
+                while world == 0 && matches!(semantic, 0x83 | 0x84 | 0x87 | 0x8a..=0x8d) {
+                    semantic = 0x7f + rng.below(0x15);
+                }
+                if world == 0 && k == 0 {
+                    semantic = 0x82; // skipped without one
+                }
+                let format = match rng.below(5) {
+                    0 => 0x2f,
+                    1 | 2 => 0x30,
+                    _ => 0x31,
+                };
+                let size = if semantic == 0x8f && format == 0x30 {
+                    48 * (1 + rng.below(9))
+                } else if semantic == 0x8f && k < 5 && rng.below(3) == 0 {
+                    0x1040 // room for 65 (bit 6 of the 7-bit count)
+                } else if semantic == 0x8f {
+                    64 * (1 + rng.below(9))
+                } else {
+                    [4, 16, 64][rng.below(3) as usize]
+                };
+                let e = entries + 16 * k;
+                t.w32(e, rng.next());
+                t.write(e + 2, &[semantic as u8, format as u8]);
+                t.w32(e + 4, rng.next());
+                t.w32(e + 8, (4 + 0x200 * k) | (size << 16));
+                t.w32(e + 0xc, rng.next());
+            }
+            let layout = t.zeros(0x40);
+            t.fill(&mut rng, layout, 0x40);
+            t.w32(layout + 0x28, n | (rng.below(2) << 31));
+            t.w32(layout + 0x2c, entries);
+            t.write(layout + 0x32, &0x1c00_u16.to_le_bytes());
+            t.w32(node + 0x68, layout);
+            let buffer = t.zeros(0x1c00);
+            t.results(allocate, &[if case % 23 == 9 { 0 } else { buffer }]);
+            t.check_framed(
+                &format!("{name} case {case} ({n} entries)"),
+                SYM,
+                Conv::Thiscall(r),
+                &[node],
+                nc::FRAME,
+                0,
+                |g, ebp| nc::bridge::generate(g, r, node, ebp),
+            );
+            let mut first = [0_u8; 8];
+            t.a.read_bytes(buffer + 4, &mut first);
+            wrote += u32::from(first != [0; 8]);
+        }
+        assert!(wrote > 30, "{name}: values written in {wrote} cases");
     }
 }
