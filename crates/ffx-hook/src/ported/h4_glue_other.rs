@@ -13,8 +13,8 @@
 use ffx_glue_other::{
     copies as c, effect as e, frames as fr, h4_c1 as c1, h4_c2 as c2, h4_c3 as c3, h4_c4 as c4,
     h4_d1 as d1, h4_d2 as d2, h4_d3 as d3, h4_d4 as d4, h4_d5 as d5, h4_e1 as e1, h4_e2 as e2,
-    h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, menu as mn, misc as m,
-    movie as mv, r3, sound as s,
+    h4_e3 as e3, h4_e4 as e4, h4_e5 as e5, h4_f1 as f1, h4_f2 as f2, h4_f3 as f3, menu as mn,
+    misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -1934,5 +1934,29 @@ ported! {
     /// `SfxEvent_dtor_0070e850(this)`.
     SfxEvent_dtor_0070e850 @ 0x0070_e850 => extern "thiscall" fn sfx_event_dtor(this: u32) {
         f2::sfx_event_dtor(&mut mem(), this);
+    }
+    // ---- continuation round 4, batch 3 (ffx_glue_other::h4_f3)
+    /// `FmodSfx_update(this; dt)`.
+    FmodSfx_update @ 0x0070_dec0 => extern "thiscall" fn sfx_update(this: u32, dt: u32) {
+        f3::sfx_update(&mut mem(), this, dt);
+    }
+    /// `FmodSfx_createSfxEvent(this; id)`.
+    FmodSfx_createSfxEvent @ 0x0070_c8f0 => extern "thiscall" fn sfx_create_event(this: u32, id: u32) -> u32 {
+        let mut frame = StackFrame::<{ (f3::CREATE_FRAME / 4) as usize }>::new();
+        f3::sfx_create_event(&mut mem(), frame.at(), this, id)
+    }
+    /// `FmodSfx_playBattleStreaming(this; a, id, volume, pan)`.
+    FmodSfx_playBattleStreaming @ 0x0070_d190 => extern "thiscall" fn sfx_play_battle_streaming(this: u32, a: u32, id: u32, volume: u32, pan: u32) {
+        let mut frame = StackFrame::<{ (f3::STREAM_FRAME / 4) as usize }>::new();
+        f3::sfx_play_battle_streaming(&mut mem(), frame.at(), this, [a, id, volume, pan]);
+    }
+    /// `FmodSfx_loadProject(this; a, id, resident)`.
+    FmodSfx_loadProject @ 0x0070_cf10 => extern "thiscall" fn sfx_load_project(this: u32, a: u32, id: u32, resident: u32) {
+        let mut frame = StackFrame::<{ (f3::LOAD_FRAME / 4) as usize }>::new();
+        f3::sfx_load_project(&mut mem(), frame.at(), this, [a, id, resident]);
+    }
+    /// `FmodSfx_ctor_0070bfc0(this)`.
+    FmodSfx_ctor_0070bfc0 @ 0x0070_bfc0 => extern "thiscall" fn sfx_ctor(this: u32) -> u32 {
+        f3::sfx_ctor(&mut mem(), this)
     }
 }

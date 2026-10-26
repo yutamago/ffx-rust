@@ -62,7 +62,9 @@
 //!   setups and buffer chain swap;
 //! - [`h4_f2`]: its second batch: the render thread's shader-pass switch,
 //!   the menu manager's material update and buffer reset, the button-icon
-//!   vertex info lookup, a sound event's constructor and release.
+//!   vertex info lookup, a sound event's constructor and release;
+//! - [`h4_f3`]: its third batch: the sound effects' per-frame update,
+//!   event creation, battle stream, project load and constructor.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -98,6 +100,7 @@ pub mod h4_e4;
 pub mod h4_e5;
 pub mod h4_f1;
 pub mod h4_f2;
+pub mod h4_f3;
 pub mod menu;
 pub mod misc;
 pub mod movie;
