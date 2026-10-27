@@ -26,6 +26,7 @@ use ffx_bridge::Mem;
 use ffx_glue_other::{
     h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf,
     h4b_g as bg, h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk, h4b_l as bl, h4b_m as bm,
+    h4b_n as bn,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -4772,6 +4773,324 @@ fn bm_list_bar() {
                         at,
                     )
                 },
+            );
+        }
+    }
+}
+
+// ---- round 4, batch 1 (ffx_glue_other::h4b_n)
+
+/// `TOAdpEasyShapeXYWHC2`: ids in every range and the per-id cases,
+/// given and layout sizes, both anchors, the alternative placement and
+/// its nudges, layouts of 0..=4 entries; `BeginScissor_XYUV` runs as the
+/// original with the scissor off, on and scaled; the f64 and f32
+/// constants random in half the cases. The record's never-written words
+/// are zeroed alike; the whole frame and every drawn record compared.
+#[test]
+fn bn_easy_shape_xywhc2() {
+    const F64S: [u32; 15] = [
+        0x00b9_22a8,
+        0x00b6_6c70,
+        0x00b6_6c78,
+        0x00b9_2270,
+        0x00b9_2228,
+        0x00b4_9958,
+        0x00b9_22b0,
+        0x00b9_2200,
+        0x00b6_6c60,
+        0x00b2_c5c8,
+        0x00b4_3d80,
+        0x00b4_8340,
+        0x00b6_6c80,
+        0x00b4_1cc0,
+        0x00b5_8b50,
+    ];
+    const F32S: [u32; 3] = [0x00b9_2318, 0x00b9_2314, 0x00b1_f2b0];
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_e380);
+        let orig64: Vec<Vec<u8>> = F64S
+            .iter()
+            .map(|&c| {
+                let at = t.rebase(c);
+                Oracle::read(&mut t.a, at, 8).unwrap()
+            })
+            .collect();
+        let orig32: Vec<Vec<u8>> = F32S
+            .iter()
+            .map(|&c| {
+                let at = t.rebase(c);
+                Oracle::read(&mut t.a, at, 4).unwrap()
+            })
+            .collect();
+        let (iw, ih) = (t.zeros(4), t.zeros(4));
+        t.stub_at(bn::IMAGE_WH, false, 3, 0, &[wr(1, iw), wr(2, ih)]);
+        capture_stub_n(&mut t, bn::DRAW_UI_ELEMENT, 5, 0, 0x98, 8);
+        let mut tags = vec![bn::IMAGE_WH, bn::DRAW_UI_ELEMENT];
+        for (sym, n) in [
+            (bn::SHAPE_TEXTURE_NAME, 1),
+            (bn::COPY_LAYOUT_7D0, 1),
+            (bn::COPY_LAYOUT_450, 1),
+            (bn::COPY_LAYOUT_790, 1),
+            (bn::SHAPE_DATA_MODIFY, 2),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let layout = t.zeros(4 + 12 * 6);
+        let ebp = t.ebp_for(8);
+        let ids: Vec<u32> = [
+            0x3e, 0, 5, 0xc6, 0xd8, 0xda, 0xc8, 0x18e, 0x190, 0x1df, 0x1e0, 0x1e4,
+        ]
+        .into_iter()
+        .chain([
+            0x1e9, 0x1ea, 0x1ee, 0x1f3, 0x1f4, 0x250, 0x256, 0x258, 0x259, 0x25c, 0x25d,
+        ])
+        .chain([0x25f, 0x260, 0x261, 0x262, 0x263, 0x264, 0x270, 0x289])
+        .collect();
+        for i in 0..8000 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.ret(bn::COPY_LAYOUT_7D0, layout);
+            t.ret(bn::COPY_LAYOUT_450, layout);
+            t.ret(bn::COPY_LAYOUT_790, layout);
+            if rng.below(2) == 0 {
+                t.constants(&mut rng, &F32S, &F64S);
+                if rng.below(2) == 0 {
+                    let at = t.rebase(F32S[1]);
+                    t.write(at, &8f32.to_le_bytes());
+                }
+            } else {
+                for (k, &c) in F64S.iter().enumerate() {
+                    let at = t.rebase(c);
+                    t.write(at, &orig64[k]);
+                }
+                for (k, &c) in F32S.iter().enumerate() {
+                    let at = t.rebase(c);
+                    t.write(at, &orig32[k]);
+                }
+            }
+            let img = |rng: &mut Rng| match rng.below(4) {
+                0 => rng.float(),
+                1 => 0,
+                _ => f32::from(rng.pick(&[64u16, 128, 256, 512, 1024])).to_bits(),
+            };
+            let (a, b) = (img(&mut rng), img(&mut rng));
+            t.w32(iw, a);
+            t.w32(ih, b);
+            for g in [bn::SCALE_X.sym, bn::SCALE_Y.sym] {
+                let v = match rng.below(4) {
+                    0 => rng.float(),
+                    1 => 1.5f32.to_bits(),
+                    _ => 1f32.to_bits(),
+                };
+                t.g32(g, v);
+            }
+            let alt = rng.pick(&[0, 0, 1, 7]);
+            t.g32(bn::SHAPE_ALT.sym, alt);
+            let nudge = rng.pick(&[0, 1]);
+            t.g32(bn::SHAPE_ALT_NUDGE.sym, nudge);
+            // BeginScissor_XYUV's state: off, on, on and scaled.
+            let on = rng.pick(&[0, 1, 1]);
+            t.g32(0x0187_16d0, on);
+            let xyuv = rng.pick(&[0u8, 1]);
+            let at = t.rebase(0x0187_16d4);
+            t.w8(at, xyuv);
+            for (k, v) in [0.75f32, 1.25].into_iter().enumerate() {
+                t.g32(0x0187_16a8 + 4 * k as u32, v.to_bits());
+            }
+            let edges = [
+                rng.below(200) as f32 - 50.0,
+                rng.below(200) as f32 - 50.0,
+                rng.below(400) as f32 + 100.0,
+                rng.below(400) as f32 + 100.0,
+            ];
+            for (k, v) in edges.into_iter().enumerate() {
+                t.g32(0x0187_16f8 + 4 * k as u32, v.to_bits());
+            }
+            // The layout: a count, then entries of u, v, dx, dy, w, h and
+            // the two anchors.
+            let n = rng.pick(&[0, 1, 1, 2, 3, 4]);
+            t.w32(layout, n);
+            for k in 0..6 {
+                let e = layout + 4 + 12 * k;
+                let v = rng.next();
+                t.w32(e, v);
+                if rng.below(3) == 0 {
+                    let c = rng.pick(&[4u8, 5, 0xfc, 0x80, 0x7f]);
+                    t.w8(e + 2, c);
+                }
+                let lw = rng.below(300) as u16;
+                let lh = rng.pick(&[8u16, 9, 7, 30, 0, 0xffff]);
+                t.w16(e + 4, lw);
+                t.w16(e + 6, lh);
+                for off in [8, 10] {
+                    let a = rng.pick(&[0u16, 1, 1, 2, 0x101]);
+                    t.w16(e + off, a);
+                }
+            }
+            let id = rng.pick(&ids);
+            let r = rng.next();
+            let wd = rng.pick(&[0, 0, 16, 100, 0xffff_fff0, r]);
+            let r = rng.next();
+            let ht = rng.pick(&[0, 0, 8, 100, 0xffff_fff8, r]);
+            let mut xy = || match rng.below(4) {
+                0 => rng.next(),
+                _ => rng.small(),
+            };
+            let (x, y) = (xy(), xy());
+            let (c0, c1) = (rng.next(), rng.next());
+            let ret = rng.next();
+            let args = [ret, id, x, y, wd, ht, c0, c1];
+            let zero = [(ebp - 0x5c, ebp - 0x14), (ebp - 0x10, ebp - 0xc)];
+            run_zeroed(
+                &mut t,
+                &w,
+                0x008e_d380,
+                Conv::Cdecl,
+                &args,
+                (ebp - 0xe8, ebp - 4),
+                0xa5,
+                &zero,
+                &|_| vec![(ebp - 0xe8, ebp - 4)],
+                |g| {
+                    bn::easy_shape_xywhc2(
+                        g,
+                        ebp - 0xe8,
+                        ret,
+                        id,
+                        x.cast_signed(),
+                        y.cast_signed(),
+                        wd.cast_signed(),
+                        ht.cast_signed(),
+                        c0,
+                        c1,
+                    )
+                },
+            );
+        }
+    }
+}
+
+/// `rcPrimDraw2D`: counts 0, -1, 1, 2, 3, 4, 5 and 0x41, vertices on
+/// both sides of the centre (and NaN-free random floats), wide and narrow
+/// quads, in and out of Blitzball, the circle's name made or not; the
+/// packet, the minimap type, the whole frame and every drawn record
+/// compared. The packet calls and `rcVectorToFixed_009273e0` run as the
+/// original.
+#[test]
+fn bn_prim_draw_2d() {
+    const F64S: [u32; 6] = [
+        0x00b9_22e0,
+        0x00b9_22f0,
+        0x00b5_4c70,
+        0x00b5_1bd0,
+        0x00b4_1d38,
+        0x00b9_2220,
+    ];
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_5f80);
+        let orig64: Vec<Vec<u8>> = F64S
+            .iter()
+            .map(|&c| {
+                let at = t.rebase(c);
+                Oracle::read(&mut t.a, at, 8).unwrap()
+            })
+            .collect();
+        let globals: Vec<u32> = [0x00c5_e76c, 0x00c5_e770, 0x00c5_e774]
+            .iter()
+            .map(|&g| {
+                let at = t.rebase(g);
+                Mem::read::<u32>(&t.a, at)
+            })
+            .collect();
+        capture_stub_n(&mut t, bn::DRAW_UI_ELEMENT, 5, 0, 0x98, 8);
+        let mut tags = vec![bn::DRAW_UI_ELEMENT];
+        for (sym, n) in [
+            (bn::GET_NOW_UI_TYPE, 0),
+            (bn::MINIMAP_IN_BLITZ, 0),
+            (bn::IS_3D_SCENE, 0),
+            (bn::MEMSET, 3),
+            (bn::UNIFY_FILENAME, 3),
+            (bn::PACKET_DRAW, 1),
+            (bn::SET_MINIMAP_TYPE, 1),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let packet = t.zeros(0x40 + 0x20 * 0x42);
+        t.g32(bn::PRIM_PACKET.sym, packet);
+        let verts = t.zeros(16 * 0x42);
+        let colour = t.zeros(16);
+        let ebp = t.ebp_for(4);
+        for i in 0..4000 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let blitz = rng.pick(&[0, 0, 1]);
+            t.ret(bn::MINIMAP_IN_BLITZ, blitz);
+            if rng.below(2) == 0 {
+                t.constants(&mut rng, &[], &F64S);
+            } else {
+                for (k, &c) in F64S.iter().enumerate() {
+                    let at = t.rebase(c);
+                    t.write(at, &orig64[k]);
+                }
+            }
+            for (k, &g) in [0x00c5_e76c, 0x00c5_e770, 0x00c5_e774].iter().enumerate() {
+                let v = if rng.below(4) == 0 {
+                    rng.small()
+                } else {
+                    globals[k]
+                };
+                t.g32(g, v);
+            }
+            let made = rng.pick(&[0u8, b'/']);
+            let at = t.rebase(bn::PRIM_CIRCLE_NAME);
+            t.w8(at, made);
+            let side = rng.below(3);
+            for k in 0..0x42 {
+                let c = |rng: &mut Rng| match side {
+                    0 => (rng.below(1100) as f32 + 1500.0 + rng.below(64) as f32 / 64.0).to_bits(),
+                    1 => (rng.below(300) as f32 + 1900.0).to_bits(),
+                    _ => rng.float(),
+                };
+                let (x, y) = (c(&mut rng), c(&mut rng));
+                t.w32(verts + 16 * k, x);
+                t.w32(verts + 16 * k + 4, y);
+                let z = match rng.below(4) {
+                    0 => rng.float(),
+                    _ => (rng.below(600) as f32 / 256.0).to_bits(),
+                };
+                t.w32(verts + 16 * k + 8, z);
+                let wv = rng.next();
+                t.w32(verts + 16 * k + 12, wv);
+            }
+            // Ties: x0 and y0 on the centre, a quad exactly 100 wide.
+            if rng.below(4) == 0 {
+                t.w32(verts, 2048f32.to_bits());
+                t.w32(verts + 4, 2048f32.to_bits());
+                if rng.below(2) == 0 {
+                    t.w32(verts + 0x30, 2148f32.to_bits());
+                }
+            }
+            for k in 0..4 {
+                let v = match rng.below(5) {
+                    0 => rng.float(),
+                    _ => (rng.below(2560) as f32 / 10.0).to_bits(),
+                };
+                t.w32(colour + 4 * k, v);
+            }
+            let count = rng.pick(&[0, 0xffff_ffff, 1, 2, 2, 3, 3, 4, 4, 4, 5, 0x41, 0x41]);
+            let unused = rng.next();
+            run_parts(
+                &mut t,
+                &w,
+                0x0092_5f80,
+                Conv::Cdecl,
+                &[unused, verts, count, colour],
+                (ebp - 0x114, ebp - 4),
+                0xa5,
+                &|_| vec![(ebp - 0x114, ebp - 4)],
+                |g| bn::prim_draw_2d(g, ebp - 0x114, verts, count.cast_signed(), colour),
             );
         }
     }

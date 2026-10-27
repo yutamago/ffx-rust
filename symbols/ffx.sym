@@ -14400,7 +14400,7 @@
 0x008ed0a0 function TOAddPktBaseMesFont_008ed0a0  # cdecl(cursor, text, x, y, colour) -> TOAddPktBaseMesFontLClutTypeRGBA(cursor, -1, text, x, y, colour, 0, 0x80 x4); ported (system round 34); name ours
 0x008ed160 function TOAddPktBaseMesFontRGBA_008ed160 # cdecl(cursor, text, x, y, colour, r, g, b, a) -> TOAddPktBaseMesFontLClutTypeRGBA(cursor, -1, text, x, y, colour, 0, r, g, b, a); ported (system round 34); name ours
 0x008ed190 function TOAdpEasyMesFontLClutRGBAInterMode # layout+callees: sorts between TOAdpCrossFontS_ASCII and TOAdpEasyShapeXYWHC2, and its named callees match the Switch 0x71005104b0 TOAdpEasyMesFontLClutRGBAInterMode's (similarity 1.00: TOGetFontInfoInterMode, TOMakePktFont1612Font, TOMakePktFont1612Shadow, TOSkipCode); symbols from Fahrenheit's server export
-0x008ed380 function TOAdpEasyShapeXYWHC2      # fh v3:exact 0x008ed380
+0x008ed380 function TOAdpEasyShapeXYWHC2      # fh v3:exact 0x008ed380; cdecl(ret, id, x, y, w, h, c0, c1) -> ret (eax = [ebp+8]): window layout shape id (0..198/200..398 image 0x3e00 TOCopyWindowLayout_008fa7d0, 400..598 0x3f00 _008fa450, 600..649 0x3dc0 _008fa790), each entry (id 0x3e: the last) a quad through BeginScissor_XYUV and graphicDrawUIElement(rec, name, 1, 0, 0); x87 bit for bit; junk reads: an id in no range leaves name/layout = [ebp-0xa0] and the image size [ebp-0xe4]/[ebp-0xe0] never written (port 0; the count read then faults); record words +0x40..+0x84, +0x8c never written (0); ported (ffx_glue_other::h4b_n, h4b r4)
 0x008ee060 function TODrawFont3d80String_008ee060 # cdecl(cursor, text, x, y, nibbles, c0..c3) -> cursor: Identity_008f2f70(cursor), then TODrawFont3d80Glyph_008eeee0 per character of the NUL-terminated text, x += 10; returns the last cursor; ported (system round 37); name ours
 0x008ee210 function TOAddPktBaseMesFontLClutRGBA_copy_008ee210 # ported (system round 34: kind 0 into 0x008e92a0); the same code as TOAddPktBaseMesFontLClutRGBA (0x008e9270; call targets equal), a copy the compiler kept; own name
 0x008ee240 function TOAdpFontM_ASCII          # fh v3:exact 0x008ee240
@@ -15331,7 +15331,7 @@
 0x00925c50 function rcPrimBoxLine                # layout: alphabetical run between rcPrimBox and rcPrimCircleLine (2 unnamed in the gap); Switch 0x7100551660 rcPrimBoxLine is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00925db0 function rcPrimCircle                 # layout: alphabetical run between rcPrimBox and rcPrimCircleLine (2 unnamed in the gap); Switch 0x7100551e10 rcPrimCircle is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00925ea0 function rcPrimCircleLine          # fh v3:exact 0x00925ea0; ported (field round 42): (x, y, r, colour, ui): 65 stack vertices, the box (x - r, y - k), (x + r, y + k) at depth 256 and 63 zero ones, k = r * 1.1666666 * 416 / 448 (f64), rcPrimDraw2D(0x42, verts, 0x41, colour) with the UI type as rcPrimLine; returns cgraphicSetNowUIType(0)'s eax
-0x00925f80 function rcPrimDraw2D              # fh v3:exact 0x00925f80
+0x00925f80 function rcPrimDraw2D              # fh v3:exact 0x00925f80; cdecl(unused, verts, count, colour) -> rcPacketDataDraw's eax (4 words; Ghidra shows 3): each vertex into g_RcPrim2DPacket (r, g, b = ftol(colour[i] * z) >> 8, a = ftol(colour[3]), 12.4 x, y), then by count a graphicDrawUIElement record: 2 line, 3 triangle, 4 quad (0, 2, 3, 1; x3 - x0 >= 100 sets graphicSetMiniMapType 1..4), 0x41 guide circle; x87 bit for bit; junk read: count <= 0 loads [ebp-0xbc]/[ebp-0xc0]/[ebp-0xc4] never written into registers no path uses (port reads nothing); ported (ffx_glue_other::h4b_n, h4b r4)
 0x00926c00 function rcPrimLine                # fh v3:exact 0x00926c00; ported (field round 41): (x0, y0, x1, y1, colour, ui): vertices (x, y, 256.0, 0) on the stack, rcPrimDraw2D(0x41, verts, 2, colour) between cgraphicSetNowUIType(2) (when ui) and cgraphicSetNowUIType(0), whose eax it returns
 0x009270c0 function rcPrimTri                 # fh v3:exact 0x009270c0; ported (field round 43): (x, y, r, angle, colour, ui): the triangle inscribed in rcPrimCircleLine's circle, corners at angle and +-1/3 turn through g_pppSinTable 0x00c44bf0 (index ftol(angle * [0x00b51558] / [0x00b39378]), (i + off) >> 4 & 0xfff), y scaled by 1.1666666 * 416 / 448; depths 256.0 and [0x00b664d8]; rcPrimDraw2D(0x4c, verts, 3, colour) with rcPrimLine's UI calls
 0x00927230 function rcPrimTriLine                # layout+callees: sorts between rcPrimTri and rcPrint, and its named callees match the Switch 0x7100551970 rcPrimTriLine's (similarity 0.67: cgraphicSetNowUIType, rcPrimDraw2D); symbols from Fahrenheit's server export
@@ -19389,6 +19389,7 @@
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set
 0x00c49718 label g_ChrMouthTh                # i16, Ch_GuiSetMouthTh (0..200)
 0x00c49784 label    g_ChrSysMotionSets        # i8 per slot: the system motion set of a definition's table (+0x6c, 8-byte entries from +0x10) Ch_SetSysMotion 0x00837d00 uses
+0x00c498dc label    g_RcPrim2DPacket          # the packet buffer pointer rcPrimDraw2D opens (rcPacketDataOpenAdr; 0x01f00000 in the image); name ours
 0x00c4dee4 label    g_FreeCamHeight           # f32: Sg_ControlCamera's height, +/- 0.2 with L/R button mode buttons 2/8
 0x00c4def0 label    g_FreeCamYaw              # f32 radians: Sg_ControlCamera turns it by (right stick x - 0x80) degrees / 12, wrapped into -pi..pi
 0x00c4def4 label    g_FreeCamPitch            # f32 radians: Sg_ControlCamera turns it by (right stick y - 0x80) degrees / 12, wrapped into -pi..pi
@@ -19421,6 +19422,8 @@
 0x00c5b2d4 label g_TkMenuMainOptionOrder  # u8[32]: the slot of main-menu option bit i (TkMenuAppearMainCmdWindow); 01 02 04 00 05 06 07 08 09 0a ...; name ours
 0x00c5d770 label    g_TOScreenW               # TOGetScreenWH reads its low half as the width
 0x00c5d774 label    g_TOScreenH               # TOGetScreenWH reads its low half as the height
+0x00c5d778 label    g_TOScaleX                # f32 (1.0 in the image): the TO font and shape width scale; TOAdpEasyShapeXYWHC2 and the TOMakePkt*Font draws multiply widths by it (12 code reads, no code write); name ours
+0x00c5d77c label    g_TOScaleY                # f32 (1.0 in the image): the height scale beside g_TOScaleX; name ours
 0x00c5d780 label    g_TOAddPkt                # TOInitAddPkt sets 1, TOSetAddPkt 0
 0x00c5d788 label    g_YiWindowHandlers        # window handlers by kind, 6 words (0x18 bytes) a kind (yiWindowSetHandlers)
 0x00c5e350 label    g_GuideFlags                 # bit 0: the minimap may show (clear: Guide_FadeOff)
@@ -19435,6 +19438,10 @@
 0x00c5e478 label    g_GuideEnabled               # 0: Guide_Update returns at once
 0x00c5e480 label    g_RcbgChunkTags              # 13 pointers to the Yn chunk tags (rcbgChunkTag)
 0x00c5e754 label    g_RcdtTm2Psm                 # GS pixel format per TIM2 image type, 8 words (rcdtTm2GetPsm): 0, 2, 1, 0, 0x14, 0x13
+0x00c5e76c label    g_RcPrim2DOrigin          # i32 0x800: rcPrimDraw2D's map origin (x - origin, y - origin), its only reader; follows g_RcdtTm2Psm's six words; name ours
+0x00c5e770 label    g_RcPrim2DCenterX         # i32 0x100: rcPrimDraw2D's minimap centre x (256 splits the near and far side, mirrored from 512); name ours
+0x00c5e774 label    g_RcPrim2DCenterY         # i32 0xd0: rcPrimDraw2D's minimap centre y (208 splits the sides); name ours
+0x00c5e778 label    g_RcPrim2DCirclePath      # -> "/FFX_Data/GameData/PS3Data/menu/GCM/guide_circle.dds.phyre": rcPrimDraw2D's count 0x41 texture, unified once into g_RcPrim2DCircleName; name ours
 0x00c5e790 label    g_GuidePacketStrides         # bytes per primitive of the minimap mesh's packet types 0-7 (0x14 0x1c 0x20 0x28 0x18 0x20 0x28 0x30); type 0: triangles, vertex indices at +0xc
 0x00c613b0 label    g_PageManager             # the page manager (PageAlloc/PageCommit/PageQueueDecommit/PageRelease pass it); ffx_system::heap has the layout
 0x00c64c10 label    g_MagicFilePreloadTable   # 12 x (i32 magic, i32 file, i32 handle id): MagicFile_PreloadPrx_009dae90's slots; negative magic/file match any; name ours
@@ -20705,6 +20712,8 @@
 0x018716cc label    g_TOPktCursor             # the packet write cursor: the TOAdp* cursor forms and 0x008ff020 write at it; TOCtrlPkt kicks once it reaches g_TOPktBuff[2]; name ours
 0x018716d0 label    g_TkMenuScissorOn         # 1: BeginScissor_XYUV clips; cleared by CloseScissor
 0x018716d4 label    g_TkMenuScissorXyuv       # u8, BeginScissor_XYUV's scaled mode; cleared by CloseScissor
+0x018716e8 label    g_TOEasyShapeAlt          # u32 (0 in the image; no code write): TOAdpEasyShapeXYWHC2's alternative placement (edges at 0.8 of the scaled size, ids 600..=611 scaled 0.6 x 0.9 instead of 0.56 x 0.7); its only reader; name ours
+0x018716ec label    g_TOEasyShapeAltNudge     # u32 (0; no code write): with g_TOEasyShapeAlt, TOAdpEasyShapeXYWHC2's pixel nudges (+2, -1, +4, +3/+8); its only reader; name ours
 0x018716f0 label    g_InvokedFromSelectCursor # SetInvokedFromSelectCursor
 0x018716f4 label    g_TOPktDmaChannel         # TODrawKick passes it to sceDmaSend with g_TOPktBuff[0]; name ours
 0x018716f8 label    g_TkMenuScissorBox        # 4 x f32 left, top, right, bottom (BeginScissor_XYUV; an edge counts as outside)
@@ -20747,6 +20756,7 @@
 0x0193bf78 label    g_GuideFade                  # the minimap's alpha, 0..128 (Guide_FadeStep)
 0x0193bf7c label    g_GuideBattleSave            # the guide's +0x6c float kept over a battle (rcbgGuideBattleBegin/End)
 0x0193bf80 label    g_YnMapSystem                # Yn's field state: +0 the map (its +8: guide map list, +0x18 i16 count, +0x1a i16 shown, +0x1c models), +4 the guide (Yn_GuideMapGetMapNo, Yn_GuideMapSetMapNo, Yn_BattleBegin)
+0x0193bf88 label    g_RcPrim2DCircleName      # 0x100 bytes: fiosUnifyFilename(g_RcPrim2DCirclePath) when its first byte is 0 (rcPrimDraw2D count 0x41), the texture graphicDrawUIElement draws; name ours
 0x0193c090 label    g_RcefChrBaseMatrix       # name ours: rcefSetChrBaseMatrix's output without one
 0x0193c0d0 label    g_RcefParKept                # particle parts rcefParCreate remembers for some magic effects: +0 0x20e, +8 0x180, +0x10 0x168, +0x18 0x217 (entry 2); +0xc 0xbf, +0x14 0x216 (entry 1)
 0x0193c0f0 label    g_RcuiWork                   # rcui work area: +0xbe8 the ID dragged, +0xbec rcuiMouseMoveGetID, +0xbf0 dragging

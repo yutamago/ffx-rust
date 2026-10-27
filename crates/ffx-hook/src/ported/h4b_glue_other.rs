@@ -8,7 +8,7 @@
 
 use ffx_glue_other::{
     h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf, h4b_g as bg,
-    h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk, h4b_l as bl, h4b_m as bm,
+    h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk, h4b_l as bl, h4b_m as bm, h4b_n as bn,
 };
 
 use super::{StackFrame, mem, ported};
@@ -325,5 +325,24 @@ ported! {
     AbmapPadDrawListBar_00a462f0 @ 0x00a4_62f0 => extern "C" fn pad_list_bar(kind: u32, top: u32, pos: u32, bottom: u32, at: u32) -> u32 {
         let mut f = StackFrame::<0x66>::new();
         bm::list_bar(&mut mem(), f.at(), kind.cast_signed(), top.cast_signed(), pos.cast_signed(), bottom.cast_signed(), at)
+    }
+
+    // ---- round 4, batch 1 (ffx_glue_other::h4b_n)
+
+    /// `TOAdpEasyShapeXYWHC2(ret, id, x, y, w, h, c0, c1)`: the edges,
+    /// UVs, temporaries and the quad record in a frame (`ebp - 0xe8` ..
+    /// `ebp - 4`, 57 words; zeroed, so the never-written record words and
+    /// an unknown id's layout are 0). Returns `ret`, as the original does.
+    TOAdpEasyShapeXYWHC2 @ 0x008e_d380 => extern "C" fn easy_shape_xywhc2(ret: u32, id: u32, x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) -> u32 {
+        let mut f = StackFrame::<0x39>::new();
+        bn::easy_shape_xywhc2(&mut mem(), f.at(), ret, id, x.cast_signed(), y.cast_signed(), w.cast_signed(), h.cast_signed(), c0, c1)
+    }
+    /// `rcPrimDraw2D(unused, verts, count, colour)`: the record, the
+    /// vertex colours and temporaries in a frame (`ebp - 0x114` .. `ebp -
+    /// 4`, 68 words). Returns `rcPacketDataDraw`'s `eax`, as the original
+    /// does.
+    rcPrimDraw2D @ 0x0092_5f80 => extern "C" fn prim_draw_2d(_unused: u32, verts: u32, count: u32, colour: u32) -> u32 {
+        let mut f = StackFrame::<0x44>::new();
+        bn::prim_draw_2d(&mut mem(), f.at(), verts, count.cast_signed(), colour)
     }
 }
