@@ -10,6 +10,7 @@ use ffx_prender::m5r_a::bridge as a;
 use ffx_prender::m5r_b::bridge as b;
 use ffx_prender::m5r_c::bridge as c;
 use ffx_prender::m5r_d::bridge as d;
+use ffx_prender::m5r_e::bridge as e;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -581,5 +582,123 @@ ported! {
     graphicSceneMatrixTranspose_00643b80 @ 0x0064_3b80 => extern "C" fn scene_matrix_transpose() -> u32 {
         let mut f = StackFrame::<0x20>::new();
         d::scene_matrix_transpose(&mut mem(), f.at() + 0x80)
+    }
+    // ---- batch 5 (ffx_prender::m5r_e, m5r_a's reserve, ffx_pload's pointer array resize) ----
+    /// `graphicSetMeshesVisible_00643df0(on)`.
+    graphicSetMeshesVisible_00643df0 @ 0x0064_3df0 => extern "C" fn set_meshes_visible(on: u32) -> u32 {
+        e::set_meshes_visible(&mut mem(), on)
+    }
+    /// `PostProcessTweakUtil_setEnabled_006984f0(this; on)`.
+    PostProcessTweakUtil_setEnabled_006984f0 @ 0x0069_84f0 => extern "thiscall" fn post_tweak_set_enabled(this: u32, on: u32) -> u32 {
+        e::post_tweak_set_enabled(&mut mem(), this, on)
+    }
+    /// `DebugMenuManager_disableTweaks_006b49c0()`.
+    DebugMenuManager_disableTweaks_006b49c0 @ 0x006b_49c0 => extern "C" fn disable_tweaks() -> u32 {
+        e::disable_tweaks(&mut mem())
+    }
+    /// `PhyreScene_softResetScene(scene)`.
+    PhyreScene_softResetScene @ 0x0066_fad0 => extern "thiscall" fn soft_reset(this: u32) -> u32 {
+        e::soft_reset(&mut mem(), this)
+    }
+    /// `ShadowManager_resetIfSolution_006ce0c0(this; x)`.
+    ShadowManager_resetIfSolution_006ce0c0 @ 0x006c_e0c0 => extern "thiscall" fn shadow_reset_if_solution(this: u32, x: u32) -> u32 {
+        e::shadow_reset_if_solution(&mut mem(), this, x)
+    }
+    /// `graphicShadowReset_00643e80(x)` -> 1.
+    graphicShadowReset_00643e80 @ 0x0064_3e80 => extern "C" fn shadow_reset(x: u32) -> u32 {
+        e::shadow_reset(&mut mem(), x)
+    }
+    /// `graphicSetAnimatedMaterialsChar_006440e0(a0..a10)` (words 7 and 8
+    /// are never read).
+    graphicSetAnimatedMaterialsChar_006440e0 @ 0x0064_40e0 => extern "C" fn set_animated_materials_char(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, _a7: u32, _a8: u32, a9: u32, a10: u32) -> u32 {
+        e::set_animated_materials_char(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, 0, 0, a9, a10])
+    }
+    /// `graphicTextureVideoPlay(x)`.
+    graphicTextureVideoPlay @ 0x0064_4280 => extern "C" fn texture_video_play(x: u32) -> u32 {
+        e::texture_video_play(&mut mem(), x)
+    }
+    /// `BlurEffect_updateRadialLine_006c3fd0(this; a, b, f, g)`.
+    BlurEffect_updateRadialLine_006c3fd0 @ 0x006c_3fd0 => extern "thiscall" fn blur_update_radial_line(this: u32, a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        e::blur_update_radial_line(&mut mem(), this, [a0, a1, a2, a3])
+    }
+    /// `graphicUpdateRadialLineLogic(on, b, f, g)`.
+    graphicUpdateRadialLineLogic @ 0x0064_49d0 => extern "C" fn update_radial_line_logic(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        e::update_radial_line_logic(&mut mem(), [a0, a1, a2, a3])
+    }
+    /// `graphicVideoGetElapsedFrame()`.
+    graphicVideoGetElapsedFrame @ 0x0064_5d90 => extern "C" fn video_elapsed_frame() -> u32 {
+        e::video_elapsed_frame(&mut mem())
+    }
+    /// `graphicSetWaveStrength_00645e40()`.
+    graphicSetWaveStrength_00645e40 @ 0x0064_5e40 => extern "C" fn set_wave_strength() -> u32 {
+        e::set_wave_strength(&mut mem())
+    }
+    /// `PhyreSceneCursor_ctorSeek2_0064cda0(this; cluster)` -> `this`.
+    PhyreSceneCursor_ctorSeek2_0064cda0 @ 0x0064_cda0 => extern "thiscall" fn cursor_ctor_seek2(this: u32, cluster: u32) -> u32 {
+        e::cursor_ctor(&mut mem(), this, cluster, ffx_prender::m5r_e::CURSOR_CLASS2, ffx_prender::m5r_e::CURSOR_SEEK2)
+    }
+    /// `PhyreSceneCursor_ctorSeek3_0064ce00(this; cluster)` -> `this`.
+    PhyreSceneCursor_ctorSeek3_0064ce00 @ 0x0064_ce00 => extern "thiscall" fn cursor_ctor_seek3(this: u32, cluster: u32) -> u32 {
+        e::cursor_ctor(&mut mem(), this, cluster, ffx_prender::m5r_e::CURSOR_CLASS3, ffx_prender::m5r_e::CURSOR_SEEK3)
+    }
+    /// `PhyreSceneCursor_ctorSeek4_0064ce60(this; cluster)` -> `this`.
+    PhyreSceneCursor_ctorSeek4_0064ce60 @ 0x0064_ce60 => extern "thiscall" fn cursor_ctor_seek4(this: u32, cluster: u32) -> u32 {
+        e::cursor_ctor(&mut mem(), this, cluster, ffx_prender::m5r_e::CURSOR_CLASS4, ffx_prender::m5r_e::CURSOR_SEEK4)
+    }
+    /// `WordArray_alloc_0064f7f0(n, src, count)`.
+    WordArray_alloc_0064f7f0 @ 0x0064_f7f0 => extern "C" fn word_array_alloc_0064f7f0(n: u32, src: u32, count: u32) -> u32 {
+        e::word_array_alloc(&mut mem(), n, src, count)
+    }
+    /// `WordArray_alloc_0064f860(n, src, count)`.
+    WordArray_alloc_0064f860 @ 0x0064_f860 => extern "C" fn word_array_alloc_0064f860(n: u32, src: u32, count: u32) -> u32 {
+        e::word_array_alloc(&mut mem(), n, src, count)
+    }
+    /// `AtlThrowLastError_0064fa70()`: throws.
+    AtlThrowLastError_0064fa70 @ 0x0064_fa70 => extern "C" fn throw_last_error() -> u32 {
+        e::throw_last_error(&mut mem())
+    }
+    /// `StdVector_allocate_00654d40(this; n)` (`al`).
+    StdVector_allocate_00654d40 @ 0x0065_4d40 => extern "thiscall" fn vector_allocate_00654d40(this: u32, n: u32) -> u32 {
+        e::vector_allocate(&mut mem(), this, n)
+    }
+    /// `StdVector_allocate_00654db0(this; n)` (`al`).
+    StdVector_allocate_00654db0 @ 0x0065_4db0 => extern "thiscall" fn vector_allocate_00654db0(this: u32, n: u32) -> u32 {
+        e::vector_allocate(&mut mem(), this, n)
+    }
+    /// `PhyreScene_restoreLoadingCluster_0065a590(scene)`.
+    PhyreScene_restoreLoadingCluster_0065a590 @ 0x0065_a590 => extern "thiscall" fn restore_loading_cluster(this: u32) {
+        e::restore_loading_cluster(&mut mem(), this);
+    }
+    /// `PhyreScene_loadWaterTexture_00665fd0(scene)`: the name in the
+    /// shim's frame (`ebp - 0x104`).
+    PhyreScene_loadWaterTexture_00665fd0 @ 0x0066_5fd0 => extern "thiscall" fn load_water_texture(this: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        e::load_water_texture(&mut mem(), f.at() + 0x104, this)
+    }
+    /// `PhyreScene_onFontTextureLoaded(cluster)`: its argument slot is
+    /// handed on.
+    PhyreScene_onFontTextureLoaded @ 0x0066_66a0 => extern "C" fn on_font_texture_loaded(_cluster: u32; slots: u32) -> u32 {
+        e::on_font_texture_loaded(&mut mem(), slots)
+    }
+    /// `Array_Reserve_00667f00(array; n)`, 4-byte elements.
+    Array_Reserve_00667f00 @ 0x0066_7f00 => extern "thiscall" fn reserve_00667f00(this: u32, n: u32) -> u32 {
+        a::reserve(&mut mem(), this, n, 4)
+    }
+    /// `Array_Reserve_00668180(array; n)`, 8-byte elements.
+    Array_Reserve_00668180 @ 0x0066_8180 => extern "thiscall" fn reserve_00668180(this: u32, n: u32) -> u32 {
+        a::reserve(&mut mem(), this, n, 8)
+    }
+    /// `Array_Reserve_00668300(array; n)`, 8-byte elements.
+    Array_Reserve_00668300 @ 0x0066_8300 => extern "thiscall" fn reserve_00668300(this: u32, n: u32) -> u32 {
+        a::reserve(&mut mem(), this, n, 8)
+    }
+    /// `Array_Reserve_00668380(array; n)`, 1-byte elements.
+    Array_Reserve_00668380 @ 0x0066_8380 => extern "thiscall" fn reserve_00668380(this: u32, n: u32) -> u32 {
+        a::reserve(&mut mem(), this, n, 1)
+    }
+    /// `PArray_ptr_resize_0066c240(this; n)`: the same code as
+    /// `Phyre_PArray_ptr_resize_0047efc0`.
+    PArray_ptr_resize_0066c240 @ 0x0066_c240 => extern "thiscall" fn pointer_array_resize_0066c240(this: u32, n: u32) -> u32 {
+        ffx_pload::descriptor::bridge::pointer_array_resize(&mut mem(), this, n)
     }
 }

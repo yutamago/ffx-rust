@@ -38,6 +38,7 @@ use ffx_prender::m5r_a::{self as ma, bridge as a};
 use ffx_prender::m5r_b::{self as mb, bridge as b};
 use ffx_prender::m5r_c::{self as mc, bridge as c};
 use ffx_prender::m5r_d::{self as md, bridge as d};
+use ffx_prender::m5r_e::{self as me, bridge as e};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -425,6 +426,13 @@ impl Twins {
         let s = self.stub_code(tag, false, n, 0, Ret::Val(0), true);
         self.jump(sym, s);
         s
+    }
+
+    /// An unwinding stub for the throwing import whose slot is `sym`.
+    fn throw_import(&mut self, sym: u32, tag: u32, n: u32) {
+        let s = self.stub_code(tag, false, n, 0, Ret::Val(0), true);
+        let at = self.rebase(sym);
+        self.patch(at, &s.to_le_bytes());
     }
 
     fn jump(&mut self, sym: u32, to: u32) {
@@ -3355,6 +3363,399 @@ fn loading_push_and_others_match_the_original() {
                 |g| Out::U32(d::scene_matrix_transpose(g, ebp)),
             );
             t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- batch 5 (ffx_prender::m5r_e) ----
+
+#[test]
+fn forwarders_e_match_the_original() {
+    let cases: [Fwd; 6] = [
+        (
+            "graphicSetMeshesVisible_00643df0",
+            0x0064_3df0,
+            1,
+            &[(me::SCENE_SET_MESHES_VISIBLE, true, 1, 1)],
+            |g, a| e::set_meshes_visible(g, a[0]),
+        ),
+        (
+            "graphicTextureVideoPlay",
+            0x0064_4280,
+            1,
+            &[(me::SCENE_TEXTURE_VIDEO_PLAY, true, 1, 1)],
+            |g, a| e::texture_video_play(g, a[0]),
+        ),
+        (
+            "graphicSetWaveStrength_00645e40",
+            0x0064_5e40,
+            0,
+            &[(me::SCENE_SET_WAVE_STRENGTH, true, 0, 0)],
+            |g, _| e::set_wave_strength(g),
+        ),
+        (
+            "graphicShadowReset_00643e80",
+            0x0064_3e80,
+            1,
+            &[
+                (me::SHADOW_MANAGER, false, 0, 0),
+                (me::SHADOW_RESET_IF, true, 1, 1),
+            ],
+            |g, a| e::shadow_reset(g, a[0]),
+        ),
+        (
+            "graphicUpdateRadialLineLogic",
+            0x0064_49d0,
+            4,
+            &[
+                (me::BLUR_EFFECT, false, 0, 0),
+                (me::BLUR_RADIAL_LINE, true, 4, 4),
+            ],
+            |g, a| e::update_radial_line_logic(g, [a[0], a[1], a[2], a[3]]),
+        ),
+        (
+            "graphicSetAnimatedMaterialsChar_006440e0",
+            0x0064_40e0,
+            11,
+            &[
+                (me::TEXANIM_MANAGER, false, 0, 0),
+                (me::TEXANIM_SET_CHAR, true, 9, 9),
+            ],
+            |g, a| {
+                let mut w = [0; 11];
+                w.copy_from_slice(a);
+                e::set_animated_materials_char(g, w)
+            },
+        ),
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0401);
+        for _ in 0..16 {
+            for &(name, sym, n, stubs, port) in &cases {
+                let scene = rand_obj(t, &mut rng, 0x10);
+                t.global(me::SCENE.sym, scene);
+                for (k, &(s, this, words, pops)) in stubs.iter().enumerate() {
+                    t.stub_sym(
+                        s,
+                        1 + k as u32,
+                        this,
+                        words,
+                        pops,
+                        Ret::Val(0x900 + k as u32),
+                    );
+                }
+                let args: Vec<u32> = (0..n)
+                    .map(|_| {
+                        if rng.chance(4) {
+                            rng.below(3)
+                        } else {
+                            float_word(&mut rng)
+                        }
+                    })
+                    .collect();
+                t.check(name, sym, Conv::Cdecl, &args, |g| Out::U32(port(g, &args)));
+                t.reset();
+            }
+        }
+    });
+}
+
+#[test]
+fn small_e_methods_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0402);
+        for case in 0..40 {
+            // PostProcessTweakUtil_setEnabled: the argument byte and +4
+            let this = rand_obj(t, &mut rng, 0x190);
+            t.w8(this + 4, (case % 2) as u8);
+            t.stub_sym(me::TEXT_SET_ENABLED, 1, true, 1, 1, Ret::Val(0x11));
+            t.stub_sym(me::TEXT_RESIZE, 2, true, 2, 2, Ret::Val(0x12));
+            let on = [0, 1, 0x100, rng.next()][(case / 2 % 4) as usize];
+            t.check(
+                "PostProcessTweakUtil_setEnabled_006984f0",
+                0x0069_84f0,
+                Conv::Thiscall(this),
+                &[on],
+                |g| Out::U32(e::post_tweak_set_enabled(g, this, on)),
+            );
+            t.reset();
+
+            // DebugMenuManager_disableTweaks and the soft reset
+            for (k, &g) in me::TWEAK_GETTERS.iter().enumerate() {
+                t.stub_sym(g, 0x10 + k as u32, false, 0, 0, Ret::Val(0x1000 + k as u32));
+            }
+            t.stub_sym(me::TWEAK_GETTER_LAST, 0x20, false, 0, 0, Ret::Val(0));
+            for (k, &f) in me::TWEAK_SET_ENABLED.iter().enumerate() {
+                t.stub_sym(f, 0x30 + k as u32, true, 1, 1, Ret::Val(0x2000 + k as u32));
+            }
+            t.check(
+                "DebugMenuManager_disableTweaks_006b49c0",
+                0x006b_49c0,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(e::disable_tweaks(g)),
+            );
+            let scene = rand_obj(t, &mut rng, 0xfa00);
+            let dmm = t.zeros(4);
+            t.stub_sym(me::DEBUG_MENU_MANAGER, 0x40, false, 0, 0, Ret::Val(dmm));
+            t.stub_sym(me::DISABLE_TWEAKS, 0x41, true, 0, 0, Ret::Val(0x42));
+            t.global(me::SCENE_3D.sym, 0);
+            t.check(
+                "PhyreScene_softResetScene",
+                0x0066_fad0,
+                Conv::Thiscall(scene),
+                &[],
+                |g| Out::U32(e::soft_reset(g, scene)),
+            );
+            t.reset();
+
+            // ShadowManager_resetIfSolution: 0x203b, other, negative
+            let shadow = t.zeros(0x4060);
+            let s = [0x203b, 0x203a, 0xffff_e03b, 0][(case % 4) as usize];
+            t.w32(shadow + 0x4050, s);
+            t.stub_sym(me::SHADOW_RESET_SOLUTION, 3, true, 1, 1, Ret::Val(0x33));
+            let x = rng.next();
+            t.check(
+                "ShadowManager_resetIfSolution_006ce0c0",
+                0x006c_e0c0,
+                Conv::Thiscall(shadow),
+                &[x],
+                |g| Out::U32(e::shadow_reset_if_solution(g, shadow, x)),
+            );
+            t.reset();
+
+            // BlurEffect_updateRadialLine
+            let blur = rand_obj(t, &mut rng, 0x20);
+            t.stub_sym(me::RADIAL_LINE_UPDATE, 4, true, 4, 4, Ret::Val(0x44));
+            let a: Vec<u32> = (0..4).map(|_| float_word(&mut rng)).collect();
+            t.check(
+                "BlurEffect_updateRadialLine_006c3fd0",
+                0x006c_3fd0,
+                Conv::Thiscall(blur),
+                &a,
+                |g| {
+                    Out::U32(e::blur_update_radial_line(
+                        g,
+                        blur,
+                        [a[0], a[1], a[2], a[3]],
+                    ))
+                },
+            );
+            t.reset();
+
+            // graphicVideoGetElapsedFrame
+            let m = rand_obj(t, &mut rng, 0x700);
+            t.stub_sym(me::FMV_MANAGER, 5, false, 0, 0, Ret::Val(m));
+            let frame = rng.next();
+            t.stub_sym(me::FMV_CURRENT_FRAME, 6, true, 0, 0, Ret::Val(frame));
+            t.check(
+                "graphicVideoGetElapsedFrame",
+                0x0064_5d90,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(e::video_elapsed_frame(g)),
+            );
+            t.reset();
+
+            // the scene cursors' constructors: an empty or a filled list
+            let cluster = rand_obj(t, &mut rng, 0x40);
+            if case % 2 == 0 {
+                t.w32(cluster + 0x1c, cluster + 0x1c);
+            }
+            for (sym, class, seek) in [
+                (0x0064_cda0, me::CURSOR_CLASS2, me::CURSOR_SEEK2),
+                (0x0064_ce00, me::CURSOR_CLASS3, me::CURSOR_SEEK3),
+                (0x0064_ce60, me::CURSOR_CLASS4, me::CURSOR_SEEK4),
+            ] {
+                let cursor = rand_obj(t, &mut rng, 0x20);
+                t.stub_sym(seek, 7, true, 0, 0, Ret::Val(0x77));
+                t.check(
+                    &format!("PhyreSceneCursor_ctor_{sym:08x}"),
+                    sym,
+                    Conv::Thiscall(cursor),
+                    &[cluster],
+                    |g| Out::U32(e::cursor_ctor(g, cursor, cluster, class, seek)),
+                );
+                t.reset();
+            }
+
+            // the word arrays: n 0..4, count 0..n, the allocation failing
+            let n = rng.below(5);
+            let count = if n == 0 { 0 } else { rng.below(n + 1) };
+            let src = rand_obj(t, &mut rng, 0x20);
+            let block = if rng.chance(5) {
+                0
+            } else {
+                rand_obj(t, &mut rng, 0x20)
+            };
+            t.stub_sym(me::PHYRE_MALLOC_ALIGNED, 8, false, 2, 0, Ret::Val(block));
+            for sym in [0x0064_f7f0, 0x0064_f860] {
+                t.check(
+                    &format!("WordArray_alloc_{sym:08x}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[n, src, count],
+                    |g| Out::U32(e::word_array_alloc(g, n, src, count)),
+                );
+            }
+            t.reset();
+
+            // AtlThrowLastError: positive, zero, negative codes
+            let code = [5, 0, 0x8000_4005, 0x8_0002][(case % 4) as usize];
+            t.import_sym(me::GET_LAST_ERROR, 9, 0, 0, Ret::Val(code));
+            t.throw_sym(me::THROW, 10, 1);
+            t.check(
+                "AtlThrowLastError_0064fa70",
+                0x0064_fa70,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    e::throw_last_error(g);
+                    Out::None
+                },
+            );
+            t.reset();
+
+            // the vector allocators: 0, small, past the limit, no memory
+            let n = [0, 3, 0x4000_0000, 2][(case % 4) as usize];
+            let vec = rand_obj(t, &mut rng, 12);
+            let p = if case % 8 == 3 {
+                0
+            } else {
+                0x0ab0_0000 + (case << 8)
+            };
+            t.stub_sym(me::OPERATOR_NEW, 11, false, 1, 0, Ret::Val(p));
+            t.throw_import(me::XLENGTH_ERROR, 12, 1);
+            t.throw_import(me::XBAD_ALLOC, 13, 0);
+            let throws = n > 0x3fff_ffff || (n != 0 && p == 0);
+            for sym in [0x0065_4d40, 0x0065_4db0] {
+                t.check(
+                    &format!("StdVector_allocate_{sym:08x}"),
+                    sym,
+                    Conv::Thiscall(vec),
+                    &[n],
+                    |g| {
+                        let r = e::vector_allocate(g, vec, n);
+                        if throws { Out::None } else { Out::U32(r) }
+                    },
+                );
+            }
+            t.reset();
+
+            // the loading cluster: either flag
+            let scene = rand_obj(t, &mut rng, 0xfa00);
+            t.w8(scene + 0xf9d1, (case % 2) as u8);
+            t.w8(scene + 0xf9d0, (case / 2 % 2) as u8);
+            t.stub_sym(me::WORLD_REMOVE_CLUSTER, 14, true, 1, 1, Ret::Val(0));
+            t.stub_sym(me::WORLD_ADD_CLUSTER, 15, true, 1, 1, Ret::Val(0));
+            t.check(
+                "PhyreScene_restoreLoadingCluster_0065a590",
+                0x0065_a590,
+                Conv::Thiscall(scene),
+                &[],
+                |g| {
+                    e::restore_loading_cluster(g, scene);
+                    Out::None
+                },
+            );
+            t.reset();
+
+            // the water texture (frame) and the font texture fix-up (slot)
+            t.stub_sym(me::UNIFY_FILENAME, 16, false, 3, 0, Ret::Val(0));
+            t.stub_sym(
+                me::SCENE_LOAD_VFX_TEXTURE_ASYNC,
+                17,
+                true,
+                2,
+                2,
+                Ret::Val(0x55),
+            );
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x140);
+            t.check(
+                "PhyreScene_loadWaterTexture_00665fd0",
+                0x0066_5fd0,
+                Conv::Thiscall(scene),
+                &[],
+                |g| Out::U32(e::load_water_texture(g, ebp, scene)),
+            );
+            t.b_top = None;
+            t.stub_sym(me::ASYNC_LOAD_MANAGER, 18, false, 0, 0, Ret::Val(1));
+            t.stub_sym(me::GET_APPLICATION, 19, false, 0, 0, Ret::Val(2));
+            t.stub_sym(me::FIXUP_CLUSTERS, 20, false, 2, 0, Ret::Val(0x66));
+            let slot = first_slot(&t.b, 1);
+            let cluster = rng.next();
+            t.check(
+                "PhyreScene_onFontTextureLoaded",
+                0x0066_66a0,
+                Conv::Cdecl,
+                &[cluster],
+                |g| Out::U32(e::on_font_texture_loaded(g, slot)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn array_reserves_and_resize_b5_match_the_original() {
+    let list: [(u32, u32); 4] = [
+        (0x0066_7f00, 4),
+        (0x0066_8180, 8),
+        (0x0066_8300, 8),
+        (0x0066_8380, 1),
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0403);
+        for &(sym, elem) in &list {
+            for _ in 0..30 {
+                let arr = t.zeros(12);
+                t.w32(arr, rng.word());
+                t.w32(arr + 4, rng.word());
+                if !rng.chance(3) {
+                    t.w32(arr + 8, 0x0abc_0000 | rng.below(0x1000));
+                }
+                let n = rng.word();
+                let block = if rng.chance(4) { 0 } else { 0x0def_0000 };
+                t.stub_sym(ma::USER_MALLOC, 1, false, 1, 0, Ret::Val(block));
+                t.stub_sym(ma::MEMCPY, 2, false, 3, 0, Ret::Keep);
+                t.stub_sym(ma::USER_FREE, 3, false, 1, 0, Ret::Val(0x77));
+                t.check(
+                    &format!("Array_Reserve_{sym:08x}"),
+                    sym,
+                    Conv::Thiscall(arr),
+                    &[n],
+                    |g| Out::U32(a::reserve(g, arr, n, elem)),
+                );
+                t.reset();
+            }
+        }
+        // PArray_ptr_resize_0066c240 (ffx_pload's port of its twin
+        // 0x0047efc0): the same size, a new size (owned or borrowed old
+        // block), 0, the allocation failing
+        for _ in 0..60 {
+            let n = rng.below(6);
+            let count = if rng.chance(4) {
+                n
+            } else {
+                rng.below(6) | if rng.chance(4) { 0x8000_0000 } else { 0 }
+            };
+            let arr = t.words(&[count, rng.next()]);
+            let block = if rng.chance(5) { 0 } else { t.zeros(0x20) };
+            t.stub_sym(me::PHYRE_MALLOC_ALIGNED, 1, false, 2, 0, Ret::Val(block));
+            t.stub_sym(ma::PHYRE_FREE, 2, false, 1, 0, Ret::Val(0));
+            t.check(
+                "PArray_ptr_resize_0066c240",
+                0x0066_c240,
+                Conv::Thiscall(arr),
+                &[n],
+                |g| {
+                    Out::U32(ffx_pload::descriptor::bridge::pointer_array_resize(
+                        g, arr, n,
+                    ))
+                },
+            );
             t.reset();
         }
     });
