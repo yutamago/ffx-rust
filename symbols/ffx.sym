@@ -3599,7 +3599,7 @@
 0x0063a030 function graphicCharacterInstanceDestroy # fh v3:exact 0x0063a1f0
 0x0063a160 function graphicCharacterInstanceDestroyClothVertexBuffers # fh v3:exact 0x0063a320
 0x0063a2b0 function graphicCharacterInstanceGetBoundingBox # cdecl(chr, max, min): over Ch_GetChrRenderInstance(chr)'s instances' +0x1c bounds (corner, extent), the largest corner + extent and the smallest corner per axis from -/+16777216; alphabetical run between graphicCharacterInstanceDestroyClothVertexBuffers and graphicCharacterInstanceGetClothVertexBuffers; name ours
-0x0063a810 function graphicCharacterInstanceGetClothVertexBuffers # fh v3:bsim0.91 0x0063a9d0
+0x0063a810 function graphicCharacterInstanceGetClothVertexBuffers # fh v3:bsim0.91 0x0063a9d0; cdecl(instance, &cpu) -> the cloth record (0x230 bytes; 0 without an instance; Ghidra: void); frame ebp-0xb8: map outputs at -0xa8 (positions) and -0xa0 (colours), read even when no map ran (junk reads, port uses 0), half-float scratch -0x30/-0x50/-0x4c, colour-byte qword -0x3c; allocations mspace_memalign(g_ClothHeap 0x00ccb454) else user_aligned_malloc; streams c985d8/c98620 (vec3 copies, CPU-side entries when *cpu was 0) and c98650 (16-byte copy, 8-byte halves via *2^112, 4-byte RGBA bytes/255 high first); the record into the cloth list 0x00ccb250/0x00ccb254 (first free slot or appended); ported M4 h3 r19 (ffx_prender::h3_glue67)
 0x0063b1b0 function graphicCharacterInstanceGetMaxiumBoundingBox # fh v3:exact 0x0063b370
 0x0063b200 function graphicCharacterInstanceInitClothList # layout: alphabetical run between graphicCharacterInstanceGetMaxiumBoundingBox and graphicCharacterInstanceOutputAllVertexBuffers (2 unnamed in the gap); Switch 0x71001ceaf0 graphicCharacterInstanceInitClothList is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0063b230 function graphicCharacterInstanceIsVisible # layout: alphabetical run between graphicCharacterInstanceGetMaxiumBoundingBox and graphicCharacterInstanceOutputAllVertexBuffers (2 unnamed in the gap); Switch 0x71001ce850 graphicCharacterInstanceIsVisible is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -19530,6 +19530,9 @@
 0x00ccb228 label    g_GraphicScreenDttOffset  # two floats: graphicScreenSetDttOffset / graphicScreenGetDttOffset
 0x00ccb230 label g_TexAnimSkip                # setAnimatedMaterialsChar 0x6b3060: count, then characters 1..count that get no animated materials
 0x00ccb248 label    g_EtBreathFlags              # op_et_bindeff2_breath_on sets bit 0 for characters 1 and 0x65
+0x00ccb250 label    g_ClothRecordCount        # u32: the cloth records' list count; graphicCharacterInstanceGetClothVertexBuffers puts a record in the first 0 slot of g_ClothRecords or appends (M4 h3 r19)
+0x00ccb254 label    g_ClothRecords            # u32[]: the cloth records (see g_ClothRecordCount) (M4 h3 r19)
+0x00ccb454 label    g_ClothHeap               # the mspace graphicCharacterInstanceGetClothVertexBuffers allocates from (16-aligned; user_aligned_malloc when it fails) (M4 h3 r19)
 0x00ccb460 label    g_GraphicLevelFilter      # byte set with the scene's +3 by 0x00641e40; at 1, graphicVFXUpdate skips geometry with +0x51 == 1 on 21 level hashes (ffx_graphic::vfx::FILTERED_LEVELS)
 0x00ccb464 label    g_GraphicMagicFileAsyncLoad # graphicIsMagicFileAsyncLoadAvailable
 0x00ccb468 label    g_GraphicGameOverNotify   # graphicSetGameOverNotify

@@ -89,6 +89,7 @@ use ffx_prender::h3_glue63::{self as h63, bridge as gh63};
 use ffx_prender::h3_glue64::{self as h64, bridge as gh64};
 use ffx_prender::h3_glue65::{self as h65, bridge as gh65};
 use ffx_prender::h3_glue66::{self as h66, bridge as gh66};
+use ffx_prender::h3_glue67::{self as h67, bridge as gh67};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -13748,5 +13749,281 @@ fn batch68_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES68, n, &mut Rng(0x6868_b068));
+    });
+}
+
+// ---- round 19 batch 69 (ffx_prender::h3_glue67) ----
+
+impl Twins {
+    /// A recording `thiscall(this; i, &out)` stub (`ret 8`) that stores
+    /// `ptr` and `mapped` through `out` and returns `ret`s in turn.
+    fn stub_map69(&mut self, sym: u32, ptr: u32, mapped: u32, rets: &[u32]) {
+        let words: Vec<u8> = rets.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let table = self.alloc(&words);
+        let cell = self.alloc(&table.to_le_bytes());
+        let log = self.stub(None, sym, true, 2, 2, None);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+        c.extend([0xc7, 0x00]);
+        c.extend(ptr.to_le_bytes()); // mov [eax], ptr
+        c.extend([0xc7, 0x40, 0x04]);
+        c.extend(mapped.to_le_bytes()); // mov [eax+4], mapped
+        c.extend([0x8b, 0x15]);
+        c.extend(cell.to_le_bytes()); // mov edx, [cell]
+        c.extend([0x8b, 0x02]); // mov eax, [edx]
+        c.extend([0x83, 0xc2, 0x04]); // add edx, 4
+        c.extend([0x89, 0x15]);
+        c.extend(cell.to_le_bytes()); // mov [cell], edx
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+
+    /// A recording `memset` (cdecl, 3 words) that clears too.
+    fn stub_memset69(&mut self, sym: u32) {
+        let log = self.stub(None, sym, false, 3, 0, Some(0));
+        // push edi; mov edi, [esp+8]; mov eax, [esp+0xc]; mov ecx, [esp+0x10];
+        // rep stosb; pop edi; jmp log
+        let mut c = vec![
+            0x57, 0x8b, 0x7c, 0x24, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x4c, 0x24, 0x10, 0xf3,
+            0xaa, 0x5f,
+        ];
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+
+    /// A recording cdecl stub at `sym` (`n` words, not popped) that
+    /// first stores `value` at the absolute address `at`.
+    fn stub_store_c(&mut self, sym: u32, n: u32, at: u32, value: u32) {
+        let log = self.stub(None, sym, false, n, 0, Some(0));
+        let mut c = vec![0xc7, 0x05]; // mov dword [at], value
+        c.extend(at.to_le_bytes());
+        c.extend(value.to_le_bytes());
+        let here = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(here + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// One vertex block at `block` (0x40 bytes): its attributes (positions
+/// of either name, colours of 16, 8, 4 or 6 bytes, others), the stride
+/// (their sizes, sometimes more), its buffer index and entry array (one
+/// inline entry, or an array of two), pending 0 or (once per case) 1.
+fn block69(t: &mut Twins, block: u32, rng: &mut Rng, pending: &mut Option<u32>) -> bool {
+    let n = rng.below(4);
+    let attrs = t.zeros(0x40);
+    let mut offset = 0;
+    let mut positions = false;
+    for k in 0..n {
+        let (size, name) = match rng.below(6) {
+            0 => {
+                positions = true;
+                (12, t.rebase(h67::NAME_POSITION_A))
+            }
+            1 => {
+                positions = true;
+                (12, t.rebase(h67::NAME_POSITION_B))
+            }
+            5 => (4, rng.word()),
+            _ => (pick(rng, &[16, 8, 4, 6]), t.rebase(h67::NAME_COLOR)),
+        };
+        t.w32(attrs + 0xc * k, offset);
+        t.w32(attrs + 0xc * k + 4, name);
+        offset += size;
+    }
+    let stride = offset + pick(rng, &[0, 0, 4]);
+    let stride = if stride == 0 { 4 } else { stride };
+    t.w32(block, stride);
+    t.w32(block + 8, n | if rng.chance(4) { 0x8000_0000 } else { 0 });
+    t.w32(block + 0xc, attrs);
+    let entries = pick(rng, &[1, 2, 0x8000_0002]);
+    t.w32(block + 0x18, entries);
+    let index = if entries == 1 { 0 } else { rng.below(2) };
+    t.w32(block + 0x10, index);
+    let array = if entries == 1 {
+        block + 0x1c
+    } else {
+        let a = t.zeros(0x40);
+        t.w32(block + 0x1c, a);
+        a
+    };
+    let at = array + 20 * index + 0x10;
+    let wait = pending.is_none() && rng.chance(4);
+    t.w32(at, u32::from(wait));
+    if wait {
+        *pending = Some(at);
+    }
+    positions
+}
+
+/// A character instance: 0-2 meshes (stray top bits), each 0-2 elements
+/// (the pair halves set or 0xffff, 0-2 blocks); the CPU side new or
+/// given (with lists and entries or none); the allocations (the heap
+/// failing now and then); the buffer bound or made or not; the maps'
+/// answers and the mapped data (small sizes, halves and bytes random);
+/// the cloth list (free slots or full).
+#[allow(clippy::too_many_lines)] // one structure per level
+fn prep_cloth69(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let instance = t.zeros(0x20);
+    let meshes = rng.below(3);
+    t.w32(
+        instance,
+        meshes | if rng.chance(4) { 0x8000_0000 } else { 0 },
+    );
+    let list = t.zeros(0x10);
+    t.w32(instance + 4, list);
+    let mut pending = None;
+    let mut positions = false;
+    for i in 0..meshes {
+        let slot = t.zeros(4);
+        let object = t.zeros(0x10);
+        t.w32(slot, object);
+        t.w32(list + 4 * i, slot);
+        let elements = rng.below(3);
+        t.w32(
+            object,
+            elements | if rng.chance(4) { 0x8000_0000 } else { 0 },
+        );
+        let base = t.zeros(0x6c * 2);
+        t.w32(object + 4, base);
+        for j in 0..elements {
+            let e = base + 0x6c * j;
+            let a = if rng.chance(6) {
+                0xffff
+            } else {
+                rng.below(0x100)
+            };
+            let b = if rng.chance(6) {
+                0xffff
+            } else {
+                rng.below(0x100)
+            };
+            t.write(e + 0x20, &(a as u16).to_le_bytes());
+            t.write(e + 0x24, &(b as u16).to_le_bytes());
+            let blocks = rng.below(3);
+            t.w32(
+                e + 0x28,
+                blocks | if rng.chance(4) { 0x8000_0000 } else { 0 },
+            );
+            let bs = t.zeros(0x80);
+            t.w32(e + 0x2c, bs);
+            for k in 0..blocks {
+                positions |= block69(t, bs + 0x40 * k, rng, &mut pending);
+            }
+        }
+    }
+    if let Some(at) = pending {
+        t.stub_store_c(h67::SLEEP, 1, at, 0);
+    }
+    let out = obj + 0x40;
+    let cpu = if rng.chance(2) {
+        0
+    } else {
+        let cpu = t.zeros(0x20);
+        for i in 0..2 {
+            if rng.chance(3) {
+                continue;
+            }
+            let cs = t.zeros(0x20);
+            t.w32(cpu + 4 + 4 * i, cs);
+            for j in 0..2 {
+                if rng.chance(2) {
+                    let e = t.zeros(0x10);
+                    t.w32(e, rng.below(6));
+                    t.w32(cs + 4 + 4 * j, e);
+                }
+            }
+        }
+        cpu
+    };
+    t.w32(out, cpu);
+    args[0] = if rng.chance(12) { 0 } else { instance };
+    args[1] = out;
+    let heap: Vec<u32> = (0..48)
+        .map(|_| {
+            if rng.chance(6) {
+                0
+            } else {
+                let fill = rng.bytes(0x240);
+                t.alloc(&fill)
+            }
+        })
+        .collect();
+    t.stub_seq(h67::MSPACE_MEMALIGN, false, 3, 0, &heap);
+    let user: Vec<u32> = (0..48)
+        .map(|_| {
+            let fill = rng.bytes(0x240);
+            t.alloc(&fill)
+        })
+        .collect();
+    t.stub_memset69(h67::MEMSET);
+    t.stub_seq(h67::ALIGNED_MALLOC, false, 2, 0, &user);
+    let bound: Vec<u32> = (0..24).map(|_| answer(rng)).collect();
+    t.stub_seq(h67::VB_IS_BOUND, true, 0, 0, &bound);
+    // a skipped map leaves the pointer 0 (junk read): only where nothing
+    // raises the colour count above the mapped one (a new CPU side
+    // without position streams)
+    let skips = if cpu == 0 && !positions {
+        &[0, 1, 9][..]
+    } else {
+        &[0][..]
+    };
+    let made: Vec<u32> = (0..24).map(|_| pick(rng, skips)).collect();
+    t.stub_seq(h67::VB_CREATE, true, 0, 0, &made);
+    let data = t.alloc(&rng.bytes(0x100));
+    // now and then halves at infinity (65536 exactly, not above) and next
+    // to it
+    if rng.chance(2) {
+        let halves: Vec<u8> = [0x7c00_u16, 0xfc00, 0x7bff, 0x7c01, 0x0001, 0x8400]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        for k in 0..8 {
+            t.write(data + 12 * k, &halves);
+        }
+    }
+    let size = pick(rng, &[0, 16, 40, 64, 100, 0xffff_ffd0]);
+    let maps: Vec<u32> = (0..24).map(|_| pick(rng, &[0, 0, 1, 9])).collect();
+    t.stub_map69(h67::VB_MAP_FOR_READ, data, size, &maps);
+    let unmaps: Vec<u32> = (0..24).map(|_| pick(rng, &[0, 1])).collect();
+    t.stub_seq(h67::VB_UNMAP, true, 2, 2, &unmaps);
+    let count = rng.below(4);
+    t.global(h67::CLOTH_COUNT, count);
+    let slots = t.rebase(h67::CLOTH_SLOTS);
+    for k in 0..5 {
+        let v = if rng.chance(3) { 0 } else { rng.word() | 1 };
+        t.w32(slots + 4 * k, v);
+    }
+    // junk reads: the map outputs, never written when no map ran
+    FRAME_WRITES.with(|z| z.replace(vec![(0xa8, vec![0; 0x10])]));
+}
+
+const CLOTH69_STUBS: &[(u32, K)] = &[];
+
+#[rustfmt::skip]
+const CASES69: &[Case] = &[
+    with_cookie(framed(Case { prep: Some(prep_cloth69), ..cdecl("get_cloth_vertex_buffers", 0x0063_a810, 2, CLOTH69_STUBS, |m, _, a| u(gh67::get_cloth_vertex_buffers(m, frame_ebp(), a[0], a[1]))) }, 0xb8, 0)),
+];
+
+#[test]
+fn batch69_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES69, n, &mut Rng(0x6969_b069));
     });
 }

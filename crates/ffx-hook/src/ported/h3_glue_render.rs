@@ -72,6 +72,7 @@ use ffx_prender::h3_glue63::bridge as g63;
 use ffx_prender::h3_glue64::bridge as g64;
 use ffx_prender::h3_glue65::bridge as g65;
 use ffx_prender::h3_glue66::bridge as g66;
+use ffx_prender::h3_glue67::bridge as g67;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2223,6 +2224,15 @@ ported! {
     graphicDrawUIElement @ 0x0063_eee0 => extern "C" fn graphic_draw_ui_element(quad: u32, name: u32, screen: u32, kind: u32, vertex_kind: u32) {
         let mut f = StackFrame::<0x27>::new();
         g66::draw_ui_element(&mut mem(), f.at() + 0x9c, quad, name, screen, kind, vertex_kind);
+    }
+
+    // ---- round 19 batch 69 (ffx_prender::h3_glue67) ----
+    /// `graphicCharacterInstanceGetClothVertexBuffers(instance, &cpu)` ->
+    /// the cloth record: the instance's cloth position and colour streams
+    /// read back (frame `ebp - 0xb8`).
+    graphicCharacterInstanceGetClothVertexBuffers @ 0x0063_a810 => extern "C" fn graphic_get_cloth_vertex_buffers(instance: u32, cpu: u32) -> u32 {
+        let mut f = StackFrame::<0x2e>::new();
+        g67::get_cloth_vertex_buffers(&mut mem(), f.at() + 0xb8, instance, cpu)
     }
 }
 
