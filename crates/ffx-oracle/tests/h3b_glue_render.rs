@@ -1430,3 +1430,100 @@ fn batch3_render_hdao_pass_matches_the_original() {
         run_cases(t, CASES_HDAO, n, &mut Rng(0xb3b3_0004));
     });
 }
+
+// ---- batch 4: ShadowManager_createResources_006d1b40 (ffx_prender::h3b_glue5) ----
+
+use ffx_prender::h3b_glue5::{self as h5, bridge as b5};
+
+impl Twins {
+    /// A recording stub at `sym` (logging `ecx`) that first stores the
+    /// words `writes` at `[ecx + off]` (an object the callee fills).
+    fn stub_this_out(
+        &mut self,
+        sym: u32,
+        n: u32,
+        pops: u32,
+        ret: Option<u32>,
+        writes: &[(u8, u32)],
+    ) {
+        let log = self.stub(None, sym, true, n, pops, ret);
+        let mut c = vec![];
+        for &(off, v) in writes {
+            c.extend([0xc7, 0x41, off]); // mov dword [ecx+off], v
+            c.extend(v.to_le_bytes());
+        }
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// The manager (old contents: sampler flags, arrays to release), the
+/// cluster's object list (empty or not), the meshes (the triangle missing
+/// now and then), the cursor's find, the material array's head.
+fn prep_shadow_resources(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let sm = t.zeros(0x4100);
+    *this = sm;
+    let old = rng.bytes(0x4100);
+    t.write(sm, &old);
+    let cluster = obj + 0x200;
+    t.w32(sm, cluster);
+    let list = cluster + 0x1c;
+    let first = if rng.chance(3) { list } else { obj + 0x240 };
+    t.w32(list, first);
+    let mesh = if rng.chance(8) { 0 } else { obj + 0x300 };
+    t.stub_ret(h5::MESH_TRIANGLE, false, 1, 0, mesh);
+    let w = rng.next();
+    t.w32(obj + 0x300, w);
+    t.stub_ret(h5::MESH_SPLIT, false, 6, 0, obj + 0x340);
+    let w = rng.next();
+    t.w32(obj + 0x340, w);
+    let found = if rng.chance(3) { 0 } else { rng.next() | 1 };
+    let base = rng.next();
+    let off = rng.below(0x100);
+    t.stub_this_out(
+        h5::CURSOR_SEEK,
+        0,
+        0,
+        None,
+        &[(0xc, found), (0, base), (0x10, off)],
+    );
+    let head = pick(rng, &[1, 0, 2, 3, 0x8000_0002, 0x8000_0001, 0x8000_0000]);
+    t.w32(obj + 0x400, head);
+    let data = pick(rng, &[obj + 0x404, obj + 0x480, 0]);
+    t.w32(obj + 0x404, data);
+    let c84 = if rng.chance(4) { 0 } else { obj + 0x500 };
+    let (c88, c8c) = (rng.next(), rng.next());
+    t.stub_seq(
+        h5::CLUSTER_CREATE,
+        true,
+        3,
+        3,
+        &[obj + 0x400, c84, c88, c8c],
+    );
+}
+
+const SHADOW_RESOURCES_STUBS: &[(u32, K)] = &[
+    (h5::SHADOW_MESH, K::This(1)),
+    (h5::CREATE_MATERIAL, K::This(3)),
+    (h5::FREE, K::Cdecl(1)),
+    (h5::REGISTER, K::This(0)),
+];
+
+#[rustfmt::skip]
+const CASES_SHADOW_RESOURCES: &[Case] = &[
+    framed(Case { prep: Some(prep_shadow_resources), ..method("shadow_create_resources", 0x006d_1b40, This::Object, 0, SHADOW_RESOURCES_STUBS, |m, this, _| u(b5::create_resources(m, frame_ebp(), this))) }, 0x28, 0),
+];
+
+#[test]
+fn batch4_shadow_create_resources_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES_SHADOW_RESOURCES, n, &mut Rng(0xb3b4_0005));
+    });
+}

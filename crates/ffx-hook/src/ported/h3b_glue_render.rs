@@ -9,6 +9,7 @@ use ffx_prender::h3b_glue1::bridge as b1;
 use ffx_prender::h3b_glue2::bridge as b2;
 use ffx_prender::h3b_glue3::bridge as b3;
 use ffx_prender::h3b_glue4::bridge as b4;
+use ffx_prender::h3b_glue5::bridge as b5;
 
 ported! {
     // ---- batch 1 (ffx_prender::h3b_glue1) ----
@@ -41,5 +42,13 @@ ported! {
     PostProcessManager_renderHDAOPass @ 0x0069_5ba0 => extern "thiscall" fn render_hdao_pass(this: u32, _renderer: u32, _unused: u32, _target: u32, _normals: u32; slots: u32) -> u32 {
         let mut f = StackFrame::<0x5b>::new();
         b4::render_hdao_pass(&mut mem(), f.at() + 0x16c, slots, this)
+    }
+
+    // ---- batch 4 (ffx_prender::h3b_glue5) ----
+    /// `ShadowManager_createResources_006d1b40(this)`: the shadow
+    /// manager's meshes, material, samplers and state; 0, or 0x15.
+    ShadowManager_createResources_006d1b40 @ 0x006d_1b40 => extern "thiscall" fn shadow_create_resources(this: u32) -> u32 {
+        let mut f = StackFrame::<0xa>::new();
+        b5::create_resources(&mut mem(), f.at() + 0x28, this)
     }
 }
