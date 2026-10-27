@@ -70,6 +70,7 @@ use ffx_prender::h3_glue44::{self as h44, bridge as gh44};
 use ffx_prender::h3_glue45::{self as h45, bridge as gh45};
 use ffx_prender::h3_glue46::{self as h46, bridge as gh46};
 use ffx_prender::h3_glue47::{self as h47, bridge as gh47};
+use ffx_prender::h3_glue48::{self as h48, bridge as gh48};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -406,7 +407,20 @@ impl Twins {
     }
 
     fn diff(&mut self, what: &str) {
-        assert_eq!(self.a.diff(&mut self.b).unwrap(), [], "{what}: memory");
+        let d = self.a.diff(&mut self.b).unwrap();
+        if !d.is_empty() && std::env::var_os("H3_LOG").is_some() {
+            // the call logs side by side (tag, this, arguments)
+            for (side, o) in [("a", &self.a), ("b", &self.b)] {
+                let n: u32 = Mem::read(o, self.log);
+                for k in 0..n.min(64) {
+                    let e: Vec<u32> = (0..16)
+                        .map(|w| Mem::read::<u32>(o, self.log + 4 + 64 * k + 4 * w))
+                        .collect();
+                    eprintln!("{side} {k}: {e:x?}");
+                }
+            }
+        }
+        assert_eq!(d, [], "{what}: memory");
     }
 
     /// Runs the original at `sym` in `a` and `bridge` on `b`; compares the
@@ -11220,5 +11234,116 @@ fn batch48_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 30 } else { 150 };
         run_cases(t, CASES48, n, &mut Rng(0x4848_b048));
+    });
+}
+
+// ---- round 13 batch 49 (ffx_prender::h3_glue48) ----
+
+/// A scene with its loaded-character tree (head at `obj + 0x1400`, one
+/// node at `obj + 0x1500` whose key is the name or another, inline or
+/// in a buffer), a name (empty, the image's empty string, inline or
+/// longer), the request, and the stubs' answers: the lookup's node, the
+/// move's capacity and buffer, the reader open or not, the allocations
+/// (a long name's two first, then the three blocks or null), the reader
+/// (any value), the asset counts. The platform path is the original's.
+fn prep_load_character49(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let head = obj + 0x1400;
+    t.w32(obj + 0x11dc, head);
+    let name_at = obj + 0x100;
+    let len = pick(rng, &[0, 1, 5, 15, 16, 30]) as usize;
+    let mut name: Vec<u8> = (0..len).map(|_| b'a' + rng.below(3) as u8).collect();
+    let mut z = name.clone();
+    z.push(0);
+    t.write(name_at, &z);
+    args[0] = if rng.chance(6) {
+        t.rebase(h48::EMPTY)
+    } else {
+        name_at
+    };
+    let request = obj + 0x180;
+    args[1] = request;
+    // the node: the same key, or another
+    let node = obj + 0x1500;
+    if rng.chance(2) {
+        name = (0..rng.below(20))
+            .map(|_| b'a' + rng.below(3) as u8)
+            .collect();
+    }
+    let mut key = name.clone();
+    key.push(0);
+    let inline = key.len() <= 16 && rng.chance(2);
+    if inline {
+        t.write(node + 0x10, &key);
+        t.w32(node + 0x24, 0xf);
+    } else {
+        t.write(obj + 0x1600, &key);
+        t.w32(node + 0x10, obj + 0x1600);
+        t.w32(node + 0x24, 0x10 + rng.below(0x20));
+    }
+    t.w32(node + 0x20, name.len() as u32);
+    t.w32(node + 0x28, obj + 0x1700);
+    let found = if rng.chance(3) { head } else { node };
+    t.stub_ret(h48::LOWER_BOUND, true, 1, 1, found);
+    let cap = pick(rng, &[0xf, 0x10, 0x40]);
+    t.stub_set_this(
+        h48::STRING_MOVE_ASSIGN,
+        1,
+        rng.word(),
+        &[(0x14, cap), (0, obj + 0x1800)],
+    );
+    t.stub_ret(h48::READER_IS_OPEN, true, 0, 0, rng.word() & 0x101);
+    // a long name's buffers (the key, the by-value copy) come first
+    let mut news = vec![];
+    if len > 15 {
+        news.extend([obj + 0x1b00, obj + 0x1b80]);
+    }
+    for (k, at) in [0x1900u32, 0x1980, 0x19c0].into_iter().enumerate() {
+        news.push(if (k > 0 && rng.chance(5)) || rng.chance(8) {
+            0
+        } else {
+            obj + at
+        });
+    }
+    news.extend([obj + 0x1c00, obj + 0x1c80]);
+    t.stub_seq(h48::OPERATOR_NEW, false, 1, 0, &news);
+    // the reader is only handed to stubs: any value, high bit too
+    let reader = if rng.chance(2) {
+        obj + 0x1a00
+    } else {
+        0x8000_0000 | (rng.word() & 0x3fff_ffff)
+    };
+    t.stub_ret(h48::ASSET_READER_CTOR, true, 0, 0, reader);
+    t.stub_ret(h48::OPERATOR_NEW_ARRAY, false, 1, 0, obj + 0x1a80);
+    let count = pick(rng, &[0, 1, 3, u32::MAX]);
+    let mut counts = vec![rng.below(5), count];
+    counts.extend(std::iter::repeat_n(count, 4));
+    t.stub_seq(h48::ASSET_COUNT, true, 0, 0, &counts);
+    t.stub_wide(h48::LOAD_CLUSTER, 7, rng.word());
+}
+
+const LOAD_CHARACTER49_STUBS: &[(u32, K)] = &[
+    (h48::OPERATOR_DELETE, K::Cdecl(1)),
+    (h48::TABLE_INSTANCE, K::Getter),
+    (h48::INSERT_PROTOTYPE, K::This(2)),
+    (h48::BUILD_SUFFIXES, K::This(0)),
+    (h48::READER_CTOR, K::This(1)),
+    (h48::READER_CLOSE, K::This(0)),
+    (h48::READER_DTOR, K::This(0)),
+    (h48::READ_ASSET_HEADER, K::This(1)),
+    (h48::ASYNC_LOAD_INSTANCE, K::Getter),
+    (h48::CREATE_CHILDREN, K::This(1)),
+    (h48::ASSET_PATH, K::This(1)),
+];
+
+#[rustfmt::skip]
+const CASES49: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_load_character49), ..method("load_character", 0x0066_3f20, This::Object, 2, LOAD_CHARACTER49_STUBS, |m, this, a| u(gh48::load_character(m, frame_ebp(), frame_ebp() - 0xc0, this, a[0], a[1]))) }), 0xa8, 0),
+];
+
+#[test]
+fn batch49_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 200 };
+        run_cases(t, CASES49, n, &mut Rng(0x4949_b049));
     });
 }

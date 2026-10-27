@@ -53,6 +53,7 @@ use ffx_prender::h3_glue44::bridge as g44;
 use ffx_prender::h3_glue45::bridge as g45;
 use ffx_prender::h3_glue46::bridge as g46;
 use ffx_prender::h3_glue47::bridge as g47;
+use ffx_prender::h3_glue48::bridge as g48;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2019,6 +2020,17 @@ ported! {
     VfxShaderManager_loadVfxShader @ 0x006c_0fc0 => extern "thiscall" fn vfx_load_vfx_shader(this: u32) -> u32 {
         let mut f = StackFrame::<0xc6a>::new();
         g47::load_vfx_shader(&mut mem(), f.at() + 0x31a8, this)
+    }
+
+    // ---- round 13 batch 49 (ffx_prender::h3_glue48) ----
+    /// `PhyreScene_loadCharacter(this; name, request)` -> 0, or 5 when
+    /// the character's file is missing (frame `ebp - 0xa8`, and below it
+    /// the 0x18 bytes of the name string the original builds in its
+    /// argument area).
+    PhyreScene_loadCharacter @ 0x0066_3f20 => extern "thiscall" fn scene_load_character(this: u32, name: u32, request: u32) -> u32 {
+        let mut f = StackFrame::<0x30>::new();
+        let scratch = f.at();
+        g48::load_character(&mut mem(), scratch + 0xc0, scratch, this, name, request)
     }
 }
 
