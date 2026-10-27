@@ -140,3 +140,15 @@ See [docs/workflow.md](docs/workflow.md).
 [VBFExtract](https://github.com/Kaldaien/VBFExtract) are used only as
 references for facts. No code is copied from them; everything here is
 derived from `FFX.exe` and the game files.
+
+## Licence
+
+MIT OR Apache-2.0. Two parts carry other permissive licences and keep
+their notices:
+
+- `crates/ffx-movie/src/vorbis` is a port of the libVorbis 1.3.5 decoder
+  and libogg's bit reader that FFX.exe links (BSD-3-Clause, Xiph.org
+  Foundation): [crates/ffx-movie/NOTICE](crates/ffx-movie/NOTICE).
+- `third_party/zvidlib-vp8` is the vendored zvidlib-vp8 0.5.0 VP8 decoder
+  (MIT, with its BSD-3-Clause libvpx/RFC 6386 notice):
+  [third_party/zvidlib-vp8/PATCHES.md](third_party/zvidlib-vp8/PATCHES.md).

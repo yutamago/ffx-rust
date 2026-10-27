@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-exclude = ["app"]
+exclude = ["app", "third_party/zvidlib-vp8"]
 
 [workspace.package]
 version = "0.1.0"
@@ -52,6 +52,9 @@ ffx-vfx = { path = "crates/ffx-vfx" }
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 flate2 = "1.1.10"
+libm = "0.2"
+zvidlib-core = "=0.5.0"
+zvidlib-vp8 = { path = "third_party/zvidlib-vp8", default-features = false }
 goblin = { version = "0.10.7", default-features = false, features = ["pe32", "std"] }
 lz4_flex = { version = "0.11", default-features = false, features = ["safe-encode", "safe-decode"] }
 md-5 = "0.11.0"

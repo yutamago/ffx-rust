@@ -62,6 +62,27 @@ pub fn view_screen(v: &ViewScreen) -> ([f32; 16], [f32; 16]) {
     (proj, screen)
 }
 
+pub mod vorbis;
+pub mod vp8;
+pub mod webm;
+
+/// One Vorbis sample as the movie's FMOD stream gets it
+/// (`PVideoPlaybackWin32_AudioRead` `0x00a27170`, on the x87 at 53 bits):
+/// `fld f; fmul 32767.0; fadd 0.5; fstp dword`, `floor` of that (stored
+/// as f32 again), `ftol2_sse` (truncation; `cvttsd2si`, as the game always
+/// has SSE2) and a clamp to `-0x8000..=0x7fff`.
+#[must_use]
+pub fn vorbis_to_s16(f: f32) -> i16 {
+    #[allow(clippy::cast_possible_truncation)] // the fstp dword
+    let biased = (f64::from(f) * 32767.0 + 0.5) as f32;
+    #[allow(clippy::cast_possible_truncation)] // the second fstp dword
+    let floored = f64::from(biased).floor() as f32;
+    let v = ffx_bridge::x87::cvttsd2si(f64::from(floored)).cast_signed();
+    #[allow(clippy::cast_possible_truncation)] // clamped
+    let s = v.clamp(-0x8000, 0x7fff) as i16;
+    s
+}
+
 /// The originals, where the game keeps their state (`ffx_bridge::Mem`).
 pub mod bridge {
     use ffx_bridge::{Host, Mem, x87};

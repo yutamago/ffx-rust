@@ -774,6 +774,10 @@ name = "ffx-movie"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "libm",
+ "md-5",
+ "zvidlib-core",
+ "zvidlib-vp8",
 ]
 
 [[package]]
@@ -812,6 +816,7 @@ dependencies = [
  "flate2",
  "goblin",
  "lz4_flex",
+ "md-5",
  "thiserror",
  "unicorn-engine",
 ]
@@ -2636,3 +2641,33 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[package]]
+name = "zvidlib-build"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4703bf6f711ae09b600c6272c6e629d4b9e9857c6aea50bb599f65bec876c169"
+
+[[package]]
+name = "zvidlib-color"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c337a4d5bae5eae15934c4d4081bf6a4be04d309332b018d8c2dfa494f95934"
+dependencies = [
+ "zvidlib-core",
+]
+
+[[package]]
+name = "zvidlib-core"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "568189ce764b4890342f24ed013595066b6beb0d8e30af37bb755fafae074b90"
+
+[[package]]
+name = "zvidlib-vp8"
+version = "0.5.0"
+dependencies = [
+ "zvidlib-build",
+ "zvidlib-color",
+ "zvidlib-core",
+]
