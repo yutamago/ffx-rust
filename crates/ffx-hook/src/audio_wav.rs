@@ -46,6 +46,19 @@
 //! process without closing FMOD, so the WAV header's sizes are never
 //! filled in and the last block or so may be lost: compare between marks,
 //! up to a mark some frames before the end.
+//!
+//! **Without a file.** A harness game on the virtual clock
+//! (`FFX_HARNESS`, `FFX_HARNESS_FAST=1`, `FFX_HARNESS_VIRTUAL_CLOCK=1`:
+//! every lockstep replay) gets the same set-up and the same turns with
+//! `FMOD_OUTPUTTYPE_NOSOUND_NRT` (4) and no file, unless
+//! `FFX_AUDIO_NRT=0`. With a real output device the mixer plays in real
+//! time, so a voice stream ended after however many updates the machine
+//! managed meanwhile: Wakka's line in event-besaid closed its subtitle at
+//! event count 0x74 to 0x82 over six runs, original code included, and
+//! with it moved his mouth (auto talk until the voice ends) and every frame
+//! the script waits on a voice or a music file. Under the turns the voice
+//! plays one block per update, and the subtitle closed at 0x6f in every
+//! run (`docs/harness.md`, "Sound in lockstep").
 
 use std::ffi::{CString, c_void};
 use std::io::Write as _;
@@ -58,6 +71,8 @@ use windows_sys::Win32::System::Threading::{ResetEvent, SetEvent, WaitForSingleO
 
 use crate::log::log;
 
+/// `FMOD_OUTPUTTYPE_NOSOUND_NRT` (FMOD Ex 4.44).
+const OUTPUT_NOSOUND_NRT: i32 = 4;
 /// `FMOD_OUTPUTTYPE_WAVWRITER_NRT` (FMOD Ex 4.44).
 const OUTPUT_WAVWRITER_NRT: i32 = 5;
 /// `FMOD_SOUND_FORMAT_PCMFLOAT`.
@@ -87,6 +102,9 @@ const UPDATE_NAME: &str = "?update@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@XZ";
 
 /// The capture is on (`FFX_AUDIO_WAV` set, the slots patched).
 static ON: AtomicBool = AtomicBool::new(false);
+/// The output type `EventSystem::init` sets: [`OUTPUT_WAVWRITER_NRT`]
+/// with a file, [`OUTPUT_NOSOUND_NRT`] without.
+static OUTPUT: AtomicU32 = AtomicU32::new(OUTPUT_WAVWRITER_NRT as u32);
 /// The WAV file's name, for `EventSystem::init`.
 static PATH: OnceLock<CString> = OnceLock::new();
 /// The marks file.
@@ -226,10 +244,11 @@ unsafe extern "system" fn event_system_init(
     let path = PATH.get().map_or(std::ptr::null(), |p| p.as_ptr());
     if system != 0 {
         SYSTEM.store(system, Ordering::Release);
+        let kind = OUTPUT.load(Ordering::Acquire);
         let output = system_call(
             "?setOutput@System@FMOD@@QAG?AW4FMOD_RESULT@@W4FMOD_OUTPUTTYPE@@@Z",
             system,
-            &[OUTPUT_WAVWRITER_NRT as usize],
+            &[kind as usize],
         );
         let before = software_format(system);
         let set_format = before.and_then(|[rate, _, out, max_in, resampler, _]| {
@@ -255,7 +274,7 @@ unsafe extern "system" fn event_system_init(
             &[block, 4],
         );
         log(&format!(
-            "  audio wav: setOutput(WAVWRITER_NRT) {output:?}, software format before {before:?}, \
+            "  audio wav: setOutput({kind}) {output:?}, software format before {before:?}, \
              PCMFLOAT {set_format:?}, DSP block {block} {set_block:?}"
         ));
     } else {
@@ -497,25 +516,33 @@ pub fn mark(name: &str) -> String {
 /// `base` must be the main module; called before other threads run game
 /// code, after the other import patches (`fmod_log`).
 pub unsafe fn install(base: usize) {
-    let Ok(path) = std::env::var("FFX_AUDIO_WAV") else {
-        return;
-    };
+    let path = std::env::var("FFX_AUDIO_WAV").unwrap_or_default();
     if path.is_empty() {
-        return;
-    }
-    let Ok(c_path) = CString::new(path.clone()) else {
-        return;
-    };
-    match std::fs::File::create(format!("{path}.marks")) {
-        Ok(mut f) => {
-            let _ = writeln!(f, "# audiomarks 1 {path}");
-            if let Ok(mut m) = MARKS.lock() {
-                *m = Some(f);
-            }
+        // no file: the same mixer and turns without sound on the virtual
+        // clock (module docs, "Without a file")
+        let env = |name: &str| std::env::var(name).unwrap_or_default();
+        let lockstep_game = !env("FFX_HARNESS").is_empty()
+            && env("FFX_HARNESS_FAST") == "1"
+            && env("FFX_HARNESS_VIRTUAL_CLOCK") == "1";
+        if !lockstep_game || env("FFX_AUDIO_NRT") == "0" {
+            return;
         }
-        Err(e) => log(&format!("  audio wav: cannot create {path}.marks: {e}")),
+        OUTPUT.store(OUTPUT_NOSOUND_NRT as u32, Ordering::Release);
+    } else {
+        let Ok(c_path) = CString::new(path.clone()) else {
+            return;
+        };
+        match std::fs::File::create(format!("{path}.marks")) {
+            Ok(mut f) => {
+                let _ = writeln!(f, "# audiomarks 1 {path}");
+                if let Ok(mut m) = MARKS.lock() {
+                    *m = Some(f);
+                }
+            }
+            Err(e) => log(&format!("  audio wav: cannot create {path}.marks: {e}")),
+        }
+        let _ = PATH.set(c_path);
     }
-    let _ = PATH.set(c_path);
     // SAFETY: forwarded from the caller.
     let (init, update) = unsafe {
         (
@@ -551,7 +578,13 @@ pub unsafe fn install(base: usize) {
     // SAFETY: forwarded from the caller (the FMOD thread is made later).
     let r = unsafe { crate::install(base, &hooks, &[]) };
     ON.store(true, Ordering::Release);
-    log(&format!(
-        "  audio wav: FMOD output to {path} (WAVWRITER_NRT, PCMFLOAT); FmodManager_tick turns {r:?}"
-    ));
+    if path.is_empty() {
+        log(&format!(
+            "  audio wav: no file, FMOD output NOSOUND_NRT on the virtual clock; FmodManager_tick turns {r:?}"
+        ));
+    } else {
+        log(&format!(
+            "  audio wav: FMOD output to {path} (WAVWRITER_NRT, PCMFLOAT); FmodManager_tick turns {r:?}"
+        ));
+    }
 }

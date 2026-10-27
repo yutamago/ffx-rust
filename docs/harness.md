@@ -768,7 +768,9 @@ a script does after one lands on a different frame in every run, original
 code included (Wakka's run: 7,700 pixels between two original runs at the
 same count). event-besaid takes no shot then, and waits for the subtitle's
 window to close (`waitfor` state 0) before the next input, after which the
-script's frames are fixed again. Two more things vary between original
+script's frames are fixed again. (Since 2026-10-27 the voice keeps the
+update count in lockstep, "Sound in lockstep" below: the subtitle closes at
+count 0x6f in every run.) Two more things vary between original
 runs: a chocobo icon at the bottom right of maps `0x14` and `0x29` that
 animates by the wall clock (masked, `shot-compare.py` `MASKS`), and the
 player position range (`run-all.sh` passes `--ignore 2`). That was thought
@@ -1204,6 +1206,33 @@ near-silent from block 768 of 990 (the AP screen). Bisected with
 `MsMusicReadStart`): the original tail-jumps to `SndMusicRead` with its own
 argument (`g_BtlEndMusic`, the fanfare 0x8a), and the port passed none, so
 the fanfare never loaded. Fixed; all four now match.
+
+### Sound in lockstep
+
+Since 2026-10-27 (replay-flakes3) every game on the virtual clock (all
+lockstep replays, the draw captures) runs FMOD as the audio capture does,
+without the file: output `FMOD_OUTPUTTYPE_NOSOUND_NRT` (4), the same
+software format, DSP blocks of one tick, streams decoded in `update`, and
+the `FmodManager_tick` turns at each frame boundary. Nothing reaches the
+speakers. `FFX_AUDIO_NRT=0` keeps the old real-time mixer; `realtime`
+replays (boot, event-cliff, event-arrival, movie-fmv) are not on the
+virtual clock and keep it too.
+
+Before, the mixer ran on the sound card's clock, so a voice or a music
+file took as many updates as the machine managed in its real length. In
+event-besaid Wakka's "Hey! It's this way!" ends his auto talk
+(`Ch_Mouth` `0x008344f0` moves the mouth from `rand()` while chr `+0x4d4`
+is set, `Native_5076_ChrSetAutoTalk`) and closes the subtitle when the
+voice ends (`SndStatusUpdate` `0x00887700` ORs the stream's play state
+into `g_TkSndVoiceFlags` `0x0132ff10`). Six runs closed it at event count
+0x74 to 0x82 (originals 0x7a and 0x82 side by side, Rust 0x74 and 0x75 at
+55 s a run under load), and a slower run could end the line, and the
+mouth, before event-besaid-2 at count 0x5f. With the turns, two original
+and one Rust run closed it at 0x6f, and the three traces of the mouth
+words (`*0x023c44e4 + n x 0x880 + 0x4d4`, 16 bytes, eight records) and
+the voice flags agreed on every frame. What follows a voice (Wakka's
+run, the river) and every wait on a music file now lands on fixed frames
+too, so all lockstep references had to be recorded again with it.
 
 ## Parallel games
 

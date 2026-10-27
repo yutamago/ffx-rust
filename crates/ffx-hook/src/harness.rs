@@ -81,7 +81,7 @@
 //! | `overlaymouse <x> <y> [down\|up]` | moves the overlay's pointer there, pressing or releasing the left button |
 //! | `overlaykey <vk hex> down\|up` | a key for the overlay (Windows virtual-key code) |
 //! | `editor` | opens or closes the renderer's editor (as F11; shows the overlay) |
-//! | `audiomark <name>` | `ok frame <n> sample <n> updates <n> free <n> late <n>`: notes where the `FFX_AUDIO_WAV` capture stands in its marks file ([`crate::audio_wav`]; `ok off` without it) |
+//! | `audiomark <name>` | `ok frame <n> sample <n> updates <n> free <n> late <n>`: notes where the `FFX_AUDIO_WAV` capture stands in its marks file ([`crate::audio_wav`]; `ok off` without it; with no file on the virtual clock only the sample clock, no marks file) |
 //! | `quit` | ends the process |
 
 use std::collections::VecDeque;

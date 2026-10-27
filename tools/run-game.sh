@@ -93,6 +93,12 @@ fi
 if [[ -n "${FFX_AUDIO_WAV:-}" ]]; then
     export WSLENV="${WSLENV:+$WSLENV:}FFX_AUDIO_WAV/p"
 fi
+# Without a file, games on the virtual clock run FMOD the same way with no
+# output (NOSOUND_NRT, docs/harness.md "Sound in lockstep");
+# FFX_AUDIO_NRT=0 keeps the sound card's real-time mixer instead.
+if [[ -n "${FFX_AUDIO_NRT:-}" ]]; then
+    export WSLENV="${WSLENV:+$WSLENV:}FFX_AUDIO_NRT"
+fi
 case "$lang" in jp|en|fr|de|it|es|kr|ch) ;; *) echo "unknown language $lang" >&2; exit 2 ;; esac
 if [[ -n "$instance" ]]; then
     game="$("$repo/tools/instance.sh" "$instance" ${mods[@]+"${mods[@]}"})"

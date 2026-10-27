@@ -12,9 +12,10 @@
 # count (0x01325d94, as in field-walk.txt), which every map's event starts
 # again from 0; the inputs on a map start at a fixed count too (`waitfor`
 # a power-of-two range of the count), so their frames are fixed as well.
-# The voiced line waits for the voice stream, which plays in real time:
-# what the script does after it (Wakka's run) lands on another frame in
-# every run, original code included, so no shot is taken then.
+# The voiced line waits for the voice stream. On the virtual clock FMOD
+# mixes one block per update (docs/harness.md, "Sound in lockstep"), so
+# the line ends, and the subtitle closes, at count 0x6f in every run; with
+# the sound card's real-time mixer it landed anywhere from 0x74 to 0x82.
 # The chocobo icon at the bottom right (x 1200-1280, y 640-720) animates
 # by the wall clock and is left out (tools/shot-compare.py MASKS).
 #
@@ -57,9 +58,8 @@ pad
 wait 40
 read 0x01325d94 4
 shot $OUT\event-besaid-2.bmp
-# the subtitle stays until the voice ends (real time, so a varying number
-# of frames); from its close the script's frames are fixed again: Wakka
-# runs off and the control comes back. Then right to map 0x29.
+# the subtitle stays until the voice ends (count 0x6f, see above); then
+# Wakka runs off and the control comes back. Then right to map 0x29.
 waitfor 0x01326d84:4 00000000 ffffffff 3000
 wait 120
 pad right
