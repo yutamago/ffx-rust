@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf,
-    h4b_g as bg, h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk, h4b_l as bl,
+    h4b_g as bg, h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk, h4b_l as bl, h4b_m as bm,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -4647,6 +4647,132 @@ fn bl_wait_win_main() {
             let x = Oracle::read(&mut t.a, frame, 8).unwrap();
             let y = Oracle::read(&mut t.b, frame, 8).unwrap();
             assert_eq!(x, y, "{what}: frame");
+        }
+    }
+}
+
+// ---- round 3, batch 4 (ffx_glue_other::h4b_m)
+
+/// `AbmapPadDrawListBar_00a462f0`: every thumb kind in both layouts and
+/// some without a thumb, bars of every height around the 3-, 5-row and
+/// 0x3c limits, the track from each row; image and random constants.
+/// The record each draw sees is captured, the record, the zeroed words
+/// and the name buffer compared after.
+#[test]
+fn bm_list_bar() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f701);
+        capture_stub_n(&mut t, bm::DRAW_ABMAP_ELEMENT, 3, 0, 0x80, 128);
+        let tags = [bm::DRAW_ABMAP_ELEMENT];
+        let f32s = [
+            0x00b5_f330,
+            0x00b6_56dc,
+            0x00b5_83d8,
+            0x00b6_6dc8,
+            0x00b7_b6d0,
+            0x00b7_b6ec,
+            0x00b5_1b9c,
+            0x00b7_b5f4,
+            0x00b4_936c,
+            0x00b5_ed88,
+            0x00b7_b5f0,
+            0x00b7_b5dc,
+            0x00b7_b5e0,
+            0x00b7_b614,
+            0x00b6_5610,
+            0x00b7_b5f8,
+            0x00b7_b620,
+            0x00b7_b600,
+            0x00b6_6c20,
+            0x00b6_6bf0,
+        ];
+        let f64s = [
+            0x00b7_b680,
+            0x00b9_2220,
+            0x00b9_2248,
+            0x00b3_4f90,
+            0x00b5_ee40,
+            0x00b4_1308,
+            0x00b2_c5c8,
+            0x00b4_1d00,
+            0x00b7_b6b0,
+            0x00b6_5658,
+        ];
+        let mut real = Vec::new();
+        for &c in &f32s {
+            let at = t.rebase(c);
+            real.push((at, Oracle::read(&mut t.a, at, 4).unwrap()));
+        }
+        for &c in &f64s {
+            let at = t.rebase(c);
+            real.push((at, Oracle::read(&mut t.a, at, 8).unwrap()));
+        }
+        let ebp = t.ebp_for(5);
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            if rng.below(3) == 0 {
+                t.constants(&mut rng, &f32s, &f64s);
+            } else {
+                for (at, v) in &real {
+                    t.write(*at, v);
+                }
+            }
+            let cjk = rng.pick(&[0, 1, 2]);
+            t.g32(bm::ABMAP_CJK.sym, cjk);
+            let kind = rng.pick(&[0x40, 0x48, 0x5f, 0x60, 0x88, 0xa0, 0x10, 0x50]);
+            let top = rng.below(300) as i32 - 50;
+            let height = rng.pick(&[
+                0,
+                20,
+                39,
+                40,
+                59,
+                60,
+                61,
+                80,
+                99,
+                100,
+                120,
+                200,
+                0xffff_ffec_u32,
+            ]);
+            let height = if rng.below(4) == 0 {
+                rng.below(300) as i32
+            } else {
+                height.cast_signed()
+            };
+            let pos = rng.below(400) as i32 - 100;
+            let at = rng.pick(&[0, 0, 0, 1, 2, 3, 4, 0xffff_ffff, 0xffff_fffe]);
+            let args = [
+                kind,
+                top as u32,
+                pos as u32,
+                top.wrapping_add(height) as u32,
+                at,
+            ];
+            let frame = ebp - 0x19c;
+            run_parts(
+                &mut t,
+                &w,
+                0x00a4_62f0,
+                Conv::Cdecl,
+                &args,
+                (ebp - 0x1ac, ebp - 4),
+                0xa5,
+                &|_| vec![(frame, ebp - 4)],
+                |g| {
+                    bm::list_bar(
+                        g,
+                        frame,
+                        kind as i32,
+                        top,
+                        pos,
+                        top.wrapping_add(height),
+                        at,
+                    )
+                },
+            );
         }
     }
 }

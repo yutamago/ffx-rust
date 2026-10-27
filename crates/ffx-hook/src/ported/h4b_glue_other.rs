@@ -8,7 +8,7 @@
 
 use ffx_glue_other::{
     h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf, h4b_g as bg,
-    h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk, h4b_l as bl,
+    h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk, h4b_l as bl, h4b_m as bm,
 };
 
 use super::{StackFrame, mem, ported};
@@ -315,5 +315,15 @@ ported! {
     TODrawWaitBtlWinMain @ 0x008a_49b0 => extern "C" fn wait_win_main(w: u32) -> u32 {
         let mut f = StackFrame::<2>::new();
         bl::wait_win_main(&mut mem(), w, f.at()).unwrap_or(0)
+    }
+
+    // ---- round 3, batch 4 (ffx_glue_other::h4b_m)
+
+    /// `AbmapPadDrawListBar_00a462f0(kind, top, pos, bottom, at)`: the
+    /// quad record and the name buffer in a frame (`ebp - 0x19c` ..
+    /// `ebp - 4`, 102 words).
+    AbmapPadDrawListBar_00a462f0 @ 0x00a4_62f0 => extern "C" fn pad_list_bar(kind: u32, top: u32, pos: u32, bottom: u32, at: u32) -> u32 {
+        let mut f = StackFrame::<0x66>::new();
+        bm::list_bar(&mut mem(), f.at(), kind.cast_signed(), top.cast_signed(), pos.cast_signed(), bottom.cast_signed(), at)
     }
 }
