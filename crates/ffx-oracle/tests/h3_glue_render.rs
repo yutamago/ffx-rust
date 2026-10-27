@@ -74,6 +74,7 @@ use ffx_prender::h3_glue48::{self as h48, bridge as gh48};
 use ffx_prender::h3_glue49::{self as h49, bridge as gh49};
 use ffx_prender::h3_glue50::{self as h50, bridge as gh50};
 use ffx_prender::h3_glue51::{self as h51, bridge as gh51};
+use ffx_prender::h3_glue52::{self as h52, bridge as gh52};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -11746,5 +11747,102 @@ fn batch52_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES52, n, &mut Rng(0x5252_b052));
+    });
+}
+
+// ---- round 15 batch 53 (ffx_prender::h3_glue52) ----
+
+/// A character's last asset loaded: its name (`a`, `b`, `/` and `.`,
+/// 0 to 40 bytes; some with no `/` or no `.`), `out` (its model word),
+/// a reader (0 now and then), the asset array (data or none), the
+/// request and `extra` (0 or a pointer). The cluster fix-up fails now
+/// and then; the reader's symbol ids are -1 or an index; the `.ovp` file
+/// is missing, fails to open, or reads in up to three chunks of the
+/// frame's bytes (random, or a long run without a 0). The string code
+/// is the original's, `operator new` gives 0x1000-byte buffers in turn;
+/// the tree's node and insert are recording stubs.
+fn prep_all_assets53(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let len = pick(rng, &[0, 1, 5, 15, 16, 24, 40]) as usize;
+    let alphabet: &[u8] = match rng.below(4) {
+        0 => b"ab.",
+        1 => b"ab/",
+        _ => b"ab/.",
+    };
+    let mut name: Vec<u8> = (0..len)
+        .map(|_| alphabet[rng.below(alphabet.len() as u32) as usize])
+        .collect();
+    name.push(0);
+    let name_at = obj + 0x100;
+    t.write(name_at, &name);
+    let out = obj + 0x180;
+    t.w32(out, rng.word());
+    let reader = match rng.below(4) {
+        0 => 0,
+        1 => obj + 0x1a00,
+        _ => rng.word(),
+    };
+    let array = obj + 0x1c0;
+    t.w32(array + 8, if rng.chance(5) { 0 } else { obj + 0x1d00 });
+    let request = obj + 0x1e0;
+    let extra = if rng.chance(3) { 0 } else { obj + 0x1e80 };
+    args.copy_from_slice(&[out, reader, array, request, name_at, extra]);
+    let failed = if rng.chance(5) { 1 + rng.below(9) } else { 0 };
+    t.stub_ret(h52::FIXUP_CLUSTERS, false, 2, 0, failed);
+    let mut id = || {
+        if rng.chance(3) {
+            u32::MAX
+        } else {
+            rng.below(4)
+        }
+    };
+    let ids = [id(), id()];
+    t.stub_seq(h52::GET_SYMBOL_ID, true, 1, 1, &ids);
+    let heap = t.zeros(0x1000 * 24);
+    let news: Vec<u32> = (0..24).map(|k| heap + 0x1000 * k).collect();
+    t.stub_seq(h48::OPERATOR_NEW, false, 1, 0, &news);
+    t.stub_ret(h52::BUY_NODE, true, 1, 1, obj + 0x1f00);
+    let exists = u32::from(!rng.chance(4));
+    t.stub_ret(h52::FIOS_IS_FILE_EXIST, false, 1, 0, exists);
+    let stream = if rng.chance(4) { 0 } else { rng.word() | 1 };
+    t.stub_ret(h52::FIOS_OPEN, false, 2, 0, stream);
+    let mut reads: Vec<u32> = (0..rng.below(4))
+        .map(|_| pick(rng, &[1, 7, 16, 0x40, 0x3ff]))
+        .collect();
+    reads.push(if rng.chance(3) { u32::MAX } else { 0 });
+    t.stub_seq(h52::FIOS_READ, false, 3, 0, &reads);
+    if rng.chance(2) {
+        let text: Vec<u8> = (0..0x400).map(|_| b'a' + rng.below(26) as u8).collect();
+        FRAME_WRITES.with(|z| z.replace(vec![(0x410, text)]));
+    }
+}
+
+const ALL_ASSETS53_STUBS: &[(u32, K)] = &[
+    (h52::GET_APPLICATION, K::Getter),
+    (h52::ASSET_COUNT, K::This(0)),
+    (h52::READER_DTOR, K::This(0)),
+    (h52::OPERATOR_DELETE, K::Cdecl(1)),
+    (h52::OPERATOR_DELETE_ARRAY, K::Cdecl(1)),
+    (h52::USER_FREE, K::Cdecl(1)),
+    (h52::TREE_INSERT, K::This(4)),
+    (h52::REBIND_ALT, K::This(3)),
+    (h52::FIOS_CLOSE, K::Cdecl(1)),
+    (h52::TEXTURE_ANIMATION_INSTANCE, K::Getter),
+    (h52::ADD_ANIMATED_MATERIALS, K::This(7)),
+    (h52::TABLE_INSTANCE, K::Getter),
+    (h52::INSERT_PROTOTYPE, K::This(2)),
+    (h52::BUILD_SUFFIXES, K::This(0)),
+    (h52::CHR_LOAD_COUNTDOWN, K::Cdecl(0)),
+];
+
+#[rustfmt::skip]
+const CASES53: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_all_assets53), ..method("on_character_all_assets_loaded", 0x0065_a760, This::Object, 6, ALL_ASSETS53_STUBS, |m, this, a| u(gh52::on_character_all_assets_loaded(m, frame_ebp(), this, a[0], a[1], a[2], a[3], a[4], a[5]))) }), 0x4ac, 0),
+];
+
+#[test]
+fn batch53_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES53, n, &mut Rng(0x5353_b053));
     });
 }
