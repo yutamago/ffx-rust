@@ -1584,9 +1584,19 @@ Original code, measured this round (probe scripts and logs in
   boundary too did not remove it. boot-3 in the first main-list proof
   run: Rikku's back strap differed (2,029 pixels by value, 32 over the
   comparison's noise; every `waitfor` and shot at the same update as in
-  the passing runs). Leads in `docs/drawdiff.md`, "Scene gates": the
+  the passing runs). event-besaid-4 in the fourth: 609 pixels outside
+  the 3,674 the two originals differ by, all on Tidus's hood and the mesh
+  on his leg, the hood with a dark notch the originals never show (by
+  eye: as if part of its vertices were a step behind); the originals'
+  own difference there is the same leg mesh. battle-magic-3 in the
+  fifth: 43 pixels (1,498 by value) on Tidus inside the spell's haze,
+  where the originals agree. So cloth is most of what is left in the
+  main list: the river walk's event-besaid-4/-5 differences between
+  originals included. Leads in `docs/drawdiff.md`, "Scene gates": the
   cloth jobs run from the end of `Ch_DrawMain` to the end of the update,
-  beside the main thread and the render thread.
+  beside the main thread and the render thread. A fix would order the
+  cloth jobs against whatever reads the vertices (in lockstep), then needs
+  every reference recorded again.
 - **The eye-blink bind and the loader's 16x8 texture** in the scene
   gates: bsil0000's r1 has the blink's BC1 frame where r2 and an all-hooks
   capture have BC3; kami0100's r2 has the loader's texture
@@ -1595,6 +1605,38 @@ Original code, measured this round (probe scripts and logs in
   (`vs 598aad727f6ce184`, srv1 32x32), and the next one passed against
   r1. All three were seen with three games at once; none is on the
   scene's list where it was seen, and the lists were not loosened.
+
+Proofs of this round (`run-all.sh`, three games at once, other agents'
+games beside them): the main list against the shared references (with
+this branch's menu-save recording), the extra list against the shared
+ones with this branch's movie-fmv and iggy-menus recordings
+(`~/ffx-work/flakes7/shots-extra`):
+
+| Run | Main | Extra |
+|---|---|---|
+| 1 | FAIL boot-3, 32 pixels: Rikku's strap (cloth) | FAIL iggy-menus: after the game over the title's world never loaded |
+| 2 | pass | pass |
+| 3 | pass | FAIL iggy-menus, the same |
+| 4 | FAIL event-besaid-4, 609 pixels: Tidus's hood (cloth) | FAIL battle-ifrit-1, 9 pixels: Wakka's eyes (blink) |
+| 5 | FAIL battle-magic-3, 43 pixels on Tidus | pass |
+
+movie-fmv (lockstep) passed in all five, shots and trace. The iggy-menus
+failure is new: after `AtelJumpGameOver` the map word went to `0x17` as
+in every run, but the title's world (`test20`) never loaded (no `world:
+scene test20` in the hook log; map `0x17` for 1,470 updates until the
+`waitfor` for the opening, `0x15d`, timed out). Original code never did it
+(the two recordings and three more runs); with every hook it did in 3 of
+7 runs. With six of the hooks added since replay-flakes6
+(`PhyreScene_initScene`, `PhyreScene_doOnFieldMapAssetLoaded`,
+`LoadingScreen_prepareMesh`, `PhyFMVPlayerManager_initialize`,
+`FFEscMenu_initializeVideoSettingPage`,
+`MenuDynamicGeometry_setShaderClusterAndMaterial`) disabled
+(`FFX_HOOK_DISABLE`) it passed 6 of 6; with the first three of them
+disabled 6 of 6, and with `PhyreScene_doOnFieldMapAssetLoaded`
+(`0x0065af60`, h3 r18) alone disabled 6 of 6. So that port is the lead
+(a 1-in-3 failure, so six passes leave about a 9% chance per step that
+the culprit was on): the title's map load after a game over does not
+finish with it in about one run of three.
 
 ## Parallel games
 
