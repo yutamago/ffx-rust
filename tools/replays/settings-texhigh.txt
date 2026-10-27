@@ -5,7 +5,7 @@
 # all its mip levels (Phyre_PBinary_loadClusterTextures drops none,
 # g_Settings +0x34 = 0). Same walk, shots and traces as settings-hdao.txt.
 settings texhigh
-load direct 1 cdsp0000
+load direct 1 cdsp0000 lockstep
 lockstep on
 pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500

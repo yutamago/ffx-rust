@@ -5,7 +5,7 @@
 # PostProcessManager_renderFXAA (scene +0x10dd8 = 1) and renderUSM
 # (pp +0x123d3). Same walk, shots and traces as settings-hdao.txt.
 settings fxaa
-load direct 1 cdsp0000
+load direct 1 cdsp0000 lockstep
 lockstep on
 pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500

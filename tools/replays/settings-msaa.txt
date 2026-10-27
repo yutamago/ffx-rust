@@ -6,7 +6,7 @@
 # resolves and the scene's Opaque pass instead of OpaqueNoMSAA
 # (g_Settings +0x38). Same walk, shots and traces as settings-hdao.txt.
 settings msaa4
-load direct 1 cdsp0000
+load direct 1 cdsp0000 lockstep
 lockstep on
 pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500

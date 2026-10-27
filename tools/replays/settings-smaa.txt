@@ -5,7 +5,7 @@
 # PostProcessManager_renderSMAA at quality 4 (pp +0x1231c) and renderUSM.
 # Same walk, shots and traces as settings-hdao.txt.
 settings smaa
-load direct 1 cdsp0000
+load direct 1 cdsp0000 lockstep
 lockstep on
 pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500

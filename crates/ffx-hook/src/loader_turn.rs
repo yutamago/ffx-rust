@@ -61,6 +61,8 @@ static TURN: AtomicBool = AtomicBool::new(false);
 static RENDER_WAITING: AtomicBool = AtomicBool::new(false);
 /// The update (`PASSED` value) the loader was let go in after a stall.
 static STALL_FREED: AtomicU32 = AtomicU32::new(u32::MAX);
+/// Stalls so far (logged).
+static STALLS: AtomicU32 = AtomicU32::new(0);
 
 static WAKE: Mutex<()> = Mutex::new(());
 static CHANGED: Condvar = Condvar::new();
@@ -223,6 +225,14 @@ fn loader_wait() {
             since = Instant::now();
         } else if since.elapsed() > STALL {
             STALL_FREED.store(now, Ordering::Release);
+            let n = STALLS.fetch_add(1, Ordering::AcqRel);
+            // a map load's update (the main thread in `CdReadSync`
+            // `0x0076c490`, waiting for the read thread) is the usual one
+            if n < 8 {
+                log(&format!(
+                    "  harness: loader freed in update {now} (stall {n})"
+                ));
+            }
             return true;
         }
         false

@@ -10,7 +10,7 @@
 # so a settings file the game did not take shows up as a difference, the
 # generators and the party records.
 settings hdao
-load direct 1 cdsp0000
+load direct 1 cdsp0000 lockstep
 lockstep on
 pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500
