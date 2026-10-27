@@ -11,6 +11,7 @@ use ffx_prender::h3b_glue3::bridge as b3;
 use ffx_prender::h3b_glue4::bridge as b4;
 use ffx_prender::h3b_glue5::bridge as b5;
 use ffx_prender::h3b_glue6::bridge as b6;
+use ffx_prender::h3b_glue7::bridge as b7;
 
 ported! {
     // ---- batch 1 (ffx_prender::h3b_glue1) ----
@@ -62,5 +63,14 @@ ported! {
     TextureAnimationManager_addAnimatedMaterials @ 0x006b_05d0 => extern "thiscall" fn add_animated_materials(this: u32, scene: u32, clusters: u32, first: u32, last: u32, name: u32, _unused: u32, table: u32) {
         let mut f = StackFrame::<0x60>::new();
         b6::add_animated_materials(&mut mem(), f.at() + 0x140, this, scene, clusters, first, last, name, table);
+    }
+
+    // ---- round 2, batch 2 (ffx_prender::h3b_glue7) ----
+    /// `ShadowManager_renderCharacterTiles_006caee0(this; renderer,
+    /// solution, keep)`: the per-character shadow tiles, blurred; the
+    /// first renderer error, 3, or the final scissor's result.
+    ShadowManager_renderCharacterTiles_006caee0 @ 0x006c_aee0 => extern "thiscall" fn render_character_tiles(this: u32, renderer: u32, solution: u32, keep: u32) -> u32 {
+        let mut f = StackFrame::<0x62>::new();
+        b7::render_character_tiles(&mut mem(), f.at() + 0x188, this, renderer, solution, keep as u8 != 0)
     }
 }

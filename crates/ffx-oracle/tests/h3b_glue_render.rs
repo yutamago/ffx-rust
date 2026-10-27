@@ -1980,3 +1980,225 @@ fn r2_batch1_add_animated_materials_matches_the_original() {
         run_cases(t, CASES_AAM, n, &mut Rng(0xb3b2_0001));
     });
 }
+
+// ---- round 2 batch 2: ShadowManager_renderCharacterTiles_006caee0 (ffx_prender::h3b_glue7) ----
+
+use ffx_prender::h3b_glue7::{self as h7, bridge as b7};
+
+/// A caster list `{count, data}`: 1..3 instances (each with a materials
+/// word and, for the first, an object with a scale at `+0x14`), now and
+/// then none or a count with the top bit.
+fn tiles_list(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let n = pick(rng, &[0, 1, 2, 3, 0x8000_0002, 0x8000_0000]);
+    let list = t.zeros(8);
+    let data = t.zeros(0x10);
+    t.w32(list, n);
+    t.w32(list + 4, data);
+    for m in 0..(n & 3).max(1) {
+        let instance = t.zeros(0x20);
+        let object = t.zeros(0x20);
+        let (w, f) = (rng.next(), rng.float().to_bits());
+        t.w32(instance + 0x10, w);
+        t.w32(instance + 0x1c, object);
+        t.w32(object + 0x14, f);
+        t.w32(data + 4 * m, instance);
+    }
+    list
+}
+
+/// The shadow manager (cells in use or not, their matrices, scales and
+/// depths, the camera with a recording virtual slot 1, the blur mesh's
+/// material and parameter buffer), the renderer, the static rectangle
+/// list and its guard, the atlas size; renderer calls fail now and then.
+#[allow(clippy::too_many_lines)] // the whole set-up
+fn prep_tiles(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let sm = t.zeros(0x4100);
+    *this = sm;
+    let junk = rng.bytes(0x4100);
+    t.write(sm, &junk);
+    t.w32(sm + 0x4060, u32::from(!rng.chance(8)));
+    // cells in use: none, one, or about one in 1..6
+    let density = rng.below(8);
+    let lone = rng.below(64);
+    for k in 0..64 {
+        let listed = match density {
+            0 => false,
+            1 => k == lone,
+            d => rng.below(d - 1) == 0,
+        };
+        let list = if listed { tiles_list(t, rng) } else { 0 };
+        t.w32(sm + 0xde8 + 4 * k, list);
+        let alt = if rng.chance(3) { tiles_list(t, rng) } else { 0 };
+        t.w32(sm + 0xee8 + 4 * k, alt);
+        for at in [0xfe8, 0x10e8] {
+            let v = if rng.chance(6) { rng.word() } else { 1 };
+            t.w32(sm + at + 4 * k, v);
+        }
+        let b = u8::from(rng.chance(4));
+        t.write(sm + 0x2b28 + k, &[b]);
+        for at in [0x28e8, 0x6b8] {
+            let f = rng.float().to_bits();
+            t.w32(sm + at + 4 * k, f);
+        }
+        let depth = if rng.chance(4) {
+            0
+        } else {
+            rng.float().to_bits()
+        };
+        t.w32(sm + 0x7b8 + 4 * k, depth);
+        let cells = {
+            let any = rng.next();
+            pick(rng, &[1, 1, 2, 3, 0, 0xffff_ffff, any])
+        };
+        t.w32(sm + 0x29e8 + 4 * k, cells);
+    }
+    for w in 0..0x400 {
+        let f = rng.float().to_bits();
+        t.w32(sm + 0x17e8 + 4 * w, f);
+    }
+    // the camera: virtual slot 1 records
+    let camera = t.zeros(0x200);
+    let vtable = t.zeros(8);
+    let changed = t.stub(None, 0xca3e_0001, true, 0, 0, Some(rng.next()));
+    t.w32(vtable + 4, changed);
+    t.w32(camera, vtable);
+    t.w32(sm + 0x84, camera);
+    let out = t.zeros(0x40);
+    t.w32(sm + 0x88, out);
+    // the blur mesh: its first material's shader and parameter buffer
+    let mesh = t.zeros(0x20);
+    let materials = t.zeros(0x10);
+    let material = t.zeros(0x10);
+    let buffer = t.zeros(0x100);
+    t.w32(sm + 0x8b8, mesh);
+    t.w32(mesh + 0x10, materials);
+    let n = pick(rng, &[1, 2, 0x8000_0001]);
+    t.w32(materials, n);
+    t.w32(
+        materials + 4,
+        if n & 3 == 1 { material } else { materials + 8 },
+    );
+    t.w32(materials + 8, material);
+    t.w32(material, rng.next());
+    t.w32(material + 4, buffer);
+    t.w32(buffer, {
+        let any = rng.below(0x100);
+        pick(rng, &[0x40, 0x80, 0x10, any])
+    });
+    for at in [0x58, 0x70] {
+        let surface = t.zeros(8);
+        let (w, flag) = (rng.next(), u8::from(rng.chance(3)));
+        t.w32(surface, w);
+        t.write(surface + 4, &[flag]);
+        t.w32(sm + at, surface);
+    }
+    // the renderer
+    let renderer = t.zeros(0x200);
+    let pass = rng.next();
+    t.w32(renderer + 0x13c, pass);
+    // the static rectangles and the atlas size
+    let rects = t.rebase(h7::RECTS);
+    let n = pick(rng, &[0, 1, 2, 3, 0x8000_0000, 0x8000_0002]);
+    let data = t.zeros(0x40);
+    let words: Vec<u8> = (0..0x40).map(|_| rng.below(0x400) as u8).collect();
+    t.write(data, &words);
+    t.w32(rects, n);
+    t.w32(rects + 4, data);
+    let guard = t.rebase(h7::RECTS_GUARD);
+    let g = rng.next();
+    t.w32(guard, g);
+    let size = {
+        let any = rng.next();
+        pick(rng, &[1024, 1024, 512, 1000, 0xffff_fc00, 7, 0, any])
+    };
+    t.global(h7::SHADOW_SIZE, size);
+    // the parameters: none, or offset/size records
+    let records = t.zeros(0x100);
+    for k in 0..0x10 {
+        let off = pick(rng, &[0, 2, 4, 8, 0x10, 0x30, 0xf0]) as u16;
+        let size = pick(rng, &[0, 4, 8, 0x10, 0x10, 0x2010]) as u16;
+        t.write(records + 0x10 * k + 8, &off.to_le_bytes());
+        t.write(records + 0x10 * k + 0xa, &size.to_le_bytes());
+    }
+    let values: Vec<u32> = (0..4)
+        .map(|_| {
+            if rng.chance(4) {
+                0
+            } else {
+                records + 0x10 * rng.below(0x10)
+            }
+        })
+        .collect();
+    t.stub_seq(h7::FIND_PARAM, true, 1, 1, &values);
+    for (sym, n) in [
+        (h7::SET_COLOR_TARGET, 2),
+        (h7::SET_DEPTH_TARGET, 1),
+        (h7::BEGIN_SCENE, 1),
+        (h7::END_SCENE, 1),
+        (h7::SET_VIEWPORT, 4),
+        (h7::SET_SCISSOR, 4),
+        (h7::WRITE_PARAM, 2),
+        (h7::SET_VALUE, 2),
+    ] {
+        // the parameter writes and scene ends (two or three calls) fail
+        // more often
+        let v = errors_n(
+            rng,
+            if sym == h7::WRITE_PARAM || sym == h7::END_SCENE {
+                6
+            } else {
+                300
+            },
+        );
+        t.stub_seq(sym, true, n, n, &v);
+    }
+    let post = t.zeros(0x100);
+    let target = t.zeros(8);
+    let texture = t.zeros(0x40);
+    // the target must be there: the original reads through it unchecked
+    let (w, hgt, flag) = (rng.next(), rng.next(), 0u8);
+    t.w32(texture + 0x1c, w);
+    t.w32(texture + 0x20, hgt);
+    t.w32(target, texture);
+    t.write(target + 4, &[flag]);
+    t.w32(post + 0x8c, target);
+    t.stub_ret(h7::POST_PROCESS, false, 0, 0, post);
+    let solution = {
+        let any = rng.next();
+        pick(rng, &[0, 1, 2, 3, 4, any])
+    };
+    let keep = {
+        let any = rng.next();
+        pick(rng, &[0, 1, 0x100, any])
+    };
+    args.copy_from_slice(&[renderer, solution, keep]);
+}
+
+const TILES_STUBS: &[(u32, K)] = &[
+    (h7::SET_CLEAR_COLOR, K::This(4)),
+    (h7::SET_CLEAR_DEPTH, K::This(1)),
+    (h7::CLEAR_SCENE, K::This(1)),
+    (h7::SET_CAMERA, K::This(1)),
+    (h7::RENDER_INSTANCE, K::This(4)),
+    (h7::RENDER_FOR_PASS, K::This(1)),
+    (h7::UPDATE_VIEW, K::This(0)),
+    (h7::PUSH_RECT, K::This(1)),
+    (h7::FREE, K::Cdecl(1)),
+    (h7::ATEXIT, K::Cdecl(1)),
+];
+
+#[rustfmt::skip]
+const CASES_TILES: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_tiles), ..method("render_character_tiles", 0x006c_aee0, This::Object, 3, TILES_STUBS, |m, this, a| {
+        slots_at(m, a);
+        u(b7::render_character_tiles(m, frame_ebp(), this, a[0], a[1], a[2] as u8 != 0))
+    }) }), h7::FRAME, 0xc),
+];
+
+#[test]
+fn r2_batch2_render_character_tiles_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES_TILES, n, &mut Rng(0xb3b2_0002));
+    });
+}
