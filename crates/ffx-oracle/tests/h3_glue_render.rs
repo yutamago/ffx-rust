@@ -81,6 +81,7 @@ use ffx_prender::h3_glue55::{self as h55, bridge as gh55};
 use ffx_prender::h3_glue56::{self as h56, bridge as gh56};
 use ffx_prender::h3_glue57::{self as h57, bridge as gh57};
 use ffx_prender::h3_glue58::bridge as gh58;
+use ffx_prender::h3_glue59::{self as h59, bridge as gh59};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -12860,5 +12861,89 @@ fn batch60_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 400 };
         run_cases(t, CASES60, n, &mut Rng(0x6060_b060));
+    });
+}
+
+// ---- round 17 batch 61 (ffx_prender::h3_glue59) ----
+
+const INIT61_STUBS: &[(u32, K)] = &[
+    (h59::UPDATE_VIEW_MATRICES, K::This(0)),
+    (h59::MATRIX4X3_CLASS, K::Cdecl(0)),
+    (h59::SAMPLER_STATES_INIT, K::Cdecl(0)),
+    (h59::COPY_TABLE, K::This(0)),
+    (h59::SETTINGS_SAVE, K::This(0)),
+    (h59::INPUT_MANAGER, K::Cdecl(0)),
+    (h59::BUILD_PAD_MAP, K::This(0)),
+    (h59::IGGY_MENU_CREATE, K::Cdecl(0)),
+    (h59::IGGY_MENU_INIT, K::This(3)),
+    (h59::FIOS_UNIFY, K::Cdecl(3)),
+    (h59::LOAD_PAUSE_MENU, K::Cdecl(1)),
+    (h59::LOAD_ESC_MENU, K::Cdecl(5)),
+    (h59::ICON_PANEL_CREATE, K::Cdecl(0)),
+    (h59::AFTER_MENUS, K::Cdecl(0)),
+];
+
+/// The scene (its settings' bit 7 set or not), its cameras (pointers and
+/// embedded ones, all with a vtable whose `+4` logs), the registration
+/// (failing now and then), the instance list and its 3x4 matrix, the two
+/// new matrices, the settings' pad-map byte, the application and the Iggy
+/// menu manager.
+fn prep_init61(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x11400);
+    *this = scene;
+    let fill = rng.bytes(0x40);
+    t.write(scene + 0x940, &fill);
+    let flags = rng.next();
+    t.w32(scene + 0x95c, flags);
+    let renderer = rng.next();
+    t.w32(scene + 0xd0, renderer);
+    t.w32(scene + 0x10ddc, rng.next());
+    let vcall = t.stub(None, 0x4444, true, 0, 0, Some(0x1234));
+    let vtable = obj + 0x1f00;
+    t.w32(vtable + 4, vcall);
+    for (k, slot) in [0xdc, 0x394, 0x238, 0x7e0, 0x654].into_iter().enumerate() {
+        let camera = obj + 0x200 * k as u32;
+        let fill = rng.bytes(0x200);
+        t.write(camera, &fill);
+        t.w32(camera, vtable);
+        t.w32(scene + slot, camera);
+    }
+    for at in [0xbdc, 0xa84, 0x4fc] {
+        t.w32(scene + at, vtable);
+    }
+    let main = t.r32(scene + 0xdc);
+    let far = mild(rng);
+    t.w32(main + 0xbc, far);
+    let aspect = mild(rng);
+    t.w32(main + 0x150, aspect);
+    let error = if rng.chance(6) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h59::REGISTER, true, 0, 0, error);
+    let list = obj + 0xc00;
+    let matrix = obj + 0xc80;
+    t.w32(list + 0x34, matrix);
+    t.stub_ret(h59::ALLOCATE_INSTANCE_LIST, true, 3, 3, list);
+    let clusters = [obj + 0xd00, obj + 0xd40];
+    t.stub_seq(h59::CLUSTER_CREATE, true, 3, 3, &clusters);
+    let settings = obj + 0xe00;
+    t.write(settings + 0x638, &[u8::from(rng.chance(2))]);
+    t.global(h59::SETTINGS, settings);
+    let app = obj + 0x1000;
+    let words = rng.bytes(0x280);
+    t.write(app, &words);
+    t.stub_ret(h59::GET_APPLICATION, false, 0, 0, app);
+    let manager = rng.next();
+    t.global(h59::IGGY_MENU_MANAGER, manager);
+}
+
+#[rustfmt::skip]
+const CASES61: &[Case] = &[
+    framed(with_cookie(Case { prep: Some(prep_init61), ..method("init_scene", 0x0065_f450, This::Object, 0, INIT61_STUBS, |m, this, _| u(gh59::init_scene(m, frame_ebp(), this))) }), 0x1c8, 0),
+];
+
+#[test]
+fn batch61_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 20 } else { 60 };
+        run_cases(t, CASES61, n, &mut Rng(0x6161_b061));
     });
 }

@@ -64,6 +64,7 @@ use ffx_prender::h3_glue55::bridge as g55;
 use ffx_prender::h3_glue56::bridge as g56;
 use ffx_prender::h3_glue57::bridge as g57;
 use ffx_prender::h3_glue58::bridge as g58;
+use ffx_prender::h3_glue59::bridge as g59;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2143,6 +2144,15 @@ ported! {
     /// shards' vertex colours, diffuse (mode 1) or specular (mode 2).
     BrokenScreen_shadeShards_006d3650 @ 0x006d_3650 => extern "thiscall" fn shade_shards(this: u32, x: u32, y: u32, z: u32, _unused: u32, r: u32, g: u32, b: u32, strength: u32) -> u32 {
         g58::shade_shards(&mut mem(), this, [x, y, z], [r, g, b], strength)
+    }
+
+    // ---- round 17 batch 61 (ffx_prender::h3_glue59) ----
+    /// `PhyreScene_initScene(scene)` -> 0 or the texture registration's
+    /// error: the scene's cameras, light matrices and menus (frame `ebp -
+    /// 0x1c8`).
+    PhyreScene_initScene @ 0x0065_f450 => extern "thiscall" fn scene_init_scene(this: u32) -> u32 {
+        let mut f = StackFrame::<0x72>::new();
+        g59::init_scene(&mut mem(), f.at() + 0x1c8, this)
     }
 }
 
