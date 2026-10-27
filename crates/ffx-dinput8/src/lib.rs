@@ -111,6 +111,10 @@ unsafe fn install_hooks(base: usize) {
         }
         Err(wrong) => log(&format!("  not patching: {wrong}")),
     }
+    // The Rust sound engine in place of FMOD (FFX_RUST_AUDIO=1), first: the
+    // call log and the capture wrap its stubs.
+    // SAFETY: forwarded from the caller.
+    unsafe { ffx_hook::rust_audio::install(base) };
     // FMOD call log (FFX_FMOD_LOG): import and vtable slots only.
     // SAFETY: forwarded from the caller.
     unsafe { ffx_hook::fmod_log::install(base) };

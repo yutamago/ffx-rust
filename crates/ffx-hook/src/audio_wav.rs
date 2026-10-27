@@ -234,7 +234,9 @@ unsafe extern "system" fn event_system_init(
         c"fmod_event.dll",
         "?getSystemObject@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@PAPAVSystem@2@@Z",
     );
-    if get != 0 {
+    // with the Rust engine there is no FMOD System to set up (rust_audio.rs
+    // writes the WAV itself)
+    if get != 0 && !crate::rust_audio::on() {
         // SAFETY: `EventSystem::getSystemObject(this, System**)`, stdcall.
         unsafe {
             let f: unsafe extern "system" fn(usize, *mut usize) -> u32 = std::mem::transmute(get);
@@ -293,6 +295,11 @@ unsafe extern "system" fn event_system_init(
             event_flags,
         )
     };
+    if crate::rust_audio::on() {
+        mark_line(&format!(
+            "format rate 48000 format 5 channels 2 bits 32 block 1600 output rust init {r:#x}"
+        ));
+    }
     if system != 0 {
         let after = software_format(system);
         let mut length = 0u32;
@@ -341,6 +348,9 @@ unsafe extern "system" fn event_system_update(this: usize) -> u32 {
         {
             SAMPLE.store(u64::from(hi) << 32 | u64::from(lo), Ordering::Release);
         }
+    }
+    if crate::rust_audio::on() {
+        SAMPLE.store(crate::rust_audio::clock(), Ordering::Release);
     }
     let n = UPDATES.fetch_add(1, Ordering::AcqRel) + 1;
     crate::fmod_log::note(&format!(

@@ -61,6 +61,28 @@ impl Bank {
     /// # Errors
     /// When the bytes are not a version 1 FSB5 bank.
     pub fn parse(b: &[u8]) -> Result<Self, Error> {
+        Self::parse_with(b, true)
+    }
+
+    /// The bytes [`Bank::parse`] needs before the sample data: the header,
+    /// the sample headers and the name table (from the first 0x3c bytes).
+    #[must_use]
+    pub fn head_len(first: &[u8]) -> Option<usize> {
+        let headers = u32_at(first, 12).ok()? as usize;
+        let names = u32_at(first, 16).ok()? as usize;
+        Some(0x3c + headers + names)
+    }
+
+    /// Reads a bank from its head alone ([`Bank::head_len`] bytes): the
+    /// samples' data ranges point past it, into the file.
+    ///
+    /// # Errors
+    /// As [`Bank::parse`], without the check that the data is there.
+    pub fn parse_head(head: &[u8]) -> Result<Self, Error> {
+        Self::parse_with(head, false)
+    }
+
+    fn parse_with(b: &[u8], whole: bool) -> Result<Self, Error> {
         if b.get(..4) != Some(b"FSB5") {
             return Err(Error::Magic);
         }
@@ -75,7 +97,7 @@ impl Bank {
         let codec = u32_at(b, 24)?;
         let names_at = 0x3c + headers;
         let data_at = names_at + names;
-        if b.len() < data_at + data_size {
+        if whole && b.len() < data_at + data_size {
             return Err(Error::Truncated);
         }
 
@@ -124,7 +146,7 @@ impl Bank {
             let end = raw.get(i + 1).map_or(data_size, |r| r.2);
             let name = if names >= 4 * count {
                 let off = u32_at(b, names_at + 4 * i)? as usize;
-                let s = b.get(names_at + off..data_at).unwrap_or(&[]);
+                let s = b.get(names_at + off..data_at.min(b.len())).unwrap_or(&[]);
                 String::from_utf8_lossy(&s[..s.iter().position(|&c| c == 0).unwrap_or(s.len())])
                     .into_owned()
             } else {
