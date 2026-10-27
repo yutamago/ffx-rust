@@ -1580,8 +1580,13 @@ Original code, measured this round (probe scripts and logs in
   ("How it gets in"), and the four runs took the same updates from the
   load to the battle and to each `waitfor`, with the loader freed only in
   the map load's update. What moves the blink is not found.
-- **kami0100's cloth ring** (gate entry): pinning at the load's boundary
-  too did not remove it (`docs/drawdiff.md`, "Scene gates").
+- **Cloth.** kami0100's cloth ring (gate entry): pinning at the load's
+  boundary too did not remove it. boot-3 in the first main-list proof
+  run: Rikku's back strap differed (2,029 pixels by value, 32 over the
+  comparison's noise; every `waitfor` and shot at the same update as in
+  the passing runs). Leads in `docs/drawdiff.md`, "Scene gates": the
+  cloth jobs run from the end of `Ch_DrawMain` to the end of the update,
+  beside the main thread and the render thread.
 - **The eye-blink bind and the loader's 16x8 texture** in the scene
   gates: bsil0000's r1 has the blink's BC1 frame where r2 and an all-hooks
   capture have BC3; kami0100's r2 has the loader's texture

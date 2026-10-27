@@ -371,10 +371,22 @@ update of the map's load steps on the pinned clock; tried with a harness
 change not kept) gave two original captures (`dg-kami-lp1/lp2`) whose
 cloth still differed in 29 draws a frame, with `GlobalTime` equal. So
 the load update's step does not carry it, as replay-flakes4 found for the
-pin sent at that boundary. Lead: the loader's 100 ms rule in the map
-load's update (`docs/harness.md`, "Load pacing"), which frees the loader
-beside an update for a real-time stretch, so the characters' models (and
-so the cloth's first steps) may be ready an update apart.
+pin sent at that boundary. Two leads, neither measured: the loader's
+100 ms rule in the map load's update (`docs/harness.md`, "Load
+pacing"), which frees the loader beside an update for a real-time
+stretch; and the cloth jobs' timing. `Ch_DrawMain` (`0x0082ed50`) queues
+one cloth job per character at its end (`JobSchedule_Ch_Cloth_PerCharacter`
+`0x00a44b40`, count 1), and `Sg_MainLoop` waits for them only at its own
+end (`JobScheduleWait_Ch_Cloth_PerCharacter`, after the rest of the
+draw, the swap and `MagicFile_Update`). Each job writes the cloth back
+into the model's vertices (`Sg_ClothStep` `0x00822de0`) while the main
+thread goes on with the update and, in lockstep, the render thread draws
+the previous update (released from its present hold when the main thread
+left the boundary). If anything of those reads the cloth vertices in
+that window (the `vb5` ring is filled from them), what it gets follows
+the threads' timing. boot-3 (the opening) showed the same thing once in
+a Rust run against two agreeing originals: Rikku's back strap, a few
+hundred pixels, with every `waitfor` and shot at the same update.
 
 ### draw-field references (ref-a, ref-b, ref-c)
 
