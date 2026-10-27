@@ -69,7 +69,6 @@ use ffx_prender::h3_glue60::bridge as g60;
 use ffx_prender::h3_glue61::bridge as g61;
 use ffx_prender::h3_glue62::bridge as g62;
 use ffx_prender::h3_glue63::bridge as g63;
-use ffx_prender::h3_glue64::bridge as g64;
 use ffx_prender::h3_glue65::bridge as g65;
 use ffx_prender::h3_glue66::bridge as g66;
 use ffx_prender::h3_glue67::bridge as g67;
@@ -2201,13 +2200,13 @@ ported! {
     }
 
     // ---- round 18 batch 66 (ffx_prender::h3_glue64) ----
-    /// `PhyreScene_doOnFieldMapAssetLoaded(scene; asset, unused, &model,
-    /// &assets, reader, id, scaled)` -> 0: the asset kept, and the first
-    /// map model's instances placed (frame `ebp - 0x1c0`).
-    PhyreScene_doOnFieldMapAssetLoaded @ 0x0065_af60 => extern "thiscall" fn scene_do_on_field_map_asset_loaded(this: u32, asset: u32, _unused: u32, model: u32, assets: u32, reader: u32, id: u32, scaled: u32) -> u32 {
-        let mut f = StackFrame::<0x70>::new();
-        g64::do_on_field_map_asset_loaded(&mut mem(), f.at() + 0x1c0, this, asset, model, assets, reader, id, scaled)
-    }
+    // PhyreScene_doOnFieldMapAssetLoaded 0x0065af60
+    // (ffx_prender::h3_glue64::bridge::do_on_field_map_asset_loaded) is NOT
+    // hooked: it passes its oracle test and mutants, but with it hooked the
+    // title's map after a game over sometimes never loads (iggy-menus, 3
+    // of 7 runs; 0 of 6 with it off, 0 of 5 on original code) and the
+    // kami0100 scene gate binds another texture-animation frame (5 of 9
+    // runs; 0 of 6 with it off). Open problem (replay-flakes7, 2026-10-27).
 
     // ---- round 19 batch 67 (ffx_prender::h3_glue65) ----
     /// `PhyreScene_textureVideoLoad(scene; path)`: the map's texture video
