@@ -17,7 +17,7 @@
     clippy::cast_precision_loss
 )]
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
@@ -69,6 +69,7 @@ use ffx_prender::h3_glue43::{self as h43, bridge as gh43};
 use ffx_prender::h3_glue44::{self as h44, bridge as gh44};
 use ffx_prender::h3_glue45::{self as h45, bridge as gh45};
 use ffx_prender::h3_glue46::{self as h46, bridge as gh46};
+use ffx_prender::h3_glue47::{self as h47, bridge as gh47};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -799,10 +800,14 @@ fn run_cases(t: &mut Twins, cases: &[Case], n: u32, rng: &mut Rng) {
                     let lo = ebp - low;
                     let fill = rng.bytes((low + 8 + high) as usize);
                     t.write(lo, &fill);
+                    for (off, bytes) in FRAME_WRITES.with(RefCell::take) {
+                        t.write(ebp - off, &bytes);
+                    }
                     FRAME_EBP.with(|f| f.set(ebp));
                     t.b.set_call_top(Some(lo - 0x100));
                     t.check(&what, case.sym, conv, &args, |m| port(m, this, &args));
                     t.b.set_call_top(None);
+                    let ignore = FRAME_IGNORE.with(RefCell::take);
                     // what the callees saw through the frame's pointers
                     for (from, n) in [(lo, low), (ebp + 8, high)] {
                         let mut x = vec![0; n as usize];
@@ -818,7 +823,23 @@ fn run_cases(t: &mut Twins, cases: &[Case], n: u32, rng: &mut Rng) {
                             let cookie = (n - top) as usize;
                             x[cookie..].copy_from_slice(&y[cookie..]);
                         }
-                        assert_eq!(x, y, "{what}: frame at {from:#x}");
+                        if from == lo {
+                            for &(off, len) in &ignore {
+                                let start = (low - off) as usize;
+                                let end = start + len as usize;
+                                y[start..end].copy_from_slice(&x[start..end]);
+                            }
+                        }
+                        if let Some(first) = x.iter().zip(&y).position(|(p, q)| p != q) {
+                            let at = from + first as u32;
+                            let shown = (first + 16).min(x.len());
+                            panic!(
+                                "{what}: frame at {from:#x} differs at {at:#x} (ebp - {:#x}): {:?} vs {:?}",
+                                ebp - at,
+                                &x[first..shown],
+                                &y[first..shown]
+                            );
+                        }
                     }
                 }
             }
@@ -10989,5 +11010,215 @@ fn batch47_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 300 } else { 1000 };
         run_cases(t, CASES46, n, &mut Rng(0x4646_b047));
+    });
+}
+
+// ---- round 13 batch 48 (ffx_prender::h3_glue47) ----
+
+thread_local! {
+    /// Bytes stored into a framed case's frame (at `ebp` offsets) after
+    /// the random fill: 0 for words the original reads but never writes
+    /// (junk reads), which the port takes as 0 (brief 2026-10-24), or
+    /// what a stubbed callee would have written.
+    /// Bytes of a framed case's frame (`ebp` offset, length) not
+    /// compared: what the original's prologue leaves there (the
+    /// `alloca_probe` call's return address).
+    static FRAME_IGNORE: RefCell<Vec<(u32, u32)>> = const { RefCell::new(Vec::new()) };
+    static FRAME_WRITES: RefCell<Vec<(u32, Vec<u8>)>> = const { RefCell::new(Vec::new()) };
+}
+
+impl Twins {
+    /// A recording `fiosRead(stream, buf, n)` (cdecl) serving the bytes
+    /// at `src` (`len` of them): `min(n, left)` bytes copied, the count
+    /// in `eax`.
+    fn stub_read48(&mut self, sym: u32, src: u32, len: u32) {
+        let cells = self.zeros(8);
+        self.w32(cells, src);
+        self.w32(cells + 4, len);
+        let (cursor, left) = (cells, cells + 4);
+        let log = self.stub(None, sym, false, 3, 0, None);
+        // push esi; push edi; push ecx; mov edi, [esp+0x14]; mov ecx, [esp+0x18]
+        let mut c = vec![
+            0x56, 0x57, 0x51, 0x8b, 0x7c, 0x24, 0x14, 0x8b, 0x4c, 0x24, 0x18,
+        ];
+        c.extend([0x3b, 0x0d]); // cmp ecx, [left]
+        c.extend(left.to_le_bytes());
+        c.extend([0x76, 0x06, 0x8b, 0x0d]); // jbe +6; mov ecx, [left]
+        c.extend(left.to_le_bytes());
+        c.extend([0x8b, 0x35]); // mov esi, [cursor]
+        c.extend(cursor.to_le_bytes());
+        c.extend([0x89, 0xc8, 0x29, 0x05]); // mov eax, ecx; sub [left], eax
+        c.extend(left.to_le_bytes());
+        c.extend([0x01, 0x05]); // add [cursor], eax
+        c.extend(cursor.to_le_bytes());
+        c.extend([0xf3, 0xa4, 0x59, 0x5f, 0x5e]); // rep movsb; pop ecx; pop edi; pop esi
+        let at = self.cave_next;
+        c.push(0xe9); // jmp log
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// Every option name `loadShader` looks for, `VSP_ALPHA_MODULATE` first
+/// among the blends.
+const VSP48: [&str; 28] = [
+    "VSP_GROUND_SPECIAL",
+    "VSP_Z_BUF_CLEAR",
+    "VSP_PERS_Z_BUF_CLEAR",
+    "VSP_DTT_SPECIAL",
+    "VSP_GRAY_SCALE",
+    "VSP_NOISE_BLUR_ADDITIVE",
+    "VSP_NOISE_BLUR",
+    "VSP_SCREEN_FILTER",
+    "VSP_ZMAT",
+    "VSP_ALPHA_MODULATE",
+    "VSP_ALPHA_ADDITIVE",
+    "VSP_ALPHA_SUBSTRACT3",
+    "VSP_ALPHA_SUBSTRACT2",
+    "VSP_ALPHA_SUBSTRACT",
+    "VSP_ENABLE_TEXTURE",
+    "VSP_ZWRITE_ENABLE",
+    "VSP_ALPHA_TEST_ENABLED",
+    "VSP_ZTEST_DISABLE",
+    "VSP_TK_RUNTIME_CLUT_16x16",
+    "VSP_ALPHA_NO_BLENDING",
+    "VSP_EXTENDED_ALPHA",
+    "VSP_ENABLE_NCLIP",
+    "VSP_SHIFT_ON_SCREEN",
+    "VSP_LOGO_SPECIAL",
+    "VSP_POINTLIGHT",
+    "VSP_TEXTURE_VIDEO",
+    "VSP_LOGO_TEXTURE_VIDEO",
+    "VSP_YIQ",
+];
+
+/// A random shader entry: `name:options` (or without the colon now and
+/// then), the options a few of [`VSP48`] (mostly the later, cumulative
+/// ones), separated by `|`.
+fn shader_entry48(rng: &mut Rng, colon: bool) -> Vec<u8> {
+    let mut s: Vec<u8> = b"vfx_".to_vec();
+    for _ in 0..rng.below(12) {
+        s.push(b'a' + rng.below(26) as u8);
+    }
+    s.extend(b".phyre");
+    if colon {
+        s.push(b':');
+        for _ in 0..rng.below(7) {
+            let k = if rng.chance(4) {
+                rng.below(8)
+            } else {
+                8 + rng.below(20)
+            };
+            s.extend(VSP48[k as usize].as_bytes());
+            s.push(b'|');
+        }
+    }
+    s
+}
+
+fn prep_load_shader48(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    // only handed on (to the stubbed tree and as the request's signed
+    // word pair): any value, high bit too
+    if rng.chance(2) {
+        *this = rng.word() | 0x8000_0000;
+    }
+    let dir = obj + 0x100;
+    t.write(dir, b"/FFX_Data/GameData/PS3Data/Shaders/\0");
+    let colon = !rng.chance(6);
+    let mut entry = shader_entry48(rng, colon);
+    entry.push(0);
+    let at = obj + 0x400;
+    t.write(at, &entry);
+    args[0] = dir;
+    args[1] = at;
+    t.stub_ret(h47::READER_IS_OPEN, true, 0, 0, rng.word() & 0x101);
+    if !colon {
+        // the name and the options the original reads unwritten
+        FRAME_WRITES.with(|z| z.replace(vec![(0x490, vec![0]), (0x410, vec![0])]));
+    }
+}
+
+const LOAD_SHADER48_STUBS: &[(u32, K)] = &[
+    (h47::READER_CTOR, K::This(1)),
+    (h47::READER_CLOSE, K::This(0)),
+    (h47::READER_DTOR, K::This(0)),
+    (h47::ASYNC_LOAD_INSTANCE, K::Getter),
+    (h47::LOAD_CLUSTER, K::Cdecl(9)),
+    (h47::DBG_PRINTF, K::Cdecl(2)),
+    (h47::TREE_INSERT_NEW, K::This(2)),
+];
+
+/// The collection's text: lines of shader entries, comments (`//`),
+/// other lines and empty ones, ending with or without a newline; read in
+/// chunks; the collection missing now and then; the shaders loaded or
+/// not; the array's count with or without the not-owned bit.
+fn prep_load_vfx_shader48(t: &mut Twins, obj: u32, _: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let mut text = vec![];
+    for _ in 0..rng.below(14) {
+        match rng.below(5) {
+            0 => text.extend(b"// a comment vfx_x.phyre:VSP_ZMAT"),
+            1 => text.extend(b"notes"),
+            2 => {}
+            _ => {
+                let e = shader_entry48(rng, true);
+                text.extend(e);
+            }
+        }
+        text.push(b'\n');
+    }
+    if rng.chance(2) {
+        let e = shader_entry48(rng, true);
+        text.extend(e);
+    }
+    let src = obj + 0x800;
+    t.write(src, &text);
+    // what the stubbed fiosUnifyFilename writes
+    let dir = b"/fp/Shaders/\0".to_vec();
+    FRAME_WRITES.with(|z| z.replace(vec![(0x190, dir)]));
+    FRAME_IGNORE.with(|z| z.replace(vec![(0x14, 4)]));
+    if rng.chance(8) {
+        // a read error at once
+        t.stub_ret(h47::FIOS_READ, false, 3, 0, u32::MAX);
+    } else {
+        t.stub_read48(h47::FIOS_READ, src, text.len() as u32);
+    }
+    let stream = if rng.chance(6) { 0 } else { obj + 0x40 };
+    t.stub_ret(h47::FIOS_OPEN, false, 2, 0, stream);
+    let shader = if rng.chance(3) { 0 } else { rng.word() | 1 };
+    t.stub_ret(h47::LOAD_SHADER, true, 2, 2, shader);
+    let count = (rng.below(5) + 1) | (rng.word() & 0x8000_0000);
+    t.stub_set_this(
+        h47::PARRAY_PUSH,
+        2,
+        rng.word(),
+        &[(0, count), (4, obj + 0x1000)],
+    );
+}
+
+const LOAD_VFX_SHADER48_STUBS: &[(u32, K)] = &[
+    (h47::UNIFY_FILENAME, K::Cdecl(3)),
+    (h47::FIOS_CLOSE, K::Cdecl(1)),
+    (h47::DBG_PRINTF, K::Cdecl(1)),
+    (h47::PHYRE_MALLOC, K::Cdecl(2)),
+    (h47::GET_APPLICATION, K::Cdecl(0)),
+    (h47::FIXUP_CLUSTERS, K::Cdecl(2)),
+    (h47::PHYRE_FREE, K::Cdecl(1)),
+];
+
+#[rustfmt::skip]
+const CASES48: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_load_shader48), ..method("load_shader", 0x006c_0a70, This::Object, 2, LOAD_SHADER48_STUBS, |m, this, a| u(gh47::load_shader(m, frame_ebp(), this, a[0], a[1]))) }), 0x5c0, 0),
+    framed(with_seh(Case { prep: Some(prep_load_vfx_shader48), ..method("load_vfx_shader", 0x006c_0fc0, This::Object, 0, LOAD_VFX_SHADER48_STUBS, |m, this, _| u(gh47::load_vfx_shader(m, frame_ebp(), this))) }), 0x31a8, 0),
+];
+
+#[test]
+fn batch48_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 30 } else { 150 };
+        run_cases(t, CASES48, n, &mut Rng(0x4848_b048));
     });
 }
