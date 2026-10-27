@@ -567,17 +567,28 @@ def main():
                 sites[int(callee, 16)].append((int(caller, 16), int(site, 16)))
     shim = re.compile(r"^\s*(\w+) @ 0x([0-9a-f_]+) =>\s*extern \"([\w-]+)\" fn \w+\([^)]*\)\s*(->\s*[\w:]+)?", re.M)
     shims = []
+    thunks = {}
     for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
         for name, addr, _abi, ret in shim.findall(f.read_text(encoding="utf-8")):
             if args.names and name not in args.names:
                 continue
-            shims.append((f, name, int(addr.replace("_", ""), 16), ret))
+            a = int(addr.replace("_", ""), 16)
+            # a jmp thunk the dump lacks (progress.jmp_thunk): its target's
+            # code is what runs, for the thunk's callers
+            body = a if a in rows else progress.jmp_thunk(EXE, a, rows)
+            if body is None:
+                print(f"{f.name}: {name} @ {a:#010x}: no function in the dump (check-ported)")
+                continue
+            if body != a:
+                thunks[a] = body
+            shims.append((f, name, a, ret))
     # disassemble what is not cached yet in parallel: the originals, then
     # the callers of those that need their call sites checked
-    CACHE.prefetch(((a, rows[a][1]) for _, _, a, _ in shims), args.jobs)
+    CACHE.prefetch(((b, rows[b][1]) for b in (thunks.get(a, a) for _, _, a, _ in shims)), args.jobs)
     checks = []
     for f, name, a, ret in shims:
-        code = CACHE.get(a, rows[a][1])
+        body = thunks.get(a, a)
+        code = CACHE.get(body, rows[body][1])
         changed = writes(code)
         kept = set(SCRATCH) - changed
         if ret:

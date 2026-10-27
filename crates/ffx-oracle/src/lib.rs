@@ -121,6 +121,11 @@ pub enum Conv {
     Thiscall(u32),
     /// The first two in ECX and EDX, the rest on the stack, the callee pops them.
     Fastcall,
+    /// The first two in ECX and EDX, the rest on the stack, the caller pops
+    /// them: a custom convention of MSVC's link-time code generation
+    /// (`0x00401690`, `Settings_ValidateBindings`; the hook's
+    /// `fastcall-caller-pops` shims).
+    FastcallCallerPops,
 }
 
 /// What a call left in the result registers.
@@ -1039,7 +1044,7 @@ impl Oracle {
             )
         };
         let stack_args: &[u32] = match conv {
-            Conv::Fastcall => {
+            Conv::Fastcall | Conv::FastcallCallerPops => {
                 self.uc.reg_write(
                     RegisterX86::ECX,
                     u64::from(args.first().copied().unwrap_or(0)),
@@ -1091,7 +1096,7 @@ impl Oracle {
             }
         }
         let popped = match conv {
-            Conv::Cdecl => 0,
+            Conv::Cdecl | Conv::FastcallCallerPops => 0,
             _ => 4 * stack_args.len() as u64,
         };
         if self.uc.reg_read(RegisterX86::ESP)? != sp + 4 + popped {

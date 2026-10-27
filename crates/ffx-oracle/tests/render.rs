@@ -322,7 +322,7 @@ impl Twins {
             Conv::Cdecl => (false, 0),
             Conv::Stdcall => (false, n),
             Conv::Thiscall(_) => (true, n),
-            Conv::Fastcall => unreachable!("no fastcall stubs"),
+            Conv::Fastcall | Conv::FastcallCallerPops => unreachable!("no fastcall stubs"),
         };
         self.stub(Some(at), sym, this, n, pops, ret);
     }

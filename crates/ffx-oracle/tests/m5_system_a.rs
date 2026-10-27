@@ -825,6 +825,143 @@ fn binding_slot_filters_match_the_original() {
     });
 }
 
+/// `0x00401690(text; out, max)` (`Conv::FastcallCallerPops`): digits,
+/// commas, other bytes (high ones too), empty and null texts, `max` 0, 1,
+/// small, 81 and negative. The pointer wrapping to 0 (`inc edi; jne`) is
+/// not reached: no text ends at 0xffffffff.
+#[test]
+fn custom_conv_parse_list_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0169_0001);
+        let chars = b"0123456789,,, x-/:\x80\xb0\xff";
+        for case in 0..300 {
+            t.reset();
+            let len = rng.below(48) as usize;
+            let mut s: Vec<u8> = (0..len)
+                .map(|_| chars[rng.below(chars.len() as u32) as usize])
+                .collect();
+            if rng.chance(4) {
+                // long numbers: wrapping accumulators
+                s.extend(b"98765432109876543210,4294967295,4294967296");
+            }
+            s.push(0);
+            let text = if case % 37 == 5 { 0 } else { t.alloc(&s) };
+            let out = t.zeros(0x200);
+            let max = [0u32, 1, 2, 3, 7, 0x51, 0xffff_ffff, 0x8000_0000][rng.below(8) as usize];
+            let what = format!(
+                "0x00401690 #{case} {:?} max {max:#x}",
+                String::from_utf8_lossy(&s)
+            );
+            t.check(
+                &what,
+                0x0040_1690,
+                Conv::FastcallCallerPops,
+                &[text, out, max],
+                |m| Out::U32(st::parse_list(m, text, out, max)),
+            );
+        }
+    });
+}
+
+/// `Settings_ValidateBindings(list; n, filter)` (`Conv::FastcallCallerPops`)
+/// with the three real slot filters and recording stubs that take every
+/// slot or none (the log checks the order of the filter calls): valid
+/// distinct codes (the 1 path), a code without a name, codes 0x80 and
+/// negative, duplicates, zero slots below and above 0x31, `n` 0, small, 81,
+/// 0x60 and negative. On the image the key-name tables are random; on the
+/// snapshots they are the game's own.
+#[test]
+fn custom_conv_validate_bindings_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x05bb_0002);
+        let (kb, pad) = (t.rebase(st::KEYBOARD), t.rebase(st::CONTROLLER));
+        if !t.snapshot {
+            for i in 0..0x80 {
+                let v = if rng.chance(4) { 0 } else { rng.next() | 1 };
+                t.w32(kb + 4 * i, v);
+                let v = if rng.chance(4) { 0 } else { rng.next() | 1 };
+                t.w32(pad + 4 * i, v);
+            }
+            // code 0 named, so that zero slots below 0x31 pass; the words
+            // past both tables: a code 0x80 read as a name would find one
+            t.w32(kb, 0x5555_0002);
+            t.w32(pad, 0x5555_0003);
+            t.w32(kb + 0x200, 0x5555_0001);
+            t.w32(pad + 0x200, 0x5555_0001);
+        }
+        let named = |t: &Twins, base: u32| -> Vec<u32> {
+            (1..0x80).filter(|&c| t.r32(base + 4 * c) != 0).collect()
+        };
+        let (kb_named, pad_named) = (named(t, kb), named(t, pad));
+        for case in 0..400 {
+            t.reset();
+            let n = [
+                0u32,
+                1,
+                3,
+                0x10,
+                0x1d,
+                0x30,
+                0x40,
+                0x51,
+                0x51,
+                0x51,
+                0x60,
+                0xffff_ffff,
+            ][rng.below(12) as usize];
+            let words = n.min(0x60) as usize;
+            // codes distinct across both tables, each named in its own:
+            // a lookup in the wrong table finds the other's zeros
+            let mut used = [false; 0x80];
+            let mut list = vec![0u32; 0x60];
+            for (i, w) in list.iter_mut().enumerate().take(words) {
+                let pad_slot = (14..=27).contains(&i) || i == 44 || i == 45;
+                let pool: Vec<u32> = if pad_slot { &pad_named } else { &kb_named }
+                    .iter()
+                    .copied()
+                    .filter(|&c| !used[c as usize])
+                    .collect();
+                *w = if rng.chance(6) || pool.is_empty() {
+                    0
+                } else {
+                    let c = pool[rng.below(pool.len() as u32) as usize];
+                    used[c as usize] = true;
+                    c
+                };
+            }
+            // some cases broken in one slot
+            let fault = rng.below(6);
+            if words > 0 && fault < 4 {
+                let i = rng.below(words as u32) as usize;
+                list[i] = match fault {
+                    0 => [0x80, 0xffff_ffff, 0x8000_0000, 0x7fff_ffff][rng.below(4) as usize],
+                    // a code without a name (when there is one)
+                    1 => (0..0x80).find(|&c| t.r32(kb + 4 * c) == 0).unwrap_or(0),
+                    2 => (0..0x80).find(|&c| t.r32(pad + 4 * c) == 0).unwrap_or(0),
+                    // a duplicate of another slot's code
+                    _ => list[rng.below(words as u32) as usize],
+                };
+            }
+            let at = t.words(&list);
+            let filter = match rng.below(5) {
+                0 => t.rebase(0x0040_5cb0),
+                1 => t.rebase(0x0040_5d00),
+                2 => t.rebase(0x0040_5d80),
+                3 => t.stub_code(0x5f00, false, 1, 0, 0x7fff_ff01),
+                _ => t.stub_code(0x5f01, false, 1, 0, 0x0000_0100),
+            };
+            let what = format!("Settings_ValidateBindings #{case} n {n:#x} fault {fault}");
+            t.check(
+                &what,
+                0x0040_5bb0,
+                Conv::FastcallCallerPops,
+                &[at, n, filter],
+                |m| Out::U32(st::validate_bindings(m, at, n, filter)),
+            );
+        }
+    });
+}
+
 // ---- the save/load screen ----
 
 /// Random machine globals: state, timer, list position, counts, choice,
@@ -1063,6 +1200,16 @@ fn save_machine_update_matches_the_original() {
             let what = format!("SaveDataMachine_Update state {state}");
             t.check(&what, 0x006f_0950, Conv::Cdecl, &[], |m| {
                 Out::U32(sa::machine_update(m))
+            });
+        }
+        // code_006f2740: the 5-byte jump thunk to it (SaveData_Update
+        // calls it with ecx = the manager, which the machine never reads)
+        for ret in [0u32, 1, 0x1234_5678] {
+            t.reset();
+            t.stub(0x006f_0950, false, 0, 0, ret);
+            let what = format!("code_006f2740 -> {ret:#x}");
+            t.check(&what, 0x006f_2740, Conv::Thiscall(0x0bad_f00d), &[], |m| {
+                Out::U32(sa::machine_update_thunk(m))
             });
         }
     });

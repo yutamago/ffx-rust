@@ -318,4 +318,24 @@ ported! {
     SaveData_Update @ 0x0064_8480 => extern "C" fn save_data_update() -> u32 {
         sa::save_data_update(&mut mem())
     }
+
+    // ---- round 2: the custom convention and the jump thunks ----
+    /// `0x00401690(text; out, max)`: `ecx`, `edx` and a stack word the
+    /// caller pops.
+    Settings_ParseIntList_00401690 @ 0x0040_1690 => extern "fastcall-caller-pops" fn parse_int_list(text: u32, out: u32, max: u32) -> u32 {
+        st::parse_list(&mut mem(), text, out, max)
+    }
+    /// `Settings_ValidateBindings(list; n, filter)`: `ecx`, `edx` and a
+    /// stack word the caller pops.
+    Settings_ValidateBindings @ 0x0040_5bb0 => extern "fastcall-caller-pops" fn validate_bindings(list: u32, n: u32, filter: u32) -> u32 {
+        st::validate_bindings(&mut mem(), list, n, filter)
+    }
+    /// `user_free_thunk(p)`: the 5-byte `jmp user_free`.
+    user_free_thunk @ 0x0068_7010 => extern "C" fn user_free_thunk(p: u32) -> u32 {
+        sa::user_free_thunk(&mut mem(), p)
+    }
+    /// `code_006f2740()`: the 5-byte `jmp SaveDataMachine_Update`.
+    code_006f2740 @ 0x006f_2740 => extern "C" fn machine_update_thunk() -> u32 {
+        sa::machine_update_thunk(&mut mem())
+    }
 }

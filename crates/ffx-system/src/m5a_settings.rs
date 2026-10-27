@@ -161,6 +161,115 @@ pub mod bridge {
         }
     }
 
+    /// `0x00401690(text; out, max)` (`ecx` = the text, `edx` = `out`, one
+    /// stack word the caller pops: `fastcall-caller-pops`): the decimal
+    /// list in the NUL-terminated `text` (a binding line of
+    /// `GameSetting.ini`) into the words at `out`, one per `,` or the end,
+    /// up to `max` (signed; at least one word is written when `text` is
+    /// not null). Characters other than digits, `,` and NUL are skipped
+    /// (signed byte compares: bytes 0x80.. are not digits); a number is
+    /// `acc * 10 + c - '0'` in wrapping 32 bits. Returns the count (0 for
+    /// a null `text`). The same loop is inlined in `Settings_SetValue` for
+    /// the other two tables.
+    pub fn parse_list(mem: &mut impl Mem, text: u32, out: u32, max: u32) -> u32 {
+        let mut count = 0u32;
+        let mut acc = 0u32;
+        let mut p = text;
+        if p == 0 {
+            return 0;
+        }
+        loop {
+            let c: u8 = mem.read(p);
+            let s = c.cast_signed();
+            if (0x30..=0x39).contains(&s) {
+                acc = acc
+                    .wrapping_mul(10)
+                    .wrapping_add(u32::from(c))
+                    .wrapping_sub(0x30);
+            } else if c == b',' || c == 0 {
+                mem.write(out.wrapping_add(count.wrapping_mul(4)), acc);
+                count = count.wrapping_add(1);
+                if count.cast_signed() >= max.cast_signed() {
+                    break;
+                }
+                acc = 0;
+            } else {
+                // `inc edi; jne`: the next byte, unless the pointer wraps
+                p = p.wrapping_add(1);
+                if p == 0 {
+                    break;
+                }
+                continue;
+            }
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                break;
+            }
+            p = p.wrapping_add(1);
+            if p == 0 {
+                break;
+            }
+        }
+        count
+    }
+
+    /// `Settings_ValidateBindings(list; n, filter)` (`ecx` = the binding
+    /// table, `edx` = its word count, `filter` = the slot filter, a cdecl
+    /// `(slot) -> al` the caller pushes and pops:
+    /// `fastcall-caller-pops`). 0 when a slot the filter takes has a key
+    /// code outside 0..0x80 or one without a name, or when two such slots
+    /// share a nonzero code; else 1. Slots 14..=27 and 44, 45 are
+    /// controller codes (`CONTROLLER_NAMES`), the rest keyboard codes; a
+    /// zero slot at 0x31 or above is skipped before the filter is asked
+    /// (unsigned `jae`; counts and indices compare signed). The filter is
+    /// called once per slot in the first pass, and again for each pair in
+    /// the second (outer slot, then each later slot with a code).
+    pub fn validate_bindings(h: &mut impl Host, list: u32, n: u32, filter: u32) -> u32 {
+        let n = n.cast_signed();
+        let at = |i: i32| list.wrapping_add(4u32.wrapping_mul(i.cast_unsigned()));
+        let mut i = 0i32;
+        while i < n {
+            let code: u32 = h.read(at(i));
+            if (code != 0 || i < 0x31)
+                && h.call(filter, Conv::Cdecl, &[i.cast_unsigned()]) & 0xff != 0
+            {
+                let table = if (14..=27).contains(&i) || i.wrapping_sub(0x2c).cast_unsigned() <= 1 {
+                    CONTROLLER_NAMES
+                } else {
+                    KEYBOARD_NAMES
+                };
+                if code >= 0x80 {
+                    // also the negative codes (`js`)
+                    return 0;
+                }
+                let name: u32 = h.read(h.rebase(table).wrapping_add(4 * code));
+                if name == 0 {
+                    return 0;
+                }
+            }
+            i += 1;
+        }
+        let mut i = 0i32;
+        while i < n {
+            let code: u32 = h.read(at(i));
+            if code != 0 && h.call(filter, Conv::Cdecl, &[i.cast_unsigned()]) & 0xff != 0 {
+                let mut j = i + 1;
+                while j < n {
+                    let other: u32 = h.read(at(j));
+                    if other != 0 && h.call(filter, Conv::Cdecl, &[j.cast_unsigned()]) & 0xff != 0 {
+                        let first: u32 = h.read(at(i));
+                        if first == other {
+                            return 0;
+                        }
+                    }
+                    j += 1;
+                }
+            }
+            i += 1;
+        }
+        1
+    }
+
     /// The keyboard table's address constant (for the shims).
     pub const KEYBOARD: u32 = KEYBOARD_NAMES;
     /// The controller table's address constant (for the shims).

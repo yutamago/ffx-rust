@@ -33,6 +33,7 @@
 0x004015c0 function StdSystemErrorCategory_defaultErrorCondition_004015c0 # vtable 0x00b0da20 slot 3: (out, code) ret 8, ecx unused -> out: {code, &generic 0x00c8b43c} when _Syserror_map(code) is set, else {code, &system 0x00c8b438}; name ours; ported ffx_system::m5a_std (m5 system-a b1)
 0x00401600 function StdSystemErrorCategory_deletingDtor_00401600 # vtable 0x00b0da20 slot 0: as StdErrorCategory_deletingDtor_00401260; name ours; ported ffx_system::m5a_std (m5 system-a b1)
 0x00401660 function StdOstreamSentry_unlock_00401660 # ecx = the stream holder (no stack words; Unwind@00adfdc8): rdbuf ([stream + vbase + 0x38]), when set, tail-jumped vtable[2] (_Unlock); name ours; ported ffx_system::m5a_std (m5 system-a b1)
+0x00401690 function Settings_ParseIntList_00401690 # fastcall-caller-pops(text; out, max): ecx = the NUL-terminated decimal list, edx = the word array, one stack word (max, signed) the caller pops (LTCG custom convention; caller Settings_SetValue for lmKeyBinding, the FFX and FFX-2 tables inline the same loop) -> the count: a word per ',' or the end, other bytes skipped (signed byte compares); name ours; ported ffx_system::m5a_settings (m5 system-a c2)
 0x004016e0 function Settings_JoinBindings # guess: ints -> "a,b,c" std::string (used by Settings_Format) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00401840 function StdStringstream_dtor_00401840 # ecx = a std::stringstream (Unwind): basic_ios at +0x68 gets vtable 0x00b7cb6c, the vbase word, 0x00403010(+0x18), MSVCP110 ~basic_iostream(+0x20), tail jump ~basic_ios(+0x68); name ours; ported ffx_system::m5a_std (m5 system-a b1)
 0x00401880 function Settings_Construct # GameSetting.ini path at +0x430; field 0 = language index; ported ffx_system::m5a_settings::bridge::construct: thiscall(this; path) ret 4 -> this; +0x638 = 0x101, +0x63a = 1, 24 words from 0x00b7cba8 stride 16, memset +0x60/+0x1a4/+0x2e8 0x144, wide path to +0x430 (m5 system-a b1)
@@ -67,7 +68,7 @@
 0x00405b60 function KeyNames_setController_00405b60 # cdecl(slot, name) -> al: the same for the controller key-name table 0x00c8a680; called 16 times by FFEscMenu_initControllerKeyNames_00702250; name ours (M4 h4 cont8); ported ffx_system::m5a_settings (m5 system-a b1)
 0x00405b90 function ReturnConst80_00405b90 # auto-port shape (return constant, cdecl): return 0x80; callers: ; name ours; ported by hand in ported/m5_system_a.rs (m5 system-a b1)
 0x00405ba0 function ReturnConst_00405ba0 # () -> 0x80; name ours
-0x00405bb0 function Settings_ValidateBindings # (list, n, slot filter): codes 0..0x7f with a key name, no duplicates (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x00405bb0 function Settings_ValidateBindings # (list, n, slot filter): codes 0..0x7f with a key name, no duplicates (platform census 2026-10-25, docs/formats/platform.md; settings/Steam); fastcall-caller-pops(list; n, filter): ecx = the table, edx = its word count, the cdecl slot filter on the stack (caller pops) -> 1 or 0: a filtered slot's code outside 0..0x80 (signed) or without a name (slots 14..=27, 44, 45 the controller table 0x00c8a680, the rest the keyboard table 0x00c8abe0; zero slots from 0x31 skipped), or two filtered nonzero slots alike -> 0; ported ffx_system::m5a_settings (m5 system-a c2)
 0x00405cb0 function Settings_IsFfxBindingSlot # slot filter for ffxKeyBinding (platform census 2026-10-25, docs/formats/platform.md; settings/Steam); cdecl(slot) -> eax (al the answer, upper bytes the slot's); ported ffx_system::m5a_settings (m5 system-a b1)
 0x00405d00 function Settings_IsFfx2BindingSlot # slot filter for ffx2KeyBinding (platform census 2026-10-25, docs/formats/platform.md; settings/Steam); cdecl(slot) -> eax (al the answer, upper bytes the slot's); ported ffx_system::m5a_settings (m5 system-a b1)
 0x00405d80 function Settings_IsLmBindingSlot # slot filter for lmKeyBinding (platform census 2026-10-25, docs/formats/platform.md; settings/Steam); cdecl(slot) -> eax (al the answer, upper bytes the slot's); ported ffx_system::m5a_settings (m5 system-a b1)
@@ -4615,7 +4616,7 @@
 0x00686f80 function Identity_00686f80 # cdecl(x) -> x (frame-pointer build); name ours
 0x00686ff0 function user_aligned_malloc       # cdecl(size, align): jmp UserHeap_AlignedMalloc; fh v3:bsim1.00 0x00687190
 0x00687000 function user_calloc # cdecl(n, size): jmp UserHeap_Calloc 0x006fb820; name ours (after user_malloc)
-0x00687010 function user_free_thunk # cdecl(p): jmp user_free 0x006fb8b0 (Phyre_PhyreFree and operator delete call it); name ours; bridge ffx_system::m5a_savedata::bridge::user_free_thunk, not hooked: no function in the dump (check-ported), m5 system-a b2
+0x00687010 function user_free_thunk # cdecl(p): jmp user_free 0x006fb8b0 (Phyre_PhyreFree and operator delete call it); name ours; ported ffx_system::m5a_savedata (m5 system-a b2), hooked c2: a 5-byte jmp thunk the dump lacks, confirmed from the machine code (check-ported)
 0x00687020 function user_malloc               # cdecl(size): jmp UserHeap_Malloc; fh v3:bsim1.00 0x006871c0
 0x00687030 function user_heap_destroy # (): jmp UserHeap_Destroy 0x006fb9a0; name ours
 0x00687040 function malloc_pool_init_thunk # (): jmp malloc_pool_init 0x006fb9b0; name ours
@@ -5555,7 +5556,7 @@
 0x006f2520 function SetMember394_006f2520 # thiscall(this; v), ret 4: this+0x394 = v, returns v; caller 0x00648f80 (save data); name ours
 0x006f2530 function SaveDataManager_setSaveDataIconString # fh v3:exact 0x006f2670 SaveDataManager::setSaveDataIconString
 0x006f2560 function SaveDataManager_setSaveDataInfo # fh v3:exact 0x006f26a0 SaveDataManager::setSaveDataInfo
-0x006f2740 function code_006f2740 # cdecl(): jmp SaveDataMachine_Update (called with ecx = the save manager); bridge ffx_system::m5a_savedata::bridge::machine_update_thunk, not hooked: no function in the dump (check-ported), m5 system-a b2
+0x006f2740 function code_006f2740 # cdecl(): jmp SaveDataMachine_Update (called with ecx = the save manager, never read); ported ffx_system::m5a_savedata::bridge::machine_update_thunk (m5 system-a b2), hooked c2: a 5-byte jmp thunk the dump lacks, confirmed from the machine code (check-ported)
 0x006f29f0 function crossThreadImpl_run_006f29f0 # thiscall(this): [this+0x10]([this+0x14]) cdecl when set; returns 0; slot 1 of crossThreadImpl_vftable (0x00b4bbd0); name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x006f2a40 function Thread_Sleep # cdecl(ms): Sleep(ms), its eax left; name ours
 0x006f2be0 function Event_Reset # cdecl(&event): ResetEvent(*event) through 0x00b0c0f0; name ours
