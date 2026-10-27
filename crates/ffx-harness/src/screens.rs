@@ -158,7 +158,7 @@ pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
 /// # Errors
 /// Fails when the save does not load or its event does not open.
 pub fn load_save_direct(game: &mut Game, save: &str) -> Result<String> {
-    load_direct(game, save, false, false)
+    load_direct(game, save, false)
 }
 
 /// As [`load_save_direct`], but lockstep takes hold at the boundary the
@@ -173,25 +173,10 @@ pub fn load_save_direct(game: &mut Game, save: &str) -> Result<String> {
 /// # Errors
 /// Fails when the save does not load or its event does not open.
 pub fn load_save_direct_lockstep(game: &mut Game, save: &str) -> Result<String> {
-    load_direct(game, save, true, false)
+    load_direct(game, save, true)
 }
 
-/// As [`load_save_direct_lockstep`], and `pin` (`docs/harness.md`, "Pinned
-/// state") at the load's own boundary, before the load's first update
-/// (replay line `load direct SAVE [script] lockstep pin`): a `pin` sent
-/// after the event opened left the load's updates before it running on
-/// the time the free boot had left (kami0100: `scene.GlobalTime` 2 ulp
-/// apart between original runs, `docs/drawdiff.md`). A replay that pins
-/// here sends no later `pin`: a second one would set the clock back.
-///
-/// # Errors
-/// Fails when the save does not load, the pin fails or the save's event
-/// does not open.
-pub fn load_save_direct_lockstep_pinned(game: &mut Game, save: &str) -> Result<String> {
-    load_direct(game, save, true, true)
-}
-
-fn load_direct(game: &mut Game, save: &str, lockstep: bool, pin: bool) -> Result<String> {
+fn load_direct(game: &mut Game, save: &str, lockstep: bool) -> Result<String> {
     if !game.opened().iter().any(|e| e.contains("memochek.ebp")) {
         game.wait_for_open("memochek.ebp", 2, 3000)?;
     }
@@ -223,11 +208,6 @@ fn load_direct(game: &mut Game, save: &str, lockstep: bool, pin: bool) -> Result
             Err(e) => return Err(e),
         }
     };
-    if pin {
-        // lockstep holds the main thread at the load's boundary, where the
-        // pin job runs before the load's first update
-        game.command("pin")?;
-    }
     // in lockstep one frame at a time, so the wait ends at the boundary
     // after the open, not up to 4 later
     let opened = game.wait_for_open(".ebp", if lockstep { 1 } else { 5 }, 1200)?;

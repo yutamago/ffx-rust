@@ -20,17 +20,13 @@
 # update of the load in every run. Pinned at count 64, five original
 # kami0100 runs still differed in `scene.GlobalTime`, the cloth ring and
 # the eye-blink texture: the 64 updates before it ran on the time the free
-# boot left (those captures: dg-<replay>-pin64-q*). The pin right after
-# `lockstep on` (references dg-<replay>-q1/q2) still let the load's
-# updates up to the event's opening run on that time: GlobalTime 2 ulp,
-# the cloth ring and the blink in some original pairs. Since 2026-10-27
-# (replay-flakes4) the pin is at the load's own boundary (`load direct
-# ... lockstep pin`, no later `pin`); references dg-kami-l1/l2. Each
+# boot left (those captures: dg-<replay>-pin64-q*). References dg-<replay>-q1/q2. Each
 # capture is `gfxcapture ... now async` at a boundary the script reached
 # in lockstep: it holds the next three updates exactly (the harness checks
 # the updates the frames show and fails the reply otherwise).
-load direct 5 kami0100 lockstep pin
+load direct 5 kami0100 lockstep
 lockstep on
+pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500
 wait 37
 read 0x01325d94 4

@@ -416,22 +416,29 @@ count's picture). A `shotwhen` that matches at the first boundary it
 checks fails, because that image may already be gone; start it while the
 count is still well below its window.
 `run-all.sh --record boot` records it alone (`--record NAME...` leaves the
-other replays' recordings alone). About 75 s, the longest replay.
+other replays' recordings alone). About 75 s at the game's rate (until
+2026-10-27; it is a lockstep replay now, below).
 
 boot-2 still failed once by 346 pixels (replay-flakes-2): at the game's
-own rate a frame of jitter between the music and the updates is left, and
-two original recordings differ by 12,301 (boot-2) and 36,884 (boot-3)
-pixels. With sound in lockstep the opening's music would keep the update
-count, so a boot on the virtual clock could be pinned; tried on 2026-10-27
-(replay-flakes3: fast mode, `lockstep on` and `pin` once memochek's map is
-up, the same `shotwhen`s): the game never reached its first update (the
-hook log repeats "present of update 0: the main thread did not reach its
-boundary"), with `lockstep on` first and with a `waitfor` first alike
-(not tried with `FFX_AUDIO_NRT=0`), so
-the start-up screens before memochek would need a look of their own
-(`load direct` gets past them by tapping Start, which a boot replay must
-not). boot stays `realtime`; its comparison is not loosened, and a lone
-boot-2/3 failure of a few hundred pixels is this jitter (rerun it).
+own rate a frame of jitter between the music and the updates was left, and
+two original recordings differed by 12,301 (boot-2) and 36,884 (boot-3)
+pixels. Since 2026-10-27 (replay-flakes4) boot runs in lockstep: fast
+mode on the virtual clock, `lockstep on` and `pin` once memochek's map is
+up, the same `shotwhen`s. Sound in lockstep (below) keeps the opening's
+music on the update count, so the count fixes the picture again. Tried in
+replay-flakes3, the game never reached its first update: the hook log
+repeated "present of update 0: the main thread did not reach its
+boundary", which the harness writes only when lockstep is on and the main
+loop has not entered `FFXApplication_animate` yet. `lockstep on` held at
+once when the main loop had not started (the map words are set during the
+start-up loop), so every start-up present waited 5 s for boundary 0. Now
+the main thread takes the requested hold at its first boundary there too.
+(In the runs below the map words matched at update 5, after the main loop
+had started, so they show that the boot repeats, not this path.) Two
+original and two Rust runs side by side gave the four shots the same to
+the pixel; the replay takes 18-28 s instead of 75. Its references were
+recorded again (the realtime ones are in
+`~/ffx-work/replay-shots-nrt.pre-flakes4`).
 
 `tools/replays/battle-magic.txt` (2026-10-24) plays the one spell
 overlay that calls `op_shape_draw` (`0x007ed0c0`): `magic_0481.dll`, its
@@ -1064,7 +1071,12 @@ dates are the files' times.
   thread's copies half-done ("Frames and threads"): sampled between two
   updates, three original runs, three Rust runs and a hook-hit run agree on
   every range, and nothing is left out. The waits on the map words still
-  check the maps.
+  check the maps. Range 12 (entry 1's slot, `0x00ce7324`) then differed
+  in some runs (replay-flakes3): the list sorts the saves by their
+  modification time to the second, and the sandbox's copies all got the
+  copy's time, so which save sorted first depended on whether the copies
+  fell within one second. Since 2026-10-27 the sandbox keeps the source
+  files' times (`docs/formats/save.md`); menu-save was recorded again.
 
 ### Coverage replays
 
@@ -1129,8 +1141,16 @@ real-time movie.
   within a pixel and twice 98,378 pixels off (x 62..1174, y 144..682: the
   page slid about 11 pixels less; Rust runs on main before the re-recording
   showed the same). Exactly one count, so a discrete step (a Flash tick
-  more or less during the slide), not wall-clock drift. Open; the traces
-  match.
+  more or less during the slide), not wall-clock drift. The traces
+  matched. Cause (replay-flakes4): Iggy timed its Flash frames by the wall
+  clock ("Flash on the virtual clock" below), and the Rust update's longer
+  real time let one fewer slide frame run before the shot in some runs.
+  With Iggy on the virtual clock three original and three Rust runs gave
+  pages 1-9 the same within 36 pixels (most within 1: a pixel at 169,512
+  and a 17-pixel group in one original run), page 7 within 179, page 10
+  within 137; page 6 within 17 in all six. The title (11, 12) still
+  differs everywhere between any two runs. Recorded again with it (the
+  old recordings in `~/ffx-work/replay-shots-extra.pre-flakes4`).
 - `battle-ifrit` (about 20 s): the Thunder Plains (`battle 34 0 0`,
   `kami00_00`, battle map `0x412`) from save 5, set up as battle-overdrive
   (party, the monsters' HP 99999); Tidus attacks, Yuna summons Ifrit
@@ -1262,7 +1282,7 @@ without the file: output `FMOD_OUTPUTTYPE_NOSOUND_NRT` (4), the same
 software format, DSP blocks of one tick, streams decoded in `update`, and
 the `FmodManager_tick` turns at each frame boundary. Nothing reaches the
 speakers. `FFX_AUDIO_NRT=0` keeps the old real-time mixer; `realtime`
-replays (boot, event-cliff, event-arrival, movie-fmv) are not on the
+replays (event-cliff, event-arrival, movie-fmv; boot until 2026-10-27) are not on the
 virtual clock and keep it too.
 
 Before, the mixer ran on the sound card's clock, so a voice or a music
@@ -1280,6 +1300,37 @@ words (`*0x023c44e4 + n x 0x880 + 0x4d4`, 16 bytes, eight records) and
 the voice flags agreed on every frame. What follows a voice (Wakka's
 run, the river) and every wait on a music file now lands on fixed frames
 too, so all lockstep references had to be recorded again with it.
+
+### Flash on the virtual clock
+
+Iggy (`iggy_w32.dll`) plays the Flash screens: the PC menu's pages, the
+title, the save and load lists and the autosave prompt (`chocobo.swf`, the
+running chocobo at the bottom right, 50x50 at 1220,660, which
+`PhyreScene_showAutoSavingPrompt` `0x0066f480` opens when an autosave
+starts: Besaid beach, the agency). The game ticks each player on the
+render thread (`0x00a3d9f0`, a render command `IggyPlayer_QueueDraw`
+queues: `while IggyPlayerReadyToTick: IggyPlayerTickRS`). The tick check
+adds the time since its last call to the player's accumulator (`+0x28`)
+and says ready while that reaches the period (`1 / fps`, `+0x21e0`); the
+time is `QueryPerformanceCounter` (or `timeGetTime`) unless
+`IggyPlayerDebugSetTime` has set one (`+0x21d0`, 0 for none; the last
+check's time is `+0x21d8`). So how many Flash frames a slide or a fade had
+run at a given update followed real time, in lockstep too: iggy-menus'
+Key bindings page one slide frame short in two of five Rust runs, the
+fades of pages 3-5 and the chocobo icon (by about 800-1,000 pixels between
+original runs, and in one draw-field capture not at all: its draws
+followed the wall clock, 122 to 128 of them over three frames).
+
+Since 2026-10-27 (replay-flakes4) on the virtual clock the harness wraps
+`FFX.exe`'s `IggyPlayerReadyToTick` import: before each check it sets the
+player's time to the game time of the update the draw belongs to (the
+virtual clock when that update's flip was queued, kept per flip as the
+flip labels are), so every check of one draw sees the same time, and a
+player's first check also takes it as its last one (the real time read
+when the player started never enters an elapsed time). The hook log says
+`Iggy's tick check on the virtual clock: on`. `realtime` replays keep the
+wall clock. Reads of the raw clock outside the tick check (a player's
+elapsed real time at `+0x30`, Iggy's own profiling) are left as they are.
 
 ## Parallel games
 
@@ -1466,8 +1517,8 @@ so wall-clock animations drift a little further.
 
 The cursor glow and battle-attack-1's idle pose in the lockstep replays
 came from the frames before `lockstep on`, not from the wall clock
-("Pinned state"). boot runs in real time, so `pin` doesn't apply there.
-boot-3 (the opening) had 39 px, single pixels on model edges, in 1 of 25
+("Pinned state"). boot ran in real time then (lockstep and pinned since
+2026-10-27). boot-3 (the opening) had 39 px, single pixels on model edges, in 1 of 25
 Rust runs. The two original runs differ there by 35,000 px. Rerun such a
 boot-3 failure rather than bisect it. Measured with
 `~/ffx-work/pixel-regress/measure.sh` (`ORIGINAL=1` for the original
