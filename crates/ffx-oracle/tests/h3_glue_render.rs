@@ -72,6 +72,7 @@ use ffx_prender::h3_glue46::{self as h46, bridge as gh46};
 use ffx_prender::h3_glue47::{self as h47, bridge as gh47};
 use ffx_prender::h3_glue48::{self as h48, bridge as gh48};
 use ffx_prender::h3_glue49::{self as h49, bridge as gh49};
+use ffx_prender::h3_glue50::{self as h50, bridge as gh50};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -11378,32 +11379,11 @@ fn prep_unload_character50(
     args[0] = character;
     let key = if rng.chance(6) { 0 } else { rng.word() | 1 };
     t.w32(character + 4, key);
-    // the tree: head, N0..N3
-    let head = obj + 0x1400;
-    let n: Vec<u32> = (0..7).map(|k| obj + 0x1440 + 0x40 * k).collect();
-    t.w32(scene + 0x11dc, head);
-    t.write(head + 0xd, &[1]);
-    for (node, [left, parent, right]) in [
-        (head, [n[0], n[1], n[4]]),
-        (n[0], [head, n[1], n[5]]),
-        (n[5], [head, n[0], n[6]]),
-        (n[6], [head, n[5], head]),
-        (n[1], [n[0], head, n[2]]),
-        (n[2], [n[3], n[1], n[4]]),
-        (n[3], [head, n[2], head]),
-        (n[4], [head, n[2], head]),
-    ] {
-        t.w32(node, left);
-        t.w32(node + 4, parent);
-        t.w32(node + 8, right);
-        if node != head {
-            t.write(node + 0xd, &[0]);
-        }
-    }
+    // the tree: one value of its nodes holds the key
+    let values: Vec<u32> = (0..7).map(|k| obj + 0x1600 + 0x40 * k).collect();
+    name_tree50(t, obj, scene + 0x11dc, &values, rng);
     let owner = rng.below(7) as usize;
-    for (k, &node) in n.iter().enumerate() {
-        let value = obj + 0x1600 + 0x40 * k as u32;
-        t.w32(node + 0x28, value);
+    for (k, &value) in values.iter().enumerate() {
         let mine = if k == owner {
             key
         } else {
@@ -11412,30 +11392,6 @@ fn prep_unload_character50(
         t.w32(value, mine);
         let data = if rng.chance(4) { 0 } else { obj + 0x1900 };
         t.w32(value + 4, data);
-        // the name
-        let mut name: Vec<u8> = if rng.chance(3) {
-            // a long part between the last '/' and the last '.'
-            let mut v = b"d/".to_vec();
-            v.extend((0..16 + rng.below(12)).map(|_| b'a' + rng.below(3) as u8));
-            v.extend(b".ext");
-            v
-        } else {
-            let len = pick(rng, &[0, 1, 4, 9, 15, 16, 27]) as usize;
-            (0..len).map(|_| b"aa/.b"[rng.below(5) as usize]).collect()
-        };
-        let len = name.len();
-        name.push(0);
-        let s = node + 0x10;
-        if len < 16 && rng.chance(4) {
-            t.write(s, &name);
-            t.w32(s + 0x14, 0xf);
-        } else {
-            let buf = obj + 0x1a00 + 0x40 * k as u32;
-            t.write(buf, &name);
-            t.w32(s, buf);
-            t.w32(s + 0x14, (len as u32).max(0x10) + rng.below(8));
-        }
-        t.w32(s + 0x10, len as u32);
     }
     t.stub_seq(
         h48::OPERATOR_NEW,
@@ -11493,5 +11449,154 @@ fn batch50_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 40 } else { 200 };
         run_cases(t, CASES50, n, &mut Rng(0x5050_b050));
+    });
+}
+
+/// A name tree (`*slot` its head at `obj + 0x1400`) of seven nodes, in
+/// order N0, N5, N6, N1, N3, N2, N4 (a right subtree's leftmost and
+/// climbs of one and two steps back up); node k's value (`+0x28`) is
+/// `values[k]`. Their names (`+0x10`) mix `a`, `/` and `.`, or have a
+/// long part between a '/' and a '.', inline or in a buffer.
+fn name_tree50(t: &mut Twins, obj: u32, slot: u32, values: &[u32], rng: &mut Rng) {
+    let head = obj + 0x1400;
+    let n: Vec<u32> = (0..7).map(|k| obj + 0x1440 + 0x40 * k).collect();
+    t.w32(slot, head);
+    t.write(head + 0xd, &[1]);
+    for (node, [left, parent, right]) in [
+        (head, [n[0], n[1], n[4]]),
+        (n[0], [head, n[1], n[5]]),
+        (n[5], [head, n[0], n[6]]),
+        (n[6], [head, n[5], head]),
+        (n[1], [n[0], head, n[2]]),
+        (n[2], [n[3], n[1], n[4]]),
+        (n[3], [head, n[2], head]),
+        (n[4], [head, n[2], head]),
+    ] {
+        t.w32(node, left);
+        t.w32(node + 4, parent);
+        t.w32(node + 8, right);
+        if node != head {
+            t.write(node + 0xd, &[0]);
+        }
+    }
+    for (k, &node) in n.iter().enumerate() {
+        t.w32(node + 0x28, values[k]);
+        let mut name: Vec<u8> = if rng.chance(3) {
+            // a long part between the last '/' and the last '.'
+            let mut v = b"d/".to_vec();
+            v.extend((0..16 + rng.below(12)).map(|_| b'a' + rng.below(3) as u8));
+            v.extend(b".ext");
+            v
+        } else {
+            let len = pick(rng, &[0, 1, 4, 9, 15, 16, 27]) as usize;
+            (0..len).map(|_| b"aa/.b"[rng.below(5) as usize]).collect()
+        };
+        let len = name.len();
+        name.push(0);
+        let s = node + 0x10;
+        if len < 16 && rng.chance(4) {
+            t.write(s, &name);
+            t.w32(s + 0x14, 0xf);
+        } else {
+            let buf = obj + 0x1a00 + 0x40 * k as u32;
+            t.write(buf, &name);
+            t.w32(s, buf);
+            t.w32(s + 0x14, (len as u32).max(0x10) + rng.below(8));
+        }
+        t.w32(s + 0x10, len as u32);
+    }
+}
+
+// ---- round 14 batch 51 (ffx_prender::h3_glue50) ----
+
+/// A character (`args[0]`, 0 now and then; its model `+4` and shared
+/// flag `+0x20`) and key; the list from `operator new` (then buffers for
+/// long names); the cursor script over the model's meshes; the push
+/// stub setting the list's count (high bit too) and data, or the
+/// original push; the name tree
+/// with 0 to all nodes this character's; `PhyreMalloc` giving memory or
+/// 0. The string code and `memmove` are the original's, and every other
+/// time the push too (`PhyreFree` stubbed).
+fn prep_instantiate51(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let character = obj + 0x600;
+    args[0] = if rng.chance(8) { 0 } else { character };
+    args[1] = rng.word();
+    let model = obj + 0x800;
+    t.w32(character + 4, model);
+    t.w32(
+        model + 0x1c,
+        if rng.chance(2) {
+            model + 0x1c
+        } else {
+            obj + 0x880
+        },
+    );
+    t.w32(character + 0x20, if rng.chance(2) { 0 } else { rng.word() });
+    let list = obj + 0x900;
+    let mut news = vec![list];
+    news.extend((0..8).map(|k| obj + 0x1c00 + 0x40 * k));
+    t.stub_seq(h50::OPERATOR_NEW, false, 1, 0, &news);
+    let area = t.zeros(0x800);
+    let steps = cursor_steps(t, area, false, rng);
+    t.stub_cursor_script(h50::CURSOR_BEGIN, h50::CURSOR_NEXT, &steps);
+    let count = pick(rng, &[0, 1, 3, 0x8000_0002]);
+    let src = obj + 0xa00;
+    for k in 0..4 {
+        let w = rng.word();
+        t.w32(src + 4 * k, w);
+    }
+    if rng.chance(2) {
+        // the original push (it reads the value through its pointer)
+        t.stub_ret(h50::PHYRE_FREE, false, 1, 0, rng.word());
+    } else {
+        t.stub_this_out(
+            h50::PARRAY_PUSH_INTO,
+            2,
+            2,
+            Some(rng.word()),
+            &[(0, count), (4, src)],
+        );
+    }
+    let mallocs: Vec<u32> = (0..32)
+        .map(|k| {
+            if rng.chance(4) {
+                0
+            } else {
+                obj + 0xb00 + 0x40 * k
+            }
+        })
+        .collect();
+    t.stub_seq(h50::PHYRE_MALLOC, false, 2, 0, &mallocs);
+    let tree = obj + 0x13c0;
+    t.stub_ret(h50::TABLE_TREE, true, 0, 0, tree);
+    let values: Vec<u32> = (0..7)
+        .map(|_| if rng.chance(3) { character } else { rng.word() })
+        .collect();
+    name_tree50(t, obj, tree, &values, rng);
+}
+
+const INSTANTIATE51_STUBS: &[(u32, K)] = &[
+    (h50::OPERATOR_DELETE, K::Cdecl(1)),
+    (h50::CHARACTER_ADD_INSTANCE, K::This(1)),
+    (h50::INSTANTIATE_MESH, K::This(3)),
+    (h50::INSTANCE_ADD_MESH, K::This(1)),
+    (h50::LIGHTING_INSTANCE, K::Getter),
+    (h50::LIGHTING_INSTANTIATE, K::This(1)),
+    (h50::TABLE_INSTANCE, K::Getter),
+    (h50::TEXTURE_ANIMATION_INSTANCE, K::Getter),
+    (h50::REGISTER_CHARACTER_INSTANCE, K::This(2)),
+    (h50::DEPTH_BIAS_ON_INSTANTIATED, K::Cdecl(3)),
+];
+
+#[rustfmt::skip]
+const CASES51: &[Case] = &[
+    framed(with_cookie(Case { prep: Some(prep_instantiate51), ..cdecl("instantiate_character", 0x0063_c540, 2, INSTANTIATE51_STUBS, |m, _, a| u(gh50::instantiate_character(m, frame_ebp(), a[0], a[1]))) }), 0x54, 0),
+];
+
+#[test]
+fn batch51_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 200 };
+        run_cases(t, CASES51, n, &mut Rng(0x5151_b051));
     });
 }

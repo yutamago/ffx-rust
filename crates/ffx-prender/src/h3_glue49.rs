@@ -34,7 +34,7 @@ pub mod bridge {
     use ffx_graphic::host::{Conv, Host};
 
     /// The string's text: its buffer from capacity 16 on, else inline.
-    fn text(h: &impl Host, s: u32) -> u32 {
+    pub(crate) fn text(h: &impl Host, s: u32) -> u32 {
         if h.read::<u32>(s + 0x14) >= 0x10 {
             h.read(s)
         } else {
@@ -44,7 +44,7 @@ pub mod bridge {
 
     /// An empty MSVC string at `s` (capacity 15, size 0, the text's
     /// first byte 0, in that order).
-    fn clear_string(h: &mut impl Host, s: u32) {
+    pub(crate) fn clear_string(h: &mut impl Host, s: u32) {
         h.write(s + 0x14, 0xfu32);
         h.write(s + 0x10, 0u32);
         h.write(s, 0u8);
@@ -53,7 +53,7 @@ pub mod bridge {
     /// The tree's in-order successor of `node` (`+0` left, `+4` parent,
     /// `+8` right, byte `+0xd` the head's mark). A head stays where it
     /// is, as in the original.
-    fn successor(h: &impl Host, node: u32) -> u32 {
+    pub(crate) fn successor(h: &impl Host, node: u32) -> u32 {
         let nil = |n: u32| h.read::<u8>(n.wrapping_add(0xd)) != 0;
         if nil(node) {
             return node;
@@ -82,7 +82,7 @@ pub mod bridge {
     /// The last index of `c` in the string at `s`, or -1 (`rfind` from
     /// the end; the original compares the cursor with the string's text
     /// before each step back).
-    fn rfind(h: &impl Host, s: u32, c: u8) -> u32 {
+    pub(crate) fn rfind(h: &impl Host, s: u32, c: u8) -> u32 {
         let size: u32 = h.read(s + 0x10);
         if size == 0 {
             return u32::MAX;
@@ -235,7 +235,7 @@ pub mod bridge {
     /// The string move-assignment the original inlines: `to`'s buffer
     /// freed, `to` cleared, `from`'s text taken (copied with its 0 when
     /// inline, else its buffer), `from` cleared.
-    fn move_string(h: &mut impl Host, to: u32, from: u32) {
+    pub(crate) fn move_string(h: &mut impl Host, to: u32, from: u32) {
         if h.read::<u32>(to + 0x14) >= 0x10 {
             let data: u32 = h.read(to);
             h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[data]);

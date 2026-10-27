@@ -55,6 +55,7 @@ use ffx_prender::h3_glue46::bridge as g46;
 use ffx_prender::h3_glue47::bridge as g47;
 use ffx_prender::h3_glue48::bridge as g48;
 use ffx_prender::h3_glue49::bridge as g49;
+use ffx_prender::h3_glue50::bridge as g50;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2041,6 +2042,15 @@ ported! {
     PhyreScene_unloadCharacter_00670b20 @ 0x0067_0b20 => extern "thiscall" fn scene_unload_character(this: u32, character: u32) -> u32 {
         let mut f = StackFrame::<0x15>::new();
         g49::unload_character(&mut mem(), f.at() + 0x54, this, character)
+    }
+
+    // ---- round 14 batch 51 (ffx_prender::h3_glue50) ----
+    /// `graphicCharacterInstantiate_0063c540(character, key)` -> the new
+    /// instance list (0 without a character): its meshes instantiated,
+    /// its name registered (frame `ebp - 0x54`).
+    graphicCharacterInstantiate_0063c540 @ 0x0063_c540 => extern "C" fn character_instantiate(character: u32, key: u32) -> u32 {
+        let mut f = StackFrame::<0x15>::new();
+        g50::instantiate_character(&mut mem(), f.at() + 0x54, character, key)
     }
 }
 
