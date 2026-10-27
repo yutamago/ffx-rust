@@ -1638,6 +1638,23 @@ disabled 6 of 6, and with `PhyreScene_doOnFieldMapAssetLoaded`
 the culprit was on): the title's map load after a game over does not
 finish with it in about one run of three.
 
+The same port is the lead for kami0100's scene-gate failures with every
+hook on (the h3b agent's 4 of 7, `dg-kami-h3b2-*`). Gated against
+`dg-kami-r1`: with every hook, 5 of 9 captures failed (h3b's seven and
+this round's two), on draw 31 (the loader's 16x8 texture,
+`f1de6dea8bd5f574` srv1) in 3 and on draw 45 (a texture-animation bind,
+`598aad727f6ce184` srv1, 32x32) in 2; six original captures (r2, lp1,
+lp2, h3b's orig1/orig2, q2) differed in draw 31 once (r2) and never in
+draw 45; only-m4 (`h3b2-m4a`) and `addAnimatedMaterials` off (`off2`)
+passed; with `PhyreScene_doOnFieldMapAssetLoaded` disabled, 6 of 6
+passed (`dg-kami-f7nodo1..6`). So the texture-animation flake is more
+frequent with every hook on, and the map-asset callback's port is where
+to look: it handles each asset of the field map as it arrives from the
+loader, which is where the loader's timing reaches the main thread. The
+first 16 of the 22 `TextureAnimationInfo`s (`*0x00cccaa8 +0x80`) held the
+same period, timer and frame (0) at count 101 in three original and three
+Rust runs, so the bound frame is not chosen by a timer that differs.
+
 ## Parallel games
 
 `Game_Main` (`0x0062ee50`) takes the named mutex
