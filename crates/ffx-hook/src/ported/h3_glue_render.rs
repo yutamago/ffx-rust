@@ -70,6 +70,10 @@ use ffx_prender::h3_glue61::bridge as g61;
 use ffx_prender::h3_glue62::bridge as g62;
 use ffx_prender::h3_glue63::bridge as g63;
 use ffx_prender::h3_glue64::bridge as g64;
+use ffx_prender::h3_glue65::bridge as g65;
+use ffx_prender::h3_glue66::bridge as g66;
+use ffx_prender::h3_glue67::bridge as g67;
+use ffx_prender::h3_glue68::bridge as g68;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2203,6 +2207,41 @@ ported! {
     PhyreScene_doOnFieldMapAssetLoaded @ 0x0065_af60 => extern "thiscall" fn scene_do_on_field_map_asset_loaded(this: u32, asset: u32, _unused: u32, model: u32, assets: u32, reader: u32, id: u32, scaled: u32) -> u32 {
         let mut f = StackFrame::<0x70>::new();
         g64::do_on_field_map_asset_loaded(&mut mem(), f.at() + 0x1c0, this, asset, model, assets, reader, id, scaled)
+    }
+
+    // ---- round 19 batch 67 (ffx_prender::h3_glue65) ----
+    /// `PhyreScene_textureVideoLoad(scene; path)`: the map's texture video
+    /// file read, its three textures made, the movie opened and the
+    /// file's effects created (frame `ebp - 0xb60`).
+    PhyreScene_textureVideoLoad @ 0x0066_fb70 => extern "thiscall" fn scene_texture_video_load(this: u32, path: u32) {
+        let mut f = StackFrame::<0x2d8>::new();
+        g65::texture_video_load(&mut mem(), f.at() + 0xb60, this, path);
+    }
+
+    // ---- round 19 batch 68 (ffx_prender::h3_glue66) ----
+    /// `graphicDrawUIElement(quad, name, screen, kind, vertex_kind)`: a
+    /// menu quad into the UI's vertex buffers, or the ability map's
+    /// (frame `ebp - 0x9c`; the remap's name slot in it).
+    graphicDrawUIElement @ 0x0063_eee0 => extern "C" fn graphic_draw_ui_element(quad: u32, name: u32, screen: u32, kind: u32, vertex_kind: u32) {
+        let mut f = StackFrame::<0x27>::new();
+        g66::draw_ui_element(&mut mem(), f.at() + 0x9c, quad, name, screen, kind, vertex_kind);
+    }
+
+    // ---- round 19 batch 69 (ffx_prender::h3_glue67) ----
+    /// `graphicCharacterInstanceGetClothVertexBuffers(instance, &cpu)` ->
+    /// the cloth record: the instance's cloth position and colour streams
+    /// read back (frame `ebp - 0xb8`).
+    graphicCharacterInstanceGetClothVertexBuffers @ 0x0063_a810 => extern "C" fn graphic_get_cloth_vertex_buffers(instance: u32, cpu: u32) -> u32 {
+        let mut f = StackFrame::<0x2e>::new();
+        g67::get_cloth_vertex_buffers(&mut mem(), f.at() + 0xb8, instance, cpu)
+    }
+
+    // ---- round 19 batch 70 (ffx_prender::h3_glue68) ----
+    /// `PhyreScene_PhyreScene(scene)` -> `scene`: the scene's constructor
+    /// (frame `ebp - 0x58`).
+    PhyreScene_PhyreScene @ 0x0064_dc00 => extern "thiscall" fn scene_phyre_scene(this: u32) -> u32 {
+        let mut f = StackFrame::<0x16>::new();
+        g68::phyre_scene(&mut mem(), f.at() + 0x58, this)
     }
 }
 
