@@ -88,6 +88,7 @@ use ffx_prender::h3_glue62::{self as h62, bridge as gh62};
 use ffx_prender::h3_glue63::{self as h63, bridge as gh63};
 use ffx_prender::h3_glue64::{self as h64, bridge as gh64};
 use ffx_prender::h3_glue65::{self as h65, bridge as gh65};
+use ffx_prender::h3_glue66::{self as h66, bridge as gh66};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -13635,5 +13636,117 @@ fn batch67_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES67, n, &mut Rng(0x6767_b067));
+    });
+}
+
+// ---- round 19 batch 68 (ffx_prender::h3_glue66) ----
+
+const UI68_STUBS: &[(u32, K)] = &[
+    (h66::REMAP_INSTANCE, K::Cdecl(0)),
+    (h66::UI_ELEMENT_REMAP, K::Cdecl(2)),
+    (h66::DRAW_UI_ABMAP_ELEMENT, K::Cdecl(3)),
+];
+
+/// The skipped frame; the ability map (none, or up with its `+4` below 2
+/// or not, signed); the remap (drawing, or replacing the name in the
+/// frame slot); the vertex record's buffer (small counts: a negative
+/// one sends the index offsets off the heap) and the dynamic geometry's
+/// current buffer id; the quad's corners and colours
+/// (in and out of 0..255); the name (none now and then), `screen`, the
+/// kinds (1, 2, 3, 4, `kind % 5 == 1`, negatives) and the vertex kind.
+fn prep_ui68(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let skip = if rng.chance(10) {
+        pick(rng, &[1, 2, 0x100])
+    } else {
+        0
+    };
+    t.global(h66::SKIP_FRAME, skip);
+    let abmap = if rng.chance(3) {
+        let abmap = t.zeros(0x10);
+        let state = pick(rng, &[0, 1, 2, 3, 0xffff_ffff, 0x8000_0000]);
+        t.w32(abmap + 4, state);
+        abmap
+    } else {
+        0
+    };
+    t.global(h66::ABMAP, abmap);
+    let renamed = obj + 0x1e00;
+    let drawn = if rng.chance(6) {
+        pick(rng, &[1, 0x100, 0x8000_0000])
+    } else {
+        0
+    };
+    let writes: &[(u8, u32)] = if rng.chance(4) { &[(3, renamed)] } else { &[] };
+    t.stub_writes(h66::REMAP_BUTTON_ICON, true, 5, 5, drawn, writes);
+    let info = t.zeros(0x100);
+    let fill = rng.bytes(0x100);
+    t.write(info, &fill);
+    let buffer = t.zeros(0x100);
+    t.w32(info + 0x94, buffer);
+    let count = pick(rng, &[0, 4, 8, 12, 1, 7, 0x40, 0x3f]);
+    t.w32(buffer + 4, count);
+    let total = rng.next();
+    t.w32(buffer + 8, total);
+    let room = t.zeros(0x2000);
+    for k in 0..5 {
+        t.w32(buffer + 0xc + 4 * k, room + 0x400 * k);
+    }
+    t.stub_ret(h66::MENU_VERTEX_INFO, true, 2, 2, info);
+    t.global(h66::GRAPHIC_UI, obj + 0x600);
+    t.global(h66::DYN_GEO_FILL, obj + 0x700);
+    let id = pick(rng, &[0, 1, 2]);
+    t.stub_ret(h66::CURRENT_BUFFER_ID, true, 0, 0, id);
+    let quad = obj + 0x100;
+    for v in 0..4 {
+        let at = quad + 0x20 * v;
+        for k in 0..4 {
+            let x = mild(rng);
+            t.w32(at + 4 * k, x);
+        }
+        for k in 0..4 {
+            let c = if rng.chance(4) {
+                rng.next()
+            } else {
+                rng.below(256)
+            };
+            t.w32(at + 0x10 + 4 * k, c);
+        }
+    }
+    args[0] = quad;
+    args[1] = if rng.chance(5) { 0 } else { obj + 0x1c00 };
+    args[2] = if rng.chance(3) { rng.word() | 1 } else { 0 };
+    args[3] = pick(
+        rng,
+        &[
+            1,
+            1,
+            2,
+            2,
+            3,
+            3,
+            4,
+            4,
+            0,
+            5,
+            6,
+            11,
+            0xffff_fffc,
+            0xffff_fff9,
+            0xffff_fffb,
+            7,
+        ],
+    );
+}
+
+#[rustfmt::skip]
+const CASES68: &[Case] = &[
+    with_cookie(framed(Case { prep: Some(prep_ui68), ..cdecl("draw_ui_element", 0x0063_eee0, 5, UI68_STUBS, |m, _, a| { gh66::draw_ui_element(m, frame_ebp(), a[0], a[1], a[2], a[3], a[4]); Out::None }) }, 0x9c, 0)),
+];
+
+#[test]
+fn batch68_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES68, n, &mut Rng(0x6868_b068));
     });
 }

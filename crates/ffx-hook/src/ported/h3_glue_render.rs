@@ -71,6 +71,7 @@ use ffx_prender::h3_glue62::bridge as g62;
 use ffx_prender::h3_glue63::bridge as g63;
 use ffx_prender::h3_glue64::bridge as g64;
 use ffx_prender::h3_glue65::bridge as g65;
+use ffx_prender::h3_glue66::bridge as g66;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2213,6 +2214,15 @@ ported! {
     PhyreScene_textureVideoLoad @ 0x0066_fb70 => extern "thiscall" fn scene_texture_video_load(this: u32, path: u32) {
         let mut f = StackFrame::<0x2d8>::new();
         g65::texture_video_load(&mut mem(), f.at() + 0xb60, this, path);
+    }
+
+    // ---- round 19 batch 68 (ffx_prender::h3_glue66) ----
+    /// `graphicDrawUIElement(quad, name, screen, kind, vertex_kind)`: a
+    /// menu quad into the UI's vertex buffers, or the ability map's
+    /// (frame `ebp - 0x9c`; the remap's name slot in it).
+    graphicDrawUIElement @ 0x0063_eee0 => extern "C" fn graphic_draw_ui_element(quad: u32, name: u32, screen: u32, kind: u32, vertex_kind: u32) {
+        let mut f = StackFrame::<0x27>::new();
+        g66::draw_ui_element(&mut mem(), f.at() + 0x9c, quad, name, screen, kind, vertex_kind);
     }
 }
 
