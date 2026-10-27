@@ -24,7 +24,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::{Mem, x87};
-use ffx_glue_other::{h4_k1 as k1, h4_k2 as k2, h4_k3 as k3, h4_k4 as k4};
+use ffx_glue_other::{
+    h4_k1 as k1, h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1, h4_l2 as l2, h4_l3 as l3,
+    h4_l4 as l4, h4_l5 as l5,
+};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -1792,4 +1795,1016 @@ fn k4_create_shape_field() {
 /// A texture number below the monsters' range.
 fn rng_texture(rng: &mut Rng) -> u32 {
     rng.below(0x3f00)
+}
+
+// ---- continuation round 10, batch 1 (ffx_glue_other::h4_l1)
+
+/// A recording stub at `sym` (a varargs cdecl function) that logs
+/// `n_match` words when its first argument is `first`, else `n_else`.
+fn stub_by_format(t: &mut Twins, sym: u32, first: u32, n_match: u32, n_else: u32) {
+    let other = t.stub_code(sym, false, n_else, 0, false, &[]);
+    let matched = t.stub_code(sym, false, n_match, 0, false, &[]);
+    let mut c = vec![0x81, 0x7c, 0x24, 0x04];
+    c.extend(first.to_le_bytes()); // cmp dword [esp+4], first
+    c.extend([0x0f, 0x85]);
+    let at = t.cave_next + c.len() as u32 + 4;
+    c.extend(other.wrapping_sub(at).to_le_bytes()); // jne other
+    c.push(0xe9);
+    let at = t.cave_next + c.len() as u32 + 4;
+    c.extend(matched.wrapping_sub(at).to_le_bytes()); // jmp matched
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// An alpha-function stub that looks its mode up in a 0x100-word table;
+/// the table's address.
+fn alpha_table(t: &mut Twins) -> u32 {
+    let table = t.zeros(0x400);
+    let rest = t.stub_code(k4::ALPHA_FUNCTION, false, 1, 0, false, &[]);
+    let cell = t.cells[&k4::ALPHA_FUNCTION];
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x04, 0x85];
+    c.extend(table.to_le_bytes()); // eax = table[[esp+4]]
+    c.push(0xa3);
+    c.extend(cell.to_le_bytes()); // mov [cell], eax
+    c.push(0xe9);
+    let at = t.cave_next + c.len() as u32 + 4;
+    c.extend(rest.wrapping_sub(at).to_le_bytes());
+    let f = t.code(&c);
+    t.jump(k4::ALPHA_FUNCTION, f);
+    table
+}
+
+/// `createVFXRenderDataBufferShp`: 0..12 shapes (negative counts) over
+/// one or a few textures (the second reported), the magic and level
+/// remaps (0x241/0x3cc0, 0x1ed9/0x3720), monster textures (missing, none,
+/// named or not), textures not loaded, no primitives, every alpha alike
+/// or mixed (magic 7 keeps one instance), magic 0x1e3 on map 0x71, render
+/// data there or not.
+#[test]
+fn l1_create_shp() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_5170);
+        let stubs = [
+            (l1::MAGIC_ID, 0),
+            (l1::LEVEL_NAME_HASH, 0),
+            (k4::GET_PTR32, 1),
+            (k4::CHR_FROM_CONTENT, 1),
+            (k4::MONSTER_TEXTURE_NAME, 2),
+            (l1::IS_TEXTURE_WITH_BP_LOADED, 7),
+            (k4::VFX_CREATE, 3),
+            (k4::VFX_CREATE_DATA_BUFFER, 7),
+            (k4::GET_RENDER_DATA, 2),
+        ];
+        for (sym, n) in stubs {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        // dbgPrintf: the not-loaded message has four arguments
+        let not_loaded = t.rebase(l1::NOT_LOADED);
+        stub_by_format(&mut t, k4::DBG_PRINTF, not_loaded, 5, 1);
+        let table = alpha_table(&mut t);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(k4::DBG_PRINTF);
+        let frame = t.ebp_for(5) - 0x68e0;
+        let (mut single, mut six) = (0, 0);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.ret(l1::MAGIC_ID, rng.pick(&[7, 0x1e3, 0x241, 0x241, 3, 3]));
+            t.ret(l1::LEVEL_NAME_HASH, rng.pick(&[0x1ed9, 0x1ed9, 5]));
+            t.g32(l1::CURRENT_MAP, rng.pick(&[0x71, 0x71, 0x41]));
+            // 0x1555_5556 wraps the vertex count to 8 and the index count negative
+            t.g32(
+                l1::ENLARGE,
+                rng.pick(&[1, 1, 2, 3, 0xffff_ffff, 0, 0x1555_5556]),
+            );
+            t.ret(l1::IS_TEXTURE_WITH_BP_LOADED, rng.pick(&[1, 1, 1, 1, 1, 0]));
+            let r = rng.next();
+            t.ret(k4::CHR_FROM_CONTENT, rng.pick(&[0, r, r, r, 0xffff_ffff]));
+            let text = string(&mut t, b"monster/tex");
+            t.ret(k4::MONSTER_TEXTURE_NAME, rng.pick(&[0, text, text]));
+            // alpha functions: all alike, or two values
+            let a0 = rng.below(4);
+            let a1 = a0 ^ (1 + rng.below(3));
+            let mixed = rng.below(2) == 0;
+            for m in 0..0x100 {
+                let a = if mixed && rng.below(3) == 0 { a1 } else { a0 };
+                t.w32(table + 4 * m, a);
+            }
+            // the render data: entries of 0x6c bytes
+            let entries = t.zeros(0x6c * 4);
+            let data = random_block(&mut t, &mut rng, 0xc8);
+            t.w32(data + 0x90, rng.pick(&[0, 1, 3, 0xffff_ffff]));
+            t.w32(data + 0x94, entries);
+            t.ret(k4::GET_RENDER_DATA, rng.pick(&[data, data, data, 0]));
+            // textures: one most of the time, the remapped numbers, monsters
+            let textures: Vec<(u32, u32)> = (0..3)
+                .map(|_| {
+                    let x = rng_texture(&mut rng);
+                    let number = rng.pick(&[x, 0x3cc0, 0x3720, 0x3f00, 0x3f05]);
+                    let lo = number | (rng.next() & 0xffff_c000);
+                    (lo, rng.next())
+                })
+                .collect();
+            let few = rng.pick(&[1u32, 1, 2, 3]);
+            let shape = t.zeros(0x800);
+            let n = rng.pick(&[0u16, 1, 2, 3, 6, 12, 0xffff]);
+            t.w16(shape + 6, n);
+            for k in 0..12u32 {
+                let sub = 0x80 + 0x60 * k;
+                t.w16(shape + 0x10 + 8 * k, sub as u16);
+                let (lo, hi) = textures[rng.below(few) as usize];
+                t.w32(shape + sub + 0x10, lo);
+                t.w32(shape + sub + 0x14, hi);
+                let p = rng.pick(&[0u16, 1, 4, 9, 0xfffe]);
+                t.w16(shape + sub + 2, p);
+                t.w32(shape + sub + 4, 0x10);
+                for q in 0..9 {
+                    let m = rng.below(0x100);
+                    t.w8(shape + sub + 0x14 + 8 * q + 4, m as u8);
+                }
+            }
+            t.ret(k4::GET_PTR32, shape);
+            let shapes = random_block(&mut t, &mut rng, 4);
+            let flags = rng.next();
+            let r = rng.next();
+            let lo = rng.pick(&[r, 0xffff_ff00, 0xffff_d8f0, 5]);
+            let (hi, unused) = (rng.next(), rng.next());
+            t.check_framed(
+                &w,
+                0x0071_5170,
+                &[lo, hi, shapes, unused, flags],
+                frame,
+                // up to ebp-8, where the original's __chkstk call leaves ecx
+                &[(0x2c, 0x68d8 - 0x2c)],
+                |g| u(l1::create_shp(g, frame, lo, hi, shapes, flags)),
+            );
+            let mut buffers = 0;
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                buffers += u32::from(tag == k4::VFX_CREATE_DATA_BUFFER);
+            }
+            single += u32::from(buffers == 1);
+            six += u32::from(buffers == 6);
+        }
+        assert!(single > 10 && six > 10, "{name}: {single} {six}");
+    }
+}
+
+/// `MenuManager_GetMenuVertexInfo`: chains 0, 1 and others, the single
+/// kinds (1, 2, 10) with a batch pending or not and pools used up or not,
+/// batch mode (no names yet, a known name used fewer or 12 times, a new
+/// name, six names), and the plain mode (the same name or another, the
+/// single record moved or not, 12 quads, a batch pending).
+#[test]
+fn l1_get_menu_vertex_info() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_ba50);
+        let stubs = [
+            (l1::GATHER, true, 1),
+            (l1::TAKE_MULTI, true, 1),
+            (l1::TAKE_SINGLE, true, 1),
+            (l1::MOVE, false, 2),
+            (l1::FIND_NAME, true, 1),
+            (l1::STORE_NAME, true, 2),
+        ];
+        for (sym, this, n) in stubs {
+            t.stub_at(sym, this, n, n, &[]);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let uses = t.rebase(l1::NAME_USES);
+        let mut seen = HashMap::new();
+        for i in 0..1500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.ret(l1::FIND_NAME, rng.pick(&[0xffff_ffff, 0, 1, 2, 5]));
+            for k in 0..6 {
+                let v = rng.pick(&[0, 3, 11, 12, 13, 0xffff_ffff]);
+                t.w32(uses + 4 * k, v);
+            }
+            // the manager: the draw lists' counts at most 8, the records
+            // arrays 32 words
+            let this = random_block(&mut t, &mut rng, 0x5c00);
+            t.w32(this + 0x5b7c, rng.pick(&[0, 0, 1, 1, 2]));
+            t.w32(this + 0x5b8c, rng.pick(&[1, 1, 0, 3]));
+            t.w32(this + 0x5844, rng.pick(&[0, 0, 1, 3, 5, 6, 9]));
+            t.w8(this + 0x5b74, rng.pick(&[0, 1, 1, 2]));
+            t.w32(this + 0x5b78, rng.pick(&[0, 5, 11, 12, 13]));
+            for off in [0x2c50, 0x5840] {
+                let n = 1 + rng.below(8);
+                t.w32(this + off, n);
+            }
+            for (used, pool, records) in [
+                (0x2bfc, 0x15e8, 0x15ec),
+                (0x583c, 0x4240, 0x4244),
+                (0x5838, 0x4238, 0x423c),
+            ] {
+                let u = 1 + rng.below(10);
+                t.w32(this + used, u);
+                let p = rng.pick(&[u, u + 1, u + 5, u - 1]) | (rng.next() & 0x8000_0000);
+                t.w32(this + pool, p);
+                let r = random_block(&mut t, &mut rng, 0x80);
+                t.w32(this + records, r);
+            }
+            let text = rng.pick(&[&b"menu/a"[..], b"menu/b", b"", b"menu/a2"]);
+            let last = string(&mut t, b"menu/a");
+            t.w32(this + 0x5b88, last);
+            let text = string(&mut t, text);
+            let kind = rng.pick(&[0, 0, 3, 7, 1, 2, 10]);
+            t.check_conv(&w, 0x0067_ba50, Conv::Thiscall(this), &[text, kind], |g| {
+                u(l1::get_menu_vertex_info(g, this, text, kind))
+            });
+            let first: u32 = if t.log_entries() > 0 {
+                Mem::read(&t.b, t.log + 4)
+            } else {
+                0
+            };
+            *seen.entry(first).or_insert(0) += 1;
+        }
+        assert!(seen.len() >= 6, "{name}: {seen:?}");
+    }
+}
+
+/// An MSVC tree at a fresh head (nil flag `+0xd` set; left the leftmost,
+/// parent the root, right the rightmost) holding `values` under random
+/// distinct keys, inserted in random order without balancing. Returns
+/// the head.
+fn msvc_tree(t: &mut Twins, rng: &mut Rng, values: &[u32]) -> u32 {
+    let head = t.zeros(0x18);
+    t.w8(head + 0xd, 1);
+    let mut keys: Vec<u32> = Vec::new();
+    while keys.len() < values.len() {
+        let k = rng.below(1000);
+        if !keys.contains(&k) {
+            keys.push(k);
+        }
+    }
+    let nodes: Vec<u32> = (0..values.len()).map(|_| t.zeros(0x18)).collect();
+    // (left, parent, right) as node indices, usize::MAX for nil
+    let nil = usize::MAX;
+    let mut links = vec![(nil, nil, nil); nodes.len()];
+    for i in 1..nodes.len() {
+        let mut at = 0;
+        loop {
+            let (l, _, r) = links[at];
+            let next = if keys[i] < keys[at] { l } else { r };
+            if next == nil {
+                if keys[i] < keys[at] {
+                    links[at].0 = i;
+                } else {
+                    links[at].2 = i;
+                }
+                links[i].1 = at;
+                break;
+            }
+            at = next;
+        }
+    }
+    let addr = |i: usize| if i == nil { head } else { nodes[i] };
+    for (i, &n) in nodes.iter().enumerate() {
+        let (l, p, r) = links[i];
+        t.w32(n, addr(l));
+        t.w32(n + 4, addr(p));
+        t.w32(n + 8, addr(r));
+        t.w32(n + 0x10, keys[i]);
+        t.w32(n + 0x14, values[i]);
+    }
+    if nodes.is_empty() {
+        for k in 0..3 {
+            t.w32(head + 4 * k, head);
+        }
+    } else {
+        let by_key = |pick_max: bool| {
+            let mut i = 0;
+            for j in 0..keys.len() {
+                if (keys[j] > keys[i]) == pick_max && keys[j] != keys[i] {
+                    i = j;
+                }
+            }
+            nodes[i]
+        };
+        t.w32(head, by_key(false));
+        t.w32(head + 4, nodes[0]);
+        t.w32(head + 8, by_key(true));
+    }
+    head
+}
+
+/// `ChrResourceCacheManager_applyDelayedRelease`: states 0..2 and others,
+/// maps of 0..12 entries whose infos have users or not and are pending or
+/// not, clusters there or not, infos in the manager's pool (below its
+/// lowest free slot or not) or deleted. The key and info arrays are
+/// pushed by the original `PArray` code in both oracles.
+#[test]
+fn l1_apply_delayed_release() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a6b0);
+        let heap = t.zeros(0x1_0000);
+        stub_bump(&mut t, l1::PHYRE_MALLOC, 2, heap);
+        let stubs = [
+            (l1::PHYRE_FREE, false, 1, 0),
+            (l1::CLUSTER_DTOR, true, 0, 0),
+            (l1::OPERATOR_DELETE, false, 1, 0),
+            (l1::EQUAL_RANGE, true, 2, 2),
+            (l1::ERASE_RANGE, true, 3, 3),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        for (slot, n) in [
+            (l1::WAIT_FOR_SINGLE_OBJECT.sym, 2),
+            (l1::RELEASE_MUTEX.sym, 1),
+        ] {
+            let addr = t.stub_code(slot, false, n, n, false, &[]);
+            t.g32(slot, addr);
+        }
+        let tags = [
+            l1::PHYRE_FREE,
+            l1::CLUSTER_DTOR,
+            l1::OPERATOR_DELETE,
+            l1::ERASE_RANGE,
+            l1::WAIT_FOR_SINGLE_OBJECT.sym,
+            l1::RELEASE_MUTEX.sym,
+        ];
+        let frame = t.ebp_for(0) - 0x40;
+        let mut released = 0;
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let range = random_block(&mut t, &mut rng, 8);
+            t.ret(l1::EQUAL_RANGE, range);
+            let manager = random_block(&mut t, &mut rng, 0x6420);
+            t.g32(l1::CLUSTER_MANAGER, manager);
+            let mutex = random_block(&mut t, &mut rng, 4);
+            t.w32(manager + 0x18, mutex);
+            t.w32(manager + 0x641c, rng.below(0x500));
+            let n = rng.pick(&[0usize, 1, 2, 5, 8, 12]);
+            let mut values = Vec::new();
+            for k in 0..n {
+                let info = if rng.below(3) == 0 {
+                    // the pool's first and last slots, one past it, others
+                    let r = k as u32 * 37 + rng.below(30);
+                    manager + 0x1c + 0x18 * rng.pick(&[0, 0x3ff, 0x400, r, r])
+                } else {
+                    random_block(&mut t, &mut rng, 0x10)
+                };
+                let r = rng.next();
+                t.w32(info, rng.pick(&[0, r, r]));
+                t.w32(info + 4, rng.pick(&[0, 0, 0xffff_ffff, 1, 5]));
+                t.w32(info + 0xc, rng.pick(&[0, 1, 1, 7]));
+                values.push(info);
+            }
+            let map = msvc_tree(&mut t, &mut rng, &values);
+            t.w32(manager + 0x10, map);
+            let this = random_block(&mut t, &mut rng, 0x10);
+            t.w32(this, rng.pick(&[0, 1, 1, 2, 5]));
+            let table = random_block(&mut t, &mut rng, 0x40);
+            t.w32(this + 8, rng.pick(&[0, 3, 0x8000_0008]));
+            t.w32(this + 0xc, table);
+            t.check_framed_conv(
+                &w,
+                0x0069_a6b0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 0x1c)],
+                |g| u(l1::apply_delayed_release(g, frame, this)),
+            );
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                released += u32::from(tag == l1::ERASE_RANGE);
+            }
+        }
+        assert!(released > 50, "{name}: {released}");
+    }
+}
+
+/// The C string at `at` in `t`'s first oracle.
+fn read_text(t: &Twins, at: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    loop {
+        let b: u8 = Mem::read(&t.a, at + out.len() as u32);
+        if b == 0 {
+            return out;
+        }
+        out.push(b);
+    }
+}
+
+/// `FmodVoice_dataChange`: ids in and out of 1..500, no system, the
+/// current id, the no-play ids and flag, both languages, tables that are
+/// not "ML", empty or list the id 0..6 times, banks named like the
+/// preloaded ones (each data id) or not, projects missing, and the
+/// event-system, project and group calls through fake objects.
+#[test]
+fn l1_voice_data_change() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_a630);
+        let project_cell = t.zeros(4);
+        let group_cell = t.zeros(4);
+        let folder_cell = t.zeros(4);
+        t.w32(folder_cell, u32::from_le_bytes(*b"V/a\0"));
+        t.stub_at(l1::RELEASE_DATA, true, 0, 0, &[]);
+        t.stub_at(l1::FULL_FILENAME, false, 2, 0, &[wr(0, folder_cell)]);
+        t.stub_at(l1::ERRCHECK, false, 3, 0, &[]);
+        t.stub_at(l1::PRINT_TO_OUTPUT, false, 4, 0, &[]);
+        t.stub_at(l1::EVENT_SYSTEM_LOAD, false, 4, 4, &[wr(3, project_cell)]);
+        // the project's getGroup (vtable +8) and the group's
+        // loadEventData (vtable +4)
+        let get_group = t.stub_code(0xf000_0008, false, 4, 4, false, &[wr(3, group_cell)]);
+        let load = t.stub_code(0xf000_0004, false, 3, 3, false, &[]);
+        let vtable = t.zeros(0x10);
+        t.w32(vtable + 4, load);
+        t.w32(vtable + 8, get_group);
+        let tags = [
+            l1::RELEASE_DATA,
+            l1::FULL_FILENAME,
+            l1::ERRCHECK,
+            l1::PRINT_TO_OUTPUT,
+            l1::EVENT_SYSTEM_LOAD,
+            0xf000_0008,
+            0xf000_0004,
+        ];
+        let mut banks: Vec<Vec<u8>> = l1::PRELOAD
+            .iter()
+            .flat_map(|(_, b)| b.iter())
+            .map(|&b| read_text(&t, t.rebase(b)))
+            .collect();
+        banks.extend([
+            b"bank12".to_vec(),
+            b"ffx_us_voice33".to_vec(),
+            b"x00".to_vec(),
+        ]);
+        let frame = t.ebp_for(2) - 0x204;
+        let mut loads = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let object = t.zeros(8);
+            t.w32(object, vtable);
+            t.w32(project_cell, rng.pick(&[object, object, object, 0]));
+            t.w32(group_cell, object);
+            t.g32(l1::VOICE_NO_PLAY, rng.pick(&[0, 0, 1, 2]));
+            let r = rng.next();
+            t.g32(l1::MUSIC_NO_LOAD, r);
+            let id = rng.pick(&[0x170, 0x10e, 0x7f, 0x189, 0x18e, 0x18f, 1, 500, 501, 0]);
+            let this = random_block(&mut t, &mut rng, 0x30);
+            t.w32(this, rng.pick(&[id, 3, 3, 3]));
+            t.w8(this + 4, rng.pick(&[0, 1, 2]));
+            let projects = random_block(&mut t, &mut rng, 400);
+            let groups = random_block(&mut t, &mut rng, 400);
+            t.w32(this + 0x18, projects);
+            // sometimes the groups alias the object, so that getGroup
+            // (slot 0) changes the current data the preload test reads
+            t.w32(this + 0xc, if rng.below(6) == 0 { this } else { groups });
+            // the voice table: entries, then the names
+            let n = rng.pick(&[0u32, 1, 2, 4, 6]);
+            let table = t.zeros(0x400);
+            t.write(
+                table,
+                if rng.below(8) == 0 {
+                    b"MX\0\0"
+                } else {
+                    b"ML\0\0"
+                },
+            );
+            t.w32(table + 4, n);
+            let mut at = 8 + 8 * n;
+            for k in 0..n {
+                let e = table + 8 + 8 * k;
+                t.w32(e, rng.pick(&[id, id, 7, id ^ 1]));
+                t.w32(e + 4, at);
+                let bank = banks[rng.below(banks.len() as u32) as usize].clone();
+                t.write(table + at, &bank);
+                at += bank.len() as u32 + 1;
+            }
+            t.w32(this + 0x28, table);
+            let system = rng.pick(&[0, 0x1234, 0x1234, 0x1234]);
+            t.check_framed_conv(
+                &w,
+                0x0070_a630,
+                Conv::Thiscall(this),
+                &[id, system],
+                frame,
+                &[(0, 0x200)],
+                |g| u(l1::data_change(g, frame, this, id, system)),
+            );
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                loads += u32::from(tag == 0xf000_0004);
+            }
+        }
+        assert!(loads > 10, "{name}: {loads}");
+    }
+}
+
+// ---- continuation round 10, batch 2 (ffx_glue_other::h4_l2)
+
+/// `updateGuildMapRenderData`: maps of 0..8 segments (type 0 with 0..5
+/// primitives, negative and high types skipped, types 1..7 failing),
+/// totals that end early or run past the 29 segment records, buffers
+/// missing, random colour and tint bytes, random scale and bound
+/// constants (NaN, infinities), render data missing.
+#[test]
+fn l2_update_guild_map() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_7620);
+        let stubs = [
+            (k4::GET_RENDER_DATA, 2),
+            (k1::GET_BUFFER, 4),
+            (ffx_glue_other::h4_i1::MUL_MATRIX, 3),
+            (k1::SET_VISIBLE, 3),
+        ];
+        for (sym, n) in stubs {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let mut shown = 0;
+        for i in 0..1500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(
+                &mut rng,
+                &[l2::LOW_START, l2::HIGH_START],
+                &[l2::TINT_SCALE, l2::COLOUR_SCALE],
+            );
+            let case = rng.below(4);
+            match case {
+                0 => {
+                    t.g32(l2::LOW_START, f32::MAX.to_bits());
+                    t.g32(l2::HIGH_START, (-f32::MAX).to_bits());
+                }
+                // signed zeros: a point at 0 does not replace an equal
+                // zero of the other sign
+                1 => {
+                    let (a, b) = (rng.pick(&[0x8000_0000, 0]), rng.pick(&[0x8000_0000, 0]));
+                    t.g32(l2::LOW_START, a);
+                    t.g32(l2::HIGH_START, b);
+                }
+                _ => {}
+            }
+            // the render data and its 29 segment records' buffers
+            let data = random_block(&mut t, &mut rng, 0xd0);
+            let records = t.zeros(0x6c * 30);
+            t.w32(data + 0x94, records);
+            for r in 0..30u32 {
+                let end = records + 0x6c * (r + 1);
+                let positions = t.zeros(0x24 * 6);
+                let colours = t.zeros(0x30 * 6);
+                let indices = t.zeros(6 * 6);
+                t.w32(end - 0x60, positions);
+                t.w32(end - 0x58, colours);
+                t.w32(end - 0x50, indices);
+            }
+            t.ret(k4::GET_RENDER_DATA, rng.pick(&[data, data, data, data, 0]));
+            let r = rng.next() | 1;
+            t.ret(k1::GET_BUFFER, rng.pick(&[r, r, r, r, r, 0]));
+            // the map: segments at +0x40, points at +0x600
+            let map = t.zeros(0x800);
+            t.w32(map + 4, 0x40);
+            t.w32(map + 8, 0x600);
+            // 16 points of three i16s: small, zero (signed-zero bounds)
+            // or any
+            for k in 0..16 * 3 {
+                let (s, r) = (rng.small() as u16, rng.next() as u16);
+                let v = if case == 1 {
+                    0
+                } else {
+                    rng.pick(&[s, 0, 0, r])
+                };
+                t.w16(map + 0x600 + 2 * k, v);
+            }
+            let mut at = 0x40;
+            let mut total = 0i32;
+            for _ in 0..rng.below(9) {
+                let kind = rng.pick(&[0u8, 0, 0, 0, 0, 0x80, 0xff, 8, 7, 1]);
+                let n = rng.pick(&[0u16, 1, 2, 5, 5]);
+                t.w8(map + at + 1, kind);
+                t.w16(map + at + 2, n);
+                at += 0x10;
+                if kind == 0 {
+                    for _ in 0..n {
+                        for b in 0..12 {
+                            let r = rng.below(256);
+                            let v = rng.pick(&[0, 0xff, r]);
+                            t.w8(map + at + b, v as u8);
+                        }
+                        for v in 0..3 {
+                            let p = rng.below(16) as u16;
+                            t.w16(map + at + 0xc + 2 * v, p);
+                        }
+                        at += 0x14;
+                    }
+                }
+                total += i32::from(n);
+            }
+            let total = rng.pick(&[total, total, total + 3, total - 1, 0, -2]);
+            t.w16(map + 0x10, total as u16);
+            let tint = random_block(&mut t, &mut rng, 0x24);
+            let matrix = random_block(&mut t, &mut rng, 0x40);
+            t.w32(tint + 0x20, matrix);
+            for b in 0..4 {
+                let r = rng.below(256);
+                let v = rng.pick(&[0, 0x80, 0xff, r]);
+                t.w8(tint + 0x18 + b, v as u8);
+            }
+            let (lo, hi) = (rng.next(), rng.next());
+            t.check(&w, 0x0071_7620, &[lo, hi, map, tint], |g| {
+                u(l2::update_guild_map(g, lo, hi, map, tint))
+            });
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                shown += u32::from(tag == k1::SET_VISIBLE);
+            }
+        }
+        assert!(shown > 30, "{name}: {shown}");
+    }
+}
+
+// ---- continuation round 10, batch 3 (ffx_glue_other::h4_l3)
+
+/// A `fiosRead(file, buffer, size)` stub over the fake file at the cells
+/// `cursor` (next byte) and `left` (bytes left): copies up to `size` bytes
+/// and returns the count; logs 3 words.
+fn fios_read_stub(t: &mut Twins, cursor: u32, left: u32) {
+    let rest = t.stub_code(l3::FIOS_READ, false, 3, 0, false, &[]);
+    let cell = t.cells[&l3::FIOS_READ];
+    let mut c = vec![0x8b, 0x0d];
+    c.extend(left.to_le_bytes()); // mov ecx, [left]
+    c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc]
+    c.extend([0x39, 0xc1, 0x76, 0x02, 0x89, 0xc1]); // cmp ecx, eax; jbe +2; mov ecx, eax
+    c.extend([0x89, 0x0d]);
+    c.extend(cell.to_le_bytes()); // mov [cell], ecx
+    c.extend([0x29, 0x0d]);
+    c.extend(left.to_le_bytes()); // sub [left], ecx
+    c.extend([0x56, 0x57, 0x8b, 0x35]);
+    c.extend(cursor.to_le_bytes()); // push esi; push edi; mov esi, [cursor]
+    c.extend([0x8b, 0x7c, 0x24, 0x10, 0xf3, 0xa4]); // mov edi, [esp+0x10]; rep movsb
+    c.extend([0x89, 0x35]);
+    c.extend(cursor.to_le_bytes()); // mov [cursor], esi
+    c.extend([0x5f, 0x5e, 0xe9]); // pop edi; pop esi; jmp rest
+    let at = t.cave_next + c.len() as u32 + 4;
+    c.extend(rest.wrapping_sub(at).to_le_bytes());
+    let f = t.code(&c);
+    t.jump(l3::FIOS_READ, f);
+}
+
+/// `PhyFMVPlayerManager_createVideoIndexMap`: each language (and an
+/// unknown one), the list missing, lists read in one or several chunks,
+/// lines with or without a final newline, without ':' or a second comma
+/// (the end), the second or third field as the name; the CRT string code
+/// runs as the original's in both oracles.
+#[test]
+fn l3_create_video_index_map() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_82f0);
+        let language = t.zeros(4);
+        let cursor = t.zeros(4);
+        let left = t.zeros(4);
+        let list_name = t.zeros(4);
+        t.w32(list_name, u32::from_le_bytes(*b"vl\0\0"));
+        t.stub_at(l3::LOCALIZATION, false, 0, 0, &[]);
+        t.stub_at(l3::UNIFY_FILENAME, false, 3, 0, &[wr(1, list_name)]);
+        t.stub_at(l3::PHYRE_PRINTF, false, 2, 0, &[]);
+        t.stub_at(k4::DBG_PRINTF, false, 1, 0, &[]);
+        t.stub_at(l3::FIOS_OPEN, false, 2, 0, &[]);
+        t.stub_at(l3::FIOS_CLOSE, false, 1, 0, &[]);
+        t.stub_at(l3::STREAM_PREFIX, false, 0, 0, &[]);
+        t.stub_at(l3::BUY_NODE, true, 1, 1, &[]);
+        t.stub_at(l3::INSERT_NODE, true, 4, 4, &[]);
+        fios_read_stub(&mut t, cursor, left);
+        let tags = [
+            l3::LOCALIZATION,
+            l3::UNIFY_FILENAME,
+            l3::PHYRE_PRINTF,
+            k4::DBG_PRINTF,
+            l3::FIOS_OPEN,
+            l3::FIOS_CLOSE,
+            l3::STREAM_PREFIX,
+            l3::BUY_NODE,
+            l3::INSERT_NODE,
+        ];
+        let prefix = string(&mut t, b"C:/game");
+        let frame = t.ebp_for(1) - 0x3364;
+        let mut inserted = 0;
+        for i in 0..120 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.ret(l3::LOCALIZATION, language);
+            t.w32(language, rng.pick(&[0, 1, 2, 3, 3, 4]));
+            t.ret(l3::STREAM_PREFIX, prefix);
+            let r = rng.next() | 1;
+            t.ret(l3::FIOS_OPEN, rng.pick(&[r, r, r, r, 0]));
+            // the list: lines "<id>:<a>,<b>,<c>", some broken
+            let mut text = Vec::new();
+            for k in 0..rng.below(40) {
+                let line = match rng.below(12) {
+                    0 => b"no colon here".to_vec(),
+                    1 => format!("{k}:one,field").into_bytes(),
+                    _ => format!(
+                        "{}:{},movie{:02},en_movie{:03}",
+                        rng.below(200),
+                        rng.below(9),
+                        rng.below(100),
+                        rng.below(1000)
+                    )
+                    .into_bytes(),
+                };
+                text.extend(line);
+                text.push(b'\n');
+            }
+            if rng.below(2) == 0 {
+                text.pop();
+            }
+            let file = t.alloc(&[text.as_slice(), &[0u8; 4]].concat());
+            t.w32(cursor, file);
+            t.w32(left, text.len() as u32);
+            let this = random_block(&mut t, &mut rng, 0x700);
+            let english = rng.pick(&[0, 1, 0x100]);
+            t.check_framed_conv(
+                &w,
+                0x006d_82f0,
+                Conv::Thiscall(this),
+                &[english],
+                frame,
+                // past the saved this (+0x10) and the last-line flag
+                // (+0x17); up to ebp-8, where __chkstk leaves ecx
+                &[(0, 0x10), (0x18, 0x335c - 0x18)],
+                |g| {
+                    l3::create_video_index_map(g, frame, this, english);
+                    Out::None
+                },
+            );
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                inserted += u32::from(tag == l3::INSERT_NODE);
+            }
+        }
+        assert!(inserted > 200, "{name}: {inserted}");
+    }
+}
+
+/// `menu_list_drawShape_00774cb0`: texture modes 5, 8, 0xb and another
+/// (whose never-written name and size words are 0 in both, brief
+/// 2026-10-24), groups none or set, the mode-0xb v nudge, kind 2's
+/// wobble (random time and constants, `_CIcos` run as the original's),
+/// random sizes (0, NaN, infinities) and offsets.
+#[test]
+fn l4_draw_shape() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_4cb0);
+        let (w_cell, h_cell) = (t.zeros(4), t.zeros(4));
+        t.stub_at(l4::SHAPE_TEXTURE_NAME, false, 1, 0, &[]);
+        t.stub_at(l4::IMAGE_WH, false, 3, 0, &[wr(1, w_cell), wr(2, h_cell)]);
+        t.stub(l4::GET_TIME, 0, true);
+        t.stub_at(l4::DRAW_UI_ELEMENT, false, 5, 0, &[]);
+        let tags = [
+            l4::SHAPE_TEXTURE_NAME,
+            l4::IMAGE_WH,
+            l4::GET_TIME,
+            l4::DRAW_UI_ELEMENT,
+        ];
+        let frame = t.ebp_for(4) - 0xb8;
+        let mut wobbles = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[], &[l4::V_NUDGE, l4::TIME_SCALE, l4::WOBBLE]);
+            let time = rng.double();
+            t.ret_f64(l4::GET_TIME, time);
+            let (a, b) = (rng.float(), rng.float());
+            t.w32(w_cell, rng.pick(&[a, 0x4300_0000, 0x4380_0000]));
+            t.w32(h_cell, rng.pick(&[b, 0x4300_0000, 0x4400_0000]));
+            t.g32(l4::TEXTURE_MODE, rng.pick(&[5, 8, 0xb, 0xb, 3]));
+            let groups = random_block(&mut t, &mut rng, 0x10);
+            for k in 0..4 {
+                let v = rng.below(4);
+                t.w32(groups + 4 * k, v);
+            }
+            t.g32(l4::SHAPE_GROUPS, groups);
+            // sprites: (d, e2, e4, e6, texture)
+            let sprites = t.zeros(12 * 12);
+            for k in 0..12 {
+                let r = sprites + 12 * k;
+                let nudge = rng.below(3) == 0;
+                let (d, e4) = if nudge {
+                    (rng.pick(&[0, 0, 5]), 0x1a0)
+                } else {
+                    (rng.small() as u16, rng.small() as u16)
+                };
+                t.w16(r, d);
+                t.w16(r + 4, e4);
+                let (e2, e6) = (rng.small() as u16, rng.next() as u16);
+                t.w16(r + 2, e2);
+                t.w16(r + 6, e6);
+                // texture indices are signed
+                t.w16(r + 8, rng.pick(&[0, 1, 2, 3, 0xffff]));
+            }
+            t.g32(l4::SHAPE_SPRITES, sprites);
+            let textures = t.rebase(l4::SHAPE_TEXTURES);
+            // texture -1's entry (a sign-extension slip would read 0xff's)
+            for (k, at) in [(0, textures - 16), (1, textures + 16 * 0xff)] {
+                let (hi, lo) = (rng.next(), rng.next());
+                t.w32(at, hi | k);
+                t.w32(at + 8, lo);
+            }
+            for k in 0..4 {
+                let (hi, lo) = rng.pick(&[(0x13, 0x2f00), (0x13, 0x2f01), (2, 0x2f00), (7, 9)]);
+                t.w32(textures + 16 * k, hi);
+                t.w32(textures + 16 * k + 8, lo);
+            }
+            let item = random_block(&mut t, &mut rng, 0x30);
+            t.w8(item, rng.pick(&[2, 2, 0, 1]));
+            let (dx, dy) = (rng.small() as u16, rng.small() as u16);
+            t.w16(item + 8, dx);
+            t.w16(item + 0xa, dy);
+            t.w16(item + 0x16, rng.below(6) as u16);
+            t.w16(item + 0x18, rng.pick(&[0xffff, 0, 1, 3]));
+            // the never-written name and size words: 0 in both
+            for off in [0, 8, 0x18] {
+                t.w32(frame + off, 0);
+            }
+            let (x, y) = (rng.small(), rng.small());
+            let unused = rng.next();
+            t.check_framed(
+                &w,
+                0x0077_4cb0,
+                &[unused, item, x, y],
+                frame,
+                &[(0x1c, 0x40), (0x1c + 0x88, 4), (0x1c + 0x90, 8)],
+                |g| u(l4::draw_shape(g, frame, item, x, y)),
+            );
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                wobbles += u32::from(tag == l4::GET_TIME);
+            }
+        }
+        assert!(wobbles > 100, "{name}: {wobbles}");
+    }
+}
+
+// ---- continuation round 10, batch 5 (ffx_glue_other::h4_l5)
+
+/// A one-word cdecl stub at `sym` whose result is `table[arg & 0xff]`;
+/// the table's address (0x100 words).
+fn table_stub(t: &mut Twins, sym: u32) -> u32 {
+    let table = t.zeros(0x400);
+    let rest = t.stub_code(sym, false, 1, 0, false, &[]);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x0f, 0xb6, 0x44, 0x24, 0x04, 0x8b, 0x04, 0x85];
+    c.extend(table.to_le_bytes()); // movzx eax, byte [esp+4]; mov eax, table[eax]
+    c.push(0xa3);
+    c.extend(cell.to_le_bytes()); // mov [cell], eax
+    c.push(0xe9);
+    let at = t.cave_next + c.len() as u32 + 4;
+    c.extend(rest.wrapping_sub(at).to_le_bytes());
+    let f = t.code(&c);
+    t.jump(sym, f);
+    table
+}
+
+/// `FFEscMenu_update`: not set up, the escape key watched or not, a fresh
+/// press or a held one closing an open menu (cursor clip and visibility)
+/// or opening a closed one, the open countdown, the six menu keys (press,
+/// release, flagged), the stick's directions (random values, NaN, the
+/// threshold), the cursor, the timers and the help-text countdown.
+#[test]
+fn l5_esc_update() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_ffb0);
+        for (sym, this, n) in [
+            (l5::GET_DEVICE, false, 2),
+            (l5::FREE_CAMERA_TYPE, false, 0),
+            (l5::UNPAUSE, true, 0),
+            (l5::PAUSE, true, 0),
+            (l5::CALL_AS3, true, 5),
+            (l5::SET_ENABLE, true, 1),
+            (l5::PLAY_CLICK, false, 1),
+            (l5::SETTINGS_SAVE, true, 0),
+            (l5::SAVE_BUSY, false, 1),
+            (l5::ENABLE_PARA, true, 1),
+            (l5::REFRESH, true, 0),
+            (l5::STICK_INFO, false, 0),
+            (l5::DATA_VALUE_SET, false, 2),
+            (l5::CALL_FLASH, false, 6),
+            (l5::FLUSH, true, 0),
+        ] {
+            let pops = if this { n } else { 0 };
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        t.stub_u64(l5::TIME_MICRO, false, 0, 0);
+        for slot in [
+            l5::GET_CLIP_CURSOR.sym,
+            l5::CLIP_CURSOR.sym,
+            l5::SHOW_CURSOR.sym,
+        ] {
+            let addr = t.stub_code(slot, false, 1, 1, false, &[]);
+            t.g32(slot, addr);
+        }
+        let releases = table_stub(&mut t, l5::IS_RELEASE);
+        let presses = table_stub(&mut t, l5::IS_PRESS);
+        let key_stub = t.stub_code(0xf000_000c, true, 1, 1, false, &[]);
+        let vtable = t.zeros(0x10);
+        t.w32(vtable + 0xc, key_stub);
+        let device = t.zeros(4);
+        t.w32(device, vtable);
+        let tags = [
+            l5::GET_DEVICE,
+            l5::FREE_CAMERA_TYPE,
+            l5::CALL_AS3,
+            l5::STICK_INFO,
+            l5::FLUSH,
+            l5::GET_CLIP_CURSOR.sym,
+            0xf000_000c,
+        ];
+        let frame = t.ebp_for(0) - 0x18;
+        let mut opened = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.ret(l5::GET_DEVICE, device);
+            t.ret(0xf000_000c, rng.pick(&[0, 1, 2, 0x100, 0xff01]));
+            t.ret(l5::GET_CLIP_CURSOR.sym, rng.pick(&[0, 1]));
+            t.ret(l5::FREE_CAMERA_TYPE, rng.pick(&[0, 0, 2]));
+            t.ret_u64(
+                l5::TIME_MICRO,
+                u64::from(rng.next()) << 20 | u64::from(rng.next()),
+            );
+            t.g32(l5::ESC_DOWN, rng.pick(&[0, 0, 1]));
+            t.g32(l5::SAVE_MACHINE_BUSY, rng.pick(&[0, 1, 2]));
+            let settings = random_block(&mut t, &mut rng, 0x10);
+            t.w32(settings + 8, rng.pick(&[1, 0, 2]));
+            t.g32(l5::SETTINGS, settings);
+            let menu = rng.next();
+            t.g32(l5::ESC_MENU, menu);
+            for k in 0..0x100 {
+                let (a, b) = (rng.below(5) == 0, rng.below(5) == 0);
+                t.w32(releases + 4 * k, u32::from(a));
+                t.w32(presses + 4 * k, u32::from(b));
+            }
+            let keys = t.rebase(l5::MENU_KEYS);
+            for k in 0..6 {
+                t.w8(keys + 12 * k, rng.pick(&[0, 0, 1]));
+                t.w32(keys + 12 * k + 4, rng.below(0x100));
+                let r = rng.next();
+                t.w32(keys + 12 * k + 8, r);
+            }
+            // the stick: four directions over one block
+            let block = t.zeros(0x40);
+            for k in 0..16 {
+                let f = rng.float();
+                let v = rng.pick(&[f, 0x3f00_0000, 0x3f40_0000, 0, 0xbf80_0000]);
+                t.w32(block + 4 * k, v);
+            }
+            t.ret(l5::STICK_INFO, 4 * rng.below(4));
+            let directions = t.rebase(l5::STICK_DIRECTIONS);
+            for d in 0..4 {
+                let at = directions + 16 * d;
+                t.w32(at, rng.pick(&[d + 1, 0x77]));
+                t.w32(at + 4, block + 4 * rng.below(4));
+                let s = rng.float();
+                t.w32(at + 8, rng.pick(&[0x3f80_0000, 0xbf80_0000, s]));
+                let r = rng.next();
+                t.w32(at + 0xc, r);
+            }
+            if rng.below(4) == 0 {
+                let f = rng.float();
+                t.g32(l5::STICK_THRESHOLD, f);
+            } else {
+                t.g32(l5::STICK_THRESHOLD, 0x3f00_0000);
+            }
+            let this = random_block(&mut t, &mut rng, 0x240);
+            for (off, v) in [
+                (0xa0, rng.pick(&[1, 1, 1, 0])),
+                (0xe0, rng.pick(&[1, 1, 0])),
+                (0x70, rng.pick(&[0, 1])),
+                (0x118, rng.pick(&[0, 1])),
+                (0x130, rng.pick(&[0, 1, 2])),
+                (0x117, rng.pick(&[0, 1])),
+                (0x94, rng.pick(&[0, 1])),
+                (0xe8, rng.pick(&[0, 1])),
+            ] {
+                t.w8(this + off, v);
+            }
+            t.w32(this + 0xe4, rng.pick(&[0, 1, 0xffff_ffff, 5]));
+            t.w32(this + 0x12c, rng.pick(&[0, 1, 2, 0x77]));
+            t.w32(this + 0x234, rng.pick(&[1, 1, 0, 2, 0xffff_ffff]));
+            t.check_framed_conv(
+                &w,
+                0x0068_ffb0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 0x10)],
+                |g| match l5::esc_update(g, frame, this) {
+                    Some(v) => u(v),
+                    None => Out::None,
+                },
+            );
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                opened += u32::from(tag == l5::PAUSE);
+            }
+        }
+        assert!(opened > 30, "{name}: {opened}");
+    }
 }
