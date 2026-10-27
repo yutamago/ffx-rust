@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_system::m5a_platform::{self as platform, bridge as pf};
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
 use ffx_system::m5a_settings::{self as settings, bridge as st};
 use ffx_system::m5a_std::{self as sd, bridge as sb};
@@ -286,6 +287,38 @@ impl Twins {
         addr
     }
 
+    /// A recording cdecl stub bound to the import slot `slot` like
+    /// [`Twins::stub_import`] (tag `slot`, `n` words, no `ecx`), returning
+    /// `seq[k]` on its `k`-th call (`seq` must be long enough).
+    fn stub_import_seq(&mut self, slot: u32, n: u32, seq: &[u32]) {
+        let ctr = self.words(&[0]);
+        let tbl = self.words(seq);
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(slot.to_le_bytes()); // mov [eax], tag
+        for i in 0..n {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0xa1);
+        c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+        c.extend([0x8b, 0x04, 0x85]);
+        c.extend(tbl.to_le_bytes()); // mov eax, [tbl + eax*4]
+        c.extend([0xff, 0x05]);
+        c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+        c.push(0xc3);
+        let addr = self.cave_code(&c);
+        let at = self.rebase(slot);
+        self.patch(at, &addr.to_le_bytes());
+    }
+
     /// Code in the cave; returns its address.
     fn cave_code(&mut self, c: &[u8]) -> u32 {
         let addr = self.cave_next;
@@ -450,7 +483,12 @@ impl Twins {
         init: &[u8],
         bridge: impl FnOnce(&mut G, u32) -> Out,
     ) {
-        let ebp = self.frame_ebp(args.len());
+        // the stack words: fastcall's first two are in ecx and edx
+        let words = match conv {
+            Conv::Fastcall | Conv::FastcallCallerPops => args.len().saturating_sub(2),
+            _ => args.len(),
+        };
+        let ebp = self.frame_ebp(words);
         let lo = ebp - low;
         let mut frame = vec![0; low as usize];
         frame[..init.len()].copy_from_slice(init);
@@ -958,6 +996,462 @@ fn custom_conv_validate_bindings_matches_the_original() {
                 &[at, n, filter],
                 |m| Out::U32(st::validate_bindings(m, at, n, filter)),
             );
+        }
+    });
+}
+
+/// `Settings_JoinBindings(out; list, n)` (`Conv::FastcallCallerPops`)
+/// with every callee stubbed: the stream constructor, the comma writer,
+/// `operator<<(int)`, `str()`, `operator delete`, `setg` and the three
+/// destructors log their calls. The frame (`ebp - 0xcc` up) holds what
+/// the constructor would have built: the vbase table pointer (offset
+/// 0x68 or 0x60), the buffer-owned flag at `ebp - 0x78` (both values),
+/// the buffer pointer cell at `ebp - 0xa8` and the three pointer cells
+/// the destructor clears; the rest random. `n` 0, 1, several and
+/// negative. The SEH registration and the cookie (`ebp - 0x10` up) are
+/// left out of the frame compare.
+#[test]
+fn custom_conv_join_bindings_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x16e0_0003);
+        t.skip = 0x10;
+        for case in 0..40 {
+            t.reset();
+            let n = [0u32, 1, 2, 5, 0x51, 0xffff_ffff][rng.below(6) as usize];
+            let list: Vec<u32> = (0..0x51).map(|_| rng.word()).collect();
+            let list = t.words(&list);
+            let out = t.zeros(0x20);
+            let dist = [0x68u32, 0x60][rng.below(2) as usize];
+            let vbtable = t.words(&[0, dist]);
+            let block = t.words(&[rng.next()]);
+            let cells = t.words(&[rng.next(), rng.next(), rng.next()]);
+            let mut frame: Vec<u32> = (0..0xcc / 4).map(|_| rng.next()).collect();
+            // word k of the frame is at ebp - 0xcc + 4k
+            let mut set = |off: u32, v: u32| frame[((0xcc - off) / 4) as usize] = v;
+            set(0xcc, vbtable);
+            set(0x78, rng.next() & !1 | u32::from(rng.chance(2)));
+            set(0xa8, block);
+            set(0xa4, cells);
+            set(0x94, cells + 4);
+            set(0x84, cells + 8);
+            let init: Vec<u8> = frame.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let list_stubs = [
+                (st::STRINGSTREAM_CTOR, true, 0, 2, 0x5a5a_0001),
+                (st::PUT_COMMA, true, 0, 0, 0x0c0c_0002),
+                (st::STRINGSTREAM_STR, true, 1, 1, 0x5a5a_0003),
+                (st::OPERATOR_DELETE, false, 1, 0, 0x5a5a_0004),
+            ];
+            t.stubs(&list_stubs);
+            for (slot, n, ret) in [
+                (st::OSTREAM_INT_IAT, 1, 0x1111_0001),
+                (st::SETG_IAT, 3, 0x1111_0002),
+                (st::STREAMBUF_DTOR_IAT, 0, 0x1111_0003),
+                (st::IOSTREAM_DTOR_IAT, 0, 0x1111_0004),
+                (st::IOS_DTOR_IAT, 0, 0x1111_0005),
+            ] {
+                t.stub_import(slot, true, n, n, ret);
+            }
+            let what = format!("Settings_JoinBindings #{case} n {n:#x} dist {dist:#x}");
+            t.check_framed_init(
+                &what,
+                0x0040_16e0,
+                Conv::FastcallCallerPops,
+                &[out, list, n],
+                0xcc,
+                &init,
+                |m, ebp| Out::U32(st::join_bindings(m, ebp, out, list, n)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+/// A by-value `std::string` (six words) holding `text`: in place below
+/// 16 bytes, else on the heap (`alloc`) with capacity `text.len()` or more.
+fn by_value_string(t: &mut Twins, text: &[u8], heap: bool) -> [u32; 6] {
+    let mut w = [0u32; 6];
+    if heap || text.len() >= 16 {
+        let mut z = text.to_vec();
+        z.push(0);
+        let p = t.alloc(&z);
+        w[0] = p;
+        w[5] = (text.len() as u32).max(0x10);
+    } else {
+        let mut b = [0u8; 16];
+        b[..text.len()].copy_from_slice(text);
+        for (i, c) in b.chunks(4).enumerate() {
+            w[i] = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+        }
+        w[5] = 0xf;
+    }
+    w[4] = text.len() as u32;
+    w
+}
+
+/// `Settings_SetValue(this; key, value)` (thiscall, `ret 0x1c`): key rows
+/// of 0..8 strings (set here in both oracles) so that every path runs:
+/// the `_stricmp` search (a stub answering a random sequence: a match at
+/// each index, none, an empty row), the one-string keys 1 (`find` hit or
+/// miss, the two substrings in the frame with in-place or heap buffers,
+/// the frame state byte), 0x15..=0x17 (the binding lists through the
+/// real `Settings_ValidateBindings` and slot filters) and any other
+/// (`atoi`); the value in place and on the heap (`operator delete`). The
+/// string's words sit at the original's argument slots in both oracles.
+#[test]
+#[allow(clippy::too_many_lines)] // one case setup, every path
+fn custom_conv_set_value_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x1930_0004);
+        t.skip = 0x14;
+        let (kb, pad) = (t.rebase(st::KEYBOARD), t.rebase(st::CONTROLLER));
+        if !t.snapshot {
+            // the key-name tables as in the validate test: code 0 named
+            for i in 0..0x80 {
+                let v = if i > 0 && rng.chance(4) {
+                    0
+                } else {
+                    rng.next() | 1
+                };
+                t.w32(kb + 4 * i, v);
+                let v = if i > 0 && rng.chance(4) {
+                    0
+                } else {
+                    rng.next() | 1
+                };
+                t.w32(pad + 4 * i, v);
+            }
+        }
+        let texts: [&[u8]; 6] = [
+            b"1920*1080",
+            b"1280x720",
+            b"3,4,5,6,0,0,7",
+            b"1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29",
+            b"HIGH",
+            b"",
+        ];
+        for case in 0..160 {
+            t.reset();
+            let key = [0u32, 1, 1, 2, 5, 13, 0x15, 0x16, 0x17, 0x17, 0x0b][rng.below(11) as usize];
+            let count = [0u32, 1, 1, 1, 2, 3, 8][rng.below(7) as usize];
+            let row = t.rebase(st::VALUE_STRINGS) + key * 0x20;
+            let mut words = [0u32; 8];
+            for w in words.iter_mut().take(count as usize) {
+                *w = 0x0012_0000 | rng.below(0x1000);
+            }
+            let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+            t.patch(row, &bytes);
+            let this = t.alloc(&(0..0x640).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            // or a long list: 0x58 codes, past the tables' 0x51 words,
+            // distinct and named in their slot's table (the validation's
+            // 1 path), but sometimes one unnamed code in a slot only some
+            // of the filters take (0x24: FFX's, not FFX-2's)
+            let mut used = [false; 0x80];
+            let mut codes = Vec::new();
+            for i in 0..0x58u32 {
+                let table = if (14..=27).contains(&i) || i == 44 || i == 45 {
+                    pad
+                } else {
+                    kb
+                };
+                let pool: Vec<u32> = (1..0x80u32)
+                    .filter(|&c| !used[c as usize] && t.r32(table + 4 * c) != 0)
+                    .collect();
+                let c = if pool.is_empty() {
+                    0
+                } else {
+                    pool[rng.below(pool.len() as u32) as usize]
+                };
+                used[c as usize] = true;
+                codes.push(c);
+            }
+            let unnamed = if rng.chance(2) {
+                (1..0x80u32).find(|&c| !used[c as usize] && t.r32(kb + 4 * c) == 0)
+            } else {
+                None
+            };
+            if let Some(c) = unnamed {
+                codes[0x24] = c;
+            }
+            let long: Vec<u8> = codes
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+                .into_bytes();
+            let k = rng.below(texts.len() as u32 + 2) as usize;
+            let text: &[u8] = if k < texts.len() { texts[k] } else { &long };
+            let value = by_value_string(t, text, rng.chance(3));
+            let seq: Vec<u32> = (0..8).map(|_| u32::from(!rng.chance(3))).collect();
+            t.stub_import_seq(st::STRICMP_IAT, 2, &seq);
+            // printf: the Resolution message has one argument, the other two
+            let printf_words = if key == 1 && count == 1 { 2 } else { 3 };
+            t.stub_import(st::PRINTF_IAT, false, printf_words, 0, 0x2222_0001);
+            let numbers = [rng.next(), rng.next()];
+            t.stub_import_seq(st::ATOI_IAT, 1, &numbers);
+            let pos = [u32::MAX, 0, 4, 0x10][rng.below(4) as usize];
+            t.stubs(&[
+                (st::STRING_FIND, true, 3, 3, pos),
+                (st::STRING_SUBSTR, true, 3, 3, 0x2222_0002),
+                (st::OPERATOR_DELETE, false, 1, 0, 0x2222_0003),
+            ]);
+            // the frame: the two substrings' words (in place or heap)
+            let mut frame: Vec<u32> = (0..0x50 / 4).map(|_| rng.next()).collect();
+            for off in [0x44u32, 0x2c] {
+                let cap = if rng.chance(2) { 0xf } else { 0x20 };
+                frame[((0x50 - off + 0x14) / 4) as usize] = cap;
+            }
+            let init: Vec<u8> = frame.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let mut args = vec![key];
+            args.extend(value);
+            let ebp = t.frame_ebp(args.len());
+            let slots: Vec<u8> = args.iter().flat_map(|w| w.to_le_bytes()).collect();
+            t.write(ebp + 8, &slots);
+            let what = format!(
+                "Settings_SetValue #{case} key {key:#x} row {count} {:?} this {this:#x} ebp {ebp:#x} value {value:x?}",
+                String::from_utf8_lossy(text)
+            );
+            t.check_framed_init(
+                &what,
+                0x0040_1930,
+                Conv::Thiscall(this),
+                &args,
+                0x50,
+                &init,
+                |m, ebp| Out::U32(st::set_value(m, ebp, this, key, ebp + 0xc)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+/// `Settings_Save(this)` and `Settings_Load(this)` (thiscall) with the
+/// CRT's file functions, `Settings_Format`, `Settings_Parse`,
+/// `Settings_CopyDefaultTables` and (for the load without a file)
+/// `Settings_Save` stubbed: lengths 0, small and large, `_wfopen`
+/// failing and not. The `alloca` buffer is where the original's
+/// `_alloca_probe_16` puts it (16-aligned below `ebp - 0x14`), so the
+/// logged pointers agree.
+#[test]
+fn settings_save_load_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x1d80_0005);
+        for case in 0..48 {
+            t.reset();
+            let this = t.alloc(&(0..0x640).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let file = if rng.chance(3) { 0 } else { 0x0bad_f11e };
+            let len = [0u32, 1, 0x35, 0x400, 0xfff][rng.below(5) as usize];
+            t.stub_import(st::WFOPEN_IAT, false, 2, 0, file);
+            for (slot, n) in [
+                (st::FWRITE_IAT, 4),
+                (st::FCLOSE_IAT, 1),
+                (st::FSEEK_IAT, 3),
+                (st::FREAD_IAT, 4),
+            ] {
+                t.stub_import(slot, false, n, 0, 0x3333_0000 + n);
+            }
+            t.stub_import(st::FTELL_IAT, false, 1, 0, len);
+            t.stubs(&[
+                (st::FORMAT, true, 1, 1, len),
+                (st::PARSE, true, 1, 1, 0x3333_0010),
+                (st::COPY_DEFAULT_TABLES, true, 0, 0, 0x3333_0011),
+            ]);
+            let ebp = t.frame_ebp(0);
+            let alloca = move |n: u32| (ebp - 0x14).wrapping_sub(n) & !0xf;
+            let what = format!("Settings_Save #{case} file {file:#x} len {len:#x}");
+            t.check(&what, st::SAVE, Conv::Thiscall(this), &[], |m| {
+                Out::U32(st::save(m, this, alloca))
+            });
+            // Settings_Load's own call of Settings_Save, stubbed
+            t.stub(st::SAVE, true, 0, 0, 0x3333_0012);
+            let what = format!("Settings_Load #{case} file {file:#x} len {len:#x}");
+            t.check(&what, 0x0040_1cb0, Conv::Thiscall(this), &[], |m| {
+                Out::U32(st::load(m, this, alloca))
+            });
+        }
+    });
+}
+
+// ---- the platform glue (m5a_platform) ----
+
+/// `fiosClose`, `sceClose`, `sceWrite` and `SaveDataIsSaveEnabled` with
+/// their callees stubbed: null and real files, `closeFile` answering 0, 1,
+/// 2 and 0x101 (only `al` counts).
+#[test]
+fn platform_files_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0679_0006);
+        for case in 0..32 {
+            t.reset();
+            let closed = [0u32, 1, 2, 0x101][rng.below(4) as usize];
+            t.stubs(&[
+                (pf::CLOSE_FILE, true, 0, 0, closed),
+                (pf::OPERATOR_DELETE, false, 1, 0, 0x4444_0001),
+                (pf::DBG_PRINTF, false, 2, 0, 0x4444_0002),
+                (pf::SAVE_MANAGER, false, 0, 0, 0x4444_0003),
+                (pf::SAVE_IS_ENABLED, true, 0, 0, rng.word()),
+            ]);
+            let f = if rng.chance(4) { 0 } else { t.zeros(0x40) };
+            let what = format!("fiosClose #{case} {f:#x} closed {closed:#x}");
+            t.check(&what, 0x0067_9510, Conv::Cdecl, &[f], |m| {
+                Out::U32(pf::fios_close(m, f))
+            });
+            let what = format!("sceClose #{case} {f:#x} closed {closed:#x}");
+            t.check(&what, 0x0062_f610, Conv::Cdecl, &[f], |m| {
+                Out::U32(pf::sce_close(m, f))
+            });
+            let buf = rng.next();
+            let what = format!("sceWrite #{case}");
+            t.check(&what, 0x0062_fdc0, Conv::Cdecl, &[f, buf, 7], |m| {
+                Out::U32(pf::sce_write(m, buf))
+            });
+            let what = format!("SaveDataIsSaveEnabled #{case}");
+            t.check(&what, 0x0064_80e0, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::is_save_enabled(m))
+            });
+        }
+    });
+}
+
+/// `0x0061b3c0(module, info, id)` with `LoadResource`, `LockResource` and
+/// `SizeofResource` stubbed (stdcall): a block of 16 length-prefixed
+/// UTF-16 strings (empty ones too), sizes that cut it short, both
+/// failures, ids with every low nibble and high bits.
+#[test]
+fn platform_string_resource_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x061b_0007);
+        for case in 0..200 {
+            t.reset();
+            let mut block = Vec::new();
+            for _ in 0..16 {
+                let n = if rng.chance(3) {
+                    0
+                } else {
+                    rng.below(6) as u16
+                };
+                block.extend(n.to_le_bytes());
+                for _ in 0..n {
+                    block.extend((rng.next() as u16).to_le_bytes());
+                }
+            }
+            let full = block.len() as u32;
+            let at = t.alloc(&block);
+            let global = if rng.chance(8) { 0 } else { 0x5151_0000 };
+            let locked = if rng.chance(8) { 0 } else { at };
+            // string starts, for sizes that end exactly at one
+            let mut starts = vec![0u32];
+            let mut q = 0usize;
+            while q < block.len() {
+                q += 2 + 2 * usize::from(u16::from_le_bytes([block[q], block[q + 1]]));
+                starts.push(q as u32);
+            }
+            let size = match rng.below(4) {
+                0 => full,
+                1 => rng.below(full + 1),
+                2 => starts[rng.below(starts.len() as u32) as usize],
+                _ => full + 8,
+            };
+            for (slot, n, ret) in [
+                (pf::LOAD_RESOURCE_IAT, 2, global),
+                (pf::LOCK_RESOURCE_IAT, 1, locked),
+                (pf::SIZEOF_RESOURCE_IAT, 2, size),
+            ] {
+                t.stub_import(slot, false, n, n, ret);
+            }
+            let id = rng.below(16) | if rng.chance(3) { rng.next() & !0xf } else { 0 };
+            let (module, info) = (0x0040_0000, rng.next());
+            let what = format!("0x0061b3c0 #{case} id {id:#x} size {size}/{full}");
+            t.check(&what, 0x0061_b3c0, Conv::Cdecl, &[module, info, id], |m| {
+                Out::U32(pf::string_resource_image(m, module, info, id))
+            });
+        }
+    });
+}
+
+/// The achievement records (`g_AchievementRecords`, set in both oracles:
+/// all unlocked but a few, so that the platinum's path runs too) with
+/// `SteamUserStats` returning a fake object whose vtable slots 7
+/// (`SetAchievement`) and 10 (`StoreStats`) log, the manager's flag
+/// `+0x4d` on and off, ids 0..=0x25 (past 0x21 too), `g_SteamReady` on and
+/// off.
+#[test]
+fn platform_achievements_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x06f1_0008);
+        let records = t.rebase(platform::RECORDS);
+        for case in 0..160 {
+            t.reset();
+            let mut bytes: Vec<u8> = (0..34 * platform::RECORD + 0x400)
+                .map(|_| rng.next() as u8)
+                .collect();
+            let missing = rng.below(4);
+            for id in 0..34u32 {
+                let at = (id * platform::RECORD + 0x184) as usize;
+                bytes[at] = u8::from(id != 0 || rng.chance(4));
+            }
+            for _ in 0..missing {
+                let id = rng.below(34);
+                bytes[(id * platform::RECORD + 0x184) as usize] = 0;
+            }
+            t.patch(records, &bytes);
+            let slots: Vec<(u32, u32)> = (0..11)
+                .map(|i| (u32::from(i == 7), 0x4545_0000 + i))
+                .collect();
+            let stats = t.object(&slots);
+            t.stub_import(pf::STEAM_USER_STATS_IAT, false, 0, 0, stats);
+            let manager = t.zeros(0x80);
+            t.write(manager + 0x4d, &[u8::from(!rng.chance(5))]);
+            t.stubs(&[(pf::ACHIEVEMENTS, false, 0, 0, manager)]);
+            let steam = t.rebase(platform::STEAM_READY);
+            t.patch(steam, &[u8::from(!rng.chance(5))]);
+            let id = rng.below(0x26);
+            let what = format!("SetAchievement #{case} id {id:#x}");
+            t.check(&what, 0x006f_1900, Conv::Thiscall(manager), &[id], |m| {
+                pf::set_achievement(m, manager, id);
+                Out::None
+            });
+            // half the cases: only this id and the platinum missing, so
+            // that the unlock goes on to the platinum (0x21 often)
+            let id = if rng.chance(2) {
+                let id = [0x21, 0x20, 1, 0x22, rng.below(0x26)][rng.below(5) as usize];
+                let mut set =
+                    |id: u32, v: u8| t.write(records + id * platform::RECORD + 0x184, &[v]);
+                for k in 0..34 {
+                    set(k, 1);
+                }
+                set(0, 0);
+                if id < 34 {
+                    set(id, 0);
+                }
+                id
+            } else {
+                rng.below(0x26)
+            };
+            let what = format!("Unlock #{case} id {id:#x}");
+            t.check(&what, 0x006f_1510, Conv::Thiscall(manager), &[id], |m| {
+                pf::unlock(m, manager, id);
+                Out::None
+            });
+            if rng.chance(2) {
+                // the platinum and at most one other missing (1 and 0x21
+                // often: the ends of the scan)
+                for k in 0..34u32 {
+                    t.write(records + k * platform::RECORD + 0x184, &[u8::from(k != 0)]);
+                }
+                let k = [1u32, 0x21, 0x22, 0, rng.below(34)][rng.below(5) as usize];
+                t.write(records + k * platform::RECORD + 0x184, &[0]);
+            }
+            let what = format!("AchievementTryObtainPlat #{case}");
+            t.check(&what, 0x006f_1550, Conv::Thiscall(manager), &[], |m| {
+                pf::try_obtain_platinum(m, manager);
+                Out::None
+            });
+            let id = rng.below(0x26);
+            let what = format!("SaveDataUnlockAchievement #{case} id {id:#x}");
+            t.check(&what, 0x0064_88c0, Conv::Cdecl, &[id], |m| {
+                pf::unlock_achievement(m, id);
+                Out::None
+            });
         }
     });
 }

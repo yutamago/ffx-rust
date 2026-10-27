@@ -34,11 +34,11 @@
 0x00401600 function StdSystemErrorCategory_deletingDtor_00401600 # vtable 0x00b0da20 slot 0: as StdErrorCategory_deletingDtor_00401260; name ours; ported ffx_system::m5a_std (m5 system-a b1)
 0x00401660 function StdOstreamSentry_unlock_00401660 # ecx = the stream holder (no stack words; Unwind@00adfdc8): rdbuf ([stream + vbase + 0x38]), when set, tail-jumped vtable[2] (_Unlock); name ours; ported ffx_system::m5a_std (m5 system-a b1)
 0x00401690 function Settings_ParseIntList_00401690 # fastcall-caller-pops(text; out, max): ecx = the NUL-terminated decimal list, edx = the word array, one stack word (max, signed) the caller pops (LTCG custom convention; caller Settings_SetValue for lmKeyBinding, the FFX and FFX-2 tables inline the same loop) -> the count: a word per ',' or the end, other bytes skipped (signed byte compares); name ours; ported ffx_system::m5a_settings (m5 system-a c2)
-0x004016e0 function Settings_JoinBindings # guess: ints -> "a,b,c" std::string (used by Settings_Format) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x004016e0 function Settings_JoinBindings # guess: ints -> "a,b,c" std::string (used by Settings_Format) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam); fastcall-caller-pops(out; list, n) -> out: ecx = the std::string to fill, edx = the words, n (signed) on the stack the caller pops; a std::stringstream at ebp-0xcc (0x00402f00 ctor, 0x00404a90 comma, operator<<(int), 0x00402ff0 str()), its destructor inlined (basic_ios vtable 0x00b7cb6c via the vbase offset, stringbuf vtable 0x00b7cb2c, buffer freed when ebp-0x78 bit 0, setg(0,0,0), three pointers cleared, ~basic_streambuf/~basic_iostream/~basic_ios); ported ffx_system::m5a_settings (m5 system-a c2)
 0x00401840 function StdStringstream_dtor_00401840 # ecx = a std::stringstream (Unwind): basic_ios at +0x68 gets vtable 0x00b7cb6c, the vbase word, 0x00403010(+0x18), MSVCP110 ~basic_iostream(+0x20), tail jump ~basic_ios(+0x68); name ours; ported ffx_system::m5a_std (m5 system-a b1)
 0x00401880 function Settings_Construct # GameSetting.ini path at +0x430; field 0 = language index; ported ffx_system::m5a_settings::bridge::construct: thiscall(this; path) ret 4 -> this; +0x638 = 0x101, +0x63a = 1, 24 words from 0x00b7cba8 stride 16, memset +0x60/+0x1a4/+0x2e8 0x144, wide path to +0x430 (m5 system-a b1)
 0x00401920 function Settings_dtor # empty; Game_Main calls it before delete g_Settings (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
-0x00401930 function Settings_SetValue          # thiscall(settings, key, value string): looks the value up in key's table of 8 strings at 0x00c89f48 + key * 0x20 (stricmp) and stores its index at settings + 4 * key (Resolution, the key bindings and a few others parsed apart); called per key=value line by 0x00401e00 under Settings_Load; so Shadow (key 12) "0".."3" -> +0x30 = 0..3, TextureQuality (key 13) TQ_HIGH/TQ_MEDIUM/TQ_LOW -> +0x34 = 0/1/2 (docs/formats/scene-maps.md, Q1); name ours
+0x00401930 function Settings_SetValue # thiscall(settings, key, value string): looks the value up in key's table of 8 strings at 0x00c89f48 + key * 0x20 (stricmp) and stores its index at settings + 4 * key (Resolution, the key bindings and a few others parsed apart); called per key=value line by 0x00401e00 under Settings_Load; so Shadow (key 12) "0".."3" -> +0x30 = 0..3, TextureQuality (key 13) TQ_HIGH/TQ_MEDIUM/TQ_LOW -> +0x34 = 0/1/2 (docs/formats/scene-maps.md, Q1); name ours; thiscall(this; key, std::string value by value) ret 0x1c -> 0/1: key's row of 0x00c89f48 counted to its first null (at most 8); exactly one string = special key (1 Resolution "W*H" 0x00b7c798: find, substr x2, this[1] = W << 16 | H & 0xffff, no '*' -> printf 0x00b7ca30, 1; 0x15/0x16 the inline 0x00401690 loop into +0x60/+0x1a4, +0x42c count, Settings_ValidateBindings(0x00405cb0/0x00405d00) -> byte +0x638/+0x639; 0x17 Settings_ParseIntList_00401690 into +0x2e8, 0x00405d80 -> +0x63a; else this[key] = atoi); else _stricmp search, this[key] = index, none -> printf 0x00b7ca5c with g_SettingsKeyNames[key], 1; value deleted when its capacity >= 16; ported ffx_system::m5a_settings (m5 system-a c2)
 0x00401c80 function Settings_SetPath # copies the wide path to +0x430 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00401cb0 function Settings_Load             # reads Documents\Square Enix\...\GameSetting.ini (Language=jp|en|fr|de|it|es|kr|ch)
 0x00401d80 function Settings_Save # _wfopen(path, "wb"), Settings_Format, fwrite; callers Settings_Load (no file), PhyreScene_initScene, FFEscMenu_resume/_update/QuitConfirmed (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
@@ -3219,6 +3219,7 @@
 0x0061acb0 function PStreamFile_entrySize64 # thiscall(this) -> edx:eax = u64 at +8 of *(this+0xc) (called by Phyre_PSerialization_PStreamFile_getFileSize); name ours
 0x0061acc0 function VbfStream_Open            # fopen(path, "rb") for one of 15 reader streams
 0x0061acf0 function VFile_reset # thiscall(this): +0xc, +0x10, +0x14 and byte +0 zeroed (the VFile released); caller BigFileHandle_releaseVFile; name ours
+0x0061b3c0 function AtlStringResourceImage_0061b3c0 # cdecl(module, info, id) -> the string or 0: LoadResource/LockResource/SizeofResource, id & 0xf length-prefixed UTF-16 strings skipped, the string when before the end and not empty (ATL's AtlGetStringResourceImage helper; callers 0x0061b270, AtlGetStringResourceImage, 0x0064f970, 0x0064f9e0, 0x00652310); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061b500 function Queue_PostRequest # thiscall(queue, request), ret 4: request+0x58 = 0, ReleaseSemaphore(*queue, 1, 0); 0 for no request; name ours
 0x0061b590 function BigFileStream_createInstance # allocates the 0x44-byte FileSys into g_FileSys; was FileSys_CreateSingleton
 0x0061b7e0 function FileSys_NewReadRequest    # finds the first block and its file offset for a read at a 64-bit position
@@ -3389,7 +3390,7 @@
 0x0062f500 function dbgPrintf                 # fh v3:bsim1.00+call.cs 0x0062f6b0 cdecl
 0x0062f510 function debug_exit_trace          # fh v3:bsim1.00 0x0062f6c0
 0x0062f550 function sceCdDiskReady            # fh v3:bsim1.00 0x0062f700
-0x0062f610 function sceClose                  # fh v3:bsim1.00+call.cs 0x0062f7c0 cdecl
+0x0062f610 function sceClose # fh v3:bsim1.00+call.cs 0x0062f7c0 cdecl; cdecl(fd) -> 0: fiosClose(fd); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0062f680 function sceDeci2Open              # fh v3:bsim1.00 0x0062f830
 0x0062f690 function sceDeci2ReqSend           # fh v3:bsim1.00 0x0062f840
 0x0062f6e0 function sceDmaGetChan             # fh v3:bsim1.00 0x0062f890
@@ -3452,7 +3453,7 @@
 0x0062fce0 function FFXVu0InnerProduct        # fh v3:bsim1.00 0x0062fe90
 0x0062fd10 function FFXVu0InterVector         # fh v3:exact 0x0062fec0
 0x0062fd70 function FFXVu0InterVectorXYZ      # fh v3:exact 0x0062ff20
-0x0062fdc0 function sceWrite                  # fh v3:exact 0x0062ff70
+0x0062fdc0 function sceWrite # fh v3:exact 0x0062ff70; cdecl(fd, buf, ..) -> 0: dbgPrintf("Virtuos sceWrite" 0x00b4133c, buf), nothing written; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0062fdf0 function umount                    # fh v3:bsim1.00 0x0062ffa0
 0x0062fe50 function MapFindU32_0062fe50 # thiscall(head, &key), ret 4: binary-tree lookup from root head+0xc (left +0, right +4, key +0xc, leaves point back at head); returns the node or 0; name ours
 0x00630310 function operator_new              # fh v3:cg27 0x6304c0 operator.new
@@ -4007,7 +4008,7 @@
 0x006480a0 function SaveDataIsLoadingSuccessful # fh v3:cg2 0x648250
 0x006480c0 function SaveDataIsOperationCanceled # fh v3:cg2 0x648270
 0x006480d0 function SaveDataIsSave            # fh v3:bsim1.00 0x00648280
-0x006480e0 function SaveDataIsSaveEnabled     # fh v3:bsim1.00 0x00648290
+0x006480e0 function SaveDataIsSaveEnabled # fh v3:bsim1.00 0x00648290; cdecl(): tail jump SaveDataManager_isSaveEnabled(SaveDataManager_instance()); ported ffx_system::m5a_platform (m5 system-a c2)
 0x006480f0 function SaveDataIsSavingFinished  # fh v3:cg3 0x6482a0
 0x00648100 function SaveDataIsScreenClosed    # fh v3:exact 0x006482b0
 0x00648150 function SaveDataLocRemoveNumTag   # fh v3:exact 0x00648300
@@ -4036,7 +4037,7 @@
 0x006487a0 function SaveDataToSave            # fh v4:imported+call.cs cdecl
 0x00648820 function SaveDataTtyWrite             # layout: alphabetical run between SaveDataToSave and SaveDataTtyWrite2 (1 unnamed in the gap); Switch 0x7100225110 SaveDataTtyWrite is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00648850 function SaveDataTtyWrite2         # fh v3:exact 0x00648a00
-0x006488c0 function SaveDataUnlockAchievement # fh v3:exact 0x00648a70
+0x006488c0 function SaveDataUnlockAchievement # fh v3:exact 0x00648a70; cdecl(id): with g_SteamReady, StatsAndAchievements_Unlock_006f1510(AchievementManager_GetInstance(); id); eax junk; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006488e0 function SaveDataUnlockTrophy         # layout: alphabetical run between SaveDataUnlockAchievement and SaveDataUpdateIcon (1 unnamed in the gap); Switch 0x71002251d0 SaveDataUnlockTrophy is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00648920 function SaveDataUpdateIcon        # fh v3:exact 0x00648ad0
 0x00648f20 function SaveDataWriteCrc          # fh v3:exact+call.cs 0x006490d0 cdecl
@@ -4435,7 +4436,7 @@
 0x006793e0 function PhyreFIOS_LoadMagicfilePrx # fh v3:exact 0x00679590 PhyreFIOS::LoadMagicfilePrx
 0x006794f0 function PhyreFIOS_UnloadMagicfilePrx # fh v3:cg2 0x6796a0 PhyreFIOS::UnloadMagicfilePrx; ported (ffx_glue_other::misc, m4 h4 r1): jmp PhyreFIOS_UnloadPrx (cdecl, 1 word)
 0x00679500 function fiosClearOps              # fh v3:bsim1.00 0x006796b0
-0x00679510 function fiosClose                 # fh v3:exact 0x006796c0
+0x00679510 function fiosClose # fh v3:exact 0x006796c0; cdecl(f) -> 0 or 9: null 9; PStreamFile_closeFile (al 1 -> 0), the bare-ret 0x00607c10, operator delete; ported ffx_system::m5a_platform (0x00607c10 not called) (m5 system-a c2)
 0x00679560 function fiosDeleteCompletedOps    # fh v3:bsim1.00 0x00679710
 0x00679570 function fiosFileSize              # fh v3:exact 0x00679720
 0x00679590 function fiosFinalize              # fh switch:bsim1.00 0x71001cad60
@@ -5515,8 +5516,8 @@
 0x006f1420 function StatsAndAchievements_ResetAll # SteamUserStats()->ResetAllStats(true) (+0x54); BasicDebugTweakUtil item 0xc (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f1430 function StatsAndAchievements_Create # new(0x50) -> 0x00ce81a8 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f14a0 function StatsAndAchievements_Destroy # no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
-0x006f1510 function StatsAndAchievements_Unlock_006f1510 # thiscall(this, id), ret 4: with this+0x4d set (the constructor sets it and nothing clears it; +0x4c is "stats received", platform census 2026-10-25), id <= 0x21 and record id's achieved byte (g_AchievementRecords +0x184) clear: StatsAndAchievements_SetAchievement_006f1900(id), then AchievementTryObtainPlat (which, once records 1..33 are achieved and record 0, the platinum, is not, calls this with 0); callers SaveDataUnlockAchievement (0x006488d6) and AchievementTryObtainPlat (0x006f1573) only (tools/refs.py): platform, the Steam achievement layer (classify REVIEWED); class from Fahrenheit's CCallback<StatsAndAchievements,...> vtables; name ours
-0x006f1550 function AchievementTryObtainPlat  # fh v3:exact 0x006f1690 +AchievementTryObtainPlat
+0x006f1510 function StatsAndAchievements_Unlock_006f1510 # thiscall(this, id), ret 4: with this+0x4d set (the constructor sets it and nothing clears it; +0x4c is "stats received", platform census 2026-10-25), id <= 0x21 and record id's achieved byte (g_AchievementRecords +0x184) clear: StatsAndAchievements_SetAchievement_006f1900(id), then AchievementTryObtainPlat (which, once records 1..33 are achieved and record 0, the platinum, is not, calls this with 0); callers SaveDataUnlockAchievement (0x006488d6) and AchievementTryObtainPlat (0x006f1573) only (tools/refs.py): platform, the Steam achievement layer (classify REVIEWED); class from Fahrenheit's CCallback<StatsAndAchievements,...> vtables; name ours; ported ffx_system::m5a_platform: void (eax junk to callers) (m5 system-a c2)
+0x006f1550 function AchievementTryObtainPlat # fh v3:exact 0x006f1690 +AchievementTryObtainPlat; thiscall(this): record 0 not unlocked and records 1..=0x21 all are -> StatsAndAchievements_Unlock_006f1510(this; 0); ported ffx_system::m5a_platform (m5 system-a c2)
 0x006f1580 function ReturnConst_006f1580 # () -> 0x98; name ours
 0x006f1590 function ReturnConst_006f1590 # () -> 0x18; name ours
 0x006f15a0 function ReturnConst_006f15a0 # () -> 0x10; name ours
@@ -5529,7 +5530,7 @@
 0x006f1780 function CCallback_UserStatsStored_Register # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f17d0 function StatsAndAchievements_RequestStats # if +0x4d and logged on: RequestCurrentStats; no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f18b0 function StatsAndAchievements_SetAchievementByName # (name): SetAchievement + StoreStats; no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
-0x006f1900 function StatsAndAchievements_SetAchievement_006f1900 # thiscall(this, id), ret 4: with +0x4d set, record id's achieved byte = 1 and +0x188 = 0, then SteamUserStats()->SetAchievement(record +0 name) (vtable +0x1c) and ->StoreStats() (+0x28); only caller StatsAndAchievements_Unlock_006f1510; name ours
+0x006f1900 function StatsAndAchievements_SetAchievement_006f1900 # thiscall(this, id), ret 4: with +0x4d set, record id's achieved byte = 1 and +0x188 = 0, then SteamUserStats()->SetAchievement(record +0 name) (vtable +0x1c) and ->StoreStats() (+0x28); only caller StatsAndAchievements_Unlock_006f1510; name ours; ported ffx_system::m5a_platform: void (eax junk to its caller) (m5 system-a c2)
 0x006f1aa0 function SaveDataManager_setResult_006f1aa0 # thiscall(this; v) ret 4 -> v: [[0x00ce81f4] + 8] = 4/2/6 for this+8 = 3/1/5; this+0x3a4 = v; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x006f1ce0 function SaveDataManager_doLoad    # fh v3:exact 0x006f1e20 SaveDataManager::doLoad
 0x006f1d70 function SaveDataManager_doSave    # fh v3:exact 0x006f1eb0 SaveDataManager::doSave

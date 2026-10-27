@@ -9,6 +9,7 @@
 //! frames are per call.
 
 use super::{StackFrame, mem, ported};
+use ffx_system::m5a_platform::bridge as pf;
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
 use ffx_system::m5a_settings::bridge as st;
 use ffx_system::m5a_std::{self as sd, bridge as sb};
@@ -330,6 +331,70 @@ ported! {
     Settings_ValidateBindings @ 0x0040_5bb0 => extern "fastcall-caller-pops" fn validate_bindings(list: u32, n: u32, filter: u32) -> u32 {
         st::validate_bindings(&mut mem(), list, n, filter)
     }
+    /// `Settings_JoinBindings(out; list, n)`: `ecx`, `edx` and a stack
+    /// word the caller pops; frame `ebp - 0xd0`.
+    Settings_JoinBindings @ 0x0040_16e0 => extern "fastcall-caller-pops" fn join_bindings(out: u32, list: u32, n: u32) -> u32 {
+        let mut f = StackFrame::<{ (st::JOIN_FRAME / 4) as usize }>::new();
+        st::join_bindings(&mut mem(), f.at() + st::JOIN_FRAME, out, list, n)
+    }
+    /// `Settings_SetValue(this; key, std::string value)`: the string's six
+    /// words read where the caller pushed them (`slots`), frame
+    /// `ebp - 0x50`.
+    Settings_SetValue @ 0x0040_1930 => extern "thiscall" fn set_value(this: u32, key: u32, s0: u32, s1: u32, s2: u32, s3: u32, s4: u32, s5: u32; slots: u32) -> u32 {
+        let _ = (s0, s1, s2, s3, s4, s5);
+        let mut f = StackFrame::<{ (st::SET_VALUE_FRAME / 4) as usize }>::new();
+        st::set_value(&mut mem(), f.at() + st::SET_VALUE_FRAME, this, key, slots + 4)
+    }
+    /// `Settings_Save(this)`: the original's `alloca` buffer is a zeroed
+    /// heap block here.
+    Settings_Save @ 0x0040_1d80 => extern "thiscall" fn settings_save(this: u32) -> u32 {
+        let mut store = Vec::new();
+        st::save(&mut mem(), this, |n| zeroed(&mut store, n))
+    }
+    /// `Settings_Load(this)`: the same for the file's bytes (and the 0x20
+    /// spare ones, junk in the original).
+    Settings_Load @ 0x0040_1cb0 => extern "thiscall" fn settings_load(this: u32) -> u32 {
+        let mut store = Vec::new();
+        st::load(&mut mem(), this, |n| zeroed(&mut store, n))
+    }
+    // ---- the platform glue (ffx_system::m5a_platform) ----
+    /// `fiosClose(f)`.
+    fiosClose @ 0x0067_9510 => extern "C" fn fios_close(f: u32) -> u32 {
+        pf::fios_close(&mut mem(), f)
+    }
+    /// `sceClose(fd)`.
+    sceClose @ 0x0062_f610 => extern "C" fn sce_close(fd: u32) -> u32 {
+        pf::sce_close(&mut mem(), fd)
+    }
+    /// `sceWrite(fd, buf, ..)`: only `buf` is read.
+    sceWrite @ 0x0062_fdc0 => extern "C" fn sce_write(fd: u32, buf: u32) -> u32 {
+        let _ = fd;
+        pf::sce_write(&mut mem(), buf)
+    }
+    /// `0x0061b3c0(module, info, id)`.
+    AtlStringResourceImage_0061b3c0 @ 0x0061_b3c0 => extern "C" fn string_resource_image(module: u32, info: u32, id: u32) -> u32 {
+        pf::string_resource_image(&mut mem(), module, info, id)
+    }
+    /// `SaveDataIsSaveEnabled()`.
+    SaveDataIsSaveEnabled @ 0x0064_80e0 => extern "C" fn is_save_enabled() -> u32 {
+        pf::is_save_enabled(&mut mem())
+    }
+    /// `(this; id)`: `eax` junk to the caller.
+    StatsAndAchievements_SetAchievement_006f1900 @ 0x006f_1900 => extern "thiscall" fn set_achievement(this: u32, id: u32) {
+        pf::set_achievement(&mut mem(), this, id);
+    }
+    /// `(this; id)`.
+    StatsAndAchievements_Unlock_006f1510 @ 0x006f_1510 => extern "thiscall" fn unlock(this: u32, id: u32) {
+        pf::unlock(&mut mem(), this, id);
+    }
+    /// `(this)`: `ecx` is passed on to the unlock.
+    AchievementTryObtainPlat @ 0x006f_1550 => extern "thiscall" fn try_obtain_platinum(this: u32) {
+        pf::try_obtain_platinum(&mut mem(), this);
+    }
+    /// `SaveDataUnlockAchievement(id)`.
+    SaveDataUnlockAchievement @ 0x0064_88c0 => extern "C" fn unlock_achievement(id: u32) {
+        pf::unlock_achievement(&mut mem(), id);
+    }
     /// `user_free_thunk(p)`: the 5-byte `jmp user_free`.
     user_free_thunk @ 0x0068_7010 => extern "C" fn user_free_thunk(p: u32) -> u32 {
         sa::user_free_thunk(&mut mem(), p)
@@ -338,4 +403,18 @@ ported! {
     code_006f2740 @ 0x006f_2740 => extern "C" fn machine_update_thunk() -> u32 {
         sa::machine_update_thunk(&mut mem())
     }
+}
+
+/// `n` zero bytes in `store` (replacing what it held), for an original's
+/// `alloca` buffer; returns their address, or 0 when the allocation fails
+/// (no panic in the game: the original's `alloca` of that size fails too,
+/// at its stack guard).
+fn zeroed(store: &mut Vec<u8>, n: u32) -> u32 {
+    store.clear();
+    let n = n as usize;
+    if store.try_reserve_exact(n).is_err() {
+        return 0;
+    }
+    store.resize(n, 0);
+    u32::try_from(store.as_mut_ptr() as usize).unwrap_or(0)
 }
