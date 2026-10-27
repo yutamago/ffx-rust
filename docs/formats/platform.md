@@ -669,7 +669,11 @@ without an audio track) and does not print the original's two error lines.
 In game: `tools/replays/run-all.sh --extra --hits movie-fmv` (Wakka's kick,
 `IWK_us.webm`) runs all 35 hooks (none of the libraries' code), the traces
 have the same events and the four shots are identical to the original's.
-The other replays play no FMV.
+Its sound: `tools/replays/run-all.sh --audio movie-fmv` (marks from the
+movie's start to the third shot) gives 510,400 frames (10.6 s) of FMOD's
+float mix identical to both original captures, which agree with each other.
+The other replays play no FMV, and none plays a texture video (the scene's
+second player, the same hooks).
 
 ## What the Rust side must reproduce
 
