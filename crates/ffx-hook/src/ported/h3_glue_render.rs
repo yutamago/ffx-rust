@@ -68,6 +68,7 @@ use ffx_prender::h3_glue59::bridge as g59;
 use ffx_prender::h3_glue60::bridge as g60;
 use ffx_prender::h3_glue61::bridge as g61;
 use ffx_prender::h3_glue62::bridge as g62;
+use ffx_prender::h3_glue63::bridge as g63;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2183,6 +2184,15 @@ ported! {
     PhyreScene_RenderVideoAndItsUI @ 0x0065_3960 => extern "thiscall" fn scene_render_video_and_its_ui(this: u32) -> u32 {
         let mut f = StackFrame::<0x28>::new();
         g62::render_video_and_its_ui(&mut mem(), f.at() + 0xa0, this)
+    }
+
+    // ---- round 18 batch 65 (ffx_prender::h3_glue63) ----
+    /// `PostProcessManager_renderHDAO(scene)` -> 0: the HDAO depth pass
+    /// from an orthographic camera built in the frame, the map materials'
+    /// colour scale set to 1s around it (frame `ebp - 0x2e8`).
+    PostProcessManager_renderHDAO @ 0x0066_b560 => extern "thiscall" fn post_render_hdao(this: u32) -> u32 {
+        let mut f = StackFrame::<0xba>::new();
+        g63::render_hdao(&mut mem(), f.at() + 0x2e8, this)
     }
 }
 

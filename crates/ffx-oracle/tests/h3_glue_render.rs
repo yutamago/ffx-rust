@@ -85,6 +85,7 @@ use ffx_prender::h3_glue59::{self as h59, bridge as gh59};
 use ffx_prender::h3_glue60::{self as h60, bridge as gh60};
 use ffx_prender::h3_glue61::{self as h61, bridge as gh61};
 use ffx_prender::h3_glue62::{self as h62, bridge as gh62};
+use ffx_prender::h3_glue63::{self as h63, bridge as gh63};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -13254,5 +13255,111 @@ fn batch64_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES64, n, &mut Rng(0x6464_b064));
+    });
+}
+
+// ---- round 18 batch 65 (ffx_prender::h3_glue63) ----
+
+/// A scene for the HDAO pass: its two enable bytes (now and then
+/// clear), the colour target (now and then none) and the depth target
+/// (their textures there or not), the matrix `+0xfc04` and the extents
+/// `+0xfc34..+0xfc5c` (mild floats), the swap code `+0xfaf4`, a map
+/// cluster or none with the map tree of [`map_tree`] (walked twice: the
+/// successors run on to the head for each walk; `memcpy` is the
+/// original's), the world kind `+0xf9cc`, the scene's camera or none.
+/// The camera's construction (but its projection update, which logs the
+/// vtable it finds) and its matrices are the original's.
+fn prep_hdao65(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    for off in [0xfc00, 0xfc01] {
+        let b = if rng.chance(8) {
+            0
+        } else {
+            pick(rng, &[1, 0x80]) as u8
+        };
+        t.write(scene + off, &[b]);
+    }
+    let targets = t.zeros(0x200);
+    for (k, off) in [0xfc70u32, 0xfc74].into_iter().enumerate() {
+        let slot = targets + 0x10 * k as u32;
+        let texture = targets + 0x80 + 0x40 * k as u32;
+        let none = k == 0 && rng.chance(8);
+        t.w32(scene + off, if none { 0 } else { slot });
+        t.w32(slot, texture);
+        let gone = u8::from(k != 0 && rng.chance(4));
+        // the byte after the flag set, so a port reading it shows
+        t.write(slot + 4, &[gone, 0x80]);
+        t.w32(texture + 0x1c, rng.word());
+        t.w32(texture + 0x20, rng.word());
+    }
+    for k in 0..16 {
+        let v = mild(rng);
+        t.w32(scene + 0xfc04 + 4 * k, v);
+    }
+    for at in (0xfc34..0xfc60).step_by(4) {
+        let v = mild(rng);
+        t.w32(scene + at, v);
+    }
+    let code = pick(rng, &[0xc04, 0xb48, 0, 0xc05]);
+    t.w32(scene + 0xfaf4, code);
+    let renderer = t.zeros(0x100);
+    t.w32(scene + 0xd0, renderer);
+    t.w32(scene + 0xdc, if rng.chance(4) { 0 } else { obj + 0x1f00 });
+    let kind = pick(rng, &[0, 1, 2, 3]);
+    t.w32(scene + 0xf9cc, kind);
+    t.w32(scene + 0x10d4, if rng.chance(4) { 0 } else { obj });
+    for k in 0..4 {
+        let v = mild(rng);
+        t.w32(scene + 0xfc78 + 4 * k, v);
+    }
+    map_tree(t, obj, scene, rng);
+    // two walks: each runs its successors on to the head
+    let head = scene + 0x1198;
+    let mut order = vec![];
+    for _ in 0..2 {
+        for _ in 0..rng.below(4) {
+            order.push(obj + 0x100 + 0x40 * rng.below(3));
+        }
+        order.push(head);
+    }
+    order.extend([head; 4]);
+    t.stub_seq(h63::TREE_SUCCESSOR, true, 1, 1, &order);
+    // buffer sizes some parameters fill exactly (offset + size)
+    for m in 0..3 {
+        let size = pick(rng, &[0x10, 0x2c, 0x30, 0x4c, 0x50, 0x80]);
+        t.w32(obj + 0x1000 + 0x100 * m, size);
+    }
+    // the walks' counters and the x87 temporaries
+    FRAME_IGNORE.with(|z| z.replace(vec![(0x20, 0x10), (0xb0, 4)]));
+}
+
+const HDAO65_STUBS: &[(u32, K)] = &[
+    // logs the vtable it finds (the orthographic camera's)
+    (h63::ORTHO_UPDATE, K::KeepDeref(0)),
+    (h63::UPDATE_VIEW_MATRICES, K::This(0)),
+    (h63::PHYRE_FREE, K::Cdecl(1)),
+    (h63::SET_CLEAR_DEPTH, K::This(1)),
+    (h63::SET_CAMERA, K::This(1)),
+    (h63::SET_VIEWPORT, K::This(4)),
+    (h63::SET_COLOR_TARGET, K::This(2)),
+    (h63::SET_DEPTH_STENCIL_TARGET, K::This(1)),
+    (h63::SET_CLEAR_COLOR, K::This(4)),
+    (h63::BEGIN_SCENE, K::This(1)),
+    (h63::END_SCENE, K::This(1)),
+    (h63::GET_APPLICATION, K::Getter),
+    (h63::RENDER_WORLD, K::This(3)),
+];
+
+#[rustfmt::skip]
+const CASES65: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_hdao65), ..method("render_hdao", 0x0066_b560, This::Object, 0, HDAO65_STUBS, |m, this, _| u(gh63::render_hdao(m, frame_ebp(), this))) }), 0x2e8, 0),
+];
+
+#[test]
+fn batch65_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES65, n, &mut Rng(0x6565_b065));
     });
 }
