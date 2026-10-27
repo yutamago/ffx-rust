@@ -176,7 +176,7 @@ Bit fields, from the properties' cases:
 | `+0x3f5` | `u8` | `death_pattern` | property `0x4f` `STAT_DEATH_PATTERN`; `MsDamageCheckDeath`, `MsRelife`, `MsSetDeath` |
 | `+0x3f8` | `u8 (bool)` | `stat_center_chr_flag` | property `0x129` `STAT_CENTER_CHR_FLAG`; `msCheckSameTarget`, `MsSetRamChrData`, `MsExchangeChr` |
 | `+0x3f9` | `u8` | `stat_death_return` | property `0x14a` `STAT_DEATH_RETURN`; `MsCheckDeathMotion`, `MsSetRamChrData`, `Native_7117_BtlQueueCommand` |
-| `+0x400` | `u16` | `motion_speed_normal` | property `0xfb` `STAT_MOTION_SPEED_NORMAL`; `MsBtlReadPlayerProcess`; **`u16`**, not `u8`: every access is a word (`MsGetChrMotionSpeed` `0x007956b0`, `MsCalcMotionSpeed`) |
+| `+0x400` | `u16` | `motion_speed_normal` | property `0xfb` `STAT_MOTION_SPEED_NORMAL`; `MsBtlReadPlayerProcess`; **`u16`**, not `u8`: every access is a word (`MsGetChrMotionSpeed` `0x007956a0`, `MsCalcMotionSpeed`) |
 | `+0x402` | `u16` | `motion_speed_effect` | `MsEffectSetSpeed`, `MsCalcMotionSpeed`, `Battle_ScriptPlayMotion` |
 | `+0x404` | `u8` | `motion_speed_effect_nonzero` | `MsEffectSetMotion`, `MsEffectSetSpeed`; 1 while `+0x402` is in force (`MsEffectSetSpeed` sets it, `MsMotionSpeedSetNormal` clears it); `MsTerminateMotion` clears `+0x404` and `+0x405` with one word store |
 | `+0x405` | `u8` | `motion_speed_normal_init` | property `0xfc` `STAT_MOTION_SPEED_NORMAL_START`; `MsEffectMagicMotion`, `MsEffectStart`, `MsEffectEnd_00788f90` |
