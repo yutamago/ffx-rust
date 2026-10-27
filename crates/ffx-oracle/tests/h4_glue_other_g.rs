@@ -23,7 +23,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
-use ffx_glue_other::{h4_m1 as m1, h4_m2 as m2, h4_m3 as m3, h4_m4 as m4};
+use ffx_glue_other::{
+    h4_m1 as m1, h4_m2 as m2, h4_m3 as m3, h4_m4 as m4, h4_m5 as m5, h4_m6 as m6, h4_m7 as m7,
+};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -1320,8 +1322,8 @@ fn m4_prepare_mesh() {
         let frame = ebp - 0x60;
         let maps = stub_map(&mut t, m2::MAP, frame + 0x30);
         // the records as the callees see them (the frame reuses them)
-        stub_copying(&mut t, m4::SET_TEXTURE, true, 2, 2, 1);
-        stub_copying(&mut t, m4::SET_VALUE, true, 2, 2, 1);
+        stub_copying(&mut t, m4::SET_TEXTURE, true, 2, 2, &[1], 4);
+        stub_copying(&mut t, m4::SET_VALUE, true, 2, 2, &[1], 4);
         for (sym, this, n, pops) in [
             (m2::SEGMENTS_CONSTRUCT, false, 2, 0),
             (m2::SEGMENTS_DESTROY, false, 2, 0),
@@ -1447,21 +1449,32 @@ fn m4_prepare_mesh() {
     }
 }
 
-/// A recording stub at `sym` that also copies the 16 bytes its stack word
-/// `arg` points at into a ring of eight records (what a callee reads
-/// through a pointer to the caller's frame, as it was at the call).
-/// Returns the ring (a count word, then the records).
-fn stub_copying(t: &mut Twins, sym: u32, this: bool, n: u32, pops: u32, arg: u8) -> u32 {
+/// A recording stub at `sym` that also copies `words` words from each
+/// pointer among its stack words `args` into a ring of eight 0x40-byte
+/// records (what a callee reads through pointers to the caller's frame,
+/// as it was at the call). Returns the ring (a count word, then the
+/// records).
+fn stub_copying(
+    t: &mut Twins,
+    sym: u32,
+    this: bool,
+    n: u32,
+    pops: u32,
+    args: &[u8],
+    words: u8,
+) -> u32 {
+    assert!(args.len() <= 4 && words <= 4);
     let rest = t.stub_code(sym, this, n, pops, false, &[]);
-    let ring = t.zeros(4 + 8 * 16);
-    let mut c = vec![0xa1];
-    c.extend(ring.to_le_bytes()); // mov eax, [ring]
-    c.extend([0x83, 0xe0, 0x07, 0xc1, 0xe0, 0x04, 0x05]); // and eax, 7; shl eax, 4; add eax,
+    let ring = t.zeros(4 + 8 * 0x40);
+    let mut c = vec![0x51, 0xa1]; // push ecx; mov eax, [ring]
+    c.extend(ring.to_le_bytes());
+    c.extend([0x83, 0xe0, 0x07, 0xc1, 0xe0, 0x06, 0x05]); // and eax, 7; shl eax, 6; add eax,
     c.extend((ring + 4).to_le_bytes()); // ring + 4
-    c.extend([0x8b, 0x54, 0x24, 4 + 4 * arg]); // mov edx, [esp+4+4*arg]
-    c.push(0x51); // push ecx
-    for k in 0..4u8 {
-        c.extend([0x8b, 0x4a, 4 * k, 0x89, 0x48, 4 * k]); // mov ecx, [edx+4k]; mov [eax+4k], ecx
+    for (j, &arg) in (0u8..).zip(args) {
+        c.extend([0x8b, 0x54, 0x24, 8 + 4 * arg]); // mov edx, [esp+8+4*arg]
+        for k in 0..words {
+            c.extend([0x8b, 0x4a, 4 * k, 0x89, 0x48, 16 * j + 4 * k]); // mov ecx, [edx+4k]; mov [eax+16j+4k], ecx
+        }
     }
     c.push(0x59); // pop ecx
     c.extend([0xff, 0x05]);
@@ -1470,4 +1483,443 @@ fn stub_copying(t: &mut Twins, sym: u32, this: bool, n: u32, pops: u32, arg: u8)
     let f = t.code(&c);
     t.jump(sym, f);
     ring
+}
+
+/// `GraphicAbmap_update_00685840`: every state (negative, 0, 1, 2, 3, 4,
+/// large), `+8`'s sign, the draw detached or not, handles empty, half
+/// empty (only the high word) or set, render data missing or there; in
+/// state 3 the 23 render data with their segments freed and the fifteen
+/// geometries released and destroyed through their vtables.
+#[test]
+fn m5_abmap_update() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_6858);
+        for (sym, this, n) in [
+            (m5::DELETE, false, 1),
+            (m5::DELETE_ARRAY, false, 1),
+            (m5::RELEASE_GEOMETRY, true, 0),
+            (m5::PHYRE_PRINTF, false, 2),
+        ] {
+            t.stub_at(sym, this, n, 0, &[]);
+        }
+        let destroy = t.stub_code(0x00ab_0000, true, 1, 1, false, &[]);
+        let vtable = t.zeros(4);
+        t.w32(vtable, destroy);
+        let tags = [
+            m5::DELETE,
+            m5::DELETE_ARRAY,
+            m5::RELEASE_GEOMETRY,
+            m5::PHYRE_PRINTF,
+            0x00ab_0000,
+        ];
+        let mut seen = [0u32; 4];
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let this = random_block(&mut t, &mut rng, 0xe8);
+            let state = rng.pick(&[
+                0xffff_fffe,
+                0xffff_ffff,
+                0,
+                1,
+                2,
+                3,
+                3,
+                3,
+                4,
+                0x8000_0000,
+                0x7fff_ffff,
+            ]);
+            t.w32(this + 4, state);
+            let x = rng.next();
+            t.w32(this + 8, rng.pick(&[0, 1, 0xffff_ffff, x]));
+            let detached = rng.pick(&[0, 0, 0, 1]);
+            t.g32(m5::DRAW_DETACHED, detached);
+            for k in 0..15 {
+                let geometry = random_block(&mut t, &mut rng, 0x30);
+                t.w32(geometry, vtable);
+                let (lo, hi) = match rng.below(6) {
+                    0 => (0, 0),
+                    _ => (geometry, rng.pick(&[0, 0, 0xffff_ffff])),
+                };
+                t.w32(this + 0x10 + 8 * k, lo);
+                t.w32(this + 0x14 + 8 * k, hi);
+            }
+            for k in 0..23 {
+                let data = random_block(&mut t, &mut rng, 0x98);
+                let segments = random_block(&mut t, &mut rng, 4 * 0x6c);
+                t.w32(data + 0x94, segments);
+                let none = state != 3 && rng.below(4) == 0;
+                t.w32(this + 0x88 + 4 * k, if none { 0 } else { data });
+            }
+            t.check_conv(&w, 0x0068_5840, Conv::Thiscall(this), &[], |g| {
+                u(m5::abmap_update(g, this))
+            });
+            let s = state.cast_signed();
+            seen[if s < 2 {
+                usize::from(detached == 0)
+            } else if s == 3 {
+                2
+            } else {
+                3
+            }] += 1;
+        }
+        eprintln!("{name}: {seen:?}");
+        assert!(seen.iter().all(|&k| k > 10), "{name}: {seen:?}");
+    }
+}
+
+/// `ClassDynamicGeometry_setupMaterial`: no owner, the cursor finding no
+/// shader, the resize failing, 0..3 segments (and a negative count),
+/// material arrays too short, handle tables there or made (inline for one
+/// segment, else allocated), each parameter missing, the fade with and
+/// without the geometry's depth, clusters missing, texture clusters found
+/// or the frame buffer names (and an unknown one), bindings failing.
+#[test]
+fn m6_setup_material() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_6a3b);
+        let cursor = stub_filling(&mut t, m1::CURSOR_SEEK, 0, 0, &[0, 0xc, 0x10]);
+        let iter = stub_filling(&mut t, m1::TEXTURE_ITERATOR, 1, 1, &[0, 0x10]);
+        let params = [
+            m1::TEXTURE_PARAM,
+            m1::SAMPLER_PARAM,
+            m6::TARGET_PARAM,
+            m6::UV_SCALE_PARAM,
+            m6::CC_PARAM,
+            m1::COLOUR_PARAM,
+            m6::FADE_PARAM,
+            m6::FADE_FACTOR_PARAM,
+        ];
+        let cases: Vec<(u32, u32)> = params
+            .iter()
+            .zip(1..)
+            .map(|(&p, k)| (t.rebase(p), m1::FIND_PARAM + k))
+            .collect();
+        stub_by_arg(&mut t, m1::FIND_PARAM, true, 1, 1, 0, &cases);
+        let a_cell = t.zeros(4);
+        let b_cell = t.zeros(4);
+        t.stub_at(
+            m6::CREATE_MATERIAL,
+            true,
+            4,
+            4,
+            &[wr(2, a_cell), wr(3, b_cell)],
+        );
+        for sym in [m1::SET_VALUE, m1::SURFACE_FORMAT, m6::SET_TEXTURE] {
+            stub_copying(&mut t, sym, true, 2, 2, &[1], 4);
+        }
+        // the fade words sit next to the original's own locals: one word
+        stub_copying(&mut t, m6::SET_VALUE2, true, 2, 2, &[1], 1);
+        for (sym, this, n, pops) in [
+            (m6::RESIZE, true, 1, 1),
+            (m6::MALLOC, false, 1, 0),
+            (m6::MEMSET, false, 3, 0),
+            (m1::SET_VALUE_DESC, true, 2, 2),
+            (m1::POST_PROCESS, false, 0, 0),
+            (m1::CLUSTER_MANAGER, false, 0, 0),
+            (m1::CLUSTER_BY_NAME, true, 1, 1),
+            (m6::LIVE_POINTER, true, 0, 0),
+            (m6::READY_A8, true, 0, 0),
+            (m1::LINEAR_SAMPLER, true, 1, 1),
+            (m6::SOFT_PARTICLE, false, 5, 0),
+        ] {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags = vec![
+            m1::CURSOR_SEEK,
+            m1::TEXTURE_ITERATOR,
+            m1::FIND_PARAM,
+            m6::CREATE_MATERIAL,
+            m1::SET_VALUE,
+            m6::SET_VALUE2,
+            m6::SET_TEXTURE,
+            m6::MALLOC,
+            m6::MEMSET,
+            m1::SET_VALUE_DESC,
+            m1::CLUSTER_MANAGER,
+            m6::LIVE_POINTER,
+            m6::READY_A8,
+            m1::LINEAR_SAMPLER,
+            m6::SOFT_PARTICLE,
+        ];
+        tags.extend(cases.iter().map(|c| c.1));
+        let texts: Vec<u32> = [
+            &b"menu_tex"[..],
+            b"D3D11FrameBuffer",
+            b"FrameBuffer",
+            b"RWTT",
+            b"other",
+        ]
+        .iter()
+        .map(|s| string(&mut t, s))
+        .collect();
+        let manager = t.zeros(0x100);
+        let scene = t.zeros(0xfc80);
+        let mut seen = [0u32; 6];
+        for i in 0..500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[m6::SOFT_A, m6::SOFT_B], &[]);
+            t.g32(m1::PHYRE_SCENE, scene);
+            t.ret(m1::POST_PROCESS, manager);
+            for off in [0x9c, 0xac] {
+                let buffer = random_block(&mut t, &mut rng, 8);
+                t.w32(buffer + 4, rng.pick(&[0, 0, 1]));
+                t.w32(manager + off, buffer);
+            }
+            let rwtt = random_block(&mut t, &mut rng, 8);
+            t.w32(rwtt + 4, rng.pick(&[0, 0, 1]));
+            t.w32(scene + 0xfc70, rng.pick(&[0, rwtt, rwtt]));
+            for k in 1..=8 {
+                if rng.below(5) == 0 {
+                    t.ret(m1::FIND_PARAM + k, 0);
+                }
+            }
+            let n = rng.pick(&[0, 1, 1, 2, 3, 3, 0xffff_ffff]);
+            let room: u32 = if n <= 3 { n } else { 0 };
+            let this = random_block(&mut t, &mut rng, 0x40);
+            let owner = t.zeros(0x20);
+            t.w32(owner + 0x1c, rng.pick(&[owner + 0x1c, 0x1234]));
+            t.w32(
+                this + 0x20,
+                rng.pick(&[0, owner, owner, owner, owner, owner]),
+            );
+            let geometry = random_block(&mut t, &mut rng, 0xb8);
+            let records = random_block(&mut t, &mut rng, 0x6c * 3);
+            t.w32(geometry + 0x94, records);
+            t.w8(geometry + 0xb7, rng.pick(&[0, 0, 3, 0xff]));
+            t.w32(this + 0x24, geometry);
+            let array = random_block(&mut t, &mut rng, 8);
+            let elements = random_block(&mut t, &mut rng, 16);
+            t.w32(array + 4, elements);
+            let count = rng.pick(&[room, room, room, room + 1, room.saturating_sub(1)]);
+            let count = count | rng.pick(&[0, 0x8000_0000]);
+            t.w32(array, count);
+            t.w32(this + 0x14, array);
+            for off in [0x18, 0x1c] {
+                let table = random_block(&mut t, &mut rng, 16);
+                t.w32(this + off, rng.pick(&[0, table, table]));
+            }
+            let tables = random_block(&mut t, &mut rng, 16);
+            t.ret(m6::MALLOC, tables);
+            t.ret(m6::RESIZE, rng.pick(&[0, 0, 0, 0, 7]));
+            let names = t.zeros(16);
+            let clusters = t.zeros(16);
+            for k in 0..room {
+                let s = texts[rng.below(5) as usize];
+                t.w32(names + 4 * k, s);
+                let x = rng.next();
+                t.w32(clusters + 4 * k, rng.pick(&[0, x, x]));
+            }
+            let x = rng.next();
+            t.ret(m1::CLUSTER_BY_NAME, rng.pick(&[0, 0, x]));
+            t.ret(m1::SURFACE_FORMAT, rng.pick(&[0, 0, 0, 0, 5]));
+            t.ret(m6::SET_TEXTURE, rng.pick(&[0, 0, 0, 0, 5]));
+            t.ret(m1::SET_VALUE, rng.pick(&[0, 0, 0, 0, 3]));
+            let x = rng.next();
+            t.w32(a_cell, rng.pick(&[0, x]));
+            let x = rng.next();
+            t.w32(b_cell, rng.pick(&[0, x]));
+            let material = random_block(&mut t, &mut rng, 8);
+            t.ret(m6::CREATE_MATERIAL, material);
+            let base = t.zeros(0x40);
+            let off = 4 * rng.below(8);
+            let shader = rng.next();
+            t.w32(base + off, shader);
+            t.w32(cursor[0], off);
+            t.w32(cursor[1], rng.pick(&[0, 1, 1, 1, 1, 1]));
+            t.w32(cursor[2], base);
+            let (a, b) = (rng.next(), rng.next());
+            t.w32(iter[0], a);
+            t.w32(iter[1], b);
+            let ebp = t.ebp_for(3);
+            let frame = ebp - 0xf8;
+            let r = t.check_framed_conv(
+                &format!("{w} n {n:#x} count {count:#x} this {this:#x} geometry {geometry:#x} array {array:#x} names {names:#x} clusters {clusters:#x} material {material:#x}"),
+                0x006a_3b50,
+                Conv::Thiscall(this),
+                &[n, names, clusters],
+                frame,
+                &[(0, 0xc0), (0xc4, 4), (0xd0, 4), (0xd8, 4), (0xe8, 4)],
+                |g| u(m6::setup_material(g, frame, this, n, names, clusters)),
+            );
+            seen[match r {
+                0 => 0,
+                0xa => 1,
+                3 => 2,
+                0x13 => 3,
+                5 | 7 => 4,
+                _ => 5,
+            }] += 1;
+        }
+        eprintln!("{name}: {seen:?}");
+        assert!(seen[..5].iter().all(|&k| k > 5), "{name}: {seen:?}");
+    }
+}
+
+/// `ClassDynamicGeometry_updateRenderData`: no geometry, no instance flag,
+/// no or empty materials; mesh, instance and bounds there or not; the
+/// segment textures bound once (names missing, materials missing,
+/// clusters or parameters missing, bindings failing); the depth range,
+/// z matrix (offsets out of the buffer or below 4), screen, soft particle
+/// and fade passes on and off; random floats (NaN, infinities).
+#[test]
+fn m7_update_render_data() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_6a4a);
+        let iter = stub_filling(&mut t, m1::TEXTURE_ITERATOR, 1, 1, &[0, 0x10]);
+        let params = [
+            m1::TEXTURE_PARAM,
+            m1::SAMPLER_PARAM,
+            m7::Z_RANGE_PARAM,
+            m7::Z_MATRIX_PARAM,
+            m7::SCREEN_PARAM,
+            m6::FADE_PARAM,
+            m6::FADE_FACTOR_PARAM,
+        ];
+        let cases: Vec<(u32, u32)> = params
+            .iter()
+            .zip(1..)
+            .map(|(&p, k)| (t.rebase(p), m1::FIND_PARAM + k))
+            .collect();
+        stub_by_arg(&mut t, m1::FIND_PARAM, true, 1, 1, 0, &cases);
+        stub_copying(&mut t, m1::SURFACE_FORMAT, true, 2, 2, &[1], 4);
+        stub_copying(&mut t, m6::SET_VALUE2, true, 2, 2, &[1], 1);
+        stub_copying(&mut t, m7::SET_MIN_MAX, true, 2, 2, &[0, 1], 3);
+        stub_copying(&mut t, m7::MEMCPY, false, 3, 0, &[1], 4);
+        for (sym, this, n, pops) in [
+            (m7::FILL_DRAW_TABLE, true, 1, 1),
+            (m7::SET_WORLD_MATRIX, false, 2, 2),
+            (m1::SET_VALUE_DESC, true, 2, 2),
+            (m1::CLUSTER_MANAGER, false, 0, 0),
+            (m1::CLUSTER_BY_NAME, true, 1, 1),
+            (m1::LINEAR_SAMPLER, true, 1, 1),
+            (m6::SOFT_PARTICLE, false, 5, 0),
+        ] {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let mut tags = vec![
+            m1::TEXTURE_ITERATOR,
+            m1::FIND_PARAM,
+            m6::SET_VALUE2,
+            m7::SET_MIN_MAX,
+            m7::MEMCPY,
+            m7::FILL_DRAW_TABLE,
+            m7::SET_WORLD_MATRIX,
+            m1::SET_VALUE_DESC,
+            m1::CLUSTER_MANAGER,
+            m1::LINEAR_SAMPLER,
+            m6::SOFT_PARTICLE,
+        ];
+        tags.extend(cases.iter().map(|c| c.1));
+        let scene = t.zeros(4);
+        let mut seen = [0u32; 4];
+        for i in 0..500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[m6::SOFT_A, m6::SOFT_B], &[]);
+            t.g32(m1::PHYRE_SCENE, scene);
+            // the parameters: offsets and sizes in and out of the buffers
+            for k in 1..=7 {
+                let p = t.zeros(0xc);
+                t.w16(p + 8, rng.pick(&[0, 2, 4, 8, 0x40, 0x100]));
+                t.w16(p + 0xa, rng.pick(&[4, 8, 0x40, 0xe010, 0x1ff0]));
+                t.ret(m1::FIND_PARAM + k, rng.pick(&[0, p, p, p]));
+            }
+            // the geometry
+            let g = random_block(&mut t, &mut rng, 0xb8);
+            for k in 0..0x30 {
+                let f = rng.float();
+                t.w32(g + 0x40 + 4 * k, f);
+            }
+            let x = rng.next();
+            t.w32(g + 0x80, rng.pick(&[0, 0, 5, 0xffff_fff0, x]));
+            t.w32(g + 0x84, rng.pick(&[0, 1]));
+            let segments = rng.pick(&[0, 1, 2, 3, 0xffff_ffff]);
+            t.w32(g + 0x90, segments);
+            let records = random_block(&mut t, &mut rng, 3 * 0x6c);
+            for k in 0..3 {
+                let x = rng.next();
+                t.w32(records + 0x6c * k + 0x20, rng.pick(&[0, x, x]));
+            }
+            t.w32(g + 0x94, records);
+            t.w8(g + 0xb6, rng.pick(&[0, 0, 2]));
+            t.w8(g + 0xb7, rng.pick(&[0, 0, 4, 0xff]));
+            // the materials
+            let n = rng.pick(&[0, 1, 2, 3, 0x8000_0002]);
+            let room = n & 0x7fff_ffff;
+            let array = t.zeros(16);
+            t.w32(array, n);
+            let elements = t.zeros(16);
+            for k in 0..3 {
+                let material = random_block(&mut t, &mut rng, 8);
+                let buffer = t.zeros(0x240);
+                t.w32(buffer, rng.pick(&[0x40, 0x200, 0x110]));
+                t.w32(material + 4, buffer);
+                let at = if room == 1 {
+                    array + 4
+                } else {
+                    elements + 4 * k
+                };
+                // later passes read every material's buffer
+                let range: u32 = Mem::read(&t.b, g + 0x80);
+                let screen: u32 = Mem::read(&t.b, g + 0x84);
+                let fade: u8 = Mem::read(&t.b, g + 0xb7);
+                let zero_ok = range == 0 && screen == 0 && fade == 0;
+                if k < room.max(1) {
+                    let m = if zero_ok {
+                        rng.pick(&[0, material, material, material])
+                    } else {
+                        material
+                    };
+                    t.w32(at, m);
+                }
+            }
+            if room > 1 {
+                t.w32(array + 4, elements);
+            }
+            let this = random_block(&mut t, &mut rng, 0x34);
+            t.w32(this + 0x24, rng.pick(&[0, g, g, g, g, g, g, g]));
+            t.w32(this + 4, rng.pick(&[0, 1, 1, 1, 1]));
+            t.w32(
+                this + 0x14,
+                rng.pick(&[0, array, array, array, array, array]),
+            );
+            let x = rng.next();
+            t.w32(this + 8, rng.pick(&[0, x]));
+            let instance = random_block(&mut t, &mut rng, 0x20);
+            let x = rng.next();
+            t.w32(instance + 0x1c, rng.pick(&[0, x]));
+            t.w32(this + 0xc, rng.pick(&[0, instance]));
+            t.w8(this + 0x30, rng.pick(&[0, 0, 1]));
+            let x = rng.next();
+            t.ret(m1::CLUSTER_BY_NAME, rng.pick(&[0, x, x]));
+            t.ret(m1::SURFACE_FORMAT, rng.pick(&[0, 0, 0, 0, 5]));
+            let (a, b) = (rng.next(), rng.next());
+            t.w32(iter[0], a);
+            t.w32(iter[1], b);
+            let ebp = t.ebp_for(1);
+            let frame = ebp - 0x100;
+            let unused = rng.next();
+            let r = t.check_framed_conv(
+                &format!("{w} n {n:#x} segments {segments:#x}"),
+                0x006a_4a50,
+                Conv::Thiscall(this),
+                &[unused],
+                frame,
+                &[(0, 0x6c), (0x6c, 0x40), (0xb0, 8), (0xb8, 0x30)],
+                |g| u(m7::update_render_data(g, frame, this)),
+            );
+            let calls = t.log_entries();
+            seen[match r {
+                0 if calls > 10 => 0,
+                0 | 1 => 1,
+                5 => 2,
+                _ => 3,
+            }] += 1;
+        }
+        eprintln!("{name}: {seen:?}");
+        assert!(seen[..3].iter().all(|&k| k > 2), "{name}: {seen:?}");
+    }
 }

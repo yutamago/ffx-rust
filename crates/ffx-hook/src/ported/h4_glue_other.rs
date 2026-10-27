@@ -19,8 +19,8 @@ use ffx_glue_other::{
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
     h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, h4_k1 as k1,
     h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1, h4_l2 as l2, h4_l3 as l3, h4_l4 as l4,
-    h4_l5 as l5, h4_m1 as m1, h4_m2 as m2, h4_m3 as m3, h4_m4 as m4, menu as mn, misc as m,
-    movie as mv, r3, sound as s,
+    h4_l5 as l5, h4_m1 as m1, h4_m2 as m2, h4_m3 as m3, h4_m4 as m4, h4_m5 as m5, h4_m6 as m6,
+    h4_m7 as m7, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2676,6 +2676,27 @@ ported! {
     LoadingScreen_prepareMesh @ 0x006e_4920 => extern "thiscall" fn loading_screen_prepare_mesh(this: u32) -> u32 {
         let mut frame = StackFrame::<{ (m4::MESH_FRAME / 4) as usize }>::new();
         m4::prepare_mesh(&mut mem(), frame.at(), this).unwrap_or(0)
+    }
+    // ---- continuation round 11, batch 2 (ffx_glue_other::h4_m5, h4_m6, h4_m7)
+    /// `GraphicAbmap_update_00685840(this)` (`ecx`, plain ret;
+    /// `graphicAbmapUpdate` tail-jumps to it) -> the original's `eax` (the
+    /// state, its negation, or the last geometry destructor's result).
+    GraphicAbmap_update_00685840 @ 0x0068_5840 => extern "thiscall" fn graphic_abmap_update(this: u32) -> u32 {
+        m5::abmap_update(&mut mem(), this)
+    }
+    /// `ClassDynamicGeometry_setupMaterial(this; n, names, clusters)` -> 0,
+    /// 0xa, 3, 0x13 or a callee's error (a 0xf0-byte frame: the texture
+    /// records, the cursor, the material handles and fade values).
+    ClassDynamicGeometry_setupMaterial @ 0x006a_3b50 => extern "thiscall" fn class_dynamic_geometry_setup_material(this: u32, n: u32, names: u32, clusters: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m6::MATERIAL_FRAME / 4) as usize }>::new();
+        m6::setup_material(&mut mem(), frame.at(), this, n, names, clusters)
+    }
+    /// `ClassDynamicGeometry_updateRenderData(this; unused)` -> 0, 1 or a
+    /// binding's error (the word is never read; a 0x100-byte frame: the
+    /// segment record's copy, the z matrix, the fade values, the bounds).
+    ClassDynamicGeometry_updateRenderData @ 0x006a_4a50 => extern "thiscall" fn class_dynamic_geometry_update_render_data(this: u32, _unused: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m7::RENDER_FRAME / 4) as usize }>::new();
+        m7::update_render_data(&mut mem(), frame.at(), this)
     }
 }
 
