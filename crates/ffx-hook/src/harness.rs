@@ -1589,6 +1589,7 @@ pub unsafe extern "thiscall" fn animate(app: *mut c_void) -> u32 {
         LOCKSTEP.store(true, Ordering::Release);
     }
     REACHED.store(frame + 1, Ordering::Release);
+    note_clock_step(frame);
     trace_frame(frame);
     run_main_jobs(frame);
     // Lockstep: hold the game here until the script allows more updates,
@@ -1627,6 +1628,33 @@ pub unsafe extern "thiscall" fn animate(app: *mut c_void) -> u32 {
     };
     FRAME.store(frame + 1, Ordering::Release);
     r
+}
+
+/// The virtual clock at the last frame boundary (`f64` bits of
+/// [`SKIPPED`]), for [`note_clock_step`].
+static CLOCK_AT_BOUNDARY: AtomicU64 = AtomicU64::new(0);
+/// Updates [`note_clock_step`] has logged.
+static CLOCK_STEPS_LOGGED: AtomicU32 = AtomicU32::new(0);
+
+/// Logs an update in lockstep over which the virtual clock moved by more
+/// than one frame (`harness: the clock moved N s in update M`): only the
+/// frame limiter should move it once the main loop runs, so anything more
+/// is time some wait inside the update added (the first 40).
+fn note_clock_step(frame: u32) {
+    let now = SKIPPED.load(Ordering::Acquire);
+    let before = CLOCK_AT_BOUNDARY.swap(now, Ordering::AcqRel);
+    let step = f64::from_bits(now) - f64::from_bits(before);
+    if VIRTUAL.load(Ordering::Acquire)
+        && LOCKSTEP.load(Ordering::Acquire)
+        && frame > 0
+        && step > 1.5 * PINNED_FRAME
+        && CLOCK_STEPS_LOGGED.fetch_add(1, Ordering::AcqRel) < 40
+    {
+        log(&format!(
+            "  harness: the clock moved {step:.6} s in update {}",
+            frame - 1
+        ));
+    }
 }
 
 /// Wraps `Phyre_PRendering_PRenderer_flip` (`0x005b6af0`,
