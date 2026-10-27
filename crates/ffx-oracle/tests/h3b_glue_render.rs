@@ -16,6 +16,7 @@
 )]
 
 use std::cell::{Cell, RefCell};
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
@@ -1527,5 +1528,1033 @@ fn batch4_shadow_create_resources_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES_SHADOW_RESOURCES, n, &mut Rng(0xb3b4_0005));
+    });
+}
+
+// ---- round 2 batch 1: TextureAnimationManager_addAnimatedMaterials (ffx_prender::h3b_glue6) ----
+
+use ffx_prender::h3b_glue6::{self as h6, bridge as b6};
+
+/// A cursor script word the stub leaves alone.
+const KEEP: u32 = 0x5e5e_5e5e;
+
+impl Twins {
+    /// A NUL-terminated string; its address.
+    fn cstr(&mut self, s: &str) -> u32 {
+        let mut b = s.as_bytes().to_vec();
+        b.push(0);
+        self.alloc(&b)
+    }
+
+    /// `jmp target` appended to `c`, which will sit at `base`.
+    fn jmp_to(c: &mut Vec<u8>, base: u32, target: u32) {
+        c.push(0xe9);
+        let end = base + c.len() as u32 + 4;
+        c.extend(target.wrapping_sub(end).to_le_bytes());
+    }
+
+    /// Sends the calls of `sym` to `code` (in the cave).
+    fn divert(&mut self, sym: u32, code: u32) {
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+
+    /// Bump allocators (cdecl, `(sym, words)`, the size first) over one
+    /// arena, logged as [`Twins::stub`]; the call that brings the shared
+    /// countdown to 0 returns 0 (a countdown of 0 never does). Only
+    /// `addAnimatedMaterials`' own calls count down (its callees crash on
+    /// a failed allocation, original and port alike).
+    fn stub_bump(&mut self, syms: &[(u32, u32)], arena: u32, fail_after: u32) {
+        let cell = self.alloc(&arena.to_le_bytes());
+        let count = self.alloc(&fail_after.to_le_bytes());
+        for &(sym, n) in syms {
+            let log = self.stub(None, sym, false, n, 0, None);
+            let base = self.cave_next;
+            let mut ok = vec![0xa1];
+            ok.extend(cell.to_le_bytes()); // mov eax, [cell]
+            ok.extend([0x8b, 0x4c, 0x24, 0x04]); // mov ecx, [esp+4]
+            ok.extend([0x83, 0xc1, 0x13]); // add ecx, 0x13
+            ok.extend([0x83, 0xe1, 0xf0]); // and ecx, -16
+            ok.extend([0x01, 0x0d]);
+            ok.extend(cell.to_le_bytes()); // add [cell], ecx
+            // only calls from the original itself or from the port (whose
+            // return address is outside the image's code) may fail
+            let mut c = vec![0x8b, 0x14, 0x24]; // mov edx, [esp]
+            for (bound, jump) in [
+                (self.rebase(0x006b_05d0), 8u8), // jb outside
+                (self.rebase(0x006b_1a0d), 16),  // jb eligible
+                (self.rebase(0x0040_1000), 8),   // outside: jb eligible
+                (self.rebase(0x00b0_ba7b), 8),   // jb ok
+            ] {
+                c.extend([0x81, 0xfa]);
+                c.extend(bound.to_le_bytes()); // cmp edx, bound
+                c.extend([0x72, jump]);
+            }
+            c.extend([0xff, 0x0d]);
+            c.extend(count.to_le_bytes()); // eligible: dec dword [count]
+            c.extend([0x74, (ok.len() + 5) as u8]); // jz fail
+            c.extend(ok);
+            Self::jmp_to(&mut c, base, log);
+            c.extend([0x31, 0xc0]); // fail: xor eax, eax
+            Self::jmp_to(&mut c, base, log);
+            let code = self.code(&c);
+            self.divert(sym, code);
+        }
+    }
+
+    /// Cursor stubs at `syms` sharing one script: each call copies the next
+    /// five words of `steps` (base, block, stride, count, offset) into the
+    /// cursor (`ecx`), but for [`KEEP`] words, then logs as
+    /// [`Twins::stub`].
+    fn stub_cursor_run(&mut self, syms: &[u32], steps: &[[u32; 5]]) {
+        let words: Vec<u8> = steps
+            .iter()
+            .flatten()
+            .flat_map(|w| w.to_le_bytes())
+            .collect();
+        let table = self.alloc(&words);
+        let ptr = self.alloc(&table.to_le_bytes());
+        for &sym in syms {
+            let log = self.stub(None, sym, true, 0, 0, Some(sym));
+            let base = self.cave_next;
+            let mut c = vec![0xa1];
+            c.extend(ptr.to_le_bytes()); // mov eax, [ptr]
+            for i in 0..5u8 {
+                c.extend([0x8b, 0x50, 4 * i]); // mov edx, [eax+4i]
+                c.extend([0x81, 0xfa]);
+                c.extend(KEEP.to_le_bytes()); // cmp edx, KEEP
+                c.extend([0x74, 0x03]); // je +3
+                c.extend([0x89, 0x51, 4 * i]); // mov [ecx+4i], edx
+            }
+            c.extend([0x83, 0xc0, 0x14]); // add eax, 20
+            c.push(0xa3);
+            c.extend(ptr.to_le_bytes()); // mov [ptr], eax
+            Self::jmp_to(&mut c, base, log);
+            let code = self.code(&c);
+            self.divert(sym, code);
+        }
+    }
+}
+
+/// Cursor runs over the slots `area + 0x100 k` (the element at `+4`): one
+/// to three runs of 0..4, each with a block word that may be one of its
+/// slots (`[block]` the next block), then the end (nothing written).
+/// With `null`, now and then a lone element at address 0 (skipped by the
+/// materials' walk).
+fn aam_cursor_steps(t: &mut Twins, area: u32, null: bool, rng: &mut Rng) -> Vec<[u32; 5]> {
+    let mut steps = vec![];
+    for _ in 0..=rng.below(3) {
+        let base = area + 0x100 * rng.below(4);
+        let block = if rng.chance(2) {
+            base + 0x100 * (1 + rng.below(3))
+        } else {
+            rng.next() | 3
+        };
+        if block % 4 == 0 {
+            let next = if rng.chance(2) { block } else { rng.next() | 3 };
+            t.w32(block, next);
+        }
+        if null && rng.chance(4) {
+            steps.push([base, block, 0x100, 1, 0u32.wrapping_sub(base)]);
+        } else {
+            steps.push([base, block, 0x100, rng.below(5), 4]);
+        }
+    }
+    steps.push([KEEP; 5]);
+    steps
+}
+
+/// A tagged pointer now and then (bit 0: not owned).
+fn tagged(rng: &mut Rng, p: u32) -> u32 {
+    if p != 0 && rng.chance(3) { p + 1 } else { p }
+}
+
+/// A word array `{count, data}` at `at`: empty, or 1..3 words (top bit:
+/// not owned).
+fn aam_words(t: &mut Twins, at: u32, rng: &mut Rng) {
+    let n = rng.below(4);
+    let data = if n == 0 && rng.chance(2) {
+        0
+    } else {
+        let w: Vec<u8> = (0..4 * n.max(1)).map(|_| rng.next() as u8).collect();
+        t.alloc(&w)
+    };
+    t.w32(at, n | if rng.chance(4) { 0x8000_0000 } else { 0 });
+    t.w32(at + 4, data);
+}
+
+/// The scene's materials at the cursor slots of `area`: parameter arrays
+/// of 0..3 materials (names plain, empty, `Mat_CTA` ones with the ids),
+/// their shaders' key/value pairs and parameter buffers.
+fn aam_materials(t: &mut Twins, area: u32, ids: &[u32], rng: &mut Rng) {
+    let empty = t.rebase(h6::EMPTY);
+    let uv = t.rebase(h6::CHR_UV);
+    for slot in 0..16 {
+        let object = area + 0x100 * slot + 4;
+        let n = pick(rng, &[0, 1, 2, 3, 0x8000_0002]);
+        let params = t.zeros(0x20);
+        t.w32(object + 0x10, params);
+        t.w32(params, n);
+        let mut list = vec![];
+        for _ in 0..(n & 0x7fff_ffff).max(1) {
+            let mat = t.zeros(0x40);
+            let shader = t.zeros(0x10);
+            let buffer = t.zeros(0x100);
+            t.w32(mat, shader);
+            t.w32(mat + 4, buffer);
+            t.w32(buffer, rng.below(0x50));
+            let id = ids[rng.below(6) as usize];
+            let name = match rng.below(7) {
+                0 => empty,
+                1 => t.cstr(""),
+                2 => t.cstr("plain"),
+                3 => t.cstr(&format!("Mat_CTA_c{id}")),
+                4 => t.cstr(&format!("Mat_CTA_c{id}G")),
+                5 => t.cstr(&format!("Mat_CTA_c{id}x")),
+                _ => t.cstr(&format!("xMat_CTAc{id}")),
+            };
+            let name = tagged(rng, name);
+            t.w32(mat + 0x10, name);
+            let pairs = rng.below(4);
+            let table = t.zeros(8 * pairs as usize + 8);
+            t.w32(
+                shader + 4,
+                pairs | if rng.chance(5) { 0x8000_0000 } else { 0 },
+            );
+            t.w32(shader + 8, table);
+            for j in 0..pairs {
+                let key = match rng.below(4) {
+                    0 => uv,
+                    1 => t.cstr("CHR_TEXTURE_ANIMATION_UV"),
+                    2 => t.cstr("OTHER"),
+                    _ => 0,
+                };
+                let value = match rng.below(4) {
+                    0 => empty,
+                    1 => t.cstr(""),
+                    2 => t.cstr("1"),
+                    _ => 0,
+                };
+                let (key, value) = (tagged(rng, key), tagged(rng, value));
+                t.w32(table + 8 * j, key);
+                t.w32(table + 8 * j + 4, value);
+            }
+            list.push(mat);
+        }
+        if n & 0x7fff_ffff == 1 {
+            t.w32(params + 4, list[0]);
+        } else {
+            let words: Vec<u8> = list.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let data = t.alloc(&words);
+            t.w32(params + 4, data);
+        }
+    }
+}
+
+/// The manager: junk, word lists `+0x5c`/`+0x74`, old Info objects
+/// `+0x7c` (not owned), materials `+0x64`/`+0x68` empty or not.
+fn aam_manager(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let manager = t.zeros(0x100);
+    let junk = rng.bytes(0x100);
+    t.write(manager, &junk);
+    for at in [0x5c, 0x74] {
+        aam_words(t, manager + at, rng);
+    }
+    let info_vtable = t.rebase(h6::INFO_VTABLE);
+    if rng.chance(2) {
+        t.w32(manager + 0x7c, 0);
+        t.w32(manager + 0x80, 0);
+    } else {
+        let k = 1 + rng.below(2);
+        let infos = t.zeros(0x20 * k as usize);
+        for i in 0..k {
+            t.w32(infos + 0x20 * i, info_vtable);
+        }
+        t.w32(manager + 0x7c, k | 0x8000_0000);
+        t.w32(manager + 0x80, infos);
+    }
+    let k = rng.below(4);
+    let mats = t.zeros(0x20 * k as usize + 0x20);
+    for i in 0..k {
+        let e = mats + 0x20 * i;
+        match rng.below(4) {
+            0 => {}
+            1 => {
+                let w = t.alloc(&rng.next().to_le_bytes());
+                t.w32(e, 1);
+                t.w32(e + 4, w);
+            }
+            2 => {
+                let w = t.alloc(&rng.next().to_le_bytes());
+                t.w32(e + 0x10, 1);
+                t.w32(e + 0x14, w);
+            }
+            _ => {
+                let s = t.cstr("old");
+                let s = tagged(rng, s);
+                t.w32(e + 0x1c, s);
+            }
+        }
+    }
+    t.w32(
+        manager + 0x64,
+        k | if rng.chance(4) { 0x8000_0000 } else { 0 },
+    );
+    t.w32(
+        manager + 0x68,
+        if k == 0 && rng.chance(2) { 0 } else { mats },
+    );
+    manager
+}
+
+/// The clusters (index -1 readable; each list empty or not, the last's
+/// object chain holding the Char class or not), the texture seeks and the
+/// last cluster's animation objects (word lists only with `words`: the
+/// Info copy constructor reads a list whose copy failed); returns
+/// (clusters, first, last).
+fn aam_clusters(t: &mut Twins, ids: &[u32], words: bool, rng: &mut Rng) -> (u32, u32, u32) {
+    let clusters = t.zeros(0x10);
+    let table = t.zeros(0x20);
+    t.w32(clusters + 8, table + 4);
+    let last = rng.below(5);
+    let first = pick(rng, &[0, 1, 2, 3, 0xffff_ffff, last, last]);
+    for i in 0..6 {
+        let cluster = t.zeros(0x40);
+        let anim = t.zeros(0x80);
+        t.w32(table + 4 * i, cluster);
+        let class = match rng.below(4) {
+            0 => 0,
+            1 => t.rebase(h6::CHAR_CLASS),
+            _ => {
+                let c = t.zeros(0x80);
+                let next = if rng.chance(2) {
+                    t.rebase(h6::CHAR_CLASS)
+                } else {
+                    0
+                };
+                t.w32(c + 0x40, next);
+                c
+            }
+        };
+        t.w32(anim + 0x2c, class);
+        let objects = cluster + 0x1c;
+        let at_last = i == last + 1;
+        t.w32(
+            objects,
+            if !at_last && rng.chance(3) {
+                objects
+            } else {
+                anim
+            },
+        );
+    }
+    let seeks: Vec<[u32; 5]> = (0..6)
+        .map(|_| [rng.next(), rng.next(), rng.next(), rng.next(), rng.next()])
+        .collect();
+    t.stub_cursor_run(&[h6::ITER_SEEK], &seeks);
+    let area = t.zeros(0x1000);
+    for slot in 0..16 {
+        let rec = area + 0x100 * slot + 4;
+        let id = ids[rng.below(6) as usize];
+        let text = if rng.chance(4) {
+            0
+        } else {
+            t.cstr(&format!("t{id}"))
+        };
+        let path = t.cstr(&format!("c{id}"));
+        let n = if words { rng.below(3) } else { 0 };
+        let bytes: Vec<u8> = (0..4 * n).map(|_| rng.next() as u8).collect();
+        let words = if n == 0 { 0 } else { t.alloc(&bytes) };
+        let top = if rng.chance(3) { 0x8000_0000 } else { 0 };
+        let (text, path) = (tagged(rng, text), tagged(rng, path));
+        t.w32(rec, text);
+        t.w32(rec + 0xc, n | top);
+        t.w32(rec + 0x10, words);
+        t.w32(rec + 0x14, path);
+        for off in [8, 0x18, 0x1c, 0x20, 0x24] {
+            let f = rng.float().to_bits();
+            t.w32(rec + off, f);
+        }
+    }
+    let steps = aam_cursor_steps(t, area, false, rng);
+    t.stub_cursor_run(&[h6::ANIM_BEGIN, h6::ANIM_NEXT], &steps);
+    (clusters, first, last)
+}
+
+/// The manager, the scene's materials and the clusters (scripted
+/// cursors), the shader parameters, the shadow table text and the name;
+/// allocations fail now and then.
+fn prep_aam(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let heap = t.zeros(0x8000);
+    let fail = if rng.chance(3) { 1 + rng.below(80) } else { 0 };
+    t.stub_bump(&[(h6::MALLOC, 2), (0x0042_fb40, 1)], heap, fail);
+    // the original writes through what `new` returns unchecked
+    let pool = t.zeros(0x2000);
+    t.stub_bump(&[(h6::NEW, 1), (h6::NEW_ARRAY, 1)], pool, 0);
+    *this = aam_manager(t, rng);
+    let ids: Vec<u32> = (0..6).map(|_| 1 + rng.below(6)).collect();
+    let scene = t.zeros(0x40);
+    let node = t.zeros(0x40);
+    t.w32(
+        scene + 0x1c,
+        if rng.chance(3) { scene + 0x1c } else { node },
+    );
+    let area = t.zeros(0x1000);
+    aam_materials(t, area, &ids, rng);
+    let steps = aam_cursor_steps(t, area, true, rng);
+    t.stub_cursor_run(&[h6::CURSOR_BEGIN, h6::CURSOR_NEXT], &steps);
+    let (clusters, first, last) = aam_clusters(t, &ids, fail == 0, rng);
+
+    // the shader parameters: none, or offset/size records
+    let records = t.zeros(0x400);
+    for k in 0..0x40 {
+        let off = pick(rng, &[0, 2, 4, 8, 0x10, 0x30]) as u16;
+        let size = (rng.below(9) as u16) | (rng.next() as u16 & 0xe000);
+        t.write(records + 0x10 * k + 8, &off.to_le_bytes());
+        t.write(records + 0x10 * k + 0xa, &size.to_le_bytes());
+    }
+    let values: Vec<u32> = (0..1200)
+        .map(|_| {
+            if rng.chance(2) {
+                0
+            } else {
+                records + 0x10 * rng.below(0x40)
+            }
+        })
+        .collect();
+    t.stub_seq(h6::FIND_PARAM, true, 1, 1, &values);
+    let shadows = t.zeros(0x10);
+    t.stub_ret(h6::SHADOW_INSTANCE, false, 0, 0, shadows);
+    let map = t.zeros(8);
+    let (tex, flag) = (rng.next(), rng.below(2) as u8);
+    t.w32(map, tex);
+    t.write(map + 4, &[flag]);
+    t.stub_ret(h6::DUMMY_SHADOW_MAP, true, 0, 0, map);
+
+    // the shadow table's text: rows `key:v!,v?,\r\n`
+    let mut text = String::new();
+    for _ in 0..16 {
+        let key = if rng.chance(4) {
+            9
+        } else {
+            ids[rng.below(6) as usize]
+        };
+        let _ = write!(text, "{key}:");
+        for _ in 0..rng.below(4) {
+            let v = pick(rng, &[0, 1, 2, 3, 0xffff_ffff, 7]) as i32;
+            let mark = if rng.chance(2) { '!' } else { '?' };
+            let _ = write!(text, "{v}{mark},");
+        }
+        text += "\r\n";
+    }
+    let table_text = if rng.chance(5) { 0 } else { t.cstr(&text) };
+    let id = ids[rng.below(6) as usize];
+    let name = if rng.chance(4) {
+        0
+    } else {
+        t.cstr(&format!("c{id}"))
+    };
+    let unused = rng.next();
+    args.copy_from_slice(&[scene, clusters, first, last, name, unused, table_text]);
+}
+
+const AAM_STUBS: &[(u32, K)] = &[
+    (h6::FREE, K::Cdecl(1)),
+    (h6::DELETE_ARRAY, K::Cdecl(1)),
+    (h6::WRITE_PARAM, K::This(2)),
+];
+
+#[rustfmt::skip]
+const CASES_AAM: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_aam), ..method("add_animated_materials", 0x006b_05d0, This::Object, 7, AAM_STUBS, |m, this, a| {
+        slots_at(m, a);
+        b6::add_animated_materials(m, frame_ebp(), this, a[0], a[1], a[2], a[3], a[4], a[6]);
+        Out::None
+    }) }), h6::FRAME, 0x1c),
+];
+
+#[test]
+fn r2_batch1_add_animated_materials_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES_AAM, n, &mut Rng(0xb3b2_0001));
+    });
+}
+
+// ---- round 2 batch 2: ShadowManager_renderCharacterTiles_006caee0 (ffx_prender::h3b_glue7) ----
+
+use ffx_prender::h3b_glue7::{self as h7, bridge as b7};
+
+/// A caster list `{count, data}`: 1..3 instances (each with a materials
+/// word and, for the first, an object with a scale at `+0x14`), now and
+/// then none or a count with the top bit.
+fn tiles_list(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let n = pick(rng, &[0, 1, 2, 3, 0x8000_0002, 0x8000_0000]);
+    let list = t.zeros(8);
+    let data = t.zeros(0x10);
+    t.w32(list, n);
+    t.w32(list + 4, data);
+    for m in 0..(n & 3).max(1) {
+        let instance = t.zeros(0x20);
+        let object = t.zeros(0x20);
+        let (w, f) = (rng.next(), rng.float().to_bits());
+        t.w32(instance + 0x10, w);
+        t.w32(instance + 0x1c, object);
+        t.w32(object + 0x14, f);
+        t.w32(data + 4 * m, instance);
+    }
+    list
+}
+
+/// The shadow manager (cells in use or not, their matrices, scales and
+/// depths, the camera with a recording virtual slot 1, the blur mesh's
+/// material and parameter buffer), the renderer, the static rectangle
+/// list and its guard, the atlas size; renderer calls fail now and then.
+#[allow(clippy::too_many_lines)] // the whole set-up
+fn prep_tiles(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let sm = t.zeros(0x4100);
+    *this = sm;
+    let junk = rng.bytes(0x4100);
+    t.write(sm, &junk);
+    t.w32(sm + 0x4060, u32::from(!rng.chance(8)));
+    // cells in use: none, one, or about one in 1..6
+    let density = rng.below(8);
+    let lone = rng.below(64);
+    for k in 0..64 {
+        let listed = match density {
+            0 => false,
+            1 => k == lone,
+            d => rng.below(d - 1) == 0,
+        };
+        let list = if listed { tiles_list(t, rng) } else { 0 };
+        t.w32(sm + 0xde8 + 4 * k, list);
+        let alt = if rng.chance(3) { tiles_list(t, rng) } else { 0 };
+        t.w32(sm + 0xee8 + 4 * k, alt);
+        for at in [0xfe8, 0x10e8] {
+            let v = if rng.chance(6) { rng.word() } else { 1 };
+            t.w32(sm + at + 4 * k, v);
+        }
+        let b = u8::from(rng.chance(4));
+        t.write(sm + 0x2b28 + k, &[b]);
+        for at in [0x28e8, 0x6b8] {
+            let f = rng.float().to_bits();
+            t.w32(sm + at + 4 * k, f);
+        }
+        let depth = if rng.chance(4) {
+            0
+        } else {
+            rng.float().to_bits()
+        };
+        t.w32(sm + 0x7b8 + 4 * k, depth);
+        let cells = {
+            let any = rng.next();
+            pick(rng, &[1, 1, 2, 3, 0, 0xffff_ffff, any])
+        };
+        t.w32(sm + 0x29e8 + 4 * k, cells);
+    }
+    for w in 0..0x400 {
+        let f = rng.float().to_bits();
+        t.w32(sm + 0x17e8 + 4 * w, f);
+    }
+    // the camera: virtual slot 1 records
+    let camera = t.zeros(0x200);
+    let vtable = t.zeros(8);
+    let changed = t.stub(None, 0xca3e_0001, true, 0, 0, Some(rng.next()));
+    t.w32(vtable + 4, changed);
+    t.w32(camera, vtable);
+    t.w32(sm + 0x84, camera);
+    let out = t.zeros(0x40);
+    t.w32(sm + 0x88, out);
+    // the blur mesh: its first material's shader and parameter buffer
+    let mesh = t.zeros(0x20);
+    let materials = t.zeros(0x10);
+    let material = t.zeros(0x10);
+    let buffer = t.zeros(0x100);
+    t.w32(sm + 0x8b8, mesh);
+    t.w32(mesh + 0x10, materials);
+    let n = pick(rng, &[1, 2, 0x8000_0001]);
+    t.w32(materials, n);
+    t.w32(
+        materials + 4,
+        if n & 3 == 1 { material } else { materials + 8 },
+    );
+    t.w32(materials + 8, material);
+    t.w32(material, rng.next());
+    t.w32(material + 4, buffer);
+    t.w32(buffer, {
+        let any = rng.below(0x100);
+        pick(rng, &[0x40, 0x80, 0x10, any])
+    });
+    for at in [0x58, 0x70] {
+        let surface = t.zeros(8);
+        let (w, flag) = (rng.next(), u8::from(rng.chance(3)));
+        t.w32(surface, w);
+        t.write(surface + 4, &[flag]);
+        t.w32(sm + at, surface);
+    }
+    // the renderer
+    let renderer = t.zeros(0x200);
+    let pass = rng.next();
+    t.w32(renderer + 0x13c, pass);
+    // the static rectangles and the atlas size
+    let rects = t.rebase(h7::RECTS);
+    let n = pick(rng, &[0, 1, 2, 3, 0x8000_0000, 0x8000_0002]);
+    let data = t.zeros(0x40);
+    let words: Vec<u8> = (0..0x40).map(|_| rng.below(0x400) as u8).collect();
+    t.write(data, &words);
+    t.w32(rects, n);
+    t.w32(rects + 4, data);
+    let guard = t.rebase(h7::RECTS_GUARD);
+    let g = rng.next();
+    t.w32(guard, g);
+    let size = {
+        let any = rng.next();
+        pick(rng, &[1024, 1024, 512, 1000, 0xffff_fc00, 7, 0, any])
+    };
+    t.global(h7::SHADOW_SIZE, size);
+    // the parameters: none, or offset/size records
+    let records = t.zeros(0x100);
+    for k in 0..0x10 {
+        let off = pick(rng, &[0, 2, 4, 8, 0x10, 0x30, 0xf0]) as u16;
+        let size = pick(rng, &[0, 4, 8, 0x10, 0x10, 0x2010]) as u16;
+        t.write(records + 0x10 * k + 8, &off.to_le_bytes());
+        t.write(records + 0x10 * k + 0xa, &size.to_le_bytes());
+    }
+    let values: Vec<u32> = (0..4)
+        .map(|_| {
+            if rng.chance(4) {
+                0
+            } else {
+                records + 0x10 * rng.below(0x10)
+            }
+        })
+        .collect();
+    t.stub_seq(h7::FIND_PARAM, true, 1, 1, &values);
+    for (sym, n) in [
+        (h7::SET_COLOR_TARGET, 2),
+        (h7::SET_DEPTH_TARGET, 1),
+        (h7::BEGIN_SCENE, 1),
+        (h7::END_SCENE, 1),
+        (h7::SET_VIEWPORT, 4),
+        (h7::SET_SCISSOR, 4),
+        (h7::WRITE_PARAM, 2),
+        (h7::SET_VALUE, 2),
+    ] {
+        // the parameter writes and scene ends (two or three calls) fail
+        // more often
+        let v = errors_n(
+            rng,
+            if sym == h7::WRITE_PARAM || sym == h7::END_SCENE {
+                6
+            } else {
+                300
+            },
+        );
+        t.stub_seq(sym, true, n, n, &v);
+    }
+    let post = t.zeros(0x100);
+    let target = t.zeros(8);
+    let texture = t.zeros(0x40);
+    // the target must be there: the original reads through it unchecked
+    let (w, hgt, flag) = (rng.next(), rng.next(), 0u8);
+    t.w32(texture + 0x1c, w);
+    t.w32(texture + 0x20, hgt);
+    t.w32(target, texture);
+    t.write(target + 4, &[flag]);
+    t.w32(post + 0x8c, target);
+    t.stub_ret(h7::POST_PROCESS, false, 0, 0, post);
+    let solution = {
+        let any = rng.next();
+        pick(rng, &[0, 1, 2, 3, 4, any])
+    };
+    let keep = {
+        let any = rng.next();
+        pick(rng, &[0, 1, 0x100, any])
+    };
+    args.copy_from_slice(&[renderer, solution, keep]);
+}
+
+const TILES_STUBS: &[(u32, K)] = &[
+    (h7::SET_CLEAR_COLOR, K::This(4)),
+    (h7::SET_CLEAR_DEPTH, K::This(1)),
+    (h7::CLEAR_SCENE, K::This(1)),
+    (h7::SET_CAMERA, K::This(1)),
+    (h7::RENDER_INSTANCE, K::This(4)),
+    (h7::RENDER_FOR_PASS, K::This(1)),
+    (h7::UPDATE_VIEW, K::This(0)),
+    (h7::PUSH_RECT, K::This(1)),
+    (h7::FREE, K::Cdecl(1)),
+    (h7::ATEXIT, K::Cdecl(1)),
+];
+
+#[rustfmt::skip]
+const CASES_TILES: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_tiles), ..method("render_character_tiles", 0x006c_aee0, This::Object, 3, TILES_STUBS, |m, this, a| {
+        slots_at(m, a);
+        u(b7::render_character_tiles(m, frame_ebp(), this, a[0], a[1], a[2] as u8 != 0))
+    }) }), h7::FRAME, 0xc),
+];
+
+#[test]
+fn r2_batch2_render_character_tiles_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES_TILES, n, &mut Rng(0xb3b2_0002));
+    });
+}
+
+// ---- round 2 batch 3: ShadowManager_renderCascades_006c9e50 (ffx_prender::h3b_glue8) ----
+
+use ffx_prender::h3b_glue8::{self as h8, bridge as b8};
+
+impl Twins {
+    /// The edge test: each call's twenty stack words appended to a record
+    /// area (compared with the rest of memory), `ecx` logged, the results
+    /// `values` in turn, twenty words popped.
+    fn stub_crosses(&mut self, values: &[u32]) {
+        let area = self.zeros(20 * 4 * 16);
+        let cursor = self.alloc(&area.to_le_bytes());
+        let words: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let table = self.alloc(&words);
+        let ptr = self.alloc(&table.to_le_bytes());
+        let log = self.stub(None, h8::CROSSES_EDGE, true, 0, 20, None);
+        let base = self.cave_next;
+        let mut c = vec![0x56, 0x57, 0x51]; // push esi; push edi; push ecx
+        c.extend([0x8d, 0x74, 0x24, 0x10]); // lea esi, [esp+0x10]
+        c.extend([0x8b, 0x3d]);
+        c.extend(cursor.to_le_bytes()); // mov edi, [cursor]
+        c.extend([0xb9, 20, 0, 0, 0]); // mov ecx, 20
+        c.extend([0xf3, 0xa5]); // rep movsd
+        c.extend([0x89, 0x3d]);
+        c.extend(cursor.to_le_bytes()); // mov [cursor], edi
+        c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+        c.extend([0x8b, 0x15]);
+        c.extend(ptr.to_le_bytes()); // mov edx, [ptr]
+        c.extend([0x8b, 0x02]); // mov eax, [edx]
+        c.extend([0x83, 0xc2, 0x04]); // add edx, 4
+        c.extend([0x89, 0x15]);
+        c.extend(ptr.to_le_bytes()); // mov [ptr], edx
+        Self::jmp_to(&mut c, base, log);
+        let code = self.code(&c);
+        self.divert(h8::CROSSES_EDGE, code);
+    }
+
+    /// The grad-mesh set-up (`this; i, meshes, extras, scale, unused,
+    /// depth`, six words popped): the first four of `meshes` set to
+    /// `values`, then logged.
+    fn stub_grad(&mut self, sym: u32, values: [u32; 4]) {
+        let log = self.stub(None, sym, true, 6, 6, Some(sym));
+        let base = self.cave_next;
+        let mut c = vec![0x8b, 0x54, 0x24, 0x08]; // mov edx, [esp+8]
+        for (k, v) in (0u8..).zip(values) {
+            c.extend([0xc7, 0x42, 4 * k]); // mov dword [edx+4k], v
+            c.extend(v.to_le_bytes());
+        }
+        Self::jmp_to(&mut c, base, log);
+        let code = self.code(&c);
+        self.divert(sym, code);
+    }
+}
+
+/// The shadow manager for the cascades (the clear flag now and then, the
+/// edge flag, matrices, maps and blur targets, cascade bytes, last
+/// frame's and this frame's rectangles, the blur mesh), the renderer, the
+/// atlas size, the edge test's answers and the grad meshes; renderer
+/// calls fail now and then.
+#[allow(clippy::too_many_lines)] // the whole set-up
+fn prep_cascades(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let sm = t.zeros(0x4100);
+    *this = sm;
+    let junk = rng.bytes(0x4100);
+    t.write(sm, &junk);
+    t.w32(sm + 0x4060, u32::from(!rng.chance(10)));
+    t.write(sm + 0x400c, &[u8::from(rng.chance(8))]);
+    t.write(sm + 0x404c, &[u8::from(rng.chance(3))]);
+    for w in 0..0x148 {
+        let f = rng.float().to_bits();
+        t.w32(sm + 0x90 + 4 * w, f);
+    }
+    let density = rng.below(6);
+    for k in 0..64 {
+        let list = if density != 0 && rng.below(density) == 0 {
+            tiles_list(t, rng)
+        } else {
+            0
+        };
+        t.w32(sm + 0xde8 + 4 * k, list);
+        let alt = if rng.chance(3) { tiles_list(t, rng) } else { 0 };
+        t.w32(sm + 0xee8 + 4 * k, alt);
+        for at in [0xfe8, 0x10e8] {
+            let v = if rng.chance(6) { rng.word() } else { 1 };
+            t.w32(sm + at + 4 * k, v);
+        }
+        for c in 0..2 {
+            let b = u8::from(!rng.chance(3));
+            t.write(sm + 0x2b28 + 0x40 * c + k, &[b]);
+        }
+    }
+    for at in [0x5c, 0x60, 0x64, 0x6c, 0x70] {
+        let surface = t.zeros(8);
+        let (w, flag) = (rng.next(), u8::from(rng.chance(3)));
+        t.w32(surface, w);
+        t.write(surface + 4, &[flag]);
+        t.w32(sm + at, surface);
+    }
+    // the rectangles: last frame's (+0x37b0) and this frame's (+0x2fa8)
+    for c in 0..2 {
+        for (rects, count) in [(0x37b0, 0x3fb0), (0x2fa8, 0x37a8)] {
+            let n = pick(rng, &[0, 1, 2, 3, 0xffff_ffff]);
+            t.w32(sm + count + 4 * c, n);
+            for w in 0..12 {
+                let v = rng.below(0x400);
+                t.w32(sm + rects + 0x400 * c + 4 * w, v);
+            }
+        }
+    }
+    // the blur mesh: its first material's shader and parameter buffer
+    let mesh = t.zeros(0x20);
+    let materials = t.zeros(0x10);
+    let material = t.zeros(0x10);
+    let buffer = t.zeros(0x100);
+    t.w32(sm + 0x8b8, mesh);
+    t.w32(mesh + 0x10, materials);
+    let n = pick(rng, &[1, 2, 0x8000_0001]);
+    t.w32(materials, n);
+    t.w32(
+        materials + 4,
+        if n & 3 == 1 { material } else { materials + 8 },
+    );
+    t.w32(materials + 8, material);
+    let shader = rng.next();
+    t.w32(material, shader);
+    t.w32(material + 4, buffer);
+    let any = rng.below(0x100);
+    let room = pick(rng, &[0x40, 0x80, 0x10, any]);
+    t.w32(buffer, room);
+    // the grad meshes the set-up stores: its own, the default or another
+    let grads: Vec<u32> = (0..4)
+        .map(|_| match rng.below(3) {
+            0 => mesh,
+            _ => {
+                let g = t.zeros(0x20);
+                let w = rng.next();
+                t.w32(g + 0x10, w);
+                g
+            }
+        })
+        .collect();
+    let grads = [grads[0], grads[1], grads[2], grads[3]];
+    t.stub_grad(h8::GRAD_MESHES_A, grads);
+    t.stub_grad(h8::GRAD_MESHES_B, grads);
+    let answers: Vec<u32> = (0..4)
+        .map(|_| {
+            if rng.chance(4) {
+                rng.next() | 1
+            } else {
+                rng.next() & 0xffff_ff00
+            }
+        })
+        .collect();
+    t.stub_crosses(&answers);
+    // the renderer, the globals
+    let renderer = t.zeros(0x200);
+    let pass = rng.next();
+    t.w32(renderer + 0x13c, pass);
+    let size = pick(
+        rng,
+        &[1024, 1024, 512, 1000, 0xffff_fc00, 7, 0, 0x7fff_ffff],
+    );
+    t.global(h8::SHADOW_SIZE, size);
+    for g in [h8::RATIO_A, h8::RATIO_C] {
+        let f = rng.float().to_bits();
+        t.global(g, f);
+    }
+    let set = rng.word();
+    t.global(h8::GRAD_MESH_SET, set);
+    // the parameters: none, or offset/size records (in two cases of
+    // three all fitting the buffer, which has room for 0x40 bytes)
+    let records = t.zeros(0x100);
+    let fit = !rng.chance(3);
+    if fit {
+        t.w32(buffer, 0x40);
+    }
+    for k in 0..0x10 {
+        let off = if fit {
+            pick(rng, &[4, 8, 0x10, 0x20])
+        } else {
+            pick(rng, &[0, 2, 4, 8, 0x10, 0x30, 0xf0])
+        } as u16;
+        let size = if fit {
+            pick(rng, &[0, 4, 8, 0x10, 0x2010])
+        } else {
+            pick(rng, &[0, 4, 8, 0x10, 0x10, 0x2010])
+        } as u16;
+        t.write(records + 0x10 * k + 8, &off.to_le_bytes());
+        t.write(records + 0x10 * k + 0xa, &size.to_le_bytes());
+    }
+    let values: Vec<u32> = (0..8)
+        .map(|_| {
+            if rng.chance(4) {
+                0
+            } else {
+                records + 0x10 * rng.below(0x10)
+            }
+        })
+        .collect();
+    t.stub_seq(h8::FIND_PARAM, true, 1, 1, &values);
+    for (sym, n) in [
+        (h8::SET_COLOR_TARGET, 2),
+        (h8::SET_DEPTH_TARGET, 1),
+        (h8::BEGIN_SCENE, 1),
+        (h8::END_SCENE, 1),
+        (h8::SET_VIEWPORT, 4),
+        (h8::SET_SCISSOR, 4),
+        (h8::WRITE_PARAM, 2),
+    ] {
+        // the parameter writes and scene ends (a few calls) fail more often
+        let v = errors_n(
+            rng,
+            if sym == h8::WRITE_PARAM || sym == h8::END_SCENE {
+                10
+            } else {
+                300
+            },
+        );
+        t.stub_seq(sym, true, n, n, &v);
+    }
+    let post = t.zeros(0x100);
+    let target = t.zeros(8);
+    let texture = t.zeros(0x40);
+    let (w, hgt) = (rng.next(), rng.next());
+    t.w32(texture + 0x1c, w);
+    t.w32(texture + 0x20, hgt);
+    // the target must be there: the original reads through it unchecked
+    t.w32(target, texture);
+    t.w32(post + 0x8c, target);
+    t.stub_ret(h8::POST_PROCESS, false, 0, 0, post);
+    let any = rng.next();
+    let solution = pick(rng, &[2, 3, 4, 4, any]);
+    let any = rng.next();
+    let keep = pick(rng, &[0, 0, 1, 0x100, any]);
+    args.copy_from_slice(&[renderer, solution, keep]);
+}
+
+const CASCADES_STUBS: &[(u32, K)] = &[
+    (h8::SET_CLEAR_COLOR, K::This(4)),
+    (h8::SET_CLEAR_DEPTH, K::This(1)),
+    (h8::CLEAR_SCENE, K::This(1)),
+    (h8::SET_CAMERA, K::This(1)),
+    (h8::RENDER_INSTANCE, K::This(4)),
+    (h8::SYNC_CASCADES, K::This(0)),
+    (h8::BUILD_RECTS, K::This(3)),
+    (h8::FREE, K::Cdecl(1)),
+];
+
+/// The port, its edge test calling the original (the stub) in the oracle.
+fn port_cascades(m: &mut G, this: u32, a: &[u32]) -> Out {
+    slots_at(m, a);
+    let mut crosses = |g: &mut G, this: u32, w: &[u32; 20]| -> u32 {
+        g.0.call(g.1, Conv::Cdecl, &[]).unwrap();
+        let at = g.0.rebase(h8::CROSSES_EDGE);
+        g.0.call(at, Conv::Thiscall(this), w).unwrap().eax
+    };
+    u(b8::render_cascades(
+        m,
+        frame_ebp(),
+        this,
+        a[0],
+        a[1],
+        a[2] as u8,
+        &mut crosses,
+    ))
+}
+
+#[rustfmt::skip]
+const CASES_CASCADES: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_cascades), ..method("render_cascades", 0x006c_9e50, This::Object, 3, CASCADES_STUBS, port_cascades) }), h8::FRAME, 0xc),
+];
+
+#[test]
+fn r2_batch3_render_cascades_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES_CASCADES, n, &mut Rng(0xb3b2_0003));
+    });
+}
+
+// ---- round 2 batch 4: ShadowManager_fitBattleCascade_006d00d0 (ffx_prender::h3b_glue9) ----
+
+use ffx_prender::h3b_glue9::{self as h9, bridge as b9};
+
+/// A float for the battle light: a plain one (small, with a fraction) in
+/// three cases of four, else anything [`Rng::float`] gives.
+fn light_float(rng: &mut Rng) -> u32 {
+    if rng.chance(4) {
+        rng.float().to_bits()
+    } else {
+        ((rng.below(4000) as f32 - 2000.0) / 16.0).to_bits()
+    }
+}
+
+/// The manager (angles, the world matrix object), the light (its 3x4,
+/// `+0x30`/`+0x44` scales, 0 now and then, its range), the far distance and
+/// the focus stub's two floats.
+fn prep_battle(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let sm = t.zeros(0x4100);
+    *this = sm;
+    let junk = rng.bytes(0x400);
+    t.write(sm, &junk);
+    for at in [0x4018, 0x401c] {
+        let v = light_float(rng);
+        t.w32(sm + at, v);
+    }
+    let world = t.zeros(0x40);
+    t.w32(sm + 0x8c, world);
+    let light = t.zeros(0x100);
+    for w in 0..0x30 {
+        let v = light_float(rng);
+        t.w32(light + 4 * w, v);
+    }
+    for at in [0x30, 0x44] {
+        if rng.chance(4) {
+            t.w32(light + at, 0);
+        }
+    }
+    let far = light_float(rng);
+    t.global(h9::FAR_DISTANCE, far);
+    // the focus: two floats through the pointers
+    let (fx, fy) = (light_float(rng), light_float(rng));
+    let log = t.stub(None, h9::FOCUS, true, 2, 2, None);
+    let base = t.cave_next;
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+    c.extend([0xc7, 0x00]);
+    c.extend(fx.to_le_bytes()); // mov dword [eax], fx
+    c.extend([0x8b, 0x44, 0x24, 0x08]); // mov eax, [esp+8]
+    c.extend([0xc7, 0x00]);
+    c.extend(fy.to_le_bytes()); // mov dword [eax], fy
+    Twins::jmp_to(&mut c, base, log);
+    let code = t.code(&c);
+    t.divert(h9::FOCUS, code);
+    let any = rng.next();
+    let focus = pick(rng, &[0, 1, 0x100, any]);
+    args.copy_from_slice(&[light, focus]);
+}
+
+#[rustfmt::skip]
+const CASES_BATTLE: &[Case] = &[
+    framed(with_cookie(Case { prep: Some(prep_battle), ..method("fit_battle_cascade", 0x006d_00d0, This::Object, 2, &[], |m, this, a| {
+        slots_at(m, a);
+        b9::fit_battle_cascade(m, frame_ebp(), this, a[0], a[1] as u8);
+        Out::None
+    }) }), h9::FRAME, 8),
+];
+
+#[test]
+fn r2_batch4_fit_battle_cascade_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES_BATTLE, n, &mut Rng(0xb3b2_0004));
     });
 }
