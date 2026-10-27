@@ -58,6 +58,7 @@ use ffx_prender::h3_glue49::bridge as g49;
 use ffx_prender::h3_glue50::bridge as g50;
 use ffx_prender::h3_glue51::bridge as g51;
 use ffx_prender::h3_glue52::bridge as g52;
+use ffx_prender::h3_glue53::bridge as g53;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2073,6 +2074,14 @@ ported! {
     PhyreScene_doOnCharacterAllAssetsLoaded @ 0x0065_a760 => extern "thiscall" fn scene_on_character_all_assets_loaded(this: u32, out: u32, reader: u32, array: u32, request: u32, name: u32, extra: u32) -> u32 {
         let mut f = StackFrame::<0x12b>::new();
         g52::on_character_all_assets_loaded(&mut mem(), f.at() + 0x4ac, this, out, reader, array, request, name, extra)
+    }
+
+    // ---- round 15 batch 54 (ffx_prender::h3_glue53) ----
+    /// `PhyreScene_RenderABmap(scene)` -> 0 or the first failing renderer
+    /// call's code: the sphere grid's passes (frame `ebp - 0x38`).
+    PhyreScene_RenderABmap @ 0x0065_2a10 => extern "thiscall" fn scene_render_abmap(this: u32) -> u32 {
+        let mut f = StackFrame::<0xe>::new();
+        g53::render_abmap(&mut mem(), f.at() + 0x38, this)
     }
 }
 
