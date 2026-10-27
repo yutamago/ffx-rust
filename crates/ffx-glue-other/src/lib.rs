@@ -221,6 +221,8 @@ pub mod h4b_k;
 pub mod h4b_l;
 pub mod h4b_m;
 pub mod h4b_n;
+pub mod h4x_shape;
+pub mod h4x_video;
 pub mod menu;
 pub mod misc;
 pub mod movie;

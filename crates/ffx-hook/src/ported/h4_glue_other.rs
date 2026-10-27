@@ -2715,6 +2715,23 @@ ported! {
         let mut frame = StackFrame::<{ (m9::ATEL_FRAME / 4) as usize }>::new();
         m9::update_atel_shp(&mut mem(), frame.at(), lo, hi, shapes, obj, index)
     }
+    // ---- round h4x, batch 1 (ffx_glue_other::h4x_video)
+    /// `FFEscMenu_initializeVideoSettingPage(this)` (a 0xac8-byte frame:
+    /// the Iggy values, the choices' `LocString`s and lists).
+    FFEscMenu_initializeVideoSettingPage @ 0x006f_cca0 => extern "thiscall" fn video_setting_page(this: u32) -> u32 {
+        use ffx_glue_other::h4x_video as xv;
+        let mut frame = StackFrame::<{ (xv::VIDEO_FRAME / 4) as usize }>::new();
+        xv::video_setting_page(&mut mem(), frame.at(), this)
+    }
+    // ---- round h4x, batch 2 (ffx_glue_other::h4x_shape)
+    /// `updateVFXRenderDataShapeField(lo, hi, shape, obj)` -> 1, or 0
+    /// without render data (a 0xd4-byte frame: the fade matrix, the quad's
+    /// vertices, the fade vector).
+    updateVFXRenderDataShapeField @ 0x0071_a4e0 => extern "C" fn update_vfx_render_data_shape_field(lo: u32, hi: u32, shape: u32, obj: u32) -> u32 {
+        use ffx_glue_other::h4x_shape as xs;
+        let mut frame = StackFrame::<{ (xs::SHAPE_FRAME / 4) as usize }>::new();
+        xs::update_shape_field(&mut mem(), frame.at(), lo, hi, shape, obj)
+    }
 }
 
 /// `_CIfmod(a, b)` through the game's import thunk (`0x009498e0`): `a` in
