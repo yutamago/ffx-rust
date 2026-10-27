@@ -1456,7 +1456,20 @@ with each other and with the shared ones of replay-flakes5; then five
 - menu-shop's cursor boxes (x 210-266, y 167-191; 25-473 pixels in the
   h4b3 merge verify): not seen in five runs.
 - movie-fmv's reading thread in lockstep: not looked at again
-  (replay-flakes5's finding stands: movie-fmv stays `realtime`).
+  (replay-flakes5's finding stands: movie-fmv stays `realtime`). In one
+  of the five extra-list runs (Rust) the movie did not advance in
+  `realtime` either: movie 2 was requested and the manager played
+  (`+0x6d0`), but the frame `+0x6d8` stayed under 64 for 1,200 updates
+  and the first `shotwhen` timed out. Three more Rust runs and three
+  original runs side by side were fine (so 1 of 9 Rust runs, 0 of 5
+  original runs counting the two recordings); the same stall as
+  replay-flakes5's in lockstep, not explained.
+- battle-ifrit-1 and -2: 3 and 9 pixels on Wakka's head (x 905..918,
+  y 462..469; his idle pose) in two of five Rust runs, while the two
+  original recordings agree there. The 3 passed as a streak, the 9
+  failed extra run 3. Not measured on more original runs, so not known
+  whether the originals vary there too (the idle pose did in
+  battle-attack before `pin`).
 - event-besaid-4 and -5 differ between any two original recordings (4,000
   to 10,000 pixels, the river walk after the voiced line), as before; the
   comparison leaves those pixels out.
