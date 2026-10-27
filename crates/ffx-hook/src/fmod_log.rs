@@ -24,6 +24,7 @@
 //! # fmodlog 1
 //! # fn <index> <dll> <import|vtable@<slot>> <target> <decorated name>
 //! # thread <tid> <start address: FFX.exe address or module+offset>
+//! # update <n> <dsp clock after it> <result>   (with FFX_AUDIO_WAV: crate::audio_wav)
 //! <seq> <ms> <frame> <tid> <caller> <index> <words> <arg,arg,...> <result> [o<i>=<word>]... [s<i>="<text>"]...
 //! ```
 //!
@@ -291,6 +292,22 @@ fn write_call(p: &Pending, words: usize, result: u32) {
         let _ = log.out.flush();
         log.flushed = Instant::now();
     }
+}
+
+/// Writes `# <text>` into the log (when it is on), in order with the calls:
+/// the audio capture's `EventSystem::update` wrapper notes each update and
+/// the mixer's sample clock after it (`# update <n> <dsp clock>`), since an
+/// update it makes is not a call from `FFX.exe` and so not logged.
+pub fn note(text: &str) {
+    if !ON.load(Ordering::Acquire) {
+        return;
+    }
+    let Ok(mut log) = LOG.lock() else { return };
+    let Some(log) = log.as_mut() else { return };
+    let _ = writeln!(log.out, "# {text}");
+    // one flush per FMOD tick: `quit` then loses no update's calls
+    let _ = log.out.flush();
+    log.flushed = Instant::now();
 }
 
 /// This thread's start address, as an `FFX.exe` address or `module+offset`.

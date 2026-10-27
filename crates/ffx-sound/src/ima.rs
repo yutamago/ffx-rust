@@ -1,10 +1,14 @@
 //! IMA ADPCM as the game's banks store it (the Xbox layout): a mono block
 //! is 0x24 bytes, a 4-byte header (predictor `i16`, step index `u8`, one
-//! unused byte) and 32 bytes of 4-bit codes (low nibble first), 64 samples;
-//! a stereo block is 0x48 bytes: both channels' headers, then their codes
-//! in alternating 4-byte words. The step and index tables are the IMA
-//! standard's. (A stereo bank decoded with whole blocks per channel instead
-//! is noise: mean step between samples 84 and 983 against 23 this way.)
+//! unused byte) and 32 bytes of 4-bit codes (low nibble first), 64 samples:
+//! the predictor itself, then the first 63 codes (the 64th code is never
+//! output; measured against FMOD's mix, where a block whose header differs
+//! from the previous block's last code shows it at the block's first frame,
+//! `docs/formats/audio-platform.md`, "FMOD Ex's mixer"); a stereo block is
+//! 0x48 bytes: both channels' headers, then their codes in alternating
+//! 4-byte words. The step and index tables are the IMA standard's. (A
+//! stereo bank decoded with whole blocks per channel instead is noise: mean
+//! step between samples 84 and 983 against 23 this way.)
 
 const STEPS: [i32; 89] = [
     7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66,
@@ -57,6 +61,11 @@ impl Channel {
         }
     }
 
+    /// The header's predictor: the block's first sample.
+    fn sample(&self) -> i16 {
+        i16::try_from(self.predictor).unwrap_or(0)
+    }
+
     fn codes(&mut self, bytes: &[u8], out: &mut Vec<i16>) {
         for &byte in bytes {
             out.push(step(byte & 0xf, &mut self.predictor, &mut self.index));
@@ -74,10 +83,16 @@ pub fn decode(data: &[u8], channels: u16, frames: u32) -> Vec<i16> {
         let (mut l, mut r) = (Vec::with_capacity(frames), Vec::with_capacity(frames));
         for b in data.as_chunks::<{ 2 * BLOCK }>().0 {
             let (mut cl, mut cr) = (Channel::new(&b[0..4]), Channel::new(&b[4..8]));
+            let start = l.len();
+            l.push(cl.sample());
+            r.push(cr.sample());
             for w in b[8..].as_chunks::<8>().0 {
                 cl.codes(&w[..4], &mut l);
                 cr.codes(&w[4..], &mut r);
             }
+            // the block's 64th code is never output
+            l.truncate(start + BLOCK_SAMPLES);
+            r.truncate(start + BLOCK_SAMPLES);
         }
         let n = frames.min(l.len()).min(r.len());
         return l[..n]
@@ -88,7 +103,11 @@ pub fn decode(data: &[u8], channels: u16, frames: u32) -> Vec<i16> {
     }
     let mut out = Vec::with_capacity(frames);
     for b in data.as_chunks::<BLOCK>().0 {
-        Channel::new(&b[..4]).codes(&b[4..], &mut out);
+        let start = out.len();
+        let mut c = Channel::new(&b[..4]);
+        out.push(c.sample());
+        c.codes(&b[4..], &mut out);
+        out.truncate(start + BLOCK_SAMPLES);
     }
     out.truncate(frames);
     out
