@@ -438,7 +438,12 @@ had started, so they show that the boot repeats, not this path.) Two
 original and two Rust runs side by side gave the four shots the same to
 the pixel; the replay takes 18-28 s instead of 75. Its references were
 recorded again (the realtime ones are in
-`~/ffx-work/replay-shots-nrt.pre-flakes4`).
+`~/ffx-work/replay-shots-nrt.pre-flakes4`). Not all of it repeats yet: the
+two recordings agree on boot-1 and boot-2 but differ by 417 pixels on
+boot-3 (x 110..927) and 641 on boot-4 (the title, x 842..886), and one of
+five Rust runs under load differed from both recordings by 9 single pixels
+on boot-2 (x 295..691, y 319..551). Open: something of the opening still
+follows real time (not looked into).
 
 `tools/replays/battle-magic.txt` (2026-10-24) plays the one spell
 overlay that calls `op_shape_draw` (`0x007ed0c0`): `magic_0481.dll`, its
