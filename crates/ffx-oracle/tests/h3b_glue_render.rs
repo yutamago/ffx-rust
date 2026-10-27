@@ -4,7 +4,7 @@
 //! Results and every byte written must agree. Needs `FFX_GAME_DIR`.
 //!
 //! The harness is `h3_glue_render.rs`'s (recording stubs in
-//! `graphicFontDraw`'s body, frames at the original's address); the two
+//! `FUN_006cbf20`'s body, frames at the original's address); the two
 //! agents keep separate files.
 
 #![allow(
@@ -24,9 +24,11 @@ use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_prender::glue;
 use ffx_prender::glue2;
 
-/// `graphicFontDraw`'s body: no test here calls it, so the recording
-/// stubs are written over it.
-const CAVE: u32 = 0x0064_0660;
+/// The body of `FUN_006cbf20` (2438 bytes; 0 refs in `tools/refs.py`, never
+/// reached in the coverage runs, called by no test or hook): the recording
+/// stubs are written over it. Until h3c it was `graphicFontDraw`'s, which
+/// is ported now and has its own test.
+const CAVE: u32 = 0x006c_bf20;
 const CAVE_LEN: u32 = 1760;
 /// After the stubs: `mov eax, POISON; ret`, which [`G`] calls before each
 /// original so that a callee leaving `eax` alone shows the poison, not what
@@ -35,7 +37,7 @@ const POISON_AT: u32 = CAVE + CAVE_LEN;
 const POISON: u32 = 0xdead_beef;
 /// After the poison: `fld qword [esp+4]; call [esp+0xc]; ret`, and at
 /// `+16` `fstp st0; ret`, for [`Host::call_intrinsic`] (a CRT intrinsic
-/// with its argument in `ST0`; `graphicFontDraw` is 1806 bytes long).
+/// with its argument in `ST0`; the cave function is 2438 bytes long).
 const TRAMPOLINE_AT: u32 = POISON_AT + 8;
 ///
 /// At `+19`, for [`Host::call_intrinsic2`]: `fld qword [esp+4]; fld qword
