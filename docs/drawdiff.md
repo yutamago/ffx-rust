@@ -336,7 +336,18 @@ frames (609 draws against 780-784), so the back buffer hashes had no
 allowed draw before them. The icon is Iggy's autosave prompt
 (`chocobo.swf`), whose Flash frames followed the wall clock; since
 2026-10-27 Iggy's tick check runs on the virtual clock (`docs/harness.md`,
-"Flash on the virtual clock").
+"Flash on the virtual clock"). On game time the prompt has played out
+before besaid-101's count: it draws in none of the three frames in every
+run (three original and five Rust captures, 761 draws each; with the wall
+clock 122-128 icon draws in 1,009-1,011). The references were taken again
+(replay-flakes4): `ref3-a`, `ref3-b`, `ref3-c` (original code), and the
+gate's default should move to `ref3-a`. ref3-a and ref3-c agree; ref3-b
+differs from both on fw-459's draw 115 (`vs db349612...`, ps srv1: the
+eye-blink texture, as kami0100's draw 91 and fw-101's draw 113), which the
+draw-field allow list does not cover; left as it is (not loosened). The
+Rust captures pass against ref3-a. The scene gate's besaid references
+(`dg-besaid-q1/q2`) still pass: a new original capture with Iggy on the
+virtual clock (`dg-besaid-v1`) passed against q1 on bsil0000 and bsil0300.
 
 ### draw-field references (ref-a, ref-b, ref-c)
 
